@@ -181,6 +181,100 @@ export function buildMeetingCleanupEntryBlock(entry: { date: string; attendees: 
   );
 }
 
+export function buildDocumentRecommendSystemPrompt(): string {
+  return (
+    INSTITUTION_CONTEXT +
+    "\n\n" +
+    'GIA는 "대안교육기관에 관한 법률"에 따른 대안교육기관 등록을 신청했고 승인되었다고 가정합니다. ' +
+    "당신은 GIA 같은 학교가 운영을 제대로 갖추기 위해 마련해두면 좋은 서류/문서 목록을 추천하는 " +
+    "보조자입니다. 아래 [참고 법령 목록]에서 요구하거나 근거가 되는 서류(등록 서류, 안전조치 증빙, " +
+    "개인정보처리방침 등)와, 법령에 명시되지 않아도 사교육/대안교육기관이 일반적으로 갖추는 것이 " +
+    "좋은 운영 서류(위탁교육계약서, 시설안전점검표, 비상연락망, 현장학습 동의서 양식 등)를 함께 " +
+    "고려하세요.\n" +
+    "이미 등록된 서류 이름 목록이 주어지면 그 이름과 겹치는 항목은 다시 추천하지 마세요.\n" +
+    "실제로 필요하다고 확신하는 항목만 추천하고, 지어내지 마세요. 8~12개 정도로 추천하세요.\n\n" +
+    "아래 JSON 형식으로만 답하세요(다른 텍스트 금지):\n" +
+    '{"documents":[{"name":"서류명", "category":"분류(예: 등록/인허가, 안전, 개인정보, 계약, 인사, 학사)", ' +
+    '"reason":"왜 필요한지 한 문장"}]}\n\n' +
+    "[참고 법령 목록]\n" +
+    LAW_REFERENCE.map((l) => `${l.topic} | ${l.law} | ${l.points}`).join("\n")
+  );
+}
+
+export function buildDocumentRecommendEntryBlock(existingNames: string[]): string {
+  return existingNames.length
+    ? `[이미 등록된 서류 이름 - 중복 추천 금지]\n${existingNames.join(", ")}`
+    : "[이미 등록된 서류 없음]";
+}
+
+export function buildDocumentDraftSystemPrompt(): string {
+  return (
+    INSTITUTION_CONTEXT +
+    "\n\n" +
+    'GIA는 "대안교육기관에 관한 법률"에 따른 대안교육기관 등록을 신청했고 승인되었다고 가정합니다. ' +
+    "당신은 담당자가 요청한 서류의 실제 초안을 작성하는 보조자입니다. 서류명과 분류를 보고, 바로 " +
+    "다듬어서 쓸 수 있는 수준의 초안을 작성하세요(제목, 조항/항목 구조를 갖춘 정식 문서 형태). " +
+    "GIA의 구체적인 수치·인명·주소 등 실제 정보는 알 수 없으니 [ ] 괄호로 채워 넣을 자리를 " +
+    "표시하세요(예: [정원 인원수], [담당자명]). 아래 [참고 법령 목록]에 관련 근거가 있으면 조항을 " +
+    "자연스럽게 반영하세요. 지어내지 말고, 확실하지 않은 수치/기준은 괄호로 담당자가 채우도록 " +
+    "남겨두세요.\n\n" +
+    "아래 JSON 형식으로만 답하세요(다른 텍스트 금지). 줄바꿈은 JSON 문자열 규칙에 맞게 \\n으로 " +
+    "표시하세요:\n" +
+    '{"draftText":"서류 초안 전문"}\n\n' +
+    "[참고 법령 목록]\n" +
+    LAW_REFERENCE.map((l) => `${l.topic} | ${l.law} | ${l.points}`).join("\n")
+  );
+}
+
+export function buildDocumentDraftEntryBlock(doc: { name: string; category: string; notes: string }): string {
+  return `[작성할 서류]\n서류명: ${doc.name}\n분류: ${doc.category}\n담당자 메모: ${doc.notes || "(없음)"}`;
+}
+
+export function buildEventCompareSystemPrompt(): string {
+  return (
+    INSTITUTION_CONTEXT +
+    "\n\n" +
+    "당신은 GIA 학교의 반복 행사 기록을 연도별로 비교해서, 담당자가 다음 번 행사를 더 잘 준비할 " +
+    "수 있도록 도와주는 보조자입니다. 여러 연도의 같은(또는 비슷한) 행사 기록(좋았던 점/아쉬웠던 " +
+    "점/개선 제안)을 받아서 다음을 정리하세요.\n" +
+    "1) improvements: 작년 대비 실제로 개선된 것으로 보이는 점(과거 기록의 아쉬운 점/개선 제안이 " +
+    "이후 기록에서는 더 이상 언급되지 않거나 좋아진 점으로 바뀐 경우)\n" +
+    "2) recurringIssues: 여러 해에 걸쳐 반복적으로 언급되는 아쉬운 점(아직 해결되지 않은 문제)\n" +
+    "3) recommendation: 다음 행사를 준비할 때 가장 우선적으로 반영하면 좋을 제안 1~2가지\n" +
+    "지어내지 말고 실제 기록에 있는 내용만 근거로 삼으세요. 학생 개인정보는 포함하지 마세요.\n\n" +
+    "아래 JSON 형식으로만 답하세요(다른 텍스트 금지). 줄바꿈은 \\n으로 표시하세요:\n" +
+    '{"improvements":["- ...", "- ..."], "recurringIssues":["- ...", "- ..."], "recommendation":"..."}'
+  );
+}
+
+export function buildEventCompareEntryBlock(
+  events: { date: string; good: string; lack: string; suggest: string }[]
+): string {
+  return events
+    .map(
+      (e, i) =>
+        `[${i + 1}번째 기록 - ${e.date}]\n좋았던 점: ${e.good || "(없음)"}\n아쉬웠던 점: ${e.lack || "(없음)"}\n개선 제안: ${e.suggest || "(없음)"}`
+    )
+    .join("\n\n");
+}
+
+export function buildManualFaqSystemPrompt(): string {
+  return (
+    INSTITUTION_CONTEXT +
+    "\n\n" +
+    "당신은 GIA의 학부모용 운영계획안 전체 내용을 바탕으로, 학부모가 실제로 궁금해할 만한 질문과 " +
+    "답변(FAQ)을 만드는 보조자입니다. 운영계획안 각 항목의 내용을 보고, 학부모 입장에서 자주 물어볼 " +
+    "만한 질문을 뽑아 친절하고 정중한 존댓말로 답변을 작성하세요. 답변은 운영계획안에 실제로 있는 " +
+    "내용에 근거해야 하며, 없는 내용을 지어내면 안 됩니다. 8~12개 정도로 만드세요.\n\n" +
+    "아래 JSON 형식으로만 답하세요(다른 텍스트 금지). 줄바꿈은 \\n으로 표시하세요:\n" +
+    '{"faqs":[{"question":"...", "answer":"..."}]}'
+  );
+}
+
+export function buildManualFaqEntryBlock(sections: { category: string; content: string }[]): string {
+  return sections.map((s) => `[${s.category}]\n${s.content}`).join("\n\n");
+}
+
 export function buildMeetingEntryBlock(
   entry: { date: string; attendees: string; content: string },
   label?: string

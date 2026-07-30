@@ -424,3 +424,39 @@ end $$;
 -- 문서(또는 둘 다)에 반영할지 직접 판단합니다. 판단 전에는 target_doc이 비어있어야 하므로
 -- NOT NULL 제약을 해제합니다.
 alter table manual_drafts alter column target_doc drop not null;
+
+-- ===== 15. 서류함(documents) - 학교가 갖춰야 할 서류를 AI 추천/초안 작성으로 관리 =====
+create table if not exists documents (
+  id uuid primary key default gen_random_uuid(),
+  case_id text unique not null,           -- 예: DOC-260730-...
+  name text not null,
+  category text,
+  status text not null default '필요' check (status in ('필요', '준비중', '보유', '만료임박', '해당없음')),
+  notes text,
+  ai_draft text,                          -- AI가 만들어준 서류 초안(있으면)
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+drop trigger if exists documents_set_updated_at on documents;
+create trigger documents_set_updated_at
+  before update on documents
+  for each row execute function set_updated_at();
+
+alter table documents enable row level security;
+drop policy if exists "giamicro_all_documents" on documents;
+create policy "giamicro_all_documents" on documents
+  for all using (is_giamicro_user()) with check (is_giamicro_user());
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'documents'
+  ) then
+    alter publication supabase_realtime add table documents;
+  end if;
+end $$;
+
+-- ===== 16. 매뉴얼 항목 서명 필요 여부 (PDF에 서명란 자동 삽입용) =====
+alter table manual_sections add column if not exists requires_signature boolean not null default false;

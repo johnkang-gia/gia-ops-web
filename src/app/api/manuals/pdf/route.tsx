@@ -30,6 +30,12 @@ const styles = StyleSheet.create({
   paragraph: { marginBottom: 10, whiteSpace: "pre-wrap" },
   footer: { position: "absolute", bottom: 24, left: 48, right: 48, fontSize: 8, color: "#999999", textAlign: "center" },
   pageNumber: { position: "absolute", bottom: 24, right: 48, fontSize: 8, color: "#999999" },
+  signatureBox: { marginTop: 6, marginBottom: 14, padding: 10, border: "1pt solid #cccccc", borderRadius: 4 },
+  signatureLabel: { fontSize: 9, color: "#666666", marginBottom: 8 },
+  signatureRow: { flexDirection: "row", marginBottom: 4 },
+  signatureField: { flexDirection: "row", alignItems: "flex-end", marginRight: 20 },
+  signatureFieldLabel: { fontSize: 9, color: "#444444", marginRight: 4 },
+  signatureLine: { borderBottom: "0.75pt solid #999999", width: 90, height: 12 },
 });
 
 function ManualDocument({
@@ -61,6 +67,34 @@ function ManualDocument({
             {/* 매뉴얼 내용은 리치 텍스트(HTML)로 저장되므로, PDF에는 태그 없이 읽기 좋은
                 일반 텍스트로 변환해서 출력합니다(굵게 등 서식은 PDF에서는 생략). */}
             <Text style={styles.paragraph}>{htmlToPlainText(s.content)}</Text>
+            {/* 앱에서 "서명 필요"로 표시한 항목은 종이로 배포했을 때 학부모가 바로 서명할 수
+                있도록 PDF에 서명란을 자동으로 넣습니다(내부 인원만 쓰는 앱이라 전자서명 기능
+                대신, 배포용 문서 자체에 서명란을 마련하는 방식을 씁니다). */}
+            {s.requires_signature && (
+              <View style={styles.signatureBox}>
+                <Text style={styles.signatureLabel}>
+                  ✍️ 위 내용을 확인하였으며 이에 동의합니다.
+                </Text>
+                <View style={styles.signatureRow}>
+                  <View style={styles.signatureField}>
+                    <Text style={styles.signatureFieldLabel}>학생명</Text>
+                    <View style={styles.signatureLine} />
+                  </View>
+                  <View style={styles.signatureField}>
+                    <Text style={styles.signatureFieldLabel}>보호자 성명</Text>
+                    <View style={styles.signatureLine} />
+                  </View>
+                  <View style={styles.signatureField}>
+                    <Text style={styles.signatureFieldLabel}>서명</Text>
+                    <View style={styles.signatureLine} />
+                  </View>
+                  <View style={styles.signatureField}>
+                    <Text style={styles.signatureFieldLabel}>날짜</Text>
+                    <View style={styles.signatureLine} />
+                  </View>
+                </View>
+              </View>
+            )}
           </View>
         ))}
       </Page>

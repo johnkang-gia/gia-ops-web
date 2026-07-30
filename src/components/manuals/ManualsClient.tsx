@@ -8,6 +8,21 @@ import RichTextEditor from "@/components/manuals/RichTextEditor";
 
 type TargetDoc = "학부모용" | "실무자용";
 
+const FAQ_CATEGORY = "자주 묻는 질문(FAQ)";
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function buildFaqHtml(faqs: { question: string; answer: string }[]): string {
+  return faqs
+    .map(
+      (f) =>
+        `<p><strong>Q. ${escapeHtml(f.question)}</strong></p><p>A. ${escapeHtml(f.answer)}</p>`
+    )
+    .join("<p></p>");
+}
+
 const TABS: { title: string; doc: TargetDoc; icon: string }[] = [
   { title: "GIA 운영계획안 (학부모 배포용)", doc: "학부모용", icon: "📘" },
   { title: "GIA 실무자매뉴얼", doc: "실무자용", icon: "📗" },
@@ -20,6 +35,7 @@ export default function ManualsClient({ initialItems }: { initialItems: ManualSe
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editCategory, setEditCategory] = useState("");
   const [editContent, setEditContent] = useState("");
+  const [editRequiresSignature, setEditRequiresSignature] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -27,6 +43,12 @@ export default function ManualsClient({ initialItems }: { initialItems: ManualSe
   const [addingOpen, setAddingOpen] = useState(false);
   const [newCategory, setNewCategory] = useState("");
   const [newContent, setNewContent] = useState("");
+  const [newRequiresSignature, setNewRequiresSignature] = useState(false);
+
+  const [faqLoading, setFaqLoading] = useState(false);
+  const [faqError, setFaqError] = useState("");
+  const [faqPreview, setFaqPreview] = useState<{ question: string; answer: string }[] | null>(null);
+  const [faqSaving, setFaqSaving] = useState(false);
 
   useEffect(() => {
     const supabase = createClient();
@@ -63,6 +85,7 @@ export default function ManualsClient({ initialItems }: { initialItems: ManualSe
     setEditingId(s.id);
     setEditCategory(s.category);
     setEditContent(toDisplayHtml(s.content));
+    setEditRequiresSignature(Boolean(s.requires_signature));
     setError(null);
   }
 
@@ -77,7 +100,11 @@ export default function ManualsClient({ initialItems }: { initialItems: ManualSe
     const res = await fetch(`/api/manuals/sections/${id}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ category: editCategory, content: editContent }),
+      body: JSON.stringify({
+        category: editCategory,
+        content: editContent,
+        requiresSignature: editRequiresSignature,
+      }),
     });
     const data = await res.json();
     setBusyId(null);
@@ -109,7 +136,12 @@ export default function ManualsClient({ initialItems }: { initialItems: ManualSe
     const res = await fetch("/api/manuals/sections", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ targetDoc: doc, category: newCategory, content: newContent }),
+      body: JSON.stringify({
+        targetDoc: doc,
+        category: newCategory,
+        content: newContent,
+        requiresSignature: newRequiresSignature,
+      }),
     });
     const data = await res.json();
     setAdding(false);
@@ -120,6 +152,47 @@ export default function ManualsClient({ initialItems }: { initialItems: ManualSe
     setAddingOpen(false);
     setNewCategory("");
     setNewContent("");
+    setNewRequiresSignature(false);
+  }
+
+  async function generateFaq() {
+    setFaqLoading(true);
+    setFaqError("");
+    setFaqPreview(null);
+    const res = await fetch("/api/ai/manual-faq", { method: "POST" });
+    const data = await res.json();
+    setFaqLoading(false);
+    if (!res.ok) {
+      setFaqError(data.error || "FAQ를 만들지 못했습니다.");
+      return;
+    }
+    setFaqPreview(data.faqs);
+  }
+
+  async function saveFaqToManual() {
+    if (!faqPreview || faqPreview.length === 0) return;
+    setFaqSaving(true);
+    setFaqError("");
+    const html = buildFaqHtml(faqPreview);
+    const existing = items.find((it) => it.target_doc === "학부모용" && it.category === FAQ_CATEGORY);
+    const res = existing
+      ? await fetch(`/api/manuals/sections/${existing.id}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ content: html }),
+        })
+      : await fetch("/api/manuals/sections", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ targetDoc: "학부모용", category: FAQ_CATEGORY, content: html }),
+        });
+    const data = await res.json();
+    setFaqSaving(false);
+    if (!res.ok) {
+      setFaqError(data.error || "매뉴얼에 반영하지 못했습니다.");
+      return;
+    }
+    setFaqPreview(null);
   }
 
   const activeTab = TABS.find((t) => t.doc === activeDoc)!;
@@ -161,11 +234,21 @@ export default function ManualsClient({ initialItems }: { initialItems: ManualSe
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-base font-bold">{activeTab.title}</h2>
           <div className="flex flex-wrap gap-2">
+            {activeDoc === "학부모용" && (
+              <button
+                onClick={generateFaq}
+                disabled={faqLoading}
+                className="rounded-lg border border-blue-200 px-3 py-1.5 text-xs font-semibold text-blue-600 hover:bg-blue-50 disabled:opacity-50"
+              >
+                {faqLoading ? "AI가 만드는 중..." : "❓ FAQ 자동 생성"}
+              </button>
+            )}
             <button
               onClick={() => {
                 setAddingOpen((v) => !v);
                 setNewCategory("");
                 setNewContent("");
+                setNewRequiresSignature(false);
                 setError(null);
               }}
               className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
@@ -183,6 +266,39 @@ export default function ManualsClient({ initialItems }: { initialItems: ManualSe
           </div>
         </div>
 
+        {faqError && <p className="mb-3 text-sm text-red-600">{faqError}</p>}
+
+        {faqPreview && (
+          <div className="mb-3 rounded-xl border border-blue-200 bg-blue-50 p-4 shadow-sm">
+            <div className="mb-2 text-sm font-semibold text-blue-800">
+              AI가 만든 FAQ 미리보기 ({faqPreview.length}개) - 반영하면 &quot;{FAQ_CATEGORY}&quot; 항목으로 저장됩니다
+            </div>
+            <div className="mb-3 flex max-h-80 flex-col gap-2 overflow-y-auto">
+              {faqPreview.map((f, i) => (
+                <div key={i} className="rounded-lg bg-white p-2 text-xs">
+                  <div className="font-semibold text-slate-700">Q. {f.question}</div>
+                  <div className="mt-1 text-slate-600">A. {f.answer}</div>
+                </div>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={saveFaqToManual}
+                disabled={faqSaving}
+                className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+              >
+                {faqSaving ? "반영 중..." : "매뉴얼에 반영"}
+              </button>
+              <button
+                onClick={() => setFaqPreview(null)}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+              >
+                취소
+              </button>
+            </div>
+          </div>
+        )}
+
         {addingOpen && (
           <div className="mb-3 flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <input
@@ -193,6 +309,16 @@ export default function ManualsClient({ initialItems }: { initialItems: ManualSe
               className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
             />
             <RichTextEditor content={newContent} onChange={setNewContent} minHeight="8rem" />
+            {activeDoc === "학부모용" && (
+              <label className="flex items-center gap-2 text-xs text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={newRequiresSignature}
+                  onChange={(e) => setNewRequiresSignature(e.target.checked)}
+                />
+                ✍️ 서명이 필요한 항목이에요(환불 규정, 안전 수칙 등 - PDF에 서명란이 자동으로 들어갑니다)
+              </label>
+            )}
             {error && <p className="text-sm text-red-600">{error}</p>}
             <div className="flex flex-wrap gap-2">
               <button
@@ -232,6 +358,16 @@ export default function ManualsClient({ initialItems }: { initialItems: ManualSe
                       className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm font-semibold"
                     />
                     <RichTextEditor content={editContent} onChange={setEditContent} minHeight="10rem" />
+                    {activeDoc === "학부모용" && (
+                      <label className="flex items-center gap-2 text-xs text-slate-600">
+                        <input
+                          type="checkbox"
+                          checked={editRequiresSignature}
+                          onChange={(e) => setEditRequiresSignature(e.target.checked)}
+                        />
+                        ✍️ 서명이 필요한 항목이에요(환불 규정, 안전 수칙 등 - PDF에 서명란이 자동으로 들어갑니다)
+                      </label>
+                    )}
                     {error && <p className="text-sm text-red-600">{error}</p>}
                     <div className="flex flex-wrap gap-2">
                       <button
@@ -252,7 +388,14 @@ export default function ManualsClient({ initialItems }: { initialItems: ManualSe
                 ) : (
                   <div>
                     <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-                      <div className="text-sm font-semibold">{s.category}</div>
+                      <div className="flex items-center gap-2">
+                        <div className="text-sm font-semibold">{s.category}</div>
+                        {s.requires_signature && (
+                          <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-600">
+                            ✍️ 서명 필요
+                          </span>
+                        )}
+                      </div>
                       <div className="flex flex-wrap gap-2">
                         <button
                           onClick={() => startEdit(s)}

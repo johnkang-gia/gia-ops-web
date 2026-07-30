@@ -13,9 +13,10 @@ export async function PATCH(
   if (!user) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
 
   const body = await request.json().catch(() => ({}));
-  const update: Record<string, string> = {};
+  const update: Record<string, string | boolean> = {};
   if (typeof body.category === "string") update.category = body.category.trim();
   if (typeof body.content === "string") update.content = body.content;
+  if (typeof body.requiresSignature === "boolean") update.requires_signature = body.requiresSignature;
 
   if (Object.keys(update).length === 0) {
     return NextResponse.json({ error: "수정할 내용이 없습니다." }, { status: 400 });

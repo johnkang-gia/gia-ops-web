@@ -13,6 +13,7 @@ export async function POST(request: Request) {
   const targetDoc = body.targetDoc === "실무자용" ? "실무자용" : "학부모용";
   const category = String(body.category || "").trim();
   const content = String(body.content || "").trim();
+  const requiresSignature = targetDoc === "학부모용" && Boolean(body.requiresSignature);
 
   if (!category) {
     return NextResponse.json({ error: "항목(카테고리) 이름을 입력해주세요." }, { status: 400 });
@@ -20,7 +21,7 @@ export async function POST(request: Request) {
 
   const { data, error } = await supabase
     .from("manual_sections")
-    .insert({ target_doc: targetDoc, category, content })
+    .insert({ target_doc: targetDoc, category, content, requires_signature: requiresSignature })
     .select()
     .single();
 

@@ -7,6 +7,10 @@ export const dynamic = "force-dynamic";
 async function loadHomeData() {
   const supabase = await createClient();
 
+  const ninetyDaysAgo = new Date();
+  ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+  const ninetyDaysAgoStr = ninetyDaysAgo.toISOString().slice(0, 10);
+
   const [
     incidentsCount,
     eventsCount,
@@ -17,6 +21,7 @@ async function loadHomeData() {
     recentIncidents,
     recentEvents,
     recentMeetings,
+    recentIncidentsForPattern,
   ] = await Promise.all([
     supabase.from("incidents").select("id", { count: "exact", head: true }),
     supabase.from("events").select("id", { count: "exact", head: true }),
@@ -39,7 +44,32 @@ async function loadHomeData() {
       .select("id, case_id, date, content, status, created_at")
       .order("date", { ascending: false })
       .limit(6),
+    supabase
+      .from("incidents")
+      .select("id, date, title, manual_cat")
+      .not("manual_cat", "is", null)
+      .gte("date", ninetyDaysAgoStr)
+      .order("date", { ascending: false }),
   ]);
+
+  // AI 호출 없이 순수 집계만으로 "최근 90일 내 같은 유형 사건 반복" 여부를 찾습니다(비용 0).
+  type PatternRow = { manual_cat: string; count: number; latestTitle: string; latestDate: string };
+  const grouped = new Map<string, { count: number; latestTitle: string; latestDate: string }>();
+  for (const row of (recentIncidentsForPattern.data as { date: string; title: string; manual_cat: string }[] | null) ?? []) {
+    const key = row.manual_cat.trim();
+    if (!key) continue;
+    const existing = grouped.get(key);
+    if (existing) {
+      existing.count += 1;
+    } else {
+      grouped.set(key, { count: 1, latestTitle: row.title, latestDate: row.date });
+    }
+  }
+  const recurringPatterns: PatternRow[] = Array.from(grouped.entries())
+    .map(([manual_cat, v]) => ({ manual_cat, ...v }))
+    .filter((p) => p.count >= 3)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
 
   type Activity = {
     key: string;
@@ -95,6 +125,7 @@ async function loadHomeData() {
       manualSections: manualSectionsCount.count ?? 0,
     },
     activity,
+    recurringPatterns,
   };
 }
 
@@ -105,7 +136,7 @@ function oneLine(text: string, maxLen = 42) {
 }
 
 export default async function HomePage() {
-  const { counts, activity } = await loadHomeData();
+  const { counts, activity, recurringPatterns } = await loadHomeData();
 
   const recordCards = [
     { label: "📋 사건", value: counts.incidents, href: "/records" },
@@ -159,6 +190,32 @@ export default async function HomePage() {
           </Link>
         ))}
       </div>
+
+      {recurringPatterns.length > 0 && (
+        <>
+          <div className="mb-2 text-xs font-semibold text-amber-600">⚠️ 반복되는 사건 유형(최근 90일)</div>
+          <div className="mb-8 flex flex-col gap-2">
+            {recurringPatterns.map((p) => (
+              <Link
+                key={p.manual_cat}
+                href="/records"
+                className="flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm hover:border-amber-300"
+              >
+                <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700">
+                  {p.count}건
+                </span>
+                <span className="min-w-0 flex-1 truncate font-medium text-amber-900">{p.manual_cat}</span>
+                <span className="hidden shrink-0 text-xs text-amber-600 sm:inline">
+                  최근: {oneLine(p.latestTitle, 24)} ({p.latestDate})
+                </span>
+              </Link>
+            ))}
+            <p className="text-xs text-amber-700">
+              같은 유형의 사건이 반복되고 있어요 - 재발 방지를 위한 근본적인 대책(매뉴얼 반영)이 필요해 보입니다.
+            </p>
+          </div>
+        </>
+      )}
 
       <div className="mb-3 text-sm font-bold text-slate-700">최근 활동</div>
       <div className="flex flex-col gap-2">

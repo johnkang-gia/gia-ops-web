@@ -102,6 +102,19 @@ export type ManualSection = {
   target_doc: string;
   category: string;
   content: string;
+  requires_signature: boolean;
+  updated_at: string;
+};
+
+export type SchoolDocument = {
+  id: string;
+  case_id: string;
+  name: string;
+  category: string | null;
+  status: "필요" | "준비중" | "보유" | "만료임박" | "해당없음";
+  notes: string | null;
+  ai_draft: string | null;
+  created_at: string;
   updated_at: string;
 };
 

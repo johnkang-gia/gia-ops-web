@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useRealtimeTable } from "@/lib/useRealtimeTable";
 import { genCaseId } from "@/lib/caseId";
 import type { EventRecord } from "@/lib/types";
+import type { EventCompareResult } from "@/lib/ai/types";
 
 type FormState = {
   date: string;
@@ -44,6 +45,9 @@ export default function EventsClient({
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [comparing, setComparing] = useState<string | null>(null);
+  const [compareResults, setCompareResults] = useState<Record<string, EventCompareResult & { recordCount: number }>>({});
+  const [compareError, setCompareError] = useState<Record<string, string>>({});
 
   function startEdit(it: EventRecord) {
     setEditingId(it.id);
@@ -104,6 +108,23 @@ export default function EventsClient({
       }
     }
     setSaving(false);
+  }
+
+  async function compareWithPastYears(name: string) {
+    setComparing(name);
+    setCompareError((prev) => ({ ...prev, [name]: "" }));
+    const res = await fetch("/api/ai/compare-events", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    const data = await res.json();
+    setComparing(null);
+    if (!res.ok) {
+      setCompareError((prev) => ({ ...prev, [name]: data.error || "비교 리포트를 만들지 못했습니다." }));
+      return;
+    }
+    setCompareResults((prev) => ({ ...prev, [name]: { ...data.result, recordCount: data.recordCount } }));
   }
 
   return (
@@ -210,6 +231,11 @@ export default function EventsClient({
         )}
         {items.map((it) => {
           const expanded = expandedId === it.id;
+          const sameNameCount = items.filter(
+            (o) => o.name.trim().toLowerCase() === it.name.trim().toLowerCase()
+          ).length;
+          const compareResult = compareResults[it.name];
+          const compareErr = compareError[it.name];
           return (
             <div key={it.id} className="rounded-xl border border-slate-200 bg-white shadow-sm">
               <button
@@ -246,12 +272,55 @@ export default function EventsClient({
                         </div>
                       ))}
                   </dl>
-                  <button
-                    onClick={() => startEdit(it)}
-                    className="mt-3 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-                  >
-                    수정
-                  </button>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      onClick={() => startEdit(it)}
+                      className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                    >
+                      수정
+                    </button>
+                    {sameNameCount >= 2 && (
+                      <button
+                        onClick={() => compareWithPastYears(it.name)}
+                        disabled={comparing === it.name}
+                        className="rounded-lg border border-blue-200 px-3 py-1.5 text-xs font-semibold text-blue-600 hover:bg-blue-50 disabled:opacity-50"
+                      >
+                        {comparing === it.name ? "AI가 비교하는 중..." : "📊 연도별 비교 리포트"}
+                      </button>
+                    )}
+                  </div>
+
+                  {compareErr && <p className="mt-2 text-xs text-red-600">{compareErr}</p>}
+
+                  {compareResult && (
+                    <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs">
+                      <div className="mb-2 font-semibold text-blue-800">
+                        &quot;{it.name}&quot; 과거 기록 {compareResult.recordCount}건 비교
+                      </div>
+                      {compareResult.improvements?.length > 0 && (
+                        <div className="mb-2">
+                          <div className="font-semibold text-blue-700">✅ 개선된 점</div>
+                          {compareResult.improvements.map((line, i) => (
+                            <p key={i} className="whitespace-pre-wrap text-slate-600">{line}</p>
+                          ))}
+                        </div>
+                      )}
+                      {compareResult.recurringIssues?.length > 0 && (
+                        <div className="mb-2">
+                          <div className="font-semibold text-amber-700">⚠️ 반복되는 문제</div>
+                          {compareResult.recurringIssues.map((line, i) => (
+                            <p key={i} className="whitespace-pre-wrap text-slate-600">{line}</p>
+                          ))}
+                        </div>
+                      )}
+                      {compareResult.recommendation && (
+                        <div>
+                          <div className="font-semibold text-blue-700">💡 다음 행사 제안</div>
+                          <p className="whitespace-pre-wrap text-slate-600">{compareResult.recommendation}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { href: "/adopted", label: "채택예정", icon: "📬" },
   { href: "/ai-manual", label: "AI 매뉴얼", icon: "✨" },
   { href: "/manuals", label: "매뉴얼", icon: "📖" },
+  { href: "/documents", label: "서류함", icon: "📁" },
   { href: "/admin/users", label: "사용자 관리", icon: "🔐" },
 ];
 

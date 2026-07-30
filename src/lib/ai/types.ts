@@ -37,3 +37,21 @@ export type ManualDraftClassifyResult = {
 export type MeetingCleanupResult = {
   cleanedContent: string;
 };
+
+export type DocumentRecommendResult = {
+  documents: { name: string; category: string; reason: string }[];
+};
+
+export type DocumentDraftResult = {
+  draftText: string;
+};
+
+export type EventCompareResult = {
+  improvements: string[];
+  recurringIssues: string[];
+  recommendation: string;
+};
+
+export type ManualFaqResult = {
+  faqs: { question: string; answer: string }[];
+};

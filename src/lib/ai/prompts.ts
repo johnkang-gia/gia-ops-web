@@ -275,6 +275,64 @@ export function buildManualFaqEntryBlock(sections: { category: string; content: 
   return sections.map((s) => `[${s.category}]\n${s.content}`).join("\n\n");
 }
 
+export function buildComplaintAnticipateSystemPrompt(): string {
+  return (
+    INSTITUTION_CONTEXT +
+    "\n\n" +
+    "당신은 GIA 같은 영어 중심 국제학교에서 학부모가 실제로 제기할 만한 문의나 컴플레인을 미리 " +
+    "예상하고, 실무자(교사/행정담당자)가 전화나 대면 상황에서 바로 참고해서 답변할 수 있는 " +
+    "실무자매뉴얼 항목을 만드는 보조자입니다.\n" +
+    "학비/환불, 안전/사고, 급식/알레르기, 학사 운영(수업, 방학, 결석 처리), 소통/상담, 원어민 " +
+    "교사와의 의사소통(영어 수업 진행 방식, 통역 지원), 시설/위생, 사진·개인정보 활용, 또래 " +
+    "갈등 등 국제학교 학부모가 실제로 흔히 문의하거나 컴플레인하는 주제를 폭넓게 고려하세요.\n\n" +
+    "각 항목마다 다음을 작성하세요.\n" +
+    "1) category: 이 문의/컴플레인 유형을 나타내는 짧고 명확한 항목명(실무자매뉴얼에 그대로 " +
+    "쓸 수 있는 이름)\n" +
+    "2) complaintSummary: 학부모가 실제로 할 법한 문의/컴플레인을 1~2문장으로 구체적으로 서술\n" +
+    "3) recommendedResponse: 실무자가 이 상황에서 참고해서 바로 답변할 수 있는 응대 가이드. " +
+    "실제 답변 스크립트가 아니라, \"이렇게 설명하고 이렇게 안내한다\"는 절차/기준 형태로 " +
+    "작성하세요(구체적인 수치는 GIA 실정에 맞게 나중에 채울 수 있도록 [ ] 표시를 남기세요). " +
+    "아래 [참고 법령 목록]에 근거가 있으면 자연스럽게 반영하세요.\n\n" +
+    "이미 실무자매뉴얼에 있는 항목명과 겹치는 주제는 다시 만들지 마세요. 지어내지 말고 실제로 " +
+    "있을 법한 현실적인 상황만 다루세요. 6~10개 정도 만드세요.\n\n" +
+    "아래 JSON 형식으로만 답하세요(다른 텍스트 금지). 줄바꿈은 \\n으로 표시하세요:\n" +
+    '{"complaints":[{"category":"...", "complaintSummary":"...", "recommendedResponse":"...", ' +
+    '"legalBasis":"[참고 법령 목록]에 있으면 인용, 없으면 빈 문자열(지어내지 말 것)"}]}\n\n' +
+    "[참고 법령 목록]\n" +
+    LAW_REFERENCE.map((l) => `${l.topic} | ${l.law} | ${l.points}`).join("\n")
+  );
+}
+
+export function buildComplaintAnticipateEntryBlock(existingCategories: string[], hint: string): string {
+  const parts = [
+    existingCategories.length
+      ? `[이미 실무자매뉴얼에 있는 항목명 - 중복 금지]\n${existingCategories.join(", ")}`
+      : "[이미 등록된 항목 없음]",
+  ];
+  if (hint.trim()) {
+    parts.push(`[담당자가 남긴 참고 힌트]\n${hint.trim()}`);
+  }
+  return parts.join("\n\n");
+}
+
+export function buildComplaintFinalizeSystemPrompt(): string {
+  return (
+    INSTITUTION_CONTEXT +
+    "\n\n" +
+    "당신은 실무자들이 회의를 통해 GIA 실정에 맞게 수정한 문의/컴플레인 응대 문구를, 실무자매뉴얼에 " +
+    "정식으로 실을 수 있는 깔끔한 규정 문구로 다듬는 보조자입니다.\n" +
+    "실무자가 수정한 내용의 의미를 절대 바꾸거나 지어내지 마세요 - 구어체나 회의 메모체로 남아있는 " +
+    "표현을 공식적인 문어체로 다듬고, \"학부모가 OOO 문의를 하면 → 이렇게 안내한다\" 형태의 " +
+    "명확한 절차문으로 정리하세요. 실무자가 채워넣은 구체적인 수치나 기준은 그대로 유지하세요.\n\n" +
+    "아래 JSON 형식으로만 답하세요(다른 텍스트 금지). 줄바꿈은 \\n으로 표시하세요:\n" +
+    '{"finalText":"정식 실무자매뉴얼에 실을 완성된 문구"}'
+  );
+}
+
+export function buildComplaintFinalizeEntryBlock(entry: { category: string; draftText: string }): string {
+  return `[항목명]\n${entry.category}\n\n[실무자가 회의를 거쳐 수정한 응대 문구(원문)]\n${entry.draftText}`;
+}
+
 export function buildMeetingEntryBlock(
   entry: { date: string; attendees: string; content: string },
   label?: string

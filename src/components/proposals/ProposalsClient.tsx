@@ -9,6 +9,7 @@ const SOURCE_LABEL: Record<string, string> = {
   events: "🎉 행사",
   meetings: "💬 회의",
   manual: "✨ AI매뉴얼",
+  complaint: "🗣️ 예상 문의/컴플레인",
 };
 
 function oneLine(text: string, maxLen = 70) {
@@ -17,7 +18,7 @@ function oneLine(text: string, maxLen = 70) {
   return t.length > maxLen ? t.slice(0, maxLen) + "…" : t;
 }
 
-type CategoryTab = "all" | "incidents" | "events" | "meetings" | "manual";
+type CategoryTab = "all" | "incidents" | "events" | "meetings" | "manual" | "complaint";
 
 export default function ProposalsClient({ initialItems }: { initialItems: Proposal[] }) {
   const [items, setItems] = useState<Proposal[]>(initialItems);
@@ -121,6 +122,7 @@ export default function ProposalsClient({ initialItems }: { initialItems: Propos
     events: items.filter((it) => it.source === "events").length,
     meetings: items.filter((it) => it.source === "meetings").length,
     manual: items.filter((it) => it.source === "manual").length,
+    complaint: items.filter((it) => it.source === "complaint").length,
   };
   const filteredItems = tab === "all" ? items : items.filter((it) => it.source === tab);
   const CATEGORY_TABS: { key: CategoryTab; label: string }[] = [
@@ -129,6 +131,7 @@ export default function ProposalsClient({ initialItems }: { initialItems: Propos
     { key: "events", label: "🎉 행사기록제안" },
     { key: "meetings", label: "💬 회의록제안" },
     { key: "manual", label: "✨ AI매뉴얼제안" },
+    { key: "complaint", label: "🗣️ 예상 문의/컴플레인" },
   ];
 
   return (

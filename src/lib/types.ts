@@ -57,7 +57,7 @@ export type ManualDraft = {
 export type Proposal = {
   id: string;
   case_id: string;
-  source: "incidents" | "events" | "meetings" | "manual";
+  source: "incidents" | "events" | "meetings" | "manual" | "complaint";
   source_id: string | null;
   date: string;
   target_doc: string;

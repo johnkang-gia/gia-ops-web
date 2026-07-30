@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { genCaseId } from "@/lib/caseId";
 import type { Proposal } from "@/lib/types";
+import { callClaudeJson } from "@/lib/ai/claude";
+import { buildComplaintFinalizeSystemPrompt, buildComplaintFinalizeEntryBlock } from "@/lib/ai/prompts";
+import type { ComplaintFinalizeResult } from "@/lib/ai/types";
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -33,6 +36,22 @@ export async function POST(request: Request) {
     if (p.parent_msg) guideParts.push(`[학부모 안내 멘트 옵션]\n${p.parent_msg}`);
     if (p.student_edu) guideParts.push(`[학생 교육 방법 옵션]\n${p.student_edu}`);
 
+    // 예상 문의/컴플레인 제안은 실무자들이 회의를 거쳐 GIA 실정에 맞게 고친 문구를 그대로
+    // 옮기지 않고, AI가 한 번 더 다듬어 깔끔한 규정 문구로 정리한 뒤 채택예정에 올립니다
+    // (실무자매뉴얼에 바로 실을 수 있는 수준으로 만들기 위함).
+    let specificText = p.final_text;
+    if (p.source === "complaint") {
+      try {
+        const systemPrompt = buildComplaintFinalizeSystemPrompt();
+        const userPrompt = buildComplaintFinalizeEntryBlock({ category: p.category, draftText: p.final_text });
+        const result = (await callClaudeJson(systemPrompt, userPrompt)) as ComplaintFinalizeResult;
+        specificText = result.finalText || p.final_text;
+      } catch {
+        // AI 정리에 실패해도 승인 자체는 막지 않고, 실무자가 입력한 원문을 그대로 사용합니다.
+        specificText = p.final_text;
+      }
+    }
+
     const { error: insertErr } = await supabase.from("adopted").insert({
       case_id: genCaseId("ADT"),
       source_id: p.case_id,
@@ -41,7 +60,7 @@ export async function POST(request: Request) {
       target_doc: p.target_doc,
       category: p.category,
       ai_original: p.final_text,
-      specific_text: p.final_text,
+      specific_text: specificText,
       guide: guideParts.join("\n\n") || null,
       legal_basis: p.legal_basis,
       applicability: p.applicability,

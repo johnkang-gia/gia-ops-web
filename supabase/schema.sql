@@ -460,3 +460,10 @@ end $$;
 
 -- ===== 16. 매뉴얼 항목 서명 필요 여부 (PDF에 서명란 자동 삽입용) =====
 alter table manual_sections add column if not exists requires_signature boolean not null default false;
+
+-- ===== 17. AI 예상 문의/컴플레인 제안(proposals.source에 'complaint' 추가) =====
+-- 실무자매뉴얼에 "학부모가 이런 문의/컴플레인을 하면 이렇게 답한다"를 미리 채워두기 위해,
+-- AI가 예상되는 문의/컴플레인과 권장 응대 문구를 제안함에 자동으로 만들어 넣습니다.
+alter table proposals drop constraint if exists proposals_source_check;
+alter table proposals add constraint proposals_source_check
+  check (source in ('incidents', 'events', 'meetings', 'manual', 'complaint'));

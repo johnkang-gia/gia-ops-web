@@ -6,6 +6,7 @@ import { SidebarNavLinks, MobileNavLinks } from "@/components/NavLinks";
 
 const NAV_ITEMS = [
   { href: "/home", label: "홈", icon: "🏠" },
+  { href: "/staff-manual", label: "실무자매뉴얼", icon: "📚" },
   { href: "/records", label: "기록함", icon: "🗂️" },
   { href: "/proposals", label: "제안함", icon: "📝" },
   { href: "/adopted", label: "채택예정", icon: "📬" },

@@ -55,3 +55,11 @@ export type EventCompareResult = {
 export type ManualFaqResult = {
   faqs: { question: string; answer: string }[];
 };
+
+export type ComplaintAnticipateResult = {
+  complaints: { category: string; complaintSummary: string; recommendedResponse: string; legalBasis: string }[];
+};
+
+export type ComplaintFinalizeResult = {
+  finalText: string;
+};

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import type { Adopted } from "@/lib/types";
+import { appendHtmlSection, plainTextToHtml } from "@/lib/manualHtml";
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -30,7 +31,9 @@ export async function POST(request: Request) {
     .maybeSingle();
 
   if (existingSection) {
-    const merged = `${existingSection.content}\n\n${adopted.specific_text}`.trim();
+    // 매뉴얼 내용은 리치 텍스트(HTML)로 저장되므로, 기존 내용이 과거 저장된 일반 텍스트여도
+    // 안전하게 HTML로 정규화한 뒤 새 내용을 문단으로 이어붙입니다.
+    const merged = appendHtmlSection(existingSection.content, adopted.specific_text);
     const { error: updateErr } = await supabase
       .from("manual_sections")
       .update({ content: merged })
@@ -40,7 +43,7 @@ export async function POST(request: Request) {
     const { error: insertErr } = await supabase.from("manual_sections").insert({
       target_doc: adopted.target_doc,
       category: adopted.category,
-      content: adopted.specific_text,
+      content: plainTextToHtml(adopted.specific_text),
     });
     if (insertErr) return NextResponse.json({ error: insertErr.message }, { status: 500 });
   }

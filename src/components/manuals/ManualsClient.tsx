@@ -3,26 +3,30 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { ManualSection } from "@/lib/types";
+import { toDisplayHtml } from "@/lib/manualHtml";
+import RichTextEditor from "@/components/manuals/RichTextEditor";
 
 type TargetDoc = "학부모용" | "실무자용";
 
-const GROUPS: { title: string; doc: TargetDoc }[] = [
-  { title: "GIA 운영계획안 (학부모 배포용)", doc: "학부모용" },
-  { title: "GIA 실무자매뉴얼", doc: "실무자용" },
+const TABS: { title: string; doc: TargetDoc; icon: string }[] = [
+  { title: "GIA 운영계획안 (학부모 배포용)", doc: "학부모용", icon: "📘" },
+  { title: "GIA 실무자매뉴얼", doc: "실무자용", icon: "📗" },
 ];
 
 export default function ManualsClient({ initialItems }: { initialItems: ManualSection[] }) {
   const [items, setItems] = useState<ManualSection[]>(initialItems);
+  const [activeDoc, setActiveDoc] = useState<TargetDoc>("학부모용");
+
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editCategory, setEditCategory] = useState("");
   const [editContent, setEditContent] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const [addingDoc, setAddingDoc] = useState<TargetDoc | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [addingOpen, setAddingOpen] = useState(false);
   const [newCategory, setNewCategory] = useState("");
   const [newContent, setNewContent] = useState("");
-  const [adding, setAdding] = useState(false);
 
   useEffect(() => {
     const supabase = createClient();
@@ -58,7 +62,7 @@ export default function ManualsClient({ initialItems }: { initialItems: ManualSe
   function startEdit(s: ManualSection) {
     setEditingId(s.id);
     setEditCategory(s.category);
-    setEditContent(s.content);
+    setEditContent(toDisplayHtml(s.content));
     setError(null);
   }
 
@@ -113,160 +117,173 @@ export default function ManualsClient({ initialItems }: { initialItems: ManualSe
       setError(data.error || "추가하지 못했습니다.");
       return;
     }
-    setAddingDoc(null);
+    setAddingOpen(false);
     setNewCategory("");
     setNewContent("");
   }
 
+  const activeTab = TABS.find((t) => t.doc === activeDoc)!;
+  const docItems = items.filter((it) => it.target_doc === activeDoc);
+
   return (
     <div className="mx-auto max-w-3xl">
-      <h1 className="mb-4 text-lg font-bold">매뉴얼</h1>
-      <p className="mb-6 text-sm text-slate-500">
+      <h1 className="mb-1 text-lg font-bold">매뉴얼</h1>
+      <p className="mb-4 text-sm text-slate-500">
         채택예정에서 발행한 내용이 자동으로 쌓이거나, 아래에서 직접 항목을 추가·수정·삭제할 수
-        있습니다. 우측 상단 &quot;PDF로 보기/다운로드&quot;는 지금 이 화면의 최신 내용을 그대로
-        인쇄용 PDF로 만들어줍니다.
+        있습니다. 구글독스처럼 굵게·목록·제목 등 서식을 적용해 편집할 수 있고, 우측 상단
+        &quot;PDF로 보기/다운로드&quot;는 지금 이 화면의 최신 내용을 그대로 인쇄용 PDF로
+        만들어줍니다.
       </p>
 
-      <div className="flex flex-col gap-8">
-        {GROUPS.map((group) => {
-          const groupItems = items.filter((it) => it.target_doc === group.doc);
-          return (
-            <section key={group.doc}>
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-base font-bold">{group.title}</h2>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    onClick={() => {
-                      setAddingDoc(addingDoc === group.doc ? null : group.doc);
-                      setNewCategory("");
-                      setNewContent("");
-                      setError(null);
-                    }}
-                    className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-                  >
-                    + 새 항목 추가
-                  </button>
-                  <a
-                    href={`/api/manuals/pdf?doc=${encodeURIComponent(group.doc)}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700"
-                  >
-                    🖨️ PDF로 보기/다운로드
-                  </a>
-                </div>
-              </div>
+      <div className="mb-4 flex gap-1 border-b border-slate-200">
+        {TABS.map((t) => (
+          <button
+            key={t.doc}
+            onClick={() => {
+              setActiveDoc(t.doc);
+              setEditingId(null);
+              setAddingOpen(false);
+              setError(null);
+            }}
+            className={`rounded-t-lg px-4 py-2 text-sm font-semibold ${
+              activeDoc === t.doc
+                ? "border border-b-white border-slate-200 bg-white text-slate-900"
+                : "text-slate-500 hover:text-slate-700"
+            }`}
+            style={activeDoc === t.doc ? { marginBottom: "-1px" } : undefined}
+          >
+            {t.icon} {t.doc}
+          </button>
+        ))}
+      </div>
 
-              {addingDoc === group.doc && (
-                <div className="mb-3 flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <input
-                    type="text"
-                    value={newCategory}
-                    onChange={(e) => setNewCategory(e.target.value)}
-                    placeholder="항목(카테고리) 이름 - 예: 사건 대응 절차"
-                    className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
-                  />
-                  <textarea
-                    value={newContent}
-                    onChange={(e) => setNewContent(e.target.value)}
-                    placeholder="내용을 입력하세요"
-                    rows={4}
-                    className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
-                  />
-                  {error && <p className="text-sm text-red-600">{error}</p>}
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      onClick={() => createSection(group.doc)}
-                      disabled={adding}
-                      className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
-                    >
-                      {adding ? "추가 중..." : "추가"}
-                    </button>
-                    <button
-                      onClick={() => setAddingDoc(null)}
-                      className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-                    >
-                      취소
-                    </button>
+      <section>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-base font-bold">{activeTab.title}</h2>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => {
+                setAddingOpen((v) => !v);
+                setNewCategory("");
+                setNewContent("");
+                setError(null);
+              }}
+              className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+            >
+              + 새 항목 추가
+            </button>
+            <a
+              href={`/api/manuals/pdf?doc=${encodeURIComponent(activeDoc)}`}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700"
+            >
+              🖨️ PDF로 보기/다운로드
+            </a>
+          </div>
+        </div>
+
+        {addingOpen && (
+          <div className="mb-3 flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <input
+              type="text"
+              value={newCategory}
+              onChange={(e) => setNewCategory(e.target.value)}
+              placeholder="항목(카테고리) 이름 - 예: 사건 대응 절차"
+              className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+            />
+            <RichTextEditor content={newContent} onChange={setNewContent} minHeight="8rem" />
+            {error && <p className="text-sm text-red-600">{error}</p>}
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => createSection(activeDoc)}
+                disabled={adding}
+                className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+              >
+                {adding ? "추가 중..." : "추가"}
+              </button>
+              <button
+                onClick={() => setAddingOpen(false)}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+              >
+                취소
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="flex flex-col gap-2">
+          {docItems.length === 0 && !addingOpen && (
+            <div className="rounded-lg bg-white p-4 text-sm text-slate-400 shadow-sm">
+              아직 항목이 없습니다.
+            </div>
+          )}
+          {docItems.map((s) => {
+            const isEditing = editingId === s.id;
+            const busy = busyId === s.id;
+            return (
+              <div key={s.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                {isEditing ? (
+                  <div className="flex flex-col gap-2">
+                    <input
+                      type="text"
+                      value={editCategory}
+                      onChange={(e) => setEditCategory(e.target.value)}
+                      className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm font-semibold"
+                    />
+                    <RichTextEditor content={editContent} onChange={setEditContent} minHeight="10rem" />
+                    {error && <p className="text-sm text-red-600">{error}</p>}
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={() => saveEdit(s.id)}
+                        disabled={busy}
+                        className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+                      >
+                        {busy ? "저장 중..." : "저장"}
+                      </button>
+                      <button
+                        onClick={cancelEdit}
+                        className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                      >
+                        취소
+                      </button>
+                    </div>
                   </div>
-                </div>
-              )}
-
-              <div className="flex flex-col gap-2">
-                {groupItems.length === 0 && addingDoc !== group.doc && (
-                  <div className="rounded-lg bg-white p-4 text-sm text-slate-400 shadow-sm">
-                    아직 항목이 없습니다.
+                ) : (
+                  <div>
+                    <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-sm font-semibold">{s.category}</div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={() => startEdit(s)}
+                          className="rounded-lg border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                        >
+                          수정
+                        </button>
+                        <button
+                          onClick={() => deleteSection(s.id)}
+                          disabled={busy}
+                          className="rounded-lg border border-red-200 px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
+                        >
+                          삭제
+                        </button>
+                      </div>
+                    </div>
+                    {s.content ? (
+                      <div
+                        className="prose prose-sm max-w-none text-xs text-slate-600"
+                        dangerouslySetInnerHTML={{ __html: toDisplayHtml(s.content) }}
+                      />
+                    ) : (
+                      <p className="text-xs text-slate-400">(내용 없음)</p>
+                    )}
                   </div>
                 )}
-                {groupItems.map((s) => {
-                  const isEditing = editingId === s.id;
-                  const busy = busyId === s.id;
-                  return (
-                    <div key={s.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                      {isEditing ? (
-                        <div className="flex flex-col gap-2">
-                          <input
-                            type="text"
-                            value={editCategory}
-                            onChange={(e) => setEditCategory(e.target.value)}
-                            className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm font-semibold"
-                          />
-                          <textarea
-                            value={editContent}
-                            onChange={(e) => setEditContent(e.target.value)}
-                            rows={6}
-                            className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
-                          />
-                          {error && <p className="text-sm text-red-600">{error}</p>}
-                          <div className="flex flex-wrap gap-2">
-                            <button
-                              onClick={() => saveEdit(s.id)}
-                              disabled={busy}
-                              className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
-                            >
-                              {busy ? "저장 중..." : "저장"}
-                            </button>
-                            <button
-                              onClick={cancelEdit}
-                              className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-                            >
-                              취소
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div>
-                          <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-                            <div className="text-sm font-semibold">{s.category}</div>
-                            <div className="flex flex-wrap gap-2">
-                              <button
-                                onClick={() => startEdit(s)}
-                                className="rounded-lg border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-                              >
-                                수정
-                              </button>
-                              <button
-                                onClick={() => deleteSection(s.id)}
-                                disabled={busy}
-                                className="rounded-lg border border-red-200 px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
-                              >
-                                삭제
-                              </button>
-                            </div>
-                          </div>
-                          <p className="whitespace-pre-wrap text-xs text-slate-600">
-                            {s.content || "(내용 없음)"}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
               </div>
-            </section>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      </section>
     </div>
   );
 }

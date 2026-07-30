@@ -2,6 +2,7 @@ import path from "node:path";
 import { Document, Page, Text, View, StyleSheet, Font, renderToBuffer } from "@react-pdf/renderer";
 import { createClient } from "@/lib/supabase/server";
 import type { ManualSection } from "@/lib/types";
+import { htmlToPlainText } from "@/lib/manualHtml";
 
 // 구글 문서를 대체하는 자체 PDF 매뉴얼 생성. 한글 표시를 위해 Pretendard 폰트를
 // 프로젝트에 내장해서 등록합니다(원격 폰트 서버에 의존하지 않아 배포 환경에 관계없이 안정적으로 동작).
@@ -57,7 +58,9 @@ function ManualDocument({
         {sections.map((s) => (
           <View key={s.id} break={false}>
             <Text style={styles.h2}>{s.category}</Text>
-            <Text style={styles.paragraph}>{s.content}</Text>
+            {/* 매뉴얼 내용은 리치 텍스트(HTML)로 저장되므로, PDF에는 태그 없이 읽기 좋은
+                일반 텍스트로 변환해서 출력합니다(굵게 등 서식은 PDF에서는 생략). */}
+            <Text style={styles.paragraph}>{htmlToPlainText(s.content)}</Text>
           </View>
         ))}
       </Page>

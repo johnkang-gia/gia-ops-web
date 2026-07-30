@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import SignOutButton from "@/components/SignOutButton";
@@ -31,8 +32,10 @@ export default async function DashboardLayout({
     <div className="flex min-h-screen flex-1">
       <aside className="hidden w-56 shrink-0 border-r border-slate-200 bg-white p-4 sm:flex sm:flex-col">
         <div className="mb-6 px-2">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo-main.png" alt="GIA Micro Lab" className="h-10 w-auto" />
+          <Link href="/home">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo-main.png" alt="GIA Micro Lab" className="h-10 w-auto" />
+          </Link>
           <div className="mt-2 truncate text-xs text-slate-400">
             {user.email}
           </div>
@@ -47,8 +50,10 @@ export default async function DashboardLayout({
 
       <div className="flex min-h-screen flex-1 flex-col">
         <header className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 sm:hidden">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo-main.png" alt="GIA Micro Lab" className="h-7 w-auto" />
+          <Link href="/home">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo-main.png" alt="GIA Micro Lab" className="h-7 w-auto" />
+          </Link>
           <SignOutButton />
         </header>
         <nav className="flex gap-1 overflow-x-auto border-b border-slate-200 bg-white px-2 py-2 sm:hidden">

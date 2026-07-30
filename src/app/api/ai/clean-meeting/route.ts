@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { callClaudeJson } from "@/lib/ai/claude";
+import { callClaudeJson, CLAUDE_MODEL_FAST } from "@/lib/ai/claude";
 import { buildMeetingCleanupSystemPrompt, buildMeetingCleanupEntryBlock } from "@/lib/ai/prompts";
 import type { MeetingCleanupResult } from "@/lib/ai/types";
 
@@ -23,7 +23,11 @@ export async function POST(request: Request) {
   try {
     const systemPrompt = buildMeetingCleanupSystemPrompt();
     const userPrompt = buildMeetingCleanupEntryBlock({ date, attendees, content });
-    const result = (await callClaudeJson(systemPrompt, userPrompt)) as MeetingCleanupResult;
+    // 맞춤법/문장 정리는 비교적 기계적인 작업이라 저렴한 모델(Haiku)로 충분합니다.
+    const result = (await callClaudeJson(systemPrompt, userPrompt, {
+      model: CLAUDE_MODEL_FAST,
+      maxTokens: 3000,
+    })) as MeetingCleanupResult;
 
     return NextResponse.json({ success: true, cleanedContent: result.cleanedContent || content });
   } catch (err) {

@@ -23,6 +23,8 @@ export type MeetingClassifyResult = {
 };
 
 export type ManualDraftClassifyResult = {
+  targetDoc: "학부모용" | "실무자용" | "둘다";
+  targetDocReason: string;
   category: string;
   isNewCategory: boolean;
   finalText: string;

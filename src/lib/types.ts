@@ -48,7 +48,7 @@ export type EventRecord = {
 export type ManualDraft = {
   id: string;
   case_id: string;
-  target_doc: string;
+  target_doc: string | null; // AI가 판단하기 전까지는 비어있음(학부모용/실무자용/둘다)
   raw_text: string;
   scanned_at: string | null;
   created_at: string;

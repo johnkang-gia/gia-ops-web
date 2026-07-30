@@ -4,11 +4,10 @@ import { useState } from "react";
 import type { Proposal } from "@/lib/types";
 
 export default function AiManualClient() {
-  const [targetDoc, setTargetDoc] = useState<"학부모용" | "실무자용">("실무자용");
   const [rawText, setRawText] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const [result, setResult] = useState<Proposal | null>(null);
+  const [result, setResult] = useState<{ proposals: Proposal[]; reason: string } | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -19,7 +18,7 @@ export default function AiManualClient() {
     const res = await fetch("/api/ai/manual-draft", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ rawText, targetDoc }),
+      body: JSON.stringify({ rawText }),
     });
     const data = await res.json();
     setSubmitting(false);
@@ -27,7 +26,7 @@ export default function AiManualClient() {
       setError(data.error || "제안을 만들지 못했습니다.");
       return;
     }
-    setResult(data.proposal as Proposal);
+    setResult({ proposals: data.proposals as Proposal[], reason: data.reason || "" });
     setRawText("");
   }
 
@@ -36,26 +35,16 @@ export default function AiManualClient() {
       <h1 className="mb-1 text-lg font-bold">AI 매뉴얼</h1>
       <p className="mb-4 text-xs text-slate-500">
         규정이나 매뉴얼로 만들고 싶은 내용을 편하게 글로 쓰면, AI가 정식 문서 문구로 다듬고 관련
-        법령까지 찾아서 제안을 만듭니다. 제안함의 &quot;AI매뉴얼제안&quot; 탭에서 검토·승인하면
-        매뉴얼(운영계획안/실무자매뉴얼)에 바로 반영할 수 있습니다.
+        법령까지 찾아서 제안을 만듭니다. 학부모용 운영계획안과 실무자용 매뉴얼 중 어디에 반영할지도
+        내용을 보고 AI가 자동으로 판단해요(예: 차량 탑승·아동 인계·환불 규정처럼 학부모도 알아야
+        하는 내용이면 두 문서 모두에, 교사 채용 기준처럼 내부용이면 실무자매뉴얼에만). 제안함의
+        &quot;AI매뉴얼제안&quot; 탭에서 검토·승인하면 매뉴얼에 바로 반영됩니다.
       </p>
 
       <form
         onSubmit={handleSubmit}
         className="mb-6 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
       >
-        <label className="mb-3 flex flex-col gap-1 text-xs text-slate-500">
-          어느 문서에 반영할까요?
-          <select
-            value={targetDoc}
-            onChange={(e) => setTargetDoc(e.target.value as "학부모용" | "실무자용")}
-            className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
-          >
-            <option value="실무자용">실무자용 (GIA 실무자매뉴얼)</option>
-            <option value="학부모용">학부모용 (GIA 운영계획안)</option>
-          </select>
-        </label>
-
         <label className="mb-3 flex flex-col gap-1 text-xs text-slate-500">
           내용 (두서없이 편하게 써도 됩니다)
           <textarea
@@ -82,19 +71,27 @@ export default function AiManualClient() {
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
           <div className="mb-2 text-sm font-semibold text-emerald-800">
             제안이 만들어졌습니다 - 제안함에 저장됐어요
+            {result.proposals.length > 1 && " (학부모용 + 실무자용 두 곳에 반영 예정)"}
           </div>
-          <div className="mb-2 text-xs text-emerald-700">
-            항목(카테고리): {result.category} · 대상 문서: {result.target_doc}
-          </div>
-          <div className="mb-3 whitespace-pre-wrap rounded-lg bg-white p-3 text-sm text-slate-700">
-            {result.final_text}
-          </div>
-          {result.legal_basis && (
-            <div className="mb-1 text-xs text-slate-600">관련 법령: {result.legal_basis}</div>
+          {result.reason && (
+            <div className="mb-3 text-xs text-emerald-700">AI 판단 이유: {result.reason}</div>
           )}
+          <div className="flex flex-col gap-2">
+            {result.proposals.map((p) => (
+              <div key={p.id} className="rounded-lg bg-white p-3">
+                <div className="mb-1 text-xs font-semibold text-slate-500">
+                  {p.target_doc} · {p.category}
+                </div>
+                <div className="whitespace-pre-wrap text-sm text-slate-700">{p.final_text}</div>
+                {p.legal_basis && (
+                  <div className="mt-1 text-xs text-slate-500">관련 법령: {p.legal_basis}</div>
+                )}
+              </div>
+            ))}
+          </div>
           <a
             href="/proposals"
-            className="mt-2 inline-block text-xs font-semibold text-emerald-700 underline"
+            className="mt-3 inline-block text-xs font-semibold text-emerald-700 underline"
           >
             제안함에서 확인/승인하기 →
           </a>

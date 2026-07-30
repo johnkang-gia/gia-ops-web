@@ -418,3 +418,9 @@ begin
     alter publication supabase_realtime add table app_users;
   end if;
 end $$;
+
+-- ===== 14. AI 매뉴얼: 대상 문서(학부모용/실무자용) AI 자동 판단 =====
+-- 이전에는 작성자가 미리 "학부모용"/"실무자용"을 선택했지만, 이제 AI가 내용을 보고 어느
+-- 문서(또는 둘 다)에 반영할지 직접 판단합니다. 판단 전에는 target_doc이 비어있어야 하므로
+-- NOT NULL 제약을 해제합니다.
+alter table manual_drafts alter column target_doc drop not null;

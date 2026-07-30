@@ -1,18 +1,26 @@
 // GIA_매뉴얼_자동화_v18_회사계정.gs의 callClaudeJson()을 Node fetch로 옮긴 것입니다.
 // 서버(Route Handler)에서만 import 하세요 - ANTHROPIC_API_KEY는 절대 클라이언트에 노출하면 안 됩니다.
-
-const CLAUDE_MODEL = "claude-sonnet-5";
+//
+// 비용 절감을 위해 작업 성격에 따라 모델을 나눠 씁니다:
+// - CLAUDE_MODEL_QUALITY(Sonnet): 학부모에게 직접 나가는 문구(안내 메시지)나 어느 문서(학부모용/
+//   실무자용)에 반영할지처럼 판단이 틀리면 학부모 클레임/법적 리스크로 이어질 수 있는 작업.
+// - CLAUDE_MODEL_FAST(Haiku): 맞춤법 정리, 이미 결정된 회의 내용 분류처럼 상대적으로 기계적이고
+//   실수해도 사람이 검토 단계에서 바로 잡을 수 있는 작업. Haiku가 Sonnet 대비 훨씬 저렴합니다.
+// 시스템 프롬프트에 prompt caching(ephemeral)을 적용해 반복 호출 시 입력 토큰 비용도 줄입니다.
+export const CLAUDE_MODEL_QUALITY = "claude-sonnet-5";
+export const CLAUDE_MODEL_FAST = "claude-haiku-4-5-20251001";
 
 export async function callClaudeJson(
   systemPrompt: string,
   userPrompt: string,
-  opts?: { maxTokens?: number }
+  opts?: { maxTokens?: number; model?: string }
 ): Promise<unknown> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     throw new Error("ANTHROPIC_API_KEY가 설정되어 있지 않습니다(Vercel 환경변수 확인).");
   }
   const maxTokens = opts?.maxTokens ?? 8000;
+  const model = opts?.model ?? CLAUDE_MODEL_QUALITY;
 
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -22,7 +30,7 @@ export async function callClaudeJson(
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model: CLAUDE_MODEL,
+      model,
       max_tokens: maxTokens,
       system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
       messages: [{ role: "user", content: userPrompt }],

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { callClaudeJson } from "@/lib/ai/claude";
+import { callClaudeJson, CLAUDE_MODEL_FAST } from "@/lib/ai/claude";
 import {
   buildIncidentClassifySystemPrompt,
   buildIncidentEntryBlock,
@@ -71,24 +71,30 @@ async function scanIncidentOrEvent(supabase: any, type: "incidents" | "events") 
     const result = (await callClaudeJson(systemPrompt, userPrompt)) as IncidentClassifyResult;
 
     const legalSummary = findLegalFullText(result.legalBasis);
+    // targetDoc이 "둘다"면 학부모용/실무자용 각각 별도 제안으로 만듭니다(문자열 "둘다"를 그대로
+    // target_doc에 저장하면 매뉴얼 화면의 학부모용/실무자용 탭 어디에도 매칭되지 않는 값이 됩니다).
+    const targetDocs =
+      result.targetDoc === "둘다" ? (["학부모용", "실무자용"] as const) : ([result.targetDoc || "실무자용"] as const);
 
-    const { error: insertErr } = await supabase.from("proposals").insert({
-      case_id: genCaseId("PRP"),
-      source: type,
-      source_id: row.case_id,
-      date: row.date,
-      target_doc: result.targetDoc || "실무자용",
-      category: result.category || "미분류",
-      remediation: (result.remediationOptions || []).join("\n\n[--- 다음 옵션 ---]\n\n"),
-      parent_msg: (result.parentCommunicationOptions || []).join("\n\n[--- 다음 옵션 ---]\n\n"),
-      student_edu: (result.studentEducationOptions || []).join("\n\n[--- 다음 옵션 ---]\n\n"),
-      final_text: result.suggestedFinal || (result.remediationOptions || [])[0] || "",
-      legal_basis: result.legalBasis || "",
-      applicability: result.legalApplicability || "",
-      legal_summary: legalSummary,
-      benchmark: result.benchmarkNote || "",
-    });
-    if (insertErr) throw new Error(insertErr.message);
+    for (const targetDoc of targetDocs) {
+      const { error: insertErr } = await supabase.from("proposals").insert({
+        case_id: genCaseId("PRP"),
+        source: type,
+        source_id: row.case_id,
+        date: row.date,
+        target_doc: targetDoc,
+        category: result.category || "미분류",
+        remediation: (result.remediationOptions || []).join("\n\n[--- 다음 옵션 ---]\n\n"),
+        parent_msg: (result.parentCommunicationOptions || []).join("\n\n[--- 다음 옵션 ---]\n\n"),
+        student_edu: (result.studentEducationOptions || []).join("\n\n[--- 다음 옵션 ---]\n\n"),
+        final_text: result.suggestedFinal || (result.remediationOptions || [])[0] || "",
+        legal_basis: result.legalBasis || "",
+        applicability: result.legalApplicability || "",
+        legal_summary: legalSummary,
+        benchmark: result.benchmarkNote || "",
+      });
+      if (insertErr) throw new Error(insertErr.message);
+    }
 
     await supabase.from(type).update({ scanned_at: new Date().toISOString() }).eq("id", row.id);
     created += 1;
@@ -116,7 +122,10 @@ async function scanMeetings(supabase: any) {
       { date: row.date, attendees: row.attendees || "", content: row.content },
       "회의 정보"
     );
-    const result = (await callClaudeJson(systemPrompt, userPrompt)) as MeetingClassifyResult;
+    // 이미 결정된 회의 내용을 문서별로 분류/정리하는 작업이라 저렴한 모델(Haiku)로 처리합니다.
+    const result = (await callClaudeJson(systemPrompt, userPrompt, {
+      model: CLAUDE_MODEL_FAST,
+    })) as MeetingClassifyResult;
 
     const proposals = result.proposals || [];
     const futurePlanItems: string[] = [];

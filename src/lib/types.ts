@@ -104,3 +104,11 @@ export type ManualSection = {
   content: string;
   updated_at: string;
 };
+
+export type AppUser = {
+  email: string;
+  status: "pending" | "approved" | "rejected";
+  requested_at: string;
+  decided_at: string | null;
+  decided_by: string | null;
+};

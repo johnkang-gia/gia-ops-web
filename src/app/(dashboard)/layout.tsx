@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { href: "/adopted", label: "채택예정", icon: "📬" },
   { href: "/ai-manual", label: "AI 매뉴얼", icon: "✨" },
   { href: "/manuals", label: "매뉴얼", icon: "📖" },
+  { href: "/admin/users", label: "사용자 관리", icon: "🔐" },
 ];
 
 export default async function DashboardLayout({
@@ -32,7 +33,7 @@ export default async function DashboardLayout({
     <div className="flex min-h-screen flex-1">
       <aside className="hidden w-56 shrink-0 border-r border-slate-200 bg-white p-4 sm:flex sm:flex-col">
         <div className="mb-6 px-2">
-          <Link href="/home">
+          <Link href="/home" className="inline-block cursor-pointer">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/logo-main.png" alt="GIA Micro Lab" className="h-10 w-auto" />
           </Link>
@@ -50,7 +51,7 @@ export default async function DashboardLayout({
 
       <div className="flex min-h-screen flex-1 flex-col">
         <header className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 sm:hidden">
-          <Link href="/home">
+          <Link href="/home" className="inline-block cursor-pointer">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/logo-main.png" alt="GIA Micro Lab" className="h-7 w-auto" />
           </Link>

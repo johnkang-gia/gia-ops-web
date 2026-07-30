@@ -15,3 +15,15 @@
 body {
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Tailwind 기본 리셋은 <button>의 커서를 화살표(default)로 둡니다.
+   앱 전체에서 버튼/탭처럼 클릭 가능한 요소는 마우스를 올렸을 때 손가락 모양(pointer)이
+   되도록 통일합니다. 링크(<a>)는 브라우저 기본값이 이미 pointer라 손댈 필요가 없습니다. */
+button:not(:disabled),
+[role="button"]:not(:disabled) {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}

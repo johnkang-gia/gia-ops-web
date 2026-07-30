@@ -16,7 +16,7 @@ export function SidebarNavLinks({ items }: { items: NavItem[] }) {
             key={item.href}
             href={item.href}
             className={
-              "flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium " +
+              "flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors " +
               (active
                 ? "bg-slate-900 text-white"
                 : "text-slate-600 hover:bg-slate-100 hover:text-slate-900")
@@ -42,7 +42,7 @@ export function MobileNavLinks({ items }: { items: NavItem[] }) {
             key={item.href}
             href={item.href}
             className={
-              "shrink-0 rounded-lg px-3 py-1.5 text-sm font-medium " +
+              "shrink-0 cursor-pointer rounded-lg px-3 py-1.5 text-sm font-medium transition-colors " +
               (active ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100")
             }
           >

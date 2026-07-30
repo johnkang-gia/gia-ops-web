@@ -352,3 +352,69 @@ begin
     alter publication supabase_realtime add table manual_drafts;
   end if;
 end $$;
+
+-- ===== 13. 로그인 승인제(app_users) - 개발자/관리자 권한 구분 =====
+-- giamicro.com 계정이면 누구나 로그인은 되지만, 관리자가 승인하기 전에는 대시보드에 들어갈 수
+-- 없습니다(짧게 근무하고 그만두는 인력 대응). 개발자(johnkang@giamicro.com)는 이 테이블 상태와
+-- 무관하게 항상 접근 가능하도록 is_app_admin() 함수에서 이메일을 직접 하드코딩해 확인합니다.
+
+create table if not exists app_users (
+  email text primary key,
+  status text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
+  requested_at timestamptz not null default now(),
+  decided_at timestamptz,
+  decided_by text
+);
+
+alter table app_users enable row level security;
+
+-- security definer로 만들어 아래 정책이 자기 자신(app_users)을 참조해도 재귀 없이 안전합니다.
+create or replace function is_app_admin()
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select
+    coalesce((auth.jwt() ->> 'email') ilike 'johnkang@giamicro.com', false)
+    or exists (
+      select 1 from app_users
+      where email = lower(auth.jwt() ->> 'email')
+        and status = 'approved'
+    );
+$$;
+
+-- 본인 행은 승인 상태 확인을 위해 항상 조회 가능
+drop policy if exists "app_users_select_self" on app_users;
+create policy "app_users_select_self" on app_users
+  for select
+  using (email = lower(auth.jwt() ->> 'email'));
+
+-- 최초 로그인 시 본인 신청(행 생성)을 허용
+drop policy if exists "app_users_insert_self" on app_users;
+create policy "app_users_insert_self" on app_users
+  for insert
+  with check (email = lower(auth.jwt() ->> 'email'));
+
+-- 승인된 사용자(개발자 포함)는 전체 목록을 보고 승인/거절/차단을 처리할 수 있음
+drop policy if exists "app_users_manage_by_admin" on app_users;
+create policy "app_users_manage_by_admin" on app_users
+  for all
+  using (is_app_admin())
+  with check (is_app_admin());
+
+-- 개발자 계정은 배포 즉시 승인 상태로 등록해 잠기지 않도록 합니다.
+insert into app_users (email, status, decided_at, decided_by)
+values ('johnkang@giamicro.com', 'approved', now(), 'system')
+on conflict (email) do update set status = 'approved';
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'app_users'
+  ) then
+    alter publication supabase_realtime add table app_users;
+  end if;
+end $$;

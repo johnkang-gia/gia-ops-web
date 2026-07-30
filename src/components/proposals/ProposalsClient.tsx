@@ -16,6 +16,8 @@ function oneLine(text: string, maxLen = 70) {
   return t.length > maxLen ? t.slice(0, maxLen) + "…" : t;
 }
 
+type CategoryTab = "all" | "incidents" | "events" | "meetings";
+
 export default function ProposalsClient({ initialItems }: { initialItems: Proposal[] }) {
   const [items, setItems] = useState<Proposal[]>(initialItems);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -23,6 +25,7 @@ export default function ProposalsClient({ initialItems }: { initialItems: Propos
   const [busyId, setBusyId] = useState<string | null>(null);
   const [scanBusy, setScanBusy] = useState<string | null>(null);
   const [scanMsg, setScanMsg] = useState("");
+  const [tab, setTab] = useState<CategoryTab>("all");
 
   useEffect(() => {
     const supabase = createClient();
@@ -111,6 +114,20 @@ export default function ProposalsClient({ initialItems }: { initialItems: Propos
     }
   }
 
+  const categoryCounts = {
+    all: items.length,
+    incidents: items.filter((it) => it.source === "incidents").length,
+    events: items.filter((it) => it.source === "events").length,
+    meetings: items.filter((it) => it.source === "meetings").length,
+  };
+  const filteredItems = tab === "all" ? items : items.filter((it) => it.source === tab);
+  const CATEGORY_TABS: { key: CategoryTab; label: string }[] = [
+    { key: "all", label: "전체" },
+    { key: "incidents", label: "📋 사건기록제안" },
+    { key: "events", label: "🎉 행사기록제안" },
+    { key: "meetings", label: "💬 회의록제안" },
+  ];
+
   return (
     <div className="mx-auto max-w-3xl">
       <h1 className="mb-4 text-lg font-bold">제안함 검토대기 ({items.length}건)</h1>
@@ -136,13 +153,32 @@ export default function ProposalsClient({ initialItems }: { initialItems: Propos
         {scanMsg && <p className="mt-2 text-xs text-slate-600">{scanMsg}</p>}
       </div>
 
+      <div className="mb-4 flex gap-1 overflow-x-auto border-b border-slate-200">
+        {CATEGORY_TABS.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={
+              "shrink-0 border-b-2 px-3 py-2 text-sm font-semibold transition " +
+              (tab === t.key
+                ? "border-slate-900 text-slate-900"
+                : "border-transparent text-slate-400 hover:text-slate-600")
+            }
+          >
+            {t.label} ({categoryCounts[t.key]})
+          </button>
+        ))}
+      </div>
+
       <div className="flex flex-col gap-2">
-        {items.length === 0 && (
+        {filteredItems.length === 0 && (
           <div className="rounded-lg bg-white p-4 text-sm text-slate-400 shadow-sm">
-            검토 대기 중인 제안이 없습니다. 위에서 분석을 실행해보세요.
+            {items.length === 0
+              ? "검토 대기 중인 제안이 없습니다. 위에서 분석을 실행해보세요."
+              : "이 분류에는 검토 대기 중인 제안이 없습니다."}
           </div>
         )}
-        {items.map((it) => {
+        {filteredItems.map((it) => {
           const expanded = expandedId === it.id;
           const draft = drafts[it.id] ?? it.final_text;
           const busy = busyId === it.id;

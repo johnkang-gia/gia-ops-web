@@ -7,27 +7,39 @@ export const dynamic = "force-dynamic";
 async function loadHomeData() {
   const supabase = await createClient();
 
-  const [incidentsCount, eventsCount, meetingsCount, recentIncidents, recentEvents, recentMeetings] =
-    await Promise.all([
-      supabase.from("incidents").select("id", { count: "exact", head: true }),
-      supabase.from("events").select("id", { count: "exact", head: true }),
-      supabase.from("meetings").select("id", { count: "exact", head: true }),
-      supabase
-        .from("incidents")
-        .select("id, case_id, date, title, status, created_at")
-        .order("date", { ascending: false })
-        .limit(6),
-      supabase
-        .from("events")
-        .select("id, case_id, date, name, status, created_at")
-        .order("date", { ascending: false })
-        .limit(6),
-      supabase
-        .from("meetings")
-        .select("id, case_id, date, content, status, created_at")
-        .order("date", { ascending: false })
-        .limit(6),
-    ]);
+  const [
+    incidentsCount,
+    eventsCount,
+    meetingsCount,
+    proposalsPendingCount,
+    adoptedPendingCount,
+    manualSectionsCount,
+    recentIncidents,
+    recentEvents,
+    recentMeetings,
+  ] = await Promise.all([
+    supabase.from("incidents").select("id", { count: "exact", head: true }),
+    supabase.from("events").select("id", { count: "exact", head: true }),
+    supabase.from("meetings").select("id", { count: "exact", head: true }),
+    supabase.from("proposals").select("id", { count: "exact", head: true }).eq("status", "검토대기"),
+    supabase.from("adopted").select("id", { count: "exact", head: true }).eq("publish", false),
+    supabase.from("manual_sections").select("id", { count: "exact", head: true }),
+    supabase
+      .from("incidents")
+      .select("id, case_id, date, title, status, created_at")
+      .order("date", { ascending: false })
+      .limit(6),
+    supabase
+      .from("events")
+      .select("id, case_id, date, name, status, created_at")
+      .order("date", { ascending: false })
+      .limit(6),
+    supabase
+      .from("meetings")
+      .select("id, case_id, date, content, status, created_at")
+      .order("date", { ascending: false })
+      .limit(6),
+  ]);
 
   type Activity = {
     key: string;
@@ -46,7 +58,7 @@ async function loadHomeData() {
         title: it.title,
         date: it.date,
         status: it.status,
-        href: "/incidents",
+        href: "/records",
       })
     ),
     ...((recentEvents.data as Pick<EventRecord, "id" | "case_id" | "date" | "name" | "status" | "created_at">[] | null) ?? []).map(
@@ -56,7 +68,7 @@ async function loadHomeData() {
         title: it.name,
         date: it.date,
         status: it.status,
-        href: "/events",
+        href: "/records",
       })
     ),
     ...((recentMeetings.data as Pick<Meeting, "id" | "case_id" | "date" | "content" | "status" | "created_at">[] | null) ?? []).map(
@@ -66,7 +78,7 @@ async function loadHomeData() {
         title: it.content,
         date: it.date,
         status: it.status,
-        href: "/meetings",
+        href: "/records",
       })
     ),
   ]
@@ -78,6 +90,9 @@ async function loadHomeData() {
       incidents: incidentsCount.count ?? 0,
       events: eventsCount.count ?? 0,
       meetings: meetingsCount.count ?? 0,
+      proposalsPending: proposalsPendingCount.count ?? 0,
+      adoptedPending: adoptedPendingCount.count ?? 0,
+      manualSections: manualSectionsCount.count ?? 0,
     },
     activity,
   };
@@ -92,25 +107,55 @@ function oneLine(text: string, maxLen = 42) {
 export default async function HomePage() {
   const { counts, activity } = await loadHomeData();
 
-  const statCards = [
-    { label: "📋 사건", value: counts.incidents, href: "/incidents" },
-    { label: "🎉 행사", value: counts.events, href: "/events" },
-    { label: "💬 회의", value: counts.meetings, href: "/meetings" },
+  const recordCards = [
+    { label: "📋 사건", value: counts.incidents, href: "/records" },
+    { label: "🎉 행사", value: counts.events, href: "/records" },
+    { label: "💬 회의", value: counts.meetings, href: "/records" },
+  ];
+
+  const workCards = [
+    { label: "📝 제안함 대기", value: counts.proposalsPending, href: "/proposals", highlight: counts.proposalsPending > 0 },
+    { label: "📬 채택예정 대기", value: counts.adoptedPending, href: "/adopted", highlight: counts.adoptedPending > 0 },
+    { label: "📖 발행된 매뉴얼 항목", value: counts.manualSections, href: "/manuals", highlight: false },
   ];
 
   return (
     <div className="mx-auto max-w-3xl">
       <h1 className="mb-4 text-lg font-bold">홈</h1>
 
-      <div className="mb-8 grid grid-cols-3 gap-2 sm:gap-3">
-        {statCards.map((card) => (
+      <div className="mb-2 text-xs font-semibold text-slate-400">기록 현황</div>
+      <div className="mb-5 grid grid-cols-3 gap-2 sm:gap-3">
+        {recordCards.map((card) => (
           <Link
-            key={card.href}
+            key={card.label}
             href={card.href}
             className="rounded-xl border border-slate-200 bg-white p-3 text-center shadow-sm hover:border-slate-300 sm:p-4"
           >
             <div className="text-xl font-bold sm:text-2xl">{card.value}</div>
             <div className="mt-1 text-xs text-slate-500">{card.label}</div>
+          </Link>
+        ))}
+      </div>
+
+      <div className="mb-2 text-xs font-semibold text-slate-400">처리할 일</div>
+      <div className="mb-8 grid grid-cols-3 gap-2 sm:gap-3">
+        {workCards.map((card) => (
+          <Link
+            key={card.label}
+            href={card.href}
+            className={
+              "rounded-xl border p-3 text-center shadow-sm sm:p-4 " +
+              (card.highlight
+                ? "border-amber-300 bg-amber-50 hover:border-amber-400"
+                : "border-slate-200 bg-white hover:border-slate-300")
+            }
+          >
+            <div className={"text-xl font-bold sm:text-2xl " + (card.highlight ? "text-amber-700" : "")}>
+              {card.value}
+            </div>
+            <div className={"mt-1 text-xs " + (card.highlight ? "text-amber-700" : "text-slate-500")}>
+              {card.label}
+            </div>
           </Link>
         ))}
       </div>

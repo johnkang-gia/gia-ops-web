@@ -114,6 +114,59 @@ export function buildMeetingClassifySystemPrompt(): string {
   );
 }
 
+export function buildManualDraftClassifySystemPrompt(targetDoc: string): string {
+  return (
+    INSTITUTION_CONTEXT +
+    "\n\n" +
+    'GIA는 "대안교육기관에 관한 법률"에 따른 대안교육기관 등록을 신청했고 승인되었다고 가정합니다. ' +
+    "정규 초중등학교 대상 법령을 그대로 지킬 법적 의무는 없지만 모범사례로 참고합니다.\n" +
+    "당신은 담당자가 두서없이 적은 규정/매뉴얼 초안(메모, 구어체, 생각나는 대로 쓴 글일 수 있음)을 받아서, " +
+    `그대로 "${targetDoc}" 문서에 실을 수 있는 정식 규정/매뉴얼 항목 문구로 다듬는 보조자입니다.\n\n` +
+    "다음을 지키세요.\n" +
+    "1) 원문의 의도와 내용을 절대 바꾸거나 지어내지 마세요 - 표현만 공식적인 문어체로 다듬고, 빠진 논리적 " +
+    "연결이 있으면 자연스럽게 보완하는 정도로만 정리하세요.\n" +
+    "2) 아래 [참고 법령 목록]에 관련된 법령이 있으면 근거로 자연스럽게 녹여 넣으세요(법조항을 나열하듯 " +
+    "쓰지 말고, 왜 이 규정이 타당한지 근거가 느껴지도록). 관련 법령이 없다면 legalBasis는 빈 문자열로 " +
+    "두고 지어내지 마세요.\n" +
+    "3) category는 이 항목이 속할 짧고 명확한 항목명입니다(기존 항목명과 비슷한 걸 새로 만들지 말고, " +
+    "이미 있을 법한 이름이면 그 이름을 그대로 쓰세요).\n\n" +
+    "아래 JSON 형식으로만 답하세요(다른 텍스트 금지). 줄바꿈은 JSON 문자열 규칙에 맞게 \\n으로 표시하세요:\n" +
+    '{"category":"항목명",\n' +
+    ' "isNewCategory": true/false,\n' +
+    ' "finalText":"정식 문서에 바로 실을 수 있게 다듬은 완성된 문구",\n' +
+    ' "legalBasis":"[참고 법령 목록]에 있으면 인용, 없으면 빈 문자열(지어내지 말 것)",\n' +
+    ' "legalApplicability":"legalBasis를 썼다면 해당 적용성 값, 없으면 빈 문자열",\n' +
+    ' "legalSummary":"legalBasis를 썼다면 그 조항이 요구하는 바를 한두 문장으로 요약, 없으면 빈 문자열",\n' +
+    ' "benchmarkNote":"확실히 아는 타 사립교육기관 사례가 있을 때만, 없으면 빈 문자열(지어내지 말 것)"}\n\n' +
+    "[참고 법령 목록]\n" +
+    LAW_REFERENCE.map((l) => `${l.topic} | ${l.law} | ${l.points} | 적용성:${l.applicability}`).join("\n")
+  );
+}
+
+export function buildManualDraftEntryBlock(rawText: string): string {
+  return `[담당자가 작성한 초안(원문 - 메모/구어체일 수 있음, 그대로 베끼지 말고 정리할 것)]\n${rawText}`;
+}
+
+export function buildMeetingCleanupSystemPrompt(): string {
+  return (
+    "당신은 GIA 학교의 회의록을 정리하는 보조자입니다. 담당자가 두서없이 메모하듯 적은 회의 내용을 " +
+    "받아서, 맞춤법과 띄어쓰기를 교정하고 문장을 매끄러운 문어체로 다듬어 누가 읽어도 무슨 내용인지 " +
+    "한눈에 알 수 있는 정식 회의록으로 정리하세요.\n" +
+    "절대 원문을 그대로 복사하지 말고, 내용을 지어내거나 왜곡하지도 마세요(표현만 다듬는 것입니다). " +
+    "안건별로 문단이나 목록으로 구분해서 읽기 편하게 정리하세요. 학생·학부모 개인정보는 그대로 두되 " +
+    "과도하게 반복되는 부분은 자연스럽게 정리하세요.\n\n" +
+    "아래 JSON 형식으로만 답하세요(다른 텍스트 금지). 줄바꿈은 JSON 문자열 규칙에 맞게 \\n으로 표시하세요:\n" +
+    '{"cleanedContent":"정리된 회의록 전문"}'
+  );
+}
+
+export function buildMeetingCleanupEntryBlock(entry: { date: string; attendees: string; content: string }): string {
+  return (
+    `[회의 정보]\n날짜: ${entry.date}\n참석자: ${entry.attendees}` +
+    `\n\n[정리할 원문]\n${entry.content}`
+  );
+}
+
 export function buildMeetingEntryBlock(
   entry: { date: string; attendees: string; content: string },
   label?: string

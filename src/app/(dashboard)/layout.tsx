@@ -8,6 +8,7 @@ const NAV_ITEMS = [
   { href: "/records", label: "기록함", icon: "🗂️" },
   { href: "/proposals", label: "제안함", icon: "📝" },
   { href: "/adopted", label: "채택예정", icon: "📬" },
+  { href: "/ai-manual", label: "AI 매뉴얼", icon: "✨" },
   { href: "/manuals", label: "매뉴얼", icon: "📖" },
 ];
 

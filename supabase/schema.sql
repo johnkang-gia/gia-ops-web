@@ -308,3 +308,47 @@ begin
     alter publication supabase_realtime add table manual_sections;
   end if;
 end $$;
+
+-- =====================================================================
+-- Phase 3: AI 매뉴얼 작성(직접 글쓰기 -> AI 제안) · 회의록 AI 정리
+-- (Phase 1 + Phase 2를 이미 실행했다면 이 블록만 추가로 SQL Editor에 붙여넣고 실행해도 됩니다.
+--  전체를 다시 실행해도 안전합니다.)
+-- =====================================================================
+
+-- ===== 11. 제안함(proposals) 출처(source)에 "manual"(AI 매뉴얼 작성) 추가 =====
+-- 기존에는 사건/행사/회의 3가지 출처만 허용했는데, "AI 매뉴얼" 메뉴에서 담당자가 직접 쓴 초안도
+-- 같은 제안함 파이프라인(제안 -> 승인 -> 채택예정 -> 발행)을 타도록 출처를 하나 더 허용합니다.
+-- 제약조건 이름은 schema.sql에서 별도 이름을 주지 않았을 때 Postgres가 자동으로 붙이는
+-- "<테이블>_<컬럼>_check" 규칙을 따릅니다.
+
+alter table proposals drop constraint if exists proposals_source_check;
+alter table proposals add constraint proposals_source_check
+  check (source in ('incidents', 'events', 'meetings', 'manual'));
+
+-- ===== 12. AI 매뉴얼 작성 초안(manual_drafts) =====
+-- "AI 매뉴얼" 메뉴에서 담당자가 두서없이 쓴 원문을 그대로 보관합니다(감사/추적용). AI가 다듬은
+-- 결과물은 proposals 테이블에 source='manual'로 저장되고, 이 테이블의 case_id를 source_id로 참조합니다.
+
+create table if not exists manual_drafts (
+  id uuid primary key default gen_random_uuid(),
+  case_id text unique not null,                 -- 예: MDR-260730-...
+  target_doc text not null,                      -- '학부모용' | '실무자용'
+  raw_text text not null,
+  scanned_at timestamptz,                        -- AI가 처리해서 제안을 만든 시각
+  created_at timestamptz not null default now()
+);
+
+alter table manual_drafts enable row level security;
+drop policy if exists "giamicro_all_manual_drafts" on manual_drafts;
+create policy "giamicro_all_manual_drafts" on manual_drafts
+  for all using (is_giamicro_user()) with check (is_giamicro_user());
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'manual_drafts'
+  ) then
+    alter publication supabase_realtime add table manual_drafts;
+  end if;
+end $$;

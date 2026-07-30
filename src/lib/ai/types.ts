@@ -21,3 +21,17 @@ export type MeetingClassifyResult = {
   proposals: MeetingProposalItem[];
   nextAgendaItems: string[];
 };
+
+export type ManualDraftClassifyResult = {
+  category: string;
+  isNewCategory: boolean;
+  finalText: string;
+  legalBasis: string;
+  legalApplicability: string;
+  legalSummary: string;
+  benchmarkNote: string;
+};
+
+export type MeetingCleanupResult = {
+  cleanedContent: string;
+};

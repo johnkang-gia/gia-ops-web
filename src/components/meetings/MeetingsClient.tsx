@@ -42,6 +42,7 @@ export default function MeetingsClient({
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [cleaning, setCleaning] = useState(false);
 
   function startEdit(it: Meeting) {
     setEditingId(it.id);
@@ -103,6 +104,27 @@ export default function MeetingsClient({
     setSaving(false);
   }
 
+  async function handleCleanUp() {
+    if (!form.content.trim()) {
+      setError("정리할 회의 내용을 먼저 입력해주세요.");
+      return;
+    }
+    setCleaning(true);
+    setError("");
+    const res = await fetch("/api/ai/clean-meeting", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ date: form.date, attendees: form.attendees, content: form.content }),
+    });
+    const data = await res.json();
+    setCleaning(false);
+    if (!res.ok) {
+      setError(data.error || "정리하지 못했습니다.");
+      return;
+    }
+    setForm((f) => ({ ...f, content: data.cleanedContent }));
+  }
+
   return (
     <div className="mx-auto max-w-3xl">
       <div className="mb-4 flex items-center justify-between">
@@ -145,11 +167,21 @@ export default function MeetingsClient({
             </label>
           </div>
           <label className="flex flex-col gap-1 text-xs text-slate-500">
-            회의 내용(주요 논의사항 - 자유롭게 작성)
+            <div className="flex items-center justify-between">
+              <span>회의 내용(주요 논의사항 - 두서없이 메모하듯 써도 됩니다)</span>
+              <button
+                type="button"
+                onClick={handleCleanUp}
+                disabled={cleaning || !form.content.trim()}
+                className="rounded-lg border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+              >
+                {cleaning ? "정리 중..." : "🧹 AI로 정리"}
+              </button>
+            </div>
             <textarea
               value={form.content}
               onChange={(e) => setForm({ ...form, content: e.target.value })}
-              rows={3}
+              rows={5}
               className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
             />
           </label>

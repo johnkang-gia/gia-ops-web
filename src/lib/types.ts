@@ -45,10 +45,19 @@ export type EventRecord = {
   updated_at: string;
 };
 
+export type ManualDraft = {
+  id: string;
+  case_id: string;
+  target_doc: string;
+  raw_text: string;
+  scanned_at: string | null;
+  created_at: string;
+};
+
 export type Proposal = {
   id: string;
   case_id: string;
-  source: "incidents" | "events" | "meetings";
+  source: "incidents" | "events" | "meetings" | "manual";
   source_id: string | null;
   date: string;
   target_doc: string;

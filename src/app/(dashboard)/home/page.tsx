@@ -98,7 +98,7 @@ async function loadHomeData() {
         title: it.name,
         date: it.date,
         status: it.status,
-        href: "/records",
+        href: "/events",
       })
     ),
     ...((recentMeetings.data as Pick<Meeting, "id" | "case_id" | "date" | "content" | "status" | "created_at">[] | null) ?? []).map(
@@ -140,7 +140,7 @@ export default async function HomePage() {
 
   const recordCards = [
     { label: "📋 사건", value: counts.incidents, href: "/records" },
-    { label: "🎉 행사", value: counts.events, href: "/records" },
+    { label: "🎉 행사", value: counts.events, href: "/events" },
     { label: "💬 회의", value: counts.meetings, href: "/records" },
   ];
 

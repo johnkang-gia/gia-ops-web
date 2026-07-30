@@ -467,3 +467,65 @@ alter table manual_sections add column if not exists requires_signature boolean 
 alter table proposals drop constraint if exists proposals_source_check;
 alter table proposals add constraint proposals_source_check
   check (source in ('incidents', 'events', 'meetings', 'manual', 'complaint'));
+
+-- ===== 18. 행사 정규/일시적 구분 + 사진 =====
+alter table events add column if not exists kind text not null default 'adhoc' check (kind in ('regular', 'adhoc'));
+alter table events add column if not exists photo_paths text[] not null default '{}';
+
+-- ===== 19. 학기/캠프(terms) - 매년 반복되는 학기·캠프를 누적 기록하고 다음 회차에 참고 =====
+-- 학기 중 계속 진행되는 회의에서 나온 안건이 자동으로 이 기록(good/lack/suggest)에 누적되고,
+-- 다음 해 같은 학기/캠프가 시작될 때 AI 비교 리포트로 참고할 수 있습니다.
+create table if not exists terms (
+  id uuid primary key default gen_random_uuid(),
+  case_id text unique not null,             -- 예: TRM-260730-...
+  term_type text not null,                  -- 예: '1학기', '여름캠프1' (자유 입력, 반복해서 쓰면 자동으로 묶임)
+  year text not null,                       -- 예: '2026'
+  start_date date,
+  end_date date,
+  status text not null default '진행중' check (status in ('진행중', '종료')),
+  good text,
+  lack text,
+  suggest text,
+  photo_paths text[] not null default '{}',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+drop trigger if exists terms_set_updated_at on terms;
+create trigger terms_set_updated_at
+  before update on terms
+  for each row execute function set_updated_at();
+
+alter table terms enable row level security;
+drop policy if exists "giamicro_all_terms" on terms;
+create policy "giamicro_all_terms" on terms
+  for all using (is_giamicro_user()) with check (is_giamicro_user());
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'terms'
+  ) then
+    alter publication supabase_realtime add table terms;
+  end if;
+end $$;
+
+-- ===== 20. 행사/학기 사진 저장소(Storage) =====
+-- 비공개 버킷 - giamicro.com 로그인 사용자만 업로드/조회/삭제할 수 있습니다(아동 사진 포함 가능하므로
+-- 공개 버킷으로 만들지 않습니다).
+insert into storage.buckets (id, name, public)
+values ('event-photos', 'event-photos', false)
+on conflict (id) do nothing;
+
+drop policy if exists "giamicro_read_event_photos" on storage.objects;
+create policy "giamicro_read_event_photos" on storage.objects
+  for select using (bucket_id = 'event-photos' and is_giamicro_user());
+
+drop policy if exists "giamicro_write_event_photos" on storage.objects;
+create policy "giamicro_write_event_photos" on storage.objects
+  for insert with check (bucket_id = 'event-photos' and is_giamicro_user());
+
+drop policy if exists "giamicro_delete_event_photos" on storage.objects;
+create policy "giamicro_delete_event_photos" on storage.objects
+  for delete using (bucket_id = 'event-photos' and is_giamicro_user());

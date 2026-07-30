@@ -1,41 +1,40 @@
 "use client";
 
 import { useState } from "react";
-import type { Incident, EventRecord, Meeting } from "@/lib/types";
+import type { Incident, Meeting } from "@/lib/types";
 import IncidentsClient from "@/components/incidents/IncidentsClient";
-import EventsClient from "@/components/events/EventsClient";
 import MeetingsClient from "@/components/meetings/MeetingsClient";
 
-type Tab = "incidents" | "events" | "meetings";
+type Tab = "incidents" | "meetings";
 
 const TABS: { key: Tab; label: string; icon: string }[] = [
   { key: "incidents", label: "사건", icon: "📋" },
-  { key: "events", label: "행사", icon: "🎉" },
   { key: "meetings", label: "회의", icon: "💬" },
 ];
 
 export default function RecordsClient({
   initialIncidents,
-  initialEvents,
   initialMeetings,
 }: {
   initialIncidents: Incident[];
-  initialEvents: EventRecord[];
   initialMeetings: Meeting[];
 }) {
   const [tab, setTab] = useState<Tab>("incidents");
 
   const counts: Record<Tab, number> = {
     incidents: initialIncidents.length,
-    events: initialEvents.length,
     meetings: initialMeetings.length,
   };
 
   return (
     <div className="mx-auto max-w-3xl">
-      <h1 className="mb-4 text-lg font-bold">기록함</h1>
+      <h1 className="mb-1 text-lg font-bold">기록함</h1>
+      <p className="mb-4 text-xs text-slate-500">
+        사건·회의 기록은 AI 매뉴얼과 함께 실무자매뉴얼/운영계획안을 만드는 재료입니다. 반복되는
+        행사 기록은 별도의 &quot;행사기록&quot; 메뉴에서 관리합니다.
+      </p>
 
-      <div className="mb-5 grid grid-cols-3 gap-2 sm:gap-3">
+      <div className="mb-5 grid grid-cols-2 gap-2 sm:gap-3">
         {TABS.map((t) => (
           <button
             key={t.key}
@@ -77,7 +76,6 @@ export default function RecordsClient({
       </div>
 
       {tab === "incidents" && <IncidentsClient initialItems={initialIncidents} />}
-      {tab === "events" && <EventsClient initialItems={initialEvents} />}
       {tab === "meetings" && <MeetingsClient initialItems={initialMeetings} />}
     </div>
   );

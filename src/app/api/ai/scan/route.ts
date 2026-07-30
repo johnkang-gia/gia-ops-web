@@ -132,7 +132,50 @@ async function scanMeetings(supabase: any) {
 
     for (const p of proposals) {
       if (p.targetDoc === "향후계획") {
-        futurePlanItems.push(p.finalText);
+        futurePlanItems.push(`[향후계획] ${p.finalText}`);
+        continue;
+      }
+      if (p.targetDoc === "행사학기참고") {
+        // 매뉴얼(규정)이 아니라 특정 행사/학기에 대한 회고이므로, 이름이 비슷한 행사 기록이나
+        // 진행 중인 학기 기록을 찾아 "개선 제안"란에 자동으로 붙여둡니다(다음번 같은 행사/학기 때
+        // AI 비교 리포트에 바로 반영됨). 매칭되는 기록이 없으면 회의록 자체의 확정 기록에 메모로 남깁니다.
+        let matched = false;
+        const guess = (p.eventNameGuess || "").trim();
+        const note = `[회의록 참고, ${row.date}] ${p.finalText}`;
+
+        if (guess && p.referenceKind === "학기") {
+          // 진행 중인 같은 학기/캠프를 우선 찾고, 없으면 가장 최근 회차에 붙입니다.
+          const { data: matchedTerms } = await supabase
+            .from("terms")
+            .select("id, suggest, status")
+            .ilike("term_type", guess)
+            .order("year", { ascending: false });
+          const target =
+            (matchedTerms || []).find((t: { status: string }) => t.status === "진행중") ??
+            (matchedTerms || [])[0];
+          if (target) {
+            const merged = [target.suggest, note].filter(Boolean).join("\n\n");
+            await supabase.from("terms").update({ suggest: merged }).eq("id", target.id);
+            matched = true;
+          }
+        } else if (guess) {
+          const { data: matchedEvents } = await supabase
+            .from("events")
+            .select("id, suggest")
+            .ilike("name", `%${guess}%`)
+            .order("date", { ascending: false })
+            .limit(1);
+          const target = matchedEvents?.[0];
+          if (target) {
+            const merged = [target.suggest, note].filter(Boolean).join("\n\n");
+            await supabase.from("events").update({ suggest: merged }).eq("id", target.id);
+            matched = true;
+          }
+        }
+
+        if (!matched) {
+          futurePlanItems.push(`[행사/학기 메모]${guess ? ` (${guess})` : ""} ${p.finalText}`);
+        }
         continue;
       }
       const { error: insertErr } = await supabase.from("proposals").insert({

@@ -13,8 +13,10 @@ export type IncidentClassifyResult = {
 
 export type MeetingProposalItem = {
   category: string;
-  targetDoc: "학부모용" | "실무자용" | "향후계획";
+  targetDoc: "학부모용" | "실무자용" | "행사학기참고" | "향후계획";
   finalText: string;
+  eventNameGuess?: string;
+  referenceKind?: "행사" | "학기";
 };
 
 export type MeetingClassifyResult = {

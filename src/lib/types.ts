@@ -41,6 +41,24 @@ export type EventRecord = {
   lack: string | null;
   suggest: string | null;
   status: string | null;
+  kind: "regular" | "adhoc";
+  photo_paths: string[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type Term = {
+  id: string;
+  case_id: string;
+  term_type: string;
+  year: string;
+  start_date: string | null;
+  end_date: string | null;
+  status: "진행중" | "종료";
+  good: string | null;
+  lack: string | null;
+  suggest: string | null;
+  photo_paths: string[];
   created_at: string;
   updated_at: string;
 };

@@ -11,7 +11,7 @@ type WithId = { id: string; date?: string };
  * 서버에서 미리 불러온 initialItems로 시작하고, 이후 변경분만 실시간으로 반영합니다.
  */
 export function useRealtimeTable<T extends WithId>(
-  table: "incidents" | "events" | "meetings",
+  table: "incidents" | "events" | "meetings" | "terms",
   initialItems: T[]
 ) {
   const [items, setItems] = useState<T[]>(initialItems);

@@ -1,6 +1,7 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { isPinCookieValid, pinCookieName } from "@/lib/pinCookie";
+import { authOkCookieMaxAge, authOkCookieName, isAuthOkCookieValid, makeAuthOkCookieValue } from "@/lib/authCookie";
 import { isDeveloperEmail } from "@/lib/roles";
 
 const ALLOWED_DOMAIN = "@giamicro.com";
@@ -43,9 +44,13 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
+  // getUser()는 매 요청마다 Supabase Auth 서버로 네트워크 요청을 보내 검증합니다.
+  // getClaims()는 프로젝트가 비대칭 서명키(JWKS)를 쓰는 경우 로컬에서(캐시된 공개키로) 검증하므로
+  // 더 빠르고, 그렇지 않은 프로젝트에서도 getUser()와 동일하게 동작해 손해가 없습니다.
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: claimsData,
+  } = await supabase.auth.getClaims();
+  const user = claimsData ? { id: claimsData.claims.sub, email: claimsData.claims.email as string | undefined } : null;
 
   const path = request.nextUrl.pathname;
   const isAuthRoute =
@@ -72,25 +77,41 @@ export async function updateSession(request: NextRequest) {
       return NextResponse.redirect(url);
     }
 
-    if (!isDeveloperEmail(email)) {
-      const normalizedEmail = email.toLowerCase();
-      const { data: appUser } = await supabase
-        .from("app_users")
-        .select("status")
-        .eq("email", normalizedEmail)
-        .maybeSingle();
+    if (!isDeveloperEmail(email) && user.id) {
+      // 승인 여부를 매 요청마다 DB에서 조회하면 페이지 이동마다 네트워크 왕복이 늘어나 체감
+      // 속도가 떨어집니다. 한 번 승인 확인이 끝나면 짧은 시간(5분) 동안은 서명된 쿠키만으로
+      // 통과시키고, 쿠키가 없거나 만료됐을 때만 실제로 DB를 조회합니다.
+      const authOkCookie = request.cookies.get(authOkCookieName())?.value;
+      const cachedOk = isAuthOkCookieValid(user.id, authOkCookie);
 
-      if (!appUser) {
-        // 첫 로그인 - 승인 신청 행을 만들고 대기 화면으로 보냅니다.
-        await supabase.from("app_users").insert({ email: normalizedEmail });
-        const url = request.nextUrl.clone();
-        url.pathname = "/pending";
-        return NextResponse.redirect(url);
-      }
-      if (appUser.status !== "approved") {
-        const url = request.nextUrl.clone();
-        url.pathname = "/pending";
-        return NextResponse.redirect(url);
+      if (!cachedOk) {
+        const normalizedEmail = email.toLowerCase();
+        const { data: appUser } = await supabase
+          .from("app_users")
+          .select("status")
+          .eq("email", normalizedEmail)
+          .maybeSingle();
+
+        if (!appUser) {
+          // 첫 로그인 - 승인 신청 행을 만들고 대기 화면으로 보냅니다.
+          await supabase.from("app_users").insert({ email: normalizedEmail });
+          const url = request.nextUrl.clone();
+          url.pathname = "/pending";
+          return NextResponse.redirect(url);
+        }
+        if (appUser.status !== "approved") {
+          const url = request.nextUrl.clone();
+          url.pathname = "/pending";
+          return NextResponse.redirect(url);
+        }
+
+        supabaseResponse.cookies.set(authOkCookieName(), makeAuthOkCookieValue(user.id), {
+          httpOnly: true,
+          secure: true,
+          sameSite: "lax",
+          path: "/",
+          maxAge: authOkCookieMaxAge(),
+        });
       }
 
       const pinCookie = request.cookies.get(pinCookieName())?.value;

@@ -108,7 +108,7 @@ async function loadHomeData() {
         title: it.content,
         date: it.date,
         status: it.status,
-        href: "/records",
+        href: "/meetings",
       })
     ),
   ]
@@ -141,7 +141,7 @@ export default async function HomePage() {
   const recordCards = [
     { label: "📋 사건", value: counts.incidents, href: "/records" },
     { label: "🎉 행사", value: counts.events, href: "/events" },
-    { label: "💬 회의", value: counts.meetings, href: "/records" },
+    { label: "💬 회의", value: counts.meetings, href: "/meetings" },
   ];
 
   const workCards = [

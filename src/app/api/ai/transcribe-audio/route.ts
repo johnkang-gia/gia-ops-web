@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { transcribeAudioWithOpenAI } from "@/lib/ai/openai";
+import { transcribeAudioWithGroq } from "@/lib/ai/groq";
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -20,7 +20,7 @@ export async function POST(request: Request) {
     }
 
     const filename = path.split("/").pop() || "audio.webm";
-    const text = await transcribeAudioWithOpenAI(blob, filename);
+    const text = await transcribeAudioWithGroq(blob, filename);
     return NextResponse.json({ success: true, text });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

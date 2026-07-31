@@ -23,7 +23,8 @@ const NAV_GROUPS = [
   {
     label: "자료 기록 (매뉴얼 재료)",
     items: [
-      { href: "/records", label: "기록함", icon: "🗂️" },
+      { href: "/records", label: "사건기록", icon: "📋" },
+      { href: "/meetings", label: "회의기록", icon: "💬" },
       { href: "/ai-manual", label: "AI 매뉴얼", icon: "✨" },
     ],
   },

@@ -135,6 +135,11 @@ export default function MeetingsClient({
 
   return (
     <div className="mx-auto max-w-3xl">
+      <p className="mb-3 text-xs text-slate-500">
+        회의 안건은 AI 분석을 거쳐 실무자매뉴얼/운영계획안이나 관련 행사·학기 기록에 자동으로
+        반영됩니다. 아래 채팅으로 두서없는 메모를 붙여넣거나, 음성 파일을 올리거나, 회의를 라이브로
+        녹음하면서 정리할 수 있습니다.
+      </p>
       <div className="mb-4 flex items-center justify-between">
         <h1 className="text-lg font-bold">회의 ({items.length}건)</h1>
         <button

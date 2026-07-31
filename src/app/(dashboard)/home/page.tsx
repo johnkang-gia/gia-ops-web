@@ -169,13 +169,12 @@ export default async function HomePage() {
 
   return (
     <div className="mx-auto max-w-6xl">
-      <h1 className="mb-2 text-lg font-bold">홈</h1>
-
       {currentTerm && (
-        <div className="mb-5 flex justify-center">
-          <div className="inline-flex items-center gap-2 rounded-full bg-blue-600 px-5 py-2 text-base font-bold text-white shadow-sm sm:text-lg">
+        <div className="mb-6 pt-1 text-center">
+          <div className="text-2xl font-extrabold tracking-tight text-slate-800 sm:text-3xl">
             📅 {currentTerm.year} {currentTerm.term_type}
           </div>
+          <div className="mx-auto mt-2 h-0.5 w-14 rounded-full bg-blue-400" />
         </div>
       )}
 

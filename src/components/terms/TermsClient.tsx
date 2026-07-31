@@ -82,28 +82,62 @@ export default function TermsClient({ initialItems }: { initialItems: Term[] }) 
     })[0];
   }, [items]);
 
-  const allOccurrencesSorted = useMemo(
+  const CURRENT_YEAR = String(new Date().getFullYear());
+
+  // 선택지는 실제로 저장된 회차가 아니라 항상 존재하는 7개 학기/캠프 종류(+커스텀으로 추가된
+  // 종류)를 그대로 보여줍니다. 아직 올해 회차 기록이 하나도 없어도 선택할 수 있어야 하기 때문에,
+  // 저장된 occurrence 목록(items)이 아니라 allTypes를 기준으로 만듭니다.
+  const switcherOptions = useMemo(
     () =>
-      [...items].sort((a, b) => a.term_type.localeCompare(b.term_type) || b.year.localeCompare(a.year)),
-    [items]
+      allTypes.map((t) => ({
+        type: t,
+        existing: items.find((it) => it.term_type === t && it.year === CURRENT_YEAR) ?? null,
+      })),
+    [allTypes, items, CURRENT_YEAR]
   );
 
-  async function setCurrentTerm(id: string) {
+  // 선택한 학기/캠프 종류를 "올해(CURRENT_YEAR) 진행중"으로 설정합니다. 이미 그 종류/연도의
+  // 기록이 있으면 상태만 바꾸고, 없으면 새로 만듭니다(비어있던 선택창에서 바로 시작할 수 있게).
+  async function setCurrentTermType(termType: string) {
     setSwitching(true);
     const supabase = createClient();
-    const others = items.filter((it) => it.status === "진행중" && it.id !== id);
-    await Promise.all([
-      ...others.map((it) => supabase.from("terms").update({ status: "종료" }).eq("id", it.id)),
-      supabase.from("terms").update({ status: "진행중" }).eq("id", id),
-    ]);
-    // 실시간 구독으로도 곧 반영되지만, 누르자마자 화면이 바뀌도록 미리 로컬 상태도 갱신합니다.
-    setItems((prev) =>
-      prev.map((it) => {
-        if (it.id === id) return { ...it, status: "진행중" };
-        if (others.some((o) => o.id === it.id)) return { ...it, status: "종료" };
-        return it;
-      })
+    const existing = items.find((it) => it.term_type === termType && it.year === CURRENT_YEAR);
+    const others = items.filter(
+      (it) => it.status === "진행중" && (!existing || it.id !== existing.id)
     );
+    await Promise.all(others.map((it) => supabase.from("terms").update({ status: "종료" }).eq("id", it.id)));
+
+    if (existing) {
+      await supabase.from("terms").update({ status: "진행중" }).eq("id", existing.id);
+      setItems((prev) =>
+        prev.map((it) => {
+          if (it.id === existing.id) return { ...it, status: "진행중" };
+          if (others.some((o) => o.id === it.id)) return { ...it, status: "종료" };
+          return it;
+        })
+      );
+    } else {
+      const { data } = await supabase
+        .from("terms")
+        .insert({
+          case_id: genCaseId("TRM"),
+          term_type: termType,
+          year: CURRENT_YEAR,
+          status: "진행중",
+          good: "",
+          lack: "",
+          suggest: "",
+        })
+        .select()
+        .single();
+      setItems((prev) => {
+        const withOthersEnded = prev.map((it) =>
+          others.some((o) => o.id === it.id) ? { ...it, status: "종료" as const } : it
+        );
+        return data ? [data as Term, ...withOthersEnded] : withOthersEnded;
+      });
+      setSelectedType(termType);
+    }
     setSwitching(false);
     setSwitcherOpen(false);
   }
@@ -225,7 +259,7 @@ export default function TermsClient({ initialItems }: { initialItems: Term[] }) 
           <button
             onClick={() => {
               setSwitcherOpen((v) => !v);
-              setSwitcherChoice(currentActive?.id ?? "");
+              setSwitcherChoice(currentActive?.term_type ?? "");
             }}
             className="rounded-lg border border-blue-300 px-2 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100"
           >
@@ -246,23 +280,24 @@ export default function TermsClient({ initialItems }: { initialItems: Term[] }) 
               onChange={(e) => setSwitcherChoice(e.target.value)}
               className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
             >
-              <option value="">학기/캠프 회차 선택</option>
-              {allOccurrencesSorted.map((it) => (
-                <option key={it.id} value={it.id}>
-                  {it.term_type} ({it.year}){it.status === "진행중" ? " · 현재 진행중" : ""}
+              <option value="">학기/캠프 종류 선택</option>
+              {switcherOptions.map(({ type, existing }) => (
+                <option key={type} value={type}>
+                  {type} ({CURRENT_YEAR}){existing?.status === "진행중" ? " · 현재 진행중" : existing ? " · 기존 기록 있음" : " · 새로 시작"}
                 </option>
               ))}
             </select>
             <button
-              onClick={() => switcherChoice && setCurrentTerm(switcherChoice)}
+              onClick={() => switcherChoice && setCurrentTermType(switcherChoice)}
               disabled={!switcherChoice || switching}
               className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
             >
               {switching ? "전환 중..." : "이 학기로 전환"}
             </button>
             <p className="w-full text-[11px] text-blue-600">
-              전환하면 기존에 진행중이던 학기는 자동으로 종료 처리되고, 그 이후 새로 작성되는
-              사건·회의 기록이 새 학기로 연결됩니다.
+              올해({CURRENT_YEAR}) 기록이 없는 종류를 고르면 새로 만들어서 바로 진행중으로
+              설정합니다. 전환하면 기존에 진행중이던 학기는 자동으로 종료 처리되고, 그 이후 새로
+              작성되는 사건·회의 기록이 새 학기로 연결됩니다.
             </p>
           </div>
         )}

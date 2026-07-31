@@ -166,7 +166,7 @@ export default async function HomePage() {
         {currentTerm ? (
           <div className="min-w-0 flex-1">
             <div className="text-sm font-bold text-blue-900">
-              현재 학기: {currentTerm.term_type} ({currentTerm.year})
+              현재 학기: {currentTerm.year} {currentTerm.term_type}
             </div>
             <div className="text-xs text-blue-600">
               {currentTerm.start_date ? `${currentTerm.start_date} ~ ${currentTerm.end_date ?? "진행중"}` : "기간 미입력"}

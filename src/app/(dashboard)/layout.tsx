@@ -85,7 +85,7 @@ export default async function DashboardLayout({
     redirect("/login");
   }
 
-  const termLabel = currentTerm ? `${currentTerm.term_type} (${currentTerm.year})` : null;
+  const termLabel = currentTerm ? `${currentTerm.year} ${currentTerm.term_type}` : null;
   const navGroups = isDeveloperEmail(user.email) ? [...NAV_GROUPS, DEVELOPER_NAV_GROUP] : NAV_GROUPS;
 
   return (

@@ -61,6 +61,7 @@ export default function TermsClient({ initialItems }: { initialItems: Term[] }) 
   const [compareError, setCompareError] = useState("");
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [switcherChoice, setSwitcherChoice] = useState("");
+  const [switcherYear, setSwitcherYear] = useState(String(new Date().getFullYear()));
   const [switching, setSwitching] = useState(false);
 
   const occurrences = items
@@ -83,25 +84,32 @@ export default function TermsClient({ initialItems }: { initialItems: Term[] }) 
   }, [items]);
 
   const CURRENT_YEAR = String(new Date().getFullYear());
+  // 연도 선택지: 작년~내년을 기본으로 주고, 이미 기록이 있는 연도가 그 범위 밖이면 추가합니다.
+  const yearChoices = useMemo(() => {
+    const base = [String(Number(CURRENT_YEAR) - 1), CURRENT_YEAR, String(Number(CURRENT_YEAR) + 1)];
+    const used = [...new Set(items.map((it) => it.year))];
+    const merged = [...new Set([...base, ...used])];
+    return merged.sort((a, b) => a.localeCompare(b));
+  }, [items, CURRENT_YEAR]);
 
   // 선택지는 실제로 저장된 회차가 아니라 항상 존재하는 7개 학기/캠프 종류(+커스텀으로 추가된
-  // 종류)를 그대로 보여줍니다. 아직 올해 회차 기록이 하나도 없어도 선택할 수 있어야 하기 때문에,
+  // 종류)를 그대로 보여줍니다. 선택한 연도에 아직 회차 기록이 없어도 선택할 수 있어야 하기 때문에,
   // 저장된 occurrence 목록(items)이 아니라 allTypes를 기준으로 만듭니다.
   const switcherOptions = useMemo(
     () =>
       allTypes.map((t) => ({
         type: t,
-        existing: items.find((it) => it.term_type === t && it.year === CURRENT_YEAR) ?? null,
+        existing: items.find((it) => it.term_type === t && it.year === switcherYear) ?? null,
       })),
-    [allTypes, items, CURRENT_YEAR]
+    [allTypes, items, switcherYear]
   );
 
-  // 선택한 학기/캠프 종류를 "올해(CURRENT_YEAR) 진행중"으로 설정합니다. 이미 그 종류/연도의
-  // 기록이 있으면 상태만 바꾸고, 없으면 새로 만듭니다(비어있던 선택창에서 바로 시작할 수 있게).
-  async function setCurrentTermType(termType: string) {
+  // 선택한 연도·학기/캠프 종류를 "진행중"으로 설정합니다. 이미 그 종류/연도의 기록이 있으면
+  // 상태만 바꾸고, 없으면 새로 만듭니다(비어있던 선택창에서 바로 시작할 수 있게).
+  async function setCurrentTermType(termType: string, year: string) {
     setSwitching(true);
     const supabase = createClient();
-    const existing = items.find((it) => it.term_type === termType && it.year === CURRENT_YEAR);
+    const existing = items.find((it) => it.term_type === termType && it.year === year);
     const others = items.filter(
       (it) => it.status === "진행중" && (!existing || it.id !== existing.id)
     );
@@ -122,7 +130,7 @@ export default function TermsClient({ initialItems }: { initialItems: Term[] }) 
         .insert({
           case_id: genCaseId("TRM"),
           term_type: termType,
-          year: CURRENT_YEAR,
+          year,
           status: "진행중",
           good: "",
           lack: "",
@@ -260,6 +268,7 @@ export default function TermsClient({ initialItems }: { initialItems: Term[] }) 
             onClick={() => {
               setSwitcherOpen((v) => !v);
               setSwitcherChoice(currentActive?.term_type ?? "");
+              setSwitcherYear(currentActive?.year ?? CURRENT_YEAR);
             }}
             className="rounded-lg border border-blue-300 px-2 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100"
           >
@@ -268,13 +277,24 @@ export default function TermsClient({ initialItems }: { initialItems: Term[] }) 
         </div>
         {currentActive ? (
           <div className="text-sm font-bold text-blue-900">
-            {currentActive.term_type} ({currentActive.year})
+            {currentActive.year} {currentActive.term_type}
           </div>
         ) : (
           <div className="text-sm text-blue-700">설정된 진행중 학기가 없습니다.</div>
         )}
         {switcherOpen && (
           <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-blue-200 pt-3">
+            <select
+              value={switcherYear}
+              onChange={(e) => setSwitcherYear(e.target.value)}
+              className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+            >
+              {yearChoices.map((y) => (
+                <option key={y} value={y}>
+                  {y}년
+                </option>
+              ))}
+            </select>
             <select
               value={switcherChoice}
               onChange={(e) => setSwitcherChoice(e.target.value)}
@@ -283,21 +303,22 @@ export default function TermsClient({ initialItems }: { initialItems: Term[] }) 
               <option value="">학기/캠프 종류 선택</option>
               {switcherOptions.map(({ type, existing }) => (
                 <option key={type} value={type}>
-                  {type} ({CURRENT_YEAR}){existing?.status === "진행중" ? " · 현재 진행중" : existing ? " · 기존 기록 있음" : " · 새로 시작"}
+                  {type}
+                  {existing?.status === "진행중" ? " · 현재 진행중" : existing ? " · 기존 기록 있음" : " · 새로 시작"}
                 </option>
               ))}
             </select>
             <button
-              onClick={() => switcherChoice && setCurrentTermType(switcherChoice)}
+              onClick={() => switcherChoice && setCurrentTermType(switcherChoice, switcherYear)}
               disabled={!switcherChoice || switching}
               className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
             >
-              {switching ? "전환 중..." : "이 학기로 전환"}
+              {switching ? "전환 중..." : `${switcherYear} ${switcherChoice || ""} 로 전환`}
             </button>
             <p className="w-full text-[11px] text-blue-600">
-              올해({CURRENT_YEAR}) 기록이 없는 종류를 고르면 새로 만들어서 바로 진행중으로
-              설정합니다. 전환하면 기존에 진행중이던 학기는 자동으로 종료 처리되고, 그 이후 새로
-              작성되는 사건·회의 기록이 새 학기로 연결됩니다.
+              연도와 학기/캠프 종류를 선택하세요. 선택한 연도에 해당 종류의 기록이 없으면 새로
+              만들어서 바로 진행중으로 설정합니다. 전환하면 기존에 진행중이던 학기는 자동으로
+              종료 처리되고, 그 이후 새로 작성되는 사건·회의 기록이 새 학기로 연결됩니다.
             </p>
           </div>
         )}

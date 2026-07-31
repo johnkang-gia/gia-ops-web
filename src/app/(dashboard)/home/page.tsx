@@ -157,12 +157,15 @@ export default async function HomePage() {
 
   return (
     <div className="mx-auto max-w-6xl">
-      <div className="mb-4 flex items-center justify-between gap-2">
-        <h1 className="text-lg font-bold">홈</h1>
-        <span className="text-sm font-semibold text-blue-700">
-          {currentTerm ? `📅 ${currentTerm.year} ${currentTerm.term_type}` : ""}
-        </span>
-      </div>
+      <h1 className="mb-2 text-lg font-bold">홈</h1>
+
+      {currentTerm && (
+        <div className="mb-5 flex justify-center">
+          <div className="inline-flex items-center gap-2 rounded-full bg-blue-600 px-5 py-2 text-base font-bold text-white shadow-sm sm:text-lg">
+            📅 {currentTerm.year} {currentTerm.term_type}
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_260px]">
         <div className="min-w-0">

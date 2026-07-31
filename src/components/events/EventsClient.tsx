@@ -268,7 +268,7 @@ function RegularEventsSection({
               disabled={comparing}
               className="rounded-lg border border-blue-200 px-3 py-1.5 text-xs font-semibold text-blue-600 hover:bg-blue-50 disabled:opacity-50"
             >
-              {comparing ? "AI가 비교하는 중..." : "📊 연도별 비교 리포트"}
+              {comparing ? "AI가 행사분석 중..." : "🔍 행사분석 (AI)"}
             </button>
           )}
         </div>
@@ -278,7 +278,7 @@ function RegularEventsSection({
       {compareResult && (
         <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs">
           <div className="mb-2 font-semibold text-blue-800">
-            &quot;{effectiveSelected}&quot; 과거 기록 {compareResult.recordCount}건 비교
+            &quot;{effectiveSelected}&quot; 과거 기록 {compareResult.recordCount}건 AI 행사분석 결과
           </div>
           {compareResult.improvements?.length > 0 && (
             <div className="mb-2">

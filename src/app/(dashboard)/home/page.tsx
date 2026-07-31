@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentTerm } from "@/lib/currentTerm";
+import DateTimeCard from "@/components/home/DateTimeCard";
 import type { Incident, Meeting, EventRecord, Term } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -155,118 +156,108 @@ export default async function HomePage() {
   ];
 
   return (
-    <div className="mx-auto max-w-5xl">
-      <h1 className="mb-4 text-lg font-bold">홈</h1>
-
-      <Link
-        href="/terms"
-        className="mb-5 flex items-center gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 shadow-sm hover:border-blue-300"
-      >
-        <span className="text-xl">📅</span>
-        {currentTerm ? (
-          <div className="min-w-0 flex-1">
-            <div className="text-sm font-bold text-blue-900">
-              현재 학기: {currentTerm.year} {currentTerm.term_type}
-            </div>
-            <div className="text-xs text-blue-600">
-              {currentTerm.start_date ? `${currentTerm.start_date} ~ ${currentTerm.end_date ?? "진행중"}` : "기간 미입력"}
-              {" · "}이 기간에 작성되는 사건·회의 기록은 자동으로 이 학기에 누적됩니다
-            </div>
-          </div>
-        ) : (
-          <div className="min-w-0 flex-1">
-            <div className="text-sm font-bold text-blue-900">진행 중으로 표시된 학기가 없습니다</div>
-            <div className="text-xs text-blue-600">학기 메뉴에서 현재 학기/캠프를 &quot;진행중&quot;으로 등록해주세요</div>
-          </div>
-        )}
-      </Link>
-
-      <div className="mb-2 text-xs font-semibold text-slate-400">기록 현황</div>
-      <div className="mb-5 grid grid-cols-3 gap-2 sm:gap-3">
-        {recordCards.map((card) => (
-          <Link
-            key={card.label}
-            href={card.href}
-            className="rounded-xl border border-slate-200 bg-white p-3 text-center shadow-sm hover:border-slate-300 sm:p-4"
-          >
-            <div className="text-xl font-bold sm:text-2xl">{card.value}</div>
-            <div className="mt-1 text-xs text-slate-500">{card.label}</div>
-          </Link>
-        ))}
+    <div className="mx-auto max-w-6xl">
+      <div className="mb-4 flex items-center justify-between gap-2">
+        <h1 className="text-lg font-bold">홈</h1>
+        <span className="text-sm font-semibold text-blue-700">
+          {currentTerm ? `📅 ${currentTerm.year} ${currentTerm.term_type}` : ""}
+        </span>
       </div>
 
-      <div className="mb-2 text-xs font-semibold text-slate-400">처리할 일</div>
-      <div className="mb-8 grid grid-cols-3 gap-2 sm:gap-3">
-        {workCards.map((card) => (
-          <Link
-            key={card.label}
-            href={card.href}
-            className={
-              "rounded-xl border p-3 text-center shadow-sm sm:p-4 " +
-              (card.highlight
-                ? "border-amber-300 bg-amber-50 hover:border-amber-400"
-                : "border-slate-200 bg-white hover:border-slate-300")
-            }
-          >
-            <div className={"text-xl font-bold sm:text-2xl " + (card.highlight ? "text-amber-700" : "")}>
-              {card.value}
-            </div>
-            <div className={"mt-1 text-xs " + (card.highlight ? "text-amber-700" : "text-slate-500")}>
-              {card.label}
-            </div>
-          </Link>
-        ))}
-      </div>
-
-      {recurringPatterns.length > 0 && (
-        <>
-          <div className="mb-2 text-xs font-semibold text-amber-600">⚠️ 반복되는 사건 유형(최근 90일)</div>
-          <div className="mb-8 flex flex-col gap-2">
-            {recurringPatterns.map((p) => (
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_260px]">
+        <div className="min-w-0">
+          <div className="mb-2 text-xs font-semibold text-slate-400">기록 현황</div>
+          <div className="mb-5 grid grid-cols-3 gap-2 sm:gap-3">
+            {recordCards.map((card) => (
               <Link
-                key={p.manual_cat}
-                href="/records"
-                className="flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm hover:border-amber-300"
+                key={card.label}
+                href={card.href}
+                className="rounded-xl border border-slate-200 bg-white p-3 text-center shadow-sm hover:border-slate-300 sm:p-4"
               >
-                <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700">
-                  {p.count}건
-                </span>
-                <span className="min-w-0 flex-1 truncate font-medium text-amber-900">{p.manual_cat}</span>
-                <span className="hidden shrink-0 text-xs text-amber-600 sm:inline">
-                  최근: {oneLine(p.latestTitle, 24)} ({p.latestDate})
-                </span>
+                <div className="text-xl font-bold sm:text-2xl">{card.value}</div>
+                <div className="mt-1 text-xs text-slate-500">{card.label}</div>
               </Link>
             ))}
-            <p className="text-xs text-amber-700">
-              같은 유형의 사건이 반복되고 있어요 - 재발 방지를 위한 근본적인 대책(매뉴얼 반영)이 필요해 보입니다.
-            </p>
           </div>
-        </>
-      )}
 
-      <div className="mb-3 text-sm font-bold text-slate-700">최근 활동</div>
-      <div className="flex flex-col gap-2">
-        {activity.length === 0 && (
-          <div className="rounded-lg bg-white p-4 text-sm text-slate-400 shadow-sm">
-            최근 등록된 기록이 없습니다.
+          <div className="mb-2 text-xs font-semibold text-slate-400">처리할 일</div>
+          <div className="mb-8 grid grid-cols-3 gap-2 sm:gap-3">
+            {workCards.map((card) => (
+              <Link
+                key={card.label}
+                href={card.href}
+                className={
+                  "rounded-xl border p-3 text-center shadow-sm sm:p-4 " +
+                  (card.highlight
+                    ? "border-amber-300 bg-amber-50 hover:border-amber-400"
+                    : "border-slate-200 bg-white hover:border-slate-300")
+                }
+              >
+                <div className={"text-xl font-bold sm:text-2xl " + (card.highlight ? "text-amber-700" : "")}>
+                  {card.value}
+                </div>
+                <div className={"mt-1 text-xs " + (card.highlight ? "text-amber-700" : "text-slate-500")}>
+                  {card.label}
+                </div>
+              </Link>
+            ))}
           </div>
-        )}
-        {activity.map((it) => (
-          <Link
-            key={it.key}
-            href={it.href}
-            className="flex items-center gap-3 rounded-lg bg-white px-3 py-2.5 text-sm shadow-sm hover:bg-slate-50"
-          >
-            <span>{it.icon}</span>
-            <span className="min-w-0 flex-1 truncate">{oneLine(it.title)}</span>
-            <span className="shrink-0 text-xs text-slate-400">{it.date}</span>
-            {it.status && (
-              <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
-                {it.status}
-              </span>
+
+          {recurringPatterns.length > 0 && (
+            <>
+              <div className="mb-2 text-xs font-semibold text-amber-600">⚠️ 반복되는 사건 유형(최근 90일)</div>
+              <div className="mb-8 flex flex-col gap-2">
+                {recurringPatterns.map((p) => (
+                  <Link
+                    key={p.manual_cat}
+                    href="/records"
+                    className="flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm hover:border-amber-300"
+                  >
+                    <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700">
+                      {p.count}건
+                    </span>
+                    <span className="min-w-0 flex-1 truncate font-medium text-amber-900">{p.manual_cat}</span>
+                    <span className="hidden shrink-0 text-xs text-amber-600 sm:inline">
+                      최근: {oneLine(p.latestTitle, 24)} ({p.latestDate})
+                    </span>
+                  </Link>
+                ))}
+                <p className="text-xs text-amber-700">
+                  같은 유형의 사건이 반복되고 있어요 - 재발 방지를 위한 근본적인 대책(매뉴얼 반영)이 필요해 보입니다.
+                </p>
+              </div>
+            </>
+          )}
+
+          <div className="mb-3 text-sm font-bold text-slate-700">최근 활동</div>
+          <div className="flex flex-col gap-2">
+            {activity.length === 0 && (
+              <div className="rounded-lg bg-white p-4 text-sm text-slate-400 shadow-sm">
+                최근 등록된 기록이 없습니다.
+              </div>
             )}
-          </Link>
-        ))}
+            {activity.map((it) => (
+              <Link
+                key={it.key}
+                href={it.href}
+                className="flex items-center gap-3 rounded-lg bg-white px-3 py-2.5 text-sm shadow-sm hover:bg-slate-50"
+              >
+                <span>{it.icon}</span>
+                <span className="min-w-0 flex-1 truncate">{oneLine(it.title)}</span>
+                <span className="shrink-0 text-xs text-slate-400">{it.date}</span>
+                {it.status && (
+                  <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
+                    {it.status}
+                  </span>
+                )}
+              </Link>
+            ))}
+          </div>
+        </div>
+
+        <div className="lg:sticky lg:top-4 lg:self-start">
+          <DateTimeCard />
+        </div>
       </div>
     </div>
   );

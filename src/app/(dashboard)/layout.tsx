@@ -124,13 +124,15 @@ export default async function DashboardLayout({
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/logo-main.png" alt="GIA Micro Lab" className="h-7 w-auto" />
           </Link>
-          {termLabel && (
+          {termLabel ? (
             <Link
               href="/terms"
               className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700"
             >
               📅 {termLabel}
             </Link>
+          ) : (
+            <span className="text-[11px] text-slate-300">진행중인 학기 없음</span>
           )}
           <SignOutButton />
         </header>

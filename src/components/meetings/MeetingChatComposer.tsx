@@ -9,10 +9,24 @@ import type { Meeting } from "@/lib/types";
 type ChatTurn = { role: "user" | "assistant"; content: string };
 type Draft = { date: string; attendees: string; organizedContent: string };
 
-// 라이브 녹음은 이 길이(약 45초)마다 녹음을 끊고 재시작하면서, 그 구간만 바로 텍스트로 바꿔
+// 라이브 녹음은 이 길이(약 60초)마다 녹음을 끊고 재시작하면서, 그 구간만 바로 텍스트로 바꿔
 // 채팅에 자동으로 보냅니다(진짜 실시간 스트리밍은 아니지만, 이 정도 지연으로도 회의가 진행되는
-// 동안 정리본이 계속 갱신되는 것을 볼 수 있습니다).
-const LIVE_CHUNK_MS = 45000;
+// 동안 정리본이 계속 갱신되는 것을 볼 수 있습니다). 너무 짧게 끊으면 문장 중간이 잘려서
+// 인식률이 떨어지므로, 30초보다는 다소 길게 잡았습니다.
+const LIVE_CHUNK_MS = 60000;
+
+// 브라우저가 지원하는 것 중 음질이 가장 좋은 녹음 형식을 고릅니다. 기본값(브라우저가 알아서
+// 고르는 저음질 opus)보다 비트레이트를 높이면 인식률에 도움이 됩니다.
+const PREFERRED_MIME_TYPES = [
+  "audio/webm;codecs=opus",
+  "audio/webm",
+  "audio/mp4",
+];
+
+function pickMimeType(): string | undefined {
+  if (typeof MediaRecorder === "undefined") return undefined;
+  return PREFERRED_MIME_TYPES.find((t) => MediaRecorder.isTypeSupported(t));
+}
 
 function formatElapsed(sec: number): string {
   const m = Math.floor(sec / 60);
@@ -170,7 +184,11 @@ export default function MeetingChatComposer({
   function recordNextSegment() {
     const stream = mediaStreamRef.current;
     if (!stream) return;
-    const recorder = new MediaRecorder(stream);
+    const mimeType = pickMimeType();
+    const recorder = new MediaRecorder(stream, {
+      ...(mimeType ? { mimeType } : {}),
+      audioBitsPerSecond: 128000, // 기본값보다 높여서 음질을 개선(인식률에 도움)
+    });
     const chunks: Blob[] = [];
     recorder.ondataavailable = (e) => {
       if (e.data.size > 0) chunks.push(e.data);
@@ -196,7 +214,14 @@ export default function MeetingChatComposer({
   async function startLive() {
     setError("");
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          channelCount: 1,
+        },
+      });
       mediaStreamRef.current = stream;
       liveRecordingRef.current = true;
       setLiveRecording(true);
@@ -284,9 +309,10 @@ export default function MeetingChatComposer({
       )}
       {liveRecording && (
         <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
-          회의를 녹음하고 있어요. 약 45초 단위로 자동으로 텍스트로 바꿔서 정리본에 반영합니다.
+          회의를 녹음하고 있어요. 약 60초 단위로 자동으로 텍스트로 바꿔서 정리본에 반영합니다.
           끝나면 &quot;회의 종료&quot;를 누르세요. 그 사이에도 채팅으로 직접 메모를 추가할 수
-          있습니다.
+          있습니다. 인식률을 높이려면 발언자와 마이크(휴대폰/노트북)를 너무 멀리 두지 말고,
+          여러 명이 동시에 말하지 않도록 해주세요.
         </p>
       )}
 

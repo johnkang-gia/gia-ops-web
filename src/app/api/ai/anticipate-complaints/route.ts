@@ -6,6 +6,7 @@ import { findLegalFullText } from "@/lib/ai/lawReference";
 import { htmlToPlainText } from "@/lib/manualHtml";
 import type { ComplaintAnticipateResult } from "@/lib/ai/types";
 import { genCaseId } from "@/lib/caseId";
+import { logApiError } from "@/lib/logging";
 
 // AI 프롬프트에 실어보낼 기존 매뉴얼 내용의 항목당 최대 길이(비용 통제용 - 전체 내용을 다 보낼
 // 필요 없이 "이미 이 주제가 다뤄졌는지" 판단할 정도면 충분합니다).
@@ -54,6 +55,7 @@ export async function POST(request: Request) {
     // 학부모 응대에 바로 쓰이는 문구라 고품질 모델을 사용합니다.
     const result = (await callClaudeJson(systemPrompt, userPrompt, {
       maxTokens: 6000,
+      route: "anticipate-complaints",
     })) as ComplaintAnticipateResult;
 
     const toInsert = (result.complaints || []).filter(
@@ -80,6 +82,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, created: data?.length ?? 0 });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    await logApiError(supabase, "anticipate-complaints", err, user.email);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

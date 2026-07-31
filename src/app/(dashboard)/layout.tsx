@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentTerm } from "@/lib/currentTerm";
+import { isDeveloperEmail } from "@/lib/roles";
 import SignOutButton from "@/components/SignOutButton";
 import { SidebarNavLinks, MobileNavLinks } from "@/components/NavLinks";
 
@@ -51,10 +52,20 @@ const NAV_GROUPS = [
     ],
   },
   {
+    label: "지원",
+    items: [{ href: "/inquiries", label: "문의및건의사항", icon: "🗣️" }],
+  },
+  {
     label: "관리",
     items: [{ href: "/admin/users", label: "사용자 관리", icon: "🔐" }],
   },
 ];
+
+// 개발자(johnkang@giamicro.com)에게만 보이는 그룹입니다. 아래에서 조건부로 NAV_GROUPS 끝에 붙입니다.
+const DEVELOPER_NAV_GROUP = {
+  label: "개발자",
+  items: [{ href: "/dev", label: "개발자 대시보드", icon: "🛠️" }],
+};
 
 export default async function DashboardLayout({
   children,
@@ -75,6 +86,7 @@ export default async function DashboardLayout({
   }
 
   const termLabel = currentTerm ? `${currentTerm.term_type} (${currentTerm.year})` : null;
+  const navGroups = isDeveloperEmail(user.email) ? [...NAV_GROUPS, DEVELOPER_NAV_GROUP] : NAV_GROUPS;
 
   return (
     <div className="flex min-h-screen flex-1">
@@ -99,7 +111,7 @@ export default async function DashboardLayout({
           </div>
         </div>
         <nav className="flex flex-1 flex-col gap-1 overflow-y-auto">
-          <SidebarNavLinks groups={NAV_GROUPS} />
+          <SidebarNavLinks groups={navGroups} />
         </nav>
         <div className="border-t border-slate-200 pt-3">
           <SignOutButton />
@@ -123,7 +135,7 @@ export default async function DashboardLayout({
           <SignOutButton />
         </header>
         <nav className="flex gap-1 overflow-x-auto border-b border-slate-200 bg-white px-2 py-2 sm:hidden">
-          <MobileNavLinks groups={NAV_GROUPS} />
+          <MobileNavLinks groups={navGroups} />
         </nav>
         <main className="flex-1 overflow-x-hidden p-4 sm:p-8">{children}</main>
       </div>

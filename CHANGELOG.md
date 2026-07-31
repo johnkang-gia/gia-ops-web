@@ -4,6 +4,111 @@
 `version` 값과 항상 일치시킵니다. 업데이트할 때마다 이 파일 맨 위에 새 항목을 추가하고,
 같은 내용을 GitHub Desktop의 커밋 Summary/Description에도 그대로 사용하면 됩니다.
 
+## v0.17.0 - 2026-07-31
+
+문의및건의사항 메뉴 + 개발자 대시보드 + 오류/AI사용량 로깅(DB 변경 있음 - 아래 SQL 실행 필요):
+
+- **문의및건의사항** 메뉴 신설(전 직원): 오류 신고/기능제안/기타를 자유롭게 남기고, 본인이 남긴
+  문의와 개발자 답변을 확인할 수 있음
+- **개발자 대시보드**(`/dev`, johnkang@giamicro.com 전용): 전체 데이터 현황(테이블별 건수),
+  14일 넘게 방치된 제안/채택예정과 3일 넘게 미처리된 오류 문의 알림, 최근 30일 AI 사용량(라우트별
+  호출수·실패수·토큰수), 최근 오류 로그 20건을 한 화면에서 확인
+  - 개발자 메뉴에서는 문의사항도 전체 조회 + 상태변경(접수/처리중/완료) + 답변 작성 가능
+- **오류 로깅**: 지금까지 API 오류가 기록되지 않던 것을 모든 AI 관련 API 라우트(16개)에서
+  자동으로 `error_logs`에 남기도록 구현
+- **AI 사용량 로깅**: `callClaudeJson` 호출마다 라우트명·모델·입력/출력 토큰수·성공여부를
+  `ai_usage_logs`에 자동 기록(비용/사용 패턴 모니터링용)
+- **Vercel Analytics + Speed Insights** 연동: 배포하면 별도 설정 없이 실제 사용자 페이지
+  로딩 속도가 Vercel 대시보드에 자동으로 수집됨(무료 도구)
+- **DB 변경 필요**: `inquiries`/`error_logs`/`ai_usage_logs` 테이블과 `is_developer()` 함수
+  추가 (아래 SQL을 Supabase SQL Editor에서 실행)
+
+```sql
+create or replace function is_developer()
+returns boolean
+language sql
+stable
+as $$
+  select coalesce(lower(auth.jwt() ->> 'email') = 'johnkang@giamicro.com', false);
+$$;
+
+create table if not exists inquiries (
+  id uuid primary key default gen_random_uuid(),
+  case_id text unique not null,
+  category text not null,
+  title text not null,
+  content text not null,
+  status text not null default '접수',
+  reporter_email text not null,
+  developer_note text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  resolved_at timestamptz
+);
+
+create table if not exists error_logs (
+  id uuid primary key default gen_random_uuid(),
+  route text not null,
+  message text not null,
+  stack text,
+  user_email text,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists ai_usage_logs (
+  id uuid primary key default gen_random_uuid(),
+  route text not null,
+  model text not null,
+  input_tokens integer,
+  output_tokens integer,
+  success boolean not null default true,
+  error_message text,
+  created_at timestamptz not null default now()
+);
+
+alter table inquiries enable row level security;
+alter table error_logs enable row level security;
+alter table ai_usage_logs enable row level security;
+
+drop policy if exists "giamicro_insert_inquiries" on inquiries;
+create policy "giamicro_insert_inquiries" on inquiries
+  for insert with check (is_giamicro_user() and reporter_email = (auth.jwt() ->> 'email'));
+
+drop policy if exists "self_select_inquiries" on inquiries;
+create policy "self_select_inquiries" on inquiries
+  for select using (reporter_email = (auth.jwt() ->> 'email'));
+
+drop policy if exists "developer_manage_inquiries" on inquiries;
+create policy "developer_manage_inquiries" on inquiries
+  for all using (is_developer()) with check (is_developer());
+
+drop policy if exists "giamicro_insert_error_logs" on error_logs;
+create policy "giamicro_insert_error_logs" on error_logs
+  for insert with check (is_giamicro_user());
+
+drop policy if exists "developer_manage_error_logs" on error_logs;
+create policy "developer_manage_error_logs" on error_logs
+  for all using (is_developer()) with check (is_developer());
+
+drop policy if exists "giamicro_insert_ai_usage_logs" on ai_usage_logs;
+create policy "giamicro_insert_ai_usage_logs" on ai_usage_logs
+  for insert with check (is_giamicro_user());
+
+drop policy if exists "developer_manage_ai_usage_logs" on ai_usage_logs;
+create policy "developer_manage_ai_usage_logs" on ai_usage_logs
+  for all using (is_developer()) with check (is_developer());
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'inquiries'
+  ) then
+    alter publication supabase_realtime add table inquiries;
+  end if;
+end $$;
+```
+
 ## v0.16.0 - 2026-07-31
 
 사건 AI 자동채우기 복원 + 학기 자동 연결 + 작성자 자동 입력(DB 변경 있음 - 아래 SQL 실행 필요):

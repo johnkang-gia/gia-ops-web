@@ -567,3 +567,93 @@ alter table incidents add column if not exists term_id uuid references terms(id)
 alter table meetings add column if not exists term_id uuid references terms(id) on delete set null;
 create index if not exists incidents_term_id_idx on incidents(term_id);
 create index if not exists meetings_term_id_idx on meetings(term_id);
+
+-- ===== 24. 문의및 건의사항(inquiries) + 오류로그/AI 사용량 로그 + 개발자 대시보드 =====
+-- 직원 누구나 오류 신고·기능 제안을 남길 수 있고(inquiries), 개발자(johnkang@giamicro.com)는
+-- 전체 문의를 관리하고, 시스템이 자동으로 남기는 오류 로그(error_logs)와 AI 호출 로그
+-- (ai_usage_logs)를 통해 앱이 원활히 돌아가는지 모니터링합니다.
+-- is_developer()는 src/lib/roles.ts의 DEVELOPER_EMAILS와 반드시 같은 이메일로 맞춰주세요.
+
+create or replace function is_developer()
+returns boolean
+language sql
+stable
+as $$
+  select coalesce(lower(auth.jwt() ->> 'email') = 'johnkang@giamicro.com', false);
+$$;
+
+create table if not exists inquiries (
+  id uuid primary key default gen_random_uuid(),
+  case_id text unique not null,           -- 예: INQ-260731-...
+  category text not null,                  -- 오류 | 기능제안 | 기타
+  title text not null,
+  content text not null,
+  status text not null default '접수',     -- 접수 | 처리중 | 완료
+  reporter_email text not null,
+  developer_note text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  resolved_at timestamptz
+);
+
+create table if not exists error_logs (
+  id uuid primary key default gen_random_uuid(),
+  route text not null,
+  message text not null,
+  stack text,
+  user_email text,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists ai_usage_logs (
+  id uuid primary key default gen_random_uuid(),
+  route text not null,
+  model text not null,
+  input_tokens integer,
+  output_tokens integer,
+  success boolean not null default true,
+  error_message text,
+  created_at timestamptz not null default now()
+);
+
+alter table inquiries enable row level security;
+alter table error_logs enable row level security;
+alter table ai_usage_logs enable row level security;
+
+drop policy if exists "giamicro_insert_inquiries" on inquiries;
+create policy "giamicro_insert_inquiries" on inquiries
+  for insert with check (is_giamicro_user() and reporter_email = (auth.jwt() ->> 'email'));
+
+drop policy if exists "self_select_inquiries" on inquiries;
+create policy "self_select_inquiries" on inquiries
+  for select using (reporter_email = (auth.jwt() ->> 'email'));
+
+drop policy if exists "developer_manage_inquiries" on inquiries;
+create policy "developer_manage_inquiries" on inquiries
+  for all using (is_developer()) with check (is_developer());
+
+drop policy if exists "giamicro_insert_error_logs" on error_logs;
+create policy "giamicro_insert_error_logs" on error_logs
+  for insert with check (is_giamicro_user());
+
+drop policy if exists "developer_manage_error_logs" on error_logs;
+create policy "developer_manage_error_logs" on error_logs
+  for all using (is_developer()) with check (is_developer());
+
+drop policy if exists "giamicro_insert_ai_usage_logs" on ai_usage_logs;
+create policy "giamicro_insert_ai_usage_logs" on ai_usage_logs
+  for insert with check (is_giamicro_user());
+
+drop policy if exists "developer_manage_ai_usage_logs" on ai_usage_logs;
+create policy "developer_manage_ai_usage_logs" on ai_usage_logs
+  for all using (is_developer()) with check (is_developer());
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'inquiries'
+  ) then
+    alter publication supabase_realtime add table inquiries;
+  end if;
+end $$;

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { transcribeAudioWithGroq } from "@/lib/ai/groq";
+import { logApiError } from "@/lib/logging";
 
 // 회의 라이브 녹음 중 짧은 구간(약 45초)마다 호출되는 경량 전사 라우트입니다. /api/ai/transcribe-audio
 // 와 달리 Supabase Storage에 저장하지 않고 바로 OpenAI로 보내 지연을 최소화합니다(원본 녹음이
@@ -23,6 +24,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, text });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    await logApiError(supabase, "transcribe-live-chunk", err, user.email);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { callClaudeJson, CLAUDE_MODEL_FAST } from "@/lib/ai/claude";
 import { buildTermCompareSystemPrompt, buildTermCompareEntryBlock } from "@/lib/ai/prompts";
 import type { EventCompareResult } from "@/lib/ai/types";
+import { logApiError } from "@/lib/logging";
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -33,11 +34,13 @@ export async function POST(request: Request) {
     // 내부 분석/요약용이라 저렴한 모델로 충분합니다.
     const result = (await callClaudeJson(systemPrompt, userPrompt, {
       model: CLAUDE_MODEL_FAST,
+      route: "compare-terms",
     })) as EventCompareResult;
 
     return NextResponse.json({ success: true, result, recordCount: rows.length });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    await logApiError(supabase, "compare-terms", err, user.email);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

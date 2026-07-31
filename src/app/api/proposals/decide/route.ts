@@ -44,7 +44,9 @@ export async function POST(request: Request) {
       try {
         const systemPrompt = buildComplaintFinalizeSystemPrompt();
         const userPrompt = buildComplaintFinalizeEntryBlock({ category: p.category, draftText: p.final_text });
-        const result = (await callClaudeJson(systemPrompt, userPrompt)) as ComplaintFinalizeResult;
+        const result = (await callClaudeJson(systemPrompt, userPrompt, {
+          route: "proposals-decide",
+        })) as ComplaintFinalizeResult;
         specificText = result.finalText || p.final_text;
       } catch {
         // AI 정리에 실패해도 승인 자체는 막지 않고, 실무자가 입력한 원문을 그대로 사용합니다.

@@ -4,6 +4,7 @@ import { callClaudeJson, CLAUDE_MODEL_FAST } from "@/lib/ai/claude";
 import { buildDocumentRecommendSystemPrompt, buildDocumentRecommendEntryBlock } from "@/lib/ai/prompts";
 import type { DocumentRecommendResult } from "@/lib/ai/types";
 import { genCaseId } from "@/lib/caseId";
+import { logApiError } from "@/lib/logging";
 
 export async function POST() {
   const supabase = await createClient();
@@ -21,6 +22,7 @@ export async function POST() {
     // 목록 추천은 이미 조사된 법령 목록을 바탕으로 한 분류 작업에 가까워 저렴한 모델로 충분합니다.
     const result = (await callClaudeJson(systemPrompt, userPrompt, {
       model: CLAUDE_MODEL_FAST,
+      route: "document-recommend",
     })) as DocumentRecommendResult;
 
     const toInsert = (result.documents || []).filter(
@@ -47,6 +49,7 @@ export async function POST() {
     return NextResponse.json({ success: true, created: data?.length ?? 0 });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    await logApiError(supabase, "document-recommend", err, user.email);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

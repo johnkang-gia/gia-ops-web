@@ -5,6 +5,7 @@ import { buildManualDraftClassifySystemPrompt, buildManualDraftEntryBlock } from
 import { findLegalFullText } from "@/lib/ai/lawReference";
 import type { ManualDraftClassifyResult } from "@/lib/ai/types";
 import { genCaseId } from "@/lib/caseId";
+import { logApiError } from "@/lib/logging";
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -32,7 +33,9 @@ export async function POST(request: Request) {
 
     const systemPrompt = buildManualDraftClassifySystemPrompt();
     const userPrompt = buildManualDraftEntryBlock(rawText);
-    const result = (await callClaudeJson(systemPrompt, userPrompt)) as ManualDraftClassifyResult;
+    const result = (await callClaudeJson(systemPrompt, userPrompt, {
+      route: "manual-draft",
+    })) as ManualDraftClassifyResult;
 
     const legalSummary = findLegalFullText(result.legalBasis) || result.legalSummary || "";
     const targetDocs =
@@ -69,6 +72,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, proposals, reason: result.targetDocReason || "" });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    await logApiError(supabase, "manual-draft", err, user.email);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

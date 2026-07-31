@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { callClaudeJson, CLAUDE_MODEL_FAST } from "@/lib/ai/claude";
 import { buildMeetingChatSystemPrompt, buildMeetingChatEntryBlock } from "@/lib/ai/prompts";
 import type { MeetingChatResult } from "@/lib/ai/types";
+import { logApiError } from "@/lib/logging";
 
 type ChatTurn = { role: "user" | "assistant"; content: string };
 
@@ -33,11 +34,13 @@ export async function POST(request: Request) {
     const result = (await callClaudeJson(systemPrompt, userPrompt, {
       model: CLAUDE_MODEL_FAST,
       maxTokens: 3000,
+      route: "meeting-chat",
     })) as MeetingChatResult;
 
     return NextResponse.json({ success: true, result });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    await logApiError(supabase, "meeting-chat", err, user.email);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

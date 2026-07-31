@@ -4,6 +4,7 @@ import { callClaudeJson, CLAUDE_MODEL_FAST } from "@/lib/ai/claude";
 import { buildManualFaqSystemPrompt, buildManualFaqEntryBlock } from "@/lib/ai/prompts";
 import { htmlToPlainText } from "@/lib/manualHtml";
 import type { ManualFaqResult } from "@/lib/ai/types";
+import { logApiError } from "@/lib/logging";
 
 export async function POST() {
   const supabase = await createClient();
@@ -34,11 +35,13 @@ export async function POST() {
     const result = (await callClaudeJson(systemPrompt, userPrompt, {
       model: CLAUDE_MODEL_FAST,
       maxTokens: 4000,
+      route: "manual-faq",
     })) as ManualFaqResult;
 
     return NextResponse.json({ success: true, faqs: result.faqs || [] });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    await logApiError(supabase, "manual-faq", err, user.email);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -4,6 +4,7 @@ import { callClaudeJson } from "@/lib/ai/claude";
 import { buildAdoptedReviewSystemPrompt, buildAdoptedReviewEntryBlock } from "@/lib/ai/prompts";
 import type { AdoptedReviewResult } from "@/lib/ai/types";
 import type { Adopted } from "@/lib/types";
+import { logApiError } from "@/lib/logging";
 
 // 매뉴얼에 정식으로 실리기 전 마지막 관문이라 고품질 모델(기본 Sonnet)을 사용합니다.
 export async function POST(request: Request) {
@@ -35,7 +36,10 @@ export async function POST(request: Request) {
       specificText: adopted.specific_text,
       reviewRound: nextRound,
     });
-    const result = (await callClaudeJson(systemPrompt, userPrompt, { maxTokens: 3000 })) as AdoptedReviewResult;
+    const result = (await callClaudeJson(systemPrompt, userPrompt, {
+      maxTokens: 3000,
+      route: "review-adopted",
+    })) as AdoptedReviewResult;
     const reviewResultToStore = { ...result, reviewedText: adopted.specific_text };
 
     const { data: updated, error: updateErr } = await supabase
@@ -53,6 +57,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, item: updated });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    await logApiError(supabase, "review-adopted", err, user.email);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

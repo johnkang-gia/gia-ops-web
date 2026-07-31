@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { callClaudeJson, CLAUDE_MODEL_FAST } from "@/lib/ai/claude";
 import { buildMeetingCleanupSystemPrompt, buildMeetingCleanupEntryBlock } from "@/lib/ai/prompts";
 import type { MeetingCleanupResult } from "@/lib/ai/types";
+import { logApiError } from "@/lib/logging";
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -27,11 +28,13 @@ export async function POST(request: Request) {
     const result = (await callClaudeJson(systemPrompt, userPrompt, {
       model: CLAUDE_MODEL_FAST,
       maxTokens: 3000,
+      route: "clean-meeting",
     })) as MeetingCleanupResult;
 
     return NextResponse.json({ success: true, cleanedContent: result.cleanedContent || content });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    await logApiError(supabase, "clean-meeting", err, user.email);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

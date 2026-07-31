@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { callClaudeJson, CLAUDE_MODEL_FAST } from "@/lib/ai/claude";
 import { buildIncidentFillSystemPrompt, buildIncidentFillEntryBlock } from "@/lib/ai/prompts";
 import type { IncidentFillResult } from "@/lib/ai/types";
+import { logApiError } from "@/lib/logging";
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -27,11 +28,13 @@ export async function POST(request: Request) {
     const result = (await callClaudeJson(systemPrompt, userPrompt, {
       model: CLAUDE_MODEL_FAST,
       maxTokens: 1500,
+      route: "fill-incident",
     })) as IncidentFillResult;
 
     return NextResponse.json({ success: true, result });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    await logApiError(supabase, "fill-incident", err, user.email);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

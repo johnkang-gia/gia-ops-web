@@ -149,6 +149,40 @@ export type SchoolDocument = {
   updated_at: string;
 };
 
+export type Inquiry = {
+  id: string;
+  case_id: string;
+  category: "오류" | "기능제안" | "기타";
+  title: string;
+  content: string;
+  status: "접수" | "처리중" | "완료";
+  reporter_email: string;
+  developer_note: string | null;
+  created_at: string;
+  updated_at: string;
+  resolved_at: string | null;
+};
+
+export type ErrorLog = {
+  id: string;
+  route: string;
+  message: string;
+  stack: string | null;
+  user_email: string | null;
+  created_at: string;
+};
+
+export type AiUsageLog = {
+  id: string;
+  route: string;
+  model: string;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  success: boolean;
+  error_message: string | null;
+  created_at: string;
+};
+
 export type AppUser = {
   email: string;
   status: "pending" | "approved" | "rejected";

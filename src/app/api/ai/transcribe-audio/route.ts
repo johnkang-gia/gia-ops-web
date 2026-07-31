@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { transcribeAudioWithGroq } from "@/lib/ai/groq";
+import { logApiError } from "@/lib/logging";
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -24,6 +25,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, text });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    await logApiError(supabase, "transcribe-audio", err, user.email);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

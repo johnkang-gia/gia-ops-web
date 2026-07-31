@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { callClaudeJson } from "@/lib/ai/claude";
 import { buildDocumentDraftSystemPrompt, buildDocumentDraftEntryBlock } from "@/lib/ai/prompts";
 import type { DocumentDraftResult } from "@/lib/ai/types";
+import { logApiError } from "@/lib/logging";
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -30,7 +31,10 @@ export async function POST(request: Request) {
       notes: doc.notes || "",
     });
     // 실제 서류 초안 작성은 정확도가 중요해 고품질 모델을 사용합니다.
-    const result = (await callClaudeJson(systemPrompt, userPrompt, { maxTokens: 4000 })) as DocumentDraftResult;
+    const result = (await callClaudeJson(systemPrompt, userPrompt, {
+      maxTokens: 4000,
+      route: "document-draft",
+    })) as DocumentDraftResult;
 
     const { data: updated, error: updateErr } = await supabase
       .from("documents")
@@ -43,6 +47,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, document: updated });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    await logApiError(supabase, "document-draft", err, user.email);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

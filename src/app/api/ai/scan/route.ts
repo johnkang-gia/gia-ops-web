@@ -10,6 +10,7 @@ import {
 import { findLegalFullText } from "@/lib/ai/lawReference";
 import type { IncidentClassifyResult, MeetingClassifyResult } from "@/lib/ai/types";
 import { genCaseId } from "@/lib/caseId";
+import { logApiError } from "@/lib/logging";
 
 const BATCH_SIZE = 5;
 
@@ -38,6 +39,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, created });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    await logApiError(supabase, `scan:${type}`, err, user.email);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
@@ -70,7 +72,9 @@ async function scanIncidentOrEvent(supabase: any, type: "incidents" | "events", 
     };
     const systemPrompt = buildIncidentClassifySystemPrompt();
     const userPrompt = buildIncidentEntryBlock(entry, "신규 기록");
-    const result = (await callClaudeJson(systemPrompt, userPrompt)) as IncidentClassifyResult;
+    const result = (await callClaudeJson(systemPrompt, userPrompt, {
+      route: `scan:${type}`,
+    })) as IncidentClassifyResult;
 
     const legalSummary = findLegalFullText(result.legalBasis);
     // targetDoc이 "둘다"면 학부모용/실무자용 각각 별도 제안으로 만듭니다(문자열 "둘다"를 그대로
@@ -128,6 +132,7 @@ async function scanMeetings(supabase: any, id?: string) {
     // 이미 결정된 회의 내용을 문서별로 분류/정리하는 작업이라 저렴한 모델(Haiku)로 처리합니다.
     const result = (await callClaudeJson(systemPrompt, userPrompt, {
       model: CLAUDE_MODEL_FAST,
+      route: "scan:meetings",
     })) as MeetingClassifyResult;
 
     const proposals = result.proposals || [];

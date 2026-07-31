@@ -151,7 +151,7 @@ export default async function HomePage() {
   ];
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className="mx-auto max-w-5xl">
       <h1 className="mb-4 text-lg font-bold">홈</h1>
 
       <div className="mb-2 text-xs font-semibold text-slate-400">기록 현황</div>

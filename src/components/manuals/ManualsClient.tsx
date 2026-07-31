@@ -199,7 +199,7 @@ export default function ManualsClient({ initialItems }: { initialItems: ManualSe
   const docItems = items.filter((it) => it.target_doc === activeDoc);
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className="mx-auto max-w-5xl">
       <h1 className="mb-1 text-lg font-bold">매뉴얼</h1>
       <p className="mb-4 text-sm text-slate-500">
         채택예정에서 발행한 내용이 자동으로 쌓이거나, 아래에서 직접 항목을 추가·수정·삭제할 수

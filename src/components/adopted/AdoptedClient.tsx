@@ -108,7 +108,7 @@ export default function AdoptedClient({ initialItems }: { initialItems: Adopted[
   }
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className="mx-auto max-w-5xl">
       <h1 className="mb-4 text-lg font-bold">채택예정 ({items.length}건)</h1>
       <p className="mb-4 text-sm text-slate-500">
         제안함에서 승인한 내용이 여기로 옵니다. GIA 실정에 맞게 구체화한 뒤 &quot;발행&quot;을 눌러야

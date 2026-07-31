@@ -47,7 +47,7 @@ export default function EventsClient({ initialItems }: { initialItems: EventReco
   }
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className="mx-auto max-w-5xl">
       <h1 className="mb-1 text-lg font-bold">행사기록</h1>
       <p className="mb-4 text-xs text-slate-500">
         매년/주기적으로 반복되는 행사(정규행사)는 이름별로 묶어서 이력을 쌓고 AI로 지난 회차와

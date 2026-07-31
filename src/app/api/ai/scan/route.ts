@@ -24,16 +24,17 @@ export async function POST(request: Request) {
 
   const body = await request.json().catch(() => ({}));
   const type = body.type as ScanType;
+  const id = typeof body.id === "string" ? body.id : undefined;
   if (!["incidents", "events", "meetings"].includes(type)) {
     return NextResponse.json({ error: "type은 incidents/events/meetings 중 하나여야 합니다." }, { status: 400 });
   }
 
   try {
     if (type === "meetings") {
-      const created = await scanMeetings(supabase);
+      const created = await scanMeetings(supabase, id);
       return NextResponse.json({ success: true, created });
     }
-    const created = await scanIncidentOrEvent(supabase, type);
+    const created = await scanIncidentOrEvent(supabase, type, id);
     return NextResponse.json({ success: true, created });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -42,13 +43,14 @@ export async function POST(request: Request) {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function scanIncidentOrEvent(supabase: any, type: "incidents" | "events") {
-  const { data: rows, error } = await supabase
-    .from(type)
-    .select("*")
-    .is("scanned_at", null)
-    .order("date", { ascending: true })
-    .limit(BATCH_SIZE);
+async function scanIncidentOrEvent(supabase: any, type: "incidents" | "events", id?: string) {
+  let query = supabase.from(type).select("*");
+  if (id) {
+    query = query.eq("id", id);
+  } else {
+    query = query.is("scanned_at", null).order("date", { ascending: true }).limit(BATCH_SIZE);
+  }
+  const { data: rows, error } = await query;
   if (error) throw new Error(error.message);
   if (!rows || !rows.length) return 0;
 
@@ -104,13 +106,14 @@ async function scanIncidentOrEvent(supabase: any, type: "incidents" | "events") 
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function scanMeetings(supabase: any) {
-  const { data: rows, error } = await supabase
-    .from("meetings")
-    .select("*")
-    .is("scanned_at", null)
-    .order("date", { ascending: true })
-    .limit(BATCH_SIZE);
+async function scanMeetings(supabase: any, id?: string) {
+  let query = supabase.from("meetings").select("*");
+  if (id) {
+    query = query.eq("id", id);
+  } else {
+    query = query.is("scanned_at", null).order("date", { ascending: true }).limit(BATCH_SIZE);
+  }
+  const { data: rows, error } = await query;
   if (error) throw new Error(error.message);
   if (!rows || !rows.length) return 0;
 

@@ -79,7 +79,7 @@ export default function StaffManualClient({ initialItems }: { initialItems: Manu
   }
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className="mx-auto max-w-5xl">
       <h1 className="mb-1 text-lg font-bold">실무자매뉴얼</h1>
       <p className="mb-4 text-xs text-slate-500">
         학부모님의 문의나 컴플레인이 들어왔을 때 바로 검색해서 참고할 수 있는 실무자용

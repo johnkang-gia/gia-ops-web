@@ -192,7 +192,7 @@ export default function DocumentsClient({ initialItems }: { initialItems: School
   }
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className="mx-auto max-w-5xl">
       <h1 className="mb-1 text-lg font-bold">서류함</h1>
       <p className="mb-4 text-xs text-slate-500">
         학교 운영에 필요한 서류를 정리하고 상태를 관리합니다. &quot;AI 서류 추천받기&quot;를

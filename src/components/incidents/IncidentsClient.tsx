@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useRealtimeTable } from "@/lib/useRealtimeTable";
 import { genCaseId } from "@/lib/caseId";
 import type { Incident } from "@/lib/types";
+import AiSourcePanel from "@/components/ai/AiSourcePanel";
 
 type FormState = {
   date: string;
@@ -32,28 +33,36 @@ const EMPTY_FORM: FormState = {
   status: "",
 };
 
-function oneLine(text: string, maxLen = 60) {
+function oneLine(text: string, maxLen = 40) {
   const t = String(text || "").replace(/\s+/g, " ").trim();
   if (!t) return "(내용 없음)";
   return t.length > maxLen ? t.slice(0, maxLen) + "…" : t;
 }
 
+// 왼쪽(목록) · 가운데(입력폼, 항상 표시) · 오른쪽(AI 제안) 3단 레이아웃입니다. 사건기록 →
+// 제안함 → 채택예정을 오가지 않고, 새 사건을 적으면 바로 옆에서 AI 제안이 나타나 승인/발행까지
+// 한 화면에서 끝낼 수 있습니다.
 export default function IncidentsClient({
   initialItems,
 }: {
   initialItems: Incident[];
 }) {
   const [items, setItems] = useRealtimeTable<Incident>("incidents", initialItems);
-  const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [justSavedMsg, setJustSavedMsg] = useState("");
+
+  function startNew() {
+    setEditingId(null);
+    setForm(EMPTY_FORM);
+    setError("");
+    setJustSavedMsg("");
+  }
 
   function startEdit(it: Incident) {
     setEditingId(it.id);
-    setExpandedId(it.id);
     setForm({
       date: it.date,
       title: it.title,
@@ -66,14 +75,8 @@ export default function IncidentsClient({
       manual_cat: it.manual_cat ?? "",
       status: it.status ?? "",
     });
-    setShowForm(false);
-  }
-
-  function resetForm() {
-    setForm(EMPTY_FORM);
-    setEditingId(null);
-    setShowForm(false);
     setError("");
+    setJustSavedMsg("");
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -84,6 +87,7 @@ export default function IncidentsClient({
     }
     setSaving(true);
     setError("");
+    setJustSavedMsg("");
     const supabase = createClient();
 
     if (editingId) {
@@ -97,7 +101,7 @@ export default function IncidentsClient({
         setError(err.message);
       } else if (data) {
         setItems((prev) => prev.map((it) => (it.id === editingId ? (data as Incident) : it)));
-        resetForm();
+        setJustSavedMsg("수정되었습니다.");
       }
     } else {
       const { data, error: err } = await supabase
@@ -108,34 +112,82 @@ export default function IncidentsClient({
       if (err) {
         setError(err.message);
       } else if (data) {
-        setItems((prev) => [data as Incident, ...prev]);
-        resetForm();
+        const saved = data as Incident;
+        setItems((prev) => [saved, ...prev]);
+        startNew();
+        setJustSavedMsg("저장되었습니다. 오른쪽에 AI 제안이 곧 나타납니다.");
+        // 저장 직후 바로 이 건에 대해서만 AI 분석을 실행해, 5건 단위 일괄 분석을 기다리지 않고
+        // 오른쪽 패널에 즉시 제안이 뜨도록 합니다.
+        fetch("/api/ai/scan", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ type: "incidents", id: saved.id }),
+        }).catch(() => {});
       }
     }
     setSaving(false);
   }
 
   return (
-    <div className="mx-auto max-w-3xl">
-      <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-lg font-bold">사건 ({items.length}건)</h1>
-        <button
-          onClick={() => {
-            setShowForm((v) => !v);
-            setEditingId(null);
-            setForm(EMPTY_FORM);
-          }}
-          className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-slate-700"
-        >
-          {showForm ? "닫기" : "+ 새로 입력"}
-        </button>
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[300px_1fr_340px] lg:items-start">
+      {/* 왼쪽: 목록 */}
+      <div className="order-2 flex flex-col gap-2 lg:order-1">
+        <div className="flex items-center justify-between">
+          <h1 className="text-sm font-bold text-slate-700">사건 ({items.length}건)</h1>
+          <button
+            onClick={startNew}
+            className="rounded-lg bg-slate-900 px-2.5 py-1 text-xs font-semibold text-white hover:bg-slate-700"
+          >
+            + 새 사건
+          </button>
+        </div>
+        <div className="flex max-h-[75vh] flex-col gap-1.5 overflow-y-auto lg:max-h-[calc(100vh-8rem)]">
+          {items.length === 0 && (
+            <div className="rounded-lg bg-white p-3 text-xs text-slate-400 shadow-sm">등록된 사건이 없습니다.</div>
+          )}
+          {items.map((it) => (
+            <button
+              key={it.id}
+              onClick={() => startEdit(it)}
+              className={
+                "flex flex-col gap-0.5 rounded-lg border px-3 py-2 text-left shadow-sm transition " +
+                (editingId === it.id
+                  ? "border-slate-900 bg-slate-50"
+                  : "border-slate-200 bg-white hover:border-slate-300")
+              }
+            >
+              <div className="flex items-center gap-2">
+                <span className="min-w-0 flex-1 truncate text-xs font-medium">{oneLine(it.title)}</span>
+                <span className="shrink-0 text-[10px] text-slate-400">{it.date}</span>
+              </div>
+              {it.status && (
+                <span className="w-fit rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600">
+                  {it.status}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {(showForm || editingId) && (
+      {/* 가운데: 입력폼 (항상 표시) */}
+      <div className="order-1 lg:order-2">
         <form
           onSubmit={handleSubmit}
-          className="mb-6 flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+          className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
         >
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-bold">{editingId ? "사건 수정" : "새 사건 입력"}</h2>
+            {editingId && (
+              <button
+                type="button"
+                onClick={startNew}
+                className="text-xs font-semibold text-slate-500 hover:text-slate-700"
+              >
+                새로 작성하기
+              </button>
+            )}
+          </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label className="flex flex-col gap-1 text-xs text-slate-500">
               날짜
@@ -205,6 +257,7 @@ export default function IncidentsClient({
           </div>
 
           {error && <p className="text-sm text-red-600">{error}</p>}
+          {justSavedMsg && <p className="text-sm text-emerald-600">{justSavedMsg}</p>}
 
           <div className="flex gap-2">
             <button
@@ -212,80 +265,21 @@ export default function IncidentsClient({
               disabled={saving}
               className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
             >
-              {saving ? "저장 중..." : "저장"}
-            </button>
-            <button
-              type="button"
-              onClick={resetForm}
-              className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
-            >
-              취소
+              {saving ? "저장 중..." : editingId ? "수정 저장" : "저장"}
             </button>
           </div>
         </form>
-      )}
 
-      <div className="flex flex-col gap-2">
-        {items.length === 0 && (
-          <div className="rounded-lg bg-white p-4 text-sm text-slate-400 shadow-sm">
-            등록된 사건이 없습니다.
+        {editingId && (
+          <div className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
+            매뉴얼 항목: {items.find((it) => it.id === editingId)?.manual_cat || "(아직 분류 안 됨)"}
           </div>
         )}
-        {items.map((it) => {
-          const expanded = expandedId === it.id;
-          return (
-            <div
-              key={it.id}
-              className="rounded-xl border border-slate-200 bg-white shadow-sm"
-            >
-              <button
-                onClick={() => setExpandedId(expanded ? null : it.id)}
-                className="flex w-full items-center gap-3 px-4 py-3 text-left"
-              >
-                <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                  {oneLine(it.title)}
-                </span>
-                <span className="shrink-0 text-xs text-slate-400">{it.date}</span>
-                {it.status && (
-                  <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
-                    {it.status}
-                  </span>
-                )}
-                <span className="shrink-0 text-xs font-bold text-blue-600">
-                  {expanded ? "접기 ‹" : "더보기 ›"}
-                </span>
-              </button>
-              {expanded && (
-                <div className="border-t border-slate-100 px-4 py-3 text-sm">
-                  <dl className="flex flex-col gap-2">
-                    {[
-                      ["담당자", it.owner],
-                      ["매뉴얼 항목", it.manual_cat],
-                      ["상세 내용", it.detail],
-                      ["잘된 점", it.good],
-                      ["부족했던 점", it.lack],
-                      ["보완점/제안", it.suggest],
-                      ["관련 학생", it.students],
-                    ]
-                      .filter(([, v]) => v)
-                      .map(([label, value]) => (
-                        <div key={label as string}>
-                          <dt className="text-xs text-slate-400">{label}</dt>
-                          <dd className="whitespace-pre-wrap">{value}</dd>
-                        </div>
-                      ))}
-                  </dl>
-                  <button
-                    onClick={() => startEdit(it)}
-                    className="mt-3 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-                  >
-                    수정
-                  </button>
-                </div>
-              )}
-            </div>
-          );
-        })}
+      </div>
+
+      {/* 오른쪽: AI 제안 */}
+      <div className="order-3">
+        <AiSourcePanel source="incidents" scanType="incidents" />
       </div>
     </div>
   );

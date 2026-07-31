@@ -166,7 +166,7 @@ export default function TermsClient({ initialItems }: { initialItems: Term[] }) 
   }
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className="mx-auto max-w-5xl">
       <h1 className="mb-1 text-lg font-bold">학기 · 캠프</h1>
       <p className="mb-4 text-xs text-slate-500">
         학기(1~3학기)와 방학 캠프(여름캠프1·2, 겨울캠프1·2)는 매년 반복됩니다. 학기가 진행되는

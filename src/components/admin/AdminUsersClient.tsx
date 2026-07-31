@@ -63,7 +63,7 @@ export default function AdminUsersClient({ initialUsers }: { initialUsers: AppUs
   const rejected = users.filter((u) => u.status === "rejected");
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className="mx-auto max-w-5xl">
       <h1 className="mb-1 text-lg font-bold">사용자 관리</h1>
       <p className="mb-6 text-sm text-slate-500">
         giamicro.com 계정으로 로그인하면 자동으로 승인 대기 목록에 올라갑니다. 승인해야 해당

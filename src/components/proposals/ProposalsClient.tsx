@@ -135,7 +135,7 @@ export default function ProposalsClient({ initialItems }: { initialItems: Propos
   ];
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className="mx-auto max-w-5xl">
       <h1 className="mb-4 text-lg font-bold">제안함 검토대기 ({items.length}건)</h1>
 
       <div className="mb-6 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">

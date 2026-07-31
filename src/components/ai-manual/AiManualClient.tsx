@@ -1,9 +1,19 @@
 "use client";
 
 import { useState } from "react";
-import type { Proposal } from "@/lib/types";
+import { useRealtimeTable } from "@/lib/useRealtimeTable";
+import type { Proposal, ManualDraft } from "@/lib/types";
+import AiSourcePanel from "@/components/ai/AiSourcePanel";
 
-export default function AiManualClient() {
+function oneLine(text: string, maxLen = 40) {
+  const t = String(text || "").replace(/\s+/g, " ").trim();
+  if (!t) return "(내용 없음)";
+  return t.length > maxLen ? t.slice(0, maxLen) + "…" : t;
+}
+
+// 왼쪽(과거 작성 이력) · 가운데(입력폼) · 오른쪽(AI 제안) 3단 레이아웃입니다.
+export default function AiManualClient({ initialItems }: { initialItems: ManualDraft[] }) {
+  const [drafts] = useRealtimeTable<ManualDraft>("manual_drafts", initialItems);
   const [rawText, setRawText] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -31,72 +41,95 @@ export default function AiManualClient() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl">
-      <h1 className="mb-1 text-lg font-bold">AI 매뉴얼</h1>
-      <p className="mb-4 text-xs text-slate-500">
-        규정이나 매뉴얼로 만들고 싶은 내용을 편하게 글로 쓰면, AI가 정식 문서 문구로 다듬고 관련
-        법령까지 찾아서 제안을 만듭니다. 학부모용 운영계획안과 실무자용 매뉴얼 중 어디에 반영할지도
-        내용을 보고 AI가 자동으로 판단해요(예: 차량 탑승·아동 인계·환불 규정처럼 학부모도 알아야
-        하는 내용이면 두 문서 모두에, 교사 채용 기준처럼 내부용이면 실무자매뉴얼에만). 제안함의
-        &quot;AI매뉴얼제안&quot; 탭에서 검토·승인하면 매뉴얼에 바로 반영됩니다.
-      </p>
-
-      <form
-        onSubmit={handleSubmit}
-        className="mb-6 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
-      >
-        <label className="mb-3 flex flex-col gap-1 text-xs text-slate-500">
-          내용 (두서없이 편하게 써도 됩니다)
-          <textarea
-            value={rawText}
-            onChange={(e) => setRawText(e.target.value)}
-            rows={8}
-            placeholder="예: 현장학습 갈 때 인솔교사 비율은 학생 10명당 1명 이상으로 하고, 비상연락망은 출발 전에 학부모한테 미리 공지하면 좋겠음. 사고나면..."
-            className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
-          />
-        </label>
-
-        {error && <p className="mb-3 text-xs text-red-600">{error}</p>}
-
-        <button
-          type="submit"
-          disabled={submitting || !rawText.trim()}
-          className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
-        >
-          {submitting ? "AI가 정리하는 중..." : "AI로 제안 만들기"}
-        </button>
-      </form>
-
-      {result && (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
-          <div className="mb-2 text-sm font-semibold text-emerald-800">
-            제안이 만들어졌습니다 - 제안함에 저장됐어요
-            {result.proposals.length > 1 && " (학부모용 + 실무자용 두 곳에 반영 예정)"}
-          </div>
-          {result.reason && (
-            <div className="mb-3 text-xs text-emerald-700">AI 판단 이유: {result.reason}</div>
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[300px_1fr_340px] lg:items-start">
+      {/* 왼쪽: 과거 작성 이력 */}
+      <div className="order-2 flex flex-col gap-2 lg:order-1">
+        <h1 className="text-sm font-bold text-slate-700">작성 이력 ({drafts.length}건)</h1>
+        <div className="flex max-h-[75vh] flex-col gap-1.5 overflow-y-auto lg:max-h-[calc(100vh-8rem)]">
+          {drafts.length === 0 && (
+            <div className="rounded-lg bg-white p-3 text-xs text-slate-400 shadow-sm">
+              아직 작성한 내용이 없습니다.
+            </div>
           )}
-          <div className="flex flex-col gap-2">
-            {result.proposals.map((p) => (
-              <div key={p.id} className="rounded-lg bg-white p-3">
-                <div className="mb-1 text-xs font-semibold text-slate-500">
-                  {p.target_doc} · {p.category}
-                </div>
-                <div className="whitespace-pre-wrap text-sm text-slate-700">{p.final_text}</div>
-                {p.legal_basis && (
-                  <div className="mt-1 text-xs text-slate-500">관련 법령: {p.legal_basis}</div>
-                )}
-              </div>
-            ))}
-          </div>
-          <a
-            href="/proposals"
-            className="mt-3 inline-block text-xs font-semibold text-emerald-700 underline"
-          >
-            제안함에서 확인/승인하기 →
-          </a>
+          {drafts.map((d) => (
+            <button
+              key={d.id}
+              onClick={() => setRawText(d.raw_text)}
+              className="flex flex-col gap-0.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left shadow-sm hover:border-slate-300"
+            >
+              <span className="truncate text-xs font-medium">{oneLine(d.raw_text)}</span>
+              <span className="text-[10px] text-slate-400">
+                {d.target_doc ?? "분석 대기"} · {d.created_at.slice(0, 10)}
+              </span>
+            </button>
+          ))}
         </div>
-      )}
+      </div>
+
+      {/* 가운데: 입력폼 */}
+      <div className="order-1 lg:order-2">
+        <p className="mb-3 text-xs text-slate-500">
+          규정이나 매뉴얼로 만들고 싶은 내용을 편하게 글로 쓰면, AI가 정식 문서 문구로 다듬고 관련
+          법령까지 찾아서 제안을 만듭니다. 학부모용 운영계획안과 실무자용 매뉴얼 중 어디에 반영할지도
+          내용을 보고 AI가 자동으로 판단해요. 오른쪽에서 바로 검토·승인·발행까지 할 수 있습니다.
+        </p>
+
+        <form
+          onSubmit={handleSubmit}
+          className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+        >
+          <label className="mb-3 flex flex-col gap-1 text-xs text-slate-500">
+            내용 (두서없이 편하게 써도 됩니다)
+            <textarea
+              value={rawText}
+              onChange={(e) => setRawText(e.target.value)}
+              rows={8}
+              placeholder="예: 현장학습 갈 때 인솔교사 비율은 학생 10명당 1명 이상으로 하고, 비상연락망은 출발 전에 학부모한테 미리 공지하면 좋겠음. 사고나면..."
+              className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+            />
+          </label>
+
+          {error && <p className="mb-3 text-xs text-red-600">{error}</p>}
+
+          <button
+            type="submit"
+            disabled={submitting || !rawText.trim()}
+            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+          >
+            {submitting ? "AI가 정리하는 중..." : "AI로 제안 만들기"}
+          </button>
+        </form>
+
+        {result && (
+          <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
+            <div className="mb-2 text-sm font-semibold text-emerald-800">
+              제안이 만들어졌습니다 - 오른쪽 &quot;검토대기&quot;에서 확인하세요
+              {result.proposals.length > 1 && " (학부모용 + 실무자용 두 곳에 반영 예정)"}
+            </div>
+            {result.reason && (
+              <div className="mb-3 text-xs text-emerald-700">AI 판단 이유: {result.reason}</div>
+            )}
+            <div className="flex flex-col gap-2">
+              {result.proposals.map((p) => (
+                <div key={p.id} className="rounded-lg bg-white p-3">
+                  <div className="mb-1 text-xs font-semibold text-slate-500">
+                    {p.target_doc} · {p.category}
+                  </div>
+                  <div className="whitespace-pre-wrap text-sm text-slate-700">{p.final_text}</div>
+                  {p.legal_basis && (
+                    <div className="mt-1 text-xs text-slate-500">관련 법령: {p.legal_basis}</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 오른쪽: AI 제안 */}
+      <div className="order-3">
+        <AiSourcePanel source="manual" />
+      </div>
     </div>
   );
 }

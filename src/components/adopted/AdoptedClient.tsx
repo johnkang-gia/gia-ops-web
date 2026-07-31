@@ -81,6 +81,32 @@ export default function AdoptedClient({ initialItems }: { initialItems: Adopted[
     }
   }
 
+  async function runReview(id: string) {
+    setBusyId(id);
+    // 지금 수정 중인 내용 기준으로 검증받도록, 검증 전에 먼저 저장합니다.
+    if (drafts[id] !== undefined) {
+      await fetch("/api/adopted/save-text", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id, specificText: drafts[id] }),
+      });
+    }
+    const res = await fetch("/api/ai/review-adopted", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setBusyId(null);
+    if (!res.ok) {
+      alert(data.error || "AI 검증을 실행하지 못했습니다.");
+      return;
+    }
+    if (data.item) {
+      setItems((prev) => prev.map((it) => (it.id === id ? (data.item as Adopted) : it)));
+    }
+  }
+
   return (
     <div className="mx-auto max-w-3xl">
       <h1 className="mb-4 text-lg font-bold">채택예정 ({items.length}건)</h1>
@@ -111,6 +137,11 @@ export default function AdoptedClient({ initialItems }: { initialItems: Adopted[
                 <span className="min-w-0 flex-1 truncate text-sm font-medium">
                   {oneLine(it.specific_text)}
                 </span>
+                {it.review_count > 0 && (
+                  <span className="hidden shrink-0 rounded-full bg-purple-50 px-2 py-0.5 text-xs text-purple-600 sm:inline">
+                    🔍 검증 {it.review_count}회
+                  </span>
+                )}
                 <span className="hidden shrink-0 text-xs text-slate-400 sm:inline">{it.date}</span>
                 <span className="shrink-0 text-xs font-bold text-blue-600">{expanded ? "접기 ‹" : "더보기 ›"}</span>
               </button>
@@ -144,13 +175,20 @@ export default function AdoptedClient({ initialItems }: { initialItems: Adopted[
                       ))}
                   </dl>
 
-                  <div className="flex flex-wrap gap-2">
+                  <div className="mb-3 flex flex-wrap gap-2">
                     <button
                       onClick={() => saveText(it.id)}
                       disabled={busy}
                       className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
                     >
                       내용 저장
+                    </button>
+                    <button
+                      onClick={() => runReview(it.id)}
+                      disabled={busy}
+                      className="rounded-lg border border-purple-200 px-3 py-1.5 text-xs font-semibold text-purple-600 hover:bg-purple-50 disabled:opacity-50"
+                    >
+                      {busy ? "처리 중..." : it.review_count > 0 ? "🔍 다시 AI 검증" : "🔍 AI 검증"}
                     </button>
                     <button
                       onClick={() => publish(it.id)}
@@ -160,6 +198,57 @@ export default function AdoptedClient({ initialItems }: { initialItems: Adopted[
                       발행
                     </button>
                   </div>
+
+                  {it.review_result && (
+                    <div className="rounded-lg border border-purple-200 bg-purple-50 p-3 text-xs">
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <span className="font-semibold text-purple-800">
+                          🔍 AI 비판적 검증 결과 ({it.review_count}회차)
+                        </span>
+                        {it.review_result.reviewedText !== draft && (
+                          <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+                            ⚠️ 검증 이후 내용이 수정됨 - 다시 검증해보세요
+                          </span>
+                        )}
+                      </div>
+                      {it.review_result.summary && (
+                        <p className="mb-2 whitespace-pre-wrap text-purple-900">{it.review_result.summary}</p>
+                      )}
+                      {it.review_result.potentialComplaints?.length > 0 && (
+                        <div className="mb-2">
+                          <div className="font-semibold text-purple-700">🗣️ 예상 후속 문의/컴플레인</div>
+                          {it.review_result.potentialComplaints.map((line, i) => (
+                            <p key={i} className="whitespace-pre-wrap text-slate-600">{line}</p>
+                          ))}
+                        </div>
+                      )}
+                      {it.review_result.blindSpots?.length > 0 && (
+                        <div className="mb-2">
+                          <div className="font-semibold text-red-700">⚠️ 맹점/허점</div>
+                          {it.review_result.blindSpots.map((line, i) => (
+                            <p key={i} className="whitespace-pre-wrap text-slate-600">{line}</p>
+                          ))}
+                        </div>
+                      )}
+                      {it.review_result.suggestions?.length > 0 && (
+                        <div>
+                          <div className="font-semibold text-purple-700">💡 보완 제안</div>
+                          {it.review_result.suggestions.map((line, i) => (
+                            <p key={i} className="whitespace-pre-wrap text-slate-600">{line}</p>
+                          ))}
+                        </div>
+                      )}
+                      {it.review_result.potentialComplaints?.length === 0 &&
+                        it.review_result.blindSpots?.length === 0 &&
+                        it.review_result.suggestions?.length === 0 && (
+                          <p className="text-purple-700">특별히 지적할 점이 없다고 판단했습니다.</p>
+                        )}
+                      <p className="mt-2 text-purple-400">
+                        위 내용을 반영해서 수정한 뒤 다시 검증을 받고, 충분히 보완됐다고 판단되면
+                        발행하세요.
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

@@ -65,3 +65,10 @@ export type ComplaintAnticipateResult = {
 export type ComplaintFinalizeResult = {
   finalText: string;
 };
+
+export type AdoptedReviewResult = {
+  potentialComplaints: string[];
+  blindSpots: string[];
+  suggestions: string[];
+  summary: string;
+};

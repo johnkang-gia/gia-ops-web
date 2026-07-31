@@ -111,6 +111,15 @@ export type Adopted = {
   benchmark: string | null;
   publish: boolean;
   published_at: string | null;
+  review_result: {
+    potentialComplaints: string[];
+    blindSpots: string[];
+    suggestions: string[];
+    summary: string;
+    reviewedText: string; // 이 검증이 이뤄졌을 당시의 specific_text 스냅샷(이후 수정 여부 비교용)
+  } | null;
+  review_count: number;
+  last_reviewed_at: string | null;
   created_at: string;
   updated_at: string;
 };

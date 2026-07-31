@@ -333,7 +333,10 @@ export function buildComplaintAnticipateSystemPrompt(): string {
     "실제 답변 스크립트가 아니라, \"이렇게 설명하고 이렇게 안내한다\"는 절차/기준 형태로 " +
     "작성하세요(구체적인 수치는 GIA 실정에 맞게 나중에 채울 수 있도록 [ ] 표시를 남기세요). " +
     "아래 [참고 법령 목록]에 근거가 있으면 자연스럽게 반영하세요.\n\n" +
-    "이미 실무자매뉴얼에 있는 항목명과 겹치는 주제는 다시 만들지 마세요. 지어내지 말고 실제로 " +
+    "매우 중요: 아래 [이미 실무자매뉴얼에 규정된 내용]과 [이미 검토 대기 중인 예상 문의]를 꼼꼼히 " +
+    "읽고, 항목명(카테고리)이 다르더라도 실질적으로 같은 주제이거나 이미 그 내용 안에 답이 나와있는 " +
+    "문의는 절대 다시 만들지 마세요(예: 카테고리명이 달라도 이미 등록된 내용이 사실상 같은 질문에 " +
+    "답하고 있으면 걸러야 합니다). 아직 다뤄지지 않은 새로운 주제만 만드세요. 지어내지 말고 실제로 " +
     "있을 법한 현실적인 상황만 다루세요. 6~10개 정도 만드세요.\n\n" +
     "아래 JSON 형식으로만 답하세요(다른 텍스트 금지). 줄바꿈은 \\n으로 표시하세요:\n" +
     '{"complaints":[{"category":"...", "complaintSummary":"...", "recommendedResponse":"...", ' +
@@ -343,11 +346,20 @@ export function buildComplaintAnticipateSystemPrompt(): string {
   );
 }
 
-export function buildComplaintAnticipateEntryBlock(existingCategories: string[], hint: string): string {
+export function buildComplaintAnticipateEntryBlock(
+  existingManualEntries: { category: string; content: string }[],
+  pendingComplaints: { category: string; text: string }[],
+  hint: string
+): string {
   const parts = [
-    existingCategories.length
-      ? `[이미 실무자매뉴얼에 있는 항목명 - 중복 금지]\n${existingCategories.join(", ")}`
-      : "[이미 등록된 항목 없음]",
+    existingManualEntries.length
+      ? `[이미 실무자매뉴얼에 규정된 내용 - 이 내용에 이미 답이 있는 주제는 새로 만들지 말 것]\n` +
+        existingManualEntries.map((e) => `- ${e.category}: ${e.content}`).join("\n")
+      : "[아직 실무자매뉴얼에 등록된 항목 없음]",
+    pendingComplaints.length
+      ? `[이미 검토 대기 중인 예상 문의(제안함) - 실질적으로 같은 내용 중복 금지]\n` +
+        pendingComplaints.map((p) => `- ${p.category}: ${p.text}`).join("\n")
+      : "[검토 대기 중인 예상 문의 없음]",
   ];
   if (hint.trim()) {
     parts.push(`[담당자가 남긴 참고 힌트]\n${hint.trim()}`);
@@ -371,6 +383,47 @@ export function buildComplaintFinalizeSystemPrompt(): string {
 
 export function buildComplaintFinalizeEntryBlock(entry: { category: string; draftText: string }): string {
   return `[항목명]\n${entry.category}\n\n[실무자가 회의를 거쳐 수정한 응대 문구(원문)]\n${entry.draftText}`;
+}
+
+export function buildAdoptedReviewSystemPrompt(): string {
+  return (
+    INSTITUTION_CONTEXT +
+    "\n\n" +
+    "당신은 GIA 학교가 운영계획안/실무자매뉴얼에 정식으로 실으려는 조항(항목)을 발행하기 직전에, " +
+    "비판적으로 검증하는 깐깐한 검토자입니다. 실무자들이 이미 GIA 실정에 맞게 구체화한 문구를 " +
+    "받아서, 그대로 통과시키지 말고 다음 관점에서 최대한 실질적으로 문제를 짚어내세요.\n" +
+    "1) potentialComplaints: 이 조항을 실제로 적용했을 때 학부모나 학생, 교직원이 제기할 법한 " +
+    "후속 문의·불만·이의제기를 구체적인 상황으로 예상하세요(예: \"환불 기준일이 애매해서 학부모가 " +
+    "'그럼 며칠 전까지냐'고 되물을 것이다\"처럼 실제로 벌어질 법한 장면으로).\n" +
+    "2) blindSpots: 조항 자체의 맹점·허점을 짚으세요 - 예외 상황이 빠짐, 책임 소재 불명확, " +
+    "실행 불가능하거나 측정 불가능한 기준, 다른 조항과 모순 가능성, 법적 근거 부족, 지나치게 " +
+    "포괄적이거나 반대로 지나치게 좁아서 실무에서 적용하기 어려운 표현 등을 구체적으로 지적하세요.\n" +
+    "3) suggestions: 위에서 지적한 문제를 보완할 수 있는 구체적이고 실행 가능한 수정 제안을 " +
+    "작성하세요(추상적 조언이 아니라 \"OOO 문구를 XXX로 바꾸거나, YYY 기준을 명시하라\"는 식의 " +
+    "실질적인 제안).\n" +
+    "4) summary: 전반적으로 이 조항이 발행할 준비가 얼마나 됐는지 한두 문장으로 평가.\n\n" +
+    "이미 잘 작성되어 특별히 지적할 내용이 없다면 억지로 문제를 만들어내지 말고 해당 배열을 " +
+    "비워두거나 짧게 답하세요. 근거 없이 트집 잡지 말고, 실제로 GIA 운영에 영향을 줄 수 있는 " +
+    "현실적인 지적만 하세요. 아래 [참고 법령 목록]에 관련 근거가 있으면 지적에 자연스럽게 " +
+    "반영하세요.\n\n" +
+    "아래 JSON 형식으로만 답하세요(다른 텍스트 금지). 줄바꿈은 \\n으로 표시하세요:\n" +
+    '{"potentialComplaints":["- ...", "- ..."], "blindSpots":["- ...", "- ..."], ' +
+    '"suggestions":["- ...", "- ..."], "summary":"..."}\n\n' +
+    "[참고 법령 목록]\n" +
+    LAW_REFERENCE.map((l) => `${l.topic} | ${l.law} | ${l.points}`).join("\n")
+  );
+}
+
+export function buildAdoptedReviewEntryBlock(entry: {
+  targetDoc: string;
+  category: string;
+  specificText: string;
+  reviewRound: number;
+}): string {
+  return (
+    `[대상 문서]\n${entry.targetDoc}\n\n[항목명]\n${entry.category}\n\n` +
+    `[검증할 최종 문구(${entry.reviewRound}번째 검증)]\n${entry.specificText}`
+  );
 }
 
 export function buildMeetingEntryBlock(

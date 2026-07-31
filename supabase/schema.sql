@@ -529,3 +529,10 @@ create policy "giamicro_write_event_photos" on storage.objects
 drop policy if exists "giamicro_delete_event_photos" on storage.objects;
 create policy "giamicro_delete_event_photos" on storage.objects
   for delete using (bucket_id = 'event-photos' and is_giamicro_user());
+
+-- ===== 21. 채택예정 AI 비판적 검증(반복 검증 워크플로우) =====
+-- 채택예정 항목을 발행하기 전, AI가 예상 후속 문의/맹점/보완 제안을 비판적으로 짚어주고,
+-- 실무자가 내용을 보완한 뒤 다시 검증받을 수 있도록 결과와 검증 횟수를 누적합니다.
+alter table adopted add column if not exists review_result jsonb;
+alter table adopted add column if not exists review_count integer not null default 0;
+alter table adopted add column if not exists last_reviewed_at timestamptz;

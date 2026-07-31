@@ -5,6 +5,7 @@ import { getCurrentTerm } from "@/lib/currentTerm";
 import { isDeveloperEmail } from "@/lib/roles";
 import SignOutButton from "@/components/SignOutButton";
 import { SidebarNavLinks, MobileNavLinks } from "@/components/NavLinks";
+import TodoReminderProvider from "@/components/todo/TodoReminderProvider";
 
 // 메뉴를 목적별로 묶었습니다:
 // - 홈/실무자매뉴얼: 매일 가장 자주 쓰는 화면(홈 확인, 학부모 문의 답변용 검색)이라 맨 위.
@@ -90,6 +91,7 @@ export default async function DashboardLayout({
 
   return (
     <div className="flex min-h-screen flex-1">
+      <TodoReminderProvider userEmail={user.email ?? null} />
       <aside className="hidden w-56 shrink-0 border-r border-slate-200 bg-white p-4 sm:flex sm:flex-col">
         <div className="mb-6 px-2">
           <Link href="/home" className="inline-block cursor-pointer">

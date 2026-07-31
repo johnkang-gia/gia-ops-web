@@ -657,3 +657,40 @@ begin
     alter publication supabase_realtime add table inquiries;
   end if;
 end $$;
+
+-- ===== 25. 개인 할 일(todos) - 홈 화면 왼쪽 위젯 =====
+-- 다른 테이블(사건/회의/행사 등)은 giamicro 도메인 전체가 공유하지만, 할 일은 각자 자신의
+-- 업무를 적는 개인용이라 본인 것만 보이고 수정할 수 있게 user_email 기준으로 제한합니다.
+-- due_at을 설정하면 그 시간에 브라우저 알림(팝업)으로 알려주고, notified 컬럼으로 중복 알림을
+-- 막습니다(한 번 알림을 보내면 true로 바뀌고 다시 보내지 않음).
+create table if not exists todos (
+  id uuid primary key default gen_random_uuid(),
+  user_email text not null,
+  text text not null,
+  due_at timestamptz,
+  done boolean not null default false,
+  notified boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists todos_user_email_idx on todos(user_email);
+
+drop trigger if exists todos_set_updated_at on todos;
+create trigger todos_set_updated_at
+  before update on todos
+  for each row execute function set_updated_at();
+
+alter table todos enable row level security;
+drop policy if exists "own_todos" on todos;
+create policy "own_todos" on todos
+  for all using (user_email = (auth.jwt() ->> 'email')) with check (user_email = (auth.jwt() ->> 'email'));
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'todos'
+  ) then
+    alter publication supabase_realtime add table todos;
+  end if;
+end $$;

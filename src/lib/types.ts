@@ -149,6 +149,17 @@ export type SchoolDocument = {
   updated_at: string;
 };
 
+export type Todo = {
+  id: string;
+  user_email: string;
+  text: string;
+  due_at: string | null;
+  done: boolean;
+  notified: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
 export type Inquiry = {
   id: string;
   case_id: string;

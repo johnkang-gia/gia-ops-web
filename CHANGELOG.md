@@ -4,6 +4,55 @@
 `version` 값과 항상 일치시킵니다. 업데이트할 때마다 이 파일 맨 위에 새 항목을 추가하고,
 같은 내용을 GitHub Desktop의 커밋 Summary/Description에도 그대로 사용하면 됩니다.
 
+## v0.20.0 - 2026-07-31
+
+홈 화면 왼쪽에 개인 할 일 목록 + 시간 알림 기능 신설:
+
+- 홈 화면 맨 왼쪽에 "✅ 할 일" 위젯 추가. 할 일을 적고, 원하면 날짜·시간을 함께 설정할 수
+  있음. 체크박스로 완료 처리, ✕ 버튼으로 삭제 가능. 다른 기록(사건/회의 등)과 달리 이 할 일은
+  본인 것만 보이는 개인용 목록임(DB에서 본인 이메일로 접근 제한)
+- 설정한 시간이 되면 팝업으로 알려줌: (1) 브라우저 알림 허용 시 OS 알림 센터에도 뜨는 네이티브
+  알림, (2) 앱을 켜둔 화면 오른쪽 아래에 뜨는 인앱 팝업(완료 처리/닫기 버튼 포함) - 홈 화면이
+  아니어도 앱의 다른 어떤 화면에 있든 뜸. 할 일 위젯의 "🔔 알림 켜기" 버튼을 한 번 눌러 브라우저
+  알림을 허용해두면 더 확실하게 받을 수 있음
+  - 주의: 이 알림은 브라우저 탭(앱)이 열려 있는 동안에만 동작함. 완전히 브라우저를 꺼두면
+    알림이 가지 않음(탭을 열어두거나 최소화만 해두면 정상 동작)
+
+```sql
+-- ===== 25. 개인 할 일(todos) - 홈 화면 왼쪽 위젯 =====
+create table if not exists todos (
+  id uuid primary key default gen_random_uuid(),
+  user_email text not null,
+  text text not null,
+  due_at timestamptz,
+  done boolean not null default false,
+  notified boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists todos_user_email_idx on todos(user_email);
+
+drop trigger if exists todos_set_updated_at on todos;
+create trigger todos_set_updated_at
+  before update on todos
+  for each row execute function set_updated_at();
+
+alter table todos enable row level security;
+drop policy if exists "own_todos" on todos;
+create policy "own_todos" on todos
+  for all using (user_email = (auth.jwt() ->> 'email')) with check (user_email = (auth.jwt() ->> 'email'));
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'todos'
+  ) then
+    alter publication supabase_realtime add table todos;
+  end if;
+end $$;
+```
+
 ## v0.19.0 - 2026-07-31
 
 홈 학기 표시 강조 + 달력 공휴일/OS 캘린더 연동 + 행사분석 문구 정비(DB 변경 없음):

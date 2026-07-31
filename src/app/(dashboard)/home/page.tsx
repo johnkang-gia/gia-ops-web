@@ -2,12 +2,18 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentTerm } from "@/lib/currentTerm";
 import DateTimeCard from "@/components/home/DateTimeCard";
-import type { Incident, Meeting, EventRecord, Term } from "@/lib/types";
+import TodoList from "@/components/home/TodoList";
+import type { Incident, Meeting, EventRecord, Term, Todo } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
 async function loadHomeData() {
   const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const userEmail = user?.email ?? "";
 
   const ninetyDaysAgo = new Date();
   ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
@@ -25,6 +31,7 @@ async function loadHomeData() {
     recentMeetings,
     recentIncidentsForPattern,
     currentTerm,
+    myTodos,
   ] = await Promise.all([
     supabase.from("incidents").select("id", { count: "exact", head: true }),
     supabase.from("events").select("id", { count: "exact", head: true }),
@@ -54,6 +61,9 @@ async function loadHomeData() {
       .gte("date", ninetyDaysAgoStr)
       .order("date", { ascending: false }),
     getCurrentTerm(supabase),
+    userEmail
+      ? supabase.from("todos").select("*").eq("user_email", userEmail).order("created_at", { ascending: false })
+      : Promise.resolve({ data: [] as Todo[] }),
   ]);
 
   // AI 호출 없이 순수 집계만으로 "최근 90일 내 같은 유형 사건 반복" 여부를 찾습니다(비용 0).
@@ -131,6 +141,8 @@ async function loadHomeData() {
     activity,
     recurringPatterns,
     currentTerm: currentTerm as Term | null,
+    userEmail,
+    myTodos: (myTodos.data as Todo[] | null) ?? [],
   };
 }
 
@@ -141,7 +153,7 @@ function oneLine(text: string, maxLen = 42) {
 }
 
 export default async function HomePage() {
-  const { counts, activity, recurringPatterns, currentTerm } = await loadHomeData();
+  const { counts, activity, recurringPatterns, currentTerm, userEmail, myTodos } = await loadHomeData();
 
   const recordCards = [
     { label: "📋 사건", value: counts.incidents, href: "/records" },
@@ -167,8 +179,12 @@ export default async function HomePage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_260px]">
-        <div className="min-w-0">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[220px_1fr_260px]">
+        <div className="order-2 lg:order-1 lg:sticky lg:top-4 lg:self-start">
+          {userEmail && <TodoList initialItems={myTodos} userEmail={userEmail} />}
+        </div>
+
+        <div className="order-1 min-w-0 lg:order-2">
           <div className="mb-2 text-xs font-semibold text-slate-400">기록 현황</div>
           <div className="mb-5 grid grid-cols-3 gap-2 sm:gap-3">
             {recordCards.map((card) => (
@@ -258,7 +274,7 @@ export default async function HomePage() {
           </div>
         </div>
 
-        <div className="lg:sticky lg:top-4 lg:self-start">
+        <div className="order-3 lg:sticky lg:top-4 lg:self-start">
           <DateTimeCard />
         </div>
       </div>

@@ -72,3 +72,11 @@ export type AdoptedReviewResult = {
   suggestions: string[];
   summary: string;
 };
+
+export type MeetingChatResult = {
+  reply: string;
+  date: string;
+  attendees: string;
+  organizedContent: string;
+  readyToSave: boolean;
+};

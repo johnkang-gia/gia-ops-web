@@ -536,3 +536,26 @@ create policy "giamicro_delete_event_photos" on storage.objects
 alter table adopted add column if not exists review_result jsonb;
 alter table adopted add column if not exists review_count integer not null default 0;
 alter table adopted add column if not exists last_reviewed_at timestamptz;
+
+-- ===== 22. 회의록 대화형 작성(채팅) + 음성 녹음 업로드 =====
+-- 두서없이 적은 회의 메모를 채팅으로 붙여넣으면 AI가 애매한 부분을 되물어가며 정리합니다.
+-- 대화 전체(source_chat)를 남겨서 나중에 왜 이렇게 정리됐는지 참고할 수 있게 하고, 녹음
+-- 파일을 올린 경우 저장 경로(audio_path)도 함께 기록합니다.
+alter table meetings add column if not exists source_chat jsonb;
+alter table meetings add column if not exists audio_path text;
+
+insert into storage.buckets (id, name, public)
+values ('meeting-audio', 'meeting-audio', false)
+on conflict (id) do nothing;
+
+drop policy if exists "giamicro_read_meeting_audio" on storage.objects;
+create policy "giamicro_read_meeting_audio" on storage.objects
+  for select using (bucket_id = 'meeting-audio' and is_giamicro_user());
+
+drop policy if exists "giamicro_write_meeting_audio" on storage.objects;
+create policy "giamicro_write_meeting_audio" on storage.objects
+  for insert with check (bucket_id = 'meeting-audio' and is_giamicro_user());
+
+drop policy if exists "giamicro_delete_meeting_audio" on storage.objects;
+create policy "giamicro_delete_meeting_audio" on storage.objects
+  for delete using (bucket_id = 'meeting-audio' and is_giamicro_user());

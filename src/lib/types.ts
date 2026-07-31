@@ -27,6 +27,8 @@ export type Meeting = {
   status: string | null;
   next_agenda: string | null;
   final_record: string | null;
+  source_chat: { role: "user" | "assistant"; content: string; at: string }[] | null;
+  audio_path: string | null;
   created_at: string;
   updated_at: string;
 };

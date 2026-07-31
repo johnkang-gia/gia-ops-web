@@ -4,7 +4,9 @@ import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRealtimeTable } from "@/lib/useRealtimeTable";
 import { genCaseId } from "@/lib/caseId";
+import { getMeetingAudioUrl } from "@/lib/storage";
 import type { Meeting } from "@/lib/types";
+import MeetingChatComposer from "./MeetingChatComposer";
 
 type FormState = {
   date: string;
@@ -36,13 +38,20 @@ export default function MeetingsClient({
   initialItems: Meeting[];
 }) {
   const [items, setItems] = useRealtimeTable<Meeting>("meetings", initialItems);
-  const [showForm, setShowForm] = useState(false);
+  const [showChat, setShowChat] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [cleaning, setCleaning] = useState(false);
+  const [audioUrls, setAudioUrls] = useState<Record<string, string>>({});
+
+  async function loadAudioUrl(it: Meeting) {
+    if (!it.audio_path || audioUrls[it.id]) return;
+    const url = await getMeetingAudioUrl(it.audio_path);
+    if (url) setAudioUrls((prev) => ({ ...prev, [it.id]: url }));
+  }
 
   function startEdit(it: Meeting) {
     setEditingId(it.id);
@@ -55,13 +64,12 @@ export default function MeetingsClient({
       next_agenda: it.next_agenda ?? "",
       final_record: it.final_record ?? "",
     });
-    setShowForm(false);
+    setShowChat(false);
   }
 
   function resetForm() {
     setForm(EMPTY_FORM);
     setEditingId(null);
-    setShowForm(false);
     setError("");
   }
 
@@ -131,17 +139,27 @@ export default function MeetingsClient({
         <h1 className="text-lg font-bold">회의 ({items.length}건)</h1>
         <button
           onClick={() => {
-            setShowForm((v) => !v);
+            setShowChat((v) => !v);
             setEditingId(null);
             setForm(EMPTY_FORM);
           }}
           className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-slate-700"
         >
-          {showForm ? "닫기" : "+ 새로 입력"}
+          {showChat ? "닫기" : "+ 새로 입력(채팅)"}
         </button>
       </div>
 
-      {(showForm || editingId) && (
+      {showChat && !editingId && (
+        <MeetingChatComposer
+          onSaved={(meeting) => {
+            setItems((prev) => [meeting, ...prev]);
+            setShowChat(false);
+          }}
+          onCancel={() => setShowChat(false)}
+        />
+      )}
+
+      {editingId && (
         <form
           onSubmit={handleSubmit}
           className="mb-6 flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
@@ -245,12 +263,16 @@ export default function MeetingsClient({
           return (
             <div key={it.id} className="rounded-xl border border-slate-200 bg-white shadow-sm">
               <button
-                onClick={() => setExpandedId(expanded ? null : it.id)}
+                onClick={() => {
+                  setExpandedId(expanded ? null : it.id);
+                  if (!expanded) loadAudioUrl(it);
+                }}
                 className="flex w-full items-center gap-3 px-4 py-3 text-left"
               >
                 <span className="min-w-0 flex-1 truncate text-sm font-medium">
                   {oneLine(it.content)}
                 </span>
+                {it.audio_path && <span className="shrink-0 text-xs">🎙️</span>}
                 <span className="shrink-0 text-xs text-slate-400">{it.date}</span>
                 {it.status && (
                   <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
@@ -278,6 +300,15 @@ export default function MeetingsClient({
                         </div>
                       ))}
                   </dl>
+                  {it.audio_path && (
+                    <div className="mt-3">
+                      {audioUrls[it.id] ? (
+                        <audio controls src={audioUrls[it.id]} className="h-9 w-full max-w-sm" />
+                      ) : (
+                        <p className="text-xs text-slate-400">🎙️ 녹음 파일 불러오는 중...</p>
+                      )}
+                    </div>
+                  )}
                   <button
                     onClick={() => startEdit(it)}
                     className="mt-3 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"

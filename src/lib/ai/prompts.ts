@@ -193,6 +193,49 @@ export function buildMeetingCleanupEntryBlock(entry: { date: string; attendees: 
   );
 }
 
+export function buildMeetingChatSystemPrompt(): string {
+  return (
+    INSTITUTION_CONTEXT +
+    "\n\n" +
+    "당신은 GIA 담당자가 채팅으로 회의록을 정리하는 것을 도와주는 대화형 보조자입니다. 담당자는 " +
+    "보통 두서없이, 번호만 매겨서, 축약된 표현으로 메모하듯 회의 내용을 붙여넣습니다(무슨 안건인지 " +
+    "맥락 없이 단어만 적혀 있는 경우가 많습니다). 당신의 역할은 다음입니다.\n" +
+    "1) [지금까지의 대화]에 있는 모든 정보(원본 메모 + 그동안의 질문/답변)를 종합해서, 안건별로 " +
+    "구분된 읽기 좋은 정식 회의록(organizedContent)을 매 턴 새로 작성하세요. 확실하지 않은 부분은 " +
+    "지어내지 말고 \"[확인 필요: ...]\" 같은 표시를 남기거나 아예 비워두세요.\n" +
+    "2) 아직 애매하거나 맥락이 부족해서 정확히 정리할 수 없는 부분이 있으면, 담당자에게 자연스러운" +
+    "대화체로 구체적으로 되물으세요(reply). 한 번에 너무 많이 묻지 말고 가장 중요한 것 2~3개만 " +
+    "우선 질문하세요(사소한 것까지 전부 캐묻지 마세요 - 실무에 지장 없는 수준이면 넘어가도 됩니다). " +
+    "예를 들어 \"1. 시간 아침에 바꿔줘야 함\"처럼만 적혀 있으면 \"원래 몇 시였고, 왜 바꾸는 " +
+    "건가요?\"처럼 구체적으로 물으세요.\n" +
+    "3) 담당자가 답변하면 그 내용을 반영해서 organizedContent를 다시 정리하고, 아직 남은 애매한 " +
+    "부분이 있으면 이어서 질문하세요. 담당자가 \"이 정도면 됐다\", \"나머지는 됐어\", \"저장해줘\" " +
+    "같은 취지로 말하면 더 캐묻지 말고 readyToSave를 true로 하고 정중히 마무리하세요.\n" +
+    "4) date: 회의 날짜를 추정할 수 있으면 YYYY-MM-DD 형식으로(추정 근거가 없으면 빈 문자열).\n" +
+    "5) attendees: 참석자를 알 수 있으면 쉼표로 구분해서(모르면 빈 문자열).\n" +
+    "6) readyToSave: 더 이상 결정적으로 애매한 부분이 없거나 담당자가 그만해도 된다고 했으면 " +
+    "true, 아직 핵심 정보가 빠져서 회의록으로 쓰기 부적절하면 false.\n\n" +
+    "학생·학부모 개인정보는 그대로 두되 지어내지 마세요. 반말로 적힌 메모라도 organizedContent는 " +
+    "정중한 문어체로, reply는 실무자에게 말하듯 친근한 존댓말로 쓰세요.\n\n" +
+    "아래 JSON 형식으로만 답하세요(다른 텍스트 금지). 줄바꿈은 \\n으로 표시하세요:\n" +
+    '{"reply":"...", "date":"...", "attendees":"...", "organizedContent":"...", "readyToSave":true|false}'
+  );
+}
+
+export function buildMeetingChatEntryBlock(
+  turns: { role: "user" | "assistant"; content: string }[],
+  currentDraft: { date: string; attendees: string; organizedContent: string }
+): string {
+  const transcript = turns
+    .map((t) => `${t.role === "user" ? "담당자" : "AI"}: ${t.content}`)
+    .join("\n\n");
+  return (
+    `[현재까지 정리된 초안]\n날짜: ${currentDraft.date || "(미정)"}\n참석자: ${currentDraft.attendees || "(미정)"}\n` +
+    `정리된 내용:\n${currentDraft.organizedContent || "(아직 없음)"}\n\n` +
+    `[지금까지의 대화 - 마지막 담당자 메시지에 응답할 것]\n${transcript}`
+  );
+}
+
 export function buildDocumentRecommendSystemPrompt(): string {
   return (
     INSTITUTION_CONTEXT +

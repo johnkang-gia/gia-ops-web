@@ -62,7 +62,14 @@ async function loadHomeData() {
       .order("date", { ascending: false }),
     getCurrentTerm(supabase),
     userEmail
-      ? supabase.from("todos").select("*").eq("user_email", userEmail).order("created_at", { ascending: false })
+      ? supabase
+          .from("todos")
+          .select("*")
+          .eq("user_email", userEmail)
+          // KST(UTC+9) 기준 오늘 날짜만 미리 불러옵니다(홈 위젯은 "오늘 할 일"만 보여줌 -
+          // 지난 기록은 업무히스토리 페이지에서 따로 불러옵니다).
+          .eq("for_date", new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10))
+          .order("created_at", { ascending: false })
       : Promise.resolve({ data: [] as Todo[] }),
   ]);
 

@@ -667,7 +667,8 @@ create table if not exists todos (
   id uuid primary key default gen_random_uuid(),
   user_email text not null,
   text text not null,
-  due_at timestamptz,
+  for_date date not null default current_date,  -- 이 할 일이 속한 날짜(업무 히스토리 조회 기준)
+  due_at timestamptz,                            -- 설정하면 이 시각에 팝업/브라우저 알림
   done boolean not null default false,
   notified boolean not null default false,
   created_at timestamptz not null default now(),
@@ -694,3 +695,9 @@ begin
     alter publication supabase_realtime add table todos;
   end if;
 end $$;
+
+-- ===== 26. 할 일에 날짜(for_date) 추가 - 업무 히스토리(달력) 조회용 =====
+-- 기존에 todos 테이블이 이미 있던 환경(위 25번을 이미 실행한 경우)을 위한 업그레이드 경로입니다.
+-- 신규 설치는 위 25번 create table에 for_date가 이미 포함되어 있어 아래 구문은 효과가 없습니다.
+alter table todos add column if not exists for_date date not null default current_date;
+create index if not exists todos_user_date_idx on todos(user_email, for_date);

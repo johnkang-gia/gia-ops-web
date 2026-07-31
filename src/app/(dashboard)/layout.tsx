@@ -21,6 +21,7 @@ const NAV_GROUPS = [
     items: [
       { href: "/home", label: "홈", icon: "🏠" },
       { href: "/staff-manual", label: "실무자매뉴얼", icon: "📚" },
+      { href: "/work-history", label: "업무히스토리", icon: "🗂️" },
     ],
   },
   {

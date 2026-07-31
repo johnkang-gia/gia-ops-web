@@ -153,6 +153,7 @@ export type Todo = {
   id: string;
   user_email: string;
   text: string;
+  for_date: string;
   due_at: string | null;
   done: boolean;
   notified: boolean;

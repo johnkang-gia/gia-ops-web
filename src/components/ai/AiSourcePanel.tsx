@@ -42,11 +42,27 @@ export default function AiSourcePanel({
     let cancelled = false;
     const supabase = createClient();
 
+    // 이 패널이 실제로 화면에 그리는 항목만 가져옵니다(불필요한 대용량 컬럼을 빼서 전송량을 줄임).
+    const PROPOSAL_COLS =
+      "id, source, date, target_doc, category, final_text, remediation, parent_msg, student_edu, legal_basis";
+    const ADOPTED_COLS =
+      "id, source, date, target_doc, category, specific_text, guide, legal_basis, review_result, review_count";
+
     async function load() {
       setLoading(true);
       const [p, a] = await Promise.all([
-        supabase.from("proposals").select("*").eq("source", source).eq("status", "검토대기").order("date", { ascending: false }),
-        supabase.from("adopted").select("*").eq("source", source).eq("publish", false).order("date", { ascending: false }),
+        supabase
+          .from("proposals")
+          .select(PROPOSAL_COLS)
+          .eq("source", source)
+          .eq("status", "검토대기")
+          .order("date", { ascending: false }),
+        supabase
+          .from("adopted")
+          .select(ADOPTED_COLS)
+          .eq("source", source)
+          .eq("publish", false)
+          .order("date", { ascending: false }),
       ]);
       if (cancelled) return;
       setProposals((p.data as Proposal[]) ?? []);
@@ -55,34 +71,42 @@ export default function AiSourcePanel({
     }
     load();
 
+    // Postgres 쪽에서 이 source에 해당하는 행만 골라서 보내주도록 filter를 걸어, 다른 화면(다른
+    // source)에서 일어난 변경 이벤트까지 매번 이 패널로 내려받아 걸러내는 낭비를 없앱니다.
     const channel = supabase
       .channel(`ai-source-panel-${source}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "proposals" }, (payload) => {
-        const row = (payload.new ?? payload.old) as Proposal;
-        if (row.source !== source) return;
-        setProposals((prev) => {
-          if (payload.eventType === "DELETE") return prev.filter((it) => it.id !== row.id);
-          const next = payload.new as Proposal;
-          const stillPending = next.status === "검토대기";
-          const exists = prev.some((it) => it.id === next.id);
-          if (!stillPending) return prev.filter((it) => it.id !== next.id);
-          const merged = exists ? prev.map((it) => (it.id === next.id ? next : it)) : [next, ...prev];
-          return [...merged].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
-        });
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "adopted" }, (payload) => {
-        const row = (payload.new ?? payload.old) as Adopted;
-        if (row.source !== source) return;
-        setAdopted((prev) => {
-          if (payload.eventType === "DELETE") return prev.filter((it) => it.id !== row.id);
-          const next = payload.new as Adopted;
-          const stillPending = !next.publish;
-          const exists = prev.some((it) => it.id === next.id);
-          if (!stillPending) return prev.filter((it) => it.id !== next.id);
-          const merged = exists ? prev.map((it) => (it.id === next.id ? next : it)) : [next, ...prev];
-          return [...merged].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
-        });
-      })
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "proposals", filter: `source=eq.${source}` },
+        (payload) => {
+          const row = (payload.new ?? payload.old) as Proposal;
+          setProposals((prev) => {
+            if (payload.eventType === "DELETE") return prev.filter((it) => it.id !== row.id);
+            const next = payload.new as Proposal;
+            const stillPending = next.status === "검토대기";
+            const exists = prev.some((it) => it.id === next.id);
+            if (!stillPending) return prev.filter((it) => it.id !== next.id);
+            const merged = exists ? prev.map((it) => (it.id === next.id ? next : it)) : [next, ...prev];
+            return [...merged].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+          });
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "adopted", filter: `source=eq.${source}` },
+        (payload) => {
+          const row = (payload.new ?? payload.old) as Adopted;
+          setAdopted((prev) => {
+            if (payload.eventType === "DELETE") return prev.filter((it) => it.id !== row.id);
+            const next = payload.new as Adopted;
+            const stillPending = !next.publish;
+            const exists = prev.some((it) => it.id === next.id);
+            if (!stillPending) return prev.filter((it) => it.id !== next.id);
+            const merged = exists ? prev.map((it) => (it.id === next.id ? next : it)) : [next, ...prev];
+            return [...merged].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+          });
+        }
+      )
       .subscribe();
 
     return () => {

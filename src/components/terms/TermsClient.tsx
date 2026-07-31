@@ -59,10 +59,54 @@ export default function TermsClient({ initialItems }: { initialItems: Term[] }) 
   const [comparing, setComparing] = useState(false);
   const [compareResult, setCompareResult] = useState<(EventCompareResult & { recordCount: number }) | null>(null);
   const [compareError, setCompareError] = useState("");
+  const [switcherOpen, setSwitcherOpen] = useState(false);
+  const [switcherChoice, setSwitcherChoice] = useState("");
+  const [switching, setSwitching] = useState(false);
 
   const occurrences = items
     .filter((it) => it.term_type === selectedType)
     .sort((a, b) => b.year.localeCompare(a.year));
+
+  // 홈/사이드바에서 쓰는 getCurrentTerm()과 같은 기준(진행중 중 시작일이 가장 최근인 것, 없으면
+  // 등록일 최신)으로 "현재 학기"를 골라 화면 맨 위에 보여줍니다.
+  const currentActive = useMemo(() => {
+    const active = items.filter((it) => it.status === "진행중");
+    if (!active.length) return null;
+    return [...active].sort((a, b) => {
+      if (a.start_date && b.start_date && a.start_date !== b.start_date) {
+        return b.start_date.localeCompare(a.start_date);
+      }
+      if (a.start_date && !b.start_date) return -1;
+      if (!a.start_date && b.start_date) return 1;
+      return b.created_at.localeCompare(a.created_at);
+    })[0];
+  }, [items]);
+
+  const allOccurrencesSorted = useMemo(
+    () =>
+      [...items].sort((a, b) => a.term_type.localeCompare(b.term_type) || b.year.localeCompare(a.year)),
+    [items]
+  );
+
+  async function setCurrentTerm(id: string) {
+    setSwitching(true);
+    const supabase = createClient();
+    const others = items.filter((it) => it.status === "진행중" && it.id !== id);
+    await Promise.all([
+      ...others.map((it) => supabase.from("terms").update({ status: "종료" }).eq("id", it.id)),
+      supabase.from("terms").update({ status: "진행중" }).eq("id", id),
+    ]);
+    // 실시간 구독으로도 곧 반영되지만, 누르자마자 화면이 바뀌도록 미리 로컬 상태도 갱신합니다.
+    setItems((prev) =>
+      prev.map((it) => {
+        if (it.id === id) return { ...it, status: "진행중" };
+        if (others.some((o) => o.id === it.id)) return { ...it, status: "종료" };
+        return it;
+      })
+    );
+    setSwitching(false);
+    setSwitcherOpen(false);
+  }
 
   async function updatePhotos(id: string, photo_paths: string[]) {
     const supabase = createClient();
@@ -174,6 +218,55 @@ export default function TermsClient({ initialItems }: { initialItems: Term[] }) 
         동안 나온 회의록 내용은 회의록 AI 분류를 통해 해당 학기의 개선 제안란에 자동으로
         누적되고, 다음 같은 학기나 다음 연도가 되었을 때 참고할 수 있습니다.
       </p>
+
+      <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 p-4 shadow-sm">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <div className="text-xs font-semibold text-blue-700">현재 학기</div>
+          <button
+            onClick={() => {
+              setSwitcherOpen((v) => !v);
+              setSwitcherChoice(currentActive?.id ?? "");
+            }}
+            className="rounded-lg border border-blue-300 px-2 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100"
+          >
+            {switcherOpen ? "닫기" : currentActive ? "변경" : "설정하기"}
+          </button>
+        </div>
+        {currentActive ? (
+          <div className="text-sm font-bold text-blue-900">
+            {currentActive.term_type} ({currentActive.year})
+          </div>
+        ) : (
+          <div className="text-sm text-blue-700">설정된 진행중 학기가 없습니다.</div>
+        )}
+        {switcherOpen && (
+          <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-blue-200 pt-3">
+            <select
+              value={switcherChoice}
+              onChange={(e) => setSwitcherChoice(e.target.value)}
+              className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+            >
+              <option value="">학기/캠프 회차 선택</option>
+              {allOccurrencesSorted.map((it) => (
+                <option key={it.id} value={it.id}>
+                  {it.term_type} ({it.year}){it.status === "진행중" ? " · 현재 진행중" : ""}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={() => switcherChoice && setCurrentTerm(switcherChoice)}
+              disabled={!switcherChoice || switching}
+              className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+            >
+              {switching ? "전환 중..." : "이 학기로 전환"}
+            </button>
+            <p className="w-full text-[11px] text-blue-600">
+              전환하면 기존에 진행중이던 학기는 자동으로 종료 처리되고, 그 이후 새로 작성되는
+              사건·회의 기록이 새 학기로 연결됩니다.
+            </p>
+          </div>
+        )}
+      </div>
 
       <div className="mb-3 flex flex-wrap items-center gap-1.5">
         {allTypes.map((t) => (

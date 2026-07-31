@@ -4,6 +4,31 @@
 `version` 값과 항상 일치시킵니다. 업데이트할 때마다 이 파일 맨 위에 새 항목을 추가하고,
 같은 내용을 GitHub Desktop의 커밋 Summary/Description에도 그대로 사용하면 됩니다.
 
+## v0.16.0 - 2026-07-31
+
+사건 AI 자동채우기 복원 + 학기 자동 연결 + 작성자 자동 입력(DB 변경 있음 - 아래 SQL 실행 필요):
+
+- **사건기록 AI 자동채우기**: 상세 내용(경위)란에 두서없이 적고 "🧹 AI로 채우기"를 누르면 날짜·
+  제목·잘된 점·부족했던 점·보완점을 AI가 원문에서 찾아 자동으로 채워줌(원문에 없는 내용은 억지로
+  지어내지 않고 비워둠 - 없어졌던 예전 기능을 새 화면 구조에 맞게 복원)
+- **담당자 자동 입력**: 새 사건을 작성할 때 담당자(작성자) 칸에 로그인한 계정 이메일이 자동으로
+  채워짐(직접 수정 가능)
+- **학기 자동 연결**: 학기 메뉴에서 어떤 학기/캠프를 "진행중"으로 등록해두면, 그 기간에 새로
+  작성하는 사건·회의 기록이 자동으로 그 학기에 연결됨. 학기 메뉴에서 회차를 펼치면 그 기간에
+  쌓인 사건/회의 기록을 목록으로 바로 확인 가능
+- 홈 화면 상단에 "현재 학기" 카드 추가(진행중인 학기가 없으면 등록 안내 표시)
+- 사이드바(PC)와 상단 헤더(모바일) 로고와 로그인 계정 사이에 현재 학기 배지 표시, 누르면 학기
+  메뉴로 이동
+- **DB 변경 필요**: `incidents`/`meetings` 테이블에 `term_id` 컬럼 추가 (아래 SQL을 Supabase
+  SQL Editor에서 실행)
+
+```sql
+alter table incidents add column if not exists term_id uuid references terms(id) on delete set null;
+alter table meetings add column if not exists term_id uuid references terms(id) on delete set null;
+create index if not exists incidents_term_id_idx on incidents(term_id);
+create index if not exists meetings_term_id_idx on meetings(term_id);
+```
+
 ## v0.15.0 - 2026-07-31
 
 화면 폭 자동 조정 + 사건/회의/AI매뉴얼 3단 통합 작업화면(DB 변경 없음):

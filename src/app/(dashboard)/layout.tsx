@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getCurrentTerm } from "@/lib/currentTerm";
 import SignOutButton from "@/components/SignOutButton";
 import { SidebarNavLinks, MobileNavLinks } from "@/components/NavLinks";
 
@@ -61,14 +62,19 @@ export default async function DashboardLayout({
   children: React.ReactNode;
 }) {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const [
+    {
+      data: { user },
+    },
+    currentTerm,
+  ] = await Promise.all([supabase.auth.getUser(), getCurrentTerm(supabase)]);
 
   // middleware.ts가 1차로 막지만, 서버 컴포넌트 단에서도 한 번 더 확인합니다(방어적 이중 확인).
   if (!user) {
     redirect("/login");
   }
+
+  const termLabel = currentTerm ? `${currentTerm.term_type} (${currentTerm.year})` : null;
 
   return (
     <div className="flex min-h-screen flex-1">
@@ -78,7 +84,17 @@ export default async function DashboardLayout({
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/logo-main.png" alt="GIA Micro Lab" className="h-10 w-auto" />
           </Link>
-          <div className="mt-2 truncate text-xs text-slate-400">
+          {termLabel ? (
+            <Link
+              href="/terms"
+              className="mt-2 inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700 hover:bg-blue-100"
+            >
+              📅 {termLabel}
+            </Link>
+          ) : (
+            <div className="mt-2 text-[11px] text-slate-300">진행중인 학기 없음</div>
+          )}
+          <div className="mt-1 truncate text-xs text-slate-400">
             {user.email}
           </div>
         </div>
@@ -96,6 +112,14 @@ export default async function DashboardLayout({
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/logo-main.png" alt="GIA Micro Lab" className="h-7 w-auto" />
           </Link>
+          {termLabel && (
+            <Link
+              href="/terms"
+              className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700"
+            >
+              📅 {termLabel}
+            </Link>
+          )}
           <SignOutButton />
         </header>
         <nav className="flex gap-1 overflow-x-auto border-b border-slate-200 bg-white px-2 py-2 sm:hidden">

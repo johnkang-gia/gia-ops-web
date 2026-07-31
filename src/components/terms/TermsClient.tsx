@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useRealtimeTable } from "@/lib/useRealtimeTable";
 import { genCaseId } from "@/lib/caseId";
@@ -364,6 +365,12 @@ export default function TermsClient({ initialItems }: { initialItems: Term[] }) 
   );
 }
 
+function oneLineRecord(text: string, maxLen = 50) {
+  const t = String(text || "").replace(/\s+/g, " ").trim();
+  if (!t) return "(내용 없음)";
+  return t.length > maxLen ? t.slice(0, maxLen) + "…" : t;
+}
+
 function TermOccurrenceCard({
   item,
   onEdit,
@@ -374,12 +381,29 @@ function TermOccurrenceCard({
   onPhotosChange: (paths: string[]) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [linkedIncidents, setLinkedIncidents] = useState<{ id: string; date: string; title: string }[] | null>(null);
+  const [linkedMeetings, setLinkedMeetings] = useState<{ id: string; date: string; content: string }[] | null>(null);
+  const [loadingLinked, setLoadingLinked] = useState(false);
+
+  async function toggle() {
+    const next = !expanded;
+    setExpanded(next);
+    if (next && linkedIncidents === null) {
+      setLoadingLinked(true);
+      const supabase = createClient();
+      const [inc, mtg] = await Promise.all([
+        supabase.from("incidents").select("id, date, title").eq("term_id", item.id).order("date", { ascending: false }),
+        supabase.from("meetings").select("id, date, content").eq("term_id", item.id).order("date", { ascending: false }),
+      ]);
+      setLinkedIncidents(inc.data ?? []);
+      setLinkedMeetings(mtg.data ?? []);
+      setLoadingLinked(false);
+    }
+  }
+
   return (
     <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
-      <button
-        onClick={() => setExpanded((v) => !v)}
-        className="flex w-full items-center gap-3 px-4 py-3 text-left"
-      >
+      <button onClick={toggle} className="flex w-full items-center gap-3 px-4 py-3 text-left">
         <span className="shrink-0 text-xs font-semibold text-slate-500">{item.year}</span>
         <span className="min-w-0 flex-1 truncate text-sm">
           {item.start_date ? `${item.start_date} ~ ${item.end_date ?? ""}` : "기간 미입력"}
@@ -417,6 +441,42 @@ function TermOccurrenceCard({
           >
             수정
           </button>
+
+          <div className="mt-4 border-t border-slate-100 pt-3">
+            <div className="mb-2 text-xs font-semibold text-slate-500">
+              이 기간에 쌓인 기록 {loadingLinked ? "" : `(사건 ${linkedIncidents?.length ?? 0}건 · 회의 ${linkedMeetings?.length ?? 0}건)`}
+            </div>
+            {loadingLinked && <p className="text-xs text-slate-400">불러오는 중...</p>}
+            {!loadingLinked && (linkedIncidents?.length ?? 0) === 0 && (linkedMeetings?.length ?? 0) === 0 && (
+              <p className="text-xs text-slate-400">
+                아직 이 학기로 분류된 사건·회의 기록이 없습니다(진행중 상태일 때 새로 작성하는 기록부터 자동으로 연결됩니다).
+              </p>
+            )}
+            <div className="flex flex-col gap-1">
+              {linkedIncidents?.map((it) => (
+                <Link
+                  key={`inc-${it.id}`}
+                  href="/records"
+                  className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs hover:bg-slate-50"
+                >
+                  <span className="shrink-0 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600">📋 사건</span>
+                  <span className="min-w-0 flex-1 truncate">{oneLineRecord(it.title)}</span>
+                  <span className="shrink-0 text-[10px] text-slate-400">{it.date}</span>
+                </Link>
+              ))}
+              {linkedMeetings?.map((it) => (
+                <Link
+                  key={`mtg-${it.id}`}
+                  href="/meetings"
+                  className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs hover:bg-slate-50"
+                >
+                  <span className="shrink-0 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600">💬 회의</span>
+                  <span className="min-w-0 flex-1 truncate">{oneLineRecord(it.content)}</span>
+                  <span className="shrink-0 text-[10px] text-slate-400">{it.date}</span>
+                </Link>
+              ))}
+            </div>
+          </div>
         </div>
       )}
     </div>

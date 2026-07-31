@@ -173,6 +173,32 @@ export function buildManualDraftEntryBlock(rawText: string): string {
   return `[담당자가 작성한 초안(원문 - 메모/구어체일 수 있음, 그대로 베끼지 말고 정리할 것)]\n${rawText}`;
 }
 
+export function buildIncidentFillSystemPrompt(): string {
+  return (
+    "당신은 GIA 학교 담당자가 사건 기록의 \"상세 내용(경위)\"란에 두서없이 메모하듯 적은 글을 읽고, " +
+    "나머지 항목을 최대한 채워주는 보조자입니다. 지어내지 말고, 원문에 실제로 드러나거나 합리적으로 " +
+    "추론 가능한 내용만 채우세요. 확실하지 않으면 빈 문자열로 두세요(억지로 채우지 마세요).\n" +
+    "- title: 무슨 사건인지 한 줄로 요약한 제목(15자 내외, 간결하게)\n" +
+    "- date: 원문에 날짜(오늘, 어제, 몇 월 며칠 등)가 언급되어 있으면 오늘 날짜를 기준으로 계산해서 " +
+    "yyyy-MM-dd 형식으로 채우고, 언급이 전혀 없으면 빈 문자열\n" +
+    "- good: 이 사건 대응 중 잘 처리된 점이 원문에 드러나면 정리, 없으면 빈 문자열\n" +
+    "- lack: 아쉬웠던 점/미흡했던 점이 원문에 드러나면 정리, 없으면 빈 문자열\n" +
+    "- suggest: 재발 방지를 위한 보완점/제안이 원문에 드러나면 정리, 없으면 빈 문자열(원문에 없다고 " +
+    "새로 지어내지 마세요 - 이 항목은 사람이 나중에 AI 제안을 통해 별도로 받습니다)\n" +
+    "맞춤법과 띄어쓰기는 교정하되 내용을 왜곡하거나 과장하지 마세요. 학생 개인정보는 그대로 두세요.\n\n" +
+    "아래 JSON 형식으로만 답하세요(다른 텍스트 금지). 줄바꿈은 JSON 문자열 규칙에 맞게 \\n으로 표시하세요:\n" +
+    '{"date":"...", "title":"...", "good":"...", "lack":"...", "suggest":"..."}'
+  );
+}
+
+export function buildIncidentFillEntryBlock(detail: string, todayDate: string, currentTitle?: string): string {
+  return (
+    `[오늘 날짜(기준)] ${todayDate}\n` +
+    (currentTitle ? `[현재 제목] ${currentTitle}\n` : "") +
+    `[상세 내용 원문]\n${detail}`
+  );
+}
+
 export function buildMeetingCleanupSystemPrompt(): string {
   return (
     "당신은 GIA 학교의 회의록을 정리하는 보조자입니다. 담당자가 두서없이 메모하듯 적은 회의 내용을 " +

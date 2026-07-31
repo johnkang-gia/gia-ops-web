@@ -14,6 +14,7 @@ export type Incident = {
   students: string | null;
   manual_cat: string | null;
   status: string | null;
+  term_id: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -29,6 +30,7 @@ export type Meeting = {
   final_record: string | null;
   source_chat: { role: "user" | "assistant"; content: string; at: string }[] | null;
   audio_path: string | null;
+  term_id: string | null;
   created_at: string;
   updated_at: string;
 };

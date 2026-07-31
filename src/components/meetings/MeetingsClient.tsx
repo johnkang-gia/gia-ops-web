@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useRealtimeTable } from "@/lib/useRealtimeTable";
 import { genCaseId } from "@/lib/caseId";
 import { getMeetingAudioUrl } from "@/lib/storage";
-import type { Meeting } from "@/lib/types";
+import type { Meeting, Term } from "@/lib/types";
 import MeetingChatComposer from "./MeetingChatComposer";
 import AiSourcePanel from "@/components/ai/AiSourcePanel";
 
@@ -36,8 +36,10 @@ function oneLine(text: string, maxLen = 40) {
 // 왼쪽(날짜별 목록) · 가운데(채팅 작성창, 항상 표시) · 오른쪽(AI 제안) 3단 레이아웃입니다.
 export default function MeetingsClient({
   initialItems,
+  currentTerm,
 }: {
   initialItems: Meeting[];
+  currentTerm: Term | null;
 }) {
   const [items, setItems] = useRealtimeTable<Meeting>("meetings", initialItems);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
@@ -174,6 +176,7 @@ export default function MeetingsClient({
         {!editingId && (
           <MeetingChatComposer
             key={composerKey}
+            currentTerm={currentTerm}
             onSaved={(meeting) => {
               setItems((prev) => [meeting, ...prev]);
               setComposerKey((k) => k + 1);

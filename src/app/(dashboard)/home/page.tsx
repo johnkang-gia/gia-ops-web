@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import type { Incident, Meeting, EventRecord } from "@/lib/types";
+import { getCurrentTerm } from "@/lib/currentTerm";
+import type { Incident, Meeting, EventRecord, Term } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,7 @@ async function loadHomeData() {
     recentEvents,
     recentMeetings,
     recentIncidentsForPattern,
+    currentTerm,
   ] = await Promise.all([
     supabase.from("incidents").select("id", { count: "exact", head: true }),
     supabase.from("events").select("id", { count: "exact", head: true }),
@@ -50,6 +52,7 @@ async function loadHomeData() {
       .not("manual_cat", "is", null)
       .gte("date", ninetyDaysAgoStr)
       .order("date", { ascending: false }),
+    getCurrentTerm(supabase),
   ]);
 
   // AI 호출 없이 순수 집계만으로 "최근 90일 내 같은 유형 사건 반복" 여부를 찾습니다(비용 0).
@@ -126,6 +129,7 @@ async function loadHomeData() {
     },
     activity,
     recurringPatterns,
+    currentTerm: currentTerm as Term | null,
   };
 }
 
@@ -136,7 +140,7 @@ function oneLine(text: string, maxLen = 42) {
 }
 
 export default async function HomePage() {
-  const { counts, activity, recurringPatterns } = await loadHomeData();
+  const { counts, activity, recurringPatterns, currentTerm } = await loadHomeData();
 
   const recordCards = [
     { label: "📋 사건", value: counts.incidents, href: "/records" },
@@ -153,6 +157,29 @@ export default async function HomePage() {
   return (
     <div className="mx-auto max-w-5xl">
       <h1 className="mb-4 text-lg font-bold">홈</h1>
+
+      <Link
+        href="/terms"
+        className="mb-5 flex items-center gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 shadow-sm hover:border-blue-300"
+      >
+        <span className="text-xl">📅</span>
+        {currentTerm ? (
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-bold text-blue-900">
+              현재 학기: {currentTerm.term_type} ({currentTerm.year})
+            </div>
+            <div className="text-xs text-blue-600">
+              {currentTerm.start_date ? `${currentTerm.start_date} ~ ${currentTerm.end_date ?? "진행중"}` : "기간 미입력"}
+              {" · "}이 기간에 작성되는 사건·회의 기록은 자동으로 이 학기에 누적됩니다
+            </div>
+          </div>
+        ) : (
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-bold text-blue-900">진행 중으로 표시된 학기가 없습니다</div>
+            <div className="text-xs text-blue-600">학기 메뉴에서 현재 학기/캠프를 &quot;진행중&quot;으로 등록해주세요</div>
+          </div>
+        )}
+      </Link>
 
       <div className="mb-2 text-xs font-semibold text-slate-400">기록 현황</div>
       <div className="mb-5 grid grid-cols-3 gap-2 sm:gap-3">

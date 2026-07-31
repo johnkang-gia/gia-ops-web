@@ -80,3 +80,11 @@ export type MeetingChatResult = {
   organizedContent: string;
   readyToSave: boolean;
 };
+
+export type IncidentFillResult = {
+  date: string;
+  title: string;
+  good: string;
+  lack: string;
+  suggest: string;
+};

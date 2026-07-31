@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { uploadMeetingAudio } from "@/lib/storage";
 import { genCaseId } from "@/lib/caseId";
-import type { Meeting } from "@/lib/types";
+import type { Meeting, Term } from "@/lib/types";
 
 type ChatTurn = { role: "user" | "assistant"; content: string };
 type Draft = { date: string; attendees: string; organizedContent: string };
@@ -37,9 +37,11 @@ function formatElapsed(sec: number): string {
 export default function MeetingChatComposer({
   onSaved,
   onCancel,
+  currentTerm,
 }: {
   onSaved: (meeting: Meeting) => void;
   onCancel: () => void;
+  currentTerm?: Term | null;
 }) {
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [input, setInput] = useState("");
@@ -265,6 +267,7 @@ export default function MeetingChatComposer({
         final_record: "",
         source_chat: turns,
         audio_path: audioPath,
+        term_id: currentTerm?.id ?? null,
       })
       .select()
       .single();

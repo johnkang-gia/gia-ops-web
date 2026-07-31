@@ -4,7 +4,7 @@ import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRealtimeTable } from "@/lib/useRealtimeTable";
 import { genCaseId } from "@/lib/caseId";
-import type { Incident } from "@/lib/types";
+import type { Incident, Term } from "@/lib/types";
 import AiSourcePanel from "@/components/ai/AiSourcePanel";
 
 type FormState = {
@@ -20,18 +20,20 @@ type FormState = {
   status: string;
 };
 
-const EMPTY_FORM: FormState = {
-  date: new Date().toISOString().slice(0, 10),
-  title: "",
-  detail: "",
-  good: "",
-  lack: "",
-  suggest: "",
-  owner: "",
-  students: "",
-  manual_cat: "",
-  status: "",
-};
+function emptyForm(ownerDefault: string): FormState {
+  return {
+    date: new Date().toISOString().slice(0, 10),
+    title: "",
+    detail: "",
+    good: "",
+    lack: "",
+    suggest: "",
+    owner: ownerDefault,
+    students: "",
+    manual_cat: "",
+    status: "",
+  };
+}
 
 function oneLine(text: string, maxLen = 40) {
   const t = String(text || "").replace(/\s+/g, " ").trim();
@@ -44,21 +46,55 @@ function oneLine(text: string, maxLen = 40) {
 // 한 화면에서 끝낼 수 있습니다.
 export default function IncidentsClient({
   initialItems,
+  currentTerm,
+  currentUserEmail,
 }: {
   initialItems: Incident[];
+  currentTerm: Term | null;
+  currentUserEmail: string;
 }) {
   const [items, setItems] = useRealtimeTable<Incident>("incidents", initialItems);
-  const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [form, setForm] = useState<FormState>(emptyForm(currentUserEmail));
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [justSavedMsg, setJustSavedMsg] = useState("");
+  const [filling, setFilling] = useState(false);
 
   function startNew() {
     setEditingId(null);
-    setForm(EMPTY_FORM);
+    setForm(emptyForm(currentUserEmail));
     setError("");
     setJustSavedMsg("");
+  }
+
+  async function fillFromDetail() {
+    if (!form.detail.trim()) {
+      setError("먼저 상세 내용(경위)을 입력해주세요.");
+      return;
+    }
+    setFilling(true);
+    setError("");
+    const res = await fetch("/api/ai/fill-incident", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ detail: form.detail, currentTitle: form.title }),
+    });
+    const data = await res.json();
+    setFilling(false);
+    if (!res.ok) {
+      setError(data.error || "자동 채우기에 실패했습니다.");
+      return;
+    }
+    const result = data.result as { date: string; title: string; good: string; lack: string; suggest: string };
+    setForm((f) => ({
+      ...f,
+      date: result.date || f.date,
+      title: result.title || f.title,
+      good: result.good || f.good,
+      lack: result.lack || f.lack,
+      suggest: result.suggest || f.suggest,
+    }));
   }
 
   function startEdit(it: Incident) {
@@ -106,7 +142,7 @@ export default function IncidentsClient({
     } else {
       const { data, error: err } = await supabase
         .from("incidents")
-        .insert({ ...form, case_id: genCaseId("INC") })
+        .insert({ ...form, case_id: genCaseId("INC"), term_id: currentTerm?.id ?? null })
         .select()
         .single();
       if (err) {
@@ -218,8 +254,30 @@ export default function IncidentsClient({
               className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
             />
           </label>
+          <label className="flex flex-col gap-1 text-xs text-slate-500">
+            <div className="flex items-center justify-between">
+              <span>상세 내용(경위) - 두서없이 메모하듯 써도 됩니다</span>
+              <button
+                type="button"
+                onClick={fillFromDetail}
+                disabled={filling || !form.detail.trim()}
+                className="rounded-lg border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+              >
+                {filling ? "채우는 중..." : "🧹 AI로 채우기"}
+              </button>
+            </div>
+            <textarea
+              value={form.detail}
+              onChange={(e) => setForm({ ...form, detail: e.target.value })}
+              rows={3}
+              className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+            />
+          </label>
+          <p className="-mt-2 text-[11px] text-slate-400">
+            위에 상황을 적고 &quot;AI로 채우기&quot;를 누르면 날짜·제목·잘된 점·부족했던 점·보완점을
+            AI가 최대한 자동으로 채워줍니다(원문에 없는 내용은 비워둠 - 확인 후 수정하세요).
+          </p>
           {[
-            ["detail", "상세 내용(경위)"],
             ["good", "잘된 점"],
             ["lack", "부족했던 점"],
             ["suggest", "보완점/제안"],

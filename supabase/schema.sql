@@ -559,3 +559,11 @@ create policy "giamicro_write_meeting_audio" on storage.objects
 drop policy if exists "giamicro_delete_meeting_audio" on storage.objects;
 create policy "giamicro_delete_meeting_audio" on storage.objects
   for delete using (bucket_id = 'meeting-audio' and is_giamicro_user());
+
+-- ===== 23. 사건/회의를 현재 진행중인 학기와 자동 연결(term_id) =====
+-- 담당자가 새 사건/회의를 저장하는 시점에 "진행중" 상태인 학기·캠프가 있으면 그 학기에 자동으로
+-- 묶어서, 학기 화면에서 해당 기간에 쌓인 사건/회의를 목록으로 바로 볼 수 있게 합니다.
+alter table incidents add column if not exists term_id uuid references terms(id) on delete set null;
+alter table meetings add column if not exists term_id uuid references terms(id) on delete set null;
+create index if not exists incidents_term_id_idx on incidents(term_id);
+create index if not exists meetings_term_id_idx on meetings(term_id);

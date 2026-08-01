@@ -1,7 +1,12 @@
 @import "tailwindcss";
 
+/* ===== GIA 브랜드 컬러 ===== =====
+   로고(GIA Micro Lab crest)의 짙은 남색을 기준으로 잡은 팔레트입니다. 예전에는 사이드바/카드가
+   전부 흰색이라 화면 전체가 밋밋하고 가시성이 떨어졌는데, 페이지 배경을 살짝 톤 다운하고
+   사이드바/헤더에 남색을, 강조 요소에 골드를 써서 GIA ops·업무·위클리 리포트 세 화면이
+   하나의 제품처럼 통일된 느낌을 갖도록 했습니다. */
 :root {
-  --background: #ffffff;
+  --background: #eef1f6;
   --foreground: #171717;
 }
 
@@ -10,10 +15,26 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  --color-gia-navy: #0f1b33;
+  --color-gia-navy-2: #172a4d;
+  --color-gia-navy-3: #223a66;
+  --color-gia-navy-light: #33477a;
+  --color-gia-gold: #c6a15b;
+  --color-gia-gold-soft: #efe3c8;
+  --color-gia-bg: #eef1f6;
+  --color-gia-surface: #ffffff;
 }
 
 body {
   font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--color-gia-bg);
+}
+
+/* 사이드바/헤더 등 어두운 남색 배경 위에서 쓰는 공용 유틸 - 여러 페이지(대시보드 셸,
+   로그인/승인대기/온보딩/PIN, 위클리 리포트 교사용 사이드바)에서 재사용합니다. */
+.gia-navy-panel {
+  background: linear-gradient(165deg, var(--color-gia-navy) 0%, var(--color-gia-navy-2) 55%, var(--color-gia-navy-3) 100%);
 }
 
 /* Tailwind 기본 리셋은 <button>의 커서를 화살표(default)로 둡니다.

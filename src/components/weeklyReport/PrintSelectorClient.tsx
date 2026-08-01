@@ -39,7 +39,7 @@ export default function PrintSelectorClient({ students }: { students: WrStudent[
         rel="noreferrer"
         className={
           "inline-block rounded-lg px-4 py-2 text-sm font-semibold text-white " +
-          (selectedId ? "bg-slate-900 hover:bg-slate-700" : "pointer-events-none bg-slate-300")
+          (selectedId ? "bg-gia-navy hover:bg-gia-navy-2" : "pointer-events-none bg-slate-300")
         }
       >
         🖨️ 발행된 리포트 PDF 열기

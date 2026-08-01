@@ -4,6 +4,109 @@
 `version` 값과 항상 일치시킵니다. 업데이트할 때마다 이 파일 맨 위에 새 항목을 추가하고,
 같은 내용을 GitHub Desktop의 커밋 Summary/Description에도 그대로 사용하면 됩니다.
 
+## v0.27.0 - 2026-08-01
+
+디자인 통일 + 업무 탭 고도화 + 위클리 리포트 실데이터 시드 + 통합 SQL 정리:
+
+- **디자인 시스템 도입(GIA 남색+골드).** 로고의 짙은 남색을 기준으로 남색/골드 팔레트를
+  `globals.css`에 정의하고, 페이지 배경을 흰색에서 살짝 톤 다운된 회색빛(`#eef1f6`)으로
+  바꿔서 흰색 카드가 배경과 구분되도록 했습니다 - "다 하얘서 가시성이 떨어진다"는 문제의
+  원인이 흰 카드가 흰 배경 위에 있었기 때문이라, 배경만 바꿔도 앱 전체(GIA ops·업무·위클리
+  리포트 공통 레이아웃)에 카드 구분이 생깁니다
+- **공용 셸(사이드바/헤더)을 남색 테마로 전환.** 대시보드 좌측 사이드바와 모바일 헤더가
+  남색 그라데이션이 되고, 로고는 남색 배경 위에서도 잘 보이도록 흰 칩(chip) 위에 올렸습니다.
+  로그인/온보딩/승인대기/PIN 화면도 같은 남색 배경 + 흰 카드로 톤을 맞춰서, 로그인부터
+  업무·위클리 리포트까지 하나의 제품처럼 보이도록 했습니다
+- **업무 탭을 워크플랫폼(WorkFlatform) 참조 구조에 맞춰 재구성했습니다.**
+  - 칸반 컬럼 순서를 참조 앱과 동일하게 "진행 대기 → 진행 중 → 보류·이슈 → 완료"로
+    바꿨습니다(DB에 저장되는 상태값 자체는 그대로 두고 화면 라벨/순서만 맞춰서 마이그레이션
+    없이 적용됩니다)
+  - **업무 확인(담당자 체크) 기능을 추가했습니다.** 담당자로 태그된 사람이 카드를 열어
+    "나 확인함" 체크를 하면 시각·이름이 기록되고, 카드에는 "확인 2/3" 같은 진행률이 표시됩니다
+  - **실시간 로그 패널을 추가했습니다.** 부서를 선택하면 보드 위쪽에 "OOO님이 업무를
+    '진행 중'으로 변경했습니다" / "OOO님이 업무를 확인했습니다" 같은 최근 활동이 실시간으로
+    쌓입니다(참조 앱처럼 별도 로그 테이블을 새로 만들지 않고, 기존 코멘트 테이블에 시스템
+    이벤트를 함께 기록하는 방식이라 구조가 단순합니다)
+  - 부서별 등록 색상(`departments.color`)을 업무 카드/부서 탭/채팅 `#태그`에 실제로
+    반영해서 부서 구분이 훨씬 선명해졌습니다
+  - dnd-kit·리사이즈 가능한 3단 레이아웃·별도 회의 예약 테이블(meetings)은 이번에 들여오지
+    않았습니다 - 기존 드래그앤드롭은 이미 잘 동작하고, 회의 예약은 이 앱의 기존 "회의기록"
+    기능과 성격이 달라 중복을 피했습니다
+- **업무/사건/행사/제안함/문의 등 앱 전반의 강조 버튼·선택 탭 색상을 슬레이트 계열에서
+  GIA 남색으로 통일**해서 세 앱이 같은 브랜드 색을 쓰도록 정리했습니다
+- **위클리 리포트 실데이터 시드.** 전달해주신 학생/반/과목/학기 더미 데이터를 실제
+  `wr_terms`/`wr_classes`/`wr_students`/`wr_subjects`/`wr_reports` 테이블 구조(uuid 기본키)에
+  맞춰 옮겼습니다: 2026년 가을학기, 1학년A·2학년A 반, 학생 5명(이해린/김민지/팜하니/강해린/
+  다니엘, 학부모 연락처 포함), 수학(1학년)·영어(2학년) 과목, 이해린 담임 리포트 샘플 1건
+  - ⚠️ **원본 데이터의 teacher1/teacher2 계정은 실제 @giamicro.com 이메일이 아니라서 반/과목의
+    담당교사는 비워뒀습니다.** 위클리 리포트 관리 > 반/담임 배정, 과목반 세팅 화면에서 실제
+    선생님 이메일을 배정해주세요. 이 데이터는 원본 문서에도 "초기 테스트용 더미 데이터"라고
+    명시되어 있으니, 실 운영 전에 필요 없는 항목은 같은 관리 화면에서 지우고 실제 데이터로
+    교체하시면 됩니다
+- **레거시 정리.** 홈 화면의 개인용 "할 일" 위젯이 팀 공유 업무 보드로 완전히 대체된 뒤
+  화면 어디에서도 쓰이지 않던 `todos` 테이블을 정리했습니다
+- **통합 SQL 정리.** `supabase/schema.sql`은 이제 31개 섹션이 누적된 하나의 파일이고, 전체를
+  처음부터 끝까지 한 번에 실행해도 안전합니다(있는 테이블/컬럼은 건드리지 않고, 없는 것만
+  만들고, 이번에 불필요해진 `todos`는 제거). 아래 채팅 메시지에 전체 파일을 통째로 붙여
+  드렸으니, Supabase SQL Editor에 한 번만 붙여넣고 실행하시면 됩니다
+
+이번 버전은 새 테이블 대신 기존 테이블에 컬럼만 추가하는 방식이라, 아래 SQL만 따로 실행해도
+되고, 맨 아래 채팅에 첨부한 전체 통합 SQL을 실행해도 결과는 동일합니다:
+
+```sql
+-- ===== 31. 업무 확인(acknowledged_by) + 실시간 로그 =====
+alter table tasks add column if not exists acknowledged_by jsonb not null default '[]'::jsonb;
+alter table task_comments add column if not exists department text;
+alter table task_comments add column if not exists is_system boolean not null default false;
+
+update task_comments tc
+set department = t.department
+from tasks t
+where tc.task_id = t.id and tc.department is null and t.department is not null;
+
+create index if not exists task_comments_department_idx on task_comments(department, created_at);
+
+-- ===== 32. 위클리 리포트 초기 데이터 시드 =====
+insert into wr_terms (id, name, start_date, end_date, is_active) values
+  (md5('wr-term-2026-fall')::uuid, '2026년 가을학기', '2026-09-01', '2026-12-31', true)
+on conflict (id) do nothing;
+
+insert into wr_classes (id, grade, class_name, teacher_email) values
+  (md5('wr-class-1a')::uuid, '1', 'A', null),
+  (md5('wr-class-2a')::uuid, '2', 'A', null)
+on conflict (id) do nothing;
+
+insert into wr_students (id, name, grade, class_name, parent_phone, status) values
+  (md5('wr-student-1a-01')::uuid, '이해린', '1', 'A', '010-1111-2222', 'active'),
+  (md5('wr-student-1a-02')::uuid, '김민지', '1', 'A', '010-2222-3333', 'active'),
+  (md5('wr-student-1a-03')::uuid, '팜하니', '1', 'A', '010-3333-4444', 'active'),
+  (md5('wr-student-2a-01')::uuid, '강해린', '2', 'A', '010-5555-6666', 'active'),
+  (md5('wr-student-2a-02')::uuid, '다니엘', '2', 'A', '010-7777-8888', 'active')
+on conflict (id) do nothing;
+
+insert into wr_subjects (id, name, teacher_email, class_id, color, student_ids) values
+  (md5('wr-subject-math-1')::uuid, '수학 (1학년)', null, md5('wr-class-1a')::uuid, '#4F46E5',
+    array[md5('wr-student-1a-01')::uuid, md5('wr-student-1a-02')::uuid, md5('wr-student-1a-03')::uuid]),
+  (md5('wr-subject-eng-2')::uuid, '영어 (2학년)', null, md5('wr-class-2a')::uuid, '#10B981',
+    array[md5('wr-student-2a-01')::uuid, md5('wr-student-2a-02')::uuid])
+on conflict (id) do nothing;
+
+insert into wr_reports (id, student_id, term_id, subject, academic, improvement, participation, behavior, social, teacher_note, eval_badges, status, report_date) values
+  (md5('wr-report-sample-1')::uuid, md5('wr-student-1a-01')::uuid, md5('wr-term-2026-fall')::uuid, '담임',
+   '수학 연산 속도가 매우 빠릅니다.',
+   '서술형 문제 풀이 시 식을 적는 연습이 필요합니다.',
+   '수업 시간에 항상 집중하며 발표를 잘합니다.',
+   '친구들과 배려하며 잘 어울립니다.',
+   '리더십이 뛰어납니다.',
+   '전반적으로 매우 우수한 성취도를 보이고 있습니다.',
+   '{"academic": ["excellent"], "behavior": ["good", "excellent"], "social": ["excellent"]}'::jsonb,
+   'published', '2026-08-01')
+on conflict (id) do nothing;
+
+-- ===== 33. 레거시 정리: todos 테이블 제거 =====
+drop table if exists todos cascade;
+```
+
 ## v0.26.0 - 2026-08-01
 
 GIA 통합 플랫폼 3번째 통합: "위클리 리포트"(학생 주간 평가 리포트) 병합 + 교사 전용 접근 분리:

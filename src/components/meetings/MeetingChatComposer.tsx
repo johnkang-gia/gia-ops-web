@@ -327,7 +327,7 @@ export default function MeetingChatComposer({
               className={
                 "max-w-[85%] whitespace-pre-wrap rounded-lg px-3 py-2 text-sm " +
                 (t.role === "user"
-                  ? "self-end bg-slate-900 text-white"
+                  ? "self-end bg-gia-navy text-white"
                   : "self-start bg-white text-slate-700 shadow-sm")
               }
             >
@@ -362,7 +362,7 @@ export default function MeetingChatComposer({
             type="button"
             onClick={() => sendMessage(input)}
             disabled={sending || !input.trim()}
-            className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+            className="rounded-lg bg-gia-navy px-3 py-1.5 text-xs font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50"
           >
             전송
           </button>
@@ -427,7 +427,7 @@ export default function MeetingChatComposer({
           type="button"
           onClick={handleSave}
           disabled={saving || liveRecording || !draft.organizedContent.trim()}
-          className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+          className="rounded-lg bg-gia-navy px-4 py-2 text-sm font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50"
         >
           {saving ? "저장 중..." : liveRecording ? "회의를 먼저 종료하세요" : "회의록으로 저장"}
         </button>

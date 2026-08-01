@@ -110,7 +110,7 @@ export default function AdminUsersClient({ initialUsers }: { initialUsers: AppUs
                   <button
                     onClick={() => updateStatus(u.email, "approved")}
                     disabled={busyEmail === u.email}
-                    className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+                    className="rounded-lg bg-gia-navy px-3 py-1.5 text-xs font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50"
                   >
                     승인
                   </button>
@@ -144,7 +144,7 @@ export default function AdminUsersClient({ initialUsers }: { initialUsers: AppUs
                   <div className="text-sm font-semibold">
                     {u.name || u.email}
                     {(developer || u.position) && (
-                      <span className="ml-2 rounded bg-slate-900 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                      <span className="ml-2 rounded bg-gia-navy px-1.5 py-0.5 text-[10px] font-bold text-white">
                         {developer ? "개발자" : u.position}
                       </span>
                     )}
@@ -189,7 +189,7 @@ export default function AdminUsersClient({ initialUsers }: { initialUsers: AppUs
                 <button
                   onClick={() => updateStatus(u.email, "approved")}
                   disabled={busyEmail === u.email}
-                  className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+                  className="rounded-lg bg-gia-navy px-3 py-1.5 text-xs font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50"
                 >
                   다시 승인
                 </button>

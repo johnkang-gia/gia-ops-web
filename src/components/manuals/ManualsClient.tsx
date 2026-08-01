@@ -259,7 +259,7 @@ export default function ManualsClient({ initialItems }: { initialItems: ManualSe
               href={`/api/manuals/pdf?doc=${encodeURIComponent(activeDoc)}`}
               target="_blank"
               rel="noreferrer"
-              className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700"
+              className="rounded-lg bg-gia-navy px-3 py-1.5 text-xs font-semibold text-white hover:bg-gia-navy-2"
             >
               🖨️ PDF로 보기/다운로드
             </a>
@@ -285,7 +285,7 @@ export default function ManualsClient({ initialItems }: { initialItems: ManualSe
               <button
                 onClick={saveFaqToManual}
                 disabled={faqSaving}
-                className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+                className="rounded-lg bg-gia-navy px-3 py-1.5 text-xs font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50"
               >
                 {faqSaving ? "반영 중..." : "매뉴얼에 반영"}
               </button>
@@ -324,7 +324,7 @@ export default function ManualsClient({ initialItems }: { initialItems: ManualSe
               <button
                 onClick={() => createSection(activeDoc)}
                 disabled={adding}
-                className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+                className="rounded-lg bg-gia-navy px-3 py-1.5 text-xs font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50"
               >
                 {adding ? "추가 중..." : "추가"}
               </button>
@@ -373,7 +373,7 @@ export default function ManualsClient({ initialItems }: { initialItems: ManualSe
                       <button
                         onClick={() => saveEdit(s.id)}
                         disabled={busy}
-                        className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+                        className="rounded-lg bg-gia-navy px-3 py-1.5 text-xs font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50"
                       >
                         {busy ? "저장 중..." : "저장"}
                       </button>

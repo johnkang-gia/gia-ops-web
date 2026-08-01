@@ -193,7 +193,7 @@ export default function AdoptedClient({ initialItems }: { initialItems: Adopted[
                     <button
                       onClick={() => publish(it.id)}
                       disabled={busy}
-                      className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+                      className="rounded-lg bg-gia-navy px-3 py-1.5 text-xs font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50"
                     >
                       발행
                     </button>

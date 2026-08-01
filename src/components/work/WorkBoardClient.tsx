@@ -11,14 +11,8 @@ import TaskCard from "./TaskCard";
 import TaskDetailPanel from "./TaskDetailPanel";
 import ChatPanel from "./ChatPanel";
 import CompletionGauge from "./CompletionGauge";
-
-const STATUS_ORDER: TaskStatus[] = ["예정", "진행중", "완료", "보류"];
-const STATUS_STYLE: Record<TaskStatus, { header: string; drop: string }> = {
-  예정: { header: "text-slate-600", drop: "bg-slate-100/70" },
-  진행중: { header: "text-blue-600", drop: "bg-blue-100/70" },
-  완료: { header: "text-emerald-600", drop: "bg-emerald-100/70" },
-  보류: { header: "text-amber-600", drop: "bg-amber-100/70" },
-};
+import ActivityLog from "./ActivityLog";
+import { STATUS_ORDER, STATUS_LABEL, STATUS_STYLE } from "./statusConfig";
 
 export default function WorkBoardClient({
   initialTasks,
@@ -51,6 +45,12 @@ export default function WorkBoardClient({
     const fromTasks = tasks.map((t) => t.department).filter((d): d is string => !!d);
     return [...new Set([...fromTable, ...fromTasks])];
   }, [departments, tasks]);
+
+  const deptColorMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const d of departments) if (d.color) map.set(d.name, d.color);
+    return map;
+  }, [departments]);
 
   const scopedTasks = deptFilter === "전체" ? tasks : tasks.filter((t) => t.department === deptFilter);
 
@@ -109,6 +109,13 @@ export default function WorkBoardClient({
     setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, status, position } : t)));
     const supabase = createClient();
     await supabase.from("tasks").update({ status, position }).eq("id", taskId);
+    await supabase.from("task_comments").insert({
+      task_id: taskId,
+      author_email: userEmail,
+      content: `${nameFor(team, userEmail)}님이 업무를 '${STATUS_LABEL[status]}'(으)로 변경했습니다.`,
+      department: task.department,
+      is_system: true,
+    });
   }
 
   function toggleAssignee(email: string) {
@@ -116,39 +123,51 @@ export default function WorkBoardClient({
   }
 
   return (
-    <div className="relative rounded-3xl bg-gradient-to-br from-sky-50 via-white to-violet-50 p-3 sm:p-5">
+    <div className="relative rounded-3xl bg-gradient-to-br from-gia-navy/5 via-white to-gia-gold-soft/20 p-3 sm:p-5">
       <datalist id="dept-options">
         {allDepartmentNames.map((d) => (
           <option key={d} value={d} />
         ))}
       </datalist>
 
-      <div className="mb-4 flex flex-wrap items-center gap-1.5 rounded-xl border border-white/60 bg-white/50 px-3 py-2 text-xs text-slate-500 shadow-sm backdrop-blur-md">
+      <div className="mb-4 flex flex-wrap items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-500 shadow-sm">
         <span className="font-semibold text-slate-600">🟢 지금 접속 중:</span>
         {online.length === 0 && <span>없음</span>}
         {online.map((email) => (
-          <span key={email} className="rounded-full bg-white/80 px-2 py-0.5 shadow-sm">
+          <span key={email} className="rounded-full bg-slate-100 px-2 py-0.5">
             {email === userEmail ? "나" : nameFor(team, email)}
           </span>
         ))}
       </div>
 
       <div className="mb-3 flex flex-wrap items-center gap-1.5">
-        {["전체", ...allDepartmentNames].map((d) => (
-          <button
-            key={d}
-            onClick={() => setDeptFilter(d)}
-            className={
-              "rounded-full border px-3 py-1 text-xs font-semibold backdrop-blur transition " +
-              (d === deptFilter
-                ? "border-slate-900/80 bg-slate-900/90 text-white"
-                : "border-white/70 bg-white/50 text-slate-600 hover:bg-white/80")
-            }
-          >
-            {d}
-          </button>
-        ))}
+        {["전체", ...allDepartmentNames].map((d) => {
+          const color = deptColorMap.get(d);
+          const active = d === deptFilter;
+          return (
+            <button
+              key={d}
+              onClick={() => setDeptFilter(d)}
+              style={active && color ? { backgroundColor: color, borderColor: color } : undefined}
+              className={
+                "flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold transition " +
+                (active
+                  ? color
+                    ? "text-white"
+                    : "border-gia-navy bg-gia-navy text-white"
+                  : "border-slate-200 bg-white text-slate-600 hover:border-slate-300")
+              }
+            >
+              {!active && color && (
+                <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: color }} />
+              )}
+              {d}
+            </button>
+          );
+        })}
       </div>
+
+      <ActivityLog department={deptFilter} />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_300px]">
         <div className="min-w-0">
@@ -160,26 +179,26 @@ export default function WorkBoardClient({
 
           <form
             onSubmit={addTask}
-            className="mb-5 flex flex-col gap-2 rounded-2xl border border-white/70 bg-white/60 p-3 shadow-lg shadow-slate-200/40 backdrop-blur-md"
+            className="mb-5 flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"
           >
             <div className="flex flex-wrap gap-2">
               <input
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="새 업무 등록 (예: 학부모 안내문 발송)"
-                className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white/80 px-3 py-2 text-sm"
+                className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
               />
               <input
                 list="dept-options"
                 value={department}
                 onChange={(e) => setDepartment(e.target.value)}
                 placeholder="부서(선택)"
-                className="w-28 rounded-lg border border-slate-300 bg-white/80 px-2 py-2 text-xs"
+                className="w-28 rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs"
               />
               <select
                 value={priority}
                 onChange={(e) => setPriority(e.target.value as "보통" | "긴급")}
-                className="rounded-lg border border-slate-300 bg-white/80 px-2 py-2 text-xs"
+                className="rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs"
               >
                 <option value="보통">보통</option>
                 <option value="긴급">🔴 긴급</option>
@@ -187,7 +206,7 @@ export default function WorkBoardClient({
               <button
                 type="submit"
                 disabled={saving || !title.trim()}
-                className="shrink-0 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+                className="shrink-0 rounded-lg bg-gia-navy px-4 py-2 text-sm font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50"
               >
                 등록
               </button>
@@ -204,8 +223,8 @@ export default function WorkBoardClient({
                     className={
                       "rounded-full border px-2 py-0.5 text-[11px] transition " +
                       (active
-                        ? "border-blue-500 bg-blue-500 text-white"
-                        : "border-slate-200 bg-white/70 text-slate-500 hover:border-slate-300")
+                        ? "border-gia-navy bg-gia-navy text-white"
+                        : "border-slate-200 bg-white text-slate-500 hover:border-slate-300")
                     }
                   >
                     {online.includes(member.email) && <span className="mr-0.5">🟢</span>}
@@ -239,12 +258,12 @@ export default function WorkBoardClient({
                   setDragOverStatus(null);
                 }}
                 className={
-                  "flex min-h-[200px] flex-col gap-2 rounded-2xl border border-white/60 p-2 shadow-sm backdrop-blur-md transition " +
-                  (dragOverStatus === status ? "border-blue-300 " + STATUS_STYLE[status].drop : "bg-white/40")
+                  "flex min-h-[200px] flex-col gap-2 rounded-2xl border p-2 shadow-sm transition " +
+                  (dragOverStatus === status ? "border-gia-navy-light " + STATUS_STYLE[status].drop : "border-slate-200 bg-white")
                 }
               >
                 <div className={"flex items-center justify-between px-1 text-xs font-bold " + STATUS_STYLE[status].header}>
-                  <span>{status}</span>
+                  <span>{STATUS_LABEL[status]}</span>
                   <span className="text-slate-300">{grouped[status].length}</span>
                 </div>
                 {grouped[status].map((task) => (
@@ -252,6 +271,7 @@ export default function WorkBoardClient({
                     key={task.id}
                     task={task}
                     team={team}
+                    deptColor={task.department ? deptColorMap.get(task.department) : null}
                     onOpen={() => setSelectedId(task.id)}
                     onDragStartTask={(e, id) => e.dataTransfer.setData("text/plain", id)}
                     onStatusChange={(s) => changeStatus(task.id, s)}
@@ -275,7 +295,7 @@ export default function WorkBoardClient({
               onTaskCreated={addTaskRow}
             />
           ) : (
-            <div className="flex h-[200px] items-center justify-center rounded-2xl border border-white/70 bg-white/50 p-4 text-center text-xs text-slate-400 shadow-sm backdrop-blur-md">
+            <div className="flex h-[200px] items-center justify-center rounded-2xl border border-slate-200 bg-white p-4 text-center text-xs text-slate-400 shadow-sm">
               부서 탭을 선택하면
               <br />
               실시간 채팅을 볼 수 있어요

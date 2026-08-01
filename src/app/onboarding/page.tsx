@@ -33,8 +33,8 @@ export default async function OnboardingPage() {
   }
 
   return (
-    <main className="flex flex-1 items-center justify-center px-4 py-10">
-      <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
+    <main className="gia-navy-panel flex flex-1 items-center justify-center px-4 py-10">
+      <div className="w-full max-w-sm rounded-2xl bg-white p-8 shadow-2xl">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/logo-login.png" alt="GIA Micro Lab" className="mx-auto mb-4 h-20 w-auto" />
         <h1 className="mb-1 text-center text-lg font-bold">처음 오셨네요</h1>

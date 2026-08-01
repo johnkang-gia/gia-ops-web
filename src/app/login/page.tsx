@@ -24,7 +24,7 @@ function LoginForm() {
   }
 
   return (
-    <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-8 shadow-sm text-center">
+    <div className="w-full max-w-sm rounded-2xl bg-white p-8 shadow-2xl text-center">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src="/logo-login.png" alt="GIA Micro Lab" className="mx-auto mb-4 h-24 w-auto" />
       <p className="text-sm text-slate-500 mb-6">
@@ -41,7 +41,7 @@ function LoginForm() {
       <button
         onClick={handleGoogleLogin}
         disabled={loading}
-        className="w-full rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+        className="w-full rounded-lg bg-gia-navy px-4 py-2.5 text-sm font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50"
       >
         {loading ? "이동 중..." : "Google 계정으로 로그인"}
       </button>
@@ -51,7 +51,7 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <main className="flex flex-1 items-center justify-center px-4">
+    <main className="gia-navy-panel flex flex-1 items-center justify-center px-4">
       <Suspense fallback={null}>
         <LoginForm />
       </Suspense>

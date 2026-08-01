@@ -303,7 +303,7 @@ export default function AiSourcePanel({
                       <button
                         onClick={() => decideProposal(it.id, "승인")}
                         disabled={busy}
-                        className="rounded-lg bg-slate-900 px-2 py-1 text-[11px] font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+                        className="rounded-lg bg-gia-navy px-2 py-1 text-[11px] font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50"
                       >
                         승인
                       </button>
@@ -394,7 +394,7 @@ export default function AiSourcePanel({
                       <button
                         onClick={() => publishAdopted(it.id)}
                         disabled={busy}
-                        className="rounded-lg bg-slate-900 px-2 py-1 text-[11px] font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+                        className="rounded-lg bg-gia-navy px-2 py-1 text-[11px] font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50"
                       >
                         발행
                       </button>

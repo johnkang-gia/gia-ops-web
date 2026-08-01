@@ -150,7 +150,7 @@ export default function ProposalsClient({ initialItems }: { initialItems: Propos
               key={type}
               onClick={() => runScan(type)}
               disabled={scanBusy !== null}
-              className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+              className="rounded-lg bg-gia-navy px-3 py-1.5 text-sm font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50"
             >
               {scanBusy === type ? "분석 중..." : `${SOURCE_LABEL[type]} 분석하기`}
             </button>
@@ -167,7 +167,7 @@ export default function ProposalsClient({ initialItems }: { initialItems: Propos
             className={
               "shrink-0 border-b-2 px-3 py-2 text-sm font-semibold transition " +
               (tab === t.key
-                ? "border-slate-900 text-slate-900"
+                ? "border-gia-navy text-gia-navy"
                 : "border-transparent text-slate-400 hover:text-slate-600")
             }
           >
@@ -247,7 +247,7 @@ export default function ProposalsClient({ initialItems }: { initialItems: Propos
                     <button
                       onClick={() => decide(it.id, "승인")}
                       disabled={busy}
-                      className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+                      className="rounded-lg bg-gia-navy px-3 py-1.5 text-xs font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50"
                     >
                       승인
                     </button>

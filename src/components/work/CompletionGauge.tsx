@@ -7,7 +7,7 @@ export default function CompletionGauge({ percent, label }: { percent: number; l
   const offset = c - (clamped / 100) * c;
 
   return (
-    <div className="flex items-center gap-3 rounded-2xl border border-white/70 bg-white/60 px-4 py-3 shadow-sm backdrop-blur-md">
+    <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
       <svg width="60" height="60" viewBox="0 0 60 60">
         <circle cx="30" cy="30" r={r} fill="none" stroke="#e2e8f0" strokeWidth="6" />
         <circle
@@ -15,7 +15,7 @@ export default function CompletionGauge({ percent, label }: { percent: number; l
           cy="30"
           r={r}
           fill="none"
-          stroke="#3b82f6"
+          stroke="#c6a15b"
           strokeWidth="6"
           strokeDasharray={c}
           strokeDashoffset={offset}

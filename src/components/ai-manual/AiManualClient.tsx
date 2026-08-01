@@ -94,7 +94,7 @@ export default function AiManualClient({ initialItems }: { initialItems: ManualD
           <button
             type="submit"
             disabled={submitting || !rawText.trim()}
-            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+            className="rounded-lg bg-gia-navy px-4 py-2 text-sm font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50"
           >
             {submitting ? "AI가 정리하는 중..." : "AI로 제안 만들기"}
           </button>

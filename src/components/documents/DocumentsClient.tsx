@@ -205,7 +205,7 @@ export default function DocumentsClient({ initialItems }: { initialItems: School
         <button
           onClick={requestRecommend}
           disabled={recommending}
-          className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+          className="rounded-lg bg-gia-navy px-3 py-1.5 text-sm font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50"
         >
           {recommending ? "AI가 찾는 중..." : "✨ AI 서류 추천받기"}
         </button>
@@ -248,7 +248,7 @@ export default function DocumentsClient({ initialItems }: { initialItems: School
           <button
             type="submit"
             disabled={saving}
-            className="self-start rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+            className="self-start rounded-lg bg-gia-navy px-4 py-2 text-sm font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50"
           >
             {saving ? "저장 중..." : "추가"}
           </button>

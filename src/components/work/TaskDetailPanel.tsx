@@ -4,8 +4,7 @@ import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Task, TaskComment, TaskStatus, TeamMember } from "@/lib/types";
 import { nameFor } from "@/lib/teamName";
-
-const STATUS_ORDER: TaskStatus[] = ["예정", "진행중", "완료", "보류"];
+import { STATUS_ORDER, STATUS_LABEL } from "./statusConfig";
 
 function timeAgo(iso: string) {
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -57,7 +56,11 @@ export default function TaskDetailPanel({
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "task_comments", filter: `task_id=eq.${task.id}` },
         (payload) => {
-          setComments((prev) => [...prev, payload.new as TaskComment]);
+          setComments((prev) => {
+            const next = payload.new as TaskComment;
+            if (prev.some((c) => c.id === next.id)) return prev;
+            return [...prev, next];
+          });
         }
       )
       .subscribe();
@@ -74,9 +77,39 @@ export default function TaskDetailPanel({
     await supabase.from("tasks").update(fields).eq("id", task.id);
   }
 
+  // 상태 변경/업무 확인 시 "실시간 로그"에 뜰 시스템 코멘트를 자동으로 남깁니다(GIA WorkFlatform
+  // 참조 구조의 활동 로그 기능 - 별도 로그 테이블 없이 기존 task_comments를 재사용합니다).
+  async function logSystemEvent(content: string) {
+    const supabase = createClient();
+    await supabase.from("task_comments").insert({
+      task_id: task.id,
+      author_email: currentUserEmail,
+      content,
+      department: task.department,
+      is_system: true,
+    });
+  }
+
   function toggleAssignee(email: string) {
     const has = task.assignee_emails.includes(email);
     patch({ assignee_emails: has ? task.assignee_emails.filter((e) => e !== email) : [...task.assignee_emails, email] });
+  }
+
+  async function changeStatus(status: TaskStatus) {
+    if (status === task.status) return;
+    await patch({ status });
+    await logSystemEvent(`${nameFor(team, currentUserEmail)}님이 업무를 '${STATUS_LABEL[status]}'(으)로 변경했습니다.`);
+  }
+
+  async function toggleAck() {
+    const already = task.acknowledged_by?.some((a) => a.email === currentUserEmail);
+    const nextAck = already
+      ? task.acknowledged_by.filter((a) => a.email !== currentUserEmail)
+      : [...(task.acknowledged_by ?? []), { email: currentUserEmail, time: new Date().toISOString() }];
+    await patch({ acknowledged_by: nextAck });
+    if (!already) {
+      await logSystemEvent(`${nameFor(team, currentUserEmail)}님이 업무를 확인했습니다.`);
+    }
   }
 
   async function saveDue() {
@@ -89,7 +122,9 @@ export default function TaskDetailPanel({
     const supabase = createClient();
     const text = commentText.trim();
     setCommentText("");
-    await supabase.from("task_comments").insert({ task_id: task.id, author_email: currentUserEmail, content: text });
+    await supabase
+      .from("task_comments")
+      .insert({ task_id: task.id, author_email: currentUserEmail, content: text, department: task.department });
   }
 
   async function remove() {
@@ -99,6 +134,9 @@ export default function TaskDetailPanel({
     onDeleted(task.id);
     onClose();
   }
+
+  const myAck = task.acknowledged_by?.some((a) => a.email === currentUserEmail);
+  const iAmAssignee = task.assignee_emails.includes(currentUserEmail);
 
   return (
     <div
@@ -124,12 +162,12 @@ export default function TaskDetailPanel({
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <select
             value={task.status}
-            onChange={(e) => patch({ status: e.target.value as TaskStatus })}
+            onChange={(e) => changeStatus(e.target.value as TaskStatus)}
             className="rounded-lg border border-slate-300 px-2 py-1 text-xs"
           >
             {STATUS_ORDER.map((s) => (
               <option key={s} value={s}>
-                {s}
+                {STATUS_LABEL[s]}
               </option>
             ))}
           </select>
@@ -170,7 +208,7 @@ export default function TaskDetailPanel({
                   className={
                     "rounded-full border px-2 py-1 text-[11px] font-medium transition " +
                     (active
-                      ? "border-blue-500 bg-blue-500 text-white"
+                      ? "border-gia-navy bg-gia-navy text-white"
                       : "border-slate-200 text-slate-500 hover:border-slate-300")
                   }
                 >
@@ -182,21 +220,56 @@ export default function TaskDetailPanel({
           </div>
         </div>
 
+        {task.assignee_emails.length > 0 && (
+          <div className="mb-3 rounded-lg border border-gia-gold-soft/60 bg-gia-gold-soft/10 p-2.5">
+            <div className="mb-1.5 flex items-center justify-between">
+              <span className="text-xs font-semibold text-gia-navy">
+                ✅ 업무 확인 ({task.acknowledged_by?.length ?? 0}/{task.assignee_emails.length})
+              </span>
+              {iAmAssignee && (
+                <label className="flex items-center gap-1 text-[11px] font-medium text-gia-navy">
+                  <input type="checkbox" checked={!!myAck} onChange={toggleAck} />
+                  나 확인함
+                </label>
+              )}
+            </div>
+            <div className="flex flex-col gap-1">
+              {task.assignee_emails.map((email) => {
+                const ack = task.acknowledged_by?.find((a) => a.email === email);
+                return (
+                  <div key={email} className="flex items-center justify-between text-[11px]">
+                    <span className={ack ? "text-slate-700" : "text-slate-400"}>
+                      {ack ? "✅" : "⬜"} {nameFor(team, email)}
+                    </span>
+                    {ack && <span className="text-slate-400">{timeAgo(ack.time)}</span>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         <div className="mb-2 text-xs font-semibold text-slate-400">
           💬 코멘트 ({comments.length})
         </div>
         <div className="mb-2 flex-1 overflow-y-auto rounded-lg bg-slate-50 p-2">
           {comments.length === 0 && <p className="text-xs text-slate-300">아직 코멘트가 없습니다.</p>}
           <div className="flex flex-col gap-2">
-            {comments.map((c) => (
-              <div key={c.id} className="rounded-lg bg-white p-2 text-xs shadow-sm">
-                <div className="mb-0.5 flex items-center justify-between">
-                  <span className="font-semibold text-slate-600">{nameFor(team, c.author_email)}</span>
-                  <span className="text-[10px] text-slate-300">{timeAgo(c.created_at)}</span>
+            {comments.map((c) =>
+              c.is_system ? (
+                <div key={c.id} className="px-1 text-[11px] italic text-slate-400">
+                  🔔 {c.content} · {timeAgo(c.created_at)}
                 </div>
-                <p className="whitespace-pre-wrap text-slate-700">{c.content}</p>
-              </div>
-            ))}
+              ) : (
+                <div key={c.id} className="rounded-lg bg-white p-2 text-xs shadow-sm">
+                  <div className="mb-0.5 flex items-center justify-between">
+                    <span className="font-semibold text-slate-600">{nameFor(team, c.author_email)}</span>
+                    <span className="text-[10px] text-slate-300">{timeAgo(c.created_at)}</span>
+                  </div>
+                  <p className="whitespace-pre-wrap text-slate-700">{c.content}</p>
+                </div>
+              )
+            )}
           </div>
         </div>
 
@@ -210,7 +283,7 @@ export default function TaskDetailPanel({
           <button
             type="submit"
             disabled={!commentText.trim()}
-            className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+            className="rounded-lg bg-gia-navy px-3 py-1.5 text-xs font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50"
           >
             등록
           </button>

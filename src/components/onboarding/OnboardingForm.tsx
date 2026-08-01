@@ -86,7 +86,7 @@ export default function OnboardingForm({
               className={
                 "rounded-full border px-3 py-1.5 text-xs font-semibold transition " +
                 (department === d
-                  ? "border-slate-900 bg-slate-900 text-white"
+                  ? "border-gia-navy bg-gia-navy text-white"
                   : "border-slate-200 bg-white text-slate-500 hover:border-slate-300")
               }
             >
@@ -107,7 +107,7 @@ export default function OnboardingForm({
               className={
                 "rounded-full border px-3 py-1.5 text-xs font-semibold transition " +
                 (position === p
-                  ? "border-slate-900 bg-slate-900 text-white"
+                  ? "border-gia-navy bg-gia-navy text-white"
                   : "border-slate-200 bg-white text-slate-500 hover:border-slate-300")
               }
             >
@@ -126,7 +126,7 @@ export default function OnboardingForm({
       <button
         type="submit"
         disabled={submitting}
-        className="mt-1 w-full rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+        className="mt-1 w-full rounded-lg bg-gia-navy px-4 py-2.5 text-sm font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50"
       >
         {submitting ? "저장 중..." : "저장하고 계속하기"}
       </button>

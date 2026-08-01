@@ -1034,3 +1034,74 @@ begin
     alter publication supabase_realtime add table wr_comments;
   end if;
 end $$;
+
+-- ===== 31. 업무 확인(acknowledged_by) + 실시간 로그 - GIA WorkFlatform 참조 구조 통합 3단계 =====
+-- 참조 소스코드(WorkFlatform)의 task_assignees(담당자별 확인 여부)와 별도 활동 로그 테이블을
+-- 그대로 들여오는 대신, 이 프로젝트의 기존 관례(부모 테이블에 jsonb 컬럼 하나 추가)를 따라
+-- tasks.acknowledged_by 컬럼 하나로 "담당자가 업무를 확인했다"를 기록합니다. 활동 로그도 새
+-- 테이블을 만들지 않고, 기존 task_comments에 department/is_system 컬럼만 추가해서 상태변경·
+-- 업무확인 이벤트를 "시스템 코멘트"로 남기고, 화면에서는 is_system=true인 것만 모아
+-- "실시간 로그" 패널로 보여줍니다.
+alter table tasks add column if not exists acknowledged_by jsonb not null default '[]'::jsonb;
+
+alter table task_comments add column if not exists department text;
+alter table task_comments add column if not exists is_system boolean not null default false;
+
+-- 이미 task_comments에 데이터가 쌓여있는 환경을 위해, 소속 업무(tasks)의 department를
+-- 한 번 백필해둡니다(이후로는 코멘트 등록 시점에 항상 department를 함께 저장합니다).
+update task_comments tc
+set department = t.department
+from tasks t
+where tc.task_id = t.id and tc.department is null and t.department is not null;
+
+create index if not exists task_comments_department_idx on task_comments(department, created_at);
+
+-- ===== 32. 위클리 리포트 초기 데이터 시드 (테스트/더미 데이터) =====
+-- 업로드된 weekly_report_supabase_seed.md의 더미 데이터를 실제 wr_* 테이블(uuid 기본키) 구조에
+-- 맞춰 옮긴 것입니다. md5('고유문자열')::uuid 트릭으로 여러 insert 문이 서로를 안정적으로
+-- 참조할 수 있는 고정 uuid를 만들었습니다(같은 문자열이면 항상 같은 uuid가 나와서, 이 스크립트를
+-- 여러 번 실행해도 on conflict do nothing으로 안전하게 무시됩니다).
+-- 주의: 원본 시드의 teacher1/teacher2 계정은 실제 @giamicro.com 이메일이 아니라서 teacher_email을
+-- 비워뒀습니다. 관리자 화면(위클리 리포트 관리 > 반/담임 배정, 과목반 세팅)에서 실제 선생님
+-- 이메일을 배정해주세요.
+insert into wr_terms (id, name, start_date, end_date, is_active) values
+  (md5('wr-term-2026-fall')::uuid, '2026년 가을학기', '2026-09-01', '2026-12-31', true)
+on conflict (id) do nothing;
+
+insert into wr_classes (id, grade, class_name, teacher_email) values
+  (md5('wr-class-1a')::uuid, '1', 'A', null),
+  (md5('wr-class-2a')::uuid, '2', 'A', null)
+on conflict (id) do nothing;
+
+insert into wr_students (id, name, grade, class_name, parent_phone, status) values
+  (md5('wr-student-1a-01')::uuid, '이해린', '1', 'A', '010-1111-2222', 'active'),
+  (md5('wr-student-1a-02')::uuid, '김민지', '1', 'A', '010-2222-3333', 'active'),
+  (md5('wr-student-1a-03')::uuid, '팜하니', '1', 'A', '010-3333-4444', 'active'),
+  (md5('wr-student-2a-01')::uuid, '강해린', '2', 'A', '010-5555-6666', 'active'),
+  (md5('wr-student-2a-02')::uuid, '다니엘', '2', 'A', '010-7777-8888', 'active')
+on conflict (id) do nothing;
+
+insert into wr_subjects (id, name, teacher_email, class_id, color, student_ids) values
+  (md5('wr-subject-math-1')::uuid, '수학 (1학년)', null, md5('wr-class-1a')::uuid, '#4F46E5',
+    array[md5('wr-student-1a-01')::uuid, md5('wr-student-1a-02')::uuid, md5('wr-student-1a-03')::uuid]),
+  (md5('wr-subject-eng-2')::uuid, '영어 (2학년)', null, md5('wr-class-2a')::uuid, '#10B981',
+    array[md5('wr-student-2a-01')::uuid, md5('wr-student-2a-02')::uuid])
+on conflict (id) do nothing;
+
+insert into wr_reports (id, student_id, term_id, subject, academic, improvement, participation, behavior, social, teacher_note, eval_badges, status, report_date) values
+  (md5('wr-report-sample-1')::uuid, md5('wr-student-1a-01')::uuid, md5('wr-term-2026-fall')::uuid, '담임',
+   '수학 연산 속도가 매우 빠릅니다.',
+   '서술형 문제 풀이 시 식을 적는 연습이 필요합니다.',
+   '수업 시간에 항상 집중하며 발표를 잘합니다.',
+   '친구들과 배려하며 잘 어울립니다.',
+   '리더십이 뛰어납니다.',
+   '전반적으로 매우 우수한 성취도를 보이고 있습니다.',
+   '{"academic": ["excellent"], "behavior": ["good", "excellent"], "social": ["excellent"]}'::jsonb,
+   'published', '2026-08-01')
+on conflict (id) do nothing;
+
+-- ===== 33. 레거시 정리: todos(개인 전용 할 일) 테이블 제거 =====
+-- 25번에서 만든 todos는 27번의 tasks(팀 공유 칸반보드)로 완전히 대체되어 더 이상 화면 어디에서도
+-- 쓰이지 않습니다(홈 화면 위젯도 이미 tasks 기반으로 바뀜). 있는 건 두고 없는 건 만들고 불필요한
+-- 건 지운다는 원칙에 따라, 실서비스 DB에 남아있는 이 테이블을 안전하게 제거합니다.
+drop table if exists todos cascade;

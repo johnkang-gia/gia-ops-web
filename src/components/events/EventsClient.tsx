@@ -62,7 +62,7 @@ export default function EventsClient({ initialItems }: { initialItems: EventReco
           className={
             "border-b-2 px-3 py-2 text-sm font-semibold transition " +
             (topTab === "regular"
-              ? "border-slate-900 text-slate-900"
+              ? "border-gia-navy text-gia-navy"
               : "border-transparent text-slate-400 hover:text-slate-600")
           }
         >
@@ -73,7 +73,7 @@ export default function EventsClient({ initialItems }: { initialItems: EventReco
           className={
             "border-b-2 px-3 py-2 text-sm font-semibold transition " +
             (topTab === "adhoc"
-              ? "border-slate-900 text-slate-900"
+              ? "border-gia-navy text-gia-navy"
               : "border-transparent text-slate-400 hover:text-slate-600")
           }
         >
@@ -238,7 +238,7 @@ function RegularEventsSection({
             className={
               "rounded-full border px-3 py-1 text-xs font-semibold transition " +
               (n === effectiveSelected
-                ? "border-slate-900 bg-slate-900 text-white"
+                ? "border-gia-navy bg-gia-navy text-white"
                 : "border-slate-300 text-slate-600 hover:bg-slate-50")
             }
           >
@@ -414,7 +414,7 @@ function AdhocEventsSection({
             setEditingId(null);
             setForm(EMPTY_FORM);
           }}
-          className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-slate-700"
+          className="rounded-lg bg-gia-navy px-3 py-1.5 text-sm font-semibold text-white hover:bg-gia-navy-2"
         >
           {showForm ? "닫기" : "+ 새로 기록"}
         </button>
@@ -470,7 +470,7 @@ function AdhocEventsSection({
             <button
               type="submit"
               disabled={saving}
-              className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+              className="rounded-lg bg-gia-navy px-4 py-2 text-sm font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50"
             >
               {saving ? "저장 중..." : "저장"}
             </button>
@@ -607,7 +607,7 @@ function EventForm({
         <button
           type="submit"
           disabled={saving}
-          className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+          className="rounded-lg bg-gia-navy px-4 py-2 text-sm font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50"
         >
           {saving ? "저장 중..." : "저장"}
         </button>

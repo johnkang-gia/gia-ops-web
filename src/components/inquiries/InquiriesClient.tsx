@@ -103,7 +103,7 @@ export default function InquiriesClient({
               className={
                 "rounded-full border px-3 py-1 text-xs font-semibold transition " +
                 (category === c
-                  ? "border-slate-900 bg-slate-900 text-white"
+                  ? "border-gia-navy bg-gia-navy text-white"
                   : "border-slate-300 text-slate-600 hover:bg-slate-50")
               }
             >
@@ -135,7 +135,7 @@ export default function InquiriesClient({
         <button
           type="submit"
           disabled={submitting}
-          className="w-fit rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+          className="w-fit rounded-lg bg-gia-navy px-4 py-2 text-sm font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50"
         >
           {submitting ? "등록 중..." : "등록"}
         </button>
@@ -212,7 +212,7 @@ export default function InquiriesClient({
                       <button
                         onClick={() => saveDeveloperUpdate(it.id)}
                         disabled={busy}
-                        className="w-fit rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+                        className="w-fit rounded-lg bg-gia-navy px-3 py-1.5 text-xs font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50"
                       >
                         {busy ? "저장 중..." : "저장"}
                       </button>

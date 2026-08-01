@@ -46,14 +46,14 @@ export default function PinPage() {
   }
 
   if (loading) {
-    return <main className="flex flex-1 items-center justify-center px-4" />;
+    return <main className="gia-navy-panel flex flex-1 items-center justify-center px-4" />;
   }
 
   return (
-    <main className="flex flex-1 items-center justify-center px-4">
+    <main className="gia-navy-panel flex flex-1 items-center justify-center px-4">
       <form
         onSubmit={handleSubmit}
-        className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-8 shadow-sm"
+        className="w-full max-w-sm rounded-2xl bg-white p-8 shadow-2xl"
       >
         <h1 className="mb-1 text-center text-xl font-bold">
           {hasPin ? "보안 PIN 확인" : "보안 PIN 설정"}
@@ -90,7 +90,7 @@ export default function PinPage() {
         <button
           type="submit"
           disabled={submitting || pin.length < 4}
-          className="w-full rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+          className="w-full rounded-lg bg-gia-navy px-4 py-2.5 text-sm font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50"
         >
           {submitting ? "확인 중..." : hasPin ? "확인" : "PIN 설정하기"}
         </button>

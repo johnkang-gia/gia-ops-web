@@ -163,6 +163,8 @@ export type Todo = {
 
 export type TaskStatus = "예정" | "진행중" | "완료" | "보류";
 
+export type TaskAck = { email: string; time: string };
+
 export type Task = {
   id: string;
   case_id: string;
@@ -174,6 +176,7 @@ export type Task = {
   assignee_emails: string[];
   position: number;
   due_at: string | null;
+  acknowledged_by: TaskAck[];
   created_at: string;
   updated_at: string;
 };
@@ -183,6 +186,8 @@ export type TaskComment = {
   task_id: string;
   author_email: string;
   content: string;
+  department: string | null;
+  is_system: boolean;
   created_at: string;
 };
 

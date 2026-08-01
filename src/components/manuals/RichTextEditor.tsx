@@ -26,7 +26,7 @@ function ToolbarButton({
       onMouseDown={(e) => e.preventDefault()}
       onClick={onClick}
       className={`rounded px-2 py-1 text-xs font-medium ${
-        active ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"
+        active ? "bg-gia-navy text-white" : "text-slate-600 hover:bg-slate-100"
       } disabled:cursor-not-allowed disabled:opacity-40`}
     >
       {children}

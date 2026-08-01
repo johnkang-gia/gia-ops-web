@@ -129,10 +129,14 @@ export default function ChatPanel({
   }
 
   const otherDepartments = departments.filter((d) => d.name !== department);
+  const deptColor = departments.find((d) => d.name === department)?.color;
 
   return (
-    <div className="flex h-[520px] flex-col rounded-2xl border border-white/70 bg-white/60 shadow-lg shadow-slate-200/40 backdrop-blur-md">
-      <div className="border-b border-white/60 px-3 py-2 text-xs font-bold text-slate-600">
+    <div className="flex h-[520px] flex-col rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div
+        style={deptColor ? { borderBottomColor: deptColor } : undefined}
+        className="border-b-2 border-gia-gold/60 px-3 py-2 text-xs font-bold text-gia-navy"
+      >
         💬 {department} 실시간 채팅
       </div>
 
@@ -140,13 +144,13 @@ export default function ChatPanel({
         {messages.length === 0 && <p className="text-xs text-slate-300">아직 메시지가 없습니다. 첫 메시지를 남겨보세요.</p>}
         <div className="flex flex-col gap-2">
           {messages.map((m) => (
-            <div key={m.id} className="rounded-lg bg-white/70 p-2 text-xs shadow-sm">
+            <div key={m.id} className="rounded-lg bg-slate-50 p-2 text-xs shadow-sm">
               <div className="mb-0.5 flex items-center justify-between gap-2">
                 <span className="font-semibold text-slate-600">{nameFor(team, m.author_email)}</span>
                 <span className="text-[10px] text-slate-300">{timeStr(m.created_at)}</span>
               </div>
               {m.source_department && (
-                <div className="mb-1 text-[10px] font-medium text-indigo-400">🔁 {m.source_department}에서 공유됨</div>
+                <div className="mb-1 text-[10px] font-medium text-gia-navy-light">🔁 {m.source_department}에서 공유됨</div>
               )}
               <p className="whitespace-pre-wrap text-slate-700">{m.content}</p>
             </div>
@@ -154,7 +158,7 @@ export default function ChatPanel({
         </div>
       </div>
 
-      <div className="border-t border-white/60 px-3 py-2">
+      <div className="border-t border-slate-200 px-3 py-2">
         <div className="mb-1.5 flex flex-wrap gap-1">
           {team
             .filter((m) => m.email !== userEmail && m.name)
@@ -164,7 +168,7 @@ export default function ChatPanel({
                 key={member.email}
                 type="button"
                 onClick={() => insertToken(`@${member.name}`)}
-                className="rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] text-blue-500 hover:bg-blue-100"
+                className="rounded-full bg-gia-navy/10 px-1.5 py-0.5 text-[10px] font-medium text-gia-navy hover:bg-gia-navy/20"
               >
                 @{member.name}
               </button>
@@ -174,7 +178,8 @@ export default function ChatPanel({
               key={d.id}
               type="button"
               onClick={() => insertToken(`#${d.name}`)}
-              className="rounded-full bg-indigo-50 px-1.5 py-0.5 text-[10px] text-indigo-500 hover:bg-indigo-100"
+              style={d.color ? { backgroundColor: d.color + "1a", color: d.color } : undefined}
+              className="rounded-full bg-gia-gold-soft/40 px-1.5 py-0.5 text-[10px] font-medium text-gia-gold hover:opacity-80"
             >
               #{d.name}
             </button>
@@ -185,12 +190,12 @@ export default function ChatPanel({
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder="메시지 입력... @사람 태그하면 업무로 등록돼요"
-            className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white/80 px-2 py-1.5 text-xs"
+            className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs"
           />
           <button
             type="submit"
             disabled={sending || !text.trim()}
-            className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+            className="rounded-lg bg-gia-navy px-3 py-1.5 text-xs font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50"
           >
             전송
           </button>

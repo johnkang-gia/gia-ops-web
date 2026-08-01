@@ -32,8 +32,8 @@ export default async function PendingPage() {
   const isRejected = appUser?.status === "rejected";
 
   return (
-    <main className="flex flex-1 items-center justify-center px-4">
-      <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+    <main className="gia-navy-panel flex flex-1 items-center justify-center px-4">
+      <div className="w-full max-w-sm rounded-2xl bg-white p-8 text-center shadow-2xl">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/logo-login.png" alt="GIA Micro Lab" className="mx-auto mb-4 h-20 w-auto" />
 

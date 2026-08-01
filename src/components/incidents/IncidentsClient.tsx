@@ -172,7 +172,7 @@ export default function IncidentsClient({
           <h1 className="text-sm font-bold text-slate-700">사건 ({items.length}건)</h1>
           <button
             onClick={startNew}
-            className="rounded-lg bg-slate-900 px-2.5 py-1 text-xs font-semibold text-white hover:bg-slate-700"
+            className="rounded-lg bg-gia-navy px-2.5 py-1 text-xs font-semibold text-white hover:bg-gia-navy-2"
           >
             + 새 사건
           </button>
@@ -188,7 +188,7 @@ export default function IncidentsClient({
               className={
                 "flex flex-col gap-0.5 rounded-lg border px-3 py-2 text-left shadow-sm transition " +
                 (editingId === it.id
-                  ? "border-slate-900 bg-slate-50"
+                  ? "border-gia-navy bg-gia-gold-soft/20"
                   : "border-slate-200 bg-white hover:border-slate-300")
               }
             >
@@ -321,7 +321,7 @@ export default function IncidentsClient({
             <button
               type="submit"
               disabled={saving}
-              className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+              className="rounded-lg bg-gia-navy px-4 py-2 text-sm font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50"
             >
               {saving ? "저장 중..." : editingId ? "수정 저장" : "저장"}
             </button>

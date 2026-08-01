@@ -120,7 +120,7 @@ export default function StaffManualClient({ initialItems }: { initialItems: Manu
         <button
           onClick={requestComplaints}
           disabled={generating}
-          className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+          className="rounded-lg bg-gia-navy px-3 py-1.5 text-xs font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50"
         >
           {generating ? "AI가 예상하는 중..." : "제안 만들기"}
         </button>

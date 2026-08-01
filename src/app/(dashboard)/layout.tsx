@@ -149,58 +149,58 @@ export default async function DashboardLayout({
 
   return (
     <div className="flex min-h-screen flex-1">
-      <aside className="hidden w-56 shrink-0 border-r border-slate-200 bg-white p-4 sm:flex sm:flex-col">
-        <div className="mb-6 px-2">
-          <Link href={homeHref} className="inline-block cursor-pointer">
+      <aside className="gia-navy-panel hidden w-56 shrink-0 p-4 shadow-xl sm:flex sm:flex-col">
+        <div className="mb-6 px-1">
+          <Link href={homeHref} className="inline-block cursor-pointer rounded-xl bg-white px-3 py-2 shadow-sm">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo-main.png" alt="GIA Micro Lab" className="h-10 w-auto" />
+            <img src="/logo-main.png" alt="GIA Micro Lab" className="h-8 w-auto" />
           </Link>
           {!isTeacher &&
             (termLabel ? (
               <Link
                 href="/terms"
-                className="mt-2 inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700 hover:bg-blue-100"
+                className="mt-2 inline-flex items-center gap-1 rounded-full bg-gia-gold-soft/20 px-2 py-0.5 text-[11px] font-semibold text-gia-gold hover:bg-gia-gold-soft/30"
               >
                 📅 {termLabel}
               </Link>
             ) : (
-              <div className="mt-2 text-[11px] text-slate-300">진행중인 학기 없음</div>
+              <div className="mt-2 text-[11px] text-white/30">진행중인 학기 없음</div>
             ))}
-          <div className="mt-1 truncate text-xs text-slate-400">
+          <div className="mt-1 truncate text-xs text-white/50">
             {displayName}
           </div>
         </div>
         <nav className="flex flex-1 flex-col gap-1 overflow-y-auto">
-          <SidebarNavLinks groups={navGroups} />
+          <SidebarNavLinks groups={navGroups} dark />
         </nav>
-        <div className="border-t border-slate-200 pt-3">
-          <SignOutButton />
+        <div className="border-t border-white/10 pt-3">
+          <SignOutButton dark />
         </div>
       </aside>
 
       <div className="flex min-h-screen flex-1 flex-col">
-        <header className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 sm:hidden">
-          <Link href={homeHref} className="inline-block cursor-pointer">
+        <header className="gia-navy-panel flex items-center justify-between px-4 py-3 shadow-md sm:hidden">
+          <Link href={homeHref} className="inline-block cursor-pointer rounded-lg bg-white px-2 py-1.5">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo-main.png" alt="GIA Micro Lab" className="h-7 w-auto" />
+            <img src="/logo-main.png" alt="GIA Micro Lab" className="h-6 w-auto" />
           </Link>
           {!isTeacher &&
             (termLabel ? (
               <Link
                 href="/terms"
-                className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700"
+                className="rounded-full bg-gia-gold-soft/20 px-2 py-0.5 text-[11px] font-semibold text-gia-gold"
               >
                 📅 {termLabel}
               </Link>
             ) : (
-              <span className="text-[11px] text-slate-300">진행중인 학기 없음</span>
+              <span className="text-[11px] text-white/30">진행중인 학기 없음</span>
             ))}
-          <SignOutButton />
+          <SignOutButton dark />
         </header>
-        <nav className="flex gap-1 overflow-x-auto border-b border-slate-200 bg-white px-2 py-2 sm:hidden">
-          <MobileNavLinks groups={navGroups} />
+        <nav className="gia-navy-panel flex gap-1 overflow-x-auto px-2 py-2 sm:hidden">
+          <MobileNavLinks groups={navGroups} dark />
         </nav>
-        <main className="flex-1 overflow-x-hidden p-4 sm:p-8">{children}</main>
+        <main className="flex-1 overflow-x-hidden bg-gia-bg p-4 sm:p-8">{children}</main>
       </div>
     </div>
   );

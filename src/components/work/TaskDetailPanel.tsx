@@ -104,7 +104,10 @@ export default function TaskDetailPanel({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-end bg-black/30 sm:items-center sm:justify-center" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-end bg-black/30 backdrop-blur-sm sm:items-center sm:justify-center"
+      onClick={onClose}
+    >
       <div
         onClick={(e) => e.stopPropagation()}
         className="flex h-full w-full max-w-md flex-col bg-white p-4 shadow-xl sm:h-[85vh] sm:rounded-xl"
@@ -147,6 +150,13 @@ export default function TaskDetailPanel({
             onChange={(e) => setDueLocal(e.target.value)}
             onBlur={saveDue}
             className="rounded-lg border border-slate-300 px-2 py-1 text-xs"
+          />
+          <input
+            list="dept-options"
+            defaultValue={task.department ?? ""}
+            onBlur={(e) => patch({ department: e.target.value.trim() || null })}
+            placeholder="부서"
+            className="w-24 rounded-lg border border-slate-300 px-2 py-1 text-xs"
           />
         </div>
 

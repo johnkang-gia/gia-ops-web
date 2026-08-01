@@ -169,6 +169,7 @@ export type Task = {
   title: string;
   status: TaskStatus;
   priority: "보통" | "긴급";
+  department: string | null;
   owner_email: string;
   assignee_emails: string[];
   position: number;

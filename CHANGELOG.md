@@ -4,6 +4,27 @@
 `version` 값과 항상 일치시킵니다. 업데이트할 때마다 이 파일 맨 위에 새 항목을 추가하고,
 같은 내용을 GitHub Desktop의 커밋 Summary/Description에도 그대로 사용하면 됩니다.
 
+## v0.23.0 - 2026-07-31
+
+GIA WorkFlatform 통합 1단계: 업무보드에 부서 개념 + 글래스모피즘 스타일 적용:
+
+- 사장님이 주신 "GIA WorkFlatform" 기획서(부서별 채팅+업무 자동할당+글래스모피즘 UI 협업툴)를
+  검토한 결과, 단계적으로 통합하기로 했고 1단계로 업무보드에 부서(department) 개념을 추가함
+- tasks에 부서 필드 추가(기본값 유치부/초등부/행정실 + 실제 쓰인 부서명이 자동으로 선택지에
+  추가됨 - 학기/행사명과 같은 방식). 업무 등록 시, 업무 카드 상세에서 부서를 지정할 수 있고,
+  보드 상단 탭에서 "전체" 또는 특정 부서만 필터링해서 볼 수 있음
+- 디자인: 기획서의 vanilla CSS 대신, 기존 Tailwind 체계를 유지하면서 Tailwind 유틸리티만으로
+  글래스모피즘(반투명 + 블러 + 은은한 그라데이션)을 구현함. 앱 전체 스타일 일관성은 유지하고
+  업무 페이지에만 유리감 있는 프리미엄 톤을 적용
+- 다음 단계(부서별 실시간 채팅 + `@`/`#` 태그로 업무 자동 전환)는 별도로 진행 예정 - 실제 부서
+  전체 목록과 Supabase 요금제(Realtime 동시 연결 수) 확인이 먼저 필요함
+
+```sql
+-- ===== 28. 업무에 부서(department) 추가 - GIA WorkFlatform 통합 1단계 =====
+alter table tasks add column if not exists department text;
+create index if not exists tasks_department_idx on tasks(department);
+```
+
 ## v0.22.0 - 2026-07-31
 
 "업무" 메뉴 신설: 팀 공유 실시간 칸반보드(개인 할일/업무히스토리 기능 대체):

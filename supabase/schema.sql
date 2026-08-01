@@ -713,6 +713,7 @@ create table if not exists tasks (
   title text not null,
   status text not null default '예정' check (status in ('예정', '진행중', '완료', '보류')),
   priority text not null default '보통' check (priority in ('보통', '긴급')),
+  department text,                              -- 예: 유치부/초등부/행정실(자유 입력, 부서별 필터용)
   owner_email text not null,                   -- 최초 등록자
   assignee_emails text[] not null default '{}', -- 태그된 담당자(복수 가능)
   position double precision not null default 0,
@@ -767,3 +768,10 @@ begin
     alter publication supabase_realtime add table task_comments;
   end if;
 end $$;
+
+-- ===== 28. 업무에 부서(department) 추가 - GIA WorkFlatform 통합 1단계 =====
+-- 기존에 27번을 이미 실행한 환경을 위한 업그레이드 경로입니다(신규 설치는 위 create table에
+-- department가 이미 포함되어 있어 아래 구문은 효과가 없습니다). 나중에 부서별 실시간 채팅 등을
+-- 얹을 때도 이 컬럼(또는 정식 departments 테이블)을 기준으로 확장할 예정입니다.
+alter table tasks add column if not exists department text;
+create index if not exists tasks_department_idx on tasks(department);

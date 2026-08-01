@@ -27,8 +27,8 @@ export default function TaskCard({
       onDragStart={(e) => onDragStartTask(e, task.id)}
       onClick={onOpen}
       className={
-        "cursor-pointer rounded-lg border bg-white p-2.5 text-left shadow-sm transition hover:border-blue-300 hover:shadow " +
-        (overdue ? "border-red-300" : "border-slate-200")
+        "cursor-pointer rounded-xl border bg-white/70 p-2.5 text-left shadow-sm backdrop-blur-sm transition hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md " +
+        (overdue ? "border-red-300" : "border-white/80")
       }
     >
       <div className="mb-1.5 flex items-start gap-1.5">
@@ -39,6 +39,14 @@ export default function TaskCard({
         )}
         <span className="min-w-0 flex-1 text-sm font-medium text-slate-800">{task.title}</span>
       </div>
+
+      {task.department && (
+        <div className="mb-1.5">
+          <span className="rounded-full bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium text-indigo-500">
+            🏫 {task.department}
+          </span>
+        </div>
+      )}
 
       {task.assignee_emails.length > 0 && (
         <div className="mb-1.5 flex flex-wrap gap-1">

@@ -11,11 +11,15 @@ import TaskDetailPanel from "./TaskDetailPanel";
 
 const STATUS_ORDER: TaskStatus[] = ["예정", "진행중", "완료", "보류"];
 const STATUS_STYLE: Record<TaskStatus, { header: string; drop: string }> = {
-  예정: { header: "text-slate-600", drop: "bg-slate-50" },
-  진행중: { header: "text-blue-600", drop: "bg-blue-50" },
-  완료: { header: "text-emerald-600", drop: "bg-emerald-50" },
-  보류: { header: "text-amber-600", drop: "bg-amber-50" },
+  예정: { header: "text-slate-600", drop: "bg-slate-100/70" },
+  진행중: { header: "text-blue-600", drop: "bg-blue-100/70" },
+  완료: { header: "text-emerald-600", drop: "bg-emerald-100/70" },
+  보류: { header: "text-amber-600", drop: "bg-amber-100/70" },
 };
+
+// 부서 목록은 고정 값이 아니라 기본값(유치부/초등부/행정실)에 실제로 쓰인 부서명을 더해
+// 동적으로 늘어납니다(학기/행사명과 같은 패턴) - 부서 구조가 바뀌어도 코드 수정 없이 대응됩니다.
+const DEFAULT_DEPARTMENTS = ["유치부", "초등부", "행정실"];
 
 function shortName(email: string) {
   return email.split("@")[0];
@@ -35,22 +39,32 @@ export default function WorkBoardClient({
 
   const [title, setTitle] = useState("");
   const [priority, setPriority] = useState<"보통" | "긴급">("보통");
+  const [department, setDepartment] = useState("");
   const [assignees, setAssignees] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [dragOverStatus, setDragOverStatus] = useState<TaskStatus | null>(null);
   const [showCompletedAll, setShowCompletedAll] = useState(false);
+  const [deptFilter, setDeptFilter] = useState("전체");
+
+  const allDepartments = useMemo(
+    () => [...new Set([...DEFAULT_DEPARTMENTS, ...tasks.map((t) => t.department).filter((d): d is string => !!d)])],
+    [tasks]
+  );
+
+  const scopedTasks = deptFilter === "전체" ? tasks : tasks.filter((t) => t.department === deptFilter);
 
   const grouped = useMemo(() => {
     const map: Record<TaskStatus, Task[]> = { 예정: [], 진행중: [], 완료: [], 보류: [] };
     const fourteenDaysAgo = Date.now() - 14 * 24 * 60 * 60 * 1000;
-    for (const t of tasks) {
+    for (const t of scopedTasks) {
       if (t.status === "완료" && !showCompletedAll && new Date(t.updated_at).getTime() < fourteenDaysAgo) continue;
       map[t.status].push(t);
     }
     for (const s of STATUS_ORDER) map[s].sort((a, b) => a.position - b.position);
     return map;
-  }, [tasks, showCompletedAll]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scopedTasks, showCompletedAll]);
 
   const selectedTask = tasks.find((t) => t.id === selectedId) ?? null;
 
@@ -66,6 +80,7 @@ export default function WorkBoardClient({
         title: title.trim(),
         status: "예정",
         priority,
+        department: department.trim() || null,
         owner_email: userEmail,
         assignee_emails: assignees,
         position: Date.now(),
@@ -93,29 +108,62 @@ export default function WorkBoardClient({
   }
 
   return (
-    <div>
-      <div className="mb-4 flex flex-wrap items-center gap-1.5 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
+    <div className="relative rounded-3xl bg-gradient-to-br from-sky-50 via-white to-violet-50 p-3 sm:p-5">
+      <datalist id="dept-options">
+        {allDepartments.map((d) => (
+          <option key={d} value={d} />
+        ))}
+      </datalist>
+
+      <div className="mb-4 flex flex-wrap items-center gap-1.5 rounded-xl border border-white/60 bg-white/50 px-3 py-2 text-xs text-slate-500 shadow-sm backdrop-blur-md">
         <span className="font-semibold text-slate-600">🟢 지금 접속 중:</span>
         {online.length === 0 && <span>없음</span>}
         {online.map((email) => (
-          <span key={email} className="rounded-full bg-white px-2 py-0.5 shadow-sm">
+          <span key={email} className="rounded-full bg-white/80 px-2 py-0.5 shadow-sm">
             {email === userEmail ? "나" : shortName(email)}
           </span>
         ))}
       </div>
 
-      <form onSubmit={addTask} className="mb-5 flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-        <div className="flex gap-2">
+      <div className="mb-3 flex flex-wrap items-center gap-1.5">
+        {["전체", ...allDepartments].map((d) => (
+          <button
+            key={d}
+            onClick={() => setDeptFilter(d)}
+            className={
+              "rounded-full border px-3 py-1 text-xs font-semibold backdrop-blur transition " +
+              (d === deptFilter
+                ? "border-slate-900/80 bg-slate-900/90 text-white"
+                : "border-white/70 bg-white/50 text-slate-600 hover:bg-white/80")
+            }
+          >
+            {d}
+          </button>
+        ))}
+      </div>
+
+      <form
+        onSubmit={addTask}
+        className="mb-5 flex flex-col gap-2 rounded-2xl border border-white/70 bg-white/60 p-3 shadow-lg shadow-slate-200/40 backdrop-blur-md"
+      >
+        <div className="flex flex-wrap gap-2">
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="새 업무 등록 (예: 학부모 안내문 발송)"
-            className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white/80 px-3 py-2 text-sm"
+          />
+          <input
+            list="dept-options"
+            value={department}
+            onChange={(e) => setDepartment(e.target.value)}
+            placeholder="부서(선택)"
+            className="w-28 rounded-lg border border-slate-300 bg-white/80 px-2 py-2 text-xs"
           />
           <select
             value={priority}
             onChange={(e) => setPriority(e.target.value as "보통" | "긴급")}
-            className="rounded-lg border border-slate-300 px-2 py-2 text-xs"
+            className="rounded-lg border border-slate-300 bg-white/80 px-2 py-2 text-xs"
           >
             <option value="보통">보통</option>
             <option value="긴급">🔴 긴급</option>
@@ -139,7 +187,7 @@ export default function WorkBoardClient({
                 onClick={() => toggleAssignee(email)}
                 className={
                   "rounded-full border px-2 py-0.5 text-[11px] transition " +
-                  (active ? "border-blue-500 bg-blue-500 text-white" : "border-slate-200 text-slate-500 hover:border-slate-300")
+                  (active ? "border-blue-500 bg-blue-500 text-white" : "border-slate-200 bg-white/70 text-slate-500 hover:border-slate-300")
                 }
               >
                 {online.includes(email) && <span className="mr-0.5">🟢</span>}
@@ -173,8 +221,8 @@ export default function WorkBoardClient({
               setDragOverStatus(null);
             }}
             className={
-              "flex min-h-[200px] flex-col gap-2 rounded-xl border border-slate-200 p-2 transition " +
-              (dragOverStatus === status ? "border-blue-300 " + STATUS_STYLE[status].drop : "bg-white")
+              "flex min-h-[200px] flex-col gap-2 rounded-2xl border border-white/60 p-2 shadow-sm backdrop-blur-md transition " +
+              (dragOverStatus === status ? "border-blue-300 " + STATUS_STYLE[status].drop : "bg-white/40")
             }
           >
             <div className={"flex items-center justify-between px-1 text-xs font-bold " + STATUS_STYLE[status].header}>

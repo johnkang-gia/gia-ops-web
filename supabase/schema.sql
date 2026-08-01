@@ -701,3 +701,69 @@ end $$;
 -- 신규 설치는 위 25번 create table에 for_date가 이미 포함되어 있어 아래 구문은 효과가 없습니다.
 alter table todos add column if not exists for_date date not null default current_date;
 create index if not exists todos_user_date_idx on todos(user_email, for_date);
+
+-- ===== 27. 업무(tasks) - 팀 공유 칸반보드 + 실시간 코멘트 =====
+-- 25번의 todos(개인 전용 할 일)를 대체하는 팀 공유 업무 관리입니다. giamicro 팀 전체가 실시간으로
+-- 같은 보드를 보고, 카드를 드래그해서 상태를 옮기고, 담당자를 태그하고, 각 업무에 코멘트를
+-- 남길 수 있습니다. status는 칸반 보드의 4개 컬럼(예정/진행중/완료/보류)이고, position은 같은
+-- 컬럼 안에서의 정렬 순서(카드를 옮길 때마다 갱신)입니다.
+create table if not exists tasks (
+  id uuid primary key default gen_random_uuid(),
+  case_id text unique not null,               -- 예: TSK-260801-...
+  title text not null,
+  status text not null default '예정' check (status in ('예정', '진행중', '완료', '보류')),
+  priority text not null default '보통' check (priority in ('보통', '긴급')),
+  owner_email text not null,                   -- 최초 등록자
+  assignee_emails text[] not null default '{}', -- 태그된 담당자(복수 가능)
+  position double precision not null default 0,
+  due_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists tasks_status_idx on tasks(status);
+
+drop trigger if exists tasks_set_updated_at on tasks;
+create trigger tasks_set_updated_at
+  before update on tasks
+  for each row execute function set_updated_at();
+
+alter table tasks enable row level security;
+drop policy if exists "giamicro_all_tasks" on tasks;
+create policy "giamicro_all_tasks" on tasks
+  for all using (is_giamicro_user()) with check (is_giamicro_user());
+
+create table if not exists task_comments (
+  id uuid primary key default gen_random_uuid(),
+  task_id uuid not null references tasks(id) on delete cascade,
+  author_email text not null,
+  content text not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists task_comments_task_id_idx on task_comments(task_id);
+
+alter table task_comments enable row level security;
+drop policy if exists "giamicro_all_task_comments" on task_comments;
+create policy "giamicro_all_task_comments" on task_comments
+  for all using (is_giamicro_user()) with check (is_giamicro_user());
+
+-- 담당자 태그 선택창에 쓸 팀원 목록: 승인된(app_users.status='approved') 사용자는 누구나 서로의
+-- 이메일을 조회할 수 있게 허용합니다(기존에는 본인 행 또는 관리자만 조회 가능했음).
+drop policy if exists "giamicro_select_approved_app_users" on app_users;
+create policy "giamicro_select_approved_app_users" on app_users
+  for select using (is_giamicro_user() and status = 'approved');
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'tasks'
+  ) then
+    alter publication supabase_realtime add table tasks;
+  end if;
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'task_comments'
+  ) then
+    alter publication supabase_realtime add table task_comments;
+  end if;
+end $$;

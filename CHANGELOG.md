@@ -4,6 +4,78 @@
 `version` 값과 항상 일치시킵니다. 업데이트할 때마다 이 파일 맨 위에 새 항목을 추가하고,
 같은 내용을 GitHub Desktop의 커밋 Summary/Description에도 그대로 사용하면 됩니다.
 
+## v0.22.0 - 2026-07-31
+
+"업무" 메뉴 신설: 팀 공유 실시간 칸반보드(개인 할일/업무히스토리 기능 대체):
+
+- 이전에 만든 개인용 할 일(홈 위젯)/업무히스토리(달력)는 "차라리 팀이 같이 보는 업무판이 낫겠다"는
+  요청에 따라 이번 버전에서 새 "업무" 메뉴로 완전히 대체했습니다. 홈 화면과 사이드바에서
+  제거했고(파일도 정리), DB의 todos 테이블은 남아있지만 더 이상 앱에서 쓰지 않습니다(원하시면
+  나중에 직접 삭제하셔도 됩니다).
+- 사이드바에 "업무" 메뉴 신설(홈 바로 아래). 팀 전체가 같은 보드를 실시간으로 봅니다.
+- 지금 이 페이지에 접속해 있는 팀원을 실시간으로 보여줌(Supabase Presence)
+- 업무를 등록하면 카드 형태로 "예정" 칸에 들어가고, 마우스로 카드를 끌어서 진행중/완료/보류
+  칸으로 옮길 수 있음(모바일 등 드래그가 불편한 환경을 위해 카드마다 상태를 바로 바꾸는
+  드롭다운도 함께 제공)
+- 업무를 등록하거나 카드를 열었을 때, 지금 접속 중인 팀원을 포함한 승인된 팀원 전체를
+  담당자로 태그할 수 있음(여러 명 가능)
+- 카드를 클릭하면 상세 패널이 열리고, 상태/우선순위/마감일/담당자를 바로 수정할 수 있음
+- 구글 시트 메모처럼, 각 업무 카드에 실시간 코멘트를 남길 수 있음 - 팀원이 그 업무를 보고 있으면
+  코멘트가 실시간으로 함께 뜸
+- 완료된 업무는 기본적으로 최근 14일치만 보여서 보드가 오래된 카드로 지저분해지지 않게 하고,
+  체크박스로 전체 완료 이력도 펼쳐볼 수 있음
+- 우선순위(보통/긴급) 태그, 마감일 지난 카드 빨간 테두리 강조 등 부가 기능도 함께 추가
+- 홈 화면은 "업무 현황"(예정/진행중/완료/보류 건수 + 나에게 태그된 업무 건수)만 요약으로 보여주고,
+  자세히 보려면 업무 메뉴로 이동하도록 정리
+
+```sql
+-- ===== 27. 업무(tasks) - 팀 공유 칸반보드 + 실시간 코멘트 =====
+create table if not exists tasks (
+  id uuid primary key default gen_random_uuid(),
+  case_id text unique not null,
+  title text not null,
+  status text not null default '예정' check (status in ('예정', '진행중', '완료', '보류')),
+  priority text not null default '보통' check (priority in ('보통', '긴급')),
+  owner_email text not null,
+  assignee_emails text[] not null default '{}',
+  position double precision not null default 0,
+  due_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists tasks_status_idx on tasks(status);
+
+drop trigger if exists tasks_set_updated_at on tasks;
+create trigger tasks_set_updated_at
+  before update on tasks
+  for each row execute function set_updated_at();
+
+alter table tasks enable row level security;
+drop policy if exists "giamicro_all_tasks" on tasks;
+create policy "giamicro_all_tasks" on tasks
+  for all using (is_giamicro_user()) with check (is_giamicro_user());
+
+create table if not exists task_comments (
+  id uuid primary key default gen_random_uuid(),
+  task_id uuid not null references tasks(id) on delete cascade,
+  author_email text not null,
+  content text not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists task_comments_task_id_idx on task_comments(task_id);
+
+alter table task_comments enable row level security;
+drop policy if exists "giamicro_all_task_comments" on task_comments;
+create policy "giamicro_all_task_comments" on task_comments
+  for all using (is_giamicro_user()) with check (is_giamicro_user());
+
+drop policy if exists "giamicro_select_approved_app_users" on app_users;
+create policy "giamicro_select_approved_app_users" on app_users
+  for select using (is_giamicro_user() and status = 'approved');
+
+-- (realtime publication 추가 구문은 supabase/schema.sql 27번 섹션 전체를 참고하세요)
+```
+
 ## v0.21.0 - 2026-07-31
 
 할 일 입력 확대 + 날짜별 기록 저장 + 업무 히스토리(달력) 메뉴 신설:

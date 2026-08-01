@@ -161,6 +161,30 @@ export type Todo = {
   updated_at: string;
 };
 
+export type TaskStatus = "예정" | "진행중" | "완료" | "보류";
+
+export type Task = {
+  id: string;
+  case_id: string;
+  title: string;
+  status: TaskStatus;
+  priority: "보통" | "긴급";
+  owner_email: string;
+  assignee_emails: string[];
+  position: number;
+  due_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type TaskComment = {
+  id: string;
+  task_id: string;
+  author_email: string;
+  content: string;
+  created_at: string;
+};
+
 export type Inquiry = {
   id: string;
   case_id: string;

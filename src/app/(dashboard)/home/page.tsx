@@ -2,8 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentTerm } from "@/lib/currentTerm";
 import DateTimeCard from "@/components/home/DateTimeCard";
-import TodoList from "@/components/home/TodoList";
-import type { Incident, Meeting, EventRecord, Term, Todo } from "@/lib/types";
+import type { Incident, Meeting, EventRecord, Term, TaskStatus } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +30,7 @@ async function loadHomeData() {
     recentMeetings,
     recentIncidentsForPattern,
     currentTerm,
-    myTodos,
+    taskRows,
   ] = await Promise.all([
     supabase.from("incidents").select("id", { count: "exact", head: true }),
     supabase.from("events").select("id", { count: "exact", head: true }),
@@ -61,17 +60,16 @@ async function loadHomeData() {
       .gte("date", ninetyDaysAgoStr)
       .order("date", { ascending: false }),
     getCurrentTerm(supabase),
-    userEmail
-      ? supabase
-          .from("todos")
-          .select("*")
-          .eq("user_email", userEmail)
-          // KST(UTC+9) 기준 오늘 날짜만 미리 불러옵니다(홈 위젯은 "오늘 할 일"만 보여줌 -
-          // 지난 기록은 업무히스토리 페이지에서 따로 불러옵니다).
-          .eq("for_date", new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10))
-          .order("created_at", { ascending: false })
-      : Promise.resolve({ data: [] as Todo[] }),
+    supabase.from("tasks").select("status, assignee_emails"),
   ]);
+
+  // 업무(칸반) 요약: 상태별 건수 + 내가 담당자로 태그된, 아직 완료되지 않은 업무 건수.
+  const taskCounts: Record<TaskStatus, number> = { 예정: 0, 진행중: 0, 완료: 0, 보류: 0 };
+  let myOpenTasks = 0;
+  for (const row of (taskRows.data as { status: TaskStatus; assignee_emails: string[] }[] | null) ?? []) {
+    taskCounts[row.status] = (taskCounts[row.status] ?? 0) + 1;
+    if (row.status !== "완료" && userEmail && row.assignee_emails?.includes(userEmail)) myOpenTasks += 1;
+  }
 
   // AI 호출 없이 순수 집계만으로 "최근 90일 내 같은 유형 사건 반복" 여부를 찾습니다(비용 0).
   type PatternRow = { manual_cat: string; count: number; latestTitle: string; latestDate: string };
@@ -148,8 +146,8 @@ async function loadHomeData() {
     activity,
     recurringPatterns,
     currentTerm: currentTerm as Term | null,
-    userEmail,
-    myTodos: (myTodos.data as Todo[] | null) ?? [],
+    taskCounts,
+    myOpenTasks,
   };
 }
 
@@ -160,7 +158,7 @@ function oneLine(text: string, maxLen = 42) {
 }
 
 export default async function HomePage() {
-  const { counts, activity, recurringPatterns, currentTerm, userEmail, myTodos } = await loadHomeData();
+  const { counts, activity, recurringPatterns, currentTerm, taskCounts, myOpenTasks } = await loadHomeData();
 
   const recordCards = [
     { label: "📋 사건", value: counts.incidents, href: "/records" },
@@ -174,6 +172,13 @@ export default async function HomePage() {
     { label: "📖 발행된 매뉴얼 항목", value: counts.manualSections, href: "/manuals", highlight: false },
   ];
 
+  const taskCards = [
+    { label: "🗓️ 예정", value: taskCounts.예정 },
+    { label: "🔧 진행중", value: taskCounts.진행중 },
+    { label: "✅ 완료", value: taskCounts.완료 },
+    { label: "⏸️ 보류", value: taskCounts.보류 },
+  ];
+
   return (
     <div className="mx-auto max-w-6xl">
       {currentTerm && (
@@ -185,12 +190,35 @@ export default async function HomePage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[220px_1fr_260px]">
-        <div className="order-2 lg:order-1 lg:sticky lg:top-4 lg:self-start">
-          {userEmail && <TodoList initialItems={myTodos} userEmail={userEmail} />}
-        </div>
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_260px]">
+        <div className="min-w-0">
+          <div className="mb-2 flex items-center justify-between">
+            <div className="text-xs font-semibold text-slate-400">업무 현황</div>
+            <Link href="/work" className="text-[11px] font-semibold text-blue-500 hover:underline">
+              업무 보드 열기 →
+            </Link>
+          </div>
+          {myOpenTasks > 0 && (
+            <Link
+              href="/work"
+              className="mb-2 block rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 hover:border-blue-300"
+            >
+              👤 나에게 태그된 진행 중 업무 {myOpenTasks}건
+            </Link>
+          )}
+          <div className="mb-5 grid grid-cols-4 gap-2 sm:gap-3">
+            {taskCards.map((card) => (
+              <Link
+                key={card.label}
+                href="/work"
+                className="rounded-xl border border-slate-200 bg-white p-3 text-center shadow-sm hover:border-slate-300 sm:p-4"
+              >
+                <div className="text-xl font-bold sm:text-2xl">{card.value}</div>
+                <div className="mt-1 text-xs text-slate-500">{card.label}</div>
+              </Link>
+            ))}
+          </div>
 
-        <div className="order-1 min-w-0 lg:order-2">
           <div className="mb-2 text-xs font-semibold text-slate-400">기록 현황</div>
           <div className="mb-5 grid grid-cols-3 gap-2 sm:gap-3">
             {recordCards.map((card) => (
@@ -280,7 +308,7 @@ export default async function HomePage() {
           </div>
         </div>
 
-        <div className="order-3 lg:sticky lg:top-4 lg:self-start">
+        <div className="lg:sticky lg:top-4 lg:self-start">
           <DateTimeCard />
         </div>
       </div>

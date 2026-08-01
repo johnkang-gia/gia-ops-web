@@ -775,3 +775,60 @@ end $$;
 -- 얹을 때도 이 컬럼(또는 정식 departments 테이블)을 기준으로 확장할 예정입니다.
 alter table tasks add column if not exists department text;
 create index if not exists tasks_department_idx on tasks(department);
+
+-- ===== 29. GIA WorkFlatform 통합 2단계 - 부서 레지스트리 + 실시간 채팅 =====
+-- 사장님이 주신 기획서(부서별 실시간 채팅 + 채팅 중 @사람/#부서 태그 시 즉시 업무로 전환·공유)를
+-- 반영합니다. 우선 초등부만 활성화하고, 유치부/중고등부는 나중에 departments에 행만 추가하면
+-- 코드 수정 없이 그대로 확장됩니다.
+--
+-- departments: 부서 레지스트리(부서명/색상/정렬 순서). tasks.department는 계속 자유 입력 텍스트로
+-- 남겨두고(기존 데이터 보존), 화면에서는 departments 테이블 값을 기본 선택지로 보여줍니다.
+create table if not exists departments (
+  id uuid primary key default gen_random_uuid(),
+  name text unique not null,
+  color text not null default '#3B82F6',
+  sort_order int not null default 0,
+  created_at timestamptz not null default now()
+);
+
+insert into departments (name, color, sort_order)
+values ('초등부', '#3B82F6', 1)
+on conflict (name) do nothing;
+
+alter table departments enable row level security;
+drop policy if exists "giamicro_all_departments" on departments;
+create policy "giamicro_all_departments" on departments
+  for all using (is_giamicro_user()) with check (is_giamicro_user());
+
+-- messages: 부서별 실시간 채팅. source_department가 채워져 있으면 "다른 부서 채팅에서 #태그로
+-- 넘어온 메시지"라는 뜻입니다(원본은 그대로 남고, 태그된 부서 채팅에도 복사되어 들어갑니다).
+create table if not exists messages (
+  id uuid primary key default gen_random_uuid(),
+  department text not null,
+  author_email text not null,
+  content text not null,
+  source_department text,
+  created_at timestamptz not null default now()
+);
+create index if not exists messages_department_idx on messages(department, created_at);
+
+alter table messages enable row level security;
+drop policy if exists "giamicro_all_messages" on messages;
+create policy "giamicro_all_messages" on messages
+  for all using (is_giamicro_user()) with check (is_giamicro_user());
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'departments'
+  ) then
+    alter publication supabase_realtime add table departments;
+  end if;
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'messages'
+  ) then
+    alter publication supabase_realtime add table messages;
+  end if;
+end $$;

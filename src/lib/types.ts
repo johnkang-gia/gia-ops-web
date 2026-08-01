@@ -186,6 +186,23 @@ export type TaskComment = {
   created_at: string;
 };
 
+export type Department = {
+  id: string;
+  name: string;
+  color: string;
+  sort_order: number;
+  created_at: string;
+};
+
+export type ChatMessage = {
+  id: string;
+  department: string;
+  author_email: string;
+  content: string;
+  source_department: string | null;
+  created_at: string;
+};
+
 export type Inquiry = {
   id: string;
   case_id: string;

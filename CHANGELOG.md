@@ -4,6 +4,65 @@
 `version` 값과 항상 일치시킵니다. 업데이트할 때마다 이 파일 맨 위에 새 항목을 추가하고,
 같은 내용을 GitHub Desktop의 커밋 Summary/Description에도 그대로 사용하면 됩니다.
 
+## v0.24.0 - 2026-07-31
+
+GIA WorkFlatform 통합 2단계: 부서별 실시간 채팅 + 채팅→업무 자동 전환 (우선 초등부만 활성화):
+
+- 업무 페이지에서 부서 탭을 선택하면(기본값 초등부) 오른쪽에 그 부서의 실시간 채팅창이 뜸.
+  팀원이 메시지를 보내면 같은 부서를 보고 있는 모든 사람 화면에 실시간으로 뜸
+- 채팅에서 "@사람이름"을 태그하면 그 메시지가 즉시 업무 카드로 등록되고(상태: 예정, 담당자:
+  태그된 사람), "✅ 업무로 등록됨" 안내 메시지가 채팅에 남아서 누가 봐도 바로 확인 가능
+- 채팅에서 "#부서명"을 태그하면 같은 메시지가 그 부서 채팅방에도 그대로 복사되어 들어감
+  (원본 부서 이름이 "~에서 공유됨"으로 표시됨) - 부서 간 교차 공유
+- 빠른 입력을 위해 채팅 입력창 위에 팀원 이름(@)과 다른 부서(#) 버튼을 눌러서 바로 태그를
+  삽입할 수 있게 함
+- 부서를 선택하면 그 부서 업무의 완료율을 보여주는 원형 게이지 위젯 추가
+- 부서 목록을 코드에 하드코딩하지 않고 departments 테이블로 관리하도록 변경. 지금은 초등부만
+  등록돼 있고, 유치부/중고등부는 나중에 departments 테이블에 행만 추가하면 코드 수정 없이 탭과
+  채팅이 자동으로 생김
+
+이번 단계에서 기획서 대비 단순화한 부분: 부서 하나당 채널을 여러 개(공지/자유 등) 두는 기능은
+아직 없고 부서=채널 1:1로 구현했습니다. 또 지금은 모든 승인된 팀원이 모든 부서 채팅을 볼 수
+있어요(부서 소속에 따른 접근 제한은 아직 없음, 학교 규모상 전체 공유가 더 유용할 것으로 판단).
+필요하시면 다음 단계로 추가하겠습니다.
+
+```sql
+-- ===== 29. GIA WorkFlatform 통합 2단계 - 부서 레지스트리 + 실시간 채팅 =====
+create table if not exists departments (
+  id uuid primary key default gen_random_uuid(),
+  name text unique not null,
+  color text not null default '#3B82F6',
+  sort_order int not null default 0,
+  created_at timestamptz not null default now()
+);
+
+insert into departments (name, color, sort_order)
+values ('초등부', '#3B82F6', 1)
+on conflict (name) do nothing;
+
+alter table departments enable row level security;
+drop policy if exists "giamicro_all_departments" on departments;
+create policy "giamicro_all_departments" on departments
+  for all using (is_giamicro_user()) with check (is_giamicro_user());
+
+create table if not exists messages (
+  id uuid primary key default gen_random_uuid(),
+  department text not null,
+  author_email text not null,
+  content text not null,
+  source_department text,
+  created_at timestamptz not null default now()
+);
+create index if not exists messages_department_idx on messages(department, created_at);
+
+alter table messages enable row level security;
+drop policy if exists "giamicro_all_messages" on messages;
+create policy "giamicro_all_messages" on messages
+  for all using (is_giamicro_user()) with check (is_giamicro_user());
+
+-- (realtime publication 추가 구문은 supabase/schema.sql 29번 섹션 전체를 참고하세요)
+```
+
 ## v0.23.0 - 2026-07-31
 
 GIA WorkFlatform 통합 1단계: 업무보드에 부서 개념 + 글래스모피즘 스타일 적용:

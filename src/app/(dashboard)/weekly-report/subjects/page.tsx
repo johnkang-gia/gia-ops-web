@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { getActiveWrTerm } from "@/lib/weeklyReport/getActiveTerm";
+import { getCurrentTerm } from "@/lib/currentTerm";
 import type { WrSubject, WrStudent } from "@/lib/types";
 import StudentReportBoard from "@/components/weeklyReport/StudentReportBoard";
 
@@ -16,7 +16,7 @@ export default async function MySubjectsPage() {
 
   const [{ data: subjectsData }, term] = await Promise.all([
     supabase.from("wr_subjects").select("*").eq("teacher_email", email).order("name", { ascending: true }),
-    getActiveWrTerm(supabase),
+    getCurrentTerm(supabase),
   ]);
   const subjects = (subjectsData as WrSubject[] | null) ?? [];
 
@@ -37,7 +37,7 @@ export default async function MySubjectsPage() {
     <div className="mx-auto max-w-5xl">
       <h1 className="mb-1 text-lg font-bold">내 담당과목</h1>
       <p className="mb-4 text-xs text-slate-500">
-        {term ? `현재 학기: ${term.name}` : "활성화된 학기가 없습니다. 관리자에게 학기 설정을 요청해주세요."}
+        {term ? `현재 학기: ${term.year}년 ${term.term_type}` : "진행중인 학기가 없습니다. 관리자에게 학기 설정을 요청해주세요."}
       </p>
 
       {subjects.length === 0 && (

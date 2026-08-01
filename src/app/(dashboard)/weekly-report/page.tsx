@@ -18,7 +18,7 @@ export default async function WeeklyReportLandingPage() {
   const { data: appUser } = await supabase.from("app_users").select("position").eq("email", email).maybeSingle();
   const position = appUser?.position;
 
-  if (position === "관리자" || position === "교직원") {
+  if (position === "관리자" || position === "행정직원") {
     redirect("/weekly-report/students");
   }
 

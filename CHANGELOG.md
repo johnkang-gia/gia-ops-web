@@ -4,6 +4,186 @@
 `version` 값과 항상 일치시킵니다. 업데이트할 때마다 이 파일 맨 위에 새 항목을 추가하고,
 같은 내용을 GitHub Desktop의 커밋 Summary/Description에도 그대로 사용하면 됩니다.
 
+## v0.29.0 - 2026-08-01
+
+통합 인물관리 시스템 - 학생 영구 고유번호 도입 + 연도/학기 통합 + 사건기록-학생 구조적 연결 +
+학생 정보 조회 화면 신규:
+
+**동명이인 구분 방법**: 이름만으로는 같은 이름의 학생(예: 김재이가 1A/1C/2J 세 반에 있음)을
+구분할 수 없어서, 실제 학교 현장에서 쓰는 "학번" 방식을 그대로 들여왔습니다. 학생이 처음
+등록되는 순간 `GIA-2026-0001` 형식의 영구 고유번호(student_no)가 자동으로 한 번 부여되고,
+이후 이름이 바뀌든 학년·반이 바뀌든 절대 바뀌지 않습니다. 업무·사건기록·위클리 리포트 세
+영역 모두 이제 이 고유번호(정확히는 그것과 묶인 학생 레코드의 id)를 기준으로 같은 학생을
+가리키게 됩니다 - "강여명 어머니께서"라는 문구가 나와도, 그 강여명이 어느 학생인지는 화면에서
+직접 골라서 정확히 연결해야 합니다(이름만으로는 시스템이 자동으로 확신할 수 없기 때문입니다).
+
+- **학생 영구 고유번호(student_no).** 기존 114명 전원에게 일괄로 GIA-2026-0001 ~ GIA-2026-0114
+  번호를 부여했습니다. 신규 등록되는 학생은 등록 시점 연도로 자동 채번됩니다.
+- **학생 인적/학적사항 확장.** 생년월일·학생 연락처·주소 컬럼을 추가했고, 반(wr_classes)과도
+  FK로 연결해 담임선생님을 안정적으로 조회할 수 있게 했습니다.
+- **연도>학기(정규학기+캠프)>학생/교직원 통합 분류체계.** 위클리 리포트가 따로 쓰던 학기
+  테이블(wr_terms)을 없애고, 운영(gia-ops)이 쓰던 학기 테이블(terms - 연도+학기유형: 1학기/
+  2학기/3학기/여름캠프1/여름캠프2/겨울캠프1/겨울캠프2)로 완전히 통합했습니다. 이제 학기 관리는
+  [학기] 화면 하나에서만 하면 되고, 위클리 리포트도 같은 학기 기준으로 움직입니다.
+  - **재학 이력(wr_enrollments) 신설.** "몇년도 어느 학기에 이 학생이 몇학년 몇반, 담임은
+    누구였는지"를 스냅샷으로 남기는 이력 테이블입니다. 현재 재적생 전원에 대해 지금 진행중인
+    학기 기준 스냅샷을 한 건씩 만들어 이력을 시작했습니다.
+- **사건기록 ↔ 학생 구조적 연결.** 사건 입력/수정 화면에 "관련 학생(정확히 연결)" 검색창을
+  추가했습니다. 이름을 검색하면 학년·반·학번까지 함께 보여줘서 동명이인 중 정확한 학생을 골라
+  연결할 수 있고, 기존 자유 텍스트(쉼표 구분 이름) 필드는 메모용으로 그대로 남겨뒀습니다.
+- **직위체계 정리.** '교직원'이라는 모호한 표현을 '행정직원'으로 명확히 했습니다(교사/행정직원/
+  관리자 3단계 + 개발자는 별도 최고권한, 실제 권한 로직은 바뀌지 않았습니다 - 표현만 정리).
+- **학생 정보 조회(통합 프로필) 화면 신규 - `/students`.** 행정직원/관리자(+개발자)만 접근
+  가능합니다. 이름이나 학번으로 검색하면 그 학생의 기본 인적사항, 학적 이력(연도·학기별
+  학년/반/담임), 관련 사건기록, 위클리 리포트 이력, 그리고 업무/코멘트/채팅에서 그 학생 이름이
+  언급된 내역(텍스트 검색 기반 참고용)까지 한 화면에서 볼 수 있습니다. 사이드바 [지원 · 관리]
+  카테고리에 "학생 정보 조회" 메뉴가 추가됐습니다.
+
+Supabase SQL Editor에 아래 SQL을 붙여넣고 실행해주세요(재실행해도 안전합니다).
+
+```sql
+-- ===== 36. 통합 인물관리(학생 영구 고유번호 + 연도/학기 통합 + 사건-학생 연결) =====
+-- "업무·기록·생활(위클리 리포트) 세 영역에서 같은 학생/직원은 항상 같은 고유번호로 관리되어야
+-- 한다"는 요청을 반영한 마이그레이션입니다. 동명이인(예: 김재이가 3개 반에 존재) 문제를
+-- 이름이 아니라 영구 고유번호(student_no)로 해결하고, 연도별·학기별(정규학기+캠프) 재학
+-- 이력을 남기고, 사건기록이 학생 이름 텍스트가 아니라 실제 학생 레코드를 가리키도록 합니다.
+
+-- 36-1) 직위체계 정리: '교직원'(모호한 표현) → '행정직원'으로 명확화.
+--       (교사/행정직원/관리자 3단계 + 개발자는 이 체계와 무관하게 완전 별도 최고권한)
+update app_users set position = '행정직원' where position = '교직원';
+alter table app_users drop constraint if exists app_users_position_check;
+alter table app_users add constraint app_users_position_check
+  check (position in ('교사', '행정직원', '관리자', '개발자'));
+
+-- 36-2) 학생 영구 고유번호(student_no) + 기본 인적사항 확장 + 학급 FK 연결.
+--       student_no는 한 번 부여되면 학년/반/이름이 바뀌어도 절대 바뀌지 않는 내부 식별자입니다.
+create sequence if not exists wr_student_no_seq;
+
+alter table wr_students add column if not exists student_no text;
+alter table wr_students add column if not exists birth_date date;
+alter table wr_students add column if not exists phone text;
+alter table wr_students add column if not exists address text;
+alter table wr_students add column if not exists class_id uuid references wr_classes(id) on delete set null;
+
+-- 이미 등록된 학생들에게 일괄 채번합니다(입학연도를 알 수 없어 이번 이관 연도 2026으로 표기 -
+-- 이후 신규 등록되는 학생은 실제 등록 시점 연도로 자동 채번됩니다).
+update wr_students
+set student_no = 'GIA-2026-' || lpad(nextval('wr_student_no_seq')::text, 4, '0')
+where student_no is null;
+
+alter table wr_students alter column student_no set default
+  ('GIA-' || to_char(now(), 'YYYY') || '-' || lpad(nextval('wr_student_no_seq')::text, 4, '0'));
+alter table wr_students alter column student_no set not null;
+create unique index if not exists wr_students_student_no_idx on wr_students(student_no);
+
+-- grade/class_name 텍스트 필드는 기존 화면 호환을 위해 그대로 두고, class_id로 wr_classes와도
+-- 연결해 담임선생님을 텍스트 매칭이 아닌 FK로 안정적으로 조회할 수 있게 합니다.
+update wr_students ws
+set class_id = wc.id
+from wr_classes wc
+where ws.class_id is null and ws.grade = wc.grade and ws.class_name = wc.class_name;
+
+-- 36-3) 연도>학기(정규학기+캠프) 통합: 위클리 리포트도 운영(gia-ops)과 같은 terms 테이블을
+--       씁니다(더 이상 wr_terms를 따로 쓰지 않습니다). terms.term_type은 자유 입력이지만
+--       화면에서는 1학기/2학기/3학기/여름캠프1/여름캠프2/겨울캠프1/겨울캠프2를 기본 선택지로
+--       제공합니다. wr_reports가 참조하던 wr_terms를 terms로 재연결합니다.
+alter table wr_reports drop constraint if exists wr_reports_term_id_fkey;
+alter table wr_reports add constraint wr_reports_term_id_fkey
+  foreign key (term_id) references terms(id) on delete set null;
+
+-- wr_terms는 이제 쓰이지 않습니다(운영 학기 terms로 완전히 통합) - 안전하게 제거합니다.
+drop table if exists wr_terms cascade;
+
+-- 36-4) 재학 이력(wr_enrollments): "몇년도 어느 학기에 이 학생이 몇학년 몇반, 담임은 누구였는지"를
+--       스냅샷으로 남기는 이력 테이블입니다. wr_students.grade/class_name(현재값)과 별개로,
+--       학기가 바뀔 때마다 새 행을 추가해 나가면 됩니다.
+create table if not exists wr_enrollments (
+  id uuid primary key default gen_random_uuid(),
+  student_id uuid not null references wr_students(id) on delete cascade,
+  term_id uuid references terms(id) on delete set null,
+  grade text,
+  class_id uuid references wr_classes(id) on delete set null,
+  homeroom_teacher_email text,
+  created_at timestamptz not null default now(),
+  unique (student_id, term_id)
+);
+create index if not exists wr_enrollments_student_idx on wr_enrollments(student_id);
+create index if not exists wr_enrollments_term_idx on wr_enrollments(term_id);
+
+alter table wr_enrollments enable row level security;
+drop policy if exists "giamicro_all_wr_enrollments" on wr_enrollments;
+create policy "giamicro_all_wr_enrollments" on wr_enrollments
+  for all using (is_giamicro_user()) with check (is_giamicro_user());
+
+-- 현재 재학생 전원에 대해, 지금 진행중인 학기(있다면) 기준 스냅샷을 한 건씩 만들어 이력을
+-- 시작합니다. 진행중인 학기가 없으면 term_id는 null로 남고, 나중에 학기가 생기면 관리자가
+-- [학생 정보 조회] 화면에서 새 학기 스냅샷을 추가하면 됩니다.
+insert into wr_enrollments (student_id, term_id, grade, class_id, homeroom_teacher_email)
+select ws.id,
+       (select id from terms where status = '진행중' order by start_date desc nulls last limit 1),
+       ws.grade, ws.class_id, wc.teacher_email
+from wr_students ws
+left join wr_classes wc on wc.id = ws.class_id
+where not exists (
+  select 1 from wr_enrollments we
+  where we.student_id = ws.id
+    and we.term_id is not distinct from (select id from terms where status = '진행중' order by start_date desc nulls last limit 1)
+);
+
+-- 36-5) 사건기록 ↔ 학생 구조적 연결(incident_students): incidents.students(자유 텍스트, 쉼표
+--       구분)는 빠른 메모용으로 계속 남겨두되, 실제 학생 레코드와 다대다로 연결하는 조인
+--       테이블을 추가합니다. 이렇게 연결된 사건은 [학생 정보 조회] 화면에서 그 학생의 학번
+--       기준으로 정확히 모아볼 수 있습니다(이름이 같은 다른 학생과 섞이지 않습니다).
+create table if not exists incident_students (
+  id uuid primary key default gen_random_uuid(),
+  incident_id uuid not null references incidents(id) on delete cascade,
+  student_id uuid not null references wr_students(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  unique (incident_id, student_id)
+);
+create index if not exists incident_students_incident_idx on incident_students(incident_id);
+create index if not exists incident_students_student_idx on incident_students(student_id);
+
+alter table incident_students enable row level security;
+drop policy if exists "giamicro_all_incident_students" on incident_students;
+create policy "giamicro_all_incident_students" on incident_students
+  for all using (is_giamicro_user()) with check (is_giamicro_user());
+
+do $$
+begin
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'wr_enrollments') then
+    alter publication supabase_realtime add table wr_enrollments;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'incident_students') then
+    alter publication supabase_realtime add table incident_students;
+  end if;
+end $$;
+```
+
+## v0.28.1 - 2026-08-01
+
+위클리 리포트에 실제 학생 명단(114명, 10개 반) 이관 - 코드 변경 없이 DB 데이터만 추가:
+
+- 업로드해주신 실제 GIA 명단(구 프로토타입 DB 덤프)을 현재 `wr_classes`/`wr_students` 스키마에
+  맞춰 옮겼습니다. 1A/1C/1J/2Y/2J/2K/3J/3A/4A/5E 총 10개 반, 학생 114명 전원이 들어갑니다.
+- 32번에서 넣어뒀던 테스트용 더미 데이터(이해린/김민지/팜하니/강해린/다니엘, 1a/2a 반)는
+  정확히 그 5명/2개 반만 지정해서 함께 정리했습니다 - 실제 명단과 섞이지 않습니다.
+- ⚠️ **담임 선생님 이메일은 비워뒀습니다.** 원본 자료에 실제 `@giamicro.com` 이메일이 없고
+  구 시스템의 아이디/비밀번호만 있었습니다. 아래 담임 배정을 참고해서 [위클리 리포트 관리 >
+  반/담임 배정] 화면에서 실제 이메일로 배정해주세요.
+  - 1A=Aimie, 1C=Carina, 1J=Jamie, 2Y=Yunsang, 2J=Jandy, 2K=Katherine, 3J=Janelle, 3A=Anna,
+    4A=Sarah, 5E=Eamonn
+  - Crystal/Michelle/Celine 선생님은 원본 자료상 담임 배정이 없어(과목 전담으로 추정)
+    [과목반 세팅] 화면에서 별도로 배정해주세요.
+- 코드 변경은 없어서 빌드/배포 없이 아래 SQL만 Supabase SQL Editor에 붙여넣고 실행하시면
+  바로 반영됩니다.
+
+```sql
+-- ===== 35. 위클리 리포트 실제 데이터(반/학생 전체 명단) 이관 =====
+-- (전체 SQL은 supabase/schema.sql의 35번 섹션을 참고해주세요 - 반 10개 + 학생 114명 전체가
+--  포함돼 있어 이 체인지로그에는 길이 때문에 요약만 남깁니다.)
+```
+
 ## v0.28.0 - 2026-08-01
 
 사이드바 화이트 복귀 + 업무 탭 WorkFlatform 원본 재구현 + 플라이아웃 메뉴 + 통합 관리자 대시보드 + 3개 앱 테마 명확화:

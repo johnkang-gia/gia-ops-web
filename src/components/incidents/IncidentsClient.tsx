@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRealtimeTable } from "@/lib/useRealtimeTable";
 import { genCaseId } from "@/lib/caseId";
-import type { Incident, Term } from "@/lib/types";
+import type { Incident, Term, WrStudent } from "@/lib/types";
 import AiSourcePanel from "@/components/ai/AiSourcePanel";
 
 type FormState = {
@@ -61,9 +61,64 @@ export default function IncidentsClient({
   const [justSavedMsg, setJustSavedMsg] = useState("");
   const [filling, setFilling] = useState(false);
 
+  // 동명이인이 있어도 정확히 어느 학생인지 고유번호(student_no) 기준으로 연결하기 위한 상태입니다
+  // (incidents.students 자유 텍스트는 그대로 두고, incident_students 조인 테이블에 실제 학생
+  // 레코드를 별도로 연결합니다 - [학생 정보 조회] 화면에서 이 연결을 기준으로 모아봅니다).
+  const [allStudents, setAllStudents] = useState<WrStudent[]>([]);
+  const [linkedStudentIds, setLinkedStudentIds] = useState<string[]>([]);
+  const [studentQuery, setStudentQuery] = useState("");
+  const [showStudentMenu, setShowStudentMenu] = useState(false);
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase
+      .from("wr_students")
+      .select("*")
+      .eq("status", "active")
+      .order("name", { ascending: true })
+      .then(({ data }) => setAllStudents((data as WrStudent[] | null) ?? []));
+  }, []);
+
+  const studentMatches = useMemo(() => {
+    const q = studentQuery.trim();
+    if (!q) return [];
+    return allStudents.filter((s) => s.name.includes(q) && !linkedStudentIds.includes(s.id)).slice(0, 8);
+  }, [allStudents, studentQuery, linkedStudentIds]);
+
+  function addLinkedStudent(s: WrStudent) {
+    setLinkedStudentIds((prev) => [...prev, s.id]);
+    // 자유 텍스트 필드에도 이름을 같이 남겨서(기존 화면 호환) 목록에서 빠르게 훑어볼 수 있게 합니다.
+    setForm((f) => {
+      const names = f.students
+        .split(",")
+        .map((n) => n.trim())
+        .filter(Boolean);
+      if (names.includes(s.name)) return f;
+      return { ...f, students: [...names, s.name].join(", ") };
+    });
+    setStudentQuery("");
+    setShowStudentMenu(false);
+  }
+
+  function removeLinkedStudent(id: string) {
+    setLinkedStudentIds((prev) => prev.filter((sid) => sid !== id));
+  }
+
+  async function syncIncidentStudents(incidentId: string) {
+    const supabase = createClient();
+    await supabase.from("incident_students").delete().eq("incident_id", incidentId);
+    if (linkedStudentIds.length > 0) {
+      await supabase
+        .from("incident_students")
+        .insert(linkedStudentIds.map((student_id) => ({ incident_id: incidentId, student_id })));
+    }
+  }
+
   function startNew() {
     setEditingId(null);
     setForm(emptyForm(currentUserEmail));
+    setLinkedStudentIds([]);
+    setStudentQuery("");
     setError("");
     setJustSavedMsg("");
   }
@@ -111,6 +166,14 @@ export default function IncidentsClient({
       manual_cat: it.manual_cat ?? "",
       status: it.status ?? "",
     });
+    setStudentQuery("");
+    setLinkedStudentIds([]);
+    const supabase = createClient();
+    supabase
+      .from("incident_students")
+      .select("student_id")
+      .eq("incident_id", it.id)
+      .then(({ data }) => setLinkedStudentIds(((data as { student_id: string }[] | null) ?? []).map((r) => r.student_id)));
     setError("");
     setJustSavedMsg("");
   }
@@ -137,6 +200,7 @@ export default function IncidentsClient({
         setError(err.message);
       } else if (data) {
         setItems((prev) => prev.map((it) => (it.id === editingId ? (data as Incident) : it)));
+        await syncIncidentStudents(editingId);
         setJustSavedMsg("수정되었습니다.");
       }
     } else {
@@ -150,6 +214,7 @@ export default function IncidentsClient({
       } else if (data) {
         const saved = data as Incident;
         setItems((prev) => [saved, ...prev]);
+        await syncIncidentStudents(saved.id);
         startNew();
         setJustSavedMsg("저장되었습니다. 오른쪽에 AI 제안이 곧 나타납니다.");
         // 저장 직후 바로 이 건에 대해서만 AI 분석을 실행해, 5건 단위 일괄 분석을 기다리지 않고
@@ -294,7 +359,7 @@ export default function IncidentsClient({
           ))}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label className="flex flex-col gap-1 text-xs text-slate-500">
-              관련 학생 이름(쉼표 구분)
+              관련 학생 이름(쉼표 구분, 메모용)
               <input
                 type="text"
                 value={form.students}
@@ -312,6 +377,64 @@ export default function IncidentsClient({
                 className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
               />
             </label>
+          </div>
+
+          <div className="relative flex flex-col gap-1 text-xs text-slate-500">
+            <span>관련 학생(정확히 연결 - 동명이인 방지용)</span>
+            {linkedStudentIds.length > 0 && (
+              <div className="mb-1 flex flex-wrap gap-1.5">
+                {linkedStudentIds.map((id) => {
+                  const s = allStudents.find((st) => st.id === id);
+                  return (
+                    <span
+                      key={id}
+                      className="flex items-center gap-1 rounded-full bg-gia-gold-soft/40 px-2 py-0.5 text-[11px] font-medium text-gia-navy"
+                    >
+                      {s ? `${s.name} · ${s.grade}학년 ${s.class_name}반` : "(로딩중...)"}
+                      <button
+                        type="button"
+                        onClick={() => removeLinkedStudent(id)}
+                        className="text-slate-400 hover:text-red-500"
+                      >
+                        ✕
+                      </button>
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+            <input
+              type="text"
+              value={studentQuery}
+              onChange={(e) => {
+                setStudentQuery(e.target.value);
+                setShowStudentMenu(true);
+              }}
+              onFocus={() => setShowStudentMenu(true)}
+              placeholder="학생 이름으로 검색해서 정확한 학생을 골라주세요"
+              className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+            />
+            {showStudentMenu && studentMatches.length > 0 && (
+              <div className="absolute top-full z-10 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg">
+                {studentMatches.map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => addLinkedStudent(s)}
+                    className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-slate-50"
+                  >
+                    <span className="font-medium">{s.name}</span>
+                    <span className="text-[11px] text-slate-400">
+                      {s.grade}학년 {s.class_name}반 · {s.student_no}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+            <p className="text-[11px] text-slate-400">
+              같은 이름의 학생이 여러 명일 수 있어, 학년·반·학번까지 보고 정확히 골라야 [학생 정보
+              조회]에서 이 사건이 그 학생 기록으로 정확히 모입니다.
+            </p>
           </div>
 
           {error && <p className="text-sm text-red-600">{error}</p>}

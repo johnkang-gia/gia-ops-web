@@ -244,7 +244,7 @@ export type AiUsageLog = {
 };
 
 export type Department3 = "유치부" | "초등부" | "중고등부";
-export type StaffPosition = "교사" | "교직원" | "관리자" | "개발자";
+export type StaffPosition = "교사" | "행정직원" | "관리자" | "개발자";
 
 export type AppUser = {
   email: string;
@@ -267,15 +267,9 @@ export type BadgeValue = "excellent" | "good" | "warning" | "bad";
 export type EvalCategory = "academic" | "improvement" | "participation" | "behavior" | "social";
 export type EvalBadges = Partial<Record<EvalCategory | "overall", BadgeValue[]>>;
 
-export type WrTerm = {
-  id: string;
-  name: string;
-  start_date: string | null;
-  end_date: string | null;
-  is_active: boolean;
-  is_archived: boolean;
-  created_at: string;
-};
+// 위클리 리포트도 운영(gia-ops)과 동일한 학기 체계(Term: 연도+학기유형)를 씁니다 - 더 이상
+// 별도의 wr_terms를 쓰지 않습니다. 기존 코드에서 WrTerm을 쓰던 자리는 Term으로 바꿔주세요.
+export type WrTerm = Term;
 
 export type WrClass = {
   id: string;
@@ -288,12 +282,36 @@ export type WrClass = {
 
 export type WrStudent = {
   id: string;
+  student_no: string; // 영구 고유번호(예: GIA-2026-0001) - 동명이인이어도 절대 겹치지 않습니다.
   name: string;
   grade: string | null;
   class_name: string | null;
+  class_id: string | null;
+  birth_date: string | null;
+  phone: string | null;
   parent_phone: string | null;
+  address: string | null;
   note: string | null;
   status: "active" | "inactive";
+  created_at: string;
+};
+
+// 재학 이력(연도/학기별 학년·반·담임 스냅샷) - "몇년도 어느 학기에 이 학생이 몇학년 몇반이었는지"
+export type WrEnrollment = {
+  id: string;
+  student_id: string;
+  term_id: string | null;
+  grade: string | null;
+  class_id: string | null;
+  homeroom_teacher_email: string | null;
+  created_at: string;
+};
+
+// 사건기록 ↔ 학생 구조적 연결(다대다)
+export type IncidentStudent = {
+  id: string;
+  incident_id: string;
+  student_id: string;
   created_at: string;
 };
 

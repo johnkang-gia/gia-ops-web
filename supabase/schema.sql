@@ -1111,3 +1111,283 @@ drop table if exists todos cascade;
 -- 보여줍니다. 기존에는 title 하나뿐이었는데, 이 컬럼을 추가해 카드에 "무엇을 해야 하는지"를
 -- 조금 더 자세히 적을 수 있게 했습니다(선택 입력 - 비워두면 예전처럼 제목만 보입니다).
 alter table tasks add column if not exists description text;
+
+-- ===== 35. 위클리 리포트 실제 데이터(반/학생 전체 명단) 이관 =====
+-- 업로드된 weekly_report_gia_real_data.md의 실제 GIA 학생·반 명단(구 프로토타입 DB 덤프)을
+-- 현재 wr_* 스키마(uuid 기본키) 구조에 맞춰 옮긴 것입니다. md5('고유문자열')::uuid 트릭으로
+-- 이 스크립트를 여러 번 실행해도 on conflict do nothing으로 안전하게 무시됩니다.
+--
+-- 1) 32번에서 넣었던 테스트용 더미 데이터(이해린/김민지/팜하니/강해린/다니엘, 1a/2a 반)를
+--    먼저 정리합니다 - 실제 명단과 섞이지 않도록 정확히 그 5명/2개 반/2개 과목만 지정해서
+--    지웁니다(다른 데이터는 건드리지 않습니다). 학생 삭제 시 해당 학생의 리포트도 함께
+--    지워집니다(wr_reports.student_id가 on delete cascade로 걸려있음).
+delete from wr_subjects where id in (md5('wr-subject-math-1')::uuid, md5('wr-subject-eng-2')::uuid);
+delete from wr_students where id in (
+  md5('wr-student-1a-01')::uuid, md5('wr-student-1a-02')::uuid, md5('wr-student-1a-03')::uuid,
+  md5('wr-student-2a-01')::uuid, md5('wr-student-2a-02')::uuid
+);
+delete from wr_classes where id in (md5('wr-class-1a')::uuid, md5('wr-class-2a')::uuid);
+
+-- 2) 반 10개를 만듭니다. teacher_email은 원본 자료에 실제 @giamicro.com 이메일이 없어서
+--    (아이디/비밀번호 방식의 구 시스템 계정만 있었음) 비워뒀습니다 - 아래 담임 선생님 성함을
+--    참고해서 [위클리 리포트 관리 > 반/담임 배정] 화면에서 실제 이메일로 배정해주세요.
+--    담임: 1A=Aimie, 1C=Carina, 1J=Jamie, 2Y=Yunsang, 2J=Jandy, 2K=Katherine,
+--          3J=Janelle, 3A=Anna, 4A=Sarah, 5E=Eamonn
+--    (Crystal/Michelle/Celine 선생님은 원본 자료상 담임이 아닌 과목 전담으로 보입니다 -
+--     필요하시면 [과목반 세팅] 화면에서 과목별로 배정해주세요.)
+insert into wr_classes (id, grade, class_name, teacher_email) values
+  (md5('wr-class-real-1a')::uuid, '1', 'A', null),
+  (md5('wr-class-real-1c')::uuid, '1', 'C', null),
+  (md5('wr-class-real-1j')::uuid, '1', 'J', null),
+  (md5('wr-class-real-2y')::uuid, '2', 'Y', null),
+  (md5('wr-class-real-2j')::uuid, '2', 'J', null),
+  (md5('wr-class-real-2k')::uuid, '2', 'K', null),
+  (md5('wr-class-real-3j')::uuid, '3', 'J', null),
+  (md5('wr-class-real-3a')::uuid, '3', 'A', null),
+  (md5('wr-class-real-4a')::uuid, '4', 'A', null),
+  (md5('wr-class-real-5e')::uuid, '5', 'E', null)
+on conflict (id) do nothing;
+
+-- 3) 학생 114명 전원을 넣습니다(원본 STU 코드를 md5 키에 그대로 넣어 고유성을 보장했습니다).
+insert into wr_students (id, name, grade, class_name, status) values
+  (md5('wr-student-real-STU-10000')::uuid, '김사랑(Benecia Kim)', '1', 'A', 'active'),
+  (md5('wr-student-real-STU-10001')::uuid, '김단우(Danu Kim)', '1', 'A', 'active'),
+  (md5('wr-student-real-STU-10002')::uuid, '심규민(Gyumin Shim)', '1', 'A', 'active'),
+  (md5('wr-student-real-STU-10003')::uuid, '박하솜(Hasom Park)', '1', 'A', 'active'),
+  (md5('wr-student-real-STU-10004')::uuid, '주이안(Ian Ju)', '1', 'A', 'active'),
+  (md5('wr-student-real-STU-10005')::uuid, '김재이(Jay Kim)', '1', 'A', 'active'),
+  (md5('wr-student-real-STU-10006')::uuid, '남예인(Jennie Nam)', '1', 'A', 'active'),
+  (md5('wr-student-real-STU-10007')::uuid, '이라엘(Lael Lee)', '1', 'A', 'active'),
+  (md5('wr-student-real-STU-10008')::uuid, '김도은(Rogan Kim)', '1', 'A', 'active'),
+  (md5('wr-student-real-STU-10009')::uuid, '이서준(Seojun Lee)', '1', 'A', 'active'),
+  (md5('wr-student-real-STU-100010')::uuid, '원세빈(Sophia Won)', '1', 'A', 'active'),
+  (md5('wr-student-real-STU-100011')::uuid, '권태이(Tay Kwon)', '1', 'A', 'active'),
+  (md5('wr-student-real-STU-100012')::uuid, '한우영(Zoe Han)', '1', 'A', 'active'),
+
+  (md5('wr-student-real-STU-10010')::uuid, '김나율(Anna Kim)', '1', 'C', 'active'),
+  (md5('wr-student-real-STU-10011')::uuid, '이아인(Ayn Lee)', '1', 'C', 'active'),
+  (md5('wr-student-real-STU-10012')::uuid, '황라윤(Bella Hwang)', '1', 'C', 'active'),
+  (md5('wr-student-real-STU-10013')::uuid, '박도하(Doha Park)', '1', 'C', 'active'),
+  (md5('wr-student-real-STU-10014')::uuid, '서민준(Eden Seo)', '1', 'C', 'active'),
+  (md5('wr-student-real-STU-10015')::uuid, '이현우(Harry Lee)', '1', 'C', 'active'),
+  (md5('wr-student-real-STU-10016')::uuid, '문준연(Joon Moon)', '1', 'C', 'active'),
+  (md5('wr-student-real-STU-10017')::uuid, '연하윤(Hayoon Yon)', '1', 'C', 'active'),
+  (md5('wr-student-real-STU-10018')::uuid, '김재이(Jay Kim)', '1', 'C', 'active'),
+  (md5('wr-student-real-STU-10019')::uuid, '고서윤(Jenny Go)', '1', 'C', 'active'),
+  (md5('wr-student-real-STU-100110')::uuid, '전준백(Justin Jeon)', '1', 'C', 'active'),
+  (md5('wr-student-real-STU-100111')::uuid, '백서아(Ruby Paik)', '1', 'C', 'active'),
+  (md5('wr-student-real-STU-100112')::uuid, '박세인(Clara Park)', '1', 'C', 'active'),
+
+  (md5('wr-student-real-STU-10020')::uuid, '신민하(Brooklyn Shin)', '1', 'J', 'active'),
+  (md5('wr-student-real-STU-10021')::uuid, '손별(Byeol Son)', '1', 'J', 'active'),
+  (md5('wr-student-real-STU-10022')::uuid, '곽세린(Celine Kwak)', '1', 'J', 'active'),
+  (md5('wr-student-real-STU-10023')::uuid, '이예나(Eliana Lee)', '1', 'J', 'active'),
+  (md5('wr-student-real-STU-10024')::uuid, '이은재(Ellie Lee)', '1', 'J', 'active'),
+  (md5('wr-student-real-STU-10025')::uuid, '전지완(Eric Jeon)', '1', 'J', 'active'),
+  (md5('wr-student-real-STU-10026')::uuid, '황이안(Ian Hwang)', '1', 'J', 'active'),
+  (md5('wr-student-real-STU-10027')::uuid, '이예준(Isaac Lee)', '1', 'J', 'active'),
+  (md5('wr-student-real-STU-10028')::uuid, '고진우(Jinwoo Ko)', '1', 'J', 'active'),
+  (md5('wr-student-real-STU-10029')::uuid, '이신원(Max Lee)', '1', 'J', 'active'),
+  (md5('wr-student-real-STU-100210')::uuid, '노유겸(Noah Roh)', '1', 'J', 'active'),
+  (md5('wr-student-real-STU-100211')::uuid, '박세주(Reina Park)', '1', 'J', 'active'),
+  (md5('wr-student-real-STU-100212')::uuid, '정서안(Sharlene Jung)', '1', 'J', 'active'),
+  (md5('wr-student-real-STU-100213')::uuid, '황라원(Sophia Hwang)', '1', 'J', 'active'),
+  (md5('wr-student-real-STU-100214')::uuid, '이연우(Yeni Lee)', '1', 'J', 'active'),
+
+  (md5('wr-student-real-STU-10030')::uuid, '임예나(Grace Lim)', '2', 'Y', 'active'),
+  (md5('wr-student-real-STU-10031')::uuid, 'Maya Amelia Dowding(Maya Amelia Dowding)', '2', 'Y', 'active'),
+  (md5('wr-student-real-STU-10032')::uuid, '임다현(Diane Lim)', '2', 'Y', 'active'),
+  (md5('wr-student-real-STU-10033')::uuid, '김현수(Hans Kim)', '2', 'Y', 'active'),
+  (md5('wr-student-real-STU-10034')::uuid, '민송희(Sophia Min)', '2', 'Y', 'active'),
+  (md5('wr-student-real-STU-10035')::uuid, '이서아(Vivian Lee)', '2', 'Y', 'active'),
+  (md5('wr-student-real-STU-10036')::uuid, '엄하율(Henry Hayule Eom)', '2', 'Y', 'active'),
+  (md5('wr-student-real-STU-10037')::uuid, '홍서형(Danny Hong)', '2', 'Y', 'active'),
+  (md5('wr-student-real-STU-10038')::uuid, '유한솔(Kai Yoo)', '2', 'Y', 'active'),
+  (md5('wr-student-real-STU-10039')::uuid, '황시원(Sean Hwang)', '2', 'Y', 'active'),
+
+  (md5('wr-student-real-STU-10040')::uuid, '강서후(Seohu Kang)', '2', 'J', 'active'),
+  (md5('wr-student-real-STU-10041')::uuid, '김재이(Jay Kim)', '2', 'J', 'active'),
+  (md5('wr-student-real-STU-10042')::uuid, '정겨울(Wynter Jeong)', '2', 'J', 'active'),
+  (md5('wr-student-real-STU-10043')::uuid, '이서현(Elizabeth Lee)', '2', 'J', 'active'),
+  (md5('wr-student-real-STU-10044')::uuid, '민노엘(Noel Min)', '2', 'J', 'active'),
+  (md5('wr-student-real-STU-10045')::uuid, '강이제(Ije Kang)', '2', 'J', 'active'),
+  (md5('wr-student-real-STU-10046')::uuid, '황준호(June Hwang)', '2', 'J', 'active'),
+  (md5('wr-student-real-STU-10047')::uuid, '정이엘(E.L. Jeong)', '2', 'J', 'active'),
+  (md5('wr-student-real-STU-10048')::uuid, '정레인(Rain Jung)', '2', 'J', 'active'),
+
+  (md5('wr-student-real-STU-10050')::uuid, '이준원(Jun Lee)', '2', 'K', 'active'),
+  (md5('wr-student-real-STU-10051')::uuid, '최서아(Sarah Choi)', '2', 'K', 'active'),
+  (md5('wr-student-real-STU-10052')::uuid, '정세진(Emma Jung)', '2', 'K', 'active'),
+  (md5('wr-student-real-STU-10053')::uuid, '차봄(Bom Cha)', '2', 'K', 'active'),
+  (md5('wr-student-real-STU-10054')::uuid, '이주원(Benny Lee)', '2', 'K', 'active'),
+  (md5('wr-student-real-STU-10055')::uuid, '지수(Soo Ji)', '2', 'K', 'active'),
+  (md5('wr-student-real-STU-10056')::uuid, '이준서(Justin Lee)', '2', 'K', 'active'),
+  (md5('wr-student-real-STU-10057')::uuid, '이예온(Grace Lee)', '2', 'K', 'active'),
+  (md5('wr-student-real-STU-10058')::uuid, '임주한(Juhan Lim)', '2', 'K', 'active'),
+
+  (md5('wr-student-real-STU-10060')::uuid, '곽호율(James Kwak)', '3', 'J', 'active'),
+  (md5('wr-student-real-STU-10061')::uuid, '홍동은(Jaden Hong)', '3', 'J', 'active'),
+  (md5('wr-student-real-STU-10062')::uuid, '김태오(Theo Kim)', '3', 'J', 'active'),
+  (md5('wr-student-real-STU-10063')::uuid, '남가인(Gahin Nam)', '3', 'J', 'active'),
+  (md5('wr-student-real-STU-10064')::uuid, '고이건(Eagon Koh)', '3', 'J', 'active'),
+  (md5('wr-student-real-STU-10065')::uuid, '김서진(Seojin Kim)', '3', 'J', 'active'),
+  (md5('wr-student-real-STU-10066')::uuid, '마리아 파즈 마누키안(Maria Paz Manoukian)', '3', 'J', 'active'),
+  (md5('wr-student-real-STU-10067')::uuid, '김동하(Dongha Kim)', '3', 'J', 'active'),
+  (md5('wr-student-real-STU-10068')::uuid, '정채린(Serena Jung)', '3', 'J', 'active'),
+  (md5('wr-student-real-STU-10069')::uuid, '김태리(Terry Kim)', '3', 'J', 'active'),
+  (md5('wr-student-real-STU-100610')::uuid, '임하임(Blaire Lim)', '3', 'J', 'active'),
+
+  (md5('wr-student-real-STU-10070')::uuid, '김서이(Victoria Kim)', '3', 'A', 'active'),
+  (md5('wr-student-real-STU-10071')::uuid, '김지민(Jimin Kim)', '3', 'A', 'active'),
+  (md5('wr-student-real-STU-10072')::uuid, '유재이(Jay Yu)', '3', 'A', 'active'),
+  (md5('wr-student-real-STU-10073')::uuid, '이세은(Lina Lee)', '3', 'A', 'active'),
+  (md5('wr-student-real-STU-10074')::uuid, '임선우(Sunwoo Lim)', '3', 'A', 'active'),
+  (md5('wr-student-real-STU-10075')::uuid, '정리사(Lisa Jung)', '3', 'A', 'active'),
+  (md5('wr-student-real-STU-10076')::uuid, '정서우(Stella Jung)', '3', 'A', 'active'),
+  (md5('wr-student-real-STU-10077')::uuid, '정하임(Hayim Jung)', '3', 'A', 'active'),
+  (md5('wr-student-real-STU-10078')::uuid, '강하라(Hara Kang)', '3', 'A', 'active'),
+  (md5('wr-student-real-STU-10079')::uuid, '황준호(June Hwang)', '3', 'A', 'active'),
+  (md5('wr-student-real-STU-100710')::uuid, '조장훈(Janghoon Cho)', '3', 'A', 'active'),
+  (md5('wr-student-real-STU-100711')::uuid, '권수호(Teddy Kwon)', '3', 'A', 'active'),
+
+  (md5('wr-student-real-STU-10080')::uuid, '임지효(Jihyo Yim)', '4', 'A', 'active'),
+  (md5('wr-student-real-STU-10081')::uuid, '최서연(Seoyeon Choi)', '4', 'A', 'active'),
+  (md5('wr-student-real-STU-10082')::uuid, '강예성(Yesung Kang)', '4', 'A', 'active'),
+  (md5('wr-student-real-STU-10083')::uuid, '이한범(Danny Lee)', '4', 'A', 'active'),
+  (md5('wr-student-real-STU-10084')::uuid, '김리안(Rian Kim)', '4', 'A', 'active'),
+  (md5('wr-student-real-STU-10085')::uuid, '강하늘(Skye Kang)', '4', 'A', 'active'),
+  (md5('wr-student-real-STU-10086')::uuid, '김태지(Teji Kim)', '4', 'A', 'active'),
+  (md5('wr-student-real-STU-10087')::uuid, '김태윤(Teddy Kim)', '4', 'A', 'active'),
+  (md5('wr-student-real-STU-10088')::uuid, '이온유(Roy Lee)', '4', 'A', 'active'),
+  (md5('wr-student-real-STU-10089')::uuid, '도윤서(Yoonseo Doh)', '4', 'A', 'active'),
+
+  (md5('wr-student-real-STU-10090')::uuid, '박준후(Justin Park)', '5', 'E', 'active'),
+  (md5('wr-student-real-STU-10091')::uuid, '문수민(Clara Moon)', '5', 'E', 'active'),
+  (md5('wr-student-real-STU-10092')::uuid, '김시아(Joy Kim)', '5', 'E', 'active'),
+  (md5('wr-student-real-STU-10093')::uuid, '김시준(Leo Kim)', '5', 'E', 'active'),
+  (md5('wr-student-real-STU-10094')::uuid, '정도현(Aaron Jung)', '5', 'E', 'active'),
+  (md5('wr-student-real-STU-10095')::uuid, '정채윤(Olivia Jung)', '5', 'E', 'active'),
+  (md5('wr-student-real-STU-10096')::uuid, '강하엘(Hael Kang)', '5', 'E', 'active'),
+  (md5('wr-student-real-STU-10097')::uuid, '제이콥 딜런 마(Jacob Dylan Ma)', '5', 'E', 'active'),
+  (md5('wr-student-real-STU-10098')::uuid, '강여명(Ryeomyeong Kang)', '5', 'E', 'active'),
+  (md5('wr-student-real-STU-10099')::uuid, '후안 이그나시오 마누키안(Juan Ignacio Manoukian)', '5', 'E', 'active'),
+  (md5('wr-student-real-STU-100910')::uuid, '이도후(Henry Lee)', '5', 'E', 'active'),
+  (md5('wr-student-real-STU-100911')::uuid, '박지음(Jeum Park)', '5', 'E', 'active')
+on conflict (id) do nothing;
+
+-- ===== 36. 통합 인물관리(학생 영구 고유번호 + 연도/학기 통합 + 사건-학생 연결) =====
+-- "업무·기록·생활(위클리 리포트) 세 영역에서 같은 학생/직원은 항상 같은 고유번호로 관리되어야
+-- 한다"는 요청을 반영한 마이그레이션입니다. 동명이인(예: 김재이가 3개 반에 존재) 문제를
+-- 이름이 아니라 영구 고유번호(student_no)로 해결하고, 연도별·학기별(정규학기+캠프) 재학
+-- 이력을 남기고, 사건기록이 학생 이름 텍스트가 아니라 실제 학생 레코드를 가리키도록 합니다.
+
+-- 36-1) 직위체계 정리: '교직원'(모호한 표현) → '행정직원'으로 명확화.
+--       (교사/행정직원/관리자 3단계 + 개발자는 이 체계와 무관하게 완전 별도 최고권한)
+update app_users set position = '행정직원' where position = '교직원';
+alter table app_users drop constraint if exists app_users_position_check;
+alter table app_users add constraint app_users_position_check
+  check (position in ('교사', '행정직원', '관리자', '개발자'));
+
+-- 36-2) 학생 영구 고유번호(student_no) + 기본 인적사항 확장 + 학급 FK 연결.
+--       student_no는 한 번 부여되면 학년/반/이름이 바뀌어도 절대 바뀌지 않는 내부 식별자입니다.
+create sequence if not exists wr_student_no_seq;
+
+alter table wr_students add column if not exists student_no text;
+alter table wr_students add column if not exists birth_date date;
+alter table wr_students add column if not exists phone text;
+alter table wr_students add column if not exists address text;
+alter table wr_students add column if not exists class_id uuid references wr_classes(id) on delete set null;
+
+-- 이미 등록된 학생들에게 일괄 채번합니다(입학연도를 알 수 없어 이번 이관 연도 2026으로 표기 -
+-- 이후 신규 등록되는 학생은 실제 등록 시점 연도로 자동 채번됩니다).
+update wr_students
+set student_no = 'GIA-2026-' || lpad(nextval('wr_student_no_seq')::text, 4, '0')
+where student_no is null;
+
+alter table wr_students alter column student_no set default
+  ('GIA-' || to_char(now(), 'YYYY') || '-' || lpad(nextval('wr_student_no_seq')::text, 4, '0'));
+alter table wr_students alter column student_no set not null;
+create unique index if not exists wr_students_student_no_idx on wr_students(student_no);
+
+-- grade/class_name 텍스트 필드는 기존 화면 호환을 위해 그대로 두고, class_id로 wr_classes와도
+-- 연결해 담임선생님을 텍스트 매칭이 아닌 FK로 안정적으로 조회할 수 있게 합니다.
+update wr_students ws
+set class_id = wc.id
+from wr_classes wc
+where ws.class_id is null and ws.grade = wc.grade and ws.class_name = wc.class_name;
+
+-- 36-3) 연도>학기(정규학기+캠프) 통합: 위클리 리포트도 운영(gia-ops)과 같은 terms 테이블을
+--       씁니다(더 이상 wr_terms를 따로 쓰지 않습니다). terms.term_type은 자유 입력이지만
+--       화면에서는 1학기/2학기/3학기/여름캠프1/여름캠프2/겨울캠프1/겨울캠프2를 기본 선택지로
+--       제공합니다. wr_reports가 참조하던 wr_terms를 terms로 재연결합니다.
+alter table wr_reports drop constraint if exists wr_reports_term_id_fkey;
+alter table wr_reports add constraint wr_reports_term_id_fkey
+  foreign key (term_id) references terms(id) on delete set null;
+
+-- wr_terms는 이제 쓰이지 않습니다(운영 학기 terms로 완전히 통합) - 안전하게 제거합니다.
+drop table if exists wr_terms cascade;
+
+-- 36-4) 재학 이력(wr_enrollments): "몇년도 어느 학기에 이 학생이 몇학년 몇반, 담임은 누구였는지"를
+--       스냅샷으로 남기는 이력 테이블입니다. wr_students.grade/class_name(현재값)과 별개로,
+--       학기가 바뀔 때마다 새 행을 추가해 나가면 됩니다.
+create table if not exists wr_enrollments (
+  id uuid primary key default gen_random_uuid(),
+  student_id uuid not null references wr_students(id) on delete cascade,
+  term_id uuid references terms(id) on delete set null,
+  grade text,
+  class_id uuid references wr_classes(id) on delete set null,
+  homeroom_teacher_email text,
+  created_at timestamptz not null default now(),
+  unique (student_id, term_id)
+);
+create index if not exists wr_enrollments_student_idx on wr_enrollments(student_id);
+create index if not exists wr_enrollments_term_idx on wr_enrollments(term_id);
+
+alter table wr_enrollments enable row level security;
+drop policy if exists "giamicro_all_wr_enrollments" on wr_enrollments;
+create policy "giamicro_all_wr_enrollments" on wr_enrollments
+  for all using (is_giamicro_user()) with check (is_giamicro_user());
+
+-- 현재 재학생 전원에 대해, 지금 진행중인 학기(있다면) 기준 스냅샷을 한 건씩 만들어 이력을
+-- 시작합니다. 진행중인 학기가 없으면 term_id는 null로 남고, 나중에 학기가 생기면 관리자가
+-- [학생 정보 조회] 화면에서 새 학기 스냅샷을 추가하면 됩니다.
+insert into wr_enrollments (student_id, term_id, grade, class_id, homeroom_teacher_email)
+select ws.id,
+       (select id from terms where status = '진행중' order by start_date desc nulls last limit 1),
+       ws.grade, ws.class_id, wc.teacher_email
+from wr_students ws
+left join wr_classes wc on wc.id = ws.class_id
+where not exists (
+  select 1 from wr_enrollments we
+  where we.student_id = ws.id
+    and we.term_id is not distinct from (select id from terms where status = '진행중' order by start_date desc nulls last limit 1)
+);
+
+-- 36-5) 사건기록 ↔ 학생 구조적 연결(incident_students): incidents.students(자유 텍스트, 쉼표
+--       구분)는 빠른 메모용으로 계속 남겨두되, 실제 학생 레코드와 다대다로 연결하는 조인
+--       테이블을 추가합니다. 이렇게 연결된 사건은 [학생 정보 조회] 화면에서 그 학생의 학번
+--       기준으로 정확히 모아볼 수 있습니다(이름이 같은 다른 학생과 섞이지 않습니다).
+create table if not exists incident_students (
+  id uuid primary key default gen_random_uuid(),
+  incident_id uuid not null references incidents(id) on delete cascade,
+  student_id uuid not null references wr_students(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  unique (incident_id, student_id)
+);
+create index if not exists incident_students_incident_idx on incident_students(incident_id);
+create index if not exists incident_students_student_idx on incident_students(student_id);
+
+alter table incident_students enable row level security;
+drop policy if exists "giamicro_all_incident_students" on incident_students;
+create policy "giamicro_all_incident_students" on incident_students
+  for all using (is_giamicro_user()) with check (is_giamicro_user());
+
+do $$
+begin
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'wr_enrollments') then
+    alter publication supabase_realtime add table wr_enrollments;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'incident_students') then
+    alter publication supabase_realtime add table incident_students;
+  end if;
+end $$;

@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { isDeveloperEmail } from "@/lib/roles";
-import type { AppUser, Department, Task, WrReport, WrStudent, WrTerm } from "@/lib/types";
+import type { AppUser, Department, Task, Term, WrReport, WrStudent } from "@/lib/types";
 import StatCard from "@/components/admin/StatCard";
 import GroupedBarChart, { type BarDataPoint } from "@/components/admin/GroupedBarChart";
 import RankedList, { type RankedItem } from "@/components/admin/RankedList";
@@ -72,7 +72,7 @@ export default async function AdminDashboardPage() {
       supabase.from("departments").select("*").order("sort_order", { ascending: true }),
       supabase.from("app_users").select("*").eq("status", "approved"),
       supabase.from("wr_students").select("id, name, status, class_name").eq("status", "active"),
-      supabase.from("wr_terms").select("*").eq("is_active", true).maybeSingle(),
+      supabase.from("terms").select("*").eq("status", "진행중").order("start_date", { ascending: false }).limit(1).maybeSingle(),
       supabase
         .from("wr_reports")
         .select("id, student_id, term_id, eval_badges, status, report_date")
@@ -86,7 +86,7 @@ export default async function AdminDashboardPage() {
   const departments = (deptRes.data as Department[] | null) ?? [];
   const appUsers = (appUsersRes.data as AppUser[] | null) ?? [];
   const wrStudents = (wrStudentsRes.data as WrStudent[] | null) ?? [];
-  const wrTerm = wrTermRes.data as WrTerm | null;
+  const wrTerm = wrTermRes.data as Term | null;
   const wrReports = (wrReportsRes.data as WrReport[] | null) ?? [];
 
   // ===== 1. 학교 전체 통계 (KPI) =====
@@ -178,7 +178,7 @@ export default async function AdminDashboardPage() {
 
   const staffByPosition = {
     관리자: appUsers.filter((u) => u.position === "관리자").length,
-    교직원: appUsers.filter((u) => u.position === "교직원").length,
+    행정직원: appUsers.filter((u) => u.position === "행정직원").length,
     교사: appUsers.filter((u) => u.position === "교사").length,
   };
 
@@ -204,7 +204,7 @@ export default async function AdminDashboardPage() {
 
       <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
         <StatCard label="관리자" value={staffByPosition.관리자} accent="#1e3a5f" />
-        <StatCard label="교직원" value={staffByPosition.교직원} accent="#1e3a5f" />
+        <StatCard label="행정직원" value={staffByPosition.행정직원} accent="#1e3a5f" />
         <StatCard label="교사" value={staffByPosition.교사} accent="#1e3a5f" />
       </div>
 
@@ -223,7 +223,7 @@ export default async function AdminDashboardPage() {
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <h2 className="mb-1 text-sm font-bold text-slate-700">🌱 학생 평가 현황 (반복 지도필요 / 반복 우수)</h2>
           <p className="mb-3 text-[11px] text-slate-400">
-            {wrTerm ? `${wrTerm.name} 기준` : "진행중인 학기 없음"} · 경고/미흡 배지 3회 이상은 추가 조치, 우수 배지 3회
+            {wrTerm ? `${wrTerm.year} ${wrTerm.term_type} 기준` : "진행중인 학기 없음"} · 경고/미흡 배지 3회 이상은 추가 조치, 우수 배지 3회
             이상은 보상을 검토해 주세요.{" "}
             <Link href="/weekly-report/admin/stats" className="text-blue-600 hover:underline">
               위클리 리포트 통계 →

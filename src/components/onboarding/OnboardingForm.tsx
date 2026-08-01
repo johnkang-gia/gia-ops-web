@@ -7,7 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 const DEPARTMENTS = ["유치부", "초등부", "중고등부"] as const;
 // "개발자" 직위는 시스템이 johnkang@giamicro.com 계정 전용으로 예약해두고 있어서, 다른
 // 사람들에게는 선택지로 아예 보여주지 않습니다.
-const POSITIONS = ["교사", "교직원", "관리자"] as const;
+const POSITIONS = ["교사", "행정직원", "관리자"] as const;
 
 export default function OnboardingForm({
   initialDepartment,
@@ -116,7 +116,7 @@ export default function OnboardingForm({
           ))}
         </div>
         <p className="mt-1 text-[11px] text-slate-400">
-          교사/교직원과 관리자의 권한이 다르게 적용되니 정확히 선택해주세요. 관리자 승인 시 함께
+          교사/행정직원과 관리자의 권한이 다르게 적용되니 정확히 선택해주세요. 관리자 승인 시 함께
           확인됩니다.
         </p>
       </div>

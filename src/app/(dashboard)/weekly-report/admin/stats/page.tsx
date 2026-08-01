@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { isDeveloperEmail } from "@/lib/roles";
-import { getActiveWrTerm } from "@/lib/weeklyReport/getActiveTerm";
+import { getCurrentTerm } from "@/lib/currentTerm";
 import { getWeekRange } from "@/lib/weeklyReport/week";
 import type { WrReport } from "@/lib/types";
 
@@ -28,7 +28,7 @@ export default async function WeeklyReportStatsPage() {
     if (me?.position !== "관리자") redirect("/weekly-report");
   }
 
-  const term = await getActiveWrTerm(supabase);
+  const term = await getCurrentTerm(supabase);
   const { start, end } = getWeekRange();
 
   const [{ count: activeStudentCount }, { data: weekReportsData }] = await Promise.all([
@@ -54,7 +54,7 @@ export default async function WeeklyReportStatsPage() {
     <div className="mx-auto max-w-3xl">
       <h1 className="mb-1 text-lg font-bold">위클리 리포트 통계</h1>
       <p className="mb-4 text-xs text-slate-500">
-        {term ? `현재 학기: ${term.name}` : "활성화된 학기가 없습니다."} · 이번 주 ({start} ~ {end}) 기준
+        {term ? `현재 학기: ${term.year}년 ${term.term_type}` : "진행중인 학기가 없습니다."} · 이번 주 ({start} ~ {end}) 기준
       </p>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">

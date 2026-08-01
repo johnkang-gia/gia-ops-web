@@ -42,21 +42,24 @@ function buildWeeklyReportCategory(isAdmin: boolean): NavCategory {
       { href: "/weekly-report/admin/classes", label: "반/담임 배정", icon: "🏫" },
       { href: "/weekly-report/admin/subjects", label: "과목반 세팅", icon: "📘" },
       { href: "/weekly-report/admin/students", label: "학생 명부", icon: "🧑‍🎓" },
-      { href: "/weekly-report/admin/terms", label: "학기 관리", icon: "🗓️" },
+      { href: "/terms", label: "학기 관리", icon: "🗓️" },
       { href: "/weekly-report/admin/stats", label: "통계 대시보드", icon: "📊" }
     );
   }
   return { key: "weekly", label: "위클리 리포트", icon: "📈", accent: "teal", items };
 }
 
-// "지원 · 관리" - 문의및건의사항은 교직원 이상 누구나, 사용자 관리/관리자 대시보드는 관리자만.
-// 예전에는 각각 다른 메뉴 그룹에 흩어져 있어 스크롤을 계속 내려야 보였는데, 여기 하나로
-// 모으고 맨 뒤로 옮겼습니다.
-function buildSupportCategory(isAdmin: boolean): NavCategory {
+// "지원 · 관리" - 문의및건의사항은 행정직원 이상 누구나, 사용자 관리/관리자 대시보드는 관리자만,
+// 학생 정보 조회는 행정직원/관리자(+개발자)만. 예전에는 각각 다른 메뉴 그룹에 흩어져 있어
+// 스크롤을 계속 내려야 보였는데, 여기 하나로 모으고 맨 뒤로 옮겼습니다.
+function buildSupportCategory(isAdmin: boolean, isStaffOrAbove: boolean): NavCategory {
   const items = [];
   if (isAdmin) {
     items.push({ href: "/admin/dashboard", label: "관리자 대시보드", icon: "📊" });
     items.push({ href: "/admin/users", label: "사용자 관리", icon: "🔐" });
+  }
+  if (isStaffOrAbove) {
+    items.push({ href: "/students", label: "학생 정보 조회", icon: "🔎" });
   }
   items.push({ href: "/inquiries", label: "문의및건의사항", icon: "🗣️" });
   return { key: "support", label: "지원 · 관리", icon: "🛠️", accent: "amber", items };
@@ -88,7 +91,7 @@ export default async function DashboardLayout({
   const displayName = appUser?.name || user.email;
   const isAdmin = isDeveloperEmail(user.email) || appUser?.position === "관리자";
   const isTeacher = !isDeveloperEmail(user.email) && appUser?.position === "교사";
-  const isStaffOrAbove = isAdmin || appUser?.position === "교직원";
+  const isStaffOrAbove = isAdmin || appUser?.position === "행정직원";
   const isDeveloper = isDeveloperEmail(user.email);
 
   const termLabel = currentTerm ? `${currentTerm.year} ${currentTerm.term_type}` : null;
@@ -96,7 +99,7 @@ export default async function DashboardLayout({
 
   // 교사는 GIA ops/업무 등 다른 메뉴를 아예 볼 수 없고 위클리 리포트만 보입니다(계약직으로
   // 짧게 근무할 수도 있어 내부 문서 성격의 다른 메뉴를 감춥니다 - middleware.ts에서 실제
-  // 접근 자체도 막습니다). 관리자/교직원/개발자는 기존 메뉴 전체 + 위클리 리포트를 함께 봅니다.
+  // 접근 자체도 막습니다). 관리자/행정직원/개발자는 기존 메뉴 전체 + 위클리 리포트를 함께 봅니다.
   let categories: NavCategory[];
   if (isTeacher) {
     categories = [
@@ -110,7 +113,7 @@ export default async function DashboardLayout({
       buildOpsCategory(),
     ];
     if (isStaffOrAbove) categories.push(buildWeeklyReportCategory(isAdmin));
-    categories.push(buildSupportCategory(isAdmin));
+    categories.push(buildSupportCategory(isAdmin, isStaffOrAbove));
     if (isDeveloper) {
       categories.push({ key: "dev", label: "개발자", icon: "🧑‍💻", href: "/dev", accent: "red" });
     }

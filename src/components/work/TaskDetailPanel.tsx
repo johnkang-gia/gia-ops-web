@@ -2,13 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import type { Task, TaskComment, TaskStatus } from "@/lib/types";
+import type { Task, TaskComment, TaskStatus, TeamMember } from "@/lib/types";
+import { nameFor } from "@/lib/teamName";
 
 const STATUS_ORDER: TaskStatus[] = ["예정", "진행중", "완료", "보류"];
-
-function shortName(email: string) {
-  return email.split("@")[0];
-}
 
 function timeAgo(iso: string) {
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -30,7 +27,7 @@ export default function TaskDetailPanel({
   onDeleted,
 }: {
   task: Task;
-  team: string[];
+  team: TeamMember[];
   online: string[];
   currentUserEmail: string;
   onClose: () => void;
@@ -163,13 +160,13 @@ export default function TaskDetailPanel({
         <div className="mb-3">
           <div className="mb-1 text-xs font-semibold text-slate-400">담당자 태그</div>
           <div className="flex flex-wrap gap-1.5">
-            {team.map((email) => {
-              const active = task.assignee_emails.includes(email);
-              const isOnline = online.includes(email);
+            {team.map((member) => {
+              const active = task.assignee_emails.includes(member.email);
+              const isOnline = online.includes(member.email);
               return (
                 <button
-                  key={email}
-                  onClick={() => toggleAssignee(email)}
+                  key={member.email}
+                  onClick={() => toggleAssignee(member.email)}
                   className={
                     "rounded-full border px-2 py-1 text-[11px] font-medium transition " +
                     (active
@@ -178,7 +175,7 @@ export default function TaskDetailPanel({
                   }
                 >
                   {isOnline && <span className="mr-1">🟢</span>}
-                  {shortName(email)}
+                  {nameFor(team, member.email)}
                 </button>
               );
             })}
@@ -194,7 +191,7 @@ export default function TaskDetailPanel({
             {comments.map((c) => (
               <div key={c.id} className="rounded-lg bg-white p-2 text-xs shadow-sm">
                 <div className="mb-0.5 flex items-center justify-between">
-                  <span className="font-semibold text-slate-600">{shortName(c.author_email)}</span>
+                  <span className="font-semibold text-slate-600">{nameFor(team, c.author_email)}</span>
                   <span className="text-[10px] text-slate-300">{timeAgo(c.created_at)}</span>
                 </div>
                 <p className="whitespace-pre-wrap text-slate-700">{c.content}</p>

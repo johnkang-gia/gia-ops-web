@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import WorkBoardClient from "@/components/work/WorkBoardClient";
-import type { Task, Department } from "@/lib/types";
+import type { Task, Department, TeamMember } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -14,11 +14,11 @@ export default async function WorkPage() {
 
   const [tasksRes, teamRes, deptRes] = await Promise.all([
     supabase.from("tasks").select("*").order("position", { ascending: true }),
-    supabase.from("app_users").select("email").eq("status", "approved").order("email", { ascending: true }),
+    supabase.from("app_users").select("email, name").eq("status", "approved").order("email", { ascending: true }),
     supabase.from("departments").select("*").order("sort_order", { ascending: true }),
   ]);
 
-  const team = ((teamRes.data as { email: string }[] | null) ?? []).map((r) => r.email);
+  const team = (teamRes.data as TeamMember[] | null) ?? [];
 
   return (
     <div className="mx-auto max-w-6xl">

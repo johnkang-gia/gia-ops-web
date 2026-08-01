@@ -58,7 +58,9 @@ export async function updateSession(request: NextRequest) {
     path.startsWith("/auth") ||
     path.startsWith("/pin") ||
     path.startsWith("/api/pin") ||
-    path.startsWith("/pending");
+    path.startsWith("/pending") ||
+    path.startsWith("/onboarding") ||
+    path.startsWith("/api/onboarding");
 
   if (!user && !isAuthRoute) {
     const url = request.nextUrl.clone();
@@ -88,15 +90,22 @@ export async function updateSession(request: NextRequest) {
         const normalizedEmail = email.toLowerCase();
         const { data: appUser } = await supabase
           .from("app_users")
-          .select("status")
+          .select("status, name")
           .eq("email", normalizedEmail)
           .maybeSingle();
 
         if (!appUser) {
-          // 첫 로그인 - 승인 신청 행을 만들고 대기 화면으로 보냅니다.
+          // 첫 로그인 - 승인 신청 행을 만들고 온보딩(이름/소속/직위 입력) 화면으로 보냅니다.
           await supabase.from("app_users").insert({ email: normalizedEmail });
           const url = request.nextUrl.clone();
-          url.pathname = "/pending";
+          url.pathname = "/onboarding";
+          return NextResponse.redirect(url);
+        }
+        if (!appUser.name) {
+          // 이름/소속/직위를 아직 입력하지 않음 - 승인 여부와 무관하게 온보딩부터 완료해야 함
+          // (기존에 이미 승인된 계정이라도 이 정보가 없으면 채우도록 함).
+          const url = request.nextUrl.clone();
+          url.pathname = "/onboarding";
           return NextResponse.redirect(url);
         }
         if (appUser.status !== "approved") {

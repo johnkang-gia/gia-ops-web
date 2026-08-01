@@ -3,20 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { genCaseId } from "@/lib/caseId";
-import type { ChatMessage, Department, Task } from "@/lib/types";
-
-function shortName(email: string) {
-  return email.split("@")[0];
-}
+import type { ChatMessage, Department, Task, TeamMember } from "@/lib/types";
+import { nameFor, extractMentionedEmails } from "@/lib/teamName";
 
 function timeStr(iso: string) {
   return new Date(iso).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
-}
-
-// 메시지에서 "@사람" 태그를 찾아 실제 팀 이메일과 매칭합니다(로그인 이메일의 @ 앞부분 기준).
-function extractMentionedEmails(text: string, team: string[]): string[] {
-  const tags = [...text.matchAll(/@([a-zA-Z0-9._-]+)/g)].map((m) => m[1].toLowerCase());
-  return team.filter((email) => tags.includes(shortName(email).toLowerCase()));
 }
 
 // 메시지에서 "#부서명" 태그를 찾아, 지금 보고 있는 부서를 제외한 실제 부서명과 매칭합니다.
@@ -34,7 +25,7 @@ export default function ChatPanel({
 }: {
   department: string;
   departments: Department[];
-  team: string[];
+  team: TeamMember[];
   userEmail: string;
   onTaskCreated?: (task: Task) => void;
 }) {
@@ -114,7 +105,7 @@ export default function ChatPanel({
         await supabase.from("messages").insert({
           department,
           author_email: userEmail,
-          content: `✅ 업무로 등록됨 → ${mentioned.map(shortName).join(", ")}님 태그: "${newTask.title}"`,
+          content: `✅ 업무로 등록됨 → ${mentioned.map((e) => nameFor(team, e)).join(", ")}님 태그: "${newTask.title}"`,
         });
       }
     }
@@ -151,7 +142,7 @@ export default function ChatPanel({
           {messages.map((m) => (
             <div key={m.id} className="rounded-lg bg-white/70 p-2 text-xs shadow-sm">
               <div className="mb-0.5 flex items-center justify-between gap-2">
-                <span className="font-semibold text-slate-600">{shortName(m.author_email)}</span>
+                <span className="font-semibold text-slate-600">{nameFor(team, m.author_email)}</span>
                 <span className="text-[10px] text-slate-300">{timeStr(m.created_at)}</span>
               </div>
               {m.source_department && (
@@ -166,16 +157,16 @@ export default function ChatPanel({
       <div className="border-t border-white/60 px-3 py-2">
         <div className="mb-1.5 flex flex-wrap gap-1">
           {team
-            .filter((e) => e !== userEmail)
+            .filter((m) => m.email !== userEmail && m.name)
             .slice(0, 8)
-            .map((email) => (
+            .map((member) => (
               <button
-                key={email}
+                key={member.email}
                 type="button"
-                onClick={() => insertToken(`@${shortName(email)}`)}
+                onClick={() => insertToken(`@${member.name}`)}
                 className="rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] text-blue-500 hover:bg-blue-100"
               >
-                @{shortName(email)}
+                @{member.name}
               </button>
             ))}
           {otherDepartments.map((d) => (

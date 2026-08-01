@@ -86,8 +86,19 @@ export default async function DashboardLayout({
     redirect("/login");
   }
 
+  const { data: appUser } = await supabase
+    .from("app_users")
+    .select("name, position")
+    .eq("email", (user.email ?? "").toLowerCase())
+    .maybeSingle();
+  const displayName = appUser?.name || user.email;
+  const isAdmin = isDeveloperEmail(user.email) || appUser?.position === "관리자";
+
   const termLabel = currentTerm ? `${currentTerm.year} ${currentTerm.term_type}` : null;
-  const navGroups = isDeveloperEmail(user.email) ? [...NAV_GROUPS, DEVELOPER_NAV_GROUP] : NAV_GROUPS;
+  // "관리" 메뉴는 관리자 직위(또는 개발자)에게만 보입니다 - 승인 권한이 없는 사람에게는 애초에
+  // 메뉴 자체를 감춰 혼란을 줄입니다(실제 접근 제한은 RLS가 최종적으로 보장).
+  const baseGroups = isAdmin ? NAV_GROUPS : NAV_GROUPS.filter((g) => g.label !== "관리");
+  const navGroups = isDeveloperEmail(user.email) ? [...baseGroups, DEVELOPER_NAV_GROUP] : baseGroups;
 
   return (
     <div className="flex min-h-screen flex-1">
@@ -108,7 +119,7 @@ export default async function DashboardLayout({
             <div className="mt-2 text-[11px] text-slate-300">진행중인 학기 없음</div>
           )}
           <div className="mt-1 truncate text-xs text-slate-400">
-            {user.email}
+            {displayName}
           </div>
         </div>
         <nav className="flex flex-1 flex-col gap-1 overflow-y-auto">

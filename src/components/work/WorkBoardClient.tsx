@@ -5,7 +5,8 @@ import { createClient } from "@/lib/supabase/client";
 import { useRealtimeTable } from "@/lib/useRealtimeTable";
 import { useOnlineUsers } from "@/lib/useOnlineUsers";
 import { genCaseId } from "@/lib/caseId";
-import type { Task, TaskStatus, Department } from "@/lib/types";
+import type { Task, TaskStatus, Department, TeamMember } from "@/lib/types";
+import { nameFor } from "@/lib/teamName";
 import TaskCard from "./TaskCard";
 import TaskDetailPanel from "./TaskDetailPanel";
 import ChatPanel from "./ChatPanel";
@@ -19,10 +20,6 @@ const STATUS_STYLE: Record<TaskStatus, { header: string; drop: string }> = {
   보류: { header: "text-amber-600", drop: "bg-amber-100/70" },
 };
 
-function shortName(email: string) {
-  return email.split("@")[0];
-}
-
 export default function WorkBoardClient({
   initialTasks,
   team,
@@ -30,7 +27,7 @@ export default function WorkBoardClient({
   departments,
 }: {
   initialTasks: Task[];
-  team: string[];
+  team: TeamMember[];
   userEmail: string;
   departments: Department[];
 }) {
@@ -131,7 +128,7 @@ export default function WorkBoardClient({
         {online.length === 0 && <span>없음</span>}
         {online.map((email) => (
           <span key={email} className="rounded-full bg-white/80 px-2 py-0.5 shadow-sm">
-            {email === userEmail ? "나" : shortName(email)}
+            {email === userEmail ? "나" : nameFor(team, email)}
           </span>
         ))}
       </div>
@@ -197,13 +194,13 @@ export default function WorkBoardClient({
             </div>
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="text-[11px] text-slate-400">담당자 태그:</span>
-              {team.map((email) => {
-                const active = assignees.includes(email);
+              {team.map((member) => {
+                const active = assignees.includes(member.email);
                 return (
                   <button
-                    key={email}
+                    key={member.email}
                     type="button"
-                    onClick={() => toggleAssignee(email)}
+                    onClick={() => toggleAssignee(member.email)}
                     className={
                       "rounded-full border px-2 py-0.5 text-[11px] transition " +
                       (active
@@ -211,8 +208,8 @@ export default function WorkBoardClient({
                         : "border-slate-200 bg-white/70 text-slate-500 hover:border-slate-300")
                     }
                   >
-                    {online.includes(email) && <span className="mr-0.5">🟢</span>}
-                    {shortName(email)}
+                    {online.includes(member.email) && <span className="mr-0.5">🟢</span>}
+                    {nameFor(team, member.email)}
                   </button>
                 );
               })}
@@ -254,6 +251,7 @@ export default function WorkBoardClient({
                   <TaskCard
                     key={task.id}
                     task={task}
+                    team={team}
                     onOpen={() => setSelectedId(task.id)}
                     onDragStartTask={(e, id) => e.dataTransfer.setData("text/plain", id)}
                     onStatusChange={(s) => changeStatus(task.id, s)}

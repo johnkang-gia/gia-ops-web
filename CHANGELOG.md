@@ -4,6 +4,109 @@
 `version` 값과 항상 일치시킵니다. 업데이트할 때마다 이 파일 맨 위에 새 항목을 추가하고,
 같은 내용을 GitHub Desktop의 커밋 Summary/Description에도 그대로 사용하면 됩니다.
 
+## v0.25.0 - 2026-08-01
+
+로그인 승인 방식 전면 개편: 이름/소속/직위 온보딩 + 관리자 권한 재정의 + 업무보드 이름 표시:
+
+- 처음 로그인하는 사람은 이제 이름, 소속(유치부/초등부/중고등부), 직위(교사/교직원/관리자)를
+  입력하는 온보딩 화면(`/onboarding`)을 먼저 거친 뒤에 승인 대기 화면으로 넘어감. "개발자"
+  직위는 johnkang@giamicro.com 계정 전용으로 예약되어 있어 다른 사람에게는 선택지로 보이지
+  않음
+- 승인 권한이 "승인된 사람이면 누구나"에서 "직위가 관리자(또는 개발자)인 사람만"으로
+  좁혀짐. 교사·교직원은 승인해줄 수 없고, 관리자만 사용자 관리 화면에서 승인/거절 처리 가능
+  (사이드바의 "관리" 메뉴 자체도 관리자가 아니면 안 보이도록 숨김)
+- 이 기능이 추가되기 전 이미 승인됐던 기존 계정도, 아직 이름을 입력한 적이 없다면 다음
+  로그인 때 온보딩 화면을 한 번 거치게 됨(그 뒤로는 다시 뜨지 않음)
+- 온보딩 중 자기 상태(status)를 스스로 승인으로 바꾸거나, 승인 기록(담당자/일시)을 조작하는
+  것은 DB 트리거로 원천 차단됨 - 오직 관리자만 승인/거절 처리 가능
+- 사용자 관리 화면에 이제 이메일뿐 아니라 이름·소속·직위가 함께 표시됨
+- 업무 보드(칸반 카드, 상세 패널, 담당자 태그, 접속자 목록)와 부서 채팅에서 이제 이메일
+  대신 이름이 표시되고, 채팅 멘션도 "@이메일앞부분" 대신 "@이름"으로 사람을 태그함
+- (참고) 사건/회의/행사의 담당자·작성자 표시, 문의사항 작성자 표시, 개발자 대시보드 로그는
+  이번 작업 범위에 포함되지 않아 여전히 이메일로 표시됩니다 - 필요하시면 다음 작업으로
+  이어서 처리해드릴게요
+
+Supabase에서 아래 SQL을 SQL Editor에 붙여넣고 실행해주세요(기존 데이터는 그대로 유지되고,
+새 컬럼/정책만 추가됩니다):
+
+```sql
+-- app_users에 이름/소속/직위 컬럼 추가
+alter table app_users add column if not exists name text;
+alter table app_users add column if not exists department text;
+alter table app_users add column if not exists position text;
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'app_users_department_check') then
+    alter table app_users add constraint app_users_department_check
+      check (department in ('유치부', '초등부', '중고등부'));
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'app_users_position_check') then
+    alter table app_users add constraint app_users_position_check
+      check (position in ('교사', '교직원', '관리자', '개발자'));
+  end if;
+end $$;
+
+-- 관리자 권한을 "승인된 사람"에서 "승인된 + 직위가 관리자인 사람"으로 재정의
+create or replace function is_app_admin()
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select
+    coalesce((auth.jwt() ->> 'email') ilike 'johnkang@giamicro.com', false)
+    or exists (
+      select 1 from app_users
+      where email = lower(auth.jwt() ->> 'email')
+        and status = 'approved'
+        and position = '관리자'
+    );
+$$;
+
+-- 온보딩(이름 입력 전 1회) 자기 행 수정 허용
+drop policy if exists "app_users_update_self_while_pending" on app_users;
+drop policy if exists "app_users_update_self_onboarding" on app_users;
+create policy "app_users_update_self_onboarding" on app_users
+  for update
+  using (email = lower(auth.jwt() ->> 'email') and name is null)
+  with check (email = lower(auth.jwt() ->> 'email'));
+
+-- 본인 스스로는 status/decided_at/decided_by/email을 바꿀 수 없도록 트리거로 이중 차단
+-- (관리자가 하는 승인/거절 처리는 영향받지 않음)
+create or replace function protect_app_users_self_update()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if is_app_admin() then
+    return new;
+  end if;
+  new.email := old.email;
+  new.status := old.status;
+  new.decided_at := old.decided_at;
+  new.decided_by := old.decided_by;
+  return new;
+end;
+$$;
+
+drop trigger if exists app_users_protect_self_update on app_users;
+create trigger app_users_protect_self_update
+  before update on app_users
+  for each row execute function protect_app_users_self_update();
+
+-- 개발자 계정 이름/직위 채우기
+insert into app_users (email, status, decided_at, decided_by, name, position)
+values ('johnkang@giamicro.com', 'approved', now(), 'system', 'John Kang', '개발자')
+on conflict (email) do update set status = 'approved', name = 'John Kang', position = '개발자';
+```
+
+SQL 실행 후에는 기존에 이미 승인된 계정들(개발자 제외)이 전부 "직위 미입력" 상태가 되므로,
+다음 로그인 때 온보딩 화면에서 소속·직위를 입력해달라고 팀에 안내해주시면 됩니다. 그 전까지는
+관리자 화면에 "이름 미입력(온보딩 대기 중)"으로 표시됩니다.
+
 ## v0.24.0 - 2026-07-31
 
 GIA WorkFlatform 통합 2단계: 부서별 실시간 채팅 + 채팅→업무 자동 전환 (우선 초등부만 활성화):

@@ -237,10 +237,21 @@ export type AiUsageLog = {
   created_at: string;
 };
 
+export type Department3 = "유치부" | "초등부" | "중고등부";
+export type StaffPosition = "교사" | "교직원" | "관리자" | "개발자";
+
 export type AppUser = {
   email: string;
   status: "pending" | "approved" | "rejected";
   requested_at: string;
   decided_at: string | null;
   decided_by: string | null;
+  name: string | null;
+  department: Department3 | null;
+  position: StaffPosition | null;
+};
+
+export type TeamMember = {
+  email: string;
+  name: string | null;
 };

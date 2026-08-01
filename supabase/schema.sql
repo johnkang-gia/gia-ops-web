@@ -363,12 +363,37 @@ create table if not exists app_users (
   status text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
   requested_at timestamptz not null default now(),
   decided_at timestamptz,
-  decided_by text
+  decided_by text,
+  name text,
+  department text check (department in ('유치부', '초등부', '중고등부')),
+  position text check (position in ('교사', '교직원', '관리자', '개발자'))
 );
+
+-- 기존에 이미 만들어진 테이블에도 안전하게 컬럼을 추가합니다(신규 설치 시에는 위 CREATE TABLE에서
+-- 이미 컬럼이 있으므로 아래 구문은 아무 일도 하지 않습니다).
+alter table app_users add column if not exists name text;
+alter table app_users add column if not exists department text;
+alter table app_users add column if not exists position text;
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'app_users_department_check'
+  ) then
+    alter table app_users add constraint app_users_department_check
+      check (department in ('유치부', '초등부', '중고등부'));
+  end if;
+  if not exists (
+    select 1 from pg_constraint where conname = 'app_users_position_check'
+  ) then
+    alter table app_users add constraint app_users_position_check
+      check (position in ('교사', '교직원', '관리자', '개발자'));
+  end if;
+end $$;
 
 alter table app_users enable row level security;
 
 -- security definer로 만들어 아래 정책이 자기 자신(app_users)을 참조해도 재귀 없이 안전합니다.
+-- 관리자 권한은 이제 "승인된 사용자"가 아니라 "직위가 관리자(또는 개발자)인 승인된 사용자"에게만 있습니다.
 create or replace function is_app_admin()
 returns boolean
 language sql
@@ -382,6 +407,7 @@ as $$
       select 1 from app_users
       where email = lower(auth.jwt() ->> 'email')
         and status = 'approved'
+        and position = '관리자'
     );
 $$;
 
@@ -397,6 +423,45 @@ create policy "app_users_insert_self" on app_users
   for insert
   with check (email = lower(auth.jwt() ->> 'email'));
 
+-- 온보딩(이름/소속/직위 입력)을 위해 "아직 이름을 입력한 적 없는" 본인 행만 스스로 수정할 수
+-- 있게 합니다(신규 가입자뿐 아니라, 이 기능이 추가되기 전 이미 승인됐던 기존 계정도 이름이
+-- 비어있으면 한 번은 채울 수 있도록 함). status/decided_at/decided_by/email은 아래 트리거가
+-- 본인 스스로는 절대 바꿀 수 없도록 한 번 더 강제하므로, 이 정책만으로 "내가 내 상태를
+-- 승인으로 바꾼다"거나 "내 직위를 몰래 관리자로 올린 뒤 상태까지 승인시킨다"는 불가능합니다.
+drop policy if exists "app_users_update_self_while_pending" on app_users;
+drop policy if exists "app_users_update_self_onboarding" on app_users;
+create policy "app_users_update_self_onboarding" on app_users
+  for update
+  using (email = lower(auth.jwt() ->> 'email') and name is null)
+  with check (email = lower(auth.jwt() ->> 'email'));
+
+-- 관리자가 아닌 본인 스스로의 수정 요청에서는 email/status/decided_at/decided_by를 항상 원래
+-- 값으로 되돌려, 온보딩 정책이 열려 있는 짧은 순간에도 상태를 셀프 승인하거나 담당자 기록을
+-- 조작할 수 없도록 한 번 더 막습니다. 관리자(is_app_admin())가 수행하는 승인/거절 처리는
+-- 이 트리거의 영향을 받지 않습니다.
+create or replace function protect_app_users_self_update()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if is_app_admin() then
+    return new;
+  end if;
+  new.email := old.email;
+  new.status := old.status;
+  new.decided_at := old.decided_at;
+  new.decided_by := old.decided_by;
+  return new;
+end;
+$$;
+
+drop trigger if exists app_users_protect_self_update on app_users;
+create trigger app_users_protect_self_update
+  before update on app_users
+  for each row execute function protect_app_users_self_update();
+
 -- 승인된 사용자(개발자 포함)는 전체 목록을 보고 승인/거절/차단을 처리할 수 있음
 drop policy if exists "app_users_manage_by_admin" on app_users;
 create policy "app_users_manage_by_admin" on app_users
@@ -405,9 +470,9 @@ create policy "app_users_manage_by_admin" on app_users
   with check (is_app_admin());
 
 -- 개발자 계정은 배포 즉시 승인 상태로 등록해 잠기지 않도록 합니다.
-insert into app_users (email, status, decided_at, decided_by)
-values ('johnkang@giamicro.com', 'approved', now(), 'system')
-on conflict (email) do update set status = 'approved';
+insert into app_users (email, status, decided_at, decided_by, name, position)
+values ('johnkang@giamicro.com', 'approved', now(), 'system', 'John Kang', '개발자')
+on conflict (email) do update set status = 'approved', name = 'John Kang', position = '개발자';
 
 do $$
 begin

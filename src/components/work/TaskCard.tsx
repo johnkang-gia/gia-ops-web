@@ -1,20 +1,19 @@
 "use client";
 
-import type { Task, TaskStatus } from "@/lib/types";
+import type { Task, TaskStatus, TeamMember } from "@/lib/types";
+import { nameFor } from "@/lib/teamName";
 
 const STATUS_ORDER: TaskStatus[] = ["예정", "진행중", "완료", "보류"];
 
-function shortName(email: string) {
-  return email.split("@")[0];
-}
-
 export default function TaskCard({
   task,
+  team,
   onOpen,
   onDragStartTask,
   onStatusChange,
 }: {
   task: Task;
+  team: TeamMember[];
   onOpen: () => void;
   onDragStartTask: (e: React.DragEvent, taskId: string) => void;
   onStatusChange: (status: TaskStatus) => void;
@@ -52,7 +51,7 @@ export default function TaskCard({
         <div className="mb-1.5 flex flex-wrap gap-1">
           {task.assignee_emails.map((email) => (
             <span key={email} className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">
-              👤 {shortName(email)}
+              👤 {nameFor(team, email)}
             </span>
           ))}
         </div>

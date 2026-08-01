@@ -90,8 +90,21 @@ export default function AdminUsersClient({ initialUsers }: { initialUsers: AppUs
                 className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3"
               >
                 <div>
-                  <div className="text-sm font-semibold">{u.email}</div>
-                  <div className="text-xs text-slate-500">신청일 {formatDate(u.requested_at)}</div>
+                  <div className="text-sm font-semibold">
+                    {u.name ? (
+                      <>
+                        {u.name}
+                        <span className="ml-1.5 font-normal text-slate-500">
+                          {[u.department, u.position].filter(Boolean).join(" · ")}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="text-amber-600">이름 미입력(온보딩 대기 중)</span>
+                    )}
+                  </div>
+                  <div className="text-xs text-slate-500">
+                    {u.email} · 신청일 {formatDate(u.requested_at)}
+                  </div>
                 </div>
                 <div className="flex gap-2">
                   <button
@@ -129,15 +142,16 @@ export default function AdminUsersClient({ initialUsers }: { initialUsers: AppUs
               >
                 <div>
                   <div className="text-sm font-semibold">
-                    {u.email}
-                    {developer && (
+                    {u.name || u.email}
+                    {(developer || u.position) && (
                       <span className="ml-2 rounded bg-slate-900 px-1.5 py-0.5 text-[10px] font-bold text-white">
-                        개발자
+                        {developer ? "개발자" : u.position}
                       </span>
                     )}
+                    {u.department && <span className="ml-1.5 font-normal text-slate-500">{u.department}</span>}
                   </div>
                   <div className="text-xs text-slate-500">
-                    승인일 {formatDate(u.decided_at)} {u.decided_by ? `· ${u.decided_by}` : ""}
+                    {u.email} · 승인일 {formatDate(u.decided_at)} {u.decided_by ? `· ${u.decided_by}` : ""}
                   </div>
                 </div>
                 {!developer && (
@@ -167,9 +181,9 @@ export default function AdminUsersClient({ initialUsers }: { initialUsers: AppUs
                 className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3"
               >
                 <div>
-                  <div className="text-sm font-semibold text-slate-500">{u.email}</div>
+                  <div className="text-sm font-semibold text-slate-500">{u.name || u.email}</div>
                   <div className="text-xs text-slate-400">
-                    처리일 {formatDate(u.decided_at)} {u.decided_by ? `· ${u.decided_by}` : ""}
+                    {u.email} · 처리일 {formatDate(u.decided_at)} {u.decided_by ? `· ${u.decided_by}` : ""}
                   </div>
                 </div>
                 <button

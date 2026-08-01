@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 export type NavLeaf = { href: string; label: string; icon: string };
 
@@ -57,6 +58,25 @@ const ACCENT_BORDER: Record<NavAccent, string> = {
 export function SidebarNavLinks({ categories }: { categories: NavCategory[] }) {
   const pathname = usePathname();
   const [openKey, setOpenKey] = useState<string | null>(null);
+  const [popupPos, setPopupPos] = useState<{ top: number; left: number } | null>(null);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 부메뉴를 사이드바 <nav> 안(overflow-y-auto)에 그대로 두면, 메뉴가 길어질 때 부메뉴 자체가
+  // 스크롤 영역에 끼어 잘리거나 사이드바에 스크롤이 생겨버립니다. document.body에 포탈로
+  // 그려서(진짜 팝업처럼) 어떤 부모의 overflow에도 영향받지 않고 항상 떠서 나오게 했습니다.
+  function openFlyout(key: string, el: HTMLElement) {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    const rect = el.getBoundingClientRect();
+    setPopupPos({ top: rect.top, left: rect.right + 4 });
+    setOpenKey(key);
+  }
+
+  function scheduleClose() {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    closeTimer.current = setTimeout(() => setOpenKey(null), 120);
+  }
+
+  const openCategory = categories.find((c) => c.key === openKey);
 
   return (
     <div className="flex flex-col gap-0.5">
@@ -65,14 +85,12 @@ export function SidebarNavLinks({ categories }: { categories: NavCategory[] }) {
         const accent = cat.accent ?? "navy";
         const hasChildren = !!cat.items && cat.items.length > 0;
         const targetHref = cat.href ?? cat.items?.[0]?.href ?? "#";
-        const open = openKey === cat.key;
 
         return (
           <div
             key={cat.key}
-            className="relative"
-            onMouseEnter={() => hasChildren && setOpenKey(cat.key)}
-            onMouseLeave={() => setOpenKey((k) => (k === cat.key ? null : k))}
+            onMouseEnter={(e) => hasChildren && openFlyout(cat.key, e.currentTarget)}
+            onMouseLeave={scheduleClose}
           >
             <Link
               href={targetHref}
@@ -88,36 +106,46 @@ export function SidebarNavLinks({ categories }: { categories: NavCategory[] }) {
               <span className="flex-1">{cat.label}</span>
               {hasChildren && <span className="text-[10px] text-slate-300">›</span>}
             </Link>
-
-            {hasChildren && open && (
-              <div className="absolute left-full top-0 z-30 ml-1 w-56 rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg">
-                <div className={"mb-1 px-2 pt-1 text-[10px] font-bold uppercase tracking-wide " + ACCENT_TEXT[accent]}>
-                  {cat.label}
-                </div>
-                {cat.items!.map((item) => {
-                  const itemActive = isActiveHref(pathname, item.href);
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      onClick={() => setOpenKey(null)}
-                      className={
-                        "flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm transition-colors " +
-                        (itemActive
-                          ? ACCENT_BG_SOFT[accent] + " " + ACCENT_TEXT[accent] + " font-semibold"
-                          : "text-slate-600 hover:bg-slate-100 hover:text-slate-900")
-                      }
-                    >
-                      <span>{item.icon}</span>
-                      <span>{item.label}</span>
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
           </div>
         );
       })}
+
+      {openCategory &&
+        popupPos &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            onMouseEnter={() => closeTimer.current && clearTimeout(closeTimer.current)}
+            onMouseLeave={scheduleClose}
+            style={{ position: "fixed", top: popupPos.top, left: popupPos.left }}
+            className="z-50 w-56 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl"
+          >
+            <div className={"mb-1 px-2 pt-1 text-[10px] font-bold uppercase tracking-wide " + ACCENT_TEXT[openCategory.accent ?? "navy"]}>
+              {openCategory.label}
+            </div>
+            {openCategory.items!.map((item) => {
+              const itemActive = isActiveHref(pathname, item.href);
+              const accent = openCategory.accent ?? "navy";
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => setOpenKey(null)}
+                  className={
+                    "flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm transition-colors " +
+                    (itemActive
+                      ? ACCENT_BG_SOFT[accent] + " " + ACCENT_TEXT[accent] + " font-semibold"
+                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-900")
+                  }
+                >
+                  <span>{item.icon}</span>
+                  <span>{item.label}</span>
+                </Link>
+              );
+            })}
+          </div>,
+          document.body
+        )}
     </div>
   );
 }

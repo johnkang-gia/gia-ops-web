@@ -33,8 +33,10 @@ export default function WorkspaceArea({
   onToggleAck: (taskId: string, checked: boolean) => void;
   onTaskCreated?: (task: Task) => void;
 }) {
-  const [leftWidth, setLeftWidth] = useState(58);
-  const [topHeight, setTopHeight] = useState(48);
+  // 채팅이 핵심 업무 도구(업무 등록도 채팅에서 이루어짐)라 채팅에 화면을 더 내주고, 업무
+  // 상황판/칸반은 참고용으로 작게 둡니다(좌:우 = 대략 3:7).
+  const [leftWidth, setLeftWidth] = useState(30);
+  const [topHeight, setTopHeight] = useState(25);
 
   function startColResize(e: React.MouseEvent) {
     e.preventDefault();
@@ -44,8 +46,8 @@ export default function WorkspaceArea({
       const containerWidth = window.innerWidth - 224; // 사이드바 폭(w-56=224px) 대략 보정
       const deltaPercent = ((moveEvent.clientX - startX) / containerWidth) * 100;
       let next = startLeft + deltaPercent;
-      if (next < 25) next = 25;
-      if (next > 80) next = 80;
+      if (next < 20) next = 20;
+      if (next > 60) next = 60;
       setLeftWidth(next);
     }
     function onUp() {
@@ -64,8 +66,8 @@ export default function WorkspaceArea({
       const containerHeight = window.innerHeight - 130;
       const deltaPercent = ((moveEvent.clientY - startY) / containerHeight) * 100;
       let next = startTop + deltaPercent;
-      if (next < 20) next = 20;
-      if (next > 80) next = 80;
+      if (next < 15) next = 15;
+      if (next > 60) next = 60;
       setTopHeight(next);
     }
     function onUp() {
@@ -89,6 +91,7 @@ export default function WorkspaceArea({
       </header>
 
       <div className="flex flex-1 overflow-hidden">
+        {/* 왼쪽: 업무 상황판(작게) + 칸반(작게) - 참고용 요약 */}
         <div className="flex flex-col overflow-hidden" style={{ width: `${leftWidth}%` }}>
           <div className="overflow-hidden" style={{ height: `${topHeight}%` }}>
             <DashboardArea tasks={tasks} activeDepartmentName={activeDepartment.name} deptColorMap={deptColorMap} onSelectTask={onOpenTask} />
@@ -98,30 +101,31 @@ export default function WorkspaceArea({
             className="h-1 shrink-0 cursor-row-resize bg-black/5 transition hover:bg-blue-400"
           />
           <div className="overflow-hidden" style={{ height: `${100 - topHeight}%` }}>
-            <ChatPanel
-              department={activeDepartment.name}
-              departments={departments}
-              team={team}
-              userEmail={currentUserEmail}
+            <TaskBoard
               tasks={tasks}
-              onTaskCreated={onTaskCreated}
+              team={team}
+              deptColorMap={deptColorMap}
+              isAdmin={isAdmin}
+              currentUserEmail={currentUserEmail}
+              deptFilter={activeDepartment.name}
+              onOpenTask={onOpenTask}
+              onChangeStatus={onChangeStatus}
+              onToggleAck={onToggleAck}
             />
           </div>
         </div>
 
         <div onMouseDown={startColResize} className="w-1 shrink-0 cursor-col-resize bg-black/5 transition hover:bg-blue-400" />
 
+        {/* 오른쪽: 채팅 - 여기서 메시지를 보내는 것만으로 업무가 등록됩니다(@담당자 태그) */}
         <div className="overflow-hidden" style={{ width: `${100 - leftWidth}%` }}>
-          <TaskBoard
-            tasks={tasks}
+          <ChatPanel
+            department={activeDepartment.name}
+            departments={departments}
             team={team}
-            deptColorMap={deptColorMap}
-            isAdmin={isAdmin}
-            currentUserEmail={currentUserEmail}
-            deptFilter={activeDepartment.name}
-            onOpenTask={onOpenTask}
-            onChangeStatus={onChangeStatus}
-            onToggleAck={onToggleAck}
+            userEmail={currentUserEmail}
+            tasks={tasks}
+            onTaskCreated={onTaskCreated}
           />
         </div>
       </div>

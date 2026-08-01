@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { genCaseId } from "@/lib/caseId";
 import type { ChatMessage, Department, Task, TeamMember } from "@/lib/types";
 import { nameFor, extractMentionedEmails } from "@/lib/teamName";
+import { parseTaskFromMessage } from "@/lib/parseTaskFromMessage";
 
 function timeStr(iso: string) {
   return new Date(iso).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
@@ -156,29 +157,35 @@ export default function ChatPanel({
 
     await supabase.from("messages").insert({ department, author_email: userEmail, content });
 
-    // "@사람" 태그 - 즉시 업무로 전환하고, 등록됐다는 안내 메시지를 채팅에 남깁니다.
+    // "@사람" 태그 - 즉시 업무로 전환하고, 등록됐다는 안내 메시지를 채팅에 남깁니다. 문장 안의
+    // "내일까지" 같은 마감기한 표현은 parseTaskFromMessage가 due_at으로 뽑아내고, @태그/마감
+    // 표현/"해주세요" 같은 요청형 어미는 제목에서 지워서 "이서아 입금확인"처럼 깔끔하게 만듭니다.
     const mentioned = extractMentionedEmails(content, team);
     if (mentioned.length > 0) {
+      const { cleanTitle, dueAt, deadlineLabel } = parseTaskFromMessage(content);
+      const title = cleanTitle.length > 80 ? cleanTitle.slice(0, 80) + "…" : cleanTitle;
       const { data: newTask } = await supabase
         .from("tasks")
         .insert({
           case_id: genCaseId("TSK"),
-          title: content.length > 80 ? content.slice(0, 80) + "…" : content,
+          title,
           status: "예정",
           priority: "보통",
           department,
           owner_email: userEmail,
           assignee_emails: mentioned,
+          due_at: dueAt,
           position: Date.now(),
         })
         .select()
         .single();
       if (newTask) {
         onTaskCreated?.(newTask as Task);
+        const deadlineSuffix = deadlineLabel ? ` (${deadlineLabel})` : "";
         await supabase.from("messages").insert({
           department,
           author_email: userEmail,
-          content: `✅ 업무로 등록됨 → ${mentioned.map((e) => nameFor(team, e)).join(", ")}님 태그: "${newTask.title}"`,
+          content: `✅ 업무로 등록됨 → ${mentioned.map((e) => nameFor(team, e)).join(", ")}님 태그: "${newTask.title}"${deadlineSuffix}`,
         });
       }
     }
@@ -206,7 +213,7 @@ export default function ChatPanel({
         {messages.length === 0 && <p className="text-xs opacity-40">아직 메시지가 없습니다. 첫 메시지를 남겨보세요.</p>}
         <div className="flex flex-col gap-3">
           {messages.map((m) => {
-            const linkedTask = tasks.find((t) => t.title === m.content.match(/"([^"]+)"$/)?.[1]);
+            const linkedTask = tasks.find((t) => t.title === m.content.match(/"([^"]+)"/)?.[1]);
             return (
               <div key={m.id} className="flex gap-2">
                 <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-100 text-sm">👤</div>

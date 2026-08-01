@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRealtimeTable } from "@/lib/useRealtimeTable";
 import { useOnlineUsers } from "@/lib/useOnlineUsers";
-import { genCaseId } from "@/lib/caseId";
 import type { Task, TaskStatus, Department, TeamMember } from "@/lib/types";
 import { nameFor } from "@/lib/teamName";
 import { STATUS_LABEL } from "./statusConfig";
@@ -30,12 +29,6 @@ export default function WorkBoardClient({
 
   const [activeDeptId, setActiveDeptId] = useState<string | null>(deptList[0]?.id ?? null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [priority, setPriority] = useState<"보통" | "긴급">("보통");
-  const [assignees, setAssignees] = useState<string[]>([]);
-  const [saving, setSaving] = useState(false);
 
   const activeDepartment = deptList.find((d) => d.id === activeDeptId) ?? deptList[0] ?? null;
 
@@ -61,35 +54,6 @@ export default function WorkBoardClient({
     setDeptList((prev) => prev.map((d) => (d.id === dept.id ? { ...d, color } : d)));
     const supabase = createClient();
     await supabase.from("departments").update({ color }).eq("id", dept.id);
-  }
-
-  async function addTask(e: React.FormEvent) {
-    e.preventDefault();
-    if (!title.trim() || !activeDepartment) return;
-    setSaving(true);
-    const supabase = createClient();
-    const { data } = await supabase
-      .from("tasks")
-      .insert({
-        case_id: genCaseId("TSK"),
-        title: title.trim(),
-        description: description.trim() || null,
-        status: "예정",
-        priority,
-        department: activeDepartment.name,
-        owner_email: userEmail,
-        assignee_emails: assignees,
-        position: Date.now(),
-      })
-      .select()
-      .single();
-    if (data) addTaskRow(data as Task);
-    setTitle("");
-    setDescription("");
-    setPriority("보통");
-    setAssignees([]);
-    setShowAddForm(false);
-    setSaving(false);
   }
 
   async function changeStatus(taskId: string, status: TaskStatus) {
@@ -128,10 +92,6 @@ export default function WorkBoardClient({
         is_system: true,
       });
     }
-  }
-
-  function toggleAssignee(email: string) {
-    setAssignees((prev) => (prev.includes(email) ? prev.filter((e) => e !== email) : [...prev, email]));
   }
 
   if (!activeDepartment) {
@@ -175,56 +135,10 @@ export default function WorkBoardClient({
         <span className="ml-auto flex items-center gap-1 rounded-full bg-black/5 px-2.5 py-1 text-[11px] text-slate-500">
           🟢 {online.length}명 접속중
         </span>
-        <button
-          onClick={() => setShowAddForm((v) => !v)}
-          className="rounded-full bg-blue-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-600"
-        >
-          + 새 업무
-        </button>
+        <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-medium text-blue-600">
+          💬 채팅에서 @담당자를 태그하면 바로 업무로 등록돼요
+        </span>
       </div>
-
-      {showAddForm && (
-        <form onSubmit={addTask} className="glass m-2 flex shrink-0 flex-col gap-2 p-3">
-          <div className="flex flex-wrap gap-2">
-            <input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="업무 제목"
-              className="min-w-0 flex-1 rounded-lg border border-black/10 bg-white/80 px-3 py-2 text-sm"
-              autoFocus
-            />
-            <select value={priority} onChange={(e) => setPriority(e.target.value as "보통" | "긴급")} className="rounded-lg border border-black/10 bg-white/80 px-2 py-2 text-xs">
-              <option value="보통">보통</option>
-              <option value="긴급">🔴 긴급</option>
-            </select>
-            <button type="submit" disabled={saving || !title.trim()} className="shrink-0 rounded-lg bg-blue-500 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-600 disabled:opacity-50">
-              등록
-            </button>
-          </div>
-          <input
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="설명(선택)"
-            className="rounded-lg border border-black/10 bg-white/80 px-3 py-2 text-sm"
-          />
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-[11px] opacity-50">담당자 태그:</span>
-            {team.map((member) => {
-              const active = assignees.includes(member.email);
-              return (
-                <button
-                  key={member.email}
-                  type="button"
-                  onClick={() => toggleAssignee(member.email)}
-                  className={"rounded-full border px-2 py-0.5 text-[11px] transition " + (active ? "border-blue-500 bg-blue-500 text-white" : "border-black/10 bg-white/70 text-slate-500")}
-                >
-                  {nameFor(team, member.email)}
-                </button>
-              );
-            })}
-          </div>
-        </form>
-      )}
 
       <div className="flex-1 overflow-hidden">
         <WorkspaceArea

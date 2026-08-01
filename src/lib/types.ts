@@ -255,3 +255,76 @@ export type TeamMember = {
   email: string;
   name: string | null;
 };
+
+// ===== 위클리 리포트 (Weekly Student Report) =====
+export type BadgeValue = "excellent" | "good" | "warning" | "bad";
+export type EvalCategory = "academic" | "improvement" | "participation" | "behavior" | "social";
+export type EvalBadges = Partial<Record<EvalCategory | "overall", BadgeValue[]>>;
+
+export type WrTerm = {
+  id: string;
+  name: string;
+  start_date: string | null;
+  end_date: string | null;
+  is_active: boolean;
+  is_archived: boolean;
+  created_at: string;
+};
+
+export type WrClass = {
+  id: string;
+  grade: string | null;
+  class_name: string | null;
+  teacher_email: string | null;
+  sub_teacher_email: string | null;
+  created_at: string;
+};
+
+export type WrStudent = {
+  id: string;
+  name: string;
+  grade: string | null;
+  class_name: string | null;
+  parent_phone: string | null;
+  note: string | null;
+  status: "active" | "inactive";
+  created_at: string;
+};
+
+export type WrSubject = {
+  id: string;
+  name: string;
+  teacher_email: string | null;
+  class_id: string | null;
+  color: string | null;
+  student_ids: string[];
+  created_at: string;
+};
+
+export type WrReport = {
+  id: string;
+  student_id: string;
+  term_id: string | null;
+  subject: string;
+  academic: string | null;
+  improvement: string | null;
+  participation: string | null;
+  behavior: string | null;
+  social: string | null;
+  teacher_note: string | null;
+  eval_badges: EvalBadges;
+  status: "draft" | "published";
+  report_date: string;
+  is_archived: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type WrComment = {
+  id: string;
+  student_id: string;
+  author_email: string;
+  content: string;
+  comment_date: string;
+  created_at: string;
+};

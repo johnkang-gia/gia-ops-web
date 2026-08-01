@@ -68,6 +68,39 @@ const DEVELOPER_NAV_GROUP = {
   items: [{ href: "/dev", label: "개발자 대시보드", icon: "🛠️" }],
 };
 
+// 위클리 리포트(학생 주간 리포트) - 교직원 이상(교직원/관리자/개발자)에게 보이는 열람 메뉴.
+// 교사는 이 그룹이 아니라 아래 TEACHER_NAV_GROUPS(자기 반/과목만)로 완전히 별도 처리됩니다.
+const WEEKLY_REPORT_VIEW_GROUP = {
+  label: "위클리 리포트",
+  items: [
+    { href: "/weekly-report/students", label: "학생 현황", icon: "🎓" },
+    { href: "/weekly-report/print", label: "리포트 프린트", icon: "🖨️" },
+  ],
+};
+
+// 관리자(또는 개발자) 전용 - 반/과목/학생명부/학기 세팅 + 통계.
+const WEEKLY_REPORT_ADMIN_GROUP = {
+  label: "위클리 리포트 관리",
+  items: [
+    { href: "/weekly-report/admin/classes", label: "반/담임 배정", icon: "🏫" },
+    { href: "/weekly-report/admin/subjects", label: "과목반 세팅", icon: "📘" },
+    { href: "/weekly-report/admin/students", label: "학생 명부", icon: "🧑‍🎓" },
+    { href: "/weekly-report/admin/terms", label: "학기 관리", icon: "🗓️" },
+    { href: "/weekly-report/admin/stats", label: "통계 대시보드", icon: "📊" },
+  ],
+};
+
+// 교사 전용 사이드바 - 계약직으로 짧게 근무할 수도 있는 교사에게는 GIA ops/업무 등 내부
+// 문서 성격의 다른 메뉴를 아예 보여주지 않고, 위클리 리포트 작성 화면만 보여줍니다.
+const TEACHER_NAV_GROUPS = [
+  {
+    items: [
+      { href: "/weekly-report/homeroom", label: "내 담임반", icon: "🏠" },
+      { href: "/weekly-report/subjects", label: "내 담당과목", icon: "📘" },
+    ],
+  },
+];
+
 export default async function DashboardLayout({
   children,
 }: {
@@ -93,31 +126,46 @@ export default async function DashboardLayout({
     .maybeSingle();
   const displayName = appUser?.name || user.email;
   const isAdmin = isDeveloperEmail(user.email) || appUser?.position === "관리자";
+  const isTeacher = !isDeveloperEmail(user.email) && appUser?.position === "교사";
+  const isStaffOrAbove = isAdmin || appUser?.position === "교직원";
 
   const termLabel = currentTerm ? `${currentTerm.year} ${currentTerm.term_type}` : null;
-  // "관리" 메뉴는 관리자 직위(또는 개발자)에게만 보입니다 - 승인 권한이 없는 사람에게는 애초에
-  // 메뉴 자체를 감춰 혼란을 줄입니다(실제 접근 제한은 RLS가 최종적으로 보장).
-  const baseGroups = isAdmin ? NAV_GROUPS : NAV_GROUPS.filter((g) => g.label !== "관리");
-  const navGroups = isDeveloperEmail(user.email) ? [...baseGroups, DEVELOPER_NAV_GROUP] : baseGroups;
+  const homeHref = isTeacher ? "/weekly-report" : "/home";
+
+  // 교사는 GIA ops/업무 등 다른 메뉴를 아예 볼 수 없고 위클리 리포트만 보입니다(계약직으로
+  // 짧게 근무할 수도 있어 내부 문서 성격의 다른 메뉴를 감춥니다 - middleware.ts에서 실제
+  // 접근 자체도 막습니다). 관리자/교직원/개발자는 기존 메뉴 전체 + 위클리 리포트를 함께 봅니다.
+  let navGroups: typeof NAV_GROUPS;
+  if (isTeacher) {
+    navGroups = TEACHER_NAV_GROUPS;
+  } else {
+    // "관리" 메뉴는 관리자 직위(또는 개발자)에게만 보입니다 - 승인 권한이 없는 사람에게는 애초에
+    // 메뉴 자체를 감춰 혼란을 줄입니다(실제 접근 제한은 RLS가 최종적으로 보장).
+    let groups = isAdmin ? NAV_GROUPS : NAV_GROUPS.filter((g) => g.label !== "관리");
+    if (isStaffOrAbove) groups = [...groups, WEEKLY_REPORT_VIEW_GROUP];
+    if (isAdmin) groups = [...groups, WEEKLY_REPORT_ADMIN_GROUP];
+    navGroups = isDeveloperEmail(user.email) ? [...groups, DEVELOPER_NAV_GROUP] : groups;
+  }
 
   return (
     <div className="flex min-h-screen flex-1">
       <aside className="hidden w-56 shrink-0 border-r border-slate-200 bg-white p-4 sm:flex sm:flex-col">
         <div className="mb-6 px-2">
-          <Link href="/home" className="inline-block cursor-pointer">
+          <Link href={homeHref} className="inline-block cursor-pointer">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/logo-main.png" alt="GIA Micro Lab" className="h-10 w-auto" />
           </Link>
-          {termLabel ? (
-            <Link
-              href="/terms"
-              className="mt-2 inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700 hover:bg-blue-100"
-            >
-              📅 {termLabel}
-            </Link>
-          ) : (
-            <div className="mt-2 text-[11px] text-slate-300">진행중인 학기 없음</div>
-          )}
+          {!isTeacher &&
+            (termLabel ? (
+              <Link
+                href="/terms"
+                className="mt-2 inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700 hover:bg-blue-100"
+              >
+                📅 {termLabel}
+              </Link>
+            ) : (
+              <div className="mt-2 text-[11px] text-slate-300">진행중인 학기 없음</div>
+            ))}
           <div className="mt-1 truncate text-xs text-slate-400">
             {displayName}
           </div>
@@ -132,20 +180,21 @@ export default async function DashboardLayout({
 
       <div className="flex min-h-screen flex-1 flex-col">
         <header className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 sm:hidden">
-          <Link href="/home" className="inline-block cursor-pointer">
+          <Link href={homeHref} className="inline-block cursor-pointer">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/logo-main.png" alt="GIA Micro Lab" className="h-7 w-auto" />
           </Link>
-          {termLabel ? (
-            <Link
-              href="/terms"
-              className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700"
-            >
-              📅 {termLabel}
-            </Link>
-          ) : (
-            <span className="text-[11px] text-slate-300">진행중인 학기 없음</span>
-          )}
+          {!isTeacher &&
+            (termLabel ? (
+              <Link
+                href="/terms"
+                className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700"
+              >
+                📅 {termLabel}
+              </Link>
+            ) : (
+              <span className="text-[11px] text-slate-300">진행중인 학기 없음</span>
+            ))}
           <SignOutButton />
         </header>
         <nav className="flex gap-1 overflow-x-auto border-b border-slate-200 bg-white px-2 py-2 sm:hidden">

@@ -4,6 +4,172 @@
 `version` 값과 항상 일치시킵니다. 업데이트할 때마다 이 파일 맨 위에 새 항목을 추가하고,
 같은 내용을 GitHub Desktop의 커밋 Summary/Description에도 그대로 사용하면 됩니다.
 
+## v0.26.0 - 2026-08-01
+
+GIA 통합 플랫폼 3번째 통합: "위클리 리포트"(학생 주간 평가 리포트) 병합 + 교사 전용 접근 분리:
+
+- 별도로 개발 중이던 학생 주간 리포트 앱(교사가 학업/보완점/참여도/태도/교우관계 5개 항목을
+  뱃지(🌟탁월/🟢양호/⚠️지도요망/🚨집중지도)와 서술형으로 매주 평가하는 앱)을 gia-ops-web
+  안에 새 메뉴 "위클리 리포트"로 통합했습니다. 반/과목/학생/학기 데이터는 `wr_` 접두사 테이블로
+  분리해서 기존 GIA ops 데이터와 섞이지 않습니다
+- **교사(직위=교사)는 로그인하면 위클리 리포트 화면만 보이고, 사이드바에도 "내 담임반"·
+  "내 담당과목" 두 메뉴만 나타납니다.** GIA ops(사건/회의/매뉴얼 등)와 업무 보드는 아예 접근
+  자체가 막힙니다(주소를 직접 입력해도 위클리 리포트로 돌아옵니다) - 계약직으로 짧게 근무할
+  수도 있는 교사에게 내부 문서 성격의 다른 메뉴를 보여주지 않기 위함입니다
+- **관리자/교직원/개발자는 기존 메뉴 전체 + 위클리 리포트를 함께 볼 수 있습니다.** 교직원은
+  "학생 현황"·"리포트 프린트"를, 관리자(+개발자)는 여기에 더해 "반/담임 배정"·"과목반 세팅"·
+  "학생 명부"·"학기 관리"·"통계 대시보드"까지 볼 수 있습니다
+- 리포트 작성 화면은 원본 앱의 기능을 그대로 옮겼습니다: 뱃지 복수 선택, 3초 자동 임시저장,
+  종합 의견 상용구 저장(개인 브라우저에 저장), 지난주 기록 보기, 임시저장/발행 구분, 다른
+  과목 탭은 읽기 전용으로 열람
+- 학부모 배포용 PDF(발행된 리포트만 모아서 과목별로 정리)를 리포트 프린트 메뉴에서 바로
+  열람/다운로드할 수 있습니다
+- 참고: 원본 문서의 "AI 뱃지"는 실제로는 AI가 아니라 선생님이 직접 클릭해서 고르는 수동
+  평가였습니다(이름만 ai_tags였을 뿐 생성 로직은 없었음) - 그대로 수동 선택 방식으로 옮겼습니다
+- 원본 앱의 회원가입/비밀번호/사용자 승인/오류 로그/개발자 대시보드 화면은 옮기지 않았습니다 -
+  이미 gia-ops-web에 동일한 기능(구글 로그인 승인, 개발자 대시보드 등)이 있어서 그걸 그대로
+  씁니다. "건의사항" 기능도 기존 "문의및건의사항" 메뉴로 대체됩니다(별도 이관 없음)
+
+Supabase에서 아래 SQL을 SQL Editor에 붙여넣고 실행해주세요:
+
+```sql
+-- ===== 위클리 리포트 테이블 =====
+create table if not exists wr_terms (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  start_date date,
+  end_date date,
+  is_active boolean not null default false,
+  is_archived boolean not null default false,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists wr_classes (
+  id uuid primary key default gen_random_uuid(),
+  grade text,
+  class_name text,
+  teacher_email text,
+  sub_teacher_email text,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists wr_students (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  grade text,
+  class_name text,
+  parent_phone text,
+  note text,
+  status text not null default 'active' check (status in ('active', 'inactive')),
+  created_at timestamptz not null default now()
+);
+
+create table if not exists wr_subjects (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  teacher_email text,
+  class_id uuid references wr_classes(id) on delete set null,
+  color text default '#3B82F6',
+  student_ids uuid[] not null default '{}',
+  created_at timestamptz not null default now()
+);
+
+create table if not exists wr_reports (
+  id uuid primary key default gen_random_uuid(),
+  student_id uuid not null references wr_students(id) on delete cascade,
+  term_id uuid references wr_terms(id) on delete set null,
+  subject text not null,
+  academic text,
+  improvement text,
+  participation text,
+  behavior text,
+  social text,
+  teacher_note text,
+  eval_badges jsonb not null default '{}',
+  status text not null default 'draft' check (status in ('draft', 'published')),
+  report_date date not null default current_date,
+  is_archived boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists wr_reports_student_idx on wr_reports(student_id, subject, report_date);
+create index if not exists wr_reports_term_idx on wr_reports(term_id);
+
+create table if not exists wr_comments (
+  id uuid primary key default gen_random_uuid(),
+  student_id uuid not null references wr_students(id) on delete cascade,
+  author_email text not null,
+  content text not null,
+  comment_date date not null default current_date,
+  created_at timestamptz not null default now()
+);
+create index if not exists wr_comments_student_idx on wr_comments(student_id, created_at);
+
+drop trigger if exists wr_reports_set_updated_at on wr_reports;
+create trigger wr_reports_set_updated_at
+  before update on wr_reports
+  for each row execute function set_updated_at();
+
+alter table wr_terms enable row level security;
+alter table wr_classes enable row level security;
+alter table wr_students enable row level security;
+alter table wr_subjects enable row level security;
+alter table wr_reports enable row level security;
+alter table wr_comments enable row level security;
+
+drop policy if exists "giamicro_all_wr_terms" on wr_terms;
+create policy "giamicro_all_wr_terms" on wr_terms
+  for all using (is_giamicro_user()) with check (is_giamicro_user());
+
+drop policy if exists "giamicro_all_wr_classes" on wr_classes;
+create policy "giamicro_all_wr_classes" on wr_classes
+  for all using (is_giamicro_user()) with check (is_giamicro_user());
+
+drop policy if exists "giamicro_all_wr_students" on wr_students;
+create policy "giamicro_all_wr_students" on wr_students
+  for all using (is_giamicro_user()) with check (is_giamicro_user());
+
+drop policy if exists "giamicro_all_wr_subjects" on wr_subjects;
+create policy "giamicro_all_wr_subjects" on wr_subjects
+  for all using (is_giamicro_user()) with check (is_giamicro_user());
+
+drop policy if exists "giamicro_all_wr_reports" on wr_reports;
+create policy "giamicro_all_wr_reports" on wr_reports
+  for all using (is_giamicro_user()) with check (is_giamicro_user());
+
+drop policy if exists "giamicro_all_wr_comments" on wr_comments;
+create policy "giamicro_all_wr_comments" on wr_comments
+  for all using (is_giamicro_user()) with check (is_giamicro_user());
+
+do $$
+begin
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'wr_terms') then
+    alter publication supabase_realtime add table wr_terms;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'wr_classes') then
+    alter publication supabase_realtime add table wr_classes;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'wr_students') then
+    alter publication supabase_realtime add table wr_students;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'wr_subjects') then
+    alter publication supabase_realtime add table wr_subjects;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'wr_reports') then
+    alter publication supabase_realtime add table wr_reports;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'wr_comments') then
+    alter publication supabase_realtime add table wr_comments;
+  end if;
+end $$;
+```
+
+SQL 실행 후 관리자 화면(위클리 리포트 관리 → 학생 명부 / 반·담임 배정 / 과목반 세팅 / 학기 관리)에서
+학생·반·과목·학기 데이터를 등록해주셔야 교사들이 리포트를 작성할 수 있습니다. 또한 기존
+교사 계정들의 직위가 정확히 "교사"로 설정되어 있는지 사용자 관리 화면에서 한 번 확인해주세요
+(온보딩 때 잘못 선택했다면 본인이 다시 바꿀 수 없으니 관리자가 별도로 안내해주셔야 합니다 -
+현재는 앱에 관리자용 직위 수정 화면이 없어서, 필요하시면 다음 작업으로 추가해드릴 수 있습니다).
+
 ## v0.25.0 - 2026-08-01
 
 로그인 승인 방식 전면 개편: 이름/소속/직위 온보딩 + 관리자 권한 재정의 + 업무보드 이름 표시:

@@ -1,7 +1,7 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { isPinCookieValid, pinCookieName } from "@/lib/pinCookie";
-import { authOkCookieMaxAge, authOkCookieName, isAuthOkCookieValid, makeAuthOkCookieValue } from "@/lib/authCookie";
+import { authOkCookieMaxAge, authOkCookieName, makeAuthOkCookieValue, readAuthOkCookie } from "@/lib/authCookie";
 import { isDeveloperEmail } from "@/lib/roles";
 
 const ALLOWED_DOMAIN = "@giamicro.com";
@@ -82,15 +82,17 @@ export async function updateSession(request: NextRequest) {
     if (!isDeveloperEmail(email) && user.id) {
       // 승인 여부를 매 요청마다 DB에서 조회하면 페이지 이동마다 네트워크 왕복이 늘어나 체감
       // 속도가 떨어집니다. 한 번 승인 확인이 끝나면 짧은 시간(5분) 동안은 서명된 쿠키만으로
-      // 통과시키고, 쿠키가 없거나 만료됐을 때만 실제로 DB를 조회합니다.
+      // 통과시키고, 쿠키가 없거나 만료됐을 때만 실제로 DB를 조회합니다. 이 쿠키에는 직위
+      // (position)도 함께 캐싱해서, 교사 전용 화면 제한도 DB 재조회 없이 판단합니다.
       const authOkCookie = request.cookies.get(authOkCookieName())?.value;
-      const cachedOk = isAuthOkCookieValid(user.id, authOkCookie);
+      const cached = readAuthOkCookie(user.id, authOkCookie);
+      let position: string | null = cached?.position ?? null;
 
-      if (!cachedOk) {
+      if (!cached) {
         const normalizedEmail = email.toLowerCase();
         const { data: appUser } = await supabase
           .from("app_users")
-          .select("status, name")
+          .select("status, name, position")
           .eq("email", normalizedEmail)
           .maybeSingle();
 
@@ -114,7 +116,8 @@ export async function updateSession(request: NextRequest) {
           return NextResponse.redirect(url);
         }
 
-        supabaseResponse.cookies.set(authOkCookieName(), makeAuthOkCookieValue(user.id), {
+        position = appUser.position;
+        supabaseResponse.cookies.set(authOkCookieName(), makeAuthOkCookieValue(user.id, position), {
           httpOnly: true,
           secure: true,
           sameSite: "lax",
@@ -127,6 +130,15 @@ export async function updateSession(request: NextRequest) {
       if (!isPinCookieValid(user.id, pinCookie)) {
         const url = request.nextUrl.clone();
         url.pathname = "/pin";
+        return NextResponse.redirect(url);
+      }
+
+      // 교사는 위클리 리포트 화면만 볼 수 있습니다. GIA ops(사건/회의/매뉴얼 등)와 업무
+      // 보드는 계약직으로 짧게 근무할 수도 있는 교사에게는 내부 문서나 다름없어서, 관리자/
+      // 교직원/개발자와 달리 아예 접근 자체를 막습니다.
+      if (position === "교사" && !path.startsWith("/weekly-report")) {
+        const url = request.nextUrl.clone();
+        url.pathname = "/weekly-report";
         return NextResponse.redirect(url);
       }
     }

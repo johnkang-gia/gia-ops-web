@@ -897,3 +897,140 @@ begin
     alter publication supabase_realtime add table messages;
   end if;
 end $$;
+
+-- ===== 30. 위클리 리포트(Weekly Student Report) 통합 =====
+-- 별도로 개발되던 "학생 주간 리포트" 앱을 gia-ops-web 안으로 합칩니다. 기존 사건/행사/회의
+-- 등과 개념적으로 겹치지 않는 새 도메인이라 테이블 이름을 wr_ 접두사로 분리했습니다(기존
+-- terms 테이블은 학기/캠프 반복행사 기록용이라 성격이 달라, 위클리 리포트 전용 학기 테이블을
+-- 따로 둡니다). 권한은 이 프로젝트의 기존 관례(테이블 단위 RLS는 giamicro 승인 사용자에게
+-- 넓게 열어두고, "교사는 자기 반/과목만 수정 가능" 같은 세부 규칙은 화면 쪽에서 처리)를
+-- 그대로 따릅니다 - tasks/messages 테이블과 동일한 패턴입니다.
+
+create table if not exists wr_terms (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  start_date date,
+  end_date date,
+  is_active boolean not null default false,
+  is_archived boolean not null default false,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists wr_classes (
+  id uuid primary key default gen_random_uuid(),
+  grade text,
+  class_name text,
+  teacher_email text,
+  sub_teacher_email text,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists wr_students (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  grade text,
+  class_name text,
+  parent_phone text,
+  note text,
+  status text not null default 'active' check (status in ('active', 'inactive')),
+  created_at timestamptz not null default now()
+);
+
+create table if not exists wr_subjects (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  teacher_email text,
+  class_id uuid references wr_classes(id) on delete set null,
+  color text default '#3B82F6',
+  student_ids uuid[] not null default '{}',
+  created_at timestamptz not null default now()
+);
+
+create table if not exists wr_reports (
+  id uuid primary key default gen_random_uuid(),
+  student_id uuid not null references wr_students(id) on delete cascade,
+  term_id uuid references wr_terms(id) on delete set null,
+  subject text not null,                    -- '담임' 또는 실제 과목명
+  academic text,
+  improvement text,
+  participation text,
+  behavior text,
+  social text,
+  teacher_note text,
+  eval_badges jsonb not null default '{}',  -- {academic:['good'], ...} 형태
+  status text not null default 'draft' check (status in ('draft', 'published')),
+  report_date date not null default current_date,
+  is_archived boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists wr_reports_student_idx on wr_reports(student_id, subject, report_date);
+create index if not exists wr_reports_term_idx on wr_reports(term_id);
+
+create table if not exists wr_comments (
+  id uuid primary key default gen_random_uuid(),
+  student_id uuid not null references wr_students(id) on delete cascade,
+  author_email text not null,
+  content text not null,
+  comment_date date not null default current_date,
+  created_at timestamptz not null default now()
+);
+create index if not exists wr_comments_student_idx on wr_comments(student_id, created_at);
+
+drop trigger if exists wr_reports_set_updated_at on wr_reports;
+create trigger wr_reports_set_updated_at
+  before update on wr_reports
+  for each row execute function set_updated_at();
+
+alter table wr_terms enable row level security;
+alter table wr_classes enable row level security;
+alter table wr_students enable row level security;
+alter table wr_subjects enable row level security;
+alter table wr_reports enable row level security;
+alter table wr_comments enable row level security;
+
+drop policy if exists "giamicro_all_wr_terms" on wr_terms;
+create policy "giamicro_all_wr_terms" on wr_terms
+  for all using (is_giamicro_user()) with check (is_giamicro_user());
+
+drop policy if exists "giamicro_all_wr_classes" on wr_classes;
+create policy "giamicro_all_wr_classes" on wr_classes
+  for all using (is_giamicro_user()) with check (is_giamicro_user());
+
+drop policy if exists "giamicro_all_wr_students" on wr_students;
+create policy "giamicro_all_wr_students" on wr_students
+  for all using (is_giamicro_user()) with check (is_giamicro_user());
+
+drop policy if exists "giamicro_all_wr_subjects" on wr_subjects;
+create policy "giamicro_all_wr_subjects" on wr_subjects
+  for all using (is_giamicro_user()) with check (is_giamicro_user());
+
+drop policy if exists "giamicro_all_wr_reports" on wr_reports;
+create policy "giamicro_all_wr_reports" on wr_reports
+  for all using (is_giamicro_user()) with check (is_giamicro_user());
+
+drop policy if exists "giamicro_all_wr_comments" on wr_comments;
+create policy "giamicro_all_wr_comments" on wr_comments
+  for all using (is_giamicro_user()) with check (is_giamicro_user());
+
+do $$
+begin
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'wr_terms') then
+    alter publication supabase_realtime add table wr_terms;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'wr_classes') then
+    alter publication supabase_realtime add table wr_classes;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'wr_students') then
+    alter publication supabase_realtime add table wr_students;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'wr_subjects') then
+    alter publication supabase_realtime add table wr_subjects;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'wr_reports') then
+    alter publication supabase_realtime add table wr_reports;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'wr_comments') then
+    alter publication supabase_realtime add table wr_comments;
+  end if;
+end $$;

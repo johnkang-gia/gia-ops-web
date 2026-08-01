@@ -8,13 +8,14 @@ export const STATUS_ORDER: TaskStatus[] = ["예정", "진행중", "보류", "완
 export const STATUS_LABEL: Record<TaskStatus, string> = {
   예정: "진행 대기",
   진행중: "진행 중",
-  보류: "보류·이슈",
+  보류: "보류/이슈",
   완료: "완료",
 };
 
-export const STATUS_STYLE: Record<TaskStatus, { header: string; drop: string }> = {
-  예정: { header: "text-slate-600", drop: "bg-slate-100" },
-  진행중: { header: "text-gia-navy", drop: "bg-gia-navy/10" },
-  보류: { header: "text-amber-600", drop: "bg-amber-100" },
-  완료: { header: "text-emerald-600", drop: "bg-emerald-100" },
+// 참조 소스코드 COLUMNS의 색상(#94a3b8/#3b82f6/#f59e0b/#10b981)을 그대로 가져왔습니다.
+export const STATUS_COLOR: Record<TaskStatus, string> = {
+  예정: "#94a3b8",
+  진행중: "#3b82f6",
+  보류: "#f59e0b",
+  완료: "#10b981",
 };

@@ -1,103 +1,127 @@
 "use client";
 
-import type { Task, TaskStatus, TeamMember } from "@/lib/types";
+import { useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import type { Task, TeamMember } from "@/lib/types";
 import { nameFor } from "@/lib/teamName";
-import { STATUS_ORDER, STATUS_LABEL } from "./statusConfig";
+
+// 마감일을 참조 소스코드처럼 "오늘 마감" / "이번주 금요일" 같은 짧은 문구로 바꿔줍니다.
+// 실제 데이터는 정확한 타임스탬프(due_at)를 그대로 쓰고, 화면에만 사람이 읽기 편한 라벨을 씁니다.
+function deadlineLabel(dueAt: string | null): string | null {
+  if (!dueAt) return null;
+  const due = new Date(dueAt);
+  const now = new Date();
+  const dueDay = new Date(due.getFullYear(), due.getMonth(), due.getDate());
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const diffDays = Math.round((dueDay.getTime() - today.getTime()) / 86400000);
+  if (diffDays < 0) return `${-diffDays}일 지남`;
+  if (diffDays === 0) return "오늘 마감";
+  if (diffDays === 1) return "내일 마감";
+  if (diffDays <= 7) return `${diffDays}일 후 마감`;
+  return due.toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" }) + " 마감";
+}
 
 export default function TaskCard({
   task,
   team,
   deptColor,
+  isAdmin,
+  currentUserEmail,
   onOpen,
-  onDragStartTask,
-  onStatusChange,
+  onToggleAcknowledge,
 }: {
   task: Task;
   team: TeamMember[];
   deptColor?: string | null;
+  isAdmin: boolean;
+  currentUserEmail: string;
   onOpen: () => void;
-  onDragStartTask: (e: React.DragEvent, taskId: string) => void;
-  onStatusChange: (status: TaskStatus) => void;
+  onToggleAcknowledge: (checked: boolean) => void;
 }) {
-  const overdue = task.due_at && task.status !== "완료" && new Date(task.due_at).getTime() < Date.now();
-  const ackCount = task.acknowledged_by?.length ?? 0;
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: task.id,
+    data: { type: "Task", task },
+  });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  const color = deptColor || "#3b82f6";
+  const ackList = task.acknowledged_by ?? [];
   const totalAssignees = task.assignee_emails.length;
-  const color = deptColor || "#c6a15b";
+  const iAmAssignee = task.assignee_emails.includes(currentUserEmail);
+  const myAck = ackList.some((a) => a.email === currentUserEmail);
+  const needsMyAck = iAmAssignee && task.status !== "완료" && !myAck;
+  const overdue = task.due_at && task.status !== "완료" && new Date(task.due_at).getTime() < Date.now();
+  const deadline = deadlineLabel(task.due_at);
+  const unacknowledged = task.assignee_emails.filter((e) => !ackList.some((a) => a.email === e));
+
+  const assigneeSummary =
+    totalAssignees === 0
+      ? null
+      : totalAssignees === 1
+        ? `@${nameFor(team, task.assignee_emails[0])}`
+        : `@${nameFor(team, task.assignee_emails[0])} 외 ${totalAssignees - 1}명`;
 
   return (
     <div
-      draggable
-      onDragStart={(e) => onDragStartTask(e, task.id)}
+      ref={setNodeRef}
+      style={{ ...style, borderLeftColor: color }}
+      className={"glass mb-2 cursor-grab overflow-hidden rounded-lg border-l-4 p-3 shadow-sm transition " + (needsMyAck ? "ring-1 ring-amber-400" : "")}
+      {...attributes}
+      {...listeners}
       onClick={onOpen}
-      style={{ borderLeftColor: task.department ? color : undefined, borderLeftWidth: task.department ? 4 : 1 }}
-      className={
-        "cursor-pointer rounded-xl border bg-white p-2.5 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md " +
-        (overdue ? "border-red-300" : "border-slate-200")
-      }
     >
-      <div className="mb-1.5 flex items-start gap-1.5">
+      <div className="mb-1.5 flex items-start gap-2">
+        {iAmAssignee && (
+          <input
+            type="checkbox"
+            checked={myAck}
+            onChange={(e) => onToggleAcknowledge(e.target.checked)}
+            onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+            className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer"
+            title="업무 확인"
+          />
+        )}
         {task.priority === "긴급" && (
           <span className="mt-0.5 shrink-0 rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-600">
             긴급
           </span>
         )}
-        <span className="min-w-0 flex-1 text-sm font-medium text-slate-800">{task.title}</span>
-      </div>
-
-      {task.department && (
-        <div className="mb-1.5">
-          <span
-            style={{ backgroundColor: color + "22", color }}
-            className="rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
-          >
-            🏫 {task.department}
+        <span className={"min-w-0 flex-1 text-sm font-semibold text-slate-800" + (iAmAssignee && myAck ? " line-through opacity-60" : "")}>
+          {task.title}
+        </span>
+        {totalAssignees > 0 && (
+          <span className="shrink-0 text-[10px] font-semibold text-slate-400">
+            확인 {ackList.length}/{totalAssignees}
           </span>
-        </div>
-      )}
-
-      {totalAssignees > 0 && (
-        <div className="mb-1.5 flex flex-wrap items-center gap-1">
-          {task.assignee_emails.map((email) => {
-            const acked = task.acknowledged_by?.some((a) => a.email === email);
-            return (
-              <span
-                key={email}
-                className={
-                  "rounded-full px-1.5 py-0.5 text-[10px] " +
-                  (acked ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-500")
-                }
-              >
-                {acked ? "✅" : "👤"} {nameFor(team, email)}
-              </span>
-            );
-          })}
-          <span className="ml-auto rounded-full bg-gia-navy/5 px-1.5 py-0.5 text-[10px] font-semibold text-gia-navy">
-            확인 {ackCount}/{totalAssignees}
-          </span>
-        </div>
-      )}
-
-      <div className="flex items-center justify-between gap-1">
-        {task.due_at ? (
-          <span className={"text-[10px] " + (overdue ? "font-semibold text-red-500" : "text-slate-400")}>
-            🕐 {new Date(task.due_at).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-          </span>
-        ) : (
-          <span />
         )}
-        <select
-          value={task.status}
-          onClick={(e) => e.stopPropagation()}
-          onChange={(e) => onStatusChange(e.target.value as TaskStatus)}
-          className="rounded border border-slate-200 bg-slate-50 px-1 py-0.5 text-[10px] text-slate-500"
-        >
-          {STATUS_ORDER.map((s) => (
-            <option key={s} value={s}>
-              {STATUS_LABEL[s]}
-            </option>
-          ))}
-        </select>
       </div>
+
+      {task.description && <div className="mb-2 text-xs text-slate-500">{task.description}</div>}
+
+      <div className="flex items-center justify-between gap-2 text-[11px] text-slate-500">
+        <span className={overdue ? "font-semibold text-red-500" : ""}>{deadline ?? ""}</span>
+        {assigneeSummary && <span>👤 {assigneeSummary}</span>}
+      </div>
+
+      {isAdmin && totalAssignees > 0 && (
+        <div className="mt-2 flex flex-col gap-0.5 border-t border-dashed border-slate-200 pt-2 text-[11px]">
+          <div className="font-semibold text-slate-400">[관리자] 확인 현황 ({ackList.length}/{totalAssignees})</div>
+          {ackList.length > 0 && (
+            <div className="text-emerald-600">
+              {ackList.map((a) => `✓ ${nameFor(team, a.email)}`).join(" · ")}
+            </div>
+          )}
+          {unacknowledged.length > 0 && (
+            <div className="text-red-500">! 미확인: {unacknowledged.map((e) => nameFor(team, e)).join(", ")}</div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

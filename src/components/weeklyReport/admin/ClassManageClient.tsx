@@ -83,7 +83,7 @@ export default function ClassManageClient({ initialClasses, team }: { initialCla
             ))}
           </select>
         </div>
-        <button disabled={saving} className="rounded-lg bg-gia-navy px-3 py-1.5 text-sm font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50">
+        <button disabled={saving} className="rounded-lg bg-wr-primary px-3 py-1.5 text-sm font-semibold text-white hover:bg-wr-primary-2 disabled:opacity-50">
           반 추가
         </button>
       </form>

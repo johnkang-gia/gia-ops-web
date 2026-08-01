@@ -60,16 +60,16 @@ export default function ActivityLog({ department }: { department: string }) {
   if (department === "전체") return null;
 
   return (
-    <div className="mb-3 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
-      <div className="mb-1.5 text-xs font-bold text-gia-navy">🔔 실시간 로그</div>
+    <div className="glass mb-2 px-3 py-2">
+      <div className="mb-1.5 text-xs font-bold text-blue-600">🔔 실시간 로그</div>
       {events.length === 0 ? (
-        <p className="text-[11px] text-slate-300">아직 활동 기록이 없습니다.</p>
+        <p className="text-[11px] opacity-40">아직 활동 기록이 없습니다.</p>
       ) : (
         <div className="flex flex-wrap gap-x-4 gap-y-1">
           {events.map((e) => (
-            <span key={e.id} className="text-[11px] text-slate-500">
+            <span key={e.id} className="text-[11px] opacity-70">
               {e.content}{" "}
-              <span className="text-slate-300">· {timeAgo(e.created_at)}</span>
+              <span className="opacity-50">· {timeAgo(e.created_at)}</span>
             </span>
           ))}
         </div>

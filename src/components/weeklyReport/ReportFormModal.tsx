@@ -416,7 +416,7 @@ export default function ReportFormModal({
                   <button
                     disabled={isSaving}
                     onClick={() => handleSave("published")}
-                    className="rounded-lg bg-gia-navy px-3 py-2 text-sm font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50"
+                    className="rounded-lg bg-wr-primary px-3 py-2 text-sm font-semibold text-white hover:bg-wr-primary-2 disabled:opacity-50"
                   >
                     발행하기
                   </button>

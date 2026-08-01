@@ -63,7 +63,7 @@ export default function TermManageClient({ initialTerms }: { initialTerms: WrTer
           <label className="mb-1 block text-[11px] text-slate-400">종료일</label>
           <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
         </div>
-        <button disabled={saving} className="rounded-lg bg-gia-navy px-3 py-1.5 text-sm font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50">
+        <button disabled={saving} className="rounded-lg bg-wr-primary px-3 py-1.5 text-sm font-semibold text-white hover:bg-wr-primary-2 disabled:opacity-50">
           학기 추가
         </button>
       </form>

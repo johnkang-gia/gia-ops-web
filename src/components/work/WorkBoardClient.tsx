@@ -7,68 +7,48 @@ import { useOnlineUsers } from "@/lib/useOnlineUsers";
 import { genCaseId } from "@/lib/caseId";
 import type { Task, TaskStatus, Department, TeamMember } from "@/lib/types";
 import { nameFor } from "@/lib/teamName";
-import TaskCard from "./TaskCard";
+import { STATUS_LABEL } from "./statusConfig";
+import WorkspaceArea from "./WorkspaceArea";
 import TaskDetailPanel from "./TaskDetailPanel";
-import ChatPanel from "./ChatPanel";
-import CompletionGauge from "./CompletionGauge";
-import ActivityLog from "./ActivityLog";
-import { STATUS_ORDER, STATUS_LABEL, STATUS_STYLE } from "./statusConfig";
 
 export default function WorkBoardClient({
   initialTasks,
   team,
   userEmail,
   departments,
+  isAdmin,
 }: {
   initialTasks: Task[];
   team: TeamMember[];
   userEmail: string;
   departments: Department[];
+  isAdmin: boolean;
 }) {
   const [tasks, setTasks] = useRealtimeTable<Task>("tasks", initialTasks);
+  const [deptList, setDeptList] = useState<Department[]>(departments);
   const online = useOnlineUsers(userEmail);
 
+  const [activeDeptId, setActiveDeptId] = useState<string | null>(deptList[0]?.id ?? null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [showAddForm, setShowAddForm] = useState(false);
   const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
   const [priority, setPriority] = useState<"보통" | "긴급">("보통");
-  const [department, setDepartment] = useState("");
   const [assignees, setAssignees] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [dragOverStatus, setDragOverStatus] = useState<TaskStatus | null>(null);
-  const [showCompletedAll, setShowCompletedAll] = useState(false);
-  // 등록된 부서가 있으면(지금은 초등부) 기본으로 그 부서를 바로 보여줍니다. 나중에 유치부/중고등부가
-  // 추가되면 departments 테이블에 행만 더 넣으면 자동으로 탭에 나타납니다.
-  const [deptFilter, setDeptFilter] = useState(departments[0]?.name ?? "전체");
 
-  const allDepartmentNames = useMemo(() => {
-    const fromTable = departments.map((d) => d.name);
-    const fromTasks = tasks.map((t) => t.department).filter((d): d is string => !!d);
-    return [...new Set([...fromTable, ...fromTasks])];
-  }, [departments, tasks]);
+  const activeDepartment = deptList.find((d) => d.id === activeDeptId) ?? deptList[0] ?? null;
 
   const deptColorMap = useMemo(() => {
     const map = new Map<string, string>();
-    for (const d of departments) if (d.color) map.set(d.name, d.color);
+    for (const d of deptList) if (d.color) map.set(d.name, d.color);
     return map;
-  }, [departments]);
+  }, [deptList]);
 
-  const scopedTasks = deptFilter === "전체" ? tasks : tasks.filter((t) => t.department === deptFilter);
-
-  const grouped = useMemo(() => {
-    const map: Record<TaskStatus, Task[]> = { 예정: [], 진행중: [], 완료: [], 보류: [] };
-    const fourteenDaysAgo = Date.now() - 14 * 24 * 60 * 60 * 1000;
-    for (const t of scopedTasks) {
-      if (t.status === "완료" && !showCompletedAll && new Date(t.updated_at).getTime() < fourteenDaysAgo) continue;
-      map[t.status].push(t);
-    }
-    for (const s of STATUS_ORDER) map[s].sort((a, b) => a.position - b.position);
-    return map;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scopedTasks, showCompletedAll]);
-
-  const completionPercent = scopedTasks.length
-    ? Math.round((scopedTasks.filter((t) => t.status === "완료").length / scopedTasks.length) * 100)
-    : 0;
+  const scopedTasks = useMemo(
+    () => (activeDepartment ? tasks.filter((t) => t.department === activeDepartment.name) : []),
+    [tasks, activeDepartment]
+  );
 
   const selectedTask = tasks.find((t) => t.id === selectedId) ?? null;
 
@@ -76,9 +56,16 @@ export default function WorkBoardClient({
     setTasks((prev) => (prev.some((t) => t.id === task.id) ? prev : [...prev, task]));
   }
 
+  async function handleColorChange(dept: Department, color: string) {
+    if (!isAdmin) return;
+    setDeptList((prev) => prev.map((d) => (d.id === dept.id ? { ...d, color } : d)));
+    const supabase = createClient();
+    await supabase.from("departments").update({ color }).eq("id", dept.id);
+  }
+
   async function addTask(e: React.FormEvent) {
     e.preventDefault();
-    if (!title.trim()) return;
+    if (!title.trim() || !activeDepartment) return;
     setSaving(true);
     const supabase = createClient();
     const { data } = await supabase
@@ -86,9 +73,10 @@ export default function WorkBoardClient({
       .insert({
         case_id: genCaseId("TSK"),
         title: title.trim(),
+        description: description.trim() || null,
         status: "예정",
         priority,
-        department: department.trim() || null,
+        department: activeDepartment.name,
         owner_email: userEmail,
         assignee_emails: assignees,
         position: Date.now(),
@@ -97,8 +85,10 @@ export default function WorkBoardClient({
       .single();
     if (data) addTaskRow(data as Task);
     setTitle("");
+    setDescription("");
     setPriority("보통");
     setAssignees([]);
+    setShowAddForm(false);
     setSaving(false);
   }
 
@@ -118,190 +108,138 @@ export default function WorkBoardClient({
     });
   }
 
+  async function toggleAck(taskId: string, checked: boolean) {
+    const task = tasks.find((t) => t.id === taskId);
+    if (!task) return;
+    const already = task.acknowledged_by?.some((a) => a.email === userEmail);
+    if (checked === !!already) return;
+    const nextAck = checked
+      ? [...(task.acknowledged_by ?? []), { email: userEmail, time: new Date().toISOString() }]
+      : (task.acknowledged_by ?? []).filter((a) => a.email !== userEmail);
+    setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, acknowledged_by: nextAck } : t)));
+    const supabase = createClient();
+    await supabase.from("tasks").update({ acknowledged_by: nextAck }).eq("id", taskId);
+    if (checked) {
+      await supabase.from("task_comments").insert({
+        task_id: taskId,
+        author_email: userEmail,
+        content: `${nameFor(team, userEmail)}님이 업무를 확인했습니다.`,
+        department: task.department,
+        is_system: true,
+      });
+    }
+  }
+
   function toggleAssignee(email: string) {
     setAssignees((prev) => (prev.includes(email) ? prev.filter((e) => e !== email) : [...prev, email]));
   }
 
-  return (
-    <div className="relative rounded-3xl bg-gradient-to-br from-gia-navy/5 via-white to-gia-gold-soft/20 p-3 sm:p-5">
-      <datalist id="dept-options">
-        {allDepartmentNames.map((d) => (
-          <option key={d} value={d} />
-        ))}
-      </datalist>
-
-      <div className="mb-4 flex flex-wrap items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-500 shadow-sm">
-        <span className="font-semibold text-slate-600">🟢 지금 접속 중:</span>
-        {online.length === 0 && <span>없음</span>}
-        {online.map((email) => (
-          <span key={email} className="rounded-full bg-slate-100 px-2 py-0.5">
-            {email === userEmail ? "나" : nameFor(team, email)}
-          </span>
-        ))}
+  if (!activeDepartment) {
+    return (
+      <div className="flex h-full items-center justify-center p-8 text-sm text-slate-500">
+        등록된 부서가 없습니다. 먼저 부서를 추가해주세요.
       </div>
+    );
+  }
 
-      <div className="mb-3 flex flex-wrap items-center gap-1.5">
-        {["전체", ...allDepartmentNames].map((d) => {
-          const color = deptColorMap.get(d);
-          const active = d === deptFilter;
+  return (
+    <div className="flex h-full flex-col overflow-hidden">
+      {/* 부서 선택 - 참조 소스코드의 좌측 세로 부서 목록 대신, 이미 있는 메인 사이드바와 중복되지
+          않도록 상단 가로 탭으로 배치했습니다(색상 점 클릭 시 관리자만 색상 변경 가능한 것은 동일). */}
+      <div className="glass-panel flex shrink-0 flex-wrap items-center gap-1 border-b border-black/5 px-3 py-2">
+        {deptList.map((dept) => {
+          const active = dept.id === activeDeptId;
           return (
             <button
-              key={d}
-              onClick={() => setDeptFilter(d)}
-              style={active && color ? { backgroundColor: color, borderColor: color } : undefined}
-              className={
-                "flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold transition " +
-                (active
-                  ? color
-                    ? "text-white"
-                    : "border-gia-navy bg-gia-navy text-white"
-                  : "border-slate-200 bg-white text-slate-600 hover:border-slate-300")
-              }
+              key={dept.id}
+              onClick={() => setActiveDeptId(dept.id)}
+              style={active ? { backgroundColor: dept.color + "22", color: dept.color } : undefined}
+              className={"flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition " + (active ? "" : "text-slate-500 hover:bg-black/5")}
             >
-              {!active && color && (
-                <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: color }} />
-              )}
-              {d}
+              <span className="relative inline-block h-2.5 w-2.5 shrink-0 overflow-hidden rounded-full" style={{ backgroundColor: dept.color }}>
+                {isAdmin && (
+                  <input
+                    type="color"
+                    value={dept.color}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => handleColorChange(dept, e.target.value)}
+                    className="absolute -left-1/2 -top-1/2 h-[200%] w-[200%] cursor-pointer opacity-0"
+                    title={`${dept.name} 색상 변경 (관리자 전용)`}
+                  />
+                )}
+              </span>
+              {dept.name}
             </button>
           );
         })}
+        <span className="ml-auto flex items-center gap-1 rounded-full bg-black/5 px-2.5 py-1 text-[11px] text-slate-500">
+          🟢 {online.length}명 접속중
+        </span>
+        <button
+          onClick={() => setShowAddForm((v) => !v)}
+          className="rounded-full bg-blue-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-600"
+        >
+          + 새 업무
+        </button>
       </div>
 
-      <ActivityLog department={deptFilter} />
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_300px]">
-        <div className="min-w-0">
-          {deptFilter !== "전체" && (
-            <div className="mb-3">
-              <CompletionGauge percent={completionPercent} label={`${deptFilter} 업무`} />
-            </div>
-          )}
-
-          <form
-            onSubmit={addTask}
-            className="mb-5 flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"
-          >
-            <div className="flex flex-wrap gap-2">
-              <input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="새 업무 등록 (예: 학부모 안내문 발송)"
-                className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
-              />
-              <input
-                list="dept-options"
-                value={department}
-                onChange={(e) => setDepartment(e.target.value)}
-                placeholder="부서(선택)"
-                className="w-28 rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs"
-              />
-              <select
-                value={priority}
-                onChange={(e) => setPriority(e.target.value as "보통" | "긴급")}
-                className="rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs"
-              >
-                <option value="보통">보통</option>
-                <option value="긴급">🔴 긴급</option>
-              </select>
-              <button
-                type="submit"
-                disabled={saving || !title.trim()}
-                className="shrink-0 rounded-lg bg-gia-navy px-4 py-2 text-sm font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50"
-              >
-                등록
-              </button>
-            </div>
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-[11px] text-slate-400">담당자 태그:</span>
-              {team.map((member) => {
-                const active = assignees.includes(member.email);
-                return (
-                  <button
-                    key={member.email}
-                    type="button"
-                    onClick={() => toggleAssignee(member.email)}
-                    className={
-                      "rounded-full border px-2 py-0.5 text-[11px] transition " +
-                      (active
-                        ? "border-gia-navy bg-gia-navy text-white"
-                        : "border-slate-200 bg-white text-slate-500 hover:border-slate-300")
-                    }
-                  >
-                    {online.includes(member.email) && <span className="mr-0.5">🟢</span>}
-                    {nameFor(team, member.email)}
-                  </button>
-                );
-              })}
-            </div>
-          </form>
-
-          <div className="mb-2 flex justify-end">
-            <label className="flex items-center gap-1 text-[11px] text-slate-400">
-              <input type="checkbox" checked={showCompletedAll} onChange={(e) => setShowCompletedAll(e.target.checked)} />
-              완료된 업무 전체 보기(기본은 최근 14일)
-            </label>
-          </div>
-
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {STATUS_ORDER.map((status) => (
-              <div
-                key={status}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setDragOverStatus(status);
-                }}
-                onDragLeave={() => setDragOverStatus((s) => (s === status ? null : s))}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  const taskId = e.dataTransfer.getData("text/plain");
-                  changeStatus(taskId, status);
-                  setDragOverStatus(null);
-                }}
-                className={
-                  "flex min-h-[200px] flex-col gap-2 rounded-2xl border p-2 shadow-sm transition " +
-                  (dragOverStatus === status ? "border-gia-navy-light " + STATUS_STYLE[status].drop : "border-slate-200 bg-white")
-                }
-              >
-                <div className={"flex items-center justify-between px-1 text-xs font-bold " + STATUS_STYLE[status].header}>
-                  <span>{STATUS_LABEL[status]}</span>
-                  <span className="text-slate-300">{grouped[status].length}</span>
-                </div>
-                {grouped[status].map((task) => (
-                  <TaskCard
-                    key={task.id}
-                    task={task}
-                    team={team}
-                    deptColor={task.department ? deptColorMap.get(task.department) : null}
-                    onOpen={() => setSelectedId(task.id)}
-                    onDragStartTask={(e, id) => e.dataTransfer.setData("text/plain", id)}
-                    onStatusChange={(s) => changeStatus(task.id, s)}
-                  />
-                ))}
-                {grouped[status].length === 0 && (
-                  <p className="px-1 text-[11px] text-slate-300">여기로 카드를 끌어다 놓을 수 있어요</p>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="lg:sticky lg:top-4 lg:self-start">
-          {deptFilter !== "전체" ? (
-            <ChatPanel
-              department={deptFilter}
-              departments={departments}
-              team={team}
-              userEmail={userEmail}
-              onTaskCreated={addTaskRow}
+      {showAddForm && (
+        <form onSubmit={addTask} className="glass m-2 flex shrink-0 flex-col gap-2 p-3">
+          <div className="flex flex-wrap gap-2">
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="업무 제목"
+              className="min-w-0 flex-1 rounded-lg border border-black/10 bg-white/80 px-3 py-2 text-sm"
+              autoFocus
             />
-          ) : (
-            <div className="flex h-[200px] items-center justify-center rounded-2xl border border-slate-200 bg-white p-4 text-center text-xs text-slate-400 shadow-sm">
-              부서 탭을 선택하면
-              <br />
-              실시간 채팅을 볼 수 있어요
-            </div>
-          )}
-        </div>
+            <select value={priority} onChange={(e) => setPriority(e.target.value as "보통" | "긴급")} className="rounded-lg border border-black/10 bg-white/80 px-2 py-2 text-xs">
+              <option value="보통">보통</option>
+              <option value="긴급">🔴 긴급</option>
+            </select>
+            <button type="submit" disabled={saving || !title.trim()} className="shrink-0 rounded-lg bg-blue-500 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-600 disabled:opacity-50">
+              등록
+            </button>
+          </div>
+          <input
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="설명(선택)"
+            className="rounded-lg border border-black/10 bg-white/80 px-3 py-2 text-sm"
+          />
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[11px] opacity-50">담당자 태그:</span>
+            {team.map((member) => {
+              const active = assignees.includes(member.email);
+              return (
+                <button
+                  key={member.email}
+                  type="button"
+                  onClick={() => toggleAssignee(member.email)}
+                  className={"rounded-full border px-2 py-0.5 text-[11px] transition " + (active ? "border-blue-500 bg-blue-500 text-white" : "border-black/10 bg-white/70 text-slate-500")}
+                >
+                  {nameFor(team, member.email)}
+                </button>
+              );
+            })}
+          </div>
+        </form>
+      )}
+
+      <div className="flex-1 overflow-hidden">
+        <WorkspaceArea
+          activeDepartment={activeDepartment}
+          tasks={scopedTasks}
+          team={team}
+          deptColorMap={deptColorMap}
+          departments={deptList}
+          isAdmin={isAdmin}
+          currentUserEmail={userEmail}
+          onOpenTask={setSelectedId}
+          onChangeStatus={changeStatus}
+          onToggleAck={toggleAck}
+          onTaskCreated={addTaskRow}
+        />
       </div>
 
       {selectedTask && (

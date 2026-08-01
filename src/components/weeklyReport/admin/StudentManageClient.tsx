@@ -91,7 +91,7 @@ export default function StudentManageClient({ initialStudents }: { initialStuden
           <label className="mb-1 block text-[11px] text-slate-400">보호자 연락처</label>
           <input value={parentPhone} onChange={(e) => setParentPhone(e.target.value)} className="w-32 rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
         </div>
-        <button disabled={saving} className="rounded-lg bg-gia-navy px-3 py-1.5 text-sm font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50">
+        <button disabled={saving} className="rounded-lg bg-wr-primary px-3 py-1.5 text-sm font-semibold text-white hover:bg-wr-primary-2 disabled:opacity-50">
           학생 추가
         </button>
         <button type="button" onClick={() => setShowBulk((v) => !v)} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50">
@@ -109,7 +109,7 @@ export default function StudentManageClient({ initialStudents }: { initialStuden
             placeholder={"홍길동,3,1반,010-1234-5678\n김철수,3,2반,"}
             className="mb-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
           />
-          <button onClick={bulkAdd} disabled={saving} className="rounded-lg bg-gia-navy px-3 py-1.5 text-sm font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50">
+          <button onClick={bulkAdd} disabled={saving} className="rounded-lg bg-wr-primary px-3 py-1.5 text-sm font-semibold text-white hover:bg-wr-primary-2 disabled:opacity-50">
             일괄 등록
           </button>
         </div>

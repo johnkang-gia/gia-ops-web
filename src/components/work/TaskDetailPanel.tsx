@@ -208,7 +208,7 @@ export default function TaskDetailPanel({
                   className={
                     "rounded-full border px-2 py-1 text-[11px] font-medium transition " +
                     (active
-                      ? "border-gia-navy bg-gia-navy text-white"
+                      ? "border-blue-500 bg-blue-500 text-white"
                       : "border-slate-200 text-slate-500 hover:border-slate-300")
                   }
                 >
@@ -221,13 +221,13 @@ export default function TaskDetailPanel({
         </div>
 
         {task.assignee_emails.length > 0 && (
-          <div className="mb-3 rounded-lg border border-gia-gold-soft/60 bg-gia-gold-soft/10 p-2.5">
+          <div className="mb-3 rounded-lg border border-blue-200 bg-blue-50 p-2.5">
             <div className="mb-1.5 flex items-center justify-between">
-              <span className="text-xs font-semibold text-gia-navy">
+              <span className="text-xs font-semibold text-blue-600">
                 ✅ 업무 확인 ({task.acknowledged_by?.length ?? 0}/{task.assignee_emails.length})
               </span>
               {iAmAssignee && (
-                <label className="flex items-center gap-1 text-[11px] font-medium text-gia-navy">
+                <label className="flex items-center gap-1 text-[11px] font-medium text-blue-600">
                   <input type="checkbox" checked={!!myAck} onChange={toggleAck} />
                   나 확인함
                 </label>
@@ -283,7 +283,7 @@ export default function TaskDetailPanel({
           <button
             type="submit"
             disabled={!commentText.trim()}
-            className="rounded-lg bg-gia-navy px-3 py-1.5 text-xs font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50"
+            className="rounded-lg bg-blue-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-600 disabled:opacity-50"
           >
             등록
           </button>

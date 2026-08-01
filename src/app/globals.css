@@ -24,6 +24,13 @@
   --color-gia-gold-soft: #efe3c8;
   --color-gia-bg: #eef1f6;
   --color-gia-surface: #ffffff;
+
+  /* 위클리 리포트(학생 관리) 전용 배경 톤 - 운영(네이비)/업무(블루)와 구분되는 틸 계열.
+     wr-primary는 사이드바 "위클리 리포트" 메뉴 강조색(teal-600, #0d9488)과 겹치지 않도록
+     한 톤 더 짙게 잡아, 이 화면 안의 버튼/강조 요소가 독자적인 틸 계열로 보이게 했습니다. */
+  --color-wr-bg: #eef7f6;
+  --color-wr-primary: #0e7e72;
+  --color-wr-primary-2: #0b665c;
 }
 
 body {
@@ -31,10 +38,45 @@ body {
   background-color: var(--color-gia-bg);
 }
 
-/* 사이드바/헤더 등 어두운 남색 배경 위에서 쓰는 공용 유틸 - 여러 페이지(대시보드 셸,
-   로그인/승인대기/온보딩/PIN, 위클리 리포트 교사용 사이드바)에서 재사용합니다. */
+/* 로그인/승인대기/온보딩/PIN 등 "메뉴 없는" 인증 화면 전용 남색 배경 - 사이드바 메뉴는
+   로고와 어울리게 흰색으로 되돌렸지만, 이 화면들은 메뉴가 없어 로고와 색이 부딪히지
+   않으므로 브랜드 톤을 그대로 유지합니다. */
 .gia-navy-panel {
   background: linear-gradient(165deg, var(--color-gia-navy) 0%, var(--color-gia-navy-2) 55%, var(--color-gia-navy-3) 100%);
+}
+
+/* ===== 업무(WorkFlatform) 전용 테마 - 이 클래스로 감싼 영역 안에서만 적용됩니다 =====
+   GIA WorkFlatform 원본 소스코드의 글래스모피즘(반투명 + 블러) 스타일을 그대로 가져왔습니다.
+   운영(gia-ops)/위클리 리포트와는 완전히 다른 룩(밝은 블루 + 유리질감)이라, 사이드바에서
+   "업무"로 들어오는 순간 다른 앱에 들어왔다는 게 바로 느껴지도록 의도했습니다. */
+.workflatform-theme {
+  --wf-bg: #f0f4f8;
+  --wf-fg: #1a202c;
+  --wf-primary: #3b82f6;
+  --wf-primary-hover: #2563eb;
+  --wf-glass-bg: rgba(255, 255, 255, 0.7);
+  --wf-glass-border: rgba(255, 255, 255, 0.4);
+  --wf-glass-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --wf-danger: #ef4444;
+  --wf-success: #10b981;
+  --wf-warning: #f59e0b;
+  background: var(--wf-bg);
+  color: var(--wf-fg);
+}
+
+.workflatform-theme .glass {
+  background: var(--wf-glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--wf-glass-border);
+  box-shadow: var(--wf-glass-shadow);
+  border-radius: 12px;
+}
+
+.workflatform-theme .glass-panel {
+  background: var(--wf-glass-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
 }
 
 /* Tailwind 기본 리셋은 <button>의 커서를 화살표(default)로 둡니다.

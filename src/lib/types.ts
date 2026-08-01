@@ -169,6 +169,7 @@ export type Task = {
   id: string;
   case_id: string;
   title: string;
+  description: string | null;
   status: TaskStatus;
   priority: "보통" | "긴급";
   department: string | null;

@@ -100,7 +100,7 @@ export default function StudentProfileClient({
           />
           <button
             disabled={saving || !commentText.trim()}
-            className="rounded-lg bg-gia-navy px-3 py-2 text-sm font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50"
+            className="rounded-lg bg-wr-primary px-3 py-2 text-sm font-semibold text-white hover:bg-wr-primary-2 disabled:opacity-50"
           >
             등록
           </button>

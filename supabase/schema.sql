@@ -1105,3 +1105,9 @@ on conflict (id) do nothing;
 -- 쓰이지 않습니다(홈 화면 위젯도 이미 tasks 기반으로 바뀜). 있는 건 두고 없는 건 만들고 불필요한
 -- 건 지운다는 원칙에 따라, 실서비스 DB에 남아있는 이 테이블을 안전하게 제거합니다.
 drop table if exists todos cascade;
+
+-- ===== 34. 업무(tasks)에 설명(description) 추가 - WorkFlatform UI/UX 이식 =====
+-- 참조 소스코드(WorkFlatform)의 업무 카드는 제목과 별도로 짧은 설명(description)을 한 줄 더
+-- 보여줍니다. 기존에는 title 하나뿐이었는데, 이 컬럼을 추가해 카드에 "무엇을 해야 하는지"를
+-- 조금 더 자세히 적을 수 있게 했습니다(선택 입력 - 비워두면 예전처럼 제목만 보입니다).
+alter table tasks add column if not exists description text;

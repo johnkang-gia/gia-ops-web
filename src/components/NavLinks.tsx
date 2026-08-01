@@ -2,80 +2,145 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
 
-export type NavItem = { href: string; label: string; icon: string };
-export type NavGroup = { label?: string; items: NavItem[] };
+export type NavLeaf = { href: string; label: string; icon: string };
 
-function isActive(pathname: string | null, href: string) {
+// 메뉴 구조를 "카테고리" 단위로 바꿨습니다. items가 있으면 마우스를 올렸을 때 오른쪽으로
+// 펼쳐지는 플라이아웃 서브메뉴가 되고(주메뉴가 세로로 길어지지 않음), items가 없으면 href로
+// 바로 이동하는 단일 링크입니다. accent는 이 카테고리가 속한 "앱"을 색으로 구분하기 위한
+// 값입니다(업무=블루/운영=네이비/위클리 리포트=틸/관리자·개발자=앰버·레드).
+export type NavAccent = "navy" | "blue" | "teal" | "amber" | "red";
+
+export type NavCategory = {
+  key: string;
+  label: string;
+  icon: string;
+  accent?: NavAccent;
+  href?: string;
+  items?: NavLeaf[];
+};
+
+function isActiveHref(pathname: string | null, href: string) {
   return pathname === href || pathname?.startsWith(href + "/");
 }
 
-export function SidebarNavLinks({ groups, dark = false }: { groups: NavGroup[]; dark?: boolean }) {
+function isActiveCategory(pathname: string | null, cat: NavCategory) {
+  if (cat.href && isActiveHref(pathname, cat.href)) return true;
+  return !!cat.items?.some((i) => isActiveHref(pathname, i.href));
+}
+
+const ACCENT_TEXT: Record<NavAccent, string> = {
+  navy: "text-gia-navy",
+  blue: "text-blue-600",
+  teal: "text-teal-600",
+  amber: "text-amber-600",
+  red: "text-red-600",
+};
+
+const ACCENT_BG_SOFT: Record<NavAccent, string> = {
+  navy: "bg-gia-navy/8",
+  blue: "bg-blue-50",
+  teal: "bg-teal-50",
+  amber: "bg-amber-50",
+  red: "bg-red-50",
+};
+
+const ACCENT_BORDER: Record<NavAccent, string> = {
+  navy: "border-gia-navy",
+  blue: "border-blue-500",
+  teal: "border-teal-500",
+  amber: "border-amber-500",
+  red: "border-red-500",
+};
+
+export function SidebarNavLinks({ categories }: { categories: NavCategory[] }) {
   const pathname = usePathname();
+  const [openKey, setOpenKey] = useState<string | null>(null);
+
   return (
-    <>
-      {groups.map((group, gi) => (
-        <div key={group.label ?? gi} className={gi === 0 ? "" : "mt-4"}>
-          {group.label && (
-            <div
+    <div className="flex flex-col gap-0.5">
+      {categories.map((cat) => {
+        const active = isActiveCategory(pathname, cat);
+        const accent = cat.accent ?? "navy";
+        const hasChildren = !!cat.items && cat.items.length > 0;
+        const targetHref = cat.href ?? cat.items?.[0]?.href ?? "#";
+        const open = openKey === cat.key;
+
+        return (
+          <div
+            key={cat.key}
+            className="relative"
+            onMouseEnter={() => hasChildren && setOpenKey(cat.key)}
+            onMouseLeave={() => setOpenKey((k) => (k === cat.key ? null : k))}
+          >
+            <Link
+              href={targetHref}
+              onClick={() => setOpenKey(null)}
               className={
-                "mb-1 px-3 text-[10px] font-bold uppercase tracking-wide " +
-                (dark ? "text-white/40" : "text-slate-400")
+                "flex cursor-pointer items-center gap-2 rounded-lg border-l-2 px-3 py-2 text-sm font-medium transition-colors " +
+                (active
+                  ? ACCENT_BORDER[accent] + " " + ACCENT_BG_SOFT[accent] + " " + ACCENT_TEXT[accent] + " font-bold"
+                  : "border-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-900")
               }
             >
-              {group.label}
-            </div>
-          )}
-          <div className="flex flex-col gap-1">
-            {group.items.map((item) => {
-              const active = isActive(pathname, item.href);
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={
-                    "flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors " +
-                    (dark
-                      ? active
-                        ? "bg-gia-gold text-gia-navy font-bold shadow-sm"
-                        : "text-white/70 hover:bg-white/10 hover:text-white"
-                      : active
-                        ? "bg-gia-navy text-white"
-                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-900")
-                  }
-                >
-                  <span>{item.icon}</span>
-                  <span>{item.label}</span>
-                </Link>
-              );
-            })}
+              <span>{cat.icon}</span>
+              <span className="flex-1">{cat.label}</span>
+              {hasChildren && <span className="text-[10px] text-slate-300">›</span>}
+            </Link>
+
+            {hasChildren && open && (
+              <div className="absolute left-full top-0 z-30 ml-1 w-56 rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg">
+                <div className={"mb-1 px-2 pt-1 text-[10px] font-bold uppercase tracking-wide " + ACCENT_TEXT[accent]}>
+                  {cat.label}
+                </div>
+                {cat.items!.map((item) => {
+                  const itemActive = isActiveHref(pathname, item.href);
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      onClick={() => setOpenKey(null)}
+                      className={
+                        "flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm transition-colors " +
+                        (itemActive
+                          ? ACCENT_BG_SOFT[accent] + " " + ACCENT_TEXT[accent] + " font-semibold"
+                          : "text-slate-600 hover:bg-slate-100 hover:text-slate-900")
+                      }
+                    >
+                      <span>{item.icon}</span>
+                      <span>{item.label}</span>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
           </div>
-        </div>
-      ))}
-    </>
+        );
+      })}
+    </div>
   );
 }
 
-export function MobileNavLinks({ groups, dark = false }: { groups: NavGroup[]; dark?: boolean }) {
+// 모바일은 화면이 좁아 플라이아웃을 붙일 공간이 없어서, 기존처럼 전체를 한 줄로 펼쳐 가로
+// 스크롤하는 방식을 그대로 유지합니다(카테고리 라벨은 생략하고 실제 링크만 나열).
+export function MobileNavLinks({ categories }: { categories: NavCategory[] }) {
   const pathname = usePathname();
-  const items = groups.flatMap((g) => g.items);
+  const items: NavLeaf[] = categories.flatMap((c) =>
+    c.items && c.items.length > 0 ? c.items : c.href ? [{ href: c.href, label: c.label, icon: c.icon }] : []
+  );
+
   return (
     <>
       {items.map((item) => {
-        const active = isActive(pathname, item.href);
+        const active = isActiveHref(pathname, item.href);
         return (
           <Link
             key={item.href}
             href={item.href}
             className={
               "shrink-0 cursor-pointer rounded-lg px-3 py-1.5 text-sm font-medium transition-colors " +
-              (dark
-                ? active
-                  ? "bg-gia-gold text-gia-navy font-bold"
-                  : "text-white/70 hover:bg-white/10"
-                : active
-                  ? "bg-gia-navy text-white"
-                  : "text-slate-600 hover:bg-slate-100")
+              (active ? "bg-gia-navy text-white" : "text-slate-600 hover:bg-slate-100")
             }
           >
             {item.icon} {item.label}

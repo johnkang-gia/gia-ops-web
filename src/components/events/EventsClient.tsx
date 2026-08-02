@@ -1,12 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRealtimeTable } from "@/lib/useRealtimeTable";
 import { genCaseId } from "@/lib/caseId";
 import type { EventRecord } from "@/lib/types";
 import type { EventCompareResult } from "@/lib/ai/types";
 import PhotoUploader from "@/components/common/PhotoUploader";
+import Pagination from "@/components/Pagination";
+
+const EVENTS_PAGE_SIZE = 8;
 
 type FormState = {
   date: string;
@@ -47,38 +50,40 @@ export default function EventsClient({ initialItems }: { initialItems: EventReco
   }
 
   return (
-    <div className="mx-auto max-w-5xl">
-      <h1 className="mb-1 text-lg font-bold">행사기록</h1>
-      <p className="mb-4 text-xs text-slate-500">
-        매년/주기적으로 반복되는 행사(정규행사)는 이름별로 묶어서 이력을 쌓고 AI로 지난 회차와
-        비교해 다음 행사를 더 잘 준비할 수 있습니다. 한 번만 진행하는 행사(일시적행사)는 &quot;이런
-        행사가 있었다&quot; 정도로만 가볍게 기록해두면, 몇 년 뒤 비슷한 행사를 할 때 참고할 수
-        있습니다.
-      </p>
+    <div className="mx-auto flex h-full max-w-5xl flex-col overflow-hidden">
+      <div className="shrink-0">
+        <h1 className="mb-1 text-lg font-bold">행사기록</h1>
+        <p className="mb-4 text-xs text-slate-500">
+          매년/주기적으로 반복되는 행사(정규행사)는 이름별로 묶어서 이력을 쌓고 AI로 지난 회차와
+          비교해 다음 행사를 더 잘 준비할 수 있습니다. 한 번만 진행하는 행사(일시적행사)는 &quot;이런
+          행사가 있었다&quot; 정도로만 가볍게 기록해두면, 몇 년 뒤 비슷한 행사를 할 때 참고할 수
+          있습니다.
+        </p>
 
-      <div className="mb-4 flex gap-1 border-b border-slate-200">
-        <button
-          onClick={() => setTopTab("regular")}
-          className={
-            "border-b-2 px-3 py-2 text-sm font-semibold transition " +
-            (topTab === "regular"
-              ? "border-gia-navy text-gia-navy"
-              : "border-transparent text-slate-400 hover:text-slate-600")
-          }
-        >
-          🎯 정규행사 ({regularItems.length})
-        </button>
-        <button
-          onClick={() => setTopTab("adhoc")}
-          className={
-            "border-b-2 px-3 py-2 text-sm font-semibold transition " +
-            (topTab === "adhoc"
-              ? "border-gia-navy text-gia-navy"
-              : "border-transparent text-slate-400 hover:text-slate-600")
-          }
-        >
-          📌 일시적행사 ({adhocItems.length})
-        </button>
+        <div className="mb-4 flex gap-1 border-b border-slate-200">
+          <button
+            onClick={() => setTopTab("regular")}
+            className={
+              "border-b-2 px-3 py-2 text-sm font-semibold transition " +
+              (topTab === "regular"
+                ? "border-gia-navy text-gia-navy"
+                : "border-transparent text-slate-400 hover:text-slate-600")
+            }
+          >
+            🎯 정규행사 ({regularItems.length})
+          </button>
+          <button
+            onClick={() => setTopTab("adhoc")}
+            className={
+              "border-b-2 px-3 py-2 text-sm font-semibold transition " +
+              (topTab === "adhoc"
+                ? "border-gia-navy text-gia-navy"
+                : "border-transparent text-slate-400 hover:text-slate-600")
+            }
+          >
+            📌 일시적행사 ({adhocItems.length})
+          </button>
+        </div>
       </div>
 
       {topTab === "regular" ? (
@@ -112,11 +117,23 @@ function RegularEventsSection({
   const [comparing, setComparing] = useState(false);
   const [compareResult, setCompareResult] = useState<(EventCompareResult & { recordCount: number }) | null>(null);
   const [compareError, setCompareError] = useState("");
+  const [page, setPage] = useState(1);
 
   const effectiveSelected = selectedName ?? names[0] ?? null;
   const occurrences = items
     .filter((it) => it.name.trim() === effectiveSelected)
     .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+
+  // 정규행사 시리즈(이름 pill)를 바꾸면 이전 페이지 번호가 그대로 남아있지 않도록 리셋합니다.
+  useEffect(() => {
+    setPage(1);
+  }, [effectiveSelected]);
+
+  const totalPages = Math.max(1, Math.ceil(occurrences.length / EVENTS_PAGE_SIZE));
+  const pageItems = useMemo(
+    () => occurrences.slice((page - 1) * EVENTS_PAGE_SIZE, page * EVENTS_PAGE_SIZE),
+    [occurrences, page]
+  );
 
   function startAdd() {
     setForm({ ...EMPTY_FORM, name: effectiveSelected || "" });
@@ -225,7 +242,8 @@ function RegularEventsSection({
   }
 
   return (
-    <div>
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="shrink-0">
       <div className="mb-3 flex flex-wrap items-center gap-1.5">
         {names.map((n) => (
           <button
@@ -315,11 +333,17 @@ function RegularEventsSection({
           error={error}
         />
       )}
+      </div>
 
-      <div className="flex flex-col gap-2">
-        {occurrences.map((it) => (
-          <EventOccurrenceCard key={it.id} item={it} onEdit={() => startEdit(it)} onPhotosChange={(p) => updatePhotos(it.id, p)} />
-        ))}
+      <div className="flex-1 overflow-y-auto">
+        <div className="flex flex-col gap-2">
+          {pageItems.map((it) => (
+            <EventOccurrenceCard key={it.id} item={it} onEdit={() => startEdit(it)} onPhotosChange={(p) => updatePhotos(it.id, p)} />
+          ))}
+        </div>
+      </div>
+      <div className="shrink-0">
+        <Pagination page={page} totalPages={totalPages} onChange={setPage} />
       </div>
     </div>
   );
@@ -340,8 +364,14 @@ function AdhocEventsSection({
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [page, setPage] = useState(1);
 
   const sorted = [...items].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  const totalPages = Math.max(1, Math.ceil(sorted.length / EVENTS_PAGE_SIZE));
+  const pageItems = useMemo(
+    () => sorted.slice((page - 1) * EVENTS_PAGE_SIZE, page * EVENTS_PAGE_SIZE),
+    [sorted, page]
+  );
 
   function startEdit(it: EventRecord) {
     setEditingId(it.id);
@@ -406,7 +436,8 @@ function AdhocEventsSection({
   }
 
   return (
-    <div>
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="shrink-0">
       <div className="mb-3 flex items-center justify-end">
         <button
           onClick={() => {
@@ -484,14 +515,16 @@ function AdhocEventsSection({
           </div>
         </form>
       )}
+      </div>
 
+      <div className="flex-1 overflow-y-auto">
       <div className="flex flex-col gap-2">
         {sorted.length === 0 && (
           <div className="rounded-lg bg-white p-4 text-sm text-slate-400 shadow-sm">
             등록된 일시적행사가 없습니다.
           </div>
         )}
-        {sorted.map((it) => {
+        {pageItems.map((it) => {
           const expanded = expandedId === it.id;
           return (
             <div key={it.id} className="rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -525,6 +558,10 @@ function AdhocEventsSection({
             </div>
           );
         })}
+      </div>
+      </div>
+      <div className="shrink-0">
+        <Pagination page={page} totalPages={totalPages} onChange={setPage} />
       </div>
     </div>
   );

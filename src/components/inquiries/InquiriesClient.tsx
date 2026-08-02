@@ -1,8 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRealtimeTable } from "@/lib/useRealtimeTable";
 import type { Inquiry } from "@/lib/types";
+import Pagination from "@/components/Pagination";
+
+// 문의가 쌓일수록 목록이 끝없이 길어지지 않도록, 게시판처럼 페이지 단위로 잘라 보여줍니다.
+const PAGE_SIZE = 10;
 
 const CATEGORY_LABEL: Record<string, string> = {
   오류: "🐞 오류",
@@ -85,70 +89,84 @@ export default function InquiriesClient({
 
   const visibleItems = isDeveloper ? items : items.filter((it) => it.reporter_email === currentUserEmail);
 
+  const [page, setPage] = useState(1);
+  const pageItems = useMemo(
+    () => visibleItems.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [visibleItems, page]
+  );
+  const totalPages = Math.max(1, Math.ceil(visibleItems.length / PAGE_SIZE));
+  // 목록이 갱신되어(새 문의 등록 등) 전체 건수가 바뀌면 현재 보던 페이지가 더 이상 유효하지
+  // 않을 수 있어 1페이지로 되돌립니다.
+  useEffect(() => {
+    setPage(1);
+  }, [visibleItems.length]);
+
   return (
-    <div className="mx-auto max-w-3xl">
-      <h1 className="mb-1 text-lg font-bold">문의및 건의사항</h1>
-      <p className="mb-4 text-xs text-slate-500">
-        오류를 발견했거나 앱에 추가되면 좋을 기능이 있으면 남겨주세요. 개발자가 확인 후 상태와
-        답변을 남깁니다.
-      </p>
+    <div className="mx-auto flex h-full max-w-3xl flex-col overflow-hidden">
+      <div className="shrink-0">
+        <h1 className="mb-1 text-lg font-bold">문의및 건의사항</h1>
+        <p className="mb-4 text-xs text-slate-500">
+          오류를 발견했거나 앱에 추가되면 좋을 기능이 있으면 남겨주세요. 개발자가 확인 후 상태와
+          답변을 남깁니다.
+        </p>
 
-      <form onSubmit={handleSubmit} className="mb-6 flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex gap-1.5">
-          {(["오류", "기능제안", "기타"] as const).map((c) => (
-            <button
-              key={c}
-              type="button"
-              onClick={() => setCategory(c)}
-              className={
-                "rounded-full border px-3 py-1 text-xs font-semibold transition " +
-                (category === c
-                  ? "border-gia-navy bg-gia-navy text-white"
-                  : "border-slate-300 text-slate-600 hover:bg-slate-50")
-              }
-            >
-              {CATEGORY_LABEL[c]}
-            </button>
-          ))}
-        </div>
-        <label className="flex flex-col gap-1 text-xs text-slate-500">
-          제목
-          <input
-            type="text"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder={category === "오류" ? "예: 회의록 저장 시 오류 발생" : "예: 사건기록에 사진 첨부 기능 추가"}
-            className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-slate-500">
-          내용
-          <textarea
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            rows={4}
-            placeholder="어떤 상황에서 무슨 일이 있었는지, 또는 어떤 기능이 필요한지 자유롭게 적어주세요."
-            className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
-          />
-        </label>
-        {error && <p className="text-sm text-red-600">{error}</p>}
-        <button
-          type="submit"
-          disabled={submitting}
-          className="w-fit rounded-lg bg-gia-navy px-4 py-2 text-sm font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50"
-        >
-          {submitting ? "등록 중..." : "등록"}
-        </button>
-      </form>
+        <form onSubmit={handleSubmit} className="mb-6 flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex gap-1.5">
+            {(["오류", "기능제안", "기타"] as const).map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => setCategory(c)}
+                className={
+                  "rounded-full border px-3 py-1 text-xs font-semibold transition " +
+                  (category === c
+                    ? "border-gia-navy bg-gia-navy text-white"
+                    : "border-slate-300 text-slate-600 hover:bg-slate-50")
+                }
+              >
+                {CATEGORY_LABEL[c]}
+              </button>
+            ))}
+          </div>
+          <label className="flex flex-col gap-1 text-xs text-slate-500">
+            제목
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder={category === "오류" ? "예: 회의록 저장 시 오류 발생" : "예: 사건기록에 사진 첨부 기능 추가"}
+              className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-slate-500">
+            내용
+            <textarea
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              rows={4}
+              placeholder="어떤 상황에서 무슨 일이 있었는지, 또는 어떤 기능이 필요한지 자유롭게 적어주세요."
+              className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+            />
+          </label>
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          <button
+            type="submit"
+            disabled={submitting}
+            className="w-fit rounded-lg bg-gia-navy px-4 py-2 text-sm font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50"
+          >
+            {submitting ? "등록 중..." : "등록"}
+          </button>
+        </form>
 
-      <h2 className="mb-2 text-sm font-bold text-slate-700">
-        {isDeveloper ? `전체 문의 (${visibleItems.length}건)` : `내가 남긴 문의 (${visibleItems.length}건)`}
-      </h2>
-      <div className="flex flex-col gap-2">
+        <h2 className="mb-2 text-sm font-bold text-slate-700">
+          {isDeveloper ? `전체 문의 (${visibleItems.length}건)` : `내가 남긴 문의 (${visibleItems.length}건)`}
+        </h2>
+      </div>
+      <div className="flex flex-1 flex-col gap-2 overflow-y-auto">
         {visibleItems.length === 0 && (
           <div className="rounded-lg bg-white p-4 text-sm text-slate-400 shadow-sm">등록된 문의가 없습니다.</div>
         )}
-        {visibleItems.map((it) => {
+        {pageItems.map((it) => {
           const expanded = expandedId === it.id;
           const draft = drafts[it.id] ?? { status: it.status, note: it.developer_note ?? "" };
           const busy = busyId === it.id;
@@ -223,6 +241,9 @@ export default function InquiriesClient({
             </div>
           );
         })}
+      </div>
+      <div className="shrink-0">
+        <Pagination page={page} totalPages={totalPages} onChange={setPage} />
       </div>
     </div>
   );

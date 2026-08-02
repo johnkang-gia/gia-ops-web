@@ -1,10 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { ManualSection } from "@/lib/types";
 import { toDisplayHtml } from "@/lib/manualHtml";
 import RichTextEditor from "@/components/manuals/RichTextEditor";
+import Pagination from "@/components/Pagination";
+
+const PAGE_SIZE = 10;
 
 type TargetDoc = "학부모용" | "실무자용";
 
@@ -31,6 +34,12 @@ const TABS: { title: string; doc: TargetDoc; icon: string }[] = [
 export default function ManualsClient({ initialItems }: { initialItems: ManualSection[] }) {
   const [items, setItems] = useState<ManualSection[]>(initialItems);
   const [activeDoc, setActiveDoc] = useState<TargetDoc>("학부모용");
+  const [page, setPage] = useState(1);
+
+  // 학부모용/실무자용 탭을 바꾸면 목록이 달라지므로 이전 페이지 번호가 남아있지 않도록 리셋합니다.
+  useEffect(() => {
+    setPage(1);
+  }, [activeDoc]);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editCategory, setEditCategory] = useState("");
@@ -197,9 +206,15 @@ export default function ManualsClient({ initialItems }: { initialItems: ManualSe
 
   const activeTab = TABS.find((t) => t.doc === activeDoc)!;
   const docItems = items.filter((it) => it.target_doc === activeDoc);
+  const totalPages = Math.max(1, Math.ceil(docItems.length / PAGE_SIZE));
+  const pageItems = useMemo(
+    () => docItems.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [docItems, page]
+  );
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div className="mx-auto flex h-full max-w-5xl flex-col overflow-hidden">
+      <div className="shrink-0">
       <h1 className="mb-1 text-lg font-bold">매뉴얼</h1>
       <p className="mb-4 text-sm text-slate-500">
         채택예정에서 발행한 내용이 자동으로 쌓이거나, 아래에서 직접 항목을 추가·수정·삭제할 수
@@ -229,8 +244,10 @@ export default function ManualsClient({ initialItems }: { initialItems: ManualSe
           </button>
         ))}
       </div>
+      </div>
 
-      <section>
+      <section className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="shrink-0">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-base font-bold">{activeTab.title}</h2>
           <div className="flex flex-wrap gap-2">
@@ -337,14 +354,16 @@ export default function ManualsClient({ initialItems }: { initialItems: ManualSe
             </div>
           </div>
         )}
+        </div>
 
+        <div className="flex-1 overflow-y-auto">
         <div className="flex flex-col gap-2">
           {docItems.length === 0 && !addingOpen && (
             <div className="rounded-lg bg-white p-4 text-sm text-slate-400 shadow-sm">
               아직 항목이 없습니다.
             </div>
           )}
-          {docItems.map((s) => {
+          {pageItems.map((s) => {
             const isEditing = editingId === s.id;
             const busy = busyId === s.id;
             return (
@@ -425,6 +444,10 @@ export default function ManualsClient({ initialItems }: { initialItems: ManualSe
               </div>
             );
           })}
+        </div>
+        </div>
+        <div className="shrink-0">
+          <Pagination page={page} totalPages={totalPages} onChange={setPage} />
         </div>
       </section>
     </div>

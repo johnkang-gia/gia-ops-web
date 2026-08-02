@@ -78,8 +78,11 @@ export function SidebarNavLinks({ categories }: { categories: NavCategory[] }) {
 
   const openCategory = categories.find((c) => c.key === openKey);
 
+  // 예전에는 메뉴 그룹 사이에 구분선이 있어서 어디까지가 한 앱(업무/운영/위클리 등)인지
+  // 한눈에 보였는데, 플라이아웃으로 평평하게 펼치면서 그 구분이 사라졌습니다. 얇은 실선을
+  // 각 메뉴 항목 사이(divide-y)에 다시 넣어서 원래처럼 구분되도록 했습니다.
   return (
-    <div className="flex flex-col gap-0.5">
+    <div className="flex flex-col divide-y divide-slate-100">
       {categories.map((cat) => {
         const active = isActiveCategory(pathname, cat);
         const accent = cat.accent ?? "navy";
@@ -89,6 +92,7 @@ export function SidebarNavLinks({ categories }: { categories: NavCategory[] }) {
         return (
           <div
             key={cat.key}
+            className="py-0.5"
             onMouseEnter={(e) => hasChildren && openFlyout(cat.key, e.currentTarget)}
             onMouseLeave={scheduleClose}
           >

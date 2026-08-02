@@ -6,6 +6,10 @@ import { useRealtimeTable } from "@/lib/useRealtimeTable";
 import { genCaseId } from "@/lib/caseId";
 import type { Incident, Term, WrStudent } from "@/lib/types";
 import AiSourcePanel from "@/components/ai/AiSourcePanel";
+import Pagination from "@/components/Pagination";
+
+// 사건이 쌓일수록 목록이 끝없이 길어지지 않도록, 게시판처럼 페이지 단위로 잘라 보여줍니다.
+const PAGE_SIZE = 10;
 
 type FormState = {
   date: string;
@@ -68,6 +72,18 @@ export default function IncidentsClient({
   const [linkedStudentIds, setLinkedStudentIds] = useState<string[]>([]);
   const [studentQuery, setStudentQuery] = useState("");
   const [showStudentMenu, setShowStudentMenu] = useState(false);
+
+  const [page, setPage] = useState(1);
+  const pageItems = useMemo(
+    () => items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [items, page]
+  );
+  const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
+  // 목록이 갱신되어(새 사건 저장 등) 전체 건수가 바뀌면 현재 보던 페이지가 더 이상 유효하지
+  // 않을 수 있어 1페이지로 되돌립니다.
+  useEffect(() => {
+    setPage(1);
+  }, [items.length]);
 
   useEffect(() => {
     const supabase = createClient();
@@ -230,9 +246,9 @@ export default function IncidentsClient({
   }
 
   return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[300px_1fr_340px] lg:items-start">
-      {/* 왼쪽: 목록 */}
-      <div className="order-2 flex flex-col gap-2 lg:order-1">
+    <div className="grid h-full grid-cols-1 gap-4 overflow-y-auto lg:grid-cols-[300px_1fr_340px] lg:overflow-hidden">
+      {/* 왼쪽: 목록 - 계속 늘어지는 스크롤 대신 게시판처럼 페이지 번호로 넘겨봅니다 */}
+      <div className="order-2 flex flex-col gap-2 lg:order-1 lg:h-full lg:min-h-0 lg:overflow-hidden">
         <div className="flex items-center justify-between">
           <h1 className="text-sm font-bold text-slate-700">사건 ({items.length}건)</h1>
           <button
@@ -242,11 +258,11 @@ export default function IncidentsClient({
             + 새 사건
           </button>
         </div>
-        <div className="flex max-h-[75vh] flex-col gap-1.5 overflow-y-auto lg:max-h-[calc(100vh-8rem)]">
+        <div className="flex flex-1 flex-col gap-1.5 overflow-y-auto lg:min-h-0">
           {items.length === 0 && (
             <div className="rounded-lg bg-white p-3 text-xs text-slate-400 shadow-sm">등록된 사건이 없습니다.</div>
           )}
-          {items.map((it) => (
+          {pageItems.map((it) => (
             <button
               key={it.id}
               onClick={() => startEdit(it)}
@@ -268,6 +284,9 @@ export default function IncidentsClient({
               )}
             </button>
           ))}
+        </div>
+        <div className="shrink-0">
+          <Pagination page={page} totalPages={totalPages} onChange={setPage} />
         </div>
       </div>
 

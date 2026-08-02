@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useRealtimeTable } from "@/lib/useRealtimeTable";
@@ -8,8 +8,10 @@ import { genCaseId } from "@/lib/caseId";
 import type { Term } from "@/lib/types";
 import type { EventCompareResult } from "@/lib/ai/types";
 import PhotoUploader from "@/components/common/PhotoUploader";
+import Pagination from "@/components/Pagination";
 
 const TERM_TYPES = ["1학기", "2학기", "3학기", "여름캠프1", "여름캠프2", "겨울캠프1", "겨울캠프2"];
+const PAGE_SIZE = 10;
 
 type FormState = {
   term_type: string;
@@ -67,6 +69,16 @@ export default function TermsClient({ initialItems }: { initialItems: Term[] }) 
   const occurrences = items
     .filter((it) => it.term_type === selectedType)
     .sort((a, b) => b.year.localeCompare(a.year));
+
+  const [page, setPage] = useState(1);
+  const pageItems = useMemo(
+    () => occurrences.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [occurrences, page]
+  );
+  const totalPages = Math.max(1, Math.ceil(occurrences.length / PAGE_SIZE));
+  useEffect(() => {
+    setPage(1);
+  }, [selectedType]);
 
   // 홈/사이드바에서 쓰는 getCurrentTerm()과 같은 기준(진행중 중 시작일이 가장 최근인 것, 없으면
   // 등록일 최신)으로 "현재 학기"를 골라 화면 맨 위에 보여줍니다.
@@ -253,7 +265,8 @@ export default function TermsClient({ initialItems }: { initialItems: Term[] }) 
   }
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div className="mx-auto flex h-full max-w-5xl flex-col overflow-hidden">
+    <div className="shrink-0">
       <h1 className="mb-1 text-lg font-bold">학기 · 캠프</h1>
       <p className="mb-4 text-xs text-slate-500">
         학기(1~3학기)와 방학 캠프(여름캠프1·2, 겨울캠프1·2)는 매년 반복됩니다. 학기가 진행되는
@@ -494,21 +507,27 @@ export default function TermsClient({ initialItems }: { initialItems: Term[] }) 
           </div>
         </form>
       )}
+    </div>
 
-      <div className="flex flex-col gap-2">
-        {occurrences.length === 0 && (
-          <div className="rounded-lg bg-white p-4 text-sm text-slate-400 shadow-sm">
-            &quot;{selectedType}&quot; 기록이 아직 없습니다.
-          </div>
-        )}
-        {occurrences.map((it) => (
-          <TermOccurrenceCard
-            key={it.id}
-            item={it}
-            onEdit={() => startEdit(it)}
-            onPhotosChange={(p) => updatePhotos(it.id, p)}
-          />
-        ))}
+      <div className="flex-1 overflow-y-auto">
+        <div className="flex flex-col gap-2">
+          {occurrences.length === 0 && (
+            <div className="rounded-lg bg-white p-4 text-sm text-slate-400 shadow-sm">
+              &quot;{selectedType}&quot; 기록이 아직 없습니다.
+            </div>
+          )}
+          {pageItems.map((it) => (
+            <TermOccurrenceCard
+              key={it.id}
+              item={it}
+              onEdit={() => startEdit(it)}
+              onPhotosChange={(p) => updatePhotos(it.id, p)}
+            />
+          ))}
+        </div>
+      </div>
+      <div className="shrink-0">
+        <Pagination page={page} totalPages={totalPages} onChange={setPage} />
       </div>
     </div>
   );

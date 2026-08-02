@@ -1,8 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Proposal } from "@/lib/types";
+import Pagination from "@/components/Pagination";
+
+const PAGE_SIZE = 10;
 
 const SOURCE_LABEL: Record<string, string> = {
   incidents: "📋 사건",
@@ -28,6 +31,12 @@ export default function ProposalsClient({ initialItems }: { initialItems: Propos
   const [scanBusy, setScanBusy] = useState<string | null>(null);
   const [scanMsg, setScanMsg] = useState("");
   const [tab, setTab] = useState<CategoryTab>("all");
+  const [page, setPage] = useState(1);
+
+  // 분류 탭을 바꾸면 목록이 달라지므로 이전 페이지 번호가 남아있지 않도록 리셋합니다.
+  useEffect(() => {
+    setPage(1);
+  }, [tab]);
 
   useEffect(() => {
     const supabase = createClient();
@@ -125,6 +134,11 @@ export default function ProposalsClient({ initialItems }: { initialItems: Propos
     complaint: items.filter((it) => it.source === "complaint").length,
   };
   const filteredItems = tab === "all" ? items : items.filter((it) => it.source === tab);
+  const totalPages = Math.max(1, Math.ceil(filteredItems.length / PAGE_SIZE));
+  const pageItems = useMemo(
+    () => filteredItems.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [filteredItems, page]
+  );
   const CATEGORY_TABS: { key: CategoryTab; label: string }[] = [
     { key: "all", label: "전체" },
     { key: "incidents", label: "📋 사건기록제안" },
@@ -135,7 +149,8 @@ export default function ProposalsClient({ initialItems }: { initialItems: Propos
   ];
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div className="mx-auto flex h-full max-w-5xl flex-col overflow-hidden">
+      <div className="shrink-0">
       <h1 className="mb-4 text-lg font-bold">제안함 검토대기 ({items.length}건)</h1>
 
       <div className="mb-6 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -175,7 +190,9 @@ export default function ProposalsClient({ initialItems }: { initialItems: Propos
           </button>
         ))}
       </div>
+      </div>
 
+      <div className="flex-1 overflow-y-auto">
       <div className="flex flex-col gap-2">
         {filteredItems.length === 0 && (
           <div className="rounded-lg bg-white p-4 text-sm text-slate-400 shadow-sm">
@@ -184,7 +201,7 @@ export default function ProposalsClient({ initialItems }: { initialItems: Propos
               : "이 분류에는 검토 대기 중인 제안이 없습니다."}
           </div>
         )}
-        {filteredItems.map((it) => {
+        {pageItems.map((it) => {
           const expanded = expandedId === it.id;
           const draft = drafts[it.id] ?? it.final_text;
           const busy = busyId === it.id;
@@ -271,6 +288,10 @@ export default function ProposalsClient({ initialItems }: { initialItems: Propos
             </div>
           );
         })}
+      </div>
+      </div>
+      <div className="shrink-0">
+        <Pagination page={page} totalPages={totalPages} onChange={setPage} />
       </div>
     </div>
   );

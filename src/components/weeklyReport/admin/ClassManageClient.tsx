@@ -1,8 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { TeamMember, WrClass } from "@/lib/types";
+import Pagination from "@/components/Pagination";
+
+const PAGE_SIZE = 15;
 
 export default function ClassManageClient({ initialClasses, team }: { initialClasses: WrClass[]; team: TeamMember[] }) {
   const [classes, setClasses] = useState<WrClass[]>(initialClasses);
@@ -50,9 +53,16 @@ export default function ClassManageClient({ initialClasses, team }: { initialCla
     await supabase.from("wr_classes").delete().eq("id", id);
   }
 
+  const [page, setPage] = useState(1);
+  const pageItems = useMemo(
+    () => classes.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [classes, page]
+  );
+  const totalPages = Math.max(1, Math.ceil(classes.length / PAGE_SIZE));
+
   return (
-    <div>
-      <form onSubmit={addClass} className="mb-4 flex flex-wrap items-end gap-2 rounded-xl border border-slate-200 bg-white p-3">
+    <div className="flex h-full flex-col overflow-hidden">
+      <form onSubmit={addClass} className="mb-4 flex shrink-0 flex-wrap items-end gap-2 rounded-xl border border-slate-200 bg-white p-3">
         <div>
           <label className="mb-1 block text-[11px] text-slate-400">학년</label>
           <input value={grade} onChange={(e) => setGrade(e.target.value)} placeholder="예: 3" className="w-20 rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
@@ -88,7 +98,7 @@ export default function ClassManageClient({ initialClasses, team }: { initialCla
         </button>
       </form>
 
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+      <div className="flex-1 overflow-y-auto rounded-xl border border-slate-200 bg-white">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-400">
             <tr>
@@ -99,7 +109,7 @@ export default function ClassManageClient({ initialClasses, team }: { initialCla
             </tr>
           </thead>
           <tbody>
-            {classes.map((c) => (
+            {pageItems.map((c) => (
               <tr key={c.id} className="border-t border-slate-100">
                 <td className="px-3 py-2 font-medium">
                   {c.grade}학년 {c.class_name}
@@ -148,6 +158,9 @@ export default function ClassManageClient({ initialClasses, team }: { initialCla
             )}
           </tbody>
         </table>
+      </div>
+      <div className="shrink-0">
+        <Pagination page={page} totalPages={totalPages} onChange={setPage} />
       </div>
     </div>
   );

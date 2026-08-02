@@ -28,13 +28,17 @@ export default async function StudentsSearchPage() {
     .order("name", { ascending: true });
 
   return (
-    <div className="mx-auto max-w-2xl">
-      <h1 className="mb-1 text-lg font-bold">학생 정보 조회</h1>
-      <p className="mb-4 text-xs text-slate-500">
-        업무 · 사건기록 · 위클리 리포트에서 같은 학생은 항상 같은 학번(고유번호)으로 관리됩니다.
-        이름이나 학번으로 검색해 그 학생의 인적사항·학적사항·관련 기록을 한 화면에서 확인하세요.
-      </p>
-      <StudentSearchClient students={(data as WrStudent[] | null) ?? []} />
+    <div className="mx-auto flex h-full max-w-2xl flex-col overflow-hidden">
+      <div className="shrink-0">
+        <h1 className="mb-1 text-lg font-bold">학생 정보 조회</h1>
+        <p className="mb-4 text-xs text-slate-500">
+          업무 · 사건기록 · 위클리 리포트에서 같은 학생은 항상 같은 학번(고유번호)으로 관리됩니다.
+          이름이나 학번으로 검색해 그 학생의 인적사항·학적사항·관련 기록을 한 화면에서 확인하세요.
+        </p>
+      </div>
+      <div className="min-h-0 flex-1">
+        <StudentSearchClient students={(data as WrStudent[] | null) ?? []} />
+      </div>
     </div>
   );
 }

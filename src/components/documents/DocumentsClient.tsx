@@ -1,9 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { SchoolDocument } from "@/lib/types";
 import { genCaseId } from "@/lib/caseId";
+import Pagination from "@/components/Pagination";
+
+// "그 외" 목록이 계속 늘어질 수 있어 게시판처럼 페이지 단위로 잘라 보여줍니다. (신경 써야 할
+// 서류는 바로 눈에 띄어야 해서 페이지를 나누지 않고 항상 전체를 보여줍니다.)
+const PAGE_SIZE = 10;
 
 const STATUS_OPTIONS: SchoolDocument["status"][] = ["필요", "준비중", "보유", "만료임박", "해당없음"];
 
@@ -127,6 +132,18 @@ export default function DocumentsClient({ initialItems }: { initialItems: School
   const needAttention = items.filter((d) => d.status === "필요" || d.status === "만료임박");
   const others = items.filter((d) => d.status !== "필요" && d.status !== "만료임박");
 
+  const [othersPage, setOthersPage] = useState(1);
+  const othersPageItems = useMemo(
+    () => others.slice((othersPage - 1) * PAGE_SIZE, othersPage * PAGE_SIZE),
+    [others, othersPage]
+  );
+  const othersTotalPages = Math.max(1, Math.ceil(others.length / PAGE_SIZE));
+  // 서류 상태가 바뀌어 "그 외" 목록 건수가 달라지면 현재 보던 페이지가 더 이상 유효하지 않을
+  // 수 있어 1페이지로 되돌립니다.
+  useEffect(() => {
+    setOthersPage(1);
+  }, [others.length]);
+
   function renderRow(d: SchoolDocument) {
     const expanded = expandedId === d.id;
     return (
@@ -192,89 +209,94 @@ export default function DocumentsClient({ initialItems }: { initialItems: School
   }
 
   return (
-    <div className="mx-auto max-w-5xl">
-      <h1 className="mb-1 text-lg font-bold">서류함</h1>
-      <p className="mb-4 text-xs text-slate-500">
-        학교 운영에 필요한 서류를 정리하고 상태를 관리합니다. &quot;AI 서류 추천받기&quot;를
-        누르면 GIA 같은 대안교육기관이 갖추면 좋은 서류를 AI가 찾아서 목록에 추가하고,
-        각 서류의 &quot;AI 초안 만들기&quot;를 누르면 바로 다듬어 쓸 수 있는 초안을 만들어줍니다
-        (실제 수치·인명 등은 [ ] 표시된 자리에 직접 채워주세요).
-      </p>
+    <div className="mx-auto flex h-full max-w-5xl flex-col overflow-hidden">
+      <div className="shrink-0">
+        <h1 className="mb-1 text-lg font-bold">서류함</h1>
+        <p className="mb-4 text-xs text-slate-500">
+          학교 운영에 필요한 서류를 정리하고 상태를 관리합니다. &quot;AI 서류 추천받기&quot;를
+          누르면 GIA 같은 대안교육기관이 갖추면 좋은 서류를 AI가 찾아서 목록에 추가하고,
+          각 서류의 &quot;AI 초안 만들기&quot;를 누르면 바로 다듬어 쓸 수 있는 초안을 만들어줍니다
+          (실제 수치·인명 등은 [ ] 표시된 자리에 직접 채워주세요).
+        </p>
 
-      <div className="mb-6 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <button
-          onClick={requestRecommend}
-          disabled={recommending}
-          className="rounded-lg bg-gia-navy px-3 py-1.5 text-sm font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50"
-        >
-          {recommending ? "AI가 찾는 중..." : "✨ AI 서류 추천받기"}
-        </button>
-        <button
-          onClick={() => setShowForm((v) => !v)}
-          className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-600 hover:bg-slate-50"
-        >
-          {showForm ? "닫기" : "+ 직접 추가"}
-        </button>
-        {recommendMsg && <span className="text-xs text-slate-500">{recommendMsg}</span>}
-      </div>
-
-      {showForm && (
-        <form
-          onSubmit={addDocument}
-          className="mb-6 flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
-        >
-          <input
-            type="text"
-            value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
-            placeholder="서류명 - 예: 개인정보처리방침"
-            className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
-          />
-          <input
-            type="text"
-            value={form.category}
-            onChange={(e) => setForm({ ...form, category: e.target.value })}
-            placeholder="분류 - 예: 개인정보"
-            className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
-          />
-          <textarea
-            value={form.notes}
-            onChange={(e) => setForm({ ...form, notes: e.target.value })}
-            placeholder="메모(선택)"
-            rows={2}
-            className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
-          />
-          {error && <p className="text-sm text-red-600">{error}</p>}
+        <div className="mb-6 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <button
-            type="submit"
-            disabled={saving}
-            className="self-start rounded-lg bg-gia-navy px-4 py-2 text-sm font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50"
+            onClick={requestRecommend}
+            disabled={recommending}
+            className="rounded-lg bg-gia-navy px-3 py-1.5 text-sm font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50"
           >
-            {saving ? "저장 중..." : "추가"}
+            {recommending ? "AI가 찾는 중..." : "✨ AI 서류 추천받기"}
           </button>
-        </form>
-      )}
+          <button
+            onClick={() => setShowForm((v) => !v)}
+            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+          >
+            {showForm ? "닫기" : "+ 직접 추가"}
+          </button>
+          {recommendMsg && <span className="text-xs text-slate-500">{recommendMsg}</span>}
+        </div>
 
-      <div className="mb-2 text-xs font-semibold text-slate-400">
-        신경 써야 할 서류 ({needAttention.length})
-      </div>
-      <div className="mb-6 flex flex-col gap-2">
-        {needAttention.length === 0 ? (
-          <div className="rounded-lg bg-white p-4 text-sm text-slate-400 shadow-sm">없습니다.</div>
-        ) : (
-          needAttention.map(renderRow)
+        {showForm && (
+          <form
+            onSubmit={addDocument}
+            className="mb-6 flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+          >
+            <input
+              type="text"
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              placeholder="서류명 - 예: 개인정보처리방침"
+              className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+            />
+            <input
+              type="text"
+              value={form.category}
+              onChange={(e) => setForm({ ...form, category: e.target.value })}
+              placeholder="분류 - 예: 개인정보"
+              className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+            />
+            <textarea
+              value={form.notes}
+              onChange={(e) => setForm({ ...form, notes: e.target.value })}
+              placeholder="메모(선택)"
+              rows={2}
+              className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+            />
+            {error && <p className="text-sm text-red-600">{error}</p>}
+            <button
+              type="submit"
+              disabled={saving}
+              className="self-start rounded-lg bg-gia-navy px-4 py-2 text-sm font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50"
+            >
+              {saving ? "저장 중..." : "추가"}
+            </button>
+          </form>
         )}
+
+        <div className="mb-2 text-xs font-semibold text-slate-400">
+          신경 써야 할 서류 ({needAttention.length})
+        </div>
+        <div className="mb-6 flex flex-col gap-2">
+          {needAttention.length === 0 ? (
+            <div className="rounded-lg bg-white p-4 text-sm text-slate-400 shadow-sm">없습니다.</div>
+          ) : (
+            needAttention.map(renderRow)
+          )}
+        </div>
       </div>
 
       {others.length > 0 && (
-        <>
-          <div className="mb-2 text-xs font-semibold text-slate-400">그 외 ({others.length})</div>
-          <div className="flex flex-col gap-2">{others.map(renderRow)}</div>
-        </>
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="mb-2 shrink-0 text-xs font-semibold text-slate-400">그 외 ({others.length})</div>
+          <div className="flex flex-1 flex-col gap-2 overflow-y-auto">{othersPageItems.map(renderRow)}</div>
+          <div className="shrink-0">
+            <Pagination page={othersPage} totalPages={othersTotalPages} onChange={setOthersPage} />
+          </div>
+        </div>
       )}
 
       {items.length === 0 && (
-        <div className="rounded-lg bg-white p-4 text-sm text-slate-400 shadow-sm">
+        <div className="shrink-0 rounded-lg bg-white p-4 text-sm text-slate-400 shadow-sm">
           아직 등록된 서류가 없습니다. &quot;AI 서류 추천받기&quot;로 시작해보세요.
         </div>
       )}

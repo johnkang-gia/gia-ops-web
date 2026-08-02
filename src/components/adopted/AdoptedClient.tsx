@@ -1,8 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Adopted } from "@/lib/types";
+import Pagination from "@/components/Pagination";
+
+const PAGE_SIZE = 10;
 
 function oneLine(text: string, maxLen = 70) {
   const t = String(text || "").replace(/\s+/g, " ").trim();
@@ -15,6 +18,7 @@ export default function AdoptedClient({ initialItems }: { initialItems: Adopted[
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     const supabase = createClient();
@@ -107,21 +111,30 @@ export default function AdoptedClient({ initialItems }: { initialItems: Adopted[
     }
   }
 
+  const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
+  const pageItems = useMemo(
+    () => items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [items, page]
+  );
+
   return (
-    <div className="mx-auto max-w-5xl">
+    <div className="mx-auto flex h-full max-w-5xl flex-col overflow-hidden">
+      <div className="shrink-0">
       <h1 className="mb-4 text-lg font-bold">채택예정 ({items.length}건)</h1>
       <p className="mb-4 text-sm text-slate-500">
         제안함에서 승인한 내용이 여기로 옵니다. GIA 실정에 맞게 구체화한 뒤 &quot;발행&quot;을 눌러야
         매뉴얼(운영계획안/실무자매뉴얼)에 실제로 반영됩니다.
       </p>
+      </div>
 
+      <div className="flex-1 overflow-y-auto">
       <div className="flex flex-col gap-2">
         {items.length === 0 && (
           <div className="rounded-lg bg-white p-4 text-sm text-slate-400 shadow-sm">
             채택예정 항목이 없습니다.
           </div>
         )}
-        {items.map((it) => {
+        {pageItems.map((it) => {
           const expanded = expandedId === it.id;
           const draft = drafts[it.id] ?? it.specific_text;
           const busy = busyId === it.id;
@@ -254,6 +267,10 @@ export default function AdoptedClient({ initialItems }: { initialItems: Adopted[
             </div>
           );
         })}
+      </div>
+      </div>
+      <div className="shrink-0">
+        <Pagination page={page} totalPages={totalPages} onChange={setPage} />
       </div>
     </div>
   );

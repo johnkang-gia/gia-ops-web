@@ -1,8 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { WrStudent } from "@/lib/types";
+import Pagination from "@/components/Pagination";
+
+const PAGE_SIZE = 15;
 
 export default function StudentManageClient({ initialStudents }: { initialStudents: WrStudent[] }) {
   const [students, setStudents] = useState<WrStudent[]>(initialStudents);
@@ -71,10 +74,16 @@ export default function StudentManageClient({ initialStudents }: { initialStuden
   }
 
   const active = students.filter((s) => s.status === "active");
+  const [page, setPage] = useState(1);
+  const pageItems = useMemo(
+    () => active.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [active, page]
+  );
+  const totalPages = Math.max(1, Math.ceil(active.length / PAGE_SIZE));
 
   return (
-    <div>
-      <form onSubmit={addStudent} className="mb-3 flex flex-wrap items-end gap-2 rounded-xl border border-slate-200 bg-white p-3">
+    <div className="flex h-full flex-col overflow-hidden">
+      <form onSubmit={addStudent} className="mb-3 flex shrink-0 flex-wrap items-end gap-2 rounded-xl border border-slate-200 bg-white p-3">
         <div>
           <label className="mb-1 block text-[11px] text-slate-400">이름</label>
           <input value={name} onChange={(e) => setName(e.target.value)} className="w-28 rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
@@ -100,7 +109,7 @@ export default function StudentManageClient({ initialStudents }: { initialStuden
       </form>
 
       {showBulk && (
-        <div className="mb-4 rounded-xl border border-slate-200 bg-white p-3">
+        <div className="mb-4 shrink-0 rounded-xl border border-slate-200 bg-white p-3">
           <p className="mb-1.5 text-[11px] text-slate-400">한 줄에 하나씩, &quot;이름,학년,반,보호자연락처&quot; 형식으로 붙여넣으세요.</p>
           <textarea
             value={bulkText}
@@ -115,7 +124,7 @@ export default function StudentManageClient({ initialStudents }: { initialStuden
         </div>
       )}
 
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+      <div className="flex-1 overflow-y-auto rounded-xl border border-slate-200 bg-white">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-400">
             <tr>
@@ -127,7 +136,7 @@ export default function StudentManageClient({ initialStudents }: { initialStuden
             </tr>
           </thead>
           <tbody>
-            {active.map((s) => (
+            {pageItems.map((s) => (
               <tr key={s.id} className="border-t border-slate-100">
                 <td className="px-3 py-2 font-medium">{s.name}</td>
                 <td className="px-3 py-2 text-slate-500">{s.grade ?? "-"}</td>
@@ -152,6 +161,9 @@ export default function StudentManageClient({ initialStudents }: { initialStuden
             )}
           </tbody>
         </table>
+      </div>
+      <div className="shrink-0">
+        <Pagination page={page} totalPages={totalPages} onChange={setPage} />
       </div>
     </div>
   );

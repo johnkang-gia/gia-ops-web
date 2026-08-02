@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRealtimeTable } from "@/lib/useRealtimeTable";
 import { genCaseId } from "@/lib/caseId";
@@ -8,6 +8,10 @@ import { getMeetingAudioUrl } from "@/lib/storage";
 import type { Meeting, Term } from "@/lib/types";
 import MeetingChatComposer from "./MeetingChatComposer";
 import AiSourcePanel from "@/components/ai/AiSourcePanel";
+import Pagination from "@/components/Pagination";
+
+// 회의가 쌓일수록 목록이 끝없이 길어지지 않도록, 게시판처럼 페이지 단위로 잘라 보여줍니다.
+const PAGE_SIZE = 10;
 
 type FormState = {
   date: string;
@@ -49,6 +53,18 @@ export default function MeetingsClient({
   const [cleaning, setCleaning] = useState(false);
   const [audioUrls, setAudioUrls] = useState<Record<string, string>>({});
   const [composerKey, setComposerKey] = useState(0);
+
+  const [page, setPage] = useState(1);
+  const pageItems = useMemo(
+    () => items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [items, page]
+  );
+  const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
+  // 새 회의가 저장되는 등 전체 건수가 바뀌면 현재 보던 페이지가 유효하지 않을 수 있어
+  // 1페이지로 되돌립니다.
+  useEffect(() => {
+    setPage(1);
+  }, [items.length]);
 
   async function loadAudioUrl(it: Meeting) {
     if (!it.audio_path || audioUrls[it.id]) return;
@@ -121,9 +137,9 @@ export default function MeetingsClient({
   }
 
   return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[300px_1fr_340px] lg:items-start">
-      {/* 왼쪽: 날짜별 목록 */}
-      <div className="order-2 flex flex-col gap-2 lg:order-1">
+    <div className="grid h-full grid-cols-1 gap-4 overflow-y-auto lg:grid-cols-[300px_1fr_340px] lg:overflow-hidden">
+      {/* 왼쪽: 날짜별 목록 - 계속 늘어지는 스크롤 대신 게시판처럼 페이지 번호로 넘겨봅니다 */}
+      <div className="order-2 flex flex-col gap-2 lg:order-1 lg:h-full lg:min-h-0 lg:overflow-hidden">
         <div className="flex items-center justify-between">
           <h1 className="text-sm font-bold text-slate-700">회의 ({items.length}건)</h1>
           {editingId && (
@@ -135,11 +151,11 @@ export default function MeetingsClient({
             </button>
           )}
         </div>
-        <div className="flex max-h-[75vh] flex-col gap-1.5 overflow-y-auto lg:max-h-[calc(100vh-8rem)]">
+        <div className="flex flex-1 flex-col gap-1.5 overflow-y-auto lg:min-h-0">
           {items.length === 0 && (
             <div className="rounded-lg bg-white p-3 text-xs text-slate-400 shadow-sm">등록된 회의가 없습니다.</div>
           )}
-          {items.map((it) => (
+          {pageItems.map((it) => (
             <button
               key={it.id}
               onClick={() => {
@@ -160,6 +176,9 @@ export default function MeetingsClient({
               <span className="text-[10px] text-slate-400">{it.date}</span>
             </button>
           ))}
+        </div>
+        <div className="shrink-0">
+          <Pagination page={page} totalPages={totalPages} onChange={setPage} />
         </div>
       </div>
 

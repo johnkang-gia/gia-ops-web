@@ -6,6 +6,7 @@ import { isDeveloperEmail } from "@/lib/roles";
 import SignOutButton from "@/components/SignOutButton";
 import { SidebarNavLinks, MobileNavLinks, type NavCategory } from "@/components/NavLinks";
 import MainArea from "@/components/MainArea";
+import DateTimeCard from "@/components/home/DateTimeCard";
 
 // 메뉴를 "카테고리" 단위로 재구성했습니다(이전에는 세로로 긴 그룹 목록이라 계속 스크롤해야
 // 했는데, 지금은 주메뉴 몇 개만 보이고 하위 항목은 마우스를 올리면 오른쪽으로 펼쳐집니다).
@@ -18,7 +19,6 @@ function buildOpsCategory(): NavCategory {
     icon: "📋",
     accent: "navy",
     items: [
-      { href: "/staff-manual", label: "실무자매뉴얼", icon: "📚" },
       { href: "/records", label: "사건기록", icon: "📋" },
       { href: "/meetings", label: "회의기록", icon: "💬" },
       { href: "/ai-manual", label: "AI 매뉴얼", icon: "✨" },
@@ -109,6 +109,8 @@ export default async function DashboardLayout({
   } else {
     categories = [
       { key: "home", label: "홈", icon: "🏠", href: "/home", accent: "navy" },
+      // 전화 응대 중 바로 열어야 하는 메뉴라 운영관리 하위에 묻지 않고 홈-업무 사이에 따로 뺐습니다.
+      { key: "staff-manual", label: "실무자 매뉴얼", icon: "📚", href: "/staff-manual", accent: "amber" },
       { key: "work", label: "업무", icon: "🗂️", href: "/work", accent: "blue" },
       buildOpsCategory(),
     ];
@@ -140,6 +142,12 @@ export default async function DashboardLayout({
             ))}
           <div className="mt-1 truncate text-xs text-slate-400">{displayName}</div>
         </div>
+
+        {/* 달력+시계를 축소판으로 항상 띄워둡니다(메뉴 스크롤에 밀리지 않도록 nav 바깥, shrink-0). */}
+        <div className="mb-3 shrink-0 border-b border-slate-100 pb-3">
+          <DateTimeCard compact />
+        </div>
+
         <nav className="flex flex-1 flex-col gap-1 overflow-y-auto overflow-x-visible">
           <SidebarNavLinks categories={categories} />
         </nav>

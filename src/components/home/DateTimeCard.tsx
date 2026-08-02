@@ -59,9 +59,10 @@ function openInNativeCalendar(dateStr: string, title: string) {
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
-// 서버(SSR)와 클라이언트의 "지금 시각"이 다를 수 있어 hydration 불일치를 막기 위해,
-// 마운트되기 전까지는 아무것도 그리지 않고 클라이언트에서 계산한 값만 사용합니다.
-export default function DateTimeCard() {
+// compact=true면 왼쪽 사이드바에 항상 붙어있는 축소판(작은 글씨/좁은 칸/테두리 없음)으로,
+// compact=false(기본값)면 기존처럼 카드형 큰 위젯으로 그립니다. 기능(달력 이동, 공휴일 표시,
+// 클릭시 OS 캘린더 연동)은 두 모드 모두 동일합니다.
+export default function DateTimeCard({ compact = false }: { compact?: boolean }) {
   const [mounted, setMounted] = useState(false);
   const [now, setNow] = useState<Date | null>(null);
   const [viewOffset, setViewOffset] = useState(0); // 표시 중인 달의 현재 달 대비 오프셋(0=이번 달)
@@ -97,15 +98,21 @@ export default function DateTimeCard() {
   }, [viewYear]);
 
   if (!mounted || !now) {
-    return (
+    return compact ? (
+      <div className="h-24 animate-pulse rounded-lg bg-slate-50" />
+    ) : (
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="h-40 animate-pulse rounded-lg bg-slate-50" />
       </div>
     );
   }
 
-  const timeStr = now.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  const dateStr = now.toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric" });
+  const timeStr = compact
+    ? now.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })
+    : now.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const dateStr = compact
+    ? now.toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" })
+    : now.toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric" });
   const weekdayStr = WEEKDAYS[now.getDay()] + "요일";
   const todayKey = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
   const todayHoliday = holidays[todayKey]?.join(" · ");
@@ -122,41 +129,50 @@ export default function DateTimeCard() {
     ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
   ];
 
+  const cellSize = compact ? "h-5 w-5 text-[9px]" : "h-6 w-6";
+
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="mb-3 text-center">
-        <div className="text-2xl font-bold tabular-nums text-slate-800">{timeStr}</div>
-        <div className="mt-1 text-sm font-semibold text-slate-600">{dateStr}</div>
-        <div className="text-xs text-slate-400">
-          {weekdayStr}
-          {todayHoliday ? ` · ${todayHoliday}` : ""}
+    <div className={compact ? "px-0.5" : "rounded-xl border border-slate-200 bg-white p-4 shadow-sm"}>
+      <div className={compact ? "mb-1.5 text-center" : "mb-3 text-center"}>
+        <div className={compact ? "text-sm font-bold tabular-nums text-slate-800" : "text-2xl font-bold tabular-nums text-slate-800"}>
+          {timeStr}
         </div>
+        <div className={compact ? "text-[10px] font-semibold text-slate-500" : "mt-1 text-sm font-semibold text-slate-600"}>
+          {dateStr} {compact ? `(${weekdayStr[0]})` : ""}
+        </div>
+        {!compact && (
+          <div className="text-xs text-slate-400">
+            {weekdayStr}
+            {todayHoliday ? ` · ${todayHoliday}` : ""}
+          </div>
+        )}
+        {compact && todayHoliday && <div className="text-[9px] font-semibold text-red-500">{todayHoliday}</div>}
       </div>
 
-      <div className="mb-2 flex items-center justify-between">
+      <div className={compact ? "mb-1 flex items-center justify-between" : "mb-2 flex items-center justify-between"}>
         <button
           onClick={() => setViewOffset((v) => v - 1)}
-          className="rounded px-1.5 py-0.5 text-xs text-slate-400 hover:bg-slate-100"
+          className={"rounded text-slate-400 hover:bg-slate-100 " + (compact ? "px-1 text-[10px]" : "px-1.5 py-0.5 text-xs")}
           aria-label="이전 달"
         >
           ‹
         </button>
-        <div className="text-xs font-semibold text-slate-600">
+        <div className={compact ? "text-[10px] font-semibold text-slate-600" : "text-xs font-semibold text-slate-600"}>
           {vYear}년 {vMonth + 1}월
         </div>
         <button
           onClick={() => setViewOffset((v) => v + 1)}
-          className="rounded px-1.5 py-0.5 text-xs text-slate-400 hover:bg-slate-100"
+          className={"rounded text-slate-400 hover:bg-slate-100 " + (compact ? "px-1 text-[10px]" : "px-1.5 py-0.5 text-xs")}
           aria-label="다음 달"
         >
           ›
         </button>
       </div>
 
-      <div className="grid grid-cols-7 gap-y-1 text-center text-[11px]">
+      <div className={"grid grid-cols-7 text-center " + (compact ? "gap-y-0.5 text-[9px]" : "gap-y-1 text-[11px]")}>
         {WEEKDAYS.map((w, i) => (
           <div key={w} className={"font-semibold " + (i === 0 ? "text-red-400" : i === 6 ? "text-blue-400" : "text-slate-400")}>
-            {w}
+            {compact ? w[0] : w}
           </div>
         ))}
         {cells.map((day, idx) => {
@@ -166,13 +182,15 @@ export default function DateTimeCard() {
           const holidayNames = dateKey ? holidays[dateKey] : undefined;
           const isHoliday = !!holidayNames?.length;
           return (
-            <div key={idx} className="flex items-center justify-center py-0.5">
+            <div key={idx} className={"flex items-center justify-center " + (compact ? "py-0" : "py-0.5")}>
               {day && dateKey && (
                 <button
                   onClick={() => openInNativeCalendar(dateKey, holidayNames?.join(" · ") ?? "GIA 학사 일정")}
                   title={holidayNames?.join(" · ") ?? "클릭하면 캘린더 앱에서 열립니다"}
                   className={
-                    "flex h-6 w-6 items-center justify-center rounded-full transition hover:bg-slate-100 " +
+                    "flex items-center justify-center rounded-full transition hover:bg-slate-100 " +
+                    cellSize +
+                    " " +
                     (isToday
                       ? "bg-blue-600 font-bold text-white hover:bg-blue-600"
                       : isHoliday

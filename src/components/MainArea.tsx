@@ -10,9 +10,16 @@ export default function MainArea({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isWork = pathname?.startsWith("/work");
   const isWeekly = pathname?.startsWith("/weekly-report");
+  const isStaffManual = pathname?.startsWith("/staff-manual");
 
   if (isWork) {
     return <main className="workflatform-theme flex-1 overflow-hidden">{children}</main>;
+  }
+
+  // 실무자매뉴얼은 좌(매뉴얼)/우(학생검색) 두 영역이 각자 스크롤되며 화면 안에 같이 떠 있어야
+  // 전화 응대 중 둘 다 스크롤 없이 훑어보기 편해서, 다른 페이지와 달리 높이를 뷰포트에 맞춥니다.
+  if (isStaffManual) {
+    return <main className="flex-1 overflow-hidden bg-gia-bg p-4 sm:p-6">{children}</main>;
   }
 
   return (

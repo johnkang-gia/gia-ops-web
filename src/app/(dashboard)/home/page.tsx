@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentTerm } from "@/lib/currentTerm";
-import DateTimeCard from "@/components/home/DateTimeCard";
 import type { Incident, Meeting, EventRecord, Term, TaskStatus } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -190,8 +189,8 @@ export default async function HomePage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_260px]">
-        <div className="min-w-0">
+      {/* 달력/시계 위젯은 왼쪽 사이드바로 옮겨 항상 보이도록 했습니다(홈 화면에서는 제거) */}
+      <div className="min-w-0">
           <div className="mb-2 flex items-center justify-between">
             <div className="text-xs font-semibold text-slate-400">업무 현황</div>
             <Link href="/work" className="text-[11px] font-semibold text-blue-500 hover:underline">
@@ -306,11 +305,6 @@ export default async function HomePage() {
               </Link>
             ))}
           </div>
-        </div>
-
-        <div className="lg:sticky lg:top-4 lg:self-start">
-          <DateTimeCard />
-        </div>
       </div>
     </div>
   );

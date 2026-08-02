@@ -4,7 +4,8 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { isDeveloperEmail } from "@/lib/roles";
 import { getCurrentTerm } from "@/lib/currentTerm";
 import { getWeekRange } from "@/lib/weeklyReport/week";
-import type { WrReport } from "@/lib/types";
+import type { Term, WrClass, WrReport } from "@/lib/types";
+import RecordSearchPanel from "@/components/weeklyReport/admin/RecordSearchPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -26,12 +27,15 @@ export default async function WeeklyReportStatsPage() {
   const term = await getCurrentTerm(supabase);
   const { start, end } = getWeekRange();
 
-  const [{ count: activeStudentCount }, { data: weekReportsData }] = await Promise.all([
-    supabase.from("wr_students").select("id", { count: "exact", head: true }).eq("status", "active"),
-    term
-      ? supabase.from("wr_reports").select("*").eq("term_id", term.id).gte("report_date", start).lte("report_date", end)
-      : Promise.resolve({ data: [] as WrReport[] }),
-  ]);
+  const [{ count: activeStudentCount }, { data: weekReportsData }, { data: termsData }, { data: classesData }] =
+    await Promise.all([
+      supabase.from("wr_students").select("id", { count: "exact", head: true }).eq("status", "active"),
+      term
+        ? supabase.from("wr_reports").select("*").eq("term_id", term.id).gte("report_date", start).lte("report_date", end)
+        : Promise.resolve({ data: [] as WrReport[] }),
+      supabase.from("terms").select("*").order("year", { ascending: false }).order("start_date", { ascending: false }),
+      supabase.from("wr_classes").select("*").order("grade", { ascending: true }).order("class_name", { ascending: true }),
+    ]);
 
   const weekReports = (weekReportsData as WrReport[] | null) ?? [];
   const published = weekReports.filter((r) => r.status === "published").length;
@@ -47,7 +51,7 @@ export default async function WeeklyReportStatsPage() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <h1 className="mb-1 text-lg font-bold">위클리 리포트 통계</h1>
+      <h1 className="mb-1 text-lg font-bold">주간 학생 관찰기록 통계</h1>
       <p className="mb-4 text-xs text-slate-500">
         {term ? `현재 학기: ${term.year}년 ${term.term_type}` : "진행중인 학기가 없습니다."} · 이번 주 ({start} ~ {end}) 기준
       </p>
@@ -61,9 +65,11 @@ export default async function WeeklyReportStatsPage() {
         <StatCard label="이번주 작성된 리포트 총합" value={weekReports.length} tone="text-slate-700" />
       </div>
 
-      <p className="mt-4 text-[11px] text-slate-400">
+      <p className="mb-6 mt-4 text-[11px] text-slate-400">
         &quot;지도 필요/우수 학생&quot;은 이번 주 리포트 중 하나라도 해당 뱃지가 선택된 학생 수를 중복 없이 센 값입니다.
       </p>
+
+      <RecordSearchPanel terms={(termsData as Term[] | null) ?? []} classes={(classesData as WrClass[] | null) ?? []} />
     </div>
   );
 }

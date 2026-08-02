@@ -1391,3 +1391,34 @@ begin
     alter publication supabase_realtime add table incident_students;
   end if;
 end $$;
+
+-- ===== 37. wr_reports에 학년/반 스냅샷 컬럼 추가 (연도-학기-학년-반 통합 검색) =====
+-- 지금까지 wr_reports는 student_id + term_id(연도+학기)만 갖고 있어서, "이 학기 3학년 2반
+-- 리포트만 모아보기" 같은 검색을 하려면 wr_enrollments를 거쳐 조인해야 했습니다. 리포트를
+-- 쓴/발행한 시점의 학년·반을 리포트 행 자체에 함께 저장해두면(wr_enrollments처럼 이력용
+-- 스냅샷) 조인 없이 바로 연도-학기-학년-반 조합으로 검색할 수 있습니다. 반이 학기 중간에
+-- 바뀌어도 그 시점 리포트의 반 기록은 그대로 남습니다.
+alter table wr_reports add column if not exists class_id uuid references wr_classes(id) on delete set null;
+alter table wr_reports add column if not exists grade text;
+create index if not exists wr_reports_term_grade_class_idx on wr_reports(term_id, grade, class_id);
+
+-- 기존에 이미 저장된 리포트에도 소급 적용합니다: 같은 student_id+term_id의 재학 이력
+-- (wr_enrollments)이 있으면 그 학년/반을, 없으면 학생의 현재 학년/반(wr_students)을 채웁니다.
+-- (UPDATE ... FROM의 JOIN ON 절에서는 갱신 대상 테이블(r)을 참조할 수 없어 - Postgres 제약 -
+-- 상관 서브쿼리 형태로 작성했습니다.)
+update wr_reports r
+set class_id = coalesce(
+    (select we.class_id from wr_enrollments we
+     where we.student_id = r.student_id and we.term_id is not distinct from r.term_id
+     limit 1),
+    (select ws.class_id from wr_students ws where ws.id = r.student_id)
+  ),
+  grade = coalesce(
+    (select we.grade from wr_enrollments we
+     where we.student_id = r.student_id and we.term_id is not distinct from r.term_id
+     limit 1),
+    (select ws.grade from wr_students ws where ws.id = r.student_id)
+  )
+where r.class_id is null
+  and r.grade is null
+  and exists (select 1 from wr_students ws where ws.id = r.student_id);

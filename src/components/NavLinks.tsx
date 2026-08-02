@@ -11,7 +11,7 @@ export type NavLeaf = { href: string; label: string; icon: string };
 // 펼쳐지는 플라이아웃 서브메뉴가 되고(주메뉴가 세로로 길어지지 않음), items가 없으면 href로
 // 바로 이동하는 단일 링크입니다. accent는 이 카테고리가 속한 "앱"을 색으로 구분하기 위한
 // 값입니다(업무=블루/운영=네이비/위클리 리포트=틸/관리자·개발자=앰버·레드).
-export type NavAccent = "navy" | "blue" | "teal" | "amber" | "red";
+export type NavAccent = "navy" | "blue" | "teal" | "amber" | "red" | "purple";
 
 export type NavCategory = {
   key: string;
@@ -37,6 +37,7 @@ const ACCENT_TEXT: Record<NavAccent, string> = {
   teal: "text-teal-600",
   amber: "text-amber-600",
   red: "text-red-600",
+  purple: "text-purple-600",
 };
 
 const ACCENT_BG_SOFT: Record<NavAccent, string> = {
@@ -45,6 +46,7 @@ const ACCENT_BG_SOFT: Record<NavAccent, string> = {
   teal: "bg-teal-50",
   amber: "bg-amber-50",
   red: "bg-red-50",
+  purple: "bg-purple-50",
 };
 
 const ACCENT_BORDER: Record<NavAccent, string> = {
@@ -53,6 +55,7 @@ const ACCENT_BORDER: Record<NavAccent, string> = {
   teal: "border-teal-500",
   amber: "border-amber-500",
   red: "border-red-500",
+  purple: "border-purple-500",
 };
 
 export function SidebarNavLinks({ categories }: { categories: NavCategory[] }) {

@@ -47,7 +47,7 @@ function ReportDocument({ student, reports }: { student: WrStudent; reports: WrR
           {student.grade}학년 {student.class_name} · GIA · 발행일: {today}
         </Text>
         <Text fixed style={styles.pageNumber} render={({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}`} />
-        <Text fixed style={styles.footer}>GIA · 위클리 리포트</Text>
+        <Text fixed style={styles.footer}>GIA · 주간 학생 관찰기록</Text>
 
         {reports.length === 0 && <Text>아직 발행된 리포트가 없습니다.</Text>}
         {reports.map((r) => (

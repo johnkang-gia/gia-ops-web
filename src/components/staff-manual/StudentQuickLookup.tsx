@@ -64,8 +64,8 @@ export default function StudentQuickLookup({ students }: { students: WrStudent[]
     <div className="flex h-full flex-col overflow-hidden">
       <h2 className="mb-1 text-sm font-bold text-slate-700">🔎 학생 정보 조회</h2>
       <p className="mb-3 text-xs text-slate-500">
-        전화 응대 중인 학생의 이름이나 학번을 검색하면, 인적사항·학적사항·사건기록·위클리 리포트
-        이력을 옆에서 바로 확인할 수 있습니다.
+        전화 응대 중인 학생의 이름이나 학번을 검색하면, 인적사항·학적사항·사건기록·주간 학생
+        관찰기록 이력을 옆에서 바로 확인할 수 있습니다.
       </p>
 
       {!selectedId ? (
@@ -173,9 +173,9 @@ export default function StudentQuickLookup({ students }: { students: WrStudent[]
                 </div>
 
                 <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm">
-                  <h4 className="mb-1.5 text-xs font-bold text-slate-700">📈 위클리 리포트 이력 ({profile.reports.length}건)</h4>
+                  <h4 className="mb-1.5 text-xs font-bold text-slate-700">📈 주간 학생 관찰기록 이력 ({profile.reports.length}건)</h4>
                   {profile.reports.length === 0 ? (
-                    <p className="text-[11px] text-slate-400">작성된 위클리 리포트가 없습니다.</p>
+                    <p className="text-[11px] text-slate-400">작성된 주간 학생 관찰기록이 없습니다.</p>
                   ) : (
                     <div className="flex flex-col gap-1">
                       {profile.reports.slice(0, 10).map((r) => (

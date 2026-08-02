@@ -4,6 +4,59 @@
 `version` 값과 항상 일치시킵니다. 업데이트할 때마다 이 파일 맨 위에 새 항목을 추가하고,
 같은 내용을 GitHub Desktop의 커밋 Summary/Description에도 그대로 사용하면 됩니다.
 
+## v0.34.0 - 2026-08-02
+
+"위클리 리포트" 한글 개칭 + 학교관리 메뉴 통합 + 반별 작성 현황 위젯 + 통합 검색:
+
+- **"위클리 리포트" → "주간 학생 관찰기록"으로 개칭.** 사이드바 메뉴명, 페이지 제목, PDF
+  표지/푸터 등 화면에 보이는 텍스트를 전부 바꿨습니다. 라우트(`/weekly-report/*`)와 내부
+  코드는 그대로라 기존 북마크/링크는 영향 없습니다.
+- **"학교관리" 메뉴 신설(통합 관리).** 학생/반/학기/교직원 계정 관리가 운영관리·주간 학생
+  관찰기록·지원관리 세 군데에 흩어져 있었고, 특히 "학기"는 두 곳에 중복으로 있었습니다.
+  이제 사이드바에 "학교관리" 카테고리를 새로 만들어 학생 정보 조회 · 학생 관리 · 반 관리 ·
+  과목반 세팅 · 학기 관리 · 사용자 관리를 한곳에 모았습니다(권한 기준은 기존과 동일 - 반/과목/
+  학생 명부/사용자 관리는 관리자만, 학기·학생 정보 조회는 행정직원 이상 누구나).
+- **반별 작성 현황 위젯 화면.** "주간 학생 관찰기록" 메뉴에 들어가면 이제 맨 위에 현재 학기가
+  크게 표시되고, 그 아래 반마다 위젯 카드가 나옵니다. 위젯 안에는 그 반 학생 리스트와 이번 주
+  담임 리포트 작성 여부 뱃지(✅ 발행됨 / 📝 임시저장 / 미작성)가 한눈에 보이고, 카드 우측 상단에
+  "8/12 작성" 식으로 반 전체 진행률도 표시됩니다. 학생을 클릭하면 바로 열람·수정할 수 있습니다
+  (관리자 권한으로 모든 과목 탭 열람 가능). 반 미배정 학생은 별도 위젯으로 모아 보여주고,
+  예전 표 형태 화면은 "전체 목록" 탭으로 그대로 남겨뒀습니다.
+- **연도-학기-학년-반 통합 검색.** 주간 학생 관찰기록 통계 화면 하단에 검색 패널을 추가해,
+  연도·학기 / 학년 / 반 조건으로 그동안 쌓인 리포트를 바로 찾아볼 수 있습니다. 이를 위해
+  `wr_reports`에 작성 시점 학년/반 스냅샷 컬럼(`class_id`, `grade`)을 추가하고 기존 기록에도
+  소급 반영했습니다(재학 이력이 있으면 그 기준, 없으면 학생의 현재 학년/반 기준) - 앞으로 반이
+  바뀌어도 과거 리포트의 반 기록은 그대로 남습니다.
+- **DB 변경 있음.** 아래 SQL을 Supabase SQL Editor에 붙여넣고 실행해주세요(재실행해도
+  안전합니다 - 전체 `supabase/schema.sql`에도 반영되어 있습니다).
+
+```sql
+alter table wr_reports add column if not exists class_id uuid references wr_classes(id) on delete set null;
+alter table wr_reports add column if not exists grade text;
+create index if not exists wr_reports_term_grade_class_idx on wr_reports(term_id, grade, class_id);
+
+update wr_reports r
+set class_id = coalesce(
+    (select we.class_id from wr_enrollments we
+     where we.student_id = r.student_id and we.term_id is not distinct from r.term_id
+     limit 1),
+    (select ws.class_id from wr_students ws where ws.id = r.student_id)
+  ),
+  grade = coalesce(
+    (select we.grade from wr_enrollments we
+     where we.student_id = r.student_id and we.term_id is not distinct from r.term_id
+     limit 1),
+    (select ws.grade from wr_students ws where ws.id = r.student_id)
+  )
+where r.class_id is null
+  and r.grade is null
+  and exists (select 1 from wr_students ws where ws.id = r.student_id);
+```
+
+(처음 드렸던 SQL의 UPDATE 문에 문법 오류가 있어 `42P01` 에러가 났었습니다 - 위 버전으로 다시
+실행해주세요. `alter table`/`create index`는 재실행해도 안전하고, 이미 컬럼이 추가돼 있었다면
+그 부분은 건너뛰고 UPDATE만 다시 실행됩니다.)
+
 ## v0.33.1 - 2026-08-02
 
 전체 빌드 점검 + 로고 이미지 최적화:

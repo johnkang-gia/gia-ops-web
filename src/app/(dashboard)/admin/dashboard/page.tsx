@@ -182,7 +182,7 @@ export default async function AdminDashboardPage() {
         <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700">통합 현황</span>
       </div>
       <p className="mb-5 text-xs text-slate-500">
-        업무 · 운영(사건·행사·회의) · 위클리 리포트 세 영역을 한 화면에서 확인합니다. 반복되는 사건 유형과 반복적으로
+        업무 · 운영(사건·행사·회의) · 주간 학생 관찰기록 세 영역을 한 화면에서 확인합니다. 반복되는 사건 유형과 반복적으로
         지도가 필요한 학생을 자동으로 짚어드리고, 최근 6개월 추이를 그래프로 보여드립니다.
       </p>
 
@@ -219,7 +219,7 @@ export default async function AdminDashboardPage() {
             {wrTerm ? `${wrTerm.year} ${wrTerm.term_type} 기준` : "진행중인 학기 없음"} · 경고/미흡 배지 3회 이상은 추가 조치, 우수 배지 3회
             이상은 보상을 검토해 주세요.{" "}
             <Link href="/weekly-report/admin/stats" className="text-blue-600 hover:underline">
-              위클리 리포트 통계 →
+              주간 학생 관찰기록 통계 →
             </Link>
           </p>
           <div className="grid grid-cols-2 gap-4">

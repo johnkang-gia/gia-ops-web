@@ -12,7 +12,7 @@ import DateTimeCard from "@/components/home/DateTimeCard";
 // 메뉴를 "카테고리" 단위로 재구성했습니다(이전에는 세로로 긴 그룹 목록이라 계속 스크롤해야
 // 했는데, 지금은 주메뉴 몇 개만 보이고 하위 항목은 마우스를 올리면 오른쪽으로 펼쳐집니다).
 // accent는 이 카테고리가 어느 "앱"에 속하는지 색으로 알려줍니다: 홈/운영 관리=네이비(GIA ops),
-// 업무=블루(WorkFlatform), 위클리 리포트=틸, 지원·관리/개발자=앰버·레드.
+// 업무=블루(WorkFlatform), 학교관리=퍼플, 주간 학생 관찰기록=틸, 지원·관리/개발자=앰버·레드.
 function buildOpsCategory(): NavCategory {
   return {
     key: "ops",
@@ -24,7 +24,6 @@ function buildOpsCategory(): NavCategory {
       { href: "/meetings", label: "회의기록", icon: "💬" },
       { href: "/ai-manual", label: "AI 매뉴얼", icon: "✨" },
       { href: "/events", label: "행사기록", icon: "🎉" },
-      { href: "/terms", label: "학기", icon: "📅" },
       { href: "/proposals", label: "제안함", icon: "📝" },
       { href: "/adopted", label: "채택예정", icon: "📬" },
       { href: "/manuals", label: "매뉴얼", icon: "📖" },
@@ -33,34 +32,42 @@ function buildOpsCategory(): NavCategory {
   };
 }
 
+// "학교관리" - 학생/반/학기/교직원(교사·관리자 등 계정) 관리를 한곳에 모았습니다. 예전에는
+// 학기가 운영관리에도, 위클리 리포트 하위에도 중복으로 있었고 학생 관리도 두 군데(학생 명부 ·
+// 학생 정보 조회)에 흩어져 있어 헷갈렸는데, 여기 하나로 통합했습니다. 반/과목/학생 명부/사용자
+// 관리는 관리자만, 학기와 학생 정보 조회는 행정직원 이상 누구나 볼 수 있습니다(기존 권한 그대로).
+function buildSchoolCategory(isAdmin: boolean, isStaffOrAbove: boolean): NavCategory {
+  const items = [];
+  if (isStaffOrAbove) items.push({ href: "/students", label: "학생 정보 조회", icon: "🔎" });
+  if (isAdmin) {
+    items.push(
+      { href: "/weekly-report/admin/students", label: "학생 관리", icon: "🧑‍🎓" },
+      { href: "/weekly-report/admin/classes", label: "반 관리", icon: "🏫" },
+      { href: "/weekly-report/admin/subjects", label: "과목반 세팅", icon: "📘" }
+    );
+  }
+  items.push({ href: "/terms", label: "학기 관리", icon: "🗓️" });
+  if (isAdmin) items.push({ href: "/admin/users", label: "사용자 관리", icon: "🔐" });
+  return { key: "school", label: "학교관리", icon: "🏛️", accent: "purple", items };
+}
+
 function buildWeeklyReportCategory(isAdmin: boolean): NavCategory {
   const items = [
-    { href: "/weekly-report/students", label: "학생 현황", icon: "🎓" },
+    { href: "/weekly-report/students", label: "반별 작성 현황", icon: "🎓" },
     { href: "/weekly-report/print", label: "리포트 프린트", icon: "🖨️" },
   ];
   if (isAdmin) {
-    items.push(
-      { href: "/weekly-report/admin/classes", label: "반/담임 배정", icon: "🏫" },
-      { href: "/weekly-report/admin/subjects", label: "과목반 세팅", icon: "📘" },
-      { href: "/weekly-report/admin/students", label: "학생 명부", icon: "🧑‍🎓" },
-      { href: "/terms", label: "학기 관리", icon: "🗓️" },
-      { href: "/weekly-report/admin/stats", label: "통계 대시보드", icon: "📊" }
-    );
+    items.push({ href: "/weekly-report/admin/stats", label: "통계 대시보드", icon: "📊" });
   }
-  return { key: "weekly", label: "위클리 리포트", icon: "📈", accent: "teal", items };
+  return { key: "weekly", label: "주간 학생 관찰기록", icon: "📈", accent: "teal", items };
 }
 
-// "지원 · 관리" - 문의및건의사항은 행정직원 이상 누구나, 사용자 관리/관리자 대시보드는 관리자만,
-// 학생 정보 조회는 행정직원/관리자(+개발자)만. 예전에는 각각 다른 메뉴 그룹에 흩어져 있어
-// 스크롤을 계속 내려야 보였는데, 여기 하나로 모으고 맨 뒤로 옮겼습니다.
-function buildSupportCategory(isAdmin: boolean, isStaffOrAbove: boolean): NavCategory {
+// "지원 · 관리" - 학생/반/학기/계정 관리는 학교관리로 옮겼고, 여기는 관리자 대시보드(통합
+// 현황판)와 문의및건의사항만 남았습니다.
+function buildSupportCategory(isAdmin: boolean): NavCategory {
   const items = [];
   if (isAdmin) {
     items.push({ href: "/admin/dashboard", label: "관리자 대시보드", icon: "📊" });
-    items.push({ href: "/admin/users", label: "사용자 관리", icon: "🔐" });
-  }
-  if (isStaffOrAbove) {
-    items.push({ href: "/students", label: "학생 정보 조회", icon: "🔎" });
   }
   items.push({ href: "/inquiries", label: "문의및건의사항", icon: "🗣️" });
   return { key: "support", label: "지원 · 관리", icon: "🛠️", accent: "amber", items };
@@ -107,9 +114,10 @@ export default async function DashboardLayout({
       { key: "staff-manual", label: "실무자 매뉴얼", icon: "📚", href: "/staff-manual", accent: "amber" },
       { key: "work", label: "업무", icon: "🗂️", href: "/work", accent: "blue" },
       buildOpsCategory(),
+      buildSchoolCategory(isAdmin, isStaffOrAbove),
     ];
     if (isStaffOrAbove) categories.push(buildWeeklyReportCategory(isAdmin));
-    categories.push(buildSupportCategory(isAdmin, isStaffOrAbove));
+    categories.push(buildSupportCategory(isAdmin));
     if (isDeveloper) {
       categories.push({ key: "dev", label: "개발자", icon: "🧑‍💻", href: "/dev", accent: "red" });
     }

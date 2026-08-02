@@ -329,6 +329,8 @@ export type WrReport = {
   id: string;
   student_id: string;
   term_id: string | null;
+  class_id: string | null; // 작성 시점 학년/반 스냅샷 - 연도-학기-학년-반 통합 검색용
+  grade: string | null;
   subject: string;
   academic: string | null;
   improvement: string | null;

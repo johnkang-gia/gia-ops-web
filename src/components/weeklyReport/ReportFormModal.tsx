@@ -128,6 +128,9 @@ export default function ReportFormModal({
     const payload = {
       student_id: student.id,
       term_id: termId,
+      // 작성 시점 학생의 학년/반을 함께 저장합니다(연도-학기-학년-반 통합 검색용 스냅샷).
+      class_id: student.class_id,
+      grade: student.grade,
       subject: mode === "admin" || mode === "archive" ? activeTab : mySubject,
       academic: formData.academic,
       improvement: formData.improvement,

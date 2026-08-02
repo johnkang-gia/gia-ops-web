@@ -157,9 +157,9 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
       </div>
 
       <div className="mb-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <h2 className="mb-2 text-sm font-bold text-slate-700">📈 위클리 리포트 이력 ({reports.length}건)</h2>
+        <h2 className="mb-2 text-sm font-bold text-slate-700">📈 주간 학생 관찰기록 이력 ({reports.length}건)</h2>
         {reports.length === 0 ? (
-          <p className="text-xs text-slate-400">작성된 위클리 리포트가 없습니다.</p>
+          <p className="text-xs text-slate-400">작성된 주간 학생 관찰기록이 없습니다.</p>
         ) : (
           <div className="flex flex-col gap-1.5">
             {reports.slice(0, 20).map((r) => (

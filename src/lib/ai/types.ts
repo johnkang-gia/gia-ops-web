@@ -88,3 +88,13 @@ export type IncidentFillResult = {
   lack: string;
   suggest: string;
 };
+
+// 채팅 메시지를 눌러 "업무로 등록"할 때 AI가 분석해 내는 결과입니다. assigneeNames는 팀원
+// 명단(roster)에 실제로 있는 이름만 넣도록 프롬프트에서 강제하고, 서버에서 이름→이메일로
+// 다시 매칭합니다(AI가 이메일을 직접 만들어내지 않도록 하기 위함).
+export type TaskAnalyzeResult = {
+  title: string;
+  assigneeNames: string[];
+  dueDate: string;
+  priority: "보통" | "긴급";
+};

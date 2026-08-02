@@ -199,6 +199,33 @@ export function buildIncidentFillEntryBlock(detail: string, todayDate: string, c
   );
 }
 
+// 업무 탭 채팅에서 메시지를 눌러 "업무로 등록"할 때 씁니다. 예전에는 @태그가 있으면 메시지를
+// 통째로 자동 업무화했는데, 실시간 채팅이 활발해지니 잡담까지 자동 등록될까 봐 사람이 직접
+// "이 메시지는 업무예요"라고 눌렀을 때만 AI가 분석하도록 바꿨습니다. team 명단에 실제로 있는
+// 이름만 담당자로 고르게 해서, AI가 없는 이름을 지어내지 않도록 합니다.
+export function buildTaskAnalyzeSystemPrompt(teamNames: string[]): string {
+  return (
+    "당신은 GIA 학교 업무 채팅에 올라온 메시지 한 건을 읽고, 그 내용을 팀 업무 관리 시스템의 " +
+    "업무(할 일) 카드로 등록하기 위해 핵심만 뽑아내는 보조자입니다.\n" +
+    `[등록된 팀원 이름 목록] ${teamNames.join(", ") || "(없음)"}\n` +
+    "- title: 무엇을 해야 하는지 15자 내외로 간결한 제목(예: \"이서아 입금확인\"). 인사말/이모지/" +
+    "\"~해주세요\" 같은 요청형 어미는 빼고 핵심 행동만 남기세요.\n" +
+    "- assigneeNames: 이 업무를 처리해야 할 사람(들). 반드시 [등록된 팀원 이름 목록]에 있는 이름만 " +
+    "정확히 그대로 골라 배열로 담으세요(목록에 없는 이름은 절대 만들어내지 마세요). 메시지에 " +
+    "\"@이름\"으로 명시적으로 태그되어 있으면 그 사람을, 태그가 없어도 본문에 이름이 언급되어 그 " +
+    "사람이 처리해야 할 일로 보이면 그 사람을 고르세요. 누가 해야 할지 전혀 알 수 없으면 빈 배열.\n" +
+    "- dueDate: 메시지에 \"오늘/내일/모레/이번주 금요일/8월 5일까지\" 같은 마감 표현이 있으면 " +
+    "오늘 날짜를 기준으로 계산해 yyyy-MM-dd로, 없으면 빈 문자열.\n" +
+    "- priority: \"급하게/긴급/오늘 안에/ASAP\" 같은 다급함이 느껴지면 \"긴급\", 아니면 \"보통\".\n\n" +
+    "아래 JSON 형식으로만 답하세요(다른 텍스트 금지):\n" +
+    '{"title":"...", "assigneeNames":["..."], "dueDate":"", "priority":"보통"}'
+  );
+}
+
+export function buildTaskAnalyzeEntryBlock(content: string, todayDate: string): string {
+  return `[오늘 날짜(기준)] ${todayDate}\n[채팅 메시지 원문]\n${content}`;
+}
+
 export function buildMeetingCleanupSystemPrompt(): string {
   return (
     "당신은 GIA 학교의 회의록을 정리하는 보조자입니다. 담당자가 두서없이 메모하듯 적은 회의 내용을 " +

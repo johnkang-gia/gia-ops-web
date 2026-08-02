@@ -46,9 +46,9 @@ export default function DashboardArea({
   const popupTasks = activeGroup ? tasks.filter(activeGroup.filter) : [];
 
   return (
-    <div className="glass flex h-full items-center gap-3 overflow-x-auto p-3">
+    <div className="glass flex h-full items-center gap-2 overflow-x-auto px-3 py-1.5">
       <div className="flex shrink-0 flex-col items-center">
-        <svg width="32" height="32" viewBox="0 0 34 34" className="-rotate-90">
+        <svg width="26" height="26" viewBox="0 0 34 34" className="-rotate-90">
           <circle cx="17" cy="17" r={r} fill="none" stroke="rgba(0,0,0,0.08)" strokeWidth="3" />
           <circle
             cx="17"

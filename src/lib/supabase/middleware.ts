@@ -135,8 +135,9 @@ export async function updateSession(request: NextRequest) {
 
       // 교사는 위클리 리포트 화면만 볼 수 있습니다. GIA ops(사건/회의/매뉴얼 등)와 업무
       // 보드는 계약직으로 짧게 근무할 수도 있는 교사에게는 내부 문서나 다름없어서, 관리자/
-      // 행정직원/개발자와 달리 아예 접근 자체를 막습니다.
-      if (position === "교사" && !path.startsWith("/weekly-report")) {
+      // 행정직원/개발자와 달리 아예 접근 자체를 막습니다. 내 계정 설정(/account)은 직위와
+      // 무관하게 누구나 자기 프로필을 관리할 수 있어야 하므로 예외로 둡니다.
+      if (position === "교사" && !path.startsWith("/weekly-report") && !path.startsWith("/account")) {
         const url = request.nextUrl.clone();
         url.pathname = "/weekly-report";
         return NextResponse.redirect(url);

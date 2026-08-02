@@ -52,13 +52,17 @@ export default function IncidentsClient({
   initialItems,
   currentTerm,
   currentUserEmail,
+  currentUserName,
 }: {
   initialItems: Incident[];
   currentTerm: Term | null;
   currentUserEmail: string;
+  currentUserName: string;
 }) {
   const [items, setItems] = useRealtimeTable<Incident>("incidents", initialItems);
-  const [form, setForm] = useState<FormState>(emptyForm(currentUserEmail));
+  // 담당자 기본값은 로그인 이메일이 아니라 [내 계정 설정]에서 정한 표시 이름을 씁니다(이름이
+  // 아직 없으면 이메일로 대체). 물론 자유 텍스트라 필요하면 그대로 고쳐 쓸 수 있습니다.
+  const [form, setForm] = useState<FormState>(emptyForm(currentUserName || currentUserEmail));
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -132,7 +136,7 @@ export default function IncidentsClient({
 
   function startNew() {
     setEditingId(null);
-    setForm(emptyForm(currentUserEmail));
+    setForm(emptyForm(currentUserName || currentUserEmail));
     setLinkedStudentIds([]);
     setStudentQuery("");
     setError("");

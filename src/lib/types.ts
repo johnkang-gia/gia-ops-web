@@ -255,6 +255,8 @@ export type AppUser = {
   name: string | null;
   department: Department3 | null;
   position: StaffPosition | null;
+  avatar_url: string | null;
+  title: string | null;
 };
 
 export type TeamMember = {

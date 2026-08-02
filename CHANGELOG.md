@@ -4,6 +4,85 @@
 `version` 값과 항상 일치시킵니다. 업데이트할 때마다 이 파일 맨 위에 새 항목을 추가하고,
 같은 내용을 GitHub Desktop의 커밋 Summary/Description에도 그대로 사용하면 됩니다.
 
+## v0.35.0 - 2026-08-02
+
+내 계정 설정(프로필 사진/이름/표시 직함) + 사이드바 프로필 표시 + 담당자 자동 채움을 이름으로 전환:
+
+- **내 계정 설정 화면 신설(`/account`).** 사이드바 하단 프로필을 누르면 이동하는 새 화면으로,
+  프로필 사진, 이름, 표시 직함을 스스로 바꿀 수 있습니다. 사진은 공개 스토리지 버킷(`avatars`)에
+  올라가고 계정당 파일명이 고정돼(upsert) 바꿀 때마다 예전 파일이 쌓이지 않습니다.
+- **직위(권한)와 표시 직함을 분리했습니다.** `position`(교사/행정직원/관리자/개발자)은 layout.tsx의
+  메뉴 접근 권한 판단에 직접 쓰이는 값이라, 이걸 아무나 자유롭게 고치게 열어주면 스스로 관리자로
+  올리는 권한 상승 구멍이 됩니다. 그래서 "직책"을 셀프로 바꾸는 기능은 권한과 무관한 별도의
+  `title`(표시 직함) 컬럼으로 만들었습니다 - 아무 것도 입력하지 않으면 실제 직위가 그대로 뱃지에
+  보이고(개발자 계정은 아무 것도 안 해도 "(개발자)" 표시), 원하면 자유 문구로 바꿀 수 있습니다.
+  실제 메뉴 접근 권한을 바꾸는 직위는 여전히 관리자만 [학교관리 &gt; 사용자 관리]에서 바꿀 수
+  있습니다. 이 화면에서 온보딩 이후에도 이름/사진/표시 직함을 스스로 고칠 수 있도록 관련 DB
+  정책(RLS)도 넓혔고, 비관리자가 `position`/`email`/`status`/`decided_at`/`decided_by`를 함께
+  바꾸려는 시도는 트리거가 항상 원래 값으로 되돌립니다(권한 상승 방지).
+- **사이드바 프로필 블록 개편.** 로고 아래 학기 배지 밑에 있던 한 줄짜리 이메일 표시를,
+  프로필 사진 + "이름(표시 직함)" + 그 아래 작은 글씨로 로그인 이메일을 보여주는 카드로
+  바꿨습니다. 예: "강경원 (개발자)" 위, "one2k87@gmail.com" 아래. 클릭하면 내 계정 설정으로
+  이동합니다. 교사 계정도 이 프로필 카드는 볼 수 있고(교사는 다른 메뉴가 다 가려져 있지만
+  자기 계정 설정은 예외로 열어뒀습니다), 사이드바가 없는 모바일 상단 헤더는 이번에는 손대지
+  않았습니다.
+- **사건기록 담당자 자동 채움을 이메일 대신 이름으로.** 새 사건을 작성할 때 담당자 칸에
+  자동으로 채워지던 로그인 이메일을, 내 계정 설정에서 정한 이름(없으면 이메일)으로 바꿨습니다.
+  물론 자유 텍스트라 필요하면 그대로 고쳐 쓸 수 있습니다.
+- **DB 변경 있음.** 아래 SQL을 Supabase SQL Editor에 붙여넣고 실행해주세요(재실행해도 안전합니다 -
+  이미 적용됐다면 대부분 건너뜁니다).
+
+```sql
+alter table app_users add column if not exists avatar_url text;
+alter table app_users add column if not exists title text;
+
+drop policy if exists "app_users_update_self_onboarding" on app_users;
+drop policy if exists "app_users_update_self" on app_users;
+create policy "app_users_update_self" on app_users
+  for update
+  using (email = lower(auth.jwt() ->> 'email'))
+  with check (email = lower(auth.jwt() ->> 'email'));
+
+create or replace function protect_app_users_self_update()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if is_app_admin() then
+    return new;
+  end if;
+  new.email := old.email;
+  new.status := old.status;
+  new.decided_at := old.decided_at;
+  new.decided_by := old.decided_by;
+  new.position := old.position;
+  return new;
+end;
+$$;
+
+insert into storage.buckets (id, name, public)
+values ('avatars', 'avatars', true)
+on conflict (id) do nothing;
+
+drop policy if exists "public_read_avatars" on storage.objects;
+create policy "public_read_avatars" on storage.objects
+  for select using (bucket_id = 'avatars');
+
+drop policy if exists "giamicro_write_avatars" on storage.objects;
+create policy "giamicro_write_avatars" on storage.objects
+  for insert with check (bucket_id = 'avatars' and is_giamicro_user());
+
+drop policy if exists "giamicro_update_avatars" on storage.objects;
+create policy "giamicro_update_avatars" on storage.objects
+  for update using (bucket_id = 'avatars' and is_giamicro_user());
+
+drop policy if exists "giamicro_delete_avatars" on storage.objects;
+create policy "giamicro_delete_avatars" on storage.objects
+  for delete using (bucket_id = 'avatars' and is_giamicro_user());
+```
+
 ## v0.34.0 - 2026-08-02
 
 "위클리 리포트" 한글 개칭 + 학교관리 메뉴 통합 + 반별 작성 현황 위젯 + 통합 검색:

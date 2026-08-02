@@ -1422,3 +1422,68 @@ set class_id = coalesce(
 where r.class_id is null
   and r.grade is null
   and exists (select 1 from wr_students ws where ws.id = r.student_id);
+
+-- ===== 38. 내 계정 설정(프로필 사진/이름/표시 직함) + 자기수정 범위 확대 =====
+-- position(교사/행정직원/관리자/개발자)은 layout.tsx의 isAdmin/isTeacher/isStaffOrAbove 권한
+-- 판단에 직접 쓰이는 값이라, 이 컬럼을 아무나 자유롭게 고칠 수 있게 열어주면 스스로 관리자로
+-- 승격하는 권한 상승 구멍이 됩니다. 그래서 "직책"을 셀프로 수정하는 기능은, 권한과 무관한
+-- 별도의 표시용 title(표시 직함) 컬럼으로 분리했습니다 - 아무 값도 입력하지 않으면 실제
+-- position이 그대로 뱃지로 보이고(예: 개발자 계정은 아무것도 안 해도 "(개발자)"가 뜸), 원하면
+-- 자유 문구로 바꿀 수 있습니다. 실제 메뉴 접근 권한을 바꾸는 position은 여전히 관리자만
+-- [사용자 관리] 화면에서 바꿀 수 있습니다.
+alter table app_users add column if not exists avatar_url text;
+alter table app_users add column if not exists title text;
+
+-- 온보딩 때만(name is null) 스스로 고칠 수 있던 기존 정책을 "언제든 본인 행을 수정 가능"으로
+-- 넓힙니다 - 이제 내 계정 설정 화면에서 이름/사진/표시 직함을 온보딩 이후에도 바꿀 수 있어야
+-- 하기 때문입니다. email/status/decided_at/decided_by/position은 아래 트리거가 비관리자에겐
+-- 항상 원래 값으로 되돌리므로, 이 정책이 넓어져도 그 컬럼들은 여전히 스스로 바꿀 수 없습니다.
+drop policy if exists "app_users_update_self_onboarding" on app_users;
+drop policy if exists "app_users_update_self" on app_users;
+create policy "app_users_update_self" on app_users
+  for update
+  using (email = lower(auth.jwt() ->> 'email'))
+  with check (email = lower(auth.jwt() ->> 'email'));
+
+-- position도 email/status/decided_at/decided_by와 함께 비관리자는 절대 스스로 바꿀 수 없도록
+-- 트리거를 확장합니다(권한 상승 방지). 관리자(is_app_admin())의 수정은 그대로 통과됩니다.
+create or replace function protect_app_users_self_update()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if is_app_admin() then
+    return new;
+  end if;
+  new.email := old.email;
+  new.status := old.status;
+  new.decided_at := old.decided_at;
+  new.decided_by := old.decided_by;
+  new.position := old.position;
+  return new;
+end;
+$$;
+
+-- 프로필 사진 - 공개 버킷으로 만들어(공개 URL 그대로 사용) 사이드바를 렌더링할 때마다
+-- signed URL을 새로 발급받는 비용을 피합니다(민감 정보가 아니므로 공개해도 괜찮은 사진).
+insert into storage.buckets (id, name, public)
+values ('avatars', 'avatars', true)
+on conflict (id) do nothing;
+
+drop policy if exists "public_read_avatars" on storage.objects;
+create policy "public_read_avatars" on storage.objects
+  for select using (bucket_id = 'avatars');
+
+drop policy if exists "giamicro_write_avatars" on storage.objects;
+create policy "giamicro_write_avatars" on storage.objects
+  for insert with check (bucket_id = 'avatars' and is_giamicro_user());
+
+drop policy if exists "giamicro_update_avatars" on storage.objects;
+create policy "giamicro_update_avatars" on storage.objects
+  for update using (bucket_id = 'avatars' and is_giamicro_user());
+
+drop policy if exists "giamicro_delete_avatars" on storage.objects;
+create policy "giamicro_delete_avatars" on storage.objects
+  for delete using (bucket_id = 'avatars' and is_giamicro_user());

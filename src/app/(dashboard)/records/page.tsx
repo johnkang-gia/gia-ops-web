@@ -19,6 +19,7 @@ export default async function RecordsPage() {
       initialItems={(data as Incident[]) ?? []}
       currentTerm={currentTerm}
       currentUserEmail={me?.email ?? ""}
+      currentUserName={me?.name || me?.email || ""}
     />
   );
 }

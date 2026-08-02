@@ -94,6 +94,10 @@ export default async function DashboardLayout({
   const isTeacher = !isDeveloperEmail(me.email) && me.position === "교사";
   const isStaffOrAbove = isAdmin || me.position === "행정직원";
   const isDeveloper = isDeveloperEmail(me.email);
+  // 뱃지는 "표시 직함"(내 계정 설정에서 자유롭게 바꿀 수 있는 코스메틱 값)을 우선 쓰고, 아무 것도
+  // 설정하지 않았으면 실제 직위(position)로 대체합니다 - 개발자 계정은 아무 것도 안 해도 "개발자"
+  // 뱃지가 자동으로 뜹니다. 메뉴 접근 권한과는 무관한 표시 전용 값입니다.
+  const badgeLabel = me.title || me.position || (isDeveloper ? "개발자" : null);
 
   const termLabel = currentTerm ? `${currentTerm.year} ${currentTerm.term_type}` : null;
   const homeHref = isTeacher ? "/weekly-report" : "/home";
@@ -142,7 +146,28 @@ export default async function DashboardLayout({
             ) : (
               <div className="mt-2 text-[11px] text-slate-300">진행중인 학기 없음</div>
             ))}
-          <div className="mt-1 truncate text-xs text-slate-400">{displayName}</div>
+          <Link
+            href="/account"
+            className="mt-2 flex items-center gap-2 rounded-lg px-1 py-1 hover:bg-slate-50"
+          >
+            <div className="h-8 w-8 shrink-0 overflow-hidden rounded-full bg-slate-100">
+              {me.avatar_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={me.avatar_url} alt={displayName} className="h-full w-full object-cover" />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-xs font-bold text-slate-300">
+                  {displayName[0]?.toUpperCase()}
+                </div>
+              )}
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1 truncate text-xs font-semibold text-slate-700">
+                <span className="truncate">{displayName}</span>
+                {badgeLabel && <span className="shrink-0 text-slate-400">({badgeLabel})</span>}
+              </div>
+              <div className="truncate text-[11px] text-slate-400">{me.email}</div>
+            </div>
+          </Link>
         </div>
 
         {/* 달력+시계를 축소판으로 항상 띄워둡니다(메뉴 스크롤에 밀리지 않도록 nav 바깥, shrink-0). */}

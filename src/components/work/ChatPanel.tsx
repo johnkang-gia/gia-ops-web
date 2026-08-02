@@ -199,11 +199,16 @@ export default function ChatPanel({
     setSending(false);
   }
 
+  // 아래에 뜨면 바로 다음 메시지를 가려버려서, 메시지 오른쪽 옆에 작게 붙도록 위치를 잡습니다.
+  // 오른쪽에 공간이 부족하면(채팅창을 좁게 줄인 경우) 자동으로 왼쪽에 붙습니다.
+  const TASK_POPUP_WIDTH = 100;
   function openTaskPopup(e: React.MouseEvent, m: ChatMessage) {
     if (m.content.startsWith("✅ 업무로 등록됨")) return; // 등록 안내 메시지는 다시 등록할 필요 없음
     e.stopPropagation();
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    setTaskPopup({ message: m, top: rect.bottom + 4, left: Math.min(rect.left, window.innerWidth - 230) });
+    const spaceRight = window.innerWidth - rect.right;
+    const left = spaceRight >= TASK_POPUP_WIDTH + 8 ? rect.right + 6 : Math.max(4, rect.left - TASK_POPUP_WIDTH - 6);
+    setTaskPopup({ message: m, top: rect.top, left });
   }
 
   // 팝업에서 "업무로 등록"을 누르면 이 메시지 한 건만 AI에게 보내 제목/담당자/마감일/우선순위를
@@ -384,25 +389,27 @@ export default function ChatPanel({
         </form>
       </div>
 
-      {/* 메시지를 클릭하면 뜨는 작은 "업무로 등록" 팝업 - 사이드바 부메뉴/업무상황판과 같은
-          포탈 패턴이라 채팅창의 overflow-y-auto에 잘리지 않고 항상 위에 떠서 나옵니다. */}
+      {/* 메시지를 클릭하면 뜨는 작은 "업무등록" 팝업 - 채팅 말풍선(.glass, 13px) 바로 옆에
+          붙는 아주 작은 컨트롤이라, 다음 메시지를 가리지 않도록 아래가 아니라 옆으로 띄우고,
+          글씨도 더 작게(11px) 만들어서 말풍선과 한눈에 구별되도록 했습니다. 사이드바 부메뉴/
+          업무상황판과 같은 포탈 패턴이라 overflow-y-auto에 잘리지 않고 항상 위에 떠서 나옵니다. */}
       {taskPopup &&
         typeof document !== "undefined" &&
         createPortal(
           <>
             <div className="fixed inset-0 z-40" onClick={() => !analyzing && setTaskPopup(null)} />
             <div
-              style={{ position: "fixed", top: taskPopup.top, left: taskPopup.left }}
-              className="z-50 w-56 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl"
+              style={{ position: "fixed", top: taskPopup.top, left: taskPopup.left, width: TASK_POPUP_WIDTH }}
+              className="z-50 rounded-lg border border-slate-200 bg-white p-1 shadow-lg"
             >
               {analyzing ? (
-                <div className="px-2.5 py-2 text-[12px] text-slate-500">🤖 AI가 분석하는 중...</div>
+                <div className="px-1.5 py-1 text-center text-[10px] text-slate-400">분석 중…</div>
               ) : (
                 <button
                   onClick={() => registerAsTask(taskPopup.message)}
-                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] font-semibold text-blue-600 hover:bg-blue-50"
+                  className="flex w-full items-center justify-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-semibold text-blue-600 hover:bg-blue-50"
                 >
-                  📋 업무로 등록 (AI 분석)
+                  📋 업무등록
                 </button>
               )}
             </div>

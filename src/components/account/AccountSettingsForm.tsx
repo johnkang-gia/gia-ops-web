@@ -9,20 +9,17 @@ export default function AccountSettingsForm({
   userId,
   email,
   initialName,
-  initialTitle,
   initialAvatarUrl,
   positionLabel,
 }: {
   userId: string;
   email: string;
   initialName: string;
-  initialTitle: string;
   initialAvatarUrl: string | null;
   positionLabel: string | null;
 }) {
   const router = useRouter();
   const [name, setName] = useState(initialName);
-  const [title, setTitle] = useState(initialTitle);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(initialAvatarUrl);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -62,7 +59,6 @@ export default function AccountSettingsForm({
       .from("app_users")
       .update({
         name: name.trim(),
-        title: title.trim() || null,
         avatar_url: avatarUrl,
       })
       .eq("email", email);
@@ -116,17 +112,20 @@ export default function AccountSettingsForm({
       </div>
 
       <div>
-        <label className="mb-1 block text-xs font-semibold text-slate-500">표시 직함</label>
-        <input
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder={positionLabel ? `예: ${positionLabel}` : "예: 개발자"}
-          className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm"
-        />
+        <label className="mb-1 block text-xs font-semibold text-slate-500">직위</label>
+        <div className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2.5">
+          {positionLabel ? (
+            <span className="rounded bg-gia-navy px-2 py-0.5 text-xs font-bold text-white">
+              {positionLabel}
+            </span>
+          ) : (
+            <span className="text-sm text-slate-400">미지정</span>
+          )}
+        </div>
         <p className="mt-1 text-[11px] text-slate-400">
-          사이드바 이름 옆 뱃지에 표시됩니다. 비워두면 실제 직위({positionLabel ?? "미지정"})가 그대로
-          보입니다. 메뉴 접근 권한과는 무관한 표시용 값이라, 실제 직위(권한)는 관리자만 [학교관리 &gt;
-          사용자 관리]에서 바꿀 수 있습니다.
+          사이드바 이름 옆 뱃지에 그대로 표시되는, 우리 시스템의 실제 권한 값입니다(교사/행정직원/
+          관리자/개발자에 따라 볼 수 있는 메뉴가 달라짐). 여기서 직접 바꿀 수는 없고, 관리자만
+          [학교관리 &gt; 사용자 관리]에서 승인 시점 또는 그 이후에 변경할 수 있습니다.
         </p>
       </div>
 

@@ -94,10 +94,9 @@ export default async function DashboardLayout({
   const isTeacher = !isDeveloperEmail(me.email) && me.position === "교사";
   const isStaffOrAbove = isAdmin || me.position === "행정직원";
   const isDeveloper = isDeveloperEmail(me.email);
-  // 뱃지는 "표시 직함"(내 계정 설정에서 자유롭게 바꿀 수 있는 코스메틱 값)을 우선 쓰고, 아무 것도
-  // 설정하지 않았으면 실제 직위(position)로 대체합니다 - 개발자 계정은 아무 것도 안 해도 "개발자"
-  // 뱃지가 자동으로 뜹니다. 메뉴 접근 권한과는 무관한 표시 전용 값입니다.
-  const badgeLabel = me.title || me.position || (isDeveloper ? "개발자" : null);
+  // 뱃지는 우리 권한 체계의 실제 값(position)을 그대로 보여줍니다 - 자유 입력이 아니라 관리자가
+  // [사용자 관리]에서 지정한 값입니다. 개발자 계정은 position과 무관하게 항상 "개발자"로 표시됩니다.
+  const badgeLabel = isDeveloper ? "개발자" : me.position;
 
   const termLabel = currentTerm ? `${currentTerm.year} ${currentTerm.term_type}` : null;
   const homeHref = isTeacher ? "/weekly-report" : "/home";

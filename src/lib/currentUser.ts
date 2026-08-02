@@ -7,7 +7,6 @@ export type CurrentAppUser = {
   name: string | null;
   position: string | null;
   avatar_url: string | null;
-  title: string | null;
 } | null;
 
 // 사이드바(layout.tsx)와 각 페이지가 매 요청(탭 전환)마다 "로그인 확인 + app_users에서
@@ -29,7 +28,7 @@ export const getCurrentAppUser = cache(async (): Promise<CurrentAppUser> => {
   const email = user.email.toLowerCase();
   const { data: appUser } = await supabase
     .from("app_users")
-    .select("name, position, avatar_url, title")
+    .select("name, position, avatar_url")
     .eq("email", email)
     .maybeSingle();
 
@@ -39,6 +38,5 @@ export const getCurrentAppUser = cache(async (): Promise<CurrentAppUser> => {
     name: appUser?.name ?? null,
     position: appUser?.position ?? null,
     avatar_url: appUser?.avatar_url ?? null,
-    title: appUser?.title ?? null,
   };
 });

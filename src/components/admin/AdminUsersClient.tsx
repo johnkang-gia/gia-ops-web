@@ -9,6 +9,7 @@ import Pagination from "@/components/Pagination";
 // 세 목록(대기/승인/거절)이 각자 계속 늘어질 수 있어, 게시판처럼 각각 독립적으로 페이지를
 // 나눠 보여줍니다.
 const PAGE_SIZE = 10;
+const POSITIONS = ["교사", "행정직원", "관리자"] as const;
 
 function formatDate(value: string | null) {
   if (!value) return "-";
@@ -63,6 +64,23 @@ export default function AdminUsersClient({ initialUsers }: { initialUsers: AppUs
     }
   }
 
+  // 직위(권한)는 이 화면에서 관리자가 언제든 바꿀 수 있습니다 - 온보딩 때 본인이 고른 값은
+  // 참고용일 뿐이고, 승인 전이든 후든 실제 권한은 여기서 관리자가 확정/정정합니다.
+  async function updatePosition(email: string, position: string) {
+    setBusyEmail(email);
+    setError(null);
+    const res = await fetch("/api/admin/users", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email, position }),
+    });
+    const data = await res.json();
+    setBusyEmail(null);
+    if (!res.ok) {
+      setError(data.error || "처리하지 못했습니다.");
+    }
+  }
+
   const pending = users.filter((u) => u.status === "pending");
   const approved = users.filter((u) => u.status === "approved");
   const rejected = users.filter((u) => u.status === "rejected");
@@ -102,10 +120,13 @@ export default function AdminUsersClient({ initialUsers }: { initialUsers: AppUs
       <div className="shrink-0">
         <h1 className="mb-1 text-lg font-bold">사용자 관리</h1>
         <p className="mb-6 text-sm text-slate-500">
-          giamicro.com 계정으로 로그인하면 자동으로 승인 대기 목록에 올라갑니다. 승인해야 해당
-          계정이 대시보드에 들어갈 수 있고, 퇴사 등으로 접근을 막아야 할 때는 승인된 계정을
-          &quot;차단&quot;하면 즉시 접근이 제한됩니다. 개발자 계정(johnkang@giamicro.com)은 상태와
-          무관하게 항상 접근할 수 있어 목록에서 변경할 수 없습니다.
+          giamicro.com 계정으로 로그인하면 자동으로 승인 대기 목록에 올라갑니다. 직위(교사/행정직원/
+          관리자)는 온보딩 때 본인이 고른 값과 무관하게 여기서 관리자가 최종적으로 지정·변경하며,
+          실제 메뉴 접근 권한은 이 직위를 기준으로만 결정됩니다(교사는 위클리 리포트만, 관리자는
+          전체). 직위를 지정해야 승인할 수 있고, 승인된 계정도 언제든 직위를 바꿀 수 있습니다.
+          퇴사 등으로 접근을 막아야 할 때는 승인된 계정을 &quot;차단&quot;하면 즉시 접근이
+          제한됩니다. 개발자 계정(johnkang@giamicro.com)은 상태·직위와 무관하게 항상 접근할 수
+          있어 목록에서 변경할 수 없습니다.
         </p>
 
         {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
@@ -145,10 +166,24 @@ export default function AdminUsersClient({ initialUsers }: { initialUsers: AppUs
                         {u.email} · 신청일 {formatDate(u.requested_at)}
                       </div>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={u.position ?? ""}
+                        onChange={(e) => updatePosition(u.email, e.target.value)}
+                        disabled={busyEmail === u.email}
+                        className="rounded-lg border border-amber-300 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 disabled:opacity-50"
+                      >
+                        <option value="">직위 미지정</option>
+                        {POSITIONS.map((p) => (
+                          <option key={p} value={p}>
+                            {p}
+                          </option>
+                        ))}
+                      </select>
                       <button
                         onClick={() => updateStatus(u.email, "approved")}
-                        disabled={busyEmail === u.email}
+                        disabled={busyEmail === u.email || !u.position}
+                        title={!u.position ? "승인하려면 먼저 직위를 지정해주세요." : undefined}
                         className="rounded-lg bg-gia-navy px-3 py-1.5 text-xs font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50"
                       >
                         승인
@@ -184,9 +219,9 @@ export default function AdminUsersClient({ initialUsers }: { initialUsers: AppUs
                   <div>
                     <div className="text-sm font-semibold">
                       {u.name || u.email}
-                      {(developer || u.position) && (
+                      {developer && (
                         <span className="ml-2 rounded bg-gia-navy px-1.5 py-0.5 text-[10px] font-bold text-white">
-                          {developer ? "개발자" : u.position}
+                          개발자
                         </span>
                       )}
                       {u.department && <span className="ml-1.5 font-normal text-slate-500">{u.department}</span>}
@@ -196,13 +231,28 @@ export default function AdminUsersClient({ initialUsers }: { initialUsers: AppUs
                     </div>
                   </div>
                   {!developer && (
-                    <button
-                      onClick={() => updateStatus(u.email, "rejected")}
-                      disabled={busyEmail === u.email}
-                      className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
-                    >
-                      차단
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={u.position ?? ""}
+                        onChange={(e) => updatePosition(u.email, e.target.value)}
+                        disabled={busyEmail === u.email}
+                        className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 disabled:opacity-50"
+                      >
+                        <option value="">직위 미지정</option>
+                        {POSITIONS.map((p) => (
+                          <option key={p} value={p}>
+                            {p}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => updateStatus(u.email, "rejected")}
+                        disabled={busyEmail === u.email}
+                        className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
+                      >
+                        차단
+                      </button>
+                    </div>
                   )}
                 </div>
               );

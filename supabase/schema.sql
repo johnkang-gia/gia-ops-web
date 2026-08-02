@@ -1423,21 +1423,20 @@ where r.class_id is null
   and r.grade is null
   and exists (select 1 from wr_students ws where ws.id = r.student_id);
 
--- ===== 38. 내 계정 설정(프로필 사진/이름/표시 직함) + 자기수정 범위 확대 =====
+-- ===== 38. 내 계정 설정(프로필 사진/이름) + 직위(권한) 뱃지 관리자 편집 + 자기수정 범위 확대 =====
 -- position(교사/행정직원/관리자/개발자)은 layout.tsx의 isAdmin/isTeacher/isStaffOrAbove 권한
--- 판단에 직접 쓰이는 값이라, 이 컬럼을 아무나 자유롭게 고칠 수 있게 열어주면 스스로 관리자로
--- 승격하는 권한 상승 구멍이 됩니다. 그래서 "직책"을 셀프로 수정하는 기능은, 권한과 무관한
--- 별도의 표시용 title(표시 직함) 컬럼으로 분리했습니다 - 아무 값도 입력하지 않으면 실제
--- position이 그대로 뱃지로 보이고(예: 개발자 계정은 아무것도 안 해도 "(개발자)"가 뜸), 원하면
--- 자유 문구로 바꿀 수 있습니다. 실제 메뉴 접근 권한을 바꾸는 position은 여전히 관리자만
--- [사용자 관리] 화면에서 바꿀 수 있습니다.
+-- 판단에 직접 쓰이는 값이자, 사이드바 뱃지에 그대로 노출되는 "우리 권한 체계" 그 자체입니다.
+-- 그래서 본인이 자유 문구로 바꿀 수 있는 별도 필드를 두지 않고, position 값 자체를 읽기 전용
+-- 뱃지로 노출합니다 - 실제로 이 값을 바꿀 수 있는 사람은 관리자(이상)뿐이고, 승인 시점이든
+-- 그 이후든 [학교관리 > 사용자 관리] 화면에서 지정/변경합니다(온보딩 때 본인이 고른 값은
+-- 참고용 초기값일 뿐, 승인하려면 관리자가 직위를 확정해야 합니다).
 alter table app_users add column if not exists avatar_url text;
-alter table app_users add column if not exists title text;
 
 -- 온보딩 때만(name is null) 스스로 고칠 수 있던 기존 정책을 "언제든 본인 행을 수정 가능"으로
--- 넓힙니다 - 이제 내 계정 설정 화면에서 이름/사진/표시 직함을 온보딩 이후에도 바꿀 수 있어야
--- 하기 때문입니다. email/status/decided_at/decided_by/position은 아래 트리거가 비관리자에겐
--- 항상 원래 값으로 되돌리므로, 이 정책이 넓어져도 그 컬럼들은 여전히 스스로 바꿀 수 없습니다.
+-- 넓힙니다 - 이제 내 계정 설정 화면에서 이름/사진을 온보딩 이후에도 바꿀 수 있어야 하기
+-- 때문입니다. email/status/decided_at/decided_by/position은 아래 트리거가 비관리자에겐
+-- 항상 원래 값으로 되돌리므로, 이 정책이 넓어져도 그 컬럼들(특히 position)은 여전히 스스로
+-- 바꿀 수 없고 관리자만 바꿀 수 있습니다.
 drop policy if exists "app_users_update_self_onboarding" on app_users;
 drop policy if exists "app_users_update_self" on app_users;
 create policy "app_users_update_self" on app_users

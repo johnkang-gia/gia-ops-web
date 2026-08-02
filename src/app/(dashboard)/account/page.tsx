@@ -5,9 +5,10 @@ import AccountSettingsForm from "@/components/account/AccountSettingsForm";
 
 export const dynamic = "force-dynamic";
 
-// 내 계정 설정 - 프로필 사진/이름/표시 직함을 스스로 바꿀 수 있는 화면입니다. 실제 메뉴 접근
-// 권한을 결정하는 position(교사/행정직원/관리자/개발자)은 여기서 다루지 않습니다 - 권한 상승을
-// 막기 위해 관리자만 [학교관리 > 사용자 관리]에서 바꿀 수 있게 그대로 남겨뒀습니다.
+// 내 계정 설정 - 프로필 사진/이름을 스스로 바꿀 수 있는 화면입니다. 직위(권한) 뱃지는 여기서
+// 자유롭게 정하는 값이 아니라 우리 시스템의 실제 권한 체계(교사/행정직원/관리자/개발자)를 그대로
+// 보여주는 읽기 전용 표시입니다 - 실제 값을 바꾸는 건 관리자만 [학교관리 > 사용자 관리]에서
+// 승인 시점 또는 그 이후에 할 수 있습니다(권한 상승 방지).
 export default async function AccountPage() {
   const me = await getCurrentAppUser();
   if (!me) redirect("/login");
@@ -18,14 +19,13 @@ export default async function AccountPage() {
     <div className="mx-auto max-w-lg">
       <h1 className="mb-1 text-lg font-bold">내 계정 설정</h1>
       <p className="mb-6 text-xs text-slate-500">
-        여기서 바꾼 이름과 표시 직함은 사이드바 상단과, 앞으로 내가 작성하는 기록의 작성자 표시에
-        바로 반영됩니다.
+        여기서 바꾼 이름과 사진은 사이드바 상단과, 앞으로 내가 작성하는 기록의 작성자 표시에 바로
+        반영됩니다. 직위(권한) 뱃지는 관리자가 지정한 값을 그대로 보여줍니다.
       </p>
       <AccountSettingsForm
         userId={me.id}
         email={me.email}
         initialName={me.name ?? ""}
-        initialTitle={me.title ?? ""}
         initialAvatarUrl={me.avatar_url}
         positionLabel={positionLabel}
       />

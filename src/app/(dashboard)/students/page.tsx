@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getCurrentAppUser } from "@/lib/currentUser";
 import { isDeveloperEmail } from "@/lib/roles";
 import type { WrStudent } from "@/lib/types";
 import StudentSearchClient from "@/components/students/StudentSearchClient";
@@ -10,15 +11,11 @@ export const dynamic = "force-dynamic";
 // 여기서는 학교 전체 학생의 사건기록·업무언급까지 한 번에 볼 수 있어 접근을 좁혀둡니다.
 export default async function StudentsSearchPage() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
+  const me = await getCurrentAppUser();
+  if (!me) redirect("/login");
 
-  const email = (user.email ?? "").toLowerCase();
-  if (!isDeveloperEmail(email)) {
-    const { data: me } = await supabase.from("app_users").select("position").eq("email", email).maybeSingle();
-    if (me?.position !== "관리자" && me?.position !== "행정직원") redirect("/home");
+  if (!isDeveloperEmail(me.email) && me.position !== "관리자" && me.position !== "행정직원") {
+    redirect("/home");
   }
 
   const { data } = await supabase

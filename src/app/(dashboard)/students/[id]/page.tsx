@@ -1,6 +1,7 @@
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { getCurrentAppUser } from "@/lib/currentUser";
 import { isDeveloperEmail } from "@/lib/roles";
 import type { Incident, Task, TaskComment, ChatMessage, WrClass, WrEnrollment, WrReport, WrStudent } from "@/lib/types";
 
@@ -20,15 +21,11 @@ function fmtDate(d: string | null) {
 export default async function StudentProfilePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
+  const me = await getCurrentAppUser();
+  if (!me) redirect("/login");
 
-  const email = (user.email ?? "").toLowerCase();
-  if (!isDeveloperEmail(email)) {
-    const { data: me } = await supabase.from("app_users").select("position").eq("email", email).maybeSingle();
-    if (me?.position !== "관리자" && me?.position !== "행정직원") redirect("/home");
+  if (!isDeveloperEmail(me.email) && me.position !== "관리자" && me.position !== "행정직원") {
+    redirect("/home");
   }
 
   const { data: studentData } = await supabase.from("wr_students").select("*").eq("id", id).maybeSingle();

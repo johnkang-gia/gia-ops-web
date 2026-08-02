@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { getCurrentAppUser } from "@/lib/currentUser";
 import { isDeveloperEmail } from "@/lib/roles";
 import type { Inquiry } from "@/lib/types";
 import InquiriesClient from "@/components/inquiries/InquiriesClient";
@@ -7,10 +8,8 @@ export const dynamic = "force-dynamic";
 
 export default async function InquiriesPage() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  const isDeveloper = isDeveloperEmail(user?.email);
+  const me = await getCurrentAppUser();
+  const isDeveloper = isDeveloperEmail(me?.email);
 
   const { data } = await supabase
     .from("inquiries")
@@ -22,7 +21,7 @@ export default async function InquiriesPage() {
     <InquiriesClient
       initialItems={(data as Inquiry[]) ?? []}
       isDeveloper={isDeveloper}
-      currentUserEmail={user?.email ?? ""}
+      currentUserEmail={me?.email ?? ""}
     />
   );
 }

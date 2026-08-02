@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { getCurrentAppUser } from "@/lib/currentUser";
 import { getCurrentTerm } from "@/lib/currentTerm";
 import type { Incident, Meeting, EventRecord, Term, TaskStatus } from "@/lib/types";
 
@@ -8,10 +9,8 @@ export const dynamic = "force-dynamic";
 async function loadHomeData() {
   const supabase = await createClient();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  const userEmail = user?.email ?? "";
+  const me = await getCurrentAppUser();
+  const userEmail = me?.email ?? "";
 
   const ninetyDaysAgo = new Date();
   ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);

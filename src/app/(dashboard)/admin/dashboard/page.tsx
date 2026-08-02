@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { getCurrentAppUser } from "@/lib/currentUser";
 import { isDeveloperEmail } from "@/lib/roles";
 import type { AppUser, Department, Task, Term, WrReport, WrStudent } from "@/lib/types";
 import StatCard from "@/components/admin/StatCard";
@@ -45,19 +46,11 @@ function currentWeekRange() {
 
 export default async function AdminDashboardPage() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
+  const me = await getCurrentAppUser();
+  if (!me) redirect("/login");
 
-  const email = (user.email ?? "").toLowerCase();
-  const developer = isDeveloperEmail(email);
-  let myPosition: string | null = null;
-  if (!developer) {
-    const { data: me } = await supabase.from("app_users").select("position").eq("email", email).maybeSingle();
-    myPosition = me?.position ?? null;
-    if (myPosition !== "관리자") redirect("/home");
-  }
+  const developer = isDeveloperEmail(me.email);
+  if (!developer && me.position !== "관리자") redirect("/home");
 
   const months = lastMonths(6);
   const rangeStart = toDateStr(months[0].start);

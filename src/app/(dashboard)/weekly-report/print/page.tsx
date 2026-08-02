@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getCurrentAppUser } from "@/lib/currentUser";
 import type { WrStudent } from "@/lib/types";
 import PrintSelectorClient from "@/components/weeklyReport/PrintSelectorClient";
 
@@ -7,10 +8,8 @@ export const dynamic = "force-dynamic";
 
 export default async function PrintPage() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
+  const me = await getCurrentAppUser();
+  if (!me) redirect("/login");
 
   const { data } = await supabase
     .from("wr_students")

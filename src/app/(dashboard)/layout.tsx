@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentTerm } from "@/lib/currentTerm";
+import { getCurrentAppUser } from "@/lib/currentUser";
 import { isDeveloperEmail } from "@/lib/roles";
 import SignOutButton from "@/components/SignOutButton";
 import { SidebarNavLinks, MobileNavLinks, type NavCategory } from "@/components/NavLinks";
@@ -71,28 +72,21 @@ export default async function DashboardLayout({
   children: React.ReactNode;
 }) {
   const supabase = await createClient();
-  const [
-    {
-      data: { user },
-    },
-    currentTerm,
-  ] = await Promise.all([supabase.auth.getUser(), getCurrentTerm(supabase)]);
+  // getCurrentAppUser()는 React cache()로 감싸져 있어서, 이 아래에서 렌더링되는 각 페이지가
+  // 같은 정보를 또 조회하려 해도(예: 학생 조회/관리자 화면의 권한 체크) 같은 요청 안에서는
+  // 실제 DB 조회 없이 이 결과를 그대로 재사용합니다 - 탭을 옮길 때마다 두 번 묻던 것을 한 번으로.
+  const [me, currentTerm] = await Promise.all([getCurrentAppUser(), getCurrentTerm(supabase)]);
 
   // middleware.ts가 1차로 막지만, 서버 컴포넌트 단에서도 한 번 더 확인합니다(방어적 이중 확인).
-  if (!user) {
+  if (!me) {
     redirect("/login");
   }
 
-  const { data: appUser } = await supabase
-    .from("app_users")
-    .select("name, position")
-    .eq("email", (user.email ?? "").toLowerCase())
-    .maybeSingle();
-  const displayName = appUser?.name || user.email;
-  const isAdmin = isDeveloperEmail(user.email) || appUser?.position === "관리자";
-  const isTeacher = !isDeveloperEmail(user.email) && appUser?.position === "교사";
-  const isStaffOrAbove = isAdmin || appUser?.position === "행정직원";
-  const isDeveloper = isDeveloperEmail(user.email);
+  const displayName = me.name || me.email;
+  const isAdmin = isDeveloperEmail(me.email) || me.position === "관리자";
+  const isTeacher = !isDeveloperEmail(me.email) && me.position === "교사";
+  const isStaffOrAbove = isAdmin || me.position === "행정직원";
+  const isDeveloper = isDeveloperEmail(me.email);
 
   const termLabel = currentTerm ? `${currentTerm.year} ${currentTerm.term_type}` : null;
   const homeHref = isTeacher ? "/weekly-report" : "/home";

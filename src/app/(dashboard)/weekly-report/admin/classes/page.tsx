@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getCurrentAppUser } from "@/lib/currentUser";
 import { isDeveloperEmail } from "@/lib/roles";
 import type { TeamMember, WrClass } from "@/lib/types";
 import ClassManageClient from "@/components/weeklyReport/admin/ClassManageClient";
@@ -8,15 +9,9 @@ export const dynamic = "force-dynamic";
 
 export default async function ClassManagePage() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
-  const email = (user.email ?? "").toLowerCase();
-  if (!isDeveloperEmail(email)) {
-    const { data: me } = await supabase.from("app_users").select("position").eq("email", email).maybeSingle();
-    if (me?.position !== "관리자") redirect("/weekly-report");
-  }
+  const me = await getCurrentAppUser();
+  if (!me) redirect("/login");
+  if (!isDeveloperEmail(me.email) && me.position !== "관리자") redirect("/weekly-report");
 
   const [{ data: classesData }, { data: teamData }] = await Promise.all([
     supabase.from("wr_classes").select("*").order("grade", { ascending: true }).order("class_name", { ascending: true }),

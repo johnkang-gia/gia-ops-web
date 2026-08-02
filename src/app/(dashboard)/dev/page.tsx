@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { getCurrentAppUser } from "@/lib/currentUser";
 import { isDeveloperEmail } from "@/lib/roles";
 import type { ErrorLog, AiUsageLog } from "@/lib/types";
 
@@ -29,10 +30,8 @@ const THIRTY_DAYS_AGO = () => {
 
 export default async function DevDashboardPage() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!isDeveloperEmail(user?.email)) {
+  const me = await getCurrentAppUser();
+  if (!isDeveloperEmail(me?.email)) {
     redirect("/home");
   }
 

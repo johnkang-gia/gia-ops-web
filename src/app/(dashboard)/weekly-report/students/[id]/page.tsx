@@ -1,5 +1,6 @@
 import { redirect, notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getCurrentAppUser } from "@/lib/currentUser";
 import type { WrComment, WrReport, WrStudent } from "@/lib/types";
 import StudentProfileClient from "@/components/weeklyReport/StudentProfileClient";
 
@@ -8,10 +9,8 @@ export const dynamic = "force-dynamic";
 export default async function StudentProfilePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
+  const me = await getCurrentAppUser();
+  if (!me) redirect("/login");
 
   const [{ data: student }, { data: reports }, { data: comments }] = await Promise.all([
     supabase.from("wr_students").select("*").eq("id", id).maybeSingle(),
@@ -32,7 +31,7 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
         student={student as WrStudent}
         reports={(reports as WrReport[] | null) ?? []}
         initialComments={(comments as WrComment[] | null) ?? []}
-        userEmail={(user.email ?? "").toLowerCase()}
+        userEmail={me.email}
       />
     </div>
   );

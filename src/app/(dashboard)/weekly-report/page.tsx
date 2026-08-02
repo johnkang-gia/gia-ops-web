@@ -1,24 +1,20 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getCurrentAppUser } from "@/lib/currentUser";
 import { isDeveloperEmail } from "@/lib/roles";
 
 export const dynamic = "force-dynamic";
 
 export default async function WeeklyReportLandingPage() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
+  const me = await getCurrentAppUser();
+  if (!me) redirect("/login");
 
-  const email = (user.email ?? "").toLowerCase();
+  const email = me.email;
 
   if (isDeveloperEmail(email)) redirect("/weekly-report/students");
 
-  const { data: appUser } = await supabase.from("app_users").select("position").eq("email", email).maybeSingle();
-  const position = appUser?.position;
-
-  if (position === "관리자" || position === "행정직원") {
+  if (me.position === "관리자" || me.position === "행정직원") {
     redirect("/weekly-report/students");
   }
 

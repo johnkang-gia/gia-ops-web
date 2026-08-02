@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getCurrentAppUser } from "@/lib/currentUser";
 import { getCurrentTerm } from "@/lib/currentTerm";
 import type { WrClass, WrStudent } from "@/lib/types";
 import StudentReportBoard from "@/components/weeklyReport/StudentReportBoard";
@@ -8,11 +9,9 @@ export const dynamic = "force-dynamic";
 
 export default async function HomeroomPage() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
-  const email = (user.email ?? "").toLowerCase();
+  const me = await getCurrentAppUser();
+  if (!me) redirect("/login");
+  const email = me.email;
 
   const [{ data: classesData }, term] = await Promise.all([
     supabase.from("wr_classes").select("*").or(`teacher_email.eq.${email},sub_teacher_email.eq.${email}`),

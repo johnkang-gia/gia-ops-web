@@ -4,22 +4,7 @@ import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { Task, TeamMember } from "@/lib/types";
 import { nameFor } from "@/lib/teamName";
-
-// 마감일을 참조 소스코드처럼 "오늘 마감" / "이번주 금요일" 같은 짧은 문구로 바꿔줍니다.
-// 실제 데이터는 정확한 타임스탬프(due_at)를 그대로 쓰고, 화면에만 사람이 읽기 편한 라벨을 씁니다.
-function deadlineLabel(dueAt: string | null): string | null {
-  if (!dueAt) return null;
-  const due = new Date(dueAt);
-  const now = new Date();
-  const dueDay = new Date(due.getFullYear(), due.getMonth(), due.getDate());
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const diffDays = Math.round((dueDay.getTime() - today.getTime()) / 86400000);
-  if (diffDays < 0) return `${-diffDays}일 지남`;
-  if (diffDays === 0) return "오늘 마감";
-  if (diffDays === 1) return "내일 마감";
-  if (diffDays <= 7) return `${diffDays}일 후 마감`;
-  return due.toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" }) + " 마감";
-}
+import { deadlineLabel } from "@/lib/deadlineLabel";
 
 export default function TaskCard({
   task,

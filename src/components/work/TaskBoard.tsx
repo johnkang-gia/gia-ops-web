@@ -129,7 +129,10 @@ export default function TaskBoard({
 
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
         <div className="flex-1 overflow-y-auto p-3">
-          <div className="flex flex-col gap-3">
+          {/* 우측 컬럼 폭이 넓어져서(내 업무목록 위젯 아래) 상태 컬럼을 나란히 배치할 여유가
+              생겼습니다 - 좁을 땐 1열로 쌓이고, 넓어지면 최대 4열(진행대기/진행중/보류이슈/완료)
+              나란히 놓여 진짜 칸반보드처럼 드래그앤드롭할 수 있습니다. */}
+          <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {STATUS_ORDER.map((status) => (
               <DroppableColumn
                 key={status}

@@ -1,83 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { Task } from "@/lib/types";
 
-// 명도 대비를 계산해 배지 글자색을 흑/백으로 자동 결정합니다(참조 소스코드의 getContrastColor
-// 그대로 - YIQ 공식으로 밝은 배경엔 검정 글씨, 어두운 배경엔 흰 글씨).
-function getContrastColor(hex: string) {
-  if (!hex || !hex.startsWith("#")) return "#ffffff";
-  const clean = hex.replace("#", "");
-  const r = parseInt(clean.substring(0, 2), 16) || 0;
-  const g = parseInt(clean.substring(2, 4), 16) || 0;
-  const b = parseInt(clean.substring(4, 6), 16) || 0;
-  const yiq = (r * 299 + g * 587 + b * 114) / 1000;
-  return yiq >= 128 ? "#000000" : "#ffffff";
-}
+// 업무 상황판을 "많이 차지하지 않게" 압축했습니다 - 이전처럼 카드를 잔뜩 늘어놓는 대신, 상태별
+// 숫자 배지 한 줄만 보여주고 클릭하면 그 상태의 업무 목록이 포탈 팝업으로 뜹니다(사이드바
+// 부메뉴와 동일한 패턴 - document.body에 그려서 어떤 부모 영역에도 잘리지 않습니다).
+type GroupKey = "all" | "완료" | "active" | "보류";
 
-function TaskBadgeSection({
-  title,
-  icon,
-  color,
-  tasks,
-  deptColorMap,
-  onBadgeClick,
-}: {
-  title: string;
-  icon: string;
-  color: string;
-  tasks: Task[];
-  deptColorMap: Map<string, string>;
-  onBadgeClick: (task: Task) => void;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const MAX_VISIBLE = 6;
-  const hasMore = tasks.length > MAX_VISIBLE;
-  const visible = expanded ? tasks : tasks.slice(0, MAX_VISIBLE);
-
-  return (
-    <div className="glass flex flex-col p-3">
-      <div className="flex items-center justify-between text-[13px] font-bold" style={{ color }}>
-        <span className="flex items-center gap-1.5">
-          {icon} {title}
-        </span>
-        <span className="rounded-full bg-black/5 px-1.5 py-0.5 text-[11px]">{tasks.length}</span>
-      </div>
-
-      {tasks.length === 0 ? (
-        <div className="mt-3 text-xs opacity-50">업무 없음</div>
-      ) : (
-        <div className="mt-3 flex flex-col gap-1.5">
-          <div className="flex flex-wrap gap-1.5">
-            {visible.map((task) => {
-              const deptColor = task.department ? deptColorMap.get(task.department) : null;
-              const bg = deptColor || color;
-              return (
-                <button
-                  key={task.id}
-                  onClick={() => onBadgeClick(task)}
-                  title={task.title}
-                  style={{ backgroundColor: bg, color: getContrastColor(bg) }}
-                  className="max-w-full truncate rounded-md px-2 py-1 text-[11px] font-semibold shadow-sm transition hover:brightness-110"
-                >
-                  {task.title}
-                </button>
-              );
-            })}
-          </div>
-          {hasMore && (
-            <button
-              onClick={() => setExpanded((v) => !v)}
-              className="mt-0.5 self-center text-[11px] font-semibold text-slate-400 hover:text-slate-600"
-            >
-              {expanded ? "▲ 접기" : `▼ 더보기 (+${tasks.length - MAX_VISIBLE}건)`}
-            </button>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
+const GROUPS: { key: GroupKey; label: string; icon: string; color: string; filter: (t: Task) => boolean }[] = [
+  { key: "all", label: "전체", icon: "📋", color: "#334155", filter: () => true },
+  { key: "active", label: "진행 & 대기", icon: "🕐", color: "#3b82f6", filter: (t) => t.status === "예정" || t.status === "진행중" },
+  { key: "보류", label: "보류 & 이슈", icon: "⚠️", color: "#f59e0b", filter: (t) => t.status === "보류" },
+  { key: "완료", label: "완료", icon: "✅", color: "#10b981", filter: (t) => t.status === "완료" },
+];
 
 export default function DashboardArea({
   tasks,
@@ -90,50 +27,111 @@ export default function DashboardArea({
   deptColorMap: Map<string, string>;
   onSelectTask: (id: string) => void;
 }) {
-  const completed = tasks.filter((t) => t.status === "완료");
-  const active = tasks.filter((t) => t.status === "예정" || t.status === "진행중");
-  const onHold = tasks.filter((t) => t.status === "보류");
+  const [openKey, setOpenKey] = useState<GroupKey | null>(null);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
 
+  const completed = tasks.filter((t) => t.status === "완료");
   const progress = tasks.length ? Math.round((completed.length / tasks.length) * 100) : 0;
   const r = 13;
   const c = 2 * Math.PI * r;
   const offset = c - (progress / 100) * c;
 
+  function openPopup(key: GroupKey, el: HTMLElement) {
+    const rect = el.getBoundingClientRect();
+    setPos({ top: rect.bottom + 6, left: Math.min(rect.left, window.innerWidth - 300) });
+    setOpenKey(key);
+  }
+
+  const activeGroup = GROUPS.find((g) => g.key === openKey);
+  const popupTasks = activeGroup ? tasks.filter(activeGroup.filter) : [];
+
   return (
-    <div className="flex h-full flex-col overflow-hidden p-3">
-      <div className="mb-3 flex items-center gap-2.5 border-b border-black/5 pb-2.5">
-        <div className="flex flex-col items-center">
-          <svg width="34" height="34" viewBox="0 0 34 34" className="-rotate-90">
-            <circle cx="17" cy="17" r={r} fill="none" stroke="rgba(0,0,0,0.08)" strokeWidth="3" />
-            <circle
-              cx="17"
-              cy="17"
-              r={r}
-              fill="none"
-              stroke="var(--wf-primary, #3b82f6)"
-              strokeWidth="3"
-              strokeDasharray={c}
-              strokeDashoffset={offset}
-              strokeLinecap="round"
-              className="transition-[stroke-dashoffset] duration-700"
-            />
-          </svg>
-          <div className="text-[10px] font-bold text-blue-600">
-            {completed.length}/{tasks.length}
-          </div>
-        </div>
-        <div>
-          <h3 className="text-sm font-bold">📊 [{activeDepartmentName}] 업무 상황판</h3>
-          <div className="text-[11px] opacity-60">{activeDepartmentName} 부서로 들어온 모든 업무를 한눈에 모아봅니다.</div>
+    <div className="glass flex h-full items-center gap-3 overflow-x-auto p-3">
+      <div className="flex shrink-0 flex-col items-center">
+        <svg width="32" height="32" viewBox="0 0 34 34" className="-rotate-90">
+          <circle cx="17" cy="17" r={r} fill="none" stroke="rgba(0,0,0,0.08)" strokeWidth="3" />
+          <circle
+            cx="17"
+            cy="17"
+            r={r}
+            fill="none"
+            stroke="var(--wf-primary, #3b82f6)"
+            strokeWidth="3"
+            strokeDasharray={c}
+            strokeDashoffset={offset}
+            strokeLinecap="round"
+            className="transition-[stroke-dashoffset] duration-700"
+          />
+        </svg>
+        <div className="text-[9px] font-bold text-blue-600">
+          {completed.length}/{tasks.length}
         </div>
       </div>
 
-      <div className="grid flex-1 grid-cols-1 gap-3 overflow-y-auto pr-1 sm:grid-cols-2">
-        <TaskBadgeSection title="전체 업무" icon="📋" color="#334155" tasks={tasks} deptColorMap={deptColorMap} onBadgeClick={(t) => onSelectTask(t.id)} />
-        <TaskBadgeSection title="완료" icon="✅" color="#10b981" tasks={completed} deptColorMap={deptColorMap} onBadgeClick={(t) => onSelectTask(t.id)} />
-        <TaskBadgeSection title="진행 & 대기" icon="🕐" color="#3b82f6" tasks={active} deptColorMap={deptColorMap} onBadgeClick={(t) => onSelectTask(t.id)} />
-        <TaskBadgeSection title="보류 & 이슈" icon="⚠️" color="#f59e0b" tasks={onHold} deptColorMap={deptColorMap} onBadgeClick={(t) => onSelectTask(t.id)} />
+      <div className="min-w-0">
+        <div className="text-[11px] font-bold opacity-70">📊 [{activeDepartmentName}] 업무 상황판</div>
+        <div className="mt-1 flex flex-wrap items-center gap-1.5">
+          {GROUPS.map((g) => {
+            const count = tasks.filter(g.filter).length;
+            return (
+              <button
+                key={g.key}
+                onClick={(e) => openPopup(g.key, e.currentTarget)}
+                style={{ backgroundColor: g.color + "1a", color: g.color }}
+                className="flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-bold transition hover:brightness-95"
+              >
+                <span>{g.icon}</span>
+                <span>{g.label}</span>
+                <span className="rounded-full bg-white/70 px-1.5">{count}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
+
+      {activeGroup &&
+        pos &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setOpenKey(null)} />
+            <div
+              style={{ position: "fixed", top: pos.top, left: pos.left }}
+              className="z-50 max-h-80 w-72 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-xl"
+            >
+              <div className="mb-1.5 flex items-center justify-between px-1.5 pt-0.5 text-[12px] font-bold" style={{ color: activeGroup.color }}>
+                <span>
+                  {activeGroup.icon} {activeGroup.label}
+                </span>
+                <span>{popupTasks.length}건</span>
+              </div>
+              {popupTasks.length === 0 ? (
+                <div className="px-2 py-4 text-center text-xs opacity-50">업무 없음</div>
+              ) : (
+                <div className="flex flex-col gap-1">
+                  {popupTasks.map((task) => {
+                    const deptColor = task.department ? deptColorMap.get(task.department) : null;
+                    return (
+                      <button
+                        key={task.id}
+                        onClick={() => {
+                          onSelectTask(task.id);
+                          setOpenKey(null);
+                        }}
+                        style={{ borderLeftColor: deptColor || activeGroup.color }}
+                        className="truncate rounded-lg border-l-[3px] bg-black/[0.02] px-2 py-1.5 text-left text-[12px] hover:bg-black/5"
+                        title={task.title}
+                      >
+                        {task.title}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </>,
+          document.body
+        )}
     </div>
   );
 }

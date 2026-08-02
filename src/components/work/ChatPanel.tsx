@@ -2,15 +2,29 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 import { genCaseId } from "@/lib/caseId";
-import type { ChatMessage, Department, Task, TeamMember } from "@/lib/types";
+import type { ChatMessage, Department, MessageReaction, Task, TeamMember } from "@/lib/types";
 import { nameFor, extractMentionedEmails } from "@/lib/teamName";
 import { parseTaskFromMessage } from "@/lib/parseTaskFromMessage";
 import { deadlineLabel } from "@/lib/deadlineLabel";
 
+const REACTION_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
+const TYPING_EXPIRE_MS = 3000;
+const GROUP_WINDOW_MS = 5 * 60 * 1000;
+
 function timeStr(iso: string) {
   return new Date(iso).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
+}
+
+function oneLine(text: string, maxLen = 40) {
+  const t = text.replace(/\s+/g, " ").trim();
+  return t.length > maxLen ? t.slice(0, maxLen) + "…" : t;
+}
+
+function isSystemMsg(content: string) {
+  return content.startsWith("✅ 업무로 등록됨");
 }
 
 // 메시지에서 "#부서명" 태그를 찾아, 지금 보고 있는 부서를 제외한 실제 부서명과 매칭합니다.
@@ -19,28 +33,55 @@ function extractTaggedDepartments(text: string, departments: Department[], curre
   return departments.filter((d) => d.name !== current && tags.includes(d.name)).map((d) => d.name);
 }
 
-// @이름 / #부서명 토큰을 부서색으로 하이라이트해서 렌더링합니다(참조 소스코드의 renderMessageText).
+// @이름 / #부서명 토큰과 **굵게** / *기울임* / ~~취소선~~ / `코드` 마크다운을 함께 렌더링합니다.
+// 구글챗처럼 자주 쓰는 텍스트 서식을 별도 툴바 없이 문법만으로 바로 쓸 수 있게 했습니다.
 function renderMessageText(text: string, departments: Department[]) {
-  const parts = text.split(/(@\S+|#\S+)/);
-  return parts.map((part, i) => {
-    if (part.startsWith("@")) {
-      return (
+  const TOKEN_RE = /(\*\*[^*\n]+\*\*|~~[^~\n]+~~|`[^`\n]+`|@\S+|#\S+|\*[^*\n]+\*)/g;
+  const parts = text.split(TOKEN_RE);
+  const nodes: React.ReactNode[] = [];
+
+  parts.forEach((part, i) => {
+    if (!part) return;
+    if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
+      nodes.push(<strong key={i}>{part.slice(2, -2)}</strong>);
+    } else if (part.startsWith("~~") && part.endsWith("~~") && part.length > 4) {
+      nodes.push(
+        <del key={i} className="opacity-60">
+          {part.slice(2, -2)}
+        </del>
+      );
+    } else if (part.startsWith("`") && part.endsWith("`") && part.length > 2) {
+      nodes.push(
+        <code key={i} className="rounded bg-black/10 px-1 py-0.5 font-mono text-[12px]">
+          {part.slice(1, -1)}
+        </code>
+      );
+    } else if (part.startsWith("@")) {
+      nodes.push(
         <span key={i} className="rounded bg-blue-100 px-1 py-0.5 font-semibold text-blue-700">
           {part}
         </span>
       );
-    }
-    if (part.startsWith("#")) {
+    } else if (part.startsWith("#")) {
       const dept = departments.find((d) => d.name === part.slice(1));
       const color = dept?.color || "#f59e0b";
-      return (
+      nodes.push(
         <span key={i} style={{ backgroundColor: color + "22", color }} className="rounded px-1 py-0.5 font-semibold">
           {part}
         </span>
       );
+    } else if (part.startsWith("*") && part.endsWith("*") && part.length > 2) {
+      nodes.push(<em key={i}>{part.slice(1, -1)}</em>);
+    } else {
+      // 일반 텍스트 - 줄바꿈(\n)을 <br/>로 바꿔가며 그대로 출력합니다.
+      part.split("\n").forEach((line, li) => {
+        if (li > 0) nodes.push(<br key={`${i}-br-${li}`} />);
+        if (line) nodes.push(<span key={`${i}-${li}`}>{line}</span>);
+      });
     }
-    return part;
   });
+
+  return nodes;
 }
 
 export default function ChatPanel({
@@ -59,19 +100,34 @@ export default function ChatPanel({
   onTaskCreated?: (task: Task) => void;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [reactions, setReactions] = useState<MessageReaction[]>([]);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const channelRef = useRef<RealtimeChannel | null>(null);
 
   const [showMentionMenu, setShowMentionMenu] = useState(false);
   const [showHashMenu, setShowHashMenu] = useState(false);
   const [mentionFilter, setMentionFilter] = useState("");
   const [hashFilter, setHashFilter] = useState("");
 
+  // 답장(인용) 대상 - 메시지 옆 ↩️를 누르면 여기 담기고, 입력창 위에 미리보기로 뜹니다.
+  const [replyTarget, setReplyTarget] = useState<ChatMessage | null>(null);
+  // 수정 중인 메시지 id/내용 - 말풍선이 그 자리에서 바로 입력창으로 바뀝니다.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editText, setEditText] = useState("");
+  // 이모지 반응 고르는 작은 팝업 위치.
+  const [reactionPopup, setReactionPopup] = useState<{ messageId: string; top: number; left: number } | null>(null);
+  // 지금 입력 중인 다른 사람들(이메일 -> 이름/마지막 타이핑 시각). 3초 넘게 조용하면 자동으로 사라집니다.
+  const [typingUsers, setTypingUsers] = useState<Record<string, { name: string; ts: number }>>({});
+  const typingTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const lastTypingSentRef = useRef(0);
+
   // 메시지를 클릭하면 뜨는 "업무로 등록" 작은 팝업 상태입니다.
   const [taskPopup, setTaskPopup] = useState<{ message: ChatMessage; top: number; left: number } | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
+  const [registerError, setRegisterError] = useState<string | null>(null);
 
   // 실시간 연결 상태를 화면에 보여줍니다("실시간 채팅이 제대로 돌아가는지" 눈으로 확인할 수 있게).
   // 웹소켓이 끊겼다가 다시 붙는 경우(와이파이 전환, 노트북 잠깐 절전 등) Supabase Realtime은
@@ -83,16 +139,29 @@ export default function ChatPanel({
     const supabase = createClient();
     let cancelled = false;
 
-    function loadRecentMessages() {
-      supabase
+    async function loadRecentMessages() {
+      const { data } = await supabase
         .from("messages")
         .select("*")
         .eq("department", department)
         .order("created_at", { ascending: true })
-        .limit(100)
-        .then(({ data }) => {
-          if (!cancelled) setMessages((data as ChatMessage[] | null) ?? []);
-        });
+        .limit(100);
+      if (cancelled) return;
+      const msgs = (data as ChatMessage[] | null) ?? [];
+      setMessages(msgs);
+
+      if (msgs.length === 0) {
+        setReactions([]);
+        return;
+      }
+      const { data: reactionData } = await supabase
+        .from("message_reactions")
+        .select("*")
+        .in(
+          "message_id",
+          msgs.map((m) => m.id)
+        );
+      if (!cancelled) setReactions((reactionData as MessageReaction[] | null) ?? []);
     }
 
     loadRecentMessages();
@@ -110,6 +179,61 @@ export default function ChatPanel({
           });
         }
       )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "messages", filter: `department=eq.${department}` },
+        (payload) => {
+          const next = payload.new as ChatMessage;
+          setMessages((prev) => prev.map((m) => (m.id === next.id ? next : m)));
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "messages", filter: `department=eq.${department}` },
+        (payload) => {
+          const removed = payload.old as { id: string };
+          setMessages((prev) => prev.filter((m) => m.id !== removed.id));
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "message_reactions", filter: `department=eq.${department}` },
+        (payload) => {
+          const next = payload.new as MessageReaction;
+          setReactions((prev) => {
+            if (
+              prev.some(
+                (r) =>
+                  r.id === next.id ||
+                  (r.message_id === next.message_id && r.emoji === next.emoji && r.author_email === next.author_email)
+              )
+            )
+              return prev;
+            return [...prev, next];
+          });
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "message_reactions", filter: `department=eq.${department}` },
+        (payload) => {
+          const removed = payload.old as { id: string };
+          setReactions((prev) => prev.filter((r) => r.id !== removed.id));
+        }
+      )
+      .on("broadcast", { event: "typing" }, (msg) => {
+        const p = msg.payload as { email: string; name: string };
+        if (!p?.email || p.email === userEmail) return;
+        setTypingUsers((prev) => ({ ...prev, [p.email]: { name: p.name, ts: Date.now() } }));
+        clearTimeout(typingTimersRef.current[p.email]);
+        typingTimersRef.current[p.email] = setTimeout(() => {
+          setTypingUsers((prev) => {
+            const next = { ...prev };
+            delete next[p.email];
+            return next;
+          });
+        }, TYPING_EXPIRE_MS);
+      })
       .subscribe((status) => {
         if (cancelled) return;
         if (status === "SUBSCRIBED") {
@@ -124,22 +248,48 @@ export default function ChatPanel({
         }
       });
 
+    channelRef.current = channel;
+
     return () => {
       cancelled = true;
+      channelRef.current = null;
+      for (const t of Object.values(typingTimersRef.current)) clearTimeout(t);
+      typingTimersRef.current = {};
+      setTypingUsers({});
       supabase.removeChannel(channel);
     };
-  }, [department]);
+  }, [department, userEmail]);
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
   }, [messages]);
 
+  // 입력창 높이를 내용에 맞춰 자동으로 늘립니다(최대 5줄 정도까지, 그 이상은 스크롤).
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 120) + "px";
+  }, [text]);
+
   const filteredUsers = team.filter((m) => m.name && m.name.includes(mentionFilter)).slice(0, 8);
   const filteredDepartments = departments.filter((d) => d.name !== department && d.name.includes(hashFilter));
 
-  function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
+  function broadcastTyping() {
+    const now = Date.now();
+    if (now - lastTypingSentRef.current < 1500) return; // 너무 자주 보내지 않도록 살짝 쓰로틀
+    lastTypingSentRef.current = now;
+    channelRef.current?.send({
+      type: "broadcast",
+      event: "typing",
+      payload: { email: userEmail, name: nameFor(team, userEmail) },
+    });
+  }
+
+  function handleInputChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
     const val = e.target.value;
     setText(val);
+    if (val.trim()) broadcastTyping();
     const cursor = e.target.selectionStart || 0;
     const before = val.slice(0, cursor);
 
@@ -161,20 +311,34 @@ export default function ChatPanel({
     }
   }
 
+  // Enter로 전송, Shift+Enter로 줄바꿈 - 구글챗/슬랙과 동일한 입력 방식입니다. 멘션/부서 메뉴가
+  // 떠 있을 때 Enter를 누르면 메뉴 선택으로 우선 쓰는 게 자연스럽지만, 메뉴 항목은 클릭으로도
+  // 고를 수 있어 여기서는 항상 전송으로 통일했습니다(에디터마다 동작이 다르면 오히려 헷갈립니다).
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      doSend();
+    }
+  }
+
   function selectToken(value: string, isHash: boolean) {
-    if (!inputRef.current) return;
-    const cursor = inputRef.current.selectionStart || 0;
+    if (!textareaRef.current) return;
+    const cursor = textareaRef.current.selectionStart || 0;
     const before = text.slice(0, cursor);
     const after = text.slice(cursor);
     const newBefore = isHash ? before.replace(/#\S*$/, `#${value} `) : before.replace(/@\S*$/, `@${value} `);
     setText(newBefore + after);
     setShowMentionMenu(false);
     setShowHashMenu(false);
-    inputRef.current.focus();
+    textareaRef.current.focus();
   }
 
   async function sendMessage(e: React.FormEvent) {
     e.preventDefault();
+    await doSend();
+  }
+
+  async function doSend() {
     const content = text.trim();
     if (!content || sending) return;
     setSending(true);
@@ -182,8 +346,10 @@ export default function ChatPanel({
     setShowMentionMenu(false);
     setShowHashMenu(false);
     const supabase = createClient();
+    const replyToId = replyTarget?.id ?? null;
+    setReplyTarget(null);
 
-    await supabase.from("messages").insert({ department, author_email: userEmail, content });
+    await supabase.from("messages").insert({ department, author_email: userEmail, content, reply_to_id: replyToId });
 
     // 예전에는 "@사람" 태그가 있으면 메시지를 곧바로 업무로 자동 등록했는데, 채팅이 실시간으로
     // 활발해지면 태그만 걸린 잡담까지 전부 업무화될 수 있어서 바꿨습니다. 이제는 메시지를 직접
@@ -199,15 +365,96 @@ export default function ChatPanel({
     setSending(false);
   }
 
+  // 잘못 보낸 메시지는 보낸 사람 본인만 지울 수 있습니다(DB의 delete RLS 정책도 author_email이
+  // 본인일 때만 허용하도록 맞춰뒀습니다 - 여기 UI 조건은 그 위에 얹는 사용성용 가드입니다).
+  async function deleteMessage(m: ChatMessage) {
+    if (m.author_email !== userEmail) return;
+    if (!confirm("이 메시지를 삭제할까요? 되돌릴 수 없습니다.")) return;
+    const supabase = createClient();
+    setMessages((prev) => prev.filter((x) => x.id !== m.id));
+    const { error } = await supabase.from("messages").delete().eq("id", m.id);
+    if (error) {
+      console.error("메시지 삭제 실패:", error);
+      alert("메시지를 삭제하지 못했습니다: " + error.message);
+      setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev, m]));
+    }
+  }
+
+  function startEdit(m: ChatMessage) {
+    setEditingId(m.id);
+    setEditText(m.content);
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEditText("");
+  }
+
+  async function saveEdit(m: ChatMessage) {
+    const content = editText.trim();
+    if (!content) return;
+    const editedAt = new Date().toISOString();
+    const supabase = createClient();
+    const { error } = await supabase.from("messages").update({ content, edited_at: editedAt }).eq("id", m.id);
+    if (error) {
+      alert("수정하지 못했습니다: " + error.message);
+      return;
+    }
+    setMessages((prev) => prev.map((x) => (x.id === m.id ? { ...x, content, edited_at: editedAt } : x)));
+    setEditingId(null);
+    setEditText("");
+  }
+
+  // 이모지 반응 - 이미 남긴 반응을 다시 누르면 취소(토글)됩니다.
+  async function toggleReaction(messageId: string, emoji: string) {
+    setReactionPopup(null);
+    const supabase = createClient();
+    const existing = reactions.find((r) => r.message_id === messageId && r.emoji === emoji && r.author_email === userEmail);
+    if (existing) {
+      setReactions((prev) => prev.filter((r) => r.id !== existing.id));
+      const { error } = await supabase.from("message_reactions").delete().eq("id", existing.id);
+      if (error) setReactions((prev) => [...prev, existing]);
+      return;
+    }
+    const tempId = `temp-${Date.now()}`;
+    const optimistic: MessageReaction = {
+      id: tempId,
+      message_id: messageId,
+      department,
+      emoji,
+      author_email: userEmail,
+      created_at: new Date().toISOString(),
+    };
+    setReactions((prev) => [...prev, optimistic]);
+    const { data, error } = await supabase
+      .from("message_reactions")
+      .insert({ message_id: messageId, department, emoji, author_email: userEmail })
+      .select()
+      .single();
+    if (error) {
+      setReactions((prev) => prev.filter((r) => r.id !== tempId));
+    } else if (data) {
+      setReactions((prev) => prev.map((r) => (r.id === tempId ? (data as MessageReaction) : r)));
+    }
+  }
+
+  const REACTION_POPUP_WIDTH = 172;
+  function openReactionPopup(e: React.MouseEvent, messageId: string) {
+    e.stopPropagation();
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setReactionPopup({ messageId, top: rect.bottom + 4, left: Math.max(4, rect.left - REACTION_POPUP_WIDTH + 24) });
+  }
+
   // 아래에 뜨면 바로 다음 메시지를 가려버려서, 메시지 오른쪽 옆에 작게 붙도록 위치를 잡습니다.
   // 오른쪽에 공간이 부족하면(채팅창을 좁게 줄인 경우) 자동으로 왼쪽에 붙습니다.
   const TASK_POPUP_WIDTH = 100;
   function openTaskPopup(e: React.MouseEvent, m: ChatMessage) {
-    if (m.content.startsWith("✅ 업무로 등록됨")) return; // 등록 안내 메시지는 다시 등록할 필요 없음
+    if (isSystemMsg(m.content)) return; // 등록 안내 메시지는 다시 등록할 필요 없음
     e.stopPropagation();
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const spaceRight = window.innerWidth - rect.right;
     const left = spaceRight >= TASK_POPUP_WIDTH + 8 ? rect.right + 6 : Math.max(4, rect.left - TASK_POPUP_WIDTH - 6);
+    setRegisterError(null);
     setTaskPopup({ message: m, top: rect.top, left });
   }
 
@@ -216,6 +463,7 @@ export default function ChatPanel({
   // (parseTaskFromMessage)로 대체해서 등록 자체는 항상 되도록 했습니다.
   async function registerAsTask(m: ChatMessage) {
     setAnalyzing(true);
+    setRegisterError(null);
     const supabase = createClient();
     let title: string;
     let assigneeEmails: string[];
@@ -245,41 +493,54 @@ export default function ChatPanel({
       dueAt = parsed.dueAt;
     }
 
-    const { data: newTask } = await supabase
-      .from("tasks")
-      .insert({
-        case_id: genCaseId("TSK"),
-        title,
-        description: m.content,
-        status: "예정",
-        priority,
-        department,
-        owner_email: userEmail,
-        assignee_emails: assigneeEmails,
-        due_at: dueAt,
-        position: Date.now(),
-      })
-      .select()
-      .single();
+    // 이 아래(실제 DB 저장)에서 실패하면 예전에는 조용히 아무 일도 없었던 것처럼 팝업만 닫혀서
+    // "눌렀는데 등록이 안 된다"는 게 겉으로 전혀 드러나지 않았습니다. try/catch로 감싸고 error를
+    // 반드시 확인해서, 실패하면 팝업을 닫지 않고 이유를 보여주고 다시 시도할 수 있게 했습니다.
+    try {
+      const { data: newTask, error: taskError } = await supabase
+        .from("tasks")
+        .insert({
+          case_id: genCaseId("TSK"),
+          title,
+          description: m.content,
+          status: "예정",
+          priority,
+          department,
+          owner_email: userEmail,
+          assignee_emails: assigneeEmails,
+          due_at: dueAt,
+          position: Date.now(),
+        })
+        .select()
+        .single();
 
-    if (newTask) {
+      if (taskError || !newTask) {
+        throw new Error(taskError?.message || "업무를 저장하지 못했습니다.");
+      }
+
       onTaskCreated?.(newTask as Task);
       const assigneeLabel = assigneeEmails.length > 0 ? `${assigneeEmails.map((e) => nameFor(team, e)).join(", ")}님` : "담당자 미지정";
       const dl = deadlineLabel(dueAt);
       const deadlineSuffix = dl ? ` (${dl})` : "";
       const aiNote = aiFailed ? " ⚠️AI 분석 실패로 기본 규칙 사용" : " (AI 분석)";
-      await supabase.from("messages").insert({
+      const { error: msgError } = await supabase.from("messages").insert({
         department,
         author_email: userEmail,
         content: `✅ 업무로 등록됨${aiNote} → ${assigneeLabel}: "${newTask.title}"${deadlineSuffix}`,
       });
-    }
+      if (msgError) console.error("업무등록 안내 메시지 전송 실패:", msgError);
 
-    setAnalyzing(false);
-    setTaskPopup(null);
+      setTaskPopup(null);
+    } catch (err) {
+      console.error("업무등록 실패:", err);
+      setRegisterError(err instanceof Error ? err.message : "업무를 등록하지 못했습니다.");
+    } finally {
+      setAnalyzing(false);
+    }
   }
 
   const deptColor = departments.find((d) => d.name === department)?.color || "#3b82f6";
+  const typingNames = Object.values(typingUsers).map((t) => t.name);
 
   return (
     <div className="glass-panel flex h-full flex-col overflow-hidden">
@@ -302,33 +563,169 @@ export default function ChatPanel({
       <div ref={listRef} className="flex-1 overflow-y-auto p-3">
         {messages.length === 0 && <p className="text-xs opacity-40">아직 메시지가 없습니다. 첫 메시지를 남겨보세요.</p>}
         <div className="flex flex-col gap-3">
-          {messages.map((m) => {
+          {messages.map((m, idx) => {
             const linkedTask = tasks.find((t) => t.title === m.content.match(/"([^"]+)"/)?.[1]);
-            const isSystemConfirmation = m.content.startsWith("✅ 업무로 등록됨");
+            const isSystemConfirmation = isSystemMsg(m.content);
+            const isMine = m.author_email === userEmail;
+            const prevMsg = messages[idx - 1];
+            const grouped =
+              !!prevMsg &&
+              !m.reply_to_id &&
+              prevMsg.author_email === m.author_email &&
+              !isSystemMsg(prevMsg.content) &&
+              !isSystemConfirmation &&
+              new Date(m.created_at).getTime() - new Date(prevMsg.created_at).getTime() < GROUP_WINDOW_MS;
+            const quoted = m.reply_to_id ? messages.find((x) => x.id === m.reply_to_id) : null;
+            const msgReactions = reactions.filter((r) => r.message_id === m.id);
+            const reactionGroups = REACTION_EMOJIS.map((emoji) => ({
+              emoji,
+              emails: msgReactions.filter((r) => r.emoji === emoji).map((r) => r.author_email),
+            })).filter((g) => g.emails.length > 0);
+            const isEditing = editingId === m.id;
+
             return (
-              <div key={m.id} className="flex gap-2">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-100 text-sm">👤</div>
+              <div key={m.id} className={"group flex gap-2 " + (grouped ? "mt-[-6px]" : "")}>
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center">
+                  {!grouped && <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-sm">👤</div>}
+                </div>
                 <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-baseline gap-1.5">
-                    <span className="text-sm font-semibold">{nameFor(team, m.author_email)}</span>
-                    <span className="text-[11px] opacity-50">{timeStr(m.created_at)}</span>
-                    {linkedTask && (
-                      <span className="flex items-center gap-1 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">
-                        💼 업무 ({linkedTask.acknowledged_by?.length ?? 0}/{linkedTask.assignee_emails.length})
-                      </span>
-                    )}
-                  </div>
+                  {!grouped && (
+                    <div className="flex flex-wrap items-baseline gap-1.5">
+                      <span className="text-sm font-semibold">{nameFor(team, m.author_email)}</span>
+                      <span className="text-[11px] opacity-50">{timeStr(m.created_at)}</span>
+                      {linkedTask && (
+                        <span className="flex items-center gap-1 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">
+                          💼 업무 ({linkedTask.acknowledged_by?.length ?? 0}/{linkedTask.assignee_emails.length})
+                        </span>
+                      )}
+                    </div>
+                  )}
                   {m.source_department && <div className="mt-0.5 text-[10px] font-medium text-indigo-500">🔁 {m.source_department}에서 공유됨</div>}
-                  <div
-                    onClick={(e) => !isSystemConfirmation && openTaskPopup(e, m)}
-                    title={isSystemConfirmation ? undefined : "클릭하면 이 메시지를 업무로 등록할 수 있어요"}
-                    className={
-                      "glass mt-1 inline-block max-w-full rounded-tl-none px-3 py-1.5 text-[13px] leading-relaxed transition " +
-                      (isSystemConfirmation ? "" : "cursor-pointer hover:brightness-95")
-                    }
-                  >
-                    {renderMessageText(m.content, departments)}
-                  </div>
+
+                  {isEditing ? (
+                    <div className="mt-1">
+                      <textarea
+                        value={editText}
+                        onChange={(e) => setEditText(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !e.shiftKey) {
+                            e.preventDefault();
+                            saveEdit(m);
+                          } else if (e.key === "Escape") {
+                            cancelEdit();
+                          }
+                        }}
+                        autoFocus
+                        rows={2}
+                        className="w-full rounded-lg border border-blue-300 bg-white px-2 py-1.5 text-[13px] outline-none"
+                      />
+                      <div className="mt-1 flex gap-2">
+                        <button
+                          onClick={() => saveEdit(m)}
+                          className="rounded-md bg-blue-500 px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-blue-600"
+                        >
+                          저장
+                        </button>
+                        <button onClick={cancelEdit} className="rounded-md px-2 py-0.5 text-[11px] font-semibold text-slate-500 hover:bg-black/5">
+                          취소
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-1 flex items-end gap-1">
+                      <div
+                        onClick={(e) => !isSystemConfirmation && openTaskPopup(e, m)}
+                        title={isSystemConfirmation ? undefined : "클릭하면 이 메시지를 업무로 등록할 수 있어요"}
+                        className={
+                          "glass inline-block max-w-full rounded-tl-none px-3 py-1.5 text-[13px] leading-relaxed transition " +
+                          (isSystemConfirmation ? "" : "cursor-pointer hover:brightness-95")
+                        }
+                      >
+                        {quoted && (
+                          <div className="mb-1 rounded border-l-2 border-slate-300 bg-black/5 px-2 py-1 text-[11px] opacity-70">
+                            <span className="font-semibold">{nameFor(team, quoted.author_email)}</span>: {oneLine(quoted.content)}
+                          </div>
+                        )}
+                        {!quoted && m.reply_to_id && (
+                          <div className="mb-1 rounded border-l-2 border-slate-300 bg-black/5 px-2 py-1 text-[11px] italic opacity-50">
+                            (원본 메시지를 찾을 수 없음)
+                          </div>
+                        )}
+                        {renderMessageText(m.content, departments)}
+                        {m.edited_at && <span className="ml-1 text-[10px] opacity-40">(수정됨)</span>}
+                      </div>
+
+                      {!isSystemConfirmation && (
+                        <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition group-hover:opacity-100">
+                          <button
+                            type="button"
+                            onClick={(e) => openReactionPopup(e, m.id)}
+                            title="반응 남기기"
+                            className="rounded px-1 py-0.5 text-[13px] hover:bg-black/5"
+                          >
+                            😀
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setReplyTarget(m);
+                              textareaRef.current?.focus();
+                            }}
+                            title="답장"
+                            className="rounded px-1 py-0.5 text-[13px] hover:bg-black/5"
+                          >
+                            ↩️
+                          </button>
+                          {isMine && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                startEdit(m);
+                              }}
+                              title="수정"
+                              className="rounded px-1 py-0.5 text-[13px] hover:bg-black/5"
+                            >
+                              ✏️
+                            </button>
+                          )}
+                          {isMine && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                deleteMessage(m);
+                              }}
+                              title="삭제"
+                              className="rounded px-1 py-0.5 text-[13px] font-bold text-red-500 hover:bg-red-50"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {reactionGroups.length > 0 && (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {reactionGroups.map((g) => (
+                        <button
+                          key={g.emoji}
+                          onClick={() => toggleReaction(m.id, g.emoji)}
+                          title={g.emails.map((e) => nameFor(team, e)).join(", ")}
+                          className={
+                            "flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-[11px] transition " +
+                            (g.emails.includes(userEmail) ? "border-blue-400 bg-blue-50" : "border-slate-200 bg-white/60 hover:bg-black/5")
+                          }
+                        >
+                          <span>{g.emoji}</span>
+                          <span className="text-[10px] opacity-70">{g.emails.length}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -337,6 +734,22 @@ export default function ChatPanel({
       </div>
 
       <div className="relative border-t border-black/5 p-2.5">
+        {typingNames.length > 0 && (
+          <div className="px-1 pb-1 text-[11px] italic opacity-50">{typingNames.join(", ")}님이 입력 중...</div>
+        )}
+
+        {replyTarget && (
+          <div className="mb-1.5 flex items-center gap-2 rounded-lg border border-slate-200 bg-black/[0.03] px-2.5 py-1.5 text-[11px]">
+            <span className="opacity-50">↩️ 답장</span>
+            <span className="min-w-0 flex-1 truncate">
+              <span className="font-semibold">{nameFor(team, replyTarget.author_email)}</span>: {oneLine(replyTarget.content, 50)}
+            </span>
+            <button type="button" onClick={() => setReplyTarget(null)} className="shrink-0 rounded px-1 font-bold opacity-50 hover:bg-black/5">
+              ✕
+            </button>
+          </div>
+        )}
+
         {showMentionMenu && filteredUsers.length > 0 && (
           <div className="glass absolute bottom-full left-2.5 z-20 mb-1.5 max-h-48 w-56 overflow-y-auto p-1.5">
             <div className="px-2 py-1 text-[11px] opacity-60">개인 호출 (@)</div>
@@ -370,19 +783,21 @@ export default function ChatPanel({
           </div>
         )}
 
-        <form onSubmit={sendMessage} className="flex items-center gap-2 rounded-lg border border-black/10 bg-black/[0.03] px-3 py-2">
-          <input
-            ref={inputRef}
+        <form onSubmit={sendMessage} className="flex items-end gap-2 rounded-lg border border-black/10 bg-black/[0.03] px-3 py-2">
+          <textarea
+            ref={textareaRef}
             value={text}
             onChange={handleInputChange}
-            placeholder="메시지 보내기 (@개인호출, #부서단체공지)"
-            className="min-w-0 flex-1 bg-transparent text-sm outline-none"
+            onKeyDown={handleKeyDown}
+            placeholder="메시지 보내기 (Enter 전송·Shift+Enter 줄바꿈, **굵게** *기울임* ~~취소선~~ `코드`, @개인호출, #부서공지)"
+            rows={1}
+            className="min-w-0 flex-1 resize-none bg-transparent text-sm leading-relaxed outline-none"
             autoComplete="off"
           />
           <button
             type="submit"
             disabled={sending || !text.trim()}
-            className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-500 text-white transition hover:bg-blue-600 disabled:opacity-50"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-500 text-white transition hover:bg-blue-600 disabled:opacity-50"
           >
             ➤
           </button>
@@ -399,11 +814,21 @@ export default function ChatPanel({
           <>
             <div className="fixed inset-0 z-40" onClick={() => !analyzing && setTaskPopup(null)} />
             <div
-              style={{ position: "fixed", top: taskPopup.top, left: taskPopup.left, width: TASK_POPUP_WIDTH }}
+              style={{ position: "fixed", top: taskPopup.top, left: taskPopup.left, width: registerError ? 200 : TASK_POPUP_WIDTH }}
               className="z-50 rounded-lg border border-slate-200 bg-white p-1 shadow-lg"
             >
               {analyzing ? (
                 <div className="px-1.5 py-1 text-center text-[10px] text-slate-400">분석 중…</div>
+              ) : registerError ? (
+                <div className="p-1">
+                  <div className="mb-1 text-[10px] leading-snug text-red-600">⚠️ {registerError}</div>
+                  <button
+                    onClick={() => registerAsTask(taskPopup.message)}
+                    className="flex w-full items-center justify-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-semibold text-blue-600 hover:bg-blue-50"
+                  >
+                    다시 시도
+                  </button>
+                </div>
               ) : (
                 <button
                   onClick={() => registerAsTask(taskPopup.message)}
@@ -412,6 +837,30 @@ export default function ChatPanel({
                   📋 업무등록
                 </button>
               )}
+            </div>
+          </>,
+          document.body
+        )}
+
+      {/* 이모지 반응 고르기 팝업 - 업무등록 팝업과 같은 포탈 패턴입니다. */}
+      {reactionPopup &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setReactionPopup(null)} />
+            <div
+              style={{ position: "fixed", top: reactionPopup.top, left: reactionPopup.left, width: REACTION_POPUP_WIDTH }}
+              className="z-50 flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-white p-1.5 shadow-lg"
+            >
+              {REACTION_EMOJIS.map((emoji) => (
+                <button
+                  key={emoji}
+                  onClick={() => toggleReaction(reactionPopup.messageId, emoji)}
+                  className="flex h-7 w-7 items-center justify-center rounded-md text-base hover:bg-black/5"
+                >
+                  {emoji}
+                </button>
+              ))}
             </div>
           </>,
           document.body

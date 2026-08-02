@@ -206,6 +206,17 @@ export type ChatMessage = {
   author_email: string;
   content: string;
   source_department: string | null;
+  reply_to_id: string | null;
+  edited_at: string | null;
+  created_at: string;
+};
+
+export type MessageReaction = {
+  id: string;
+  message_id: string;
+  department: string;
+  emoji: string;
+  author_email: string;
   created_at: string;
 };
 

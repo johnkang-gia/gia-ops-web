@@ -1486,3 +1486,86 @@ create policy "giamicro_update_avatars" on storage.objects
 drop policy if exists "giamicro_delete_avatars" on storage.objects;
 create policy "giamicro_delete_avatars" on storage.objects
   for delete using (bucket_id = 'avatars' and is_giamicro_user());
+
+-- ===== 39. 채팅 메시지 - 보낸 사람 본인만 삭제 가능 =====
+-- 기존 "giamicro_all_messages" 정책은 for all(select/insert/update/delete 전부)이라, 도메인
+-- 계정이기만 하면 다른 사람이 보낸 메시지도 지울 수 있었습니다. 잘못 보낸 메시지는 "보낸
+-- 사람만" 지울 수 있어야 하므로, 하나의 for all 정책을 명령별로 쪼갰습니다: 조회는 그대로
+-- 누구나, 작성은 author_email이 본인 계정과 같을 때만(다른 사람 이름으로 메시지를 보내는 것도
+-- 막습니다), 삭제는 author_email이 본인일 때만 허용합니다.
+drop policy if exists "giamicro_all_messages" on messages;
+
+drop policy if exists "giamicro_select_messages" on messages;
+create policy "giamicro_select_messages" on messages
+  for select using (is_giamicro_user());
+
+drop policy if exists "giamicro_insert_own_messages" on messages;
+create policy "giamicro_insert_own_messages" on messages
+  for insert with check (is_giamicro_user() and author_email = lower(auth.jwt() ->> 'email'));
+
+drop policy if exists "author_delete_own_messages" on messages;
+create policy "author_delete_own_messages" on messages
+  for delete using (is_giamicro_user() and author_email = lower(auth.jwt() ->> 'email'));
+
+-- Supabase Realtime은 DELETE 이벤트의 "이전 행" 정보를 기본적으로 기본키만 담아 보냅니다.
+-- ChatPanel의 실시간 구독이 department 컬럼으로 필터링하는데, 기본키만 오면 그 필터를 판단할
+-- 수 없어 삭제 이벤트 자체가 다른 접속자에게 전달되지 않습니다. REPLICA IDENTITY FULL로
+-- 바꾸면 삭제된 행의 전체 컬럼이 함께 전달되어 필터가 정상 동작합니다.
+alter table messages replica identity full;
+
+-- ===== 40. 채팅 - 답장/수정/이모지 반응 (구글챗 스타일 기능) =====
+-- reply_to_id: 답장(인용)할 때 원본 메시지를 가리킵니다. 원본이 나중에 삭제되면 답장 자체는
+-- 남기고 참조만 끊습니다(on delete set null) - "삭제된 메시지에 대한 답장"이라는 게 채팅에서는
+-- 자연스러운 표현이라 답장까지 함께 지우지 않습니다.
+alter table messages add column if not exists reply_to_id uuid references messages(id) on delete set null;
+-- edited_at: 값이 있으면 화면에 "(수정됨)"을 표시합니다.
+alter table messages add column if not exists edited_at timestamptz;
+
+-- 메시지 수정은 보낸 사람 본인만 가능합니다(삭제와 동일한 원칙).
+drop policy if exists "author_update_own_messages" on messages;
+create policy "author_update_own_messages" on messages
+  for update
+  using (is_giamicro_user() and author_email = lower(auth.jwt() ->> 'email'))
+  with check (is_giamicro_user() and author_email = lower(auth.jwt() ->> 'email'));
+
+-- 이모지 반응 - 메시지 자체를 건드리지 않고 별도 테이블에 "누가 어떤 메시지에 어떤 이모지를
+-- 남겼는지"만 기록합니다(메시지 jsonb 컬럼을 여러 사람이 동시에 고치는 것보다 훨씬 안전합니다).
+-- 같은 사람이 같은 메시지에 같은 이모지를 두 번 못 남기게 unique 제약을 걸어두고, 클라이언트는
+-- 이미 남긴 반응을 다시 누르면 삭제(토글)합니다.
+-- department을 반응 테이블에도 그대로 복사해둡니다(messages와 조인 없이도 실시간 구독을
+-- department별로 필터링하려면 필요합니다 - 그렇지 않으면 다른 부서 채팅방의 반응 이벤트까지
+-- 전부 받아서 매번 걸러내야 합니다).
+create table if not exists message_reactions (
+  id uuid primary key default gen_random_uuid(),
+  message_id uuid not null references messages(id) on delete cascade,
+  department text not null,
+  emoji text not null,
+  author_email text not null,
+  created_at timestamptz not null default now(),
+  unique (message_id, emoji, author_email)
+);
+create index if not exists message_reactions_message_idx on message_reactions(message_id);
+create index if not exists message_reactions_department_idx on message_reactions(department);
+
+alter table message_reactions enable row level security;
+drop policy if exists "giamicro_select_reactions" on message_reactions;
+create policy "giamicro_select_reactions" on message_reactions
+  for select using (is_giamicro_user());
+drop policy if exists "giamicro_insert_own_reaction" on message_reactions;
+create policy "giamicro_insert_own_reaction" on message_reactions
+  for insert with check (is_giamicro_user() and author_email = lower(auth.jwt() ->> 'email'));
+drop policy if exists "author_delete_own_reaction" on message_reactions;
+create policy "author_delete_own_reaction" on message_reactions
+  for delete using (is_giamicro_user() and author_email = lower(auth.jwt() ->> 'email'));
+
+alter table message_reactions replica identity full;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'message_reactions'
+  ) then
+    alter publication supabase_realtime add table message_reactions;
+  end if;
+end $$;

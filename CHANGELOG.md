@@ -4,6 +4,121 @@
 `version` 값과 항상 일치시킵니다. 업데이트할 때마다 이 파일 맨 위에 새 항목을 추가하고,
 같은 내용을 GitHub Desktop의 커밋 Summary/Description에도 그대로 사용하면 됩니다.
 
+## v0.37.0 - 2026-08-03
+
+업무 채팅에 구글챗 스타일 기능 대거 추가 + 삭제 UX를 카카오톡 방식으로 변경:
+
+- **메시지 삭제 UX 변경.** 이전엔 이름 옆에 휴지통 아이콘이 있었는데, 카카오톡처럼 내가 보낸
+  메시지에 마우스를 올렸을 때만 말풍선 오른쪽에 작게 ✕가 나타나도록 바꿨습니다. 누르면 확인 후
+  삭제됩니다.
+- **Enter로 전송, Shift+Enter로 줄바꿈.** 입력창이 한 줄짜리 input에서 여러 줄 입력 가능한
+  textarea로 바뀌었고, 내용에 맞춰 높이가 자동으로 늘어납니다(최대 5줄 정도, 그 이상은 스크롤).
+- **텍스트 서식.** `**굵게**`, `*기울임*`, `~~취소선~~`, `` `코드` `` 문법을 메시지에 그대로
+  쓰면 서식이 적용되어 보입니다.
+- **메시지 수정.** 내가 보낸 메시지에 마우스를 올리면 ✏️ 아이콘이 뜨고, 눌러서 고치고 저장하면
+  "(수정됨)" 표시와 함께 반영됩니다.
+- **답장(인용).** 메시지에 마우스를 올려 ↩️를 누르면 입력창 위에 원본이 미리보기로 뜨고, 그
+  상태로 보내면 답장한 메시지 위에 원본이 작게 인용되어 표시됩니다.
+- **이모지 반응.** 😀 아이콘을 누르면 👍❤️😂😮😢🙏 중 고를 수 있고, 메시지 아래에 반응 뱃지로
+  모입니다(같은 이모지를 다시 누르면 취소). 누가 반응했는지는 마우스를 올리면 볼 수 있습니다.
+- **입력 중 표시.** 다른 사람이 타이핑하고 있으면 입력창 위에 "OOO님이 입력 중..."이 뜹니다
+  (3초 넘게 조용하면 사라집니다).
+- **연속 메시지 그룹핑.** 같은 사람이 5분 안에 연달아 보낸 메시지는 이름/시간을 반복해서
+  보여주지 않고 말풍선만 이어서 보여줘 채팅창이 덜 복잡해졌습니다.
+- **채팅 업무등록 버튼 실패 원인 수정.** 업무 저장이 실패해도 결과를 확인하지 않고 팝업만
+  닫아버려서 "눌렀는데 반응이 없다"로 보였던 문제를 고쳤습니다. 이제 실패하면 팝업이 안
+  닫히고 이유와 "다시 시도" 버튼이 뜹니다.
+- **참고로 이번엔 넣지 않은 것들:** 파일/이미지 첨부, 읽음 표시, 링크 미리보기, 메시지
+  검색·고정은 구글챗에 있지만 저장소/조회 기능이 추가로 필요해서 이번 범위에는 넣지
+  않았습니다. 필요하시면 다음에 이어서 추가해드릴 수 있어요.
+- **DB 변경 있음.** 아래 SQL을 Supabase SQL Editor에 붙여넣고 실행해주세요(재실행해도
+  안전합니다).
+
+```sql
+alter table messages add column if not exists reply_to_id uuid references messages(id) on delete set null;
+alter table messages add column if not exists edited_at timestamptz;
+
+drop policy if exists "author_update_own_messages" on messages;
+create policy "author_update_own_messages" on messages
+  for update
+  using (is_giamicro_user() and author_email = lower(auth.jwt() ->> 'email'))
+  with check (is_giamicro_user() and author_email = lower(auth.jwt() ->> 'email'));
+
+create table if not exists message_reactions (
+  id uuid primary key default gen_random_uuid(),
+  message_id uuid not null references messages(id) on delete cascade,
+  department text not null,
+  emoji text not null,
+  author_email text not null,
+  created_at timestamptz not null default now(),
+  unique (message_id, emoji, author_email)
+);
+create index if not exists message_reactions_message_idx on message_reactions(message_id);
+create index if not exists message_reactions_department_idx on message_reactions(department);
+
+alter table message_reactions enable row level security;
+drop policy if exists "giamicro_select_reactions" on message_reactions;
+create policy "giamicro_select_reactions" on message_reactions
+  for select using (is_giamicro_user());
+drop policy if exists "giamicro_insert_own_reaction" on message_reactions;
+create policy "giamicro_insert_own_reaction" on message_reactions
+  for insert with check (is_giamicro_user() and author_email = lower(auth.jwt() ->> 'email'));
+drop policy if exists "author_delete_own_reaction" on message_reactions;
+create policy "author_delete_own_reaction" on message_reactions
+  for delete using (is_giamicro_user() and author_email = lower(auth.jwt() ->> 'email'));
+
+alter table message_reactions replica identity full;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'message_reactions'
+  ) then
+    alter publication supabase_realtime add table message_reactions;
+  end if;
+end $$;
+```
+
+## v0.36.0 - 2026-08-03
+
+업무 채팅 "업무등록" 버튼 실패 원인 수정 + 메시지 본인 삭제 기능:
+
+- **채팅 "업무등록" 버튼을 눌러도 등록이 안 되던 문제 수정.** 원인은 등록 로직 자체가 아니라
+  오류 처리 방식이었습니다 - AI 분석이 실패해도 규칙 기반으로 대체되니 문제가 아니었고, 그 다음
+  단계인 실제 업무 저장(`tasks` 테이블 insert)이 실패했을 때 결과를 확인하지 않고 그냥 팝업을
+  닫아버려서, 저장이 안 됐는데도 화면에는 아무 표시가 없어 "눌렀는데 반응이 없다"로 보였던
+  것입니다. 이제 저장 단계 전체를 try/catch로 감싸고 실패하면 팝업이 닫히지 않고 이유를
+  보여주며 "다시 시도" 버튼을 제공합니다(콘솔에도 원인을 로그로 남겨서 이후에도 진단하기
+  쉽게 했습니다).
+- **채팅 메시지 본인 삭제 기능 추가.** 메시지에 마우스를 올리면(내가 보낸 메시지에만) 오른쪽에
+  🗑️ 아이콘이 나타나고, 눌러서 확인하면 삭제됩니다. DB 쪽도 함께 손봤습니다 - 기존에는
+  giamicro.com 계정이면 누구나 다른 사람 메시지도 지울 수 있었는데(정책이 select/insert/
+  delete를 구분하지 않고 전부 열려 있었음), 이제 삭제는 "보낸 사람 본인"만 가능하도록
+  좁혔고, 메시지 작성도 본인 이메일로만 가능하도록 함께 막았습니다(다른 사람 이름으로 보내는
+  것 방지). 실시간 삭제 반영을 위해 메시지 테이블의 REPLICA IDENTITY도 FULL로 바꿔서, 삭제
+  이벤트가 다른 접속자 화면에도 department 필터를 타고 정상적으로 전달되도록 했습니다.
+- **DB 변경 있음.** 아래 SQL을 Supabase SQL Editor에 붙여넣고 실행해주세요(재실행해도
+  안전합니다).
+
+```sql
+drop policy if exists "giamicro_all_messages" on messages;
+
+drop policy if exists "giamicro_select_messages" on messages;
+create policy "giamicro_select_messages" on messages
+  for select using (is_giamicro_user());
+
+drop policy if exists "giamicro_insert_own_messages" on messages;
+create policy "giamicro_insert_own_messages" on messages
+  for insert with check (is_giamicro_user() and author_email = lower(auth.jwt() ->> 'email'));
+
+drop policy if exists "author_delete_own_messages" on messages;
+create policy "author_delete_own_messages" on messages
+  for delete using (is_giamicro_user() and author_email = lower(auth.jwt() ->> 'email'));
+
+alter table messages replica identity full;
+```
+
 ## v0.35.0 - 2026-08-02
 
 내 계정 설정(프로필 사진/이름) + 직위(권한) 뱃지 표시 + 관리자의 직위 편집 + 담당자 자동 채움을 이름으로 전환:

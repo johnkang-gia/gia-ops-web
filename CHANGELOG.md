@@ -4,6 +4,143 @@
 `version` 값과 항상 일치시킵니다. 업데이트할 때마다 이 파일 맨 위에 새 항목을 추가하고,
 같은 내용을 GitHub Desktop의 커밋 Summary/Description에도 그대로 사용하면 됩니다.
 
+## v0.38.0 - 2026-08-03
+
+지난 버전(v0.37.0) CHANGELOG에서 "저장소/조회 기능이 더 필요해서 이번 범위에는 넣지 않았다"고
+미뤄뒀던 4가지 - 파일/이미지 첨부, 읽음 표시, 링크 미리보기, 메시지 검색·고정 - 를 마저
+구현했습니다:
+
+- **파일/이미지 첨부.** 입력창 왼쪽 📎 버튼으로 파일을 고르면(최대 20MB) 바로 업로드되어
+  메시지로 전송됩니다. 이미지는 말풍선 안에 바로 미리보기로 뜨고, 다른 파일은 이름+용량이 적힌
+  파일 칩으로 표시되며 눌러서 새 탭으로 열어볼 수 있습니다. 회의 음성/행사 사진과 같은 방식으로
+  비공개 저장소에 저장되고, 열람 링크는 매번 새로 발급되는 1시간짜리 서명 URL을 씁니다.
+- **읽음 표시.** 내가 보낸 메시지 옆에 "아직 안 읽은 부서원 수"가 카카오톡의 숫자처럼 표시되고,
+  상대가 채팅방을 열면 실시간으로 줄어듭니다. 메시지마다 읽음 여부를 따로 저장하지 않고
+  "부서원별로 마지막으로 읽은 시각"만 저장해서, 그 시각 이후에 온 메시지를 안 읽은 것으로
+  계산하는 가벼운 방식을 썼습니다.
+- **링크 미리보기.** 메시지에 http(s) 링크가 있으면 구글챗처럼 그 아래에 제목/설명/썸네일이 담긴
+  작은 카드가 자동으로 붙습니다. 브라우저가 직접 외부 사이트에 접속하면 대부분 CORS에 막히기
+  때문에, 서버가 대신 가져오는 방식이고 사설망 주소로는 접속하지 않도록 기본적인 방어를
+  넣었습니다.
+- **메시지 검색.** 채팅창 헤더의 🔍를 누르면 검색창이 뜨고, 입력하는 대로 그 부서 채팅방의
+  메시지 내용을 검색합니다. 결과를 누르면 해당 메시지로 스크롤 이동하며 잠깐 노란색으로
+  반짝여 위치를 표시해줍니다.
+- **메시지 고정.** 메시지에 마우스를 올려 📌를 누르면 고정되어 채팅창 상단에 "고정된 메시지"
+  바로 모입니다(카카오톡 공지처럼 부서원 누구나 고정/해제 가능). 다만 고정 여부가 아닌
+  글자 내용·첨부파일 등은 여전히 작성자 본인만 고칠 수 있도록 DB 쪽에서 한 번 더 막아뒀습니다.
+- **DB 변경 있음.** 아래 SQL을 Supabase SQL Editor에 붙여넣고 실행해주세요(재실행해도
+  안전합니다).
+
+```sql
+-- ===== 41. 채팅 - 첨부파일 / 읽음 표시 / 메시지 고정 (구글챗 스타일 기능 2차) =====
+
+-- 41-1) 파일/이미지 첨부. 메시지당 첨부 1개로 단순화했습니다(여러 개가 필요하면 나중에 별도
+-- 테이블로 확장 가능). content는 첨부만 보내고 글자는 안 쓸 수도 있어 빈 문자열을 허용합니다.
+alter table messages add column if not exists attachment_path text;
+alter table messages add column if not exists attachment_name text;
+alter table messages add column if not exists attachment_type text;
+alter table messages add column if not exists attachment_size bigint;
+
+-- 회의 음성/행사 사진처럼 사내 파일이라 비공개 버킷으로 만들고, 조회도 signed URL로만
+-- 가능하게 합니다(giamicro.com 계정이면 업로드/조회/삭제 모두 가능 - 기존 event-photos와 동일한
+-- 신뢰 모델).
+insert into storage.buckets (id, name, public)
+values ('chat-files', 'chat-files', false)
+on conflict (id) do nothing;
+
+drop policy if exists "giamicro_read_chat_files" on storage.objects;
+create policy "giamicro_read_chat_files" on storage.objects
+  for select using (bucket_id = 'chat-files' and is_giamicro_user());
+drop policy if exists "giamicro_write_chat_files" on storage.objects;
+create policy "giamicro_write_chat_files" on storage.objects
+  for insert with check (bucket_id = 'chat-files' and is_giamicro_user());
+drop policy if exists "giamicro_delete_chat_files" on storage.objects;
+create policy "giamicro_delete_chat_files" on storage.objects
+  for delete using (bucket_id = 'chat-files' and is_giamicro_user());
+
+-- 41-2) 읽음 표시. 부서 채팅방마다 "내가 여기를 마지막으로 읽은 시각"만 한 행씩 저장합니다
+-- (메시지마다 읽음 여부를 따로 저장하면 데이터가 기하급수로 늘어나므로, 카카오톡처럼 "이
+-- 시각 이후 메시지 = 안 읽음"으로 계산합니다).
+create table if not exists message_reads (
+  department text not null,
+  user_email text not null,
+  last_read_at timestamptz not null default now(),
+  primary key (department, user_email)
+);
+
+alter table message_reads enable row level security;
+drop policy if exists "giamicro_select_reads" on message_reads;
+create policy "giamicro_select_reads" on message_reads
+  for select using (is_giamicro_user());
+drop policy if exists "self_insert_reads" on message_reads;
+create policy "self_insert_reads" on message_reads
+  for insert with check (is_giamicro_user() and user_email = lower(auth.jwt() ->> 'email'));
+drop policy if exists "self_update_reads" on message_reads;
+create policy "self_update_reads" on message_reads
+  for update
+  using (is_giamicro_user() and user_email = lower(auth.jwt() ->> 'email'))
+  with check (is_giamicro_user() and user_email = lower(auth.jwt() ->> 'email'));
+
+alter table message_reads replica identity full;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'message_reads'
+  ) then
+    alter publication supabase_realtime add table message_reads;
+  end if;
+end $$;
+
+-- 41-3) 메시지 고정. 카카오톡 공지처럼 "누구든" 고정/해제할 수 있게 하려는데, 지난 버전에서
+-- 만든 "author_update_own_messages" 정책은 UPDATE 자체를 작성자로만 제한하고 있어 그대로는
+-- 다른 사람이 핀을 꽂을 수 없습니다. app_users 자기수정 때와 같은 패턴으로, RLS는
+-- giamicro.com 계정이면 누구나 UPDATE를 시도할 수 있게 넓히고, 트리거가 "본인이 작성한
+-- 메시지가 아니라면 pinned_at/pinned_by를 뺀 나머지 컬럼(글자 내용, 첨부파일, 답장 대상 등)은
+-- 전부 원래 값으로 되돌리는" 방식으로 실제 수정 범위를 좁힙니다.
+alter table messages add column if not exists pinned_at timestamptz;
+alter table messages add column if not exists pinned_by text;
+
+drop policy if exists "author_update_own_messages" on messages;
+drop policy if exists "giamicro_update_messages" on messages;
+create policy "giamicro_update_messages" on messages
+  for update
+  using (is_giamicro_user())
+  with check (is_giamicro_user());
+
+create or replace function protect_messages_update()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if old.author_email = lower(auth.jwt() ->> 'email') then
+    return new; -- 작성자 본인 - 내용/첨부/답장/수정시각 등 전부 자유롭게 바꿀 수 있음
+  end if;
+  -- 작성자가 아니면 고정(pinned_at/pinned_by)만 바꿀 수 있고 나머지는 원래 값으로 되돌립니다.
+  new.content := old.content;
+  new.edited_at := old.edited_at;
+  new.reply_to_id := old.reply_to_id;
+  new.author_email := old.author_email;
+  new.department := old.department;
+  new.created_at := old.created_at;
+  new.source_department := old.source_department;
+  new.attachment_path := old.attachment_path;
+  new.attachment_name := old.attachment_name;
+  new.attachment_type := old.attachment_type;
+  new.attachment_size := old.attachment_size;
+  return new;
+end;
+$$;
+
+drop trigger if exists messages_protect_update on messages;
+create trigger messages_protect_update
+  before update on messages
+  for each row execute function protect_messages_update();
+```
+
 ## v0.37.0 - 2026-08-03
 
 업무 채팅에 구글챗 스타일 기능 대거 추가 + 삭제 UX를 카카오톡 방식으로 변경:

@@ -208,6 +208,12 @@ export type ChatMessage = {
   source_department: string | null;
   reply_to_id: string | null;
   edited_at: string | null;
+  attachment_path: string | null;
+  attachment_name: string | null;
+  attachment_type: string | null;
+  attachment_size: number | null;
+  pinned_at: string | null;
+  pinned_by: string | null;
   created_at: string;
 };
 
@@ -218,6 +224,12 @@ export type MessageReaction = {
   emoji: string;
   author_email: string;
   created_at: string;
+};
+
+export type MessageRead = {
+  department: string;
+  user_email: string;
+  last_read_at: string;
 };
 
 export type Inquiry = {

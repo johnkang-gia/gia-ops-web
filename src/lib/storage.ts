@@ -9,6 +9,8 @@ const MEETING_AUDIO_BUCKET = "meeting-audio";
 // 프로필 사진은 민감 정보가 아니라 공개 버킷을 씁니다 - 사이드바를 그릴 때마다 signed URL을
 // 새로 발급받지 않아도 되도록(그럼 매 페이지 로드마다 스토리지 API를 한 번씩 더 불러야 함).
 const AVATARS_BUCKET = "avatars";
+// 업무 채팅에 첨부하는 파일 - 사내 파일이라 비공개 버킷입니다.
+const CHAT_FILES_BUCKET = "chat-files";
 
 async function uploadFile(bucket: string, file: File, folder: string): Promise<string> {
   const supabase = createClient();
@@ -73,4 +75,12 @@ export async function uploadAvatar(file: File, userId: string): Promise<string> 
   // 캐시 무효화를 위해 매번 다른 쿼리스트링을 붙입니다(파일명이 고정이라 브라우저/CDN이
   // 이전 사진을 계속 캐싱해서 보여줄 수 있음).
   return `${data.publicUrl}?v=${Date.now()}`;
+}
+
+export async function uploadChatFile(file: File, folder: string): Promise<string> {
+  return uploadFile(CHAT_FILES_BUCKET, file, folder);
+}
+
+export async function getChatFileSignedUrl(path: string): Promise<string | null> {
+  return getFileSignedUrl(CHAT_FILES_BUCKET, path);
 }

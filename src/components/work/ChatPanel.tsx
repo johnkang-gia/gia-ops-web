@@ -5,14 +5,18 @@ import { createPortal } from "react-dom";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 import { genCaseId } from "@/lib/caseId";
-import type { ChatMessage, Department, MessageReaction, Task, TeamMember } from "@/lib/types";
+import type { ChatMessage, Department, MessageReaction, MessageRead, Task, TeamMember } from "@/lib/types";
 import { nameFor, extractMentionedEmails } from "@/lib/teamName";
 import { parseTaskFromMessage } from "@/lib/parseTaskFromMessage";
 import { deadlineLabel } from "@/lib/deadlineLabel";
+import { uploadChatFile, getChatFileSignedUrl } from "@/lib/storage";
+import LinkPreviewCard from "./LinkPreviewCard";
 
 const REACTION_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 const TYPING_EXPIRE_MS = 3000;
 const GROUP_WINDOW_MS = 5 * 60 * 1000;
+const MARK_READ_DEBOUNCE_MS = 1500;
+const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 
 function timeStr(iso: string) {
   return new Date(iso).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
@@ -25,6 +29,20 @@ function oneLine(text: string, maxLen = 40) {
 
 function isSystemMsg(content: string) {
   return content.startsWith("✅ 업무로 등록됨");
+}
+
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+}
+
+// 메시지 안에서 첫 번째 링크를 찾아 미리보기 카드를 붙일 때 씁니다. 문장 끝의 마침표/쉼표/괄호
+// 등이 URL에 딸려 들어오는 걸 대충 정리합니다(완벽하진 않지만 채팅 문장에서는 충분합니다).
+function firstUrlIn(text: string): string | null {
+  const m = text.match(/https?:\/\/[^\s]+/);
+  if (!m) return null;
+  return m[0].replace(/[),.!?，。]+$/, "");
 }
 
 // 메시지에서 "#부서명" 태그를 찾아, 지금 보고 있는 부서를 제외한 실제 부서명과 매칭합니다.
@@ -101,11 +119,15 @@ export default function ChatPanel({
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [reactions, setReactions] = useState<MessageReaction[]>([]);
+  const [reads, setReads] = useState<Record<string, string>>({}); // email -> last_read_at
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
+  const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const lastMarkReadRef = useRef(0);
 
   const [showMentionMenu, setShowMentionMenu] = useState(false);
   const [showHashMenu, setShowHashMenu] = useState(false);
@@ -124,6 +146,18 @@ export default function ChatPanel({
   const typingTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const lastTypingSentRef = useRef(0);
 
+  // 파일 첨부 업로드 상태 + signed URL 캐시(경로별로 한 번만 발급받습니다).
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const [attachmentUrls, setAttachmentUrls] = useState<Record<string, string>>({});
+
+  // 고정된 메시지 목록 펼침/접힘, 검색창 열림 상태, 스크롤 이동 후 잠깐 반짝이는 하이라이트.
+  const [pinnedOpen, setPinnedOpen] = useState(true);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<ChatMessage[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+
   // 메시지를 클릭하면 뜨는 "업무로 등록" 작은 팝업 상태입니다.
   const [taskPopup, setTaskPopup] = useState<{ message: ChatMessage; top: number; left: number } | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
@@ -138,6 +172,9 @@ export default function ChatPanel({
   useEffect(() => {
     const supabase = createClient();
     let cancelled = false;
+    setSearchOpen(false);
+    setSearchQuery("");
+    setSearchResults([]);
 
     async function loadRecentMessages() {
       const { data } = await supabase
@@ -164,7 +201,16 @@ export default function ChatPanel({
       if (!cancelled) setReactions((reactionData as MessageReaction[] | null) ?? []);
     }
 
+    async function loadReads() {
+      const { data } = await supabase.from("message_reads").select("*").eq("department", department);
+      if (cancelled) return;
+      const map: Record<string, string> = {};
+      for (const r of (data as MessageRead[] | null) ?? []) map[r.user_email] = r.last_read_at;
+      setReads(map);
+    }
+
     loadRecentMessages();
+    loadReads();
 
     const channel = supabase
       .channel(`messages-${department}`)
@@ -221,6 +267,22 @@ export default function ChatPanel({
           setReactions((prev) => prev.filter((r) => r.id !== removed.id));
         }
       )
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "message_reads", filter: `department=eq.${department}` },
+        (payload) => {
+          const next = payload.new as MessageRead;
+          setReads((prev) => ({ ...prev, [next.user_email]: next.last_read_at }));
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "message_reads", filter: `department=eq.${department}` },
+        (payload) => {
+          const next = payload.new as MessageRead;
+          setReads((prev) => ({ ...prev, [next.user_email]: next.last_read_at }));
+        }
+      )
       .on("broadcast", { event: "typing" }, (msg) => {
         const p = msg.payload as { email: string; name: string };
         if (!p?.email || p.email === userEmail) return;
@@ -272,8 +334,91 @@ export default function ChatPanel({
     el.style.height = Math.min(el.scrollHeight, 120) + "px";
   }, [text]);
 
+  // 첨부파일이 있는 메시지가 로드/도착할 때마다, 아직 URL을 못 받아온 경로만 골라 signed URL을
+  // 발급받습니다(비공개 버킷이라 매번 발급이 필요하고, 1시간 동안 유효합니다).
+  useEffect(() => {
+    let cancelled = false;
+    const missing = [
+      ...new Set(messages.filter((m) => m.attachment_path && !attachmentUrls[m.attachment_path]).map((m) => m.attachment_path as string)),
+    ];
+    if (missing.length === 0) return;
+    (async () => {
+      const entries = await Promise.all(missing.map(async (p) => [p, await getChatFileSignedUrl(p)] as const));
+      if (cancelled) return;
+      setAttachmentUrls((prev) => {
+        const next = { ...prev };
+        for (const [p, url] of entries) if (url) next[p] = url;
+        return next;
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages]);
+
+  // 채팅창이 열려 있고 메시지가 쌓이면(새로 왔든, 처음 불러왔든) "여기까지 읽었다"로 표시합니다.
+  // 너무 자주 쓰지 않도록 짧게 쓰로틀만 걸었습니다(메시지 하나하나마다 매번 쓰지 않아도 충분).
+  useEffect(() => {
+    if (messages.length > 0) markRead();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages.length, department]);
+
+  useEffect(() => {
+    if (!searchOpen || !searchQuery.trim()) {
+      setSearchResults([]);
+      return;
+    }
+    let cancelled = false;
+    setSearching(true);
+    const timer = setTimeout(async () => {
+      const supabase = createClient();
+      const { data } = await supabase
+        .from("messages")
+        .select("*")
+        .eq("department", department)
+        .ilike("content", `%${searchQuery.trim()}%`)
+        .order("created_at", { ascending: false })
+        .limit(30);
+      if (!cancelled) {
+        setSearchResults((data as ChatMessage[] | null) ?? []);
+        setSearching(false);
+      }
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [searchQuery, searchOpen, department]);
+
   const filteredUsers = team.filter((m) => m.name && m.name.includes(mentionFilter)).slice(0, 8);
   const filteredDepartments = departments.filter((d) => d.name !== department && d.name.includes(hashFilter));
+  const deptMembers = team.filter((t) => t.email !== userEmail);
+  const pinnedMessages = messages
+    .filter((m) => m.pinned_at)
+    .sort((a, b) => new Date(b.pinned_at as string).getTime() - new Date(a.pinned_at as string).getTime());
+
+  // 내가 보낸 메시지를 아직 안 읽은 부서원 수를 셉니다(카카오톡의 "1" 표시와 같은 개념).
+  // 메시지마다 읽음 여부를 저장하지 않고, "이 시각 이후 메시지 = 안 읽음"으로 계산합니다.
+  function unreadCountFor(m: ChatMessage) {
+    if (m.author_email !== userEmail) return 0;
+    const msgTime = new Date(m.created_at).getTime();
+    const readCount = deptMembers.filter((t) => {
+      const lastRead = reads[t.email];
+      return lastRead && new Date(lastRead).getTime() >= msgTime;
+    }).length;
+    return Math.max(0, deptMembers.length - readCount);
+  }
+
+  async function markRead() {
+    const now = Date.now();
+    if (now - lastMarkReadRef.current < MARK_READ_DEBOUNCE_MS) return;
+    lastMarkReadRef.current = now;
+    const supabase = createClient();
+    const nowIso = new Date().toISOString();
+    setReads((prev) => ({ ...prev, [userEmail]: nowIso }));
+    await supabase.from("message_reads").upsert({ department, user_email: userEmail, last_read_at: nowIso }, { onConflict: "department,user_email" });
+  }
 
   function broadcastTyping() {
     const now = Date.now();
@@ -365,6 +510,41 @@ export default function ChatPanel({
     setSending(false);
   }
 
+  // 파일을 고르면 바로 업로드하고(입력창에 적어둔 글자가 있으면 함께 캡션으로) 메시지를 보냅니다.
+  async function handleAttachmentChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (!file) return;
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      alert("파일이 너무 큽니다 (최대 20MB).");
+      return;
+    }
+    setUploadingFile(true);
+    try {
+      const path = await uploadChatFile(file, department);
+      const supabase = createClient();
+      const content = text.trim();
+      const replyToId = replyTarget?.id ?? null;
+      setText("");
+      setReplyTarget(null);
+      const { error } = await supabase.from("messages").insert({
+        department,
+        author_email: userEmail,
+        content,
+        reply_to_id: replyToId,
+        attachment_path: path,
+        attachment_name: file.name,
+        attachment_type: file.type || null,
+        attachment_size: file.size,
+      });
+      if (error) throw new Error(error.message);
+    } catch (err) {
+      alert("파일을 업로드하지 못했습니다: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setUploadingFile(false);
+    }
+  }
+
   // 잘못 보낸 메시지는 보낸 사람 본인만 지울 수 있습니다(DB의 delete RLS 정책도 author_email이
   // 본인일 때만 허용하도록 맞춰뒀습니다 - 여기 UI 조건은 그 위에 얹는 사용성용 가드입니다).
   async function deleteMessage(m: ChatMessage) {
@@ -436,6 +616,46 @@ export default function ChatPanel({
     } else if (data) {
       setReactions((prev) => prev.map((r) => (r.id === tempId ? (data as MessageReaction) : r)));
     }
+  }
+
+  // 고정/해제는 누구나 할 수 있습니다(카카오톡 공지처럼) - DB 쪽에서도 pinned_at/pinned_by만
+  // 예외로 열어두고 나머지 컬럼(글자 내용 등)은 여전히 작성자만 바꿀 수 있게 트리거로 막아뒀습니다.
+  async function togglePin(m: ChatMessage) {
+    const supabase = createClient();
+    const wasPinned = !!m.pinned_at;
+    const patch = wasPinned ? { pinned_at: null, pinned_by: null } : { pinned_at: new Date().toISOString(), pinned_by: userEmail };
+    setMessages((prev) => prev.map((x) => (x.id === m.id ? { ...x, ...patch } : x)));
+    const { error } = await supabase.from("messages").update(patch).eq("id", m.id);
+    if (error) {
+      setMessages((prev) => prev.map((x) => (x.id === m.id ? m : x)));
+      alert((wasPinned ? "고정을 해제하지" : "고정하지") + " 못했습니다: " + error.message);
+    }
+  }
+
+  function scrollToMessage(id: string) {
+    const el = messageRefs.current[id];
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    setHighlightId(id);
+    setTimeout(() => setHighlightId((cur) => (cur === id ? null : cur)), 1500);
+  }
+
+  // 검색 결과를 누르면 그 메시지로 이동합니다. 최근 100개 안에 이미 불러와져 있으면 바로
+  // 스크롤하고, 그보다 오래된 메시지면 목록에 시간 순서대로 끼워 넣은 뒤 이동합니다(그 사이
+  // 메시지들이 통째로 로드되는 건 아니라서 위아래에 약간의 시간 간격이 보일 수 있습니다).
+  async function jumpToMessage(m: ChatMessage) {
+    setSearchOpen(false);
+    setSearchQuery("");
+    const alreadyLoaded = messages.some((x) => x.id === m.id);
+    if (!alreadyLoaded) {
+      setMessages((prev) => [...prev, m].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()));
+      const supabase = createClient();
+      const { data } = await supabase.from("message_reactions").select("*").eq("message_id", m.id);
+      if (data && data.length) {
+        setReactions((prev) => [...prev, ...(data as MessageReaction[]).filter((r) => !prev.some((p) => p.id === r.id))]);
+      }
+    }
+    requestAnimationFrame(() => requestAnimationFrame(() => scrollToMessage(m.id)));
   }
 
   const REACTION_POPUP_WIDTH = 172;
@@ -548,9 +768,17 @@ export default function ChatPanel({
         <span style={{ color: deptColor }}>👥</span>
         <span>[{department}] 부서 그룹 채팅방</span>
         <span className="text-[11px] font-normal opacity-60">({department} 부서원 전원이 참여 중입니다)</span>
+        <button
+          type="button"
+          onClick={() => setSearchOpen((v) => !v)}
+          title="메시지 검색"
+          className={"ml-auto flex h-6 w-6 items-center justify-center rounded-full text-xs hover:bg-black/5 " + (searchOpen ? "bg-black/10" : "")}
+        >
+          🔍
+        </button>
         <span
           className={
-            "ml-auto flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold " +
+            "flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold " +
             (connected ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600")
           }
           title={connected ? "실시간 연결됨" : "연결이 끊겨 재연결을 시도하는 중입니다"}
@@ -559,6 +787,65 @@ export default function ChatPanel({
           {connected ? "실시간 연결됨" : "재연결 중..."}
         </span>
       </div>
+
+      {searchOpen && (
+        <div className="border-b border-black/5 bg-white/70 p-2">
+          <input
+            autoFocus
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="메시지 검색..."
+            className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs outline-none"
+          />
+          {searchQuery.trim() && (
+            <div className="mt-1.5 max-h-48 overflow-y-auto rounded-lg border border-slate-100">
+              {searching && <div className="p-2 text-center text-[11px] opacity-40">검색 중...</div>}
+              {!searching && searchResults.length === 0 && <div className="p-2 text-center text-[11px] opacity-40">검색 결과가 없습니다.</div>}
+              {searchResults.map((r) => (
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() => jumpToMessage(r)}
+                  className="flex w-full flex-col gap-0.5 border-b border-slate-50 px-2.5 py-1.5 text-left text-[11px] last:border-0 hover:bg-slate-50"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <span className="font-semibold">{nameFor(team, r.author_email)}</span>
+                    <span className="opacity-40">{timeStr(r.created_at)}</span>
+                  </span>
+                  <span className="truncate opacity-70">{oneLine(r.content, 70)}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {pinnedMessages.length > 0 && (
+        <div className="border-b border-black/5 bg-amber-50/60 px-3 py-1.5">
+          <button
+            type="button"
+            onClick={() => setPinnedOpen((v) => !v)}
+            className="flex w-full items-center gap-1.5 text-[11px] font-semibold text-amber-700"
+          >
+            <span>📌 고정된 메시지 {pinnedMessages.length}개</span>
+            <span className="ml-auto">{pinnedOpen ? "▲" : "▼"}</span>
+          </button>
+          {pinnedOpen && (
+            <div className="mt-1 flex flex-col gap-1">
+              {pinnedMessages.map((m) => (
+                <div key={m.id} className="flex items-center gap-2 rounded-md bg-white/70 px-2 py-1 text-[11px]">
+                  <button type="button" onClick={() => scrollToMessage(m.id)} className="min-w-0 flex-1 truncate text-left hover:underline">
+                    <span className="font-semibold">{nameFor(team, m.author_email)}</span>: {oneLine(m.content, 60)}
+                  </button>
+                  <button type="button" onClick={() => togglePin(m)} title="고정 해제" className="shrink-0 text-slate-400 hover:text-red-500">
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <div ref={listRef} className="flex-1 overflow-y-auto p-3">
         {messages.length === 0 && <p className="text-xs opacity-40">아직 메시지가 없습니다. 첫 메시지를 남겨보세요.</p>}
@@ -582,9 +869,21 @@ export default function ChatPanel({
               emails: msgReactions.filter((r) => r.emoji === emoji).map((r) => r.author_email),
             })).filter((g) => g.emails.length > 0);
             const isEditing = editingId === m.id;
+            const linkUrl = !m.attachment_path ? firstUrlIn(m.content) : null;
+            const unread = unreadCountFor(m);
 
             return (
-              <div key={m.id} className={"group flex gap-2 " + (grouped ? "mt-[-6px]" : "")}>
+              <div
+                key={m.id}
+                ref={(el) => {
+                  messageRefs.current[m.id] = el;
+                }}
+                className={
+                  "group flex gap-2 rounded-lg transition " +
+                  (grouped ? "mt-[-6px] " : "") +
+                  (highlightId === m.id ? "bg-amber-100/60 ring-2 ring-amber-300" : "")
+                }
+              >
                 <div className="flex h-8 w-8 shrink-0 items-center justify-center">
                   {!grouped && <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-sm">👤</div>}
                 </div>
@@ -593,10 +892,14 @@ export default function ChatPanel({
                     <div className="flex flex-wrap items-baseline gap-1.5">
                       <span className="text-sm font-semibold">{nameFor(team, m.author_email)}</span>
                       <span className="text-[11px] opacity-50">{timeStr(m.created_at)}</span>
+                      {isMine && !isSystemConfirmation && unread > 0 && <span className="text-[10px] font-semibold text-amber-500">{unread}</span>}
                       {linkedTask && (
                         <span className="flex items-center gap-1 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">
                           💼 업무 ({linkedTask.acknowledged_by?.length ?? 0}/{linkedTask.assignee_emails.length})
                         </span>
+                      )}
+                      {m.pinned_at && (
+                        <span className="rounded bg-amber-100 px-1 py-0.5 text-[9px] font-bold text-amber-700">📌 고정됨</span>
                       )}
                     </div>
                   )}
@@ -651,8 +954,48 @@ export default function ChatPanel({
                             (원본 메시지를 찾을 수 없음)
                           </div>
                         )}
-                        {renderMessageText(m.content, departments)}
+                        {m.content && renderMessageText(m.content, departments)}
                         {m.edited_at && <span className="ml-1 text-[10px] opacity-40">(수정됨)</span>}
+
+                        {m.attachment_path && (
+                          <div className="mt-1" onClick={(e) => e.stopPropagation()}>
+                            {m.attachment_type?.startsWith("image/") ? (
+                              attachmentUrls[m.attachment_path] ? (
+                                <a href={attachmentUrls[m.attachment_path]} target="_blank" rel="noopener noreferrer">
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img
+                                    src={attachmentUrls[m.attachment_path]}
+                                    alt={m.attachment_name ?? "첨부 이미지"}
+                                    className="max-h-52 max-w-full rounded-lg object-contain"
+                                  />
+                                </a>
+                              ) : (
+                                <div className="flex h-20 w-32 items-center justify-center rounded-lg bg-black/5 text-[10px] opacity-50">
+                                  불러오는 중...
+                                </div>
+                              )
+                            ) : (
+                              <a
+                                href={attachmentUrls[m.attachment_path] || "#"}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] hover:bg-slate-50"
+                              >
+                                <span>📎</span>
+                                <span className="min-w-0 max-w-[160px] truncate font-medium text-slate-700">{m.attachment_name}</span>
+                                {m.attachment_size != null && (
+                                  <span className="shrink-0 text-slate-400">{formatFileSize(m.attachment_size)}</span>
+                                )}
+                              </a>
+                            )}
+                          </div>
+                        )}
+
+                        {linkUrl && (
+                          <div onClick={(e) => e.stopPropagation()}>
+                            <LinkPreviewCard url={linkUrl} />
+                          </div>
+                        )}
                       </div>
 
                       {!isSystemConfirmation && (
@@ -676,6 +1019,17 @@ export default function ChatPanel({
                             className="rounded px-1 py-0.5 text-[13px] hover:bg-black/5"
                           >
                             ↩️
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              togglePin(m);
+                            }}
+                            title={m.pinned_at ? "고정 해제" : "고정"}
+                            className="rounded px-1 py-0.5 text-[13px] hover:bg-black/5"
+                          >
+                            📌
                           </button>
                           {isMine && (
                             <button
@@ -784,6 +1138,16 @@ export default function ChatPanel({
         )}
 
         <form onSubmit={sendMessage} className="flex items-end gap-2 rounded-lg border border-black/10 bg-black/[0.03] px-3 py-2">
+          <input ref={fileInputRef} type="file" onChange={handleAttachmentChange} disabled={uploadingFile} className="hidden" />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploadingFile}
+            title="파일 첨부"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition hover:bg-black/5 disabled:opacity-50"
+          >
+            {uploadingFile ? "…" : "📎"}
+          </button>
           <textarea
             ref={textareaRef}
             value={text}

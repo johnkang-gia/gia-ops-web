@@ -76,6 +76,21 @@ export default function WorkspaceArea({
   // 하나씩 보여주는 별도 레이아웃을 씁니다(아래 mobileTab 상태).
   const [mobileTab, setMobileTab] = useState<"board" | "chat" | "mine">("chat");
 
+  // 모바일/데스크톱 레이아웃을 CSS(hidden/sm:flex)로만 나누면 두 레이아웃이 동시에 DOM에
+  // 마운트되어, ChatPanel·TaskBoard(ActivityLog)가 같은 실시간 채널 이름으로 두 번 구독하게
+  // 되면서 페이지 자체가 열리지 않는 문제가 있었습니다. 실제 화면 폭을 봐서 둘 중 하나만
+  // 마운트하도록 바꿨습니다(서버 렌더링과 첫 렌더는 항상 데스크톱 기준으로 맞춰 hydration
+  // 불일치를 피하고, 마운트된 다음에만 실제 폭을 반영합니다).
+  const [isMobileView, setIsMobileView] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 639px)");
+    setIsMobileView(mq.matches);
+    const onChange = (e: MediaQueryListEvent) => setIsMobileView(e.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+
   useEffect(() => {
     const saved = loadSavedLayout();
     setLeftWidth(saved.leftWidth);
@@ -134,11 +149,13 @@ export default function WorkspaceArea({
     };
   }
 
-  return (
-    <>
-      {/* 모바일(작은 화면): 마우스 드래그로 나누는 2단 레이아웃 대신, 탭으로 채팅/칸반/내업무를
-          하나씩 전체 폭으로 보여줍니다 - 터치 화면에서 리사이저를 쓸 수 없어서(요청). */}
-      <div className="flex h-full flex-col overflow-hidden sm:hidden">
+  if (isMobileView) {
+    return (
+      /* 모바일(작은 화면): 마우스 드래그로 나누는 2단 레이아웃 대신, 탭으로 채팅/칸반/내업무를
+          하나씩 전체 폭으로 보여줍니다 - 터치 화면에서 리사이저를 쓸 수 없어서(요청). 데스크톱
+          레이아웃과 동시에 마운트하면 ChatPanel/ActivityLog의 실시간 채널이 중복 구독되어 업무탭
+          자체가 열리지 않는 문제가 있었으므로, 둘 중 하나만 마운트합니다. */
+      <div className="flex h-full flex-col overflow-hidden">
         <div className="glass-panel flex shrink-0 divide-x divide-black/5 border-b border-black/5">
           {(
             [
@@ -211,9 +228,12 @@ export default function WorkspaceArea({
           )}
         </div>
       </div>
+    );
+  }
 
-      {/* 데스크톱(sm 이상): 기존 마우스 드래그로 폭/높이를 조절하는 2단 레이아웃 그대로 유지 */}
-      <div className="hidden h-full overflow-hidden sm:flex">
+  // 데스크톱(그 외 화면 폭): 기존 마우스 드래그로 폭/높이를 조절하는 2단 레이아웃 그대로 유지
+  return (
+    <div className="flex h-full overflow-hidden">
       {/* 왼쪽: 업무 상황판(숫자만, 작게) + 빠른 업무등록 위젯(항상 고정) + 채팅(나머지 공간) */}
       <div className="flex flex-col overflow-hidden" style={{ width: `${leftWidth}%` }}>
         <div className="overflow-hidden" style={{ height: `${leftTopHeight}%` }}>
@@ -274,7 +294,6 @@ export default function WorkspaceArea({
           />
         </div>
       </div>
-      </div>
-    </>
+    </div>
   );
 }

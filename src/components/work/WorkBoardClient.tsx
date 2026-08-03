@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import { useRealtimeTable } from "@/lib/useRealtimeTable";
 import { useOnlineUsers } from "@/lib/useOnlineUsers";
@@ -9,6 +10,8 @@ import { nameFor } from "@/lib/teamName";
 import { STATUS_LABEL } from "./statusConfig";
 import WorkspaceArea from "./WorkspaceArea";
 import TaskDetailPanel from "./TaskDetailPanel";
+
+type StatusToast = { id: string; taskId: string; text: string };
 
 export default function WorkBoardClient({
   initialTasks,
@@ -29,6 +32,34 @@ export default function WorkBoardClient({
 
   const [activeDeptId, setActiveDeptId] = useState<string | null>(deptList[0]?.id ?? null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [toasts, setToasts] = useState<StatusToast[]>([]);
+
+  // 공유(태그된) 업무의 상태가 바뀌면 등록자·담당자 전원이 실시간으로 알 수 있게, 상태 변경만
+  // 따로 감시하는 채널입니다. useRealtimeTable의 일반 구독은 화면 상태(tasks)를 갱신하는
+  // 용도라 "무엇이 바뀌었는지"를 구분하지 않는데, 여기서는 status가 실제로 바뀐 경우에만,
+  // 그리고 내가 바꾼 게 아니면서 내가 등록자/담당자로 태그된 업무일 때만 토스트를 띄웁니다.
+  useEffect(() => {
+    const supabase = createClient();
+    const channel = supabase
+      .channel("tasks-status-toast")
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "tasks" }, (payload) => {
+        const oldRow = payload.old as Partial<Task>;
+        const newRow = payload.new as Task;
+        if (!oldRow.status || oldRow.status === newRow.status) return; // 상태가 실제로 바뀐 경우만
+        if (!newRow.updated_by || newRow.updated_by === userEmail) return; // 내가 바꾼 건 알림 불필요
+        const involved = newRow.owner_email === userEmail || newRow.assignee_emails?.includes(userEmail);
+        if (!involved) return;
+        const moverName = nameFor(team, newRow.updated_by);
+        const id = `${newRow.id}-${Date.now()}`;
+        setToasts((prev) => [...prev, { id, taskId: newRow.id, text: `${moverName}님이 "${newRow.title}" 업무를 '${STATUS_LABEL[newRow.status]}'(으)로 옮겼어요.` }]);
+        setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 6000);
+      })
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userEmail, team]);
 
   const activeDepartment = deptList.find((d) => d.id === activeDeptId) ?? deptList[0] ?? null;
 
@@ -60,9 +91,9 @@ export default function WorkBoardClient({
     const task = tasks.find((t) => t.id === taskId);
     if (!task || task.status === status) return;
     const position = Date.now();
-    setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, status, position } : t)));
+    setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, status, position, updated_by: userEmail } : t)));
     const supabase = createClient();
-    await supabase.from("tasks").update({ status, position }).eq("id", taskId);
+    await supabase.from("tasks").update({ status, position, updated_by: userEmail }).eq("id", taskId);
     await supabase.from("task_comments").insert({
       task_id: taskId,
       author_email: userEmail,
@@ -136,7 +167,7 @@ export default function WorkBoardClient({
           🟢 {online.length}명 접속중
         </span>
         <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-medium text-blue-600">
-          💬 채팅에서 @담당자를 태그하면 바로 업무로 등록돼요
+          🏷️ 채팅 위 업무등록 위젯에서 나/전체/공유를 골라 빠르게 등록하세요
         </span>
       </div>
 
@@ -170,6 +201,27 @@ export default function WorkBoardClient({
           }}
         />
       )}
+
+      {toasts.length > 0 &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div className="fixed bottom-4 right-4 z-[60] flex flex-col gap-2">
+            {toasts.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => {
+                  setSelectedId(t.taskId);
+                  setToasts((prev) => prev.filter((x) => x.id !== t.id));
+                }}
+                className="flex max-w-xs items-start gap-2 rounded-xl border border-blue-200 bg-white px-3 py-2.5 text-left text-[12px] text-slate-700 shadow-lg transition hover:bg-blue-50"
+              >
+                <span className="shrink-0">🔔</span>
+                <span>{t.text}</span>
+              </button>
+            ))}
+          </div>,
+          document.body
+        )}
     </div>
   );
 }

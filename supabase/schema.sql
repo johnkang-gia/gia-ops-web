@@ -1677,3 +1677,13 @@ drop trigger if exists messages_protect_update on messages;
 create trigger messages_protect_update
   before update on messages
   for each row execute function protect_messages_update();
+
+-- ===== 42. 업무 - 공유 업무 실시간 알림용 updated_by =====
+-- "누가 상태를 바꿨는지" 알아야 그 사람 본인에게는 알림을 안 띄우고, 태그된 다른 사람에게만
+-- 실시간 토스트로 "OOO님이 이 업무를 진행중으로 옮겼어요" 같은 알림을 보여줄 수 있습니다.
+alter table tasks add column if not exists updated_by text;
+
+-- 위 messages 테이블과 같은 이유로, UPDATE 이벤트에 이전 status 값이 함께 와야 "정말 상태가
+-- 바뀐 변경인지"(단순 담당자 태그 수정이나 확인 체크 등은 제외) 클라이언트에서 구분할 수
+-- 있습니다. 기본 REPLICA IDENTITY는 기본키만 old에 담아 보내 이 구분이 불가능했습니다.
+alter table tasks replica identity full;

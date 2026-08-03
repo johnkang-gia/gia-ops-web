@@ -6,6 +6,7 @@ import DashboardArea from "./DashboardArea";
 import ChatPanel from "./ChatPanel";
 import TaskBoard from "./TaskBoard";
 import MyTasksWidget from "./MyTasksWidget";
+import QuickTaskWidget from "./QuickTaskWidget";
 
 // 참조 소스코드(WorkspaceArea.tsx)의 마우스 드래그 리사이저를 그대로 옮겼습니다 - 서드파티
 // 라이브러리 없이 mousedown/mousemove/mouseup만으로 좌측 폭(%)과 좌측 상단 높이(%)를 조절합니다.
@@ -85,7 +86,7 @@ export default function WorkspaceArea({
 
   return (
     <div className="flex h-full overflow-hidden">
-      {/* 왼쪽: 업무 상황판(숫자만, 작게) + 채팅(크게, 3:7) */}
+      {/* 왼쪽: 업무 상황판(숫자만, 작게) + 빠른 업무등록 위젯(항상 고정) + 채팅(나머지 공간) */}
       <div className="flex flex-col overflow-hidden" style={{ width: `${leftWidth}%` }}>
         <div className="overflow-hidden" style={{ height: `${leftTopHeight}%` }}>
           <DashboardArea tasks={tasks} activeDepartmentName={activeDepartment.name} deptColorMap={deptColorMap} onSelectTask={onOpenTask} />
@@ -94,15 +95,20 @@ export default function WorkspaceArea({
           onMouseDown={startRowResize(setLeftTopHeight, leftTopHeight, 8, 40)}
           className="h-1 shrink-0 cursor-row-resize bg-black/5 transition hover:bg-blue-400"
         />
-        <div className="overflow-hidden" style={{ height: `${100 - leftTopHeight}%` }}>
-          <ChatPanel
-            department={activeDepartment.name}
-            departments={departments}
-            team={team}
-            userEmail={currentUserEmail}
-            tasks={tasks}
-            onTaskCreated={onTaskCreated}
-          />
+        <div className="flex min-h-0 flex-col overflow-hidden" style={{ height: `${100 - leftTopHeight}%` }}>
+          <div className="shrink-0 border-b border-black/5 pb-1">
+            <QuickTaskWidget department={activeDepartment.name} team={team} currentUserEmail={currentUserEmail} onTaskCreated={onTaskCreated} />
+          </div>
+          <div className="min-h-0 flex-1 overflow-hidden">
+            <ChatPanel
+              department={activeDepartment.name}
+              departments={departments}
+              team={team}
+              userEmail={currentUserEmail}
+              tasks={tasks}
+              onTaskCreated={onTaskCreated}
+            />
+          </div>
         </div>
       </div>
 

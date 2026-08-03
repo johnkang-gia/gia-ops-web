@@ -97,7 +97,7 @@ export default function TaskDetailPanel({
 
   async function changeStatus(status: TaskStatus) {
     if (status === task.status) return;
-    await patch({ status });
+    await patch({ status, updated_by: currentUserEmail });
     await logSystemEvent(`${nameFor(team, currentUserEmail)}님이 업무를 '${STATUS_LABEL[status]}'(으)로 변경했습니다.`);
   }
 

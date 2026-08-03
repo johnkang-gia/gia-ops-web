@@ -178,6 +178,7 @@ export type Task = {
   position: number;
   due_at: string | null;
   acknowledged_by: TaskAck[];
+  updated_by: string | null;
   created_at: string;
   updated_at: string;
 };

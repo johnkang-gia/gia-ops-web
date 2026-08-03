@@ -109,8 +109,10 @@ export default function StudentReportBoard({
           >
             <div className="flex items-start justify-between gap-2">
               <span className="min-w-0 flex-1 font-semibold leading-tight text-slate-800">
-                <span className="block truncate">{student.name}</span>
-                {student.name_en && <span className="block truncate text-[11px] font-normal text-slate-400">{student.name_en}</span>}
+                <span className="block break-words">{student.name}</span>
+                {student.name_en && (
+                  <span className="block break-words text-[10px] font-normal leading-snug text-slate-400">{student.name_en}</span>
+                )}
               </span>
               <span className="shrink-0 whitespace-nowrap text-[11px] text-slate-400">
                 {student.grade}학년 {student.class_name}

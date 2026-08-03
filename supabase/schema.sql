@@ -1902,3 +1902,61 @@ insert into ai_feature_flags (key, label, group_name) values
   ('proposals-decide', '제안 승인 정리 AI', '제안함 · 채택예정'),
   ('analyze-task', '업무 분석 AI', '업무')
 on conflict (key) do nothing;
+
+-- ===== 50. 동시입력 안전장치: 업무 확인/담당자 토글 원자적 RPC + wr_reports 중복 방지 =====
+-- 여러 사람이 동시에 같은 데이터를 건드릴 때 생기는 두 가지 문제를 막습니다.
+--
+-- (1) tasks.acknowledged_by(업무 확인)/assignee_emails(담당자 태그)는 지금까지 클라이언트가
+--     "현재 배열 + 새 항목"을 계산해서 배열 전체를 update했습니다. 예를 들어 전체공지 업무를
+--     5명이 거의 동시에 "확인" 클릭하면, 늦게 도착한 update가 먼저 도착한 사람의 확인 기록을
+--     통째로 덮어써서 조용히 사라질 수 있었습니다(감지 불가능한 데이터 유실). 아래 두 함수는
+--     update 한 문장으로 처리되어 Postgres가 같은 행에 대한 동시 update를 자동으로 한 번에
+--     하나씩 순서대로 처리해주므로, 몇 명이 동시에 눌러도 모든 기록이 안전하게 누적됩니다.
+create or replace function toggle_task_ack(p_task_id uuid, p_email text)
+returns tasks
+language sql
+as $$
+  update tasks t
+  set acknowledged_by = case
+    when exists (
+      select 1 from jsonb_array_elements(t.acknowledged_by) e where e->>'email' = p_email
+    )
+    then coalesce(
+      (select jsonb_agg(e) from jsonb_array_elements(t.acknowledged_by) e where e->>'email' <> p_email),
+      '[]'::jsonb
+    )
+    else t.acknowledged_by || jsonb_build_array(jsonb_build_object('email', p_email, 'time', now()))
+  end
+  where t.id = p_task_id
+  returning *;
+$$;
+
+create or replace function toggle_task_assignee(p_task_id uuid, p_email text)
+returns tasks
+language sql
+as $$
+  update tasks
+  set assignee_emails = case
+    when p_email = any(assignee_emails) then array_remove(assignee_emails, p_email)
+    else array_append(assignee_emails, p_email)
+  end
+  where id = p_task_id
+  returning *;
+$$;
+
+-- (2) 주간 학생 관찰기록(wr_reports)도 같은 학생/과목/주(report_date) 리포트를 두 사람이(또는
+--     한 사람이 두 탭으로) 거의 동시에 처음 열어 저장하면, 둘 다 "아직 리포트가 없다"고 판단해
+--     각자 INSERT를 해서 중복 행이 생길 수 있었습니다. 먼저 기존에 이미 생겼을 수 있는 중복을
+--     최신 것만 남기고 정리한 뒤, DB가 직접 중복을 막도록 고유 제약을 겁니다(앱 쪽은 이제
+--     upsert로 저장하도록 함께 수정했습니다 - ReportFormModal.tsx).
+delete from wr_reports a
+using wr_reports b
+where a.student_id = b.student_id
+  and a.subject = b.subject
+  and a.report_date = b.report_date
+  and (a.updated_at, a.id) < (b.updated_at, b.id);
+
+drop index if exists wr_reports_student_idx;
+create unique index if not exists wr_reports_unique_idx on wr_reports(student_id, subject, report_date);
+alter table wr_reports drop constraint if exists wr_reports_unique_key;
+alter table wr_reports add constraint wr_reports_unique_key unique using index wr_reports_unique_idx;

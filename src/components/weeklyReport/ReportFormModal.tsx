@@ -143,17 +143,14 @@ export default function ReportFormModal({
       report_date: new Date().toISOString().slice(0, 10),
     };
 
-    if (existingReportId) {
-      const { data, error } = await supabase
-        .from("wr_reports")
-        .update(payload)
-        .eq("id", existingReportId)
-        .select()
-        .single();
-      if (!error && data) return data as WrReport;
-      return null;
-    }
-    const { data, error } = await supabase.from("wr_reports").insert(payload).select().single();
+    // 같은 학생·과목·주(report_date) 리포트는 upsert로 저장합니다 - 담임/과목교사가 동시에
+    // 같은 학생 리포트를 처음 열거나(또는 같은 사람이 두 탭으로) 거의 동시에 저장해도, DB의
+    // 고유 제약(student_id, subject, report_date)이 하나로 합쳐줘서 중복 행이 생기지 않습니다.
+    const { data, error } = await supabase
+      .from("wr_reports")
+      .upsert(payload, { onConflict: "student_id,subject,report_date" })
+      .select()
+      .single();
     if (!error && data) {
       setExistingReportId((data as WrReport).id);
       return data as WrReport;

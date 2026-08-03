@@ -175,9 +175,12 @@ export default function TaskDetailPanel({
     });
   }
 
-  function toggleAssignee(email: string) {
-    const has = task.assignee_emails.includes(email);
-    patch({ assignee_emails: has ? task.assignee_emails.filter((e) => e !== email) : [...task.assignee_emails, email] });
+  // 담당자 태그도 update 전체 덮어쓰기 대신 원자적 RPC로 토글합니다 - 관리자 여러 명이 거의
+  // 동시에 담당자를 태그/해제해도 서로의 변경이 사라지지 않습니다.
+  async function toggleAssignee(email: string) {
+    const supabase = createClient();
+    const { data: updated } = await supabase.rpc("toggle_task_assignee", { p_task_id: task.id, p_email: email });
+    if (updated) onUpdated({ ...task, ...(updated as Task) });
   }
 
   async function changeStatus(status: TaskStatus) {
@@ -216,12 +219,16 @@ export default function TaskDetailPanel({
     setIssueNote("");
   }
 
+  // 업무 확인도 원자적 RPC로 처리합니다 - 여러 담당자가 거의 동시에 "확인"을 눌러도 서로의
+  // 확인 기록이 사라지지 않습니다(전체 배열을 덮어쓰는 patch() 대신 toggle_task_ack 사용).
   async function toggleAck() {
     const already = task.acknowledged_by?.some((a) => a.email === currentUserEmail);
-    const nextAck = already
-      ? task.acknowledged_by.filter((a) => a.email !== currentUserEmail)
-      : [...(task.acknowledged_by ?? []), { email: currentUserEmail, time: new Date().toISOString() }];
-    await patch({ acknowledged_by: nextAck });
+    const supabase = createClient();
+    const { data: updated } = await supabase.rpc("toggle_task_ack", {
+      p_task_id: task.id,
+      p_email: currentUserEmail,
+    });
+    if (updated) onUpdated({ ...task, ...(updated as Task) });
     if (!already) {
       await logSystemEvent(`${nameFor(team, currentUserEmail)}님이 업무를 확인했습니다.`);
     }

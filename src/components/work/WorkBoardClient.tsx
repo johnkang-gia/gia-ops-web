@@ -169,12 +169,17 @@ export default function WorkBoardClient({
     if (!task) return;
     const already = task.acknowledged_by?.some((a) => a.email === userEmail);
     if (checked === !!already) return;
-    const nextAck = checked
+    // 화면은 즉시 반영(낙관적 업데이트)하되, 실제 DB 반영은 원자적 RPC로 처리합니다 - 여러
+    // 사람이 거의 동시에 같은 업무를 "확인"해도 서로의 확인 기록이 덮어써지지 않습니다.
+    const optimisticAck = checked
       ? [...(task.acknowledged_by ?? []), { email: userEmail, time: new Date().toISOString() }]
       : (task.acknowledged_by ?? []).filter((a) => a.email !== userEmail);
-    setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, acknowledged_by: nextAck } : t)));
+    setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, acknowledged_by: optimisticAck } : t)));
     const supabase = createClient();
-    await supabase.from("tasks").update({ acknowledged_by: nextAck }).eq("id", taskId);
+    const { data: updated } = await supabase.rpc("toggle_task_ack", { p_task_id: taskId, p_email: userEmail });
+    if (updated) {
+      setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, ...(updated as Task) } : t)));
+    }
     if (checked) {
       await supabase.from("task_comments").insert({
         task_id: taskId,

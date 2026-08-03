@@ -1700,3 +1700,70 @@ alter table tasks add column if not exists updated_by text;
 -- 바뀐 변경인지"(단순 담당자 태그 수정이나 확인 체크 등은 제외) 클라이언트에서 구분할 수
 -- 있습니다. 기본 REPLICA IDENTITY는 기본키만 old에 담아 보내 이 구분이 불가능했습니다.
 alter table tasks replica identity full;
+
+-- ===== 44. 업무 삭제 권한 분리 (등록자 본인 또는 관리자만) =====
+-- 기존 "giamicro_all_tasks" 정책은 for all이라 giamicro.com 계정이면 누구나 남의 업무도
+-- 지울 수 있었습니다. messages 테이블 때와 동일한 패턴으로, 삭제만 등록자 본인(또는
+-- 관리자)로 좁히고 나머지 명령은 그대로 넓게 유지합니다.
+drop policy if exists "giamicro_all_tasks" on tasks;
+
+drop policy if exists "giamicro_select_tasks" on tasks;
+create policy "giamicro_select_tasks" on tasks
+  for select using (is_giamicro_user());
+
+drop policy if exists "giamicro_insert_tasks" on tasks;
+create policy "giamicro_insert_tasks" on tasks
+  for insert with check (is_giamicro_user());
+
+drop policy if exists "giamicro_update_tasks" on tasks;
+create policy "giamicro_update_tasks" on tasks
+  for update using (is_giamicro_user()) with check (is_giamicro_user());
+
+drop policy if exists "owner_delete_tasks" on tasks;
+create policy "owner_delete_tasks" on tasks
+  for delete using (is_giamicro_user() and (owner_email = lower(auth.jwt() ->> 'email') or is_app_admin()));
+
+-- ===== 45. 업무 - 등록 방식(나/전체/공유)별 색상 =====
+-- 빠른 업무등록 위젯에서 고른 뱃지([나]/[전체]/[공유])를 그대로 저장해서, 칸반 카드
+-- 테두리 색을 부서색 대신 이 값으로 표시할 수 있게 합니다. 채팅으로 등록되는 업무(AI
+-- 분석/@태그)는 특정 인원에게 배정되는 경우가 대부분이라 기본값을 '공유'로 둡니다.
+alter table tasks add column if not exists origin_mode text not null default '공유'
+  check (origin_mode in ('나', '전체', '공유'));
+
+-- 색상은 3개(나/전체/공유) 고정 행만 있는 아주 작은 설정 테이블입니다. 조회는 누구나,
+-- 수정(색상 변경)은 관리자 이상만 가능합니다.
+create table if not exists task_mode_colors (
+  mode text primary key check (mode in ('나', '전체', '공유')),
+  color text not null
+);
+
+insert into task_mode_colors (mode, color) values
+  ('나', '#3b82f6'),
+  ('전체', '#8b5cf6'),
+  ('공유', '#f59e0b')
+on conflict (mode) do nothing;
+
+alter table task_mode_colors enable row level security;
+drop policy if exists "giamicro_select_task_mode_colors" on task_mode_colors;
+create policy "giamicro_select_task_mode_colors" on task_mode_colors
+  for select using (is_giamicro_user());
+drop policy if exists "admin_update_task_mode_colors" on task_mode_colors;
+create policy "admin_update_task_mode_colors" on task_mode_colors
+  for update using (is_app_admin()) with check (is_app_admin());
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'task_mode_colors'
+  ) then
+    alter publication supabase_realtime add table task_mode_colors;
+  end if;
+end $$;
+
+-- ===== 46. 업무 코멘트 - "이슈" 메모 구분 =====
+-- 업무를 보류로 보내면서 "이슈가 있다"고 표시하면, 이유를 적는 메모를 남길 수 있습니다.
+-- 이 메모는 일반 코멘트와 같은 테이블(task_comments)에 저장하되, is_issue로 구분해서
+-- 업무기록/상세 화면에서 다르게(⚠️ 강조) 보여줄 수 있게 합니다. 작성자는 author_email로
+-- 이미 표시되고 있어 별도 컬럼이 필요 없습니다.
+alter table task_comments add column if not exists is_issue boolean not null default false;

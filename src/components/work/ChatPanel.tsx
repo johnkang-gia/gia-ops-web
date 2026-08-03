@@ -12,7 +12,7 @@ import { deadlineLabel } from "@/lib/deadlineLabel";
 import { uploadChatFile, getChatFileSignedUrl } from "@/lib/storage";
 import LinkPreviewCard from "./LinkPreviewCard";
 
-const REACTION_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
+const REACTION_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🙏", "🎉", "👏", "🔥", "😅", "🤔", "✅"];
 const TYPING_EXPIRE_MS = 3000;
 const GROUP_WINDOW_MS = 5 * 60 * 1000;
 const MARK_READ_DEBOUNCE_MS = 1500;
@@ -466,6 +466,24 @@ export default function ChatPanel({
     }
   }
 
+  // 입력창 위 서식 툴바(요청 #8) - 구글독스처럼 버튼을 누르면 선택한 글자를 마크다운 기호로
+  // 감쌉니다. 선택한 부분이 없으면 기호만 커서 위치에 넣고 그 사이에 커서를 둡니다.
+  function wrapSelection(prefix: string, suffix: string = prefix) {
+    const el = textareaRef.current;
+    if (!el) return;
+    const start = el.selectionStart ?? text.length;
+    const end = el.selectionEnd ?? text.length;
+    const selected = text.slice(start, end);
+    const next = text.slice(0, start) + prefix + selected + suffix + text.slice(end);
+    setText(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      const cursorStart = start + prefix.length;
+      const cursorEnd = cursorStart + selected.length;
+      el.setSelectionRange(cursorStart, cursorEnd);
+    });
+  }
+
   function selectToken(value: string, isHash: boolean) {
     if (!textareaRef.current) return;
     const cursor = textareaRef.current.selectionStart || 0;
@@ -658,7 +676,7 @@ export default function ChatPanel({
     requestAnimationFrame(() => requestAnimationFrame(() => scrollToMessage(m.id)));
   }
 
-  const REACTION_POPUP_WIDTH = 172;
+  const REACTION_POPUP_WIDTH = 216;
   function openReactionPopup(e: React.MouseEvent, messageId: string) {
     e.stopPropagation();
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -1137,6 +1155,24 @@ export default function ChatPanel({
           </div>
         )}
 
+        {/* 구글독스 메뉴처럼 선택한 글자를 감싸는 간단한 서식 툴바입니다(요청 #8) - 굵게/기울임/
+            취소선/코드 4개만 지원해도 채팅에서 쓰기엔 충분하고, 결과는 기존에 지원하던 마크다운
+            문법(**굵게** 등)과 같은 문자열이라 렌더링 쪽 코드를 새로 만들 필요가 없습니다. */}
+        <div className="mb-1.5 flex items-center gap-0.5">
+          <button type="button" onClick={() => wrapSelection("**")} title="굵게" className="rounded px-1.5 py-0.5 text-[12px] font-bold text-slate-500 hover:bg-black/5">
+            B
+          </button>
+          <button type="button" onClick={() => wrapSelection("*")} title="기울임" className="rounded px-1.5 py-0.5 text-[12px] italic text-slate-500 hover:bg-black/5">
+            I
+          </button>
+          <button type="button" onClick={() => wrapSelection("~~")} title="취소선" className="rounded px-1.5 py-0.5 text-[12px] line-through text-slate-500 hover:bg-black/5">
+            S
+          </button>
+          <button type="button" onClick={() => wrapSelection("`")} title="코드" className="rounded px-1.5 py-0.5 font-mono text-[12px] text-slate-500 hover:bg-black/5">
+            {"</>"}
+          </button>
+        </div>
+
         <form onSubmit={sendMessage} className="flex items-end gap-2 rounded-lg border border-black/10 bg-black/[0.03] px-3 py-2">
           <input ref={fileInputRef} type="file" onChange={handleAttachmentChange} disabled={uploadingFile} className="hidden" />
           <button
@@ -1216,15 +1252,30 @@ export default function ChatPanel({
               style={{ position: "fixed", top: reactionPopup.top, left: reactionPopup.left, width: REACTION_POPUP_WIDTH }}
               className="z-50 flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-white p-1.5 shadow-lg"
             >
-              {REACTION_EMOJIS.map((emoji) => (
-                <button
-                  key={emoji}
-                  onClick={() => toggleReaction(reactionPopup.messageId, emoji)}
-                  className="flex h-7 w-7 items-center justify-center rounded-md text-base hover:bg-black/5"
-                >
-                  {emoji}
-                </button>
-              ))}
+              {REACTION_EMOJIS.map((emoji) => {
+                // 내가 이미 이 이모지로 반응했다면 체크 표시를 겹쳐서 바로 알아볼 수 있게 합니다.
+                const mine = reactions.some(
+                  (r) => r.message_id === reactionPopup.messageId && r.emoji === emoji && r.author_email === userEmail
+                );
+                return (
+                  <button
+                    key={emoji}
+                    onClick={() => toggleReaction(reactionPopup.messageId, emoji)}
+                    title={mine ? "반응 취소" : "반응 남기기"}
+                    className={
+                      "relative flex h-7 w-7 items-center justify-center rounded-md text-base transition " +
+                      (mine ? "bg-blue-100" : "hover:bg-black/5")
+                    }
+                  >
+                    {emoji}
+                    {mine && (
+                      <span className="absolute -bottom-0.5 -right-0.5 flex h-3 w-3 items-center justify-center rounded-full bg-blue-500 text-[7px] text-white">
+                        ✓
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </>,
           document.body

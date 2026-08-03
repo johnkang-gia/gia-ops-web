@@ -6,11 +6,12 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useRealtimeTable } from "@/lib/useRealtimeTable";
 import { useOnlineUsers } from "@/lib/useOnlineUsers";
-import type { Task, TaskStatus, Department, TeamMember } from "@/lib/types";
+import type { Task, TaskStatus, Department, TeamMember, TaskModeColor } from "@/lib/types";
 import { nameFor } from "@/lib/teamName";
 import { STATUS_LABEL } from "./statusConfig";
 import WorkspaceArea from "./WorkspaceArea";
 import TaskDetailPanel from "./TaskDetailPanel";
+import WorkGuideModal from "./WorkGuideModal";
 
 type StatusToast = { id: string; taskId: string; text: string };
 
@@ -20,20 +21,26 @@ export default function WorkBoardClient({
   userEmail,
   departments,
   isAdmin,
+  initialModeColors,
 }: {
   initialTasks: Task[];
   team: TeamMember[];
   userEmail: string;
   departments: Department[];
   isAdmin: boolean;
+  initialModeColors: TaskModeColor[];
 }) {
   const [tasks, setTasks] = useRealtimeTable<Task>("tasks", initialTasks);
   const [deptList, setDeptList] = useState<Department[]>(departments);
+  // 나/전체/공유 뱃지 색상은 관리자가 가끔만 바꾸는 설정값이라(부서 색상과 동일한 패턴),
+  // 실시간 구독 없이 로컬 상태 + 낙관적 업데이트로 충분합니다.
+  const [modeColors, setModeColors] = useState<TaskModeColor[]>(initialModeColors);
   const online = useOnlineUsers(userEmail);
 
   const [activeDeptId, setActiveDeptId] = useState<string | null>(deptList[0]?.id ?? null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [toasts, setToasts] = useState<StatusToast[]>([]);
+  const [guideOpen, setGuideOpen] = useState(false);
 
   // 공유(태그된) 업무의 상태가 바뀌면 등록자·담당자 전원이 실시간으로 알 수 있게, 상태 변경만
   // 따로 감시하는 채널입니다. useRealtimeTable의 일반 구독은 화면 상태(tasks)를 갱신하는
@@ -69,6 +76,21 @@ export default function WorkBoardClient({
     for (const d of deptList) if (d.color) map.set(d.name, d.color);
     return map;
   }, [deptList]);
+
+  const modeColorMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const m of modeColors) if (m.color) map.set(m.mode, m.color);
+    return map;
+  }, [modeColors]);
+
+  async function handleModeColorChange(mode: TaskModeColor["mode"], color: string) {
+    if (!isAdmin) return;
+    setModeColors((prev) =>
+      prev.some((m) => m.mode === mode) ? prev.map((m) => (m.mode === mode ? { ...m, color } : m)) : [...prev, { mode, color }]
+    );
+    const supabase = createClient();
+    await supabase.from("task_mode_colors").upsert({ mode, color });
+  }
 
   // archived_at이 채워진 업무는 야간 크론이 방금 업무기록으로 넘긴 것입니다. 최초 로드 쿼리는
   // 이미 걸러서 가져오지만(work/page.tsx), 그 이후 실시간 구독으로 들어오는 UPDATE 이벤트는
@@ -187,7 +209,17 @@ export default function WorkBoardClient({
         >
           🗂 업무기록
         </Link>
+        <button
+          type="button"
+          onClick={() => setGuideOpen(true)}
+          title="사용 가이드"
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-black/5 text-[12px] font-bold text-slate-600 transition hover:bg-black/10"
+        >
+          ❓
+        </button>
       </div>
+
+      {guideOpen && <WorkGuideModal onClose={() => setGuideOpen(false)} />}
 
       <div className="flex-1 overflow-hidden">
         <WorkspaceArea
@@ -195,6 +227,8 @@ export default function WorkBoardClient({
           tasks={scopedTasks}
           team={team}
           deptColorMap={deptColorMap}
+          modeColorMap={modeColorMap}
+          onModeColorChange={handleModeColorChange}
           departments={deptList}
           isAdmin={isAdmin}
           currentUserEmail={userEmail}
@@ -211,6 +245,7 @@ export default function WorkBoardClient({
           team={team}
           online={online}
           currentUserEmail={userEmail}
+          isAdmin={isAdmin}
           onClose={() => setSelectedId(null)}
           onUpdated={(updated) => setTasks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)))}
           onDeleted={(id) => {

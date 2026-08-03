@@ -10,6 +10,7 @@ export default function TaskCard({
   task,
   team,
   deptColor,
+  modeColorMap,
   isAdmin,
   currentUserEmail,
   onOpen,
@@ -18,6 +19,7 @@ export default function TaskCard({
   task: Task;
   team: TeamMember[];
   deptColor?: string | null;
+  modeColorMap?: Map<string, string>;
   isAdmin: boolean;
   currentUserEmail: string;
   onOpen: () => void;
@@ -34,7 +36,9 @@ export default function TaskCard({
     opacity: isDragging ? 0.5 : 1,
   };
 
-  const color = deptColor || "#3b82f6";
+  // 카드 강조색은 "누구를 위한 업무인가"(나/전체/공유, 관리자가 설정)를 우선 기준으로 삼고,
+  // 아직 색이 지정 안 됐거나 예전 데이터라면 부서색 → 기본 파란색 순으로 대신합니다.
+  const color = modeColorMap?.get(task.origin_mode) || deptColor || "#3b82f6";
   const ackList = task.acknowledged_by ?? [];
   const totalAssignees = task.assignee_emails.length;
   const iAmAssignee = task.assignee_emails.includes(currentUserEmail);
@@ -102,7 +106,7 @@ export default function TaskCard({
             긴급
           </span>
         )}
-        <span className={"min-w-0 flex-1 text-sm font-semibold text-slate-800" + (iAmAssignee && myAck ? " line-through opacity-60" : "")}>
+        <span className={"min-w-0 flex-1 text-sm font-semibold text-slate-800" + (iAmAssignee && myAck ? " opacity-60" : "")}>
           {task.title}
         </span>
         {totalAssignees > 0 && (

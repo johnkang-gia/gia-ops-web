@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Task, TaskComment, TaskStatus, TeamMember } from "@/lib/types";
 import { nameFor } from "@/lib/teamName";
+import { addTimedEventToNativeCalendar } from "@/lib/nativeCalendar";
 import { STATUS_ORDER, STATUS_LABEL } from "./statusConfig";
 
 function timeAgo(iso: string) {
@@ -21,6 +22,7 @@ export default function TaskDetailPanel({
   team,
   online,
   currentUserEmail,
+  isAdmin,
   onClose,
   onUpdated,
   onDeleted,
@@ -29,6 +31,7 @@ export default function TaskDetailPanel({
   team: TeamMember[];
   online: string[];
   currentUserEmail: string;
+  isAdmin: boolean;
   onClose: () => void;
   onUpdated: (task: Task) => void;
   onDeleted: (id: string) => void;
@@ -36,6 +39,11 @@ export default function TaskDetailPanel({
   const [comments, setComments] = useState<TaskComment[]>([]);
   const [commentText, setCommentText] = useState("");
   const [dueLocal, setDueLocal] = useState(task.due_at ? task.due_at.slice(0, 16) : "");
+  // 보류로 옮기려고 하면 바로 상태를 바꾸지 않고, 먼저 "단순 보류"인지 "이슈"인지 물어봅니다
+  // (이슈면 메모를 남겨야 하므로). holdPrompt가 열려 있는 동안은 select의 표시값도 이걸
+  // 기준으로 되돌려둡니다(아직 확정 전이라 실제 상태는 안 바뀐 상태).
+  const [holdPrompt, setHoldPrompt] = useState(false);
+  const [issueNote, setIssueNote] = useState("");
 
   useEffect(() => {
     const supabase = createClient();
@@ -102,6 +110,35 @@ export default function TaskDetailPanel({
     await logSystemEvent(`${nameFor(team, currentUserEmail)}님이 업무를 '${STATUS_LABEL[status]}'(으)로 변경했습니다.`);
   }
 
+  // 상태 드롭다운에서 "보류"를 고르면 바로 바꾸지 않고, 단순 보류인지 이슈(메모 필요)인지
+  // 먼저 물어봅니다. 그 외 상태는 예전처럼 바로 반영됩니다.
+  function onStatusSelect(next: TaskStatus) {
+    if (next === "보류") {
+      setHoldPrompt(true);
+      return;
+    }
+    changeStatus(next);
+  }
+
+  // 이슈 메모는 업무를 공유하는 모두(코멘트를 볼 수 있는 사람 전원)에게 보이도록 일반
+  // task_comments에 is_issue=true로 남깁니다 - 작성자는 author_email로 자동 표시됩니다.
+  async function confirmHold(withIssue: boolean) {
+    if (withIssue && !issueNote.trim()) return;
+    await changeStatus("보류");
+    if (withIssue) {
+      const supabase = createClient();
+      await supabase.from("task_comments").insert({
+        task_id: task.id,
+        author_email: currentUserEmail,
+        content: issueNote.trim(),
+        department: task.department,
+        is_issue: true,
+      });
+    }
+    setHoldPrompt(false);
+    setIssueNote("");
+  }
+
   async function toggleAck() {
     const already = task.acknowledged_by?.some((a) => a.email === currentUserEmail);
     const nextAck = already
@@ -138,6 +175,7 @@ export default function TaskDetailPanel({
 
   const myAck = task.acknowledged_by?.some((a) => a.email === currentUserEmail);
   const iAmAssignee = task.assignee_emails.includes(currentUserEmail);
+  const canDelete = task.owner_email === currentUserEmail || isAdmin;
 
   return (
     <div
@@ -163,7 +201,7 @@ export default function TaskDetailPanel({
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <select
             value={task.status}
-            onChange={(e) => changeStatus(e.target.value as TaskStatus)}
+            onChange={(e) => onStatusSelect(e.target.value as TaskStatus)}
             className="rounded-lg border border-slate-300 px-2 py-1 text-xs"
           >
             {STATUS_ORDER.map((s) => (
@@ -187,6 +225,16 @@ export default function TaskDetailPanel({
             onBlur={saveDue}
             className="rounded-lg border border-slate-300 px-2 py-1 text-xs"
           />
+          {task.due_at && (
+            <button
+              type="button"
+              onClick={() => addTimedEventToNativeCalendar(task.due_at as string, task.title)}
+              title="내 캘린더에 추가"
+              className="rounded-lg border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50"
+            >
+              📅
+            </button>
+          )}
           <input
             list="dept-options"
             defaultValue={task.department ?? ""}
@@ -195,6 +243,49 @@ export default function TaskDetailPanel({
             className="w-24 rounded-lg border border-slate-300 px-2 py-1 text-xs"
           />
         </div>
+
+        {holdPrompt && (
+          <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-2.5">
+            <div className="mb-1.5 text-xs font-semibold text-amber-700">⏸️ 보류로 옮길까요?</div>
+            <p className="mb-1.5 text-[11px] text-amber-600">
+              단순 보류라면 바로 옮기고, 이슈가 있다면 메모를 남겨서 함께 공유할 수 있어요.
+            </p>
+            <textarea
+              value={issueNote}
+              onChange={(e) => setIssueNote(e.target.value)}
+              placeholder="이슈 메모 (선택)"
+              rows={2}
+              className="mb-1.5 w-full rounded-lg border border-amber-200 bg-white px-2 py-1.5 text-xs"
+            />
+            <div className="flex justify-end gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setHoldPrompt(false);
+                  setIssueNote("");
+                }}
+                className="rounded-lg px-2 py-1 text-[11px] text-slate-400 hover:bg-slate-100"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={() => confirmHold(false)}
+                className="rounded-lg border border-amber-300 px-2 py-1 text-[11px] font-medium text-amber-700 hover:bg-amber-100"
+              >
+                그냥 보류
+              </button>
+              <button
+                type="button"
+                onClick={() => confirmHold(true)}
+                disabled={!issueNote.trim()}
+                className="rounded-lg bg-amber-500 px-2 py-1 text-[11px] font-semibold text-white hover:bg-amber-600 disabled:opacity-50"
+              >
+                이슈로 기록
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="mb-3">
           <div className="mb-1 text-xs font-semibold text-slate-400">담당자 태그</div>
@@ -261,6 +352,14 @@ export default function TaskDetailPanel({
                 <div key={c.id} className="px-1 text-[11px] italic text-slate-400">
                   🔔 {c.content} · {timeAgo(c.created_at)}
                 </div>
+              ) : c.is_issue ? (
+                <div key={c.id} className="rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs shadow-sm">
+                  <div className="mb-0.5 flex items-center justify-between">
+                    <span className="font-semibold text-amber-700">⚠️ {nameFor(team, c.author_email)}</span>
+                    <span className="text-[10px] text-amber-400">{timeAgo(c.created_at)}</span>
+                  </div>
+                  <p className="whitespace-pre-wrap text-amber-800">{c.content}</p>
+                </div>
               ) : (
                 <div key={c.id} className="rounded-lg bg-white p-2 text-xs shadow-sm">
                   <div className="mb-0.5 flex items-center justify-between">
@@ -290,9 +389,11 @@ export default function TaskDetailPanel({
           </button>
         </form>
 
-        <button onClick={remove} className="mt-3 text-left text-[11px] text-slate-300 hover:text-red-500">
-          🗑️ 이 업무 삭제
-        </button>
+        {canDelete && (
+          <button onClick={remove} className="mt-3 text-left text-[11px] text-slate-300 hover:text-red-500">
+            🗑️ 이 업무 삭제
+          </button>
+        )}
       </div>
     </div>
   );

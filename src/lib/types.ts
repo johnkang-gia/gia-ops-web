@@ -182,6 +182,7 @@ export type Task = {
   completed_at: string | null;
   archived_at: string | null;
   term_id: string | null;
+  origin_mode: "나" | "전체" | "공유";
   created_at: string;
   updated_at: string;
 };
@@ -193,7 +194,13 @@ export type TaskComment = {
   content: string;
   department: string | null;
   is_system: boolean;
+  is_issue: boolean;
   created_at: string;
+};
+
+export type TaskModeColor = {
+  mode: "나" | "전체" | "공유";
+  color: string;
 };
 
 export type Department = {

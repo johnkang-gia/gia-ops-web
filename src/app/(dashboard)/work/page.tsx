@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isDeveloperEmail } from "@/lib/roles";
 import WorkBoardClient from "@/components/work/WorkBoardClient";
-import type { Task, Department, TeamMember } from "@/lib/types";
+import type { Task, Department, TeamMember, TaskModeColor } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -15,10 +15,11 @@ export default async function WorkPage() {
   const me = await getCurrentAppUser();
   if (!me) redirect("/login");
 
-  const [tasksRes, teamRes, deptRes] = await Promise.all([
+  const [tasksRes, teamRes, deptRes, modeColorRes] = await Promise.all([
     supabase.from("tasks").select("*").is("archived_at", null).order("position", { ascending: true }),
     supabase.from("app_users").select("email, name").eq("status", "approved").order("email", { ascending: true }),
     supabase.from("departments").select("*").order("sort_order", { ascending: true }),
+    supabase.from("task_mode_colors").select("*"),
   ]);
 
   const team = (teamRes.data as TeamMember[] | null) ?? [];
@@ -32,6 +33,7 @@ export default async function WorkPage() {
         userEmail={me.email}
         departments={(deptRes.data as Department[] | null) ?? []}
         isAdmin={isAdmin}
+        initialModeColors={(modeColorRes.data as TaskModeColor[] | null) ?? []}
       />
     </div>
   );

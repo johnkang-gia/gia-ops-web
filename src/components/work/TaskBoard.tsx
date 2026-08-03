@@ -24,6 +24,7 @@ function DroppableColumn({
   tasks,
   team,
   deptColorMap,
+  modeColorMap,
   isAdmin,
   currentUserEmail,
   onOpenTask,
@@ -33,6 +34,7 @@ function DroppableColumn({
   tasks: Task[];
   team: TeamMember[];
   deptColorMap: Map<string, string>;
+  modeColorMap: Map<string, string>;
   isAdmin: boolean;
   currentUserEmail: string;
   onOpenTask: (id: string) => void;
@@ -57,6 +59,7 @@ function DroppableColumn({
               task={task}
               team={team}
               deptColor={task.department ? deptColorMap.get(task.department) : null}
+              modeColorMap={modeColorMap}
               isAdmin={isAdmin}
               currentUserEmail={currentUserEmail}
               onOpen={() => onOpenTask(task.id)}
@@ -70,10 +73,18 @@ function DroppableColumn({
   );
 }
 
+// 진행대기/진행중/완료는 항상 위에 쾌적하게 3열로 보여주고, 보류/이슈는 평소엔 접어둬서
+// 화면을 덜 차지하게 합니다(요청 #10) - 업무카드를 클릭해 상세패널에서 상태를 "보류"로
+// 바꾸면(TaskDetailPanel) 이 접힌 섹션으로 자동으로 들어갑니다. 드래그로 여기로 옮기는 것도
+// 여전히 가능합니다.
+const MAIN_STATUS_ORDER: TaskStatus[] = ["예정", "진행중", "완료"];
+const HOLD_STATUS: TaskStatus = "보류";
+
 export default function TaskBoard({
   tasks,
   team,
   deptColorMap,
+  modeColorMap,
   isAdmin,
   currentUserEmail,
   deptFilter,
@@ -84,6 +95,7 @@ export default function TaskBoard({
   tasks: Task[];
   team: TeamMember[];
   deptColorMap: Map<string, string>;
+  modeColorMap: Map<string, string>;
   isAdmin: boolean;
   currentUserEmail: string;
   deptFilter: string;
@@ -92,6 +104,8 @@ export default function TaskBoard({
   onToggleAck: (taskId: string, checked: boolean) => void;
 }) {
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [holdOpen, setHoldOpen] = useState(false);
+  const holdTasks = tasks.filter((t) => t.status === HOLD_STATUS);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -129,17 +143,17 @@ export default function TaskBoard({
 
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
         <div className="flex-1 overflow-y-auto p-3">
-          {/* 우측 컬럼 폭이 넓어져서(내 업무목록 위젯 아래) 상태 컬럼을 나란히 배치할 여유가
-              생겼습니다 - 좁을 땐 1열로 쌓이고, 넓어지면 최대 4열(진행대기/진행중/보류이슈/완료)
-              나란히 놓여 진짜 칸반보드처럼 드래그앤드롭할 수 있습니다. */}
-          <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {STATUS_ORDER.map((status) => (
+          {/* 진행대기/진행중/완료 3열을 항상 위에 쾌적하게 보여주고, 보류/이슈는 아래로 빼서
+              평소엔 접어둡니다(요청 #10) - 넓은 화면에선 3열, 좁으면 1~2열로 쌓입니다. */}
+          <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {MAIN_STATUS_ORDER.map((status) => (
               <DroppableColumn
                 key={status}
                 status={status}
                 tasks={tasks.filter((t) => t.status === status)}
                 team={team}
                 deptColorMap={deptColorMap}
+                modeColorMap={modeColorMap}
                 isAdmin={isAdmin}
                 currentUserEmail={currentUserEmail}
                 onOpenTask={onOpenTask}
@@ -147,6 +161,30 @@ export default function TaskBoard({
               />
             ))}
           </div>
+
+          <button
+            type="button"
+            onClick={() => setHoldOpen((v) => !v)}
+            className="mt-3 flex w-full items-center justify-between rounded-lg bg-amber-50 px-3 py-2 text-[12px] font-semibold text-amber-700 transition hover:bg-amber-100"
+          >
+            <span>⏸️ 보류/이슈 ({holdTasks.length})</span>
+            <span>{holdOpen ? "숨기기 ▲" : "펼치기 ▼"}</span>
+          </button>
+          {holdOpen && (
+            <div className="mt-2 grid grid-cols-1 items-start gap-3">
+              <DroppableColumn
+                status={HOLD_STATUS}
+                tasks={holdTasks}
+                team={team}
+                deptColorMap={deptColorMap}
+                modeColorMap={modeColorMap}
+                isAdmin={isAdmin}
+                currentUserEmail={currentUserEmail}
+                onOpenTask={onOpenTask}
+                onToggleAck={onToggleAck}
+              />
+            </div>
+          )}
         </div>
         <DragOverlay>
           {activeTask ? (

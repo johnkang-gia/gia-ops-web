@@ -4,6 +4,91 @@
 `version` 값과 항상 일치시킵니다. 업데이트할 때마다 이 파일 맨 위에 새 항목을 추가하고,
 같은 내용을 GitHub Desktop의 커밋 Summary/Description에도 그대로 사용하면 됩니다.
 
+## v0.41.0 - 2026-08-03 (staging)
+
+업무 페이지 사용성 개선 10건을 한 번에 반영했습니다.
+
+- **업무 삭제 권한 제한.** 이제 등록자 본인 또는 관리자만 업무를 삭제할 수 있습니다(상세
+  패널의 삭제 버튼이 다른 사람에게는 아예 보이지 않습니다).
+- **확인 체크 시 취소선 제거.** 담당자가 업무 확인 체크박스를 누르면 제목에 줄이 그이지
+  않고, 흐리게(반투명)만 표시됩니다.
+- **칸반 레이아웃 개편.** 진행대기·진행중·완료 3열이 항상 위에 쾌적하게 보이고, 보류/이슈는
+  "⏸️ 보류/이슈 (N)" 버튼을 눌러야 펼쳐지는 접이식 섹션으로 아래에 분리됐습니다.
+- **업무를 보류로 옮기면 단순 보류인지 이슈인지 물어봅니다.** 이슈를 선택하면 메모를 남길
+  수 있고, 이 메모는 업무를 공유하는 모두에게 보이며 작성자도 함께 표시됩니다.
+- **나/전체/공유 색상 시스템.** 빠른 업무등록 위젯에서 고른 뱃지가 업무에 저장되고, 그 색이
+  칸반 카드 테두리 색으로 그대로 쓰입니다. 색은 뱃지 옆 점을 클릭해 관리자만 바꿀 수
+  있습니다(부서 색상과 동일한 방식).
+- **업무 마감일 → OS 캘린더 연동.** 상세 패널의 📅 버튼을 누르면 마감 일정을 내 기기의
+  기본 캘린더 앱(Mac은 Calendar.app, 그 외는 .ics 다운로드)에 바로 추가할 수 있습니다.
+- **빠른 업무등록에 날짜/시간 선택 추가.** 오늘·내일·이번주 뱃지를 누르거나 날짜·시간을
+  직접 입력할 수 있습니다. 날짜만 넣으면 그 날짜로, 시간만 넣으면 "오늘 그 시각까지"로,
+  둘 다 넣으면 정확히 그 날짜·시각으로 마감이 등록됩니다.
+- **사용 가이드 팝업 신설.** 업무 페이지 우상단 ❓ 아이콘을 누르면 빠른등록/채팅/칸반/
+  업무기록/삭제·캘린더 사용법을 요약한 팝업이 뜹니다.
+- **채팅 서식 툴바.** 입력창 위에 굵게(B)/기울임(I)/취소선(S)/코드(&lt;/&gt;) 버튼이 생겨,
+  마크다운 문법을 직접 타이핑하지 않아도 선택한 글자를 감싸서 서식을 넣을 수 있습니다.
+- **반응(이모지) 체크 표시 + 목록 확장.** 반응 고르기 팝업에서 이미 남긴 이모지에 파란
+  체크 표시가 붙고, 자주 쓰는 이모지가 6개 → 12개로 늘었습니다.
+- **DB 변경 있음.** 아래 SQL을 Supabase SQL Editor에서 실행해주세요(재실행해도 안전합니다).
+
+```sql
+-- ===== 44. 업무 삭제 권한 분리 (등록자 본인 또는 관리자만) =====
+drop policy if exists "giamicro_all_tasks" on tasks;
+
+drop policy if exists "giamicro_select_tasks" on tasks;
+create policy "giamicro_select_tasks" on tasks
+  for select using (is_giamicro_user());
+
+drop policy if exists "giamicro_insert_tasks" on tasks;
+create policy "giamicro_insert_tasks" on tasks
+  for insert with check (is_giamicro_user());
+
+drop policy if exists "giamicro_update_tasks" on tasks;
+create policy "giamicro_update_tasks" on tasks
+  for update using (is_giamicro_user()) with check (is_giamicro_user());
+
+drop policy if exists "owner_delete_tasks" on tasks;
+create policy "owner_delete_tasks" on tasks
+  for delete using (is_giamicro_user() and (owner_email = lower(auth.jwt() ->> 'email') or is_app_admin()));
+
+-- ===== 45. 업무 - 등록 방식(나/전체/공유)별 색상 =====
+alter table tasks add column if not exists origin_mode text not null default '공유'
+  check (origin_mode in ('나', '전체', '공유'));
+
+create table if not exists task_mode_colors (
+  mode text primary key check (mode in ('나', '전체', '공유')),
+  color text not null
+);
+
+insert into task_mode_colors (mode, color) values
+  ('나', '#3b82f6'),
+  ('전체', '#8b5cf6'),
+  ('공유', '#f59e0b')
+on conflict (mode) do nothing;
+
+alter table task_mode_colors enable row level security;
+drop policy if exists "giamicro_select_task_mode_colors" on task_mode_colors;
+create policy "giamicro_select_task_mode_colors" on task_mode_colors
+  for select using (is_giamicro_user());
+drop policy if exists "admin_update_task_mode_colors" on task_mode_colors;
+create policy "admin_update_task_mode_colors" on task_mode_colors
+  for update using (is_app_admin()) with check (is_app_admin());
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'task_mode_colors'
+  ) then
+    alter publication supabase_realtime add table task_mode_colors;
+  end if;
+end $$;
+
+-- ===== 46. 업무 코멘트 - "이슈" 메모 구분 =====
+alter table task_comments add column if not exists is_issue boolean not null default false;
+```
+
 ## v0.40.0 - 2026-08-03 (staging)
 
 업무기록(archive) 기능을 새로 만들었습니다. 완료한 업무가 계속 칸반에 쌓여 있으면 "지금

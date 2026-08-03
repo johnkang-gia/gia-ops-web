@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { Department, Task, TaskStatus, TeamMember } from "@/lib/types";
+import type { Department, Task, TaskModeColor, TaskStatus, TeamMember } from "@/lib/types";
 import DashboardArea from "./DashboardArea";
 import ChatPanel from "./ChatPanel";
 import TaskBoard from "./TaskBoard";
@@ -15,6 +15,8 @@ export default function WorkspaceArea({
   tasks,
   team,
   deptColorMap,
+  modeColorMap,
+  onModeColorChange,
   departments,
   isAdmin,
   currentUserEmail,
@@ -27,6 +29,8 @@ export default function WorkspaceArea({
   tasks: Task[];
   team: TeamMember[];
   deptColorMap: Map<string, string>;
+  modeColorMap: Map<string, string>;
+  onModeColorChange: (mode: TaskModeColor["mode"], color: string) => void;
   departments: Department[];
   isAdmin: boolean;
   currentUserEmail: string;
@@ -97,7 +101,15 @@ export default function WorkspaceArea({
         />
         <div className="flex min-h-0 flex-col overflow-hidden" style={{ height: `${100 - leftTopHeight}%` }}>
           <div className="shrink-0 border-b border-black/5 pb-1">
-            <QuickTaskWidget department={activeDepartment.name} team={team} currentUserEmail={currentUserEmail} onTaskCreated={onTaskCreated} />
+            <QuickTaskWidget
+              department={activeDepartment.name}
+              team={team}
+              currentUserEmail={currentUserEmail}
+              onTaskCreated={onTaskCreated}
+              modeColorMap={modeColorMap}
+              isAdmin={isAdmin}
+              onModeColorChange={onModeColorChange}
+            />
           </div>
           <div className="min-h-0 flex-1 overflow-hidden">
             <ChatPanel
@@ -128,6 +140,7 @@ export default function WorkspaceArea({
             tasks={tasks}
             team={team}
             deptColorMap={deptColorMap}
+            modeColorMap={modeColorMap}
             isAdmin={isAdmin}
             currentUserEmail={currentUserEmail}
             deptFilter={activeDepartment.name}

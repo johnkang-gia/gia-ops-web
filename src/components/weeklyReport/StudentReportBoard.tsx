@@ -107,16 +107,19 @@ export default function StudentReportBoard({
               (warning ? "border-amber-300" : "border-slate-200")
             }
           >
-            <div className="flex items-center justify-between">
-              <span className="font-semibold text-slate-800">{student.name}</span>
-              <span className="text-[11px] text-slate-400">
+            <div className="flex items-start justify-between gap-2">
+              <span className="font-semibold leading-tight text-slate-800">
+                {student.name}
+                {student.name_en && <span className="block text-[11px] font-normal text-slate-400">{student.name_en}</span>}
+              </span>
+              <span className="shrink-0 text-[11px] text-slate-400">
                 {student.grade}학년 {student.class_name}
               </span>
             </div>
             <div className="flex items-center gap-1.5 text-[11px]">
-              {status === "published" && <span className="rounded-full bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-600">✅ 발행됨</span>}
-              {status === "draft" && <span className="rounded-full bg-amber-50 px-2 py-0.5 font-semibold text-amber-600">📝 임시저장</span>}
-              {!status && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-400">미작성</span>}
+              {status === "published" && <span className="rounded-full bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-600">✅ 발행됨 Published</span>}
+              {status === "draft" && <span className="rounded-full bg-amber-50 px-2 py-0.5 font-semibold text-amber-600">📝 임시저장 Draft</span>}
+              {!status && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-400">미작성 Not started</span>}
               {excellent && <span>🌟</span>}
               {warning && <span>⚠️</span>}
             </div>

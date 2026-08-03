@@ -319,6 +319,7 @@ export type WrStudent = {
   id: string;
   student_no: string; // 영구 고유번호(예: GIA-2026-0001) - 동명이인이어도 절대 겹치지 않습니다.
   name: string;
+  name_en: string | null;
   grade: string | null;
   class_name: string | null;
   class_id: string | null;

@@ -41,9 +41,9 @@ function buildSchoolCategory(isAdmin: boolean, isStaffOrAbove: boolean): NavCate
   if (isStaffOrAbove) items.push({ href: "/students", label: "학생 정보 조회", icon: "🔎" });
   if (isAdmin) {
     items.push(
-      { href: "/weekly-report/admin/students", label: "학생 관리", icon: "🧑‍🎓" },
-      { href: "/weekly-report/admin/classes", label: "반 관리", icon: "🏫" },
-      { href: "/weekly-report/admin/subjects", label: "과목반 세팅", icon: "📘" }
+      { href: "/weekly-report/admin/students", label: "학생 관리", labelEn: "Manage Students", icon: "🧑‍🎓" },
+      { href: "/weekly-report/admin/classes", label: "반 관리", labelEn: "Manage Classes", icon: "🏫" },
+      { href: "/weekly-report/admin/subjects", label: "과목반 세팅", labelEn: "Manage Subjects", icon: "📘" }
     );
   }
   items.push({ href: "/terms", label: "학기 관리", icon: "🗓️" });
@@ -53,13 +53,13 @@ function buildSchoolCategory(isAdmin: boolean, isStaffOrAbove: boolean): NavCate
 
 function buildWeeklyReportCategory(isAdmin: boolean): NavCategory {
   const items = [
-    { href: "/weekly-report/students", label: "반별 작성 현황", icon: "🎓" },
-    { href: "/weekly-report/print", label: "리포트 프린트", icon: "🖨️" },
+    { href: "/weekly-report/students", label: "반별 작성 현황", labelEn: "Class Status", icon: "🎓" },
+    { href: "/weekly-report/print", label: "리포트 프린트", labelEn: "Print Reports", icon: "🖨️" },
   ];
   if (isAdmin) {
-    items.push({ href: "/weekly-report/admin/stats", label: "통계 대시보드", icon: "📊" });
+    items.push({ href: "/weekly-report/admin/stats", label: "통계 대시보드", labelEn: "Statistics", icon: "📊" });
   }
-  return { key: "weekly", label: "주간 학생 관찰기록", icon: "📈", accent: "teal", items };
+  return { key: "weekly", label: "주간 학생 관찰기록", labelEn: "Weekly Student Reports", icon: "📈", accent: "teal", items };
 }
 
 // "지원 · 관리" - 학생/반/학기/계정 관리는 학교관리로 옮겼고, 여기는 관리자 대시보드(통합
@@ -107,8 +107,8 @@ export default async function DashboardLayout({
   let categories: NavCategory[];
   if (isTeacher) {
     categories = [
-      { key: "homeroom", label: "내 담임반", icon: "🏠", href: "/weekly-report/homeroom", accent: "teal" },
-      { key: "subjects", label: "내 담당과목", icon: "📘", href: "/weekly-report/subjects", accent: "teal" },
+      { key: "homeroom", label: "내 담임반", labelEn: "My Homeroom", icon: "🏠", href: "/weekly-report/homeroom", accent: "teal" },
+      { key: "subjects", label: "내 담당과목", labelEn: "My Subjects", icon: "📘", href: "/weekly-report/subjects", accent: "teal" },
     ];
   } else {
     categories = [

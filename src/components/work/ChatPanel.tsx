@@ -761,12 +761,18 @@ export default function ChatPanel({
       const dl = deadlineLabel(dueAt);
       const deadlineSuffix = dl ? ` (${dl})` : "";
       const aiNote = aiFailed ? " ⚠️AI 분석 실패로 기본 규칙 사용" : " (AI 분석)";
-      const { error: msgError } = await supabase.from("messages").insert({
-        department,
+      // 예전에는 이 확인 메시지를 채팅(messages)에 남겨서 대화가 시스템 알림으로 섞여 보였는데,
+      // 이제는 다른 업무 확인/상태변경 이벤트와 같은 자리(task_comments, is_system=true)에
+      // 남겨서 업무상황판 오른쪽 "🔔 실시간 로그"에서만 보이고 채팅창은 항상 대화만 깔끔하게
+      // 남도록 했습니다(요청).
+      const { error: logError } = await supabase.from("task_comments").insert({
+        task_id: newTask.id,
         author_email: userEmail,
         content: `✅ 업무로 등록됨${aiNote} → ${assigneeLabel}: "${newTask.title}"${deadlineSuffix}`,
+        department,
+        is_system: true,
       });
-      if (msgError) console.error("업무등록 안내 메시지 전송 실패:", msgError);
+      if (logError) console.error("업무등록 로그 기록 실패:", logError);
 
       setTaskPopup(null);
     } catch (err) {
@@ -1155,21 +1161,36 @@ export default function ChatPanel({
           </div>
         )}
 
-        {/* 구글독스 메뉴처럼 선택한 글자를 감싸는 간단한 서식 툴바입니다(요청 #8) - 굵게/기울임/
-            취소선/코드 4개만 지원해도 채팅에서 쓰기엔 충분하고, 결과는 기존에 지원하던 마크다운
-            문법(**굵게** 등)과 같은 문자열이라 렌더링 쪽 코드를 새로 만들 필요가 없습니다. */}
+        {/* 구글독스 메뉴처럼 선택한 글자를 감싸는 간단한 서식 툴바입니다(요청 #8, 아이콘화 요청
+            반영) - 굵게/기울임/취소선/코드 4개만 지원해도 채팅에서 쓰기엔 충분하고, 결과는
+            기존에 지원하던 마크다운 문법(**굵게** 등)과 같은 문자열이라 렌더링 쪽 코드를 새로
+            만들 필요가 없습니다. 글자(B/I/S) 대신 선으로 그린 작은 아이콘을 씁니다. */}
         <div className="mb-1.5 flex items-center gap-0.5">
-          <button type="button" onClick={() => wrapSelection("**")} title="굵게" className="rounded px-1.5 py-0.5 text-[12px] font-bold text-slate-500 hover:bg-black/5">
-            B
+          <button type="button" onClick={() => wrapSelection("**")} title="굵게" className="rounded p-1 text-slate-500 hover:bg-black/5">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M6 4h8a4 4 0 0 1 0 8H6z" />
+              <path d="M6 12h9a4 4 0 0 1 0 8H6z" />
+            </svg>
           </button>
-          <button type="button" onClick={() => wrapSelection("*")} title="기울임" className="rounded px-1.5 py-0.5 text-[12px] italic text-slate-500 hover:bg-black/5">
-            I
+          <button type="button" onClick={() => wrapSelection("*")} title="기울임" className="rounded p-1 text-slate-500 hover:bg-black/5">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="19" y1="4" x2="10" y2="4" />
+              <line x1="14" y1="20" x2="5" y2="20" />
+              <line x1="15" y1="4" x2="9" y2="20" />
+            </svg>
           </button>
-          <button type="button" onClick={() => wrapSelection("~~")} title="취소선" className="rounded px-1.5 py-0.5 text-[12px] line-through text-slate-500 hover:bg-black/5">
-            S
+          <button type="button" onClick={() => wrapSelection("~~")} title="취소선" className="rounded p-1 text-slate-500 hover:bg-black/5">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M6 12h12" />
+              <path d="M8 6.5c0-1.5 1.8-2.5 4-2.5s4 1 4 2.5" />
+              <path d="M8 17.5c0 1.5 1.8 2.5 4 2.5s4-1 4-2.5" />
+            </svg>
           </button>
-          <button type="button" onClick={() => wrapSelection("`")} title="코드" className="rounded px-1.5 py-0.5 font-mono text-[12px] text-slate-500 hover:bg-black/5">
-            {"</>"}
+          <button type="button" onClick={() => wrapSelection("`")} title="코드" className="rounded p-1 text-slate-500 hover:bg-black/5">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="8 6 3 12 8 18" />
+              <polyline points="16 6 21 12 16 18" />
+            </svg>
           </button>
         </div>
 

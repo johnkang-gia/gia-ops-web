@@ -5,7 +5,9 @@ import { usePathname } from "next/navigation";
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-export type NavLeaf = { href: string; label: string; icon: string };
+// labelEn이 있으면 한글 라벨 아래 작게 영어 라벨을 함께 보여줍니다 - 주간 학생 관찰기록은
+// 영어 원어민 교사도 쓰기 때문에, 그 메뉴만이라도 영어를 병기해둡니다(요청).
+export type NavLeaf = { href: string; label: string; labelEn?: string; icon: string };
 
 // 메뉴 구조를 "카테고리" 단위로 바꿨습니다. items가 있으면 마우스를 올렸을 때 오른쪽으로
 // 펼쳐지는 플라이아웃 서브메뉴가 되고(주메뉴가 세로로 길어지지 않음), items가 없으면 href로
@@ -16,6 +18,7 @@ export type NavAccent = "navy" | "blue" | "teal" | "amber" | "red" | "purple";
 export type NavCategory = {
   key: string;
   label: string;
+  labelEn?: string;
   icon: string;
   accent?: NavAccent;
   href?: string;
@@ -110,7 +113,10 @@ export function SidebarNavLinks({ categories }: { categories: NavCategory[] }) {
               }
             >
               <span>{cat.icon}</span>
-              <span className="flex-1">{cat.label}</span>
+              <span className="flex-1 leading-tight">
+                {cat.label}
+                {cat.labelEn && <span className="block text-[10px] font-normal text-slate-400">{cat.labelEn}</span>}
+              </span>
               {hasChildren && <span className="text-[10px] text-slate-300">›</span>}
             </Link>
           </div>
@@ -146,7 +152,10 @@ export function SidebarNavLinks({ categories }: { categories: NavCategory[] }) {
                   }
                 >
                   <span>{item.icon}</span>
-                  <span>{item.label}</span>
+                  <span className="leading-tight">
+                    {item.label}
+                    {item.labelEn && <span className="block text-[10px] font-normal text-slate-400">{item.labelEn}</span>}
+                  </span>
                 </Link>
               );
             })}
@@ -162,7 +171,11 @@ export function SidebarNavLinks({ categories }: { categories: NavCategory[] }) {
 export function MobileNavLinks({ categories }: { categories: NavCategory[] }) {
   const pathname = usePathname();
   const items: NavLeaf[] = categories.flatMap((c) =>
-    c.items && c.items.length > 0 ? c.items : c.href ? [{ href: c.href, label: c.label, icon: c.icon }] : []
+    c.items && c.items.length > 0
+      ? c.items
+      : c.href
+        ? [{ href: c.href, label: c.label, labelEn: c.labelEn, icon: c.icon }]
+        : []
   );
 
   return (

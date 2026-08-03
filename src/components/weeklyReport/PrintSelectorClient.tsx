@@ -10,7 +10,7 @@ export default function PrintSelectorClient({ students }: { students: WrStudent[
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return students;
-    return students.filter((s) => s.name.toLowerCase().includes(q));
+    return students.filter((s) => s.name.toLowerCase().includes(q) || (s.name_en ?? "").toLowerCase().includes(q));
   }, [students, query]);
 
   return (
@@ -30,6 +30,7 @@ export default function PrintSelectorClient({ students }: { students: WrStudent[
         {filtered.map((s) => (
           <option key={s.id} value={s.id}>
             {s.grade}학년 {s.class_name} - {s.name}
+            {s.name_en ? ` (${s.name_en})` : ""}
           </option>
         ))}
       </select>

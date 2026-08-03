@@ -33,13 +33,13 @@ export default function TermClassOverviewClient({
   const filteredGroups = useMemo(() => {
     if (!q) return classGroups;
     return classGroups
-      .map((g) => ({ ...g, students: g.students.filter((s) => s.name.toLowerCase().includes(q)) }))
+      .map((g) => ({ ...g, students: g.students.filter((s) => s.name.toLowerCase().includes(q) || (s.name_en ?? "").toLowerCase().includes(q)) }))
       .filter((g) => g.students.length > 0);
   }, [classGroups, q]);
 
   const filteredUnassigned = useMemo(() => {
     if (!q) return unassigned;
-    return unassigned.filter((s) => s.name.toLowerCase().includes(q));
+    return unassigned.filter((s) => s.name.toLowerCase().includes(q) || (s.name_en ?? "").toLowerCase().includes(q));
   }, [unassigned, q]);
 
   const isEmpty = classGroups.length === 0 && unassigned.length === 0;

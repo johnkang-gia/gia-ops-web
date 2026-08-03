@@ -17,15 +17,18 @@ function timeAgo(iso: string) {
 
 export default function StudentProfileClient({
   student,
-  reports,
+  reports: initialReports,
   initialComments,
   userEmail,
+  isWrManager,
 }: {
   student: WrStudent;
   reports: WrReport[];
   initialComments: WrComment[];
   userEmail: string;
+  isWrManager: boolean;
 }) {
+  const [reports, setReports] = useState<WrReport[]>(initialReports);
   const [opening, setOpening] = useState<{ subject: string } | null>(null);
   const [comments, setComments] = useState<WrComment[]>(initialComments);
   const [commentText, setCommentText] = useState("");
@@ -36,6 +39,13 @@ export default function StudentProfileClient({
     const list = bySubject.get(r.subject) ?? [];
     list.push(r);
     bySubject.set(r.subject, list);
+  }
+
+  async function deleteReport(id: string) {
+    if (!confirm("이 리포트를 삭제할까요? 되돌릴 수 없습니다. / Delete this report? This cannot be undone.")) return;
+    setReports((prev) => prev.filter((r) => r.id !== id));
+    const supabase = createClient();
+    await supabase.from("wr_reports").delete().eq("id", id);
   }
 
   async function addComment(e: React.FormEvent) {
@@ -64,21 +74,31 @@ export default function StudentProfileClient({
             {list
               .sort((a, b) => b.report_date.localeCompare(a.report_date))
               .map((r) => (
-                <button
+                <div
                   key={r.id}
-                  onClick={() => setOpening({ subject })}
-                  className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-sm hover:bg-slate-50"
+                  className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm hover:bg-slate-50"
                 >
-                  <span className="text-slate-600">{r.report_date}</span>
-                  <span
-                    className={
-                      "rounded-full px-2 py-0.5 text-[11px] font-semibold " +
-                      (r.status === "published" ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600")
-                    }
-                  >
-                    {r.status === "published" ? "발행됨" : "임시저장"}
-                  </span>
-                </button>
+                  <button onClick={() => setOpening({ subject })} className="flex flex-1 items-center justify-between text-left">
+                    <span className="text-slate-600">{r.report_date}</span>
+                    <span
+                      className={
+                        "rounded-full px-2 py-0.5 text-[11px] font-semibold " +
+                        (r.status === "published" ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600")
+                      }
+                    >
+                      {r.status === "published" ? "발행됨 Published" : "임시저장 Draft"}
+                    </span>
+                  </button>
+                  {isWrManager && (
+                    <button
+                      onClick={() => deleteReport(r.id)}
+                      title="리포트 삭제 Delete"
+                      className="shrink-0 px-1 text-xs text-slate-300 hover:text-red-500"
+                    >
+                      🗑
+                    </button>
+                  )}
+                </div>
               ))}
           </div>
         </div>
@@ -125,10 +145,10 @@ export default function StudentProfileClient({
           reports={reports}
           termId={bySubject.get(opening.subject)?.[0]?.term_id ?? null}
           userEmail={userEmail}
-          mode="archive"
+          mode={isWrManager ? "admin" : "archive"}
           mySubject={opening.subject}
           onClose={() => setOpening(null)}
-          onSaved={() => {}}
+          onSaved={(saved) => setReports((prev) => (prev.some((r) => r.id === saved.id) ? prev.map((r) => (r.id === saved.id ? saved : r)) : [...prev, saved]))}
         />
       )}
     </div>

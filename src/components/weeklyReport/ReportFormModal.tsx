@@ -243,7 +243,7 @@ export default function ReportFormModal({
         <div className="sticky top-0 z-10 flex items-start justify-between gap-2 border-b border-slate-200 bg-white p-4">
           <div>
             <h3 className="flex items-center gap-2 text-base font-bold">
-              📄 리포트 열람 및 작성
+              📄 리포트 열람 및 작성 <span className="text-sm font-normal text-slate-400">View / Write Report</span>
               {existingReportId && (
                 <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-normal text-slate-400">
                   #{existingReportId.slice(0, 8)}
@@ -251,7 +251,12 @@ export default function ReportFormModal({
               )}
             </h3>
             <p className="mt-1 text-sm text-slate-500">
-              {student.grade}학년 {student.class_name} - <strong className="text-blue-600">{student.name}</strong> 학생
+              {student.grade}학년 {student.class_name} -{" "}
+              <strong className="text-blue-600">
+                {student.name}
+                {student.name_en && <span className="font-normal"> ({student.name_en})</span>}
+              </strong>{" "}
+              학생
             </p>
           </div>
           <button onClick={onClose} className="rounded-lg px-2 py-1 text-slate-400 hover:bg-slate-100">
@@ -298,7 +303,9 @@ export default function ReportFormModal({
           <div className="flex flex-col gap-4">
             {EVAL_CATEGORIES.map((cat) => (
               <div key={cat}>
-                <label className="text-sm font-semibold text-slate-700">{EVAL_LABELS[cat].ko}</label>
+                <label className="text-sm font-semibold text-slate-700">
+                  {EVAL_LABELS[cat].ko} <span className="font-normal text-slate-400">{EVAL_LABELS[cat].en}</span>
+                </label>
                 <div className="mb-1.5 mt-1.5 flex flex-wrap gap-1.5">
                   {BADGE_OPTIONS.map((b) => {
                     const checked = (formData.evalBadges[cat] || []).includes(b.value);
@@ -315,7 +322,7 @@ export default function ReportFormModal({
                         style={checked ? { borderColor: b.border, backgroundColor: b.bg, color: b.color } : undefined}
                       >
                         <span>{b.emoji}</span>
-                        {b.label}
+                        {b.label} <span className="opacity-70">{b.enLabel}</span>
                       </button>
                     );
                   })}
@@ -333,7 +340,8 @@ export default function ReportFormModal({
             <div>
               <div className="mb-1.5 flex items-center justify-between">
                 <label className="text-sm font-semibold text-slate-700">
-                  교사 종합 의견 <em className="font-normal text-slate-400">(학부모 리포트에 표시됨)</em>
+                  교사 종합 의견 <span className="font-normal text-slate-400">Teacher&apos;s Comment</span>{" "}
+                  <em className="font-normal text-slate-400">(학부모 리포트에 표시됨 / shown to parents)</em>
                 </label>
                 {!isReadOnly && (
                   <button
@@ -396,7 +404,7 @@ export default function ReportFormModal({
           <div className="mt-5 flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-3">
               <button onClick={onClose} className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50">
-                취소
+                취소 Cancel
               </button>
               <span className="text-xs italic text-slate-400">{saveStatusMsg}</span>
             </div>
@@ -405,7 +413,7 @@ export default function ReportFormModal({
                 onClick={() => setShowHistory((v) => !v)}
                 className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50"
               >
-                {showHistory ? "과거 기록 닫기" : "지난주 기록 보기"}
+                {showHistory ? "과거 기록 닫기 Hide" : "지난주 기록 보기 Last Week"}
               </button>
               {!isReadOnly && (
                 <>
@@ -414,14 +422,14 @@ export default function ReportFormModal({
                     onClick={() => handleSave("draft")}
                     className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-100 disabled:opacity-50"
                   >
-                    임시저장
+                    임시저장 Save Draft
                   </button>
                   <button
                     disabled={isSaving}
                     onClick={() => handleSave("published")}
                     className="rounded-lg bg-wr-primary px-3 py-2 text-sm font-semibold text-white hover:bg-wr-primary-2 disabled:opacity-50"
                   >
-                    발행하기
+                    발행하기 Publish
                   </button>
                 </>
               )}

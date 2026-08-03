@@ -4,6 +4,67 @@
 `version` 값과 항상 일치시킵니다. 업데이트할 때마다 이 파일 맨 위에 새 항목을 추가하고,
 같은 내용을 GitHub Desktop의 커밋 Summary/Description에도 그대로 사용하면 됩니다.
 
+## v0.42.0 - 2026-08-03 (staging)
+
+업무탭 편의성 + 주간 학생 관찰기록 개선 7건을 반영했습니다.
+
+- **업무탭 레이아웃 크기 기억.** 채팅/상황판/칸반 폭·높이를 마우스로 조절하면 이 기기에
+  저장되어, 다음에 업무탭에 들어와도 조절한 그대로 유지됩니다.
+- **채팅 업무등록 안내를 실시간 로그로 분리.** 채팅으로 업무를 등록하면 "등록됨" 안내와
+  확인 내역이 더 이상 채팅에 섞이지 않고, 칸반 오른쪽 위 "🔔 실시간 로그"에만 쌓입니다.
+  로그 헤더를 클릭하면 전체 이력을 팝업으로 볼 수 있고, 채팅창은 대화만 깔끔하게 남습니다.
+- **채팅 서식 툴바 아이콘화.** 굵게/기울임/취소선/코드 버튼을 글자(B/I/S) 대신 선으로 그린
+  작은 아이콘으로 바꿨습니다.
+- **주간 학생 관찰기록 영어 병기.** 원어민 교사도 쓰는 화면이라, 메뉴(내 담임반/내 담당과목/
+  반별 작성 현황 등)와 리포트 작성창의 평가 항목·뱃지·버튼에 영어를 함께 표시했습니다.
+- **학생 이름 한글/영어 줄바꿈 표시.** 학생 카드·목록·리포트창에서 영어 이름이 등록되어
+  있으면 한글 이름 아래 줄바꿈으로 함께 보입니다. 관리자 화면(학생 관리)에서 학생별 영어
+  이름을 입력·수정할 수 있습니다.
+- **관리자/행정직원의 리포트 읽기·수정·삭제 권한.** 학생 프로필 화면에서 관리자/행정직원은
+  이제 리포트를 열람만 하는 게 아니라 직접 수정하거나 삭제할 수 있습니다(삭제 버튼은
+  관리자/행정직원에게만 보입니다).
+- **DB 변경 있음.** 아래 SQL을 Supabase SQL Editor에서 실행해주세요(재실행해도 안전합니다).
+
+```sql
+-- ===== 47. 주간 학생 관찰기록 - 영문 이름 + 관리자/행정직원 삭제 권한 =====
+alter table wr_students add column if not exists name_en text;
+
+create or replace function is_wr_manager()
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select
+    is_app_admin()
+    or exists (
+      select 1 from app_users
+      where email = lower(auth.jwt() ->> 'email')
+        and status = 'approved'
+        and position = '행정직원'
+    );
+$$;
+
+drop policy if exists "giamicro_all_wr_reports" on wr_reports;
+
+drop policy if exists "giamicro_select_wr_reports" on wr_reports;
+create policy "giamicro_select_wr_reports" on wr_reports
+  for select using (is_giamicro_user());
+
+drop policy if exists "giamicro_insert_wr_reports" on wr_reports;
+create policy "giamicro_insert_wr_reports" on wr_reports
+  for insert with check (is_giamicro_user());
+
+drop policy if exists "giamicro_update_wr_reports" on wr_reports;
+create policy "giamicro_update_wr_reports" on wr_reports
+  for update using (is_giamicro_user()) with check (is_giamicro_user());
+
+drop policy if exists "wr_manager_delete_wr_reports" on wr_reports;
+create policy "wr_manager_delete_wr_reports" on wr_reports
+  for delete using (is_wr_manager());
+```
+
 ## v0.41.0 - 2026-08-03 (staging)
 
 업무 페이지 사용성 개선 10건을 한 번에 반영했습니다.

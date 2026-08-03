@@ -1767,3 +1767,47 @@ end $$;
 -- 업무기록/상세 화면에서 다르게(⚠️ 강조) 보여줄 수 있게 합니다. 작성자는 author_email로
 -- 이미 표시되고 있어 별도 컬럼이 필요 없습니다.
 alter table task_comments add column if not exists is_issue boolean not null default false;
+
+-- ===== 47. 주간 학생 관찰기록 - 영문 이름 + 관리자/행정직원 삭제 권한 =====
+-- 담당 교사 중 영어 원어민이 있어 학생 리스트를 영어 이름과 함께 볼 수 있어야 합니다.
+alter table wr_students add column if not exists name_en text;
+
+-- 관리자(position='관리자') 또는 행정직원(position='행정직원')이면 참 - is_app_admin()은
+-- '관리자'만 포함하므로, 위클리 리포트에서는 행정직원까지 포함하는 이 함수를 따로 둡니다.
+create or replace function is_wr_manager()
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select
+    is_app_admin()
+    or exists (
+      select 1 from app_users
+      where email = lower(auth.jwt() ->> 'email')
+        and status = 'approved'
+        and position = '행정직원'
+    );
+$$;
+
+-- 리포트 삭제는 그동안 아예 만들 수 없었는데(화면에 버튼 자체가 없었음), 이제 관리자/행정직원만
+-- 지울 수 있게 허용합니다. 조회/작성/수정은 기존처럼 giamicro.com 계정이면 누구나 가능한 범위를
+-- 유지합니다(교사는 화면(UI)에서 자기 담당 과목만 수정하도록 이미 제한되어 있습니다).
+drop policy if exists "giamicro_all_wr_reports" on wr_reports;
+
+drop policy if exists "giamicro_select_wr_reports" on wr_reports;
+create policy "giamicro_select_wr_reports" on wr_reports
+  for select using (is_giamicro_user());
+
+drop policy if exists "giamicro_insert_wr_reports" on wr_reports;
+create policy "giamicro_insert_wr_reports" on wr_reports
+  for insert with check (is_giamicro_user());
+
+drop policy if exists "giamicro_update_wr_reports" on wr_reports;
+create policy "giamicro_update_wr_reports" on wr_reports
+  for update using (is_giamicro_user()) with check (is_giamicro_user());
+
+drop policy if exists "wr_manager_delete_wr_reports" on wr_reports;
+create policy "wr_manager_delete_wr_reports" on wr_reports
+  for delete using (is_wr_manager());

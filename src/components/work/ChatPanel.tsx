@@ -1210,7 +1210,7 @@ export default function ChatPanel({
             value={text}
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
-            placeholder="메시지 보내기 (Enter 전송·Shift+Enter 줄바꿈, **굵게** *기울임* ~~취소선~~ `코드`, @개인호출, #부서공지)"
+            placeholder="메시지 보내기 (Enter 전송·Shift+Enter 줄바꿈, @개인호출, #부서공지)"
             rows={1}
             className="min-w-0 flex-1 resize-none bg-transparent text-sm leading-relaxed outline-none"
             autoComplete="off"

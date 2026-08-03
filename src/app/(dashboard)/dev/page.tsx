@@ -3,7 +3,9 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isDeveloperEmail } from "@/lib/roles";
-import type { ErrorLog, AiUsageLog } from "@/lib/types";
+import type { ErrorLog, AiUsageLog, AiFeatureFlag } from "@/lib/types";
+import { estimateCostUsd, formatUsd, AI_FEATURES } from "@/lib/ai/pricing";
+import AiFeatureTogglesClient from "@/components/dev/AiFeatureTogglesClient";
 
 export const dynamic = "force-dynamic";
 
@@ -49,6 +51,7 @@ export default async function DevDashboardPage() {
     staleInquiries,
     recentErrors,
     recentUsage,
+    featureFlagsRes,
   ] = await Promise.all([
     supabase.from("incidents").select("id", { count: "exact", head: true }),
     supabase.from("events").select("id", { count: "exact", head: true }),
@@ -91,13 +94,23 @@ export default async function DevDashboardPage() {
       .gte("created_at", THIRTY_DAYS_AGO())
       .order("created_at", { ascending: false })
       .limit(1000),
+    supabase.from("ai_feature_flags").select("*").order("group_name", { ascending: true }),
   ]);
 
   const errorLogs = (recentErrors.data as ErrorLog[]) ?? [];
   const usageLogs = (recentUsage.data as AiUsageLog[]) ?? [];
+  const featureFlags = (featureFlagsRes.data as AiFeatureFlag[] | null) ?? [];
   const sevenDaysAgoStr = SEVEN_DAYS_AGO();
 
-  type RouteStat = { route: string; calls7d: number; calls30d: number; fails30d: number; inTokens30d: number; outTokens30d: number };
+  type RouteStat = {
+    route: string;
+    calls7d: number;
+    calls30d: number;
+    fails30d: number;
+    inTokens30d: number;
+    outTokens30d: number;
+    cost30d: number;
+  };
   const byRoute = new Map<string, RouteStat>();
   for (const log of usageLogs) {
     const existing = byRoute.get(log.route) ?? {
@@ -107,19 +120,32 @@ export default async function DevDashboardPage() {
       fails30d: 0,
       inTokens30d: 0,
       outTokens30d: 0,
+      cost30d: 0,
     };
     existing.calls30d += 1;
     if (log.created_at >= sevenDaysAgoStr) existing.calls7d += 1;
     if (!log.success) existing.fails30d += 1;
     existing.inTokens30d += log.input_tokens ?? 0;
     existing.outTokens30d += log.output_tokens ?? 0;
+    existing.cost30d += estimateCostUsd(log.model, log.input_tokens ?? 0, log.output_tokens ?? 0);
     byRoute.set(log.route, existing);
   }
-  const routeStats = [...byRoute.values()].sort((a, b) => b.calls30d - a.calls30d);
+  const routeStats = [...byRoute.values()].sort((a, b) => b.cost30d - a.cost30d);
   const totalCalls30d = usageLogs.length;
   const totalFails30d = usageLogs.filter((l) => !l.success).length;
   const totalInTokens = usageLogs.reduce((sum, l) => sum + (l.input_tokens ?? 0), 0);
   const totalOutTokens = usageLogs.reduce((sum, l) => sum + (l.output_tokens ?? 0), 0);
+  const totalCost30d = usageLogs.reduce(
+    (sum, l) => sum + estimateCostUsd(l.model, l.input_tokens ?? 0, l.output_tokens ?? 0),
+    0
+  );
+  // ai_feature_flags 테이블에 아직 없는 신규 route도 목록에서는 "켜짐" 상태로 항상 보여줍니다
+  // (AI_FEATURES가 코드 기준 source of truth, DB는 개발자가 끈 것만 기록).
+  const flagByKey = new Map(featureFlags.map((f) => [f.key, f]));
+  const featureItems = AI_FEATURES.map((f) => ({
+    ...f,
+    enabled: flagByKey.get(f.key)?.enabled ?? true,
+  }));
 
   const dataCards = [
     { label: "📋 사건", value: incidentsCount.count ?? 0, href: "/records" },
@@ -212,20 +238,29 @@ export default async function DevDashboardPage() {
         )}
       </div>
 
-      <div className="mb-2 text-xs font-semibold text-slate-400">AI 사용량 (최근 30일)</div>
+      <div className="mb-2 text-xs font-semibold text-slate-400">AI 사용량 & 예상 과금 (최근 30일)</div>
       <div className="mb-6 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="mb-3 flex flex-wrap gap-4 text-xs text-slate-600">
+        <div className="mb-3 flex flex-wrap items-center gap-4 text-xs text-slate-600">
+          <span className="rounded-full bg-blue-50 px-2.5 py-1 text-sm font-bold text-blue-700">
+            💰 예상 과금 {formatUsd(totalCost30d)}
+          </span>
           <span>총 호출 {totalCalls30d}회</span>
           <span>실패 {totalFails30d}회</span>
           <span>입력 토큰 {totalInTokens.toLocaleString()}</span>
           <span>출력 토큰 {totalOutTokens.toLocaleString()}</span>
         </div>
+        <p className="mb-3 text-[11px] leading-snug text-slate-400">
+          Anthropic 공식 요금표(Sonnet 5 $2/$10, Haiku 4.5 $1/$5 · 백만 토큰당) 기준 추정치입니다. 실제
+          청구서와는 소폭 차이가 날 수 있습니다. Sonnet 5는 2026년 8월 31일까지 도입 특가이며 이후
+          정가($3/$15)로 오릅니다.
+        </p>
         {routeStats.length === 0 && <p className="text-xs text-slate-400">아직 기록된 AI 호출이 없습니다.</p>}
         {routeStats.length > 0 && (
           <div className="flex flex-col gap-1">
             {routeStats.map((r) => (
               <div key={r.route} className="flex items-center gap-3 border-t border-slate-100 py-1.5 text-xs first:border-t-0">
                 <span className="min-w-0 flex-1 truncate font-mono text-slate-700">{r.route}</span>
+                <span className="shrink-0 font-semibold text-blue-700">{formatUsd(r.cost30d)}</span>
                 <span className="shrink-0 text-slate-500">7일 {r.calls7d}회</span>
                 <span className="shrink-0 text-slate-500">30일 {r.calls30d}회</span>
                 {r.fails30d > 0 && <span className="shrink-0 font-semibold text-red-600">실패 {r.fails30d}</span>}
@@ -236,6 +271,16 @@ export default async function DevDashboardPage() {
             ))}
           </div>
         )}
+      </div>
+
+      <div className="mb-2 text-xs font-semibold text-slate-400">AI 기능 on/off (과금 조절)</div>
+      <div className="mb-6 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <p className="mb-3 text-[11px] leading-snug text-slate-400">
+          과금이 부담스러운 기능을 꺼두면, 해당 기능은 즉시 사용이 막히고(Anthropic API 호출 자체가
+          발생하지 않아 비용도 0원) 모든 직원 사이드바 프로필 아래에 빨간 배너로 &quot;일시정지중&quot;이
+          표시됩니다.
+        </p>
+        <AiFeatureTogglesClient initialFeatures={featureItems} myEmail={me?.email ?? ""} />
       </div>
 
       <div className="mb-2 text-xs font-semibold text-slate-400">최근 오류 로그 (최신 20건)</div>

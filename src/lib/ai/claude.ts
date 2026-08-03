@@ -16,6 +16,24 @@ import { logAiUsage } from "@/lib/logging";
 export const CLAUDE_MODEL_QUALITY = "claude-sonnet-5";
 export const CLAUDE_MODEL_FAST = "claude-haiku-4-5-20251001";
 
+// 개발자 대시보드에서 과금이 부담스러운 AI 기능을 항목별로 끌 수 있게 하는 게이트입니다.
+// ai_feature_flags에 route가 없으면(신규 기능이라 아직 등록 안 됐거나, 조회 자체가 실패하면)
+// "허용"으로 처리합니다 - 조회 실패 때문에 정상 기능까지 막히면 안 되기 때문입니다.
+async function isFeatureEnabled(route: string): Promise<boolean> {
+  try {
+    const supabase = await createClient();
+    const { data } = await supabase
+      .from("ai_feature_flags")
+      .select("enabled")
+      .eq("key", route)
+      .maybeSingle();
+    if (!data) return true;
+    return data.enabled !== false;
+  } catch {
+    return true;
+  }
+}
+
 export async function callClaudeJson(
   systemPrompt: string,
   userPrompt: string,
@@ -40,6 +58,9 @@ export async function callClaudeJson(
   try {
     if (!apiKey) {
       throw new Error("ANTHROPIC_API_KEY가 설정되어 있지 않습니다(Vercel 환경변수 확인).");
+    }
+    if (!(await isFeatureEnabled(route))) {
+      throw new Error("현재 이 AI 기능은 관리자에 의해 일시정지되어 있습니다. 잠시 후 다시 시도해주세요.");
     }
 
     const response = await fetch("https://api.anthropic.com/v1/messages", {

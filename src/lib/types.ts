@@ -299,6 +299,15 @@ export type AiUsageLog = {
   created_at: string;
 };
 
+export type AiFeatureFlag = {
+  key: string;
+  label: string;
+  group_name: string;
+  enabled: boolean;
+  updated_by: string | null;
+  updated_at: string;
+};
+
 export type Department3 = "유치부" | "초등부" | "중고등부";
 export type StaffPosition = "교사" | "행정직원" | "관리자" | "개발자";
 

@@ -1858,3 +1858,47 @@ create policy "giamicro_write_task_files" on storage.objects
 drop policy if exists "giamicro_delete_task_files" on storage.objects;
 create policy "giamicro_delete_task_files" on storage.objects
   for delete using (bucket_id = 'task-files' and is_giamicro_user());
+
+-- ===== 49. AI 기능별 과금 on/off 토글 (개발자 대시보드) =====
+-- callClaudeJson()이 호출될 때마다 opts.route로 넘어오는 값과 1:1로 매칭되는 "기능 스위치"
+-- 테이블입니다. 개발자가 과금이 부담스러운 기능을 여기서 끄면(enabled=false), claude.ts가 실제
+-- Anthropic API를 호출하기 전에 막아서 비용이 아예 발생하지 않습니다. 모든 로그인 사용자가
+-- SELECT 할 수 있어야 사이드바 "일시정지중" 배너를 누구나 볼 수 있고, 끄고 켜는 것은 개발자만
+-- 가능합니다. key는 src/lib/ai/pricing.ts의 AI_FEATURES 목록과 반드시 일치해야 합니다.
+create table if not exists ai_feature_flags (
+  key text primary key,
+  label text not null,
+  group_name text not null,
+  enabled boolean not null default true,
+  updated_by text,
+  updated_at timestamptz not null default now()
+);
+
+alter table ai_feature_flags enable row level security;
+
+drop policy if exists "giamicro_select_ai_feature_flags" on ai_feature_flags;
+create policy "giamicro_select_ai_feature_flags" on ai_feature_flags
+  for select using (is_giamicro_user());
+
+drop policy if exists "developer_manage_ai_feature_flags" on ai_feature_flags;
+create policy "developer_manage_ai_feature_flags" on ai_feature_flags
+  for all using (is_developer()) with check (is_developer());
+
+insert into ai_feature_flags (key, label, group_name) values
+  ('scan:incidents', '사건기록 정리 AI', '기록함'),
+  ('scan:events', '행사기록 정리 AI', '기록함'),
+  ('scan:meetings', '회의기록 정리 AI', '기록함'),
+  ('fill-incident', '사건기록 자동작성 AI', '기록함'),
+  ('clean-meeting', '회의록 다듬기 AI', '기록함'),
+  ('meeting-chat', '회의록 챗봇 AI', '기록함'),
+  ('compare-events', '행사 비교분석 AI', '기록함'),
+  ('compare-terms', '학기 비교분석 AI', '기록함'),
+  ('manual-draft', '매뉴얼 초안작성 AI', '매뉴얼 · 문서'),
+  ('manual-faq', '매뉴얼 FAQ AI', '매뉴얼 · 문서'),
+  ('document-draft', '서류 초안작성 AI', '매뉴얼 · 문서'),
+  ('document-recommend', '서류 추천 AI', '매뉴얼 · 문서'),
+  ('anticipate-complaints', '민원예측 AI', '제안함 · 채택예정'),
+  ('review-adopted', '채택예정 검토 AI', '제안함 · 채택예정'),
+  ('proposals-decide', '제안 승인 정리 AI', '제안함 · 채택예정'),
+  ('analyze-task', '업무 분석 AI', '업무')
+on conflict (key) do nothing;

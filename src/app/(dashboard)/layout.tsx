@@ -10,6 +10,8 @@ import { SidebarNavLinks, MobileNavLinks, type NavCategory } from "@/components/
 import MainArea from "@/components/MainArea";
 import DateTimeCard from "@/components/home/DateTimeCard";
 import GlobalSearchBar from "@/components/GlobalSearchBar";
+import PausedFeaturesBanner from "@/components/dev/PausedFeaturesBanner";
+import type { AiFeatureFlag } from "@/lib/types";
 
 // 메뉴를 "카테고리" 단위로 재구성했습니다(이전에는 세로로 긴 그룹 목록이라 계속 스크롤해야
 // 했는데, 지금은 주메뉴 몇 개만 보이고 하위 항목은 마우스를 올리면 오른쪽으로 펼쳐집니다).
@@ -85,7 +87,14 @@ export default async function DashboardLayout({
   // getCurrentAppUser()는 React cache()로 감싸져 있어서, 이 아래에서 렌더링되는 각 페이지가
   // 같은 정보를 또 조회하려 해도(예: 학생 조회/관리자 화면의 권한 체크) 같은 요청 안에서는
   // 실제 DB 조회 없이 이 결과를 그대로 재사용합니다 - 탭을 옮길 때마다 두 번 묻던 것을 한 번으로.
-  const [me, currentTerm] = await Promise.all([getCurrentAppUser(), getCurrentTerm(supabase)]);
+  // 개발자가 과금 때문에 꺼둔 AI 기능이 있으면 사이드바 프로필 아래에 빨간 배너로 알려줍니다
+  // (giamicro 도메인 전체가 볼 수 있도록 RLS가 허용 - is_giamicro_user()).
+  const [me, currentTerm, disabledFeaturesRes] = await Promise.all([
+    getCurrentAppUser(),
+    getCurrentTerm(supabase),
+    supabase.from("ai_feature_flags").select("*").eq("enabled", false).order("updated_at", { ascending: false }),
+  ]);
+  const disabledFeatures = (disabledFeaturesRes.data as AiFeatureFlag[] | null) ?? [];
 
   // middleware.ts가 1차로 막지만, 서버 컴포넌트 단에서도 한 번 더 확인합니다(방어적 이중 확인).
   if (!me) {
@@ -171,6 +180,7 @@ export default async function DashboardLayout({
               <div className="truncate text-[11px] text-slate-400">{me.email}</div>
             </div>
           </Link>
+          <PausedFeaturesBanner disabledFeatures={disabledFeatures} />
         </div>
 
         {/* 통합 검색 - 학생/사건/회의/행사/업무/서류를 메뉴를 옮겨다니지 않고 바로 찾습니다(요청). */}

@@ -112,8 +112,9 @@ export default async function DashboardLayout({
     ];
   } else {
     categories = [
-      { key: "home", label: "홈", icon: "🏠", href: "/home", accent: "navy" },
-      // 전화 응대 중 바로 열어야 하는 메뉴라 운영관리 하위에 묻지 않고 홈-업무 사이에 따로 뺐습니다.
+      // "홈" 메뉴는 없앴습니다 - 왼쪽 로고(사이드바)/상단 로고(모바일)를 누르면 항상 홈으로
+      // 이동하므로(아래 homeHref), 메뉴에 따로 자리를 차지할 필요가 없습니다.
+      // 전화 응대 중 바로 열어야 하는 메뉴라 운영관리 하위에 묻지 않고 로고-업무 사이에 따로 뺐습니다.
       { key: "staff-manual", label: "실무자 매뉴얼", icon: "📚", href: "/staff-manual", accent: "amber" },
       { key: "work", label: "업무", icon: "🗂️", href: "/work", accent: "blue" },
       buildOpsCategory(),

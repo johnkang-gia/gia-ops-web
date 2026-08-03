@@ -4,6 +4,69 @@
 `version` 값과 항상 일치시킵니다. 업데이트할 때마다 이 파일 맨 위에 새 항목을 추가하고,
 같은 내용을 GitHub Desktop의 커밋 Summary/Description에도 그대로 사용하면 됩니다.
 
+## v0.43.0 - 2026-08-03 (staging)
+
+지난 기능 제안 중 학부모 열람 관련 항목을 제외한 나머지 6건을 반영했습니다.
+
+- 반복 업무: 업무등록 위젯/상세패널에서 매일·매주(요일)·매월(날짜) 반복을 지정하면, 완료
+  처리되는 순간 다음 회차가 자동으로 새로 등록됩니다(🔁 뱃지로 표시).
+- 업무별 첨부파일: 업무 상세패널에서 파일을 첨부·다운로드·삭제할 수 있습니다.
+- 채팅 공지 고정 배너: 이미 있는 메시지 고정(📌) 기능이 이 역할을 하고 있어 별도 개발 없이
+  그대로 사용하시면 됩니다.
+- 학기 종합 PDF: 리포트 프린트 화면에서 학생+학기를 함께 고르면, 그 학기 동안 발행된 모든
+  리포트를 과목별로 모아 하나의 PDF로 볼 수 있습니다.
+- 통합 검색: 사이드바(모바일은 상단)에서 학생·사건·회의·행사·업무·서류함을 한 번에 검색합니다.
+  교사 계정은 기존 접근 권한과 동일하게 학생 검색 결과만 보입니다.
+- 모바일 칸반 상태변경: 업무카드에 드래그 없이 바로 상태를 바꿀 수 있는 드롭다운을 추가해
+  터치 환경에서도 편하게 옮길 수 있습니다.
+
+### SQL (Supabase SQL Editor에 실행)
+
+```sql
+-- ===== 48. 반복 업무 + 업무별 첨부파일 =====
+alter table tasks add column if not exists recurrence jsonb;
+alter table tasks add column if not exists recurrence_group_id uuid;
+
+create table if not exists task_attachments (
+  id uuid primary key default gen_random_uuid(),
+  task_id uuid not null references tasks(id) on delete cascade,
+  uploader_email text not null,
+  file_path text not null,
+  file_name text not null,
+  file_type text,
+  file_size bigint,
+  created_at timestamptz not null default now()
+);
+
+alter table task_attachments enable row level security;
+
+drop policy if exists "giamicro_select_task_attachments" on task_attachments;
+create policy "giamicro_select_task_attachments" on task_attachments
+  for select using (is_giamicro_user());
+
+drop policy if exists "giamicro_insert_task_attachments" on task_attachments;
+create policy "giamicro_insert_task_attachments" on task_attachments
+  for insert with check (is_giamicro_user());
+
+drop policy if exists "giamicro_delete_task_attachments" on task_attachments;
+create policy "giamicro_delete_task_attachments" on task_attachments
+  for delete using (is_giamicro_user());
+
+insert into storage.buckets (id, name, public)
+values ('task-files', 'task-files', false)
+on conflict (id) do nothing;
+
+drop policy if exists "giamicro_read_task_files" on storage.objects;
+create policy "giamicro_read_task_files" on storage.objects
+  for select using (bucket_id = 'task-files' and is_giamicro_user());
+drop policy if exists "giamicro_write_task_files" on storage.objects;
+create policy "giamicro_write_task_files" on storage.objects
+  for insert with check (bucket_id = 'task-files' and is_giamicro_user());
+drop policy if exists "giamicro_delete_task_files" on storage.objects;
+create policy "giamicro_delete_task_files" on storage.objects
+  for delete using (bucket_id = 'task-files' and is_giamicro_user());
+```
+
 ## v0.42.0 - 2026-08-03 (staging)
 
 업무탭 편의성 + 주간 학생 관찰기록 개선 7건을 반영했습니다.

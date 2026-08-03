@@ -1,11 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { WrStudent } from "@/lib/types";
+import type { Term, WrStudent } from "@/lib/types";
 
-export default function PrintSelectorClient({ students }: { students: WrStudent[] }) {
+export default function PrintSelectorClient({ students, terms }: { students: WrStudent[]; terms: Term[] }) {
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string>("");
+  const [termId, setTermId] = useState<string>("");
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -45,6 +46,36 @@ export default function PrintSelectorClient({ students }: { students: WrStudent[
       >
         🖨️ 발행된 리포트 PDF 열기
       </a>
+
+      <div className="mt-4 border-t border-dashed border-slate-200 pt-3">
+        <p className="mb-1.5 text-xs font-semibold text-slate-500">📚 학기 종합 PDF</p>
+        <p className="mb-2 text-[11px] text-slate-400">
+          학기를 고르면 그 학기 동안 발행된 모든 리포트를 과목별로 모아 한 번에 볼 수 있습니다.
+        </p>
+        <select
+          value={termId}
+          onChange={(e) => setTermId(e.target.value)}
+          className="mb-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+        >
+          <option value="">학기 선택...</option>
+          {terms.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.year} {t.term_type} ({t.status})
+            </option>
+          ))}
+        </select>
+        <a
+          href={selectedId && termId ? `/api/weekly-report/pdf?studentId=${selectedId}&termId=${termId}&mode=term` : undefined}
+          target="_blank"
+          rel="noreferrer"
+          className={
+            "inline-block rounded-lg px-4 py-2 text-sm font-semibold text-white " +
+            (selectedId && termId ? "bg-indigo-500 hover:bg-indigo-600" : "pointer-events-none bg-slate-300")
+          }
+        >
+          📚 학기 종합 PDF 열기
+        </a>
+      </div>
     </div>
   );
 }

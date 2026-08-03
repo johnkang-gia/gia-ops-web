@@ -1811,3 +1811,50 @@ create policy "giamicro_update_wr_reports" on wr_reports
 drop policy if exists "wr_manager_delete_wr_reports" on wr_reports;
 create policy "wr_manager_delete_wr_reports" on wr_reports
   for delete using (is_wr_manager());
+
+-- ===== 48. 반복 업무 + 업무별 첨부파일 =====
+-- 반복 업무: 완료되는 순간 클라이언트가 다음 회차를 자동으로 새로 등록합니다. recurrence는
+-- {freq:'daily'|'weekly'|'monthly', weekday?, day_of_month?} 형태의 JSON이고,
+-- recurrence_group_id는 같은 반복 시리즈의 여러 회차를 하나로 묶어 추적하기 위한 값입니다.
+alter table tasks add column if not exists recurrence jsonb;
+alter table tasks add column if not exists recurrence_group_id uuid;
+
+-- 업무별 첨부파일 - 채팅 첨부(messages.attachment_*)와 동일한 구조를 업무카드 단위로 반복합니다.
+create table if not exists task_attachments (
+  id uuid primary key default gen_random_uuid(),
+  task_id uuid not null references tasks(id) on delete cascade,
+  uploader_email text not null,
+  file_path text not null,
+  file_name text not null,
+  file_type text,
+  file_size bigint,
+  created_at timestamptz not null default now()
+);
+
+alter table task_attachments enable row level security;
+
+drop policy if exists "giamicro_select_task_attachments" on task_attachments;
+create policy "giamicro_select_task_attachments" on task_attachments
+  for select using (is_giamicro_user());
+
+drop policy if exists "giamicro_insert_task_attachments" on task_attachments;
+create policy "giamicro_insert_task_attachments" on task_attachments
+  for insert with check (is_giamicro_user());
+
+drop policy if exists "giamicro_delete_task_attachments" on task_attachments;
+create policy "giamicro_delete_task_attachments" on task_attachments
+  for delete using (is_giamicro_user());
+
+insert into storage.buckets (id, name, public)
+values ('task-files', 'task-files', false)
+on conflict (id) do nothing;
+
+drop policy if exists "giamicro_read_task_files" on storage.objects;
+create policy "giamicro_read_task_files" on storage.objects
+  for select using (bucket_id = 'task-files' and is_giamicro_user());
+drop policy if exists "giamicro_write_task_files" on storage.objects;
+create policy "giamicro_write_task_files" on storage.objects
+  for insert with check (bucket_id = 'task-files' and is_giamicro_user());
+drop policy if exists "giamicro_delete_task_files" on storage.objects;
+create policy "giamicro_delete_task_files" on storage.objects
+  for delete using (bucket_id = 'task-files' and is_giamicro_user());

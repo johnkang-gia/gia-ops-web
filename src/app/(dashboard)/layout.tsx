@@ -8,6 +8,7 @@ import SignOutButton from "@/components/SignOutButton";
 import { SidebarNavLinks, MobileNavLinks, type NavCategory } from "@/components/NavLinks";
 import MainArea from "@/components/MainArea";
 import DateTimeCard from "@/components/home/DateTimeCard";
+import GlobalSearchBar from "@/components/GlobalSearchBar";
 
 // 메뉴를 "카테고리" 단위로 재구성했습니다(이전에는 세로로 긴 그룹 목록이라 계속 스크롤해야
 // 했는데, 지금은 주메뉴 몇 개만 보이고 하위 항목은 마우스를 올리면 오른쪽으로 펼쳐집니다).
@@ -171,6 +172,11 @@ export default async function DashboardLayout({
           </Link>
         </div>
 
+        {/* 통합 검색 - 학생/사건/회의/행사/업무/서류를 메뉴를 옮겨다니지 않고 바로 찾습니다(요청). */}
+        <div className="mb-3 shrink-0">
+          <GlobalSearchBar />
+        </div>
+
         {/* 달력+시계를 축소판으로 항상 띄워둡니다(메뉴 스크롤에 밀리지 않도록 nav 바깥, shrink-0). */}
         <div className="mb-3 shrink-0 border-b border-slate-100 pb-3">
           <DateTimeCard compact />
@@ -203,6 +209,9 @@ export default async function DashboardLayout({
             ))}
           <SignOutButton />
         </header>
+        <div className="border-b border-slate-200 bg-white px-3 py-2 sm:hidden">
+          <GlobalSearchBar compact />
+        </div>
         <nav className="flex gap-1 overflow-x-auto border-b border-slate-200 bg-white px-2 py-2 sm:hidden">
           <MobileNavLinks categories={categories} />
         </nav>

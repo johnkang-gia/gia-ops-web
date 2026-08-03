@@ -37,14 +37,22 @@ const styles = StyleSheet.create({
   footer: { position: "absolute", bottom: 20, left: 44, right: 44, fontSize: 8, color: "#999999", textAlign: "center" },
 });
 
-function ReportDocument({ student, reports }: { student: WrStudent; reports: WrReport[] }) {
+function ReportDocument({
+  student,
+  reports,
+  termLabel,
+}: {
+  student: WrStudent;
+  reports: WrReport[];
+  termLabel?: string | null;
+}) {
   const today = new Date().toISOString().slice(0, 10);
   return (
     <Document>
       <Page size="A4" style={styles.page}>
-        <Text style={styles.coverTitle}>{student.name} 학생 주간 리포트</Text>
+        <Text style={styles.coverTitle}>{student.name} 학생 {termLabel ? "학기 종합 리포트" : "주간 리포트"}</Text>
         <Text style={styles.coverSubtitle}>
-          {student.grade}학년 {student.class_name} · GIA · 발행일: {today}
+          {student.grade}학년 {student.class_name} · GIA{termLabel ? ` · ${termLabel}` : ""} · 발행일: {today}
         </Text>
         <Text fixed style={styles.pageNumber} render={({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}`} />
         <Text fixed style={styles.footer}>GIA · 주간 학생 관찰기록</Text>
@@ -101,32 +109,60 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const studentId = searchParams.get("studentId");
   if (!studentId) return new Response("studentId가 필요합니다.", { status: 400 });
+  // mode=term이면 학기말 종합 PDF - 과목별 최신 1건이 아니라, 그 학기 동안 발행된 모든
+  // 리포트를 과목별로 묶어 시간순(오래된 것→최신 순)으로 전부 보여줍니다(요청).
+  const termId = searchParams.get("termId");
+  const isTermMode = searchParams.get("mode") === "term" && !!termId;
 
-  const [{ data: student }, { data: reportsData }] = await Promise.all([
+  const [{ data: student }, { data: reportsData }, termRow] = await Promise.all([
     supabase.from("wr_students").select("*").eq("id", studentId).maybeSingle(),
     supabase
       .from("wr_reports")
       .select("*")
       .eq("student_id", studentId)
       .eq("status", "published")
-      .order("report_date", { ascending: false }),
+      .then((res) => res),
+    isTermMode ? supabase.from("terms").select("*").eq("id", termId).maybeSingle() : Promise.resolve({ data: null }),
   ]);
   if (!student) return new Response("학생을 찾을 수 없습니다.", { status: 404 });
 
-  // 과목별 가장 최근 발행본 하나씩만 사용합니다.
-  const latestBySubject = new Map<string, WrReport>();
-  for (const r of (reportsData as WrReport[] | null) ?? []) {
-    if (!latestBySubject.has(r.subject)) latestBySubject.set(r.subject, r);
+  const allReports = ((reportsData as WrReport[] | null) ?? []).filter((r) => !isTermMode || r.term_id === termId);
+
+  let finalReports: WrReport[];
+  let termLabel: string | null = null;
+  let filenameSuffix = "weekly_report";
+
+  if (isTermMode) {
+    // 과목별로 묶은 뒤 오래된 순으로 정렬 - 한 학기 동안의 변화 흐름을 그대로 보여줍니다.
+    const bySubject = new Map<string, WrReport[]>();
+    for (const r of allReports) {
+      const list = bySubject.get(r.subject) ?? [];
+      list.push(r);
+      bySubject.set(r.subject, list);
+    }
+    finalReports = [...bySubject.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .flatMap(([, list]) => list.sort((a, b) => a.report_date.localeCompare(b.report_date)));
+    const term = termRow.data as { term_type: string; year: string } | null;
+    termLabel = term ? `${term.year} ${term.term_type}` : "학기 종합";
+    filenameSuffix = "term_report";
+  } else {
+    // 기본 모드: 과목별 가장 최근 발행본 하나씩만 사용합니다.
+    const latestBySubject = new Map<string, WrReport>();
+    for (const r of allReports.sort((a, b) => b.report_date.localeCompare(a.report_date))) {
+      if (!latestBySubject.has(r.subject)) latestBySubject.set(r.subject, r);
+    }
+    finalReports = [...latestBySubject.values()];
   }
 
   const buffer = await renderToBuffer(
-    <ReportDocument student={student as WrStudent} reports={[...latestBySubject.values()]} />
+    <ReportDocument student={student as WrStudent} reports={finalReports} termLabel={termLabel} />
   );
 
   return new Response(new Uint8Array(buffer), {
     headers: {
       "content-type": "application/pdf",
-      "content-disposition": `inline; filename="${(student as WrStudent).name}_weekly_report.pdf"`,
+      "content-disposition": `inline; filename="${(student as WrStudent).name}_${filenameSuffix}.pdf"`,
     },
   });
 }

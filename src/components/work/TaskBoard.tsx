@@ -29,6 +29,7 @@ function DroppableColumn({
   currentUserEmail,
   onOpenTask,
   onToggleAck,
+  onChangeStatus,
 }: {
   status: TaskStatus;
   tasks: Task[];
@@ -39,6 +40,7 @@ function DroppableColumn({
   currentUserEmail: string;
   onOpenTask: (id: string) => void;
   onToggleAck: (taskId: string, checked: boolean) => void;
+  onChangeStatus: (taskId: string, status: TaskStatus) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: status });
 
@@ -64,6 +66,7 @@ function DroppableColumn({
               currentUserEmail={currentUserEmail}
               onOpen={() => onOpenTask(task.id)}
               onToggleAcknowledge={(checked) => onToggleAck(task.id, checked)}
+              onChangeStatus={(status) => onChangeStatus(task.id, status)}
             />
           ))}
           {tasks.length === 0 && <p className="px-1 text-[11px] text-slate-300">여기로 카드를 끌어다 놓을 수 있어요</p>}
@@ -158,6 +161,7 @@ export default function TaskBoard({
                 currentUserEmail={currentUserEmail}
                 onOpenTask={onOpenTask}
                 onToggleAck={onToggleAck}
+                onChangeStatus={onChangeStatus}
               />
             ))}
           </div>
@@ -182,6 +186,7 @@ export default function TaskBoard({
                 currentUserEmail={currentUserEmail}
                 onOpenTask={onOpenTask}
                 onToggleAck={onToggleAck}
+                onChangeStatus={onChangeStatus}
               />
             </div>
           )}

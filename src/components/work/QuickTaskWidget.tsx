@@ -6,7 +6,7 @@ import { genCaseId } from "@/lib/caseId";
 import { parseTaskFromMessage } from "@/lib/parseTaskFromMessage";
 import { deadlineLabel } from "@/lib/deadlineLabel";
 import { nameFor } from "@/lib/teamName";
-import type { Task, TaskModeColor, TeamMember } from "@/lib/types";
+import type { Task, TaskModeColor, TaskRecurrence, TeamMember } from "@/lib/types";
 
 type Mode = "나" | "전체" | "공유";
 
@@ -75,6 +75,14 @@ export default function QuickTaskWidget({
   const [dateStr, setDateStr] = useState("");
   const [timeStr, setTimeStr] = useState("");
 
+  // 반복 업무 - 완료될 때마다 다음 회차를 자동 생성합니다(요청). 매주/매월은 요일/날짜를
+  // 추가로 지정하고, 기본값은 오늘 기준(요일/일)로 잡아둡니다.
+  const [recurrenceOpen, setRecurrenceOpen] = useState(false);
+  const [recurrenceFreq, setRecurrenceFreq] = useState<"daily" | "weekly" | "monthly" | null>(null);
+  const [recurrenceWeekday, setRecurrenceWeekday] = useState(new Date().getDay());
+  const [recurrenceDom, setRecurrenceDom] = useState(new Date().getDate());
+  const WEEKDAY_LABELS = ["일", "월", "화", "수", "목", "금", "토"];
+
   const preview = useMemo(() => (text.trim() ? parseTaskFromMessage(text) : null), [text]);
   const explicitDueAt = useMemo(() => computeExplicitDueAt(dateStr, timeStr), [dateStr, timeStr]);
   const explicitLabel = explicitDueAt ? deadlineLabel(explicitDueAt) : null;
@@ -125,6 +133,14 @@ export default function QuickTaskWidget({
     const assigneeEmails = mode === "나" ? [currentUserEmail] : mode === "전체" ? team.map((t) => t.email) : selected;
     const dueAt = explicitDueAt ?? parsed.dueAt;
 
+    const recurrence: TaskRecurrence = recurrenceFreq
+      ? recurrenceFreq === "daily"
+        ? { freq: "daily" }
+        : recurrenceFreq === "weekly"
+          ? { freq: "weekly", weekday: recurrenceWeekday }
+          : { freq: "monthly", day_of_month: recurrenceDom }
+      : null;
+
     const supabase = createClient();
     const { data, error } = await supabase
       .from("tasks")
@@ -139,6 +155,8 @@ export default function QuickTaskWidget({
         due_at: dueAt,
         position: Date.now(),
         origin_mode: mode,
+        recurrence,
+        recurrence_group_id: recurrence ? crypto.randomUUID() : null,
       })
       .select()
       .single();
@@ -154,6 +172,8 @@ export default function QuickTaskWidget({
     setQuickBadge(null);
     setDateStr("");
     setTimeStr("");
+    setRecurrenceFreq(null);
+    setRecurrenceOpen(false);
     if (mode === "공유") {
       setSelected([]);
       setShowPicker(false);
@@ -200,16 +220,72 @@ export default function QuickTaskWidget({
         })}
         <button
           type="button"
+          onClick={() => setRecurrenceOpen((v) => !v)}
+          title="반복 업무로 등록 (완료될 때마다 다음 회차가 자동으로 생깁니다)"
+          className={
+            "ml-auto flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-bold transition " +
+            (recurrenceFreq ? "bg-indigo-500 text-white" : "bg-black/5 text-slate-400 hover:bg-black/10")
+          }
+        >
+          🔁 반복
+        </button>
+        <button
+          type="button"
           onClick={() => setUrgent((v) => !v)}
           title="긴급 표시"
           className={
-            "ml-auto flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-bold transition " +
+            "flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-bold transition " +
             (urgent ? "bg-red-500 text-white" : "bg-black/5 text-slate-400 hover:bg-black/10")
           }
         >
           🔴 긴급
         </button>
       </div>
+
+      {recurrenceOpen && (
+        <div className="flex flex-wrap items-center gap-1.5 rounded-lg bg-indigo-50/60 p-1.5">
+          {(["daily", "weekly", "monthly"] as const).map((f) => (
+            <button
+              key={f}
+              type="button"
+              onClick={() => setRecurrenceFreq((prev) => (prev === f ? null : f))}
+              className={
+                "rounded-full border px-2 py-0.5 text-[10px] font-semibold transition " +
+                (recurrenceFreq === f ? "border-indigo-500 bg-indigo-500 text-white" : "border-slate-200 text-slate-500 hover:border-slate-300")
+              }
+            >
+              {f === "daily" ? "매일" : f === "weekly" ? "매주" : "매월"}
+            </button>
+          ))}
+          {recurrenceFreq === "weekly" && (
+            <select
+              value={recurrenceWeekday}
+              onChange={(e) => setRecurrenceWeekday(Number(e.target.value))}
+              className="rounded-lg border border-indigo-200 bg-white px-1.5 py-0.5 text-[10px]"
+            >
+              {WEEKDAY_LABELS.map((d, idx) => (
+                <option key={idx} value={idx}>
+                  {d}요일
+                </option>
+              ))}
+            </select>
+          )}
+          {recurrenceFreq === "monthly" && (
+            <select
+              value={recurrenceDom}
+              onChange={(e) => setRecurrenceDom(Number(e.target.value))}
+              className="rounded-lg border border-indigo-200 bg-white px-1.5 py-0.5 text-[10px]"
+            >
+              {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                <option key={d} value={d}>
+                  {d}일
+                </option>
+              ))}
+            </select>
+          )}
+          {!recurrenceFreq && <span className="text-[10px] text-indigo-400">주기를 골라주세요 - 이 업무가 완료될 때마다 다음 회차가 자동으로 새로 등록됩니다.</span>}
+        </div>
+      )}
 
       {mode === "공유" && showPicker && (
         <div className="flex flex-wrap gap-1 rounded-lg bg-black/[0.03] p-1.5">

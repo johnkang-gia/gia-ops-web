@@ -8,6 +8,8 @@ import { useRealtimeTable } from "@/lib/useRealtimeTable";
 import { useOnlineUsers } from "@/lib/useOnlineUsers";
 import type { Task, TaskStatus, Department, TeamMember, TaskModeColor } from "@/lib/types";
 import { nameFor } from "@/lib/teamName";
+import { computeNextOccurrence } from "@/lib/recurrence";
+import { genCaseId } from "@/lib/caseId";
 import { STATUS_LABEL } from "./statusConfig";
 import WorkspaceArea from "./WorkspaceArea";
 import TaskDetailPanel from "./TaskDetailPanel";
@@ -134,6 +136,32 @@ export default function WorkBoardClient({
       department: task.department,
       is_system: true,
     });
+
+    // 반복 업무는 완료되는 순간 바로 다음 회차를 새로 등록합니다(요청) - 다음 회차도 같은
+    // recurrence_group_id를 이어받아서 "이 업무의 반복 시리즈"를 계속 추적할 수 있습니다.
+    if (status === "완료" && task.recurrence) {
+      const nextDueAt = computeNextOccurrence(task.recurrence, task.due_at ?? task.completed_at);
+      const { data: nextTask } = await supabase
+        .from("tasks")
+        .insert({
+          case_id: genCaseId("TSK"),
+          title: task.title,
+          description: task.description,
+          status: "예정",
+          priority: task.priority,
+          department: task.department,
+          owner_email: task.owner_email,
+          assignee_emails: task.assignee_emails,
+          due_at: nextDueAt,
+          position: Date.now(),
+          origin_mode: task.origin_mode,
+          recurrence: task.recurrence,
+          recurrence_group_id: task.recurrence_group_id,
+        })
+        .select()
+        .single();
+      if (nextTask) addTaskRow(nextTask as Task);
+    }
   }
 
   async function toggleAck(taskId: string, checked: boolean) {

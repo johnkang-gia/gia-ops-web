@@ -1,11 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import type { Task, TaskComment, TaskStatus, TeamMember } from "@/lib/types";
+import type { Task, TaskAttachment, TaskComment, TaskRecurrence, TaskStatus, TeamMember } from "@/lib/types";
 import { nameFor } from "@/lib/teamName";
 import { addTimedEventToNativeCalendar } from "@/lib/nativeCalendar";
+import { recurrenceLabel } from "@/lib/recurrence";
+import { uploadTaskFile, getTaskFileSignedUrl, deleteTaskFile } from "@/lib/storage";
 import { STATUS_ORDER, STATUS_LABEL } from "./statusConfig";
+
+function formatFileSize(bytes: number | null) {
+  if (!bytes) return "";
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
+}
 
 function timeAgo(iso: string) {
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -44,6 +53,74 @@ export default function TaskDetailPanel({
   // 기준으로 되돌려둡니다(아직 확정 전이라 실제 상태는 안 바뀐 상태).
   const [holdPrompt, setHoldPrompt] = useState(false);
   const [issueNote, setIssueNote] = useState("");
+  const [attachments, setAttachments] = useState<TaskAttachment[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [recurrenceOpen, setRecurrenceOpen] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const WEEKDAY_LABELS = ["일", "월", "화", "수", "목", "금", "토"];
+
+  useEffect(() => {
+    const supabase = createClient();
+    let cancelled = false;
+    supabase
+      .from("task_attachments")
+      .select("*")
+      .eq("task_id", task.id)
+      .order("created_at", { ascending: false })
+      .then(({ data }) => {
+        if (!cancelled) setAttachments((data as TaskAttachment[] | null) ?? []);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [task.id]);
+
+  async function uploadAttachment(file: File) {
+    setUploading(true);
+    try {
+      const path = await uploadTaskFile(file, task.id);
+      const supabase = createClient();
+      const { data } = await supabase
+        .from("task_attachments")
+        .insert({
+          task_id: task.id,
+          uploader_email: currentUserEmail,
+          file_path: path,
+          file_name: file.name,
+          file_type: file.type || null,
+          file_size: file.size,
+        })
+        .select()
+        .single();
+      if (data) {
+        setAttachments((prev) => [data as TaskAttachment, ...prev]);
+        await logSystemEvent(`${nameFor(team, currentUserEmail)}님이 파일을 첨부했습니다: ${file.name}`);
+      }
+    } catch (err) {
+      alert("파일 업로드에 실패했습니다: " + (err instanceof Error ? err.message : "알 수 없는 오류"));
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  async function openAttachment(a: TaskAttachment) {
+    const url = await getTaskFileSignedUrl(a.file_path);
+    if (url) window.open(url, "_blank");
+  }
+
+  async function removeAttachment(a: TaskAttachment) {
+    if (!confirm(`"${a.file_name}" 파일을 삭제할까요?`)) return;
+    setAttachments((prev) => prev.filter((x) => x.id !== a.id));
+    const supabase = createClient();
+    await supabase.from("task_attachments").delete().eq("id", a.id);
+    await deleteTaskFile(a.file_path);
+  }
+
+  async function setRecurrence(recurrence: TaskRecurrence) {
+    await patch({ recurrence, recurrence_group_id: recurrence ? task.recurrence_group_id ?? crypto.randomUUID() : task.recurrence_group_id });
+    setRecurrenceOpen(false);
+  }
 
   useEffect(() => {
     const supabase = createClient();
@@ -242,7 +319,64 @@ export default function TaskDetailPanel({
             placeholder="부서"
             className="w-24 rounded-lg border border-slate-300 px-2 py-1 text-xs"
           />
+          <button
+            type="button"
+            onClick={() => setRecurrenceOpen((v) => !v)}
+            title="완료될 때마다 다음 회차를 자동으로 등록합니다"
+            className={
+              "rounded-lg border px-2 py-1 text-xs font-semibold " +
+              (task.recurrence ? "border-indigo-400 bg-indigo-50 text-indigo-600" : "border-slate-300 text-slate-500 hover:bg-slate-50")
+            }
+          >
+            🔁 {task.recurrence ? recurrenceLabel(task.recurrence) : "반복 없음"}
+          </button>
         </div>
+
+        {recurrenceOpen && (
+          <div className="mb-3 flex flex-wrap items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50/60 p-2">
+            <button
+              type="button"
+              onClick={() => setRecurrence(null)}
+              className={"rounded-full border px-2 py-0.5 text-[11px] font-semibold " + (!task.recurrence ? "border-indigo-500 bg-indigo-500 text-white" : "border-slate-200 text-slate-500")}
+            >
+              반복 안 함
+            </button>
+            <button
+              type="button"
+              onClick={() => setRecurrence({ freq: "daily" })}
+              className={"rounded-full border px-2 py-0.5 text-[11px] font-semibold " + (task.recurrence?.freq === "daily" ? "border-indigo-500 bg-indigo-500 text-white" : "border-slate-200 text-slate-500")}
+            >
+              매일
+            </button>
+            {WEEKDAY_LABELS.map((d, idx) => (
+              <button
+                key={d}
+                type="button"
+                onClick={() => setRecurrence({ freq: "weekly", weekday: idx })}
+                className={
+                  "rounded-full border px-2 py-0.5 text-[11px] font-semibold " +
+                  (task.recurrence?.freq === "weekly" && task.recurrence.weekday === idx ? "border-indigo-500 bg-indigo-500 text-white" : "border-slate-200 text-slate-500")
+                }
+              >
+                매주 {d}
+              </button>
+            ))}
+            <select
+              value={task.recurrence?.freq === "monthly" ? task.recurrence.day_of_month ?? 1 : ""}
+              onChange={(e) => setRecurrence({ freq: "monthly", day_of_month: Number(e.target.value) })}
+              className="rounded-lg border border-indigo-200 bg-white px-1.5 py-0.5 text-[11px]"
+            >
+              <option value="" disabled>
+                매월 며칠
+              </option>
+              {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                <option key={d} value={d}>
+                  매월 {d}일
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {holdPrompt && (
           <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-2.5">
@@ -340,6 +474,45 @@ export default function TaskDetailPanel({
             </div>
           </div>
         )}
+
+        <div className="mb-3">
+          <div className="mb-1 flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-400">📎 첨부파일 ({attachments.length})</span>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              className="rounded-lg border border-slate-300 px-2 py-0.5 text-[11px] font-medium text-slate-500 hover:bg-slate-50 disabled:opacity-50"
+            >
+              {uploading ? "업로드 중..." : "+ 파일 추가"}
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) uploadAttachment(file);
+              }}
+            />
+          </div>
+          {attachments.length > 0 && (
+            <div className="flex flex-col gap-1">
+              {attachments.map((a) => (
+                <div key={a.id} className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[11px]">
+                  <button onClick={() => openAttachment(a)} className="min-w-0 flex-1 truncate text-left text-slate-600 hover:text-blue-600" title={a.file_name}>
+                    📄 {a.file_name} <span className="text-slate-300">{formatFileSize(a.file_size)}</span>
+                  </button>
+                  {(a.uploader_email === currentUserEmail || isAdmin) && (
+                    <button onClick={() => removeAttachment(a)} className="shrink-0 text-slate-300 hover:text-red-500">
+                      🗑
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
         <div className="mb-2 text-xs font-semibold text-slate-400">
           💬 코멘트 ({comments.length})

@@ -11,6 +11,9 @@ const MEETING_AUDIO_BUCKET = "meeting-audio";
 const AVATARS_BUCKET = "avatars";
 // 업무 채팅에 첨부하는 파일 - 사내 파일이라 비공개 버킷입니다.
 const CHAT_FILES_BUCKET = "chat-files";
+// 업무카드별 첨부파일 - 채팅 첨부와 동일한 신뢰 모델(giamicro.com 로그인 사용자면 누구나
+// 업로드·조회·삭제 가능)이라 별도 버킷으로 분리했습니다(용도 구분용).
+const TASK_FILES_BUCKET = "task-files";
 
 async function uploadFile(bucket: string, file: File, folder: string): Promise<string> {
   const supabase = createClient();
@@ -83,4 +86,16 @@ export async function uploadChatFile(file: File, folder: string): Promise<string
 
 export async function getChatFileSignedUrl(path: string): Promise<string | null> {
   return getFileSignedUrl(CHAT_FILES_BUCKET, path);
+}
+
+export async function uploadTaskFile(file: File, taskId: string): Promise<string> {
+  return uploadFile(TASK_FILES_BUCKET, file, taskId);
+}
+
+export async function getTaskFileSignedUrl(path: string): Promise<string | null> {
+  return getFileSignedUrl(TASK_FILES_BUCKET, path);
+}
+
+export async function deleteTaskFile(path: string): Promise<void> {
+  return deleteFile(TASK_FILES_BUCKET, path);
 }

@@ -2,9 +2,11 @@
 
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import type { Task, TeamMember } from "@/lib/types";
+import type { Task, TaskStatus, TeamMember } from "@/lib/types";
 import { nameFor } from "@/lib/teamName";
 import { deadlineLabel } from "@/lib/deadlineLabel";
+import { recurrenceLabel } from "@/lib/recurrence";
+import { STATUS_ORDER, STATUS_LABEL } from "./statusConfig";
 
 export default function TaskCard({
   task,
@@ -15,6 +17,7 @@ export default function TaskCard({
   currentUserEmail,
   onOpen,
   onToggleAcknowledge,
+  onChangeStatus,
 }: {
   task: Task;
   team: TeamMember[];
@@ -24,6 +27,7 @@ export default function TaskCard({
   currentUserEmail: string;
   onOpen: () => void;
   onToggleAcknowledge: (checked: boolean) => void;
+  onChangeStatus: (status: TaskStatus) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: task.id,
@@ -76,6 +80,20 @@ export default function TaskCard({
       >
         <span className="shrink-0 text-xs">✅</span>
         <span className="min-w-0 flex-1 truncate text-[13px] text-slate-500 line-through">{task.title}</span>
+        <select
+          value={task.status}
+          onChange={(e) => onChangeStatus(e.target.value as TaskStatus)}
+          onClick={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+          title="상태를 바로 바꾸기 (드래그 없이도 가능)"
+          className="shrink-0 rounded-full border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-500"
+        >
+          {STATUS_ORDER.map((s) => (
+            <option key={s} value={s}>
+              {STATUS_LABEL[s]}
+            </option>
+          ))}
+        </select>
       </div>
     );
   }
@@ -106,6 +124,14 @@ export default function TaskCard({
             긴급
           </span>
         )}
+        {task.recurrence && (
+          <span
+            title={recurrenceLabel(task.recurrence)}
+            className="mt-0.5 shrink-0 rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-bold text-indigo-600"
+          >
+            🔁
+          </span>
+        )}
         <span className={"min-w-0 flex-1 text-sm font-semibold text-slate-800" + (iAmAssignee && myAck ? " opacity-60" : "")}>
           {task.title}
         </span>
@@ -127,6 +153,25 @@ export default function TaskCard({
           <span className={overdue ? "font-semibold text-red-500" : dueSoon ? "font-semibold text-amber-600" : ""}>{deadline ?? ""}</span>
         </span>
         {assigneeSummary && <span>👤 {assigneeSummary}</span>}
+      </div>
+
+      {/* 드래그가 불편한 터치 환경(모바일/태블릿)에서도 상태를 바로 바꿀 수 있도록, 드래그
+          외에 이 드롭다운으로도 상태 변경이 가능합니다 - 데스크톱에서도 그대로 씁니다. */}
+      <div className="mt-1.5 flex justify-end">
+        <select
+          value={task.status}
+          onChange={(e) => onChangeStatus(e.target.value as TaskStatus)}
+          onClick={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+          title="상태를 바로 바꾸기 (드래그 없이도 가능)"
+          className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-500"
+        >
+          {STATUS_ORDER.map((s) => (
+            <option key={s} value={s}>
+              {STATUS_LABEL[s]}
+            </option>
+          ))}
+        </select>
       </div>
 
       {isAdmin && totalAssignees > 0 && (

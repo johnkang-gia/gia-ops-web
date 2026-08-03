@@ -165,6 +165,15 @@ export type TaskStatus = "예정" | "진행중" | "완료" | "보류";
 
 export type TaskAck = { email: string; time: string };
 
+// 반복 업무 - 완료 처리되는 순간 이 규칙을 바탕으로 다음 회차를 자동 생성합니다.
+// weekly는 weekday(0=일~6=토), monthly는 day_of_month(1~31, 그 달 마지막날보다 크면
+// 마지막날로 자동 보정)를 씁니다. daily는 추가 필드가 필요 없습니다.
+export type TaskRecurrence = {
+  freq: "daily" | "weekly" | "monthly";
+  weekday?: number;
+  day_of_month?: number;
+} | null;
+
 export type Task = {
   id: string;
   case_id: string;
@@ -183,8 +192,21 @@ export type Task = {
   archived_at: string | null;
   term_id: string | null;
   origin_mode: "나" | "전체" | "공유";
+  recurrence: TaskRecurrence;
+  recurrence_group_id: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type TaskAttachment = {
+  id: string;
+  task_id: string;
+  uploader_email: string;
+  file_path: string;
+  file_name: string;
+  file_type: string | null;
+  file_size: number | null;
+  created_at: string;
 };
 
 export type TaskComment = {

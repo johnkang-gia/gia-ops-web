@@ -1,9 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import type { TaskComment } from "@/lib/types";
+
+const PAGE_SIZE = 5;
+// 컴팩트 뷰에 계속 쌓아두는 로그 총량 상한 - 스크롤로 과거를 계속 불러와도 이 이상은
+// 메모리에 들고 있지 않도록(요청: "로그 캐쉬 많이 안잡아 먹도록") 오래된 쪽부터 잘라냅니다.
+const MAX_CACHED = 60;
+// 한 줄의 대략적인 높이(px) - 5줄만 보이는 고정 높이 스크롤 영역을 만들기 위해 씁니다.
+const ROW_HEIGHT = 22;
 
 function timeAgo(iso: string) {
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -17,19 +24,30 @@ function timeAgo(iso: string) {
 
 // GIA WorkFlatform 참조 구조의 "실시간 로그" 패널 - 별도 로그 테이블 없이 task_comments에
 // is_system=true로 자동 기록되는 상태변경/업무확인/채팅 업무등록 이벤트만 모아서 부서별로
-// 최근 순으로 보여줍니다. 채팅으로 등록한 업무의 "등록됐다" 안내와 확인 내역도 전부 여기로만
-// 모이고, 채팅창에는 대화만 남도록 분리했습니다(요청). 평소엔 최근 12개만 보이고, 헤더를
-// 클릭하면 전체 목록을 팝업으로 볼 수 있습니다.
-export default function ActivityLog({ department }: { department: string }) {
+// 최근 순으로 보여줍니다. 평소엔 딱 5줄만(한 줄에 로그 하나) 보이는 고정 높이 영역이고, 위로
+// 스크롤하면 그 이전 로그를 추가로 불러옵니다(캐시에 너무 많이 쌓이지 않도록 상한을 둡니다).
+// 헤더를 클릭하면 전체 목록을 팝업으로 볼 수 있습니다. 잘못 남은 로그는 관리자이거나 그
+// 행동을 한 본인이면 지울 수 있습니다(요청).
+export default function ActivityLog({
+  department,
+  isAdmin,
+  currentUserEmail,
+}: {
+  department: string;
+  isAdmin: boolean;
+  currentUserEmail: string;
+}) {
   const [events, setEvents] = useState<TaskComment[]>([]);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [fullEvents, setFullEvents] = useState<TaskComment[] | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (department === "전체") {
-      setEvents([]);
-      return;
-    }
+    setEvents([]);
+    setHasMore(true);
+    if (department === "전체") return;
     const supabase = createClient();
     let cancelled = false;
 
@@ -39,9 +57,12 @@ export default function ActivityLog({ department }: { department: string }) {
       .eq("department", department)
       .eq("is_system", true)
       .order("created_at", { ascending: false })
-      .limit(12)
+      .limit(PAGE_SIZE)
       .then(({ data }) => {
-        if (!cancelled) setEvents((data as TaskComment[] | null) ?? []);
+        if (cancelled) return;
+        const rows = (data as TaskComment[] | null) ?? [];
+        setEvents(rows);
+        setHasMore(rows.length === PAGE_SIZE);
       });
 
     const channel = supabase
@@ -52,7 +73,7 @@ export default function ActivityLog({ department }: { department: string }) {
         (payload) => {
           const next = payload.new as TaskComment;
           if (!next.is_system) return;
-          setEvents((prev) => [next, ...prev].slice(0, 12));
+          setEvents((prev) => [next, ...prev].slice(0, MAX_CACHED));
           setFullEvents((prev) => (prev ? [next, ...prev] : prev));
         }
       )
@@ -63,6 +84,48 @@ export default function ActivityLog({ department }: { department: string }) {
       supabase.removeChannel(channel);
     };
   }, [department]);
+
+  async function loadOlder() {
+    if (loadingMore || !hasMore || events.length === 0) return;
+    setLoadingMore(true);
+    const supabase = createClient();
+    const oldest = events[events.length - 1];
+    const { data } = await supabase
+      .from("task_comments")
+      .select("*")
+      .eq("department", department)
+      .eq("is_system", true)
+      .lt("created_at", oldest.created_at)
+      .order("created_at", { ascending: false })
+      .limit(PAGE_SIZE);
+    const rows = (data as TaskComment[] | null) ?? [];
+    setEvents((prev) => [...prev, ...rows].slice(0, MAX_CACHED));
+    setHasMore(rows.length === PAGE_SIZE);
+    setLoadingMore(false);
+  }
+
+  // 스크롤이 맨 위 근처에 닿으면(위로 올려야 과거 로그가 나오도록, 요청) 다음 페이지를 불러옵니다.
+  function onScroll() {
+    const el = scrollRef.current;
+    if (!el) return;
+    if (el.scrollTop < 24) loadOlder();
+  }
+
+  async function deleteEvent(e: TaskComment, fromFull: boolean) {
+    if (!confirm("이 로그 기록을 삭제할까요?")) return;
+    const supabase = createClient();
+    setEvents((prev) => prev.filter((x) => x.id !== e.id));
+    setFullEvents((prev) => (prev ? prev.filter((x) => x.id !== e.id) : prev));
+    const { error } = await supabase.from("task_comments").delete().eq("id", e.id);
+    if (error) {
+      alert("로그를 삭제하지 못했습니다: " + error.message);
+    }
+    void fromFull;
+  }
+
+  function canDelete(e: TaskComment) {
+    return isAdmin || e.author_email === currentUserEmail;
+  }
 
   async function openFull() {
     setExpanded(true);
@@ -94,12 +157,28 @@ export default function ActivityLog({ department }: { department: string }) {
       {events.length === 0 ? (
         <p className="text-[11px] opacity-40">아직 활동 기록이 없습니다.</p>
       ) : (
-        <div className="flex flex-wrap gap-x-4 gap-y-1">
+        <div
+          ref={scrollRef}
+          onScroll={onScroll}
+          className="flex flex-col overflow-y-auto"
+          style={{ maxHeight: ROW_HEIGHT * PAGE_SIZE }}
+        >
+          {loadingMore && <p className="px-1 py-0.5 text-center text-[10px] opacity-40">이전 로그 불러오는 중...</p>}
           {events.map((e) => (
-            <span key={e.id} className="text-[11px] opacity-70">
-              {e.content}{" "}
-              <span className="opacity-50">· {timeAgo(e.created_at)}</span>
-            </span>
+            <div key={e.id} className="group flex items-center gap-1 truncate px-1 py-0.5 text-[11px] opacity-70">
+              <span className="min-w-0 flex-1 truncate">
+                {e.content} <span className="opacity-50">· {timeAgo(e.created_at)}</span>
+              </span>
+              {canDelete(e) && (
+                <button
+                  onClick={() => deleteEvent(e, false)}
+                  title="로그 삭제"
+                  className="shrink-0 text-slate-300 opacity-0 hover:text-red-500 group-hover:opacity-100"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
           ))}
         </div>
       )}
@@ -126,8 +205,19 @@ export default function ActivityLog({ department }: { department: string }) {
                 ) : (
                   <div className="flex flex-col gap-2">
                     {fullEvents.map((e) => (
-                      <div key={e.id} className="rounded-lg bg-slate-50 px-2.5 py-1.5 text-[12px] text-slate-600">
-                        {e.content} <span className="text-[10px] text-slate-400">· {timeAgo(e.created_at)}</span>
+                      <div key={e.id} className="group flex items-center justify-between gap-2 rounded-lg bg-slate-50 px-2.5 py-1.5 text-[12px] text-slate-600">
+                        <span className="min-w-0 flex-1 truncate">
+                          {e.content} <span className="text-[10px] text-slate-400">· {timeAgo(e.created_at)}</span>
+                        </span>
+                        {canDelete(e) && (
+                          <button
+                            onClick={() => deleteEvent(e, true)}
+                            title="로그 삭제"
+                            className="shrink-0 text-slate-300 hover:text-red-500"
+                          >
+                            ✕
+                          </button>
+                        )}
                       </div>
                     ))}
                   </div>

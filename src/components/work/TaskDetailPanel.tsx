@@ -242,6 +242,20 @@ export default function TaskDetailPanel({
       .insert({ task_id: task.id, author_email: currentUserEmail, content: text, department: task.department });
   }
 
+  // 잘못 남은 코멘트/로그는 관리자이거나 그 글을 남긴 본인이면 지울 수 있습니다(요청) - 시스템
+  // 로그(🔔)도 예외 없이 같은 기준으로 지울 수 있게 했습니다.
+  function canDeleteComment(c: TaskComment) {
+    return isAdmin || c.author_email === currentUserEmail;
+  }
+
+  async function deleteComment(c: TaskComment) {
+    if (!confirm("이 항목을 삭제할까요?")) return;
+    setComments((prev) => prev.filter((x) => x.id !== c.id));
+    const supabase = createClient();
+    const { error } = await supabase.from("task_comments").delete().eq("id", c.id);
+    if (error) alert("삭제하지 못했습니다: " + error.message);
+  }
+
   async function remove() {
     if (!confirm("이 업무를 삭제할까요? 코멘트도 함께 삭제됩니다.")) return;
     const supabase = createClient();
@@ -522,22 +536,43 @@ export default function TaskDetailPanel({
           <div className="flex flex-col gap-2">
             {comments.map((c) =>
               c.is_system ? (
-                <div key={c.id} className="px-1 text-[11px] italic text-slate-400">
-                  🔔 {c.content} · {timeAgo(c.created_at)}
+                <div key={c.id} className="group flex items-center gap-1 px-1 text-[11px] italic text-slate-400">
+                  <span className="min-w-0 flex-1 truncate">
+                    🔔 {c.content} · {timeAgo(c.created_at)}
+                  </span>
+                  {canDeleteComment(c) && (
+                    <button onClick={() => deleteComment(c)} title="삭제" className="shrink-0 not-italic text-slate-300 opacity-0 hover:text-red-500 group-hover:opacity-100">
+                      ✕
+                    </button>
+                  )}
                 </div>
               ) : c.is_issue ? (
-                <div key={c.id} className="rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs shadow-sm">
+                <div key={c.id} className="group rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs shadow-sm">
                   <div className="mb-0.5 flex items-center justify-between">
                     <span className="font-semibold text-amber-700">⚠️ {nameFor(team, c.author_email)}</span>
-                    <span className="text-[10px] text-amber-400">{timeAgo(c.created_at)}</span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="text-[10px] text-amber-400">{timeAgo(c.created_at)}</span>
+                      {canDeleteComment(c) && (
+                        <button onClick={() => deleteComment(c)} title="삭제" className="text-amber-300 opacity-0 hover:text-red-500 group-hover:opacity-100">
+                          ✕
+                        </button>
+                      )}
+                    </span>
                   </div>
                   <p className="whitespace-pre-wrap text-amber-800">{c.content}</p>
                 </div>
               ) : (
-                <div key={c.id} className="rounded-lg bg-white p-2 text-xs shadow-sm">
+                <div key={c.id} className="group rounded-lg bg-white p-2 text-xs shadow-sm">
                   <div className="mb-0.5 flex items-center justify-between">
                     <span className="font-semibold text-slate-600">{nameFor(team, c.author_email)}</span>
-                    <span className="text-[10px] text-slate-300">{timeAgo(c.created_at)}</span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="text-[10px] text-slate-300">{timeAgo(c.created_at)}</span>
+                      {canDeleteComment(c) && (
+                        <button onClick={() => deleteComment(c)} title="삭제" className="text-slate-300 opacity-0 hover:text-red-500 group-hover:opacity-100">
+                          ✕
+                        </button>
+                      )}
+                    </span>
                   </div>
                   <p className="whitespace-pre-wrap text-slate-700">{c.content}</p>
                 </div>

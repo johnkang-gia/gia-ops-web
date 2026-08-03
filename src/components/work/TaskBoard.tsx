@@ -49,9 +49,9 @@ function DroppableColumn({
       ref={setNodeRef}
       className={"flex flex-col gap-1 rounded-lg border p-2.5 transition " + (isOver ? "border-blue-300 bg-blue-50/50" : "border-transparent bg-black/[0.02]")}
     >
-      <div className="flex items-center justify-between px-1 text-[13px] font-bold" style={{ color: STATUS_COLOR[status] }}>
-        <span>{STATUS_LABEL[status]}</span>
-        <span>{tasks.length}</span>
+      <div className="flex items-center justify-between gap-1 px-1 text-[13px] font-bold" style={{ color: STATUS_COLOR[status] }}>
+        <span className="truncate whitespace-nowrap">{STATUS_LABEL[status]}</span>
+        <span className="shrink-0">{tasks.length}</span>
       </div>
       <SortableContext id={status} items={tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
         <div className="min-h-[60px]">
@@ -142,7 +142,7 @@ export default function TaskBoard({
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <ActivityLog department={deptFilter} />
+      <ActivityLog department={deptFilter} isAdmin={isAdmin} currentUserEmail={currentUserEmail} />
 
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
         <div className="flex-1 overflow-y-auto p-3">

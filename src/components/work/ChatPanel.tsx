@@ -789,26 +789,26 @@ export default function ChatPanel({
   return (
     <div className="glass-panel flex h-full flex-col overflow-hidden">
       <div className="flex items-center gap-2 border-b border-black/5 px-3 py-2 text-[13px] font-bold">
-        <span style={{ color: deptColor }}>👥</span>
-        <span>[{department}] 부서 그룹 채팅방</span>
-        <span className="text-[11px] font-normal opacity-60">({department} 부서원 전원이 참여 중입니다)</span>
+        <span className="shrink-0" style={{ color: deptColor }}>👥</span>
+        <span className="min-w-0 truncate whitespace-nowrap">[{department}] 부서 그룹 채팅방</span>
+        <span className="hidden shrink-0 whitespace-nowrap text-[11px] font-normal opacity-60 md:inline">({department} 부서원 전원이 참여 중입니다)</span>
         <button
           type="button"
           onClick={() => setSearchOpen((v) => !v)}
           title="메시지 검색"
-          className={"ml-auto flex h-6 w-6 items-center justify-center rounded-full text-xs hover:bg-black/5 " + (searchOpen ? "bg-black/10" : "")}
+          className={"ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs hover:bg-black/5 " + (searchOpen ? "bg-black/10" : "")}
         >
           🔍
         </button>
         <span
           className={
-            "flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold " +
+            "flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-semibold " +
             (connected ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600")
           }
           title={connected ? "실시간 연결됨" : "연결이 끊겨 재연결을 시도하는 중입니다"}
         >
           <span className={"h-1.5 w-1.5 rounded-full " + (connected ? "bg-emerald-500" : "animate-pulse bg-amber-500")} />
-          {connected ? "실시간 연결됨" : "재연결 중..."}
+          <span className="hidden sm:inline">{connected ? "실시간 연결됨" : "재연결 중..."}</span>
         </span>
       </div>
 

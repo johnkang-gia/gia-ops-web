@@ -206,7 +206,7 @@ export default function WorkBoardClient({
               key={dept.id}
               onClick={() => setActiveDeptId(dept.id)}
               style={active ? { backgroundColor: dept.color + "22", color: dept.color } : undefined}
-              className={"flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition " + (active ? "" : "text-slate-500 hover:bg-black/5")}
+              className={"flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-semibold transition " + (active ? "" : "text-slate-500 hover:bg-black/5")}
             >
               <span className="relative inline-block h-2.5 w-2.5 shrink-0 overflow-hidden rounded-full" style={{ backgroundColor: dept.color }}>
                 {isAdmin && (
@@ -224,16 +224,16 @@ export default function WorkBoardClient({
             </button>
           );
         })}
-        <span className="ml-auto flex items-center gap-1 rounded-full bg-black/5 px-2.5 py-1 text-[11px] text-slate-500">
+        <span className="ml-auto flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-black/5 px-2.5 py-1 text-[11px] text-slate-500">
           🟢 {online.length}명 접속중
         </span>
-        <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-medium text-blue-600">
+        <span className="hidden shrink-0 whitespace-nowrap rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-medium text-blue-600 lg:inline-flex">
           🏷️ 채팅 위 업무등록 위젯에서 나/전체/공유를 골라 빠르게 등록하세요
         </span>
         <Link
           href="/work/history"
           title="완료된 업무를 연도·학기·날짜별로 모아봅니다"
-          className="flex items-center gap-1 rounded-full bg-black/5 px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition hover:bg-black/10"
+          className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-black/5 px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition hover:bg-black/10"
         >
           🗂 업무기록
         </Link>

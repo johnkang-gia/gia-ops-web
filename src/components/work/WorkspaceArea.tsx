@@ -71,6 +71,10 @@ export default function WorkspaceArea({
   const [leftTopHeight, setLeftTopHeight] = useState(DEFAULT_LAYOUT.leftTopHeight);
   const [rightTopHeight, setRightTopHeight] = useState(DEFAULT_LAYOUT.rightTopHeight);
   const hydratedRef = useRef(false);
+  // 마우스 드래그로 폭을 나누는 좌우 2단 레이아웃은 손가락 터치 화면에서는 쓸 수 없어서(요청:
+  // 모바일에서도 모든 메뉴를 수월하게), 작은 화면에서는 탭으로 채팅/칸반/내업무를 전체 폭으로
+  // 하나씩 보여주는 별도 레이아웃을 씁니다(아래 mobileTab 상태).
+  const [mobileTab, setMobileTab] = useState<"board" | "chat" | "mine">("chat");
 
   useEffect(() => {
     const saved = loadSavedLayout();
@@ -131,7 +135,85 @@ export default function WorkspaceArea({
   }
 
   return (
-    <div className="flex h-full overflow-hidden">
+    <>
+      {/* 모바일(작은 화면): 마우스 드래그로 나누는 2단 레이아웃 대신, 탭으로 채팅/칸반/내업무를
+          하나씩 전체 폭으로 보여줍니다 - 터치 화면에서 리사이저를 쓸 수 없어서(요청). */}
+      <div className="flex h-full flex-col overflow-hidden sm:hidden">
+        <div className="glass-panel flex shrink-0 divide-x divide-black/5 border-b border-black/5">
+          {(
+            [
+              { key: "chat", label: "💬 채팅" },
+              { key: "board", label: "🗂️ 칸반" },
+              { key: "mine", label: "📋 내 업무" },
+            ] as const
+          ).map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setMobileTab(t.key)}
+              className={
+                "flex-1 py-2.5 text-xs font-bold transition " +
+                (mobileTab === t.key ? "bg-blue-50 text-blue-600" : "text-slate-500")
+              }
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <div className="min-h-0 flex-1 overflow-hidden">
+          {mobileTab === "chat" && (
+            <div className="flex h-full flex-col overflow-hidden">
+              <div className="shrink-0 border-b border-black/5 pb-1">
+                <QuickTaskWidget
+                  department={activeDepartment.name}
+                  team={team}
+                  currentUserEmail={currentUserEmail}
+                  onTaskCreated={onTaskCreated}
+                  modeColorMap={modeColorMap}
+                  isAdmin={isAdmin}
+                  onModeColorChange={onModeColorChange}
+                />
+              </div>
+              <div className="min-h-0 flex-1 overflow-hidden">
+                <ChatPanel
+                  department={activeDepartment.name}
+                  departments={departments}
+                  team={team}
+                  userEmail={currentUserEmail}
+                  tasks={tasks}
+                  onTaskCreated={onTaskCreated}
+                />
+              </div>
+            </div>
+          )}
+          {mobileTab === "board" && (
+            <TaskBoard
+              tasks={tasks}
+              team={team}
+              deptColorMap={deptColorMap}
+              modeColorMap={modeColorMap}
+              isAdmin={isAdmin}
+              currentUserEmail={currentUserEmail}
+              deptFilter={activeDepartment.name}
+              onOpenTask={onOpenTask}
+              onChangeStatus={onChangeStatus}
+              onToggleAck={onToggleAck}
+            />
+          )}
+          {mobileTab === "mine" && (
+            <div className="flex h-full flex-col overflow-hidden">
+              <div className="shrink-0" style={{ height: "40%" }}>
+                <DashboardArea tasks={tasks} activeDepartmentName={activeDepartment.name} deptColorMap={deptColorMap} onSelectTask={onOpenTask} />
+              </div>
+              <div className="min-h-0 flex-1 overflow-hidden border-t border-black/5">
+                <MyTasksWidget tasks={tasks} currentUserEmail={currentUserEmail} onOpenTask={onOpenTask} />
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 데스크톱(sm 이상): 기존 마우스 드래그로 폭/높이를 조절하는 2단 레이아웃 그대로 유지 */}
+      <div className="hidden h-full overflow-hidden sm:flex">
       {/* 왼쪽: 업무 상황판(숫자만, 작게) + 빠른 업무등록 위젯(항상 고정) + 채팅(나머지 공간) */}
       <div className="flex flex-col overflow-hidden" style={{ width: `${leftWidth}%` }}>
         <div className="overflow-hidden" style={{ height: `${leftTopHeight}%` }}>
@@ -192,6 +274,7 @@ export default function WorkspaceArea({
           />
         </div>
       </div>
-    </div>
+      </div>
+    </>
   );
 }

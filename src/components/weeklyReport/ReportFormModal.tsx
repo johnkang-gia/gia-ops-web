@@ -242,7 +242,7 @@ export default function ReportFormModal({
       >
         <div className="sticky top-0 z-10 flex items-start justify-between gap-2 border-b border-slate-200 bg-white p-4">
           <div>
-            <h3 className="flex items-center gap-2 text-base font-bold">
+            <h3 className="flex flex-wrap items-center gap-2 text-base font-bold">
               📄 리포트 열람 및 작성 <span className="text-sm font-normal text-slate-400">View / Write Report</span>
               {existingReportId && (
                 <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-normal text-slate-400">
@@ -291,13 +291,31 @@ export default function ReportFormModal({
           )}
 
           <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-500">
-            <strong className="text-slate-600">뱃지 평가 안내 Badge Guide:</strong> 항목별로 해당하는 뱃지를 클릭해 복수 선택할 수 있습니다.
-            <span className="font-normal text-slate-400"> Click the badges that apply to each item (multiple selection allowed).</span>
-            <div className="mt-1.5 grid grid-cols-2 gap-1">
-              <span>🌟 탁월: 매우 우수한 성취 <span className="text-slate-400">Excellent: Outstanding achievement</span></span>
-              <span>🟢 양호: 정상적인 성취(기본값) <span className="text-slate-400">Good: Normal achievement (default)</span></span>
-              <span>⚠️ 지도요망: 약간의 지도 필요 <span className="text-slate-400">Needs Attention: Some guidance needed</span></span>
-              <span>🚨 집중지도: 집중 관리 필요 <span className="text-slate-400">Poor: Requires close attention</span></span>
+            <div className="text-slate-600">
+              <strong>뱃지 평가 안내 Badge Guide</strong>
+              <div className="mt-0.5 font-normal text-slate-400">
+                항목별로 해당하는 뱃지를 클릭해 복수 선택할 수 있습니다.
+                <br />
+                Click the badges that apply to each item (multiple selection allowed).
+              </div>
+            </div>
+            <div className="mt-2 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+              <div>
+                <div>🌟 탁월: 매우 우수한 성취</div>
+                <div className="text-slate-400">Excellent: Outstanding achievement</div>
+              </div>
+              <div>
+                <div>🟢 양호: 정상적인 성취(기본값)</div>
+                <div className="text-slate-400">Good: Normal achievement (default)</div>
+              </div>
+              <div>
+                <div>⚠️ 지도요망: 약간의 지도 필요</div>
+                <div className="text-slate-400">Needs Attention: Some guidance needed</div>
+              </div>
+              <div>
+                <div>🚨 집중지도: 집중 관리 필요</div>
+                <div className="text-slate-400">Poor: Requires close attention</div>
+              </div>
             </div>
           </div>
 
@@ -317,7 +335,7 @@ export default function ReportFormModal({
                         disabled={isReadOnly}
                         onClick={() => toggleBadge(cat, b.value)}
                         className={
-                          "flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition disabled:cursor-not-allowed disabled:opacity-60 " +
+                          "flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-2.5 py-1 text-xs transition disabled:cursor-not-allowed disabled:opacity-60 " +
                           (checked ? "font-semibold" : "border-slate-300 bg-white text-slate-500")
                         }
                         style={checked ? { borderColor: b.border, backgroundColor: b.bg, color: b.color } : undefined}

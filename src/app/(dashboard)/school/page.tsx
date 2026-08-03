@@ -39,15 +39,23 @@ export default async function SchoolDashboardPage() {
   const teachers = users.filter((u) => !isDeveloperEmail(u.email) && u.position === "교사");
   const staff = users.filter((u) => isDeveloperEmail(u.email) || u.position === "관리자" || u.position === "행정직원");
 
-  const termLabel = currentTerm ? `${currentTerm.year} ${currentTerm.term_type}` : "진행중인 학기 없음";
-
   return (
     <div className="mx-auto max-w-6xl">
       <h1 className="mb-1 text-lg font-bold">🏛️ 학교 관리 대시보드</h1>
       <p className="mb-4 text-xs text-slate-500">현재 학기·반·과목·교직원·학생 현황을 한눈에 확인합니다.</p>
 
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <StatCard label="현재 학기" value={termLabel} accent="#2563eb" />
+        {/* 연도는 항상 나오니 작게 위에, 학기(여름캠프 등)는 줄바꿈해서 가운데에 크게 보여줍니다. */}
+        <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white p-4 text-center shadow-sm">
+          {currentTerm ? (
+            <>
+              <div className="text-[11px] font-semibold text-slate-400">{currentTerm.year}</div>
+              <div className="mt-1 break-keep text-lg font-bold leading-tight text-blue-600">{currentTerm.term_type}</div>
+            </>
+          ) : (
+            <div className="text-sm font-semibold text-slate-300">진행중인 학기 없음</div>
+          )}
+        </div>
         <StatCard label="개설된 반" value={classes.length} sub="개" accent="#7c3aed" />
         <StatCard label="과목" value={subjects.length} sub="개" accent="#7c3aed" />
         <StatCard label="교사" value={teachers.length} sub="명" accent="#0d9488" />
@@ -69,14 +77,14 @@ export default async function SchoolDashboardPage() {
           ) : (
             <ul className="divide-y divide-slate-100">
               {classes.map((c) => (
-                <li key={c.id} className="flex items-center justify-between gap-2 py-1.5 text-xs">
-                  <span className="font-semibold text-slate-700">
+                <li key={c.id} className="py-1.5">
+                  <div className="text-xs font-semibold text-slate-700">
                     {c.grade}학년 {c.class_name}
-                  </span>
-                  <span className="truncate text-slate-400">
+                  </div>
+                  <div className="mt-0.5 break-keep text-[11px] leading-snug text-slate-400">
                     담임 {c.teacher_email ? nameByEmail.get(c.teacher_email) ?? c.teacher_email : "미지정"}
                     {c.sub_teacher_email ? ` · 부담임 ${nameByEmail.get(c.sub_teacher_email) ?? c.sub_teacher_email}` : ""}
-                  </span>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -96,14 +104,14 @@ export default async function SchoolDashboardPage() {
           ) : (
             <ul className="divide-y divide-slate-100">
               {subjects.map((s) => (
-                <li key={s.id} className="flex items-center justify-between gap-2 py-1.5 text-xs">
-                  <span className="flex items-center gap-1.5 font-semibold text-slate-700">
+                <li key={s.id} className="py-1.5">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-700">
                     <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: s.color || "#94a3b8" }} />
-                    {s.name}
-                  </span>
-                  <span className="truncate text-slate-400">
+                    <span className="break-keep">{s.name}</span>
+                  </div>
+                  <div className="mt-0.5 break-keep text-[11px] leading-snug text-slate-400">
                     {s.teacher_email ? nameByEmail.get(s.teacher_email) ?? s.teacher_email : "담당 교사 미지정"} · 학생 {s.student_ids?.length ?? 0}명
-                  </span>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -125,7 +133,10 @@ export default async function SchoolDashboardPage() {
           ) : (
             <ul className="flex flex-wrap gap-1.5">
               {teachers.map((t) => (
-                <li key={t.email} className="rounded-full bg-teal-50 px-2.5 py-1 text-xs font-medium text-teal-700">
+                <li
+                  key={t.email}
+                  className="max-w-full truncate rounded-full bg-teal-50 px-2.5 py-1 text-[11px] font-medium text-teal-700"
+                >
                   {t.name || t.email}
                   {t.department && <span className="ml-1 text-teal-400">({t.department})</span>}
                 </li>
@@ -149,7 +160,10 @@ export default async function SchoolDashboardPage() {
           ) : (
             <ul className="flex flex-wrap gap-1.5">
               {staff.map((u) => (
-                <li key={u.email} className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
+                <li
+                  key={u.email}
+                  className="max-w-full truncate rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-700"
+                >
                   {u.name || u.email}
                   <span className="ml-1 text-slate-400">
                     ({isDeveloperEmail(u.email) ? "개발자" : u.position})
@@ -171,17 +185,20 @@ export default async function SchoolDashboardPage() {
           {students.length === 0 ? (
             <p className="text-xs text-slate-400">재학 중인 학생이 없습니다.</p>
           ) : (
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-3 lg:grid-cols-4">
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3 lg:grid-cols-4">
               {students.slice(0, 24).map((s) => (
-                <div key={s.id} className="truncate text-xs text-slate-600">
-                  <span className="font-medium">{s.name}</span>
-                  <span className="ml-1 text-slate-400">
+                <div key={s.id} className="min-w-0">
+                  <div className="truncate text-xs font-medium leading-tight text-slate-700">{s.name}</div>
+                  {s.name_en && (
+                    <div className="truncate text-[11px] font-normal leading-tight text-slate-400">{s.name_en}</div>
+                  )}
+                  <div className="truncate text-[11px] leading-tight text-slate-400">
                     {s.grade}학년 {s.class_name}
-                  </span>
+                  </div>
                 </div>
               ))}
               {students.length > 24 && (
-                <div className="text-xs font-semibold text-blue-600">+{students.length - 24}명 더보기 →</div>
+                <div className="flex items-center text-xs font-semibold text-blue-600">+{students.length - 24}명 더보기 →</div>
               )}
             </div>
           )}

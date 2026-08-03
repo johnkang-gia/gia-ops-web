@@ -24,5 +24,9 @@ export default async function AdminUsersPage() {
     .order("status", { ascending: true })
     .order("requested_at", { ascending: false });
 
-  return <AdminUsersClient initialUsers={(data as AppUser[]) ?? []} />;
+  // 개발자 계정은 이 화면(및 화면을 보는 다른 관리자들)에게 존재 자체가 드러나지 않도록 아예
+  // 목록에서 제외합니다 - 서버에서 걸러서 클라이언트로 데이터 자체를 내려보내지 않습니다.
+  const users = ((data as AppUser[]) ?? []).filter((u) => !isDeveloperEmail(u.email));
+
+  return <AdminUsersClient initialUsers={users} />;
 }

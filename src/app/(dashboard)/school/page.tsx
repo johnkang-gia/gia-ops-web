@@ -37,7 +37,11 @@ export default async function SchoolDashboardPage() {
 
   const nameByEmail = new Map(users.map((u) => [u.email, u.name || u.email]));
   const teachers = users.filter((u) => !isDeveloperEmail(u.email) && u.position === "교사");
-  const staff = users.filter((u) => isDeveloperEmail(u.email) || u.position === "관리자" || u.position === "행정직원");
+  // 개발자 계정은 다른 관리자들에게 존재 자체가 드러나지 않도록 교직원 리스트/카운트에서도
+  // 완전히 제외합니다.
+  const staff = users.filter(
+    (u) => !isDeveloperEmail(u.email) && (u.position === "관리자" || u.position === "행정직원")
+  );
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -175,9 +179,7 @@ export default async function SchoolDashboardPage() {
                   className="max-w-full truncate rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-700"
                 >
                   {u.name || u.email}
-                  <span className="ml-1 text-slate-400">
-                    ({isDeveloperEmail(u.email) ? "개발자" : u.position})
-                  </span>
+                  <span className="ml-1 text-slate-400">({u.position})</span>
                 </li>
               ))}
             </ul>

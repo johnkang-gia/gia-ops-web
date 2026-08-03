@@ -6,6 +6,10 @@ import type { AppUser } from "@/lib/types";
 import { isDeveloperEmail } from "@/lib/roles";
 import Pagination from "@/components/Pagination";
 
+// 개발자 계정은 서버(admin/users/page.tsx)에서 이미 걸러서 initialUsers에 담겨오지 않지만,
+// 실시간 구독(postgres_changes)은 app_users 테이블 전체를 대상으로 하므로 여기서도 한 번 더
+// 걸러서 개발자 계정이 실시간 이벤트로 화면에 새로 나타나는 일이 없게 합니다.
+
 // 세 목록(대기/승인/거절)이 각자 계속 늘어질 수 있어, 게시판처럼 각각 독립적으로 페이지를
 // 나눠 보여줍니다.
 const PAGE_SIZE = 10;
@@ -35,6 +39,7 @@ export default function AdminUsersClient({ initialUsers }: { initialUsers: AppUs
               return prev.filter((u) => u.email !== oldEmail);
             }
             const next = payload.new as AppUser;
+            if (isDeveloperEmail(next.email)) return prev;
             const exists = prev.some((u) => u.email === next.email);
             const merged = exists
               ? prev.map((u) => (u.email === next.email ? next : u))
@@ -125,8 +130,7 @@ export default function AdminUsersClient({ initialUsers }: { initialUsers: AppUs
           실제 메뉴 접근 권한은 이 직위를 기준으로만 결정됩니다(교사는 위클리 리포트만, 관리자는
           전체). 직위를 지정해야 승인할 수 있고, 승인된 계정도 언제든 직위를 바꿀 수 있습니다.
           퇴사 등으로 접근을 막아야 할 때는 승인된 계정을 &quot;차단&quot;하면 즉시 접근이
-          제한됩니다. 개발자 계정(johnkang@giamicro.com)은 상태·직위와 무관하게 항상 접근할 수
-          있어 목록에서 변경할 수 없습니다.
+          제한됩니다.
         </p>
 
         {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
@@ -209,54 +213,44 @@ export default function AdminUsersClient({ initialUsers }: { initialUsers: AppUs
             승인됨 <span className="text-slate-400">({approved.length})</span>
           </h2>
           <div className="flex flex-col gap-2">
-            {approvedPageItems.map((u) => {
-              const developer = isDeveloperEmail(u.email);
-              return (
-                <div
-                  key={u.email}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
-                >
-                  <div>
-                    <div className="text-sm font-semibold">
-                      {u.name || u.email}
-                      {developer && (
-                        <span className="ml-2 rounded bg-gia-navy px-1.5 py-0.5 text-[10px] font-bold text-white">
-                          개발자
-                        </span>
-                      )}
-                      {u.department && <span className="ml-1.5 font-normal text-slate-500">{u.department}</span>}
-                    </div>
-                    <div className="text-xs text-slate-500">
-                      {u.email} · 승인일 {formatDate(u.decided_at)} {u.decided_by ? `· ${u.decided_by}` : ""}
-                    </div>
+            {approvedPageItems.map((u) => (
+              <div
+                key={u.email}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
+              >
+                <div>
+                  <div className="text-sm font-semibold">
+                    {u.name || u.email}
+                    {u.department && <span className="ml-1.5 font-normal text-slate-500">{u.department}</span>}
                   </div>
-                  {!developer && (
-                    <div className="flex items-center gap-2">
-                      <select
-                        value={u.position ?? ""}
-                        onChange={(e) => updatePosition(u.email, e.target.value)}
-                        disabled={busyEmail === u.email}
-                        className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 disabled:opacity-50"
-                      >
-                        <option value="">직위 미지정</option>
-                        {POSITIONS.map((p) => (
-                          <option key={p} value={p}>
-                            {p}
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        onClick={() => updateStatus(u.email, "rejected")}
-                        disabled={busyEmail === u.email}
-                        className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
-                      >
-                        차단
-                      </button>
-                    </div>
-                  )}
+                  <div className="text-xs text-slate-500">
+                    {u.email} · 승인일 {formatDate(u.decided_at)} {u.decided_by ? `· ${u.decided_by}` : ""}
+                  </div>
                 </div>
-              );
-            })}
+                <div className="flex items-center gap-2">
+                  <select
+                    value={u.position ?? ""}
+                    onChange={(e) => updatePosition(u.email, e.target.value)}
+                    disabled={busyEmail === u.email}
+                    className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 disabled:opacity-50"
+                  >
+                    <option value="">직위 미지정</option>
+                    {POSITIONS.map((p) => (
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={() => updateStatus(u.email, "rejected")}
+                    disabled={busyEmail === u.email}
+                    className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
+                  >
+                    차단
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
           <Pagination page={approvedPage} totalPages={approvedTotalPages} onChange={setApprovedPage} />
         </section>

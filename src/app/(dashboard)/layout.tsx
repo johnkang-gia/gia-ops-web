@@ -49,7 +49,7 @@ function buildSchoolCategory(isAdmin: boolean, isStaffOrAbove: boolean): NavCate
   }
   items.push({ href: "/terms", label: "학기 관리", icon: "🗓️" });
   if (isAdmin) items.push({ href: "/admin/users", label: "사용자 관리", icon: "🔐" });
-  return { key: "school", label: "학교 관리", icon: "🏛️", accent: "purple", items };
+  return { key: "school", label: "학교 관리", icon: "🏛️", accent: "purple", href: "/school", items };
 }
 
 function buildWeeklyReportCategory(isAdmin: boolean): NavCategory {

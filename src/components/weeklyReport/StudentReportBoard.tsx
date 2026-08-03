@@ -54,22 +54,40 @@ export default function StudentReportBoard({
     };
   }, [studentIds, term]);
 
+  // reports를 학생마다 매번 다시 filter()하면(학생 수 x 리포트 수) 리포트가 쌓일수록 렌더링이
+  // 느려집니다. 대신 reports가 바뀔 때 딱 한 번만 학생별로 묶어두고(Map), 이번 주 담임/과목
+  // 리포트도 미리 찾아둡니다 - 아래 렌더링에서는 이 Map을 O(1)로 조회만 합니다.
+  const reportsByStudent = useMemo(() => {
+    const map = new Map<string, WrReport[]>();
+    for (const r of reports) {
+      const list = map.get(r.student_id);
+      if (list) list.push(r);
+      else map.set(r.student_id, [r]);
+    }
+    return map;
+  }, [reports]);
+
+  const currentWeekByStudent = useMemo(() => {
+    const { start, end } = getWeekRange();
+    const map = new Map<string, WrReport>();
+    for (const r of reports) {
+      if (r.subject !== subjectName || r.is_archived) continue;
+      if (r.report_date < start || r.report_date > end) continue;
+      if (!map.has(r.student_id)) map.set(r.student_id, r); // .find()와 동일하게 첫 매치만
+    }
+    return map;
+  }, [reports, subjectName]);
+
   function reportsForStudent(studentId: string) {
-    return reports.filter((r) => r.student_id === studentId);
+    return reportsByStudent.get(studentId) ?? [];
   }
 
   function myWeekStatus(studentId: string) {
-    const { start, end } = getWeekRange();
-    const mine = reportsForStudent(studentId).filter((r) => r.subject === subjectName && !r.is_archived);
-    const current = mine.find((r) => r.report_date >= start && r.report_date <= end);
-    return current?.status ?? null; // 'draft' | 'published' | null(미작성)
+    return currentWeekByStudent.get(studentId)?.status ?? null; // 'draft' | 'published' | null(미작성)
   }
 
   function badgesForStudent(studentId: string) {
-    const { start, end } = getWeekRange();
-    const mine = reportsForStudent(studentId).filter((r) => r.subject === subjectName && !r.is_archived);
-    const current = mine.find((r) => r.report_date >= start && r.report_date <= end);
-    return current?.eval_badges ?? null;
+    return currentWeekByStudent.get(studentId)?.eval_badges ?? null;
   }
 
   function handleSaved(report: WrReport) {

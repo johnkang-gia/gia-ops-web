@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { isDeveloperEmail } from "@/lib/roles";
@@ -35,8 +36,7 @@ export default async function OnboardingPage() {
   return (
     <main className="gia-navy-panel flex flex-1 items-center justify-center px-4 py-10">
       <div className="w-full max-w-sm rounded-2xl bg-white p-8 shadow-2xl">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/logo-login.png" alt="GIA Micro Lab" className="mx-auto mb-4 h-20 w-auto" />
+        <Image src="/logo-login.png" alt="GIA Micro Lab" width={570} height={288} priority className="mx-auto mb-4 h-20 w-auto" />
         <h1 className="mb-1 text-center text-lg font-bold">처음 오셨네요</h1>
         <p className="mb-6 text-center text-sm text-slate-500">
           {email} 계정으로 이용하기 전에, 이름과 소속·직위를 알려주세요. 입력한 정보는 관리자가

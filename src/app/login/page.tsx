@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useState } from "react";
+import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
@@ -25,8 +26,7 @@ function LoginForm() {
 
   return (
     <div className="w-full max-w-sm rounded-2xl bg-white p-8 shadow-2xl text-center">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src="/logo-login.png" alt="GIA Micro Lab" className="mx-auto mb-4 h-24 w-auto" />
+      <Image src="/logo-login.png" alt="GIA Micro Lab" width={570} height={288} priority className="mx-auto mb-4 h-24 w-auto" />
       <p className="text-sm text-slate-500 mb-6">
         giamicro.com 회사 구글 계정으로 로그인하세요.
       </p>

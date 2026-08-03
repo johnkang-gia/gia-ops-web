@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { isDeveloperEmail } from "@/lib/roles";
@@ -34,8 +35,7 @@ export default async function PendingPage() {
   return (
     <main className="gia-navy-panel flex flex-1 items-center justify-center px-4">
       <div className="w-full max-w-sm rounded-2xl bg-white p-8 text-center shadow-2xl">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/logo-login.png" alt="GIA Micro Lab" className="mx-auto mb-4 h-20 w-auto" />
+        <Image src="/logo-login.png" alt="GIA Micro Lab" width={570} height={288} priority className="mx-auto mb-4 h-20 w-auto" />
 
         {isRejected ? (
           <>

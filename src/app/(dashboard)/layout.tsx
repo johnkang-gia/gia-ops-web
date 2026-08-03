@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentTerm } from "@/lib/currentTerm";
@@ -134,8 +135,7 @@ export default async function DashboardLayout({
       <aside className="hidden w-56 shrink-0 border-r border-slate-200 bg-white p-4 sm:flex sm:flex-col">
         <div className="mb-6 px-2">
           <Link href={homeHref} className="inline-block cursor-pointer">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo-main.png" alt="GIA Micro Lab" className="h-10 w-auto" />
+            <Image src="/logo-main.png" alt="GIA Micro Lab" width={538} height={120} priority className="h-10 w-auto" />
           </Link>
           {!isTeacher &&
             (termLabel ? (
@@ -193,8 +193,7 @@ export default async function DashboardLayout({
       <div className="flex min-h-screen flex-1 flex-col">
         <header className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 sm:hidden">
           <Link href={homeHref} className="inline-block cursor-pointer">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo-main.png" alt="GIA Micro Lab" className="h-7 w-auto" />
+            <Image src="/logo-main.png" alt="GIA Micro Lab" width={538} height={120} className="h-7 w-auto" />
           </Link>
           {!isTeacher &&
             (termLabel ? (

@@ -88,6 +88,12 @@ export async function getChatFileSignedUrl(path: string): Promise<string | null>
   return getFileSignedUrl(CHAT_FILES_BUCKET, path);
 }
 
+// 업로드는 성공했는데 뒤이은 메시지 insert가 실패하면(끊긴 연결 등) 버킷에 아무도 참조하지
+// 않는 파일이 그대로 남습니다 - 그 경우 정리용으로 씁니다.
+export async function deleteChatFile(path: string): Promise<void> {
+  return deleteFile(CHAT_FILES_BUCKET, path);
+}
+
 export async function uploadTaskFile(file: File, taskId: string): Promise<string> {
   return uploadFile(TASK_FILES_BUCKET, file, taskId);
 }

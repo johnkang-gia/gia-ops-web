@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import type { Task, TaskAttachment, TaskComment, TaskRecurrence, TaskStatus, TeamMember } from "@/lib/types";
 import { nameFor } from "@/lib/teamName";
 import { addTimedEventToNativeCalendar } from "@/lib/nativeCalendar";
-import { recurrenceLabel } from "@/lib/recurrence";
+import { recurrenceLabel, renewRecurringTask } from "@/lib/recurrence";
 import { uploadTaskFile, getTaskFileSignedUrl, deleteTaskFile } from "@/lib/storage";
 import { STATUS_ORDER, STATUS_LABEL } from "./statusConfig";
 
@@ -157,9 +157,16 @@ export default function TaskDetailPanel({
   }, [task.id]);
 
   async function patch(fields: Partial<Task>) {
+    // 낙관적으로 먼저 반영하되, 실제 저장이 실패하면(끊긴 와이파이 등) 원래 값으로 되돌리고
+    // 알려줍니다 - 예전에는 실패해도 화면은 계속 "저장된 것처럼" 보여서 조용히 어긋났습니다.
+    const previous = task;
     onUpdated({ ...task, ...fields });
     const supabase = createClient();
-    await supabase.from("tasks").update(fields).eq("id", task.id);
+    const { error } = await supabase.from("tasks").update(fields).eq("id", task.id);
+    if (error) {
+      onUpdated(previous);
+      alert("저장하지 못했습니다: " + error.message);
+    }
   }
 
   // 상태 변경/업무 확인 시 "실시간 로그"에 뜰 시스템 코멘트를 자동으로 남깁니다(GIA WorkFlatform
@@ -179,15 +186,30 @@ export default function TaskDetailPanel({
   // 동시에 담당자를 태그/해제해도 서로의 변경이 사라지지 않습니다.
   async function toggleAssignee(email: string) {
     const supabase = createClient();
-    const { data: updated } = await supabase.rpc("toggle_task_assignee", { p_task_id: task.id, p_email: email });
+    const { data: updated, error } = await supabase.rpc("toggle_task_assignee", { p_task_id: task.id, p_email: email });
+    if (error) {
+      alert("담당자 변경에 실패했습니다: " + error.message);
+      return;
+    }
     if (updated) onUpdated({ ...task, ...(updated as Task) });
   }
 
   async function changeStatus(status: TaskStatus) {
     if (status === task.status) return;
     const completedAt = status === "완료" ? new Date().toISOString() : null;
-    await patch({ status, updated_by: currentUserEmail, completed_at: completedAt });
+    // position도 함께 갱신해야 칸반 화면의 정렬 기준(order by position)이 이 패널에서
+    // 완료/상태변경했을 때도 최신 상태를 반영합니다(칸반 드래그 쪽과 동일하게 맞춤).
+    await patch({ status, updated_by: currentUserEmail, completed_at: completedAt, position: Date.now() });
     await logSystemEvent(`${nameFor(team, currentUserEmail)}님이 업무를 '${STATUS_LABEL[status]}'(으)로 변경했습니다.`);
+
+    // 반복 업무는 완료되는 순간 다음 회차를 새로 등록합니다 - 예전에는 칸반(WorkBoardClient)
+    // 쪽에만 이 로직이 있어서, 여기(상세패널)에서 완료 처리하면 반복이 조용히 끊겼습니다.
+    // 두 곳 모두 같은 공용 함수를 쓰고, DB의 고유 제약(recurrence_group_id+due_at)이 있어
+    // 두 사람이 거의 동시에 완료해도 다음 회차가 중복 생성되지 않습니다.
+    if (status === "완료" && task.recurrence) {
+      const supabase = createClient();
+      await renewRecurringTask(supabase, { ...task, completed_at: completedAt });
+    }
   }
 
   // 상태 드롭다운에서 "보류"를 고르면 바로 바꾸지 않고, 단순 보류인지 이슈(메모 필요)인지
@@ -224,10 +246,14 @@ export default function TaskDetailPanel({
   async function toggleAck() {
     const already = task.acknowledged_by?.some((a) => a.email === currentUserEmail);
     const supabase = createClient();
-    const { data: updated } = await supabase.rpc("toggle_task_ack", {
+    const { data: updated, error } = await supabase.rpc("toggle_task_ack", {
       p_task_id: task.id,
       p_email: currentUserEmail,
     });
+    if (error) {
+      alert("업무 확인 처리에 실패했습니다: " + error.message);
+      return;
+    }
     if (updated) onUpdated({ ...task, ...(updated as Task) });
     if (!already) {
       await logSystemEvent(`${nameFor(team, currentUserEmail)}님이 업무를 확인했습니다.`);
@@ -244,9 +270,15 @@ export default function TaskDetailPanel({
     const supabase = createClient();
     const text = commentText.trim();
     setCommentText("");
-    await supabase
+    const { error } = await supabase
       .from("task_comments")
       .insert({ task_id: task.id, author_email: currentUserEmail, content: text, department: task.department });
+    if (error) {
+      // 저장 실패 시 입력하신 내용을 복원합니다 - 예전에는 실패해도 입력창은 이미 비워져 있어
+      // 코멘트가 조용히 사라진 것처럼 보였습니다.
+      setCommentText(text);
+      alert("댓글을 등록하지 못했습니다: " + error.message);
+    }
   }
 
   // 잘못 남은 코멘트/로그는 관리자이거나 그 글을 남긴 본인이면 지울 수 있습니다(요청) - 시스템
@@ -266,7 +298,11 @@ export default function TaskDetailPanel({
   async function remove() {
     if (!confirm("이 업무를 삭제할까요? 코멘트도 함께 삭제됩니다.")) return;
     const supabase = createClient();
-    await supabase.from("tasks").delete().eq("id", task.id);
+    const { error } = await supabase.from("tasks").delete().eq("id", task.id);
+    if (error) {
+      alert("삭제하지 못했습니다: " + error.message);
+      return;
+    }
     onDeleted(task.id);
     onClose();
   }

@@ -8,8 +8,7 @@ import { useRealtimeTable } from "@/lib/useRealtimeTable";
 import { useOnlineUsers } from "@/lib/useOnlineUsers";
 import type { Task, TaskStatus, Department, TeamMember, TaskModeColor } from "@/lib/types";
 import { nameFor } from "@/lib/teamName";
-import { computeNextOccurrence } from "@/lib/recurrence";
-import { genCaseId } from "@/lib/caseId";
+import { renewRecurringTask } from "@/lib/recurrence";
 import { STATUS_LABEL } from "./statusConfig";
 import WorkspaceArea from "./WorkspaceArea";
 import TaskDetailPanel from "./TaskDetailPanel";
@@ -124,11 +123,22 @@ export default function WorkBoardClient({
     // 완료에서 다시 다른 상태로 빠지면(재작업 등) 완료 시각도 함께 지워서, 나중에 다시
     // 완료했을 때 그 새 시각으로 갱신되게 합니다.
     const completedAt = status === "완료" ? new Date().toISOString() : null;
+    // 실패 시 되돌릴 수 있도록 이전 값을 기억해둡니다(끊긴 와이파이 등으로 저장이 실패해도
+    // 화면만 바뀐 채로 남아있지 않도록).
+    const previous = task;
     setTasks((prev) =>
       prev.map((t) => (t.id === taskId ? { ...t, status, position, updated_by: userEmail, completed_at: completedAt } : t))
     );
     const supabase = createClient();
-    await supabase.from("tasks").update({ status, position, updated_by: userEmail, completed_at: completedAt }).eq("id", taskId);
+    const { error } = await supabase
+      .from("tasks")
+      .update({ status, position, updated_by: userEmail, completed_at: completedAt })
+      .eq("id", taskId);
+    if (error) {
+      setTasks((prev) => prev.map((t) => (t.id === taskId ? previous : t)));
+      alert("업무 상태를 변경하지 못했습니다: " + error.message);
+      return;
+    }
     await supabase.from("task_comments").insert({
       task_id: taskId,
       author_email: userEmail,
@@ -137,30 +147,11 @@ export default function WorkBoardClient({
       is_system: true,
     });
 
-    // 반복 업무는 완료되는 순간 바로 다음 회차를 새로 등록합니다(요청) - 다음 회차도 같은
-    // recurrence_group_id를 이어받아서 "이 업무의 반복 시리즈"를 계속 추적할 수 있습니다.
+    // 반복 업무는 완료되는 순간 바로 다음 회차를 새로 등록합니다(요청) - 상세패널에서 완료
+    // 처리하는 경우와 로직을 공유합니다(src/lib/recurrence.ts의 renewRecurringTask).
     if (status === "완료" && task.recurrence) {
-      const nextDueAt = computeNextOccurrence(task.recurrence, task.due_at ?? task.completed_at);
-      const { data: nextTask } = await supabase
-        .from("tasks")
-        .insert({
-          case_id: genCaseId("TSK"),
-          title: task.title,
-          description: task.description,
-          status: "예정",
-          priority: task.priority,
-          department: task.department,
-          owner_email: task.owner_email,
-          assignee_emails: task.assignee_emails,
-          due_at: nextDueAt,
-          position: Date.now(),
-          origin_mode: task.origin_mode,
-          recurrence: task.recurrence,
-          recurrence_group_id: task.recurrence_group_id,
-        })
-        .select()
-        .single();
-      if (nextTask) addTaskRow(nextTask as Task);
+      const nextTask = await renewRecurringTask(supabase, task);
+      if (nextTask) addTaskRow(nextTask);
     }
   }
 
@@ -176,7 +167,12 @@ export default function WorkBoardClient({
       : (task.acknowledged_by ?? []).filter((a) => a.email !== userEmail);
     setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, acknowledged_by: optimisticAck } : t)));
     const supabase = createClient();
-    const { data: updated } = await supabase.rpc("toggle_task_ack", { p_task_id: taskId, p_email: userEmail });
+    const { data: updated, error } = await supabase.rpc("toggle_task_ack", { p_task_id: taskId, p_email: userEmail });
+    if (error) {
+      setTasks((prev) => prev.map((t) => (t.id === taskId ? task : t)));
+      alert("업무 확인 처리에 실패했습니다: " + error.message);
+      return;
+    }
     if (updated) {
       setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, ...(updated as Task) } : t)));
     }

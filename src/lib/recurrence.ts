@@ -1,4 +1,5 @@
-import type { TaskRecurrence } from "./types";
+import type { Task, TaskRecurrence } from "./types";
+import { genCaseId } from "./caseId";
 
 // 완료된 업무의 마감일(또는 완료 시각)을 기준으로 다음 회차의 마감일을 계산합니다.
 // - 매일: +1일
@@ -32,6 +33,47 @@ export function computeNextOccurrence(recurrence: NonNullable<TaskRecurrence>, b
   const lastDayOfNextMonth = new Date(nextMonthFirst.getFullYear(), nextMonthFirst.getMonth() + 1, 0).getDate();
   nextMonthFirst.setDate(Math.min(targetDom, lastDayOfNextMonth));
   return nextMonthFirst.toISOString();
+}
+
+// 반복 업무가 "완료"로 바뀔 때 다음 회차를 안전하게 만듭니다. 칸반 드래그(WorkBoardClient)와
+// 업무 상세패널(TaskDetailPanel) 두 곳 모두에서 완료 처리가 일어날 수 있어서 공용 함수로
+// 뺐습니다 - 예전에는 칸반 쪽에만 이 로직이 있어서 상세패널에서 완료 처리하면 반복이 조용히
+// 끊겼습니다. DB의 고유 제약(recurrence_group_id + due_at, schema.sql 참고) 덕분에, 두 사람이
+// (또는 한 사람이 두 곳에서) 거의 동시에 같은 업무를 완료 처리해도 다음 회차가 중복 생성되지
+// 않고 한 번만 만들어집니다 - 나중에 도착한 쪽은 고유 제약 위반(23505)을 조용히 무시합니다.
+export async function renewRecurringTask(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  task: Task
+): Promise<Task | null> {
+  if (!task.recurrence) return null;
+  const nextDueAt = computeNextOccurrence(task.recurrence, task.due_at ?? task.completed_at);
+  const { data, error } = await supabase
+    .from("tasks")
+    .insert({
+      case_id: genCaseId("TSK"),
+      title: task.title,
+      description: task.description,
+      status: "예정",
+      priority: task.priority,
+      department: task.department,
+      owner_email: task.owner_email,
+      assignee_emails: task.assignee_emails,
+      due_at: nextDueAt,
+      position: Date.now(),
+      origin_mode: task.origin_mode,
+      recurrence: task.recurrence,
+      recurrence_group_id: task.recurrence_group_id,
+    })
+    .select()
+    .single();
+  if (error) {
+    if (error.code !== "23505") {
+      console.error("반복 업무 다음 회차 생성 실패:", error.message);
+    }
+    return null;
+  }
+  return data as Task;
 }
 
 export function recurrenceLabel(r: NonNullable<TaskRecurrence>): string {

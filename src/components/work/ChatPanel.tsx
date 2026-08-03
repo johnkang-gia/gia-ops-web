@@ -9,7 +9,7 @@ import type { ChatMessage, Department, MessageReaction, MessageRead, Task, TeamM
 import { nameFor, extractMentionedEmails } from "@/lib/teamName";
 import { parseTaskFromMessage } from "@/lib/parseTaskFromMessage";
 import { deadlineLabel } from "@/lib/deadlineLabel";
-import { uploadChatFile, getChatFileSignedUrl } from "@/lib/storage";
+import { uploadChatFile, getChatFileSignedUrl, deleteChatFile } from "@/lib/storage";
 import LinkPreviewCard from "./LinkPreviewCard";
 
 const REACTION_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🙏", "🎉", "👏", "🔥", "😅", "🤔", "✅"];
@@ -176,7 +176,10 @@ export default function ChatPanel({
     setSearchQuery("");
     setSearchResults([]);
 
-    async function loadRecentMessages() {
+    // merge=true는 재연결 시 씁니다 - 최근 100건으로 전체를 덮어쓰면, 검색으로 점프해서 보고
+    // 있던 옛날 메시지나 그 반응이 화면에서 그냥 사라져버립니다. 대신 기존 목록에 최신 값을
+    // 얹어(병합) 넣어서, 놓친 변경분은 반영하되 이미 보고 있던 내용은 유지합니다.
+    async function loadRecentMessages(merge = false) {
       const { data } = await supabase
         .from("messages")
         .select("*")
@@ -185,10 +188,18 @@ export default function ChatPanel({
         .limit(100);
       if (cancelled) return;
       const msgs = (data as ChatMessage[] | null) ?? [];
-      setMessages(msgs);
+      if (merge) {
+        setMessages((prev) => {
+          const byId = new Map(prev.map((m) => [m.id, m]));
+          for (const m of msgs) byId.set(m.id, m);
+          return [...byId.values()].sort((a, b) => a.created_at.localeCompare(b.created_at));
+        });
+      } else {
+        setMessages(msgs);
+      }
 
       if (msgs.length === 0) {
-        setReactions([]);
+        if (!merge) setReactions([]);
         return;
       }
       const { data: reactionData } = await supabase
@@ -198,7 +209,16 @@ export default function ChatPanel({
           "message_id",
           msgs.map((m) => m.id)
         );
-      if (!cancelled) setReactions((reactionData as MessageReaction[] | null) ?? []);
+      if (cancelled) return;
+      if (merge) {
+        setReactions((prev) => {
+          const byId = new Map(prev.map((r) => [r.id, r]));
+          for (const r of (reactionData as MessageReaction[] | null) ?? []) byId.set(r.id, r);
+          return [...byId.values()];
+        });
+      } else {
+        setReactions((reactionData as MessageReaction[] | null) ?? []);
+      }
     }
 
     async function loadReads() {
@@ -302,7 +322,7 @@ export default function ChatPanel({
           // 재연결된 경우(처음 연결이면 어차피 messages가 비어있는 상태와 동일해 무해함) 놓친
           // 메시지를 보충합니다.
           setConnected((wasConnected) => {
-            if (!wasConnected) loadRecentMessages();
+            if (!wasConnected) loadRecentMessages(true);
             return true;
           });
         } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
@@ -322,7 +342,24 @@ export default function ChatPanel({
     };
   }, [department, userEmail]);
 
+  // 메시지 목록이 바뀔 때마다 무조건 맨 아래로 스크롤하면, 위로 스크롤해서 이전 대화를 읽는
+  // 중에도 다른 사람이 메시지를 보낼 때마다 화면이 확 튀는 문제가 있었습니다. 사용자가 이미
+  // 맨 아래쪽 근처에 있을 때만 자동으로 따라 내려가고, 위로 올려서 읽고 있으면 그대로 둡니다.
+  const wasNearBottomRef = useRef(true);
   useEffect(() => {
+    const el = listRef.current;
+    if (!el) return;
+    function updateNearBottom() {
+      const threshold = 120;
+      wasNearBottomRef.current = el!.scrollHeight - el!.scrollTop - el!.clientHeight < threshold;
+    }
+    updateNearBottom();
+    el.addEventListener("scroll", updateNearBottom);
+    return () => el.removeEventListener("scroll", updateNearBottom);
+  }, []);
+
+  useEffect(() => {
+    if (!wasNearBottomRef.current) return;
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
   }, [messages]);
 
@@ -505,27 +542,42 @@ export default function ChatPanel({
     const content = text.trim();
     if (!content || sending) return;
     setSending(true);
-    setText("");
     setShowMentionMenu(false);
     setShowHashMenu(false);
     const supabase = createClient();
     const replyToId = replyTarget?.id ?? null;
-    setReplyTarget(null);
 
-    await supabase.from("messages").insert({ department, author_email: userEmail, content, reply_to_id: replyToId });
+    // 저장이 실패해도(끊긴 와이파이 등) 방금 쓴 내용이 사라지지 않도록, 전송에 성공한 뒤에만
+    // 입력창을 비웁니다. try/finally로 감싸서 실패해도 전송 버튼이 영영 잠기지 않게 합니다 -
+    // 예전에는 여기서 에러를 확인하지 않아서 실패한 메시지가 조용히 사라질 수 있었습니다.
+    try {
+      const { error } = await supabase
+        .from("messages")
+        .insert({ department, author_email: userEmail, content, reply_to_id: replyToId });
+      if (error) throw new Error(error.message);
 
-    // 예전에는 "@사람" 태그가 있으면 메시지를 곧바로 업무로 자동 등록했는데, 채팅이 실시간으로
-    // 활발해지면 태그만 걸린 잡담까지 전부 업무화될 수 있어서 바꿨습니다. 이제는 메시지를 직접
-    // 클릭했을 때 뜨는 작은 팝업에서 "업무로 등록"을 눌러야만(그때 AI가 분석) 업무가 됩니다 -
-    // 아래 registerAsTask() 참고. @태그는 여전히 하이라이트만 되고, 등록 시 담당자 후보로 쓰입니다.
+      setText("");
+      setReplyTarget(null);
 
-    // "#부서명" 태그 - 그 부서 채팅방에도 같은 메시지를 그대로 공유합니다.
-    const taggedDepts = extractTaggedDepartments(content, departments, department);
-    for (const dept of taggedDepts) {
-      await supabase.from("messages").insert({ department: dept, author_email: userEmail, content, source_department: department });
+      // 예전에는 "@사람" 태그가 있으면 메시지를 곧바로 업무로 자동 등록했는데, 채팅이 실시간으로
+      // 활발해지면 태그만 걸린 잡담까지 전부 업무화될 수 있어서 바꿨습니다. 이제는 메시지를 직접
+      // 클릭했을 때 뜨는 작은 팝업에서 "업무로 등록"을 눌러야만(그때 AI가 분석) 업무가 됩니다 -
+      // 아래 registerAsTask() 참고. @태그는 여전히 하이라이트만 되고, 등록 시 담당자 후보로 쓰입니다.
+
+      // "#부서명" 태그 - 그 부서 채팅방에도 같은 메시지를 그대로 공유합니다. 원본 메시지는 이미
+      // 보내졌으니, 이 공유가 실패해도 사용자에게 굳이 알리지 않고 콘솔에만 남깁니다.
+      const taggedDepts = extractTaggedDepartments(content, departments, department);
+      for (const dept of taggedDepts) {
+        const { error: crossError } = await supabase
+          .from("messages")
+          .insert({ department: dept, author_email: userEmail, content, source_department: department });
+        if (crossError) console.error(`#${dept} 채널 공유 실패:`, crossError.message);
+      }
+    } catch (err) {
+      alert("메시지를 보내지 못했습니다: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setSending(false);
     }
-
-    setSending(false);
   }
 
   // 파일을 고르면 바로 업로드하고(입력창에 적어둔 글자가 있으면 함께 캡션으로) 메시지를 보냅니다.
@@ -538,13 +590,13 @@ export default function ChatPanel({
       return;
     }
     setUploadingFile(true);
+    let uploadedPath: string | null = null;
     try {
       const path = await uploadChatFile(file, department);
+      uploadedPath = path;
       const supabase = createClient();
       const content = text.trim();
       const replyToId = replyTarget?.id ?? null;
-      setText("");
-      setReplyTarget(null);
       const { error } = await supabase.from("messages").insert({
         department,
         author_email: userEmail,
@@ -556,7 +608,15 @@ export default function ChatPanel({
         attachment_size: file.size,
       });
       if (error) throw new Error(error.message);
+      // 메시지 저장까지 성공한 뒤에만 캡션 입력창을 비웁니다.
+      setText("");
+      setReplyTarget(null);
     } catch (err) {
+      // 파일은 이미 업로드됐는데 메시지 저장이 실패한 경우, 아무도 참조하지 않는 파일이
+      // 버킷에 계속 남지 않도록 정리합니다.
+      if (uploadedPath) {
+        deleteChatFile(uploadedPath).catch(() => {});
+      }
       alert("파일을 업로드하지 못했습니다: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setUploadingFile(false);
@@ -609,6 +669,10 @@ export default function ChatPanel({
     const supabase = createClient();
     const existing = reactions.find((r) => r.message_id === messageId && r.emoji === emoji && r.author_email === userEmail);
     if (existing) {
+      // 방금 낙관적으로 추가한 반응(아직 서버 insert가 끝나지 않아 임시 id인 상태)을 빠르게
+      // 다시 누르면, 그 임시 id로 delete를 보내도 DB에는 매칭되는 행이 없어 아무 효과 없이
+      // "취소했다"고만 착각하게 됩니다 - insert가 끝날 때까지는 재클릭을 무시합니다.
+      if (existing.id.startsWith("temp-")) return;
       setReactions((prev) => prev.filter((r) => r.id !== existing.id));
       const { error } = await supabase.from("message_reactions").delete().eq("id", existing.id);
       if (error) setReactions((prev) => [...prev, existing]);

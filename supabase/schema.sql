@@ -1960,3 +1960,20 @@ drop index if exists wr_reports_student_idx;
 create unique index if not exists wr_reports_unique_idx on wr_reports(student_id, subject, report_date);
 alter table wr_reports drop constraint if exists wr_reports_unique_key;
 alter table wr_reports add constraint wr_reports_unique_key unique using index wr_reports_unique_idx;
+
+-- ===== 51. 실시간 채팅/업무판 정밀 점검 후 보완 =====
+-- (1) 반복 업무 다음 회차 중복 생성 방지: 칸반 드래그/상세패널 두 곳 모두 완료 처리 시 다음
+-- 회차를 만들 수 있게 됐는데(TaskDetailPanel.tsx도 이제 반복을 이어갑니다), 두 사람이 거의
+-- 동시에 같은 업무를 완료 처리하면 둘 다 "다음 회차"를 insert 시도할 수 있습니다. 같은
+-- 반복 시리즈(recurrence_group_id)에서 다음 마감일(due_at)이 겹치는 두 번째 시도는 이 고유
+-- 제약에 걸려 실패하는데, 클라이언트(src/lib/recurrence.ts의 renewRecurringTask)가 그 실패
+-- (23505)를 정상 상황으로 조용히 무시하도록 되어 있어 중복 업무가 생기지 않습니다.
+create unique index if not exists tasks_recurrence_next_idx
+  on tasks(recurrence_group_id, due_at)
+  where recurrence_group_id is not null;
+
+-- (2) 채팅 메시지 본문 검색(ILIKE '%검색어%')은 앞에 %가 붙어 일반 인덱스를 못 쓰고 매번
+-- 전체를 훑습니다. pg_trgm 확장 + GIN 인덱스를 걸어두면 메시지가 많이 쌓여도 검색이 느려지지
+-- 않습니다(사람 수·메시지 수가 지금 당장은 적어도, 몇 달 뒤를 대비한 예방 조치입니다).
+create extension if not exists pg_trgm;
+create index if not exists messages_content_trgm_idx on messages using gin (content gin_trgm_ops);

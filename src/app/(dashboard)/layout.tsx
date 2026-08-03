@@ -45,7 +45,8 @@ function buildSchoolCategory(isAdmin: boolean, isStaffOrAbove: boolean): NavCate
     items.push(
       { href: "/weekly-report/admin/students", label: "학생 관리", labelEn: "Manage Students", icon: "🧑‍🎓" },
       { href: "/weekly-report/admin/classes", label: "반 관리", labelEn: "Manage Classes", icon: "🏫" },
-      { href: "/weekly-report/admin/subjects", label: "과목반 세팅", labelEn: "Manage Subjects", icon: "📘" }
+      { href: "/weekly-report/admin/subjects", label: "과목반 세팅", labelEn: "Manage Subjects", icon: "📘" },
+      { href: "/school/import", label: "구글시트로 가져오기", labelEn: "Import from Google Sheets", icon: "📥" }
     );
   }
   items.push({ href: "/terms", label: "학기 관리", icon: "🗓️" });

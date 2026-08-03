@@ -41,7 +41,17 @@ export default async function SchoolDashboardPage() {
 
   return (
     <div className="mx-auto max-w-6xl">
-      <h1 className="mb-1 text-lg font-bold">🏛️ 학교 관리 대시보드</h1>
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <h1 className="text-lg font-bold">🏛️ 학교 관리 대시보드</h1>
+        {isAdmin && (
+          <Link
+            href="/school/import"
+            className="shrink-0 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100"
+          >
+            📥 구글시트로 가져오기
+          </Link>
+        )}
+      </div>
       <p className="mb-4 text-xs text-slate-500">현재 학기·반·과목·교직원·학생 현황을 한눈에 확인합니다.</p>
 
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">

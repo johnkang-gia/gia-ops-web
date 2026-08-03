@@ -1678,7 +1678,20 @@ create trigger messages_protect_update
   before update on messages
   for each row execute function protect_messages_update();
 
--- ===== 42. 업무 - 공유 업무 실시간 알림용 updated_by =====
+-- ===== 42. 업무기록(archive) - 완료된 업무를 연도/학기/날짜별로 보관 =====
+-- completed_at: 상태가 '완료'로 바뀐 시각(다시 열었다가 재완료하면 그때마다 갱신됨) - "언제
+-- 했는지"의 기준 시각입니다. archived_at: 매일 밤 크론이 그 전날까지 완료된 업무를 업무보드
+-- 칸반에서 빼서 업무기록으로 넘길 때 채우는 시각 - 이 값이 있으면 화면(칸반)에서는 더 이상
+-- 안 보이고 업무기록에만 보입니다. term_id: 보관 시점에 "진행중"이던 학기를 스냅샷으로
+-- 남겨서, 업무기록 화면이 연도>학기별로 묶어 보여줄 수 있게 합니다(incidents/meetings와
+-- 동일한 패턴).
+alter table tasks add column if not exists completed_at timestamptz;
+alter table tasks add column if not exists archived_at timestamptz;
+alter table tasks add column if not exists term_id uuid references terms(id) on delete set null;
+create index if not exists tasks_archived_at_idx on tasks(archived_at);
+create index if not exists tasks_term_id_idx on tasks(term_id);
+
+-- ===== 43. 업무 - 공유 업무 실시간 알림용 updated_by =====
 -- "누가 상태를 바꿨는지" 알아야 그 사람 본인에게는 알림을 안 띄우고, 태그된 다른 사람에게만
 -- 실시간 토스트로 "OOO님이 이 업무를 진행중으로 옮겼어요" 같은 알림을 보여줄 수 있습니다.
 alter table tasks add column if not exists updated_by text;

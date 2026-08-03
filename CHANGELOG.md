@@ -4,6 +4,40 @@
 `version` 값과 항상 일치시킵니다. 업데이트할 때마다 이 파일 맨 위에 새 항목을 추가하고,
 같은 내용을 GitHub Desktop의 커밋 Summary/Description에도 그대로 사용하면 됩니다.
 
+## v0.40.0 - 2026-08-03 (staging)
+
+업무기록(archive) 기능을 새로 만들었습니다. 완료한 업무가 계속 칸반에 쌓여 있으면 "지금
+해야 할 일"과 "이미 끝난 일"이 뒤섞이고, 나중에 "누가 언제 무슨 업무를 했는지" 찾아보기도
+어려웠습니다. 이제 완료 → 자동 축소 → 다음날 자동 보관 → 업무기록에서 연도/학기/날짜별로
+조회, 순서로 흐름이 정리됩니다.
+
+- **완료하는 순간 카드가 제목만 남기고 줄어듭니다.** 칸반에서 업무를 완료로 옮기면 그
+  즉시 설명/담당자/마감 뱃지 등이 사라지고 체크 표시 + 제목만 있는 얇은 줄로 바뀝니다.
+- **다음날 자정 직후 자동으로 업무기록으로 이동합니다.** 매일 밤(학기 자동전환 크론
+  바로 뒤에) 완료 상태인 업무를 업무보드에서 빼서 보관 처리하는 크론을 새로 추가했습니다.
+  업무 자체(코멘트/확인 이력 등)는 지워지지 않고, 그냥 칸반에서만 안 보이게 됩니다.
+- **업무기록 화면 신설.** 업무 페이지 우측 상단에 "🗂 업무기록" 아이콘을 누르면 이동합니다.
+  연도 → 학기 → 날짜 순으로 접이식으로 묶여 있고, 각 업무를 펼치면 제안자(등록자)/담당자/
+  완료 처리자/정시 여부와 함께, 코멘트·상태변경 이력(흐름)까지 확인할 수 있습니다. "전체
+  보기"와 "내 기록"(내가 등록했거나 담당한 것만) 필터, 부서 필터를 지원합니다.
+- **DB 변경 있음.** 아래 SQL을 Supabase SQL Editor에서 실행해주세요(재실행해도 안전합니다).
+
+```sql
+-- ===== 42. 업무기록(archive) - 완료된 업무를 연도/학기/날짜별로 보관 =====
+alter table tasks add column if not exists completed_at timestamptz;
+alter table tasks add column if not exists archived_at timestamptz;
+alter table tasks add column if not exists term_id uuid references terms(id) on delete set null;
+create index if not exists tasks_archived_at_idx on tasks(archived_at);
+create index if not exists tasks_term_id_idx on tasks(term_id);
+```
+
+- **참고: 이 기능은 매일 자정 직후(KST) 자동 실행되는 Vercel Cron에 의존합니다.**
+  기존 학기 자동전환 크론과 같은 환경변수(`CRON_SECRET`, `SUPABASE_SERVICE_ROLE_KEY`)를
+  그대로 재사용하므로 별도 설정 없이 바로 동작합니다. main에 발행(배포)된 뒤부터 매일
+  밤 자동으로 쌓이기 시작하며, staging 미리보기에서는 크론이 프로덕션 스케줄로만 등록되어
+  당장 눈으로 확인하려면 직접 완료 처리한 뒤 하루를 기다리시거나, Supabase에서 특정 업무의
+  `archived_at`을 수동으로 채워서 업무기록 화면을 미리 확인해보실 수 있습니다.
+
 ## v0.39.2 - 2026-08-03 (staging)
 
 - **채팅 업무등록 오류 수정.** "Could not find the 'description' column of 'tasks' in the

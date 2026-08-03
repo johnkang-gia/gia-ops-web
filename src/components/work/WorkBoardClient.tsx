@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useRealtimeTable } from "@/lib/useRealtimeTable";
 import { useOnlineUsers } from "@/lib/useOnlineUsers";
@@ -69,8 +70,12 @@ export default function WorkBoardClient({
     return map;
   }, [deptList]);
 
+  // archived_at이 채워진 업무는 야간 크론이 방금 업무기록으로 넘긴 것입니다. 최초 로드 쿼리는
+  // 이미 걸러서 가져오지만(work/page.tsx), 그 이후 실시간 구독으로 들어오는 UPDATE 이벤트는
+  // 필터 없이 그대로 반영되므로, 화면(칸반)에 계속 떠 있던 세션이라면 여기서 한 번 더 걸러야
+  // 자정 직후 보드에서 즉시 사라집니다.
   const scopedTasks = useMemo(
-    () => (activeDepartment ? tasks.filter((t) => t.department === activeDepartment.name) : []),
+    () => (activeDepartment ? tasks.filter((t) => t.department === activeDepartment.name && !t.archived_at) : []),
     [tasks, activeDepartment]
   );
 
@@ -91,9 +96,15 @@ export default function WorkBoardClient({
     const task = tasks.find((t) => t.id === taskId);
     if (!task || task.status === status) return;
     const position = Date.now();
-    setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, status, position, updated_by: userEmail } : t)));
+    // '완료'로 들어가는 순간 완료 시각을 찍어둡니다(업무기록 화면의 "언제 했는지" 기준).
+    // 완료에서 다시 다른 상태로 빠지면(재작업 등) 완료 시각도 함께 지워서, 나중에 다시
+    // 완료했을 때 그 새 시각으로 갱신되게 합니다.
+    const completedAt = status === "완료" ? new Date().toISOString() : null;
+    setTasks((prev) =>
+      prev.map((t) => (t.id === taskId ? { ...t, status, position, updated_by: userEmail, completed_at: completedAt } : t))
+    );
     const supabase = createClient();
-    await supabase.from("tasks").update({ status, position, updated_by: userEmail }).eq("id", taskId);
+    await supabase.from("tasks").update({ status, position, updated_by: userEmail, completed_at: completedAt }).eq("id", taskId);
     await supabase.from("task_comments").insert({
       task_id: taskId,
       author_email: userEmail,
@@ -169,6 +180,13 @@ export default function WorkBoardClient({
         <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-medium text-blue-600">
           🏷️ 채팅 위 업무등록 위젯에서 나/전체/공유를 골라 빠르게 등록하세요
         </span>
+        <Link
+          href="/work/history"
+          title="완료된 업무를 연도·학기·날짜별로 모아봅니다"
+          className="flex items-center gap-1 rounded-full bg-black/5 px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition hover:bg-black/10"
+        >
+          🗂 업무기록
+        </Link>
       </div>
 
       <div className="flex-1 overflow-hidden">

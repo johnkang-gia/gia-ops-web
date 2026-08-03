@@ -179,6 +179,9 @@ export type Task = {
   due_at: string | null;
   acknowledged_by: TaskAck[];
   updated_by: string | null;
+  completed_at: string | null;
+  archived_at: string | null;
+  term_id: string | null;
   created_at: string;
   updated_at: string;
 };

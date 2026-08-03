@@ -57,6 +57,25 @@ export default function TaskCard({
         ? `@${nameFor(team, task.assignee_emails[0])}`
         : `@${nameFor(team, task.assignee_emails[0])} 외 ${totalAssignees - 1}명`;
 
+  // 완료로 바뀐 순간부터는(다음날 밤 크론이 업무기록으로 옮기기 전까지) 칸반에서 제목만
+  // 보이는 얇은 줄로 접어둡니다 - 다 끝난 일이 여전히 큰 카드로 자리를 차지하며 눈에 띄면
+  // "아직 할 일"과 시각적으로 구분이 안 되기 때문입니다. 클릭하면 평소처럼 상세 패널이 열립니다.
+  if (task.status === "완료") {
+    return (
+      <div
+        ref={setNodeRef}
+        style={{ ...style, borderLeftColor: color }}
+        className="glass mb-1.5 flex cursor-grab items-center gap-1.5 overflow-hidden rounded-lg border-l-4 px-3 py-1.5 opacity-70 shadow-sm transition hover:opacity-100"
+        {...attributes}
+        {...listeners}
+        onClick={onOpen}
+      >
+        <span className="shrink-0 text-xs">✅</span>
+        <span className="min-w-0 flex-1 truncate text-[13px] text-slate-500 line-through">{task.title}</span>
+      </div>
+    );
+  }
+
   return (
     <div
       ref={setNodeRef}

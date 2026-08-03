@@ -16,7 +16,7 @@ export default async function WorkPage() {
   if (!me) redirect("/login");
 
   const [tasksRes, teamRes, deptRes] = await Promise.all([
-    supabase.from("tasks").select("*").order("position", { ascending: true }),
+    supabase.from("tasks").select("*").is("archived_at", null).order("position", { ascending: true }),
     supabase.from("app_users").select("email, name").eq("status", "approved").order("email", { ascending: true }),
     supabase.from("departments").select("*").order("sort_order", { ascending: true }),
   ]);

@@ -291,12 +291,13 @@ export default function ReportFormModal({
           )}
 
           <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-500">
-            <strong className="text-slate-600">뱃지 평가 안내:</strong> 항목별로 해당하는 뱃지를 클릭해 복수 선택할 수 있습니다.
+            <strong className="text-slate-600">뱃지 평가 안내 Badge Guide:</strong> 항목별로 해당하는 뱃지를 클릭해 복수 선택할 수 있습니다.
+            <span className="font-normal text-slate-400"> Click the badges that apply to each item (multiple selection allowed).</span>
             <div className="mt-1.5 grid grid-cols-2 gap-1">
-              <span>🌟 탁월: 매우 우수한 성취</span>
-              <span>🟢 양호: 정상적인 성취(기본값)</span>
-              <span>⚠️ 지도요망: 약간의 지도 필요</span>
-              <span>🚨 집중지도: 집중 관리 필요</span>
+              <span>🌟 탁월: 매우 우수한 성취 <span className="text-slate-400">Excellent: Outstanding achievement</span></span>
+              <span>🟢 양호: 정상적인 성취(기본값) <span className="text-slate-400">Good: Normal achievement (default)</span></span>
+              <span>⚠️ 지도요망: 약간의 지도 필요 <span className="text-slate-400">Needs Attention: Some guidance needed</span></span>
+              <span>🚨 집중지도: 집중 관리 필요 <span className="text-slate-400">Poor: Requires close attention</span></span>
             </div>
           </div>
 

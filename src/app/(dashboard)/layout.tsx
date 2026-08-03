@@ -48,7 +48,7 @@ function buildSchoolCategory(isAdmin: boolean, isStaffOrAbove: boolean): NavCate
   }
   items.push({ href: "/terms", label: "학기 관리", icon: "🗓️" });
   if (isAdmin) items.push({ href: "/admin/users", label: "사용자 관리", icon: "🔐" });
-  return { key: "school", label: "학교관리", icon: "🏛️", accent: "purple", items };
+  return { key: "school", label: "학교 관리", icon: "🏛️", accent: "purple", items };
 }
 
 function buildWeeklyReportCategory(isAdmin: boolean): NavCategory {
@@ -114,9 +114,10 @@ export default async function DashboardLayout({
     categories = [
       // "홈" 메뉴는 없앴습니다 - 왼쪽 로고(사이드바)/상단 로고(모바일)를 누르면 항상 홈으로
       // 이동하므로(아래 homeHref), 메뉴에 따로 자리를 차지할 필요가 없습니다.
-      // 전화 응대 중 바로 열어야 하는 메뉴라 운영관리 하위에 묻지 않고 로고-업무 사이에 따로 뺐습니다.
-      { key: "staff-manual", label: "실무자 매뉴얼", icon: "📚", href: "/staff-manual", accent: "amber" },
+      // 업무가 가장 자주 쓰는 메인 화면이라 맨 위로 올렸고, 전화 응대 중 바로 열어야 하는
+      // 실무자 매뉴얼을 바로 그 아래에 뒀습니다.
       { key: "work", label: "업무", icon: "🗂️", href: "/work", accent: "blue" },
+      { key: "staff-manual", label: "실무자 매뉴얼", icon: "📚", href: "/staff-manual", accent: "amber" },
       buildOpsCategory(),
       buildSchoolCategory(isAdmin, isStaffOrAbove),
     ];

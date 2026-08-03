@@ -4,6 +4,28 @@
 `version` 값과 항상 일치시킵니다. 업데이트할 때마다 이 파일 맨 위에 새 항목을 추가하고,
 같은 내용을 GitHub Desktop의 커밋 Summary/Description에도 그대로 사용하면 됩니다.
 
+## v0.39.2 - 2026-08-03 (staging)
+
+- **채팅 업무등록 오류 수정.** "Could not find the 'description' column of 'tasks' in the
+  schema cache" 오류는 코드 문제가 아니라, `tasks` 테이블에 `description` 컬럼을 추가하는
+  SQL(v0.34에서 이미 안내드렸던 것)이 실제 DB에는 아직 적용되지 않아서 생긴 문제로
+  보입니다. 아래 SQL을 Supabase SQL Editor에서 실행하면 컬럼이 없으면 추가하고, 이미 있으면
+  아무 일도 하지 않습니다(재실행해도 안전). 혹시 컬럼은 있는데도 같은 오류가 계속되면
+  PostgREST가 스키마 변경을 아직 못 읽은 캐시 문제일 수 있어, SQL 맨 끝에 캐시를 강제로
+  새로고침하는 구문도 함께 넣었습니다.
+- **홈 메뉴 재확인.** v0.39.1에서 없앤 게 맞는데, 그 변경은 staging 브랜치에만 있고 아직
+  main(라이브)에는 병합되지 않아서 실제 화면에서는 계속 보이셨을 거예요. staging 미리보기
+  URL에서 확인해주시면 사라져 있을 겁니다 - "발행"하시면 라이브에도 반영됩니다.
+- **메뉴 순서 변경.** 가장 자주 쓰는 "업무"를 맨 위로 올리고, 그 바로 아래에 "실무자
+  매뉴얼"을 뒀습니다.
+- **"학교관리" → "학교 관리".** "운영 관리"처럼 띄어쓰기를 맞췄습니다.
+- **DB 변경 있음.** 아래 SQL을 Supabase SQL Editor에서 실행해주세요(재실행해도 안전합니다).
+
+```sql
+alter table tasks add column if not exists description text;
+notify pgrst, 'reload schema';
+```
+
 ## v0.39.1 - 2026-08-03
 
 사이드바(PC)/상단바(모바일)의 로고를 누르면 이미 홈으로 이동하고 있었어서(기존부터 있던

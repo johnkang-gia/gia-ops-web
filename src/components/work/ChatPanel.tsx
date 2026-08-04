@@ -46,6 +46,12 @@ function firstUrlIn(text: string): string | null {
   return m[0].replace(/[),.!?，。]+$/, "");
 }
 
+// "@전체"는 실제 팀원 이름이 아니라 "이 부서 채팅을 보는 모두"를 부르는 특수 태그입니다.
+// extractMentionedEmails(팀원 이름과 매칭)에는 걸리지 않으므로 업무 등록 시 담당자로 착각해
+// 들어가는 일은 없고, 화면에서만 눈에 띄게(주황색+📢) 강조해서 "다 같이 봐야 할 말"임을
+// 표시합니다.
+const ALL_MENTION = "전체";
+
 // 메시지에서 "#부서명" 태그를 찾아, 지금 보고 있는 부서를 제외한 실제 부서명과 매칭합니다.
 function extractTaggedDepartments(text: string, departments: Department[], current: string): string[] {
   const tags = [...text.matchAll(/#([가-힣a-zA-Z0-9]+)/g)].map((m) => m[1]);
@@ -76,9 +82,17 @@ function renderMessageText(text: string, departments: Department[]) {
         </code>
       );
     } else if (part.startsWith("@")) {
+      const isAll = part === `@${ALL_MENTION}`;
       nodes.push(
-        <span key={i} className="rounded bg-blue-100 px-1 py-0.5 font-semibold text-blue-700">
-          {part}
+        <span
+          key={i}
+          className={
+            isAll
+              ? "rounded bg-amber-100 px-1 py-0.5 font-bold text-amber-700"
+              : "rounded bg-blue-100 px-1 py-0.5 font-semibold text-blue-700"
+          }
+        >
+          {isAll ? `📢 ${part}` : part}
         </span>
       );
     } else if (part.startsWith("#")) {
@@ -338,12 +352,24 @@ export default function ChatPanel({
 
     channelRef.current = channel;
 
+    // 웹소켓이 백그라운드 탭에서 조용히 끊긴 채로 있다가(브라우저가 절전 모드로 접속을 줄이는
+    // 경우 흔함) 다시 탭으로 돌아왔을 때 "SUBSCRIBED" 콜백이 바로 안 오는 경우가 있어, 탭이
+    // 다시 보이거나 창에 포커스가 돌아올 때마다 한 번 더 최신 메시지를 불러와 안전망을 둡니다
+    // - "채팅이 늦게 뜬다"는 증상의 상당수가 이런 조용한 재연결 지연 때문입니다.
+    function handleVisible() {
+      if (document.visibilityState === "visible") loadRecentMessages(true);
+    }
+    document.addEventListener("visibilitychange", handleVisible);
+    window.addEventListener("focus", handleVisible);
+
     return () => {
       cancelled = true;
       channelRef.current = null;
       for (const t of Object.values(typingTimersRef.current)) clearTimeout(t);
       typingTimersRef.current = {};
       setTypingUsers({});
+      document.removeEventListener("visibilitychange", handleVisible);
+      window.removeEventListener("focus", handleVisible);
       supabase.removeChannel(channel);
     };
   }, [department, userEmail]);
@@ -437,6 +463,7 @@ export default function ChatPanel({
   }, [searchQuery, searchOpen, department]);
 
   const filteredUsers = team.filter((m) => m.name && m.name.includes(mentionFilter)).slice(0, 8);
+  const showAllMentionOption = ALL_MENTION.includes(mentionFilter);
   const filteredDepartments = departments.filter((d) => d.name !== department && d.name.includes(hashFilter));
   const deptMembers = team.filter((t) => t.email !== userEmail);
   const pinnedMessages = messages
@@ -559,10 +586,23 @@ export default function ChatPanel({
     // 입력창을 비웁니다. try/finally로 감싸서 실패해도 전송 버튼이 영영 잠기지 않게 합니다 -
     // 예전에는 여기서 에러를 확인하지 않아서 실패한 메시지가 조용히 사라질 수 있었습니다.
     try {
-      const { error } = await supabase
+      // realtime(postgres_changes) INSERT 이벤트가 오기 전에, 방금 보낸 메시지를 응답받은
+      // 그대로 먼저 화면에 붙입니다. 와이파이 상태나 웹소켓 재연결 타이밍에 따라 realtime
+      // 이벤트가 몇 초~수십 초씩 늦게 도착할 수 있는데, 그동안 "보낸 메시지가 안 보이는"
+      // 것처럼 느껴지던 걸 없앱니다. 나중에 realtime 이벤트가 와도 같은 id면 무시하도록
+      // 되어있어(아래 INSERT 구독 핸들러의 prev.some 체크) 중복으로 쌓이지 않습니다.
+      const { data: inserted, error } = await supabase
         .from("messages")
-        .insert({ department, author_email: userEmail, content, reply_to_id: replyToId });
+        .insert({ department, author_email: userEmail, content, reply_to_id: replyToId })
+        .select(
+          "id, department, author_email, content, source_department, reply_to_id, edited_at, attachment_path, attachment_name, attachment_type, attachment_size, pinned_at, pinned_by, created_at"
+        )
+        .single();
       if (error) throw new Error(error.message);
+      if (inserted) {
+        const row = inserted as ChatMessage;
+        setMessages((prev) => (prev.some((m) => m.id === row.id) ? prev : [...prev, row]));
+      }
 
       setText("");
       setReplyTarget(null);
@@ -605,17 +645,27 @@ export default function ChatPanel({
       const supabase = createClient();
       const content = text.trim();
       const replyToId = replyTarget?.id ?? null;
-      const { error } = await supabase.from("messages").insert({
-        department,
-        author_email: userEmail,
-        content,
-        reply_to_id: replyToId,
-        attachment_path: path,
-        attachment_name: file.name,
-        attachment_type: file.type || null,
-        attachment_size: file.size,
-      });
+      const { data: inserted, error } = await supabase
+        .from("messages")
+        .insert({
+          department,
+          author_email: userEmail,
+          content,
+          reply_to_id: replyToId,
+          attachment_path: path,
+          attachment_name: file.name,
+          attachment_type: file.type || null,
+          attachment_size: file.size,
+        })
+        .select(
+          "id, department, author_email, content, source_department, reply_to_id, edited_at, attachment_path, attachment_name, attachment_type, attachment_size, pinned_at, pinned_by, created_at"
+        )
+        .single();
       if (error) throw new Error(error.message);
+      if (inserted) {
+        const row = inserted as ChatMessage;
+        setMessages((prev) => (prev.some((m) => m.id === row.id) ? prev : [...prev, row]));
+      }
       // 메시지 저장까지 성공한 뒤에만 캡션 입력창을 비웁니다.
       setText("");
       setReplyTarget(null);
@@ -978,7 +1028,11 @@ export default function ChatPanel({
                 className={
                   "group flex gap-2 rounded-lg transition " +
                   (grouped ? "mt-[-6px] " : "") +
-                  (highlightId === m.id ? "bg-amber-100/60 ring-2 ring-amber-300" : "")
+                  (highlightId === m.id
+                    ? "bg-amber-100/60 ring-2 ring-amber-300"
+                    : m.content.includes(`@${ALL_MENTION}`)
+                      ? "bg-amber-50/70 ring-1 ring-amber-200"
+                      : "")
                 }
               >
                 <div className="flex h-8 w-8 shrink-0 items-center justify-center">
@@ -1201,9 +1255,19 @@ export default function ChatPanel({
           </div>
         )}
 
-        {showMentionMenu && filteredUsers.length > 0 && (
+        {showMentionMenu && (filteredUsers.length > 0 || showAllMentionOption) && (
           <div className="glass absolute bottom-full left-2.5 z-20 mb-1.5 max-h-48 w-56 overflow-y-auto p-1.5">
-            <div className="px-2 py-1 text-[11px] opacity-60">개인 호출 (@)</div>
+            <div className="px-2 py-1 text-[11px] opacity-60">개인/전체 호출 (@)</div>
+            {showAllMentionOption && (
+              <button
+                type="button"
+                onClick={() => selectToken(ALL_MENTION, false)}
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-amber-50"
+              >
+                <span className="font-bold text-amber-600">📢 전체</span>
+                <span className="text-[11px] opacity-60">부서원 전체 호출</span>
+              </button>
+            )}
             {filteredUsers.map((u) => (
               <button
                 key={u.email}
@@ -1283,7 +1347,7 @@ export default function ChatPanel({
             value={text}
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
-            placeholder="메시지 보내기 (Enter 전송·Shift+Enter 줄바꿈, @개인호출, #부서공지)"
+            placeholder="메시지 보내기 (Enter 전송·Shift+Enter 줄바꿈, @개인호출·@전체, #부서공지)"
             rows={1}
             className="min-w-0 flex-1 resize-none bg-transparent text-sm leading-relaxed outline-none"
             autoComplete="off"

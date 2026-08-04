@@ -107,11 +107,17 @@ export function SidebarNavLinks({ categories }: { categories: NavCategory[] }) {
   // 부메뉴를 사이드바 <nav> 안(overflow-y-auto)에 그대로 두면, 메뉴가 길어질 때 부메뉴 자체가
   // 스크롤 영역에 끼어 잘리거나 사이드바에 스크롤이 생겨버립니다. document.body에 포탈로
   // 그려서(진짜 팝업처럼) 어떤 부모의 overflow에도 영향받지 않고 항상 떠서 나오게 했습니다.
-  function openFlyout(key: string, el: HTMLElement) {
+  function openFlyout(key: string, el: HTMLElement, items?: NavLeaf[]) {
     if (closeTimer.current) clearTimeout(closeTimer.current);
     const rect = el.getBoundingClientRect();
     setPopupPos({ top: rect.top, left: rect.right + 4 });
     setOpenKey(key);
+    // 부메뉴가 열리는 순간 그 안의 항목들을 미리 가져와둡니다(요청: "메뉴 눌렀을 때 화면
+    // 전환이 너무 느려" - <a href>를 버튼+router.push로 바꾸면서(위 주석 참고) Next.js가
+    // 자동으로 해주던 프리페치까지 함께 사라진 게 원인이었습니다. 마우스를 올려 부메뉴가
+    // 뜨는 시점에 그 안의 모든 링크를 미리 받아두면, 실제로 클릭할 땐 이미 화면 데이터가
+    // 준비돼 있어 훨씬 빠르게 전환됩니다.
+    items?.forEach((item) => router.prefetch(item.href));
   }
 
   function scheduleClose() {
@@ -136,7 +142,7 @@ export function SidebarNavLinks({ categories }: { categories: NavCategory[] }) {
         return (
           <div
             key={cat.key}
-            onMouseEnter={(e) => hasChildren && openFlyout(cat.key, e.currentTarget)}
+            onMouseEnter={(e) => (hasChildren ? openFlyout(cat.key, e.currentTarget, cat.items) : router.prefetch(targetHref))}
             onMouseLeave={scheduleClose}
           >
             {/* <Link href>가 아니라 버튼+router.push로 이동시킵니다: <a href>를 쓰면 마우스를
@@ -144,9 +150,12 @@ export function SidebarNavLinks({ categories }: { categories: NavCategory[] }) {
                 "메뉴에 마우스 올리면 창아래에 주소가 뜨는데 없앨 수 있어?"), 이건 브라우저
                 자체 동작이라 CSS/JS로는 못 없애고 실제 href를 안 쓰는 방법뿐입니다. 각 줄의
                 상하 여백(py)도 최대한 줄여서 스크롤 없이 메뉴 전체가 한눈에 보이게 했습니다
-                (요청: "메뉴들이 최대한 한눈에 보이게"). */}
+                (요청: "메뉴들이 최대한 한눈에 보이게"). 다만 <Link>를 버리면서 Next.js가
+                자동으로 해주던 hover 프리페치도 함께 사라졌던 게 "메뉴 눌렀을 때 화면 전환이
+                느려" 문제의 원인이라, router.prefetch()로 그 역할을 직접 되살렸습니다. */}
             <button
               type="button"
+              onTouchStart={() => router.prefetch(targetHref)}
               onClick={() => {
                 setOpenKey(null);
                 router.push(targetHref);
@@ -191,6 +200,8 @@ export function SidebarNavLinks({ categories }: { categories: NavCategory[] }) {
                 <button
                   key={item.href}
                   type="button"
+                  onMouseEnter={() => router.prefetch(item.href)}
+                  onTouchStart={() => router.prefetch(item.href)}
                   onClick={() => {
                     setOpenKey(null);
                     router.push(item.href);
@@ -230,6 +241,14 @@ export function MobileNavLinks({ categories }: { categories: NavCategory[] }) {
         ? [{ href: c.href, label: c.label, labelEn: c.labelEn, icon: c.icon, badge: undefined }]
         : []
   );
+
+  // 모바일은 가로로 죽 늘어선 목록이라 hover가 없어서(터치 시작 시점엔 이미 손가락이 눌린
+  // 뒤라 프리페치할 시간이 촉박합니다), 화면에 붙는 순간 전부 미리 받아둡니다. 항목 수가
+  // 많지 않아(전체 메뉴 20개 안팎) 한꺼번에 프리페치해도 부담이 없습니다.
+  useLayoutEffect(() => {
+    items.forEach((item) => router.prefetch(item.href));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <>

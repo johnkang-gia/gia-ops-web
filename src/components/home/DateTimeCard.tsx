@@ -6,64 +6,18 @@ import { getHolidayPreset } from "@hyunbinseo/holidays-kr";
 import { createClient } from "@/lib/supabase/client";
 
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
-const MAC_EPOCH_SECONDS = Date.UTC(2001, 0, 1) / 1000;
 
 function pad2(n: number) {
   return String(n).padStart(2, "0");
 }
 
-function isApplePlatform() {
-  if (typeof navigator === "undefined") return false;
-  return /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
-}
-
-// 날짜를 클릭하면 각 OS의 기본 캘린더 앱과 연동합니다.
-// - Mac/iOS: Calendar.app의 calshow: URL 스킴으로 해당 날짜를 바로 엽니다.
-// - 그 외(Windows/Android 등): .ics 파일을 만들어 다운로드합니다. 열어보면(더블클릭) 기본
-//   캘린더 앱(Outlook/캘린더/구글 캘린더 등)에서 바로 추가할 수 있습니다 - 웹에서 흔히 쓰이는
-//   "캘린더에 추가" 표준 방식입니다.
-function openInNativeCalendar(dateStr: string, title: string) {
-  const [y, m, d] = dateStr.split("-").map(Number);
-
-  if (isApplePlatform()) {
-    const targetSeconds = Date.UTC(y, m - 1, d) / 1000;
-    const macSeconds = Math.floor(targetSeconds - MAC_EPOCH_SECONDS);
-    window.location.href = `calshow:${macSeconds}`;
-    return;
-  }
-
-  const next = new Date(Date.UTC(y, m - 1, d + 1));
-  const nextStr = `${next.getUTCFullYear()}${pad2(next.getUTCMonth() + 1)}${pad2(next.getUTCDate())}`;
-  const compact = `${y}${pad2(m)}${pad2(d)}`;
-  const stamp = new Date().toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
-  const ics = [
-    "BEGIN:VCALENDAR",
-    "VERSION:2.0",
-    "PRODID:-//GIA Ops//KO",
-    "BEGIN:VEVENT",
-    `UID:${compact}-${Date.now()}@gia-ops-web`,
-    `DTSTAMP:${stamp}`,
-    `DTSTART;VALUE=DATE:${compact}`,
-    `DTEND;VALUE=DATE:${nextStr}`,
-    `SUMMARY:${title}`,
-    "END:VEVENT",
-    "END:VCALENDAR",
-  ].join("\r\n");
-
-  const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `${dateStr}.ics`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 2000);
-}
-
 // compact=true면 왼쪽 사이드바에 항상 붙어있는 축소판(작은 글씨/좁은 칸/테두리 없음)으로,
-// compact=false(기본값)면 기존처럼 카드형 큰 위젯으로 그립니다. 기능(달력 이동, 공휴일 표시,
-// 클릭시 OS 캘린더 연동)은 두 모드 모두 동일합니다.
+// compact=false(기본값)면 기존처럼 카드형 큰 위젯으로 그립니다. 기능(달력 이동, 공휴일 표시)은
+// 두 모드 모두 동일합니다.
+// 예전에는 날짜를 누르면 OS 기본 캘린더 앱을 여는 기능이었는데, 실제로는 잘 동작하지 않는
+// 환경이 많았고(요청: "OS캘린더 안뜨더라고") 이 위젯 자체가 학사일정 달력과 연동된 미리보기라
+// 날짜든 달력 어디를 누르든 학사일정 페이지로 바로 이동하도록 단순화했습니다. 기존의 별도
+// "학사일정 보기" 링크 버튼은 이제 중복이라 제거했습니다.
 export default function DateTimeCard({ compact = false }: { compact?: boolean }) {
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
@@ -163,10 +117,17 @@ export default function DateTimeCard({ compact = false }: { compact?: boolean })
 
   return (
     <div
+      role="button"
+      tabIndex={0}
+      onClick={() => router.push("/academic-calendar")}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") router.push("/academic-calendar");
+      }}
+      onMouseEnter={() => router.prefetch("/academic-calendar")}
+      title="클릭하면 학사일정으로 이동합니다"
       className={
-        compact
-          ? "bg-transparent"
-          : "rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+        "cursor-pointer " +
+        (compact ? "bg-transparent" : "rounded-xl border border-slate-200 bg-white p-4 shadow-sm hover:bg-slate-50")
       }
     >
       <div className={compact ? "mb-0.5 text-center" : "mb-3 text-center"}>
@@ -186,8 +147,14 @@ export default function DateTimeCard({ compact = false }: { compact?: boolean })
       </div>
 
       <div className={compact ? "mb-0.5 flex items-center justify-between" : "mb-2 flex items-center justify-between"}>
+        {/* 달력 어디를 눌러도 학사일정으로 이동하는 카드 위에 얹혀 있어서, 이전/다음 달 버튼은
+            그 클릭이 카드 클릭으로 번지지(bubbling) 않도록 stopPropagation을 꼭 걸어야
+            "달만 넘기려고 눌렀는데 화면이 이동해버리는" 문제가 안 생깁니다. */}
         <button
-          onClick={() => setViewOffset((v) => v - 1)}
+          onClick={(e) => {
+            e.stopPropagation();
+            setViewOffset((v) => v - 1);
+          }}
           className={"rounded text-slate-400 hover:bg-slate-100 " + (compact ? "px-1 text-[8px]" : "px-1.5 py-0.5 text-xs")}
           aria-label="이전 달"
         >
@@ -197,7 +164,10 @@ export default function DateTimeCard({ compact = false }: { compact?: boolean })
           {vYear}년 {vMonth + 1}월
         </div>
         <button
-          onClick={() => setViewOffset((v) => v + 1)}
+          onClick={(e) => {
+            e.stopPropagation();
+            setViewOffset((v) => v + 1);
+          }}
           className={"rounded text-slate-400 hover:bg-slate-100 " + (compact ? "px-1 text-[8px]" : "px-1.5 py-0.5 text-xs")}
           aria-label="다음 달"
         >
@@ -222,10 +192,13 @@ export default function DateTimeCard({ compact = false }: { compact?: boolean })
             <div key={idx} className={"relative flex items-center justify-center " + (compact ? "py-0" : "py-0.5")}>
               {day && dateKey && (
                 <button
-                  onClick={() => openInNativeCalendar(dateKey, holidayNames?.join(" · ") ?? "GIA 학사 일정")}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    router.push("/academic-calendar");
+                  }}
                   title={
                     [holidayNames?.join(" · "), hasChecklist ? "📅 학사일정 있음" : null].filter(Boolean).join(" · ") ||
-                    "클릭하면 캘린더 앱에서 열립니다"
+                    "클릭하면 학사일정으로 이동합니다"
                   }
                   className={
                     "flex items-center justify-center rounded-full transition hover:bg-slate-100 " +
@@ -257,18 +230,6 @@ export default function DateTimeCard({ compact = false }: { compact?: boolean })
           );
         })}
       </div>
-
-      <button
-        type="button"
-        onClick={() => router.push("/academic-calendar")}
-        className={
-          compact
-            ? "mt-0.5 w-full rounded text-center text-[8px] font-semibold text-emerald-600 hover:bg-emerald-50"
-            : "mt-2 w-full rounded-lg py-1 text-center text-xs font-semibold text-emerald-600 hover:bg-emerald-50"
-        }
-      >
-        📅 학사일정 보기
-      </button>
     </div>
   );
 }

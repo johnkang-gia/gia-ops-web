@@ -6,7 +6,10 @@ import { createPortal } from "react-dom";
 
 // labelEn이 있으면 한글 라벨 아래 작게 영어 라벨을 함께 보여줍니다 - 주간 학생 관찰기록은
 // 영어 원어민 교사도 쓰기 때문에, 그 메뉴만이라도 영어를 병기해둡니다(요청).
-export type NavLeaf = { href: string; label: string; labelEn?: string; icon: string };
+// badge - 이 메뉴에서 "지금 처리해야 할 게 몇 건인지"를 사이드바에서 바로 보여주기 위한
+// 숫자입니다(요청: "검토 대기 배지 추가" - 제안함/채택예정처럼 검토를 기다리는 항목이 있는
+// 메뉴에 빨간 숫자로 표시). 0이거나 없으면 아무것도 표시하지 않습니다.
+export type NavLeaf = { href: string; label: string; labelEn?: string; icon: string; badge?: number };
 
 // 메뉴 구조를 "카테고리" 단위로 바꿨습니다. items가 있으면 마우스를 올렸을 때 오른쪽으로
 // 펼쳐지는 플라이아웃 서브메뉴가 되고(주메뉴가 세로로 길어지지 않음), items가 없으면 href로
@@ -23,6 +26,17 @@ export type NavCategory = {
   href?: string;
   items?: NavLeaf[];
 };
+
+// 검토 대기 배지 - 제안함/채택예정처럼 "지금 처리해야 할 게 몇 건인지"를 메뉴를 열어보지
+// 않아도 사이드바에서 바로 알 수 있게 빨간 숫자로 보여줍니다.
+function NavBadge({ count }: { count: number }) {
+  if (!count) return null;
+  return (
+    <span className="ml-1 inline-flex h-4 min-w-[1rem] shrink-0 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-none text-white">
+      {count > 99 ? "99+" : count}
+    </span>
+  );
+}
 
 function isActiveHref(pathname: string | null, href: string) {
   return pathname === href || pathname?.startsWith(href + "/");
@@ -117,6 +131,7 @@ export function SidebarNavLinks({ categories }: { categories: NavCategory[] }) {
         const accent = cat.accent ?? "navy";
         const hasChildren = !!cat.items && cat.items.length > 0;
         const targetHref = cat.href ?? cat.items?.[0]?.href ?? "#";
+        const categoryBadgeTotal = cat.items?.reduce((sum, i) => sum + (i.badge ?? 0), 0) ?? 0;
 
         return (
           <div
@@ -147,6 +162,7 @@ export function SidebarNavLinks({ categories }: { categories: NavCategory[] }) {
                 {cat.label}
                 {cat.labelEn && <span className="block text-[10px] font-normal text-slate-400">{cat.labelEn}</span>}
               </span>
+              <NavBadge count={categoryBadgeTotal} />
               {hasChildren && <span className="text-[10px] text-slate-300">›</span>}
             </button>
           </div>
@@ -186,10 +202,11 @@ export function SidebarNavLinks({ categories }: { categories: NavCategory[] }) {
                   }
                 >
                   <span>{item.icon}</span>
-                  <span className="leading-tight">
+                  <span className="flex-1 leading-tight">
                     {item.label}
                     {item.labelEn && <span className="block text-[10px] font-normal text-slate-400">{item.labelEn}</span>}
                   </span>
+                  <NavBadge count={item.badge ?? 0} />
                 </button>
               );
             })}
@@ -209,7 +226,7 @@ export function MobileNavLinks({ categories }: { categories: NavCategory[] }) {
     c.items && c.items.length > 0
       ? c.items
       : c.href
-        ? [{ href: c.href, label: c.label, labelEn: c.labelEn, icon: c.icon }]
+        ? [{ href: c.href, label: c.label, labelEn: c.labelEn, icon: c.icon, badge: undefined }]
         : []
   );
 
@@ -228,6 +245,7 @@ export function MobileNavLinks({ categories }: { categories: NavCategory[] }) {
             }
           >
             {item.icon} {item.label}
+            <NavBadge count={item.badge ?? 0} />
           </button>
         );
       })}

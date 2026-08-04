@@ -17,7 +17,10 @@ import type { AiFeatureFlag } from "@/lib/types";
 // 했는데, 지금은 주메뉴 몇 개만 보이고 하위 항목은 마우스를 올리면 오른쪽으로 펼쳐집니다).
 // accent는 이 카테고리가 어느 "앱"에 속하는지 색으로 알려줍니다: 홈/운영 관리=네이비(GIA ops),
 // 업무=블루(WorkFlatform), 학교관리=퍼플, 주간 학생 관찰기록=틸, 지원·관리/개발자=앰버·레드.
-function buildOpsCategory(): NavCategory {
+// pendingProposals/pendingAdopted - 제안함(검토대기)·채택예정(발행대기) 건수입니다. 예전에는
+// 이 메뉴를 직접 열어봐야만 검토할 게 있는지 알 수 있었는데, 사이드바에서 바로 빨간 숫자로
+// 보이도록 배지를 붙였습니다(요청: "검토 대기 배지 추가").
+function buildOpsCategory(pendingProposals: number, pendingAdopted: number): NavCategory {
   return {
     key: "ops",
     label: "운영 관리",
@@ -29,8 +32,8 @@ function buildOpsCategory(): NavCategory {
       { href: "/meetings/report", label: "회의 보고서", icon: "📊" },
       { href: "/ai-manual", label: "AI 매뉴얼", icon: "✨" },
       { href: "/events", label: "행사기록", icon: "🎉" },
-      { href: "/proposals", label: "제안함", icon: "📝" },
-      { href: "/adopted", label: "채택예정", icon: "📬" },
+      { href: "/proposals", label: "제안함", icon: "📝", badge: pendingProposals },
+      { href: "/adopted", label: "채택예정", icon: "📬", badge: pendingAdopted },
       { href: "/manuals", label: "매뉴얼", icon: "📖" },
     ],
   };
@@ -103,7 +106,6 @@ function buildAdminCategory(): NavCategory {
     icon: "🏢",
     accent: "amber",
     items: [
-      { href: "/admin/dashboard", label: "관리자 대시보드", icon: "📊" },
       { href: "/school", label: "학교 현황판", icon: "🏛️" },
       { href: "/admin/education-news", label: "교육뉴스", icon: "📰" },
       { href: "/admin/gia-systems", label: "GIA시스템", icon: "🧩" },
@@ -122,12 +124,16 @@ export default async function DashboardLayout({
   // 실제 DB 조회 없이 이 결과를 그대로 재사용합니다 - 탭을 옮길 때마다 두 번 묻던 것을 한 번으로.
   // 개발자가 과금 때문에 꺼둔 AI 기능이 있으면 사이드바 프로필 아래에 빨간 배너로 알려줍니다
   // (giamicro 도메인 전체가 볼 수 있도록 RLS가 허용 - is_giamicro_user()).
-  const [me, currentTerm, disabledFeaturesRes] = await Promise.all([
+  const [me, currentTerm, disabledFeaturesRes, pendingProposalsRes, pendingAdoptedRes] = await Promise.all([
     getCurrentAppUser(),
     getCurrentTerm(),
     supabase.from("ai_feature_flags").select("*").eq("enabled", false).order("updated_at", { ascending: false }),
+    supabase.from("proposals").select("id", { count: "exact", head: true }).eq("status", "검토대기"),
+    supabase.from("adopted").select("id", { count: "exact", head: true }).eq("publish", false),
   ]);
   const disabledFeatures = (disabledFeaturesRes.data as AiFeatureFlag[] | null) ?? [];
+  const pendingProposals = pendingProposalsRes.count ?? 0;
+  const pendingAdopted = pendingAdoptedRes.count ?? 0;
 
   // middleware.ts가 1차로 막지만, 서버 컴포넌트 단에서도 한 번 더 확인합니다(방어적 이중 확인).
   if (!me) {
@@ -163,7 +169,7 @@ export default async function DashboardLayout({
       // 실무자 매뉴얼을 바로 그 아래에 뒀습니다.
       { key: "work", label: "업무", icon: "🗂️", href: "/work", accent: "blue" },
       { key: "staff-manual", label: "실무자 매뉴얼", icon: "📚", href: "/staff-manual", accent: "amber" },
-      buildOpsCategory(),
+      buildOpsCategory(pendingProposals, pendingAdopted),
       buildSchoolCategory(isAdmin, isStaffOrAbove),
       buildSchoolDocumentsCategory(),
     ];

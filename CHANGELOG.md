@@ -10,8 +10,14 @@
 일단 되돌렸습니다. 원인이 확실히 잡히기 전까지 임시 조치입니다.
 
 - v0.57.2에서 추가한 사이드바 알림 배지(NotificationBell)와 관련 코드를 전부 되돌렸습니다
-  (task_list_reads 조회/구독, 프로필 옆 빨간 배지 UI). DB의 task_list_reads 테이블은 그대로
-  둬도 무방합니다 - 지금은 어디서도 참조하지 않습니다.
+  (task_list_reads 조회/구독, 프로필 옆 빨간 배지 UI).
+- 코드에서 안 쓰게 됐으니 DB의 task_list_reads 테이블도 함께 되돌립니다(아래 SQL을 Supabase
+  SQL Editor에 붙여넣고 실행하면 삭제됩니다 - 아직 실행 안 하셨다면 그냥 두셔도 무방합니다).
+
+```sql
+-- ===== v0.57.3 롤백: task_list_reads 테이블 제거 (v0.57.2에서 추가했던 것) =====
+drop table if exists task_list_reads;
+```
 - Vercel Authentication(배포 보호)은 이미 꺼져 있는 상태에서도 로드가 안 됐던 걸 확인했고,
   서버로 직접 보낸 요청은 계속 정상 응답이 와서 배포 자체가 완전히 죽은 건 아니었습니다.
   이번 되돌리기로 증상이 없어지는지 확인하는 게 다음 단계입니다.

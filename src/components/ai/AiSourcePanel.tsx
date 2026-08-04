@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Proposal, Adopted } from "@/lib/types";
+import { useConfirm } from "@/components/common/ConfirmProvider";
+import { useToast } from "@/components/common/ToastProvider";
 
 type SourceType = "incidents" | "events" | "meetings" | "manual" | "complaint";
 
@@ -29,6 +31,8 @@ export default function AiSourcePanel({
   source: SourceType;
   scanType?: "incidents" | "events" | "meetings";
 }) {
+  const confirmAction = useConfirm();
+  const notify = useToast();
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [adopted, setAdopted] = useState<Adopted[]>([]);
   const [loading, setLoading] = useState(true);
@@ -150,7 +154,7 @@ export default function AiSourcePanel({
   }
 
   async function decideProposal(id: string, decision: "승인" | "보류" | "삭제") {
-    if (decision === "삭제" && !confirm("이 제안을 삭제할까요?")) return;
+    if (decision === "삭제" && !(await confirmAction("이 제안을 삭제할까요?", { danger: true }))) return;
     setBusyId(id);
     if (drafts[id] !== undefined) {
       await fetch("/api/proposals/save-text", {
@@ -167,7 +171,7 @@ export default function AiSourcePanel({
     setBusyId(null);
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      alert(data.error || "처리하지 못했습니다.");
+      notify(data.error || "처리하지 못했습니다.", "error");
     }
   }
 
@@ -200,7 +204,7 @@ export default function AiSourcePanel({
     setBusyId(null);
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      alert(data.error || "발행하지 못했습니다.");
+      notify(data.error || "발행하지 못했습니다.", "error");
     }
   }
 
@@ -221,7 +225,7 @@ export default function AiSourcePanel({
     const data = await res.json().catch(() => ({}));
     setBusyId(null);
     if (!res.ok) {
-      alert(data.error || "AI 검증을 실행하지 못했습니다.");
+      notify(data.error || "AI 검증을 실행하지 못했습니다.", "error");
       return;
     }
     if (data.item) {

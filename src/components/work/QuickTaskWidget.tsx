@@ -7,6 +7,7 @@ import { parseTaskFromMessage } from "@/lib/parseTaskFromMessage";
 import { deadlineLabel } from "@/lib/deadlineLabel";
 import { nameFor } from "@/lib/teamName";
 import type { Task, TaskModeColor, TaskRecurrence, TeamMember } from "@/lib/types";
+import { useToast } from "@/components/common/ToastProvider";
 
 type Mode = "나" | "전체" | "공유";
 
@@ -63,6 +64,7 @@ export default function QuickTaskWidget({
   isAdmin: boolean;
   onModeColorChange: (mode: TaskModeColor["mode"], color: string) => void;
 }) {
+  const notify = useToast();
   const [mode, setMode] = useState<Mode>("나");
   const [showPicker, setShowPicker] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
@@ -163,7 +165,7 @@ export default function QuickTaskWidget({
 
     setSubmitting(false);
     if (error || !data) {
-      alert("업무를 등록하지 못했습니다: " + (error?.message ?? "알 수 없는 오류"));
+      notify("업무를 등록하지 못했습니다: " + (error?.message ?? "알 수 없는 오류"), "error");
       return;
     }
     onTaskCreated?.(data as Task);

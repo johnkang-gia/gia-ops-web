@@ -10,6 +10,7 @@ import type { Task, TaskStatus, Department, TeamMember, TaskModeColor } from "@/
 import { nameFor } from "@/lib/teamName";
 import { renewRecurringTask } from "@/lib/recurrence";
 import { useRefreshTaskCounts } from "@/components/NotificationBell";
+import { useToast } from "@/components/common/ToastProvider";
 import { STATUS_LABEL } from "./statusConfig";
 import WorkspaceArea from "./WorkspaceArea";
 import TaskDetailPanel from "./TaskDetailPanel";
@@ -33,6 +34,7 @@ export default function WorkBoardClient({
   initialModeColors: TaskModeColor[];
 }) {
   const [tasks, setTasks] = useRealtimeTable<Task>("tasks", initialTasks);
+  const notify = useToast();
   const [deptList, setDeptList] = useState<Department[]>(departments);
   // 나/전체/공유 뱃지 색상은 관리자가 가끔만 바꾸는 설정값이라(부서 색상과 동일한 패턴),
   // 실시간 구독 없이 로컬 상태 + 낙관적 업데이트로 충분합니다.
@@ -152,7 +154,7 @@ export default function WorkBoardClient({
       .eq("id", taskId);
     if (error) {
       setTasks((prev) => prev.map((t) => (t.id === taskId ? previous : t)));
-      alert("업무 상태를 변경하지 못했습니다: " + error.message);
+      notify("업무 상태를 변경하지 못했습니다: " + error.message, "error");
       return;
     }
     await supabase.from("task_comments").insert({
@@ -186,7 +188,7 @@ export default function WorkBoardClient({
     const { data: updated, error } = await supabase.rpc("toggle_task_ack", { p_task_id: taskId, p_email: userEmail });
     if (error) {
       setTasks((prev) => prev.map((t) => (t.id === taskId ? task : t)));
-      alert("업무 확인 처리에 실패했습니다: " + error.message);
+      notify("업무 확인 처리에 실패했습니다: " + error.message, "error");
       return;
     }
     if (updated) {
@@ -271,6 +273,13 @@ export default function WorkBoardClient({
           🗂 업무기록
         </Link>
         <Link
+          href="/work/trash"
+          title="삭제한 업무를 7일 안에 복구할 수 있습니다"
+          className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-black/5 px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition hover:bg-black/10"
+        >
+          🗑 휴지통
+        </Link>
+        <Link
           href="/work/report"
           title="일간·주간·월간 업무 보고서를 문서로 정리하고 바로 인쇄할 수 있습니다"
           className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-black/5 px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition hover:bg-black/10"
@@ -310,6 +319,7 @@ export default function WorkBoardClient({
       {selectedTask && (
         <TaskDetailPanel
           task={selectedTask}
+          allTasks={tasks}
           team={team}
           online={online}
           currentUserEmail={userEmail}

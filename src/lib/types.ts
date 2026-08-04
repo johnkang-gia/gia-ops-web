@@ -237,6 +237,13 @@ export type Task = {
   origin_mode: "나" | "전체" | "공유";
   recurrence: TaskRecurrence;
   recurrence_group_id: string | null;
+  // 선행 업무(요청: "업무 선후관계 표시") - 이 업무를 시작하려면 먼저 끝나야 하는 다른
+  // 업무를 가리킵니다. 강제로 막지는 않고(팀 운영 특성상 예외가 잦음) 화면에 경고만 보여줍니다.
+  depends_on_task_id: string | null;
+  // 소프트 삭제(요청: "삭제 휴지통 7일 복구") - null이 아니면 삭제된 것으로 취급합니다.
+  // RLS가 일반 조회에서는 자동으로 걸러내고, 삭제한 지 7일 이내면 본인/담당자/관리자에게만
+  // 휴지통 화면에서 보입니다.
+  deleted_at: string | null;
   created_at: string;
   updated_at: string;
 };

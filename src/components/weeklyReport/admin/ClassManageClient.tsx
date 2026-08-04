@@ -4,10 +4,12 @@ import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { TeamMember, WrClass } from "@/lib/types";
 import Pagination from "@/components/Pagination";
+import { useConfirm } from "@/components/common/ConfirmProvider";
 
 const PAGE_SIZE = 15;
 
 export default function ClassManageClient({ initialClasses, team }: { initialClasses: WrClass[]; team: TeamMember[] }) {
+  const confirmAction = useConfirm();
   const [classes, setClasses] = useState<WrClass[]>(initialClasses);
   const [grade, setGrade] = useState("");
   const [className, setClassName] = useState("");
@@ -51,7 +53,7 @@ export default function ClassManageClient({ initialClasses, team }: { initialCla
   }
 
   async function removeClass(id: string) {
-    if (!confirm("이 반을 삭제할까요?")) return;
+    if (!(await confirmAction("이 반을 삭제할까요?", { danger: true }))) return;
     setClasses((prev) => prev.filter((c) => c.id !== id));
     const supabase = createClient();
     await supabase.from("wr_classes").delete().eq("id", id);

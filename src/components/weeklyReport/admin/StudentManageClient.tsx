@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { WrStudent, WrStudentFieldDef } from "@/lib/types";
 import Pagination from "@/components/Pagination";
+import { useConfirm } from "@/components/common/ConfirmProvider";
 
 const PAGE_SIZE = 20;
 
@@ -67,6 +68,7 @@ export default function StudentManageClient({
   initialFieldDefs: WrStudentFieldDef[];
   currentUserEmail: string;
 }) {
+  const confirmAction = useConfirm();
   const [students, setStudents] = useState<WrStudent[]>(initialStudents);
   const [fieldDefs, setFieldDefs] = useState<WrStudentFieldDef[]>(initialFieldDefs);
 
@@ -196,7 +198,7 @@ export default function StudentManageClient({
   }
 
   async function removeStudent(id: string) {
-    if (!confirm("이 학생을 완전히 삭제할까요? 관련 리포트도 함께 삭제됩니다.")) return;
+    if (!(await confirmAction("이 학생을 완전히 삭제할까요? 관련 리포트도 함께 삭제됩니다.", { danger: true }))) return;
     setStudents((prev) => prev.filter((s) => s.id !== id));
     const supabase = createClient();
     await supabase.from("wr_students").delete().eq("id", id);
@@ -225,7 +227,13 @@ export default function StudentManageClient({
   }
 
   async function removeFieldDef(def: WrStudentFieldDef) {
-    if (!confirm(`"${def.label}" 칼럼을 표에서 지울까요? 이미 입력된 값은 학생 기록에 남아있지만 화면에는 더 이상 보이지 않습니다.`)) return;
+    if (
+      !(await confirmAction(
+        `"${def.label}" 칼럼을 표에서 지울까요? 이미 입력된 값은 학생 기록에 남아있지만 화면에는 더 이상 보이지 않습니다.`,
+        { danger: true }
+      ))
+    )
+      return;
     setFieldDefs((prev) => prev.filter((f) => f.id !== def.id));
     const supabase = createClient();
     await supabase.from("wr_student_field_defs").delete().eq("id", def.id);

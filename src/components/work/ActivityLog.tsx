@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import type { TaskComment } from "@/lib/types";
+import { useConfirm } from "@/components/common/ConfirmProvider";
+import { useToast } from "@/components/common/ToastProvider";
 
 const PAGE_SIZE = 3; // 요청: "실시간로그는 세줄만"
 // 컴팩트 뷰에 계속 쌓아두는 로그 총량 상한 - 스크롤로 과거를 계속 불러와도 이 이상은
@@ -37,6 +39,8 @@ export default function ActivityLog({
   isAdmin: boolean;
   currentUserEmail: string;
 }) {
+  const confirmAction = useConfirm();
+  const notify = useToast();
   const [events, setEvents] = useState<TaskComment[]>([]);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -112,13 +116,13 @@ export default function ActivityLog({
   }
 
   async function deleteEvent(e: TaskComment, fromFull: boolean) {
-    if (!confirm("이 로그 기록을 삭제할까요?")) return;
+    if (!(await confirmAction("이 로그 기록을 삭제할까요?", { danger: true }))) return;
     const supabase = createClient();
     setEvents((prev) => prev.filter((x) => x.id !== e.id));
     setFullEvents((prev) => (prev ? prev.filter((x) => x.id !== e.id) : prev));
     const { error } = await supabase.from("task_comments").delete().eq("id", e.id);
     if (error) {
-      alert("로그를 삭제하지 못했습니다: " + error.message);
+      notify("로그를 삭제하지 못했습니다: " + error.message, "error");
     }
     void fromFull;
   }

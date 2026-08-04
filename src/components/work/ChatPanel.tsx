@@ -11,6 +11,8 @@ import { parseTaskFromMessage } from "@/lib/parseTaskFromMessage";
 import { deadlineLabel } from "@/lib/deadlineLabel";
 import { uploadChatFile, getChatFileSignedUrl, deleteChatFile } from "@/lib/storage";
 import { friendlyError } from "@/lib/errorMessage";
+import { useConfirm } from "@/components/common/ConfirmProvider";
+import { useToast } from "@/components/common/ToastProvider";
 import LinkPreviewCard from "./LinkPreviewCard";
 
 const REACTION_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🙏", "🎉", "👏", "🔥", "😅", "🤔", "✅"];
@@ -132,6 +134,8 @@ export default function ChatPanel({
   tasks: Task[];
   onTaskCreated?: (task: Task) => void;
 }) {
+  const confirmAction = useConfirm();
+  const notify = useToast();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [reactions, setReactions] = useState<MessageReaction[]>([]);
   const [reads, setReads] = useState<Record<string, string>>({}); // email -> last_read_at
@@ -622,7 +626,7 @@ export default function ChatPanel({
         if (crossError) console.error(`#${dept} 채널 공유 실패:`, crossError.message);
       }
     } catch (err) {
-      alert(friendlyError("메시지를 보내지 못했습니다.", err));
+      notify(friendlyError("메시지를 보내지 못했습니다.", err), "error");
     } finally {
       setSending(false);
     }
@@ -634,7 +638,7 @@ export default function ChatPanel({
     if (fileInputRef.current) fileInputRef.current.value = "";
     if (!file) return;
     if (file.size > MAX_ATTACHMENT_BYTES) {
-      alert("파일이 너무 큽니다 (최대 20MB).");
+      notify("파일이 너무 큽니다 (최대 20MB).", "error");
       return;
     }
     setUploadingFile(true);
@@ -675,7 +679,7 @@ export default function ChatPanel({
       if (uploadedPath) {
         deleteChatFile(uploadedPath).catch(() => {});
       }
-      alert(friendlyError("파일을 업로드하지 못했습니다.", err));
+      notify(friendlyError("파일을 업로드하지 못했습니다.", err), "error");
     } finally {
       setUploadingFile(false);
     }
@@ -685,12 +689,12 @@ export default function ChatPanel({
   // 본인일 때만 허용하도록 맞춰뒀습니다 - 여기 UI 조건은 그 위에 얹는 사용성용 가드입니다).
   async function deleteMessage(m: ChatMessage) {
     if (m.author_email !== userEmail) return;
-    if (!confirm("이 메시지를 삭제할까요? 되돌릴 수 없습니다.")) return;
+    if (!(await confirmAction("이 메시지를 삭제할까요? 되돌릴 수 없습니다.", { danger: true }))) return;
     const supabase = createClient();
     setMessages((prev) => prev.filter((x) => x.id !== m.id));
     const { error } = await supabase.from("messages").delete().eq("id", m.id);
     if (error) {
-      alert(friendlyError("메시지를 삭제하지 못했습니다.", error));
+      notify(friendlyError("메시지를 삭제하지 못했습니다.", error), "error");
       setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev, m]));
     }
   }
@@ -712,7 +716,7 @@ export default function ChatPanel({
     const supabase = createClient();
     const { error } = await supabase.from("messages").update({ content, edited_at: editedAt }).eq("id", m.id);
     if (error) {
-      alert(friendlyError("수정하지 못했습니다.", error));
+      notify(friendlyError("수정하지 못했습니다.", error), "error");
       return;
     }
     setMessages((prev) => prev.map((x) => (x.id === m.id ? { ...x, content, edited_at: editedAt } : x)));
@@ -767,7 +771,7 @@ export default function ChatPanel({
     const { error } = await supabase.from("messages").update(patch).eq("id", m.id);
     if (error) {
       setMessages((prev) => prev.map((x) => (x.id === m.id ? m : x)));
-      alert(friendlyError((wasPinned ? "고정을 해제하지" : "고정하지") + " 못했습니다.", error));
+      notify(friendlyError((wasPinned ? "고정을 해제하지" : "고정하지") + " 못했습니다.", error), "error");
     }
   }
 

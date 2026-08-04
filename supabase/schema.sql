@@ -2300,3 +2300,54 @@ begin
       check (theme in ('light', 'dark', 'liquid-glass', 'gia-brand'));
   end if;
 end $$;
+
+-- ===== 62. 업무 소프트 삭제(7일 휴지통) + 선후관계(의존) 표시 =====
+-- UX 점검("사건/행사/업무/문서 등 실제 기록 삭제에 되돌리기 기능이 전혀 없어 삭제가 즉시
+-- 영구적")에 대한 보완입니다. tasks에 한해 우선 적용합니다(이 세션에서 가장 삭제 빈도가 높고,
+-- 이미 실시간 코멘트/로그가 함께 딸려있어 "휴지통에 잠깐 머물다 완전히 사라지는" 흐름의
+-- 가치가 가장 큰 화면이라 이번 라운드는 여기부터 적용하고, 다른 화면은 이후 라운드에서
+-- 순서대로 넓힙니다).
+alter table tasks add column if not exists deleted_at timestamptz;
+alter table tasks add column if not exists depends_on_task_id uuid references tasks(id) on delete set null;
+
+-- 기존에는 giamicro.com 계정이면 select/insert/update/delete를 전부 통틀어 허용하는 단일
+-- "for all" 정책 하나였습니다. deleted_at이 있는(삭제된) 업무를 일반 조회에서 자동으로
+-- 숨기려면 select만 별도 조건을 걸어야 해서, 정책을 동작별로 나눕니다. update/insert/delete는
+-- 기존과 동일하게 giamicro.com 계정이면 전부 허용됩니다(소프트 삭제/복구도 결국 update이므로
+-- 이 삭제된 업무의 update가 update 정책 위반은 아닙니다 - 반대로 select 정책은 deleted_at is
+-- null 조건이 있어 일반 목록 조회(WorkBoardClient 등 16곳)는 코드 수정 없이 자동으로
+-- 삭제된 업무를 걸러냅니다).
+drop policy if exists "giamicro_all_tasks" on tasks;
+
+drop policy if exists "giamicro_select_tasks" on tasks;
+create policy "giamicro_select_tasks" on tasks
+  for select using (is_giamicro_user() and deleted_at is null);
+
+-- 삭제한 지 7일 이내인 업무는, 본인(등록자)이거나 태그된 담당자이거나 관리자면 휴지통
+-- 화면(/work/trash)에서 볼 수 있습니다. 위 select 정책과는 OR로 합쳐지므로(둘 다 permissive
+-- 정책), 평소 목록 조회에는 전혀 섞이지 않고 휴지통 화면의 "deleted_at is not null" 조회에만
+-- 적용됩니다.
+drop policy if exists "giamicro_select_own_trashed_tasks" on tasks;
+create policy "giamicro_select_own_trashed_tasks" on tasks
+  for select using (
+    is_giamicro_user()
+    and deleted_at is not null
+    and deleted_at > now() - interval '7 days'
+    and (
+      is_app_admin()
+      or owner_email = lower(auth.jwt() ->> 'email')
+      or lower(auth.jwt() ->> 'email') = any(assignee_emails)
+    )
+  );
+
+drop policy if exists "giamicro_insert_tasks" on tasks;
+create policy "giamicro_insert_tasks" on tasks
+  for insert with check (is_giamicro_user());
+
+drop policy if exists "giamicro_update_tasks" on tasks;
+create policy "giamicro_update_tasks" on tasks
+  for update using (is_giamicro_user()) with check (is_giamicro_user());
+
+drop policy if exists "giamicro_delete_tasks" on tasks;
+create policy "giamicro_delete_tasks" on tasks
+  for delete using (is_giamicro_user());

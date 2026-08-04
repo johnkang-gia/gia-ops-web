@@ -5,6 +5,8 @@ import { createClient } from "@/lib/supabase/client";
 import type { Proposal } from "@/lib/types";
 import Pagination from "@/components/Pagination";
 import GuideButton from "@/components/common/GuideButton";
+import { useConfirm } from "@/components/common/ConfirmProvider";
+import { useToast } from "@/components/common/ToastProvider";
 
 const PAGE_SIZE = 10;
 
@@ -36,6 +38,8 @@ function oneLine(text: string, maxLen = 70) {
 type CategoryTab = "all" | "incidents" | "events" | "meetings" | "manual" | "complaint" | "system";
 
 export default function ProposalsClient({ initialItems }: { initialItems: Proposal[] }) {
+  const confirmAction = useConfirm();
+  const notify = useToast();
   const [items, setItems] = useState<Proposal[]>(initialItems);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -116,7 +120,7 @@ export default function ProposalsClient({ initialItems }: { initialItems: Propos
   }
 
   async function decide(id: string, decision: "승인" | "보류" | "삭제") {
-    if (decision === "삭제" && !confirm("이 제안을 삭제할까요?")) return;
+    if (decision === "삭제" && !(await confirmAction("이 제안을 삭제할까요?", { danger: true }))) return;
     setBusyId(id);
     if (drafts[id] !== undefined) {
       await fetch("/api/proposals/save-text", {
@@ -133,7 +137,7 @@ export default function ProposalsClient({ initialItems }: { initialItems: Propos
     setBusyId(null);
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      alert(data.error || "처리하지 못했습니다.");
+      notify(data.error || "처리하지 못했습니다.", "error");
     }
   }
 

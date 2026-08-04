@@ -5,6 +5,7 @@ import { useRealtimeTable } from "@/lib/useRealtimeTable";
 import type { Inquiry } from "@/lib/types";
 import Pagination from "@/components/Pagination";
 import GuideButton from "@/components/common/GuideButton";
+import { useToast } from "@/components/common/ToastProvider";
 
 // 문의가 쌓일수록 목록이 끝없이 길어지지 않도록, 게시판처럼 페이지 단위로 잘라 보여줍니다.
 const PAGE_SIZE = 10;
@@ -43,6 +44,7 @@ export default function InquiriesClient({
   isDeveloper: boolean;
   currentUserEmail: string;
 }) {
+  const notify = useToast();
   const [items, setItems] = useRealtimeTable<Inquiry>("inquiries", initialItems);
   const [category, setCategory] = useState<"오류" | "기능제안" | "기타">("오류");
   const [title, setTitle] = useState("");
@@ -89,7 +91,7 @@ export default function InquiriesClient({
     const data = await res.json();
     setBusyId(null);
     if (!res.ok) {
-      alert(data.error || "저장하지 못했습니다.");
+      notify(data.error || "저장하지 못했습니다.", "error");
       return;
     }
     setItems((prev) => prev.map((it) => (it.id === id ? (data.item as Inquiry) : it)));

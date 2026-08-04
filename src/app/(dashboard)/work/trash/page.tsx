@@ -1,0 +1,33 @@
+import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
+import { getCurrentAppUser } from "@/lib/currentUser";
+import TaskTrashClient from "@/components/work/TaskTrashClient";
+import type { Task } from "@/lib/types";
+
+export const dynamic = "force-dynamic";
+
+// 요청("삭제 휴지통 7일 복구")에 따른 업무 휴지통 화면입니다. RLS가 이미 "삭제한 지 7일
+// 이내면서 본인/담당자/관리자"만 이 조회 결과에 포함되도록 걸러주므로(schema.sql 섹션 62),
+// 여기서는 그냥 deleted_at is not null인 것만 조회하면 됩니다.
+export default async function WorkTrashPage() {
+  const me = await getCurrentAppUser();
+  if (!me) redirect("/login");
+
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("tasks")
+    .select("*")
+    .not("deleted_at", "is", null)
+    .order("deleted_at", { ascending: false });
+
+  return (
+    <div className="mx-auto max-w-2xl">
+      <h1 className="mb-1 text-lg font-bold">🗑 업무 휴지통</h1>
+      <p className="mb-6 text-xs text-slate-500">
+        삭제한 업무는 7일 동안 여기서 복구할 수 있고, 그 이후에는 자동으로 완전히 삭제됩니다.
+        본인이 등록했거나 태그된 업무, 또는 관리자만 볼 수 있습니다.
+      </p>
+      <TaskTrashClient tasks={(data as Task[] | null) ?? []} />
+    </div>
+  );
+}

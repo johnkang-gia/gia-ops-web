@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import type { Adopted } from "@/lib/types";
 import Pagination from "@/components/Pagination";
 import GuideButton from "@/components/common/GuideButton";
+import { useToast } from "@/components/common/ToastProvider";
 
 const PAGE_SIZE = 10;
 
@@ -25,6 +26,7 @@ function oneLine(text: string, maxLen = 70) {
 }
 
 export default function AdoptedClient({ initialItems }: { initialItems: Adopted[] }) {
+  const notify = useToast();
   const [items, setItems] = useState<Adopted[]>(initialItems);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -92,7 +94,7 @@ export default function AdoptedClient({ initialItems }: { initialItems: Adopted[
     setBusyId(null);
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      alert(data.error || "발행하지 못했습니다.");
+      notify(data.error || "발행하지 못했습니다.", "error");
     }
   }
 
@@ -114,7 +116,7 @@ export default function AdoptedClient({ initialItems }: { initialItems: Adopted[
     const data = await res.json().catch(() => ({}));
     setBusyId(null);
     if (!res.ok) {
-      alert(data.error || "AI 검증을 실행하지 못했습니다.");
+      notify(data.error || "AI 검증을 실행하지 못했습니다.", "error");
       return;
     }
     if (data.item) {

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { WrComment, WrReport, WrStudent } from "@/lib/types";
 import ReportFormModal from "./ReportFormModal";
+import { useConfirm } from "@/components/common/ConfirmProvider";
 
 function timeAgo(iso: string) {
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -28,6 +29,7 @@ export default function StudentProfileClient({
   userEmail: string;
   isWrManager: boolean;
 }) {
+  const confirmAction = useConfirm();
   const [reports, setReports] = useState<WrReport[]>(initialReports);
   const [opening, setOpening] = useState<{ subject: string } | null>(null);
   const [comments, setComments] = useState<WrComment[]>(initialComments);
@@ -42,7 +44,7 @@ export default function StudentProfileClient({
   }
 
   async function deleteReport(id: string) {
-    if (!confirm("이 리포트를 삭제할까요? 되돌릴 수 없습니다. / Delete this report? This cannot be undone.")) return;
+    if (!(await confirmAction("이 리포트를 삭제할까요? 되돌릴 수 없습니다. / Delete this report? This cannot be undone.", { danger: true }))) return;
     setReports((prev) => prev.filter((r) => r.id !== id));
     const supabase = createClient();
     await supabase.from("wr_reports").delete().eq("id", id);

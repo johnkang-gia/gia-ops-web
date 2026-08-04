@@ -7,6 +7,7 @@ import type { ChecklistAnchor, ChecklistItem, ChecklistTemplate, Term } from "@/
 import { ANCHOR_LABEL, toDateStr } from "@/lib/academicChecklist";
 import { friendlyError } from "@/lib/errorMessage";
 import GuideButton from "@/components/common/GuideButton";
+import { useConfirm } from "@/components/common/ConfirmProvider";
 
 const GUIDE_SECTIONS = [
   {
@@ -68,6 +69,7 @@ export default function AcademicCalendarClient({
   isAdmin: boolean;
   currentUserEmail: string;
 }) {
+  const confirmAction = useConfirm();
   const [items, setItems] = useState<ChecklistItem[]>(initialItems);
   const [templates, setTemplates] = useState<ChecklistTemplate[]>(initialTemplates);
   const now = new Date();
@@ -263,7 +265,7 @@ export default function AcademicCalendarClient({
   }
 
   async function deleteTemplate(t: ChecklistTemplate) {
-    if (!confirm(`"${t.title}" 템플릿을 삭제할까요? 이미 생성된 학기별 항목은 남아있습니다.`)) return;
+    if (!(await confirmAction(`"${t.title}" 템플릿을 삭제할까요? 이미 생성된 학기별 항목은 남아있습니다.`, { danger: true }))) return;
     const supabase = createClient();
     const { error: err } = await supabase.from("academic_checklist_templates").delete().eq("id", t.id);
     if (err) setError(friendlyError("템플릿을 삭제하지 못했습니다.", err));

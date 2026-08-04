@@ -6,6 +6,8 @@ import type { SchoolDocument } from "@/lib/types";
 import { genCaseId } from "@/lib/caseId";
 import Pagination from "@/components/Pagination";
 import GuideButton from "@/components/common/GuideButton";
+import { useConfirm } from "@/components/common/ConfirmProvider";
+import { useToast } from "@/components/common/ToastProvider";
 
 // "그 외" 목록이 계속 늘어질 수 있어 게시판처럼 페이지 단위로 잘라 보여줍니다. (신경 써야 할
 // 서류는 바로 눈에 띄어야 해서 페이지를 나누지 않고 항상 전체를 보여줍니다.)
@@ -34,6 +36,8 @@ const STATUS_STYLE: Record<SchoolDocument["status"], string> = {
 const EMPTY_FORM = { name: "", category: "", notes: "" };
 
 export default function DocumentsClient({ initialItems }: { initialItems: SchoolDocument[] }) {
+  const confirmAction = useConfirm();
+  const notify = useToast();
   const [items, setItems] = useState<SchoolDocument[]>(initialItems);
   const [recommending, setRecommending] = useState(false);
   const [recommendMsg, setRecommendMsg] = useState("");
@@ -119,7 +123,7 @@ export default function DocumentsClient({ initialItems }: { initialItems: School
   }
 
   async function deleteDocument(id: string) {
-    if (!confirm("이 서류 항목을 삭제할까요?")) return;
+    if (!(await confirmAction("이 서류 항목을 삭제할까요?", { danger: true }))) return;
     const supabase = createClient();
     await supabase.from("documents").delete().eq("id", id);
   }
@@ -134,7 +138,7 @@ export default function DocumentsClient({ initialItems }: { initialItems: School
     const data = await res.json();
     setDraftingId(null);
     if (!res.ok) {
-      alert(data.error || "초안을 만들지 못했습니다.");
+      notify(data.error || "초안을 만들지 못했습니다.", "error");
       return;
     }
     setExpandedId(id);

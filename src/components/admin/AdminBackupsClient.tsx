@@ -4,6 +4,8 @@ import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { friendlyError } from "@/lib/errorMessage";
 import type { BackupSummary } from "@/lib/types";
+import { useConfirm } from "@/components/common/ConfirmProvider";
+import { useToast } from "@/components/common/ToastProvider";
 
 const TABLE_LABELS: Record<string, string> = {
   incidents: "사건기록",
@@ -30,6 +32,8 @@ function tableLabel(t: string) {
 // 표시만 합니다 - 함수 안에서 다시 한 번 관리자/개발자 여부를 확인하므로, 화면 접근 제한이
 // 뚫려도 DB가 최종 방어선이 됩니다.
 export default function AdminBackupsClient({ initialBackups }: { initialBackups: BackupSummary[] }) {
+  const confirmAction = useConfirm();
+  const notify = useToast();
   const [backups, setBackups] = useState<BackupSummary[]>(initialBackups);
   const [label, setLabel] = useState("");
   const [creating, setCreating] = useState(false);
@@ -41,7 +45,7 @@ export default function AdminBackupsClient({ initialBackups }: { initialBackups:
     const { data, error } = await supabase.rpc("create_backup", { p_label: label.trim() || null });
     setCreating(false);
     if (error) {
-      alert(friendlyError("백업을 만들지 못했습니다.", error));
+      notify(friendlyError("백업을 만들지 못했습니다.", error), "error");
       return;
     }
     const row = data as BackupSummary & { snapshot: unknown };
@@ -57,10 +61,11 @@ export default function AdminBackupsClient({ initialBackups }: { initialBackups:
     // 되돌릴 수 없는 작업이라(복원하는 순간 지금 데이터가 이 백업 시점 내용으로 대체됩니다),
     // 두 번 확인합니다 - 라벨/시각/대상 테이블을 다시 보여줘서 실수로 엉뚱한 백업을 고르지
     // 않도록 합니다.
-    const ok = confirm(
+    const ok = await confirmAction(
       `"${b.label || "(이름 없음)"}" (${when}) 시점으로 복원할까요?\n\n` +
         `대상: ${b.tables.map(tableLabel).join(", ")}\n\n` +
-        `지금 이 화면들의 데이터가 그 시점 내용으로 바뀝니다. 되돌릴 수 없으니, 걱정되면 먼저 " 지금 백업 만들기"로 현재 상태부터 남겨두세요.`
+        `지금 이 화면들의 데이터가 그 시점 내용으로 바뀝니다. 되돌릴 수 없으니, 걱정되면 먼저 " 지금 백업 만들기"로 현재 상태부터 남겨두세요.`,
+      { danger: true, confirmLabel: "복원" }
     );
     if (!ok) return;
 
@@ -69,10 +74,10 @@ export default function AdminBackupsClient({ initialBackups }: { initialBackups:
     const { error } = await supabase.rpc("restore_backup", { p_backup_id: b.id });
     setRestoringId(null);
     if (error) {
-      alert(friendlyError("복원하지 못했습니다.", error));
+      notify(friendlyError("복원하지 못했습니다.", error), "error");
       return;
     }
-    alert("복원을 완료했습니다. 화면을 새로고침해 주세요.");
+    notify("복원을 완료했습니다. 화면을 새로고침해 주세요.", "success");
   }
 
   return (

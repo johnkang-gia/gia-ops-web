@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { uploadEventPhoto, getEventPhotoUrl, deleteEventPhoto } from "@/lib/storage";
+import { useConfirm } from "@/components/common/ConfirmProvider";
 
 export default function PhotoUploader({
   paths,
@@ -12,6 +13,7 @@ export default function PhotoUploader({
   onChange: (paths: string[]) => void;
   folder: string;
 }) {
+  const confirmAction = useConfirm();
   const [urls, setUrls] = useState<Record<string, string>>({});
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
@@ -59,7 +61,7 @@ export default function PhotoUploader({
   }
 
   async function handleDelete(path: string) {
-    if (!confirm("이 사진을 삭제할까요?")) return;
+    if (!(await confirmAction("이 사진을 삭제할까요?", { danger: true }))) return;
     await deleteEventPhoto(path);
     onChange(paths.filter((p) => p !== path));
   }

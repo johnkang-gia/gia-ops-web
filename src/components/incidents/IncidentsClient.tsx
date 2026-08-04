@@ -50,6 +50,33 @@ function emptyForm(ownerDefault: string): FormState {
   };
 }
 
+// 자주 쓰는 사건 유형별 시작 틀입니다(요청: "다른 업무툴 대비 기능제안"에서 나온 "자주 쓰는
+// 사건/문서 양식 템플릿" 제안 반영). 매번 빈 칸에서 시작하는 대신, 눌러서 제목/상세 내용에
+// 기본 틀을 채워 넣고 그 위에 실제 내용만 채우면 됩니다 - 이미 있는 "AI로 채우기"(자유 메모를
+// AI가 정리)와는 반대 방향의 보완재입니다(빈 칸을 어떻게 채워야 할지부터 막막할 때 씀).
+const INCIDENT_TEMPLATES: { label: string; title: string; detail: string }[] = [
+  {
+    label: "🩹 안전사고(경미)",
+    title: "안전사고 - ",
+    detail: "언제/어디서:\n다친 학생:\n경위:\n응급처치 내용:\n보호자 연락 여부:\n",
+  },
+  {
+    label: "🧑‍🤝‍🧑 교우관계/다툼",
+    title: "교우관계 다툼 - ",
+    detail: "관련 학생:\n장소/시간:\n경위(양측 진술):\n현재 관계 상태:\n",
+  },
+  {
+    label: "📵 규칙 위반",
+    title: "규칙 위반 - ",
+    detail: "위반 내용:\n적발 경위:\n학생 반응:\n기존 지도 이력:\n",
+  },
+  {
+    label: "📞 학부모 민원",
+    title: "학부모 민원 - ",
+    detail: "민원 접수 경로:\n민원 요지:\n1차 안내 내용:\n후속 조치 필요 여부:\n",
+  },
+];
+
 function oneLine(text: string, maxLen = 40) {
   const t = String(text || "").replace(/\s+/g, " ").trim();
   if (!t) return "(내용 없음)";
@@ -326,6 +353,27 @@ export default function IncidentsClient({
               </button>
             )}
           </div>
+          {!editingId && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[11px] text-slate-400">빠른 시작:</span>
+              {INCIDENT_TEMPLATES.map((tpl) => (
+                <button
+                  key={tpl.label}
+                  type="button"
+                  onClick={() =>
+                    setForm((f) => ({
+                      ...f,
+                      title: f.title.trim() ? f.title : tpl.title,
+                      detail: f.detail.trim() ? f.detail + "\n\n" + tpl.detail : tpl.detail,
+                    }))
+                  }
+                  className="rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-medium text-slate-600 hover:border-slate-300 hover:bg-slate-50"
+                >
+                  {tpl.label}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label className="flex flex-col gap-1 text-xs text-slate-500">
               날짜

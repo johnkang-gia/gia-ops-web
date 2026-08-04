@@ -8,6 +8,8 @@ import { addTimedEventToNativeCalendar } from "@/lib/nativeCalendar";
 import { recurrenceLabel, renewRecurringTask } from "@/lib/recurrence";
 import { uploadTaskFile, getTaskFileSignedUrl, deleteTaskFile } from "@/lib/storage";
 import { friendlyError } from "@/lib/errorMessage";
+import { useConfirm } from "@/components/common/ConfirmProvider";
+import { useToast } from "@/components/common/ToastProvider";
 import { useRefreshTaskCounts } from "@/components/NotificationBell";
 import { STATUS_ORDER, STATUS_LABEL } from "./statusConfig";
 
@@ -30,6 +32,7 @@ function timeAgo(iso: string) {
 
 export default function TaskDetailPanel({
   task,
+  allTasks,
   team,
   online,
   currentUserEmail,
@@ -39,6 +42,10 @@ export default function TaskDetailPanel({
   onDeleted,
 }: {
   task: Task;
+  // 선행 업무(요청: "업무 선후관계 표시") 선택창의 후보 목록 + 이미 선택된 선행 업무의
+  // 완료 여부를 보여주는 데 씁니다. 지금 업무보드에 떠 있는(=아직 보관되지 않은) 업무만
+  // 후보로 제공합니다.
+  allTasks: Task[];
   team: TeamMember[];
   online: string[];
   currentUserEmail: string;
@@ -47,6 +54,8 @@ export default function TaskDetailPanel({
   onUpdated: (task: Task) => void;
   onDeleted: (id: string) => void;
 }) {
+  const confirmAction = useConfirm();
+  const notify = useToast();
   const [comments, setComments] = useState<TaskComment[]>([]);
   const [commentText, setCommentText] = useState("");
   const [dueLocal, setDueLocal] = useState(task.due_at ? task.due_at.slice(0, 16) : "");
@@ -100,7 +109,7 @@ export default function TaskDetailPanel({
         await logSystemEvent(`${nameFor(team, currentUserEmail)}님이 파일을 첨부했습니다: ${file.name}`);
       }
     } catch (err) {
-      alert(friendlyError("파일 업로드에 실패했습니다.", err));
+      notify(friendlyError("파일 업로드에 실패했습니다.", err), "error");
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -113,7 +122,7 @@ export default function TaskDetailPanel({
   }
 
   async function removeAttachment(a: TaskAttachment) {
-    if (!confirm(`"${a.file_name}" 파일을 삭제할까요?`)) return;
+    if (!(await confirmAction(`"${a.file_name}" 파일을 삭제할까요?`, { danger: true }))) return;
     setAttachments((prev) => prev.filter((x) => x.id !== a.id));
     const supabase = createClient();
     await supabase.from("task_attachments").delete().eq("id", a.id);
@@ -168,7 +177,7 @@ export default function TaskDetailPanel({
     const { error } = await supabase.from("tasks").update(fields).eq("id", task.id);
     if (error) {
       onUpdated(previous);
-      alert(friendlyError("저장하지 못했습니다.", error));
+      notify(friendlyError("저장하지 못했습니다.", error), "error");
     }
   }
 
@@ -191,7 +200,7 @@ export default function TaskDetailPanel({
     const supabase = createClient();
     const { data: updated, error } = await supabase.rpc("toggle_task_assignee", { p_task_id: task.id, p_email: email });
     if (error) {
-      alert(friendlyError("담당자 변경에 실패했습니다.", error));
+      notify(friendlyError("담당자 변경에 실패했습니다.", error), "error");
       return;
     }
     if (updated) onUpdated({ ...task, ...(updated as Task) });
@@ -254,7 +263,7 @@ export default function TaskDetailPanel({
       p_email: currentUserEmail,
     });
     if (error) {
-      alert(friendlyError("업무 확인 처리에 실패했습니다.", error));
+      notify(friendlyError("업무 확인 처리에 실패했습니다.", error), "error");
       return;
     }
     if (updated) onUpdated({ ...task, ...(updated as Task) });
@@ -283,7 +292,7 @@ export default function TaskDetailPanel({
       // 저장 실패 시 입력하신 내용을 복원합니다 - 예전에는 실패해도 입력창은 이미 비워져 있어
       // 코멘트가 조용히 사라진 것처럼 보였습니다.
       setCommentText(text);
-      alert(friendlyError("댓글을 등록하지 못했습니다.", error));
+      notify(friendlyError("댓글을 등록하지 못했습니다.", error), "error");
       return;
     }
     // 코멘트를 남기면 실시간 로그(부서 전체가 보는 활동 피드)에도 한 줄로 뜨게 합니다(요청:
@@ -300,19 +309,29 @@ export default function TaskDetailPanel({
   }
 
   async function deleteComment(c: TaskComment) {
-    if (!confirm("이 항목을 삭제할까요?")) return;
+    if (!(await confirmAction("이 항목을 삭제할까요?", { danger: true }))) return;
     setComments((prev) => prev.filter((x) => x.id !== c.id));
     const supabase = createClient();
     const { error } = await supabase.from("task_comments").delete().eq("id", c.id);
-    if (error) alert(friendlyError("삭제하지 못했습니다.", error));
+    if (error) notify(friendlyError("삭제하지 못했습니다.", error), "error");
   }
 
+  // 하드 삭제 대신 소프트 삭제(deleted_at)로 바꿨습니다(요청: "삭제 휴지통 7일 복구") -
+  // 코멘트는 지워지지 않고 그대로 남아있고(on delete cascade는 실제 삭제 시점에만 적용),
+  // 업무탭 화면에서는 즉시 사라지지만(RLS가 deleted_at is null만 보여줌) 7일 안에는
+  // /work/trash에서 등록자·담당자·관리자가 복구할 수 있습니다. 7일이 지나면 크론이 완전히
+  // 지웁니다.
   async function remove() {
-    if (!confirm("이 업무를 삭제할까요? 코멘트도 함께 삭제됩니다.")) return;
+    if (
+      !(await confirmAction("이 업무를 삭제할까요? 7일 안에는 휴지통에서 복구할 수 있습니다.", {
+        danger: true,
+      }))
+    )
+      return;
     const supabase = createClient();
-    const { error } = await supabase.from("tasks").delete().eq("id", task.id);
+    const { error } = await supabase.from("tasks").update({ deleted_at: new Date().toISOString() }).eq("id", task.id);
     if (error) {
-      alert(friendlyError("삭제하지 못했습니다.", error));
+      notify(friendlyError("삭제하지 못했습니다.", error), "error");
       return;
     }
     onDeleted(task.id);
@@ -402,7 +421,38 @@ export default function TaskDetailPanel({
           >
             🔁 {task.recurrence ? recurrenceLabel(task.recurrence) : "반복 없음"}
           </button>
+          {/* 선행 업무(요청: "업무 선후관계 표시") - 강제로 막지는 않고, 아직 안 끝났으면
+              아래 배너로만 알려줍니다(팀 운영 특성상 예외적으로 먼저 시작하는 경우도 잦아서). */}
+          <select
+            value={task.depends_on_task_id ?? ""}
+            onChange={(e) => patch({ depends_on_task_id: e.target.value || null })}
+            title="선행 업무 - 먼저 끝나야 하는 다른 업무를 지정합니다"
+            className="max-w-[9rem] rounded-lg border border-slate-300 px-2 py-1 text-xs"
+          >
+            <option value="">🔗 선행 업무 없음</option>
+            {allTasks
+              .filter((t) => t.id !== task.id)
+              .map((t) => (
+                <option key={t.id} value={t.id}>
+                  🔗 {t.title}
+                </option>
+              ))}
+          </select>
         </div>
+
+        {task.depends_on_task_id &&
+          (() => {
+            const predecessor = allTasks.find((t) => t.id === task.depends_on_task_id);
+            // 목록에서 안 보이면(칸반에서 이미 보관됐다는 뜻) 이미 끝난 것으로 간주하고
+            // 경고를 띄우지 않습니다.
+            if (!predecessor || predecessor.status === "완료") return null;
+            return (
+              <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                ⛔ 선행 업무가 아직 끝나지 않았습니다: <span className="font-semibold">{predecessor.title}</span>{" "}
+                ({STATUS_LABEL[predecessor.status]})
+              </div>
+            );
+          })()}
 
         {recurrenceOpen && (
           <div className="mb-3 flex flex-wrap items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50/60 p-2">

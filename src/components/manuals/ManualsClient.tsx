@@ -7,6 +7,8 @@ import { toDisplayHtml } from "@/lib/manualHtml";
 import RichTextEditor from "@/components/manuals/RichTextEditor";
 import Pagination from "@/components/Pagination";
 import GuideButton from "@/components/common/GuideButton";
+import { useConfirm } from "@/components/common/ConfirmProvider";
+import { useToast } from "@/components/common/ToastProvider";
 
 const PAGE_SIZE = 10;
 
@@ -49,6 +51,8 @@ export default function ManualsClient({
   initialItems: ManualSection[];
   initialDoc?: TargetDoc;
 }) {
+  const confirmAction = useConfirm();
+  const notify = useToast();
   const [items, setItems] = useState<ManualSection[]>(initialItems);
   const [activeDoc, setActiveDoc] = useState<TargetDoc>(initialDoc ?? "학부모용");
   const [page, setPage] = useState(1);
@@ -142,13 +146,13 @@ export default function ManualsClient({
   }
 
   async function deleteSection(id: string) {
-    if (!confirm("이 항목을 삭제할까요? 매뉴얼에서 완전히 사라집니다.")) return;
+    if (!(await confirmAction("이 항목을 삭제할까요? 매뉴얼에서 완전히 사라집니다.", { danger: true }))) return;
     setBusyId(id);
     const res = await fetch(`/api/manuals/sections/${id}`, { method: "DELETE" });
     setBusyId(null);
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      alert(data.error || "삭제하지 못했습니다.");
+      notify(data.error || "삭제하지 못했습니다.", "error");
     }
   }
 

@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import type { BadgeValue, EvalBadges, EvalCategory, WrReport, WrStudent } from "@/lib/types";
 import { BADGE_OPTIONS, EVAL_CATEGORIES, EVAL_LABELS, initialBadges } from "@/lib/weeklyReport/badges";
 import { getWeekRange } from "@/lib/weeklyReport/week";
+import { useToast } from "@/components/common/ToastProvider";
 
 type SubjectReportInfo = { current?: WrReport; previous?: WrReport; latest?: WrReport };
 
@@ -75,6 +76,7 @@ export default function ReportFormModal({
     return mode === "admin" || mode === "archive" ? [mySubject, ...others] : [mySubject, ...others];
   }, [subjectMap, mySubject, mode]);
 
+  const notify = useToast();
   const [activeTab, setActiveTab] = useState(mySubject);
   const [formData, setFormData] = useState<FormState>(BLANK_FORM);
   const [existingReportId, setExistingReportId] = useState<string | null>(null);
@@ -198,7 +200,7 @@ export default function ReportFormModal({
   async function handleSave(status: "draft" | "published") {
     if (status === "published") {
       if (!formData.academic || !formData.improvement || !formData.participation || !formData.behavior || !formData.social) {
-        alert("발행하려면 모든 항목을 작성해야 합니다. 작성 중이라면 임시저장을 이용해주세요.");
+        notify("발행하려면 모든 항목을 작성해야 합니다. 작성 중이라면 임시저장을 이용해주세요.", "error");
         return;
       }
     }
@@ -209,13 +211,13 @@ export default function ReportFormModal({
       onSaved(saved);
       onClose();
     } else {
-      alert("저장에 실패했습니다.");
+      notify("저장에 실패했습니다.", "error");
     }
   }
 
   function saveTemplate() {
     if (!formData.teacherNote.trim()) {
-      alert("저장할 종합 의견을 먼저 작성해주세요.");
+      notify("저장할 종합 의견을 먼저 작성해주세요.", "error");
       return;
     }
     const next = [...templates, { id: Date.now().toString(), text: formData.teacherNote }];

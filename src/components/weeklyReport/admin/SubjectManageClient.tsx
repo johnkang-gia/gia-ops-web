@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { TeamMember, WrClass, WrStudent, WrSubject } from "@/lib/types";
 import Pagination from "@/components/Pagination";
+import { useConfirm } from "@/components/common/ConfirmProvider";
 
 const COLORS = ["#3B82F6", "#10B981", "#8B5CF6", "#F59E0B", "#EF4444", "#EC4899", "#06B6D4"];
 const PAGE_SIZE = 10;
@@ -19,6 +20,7 @@ export default function SubjectManageClient({
   classes: WrClass[];
   students: WrStudent[];
 }) {
+  const confirmAction = useConfirm();
   const [subjects, setSubjects] = useState<WrSubject[]>(initialSubjects);
   const [name, setName] = useState("");
   const [teacherEmail, setTeacherEmail] = useState("");
@@ -53,7 +55,7 @@ export default function SubjectManageClient({
   }
 
   async function removeSubject(id: string) {
-    if (!confirm("이 과목을 삭제할까요?")) return;
+    if (!(await confirmAction("이 과목을 삭제할까요?", { danger: true }))) return;
     setSubjects((prev) => prev.filter((s) => s.id !== id));
     const supabase = createClient();
     await supabase.from("wr_subjects").delete().eq("id", id);

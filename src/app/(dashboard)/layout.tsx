@@ -14,6 +14,10 @@ import GlobalSearchBar from "@/components/GlobalSearchBar";
 import PausedFeaturesBanner from "@/components/dev/PausedFeaturesBanner";
 import NotificationBell, { NotificationProvider, TaskCountBadge } from "@/components/NotificationBell";
 import { APP_VERSION } from "@/lib/version";
+import { ToastProvider } from "@/components/common/ToastProvider";
+import { ConfirmProvider } from "@/components/common/ConfirmProvider";
+import ConnectionBanner from "@/components/common/ConnectionBanner";
+import CommandPalette from "@/components/common/CommandPalette";
 import type { AiFeatureFlag } from "@/lib/types";
 
 // 학기 배지 - 로그인 인증(me)과 달리 이 화면을 막을 이유가 없는 "장식성" 정보라서, layout
@@ -248,8 +252,12 @@ export default async function DashboardLayout({
     // "채팅을 계속치니까 채팅창이 아래로 쭉 내려가면서 메뉴랑 화면들이 전부 위로 올라가버려").
     // 높이를 화면 크기로 고정해야 그 안의 각 화면(예: 업무 탭 채팅)이 자기 영역 안에서만
     // 스크롤되고, 사이드바 메뉴는 항상 제자리에 그대로 있습니다.
+    <ToastProvider>
+    <ConfirmProvider>
     <NotificationProvider userEmail={isTeacher ? null : me.email}>
-    <div data-theme={theme} className="shell-page-bg flex h-screen flex-1">
+    <div data-theme={theme} className="shell-page-bg relative flex h-screen flex-1">
+      <ConnectionBanner />
+      <CommandPalette categories={categories} homeHref={homeHref} />
       <aside className="shell-blur hidden w-56 shrink-0 border-r border-[var(--shell-border)] bg-[var(--shell-bg)] p-4 sm:flex sm:flex-col">
         <div className="mb-3 px-2">
           {/* 로고 아래 학기 표시를 가운데 정렬합니다(요청: "로고아래 학기표시 가운데정렬"). */}
@@ -371,5 +379,7 @@ export default async function DashboardLayout({
       </div>
     </div>
     </NotificationProvider>
+    </ConfirmProvider>
+    </ToastProvider>
   );
 }

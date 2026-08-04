@@ -4,6 +4,68 @@
 `version` 값과 항상 일치시킵니다. 업데이트할 때마다 이 파일 맨 위에 새 항목을 추가하고,
 같은 내용을 GitHub Desktop의 커밋 Summary/Description에도 그대로 사용하면 됩니다.
 
+## v0.60.0 - 2026-08-04 (staging)
+
+"전부 반영해줘" 요청에 따라 UX 점검에서 나온 항목들과 기능 제안을 반영했습니다.
+
+- **오류 화면**: 서버 쪽 오류가 나면 이제 Next.js 기본 크래시 화면 대신, 다시 시도/새로고침
+  버튼이 있는 우호적인 화면이 뜹니다.
+- **삭제 확인/실패 알림**: 브라우저 기본 confirm/alert 대신 앱 안에서 자연스럽게 뜨는 확인창과
+  토스트 알림으로 20개 화면(사건/업무/채팅/제안함/문서/매뉴얼 등 46곳)을 전부 바꿨습니다.
+- **업무 휴지통(7일 복구)**: 업무를 삭제해도 즉시 영구 삭제되지 않고, 사이드바 업무탭의
+  "🗑 휴지통"에서 7일 안에 복구할 수 있습니다(등록자·담당자·관리자만 볼 수 있음). 7일이
+  지나면 자동으로 완전히 삭제됩니다. 다른 화면(사건/문서 등)은 이번 라운드 범위에서 빼고
+  다음 라운드에서 순서대로 넓힐 예정입니다.
+- **커맨드팔레트**: 어디서든 ⌘K/Ctrl+K를 누르면 메뉴 바로가기 + 통합검색을 한 번에 쓸 수
+  있는 창이 뜹니다.
+- **연결 끊김 알림**: 인터넷이 끊기면 상단에 배너로 알리고, 다시 연결되면 자동으로 화면을
+  최신 내용으로 갱신합니다.
+- **알림 묶어보기**: 프로필 옆 빨간 배지를 누르면 숫자만이 아니라 실제로 어떤 업무가
+  미확인인지 목록으로 바로 보여줍니다.
+- **업무 선후관계**: 업무 상세에서 "선행 업무"를 지정할 수 있고, 아직 안 끝났으면 경고
+  배너로 알려줍니다(강제로 막지는 않습니다).
+- **사건기록 템플릿**: 새 사건 입력 화면에 안전사고/교우관계/규칙위반/학부모민원 등 자주
+  쓰는 유형의 시작 틀(빠른 시작 버튼)을 추가했습니다.
+- 참고: 알림을 매일 이메일로 받아보는 기능은 별도 이메일 발송 서비스(API 키) 연동이
+  필요해 이번 라운드에서는 빼고, 대신 위 "알림 묶어보기"로 인앱에서 확인할 수 있게 했습니다.
+
+```sql
+-- ===== v0.60.0: 업무 소프트 삭제(7일 휴지통) + 선후관계(의존) 표시 =====
+alter table tasks add column if not exists deleted_at timestamptz;
+alter table tasks add column if not exists depends_on_task_id uuid references tasks(id) on delete set null;
+
+drop policy if exists "giamicro_all_tasks" on tasks;
+
+drop policy if exists "giamicro_select_tasks" on tasks;
+create policy "giamicro_select_tasks" on tasks
+  for select using (is_giamicro_user() and deleted_at is null);
+
+drop policy if exists "giamicro_select_own_trashed_tasks" on tasks;
+create policy "giamicro_select_own_trashed_tasks" on tasks
+  for select using (
+    is_giamicro_user()
+    and deleted_at is not null
+    and deleted_at > now() - interval '7 days'
+    and (
+      is_app_admin()
+      or owner_email = lower(auth.jwt() ->> 'email')
+      or lower(auth.jwt() ->> 'email') = any(assignee_emails)
+    )
+  );
+
+drop policy if exists "giamicro_insert_tasks" on tasks;
+create policy "giamicro_insert_tasks" on tasks
+  for insert with check (is_giamicro_user());
+
+drop policy if exists "giamicro_update_tasks" on tasks;
+create policy "giamicro_update_tasks" on tasks
+  for update using (is_giamicro_user()) with check (is_giamicro_user());
+
+drop policy if exists "giamicro_delete_tasks" on tasks;
+create policy "giamicro_delete_tasks" on tasks
+  for delete using (is_giamicro_user());
+```
+
 ## v0.59.0 - 2026-08-04 (staging)
 
 수정요청사항을 반영했습니다: "1. 구조상 들어갈만한 어울리는 모션 추가  2. UX 점검  3. 다른

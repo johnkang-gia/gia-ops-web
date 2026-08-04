@@ -48,7 +48,7 @@ export async function POST(request: Request) {
 async function scanIncidentOrEvent(supabase: any, type: "incidents" | "events", id?: string) {
   let query = supabase.from(type).select("*");
   if (id) {
-    query = query.eq("id", id);
+    query = query.eq("id", id).is("scanned_at", null);
   } else {
     query = query.is("scanned_at", null).order("date", { ascending: true }).limit(BATCH_SIZE);
   }
@@ -60,50 +60,74 @@ async function scanIncidentOrEvent(supabase: any, type: "incidents" | "events", 
   let created = 0;
 
   for (const row of rows) {
-    const entry = {
-      type: label,
-      title: row.title || row.name || "",
-      detail: row.detail || "",
-      good: row.good || "",
-      lack: row.lack || "",
-      suggest: row.suggest || "",
-      owner: row.owner || "",
-      suggestedCat: row.manual_cat || "",
-    };
-    const systemPrompt = buildIncidentClassifySystemPrompt();
-    const userPrompt = buildIncidentEntryBlock(entry, "신규 기록");
-    const result = (await callClaudeJson(systemPrompt, userPrompt, {
-      route: `scan:${type}`,
-    })) as IncidentClassifyResult;
+    // 여러 사람이 거의 동시에 "새 기록 분석"을 눌러도 같은 기록을 두 번 처리(=AI 이중 호출 +
+    // 제안 중복 생성)하지 않도록, AI를 부르기 전에 먼저 이 행을 원자적으로 "찜"합니다. 두 요청이
+    // 동시에 같은 행을 읽어왔더라도 이 UPDATE(WHERE scanned_at IS NULL)는 Postgres가 하나만
+    // 통과시키므로, 뒤에 도착한 요청은 claimed가 비어 있어 이 행을 조용히 건너뜁니다.
+    const { data: claimed, error: claimErr } = await supabase
+      .from(type)
+      .update({ scanned_at: new Date().toISOString() })
+      .eq("id", row.id)
+      .is("scanned_at", null)
+      .select()
+      .maybeSingle();
+    if (claimErr) throw new Error(claimErr.message);
+    if (!claimed) continue; // 다른 요청이 먼저 이 기록을 가져가 처리 중(또는 이미 처리 완료)
 
-    const legalSummary = findLegalFullText(result.legalBasis);
-    // targetDoc이 "둘다"면 학부모용/실무자용 각각 별도 제안으로 만듭니다(문자열 "둘다"를 그대로
-    // target_doc에 저장하면 매뉴얼 화면의 학부모용/실무자용 탭 어디에도 매칭되지 않는 값이 됩니다).
-    const targetDocs =
-      result.targetDoc === "둘다" ? (["학부모용", "실무자용"] as const) : ([result.targetDoc || "실무자용"] as const);
+    try {
+      const entry = {
+        type: label,
+        title: row.title || row.name || "",
+        detail: row.detail || "",
+        good: row.good || "",
+        lack: row.lack || "",
+        suggest: row.suggest || "",
+        owner: row.owner || "",
+        suggestedCat: row.manual_cat || "",
+      };
+      const systemPrompt = buildIncidentClassifySystemPrompt();
+      const userPrompt = buildIncidentEntryBlock(entry, "신규 기록");
+      const result = (await callClaudeJson(systemPrompt, userPrompt, {
+        route: `scan:${type}`,
+      })) as IncidentClassifyResult;
 
-    for (const targetDoc of targetDocs) {
-      const { error: insertErr } = await supabase.from("proposals").insert({
-        case_id: genCaseId("PRP"),
-        source: type,
-        source_id: row.case_id,
-        date: row.date,
-        target_doc: targetDoc,
-        category: result.category || "미분류",
-        remediation: (result.remediationOptions || []).join("\n\n[--- 다음 옵션 ---]\n\n"),
-        parent_msg: (result.parentCommunicationOptions || []).join("\n\n[--- 다음 옵션 ---]\n\n"),
-        student_edu: (result.studentEducationOptions || []).join("\n\n[--- 다음 옵션 ---]\n\n"),
-        final_text: result.suggestedFinal || (result.remediationOptions || [])[0] || "",
-        legal_basis: result.legalBasis || "",
-        applicability: result.legalApplicability || "",
-        legal_summary: legalSummary,
-        benchmark: result.benchmarkNote || "",
-      });
-      if (insertErr) throw new Error(insertErr.message);
+      const legalSummary = findLegalFullText(result.legalBasis);
+      // targetDoc이 "둘다"면 학부모용/실무자용 각각 별도 제안으로 만듭니다(문자열 "둘다"를 그대로
+      // target_doc에 저장하면 매뉴얼 화면의 학부모용/실무자용 탭 어디에도 매칭되지 않는 값이 됩니다).
+      const targetDocs =
+        result.targetDoc === "둘다" ? (["학부모용", "실무자용"] as const) : ([result.targetDoc || "실무자용"] as const);
+
+      for (const targetDoc of targetDocs) {
+        const { error: insertErr } = await supabase.from("proposals").insert({
+          case_id: genCaseId("PRP"),
+          source: type,
+          source_id: row.case_id,
+          date: row.date,
+          target_doc: targetDoc,
+          category: result.category || "미분류",
+          remediation: (result.remediationOptions || []).join("\n\n[--- 다음 옵션 ---]\n\n"),
+          parent_msg: (result.parentCommunicationOptions || []).join("\n\n[--- 다음 옵션 ---]\n\n"),
+          student_edu: (result.studentEducationOptions || []).join("\n\n[--- 다음 옵션 ---]\n\n"),
+          final_text: result.suggestedFinal || (result.remediationOptions || [])[0] || "",
+          legal_basis: result.legalBasis || "",
+          applicability: result.legalApplicability || "",
+          legal_summary: legalSummary,
+          benchmark: result.benchmarkNote || "",
+        });
+        // 위 원자적 찜(claim) 로직이 정상 동작한다면 여기서 중복이 발생할 일은 없지만, 혹시
+        // 모를 틈에 대비해 DB의 유니크 제약(source+source_id+target_doc)을 마지막 방어선으로
+        // 둡니다. 23505(유니크 위반)는 "이미 생성됨"이라는 뜻이라 오류로 취급하지 않고 조용히
+        // 건너뜁니다(반복 업무·학사일정 자동 생성과 동일한 패턴).
+        if (insertErr && insertErr.code !== "23505") throw new Error(insertErr.message);
+      }
+
+      created += 1;
+    } catch (err) {
+      // 처리 도중 실패하면(AI 오류 등) 이 기록이 "분석 완료"로 잘못 남아 다음 배치 스캔에서
+      // 영영 누락되지 않도록, 찜을 되돌려 다시 시도할 수 있게 합니다.
+      await supabase.from(type).update({ scanned_at: null }).eq("id", row.id);
+      throw err;
     }
-
-    await supabase.from(type).update({ scanned_at: new Date().toISOString() }).eq("id", row.id);
-    created += 1;
   }
 
   return created;
@@ -113,7 +137,7 @@ async function scanIncidentOrEvent(supabase: any, type: "incidents" | "events", 
 async function scanMeetings(supabase: any, id?: string) {
   let query = supabase.from("meetings").select("*");
   if (id) {
-    query = query.eq("id", id);
+    query = query.eq("id", id).is("scanned_at", null);
   } else {
     query = query.is("scanned_at", null).order("date", { ascending: true }).limit(BATCH_SIZE);
   }
@@ -124,92 +148,110 @@ async function scanMeetings(supabase: any, id?: string) {
   let created = 0;
 
   for (const row of rows) {
-    const systemPrompt = buildMeetingClassifySystemPrompt();
-    const userPrompt = buildMeetingEntryBlock(
-      { date: row.date, attendees: row.attendees || "", content: row.content },
-      "회의 정보"
-    );
-    // 이미 결정된 회의 내용을 문서별로 분류/정리하는 작업이라 저렴한 모델(Haiku)로 처리합니다.
-    const result = (await callClaudeJson(systemPrompt, userPrompt, {
-      model: CLAUDE_MODEL_FAST,
-      route: "scan:meetings",
-    })) as MeetingClassifyResult;
-
-    const proposals = result.proposals || [];
-    const futurePlanItems: string[] = [];
-
-    for (const p of proposals) {
-      if (p.targetDoc === "향후계획") {
-        futurePlanItems.push(`[향후계획] ${p.finalText}`);
-        continue;
-      }
-      if (p.targetDoc === "행사학기참고") {
-        // 매뉴얼(규정)이 아니라 특정 행사/학기에 대한 회고이므로, 이름이 비슷한 행사 기록이나
-        // 진행 중인 학기 기록을 찾아 "개선 제안"란에 자동으로 붙여둡니다(다음번 같은 행사/학기 때
-        // AI 비교 리포트에 바로 반영됨). 매칭되는 기록이 없으면 회의록 자체의 확정 기록에 메모로 남깁니다.
-        let matched = false;
-        const guess = (p.eventNameGuess || "").trim();
-        const note = `[회의록 참고, ${row.date}] ${p.finalText}`;
-
-        if (guess && p.referenceKind === "학기") {
-          // 진행 중인 같은 학기/캠프를 우선 찾고, 없으면 가장 최근 회차에 붙입니다.
-          const { data: matchedTerms } = await supabase
-            .from("terms")
-            .select("id, suggest, status")
-            .ilike("term_type", guess)
-            .order("year", { ascending: false });
-          const target =
-            (matchedTerms || []).find((t: { status: string }) => t.status === "진행중") ??
-            (matchedTerms || [])[0];
-          if (target) {
-            const merged = [target.suggest, note].filter(Boolean).join("\n\n");
-            await supabase.from("terms").update({ suggest: merged }).eq("id", target.id);
-            matched = true;
-          }
-        } else if (guess) {
-          const { data: matchedEvents } = await supabase
-            .from("events")
-            .select("id, suggest")
-            .ilike("name", `%${guess}%`)
-            .order("date", { ascending: false })
-            .limit(1);
-          const target = matchedEvents?.[0];
-          if (target) {
-            const merged = [target.suggest, note].filter(Boolean).join("\n\n");
-            await supabase.from("events").update({ suggest: merged }).eq("id", target.id);
-            matched = true;
-          }
-        }
-
-        if (!matched) {
-          futurePlanItems.push(`[행사/학기 메모]${guess ? ` (${guess})` : ""} ${p.finalText}`);
-        }
-        continue;
-      }
-      const { error: insertErr } = await supabase.from("proposals").insert({
-        case_id: genCaseId("PRP"),
-        source: "meetings",
-        source_id: row.case_id,
-        date: row.date,
-        target_doc: p.targetDoc,
-        category: p.category || "미분류",
-        final_text: p.finalText,
-      });
-      if (insertErr) throw new Error(insertErr.message);
-      created += 1;
-    }
-
-    const nextAgendaText = (result.nextAgendaItems || []).join("\n");
-    const futurePlanText = futurePlanItems.join("\n");
-
-    await supabase
+    // 사건/행사 스캔과 동일하게, AI를 부르기 전에 이 회의를 원자적으로 먼저 찜해서 두 사람이
+    // 동시에 "새 기록 분석"을 눌러도 같은 회의를 중복 처리하지 않게 합니다.
+    const { data: claimed, error: claimErr } = await supabase
       .from("meetings")
-      .update({
-        scanned_at: new Date().toISOString(),
-        next_agenda: [row.next_agenda, nextAgendaText].filter(Boolean).join("\n") || null,
-        final_record: [row.final_record, futurePlanText].filter(Boolean).join("\n") || null,
-      })
-      .eq("id", row.id);
+      .update({ scanned_at: new Date().toISOString() })
+      .eq("id", row.id)
+      .is("scanned_at", null)
+      .select()
+      .maybeSingle();
+    if (claimErr) throw new Error(claimErr.message);
+    if (!claimed) continue; // 다른 요청이 먼저 이 회의를 가져가 처리 중(또는 이미 처리 완료)
+
+    try {
+      const systemPrompt = buildMeetingClassifySystemPrompt();
+      const userPrompt = buildMeetingEntryBlock(
+        { date: row.date, attendees: row.attendees || "", content: row.content },
+        "회의 정보"
+      );
+      // 이미 결정된 회의 내용을 문서별로 분류/정리하는 작업이라 저렴한 모델(Haiku)로 처리합니다.
+      const result = (await callClaudeJson(systemPrompt, userPrompt, {
+        model: CLAUDE_MODEL_FAST,
+        route: "scan:meetings",
+      })) as MeetingClassifyResult;
+
+      const proposals = result.proposals || [];
+      const futurePlanItems: string[] = [];
+
+      for (const p of proposals) {
+        if (p.targetDoc === "향후계획") {
+          futurePlanItems.push(`[향후계획] ${p.finalText}`);
+          continue;
+        }
+        if (p.targetDoc === "행사학기참고") {
+          // 매뉴얼(규정)이 아니라 특정 행사/학기에 대한 회고이므로, 이름이 비슷한 행사 기록이나
+          // 진행 중인 학기 기록을 찾아 "개선 제안"란에 자동으로 붙여둡니다(다음번 같은 행사/학기 때
+          // AI 비교 리포트에 바로 반영됨). 매칭되는 기록이 없으면 회의록 자체의 확정 기록에 메모로 남깁니다.
+          let matched = false;
+          const guess = (p.eventNameGuess || "").trim();
+          const note = `[회의록 참고, ${row.date}] ${p.finalText}`;
+
+          if (guess && p.referenceKind === "학기") {
+            // 진행 중인 같은 학기/캠프를 우선 찾고, 없으면 가장 최근 회차에 붙입니다.
+            const { data: matchedTerms } = await supabase
+              .from("terms")
+              .select("id, suggest, status")
+              .ilike("term_type", guess)
+              .order("year", { ascending: false });
+            const target =
+              (matchedTerms || []).find((t: { status: string }) => t.status === "진행중") ??
+              (matchedTerms || [])[0];
+            if (target) {
+              const merged = [target.suggest, note].filter(Boolean).join("\n\n");
+              await supabase.from("terms").update({ suggest: merged }).eq("id", target.id);
+              matched = true;
+            }
+          } else if (guess) {
+            const { data: matchedEvents } = await supabase
+              .from("events")
+              .select("id, suggest")
+              .ilike("name", `%${guess}%`)
+              .order("date", { ascending: false })
+              .limit(1);
+            const target = matchedEvents?.[0];
+            if (target) {
+              const merged = [target.suggest, note].filter(Boolean).join("\n\n");
+              await supabase.from("events").update({ suggest: merged }).eq("id", target.id);
+              matched = true;
+            }
+          }
+
+          if (!matched) {
+            futurePlanItems.push(`[행사/학기 메모]${guess ? ` (${guess})` : ""} ${p.finalText}`);
+          }
+          continue;
+        }
+        const { error: insertErr } = await supabase.from("proposals").insert({
+          case_id: genCaseId("PRP"),
+          source: "meetings",
+          source_id: row.case_id,
+          date: row.date,
+          target_doc: p.targetDoc,
+          category: p.category || "미분류",
+          final_text: p.finalText,
+        });
+        if (insertErr) throw new Error(insertErr.message);
+        created += 1;
+      }
+
+      const nextAgendaText = (result.nextAgendaItems || []).join("\n");
+      const futurePlanText = futurePlanItems.join("\n");
+
+      await supabase
+        .from("meetings")
+        .update({
+          scanned_at: new Date().toISOString(),
+          next_agenda: [row.next_agenda, nextAgendaText].filter(Boolean).join("\n") || null,
+          final_record: [row.final_record, futurePlanText].filter(Boolean).join("\n") || null,
+        })
+        .eq("id", row.id);
+    } catch (err) {
+      // 처리 도중 실패하면 다음 배치 스캔에서 다시 시도할 수 있도록 찜을 되돌립니다.
+      await supabase.from("meetings").update({ scanned_at: null }).eq("id", row.id);
+      throw err;
+    }
   }
 
   return created;

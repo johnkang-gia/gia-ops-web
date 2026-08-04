@@ -36,7 +36,7 @@ export default async function StudentsSearchPage() {
   const { data } = await supabase
     .from("wr_students")
     .select(
-      "id, student_no, name, name_en, grade, class_name, class_id, birth_date, phone, parent_phone, address, note, status, created_at"
+      "id, student_no, name, name_en, grade, class_name, class_id, birth_date, phone, parent_phone, parent_email, gender, allergies, address, note, custom_fields, status, created_at"
     )
     .eq("status", "active")
     .order("name", { ascending: true });

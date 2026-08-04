@@ -2243,3 +2243,33 @@ grant execute on function restore_backup(uuid) to authenticated;
 -- "업무 + 업무결과"로 이어서 볼 수 있습니다(요청: "완료탭에 들어가면, 보관함으로 가고,
 -- 보고서에 업무와 업무결과로 나와서").
 alter table tasks add column if not exists resolution_note text;
+
+-- ===== 59. 학생 명부 확장(보호자 이메일/성별/알러지) + 커스텀 칼럼 =====
+-- "학생등록할 때 ... 보호자이메일, ... 성별, 알러지여부 기록할 수 있게 해주고, 혹시나 칼럼을
+-- 추가할 수도 있으니 칼럼 추가 기능도 넣어줘"라는 요청으로, 고정 컬럼 3개(보호자 이메일/성별/
+-- 알러지)를 wr_students에 추가하고, 그 외 앞으로 필요할 수 있는 항목은 관리자가 화면에서
+-- 직접 칼럼을 만들 수 있도록 custom_fields(jsonb) + 칼럼 정의 테이블로 확장 가능하게 했습니다.
+alter table wr_students add column if not exists parent_email text;
+alter table wr_students add column if not exists gender text check (gender in ('남', '여'));
+alter table wr_students add column if not exists allergies text;
+-- 관리자가 화면에서 "+ 칼럼 추가"로 만든 항목의 값은 { 칼럼키: "입력값" } 형태로 여기 담깁니다.
+alter table wr_students add column if not exists custom_fields jsonb not null default '{}'::jsonb;
+
+-- 관리자가 직접 추가한 칼럼의 정의(이름표시용 라벨/입력형식)를 저장합니다. field_key는 화면에서
+-- 무작위로 생성해 절대 겹치지 않게 하고, 학생별 실제 값은 위 wr_students.custom_fields에 이
+-- field_key를 키로 저장됩니다. 칼럼을 지워도(삭제) 이미 입력된 값 자체는 학생 레코드에 남아있고
+-- 화면에서만 더 이상 보이지 않습니다(데이터 유실 방지).
+create table if not exists wr_student_field_defs (
+  id uuid primary key default gen_random_uuid(),
+  field_key text not null unique,
+  label text not null,
+  field_type text not null default 'text' check (field_type in ('text', 'number', 'date')),
+  sort_order int not null default 0,
+  created_by text,
+  created_at timestamptz not null default now()
+);
+
+alter table wr_student_field_defs enable row level security;
+drop policy if exists "giamicro_all_wr_student_field_defs" on wr_student_field_defs;
+create policy "giamicro_all_wr_student_field_defs" on wr_student_field_defs
+  for all using (is_giamicro_user()) with check (is_giamicro_user());

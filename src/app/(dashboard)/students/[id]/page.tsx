@@ -3,7 +3,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isDeveloperEmail } from "@/lib/roles";
-import type { Incident, Task, TaskComment, ChatMessage, WrClass, WrEnrollment, WrReport, WrStudent } from "@/lib/types";
+import type { Incident, Task, TaskComment, ChatMessage, WrClass, WrEnrollment, WrReport, WrStudent, WrStudentFieldDef } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +42,7 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
     taskCommentsRes,
     messagesRes,
     currentClassRes,
+    fieldDefsRes,
   ] = await Promise.all([
     supabase.from("wr_enrollments").select("*").eq("student_id", id).order("created_at", { ascending: false }),
     supabase.from("wr_reports").select("*").eq("student_id", id).order("report_date", { ascending: false }),
@@ -55,7 +56,9 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
     supabase.from("task_comments").select("*").ilike("content", `%${searchName}%`).order("created_at", { ascending: false }).limit(20),
     supabase.from("messages").select("*").ilike("content", `%${searchName}%`).order("created_at", { ascending: false }).limit(20),
     student.class_id ? supabase.from("wr_classes").select("*").eq("id", student.class_id).maybeSingle() : Promise.resolve({ data: null }),
+    supabase.from("wr_student_field_defs").select("*").order("sort_order", { ascending: true }),
   ]);
+  const fieldDefs = (fieldDefsRes.data as WrStudentFieldDef[] | null) ?? [];
 
   const enrollments = (enrollmentsRes.data as WrEnrollment[] | null) ?? [];
   const reports = (reportsRes.data as WrReport[] | null) ?? [];
@@ -112,11 +115,22 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <h2 className="mb-2 text-sm font-bold text-slate-700">기본 인적사항</h2>
           <dl className="flex flex-col gap-1.5 text-sm">
+            <div className="flex justify-between"><dt className="text-slate-400">성별</dt><dd>{student.gender || "-"}</dd></div>
             <div className="flex justify-between"><dt className="text-slate-400">생년월일</dt><dd>{fmtDate(student.birth_date)}</dd></div>
             <div className="flex justify-between"><dt className="text-slate-400">학생 연락처</dt><dd>{student.phone || "-"}</dd></div>
             <div className="flex justify-between"><dt className="text-slate-400">보호자 연락처</dt><dd>{student.parent_phone || "-"}</dd></div>
+            <div className="flex justify-between"><dt className="text-slate-400">보호자 이메일</dt><dd>{student.parent_email || "-"}</dd></div>
             <div className="flex justify-between"><dt className="text-slate-400">주소</dt><dd className="max-w-[60%] text-right">{student.address || "-"}</dd></div>
+            <div className="flex justify-between"><dt className="text-slate-400">알러지</dt><dd className="max-w-[60%] text-right">{student.allergies || "-"}</dd></div>
             {student.note && <div className="flex justify-between"><dt className="text-slate-400">메모</dt><dd className="max-w-[60%] text-right">{student.note}</dd></div>}
+            {fieldDefs.map((f) =>
+              student.custom_fields?.[f.field_key] ? (
+                <div key={f.id} className="flex justify-between">
+                  <dt className="text-slate-400">{f.label}</dt>
+                  <dd className="max-w-[60%] text-right">{student.custom_fields[f.field_key]}</dd>
+                </div>
+              ) : null
+            )}
           </dl>
         </div>
 

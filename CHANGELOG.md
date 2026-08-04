@@ -4,6 +4,51 @@
 `version` 값과 항상 일치시킵니다. 업데이트할 때마다 이 파일 맨 위에 새 항목을 추가하고,
 같은 내용을 GitHub Desktop의 커밋 Summary/Description에도 그대로 사용하면 됩니다.
 
+## v0.57.0 - 2026-08-04 (staging)
+
+학생 명부 관리(학생 관리 페이지)에 학생 인적사항 항목을 늘리고, 앞으로 필요한 항목을 직접
+추가할 수 있는 "칼럼 추가" 기능과 구글시트 같은 정렬 기능을 넣었습니다.
+
+- **기록 항목 추가**: 학생이름·영어이름은 이미 있었고, 이번에 보호자 이메일·성별·알러지를
+  새로 추가했습니다(보호자 연락처·주소·생일은 이미 있던 항목을 이 화면에서도 바로 입력/수정할
+  수 있게 했습니다).
+- **칼럼 추가 기능**: "+ 칼럼 추가" 버튼으로 원하는 이름(예: 형제자매, 통학버스 노선)과
+  입력 형식(텍스트/숫자/날짜)을 정해 새 칼럼을 만들 수 있습니다. 만든 칼럼은 바로 표에
+  나타나고, 학생별로 값을 입력할 수 있습니다. 칼럼을 지워도 이미 입력했던 값 자체는 남아있고
+  화면에서만 안 보이게 됩니다(데이터 유실 방지).
+- **학생 명부 표 + 정렬**: 학생 명부 관리(주간 학생 관찰기록 → 관리 → 학생 명부 관리)에서
+  전체 학생을 표로 보고, 학년 → 반 → 이름(가나다) 순으로 기본 정렬됩니다. 구글시트처럼 칼럼
+  제목을 클릭하면 그 칼럼 기준으로 오름차순/내림차순 정렬을 바로 바꿀 수 있습니다.
+- 모든 칸은 클릭해서 바로 수정할 수 있습니다(기존 영어이름 인라인 수정 방식을 전체 칸으로
+  확장).
+- 학생 통합 프로필(/students/[id]) 화면에도 보호자 이메일·성별·알러지·직접 추가한 칼럼
+  값이 함께 표시됩니다.
+
+DB에 아래 SQL을 한 번 실행해주세요 (Supabase SQL Editor):
+
+```sql
+-- ===== 59. 학생 명부 확장(보호자 이메일/성별/알러지) + 커스텀 칼럼 =====
+alter table wr_students add column if not exists parent_email text;
+alter table wr_students add column if not exists gender text check (gender in ('남', '여'));
+alter table wr_students add column if not exists allergies text;
+alter table wr_students add column if not exists custom_fields jsonb not null default '{}'::jsonb;
+
+create table if not exists wr_student_field_defs (
+  id uuid primary key default gen_random_uuid(),
+  field_key text not null unique,
+  label text not null,
+  field_type text not null default 'text' check (field_type in ('text', 'number', 'date')),
+  sort_order int not null default 0,
+  created_by text,
+  created_at timestamptz not null default now()
+);
+
+alter table wr_student_field_defs enable row level security;
+drop policy if exists "giamicro_all_wr_student_field_defs" on wr_student_field_defs;
+create policy "giamicro_all_wr_student_field_defs" on wr_student_field_defs
+  for all using (is_giamicro_user()) with check (is_giamicro_user());
+```
+
 ## v0.56.11 - 2026-08-04 (staging)
 
 접속중 배지 호버 툴팁이 "적용 안 된 것 같다"는 피드백을 받아 방식을 바꿨습니다. 브라우저

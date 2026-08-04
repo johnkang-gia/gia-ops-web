@@ -417,9 +417,26 @@ export type WrStudent = {
   birth_date: string | null;
   phone: string | null;
   parent_phone: string | null;
+  parent_email: string | null;
+  gender: "남" | "여" | null;
+  allergies: string | null;
   address: string | null;
   note: string | null;
+  // 관리자가 "+ 칼럼 추가"로 직접 만든 항목의 값입니다. 키는 wr_student_field_defs.field_key와
+  // 짝을 이루고, 값은 항상 문자열로 저장합니다(숫자/날짜 칼럼도 표시용 문자열로 저장).
+  custom_fields: Record<string, string>;
   status: "active" | "inactive";
+  created_at: string;
+};
+
+// 학생 명부에 관리자가 직접 추가한 커스텀 칼럼의 정의입니다.
+export type WrStudentFieldDef = {
+  id: string;
+  field_key: string;
+  label: string;
+  field_type: "text" | "number" | "date";
+  sort_order: number;
+  created_by: string | null;
   created_at: string;
 };
 

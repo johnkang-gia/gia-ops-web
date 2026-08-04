@@ -84,7 +84,7 @@ export default function DateTimeCard({ compact = false }: { compact?: boolean })
 
   if (!mounted || !now) {
     return compact ? (
-      <div className="h-16 animate-pulse rounded-lg bg-slate-50" />
+      <div className="h-16 animate-pulse rounded-lg bg-[var(--shell-hover-bg,#f8fafc)]" />
     ) : (
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="h-40 animate-pulse rounded-lg bg-slate-50" />
@@ -131,10 +131,22 @@ export default function DateTimeCard({ compact = false }: { compact?: boolean })
       }
     >
       <div className={compact ? "mb-0.5 text-center" : "mb-3 text-center"}>
-        <div className={compact ? "text-[11px] font-bold tabular-nums text-slate-800" : "text-2xl font-bold tabular-nums text-slate-800"}>
+        <div
+          className={
+            compact
+              ? "text-[11px] font-bold tabular-nums text-[var(--shell-text,#1e293b)]"
+              : "text-2xl font-bold tabular-nums text-slate-800"
+          }
+        >
           {timeStr}
         </div>
-        <div className={compact ? "text-[8px] font-semibold text-slate-500" : "mt-1 text-sm font-semibold text-slate-600"}>
+        <div
+          className={
+            compact
+              ? "text-[8px] font-semibold text-[var(--shell-text-muted,#64748b)]"
+              : "mt-1 text-sm font-semibold text-slate-600"
+          }
+        >
           {dateStr} {compact ? `(${weekdayStr[0]})` : ""}
         </div>
         {!compact && (
@@ -155,12 +167,21 @@ export default function DateTimeCard({ compact = false }: { compact?: boolean })
             e.stopPropagation();
             setViewOffset((v) => v - 1);
           }}
-          className={"rounded text-slate-400 hover:bg-slate-100 " + (compact ? "px-1 text-[8px]" : "px-1.5 py-0.5 text-xs")}
+          className={
+            "rounded transition-colors " +
+            (compact
+              ? "px-1 text-[8px] text-[var(--shell-text-muted,#94a3b8)] hover:bg-[var(--shell-hover-bg,#f1f5f9)]"
+              : "px-1.5 py-0.5 text-xs text-slate-400 hover:bg-slate-100")
+          }
           aria-label="이전 달"
         >
           ‹
         </button>
-        <div className={compact ? "text-[8px] font-semibold text-slate-600" : "text-xs font-semibold text-slate-600"}>
+        <div
+          className={
+            compact ? "text-[8px] font-semibold text-[var(--shell-text,#475569)]" : "text-xs font-semibold text-slate-600"
+          }
+        >
           {vYear}년 {vMonth + 1}월
         </div>
         <button
@@ -168,7 +189,12 @@ export default function DateTimeCard({ compact = false }: { compact?: boolean })
             e.stopPropagation();
             setViewOffset((v) => v + 1);
           }}
-          className={"rounded text-slate-400 hover:bg-slate-100 " + (compact ? "px-1 text-[8px]" : "px-1.5 py-0.5 text-xs")}
+          className={
+            "rounded transition-colors " +
+            (compact
+              ? "px-1 text-[8px] text-[var(--shell-text-muted,#94a3b8)] hover:bg-[var(--shell-hover-bg,#f1f5f9)]"
+              : "px-1.5 py-0.5 text-xs text-slate-400 hover:bg-slate-100")
+          }
           aria-label="다음 달"
         >
           ›
@@ -177,7 +203,19 @@ export default function DateTimeCard({ compact = false }: { compact?: boolean })
 
       <div className={"grid grid-cols-7 text-center " + (compact ? "gap-y-0 text-[7px]" : "gap-y-1 text-[11px]")}>
         {WEEKDAYS.map((w, i) => (
-          <div key={w} className={"font-semibold " + (i === 0 ? "text-red-400" : i === 6 ? "text-blue-400" : "text-slate-400")}>
+          <div
+            key={w}
+            className={
+              "font-semibold " +
+              (i === 0
+                ? "text-red-400"
+                : i === 6
+                ? "text-blue-400"
+                : compact
+                ? "text-[var(--shell-text-muted,#94a3b8)]"
+                : "text-slate-400")
+            }
+          >
             {compact ? w[0] : w}
           </div>
         ))}
@@ -201,17 +239,23 @@ export default function DateTimeCard({ compact = false }: { compact?: boolean })
                     "클릭하면 학사일정으로 이동합니다"
                   }
                   className={
-                    "flex items-center justify-center rounded-full transition hover:bg-slate-100 " +
+                    "flex items-center justify-center rounded-full transition " +
+                    (compact ? "hover:bg-[var(--shell-hover-bg,#f1f5f9)]" : "hover:bg-slate-100") +
+                    " " +
                     cellSize +
                     " " +
                     (isToday
-                      ? "bg-blue-600 font-bold text-white hover:bg-blue-600"
+                      ? compact
+                        ? "bg-[var(--shell-accent,#2563eb)] font-bold text-[var(--shell-accent-text,#ffffff)] hover:bg-[var(--shell-accent,#2563eb)]"
+                        : "bg-blue-600 font-bold text-white hover:bg-blue-600"
                       : isHoliday
                       ? "font-bold text-red-500"
                       : col === 0
                       ? "text-red-400"
                       : col === 6
                       ? "text-blue-400"
+                      : compact
+                      ? "text-[var(--shell-text,#475569)]"
                       : "text-slate-600")
                   }
                 >

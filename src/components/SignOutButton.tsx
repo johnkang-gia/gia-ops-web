@@ -16,7 +16,12 @@ export default function SignOutButton({ dark = false }: { dark?: boolean }) {
   return (
     <button
       onClick={handleSignOut}
-      className={"text-sm " + (dark ? "text-white/60 hover:text-white" : "text-slate-500 hover:text-slate-900")}
+      className={
+        "text-sm transition-colors " +
+        (dark
+          ? "text-white/60 hover:text-white"
+          : "text-[var(--shell-text-muted,#64748b)] hover:text-[var(--shell-text,#0f172a)]")
+      }
     >
       로그아웃
     </button>

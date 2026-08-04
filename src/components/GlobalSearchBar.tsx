@@ -65,23 +65,25 @@ export default function GlobalSearchBar({ compact = false }: { compact?: boolean
         }}
         onFocus={() => setOpen(true)}
         placeholder="🔍 학생·사건·회의·행사·업무 검색..."
-        className="w-full rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-[12px] outline-none focus:border-blue-300 focus:bg-white"
+        className="w-full rounded-lg border border-[var(--shell-input-border,#e2e8f0)] bg-[var(--shell-input-bg,#f8fafc)] px-2.5 py-1.5 text-[12px] text-[var(--shell-text,#334155)] outline-none transition-colors placeholder:text-[var(--shell-text-muted,#94a3b8)] focus:border-blue-300 focus:bg-[var(--shell-bg,#ffffff)]"
       />
       {open && query.trim() && (
-        <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-80 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg">
-          {loading && <div className="px-3 py-2 text-[11px] text-slate-400">검색 중...</div>}
-          {!loading && results.length === 0 && <div className="px-3 py-2 text-[11px] text-slate-400">검색 결과가 없습니다.</div>}
+        <div className="shell-dropdown absolute left-0 right-0 top-full z-50 mt-1 max-h-80 overflow-y-auto rounded-lg border border-[var(--shell-border,#e2e8f0)] bg-[var(--shell-bg,#ffffff)] shadow-lg">
+          {loading && <div className="px-3 py-2 text-[11px] text-[var(--shell-text-muted,#94a3b8)]">검색 중...</div>}
+          {!loading && results.length === 0 && (
+            <div className="px-3 py-2 text-[11px] text-[var(--shell-text-muted,#94a3b8)]">검색 결과가 없습니다.</div>
+          )}
           {!loading &&
             results.map((r) => (
               <button
                 key={`${r.type}-${r.id}`}
                 onClick={() => go(r)}
-                className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] hover:bg-slate-50"
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] transition-colors hover:bg-[var(--shell-hover-bg,#f8fafc)]"
               >
                 <span className="shrink-0">{TYPE_ICON[r.type]}</span>
                 <span className="min-w-0 flex-1">
-                  <div className="truncate font-medium text-slate-700">{r.title}</div>
-                  <div className="truncate text-[10px] text-slate-400">{r.subtitle}</div>
+                  <div className="truncate font-medium text-[var(--shell-text,#334155)]">{r.title}</div>
+                  <div className="truncate text-[10px] text-[var(--shell-text-muted,#94a3b8)]">{r.subtitle}</div>
                 </span>
               </button>
             ))}

@@ -13,6 +13,7 @@ import DateTimeCard from "@/components/home/DateTimeCard";
 import GlobalSearchBar from "@/components/GlobalSearchBar";
 import PausedFeaturesBanner from "@/components/dev/PausedFeaturesBanner";
 import NotificationBell, { NotificationProvider, TaskCountBadge } from "@/components/NotificationBell";
+import { APP_VERSION } from "@/lib/version";
 import type { AiFeatureFlag } from "@/lib/types";
 
 // 학기 배지 - 로그인 인증(me)과 달리 이 화면을 막을 이유가 없는 "장식성" 정보라서, layout
@@ -321,6 +322,14 @@ export default async function DashboardLayout({
             🗣️ 문의및건의사항
           </Link>
         )}
+        {/* 요청("현재 버전을 문의사항 아래에 표시해주고 어떤 버전에서 무엇이 개선되었는지
+            버전로그 볼 수 있도록") - 누르면 /changelog로 이동합니다. */}
+        <Link
+          href="/changelog"
+          className="mb-1 flex items-center gap-1.5 px-3 py-1.5 text-[10px] text-[var(--shell-text-muted)] hover:text-[var(--shell-text)]"
+        >
+          🏷️ v{APP_VERSION}
+        </Link>
         <div className="border-t border-[var(--shell-border)] pt-3">
           <SignOutButton />
         </div>

@@ -53,6 +53,9 @@ body {
   --shell-card-bg: rgba(248, 250, 252, 0.6);
   --shell-hover-bg: #f8fafc;
   --shell-accent: var(--color-gia-navy);
+  --shell-accent-text: #ffffff;
+  --shell-input-bg: #f8fafc;
+  --shell-input-border: #e2e8f0;
   --shell-blur: 0px;
 }
 
@@ -65,6 +68,9 @@ body {
   --shell-card-bg: rgba(255, 255, 255, 0.04);
   --shell-hover-bg: rgba(255, 255, 255, 0.06);
   --shell-accent: #7dd3fc;
+  --shell-accent-text: #0b1120;
+  --shell-input-bg: rgba(255, 255, 255, 0.05);
+  --shell-input-border: #1e293b;
   --shell-blur: 0px;
 }
 
@@ -79,20 +85,26 @@ body {
   --shell-card-bg: rgba(255, 255, 255, 0.4);
   --shell-hover-bg: rgba(255, 255, 255, 0.65);
   --shell-accent: #2563eb;
+  --shell-accent-text: #ffffff;
+  --shell-input-bg: rgba(255, 255, 255, 0.55);
+  --shell-input-border: rgba(255, 255, 255, 0.6);
   --shell-blur: 16px;
 }
 
-/* GIA 브랜드 - 로고 남색 + 골드 조합. 기존 --color-gia-navy*/--color-gia-gold* 팔레트를
+/* GIA 브랜드 - 로고 남색 + 골드 조합. 기존 --color-gia-navy, --color-gia-gold 계열 팔레트를
    그대로 재사용해 로그인 화면(.gia-navy-panel)과 톤이 이어지도록 했습니다. */
 [data-theme="gia-brand"] {
   --shell-page-bg: linear-gradient(165deg, #0f1b33 0%, #172a4d 55%, #223a66 100%);
   --shell-bg: #13224a;
   --shell-border: rgba(198, 161, 91, 0.35);
   --shell-text: #f4ecd8;
-  --shell-text-muted: rgba(239, 227, 200, 0.6);
+  --shell-text-muted: rgba(239, 227, 200, 0.62);
   --shell-card-bg: rgba(255, 255, 255, 0.06);
   --shell-hover-bg: rgba(198, 161, 91, 0.16);
   --shell-accent: var(--color-gia-gold);
+  --shell-accent-text: #241a04;
+  --shell-input-bg: rgba(255, 255, 255, 0.07);
+  --shell-input-border: rgba(198, 161, 91, 0.3);
   --shell-blur: 0px;
 }
 
@@ -105,6 +117,123 @@ body {
 .shell-blur {
   backdrop-filter: blur(var(--shell-blur));
   -webkit-backdrop-filter: blur(var(--shell-blur));
+}
+
+/* ===== 사이드바 메뉴 버튼 - 테마별 보정 =====
+   요청("리퀴드 글라스의 경우 메뉴버튼들 글라스처럼, GIA 테마의 경우 배경색은 로고색으로
+   버튼들은 골드색으로... 고급스러운 느낌"). 라이트/다크는 카테고리별 고유 강조색(업무=블루,
+   위클리=틸 등, NavLinks.tsx의 ACCENT_* 참고)을 그대로 쓰고, 리퀴드글라스/GIA만 그 색 대신
+   테마 고유의 톤으로 덮어씁니다. 이 블록이 @import "tailwindcss" 다음(같은 파일의 뒷부분)에
+   있고 선택자 특이도가 Tailwind 유틸리티 클래스(class 1개)와 동일해서, 소스 순서상 나중에
+   나오는 이 규칙이 이깁니다 - NavLinks.tsx 쪽 코드는 그대로 두고 CSS만으로 테마를 얹습니다. */
+.shell-nav-btn {
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease,
+    transform 0.1s ease;
+}
+.shell-nav-btn:active {
+  transform: scale(0.97);
+}
+
+[data-theme="liquid-glass"] .shell-nav-btn-active {
+  background: rgba(255, 255, 255, 0.6);
+  border-color: rgba(255, 255, 255, 0.8);
+  color: #1d4ed8;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 2px 10px rgba(37, 99, 235, 0.14);
+}
+[data-theme="liquid-glass"] .shell-nav-btn:not(.shell-nav-btn-active):hover {
+  background: rgba(255, 255, 255, 0.45);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+[data-theme="liquid-glass"] .shell-flyout {
+  background: rgba(255, 255, 255, 0.62);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+[data-theme="gia-brand"] .shell-nav-btn-active {
+  background: linear-gradient(135deg, rgba(198, 161, 91, 0.24), rgba(198, 161, 91, 0.08));
+  border-color: var(--color-gia-gold);
+  color: var(--color-gia-gold-soft);
+  box-shadow: inset 0 0 0 1px rgba(198, 161, 91, 0.28);
+}
+[data-theme="gia-brand"] .shell-nav-btn:not(.shell-nav-btn-active):hover {
+  background: rgba(198, 161, 91, 0.12);
+  color: var(--color-gia-gold-soft);
+}
+[data-theme="gia-brand"] .shell-flyout {
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+}
+
+/* 모바일 가로 스크롤 메뉴(활성=진한 배경 알약)도 같은 논리로 리퀴드글라스/GIA에서 덮어씁니다. */
+[data-theme="liquid-glass"] .shell-nav-pill-active {
+  background: rgba(37, 99, 235, 0.85);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+[data-theme="gia-brand"] .shell-nav-pill-active {
+  background: linear-gradient(135deg, var(--color-gia-gold), #a9843f);
+  color: #241a04;
+}
+
+/* ===== 모션 - 구조상 자연스러운 지점에만 절제해서 적용 =====
+   플라이아웃/검색결과 드롭다운처럼 "떠오르는" 요소는 살짝 아래로 미끄러지며 나타나고, 알림
+   배지처럼 "값이 막 생겨난" 요소는 팝(pop)하듯 커지며 나타납니다. 접근성을 위해
+   prefers-reduced-motion을 존중합니다. */
+@keyframes shellFadeSlideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes shellBadgePop {
+  0% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  70% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes shellEntryFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.shell-flyout,
+.shell-dropdown {
+  animation: shellFadeSlideDown 0.14s ease-out;
+}
+.shell-badge-pop {
+  animation: shellBadgePop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.shell-entry-fade {
+  animation: shellEntryFadeUp 0.25s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shell-flyout,
+  .shell-dropdown,
+  .shell-badge-pop,
+  .shell-entry-fade {
+    animation: none;
+  }
 }
 
 /* 로그인/승인대기/온보딩/PIN 등 "메뉴 없는" 인증 화면 전용 남색 배경 - 사이드바 메뉴는

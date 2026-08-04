@@ -111,7 +111,7 @@ export default function NotificationBell() {
     <Link
       href="/work"
       title={`아직 확인하지 않은 업무 ${needsAckCount}건`}
-      className="absolute -left-1 -top-1 z-10 flex h-4 min-w-[1rem] animate-pulse items-center justify-center rounded-full border-2 border-white bg-red-500 px-1 text-[10px] font-bold leading-none text-white shadow-sm"
+      className="shell-badge-pop absolute -left-1 -top-1 z-10 flex h-4 min-w-[1rem] animate-pulse items-center justify-center rounded-full border-2 border-[var(--shell-bg,#ffffff)] bg-red-500 px-1 text-[10px] font-bold leading-none text-white shadow-sm"
     >
       {needsAckCount > 99 ? "99+" : needsAckCount}
     </Link>
@@ -127,7 +127,7 @@ export function TaskCountBadge() {
     <Link
       href="/work"
       title={`내 업무 총 ${myTaskCount}건`}
-      className="ml-auto shrink-0 rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold leading-none text-slate-500"
+      className="shell-badge-pop ml-auto shrink-0 rounded-md bg-[var(--shell-hover-bg,#f1f5f9)] px-1.5 py-0.5 text-[10px] font-bold leading-none text-[var(--shell-text-muted,#64748b)] transition-colors"
     >
       {myTaskCount > 99 ? "99+" : myTaskCount}
     </Link>

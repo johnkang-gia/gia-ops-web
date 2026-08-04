@@ -150,7 +150,7 @@ export function SidebarNavLinks({ categories }: { categories: NavCategory[] }) {
   // 한눈에 보였는데, 플라이아웃으로 평평하게 펼치면서 그 구분이 사라졌습니다. 얇은 실선을
   // 각 메뉴 항목 사이(divide-y)에 다시 넣어서 원래처럼 구분되도록 했습니다.
   return (
-    <div className="flex flex-col divide-y divide-slate-100">
+    <div className="flex flex-col divide-y divide-[var(--shell-border,#f1f5f9)]">
       {categories.map((cat) => {
         const active = isActiveCategory(cat, best);
         const accent = cat.accent ?? "navy";
@@ -180,10 +180,10 @@ export function SidebarNavLinks({ categories }: { categories: NavCategory[] }) {
                 router.push(targetHref);
               }}
               className={
-                "flex w-full cursor-pointer items-center gap-2 rounded-lg border-l-2 px-3 py-1.5 text-left text-sm font-medium transition-colors " +
+                "shell-nav-btn flex w-full cursor-pointer items-center gap-2 rounded-lg border-l-2 px-3 py-1.5 text-left text-sm font-medium " +
                 (active
-                  ? ACCENT_BORDER[accent] + " " + ACCENT_BG_SOFT[accent] + " " + ACCENT_TEXT[accent] + " font-bold"
-                  : "border-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-900")
+                  ? "shell-nav-btn-active " + ACCENT_BORDER[accent] + " " + ACCENT_BG_SOFT[accent] + " " + ACCENT_TEXT[accent] + " font-bold"
+                  : "border-transparent text-[var(--shell-text-muted,#475569)] hover:bg-[var(--shell-hover-bg,#f1f5f9)] hover:text-[var(--shell-text,#0f172a)]")
               }
             >
               <span>{cat.icon}</span>
@@ -207,7 +207,7 @@ export function SidebarNavLinks({ categories }: { categories: NavCategory[] }) {
             onMouseEnter={() => closeTimer.current && clearTimeout(closeTimer.current)}
             onMouseLeave={scheduleClose}
             style={{ position: "fixed", top: popupPos.top, left: popupPos.left }}
-            className="z-50 w-56 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl"
+            className="shell-flyout z-50 w-56 rounded-xl border border-[var(--shell-border,#e2e8f0)] bg-[var(--shell-bg,#ffffff)] p-1.5 shadow-xl"
           >
             <div className={"mb-1 px-2 pt-1 text-[10px] font-bold uppercase tracking-wide " + ACCENT_TEXT[openCategory.accent ?? "navy"]}>
               {openCategory.label}
@@ -226,10 +226,10 @@ export function SidebarNavLinks({ categories }: { categories: NavCategory[] }) {
                     router.push(item.href);
                   }}
                   className={
-                    "flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors " +
+                    "shell-nav-btn flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm " +
                     (itemActive
-                      ? ACCENT_BG_SOFT[accent] + " " + ACCENT_TEXT[accent] + " font-semibold"
-                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-900")
+                      ? "shell-nav-btn-active " + ACCENT_BG_SOFT[accent] + " " + ACCENT_TEXT[accent] + " font-semibold"
+                      : "text-[var(--shell-text-muted,#475569)] hover:bg-[var(--shell-hover-bg,#f1f5f9)] hover:text-[var(--shell-text,#0f172a)]")
                   }
                 >
                   <span>{item.icon}</span>
@@ -280,8 +280,10 @@ export function MobileNavLinks({ categories }: { categories: NavCategory[] }) {
             type="button"
             onClick={() => router.push(item.href)}
             className={
-              "shrink-0 cursor-pointer rounded-lg px-3 py-1.5 text-sm font-medium transition-colors " +
-              (active ? "bg-gia-navy text-white" : "text-slate-600 hover:bg-slate-100")
+              "shell-nav-btn shrink-0 cursor-pointer rounded-lg px-3 py-1.5 text-sm font-medium " +
+              (active
+                ? "shell-nav-pill-active bg-[var(--shell-accent,#0f1b33)] text-[var(--shell-accent-text,#ffffff)]"
+                : "text-[var(--shell-text-muted,#475569)] hover:bg-[var(--shell-hover-bg,#f1f5f9)]")
             }
           >
             {item.icon} {item.label}

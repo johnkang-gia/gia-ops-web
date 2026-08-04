@@ -32,7 +32,6 @@ function buildOpsCategory(): NavCategory {
       { href: "/proposals", label: "제안함", icon: "📝" },
       { href: "/adopted", label: "채택예정", icon: "📬" },
       { href: "/manuals", label: "매뉴얼", icon: "📖" },
-      { href: "/documents", label: "서류함", icon: "📁" },
     ],
   };
 }
@@ -55,6 +54,30 @@ function buildSchoolCategory(isAdmin: boolean, isStaffOrAbove: boolean): NavCate
   items.push({ href: "/terms", label: "학기 관리", icon: "🗓️" });
   if (isAdmin) items.push({ href: "/admin/users", label: "사용자 관리", icon: "🔐" });
   return { key: "school", label: "학교 관리", icon: "🏛️", accent: "purple", href: "/school", items };
+}
+
+// "학교 문서함" - 예전에는 업무 보고서·회의 보고서·매뉴얼·운영계획안·서류함이 운영관리/업무 등
+// 여러 메뉴에 흩어져 있어서, 구두로 처리되던 업무·회의를 문서로 정리해도 정작 어디서 다시
+// 찾아보고 인쇄할지 한눈에 안 보였습니다(요청: "gia의 모든 서류와 보고서들을 통합 관리해서
+// 이 메뉴에서 전부 인쇄하거나, 열람, 검색할 수 있도록"). 학교관리 바로 아래에 이 메뉴 하나를
+// 두고, 열람·검색·인쇄가 필요한 문서류를 전부 여기로 모았습니다. 매뉴얼/운영계획안은 실제
+// 작성·편집은 여전히 운영관리(채택예정 발행 워크플로우)에서 이뤄지지만, 열람·인쇄 진입점은
+// 여기에도 부메뉴로 함께 둡니다. 서류함은 운영관리에서 완전히 이쪽으로 옮겼습니다.
+function buildSchoolDocumentsCategory(): NavCategory {
+  return {
+    key: "school-documents",
+    label: "학교 문서함",
+    icon: "🗄️",
+    accent: "purple",
+    href: "/school/documents",
+    items: [
+      { href: "/school/documents", label: "문서함 홈", icon: "🗄️" },
+      { href: "/school/documents/reports", label: "보고서 (업무·회의)", icon: "📊" },
+      { href: "/manuals?doc=실무자용", label: "매뉴얼", icon: "📗" },
+      { href: "/manuals?doc=학부모용", label: "운영계획안", icon: "📘" },
+      { href: "/documents", label: "서류함", icon: "📁" },
+    ],
+  };
 }
 
 function buildWeeklyReportCategory(isAdmin: boolean): NavCategory {
@@ -142,6 +165,7 @@ export default async function DashboardLayout({
       { key: "staff-manual", label: "실무자 매뉴얼", icon: "📚", href: "/staff-manual", accent: "amber" },
       buildOpsCategory(),
       buildSchoolCategory(isAdmin, isStaffOrAbove),
+      buildSchoolDocumentsCategory(),
     ];
     if (isStaffOrAbove) categories.push(buildWeeklyReportCategory(isAdmin));
     if (isAdmin) categories.push(buildAdminCategory());

@@ -42,9 +42,15 @@ const TABS: { title: string; doc: TargetDoc; icon: string }[] = [
   { title: "GIA 실무자매뉴얼", doc: "실무자용", icon: "📗" },
 ];
 
-export default function ManualsClient({ initialItems }: { initialItems: ManualSection[] }) {
+export default function ManualsClient({
+  initialItems,
+  initialDoc,
+}: {
+  initialItems: ManualSection[];
+  initialDoc?: TargetDoc;
+}) {
   const [items, setItems] = useState<ManualSection[]>(initialItems);
-  const [activeDoc, setActiveDoc] = useState<TargetDoc>("학부모용");
+  const [activeDoc, setActiveDoc] = useState<TargetDoc>(initialDoc ?? "학부모용");
   const [page, setPage] = useState(1);
 
   // 학부모용/실무자용 탭을 바꾸면 목록이 달라지므로 이전 페이지 번호가 남아있지 않도록 리셋합니다.

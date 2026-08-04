@@ -18,6 +18,8 @@ const BOUNDED_LIST_PATHS = [
   "/adopted",
   "/manuals",
   "/documents",
+  "/school/documents",
+  "/school/documents/reports",
   "/inquiries",
   "/admin/users",
   "/students",

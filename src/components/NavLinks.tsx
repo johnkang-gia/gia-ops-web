@@ -136,14 +136,15 @@ export function SidebarNavLinks({ categories }: { categories: NavCategory[] }) {
         return (
           <div
             key={cat.key}
-            className="py-0.5"
             onMouseEnter={(e) => hasChildren && openFlyout(cat.key, e.currentTarget)}
             onMouseLeave={scheduleClose}
           >
             {/* <Link href>가 아니라 버튼+router.push로 이동시킵니다: <a href>를 쓰면 마우스를
                 올렸을 때 브라우저가 창 아래쪽 상태표시줄에 링크 주소를 계속 띄우는데(요청:
                 "메뉴에 마우스 올리면 창아래에 주소가 뜨는데 없앨 수 있어?"), 이건 브라우저
-                자체 동작이라 CSS/JS로는 못 없애고 실제 href를 안 쓰는 방법뿐입니다. */}
+                자체 동작이라 CSS/JS로는 못 없애고 실제 href를 안 쓰는 방법뿐입니다. 각 줄의
+                상하 여백(py)도 최대한 줄여서 스크롤 없이 메뉴 전체가 한눈에 보이게 했습니다
+                (요청: "메뉴들이 최대한 한눈에 보이게"). */}
             <button
               type="button"
               onClick={() => {
@@ -151,7 +152,7 @@ export function SidebarNavLinks({ categories }: { categories: NavCategory[] }) {
                 router.push(targetHref);
               }}
               className={
-                "flex w-full cursor-pointer items-center gap-2 rounded-lg border-l-2 px-3 py-2 text-left text-sm font-medium transition-colors " +
+                "flex w-full cursor-pointer items-center gap-2 rounded-lg border-l-2 px-3 py-1.5 text-left text-sm font-medium transition-colors " +
                 (active
                   ? ACCENT_BORDER[accent] + " " + ACCENT_BG_SOFT[accent] + " " + ACCENT_TEXT[accent] + " font-bold"
                   : "border-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-900")

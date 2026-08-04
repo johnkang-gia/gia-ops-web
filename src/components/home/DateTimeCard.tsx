@@ -130,7 +130,7 @@ export default function DateTimeCard({ compact = false }: { compact?: boolean })
 
   if (!mounted || !now) {
     return compact ? (
-      <div className="h-24 animate-pulse rounded-lg bg-slate-50" />
+      <div className="h-16 animate-pulse rounded-lg bg-slate-50" />
     ) : (
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="h-40 animate-pulse rounded-lg bg-slate-50" />
@@ -159,21 +159,21 @@ export default function DateTimeCard({ compact = false }: { compact?: boolean })
     ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
   ];
 
-  const cellSize = compact ? "h-4 w-4 text-[8px]" : "h-6 w-6";
+  const cellSize = compact ? "h-3.5 w-3.5 text-[7px]" : "h-6 w-6";
 
   return (
     <div
       className={
         compact
-          ? "rounded-lg border border-slate-200 bg-slate-50/70 px-1.5 py-1.5"
+          ? "bg-transparent"
           : "rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
       }
     >
-      <div className={compact ? "mb-1 text-center" : "mb-3 text-center"}>
-        <div className={compact ? "text-xs font-bold tabular-nums text-slate-800" : "text-2xl font-bold tabular-nums text-slate-800"}>
+      <div className={compact ? "mb-0.5 text-center" : "mb-3 text-center"}>
+        <div className={compact ? "text-[11px] font-bold tabular-nums text-slate-800" : "text-2xl font-bold tabular-nums text-slate-800"}>
           {timeStr}
         </div>
-        <div className={compact ? "text-[9px] font-semibold text-slate-500" : "mt-1 text-sm font-semibold text-slate-600"}>
+        <div className={compact ? "text-[8px] font-semibold text-slate-500" : "mt-1 text-sm font-semibold text-slate-600"}>
           {dateStr} {compact ? `(${weekdayStr[0]})` : ""}
         </div>
         {!compact && (
@@ -182,30 +182,30 @@ export default function DateTimeCard({ compact = false }: { compact?: boolean })
             {todayHoliday ? ` · ${todayHoliday}` : ""}
           </div>
         )}
-        {compact && todayHoliday && <div className="text-[8px] font-semibold text-red-500">{todayHoliday}</div>}
+        {compact && todayHoliday && <div className="text-[7px] font-semibold text-red-500">{todayHoliday}</div>}
       </div>
 
       <div className={compact ? "mb-0.5 flex items-center justify-between" : "mb-2 flex items-center justify-between"}>
         <button
           onClick={() => setViewOffset((v) => v - 1)}
-          className={"rounded text-slate-400 hover:bg-slate-100 " + (compact ? "px-1 text-[9px]" : "px-1.5 py-0.5 text-xs")}
+          className={"rounded text-slate-400 hover:bg-slate-100 " + (compact ? "px-1 text-[8px]" : "px-1.5 py-0.5 text-xs")}
           aria-label="이전 달"
         >
           ‹
         </button>
-        <div className={compact ? "text-[9px] font-semibold text-slate-600" : "text-xs font-semibold text-slate-600"}>
+        <div className={compact ? "text-[8px] font-semibold text-slate-600" : "text-xs font-semibold text-slate-600"}>
           {vYear}년 {vMonth + 1}월
         </div>
         <button
           onClick={() => setViewOffset((v) => v + 1)}
-          className={"rounded text-slate-400 hover:bg-slate-100 " + (compact ? "px-1 text-[9px]" : "px-1.5 py-0.5 text-xs")}
+          className={"rounded text-slate-400 hover:bg-slate-100 " + (compact ? "px-1 text-[8px]" : "px-1.5 py-0.5 text-xs")}
           aria-label="다음 달"
         >
           ›
         </button>
       </div>
 
-      <div className={"grid grid-cols-7 text-center " + (compact ? "gap-y-0 text-[8px]" : "gap-y-1 text-[11px]")}>
+      <div className={"grid grid-cols-7 text-center " + (compact ? "gap-y-0 text-[7px]" : "gap-y-1 text-[11px]")}>
         {WEEKDAYS.map((w, i) => (
           <div key={w} className={"font-semibold " + (i === 0 ? "text-red-400" : i === 6 ? "text-blue-400" : "text-slate-400")}>
             {compact ? w[0] : w}
@@ -263,7 +263,7 @@ export default function DateTimeCard({ compact = false }: { compact?: boolean })
         onClick={() => router.push("/academic-calendar")}
         className={
           compact
-            ? "mt-1 w-full rounded text-center text-[9px] font-semibold text-emerald-600 hover:bg-emerald-50"
+            ? "mt-0.5 w-full rounded text-center text-[8px] font-semibold text-emerald-600 hover:bg-emerald-50"
             : "mt-2 w-full rounded-lg py-1 text-center text-xs font-semibold text-emerald-600 hover:bg-emerald-50"
         }
       >

@@ -196,21 +196,24 @@ export default async function DashboardLayout({
     // 스크롤되고, 사이드바 메뉴는 항상 제자리에 그대로 있습니다.
     <div className="flex h-screen flex-1">
       <aside className="hidden w-56 shrink-0 border-r border-slate-200 bg-white p-4 sm:flex sm:flex-col">
-        <div className="mb-6 px-2">
-          <Link href={homeHref} className="inline-block cursor-pointer">
-            <Image src="/logo-main.png" alt="GIA Micro Lab" width={538} height={120} priority className="h-10 w-auto" />
-          </Link>
-          {!isTeacher &&
-            (termLabel ? (
-              <Link
-                href="/terms"
-                className="mt-2 inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700 hover:bg-blue-100"
-              >
-                📅 {termLabel}
-              </Link>
-            ) : (
-              <div className="mt-2 text-[11px] text-slate-300">진행중인 학기 없음</div>
-            ))}
+        <div className="mb-3 px-2">
+          {/* 로고 아래 학기 표시를 가운데 정렬합니다(요청: "로고아래 학기표시 가운데정렬"). */}
+          <div className="flex flex-col items-center text-center">
+            <Link href={homeHref} className="inline-block cursor-pointer">
+              <Image src="/logo-main.png" alt="GIA Micro Lab" width={538} height={120} priority className="h-10 w-auto" />
+            </Link>
+            {!isTeacher &&
+              (termLabel ? (
+                <Link
+                  href="/terms"
+                  className="mt-2 inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700 hover:bg-blue-100"
+                >
+                  📅 {termLabel}
+                </Link>
+              ) : (
+                <div className="mt-2 text-[11px] text-slate-300">진행중인 학기 없음</div>
+              ))}
+          </div>
           <Link
             href="/account"
             className="mt-2 flex items-center gap-2 rounded-lg px-1 py-1 hover:bg-slate-50"
@@ -236,17 +239,17 @@ export default async function DashboardLayout({
           <PausedFeaturesBanner disabledFeatures={disabledFeatures} />
         </div>
 
-        {/* 통합 검색 - 학생/사건/회의/행사/업무/서류를 메뉴를 옮겨다니지 않고 바로 찾습니다(요청). */}
-        <div className="mb-3 shrink-0">
-          <GlobalSearchBar />
+        {/* 검색+달력을 한 상자로 합쳤습니다(요청: "프로필 아래 검색과 달력위젯을 합쳐줘 검색아래에
+            달력있게"). 위쪽엔 통합 검색(학생/사건/회의/행사/업무/서류), 아래쪽엔 축소 달력을
+            같은 테두리 안에 둬서 메뉴 영역을 더 넓게 확보했습니다(요청: "이 위젯 좀더 작게"). */}
+        <div className="mb-2 shrink-0 rounded-lg border border-slate-200 bg-slate-50/60 p-1.5">
+          <GlobalSearchBar compact />
+          <div className="mt-1.5 border-t border-slate-100 pt-1.5">
+            <DateTimeCard compact />
+          </div>
         </div>
 
-        {/* 달력+시계를 축소판으로 항상 띄워둡니다(메뉴 스크롤에 밀리지 않도록 nav 바깥, shrink-0). */}
-        <div className="mb-3 shrink-0 border-b border-slate-100 pb-3">
-          <DateTimeCard compact />
-        </div>
-
-        <nav className="flex flex-1 flex-col gap-1 overflow-y-auto overflow-x-visible">
+        <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto overflow-x-visible">
           <SidebarNavLinks categories={categories} />
         </nav>
         {/* 문의및건의사항은 특정 부서/직급 전용 기능이 아니라 버그 제보·건의 창구라, 관리자

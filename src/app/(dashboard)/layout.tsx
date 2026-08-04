@@ -12,6 +12,7 @@ import MainArea from "@/components/MainArea";
 import DateTimeCard from "@/components/home/DateTimeCard";
 import GlobalSearchBar from "@/components/GlobalSearchBar";
 import PausedFeaturesBanner from "@/components/dev/PausedFeaturesBanner";
+import NotificationBell, { NotificationProvider } from "@/components/NotificationBell";
 import type { AiFeatureFlag } from "@/lib/types";
 
 // 학기 배지 - 로그인 인증(me)과 달리 이 화면을 막을 이유가 없는 "장식성" 정보라서, layout
@@ -241,6 +242,7 @@ export default async function DashboardLayout({
     // "채팅을 계속치니까 채팅창이 아래로 쭉 내려가면서 메뉴랑 화면들이 전부 위로 올라가버려").
     // 높이를 화면 크기로 고정해야 그 안의 각 화면(예: 업무 탭 채팅)이 자기 영역 안에서만
     // 스크롤되고, 사이드바 메뉴는 항상 제자리에 그대로 있습니다.
+    <NotificationProvider userEmail={isTeacher ? null : me.email}>
     <div className="flex h-screen flex-1">
       <aside className="hidden w-56 shrink-0 border-r border-slate-200 bg-white p-4 sm:flex sm:flex-col">
         <div className="mb-3 px-2">
@@ -255,28 +257,32 @@ export default async function DashboardLayout({
               </Suspense>
             )}
           </div>
-          <Link
-            href="/account"
-            className="mt-2 flex items-center gap-2 rounded-lg px-1 py-1 hover:bg-slate-50"
-          >
-            <div className="h-8 w-8 shrink-0 overflow-hidden rounded-full bg-slate-100">
-              {me.avatar_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={me.avatar_url} alt={displayName} className="h-full w-full object-cover" />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center text-xs font-bold text-slate-300">
-                  {displayName[0]?.toUpperCase()}
-                </div>
-              )}
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-1 truncate text-xs font-semibold text-slate-700">
-                <span className="truncate">{displayName}</span>
-                {badgeLabel && <span className="shrink-0 text-slate-400">({badgeLabel})</span>}
+          {/* 채팅에 새 글이 올라오거나 내 업무목록에 새 업무가 등록되면 여기 프로필 왼쪽 위에
+              빨간 알림 배지가 뜹니다(요청: "메뉴항목 프로필 옆에 알람형식으로 알 수 있도록").
+              배지 자체가 클릭 가능한 별도 링크라(/work로 이동), 안쪽에 또 링크를 두는
+              마크업을 피하려고 감싸는 relative div를 하나 더 뒀습니다. */}
+          <div className="relative mt-2">
+            <Link href="/account" className="flex items-center gap-2 rounded-lg px-1 py-1 hover:bg-slate-50">
+              <div className="h-8 w-8 shrink-0 overflow-hidden rounded-full bg-slate-100">
+                {me.avatar_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={me.avatar_url} alt={displayName} className="h-full w-full object-cover" />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center text-xs font-bold text-slate-300">
+                    {displayName[0]?.toUpperCase()}
+                  </div>
+                )}
               </div>
-              <div className="truncate text-[11px] text-slate-400">{me.email}</div>
-            </div>
-          </Link>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1 truncate text-xs font-semibold text-slate-700">
+                  <span className="truncate">{displayName}</span>
+                  {badgeLabel && <span className="shrink-0 text-slate-400">({badgeLabel})</span>}
+                </div>
+                <div className="truncate text-[11px] text-slate-400">{me.email}</div>
+              </div>
+            </Link>
+            {!isTeacher && <NotificationBell />}
+          </div>
           <Suspense fallback={null}>
             <DisabledFeaturesSection />
           </Suspense>
@@ -321,7 +327,16 @@ export default async function DashboardLayout({
               <TermBadge variant="mobile" />
             </Suspense>
           )}
-          <SignOutButton />
+          <div className="flex items-center gap-2">
+            {/* 데스크톱 프로필 옆 배지와 같은 컴포넌트를 모바일에서는 계정 아이콘 옆에 둡니다. */}
+            <div className="relative">
+              <Link href="/account" className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-slate-400">
+                {displayName[0]?.toUpperCase()}
+              </Link>
+              {!isTeacher && <NotificationBell />}
+            </div>
+            <SignOutButton />
+          </div>
         </header>
         <div className="border-b border-slate-200 bg-white px-3 py-2 sm:hidden">
           <GlobalSearchBar compact />
@@ -337,5 +352,6 @@ export default async function DashboardLayout({
         <MainArea>{children}</MainArea>
       </div>
     </div>
+    </NotificationProvider>
   );
 }

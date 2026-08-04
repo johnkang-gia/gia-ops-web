@@ -4,6 +4,60 @@
 `version` 값과 항상 일치시킵니다. 업데이트할 때마다 이 파일 맨 위에 새 항목을 추가하고,
 같은 내용을 GitHub Desktop의 커밋 Summary/Description에도 그대로 사용하면 됩니다.
 
+## v0.57.4 - 2026-08-04 (staging)
+
+알림 배지(안 읽은 채팅 + 새 업무) 기능을 다시 넣었습니다. v0.57.2 때와 똑같은 화면이지만,
+스테이징을 먹통으로 만들었던 진짜 원인으로 보이는 구조적 버그를 고쳐서 다시 넣었습니다.
+
+- **원인**: 배지가 데스크톱 사이드바 프로필 옆 + 모바일 헤더 계정 아이콘 옆, 두 군데에
+  동시에 렌더링되는데(화면 크기에 따라 CSS로만 숨기는 방식이라 화면 크기와 무관하게 둘 다
+  항상 마운트됨), 각 배지가 자기 안에서 데이터 조회 + Realtime 구독을 따로 했습니다. 그
+  결과 완전히 같은 이름의 Realtime 채널을 동시에 두 번 구독하게 됐고, 이게 Supabase 쪽에서
+  문제를 일으켜 로그인된 상태로는 어느 화면도 아예 안 뜨는 원인이었던 것으로 보입니다
+  (v0.57.3에서 이 기능을 통째로 되돌리고 task_list_reads 테이블을 지운 뒤 정상화된 것으로
+  확인됨).
+- **수정**: 데이터 조회/실시간 구독 로직을 NotificationProvider 하나로 분리해서 화면
+  최상단(layout)에서 딱 한 번만 실행되게 하고, 실제 눈에 보이는 배지 두 개는 그 결과를
+  Context로 읽기만 하는 얇은 컴포넌트로 바꿨습니다. 이제 어디에 몇 개를 렌더링해도 실시간
+  구독은 항상 하나입니다.
+- **DB**: task_list_reads 테이블을 다시 만듭니다. 이번엔 스크립트 맨 앞에서 기존 테이블을
+  완전히 지우고 처음부터 새로 만들도록 해서, 이미 한 번 실행했든 안 했든 항상 같은 결과가
+  나오게 했습니다(재실행해도 충돌 없이 안전).
+
+```sql
+-- ===== v0.57.4: task_list_reads 재생성 (기존 걸 완전히 지우고 새로 만듦 - 여러 번 실행해도 안전) =====
+drop table if exists task_list_reads cascade;
+
+create table task_list_reads (
+  user_email text primary key,
+  last_seen_at timestamptz not null default now()
+);
+
+alter table task_list_reads enable row level security;
+create policy "giamicro_select_task_list_reads" on task_list_reads
+  for select using (is_giamicro_user());
+create policy "self_insert_task_list_reads" on task_list_reads
+  for insert with check (is_giamicro_user() and user_email = lower(auth.jwt() ->> 'email'));
+create policy "self_update_task_list_reads" on task_list_reads
+  for update
+  using (is_giamicro_user() and user_email = lower(auth.jwt() ->> 'email'))
+  with check (is_giamicro_user() and user_email = lower(auth.jwt() ->> 'email'));
+
+alter table task_list_reads replica identity full;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'task_list_reads'
+  ) then
+    alter publication supabase_realtime add table task_list_reads;
+  end if;
+exception when others then
+  null;
+end $$;
+```
+
 ## v0.57.3 - 2026-08-04 (staging)
 
 스테이징 주소가 "This page couldn't load"로 아예 안 뜨는 문제 진단 중 - v0.57.2(알림 배지)를

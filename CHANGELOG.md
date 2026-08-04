@@ -4,6 +4,41 @@
 `version` 값과 항상 일치시킵니다. 업데이트할 때마다 이 파일 맨 위에 새 항목을 추가하고,
 같은 내용을 GitHub Desktop의 커밋 Summary/Description에도 그대로 사용하면 됩니다.
 
+## v0.56.7 - 2026-08-04 (staging)
+
+보안 PIN 2차 확인 기능을 없애고, 업무 등록 시 고른 공개범위([나]/[공유]/[전체])가 실제
+조회 단계에서도 지켜지도록 손봤습니다.
+
+- **PIN 2차 보안 제거**: 구글 로그인(회사 계정만 허용) + 관리자 승인 두 단계로도 충분히
+  안전하다고 판단해, 로그인 뒤 한 번 더 개인 PIN을 입력하던 화면을 없앴습니다. 이제 승인만
+  나면 바로 화면에 들어갑니다.
+- **업무 공개범위를 실제로 제한**: 지금까지는 [나](개인)/[공유](태그)로 등록해도 화면에서만
+  안 보이게 감춰뒀을 뿐, 데이터 자체는 giamicro.com 로그인 계정이면 누구나 조회할 수
+  있었습니다. DB 조회 규칙(RLS)을 고쳐서 [나]는 등록자 본인에게만, [공유]는 등록자 본인과
+  태그된 사람에게만, [전체]는 그대로 모두에게 보이도록 실제로 막았습니다.
+- **내 업무목록 위젯 보완**: "내 업무목록"이 이제 내가 등록한 업무와 나를 태그한 업무를
+  함께 보여줍니다(예전에는 담당자로 태그된 것만 보였음) - [공유]로 다른 사람만 태그해도
+  등록한 나에게 바로 보입니다.
+- DB 변경: `pins` 테이블 삭제, `tasks` 테이블 조회(select) 정책 변경 - 아래 SQL을
+  Supabase SQL Editor에서 실행해 주세요.
+
+```sql
+-- PIN 2차 보안 제거
+drop table if exists pins;
+
+-- 업무(tasks) 공개범위 - 나/공유는 관계자만, 전체는 모두에게
+drop policy if exists "giamicro_select_tasks" on tasks;
+create policy "giamicro_select_tasks" on tasks
+  for select using (
+    is_giamicro_user()
+    and (
+      origin_mode = '전체'
+      or owner_email = lower(auth.jwt() ->> 'email')
+      or lower(auth.jwt() ->> 'email') = any(assignee_emails)
+    )
+  );
+```
+
 ## v0.56.6 - 2026-08-04 (staging)
 
 사이드바 왼쪽 아래 미니 달력을 누르면 학사일정 페이지로 바로 넘어가도록 바꿨습니다.

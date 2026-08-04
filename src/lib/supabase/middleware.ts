@@ -1,6 +1,5 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import { isPinCookieValid, pinCookieName } from "@/lib/pinCookie";
 import { authOkCookieMaxAge, authOkCookieName, makeAuthOkCookieValue, readAuthOkCookie } from "@/lib/authCookie";
 import { isDeveloperEmail } from "@/lib/roles";
 
@@ -16,9 +15,10 @@ type CookieToSet = {
  * 모든 요청마다 Supabase 로그인 세션을 갱신하고, giamicro.com 도메인 계정이 아니면
  * 로그인을 강제로 끊습니다(서버 미들웨어 단계 확인 + Postgres RLS 이중 확인 중 첫 번째 방어선).
  * 도메인 확인을 통과해도 관리자가 승인한 계정이 아니면 /pending(승인 대기)으로 보냅니다
- * (개발자 계정은 면제). 승인까지 통과한 뒤에는 PIN 2차 확인 여부를 검사합니다(개발자 계정 면제).
- * /login, /auth, /pin, /api/pin, /pending 으로 시작하는 경로는 이 검사들 자체를 위한
- * 화면/API이므로 제외합니다.
+ * (개발자 계정은 면제). 예전에는 승인 뒤 PIN 2차 확인까지 요구했지만, 이미 (1)회사 구글
+ * 계정 로그인 + (2)관리자 승인 두 단계로 충분히 보안이 된다는 판단에 따라 PIN 단계는
+ * 제거했습니다(요청: "보안 핀 설정은 없애줘 지금으로도 확실히 보안은 되는것 같아").
+ * /login, /auth, /pending 으로 시작하는 경로는 이 검사들 자체를 위한 화면/API이므로 제외합니다.
  */
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
@@ -56,8 +56,6 @@ export async function updateSession(request: NextRequest) {
   const isAuthRoute =
     path.startsWith("/login") ||
     path.startsWith("/auth") ||
-    path.startsWith("/pin") ||
-    path.startsWith("/api/pin") ||
     path.startsWith("/pending") ||
     path.startsWith("/onboarding") ||
     path.startsWith("/api/onboarding");
@@ -124,13 +122,6 @@ export async function updateSession(request: NextRequest) {
           path: "/",
           maxAge: authOkCookieMaxAge(),
         });
-      }
-
-      const pinCookie = request.cookies.get(pinCookieName())?.value;
-      if (!isPinCookieValid(user.id, pinCookie)) {
-        const url = request.nextUrl.clone();
-        url.pathname = "/pin";
-        return NextResponse.redirect(url);
       }
 
       // 교사는 위클리 리포트 화면만 볼 수 있습니다. GIA ops(사건/회의/매뉴얼 등)와 업무

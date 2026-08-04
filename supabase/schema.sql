@@ -2074,3 +2074,30 @@ on conflict (category, name) do nothing;
 -- 페이지) status='진행중' 필터 + start_date 정렬로 이 테이블을 조회합니다. 지금까지 이 테이블에
 -- 색인이 없어 매번 전체를 훑고 있었는데, 학기 수가 쌓일수록 영향이 커지므로 색인을 추가합니다.
 create index if not exists terms_status_start_date_idx on terms (status, start_date desc);
+
+-- ===== 55. PIN 2차 보안 제거 =====
+-- 구글 로그인(도메인 제한) + 관리자 승인 두 단계로도 충분히 보안이 된다는 판단에 따라, 승인
+-- 뒤 한 번 더 개인 PIN을 입력하게 하던 2차 확인 단계를 없앴습니다(요청: "보안 핀 설정은
+-- 없애줘 지금으로도 확실히 보안은 되는것 같아"). 앱 쪽 미들웨어의 PIN 체크와 /pin 화면,
+-- /api/pin 라우트는 이미 코드에서 제거했고, 여기서는 더 이상 쓰지 않는 pins 테이블만 정리합니다.
+drop table if exists pins;
+
+-- ===== 56. 업무(tasks) 공개범위 - 등록 방식(나/공유/전체)에 따라 실제로 조회를 제한 =====
+-- 지금까지 "giamicro_select_tasks" 정책은 giamicro.com 로그인 계정이면 누구나 모든 업무를
+-- 조회할 수 있었습니다. [나]/[공유] 모드로 등록해도 실제로는 화면에서만 안 보였을 뿐, 다른
+-- 직원 브라우저로도 데이터 자체는 그대로 내려가고 있었습니다. 요청에 따라 조회 단계에서부터
+-- 실제로 막습니다: [전체]는 그대로 모두에게 보이고, [나](개인 업무)와 [공유](태그한 사람에게만
+-- 배정)는 등록자 본인과 담당자(assignee_emails)로 태그된 사람에게만 보입니다. [나] 모드는
+-- 등록자=담당자=나 자신이라 결과적으로 나에게만 보이고, [공유] 모드는 등록자인 나와 내가
+-- 태그한 사람 모두에게 보입니다(요청: "업무등록 나로 할경우 다른사람에게는 안보이고
+-- 나에게만... 태그를 하면 내 업무목록과 태그한사람 둘에게... 전체로 하면 모두에게").
+drop policy if exists "giamicro_select_tasks" on tasks;
+create policy "giamicro_select_tasks" on tasks
+  for select using (
+    is_giamicro_user()
+    and (
+      origin_mode = '전체'
+      or owner_email = lower(auth.jwt() ->> 'email')
+      or lower(auth.jwt() ->> 'email') = any(assignee_emails)
+    )
+  );

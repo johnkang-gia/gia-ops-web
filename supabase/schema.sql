@@ -2273,39 +2273,3 @@ alter table wr_student_field_defs enable row level security;
 drop policy if exists "giamicro_all_wr_student_field_defs" on wr_student_field_defs;
 create policy "giamicro_all_wr_student_field_defs" on wr_student_field_defs
   for all using (is_giamicro_user()) with check (is_giamicro_user());
-
--- ===== 60. 사이드바 프로필 옆 알림 배지(안 읽은 채팅 + 새 업무) =====
--- "채팅에 글이 올라오거나, 내업무, 전체업무등 내 업무목록에 업무가 등록되면 메뉴항목 프로필
--- 옆에 알람형식으로 알 수 있도록" 요청입니다. 채팅은 기존 message_reads(부서별 "마지막으로
--- 읽은 시각")를 그대로 재사용하고, 업무는 message_reads와 똑같은 패턴으로 "마지막으로 업무
--- 탭을 연 시각" 한 줄만 저장하는 테이블을 새로 둡니다. 이후 그 시각보다 늦게 등록된, 내가
--- 등록한 게 아니면서 나를 태그했거나 [전체]로 등록된 업무 수를 세면 "새 업무" 배지가 됩니다.
-create table if not exists task_list_reads (
-  user_email text primary key,
-  last_seen_at timestamptz not null default now()
-);
-
-alter table task_list_reads enable row level security;
-drop policy if exists "giamicro_select_task_list_reads" on task_list_reads;
-create policy "giamicro_select_task_list_reads" on task_list_reads
-  for select using (is_giamicro_user());
-drop policy if exists "self_insert_task_list_reads" on task_list_reads;
-create policy "self_insert_task_list_reads" on task_list_reads
-  for insert with check (is_giamicro_user() and user_email = lower(auth.jwt() ->> 'email'));
-drop policy if exists "self_update_task_list_reads" on task_list_reads;
-create policy "self_update_task_list_reads" on task_list_reads
-  for update
-  using (is_giamicro_user() and user_email = lower(auth.jwt() ->> 'email'))
-  with check (is_giamicro_user() and user_email = lower(auth.jwt() ->> 'email'));
-
-alter table task_list_reads replica identity full;
-
-do $$
-begin
-  if not exists (
-    select 1 from pg_publication_tables
-    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'task_list_reads'
-  ) then
-    alter publication supabase_realtime add table task_list_reads;
-  end if;
-end $$;

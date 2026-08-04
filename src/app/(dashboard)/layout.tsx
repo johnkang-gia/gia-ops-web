@@ -12,7 +12,6 @@ import MainArea from "@/components/MainArea";
 import DateTimeCard from "@/components/home/DateTimeCard";
 import GlobalSearchBar from "@/components/GlobalSearchBar";
 import PausedFeaturesBanner from "@/components/dev/PausedFeaturesBanner";
-import NotificationBell from "@/components/NotificationBell";
 import type { AiFeatureFlag } from "@/lib/types";
 
 // 학기 배지 - 로그인 인증(me)과 달리 이 화면을 막을 이유가 없는 "장식성" 정보라서, layout
@@ -256,32 +255,28 @@ export default async function DashboardLayout({
               </Suspense>
             )}
           </div>
-          {/* 채팅에 새 글이 올라오거나 내 업무목록에 새 업무가 등록되면 여기 프로필 왼쪽 위에
-              빨간 알림 배지가 뜹니다(요청: "메뉴항목 프로필 옆에 알람형식으로 알 수 있도록").
-              배지 자체가 클릭 가능한 별도 링크라(/work로 이동), 안쪽에 또 링크를 두는
-              마크업을 피하려고 감싸는 relative div를 하나 더 뒀습니다. */}
-          <div className="relative mt-2">
-            <Link href="/account" className="flex items-center gap-2 rounded-lg px-1 py-1 hover:bg-slate-50">
-              <div className="h-8 w-8 shrink-0 overflow-hidden rounded-full bg-slate-100">
-                {me.avatar_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={me.avatar_url} alt={displayName} className="h-full w-full object-cover" />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center text-xs font-bold text-slate-300">
-                    {displayName[0]?.toUpperCase()}
-                  </div>
-                )}
-              </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-1 truncate text-xs font-semibold text-slate-700">
-                  <span className="truncate">{displayName}</span>
-                  {badgeLabel && <span className="shrink-0 text-slate-400">({badgeLabel})</span>}
+          <Link
+            href="/account"
+            className="mt-2 flex items-center gap-2 rounded-lg px-1 py-1 hover:bg-slate-50"
+          >
+            <div className="h-8 w-8 shrink-0 overflow-hidden rounded-full bg-slate-100">
+              {me.avatar_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={me.avatar_url} alt={displayName} className="h-full w-full object-cover" />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-xs font-bold text-slate-300">
+                  {displayName[0]?.toUpperCase()}
                 </div>
-                <div className="truncate text-[11px] text-slate-400">{me.email}</div>
+              )}
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1 truncate text-xs font-semibold text-slate-700">
+                <span className="truncate">{displayName}</span>
+                {badgeLabel && <span className="shrink-0 text-slate-400">({badgeLabel})</span>}
               </div>
-            </Link>
-            {!isTeacher && <NotificationBell userEmail={me.email} />}
-          </div>
+              <div className="truncate text-[11px] text-slate-400">{me.email}</div>
+            </div>
+          </Link>
           <Suspense fallback={null}>
             <DisabledFeaturesSection />
           </Suspense>
@@ -326,16 +321,7 @@ export default async function DashboardLayout({
               <TermBadge variant="mobile" />
             </Suspense>
           )}
-          <div className="flex items-center gap-2">
-            {/* 데스크톱 프로필 옆 배지와 같은 컴포넌트를 모바일에서는 계정 아이콘 옆에 둡니다. */}
-            <div className="relative">
-              <Link href="/account" className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-slate-400">
-                {displayName[0]?.toUpperCase()}
-              </Link>
-              {!isTeacher && <NotificationBell userEmail={me.email} />}
-            </div>
-            <SignOutButton />
-          </div>
+          <SignOutButton />
         </header>
         <div className="border-b border-slate-200 bg-white px-3 py-2 sm:hidden">
           <GlobalSearchBar compact />

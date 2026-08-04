@@ -4,6 +4,53 @@
 `version` 값과 항상 일치시킵니다. 업데이트할 때마다 이 파일 맨 위에 새 항목을 추가하고,
 같은 내용을 GitHub Desktop의 커밋 Summary/Description에도 그대로 사용하면 됩니다.
 
+## v0.57.2 - 2026-08-04 (staging)
+
+사이드바 프로필 옆에 새 채팅/새 업무 알림 배지를 추가했습니다.
+
+- **알림 배지**: 채팅에 새 글이 올라오거나(내가 안 읽은 부서 채팅), 내 업무목록에 새 업무가
+  등록되면(내가 태그됐거나 [전체]로 등록된 업무, 내가 등록한 건 제외) 사이드바 프로필 사진
+  왼쪽 위에 빨간 숫자 배지가 뜹니다. 모바일에서도 상단 계정 아이콘 옆에 같은 배지가 뜹니다.
+  배지를 클릭하면 업무 탭으로 이동합니다.
+- 채팅은 이미 있던 "읽음 표시" 기록을 그대로 쓰고, 업무는 업무 탭을 열 때마다 "마지막으로
+  확인한 시각"을 새로 기록해서 그 이후 등록된 업무만 셉니다 - 업무 탭을 한 번 열면 배지가
+  다시 사라집니다.
+
+DB에 아래 SQL을 한 번 실행해주세요 (Supabase SQL Editor):
+
+```sql
+-- ===== 60. 사이드바 프로필 옆 알림 배지(안 읽은 채팅 + 새 업무) =====
+create table if not exists task_list_reads (
+  user_email text primary key,
+  last_seen_at timestamptz not null default now()
+);
+
+alter table task_list_reads enable row level security;
+drop policy if exists "giamicro_select_task_list_reads" on task_list_reads;
+create policy "giamicro_select_task_list_reads" on task_list_reads
+  for select using (is_giamicro_user());
+drop policy if exists "self_insert_task_list_reads" on task_list_reads;
+create policy "self_insert_task_list_reads" on task_list_reads
+  for insert with check (is_giamicro_user() and user_email = lower(auth.jwt() ->> 'email'));
+drop policy if exists "self_update_task_list_reads" on task_list_reads;
+create policy "self_update_task_list_reads" on task_list_reads
+  for update
+  using (is_giamicro_user() and user_email = lower(auth.jwt() ->> 'email'))
+  with check (is_giamicro_user() and user_email = lower(auth.jwt() ->> 'email'));
+
+alter table task_list_reads replica identity full;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'task_list_reads'
+  ) then
+    alter publication supabase_realtime add table task_list_reads;
+  end if;
+end $$;
+```
+
 ## v0.57.1 - 2026-08-04 (staging)
 
 사이드바 메뉴 하이라이트 버그를 고치고, AI 기능 on/off를 진짜 스위치 모양으로 바꿨습니다.

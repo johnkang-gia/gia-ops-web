@@ -43,18 +43,6 @@ export default function WorkBoardClient({
   const [toasts, setToasts] = useState<StatusToast[]>([]);
   const [guideOpen, setGuideOpen] = useState(false);
 
-  // 업무 탭을 열 때마다 "내가 마지막으로 업무 목록을 확인한 시각"을 갱신합니다. 사이드바
-  // 프로필 옆 알림 배지(NotificationBell)가 이 시각 이후 등록된 내 업무 수를 세서 보여주는데,
-  // 여기서 지금 봤다고 표시해줘야 배지가 다시 0으로 내려갑니다(요청: "내업무, 전체업무등 내
-  // 업무목록에 업무가 등록되면 메뉴항목 프로필 옆에 알람형식으로 알 수 있도록").
-  useEffect(() => {
-    const supabase = createClient();
-    supabase
-      .from("task_list_reads")
-      .upsert({ user_email: userEmail, last_seen_at: new Date().toISOString() }, { onConflict: "user_email" })
-      .then(() => {});
-  }, [userEmail]);
-
   // 공유(태그된) 업무의 상태가 바뀌면 등록자·담당자 전원이 실시간으로 알 수 있게, 상태 변경만
   // 따로 감시하는 채널입니다. useRealtimeTable의 일반 구독은 화면 상태(tasks)를 갱신하는
   // 용도라 "무엇이 바뀌었는지"를 구분하지 않는데, 여기서는 status가 실제로 바뀐 경우에만,

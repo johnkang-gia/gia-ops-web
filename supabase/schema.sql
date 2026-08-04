@@ -2274,46 +2274,11 @@ drop policy if exists "giamicro_all_wr_student_field_defs" on wr_student_field_d
 create policy "giamicro_all_wr_student_field_defs" on wr_student_field_defs
   for all using (is_giamicro_user()) with check (is_giamicro_user());
 
--- ===== 60. 사이드바 프로필 옆 알림 배지(안 읽은 채팅 + 새 업무) =====
--- "채팅에 글이 올라오거나, 내업무, 전체업무등 내 업무목록에 업무가 등록되면 메뉴항목 프로필
--- 옆에 알람형식으로 알 수 있도록" 요청입니다. 채팅은 기존 message_reads(부서별 "마지막으로
--- 읽은 시각")를 그대로 재사용하고, 업무는 message_reads와 똑같은 패턴으로 "마지막으로 업무
--- 탭을 연 시각" 한 줄만 저장하는 테이블을 새로 둡니다. 이후 그 시각보다 늦게 등록된, 내가
--- 등록한 게 아니면서 나를 태그했거나 [전체]로 등록된 업무 수를 세면 "새 업무" 배지가 됩니다.
---
--- v0.57.2에서 이 테이블을 처음 만든 뒤 스테이징 전체가 로드되지 않는 문제가 있었고, 원인이
--- 이 테이블/publication 등록 쪽 어딘가로 좁혀져서 한 번 지웠다 다시 만듭니다. 재실행해도
--- 항상 같은 결과가 나오도록 맨 앞에서 기존 걸 완전히 지우고 처음부터 다시 만듭니다(이미
--- 실행한 적이 있어도, 실행한 적이 없어도 안전하게 그대로 복붙 실행 가능).
+-- ===== 60. 사이드바 프로필 옆 알림 배지 (v0.57.6에서 설계 변경 - task_list_reads 폐기) =====
+-- 처음에는(v0.57.2~0.57.5) "안 읽은 채팅 + 마지막 방문 이후 새 업무" 방식이라 방문 시각을
+-- 저장하는 task_list_reads 테이블이 필요했는데, 요청("프로필 옆에 동그라미 숫자를 띄우고,
+-- 그게 내업무 갯수를 뜻하고 새로운 업무가 생길때마다 빨간색으로 깜빡깜빡이도록 하고
+-- 업무확인하면 그냥 작은 원안에 숫자를 표시하게")에 따라 "지금 내 업무함에 있는 업무
+-- 개수"를 그때그때 세는 방식으로 바뀌면서 더 이상 방문 시각을 저장할 필요가 없어졌습니다.
+-- 이미 실행한 적이 있다면 정리 차원에서 지웁니다(실행한 적이 없어도 안전합니다).
 drop table if exists task_list_reads cascade;
-
-create table task_list_reads (
-  user_email text primary key,
-  last_seen_at timestamptz not null default now()
-);
-
-alter table task_list_reads enable row level security;
-create policy "giamicro_select_task_list_reads" on task_list_reads
-  for select using (is_giamicro_user());
-create policy "self_insert_task_list_reads" on task_list_reads
-  for insert with check (is_giamicro_user() and user_email = lower(auth.jwt() ->> 'email'));
-create policy "self_update_task_list_reads" on task_list_reads
-  for update
-  using (is_giamicro_user() and user_email = lower(auth.jwt() ->> 'email'))
-  with check (is_giamicro_user() and user_email = lower(auth.jwt() ->> 'email'));
-
-alter table task_list_reads replica identity full;
-
-do $$
-begin
-  if not exists (
-    select 1 from pg_publication_tables
-    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'task_list_reads'
-  ) then
-    alter publication supabase_realtime add table task_list_reads;
-  end if;
-exception when others then
-  -- publication 등록 단계에서 예기치 못한 오류가 나더라도(예: 이미 다른 상태로 등록돼 있는 등)
-  -- 테이블/정책 생성 자체는 이미 끝난 뒤이므로 여기서 전체 스크립트가 실패하지 않게 합니다.
-  null;
-end $$;

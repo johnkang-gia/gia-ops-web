@@ -10,7 +10,7 @@ export default async function RecordsPage() {
   const supabase = await createClient();
   const [{ data }, currentTerm, me] = await Promise.all([
     supabase.from("incidents").select("*").order("date", { ascending: false }).limit(200),
-    getCurrentTerm(supabase),
+    getCurrentTerm(),
     getCurrentAppUser(),
   ]);
 

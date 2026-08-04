@@ -9,7 +9,7 @@ export default async function MeetingsPage() {
   const supabase = await createClient();
   const [{ data }, currentTerm] = await Promise.all([
     supabase.from("meetings").select("*").order("date", { ascending: false }).limit(200),
-    getCurrentTerm(supabase),
+    getCurrentTerm(),
   ]);
 
   return <MeetingsClient initialItems={(data as Meeting[]) ?? []} currentTerm={currentTerm} />;

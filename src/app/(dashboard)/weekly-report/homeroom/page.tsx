@@ -15,7 +15,7 @@ export default async function HomeroomPage() {
 
   const [{ data: classesData }, term] = await Promise.all([
     supabase.from("wr_classes").select("*").or(`teacher_email.eq.${email},sub_teacher_email.eq.${email}`),
-    getCurrentTerm(supabase),
+    getCurrentTerm(),
   ]);
   const classes = (classesData as WrClass[] | null) ?? [];
 

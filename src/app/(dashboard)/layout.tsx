@@ -100,7 +100,7 @@ export default async function DashboardLayout({
   // (giamicro 도메인 전체가 볼 수 있도록 RLS가 허용 - is_giamicro_user()).
   const [me, currentTerm, disabledFeaturesRes] = await Promise.all([
     getCurrentAppUser(),
-    getCurrentTerm(supabase),
+    getCurrentTerm(),
     supabase.from("ai_feature_flags").select("*").eq("enabled", false).order("updated_at", { ascending: false }),
   ]);
   const disabledFeatures = (disabledFeaturesRes.data as AiFeatureFlag[] | null) ?? [];

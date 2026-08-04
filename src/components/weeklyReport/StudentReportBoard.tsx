@@ -40,7 +40,14 @@ export default function StudentReportBoard({
       }
       setLoading(true);
       const supabase = createClient();
-      let query = supabase.from("wr_reports").select("*").in("student_id", studentIds);
+      // WrReport 타입이 쓰는 컬럼만 명시적으로 지정합니다(전체 컬럼 대신) - 학생 수 x 리포트
+      // 개수가 쌓일수록 이 조회의 전송량이 커지므로, 화면에서 실제 쓰는 열만 받아옵니다.
+      let query = supabase
+        .from("wr_reports")
+        .select(
+          "id, student_id, term_id, class_id, grade, subject, academic, improvement, participation, behavior, social, teacher_note, eval_badges, status, report_date, is_archived, created_at, updated_at"
+        )
+        .in("student_id", studentIds);
       if (term) query = query.eq("term_id", term.id);
       const { data } = await query;
       if (!cancelled) {

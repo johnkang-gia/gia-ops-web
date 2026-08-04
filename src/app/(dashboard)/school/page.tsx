@@ -23,7 +23,7 @@ export default async function SchoolDashboardPage() {
 
   const [currentTerm, { data: classesData }, { data: subjectsData }, { data: usersData }, { data: studentsData }] =
     await Promise.all([
-      getCurrentTerm(supabase),
+      getCurrentTerm(),
       supabase.from("wr_classes").select("*").order("grade", { ascending: true }).order("class_name", { ascending: true }),
       supabase.from("wr_subjects").select("*").order("name", { ascending: true }),
       supabase.from("app_users").select("*").eq("status", "approved").order("name", { ascending: true }),

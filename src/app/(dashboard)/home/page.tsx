@@ -57,7 +57,7 @@ async function loadHomeData() {
       .not("manual_cat", "is", null)
       .gte("date", ninetyDaysAgoStr)
       .order("date", { ascending: false }),
-    getCurrentTerm(supabase),
+    getCurrentTerm(),
     supabase.from("tasks").select("status, assignee_emails"),
   ]);
 

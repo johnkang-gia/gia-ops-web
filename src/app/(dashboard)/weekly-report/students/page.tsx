@@ -31,7 +31,7 @@ export default async function StudentsPage() {
       .order("class_name", { ascending: true })
       .order("name", { ascending: true }),
     supabase.from("wr_classes").select("*").order("grade", { ascending: true }).order("class_name", { ascending: true }),
-    getCurrentTerm(supabase),
+    getCurrentTerm(),
   ]);
 
   const students = (studentsData as WrStudent[] | null) ?? [];

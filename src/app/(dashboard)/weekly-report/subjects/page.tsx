@@ -15,7 +15,7 @@ export default async function MySubjectsPage() {
 
   const [{ data: subjectsData }, term] = await Promise.all([
     supabase.from("wr_subjects").select("*").eq("teacher_email", email).order("name", { ascending: true }),
-    getCurrentTerm(supabase),
+    getCurrentTerm(),
   ]);
   const subjects = (subjectsData as WrSubject[] | null) ?? [];
 

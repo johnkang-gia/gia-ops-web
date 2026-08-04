@@ -2068,3 +2068,9 @@ insert into gia_systems (category, name, status, description, source) values
   ('매뉴얼', '운영계획안 · 실무자매뉴얼 (AI 초안작성 포함)', '보유', 'AI 초안작성을 포함한 매뉴얼 작성/발행 시스템을 갖추고 있습니다.', 'manual'),
   ('운영계획안', '운영계획안(학부모용 문서)', '보유', '매뉴얼 시스템 내 학부모용 문서로 관리되고 있습니다.', 'manual')
 on conflict (category, name) do nothing;
+
+-- ===== 54. 속도개선: terms(학기) 테이블 인덱스 =====
+-- getCurrentTerm()이 "지금 진행중인 학기"를 찾기 위해 거의 모든 화면 진입 시(레이아웃+9개
+-- 페이지) status='진행중' 필터 + start_date 정렬로 이 테이블을 조회합니다. 지금까지 이 테이블에
+-- 색인이 없어 매번 전체를 훑고 있었는데, 학기 수가 쌓일수록 영향이 커지므로 색인을 추가합니다.
+create index if not exists terms_status_start_date_idx on terms (status, start_date desc);

@@ -183,7 +183,9 @@ export default function ChatPanel({
     async function loadRecentMessages(merge = false) {
       const { data } = await supabase
         .from("messages")
-        .select("*")
+        .select(
+          "id, department, author_email, content, source_department, reply_to_id, edited_at, attachment_path, attachment_name, attachment_type, attachment_size, pinned_at, pinned_by, created_at"
+        )
         .eq("department", department)
         .order("created_at", { ascending: true })
         .limit(100);
@@ -205,7 +207,7 @@ export default function ChatPanel({
       }
       const { data: reactionData } = await supabase
         .from("message_reactions")
-        .select("*")
+        .select("id, message_id, department, emoji, author_email, created_at")
         .in(
           "message_id",
           msgs.map((m) => m.id)
@@ -223,7 +225,10 @@ export default function ChatPanel({
     }
 
     async function loadReads() {
-      const { data } = await supabase.from("message_reads").select("*").eq("department", department);
+      const { data } = await supabase
+        .from("message_reads")
+        .select("department, user_email, last_read_at")
+        .eq("department", department);
       if (cancelled) return;
       const map: Record<string, string> = {};
       for (const r of (data as MessageRead[] | null) ?? []) map[r.user_email] = r.last_read_at;
@@ -413,7 +418,9 @@ export default function ChatPanel({
       const supabase = createClient();
       const { data } = await supabase
         .from("messages")
-        .select("*")
+        .select(
+          "id, department, author_email, content, source_department, reply_to_id, edited_at, attachment_path, attachment_name, attachment_type, attachment_size, pinned_at, pinned_by, created_at"
+        )
         .eq("department", department)
         .ilike("content", `%${searchQuery.trim()}%`)
         .order("created_at", { ascending: false })
@@ -732,7 +739,10 @@ export default function ChatPanel({
     if (!alreadyLoaded) {
       setMessages((prev) => [...prev, m].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()));
       const supabase = createClient();
-      const { data } = await supabase.from("message_reactions").select("*").eq("message_id", m.id);
+      const { data } = await supabase
+        .from("message_reactions")
+        .select("id, message_id, department, emoji, author_email, created_at")
+        .eq("message_id", m.id);
       if (data && data.length) {
         setReactions((prev) => [...prev, ...(data as MessageReaction[]).filter((r) => !prev.some((p) => p.id === r.id))]);
       }

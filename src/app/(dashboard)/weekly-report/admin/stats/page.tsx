@@ -24,7 +24,7 @@ export default async function WeeklyReportStatsPage() {
   if (!me) redirect("/login");
   if (!isDeveloperEmail(me.email) && me.position !== "관리자") redirect("/weekly-report");
 
-  const term = await getCurrentTerm(supabase);
+  const term = await getCurrentTerm();
   const { start, end } = getWeekRange();
 
   const [{ count: activeStudentCount }, { data: weekReportsData }, { data: termsData }, { data: classesData }] =

@@ -119,6 +119,106 @@ body {
   -webkit-backdrop-filter: blur(var(--shell-blur));
 }
 
+/* ===== 본문(GIA 운영 화면) - 테마별 글자색 보정 =====
+   요청("각 테마에 맞게 페이지 배경정도는 통일해도... 가독성좋게끔 각 테마별로 폰트색도 조절").
+   MainArea.tsx가 업무/위클리 리포트를 뺀 나머지 화면(사건기록·회의기록·제안함·매뉴얼·문서함·
+   사용자관리 등)에 shell-content shell-page-bg 클래스를 붙여 사이드바와 같은 테마 배경을
+   쓰게 했습니다. 그런데 그 화면들 내부 컴포넌트는 대부분 text-slate-700/900, bg-white 같은
+   라이트 전용 Tailwind 클래스를 그대로 쓰고 있어서, 배경만 어둡게 바꾸면 글자가 거의 안
+   보입니다. 수십 개 컴포넌트 파일을 전부 고치는 대신, 다크·GIA 테마에서만 shell-content
+   스코프 안의 자주 쓰이는 라이트 톤 클래스를 가독성 있는 색으로 다시 정의합니다(라이트·
+   리퀴드글라스는 배경이 원래도 밝아서 기존 글자색 그대로 잘 보이므로 손대지 않음). 뱃지/상태
+   표시에 쓰이는 색상(blue-600, red-500 등 의미 있는 강조색)까지는 건드리지 않았습니다. */
+[data-theme="dark"] .shell-content .text-slate-900,
+[data-theme="dark"] .shell-content .text-slate-800,
+[data-theme="dark"] .shell-content .text-slate-700 {
+  color: #e2e8f0;
+}
+[data-theme="dark"] .shell-content .text-slate-600,
+[data-theme="dark"] .shell-content .text-slate-500 {
+  color: #94a3b8;
+}
+[data-theme="dark"] .shell-content .text-slate-400,
+[data-theme="dark"] .shell-content .text-slate-300 {
+  color: #64748b;
+}
+[data-theme="dark"] .shell-content .bg-white {
+  background-color: #111a2e;
+}
+[data-theme="dark"] .shell-content .bg-slate-50,
+[data-theme="dark"] .shell-content .bg-slate-50\/60,
+[data-theme="dark"] .shell-content .bg-slate-50\/80 {
+  background-color: rgba(255, 255, 255, 0.04);
+}
+[data-theme="dark"] .shell-content .bg-slate-100 {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+[data-theme="dark"] .shell-content .border-slate-100,
+[data-theme="dark"] .shell-content .border-slate-200,
+[data-theme="dark"] .shell-content .border-slate-300 {
+  border-color: #1e293b;
+}
+[data-theme="dark"] .shell-content .divide-slate-100 > :not([hidden]) ~ :not([hidden]),
+[data-theme="dark"] .shell-content .divide-slate-200 > :not([hidden]) ~ :not([hidden]) {
+  border-color: #1e293b;
+}
+[data-theme="dark"] .shell-content .hover\:bg-slate-50:hover,
+[data-theme="dark"] .shell-content .hover\:bg-slate-100:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+[data-theme="dark"] .shell-content .hover\:text-slate-900:hover,
+[data-theme="dark"] .shell-content .hover\:text-slate-700:hover {
+  color: #f1f5f9;
+}
+[data-theme="dark"] .shell-content .placeholder-slate-400::placeholder {
+  color: #475569;
+}
+
+[data-theme="gia-brand"] .shell-content .text-slate-900,
+[data-theme="gia-brand"] .shell-content .text-slate-800,
+[data-theme="gia-brand"] .shell-content .text-slate-700 {
+  color: #f4ecd8;
+}
+[data-theme="gia-brand"] .shell-content .text-slate-600,
+[data-theme="gia-brand"] .shell-content .text-slate-500 {
+  color: rgba(239, 227, 200, 0.75);
+}
+[data-theme="gia-brand"] .shell-content .text-slate-400,
+[data-theme="gia-brand"] .shell-content .text-slate-300 {
+  color: rgba(239, 227, 200, 0.5);
+}
+[data-theme="gia-brand"] .shell-content .bg-white {
+  background-color: #16264f;
+}
+[data-theme="gia-brand"] .shell-content .bg-slate-50,
+[data-theme="gia-brand"] .shell-content .bg-slate-50\/60,
+[data-theme="gia-brand"] .shell-content .bg-slate-50\/80 {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+[data-theme="gia-brand"] .shell-content .bg-slate-100 {
+  background-color: rgba(198, 161, 91, 0.12);
+}
+[data-theme="gia-brand"] .shell-content .border-slate-100,
+[data-theme="gia-brand"] .shell-content .border-slate-200,
+[data-theme="gia-brand"] .shell-content .border-slate-300 {
+  border-color: rgba(198, 161, 91, 0.25);
+}
+[data-theme="gia-brand"] .shell-content .divide-slate-100 > :not([hidden]) ~ :not([hidden]),
+[data-theme="gia-brand"] .shell-content .divide-slate-200 > :not([hidden]) ~ :not([hidden]) {
+  border-color: rgba(198, 161, 91, 0.25);
+}
+[data-theme="gia-brand"] .shell-content .hover\:bg-slate-50:hover,
+[data-theme="gia-brand"] .shell-content .hover\:bg-slate-100:hover {
+  background-color: rgba(198, 161, 91, 0.15);
+}
+[data-theme="gia-brand"] .shell-content .hover\:text-slate-900:hover,
+[data-theme="gia-brand"] .shell-content .hover\:text-slate-700:hover {
+  color: #f4ecd8;
+}
+[data-theme="gia-brand"] .shell-content .placeholder-slate-400::placeholder {
+  color: rgba(239, 227, 200, 0.4);
+}
+
 /* ===== 사이드바 메뉴 버튼 - 테마별 보정 =====
    요청("리퀴드 글라스의 경우 메뉴버튼들 글라스처럼, GIA 테마의 경우 배경색은 로고색으로
    버튼들은 골드색으로... 고급스러운 느낌"). 라이트/다크는 카테고리별 고유 강조색(업무=블루,

@@ -239,12 +239,21 @@ export default function WorkBoardClient({
             </button>
           );
         })}
-        <span
-          className="ml-auto flex shrink-0 cursor-default items-center gap-1 whitespace-nowrap rounded-full bg-black/5 px-2.5 py-1 text-[11px] text-slate-500"
-          title={online.length > 0 ? `현재 접속중: ${online.map((e) => nameFor(team, e)).join(", ")}` : undefined}
-        >
-          🟢 {online.length}명 접속중
-        </span>
+        {/* 브라우저 기본 title 툴팁은 뜨는 데 시간이 걸리고 눈에 잘 안 띄어서, 직접 그린
+            호버 팝오버로 바꿨습니다 - 배지에 마우스를 올리면 바로 접속자 이름 목록이 뜹니다. */}
+        <div className="group relative ml-auto shrink-0">
+          <span className="flex cursor-default items-center gap-1 whitespace-nowrap rounded-full bg-black/5 px-2.5 py-1 text-[11px] text-slate-500">
+            🟢 {online.length}명 접속중
+          </span>
+          {online.length > 0 && (
+            <div className="pointer-events-none absolute right-0 top-full z-50 mt-1 hidden min-w-[140px] max-w-[220px] flex-col gap-0.5 rounded-lg border border-black/5 bg-white px-3 py-2 text-[11px] text-slate-600 shadow-lg group-hover:flex">
+              <div className="mb-0.5 font-semibold text-slate-400">🟢 현재 접속중</div>
+              {online.map((e) => (
+                <span key={e} className="truncate">{nameFor(team, e)}</span>
+              ))}
+            </div>
+          )}
+        </div>
         <span className="hidden shrink-0 whitespace-nowrap rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-medium text-blue-600 lg:inline-flex">
           🏷️ 채팅 위 업무등록 위젯에서 나/전체/공유를 골라 빠르게 등록하세요
         </span>

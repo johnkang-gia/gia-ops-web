@@ -238,6 +238,12 @@ export default function TaskHistoryClient({
                                         </div>
                                         {isExpanded && (
                                           <div className="border-t border-slate-100 bg-slate-50/60 px-3 py-2">
+                                            {task.resolution_note && (
+                                              <div className="mb-2 rounded-md bg-white p-2 text-[11px] text-slate-600">
+                                                <span className="font-semibold text-slate-500">📝 처리사항</span>
+                                                <p className="mt-0.5 whitespace-pre-wrap">{task.resolution_note}</p>
+                                              </div>
+                                            )}
                                             {loadingComments ? (
                                               <div className="text-[11px] text-slate-400">불러오는 중...</div>
                                             ) : comments.length === 0 ? (

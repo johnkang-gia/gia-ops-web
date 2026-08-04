@@ -100,7 +100,7 @@ function ReportDocument({
               <Text style={[styles.headCell, styles.colTime]}>완료 일시</Text>
               <Text style={[styles.headCell, styles.colTitle]}>업무</Text>
               <Text style={[styles.headCell, styles.colWho]}>담당/등록</Text>
-              <Text style={[styles.headCell, styles.colNote]}>비고</Text>
+              <Text style={[styles.headCell, styles.colNote]}>업무결과</Text>
             </View>
             {completed.map((t) => (
               <View key={t.id} style={styles.row} wrap={false}>
@@ -109,7 +109,7 @@ function ReportDocument({
                 <Text style={[styles.cell, styles.colWho]}>
                   {t.assignee_emails.length ? t.assignee_emails.map(nameOf).join(", ") : nameOf(t.owner_email)}
                 </Text>
-                <Text style={[styles.cell, styles.colNote]}>{t.description ?? ""}</Text>
+                <Text style={[styles.cell, styles.colNote]}>{t.resolution_note ?? t.description ?? ""}</Text>
               </View>
             ))}
           </View>
@@ -161,7 +161,7 @@ export async function GET(request: Request) {
     supabase
       .from("tasks")
       .select(
-        "id, case_id, title, description, status, priority, department, owner_email, assignee_emails, due_at, completed_at, archived_at, created_at, updated_at"
+        "id, case_id, title, description, resolution_note, status, priority, department, owner_email, assignee_emails, due_at, completed_at, archived_at, created_at, updated_at"
       )
       .limit(3000),
     supabase.from("app_users").select("email, name"),

@@ -228,6 +228,11 @@ export type Task = {
   updated_by: string | null;
   completed_at: string | null;
   archived_at: string | null;
+  // 이 업무를 어떻게 처리/완료했는지 기록하는 처리사항입니다(요청: "아래부분은 이 업무가
+  // 어떻게 완료되었는지 처리사항을 기록하도록"). tasks 행 자체에 저장되므로 완료 후
+  // archived_at만 채워지는 보관 처리(cron)를 거쳐도 그대로 남아, 업무기록·업무 보고서에서
+  // "업무 + 업무결과"로 함께 볼 수 있습니다.
+  resolution_note: string | null;
   term_id: string | null;
   origin_mode: "나" | "전체" | "공유";
   recurrence: TaskRecurrence;

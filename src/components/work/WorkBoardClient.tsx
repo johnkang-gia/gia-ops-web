@@ -225,7 +225,10 @@ export default function WorkBoardClient({
             </button>
           );
         })}
-        <span className="ml-auto flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-black/5 px-2.5 py-1 text-[11px] text-slate-500">
+        <span
+          className="ml-auto flex shrink-0 cursor-default items-center gap-1 whitespace-nowrap rounded-full bg-black/5 px-2.5 py-1 text-[11px] text-slate-500"
+          title={online.length > 0 ? `현재 접속중: ${online.map((e) => nameFor(team, e)).join(", ")}` : undefined}
+        >
           🟢 {online.length}명 접속중
         </span>
         <span className="hidden shrink-0 whitespace-nowrap rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-medium text-blue-600 lg:inline-flex">

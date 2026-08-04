@@ -18,7 +18,7 @@ export default async function WorkReportPage() {
     supabase
       .from("tasks")
       .select(
-        "id, case_id, title, description, status, priority, department, owner_email, assignee_emails, due_at, completed_at, archived_at, created_at, updated_at"
+        "id, case_id, title, description, resolution_note, status, priority, department, owner_email, assignee_emails, due_at, completed_at, archived_at, created_at, updated_at"
       )
       .order("completed_at", { ascending: false, nullsFirst: false })
       .limit(2000),

@@ -184,6 +184,12 @@ export default function WorkReportClient({
                     {t.department ? ` · ${t.department}` : ""}
                   </div>
                   {t.description && <p className="mt-1 whitespace-pre-wrap text-[11px] leading-relaxed text-slate-500">{t.description}</p>}
+                  {t.resolution_note && (
+                    <p className="mt-1 whitespace-pre-wrap rounded-md bg-slate-50 px-2 py-1 text-[11px] leading-relaxed text-slate-600">
+                      <span className="font-semibold text-slate-500">처리결과: </span>
+                      {t.resolution_note}
+                    </p>
+                  )}
                 </div>
               ))}
             </div>

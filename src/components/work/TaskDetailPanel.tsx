@@ -279,7 +279,13 @@ export default function TaskDetailPanel({
       // 코멘트가 조용히 사라진 것처럼 보였습니다.
       setCommentText(text);
       alert(friendlyError("댓글을 등록하지 못했습니다.", error));
+      return;
     }
+    // 코멘트를 남기면 실시간 로그(부서 전체가 보는 활동 피드)에도 한 줄로 뜨게 합니다(요청:
+    // "코멘트를 날리면 로그에도 뜨게 만들어주고"). 로그 줄은 짧게 보여야 해서 너무 긴 코멘트는
+    // 줄여서 남깁니다 - 원문 전체는 이 업무의 코멘트 목록에 그대로 남아있습니다.
+    const preview = text.length > 40 ? text.slice(0, 40) + "…" : text;
+    await logSystemEvent(`${nameFor(team, currentUserEmail)}님이 코멘트를 남겼습니다: "${preview}"`);
   }
 
   // 잘못 남은 코멘트/로그는 관리자이거나 그 글을 남긴 본인이면 지울 수 있습니다(요청) - 시스템
@@ -575,74 +581,94 @@ export default function TaskDetailPanel({
           )}
         </div>
 
-        <div className="mb-2 text-xs font-semibold text-slate-400">
-          💬 코멘트 ({comments.length})
-        </div>
-        <div className="mb-2 flex-1 overflow-y-auto rounded-lg bg-slate-50 p-2">
-          {comments.length === 0 && <p className="text-xs text-slate-300">아직 코멘트가 없습니다.</p>}
-          <div className="flex flex-col gap-2">
-            {comments.map((c) =>
-              c.is_system ? (
-                <div key={c.id} className="group flex items-center gap-1 px-1 text-[11px] italic text-slate-400">
-                  <span className="min-w-0 flex-1 truncate">
-                    🔔 {c.content} · {timeAgo(c.created_at)}
-                  </span>
-                  {canDeleteComment(c) && (
-                    <button onClick={() => deleteComment(c)} title="삭제" className="shrink-0 not-italic text-slate-300 opacity-0 hover:text-red-500 group-hover:opacity-100">
-                      ✕
-                    </button>
-                  )}
-                </div>
-              ) : c.is_issue ? (
-                <div key={c.id} className="group rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs shadow-sm">
-                  <div className="mb-0.5 flex items-center justify-between">
-                    <span className="font-semibold text-amber-700">⚠️ {nameFor(team, c.author_email)}</span>
-                    <span className="flex items-center gap-1.5">
-                      <span className="text-[10px] text-amber-400">{timeAgo(c.created_at)}</span>
+        {/* 코멘트(위)/처리사항(아래)을 절반씩 나눕니다(요청: "코멘트부분 위아래 반으로 나눠서,
+            위에는 코멘트를 넣을 수 있게 해주고, 아래부분은 이 업무가 어떻게 완료되었는지
+            처리사항을 기록하도록 해주고"). 바깥 flex-col 컨테이너의 남은 세로 공간을 두
+            flex-1 자식이 절반씩 나눠 갖고, 각자 안에서만 스크롤됩니다. */}
+        <div className="flex min-h-0 flex-1 flex-col gap-2">
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="mb-1 text-xs font-semibold text-slate-400">💬 코멘트 ({comments.length})</div>
+            <div className="mb-2 min-h-0 flex-1 overflow-y-auto rounded-lg bg-slate-50 p-2">
+              {comments.length === 0 && <p className="text-xs text-slate-300">아직 코멘트가 없습니다.</p>}
+              <div className="flex flex-col gap-2">
+                {comments.map((c) =>
+                  c.is_system ? (
+                    <div key={c.id} className="group flex items-center gap-1 px-1 text-[11px] italic text-slate-400">
+                      <span className="min-w-0 flex-1 truncate">
+                        🔔 {c.content} · {timeAgo(c.created_at)}
+                      </span>
                       {canDeleteComment(c) && (
-                        <button onClick={() => deleteComment(c)} title="삭제" className="text-amber-300 opacity-0 hover:text-red-500 group-hover:opacity-100">
+                        <button onClick={() => deleteComment(c)} title="삭제" className="shrink-0 not-italic text-slate-300 opacity-0 hover:text-red-500 group-hover:opacity-100">
                           ✕
                         </button>
                       )}
-                    </span>
-                  </div>
-                  <p className="whitespace-pre-wrap text-amber-800">{c.content}</p>
-                </div>
-              ) : (
-                <div key={c.id} className="group rounded-lg bg-white p-2 text-xs shadow-sm">
-                  <div className="mb-0.5 flex items-center justify-between">
-                    <span className="font-semibold text-slate-600">{nameFor(team, c.author_email)}</span>
-                    <span className="flex items-center gap-1.5">
-                      <span className="text-[10px] text-slate-300">{timeAgo(c.created_at)}</span>
-                      {canDeleteComment(c) && (
-                        <button onClick={() => deleteComment(c)} title="삭제" className="text-slate-300 opacity-0 hover:text-red-500 group-hover:opacity-100">
-                          ✕
-                        </button>
-                      )}
-                    </span>
-                  </div>
-                  <p className="whitespace-pre-wrap text-slate-700">{c.content}</p>
-                </div>
-              )
-            )}
+                    </div>
+                  ) : c.is_issue ? (
+                    <div key={c.id} className="group rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs shadow-sm">
+                      <div className="mb-0.5 flex items-center justify-between">
+                        <span className="font-semibold text-amber-700">⚠️ {nameFor(team, c.author_email)}</span>
+                        <span className="flex items-center gap-1.5">
+                          <span className="text-[10px] text-amber-400">{timeAgo(c.created_at)}</span>
+                          {canDeleteComment(c) && (
+                            <button onClick={() => deleteComment(c)} title="삭제" className="text-amber-300 opacity-0 hover:text-red-500 group-hover:opacity-100">
+                              ✕
+                            </button>
+                          )}
+                        </span>
+                      </div>
+                      <p className="whitespace-pre-wrap text-amber-800">{c.content}</p>
+                    </div>
+                  ) : (
+                    <div key={c.id} className="group rounded-lg bg-white p-2 text-xs shadow-sm">
+                      <div className="mb-0.5 flex items-center justify-between">
+                        <span className="font-semibold text-slate-600">{nameFor(team, c.author_email)}</span>
+                        <span className="flex items-center gap-1.5">
+                          <span className="text-[10px] text-slate-300">{timeAgo(c.created_at)}</span>
+                          {canDeleteComment(c) && (
+                            <button onClick={() => deleteComment(c)} title="삭제" className="text-slate-300 opacity-0 hover:text-red-500 group-hover:opacity-100">
+                              ✕
+                            </button>
+                          )}
+                        </span>
+                      </div>
+                      <p className="whitespace-pre-wrap text-slate-700">{c.content}</p>
+                    </div>
+                  )
+                )}
+              </div>
+            </div>
+
+            <form onSubmit={addComment} className="flex gap-1.5">
+              <input
+                value={commentText}
+                onChange={(e) => setCommentText(e.target.value)}
+                placeholder="코멘트 입력..."
+                className="min-w-0 flex-1 rounded-lg border border-slate-300 px-2 py-1.5 text-xs"
+              />
+              <button
+                type="submit"
+                disabled={!commentText.trim()}
+                className="rounded-lg bg-blue-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-600 disabled:opacity-50"
+              >
+                등록
+              </button>
+            </form>
+          </div>
+
+          <div className="flex min-h-0 flex-1 flex-col border-t border-slate-100 pt-2">
+            <div className="mb-1 text-xs font-semibold text-slate-400">📝 처리사항</div>
+            <textarea
+              key={task.id}
+              defaultValue={task.resolution_note ?? ""}
+              onBlur={(e) => {
+                const next = e.target.value.trim() || null;
+                if (next !== task.resolution_note) patch({ resolution_note: next });
+              }}
+              placeholder="이 업무를 어떻게 처리·완료했는지 기록해두면, 완료 후 업무기록·업무 보고서에서 처리 결과를 함께 볼 수 있습니다."
+              className="min-h-0 flex-1 resize-none rounded-lg border border-slate-200 bg-white p-2 text-xs outline-none focus:border-blue-300"
+            />
           </div>
         </div>
-
-        <form onSubmit={addComment} className="flex gap-1.5">
-          <input
-            value={commentText}
-            onChange={(e) => setCommentText(e.target.value)}
-            placeholder="코멘트 입력..."
-            className="min-w-0 flex-1 rounded-lg border border-slate-300 px-2 py-1.5 text-xs"
-          />
-          <button
-            type="submit"
-            disabled={!commentText.trim()}
-            className="rounded-lg bg-blue-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-600 disabled:opacity-50"
-          >
-            등록
-          </button>
-        </form>
 
         {canDelete && (
           <button onClick={remove} className="mt-3 text-left text-[11px] text-slate-300 hover:text-red-500">

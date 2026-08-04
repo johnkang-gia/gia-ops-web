@@ -2234,3 +2234,12 @@ $$;
 
 revoke all on function restore_backup(uuid) from public;
 grant execute on function restore_backup(uuid) to authenticated;
+
+-- ===== 58. 업무 처리사항(resolution_note) =====
+-- 업무 상세 패널의 코멘트 영역을 위(코멘트)/아래(처리사항)로 나누면서, "이 업무를 어떻게
+-- 완료했는지"를 기록하는 전용 칸을 추가합니다(요청: "아래부분은 이 업무가 어떻게 완료되었는지
+-- 처리사항을 기록하도록"). tasks 테이블에 그냥 컬럼 하나만 추가하면, 완료 후 archived_at만
+-- 채우는 기존 보관 처리(cron)를 그대로 거쳐도 이 값이 함께 남아 업무기록·업무 보고서에서
+-- "업무 + 업무결과"로 이어서 볼 수 있습니다(요청: "완료탭에 들어가면, 보관함으로 가고,
+-- 보고서에 업무와 업무결과로 나와서").
+alter table tasks add column if not exists resolution_note text;

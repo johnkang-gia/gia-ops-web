@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
+import { isTeacherOnly } from "@/lib/roles";
+import type { WrClass, WrSubject } from "@/lib/types";
 
 export type SearchResult = {
   type: "student" | "incident" | "meeting" | "event" | "task" | "document";
@@ -25,12 +27,36 @@ export async function GET(request: NextRequest) {
   const like = `%${q}%`;
   const results: SearchResult[] = [];
 
-  const { data: students } = await supabase
+  // 교사는 자기 반/과목 학생만 검색 결과에 나와야 합니다(그 외 반은 화면 자체도 막혀있지만,
+  // 통합검색으로 다른 반 학생을 찾아 우회 열람할 수 있으면 안 되므로 여기서도 owned id로
+  // 한 번 더 제한합니다).
+  let allowedStudentIds: Set<string> | null = null;
+  if (isTeacherOnly(me)) {
+    const [{ data: ownClasses }, { data: ownSubjects }] = await Promise.all([
+      supabase.from("wr_classes").select("id").or(`teacher_email.eq.${me.email},sub_teacher_email.eq.${me.email}`),
+      supabase.from("wr_subjects").select("id, student_ids").eq("teacher_email", me.email),
+    ]);
+    const classIds = ((ownClasses as WrClass[] | null) ?? []).map((c) => c.id);
+    const { data: classStudents } = classIds.length
+      ? await supabase.from("wr_students").select("id").in("class_id", classIds)
+      : { data: [] as { id: string }[] };
+    const ids = new Set<string>((classStudents ?? []).map((s) => s.id));
+    for (const sub of (ownSubjects as WrSubject[] | null) ?? []) {
+      for (const id of sub.student_ids ?? []) ids.add(id);
+    }
+    allowedStudentIds = ids;
+  }
+
+  let studentQuery = supabase
     .from("wr_students")
     .select("id, name, name_en, grade, class_name")
     .or(`name.ilike.${like},name_en.ilike.${like},student_no.ilike.${like}`)
     .eq("status", "active")
     .limit(6);
+  if (allowedStudentIds) {
+    studentQuery = studentQuery.in("id", [...allowedStudentIds]);
+  }
+  const { data: students } = await studentQuery;
   for (const s of students ?? []) {
     results.push({
       type: "student",

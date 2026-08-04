@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { friendlyError } from "@/lib/errorMessage";
 
 // ===== 공용 파싱 유틸 =====
 // 구글시트에서 셀 범위를 복사해서 붙여넣으면 탭(\t)으로 구분되고, CSV 파일을 업로드하면
@@ -84,7 +85,7 @@ function StaffImportSection({ adminEmail }: { adminEmail: string }) {
     }));
     const { error } = await supabase.from("app_users").upsert(payload, { onConflict: "email" });
     setImporting(false);
-    setResult(error ? `실패: ${error.message}` : `${valid.length}명 반영 완료. 이후 본인 계정으로 로그인하면 승인 과정 없이 바로 사용할 수 있습니다.`);
+    setResult(error ? friendlyError("반영하지 못했습니다.", error) : `${valid.length}명 반영 완료. 이후 본인 계정으로 로그인하면 승인 과정 없이 바로 사용할 수 있습니다.`);
   }
 
   return (
@@ -357,7 +358,7 @@ function StudentImportSection() {
     });
     const { error } = await supabase.from("wr_students").insert(payload);
     setImporting(false);
-    setResult(error ? `실패: ${error.message}` : `${valid.length}명 등록 완료 (새 학생으로 추가됩니다 - 이미 등록된 학생과 이름이 같아도 중복 확인 없이 추가되니, 재등록이 아닌지 확인 후 실행해주세요).`);
+    setResult(error ? friendlyError("등록하지 못했습니다.", error) : `${valid.length}명 등록 완료 (새 학생으로 추가됩니다 - 이미 등록된 학생과 이름이 같아도 중복 확인 없이 추가되니, 재등록이 아닌지 확인 후 실행해주세요).`);
   }
 
   return (

@@ -79,7 +79,7 @@ export type ManualDraft = {
 export type Proposal = {
   id: string;
   case_id: string;
-  source: "incidents" | "events" | "meetings" | "manual" | "complaint";
+  source: "incidents" | "events" | "meetings" | "manual" | "complaint" | "system";
   source_id: string | null;
   date: string;
   target_doc: string;
@@ -124,6 +124,9 @@ export type Adopted = {
   } | null;
   review_count: number;
   last_reviewed_at: string | null;
+  // source가 "system"(GIA시스템 제안)일 때만 채워집니다 - 발행되는 순간 이 gia_systems 행을
+  // 자동으로 "보유"로 갱신합니다(/api/adopted/publish).
+  system_ref_id: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -343,6 +346,11 @@ export type WrClass = {
   class_name: string | null;
   teacher_email: string | null;
   sub_teacher_email: string | null;
+  // 담임 계정(giamicro.com 이메일)이 아직 없을 때 임시로 이름만 배정해두는 필드입니다.
+  // 실제 계정이 생기면 teacher_email을 채우고, 화면에서는 teacher_email이 있으면 그 계정의
+  // 이름을 우선 표시하고 없으면 이 이름을 대신 보여줍니다.
+  teacher_name: string | null;
+  sub_teacher_name: string | null;
   created_at: string;
 };
 
@@ -420,4 +428,38 @@ export type WrComment = {
   content: string;
   comment_date: string;
   created_at: string;
+};
+
+// ===== 관리자 메뉴: 교육뉴스 / GIA시스템 =====
+export type EducationNewsItem = {
+  category: string;
+  headline: string;
+  body: string;
+  source_name: string | null;
+  source_url: string | null;
+};
+
+export type EducationNews = {
+  id: string;
+  case_id: string;
+  published_date: string;
+  title: string;
+  summary: string;
+  items: EducationNewsItem[];
+  model: string | null;
+  created_at: string;
+};
+
+export type GiaSystem = {
+  id: string;
+  category: string;
+  name: string;
+  status: "보유" | "부분보유" | "미보유";
+  description: string | null;
+  benchmark_school: string | null;
+  source: "manual" | "ai_suggested";
+  adopted_from_id: string | null;
+  adopted_at: string | null;
+  created_at: string;
+  updated_at: string;
 };

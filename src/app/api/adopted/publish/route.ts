@@ -54,5 +54,15 @@ export async function POST(request: Request) {
     .eq("id", id);
   if (publishErr) return NextResponse.json({ error: publishErr.message }, { status: 500 });
 
+  // GIA시스템 제안이 발행되면, 관리자가 매뉴얼/서류함 등 다른 곳을 따로 갱신할 필요 없이
+  // GIA시스템 현황판의 해당 행이 자동으로 "보유"로 바뀝니다(요청 사항: "추가가되면 자동으로
+  // 반영"). 이 갱신이 실패해도 매뉴얼 발행 자체는 이미 끝났으므로 에러로 막지 않습니다.
+  if (adopted.source === "system" && adopted.system_ref_id) {
+    await supabase
+      .from("gia_systems")
+      .update({ status: "보유", adopted_from_id: adopted.id, adopted_at: new Date().toISOString() })
+      .eq("id", adopted.system_ref_id);
+  }
+
   return NextResponse.json({ success: true });
 }

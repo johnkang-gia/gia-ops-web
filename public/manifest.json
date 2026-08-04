@@ -1,0 +1,16 @@
+{
+  "name": "GIA 운영",
+  "short_name": "GIA 운영",
+  "description": "GIA 학교 운영 자동화 시스템",
+  "start_url": "/home",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1e293b",
+  "icons": [
+    {
+      "src": "/logo-main.png",
+      "sizes": "538x120",
+      "type": "image/png"
+    }
+  ]
+}

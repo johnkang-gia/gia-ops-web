@@ -1,15 +1,20 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
+import { isStaffOrAboveUser } from "@/lib/roles";
 import type { Term, WrStudent } from "@/lib/types";
 import PrintSelectorClient from "@/components/weeklyReport/PrintSelectorClient";
 
 export const dynamic = "force-dynamic";
 
+// 전교생 명단에서 아무 학생이나 골라 리포트를 출력할 수 있는 화면이라 행정직원 이상만 볼 수
+// 있어야 합니다(교사가 다른 반 학생 리포트를 출력할 수 있으면 안 됨) - /weekly-report/students와
+// 동일한 이유로 여기서도 한 번 더 막습니다.
 export default async function PrintPage() {
   const supabase = await createClient();
   const me = await getCurrentAppUser();
   if (!me) redirect("/login");
+  if (!isStaffOrAboveUser(me)) redirect("/weekly-report/homeroom");
 
   const [{ data }, { data: terms }] = await Promise.all([
     supabase

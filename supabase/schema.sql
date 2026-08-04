@@ -1977,3 +1977,94 @@ create unique index if not exists tasks_recurrence_next_idx
 -- 않습니다(사람 수·메시지 수가 지금 당장은 적어도, 몇 달 뒤를 대비한 예방 조치입니다).
 create extension if not exists pg_trgm;
 create index if not exists messages_content_trgm_idx on messages using gin (content gin_trgm_ops);
+
+-- ===== 52. 반(wr_classes) 담임을 "이름만" 임시 배정 (계정 이메일은 나중에 연결) =====
+-- 담임 계정(giamicro.com 로그인)이 아직 만들어지지 않은 상태에서도, 실제 담임 이름 기준으로
+-- 반을 미리 배정해둘 수 있도록 이름 전용 컬럼을 추가합니다. teacher_email이 채워지면 화면은
+-- 그 계정 이름을 우선 보여주고, 비어있으면 이 이름을 대신 보여줍니다(ClassManageClient.tsx).
+alter table wr_classes add column if not exists teacher_name text;
+alter table wr_classes add column if not exists sub_teacher_name text;
+
+update wr_classes set teacher_name = 'Aimie' where class_name = '1A' and teacher_name is null;
+update wr_classes set teacher_name = 'Carina' where class_name = '1C' and teacher_name is null;
+update wr_classes set teacher_name = 'Jamie' where class_name = '1J' and teacher_name is null;
+update wr_classes set teacher_name = 'Yunsang' where class_name = '2Y' and teacher_name is null;
+update wr_classes set teacher_name = 'Jandy' where class_name = '2J' and teacher_name is null;
+update wr_classes set teacher_name = 'Katherine' where class_name = '2K' and teacher_name is null;
+update wr_classes set teacher_name = 'Janelle' where class_name = '3J' and teacher_name is null;
+update wr_classes set teacher_name = 'Anna' where class_name = '3A' and teacher_name is null;
+update wr_classes set teacher_name = 'Sarah' where class_name = '4A' and teacher_name is null;
+update wr_classes set teacher_name = 'Eamonn' where class_name = '5E' and teacher_name is null;
+
+-- ===== 53. 관리자 메뉴 신설: 교육뉴스 + GIA시스템 =====
+-- 관리자(부이사장/이사장 등)만 보는 두 기능입니다. 둘 다 Anthropic의 web_search 도구로 최신
+-- 웹 정보를 찾아와 생성하므로(callClaudeJsonWithWebSearch), is_app_admin()만 접근하도록
+-- 다른 지원 테이블(inquiries 등)보다 좁게 RLS를 걸었습니다.
+
+-- (1) 교육뉴스: 주 2회(월/수) AI가 국제학교/교육정책/트렌드 관련 최신 소식을 검색해 정리해
+-- 쌓아두는 다이제스트입니다. items는 [{category, headline, body, source_name, source_url}] 배열.
+create table if not exists education_news (
+  id uuid primary key default gen_random_uuid(),
+  case_id text unique not null,
+  published_date date not null default current_date,
+  title text not null,
+  summary text not null,
+  items jsonb not null default '[]'::jsonb,
+  model text,
+  created_at timestamptz not null default now()
+);
+create index if not exists education_news_date_idx on education_news (published_date desc);
+alter table education_news enable row level security;
+drop policy if exists "admin_all_education_news" on education_news;
+create policy "admin_all_education_news" on education_news
+  for all using (is_app_admin()) with check (is_app_admin());
+
+-- (2) GIA시스템: GIA가 이미 갖춘 시스템(카테고리별 보유/부분보유/미보유 현황)과, 다른 국제학교/
+-- 공립학교가 갖춘 시스템 중 GIA에 없는 것을 AI가 웹 검색으로 찾아 제안하는 기능입니다.
+-- source='ai_suggested'인 미보유 항목을 관리자가 "제안함으로 보내기"를 누르면 기존
+-- proposals→adopted(채택예정)→발행 파이프라인(운영관리)을 그대로 타고, 발행되는 순간
+-- 이 표의 상태가 자동으로 '보유'로 바뀝니다(아래 adopted.system_ref_id로 연결).
+create table if not exists gia_systems (
+  id uuid primary key default gen_random_uuid(),
+  category text not null,
+  name text not null,
+  status text not null default '미보유',   -- 보유 | 부분보유 | 미보유
+  description text,
+  benchmark_school text,                    -- AI 제안일 때 참고한 벤치마킹 대상(학교/사례)
+  source text not null default 'manual',    -- manual | ai_suggested
+  adopted_from_id uuid,
+  adopted_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create unique index if not exists gia_systems_category_name_idx on gia_systems (category, name);
+alter table gia_systems enable row level security;
+drop policy if exists "admin_all_gia_systems" on gia_systems;
+create policy "admin_all_gia_systems" on gia_systems
+  for all using (is_app_admin()) with check (is_app_admin());
+
+drop trigger if exists gia_systems_set_updated_at on gia_systems;
+create trigger gia_systems_set_updated_at
+  before update on gia_systems
+  for each row execute function set_updated_at();
+
+-- proposals에 "GIA시스템 제안" 출처를 추가하고, adopted에는 어떤 gia_systems 행에서 왔는지
+-- 역참조 컬럼을 둡니다(발행 시 자동으로 그 행을 '보유'로 갱신하기 위함 - /api/adopted/publish).
+alter table proposals drop constraint if exists proposals_source_check;
+alter table proposals add constraint proposals_source_check
+  check (source in ('incidents', 'events', 'meetings', 'manual', 'complaint', 'system'));
+alter table adopted add column if not exists system_ref_id uuid references gia_systems(id) on delete set null;
+
+-- GIA가 이 앱을 통해 이미 갖추고 있는 시스템을 항목별로 미리 정리해둡니다(관리자가 처음 이
+-- 화면을 열었을 때부터 "이미 갖춘 것"이 채워져 있도록). 이후 AI 제안이 발행되면 이 목록에
+-- 새 행이 자동으로 추가되거나 상태가 갱신됩니다.
+insert into gia_systems (category, name, status, description, source) values
+  ('구비서류', '서류함(구비서류 체크리스트)', '보유', 'GIA 운영 앱의 서류함에서 필요서류 목록과 준비 상태(필요/준비중/보유/만료임박)를 관리하고 있습니다.', 'manual'),
+  ('내규', '실무자 매뉴얼', '부분보유', '사건/행사 대응 절차 등 일부 내규성 문서는 실무자 매뉴얼에 정리돼 있으나, 별도의 정식 취업규칙/내규집은 아직 없습니다.', 'manual'),
+  ('계약서', '계약서 관리', '미보유', '교직원/거래처 계약서를 별도로 체계화해 관리하는 기능이 아직 없습니다.', 'manual'),
+  ('학생관리', '학생 통합 프로필 + 주간 학생 관찰기록', '보유', '학생별 영구 고유번호, 재학이력, 과목별 평가·코멘트를 관리하고 있습니다.', 'manual'),
+  ('교사관리', '교직원 직위·담당 배정 관리', '보유', '교사/행정직원/관리자 직위 구분과 담당 반·과목 배정을 관리하고 있습니다.', 'manual'),
+  ('교직원관리', '사용자 승인·직위 관리', '보유', '신규 직원 온보딩 승인, 소속·직위 지정을 관리자 화면에서 처리하고 있습니다.', 'manual'),
+  ('매뉴얼', '운영계획안 · 실무자매뉴얼 (AI 초안작성 포함)', '보유', 'AI 초안작성을 포함한 매뉴얼 작성/발행 시스템을 갖추고 있습니다.', 'manual'),
+  ('운영계획안', '운영계획안(학부모용 문서)', '보유', '매뉴얼 시스템 내 학부모용 문서로 관리되고 있습니다.', 'manual')
+on conflict (category, name) do nothing;

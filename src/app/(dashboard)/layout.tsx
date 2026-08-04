@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentTerm } from "@/lib/currentTerm";
 import { getCurrentAppUser } from "@/lib/currentUser";
-import { isDeveloperEmail } from "@/lib/roles";
+import { isDeveloperEmail, isAdminUser, isTeacherOnly, isStaffOrAboveUser } from "@/lib/roles";
 import SignOutButton from "@/components/SignOutButton";
 import { SidebarNavLinks, MobileNavLinks, type NavCategory } from "@/components/NavLinks";
 import MainArea from "@/components/MainArea";
@@ -67,15 +67,24 @@ function buildWeeklyReportCategory(isAdmin: boolean): NavCategory {
   return { key: "weekly", label: "주간 학생 관찰기록", labelEn: "Weekly Student Reports", icon: "📈", accent: "teal", items };
 }
 
-// "지원 · 관리" - 학생/반/학기/계정 관리는 학교관리로 옮겼고, 여기는 관리자 대시보드(통합
-// 현황판)와 문의및건의사항만 남았습니다.
-function buildSupportCategory(isAdmin: boolean): NavCategory {
-  const items = [];
-  if (isAdmin) {
-    items.push({ href: "/admin/dashboard", label: "관리자 대시보드", icon: "📊" });
-  }
-  items.push({ href: "/inquiries", label: "문의및건의사항", icon: "🗣️" });
-  return { key: "support", label: "지원 · 관리", icon: "🛠️", accent: "amber", items };
+// "관리자" - 관리자(부이사장/이사장 등)만 보는 학교 발전 현황 메뉴입니다. 관리자 대시보드(통합
+// 현황판)·학교 현황판(/school)에 더해, 다른 국제학교/공립학교와 비교해 GIA가 어떤 시스템을
+// 갖췄고 뭘 더 갖춰야 하는지 한눈에 보는 GIA시스템, 그리고 국제교육 관련 소식을 주 2회(월/수)
+// AI가 정리해주는 교육뉴스를 여기 모았습니다. 문의및건의사항은 관리자 전용이 아니라 모든
+// 직원이 쓰는 기능이라 이 카테고리에서 빼고 사이드바 맨 아래에 작은 링크로 따로 둡니다.
+function buildAdminCategory(): NavCategory {
+  return {
+    key: "admin",
+    label: "관리자",
+    icon: "🏢",
+    accent: "amber",
+    items: [
+      { href: "/admin/dashboard", label: "관리자 대시보드", icon: "📊" },
+      { href: "/school", label: "학교 현황판", icon: "🏛️" },
+      { href: "/admin/education-news", label: "교육뉴스", icon: "📰" },
+      { href: "/admin/gia-systems", label: "GIA시스템", icon: "🧩" },
+    ],
+  };
 }
 
 export default async function DashboardLayout({
@@ -102,9 +111,9 @@ export default async function DashboardLayout({
   }
 
   const displayName = me.name || me.email;
-  const isAdmin = isDeveloperEmail(me.email) || me.position === "관리자";
-  const isTeacher = !isDeveloperEmail(me.email) && me.position === "교사";
-  const isStaffOrAbove = isAdmin || me.position === "행정직원";
+  const isAdmin = isAdminUser(me);
+  const isTeacher = isTeacherOnly(me);
+  const isStaffOrAbove = isStaffOrAboveUser(me);
   const isDeveloper = isDeveloperEmail(me.email);
   // 뱃지는 우리 권한 체계의 실제 값(position)을 그대로 보여줍니다 - 자유 입력이 아니라 관리자가
   // [사용자 관리]에서 지정한 값입니다. 개발자 계정은 position과 무관하게 항상 "개발자"로 표시됩니다.
@@ -134,7 +143,7 @@ export default async function DashboardLayout({
       buildSchoolCategory(isAdmin, isStaffOrAbove),
     ];
     if (isStaffOrAbove) categories.push(buildWeeklyReportCategory(isAdmin));
-    categories.push(buildSupportCategory(isAdmin));
+    if (isAdmin) categories.push(buildAdminCategory());
     if (isDeveloper) {
       categories.push({ key: "dev", label: "개발자", icon: "🧑‍💻", href: "/dev", accent: "red" });
     }
@@ -196,6 +205,17 @@ export default async function DashboardLayout({
         <nav className="flex flex-1 flex-col gap-1 overflow-y-auto overflow-x-visible">
           <SidebarNavLinks categories={categories} />
         </nav>
+        {/* 문의및건의사항은 특정 부서/직급 전용 기능이 아니라 버그 제보·건의 창구라, 관리자
+            메뉴에 묶지 않고 누구나 눈에 띄게 맨 아래에 작은 링크로 둡니다(교사는 애초에
+            위클리 리포트 화면만 쓰므로 노출하지 않습니다). */}
+        {!isTeacher && (
+          <Link
+            href="/inquiries"
+            className="mb-1 flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-400 hover:text-slate-600"
+          >
+            🗣️ 문의및건의사항
+          </Link>
+        )}
         <div className="border-t border-slate-200 pt-3">
           <SignOutButton />
         </div>
@@ -222,8 +242,13 @@ export default async function DashboardLayout({
         <div className="border-b border-slate-200 bg-white px-3 py-2 sm:hidden">
           <GlobalSearchBar compact />
         </div>
-        <nav className="flex gap-1 overflow-x-auto border-b border-slate-200 bg-white px-2 py-2 sm:hidden">
+        <nav className="flex items-center gap-1 overflow-x-auto border-b border-slate-200 bg-white px-2 py-2 sm:hidden">
           <MobileNavLinks categories={categories} />
+          {!isTeacher && (
+            <Link href="/inquiries" className="ml-auto shrink-0 rounded-lg px-2 py-1.5 text-xs text-slate-400">
+              🗣️ 문의
+            </Link>
+          )}
         </nav>
         <MainArea>{children}</MainArea>
       </div>

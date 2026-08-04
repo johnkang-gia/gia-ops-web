@@ -1,8 +1,8 @@
 import { redirect, notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
-import { isDeveloperEmail } from "@/lib/roles";
-import type { WrComment, WrReport, WrStudent } from "@/lib/types";
+import { isStaffOrAboveUser, isTeacherOnly } from "@/lib/roles";
+import type { WrClass, WrComment, WrReport, WrStudent, WrSubject } from "@/lib/types";
 import StudentProfileClient from "@/components/weeklyReport/StudentProfileClient";
 
 export const dynamic = "force-dynamic";
@@ -20,11 +20,31 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
   ]);
 
   if (!student) notFound();
+  const s = student as WrStudent;
+
+  // 교사는 부모 연락처를 포함한 학생 전체 기록을 볼 수 있는 화면이라, 자기 담임반이나 자기
+  // 담당과목에 속한 학생일 때만 들어올 수 있게 막습니다(그 외 반은 검색으로도 우회 못하게
+  // /api/search에서도 동일 기준으로 걸러줍니다) - 이전에는 로그인만 하면 어떤 학생이든 URL로
+  // 바로 열람할 수 있었습니다.
+  if (isTeacherOnly(me)) {
+    const [{ data: ownClasses }, { data: ownSubjects }] = await Promise.all([
+      s.class_id
+        ? supabase
+            .from("wr_classes")
+            .select("id")
+            .eq("id", s.class_id)
+            .or(`teacher_email.eq.${me.email},sub_teacher_email.eq.${me.email}`)
+        : Promise.resolve({ data: [] as WrClass[] }),
+      supabase.from("wr_subjects").select("id, student_ids").eq("teacher_email", me.email),
+    ]);
+    const ownsViaClass = (ownClasses?.length ?? 0) > 0;
+    const ownsViaSubject = ((ownSubjects as WrSubject[] | null) ?? []).some((sub) => sub.student_ids?.includes(id));
+    if (!ownsViaClass && !ownsViaSubject) notFound();
+  }
 
   // 관리자/행정직원(그리고 개발자)은 주간 학생 관찰기록을 읽기전용이 아니라 직접 수정·삭제까지
   // 할 수 있어야 합니다(요청) - 그 외(교사 등으로 이 화면에 들어온 경우)는 예전처럼 읽기전용입니다.
-  const isWrManager = isDeveloperEmail(me.email) || me.position === "관리자" || me.position === "행정직원";
-  const s = student as WrStudent;
+  const isWrManager = isStaffOrAboveUser(me);
 
   return (
     <div className="mx-auto max-w-3xl">

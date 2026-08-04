@@ -7,6 +7,7 @@ import { nameFor } from "@/lib/teamName";
 import { addTimedEventToNativeCalendar } from "@/lib/nativeCalendar";
 import { recurrenceLabel, renewRecurringTask } from "@/lib/recurrence";
 import { uploadTaskFile, getTaskFileSignedUrl, deleteTaskFile } from "@/lib/storage";
+import { friendlyError } from "@/lib/errorMessage";
 import { STATUS_ORDER, STATUS_LABEL } from "./statusConfig";
 
 function formatFileSize(bytes: number | null) {
@@ -97,7 +98,7 @@ export default function TaskDetailPanel({
         await logSystemEvent(`${nameFor(team, currentUserEmail)}님이 파일을 첨부했습니다: ${file.name}`);
       }
     } catch (err) {
-      alert("파일 업로드에 실패했습니다: " + (err instanceof Error ? err.message : "알 수 없는 오류"));
+      alert(friendlyError("파일 업로드에 실패했습니다.", err));
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -165,7 +166,7 @@ export default function TaskDetailPanel({
     const { error } = await supabase.from("tasks").update(fields).eq("id", task.id);
     if (error) {
       onUpdated(previous);
-      alert("저장하지 못했습니다: " + error.message);
+      alert(friendlyError("저장하지 못했습니다.", error));
     }
   }
 
@@ -188,7 +189,7 @@ export default function TaskDetailPanel({
     const supabase = createClient();
     const { data: updated, error } = await supabase.rpc("toggle_task_assignee", { p_task_id: task.id, p_email: email });
     if (error) {
-      alert("담당자 변경에 실패했습니다: " + error.message);
+      alert(friendlyError("담당자 변경에 실패했습니다.", error));
       return;
     }
     if (updated) onUpdated({ ...task, ...(updated as Task) });
@@ -251,7 +252,7 @@ export default function TaskDetailPanel({
       p_email: currentUserEmail,
     });
     if (error) {
-      alert("업무 확인 처리에 실패했습니다: " + error.message);
+      alert(friendlyError("업무 확인 처리에 실패했습니다.", error));
       return;
     }
     if (updated) onUpdated({ ...task, ...(updated as Task) });
@@ -277,7 +278,7 @@ export default function TaskDetailPanel({
       // 저장 실패 시 입력하신 내용을 복원합니다 - 예전에는 실패해도 입력창은 이미 비워져 있어
       // 코멘트가 조용히 사라진 것처럼 보였습니다.
       setCommentText(text);
-      alert("댓글을 등록하지 못했습니다: " + error.message);
+      alert(friendlyError("댓글을 등록하지 못했습니다.", error));
     }
   }
 
@@ -292,7 +293,7 @@ export default function TaskDetailPanel({
     setComments((prev) => prev.filter((x) => x.id !== c.id));
     const supabase = createClient();
     const { error } = await supabase.from("task_comments").delete().eq("id", c.id);
-    if (error) alert("삭제하지 못했습니다: " + error.message);
+    if (error) alert(friendlyError("삭제하지 못했습니다.", error));
   }
 
   async function remove() {
@@ -300,7 +301,7 @@ export default function TaskDetailPanel({
     const supabase = createClient();
     const { error } = await supabase.from("tasks").delete().eq("id", task.id);
     if (error) {
-      alert("삭제하지 못했습니다: " + error.message);
+      alert(friendlyError("삭제하지 못했습니다.", error));
       return;
     }
     onDeleted(task.id);

@@ -10,6 +10,7 @@ import { nameFor, extractMentionedEmails } from "@/lib/teamName";
 import { parseTaskFromMessage } from "@/lib/parseTaskFromMessage";
 import { deadlineLabel } from "@/lib/deadlineLabel";
 import { uploadChatFile, getChatFileSignedUrl, deleteChatFile } from "@/lib/storage";
+import { friendlyError } from "@/lib/errorMessage";
 import LinkPreviewCard from "./LinkPreviewCard";
 
 const REACTION_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🙏", "🎉", "👏", "🔥", "😅", "🤔", "✅"];
@@ -574,7 +575,7 @@ export default function ChatPanel({
         if (crossError) console.error(`#${dept} 채널 공유 실패:`, crossError.message);
       }
     } catch (err) {
-      alert("메시지를 보내지 못했습니다: " + (err instanceof Error ? err.message : String(err)));
+      alert(friendlyError("메시지를 보내지 못했습니다.", err));
     } finally {
       setSending(false);
     }
@@ -617,7 +618,7 @@ export default function ChatPanel({
       if (uploadedPath) {
         deleteChatFile(uploadedPath).catch(() => {});
       }
-      alert("파일을 업로드하지 못했습니다: " + (err instanceof Error ? err.message : String(err)));
+      alert(friendlyError("파일을 업로드하지 못했습니다.", err));
     } finally {
       setUploadingFile(false);
     }
@@ -632,8 +633,7 @@ export default function ChatPanel({
     setMessages((prev) => prev.filter((x) => x.id !== m.id));
     const { error } = await supabase.from("messages").delete().eq("id", m.id);
     if (error) {
-      console.error("메시지 삭제 실패:", error);
-      alert("메시지를 삭제하지 못했습니다: " + error.message);
+      alert(friendlyError("메시지를 삭제하지 못했습니다.", error));
       setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev, m]));
     }
   }
@@ -655,7 +655,7 @@ export default function ChatPanel({
     const supabase = createClient();
     const { error } = await supabase.from("messages").update({ content, edited_at: editedAt }).eq("id", m.id);
     if (error) {
-      alert("수정하지 못했습니다: " + error.message);
+      alert(friendlyError("수정하지 못했습니다.", error));
       return;
     }
     setMessages((prev) => prev.map((x) => (x.id === m.id ? { ...x, content, edited_at: editedAt } : x)));
@@ -710,7 +710,7 @@ export default function ChatPanel({
     const { error } = await supabase.from("messages").update(patch).eq("id", m.id);
     if (error) {
       setMessages((prev) => prev.map((x) => (x.id === m.id ? m : x)));
-      alert((wasPinned ? "고정을 해제하지" : "고정하지") + " 못했습니다: " + error.message);
+      alert(friendlyError((wasPinned ? "고정을 해제하지" : "고정하지") + " 못했습니다.", error));
     }
   }
 
@@ -840,8 +840,7 @@ export default function ChatPanel({
 
       setTaskPopup(null);
     } catch (err) {
-      console.error("업무등록 실패:", err);
-      setRegisterError(err instanceof Error ? err.message : "업무를 등록하지 못했습니다.");
+      setRegisterError(friendlyError("업무를 등록하지 못했습니다.", err));
     } finally {
       setAnalyzing(false);
     }

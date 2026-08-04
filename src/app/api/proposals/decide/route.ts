@@ -68,6 +68,10 @@ export async function POST(request: Request) {
       applicability: p.applicability,
       legal_summary: p.legal_summary,
       benchmark: p.benchmark,
+      // GIA시스템 제안(source="system")이면 proposals.source_id에 원본 gia_systems.id를
+      // 그대로 담아 뒀습니다(다른 source와 달리 이 타입만 origin id를 직접 참조) - 발행 시
+      // 이 컬럼으로 원본 행을 찾아 자동으로 "보유"로 갱신합니다(/api/adopted/publish).
+      system_ref_id: p.source === "system" ? p.source_id : null,
     });
     if (insertErr) return NextResponse.json({ error: insertErr.message }, { status: 500 });
   }

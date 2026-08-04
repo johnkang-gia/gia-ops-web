@@ -126,3 +126,107 @@ export async function callClaudeJson(
     throw err;
   }
 }
+
+// 교육뉴스/GIA시스템 벤치마킹처럼 "최신 웹 정보"가 필요한 기능을 위한 버전입니다. Anthropic이
+// 서버에서 직접 검색을 수행하는 web_search 도구를 붙여서 호출합니다(우리가 직접 검색 API를
+// 연동할 필요 없이, 한 번의 메시지 요청 안에서 Claude가 알아서 여러 번 검색하고 최종 답을
+// 만들어 돌려줍니다). 응답 content에는 검색 과정(server_tool_use/web_search_tool_result)과
+// 최종 텍스트가 섞여 있는데, 우리는 마지막 text 블록만 최종 답으로 취급합니다 - 프롬프트에서
+// "최종 답은 반드시 JSON 하나만"이라고 명시해야 안전하게 파싱됩니다.
+export async function callClaudeJsonWithWebSearch(
+  systemPrompt: string,
+  userPrompt: string,
+  opts?: { maxTokens?: number; model?: string; route?: string; maxSearches?: number }
+): Promise<unknown> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const maxTokens = opts?.maxTokens ?? 8000;
+  const model = opts?.model ?? CLAUDE_MODEL_QUALITY;
+  const route = opts?.route ?? "unknown";
+  const maxSearches = opts?.maxSearches ?? 6;
+  let inputTokens: number | null = null;
+  let outputTokens: number | null = null;
+
+  async function recordUsage(success: boolean, errorMessage?: string) {
+    try {
+      const supabase = await createClient();
+      await logAiUsage(supabase, { route, model, inputTokens, outputTokens, success, errorMessage });
+    } catch {
+      // 로깅 실패는 무시(AI 응답 자체에는 영향 없음)
+    }
+  }
+
+  try {
+    if (!apiKey) {
+      throw new Error("ANTHROPIC_API_KEY가 설정되어 있지 않습니다(Vercel 환경변수 확인).");
+    }
+    if (!(await isFeatureEnabled(route))) {
+      throw new Error("현재 이 AI 기능은 관리자에 의해 일시정지되어 있습니다. 잠시 후 다시 시도해주세요.");
+    }
+
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: maxTokens,
+        system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
+        messages: [{ role: "user", content: userPrompt }],
+        tools: [{ type: "web_search_20250305", name: "web_search", max_uses: maxSearches }],
+      }),
+    });
+
+    const raw = await response.text();
+    let json: {
+      error?: { message?: string };
+      content?: { type: string; text?: string }[];
+      usage?: { input_tokens?: number; output_tokens?: number };
+      stop_reason?: string;
+    };
+    try {
+      json = JSON.parse(raw);
+    } catch {
+      throw new Error(`Claude API 응답을 해석할 수 없습니다(코드 ${response.status}): ${raw.slice(0, 300)}`);
+    }
+    if (json.usage) {
+      inputTokens = json.usage.input_tokens ?? null;
+      outputTokens = json.usage.output_tokens ?? null;
+    }
+    if (json.error) {
+      throw new Error(`Claude API 오류: ${json.error.message || JSON.stringify(json.error)}`);
+    }
+    if (!response.ok) {
+      throw new Error(`Claude API 오류(코드 ${response.status}): ${raw.slice(0, 300)}`);
+    }
+    if (json.stop_reason === "pause_turn") {
+      throw new Error("검색이 길어져 응답이 끊겼습니다. 잠시 후 다시 시도해주세요.");
+    }
+    const textBlocks = (json.content ?? []).filter(
+      (b): b is { type: string; text: string } => b && b.type === "text" && typeof b.text === "string"
+    );
+    if (!textBlocks.length) {
+      throw new Error(`Claude 응답에서 텍스트를 찾을 수 없습니다: ${JSON.stringify(json.content).slice(0, 300)}`);
+    }
+    let text = textBlocks[textBlocks.length - 1].text.trim();
+    text = text
+      .replace(/^```json/i, "")
+      .replace(/^```/, "")
+      .replace(/```$/, "")
+      .trim();
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      throw new Error(`Claude 응답을 JSON으로 해석하지 못했습니다: ${text.slice(0, 300)}`);
+    }
+    await recordUsage(true);
+    return parsed;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    await recordUsage(false, message);
+    throw err;
+  }
+}

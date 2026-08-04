@@ -1,7 +1,9 @@
 import path from "node:path";
 import { Document, Page, Text, View, StyleSheet, Font, renderToBuffer } from "@react-pdf/renderer";
 import { createClient } from "@/lib/supabase/server";
-import type { WrReport, WrStudent } from "@/lib/types";
+import { getCurrentAppUser } from "@/lib/currentUser";
+import { isTeacherOnly } from "@/lib/roles";
+import type { WrClass, WrReport, WrStudent, WrSubject } from "@/lib/types";
 import { BADGE_MAP, EVAL_LABELS, EVAL_CATEGORIES } from "@/lib/weeklyReport/badges";
 import type { EvalCategory } from "@/lib/types";
 
@@ -101,10 +103,8 @@ export async function GET(request: Request) {
   ensureFontRegistered();
 
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return new Response("로그인이 필요합니다.", { status: 401 });
+  const me = await getCurrentAppUser();
+  if (!me) return new Response("로그인이 필요합니다.", { status: 401 });
 
   const { searchParams } = new URL(request.url);
   const studentId = searchParams.get("studentId");
@@ -125,6 +125,25 @@ export async function GET(request: Request) {
     isTermMode ? supabase.from("terms").select("*").eq("id", termId).maybeSingle() : Promise.resolve({ data: null }),
   ]);
   if (!student) return new Response("학생을 찾을 수 없습니다.", { status: 404 });
+
+  // /weekly-report/students/[id]와 동일한 기준으로, 교사는 자기 담임반/담당과목 학생 PDF만
+  // 출력할 수 있게 막습니다(예전에는 studentId만 알면 아무 학생이나 출력 가능했습니다).
+  if (isTeacherOnly(me)) {
+    const s = student as WrStudent;
+    const [{ data: ownClasses }, { data: ownSubjects }] = await Promise.all([
+      s.class_id
+        ? supabase
+            .from("wr_classes")
+            .select("id")
+            .eq("id", s.class_id)
+            .or(`teacher_email.eq.${me.email},sub_teacher_email.eq.${me.email}`)
+        : Promise.resolve({ data: [] as WrClass[] }),
+      supabase.from("wr_subjects").select("id, student_ids").eq("teacher_email", me.email),
+    ]);
+    const ownsViaClass = (ownClasses?.length ?? 0) > 0;
+    const ownsViaSubject = ((ownSubjects as WrSubject[] | null) ?? []).some((sub) => sub.student_ids?.includes(studentId));
+    if (!ownsViaClass && !ownsViaSubject) return new Response("접근 권한이 없습니다.", { status: 403 });
+  }
 
   const allReports = ((reportsData as WrReport[] | null) ?? []).filter((r) => !isTermMode || r.term_id === termId);
 

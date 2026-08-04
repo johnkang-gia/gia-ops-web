@@ -40,7 +40,11 @@ export default function ClassManageClient({ initialClasses, team }: { initialCla
     }
   }
 
-  async function updateAssignment(id: string, field: "teacher_email" | "sub_teacher_email", value: string) {
+  async function updateAssignment(
+    id: string,
+    field: "teacher_email" | "sub_teacher_email" | "teacher_name" | "sub_teacher_name",
+    value: string
+  ) {
     setClasses((prev) => prev.map((c) => (c.id === id ? { ...c, [field]: value || null } : c)));
     const supabase = createClient();
     await supabase.from("wr_classes").update({ [field]: value || null }).eq("id", id);
@@ -127,6 +131,16 @@ export default function ClassManageClient({ initialClasses, team }: { initialCla
                       </option>
                     ))}
                   </select>
+                  {!c.teacher_email && (
+                    <input
+                      key={c.id + (c.teacher_name ?? "")}
+                      defaultValue={c.teacher_name ?? ""}
+                      onBlur={(e) => updateAssignment(c.id, "teacher_name", e.target.value)}
+                      placeholder="계정 없을 때 이름만"
+                      title="아직 계정이 없는 담임의 이름만 임시로 적어둘 수 있습니다. 계정이 생기면 위 선택으로 바꿔주세요."
+                      className="mt-1 w-32 rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-500"
+                    />
+                  )}
                 </td>
                 <td className="px-3 py-2">
                   <select
@@ -141,6 +155,16 @@ export default function ClassManageClient({ initialClasses, team }: { initialCla
                       </option>
                     ))}
                   </select>
+                  {!c.sub_teacher_email && (
+                    <input
+                      key={c.id + (c.sub_teacher_name ?? "")}
+                      defaultValue={c.sub_teacher_name ?? ""}
+                      onBlur={(e) => updateAssignment(c.id, "sub_teacher_name", e.target.value)}
+                      placeholder="계정 없을 때 이름만"
+                      title="아직 계정이 없는 부담임의 이름만 임시로 적어둘 수 있습니다. 계정이 생기면 위 선택으로 바꿔주세요."
+                      className="mt-1 w-32 rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-500"
+                    />
+                  )}
                 </td>
                 <td className="px-3 py-2 text-right">
                   <button onClick={() => removeClass(c.id)} className="text-xs text-red-400 hover:text-red-600">

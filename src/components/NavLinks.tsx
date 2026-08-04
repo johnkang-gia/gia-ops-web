@@ -1,7 +1,6 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -63,6 +62,7 @@ const ACCENT_BORDER: Record<NavAccent, string> = {
 
 export function SidebarNavLinks({ categories }: { categories: NavCategory[] }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [openKey, setOpenKey] = useState<string | null>(null);
   const [popupPos, setPopupPos] = useState<{ top: number; left: number } | null>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -125,11 +125,18 @@ export function SidebarNavLinks({ categories }: { categories: NavCategory[] }) {
             onMouseEnter={(e) => hasChildren && openFlyout(cat.key, e.currentTarget)}
             onMouseLeave={scheduleClose}
           >
-            <Link
-              href={targetHref}
-              onClick={() => setOpenKey(null)}
+            {/* <Link href>가 아니라 버튼+router.push로 이동시킵니다: <a href>를 쓰면 마우스를
+                올렸을 때 브라우저가 창 아래쪽 상태표시줄에 링크 주소를 계속 띄우는데(요청:
+                "메뉴에 마우스 올리면 창아래에 주소가 뜨는데 없앨 수 있어?"), 이건 브라우저
+                자체 동작이라 CSS/JS로는 못 없애고 실제 href를 안 쓰는 방법뿐입니다. */}
+            <button
+              type="button"
+              onClick={() => {
+                setOpenKey(null);
+                router.push(targetHref);
+              }}
               className={
-                "flex cursor-pointer items-center gap-2 rounded-lg border-l-2 px-3 py-2 text-sm font-medium transition-colors " +
+                "flex w-full cursor-pointer items-center gap-2 rounded-lg border-l-2 px-3 py-2 text-left text-sm font-medium transition-colors " +
                 (active
                   ? ACCENT_BORDER[accent] + " " + ACCENT_BG_SOFT[accent] + " " + ACCENT_TEXT[accent] + " font-bold"
                   : "border-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-900")
@@ -141,7 +148,7 @@ export function SidebarNavLinks({ categories }: { categories: NavCategory[] }) {
                 {cat.labelEn && <span className="block text-[10px] font-normal text-slate-400">{cat.labelEn}</span>}
               </span>
               {hasChildren && <span className="text-[10px] text-slate-300">›</span>}
-            </Link>
+            </button>
           </div>
         );
       })}
@@ -164,12 +171,15 @@ export function SidebarNavLinks({ categories }: { categories: NavCategory[] }) {
               const itemActive = isActiveHref(pathname, item.href);
               const accent = openCategory.accent ?? "navy";
               return (
-                <Link
+                <button
                   key={item.href}
-                  href={item.href}
-                  onClick={() => setOpenKey(null)}
+                  type="button"
+                  onClick={() => {
+                    setOpenKey(null);
+                    router.push(item.href);
+                  }}
                   className={
-                    "flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm transition-colors " +
+                    "flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors " +
                     (itemActive
                       ? ACCENT_BG_SOFT[accent] + " " + ACCENT_TEXT[accent] + " font-semibold"
                       : "text-slate-600 hover:bg-slate-100 hover:text-slate-900")
@@ -180,7 +190,7 @@ export function SidebarNavLinks({ categories }: { categories: NavCategory[] }) {
                     {item.label}
                     {item.labelEn && <span className="block text-[10px] font-normal text-slate-400">{item.labelEn}</span>}
                   </span>
-                </Link>
+                </button>
               );
             })}
           </div>,
@@ -194,6 +204,7 @@ export function SidebarNavLinks({ categories }: { categories: NavCategory[] }) {
 // 스크롤하는 방식을 그대로 유지합니다(카테고리 라벨은 생략하고 실제 링크만 나열).
 export function MobileNavLinks({ categories }: { categories: NavCategory[] }) {
   const pathname = usePathname();
+  const router = useRouter();
   const items: NavLeaf[] = categories.flatMap((c) =>
     c.items && c.items.length > 0
       ? c.items
@@ -207,16 +218,17 @@ export function MobileNavLinks({ categories }: { categories: NavCategory[] }) {
       {items.map((item) => {
         const active = isActiveHref(pathname, item.href);
         return (
-          <Link
+          <button
             key={item.href}
-            href={item.href}
+            type="button"
+            onClick={() => router.push(item.href)}
             className={
               "shrink-0 cursor-pointer rounded-lg px-3 py-1.5 text-sm font-medium transition-colors " +
               (active ? "bg-gia-navy text-white" : "text-slate-600 hover:bg-slate-100")
             }
           >
             {item.icon} {item.label}
-          </Link>
+          </button>
         );
       })}
     </>

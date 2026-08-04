@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 // labelEn이 있으면 한글 라벨 아래 작게 영어 라벨을 함께 보여줍니다 - 주간 학생 관찰기록은
@@ -66,6 +66,29 @@ export function SidebarNavLinks({ categories }: { categories: NavCategory[] }) {
   const [openKey, setOpenKey] = useState<string | null>(null);
   const [popupPos, setPopupPos] = useState<{ top: number; left: number } | null>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flyoutRef = useRef<HTMLDivElement | null>(null);
+
+  // 주메뉴가 사이드바 아래쪽에 있으면 부메뉴(플라이아웃)도 그만큼 아래에서 열리는데, 그대로
+  // 두면 화면 아래로 잘려나가 누르기 어려워집니다(요청: "부메뉴가 화면에 가려서 누르기
+  // 불편해"). 실제로 렌더링된 부메뉴 높이를 측정해서, 화면 아래로 넘치면 위로 밀어올려
+  // 항상 화면 안에 다 보이도록 보정합니다. 페인트 전에 동기적으로 실행되는 useLayoutEffect라
+  // 깜빡임 없이 바로 보정된 위치로 나타납니다.
+  useLayoutEffect(() => {
+    if (!openKey || !flyoutRef.current) return;
+    const el = flyoutRef.current;
+    const margin = 8;
+    const height = el.offsetHeight;
+    setPopupPos((prev) => {
+      if (!prev) return prev;
+      const maxTop = Math.max(margin, window.innerHeight - margin - height);
+      const clampedTop = Math.min(prev.top, maxTop);
+      if (clampedTop === prev.top) return prev;
+      return { ...prev, top: clampedTop };
+    });
+    // openKey가 바뀔 때(=새로 열릴 때)만 보정하면 충분하고, popupPos를 의존성에 넣으면
+    // 보정 자체가 다시 보정을 트리거해 무한루프가 됩니다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openKey]);
 
   // 부메뉴를 사이드바 <nav> 안(overflow-y-auto)에 그대로 두면, 메뉴가 길어질 때 부메뉴 자체가
   // 스크롤 영역에 끼어 잘리거나 사이드바에 스크롤이 생겨버립니다. document.body에 포탈로
@@ -128,6 +151,7 @@ export function SidebarNavLinks({ categories }: { categories: NavCategory[] }) {
         typeof document !== "undefined" &&
         createPortal(
           <div
+            ref={flyoutRef}
             onMouseEnter={() => closeTimer.current && clearTimeout(closeTimer.current)}
             onMouseLeave={scheduleClose}
             style={{ position: "fixed", top: popupPos.top, left: popupPos.left }}

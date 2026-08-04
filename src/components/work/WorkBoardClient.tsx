@@ -238,6 +238,13 @@ export default function WorkBoardClient({
         >
           🗂 업무기록
         </Link>
+        <Link
+          href="/work/report"
+          title="일간·주간·월간 업무 보고서를 문서로 정리하고 바로 인쇄할 수 있습니다"
+          className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-black/5 px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition hover:bg-black/10"
+        >
+          📊 업무 보고서
+        </Link>
         <button
           type="button"
           onClick={() => setGuideOpen(true)}

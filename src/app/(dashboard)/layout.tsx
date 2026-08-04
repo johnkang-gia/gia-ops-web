@@ -26,6 +26,7 @@ function buildOpsCategory(): NavCategory {
     items: [
       { href: "/records", label: "사건기록", icon: "📋" },
       { href: "/meetings", label: "회의기록", icon: "💬" },
+      { href: "/meetings/report", label: "회의 보고서", icon: "📊" },
       { href: "/ai-manual", label: "AI 매뉴얼", icon: "✨" },
       { href: "/events", label: "행사기록", icon: "🎉" },
       { href: "/proposals", label: "제안함", icon: "📝" },

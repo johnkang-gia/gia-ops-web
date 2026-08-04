@@ -9,6 +9,7 @@ import { useOnlineUsers } from "@/lib/useOnlineUsers";
 import type { Task, TaskStatus, Department, TeamMember, TaskModeColor } from "@/lib/types";
 import { nameFor } from "@/lib/teamName";
 import { renewRecurringTask } from "@/lib/recurrence";
+import { useRefreshTaskCounts } from "@/components/NotificationBell";
 import { STATUS_LABEL } from "./statusConfig";
 import WorkspaceArea from "./WorkspaceArea";
 import TaskDetailPanel from "./TaskDetailPanel";
@@ -42,6 +43,7 @@ export default function WorkBoardClient({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [toasts, setToasts] = useState<StatusToast[]>([]);
   const [guideOpen, setGuideOpen] = useState(false);
+  const refreshTaskCounts = useRefreshTaskCounts();
 
   // 공유(태그된) 업무의 상태가 바뀌면 등록자·담당자 전원이 실시간으로 알 수 있게, 상태 변경만
   // 따로 감시하는 채널입니다. useRealtimeTable의 일반 구독은 화면 상태(tasks)를 갱신하는
@@ -190,6 +192,10 @@ export default function WorkBoardClient({
     if (updated) {
       setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, ...(updated as Task) } : t)));
     }
+    // 사이드바 알림 배지가 Realtime 전파를 기다리지 않고 지금 바로 다시 세도록 알립니다
+    // (요청: "확인 체크 하자마자 사라지게 할 수 있어?" - 페이지를 새로 열어야만 반영되던
+    // 지연을 없앴습니다).
+    refreshTaskCounts();
     if (checked) {
       await supabase.from("task_comments").insert({
         task_id: taskId,

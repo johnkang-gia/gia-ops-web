@@ -12,7 +12,7 @@ import MainArea from "@/components/MainArea";
 import DateTimeCard from "@/components/home/DateTimeCard";
 import GlobalSearchBar from "@/components/GlobalSearchBar";
 import PausedFeaturesBanner from "@/components/dev/PausedFeaturesBanner";
-import NotificationBell, { NotificationProvider } from "@/components/NotificationBell";
+import NotificationBell, { NotificationProvider, TaskCountBadge } from "@/components/NotificationBell";
 import type { AiFeatureFlag } from "@/lib/types";
 
 // 학기 배지 - 로그인 인증(me)과 달리 이 화면을 막을 이유가 없는 "장식성" 정보라서, layout
@@ -257,12 +257,15 @@ export default async function DashboardLayout({
               </Suspense>
             )}
           </div>
-          {/* 채팅에 새 글이 올라오거나 내 업무목록에 새 업무가 등록되면 여기 프로필 왼쪽 위에
-              빨간 알림 배지가 뜹니다(요청: "메뉴항목 프로필 옆에 알람형식으로 알 수 있도록").
-              배지 자체가 클릭 가능한 별도 링크라(/work로 이동), 안쪽에 또 링크를 두는
-              마크업을 피하려고 감싸는 relative div를 하나 더 뒀습니다. */}
-          <div className="relative mt-2">
-            <Link href="/account" className="flex items-center gap-2 rounded-lg px-1 py-1 hover:bg-slate-50">
+          {/* 업무 관련 표시 두 가지가 여기 붙습니다(요청: "동그라미 안의 숫자는 미확인 업무
+              개수로 하고, 확인이 되면 프로필 이름 맨 오른쪽에 둥근 네모박스안에 총
+              업무갯수를 표시해줘"): (1) 프로필 아이콘 왼쪽 위 모서리 - 미확인 업무가 있으면
+              빨간 원이 깜빡임(NotificationBell), (2) 이름 줄 맨 오른쪽 - 내 업무 총 개수를
+              보여주는 조용한 사각 배지(TaskCountBadge). 둘 다 클릭 가능한 별도 링크라(/work로
+              이동), 프로필 자체 링크 안에 중첩되지 않도록 바깥 relative flex 행에 형제로
+              둡니다. */}
+          <div className="relative mt-2 flex items-center gap-1">
+            <Link href="/account" className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1 py-1 hover:bg-slate-50">
               <div className="h-8 w-8 shrink-0 overflow-hidden rounded-full bg-slate-100">
                 {me.avatar_url ? (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -281,6 +284,7 @@ export default async function DashboardLayout({
                 <div className="truncate text-[11px] text-slate-400">{me.email}</div>
               </div>
             </Link>
+            {!isTeacher && <TaskCountBadge />}
             {!isTeacher && <NotificationBell />}
           </div>
           <Suspense fallback={null}>

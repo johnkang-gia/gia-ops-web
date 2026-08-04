@@ -1,31 +1,22 @@
 "use client";
 
 import Link from "next/link";
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 
-// 사이드바 프로필 옆에 다는 작은 알림 배지입니다. 처음에는 "안 읽은 채팅 + 새 업무"를
-// 합산한 숫자였는데, 요청("프로필 옆에 동그라미 숫자를 띄우고, 그게 내업무 갯수를 뜻하고
-// 새로운 업무가 생길때마다 빨간색으로 깜빡깜빡이도록 하고 업무확인하면 그냥 작은 원안에
-// 숫자를 표시하게")에 따라 "지금 내 업무함에 있는 업무 개수"만 보여주는 배지로 바꿨습니다
-// (채팅 안읽음은 이 배지에서 뺐습니다).
+// 사이드바 프로필 옆에 다는 업무 알림 표시입니다. 두 곳으로 나뉩니다(요청: "동그라미 안의
+// 숫자는 미확인 업무 개수로 하고, 확인이 되면 프로필 이름 맨 오른쪽에 둥근 네모박스안에 총
+// 업무갯수를 표시해줘"):
+//  1) NotificationBell - 프로필 아이콘 모서리의 작은 원형 배지. "미확인" 업무(태그됐거나
+//     [전체]로 등록됐는데 아직 "업무 확인" 체크를 안 한 것) 개수만 보여주고, 하나라도 있으면
+//     빨간색으로 깜빡입니다. 0이면 아예 안 보입니다.
+//  2) TaskCountBadge - 프로필 이름 오른쪽 끝의 조용한 사각 배지. "내 업무" 총 개수(확인
+//     여부와 무관하게 진행 중인 전체)를 항상 보여줍니다.
 //
-//  - 숫자: MyTasksWidget과 같은 기준으로 "내 업무"를 셉니다 - 내가 등록자이거나, 태그된
-//    담당자이거나, [전체]로 등록된 업무이면서 아직 완료되지 않은 것.
-//  - 깜빡임: 그중 내가 담당자로 태그됐거나 [전체]로 등록됐는데(등록자 본인 제외 - 등록자는
-//    원래 확인 대상이 아님) 아직 업무 상세의 "업무 확인" 체크박스를 안 누른 업무가 하나라도
-//    있으면 빨간색으로 깜빡입니다. 그 업무를 확인 체크하면(=acknowledged_by에 내 이메일이
-//    들어가면) 더 이상 깜빡이지 않고 조용한 색의 숫자만 남습니다.
-//
-// v0.57.2에서는 이 조회/구독 로직을 배지 컴포넌트 자체 안에 뒀었는데, layout.tsx가 데스크톱
-// 사이드바용/모바일 헤더용 두 곳에 배지를 동시에 렌더링하다 보니(화면 크기에 따라 CSS로만
-// 숨기는 방식이라 둘 다 항상 마운트됨) 똑같은 이름의 Realtime 채널을 두 번 동시에 구독하게
-// 됐고, 이게 Supabase 쪽에서 문제를 일으켜 스테이징 전체가 먹통이 되는 원인이었던 것으로
-// 보입니다. 그래서 조회/구독 로직은 NotificationProvider로 분리해 layout 최상단에서 딱 한
-// 번만 실행되게 하고, 실제 배지(NotificationBell)는 그 결과를 Context로 읽기만 하는 얇은
-// 컴포넌트로 둡니다 - 여러 곳에 렌더링돼도 구독은 항상 하나입니다.
-type Counts = { myTaskCount: number; needsAck: boolean };
-const NotificationContext = createContext<Counts>({ myTaskCount: 0, needsAck: false });
+// MyTasksWidget과 같은 기준으로 "내 업무"를 셉니다 - 내가 등록자이거나, 태그된 담당자이거나,
+// [전체]로 등록된 업무이면서 아직 완료되지 않은 것.
+type Counts = { myTaskCount: number; needsAckCount: number; refresh: () => void };
+const NotificationContext = createContext<Counts>({ myTaskCount: 0, needsAckCount: 0, refresh: () => {} });
 
 type TaskRow = {
   owner_email: string;
@@ -42,7 +33,10 @@ export function NotificationProvider({
   userEmail: string | null;
   children: React.ReactNode;
 }) {
-  const [counts, setCounts] = useState<Counts>({ myTaskCount: 0, needsAck: false });
+  const [counts, setCounts] = useState<{ myTaskCount: number; needsAckCount: number }>({
+    myTaskCount: 0,
+    needsAckCount: 0,
+  });
 
   useEffect(() => {
     if (!userEmail) return; // 교사 계정 등 배지를 안 보여줄 화면에서는 조회/구독 자체를 생략
@@ -60,52 +54,80 @@ export function NotificationProvider({
           (t.owner_email === userEmail || t.assignee_emails?.includes(userEmail!) || t.origin_mode === "전체") &&
           t.status !== "완료"
       );
-      const needsAck = mine.some(
+      const needsAckCount = mine.filter(
         (t) =>
           t.owner_email !== userEmail &&
           (t.assignee_emails?.includes(userEmail!) || t.origin_mode === "전체") &&
           !(t.acknowledged_by ?? []).some((a) => a.email === userEmail)
-      );
+      ).length;
 
-      if (!cancelled) setCounts({ myTaskCount: mine.length, needsAck });
+      if (!cancelled) setCounts({ myTaskCount: mine.length, needsAckCount });
     }
 
     loadCounts();
 
     // 업무가 새로 생기거나, 상태·확인여부가 바뀌면 그때마다 다시 세어 배지를 최신 상태로
-    // 유지합니다. 이 Provider는 layout 최상단에서 딱 한 번만 마운트되므로 채널을 중복
-    // 구독할 일이 없습니다.
+    // 유지합니다. 다만 "내가 방금 이 화면에서 확인 체크한" 경우는 Realtime 전파를 기다리지
+    // 않고 아래 refresh()를 직접 호출해 즉시 반영합니다(요청: "확인 체크 하자마자 사라지게
+    // 할 수 있어?" - 페이지를 새로 열어야만 반영되던 지연을 없앴습니다).
     const channel = supabase
       .channel("global-notification-bell-" + userEmail)
       .on("postgres_changes", { event: "*", schema: "public", table: "tasks" }, () => loadCounts())
       .subscribe();
 
+    // 다른 컴포넌트(업무 확인 체크박스 등)가 "지금 바로 다시 세어줘"라고 요청할 수 있도록
+    // window 커스텀 이벤트로 loadCounts를 노출합니다. Context의 refresh()가 이 이벤트를 쏩니다.
+    const onRefresh = () => loadCounts();
+    window.addEventListener("gia-task-counts-refresh", onRefresh);
+
     return () => {
       cancelled = true;
       supabase.removeChannel(channel);
+      window.removeEventListener("gia-task-counts-refresh", onRefresh);
     };
   }, [userEmail]);
 
-  return <NotificationContext.Provider value={counts}>{children}</NotificationContext.Provider>;
+  const refresh = useCallback(() => {
+    window.dispatchEvent(new Event("gia-task-counts-refresh"));
+  }, []);
+
+  return <NotificationContext.Provider value={{ ...counts, refresh }}>{children}</NotificationContext.Provider>;
 }
 
-// 실제로 렌더링되는 작은 배지입니다. 데이터를 직접 조회하지 않고 위 Provider가 계산해둔
-// 값을 Context로 읽기만 하므로, 데스크톱/모바일 두 군데에 동시에 놓아도 안전합니다.
+// 업무 확인 체크박스를 누른 직후 등, 배지를 Realtime 전파를 기다리지 않고 즉시 다시 세고 싶을
+// 때 이 훅으로 얻은 함수를 호출합니다.
+export function useRefreshTaskCounts() {
+  return useContext(NotificationContext).refresh;
+}
+
+// 프로필 아이콘 모서리의 작은 원형 배지 - "미확인" 업무 개수. 데이터를 직접 조회하지 않고 위
+// Provider가 계산해둔 값을 Context로 읽기만 하므로, 데스크톱/모바일 두 군데에 동시에 놓아도
+// 안전합니다.
 export default function NotificationBell() {
-  const { myTaskCount, needsAck } = useContext(NotificationContext);
+  const { needsAckCount } = useContext(NotificationContext);
+  if (needsAckCount === 0) return null;
+
+  return (
+    <Link
+      href="/work"
+      title={`아직 확인하지 않은 업무 ${needsAckCount}건`}
+      className="absolute -left-1 -top-1 z-10 flex h-4 min-w-[1rem] animate-pulse items-center justify-center rounded-full border-2 border-white bg-red-500 px-1 text-[10px] font-bold leading-none text-white shadow-sm"
+    >
+      {needsAckCount > 99 ? "99+" : needsAckCount}
+    </Link>
+  );
+}
+
+// 프로필 이름 오른쪽 끝에 붙는 조용한 사각 배지 - "내 업무" 총 개수(확인 여부와 무관).
+export function TaskCountBadge() {
+  const { myTaskCount } = useContext(NotificationContext);
   if (myTaskCount === 0) return null;
 
   return (
     <Link
       href="/work"
-      title={
-        needsAck
-          ? `내 업무 ${myTaskCount}건 - 아직 확인하지 않은 업무가 있어요`
-          : `내 업무 ${myTaskCount}건`
-      }
-      className={`absolute -left-1 -top-1 z-10 flex h-4 min-w-[1rem] items-center justify-center rounded-full border-2 border-white px-1 text-[10px] font-bold leading-none text-white shadow-sm ${
-        needsAck ? "animate-pulse bg-red-500" : "bg-slate-400"
-      }`}
+      title={`내 업무 총 ${myTaskCount}건`}
+      className="ml-auto shrink-0 rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold leading-none text-slate-500"
     >
       {myTaskCount > 99 ? "99+" : myTaskCount}
     </Link>

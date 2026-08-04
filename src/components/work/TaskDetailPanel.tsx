@@ -8,6 +8,7 @@ import { addTimedEventToNativeCalendar } from "@/lib/nativeCalendar";
 import { recurrenceLabel, renewRecurringTask } from "@/lib/recurrence";
 import { uploadTaskFile, getTaskFileSignedUrl, deleteTaskFile } from "@/lib/storage";
 import { friendlyError } from "@/lib/errorMessage";
+import { useRefreshTaskCounts } from "@/components/NotificationBell";
 import { STATUS_ORDER, STATUS_LABEL } from "./statusConfig";
 
 function formatFileSize(bytes: number | null) {
@@ -59,6 +60,7 @@ export default function TaskDetailPanel({
   const [recurrenceOpen, setRecurrenceOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const WEEKDAY_LABELS = ["일", "월", "화", "수", "목", "금", "토"];
+  const refreshTaskCounts = useRefreshTaskCounts();
 
   useEffect(() => {
     const supabase = createClient();
@@ -256,6 +258,9 @@ export default function TaskDetailPanel({
       return;
     }
     if (updated) onUpdated({ ...task, ...(updated as Task) });
+    // 사이드바 알림 배지가 Realtime 전파를 기다리지 않고 지금 바로 다시 세도록 알립니다
+    // (요청: "확인 체크 하자마자 사라지게 할 수 있어?").
+    refreshTaskCounts();
     if (!already) {
       await logSystemEvent(`${nameFor(team, currentUserEmail)}님이 업무를 확인했습니다.`);
     }

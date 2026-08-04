@@ -67,6 +67,41 @@ export type Term = {
   updated_at: string;
 };
 
+// 학사일정 - 반복되는 학교 업무(체크리스트)를 학기 시작일/종료일 기준 D-day로 자동 등록하기
+// 위한 두 테이블입니다. 템플릿(academic_checklist_templates)은 관리자가 미리 정의해두는
+// "규칙"이고(예: "학생명단 확정, 학기 시작 14일 전"), 항목(academic_checklist_items)은 실제
+// 학기에 맞춰 계산된 날짜가 붙은 "발생 건"입니다(예: 2026년 여름학기의 그 규칙 → 2026-06-10).
+export type ChecklistAnchor = "term_start" | "term_end";
+
+export type ChecklistTemplate = {
+  id: string;
+  title: string;
+  description: string | null;
+  department: string | null;
+  anchor: ChecklistAnchor;
+  offset_days: number;
+  active: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ChecklistItem = {
+  id: string;
+  template_id: string | null;
+  term_id: string | null;
+  title: string;
+  description: string | null;
+  department: string | null;
+  due_date: string;
+  done: boolean;
+  done_by: string | null;
+  done_at: string | null;
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type ManualDraft = {
   id: string;
   case_id: string;

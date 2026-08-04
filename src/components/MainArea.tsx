@@ -20,6 +20,7 @@ const BOUNDED_LIST_PATHS = [
   "/documents",
   "/school/documents",
   "/school/documents/reports",
+  "/academic-calendar",
   "/inquiries",
   "/admin/users",
   "/students",

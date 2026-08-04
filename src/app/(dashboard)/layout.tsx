@@ -160,6 +160,10 @@ export default async function DashboardLayout({
     categories = [
       { key: "homeroom", label: "내 담임반", labelEn: "My Homeroom", icon: "🏠", href: "/weekly-report/homeroom", accent: "teal" },
       { key: "subjects", label: "내 담당과목", labelEn: "My Subjects", icon: "📘", href: "/weekly-report/subjects", accent: "teal" },
+      // 학사일정은 학기 시작/종료 전에 전 직원이 준비해야 할 일을 달력으로 보여주는
+      // 화면이라, 정보 열람이 제한적인 교사 계정에도 예외적으로 노출합니다(요청: "모든
+      // 직원들이 준비하고 체크할 수 있는").
+      { key: "academic-calendar", label: "학사일정", icon: "📅", href: "/academic-calendar", accent: "teal" },
     ];
   } else {
     categories = [
@@ -169,6 +173,9 @@ export default async function DashboardLayout({
       // 실무자 매뉴얼을 바로 그 아래에 뒀습니다.
       { key: "work", label: "업무", icon: "🗂️", href: "/work", accent: "blue" },
       { key: "staff-manual", label: "실무자 매뉴얼", icon: "📚", href: "/staff-manual", accent: "amber" },
+      // 학사일정 - 학기 시작/종료 며칠 전에 뭘 준비해야 하는지를 달력으로 한눈에 보고 체크하는
+      // 화면입니다(요청: "학기시작 2주전에뭘하고 1주전에 뭘하고 가 달력으로 한번에 보여서").
+      { key: "academic-calendar", label: "학사일정", icon: "📅", href: "/academic-calendar", accent: "teal" },
       buildOpsCategory(pendingProposals, pendingAdopted),
       buildSchoolCategory(isAdmin, isStaffOrAbove),
       buildSchoolDocumentsCategory(),

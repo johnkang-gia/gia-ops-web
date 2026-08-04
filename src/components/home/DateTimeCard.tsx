@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { getHolidayPreset } from "@hyunbinseo/holidays-kr";
+import { createClient } from "@/lib/supabase/client";
 
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 const MAC_EPOCH_SECONDS = Date.UTC(2001, 0, 1) / 1000;
@@ -63,10 +65,14 @@ function openInNativeCalendar(dateStr: string, title: string) {
 // compact=false(기본값)면 기존처럼 카드형 큰 위젯으로 그립니다. 기능(달력 이동, 공휴일 표시,
 // 클릭시 OS 캘린더 연동)은 두 모드 모두 동일합니다.
 export default function DateTimeCard({ compact = false }: { compact?: boolean }) {
+  const router = useRouter();
   const [mounted, setMounted] = useState(false);
   const [now, setNow] = useState<Date | null>(null);
   const [viewOffset, setViewOffset] = useState(0); // 표시 중인 달의 현재 달 대비 오프셋(0=이번 달)
   const [holidays, setHolidays] = useState<Record<string, string[]>>({});
+  // 학사일정 연동 - 이 달력이 "우리 메인 달력"이라, 학사일정(학기 시작/종료 전 준비할 일)이
+  // 있는 날짜에 작은 점을 함께 표시합니다(요청: "그 달력이 우리 메인의 달력과 연동되었으면").
+  const [checklistDates, setChecklistDates] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     setMounted(true);
@@ -78,6 +84,11 @@ export default function DateTimeCard({ compact = false }: { compact?: boolean })
   const viewYear = useMemo(() => {
     if (!now) return null;
     return new Date(now.getFullYear(), now.getMonth() + viewOffset, 1).getFullYear();
+  }, [now, viewOffset]);
+
+  const viewMonth = useMemo(() => {
+    if (!now) return null;
+    return new Date(now.getFullYear(), now.getMonth() + viewOffset, 1).getMonth();
   }, [now, viewOffset]);
 
   useEffect(() => {
@@ -96,6 +107,26 @@ export default function DateTimeCard({ compact = false }: { compact?: boolean })
       cancelled = true;
     };
   }, [viewYear]);
+
+  useEffect(() => {
+    if (viewYear === null || viewMonth === null) return;
+    let cancelled = false;
+    const monthPrefix = `${viewYear}-${pad2(viewMonth + 1)}`;
+    const supabase = createClient();
+    supabase
+      .from("academic_checklist_items")
+      .select("due_date")
+      .gte("due_date", `${monthPrefix}-01`)
+      .lte("due_date", `${monthPrefix}-31`)
+      .then(({ data }) => {
+        if (cancelled) return;
+        const rows = (data as { due_date: string }[] | null) ?? [];
+        setChecklistDates(new Set(rows.map((r) => r.due_date)));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [viewYear, viewMonth]);
 
   if (!mounted || !now) {
     return compact ? (
@@ -186,12 +217,16 @@ export default function DateTimeCard({ compact = false }: { compact?: boolean })
           const dateKey = day ? `${vYear}-${pad2(vMonth + 1)}-${pad2(day)}` : null;
           const holidayNames = dateKey ? holidays[dateKey] : undefined;
           const isHoliday = !!holidayNames?.length;
+          const hasChecklist = !!(dateKey && checklistDates.has(dateKey));
           return (
-            <div key={idx} className={"flex items-center justify-center " + (compact ? "py-0" : "py-0.5")}>
+            <div key={idx} className={"relative flex items-center justify-center " + (compact ? "py-0" : "py-0.5")}>
               {day && dateKey && (
                 <button
                   onClick={() => openInNativeCalendar(dateKey, holidayNames?.join(" · ") ?? "GIA 학사 일정")}
-                  title={holidayNames?.join(" · ") ?? "클릭하면 캘린더 앱에서 열립니다"}
+                  title={
+                    [holidayNames?.join(" · "), hasChecklist ? "📅 학사일정 있음" : null].filter(Boolean).join(" · ") ||
+                    "클릭하면 캘린더 앱에서 열립니다"
+                  }
                   className={
                     "flex items-center justify-center rounded-full transition hover:bg-slate-100 " +
                     cellSize +
@@ -210,10 +245,30 @@ export default function DateTimeCard({ compact = false }: { compact?: boolean })
                   {day}
                 </button>
               )}
+              {hasChecklist && (
+                <span
+                  className={
+                    "pointer-events-none absolute rounded-full bg-emerald-500 " +
+                    (compact ? "bottom-0 h-[3px] w-[3px]" : "bottom-0.5 h-1 w-1")
+                  }
+                />
+              )}
             </div>
           );
         })}
       </div>
+
+      <button
+        type="button"
+        onClick={() => router.push("/academic-calendar")}
+        className={
+          compact
+            ? "mt-1 w-full rounded text-center text-[9px] font-semibold text-emerald-600 hover:bg-emerald-50"
+            : "mt-2 w-full rounded-lg py-1 text-center text-xs font-semibold text-emerald-600 hover:bg-emerald-50"
+        }
+      >
+        📅 학사일정 보기
+      </button>
     </div>
   );
 }

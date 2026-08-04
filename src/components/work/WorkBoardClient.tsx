@@ -63,6 +63,20 @@ export default function WorkBoardClient({
         setToasts((prev) => [...prev, { id, taskId: newRow.id, text: `${moverName}님이 "${newRow.title}" 업무를 '${STATUS_LABEL[newRow.status]}'(으)로 옮겼어요.` }]);
         setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 6000);
       })
+      // 새 업무가 등록되어 "내 업무목록"에 들어오는 경우(내가 태그되었거나 [전체] 모드로 등록된
+      // 경우)도 매번 확인창(alert)을 띄우면 업무 흐름이 끊기니, 위 상태변경 토스트와 같은
+      // 방식으로 잠시 떴다 자동으로 사라지는 알림만 보여줍니다(요청: "그냥 알려주는 용도로
+      // 팝업이 잠시 뜨거나 했으면 좋겠어"). 내가 직접 등록한 업무는 이미 알고 있으니 제외합니다.
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "tasks" }, (payload) => {
+        const newRow = payload.new as Task;
+        if (newRow.owner_email === userEmail) return; // 내가 등록한 건 알림 불필요
+        const forMe = newRow.assignee_emails?.includes(userEmail) || newRow.origin_mode === "전체";
+        if (!forMe) return;
+        const creatorName = nameFor(team, newRow.owner_email);
+        const id = `${newRow.id}-new-${Date.now()}`;
+        setToasts((prev) => [...prev, { id, taskId: newRow.id, text: `${creatorName}님이 새 업무 "${newRow.title}"를 등록했어요.` }]);
+        setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 6000);
+      })
       .subscribe();
     return () => {
       supabase.removeChannel(channel);

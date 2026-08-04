@@ -45,7 +45,15 @@ export default function TaskCard({
   const color = modeColorMap?.get(task.origin_mode) || deptColor || "#3b82f6";
   const ackList = task.acknowledged_by ?? [];
   const totalAssignees = task.assignee_emails.length;
-  const iAmAssignee = task.assignee_emails.includes(currentUserEmail);
+  // 업무를 등록한 사람(owner_email) 본인은 "확인"할 필요가 없는 당사자라, 확인 대상
+  // 목록에서는 제외합니다(요청: "업무등록한 사람은 확인목록에서 제외시켜주고"). [전체] 모드는
+  // 부서원 전원(등록자 포함)을 담당자로 넣기 때문에 예전에는 등록자 본인도 "확인 안 함"으로
+  // 남아있었습니다. 담당자 요약 표시(@아무개 외 N명)는 실제 배정 인원 그대로 보여주고,
+  // 확인 체크박스/현황만 이 필터링된 목록 기준으로 계산합니다.
+  const ackRequiredEmails = task.assignee_emails.filter((e) => e !== task.owner_email);
+  const totalAckRequired = ackRequiredEmails.length;
+  const ackListRequired = ackList.filter((a) => ackRequiredEmails.includes(a.email));
+  const iAmAssignee = ackRequiredEmails.includes(currentUserEmail);
   const myAck = ackList.some((a) => a.email === currentUserEmail);
   const needsMyAck = iAmAssignee && task.status !== "완료" && !myAck;
   // 마감이 지났는데 아직 완료가 아니면 "지연", 24시간 안에 마감이면 "임박" - 팀이 업무가
@@ -54,7 +62,7 @@ export default function TaskCard({
   const overdue = dueTime !== null && task.status !== "완료" && dueTime < Date.now();
   const dueSoon = !overdue && dueTime !== null && task.status !== "완료" && dueTime - Date.now() < 24 * 60 * 60 * 1000;
   const deadline = deadlineLabel(task.due_at);
-  const unacknowledged = task.assignee_emails.filter((e) => !ackList.some((a) => a.email === e));
+  const unacknowledged = ackRequiredEmails.filter((e) => !ackList.some((a) => a.email === e));
   const borderColor = overdue ? "#ef4444" : dueSoon ? "#f59e0b" : color;
   const urgencyRing = overdue ? "ring-2 ring-red-400" : dueSoon ? "ring-1 ring-amber-300" : needsMyAck ? "ring-1 ring-amber-400" : "";
 
@@ -135,9 +143,9 @@ export default function TaskCard({
         <span className={"min-w-0 flex-1 text-sm font-semibold text-slate-800" + (iAmAssignee && myAck ? " opacity-60" : "")}>
           {task.title}
         </span>
-        {totalAssignees > 0 && (
+        {totalAckRequired > 0 && (
           <span className="shrink-0 text-[10px] font-semibold text-slate-400">
-            확인 {ackList.length}/{totalAssignees}
+            확인 {ackListRequired.length}/{totalAckRequired}
           </span>
         )}
       </div>
@@ -174,12 +182,12 @@ export default function TaskCard({
         </select>
       </div>
 
-      {isAdmin && totalAssignees > 0 && (
+      {isAdmin && totalAckRequired > 0 && (
         <div className="mt-2 flex flex-col gap-0.5 border-t border-dashed border-slate-200 pt-2 text-[11px]">
-          <div className="font-semibold text-slate-400">[관리자] 확인 현황 ({ackList.length}/{totalAssignees})</div>
-          {ackList.length > 0 && (
+          <div className="font-semibold text-slate-400">[관리자] 확인 현황 ({ackListRequired.length}/{totalAckRequired})</div>
+          {ackListRequired.length > 0 && (
             <div className="text-emerald-600">
-              {ackList.map((a) => `✓ ${nameFor(team, a.email)}`).join(" · ")}
+              {ackListRequired.map((a) => `✓ ${nameFor(team, a.email)}`).join(" · ")}
             </div>
           )}
           {unacknowledged.length > 0 && (

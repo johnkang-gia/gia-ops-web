@@ -4,6 +4,134 @@
 `version` 값과 항상 일치시킵니다. 업데이트할 때마다 이 파일 맨 위에 새 항목을 추가하고,
 같은 내용을 GitHub Desktop의 커밋 Summary/Description에도 그대로 사용하면 됩니다.
 
+## v0.56.8 - 2026-08-04 (staging)
+
+업무 확인목록에서 등록자 본인을 빼고, "내 업무목록"을 내 것/전체 두 칸으로 나누고, 데이터
+백업/복원 기능을 새로 만들었습니다.
+
+- **확인목록에서 등록자 제외**: [전체] 모드로 업무를 등록하면 부서원 전원(등록자 포함)이
+  담당자가 되는데, 예전에는 등록자 본인도 "확인 안 함"으로 남아있었습니다. 이제 등록자는
+  확인 대상에서 빠집니다.
+- **내 업무목록 / 전체 업무목록 좌우 분할**: 업무 탭 오른쪽 위 "내 업무목록" 자리를 반으로
+  나눠, 왼쪽은 내가 등록했거나 태그되거나 [전체] 모드인 업무만, 오른쪽은 지금 볼 수 있는
+  업무 전체를 보여줍니다.
+- **데이터 백업/복원 신설**: 관리자 메뉴에 "데이터 백업" 화면을 추가했습니다. 사건·회의·
+  행사·제안함·채택예정·매뉴얼·서류함·업무의 현재 상태를 버튼 한 번으로 스냅샷 저장하고,
+  필요하면 그 시점으로 되돌릴 수 있습니다. 관리자/개발자만 접근·실행할 수 있고, DB 함수
+  안에서도 한 번 더 권한을 확인합니다.
+- **보안 PIN 관련**: 이전 버전(v0.56.7)에서 PIN 2차 확인을 없앤 데 이어, 이번 백업 기능이
+  "데이터가 꼬여도 되돌릴 수 있는" 안전망 역할을 합니다.
+- DB 변경: `backups` 테이블 + `create_backup`/`restore_backup`/`backup_target_tables`
+  함수 신설. 아래 SQL을 Supabase SQL Editor에서 실행해 주세요.
+
+```sql
+create or replace function backup_target_tables()
+returns text[]
+language sql
+immutable
+as $$
+  select array[
+    'incidents', 'meetings', 'events', 'proposals', 'adopted', 'manual_sections',
+    'documents', 'tasks', 'task_comments', 'task_attachments'
+  ];
+$$;
+
+create table if not exists backups (
+  id uuid primary key default gen_random_uuid(),
+  label text,
+  created_by text not null,
+  created_at timestamptz not null default now(),
+  tables text[] not null,
+  snapshot jsonb not null
+);
+
+alter table backups enable row level security;
+
+drop policy if exists "admin_select_backups" on backups;
+create policy "admin_select_backups" on backups
+  for select using (is_giamicro_user() and is_app_admin());
+
+create or replace function create_backup(p_label text default null)
+returns backups
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_table text;
+  v_table_json jsonb;
+  v_snapshot jsonb := '{}'::jsonb;
+  v_row backups;
+begin
+  if not is_app_admin() then
+    raise exception '백업은 관리자/개발자만 만들 수 있습니다.';
+  end if;
+
+  foreach v_table in array backup_target_tables() loop
+    execute format('select coalesce(jsonb_agg(to_jsonb(t)), ''[]''::jsonb) from %I t', v_table)
+      into v_table_json;
+    v_snapshot := jsonb_set(v_snapshot, array[v_table], v_table_json);
+  end loop;
+
+  insert into backups (label, created_by, tables, snapshot)
+  values (p_label, lower(auth.jwt() ->> 'email'), backup_target_tables(), v_snapshot)
+  returning * into v_row;
+
+  return v_row;
+end;
+$$;
+
+revoke all on function create_backup(text) from public;
+grant execute on function create_backup(text) to authenticated;
+
+create or replace function restore_backup(p_backup_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_backup backups;
+  v_table text;
+  v_rows jsonb;
+  v_set_clause text;
+begin
+  if not is_app_admin() then
+    raise exception '복원은 관리자/개발자만 할 수 있습니다.';
+  end if;
+
+  select * into v_backup from backups where id = p_backup_id;
+  if v_backup is null then
+    raise exception '해당 백업을 찾을 수 없습니다.';
+  end if;
+
+  foreach v_table in array v_backup.tables loop
+    v_rows := coalesce(v_backup.snapshot -> v_table, '[]'::jsonb);
+
+    execute format(
+      'delete from %I where id not in (select (r->>''id'')::uuid from jsonb_array_elements($1) r)',
+      v_table
+    ) using v_rows;
+
+    if jsonb_array_length(v_rows) > 0 then
+      select string_agg(format('%I = excluded.%I', column_name, column_name), ', ')
+        into v_set_clause
+        from information_schema.columns
+        where table_schema = 'public' and table_name = v_table and column_name <> 'id';
+
+      execute format(
+        'insert into %I select * from jsonb_populate_recordset(null::%I, $1) on conflict (id) do update set %s',
+        v_table, v_table, v_set_clause
+      ) using v_rows;
+    end if;
+  end loop;
+end;
+$$;
+
+revoke all on function restore_backup(uuid) from public;
+grant execute on function restore_backup(uuid) to authenticated;
+```
+
 ## v0.56.7 - 2026-08-04 (staging)
 
 보안 PIN 2차 확인 기능을 없애고, 업무 등록 시 고른 공개범위([나]/[공유]/[전체])가 실제

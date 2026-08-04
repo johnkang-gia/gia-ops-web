@@ -309,7 +309,10 @@ export default function TaskDetailPanel({
   }
 
   const myAck = task.acknowledged_by?.some((a) => a.email === currentUserEmail);
-  const iAmAssignee = task.assignee_emails.includes(currentUserEmail);
+  // 등록자 본인은 확인 대상에서 제외합니다(요청: "업무등록한 사람은 확인목록에서 제외시켜주고") -
+  // TaskCard.tsx와 같은 기준입니다.
+  const ackRequiredEmails = task.assignee_emails.filter((e) => e !== task.owner_email);
+  const iAmAssignee = ackRequiredEmails.includes(currentUserEmail);
   const canDelete = task.owner_email === currentUserEmail || isAdmin;
 
   return (
@@ -504,11 +507,11 @@ export default function TaskDetailPanel({
           </div>
         </div>
 
-        {task.assignee_emails.length > 0 && (
+        {ackRequiredEmails.length > 0 && (
           <div className="mb-3 rounded-lg border border-blue-200 bg-blue-50 p-2.5">
             <div className="mb-1.5 flex items-center justify-between">
               <span className="text-xs font-semibold text-blue-600">
-                ✅ 업무 확인 ({task.acknowledged_by?.length ?? 0}/{task.assignee_emails.length})
+                ✅ 업무 확인 ({task.acknowledged_by?.filter((a) => ackRequiredEmails.includes(a.email)).length ?? 0}/{ackRequiredEmails.length})
               </span>
               {iAmAssignee && (
                 <label className="flex items-center gap-1 text-[11px] font-medium text-blue-600">
@@ -518,7 +521,7 @@ export default function TaskDetailPanel({
               )}
             </div>
             <div className="flex flex-col gap-1">
-              {task.assignee_emails.map((email) => {
+              {ackRequiredEmails.map((email) => {
                 const ack = task.acknowledged_by?.find((a) => a.email === email);
                 return (
                   <div key={email} className="flex items-center justify-between text-[11px]">

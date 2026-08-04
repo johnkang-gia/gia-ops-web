@@ -346,6 +346,18 @@ export type AiFeatureFlag = {
   updated_at: string;
 };
 
+// 데이터 백업/복원(관리자·개발자 전용) - snapshot은 실제 백업 내용(테이블별 행 배열)이라
+// 용량이 커질 수 있어, 목록 화면에서는 이 필드를 빼고 조회합니다(id/label/created_by/
+// created_at/tables만). 복원 실행 시에는 snapshot을 직접 다루지 않고 restore_backup(id)
+// RPC 하나만 호출하므로, 클라이언트가 snapshot 전체를 내려받을 일 자체가 없습니다.
+export type BackupSummary = {
+  id: string;
+  label: string | null;
+  created_by: string;
+  created_at: string;
+  tables: string[];
+};
+
 export type Department3 = "유치부" | "초등부" | "중고등부";
 export type StaffPosition = "교사" | "행정직원" | "관리자" | "개발자";
 

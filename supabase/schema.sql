@@ -2101,3 +2101,136 @@ create policy "giamicro_select_tasks" on tasks
       or lower(auth.jwt() ->> 'email') = any(assignee_emails)
     )
   );
+
+-- ===== 57. 데이터 백업/복원 (관리자·개발자 전용) =====
+-- 사건/회의/행사/제안함/채택예정/매뉴얼/업무/서류함처럼 매일 손으로 입력·수정하는 운영
+-- 핵심 데이터가 실수나 버그로 꼬이거나 통째로 날아가는 사고에 대비해, 버튼 한 번으로 지금
+-- 상태를 JSON 스냅샷으로 저장해두고, 필요하면 그 시점으로 되돌릴 수 있게 합니다(요청:
+-- "데이터가 꼬여서 날아가버리지않게 백업할수있게... 백업복원도 관리자,개발자권한을 가진
+-- 사람이 복원 할 수 있게"). is_app_admin()은 이미 "직위=관리자" 또는 "개발자 계정"이면
+-- true라(정의는 위 3번 섹션 참고) 별도 권한 함수 없이 그대로 씁니다.
+--
+-- 백업 대상은 아래 10개 테이블(사건/회의/행사/제안함/채택예정/매뉴얼/업무 3종/서류함)로
+-- 한정합니다 - 로그인 계정(app_users)·채팅(messages)·주간 관찰기록(wr_*)처럼 되돌렸을 때
+-- 오히려 로그인/권한이 꼬이거나 영향 범위가 지나치게 커지는 테이블은 일부러 뺐습니다.
+-- 필요해지면 이 배열에 추가하면 됩니다.
+create or replace function backup_target_tables()
+returns text[]
+language sql
+immutable
+as $$
+  select array[
+    'incidents', 'meetings', 'events', 'proposals', 'adopted', 'manual_sections',
+    'documents', 'tasks', 'task_comments', 'task_attachments'
+  ];
+$$;
+
+create table if not exists backups (
+  id uuid primary key default gen_random_uuid(),
+  label text,
+  created_by text not null,
+  created_at timestamptz not null default now(),
+  tables text[] not null,   -- 이 스냅샷이 실제로 포함한 테이블 목록(복원 시 이 목록만 사용)
+  snapshot jsonb not null   -- { "incidents": [...], "meetings": [...], ... }
+);
+
+alter table backups enable row level security;
+
+-- 조회는 관리자/개발자만 - insert/update/delete용 정책은 만들지 않습니다. 백업 생성·복원은
+-- 아래 security definer 함수를 통해서만 이뤄지고, 함수 안에서 매번 is_app_admin()을 다시
+-- 확인하므로 이 테이블에 직접 쓰는 경로 자체가 없습니다(RLS를 우회하는 함수이니만큼 함수
+-- 내부 검사가 유일한 방어선입니다).
+drop policy if exists "admin_select_backups" on backups;
+create policy "admin_select_backups" on backups
+  for select using (is_giamicro_user() and is_app_admin());
+
+-- 백업 생성: 대상 테이블을 하나씩 훑어 JSON 배열로 통째로 담습니다. security definer로
+-- 실행해야, tasks처럼 행 단위로 조회 범위가 좁아진(요청 56번) 테이블도 "지금 보이는 것만"이
+-- 아니라 전체가 빠짐없이 백업됩니다 - 대신 함수 맨 앞에서 is_app_admin()을 확인해, 이 강한
+-- 권한이 관리자/개발자 외에는 절대 쓰이지 않도록 막습니다.
+create or replace function create_backup(p_label text default null)
+returns backups
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_table text;
+  v_table_json jsonb;
+  v_snapshot jsonb := '{}'::jsonb;
+  v_row backups;
+begin
+  if not is_app_admin() then
+    raise exception '백업은 관리자/개발자만 만들 수 있습니다.';
+  end if;
+
+  foreach v_table in array backup_target_tables() loop
+    execute format('select coalesce(jsonb_agg(to_jsonb(t)), ''[]''::jsonb) from %I t', v_table)
+      into v_table_json;
+    v_snapshot := jsonb_set(v_snapshot, array[v_table], v_table_json);
+  end loop;
+
+  insert into backups (label, created_by, tables, snapshot)
+  values (p_label, lower(auth.jwt() ->> 'email'), backup_target_tables(), v_snapshot)
+  returning * into v_row;
+
+  return v_row;
+end;
+$$;
+
+revoke all on function create_backup(text) from public;
+grant execute on function create_backup(text) to authenticated;
+
+-- 백업 복원: 테이블을 통째로 delete 후 insert하지 않고, "스냅샷에 없는 행만 지우고, 스냅샷에
+-- 있는 행은 upsert(있으면 덮어쓰고 없으면 새로 만듦)"하는 방식을 씁니다. 예를 들어
+-- incident_students(사건-학생 연결)처럼 이 백업 대상에는 없지만 incidents를 참조하는 다른
+-- 테이블이 있는데, 지금도 있고 백업에도 있는 사건까지 일단 통째로 지웠다가 다시 넣으면
+-- on delete cascade로 그 연결 데이터까지 도미노로 사라져버립니다. upsert 방식은 실제로
+-- "이 백업 시점엔 없었던" 행만 지우므로 그런 부작용이 없습니다. 테이블 순서(위 배열)는
+-- task_comments/task_attachments가 tasks보다 뒤에 오도록 맞춰뒀습니다(참조 무결성).
+create or replace function restore_backup(p_backup_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_backup backups;
+  v_table text;
+  v_rows jsonb;
+  v_set_clause text;
+begin
+  if not is_app_admin() then
+    raise exception '복원은 관리자/개발자만 할 수 있습니다.';
+  end if;
+
+  select * into v_backup from backups where id = p_backup_id;
+  if v_backup is null then
+    raise exception '해당 백업을 찾을 수 없습니다.';
+  end if;
+
+  foreach v_table in array v_backup.tables loop
+    v_rows := coalesce(v_backup.snapshot -> v_table, '[]'::jsonb);
+
+    execute format(
+      'delete from %I where id not in (select (r->>''id'')::uuid from jsonb_array_elements($1) r)',
+      v_table
+    ) using v_rows;
+
+    if jsonb_array_length(v_rows) > 0 then
+      select string_agg(format('%I = excluded.%I', column_name, column_name), ', ')
+        into v_set_clause
+        from information_schema.columns
+        where table_schema = 'public' and table_name = v_table and column_name <> 'id';
+
+      execute format(
+        'insert into %I select * from jsonb_populate_recordset(null::%I, $1) on conflict (id) do update set %s',
+        v_table, v_table, v_set_clause
+      ) using v_rows;
+    end if;
+  end loop;
+end;
+$$;
+
+revoke all on function restore_backup(uuid) from public;
+grant execute on function restore_backup(uuid) to authenticated;

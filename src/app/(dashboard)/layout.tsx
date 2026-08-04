@@ -156,6 +156,7 @@ function buildAdminCategory(): NavCategory {
       { href: "/school", label: "학교 현황판", icon: "🏛️" },
       { href: "/admin/education-news", label: "교육뉴스", icon: "📰" },
       { href: "/admin/gia-systems", label: "GIA시스템", icon: "🧩" },
+      { href: "/admin/backups", label: "데이터 백업", icon: "💾" },
     ],
   };
 }

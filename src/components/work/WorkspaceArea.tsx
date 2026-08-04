@@ -6,6 +6,7 @@ import DashboardArea from "./DashboardArea";
 import ChatPanel from "./ChatPanel";
 import TaskBoard from "./TaskBoard";
 import MyTasksWidget from "./MyTasksWidget";
+import AllTasksWidget from "./AllTasksWidget";
 import QuickTaskWidget from "./QuickTaskWidget";
 
 // 참조 소스코드(WorkspaceArea.tsx)의 마우스 드래그 리사이저를 그대로 옮겼습니다 - 서드파티
@@ -221,8 +222,17 @@ export default function WorkspaceArea({
               <div className="shrink-0" style={{ height: "40%" }}>
                 <DashboardArea tasks={tasks} activeDepartmentName={activeDepartment.name} deptColorMap={deptColorMap} onSelectTask={onOpenTask} />
               </div>
-              <div className="min-h-0 flex-1 overflow-hidden border-t border-black/5">
-                <MyTasksWidget tasks={tasks} currentUserEmail={currentUserEmail} onOpenTask={onOpenTask} />
+              {/* 내 업무목록 / 전체 업무목록을 좌우로 나눠 보여줍니다(요청: "내 업무목록을
+                  반으로 나눠서 한쪽은 내업무목록, 다른쪽은 전체 업무목록으로"). 모바일은 폭이
+                  좁아 두 칸이 빡빡하지만, 항목 자체가 제목 한 줄+마감/상태 뱃지로 짧아서
+                  좌우분할로도 충분히 읽힙니다. */}
+              <div className="flex min-h-0 flex-1 divide-x divide-black/5 overflow-hidden border-t border-black/5">
+                <div className="min-w-0 flex-1 overflow-hidden">
+                  <MyTasksWidget tasks={tasks} currentUserEmail={currentUserEmail} onOpenTask={onOpenTask} />
+                </div>
+                <div className="min-w-0 flex-1 overflow-hidden">
+                  <AllTasksWidget tasks={tasks} onOpenTask={onOpenTask} />
+                </div>
               </div>
             </div>
           )}
@@ -270,10 +280,18 @@ export default function WorkspaceArea({
 
       <div onMouseDown={startColResize} className="w-1 shrink-0 cursor-col-resize bg-black/5 transition hover:bg-blue-400" />
 
-      {/* 오른쪽: 내 업무목록(위젯) + 칸반보드(진행대기/진행중/보류이슈/완료, 드래그앤드롭) */}
+      {/* 오른쪽: 내 업무목록/전체 업무목록(좌우 분할 위젯) + 칸반보드(진행대기/진행중/보류이슈/완료, 드래그앤드롭) */}
       <div className="flex flex-col overflow-hidden" style={{ width: `${100 - leftWidth}%` }}>
-        <div className="overflow-hidden" style={{ height: `${rightTopHeight}%` }}>
-          <MyTasksWidget tasks={tasks} currentUserEmail={currentUserEmail} onOpenTask={onOpenTask} />
+        {/* 내 업무목록을 좌우로 나눠, 왼쪽은 나와 관계있는 업무만(내가 등록·태그되거나 전체
+            모드), 오른쪽은 지금 볼 수 있는 업무 전체를 보여줍니다(요청: "내 업무목록을 반으로
+            나눠서 한쪽은 내업무목록, 다른쪽은 전체 업무목록으로 표시되도록"). */}
+        <div className="flex divide-x divide-black/5 overflow-hidden" style={{ height: `${rightTopHeight}%` }}>
+          <div className="min-w-0 flex-1 overflow-hidden">
+            <MyTasksWidget tasks={tasks} currentUserEmail={currentUserEmail} onOpenTask={onOpenTask} />
+          </div>
+          <div className="min-w-0 flex-1 overflow-hidden">
+            <AllTasksWidget tasks={tasks} onOpenTask={onOpenTask} />
+          </div>
         </div>
         <div
           onMouseDown={startRowResize(setRightTopHeight, rightTopHeight)}

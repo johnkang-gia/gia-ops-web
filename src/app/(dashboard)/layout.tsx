@@ -141,11 +141,14 @@ function buildWeeklyReportCategory(isAdmin: boolean): NavCategory {
   return { key: "weekly", label: "주간 학생 관찰기록", labelEn: "Weekly Student Reports", icon: "📈", accent: "teal", items };
 }
 
-// "관리자" - 관리자(부이사장/이사장 등)만 보는 학교 발전 현황 메뉴입니다. 관리자 대시보드(통합
-// 현황판)·학교 현황판(/school)에 더해, 다른 국제학교/공립학교와 비교해 GIA가 어떤 시스템을
-// 갖췄고 뭘 더 갖춰야 하는지 한눈에 보는 GIA시스템, 그리고 국제교육 관련 소식을 주 2회(월/수)
-// AI가 정리해주는 교육뉴스를 여기 모았습니다. 문의및건의사항은 관리자 전용이 아니라 모든
-// 직원이 쓰는 기능이라 이 카테고리에서 빼고 사이드바 맨 아래에 작은 링크로 따로 둡니다.
+// "관리자" - 관리자(부이사장/이사장 등)만 보는 학교 발전 현황 메뉴입니다. 다른 국제학교/공립
+// 학교와 비교해 GIA가 어떤 시스템을 갖췄고 뭘 더 갖춰야 하는지 한눈에 보는 GIA시스템, 국제교육
+// 관련 소식을 주 2회(월/수) AI가 정리해주는 교육뉴스, 데이터 백업을 여기 모았습니다. "학교
+// 현황판"(/school)은 "학교 관리" 카테고리 자체의 클릭 링크와 완전히 같은 주소라 여기 다시
+// 넣으면 두 메뉴가 항상 같이 하이라이트돼 헷갈렸습니다(요청: "학교관리를 누르면 관리자가 같이
+// 색이 바뀌고 ... 관리자메뉴를 눌러도 학교관리 메뉴가 같이 색이 바뀌어") - 학교 현황판은
+// "학교 관리" 메뉴로 가면 되므로 여기서는 뺐습니다. 문의및건의사항은 관리자 전용이 아니라
+// 모든 직원이 쓰는 기능이라 이 카테고리에서 빼고 사이드바 맨 아래에 작은 링크로 따로 둡니다.
 function buildAdminCategory(): NavCategory {
   return {
     key: "admin",
@@ -153,7 +156,6 @@ function buildAdminCategory(): NavCategory {
     icon: "🏢",
     accent: "amber",
     items: [
-      { href: "/school", label: "학교 현황판", icon: "🏛️" },
       { href: "/admin/education-news", label: "교육뉴스", icon: "📰" },
       { href: "/admin/gia-systems", label: "GIA시스템", icon: "🧩" },
       { href: "/admin/backups", label: "데이터 백업", icon: "💾" },

@@ -42,9 +42,27 @@ function isActiveHref(pathname: string | null, href: string) {
   return pathname === href || pathname?.startsWith(href + "/");
 }
 
-function isActiveCategory(pathname: string | null, cat: NavCategory) {
-  if (cat.href && isActiveHref(pathname, cat.href)) return true;
-  return !!cat.items?.some((i) => isActiveHref(pathname, i.href));
+// 카테고리끼리 URL 경로가 겹칠 수 있습니다(예: "학교관리"의 href는 "/school"인데, "학교문서함"은
+// "/school/documents"). 단순 prefix 매칭만 쓰면 "/school/documents"에 있어도 "/school"로
+// 시작한다는 이유로 학교관리까지 함께 활성화돼버립니다(요청: "학교문서합을 누르면 학교관리와
+// 관리자가 색이 같이 바뀌고"). 그래서 지금 주소와 맞는 href 후보들을 전부 모은 뒤, 그중 가장
+// 구체적인(글자수가 가장 긴) 것 하나만 "진짜 활성 경로"로 인정합니다 - 더 구체적인 카테고리가
+// 있으면 그쪽만 켜지고, 바깥(부모격) 카테고리는 꺼집니다.
+function bestMatchHref(pathname: string | null, categories: NavCategory[]): string | null {
+  let best: string | null = null;
+  for (const cat of categories) {
+    const hrefs = [cat.href, ...(cat.items?.map((i) => i.href) ?? [])].filter((h): h is string => !!h);
+    for (const href of hrefs) {
+      if (isActiveHref(pathname, href) && (!best || href.length > best.length)) best = href;
+    }
+  }
+  return best;
+}
+
+function isActiveCategory(cat: NavCategory, best: string | null) {
+  if (!best) return false;
+  if (cat.href === best) return true;
+  return !!cat.items?.some((i) => i.href === best);
 }
 
 const ACCENT_TEXT: Record<NavAccent, string> = {
@@ -81,6 +99,7 @@ export function SidebarNavLinks({ categories }: { categories: NavCategory[] }) {
   const [popupPos, setPopupPos] = useState<{ top: number; left: number } | null>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flyoutRef = useRef<HTMLDivElement | null>(null);
+  const best = bestMatchHref(pathname, categories);
 
   // 주메뉴가 사이드바 아래쪽에 있으면 부메뉴(플라이아웃)도 그만큼 아래에서 열리는데, 그대로
   // 두면 화면 아래로 잘려나가 누르기 어려워집니다(요청: "부메뉴가 화면에 가려서 누르기
@@ -133,7 +152,7 @@ export function SidebarNavLinks({ categories }: { categories: NavCategory[] }) {
   return (
     <div className="flex flex-col divide-y divide-slate-100">
       {categories.map((cat) => {
-        const active = isActiveCategory(pathname, cat);
+        const active = isActiveCategory(cat, best);
         const accent = cat.accent ?? "navy";
         const hasChildren = !!cat.items && cat.items.length > 0;
         const targetHref = cat.href ?? cat.items?.[0]?.href ?? "#";
@@ -194,7 +213,7 @@ export function SidebarNavLinks({ categories }: { categories: NavCategory[] }) {
               {openCategory.label}
             </div>
             {openCategory.items!.map((item) => {
-              const itemActive = isActiveHref(pathname, item.href);
+              const itemActive = item.href === best;
               const accent = openCategory.accent ?? "navy";
               return (
                 <button
@@ -241,6 +260,7 @@ export function MobileNavLinks({ categories }: { categories: NavCategory[] }) {
         ? [{ href: c.href, label: c.label, labelEn: c.labelEn, icon: c.icon, badge: undefined }]
         : []
   );
+  const best = bestMatchHref(pathname, categories);
 
   // 모바일은 가로로 죽 늘어선 목록이라 hover가 없어서(터치 시작 시점엔 이미 손가락이 눌린
   // 뒤라 프리페치할 시간이 촉박합니다), 화면에 붙는 순간 전부 미리 받아둡니다. 항목 수가
@@ -253,7 +273,7 @@ export function MobileNavLinks({ categories }: { categories: NavCategory[] }) {
   return (
     <>
       {items.map((item) => {
-        const active = isActiveHref(pathname, item.href);
+        const active = item.href === best;
         return (
           <button
             key={item.href}

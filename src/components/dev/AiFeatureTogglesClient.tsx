@@ -69,18 +69,30 @@ export default function AiFeatureTogglesClient({
                   <div className="truncate text-xs font-semibold text-slate-700">{f.label}</div>
                   <div className="truncate font-mono text-[10px] text-slate-400">{f.key}</div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => toggle(f.key, !f.enabled)}
-                  disabled={busyKey === f.key}
-                  className={`shrink-0 rounded-full px-3 py-1 text-[11px] font-bold transition disabled:opacity-50 ${
-                    f.enabled
-                      ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-                      : "bg-red-50 text-red-700 hover:bg-red-100"
-                  }`}
-                >
-                  {f.enabled ? "켜짐" : "일시정지중"}
-                </button>
+                <div className="flex shrink-0 items-center gap-2">
+                  <span className={`text-[11px] font-bold ${f.enabled ? "text-emerald-600" : "text-slate-400"}`}>
+                    {f.enabled ? "켜짐" : "꺼짐"}
+                  </span>
+                  {/* 텍스트 배지 대신 실제 켜고/끄는 스위치 모양으로 바꿨습니다(요청: "온오프
+                      켜짐꺼짐으로 말고 온오프 버튼으로 만들어주고"). */}
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={f.enabled}
+                    onClick={() => toggle(f.key, !f.enabled)}
+                    disabled={busyKey === f.key}
+                    title={f.enabled ? "클릭하면 끕니다" : "클릭하면 켭니다"}
+                    className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
+                      f.enabled ? "bg-emerald-500" : "bg-slate-300"
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                        f.enabled ? "translate-x-6" : "translate-x-1"
+                      }`}
+                    />
+                  </button>
+                </div>
               </div>
             ))}
           </div>

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentTerm } from "@/lib/currentTerm";
@@ -12,6 +13,52 @@ import DateTimeCard from "@/components/home/DateTimeCard";
 import GlobalSearchBar from "@/components/GlobalSearchBar";
 import PausedFeaturesBanner from "@/components/dev/PausedFeaturesBanner";
 import type { AiFeatureFlag } from "@/lib/types";
+
+// 학기 배지 - 로그인 인증(me)과 달리 이 화면을 막을 이유가 없는 "장식성" 정보라서, layout
+// 전체가 이 조회가 끝날 때까지 기다리지 않도록 별도 컴포넌트로 분리해 <Suspense>로 감쌌습니다
+// (요청: "메뉴간 전환도 그렇고 화면이 바뀌는 것도 너무 느려 - 획기적으로 빠르게"). 예전에는
+// getCurrentTerm()도 매 네비게이션마다 layout의 Promise.all 안에서 다른 4개 조회와 함께
+// 무조건 끝나야만 사이드바 전체가 그려졌는데, 이제는 로고·메뉴·검색창은 즉시 뜨고 학기 배지만
+// 살짝 늦게(스트리밍으로) 채워집니다. getCurrentTerm() 자체는 React cache()로 감싸져 있어
+// 데스크톱/모바일 두 곳에서 각각 호출해도 실제 DB 조회는 요청당 1번만 나갑니다.
+async function TermBadge({ variant }: { variant: "desktop" | "mobile" }) {
+  const currentTerm = await getCurrentTerm();
+  const termLabel = currentTerm ? `${currentTerm.year} ${currentTerm.term_type}` : null;
+
+  if (variant === "mobile") {
+    return termLabel ? (
+      <Link href="/terms" className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700">
+        📅 {termLabel}
+      </Link>
+    ) : (
+      <span className="text-[11px] text-slate-300">진행중인 학기 없음</span>
+    );
+  }
+
+  return termLabel ? (
+    <Link
+      href="/terms"
+      className="mt-2 inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700 hover:bg-blue-100"
+    >
+      📅 {termLabel}
+    </Link>
+  ) : (
+    <div className="mt-2 text-[11px] text-slate-300">진행중인 학기 없음</div>
+  );
+}
+
+// AI 기능 일시정지 배너도 학기 배지와 같은 이유로 분리했습니다 - 개발자가 과금 조절을 위해
+// 기능을 꺼둔 경우에만 보이는 드문 상황이라, 이 조회 때문에 매번 화면 전체가 늦어질 필요가
+// 없습니다.
+async function DisabledFeaturesSection() {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("ai_feature_flags")
+    .select("*")
+    .eq("enabled", false)
+    .order("updated_at", { ascending: false });
+  return <PausedFeaturesBanner disabledFeatures={(data as AiFeatureFlag[] | null) ?? []} />;
+}
 
 // 메뉴를 "카테고리" 단위로 재구성했습니다(이전에는 세로로 긴 그룹 목록이라 계속 스크롤해야
 // 했는데, 지금은 주메뉴 몇 개만 보이고 하위 항목은 마우스를 올리면 오른쪽으로 펼쳐집니다).
@@ -122,16 +169,14 @@ export default async function DashboardLayout({
   // getCurrentAppUser()는 React cache()로 감싸져 있어서, 이 아래에서 렌더링되는 각 페이지가
   // 같은 정보를 또 조회하려 해도(예: 학생 조회/관리자 화면의 권한 체크) 같은 요청 안에서는
   // 실제 DB 조회 없이 이 결과를 그대로 재사용합니다 - 탭을 옮길 때마다 두 번 묻던 것을 한 번으로.
-  // 개발자가 과금 때문에 꺼둔 AI 기능이 있으면 사이드바 프로필 아래에 빨간 배너로 알려줍니다
-  // (giamicro 도메인 전체가 볼 수 있도록 RLS가 허용 - is_giamicro_user()).
-  const [me, currentTerm, disabledFeaturesRes, pendingProposalsRes, pendingAdoptedRes] = await Promise.all([
+  // layout이 실제로 "화면을 막고" 기다려야 하는 건 로그인 여부(me)와 검토대기 배지 숫자뿐이라,
+  // 이 둘만 남기고 나머지(학기 배지·AI 기능 배너)는 위 TermBadge/DisabledFeaturesSection로
+  // 분리해 <Suspense>로 스트리밍합니다(요청: "메뉴 전환이 너무 느려 - 획기적으로 빠르게").
+  const [me, pendingProposalsRes, pendingAdoptedRes] = await Promise.all([
     getCurrentAppUser(),
-    getCurrentTerm(),
-    supabase.from("ai_feature_flags").select("*").eq("enabled", false).order("updated_at", { ascending: false }),
     supabase.from("proposals").select("id", { count: "exact", head: true }).eq("status", "검토대기"),
     supabase.from("adopted").select("id", { count: "exact", head: true }).eq("publish", false),
   ]);
-  const disabledFeatures = (disabledFeaturesRes.data as AiFeatureFlag[] | null) ?? [];
   const pendingProposals = pendingProposalsRes.count ?? 0;
   const pendingAdopted = pendingAdoptedRes.count ?? 0;
 
@@ -149,7 +194,6 @@ export default async function DashboardLayout({
   // [사용자 관리]에서 지정한 값입니다. 개발자 계정은 position과 무관하게 항상 "개발자"로 표시됩니다.
   const badgeLabel = isDeveloper ? "개발자" : me.position;
 
-  const termLabel = currentTerm ? `${currentTerm.year} ${currentTerm.term_type}` : null;
   const homeHref = isTeacher ? "/weekly-report" : "/home";
 
   // 교사는 GIA ops/업무 등 다른 메뉴를 아예 볼 수 없고 위클리 리포트만 보입니다(계약직으로
@@ -202,17 +246,11 @@ export default async function DashboardLayout({
             <Link href={homeHref} className="inline-block cursor-pointer">
               <Image src="/logo-main.png" alt="GIA Micro Lab" width={538} height={120} priority className="h-10 w-auto" />
             </Link>
-            {!isTeacher &&
-              (termLabel ? (
-                <Link
-                  href="/terms"
-                  className="mt-2 inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700 hover:bg-blue-100"
-                >
-                  📅 {termLabel}
-                </Link>
-              ) : (
-                <div className="mt-2 text-[11px] text-slate-300">진행중인 학기 없음</div>
-              ))}
+            {!isTeacher && (
+              <Suspense fallback={<div className="mt-2 h-[22px] w-24 animate-pulse rounded-full bg-slate-100" />}>
+                <TermBadge variant="desktop" />
+              </Suspense>
+            )}
           </div>
           <Link
             href="/account"
@@ -236,7 +274,9 @@ export default async function DashboardLayout({
               <div className="truncate text-[11px] text-slate-400">{me.email}</div>
             </div>
           </Link>
-          <PausedFeaturesBanner disabledFeatures={disabledFeatures} />
+          <Suspense fallback={null}>
+            <DisabledFeaturesSection />
+          </Suspense>
         </div>
 
         {/* 검색+달력을 한 상자로 합쳤습니다(요청: "프로필 아래 검색과 달력위젯을 합쳐줘 검색아래에
@@ -273,17 +313,11 @@ export default async function DashboardLayout({
           <Link href={homeHref} className="inline-block cursor-pointer">
             <Image src="/logo-main.png" alt="GIA Micro Lab" width={538} height={120} className="h-7 w-auto" />
           </Link>
-          {!isTeacher &&
-            (termLabel ? (
-              <Link
-                href="/terms"
-                className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700"
-              >
-                📅 {termLabel}
-              </Link>
-            ) : (
-              <span className="text-[11px] text-slate-300">진행중인 학기 없음</span>
-            ))}
+          {!isTeacher && (
+            <Suspense fallback={<span className="h-[22px] w-20 animate-pulse rounded-full bg-slate-100" />}>
+              <TermBadge variant="mobile" />
+            </Suspense>
+          )}
           <SignOutButton />
         </header>
         <div className="border-b border-slate-200 bg-white px-3 py-2 sm:hidden">

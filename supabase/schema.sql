@@ -2282,3 +2282,21 @@ create policy "giamicro_all_wr_student_field_defs" on wr_student_field_defs
 -- 개수"를 그때그때 세는 방식으로 바뀌면서 더 이상 방문 시각을 저장할 필요가 없어졌습니다.
 -- 이미 실행한 적이 있다면 정리 차원에서 지웁니다(실행한 적이 없어도 안전합니다).
 drop table if exists task_list_reads cascade;
+
+-- ===== 61. 테마(라이트/다크/리퀴드글라스/GIA) - 내 계정 설정에 저장 =====
+-- 요청("테마구현 : 라이트(지금), 다크, 리퀴드글라스, GIA")에 따라 계정별로 테마를 저장합니다.
+-- 적용 범위는 사용자가 고른 대로 사이드바/헤더 등 공통 틀(shell)만이고, 개별 화면 내부(업무/
+-- 위클리 리포트 등 앱별 고유 색상)는 이번 범위에서 뺐습니다("전체 공통 틀만"). name/avatar_url과
+-- 마찬가지로 본인 행이라 protect_app_users_self_update 트리거가 막는 컬럼(email/status/
+-- decided_at/decided_by/position)에 포함되지 않으므로 별도 정책 변경 없이 계정 설정 화면에서
+-- 바로 저장할 수 있습니다.
+alter table app_users add column if not exists theme text not null default 'light';
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'app_users_theme_check'
+  ) then
+    alter table app_users add constraint app_users_theme_check
+      check (theme in ('light', 'dark', 'liquid-glass', 'gia-brand'));
+  end if;
+end $$;

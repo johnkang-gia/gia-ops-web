@@ -38,6 +38,75 @@ body {
   background-color: var(--color-gia-bg);
 }
 
+/* ===== 테마(라이트/다크/리퀴드글라스/GIA) - 공용 셸(사이드바/헤더/카드/버튼) 전용 =====
+   요청("테마구현 : 라이트(지금), 다크, 리퀴드글라스, GIA")에 따라 [내 계정 설정]에서 고른
+   테마를 layout.tsx가 data-theme 속성으로 셸 바깥 div에 얹습니다. 범위는 사용자가 고른 대로
+   "전체 공통 틀만"이라, 업무/위클리 리포트 등 개별 화면 내부(workflatform-theme 등)는
+   그대로 두고 이 변수들은 건드리지 않습니다. --shell-* 이름의 변수를 두고, layout.tsx의
+   sidebar/header/card 요소들이 bg-[var(--shell-bg)]처럼 Tailwind 임의값 클래스로 읽어갑니다. */
+[data-theme="light"] {
+  --shell-page-bg: var(--color-gia-bg);
+  --shell-bg: #ffffff;
+  --shell-border: #e2e8f0;
+  --shell-text: #334155;
+  --shell-text-muted: #94a3b8;
+  --shell-card-bg: rgba(248, 250, 252, 0.6);
+  --shell-hover-bg: #f8fafc;
+  --shell-accent: var(--color-gia-navy);
+  --shell-blur: 0px;
+}
+
+[data-theme="dark"] {
+  --shell-page-bg: #0b1120;
+  --shell-bg: #0f172a;
+  --shell-border: #1e293b;
+  --shell-text: #e2e8f0;
+  --shell-text-muted: #64748b;
+  --shell-card-bg: rgba(255, 255, 255, 0.04);
+  --shell-hover-bg: rgba(255, 255, 255, 0.06);
+  --shell-accent: #7dd3fc;
+  --shell-blur: 0px;
+}
+
+/* 리퀴드 글라스 - 반투명 + 블러로 뒤가 살짝 비치는 유리질감. 업무 탭의 .glass 처리와 같은
+   원리(backdrop-filter: blur)를 셸 전체로 확장했습니다. */
+[data-theme="liquid-glass"] {
+  --shell-page-bg: linear-gradient(160deg, #dbeafe 0%, #eef2ff 45%, #e0f2fe 100%);
+  --shell-bg: rgba(255, 255, 255, 0.55);
+  --shell-border: rgba(255, 255, 255, 0.5);
+  --shell-text: #1e293b;
+  --shell-text-muted: #64748b;
+  --shell-card-bg: rgba(255, 255, 255, 0.4);
+  --shell-hover-bg: rgba(255, 255, 255, 0.65);
+  --shell-accent: #2563eb;
+  --shell-blur: 16px;
+}
+
+/* GIA 브랜드 - 로고 남색 + 골드 조합. 기존 --color-gia-navy*/--color-gia-gold* 팔레트를
+   그대로 재사용해 로그인 화면(.gia-navy-panel)과 톤이 이어지도록 했습니다. */
+[data-theme="gia-brand"] {
+  --shell-page-bg: linear-gradient(165deg, #0f1b33 0%, #172a4d 55%, #223a66 100%);
+  --shell-bg: #13224a;
+  --shell-border: rgba(198, 161, 91, 0.35);
+  --shell-text: #f4ecd8;
+  --shell-text-muted: rgba(239, 227, 200, 0.6);
+  --shell-card-bg: rgba(255, 255, 255, 0.06);
+  --shell-hover-bg: rgba(198, 161, 91, 0.16);
+  --shell-accent: var(--color-gia-gold);
+  --shell-blur: 0px;
+}
+
+/* 그라디언트 값(--shell-page-bg)은 Tailwind의 bg-[var(...)]가 background-color로만
+   매핑돼 적용이 안 되므로, background 자체를 쓰는 전용 유틸리티 클래스를 둡니다. */
+.shell-page-bg {
+  background: var(--shell-page-bg);
+}
+
+.shell-blur {
+  backdrop-filter: blur(var(--shell-blur));
+  -webkit-backdrop-filter: blur(var(--shell-blur));
+}
+
 /* 로그인/승인대기/온보딩/PIN 등 "메뉴 없는" 인증 화면 전용 남색 배경 - 사이드바 메뉴는
    로고와 어울리게 흰색으로 되돌렸지만, 이 화면들은 메뉴가 없어 로고와 색이 부딪히지
    않으므로 브랜드 톤을 그대로 유지합니다. */

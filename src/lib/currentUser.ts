@@ -1,12 +1,15 @@
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 
+export type ShellTheme = "light" | "dark" | "liquid-glass" | "gia-brand";
+
 export type CurrentAppUser = {
   id: string;
   email: string;
   name: string | null;
   position: string | null;
   avatar_url: string | null;
+  theme: ShellTheme;
 } | null;
 
 // 사이드바(layout.tsx)와 각 페이지가 매 요청(탭 전환)마다 "로그인 확인 + app_users에서
@@ -28,7 +31,7 @@ export const getCurrentAppUser = cache(async (): Promise<CurrentAppUser> => {
   const email = user.email.toLowerCase();
   const { data: appUser } = await supabase
     .from("app_users")
-    .select("name, position, avatar_url")
+    .select("name, position, avatar_url, theme")
     .eq("email", email)
     .maybeSingle();
 
@@ -38,5 +41,6 @@ export const getCurrentAppUser = cache(async (): Promise<CurrentAppUser> => {
     name: appUser?.name ?? null,
     position: appUser?.position ?? null,
     avatar_url: appUser?.avatar_url ?? null,
+    theme: (appUser?.theme as ShellTheme | undefined) ?? "light",
   };
 });

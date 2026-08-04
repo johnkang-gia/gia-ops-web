@@ -4,6 +4,34 @@
 `version` 값과 항상 일치시킵니다. 업데이트할 때마다 이 파일 맨 위에 새 항목을 추가하고,
 같은 내용을 GitHub Desktop의 커밋 Summary/Description에도 그대로 사용하면 됩니다.
 
+## v0.58.0 - 2026-08-04 (staging)
+
+수정요청사항 두 가지를 반영했습니다: "1. 실시간로그는 세줄만  2. 테마구현 : 라이트(지금),
+다크, 리퀴드글라스, GIA(gia마크색과 어울리는 몇몇색(예를들어 골드)으로 이루어진 멋스러운
+테마)".
+
+- **실시간 로그 세 줄**: 업무 탭 하단 "실시간 로그" 고정 높이 영역이 5줄 → 3줄로 줄었습니다
+  (헤더 클릭 시 뜨는 "전체보기" 팝업은 그대로 전체를 보여줍니다).
+- **테마 4종**: [내 계정 설정]에 테마 선택이 추가됐습니다 - 라이트(기존)/다크/리퀴드
+  글라스(반투명+블러)/GIA(로고 남색+골드). 고른 테마는 계정에 저장되어 어느 기기로
+  들어와도 동일하게 적용됩니다. 적용 범위는 사이드바·헤더·프로필 카드·검색/달력 카드 등
+  공통 화면 틀까지이고, 업무/위클리 리포트 등 각 화면 내부 고유 색상은 이번 범위에서
+  뺐습니다.
+
+```sql
+-- ===== v0.58.0: 테마(라이트/다크/리퀴드글라스/GIA) - 내 계정 설정에 저장 =====
+alter table app_users add column if not exists theme text not null default 'light';
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'app_users_theme_check'
+  ) then
+    alter table app_users add constraint app_users_theme_check
+      check (theme in ('light', 'dark', 'liquid-glass', 'gia-brand'));
+  end if;
+end $$;
+```
+
 ## v0.57.7 - 2026-08-04 (staging)
 
 알림 표시를 두 곳으로 나눴습니다(요청: "확인 하자마자 사라지는게 아니라 확인하고

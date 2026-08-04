@@ -45,6 +45,7 @@ export default async function AccountPage() {
         initialName={me.name ?? ""}
         initialAvatarUrl={me.avatar_url}
         positionLabel={positionLabel}
+        initialTheme={me.theme}
       />
     </div>
   );

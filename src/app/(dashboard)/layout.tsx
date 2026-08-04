@@ -190,6 +190,11 @@ export default async function DashboardLayout({
   }
 
   const displayName = me.name || me.email;
+  // 요청("테마구현 : 라이트(지금), 다크, 리퀴드글라스, GIA")에 따라 계정에 저장된 테마를
+  // 공용 셸(사이드바/헤더/카드)에만 적용합니다("전체 공통 틀만") - 업무/위클리 리포트 등
+  // 개별 화면 내부 색상은 그대로 둡니다. 서버 컴포넌트에서 바로 data-theme 속성으로
+  // 렌더링하므로 클라이언트 깜빡임(하이드레이션 후 테마 전환) 없이 첫 페인트부터 적용됩니다.
+  const theme = me.theme;
   const isAdmin = isAdminUser(me);
   const isTeacher = isTeacherOnly(me);
   const isStaffOrAbove = isStaffOrAboveUser(me);
@@ -243,8 +248,8 @@ export default async function DashboardLayout({
     // 높이를 화면 크기로 고정해야 그 안의 각 화면(예: 업무 탭 채팅)이 자기 영역 안에서만
     // 스크롤되고, 사이드바 메뉴는 항상 제자리에 그대로 있습니다.
     <NotificationProvider userEmail={isTeacher ? null : me.email}>
-    <div className="flex h-screen flex-1">
-      <aside className="hidden w-56 shrink-0 border-r border-slate-200 bg-white p-4 sm:flex sm:flex-col">
+    <div data-theme={theme} className="shell-page-bg flex h-screen flex-1">
+      <aside className="shell-blur hidden w-56 shrink-0 border-r border-[var(--shell-border)] bg-[var(--shell-bg)] p-4 sm:flex sm:flex-col">
         <div className="mb-3 px-2">
           {/* 로고 아래 학기 표시를 가운데 정렬합니다(요청: "로고아래 학기표시 가운데정렬"). */}
           <div className="flex flex-col items-center text-center">
@@ -265,23 +270,23 @@ export default async function DashboardLayout({
               이동), 프로필 자체 링크 안에 중첩되지 않도록 바깥 relative flex 행에 형제로
               둡니다. */}
           <div className="relative mt-2 flex items-center gap-1">
-            <Link href="/account" className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1 py-1 hover:bg-slate-50">
-              <div className="h-8 w-8 shrink-0 overflow-hidden rounded-full bg-slate-100">
+            <Link href="/account" className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1 py-1 hover:bg-[var(--shell-hover-bg)]">
+              <div className="h-8 w-8 shrink-0 overflow-hidden rounded-full bg-[var(--shell-hover-bg)]">
                 {me.avatar_url ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={me.avatar_url} alt={displayName} className="h-full w-full object-cover" />
                 ) : (
-                  <div className="flex h-full w-full items-center justify-center text-xs font-bold text-slate-300">
+                  <div className="flex h-full w-full items-center justify-center text-xs font-bold text-[var(--shell-text-muted)]">
                     {displayName[0]?.toUpperCase()}
                   </div>
                 )}
               </div>
               <div className="min-w-0">
-                <div className="flex items-center gap-1 truncate text-xs font-semibold text-slate-700">
+                <div className="flex items-center gap-1 truncate text-xs font-semibold text-[var(--shell-text)]">
                   <span className="truncate">{displayName}</span>
-                  {badgeLabel && <span className="shrink-0 text-slate-400">({badgeLabel})</span>}
+                  {badgeLabel && <span className="shrink-0 text-[var(--shell-text-muted)]">({badgeLabel})</span>}
                 </div>
-                <div className="truncate text-[11px] text-slate-400">{me.email}</div>
+                <div className="truncate text-[11px] text-[var(--shell-text-muted)]">{me.email}</div>
               </div>
             </Link>
             {!isTeacher && <TaskCountBadge />}
@@ -295,9 +300,9 @@ export default async function DashboardLayout({
         {/* 검색+달력을 한 상자로 합쳤습니다(요청: "프로필 아래 검색과 달력위젯을 합쳐줘 검색아래에
             달력있게"). 위쪽엔 통합 검색(학생/사건/회의/행사/업무/서류), 아래쪽엔 축소 달력을
             같은 테두리 안에 둬서 메뉴 영역을 더 넓게 확보했습니다(요청: "이 위젯 좀더 작게"). */}
-        <div className="mb-2 shrink-0 rounded-lg border border-slate-200 bg-slate-50/60 p-1.5">
+        <div className="mb-2 shrink-0 rounded-lg border border-[var(--shell-border)] bg-[var(--shell-card-bg)] p-1.5">
           <GlobalSearchBar compact />
-          <div className="mt-1.5 border-t border-slate-100 pt-1.5">
+          <div className="mt-1.5 border-t border-[var(--shell-border)] pt-1.5">
             <DateTimeCard compact />
           </div>
         </div>
@@ -311,30 +316,30 @@ export default async function DashboardLayout({
         {!isTeacher && (
           <Link
             href="/inquiries"
-            className="mb-1 flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-400 hover:text-slate-600"
+            className="mb-1 flex items-center gap-1.5 px-3 py-1.5 text-xs text-[var(--shell-text-muted)] hover:text-[var(--shell-text)]"
           >
             🗣️ 문의및건의사항
           </Link>
         )}
-        <div className="border-t border-slate-200 pt-3">
+        <div className="border-t border-[var(--shell-border)] pt-3">
           <SignOutButton />
         </div>
       </aside>
 
       <div className="flex h-screen flex-1 flex-col">
-        <header className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 sm:hidden">
+        <header className="shell-blur flex items-center justify-between border-b border-[var(--shell-border)] bg-[var(--shell-bg)] px-4 py-3 sm:hidden">
           <Link href={homeHref} className="inline-block cursor-pointer">
             <Image src="/logo-main.png" alt="GIA Micro Lab" width={538} height={120} className="h-7 w-auto" />
           </Link>
           {!isTeacher && (
-            <Suspense fallback={<span className="h-[22px] w-20 animate-pulse rounded-full bg-slate-100" />}>
+            <Suspense fallback={<span className="h-[22px] w-20 animate-pulse rounded-full bg-[var(--shell-hover-bg)]" />}>
               <TermBadge variant="mobile" />
             </Suspense>
           )}
           <div className="flex items-center gap-2">
             {/* 데스크톱 프로필 옆 배지와 같은 컴포넌트를 모바일에서는 계정 아이콘 옆에 둡니다. */}
             <div className="relative">
-              <Link href="/account" className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-slate-400">
+              <Link href="/account" className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--shell-hover-bg)] text-xs font-bold text-[var(--shell-text-muted)]">
                 {displayName[0]?.toUpperCase()}
               </Link>
               {!isTeacher && <NotificationBell />}
@@ -342,13 +347,13 @@ export default async function DashboardLayout({
             <SignOutButton />
           </div>
         </header>
-        <div className="border-b border-slate-200 bg-white px-3 py-2 sm:hidden">
+        <div className="shell-blur border-b border-[var(--shell-border)] bg-[var(--shell-bg)] px-3 py-2 sm:hidden">
           <GlobalSearchBar compact />
         </div>
-        <nav className="flex items-center gap-1 overflow-x-auto border-b border-slate-200 bg-white px-2 py-2 sm:hidden">
+        <nav className="shell-blur flex items-center gap-1 overflow-x-auto border-b border-[var(--shell-border)] bg-[var(--shell-bg)] px-2 py-2 sm:hidden">
           <MobileNavLinks categories={categories} />
           {!isTeacher && (
-            <Link href="/inquiries" className="ml-auto shrink-0 rounded-lg px-2 py-1.5 text-xs text-slate-400">
+            <Link href="/inquiries" className="ml-auto shrink-0 rounded-lg px-2 py-1.5 text-xs text-[var(--shell-text-muted)]">
               🗣️ 문의
             </Link>
           )}

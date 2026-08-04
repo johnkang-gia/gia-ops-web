@@ -4,6 +4,21 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { uploadAvatar } from "@/lib/storage";
+import type { ShellTheme } from "@/lib/currentUser";
+
+// 요청("테마구현 : 라이트(지금), 다크, 리퀴드글라스, GIA")에 따른 4가지 선택지입니다.
+// swatch는 실제 globals.css의 [data-theme] 변수값과 맞춘 미리보기용 그라디언트입니다 -
+// 고르기 전에도 대략 어떤 느낌인지 보이도록 했습니다.
+const THEME_OPTIONS: { value: ShellTheme; label: string; swatch: string }[] = [
+  { value: "light", label: "라이트", swatch: "linear-gradient(135deg, #ffffff 50%, #eef1f6 50%)" },
+  { value: "dark", label: "다크", swatch: "linear-gradient(135deg, #1e293b 50%, #0b1120 50%)" },
+  {
+    value: "liquid-glass",
+    label: "리퀴드 글라스",
+    swatch: "linear-gradient(135deg, rgba(255,255,255,0.95) 40%, rgba(125,211,252,0.55) 100%)",
+  },
+  { value: "gia-brand", label: "GIA", swatch: "linear-gradient(135deg, #0f1b33 45%, #c6a15b 100%)" },
+];
 
 export default function AccountSettingsForm({
   userId,
@@ -11,16 +26,19 @@ export default function AccountSettingsForm({
   initialName,
   initialAvatarUrl,
   positionLabel,
+  initialTheme,
 }: {
   userId: string;
   email: string;
   initialName: string;
   initialAvatarUrl: string | null;
   positionLabel: string | null;
+  initialTheme: ShellTheme;
 }) {
   const router = useRouter();
   const [name, setName] = useState(initialName);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(initialAvatarUrl);
+  const [theme, setTheme] = useState<ShellTheme>(initialTheme);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -60,6 +78,7 @@ export default function AccountSettingsForm({
       .update({
         name: name.trim(),
         avatar_url: avatarUrl,
+        theme,
       })
       .eq("email", email);
     setSaving(false);
@@ -126,6 +145,34 @@ export default function AccountSettingsForm({
           사이드바 이름 옆 뱃지에 그대로 표시되는, 우리 시스템의 실제 권한 값입니다(교사/행정직원/
           관리자/개발자에 따라 볼 수 있는 메뉴가 달라짐). 여기서 직접 바꿀 수는 없고, 관리자만
           [학교관리 &gt; 사용자 관리]에서 승인 시점 또는 그 이후에 변경할 수 있습니다.
+        </p>
+      </div>
+
+      <div>
+        <label className="mb-1 block text-xs font-semibold text-slate-500">테마</label>
+        <div className="grid grid-cols-4 gap-2">
+          {THEME_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => setTheme(opt.value)}
+              className={`flex flex-col items-center gap-1 rounded-lg border-2 p-1.5 text-center transition ${
+                theme === opt.value ? "border-gia-navy" : "border-transparent hover:border-slate-200"
+              }`}
+              title={opt.label}
+            >
+              <span
+                className="h-9 w-full rounded-md border border-slate-200"
+                style={{ background: opt.swatch }}
+              />
+              <span className={`text-[10px] font-semibold ${theme === opt.value ? "text-gia-navy" : "text-slate-500"}`}>
+                {opt.label}
+              </span>
+            </button>
+          ))}
+        </div>
+        <p className="mt-1 text-[11px] text-slate-400">
+          사이드바·헤더 등 공통 화면 틀에 적용됩니다. 저장하면 바로 반영됩니다.
         </p>
       </div>
 

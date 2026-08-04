@@ -5,11 +5,11 @@ import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import type { TaskComment } from "@/lib/types";
 
-const PAGE_SIZE = 5;
+const PAGE_SIZE = 3; // 요청: "실시간로그는 세줄만"
 // 컴팩트 뷰에 계속 쌓아두는 로그 총량 상한 - 스크롤로 과거를 계속 불러와도 이 이상은
 // 메모리에 들고 있지 않도록(요청: "로그 캐쉬 많이 안잡아 먹도록") 오래된 쪽부터 잘라냅니다.
 const MAX_CACHED = 60;
-// 한 줄의 대략적인 높이(px) - 5줄만 보이는 고정 높이 스크롤 영역을 만들기 위해 씁니다.
+// 한 줄의 대략적인 높이(px) - 3줄만 보이는 고정 높이 스크롤 영역을 만들기 위해 씁니다.
 const ROW_HEIGHT = 22;
 
 function timeAgo(iso: string) {

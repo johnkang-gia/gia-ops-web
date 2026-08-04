@@ -263,7 +263,14 @@ export default async function DashboardLayout({
           {/* 로고 아래 학기 표시를 가운데 정렬합니다(요청: "로고아래 학기표시 가운데정렬"). */}
           <div className="flex flex-col items-center text-center">
             <Link href={homeHref} className="inline-block cursor-pointer">
-              <Image src="/logo-main.png" alt="GIA Micro Lab" width={538} height={120} priority className="h-10 w-auto" />
+              <Image
+                src="/logo-main.png"
+                alt="GIA Micro Lab"
+                width={538}
+                height={120}
+                priority
+                className="shell-logo-mark h-10 w-auto"
+              />
             </Link>
             {!isTeacher && (
               <Suspense fallback={<div className="mt-2 h-[22px] w-24 animate-pulse rounded-full bg-slate-100" />}>
@@ -346,7 +353,7 @@ export default async function DashboardLayout({
       <div className="flex h-screen flex-1 flex-col">
         <header className="shell-blur flex items-center justify-between border-b border-[var(--shell-border)] bg-[var(--shell-bg)] px-4 py-3 sm:hidden">
           <Link href={homeHref} className="inline-block cursor-pointer">
-            <Image src="/logo-main.png" alt="GIA Micro Lab" width={538} height={120} className="h-7 w-auto" />
+            <Image src="/logo-main.png" alt="GIA Micro Lab" width={538} height={120} className="shell-logo-mark h-7 w-auto" />
           </Link>
           {!isTeacher && (
             <Suspense fallback={<span className="h-[22px] w-20 animate-pulse rounded-full bg-[var(--shell-hover-bg)]" />}>

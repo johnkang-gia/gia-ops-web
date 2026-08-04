@@ -4,6 +4,81 @@
 `version` 값과 항상 일치시킵니다. 업데이트할 때마다 이 파일 맨 위에 새 항목을 추가하고,
 같은 내용을 GitHub Desktop의 커밋 Summary/Description에도 그대로 사용하면 됩니다.
 
+## v0.62.0 - 2026-08-05 (staging)
+
+세 가지 요청을 반영했습니다: "1. GIA테마일 때 로고가 잘안보임 / 2. 개발자는 사용자관리에서
+사용자의 이름,부서들을 바꿀 수 있도록 / 3. 구글폼으로 받는 학기·행사 신청서를 구글시트로
+연결해 분석·정리하고, 폼 형식을 기억했다가 재사용".
+
+- **GIA/다크 테마 로고 가시성 수정**: 로고 이미지가 투명 배경 위에 남색 잉크로만 그려져 있어서
+  짙은 남색 사이드바(GIA 테마) 위에서 거의 안 보였습니다. GIA·다크 테마에서만 로고 색을
+  반전시켜(우연히도 GIA 골드 팔레트와 잘 어울리는 밝은 아이보리 톤이 됩니다) 또렷하게
+  보이도록 했습니다. 라이트·리퀴드글라스 테마는 그대로입니다.
+- **개발자 전용 이름/소속 편집**: 사용자 관리 화면에서 개발자 계정으로 로그인하면 이름 옆에
+  ✏️ 버튼이 나타나 이름/소속을 직접 정정할 수 있습니다. 온보딩 때 잘못 입력했거나 오탈자가
+  있을 때 개발자가 바로 고칠 수 있고, 일반 관리자에게는 이 버튼이 보이지 않습니다(승인/직위
+  변경 권한은 기존과 동일).
+- **신청서(구글폼) 가져오기**: 학교관리 → 구글시트로 가져오기 화면에 "📋 신청서(학기/행사)"
+  탭을 추가했습니다. 구글폼에 연결된 응답 구글시트를 열어 표 전체(제목 행 포함)를 복사해
+  붙여넣으면 열 제목을 분석해 이름/연락처/이메일/학년 등 표준 항목에 자동으로 맞춰줍니다.
+  이 매칭 규칙을 이름 붙여 템플릿으로 저장해두면, 다음에 같은 형식(구글폼은 보통 질문이
+  바뀌지 않으므로 열 제목도 그대로)의 시트를 붙여넣을 때 자동으로 알아보고 매칭을 다시 안 해도
+  됩니다. 원하면 특정 학기나 행사에 연결해 저장할 수 있고, 저장된 템플릿 관리·최근 가져온
+  신청 목록도 함께 볼 수 있습니다. 구글 계정 연동(OAuth) 없이 시트 내용을 직접 붙여넣는
+  방식이라 별도 인증 설정 없이 바로 쓸 수 있습니다 - 실시간으로 시트 URL만 넣으면 자동
+  동기화되는 방식은 구글 API 키 발급이 필요해 이번에는 붙여넣기 방식으로 대신했습니다.
+
+아래 SQL을 Supabase SQL Editor에서 실행해주세요(신청서 가져오기용 새 테이블 2개):
+
+```sql
+create table if not exists form_import_templates (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  kind text not null check (kind in ('term', 'event')),
+  headers text[] not null,
+  column_mapping jsonb not null default '{}'::jsonb,
+  created_by text not null,
+  created_at timestamptz not null default now(),
+  last_used_at timestamptz
+);
+
+create table if not exists form_submissions (
+  id uuid primary key default gen_random_uuid(),
+  template_id uuid references form_import_templates(id) on delete set null,
+  kind text not null check (kind in ('term', 'event')),
+  term_id uuid references terms(id) on delete set null,
+  event_id uuid references events(id) on delete set null,
+  raw jsonb not null default '{}'::jsonb,
+  mapped jsonb not null default '{}'::jsonb,
+  imported_by text not null,
+  imported_at timestamptz not null default now()
+);
+
+create index if not exists form_submissions_kind_idx on form_submissions (kind, imported_at desc);
+create index if not exists form_submissions_term_idx on form_submissions (term_id);
+create index if not exists form_submissions_event_idx on form_submissions (event_id);
+
+alter table form_import_templates enable row level security;
+drop policy if exists "giamicro_all_form_import_templates" on form_import_templates;
+create policy "giamicro_all_form_import_templates" on form_import_templates
+  for all using (is_giamicro_user()) with check (is_giamicro_user());
+
+alter table form_submissions enable row level security;
+drop policy if exists "giamicro_all_form_submissions" on form_submissions;
+create policy "giamicro_all_form_submissions" on form_submissions
+  for all using (is_giamicro_user()) with check (is_giamicro_user());
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'form_submissions'
+  ) then
+    alter publication supabase_realtime add table form_submissions;
+  end if;
+end $$;
+```
+
 ## v0.61.1 - 2026-08-05 (staging)
 
 "gia 테마 페이지 배경을 보면 너무 진해서 텍스트가 검은색이라 잘 안보여, 페이지 색을 좀 더

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { friendlyError } from "@/lib/errorMessage";
 
@@ -19,6 +19,11 @@ function readFileToText(file: File, onDone: (text: string) => void) {
   const reader = new FileReader();
   reader.onload = () => onDone(String(reader.result ?? ""));
   reader.readAsText(file, "utf-8");
+}
+
+function formatDate(value: string | null) {
+  if (!value) return "-";
+  return value.slice(0, 16).replace("T", " ");
 }
 
 const inputCls = "min-h-[140px] w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-xs";
@@ -433,10 +438,431 @@ function StudentImportSection() {
   );
 }
 
+// ===== 4. 신청서(구글폼 연동) - 학기/행사 신청 가져오기 =====
+// 요청("구글폼으로 보통 새로운 학기 등록 신청을 받거나, 행사 신청을 받거나 하는데... 구글폼에
+// 링크된 구글시트를 연결하면, 분석해서... 구글폼 형식도 매번 비슷하니까 기억했다가 바로 다시
+// 사용할 수 있도록 학기,이벤트 별로 저장할 수 있도록"). 위 세 섹션과 달리 열 순서가 고정돼
+// 있지 않아서(구글폼마다 질문이 다름), 붙여넣은 표의 제목 행을 보고 표준 항목에 매칭한 뒤 그
+// 매칭 규칙을 템플릿으로 저장합니다. 다음에 같은 폼(=같은 열 제목)에서 받은 시트를 붙여넣으면
+// 저장된 템플릿을 자동으로 찾아서 매칭을 다시 안 해도 됩니다.
+type FormKind = "term" | "event";
+
+type FormTemplateRow = {
+  id: string;
+  name: string;
+  kind: FormKind;
+  headers: string[];
+  column_mapping: Record<string, string>;
+  created_by: string;
+  created_at: string;
+  last_used_at: string | null;
+};
+
+type FormSubmissionRow = {
+  id: string;
+  template_id: string | null;
+  kind: FormKind;
+  term_id: string | null;
+  event_id: string | null;
+  mapped: Record<string, string>;
+  imported_by: string;
+  imported_at: string;
+};
+
+const FORM_FIELD_OPTIONS: { value: string; label: string }[] = [
+  { value: "", label: "(무시)" },
+  { value: "name", label: "이름" },
+  { value: "phone", label: "연락처" },
+  { value: "email", label: "이메일" },
+  { value: "grade", label: "학년" },
+  { value: "class_pref", label: "반/희망사항" },
+  { value: "birth_date", label: "생년월일" },
+  { value: "submitted_at", label: "신청일시" },
+  { value: "note", label: "메모/비고" },
+  { value: "extra1", label: "기타1" },
+  { value: "extra2", label: "기타2" },
+  { value: "extra3", label: "기타3" },
+];
+
+// 구글폼 질문 제목에 자주 쓰이는 단어를 보고 표준 항목을 미리 추천합니다(완벽하진 않아도
+// 처음 매칭할 때 대부분의 항목을 자동으로 채워줘서 확인만 하면 되게 합니다).
+function suggestFormField(header: string): string {
+  const h = header.trim().toLowerCase();
+  const rules: [string, string[]][] = [
+    ["name", ["이름", "성명", "학생명", "신청자", "성함"]],
+    ["phone", ["연락처", "전화", "휴대폰", "휴대전화", "핸드폰"]],
+    ["email", ["이메일", "email", "메일"]],
+    ["grade", ["학년"]],
+    ["class_pref", ["희망반", "반", "학급", "희망"]],
+    ["birth_date", ["생년월일", "생일", "출생"]],
+    ["submitted_at", ["타임스탬프", "timestamp", "제출일", "신청일시", "신청일", "작성일"]],
+    ["note", ["메모", "비고", "특이사항", "문의", "기타사항"]],
+  ];
+  for (const [field, keywords] of rules) {
+    if (keywords.some((k) => h.includes(k))) return field;
+  }
+  return "";
+}
+
+function normalizeHeaders(headers: string[]): string {
+  return headers.map((h) => h.trim().toLowerCase()).join("|");
+}
+
+function FormApplicationImportSection({ adminEmail }: { adminEmail: string }) {
+  const [kind, setKind] = useState<FormKind>("term");
+  const [linkOptions, setLinkOptions] = useState<{ id: string; label: string }[]>([]);
+  const [linkedId, setLinkedId] = useState("");
+  const [templates, setTemplates] = useState<FormTemplateRow[]>([]);
+  const [recent, setRecent] = useState<FormSubmissionRow[]>([]);
+
+  const [text, setText] = useState("");
+  const [headers, setHeaders] = useState<string[]>([]);
+  const [dataRows, setDataRows] = useState<string[][]>([]);
+  const [mapping, setMapping] = useState<Record<string, string>>({});
+  const [templateName, setTemplateName] = useState("");
+  const [matchedTemplateId, setMatchedTemplateId] = useState<string | null>(null);
+  const [analyzed, setAnalyzed] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+
+  async function loadForKind(k: FormKind) {
+    const supabase = createClient();
+    const { data: tpl } = await supabase
+      .from("form_import_templates")
+      .select("*")
+      .eq("kind", k)
+      .order("last_used_at", { ascending: false, nullsFirst: false });
+    setTemplates((tpl as FormTemplateRow[]) ?? []);
+
+    const { data: subs } = await supabase
+      .from("form_submissions")
+      .select("*")
+      .eq("kind", k)
+      .order("imported_at", { ascending: false })
+      .limit(20);
+    setRecent((subs as FormSubmissionRow[]) ?? []);
+
+    if (k === "term") {
+      const { data } = await supabase.from("terms").select("id, term_type, year").order("year", { ascending: false }).limit(30);
+      setLinkOptions(((data as { id: string; term_type: string; year: string }[]) ?? []).map((t) => ({ id: t.id, label: `${t.year} ${t.term_type}` })));
+    } else {
+      const { data } = await supabase.from("events").select("id, name, date").order("date", { ascending: false }).limit(30);
+      setLinkOptions(((data as { id: string; name: string; date: string }[]) ?? []).map((e) => ({ id: e.id, label: `${e.date} ${e.name}` })));
+    }
+  }
+
+  useEffect(() => {
+    setLinkedId("");
+    setAnalyzed(false);
+    setResult(null);
+    loadForKind(kind);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kind]);
+
+  function analyze() {
+    const all = parseRows(text, false);
+    if (all.length < 1) return;
+    const hdrs = all[0];
+    const rows = all.slice(1).filter((r) => r.some((c) => c.trim() !== ""));
+    setHeaders(hdrs);
+    setDataRows(rows);
+
+    const norm = normalizeHeaders(hdrs);
+    const matched = templates.find((t) => normalizeHeaders(t.headers) === norm);
+    if (matched) {
+      setMapping({ ...matched.column_mapping });
+      setTemplateName(matched.name);
+      setMatchedTemplateId(matched.id);
+    } else {
+      const suggested: Record<string, string> = {};
+      hdrs.forEach((h) => {
+        suggested[h] = suggestFormField(h);
+      });
+      setMapping(suggested);
+      setTemplateName("");
+      setMatchedTemplateId(null);
+    }
+    setAnalyzed(true);
+    setResult(null);
+  }
+
+  const mappedFieldCount = Object.values(mapping).filter(Boolean).length;
+
+  async function doImport() {
+    if (!templateName.trim() || mappedFieldCount === 0 || dataRows.length === 0) return;
+    setImporting(true);
+    setResult(null);
+    const supabase = createClient();
+
+    let templateId = matchedTemplateId;
+    if (templateId) {
+      await supabase
+        .from("form_import_templates")
+        .update({ name: templateName.trim(), column_mapping: mapping, last_used_at: new Date().toISOString() })
+        .eq("id", templateId);
+    } else {
+      const { data, error } = await supabase
+        .from("form_import_templates")
+        .insert({
+          name: templateName.trim(),
+          kind,
+          headers,
+          column_mapping: mapping,
+          created_by: adminEmail,
+          last_used_at: new Date().toISOString(),
+        })
+        .select("id")
+        .single();
+      if (error || !data) {
+        setImporting(false);
+        setResult(friendlyError("템플릿을 저장하지 못했습니다.", error));
+        return;
+      }
+      templateId = (data as { id: string }).id;
+    }
+
+    const payload = dataRows.map((row) => {
+      const raw: Record<string, string> = {};
+      headers.forEach((h, i) => {
+        raw[h] = row[i] ?? "";
+      });
+      const mapped: Record<string, string> = {};
+      headers.forEach((h, i) => {
+        const field = mapping[h];
+        if (field) mapped[field] = row[i] ?? "";
+      });
+      return {
+        template_id: templateId,
+        kind,
+        term_id: kind === "term" ? linkedId || null : null,
+        event_id: kind === "event" ? linkedId || null : null,
+        raw,
+        mapped,
+        imported_by: adminEmail,
+      };
+    });
+
+    const { error: insertError } = await supabase.from("form_submissions").insert(payload);
+    setImporting(false);
+    if (insertError) {
+      setResult(friendlyError("가져오지 못했습니다.", insertError));
+      return;
+    }
+    setResult(
+      `${payload.length}건 가져왔습니다. "${templateName.trim()}" 템플릿으로 저장했으니, 다음에 같은 형식의 시트를 붙여넣으면 자동으로 알아봅니다.`
+    );
+    setText("");
+    setHeaders([]);
+    setDataRows([]);
+    setMapping({});
+    setAnalyzed(false);
+    setMatchedTemplateId(null);
+    loadForKind(kind);
+  }
+
+  async function deleteTemplate(id: string) {
+    const supabase = createClient();
+    await supabase.from("form_import_templates").delete().eq("id", id);
+    loadForKind(kind);
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <h2 className="mb-1 text-sm font-bold text-slate-800">📋 신청서(구글폼) 가져오기</h2>
+        <p className="mb-3 text-[11px] text-slate-500">
+          새 학기 등록 신청이나 행사 참가 신청을 구글폼으로 받을 때, 폼에 연결된 응답 구글시트를 열어
+          제목 행을 포함해 표 전체를 복사해서 아래에 붙여넣으세요(구글 계정 연동 없이 시트 내용을
+          직접 붙여넣는 방식이라 별도 인증 없이 바로 쓸 수 있습니다). 열 제목을 분석해 이름/연락처/
+          학년 같은 표준 항목에 자동으로 맞춰주고, 그 매칭을 템플릿으로 기억해뒀다가 다음에 같은
+          형식의 시트를 붙여넣으면 바로 알아봅니다.
+        </p>
+
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <div className="flex gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1">
+            {(["term", "event"] as FormKind[]).map((k) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setKind(k)}
+                className={
+                  "rounded-md px-3 py-1 text-xs font-semibold transition " +
+                  (kind === k ? "bg-wr-primary text-white" : "text-slate-500 hover:bg-white")
+                }
+              >
+                {k === "term" ? "🗓️ 학기 신청" : "🎉 행사 신청"}
+              </button>
+            ))}
+          </div>
+          <select
+            value={linkedId}
+            onChange={(e) => setLinkedId(e.target.value)}
+            className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-700"
+          >
+            <option value="">{kind === "term" ? "연결할 학기 선택 안 함" : "연결할 행사 선택 안 함"}</option>
+            {linkOptions.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <textarea
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            setAnalyzed(false);
+          }}
+          className={inputCls}
+          placeholder="구글시트에서 제목 행을 포함해 표 전체를 복사해서 여기에 붙여넣으세요"
+        />
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <input
+            type="file"
+            accept=".csv,text/csv"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f)
+                readFileToText(f, (t) => {
+                  setText(t);
+                  setAnalyzed(false);
+                });
+            }}
+            className="text-xs"
+          />
+          <button type="button" onClick={analyze} disabled={!text.trim()} className={btnGhost}>
+            분석하기
+          </button>
+        </div>
+
+        {analyzed && (
+          <div className="mt-3 rounded-lg border border-slate-100 p-3">
+            {matchedTemplateId ? (
+              <p className="mb-2 text-xs font-semibold text-emerald-600">
+                ✓ 저장된 템플릿 &quot;{templateName}&quot;과 열 제목이 같아서 매칭을 그대로 불러왔습니다. 필요하면 아래에서 수정 후 저장하세요.
+              </p>
+            ) : (
+              <p className="mb-2 text-xs font-semibold text-amber-600">
+                처음 보는 형식이라 열 제목을 보고 최대한 자동으로 맞춰봤습니다. 확인 후 필요한 항목만 조정해주세요.
+              </p>
+            )}
+            <label className="mb-2 block text-xs text-slate-500">
+              템플릿 이름
+              <input
+                value={templateName}
+                onChange={(e) => setTemplateName(e.target.value)}
+                placeholder={kind === "term" ? "예: 2026학년도 신학기 등록 신청" : "예: 체육대회 참가 신청"}
+                className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs"
+              />
+            </label>
+            <div className="max-h-64 overflow-y-auto rounded-lg border border-slate-100">
+              <table className="w-full text-xs">
+                <thead className="sticky top-0 bg-slate-50 text-left text-slate-400">
+                  <tr>
+                    <th className="px-2 py-1">구글폼 열 제목</th>
+                    <th className="px-2 py-1">매칭할 항목</th>
+                    <th className="px-2 py-1">예시 값</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {headers.map((h, i) => (
+                    <tr key={i} className="border-t border-slate-100">
+                      <td className="px-2 py-1 font-mono">{h || "(제목 없음)"}</td>
+                      <td className="px-2 py-1">
+                        <select
+                          value={mapping[h] ?? ""}
+                          onChange={(e) => setMapping((prev) => ({ ...prev, [h]: e.target.value }))}
+                          className="rounded border border-slate-300 px-1.5 py-1 text-xs"
+                        >
+                          {FORM_FIELD_OPTIONS.map((o) => (
+                            <option key={o.value} value={o.value}>
+                              {o.label}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="max-w-[160px] truncate px-2 py-1 text-slate-400">{dataRows[0]?.[i] || "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="mt-2 text-[11px] text-slate-400">{dataRows.length}건 감지됨</p>
+            <button
+              type="button"
+              onClick={doImport}
+              disabled={importing || !templateName.trim() || mappedFieldCount === 0 || dataRows.length === 0}
+              className={btnPrimary + " mt-2"}
+            >
+              {importing ? "가져오는 중..." : `${dataRows.length}건 가져오기`}
+            </button>
+          </div>
+        )}
+        {result && <p className="mt-2 text-xs font-semibold text-slate-600">{result}</p>}
+      </div>
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <h3 className="mb-2 text-xs font-bold text-slate-700">저장된 템플릿 ({templates.length})</h3>
+        {templates.length === 0 ? (
+          <p className="text-xs text-slate-400">아직 저장된 템플릿이 없습니다.</p>
+        ) : (
+          <div className="flex flex-col gap-1.5">
+            {templates.map((t) => (
+              <div key={t.id} className="flex items-center justify-between rounded-lg bg-slate-50 px-2.5 py-1.5 text-xs">
+                <div>
+                  <span className="font-semibold text-slate-700">{t.name}</span>
+                  <span className="ml-1.5 text-slate-400">
+                    열 {t.headers.length}개 · {t.last_used_at ? `최근 사용 ${formatDate(t.last_used_at)}` : "미사용"}
+                  </span>
+                </div>
+                <button type="button" onClick={() => deleteTemplate(t.id)} className="text-red-500 hover:underline">
+                  삭제
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <h3 className="mb-2 text-xs font-bold text-slate-700">최근 가져온 신청 (최대 20건)</h3>
+        {recent.length === 0 ? (
+          <p className="text-xs text-slate-400">아직 가져온 신청이 없습니다.</p>
+        ) : (
+          <div className="max-h-64 overflow-y-auto rounded-lg border border-slate-100">
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 bg-slate-50 text-left text-slate-400">
+                <tr>
+                  <th className="px-2 py-1">이름</th>
+                  <th className="px-2 py-1">연락처</th>
+                  <th className="px-2 py-1">학년</th>
+                  <th className="px-2 py-1">가져온 시각</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recent.map((s) => (
+                  <tr key={s.id} className="border-t border-slate-100">
+                    <td className="px-2 py-1">{s.mapped.name || "-"}</td>
+                    <td className="px-2 py-1">{s.mapped.phone || "-"}</td>
+                    <td className="px-2 py-1">{s.mapped.grade || "-"}</td>
+                    <td className="px-2 py-1 text-slate-400">{formatDate(s.imported_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 const TABS = [
   { key: "staff", label: "🧑‍🏫 교직원 명단" },
   { key: "class", label: "🏫 반 구성" },
   { key: "student", label: "🎓 학생 명부" },
+  { key: "form", label: "📋 신청서(학기/행사)" },
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
 
@@ -469,6 +895,7 @@ export default function SchoolImportClient({ adminEmail }: { adminEmail: string 
       {tab === "staff" && <StaffImportSection adminEmail={adminEmail} />}
       {tab === "class" && <ClassImportSection />}
       {tab === "student" && <StudentImportSection />}
+      {tab === "form" && <FormApplicationImportSection adminEmail={adminEmail} />}
     </div>
   );
 }

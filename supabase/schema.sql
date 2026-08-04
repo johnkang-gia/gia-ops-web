@@ -2351,3 +2351,59 @@ create policy "giamicro_update_tasks" on tasks
 drop policy if exists "giamicro_delete_tasks" on tasks;
 create policy "giamicro_delete_tasks" on tasks
   for delete using (is_giamicro_user());
+
+-- ===== 63. 신청서(구글폼 연동) 가져오기 - 학기/행사 신청을 붙여넣기로 정리 + 양식 기억 =====
+-- 요청("구글폼으로 보통 새로운 학기 등록 신청을 받거나, 행사 신청을 받거나 하는데... 구글폼에
+-- 링크된 구글시트를 연결하면, 분석해서... 구글폼 형식도 매번 비슷하니까 기억했다가 바로 다시
+-- 사용할 수 있도록 학기,이벤트 별로 저장할 수 있도록"). 구글시트 API 연동(OAuth 앱 등록,
+-- 클라이언트 시크릿 발급 등)이 아직 없어서 실시간으로 시트 URL을 직접 읽어오지는 못하고,
+-- 기존 "구글시트로 가져오기" 화면과 같은 방식으로 시트 표를 복사해 붙여넣습니다. 대신 열
+-- 제목(headers)과 표준 항목(이름/연락처/학년 등) 매칭 규칙을 "템플릿"으로 저장해두면, 다음에
+-- 같은 형식(구글폼은 보통 질문이 안 바뀌므로 열 제목도 그대로)의 시트를 붙여넣을 때 자동으로
+-- 알아보고 매칭을 다시 안 해도 되게 했습니다.
+create table if not exists form_import_templates (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  kind text not null check (kind in ('term', 'event')),
+  headers text[] not null,
+  column_mapping jsonb not null default '{}'::jsonb,
+  created_by text not null,
+  created_at timestamptz not null default now(),
+  last_used_at timestamptz
+);
+
+create table if not exists form_submissions (
+  id uuid primary key default gen_random_uuid(),
+  template_id uuid references form_import_templates(id) on delete set null,
+  kind text not null check (kind in ('term', 'event')),
+  term_id uuid references terms(id) on delete set null,
+  event_id uuid references events(id) on delete set null,
+  raw jsonb not null default '{}'::jsonb,
+  mapped jsonb not null default '{}'::jsonb,
+  imported_by text not null,
+  imported_at timestamptz not null default now()
+);
+
+create index if not exists form_submissions_kind_idx on form_submissions (kind, imported_at desc);
+create index if not exists form_submissions_term_idx on form_submissions (term_id);
+create index if not exists form_submissions_event_idx on form_submissions (event_id);
+
+alter table form_import_templates enable row level security;
+drop policy if exists "giamicro_all_form_import_templates" on form_import_templates;
+create policy "giamicro_all_form_import_templates" on form_import_templates
+  for all using (is_giamicro_user()) with check (is_giamicro_user());
+
+alter table form_submissions enable row level security;
+drop policy if exists "giamicro_all_form_submissions" on form_submissions;
+create policy "giamicro_all_form_submissions" on form_submissions
+  for all using (is_giamicro_user()) with check (is_giamicro_user());
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'form_submissions'
+  ) then
+    alter publication supabase_realtime add table form_submissions;
+  end if;
+end $$;

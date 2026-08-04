@@ -28,5 +28,7 @@ export default async function AdminUsersPage() {
   // 목록에서 제외합니다 - 서버에서 걸러서 클라이언트로 데이터 자체를 내려보내지 않습니다.
   const users = ((data as AppUser[]) ?? []).filter((u) => !isDeveloperEmail(u.email));
 
-  return <AdminUsersClient initialUsers={users} />;
+  // 요청("개발자는 사용자관리에서 사용자의 이름,부서들을 바꿀 수 있도록") - 일반 관리자에게는
+  // 이름/부서 편집 UI 자체를 숨기고, 개발자 계정에게만 노출합니다.
+  return <AdminUsersClient initialUsers={users} viewerIsDeveloper={isDeveloperEmail(me.email)} />;
 }

@@ -29,11 +29,17 @@ export async function GET() {
 }
 
 const EDITABLE_POSITIONS = ["교사", "행정직원", "관리자"];
+const EDITABLE_DEPARTMENTS = ["유치부", "초등부", "중고등부"];
 
 // status(승인/거절/차단)와 position(직위=권한)을 둘 다 여기서 다룹니다. 둘 중 하나만 보내도
 // 되고 둘 다 보내도 됩니다(예: 승인하면서 직위도 같이 정정). 실제 쓰기 권한은 DB의
 // is_app_admin() RLS 정책이 최종적으로 막아주므로(관리자/개발자가 아니면 이 UPDATE 자체가
 // 거부됨), 여기서는 입력값 형식만 확인합니다.
+// name/department는 요청("개발자는 사용자관리에서 사용자의 이름,부서들을 바꿀 수 있도록")에
+// 따라 추가했습니다 - 온보딩 때 본인이 잘못 입력했거나 오탈자가 있을 때 개발자가 직접 정정할
+// 수 있게 하되, 일반 관리자는 여전히 승인/직위만 바꿀 수 있고 이름/부서는 여기서(앱 계층에서)
+// 개발자 계정으로만 제한합니다(DB RLS는 관리자도 app_users를 쓸 수 있게 열려 있어서, DB가
+// 아니라 이 라우트가 마지막 방어선입니다).
 export async function PATCH(request: Request) {
   const supabase = await createClient();
   const {
@@ -45,6 +51,8 @@ export async function PATCH(request: Request) {
   const email = String(body.email || "").toLowerCase().trim();
   const status = body.status !== undefined ? String(body.status) : undefined;
   const position = body.position !== undefined ? String(body.position) : undefined;
+  const name = body.name !== undefined ? String(body.name) : undefined;
+  const department = body.department !== undefined ? String(body.department) : undefined;
 
   if (!email) {
     return NextResponse.json({ error: "email이 필요합니다." }, { status: 400 });
@@ -55,11 +63,20 @@ export async function PATCH(request: Request) {
   if (position !== undefined && position !== "" && !EDITABLE_POSITIONS.includes(position)) {
     return NextResponse.json({ error: "position은 교사/행정직원/관리자 중 하나여야 합니다." }, { status: 400 });
   }
-  if (status === undefined && position === undefined) {
-    return NextResponse.json({ error: "status 또는 position 중 하나는 필요합니다." }, { status: 400 });
+  if (department !== undefined && department !== "" && !EDITABLE_DEPARTMENTS.includes(department)) {
+    return NextResponse.json({ error: "department는 유치부/초등부/중고등부 중 하나여야 합니다." }, { status: 400 });
+  }
+  if (name !== undefined && name.trim() === "") {
+    return NextResponse.json({ error: "이름은 비워둘 수 없습니다." }, { status: 400 });
+  }
+  if (status === undefined && position === undefined && name === undefined && department === undefined) {
+    return NextResponse.json({ error: "변경할 값이 없습니다." }, { status: 400 });
   }
   if (isDeveloperEmail(email)) {
     return NextResponse.json({ error: "개발자 계정은 변경할 수 없습니다." }, { status: 400 });
+  }
+  if ((name !== undefined || department !== undefined) && !isDeveloperEmail(user.email)) {
+    return NextResponse.json({ error: "이름/부서 변경은 개발자만 할 수 있습니다." }, { status: 403 });
   }
 
   const update: Record<string, unknown> = {};
@@ -70,6 +87,12 @@ export async function PATCH(request: Request) {
   }
   if (position !== undefined) {
     update.position = position || null;
+  }
+  if (name !== undefined) {
+    update.name = name.trim();
+  }
+  if (department !== undefined) {
+    update.department = department || null;
   }
 
   const { error } = await supabase.from("app_users").update(update).eq("email", email);

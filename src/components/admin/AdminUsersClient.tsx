@@ -25,16 +25,62 @@ const GUIDE_SECTIONS = [
 // 나눠 보여줍니다.
 const PAGE_SIZE = 10;
 const POSITIONS = ["교사", "행정직원", "관리자"] as const;
+const DEPARTMENTS = ["유치부", "초등부", "중고등부"] as const;
 
 function formatDate(value: string | null) {
   if (!value) return "-";
   return value.slice(0, 16).replace("T", " ");
 }
 
-export default function AdminUsersClient({ initialUsers }: { initialUsers: AppUser[] }) {
+export default function AdminUsersClient({
+  initialUsers,
+  viewerIsDeveloper = false,
+}: {
+  initialUsers: AppUser[];
+  viewerIsDeveloper?: boolean;
+}) {
   const [users, setUsers] = useState<AppUser[]>(initialUsers);
   const [busyEmail, setBusyEmail] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // 요청("개발자는 사용자관리에서 사용자의 이름,부서들을 바꿀 수 있도록") - 개발자 계정에게만
+  // 이름/소속 인라인 편집을 노출합니다. 온보딩 때 본인이 잘못 입력했거나 오탈자가 있을 때
+  // 개발자가 직접 정정할 수 있게 하려는 용도라, 일반 관리자에게는 이 편집 UI 자체를 숨깁니다.
+  const [editingEmail, setEditingEmail] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editDept, setEditDept] = useState("");
+
+  function startEdit(u: AppUser) {
+    setEditingEmail(u.email);
+    setEditName(u.name ?? "");
+    setEditDept(u.department ?? "");
+    setError(null);
+  }
+
+  function cancelEdit() {
+    setEditingEmail(null);
+  }
+
+  async function saveEdit(email: string) {
+    if (!editName.trim()) {
+      setError("이름을 입력해주세요.");
+      return;
+    }
+    setBusyEmail(email);
+    setError(null);
+    const res = await fetch("/api/admin/users", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email, name: editName.trim(), department: editDept }),
+    });
+    const data = await res.json();
+    setBusyEmail(null);
+    if (!res.ok) {
+      setError(data.error || "처리하지 못했습니다.");
+      return;
+    }
+    setEditingEmail(null);
+  }
 
   useEffect(() => {
     const supabase = createClient();
@@ -131,6 +177,73 @@ export default function AdminUsersClient({ initialUsers }: { initialUsers: AppUs
     setRejectedPage(1);
   }, [rejected.length]);
 
+  // 이름/소속 표시 + (개발자에게만 보이는) 편집 토글을 세 목록(대기/승인/거절)이 공통으로
+  // 씁니다. 편집 중이면 입력폼으로, 아니면 기존처럼 텍스트로 보여줍니다.
+  function renderNameBlock(u: AppUser, options?: { mutedName?: boolean }) {
+    const isEditing = editingEmail === u.email;
+    if (isEditing) {
+      return (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <input
+            value={editName}
+            onChange={(e) => setEditName(e.target.value)}
+            placeholder="이름"
+            className="w-24 rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-700"
+          />
+          <select
+            value={editDept}
+            onChange={(e) => setEditDept(e.target.value)}
+            className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700"
+          >
+            <option value="">소속 미지정</option>
+            {DEPARTMENTS.map((d) => (
+              <option key={d} value={d}>
+                {d}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={() => saveEdit(u.email)}
+            disabled={busyEmail === u.email}
+            className="rounded-lg bg-gia-navy px-2 py-1 text-xs font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50"
+          >
+            저장
+          </button>
+          <button
+            onClick={cancelEdit}
+            disabled={busyEmail === u.email}
+            className="rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:bg-slate-50"
+          >
+            취소
+          </button>
+        </div>
+      );
+    }
+    return (
+      <div className={"text-sm font-semibold" + (options?.mutedName ? " text-slate-500" : "")}>
+        {u.name ? (
+          <>
+            {u.name}
+            <span className="ml-1.5 font-normal text-slate-500">
+              {[u.department, u.position].filter(Boolean).join(" · ")}
+            </span>
+          </>
+        ) : (
+          <span className="text-amber-600">이름 미입력(온보딩 대기 중)</span>
+        )}
+        {viewerIsDeveloper && (
+          <button
+            onClick={() => startEdit(u)}
+            title="이름/소속 편집(개발자 전용)"
+            className="ml-1.5 text-xs text-slate-400 hover:text-slate-600"
+          >
+            ✏️
+          </button>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto flex h-full max-w-5xl flex-col overflow-hidden">
       <div className="shrink-0">
@@ -145,6 +258,7 @@ export default function AdminUsersClient({ initialUsers }: { initialUsers: AppUs
           전체). 직위를 지정해야 승인할 수 있고, 승인된 계정도 언제든 직위를 바꿀 수 있습니다.
           퇴사 등으로 접근을 막아야 할 때는 승인된 계정을 &quot;차단&quot;하면 즉시 접근이
           제한됩니다.
+          {viewerIsDeveloper && " 이름 옆 ✏️를 누르면 개발자 권한으로 이름/소속을 직접 정정할 수 있습니다."}
         </p>
 
         {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
@@ -168,18 +282,7 @@ export default function AdminUsersClient({ initialUsers }: { initialUsers: AppUs
                     className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3"
                   >
                     <div>
-                      <div className="text-sm font-semibold">
-                        {u.name ? (
-                          <>
-                            {u.name}
-                            <span className="ml-1.5 font-normal text-slate-500">
-                              {[u.department, u.position].filter(Boolean).join(" · ")}
-                            </span>
-                          </>
-                        ) : (
-                          <span className="text-amber-600">이름 미입력(온보딩 대기 중)</span>
-                        )}
-                      </div>
+                      {renderNameBlock(u)}
                       <div className="text-xs text-slate-500">
                         {u.email} · 신청일 {formatDate(u.requested_at)}
                       </div>
@@ -233,10 +336,7 @@ export default function AdminUsersClient({ initialUsers }: { initialUsers: AppUs
                 className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
               >
                 <div>
-                  <div className="text-sm font-semibold">
-                    {u.name || u.email}
-                    {u.department && <span className="ml-1.5 font-normal text-slate-500">{u.department}</span>}
-                  </div>
+                  {renderNameBlock(u)}
                   <div className="text-xs text-slate-500">
                     {u.email} · 승인일 {formatDate(u.decided_at)} {u.decided_by ? `· ${u.decided_by}` : ""}
                   </div>
@@ -281,7 +381,7 @@ export default function AdminUsersClient({ initialUsers }: { initialUsers: AppUs
                   className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3"
                 >
                   <div>
-                    <div className="text-sm font-semibold text-slate-500">{u.name || u.email}</div>
+                    {renderNameBlock(u, { mutedName: true })}
                     <div className="text-xs text-slate-400">
                       {u.email} · 처리일 {formatDate(u.decided_at)} {u.decided_by ? `· ${u.decided_by}` : ""}
                     </div>

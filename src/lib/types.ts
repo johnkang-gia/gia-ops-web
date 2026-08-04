@@ -539,3 +539,31 @@ export type GiaSystem = {
   created_at: string;
   updated_at: string;
 };
+
+// 구글폼 연동 신청서(학기/행사) 가져오기 - 요청("구글폼에 링크된 구글시트를 연결하면, 분석해서
+// ... 학기,이벤트 별로 저장할 수 있도록"). 열 제목(headers) -> 표준 항목(column_mapping)
+// 매칭을 "템플릿"으로 저장해두면, 다음에 같은 형식의 시트를 붙여넣을 때 자동으로 알아봅니다.
+export type FormImportKind = "term" | "event";
+
+export type FormImportTemplate = {
+  id: string;
+  name: string;
+  kind: FormImportKind;
+  headers: string[];
+  column_mapping: Record<string, string>;
+  created_by: string;
+  created_at: string;
+  last_used_at: string | null;
+};
+
+export type FormSubmission = {
+  id: string;
+  template_id: string | null;
+  kind: FormImportKind;
+  term_id: string | null;
+  event_id: string | null;
+  raw: Record<string, string>;
+  mapped: Record<string, string>;
+  imported_by: string;
+  imported_at: string;
+};

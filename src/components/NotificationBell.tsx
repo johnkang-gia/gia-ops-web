@@ -60,18 +60,22 @@ export function NotificationProvider({
         chatTotal += count ?? 0;
       }
 
-      let taskTotal = 0;
-      const since = (taskRead as { last_seen_at: string } | null)?.last_seen_at;
-      if (since) {
-        const { data: newTasks } = await supabase
-          .from("tasks")
-          .select("id, owner_email, assignee_emails, origin_mode")
-          .neq("owner_email", userEmail!)
-          .gt("created_at", since);
-        taskTotal = ((newTasks as { assignee_emails: string[]; origin_mode: string }[] | null) ?? []).filter(
-          (t) => t.origin_mode === "전체" || t.assignee_emails?.includes(userEmail!)
-        ).length;
-      }
+      // 채팅과 달리 업무는 "한 번도 업무 탭을 연 적이 없다"고 해서 건너뛰지 않습니다 - 채팅은
+      // 부서에 쌓인 과거 대화가 많아 전부 안 읽음으로 세면 숫자가 무의미해지지만, 업무는 지금
+      // 나에게 태그된 업무가 있으면(예: 아직 한 번도 업무 탭을 안 열어본 상태에서 이미 업무가
+      // 배정돼 있는 경우) 그 자체로 알려줘야 의미가 있습니다(요청: "내 업무가 하나 있는데
+      // 메인메뉴 프로필옆에 표시가안돼" - 아직 업무 탭을 연 적이 없어 task_list_reads에 내
+      // 기록이 없던 게 원인이었습니다). 그래서 아직 방문 기록이 없으면 아주 오래된 시각을
+      // 기준으로 삼아 지금 태그된/전체 업무를 전부 셉니다.
+      const since = (taskRead as { last_seen_at: string } | null)?.last_seen_at ?? "1970-01-01T00:00:00Z";
+      const { data: newTasks } = await supabase
+        .from("tasks")
+        .select("id, owner_email, assignee_emails, origin_mode")
+        .neq("owner_email", userEmail!)
+        .gt("created_at", since);
+      const taskTotal = ((newTasks as { assignee_emails: string[]; origin_mode: string }[] | null) ?? []).filter(
+        (t) => t.origin_mode === "전체" || t.assignee_emails?.includes(userEmail!)
+      ).length;
 
       if (!cancelled) setCounts({ chatUnread: chatTotal, taskUnread: taskTotal });
     }

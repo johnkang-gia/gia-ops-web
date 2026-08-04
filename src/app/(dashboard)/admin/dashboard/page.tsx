@@ -7,6 +7,17 @@ import type { AppUser, Department, Task, Term, WrReport, WrStudent } from "@/lib
 import StatCard from "@/components/admin/StatCard";
 import GroupedBarChart, { type BarDataPoint } from "@/components/admin/GroupedBarChart";
 import RankedList, { type RankedItem } from "@/components/admin/RankedList";
+import GuideButton from "@/components/common/GuideButton";
+
+const GUIDE_SECTIONS = [
+  {
+    title: "📊 관리자 대시보드란?",
+    lines: [
+      "업무 · 운영(사건·행사·회의) · 주간 학생 관찰기록 세 영역을 한 화면에서 확인합니다.",
+      "반복되는 사건 유형과 반복적으로 지도가 필요한/우수한 학생을 자동으로 짚어주고, 최근 6개월 추이와 부서별 업무 완료율을 그래프로 보여줍니다.",
+    ],
+  },
+];
 
 export const dynamic = "force-dynamic";
 
@@ -177,9 +188,12 @@ export default async function AdminDashboardPage() {
 
   return (
     <div className="mx-auto max-w-6xl">
-      <div className="mb-1 flex items-center gap-2">
-        <h1 className="text-lg font-bold">관리자 대시보드</h1>
-        <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700">통합 현황</span>
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <h1 className="text-lg font-bold">관리자 대시보드</h1>
+          <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700">통합 현황</span>
+        </div>
+        <GuideButton title="관리자 대시보드 사용 가이드" sections={GUIDE_SECTIONS} />
       </div>
       <p className="mb-5 text-xs text-slate-500">
         업무 · 운영(사건·행사·회의) · 주간 학생 관찰기록 세 영역을 한 화면에서 확인합니다. 반복되는 사건 유형과 반복적으로

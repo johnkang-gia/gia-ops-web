@@ -4,6 +4,17 @@ import { useState } from "react";
 import { useRealtimeTable } from "@/lib/useRealtimeTable";
 import type { Proposal, ManualDraft } from "@/lib/types";
 import AiSourcePanel from "@/components/ai/AiSourcePanel";
+import GuideButton from "@/components/common/GuideButton";
+
+const GUIDE_SECTIONS = [
+  {
+    title: "🤖 AI 매뉴얼 작성이란?",
+    lines: [
+      "메모나 초안을 입력하면 AI가 실무자매뉴얼(또는 운영계획안)용 문장으로 다듬어 초안을 만들어줍니다.",
+      "생성된 초안은 제안함으로 보내져 검토 후 승인하면 정식 매뉴얼에 반영됩니다.",
+    ],
+  },
+];
 
 function oneLine(text: string, maxLen = 40) {
   const t = String(text || "").replace(/\s+/g, " ").trim();
@@ -44,7 +55,10 @@ export default function AiManualClient({ initialItems }: { initialItems: ManualD
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-[300px_1fr_340px] lg:items-start">
       {/* 왼쪽: 과거 작성 이력 */}
       <div className="order-2 flex flex-col gap-2 lg:order-1">
-        <h1 className="text-sm font-bold text-slate-700">작성 이력 ({drafts.length}건)</h1>
+        <div className="flex items-center justify-between">
+          <h1 className="text-sm font-bold text-slate-700">작성 이력 ({drafts.length}건)</h1>
+          <GuideButton title="AI 매뉴얼 작성 사용 가이드" sections={GUIDE_SECTIONS} />
+        </div>
         <div className="flex max-h-[75vh] flex-col gap-1.5 overflow-y-auto lg:max-h-[calc(100vh-8rem)]">
           {drafts.length === 0 && (
             <div className="rounded-lg bg-white p-3 text-xs text-slate-400 shadow-sm">

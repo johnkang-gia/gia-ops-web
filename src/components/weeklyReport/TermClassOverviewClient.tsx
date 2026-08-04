@@ -4,6 +4,17 @@ import { useMemo, useState } from "react";
 import type { Term, WrClass, WrStudent } from "@/lib/types";
 import StudentReportBoard from "./StudentReportBoard";
 import StudentsListClient from "./StudentsListClient";
+import GuideButton from "@/components/common/GuideButton";
+
+const GUIDE_SECTIONS = [
+  {
+    title: "🎓 반별 작성 현황이란?",
+    lines: [
+      "현재 학기를 상단에 표시하고, 그 아래 반별 위젯에서 학생별 이번 주 리포트 작성 뱃지(✅ 발행됨/📝 임시저장/미작성)를 한눈에 확인합니다.",
+      "\"전체 목록\" 탭을 누르면 예전처럼 전교생을 표 형태(이름/학년/반/보호자 연락처 검색)로 볼 수 있습니다.",
+    ],
+  },
+];
 
 type ClassGroup = { cls: WrClass; teacherName: string; students: WrStudent[] };
 
@@ -80,14 +91,17 @@ export default function TermClassOverviewClient({
             📋 전체 목록
           </button>
         </div>
-        {view === "widget" && (
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="학생 이름으로 검색..."
-            className="w-full max-w-xs rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
-          />
-        )}
+        <div className="flex items-center gap-2">
+          {view === "widget" && (
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="학생 이름으로 검색..."
+              className="w-full max-w-xs rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
+            />
+          )}
+          <GuideButton title="반별 작성 현황 사용 가이드" sections={GUIDE_SECTIONS} />
+        </div>
       </div>
 
       {view === "list" ? (

@@ -6,8 +6,19 @@ import type { ManualSection } from "@/lib/types";
 import { toDisplayHtml } from "@/lib/manualHtml";
 import RichTextEditor from "@/components/manuals/RichTextEditor";
 import Pagination from "@/components/Pagination";
+import GuideButton from "@/components/common/GuideButton";
 
 const PAGE_SIZE = 10;
+
+const GUIDE_SECTIONS = [
+  {
+    title: "📖 매뉴얼이란?",
+    lines: [
+      "채택예정에서 발행한 내용이 자동으로 쌓이거나, 직접 항목을 추가·수정·삭제할 수 있습니다. 구글독스처럼 굵게·목록·제목 서식을 적용해 편집할 수 있습니다.",
+      "\"PDF로 보기/다운로드\"로 지금 화면의 최신 내용을 인쇄용 PDF로 만들 수 있습니다.",
+    ],
+  },
+];
 
 type TargetDoc = "학부모용" | "실무자용";
 
@@ -215,7 +226,10 @@ export default function ManualsClient({ initialItems }: { initialItems: ManualSe
   return (
     <div className="mx-auto flex h-full max-w-5xl flex-col overflow-hidden">
       <div className="shrink-0">
-      <h1 className="mb-1 text-lg font-bold">매뉴얼</h1>
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <h1 className="text-lg font-bold">매뉴얼</h1>
+        <GuideButton title="매뉴얼 사용 가이드" sections={GUIDE_SECTIONS} />
+      </div>
       <p className="mb-4 text-sm text-slate-500">
         채택예정에서 발행한 내용이 자동으로 쌓이거나, 아래에서 직접 항목을 추가·수정·삭제할 수
         있습니다. 구글독스처럼 굵게·목록·제목 등 서식을 적용해 편집할 수 있고, 우측 상단

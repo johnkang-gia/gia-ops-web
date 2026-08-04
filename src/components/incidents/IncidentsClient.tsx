@@ -7,9 +7,20 @@ import { genCaseId } from "@/lib/caseId";
 import type { Incident, Term, WrStudent } from "@/lib/types";
 import AiSourcePanel from "@/components/ai/AiSourcePanel";
 import Pagination from "@/components/Pagination";
+import GuideButton from "@/components/common/GuideButton";
 
 // 사건이 쌓일수록 목록이 끝없이 길어지지 않도록, 게시판처럼 페이지 단위로 잘라 보여줍니다.
 const PAGE_SIZE = 10;
+
+const GUIDE_SECTIONS = [
+  {
+    title: "📋 사건기록이란?",
+    lines: [
+      "학생 관련 사건을 기록·검색합니다. 왼쪽에서 사건을 고르면 가운데에 상세 내용과 AI 제안(대응 방안/학부모 안내 등)이 나타납니다.",
+      "\"+ 새 사건\"으로 새 기록을 작성하고, 관련 학생을 태그해두면 학생 통합 프로필에서도 확인할 수 있습니다.",
+    ],
+  },
+];
 
 type FormState = {
   date: string;
@@ -255,12 +266,15 @@ export default function IncidentsClient({
       <div className="order-2 flex flex-col gap-2 lg:order-1 lg:h-full lg:min-h-0 lg:overflow-hidden">
         <div className="flex items-center justify-between">
           <h1 className="text-sm font-bold text-slate-700">사건 ({items.length}건)</h1>
-          <button
-            onClick={startNew}
-            className="rounded-lg bg-gia-navy px-2.5 py-1 text-xs font-semibold text-white hover:bg-gia-navy-2"
-          >
-            + 새 사건
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={startNew}
+              className="rounded-lg bg-gia-navy px-2.5 py-1 text-xs font-semibold text-white hover:bg-gia-navy-2"
+            >
+              + 새 사건
+            </button>
+            <GuideButton title="사건기록 사용 가이드" sections={GUIDE_SECTIONS} />
+          </div>
         </div>
         <div className="flex flex-1 flex-col gap-1.5 overflow-y-auto lg:min-h-0">
           {items.length === 0 && (

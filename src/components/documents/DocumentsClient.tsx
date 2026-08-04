@@ -5,10 +5,21 @@ import { createClient } from "@/lib/supabase/client";
 import type { SchoolDocument } from "@/lib/types";
 import { genCaseId } from "@/lib/caseId";
 import Pagination from "@/components/Pagination";
+import GuideButton from "@/components/common/GuideButton";
 
 // "그 외" 목록이 계속 늘어질 수 있어 게시판처럼 페이지 단위로 잘라 보여줍니다. (신경 써야 할
 // 서류는 바로 눈에 띄어야 해서 페이지를 나누지 않고 항상 전체를 보여줍니다.)
 const PAGE_SIZE = 10;
+
+const GUIDE_SECTIONS = [
+  {
+    title: "🗂️ 서류함이란?",
+    lines: [
+      "학교 운영에 필요한 서류를 정리하고 상태를 관리합니다.",
+      "\"AI 서류 추천받기\"로 대안교육기관이 갖추면 좋은 서류를 AI가 찾아 목록에 추가하고, 각 서류의 \"AI 초안 만들기\"로 바로 다듬어 쓸 수 있는 초안을 만들 수 있습니다.",
+    ],
+  },
+];
 
 const STATUS_OPTIONS: SchoolDocument["status"][] = ["필요", "준비중", "보유", "만료임박", "해당없음"];
 
@@ -211,7 +222,10 @@ export default function DocumentsClient({ initialItems }: { initialItems: School
   return (
     <div className="mx-auto flex h-full max-w-5xl flex-col overflow-hidden">
       <div className="shrink-0">
-        <h1 className="mb-1 text-lg font-bold">서류함</h1>
+        <div className="mb-1 flex items-center justify-between gap-2">
+          <h1 className="text-lg font-bold">서류함</h1>
+          <GuideButton title="서류함 사용 가이드" sections={GUIDE_SECTIONS} />
+        </div>
         <p className="mb-4 text-xs text-slate-500">
           학교 운영에 필요한 서류를 정리하고 상태를 관리합니다. &quot;AI 서류 추천받기&quot;를
           누르면 GIA 같은 대안교육기관이 갖추면 좋은 서류를 AI가 찾아서 목록에 추가하고,

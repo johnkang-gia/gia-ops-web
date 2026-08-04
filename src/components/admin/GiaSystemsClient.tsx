@@ -5,6 +5,17 @@ import { createClient } from "@/lib/supabase/client";
 import { genCaseId } from "@/lib/caseId";
 import { friendlyError } from "@/lib/errorMessage";
 import type { GiaSystem } from "@/lib/types";
+import GuideButton from "@/components/common/GuideButton";
+
+const GUIDE_SECTIONS = [
+  {
+    title: "🧩 GIA시스템이란?",
+    lines: [
+      "GIA가 이미 갖춘 운영 시스템과, 다른 국제학교·공립학교는 갖췄지만 GIA에는 아직 없는 시스템을 한눈에 봅니다.",
+      "\"운영관리 제안함으로 보내기\"를 누르면 제안함→채택예정→발행 절차를 그대로 거치고, 발행되는 순간 이 표의 상태가 자동으로 \"보유\"로 바뀝니다.",
+    ],
+  },
+];
 
 const STATUS_STYLE: Record<GiaSystem["status"], string> = {
   보유: "bg-teal-50 text-teal-700",
@@ -100,13 +111,16 @@ export default function GiaSystemsClient({ initialSystems }: { initialSystems: G
             거치고, 발행되는 순간 이 표의 상태가 자동으로 &quot;보유&quot;로 바뀝니다.
           </p>
         </div>
-        <button
-          onClick={suggest}
-          disabled={suggesting}
-          className="shrink-0 rounded-lg bg-gia-navy px-3 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
-        >
-          {suggesting ? "검색 중..." : "✨ AI로 벤치마킹 제안받기"}
-        </button>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <button
+            onClick={suggest}
+            disabled={suggesting}
+            className="shrink-0 rounded-lg bg-gia-navy px-3 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+          >
+            {suggesting ? "검색 중..." : "✨ AI로 벤치마킹 제안받기"}
+          </button>
+          <GuideButton title="GIA시스템 사용 가이드" sections={GUIDE_SECTIONS} />
+        </div>
       </div>
 
       <div className="mb-4 flex gap-2 text-xs">

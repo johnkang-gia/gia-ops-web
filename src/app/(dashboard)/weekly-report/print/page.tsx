@@ -4,6 +4,17 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { isStaffOrAboveUser } from "@/lib/roles";
 import type { Term, WrStudent } from "@/lib/types";
 import PrintSelectorClient from "@/components/weeklyReport/PrintSelectorClient";
+import GuideButton from "@/components/common/GuideButton";
+
+const GUIDE_SECTIONS = [
+  {
+    title: "🖨️ 리포트 프린트란?",
+    lines: [
+      "학생을 선택하면 발행(published)된 최신 주간 관찰기록을 인쇄용 PDF로 볼 수 있습니다.",
+      "학기를 함께 고르면 그 학기 동안 발행된 모든 리포트를 모은 학기 종합 PDF도 만들 수 있습니다.",
+    ],
+  },
+];
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +40,10 @@ export default async function PrintPage() {
 
   return (
     <div className="mx-auto max-w-lg">
-      <h1 className="mb-1 text-lg font-bold">리포트 프린트</h1>
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <h1 className="text-lg font-bold">리포트 프린트</h1>
+        <GuideButton title="리포트 프린트 사용 가이드" sections={GUIDE_SECTIONS} />
+      </div>
       <p className="mb-4 text-xs text-slate-500">
         학생을 선택하면 발행(published)된 최신 리포트를 인쇄용 PDF로 볼 수 있고, 학기를 함께 고르면 그
         학기 동안 발행된 모든 리포트를 모은 학기 종합 PDF도 만들 수 있습니다.

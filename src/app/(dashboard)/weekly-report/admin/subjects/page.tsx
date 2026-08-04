@@ -4,6 +4,14 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { isDeveloperEmail } from "@/lib/roles";
 import type { TeamMember, WrClass, WrStudent, WrSubject } from "@/lib/types";
 import SubjectManageClient from "@/components/weeklyReport/admin/SubjectManageClient";
+import GuideButton from "@/components/common/GuideButton";
+
+const GUIDE_SECTIONS = [
+  {
+    title: "📘 과목반 세팅이란?",
+    lines: ["과목을 등록하고 각 과목의 담당 교사, 수강 학생 명단을 지정합니다. 여기서 지정한 담당 교사는 해당 과목의 위클리 리포트를 작성할 수 있습니다."],
+  },
+];
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +30,10 @@ export default async function SubjectManagePage() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <h1 className="mb-1 text-lg font-bold">과목반 세팅</h1>
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <h1 className="text-lg font-bold">과목반 세팅</h1>
+        <GuideButton title="과목반 세팅 사용 가이드" sections={GUIDE_SECTIONS} />
+      </div>
       <p className="mb-4 text-xs text-slate-500">과목마다 담당 교사와 수강 학생 명단을 지정합니다.</p>
       <SubjectManageClient
         initialSubjects={(subjectsData as WrSubject[] | null) ?? []}

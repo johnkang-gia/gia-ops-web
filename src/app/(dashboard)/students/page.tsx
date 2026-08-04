@@ -4,6 +4,21 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { isDeveloperEmail } from "@/lib/roles";
 import type { WrStudent } from "@/lib/types";
 import StudentSearchClient from "@/components/students/StudentSearchClient";
+import GuideButton from "@/components/common/GuideButton";
+
+const GUIDE_SECTIONS = [
+  {
+    title: "🔍 학생 정보 조회란?",
+    lines: [
+      "학교 전체 재학생을 이름/학번으로 검색해 인적사항·학적사항을 확인합니다.",
+      "업무·사건기록·주간 학생 관찰기록 등 그 학생과 관련된 기록도 한 화면에서 함께 볼 수 있습니다.",
+    ],
+  },
+  {
+    title: "👀 접근 권한",
+    lines: ["관리자·행정직원(+개발자)만 접근할 수 있습니다. 교사는 자신이 맡은 학생의 위클리 리포트만 볼 수 있습니다."],
+  },
+];
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +44,10 @@ export default async function StudentsSearchPage() {
   return (
     <div className="mx-auto flex h-full max-w-2xl flex-col overflow-hidden">
       <div className="shrink-0">
-        <h1 className="mb-1 text-lg font-bold">학생 정보 조회</h1>
+        <div className="mb-1 flex items-center justify-between gap-2">
+          <h1 className="text-lg font-bold">학생 정보 조회</h1>
+          <GuideButton title="학생 정보 조회 사용 가이드" sections={GUIDE_SECTIONS} />
+        </div>
         <p className="mb-4 text-xs text-slate-500">
           업무 · 사건기록 · 주간 학생 관찰기록에서 같은 학생은 항상 같은 학번(고유번호)으로 관리됩니다.
           이름이나 학번으로 검색해 그 학생의 인적사항·학적사항·관련 기록을 한 화면에서 확인하세요.

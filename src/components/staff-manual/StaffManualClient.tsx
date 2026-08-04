@@ -6,6 +6,14 @@ import { createClient } from "@/lib/supabase/client";
 import type { ManualSection, WrStudent } from "@/lib/types";
 import { toDisplayHtml, htmlToPlainText } from "@/lib/manualHtml";
 import StudentQuickLookup from "./StudentQuickLookup";
+import GuideButton from "@/components/common/GuideButton";
+
+const GUIDE_SECTIONS = [
+  {
+    title: "📚 실무자매뉴얼이란?",
+    lines: ["발행된 실무자용 매뉴얼을 검색·조회하는 화면입니다. 오른쪽에서 학생을 검색하면 그 학생의 인적사항과 관련 기록도 함께 확인할 수 있습니다."],
+  },
+];
 
 export default function StaffManualClient({ initialItems, students }: { initialItems: ManualSection[]; students: WrStudent[] }) {
   const [items, setItems] = useState<ManualSection[]>(initialItems);
@@ -82,7 +90,10 @@ export default function StaffManualClient({ initialItems, students }: { initialI
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <div className="mb-3 shrink-0">
-        <h1 className="mb-1 text-lg font-bold">실무자매뉴얼</h1>
+        <div className="mb-1 flex items-center justify-between gap-2">
+          <h1 className="text-lg font-bold">실무자매뉴얼</h1>
+          <GuideButton title="실무자매뉴얼 사용 가이드" sections={GUIDE_SECTIONS} />
+        </div>
         <p className="text-xs text-slate-500">
           전화 응대 중 왼쪽에서 매뉴얼을, 오른쪽에서 학생 정보를 동시에 검색해서 볼 수 있습니다.
           직접 항목을 추가하거나 자세히 수정하려면{" "}

@@ -2,6 +2,21 @@ import { redirect } from "next/navigation";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isDeveloperEmail } from "@/lib/roles";
 import SchoolImportClient from "@/components/school/SchoolImportClient";
+import GuideButton from "@/components/common/GuideButton";
+
+const GUIDE_SECTIONS = [
+  {
+    title: "📥 구글시트로 가져오기란?",
+    lines: [
+      "기존 구글시트의 교직원 명단·반 구성(담임/부담임)·학생 명부를 CSV 붙여넣기로 한 번에 시스템에 반영합니다.",
+      "구글시트에서 표를 CSV로 다운로드하거나 셀 범위를 그대로 복사해 붙여넣으면 됩니다.",
+    ],
+  },
+  {
+    title: "⚠️ 주의",
+    lines: ["관리자 전용 화면입니다. 기존 데이터와 겹치는 항목은 갱신되므로, 처음 세팅 또는 일괄 갱신 시에만 사용하세요."],
+  },
+];
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +32,10 @@ export default async function SchoolImportPage() {
 
   return (
     <div className="mx-auto max-w-5xl">
-      <h1 className="mb-1 text-lg font-bold">📥 구글시트로 학교정보 가져오기</h1>
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <h1 className="text-lg font-bold">📥 구글시트로 학교정보 가져오기</h1>
+        <GuideButton title="구글시트로 학교정보 가져오기 사용 가이드" sections={GUIDE_SECTIONS} />
+      </div>
       <p className="mb-4 text-xs text-slate-500">
         구글시트에서 표를 CSV로 다운로드하거나 셀 범위를 그대로 복사해서 붙여넣으면, 교직원 명단·반
         구성(담임/부담임)·학생 명부를 한 번에 시스템에 반영합니다.

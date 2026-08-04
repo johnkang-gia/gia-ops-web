@@ -4,9 +4,17 @@ import { useEffect, useMemo, useState } from "react";
 import { useRealtimeTable } from "@/lib/useRealtimeTable";
 import type { Inquiry } from "@/lib/types";
 import Pagination from "@/components/Pagination";
+import GuideButton from "@/components/common/GuideButton";
 
 // 문의가 쌓일수록 목록이 끝없이 길어지지 않도록, 게시판처럼 페이지 단위로 잘라 보여줍니다.
 const PAGE_SIZE = 10;
+
+const GUIDE_SECTIONS = [
+  {
+    title: "🗣️ 문의및 건의사항이란?",
+    lines: ["시스템 오류 신고나 개선 건의사항을 남기는 곳입니다. 카테고리(오류/건의 등)를 골라 작성하면 개발자가 확인 후 처리 상태를 갱신합니다."],
+  },
+];
 
 const CATEGORY_LABEL: Record<string, string> = {
   오류: "🐞 오류",
@@ -104,7 +112,10 @@ export default function InquiriesClient({
   return (
     <div className="mx-auto flex h-full max-w-3xl flex-col overflow-hidden">
       <div className="shrink-0">
-        <h1 className="mb-1 text-lg font-bold">문의및 건의사항</h1>
+        <div className="mb-1 flex items-center justify-between gap-2">
+          <h1 className="text-lg font-bold">문의및 건의사항</h1>
+          <GuideButton title="문의및 건의사항 사용 가이드" sections={GUIDE_SECTIONS} />
+        </div>
         <p className="mb-4 text-xs text-slate-500">
           오류를 발견했거나 앱에 추가되면 좋을 기능이 있으면 남겨주세요. 개발자가 확인 후 상태와
           답변을 남깁니다.

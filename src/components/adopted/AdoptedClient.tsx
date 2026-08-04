@@ -4,8 +4,19 @@ import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Adopted } from "@/lib/types";
 import Pagination from "@/components/Pagination";
+import GuideButton from "@/components/common/GuideButton";
 
 const PAGE_SIZE = 10;
+
+const GUIDE_SECTIONS = [
+  {
+    title: "📬 채택예정이란?",
+    lines: [
+      "제안함에서 승인한 내용이 여기로 옵니다. GIA 실정에 맞게 구체화한 뒤 \"발행\"을 눌러야 매뉴얼(운영계획안/실무자매뉴얼)에 실제로 반영됩니다.",
+      "발행 전 AI 검증 버튼으로 내용을 한 번 더 비판적으로 점검할 수 있습니다.",
+    ],
+  },
+];
 
 function oneLine(text: string, maxLen = 70) {
   const t = String(text || "").replace(/\s+/g, " ").trim();
@@ -120,7 +131,10 @@ export default function AdoptedClient({ initialItems }: { initialItems: Adopted[
   return (
     <div className="mx-auto flex h-full max-w-5xl flex-col overflow-hidden">
       <div className="shrink-0">
-      <h1 className="mb-4 text-lg font-bold">채택예정 ({items.length}건)</h1>
+      <div className="mb-4 flex items-center justify-between gap-2">
+        <h1 className="text-lg font-bold">채택예정 ({items.length}건)</h1>
+        <GuideButton title="채택예정 사용 가이드" sections={GUIDE_SECTIONS} />
+      </div>
       <p className="mb-4 text-sm text-slate-500">
         제안함에서 승인한 내용이 여기로 옵니다. GIA 실정에 맞게 구체화한 뒤 &quot;발행&quot;을 눌러야
         매뉴얼(운영계획안/실무자매뉴얼)에 실제로 반영됩니다.

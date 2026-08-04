@@ -3,6 +3,17 @@
 import { useState } from "react";
 import type { EducationNews } from "@/lib/types";
 import { friendlyError } from "@/lib/errorMessage";
+import GuideButton from "@/components/common/GuideButton";
+
+const GUIDE_SECTIONS = [
+  {
+    title: "📰 교육뉴스란?",
+    lines: [
+      "AI가 웹 검색으로 국제학교·교육정책·교육 트렌드 관련 최신 소식을 찾아 정리합니다.",
+      "매주 월·수요일 아침 자동으로 새 회차가 생성되고, \"지금 새로 만들기\"로 필요할 때 바로 새로 만들 수도 있습니다.",
+    ],
+  },
+];
 
 const CATEGORY_COLOR: Record<string, string> = {
   "국제학교 동향": "bg-blue-50 text-blue-700",
@@ -46,13 +57,16 @@ export default function EducationNewsClient({ initialNews }: { initialNews: Educ
             아침 자동으로 새 회차가 생성되고, 필요하면 지금 바로 새로 만들 수도 있습니다.
           </p>
         </div>
-        <button
-          onClick={generate}
-          disabled={generating}
-          className="shrink-0 rounded-lg bg-gia-navy px-3 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
-        >
-          {generating ? "검색 중..." : "✨ 지금 새로 만들기"}
-        </button>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <button
+            onClick={generate}
+            disabled={generating}
+            className="shrink-0 rounded-lg bg-gia-navy px-3 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+          >
+            {generating ? "검색 중..." : "✨ 지금 새로 만들기"}
+          </button>
+          <GuideButton title="교육뉴스 사용 가이드" sections={GUIDE_SECTIONS} />
+        </div>
       </div>
 
       {error && <div className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{error}</div>}

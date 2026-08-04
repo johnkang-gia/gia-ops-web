@@ -9,6 +9,17 @@ import type { Term } from "@/lib/types";
 import type { EventCompareResult } from "@/lib/ai/types";
 import PhotoUploader from "@/components/common/PhotoUploader";
 import Pagination from "@/components/Pagination";
+import GuideButton from "@/components/common/GuideButton";
+
+const GUIDE_SECTIONS = [
+  {
+    title: "📅 학기 · 캠프란?",
+    lines: [
+      "연도/학기(또는 캠프) 단위로 기간을 등록·관리합니다. 진행중으로 설정된 학기는 위클리 리포트, 사건/회의 기록 등 앱 전체의 \"현재 학기\" 기준이 됩니다.",
+      "학기별로 그동안 쌓인 사건/회의 기록을 모아볼 수 있고, AI로 지난 학기와 비교할 수 있습니다.",
+    ],
+  },
+];
 
 const TERM_TYPES = ["1학기", "2학기", "3학기", "여름캠프1", "여름캠프2", "겨울캠프1", "겨울캠프2"];
 const PAGE_SIZE = 10;
@@ -267,7 +278,10 @@ export default function TermsClient({ initialItems }: { initialItems: Term[] }) 
   return (
     <div className="mx-auto flex h-full max-w-5xl flex-col overflow-hidden">
     <div className="shrink-0">
-      <h1 className="mb-1 text-lg font-bold">학기 · 캠프</h1>
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <h1 className="text-lg font-bold">학기 · 캠프</h1>
+        <GuideButton title="학기 · 캠프 사용 가이드" sections={GUIDE_SECTIONS} />
+      </div>
       <p className="mb-4 text-xs text-slate-500">
         학기(1~3학기)와 방학 캠프(여름캠프1·2, 겨울캠프1·2)는 매년 반복됩니다. 학기가 진행되는
         동안 나온 회의록 내용은 회의록 AI 분류를 통해 해당 학기의 개선 제안란에 자동으로

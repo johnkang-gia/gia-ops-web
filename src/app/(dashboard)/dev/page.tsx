@@ -6,6 +6,21 @@ import { isDeveloperEmail } from "@/lib/roles";
 import type { ErrorLog, AiUsageLog, AiFeatureFlag } from "@/lib/types";
 import { estimateCostUsd, formatUsd, AI_FEATURES } from "@/lib/ai/pricing";
 import AiFeatureTogglesClient from "@/components/dev/AiFeatureTogglesClient";
+import GuideButton from "@/components/common/GuideButton";
+
+const GUIDE_SECTIONS = [
+  {
+    title: "🛠️ 개발자 대시보드란?",
+    lines: [
+      "전체 데이터 현황, 14일 이상 방치된 제안/채택예정, 3일 이상 미해결 오류 문의를 한눈에 확인합니다.",
+      "최근 30일 AI 사용량과 예상 과금, 라우트별 호출 수/토큰/실패 건수를 볼 수 있습니다.",
+    ],
+  },
+  {
+    title: "💰 AI 기능 on/off",
+    lines: ["과금이 부담스러운 AI 기능은 개별적으로 꺼서 즉시 호출을 막을 수 있습니다(끄면 전 직원 화면에 일시정지 배너 표시)."],
+  },
+];
 
 export const dynamic = "force-dynamic";
 
@@ -164,7 +179,10 @@ export default async function DevDashboardPage() {
 
   return (
     <div className="mx-auto max-w-5xl">
-      <h1 className="mb-1 text-lg font-bold">개발자 대시보드</h1>
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <h1 className="text-lg font-bold">개발자 대시보드</h1>
+        <GuideButton title="개발자 대시보드 사용 가이드" sections={GUIDE_SECTIONS} />
+      </div>
       <p className="mb-5 text-xs text-slate-500">
         전체 데이터 현황, 방치된 항목, AI 사용량, 최근 오류를 한눈에 확인합니다. 실사용자 페이지
         속도는{" "}

@@ -6,6 +6,20 @@ import { getCurrentTerm } from "@/lib/currentTerm";
 import { getWeekRange } from "@/lib/weeklyReport/week";
 import type { Term, WrClass, WrReport } from "@/lib/types";
 import RecordSearchPanel from "@/components/weeklyReport/admin/RecordSearchPanel";
+import GuideButton from "@/components/common/GuideButton";
+
+const GUIDE_SECTIONS = [
+  {
+    title: "📊 주간 학생 관찰기록 통계란?",
+    lines: [
+      "이번 주 기준 재적 학생 수, 발행/임시저장 리포트 건수, 지도 필요·우수 평가 학생 수를 한눈에 확인합니다.",
+    ],
+  },
+  {
+    title: "🔍 기록 검색",
+    lines: ["연도-학기-학년-반을 조합해 과거 리포트를 검색할 수 있습니다."],
+  },
+];
 
 export const dynamic = "force-dynamic";
 
@@ -51,7 +65,10 @@ export default async function WeeklyReportStatsPage() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <h1 className="mb-1 text-lg font-bold">주간 학생 관찰기록 통계</h1>
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <h1 className="text-lg font-bold">주간 학생 관찰기록 통계</h1>
+        <GuideButton title="주간 학생 관찰기록 통계 사용 가이드" sections={GUIDE_SECTIONS} />
+      </div>
       <p className="mb-4 text-xs text-slate-500">
         {term ? `현재 학기: ${term.year}년 ${term.term_type}` : "진행중인 학기가 없습니다."} · 이번 주 ({start} ~ {end}) 기준
       </p>

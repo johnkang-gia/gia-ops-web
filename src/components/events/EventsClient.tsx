@@ -8,8 +8,19 @@ import type { EventRecord } from "@/lib/types";
 import type { EventCompareResult } from "@/lib/ai/types";
 import PhotoUploader from "@/components/common/PhotoUploader";
 import Pagination from "@/components/Pagination";
+import GuideButton from "@/components/common/GuideButton";
 
 const EVENTS_PAGE_SIZE = 8;
+
+const GUIDE_SECTIONS = [
+  {
+    title: "🎉 행사기록이란?",
+    lines: [
+      "정규행사(매년/주기적으로 반복)는 이름별로 이력을 쌓아 AI로 지난 회차와 비교해 다음 행사를 준비할 수 있습니다.",
+      "일시적행사(한 번만 진행)는 가볍게 기록해두면 몇 년 뒤 비슷한 행사를 할 때 참고할 수 있습니다.",
+    ],
+  },
+];
 
 type FormState = {
   date: string;
@@ -52,7 +63,10 @@ export default function EventsClient({ initialItems }: { initialItems: EventReco
   return (
     <div className="mx-auto flex h-full max-w-5xl flex-col overflow-hidden">
       <div className="shrink-0">
-        <h1 className="mb-1 text-lg font-bold">행사기록</h1>
+        <div className="mb-1 flex items-center justify-between gap-2">
+          <h1 className="text-lg font-bold">행사기록</h1>
+          <GuideButton title="행사기록 사용 가이드" sections={GUIDE_SECTIONS} />
+        </div>
         <p className="mb-4 text-xs text-slate-500">
           매년/주기적으로 반복되는 행사(정규행사)는 이름별로 묶어서 이력을 쌓고 AI로 지난 회차와
           비교해 다음 행사를 더 잘 준비할 수 있습니다. 한 번만 진행하는 행사(일시적행사)는 &quot;이런

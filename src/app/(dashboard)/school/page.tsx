@@ -6,6 +6,21 @@ import { getCurrentTerm } from "@/lib/currentTerm";
 import { isDeveloperEmail } from "@/lib/roles";
 import type { AppUser, WrClass, WrStudent, WrSubject } from "@/lib/types";
 import StatCard from "@/components/admin/StatCard";
+import GuideButton from "@/components/common/GuideButton";
+
+const GUIDE_SECTIONS = [
+  {
+    title: "🏛️ 학교 관리 대시보드란?",
+    lines: [
+      "현재 학기·개설된 반·과목·교사·교직원·재학생 현황을 한 화면에서 요약해서 보여줍니다.",
+      "각 카드/목록의 '→' 링크를 누르면 해당 관리 화면(반 관리, 과목반 세팅, 사용자 관리, 학생 정보 조회)으로 바로 이동합니다.",
+    ],
+  },
+  {
+    title: "📥 구글시트로 가져오기",
+    lines: ["관리자는 우상단 버튼으로 기존에 쓰던 구글시트의 학생/반 명단을 한 번에 불러와 초기 세팅을 빠르게 할 수 있습니다."],
+  },
+];
 
 export const dynamic = "force-dynamic";
 
@@ -47,14 +62,17 @@ export default async function SchoolDashboardPage() {
     <div className="mx-auto max-w-6xl">
       <div className="mb-1 flex items-center justify-between gap-2">
         <h1 className="text-lg font-bold">🏛️ 학교 관리 대시보드</h1>
-        {isAdmin && (
-          <Link
-            href="/school/import"
-            className="shrink-0 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100"
-          >
-            📥 구글시트로 가져오기
-          </Link>
-        )}
+        <div className="flex shrink-0 items-center gap-2">
+          {isAdmin && (
+            <Link
+              href="/school/import"
+              className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100"
+            >
+              📥 구글시트로 가져오기
+            </Link>
+          )}
+          <GuideButton title="학교 관리 대시보드 사용 가이드" sections={GUIDE_SECTIONS} />
+        </div>
       </div>
       <p className="mb-4 text-xs text-slate-500">현재 학기·반·과목·교직원·학생 현황을 한눈에 확인합니다.</p>
 

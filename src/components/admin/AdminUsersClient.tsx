@@ -5,6 +5,17 @@ import { createClient } from "@/lib/supabase/client";
 import type { AppUser } from "@/lib/types";
 import { isDeveloperEmail } from "@/lib/roles";
 import Pagination from "@/components/Pagination";
+import GuideButton from "@/components/common/GuideButton";
+
+const GUIDE_SECTIONS = [
+  {
+    title: "👥 사용자 관리란?",
+    lines: [
+      "가입 신청한 계정을 승인/거부하고, 이름·소속·직위(교사/행정직원/관리자)를 지정합니다.",
+      "직위에 따라 접근 가능한 메뉴가 달라지므로, 신규 직원이 들어오면 여기서 먼저 직위를 정확히 설정해야 합니다.",
+    ],
+  },
+];
 
 // 개발자 계정은 서버(admin/users/page.tsx)에서 이미 걸러서 initialUsers에 담겨오지 않지만,
 // 실시간 구독(postgres_changes)은 app_users 테이블 전체를 대상으로 하므로 여기서도 한 번 더
@@ -123,7 +134,10 @@ export default function AdminUsersClient({ initialUsers }: { initialUsers: AppUs
   return (
     <div className="mx-auto flex h-full max-w-5xl flex-col overflow-hidden">
       <div className="shrink-0">
-        <h1 className="mb-1 text-lg font-bold">사용자 관리</h1>
+        <div className="mb-1 flex items-center justify-between gap-2">
+          <h1 className="text-lg font-bold">사용자 관리</h1>
+          <GuideButton title="사용자 관리 사용 가이드" sections={GUIDE_SECTIONS} />
+        </div>
         <p className="mb-6 text-sm text-slate-500">
           giamicro.com 계정으로 로그인하면 자동으로 승인 대기 목록에 올라갑니다. 직위(교사/행정직원/
           관리자)는 온보딩 때 본인이 고른 값과 무관하게 여기서 관리자가 최종적으로 지정·변경하며,

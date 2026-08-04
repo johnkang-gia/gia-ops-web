@@ -9,9 +9,20 @@ import type { Meeting, Term } from "@/lib/types";
 import MeetingChatComposer from "./MeetingChatComposer";
 import AiSourcePanel from "@/components/ai/AiSourcePanel";
 import Pagination from "@/components/Pagination";
+import GuideButton from "@/components/common/GuideButton";
 
 // 회의가 쌓일수록 목록이 끝없이 길어지지 않도록, 게시판처럼 페이지 단위로 잘라 보여줍니다.
 const PAGE_SIZE = 10;
+
+const GUIDE_SECTIONS = [
+  {
+    title: "💬 회의기록이란?",
+    lines: [
+      "회의 내용을 채팅형으로 대화하듯 입력하면 AI가 안건/결정사항을 자동 정리합니다. 음성 녹음 후 실시간 텍스트 변환(STT)도 지원합니다.",
+      "왼쪽 목록에서 회의를 고르면 가운데에 정리된 회의록과 AI 제안이 나타납니다.",
+    ],
+  },
+];
 
 type FormState = {
   date: string;
@@ -142,6 +153,7 @@ export default function MeetingsClient({
       <div className="order-2 flex flex-col gap-2 lg:order-1 lg:h-full lg:min-h-0 lg:overflow-hidden">
         <div className="flex items-center justify-between">
           <h1 className="text-sm font-bold text-slate-700">회의 ({items.length}건)</h1>
+          <div className="flex items-center gap-1.5">
           {editingId && (
             <button
               onClick={stopEditing}
@@ -150,6 +162,8 @@ export default function MeetingsClient({
               + 새 회의
             </button>
           )}
+          <GuideButton title="회의기록 사용 가이드" sections={GUIDE_SECTIONS} />
+          </div>
         </div>
         <div className="flex flex-1 flex-col gap-1.5 overflow-y-auto lg:min-h-0">
           {items.length === 0 && (

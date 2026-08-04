@@ -4,8 +4,19 @@ import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Proposal } from "@/lib/types";
 import Pagination from "@/components/Pagination";
+import GuideButton from "@/components/common/GuideButton";
 
 const PAGE_SIZE = 10;
+
+const GUIDE_SECTIONS = [
+  {
+    title: "📝 제안함이란?",
+    lines: [
+      "사건/행사/회의/AI매뉴얼/예상 문의 등에서 AI가 만든 제안을 검토합니다. 승인하면 채택예정으로 넘어가고, 보류·삭제도 가능합니다.",
+      "상단 \"AI 분석 실행\"으로 최근 기록을 스캔해 새 제안을 만들 수 있습니다.",
+    ],
+  },
+];
 
 const SOURCE_LABEL: Record<string, string> = {
   incidents: "📋 사건",
@@ -154,7 +165,10 @@ export default function ProposalsClient({ initialItems }: { initialItems: Propos
   return (
     <div className="mx-auto flex h-full max-w-5xl flex-col overflow-hidden">
       <div className="shrink-0">
-      <h1 className="mb-4 text-lg font-bold">제안함 검토대기 ({items.length}건)</h1>
+      <div className="mb-4 flex items-center justify-between gap-2">
+        <h1 className="text-lg font-bold">제안함 검토대기 ({items.length}건)</h1>
+        <GuideButton title="제안함 사용 가이드" sections={GUIDE_SECTIONS} />
+      </div>
 
       <div className="mb-6 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="mb-2 text-sm font-semibold text-slate-700">AI 분석 실행</div>

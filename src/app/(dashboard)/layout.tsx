@@ -181,7 +181,13 @@ export default async function DashboardLayout({
   }
 
   return (
-    <div className="flex min-h-screen flex-1">
+    // min-h-screen(최소 높이)이 아니라 h-screen(고정 높이)을 씁니다: min-height는 "이만큼은
+    // 넘게"만 정할 뿐 실제 높이를 화면에 고정하지 않아서, 채팅처럼 내용이 계속 늘어나는 화면이
+    // 있으면 이 바깥 틀 자체가 계속 늘어나며 브라우저 전체 페이지가 스크롤돼버립니다(요청:
+    // "채팅을 계속치니까 채팅창이 아래로 쭉 내려가면서 메뉴랑 화면들이 전부 위로 올라가버려").
+    // 높이를 화면 크기로 고정해야 그 안의 각 화면(예: 업무 탭 채팅)이 자기 영역 안에서만
+    // 스크롤되고, 사이드바 메뉴는 항상 제자리에 그대로 있습니다.
+    <div className="flex h-screen flex-1">
       <aside className="hidden w-56 shrink-0 border-r border-slate-200 bg-white p-4 sm:flex sm:flex-col">
         <div className="mb-6 px-2">
           <Link href={homeHref} className="inline-block cursor-pointer">
@@ -252,7 +258,7 @@ export default async function DashboardLayout({
         </div>
       </aside>
 
-      <div className="flex min-h-screen flex-1 flex-col">
+      <div className="flex h-screen flex-1 flex-col">
         <header className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 sm:hidden">
           <Link href={homeHref} className="inline-block cursor-pointer">
             <Image src="/logo-main.png" alt="GIA Micro Lab" width={538} height={120} className="h-7 w-auto" />

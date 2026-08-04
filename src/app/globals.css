@@ -46,6 +46,7 @@ body {
    sidebar/header/card 요소들이 bg-[var(--shell-bg)]처럼 Tailwind 임의값 클래스로 읽어갑니다. */
 [data-theme="light"] {
   --shell-page-bg: var(--color-gia-bg);
+  --shell-content-bg: var(--color-gia-bg);
   --shell-bg: #ffffff;
   --shell-border: #e2e8f0;
   --shell-text: #334155;
@@ -61,6 +62,7 @@ body {
 
 [data-theme="dark"] {
   --shell-page-bg: #0b1120;
+  --shell-content-bg: #0b1120;
   --shell-bg: #0f172a;
   --shell-border: #1e293b;
   --shell-text: #e2e8f0;
@@ -78,6 +80,7 @@ body {
    원리(backdrop-filter: blur)를 셸 전체로 확장했습니다. */
 [data-theme="liquid-glass"] {
   --shell-page-bg: linear-gradient(160deg, #dbeafe 0%, #eef2ff 45%, #e0f2fe 100%);
+  --shell-content-bg: linear-gradient(160deg, #dbeafe 0%, #eef2ff 45%, #e0f2fe 100%);
   --shell-bg: rgba(255, 255, 255, 0.55);
   --shell-border: rgba(255, 255, 255, 0.5);
   --shell-text: #1e293b;
@@ -92,9 +95,14 @@ body {
 }
 
 /* GIA 브랜드 - 로고 남색 + 골드 조합. 기존 --color-gia-navy, --color-gia-gold 계열 팔레트를
-   그대로 재사용해 로그인 화면(.gia-navy-panel)과 톤이 이어지도록 했습니다. */
+   그대로 재사용해 로그인 화면(.gia-navy-panel)과 톤이 이어지도록 했습니다. 사이드바/헤더(
+   --shell-bg, --shell-page-bg)는 짙은 남색을 유지하되, 사건기록·매뉴얼처럼 글자가 빽빽한
+   본문 화면(--shell-content-bg)은 남색 그대로 쓰면 검은 글자가 안 보인다는 피드백이 있어
+   골드와 어울리는 밝은 아이보리/샴페인 톤으로 따로 둡니다(라이트 테마처럼 어두운 글자가
+   그대로 잘 보임). */
 [data-theme="gia-brand"] {
   --shell-page-bg: linear-gradient(165deg, #0f1b33 0%, #172a4d 55%, #223a66 100%);
+  --shell-content-bg: linear-gradient(160deg, #faf6ec 0%, #f6efdb 50%, #f0e3bf 100%);
   --shell-bg: #13224a;
   --shell-border: rgba(198, 161, 91, 0.35);
   --shell-text: #f4ecd8;
@@ -114,6 +122,13 @@ body {
   background: var(--shell-page-bg);
 }
 
+/* 본문(MainArea) 전용 배경 - 사이드바/헤더 배경(--shell-page-bg)과 분리한 이유는 GIA
+   테마에서 남색을 본문까지 그대로 쓰면 검은 글자가 안 보여서(가독성 피드백). 다른 테마는
+   두 값이 동일합니다. */
+.shell-content-bg {
+  background: var(--shell-content-bg);
+}
+
 .shell-blur {
   backdrop-filter: blur(var(--shell-blur));
   -webkit-backdrop-filter: blur(var(--shell-blur));
@@ -122,13 +137,14 @@ body {
 /* ===== 본문(GIA 운영 화면) - 테마별 글자색 보정 =====
    요청("각 테마에 맞게 페이지 배경정도는 통일해도... 가독성좋게끔 각 테마별로 폰트색도 조절").
    MainArea.tsx가 업무/위클리 리포트를 뺀 나머지 화면(사건기록·회의기록·제안함·매뉴얼·문서함·
-   사용자관리 등)에 shell-content shell-page-bg 클래스를 붙여 사이드바와 같은 테마 배경을
-   쓰게 했습니다. 그런데 그 화면들 내부 컴포넌트는 대부분 text-slate-700/900, bg-white 같은
-   라이트 전용 Tailwind 클래스를 그대로 쓰고 있어서, 배경만 어둡게 바꾸면 글자가 거의 안
-   보입니다. 수십 개 컴포넌트 파일을 전부 고치는 대신, 다크·GIA 테마에서만 shell-content
-   스코프 안의 자주 쓰이는 라이트 톤 클래스를 가독성 있는 색으로 다시 정의합니다(라이트·
-   리퀴드글라스는 배경이 원래도 밝아서 기존 글자색 그대로 잘 보이므로 손대지 않음). 뱃지/상태
-   표시에 쓰이는 색상(blue-600, red-500 등 의미 있는 강조색)까지는 건드리지 않았습니다. */
+   사용자관리 등)에 shell-content shell-content-bg 클래스를 붙여 테마 배경을 쓰게 했습니다.
+   그런데 그 화면들 내부 컴포넌트는 대부분 text-slate-700/900, bg-white 같은 라이트 전용
+   Tailwind 클래스를 그대로 쓰고 있어서, 배경이 어두운 테마에서는 글자가 거의 안 보입니다.
+   수십 개 컴포넌트 파일을 전부 고치는 대신, 배경이 실제로 어두운 다크 테마에서만
+   shell-content 스코프 안의 자주 쓰이는 라이트 톤 클래스를 가독성 있는 색으로 다시
+   정의합니다(라이트·리퀴드글라스·GIA는 본문 배경(--shell-content-bg)이 밝은 톤이라 기존
+   글자색 그대로 잘 보이므로 손대지 않음). 뱃지/상태 표시에 쓰이는 색상(blue-600, red-500 등
+   의미 있는 강조색)까지는 건드리지 않았습니다. */
 [data-theme="dark"] .shell-content .text-slate-900,
 [data-theme="dark"] .shell-content .text-slate-800,
 [data-theme="dark"] .shell-content .text-slate-700 {
@@ -174,50 +190,9 @@ body {
   color: #475569;
 }
 
-[data-theme="gia-brand"] .shell-content .text-slate-900,
-[data-theme="gia-brand"] .shell-content .text-slate-800,
-[data-theme="gia-brand"] .shell-content .text-slate-700 {
-  color: #f4ecd8;
-}
-[data-theme="gia-brand"] .shell-content .text-slate-600,
-[data-theme="gia-brand"] .shell-content .text-slate-500 {
-  color: rgba(239, 227, 200, 0.75);
-}
-[data-theme="gia-brand"] .shell-content .text-slate-400,
-[data-theme="gia-brand"] .shell-content .text-slate-300 {
-  color: rgba(239, 227, 200, 0.5);
-}
-[data-theme="gia-brand"] .shell-content .bg-white {
-  background-color: #16264f;
-}
-[data-theme="gia-brand"] .shell-content .bg-slate-50,
-[data-theme="gia-brand"] .shell-content .bg-slate-50\/60,
-[data-theme="gia-brand"] .shell-content .bg-slate-50\/80 {
-  background-color: rgba(255, 255, 255, 0.05);
-}
-[data-theme="gia-brand"] .shell-content .bg-slate-100 {
-  background-color: rgba(198, 161, 91, 0.12);
-}
-[data-theme="gia-brand"] .shell-content .border-slate-100,
-[data-theme="gia-brand"] .shell-content .border-slate-200,
-[data-theme="gia-brand"] .shell-content .border-slate-300 {
-  border-color: rgba(198, 161, 91, 0.25);
-}
-[data-theme="gia-brand"] .shell-content .divide-slate-100 > :not([hidden]) ~ :not([hidden]),
-[data-theme="gia-brand"] .shell-content .divide-slate-200 > :not([hidden]) ~ :not([hidden]) {
-  border-color: rgba(198, 161, 91, 0.25);
-}
-[data-theme="gia-brand"] .shell-content .hover\:bg-slate-50:hover,
-[data-theme="gia-brand"] .shell-content .hover\:bg-slate-100:hover {
-  background-color: rgba(198, 161, 91, 0.15);
-}
-[data-theme="gia-brand"] .shell-content .hover\:text-slate-900:hover,
-[data-theme="gia-brand"] .shell-content .hover\:text-slate-700:hover {
-  color: #f4ecd8;
-}
-[data-theme="gia-brand"] .shell-content .placeholder-slate-400::placeholder {
-  color: rgba(239, 227, 200, 0.4);
-}
+/* GIA 테마는 --shell-content-bg가 밝은 아이보리/샴페인 톤이라(위 참고) 본문 안의
+   text-slate-700/900 같은 어두운 글자색이 원래도 잘 보여서 다크 테마처럼 별도 보정이
+   필요 없습니다. */
 
 /* ===== 사이드바 메뉴 버튼 - 테마별 보정 =====
    요청("리퀴드 글라스의 경우 메뉴버튼들 글라스처럼, GIA 테마의 경우 배경색은 로고색으로

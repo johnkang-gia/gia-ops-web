@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { getHolidayPreset } from "@hyunbinseo/holidays-kr";
 import { createClient } from "@/lib/supabase/client";
 import type { ChecklistAnchor, ChecklistItem, ChecklistTemplate, Term } from "@/lib/types";
 import { ANCHOR_LABEL, toDateStr } from "@/lib/academicChecklist";
@@ -81,6 +82,24 @@ export default function AcademicCalendarClient({
   const [quickTitle, setQuickTitle] = useState("");
   const [quickDate, setQuickDate] = useState("");
   const [error, setError] = useState("");
+  // 대한민국 공휴일 표시 - 사이드바 메인 달력(DateTimeCard)과 동일한 데이터 소스를 씁니다(요청:
+  // "학사일정 달력에도 대한민국 휴일 표시 해줘"). 준비 업무 계획을 세울 때 공휴일도 함께
+  // 보여야 실제로 일할 수 있는 날인지 가늠하기 쉽습니다.
+  const [holidays, setHolidays] = useState<Record<string, string[]>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    getHolidayPreset(String(viewYear))
+      .then((preset) => {
+        if (!cancelled) setHolidays(preset as Record<string, string[]>);
+      })
+      .catch(() => {
+        if (!cancelled) setHolidays({});
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [viewYear]);
 
   useEffect(() => {
     const supabase = createClient();
@@ -437,19 +456,25 @@ export default function AcademicCalendarClient({
                 const isTermStart = dateKey === termStartKey;
                 const isTermEnd = dateKey === termEndKey;
                 const isSelected = dateKey === selectedDate;
+                const holidayNames = dateKey ? holidays[dateKey] : undefined;
+                const isHoliday = !!holidayNames?.length;
+                const col = idx % 7;
                 return (
                   <button
                     key={idx}
                     type="button"
                     disabled={!day}
                     onClick={() => dateKey && setSelectedDate((cur) => (cur === dateKey ? null : dateKey))}
+                    title={holidayNames?.join(" · ")}
                     className={
                       "flex min-h-[3.2rem] flex-col items-start gap-0.5 rounded-lg border p-1 text-left align-top " +
                       (!day
                         ? "border-transparent"
                         : isSelected
                           ? "border-blue-400 bg-blue-50"
-                          : "border-slate-100 hover:border-slate-300")
+                          : isHoliday
+                            ? "border-red-100 bg-red-50/40 hover:border-red-300"
+                            : "border-slate-100 hover:border-slate-300")
                     }
                   >
                     {day && (
@@ -457,11 +482,22 @@ export default function AcademicCalendarClient({
                         <span
                           className={
                             "flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-semibold " +
-                            (isToday ? "bg-blue-600 text-white" : "text-slate-500")
+                            (isToday
+                              ? "bg-blue-600 text-white"
+                              : isHoliday
+                                ? "text-red-500"
+                                : col === 0
+                                  ? "text-red-400"
+                                  : col === 6
+                                    ? "text-blue-400"
+                                    : "text-slate-500")
                           }
                         >
                           {day}
                         </span>
+                        {isHoliday && (
+                          <span className="w-full truncate text-[9px] font-bold text-red-500">{holidayNames!.join(" · ")}</span>
+                        )}
                         {(isTermStart || isTermEnd) && (
                           <span className="text-[9px] font-bold text-emerald-600">{isTermStart ? "🏫 학기 시작" : "🏁 학기 종료"}</span>
                         )}

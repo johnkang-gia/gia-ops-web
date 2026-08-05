@@ -588,23 +588,40 @@ export type FormSubmission = {
 };
 
 // 행정 요청(교사 → 행정직원) - 요청: "교사는 행정부에 교실에 관한 문제나, 학생에 관한
-// 문제 등... 요청하는 여러 일들(사물함파손, 물품구입, 아픈학생인계, 출결상황문의)".
-export const STAFF_REQUEST_CATEGORIES = [
-  "사물함파손",
-  "물품구입",
-  "아픈학생인계",
-  "출결상황문의",
-  "기타",
+// 문제 등... 요청하는 여러 일들(사물함파손, 물품구입, 아픈학생인계, 출결상황문의)". 카테고리는
+// 이제 관리자가 화면에서 등록/편집할 수 있는 staff_request_categories 테이블이 기준이라(요청:
+// "위에 사물함파손,물품구입 등을 관리자가 등록/편집할 수 있게"), 고정된 문자열 목록이 아니라
+// string으로 둡니다. 아래 상수는 DB 조회가 아직 안 됐을 때(로딩 중) 쓰는 기본값일 뿐입니다.
+export const DEFAULT_STAFF_REQUEST_CATEGORIES = [
+  { category: "사물함파손", label_en: "Locker Damage", icon: "🔧" },
+  { category: "물품구입", label_en: "Supply Request", icon: "🛒" },
+  { category: "아픈학생인계", label_en: "Sick Student Handoff", icon: "🏥" },
+  { category: "출결상황문의", label_en: "Attendance Inquiry", icon: "📋" },
+  { category: "기타", label_en: "Other", icon: "📎" },
 ] as const;
-export type StaffRequestCategory = (typeof STAFF_REQUEST_CATEGORIES)[number];
+export type StaffRequestCategory = string;
 export type StaffRequestStatus = "접수대기" | "처리중" | "완료";
+
+export type StaffRequestCategoryRow = {
+  category: string;
+  label_en: string;
+  icon: string;
+  sort_order: number;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+};
 
 export type StaffRequest = {
   id: string;
   case_id: string;
   category: StaffRequestCategory;
   title: string;
+  title_ko: string | null;
+  title_en: string | null;
   content: string;
+  content_ko: string | null;
+  content_en: string | null;
   student_name: string | null;
   status: StaffRequestStatus;
   requested_by: string;
@@ -612,6 +629,19 @@ export type StaffRequest = {
   resolved_by: string | null;
   resolved_note: string | null;
   resolved_at: string | null;
+  task_id: string | null;
+  comment_count: number;
   created_at: string;
   updated_at: string;
+};
+
+export type StaffRequestComment = {
+  id: string;
+  request_id: string;
+  author_email: string;
+  author_name: string | null;
+  content: string;
+  content_ko: string | null;
+  content_en: string | null;
+  created_at: string;
 };

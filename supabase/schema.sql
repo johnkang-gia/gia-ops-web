@@ -2647,3 +2647,226 @@ begin
     alter publication supabase_realtime add table staff_requests;
   end if;
 end $$;
+
+-- ===== 72. 행정요청 확장: 카테고리 관리 + 업무보드 자동등록 + 상태 자동동기화 + 코멘트 + 번역 =====
+
+-- 72-1. 카테고리를 관리자가 등록/편집할 수 있도록 별도 테이블로 분리합니다(요청: "행정요청은
+-- 굉장히 다양한 부분들이 있으니까... 사물함파손,물품구입 등을 관리자가 등록/편집할 수 있게").
+-- category 값 자체를 기본키로 써서 기존 staff_requests.category 값(사물함파손/물품구입/
+-- 아픈학생인계/출결상황문의/기타)과 그대로 맞습니다 - 기존 데이터 마이그레이션이 필요 없습니다.
+-- 카테고리를 지우면 이미 등록된 요청들이 참조를 잃으므로, 삭제 대신 active=false로 숨기기만
+-- 합니다(새 요청 등록 시 선택지에서만 빠짐).
+create table if not exists staff_request_categories (
+  category text primary key,
+  label_en text not null,
+  icon text not null default '📎',
+  sort_order double precision not null default 0,
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+drop trigger if exists staff_request_categories_set_updated_at on staff_request_categories;
+create trigger staff_request_categories_set_updated_at
+  before update on staff_request_categories
+  for each row execute function set_updated_at();
+
+alter table staff_request_categories enable row level security;
+
+drop policy if exists "giamicro_select_staff_request_categories" on staff_request_categories;
+create policy "giamicro_select_staff_request_categories" on staff_request_categories
+  for select using (is_giamicro_user());
+
+drop policy if exists "admin_manage_staff_request_categories" on staff_request_categories;
+create policy "admin_manage_staff_request_categories" on staff_request_categories
+  for all using (is_app_admin()) with check (is_app_admin());
+
+insert into staff_request_categories (category, label_en, icon, sort_order) values
+  ('사물함파손', 'Locker Damage', '🔧', 1),
+  ('물품구입', 'Supply Request', '🛒', 2),
+  ('아픈학생인계', 'Sick Student Handoff', '🏥', 3),
+  ('출결상황문의', 'Attendance Inquiry', '📋', 4),
+  ('기타', 'Other', '📎', 5)
+on conflict (category) do nothing;
+
+-- 72-2. staff_requests 확장: 기존 category CHECK 제약을 떼고 위 카테고리 테이블을 참조하도록
+-- 바꿉니다(관리자가 새 카테고리를 추가할 때마다 CHECK 제약을 다시 만들 필요가 없도록). 번역본
+-- (title_ko/title_en/content_ko/content_en - 요청: "요청과 코멘트 모두 한,영 번역을 지원"),
+-- 자동 등록된 업무 연결(task_id - 요청: "초등부 전체 업무창에 자동으로 행정요청이 등록되게"),
+-- 코멘트 수 캐시(comment_count - 요청: "코멘트는 교사의 내가 등록한 요청에 실시간으로 반영")도
+-- 함께 추가합니다.
+alter table staff_requests drop constraint if exists staff_requests_category_check;
+
+alter table staff_requests add column if not exists title_ko text;
+alter table staff_requests add column if not exists title_en text;
+alter table staff_requests add column if not exists content_ko text;
+alter table staff_requests add column if not exists content_en text;
+alter table staff_requests add column if not exists task_id uuid references tasks(id) on delete set null;
+alter table staff_requests add column if not exists comment_count integer not null default 0;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'staff_requests_category_fkey'
+  ) then
+    alter table staff_requests
+      add constraint staff_requests_category_fkey
+      foreign key (category) references staff_request_categories(category);
+  end if;
+end $$;
+
+-- 72-3. 요청 등록 시 초등부 전체 업무창에 업무를 함께 등록하고(요청: "점수가 되면[등록이 되면]
+-- 초등부 전체 업무창에 자동으로 행정요청이 등록되게"), 요청 행과 업무 행 두 개를 한 트랜잭션으로
+-- 묶어(둘 중 하나만 반쯤 만들어지는 상황 방지) 만드는 원자적 RPC입니다. is_giamicro_user()라면
+-- tasks/staff_requests 모두 이미 RLS로 쓸 수 있어 security definer가 필요 없습니다(switch_current_
+-- term/upsert_manual_section과 같은 방식). 나중에 담당 행정직원별 자동 배정 파이프라인을 붙일
+-- 때도(요청: "나중에는 각 행정직원의 역할을 나누고... 자동으로 이 행정직원에게 가도록") 여기
+-- assignee_emails만 채워주면 되도록 우선 origin_mode='전체'로 등록해둡니다.
+create or replace function create_staff_request(
+  p_case_id text,
+  p_task_case_id text,
+  p_category text,
+  p_title text,
+  p_title_ko text,
+  p_title_en text,
+  p_content text,
+  p_content_ko text,
+  p_content_en text,
+  p_student_name text
+) returns staff_requests
+language plpgsql
+as $$
+declare
+  v_email text := lower(auth.jwt() ->> 'email');
+  v_name text;
+  v_task_id uuid;
+  v_row staff_requests;
+begin
+  select name into v_name from app_users where email = v_email;
+
+  insert into tasks (case_id, title, department, owner_email, origin_mode, status, priority)
+  values (p_task_case_id, '[행정요청] ' || p_title, '초등부', v_email, '전체', '예정', '보통')
+  returning id into v_task_id;
+
+  insert into staff_requests (
+    case_id, category, title, title_ko, title_en, content, content_ko, content_en,
+    student_name, requested_by, requested_by_name, task_id
+  ) values (
+    p_case_id, p_category, p_title, p_title_ko, p_title_en, p_content, p_content_ko, p_content_en,
+    p_student_name, v_email, coalesce(v_name, v_email), v_task_id
+  )
+  returning * into v_row;
+
+  return v_row;
+end;
+$$;
+
+-- 72-4. 업무보드 쪽 변화를 요청 상태에 자동으로 반영합니다(요청: "업무목록에서 확인체크를
+-- 한개라도하면 접수대기에서 초록불로... 완료탭으로 옮기면... 완료된 요청"). 담당자가 업무를
+-- "확인"하면(acknowledged_by가 0개→1개 이상) 접수대기→처리중으로, 업무가 완료로 바뀌면
+-- 처리중/접수대기→완료로 자동 전환합니다(반대로 완료를 취소하면 처리중으로 되돌립니다).
+-- staff_requests에는 이미 realtime이 붙어있어(위 71번 섹션) 이 UPDATE만으로 교사 화면에도 바로
+-- 반영됩니다 - 업무보드를 조작하는 사람은 항상 관리자/행정직원(is_wr_manager())이라 일반
+-- update 정책을 그대로 통과하므로 security definer가 필요 없습니다.
+create or replace function sync_staff_request_from_task() returns trigger
+language plpgsql
+as $$
+begin
+  if jsonb_array_length(new.acknowledged_by) > 0
+     and jsonb_array_length(old.acknowledged_by) = 0 then
+    update staff_requests set status = '처리중'
+    where task_id = new.id and status = '접수대기';
+  end if;
+
+  if new.status = '완료' and old.status is distinct from '완료' then
+    update staff_requests
+    set status = '완료', resolved_by = coalesce(new.updated_by, new.owner_email), resolved_at = now()
+    where task_id = new.id and status <> '완료';
+  end if;
+
+  if old.status = '완료' and new.status is distinct from '완료' then
+    update staff_requests
+    set status = '처리중', resolved_at = null
+    where task_id = new.id and status = '완료';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists tasks_sync_staff_request on tasks;
+create trigger tasks_sync_staff_request
+  after update on tasks
+  for each row execute function sync_staff_request_from_task();
+
+-- 72-5. 요청에 대한 코멘트(행정직원↔교사 대화, 요청: "행정요청에 대해서 코멘트를 넣을 수 있게").
+create table if not exists staff_request_comments (
+  id uuid primary key default gen_random_uuid(),
+  request_id uuid not null references staff_requests(id) on delete cascade,
+  author_email text not null,
+  author_name text,
+  content text not null,
+  content_ko text,
+  content_en text,
+  created_at timestamptz not null default now()
+);
+create index if not exists staff_request_comments_request_id_idx on staff_request_comments(request_id, created_at);
+
+alter table staff_request_comments enable row level security;
+
+drop policy if exists "giamicro_select_staff_request_comments" on staff_request_comments;
+create policy "giamicro_select_staff_request_comments" on staff_request_comments
+  for select using (is_giamicro_user());
+
+drop policy if exists "giamicro_insert_staff_request_comments" on staff_request_comments;
+create policy "giamicro_insert_staff_request_comments" on staff_request_comments
+  for insert with check (is_giamicro_user() and author_email = lower(auth.jwt() ->> 'email'));
+
+drop policy if exists "author_or_manager_delete_staff_request_comments" on staff_request_comments;
+create policy "author_or_manager_delete_staff_request_comments" on staff_request_comments
+  for delete using (is_wr_manager() or author_email = lower(auth.jwt() ->> 'email'));
+
+-- 코멘트 수를 staff_requests.comment_count에 캐시해둡니다 - 목록 화면(교사의 "내가 등록한
+-- 요청" 포함)이 이미 staff_requests를 realtime 구독하고 있어서(71번 섹션), 이 카운트 하나만
+-- 갱신되면 코멘트 스레드를 펼치지 않아도 실시간으로 배지가 뜹니다(요청: "코멘트는 교사의 내가
+-- 등록한 요청에 실시간으로 반영되도록"). security definer로 만든 이유: 예를 들어 이미 완료된
+-- 내 요청에 감사 코멘트를 남기는 경우처럼, 글쓴이가 staff_requests의 UPDATE 정책(관리자/
+-- 행정직원이거나 "본인+접수대기 상태")을 만족하지 못하는 상황에서도 카운트 갱신만큼은 항상
+-- 성공해야 하기 때문입니다.
+create or replace function bump_staff_request_comment_count() returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if TG_OP = 'INSERT' then
+    update staff_requests set comment_count = comment_count + 1 where id = new.request_id;
+    return new;
+  elsif TG_OP = 'DELETE' then
+    update staff_requests set comment_count = greatest(0, comment_count - 1) where id = old.request_id;
+    return old;
+  end if;
+  return null;
+end;
+$$;
+
+drop trigger if exists staff_request_comments_bump_count on staff_request_comments;
+create trigger staff_request_comments_bump_count
+  after insert or delete on staff_request_comments
+  for each row execute function bump_staff_request_comment_count();
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'staff_request_comments'
+  ) then
+    alter publication supabase_realtime add table staff_request_comments;
+  end if;
+end $$;
+
+-- 72-6. 번역 AI 기능도 다른 AI 기능들처럼 개발자가 필요하면 끌 수 있게 등록합니다(요청: "요청은
+-- 대부분 영어로 할것이라... 한,영 번역을 지원해주고").
+insert into ai_feature_flags (key, label, group_name) values
+  ('requests-translate', '행정요청 한/영 번역 AI', '업무')
+on conflict (key) do nothing;

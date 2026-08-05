@@ -14,7 +14,8 @@ const GUIDE_SECTIONS = [
   {
     title: "📬 채택예정이란?",
     lines: [
-      "제안함에서 승인한 내용이 여기로 옵니다. GIA 실정에 맞게 구체화한 뒤 \"발행\"을 눌러야 매뉴얼(운영계획안/실무자매뉴얼)에 실제로 반영됩니다.",
+      "제안함에서 승인한 내용이 여기로 옵니다. GIA 실정에 맞게 구체화한 뒤 발행해야 매뉴얼(운영계획안/실무자매뉴얼)에 실제로 반영됩니다.",
+      "학부모용·실무자용이 함께 있는 카드는 \"통합발행\"으로 운영계획안·실무자매뉴얼에 한 번에 반영하세요. 운영계획안에 넣기엔 사소한 사건은 \"실무자발행\"으로 실무자매뉴얼에만 반영할 수 있습니다.",
       "발행 전 AI 검증 버튼으로 내용을 한 번 더 비판적으로 점검할 수 있고, 실수로 승인했거나 다시 검토하고 싶으면 \"되돌리기\"로 제안함으로 되돌릴 수 있습니다(발행 전까지만 가능).",
     ],
   },
@@ -157,6 +158,49 @@ export default function AdoptedClient({
     }
   }
 
+  // 요청: "발행에서 통합발행과 실무자발행 두가지로만 나눠줘 - 운영계획안에 들어가는 내용은
+  // 자동으로 실무자매뉴얼에 들어가야 하기 때문이야". 학부모용/실무자용 두 변형이 함께 있는
+  // 그룹은 각 변형이 이미 자기 문서에 맞는 문구를 갖고 있으므로, 통합발행은 그 둘을 한 번에
+  // 발행합니다. 사건이 사소해서 운영계획안(학부모용)에는 넣지 않고 실무자매뉴얼에만 남기고
+  // 싶은 경우를 위해 실무자발행(실무자용만 발행)도 따로 둡니다.
+  async function publishGroup(g: AdoptedGroup, mode: "all" | "staffOnly") {
+    const targets = mode === "all" ? g.variants : g.variants.filter((v) => v.target_doc === "실무자용");
+    if (targets.length === 0) {
+      notify("발행할 실무자용 항목이 없습니다.", "error");
+      return;
+    }
+    setBusyId(g.key);
+    for (const v of targets) {
+      if (drafts[v.id] !== undefined) {
+        await fetch("/api/adopted/save-text", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ id: v.id, specificText: drafts[v.id] }),
+        });
+      }
+    }
+    let hadError = false;
+    for (const v of targets) {
+      const res = await fetch("/api/adopted/publish", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: v.id }),
+      });
+      if (!res.ok) {
+        hadError = true;
+        const data = await res.json().catch(() => ({}));
+        notify(data.error || "발행하지 못했습니다.", "error");
+      }
+    }
+    setBusyId(null);
+    if (!hadError) {
+      notify(
+        mode === "all" ? "운영계획안·실무자매뉴얼 둘 다 발행했습니다." : "실무자매뉴얼에만 발행했습니다.",
+        "success"
+      );
+    }
+  }
+
   // 요청 4번: 실수로 승인했거나 다시 검토하고 싶을 때, 채택예정 항목을 제안함(검토대기)으로
   // 되돌립니다. 발행된 항목은 이미 매뉴얼에 합쳐져 들어갔으므로 되돌릴 수 없습니다.
   async function revert(it: Adopted, title: string) {
@@ -280,7 +324,7 @@ export default function AdoptedClient({
             const activeTarget = activeVariant[g.key] ?? g.variants[0].target_doc;
             const active = g.variants.find((v) => v.target_doc === activeTarget) ?? g.variants[0];
             const draft = drafts[active.id] ?? active.specific_text;
-            const busy = busyId === active.id;
+            const busy = busyId === active.id || busyId === g.key;
 
             return (
               <div key={g.key} className="rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -418,13 +462,34 @@ export default function AdoptedClient({
                           ? "🔍 다시 AI 검증"
                           : "🔍 AI 검증"}
                       </button>
-                      <button
-                        onClick={() => publish(active.id)}
-                        disabled={busy}
-                        className="rounded-lg bg-gia-navy px-3 py-1.5 text-xs font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50"
-                      >
-                        발행
-                      </button>
+                      {g.variants.length > 1 ? (
+                        <>
+                          <button
+                            onClick={() => publishGroup(g, "all")}
+                            disabled={busy}
+                            className="rounded-lg bg-gia-navy px-3 py-1.5 text-xs font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50"
+                            title="운영계획안(학부모용)·실무자매뉴얼(실무자용)을 함께 발행합니다."
+                          >
+                            통합발행
+                          </button>
+                          <button
+                            onClick={() => publishGroup(g, "staffOnly")}
+                            disabled={busy}
+                            className="rounded-lg border border-gia-navy px-3 py-1.5 text-xs font-semibold text-gia-navy hover:bg-blue-50 disabled:opacity-50"
+                            title="운영계획안에는 반영하지 않고 실무자매뉴얼에만 발행합니다."
+                          >
+                            실무자발행
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          onClick={() => publish(active.id)}
+                          disabled={busy}
+                          className="rounded-lg bg-gia-navy px-3 py-1.5 text-xs font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50"
+                        >
+                          발행
+                        </button>
+                      )}
                       <button
                         onClick={() => revert(active, ctx?.title || oneLine(active.specific_text, 40))}
                         disabled={busy}

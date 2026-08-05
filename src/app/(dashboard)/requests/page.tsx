@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
-import { isAdminUser, isStaffOrAboveUser } from "@/lib/roles";
+import { isStaffOrAboveUser } from "@/lib/roles";
 import type { StaffRequest, StaffRequestCategoryRow } from "@/lib/types";
 import StaffRequestsClient from "@/components/requests/StaffRequestsClient";
 
@@ -15,7 +15,6 @@ export default async function StaffRequestsPage() {
   const supabase = await createClient();
   const me = await getCurrentAppUser();
   const isManager = isStaffOrAboveUser(me);
-  const isAdmin = isAdminUser(me);
 
   const [{ data }, { data: categoriesData }] = await Promise.all([
     supabase.from("staff_requests").select("*").order("created_at", { ascending: false }).limit(300),
@@ -27,7 +26,6 @@ export default async function StaffRequestsPage() {
       initialItems={(data as StaffRequest[]) ?? []}
       initialCategories={(categoriesData as StaffRequestCategoryRow[]) ?? []}
       isManager={isManager}
-      isAdmin={isAdmin}
       myEmail={me?.email ?? ""}
     />
   );

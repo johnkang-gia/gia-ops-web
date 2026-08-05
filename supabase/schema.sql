@@ -2677,9 +2677,12 @@ drop policy if exists "giamicro_select_staff_request_categories" on staff_reques
 create policy "giamicro_select_staff_request_categories" on staff_request_categories
   for select using (is_giamicro_user());
 
+-- 요청("카테고리 관리는 교사 이외의 권한들이 전부 할 수 있게 해줘")에 따라 관리자뿐 아니라
+-- 행정직원까지 관리할 수 있도록 is_app_admin() 대신 is_wr_manager()(위클리 리포트에서 이미
+-- "관리자 또는 행정직원"을 뜻하는 함수로 정의됨)를 씁니다.
 drop policy if exists "admin_manage_staff_request_categories" on staff_request_categories;
-create policy "admin_manage_staff_request_categories" on staff_request_categories
-  for all using (is_app_admin()) with check (is_app_admin());
+create policy "staff_manage_staff_request_categories" on staff_request_categories
+  for all using (is_wr_manager()) with check (is_wr_manager());
 
 insert into staff_request_categories (category, label_en, icon, sort_order) values
   ('사물함파손', 'Locker Damage', '🔧', 1),

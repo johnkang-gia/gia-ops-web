@@ -267,10 +267,12 @@ export default async function DashboardLayout({
           { href: "/academic-calendar/prep", label: "학기준비", icon: "🧭" },
         ],
       },
-      // 행정요청 - 교사가 등록한 사물함파손/물품구입/아픈학생인계/출결상황문의 등을
-      // 행정직원/관리자가 확인·처리하는 화면입니다(요청: "교사는 행정부에... 요청하는 여러
-      // 일들"). 학사일정 바로 아래에 둡니다.
-      { key: "requests", label: "행정요청", labelEn: "Staff Requests", icon: "🧾", href: "/requests", accent: "teal" },
+      // 행정요청 메뉴는 여기(관리자/행정직원 등)에는 따로 두지 않습니다(요청: "행정요청메뉴는
+      // 교사에게만 보이고, 나머지에게는 업무에 등록되는 것으로 알수있게 해줘") - 교사가 등록한
+      // 요청은 자동으로 업무보드에도 등록되므로(요청 575), 업무 탭 안의 업무상황판 오른쪽에
+      // 들어온 행정요청 건수가 뜨고 처리도 업무 확인/완료로 자동 동기화됩니다. /requests
+      // 페이지 자체는 남아 있어(주소로 직접 접근하거나 업무상황판에서 링크로 들어갈 수 있음)
+      // 전체 목록·상태변경도 그대로 가능합니다.
       buildOpsCategory(pendingProposals, pendingAdopted),
       buildSchoolCategory(isAdmin, isStaffOrAbove),
       buildSchoolDocumentsCategory(),

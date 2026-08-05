@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
-import { isAdminUser } from "@/lib/roles";
+import { isStaffOrAboveUser } from "@/lib/roles";
 import { logApiError } from "@/lib/logging";
 
-// 행정요청 카테고리 편집(영문 이름/아이콘/표시 여부) - 관리자만 가능합니다. category(한글
-// 이름) 자체는 기존 요청들이 참조하고 있어 바꾸지 않고, 삭제 대신 active=false로 숨겨서
-// 새 요청 등록 화면의 선택지에서만 빠지게 합니다(요청: "관리자가 등록/편집할 수 있게").
+// 행정요청 카테고리 편집(영문 이름/아이콘/표시 여부) - 관리자/행정직원이면 가능합니다(요청:
+// "카테고리 관리는 교사 이외의 권한들이 전부 할 수 있게 해줘"). category(한글 이름) 자체는
+// 기존 요청들이 참조하고 있어 바꾸지 않고, 삭제 대신 active=false로 숨겨서 새 요청 등록
+// 화면의 선택지에서만 빠지게 합니다.
 export async function PATCH(request: Request, { params }: { params: Promise<{ category: string }> }) {
   const { category } = await params;
   const supabase = await createClient();
@@ -16,8 +17,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
   if (!user) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
 
   const me = await getCurrentAppUser();
-  if (!isAdminUser(me)) {
-    return NextResponse.json({ error: "관리자만 카테고리를 관리할 수 있습니다." }, { status: 403 });
+  if (!isStaffOrAboveUser(me)) {
+    return NextResponse.json({ error: "관리자/행정직원만 카테고리를 관리할 수 있습니다." }, { status: 403 });
   }
 
   const body = await request.json().catch(() => ({}));

@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
-import { isAdminUser } from "@/lib/roles";
+import { isStaffOrAboveUser } from "@/lib/roles";
 import { logApiError } from "@/lib/logging";
 
-// 행정요청 카테고리 등록 - 관리자만 가능합니다(요청: "위에 사물함파손,물품구입 등을 관리자가
-// 등록/편집할 수 있게"). category 자체가 기본키라 한글 라벨을 그대로 값으로 씁니다(기존
-// 사물함파손/물품구입/... 값과 같은 방식이라 별도 code/slug 입력을 받지 않아도 됩니다).
+// 행정요청 카테고리 등록 - 관리자/행정직원이면 가능합니다(요청: "카테고리 관리는 교사 이외의
+// 권한들이 전부 할 수 있게 해줘"). category 자체가 기본키라 한글 라벨을 그대로 값으로 씁니다
+// (기존 사물함파손/물품구입/... 값과 같은 방식이라 별도 code/slug 입력을 받지 않아도 됩니다).
 export async function POST(request: Request) {
   const supabase = await createClient();
   const {
@@ -15,8 +15,8 @@ export async function POST(request: Request) {
   if (!user) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
 
   const me = await getCurrentAppUser();
-  if (!isAdminUser(me)) {
-    return NextResponse.json({ error: "관리자만 카테고리를 관리할 수 있습니다." }, { status: 403 });
+  if (!isStaffOrAboveUser(me)) {
+    return NextResponse.json({ error: "관리자/행정직원만 카테고리를 관리할 수 있습니다." }, { status: 403 });
   }
 
   const body = await request.json().catch(() => ({}));

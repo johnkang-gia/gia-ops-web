@@ -7,6 +7,7 @@ import {
   buildComplaintFinalizeSystemPrompt,
   buildComplaintFinalizeEntryBlock,
   buildParentToneSystemPrompt,
+  buildStaffToneSystemPrompt,
   buildParentToneEntryBlock,
 } from "@/lib/ai/prompts";
 import type { ComplaintFinalizeResult } from "@/lib/ai/types";
@@ -64,6 +65,17 @@ export async function POST(request: Request) {
         const result = (await callClaudeJson(systemPrompt, userPrompt, {
           model: CLAUDE_MODEL_FAST,
           route: "proposals-decide-parent-tone",
+        })) as ComplaintFinalizeResult;
+        specificText = result.finalText || p.final_text;
+      } else if (p.target_doc === "실무자용") {
+        // 학부모용의 짝(buildStaffToneSystemPrompt) - 실무자매뉴얼로 채택되는 문구도 승인 시점에
+        // 한 번 더 법령 조문처럼 명확한 절차문으로 다듬습니다(요청: "실무자용에는 명확하게
+        // 안내하지만... 법령과 같이 명시적이면서 정확해야 함... 정중하게 '~하는 것으로 한다.'").
+        const systemPrompt = buildStaffToneSystemPrompt();
+        const userPrompt = buildParentToneEntryBlock({ category: p.category, draftText: p.final_text });
+        const result = (await callClaudeJson(systemPrompt, userPrompt, {
+          model: CLAUDE_MODEL_FAST,
+          route: "proposals-decide-staff-tone",
         })) as ComplaintFinalizeResult;
         specificText = result.finalText || p.final_text;
       }

@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { Department, Task, TaskModeColor, TaskStatus, TeamMember } from "@/lib/types";
+import type { Department, StaffRequestCategoryRow, Task, TaskModeColor, TaskStatus, TeamMember } from "@/lib/types";
 import DashboardArea from "./DashboardArea";
+import RequestStatusWidget from "./RequestStatusWidget";
 import ChatPanel from "./ChatPanel";
 import TaskBoard from "./TaskBoard";
 import MyTasksWidget from "./MyTasksWidget";
@@ -44,6 +45,9 @@ export default function WorkspaceArea({
   onChangeStatus,
   onToggleAck,
   onTaskCreated,
+  pendingRequestCount,
+  requestCategories,
+  onRequestCategoriesChange,
 }: {
   activeDepartment: Department;
   tasks: Task[];
@@ -58,6 +62,9 @@ export default function WorkspaceArea({
   onChangeStatus: (taskId: string, status: TaskStatus) => void;
   onToggleAck: (taskId: string, checked: boolean) => void;
   onTaskCreated?: (task: Task) => void;
+  pendingRequestCount: number;
+  requestCategories: StaffRequestCategoryRow[];
+  onRequestCategoriesChange: (next: StaffRequestCategoryRow[]) => void;
 }) {
   // 부서 헤더는 상위(WorkBoardClient)의 부서탭 바 하나로 통합했기 때문에 여기서는 별도
   // 헤더 없이 바로 본문을 채웁니다(세로 공간 절약).
@@ -219,8 +226,17 @@ export default function WorkspaceArea({
           )}
           {mobileTab === "mine" && (
             <div className="flex h-full flex-col overflow-hidden">
-              <div className="shrink-0" style={{ height: "40%" }}>
-                <DashboardArea tasks={tasks} activeDepartmentName={activeDepartment.name} deptColorMap={deptColorMap} onSelectTask={onOpenTask} />
+              <div className="flex shrink-0 items-stretch gap-1" style={{ height: "40%" }}>
+                <div className="min-w-0 flex-1 overflow-hidden">
+                  <DashboardArea tasks={tasks} activeDepartmentName={activeDepartment.name} deptColorMap={deptColorMap} onSelectTask={onOpenTask} />
+                </div>
+                <div className="shrink-0">
+                  <RequestStatusWidget
+                    pendingCount={pendingRequestCount}
+                    categories={requestCategories}
+                    onCategoriesChange={onRequestCategoriesChange}
+                  />
+                </div>
               </div>
               {/* 내 업무목록 / 전체 업무목록을 좌우로 나눠 보여줍니다(요청: "내 업무목록을
                   반으로 나눠서 한쪽은 내업무목록, 다른쪽은 전체 업무목록으로"). 모바일은 폭이
@@ -246,8 +262,17 @@ export default function WorkspaceArea({
     <div className="flex h-full overflow-hidden">
       {/* 왼쪽: 업무 상황판(숫자만, 작게) + 빠른 업무등록 위젯(항상 고정) + 채팅(나머지 공간) */}
       <div className="flex flex-col overflow-hidden" style={{ width: `${leftWidth}%` }}>
-        <div className="overflow-hidden" style={{ height: `${leftTopHeight}%` }}>
-          <DashboardArea tasks={tasks} activeDepartmentName={activeDepartment.name} deptColorMap={deptColorMap} onSelectTask={onOpenTask} />
+        <div className="flex items-stretch gap-1 overflow-hidden" style={{ height: `${leftTopHeight}%` }}>
+          <div className="min-w-0 flex-1 overflow-hidden">
+            <DashboardArea tasks={tasks} activeDepartmentName={activeDepartment.name} deptColorMap={deptColorMap} onSelectTask={onOpenTask} />
+          </div>
+          <div className="shrink-0">
+            <RequestStatusWidget
+              pendingCount={pendingRequestCount}
+              categories={requestCategories}
+              onCategoriesChange={onRequestCategoriesChange}
+            />
+          </div>
         </div>
         <div
           onMouseDown={startRowResize(setLeftTopHeight, leftTopHeight, 8, 40)}

@@ -15,7 +15,7 @@ const GUIDE_SECTIONS = [
     title: "📝 제안함이란?",
     lines: [
       "사건/행사/회의/AI매뉴얼/예상 문의 등에서 AI가 만든 제안을 검토합니다. 같은 사건에서 나온 학부모용·실무자용 제안은 카드 하나로 묶여 안의 탭으로 전환해서 봅니다.",
-      "카드를 펼치지 않아도 목록의 체크박스를 누르면 그 즉시 승인되어 채택예정으로 넘어갑니다.",
+      "승인/보류/삭제는 항상 학부모용·실무자용 둘 다 함께 처리됩니다(운영계획안 내용은 자동으로 실무자매뉴얼에도 들어가야 하므로 체크박스로 따로 나누지 않습니다). 실무자매뉴얼에만 반영하고 싶은 사소한 건은 채택예정 화면에서 \"실무자발행\"으로 나중에 골라서 발행할 수 있습니다.",
       "상단 \"AI 분석 실행\"으로 최근 기록을 스캔해 새 제안을 만들 수 있습니다.",
     ],
   },
@@ -189,40 +189,67 @@ export default function ProposalsClient({
     setBusyId(null);
   }
 
-  // 요청 3번: 목록에서 체크(즉시 채택)하기 전에 사건명과 최종 채택 내용을 한 번 더 보여주고
-  // 확인을 받습니다(실수로 잘못 체크해서 바로 채택예정으로 넘어가는 것을 방지).
-  async function confirmAndApprove(v: Proposal, title: string) {
-    const finalContent = drafts[v.id] ?? v.final_text;
-    const ok = await confirmAction(`사건: ${title}\n\n최종 채택 내용:\n${finalContent || "(내용 없음)"}`, {
-      title: `"${v.target_doc}"으로 채택예정에 보내시겠습니까?`,
+  // 요청: "둘을 체크박스로 나누기보다는 통합해주고" - 예전에는 학부모용/실무자용 변형(variant)마다
+  // 따로 체크박스가 있어서 하나만 골라 채택할 수 있었지만, 운영계획안(학부모용) 내용은 자동으로
+  // 실무자매뉴얼(실무자용)에도 함께 들어가야 하므로, 승인/보류/삭제는 항상 그룹(변형 전체) 단위로
+  // 한 번에 처리합니다. 각 변형은 자기 자신의(탭에서 각각 수정한) 최종 문구를 그대로 씁니다.
+  // 실무자매뉴얼에만 필요하고 운영계획안에 넣기엔 사소한 사건은, 채택 이후 채택예정 화면의
+  // "실무자발행"으로 운영계획안 반영 없이 실무자매뉴얼에만 발행할 수 있습니다.
+  async function decideGroup(g: ProposalGroup, decision: "승인" | "보류" | "삭제") {
+    if (
+      decision === "삭제" &&
+      !(await confirmAction(
+        g.variants.length > 1 ? "이 제안을 삭제할까요? (학부모용/실무자용 모두 삭제됩니다)" : "이 제안을 삭제할까요?",
+        { danger: true }
+      ))
+    )
+      return;
+    setBusyId(g.key);
+    for (const v of g.variants) {
+      if (drafts[v.id] !== undefined) {
+        await fetch("/api/proposals/save-text", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ id: v.id, finalText: drafts[v.id] }),
+        });
+      }
+    }
+    let hadError = false;
+    for (const v of g.variants) {
+      const res = await fetch("/api/proposals/decide", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: v.id, decision }),
+      });
+      if (!res.ok) {
+        hadError = true;
+        const data = await res.json().catch(() => ({}));
+        notify(data.error || "처리하지 못했습니다.", "error");
+      }
+    }
+    setBusyId(null);
+    if (!hadError && decision === "승인") {
+      notify(
+        g.variants.length > 1
+          ? "승인했습니다 - 운영계획안·실무자매뉴얼 둘 다 채택예정으로 옮겨졌습니다."
+          : "승인했습니다 - 채택예정으로 옮겨졌습니다.",
+        "success"
+      );
+    }
+  }
+
+  // 요청 3번: 승인(채택예정으로 보내기) 전에 사건명과 최종 채택 내용을 한 번 더 보여주고 확인을
+  // 받습니다(실수로 바로 채택예정으로 넘어가는 것을 방지). 그룹에 변형이 둘이면 함께 넘어간다는
+  // 점을 안내합니다.
+  async function confirmAndApproveGroup(g: ProposalGroup, active: Proposal, title: string) {
+    const finalContent = drafts[active.id] ?? active.final_text;
+    const bothDocs = g.variants.length > 1;
+    const ok = await confirmAction(`사건: ${title}\n\n최종 채택 내용(${active.target_doc}):\n${finalContent || "(내용 없음)"}`, {
+      title: bothDocs ? "운영계획안 · 실무자매뉴얼 둘 다 채택예정으로 보내시겠습니까?" : `"${active.target_doc}"으로 채택예정에 보내시겠습니까?`,
       confirmLabel: "채택예정으로 보내기",
     });
     if (!ok) return;
-    decide(v.id, "승인");
-  }
-
-  async function decide(id: string, decision: "승인" | "보류" | "삭제") {
-    if (decision === "삭제" && !(await confirmAction("이 제안을 삭제할까요?", { danger: true }))) return;
-    setBusyId(id);
-    if (drafts[id] !== undefined) {
-      await fetch("/api/proposals/save-text", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id, finalText: drafts[id] }),
-      });
-    }
-    const res = await fetch("/api/proposals/decide", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ id, decision }),
-    });
-    setBusyId(null);
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      notify(data.error || "처리하지 못했습니다.", "error");
-    } else if (decision === "승인") {
-      notify("승인했습니다 - 채택예정으로 옮겨졌습니다.", "success");
-    }
+    await decideGroup(g, "승인");
   }
 
   const allGroups = useMemo(() => groupProposals(items), [items]);
@@ -314,7 +341,7 @@ export default function ProposalsClient({
           const activeTarget = activeVariant[g.key] ?? g.variants[0].target_doc;
           const active = g.variants.find((v) => v.target_doc === activeTarget) ?? g.variants[0];
           const draft = drafts[active.id] ?? active.final_text;
-          const busy = busyId === active.id;
+          const busy = busyId === active.id || busyId === g.key;
           const remediationOptions = parseOptions(active.remediation);
           const parentMsgOptions = parseOptions(active.parent_msg);
           const studentEduOptions = parseOptions(active.student_edu);
@@ -322,25 +349,6 @@ export default function ProposalsClient({
           return (
             <div key={g.key} className="rounded-xl border border-slate-200 bg-white shadow-sm">
               <div className="flex w-full items-center gap-2 px-4 py-3 text-left">
-                <div className="flex shrink-0 items-center gap-2">
-                  {g.variants.map((v) => (
-                    <label
-                      key={v.id}
-                      className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-500 hover:border-gia-navy hover:text-gia-navy"
-                      title={`체크하면 "${v.target_doc}" 제안을 채택예정으로 보낼지 한 번 더 확인합니다.`}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={false}
-                        disabled={busyId === v.id}
-                        onChange={() => confirmAndApprove(v, ctx?.title || oneLine(v.final_text, 40))}
-                        className="h-3.5 w-3.5 accent-gia-navy"
-                      />
-                      {v.target_doc}
-                    </label>
-                  ))}
-                </div>
                 <button
                   onClick={() => setExpandedKey(expanded ? null : g.key)}
                   className="flex min-w-0 flex-1 items-center gap-2 text-left"
@@ -348,6 +356,15 @@ export default function ProposalsClient({
                   <span className="hidden shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600 sm:inline-block">
                     {SOURCE_LABEL[g.source] ?? g.source}
                   </span>
+                  {g.variants.length > 1 && (
+                    <span className="hidden shrink-0 gap-1 sm:flex">
+                      {g.variants.map((v) => (
+                        <span key={v.id} className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] text-blue-600">
+                          {v.target_doc}
+                        </span>
+                      ))}
+                    </span>
+                  )}
                   <span className="min-w-0 flex-1 truncate text-sm font-medium">
                     {ctx ? oneLine(ctx.title, 40) : oneLine(active.final_text)}
                   </span>
@@ -497,21 +514,22 @@ export default function ProposalsClient({
                       내용 저장
                     </button>
                     <button
-                      onClick={() => decide(active.id, "승인")}
+                      onClick={() => confirmAndApproveGroup(g, active, ctx?.title || oneLine(active.final_text, 40))}
                       disabled={busy}
                       className="rounded-lg bg-gia-navy px-3 py-1.5 text-xs font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50"
+                      title={g.variants.length > 1 ? "운영계획안·실무자매뉴얼 둘 다 함께 채택예정으로 보냅니다." : undefined}
                     >
-                      승인
+                      승인{g.variants.length > 1 ? " (둘 다)" : ""}
                     </button>
                     <button
-                      onClick={() => decide(active.id, "보류")}
+                      onClick={() => decideGroup(g, "보류")}
                       disabled={busy}
                       className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
                     >
                       보류
                     </button>
                     <button
-                      onClick={() => decide(active.id, "삭제")}
+                      onClick={() => decideGroup(g, "삭제")}
                       disabled={busy}
                       className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
                     >

@@ -64,8 +64,13 @@ export default function MeetingsClient({
   // 중에서만 골라 태그합니다.
   policyCategories: PolicyCategory[];
 }) {
-  const manualCatOptions = policyCategories.filter((c) => c.target_doc === "실무자용");
-  const opPlanCatOptions = policyCategories.filter((c) => c.target_doc === "학부모용");
+  // 요청: "항목들은 기본적으로 가나다순으로 정렬" - 드롭다운에서도 항목명 한글 가나다순으로 보여줍니다.
+  const manualCatOptions = policyCategories
+    .filter((c) => c.target_doc === "실무자용")
+    .sort((a, b) => a.category.localeCompare(b.category, "ko"));
+  const opPlanCatOptions = policyCategories
+    .filter((c) => c.target_doc === "학부모용")
+    .sort((a, b) => a.category.localeCompare(b.category, "ko"));
   const [items, setItems] = useRealtimeTable<Meeting>("meetings", initialItems);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [editingId, setEditingId] = useState<string | null>(null);

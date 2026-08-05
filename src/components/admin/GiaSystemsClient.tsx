@@ -98,9 +98,15 @@ export default function GiaSystemsClient({ initialSystems }: { initialSystems: G
       if (ib === -1) return -1;
       return ia - ib;
     });
+    // 요청: "항목들은 기본적으로 가나다순으로 정렬" - 중분류는 이미 가나다순이었지만, 그 안의
+    // 세부 항목은 등록된 순서 그대로였어서 여기서도 이름 기준으로 정렬합니다. 대분류 순서는
+    // 이전 요청("전체적인 시스템 항목을 한눈에 보고 싶어서")에 따라 고정 순서(MAJOR_ORDER)를
+    // 그대로 유지합니다.
     return majors.map((major) => ({
       major,
-      categories: [...majorMap.get(major)!.entries()].sort((a, b) => a[0].localeCompare(b[0])),
+      categories: [...majorMap.get(major)!.entries()]
+        .sort((a, b) => a[0].localeCompare(b[0], "ko"))
+        .map(([category, items]) => [category, [...items].sort((a, b) => a.name.localeCompare(b.name, "ko"))] as [string, GiaSystem[]]),
     }));
   }, [systems]);
 

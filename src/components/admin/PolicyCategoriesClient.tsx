@@ -109,10 +109,12 @@ export default function PolicyCategoriesClient({ initialCategories }: { initialC
       list.push(c);
       domainMap.set(domain, list);
     }
-    const domains = [...domainMap.keys()].sort((a, b) => a.localeCompare(b));
+    // 요청: "항목들은 기본적으로 가나다순으로 정렬" - 예전에는 시드 데이터에 심어둔 sort_order를
+    // 우선했지만, 이제는 구분(도메인)·항목명 모두 한글 가나다순으로만 정렬합니다.
+    const domains = [...domainMap.keys()].sort((a, b) => a.localeCompare(b, "ko"));
     return domains.map((domain) => ({
       domain,
-      items: domainMap.get(domain)!.sort((a, b) => a.sort_order - b.sort_order || a.category.localeCompare(b.category)),
+      items: domainMap.get(domain)!.sort((a, b) => a.category.localeCompare(b.category, "ko")),
     }));
   }, [tabItems]);
 

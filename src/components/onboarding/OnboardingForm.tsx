@@ -58,6 +58,9 @@ export default function OnboardingForm({
       setError("저장하지 못했습니다. 새로고침 후 다시 시도해주세요.");
       return;
     }
+    // 등록 신청이 완료됐음을 관리자에게 Slack으로 알립니다(실패해도 온보딩 자체는
+    // 이미 저장이 끝났으니 화면 이동은 그대로 진행합니다).
+    fetch("/api/notify/registration", { method: "POST" }).catch(() => {});
     router.push("/pending");
     router.refresh();
   }

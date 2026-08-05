@@ -87,13 +87,24 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
     : { data: [] as { email: string; name: string | null }[] };
   const teacherName = new Map((teachersData ?? []).map((t) => [t.email, t.name || t.email]));
 
+  // 요청: "학생 검색했을 때 종합 정보가 한 페이지로 나오도록" - 이미 학적사항/사건기록/주간
+  // 관찰기록이 한 페이지 안에 있었지만(레이아웃/가독성 개선 요청), 페이지가 길어질 때 지금 어느
+  // 섹션을 보고 있는지 놓치기 쉬워 상단에 요약 수치 + 바로가기 탭을 추가하고, 목록이 길어지는
+  // 사건/리포트 섹션은 안쪽 스크롤로 감싸 한 화면 안에서 전체 구조가 잡히도록 했습니다.
+  const quickNav = [
+    { href: "#academic", label: "학적사항" },
+    { href: "#incidents", label: "관련 사건기록" },
+    { href: "#reports", label: "주간 관찰기록" },
+    { href: "#mentions", label: "업무/채팅 언급" },
+  ];
+
   return (
     <div className="mx-auto max-w-4xl">
       <Link href="/students" className="mb-3 inline-block text-xs text-slate-400 hover:text-slate-600">
         ← 학생 검색으로
       </Link>
 
-      <div className="mb-5 flex items-start justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="mb-3 flex items-start justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div>
           <div className="mb-1 flex items-center gap-2">
             <h1 className="text-xl font-bold text-slate-800">{student.name}</h1>
@@ -111,7 +122,31 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
         </span>
       </div>
 
-      <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
+      {/* 요약 수치 + 바로가기 - 페이지가 길어져도 지금 무엇이 몇 건 있는지 한눈에 보이고, 원하는
+          섹션으로 바로 이동할 수 있습니다. */}
+      <div className="sticky top-0 z-10 mb-5 flex flex-wrap items-center gap-1.5 rounded-2xl border border-slate-200 bg-white/95 p-2.5 shadow-sm backdrop-blur">
+        {quickNav.map((n) => (
+          <a
+            key={n.href}
+            href={n.href}
+            className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+          >
+            {n.label}
+          </a>
+        ))}
+        <span className="mx-1 h-4 w-px bg-slate-200" />
+        <span className="rounded-full bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-500">
+          학적 이력 {enrollments.length}건
+        </span>
+        <span className="rounded-full bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-500">
+          사건기록 {incidents.length}건
+        </span>
+        <span className="rounded-full bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-500">
+          관찰기록 {reports.length}건
+        </span>
+      </div>
+
+      <div id="academic" className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2 scroll-mt-16">
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <h2 className="mb-2 text-sm font-bold text-slate-700">기본 인적사항</h2>
           <dl className="flex flex-col gap-1.5 text-sm">
@@ -154,12 +189,12 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
         </div>
       </div>
 
-      <div className="mb-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div id="incidents" className="mb-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm scroll-mt-16">
         <h2 className="mb-2 text-sm font-bold text-slate-700">📋 관련 사건기록 ({incidents.length}건)</h2>
         {incidents.length === 0 ? (
           <p className="text-xs text-slate-400">연결된 사건기록이 없습니다.</p>
         ) : (
-          <div className="flex flex-col gap-1.5">
+          <div className="flex max-h-72 flex-col gap-1.5 overflow-y-auto pr-1">
             {incidents.map((it) => (
               <Link key={it.id} href="/records" className="flex items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-xs hover:bg-slate-50">
                 <span className="min-w-0 flex-1 truncate">{it.title}</span>
@@ -170,12 +205,12 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
         )}
       </div>
 
-      <div className="mb-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div id="reports" className="mb-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm scroll-mt-16">
         <h2 className="mb-2 text-sm font-bold text-slate-700">📈 주간 학생 관찰기록 이력 ({reports.length}건)</h2>
         {reports.length === 0 ? (
           <p className="text-xs text-slate-400">작성된 주간 학생 관찰기록이 없습니다.</p>
         ) : (
-          <div className="flex flex-col gap-1.5">
+          <div className="flex max-h-72 flex-col gap-1.5 overflow-y-auto pr-1">
             {reports.slice(0, 20).map((r) => (
               <Link key={r.id} href={`/weekly-report/students/${student.id}`} className="flex items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-xs hover:bg-slate-50">
                 <span className="min-w-0 flex-1 truncate">
@@ -189,7 +224,7 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
         )}
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div id="mentions" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm scroll-mt-16">
         <h2 className="mb-1 text-sm font-bold text-slate-700">🗂️ 업무/채팅 관련 언급 (참고용)</h2>
         <p className="mb-2 text-[11px] text-slate-400">
           &quot;{searchName}&quot; 이름이 들어간 업무·코멘트·채팅 메시지를 검색한 결과입니다. 자동 연결이 아니라
@@ -198,7 +233,7 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
         {tasks.length === 0 && taskComments.length === 0 && messages.length === 0 ? (
           <p className="text-xs text-slate-400">관련 언급이 없습니다.</p>
         ) : (
-          <div className="flex flex-col gap-1.5">
+          <div className="flex max-h-72 flex-col gap-1.5 overflow-y-auto pr-1">
             {tasks.map((t) => (
               <div key={`task-${t.id}`} className="flex items-center gap-2 rounded-lg bg-slate-50 px-2.5 py-1.5 text-xs">
                 <span className="shrink-0 rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700">업무</span>

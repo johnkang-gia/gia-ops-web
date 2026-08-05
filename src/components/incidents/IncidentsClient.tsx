@@ -104,8 +104,13 @@ export default function IncidentsClient({
   // 직접 입력이 아니라 이 목록에서 골라서 태그합니다.
   policyCategories: PolicyCategory[];
 }) {
-  const manualCatOptions = policyCategories.filter((c) => c.target_doc === "실무자용");
-  const opPlanCatOptions = policyCategories.filter((c) => c.target_doc === "학부모용");
+  // 요청: "항목들은 기본적으로 가나다순으로 정렬" - 드롭다운에서도 항목명 한글 가나다순으로 보여줍니다.
+  const manualCatOptions = policyCategories
+    .filter((c) => c.target_doc === "실무자용")
+    .sort((a, b) => a.category.localeCompare(b.category, "ko"));
+  const opPlanCatOptions = policyCategories
+    .filter((c) => c.target_doc === "학부모용")
+    .sort((a, b) => a.category.localeCompare(b.category, "ko"));
   const [items, setItems] = useRealtimeTable<Incident>("incidents", initialItems);
   // 담당자 기본값은 로그인 이메일이 아니라 [내 계정 설정]에서 정한 표시 이름을 씁니다(이름이
   // 아직 없으면 이메일로 대체). 물론 자유 텍스트라 필요하면 그대로 고쳐 쓸 수 있습니다.

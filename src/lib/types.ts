@@ -133,6 +133,14 @@ export type Proposal = {
   updated_at: string;
 };
 
+// proposals 카드에 "이 제안이 어떤 사건/행사/회의/초안에서 나온 건지" 개요를 보여주기 위한
+// 원본 기록 요약입니다(요청 7번). `${source}:${source_id}` 키로 조회합니다.
+export type ProposalSourceContext = {
+  title: string;
+  detail: string;
+  date: string;
+};
+
 export type Adopted = {
   id: string;
   case_id: string;

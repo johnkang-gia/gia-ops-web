@@ -44,6 +44,18 @@ export async function POST(request: Request) {
   }
 }
 
+// manual_sections에 이미 등록된 항목명을 학부모용/실무자용으로 나눠 가져옵니다. AI 분류
+// 프롬프트에 실어 보내 "비슷한 내용은 기존 항목에 최대한 합쳐지도록" 유도하기 위함입니다(요청 9번).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function loadExistingCategories(supabase: any): Promise<{ parent: string[]; staff: string[] }> {
+  const { data } = await supabase.from("manual_sections").select("target_doc, category");
+  const rows = (data || []) as { target_doc: string; category: string }[];
+  return {
+    parent: rows.filter((r) => r.target_doc === "학부모용").map((r) => r.category),
+    staff: rows.filter((r) => r.target_doc === "실무자용").map((r) => r.category),
+  };
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function scanIncidentOrEvent(supabase: any, type: "incidents" | "events", id?: string) {
   let query = supabase.from(type).select("*");
@@ -57,6 +69,7 @@ async function scanIncidentOrEvent(supabase: any, type: "incidents" | "events", 
   if (!rows || !rows.length) return 0;
 
   const label = type === "incidents" ? "사건" : "행사";
+  const existingCategories = await loadExistingCategories(supabase);
   let created = 0;
 
   for (const row of rows) {
@@ -86,7 +99,7 @@ async function scanIncidentOrEvent(supabase: any, type: "incidents" | "events", 
         suggestedCat: row.manual_cat || "",
       };
       const systemPrompt = buildIncidentClassifySystemPrompt();
-      const userPrompt = buildIncidentEntryBlock(entry, "신규 기록");
+      const userPrompt = buildIncidentEntryBlock(entry, "신규 기록", existingCategories);
       const result = (await callClaudeJson(systemPrompt, userPrompt, {
         route: `scan:${type}`,
       })) as IncidentClassifyResult;
@@ -105,9 +118,13 @@ async function scanIncidentOrEvent(supabase: any, type: "incidents" | "events", 
           date: row.date,
           target_doc: targetDoc,
           category: result.category || "미분류",
-          remediation: (result.remediationOptions || []).join("\n\n[--- 다음 옵션 ---]\n\n"),
-          parent_msg: (result.parentCommunicationOptions || []).join("\n\n[--- 다음 옵션 ---]\n\n"),
-          student_edu: (result.studentEducationOptions || []).join("\n\n[--- 다음 옵션 ---]\n\n"),
+          // 예전에는 옵션들을 "\n\n[--- 다음 옵션 ---]\n\n"로 이어붙인 하나의 문자열로 저장해서,
+          // 화면에 그 구분자 글자가 그대로 반복 노출되고 옵션 경계도 파싱하기 어려웠습니다(요청 7번:
+          // "다음옵션이라는 글자가 계속 반복"). 이제 JSON 배열 문자열로 저장하고, 화면(parseOptions)에서
+          // 파싱해 카드 형태로 렌더링합니다 - 컬럼 타입은 그대로 text라 마이그레이션이 필요 없습니다.
+          remediation: JSON.stringify(result.remediationOptions || []),
+          parent_msg: JSON.stringify(result.parentCommunicationOptions || []),
+          student_edu: JSON.stringify(result.studentEducationOptions || []),
           final_text: result.suggestedFinal || (result.remediationOptions || [])[0] || "",
           legal_basis: result.legalBasis || "",
           applicability: result.legalApplicability || "",
@@ -145,6 +162,7 @@ async function scanMeetings(supabase: any, id?: string) {
   if (error) throw new Error(error.message);
   if (!rows || !rows.length) return 0;
 
+  const existingCategories = await loadExistingCategories(supabase);
   let created = 0;
 
   for (const row of rows) {
@@ -164,7 +182,8 @@ async function scanMeetings(supabase: any, id?: string) {
       const systemPrompt = buildMeetingClassifySystemPrompt();
       const userPrompt = buildMeetingEntryBlock(
         { date: row.date, attendees: row.attendees || "", content: row.content },
-        "회의 정보"
+        "회의 정보",
+        existingCategories
       );
       // 이미 결정된 회의 내용을 문서별로 분류/정리하는 작업이라 저렴한 모델(Haiku)로 처리합니다.
       const result = (await callClaudeJson(systemPrompt, userPrompt, {

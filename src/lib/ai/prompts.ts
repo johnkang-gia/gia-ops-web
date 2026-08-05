@@ -71,12 +71,30 @@ export function buildIncidentEntryBlock(
     owner: string;
     suggestedCat: string;
   },
-  label?: string
+  label?: string,
+  existingCategories?: { parent: string[]; staff: string[] }
 ): string {
   return (
     `[${label || "신규 기록"}]\n구분: ${entry.type}\n제목: ${entry.title}\n상세 내용: ${entry.detail}` +
     `\n잘된 점: ${entry.good}\n부족했던 점: ${entry.lack}\n보완점/제안: ${entry.suggest}` +
-    `\n담당자: ${entry.owner}\n작성자 지정 항목(참고용): ${entry.suggestedCat}`
+    `\n담당자: ${entry.owner}\n작성자 지정 항목(참고용): ${entry.suggestedCat}` +
+    "\n\n" +
+    buildExistingCategoriesBlock(existingCategories)
+  );
+}
+
+// 학부모용 운영계획안·실무자용 대응 매뉴얼에 이미 등록된 항목명 목록을 프롬프트에 실어 보내기
+// 위한 공용 블록입니다. 이게 없으면 AI가 매번 카테고리를 새로 지어내서 같은 주제인데 이름만
+// 다른 항목이 계속 늘어납니다(요청: "비슷한 내용들을 항목화... 최대한 기존 항목에 넣는 방향으로").
+export function buildExistingCategoriesBlock(existingCategories?: { parent: string[]; staff: string[] }): string {
+  const parent = existingCategories?.parent ?? [];
+  const staff = existingCategories?.staff ?? [];
+  return (
+    `[학부모용 운영계획안 기존 항목]\n${parent.length ? parent.join(", ") : "(아직 없음)"}\n` +
+    `[실무자용 대응 매뉴얼 기존 항목]\n${staff.length ? staff.join(", ") : "(아직 없음)"}\n` +
+    "category를 정할 때는 위 기존 항목 중 실질적으로 같은 주제가 있으면 그 이름을 정확히 그대로 " +
+    "쓰세요(사소하게 표현이 다르다는 이유로 새 이름을 만들지 마세요). 정말 다루는 주제가 없을 때만 " +
+    "새 항목명을 제안하세요."
   );
 }
 
@@ -169,8 +187,15 @@ export function buildManualDraftClassifySystemPrompt(): string {
   );
 }
 
-export function buildManualDraftEntryBlock(rawText: string): string {
-  return `[담당자가 작성한 초안(원문 - 메모/구어체일 수 있음, 그대로 베끼지 말고 정리할 것)]\n${rawText}`;
+export function buildManualDraftEntryBlock(
+  rawText: string,
+  existingCategories?: { parent: string[]; staff: string[] }
+): string {
+  return (
+    `[담당자가 작성한 초안(원문 - 메모/구어체일 수 있음, 그대로 베끼지 말고 정리할 것)]\n${rawText}` +
+    "\n\n" +
+    buildExistingCategoriesBlock(existingCategories)
+  );
 }
 
 export function buildIncidentFillSystemPrompt(): string {
@@ -481,6 +506,33 @@ export function buildComplaintFinalizeEntryBlock(entry: { category: string; draf
   return `[항목명]\n${entry.category}\n\n[실무자가 회의를 거쳐 수정한 응대 문구(원문)]\n${entry.draftText}`;
 }
 
+// 학부모용 운영계획안에 채택되는 문구는 학부모님께 직접 안내하는 글이므로, 승인 시점에 한 번 더
+// 정중하고 친절한 톤으로 다듬습니다(요청: "학부모용에는 학부모님께 안내를 드리는것이기 때문에
+// 톤을 맞춰서 정중하고 친절하게 안내"). source가 "complaint"인 항목은 이미 별도의
+// buildComplaintFinalizeSystemPrompt로 다듬으므로 이 함수는 그 외 출처(사건/행사/회의/AI매뉴얼)의
+// 학부모용 승인 건에만 사용합니다.
+export function buildParentToneSystemPrompt(): string {
+  return (
+    INSTITUTION_CONTEXT +
+    "\n\n" +
+    "당신은 GIA 학교가 학부모용 운영계획안에 정식으로 싣기 직전인 문구를, 학부모님께 그대로 " +
+    "안내해도 좋을 수준의 정중하고 친절한 문어체로 다듬는 보조자입니다.\n" +
+    "1) 내용(사실관계, 조치, 기준)을 절대 바꾸거나 지어내지 마세요 - 어투와 문장 구조만 다듬습니다.\n" +
+    "2) 실무자끼리 주고받는 사무적인 표현(\"~할 것\", \"~함\", 개조식 나열 등)이 남아있으면, " +
+    "학부모가 읽었을 때 존중받는다고 느낄 수 있는 존댓말 문장으로 풀어 쓰세요.\n" +
+    "3) 이미 충분히 정중하게 쓰여 있다면 억지로 문장을 늘리지 말고 다듬을 부분만 최소한으로 " +
+    "손보세요.\n" +
+    "4) 운영계획안 항목 문구이므로 카카오톡 메시지처럼 인사말/서명을 새로 붙이지 말고, 정책/방침을 " +
+    "설명하는 자연스러운 문단 형태를 유지하세요.\n\n" +
+    "아래 JSON 형식으로만 답하세요(다른 텍스트 금지). 줄바꿈은 \\n으로 표시하세요:\n" +
+    '{"finalText":"정중하고 친절하게 다듬은 학부모용 운영계획안 문구"}'
+  );
+}
+
+export function buildParentToneEntryBlock(entry: { category: string; draftText: string }): string {
+  return `[항목명]\n${entry.category}\n\n[다듬을 문구(원문)]\n${entry.draftText}`;
+}
+
 export function buildAdoptedReviewSystemPrompt(): string {
   return (
     INSTITUTION_CONTEXT +
@@ -524,10 +576,13 @@ export function buildAdoptedReviewEntryBlock(entry: {
 
 export function buildMeetingEntryBlock(
   entry: { date: string; attendees: string; content: string },
-  label?: string
+  label?: string,
+  existingCategories?: { parent: string[]; staff: string[] }
 ): string {
   return (
     `[${label || "회의 정보"}]\n날짜: ${entry.date}\n참석자: ${entry.attendees}` +
-    `\n\n[회의 내용(원문 - 메모/구어체일 수 있음, 그대로 베끼지 말고 정리할 것)]\n${entry.content}`
+    `\n\n[회의 내용(원문 - 메모/구어체일 수 있음, 그대로 베끼지 말고 정리할 것)]\n${entry.content}` +
+    "\n\n" +
+    buildExistingCategoriesBlock(existingCategories)
   );
 }

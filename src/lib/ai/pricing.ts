@@ -39,6 +39,7 @@ export const AI_FEATURES: { key: string; label: string; group: string }[] = [
   { key: "anticipate-complaints", label: "민원예측 AI", group: "제안함 · 채택예정" },
   { key: "review-adopted", label: "채택예정 검토 AI", group: "제안함 · 채택예정" },
   { key: "proposals-decide", label: "제안 승인 정리 AI", group: "제안함 · 채택예정" },
+  { key: "proposals-decide-parent-tone", label: "학부모용 승인 톤 다듬기 AI", group: "제안함 · 채택예정" },
   { key: "analyze-task", label: "업무 분석 AI", group: "업무" },
   { key: "education-news", label: "교육뉴스 AI (웹검색)", group: "관리자" },
   { key: "gia-systems-suggest", label: "GIA시스템 벤치마킹 AI (웹검색)", group: "관리자" },

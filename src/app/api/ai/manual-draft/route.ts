@@ -31,8 +31,14 @@ export async function POST(request: Request) {
       .single();
     if (draftErr) throw new Error(draftErr.message);
 
+    const { data: catRows } = await supabase.from("manual_sections").select("target_doc, category");
+    const existingCategories = {
+      parent: (catRows || []).filter((r) => r.target_doc === "학부모용").map((r) => r.category),
+      staff: (catRows || []).filter((r) => r.target_doc === "실무자용").map((r) => r.category),
+    };
+
     const systemPrompt = buildManualDraftClassifySystemPrompt();
-    const userPrompt = buildManualDraftEntryBlock(rawText);
+    const userPrompt = buildManualDraftEntryBlock(rawText, existingCategories);
     const result = (await callClaudeJson(systemPrompt, userPrompt, {
       route: "manual-draft",
     })) as ManualDraftClassifyResult;

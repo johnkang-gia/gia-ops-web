@@ -3,7 +3,12 @@ import { createClient } from "@/lib/supabase/server";
 import { genCaseId } from "@/lib/caseId";
 import type { Proposal } from "@/lib/types";
 import { callClaudeJson } from "@/lib/ai/claude";
-import { buildComplaintFinalizeSystemPrompt, buildComplaintFinalizeEntryBlock } from "@/lib/ai/prompts";
+import {
+  buildComplaintFinalizeSystemPrompt,
+  buildComplaintFinalizeEntryBlock,
+  buildParentToneSystemPrompt,
+  buildParentToneEntryBlock,
+} from "@/lib/ai/prompts";
 import type { ComplaintFinalizeResult } from "@/lib/ai/types";
 
 export async function POST(request: Request) {
@@ -39,19 +44,28 @@ export async function POST(request: Request) {
     // 예상 문의/컴플레인 제안은 실무자들이 회의를 거쳐 GIA 실정에 맞게 고친 문구를 그대로
     // 옮기지 않고, AI가 한 번 더 다듬어 깔끔한 규정 문구로 정리한 뒤 채택예정에 올립니다
     // (실무자매뉴얼에 바로 실을 수 있는 수준으로 만들기 위함).
+    // 학부모용(운영계획안)으로 채택되는 나머지 출처(사건/행사/회의/AI매뉴얼)는 학부모님께 직접
+    // 안내하는 글이므로, 승인 시점에 정중하고 친절한 톤으로 한 번 더 다듬습니다(요청 9번).
     let specificText = p.final_text;
-    if (p.source === "complaint") {
-      try {
+    try {
+      if (p.source === "complaint") {
         const systemPrompt = buildComplaintFinalizeSystemPrompt();
         const userPrompt = buildComplaintFinalizeEntryBlock({ category: p.category, draftText: p.final_text });
         const result = (await callClaudeJson(systemPrompt, userPrompt, {
           route: "proposals-decide",
         })) as ComplaintFinalizeResult;
         specificText = result.finalText || p.final_text;
-      } catch {
-        // AI 정리에 실패해도 승인 자체는 막지 않고, 실무자가 입력한 원문을 그대로 사용합니다.
-        specificText = p.final_text;
+      } else if (p.target_doc === "학부모용") {
+        const systemPrompt = buildParentToneSystemPrompt();
+        const userPrompt = buildParentToneEntryBlock({ category: p.category, draftText: p.final_text });
+        const result = (await callClaudeJson(systemPrompt, userPrompt, {
+          route: "proposals-decide-parent-tone",
+        })) as ComplaintFinalizeResult;
+        specificText = result.finalText || p.final_text;
       }
+    } catch {
+      // AI 정리에 실패해도 승인 자체는 막지 않고, 담당자가 입력한 원문을 그대로 사용합니다.
+      specificText = p.final_text;
     }
 
     const { error: insertErr } = await supabase.from("adopted").insert({

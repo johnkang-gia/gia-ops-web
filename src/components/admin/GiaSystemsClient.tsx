@@ -153,6 +153,13 @@ export default function GiaSystemsClient({ initialSystems }: { initialSystems: G
                   {s.benchmark_school && (
                     <p className="mb-2 text-[11px] text-slate-400">참고 사례: {s.benchmark_school}</p>
                   )}
+                  {s.related_manual_category && (
+                    <p className="mb-2 text-[11px] text-amber-600">
+                      📎 발행된 매뉴얼(&quot;{s.related_manual_target_doc}&quot; · {s.related_manual_category})에
+                      이미 이 시스템 이름이 언급되어 있어요 - 실제로 갖춰져 있다면 상태를 확인해 &quot;보유&quot;로
+                      바꿔주세요.
+                    </p>
+                  )}
                   <div className="flex flex-wrap items-center gap-2">
                     <select
                       value={s.status}

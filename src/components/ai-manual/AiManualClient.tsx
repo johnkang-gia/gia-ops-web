@@ -22,13 +22,23 @@ function oneLine(text: string, maxLen = 40) {
   return t.length > maxLen ? t.slice(0, maxLen) + "…" : t;
 }
 
+// AI 호출 없이 키워드 겹침만으로 찾은 "관련 있어 보이는 과거 기록"입니다(요청 6번).
+type RelatedRecord = { source: "incidents" | "meetings" | "manual_sections"; id: string; label: string; snippet: string };
+const SOURCE_LABEL: Record<RelatedRecord["source"], string> = {
+  incidents: "사건기록",
+  meetings: "회의기록",
+  manual_sections: "발행된 매뉴얼",
+};
+
 // 왼쪽(과거 작성 이력) · 가운데(입력폼) · 오른쪽(AI 제안) 3단 레이아웃입니다.
 export default function AiManualClient({ initialItems }: { initialItems: ManualDraft[] }) {
   const [drafts] = useRealtimeTable<ManualDraft>("manual_drafts", initialItems);
   const [rawText, setRawText] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const [result, setResult] = useState<{ proposals: Proposal[]; reason: string } | null>(null);
+  const [result, setResult] = useState<{ proposals: Proposal[]; reason: string; relatedRecords: RelatedRecord[] } | null>(
+    null
+  );
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -47,7 +57,11 @@ export default function AiManualClient({ initialItems }: { initialItems: ManualD
       setError(data.error || "제안을 만들지 못했습니다.");
       return;
     }
-    setResult({ proposals: data.proposals as Proposal[], reason: data.reason || "" });
+    setResult({
+      proposals: data.proposals as Proposal[],
+      reason: data.reason || "",
+      relatedRecords: (data.relatedRecords as RelatedRecord[]) || [],
+    });
     setRawText("");
   }
 
@@ -136,6 +150,25 @@ export default function AiManualClient({ initialItems }: { initialItems: ManualD
                 </div>
               ))}
             </div>
+
+            {result.relatedRecords.length > 0 && (
+              <div className="mt-3 border-t border-emerald-200 pt-3">
+                <div className="mb-1.5 text-xs font-semibold text-emerald-800">
+                  🔗 관련 있어 보이는 과거 기록
+                </div>
+                <div className="flex flex-col gap-1">
+                  {result.relatedRecords.map((r) => (
+                    <div key={`${r.source}-${r.id}`} className="rounded-lg bg-white px-3 py-2 text-xs">
+                      <span className="mr-1.5 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500">
+                        {SOURCE_LABEL[r.source]}
+                      </span>
+                      <span className="font-medium text-slate-700">{r.label}</span>
+                      {r.snippet && <span className="ml-1.5 text-slate-400">{r.snippet}</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

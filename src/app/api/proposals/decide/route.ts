@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { genCaseId } from "@/lib/caseId";
 import type { Proposal } from "@/lib/types";
-import { callClaudeJson } from "@/lib/ai/claude";
+import { callClaudeJson, CLAUDE_MODEL_FAST } from "@/lib/ai/claude";
 import {
   buildComplaintFinalizeSystemPrompt,
   buildComplaintFinalizeEntryBlock,
@@ -58,7 +58,11 @@ export async function POST(request: Request) {
       } else if (p.target_doc === "학부모용") {
         const systemPrompt = buildParentToneSystemPrompt();
         const userPrompt = buildParentToneEntryBlock({ category: p.category, draftText: p.final_text });
+        // 이미 실무자들이 승인한 확정 문구를 학부모용 존댓말 톤으로만 바꾸는 단순 재작성
+        // 작업이라(새로운 판단/법적 검토가 필요 없음), 저렴한 모델(Haiku)로 처리해 AI 비용을
+        // 절감합니다(항목 9번 AI 과금 최소화 요청).
         const result = (await callClaudeJson(systemPrompt, userPrompt, {
+          model: CLAUDE_MODEL_FAST,
           route: "proposals-decide-parent-tone",
         })) as ComplaintFinalizeResult;
         specificText = result.finalText || p.final_text;
@@ -75,6 +79,7 @@ export async function POST(request: Request) {
       date: new Date().toISOString().slice(0, 10),
       target_doc: p.target_doc,
       category: p.category,
+      domain: p.domain || null,
       ai_original: p.final_text,
       specific_text: specificText,
       guide: guideParts.join("\n\n") || null,

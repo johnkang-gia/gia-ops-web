@@ -29,7 +29,7 @@ export async function POST(request: Request) {
     }
 
     const nextRound = (adopted.review_count ?? 0) + 1;
-    const systemPrompt = buildAdoptedReviewSystemPrompt();
+    const systemPrompt = buildAdoptedReviewSystemPrompt(adopted.target_doc);
     const userPrompt = buildAdoptedReviewEntryBlock({
       targetDoc: adopted.target_doc,
       category: adopted.category,

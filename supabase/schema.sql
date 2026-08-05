@@ -2870,3 +2870,146 @@ end $$;
 insert into ai_feature_flags (key, label, group_name) values
   ('requests-translate', '행정요청 한/영 번역 AI', '업무')
 on conflict (key) do nothing;
+
+-- ===== 73. 사건·회의·AI매뉴얼 통합 고도화(제안서 8개 항목) =====
+-- 직전에 전달한 제안서(단기/중기/장기 8개 항목)를 반영합니다: (1) 매뉴얼 항목에 원본 사건/회의
+-- 역참조 저장, (2) 반복 사건 패턴을 매뉴얼 화면에도 노출(홈과 동일하게 AI 호출 없이 순수 집계),
+-- (3) GIA시스템 자동 매칭(AI 호출 없이 이름 겹침만으로 매칭 - 과금 절감 요청과도 맞물림),
+-- (4) 정책영역(domain) 상위분류를 기존 AI 분류 호출에 필드만 추가(새 AI 호출 없음),
+-- (5) 매뉴얼 변경 이력, (8) 정기 리뷰 사이클(오래된 항목/최근 사건 급증 항목 플래그).
+
+-- ----- (1)+(4) manual_sections: 원본 참조(sources) + 정책영역(domain) -----
+alter table manual_sections add column if not exists sources jsonb not null default '[]'::jsonb;
+alter table manual_sections add column if not exists domain text;
+
+-- ----- (4) proposals/adopted: 정책영역(domain) 컬럼 - AI 분류 결과를 그대로 이어붙임 -----
+alter table proposals add column if not exists domain text;
+alter table adopted add column if not exists domain text;
+
+-- ----- upsert_manual_section 확장: 원본(source/source_id)과 정책영역(domain)을 함께 누적 -----
+-- 기존 호출부(발행 API)도 새 매개변수 없이 그대로 호출 가능하도록 전부 default null로 둡니다.
+create or replace function upsert_manual_section(
+  p_target_doc text,
+  p_category text,
+  p_addition_html text,
+  p_source text default null,
+  p_source_id text default null,
+  p_domain text default null
+)
+returns manual_sections
+language plpgsql
+as $$
+declare
+  result manual_sections;
+  v_new_source jsonb := '[]'::jsonb;
+begin
+  if p_source is not null and p_source_id is not null then
+    v_new_source := jsonb_build_array(
+      jsonb_build_object('source', p_source, 'source_id', p_source_id, 'added_at', now())
+    );
+  end if;
+
+  insert into manual_sections (target_doc, category, content, domain, sources)
+  values (p_target_doc, p_category, p_addition_html, p_domain, v_new_source)
+  on conflict (target_doc, category)
+  do update set
+    content = manual_sections.content || excluded.content,
+    -- 정책영역은 처음 정해진 값을 유지합니다(누적될 때마다 AI가 다르게 판단해서 바뀌는 것 방지).
+    domain = coalesce(manual_sections.domain, excluded.domain),
+    -- 같은 (source, source_id)는 한 번만 남기고, added_at이 가장 이른 것을 기준으로 정렬해 쌓습니다.
+    sources = (
+      select coalesce(jsonb_agg(d.elem order by (d.elem->>'added_at')::timestamptz asc), '[]'::jsonb)
+      from (
+        select distinct on (e->>'source', e->>'source_id') e as elem
+        from jsonb_array_elements(manual_sections.sources || excluded.sources) as e
+        order by e->>'source', e->>'source_id', (e->>'added_at')::timestamptz asc
+      ) d
+    )
+  returning * into result;
+
+  return result;
+end;
+$$;
+
+-- ----- (2) GIA시스템 자동 매칭 -----
+-- AI 호출 없이(이름 겹침만으로) 매뉴얼 항목이 발행될 때 관련 있어 보이는 미보유 시스템을 표시합니다.
+alter table gia_systems add column if not exists related_manual_category text;
+alter table gia_systems add column if not exists related_manual_target_doc text;
+
+-- ----- (5) 매뉴얼 변경 이력 -----
+-- 항목 내용이 바뀌기 직전의 이전 버전을 스냅샷으로 남깁니다(요청: "언제, 왜 바뀌었는지 추적").
+create table if not exists manual_section_history (
+  id uuid primary key default gen_random_uuid(),
+  section_id uuid not null references manual_sections(id) on delete cascade,
+  target_doc text not null,
+  category text not null,
+  content text not null,
+  changed_by text,
+  changed_at timestamptz not null default now()
+);
+
+create index if not exists manual_section_history_section_idx
+  on manual_section_history (section_id, changed_at desc);
+
+alter table manual_section_history enable row level security;
+drop policy if exists "giamicro_select_manual_section_history" on manual_section_history;
+create policy "giamicro_select_manual_section_history" on manual_section_history
+  for select using (is_giamicro_user());
+-- insert 정책은 의도적으로 만들지 않습니다 - 아래 트리거 함수만(security definer) 기록을 남길 수
+-- 있고, 사람이 직접 이력을 손대거나 지어낼 수 없도록 막습니다.
+
+create or replace function log_manual_section_history()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if TG_OP = 'UPDATE' and OLD.content is distinct from NEW.content then
+    insert into manual_section_history (section_id, target_doc, category, content, changed_by, changed_at)
+    values (OLD.id, OLD.target_doc, OLD.category, OLD.content, coalesce(auth.jwt() ->> 'email', 'system'), now());
+  end if;
+  return NEW;
+end;
+$$;
+
+drop trigger if exists manual_sections_log_history on manual_sections;
+create trigger manual_sections_log_history
+  before update on manual_sections
+  for each row execute function log_manual_section_history();
+
+-- ----- (8) 매뉴얼 정기 리뷰 사이클 -----
+-- 크론(주 1회)이 "1년 이상 재검토 안 된 항목"/"최근 90일 관련 사건 급증한 항목"을 여기에 표시해두면
+-- 관리자가 매뉴얼 화면 상단 배너에서 확인하고 처리(resolved) 표시할 수 있습니다.
+create table if not exists manual_review_flags (
+  id uuid primary key default gen_random_uuid(),
+  section_id uuid not null references manual_sections(id) on delete cascade,
+  reason text not null check (reason in ('오래됨', '사건급증')),
+  detail text,
+  resolved boolean not null default false,
+  created_at timestamptz not null default now(),
+  resolved_at timestamptz
+);
+
+create unique index if not exists manual_review_flags_unresolved_idx
+  on manual_review_flags (section_id, reason)
+  where resolved = false;
+
+alter table manual_review_flags enable row level security;
+drop policy if exists "giamicro_select_manual_review_flags" on manual_review_flags;
+create policy "giamicro_select_manual_review_flags" on manual_review_flags
+  for select using (is_giamicro_user());
+drop policy if exists "admin_resolve_manual_review_flags" on manual_review_flags;
+create policy "admin_resolve_manual_review_flags" on manual_review_flags
+  for update using (is_app_admin()) with check (is_app_admin());
+-- insert는 크론이 서비스 역할 키로 실행해 RLS를 우회하므로 별도 정책이 필요 없습니다.
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'manual_review_flags'
+  ) then
+    alter publication supabase_realtime add table manual_review_flags;
+  end if;
+end $$;

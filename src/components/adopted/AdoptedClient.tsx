@@ -217,7 +217,15 @@ export default function AdoptedClient({ initialItems }: { initialItems: Adopted[
                       disabled={busy}
                       className="rounded-lg border border-purple-200 px-3 py-1.5 text-xs font-semibold text-purple-600 hover:bg-purple-50 disabled:opacity-50"
                     >
-                      {busy ? "처리 중..." : it.review_count > 0 ? "🔍 다시 AI 검증" : "🔍 AI 검증"}
+                      {busy
+                        ? "처리 중..."
+                        : it.target_doc === "학부모용"
+                        ? it.review_count > 0
+                          ? "🔍 다시 학부모 관점 검증"
+                          : "🔍 학부모 관점 AI 검증"
+                        : it.review_count > 0
+                        ? "🔍 다시 AI 검증"
+                        : "🔍 AI 검증"}
                     </button>
                     <button
                       onClick={() => publish(it.id)}

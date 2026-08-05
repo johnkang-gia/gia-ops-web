@@ -118,6 +118,7 @@ async function scanIncidentOrEvent(supabase: any, type: "incidents" | "events", 
           date: row.date,
           target_doc: targetDoc,
           category: result.category || "미분류",
+          domain: result.domain || null,
           // 예전에는 옵션들을 "\n\n[--- 다음 옵션 ---]\n\n"로 이어붙인 하나의 문자열로 저장해서,
           // 화면에 그 구분자 글자가 그대로 반복 노출되고 옵션 경계도 파싱하기 어려웠습니다(요청 7번:
           // "다음옵션이라는 글자가 계속 반복"). 이제 JSON 배열 문자열로 저장하고, 화면(parseOptions)에서
@@ -249,6 +250,7 @@ async function scanMeetings(supabase: any, id?: string) {
           date: row.date,
           target_doc: p.targetDoc,
           category: p.category || "미분류",
+          domain: p.domain || null,
           final_text: p.finalText,
         });
         if (insertErr) throw new Error(insertErr.message);

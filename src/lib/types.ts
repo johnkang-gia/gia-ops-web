@@ -129,6 +129,9 @@ export type Proposal = {
   benchmark: string | null;
   status: string;
   reflected_at: string | null;
+  // 정책영역(운영계획안/실무자매뉴얼 상위 분류) - AI 분류 시 기존 값 중에서 고르므로 새 항목이
+  // 만들어져도 카테고리가 무한정 늘어나지 않습니다.
+  domain: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -170,8 +173,17 @@ export type Adopted = {
   // source가 "system"(GIA시스템 제안)일 때만 채워집니다 - 발행되는 순간 이 gia_systems 행을
   // 자동으로 "보유"로 갱신합니다(/api/adopted/publish).
   system_ref_id: string | null;
+  domain: string | null;
   created_at: string;
   updated_at: string;
+};
+
+// 매뉴얼 항목이 어느 사건/행사/회의/AI매뉴얼초안에서 비롯됐는지의 역참조입니다(요청: "사건기록,
+// 회의록,ai매뉴얼은 유기적으로 맞물려서..."). upsert_manual_section이 발행 때마다 누적합니다.
+export type ManualSectionSource = {
+  source: "incidents" | "events" | "meetings" | "manual" | "complaint" | "system";
+  source_id: string;
+  added_at: string;
 };
 
 export type ManualSection = {
@@ -180,7 +192,29 @@ export type ManualSection = {
   category: string;
   content: string;
   requires_signature: boolean;
+  domain: string | null;
+  sources: ManualSectionSource[];
   updated_at: string;
+};
+
+export type ManualSectionHistory = {
+  id: string;
+  section_id: string;
+  target_doc: string;
+  category: string;
+  content: string;
+  changed_by: string | null;
+  changed_at: string;
+};
+
+export type ManualReviewFlag = {
+  id: string;
+  section_id: string;
+  reason: "오래됨" | "사건급증";
+  detail: string | null;
+  resolved: boolean;
+  created_at: string;
+  resolved_at: string | null;
 };
 
 export type SchoolDocument = {
@@ -551,6 +585,10 @@ export type GiaSystem = {
   source: "manual" | "ai_suggested";
   adopted_from_id: string | null;
   adopted_at: string | null;
+  // 매뉴얼 항목 발행 시 이름이 겹치는 시스템을 AI 호출 없이 매칭해 채워둡니다(요청: "GIA시스템
+  // 자동 매칭" - 관리자가 시스템 구비 여부를 수기로 따로 추적할 필요를 줄임).
+  related_manual_category: string | null;
+  related_manual_target_doc: string | null;
   created_at: string;
   updated_at: string;
 };

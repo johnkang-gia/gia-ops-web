@@ -3,6 +3,28 @@
 // 그대로 옮긴 것입니다. 문구를 바꾸면 실제 제안 품질이 달라지므로 원문을 최대한 그대로 유지했습니다.
 import { LAW_REFERENCE } from "./lawReference";
 
+// 매뉴얼 항목의 정책영역(상위 분류) - 요청 4번 "정책영역 상위 항목화". 실무자매뉴얼/운영계획안
+// AI 분류 호출(scan/manual-draft)에 이미 나가는 응답에 필드 하나만 추가하는 방식이라 별도
+// AI 호출이 늘지 않습니다(과금에 영향 없음).
+export const MANUAL_DOMAINS = [
+  "안전/보건",
+  "학사/생활지도",
+  "시설/차량/급식",
+  "행정/서류",
+  "인사/노무",
+  "재무/환불",
+  "소통/민원대응",
+  "기타",
+];
+
+function domainInstructionBlock(): string {
+  return (
+    `"domain"에는 아래 [정책영역] 목록 중 이 항목이 속하는 것을 정확히 하나 그대로 쓰세요(매뉴얼 ` +
+    `항목을 상위 영역별로 묶어서 찾기 쉽게 하기 위함이니, 목록에 없는 새 영역명을 만들지 마세요).\n` +
+    `[정책영역] ${MANUAL_DOMAINS.join(", ")}\n`
+  );
+}
+
 export const INSTITUTION_CONTEXT =
   "[GIA 운영 맥락]\n" +
   "GIA는 영어를 주 사용 언어로 하는 교육기관입니다(원어민 외국인 선생님이 아이들을 가르치고, 한국어는 " +
@@ -44,10 +66,12 @@ export function buildIncidentClassifySystemPrompt(): string {
     "짧고 구체적인 문구로 정리하세요(상황을 대괄호로 요약한 태그로 시작). 매뉴얼용 문구이므로 학부모 메시지 전문은 " +
     "suggestedFinal에 넣지 말고 parentCommunicationOptions에만 담으세요.\n" +
     "관련 항목이 이미 있으면 보완하는 문구를, 전혀 없으면 새 항목명을 제안하세요. 학생 개인정보는 절대 포함하지 마세요.\n\n" +
+    domainInstructionBlock() +
     "아래 JSON 형식으로만 답하세요(다른 텍스트 금지). 메시지 안의 줄바꿈은 JSON 문자열 규칙에 맞게 \\n으로 표시하세요:\n" +
     '{"targetDoc":"학부모용|실무자용|둘다",\n' +
     ' "category":"해당 문서의 기존 항목명 중 하나(정확히 그대로) 또는 새 항목명",\n' +
     ' "isNewCategory": true/false,\n' +
+    ' "domain":"[정책영역] 목록 중 하나",\n' +
     ' "remediationOptions": ["- 옵션1", "- 옵션2", "- 옵션3"],\n' +
     ' "parentCommunicationOptions": ["완성된 메시지 전문 1", "완성된 메시지 전문 2"] 또는 [],\n' +
     ' "studentEducationOptions": ["- 옵션1", "- 옵션2"] 또는 [],\n' +
@@ -127,9 +151,10 @@ export function buildMeetingClassifySystemPrompt(): string {
     '   - "향후계획": 방향은 정해졌지만 당장 문서에 넣기보다 앞으로의 일정·계획으로 추적만 하면 되는 ' +
     '     내용(예: "다음 학기부터 OOO를 도입할 예정이다" 같이 시행 시점이 미래인 결정, 행사/학기 회고는 ' +
     '     아님) -> 향후계획항목(문서에는 반영되지 않고, 채택 시 회의록에 확정 기록으로만 남음).\n' +
-    '각 항목은 {"category":"...", "targetDoc":"학부모용|실무자용|행사학기참고|향후계획", "finalText":"...", ' +
-    '"eventNameGuess":"...", "referenceKind":"행사|학기"} 형태입니다(eventNameGuess/referenceKind는 ' +
-    'targetDoc이 "행사학기참고"가 아니면 항상 빈 문자열). category는 targetDoc이 "학부모용"이면 [학부모용 ' +
+    '각 항목은 {"category":"...", "targetDoc":"학부모용|실무자용|행사학기참고|향후계획", "domain":"...", ' +
+    '"finalText":"...", "eventNameGuess":"...", "referenceKind":"행사|학기"} 형태입니다(eventNameGuess/' +
+    'referenceKind는 targetDoc이 "행사학기참고"가 아니면 항상 빈 문자열, domain은 targetDoc이 "학부모용"' +
+    '이나 "실무자용"일 때만 채우고 그 외에는 빈 문자열). category는 targetDoc이 "학부모용"이면 [학부모용 ' +
     '운영계획안 기존 항목], "실무자용"이면 [실무자용 대응 매뉴얼 기존 항목] 중 하나를 정확히 그대로 쓰거나 ' +
     "해당하는 게 없으면 새 항목명을 제안하고, 그 외에는 짧고 명확한 제목을 자유롭게 붙이세요. finalText는 " +
     "위 0)의 원칙대로 다듬어 정리한 완성된 문장(법조항 번호 등 사무적 표기 없이)으로 작성하세요. 회의에서 " +
@@ -137,8 +162,9 @@ export function buildMeetingClassifySystemPrompt(): string {
     '3) nextAgendaItems: 아직 결정되지 않았거나 후속 논의가 필요한 사항을 다음 회의 안건으로 정리(간결한 ' +
     '"- " 문구, 역시 맞춤법을 교정하고 문장을 다듬어서). 없으면 빈 배열.\n' +
     "지어내지 말고 회의 내용에 실제로 언급된 것만 다루세요. 학생·학부모 개인정보는 포함하지 마세요.\n" +
+    domainInstructionBlock() +
     "아래 JSON 형식으로만 답하세요(다른 텍스트 금지). 줄바꿈은 JSON 문자열 규칙에 맞게 \\n으로 표시하세요:\n" +
-    '{"proposals":[{"category":"...", "targetDoc":"학부모용|실무자용|행사학기참고|향후계획", ' +
+    '{"proposals":[{"category":"...", "targetDoc":"학부모용|실무자용|행사학기참고|향후계획", "domain":"...", ' +
     '"finalText":"...", "eventNameGuess":"...", "referenceKind":"행사|학기"}], ' +
     '"nextAgendaItems":["- ...", "- ..."]}'
   );
@@ -172,11 +198,13 @@ export function buildManualDraftClassifySystemPrompt(): string {
     "두고 지어내지 마세요.\n" +
     "4) category는 이 항목이 속할 짧고 명확한 항목명입니다(기존 항목명과 비슷한 걸 새로 만들지 말고, " +
     "이미 있을 법한 이름이면 그 이름을 그대로 쓰세요).\n\n" +
+    domainInstructionBlock() +
     "아래 JSON 형식으로만 답하세요(다른 텍스트 금지). 줄바꿈은 JSON 문자열 규칙에 맞게 \\n으로 표시하세요:\n" +
     '{"targetDoc":"학부모용|실무자용|둘다",\n' +
     ' "targetDocReason":"이 문서(들)로 분류한 이유를 한 문장으로",\n' +
     ' "category":"항목명",\n' +
     ' "isNewCategory": true/false,\n' +
+    ' "domain":"[정책영역] 목록 중 하나",\n' +
     ' "finalText":"정식 문서에 바로 실을 수 있게 다듬은 완성된 문구",\n' +
     ' "legalBasis":"[참고 법령 목록]에 있으면 인용, 없으면 빈 문자열(지어내지 말 것)",\n' +
     ' "legalApplicability":"legalBasis를 썼다면 해당 적용성 값, 없으면 빈 문자열",\n' +
@@ -533,7 +561,7 @@ export function buildParentToneEntryBlock(entry: { category: string; draftText: 
   return `[항목명]\n${entry.category}\n\n[다듬을 문구(원문)]\n${entry.draftText}`;
 }
 
-export function buildAdoptedReviewSystemPrompt(): string {
+export function buildAdoptedReviewSystemPrompt(targetDoc?: string): string {
   return (
     INSTITUTION_CONTEXT +
     "\n\n" +
@@ -554,6 +582,14 @@ export function buildAdoptedReviewSystemPrompt(): string {
     "비워두거나 짧게 답하세요. 근거 없이 트집 잡지 말고, 실제로 GIA 운영에 영향을 줄 수 있는 " +
     "현실적인 지적만 하세요. 아래 [참고 법령 목록]에 관련 근거가 있으면 지적에 자연스럽게 " +
     "반영하세요.\n\n" +
+    (targetDoc === "학부모용"
+      ? "이 조항은 [학부모용] 운영계획안에 실릴 문구입니다. 특히 \"학부모 관점\"에서 다음을 " +
+        "최우선으로 점검하세요: 학부모가 이 문구만 읽고도 절차/기준/책임 범위를 오해 없이 이해할 " +
+        "수 있는가, 전문 용어나 내부 행정 표현이 그대로 남아 있어 불친절하게 느껴지지 않는가, " +
+        "학부모 입장에서 가장 먼저 궁금해할 질문(언제까지, 얼마나, 누구에게 연락)에 문구가 미리 " +
+        "답하고 있는가, 어조가 일방적 통보로 읽히지 않는가. potentialComplaints는 이 관점을 " +
+        "가장 무겁게 반영하세요.\n\n"
+      : "") +
     "아래 JSON 형식으로만 답하세요(다른 텍스트 금지). 줄바꿈은 \\n으로 표시하세요:\n" +
     '{"potentialComplaints":["- ...", "- ..."], "blindSpots":["- ...", "- ..."], ' +
     '"suggestions":["- ...", "- ..."], "summary":"..."}\n\n' +

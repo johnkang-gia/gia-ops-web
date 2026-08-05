@@ -2,6 +2,8 @@ export type IncidentClassifyResult = {
   targetDoc: "학부모용" | "실무자용" | "둘다";
   category: string;
   isNewCategory: boolean;
+  // 정책영역(운영계획안/실무자매뉴얼 상위 분류) - MANUAL_DOMAINS 중 하나(항목 4번 요청).
+  domain: string;
   remediationOptions: string[];
   parentCommunicationOptions: string[];
   studentEducationOptions: string[];
@@ -14,6 +16,7 @@ export type IncidentClassifyResult = {
 export type MeetingProposalItem = {
   category: string;
   targetDoc: "학부모용" | "실무자용" | "행사학기참고" | "향후계획";
+  domain?: string;
   finalText: string;
   eventNameGuess?: string;
   referenceKind?: "행사" | "학기";
@@ -29,6 +32,7 @@ export type ManualDraftClassifyResult = {
   targetDocReason: string;
   category: string;
   isNewCategory: boolean;
+  domain: string;
   finalText: string;
   legalBasis: string;
   legalApplicability: string;

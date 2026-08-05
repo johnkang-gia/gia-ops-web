@@ -138,10 +138,14 @@ export default function TaskDetailPanel({
     const supabase = createClient();
     let cancelled = false;
 
+    // 상태변경/업무확인/코멘트 등록 시 자동으로 남는 시스템 로그(is_system=true)는 이제
+    // 실시간 로그(ActivityLog)에서만 보여주고, 이 코멘트창에는 실제로 사람이 남긴 코멘트만
+    // 보이도록 걸러냅니다(요청: "코멘트창에는 코멘트만 뜨고 로그는 실시간로그에 뜨도록").
     supabase
       .from("task_comments")
       .select("*")
       .eq("task_id", task.id)
+      .eq("is_system", false)
       .order("created_at", { ascending: true })
       .then(({ data }) => {
         if (!cancelled) setComments((data as TaskComment[] | null) ?? []);
@@ -153,8 +157,9 @@ export default function TaskDetailPanel({
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "task_comments", filter: `task_id=eq.${task.id}` },
         (payload) => {
+          const next = payload.new as TaskComment;
+          if (next.is_system) return;
           setComments((prev) => {
-            const next = payload.new as TaskComment;
             if (prev.some((c) => c.id === next.id)) return prev;
             return [...prev, next];
           });
@@ -647,18 +652,7 @@ export default function TaskDetailPanel({
               {comments.length === 0 && <p className="text-xs text-slate-300">아직 코멘트가 없습니다.</p>}
               <div className="flex flex-col gap-2">
                 {comments.map((c) =>
-                  c.is_system ? (
-                    <div key={c.id} className="group flex items-center gap-1 px-1 text-[11px] italic text-slate-400">
-                      <span className="min-w-0 flex-1 truncate">
-                        🔔 {c.content} · {timeAgo(c.created_at)}
-                      </span>
-                      {canDeleteComment(c) && (
-                        <button onClick={() => deleteComment(c)} title="삭제" className="shrink-0 not-italic text-slate-300 opacity-0 hover:text-red-500 group-hover:opacity-100">
-                          ✕
-                        </button>
-                      )}
-                    </div>
-                  ) : c.is_issue ? (
+                  c.is_issue ? (
                     <div key={c.id} className="group rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs shadow-sm">
                       <div className="mb-0.5 flex items-center justify-between">
                         <span className="font-semibold text-amber-700">⚠️ {nameFor(team, c.author_email)}</span>

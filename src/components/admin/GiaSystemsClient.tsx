@@ -13,6 +13,8 @@ const GUIDE_SECTIONS = [
     title: "🧩 GIA시스템이란?",
     lines: [
       "다른 공립·사립·국제학교가 일반적으로 갖추는 운영 시스템을 대분류(예: 재정, 인사·교직원, 학사, 운영)→중분류→세부 항목으로 세분화해서, GIA가 이미 갖췄는지(보유/부분보유/미보유) 체크하는 화면입니다.",
+      "대분류 탭 안에서 중분류별로 묶여 있고, 각 중분류 묶음을 눌러야 세부 항목이 펼쳐집니다(항목이 많아져도 한눈에 훑어볼 수 있도록).",
+      "\"✨ AI로 추가/세분화 체크\"는 기존에 잘 정리해둔 항목은 절대 고치거나 지우지 않고, ①GIA에 아직 없는 시스템을 새로 추가하거나 ②이미 있는 항목 중 너무 뭉뚱그려진 것을 더 구체적인 하위 항목으로 쪼갤 수 있는지만 체크해서 제안합니다. 세분화 제안에는 어떤 기존 항목을 세분화한 것인지 함께 표시됩니다.",
       "\"운영관리 제안함으로 보내기\"를 누르면 제안함→채택예정→발행 절차를 그대로 거치고, 발행되는 순간 이 표의 상태가 자동으로 \"보유\"로 바뀝니다.",
       "필요한 서류가 있는 항목은 \"📁 서류함에 만들기\"로 서류함(문서함)에 같은 분류가 적용된 서류를 바로 만들 수 있습니다.",
     ],
@@ -35,6 +37,19 @@ export default function GiaSystemsClient({ initialSystems }: { initialSystems: G
   const [proposingId, setProposingId] = useState<string | null>(null);
   const [creatingDocId, setCreatingDocId] = useState<string | null>(null);
   const [activeMajor, setActiveMajor] = useState<string>("전체");
+  // 중분류 묶음을 드롭다운으로 열고 닫습니다(요청: "전체가 그냥 쭉 나열되는게 아니라 항목별로
+  // 정리되어서 드롭다운으로 세부항목들을 열어볼 수 있도록") - 기본은 모두 접혀있고, 누르면 그
+  // 묶음만 펼쳐집니다.
+  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
+
+  function toggleGroup(key: string) {
+    setOpenGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
 
   // 대분류 > 중분류 순서로 묶습니다(요청: "대분류항목에서부터 더 들어가서 운영-교직원-교직원계약서
   // 이런식으로 항목을 세분화"). 대분류 탭으로 먼저 좁히고, 그 안에서 중분류별 소그룹으로 보여줍니다.
@@ -175,9 +190,10 @@ export default function GiaSystemsClient({ initialSystems }: { initialSystems: G
           <button
             onClick={suggest}
             disabled={suggesting}
+            title="기존 항목은 그대로 두고, 새로 추가할 것이나 더 세분화할 것이 있는지만 체크합니다."
             className="shrink-0 rounded-lg bg-gia-navy px-3 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
           >
-            {suggesting ? "검색 중..." : "✨ AI로 벤치마킹 제안받기"}
+            {suggesting ? "검색 중..." : "✨ AI로 추가/세분화 체크"}
           </button>
           <GuideButton title="GIA시스템 사용 가이드" sections={GUIDE_SECTIONS} />
         </div>
@@ -223,12 +239,41 @@ export default function GiaSystemsClient({ initialSystems }: { initialSystems: G
 
       {error && <div className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{error}</div>}
 
-      <div className="flex flex-col gap-4">
-        {grouped.map(([groupKey, items]) => (
-          <div key={groupKey} className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-            <div className="border-b border-slate-100 bg-slate-50 px-4 py-2 text-sm font-bold text-slate-700">
-              {groupKey}
-            </div>
+      <div className="flex flex-col gap-2">
+        {grouped.map(([groupKey, items]) => {
+          const isOpen = openGroups.has(groupKey);
+          const groupCounts = items.reduce(
+            (acc, s) => {
+              acc[s.status]++;
+              return acc;
+            },
+            { 보유: 0, 부분보유: 0, 미보유: 0 } as Record<GiaSystem["status"], number>
+          );
+          return (
+            <div key={groupKey} className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+              <button
+                type="button"
+                onClick={() => toggleGroup(groupKey)}
+                className="flex w-full items-center justify-between gap-2 bg-slate-50 px-4 py-2.5 text-left hover:bg-slate-100"
+              >
+                <span className="flex items-center gap-2 text-sm font-bold text-slate-700">
+                  <span className={"inline-block transition-transform " + (isOpen ? "rotate-90" : "")}>▶</span>
+                  {groupKey}
+                  <span className="text-xs font-normal text-slate-400">({items.length}개)</span>
+                </span>
+                <span className="flex shrink-0 gap-1 text-[10px]">
+                  {groupCounts.보유 > 0 && (
+                    <span className="rounded-full bg-teal-50 px-1.5 py-0.5 font-semibold text-teal-700">보유 {groupCounts.보유}</span>
+                  )}
+                  {groupCounts.부분보유 > 0 && (
+                    <span className="rounded-full bg-amber-50 px-1.5 py-0.5 font-semibold text-amber-700">부분 {groupCounts.부분보유}</span>
+                  )}
+                  {groupCounts.미보유 > 0 && (
+                    <span className="rounded-full bg-slate-100 px-1.5 py-0.5 font-semibold text-slate-500">미보유 {groupCounts.미보유}</span>
+                  )}
+                </span>
+              </button>
+              {isOpen && (
             <div className="divide-y divide-slate-100">
               {items.map((s) => (
                 <div key={s.id} className="px-4 py-3">
@@ -243,6 +288,11 @@ export default function GiaSystemsClient({ initialSystems }: { initialSystems: G
                     )}
                     <span className="text-sm font-semibold text-slate-800">{s.name}</span>
                   </div>
+                  {s.refines_name && (
+                    <p className="mb-1 text-[11px] font-medium text-purple-600">
+                      🔍 기존 &quot;{s.refines_name}&quot; 항목을 더 구체적으로 세분화한 제안입니다 (원본 항목은 그대로 유지됩니다).
+                    </p>
+                  )}
                   {s.description && <p className="mb-1 text-xs text-slate-600">{s.description}</p>}
                   {s.benchmark_school && (
                     <p className="mb-2 text-[11px] text-slate-400">참고 사례: {s.benchmark_school}</p>
@@ -302,11 +352,13 @@ export default function GiaSystemsClient({ initialSystems }: { initialSystems: G
                 </div>
               ))}
             </div>
-          </div>
-        ))}
+              )}
+            </div>
+          );
+        })}
         {systems.length === 0 && (
           <p className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-400">
-            등록된 시스템이 없습니다. &quot;AI로 벤치마킹 제안받기&quot;로 시작해보세요.
+            등록된 시스템이 없습니다. &quot;AI로 추가/세분화 체크&quot;로 시작해보세요.
           </p>
         )}
       </div>

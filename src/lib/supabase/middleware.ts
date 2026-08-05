@@ -129,9 +129,19 @@ export async function updateSession(request: NextRequest) {
 
       // 교사는 위클리 리포트 화면만 볼 수 있습니다. GIA ops(사건/회의/매뉴얼 등)와 업무
       // 보드는 계약직으로 짧게 근무할 수도 있는 교사에게는 내부 문서나 다름없어서, 관리자/
-      // 행정직원/개발자와 달리 아예 접근 자체를 막습니다. 내 계정 설정(/account)은 직위와
-      // 무관하게 누구나 자기 프로필을 관리할 수 있어야 하므로 예외로 둡니다.
-      if (position === "교사" && !path.startsWith("/weekly-report") && !path.startsWith("/account")) {
+      // 행정직원/개발자와 달리 아예 접근 자체를 막습니다. 내 계정 설정(/account)과 행정요청
+      // (/requests, 요청: "교사는 행정부에... 요청하는 여러 일들")은 직위와 무관하게 예외로
+      // 둡니다. /api/로 시작하는 경로도 예외입니다 - 이 블록은 "화면 이동"을 막기 위한
+      // 것이지 API 호출까지 페이지로 리다이렉트해버리면(예: 권한 미리보기 드롭다운이 부르는
+      // /api/dev/preview-role) fetch()가 조용히 실패해 원래 하려던 동작 자체가 먹통이 됩니다.
+      // 각 API 라우트는 필요하면 자체적으로 권한을 다시 확인합니다.
+      if (
+        position === "교사" &&
+        !path.startsWith("/weekly-report") &&
+        !path.startsWith("/account") &&
+        !path.startsWith("/requests") &&
+        !path.startsWith("/api/")
+      ) {
         const url = request.nextUrl.clone();
         url.pathname = "/weekly-report";
         return NextResponse.redirect(url);
@@ -145,7 +155,14 @@ export async function updateSession(request: NextRequest) {
     // 미리보기가 꺼져 있으면(쿠키 없음) 예전처럼 개발자는 아무 제한도 받지 않습니다.
     if (isDev) {
       const preview = request.cookies.get(ROLE_PREVIEW_COOKIE)?.value ?? null;
-      if (isValidPreviewPosition(preview) && preview === "교사" && !path.startsWith("/weekly-report") && !path.startsWith("/account")) {
+      if (
+        isValidPreviewPosition(preview) &&
+        preview === "교사" &&
+        !path.startsWith("/weekly-report") &&
+        !path.startsWith("/account") &&
+        !path.startsWith("/requests") &&
+        !path.startsWith("/api/")
+      ) {
         const url = request.nextUrl.clone();
         url.pathname = "/weekly-report";
         return NextResponse.redirect(url);

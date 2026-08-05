@@ -237,20 +237,10 @@ export default async function DashboardLayout({
     categories = [
       { key: "homeroom", label: "내 담임반", labelEn: "My Homeroom", icon: "🏠", href: "/weekly-report/homeroom", accent: "teal" },
       { key: "subjects", label: "내 담당과목", labelEn: "My Subjects", icon: "📘", href: "/weekly-report/subjects", accent: "teal" },
-      // 학사일정은 학기 시작/종료 전에 전 직원이 준비해야 할 일을 달력으로 보여주는
-      // 화면이라, 정보 열람이 제한적인 교사 계정에도 예외적으로 노출합니다(요청: "모든
-      // 직원들이 준비하고 체크할 수 있는"). 학사일정달력/학기준비 두 화면으로 나뉩니다(요청:
-      // "학사일정에 '학사일정달력','학기준비' 부메뉴를 만들어서").
-      {
-        key: "academic-calendar",
-        label: "학사일정",
-        icon: "📅",
-        accent: "teal",
-        items: [
-          { href: "/academic-calendar", label: "학사일정달력", icon: "📅" },
-          { href: "/academic-calendar/prep", label: "학기준비", icon: "🧭" },
-        ],
-      },
+      // 학사일정은 교사에게는 감추고(요청: "교사권한은 학사일정 안보이게"), 대신 사물함 파손·
+      // 물품 구입·아픈 학생 인계·출결 상황 문의처럼 행정직원에게 부탁할 일을 등록하는
+      // "행정요청" 메뉴를 그 자리에 둡니다(요청: "교사는 행정부에... 요청하는 여러 일들").
+      { key: "requests", label: "행정요청", icon: "🧾", href: "/requests", accent: "teal" },
     ];
   } else {
     categories = [
@@ -274,6 +264,10 @@ export default async function DashboardLayout({
           { href: "/academic-calendar/prep", label: "학기준비", icon: "🧭" },
         ],
       },
+      // 행정요청 - 교사가 등록한 사물함파손/물품구입/아픈학생인계/출결상황문의 등을
+      // 행정직원/관리자가 확인·처리하는 화면입니다(요청: "교사는 행정부에... 요청하는 여러
+      // 일들"). 학사일정 바로 아래에 둡니다.
+      { key: "requests", label: "행정요청", icon: "🧾", href: "/requests", accent: "teal" },
       buildOpsCategory(pendingProposals, pendingAdopted),
       buildSchoolCategory(isAdmin, isStaffOrAbove),
       buildSchoolDocumentsCategory(),

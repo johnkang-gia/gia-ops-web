@@ -586,3 +586,32 @@ export type FormSubmission = {
   imported_by: string;
   imported_at: string;
 };
+
+// 행정 요청(교사 → 행정직원) - 요청: "교사는 행정부에 교실에 관한 문제나, 학생에 관한
+// 문제 등... 요청하는 여러 일들(사물함파손, 물품구입, 아픈학생인계, 출결상황문의)".
+export const STAFF_REQUEST_CATEGORIES = [
+  "사물함파손",
+  "물품구입",
+  "아픈학생인계",
+  "출결상황문의",
+  "기타",
+] as const;
+export type StaffRequestCategory = (typeof STAFF_REQUEST_CATEGORIES)[number];
+export type StaffRequestStatus = "접수대기" | "처리중" | "완료";
+
+export type StaffRequest = {
+  id: string;
+  case_id: string;
+  category: StaffRequestCategory;
+  title: string;
+  content: string;
+  student_name: string | null;
+  status: StaffRequestStatus;
+  requested_by: string;
+  requested_by_name: string | null;
+  resolved_by: string | null;
+  resolved_note: string | null;
+  resolved_at: string | null;
+  created_at: string;
+  updated_at: string;
+};

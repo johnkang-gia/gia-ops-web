@@ -2583,3 +2583,67 @@ $$;
 -- authenticated/anon에는 일부러 실행 권한을 주지 않습니다 - 이 함수는 cron(서비스 역할 키)에서만
 -- 호출되도록 의도한 것이라, 로그인만 한 일반 사용자가 supabase.rpc()로 직접 호출할 수 없어야 합니다.
 revoke all on function create_scheduled_backup() from public, authenticated, anon;
+
+-- ===== 71. 행정 요청(교사 → 행정직원) =====
+-- 교사 화면에서는 학사일정 등 내부 문서 성격의 메뉴를 모두 감추는 대신(요청: "교사권한은
+-- 학사일정 안보이게"), 사물함 파손·물품 구입·아픈 학생 인계·출결 문의처럼 실제로 자주 생기는
+-- "행정직원에게 요청하는 일들"을 앱 안에서 등록하고 처리 현황을 볼 수 있게 합니다(요청:
+-- "교사는 행정부에... 여러 일들을 요청"). 교사는 자기 요청만 등록/열람하고, 행정직원·관리자는
+-- 전체 요청을 보고 상태를 바꿀 수 있습니다. is_wr_manager()는 이름은 위클리 리포트에서 먼저
+-- 만들었지만 "관리자 또는 행정직원"이라는 조건 자체는 이 기능에도 그대로 맞아 재사용합니다.
+create table if not exists staff_requests (
+  id uuid primary key default gen_random_uuid(),
+  case_id text unique not null,
+  category text not null check (category in ('사물함파손', '물품구입', '아픈학생인계', '출결상황문의', '기타')),
+  title text not null,
+  content text not null default '',
+  student_name text,
+  status text not null default '접수대기' check (status in ('접수대기', '처리중', '완료')),
+  requested_by text not null,
+  requested_by_name text,
+  resolved_by text,
+  resolved_note text,
+  resolved_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+drop trigger if exists staff_requests_set_updated_at on staff_requests;
+create trigger staff_requests_set_updated_at
+  before update on staff_requests
+  for each row execute function set_updated_at();
+
+alter table staff_requests enable row level security;
+
+drop policy if exists "giamicro_select_staff_requests" on staff_requests;
+create policy "giamicro_select_staff_requests" on staff_requests
+  for select using (is_giamicro_user());
+
+drop policy if exists "giamicro_insert_staff_requests" on staff_requests;
+create policy "giamicro_insert_staff_requests" on staff_requests
+  for insert with check (is_giamicro_user() and requested_by = lower(auth.jwt() ->> 'email'));
+
+-- 상태 변경/처리 메모는 관리자·행정직원만, 요청 본인은 아직 접수 전(접수대기)이면 내용을 고칠 수
+-- 있습니다(오타 수정 등). 이미 처리 중/완료로 넘어간 요청은 본인도 손댈 수 없습니다.
+drop policy if exists "manage_staff_requests" on staff_requests;
+create policy "manage_staff_requests" on staff_requests
+  for update using (
+    is_wr_manager() or (requested_by = lower(auth.jwt() ->> 'email') and status = '접수대기')
+  )
+  with check (
+    is_wr_manager() or (requested_by = lower(auth.jwt() ->> 'email') and status = '접수대기')
+  );
+
+drop policy if exists "manager_delete_staff_requests" on staff_requests;
+create policy "manager_delete_staff_requests" on staff_requests
+  for delete using (is_wr_manager());
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'staff_requests'
+  ) then
+    alter publication supabase_realtime add table staff_requests;
+  end if;
+end $$;

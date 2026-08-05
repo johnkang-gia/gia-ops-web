@@ -244,9 +244,10 @@ export default async function DashboardLayout({
       // 물품 구입·아픈 학생 인계·출결 상황 문의처럼 행정직원에게 부탁할 일을 등록하는
       // "행정요청" 메뉴를 그 자리에 둡니다(요청: "교사는 행정부에... 요청하는 여러 일들").
       { key: "requests", label: "행정요청", labelEn: "Staff Requests", icon: "🧾", href: "/requests", accent: "teal" },
-      // 출석부 - 담임 반 학생들의 출결을 실시간으로 체크하는 화면입니다(요청: "학생출석부를
-      // 교사가 실시간 체크할 수 있게").
-      { key: "attendance", label: "출석부", labelEn: "Attendance", icon: "🗒️", href: "/attendance", accent: "teal" },
+      // 출석부 메뉴는 요청("일단 지금 출석부를 쓸건 아니니까 출석부메뉴는 감춰줘")에 따라
+      // 당분간 사이드바에서 숨겨둡니다. /attendance 화면 자체와 기능은 그대로 남아있어서,
+      // 나중에 이 항목의 주석만 풀면 바로 다시 노출할 수 있습니다.
+      // { key: "attendance", label: "출석부", labelEn: "Attendance", icon: "🗒️", href: "/attendance", accent: "teal" },
     ];
   } else {
     categories = [
@@ -279,10 +280,10 @@ export default async function DashboardLayout({
       buildOpsCategory(pendingProposals, pendingAdopted),
       buildSchoolCategory(isAdmin, isStaffOrAbove),
       buildSchoolDocumentsCategory(),
-      // 출석부 - 행정직원/관리자/개발자는 전체 반의 실시간 출결 현황을 보고 결석 학생 보호자에게
-      // 연락할 수 있습니다(요청: "다른권한의 교직원들도 그것을 실시간으로 보고 결석학생
-      // 보호자에게 연락할 수 있는").
-      { key: "attendance", label: "출석부", labelEn: "Attendance", icon: "🗒️", href: "/attendance", accent: "teal" },
+      // 출석부 메뉴는 요청("일단 지금 출석부를 쓸건 아니니까 출석부메뉴는 감춰줘")에 따라
+      // 당분간 사이드바에서 숨겨둡니다. /attendance 화면 자체와 기능은 그대로 남아있어서,
+      // 나중에 이 항목의 주석만 풀면 바로 다시 노출할 수 있습니다.
+      // { key: "attendance", label: "출석부", labelEn: "Attendance", icon: "🗒️", href: "/attendance", accent: "teal" },
     ];
     if (isStaffOrAbove) categories.push(buildWeeklyReportCategory(isAdmin));
     if (isAdmin) categories.push(buildAdminCategory());

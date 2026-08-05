@@ -55,33 +55,34 @@ function StudentRow({
   const [noteDraft, setNoteDraft] = useState(record?.contact_note ?? "");
   const needsContact = record && NEEDS_CONTACT.includes(record.status);
 
+  // 5열 그리드 안에 들어가는 카드라 가로 폭이 좁아질 수 있어서(요청: "출석부 공간 넓으니까
+  // 페이지 다섯열로 나눠서"), 이름/상태버튼을 좌우로 나란히 두지 않고 위아래로 쌓아 좁은
+  // 칸에서도 버튼이 잘리지 않게 했습니다.
   return (
-    <div className="rounded-lg border border-slate-100 bg-white px-3 py-2.5 shadow-sm">
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-semibold text-slate-700">{student.name}</div>
-          {student.name_en && <div className="truncate text-[11px] text-slate-400">{student.name_en}</div>}
-        </div>
-        <div className="flex shrink-0 flex-wrap gap-1">
-          {STATUS_LIST.map((s) => {
-            const active = record?.status === s;
-            return (
-              <button
-                key={s}
-                type="button"
-                disabled={busy}
-                onClick={() => onSetStatus(student, s)}
-                title={STATUS_META[s].en}
-                className={
-                  "rounded-full border px-2 py-1 text-xs font-semibold transition disabled:opacity-50 " +
-                  (active ? STATUS_META[s].active : "border-slate-200 text-slate-500 hover:bg-slate-50")
-                }
-              >
-                {STATUS_META[s].emoji} {s}
-              </button>
-            );
-          })}
-        </div>
+    <div className="flex h-full flex-col gap-1.5 rounded-lg border border-slate-100 bg-white px-3 py-2.5 shadow-sm">
+      <div className="min-w-0">
+        <div className="truncate text-sm font-semibold text-slate-700">{student.name}</div>
+        {student.name_en && <div className="truncate text-[11px] text-slate-400">{student.name_en}</div>}
+      </div>
+      <div className="flex flex-wrap gap-1">
+        {STATUS_LIST.map((s) => {
+          const active = record?.status === s;
+          return (
+            <button
+              key={s}
+              type="button"
+              disabled={busy}
+              onClick={() => onSetStatus(student, s)}
+              title={STATUS_META[s].en}
+              className={
+                "rounded-full border px-2 py-1 text-xs font-semibold transition disabled:opacity-50 " +
+                (active ? STATUS_META[s].active : "border-slate-200 text-slate-500 hover:bg-slate-50")
+              }
+            >
+              {STATUS_META[s].emoji} {s}
+            </button>
+          );
+        })}
       </div>
 
       {record?.checked_by && (
@@ -346,20 +347,28 @@ export default function AttendanceClient({
                   {STATUS_LIST.map((s) => `${STATUS_META[s].emoji}${counts[s]}`).join(" ")} · 미체크 {counts.미체크}
                 </span>
               </div>
-              <div className="flex flex-col gap-2">
-                {groupStudents.map((s) => (
-                  <StudentRow
-                    key={s.id}
-                    student={s}
-                    record={recordsByStudent.get(s.id)}
-                    myEmail={myEmail}
-                    myName={myName}
-                    staffNames={staffNames}
-                    onSetStatus={setStatus}
-                    onContact={contact}
-                    busy={busyId === s.id}
-                  />
-                ))}
+              {/* 요청: "출석부 공간 넓으니까 페이지 다섯열로 나눠서" - 화면이 넓을 때는 한 줄에
+                  학생 5명씩 보이는 그리드로 배치합니다. 보호자 연락이 필요한(결석/조퇴) 카드는
+                  연락처·연락완료 체크박스가 잘리지 않도록 그 줄 전체 폭을 씁니다. */}
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+                {groupStudents.map((s) => {
+                  const rec = recordsByStudent.get(s.id);
+                  const wide = !!rec && NEEDS_CONTACT.includes(rec.status);
+                  return (
+                    <div key={s.id} className={wide ? "sm:col-span-2 lg:col-span-3 xl:col-span-5" : ""}>
+                      <StudentRow
+                        student={s}
+                        record={rec}
+                        myEmail={myEmail}
+                        myName={myName}
+                        staffNames={staffNames}
+                        onSetStatus={setStatus}
+                        onContact={contact}
+                        busy={busyId === s.id}
+                      />
+                    </div>
+                  );
+                })}
               </div>
             </div>
           );

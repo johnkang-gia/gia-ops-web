@@ -75,7 +75,9 @@ export default async function AttendancePage({
   }
 
   return (
-    <div className="mx-auto max-w-4xl">
+    // 요청("출석부 공간 넓으니까 페이지 다섯열로 나눠서")에 맞춰 5열 그리드가 들어갈 자리를
+    // 넉넉히 주기 위해 다른 화면(대부분 max-w-4xl~5xl)보다 넓게 잡습니다.
+    <div className="mx-auto max-w-7xl">
       <AttendanceClient
         key={date}
         date={date}

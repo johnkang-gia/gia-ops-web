@@ -17,6 +17,7 @@ import Pagination from "@/components/Pagination";
 import GuideButton from "@/components/common/GuideButton";
 import { useConfirm } from "@/components/common/ConfirmProvider";
 import { useToast } from "@/components/common/ToastProvider";
+import { useEditPresence } from "@/lib/useEditPresence";
 
 const PAGE_SIZE = 10;
 
@@ -55,9 +56,11 @@ const TABS: { title: string; doc: TargetDoc; icon: string }[] = [
 export default function ManualsClient({
   initialItems,
   initialDoc,
+  me,
 }: {
   initialItems: ManualSection[];
   initialDoc?: TargetDoc;
+  me: { email: string; name: string } | null;
 }) {
   const confirmAction = useConfirm();
   const notify = useToast();
@@ -87,6 +90,10 @@ export default function ManualsClient({
   const [faqError, setFaqError] = useState("");
   const [faqPreview, setFaqPreview] = useState<{ question: string; answer: string }[] | null>(null);
   const [faqSaving, setFaqSaving] = useState(false);
+
+  // 동시접속 안전장치: 지금 이 문서(학부모용/실무자용)에서 다른 사람이 어떤 항목을 편집 중인지
+  // 실시간으로 알려줍니다. 편집 버튼을 누르는 순간 자기 편집 상태를 다른 화면에도 알립니다.
+  const editors = useEditPresence(`manuals-${activeDoc}`, me, editingId);
 
   useEffect(() => {
     const supabase = createClient();
@@ -398,8 +405,14 @@ export default function ManualsClient({
           {pageItems.map((s) => {
             const isEditing = editingId === s.id;
             const busy = busyId === s.id;
+            const otherEditors = editors.filter((e) => e.itemId === s.id);
             return (
               <div key={s.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                {otherEditors.length > 0 && !isEditing && (
+                  <div className="mb-2 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] font-semibold text-amber-700">
+                    ✏️ {otherEditors.map((e) => e.name).join(", ")}님이 지금 이 항목을 편집 중이에요 - 같이 수정하면 나중에 저장한 내용이 덮어쓸 수 있어요.
+                  </div>
+                )}
                 {isEditing ? (
                   <div className="flex flex-col gap-2">
                     <input

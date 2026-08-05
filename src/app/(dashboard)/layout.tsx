@@ -80,16 +80,17 @@ function buildOpsCategory(pendingProposals: number, pendingAdopted: number): Nav
     label: "운영 관리",
     icon: "📋",
     accent: "navy",
-    // 부메뉴가 8개라 목적별로 구분선을 넣었습니다(요청: "부메뉴들도 구분에 맞게... 구분선으로
-    // 구분해주고") - 기록(사건/회의/회의보고서/행사) → AI·매뉴얼(AI매뉴얼/매뉴얼) →
-    // 검토·발행(제안함/채택예정) 순서입니다.
+    // 부메뉴 항목이 많아 목적별로 구분선을 넣었습니다(요청: "부메뉴들도 구분에 맞게... 구분선으로
+    // 구분해주고") - 기록(사건/회의/회의보고서/행사) → AI 매뉴얼(작성 도구) → 검토·발행(제안함/
+    // 채택예정) 순서입니다. "매뉴얼"(조회/편집) 항목은 뺐습니다(메뉴 통합 제안 채택 #1) - 학교
+    // 문서함 부메뉴에 매뉴얼/운영계획안 진입점이 이미 있어 여기 있으면 같은 화면(/manuals)으로
+    // 가는 입구가 두 군데로 겹쳤습니다.
     items: [
       { href: "/records", label: "사건기록", icon: "📋" },
       { href: "/meetings", label: "회의기록", icon: "💬" },
       { href: "/meetings/report", label: "회의 보고서", icon: "📊" },
       { href: "/events", label: "행사기록", icon: "🎉" },
-      { href: "/ai-manual", label: "AI 매뉴얼", icon: "✨", dividerBefore: "AI · 매뉴얼" },
-      { href: "/manuals", label: "매뉴얼", icon: "📖" },
+      { href: "/ai-manual", label: "AI 매뉴얼", icon: "✨", dividerBefore: "AI 매뉴얼" },
       { href: "/proposals", label: "제안함", icon: "📝", badge: pendingProposals, dividerBefore: "검토 · 발행" },
       { href: "/adopted", label: "채택예정", icon: "📬", badge: pendingAdopted },
     ],
@@ -187,13 +188,19 @@ export default async function DashboardLayout({
   // layout이 실제로 "화면을 막고" 기다려야 하는 건 로그인 여부(me)와 검토대기 배지 숫자뿐이라,
   // 이 둘만 남기고 나머지(학기 배지·AI 기능 배너)는 위 TermBadge/DisabledFeaturesSection로
   // 분리해 <Suspense>로 스트리밍합니다(요청: "메뉴 전환이 너무 느려 - 획기적으로 빠르게").
-  const [me, pendingProposalsRes, pendingAdoptedRes] = await Promise.all([
+  // 크래시 방지(요청: "크러시 방지... 방법들을 제안해줘"): 검토대기 배지 숫자는 부가정보일 뿐이라,
+  // 이 두 조회 중 하나가 네트워크 순간 장애 등으로 실패해도 로그인 여부(me) 확인과 화면 전체가
+  // 함께 죽어서는 안 됩니다. Promise.all 대신 allSettled로 서로 독립시키고, 배지 조회가 실패하면
+  // 0으로 조용히 대체합니다(사용자에게는 배지가 잠깐 안 보이는 정도의 영향만).
+  const [meResult, pendingProposalsResult, pendingAdoptedResult] = await Promise.allSettled([
     getCurrentAppUser(),
     supabase.from("proposals").select("id", { count: "exact", head: true }).eq("status", "검토대기"),
     supabase.from("adopted").select("id", { count: "exact", head: true }).eq("publish", false),
   ]);
-  const pendingProposals = pendingProposalsRes.count ?? 0;
-  const pendingAdopted = pendingAdoptedRes.count ?? 0;
+  if (meResult.status === "rejected") throw meResult.reason;
+  const me = meResult.value;
+  const pendingProposals = pendingProposalsResult.status === "fulfilled" ? (pendingProposalsResult.value.count ?? 0) : 0;
+  const pendingAdopted = pendingAdoptedResult.status === "fulfilled" ? (pendingAdoptedResult.value.count ?? 0) : 0;
 
   // middleware.ts가 1차로 막지만, 서버 컴포넌트 단에서도 한 번 더 확인합니다(방어적 이중 확인).
   if (!me) {

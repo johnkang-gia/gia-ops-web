@@ -44,6 +44,11 @@ const THIRTY_DAYS_AGO = () => {
   d.setDate(d.getDate() - 30);
   return d.toISOString();
 };
+const ONE_DAY_AGO = () => {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return d.toISOString();
+};
 
 export default async function DevDashboardPage() {
   const supabase = await createClient();
@@ -67,6 +72,8 @@ export default async function DevDashboardPage() {
     recentErrors,
     recentUsage,
     featureFlagsRes,
+    errors24hCount,
+    lastBackup,
   ] = await Promise.all([
     supabase.from("incidents").select("id", { count: "exact", head: true }),
     supabase.from("events").select("id", { count: "exact", head: true }),
@@ -110,6 +117,13 @@ export default async function DevDashboardPage() {
       .order("created_at", { ascending: false })
       .limit(1000),
     supabase.from("ai_feature_flags").select("*").order("group_name", { ascending: true }),
+    supabase.from("error_logs").select("id", { count: "exact", head: true }).gte("created_at", ONE_DAY_AGO()),
+    supabase
+      .from("backups")
+      .select("label, created_by, created_at")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
 
   const errorLogs = (recentErrors.data as ErrorLog[]) ?? [];
@@ -176,6 +190,15 @@ export default async function DevDashboardPage() {
   const maintenanceAlerts = [
     ...staleProposals.data ?? [],
   ].length > 0 || (staleAdopted.data?.length ?? 0) > 0 || (staleInquiries.data?.length ?? 0) > 0;
+
+  // 통합관리: 시스템 상태 확장(요청: "통합관리를 위해... 방법들을 제안해줘"). 최근 24시간 오류
+  // 건수를 지난 7일 하루 평균과 비교해, 평소보다 눈에 띄게 늘었으면(1.5배 이상, 최소 3건)
+  // 빨간 카드로 바로 눈에 띄게 표시합니다. 마지막 백업 카드는 /admin/backups의 수동 백업과
+  // 새로 추가한 자동 일일 백업(cron)이 잘 돌고 있는지 여기서 바로 확인할 수 있게 합니다.
+  const errors24h = errors24hCount.count ?? 0;
+  const errors7dAvg = errorLogs.length > 0 ? errorLogs.length / 7 : 0;
+  const errors24hSpike = errors24h >= 3 && errors24h >= errors7dAvg * 1.5;
+  const lastBackupRow = lastBackup.data as { label: string | null; created_by: string; created_at: string } | null;
 
   return (
     <div className="mx-auto max-w-5xl">
@@ -254,6 +277,36 @@ export default async function DevDashboardPage() {
             <Link href="/inquiries" className="mt-1 inline-block underline">문의함 열기 →</Link>
           </div>
         )}
+      </div>
+
+      <div className="mb-2 text-xs font-semibold text-slate-400">시스템 상태</div>
+      <div className="mb-6 grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <div
+          className={
+            "rounded-xl border p-3 text-xs shadow-sm " +
+            (errors24hSpike
+              ? "border-red-200 bg-red-50 text-red-800"
+              : "border-slate-200 bg-white text-slate-600")
+          }
+        >
+          <div className="mb-1 font-semibold">🚨 최근 24시간 오류</div>
+          <div className="text-lg font-bold">{errors24h}건</div>
+          {errors24hSpike && <p className="mt-1">평소(7일 평균)보다 오류가 늘었습니다 - 아래 오류 로그를 확인해보세요.</p>}
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-600 shadow-sm">
+          <div className="mb-1 font-semibold">💾 마지막 자동/수동 백업</div>
+          {lastBackupRow ? (
+            <>
+              <div className="text-sm font-bold text-slate-800">{lastBackupRow.label || "(라벨 없음)"}</div>
+              <div className="mt-1 text-slate-400">
+                {lastBackupRow.created_at.slice(0, 19).replace("T", " ")} · {lastBackupRow.created_by}
+              </div>
+            </>
+          ) : (
+            <p className="text-slate-400">아직 백업 기록이 없습니다.</p>
+          )}
+          <Link href="/admin/backups" className="mt-1 inline-block underline">백업/복원 화면 열기 →</Link>
+        </div>
       </div>
 
       <div className="mb-2 text-xs font-semibold text-slate-400">AI 사용량 & 예상 과금 (최근 30일)</div>

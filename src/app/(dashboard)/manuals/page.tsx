@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import type { ManualSection } from "@/lib/types";
 import ManualsClient from "@/components/manuals/ManualsClient";
+import { getCurrentAppUser } from "@/lib/currentUser";
 
 export const dynamic = "force-dynamic";
 
@@ -13,13 +14,22 @@ export default async function ManualsPage({
 }) {
   const supabase = await createClient();
   const { doc } = await searchParams;
-  const { data } = await supabase
-    .from("manual_sections")
-    .select("*")
-    .order("target_doc", { ascending: true })
-    .order("category", { ascending: true });
+  const [{ data }, me] = await Promise.all([
+    supabase
+      .from("manual_sections")
+      .select("*")
+      .order("target_doc", { ascending: true })
+      .order("category", { ascending: true }),
+    getCurrentAppUser(),
+  ]);
 
   const initialDoc = doc === "학부모용" || doc === "실무자용" ? doc : undefined;
 
-  return <ManualsClient initialItems={(data as ManualSection[]) ?? []} initialDoc={initialDoc} />;
+  return (
+    <ManualsClient
+      initialItems={(data as ManualSection[]) ?? []}
+      initialDoc={initialDoc}
+      me={me ? { email: me.email, name: me.name || me.email } : null}
+    />
+  );
 }

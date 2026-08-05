@@ -11,6 +11,7 @@ import PhotoUploader from "@/components/common/PhotoUploader";
 import Pagination from "@/components/Pagination";
 import GuideButton from "@/components/common/GuideButton";
 import { TERM_TYPES } from "@/lib/termTypes";
+import { useEditPresence, type EditingUser } from "@/lib/useEditPresence";
 
 const GUIDE_SECTIONS = [
   {
@@ -48,7 +49,13 @@ function emptyForm(termType: string): FormState {
   };
 }
 
-export default function TermsClient({ initialItems }: { initialItems: Term[] }) {
+export default function TermsClient({
+  initialItems,
+  me,
+}: {
+  initialItems: Term[];
+  me: { email: string; name: string } | null;
+}) {
   const [items, setItems] = useRealtimeTable<Term>("terms", initialItems);
 
   const typesInUse = useMemo(
@@ -76,6 +83,10 @@ export default function TermsClient({ initialItems }: { initialItems: Term[] }) 
   const [switcherChoice, setSwitcherChoice] = useState("");
   const [switcherYear, setSwitcherYear] = useState(String(new Date().getFullYear()));
   const [switching, setSwitching] = useState(false);
+
+  // 동시접속 안전장치: 같은 학기/캠프 종류 화면에서 다른 사람이 어떤 회차를 편집 중인지
+  // 실시간으로 보여줍니다("좋았던 점/아쉬운 점/제안" 등을 동시에 고치다 서로 덮어쓰는 것을 방지).
+  const editors = useEditPresence(`terms-${selectedType}`, me, editingId);
 
   const occurrences = items
     .filter((it) => it.term_type === selectedType)
@@ -129,43 +140,32 @@ export default function TermsClient({ initialItems }: { initialItems: Term[] }) 
 
   // 선택한 연도·학기/캠프 종류를 "진행중"으로 설정합니다. 이미 그 종류/연도의 기록이 있으면
   // 상태만 바꾸고, 없으면 새로 만듭니다(비어있던 선택창에서 바로 시작할 수 있게).
+  //
+  // 동시접속 안전장치(요청: "동시접속,동시사용환경을 원활하게 하기 위한 방법들을 제안해줘"):
+  // 예전에는 "지금 진행중인 것들을 화면에 들고 있는 목록에서 찾아 하나씩 종료 → 새로 진행중으로
+  // 변경"을 클라이언트에서 여러 번의 update로 나눠 실행했습니다. 관리자 두 명이 거의 동시에 서로
+  // 다른 학기로 전환하면, 둘 다 "지금 뭐가 진행중인지"를 약간 오래된 화면 기준으로 계산해서
+  // 실행 순서에 따라 진행중 학기가 0개가 되거나 2개가 동시에 남는 경합이 생길 수 있었습니다.
+  // switch_current_term RPC 하나가 "종료 처리 + 전환/생성"을 DB 트랜잭션 안에서 한 번에
+  // 처리하므로, 몇 명이 동시에 눌러도 항상 정확히 하나만 진행중으로 남습니다.
   async function setCurrentTermType(termType: string, year: string) {
     setSwitching(true);
     const supabase = createClient();
-    const existing = items.find((it) => it.term_type === termType && it.year === year);
-    const others = items.filter(
-      (it) => it.status === "진행중" && (!existing || it.id !== existing.id)
-    );
-    await Promise.all(others.map((it) => supabase.from("terms").update({ status: "종료" }).eq("id", it.id)));
+    const { data, error } = await supabase
+      .rpc("switch_current_term", {
+        p_term_type: termType,
+        p_year: year,
+        p_case_id: genCaseId("TRM"),
+      })
+      .single();
 
-    if (existing) {
-      await supabase.from("terms").update({ status: "진행중" }).eq("id", existing.id);
-      setItems((prev) =>
-        prev.map((it) => {
-          if (it.id === existing.id) return { ...it, status: "진행중" };
-          if (others.some((o) => o.id === it.id)) return { ...it, status: "종료" };
-          return it;
-        })
-      );
-    } else {
-      const { data } = await supabase
-        .from("terms")
-        .insert({
-          case_id: genCaseId("TRM"),
-          term_type: termType,
-          year,
-          status: "진행중",
-          good: "",
-          lack: "",
-          suggest: "",
-        })
-        .select()
-        .single();
+    if (!error && data) {
+      const result = data as Term;
       setItems((prev) => {
-        const withOthersEnded = prev.map((it) =>
-          others.some((o) => o.id === it.id) ? { ...it, status: "종료" as const } : it
-        );
-        return data ? [data as Term, ...withOthersEnded] : withOthersEnded;
+        const rest = prev
+          .filter((it) => it.id !== result.id)
+          .map((it) => (it.status === "진행중" ? { ...it, status: "종료" as const } : it));
+        return [result, ...rest];
       });
       setSelectedType(termType);
     }
@@ -536,6 +536,7 @@ export default function TermsClient({ initialItems }: { initialItems: Term[] }) 
               item={it}
               onEdit={() => startEdit(it)}
               onPhotosChange={(p) => updatePhotos(it.id, p)}
+              editors={editors.filter((e) => e.itemId === it.id)}
             />
           ))}
         </div>
@@ -557,10 +558,12 @@ function TermOccurrenceCard({
   item,
   onEdit,
   onPhotosChange,
+  editors,
 }: {
   item: Term;
   onEdit: () => void;
   onPhotosChange: (paths: string[]) => void;
+  editors: EditingUser[];
 }) {
   const [expanded, setExpanded] = useState(false);
   const [linkedIncidents, setLinkedIncidents] = useState<{ id: string; date: string; title: string }[] | null>(null);
@@ -598,6 +601,11 @@ function TermOccurrenceCard({
         >
           {item.status}
         </span>
+        {editors.length > 0 && (
+          <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+            ✏️ {editors.map((e) => e.name).join(", ")}님 편집 중
+          </span>
+        )}
         <span className="shrink-0 text-xs font-bold text-blue-600">{expanded ? "접기 ‹" : "더보기 ›"}</span>
       </button>
       {expanded && (

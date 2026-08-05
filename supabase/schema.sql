@@ -2476,3 +2476,110 @@ from (values
 where not exists (
   select 1 from terms t where t.year = v.year and t.term_type = v.term_type
 );
+
+-- ===== 67. 속도 개선: 계속 쌓이는 로그성 테이블 인덱스 =====
+-- error_logs/ai_usage_logs는 매 AI 호출·매 오류마다 계속 쌓이기만 하는 테이블이라(삭제 없음),
+-- 시간이 지날수록 /dev 대시보드의 "최근 N일" 조회가 느려집니다. created_at 인덱스를 미리
+-- 걸어둡니다. inquiries는 /dev에서 "완료 아닌 것" 개수를 매번 세므로 status 인덱스를 추가합니다.
+create index if not exists error_logs_created_at_idx on error_logs (created_at desc);
+create index if not exists ai_usage_logs_created_at_idx on ai_usage_logs (created_at desc);
+create index if not exists inquiries_status_idx on inquiries (status);
+
+-- ===== 68. 동시접속 안전장치: 학기 전환을 원자적 RPC로 =====
+-- 예전에는 "현재 진행중 학기 종료 + 새 학기 진행중 전환/생성"을 화면(클라이언트)에서 여러 번의
+-- update로 나눠 실행했습니다. 관리자 여러 명이 거의 동시에 서로 다른 학기로 전환을 누르면, 각자
+-- 약간 오래된 목록을 기준으로 계산해서 실행 순서에 따라 진행중 학기가 0개나 2개 이상으로 꼬일
+-- 수 있었습니다(요청: "동시접속,동시사용환경을 원활하게"). 이 함수 하나가 종료 처리와
+-- 전환/생성을 하나의 트랜잭션으로 묶어서, Postgres가 자동으로 순서를 보장합니다 - 몇 명이
+-- 동시에 눌러도 항상 정확히 하나만 진행중으로 남습니다. TermsClient.tsx의 setCurrentTermType이
+-- 이제 이 RPC 하나만 호출합니다.
+create or replace function switch_current_term(p_term_type text, p_year text, p_case_id text)
+returns terms
+language plpgsql
+as $$
+declare
+  result terms;
+  target_id uuid;
+begin
+  select id into target_id from terms
+  where term_type = p_term_type and year = p_year
+  order by created_at desc
+  limit 1;
+
+  update terms set status = '종료'
+  where status = '진행중' and id is distinct from target_id;
+
+  if target_id is not null then
+    update terms set status = '진행중' where id = target_id returning * into result;
+  else
+    insert into terms (case_id, term_type, year, status, good, lack, suggest)
+    values (p_case_id, p_term_type, p_year, '진행중', '', '', '')
+    returning * into result;
+  end if;
+
+  return result;
+end;
+$$;
+
+-- ===== 69. 동시접속 안전장치: 채택예정 발행(매뉴얼 반영)을 원자적 RPC로 =====
+-- 채택예정 항목을 "발행"하면 매뉴얼(manual_sections)의 같은 항목(target_doc+category) 뒤에 내용이
+-- 이어붙습니다. 예전에는 "이미 있는지 조회 → 있으면 update, 없으면 insert"를 서버에서 두 단계로
+-- 실행해서, 서로 다른 채택예정 두 건이 같은 항목에 거의 동시에 발행되면 둘 다 "아직 없음"으로
+-- 읽고 동시에 insert를 시도해 유니크 제약(target_doc, category) 위반으로 한쪽이 발행 실패할 수
+-- 있었습니다. insert ... on conflict do update는 Postgres가 유니크 인덱스로 자동 직렬화하므로,
+-- 몇 건이 동시에 발행돼도 항상 안전하게 이어붙여집니다. api/adopted/publish/route.ts가 이 RPC
+-- 하나만 호출합니다(내용은 호출 전에 이미 HTML로 정규화되어 전달됩니다).
+create or replace function upsert_manual_section(p_target_doc text, p_category text, p_addition_html text)
+returns manual_sections
+language plpgsql
+as $$
+declare
+  result manual_sections;
+begin
+  insert into manual_sections (target_doc, category, content)
+  values (p_target_doc, p_category, p_addition_html)
+  on conflict (target_doc, category)
+  do update set content = manual_sections.content || excluded.content
+  returning * into result;
+
+  return result;
+end;
+$$;
+
+-- ===== 70. 통합관리: 자동 일일 백업 =====
+-- 이미 관리자 화면(/admin/backups)에 수동 백업/복원(create_backup/restore_backup, 위 57번
+-- 섹션)이 있습니다 - 그걸 매일 자동으로도 한 번 실행되게 합니다(요청: "통합관리를 위해...
+-- 방법들을 제안해줘" 답변 중 "자동 일일 백업" - 깜빡하고 수동 백업을 안 남겨둔 날에도 최소한의
+-- 안전망이 있게). create_backup()은 로그인 세션(auth.jwt())을 통해 is_app_admin()을 확인하는데,
+-- 크론은 서비스 역할 키로 실행되어 로그인 세션이 없으므로 그 경로를 그대로 쓸 수 없습니다. 대신
+-- 이 함수는 관리자 로그인 여부와 무관하게 동작하되, 일반 로그인 사용자(authenticated)에게는
+-- 실행 권한 자체를 주지 않아 서비스 역할 키로만 호출 가능합니다(cron/route.ts 참고).
+create or replace function create_scheduled_backup()
+returns backups
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_table text;
+  v_table_json jsonb;
+  v_snapshot jsonb := '{}'::jsonb;
+  v_row backups;
+begin
+  foreach v_table in array backup_target_tables() loop
+    execute format('select coalesce(jsonb_agg(to_jsonb(t)), ''[]''::jsonb) from %I t', v_table)
+      into v_table_json;
+    v_snapshot := jsonb_set(v_snapshot, array[v_table], v_table_json);
+  end loop;
+
+  insert into backups (label, created_by, tables, snapshot)
+  values ('자동 일일 백업 · ' || to_char(now(), 'YYYY-MM-DD'), 'system(자동백업)', backup_target_tables(), v_snapshot)
+  returning * into v_row;
+
+  return v_row;
+end;
+$$;
+
+-- authenticated/anon에는 일부러 실행 권한을 주지 않습니다 - 이 함수는 cron(서비스 역할 키)에서만
+-- 호출되도록 의도한 것이라, 로그인만 한 일반 사용자가 supabase.rpc()로 직접 호출할 수 없어야 합니다.
+revoke all on function create_scheduled_backup() from public, authenticated, anon;

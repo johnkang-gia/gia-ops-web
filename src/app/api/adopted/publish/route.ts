@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import type { Adopted } from "@/lib/types";
-import { appendHtmlSection, plainTextToHtml } from "@/lib/manualHtml";
+import { plainTextToHtml } from "@/lib/manualHtml";
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -23,30 +23,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "구체화한 최종 내용이 비어있습니다." }, { status: 400 });
   }
 
-  const { data: existingSection } = await supabase
-    .from("manual_sections")
-    .select("id, content")
-    .eq("target_doc", adopted.target_doc)
-    .eq("category", adopted.category)
-    .maybeSingle();
-
-  if (existingSection) {
-    // 매뉴얼 내용은 리치 텍스트(HTML)로 저장되므로, 기존 내용이 과거 저장된 일반 텍스트여도
-    // 안전하게 HTML로 정규화한 뒤 새 내용을 문단으로 이어붙입니다.
-    const merged = appendHtmlSection(existingSection.content, adopted.specific_text);
-    const { error: updateErr } = await supabase
-      .from("manual_sections")
-      .update({ content: merged })
-      .eq("id", existingSection.id);
-    if (updateErr) return NextResponse.json({ error: updateErr.message }, { status: 500 });
-  } else {
-    const { error: insertErr } = await supabase.from("manual_sections").insert({
-      target_doc: adopted.target_doc,
-      category: adopted.category,
-      content: plainTextToHtml(adopted.specific_text),
-    });
-    if (insertErr) return NextResponse.json({ error: insertErr.message }, { status: 500 });
-  }
+  // 동시접속 안전장치(요청: "동시접속,동시사용환경을 원활하게"): 예전에는 "같은 항목(target_doc+
+  // category)이 이미 있는지 조회 → 있으면 update, 없으면 insert"를 클라이언트/서버가 따로 실행했
+  //습니다. 서로 다른 채택예정 두 건이 같은 항목에 거의 동시에 발행되면, 둘 다 "아직 없음"으로
+  // 읽고 동시에 insert를 시도해 유니크 제약(target_doc, category) 위반으로 한쪽이 발행 실패할 수
+  // 있었습니다. upsert_manual_section RPC가 insert ... on conflict do update를 한 번의 원자적
+  // 쓰기로 처리하므로, 몇 건이 동시에 발행돼도 항상 안전하게 이어붙여집니다.
+  const { error: upsertErr } = await supabase.rpc("upsert_manual_section", {
+    p_target_doc: adopted.target_doc,
+    p_category: adopted.category,
+    p_addition_html: plainTextToHtml(adopted.specific_text),
+  });
+  if (upsertErr) return NextResponse.json({ error: upsertErr.message }, { status: 500 });
 
   const { error: publishErr } = await supabase
     .from("adopted")

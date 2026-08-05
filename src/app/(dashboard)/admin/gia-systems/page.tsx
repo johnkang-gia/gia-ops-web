@@ -16,6 +16,7 @@ export default async function GiaSystemsPage() {
   const { data } = await supabase
     .from("gia_systems")
     .select("*")
+    .order("major", { ascending: true })
     .order("category", { ascending: true })
     .order("name", { ascending: true });
 

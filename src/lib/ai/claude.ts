@@ -12,9 +12,31 @@
 // 개발자 대시보드에서 어떤 기능이 AI를 얼마나 쓰는지 볼 수 있습니다(로깅 실패는 무시하고 넘어감).
 import { createClient } from "@/lib/supabase/server";
 import { logAiUsage } from "@/lib/logging";
+import { SHARED_CACHE_CONTEXT } from "@/lib/ai/prompts";
 
 export const CLAUDE_MODEL_QUALITY = "claude-sonnet-5";
 export const CLAUDE_MODEL_FAST = "claude-haiku-4-5-20251001";
+
+// 요청("6개 AI 프롬프트가 각자 기관 소개문·법령 목록(공통 콘텐츠)을 매번 새로 캐싱하고 있는데,
+// 이걸 하나의 공유 캐시 블록으로 묶어서 캐시적중률을 올려줘"): 시스템 프롬프트가 prompts.ts의
+// SHARED_CACHE_CONTEXT로 시작하면, 그 부분만 별도 cache_control 블록으로 잘라서 보냅니다.
+// Claude API의 prompt caching은 "완전히 동일한 접두사"에만 적중하므로, 예전처럼 시스템 프롬프트
+// 전체를 통째로 캐싱하면 라우트마다 뒷부분 문구가 달라 사실상 서로 다른 캐시 항목이 되어 절대
+// 공유되지 않았습니다. 공용 부분과 라우트별 부분을 나눠서 각각 캐시 브레이크포인트를 두면, 같은
+// 5분 캐시 유효시간 안에 다른 AI 기능이 먼저 호출됐어도 앞부분(기관 소개문 + 법령 목록)은 다시
+// 캐싱하지 않아 입력 토큰 비용이 줄어듭니다. 접두사가 일치하지 않는(공용 콘텐츠를 안 쓰는) 시스템
+// 프롬프트는 예전처럼 한 블록으로만 보냅니다.
+type SystemBlock = { type: "text"; text: string; cache_control: { type: "ephemeral" } };
+function buildSystemBlocks(systemPrompt: string): SystemBlock[] {
+  if (systemPrompt.startsWith(SHARED_CACHE_CONTEXT)) {
+    const rest = systemPrompt.slice(SHARED_CACHE_CONTEXT.length);
+    return [
+      { type: "text", text: SHARED_CACHE_CONTEXT, cache_control: { type: "ephemeral" } },
+      { type: "text", text: rest, cache_control: { type: "ephemeral" } },
+    ];
+  }
+  return [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }];
+}
 
 // 개발자 대시보드에서 과금이 부담스러운 AI 기능을 항목별로 끌 수 있게 하는 게이트입니다.
 // ai_feature_flags에 route가 없으면(신규 기능이라 아직 등록 안 됐거나, 조회 자체가 실패하면)
@@ -73,7 +95,7 @@ export async function callClaudeJson(
       body: JSON.stringify({
         model,
         max_tokens: maxTokens,
-        system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
+        system: buildSystemBlocks(systemPrompt),
         messages: [{ role: "user", content: userPrompt }],
       }),
     });
@@ -173,7 +195,7 @@ export async function callClaudeJsonWithWebSearch(
       body: JSON.stringify({
         model,
         max_tokens: maxTokens,
-        system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
+        system: buildSystemBlocks(systemPrompt),
         messages: [{ role: "user", content: userPrompt }],
         tools: [{ type: "web_search_20250305", name: "web_search", max_uses: maxSearches }],
       }),

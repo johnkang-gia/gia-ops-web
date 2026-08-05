@@ -36,12 +36,32 @@ export const INSTITUTION_CONTEXT =
   "부담임이 통역/보완하는 상황을 고려, 안전/생활지도는 외국인 교사가 주도하되 한국어 서류·법령 대응은 " +
   "부담임/행정팀이 보조하는 흐름을 자연스럽게 반영).";
 
+// 프롬프트 캐시 적중률을 높이기 위한 공용 캐시 블록(요청: "6개 AI 프롬프트가 각자 기관 소개문·법령
+// 목록을 매번 새로 캐싱하고 있는데, 이걸 하나의 공유 캐시 블록으로 묶어서 캐시적중률을 올려줘").
+// INSTITUTION_CONTEXT와 [참고 법령 목록]은 여러 프롬프트에서 글자 하나 다르지 않게 똑같이 쓰이는데,
+// 예전에는 각 buildXSystemPrompt()가 이 내용을 자기 문자열 안에 그대로 이어붙여서 매번 새 문자열을
+// 만들었기 때문에(라우트마다 시스템 프롬프트 전체가 미세하게 달라짐), Claude API 캐시가 "완전히
+// 똑같은 접두사"에만 적중하는 특성상 서로 다른 라우트끼리는 절대 캐시를 공유할 수 없었습니다.
+// 이제 이 상수를 시스템 프롬프트의 맨 앞에 정확히 그대로 이어붙이면, claude.ts가 이 부분만 별도
+// cache_control 블록으로 잘라내 보내므로 이 상수로 시작하는 모든 라우트가 같은 캐시 항목을 공유합니다
+// (5분 캐시 유효시간 안에 다른 AI 기능이 먼저 호출됐다면 이 부분은 다시 캐싱하지 않아 입력 토큰
+// 비용이 줄어듭니다). ⚠️ 이 상수를 쓰는 함수는 반드시 이 상수 + "\n\n" 뒤에 라우트별 내용을
+// 이어붙여야 하고, 이 상수 자체의 문구를 부분적으로 잘라 쓰거나 바꾸면 안 됩니다(접두사 매칭이
+// 깨져 캐시가 공유되지 않습니다). [참고 법령 목록]도 함수마다 조금씩 다른 형식(적용성 포함 여부)으로
+// 이어붙이던 것을 이 상수 하나로 통일했습니다(적용성 필드는 안 쓰는 프롬프트에도 포함되지만, 참고용
+// 정보라 있어도 방해되지 않습니다).
+export const SHARED_CACHE_CONTEXT =
+  INSTITUTION_CONTEXT +
+  "\n\n" +
+  'GIA는 "대안교육기관에 관한 법률"에 따른 대안교육기관 등록을 신청했고 승인되었다고 가정합니다. ' +
+  "정규 초중등학교 대상 법령을 그대로 지킬 법적 의무는 없지만 모범사례로 참고합니다.\n\n" +
+  "[참고 법령 목록]\n" +
+  LAW_REFERENCE.map((l) => `${l.topic} | ${l.law} | ${l.points} | 적용성:${l.applicability}`).join("\n");
+
 export function buildIncidentClassifySystemPrompt(): string {
   return (
-    INSTITUTION_CONTEXT +
+    SHARED_CACHE_CONTEXT +
     "\n\n" +
-    'GIA는 "대안교육기관에 관한 법률"에 따른 대안교육기관 등록을 신청했고 승인되었다고 가정합니다. ' +
-    "정규 초중등학교 대상 법령을 그대로 지킬 법적 의무는 없지만 모범사례로 참고합니다.\n" +
     "매뉴얼은 두 문서로 나뉩니다: (A) 학부모용 운영계획안 - 정책/계획 성격, (B) 실무자용 대응 매뉴얼 - 실무 절차 성격.\n\n" +
     '구분이 "사건"인 기록은 다음 세 가지를 제안하세요:\n' +
     "1) remediationOptions: 같은 유형의 사건이 다시 발생했을 때 학교가 실제로 따를 수 있는 절차 3개를 " +
@@ -94,9 +114,7 @@ export function buildIncidentClassifySystemPrompt(): string {
     ' "suggestedFinal": "[상황 태그] - 매뉴얼에 바로 반영 가능한 정리된 문구",\n' +
     ' "legalBasis":"[참고 법령 목록]에 있으면 인용, 없으면 빈 문자열(지어내지 말 것)",\n' +
     ' "legalApplicability":"legalBasis를 썼다면 해당 적용성 값, 없으면 빈 문자열",\n' +
-    ' "benchmarkNote":"확실히 아는 타 사립교육기관 사례가 있을 때만, 없으면 빈 문자열(지어내지 말 것)"}\n\n' +
-    "[참고 법령 목록]\n" +
-    LAW_REFERENCE.map((l) => `${l.topic} | ${l.law} | ${l.points} | 적용성:${l.applicability}`).join("\n")
+    ' "benchmarkNote":"확실히 아는 타 사립교육기관 사례가 있을 때만, 없으면 빈 문자열(지어내지 말 것)"}'
   );
 }
 
@@ -188,10 +206,8 @@ export function buildMeetingClassifySystemPrompt(): string {
 
 export function buildManualDraftClassifySystemPrompt(): string {
   return (
-    INSTITUTION_CONTEXT +
+    SHARED_CACHE_CONTEXT +
     "\n\n" +
-    'GIA는 "대안교육기관에 관한 법률"에 따른 대안교육기관 등록을 신청했고 승인되었다고 가정합니다. ' +
-    "정규 초중등학교 대상 법령을 그대로 지킬 법적 의무는 없지만 모범사례로 참고합니다.\n" +
     "매뉴얼은 두 문서로 나뉩니다: (A) 학부모용 운영계획안 - 학부모에게 배포되어 학교 운영 방침을 미리 " +
     "설명해서 나중에 발생할 수 있는 문의·클레임을 예방하는 문서, (B) 실무자용 대응 매뉴얼 - 교사·행정 " +
     "담당자가 실무에서 참고하는 절차/기준 문서입니다.\n" +
@@ -225,9 +241,7 @@ export function buildManualDraftClassifySystemPrompt(): string {
     ' "legalBasis":"[참고 법령 목록]에 있으면 인용, 없으면 빈 문자열(지어내지 말 것)",\n' +
     ' "legalApplicability":"legalBasis를 썼다면 해당 적용성 값, 없으면 빈 문자열",\n' +
     ' "legalSummary":"legalBasis를 썼다면 그 조항이 요구하는 바를 한두 문장으로 요약, 없으면 빈 문자열",\n' +
-    ' "benchmarkNote":"확실히 아는 타 사립교육기관 사례가 있을 때만, 없으면 빈 문자열(지어내지 말 것)"}\n\n' +
-    "[참고 법령 목록]\n" +
-    LAW_REFERENCE.map((l) => `${l.topic} | ${l.law} | ${l.points} | 적용성:${l.applicability}`).join("\n")
+    ' "benchmarkNote":"확실히 아는 타 사립교육기관 사례가 있을 때만, 없으면 빈 문자열(지어내지 말 것)"}'
   );
 }
 
@@ -360,11 +374,10 @@ export function buildMeetingChatEntryBlock(
 
 export function buildDocumentRecommendSystemPrompt(): string {
   return (
-    INSTITUTION_CONTEXT +
+    SHARED_CACHE_CONTEXT +
     "\n\n" +
-    'GIA는 "대안교육기관에 관한 법률"에 따른 대안교육기관 등록을 신청했고 승인되었다고 가정합니다. ' +
     "당신은 GIA 같은 학교가 운영을 제대로 갖추기 위해 마련해두면 좋은 서류/문서 목록을 추천하는 " +
-    "보조자입니다. 아래 [참고 법령 목록]에서 요구하거나 근거가 되는 서류(등록 서류, 안전조치 증빙, " +
+    "보조자입니다. 위 [참고 법령 목록]에서 요구하거나 근거가 되는 서류(등록 서류, 안전조치 증빙, " +
     "개인정보처리방침 등)와, 법령에 명시되지 않아도 사교육/대안교육기관이 일반적으로 갖추는 것이 " +
     "좋은 운영 서류(위탁교육계약서, 시설안전점검표, 비상연락망, 현장학습 동의서 양식 등)를 함께 " +
     "고려하세요.\n" +
@@ -372,9 +385,7 @@ export function buildDocumentRecommendSystemPrompt(): string {
     "실제로 필요하다고 확신하는 항목만 추천하고, 지어내지 마세요. 8~12개 정도로 추천하세요.\n\n" +
     "아래 JSON 형식으로만 답하세요(다른 텍스트 금지):\n" +
     '{"documents":[{"name":"서류명", "category":"분류(예: 등록/인허가, 안전, 개인정보, 계약, 인사, 학사)", ' +
-    '"reason":"왜 필요한지 한 문장"}]}\n\n' +
-    "[참고 법령 목록]\n" +
-    LAW_REFERENCE.map((l) => `${l.topic} | ${l.law} | ${l.points}`).join("\n")
+    '"reason":"왜 필요한지 한 문장"}]}'
   );
 }
 
@@ -386,20 +397,17 @@ export function buildDocumentRecommendEntryBlock(existingNames: string[]): strin
 
 export function buildDocumentDraftSystemPrompt(): string {
   return (
-    INSTITUTION_CONTEXT +
+    SHARED_CACHE_CONTEXT +
     "\n\n" +
-    'GIA는 "대안교육기관에 관한 법률"에 따른 대안교육기관 등록을 신청했고 승인되었다고 가정합니다. ' +
     "당신은 담당자가 요청한 서류의 실제 초안을 작성하는 보조자입니다. 서류명과 분류를 보고, 바로 " +
     "다듬어서 쓸 수 있는 수준의 초안을 작성하세요(제목, 조항/항목 구조를 갖춘 정식 문서 형태). " +
     "GIA의 구체적인 수치·인명·주소 등 실제 정보는 알 수 없으니 [ ] 괄호로 채워 넣을 자리를 " +
-    "표시하세요(예: [정원 인원수], [담당자명]). 아래 [참고 법령 목록]에 관련 근거가 있으면 조항을 " +
+    "표시하세요(예: [정원 인원수], [담당자명]). 위 [참고 법령 목록]에 관련 근거가 있으면 조항을 " +
     "자연스럽게 반영하세요. 지어내지 말고, 확실하지 않은 수치/기준은 괄호로 담당자가 채우도록 " +
     "남겨두세요.\n\n" +
     "아래 JSON 형식으로만 답하세요(다른 텍스트 금지). 줄바꿈은 JSON 문자열 규칙에 맞게 \\n으로 " +
     "표시하세요:\n" +
-    '{"draftText":"서류 초안 전문"}\n\n' +
-    "[참고 법령 목록]\n" +
-    LAW_REFERENCE.map((l) => `${l.topic} | ${l.law} | ${l.points}`).join("\n")
+    '{"draftText":"서류 초안 전문"}'
   );
 }
 
@@ -482,7 +490,7 @@ export function buildManualFaqEntryBlock(sections: { category: string; content: 
 
 export function buildComplaintAnticipateSystemPrompt(): string {
   return (
-    INSTITUTION_CONTEXT +
+    SHARED_CACHE_CONTEXT +
     "\n\n" +
     "당신은 GIA 같은 영어 중심 국제학교에서 학부모가 실제로 제기할 만한 문의나 컴플레인을 미리 " +
     "예상하고, 실무자(교사/행정담당자)가 전화나 대면 상황에서 바로 참고해서 답변할 수 있는 " +
@@ -497,7 +505,7 @@ export function buildComplaintAnticipateSystemPrompt(): string {
     "3) recommendedResponse: 실무자가 이 상황에서 참고해서 바로 답변할 수 있는 응대 가이드. " +
     "실제 답변 스크립트가 아니라, \"이렇게 설명하고 이렇게 안내한다\"는 절차/기준 형태로 " +
     "작성하세요(구체적인 수치는 GIA 실정에 맞게 나중에 채울 수 있도록 [ ] 표시를 남기세요). " +
-    "아래 [참고 법령 목록]에 근거가 있으면 자연스럽게 반영하세요.\n\n" +
+    "위 [참고 법령 목록]에 근거가 있으면 자연스럽게 반영하세요.\n\n" +
     "매우 중요: 아래 [이미 실무자매뉴얼에 규정된 내용]과 [이미 검토 대기 중인 예상 문의]를 꼼꼼히 " +
     "읽고, 항목명(카테고리)이 다르더라도 실질적으로 같은 주제이거나 이미 그 내용 안에 답이 나와있는 " +
     "문의는 절대 다시 만들지 마세요(예: 카테고리명이 달라도 이미 등록된 내용이 사실상 같은 질문에 " +
@@ -505,9 +513,7 @@ export function buildComplaintAnticipateSystemPrompt(): string {
     "있을 법한 현실적인 상황만 다루세요. 6~10개 정도 만드세요.\n\n" +
     "아래 JSON 형식으로만 답하세요(다른 텍스트 금지). 줄바꿈은 \\n으로 표시하세요:\n" +
     '{"complaints":[{"category":"...", "complaintSummary":"...", "recommendedResponse":"...", ' +
-    '"legalBasis":"[참고 법령 목록]에 있으면 인용, 없으면 빈 문자열(지어내지 말 것)"}]}\n\n' +
-    "[참고 법령 목록]\n" +
-    LAW_REFERENCE.map((l) => `${l.topic} | ${l.law} | ${l.points}`).join("\n")
+    '"legalBasis":"위 [참고 법령 목록]에 있으면 인용, 없으면 빈 문자열(지어내지 말 것)"}]}'
   );
 }
 
@@ -579,7 +585,7 @@ export function buildParentToneEntryBlock(entry: { category: string; draftText: 
 
 export function buildAdoptedReviewSystemPrompt(targetDoc?: string): string {
   return (
-    INSTITUTION_CONTEXT +
+    SHARED_CACHE_CONTEXT +
     "\n\n" +
     "당신은 GIA 학교가 운영계획안/실무자매뉴얼에 정식으로 실으려는 조항(항목)을 발행하기 직전에, " +
     "비판적으로 검증하는 깐깐한 검토자입니다. 실무자들이 이미 GIA 실정에 맞게 구체화한 문구를 " +
@@ -596,7 +602,7 @@ export function buildAdoptedReviewSystemPrompt(targetDoc?: string): string {
     "4) summary: 전반적으로 이 조항이 발행할 준비가 얼마나 됐는지 한두 문장으로 평가.\n\n" +
     "이미 잘 작성되어 특별히 지적할 내용이 없다면 억지로 문제를 만들어내지 말고 해당 배열을 " +
     "비워두거나 짧게 답하세요. 근거 없이 트집 잡지 말고, 실제로 GIA 운영에 영향을 줄 수 있는 " +
-    "현실적인 지적만 하세요. 아래 [참고 법령 목록]에 관련 근거가 있으면 지적에 자연스럽게 " +
+    "현실적인 지적만 하세요. 위 [참고 법령 목록]에 관련 근거가 있으면 지적에 자연스럽게 " +
     "반영하세요.\n\n" +
     (targetDoc === "학부모용"
       ? "이 조항은 [학부모용] 운영계획안에 실릴 문구입니다. 특히 \"학부모 관점\"에서 다음을 " +
@@ -608,9 +614,7 @@ export function buildAdoptedReviewSystemPrompt(targetDoc?: string): string {
       : "") +
     "아래 JSON 형식으로만 답하세요(다른 텍스트 금지). 줄바꿈은 \\n으로 표시하세요:\n" +
     '{"potentialComplaints":["- ...", "- ..."], "blindSpots":["- ...", "- ..."], ' +
-    '"suggestions":["- ...", "- ..."], "summary":"..."}\n\n' +
-    "[참고 법령 목록]\n" +
-    LAW_REFERENCE.map((l) => `${l.topic} | ${l.law} | ${l.points}`).join("\n")
+    '"suggestions":["- ...", "- ..."], "summary":"..."}'
   );
 }
 

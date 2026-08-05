@@ -222,6 +222,11 @@ export type SchoolDocument = {
   case_id: string;
   name: string;
   category: string | null;
+  // GIA시스템(gia_systems)과 같은 대분류 체계를 서류함에도 그대로 적용하기 위한 컬럼입니다(요청:
+  // "서류함에 만들때에도 이 분류를 그대로 적용해서 서류도 자동으로 분류화 되도록"). GIA시스템
+  // 항목에서 "서류함에 만들기"로 생성된 서류가 아니면 비어있을 수 있습니다.
+  category_major: string | null;
+  gia_system_id: string | null;
   status: "필요" | "준비중" | "보유" | "만료임박" | "해당없음";
   notes: string | null;
   ai_draft: string | null;
@@ -577,6 +582,10 @@ export type EducationNews = {
 
 export type GiaSystem = {
   id: string;
+  // 대분류(예: 재정, 인사·교직원, 학사, 운영, 시설·안전, 입학·홍보, 행정·문서, 정보보안·법무).
+  // category(중분류)는 그대로 두고 그 위 단계로 새로 추가했습니다(요청: "재정,운영과 같은
+  // 대분류항목에서부터 더 들어가서 운영-교직원-교직원계약서 뭐 이런식으로 항목을 세분화").
+  major: string;
   category: string;
   name: string;
   status: "보유" | "부분보유" | "미보유";
@@ -589,6 +598,9 @@ export type GiaSystem = {
   // 자동 매칭" - 관리자가 시스템 구비 여부를 수기로 따로 추적할 필요를 줄임).
   related_manual_category: string | null;
   related_manual_target_doc: string | null;
+  // "서류함에 만들기" 버튼으로 documents 행을 만들면 그 행을 가리킵니다(이미 만들었으면 다시
+  // 만들지 않고 서류함으로 바로 이동하도록).
+  document_id: string | null;
   created_at: string;
   updated_at: string;
 };

@@ -167,6 +167,11 @@ export default function DocumentsClient({ initialItems }: { initialItems: School
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-sm font-semibold">{d.name}</span>
+              {d.category_major && (
+                <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-600">
+                  {d.category_major}
+                </span>
+              )}
               {d.category && (
                 <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
                   {d.category}

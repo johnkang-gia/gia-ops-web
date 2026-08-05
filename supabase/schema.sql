@@ -2426,3 +2426,50 @@ alter table form_submissions add column if not exists purpose text not null defa
 
 create index if not exists form_import_templates_term_type_idx on form_import_templates (term_type, year desc);
 create index if not exists form_submissions_term_type_idx on form_submissions (term_type, year desc);
+
+-- ===== 65. 업무탭 실시간 로그를 좌우 분할 - 왼쪽 부서 메모장 =====
+-- 요청("실시간 로그 반으로 나눠서 오른쪽 실시간로그 왼쪽 메모 적을 수 있도록"). 부서마다 한 장의
+-- 공유 메모장을 두고(부서당 1행), 누구나 자유롭게 적고 지울 수 있는 화이트보드처럼 씁니다.
+-- 실시간 구독으로 다른 사람이 수정하면 화면에 바로 반영됩니다.
+create table if not exists department_memos (
+  department text primary key,
+  content text not null default '',
+  updated_by text,
+  updated_at timestamptz not null default now()
+);
+
+alter table department_memos enable row level security;
+drop policy if exists "giamicro_all_department_memos" on department_memos;
+create policy "giamicro_all_department_memos" on department_memos
+  for all using (is_giamicro_user()) with check (is_giamicro_user());
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'department_memos'
+  ) then
+    alter publication supabase_realtime add table department_memos;
+  end if;
+end $$;
+
+-- ===== 66. 2026년도 학기 프리셋 시드 + 신청서 가져오기 학기선택 실연동 =====
+-- 요청("신청서 가져오기에서 기본적으로 26년도에 1,2,3학기 여름캠프1,2, 겨울캠프 1,2 이렇게
+-- 세팅해줘... 지금 설정된 학기들이 가져오기 학기선택에 반영되도록"). terms 테이블에 2026년
+-- 7개 학기(정규 3개 + 캠프 4개)를 미리 등록해두고, 신청서 가져오기 화면의 연도/학기타입
+-- 선택은 이제 이 terms 테이블에 실제로 등록된 값만 보여줍니다(정적 목록이 아님). 이미 같은
+-- 연도+학기타입 행이 있으면 건너뜁니다(재실행해도 중복 생성되지 않도록).
+insert into terms (case_id, year, term_type, status)
+select 'TRM-SEED-' || v.year || '-' || v.term_type, v.year, v.term_type, '진행중'
+from (values
+  ('2026', '1학기'),
+  ('2026', '2학기'),
+  ('2026', '3학기'),
+  ('2026', '여름캠프1'),
+  ('2026', '여름캠프2'),
+  ('2026', '겨울캠프1'),
+  ('2026', '겨울캠프2')
+) as v(year, term_type)
+where not exists (
+  select 1 from terms t where t.year = v.year and t.term_type = v.term_type
+);

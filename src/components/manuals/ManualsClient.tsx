@@ -1,10 +1,18 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import { createClient } from "@/lib/supabase/client";
 import type { ManualSection } from "@/lib/types";
 import { toDisplayHtml } from "@/lib/manualHtml";
-import RichTextEditor from "@/components/manuals/RichTextEditor";
+// 빌드 최적화: 리치 텍스트 에디터(tiptap)는 무겁고, 실제로는 "추가"나 "수정"을 눌러야만
+// 화면에 나타납니다(요청: "지금까지의 빌드 최적화 해주고"). 항상 정적으로 불러오면 매뉴얼을
+// 그냥 읽기만 하는 대다수 방문(목록 조회)에서도 에디터 JS까지 다 받아야 했는데, next/dynamic으로
+// 바꿔서 실제로 편집 화면을 열 때만 별도 청크로 내려받도록 했습니다.
+const RichTextEditor = dynamic(() => import("@/components/manuals/RichTextEditor"), {
+  ssr: false,
+  loading: () => <div className="h-24 animate-pulse rounded-lg bg-slate-100" />,
+});
 import Pagination from "@/components/Pagination";
 import GuideButton from "@/components/common/GuideButton";
 import { useConfirm } from "@/components/common/ConfirmProvider";

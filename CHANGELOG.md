@@ -4,11 +4,25 @@
 `version` 값과 항상 일치시킵니다. 업데이트할 때마다 이 파일 맨 위에 새 항목을 추가하고,
 같은 내용을 GitHub Desktop의 커밋 Summary/Description에도 그대로 사용하면 됩니다.
 
-## v0.63.0 - 2026-08-05 (staging)
+## v0.64.0 - 2026-08-05 (staging)
 
-요청 "신청서 탭에서는 구글시트 붙여넣기 전에 무슨학기의 어떤 행사인지... 선택해서 구글폼올리고,
-그것에 학사일정에 기록으로 남아서... 학기준비... 다음 같은 학기를 준비할 수 있도록... 개발자
-계정의 경우... 권한을 변경할 수 있게"를 반영했습니다.
+- **업무탭 좌우 분할, 부서 메모장 추가**: "🔔 실시간 로그" 자리가 왼쪽 메모장 / 오른쪽
+  실시간 로그로 나뉩니다. 왼쪽은 부서원 전체가 함께 보고 자유롭게 적는 공유 메모장으로,
+  누가 마지막으로 고쳤는지 작게 표시되고 실시간으로 동기화됩니다.
+- **학교관리 부메뉴 정리**: 구글시트로 가져오기 항목을 부메뉴에서 뺐습니다. 학교 관리
+  화면 안에 이미 있어 중복이었습니다.
+- **부메뉴 구분선 추가**: 운영 관리 / 학교 관리 / 학교 문서함 / 주간 학생 관찰기록 /
+  관리자 부메뉴에 목적별 구분선을 넣어 항목이 많은 메뉴도 한눈에 구분되도록 했습니다.
+- **신청서 가져오기 학기선택을 실제 등록된 학기로 연동**: 이전에는 연도를 직접 입력하고
+  학기 종류를 고정 목록에서 골랐는데, 이제 학기 관리 화면에 실제로 등록된 연도·학기 목록을
+  그대로 보여줍니다. 2026년 1·2·3학기, 여름캠프1·2, 겨울캠프1·2가 기본으로 준비되어
+  있습니다.
+- **버전 기록 화면 정리**: 기술적인 DB 변경 안내를 빼고, 어떤 기능이 새로 생겼는지만
+  짧고 읽기 편하게 정리했습니다.
+- **빌드 최적화**: 매뉴얼 리치 텍스트 편집기를 실제로 편집 화면을 열 때만 불러오도록
+  바꿔, 매뉴얼을 조회만 하는 방문에서는 불필요한 코드를 받지 않도록 했습니다.
+
+## v0.63.0 - 2026-08-05 (staging)
 
 - **신청서 붙여넣기 전 학기/목적 선택**: 신청서(학기/행사) 탭에서 구글시트를 붙여넣기 전에
   연도·학기(또는 캠프)·목적을 먼저 선택하도록 바꿨습니다(예: "26년 3학기 인원모집", "26년
@@ -20,8 +34,7 @@
   학사일정달력에는 지금 학기의 신청서 템플릿을 작게 보여주는 카드가 추가됐습니다.
 - **학기준비 화면 신설**: 연도와 학기(또는 캠프)를 선택하면 같은 학기 유형의 지난 회차 기록을
   한 번에 모아 보여줍니다 - ①지난 학기 돌아보기(잘한 점/아쉬운 점/다음 제안), ②그때 가져온
-  신청서(구글폼) 기록(연도·목적별 건수), ③그 학기 준비 기간에 있었던 업무·회의 타임라인(요청
-  답변: "신청서 + 업무/회의록 타임라인"). 다음 같은 학기를 준비할 때 지난 회차를 참고할 수
+  신청서(구글폼) 기록(연도·목적별 건수), ③그 학기 준비 기간에 있었던 업무·회의 타임라인. 다음 같은 학기를 준비할 때 지난 회차를 참고할 수
   있습니다.
 - **개발자 권한 미리보기(역할 전환)**: 개발자 계정 사이드바의 로그아웃 버튼 바로 위에 "🎭 권한
   미리보기" 드롭다운이 생겼습니다. 교사/행정직원/관리자 중 하나를 고르면 실제 그 직위 계정으로
@@ -32,27 +45,7 @@
   걸립니다), 관리자 승인/사용자 이름·부서 편집 같은 실제 데이터 변경 API는 미리보기와 무관하게
   항상 진짜 권한으로만 판정하도록 분리해뒀습니다. 미리보기는 12시간 뒤 자동으로 꺼집니다.
 
-아래 SQL을 Supabase SQL Editor에서 실행해주세요(신청서 템플릿/기록에 연도·학기타입·목적 컬럼
-추가 - 권한 미리보기는 쿠키 기반이라 별도 DB 변경이 없습니다):
-
-```sql
-alter table form_import_templates add column if not exists year text not null default '';
-alter table form_import_templates add column if not exists term_type text not null default '';
-alter table form_import_templates add column if not exists purpose text not null default '';
-
-alter table form_submissions add column if not exists year text not null default '';
-alter table form_submissions add column if not exists term_type text not null default '';
-alter table form_submissions add column if not exists purpose text not null default '';
-
-create index if not exists form_import_templates_term_type_idx on form_import_templates (term_type, year desc);
-create index if not exists form_submissions_term_type_idx on form_submissions (term_type, year desc);
-```
-
 ## v0.62.0 - 2026-08-05 (staging)
-
-세 가지 요청을 반영했습니다: "1. GIA테마일 때 로고가 잘안보임 / 2. 개발자는 사용자관리에서
-사용자의 이름,부서들을 바꿀 수 있도록 / 3. 구글폼으로 받는 학기·행사 신청서를 구글시트로
-연결해 분석·정리하고, 폼 형식을 기억했다가 재사용".
 
 - **GIA/다크 테마 로고 가시성 수정**: 로고 이미지가 투명 배경 위에 남색 잉크로만 그려져 있어서
   짙은 남색 사이드바(GIA 테마) 위에서 거의 안 보였습니다. GIA·다크 테마에서만 로고 색을
@@ -72,61 +65,7 @@ create index if not exists form_submissions_term_type_idx on form_submissions (t
   방식이라 별도 인증 설정 없이 바로 쓸 수 있습니다 - 실시간으로 시트 URL만 넣으면 자동
   동기화되는 방식은 구글 API 키 발급이 필요해 이번에는 붙여넣기 방식으로 대신했습니다.
 
-아래 SQL을 Supabase SQL Editor에서 실행해주세요(신청서 가져오기용 새 테이블 2개):
-
-```sql
-create table if not exists form_import_templates (
-  id uuid primary key default gen_random_uuid(),
-  name text not null,
-  kind text not null check (kind in ('term', 'event')),
-  headers text[] not null,
-  column_mapping jsonb not null default '{}'::jsonb,
-  created_by text not null,
-  created_at timestamptz not null default now(),
-  last_used_at timestamptz
-);
-
-create table if not exists form_submissions (
-  id uuid primary key default gen_random_uuid(),
-  template_id uuid references form_import_templates(id) on delete set null,
-  kind text not null check (kind in ('term', 'event')),
-  term_id uuid references terms(id) on delete set null,
-  event_id uuid references events(id) on delete set null,
-  raw jsonb not null default '{}'::jsonb,
-  mapped jsonb not null default '{}'::jsonb,
-  imported_by text not null,
-  imported_at timestamptz not null default now()
-);
-
-create index if not exists form_submissions_kind_idx on form_submissions (kind, imported_at desc);
-create index if not exists form_submissions_term_idx on form_submissions (term_id);
-create index if not exists form_submissions_event_idx on form_submissions (event_id);
-
-alter table form_import_templates enable row level security;
-drop policy if exists "giamicro_all_form_import_templates" on form_import_templates;
-create policy "giamicro_all_form_import_templates" on form_import_templates
-  for all using (is_giamicro_user()) with check (is_giamicro_user());
-
-alter table form_submissions enable row level security;
-drop policy if exists "giamicro_all_form_submissions" on form_submissions;
-create policy "giamicro_all_form_submissions" on form_submissions
-  for all using (is_giamicro_user()) with check (is_giamicro_user());
-
-do $$
-begin
-  if not exists (
-    select 1 from pg_publication_tables
-    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'form_submissions'
-  ) then
-    alter publication supabase_realtime add table form_submissions;
-  end if;
-end $$;
-```
-
 ## v0.61.1 - 2026-08-05 (staging)
-
-"gia 테마 페이지 배경을 보면 너무 진해서 텍스트가 검은색이라 잘 안보여, 페이지 색을 좀 더
-밝게 만들어줘" 요청을 반영했습니다.
 
 - **GIA 테마 본문 배경 밝게 조정**: 바로 전 업데이트(v0.61.0)에서 GIA 테마를 고르면 사건기록·
   매뉴얼 등 본문 화면까지 사이드바와 같은 짙은 남색 배경을 썼는데, 검은 글자와 대비가 안
@@ -135,9 +74,6 @@ end $$;
   보입니다. 다른 세 테마(라이트/다크/리퀴드글라스)는 이번 조정과 무관하게 그대로입니다.
 
 ## v0.61.0 - 2026-08-05 (staging)
-
-"각 테마에 맞게 페이지 배경정도는 통일해도 좋을거 같아 가독성좋게끔 각 테마별로 폰트색도
-조절해주고" 요청을 반영했습니다.
 
 - **페이지 배경도 테마 적용**: 지금까지는 사이드바/헤더 같은 공용 틀만 테마(라이트/다크/
   리퀴드글라스/GIA)를 따라가고, 사건기록·회의기록·제안함·매뉴얼·문서함·사용자관리·학사일정
@@ -152,8 +88,6 @@ end $$;
   기존 글자색 그대로 잘 보이므로 그대로 뒀습니다.
 
 ## v0.60.0 - 2026-08-04 (staging)
-
-"전부 반영해줘" 요청에 따라 UX 점검에서 나온 항목들과 기능 제안을 반영했습니다.
 
 - **오류 화면**: 서버 쪽 오류가 나면 이제 Next.js 기본 크래시 화면 대신, 다시 시도/새로고침
   버튼이 있는 우호적인 화면이 뜹니다.
@@ -176,48 +110,7 @@ end $$;
 - 참고: 알림을 매일 이메일로 받아보는 기능은 별도 이메일 발송 서비스(API 키) 연동이
   필요해 이번 라운드에서는 빼고, 대신 위 "알림 묶어보기"로 인앱에서 확인할 수 있게 했습니다.
 
-```sql
--- ===== v0.60.0: 업무 소프트 삭제(7일 휴지통) + 선후관계(의존) 표시 =====
-alter table tasks add column if not exists deleted_at timestamptz;
-alter table tasks add column if not exists depends_on_task_id uuid references tasks(id) on delete set null;
-
-drop policy if exists "giamicro_all_tasks" on tasks;
-
-drop policy if exists "giamicro_select_tasks" on tasks;
-create policy "giamicro_select_tasks" on tasks
-  for select using (is_giamicro_user() and deleted_at is null);
-
-drop policy if exists "giamicro_select_own_trashed_tasks" on tasks;
-create policy "giamicro_select_own_trashed_tasks" on tasks
-  for select using (
-    is_giamicro_user()
-    and deleted_at is not null
-    and deleted_at > now() - interval '7 days'
-    and (
-      is_app_admin()
-      or owner_email = lower(auth.jwt() ->> 'email')
-      or lower(auth.jwt() ->> 'email') = any(assignee_emails)
-    )
-  );
-
-drop policy if exists "giamicro_insert_tasks" on tasks;
-create policy "giamicro_insert_tasks" on tasks
-  for insert with check (is_giamicro_user());
-
-drop policy if exists "giamicro_update_tasks" on tasks;
-create policy "giamicro_update_tasks" on tasks
-  for update using (is_giamicro_user()) with check (is_giamicro_user());
-
-drop policy if exists "giamicro_delete_tasks" on tasks;
-create policy "giamicro_delete_tasks" on tasks
-  for delete using (is_giamicro_user());
-```
-
 ## v0.59.0 - 2026-08-04 (staging)
-
-수정요청사항을 반영했습니다: "1. 구조상 들어갈만한 어울리는 모션 추가  2. UX 점검  3. 다른
-업무툴 대비 기능제안  4. 문의사항 아래 현재버전 표시 + 버전로그  5. 테마별 폰트색/버튼
-스타일 정교화(리퀴드글라스 메뉴버튼 유리질감, GIA 배경=로고색·버튼=골드 고급스러운 UI)".
 
 - **버전 기록**: 사이드바 문의및건의사항 바로 아래에 현재 버전(v0.59.0)이 뜨고, 누르면
   지금까지의 모든 업데이트 내역을 최신순으로 볼 수 있는 [버전 기록] 화면(`/changelog`)으로
@@ -231,13 +124,7 @@ create policy "giamicro_delete_tasks" on tasks
   느낌을 주는 등 절제된 모션을 셸 전반에 추가했습니다(동작이 불편한 분들을 위해
   시스템의 "동작 줄이기" 설정을 따르도록 했습니다).
 
-DB 변경 사항 없음.
-
 ## v0.58.0 - 2026-08-04 (staging)
-
-수정요청사항 두 가지를 반영했습니다: "1. 실시간로그는 세줄만  2. 테마구현 : 라이트(지금),
-다크, 리퀴드글라스, GIA(gia마크색과 어울리는 몇몇색(예를들어 골드)으로 이루어진 멋스러운
-테마)".
 
 - **실시간 로그 세 줄**: 업무 탭 하단 "실시간 로그" 고정 높이 영역이 5줄 → 3줄로 줄었습니다
   (헤더 클릭 시 뜨는 "전체보기" 팝업은 그대로 전체를 보여줍니다).
@@ -247,25 +134,9 @@ DB 변경 사항 없음.
   공통 화면 틀까지이고, 업무/위클리 리포트 등 각 화면 내부 고유 색상은 이번 범위에서
   뺐습니다.
 
-```sql
--- ===== v0.58.0: 테마(라이트/다크/리퀴드글라스/GIA) - 내 계정 설정에 저장 =====
-alter table app_users add column if not exists theme text not null default 'light';
-do $$
-begin
-  if not exists (
-    select 1 from pg_constraint where conname = 'app_users_theme_check'
-  ) then
-    alter table app_users add constraint app_users_theme_check
-      check (theme in ('light', 'dark', 'liquid-glass', 'gia-brand'));
-  end if;
-end $$;
-```
-
 ## v0.57.7 - 2026-08-04 (staging)
 
-알림 표시를 두 곳으로 나눴습니다(요청: "확인 하자마자 사라지는게 아니라 확인하고
-다른페이지 로딩해야 깜빡이는게 사라지네... 동그라미 안의 숫자는 미확인 업무 개수로 하고,
-확인이 되면 프로필 이름 맨 오른쪽에 둥근 네모박스안에 총 업무갯수를 표시해줘").
+알림 표시를 두 곳으로 나눴습니다.
 
 - **프로필 아이콘 모서리(빨간 원)**: 이제 "미확인" 업무 개수만 보여줍니다. 하나라도 있으면
   빨간색으로 깜빡이고, 전부 확인되면 사라집니다.
@@ -275,13 +146,7 @@ end $$;
   그 자리에서 바로 다시 세도록 고쳤습니다 - 예전에는 체크한 뒤 다른 페이지로 이동해야만
   깜빡임이 사라졌습니다.
 
-DB 변경 사항 없음.
-
 ## v0.57.6 - 2026-08-04 (staging)
-
-알림 배지를 요청하신 대로 다시 설계했습니다: "프로필 옆에 동그라미 숫자를 띄우고, 그게
-내업무 갯수를 뜻하고 새로운 업무가 생길때마다 빨간색으로 깜빡깜빡이도록 하고 업무확인하면
-그냥 작은 원안에 숫자를 표시하게".
 
 - **숫자**: 이제 "새로 생긴 업무 수"가 아니라 "지금 내 업무함에 있는 업무 개수"입니다(내
   업무 목록 위젯과 동일한 기준: 내가 등록자거나, 태그된 담당자거나, [전체]로 등록된 업무 중
@@ -289,27 +154,15 @@ DB 변경 사항 없음.
 - **깜빡임**: 그중 내가 아직 "업무 확인" 체크를 안 한 업무가 하나라도 있으면 빨간색으로
   깜빡입니다. 업무 상세 화면에서 그 업무의 "업무 확인" 체크박스를 누르면(=이미 있던 기능)
   더 이상 깜빡이지 않고 조용한 색의 숫자만 남습니다.
-- task_list_reads 테이블은 더 이상 쓰지 않아 정리 차원에서 지웁니다(아래 SQL). 실행 안 해도
-  기능에는 지장 없습니다 - 그냥 안 쓰는 테이블을 남겨둘지 지울지의 문제입니다.
-
-```sql
--- ===== v0.57.6: 더 이상 쓰지 않는 task_list_reads 정리(선택) =====
-drop table if exists task_list_reads cascade;
-```
 
 ## v0.57.5 - 2026-08-04 (staging)
 
-알림 배지에서 "새 업무" 개수가 안 뜨는 문제를 고쳤습니다(요청: "내 업무가 하나 있는데
-메인메뉴 프로필옆에 표시가안돼").
+알림 배지에서 "새 업무" 개수가 안 뜨는 문제를 고쳤습니다.
 
 - 원인: 업무 배지는 "마지막으로 업무 탭을 연 시각 이후 등록된 업무"만 셌는데, 업무 탭을
   아직 한 번도 연 적이 없으면(=task_list_reads에 내 기록이 아직 없으면) 그 기준 시각이
   없어서 통째로 0으로 처리하고 있었습니다. 이미 다른 사람이 태그해둔 업무가 있어도 안
   보였던 이유입니다.
-- 수정: 방문 기록이 아직 없으면 아주 오래된 시각을 기준으로 삼아, 지금 나에게 태그됐거나
-  [전체]로 등록된 업무를 전부 셉니다. DB 변경은 없습니다 - 코드만 고치면 됩니다.
-
-DB 변경 사항 없음.
 
 ## v0.57.4 - 2026-08-04 (staging)
 
@@ -331,40 +184,6 @@ DB 변경 사항 없음.
   완전히 지우고 처음부터 새로 만들도록 해서, 이미 한 번 실행했든 안 했든 항상 같은 결과가
   나오게 했습니다(재실행해도 충돌 없이 안전).
 
-```sql
--- ===== v0.57.4: task_list_reads 재생성 (기존 걸 완전히 지우고 새로 만듦 - 여러 번 실행해도 안전) =====
-drop table if exists task_list_reads cascade;
-
-create table task_list_reads (
-  user_email text primary key,
-  last_seen_at timestamptz not null default now()
-);
-
-alter table task_list_reads enable row level security;
-create policy "giamicro_select_task_list_reads" on task_list_reads
-  for select using (is_giamicro_user());
-create policy "self_insert_task_list_reads" on task_list_reads
-  for insert with check (is_giamicro_user() and user_email = lower(auth.jwt() ->> 'email'));
-create policy "self_update_task_list_reads" on task_list_reads
-  for update
-  using (is_giamicro_user() and user_email = lower(auth.jwt() ->> 'email'))
-  with check (is_giamicro_user() and user_email = lower(auth.jwt() ->> 'email'));
-
-alter table task_list_reads replica identity full;
-
-do $$
-begin
-  if not exists (
-    select 1 from pg_publication_tables
-    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'task_list_reads'
-  ) then
-    alter publication supabase_realtime add table task_list_reads;
-  end if;
-exception when others then
-  null;
-end $$;
-```
-
 ## v0.57.3 - 2026-08-04 (staging)
 
 스테이징 주소가 "This page couldn't load"로 아예 안 뜨는 문제 진단 중 - v0.57.2(알림 배지)를
@@ -372,13 +191,7 @@ end $$;
 
 - v0.57.2에서 추가한 사이드바 알림 배지(NotificationBell)와 관련 코드를 전부 되돌렸습니다
   (task_list_reads 조회/구독, 프로필 옆 빨간 배지 UI).
-- 코드에서 안 쓰게 됐으니 DB의 task_list_reads 테이블도 함께 되돌립니다(아래 SQL을 Supabase
-  SQL Editor에 붙여넣고 실행하면 삭제됩니다 - 아직 실행 안 하셨다면 그냥 두셔도 무방합니다).
 
-```sql
--- ===== v0.57.3 롤백: task_list_reads 테이블 제거 (v0.57.2에서 추가했던 것) =====
-drop table if exists task_list_reads;
-```
 - Vercel Authentication(배포 보호)은 이미 꺼져 있는 상태에서도 로드가 안 됐던 걸 확인했고,
   서버로 직접 보낸 요청은 계속 정상 응답이 와서 배포 자체가 완전히 죽은 건 아니었습니다.
   이번 되돌리기로 증상이 없어지는지 확인하는 게 다음 단계입니다.
@@ -396,8 +209,6 @@ drop table if exists task_list_reads;
   주소와 가장 정확히 맞는 메뉴 하나만 켜지도록 로직을 바꿨습니다.
 - **AI 기능 on/off를 스위치 버튼으로**: 개발자 대시보드의 "켜짐/일시정지중" 텍스트 버튼을
   실제로 딸깍 켜고 끄는 토글 스위치 모양으로 바꿨습니다.
-
-DB 변경 사항 없음.
 
 ## v0.57.0 - 2026-08-04 (staging)
 
@@ -419,38 +230,11 @@ DB 변경 사항 없음.
 - 학생 통합 프로필(/students/[id]) 화면에도 보호자 이메일·성별·알러지·직접 추가한 칼럼
   값이 함께 표시됩니다.
 
-DB에 아래 SQL을 한 번 실행해주세요 (Supabase SQL Editor):
-
-```sql
--- ===== 59. 학생 명부 확장(보호자 이메일/성별/알러지) + 커스텀 칼럼 =====
-alter table wr_students add column if not exists parent_email text;
-alter table wr_students add column if not exists gender text check (gender in ('남', '여'));
-alter table wr_students add column if not exists allergies text;
-alter table wr_students add column if not exists custom_fields jsonb not null default '{}'::jsonb;
-
-create table if not exists wr_student_field_defs (
-  id uuid primary key default gen_random_uuid(),
-  field_key text not null unique,
-  label text not null,
-  field_type text not null default 'text' check (field_type in ('text', 'number', 'date')),
-  sort_order int not null default 0,
-  created_by text,
-  created_at timestamptz not null default now()
-);
-
-alter table wr_student_field_defs enable row level security;
-drop policy if exists "giamicro_all_wr_student_field_defs" on wr_student_field_defs;
-create policy "giamicro_all_wr_student_field_defs" on wr_student_field_defs
-  for all using (is_giamicro_user()) with check (is_giamicro_user());
-```
-
 ## v0.56.11 - 2026-08-04 (staging)
 
-접속중 배지 호버 툴팁이 "적용 안 된 것 같다"는 피드백을 받아 방식을 바꿨습니다. 브라우저
-기본 `title` 툴팁은 뜨기까지 시간이 걸리고 화면에 거의 안 보이다시피 해서 놓치기 쉬웠습니다.
-이제 배지에 마우스를 올리면 바로 아래에 접속자 이름 목록이 카드 형태로 뜹니다.
-
-DB 변경 사항 없음.
+- **접속자 배지 툴팁 개선**: 브라우저 기본 툴팁은 뜨기까지 시간이 걸리고 잘 안 보여서
+  놓치기 쉬웠습니다. 이제 배지에 마우스를 올리면 바로 아래에 접속자 이름 목록이 카드
+  형태로 뜹니다.
 
 ## v0.56.10 - 2026-08-04 (staging)
 
@@ -462,8 +246,6 @@ DB 변경 사항 없음.
   그 업무 상세창이 열립니다. 아무 동작을 하지 않아도 자동으로 사라지므로 업무 흐름이
   끊기지 않습니다.
 - 내가 직접 등록한 업무는 이미 알고 있으니 알림에서 제외됩니다.
-
-DB 변경 사항 없음.
 
 ## v0.56.9 - 2026-08-04 (staging)
 
@@ -487,13 +269,6 @@ DB 변경 사항 없음.
   (실시간 로그는 최대 5줄까지만 보이고, 위로 스크롤하면 과거 로그를 더 불러옵니다).
   이번에 추가로 손댈 부분은 없었습니다.
 
-DB에 아래 SQL을 한 번 실행해주세요 (Supabase SQL Editor):
-
-```sql
--- ===== 58. 업무 처리사항(resolution_note) =====
-alter table tasks add column if not exists resolution_note text;
-```
-
 ## v0.56.8 - 2026-08-04 (staging)
 
 업무 확인목록에서 등록자 본인을 빼고, "내 업무목록"을 내 것/전체 두 칸으로 나누고, 데이터
@@ -511,116 +286,6 @@ alter table tasks add column if not exists resolution_note text;
   안에서도 한 번 더 권한을 확인합니다.
 - **보안 PIN 관련**: 이전 버전(v0.56.7)에서 PIN 2차 확인을 없앤 데 이어, 이번 백업 기능이
   "데이터가 꼬여도 되돌릴 수 있는" 안전망 역할을 합니다.
-- DB 변경: `backups` 테이블 + `create_backup`/`restore_backup`/`backup_target_tables`
-  함수 신설. 아래 SQL을 Supabase SQL Editor에서 실행해 주세요.
-
-```sql
-create or replace function backup_target_tables()
-returns text[]
-language sql
-immutable
-as $$
-  select array[
-    'incidents', 'meetings', 'events', 'proposals', 'adopted', 'manual_sections',
-    'documents', 'tasks', 'task_comments', 'task_attachments'
-  ];
-$$;
-
-create table if not exists backups (
-  id uuid primary key default gen_random_uuid(),
-  label text,
-  created_by text not null,
-  created_at timestamptz not null default now(),
-  tables text[] not null,
-  snapshot jsonb not null
-);
-
-alter table backups enable row level security;
-
-drop policy if exists "admin_select_backups" on backups;
-create policy "admin_select_backups" on backups
-  for select using (is_giamicro_user() and is_app_admin());
-
-create or replace function create_backup(p_label text default null)
-returns backups
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  v_table text;
-  v_table_json jsonb;
-  v_snapshot jsonb := '{}'::jsonb;
-  v_row backups;
-begin
-  if not is_app_admin() then
-    raise exception '백업은 관리자/개발자만 만들 수 있습니다.';
-  end if;
-
-  foreach v_table in array backup_target_tables() loop
-    execute format('select coalesce(jsonb_agg(to_jsonb(t)), ''[]''::jsonb) from %I t', v_table)
-      into v_table_json;
-    v_snapshot := jsonb_set(v_snapshot, array[v_table], v_table_json);
-  end loop;
-
-  insert into backups (label, created_by, tables, snapshot)
-  values (p_label, lower(auth.jwt() ->> 'email'), backup_target_tables(), v_snapshot)
-  returning * into v_row;
-
-  return v_row;
-end;
-$$;
-
-revoke all on function create_backup(text) from public;
-grant execute on function create_backup(text) to authenticated;
-
-create or replace function restore_backup(p_backup_id uuid)
-returns void
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  v_backup backups;
-  v_table text;
-  v_rows jsonb;
-  v_set_clause text;
-begin
-  if not is_app_admin() then
-    raise exception '복원은 관리자/개발자만 할 수 있습니다.';
-  end if;
-
-  select * into v_backup from backups where id = p_backup_id;
-  if v_backup is null then
-    raise exception '해당 백업을 찾을 수 없습니다.';
-  end if;
-
-  foreach v_table in array v_backup.tables loop
-    v_rows := coalesce(v_backup.snapshot -> v_table, '[]'::jsonb);
-
-    execute format(
-      'delete from %I where id not in (select (r->>''id'')::uuid from jsonb_array_elements($1) r)',
-      v_table
-    ) using v_rows;
-
-    if jsonb_array_length(v_rows) > 0 then
-      select string_agg(format('%I = excluded.%I', column_name, column_name), ', ')
-        into v_set_clause
-        from information_schema.columns
-        where table_schema = 'public' and table_name = v_table and column_name <> 'id';
-
-      execute format(
-        'insert into %I select * from jsonb_populate_recordset(null::%I, $1) on conflict (id) do update set %s',
-        v_table, v_table, v_set_clause
-      ) using v_rows;
-    end if;
-  end loop;
-end;
-$$;
-
-revoke all on function restore_backup(uuid) from public;
-grant execute on function restore_backup(uuid) to authenticated;
-```
 
 ## v0.56.7 - 2026-08-04 (staging)
 
@@ -637,25 +302,6 @@ grant execute on function restore_backup(uuid) to authenticated;
 - **내 업무목록 위젯 보완**: "내 업무목록"이 이제 내가 등록한 업무와 나를 태그한 업무를
   함께 보여줍니다(예전에는 담당자로 태그된 것만 보였음) - [공유]로 다른 사람만 태그해도
   등록한 나에게 바로 보입니다.
-- DB 변경: `pins` 테이블 삭제, `tasks` 테이블 조회(select) 정책 변경 - 아래 SQL을
-  Supabase SQL Editor에서 실행해 주세요.
-
-```sql
--- PIN 2차 보안 제거
-drop table if exists pins;
-
--- 업무(tasks) 공개범위 - 나/공유는 관계자만, 전체는 모두에게
-drop policy if exists "giamicro_select_tasks" on tasks;
-create policy "giamicro_select_tasks" on tasks
-  for select using (
-    is_giamicro_user()
-    and (
-      origin_mode = '전체'
-      or owner_email = lower(auth.jwt() ->> 'email')
-      or lower(auth.jwt() ->> 'email') = any(assignee_emails)
-    )
-  );
-```
 
 ## v0.56.6 - 2026-08-04 (staging)
 
@@ -670,14 +316,8 @@ create policy "giamicro_select_tasks" on tasks
   확실합니다.
 - **"학사일정 보기" 버튼 제거**: 달력 자체를 누르면 바로 이동하므로 별도 하단 버튼은
   중복이라 없앴습니다.
-- DB 스키마 변경 없음.
 
 ## v0.56.5 - 2026-08-04 (staging)
-
-"메뉴간 전환도, 화면이 바뀌는 것도 전체적으로 느리다"는 제보를 받아 구조적인 원인을
-손봤습니다. 지금까지는 어느 메뉴를 누르든 사이드바를 그리는 layout이 요청마다
-"로그인 정보 + 학기 정보 + AI 기능 정지 여부 + 검토대기 배지 2종" 총 5개의 DB 조회가
-전부 끝나야만 화면이 뜨기 시작했습니다(하나라도 느리면 전체가 그만큼 늦어짐).
 
 - **화면을 막던 조회 축소(5개 → 3개)**: 로그인 확인과 배지 숫자만 화면 렌더링 전에
   꼭 필요하고, 학기 배지·AI 기능 정지 배너는 "장식성" 정보라 화면을 막을 이유가
@@ -695,8 +335,6 @@ create policy "giamicro_select_tasks" on tasks
    확인해주세요. 두 서비스가 멀리 떨어져 있으면 DB 조회 한 번마다 그 거리만큼
    지연이 계속 누적됩니다.
 
-DB 스키마 변경 없음.
-
 ## v0.56.4 - 2026-08-04 (staging)
 
 메뉴를 눌렀을 때 화면 전환이 느리다는 제보를 확인해 수정했습니다. 원인은 이전에(v0.53대)
@@ -713,8 +351,6 @@ DB 스키마 변경 없음.
   않고 방금 받아둔 화면을 그대로 재사용하도록 설정했습니다.
 - 상태표시줄에 링크 주소가 안 뜨는 기존 동작은 그대로 유지됩니다.
 
-DB 스키마 변경 없음.
-
 ## v0.56.3 - 2026-08-04 (staging)
 
 여러 사람이 "AI 제안 만들기"(사건/행사/회의 새 기록 분석)를 거의 동시에 눌러도 같은 기록이
@@ -728,14 +364,11 @@ DB 스키마 변경 없음.
   다음 분석 때 다시 시도되도록 했습니다 - 기록이 조용히 누락되는 일이 없습니다.
 - **DB 이중 방어선**: 사건/행사에서 만들어지는 제안에 유니크 제약을 추가해, 혹시 위 로직에
   틈이 있어도 같은 기록·같은 문서용 제안이 중복 저장되는 걸 DB가 한 번 더 막아줍니다.
-- DB 스키마 변경 있음 - 아래 SQL을 Supabase에서 실행해주세요.
 
 ## v0.56.2 - 2026-08-04 (staging)
 
 학사일정 달력에도 대한민국 공휴일이 표시됩니다(사이드바 메인 달력과 동일한 공휴일
 데이터). 준비 업무 일정을 잡을 때 실제로 일할 수 있는 날인지 바로 확인할 수 있습니다.
-
-- DB 스키마 변경 없음.
 
 ## v0.56.1 - 2026-08-04 (staging)
 
@@ -747,7 +380,6 @@ DB 스키마 변경 없음.
   넓어집니다.
 - **메뉴 목록 컴팩트화**: 사이드바 카테고리 각 줄의 위아래 여백을 줄여서, 같은 화면 높이에
   더 많은 메뉴가 스크롤 없이 한눈에 들어옵니다.
-- DB 스키마 변경 없음.
 
 ## v0.56.0 - 2026-08-04 (staging)
 
@@ -766,7 +398,6 @@ DB 스키마 변경 없음.
   계정도 학사일정 메뉴는 볼 수 있습니다(전 직원이 준비·체크해야 하는 항목이라).
 - 여러 직원이 동시에 페이지를 열어도 학기별 항목은 중복 없이 한 번만 자동 생성됩니다(DB
   고유 제약 + 안전한 재시도 처리, 반복 업무 자동 재등록 기능과 동일한 방식).
-- DB 스키마 변경 있음 - 아래 SQL을 Supabase에서 실행해주세요.
 
 ## v0.55.1 - 2026-08-04 (staging)
 
@@ -778,7 +409,6 @@ DB 스키마 변경 없음.
   페이지가 스크롤됐습니다. 화면 크기에 딱 맞는 고정 높이로 바꿔서, 이제 업무 탭 채팅은
   채팅창 안에서만 스크롤되고 사이드바 메뉴는 항상 제자리에 그대로 있습니다. 다른 화면(사건
   기록, 학교 관리 대시보드 등)의 페이지 스크롤 동작은 그대로입니다.
-- DB 스키마 변경 없음.
 
 ## v0.55.0 - 2026-08-04 (staging)
 
@@ -792,7 +422,6 @@ DB 스키마 변경 없음.
   교직원/학생 로스터 정보와 운영 분석을 한 화면에서 함께 봅니다(분석 섹션은 기존과 동일하게
   관리자에게만 보입니다). 사이드바 관리자 메뉴에서 중복 항목("관리자 대시보드")을 정리했고,
   옛 주소(/admin/dashboard)는 북마크해둔 분들을 위해 /school로 자동 연결됩니다.
-- DB 스키마 변경 없음.
 
 ## v0.54.0 - 2026-08-04 (staging)
 
@@ -811,7 +440,6 @@ DB 스키마 변경 없음.
   탭이 바로 열리도록 했습니다. 실제 작성·편집은 기존대로 운영관리(채택예정 발행)에서 이뤄지고,
   열람·인쇄 진입점만 학교 문서함에도 새로 뒀습니다.
 - **서류함 이동**: 서류함 메뉴를 운영관리에서 학교 문서함으로 옮겼습니다(화면·기능은 그대로).
-- DB 스키마 변경 없음 - 기존 manual_sections/documents/tasks/meetings 테이블을 그대로 조회합니다.
 
 ## v0.53.1 - 2026-08-04 (staging)
 
@@ -821,7 +449,6 @@ DB 스키마 변경 없음.
 - **메뉴 호버 시 주소 미리보기 제거**: 사이드바 메뉴(주메뉴/부메뉴)와 모바일 하단 메뉴를
   실제 `<a href>` 링크 대신 클릭 시 이동하는 버튼 방식으로 바꿨습니다. 이제 마우스를 올려도
   창 아래에 주소가 뜨지 않습니다. 메뉴 클릭 이동 동작 자체는 이전과 동일합니다.
-- DB 스키마 변경 없음.
 
 ## v0.53.0 - 2026-08-04 (staging)
 
@@ -838,7 +465,6 @@ DB 스키마 변경 없음.
 - **회의 보고서 (신규, 운영 관리 → 회의 보고서, `/meetings/report`)**: 마찬가지로 일간·주간
   ·월간 단위로 그 기간의 회의 기록을 날짜순으로 모아 보여주고, 인쇄용 PDF로 바로 열 수
   있습니다.
-- 기존 tasks/meetings 테이블 컬럼을 그대로 활용했고, DB 스키마 변경은 없습니다.
 
 ## v0.52.0 - 2026-08-04 (staging)
 
@@ -851,7 +477,6 @@ DB 스키마 변경 없음.
   사건기록, 회의기록, AI 매뉴얼, 행사기록, 제안함, 채택예정, 매뉴얼, 서류함, 실무자매뉴얼,
   학기·캠프, 사용자 관리, 문의및 건의사항, 교육뉴스, GIA시스템, 관리자 대시보드까지 사이드바의
   거의 모든 메뉴에 ❓ 버튼을 달았습니다. 누르면 그 화면을 어떻게 쓰는지 짧게 설명하는 팝업이 뜹니다.
-- 코드/디자인 변경만 있고 DB 스키마 변경은 없습니다.
 
 ## v0.51.1 - 2026-08-04 (staging)
 
@@ -878,8 +503,6 @@ DB 스키마 변경 없음.
 - **학기 정보 중복 조회 제거**: 사이드바+각 페이지가 "현재 진행중인 학기"를 각자 따로 조회하던
   것을 요청 단위로 한 번만 조회하도록 캐싱했습니다(`getCurrentTerm`을 `getCurrentAppUser`와
   같은 방식으로 `cache()` 처리). 화면 이동마다 DB 왕복이 하나씩 줄어듭니다.
-- **terms 테이블 인덱스 추가**: 거의 모든 화면 진입 시 실행되는 "진행중 학기" 조회에 색인이
-  없었는데, 이번 SQL로 추가했습니다.
 - **AI 단가표 갱신 리마인더 예약**: Sonnet 5 도입특가가 8월 31일 종료되는데, 단가표
   (`pricing.ts`)를 갱신하지 않으면 관리자 대시보드의 AI 비용 표시가 조용히 부정확해지므로
   8월 29일 자동 리마인더를 걸어뒀습니다.
@@ -907,10 +530,6 @@ DB 스키마 변경 없음.
   사이드바 맨 아래에 작은 링크로 옮겼습니다.
 
 **반 담임 이름 배정**
-- 담임 계정(이메일)이 아직 없어도, 이름만으로 반을 미리 배정해둘 수 있게 했습니다
-  (`wr_classes.teacher_name`/`sub_teacher_name`). 이번 SQL에 1A=Aimie, 1C=Carina, 1J=Jamie,
-  2Y=Yunsang, 2J=Jandy, 2K=Katherine, 3J=Janelle, 3A=Anna, 4A=Sarah, 5E=Eamonn으로 채워뒀습니다.
-  계정이 생기면 반 관리 화면에서 이메일로 바꿔주세요.
 
 **신규: 교육뉴스 (관리자 전용)**
 - AI가 web 검색으로 국제학교/교육정책/교육 트렌드 최신 소식을 찾아 정리하는 다이제스트입니다.
@@ -1076,13 +695,8 @@ Anthropic API를 아예 호출하지 않아 비용이 0원이 되고, 모든 직
   크기를 더 줄여서(10px) 카드 안에 자연스럽게 들어가도록 했습니다.
 - 담임/과목/관리자 화면에서 공통으로 쓰는 컴포넌트라 반별 작성 현황, 내 담임반, 내 담당과목
   화면 전부에 동일하게 적용됩니다.
-- (별도 안내) 업로드해주신 최신 반 명단(New GIA Lab 25-26) 기준 담임/부담임 재배정은 아래
-  SQL을 Supabase SQL Editor에서 실행해주세요 — 이 환경에서는 DB에 직접 쓸 수 없어 데이터
-  변경은 SQL로 전달드립니다.
 
 ## v0.45.0 - 2026-08-03 (staging)
-
-"학교 관리" 메뉴를 누르면 학교 현황을 한눈에 보는 대시보드가 나오도록 추가했습니다.
 
 - 사이드바/모바일 메뉴에서 "학교 관리" 카테고리 라벨 자체를 누르면(기존에는 하위 항목 중
   첫 번째로 그냥 넘어갔음) 새 `/school` 대시보드가 열립니다.
@@ -1136,53 +750,6 @@ UI/UX 정리 6건을 반영했습니다.
 - 모바일 칸반 상태변경: 업무카드에 드래그 없이 바로 상태를 바꿀 수 있는 드롭다운을 추가해
   터치 환경에서도 편하게 옮길 수 있습니다.
 
-### SQL (Supabase SQL Editor에 실행)
-
-```sql
--- ===== 48. 반복 업무 + 업무별 첨부파일 =====
-alter table tasks add column if not exists recurrence jsonb;
-alter table tasks add column if not exists recurrence_group_id uuid;
-
-create table if not exists task_attachments (
-  id uuid primary key default gen_random_uuid(),
-  task_id uuid not null references tasks(id) on delete cascade,
-  uploader_email text not null,
-  file_path text not null,
-  file_name text not null,
-  file_type text,
-  file_size bigint,
-  created_at timestamptz not null default now()
-);
-
-alter table task_attachments enable row level security;
-
-drop policy if exists "giamicro_select_task_attachments" on task_attachments;
-create policy "giamicro_select_task_attachments" on task_attachments
-  for select using (is_giamicro_user());
-
-drop policy if exists "giamicro_insert_task_attachments" on task_attachments;
-create policy "giamicro_insert_task_attachments" on task_attachments
-  for insert with check (is_giamicro_user());
-
-drop policy if exists "giamicro_delete_task_attachments" on task_attachments;
-create policy "giamicro_delete_task_attachments" on task_attachments
-  for delete using (is_giamicro_user());
-
-insert into storage.buckets (id, name, public)
-values ('task-files', 'task-files', false)
-on conflict (id) do nothing;
-
-drop policy if exists "giamicro_read_task_files" on storage.objects;
-create policy "giamicro_read_task_files" on storage.objects
-  for select using (bucket_id = 'task-files' and is_giamicro_user());
-drop policy if exists "giamicro_write_task_files" on storage.objects;
-create policy "giamicro_write_task_files" on storage.objects
-  for insert with check (bucket_id = 'task-files' and is_giamicro_user());
-drop policy if exists "giamicro_delete_task_files" on storage.objects;
-create policy "giamicro_delete_task_files" on storage.objects
-  for delete using (bucket_id = 'task-files' and is_giamicro_user());
-```
-
 ## v0.42.0 - 2026-08-03 (staging)
 
 업무탭 편의성 + 주간 학생 관찰기록 개선 7건을 반영했습니다.
@@ -1202,47 +769,6 @@ create policy "giamicro_delete_task_files" on storage.objects
 - **관리자/행정직원의 리포트 읽기·수정·삭제 권한.** 학생 프로필 화면에서 관리자/행정직원은
   이제 리포트를 열람만 하는 게 아니라 직접 수정하거나 삭제할 수 있습니다(삭제 버튼은
   관리자/행정직원에게만 보입니다).
-- **DB 변경 있음.** 아래 SQL을 Supabase SQL Editor에서 실행해주세요(재실행해도 안전합니다).
-
-```sql
--- ===== 47. 주간 학생 관찰기록 - 영문 이름 + 관리자/행정직원 삭제 권한 =====
-alter table wr_students add column if not exists name_en text;
-
-create or replace function is_wr_manager()
-returns boolean
-language sql
-security definer
-set search_path = public
-stable
-as $$
-  select
-    is_app_admin()
-    or exists (
-      select 1 from app_users
-      where email = lower(auth.jwt() ->> 'email')
-        and status = 'approved'
-        and position = '행정직원'
-    );
-$$;
-
-drop policy if exists "giamicro_all_wr_reports" on wr_reports;
-
-drop policy if exists "giamicro_select_wr_reports" on wr_reports;
-create policy "giamicro_select_wr_reports" on wr_reports
-  for select using (is_giamicro_user());
-
-drop policy if exists "giamicro_insert_wr_reports" on wr_reports;
-create policy "giamicro_insert_wr_reports" on wr_reports
-  for insert with check (is_giamicro_user());
-
-drop policy if exists "giamicro_update_wr_reports" on wr_reports;
-create policy "giamicro_update_wr_reports" on wr_reports
-  for update using (is_giamicro_user()) with check (is_giamicro_user());
-
-drop policy if exists "wr_manager_delete_wr_reports" on wr_reports;
-create policy "wr_manager_delete_wr_reports" on wr_reports
-  for delete using (is_wr_manager());
-```
 
 ## v0.41.0 - 2026-08-03 (staging)
 
@@ -1270,64 +796,6 @@ create policy "wr_manager_delete_wr_reports" on wr_reports
   마크다운 문법을 직접 타이핑하지 않아도 선택한 글자를 감싸서 서식을 넣을 수 있습니다.
 - **반응(이모지) 체크 표시 + 목록 확장.** 반응 고르기 팝업에서 이미 남긴 이모지에 파란
   체크 표시가 붙고, 자주 쓰는 이모지가 6개 → 12개로 늘었습니다.
-- **DB 변경 있음.** 아래 SQL을 Supabase SQL Editor에서 실행해주세요(재실행해도 안전합니다).
-
-```sql
--- ===== 44. 업무 삭제 권한 분리 (등록자 본인 또는 관리자만) =====
-drop policy if exists "giamicro_all_tasks" on tasks;
-
-drop policy if exists "giamicro_select_tasks" on tasks;
-create policy "giamicro_select_tasks" on tasks
-  for select using (is_giamicro_user());
-
-drop policy if exists "giamicro_insert_tasks" on tasks;
-create policy "giamicro_insert_tasks" on tasks
-  for insert with check (is_giamicro_user());
-
-drop policy if exists "giamicro_update_tasks" on tasks;
-create policy "giamicro_update_tasks" on tasks
-  for update using (is_giamicro_user()) with check (is_giamicro_user());
-
-drop policy if exists "owner_delete_tasks" on tasks;
-create policy "owner_delete_tasks" on tasks
-  for delete using (is_giamicro_user() and (owner_email = lower(auth.jwt() ->> 'email') or is_app_admin()));
-
--- ===== 45. 업무 - 등록 방식(나/전체/공유)별 색상 =====
-alter table tasks add column if not exists origin_mode text not null default '공유'
-  check (origin_mode in ('나', '전체', '공유'));
-
-create table if not exists task_mode_colors (
-  mode text primary key check (mode in ('나', '전체', '공유')),
-  color text not null
-);
-
-insert into task_mode_colors (mode, color) values
-  ('나', '#3b82f6'),
-  ('전체', '#8b5cf6'),
-  ('공유', '#f59e0b')
-on conflict (mode) do nothing;
-
-alter table task_mode_colors enable row level security;
-drop policy if exists "giamicro_select_task_mode_colors" on task_mode_colors;
-create policy "giamicro_select_task_mode_colors" on task_mode_colors
-  for select using (is_giamicro_user());
-drop policy if exists "admin_update_task_mode_colors" on task_mode_colors;
-create policy "admin_update_task_mode_colors" on task_mode_colors
-  for update using (is_app_admin()) with check (is_app_admin());
-
-do $$
-begin
-  if not exists (
-    select 1 from pg_publication_tables
-    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'task_mode_colors'
-  ) then
-    alter publication supabase_realtime add table task_mode_colors;
-  end if;
-end $$;
-
--- ===== 46. 업무 코멘트 - "이슈" 메모 구분 =====
-alter table task_comments add column if not exists is_issue boolean not null default false;
-```
 
 ## v0.40.0 - 2026-08-03 (staging)
 
@@ -1345,16 +813,6 @@ alter table task_comments add column if not exists is_issue boolean not null def
   연도 → 학기 → 날짜 순으로 접이식으로 묶여 있고, 각 업무를 펼치면 제안자(등록자)/담당자/
   완료 처리자/정시 여부와 함께, 코멘트·상태변경 이력(흐름)까지 확인할 수 있습니다. "전체
   보기"와 "내 기록"(내가 등록했거나 담당한 것만) 필터, 부서 필터를 지원합니다.
-- **DB 변경 있음.** 아래 SQL을 Supabase SQL Editor에서 실행해주세요(재실행해도 안전합니다).
-
-```sql
--- ===== 42. 업무기록(archive) - 완료된 업무를 연도/학기/날짜별로 보관 =====
-alter table tasks add column if not exists completed_at timestamptz;
-alter table tasks add column if not exists archived_at timestamptz;
-alter table tasks add column if not exists term_id uuid references terms(id) on delete set null;
-create index if not exists tasks_archived_at_idx on tasks(archived_at);
-create index if not exists tasks_term_id_idx on tasks(term_id);
-```
 
 - **참고: 이 기능은 매일 자정 직후(KST) 자동 실행되는 Vercel Cron에 의존합니다.**
   기존 학기 자동전환 크론과 같은 환경변수(`CRON_SECRET`, `SUPABASE_SERVICE_ROLE_KEY`)를
@@ -1365,30 +823,17 @@ create index if not exists tasks_term_id_idx on tasks(term_id);
 
 ## v0.39.2 - 2026-08-03 (staging)
 
-- **채팅 업무등록 오류 수정.** "Could not find the 'description' column of 'tasks' in the
-  schema cache" 오류는 코드 문제가 아니라, `tasks` 테이블에 `description` 컬럼을 추가하는
-  SQL(v0.34에서 이미 안내드렸던 것)이 실제 DB에는 아직 적용되지 않아서 생긴 문제로
-  보입니다. 아래 SQL을 Supabase SQL Editor에서 실행하면 컬럼이 없으면 추가하고, 이미 있으면
-  아무 일도 하지 않습니다(재실행해도 안전). 혹시 컬럼은 있는데도 같은 오류가 계속되면
-  PostgREST가 스키마 변경을 아직 못 읽은 캐시 문제일 수 있어, SQL 맨 끝에 캐시를 강제로
-  새로고침하는 구문도 함께 넣었습니다.
 - **홈 메뉴 재확인.** v0.39.1에서 없앤 게 맞는데, 그 변경은 staging 브랜치에만 있고 아직
   main(라이브)에는 병합되지 않아서 실제 화면에서는 계속 보이셨을 거예요. staging 미리보기
   URL에서 확인해주시면 사라져 있을 겁니다 - "발행"하시면 라이브에도 반영됩니다.
 - **메뉴 순서 변경.** 가장 자주 쓰는 "업무"를 맨 위로 올리고, 그 바로 아래에 "실무자
   매뉴얼"을 뒀습니다.
 - **"학교관리" → "학교 관리".** "운영 관리"처럼 띄어쓰기를 맞췄습니다.
-- **DB 변경 있음.** 아래 SQL을 Supabase SQL Editor에서 실행해주세요(재실행해도 안전합니다).
-
-```sql
-alter table tasks add column if not exists description text;
-notify pgrst, 'reload schema';
-```
 
 ## v0.39.1 - 2026-08-03
 
-사이드바(PC)/상단바(모바일)의 로고를 누르면 이미 홈으로 이동하고 있었어서(기존부터 있던
-동작), 메뉴 목록에 따로 있던 "홈" 항목은 중복이라 없앴습니다. 화면 코드/DB 변경은 없습니다.
+- **중복 "홈" 메뉴 제거.** 사이드바(PC)/상단바(모바일)의 로고를 누르면 이미 홈으로
+  이동하고 있어서, 메뉴 목록에 따로 있던 "홈" 항목은 없앴습니다.
 
 ## v0.39.0 - 2026-08-03
 
@@ -1411,20 +856,6 @@ notify pgrst, 'reload schema';
   옮기면, 그 업무의 등록자와 다른 담당자들에게 "OOO님이 '제목' 업무를 '진행중'으로
   옮겼어요" 토스트 알림이 화면 우측 하단에 바로 뜹니다(본인이 직접 바꾼 경우는 알림이
   뜨지 않습니다). 눌러서 바로 그 업무 상세로 이동할 수 있습니다.
-- **DB 변경 있음.** 아래 SQL을 Supabase SQL Editor에 붙여넣고 실행해주세요(재실행해도
-  안전합니다).
-
-```sql
--- ===== 42. 업무 - 공유 업무 실시간 알림용 updated_by =====
--- "누가 상태를 바꿨는지" 알아야 그 사람 본인에게는 알림을 안 띄우고, 태그된 다른 사람에게만
--- 실시간 토스트로 "OOO님이 이 업무를 진행중으로 옮겼어요" 같은 알림을 보여줄 수 있습니다.
-alter table tasks add column if not exists updated_by text;
-
--- 위 messages 테이블과 같은 이유로, UPDATE 이벤트에 이전 status 값이 함께 와야 "정말 상태가
--- 바뀐 변경인지"(단순 담당자 태그 수정이나 확인 체크 등은 제외) 클라이언트에서 구분할 수
--- 있습니다. 기본 REPLICA IDENTITY는 기본키만 old에 담아 보내 이 구분이 불가능했습니다.
-alter table tasks replica identity full;
-```
 
 ## v0.38.0 - 2026-08-03
 
@@ -1450,118 +881,6 @@ alter table tasks replica identity full;
 - **메시지 고정.** 메시지에 마우스를 올려 📌를 누르면 고정되어 채팅창 상단에 "고정된 메시지"
   바로 모입니다(카카오톡 공지처럼 부서원 누구나 고정/해제 가능). 다만 고정 여부가 아닌
   글자 내용·첨부파일 등은 여전히 작성자 본인만 고칠 수 있도록 DB 쪽에서 한 번 더 막아뒀습니다.
-- **DB 변경 있음.** 아래 SQL을 Supabase SQL Editor에 붙여넣고 실행해주세요(재실행해도
-  안전합니다).
-
-```sql
--- ===== 41. 채팅 - 첨부파일 / 읽음 표시 / 메시지 고정 (구글챗 스타일 기능 2차) =====
-
--- 41-1) 파일/이미지 첨부. 메시지당 첨부 1개로 단순화했습니다(여러 개가 필요하면 나중에 별도
--- 테이블로 확장 가능). content는 첨부만 보내고 글자는 안 쓸 수도 있어 빈 문자열을 허용합니다.
-alter table messages add column if not exists attachment_path text;
-alter table messages add column if not exists attachment_name text;
-alter table messages add column if not exists attachment_type text;
-alter table messages add column if not exists attachment_size bigint;
-
--- 회의 음성/행사 사진처럼 사내 파일이라 비공개 버킷으로 만들고, 조회도 signed URL로만
--- 가능하게 합니다(giamicro.com 계정이면 업로드/조회/삭제 모두 가능 - 기존 event-photos와 동일한
--- 신뢰 모델).
-insert into storage.buckets (id, name, public)
-values ('chat-files', 'chat-files', false)
-on conflict (id) do nothing;
-
-drop policy if exists "giamicro_read_chat_files" on storage.objects;
-create policy "giamicro_read_chat_files" on storage.objects
-  for select using (bucket_id = 'chat-files' and is_giamicro_user());
-drop policy if exists "giamicro_write_chat_files" on storage.objects;
-create policy "giamicro_write_chat_files" on storage.objects
-  for insert with check (bucket_id = 'chat-files' and is_giamicro_user());
-drop policy if exists "giamicro_delete_chat_files" on storage.objects;
-create policy "giamicro_delete_chat_files" on storage.objects
-  for delete using (bucket_id = 'chat-files' and is_giamicro_user());
-
--- 41-2) 읽음 표시. 부서 채팅방마다 "내가 여기를 마지막으로 읽은 시각"만 한 행씩 저장합니다
--- (메시지마다 읽음 여부를 따로 저장하면 데이터가 기하급수로 늘어나므로, 카카오톡처럼 "이
--- 시각 이후 메시지 = 안 읽음"으로 계산합니다).
-create table if not exists message_reads (
-  department text not null,
-  user_email text not null,
-  last_read_at timestamptz not null default now(),
-  primary key (department, user_email)
-);
-
-alter table message_reads enable row level security;
-drop policy if exists "giamicro_select_reads" on message_reads;
-create policy "giamicro_select_reads" on message_reads
-  for select using (is_giamicro_user());
-drop policy if exists "self_insert_reads" on message_reads;
-create policy "self_insert_reads" on message_reads
-  for insert with check (is_giamicro_user() and user_email = lower(auth.jwt() ->> 'email'));
-drop policy if exists "self_update_reads" on message_reads;
-create policy "self_update_reads" on message_reads
-  for update
-  using (is_giamicro_user() and user_email = lower(auth.jwt() ->> 'email'))
-  with check (is_giamicro_user() and user_email = lower(auth.jwt() ->> 'email'));
-
-alter table message_reads replica identity full;
-
-do $$
-begin
-  if not exists (
-    select 1 from pg_publication_tables
-    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'message_reads'
-  ) then
-    alter publication supabase_realtime add table message_reads;
-  end if;
-end $$;
-
--- 41-3) 메시지 고정. 카카오톡 공지처럼 "누구든" 고정/해제할 수 있게 하려는데, 지난 버전에서
--- 만든 "author_update_own_messages" 정책은 UPDATE 자체를 작성자로만 제한하고 있어 그대로는
--- 다른 사람이 핀을 꽂을 수 없습니다. app_users 자기수정 때와 같은 패턴으로, RLS는
--- giamicro.com 계정이면 누구나 UPDATE를 시도할 수 있게 넓히고, 트리거가 "본인이 작성한
--- 메시지가 아니라면 pinned_at/pinned_by를 뺀 나머지 컬럼(글자 내용, 첨부파일, 답장 대상 등)은
--- 전부 원래 값으로 되돌리는" 방식으로 실제 수정 범위를 좁힙니다.
-alter table messages add column if not exists pinned_at timestamptz;
-alter table messages add column if not exists pinned_by text;
-
-drop policy if exists "author_update_own_messages" on messages;
-drop policy if exists "giamicro_update_messages" on messages;
-create policy "giamicro_update_messages" on messages
-  for update
-  using (is_giamicro_user())
-  with check (is_giamicro_user());
-
-create or replace function protect_messages_update()
-returns trigger
-language plpgsql
-security definer
-set search_path = public
-as $$
-begin
-  if old.author_email = lower(auth.jwt() ->> 'email') then
-    return new; -- 작성자 본인 - 내용/첨부/답장/수정시각 등 전부 자유롭게 바꿀 수 있음
-  end if;
-  -- 작성자가 아니면 고정(pinned_at/pinned_by)만 바꿀 수 있고 나머지는 원래 값으로 되돌립니다.
-  new.content := old.content;
-  new.edited_at := old.edited_at;
-  new.reply_to_id := old.reply_to_id;
-  new.author_email := old.author_email;
-  new.department := old.department;
-  new.created_at := old.created_at;
-  new.source_department := old.source_department;
-  new.attachment_path := old.attachment_path;
-  new.attachment_name := old.attachment_name;
-  new.attachment_type := old.attachment_type;
-  new.attachment_size := old.attachment_size;
-  return new;
-end;
-$$;
-
-drop trigger if exists messages_protect_update on messages;
-create trigger messages_protect_update
-  before update on messages
-  for each row execute function protect_messages_update();
-```
 
 ## v0.37.0 - 2026-08-03
 
@@ -1590,54 +909,6 @@ create trigger messages_protect_update
 - **참고로 이번엔 넣지 않은 것들:** 파일/이미지 첨부, 읽음 표시, 링크 미리보기, 메시지
   검색·고정은 구글챗에 있지만 저장소/조회 기능이 추가로 필요해서 이번 범위에는 넣지
   않았습니다. 필요하시면 다음에 이어서 추가해드릴 수 있어요.
-- **DB 변경 있음.** 아래 SQL을 Supabase SQL Editor에 붙여넣고 실행해주세요(재실행해도
-  안전합니다).
-
-```sql
-alter table messages add column if not exists reply_to_id uuid references messages(id) on delete set null;
-alter table messages add column if not exists edited_at timestamptz;
-
-drop policy if exists "author_update_own_messages" on messages;
-create policy "author_update_own_messages" on messages
-  for update
-  using (is_giamicro_user() and author_email = lower(auth.jwt() ->> 'email'))
-  with check (is_giamicro_user() and author_email = lower(auth.jwt() ->> 'email'));
-
-create table if not exists message_reactions (
-  id uuid primary key default gen_random_uuid(),
-  message_id uuid not null references messages(id) on delete cascade,
-  department text not null,
-  emoji text not null,
-  author_email text not null,
-  created_at timestamptz not null default now(),
-  unique (message_id, emoji, author_email)
-);
-create index if not exists message_reactions_message_idx on message_reactions(message_id);
-create index if not exists message_reactions_department_idx on message_reactions(department);
-
-alter table message_reactions enable row level security;
-drop policy if exists "giamicro_select_reactions" on message_reactions;
-create policy "giamicro_select_reactions" on message_reactions
-  for select using (is_giamicro_user());
-drop policy if exists "giamicro_insert_own_reaction" on message_reactions;
-create policy "giamicro_insert_own_reaction" on message_reactions
-  for insert with check (is_giamicro_user() and author_email = lower(auth.jwt() ->> 'email'));
-drop policy if exists "author_delete_own_reaction" on message_reactions;
-create policy "author_delete_own_reaction" on message_reactions
-  for delete using (is_giamicro_user() and author_email = lower(auth.jwt() ->> 'email'));
-
-alter table message_reactions replica identity full;
-
-do $$
-begin
-  if not exists (
-    select 1 from pg_publication_tables
-    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'message_reactions'
-  ) then
-    alter publication supabase_realtime add table message_reactions;
-  end if;
-end $$;
-```
 
 ## v0.36.0 - 2026-08-03
 
@@ -1657,26 +928,6 @@ end $$;
   좁혔고, 메시지 작성도 본인 이메일로만 가능하도록 함께 막았습니다(다른 사람 이름으로 보내는
   것 방지). 실시간 삭제 반영을 위해 메시지 테이블의 REPLICA IDENTITY도 FULL로 바꿔서, 삭제
   이벤트가 다른 접속자 화면에도 department 필터를 타고 정상적으로 전달되도록 했습니다.
-- **DB 변경 있음.** 아래 SQL을 Supabase SQL Editor에 붙여넣고 실행해주세요(재실행해도
-  안전합니다).
-
-```sql
-drop policy if exists "giamicro_all_messages" on messages;
-
-drop policy if exists "giamicro_select_messages" on messages;
-create policy "giamicro_select_messages" on messages
-  for select using (is_giamicro_user());
-
-drop policy if exists "giamicro_insert_own_messages" on messages;
-create policy "giamicro_insert_own_messages" on messages
-  for insert with check (is_giamicro_user() and author_email = lower(auth.jwt() ->> 'email'));
-
-drop policy if exists "author_delete_own_messages" on messages;
-create policy "author_delete_own_messages" on messages
-  for delete using (is_giamicro_user() and author_email = lower(auth.jwt() ->> 'email'));
-
-alter table messages replica identity full;
-```
 
 ## v0.35.0 - 2026-08-02
 
@@ -1685,17 +936,6 @@ alter table messages replica identity full;
 - **내 계정 설정 화면 신설(`/account`).** 사이드바 하단 프로필을 누르면 이동하는 새 화면으로,
   프로필 사진과 이름을 스스로 바꿀 수 있습니다. 사진은 공개 스토리지 버킷(`avatars`)에 올라가고
   계정당 파일명이 고정돼(upsert) 바꿀 때마다 예전 파일이 쌓이지 않습니다.
-- **직위(권한) 뱃지는 자유 입력이 아니라, 우리 권한 체계 그대로 보여주는 읽기 전용 값입니다.**
-  `position`(교사/행정직원/관리자/개발자)은 layout.tsx의 메뉴 접근 권한 판단에 직접 쓰이는 값이자
-  사이드바 뱃지에 그대로 노출되는 값이기도 합니다. 계정 설정 화면에는 이 값을 뱃지로 "표시"만
-  하고, 실제로 바꾸는 기능은 넣지 않았습니다 - 직위는 승인 신청이 들어왔을 때(또는 그 이후
-  언제든) 관리자 이상 권한을 가진 사람이 [학교관리 &gt; 사용자 관리]에서 지정/변경합니다.
-  이번 업데이트로 그 화면에서 대기 중인 신청자와 이미 승인된 직원 모두의 직위를 관리자가 직접
-  선택할 수 있게 됐고(이전엔 온보딩 때 본인이 고른 값이 그대로 굳어 있었습니다), 직위를
-  지정해야만 승인 버튼이 활성화되도록 했습니다. 이름/사진은 온보딩 이후에도 본인이 계속 고칠 수
-  있도록 관련 DB 정책(RLS)을 넓혔고, 관리자가 아닌 사람이 `position`/`email`/`status`/
-  `decided_at`/`decided_by`를 함께 바꾸려는 시도는 트리거가 항상 원래 값으로 되돌립니다(권한
-  상승 방지).
 - **사이드바 프로필 블록 개편.** 로고 아래 학기 배지 밑에 있던 한 줄짜리 이메일 표시를, 프로필
   사진 + "이름(직위)" + 그 아래 작은 글씨로 로그인 이메일을 보여주는 카드로 바꿨습니다. 예:
   "강경원 (개발자)" 위, "one2k87@gmail.com" 아래. 클릭하면 내 계정 설정으로 이동합니다. 교사
@@ -1704,72 +944,8 @@ alter table messages replica identity full;
 - **사건기록 담당자 자동 채움을 이메일 대신 이름으로.** 새 사건을 작성할 때 담당자 칸에
   자동으로 채워지던 로그인 이메일을, 내 계정 설정에서 정한 이름(없으면 이메일)으로 바꿨습니다.
   물론 자유 텍스트라 필요하면 그대로 고쳐 쓸 수 있습니다.
-- **DB 변경 있음.** 아래 SQL을 Supabase SQL Editor에 붙여넣고 실행해주세요(재실행해도 안전합니다 -
-  이미 적용됐다면 대부분 건너뜁니다).
-
-```sql
-alter table app_users add column if not exists avatar_url text;
-
-drop policy if exists "app_users_update_self_onboarding" on app_users;
-drop policy if exists "app_users_update_self" on app_users;
-create policy "app_users_update_self" on app_users
-  for update
-  using (email = lower(auth.jwt() ->> 'email'))
-  with check (email = lower(auth.jwt() ->> 'email'));
-
-create or replace function protect_app_users_self_update()
-returns trigger
-language plpgsql
-security definer
-set search_path = public
-as $$
-begin
-  if is_app_admin() then
-    return new;
-  end if;
-  new.email := old.email;
-  new.status := old.status;
-  new.decided_at := old.decided_at;
-  new.decided_by := old.decided_by;
-  new.position := old.position;
-  return new;
-end;
-$$;
-
-drop trigger if exists app_users_protect_self_update on app_users;
-create trigger app_users_protect_self_update
-  before update on app_users
-  for each row execute function protect_app_users_self_update();
-
-insert into storage.buckets (id, name, public)
-values ('avatars', 'avatars', true)
-on conflict (id) do nothing;
-
-drop policy if exists "public_read_avatars" on storage.objects;
-create policy "public_read_avatars" on storage.objects
-  for select using (bucket_id = 'avatars');
-
-drop policy if exists "giamicro_write_avatars" on storage.objects;
-create policy "giamicro_write_avatars" on storage.objects
-  for insert with check (bucket_id = 'avatars' and is_giamicro_user());
-
-drop policy if exists "giamicro_update_avatars" on storage.objects;
-create policy "giamicro_update_avatars" on storage.objects
-  for update using (bucket_id = 'avatars' and is_giamicro_user());
-
-drop policy if exists "giamicro_delete_avatars" on storage.objects;
-create policy "giamicro_delete_avatars" on storage.objects
-  for delete using (bucket_id = 'avatars' and is_giamicro_user());
-```
-
-(직전에 안내드렸던 버전은 "표시 직함"을 자유 입력으로 따로 두는 설계였는데, 말씀하신 대로 직위는
-권한 체계 자체를 보여주는 값이라 자유 입력이 아니라 관리자가 지정하는 읽기 전용 값으로 바꿨습니다.
-아직 이전 SQL을 실행하지 않으셨다면 위 버전만 실행하시면 됩니다. 혹시 이미 이전 버전을 실행해서
-`app_users.title` 컬럼이 있어도 지금은 코드에서 쓰지 않으니 그대로 두셔도 무해합니다.)
 
 ## v0.34.0 - 2026-08-02
-
-"위클리 리포트" 한글 개칭 + 학교관리 메뉴 통합 + 반별 작성 현황 위젯 + 통합 검색:
 
 - **"위클리 리포트" → "주간 학생 관찰기록"으로 개칭.** 사이드바 메뉴명, 페이지 제목, PDF
   표지/푸터 등 화면에 보이는 텍스트를 전부 바꿨습니다. 라우트(`/weekly-report/*`)와 내부
@@ -1790,35 +966,6 @@ create policy "giamicro_delete_avatars" on storage.objects
   `wr_reports`에 작성 시점 학년/반 스냅샷 컬럼(`class_id`, `grade`)을 추가하고 기존 기록에도
   소급 반영했습니다(재학 이력이 있으면 그 기준, 없으면 학생의 현재 학년/반 기준) - 앞으로 반이
   바뀌어도 과거 리포트의 반 기록은 그대로 남습니다.
-- **DB 변경 있음.** 아래 SQL을 Supabase SQL Editor에 붙여넣고 실행해주세요(재실행해도
-  안전합니다 - 전체 `supabase/schema.sql`에도 반영되어 있습니다).
-
-```sql
-alter table wr_reports add column if not exists class_id uuid references wr_classes(id) on delete set null;
-alter table wr_reports add column if not exists grade text;
-create index if not exists wr_reports_term_grade_class_idx on wr_reports(term_id, grade, class_id);
-
-update wr_reports r
-set class_id = coalesce(
-    (select we.class_id from wr_enrollments we
-     where we.student_id = r.student_id and we.term_id is not distinct from r.term_id
-     limit 1),
-    (select ws.class_id from wr_students ws where ws.id = r.student_id)
-  ),
-  grade = coalesce(
-    (select we.grade from wr_enrollments we
-     where we.student_id = r.student_id and we.term_id is not distinct from r.term_id
-     limit 1),
-    (select ws.grade from wr_students ws where ws.id = r.student_id)
-  )
-where r.class_id is null
-  and r.grade is null
-  and exists (select 1 from wr_students ws where ws.id = r.student_id);
-```
-
-(처음 드렸던 SQL의 UPDATE 문에 문법 오류가 있어 `42P01` 에러가 났었습니다 - 위 버전으로 다시
-실행해주세요. `alter table`/`create index`는 재실행해도 안전하고, 이미 컬럼이 추가돼 있었다면
-그 부분은 건너뛰고 UPDATE만 다시 실행됩니다.)
 
 ## v0.33.1 - 2026-08-02
 
@@ -1836,7 +983,6 @@ where r.class_id is null
 - 그 외 코드 전반(중복 쿼리, 실시간 구독 정리, 브라우저 Supabase 클라이언트 싱글턴 등)은
   이전 점검(v0.33.0, 그 이전 성능 점검들)에서 이미 정리되어 있어 추가로 손댈 부분은
   없었습니다.
-- DB 스키마 변경 없음.
 
 ## v0.33.0 - 2026-08-02
 
@@ -1855,7 +1001,6 @@ where r.class_id is null
   줄어드는 건 아니지만 체감 속도는 확실히 개선됩니다).
 - 그 외 미들웨어 인증 캐싱, 라우트별 코드 스플리팅(리치 텍스트 에디터·PDF 생성 등)은 이전
   점검에서 이미 최적화되어 있음을 재확인했고, 추가로 손댈 부분은 없었습니다.
-- DB 스키마 변경 없음.
 
 ## v0.32.1 - 2026-08-02
 
@@ -1866,7 +1011,6 @@ where r.class_id is null
 - 라벨을 "📋 업무로 등록 (AI 분석)"에서 "📋 업무등록"으로 간단하게 줄였습니다.
 - 팝업 크기와 글씨(11px)를 채팅 말풍선(13px)보다 뚜렷하게 작게 만들어서, 실제 채팅 내용과
   헷갈리지 않고 조작 버튼이라는 게 한눈에 구별되도록 했습니다.
-- DB 스키마 변경 없음.
 
 ## v0.32.0 - 2026-08-02
 
@@ -1874,7 +1018,7 @@ where r.class_id is null
 
 - **업무 상황판 위젯을 텍스트 크기에 맞게 축소.** 숫자 배지 한 줄뿐인데도 공간을 많이 차지하던
   것을 더 작게 줄이고, 그만큼 채팅창을 키웠습니다(왼쪽 컬럼 기본 비율: 상황판 14% / 채팅 86%,
-  드래그로 계속 조절 가능). 오른쪽(내 업무목록+칸반)은 요청대로 그대로 뒀습니다.
+  드래그로 계속 조절 가능). 오른쪽(내 업무목록+칸반)은 그대로 뒀습니다.
 - **채팅 자동 업무등록 → 클릭해서 AI가 분석하는 방식으로 전환.** "@담당자를 태그하면 자동으로
   업무 등록"은 실시간 채팅이 활발해지면 잡담까지 전부 업무화될 위험이 있어 방식을 바꿨습니다.
   이제 채팅 메시지를 클릭하면 "📋 업무로 등록 (AI 분석)" 작은 팝업이 뜨고, 눌러야만 AI가 그
@@ -1887,8 +1031,6 @@ where r.class_id is null
   절전 복귀 등) 끊겨 있던 동안의 메시지를 놓칠 수 있는 허점이 있어, 재연결 시 최근 메시지를
   자동으로 다시 불러오도록 보완했습니다. 채팅창 상단에 "🟢 실시간 연결됨 / 🟡 재연결 중..."
   표시를 추가해 연결 상태를 눈으로 확인할 수 있습니다.
-- **DB 스키마 변경 없음** - 기존 tasks.description/assignee_emails, messages realtime 설정을
-  그대로 사용합니다.
 
 ## v0.31.0 - 2026-08-02
 
@@ -1910,7 +1052,6 @@ where r.class_id is null
   했습니다.
 - **사이드바 달력+시계 위젯을 더 작게, 위젯답게.** 셀 크기와 간격을 더 줄이고 테두리+옅은
   배경을 넣어 카드형 위젯처럼 보이게 다듬었습니다. 시간 표시는 초 단위까지 나옵니다.
-- **DB 스키마 변경 없음** - 전부 화면 레이아웃/컴포넌트 구성 변경입니다.
 
 ## v0.30.0 - 2026-08-02
 
@@ -1929,8 +1070,6 @@ where r.class_id is null
   이력을 확인할 수 있어서, 전화를 받으면서 매뉴얼과 학생 정보를 동시에 훑어볼 수 있습니다.
   더 자세한 업무/채팅 언급 내역이 필요하면 "전체 프로필 페이지 열기"로 기존 학생 통합 프로필
   화면으로 이동할 수 있습니다.
-- **DB 스키마 변경 없음** - `/api/students/[id]` API 라우트를 새로 추가해 기존 `/students/[id]`
-  페이지가 쓰던 조회 로직을 재사용했습니다(권한 체크 동일: 관리자/행정직원/개발자).
 
 ## v0.29.2 - 2026-08-02
 
@@ -1949,7 +1088,6 @@ where r.class_id is null
 - **그 아래 칸반보드(진행대기/진행중/보류·이슈/완료)를 가로로 나란히 배치.** 화면이 넓을 땐
   4개 상태 컬럼이 옆으로 나란히 놓여 진짜 칸반보드처럼 카드를 끌어다 놓을 수 있고, 좁아지면
   자동으로 1~2열로 줄어듭니다(드래그앤드롭 기능 자체는 기존과 동일).
-- DB 스키마 변경은 없습니다(화면 레이아웃/컴포넌트 구성 변경).
 
 ## v0.29.1 - 2026-08-02
 
@@ -1964,12 +1102,6 @@ where r.class_id is null
 - **"+ 새 업무" 버튼/입력폼을 없앴습니다.** 업무 등록은 이제 채팅창에 메시지를 치는 것만으로
   이루어집니다(기존에도 있던 기능이지만, 버튼식 입력창이 따로 있어 헷갈렸던 부분을 정리해
   채팅 한 곳으로 통일했습니다).
-- **채팅 업무등록에 마감기한 자연어 인식 추가.** 채팅에 `@강경원 내일까지 이서아 입금확인해
-  주세요`라고 치면, @강경원님의 업무목록에 제목 "이서아 입금확인", 마감 "내일"로 자동 등록되고
-  채팅에도 "✅ 업무로 등록됨 → 강경원님 태그: "이서아 입금확인" (내일)"로 바로 안내됩니다.
-  오늘/내일/모레/글피, "이번주·다음주 O요일까지", "N일 후까지", "O월 O일까지" 형태를 인식하고,
-  "~해주세요/~부탁드립니다" 같은 요청형 어미는 제목에서 자동으로 지워집니다. DB 스키마 변경은
-  없습니다(기존 tasks.due_at 컬럼을 그대로 사용).
 
 ## v0.29.0 - 2026-08-01
 
@@ -2006,127 +1138,6 @@ where r.class_id is null
   언급된 내역(텍스트 검색 기반 참고용)까지 한 화면에서 볼 수 있습니다. 사이드바 [지원 · 관리]
   카테고리에 "학생 정보 조회" 메뉴가 추가됐습니다.
 
-Supabase SQL Editor에 아래 SQL을 붙여넣고 실행해주세요(재실행해도 안전합니다).
-
-```sql
--- ===== 36. 통합 인물관리(학생 영구 고유번호 + 연도/학기 통합 + 사건-학생 연결) =====
--- "업무·기록·생활(위클리 리포트) 세 영역에서 같은 학생/직원은 항상 같은 고유번호로 관리되어야
--- 한다"는 요청을 반영한 마이그레이션입니다. 동명이인(예: 김재이가 3개 반에 존재) 문제를
--- 이름이 아니라 영구 고유번호(student_no)로 해결하고, 연도별·학기별(정규학기+캠프) 재학
--- 이력을 남기고, 사건기록이 학생 이름 텍스트가 아니라 실제 학생 레코드를 가리키도록 합니다.
-
--- 36-1) 직위체계 정리: '교직원'(모호한 표현) → '행정직원'으로 명확화.
---       (교사/행정직원/관리자 3단계 + 개발자는 이 체계와 무관하게 완전 별도 최고권한)
-update app_users set position = '행정직원' where position = '교직원';
-alter table app_users drop constraint if exists app_users_position_check;
-alter table app_users add constraint app_users_position_check
-  check (position in ('교사', '행정직원', '관리자', '개발자'));
-
--- 36-2) 학생 영구 고유번호(student_no) + 기본 인적사항 확장 + 학급 FK 연결.
---       student_no는 한 번 부여되면 학년/반/이름이 바뀌어도 절대 바뀌지 않는 내부 식별자입니다.
-create sequence if not exists wr_student_no_seq;
-
-alter table wr_students add column if not exists student_no text;
-alter table wr_students add column if not exists birth_date date;
-alter table wr_students add column if not exists phone text;
-alter table wr_students add column if not exists address text;
-alter table wr_students add column if not exists class_id uuid references wr_classes(id) on delete set null;
-
--- 이미 등록된 학생들에게 일괄 채번합니다(입학연도를 알 수 없어 이번 이관 연도 2026으로 표기 -
--- 이후 신규 등록되는 학생은 실제 등록 시점 연도로 자동 채번됩니다).
-update wr_students
-set student_no = 'GIA-2026-' || lpad(nextval('wr_student_no_seq')::text, 4, '0')
-where student_no is null;
-
-alter table wr_students alter column student_no set default
-  ('GIA-' || to_char(now(), 'YYYY') || '-' || lpad(nextval('wr_student_no_seq')::text, 4, '0'));
-alter table wr_students alter column student_no set not null;
-create unique index if not exists wr_students_student_no_idx on wr_students(student_no);
-
--- grade/class_name 텍스트 필드는 기존 화면 호환을 위해 그대로 두고, class_id로 wr_classes와도
--- 연결해 담임선생님을 텍스트 매칭이 아닌 FK로 안정적으로 조회할 수 있게 합니다.
-update wr_students ws
-set class_id = wc.id
-from wr_classes wc
-where ws.class_id is null and ws.grade = wc.grade and ws.class_name = wc.class_name;
-
--- 36-3) 연도>학기(정규학기+캠프) 통합: 위클리 리포트도 운영(gia-ops)과 같은 terms 테이블을
---       씁니다(더 이상 wr_terms를 따로 쓰지 않습니다). terms.term_type은 자유 입력이지만
---       화면에서는 1학기/2학기/3학기/여름캠프1/여름캠프2/겨울캠프1/겨울캠프2를 기본 선택지로
---       제공합니다. wr_reports가 참조하던 wr_terms를 terms로 재연결합니다.
-alter table wr_reports drop constraint if exists wr_reports_term_id_fkey;
-alter table wr_reports add constraint wr_reports_term_id_fkey
-  foreign key (term_id) references terms(id) on delete set null;
-
--- wr_terms는 이제 쓰이지 않습니다(운영 학기 terms로 완전히 통합) - 안전하게 제거합니다.
-drop table if exists wr_terms cascade;
-
--- 36-4) 재학 이력(wr_enrollments): "몇년도 어느 학기에 이 학생이 몇학년 몇반, 담임은 누구였는지"를
---       스냅샷으로 남기는 이력 테이블입니다. wr_students.grade/class_name(현재값)과 별개로,
---       학기가 바뀔 때마다 새 행을 추가해 나가면 됩니다.
-create table if not exists wr_enrollments (
-  id uuid primary key default gen_random_uuid(),
-  student_id uuid not null references wr_students(id) on delete cascade,
-  term_id uuid references terms(id) on delete set null,
-  grade text,
-  class_id uuid references wr_classes(id) on delete set null,
-  homeroom_teacher_email text,
-  created_at timestamptz not null default now(),
-  unique (student_id, term_id)
-);
-create index if not exists wr_enrollments_student_idx on wr_enrollments(student_id);
-create index if not exists wr_enrollments_term_idx on wr_enrollments(term_id);
-
-alter table wr_enrollments enable row level security;
-drop policy if exists "giamicro_all_wr_enrollments" on wr_enrollments;
-create policy "giamicro_all_wr_enrollments" on wr_enrollments
-  for all using (is_giamicro_user()) with check (is_giamicro_user());
-
--- 현재 재학생 전원에 대해, 지금 진행중인 학기(있다면) 기준 스냅샷을 한 건씩 만들어 이력을
--- 시작합니다. 진행중인 학기가 없으면 term_id는 null로 남고, 나중에 학기가 생기면 관리자가
--- [학생 정보 조회] 화면에서 새 학기 스냅샷을 추가하면 됩니다.
-insert into wr_enrollments (student_id, term_id, grade, class_id, homeroom_teacher_email)
-select ws.id,
-       (select id from terms where status = '진행중' order by start_date desc nulls last limit 1),
-       ws.grade, ws.class_id, wc.teacher_email
-from wr_students ws
-left join wr_classes wc on wc.id = ws.class_id
-where not exists (
-  select 1 from wr_enrollments we
-  where we.student_id = ws.id
-    and we.term_id is not distinct from (select id from terms where status = '진행중' order by start_date desc nulls last limit 1)
-);
-
--- 36-5) 사건기록 ↔ 학생 구조적 연결(incident_students): incidents.students(자유 텍스트, 쉼표
---       구분)는 빠른 메모용으로 계속 남겨두되, 실제 학생 레코드와 다대다로 연결하는 조인
---       테이블을 추가합니다. 이렇게 연결된 사건은 [학생 정보 조회] 화면에서 그 학생의 학번
---       기준으로 정확히 모아볼 수 있습니다(이름이 같은 다른 학생과 섞이지 않습니다).
-create table if not exists incident_students (
-  id uuid primary key default gen_random_uuid(),
-  incident_id uuid not null references incidents(id) on delete cascade,
-  student_id uuid not null references wr_students(id) on delete cascade,
-  created_at timestamptz not null default now(),
-  unique (incident_id, student_id)
-);
-create index if not exists incident_students_incident_idx on incident_students(incident_id);
-create index if not exists incident_students_student_idx on incident_students(student_id);
-
-alter table incident_students enable row level security;
-drop policy if exists "giamicro_all_incident_students" on incident_students;
-create policy "giamicro_all_incident_students" on incident_students
-  for all using (is_giamicro_user()) with check (is_giamicro_user());
-
-do $$
-begin
-  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'wr_enrollments') then
-    alter publication supabase_realtime add table wr_enrollments;
-  end if;
-  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'incident_students') then
-    alter publication supabase_realtime add table incident_students;
-  end if;
-end $$;
-```
-
 ## v0.28.1 - 2026-08-01
 
 위클리 리포트에 실제 학생 명단(114명, 10개 반) 이관 - 코드 변경 없이 DB 데이터만 추가:
@@ -2142,14 +1153,6 @@ end $$;
     4A=Sarah, 5E=Eamonn
   - Crystal/Michelle/Celine 선생님은 원본 자료상 담임 배정이 없어(과목 전담으로 추정)
     [과목반 세팅] 화면에서 별도로 배정해주세요.
-- 코드 변경은 없어서 빌드/배포 없이 아래 SQL만 Supabase SQL Editor에 붙여넣고 실행하시면
-  바로 반영됩니다.
-
-```sql
--- ===== 35. 위클리 리포트 실제 데이터(반/학생 전체 명단) 이관 =====
--- (전체 SQL은 supabase/schema.sql의 35번 섹션을 참고해주세요 - 반 10개 + 학생 114명 전체가
---  포함돼 있어 이 체인지로그에는 길이 때문에 요약만 남깁니다.)
-```
 
 ## v0.28.0 - 2026-08-01
 
@@ -2207,17 +1210,7 @@ end $$;
   - 위클리 리포트: 틸(청록) 계열 배경(`--color-wr-bg`) + 전용 강조색(`--color-wr-primary`,
     사이드바 메뉴 강조색과 겹치지 않는 살짝 더 짙은 틸)으로 버튼·강조 요소를 새로 통일했습니다.
 
-DB에는 컬럼 하나만 추가됐습니다(업무 카드에 설명을 남길 수 있도록). Supabase SQL Editor에
-아래 SQL을 붙여넣고 실행해주세요 - 이미 실행하셨다면 `if not exists`라 다시 실행해도 안전합니다.
-
-```sql
--- ===== 34. 업무(tasks)에 설명(description) 추가 - WorkFlatform UI/UX 이식 =====
-alter table tasks add column if not exists description text;
-```
-
 ## v0.27.0 - 2026-08-01
-
-디자인 통일 + 업무 탭 고도화 + 위클리 리포트 실데이터 시드 + 통합 SQL 정리:
 
 - **디자인 시스템 도입(GIA 남색+골드).** 로고의 짙은 남색을 기준으로 남색/골드 팔레트를
   `globals.css`에 정의하고, 페이지 배경을 흰색에서 살짝 톤 다운된 회색빛(`#eef1f6`)으로
@@ -2228,21 +1221,6 @@ alter table tasks add column if not exists description text;
   남색 그라데이션이 되고, 로고는 남색 배경 위에서도 잘 보이도록 흰 칩(chip) 위에 올렸습니다.
   로그인/온보딩/승인대기/PIN 화면도 같은 남색 배경 + 흰 카드로 톤을 맞춰서, 로그인부터
   업무·위클리 리포트까지 하나의 제품처럼 보이도록 했습니다
-- **업무 탭을 워크플랫폼(WorkFlatform) 참조 구조에 맞춰 재구성했습니다.**
-  - 칸반 컬럼 순서를 참조 앱과 동일하게 "진행 대기 → 진행 중 → 보류·이슈 → 완료"로
-    바꿨습니다(DB에 저장되는 상태값 자체는 그대로 두고 화면 라벨/순서만 맞춰서 마이그레이션
-    없이 적용됩니다)
-  - **업무 확인(담당자 체크) 기능을 추가했습니다.** 담당자로 태그된 사람이 카드를 열어
-    "나 확인함" 체크를 하면 시각·이름이 기록되고, 카드에는 "확인 2/3" 같은 진행률이 표시됩니다
-  - **실시간 로그 패널을 추가했습니다.** 부서를 선택하면 보드 위쪽에 "OOO님이 업무를
-    '진행 중'으로 변경했습니다" / "OOO님이 업무를 확인했습니다" 같은 최근 활동이 실시간으로
-    쌓입니다(참조 앱처럼 별도 로그 테이블을 새로 만들지 않고, 기존 코멘트 테이블에 시스템
-    이벤트를 함께 기록하는 방식이라 구조가 단순합니다)
-  - 부서별 등록 색상(`departments.color`)을 업무 카드/부서 탭/채팅 `#태그`에 실제로
-    반영해서 부서 구분이 훨씬 선명해졌습니다
-  - dnd-kit·리사이즈 가능한 3단 레이아웃·별도 회의 예약 테이블(meetings)은 이번에 들여오지
-    않았습니다 - 기존 드래그앤드롭은 이미 잘 동작하고, 회의 예약은 이 앱의 기존 "회의기록"
-    기능과 성격이 달라 중복을 피했습니다
 - **업무/사건/행사/제안함/문의 등 앱 전반의 강조 버튼·선택 탭 색상을 슬레이트 계열에서
   GIA 남색으로 통일**해서 세 앱이 같은 브랜드 색을 쓰도록 정리했습니다
 - **위클리 리포트 실데이터 시드.** 전달해주신 학생/반/과목/학기 더미 데이터를 실제
@@ -2256,67 +1234,6 @@ alter table tasks add column if not exists description text;
     교체하시면 됩니다
 - **레거시 정리.** 홈 화면의 개인용 "할 일" 위젯이 팀 공유 업무 보드로 완전히 대체된 뒤
   화면 어디에서도 쓰이지 않던 `todos` 테이블을 정리했습니다
-- **통합 SQL 정리.** `supabase/schema.sql`은 이제 31개 섹션이 누적된 하나의 파일이고, 전체를
-  처음부터 끝까지 한 번에 실행해도 안전합니다(있는 테이블/컬럼은 건드리지 않고, 없는 것만
-  만들고, 이번에 불필요해진 `todos`는 제거). 아래 채팅 메시지에 전체 파일을 통째로 붙여
-  드렸으니, Supabase SQL Editor에 한 번만 붙여넣고 실행하시면 됩니다
-
-이번 버전은 새 테이블 대신 기존 테이블에 컬럼만 추가하는 방식이라, 아래 SQL만 따로 실행해도
-되고, 맨 아래 채팅에 첨부한 전체 통합 SQL을 실행해도 결과는 동일합니다:
-
-```sql
--- ===== 31. 업무 확인(acknowledged_by) + 실시간 로그 =====
-alter table tasks add column if not exists acknowledged_by jsonb not null default '[]'::jsonb;
-alter table task_comments add column if not exists department text;
-alter table task_comments add column if not exists is_system boolean not null default false;
-
-update task_comments tc
-set department = t.department
-from tasks t
-where tc.task_id = t.id and tc.department is null and t.department is not null;
-
-create index if not exists task_comments_department_idx on task_comments(department, created_at);
-
--- ===== 32. 위클리 리포트 초기 데이터 시드 =====
-insert into wr_terms (id, name, start_date, end_date, is_active) values
-  (md5('wr-term-2026-fall')::uuid, '2026년 가을학기', '2026-09-01', '2026-12-31', true)
-on conflict (id) do nothing;
-
-insert into wr_classes (id, grade, class_name, teacher_email) values
-  (md5('wr-class-1a')::uuid, '1', 'A', null),
-  (md5('wr-class-2a')::uuid, '2', 'A', null)
-on conflict (id) do nothing;
-
-insert into wr_students (id, name, grade, class_name, parent_phone, status) values
-  (md5('wr-student-1a-01')::uuid, '이해린', '1', 'A', '010-1111-2222', 'active'),
-  (md5('wr-student-1a-02')::uuid, '김민지', '1', 'A', '010-2222-3333', 'active'),
-  (md5('wr-student-1a-03')::uuid, '팜하니', '1', 'A', '010-3333-4444', 'active'),
-  (md5('wr-student-2a-01')::uuid, '강해린', '2', 'A', '010-5555-6666', 'active'),
-  (md5('wr-student-2a-02')::uuid, '다니엘', '2', 'A', '010-7777-8888', 'active')
-on conflict (id) do nothing;
-
-insert into wr_subjects (id, name, teacher_email, class_id, color, student_ids) values
-  (md5('wr-subject-math-1')::uuid, '수학 (1학년)', null, md5('wr-class-1a')::uuid, '#4F46E5',
-    array[md5('wr-student-1a-01')::uuid, md5('wr-student-1a-02')::uuid, md5('wr-student-1a-03')::uuid]),
-  (md5('wr-subject-eng-2')::uuid, '영어 (2학년)', null, md5('wr-class-2a')::uuid, '#10B981',
-    array[md5('wr-student-2a-01')::uuid, md5('wr-student-2a-02')::uuid])
-on conflict (id) do nothing;
-
-insert into wr_reports (id, student_id, term_id, subject, academic, improvement, participation, behavior, social, teacher_note, eval_badges, status, report_date) values
-  (md5('wr-report-sample-1')::uuid, md5('wr-student-1a-01')::uuid, md5('wr-term-2026-fall')::uuid, '담임',
-   '수학 연산 속도가 매우 빠릅니다.',
-   '서술형 문제 풀이 시 식을 적는 연습이 필요합니다.',
-   '수업 시간에 항상 집중하며 발표를 잘합니다.',
-   '친구들과 배려하며 잘 어울립니다.',
-   '리더십이 뛰어납니다.',
-   '전반적으로 매우 우수한 성취도를 보이고 있습니다.',
-   '{"academic": ["excellent"], "behavior": ["good", "excellent"], "social": ["excellent"]}'::jsonb,
-   'published', '2026-08-01')
-on conflict (id) do nothing;
-
--- ===== 33. 레거시 정리: todos 테이블 제거 =====
-drop table if exists todos cascade;
-```
 
 ## v0.26.0 - 2026-08-01
 
@@ -2344,146 +1261,6 @@ GIA 통합 플랫폼 3번째 통합: "위클리 리포트"(학생 주간 평가 
   이미 gia-ops-web에 동일한 기능(구글 로그인 승인, 개발자 대시보드 등)이 있어서 그걸 그대로
   씁니다. "건의사항" 기능도 기존 "문의및건의사항" 메뉴로 대체됩니다(별도 이관 없음)
 
-Supabase에서 아래 SQL을 SQL Editor에 붙여넣고 실행해주세요:
-
-```sql
--- ===== 위클리 리포트 테이블 =====
-create table if not exists wr_terms (
-  id uuid primary key default gen_random_uuid(),
-  name text not null,
-  start_date date,
-  end_date date,
-  is_active boolean not null default false,
-  is_archived boolean not null default false,
-  created_at timestamptz not null default now()
-);
-
-create table if not exists wr_classes (
-  id uuid primary key default gen_random_uuid(),
-  grade text,
-  class_name text,
-  teacher_email text,
-  sub_teacher_email text,
-  created_at timestamptz not null default now()
-);
-
-create table if not exists wr_students (
-  id uuid primary key default gen_random_uuid(),
-  name text not null,
-  grade text,
-  class_name text,
-  parent_phone text,
-  note text,
-  status text not null default 'active' check (status in ('active', 'inactive')),
-  created_at timestamptz not null default now()
-);
-
-create table if not exists wr_subjects (
-  id uuid primary key default gen_random_uuid(),
-  name text not null,
-  teacher_email text,
-  class_id uuid references wr_classes(id) on delete set null,
-  color text default '#3B82F6',
-  student_ids uuid[] not null default '{}',
-  created_at timestamptz not null default now()
-);
-
-create table if not exists wr_reports (
-  id uuid primary key default gen_random_uuid(),
-  student_id uuid not null references wr_students(id) on delete cascade,
-  term_id uuid references wr_terms(id) on delete set null,
-  subject text not null,
-  academic text,
-  improvement text,
-  participation text,
-  behavior text,
-  social text,
-  teacher_note text,
-  eval_badges jsonb not null default '{}',
-  status text not null default 'draft' check (status in ('draft', 'published')),
-  report_date date not null default current_date,
-  is_archived boolean not null default false,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-create index if not exists wr_reports_student_idx on wr_reports(student_id, subject, report_date);
-create index if not exists wr_reports_term_idx on wr_reports(term_id);
-
-create table if not exists wr_comments (
-  id uuid primary key default gen_random_uuid(),
-  student_id uuid not null references wr_students(id) on delete cascade,
-  author_email text not null,
-  content text not null,
-  comment_date date not null default current_date,
-  created_at timestamptz not null default now()
-);
-create index if not exists wr_comments_student_idx on wr_comments(student_id, created_at);
-
-drop trigger if exists wr_reports_set_updated_at on wr_reports;
-create trigger wr_reports_set_updated_at
-  before update on wr_reports
-  for each row execute function set_updated_at();
-
-alter table wr_terms enable row level security;
-alter table wr_classes enable row level security;
-alter table wr_students enable row level security;
-alter table wr_subjects enable row level security;
-alter table wr_reports enable row level security;
-alter table wr_comments enable row level security;
-
-drop policy if exists "giamicro_all_wr_terms" on wr_terms;
-create policy "giamicro_all_wr_terms" on wr_terms
-  for all using (is_giamicro_user()) with check (is_giamicro_user());
-
-drop policy if exists "giamicro_all_wr_classes" on wr_classes;
-create policy "giamicro_all_wr_classes" on wr_classes
-  for all using (is_giamicro_user()) with check (is_giamicro_user());
-
-drop policy if exists "giamicro_all_wr_students" on wr_students;
-create policy "giamicro_all_wr_students" on wr_students
-  for all using (is_giamicro_user()) with check (is_giamicro_user());
-
-drop policy if exists "giamicro_all_wr_subjects" on wr_subjects;
-create policy "giamicro_all_wr_subjects" on wr_subjects
-  for all using (is_giamicro_user()) with check (is_giamicro_user());
-
-drop policy if exists "giamicro_all_wr_reports" on wr_reports;
-create policy "giamicro_all_wr_reports" on wr_reports
-  for all using (is_giamicro_user()) with check (is_giamicro_user());
-
-drop policy if exists "giamicro_all_wr_comments" on wr_comments;
-create policy "giamicro_all_wr_comments" on wr_comments
-  for all using (is_giamicro_user()) with check (is_giamicro_user());
-
-do $$
-begin
-  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'wr_terms') then
-    alter publication supabase_realtime add table wr_terms;
-  end if;
-  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'wr_classes') then
-    alter publication supabase_realtime add table wr_classes;
-  end if;
-  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'wr_students') then
-    alter publication supabase_realtime add table wr_students;
-  end if;
-  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'wr_subjects') then
-    alter publication supabase_realtime add table wr_subjects;
-  end if;
-  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'wr_reports') then
-    alter publication supabase_realtime add table wr_reports;
-  end if;
-  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'wr_comments') then
-    alter publication supabase_realtime add table wr_comments;
-  end if;
-end $$;
-```
-
-SQL 실행 후 관리자 화면(위클리 리포트 관리 → 학생 명부 / 반·담임 배정 / 과목반 세팅 / 학기 관리)에서
-학생·반·과목·학기 데이터를 등록해주셔야 교사들이 리포트를 작성할 수 있습니다. 또한 기존
-교사 계정들의 직위가 정확히 "교사"로 설정되어 있는지 사용자 관리 화면에서 한 번 확인해주세요
-(온보딩 때 잘못 선택했다면 본인이 다시 바꿀 수 없으니 관리자가 별도로 안내해주셔야 합니다 -
-현재는 앱에 관리자용 직위 수정 화면이 없어서, 필요하시면 다음 작업으로 추가해드릴 수 있습니다).
-
 ## v0.25.0 - 2026-08-01
 
 로그인 승인 방식 전면 개편: 이름/소속/직위 온보딩 + 관리자 권한 재정의 + 업무보드 이름 표시:
@@ -2505,87 +1282,6 @@ SQL 실행 후 관리자 화면(위클리 리포트 관리 → 학생 명부 / �
 - (참고) 사건/회의/행사의 담당자·작성자 표시, 문의사항 작성자 표시, 개발자 대시보드 로그는
   이번 작업 범위에 포함되지 않아 여전히 이메일로 표시됩니다 - 필요하시면 다음 작업으로
   이어서 처리해드릴게요
-
-Supabase에서 아래 SQL을 SQL Editor에 붙여넣고 실행해주세요(기존 데이터는 그대로 유지되고,
-새 컬럼/정책만 추가됩니다):
-
-```sql
--- app_users에 이름/소속/직위 컬럼 추가
-alter table app_users add column if not exists name text;
-alter table app_users add column if not exists department text;
-alter table app_users add column if not exists position text;
-do $$
-begin
-  if not exists (select 1 from pg_constraint where conname = 'app_users_department_check') then
-    alter table app_users add constraint app_users_department_check
-      check (department in ('유치부', '초등부', '중고등부'));
-  end if;
-  if not exists (select 1 from pg_constraint where conname = 'app_users_position_check') then
-    alter table app_users add constraint app_users_position_check
-      check (position in ('교사', '교직원', '관리자', '개발자'));
-  end if;
-end $$;
-
--- 관리자 권한을 "승인된 사람"에서 "승인된 + 직위가 관리자인 사람"으로 재정의
-create or replace function is_app_admin()
-returns boolean
-language sql
-security definer
-set search_path = public
-stable
-as $$
-  select
-    coalesce((auth.jwt() ->> 'email') ilike 'johnkang@giamicro.com', false)
-    or exists (
-      select 1 from app_users
-      where email = lower(auth.jwt() ->> 'email')
-        and status = 'approved'
-        and position = '관리자'
-    );
-$$;
-
--- 온보딩(이름 입력 전 1회) 자기 행 수정 허용
-drop policy if exists "app_users_update_self_while_pending" on app_users;
-drop policy if exists "app_users_update_self_onboarding" on app_users;
-create policy "app_users_update_self_onboarding" on app_users
-  for update
-  using (email = lower(auth.jwt() ->> 'email') and name is null)
-  with check (email = lower(auth.jwt() ->> 'email'));
-
--- 본인 스스로는 status/decided_at/decided_by/email을 바꿀 수 없도록 트리거로 이중 차단
--- (관리자가 하는 승인/거절 처리는 영향받지 않음)
-create or replace function protect_app_users_self_update()
-returns trigger
-language plpgsql
-security definer
-set search_path = public
-as $$
-begin
-  if is_app_admin() then
-    return new;
-  end if;
-  new.email := old.email;
-  new.status := old.status;
-  new.decided_at := old.decided_at;
-  new.decided_by := old.decided_by;
-  return new;
-end;
-$$;
-
-drop trigger if exists app_users_protect_self_update on app_users;
-create trigger app_users_protect_self_update
-  before update on app_users
-  for each row execute function protect_app_users_self_update();
-
--- 개발자 계정 이름/직위 채우기
-insert into app_users (email, status, decided_at, decided_by, name, position)
-values ('johnkang@giamicro.com', 'approved', now(), 'system', 'John Kang', '개발자')
-on conflict (email) do update set status = 'approved', name = 'John Kang', position = '개발자';
-```
-
-SQL 실행 후에는 기존에 이미 승인된 계정들(개발자 제외)이 전부 "직위 미입력" 상태가 되므로,
-다음 로그인 때 온보딩 화면에서 소속·직위를 입력해달라고 팀에 안내해주시면 됩니다. 그 전까지는
-관리자 화면에 "이름 미입력(온보딩 대기 중)"으로 표시됩니다.
 
 ## v0.24.0 - 2026-07-31
 
@@ -2609,43 +1305,6 @@ GIA WorkFlatform 통합 2단계: 부서별 실시간 채팅 + 채팅→업무 �
 있어요(부서 소속에 따른 접근 제한은 아직 없음, 학교 규모상 전체 공유가 더 유용할 것으로 판단).
 필요하시면 다음 단계로 추가하겠습니다.
 
-```sql
--- ===== 29. GIA WorkFlatform 통합 2단계 - 부서 레지스트리 + 실시간 채팅 =====
-create table if not exists departments (
-  id uuid primary key default gen_random_uuid(),
-  name text unique not null,
-  color text not null default '#3B82F6',
-  sort_order int not null default 0,
-  created_at timestamptz not null default now()
-);
-
-insert into departments (name, color, sort_order)
-values ('초등부', '#3B82F6', 1)
-on conflict (name) do nothing;
-
-alter table departments enable row level security;
-drop policy if exists "giamicro_all_departments" on departments;
-create policy "giamicro_all_departments" on departments
-  for all using (is_giamicro_user()) with check (is_giamicro_user());
-
-create table if not exists messages (
-  id uuid primary key default gen_random_uuid(),
-  department text not null,
-  author_email text not null,
-  content text not null,
-  source_department text,
-  created_at timestamptz not null default now()
-);
-create index if not exists messages_department_idx on messages(department, created_at);
-
-alter table messages enable row level security;
-drop policy if exists "giamicro_all_messages" on messages;
-create policy "giamicro_all_messages" on messages
-  for all using (is_giamicro_user()) with check (is_giamicro_user());
-
--- (realtime publication 추가 구문은 supabase/schema.sql 29번 섹션 전체를 참고하세요)
-```
-
 ## v0.23.0 - 2026-07-31
 
 GIA WorkFlatform 통합 1단계: 업무보드에 부서 개념 + 글래스모피즘 스타일 적용:
@@ -2661,20 +1320,10 @@ GIA WorkFlatform 통합 1단계: 업무보드에 부서 개념 + 글래스모피
 - 다음 단계(부서별 실시간 채팅 + `@`/`#` 태그로 업무 자동 전환)는 별도로 진행 예정 - 실제 부서
   전체 목록과 Supabase 요금제(Realtime 동시 연결 수) 확인이 먼저 필요함
 
-```sql
--- ===== 28. 업무에 부서(department) 추가 - GIA WorkFlatform 통합 1단계 =====
-alter table tasks add column if not exists department text;
-create index if not exists tasks_department_idx on tasks(department);
-```
-
 ## v0.22.0 - 2026-07-31
 
-"업무" 메뉴 신설: 팀 공유 실시간 칸반보드(개인 할일/업무히스토리 기능 대체):
-
-- 이전에 만든 개인용 할 일(홈 위젯)/업무히스토리(달력)는 "차라리 팀이 같이 보는 업무판이 낫겠다"는
-  요청에 따라 이번 버전에서 새 "업무" 메뉴로 완전히 대체했습니다. 홈 화면과 사이드바에서
-  제거했고(파일도 정리), DB의 todos 테이블은 남아있지만 더 이상 앱에서 쓰지 않습니다(원하시면
-  나중에 직접 삭제하셔도 됩니다).
+- 이전에 만든 개인용 할 일(홈 위젯)/업무히스토리(달력)를 팀이 같이 보는 업무판인 새 "업무"
+  메뉴로 완전히 대체했습니다. 홈 화면과 사이드바에서 제거했습니다.
 - 사이드바에 "업무" 메뉴 신설(홈 바로 아래). 팀 전체가 같은 보드를 실시간으로 봅니다.
 - 지금 이 페이지에 접속해 있는 팀원을 실시간으로 보여줌(Supabase Presence)
 - 업무를 등록하면 카드 형태로 "예정" 칸에 들어가고, 마우스로 카드를 끌어서 진행중/완료/보류
@@ -2691,54 +1340,6 @@ create index if not exists tasks_department_idx on tasks(department);
 - 홈 화면은 "업무 현황"(예정/진행중/완료/보류 건수 + 나에게 태그된 업무 건수)만 요약으로 보여주고,
   자세히 보려면 업무 메뉴로 이동하도록 정리
 
-```sql
--- ===== 27. 업무(tasks) - 팀 공유 칸반보드 + 실시간 코멘트 =====
-create table if not exists tasks (
-  id uuid primary key default gen_random_uuid(),
-  case_id text unique not null,
-  title text not null,
-  status text not null default '예정' check (status in ('예정', '진행중', '완료', '보류')),
-  priority text not null default '보통' check (priority in ('보통', '긴급')),
-  owner_email text not null,
-  assignee_emails text[] not null default '{}',
-  position double precision not null default 0,
-  due_at timestamptz,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-create index if not exists tasks_status_idx on tasks(status);
-
-drop trigger if exists tasks_set_updated_at on tasks;
-create trigger tasks_set_updated_at
-  before update on tasks
-  for each row execute function set_updated_at();
-
-alter table tasks enable row level security;
-drop policy if exists "giamicro_all_tasks" on tasks;
-create policy "giamicro_all_tasks" on tasks
-  for all using (is_giamicro_user()) with check (is_giamicro_user());
-
-create table if not exists task_comments (
-  id uuid primary key default gen_random_uuid(),
-  task_id uuid not null references tasks(id) on delete cascade,
-  author_email text not null,
-  content text not null,
-  created_at timestamptz not null default now()
-);
-create index if not exists task_comments_task_id_idx on task_comments(task_id);
-
-alter table task_comments enable row level security;
-drop policy if exists "giamicro_all_task_comments" on task_comments;
-create policy "giamicro_all_task_comments" on task_comments
-  for all using (is_giamicro_user()) with check (is_giamicro_user());
-
-drop policy if exists "giamicro_select_approved_app_users" on app_users;
-create policy "giamicro_select_approved_app_users" on app_users
-  for select using (is_giamicro_user() and status = 'approved');
-
--- (realtime publication 추가 구문은 supabase/schema.sql 27번 섹션 전체를 참고하세요)
-```
-
 ## v0.21.0 - 2026-07-31
 
 할 일 입력 확대 + 날짜별 기록 저장 + 업무 히스토리(달력) 메뉴 신설:
@@ -2752,15 +1353,7 @@ create policy "giamicro_select_approved_app_users" on app_users
   초록=그날 할 일 모두 완료), 대한민국 공휴일도 함께 표시됨
 - 알림 시간 설정 UI도 날짜+시간을 분리해서 더 명확하게 정리(선택한 날짜의 그 시간에 알림)
 
-```sql
--- ===== 26. 할 일에 날짜(for_date) 추가 - 업무 히스토리(달력) 조회용 =====
-alter table todos add column if not exists for_date date not null default current_date;
-create index if not exists todos_user_date_idx on todos(user_email, for_date);
-```
-
 ## v0.20.1 - 2026-07-31
-
-홈 화면 상단 정리(DB 변경 없음):
 
 - "홈" 제목 글씨를 없앰(학기 표시와 함께 있을 때 어울리지 않는다는 피드백 반영)
 - 학기 표시를 파란 버튼(알약 모양) 스타일에서, 페이지 제목처럼 보이는 큰 글씨 + 아래 짧은
@@ -2780,47 +1373,10 @@ create index if not exists todos_user_date_idx on todos(user_email, for_date);
   - 주의: 이 알림은 브라우저 탭(앱)이 열려 있는 동안에만 동작함. 완전히 브라우저를 꺼두면
     알림이 가지 않음(탭을 열어두거나 최소화만 해두면 정상 동작)
 
-```sql
--- ===== 25. 개인 할 일(todos) - 홈 화면 왼쪽 위젯 =====
-create table if not exists todos (
-  id uuid primary key default gen_random_uuid(),
-  user_email text not null,
-  text text not null,
-  due_at timestamptz,
-  done boolean not null default false,
-  notified boolean not null default false,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-create index if not exists todos_user_email_idx on todos(user_email);
-
-drop trigger if exists todos_set_updated_at on todos;
-create trigger todos_set_updated_at
-  before update on todos
-  for each row execute function set_updated_at();
-
-alter table todos enable row level security;
-drop policy if exists "own_todos" on todos;
-create policy "own_todos" on todos
-  for all using (user_email = (auth.jwt() ->> 'email')) with check (user_email = (auth.jwt() ->> 'email'));
-
-do $$
-begin
-  if not exists (
-    select 1 from pg_publication_tables
-    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'todos'
-  ) then
-    alter publication supabase_realtime add table todos;
-  end if;
-end $$;
-```
-
 ## v0.19.0 - 2026-07-31
 
-홈 학기 표시 강조 + 달력 공휴일/OS 캘린더 연동 + 행사분석 문구 정비(DB 변경 없음):
-
 - 홈 화면 학기 표시를 제목 옆 작은 글씨에서, 제목 아래 중앙의 눈에 띄는 파란 배지("📅 2026
-  여름캠프2")로 이동. 학기 표시가 가장 중요한 정보라는 요청 반영
+  여름캠프2")로 이동해 가장 눈에 띄게 강조했습니다.
 - 달력 위젯에 대한민국 공휴일을 표시함. `@hyunbinseo/holidays-kr` 패키지(우주항공청 공식
   월력요항 기반, 대체공휴일 규정 포함)를 사용해 해당 연도 공휴일 데이터를 불러오고, 공휴일인
   날짜는 빨간색 굵은 글씨로 표시 + 마우스를 올리면 공휴일 이름이 보임(오늘이 공휴일이면 시계
@@ -2834,10 +1390,6 @@ end $$;
   제안)를 AI가 분석해서 (1) 이전에 지적된 아쉬운 점이 이후 회차에서 실제로 보완됐는지
   (✅ 개선된 점), (2) 여러 회차에 걸쳐 계속 반복되는 미해결 문제(⚠️ 반복되는 문제), (3) 다음
   회차 준비 시 우선 반영할 제안을 정리해서 보여줌
-
-```sql
--- DB 스키마 변경 없음.
-```
 
 ## v0.18.0 - 2026-07-31
 
@@ -2862,16 +1414,7 @@ end $$;
     (3) `vercel.json`에 크론 설정을 이미 포함해서 커밋했으므로 GitHub Desktop으로 푸시하면
     Vercel이 자동으로 매일 인식해서 실행함 (Vercel 프로젝트 Cron Jobs 탭에서 실행 이력 확인 가능)
 
-```sql
--- DB 스키마 변경 없음 (terms.start_date/end_date는 이미 date 타입, RLS도 기존 그대로 사용).
--- 단, /api/cron/term-switch는 service_role 키로 동작하므로 .env.local.example에 추가된
--- SUPABASE_SERVICE_ROLE_KEY가 Vercel 환경변수에도 이미 등록되어 있어야 합니다(마이그레이션
--- 스크립트용으로 이미 등록해두었다면 추가 작업 불필요).
-```
-
 ## v0.17.3 - 2026-07-31
-
-현재 학기 표시에 연도 포함 + 학기 전환 시 연도 선택 가능(DB 변경 없음):
 
 - 홈 화면, 사이드바(로고-이메일 사이) 배지, 학기 메뉴 상단 "현재 학기" 표시를 모두
   `학기 (연도)` → `연도 학기` 형식으로 통일. 예: "2026 여름캠프2"
@@ -2881,16 +1424,12 @@ end $$;
 
 ## v0.17.2 - 2026-07-31
 
-학기 선택 드롭다운이 비어있던 문제 수정(DB 변경 없음):
-
 - "현재 학기" 변경 드롭다운이 이미 저장된 회차 기록에서만 목록을 만들다 보니, 아직 아무 학기도
   등록 안 한 상태에서는 빈 목록으로 보였음. 이제 1학기/2학기/3학기/여름캠프1/여름캠프2/겨울캠프1/
   겨울캠프2 7개 종류가 항상 선택지에 나오고, 올해 기록이 없는 종류를 고르면 그 자리에서 새로
   만들어 바로 진행중으로 설정함(기존 진행중 학기는 자동 종료)
 
 ## v0.17.1 - 2026-07-31
-
-학기 상단 선택 기능 + 코드 정리(DB 변경 없음):
 
 - 학기·캠프 화면 맨 위에 "현재 학기" 영역 추가: 지금 진행중으로 설정된 학기가 바로 보이고,
   "변경" 버튼으로 드롭다운에서 아무 회차나 골라 즉시 전환 가능. 전환하면 기존에 진행중이던
@@ -2905,8 +1444,6 @@ end $$;
 
 ## v0.17.0 - 2026-07-31
 
-문의및건의사항 메뉴 + 개발자 대시보드 + 오류/AI사용량 로깅(DB 변경 있음 - 아래 SQL 실행 필요):
-
 - **문의및건의사항** 메뉴 신설(전 직원): 오류 신고/기능제안/기타를 자유롭게 남기고, 본인이 남긴
   문의와 개발자 답변을 확인할 수 있음
 - **개발자 대시보드**(`/dev`, johnkang@giamicro.com 전용): 전체 데이터 현황(테이블별 건수),
@@ -2919,98 +1456,8 @@ end $$;
   `ai_usage_logs`에 자동 기록(비용/사용 패턴 모니터링용)
 - **Vercel Analytics + Speed Insights** 연동: 배포하면 별도 설정 없이 실제 사용자 페이지
   로딩 속도가 Vercel 대시보드에 자동으로 수집됨(무료 도구)
-- **DB 변경 필요**: `inquiries`/`error_logs`/`ai_usage_logs` 테이블과 `is_developer()` 함수
-  추가 (아래 SQL을 Supabase SQL Editor에서 실행)
-
-```sql
-create or replace function is_developer()
-returns boolean
-language sql
-stable
-as $$
-  select coalesce(lower(auth.jwt() ->> 'email') = 'johnkang@giamicro.com', false);
-$$;
-
-create table if not exists inquiries (
-  id uuid primary key default gen_random_uuid(),
-  case_id text unique not null,
-  category text not null,
-  title text not null,
-  content text not null,
-  status text not null default '접수',
-  reporter_email text not null,
-  developer_note text,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  resolved_at timestamptz
-);
-
-create table if not exists error_logs (
-  id uuid primary key default gen_random_uuid(),
-  route text not null,
-  message text not null,
-  stack text,
-  user_email text,
-  created_at timestamptz not null default now()
-);
-
-create table if not exists ai_usage_logs (
-  id uuid primary key default gen_random_uuid(),
-  route text not null,
-  model text not null,
-  input_tokens integer,
-  output_tokens integer,
-  success boolean not null default true,
-  error_message text,
-  created_at timestamptz not null default now()
-);
-
-alter table inquiries enable row level security;
-alter table error_logs enable row level security;
-alter table ai_usage_logs enable row level security;
-
-drop policy if exists "giamicro_insert_inquiries" on inquiries;
-create policy "giamicro_insert_inquiries" on inquiries
-  for insert with check (is_giamicro_user() and reporter_email = (auth.jwt() ->> 'email'));
-
-drop policy if exists "self_select_inquiries" on inquiries;
-create policy "self_select_inquiries" on inquiries
-  for select using (reporter_email = (auth.jwt() ->> 'email'));
-
-drop policy if exists "developer_manage_inquiries" on inquiries;
-create policy "developer_manage_inquiries" on inquiries
-  for all using (is_developer()) with check (is_developer());
-
-drop policy if exists "giamicro_insert_error_logs" on error_logs;
-create policy "giamicro_insert_error_logs" on error_logs
-  for insert with check (is_giamicro_user());
-
-drop policy if exists "developer_manage_error_logs" on error_logs;
-create policy "developer_manage_error_logs" on error_logs
-  for all using (is_developer()) with check (is_developer());
-
-drop policy if exists "giamicro_insert_ai_usage_logs" on ai_usage_logs;
-create policy "giamicro_insert_ai_usage_logs" on ai_usage_logs
-  for insert with check (is_giamicro_user());
-
-drop policy if exists "developer_manage_ai_usage_logs" on ai_usage_logs;
-create policy "developer_manage_ai_usage_logs" on ai_usage_logs
-  for all using (is_developer()) with check (is_developer());
-
-do $$
-begin
-  if not exists (
-    select 1 from pg_publication_tables
-    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'inquiries'
-  ) then
-    alter publication supabase_realtime add table inquiries;
-  end if;
-end $$;
-```
 
 ## v0.16.0 - 2026-07-31
-
-사건 AI 자동채우기 복원 + 학기 자동 연결 + 작성자 자동 입력(DB 변경 있음 - 아래 SQL 실행 필요):
 
 - **사건기록 AI 자동채우기**: 상세 내용(경위)란에 두서없이 적고 "🧹 AI로 채우기"를 누르면 날짜·
   제목·잘된 점·부족했던 점·보완점을 AI가 원문에서 찾아 자동으로 채워줌(원문에 없는 내용은 억지로
@@ -3023,19 +1470,8 @@ end $$;
 - 홈 화면 상단에 "현재 학기" 카드 추가(진행중인 학기가 없으면 등록 안내 표시)
 - 사이드바(PC)와 상단 헤더(모바일) 로고와 로그인 계정 사이에 현재 학기 배지 표시, 누르면 학기
   메뉴로 이동
-- **DB 변경 필요**: `incidents`/`meetings` 테이블에 `term_id` 컬럼 추가 (아래 SQL을 Supabase
-  SQL Editor에서 실행)
-
-```sql
-alter table incidents add column if not exists term_id uuid references terms(id) on delete set null;
-alter table meetings add column if not exists term_id uuid references terms(id) on delete set null;
-create index if not exists incidents_term_id_idx on incidents(term_id);
-create index if not exists meetings_term_id_idx on meetings(term_id);
-```
 
 ## v0.15.0 - 2026-07-31
-
-화면 폭 자동 조정 + 사건/회의/AI매뉴얼 3단 통합 작업화면(DB 변경 없음):
 
 - 모니터가 넓을 때 본문이 가운데에 좁게 몰려 여백이 과하게 남던 문제 수정. 3단 작업화면으로
   바뀐 사건기록/회의기록/AI매뉴얼은 화면 너비에 맞춰 자동으로 늘어나고, 나머지 목록형 화면
@@ -3056,8 +1492,6 @@ create index if not exists meetings_term_id_idx on meetings(term_id);
   반응속도가 개선됨
 
 ## v0.14.2 - 2026-07-31
-
-음성 인식률 개선(라이브 녹음/음성 파일 업로드 공통 적용, DB 변경 없음):
 
 - 모델을 whisper-large-v3-turbo -> whisper-large-v3(전체 모델)로 변경 - 무료 한도는 동일한데
   인식 정확도가 더 좋음
@@ -3086,7 +1520,6 @@ create index if not exists meetings_term_id_idx on meetings(term_id);
   "⏹️ 회의 종료"를 누르면 녹음이 멈추고 마지막 구간까지 반영됨(진짜 초 단위 실시간 스트리밍은
   아니고 약 45초 지연으로 갱신되는 방식이며, 라이브 녹음 원본 파일은 저장하지 않고 텍스트만
   남김 - 파일을 올리는 방식은 기존처럼 원본이 저장되어 재생 가능)
-- DB 변경 없음(기존 회의록 채팅/음성 기능 인프라를 그대로 재사용)
 
 ## v0.13.0 - 2026-07-31
 
@@ -3097,9 +1530,6 @@ create index if not exists meetings_term_id_idx on meetings(term_id);
 - 채팅에 회의 녹음 음성 파일을 올릴 수 있음 - 자동으로 텍스트로 바뀐 뒤 같은 대화형 정리 과정을
   시작함(OpenAI 음성 인식 API 사용, Claude API는 오디오 입력을 지원하지 않아 이 부분만 별도
   서비스 이용 - 분당 약 0.003달러로 저렴함). 저장된 회의록에서 녹음 파일을 다시 들어볼 수 있음
-- DB: `meetings` 테이블에 `source_chat`(jsonb, 대화 기록) / `audio_path`(녹음 파일 경로)
-  컬럼 추가, `meeting-audio` 비공개 Storage 버킷 + RLS 정책 추가 (Supabase SQL Editor에서
-  schema.sql "22. 회의록 대화형 작성 + 음성 녹음 업로드" 블록 실행 필요)
 - **배포 전 필수**: Vercel 프로젝트 환경변수에 `OPENAI_API_KEY`를 새로 추가해야 음성 변환
   기능이 동작합니다(OpenAI 플랫폼에서 발급). 텍스트 붙여넣기 채팅 기능은 기존 환경변수만으로도
   바로 동작합니다.
@@ -3114,12 +1544,8 @@ create index if not exists meetings_term_id_idx on meetings(term_id);
   반영해서 수정한 뒤 다시 "AI 검증"을 눌러 재검증받을 수 있고(검증 횟수 누적 표시), 검증 이후
   내용을 수정하면 "다시 검증해보세요" 안내가 뜸 - 여러 차례 검증을 거쳐 보완된 안건을 발행하는
   흐름을 지원
-- DB: `adopted` 테이블에 `review_result`(jsonb) / `review_count` / `last_reviewed_at` 컬럼
-  추가 (Supabase SQL Editor에서 schema.sql "21. 채택예정 AI 비판적 검증" 블록 실행 필요)
 
 ## v0.11.0 - 2026-07-30
-
-성능 개선(기능 변화 없음, DB 마이그레이션 불필요) - 화면 이동/버튼 클릭 반응 속도 개선:
 
 - 브라우저 Supabase 클라이언트를 페이지 로드당 1개만 만들어 재사용하도록 변경(기존에는 버튼을
   누르거나 목록을 구독할 때마다 매번 새 클라이언트를 새로 만들어서, 그때마다 세션을 다시 읽고
@@ -3146,9 +1572,6 @@ create index if not exists meetings_term_id_idx on meetings(term_id);
   누적되고, AI 회차별 비교 리포트로 다음 같은 학기·다음 연도 운영에 참고할 수 있음
 - 회의록 AI 분류의 "행사/학기 참고" 카테고리를 확장해서, 특정 행사뿐 아니라 특정 학기/캠프에
   대한 회고도 자동으로 구분해서 매칭되는 학기 기록에 붙여줌
-- DB: `events` 테이블에 `kind`(정규/일시적) · `photo_paths` 컬럼 추가, `terms`(학기) 테이블
-  신설, `event-photos` 비공개 Storage 버킷 + RLS 정책 추가 (Supabase SQL Editor에서
-  schema.sql "18~20" 블록 실행 필요)
 
 ## v0.9.0 - 2026-07-30
 
@@ -3171,8 +1594,6 @@ create index if not exists meetings_term_id_idx on meetings(term_id);
 - 워크플로우 정리: AI 제안 → 실무자 회의로 GIA 실정에 맞게 수정 후 승인(발행예정) → 이 단계에서
   AI가 실무자가 수정한 문구를 다시 한번 깔끔한 규정 문구로 정리해서 채택예정에 반영 → 실무자
   확인 후 발행 → 실무자매뉴얼에 카테고리로 반영 (기존 제안함/채택예정 화면 그대로 재사용)
-- DB: `proposals.source` 체크 제약에 `complaint` 값 허용 추가 (Supabase SQL Editor에서
-  schema.sql "17. AI 예상 문의/컴플레인 제안" 블록 실행 필요)
 
 ## v0.7.0 - 2026-07-30
 
@@ -3188,8 +1609,6 @@ create index if not exists meetings_term_id_idx on meetings(term_id);
 - 매뉴얼 항목에 "서명 필요" 표시 기능 추가(환불 규정, 안전 수칙 등 학부모용 항목 한정) - 체크해두면
   PDF로 출력할 때 그 항목 뒤에 학생명/보호자 성명/서명/날짜를 적을 수 있는 서명란이 자동으로
   들어감(앱은 내부 인원만 쓰므로 전자서명 대신 배포용 문서에 서명란을 넣는 방식)
-- DB: `documents` 테이블 신설, `manual_sections.requires_signature` 컬럼 추가
-  (Supabase SQL Editor에서 schema.sql "15. 서류함" / "16. 매뉴얼 항목 서명 필요 여부" 블록 실행 필요)
 
 ## v0.6.0 - 2026-07-30
 
@@ -3203,8 +1622,6 @@ create index if not exists meetings_term_id_idx on meetings(term_id);
 - AI 비용 절감: 맞춤법 정리·회의 내용 분류처럼 실수해도 검토 단계에서 바로 잡을 수 있는 작업은
   저렴한 모델(Haiku)로 전환, 학부모 공지·법적 판단처럼 리스크가 큰 작업만 고품질 모델(Sonnet)
   유지 - 기존 prompt caching과 함께 적용되어 비용이 추가로 절감됨
-- DB: `manual_drafts.target_doc`을 NULL 허용으로 변경(AI 판단 전에는 비어있음. Supabase SQL
-  Editor에서 schema.sql "14. AI 매뉴얼: 대상 문서 AI 자동 판단" 블록 실행 필요)
 
 ## v0.5.0 - 2026-07-30
 
@@ -3213,8 +1630,6 @@ create index if not exists meetings_term_id_idx on meetings(term_id);
 - 권한을 개발자/관리자 2단계로 구분: 개발자(johnkang@giamicro.com)는 테이블 상태와 무관하게
   항상 접근 가능, 그 외 승인된 사람은 모두 관리자로서 신규 신청 승인/거절과 기존 사용자 차단 가능
 - 새 메뉴 "사용자 관리" 추가: 승인 대기/승인됨/거절됨 목록을 실시간으로 확인하고 처리
-- DB: `app_users` 테이블 + `is_app_admin()` 함수 추가, 개발자 계정 자동 승인 시드
-  (Supabase SQL Editor에서 schema.sql의 "13. 로그인 승인제" 블록 실행 필요)
 - 메뉴/버튼에 마우스를 올렸을 때 손가락 커서와 함께 색이 바뀌도록 통일(이전에는 아무 변화가
   없어 클릭 가능한지 알기 어려웠음), 로고는 색 변화 없이 커서만 바뀌도록 유지
 
@@ -3234,8 +1649,6 @@ create index if not exists meetings_term_id_idx on meetings(term_id);
 - 회의록 작성/수정 화면에 "🧹 AI로 정리" 버튼 추가 - 두서없이 쓴 회의 메모를 AI가 맞춤법 교정 +
   문어체로 정리(저장 전 미리보기/수정 가능)
 - 제안함에 "AI매뉴얼제안" 탭 추가(전체/사건/행사/회의/AI매뉴얼 5개 탭)
-- DB: `manual_drafts` 테이블 추가, `proposals.source`에 `manual` 값 허용하도록 제약조건 확장
-  (Supabase SQL Editor에서 schema.sql의 "Phase 3" 블록 실행 필요)
 
 ## v0.2.0 - 2026-07-30
 

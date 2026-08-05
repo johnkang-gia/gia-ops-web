@@ -8,7 +8,7 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { isDeveloperEmail, isAdminUser, isTeacherOnly, isStaffOrAboveUser } from "@/lib/roles";
 import SignOutButton from "@/components/SignOutButton";
 import RolePreviewDropdown from "@/components/dev/RolePreviewDropdown";
-import { SidebarNavLinks, MobileNavLinks, type NavCategory } from "@/components/NavLinks";
+import { SidebarNavLinks, MobileNavLinks, type NavCategory, type NavLeaf } from "@/components/NavLinks";
 import MainArea from "@/components/MainArea";
 import DateTimeCard from "@/components/home/DateTimeCard";
 import GlobalSearchBar from "@/components/GlobalSearchBar";
@@ -80,15 +80,18 @@ function buildOpsCategory(pendingProposals: number, pendingAdopted: number): Nav
     label: "운영 관리",
     icon: "📋",
     accent: "navy",
+    // 부메뉴가 8개라 목적별로 구분선을 넣었습니다(요청: "부메뉴들도 구분에 맞게... 구분선으로
+    // 구분해주고") - 기록(사건/회의/회의보고서/행사) → AI·매뉴얼(AI매뉴얼/매뉴얼) →
+    // 검토·발행(제안함/채택예정) 순서입니다.
     items: [
       { href: "/records", label: "사건기록", icon: "📋" },
       { href: "/meetings", label: "회의기록", icon: "💬" },
       { href: "/meetings/report", label: "회의 보고서", icon: "📊" },
-      { href: "/ai-manual", label: "AI 매뉴얼", icon: "✨" },
       { href: "/events", label: "행사기록", icon: "🎉" },
-      { href: "/proposals", label: "제안함", icon: "📝", badge: pendingProposals },
-      { href: "/adopted", label: "채택예정", icon: "📬", badge: pendingAdopted },
+      { href: "/ai-manual", label: "AI 매뉴얼", icon: "✨", dividerBefore: "AI · 매뉴얼" },
       { href: "/manuals", label: "매뉴얼", icon: "📖" },
+      { href: "/proposals", label: "제안함", icon: "📝", badge: pendingProposals, dividerBefore: "검토 · 발행" },
+      { href: "/adopted", label: "채택예정", icon: "📬", badge: pendingAdopted },
     ],
   };
 }
@@ -97,19 +100,21 @@ function buildOpsCategory(pendingProposals: number, pendingAdopted: number): Nav
 // 학기가 운영관리에도, 위클리 리포트 하위에도 중복으로 있었고 학생 관리도 두 군데(학생 명부 ·
 // 학생 정보 조회)에 흩어져 있어 헷갈렸는데, 여기 하나로 통합했습니다. 반/과목/학생 명부/사용자
 // 관리는 관리자만, 학기와 학생 정보 조회는 행정직원 이상 누구나 볼 수 있습니다(기존 권한 그대로).
+// "구글시트로 가져오기"는 부메뉴에서 뺐습니다(요청: "부메뉴에 구글시트로 가져오기 빼줘 어차피
+// 학교관리 대시보드 위에 있으니까") - /school 화면(학교 관리 카테고리를 클릭하면 바로 가는
+// 대시보드) 안에 이미 진입 카드가 있어서 부메뉴에 중복으로 둘 필요가 없습니다.
 function buildSchoolCategory(isAdmin: boolean, isStaffOrAbove: boolean): NavCategory {
-  const items = [];
-  if (isStaffOrAbove) items.push({ href: "/students", label: "학생 정보 조회", icon: "🔎" });
+  const items: NavCategory["items"] = [];
+  if (isStaffOrAbove) items!.push({ href: "/students", label: "학생 정보 조회", icon: "🔎" });
   if (isAdmin) {
-    items.push(
-      { href: "/weekly-report/admin/students", label: "학생 관리", labelEn: "Manage Students", icon: "🧑‍🎓" },
+    items!.push(
+      { href: "/weekly-report/admin/students", label: "학생 관리", labelEn: "Manage Students", icon: "🧑‍🎓", dividerBefore: "명부 관리" },
       { href: "/weekly-report/admin/classes", label: "반 관리", labelEn: "Manage Classes", icon: "🏫" },
-      { href: "/weekly-report/admin/subjects", label: "과목반 세팅", labelEn: "Manage Subjects", icon: "📘" },
-      { href: "/school/import", label: "구글시트로 가져오기", labelEn: "Import from Google Sheets", icon: "📥" }
+      { href: "/weekly-report/admin/subjects", label: "과목반 세팅", labelEn: "Manage Subjects", icon: "📘" }
     );
   }
-  items.push({ href: "/terms", label: "학기 관리", icon: "🗓️" });
-  if (isAdmin) items.push({ href: "/admin/users", label: "사용자 관리", icon: "🔐" });
+  items!.push({ href: "/terms", label: "학기 관리", icon: "🗓️", dividerBefore: items!.length > 0 ? "" : undefined });
+  if (isAdmin) items!.push({ href: "/admin/users", label: "사용자 관리", icon: "🔐", dividerBefore: "계정" });
   return { key: "school", label: "학교 관리", icon: "🏛️", accent: "purple", href: "/school", items };
 }
 
@@ -132,18 +137,18 @@ function buildSchoolDocumentsCategory(): NavCategory {
       { href: "/school/documents/reports", label: "보고서 (업무·회의)", icon: "📊" },
       { href: "/manuals?doc=실무자용", label: "매뉴얼", icon: "📗" },
       { href: "/manuals?doc=학부모용", label: "운영계획안", icon: "📘" },
-      { href: "/documents", label: "서류함", icon: "📁" },
+      { href: "/documents", label: "서류함", icon: "📁", dividerBefore: "" },
     ],
   };
 }
 
 function buildWeeklyReportCategory(isAdmin: boolean): NavCategory {
-  const items = [
+  const items: NavLeaf[] = [
     { href: "/weekly-report/students", label: "반별 작성 현황", labelEn: "Class Status", icon: "🎓" },
     { href: "/weekly-report/print", label: "리포트 프린트", labelEn: "Print Reports", icon: "🖨️" },
   ];
   if (isAdmin) {
-    items.push({ href: "/weekly-report/admin/stats", label: "통계 대시보드", labelEn: "Statistics", icon: "📊" });
+    items.push({ href: "/weekly-report/admin/stats", label: "통계 대시보드", labelEn: "Statistics", icon: "📊", dividerBefore: "관리자용" });
   }
   return { key: "weekly", label: "주간 학생 관찰기록", labelEn: "Weekly Student Reports", icon: "📈", accent: "teal", items };
 }
@@ -165,7 +170,7 @@ function buildAdminCategory(): NavCategory {
     items: [
       { href: "/admin/education-news", label: "교육뉴스", icon: "📰" },
       { href: "/admin/gia-systems", label: "GIA시스템", icon: "🧩" },
-      { href: "/admin/backups", label: "데이터 백업", icon: "💾" },
+      { href: "/admin/backups", label: "데이터 백업", icon: "💾", dividerBefore: "" },
     ],
   };
 }

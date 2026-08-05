@@ -524,13 +524,61 @@ function FormApplicationImportSection({ adminEmail }: { adminEmail: string }) {
 
   // 붙여넣기 전에 먼저 선택하는 분류값입니다(요청: "구글시트 붙여넣기 전에 무슨학기의 어떤
   // 행사인지(예: 26년 3학기 인원모집, 26년 여름캠프2 바자회 행사) 선택해서"). year/term_type은
-  // terms 관리 화면과 같은 값 체계를 씁니다 - 다음 학기 준비처럼 아직 terms에 해당 학기 행이
-  // 없어도 먼저 지정해둘 수 있습니다.
-  const [year, setYear] = useState(String(new Date().getFullYear()));
-  const [termType, setTermType] = useState(TERM_TYPES[0]);
+  // terms 관리 화면과 같은 값 체계를 씁니다 - 정적 목록 대신 "학기 관리"(terms) 화면에 실제로
+  // 등록된 연도/학기를 그대로 선택지로 보여줍니다(요청: "지금 설정된 학기들이 가져오기
+  // 학기선택에 반영되도록"). 아직 terms에 등록되지 않은 다음 연도/학기를 미리 준비하는
+  // 경우도 있어서, "직접 입력"으로 벗어날 수 있는 길은 남겨뒀습니다.
+  const [termsData, setTermsData] = useState<{ year: string; term_type: string }[]>([]);
+  const [year, setYear] = useState("");
+  const [termType, setTermType] = useState("");
+  const [customYear, setCustomYear] = useState(false);
   const [customTermType, setCustomTermType] = useState(false);
   const [purpose, setPurpose] = useState("");
   const classifyReady = year.trim() !== "" && termType.trim() !== "" && purpose.trim() !== "";
+
+  const yearOptions = useMemo(
+    () => Array.from(new Set(termsData.map((t) => t.year))).sort((a, b) => b.localeCompare(a)),
+    [termsData]
+  );
+  const termTypeOptionsForYear = useMemo(
+    () => Array.from(new Set(termsData.filter((t) => t.year === year).map((t) => t.term_type))),
+    [termsData, year]
+  );
+  // 선택한 연도로 등록된 학기가 하나도 없으면(아직 학기관리에서 만들지 않은 미래 연도 등)
+  // 기존 표준 목록(TERM_TYPES)을 대신 보여줘서 처음 준비할 때도 고를 수 있게 합니다.
+  const termTypeOptions = termTypeOptionsForYear.length > 0 ? termTypeOptionsForYear : TERM_TYPES;
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase
+      .from("terms")
+      .select("year, term_type")
+      .order("year", { ascending: false })
+      .then(({ data }) => {
+        const rows = (data as { year: string; term_type: string }[] | null) ?? [];
+        setTermsData(rows);
+        if (rows.length > 0) {
+          const years = Array.from(new Set(rows.map((r) => r.year))).sort((a, b) => b.localeCompare(a));
+          setYear((prev) => prev || years[0]);
+          const firstYearTypes = rows.filter((r) => r.year === years[0]).map((r) => r.term_type);
+          setTermType((prev) => prev || firstYearTypes[0] || TERM_TYPES[0]);
+        } else {
+          setYear((prev) => prev || String(new Date().getFullYear()));
+          setTermType((prev) => prev || TERM_TYPES[0]);
+          setCustomYear(true);
+        }
+      });
+  }, []);
+
+  // 연도를 바꾸면 그 연도에 실제로 등록된 학기 목록도 바뀌므로, 지금 골라둔 학기타입이 새
+  // 연도에는 없는 값이면 그 연도의 첫 옵션으로 자동으로 맞춰줍니다(직접 입력 중이면 유지).
+  useEffect(() => {
+    if (customTermType) return;
+    if (termTypeOptionsForYear.length > 0 && !termTypeOptionsForYear.includes(termType)) {
+      setTermType(termTypeOptionsForYear[0]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [year]);
 
   const [text, setText] = useState("");
   const [headers, setHeaders] = useState<string[]>([]);
@@ -738,12 +786,35 @@ function FormApplicationImportSection({ adminEmail }: { adminEmail: string }) {
                 </button>
               ))}
             </div>
-            <input
-              value={year}
-              onChange={(e) => setYear(e.target.value)}
-              placeholder="연도 (예: 2026)"
-              className="w-24 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-700"
-            />
+            {customYear || yearOptions.length === 0 ? (
+              <input
+                value={year}
+                onChange={(e) => setYear(e.target.value)}
+                placeholder="연도 (예: 2026)"
+                className="w-24 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-700"
+              />
+            ) : (
+              <select
+                value={year}
+                onChange={(e) => {
+                  if (e.target.value === "__custom__") {
+                    setCustomYear(true);
+                    setYear("");
+                  } else {
+                    setYear(e.target.value);
+                  }
+                }}
+                className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-700"
+                title="학기 관리 화면에 등록된 연도 목록입니다"
+              >
+                {yearOptions.map((y) => (
+                  <option key={y} value={y}>
+                    {y}년
+                  </option>
+                ))}
+                <option value="__custom__">직접 입력...</option>
+              </select>
+            )}
             {customTermType ? (
               <input
                 value={termType}
@@ -763,8 +834,9 @@ function FormApplicationImportSection({ adminEmail }: { adminEmail: string }) {
                   }
                 }}
                 className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-700"
+                title="선택한 연도에 학기 관리 화면에서 등록된 학기 목록입니다"
               >
-                {TERM_TYPES.map((t) => (
+                {termTypeOptions.map((t) => (
                   <option key={t} value={t}>
                     {t}
                   </option>

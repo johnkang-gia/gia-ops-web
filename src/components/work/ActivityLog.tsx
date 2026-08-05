@@ -3,9 +3,114 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
-import type { TaskComment } from "@/lib/types";
+import type { DepartmentMemo, TaskComment } from "@/lib/types";
 import { useConfirm } from "@/components/common/ConfirmProvider";
 import { useToast } from "@/components/common/ToastProvider";
+
+// 저장 debounce 간격(ms) - 타이핑할 때마다 저장하면 부담스러우니 잠깐 멈췄을 때만 저장합니다.
+const MEMO_SAVE_DELAY = 800;
+
+// 부서 공유 메모장 - 실시간 로그 왼쪽 절반에 배치되는 자유 메모 영역입니다(요청: "실시간 로그
+// 반으로 나눠서 오른쪽 실시간로그 왼쪽 메모 적을 수 있도록"). 부서당 한 장(department_memos에
+// 1행)을 팀 전체가 함께 보고 고쳐 쓰는 화이트보드처럼 씁니다 - 누가 마지막으로 고쳤는지만
+// 아래에 작게 표시하고, 별도 이력은 남기지 않습니다(가벼운 메모 용도).
+function MemoPanel({ department, currentUserEmail }: { department: string; currentUserEmail: string }) {
+  const notify = useToast();
+  const [content, setContent] = useState("");
+  const [updatedBy, setUpdatedBy] = useState<string | null>(null);
+  const [updatedAt, setUpdatedAt] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const skipNextRealtimeRef = useRef(false);
+
+  useEffect(() => {
+    if (department === "전체") return;
+    const supabase = createClient();
+    let cancelled = false;
+
+    supabase
+      .from("department_memos")
+      .select("*")
+      .eq("department", department)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (cancelled) return;
+        const row = data as DepartmentMemo | null;
+        setContent(row?.content ?? "");
+        setUpdatedBy(row?.updated_by ?? null);
+        setUpdatedAt(row?.updated_at ?? null);
+      });
+
+    const channel = supabase
+      .channel(`department-memo-${department}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "department_memos", filter: `department=eq.${department}` },
+        (payload) => {
+          if (skipNextRealtimeRef.current) {
+            // 내가 방금 저장해서 온 이벤트는 다시 반영할 필요가 없습니다(커서 위치가 튀는 것 방지).
+            skipNextRealtimeRef.current = false;
+            return;
+          }
+          const row = payload.new as DepartmentMemo | undefined;
+          if (!row) return;
+          setContent(row.content ?? "");
+          setUpdatedBy(row.updated_by ?? null);
+          setUpdatedAt(row.updated_at ?? null);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(channel);
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+    };
+  }, [department]);
+
+  function handleChange(next: string) {
+    setContent(next);
+    setSaving(true);
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(async () => {
+      const supabase = createClient();
+      skipNextRealtimeRef.current = true;
+      const { error } = await supabase
+        .from("department_memos")
+        .upsert(
+          { department, content: next, updated_by: currentUserEmail, updated_at: new Date().toISOString() },
+          { onConflict: "department" }
+        );
+      setSaving(false);
+      if (error) {
+        skipNextRealtimeRef.current = false;
+        notify("메모 저장에 실패했습니다: " + error.message, "error");
+      } else {
+        setUpdatedBy(currentUserEmail);
+        setUpdatedAt(new Date().toISOString());
+      }
+    }, MEMO_SAVE_DELAY);
+  }
+
+  return (
+    <div className="flex min-w-0 flex-1 flex-col">
+      <div className="mb-1.5 flex items-center justify-between text-left text-xs font-bold text-slate-600">
+        <span>📝 부서 메모</span>
+        <span className="text-[10px] font-medium text-slate-400">{saving ? "저장 중…" : updatedBy ? `${updatedBy} 수정` : ""}</span>
+      </div>
+      <textarea
+        value={content}
+        onChange={(e) => handleChange(e.target.value)}
+        placeholder="팀원 모두가 함께 보는 메모입니다. 자유롭게 적어두세요."
+        className="min-h-[66px] w-full flex-1 resize-none rounded-lg border border-black/5 bg-white/60 px-2 py-1.5 text-[11px] text-slate-700 outline-none focus:border-blue-300"
+        style={{ maxHeight: ROW_HEIGHT * PAGE_SIZE }}
+      />
+      {updatedAt && !saving && (
+        <p className="mt-0.5 text-[9px] text-slate-300">{timeAgo(updatedAt)}</p>
+      )}
+    </div>
+  );
+}
 
 const PAGE_SIZE = 3; // 요청: "실시간로그는 세줄만"
 // 컴팩트 뷰에 계속 쌓아두는 로그 총량 상한 - 스크롤로 과거를 계속 불러와도 이 이상은
@@ -149,43 +254,51 @@ export default function ActivityLog({
 
   return (
     <div className="glass mb-2 px-3 py-2">
-      <button
-        type="button"
-        onClick={openFull}
-        className="mb-1.5 flex w-full items-center justify-between text-left text-xs font-bold text-blue-600 hover:underline"
-        title="전체 로그 보기"
-      >
-        <span>🔔 실시간 로그</span>
-        <span className="text-[10px] font-medium text-blue-400">전체보기 →</span>
-      </button>
-      {events.length === 0 ? (
-        <p className="text-[11px] opacity-40">아직 활동 기록이 없습니다.</p>
-      ) : (
-        <div
-          ref={scrollRef}
-          onScroll={onScroll}
-          className="flex flex-col overflow-y-auto"
-          style={{ maxHeight: ROW_HEIGHT * PAGE_SIZE }}
-        >
-          {loadingMore && <p className="px-1 py-0.5 text-center text-[10px] opacity-40">이전 로그 불러오는 중...</p>}
-          {events.map((e) => (
-            <div key={e.id} className="group flex items-center gap-1 truncate px-1 py-0.5 text-[11px] opacity-70">
-              <span className="min-w-0 flex-1 truncate">
-                {e.content} <span className="opacity-50">· {timeAgo(e.created_at)}</span>
-              </span>
-              {canDelete(e) && (
-                <button
-                  onClick={() => deleteEvent(e, false)}
-                  title="로그 삭제"
-                  className="shrink-0 text-slate-300 opacity-0 hover:text-red-500 group-hover:opacity-100"
-                >
-                  ✕
-                </button>
-              )}
+      {/* 왼쪽: 부서 공유 메모장 / 오른쪽: 실시간 로그(요청: "실시간 로그 반으로 나눠서 오른쪽
+          실시간로그 왼쪽 메모 적을 수 있도록") - 좁은 화면에서도 최소한 나란히 보이도록 flex로
+          반반 나눕니다. */}
+      <div className="flex gap-3 divide-x divide-black/5">
+        <MemoPanel department={department} currentUserEmail={currentUserEmail} />
+        <div className="flex min-w-0 flex-1 flex-col pl-3">
+          <button
+            type="button"
+            onClick={openFull}
+            className="mb-1.5 flex w-full items-center justify-between text-left text-xs font-bold text-blue-600 hover:underline"
+            title="전체 로그 보기"
+          >
+            <span>🔔 실시간 로그</span>
+            <span className="text-[10px] font-medium text-blue-400">전체보기 →</span>
+          </button>
+          {events.length === 0 ? (
+            <p className="text-[11px] opacity-40">아직 활동 기록이 없습니다.</p>
+          ) : (
+            <div
+              ref={scrollRef}
+              onScroll={onScroll}
+              className="flex flex-1 flex-col overflow-y-auto"
+              style={{ maxHeight: ROW_HEIGHT * PAGE_SIZE }}
+            >
+              {loadingMore && <p className="px-1 py-0.5 text-center text-[10px] opacity-40">이전 로그 불러오는 중...</p>}
+              {events.map((e) => (
+                <div key={e.id} className="group flex items-center gap-1 truncate px-1 py-0.5 text-[11px] opacity-70">
+                  <span className="min-w-0 flex-1 truncate">
+                    {e.content} <span className="opacity-50">· {timeAgo(e.created_at)}</span>
+                  </span>
+                  {canDelete(e) && (
+                    <button
+                      onClick={() => deleteEvent(e, false)}
+                      title="로그 삭제"
+                      className="shrink-0 text-slate-300 opacity-0 hover:text-red-500 group-hover:opacity-100"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              ))}
             </div>
-          ))}
+          )}
         </div>
-      )}
+      </div>
 
       {expanded &&
         typeof document !== "undefined" &&

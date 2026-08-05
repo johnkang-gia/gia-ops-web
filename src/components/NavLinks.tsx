@@ -9,7 +9,11 @@ import { createPortal } from "react-dom";
 // badge - 이 메뉴에서 "지금 처리해야 할 게 몇 건인지"를 사이드바에서 바로 보여주기 위한
 // 숫자입니다(요청: "검토 대기 배지 추가" - 제안함/채택예정처럼 검토를 기다리는 항목이 있는
 // 메뉴에 빨간 숫자로 표시). 0이거나 없으면 아무것도 표시하지 않습니다.
-export type NavLeaf = { href: string; label: string; labelEn?: string; icon: string; badge?: number };
+// dividerBefore - 부메뉴 안에서 이 항목 "위"에 구분선을 넣습니다(요청: "부메뉴들도 구분에
+// 맞게... 구분선으로 구분해주고" - 예전 사이드바 메인 카테고리 사이에 있던 구분선을, 이제는
+// 플라이아웃으로 펼쳐지는 부메뉴 내부 항목들 사이에도 목적별로 넣습니다). 빈 문자열이면 선만,
+// 값이 있으면 그 위에 작은 소제목도 함께 보여줍니다.
+export type NavLeaf = { href: string; label: string; labelEn?: string; icon: string; badge?: number; dividerBefore?: string };
 
 // 메뉴 구조를 "카테고리" 단위로 바꿨습니다. items가 있으면 마우스를 올렸을 때 오른쪽으로
 // 펼쳐지는 플라이아웃 서브메뉴가 되고(주메뉴가 세로로 길어지지 않음), items가 없으면 href로
@@ -216,29 +220,37 @@ export function SidebarNavLinks({ categories }: { categories: NavCategory[] }) {
               const itemActive = item.href === best;
               const accent = openCategory.accent ?? "navy";
               return (
-                <button
-                  key={item.href}
-                  type="button"
-                  onMouseEnter={() => router.prefetch(item.href)}
-                  onTouchStart={() => router.prefetch(item.href)}
-                  onClick={() => {
-                    setOpenKey(null);
-                    router.push(item.href);
-                  }}
-                  className={
-                    "shell-nav-btn flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm " +
-                    (itemActive
-                      ? "shell-nav-btn-active " + ACCENT_BG_SOFT[accent] + " " + ACCENT_TEXT[accent] + " font-semibold"
-                      : "text-[var(--shell-text-muted,#475569)] hover:bg-[var(--shell-hover-bg,#f1f5f9)] hover:text-[var(--shell-text,#0f172a)]")
-                  }
-                >
-                  <span>{item.icon}</span>
-                  <span className="flex-1 leading-tight">
-                    {item.label}
-                    {item.labelEn && <span className="block text-[10px] font-normal text-slate-400">{item.labelEn}</span>}
-                  </span>
-                  <NavBadge count={item.badge ?? 0} />
-                </button>
+                <div key={item.href}>
+                  {item.dividerBefore !== undefined && (
+                    <div className="mx-1 mt-1.5 mb-1 border-t border-[var(--shell-border,#e2e8f0)] pt-1">
+                      {item.dividerBefore && (
+                        <div className="px-1.5 pb-0.5 text-[9px] font-bold uppercase tracking-wide text-slate-300">{item.dividerBefore}</div>
+                      )}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onMouseEnter={() => router.prefetch(item.href)}
+                    onTouchStart={() => router.prefetch(item.href)}
+                    onClick={() => {
+                      setOpenKey(null);
+                      router.push(item.href);
+                    }}
+                    className={
+                      "shell-nav-btn flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm " +
+                      (itemActive
+                        ? "shell-nav-btn-active " + ACCENT_BG_SOFT[accent] + " " + ACCENT_TEXT[accent] + " font-semibold"
+                        : "text-[var(--shell-text-muted,#475569)] hover:bg-[var(--shell-hover-bg,#f1f5f9)] hover:text-[var(--shell-text,#0f172a)]")
+                    }
+                  >
+                    <span>{item.icon}</span>
+                    <span className="flex-1 leading-tight">
+                      {item.label}
+                      {item.labelEn && <span className="block text-[10px] font-normal text-slate-400">{item.labelEn}</span>}
+                    </span>
+                    <NavBadge count={item.badge ?? 0} />
+                  </button>
+                </div>
               );
             })}
           </div>,

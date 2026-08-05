@@ -270,6 +270,13 @@ export type TaskComment = {
   created_at: string;
 };
 
+export type DepartmentMemo = {
+  department: string;
+  content: string;
+  updated_by: string | null;
+  updated_at: string;
+};
+
 export type TaskModeColor = {
   mode: "나" | "전체" | "공유";
   color: string;

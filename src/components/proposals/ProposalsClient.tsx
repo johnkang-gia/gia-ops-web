@@ -109,6 +109,10 @@ export default function ProposalsClient({
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [activeVariant, setActiveVariant] = useState<Record<string, string>>({});
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  // 요청 1번: 옵션(보완방안/학부모안내멘트/학생교육방법) 중 하나를 고르면(동그라미 선택 - 한 번에
+  // 하나만) 그 문구가 그대로 "최종 채택 내용" 박스에 채워집니다. proposalId별로 지금 어떤 옵션을
+  // 골랐는지만 기억해서 라디오 표시를 유지합니다(실제 값은 drafts에 들어갑니다).
+  const [selectedOption, setSelectedOption] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
   const [scanBusy, setScanBusy] = useState<string | null>(null);
   const [scanMsg, setScanMsg] = useState("");
@@ -183,6 +187,18 @@ export default function ProposalsClient({
       body: JSON.stringify({ id, finalText }),
     });
     setBusyId(null);
+  }
+
+  // 요청 3번: 목록에서 체크(즉시 채택)하기 전에 사건명과 최종 채택 내용을 한 번 더 보여주고
+  // 확인을 받습니다(실수로 잘못 체크해서 바로 채택예정으로 넘어가는 것을 방지).
+  async function confirmAndApprove(v: Proposal, title: string) {
+    const finalContent = drafts[v.id] ?? v.final_text;
+    const ok = await confirmAction(`사건: ${title}\n\n최종 채택 내용:\n${finalContent || "(내용 없음)"}`, {
+      title: `"${v.target_doc}"으로 채택예정에 보내시겠습니까?`,
+      confirmLabel: "채택예정으로 보내기",
+    });
+    if (!ok) return;
+    decide(v.id, "승인");
   }
 
   async function decide(id: string, decision: "승인" | "보류" | "삭제") {
@@ -311,13 +327,14 @@ export default function ProposalsClient({
                     <label
                       key={v.id}
                       className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-500 hover:border-gia-navy hover:text-gia-navy"
-                      title={`체크하면 즉시 "${v.target_doc}" 제안을 승인해 채택예정으로 옮깁니다.`}
+                      title={`체크하면 "${v.target_doc}" 제안을 채택예정으로 보낼지 한 번 더 확인합니다.`}
                       onClick={(e) => e.stopPropagation()}
                     >
                       <input
                         type="checkbox"
+                        checked={false}
                         disabled={busyId === v.id}
-                        onChange={() => decide(v.id, "승인")}
+                        onChange={() => confirmAndApprove(v, ctx?.title || oneLine(v.final_text, 40))}
                         className="h-3.5 w-3.5 accent-gia-navy"
                       />
                       {v.target_doc}
@@ -396,26 +413,52 @@ export default function ProposalsClient({
                   {(remediationOptions.length > 0 || parentMsgOptions.length > 0 || studentEduOptions.length > 0) && (
                     <>
                       <hr className="mb-3 border-slate-100" />
+                      <p className="mb-2 text-[11px] text-slate-400">
+                        옵션 앞 동그라미를 선택하면 그 내용이 위 &quot;최종 채택 내용&quot;에 그대로 채워집니다(직접 수정 가능).
+                      </p>
                       <div className="mb-3 flex flex-col gap-3">
-                        {[
-                          ["🔧 보완/재발방지 방안 옵션", remediationOptions],
-                          ["💬 학부모 안내 멘트 옵션", parentMsgOptions],
-                          ["🎓 학생 교육 방법 옵션", studentEduOptions],
-                        ]
-                          .filter(([, opts]) => (opts as string[]).length > 0)
-                          .map(([label, opts]) => (
-                            <div key={label as string}>
-                              <div className="mb-1.5 text-xs font-semibold text-slate-600">{label as string}</div>
+                        {(
+                          [
+                            ["🔧 보완/재발방지 방안 옵션", remediationOptions, "remediation"],
+                            ["💬 학부모 안내 멘트 옵션", parentMsgOptions, "parent_msg"],
+                            ["🎓 학생 교육 방법 옵션", studentEduOptions, "student_edu"],
+                          ] as [string, string[], string][]
+                        )
+                          .filter(([, opts]) => opts.length > 0)
+                          .map(([label, opts, groupKey]) => (
+                            <div key={groupKey}>
+                              <div className="mb-1.5 text-xs font-semibold text-slate-600">{label}</div>
                               <div className="flex flex-col gap-1.5">
-                                {(opts as string[]).map((opt, i) => (
-                                  <div
-                                    key={i}
-                                    className="rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-2 text-xs text-slate-600"
-                                  >
-                                    <span className="mr-1 font-semibold text-slate-400">옵션 {i + 1}</span>
-                                    <span className="whitespace-pre-wrap">{opt}</span>
-                                  </div>
-                                ))}
+                                {opts.map((opt, i) => {
+                                  const optionKey = `${groupKey}-${i}`;
+                                  const isSelected = selectedOption[active.id] === optionKey;
+                                  return (
+                                    <label
+                                      key={i}
+                                      className={
+                                        "flex cursor-pointer items-start gap-2 rounded-lg border px-2.5 py-2 text-xs " +
+                                        (isSelected
+                                          ? "border-gia-navy bg-blue-50 text-slate-700"
+                                          : "border-slate-100 bg-slate-50 text-slate-600 hover:border-slate-200")
+                                      }
+                                    >
+                                      <input
+                                        type="radio"
+                                        name={`opt-${active.id}`}
+                                        checked={isSelected}
+                                        onChange={() => {
+                                          setSelectedOption((s) => ({ ...s, [active.id]: optionKey }));
+                                          setDrafts((d) => ({ ...d, [active.id]: opt }));
+                                        }}
+                                        className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-gia-navy"
+                                      />
+                                      <span>
+                                        <span className="mr-1 font-semibold text-slate-400">옵션 {i + 1}</span>
+                                        <span className="whitespace-pre-wrap">{opt}</span>
+                                      </span>
+                                    </label>
+                                  );
+                                })}
                               </div>
                             </div>
                           ))}

@@ -6,6 +6,7 @@ import type { Adopted } from "@/lib/types";
 import Pagination from "@/components/Pagination";
 import GuideButton from "@/components/common/GuideButton";
 import { useToast } from "@/components/common/ToastProvider";
+import { useConfirm } from "@/components/common/ConfirmProvider";
 
 const PAGE_SIZE = 10;
 
@@ -27,6 +28,7 @@ function oneLine(text: string, maxLen = 70) {
 
 export default function AdoptedClient({ initialItems }: { initialItems: Adopted[] }) {
   const notify = useToast();
+  const confirmAction = useConfirm();
   const [items, setItems] = useState<Adopted[]>(initialItems);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -96,6 +98,31 @@ export default function AdoptedClient({ initialItems }: { initialItems: Adopted[
       const data = await res.json().catch(() => ({}));
       notify(data.error || "발행하지 못했습니다.", "error");
     }
+  }
+
+  // 요청 4번: 실수로 승인했거나 다시 검토하고 싶을 때, 채택예정 항목을 제안함(검토대기)으로
+  // 되돌립니다. 발행된 항목은 이미 매뉴얼에 합쳐져 들어갔으므로 되돌릴 수 없습니다.
+  async function revert(id: string) {
+    if (
+      !(await confirmAction(
+        "이 항목을 제안함(검토대기)으로 되돌릴까요? 채택예정에서는 사라지고, 제안함에서 다시 검토할 수 있습니다.",
+        { title: "채택예정 되돌리기", confirmLabel: "되돌리기" }
+      ))
+    )
+      return;
+    setBusyId(id);
+    const res = await fetch("/api/adopted/revert", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    setBusyId(null);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      notify(data.error || "되돌리지 못했습니다.", "error");
+      return;
+    }
+    notify("제안함으로 되돌렸습니다.", "success");
   }
 
   async function runReview(id: string) {
@@ -233,6 +260,14 @@ export default function AdoptedClient({ initialItems }: { initialItems: Adopted[
                       className="rounded-lg bg-gia-navy px-3 py-1.5 text-xs font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50"
                     >
                       발행
+                    </button>
+                    <button
+                      onClick={() => revert(it.id)}
+                      disabled={busy}
+                      className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-500 hover:bg-slate-50 disabled:opacity-50"
+                      title="제안함(검토대기)으로 되돌립니다."
+                    >
+                      ↩️ 되돌리기
                     </button>
                   </div>
 

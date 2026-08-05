@@ -190,13 +190,15 @@ export function SidebarNavLinks({ categories }: { categories: NavCategory[] }) {
                   : "border-transparent text-[var(--shell-text-muted,#475569)] hover:bg-[var(--shell-hover-bg,#f1f5f9)] hover:text-[var(--shell-text,#0f172a)]")
               }
             >
-              <span>{cat.icon}</span>
-              <span className="flex-1 leading-tight">
-                {cat.label}
-                {cat.labelEn && <span className="block text-[10px] font-normal text-slate-400">{cat.labelEn}</span>}
+              <span className="shrink-0">{cat.icon}</span>
+              <span className="min-w-0 flex-1 leading-tight">
+                <span className="block truncate">{cat.label}</span>
+                {cat.labelEn && (
+                  <span className="block truncate text-[10px] font-normal text-slate-400">{cat.labelEn}</span>
+                )}
               </span>
               <NavBadge count={categoryBadgeTotal} />
-              {hasChildren && <span className="text-[10px] text-slate-300">›</span>}
+              {hasChildren && <span className="shrink-0 text-[10px] text-slate-300">›</span>}
             </button>
           </div>
         );
@@ -243,10 +245,12 @@ export function SidebarNavLinks({ categories }: { categories: NavCategory[] }) {
                         : "text-[var(--shell-text-muted,#475569)] hover:bg-[var(--shell-hover-bg,#f1f5f9)] hover:text-[var(--shell-text,#0f172a)]")
                     }
                   >
-                    <span>{item.icon}</span>
-                    <span className="flex-1 leading-tight">
-                      {item.label}
-                      {item.labelEn && <span className="block text-[10px] font-normal text-slate-400">{item.labelEn}</span>}
+                    <span className="shrink-0">{item.icon}</span>
+                    <span className="min-w-0 flex-1 leading-tight">
+                      <span className="block truncate">{item.label}</span>
+                      {item.labelEn && (
+                        <span className="block truncate text-[10px] font-normal text-slate-400">{item.labelEn}</span>
+                      )}
                     </span>
                     <NavBadge count={item.badge ?? 0} />
                   </button>
@@ -292,13 +296,26 @@ export function MobileNavLinks({ categories }: { categories: NavCategory[] }) {
             type="button"
             onClick={() => router.push(item.href)}
             className={
-              "shell-nav-btn shrink-0 cursor-pointer rounded-lg px-3 py-1.5 text-sm font-medium " +
+              "shell-nav-btn flex shrink-0 cursor-pointer items-center gap-1 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium " +
               (active
                 ? "shell-nav-pill-active bg-[var(--shell-accent,#0f1b33)] text-[var(--shell-accent-text,#ffffff)]"
                 : "text-[var(--shell-text-muted,#475569)] hover:bg-[var(--shell-hover-bg,#f1f5f9)]")
             }
           >
-            {item.icon} {item.label}
+            <span>{item.icon}</span>
+            <span className="leading-tight">
+              {item.label}
+              {item.labelEn && (
+                <span
+                  className={
+                    "ml-1 text-[10px] font-normal " +
+                    (active ? "opacity-80" : "text-slate-400")
+                  }
+                >
+                  {item.labelEn}
+                </span>
+              )}
+            </span>
             <NavBadge count={item.badge ?? 0} />
           </button>
         );

@@ -240,7 +240,7 @@ export default async function DashboardLayout({
       // 학사일정은 교사에게는 감추고(요청: "교사권한은 학사일정 안보이게"), 대신 사물함 파손·
       // 물품 구입·아픈 학생 인계·출결 상황 문의처럼 행정직원에게 부탁할 일을 등록하는
       // "행정요청" 메뉴를 그 자리에 둡니다(요청: "교사는 행정부에... 요청하는 여러 일들").
-      { key: "requests", label: "행정요청", icon: "🧾", href: "/requests", accent: "teal" },
+      { key: "requests", label: "행정요청", labelEn: "Staff Requests", icon: "🧾", href: "/requests", accent: "teal" },
     ];
   } else {
     categories = [
@@ -267,7 +267,7 @@ export default async function DashboardLayout({
       // 행정요청 - 교사가 등록한 사물함파손/물품구입/아픈학생인계/출결상황문의 등을
       // 행정직원/관리자가 확인·처리하는 화면입니다(요청: "교사는 행정부에... 요청하는 여러
       // 일들"). 학사일정 바로 아래에 둡니다.
-      { key: "requests", label: "행정요청", icon: "🧾", href: "/requests", accent: "teal" },
+      { key: "requests", label: "행정요청", labelEn: "Staff Requests", icon: "🧾", href: "/requests", accent: "teal" },
       buildOpsCategory(pendingProposals, pendingAdopted),
       buildSchoolCategory(isAdmin, isStaffOrAbove),
       buildSchoolDocumentsCategory(),

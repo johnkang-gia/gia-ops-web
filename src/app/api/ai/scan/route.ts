@@ -11,6 +11,7 @@ import { findLegalFullText } from "@/lib/ai/lawReference";
 import type { IncidentClassifyResult, MeetingClassifyResult } from "@/lib/ai/types";
 import { genCaseId } from "@/lib/caseId";
 import { logApiError } from "@/lib/logging";
+import { loadPolicyCategoryNames } from "@/lib/policyCategories";
 
 const BATCH_SIZE = 5;
 
@@ -44,18 +45,6 @@ export async function POST(request: Request) {
   }
 }
 
-// manual_sections에 이미 등록된 항목명을 학부모용/실무자용으로 나눠 가져옵니다. AI 분류
-// 프롬프트에 실어 보내 "비슷한 내용은 기존 항목에 최대한 합쳐지도록" 유도하기 위함입니다(요청 9번).
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function loadExistingCategories(supabase: any): Promise<{ parent: string[]; staff: string[] }> {
-  const { data } = await supabase.from("manual_sections").select("target_doc, category");
-  const rows = (data || []) as { target_doc: string; category: string }[];
-  return {
-    parent: rows.filter((r) => r.target_doc === "학부모용").map((r) => r.category),
-    staff: rows.filter((r) => r.target_doc === "실무자용").map((r) => r.category),
-  };
-}
-
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function scanIncidentOrEvent(supabase: any, type: "incidents" | "events", id?: string) {
   let query = supabase.from(type).select("*");
@@ -69,7 +58,7 @@ async function scanIncidentOrEvent(supabase: any, type: "incidents" | "events", 
   if (!rows || !rows.length) return 0;
 
   const label = type === "incidents" ? "사건" : "행사";
-  const existingCategories = await loadExistingCategories(supabase);
+  const existingCategories = await loadPolicyCategoryNames(supabase);
   let created = 0;
 
   for (const row of rows) {
@@ -139,6 +128,18 @@ async function scanIncidentOrEvent(supabase: any, type: "incidents" | "events", 
         if (insertErr && insertErr.code !== "23505") throw new Error(insertErr.message);
       }
 
+      // 사건 자체에도 항목 태그를 남깁니다(요청: "그 항목을 기준으로 사건,회의,운영계획안을
+      // 항목화") - 작성자가 이미 직접 골라둔 값이 있으면(수기 태그 우선) 덮어쓰지 않습니다.
+      // events는 이 컬럼이 없어 사건(incidents)에만 적용합니다.
+      if (type === "incidents" && result.category) {
+        const patch: Record<string, string> = {};
+        if (!row.manual_cat && targetDocs.includes("실무자용")) patch.manual_cat = result.category;
+        if (!row.op_plan_cat && targetDocs.includes("학부모용")) patch.op_plan_cat = result.category;
+        if (Object.keys(patch).length > 0) {
+          await supabase.from("incidents").update(patch).eq("id", row.id);
+        }
+      }
+
       created += 1;
     } catch (err) {
       // 처리 도중 실패하면(AI 오류 등) 이 기록이 "분석 완료"로 잘못 남아 다음 배치 스캔에서
@@ -163,7 +164,7 @@ async function scanMeetings(supabase: any, id?: string) {
   if (error) throw new Error(error.message);
   if (!rows || !rows.length) return 0;
 
-  const existingCategories = await loadExistingCategories(supabase);
+  const existingCategories = await loadPolicyCategoryNames(supabase);
   let created = 0;
 
   for (const row of rows) {
@@ -194,6 +195,11 @@ async function scanMeetings(supabase: any, id?: string) {
 
       const proposals = result.proposals || [];
       const futurePlanItems: string[] = [];
+      // 회의 하나에 안건이 여러 개면 항목도 여러 개일 수 있지만, 회의 행 자체엔 항목 컬럼이
+      // 하나씩뿐이라 각 문서별 첫 번째 분류 결과만 대표로 남겨둡니다(요청: "그 항목을 기준으로
+      // 사건,회의,운영계획안을 항목화"). 작성자가 이미 직접 골라둔 값이 있으면 덮어쓰지 않습니다.
+      let firstManualCat = row.manual_cat as string | null;
+      let firstOpPlanCat = row.op_plan_cat as string | null;
 
       for (const p of proposals) {
         if (p.targetDoc === "향후계획") {
@@ -255,6 +261,9 @@ async function scanMeetings(supabase: any, id?: string) {
         });
         if (insertErr) throw new Error(insertErr.message);
         created += 1;
+
+        if (p.targetDoc === "실무자용" && !firstManualCat && p.category) firstManualCat = p.category;
+        if (p.targetDoc === "학부모용" && !firstOpPlanCat && p.category) firstOpPlanCat = p.category;
       }
 
       const nextAgendaText = (result.nextAgendaItems || []).join("\n");
@@ -266,6 +275,8 @@ async function scanMeetings(supabase: any, id?: string) {
           scanned_at: new Date().toISOString(),
           next_agenda: [row.next_agenda, nextAgendaText].filter(Boolean).join("\n") || null,
           final_record: [row.final_record, futurePlanText].filter(Boolean).join("\n") || null,
+          manual_cat: firstManualCat,
+          op_plan_cat: firstOpPlanCat,
         })
         .eq("id", row.id);
     } catch (err) {

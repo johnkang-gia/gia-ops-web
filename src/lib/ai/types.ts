@@ -93,6 +93,15 @@ export type IncidentFillResult = {
   suggest: string;
 };
 
+// 기존 사건/회의를 정책 항목(policy_categories) 고정 목록으로 소급 태깅할 때 쓰는 가벼운
+// 분류 결과입니다(요청 확인: "기존 기록도 AI로 훑어서 새 항목에 소급 태깅"). 전체 재분류
+// (remediationOptions 등)를 다시 만들지 않고 항목명만 고르므로 값이 단순합니다. 해당하는
+// 항목이 정말 없으면 빈 문자열을 둡니다(지어내지 않음).
+export type BackfillCategoryResult = {
+  manualCat: string;
+  opPlanCat: string;
+};
+
 // 채팅 메시지를 눌러 "업무로 등록"할 때 AI가 분석해 내는 결과입니다. assigneeNames는 팀원
 // 명단(roster)에 실제로 있는 이름만 넣도록 프롬프트에서 강제하고, 서버에서 이름→이메일로
 // 다시 매칭합니다(AI가 이메일을 직접 만들어내지 않도록 하기 위함).

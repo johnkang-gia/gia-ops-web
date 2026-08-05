@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
-import { isAdminUser } from "@/lib/roles";
+import { isStaffOrAboveUser } from "@/lib/roles";
 import type { GiaSystem } from "@/lib/types";
 import GiaSystemsClient from "@/components/admin/GiaSystemsClient";
 
@@ -11,7 +11,8 @@ export default async function GiaSystemsPage() {
   const supabase = await createClient();
   const me = await getCurrentAppUser();
   if (!me) redirect("/login");
-  if (!isAdminUser(me)) redirect("/home");
+  // 편집 권한이 관리자→관리자+행정직원으로 넓어졌습니다(요청: "관리자·행정직원까지").
+  if (!isStaffOrAboveUser(me)) redirect("/home");
 
   const { data } = await supabase
     .from("gia_systems")

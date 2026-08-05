@@ -20,7 +20,8 @@ export function useRealtimeTable<T extends WithId>(
     | "inquiries"
     | "tasks"
     | "staff_requests"
-    | "attendance_records",
+    | "attendance_records"
+    | "policy_categories",
   initialItems: T[]
 ) {
   const [items, setItems] = useState<T[]>(initialItems);

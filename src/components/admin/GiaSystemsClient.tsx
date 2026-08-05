@@ -46,6 +46,12 @@ export default function GiaSystemsClient({ initialSystems }: { initialSystems: G
   const [proposedIds, setProposedIds] = useState<Set<string>>(new Set());
   const [proposingId, setProposingId] = useState<string | null>(null);
   const [creatingDocId, setCreatingDocId] = useState<string | null>(null);
+  // 항목명/설명 수정(요청: "모든 항목들(시스템의항목들이나...)은 편집 가능하도록") - 관리자·
+  // 행정직원 모두 여기서 이름/설명을 직접 고칠 수 있습니다. 대분류/중분류(major/category)는
+  // 트리 구조와 AI 매칭 기준이라 실수로 깨지기 쉬워 여기서는 건드리지 않고, 이름/설명만 다룹니다.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<{ name: string; description: string } | null>(null);
+  const [savingId, setSavingId] = useState<string | null>(null);
   // 대분류→중분류→세부 항목 3단 아코디언(요청: "시설안전 항목을 누르면 보안,출입/시설관리
   // 두개의 하위항목이 보이고 그중에서 보안,출입을 누르면 그 하위항목들이 보이게 해줘 -
   // 전체적인 시스템 항목을 한눈에 보고싶어서"). 대분류를 눌러야 그 밑의 중분류 목록이 보이고,
@@ -135,6 +141,38 @@ export default function GiaSystemsClient({ initialSystems }: { initialSystems: G
     const supabase = createClient();
     const { error } = await supabase.from("gia_systems").update({ status }).eq("id", id);
     if (error) setError(friendlyError("상태를 변경하지 못했습니다.", error));
+  }
+
+  function startEdit(s: GiaSystem) {
+    setEditingId(s.id);
+    setEditDraft({ name: s.name, description: s.description ?? "" });
+  }
+
+  async function saveEdit(id: string) {
+    if (!editDraft) return;
+    if (!editDraft.name.trim()) {
+      setError("항목명을 입력해주세요.");
+      return;
+    }
+    setSavingId(id);
+    setError(null);
+    try {
+      const supabase = createClient();
+      const { error: err } = await supabase
+        .from("gia_systems")
+        .update({ name: editDraft.name.trim(), description: editDraft.description.trim() || null })
+        .eq("id", id);
+      if (err) throw new Error(err.message);
+      setSystems((prev) =>
+        prev.map((s) => (s.id === id ? { ...s, name: editDraft.name.trim(), description: editDraft.description.trim() || null } : s))
+      );
+      setEditingId(null);
+      setEditDraft(null);
+    } catch (err) {
+      setError(friendlyError("항목을 수정하지 못했습니다.", err));
+    } finally {
+      setSavingId(null);
+    }
   }
 
   async function sendToProposals(s: GiaSystem) {
@@ -297,78 +335,122 @@ export default function GiaSystemsClient({ initialSystems }: { initialSystems: G
                           <div className="divide-y divide-slate-100 border-t border-slate-100">
                             {items.map((s) => (
                               <div key={s.id} className="px-4 py-3">
-                                <div className="mb-1 flex flex-wrap items-center gap-2">
-                                  <span className={"rounded-full px-2 py-0.5 text-[10px] font-semibold " + STATUS_STYLE[s.status]}>
-                                    {s.status}
-                                  </span>
-                                  {s.source === "ai_suggested" && (
-                                    <span className="rounded-full bg-purple-50 px-2 py-0.5 text-[10px] font-semibold text-purple-600">
-                                      AI 제안
-                                    </span>
-                                  )}
-                                  <span className="text-sm font-semibold text-slate-800">{s.name}</span>
-                                </div>
-                                {s.refines_name && (
-                                  <p className="mb-1 text-[11px] font-medium text-purple-600">
-                                    🔍 기존 &quot;{s.refines_name}&quot; 항목을 더 구체적으로 세분화한 제안입니다 (원본 항목은
-                                    그대로 유지됩니다).
-                                  </p>
-                                )}
-                                {s.description && <p className="mb-1 text-xs text-slate-600">{s.description}</p>}
-                                {s.benchmark_school && (
-                                  <p className="mb-2 text-[11px] text-slate-400">참고 사례: {s.benchmark_school}</p>
-                                )}
-                                {s.related_manual_category && (
-                                  <p className="mb-2 text-[11px] text-amber-600">
-                                    📎 발행된 매뉴얼(&quot;{s.related_manual_target_doc}&quot; · {s.related_manual_category})에
-                                    이미 이 시스템 이름이 언급되어 있어요 - 실제로 갖춰져 있다면 상태를 확인해 &quot;보유&quot;로
-                                    바꿔주세요.
-                                  </p>
-                                )}
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <select
-                                    value={s.status}
-                                    onChange={(e) => updateStatus(s.id, e.target.value as GiaSystem["status"])}
-                                    className="rounded-lg border border-slate-200 px-2 py-1 text-xs"
-                                  >
-                                    {STATUSES.map((st) => (
-                                      <option key={st} value={st}>
-                                        {st}
-                                      </option>
-                                    ))}
-                                  </select>
-                                  {s.status === "미보유" &&
-                                    (proposedIds.has(s.id) ? (
-                                      <Link href="/proposals" className="text-xs font-semibold text-blue-500 hover:underline">
-                                        운영관리 제안함에서 확인 →
-                                      </Link>
-                                    ) : (
+                                {editingId === s.id && editDraft ? (
+                                  <div className="flex flex-col gap-2">
+                                    <input
+                                      value={editDraft.name}
+                                      onChange={(e) => setEditDraft((d) => (d ? { ...d, name: e.target.value } : d))}
+                                      placeholder="항목명"
+                                      className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm font-semibold"
+                                    />
+                                    <textarea
+                                      value={editDraft.description}
+                                      onChange={(e) => setEditDraft((d) => (d ? { ...d, description: e.target.value } : d))}
+                                      placeholder="한줄설명"
+                                      rows={2}
+                                      className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm"
+                                    />
+                                    <div className="flex justify-end gap-1.5">
                                       <button
-                                        onClick={() => sendToProposals(s)}
-                                        disabled={proposingId === s.id}
-                                        className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                                        onClick={() => {
+                                          setEditingId(null);
+                                          setEditDraft(null);
+                                        }}
+                                        className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-500 hover:bg-slate-50"
                                       >
-                                        {proposingId === s.id ? "보내는 중..." : "운영관리 제안함으로 보내기"}
+                                        취소
                                       </button>
-                                    ))}
-                                  {s.document_id ? (
-                                    <Link
-                                      href="/documents"
-                                      className="rounded-lg border border-blue-200 px-2.5 py-1 text-xs font-semibold text-blue-600 hover:bg-blue-50"
-                                    >
-                                      📁 서류함에서 보기 →
-                                    </Link>
-                                  ) : (
-                                    <button
-                                      onClick={() => createDocument(s)}
-                                      disabled={creatingDocId === s.id}
-                                      className="rounded-lg border border-blue-200 px-2.5 py-1 text-xs font-semibold text-blue-600 hover:bg-blue-50 disabled:opacity-50"
-                                      title="이 항목에 필요한 서류를 서류함에 같은 분류로 만듭니다."
-                                    >
-                                      {creatingDocId === s.id ? "만드는 중..." : "📁 서류함에 만들기"}
-                                    </button>
-                                  )}
-                                </div>
+                                      <button
+                                        onClick={() => saveEdit(s.id)}
+                                        disabled={savingId === s.id}
+                                        className="rounded-lg bg-gia-navy px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
+                                      >
+                                        {savingId === s.id ? "저장 중..." : "저장"}
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <>
+                                    <div className="mb-1 flex flex-wrap items-center gap-2">
+                                      <span className={"rounded-full px-2 py-0.5 text-[10px] font-semibold " + STATUS_STYLE[s.status]}>
+                                        {s.status}
+                                      </span>
+                                      {s.source === "ai_suggested" && (
+                                        <span className="rounded-full bg-purple-50 px-2 py-0.5 text-[10px] font-semibold text-purple-600">
+                                          AI 제안
+                                        </span>
+                                      )}
+                                      <span className="text-sm font-semibold text-slate-800">{s.name}</span>
+                                    </div>
+                                    {s.refines_name && (
+                                      <p className="mb-1 text-[11px] font-medium text-purple-600">
+                                        🔍 기존 &quot;{s.refines_name}&quot; 항목을 더 구체적으로 세분화한 제안입니다 (원본 항목은
+                                        그대로 유지됩니다).
+                                      </p>
+                                    )}
+                                    {s.description && <p className="mb-1 text-xs text-slate-600">{s.description}</p>}
+                                    {s.benchmark_school && (
+                                      <p className="mb-2 text-[11px] text-slate-400">참고 사례: {s.benchmark_school}</p>
+                                    )}
+                                    {s.related_manual_category && (
+                                      <p className="mb-2 text-[11px] text-amber-600">
+                                        📎 발행된 매뉴얼(&quot;{s.related_manual_target_doc}&quot; · {s.related_manual_category})에
+                                        이미 이 시스템 이름이 언급되어 있어요 - 실제로 갖춰져 있다면 상태를 확인해 &quot;보유&quot;로
+                                        바꿔주세요.
+                                      </p>
+                                    )}
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <select
+                                        value={s.status}
+                                        onChange={(e) => updateStatus(s.id, e.target.value as GiaSystem["status"])}
+                                        className="rounded-lg border border-slate-200 px-2 py-1 text-xs"
+                                      >
+                                        {STATUSES.map((st) => (
+                                          <option key={st} value={st}>
+                                            {st}
+                                          </option>
+                                        ))}
+                                      </select>
+                                      <button
+                                        onClick={() => startEdit(s)}
+                                        className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                                      >
+                                        ✏️ 수정
+                                      </button>
+                                      {s.status === "미보유" &&
+                                        (proposedIds.has(s.id) ? (
+                                          <Link href="/proposals" className="text-xs font-semibold text-blue-500 hover:underline">
+                                            운영관리 제안함에서 확인 →
+                                          </Link>
+                                        ) : (
+                                          <button
+                                            onClick={() => sendToProposals(s)}
+                                            disabled={proposingId === s.id}
+                                            className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                                          >
+                                            {proposingId === s.id ? "보내는 중..." : "운영관리 제안함으로 보내기"}
+                                          </button>
+                                        ))}
+                                      {s.document_id ? (
+                                        <Link
+                                          href="/documents"
+                                          className="rounded-lg border border-blue-200 px-2.5 py-1 text-xs font-semibold text-blue-600 hover:bg-blue-50"
+                                        >
+                                          📁 서류함에서 보기 →
+                                        </Link>
+                                      ) : (
+                                        <button
+                                          onClick={() => createDocument(s)}
+                                          disabled={creatingDocId === s.id}
+                                          className="rounded-lg border border-blue-200 px-2.5 py-1 text-xs font-semibold text-blue-600 hover:bg-blue-50 disabled:opacity-50"
+                                          title="이 항목에 필요한 서류를 서류함에 같은 분류로 만듭니다."
+                                        >
+                                          {creatingDocId === s.id ? "만드는 중..." : "📁 서류함에 만들기"}
+                                        </button>
+                                      )}
+                                    </div>
+                                  </>
+                                )}
                               </div>
                             ))}
                           </div>

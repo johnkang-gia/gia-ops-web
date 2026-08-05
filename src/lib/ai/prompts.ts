@@ -109,12 +109,13 @@ export function buildIncidentClassifySystemPrompt(): string {
     "suggestedFinal 필드에는 remediationOptions 중 가장 적절한 것을 담당자가 바로 매뉴얼에 반영해도 좋을 수준으로 " +
     "짧고 구체적인 문구로 정리하세요(상황을 대괄호로 요약한 태그로 시작). 매뉴얼용 문구이므로 학부모 메시지 전문은 " +
     "suggestedFinal에 넣지 말고 parentCommunicationOptions에만 담으세요.\n" +
-    "관련 항목이 이미 있으면 보완하는 문구를, 전혀 없으면 새 항목명을 제안하세요. 학생 개인정보는 절대 포함하지 마세요.\n\n" +
+    "이 사건이 어느 고정 항목에 해당하는지는 아래 [고정 항목 목록]을 보고 고르세요(새 항목명을 " +
+    "지어내지 마세요). 학생 개인정보는 절대 포함하지 마세요.\n\n" +
     domainInstructionBlock() +
     "아래 JSON 형식으로만 답하세요(다른 텍스트 금지). 메시지 안의 줄바꿈은 JSON 문자열 규칙에 맞게 \\n으로 표시하세요:\n" +
     '{"targetDoc":"학부모용|실무자용|둘다",\n' +
-    ' "category":"해당 문서의 기존 항목명 중 하나(정확히 그대로) 또는 새 항목명",\n' +
-    ' "isNewCategory": true/false,\n' +
+    ' "category":"아래 [고정 항목 목록] 중 해당 문서의 항목명 하나(정확히 그대로)",\n' +
+    ' "isNewCategory": false,\n' +
     ' "domain":"[정책영역] 목록 중 하나",\n' +
     ' "remediationOptions": ["- 옵션1", "- 옵션2", "- 옵션3"],\n' +
     ' "parentCommunicationOptions": ["완성된 메시지 전문 1", "완성된 메시지 전문 2"] 또는 [],\n' +
@@ -149,18 +150,22 @@ export function buildIncidentEntryBlock(
   );
 }
 
-// 학부모용 운영계획안·실무자용 대응 매뉴얼에 이미 등록된 항목명 목록을 프롬프트에 실어 보내기
-// 위한 공용 블록입니다. 이게 없으면 AI가 매번 카테고리를 새로 지어내서 같은 주제인데 이름만
-// 다른 항목이 계속 늘어납니다(요청: "비슷한 내용들을 항목화... 최대한 기존 항목에 넣는 방향으로").
+// 학부모용 운영계획안·실무자용 대응 매뉴얼의 "고정 항목 목록"(policy_categories, 관리자·행정직원이
+// 화면에서 미리 정리해둔 목록)을 프롬프트에 실어 보내기 위한 공용 블록입니다. 예전에는 AI가 매번
+// category를 자유롭게 지어내서 같은 주제인데 이름만 다른 항목이 계속 늘어났는데(요청: "비슷한
+// 내용들을 항목화... 최대한 기존 항목에 넣는 방향으로"), 이제는 이 목록을 완전히 대체 기준으로
+// 삼아 AI가 반드시 이 목록 중에서만 골라야 합니다(요청 확인: "새 항목 체계로 완전히 대체").
 export function buildExistingCategoriesBlock(existingCategories?: { parent: string[]; staff: string[] }): string {
   const parent = existingCategories?.parent ?? [];
   const staff = existingCategories?.staff ?? [];
   return (
-    `[학부모용 운영계획안 기존 항목]\n${parent.length ? parent.join(", ") : "(아직 없음)"}\n` +
-    `[실무자용 대응 매뉴얼 기존 항목]\n${staff.length ? staff.join(", ") : "(아직 없음)"}\n` +
-    "category를 정할 때는 위 기존 항목 중 실질적으로 같은 주제가 있으면 그 이름을 정확히 그대로 " +
-    "쓰세요(사소하게 표현이 다르다는 이유로 새 이름을 만들지 마세요). 정말 다루는 주제가 없을 때만 " +
-    "새 항목명을 제안하세요."
+    `[학부모용 운영계획안 - 고정 항목 목록(이 중에서만 선택)]\n${parent.length ? parent.join(", ") : "(아직 등록된 항목이 없음)"}\n` +
+    `[실무자용 대응 매뉴얼 - 고정 항목 목록(이 중에서만 선택)]\n${staff.length ? staff.join(", ") : "(아직 등록된 항목이 없음)"}\n` +
+    "category는 반드시 위 두 목록 중, 이 판단의 targetDoc에 해당하는 목록에 있는 항목명 하나를 " +
+    "정확히 그대로(토씨 하나까지) 쓰세요. 새로운 항목명을 절대 지어내지 마세요 - 목록에 정확히 " +
+    "들어맞는 게 없어도, 그 중 내용상 가장 가까운 항목 하나를 골라 쓰세요(항목 목록 자체를 늘리거나 " +
+    "바꾸는 것은 관리자·행정직원이 [정책 항목 관리] 화면에서 직접 하는 일이지, 이 분류 작업의 " +
+    "몫이 아닙니다). isNewCategory는 항상 false로 두세요."
   );
 }
 
@@ -196,9 +201,10 @@ export function buildMeetingClassifySystemPrompt(): string {
     '각 항목은 {"category":"...", "targetDoc":"학부모용|실무자용|행사학기참고|향후계획", "domain":"...", ' +
     '"finalText":"...", "eventNameGuess":"...", "referenceKind":"행사|학기"} 형태입니다(eventNameGuess/' +
     'referenceKind는 targetDoc이 "행사학기참고"가 아니면 항상 빈 문자열, domain은 targetDoc이 "학부모용"' +
-    '이나 "실무자용"일 때만 채우고 그 외에는 빈 문자열). category는 targetDoc이 "학부모용"이면 [학부모용 ' +
-    '운영계획안 기존 항목], "실무자용"이면 [실무자용 대응 매뉴얼 기존 항목] 중 하나를 정확히 그대로 쓰거나 ' +
-    "해당하는 게 없으면 새 항목명을 제안하고, 그 외에는 짧고 명확한 제목을 자유롭게 붙이세요. finalText는 " +
+    '이나 "실무자용"일 때만 채우고 그 외에는 빈 문자열). category는 targetDoc이 "학부모용"이면 아래 ' +
+    '[학부모용 운영계획안 - 고정 항목 목록], "실무자용"이면 [실무자용 대응 매뉴얼 - 고정 항목 목록] 중 ' +
+    "하나를 정확히 그대로 쓰세요(새 항목명을 지어내지 말고, 가장 가까운 항목을 고르세요). 그 외" +
+    "(행사학기참고/향후계획)에는 짧고 명확한 제목을 자유롭게 붙이세요. finalText는 " +
     "위 0)의 원칙대로 다듬어 정리한 완성된 문장(법조항 번호 등 사무적 표기 없이)으로 작성하세요. 회의에서 " +
     "확정된 내용이 없으면 빈 배열로 두세요.\n" +
     '3) nextAgendaItems: 아직 결정되지 않았거나 후속 논의가 필요한 사항을 다음 회의 안건으로 정리(간결한 ' +
@@ -236,14 +242,16 @@ export function buildManualDraftClassifySystemPrompt(): string {
     "3) 아래 [참고 법령 목록]에 관련된 법령이 있으면 근거로 자연스럽게 녹여 넣으세요(법조항을 나열하듯 " +
     "쓰지 말고, 왜 이 규정이 타당한지 근거가 느껴지도록). 관련 법령이 없다면 legalBasis는 빈 문자열로 " +
     "두고 지어내지 마세요.\n" +
-    "4) category는 이 항목이 속할 짧고 명확한 항목명입니다(기존 항목명과 비슷한 걸 새로 만들지 말고, " +
-    "이미 있을 법한 이름이면 그 이름을 그대로 쓰세요).\n\n" +
+    "4) category는 아래 [고정 항목 목록] 중, 이 초안이 속하는 항목 하나를 정확히 그대로(토씨 " +
+    "하나까지) 고르세요. 새 항목명을 지어내지 마세요 - 정확히 들어맞는 게 없어도 내용상 가장 " +
+    "가까운 항목을 고르세요(목록 자체를 새로 만들거나 바꾸는 일은 관리자·행정직원이 [정책 항목 " +
+    "관리] 화면에서 직접 합니다).\n\n" +
     domainInstructionBlock() +
     "아래 JSON 형식으로만 답하세요(다른 텍스트 금지). 줄바꿈은 JSON 문자열 규칙에 맞게 \\n으로 표시하세요:\n" +
     '{"targetDoc":"학부모용|실무자용|둘다",\n' +
     ' "targetDocReason":"이 문서(들)로 분류한 이유를 한 문장으로",\n' +
-    ' "category":"항목명",\n' +
-    ' "isNewCategory": true/false,\n' +
+    ' "category":"[고정 항목 목록] 중 하나(정확히 그대로)",\n' +
+    ' "isNewCategory": false,\n' +
     ' "domain":"[정책영역] 목록 중 하나",\n' +
     ' "finalText":"정식 문서에 바로 실을 수 있게 다듬은 완성된 문구",\n' +
     ' "legalBasis":"[참고 법령 목록]에 있으면 인용, 없으면 빈 문자열(지어내지 말 것)",\n' +
@@ -681,4 +689,32 @@ export function buildMeetingEntryBlock(
     "\n\n" +
     buildExistingCategoriesBlock(existingCategories)
   );
+}
+
+// ===== 기존 사건/회의 소급 태깅(요청 확인: "기존 기록도 AI로 훑어서 새 항목에 소급 태깅") =====
+// 이미 저장된 기록에 새로 정리한 고정 항목(policy_categories)을 뒤늦게 붙이는 가벼운 배치
+// 작업입니다. 절차/문구를 새로 짓지 않고 딱 "이 기록이 어느 항목에 해당하는가"만 고르면
+// 되므로, 기존 사건/회의 분류 프롬프트보다 훨씬 짧게 만들어 과금을 최소화합니다(Haiku 사용
+// 전제 - /api/ai/backfill-categories에서 CLAUDE_MODEL_FAST로 호출).
+export function buildBackfillCategorySystemPrompt(): string {
+  return (
+    "당신은 GIA 학교의 기존 사건/회의 기록을 읽고, 이미 정리되어 있는 고정 항목 목록 중 이 " +
+    "기록이 어디에 해당하는지만 골라주는 보조자입니다. 새 절차나 문구를 짓지 마세요 - 오직 " +
+    "항목명 선택만 합니다.\n" +
+    "manualCat: 아래 [실무자용 대응 매뉴얼 - 고정 항목 목록] 중 이 기록과 관련된 항목 하나를 " +
+    "정확히 그대로 고르세요. 뚜렷하게 관련된 항목이 없으면 빈 문자열로 두세요(새 항목명을 " +
+    "지어내지 마세요).\n" +
+    "opPlanCat: 아래 [학부모용 운영계획안 - 고정 항목 목록] 중 이 기록과 관련된 항목 하나를 " +
+    "정확히 그대로 고르세요(학부모에게 안내하거나 정책으로 남길 만한 내용일 때만 - 순수 내부 " +
+    "행정/인사 문제면 빈 문자열). 뚜렷하게 관련된 항목이 없으면 빈 문자열로 두세요.\n\n" +
+    "아래 JSON 형식으로만 답하세요(다른 텍스트 금지):\n" +
+    '{"manualCat":"...", "opPlanCat":"..."}'
+  );
+}
+
+export function buildBackfillCategoryEntryBlock(
+  summary: string,
+  existingCategories: { parent: string[]; staff: string[] }
+): string {
+  return `[기록 요약]\n${summary}\n\n` + buildExistingCategoriesBlock(existingCategories);
 }

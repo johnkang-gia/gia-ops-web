@@ -139,6 +139,14 @@ function buildSchoolDocumentsCategory(): NavCategory {
       { href: "/manuals?doc=실무자용", label: "매뉴얼", icon: "📗" },
       { href: "/manuals?doc=학부모용", label: "운영계획안", icon: "📘" },
       { href: "/documents", label: "서류함", icon: "📁", dividerBefore: "" },
+      // 운영계획안/매뉴얼의 고정 항목 목록을 관리자·행정직원이 직접 추가/수정/삭제하는
+      // 화면입니다(요청: "모든 항목들은 편집 가능하도록"). GIA시스템과 달리 관리자 전용이
+      // 아니라 여기(행정직원도 보이는 문서함 부메뉴)에 둡니다.
+      { href: "/admin/policy-categories", label: "정책 항목 관리", icon: "🗂️", dividerBefore: "" },
+      // GIA시스템도 편집 권한이 관리자·행정직원까지 넓어졌으므로(요청: "관리자·행정직원까지"),
+      // 관리자 전용이던 buildAdminCategory()에서 이쪽(행정직원도 보이는 문서함 부메뉴)으로
+      // 옮겼습니다.
+      { href: "/admin/gia-systems", label: "GIA시스템", icon: "🧩" },
     ],
   };
 }
@@ -173,7 +181,6 @@ function buildAdminCategory(): NavCategory {
     items: [
       { href: "/admin/dashboard", label: "통합 대시보드", icon: "📊" },
       { href: "/admin/education-news", label: "교육뉴스", icon: "📰" },
-      { href: "/admin/gia-systems", label: "GIA시스템", icon: "🧩" },
       { href: "/admin/backups", label: "데이터 백업", icon: "💾", dividerBefore: "" },
     ],
   };

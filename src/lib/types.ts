@@ -13,6 +13,9 @@ export type Incident = {
   owner: string | null;
   students: string | null;
   manual_cat: string | null;
+  // 운영계획안(학부모용) 항목 태그 - policy_categories(target_doc='학부모용')의 category 값을
+  // 참조합니다(요청: "그 항목을 기준으로 사건,회의,운영계획안을 항목화 해줘").
+  op_plan_cat: string | null;
   status: string | null;
   term_id: string | null;
   created_at: string;
@@ -31,6 +34,10 @@ export type Meeting = {
   source_chat: { role: "user" | "assistant"; content: string; at: string }[] | null;
   audio_path: string | null;
   term_id: string | null;
+  // 매뉴얼(실무자용)/운영계획안(학부모용) 항목 태그 - incidents와 마찬가지로
+  // policy_categories의 category 값을 참조합니다.
+  manual_cat: string | null;
+  op_plan_cat: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -606,6 +613,28 @@ export type GiaSystem = {
   // 지우거나 하지 않도록 해줘" - 원본 항목은 절대 건드리지 않고, 이 필드로만 "어떤 항목을
   // 세분화한 제안인지" 표시합니다).
   refines_name: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+// 운영계획안(학부모용)/매뉴얼(실무자용) 고정 항목 체계 - 요청: "학부모님들께 보낼 운영계획안에
+// 들어가면 좋을 항목들을 추려주고, 그 항목을 기준으로 사건,회의,운영계획안을 항목화... 매뉴얼
+// 항목도 만들어줘... 모든 항목들은 편집 가능하도록". 지금까지 AI가 그때그때 자유롭게 짓던
+// category 이름을 이 고정 목록으로 완전히 대체합니다(사건/회의 AI 분류, 소급 태깅 모두 이
+// 목록 중에서만 고릅니다). 관리자·행정직원이 화면에서 추가/수정/삭제할 수 있습니다.
+export type PolicyTargetDoc = "학부모용" | "실무자용";
+export type PolicyCategoryStatus = "보유" | "부분보유" | "미보유";
+
+export type PolicyCategory = {
+  id: string;
+  target_doc: PolicyTargetDoc;
+  domain: string;
+  category: string;
+  description: string | null;
+  status: PolicyCategoryStatus;
+  sort_order: number;
+  source: "gia_system" | "benchmark" | "manual";
+  gia_system_id: string | null;
   created_at: string;
   updated_at: string;
 };

@@ -6,6 +6,7 @@ import { findLegalFullText } from "@/lib/ai/lawReference";
 import type { ManualDraftClassifyResult } from "@/lib/ai/types";
 import { genCaseId } from "@/lib/caseId";
 import { logApiError } from "@/lib/logging";
+import { loadPolicyCategoryNames } from "@/lib/policyCategories";
 
 // 흔히 나오는 조사/접속사만 제외하는 아주 단순한 불용어 목록입니다. 정교한 형태소 분석기 없이,
 // AI 호출 없는 "키워드 겹침" 방식으로 과거 관련 기록을 찾기 위한 최소한의 필터입니다(요청 6번,
@@ -111,11 +112,7 @@ export async function POST(request: Request) {
       .single();
     if (draftErr) throw new Error(draftErr.message);
 
-    const { data: catRows } = await supabase.from("manual_sections").select("target_doc, category");
-    const existingCategories = {
-      parent: (catRows || []).filter((r) => r.target_doc === "학부모용").map((r) => r.category),
-      staff: (catRows || []).filter((r) => r.target_doc === "실무자용").map((r) => r.category),
-    };
+    const existingCategories = await loadPolicyCategoryNames(supabase);
 
     const systemPrompt = buildManualDraftClassifySystemPrompt();
     const userPrompt = buildManualDraftEntryBlock(rawText, existingCategories);

@@ -3148,3 +3148,140 @@ begin
     alter publication supabase_realtime add table attendance_records;
   end if;
 end $$;
+
+-- ===== 74. 운영계획안·매뉴얼 "항목" 체계 도입 + GIA시스템 편집권한 확장 =====
+-- 요청: "Gia시스템을 참조했을 때, 학부모님들께 보낼 운영계획안에 들어가면 좋을 항목들을
+-- 추려주고... 매뉴얼은 실무자가 컴플레인 받을 수 있는 여러 상황들이나 규정들을... 매뉴얼
+-- 항목도 만들어줘... 모든 항목들(시스템의항목들이나, 매뉴얼, 운영계획안의 항목들)은 편집
+-- 가능하도록". 지금까지 운영계획안(학부모용)/매뉴얼(실무자용)의 "항목(category)"은 AI가
+-- 사건/회의를 제안으로 만들 때 그때그때 자유롭게 지어내던 이름이었습니다. 이제 GIA시스템
+-- 벤치마킹과 국제학교 컴플레인/규정 사례를 참고해 미리 정리한 "고정 항목 목록"을 만들고, AI
+-- 분류도 이 목록 중에서만 고르도록 완전히 대체합니다(요청 확인: "새 항목 체계로 완전히
+-- 대체"). 항목은 관리자·행정직원이 화면에서 이름/설명/보유상태를 직접 추가·수정·삭제할 수
+-- 있습니다(요청 확인: "관리자·행정직원까지" 편집 가능).
+
+-- ----- (1) GIA시스템 편집 권한을 관리자→관리자+행정직원으로 확장 -----
+-- 지금까지는 is_app_admin()이라 관리자 계정만 조회/수정할 수 있었는데, 위클리 리포트 등에서
+-- 이미 쓰던 "관리자 또는 행정직원" 판정 함수(is_wr_manager)로 교체합니다.
+drop policy if exists "admin_all_gia_systems" on gia_systems;
+create policy "admin_all_gia_systems" on gia_systems
+  for all using (is_wr_manager()) with check (is_wr_manager());
+
+-- ----- (2) 정책 항목(policy_categories) 테이블 -----
+-- target_doc='학부모용'은 운영계획안 항목, target_doc='실무자용'은 매뉴얼 항목입니다.
+-- gia_system_id는 학부모용 항목이 어느 GIA시스템 항목을 참고해 만들어졌는지 남겨둡니다(추적용,
+-- 필수 아님). status는 gia_systems와 같은 보유/부분보유/미보유 3단계이고, 실제로 그 항목에
+-- 해당하는 manual_sections 콘텐츠가 채워지면 관리자가 화면에서 손으로 갱신합니다.
+create table if not exists policy_categories (
+  id uuid primary key default gen_random_uuid(),
+  target_doc text not null check (target_doc in ('학부모용', '실무자용')),
+  domain text not null default '',
+  category text not null,
+  description text,
+  status text not null default '미보유' check (status in ('보유', '부분보유', '미보유')),
+  sort_order double precision not null default 0,
+  source text not null default 'benchmark',   -- 'gia_system' | 'benchmark' | 'manual'
+  gia_system_id uuid references gia_systems(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (target_doc, category)
+);
+
+drop trigger if exists policy_categories_set_updated_at on policy_categories;
+create trigger policy_categories_set_updated_at
+  before update on policy_categories
+  for each row execute function set_updated_at();
+
+alter table policy_categories enable row level security;
+
+-- 조회는 giamicro 전 직원(사건/회의 입력 화면에서 드롭다운으로 골라야 하므로), 추가·수정·삭제는
+-- 관리자·행정직원만 허용합니다.
+drop policy if exists "giamicro_select_policy_categories" on policy_categories;
+create policy "giamicro_select_policy_categories" on policy_categories
+  for select using (is_giamicro_user());
+
+drop policy if exists "manager_insert_policy_categories" on policy_categories;
+create policy "manager_insert_policy_categories" on policy_categories
+  for insert with check (is_wr_manager());
+
+drop policy if exists "manager_update_policy_categories" on policy_categories;
+create policy "manager_update_policy_categories" on policy_categories
+  for update using (is_wr_manager()) with check (is_wr_manager());
+
+drop policy if exists "manager_delete_policy_categories" on policy_categories;
+create policy "manager_delete_policy_categories" on policy_categories
+  for delete using (is_wr_manager());
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'policy_categories'
+  ) then
+    alter publication supabase_realtime add table policy_categories;
+  end if;
+end $$;
+
+-- ----- (3) 사건/회의에 "항목" 태그 컬럼 추가 -----
+-- incidents.manual_cat은 원래부터 "매뉴얼 항목(정렬/분류용)"이라는 주석대로 실무자용 항목
+-- 태그로 계속 씁니다. 여기에 학부모용(운영계획안) 항목 태그를 새로 추가하고, meetings에는
+-- 둘 다 없었으므로 두 컬럼을 새로 추가합니다(요청: "그 항목을 기준으로 사건,회의,운영계획안을
+-- 항목화 해줘").
+alter table incidents add column if not exists op_plan_cat text;
+alter table meetings add column if not exists manual_cat text;
+alter table meetings add column if not exists op_plan_cat text;
+
+-- ----- (4) 학부모용(운영계획안) 항목 시드 - GIA시스템 44개 항목 중 학부모 공개에 적합한 것만
+-- 추려 안내형 문구로 다듬었습니다. status는 참고한 GIA시스템 항목의 보유상태를 그대로
+-- 물려받습니다(정확한 실제 보유여부는 관리자가 화면에서 다시 확인/수정하면 됩니다).
+insert into policy_categories (target_doc, domain, category, description, status, source, gia_system_id, sort_order) values
+  ('학부모용', '재정', '등록금 납부 및 환불 규정', '등록금 고지·수납 절차와 중도 퇴원 시 환불 기준을 학부모에게 명확히 안내하는 항목입니다.', '미보유', 'gia_system', (select id from gia_systems where major='재정' and category='등록금·수납' and name='환불 규정 및 처리 절차'), 1),
+  ('학부모용', '학사', '입학 전형 및 대기자 관리 안내', '입학 지원부터 전형, 대기자 순번 안내까지의 절차를 학부모가 알기 쉽게 정리하는 항목입니다.', '미보유', 'gia_system', (select id from gia_systems where major='학사' and category='입학·학적' and name='입학전형 및 대기자 관리 시스템'), 2),
+  ('학부모용', '학사', '학적 관리(전입·전출) 안내', '전입·전출·휴학 등 학적 변동 시 필요한 절차와 서류를 안내하는 항목입니다.', '미보유', 'gia_system', (select id from gia_systems where major='학사' and category='입학·학적' and name='재학생 학적관리(전입·전출)'), 3),
+  ('학부모용', '학사', '출결 관리 및 결석 처리 기준', '지각·결석·조퇴 처리 기준과 장기결석 시 절차를 안내하는 항목입니다.', '미보유', 'gia_system', (select id from gia_systems where major='학사' and category='출결·교육과정' and name='출결관리 시스템'), 4),
+  ('학부모용', '학사', '교육과정 및 학사일정 안내', '학년/학기별 교육과정 편성과 주요 학사일정을 안내하는 항목입니다.', '미보유', 'gia_system', (select id from gia_systems where major='학사' and category='출결·교육과정' and name='교육과정 편성 및 시수관리'), 5),
+  ('학부모용', '학사', '성적 평가 및 생활기록부 발급 안내', '평가 방식과 생활기록부·수료증 발급 절차를 안내하는 항목입니다.', '미보유', 'gia_system', (select id from gia_systems where major='학사' and category='성적·평가' and name='생활기록부·수료증 발급 체계'), 6),
+  ('학부모용', '운영', '위기상황 대응 및 비상연락 체계 안내', '화재·지진 등 비상상황 발생 시 학교의 대응 절차와 학부모 연락 방법을 안내하는 항목입니다.', '미보유', 'gia_system', (select id from gia_systems where major='운영' and category='사건·위기대응' and name='비상연락망 및 위기대응체계'), 7),
+  ('학부모용', '운영', '통학차량 운행 및 안전관리 안내', '셔틀버스 운행 시간표, 승하차 확인, 안전관리 방침을 안내하는 항목입니다.', '미보유', 'gia_system', (select id from gia_systems where major='운영' and category='통학·차량' and name='통학차량 운행 및 승하차 관리'), 8),
+  ('학부모용', '운영', '급식 위생 및 알레르기 관리방침', '급식 위생점검과 학생 알레르기 정보 반영 절차를 안내하는 항목입니다.', '미보유', 'gia_system', (select id from gia_systems where major='운영' and category='급식·보건' and name='급식 위생·알레르기 관리 체계'), 9),
+  ('학부모용', '운영', '보건실 운영 및 투약 동의 절차', '상비약 관리와 학부모 동의 기반 투약 절차를 안내하는 항목입니다.', '미보유', 'gia_system', (select id from gia_systems where major='운영' and category='급식·보건' and name='보건실 운영 및 투약관리'), 10),
+  ('학부모용', '운영', '행사 및 방학캠프 운영 안내', '정규 행사와 방학캠프의 운영 방침·안전관리를 안내하는 항목입니다.', '부분보유', 'gia_system', (select id from gia_systems where major='운영' and category='행사·캠프' and name='방학캠프 운영관리'), 11),
+  ('학부모용', '시설·안전', '시설 안전점검 및 소방·전기 점검 안내', '건물·놀이시설, 소방·전기설비의 정기 안전점검 체계를 안내하는 항목입니다.', '미보유', 'gia_system', (select id from gia_systems where major='시설·안전' and category='시설관리' and name='시설 안전점검표 및 유지보수 체계'), 12),
+  ('학부모용', '시설·안전', '방문자 출입 및 CCTV 운영방침', '외부인 출입 확인 절차와 CCTV 설치·열람·보관 기준을 안내하는 항목입니다.', '미보유', 'gia_system', (select id from gia_systems where major='시설·안전' and category='보안·출입' and name='CCTV 운영 및 관리방침'), 13),
+  ('학부모용', '입학·홍보', 'SNS·사진 활용 동의 안내', '학생 사진·영상을 SNS나 홍보물에 사용할 때의 학부모 동의 절차를 안내하는 항목입니다.', '미보유', 'gia_system', (select id from gia_systems where major='입학·홍보' and category='홍보' and name='SNS·사진 활용 동의관리'), 14),
+  ('학부모용', '입학·홍보', '학부모 상담 예약 및 소통창구 안내', '담임·행정팀과의 상담 예약 방법과 평소 소통 채널을 안내하는 항목입니다.', '미보유', 'gia_system', (select id from gia_systems where major='입학·홍보' and category='학부모소통' and name='학부모 상담예약 체계'), 15),
+  ('학부모용', '입학·홍보', '학부모 만족도 조사 안내', '정기 만족도 조사 방식과 결과 반영 절차를 안내하는 항목입니다.', '미보유', 'gia_system', (select id from gia_systems where major='입학·홍보' and category='학부모소통' and name='학부모 만족도조사'), 16),
+  ('학부모용', '정보보안·법무', '개인정보 처리방침 및 동의서 안내', '학생·학부모 개인정보 수집·이용 목적과 동의 절차를 안내하는 항목입니다.', '미보유', 'gia_system', (select id from gia_systems where major='정보보안·법무' and category='개인정보보호' and name='개인정보처리방침 및 동의서 관리'), 17),
+  ('학부모용', '정보보안·법무', '개인정보 유출 시 대응절차 안내', '개인정보 유출 사고 발생 시 학부모에게 알리는 절차와 대응 방침을 안내하는 항목입니다.', '미보유', 'gia_system', (select id from gia_systems where major='정보보안·법무' and category='개인정보보호' and name='개인정보 유출 대응 체계'), 18),
+  ('학부모용', '정보보안·법무', '대안교육기관 등록 현황 안내', '대안교육기관에 관한 법률에 따른 학교 등록 현황을 투명하게 안내하는 항목입니다.', '미보유', 'gia_system', (select id from gia_systems where major='정보보안·법무' and category='등록·인허가' and name='대안교육기관 등록서류 관리'), 19),
+  ('학부모용', '인사·교직원', '교직원 아동학대·성범죄 경력조회 방침 안내', '채용 전/재직 중 정기적으로 시행하는 경력조회 방침을 학부모가 안심할 수 있도록 안내하는 항목입니다.', '미보유', 'gia_system', (select id from gia_systems where major='인사·교직원' and category='채용' and name='아동학대·성범죄 경력조회 체계'), 20)
+on conflict (target_doc, category) do nothing;
+
+-- ----- (5) 실무자용(매뉴얼) 항목 시드 - 국제학교/타 학교의 컴플레인 대응·규정 사례를 참고해
+-- GIA에 아직 없는 항목을 새로 정리했습니다(요청: "실무자가 컴플레인 받을 수 있는 여러
+-- 상황들이나, 규정들을... 다른학교나 국제학교들을 참고하여"). 전부 신규 벤치마킹 항목이라
+-- source='benchmark', status는 전부 '미보유'로 시작합니다.
+insert into policy_categories (target_doc, domain, category, description, status, source, sort_order) values
+  ('실무자용', '아동보호·안전', '아동학대 인지 및 의무신고 절차', '교직원이 아동학대 징후를 인지했을 때 따라야 할 신고 의무와 절차가 문서화되어 있지 않습니다.', '미보유', 'benchmark', 1),
+  ('실무자용', '아동보호·안전', '학생 안전사고 발생 시 보고체계', '교내외 안전사고 발생 시 누구에게 몇 시간 내 어떤 순서로 보고하는지에 대한 표준 절차가 없습니다.', '미보유', 'benchmark', 2),
+  ('실무자용', '아동보호·안전', '알레르기·응급질환 대응 프로토콜', '아나필락시스 등 응급상황 발생 시 에피펜 사용법을 포함한 대응 절차가 표준화되어 있지 않습니다.', '미보유', 'benchmark', 3),
+  ('실무자용', '괴롭힘·생활지도', '학교폭력·따돌림 대응 절차', '학생 간 괴롭힘 신고 접수부터 조사, 조치까지의 단계별 절차가 마련되어 있지 않습니다.', '미보유', 'benchmark', 4),
+  ('실무자용', '괴롭힘·생활지도', '사이버불링(온라인 괴롭힘) 대응 지침', 'SNS·메신저를 통한 온라인 괴롭힘 신고와 대응 지침이 없습니다.', '미보유', 'benchmark', 5),
+  ('실무자용', '괴롭힘·생활지도', '학생 징계 절차 및 이의제기(항소) 절차', '징계 결정 과정과 학생·학부모가 이의를 제기할 수 있는 절차가 문서화되어 있지 않습니다.', '미보유', 'benchmark', 6),
+  ('실무자용', '괴롭힘·생활지도', '학생 간 다툼·갈등 중재 절차', '경미한 학생 간 갈등을 담임/행정팀이 중재하는 표준 절차가 없습니다.', '미보유', 'benchmark', 7),
+  ('실무자용', '컴플레인·민원대응', '학부모 민원 접수 및 처리 절차', '학부모 민원을 접수하고 단계적으로(담임→행정팀→관리자) 처리하는 공식 절차가 없습니다.', '미보유', 'benchmark', 8),
+  ('실무자용', '컴플레인·민원대응', '교사 대상 컴플레인 대응 지침', '불친절·편애 등 특정 교사에 대한 컴플레인을 접수하고 조사하는 지침이 없습니다.', '미보유', 'benchmark', 9),
+  ('실무자용', '컴플레인·민원대응', '성적·평가 이의제기 절차', '평가 결과에 대한 학부모·학생의 이의제기를 접수하고 재검토하는 절차가 없습니다.', '미보유', 'benchmark', 10),
+  ('실무자용', '컴플레인·민원대응', '언론·SNS 부정적 게시물 대응 지침', '학교 관련 부정적 게시물이나 민원이 SNS에 올라왔을 때의 대응 원칙이 없습니다.', '미보유', 'benchmark', 11),
+  ('실무자용', '개인정보·법무', '학생 개인정보 유출·오남용 신고 대응 절차', '개인정보 유출 의심 사례를 신고받고 조사·통지하는 내부 절차가 없습니다.', '미보유', 'benchmark', 12),
+  ('실무자용', '개인정보·법무', '양육권 분쟁 시 학생 인계 기준', '이혼·양육권 분쟁 가정의 경우 비양육 보호자의 학생 접근·인계 기준이 마련되어 있지 않습니다.', '미보유', 'benchmark', 13),
+  ('실무자용', '개인정보·법무', '학생 사진·영상 SNS 게시 전 동의 확인 절차', '행사 사진 등을 게시하기 전 학부모 동의 여부를 확인하는 실무 절차가 없습니다.', '미보유', 'benchmark', 14),
+  ('실무자용', '교직원 행동강령', '교직원 채용 전 신원조회 절차', '채용 확정 전 성범죄·아동학대 경력조회를 거치는 표준 절차가 문서화되어 있지 않습니다.', '미보유', 'benchmark', 15),
+  ('실무자용', '교직원 행동강령', '교직원 행동강령 위반 신고·조사 절차', '부적절한 언행 등 교직원의 행동강령 위반을 신고하고 조사하는 절차가 없습니다.', '미보유', 'benchmark', 16),
+  ('실무자용', '교직원 행동강령', '내부고발자 보호 및 신고창구', '내부 비위를 신고한 직원을 보호하는 절차와 익명 신고창구가 없습니다.', '미보유', 'benchmark', 17),
+  ('실무자용', '통학·현장학습 안전', '통학버스 사고·지연 발생 시 대응 절차', '통학버스 사고나 지연 발생 시 학부모 안내와 대체 이동수단 확보 절차가 없습니다.', '미보유', 'benchmark', 18),
+  ('실무자용', '통학·현장학습 안전', '현장학습(캠프 포함) 안전관리 및 사고대응 절차', '교외 활동 중 사고 발생 시 인솔교사가 따라야 할 표준 대응 절차가 없습니다.', '미보유', 'benchmark', 19),
+  ('실무자용', '통학·현장학습 안전', '대체교사(서브) 배치 시 인수인계 절차', '담임 부재 시 대체교사에게 학생 특이사항을 인계하는 표준 절차가 없습니다.', '미보유', 'benchmark', 20),
+  ('실무자용', '학습지원', '특수교육대상·학습지원 학생 관련 민원 대응 지침', '학습지원이 필요한 학생에 대한 학부모 민원을 다루는 별도 지침이 없습니다.', '미보유', 'benchmark', 21),
+  ('실무자용', '위생·보건', '감염병 발생 시 등교중지 및 보고 절차', '전염병 의심 학생의 등교중지 기준과 보건당국 보고 절차가 마련되어 있지 않습니다.', '미보유', 'benchmark', 22)
+on conflict (target_doc, category) do nothing;

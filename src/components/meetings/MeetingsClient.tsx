@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useRealtimeTable } from "@/lib/useRealtimeTable";
 import { genCaseId } from "@/lib/caseId";
 import { getMeetingAudioUrl } from "@/lib/storage";
-import type { Meeting, Term } from "@/lib/types";
+import type { Meeting, PolicyCategory, Term } from "@/lib/types";
 import MeetingChatComposer from "./MeetingChatComposer";
 import AiSourcePanel from "@/components/ai/AiSourcePanel";
 import Pagination from "@/components/Pagination";
@@ -31,6 +31,8 @@ type FormState = {
   status: string;
   next_agenda: string;
   final_record: string;
+  manual_cat: string;
+  op_plan_cat: string;
 };
 
 const EMPTY_FORM: FormState = {
@@ -40,6 +42,8 @@ const EMPTY_FORM: FormState = {
   status: "",
   next_agenda: "",
   final_record: "",
+  manual_cat: "",
+  op_plan_cat: "",
 };
 
 function oneLine(text: string, maxLen = 40) {
@@ -52,10 +56,16 @@ function oneLine(text: string, maxLen = 40) {
 export default function MeetingsClient({
   initialItems,
   currentTerm,
+  policyCategories,
 }: {
   initialItems: Meeting[];
   currentTerm: Term | null;
+  // 매뉴얼(실무자용)/운영계획안(학부모용) 고정 항목 목록 - incidents와 동일하게 이 목록
+  // 중에서만 골라 태그합니다.
+  policyCategories: PolicyCategory[];
 }) {
+  const manualCatOptions = policyCategories.filter((c) => c.target_doc === "실무자용");
+  const opPlanCatOptions = policyCategories.filter((c) => c.target_doc === "학부모용");
   const [items, setItems] = useRealtimeTable<Meeting>("meetings", initialItems);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -92,6 +102,8 @@ export default function MeetingsClient({
       status: it.status ?? "",
       next_agenda: it.next_agenda ?? "",
       final_record: it.final_record ?? "",
+      manual_cat: it.manual_cat ?? "",
+      op_plan_cat: it.op_plan_cat ?? "",
     });
   }
 
@@ -304,6 +316,40 @@ export default function MeetingsClient({
                 className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
               />
             </label>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="flex flex-col gap-1 text-xs text-slate-500">
+                매뉴얼 항목(실무자용)
+                <select
+                  value={form.manual_cat}
+                  onChange={(e) => setForm({ ...form, manual_cat: e.target.value })}
+                  className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+                >
+                  <option value="">(선택 안 함 - AI가 나중에 분류)</option>
+                  {manualCatOptions.map((c) => (
+                    <option key={c.id} value={c.category}>
+                      {c.domain ? `${c.domain} · ` : ""}
+                      {c.category}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 text-xs text-slate-500">
+                운영계획안 항목(학부모용)
+                <select
+                  value={form.op_plan_cat}
+                  onChange={(e) => setForm({ ...form, op_plan_cat: e.target.value })}
+                  className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+                >
+                  <option value="">(선택 안 함 - AI가 나중에 분류)</option>
+                  {opPlanCatOptions.map((c) => (
+                    <option key={c.id} value={c.category}>
+                      {c.domain ? `${c.domain} · ` : ""}
+                      {c.category}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
 
             {error && <p className="text-sm text-red-600">{error}</p>}
 

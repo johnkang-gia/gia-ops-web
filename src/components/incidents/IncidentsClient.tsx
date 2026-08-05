@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRealtimeTable } from "@/lib/useRealtimeTable";
 import { genCaseId } from "@/lib/caseId";
-import type { Incident, Term, WrStudent } from "@/lib/types";
+import type { Incident, PolicyCategory, Term, WrStudent } from "@/lib/types";
 import AiSourcePanel from "@/components/ai/AiSourcePanel";
 import Pagination from "@/components/Pagination";
 import GuideButton from "@/components/common/GuideButton";
@@ -32,6 +32,7 @@ type FormState = {
   owner: string;
   students: string;
   manual_cat: string;
+  op_plan_cat: string;
   status: string;
 };
 
@@ -46,6 +47,7 @@ function emptyForm(ownerDefault: string): FormState {
     owner: ownerDefault,
     students: "",
     manual_cat: "",
+    op_plan_cat: "",
     status: "",
   };
 }
@@ -91,12 +93,19 @@ export default function IncidentsClient({
   currentTerm,
   currentUserEmail,
   currentUserName,
+  policyCategories,
 }: {
   initialItems: Incident[];
   currentTerm: Term | null;
   currentUserEmail: string;
   currentUserName: string;
+  // 매뉴얼(실무자용)/운영계획안(학부모용) 고정 항목 목록 - AI가 자유롭게 짓던 항목명을 이
+  // 목록으로 완전히 대체했으므로(요청: "그 항목을 기준으로 사건,회의,운영계획안을 항목화"),
+  // 직접 입력이 아니라 이 목록에서 골라서 태그합니다.
+  policyCategories: PolicyCategory[];
 }) {
+  const manualCatOptions = policyCategories.filter((c) => c.target_doc === "실무자용");
+  const opPlanCatOptions = policyCategories.filter((c) => c.target_doc === "학부모용");
   const [items, setItems] = useRealtimeTable<Incident>("incidents", initialItems);
   // 담당자 기본값은 로그인 이메일이 아니라 [내 계정 설정]에서 정한 표시 이름을 씁니다(이름이
   // 아직 없으면 이메일로 대체). 물론 자유 텍스트라 필요하면 그대로 고쳐 쓸 수 있습니다.
@@ -222,6 +231,7 @@ export default function IncidentsClient({
       owner: it.owner ?? "",
       students: it.students ?? "",
       manual_cat: it.manual_cat ?? "",
+      op_plan_cat: it.op_plan_cat ?? "",
       status: it.status ?? "",
     });
     setStudentQuery("");
@@ -464,6 +474,41 @@ export default function IncidentsClient({
             </label>
           </div>
 
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <label className="flex flex-col gap-1 text-xs text-slate-500">
+              매뉴얼 항목(실무자용)
+              <select
+                value={form.manual_cat}
+                onChange={(e) => setForm({ ...form, manual_cat: e.target.value })}
+                className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+              >
+                <option value="">(선택 안 함 - AI가 나중에 분류)</option>
+                {manualCatOptions.map((c) => (
+                  <option key={c.id} value={c.category}>
+                    {c.domain ? `${c.domain} · ` : ""}
+                    {c.category}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-slate-500">
+              운영계획안 항목(학부모용)
+              <select
+                value={form.op_plan_cat}
+                onChange={(e) => setForm({ ...form, op_plan_cat: e.target.value })}
+                className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+              >
+                <option value="">(선택 안 함 - AI가 나중에 분류)</option>
+                {opPlanCatOptions.map((c) => (
+                  <option key={c.id} value={c.category}>
+                    {c.domain ? `${c.domain} · ` : ""}
+                    {c.category}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
           <div className="relative flex flex-col gap-1 text-xs text-slate-500">
             <span>관련 학생(정확히 연결 - 동명이인 방지용)</span>
             {linkedStudentIds.length > 0 && (
@@ -535,12 +580,6 @@ export default function IncidentsClient({
             </button>
           </div>
         </form>
-
-        {editingId && (
-          <div className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
-            매뉴얼 항목: {items.find((it) => it.id === editingId)?.manual_cat || "(아직 분류 안 됨)"}
-          </div>
-        )}
       </div>
 
       {/* 오른쪽: AI 제안 */}

@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
-import { isDeveloperEmail } from "@/lib/roles";
+import { isAdminUser } from "@/lib/roles";
 import WorkBoardClient from "@/components/work/WorkBoardClient";
 import type { Task, Department, TeamMember, TaskModeColor } from "@/lib/types";
 
@@ -23,7 +23,7 @@ export default async function WorkPage() {
   ]);
 
   const team = (teamRes.data as TeamMember[] | null) ?? [];
-  const isAdmin = isDeveloperEmail(me.email) || me.position === "관리자";
+  const isAdmin = isAdminUser(me);
 
   return (
     <div className="h-full">

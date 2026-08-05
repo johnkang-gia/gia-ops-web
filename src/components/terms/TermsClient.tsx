@@ -10,6 +10,7 @@ import type { EventCompareResult } from "@/lib/ai/types";
 import PhotoUploader from "@/components/common/PhotoUploader";
 import Pagination from "@/components/Pagination";
 import GuideButton from "@/components/common/GuideButton";
+import { TERM_TYPES } from "@/lib/termTypes";
 
 const GUIDE_SECTIONS = [
   {
@@ -21,7 +22,6 @@ const GUIDE_SECTIONS = [
   },
 ];
 
-const TERM_TYPES = ["1학기", "2학기", "3학기", "여름캠프1", "여름캠프2", "겨울캠프1", "겨울캠프2"];
 const PAGE_SIZE = 10;
 
 type FormState = {

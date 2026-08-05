@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { friendlyError } from "@/lib/errorMessage";
+import { TERM_TYPES } from "@/lib/termTypes";
 
 // ===== 공용 파싱 유틸 =====
 // 구글시트에서 셀 범위를 복사해서 붙여넣으면 탭(\t)으로 구분되고, CSV 파일을 업로드하면
@@ -451,6 +452,9 @@ type FormTemplateRow = {
   id: string;
   name: string;
   kind: FormKind;
+  year: string;
+  term_type: string;
+  purpose: string;
   headers: string[];
   column_mapping: Record<string, string>;
   created_by: string;
@@ -462,6 +466,9 @@ type FormSubmissionRow = {
   id: string;
   template_id: string | null;
   kind: FormKind;
+  year: string;
+  term_type: string;
+  purpose: string;
   term_id: string | null;
   event_id: string | null;
   mapped: Record<string, string>;
@@ -514,6 +521,16 @@ function FormApplicationImportSection({ adminEmail }: { adminEmail: string }) {
   const [linkedId, setLinkedId] = useState("");
   const [templates, setTemplates] = useState<FormTemplateRow[]>([]);
   const [recent, setRecent] = useState<FormSubmissionRow[]>([]);
+
+  // 붙여넣기 전에 먼저 선택하는 분류값입니다(요청: "구글시트 붙여넣기 전에 무슨학기의 어떤
+  // 행사인지(예: 26년 3학기 인원모집, 26년 여름캠프2 바자회 행사) 선택해서"). year/term_type은
+  // terms 관리 화면과 같은 값 체계를 씁니다 - 다음 학기 준비처럼 아직 terms에 해당 학기 행이
+  // 없어도 먼저 지정해둘 수 있습니다.
+  const [year, setYear] = useState(String(new Date().getFullYear()));
+  const [termType, setTermType] = useState(TERM_TYPES[0]);
+  const [customTermType, setCustomTermType] = useState(false);
+  const [purpose, setPurpose] = useState("");
+  const classifyReady = year.trim() !== "" && termType.trim() !== "" && purpose.trim() !== "";
 
   const [text, setText] = useState("");
   const [headers, setHeaders] = useState<string[]>([]);
@@ -579,7 +596,7 @@ function FormApplicationImportSection({ adminEmail }: { adminEmail: string }) {
         suggested[h] = suggestFormField(h);
       });
       setMapping(suggested);
-      setTemplateName("");
+      setTemplateName(`${year.trim()}년 ${termType.trim()} ${purpose.trim()}`.trim());
       setMatchedTemplateId(null);
     }
     setAnalyzed(true);
@@ -589,16 +606,30 @@ function FormApplicationImportSection({ adminEmail }: { adminEmail: string }) {
   const mappedFieldCount = Object.values(mapping).filter(Boolean).length;
 
   async function doImport() {
-    if (!templateName.trim() || mappedFieldCount === 0 || dataRows.length === 0) return;
+    if (!classifyReady || !templateName.trim() || mappedFieldCount === 0 || dataRows.length === 0) return;
     setImporting(true);
     setResult(null);
     const supabase = createClient();
 
+    const y = year.trim();
+    const tt = termType.trim();
+    const p = purpose.trim();
+
     let templateId = matchedTemplateId;
     if (templateId) {
+      // 같은 형식(열 제목)의 폼을 재사용하는 경우입니다 - 매칭 규칙은 그대로 두고, 연도/목적은
+      // "가장 최근 사용" 값으로 갱신해 템플릿 목록에서 최신 상태를 보여줍니다(개별 회차 기록은
+      // 아래 form_submissions에 그대로 남아 이전 학기 기록 조회에 영향이 없습니다).
       await supabase
         .from("form_import_templates")
-        .update({ name: templateName.trim(), column_mapping: mapping, last_used_at: new Date().toISOString() })
+        .update({
+          name: templateName.trim(),
+          column_mapping: mapping,
+          year: y,
+          term_type: tt,
+          purpose: p,
+          last_used_at: new Date().toISOString(),
+        })
         .eq("id", templateId);
     } else {
       const { data, error } = await supabase
@@ -606,6 +637,9 @@ function FormApplicationImportSection({ adminEmail }: { adminEmail: string }) {
         .insert({
           name: templateName.trim(),
           kind,
+          year: y,
+          term_type: tt,
+          purpose: p,
           headers,
           column_mapping: mapping,
           created_by: adminEmail,
@@ -634,6 +668,12 @@ function FormApplicationImportSection({ adminEmail }: { adminEmail: string }) {
       return {
         template_id: templateId,
         kind,
+        // 회차별로 실제 선택한 연도/학기타입/목적을 그대로 저장합니다 - 템플릿은 재사용되며
+        // "최근 사용" 값으로 갱신되지만, 이 값은 그때 그 회차의 기록으로 고정되어 학기준비
+        // 화면에서 "지난 학기엔 이랬다"를 정확히 찾을 수 있습니다.
+        year: y,
+        term_type: tt,
+        purpose: p,
         term_id: kind === "term" ? linkedId || null : null,
         event_id: kind === "event" ? linkedId || null : null,
         raw,
@@ -678,28 +718,81 @@ function FormApplicationImportSection({ adminEmail }: { adminEmail: string }) {
           형식의 시트를 붙여넣으면 바로 알아봅니다.
         </p>
 
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          <div className="flex gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1">
-            {(["term", "event"] as FormKind[]).map((k) => (
-              <button
-                key={k}
-                type="button"
-                onClick={() => setKind(k)}
-                className={
-                  "rounded-md px-3 py-1 text-xs font-semibold transition " +
-                  (kind === k ? "bg-wr-primary text-white" : "text-slate-500 hover:bg-white")
-                }
+        <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <p className="mb-2 text-xs font-bold text-slate-600">
+            ① 무슨 학기/행사의 신청서인가요? (예: 26년 3학기 인원모집, 26년 여름캠프2 바자회 행사)
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex gap-1 rounded-lg border border-slate-200 bg-white p-1">
+              {(["term", "event"] as FormKind[]).map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => setKind(k)}
+                  className={
+                    "rounded-md px-3 py-1 text-xs font-semibold transition " +
+                    (kind === k ? "bg-wr-primary text-white" : "text-slate-500 hover:bg-white")
+                  }
+                >
+                  {k === "term" ? "🗓️ 학기 신청" : "🎉 행사 신청"}
+                </button>
+              ))}
+            </div>
+            <input
+              value={year}
+              onChange={(e) => setYear(e.target.value)}
+              placeholder="연도 (예: 2026)"
+              className="w-24 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-700"
+            />
+            {customTermType ? (
+              <input
+                value={termType}
+                onChange={(e) => setTermType(e.target.value)}
+                placeholder="학기/캠프 직접 입력"
+                className="w-32 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-700"
+              />
+            ) : (
+              <select
+                value={termType}
+                onChange={(e) => {
+                  if (e.target.value === "__custom__") {
+                    setCustomTermType(true);
+                    setTermType("");
+                  } else {
+                    setTermType(e.target.value);
+                  }
+                }}
+                className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-700"
               >
-                {k === "term" ? "🗓️ 학기 신청" : "🎉 행사 신청"}
-              </button>
-            ))}
+                {TERM_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+                <option value="__custom__">직접 입력...</option>
+              </select>
+            )}
+            <input
+              value={purpose}
+              onChange={(e) => setPurpose(e.target.value)}
+              placeholder={kind === "term" ? "목적 (예: 인원모집, 등록신청)" : "목적 (예: 바자회 행사 참가신청)"}
+              className="min-w-[160px] flex-1 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-700"
+            />
           </div>
+          {!classifyReady && (
+            <p className="mt-2 text-[11px] font-semibold text-amber-600">
+              연도/학기(또는 캠프)/목적을 모두 입력해야 아래에 붙여넣을 수 있습니다.
+            </p>
+          )}
+        </div>
+
+        <div className="mb-3 flex flex-wrap items-center gap-2">
           <select
             value={linkedId}
             onChange={(e) => setLinkedId(e.target.value)}
             className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-700"
           >
-            <option value="">{kind === "term" ? "연결할 학기 선택 안 함" : "연결할 행사 선택 안 함"}</option>
+            <option value="">{kind === "term" ? "이미 등록된 학기에 연결(선택)" : "이미 등록된 행사에 연결(선택)"}</option>
             {linkOptions.map((o) => (
               <option key={o.id} value={o.id}>
                 {o.label}
@@ -714,13 +807,19 @@ function FormApplicationImportSection({ adminEmail }: { adminEmail: string }) {
             setText(e.target.value);
             setAnalyzed(false);
           }}
-          className={inputCls}
-          placeholder="구글시트에서 제목 행을 포함해 표 전체를 복사해서 여기에 붙여넣으세요"
+          disabled={!classifyReady}
+          className={inputCls + (classifyReady ? "" : " cursor-not-allowed bg-slate-50 text-slate-300")}
+          placeholder={
+            classifyReady
+              ? "구글시트에서 제목 행을 포함해 표 전체를 복사해서 여기에 붙여넣으세요"
+              : "먼저 위에서 연도/학기(또는 캠프)/목적을 선택하세요"
+          }
         />
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <input
             type="file"
             accept=".csv,text/csv"
+            disabled={!classifyReady}
             onChange={(e) => {
               const f = e.target.files?.[0];
               if (f)
@@ -731,7 +830,7 @@ function FormApplicationImportSection({ adminEmail }: { adminEmail: string }) {
             }}
             className="text-xs"
           />
-          <button type="button" onClick={analyze} disabled={!text.trim()} className={btnGhost}>
+          <button type="button" onClick={analyze} disabled={!classifyReady || !text.trim()} className={btnGhost}>
             분석하기
           </button>
         </div>
@@ -792,7 +891,7 @@ function FormApplicationImportSection({ adminEmail }: { adminEmail: string }) {
             <button
               type="button"
               onClick={doImport}
-              disabled={importing || !templateName.trim() || mappedFieldCount === 0 || dataRows.length === 0}
+              disabled={importing || !classifyReady || !templateName.trim() || mappedFieldCount === 0 || dataRows.length === 0}
               className={btnPrimary + " mt-2"}
             >
               {importing ? "가져오는 중..." : `${dataRows.length}건 가져오기`}
@@ -812,6 +911,11 @@ function FormApplicationImportSection({ adminEmail }: { adminEmail: string }) {
               <div key={t.id} className="flex items-center justify-between rounded-lg bg-slate-50 px-2.5 py-1.5 text-xs">
                 <div>
                   <span className="font-semibold text-slate-700">{t.name}</span>
+                  {(t.year || t.term_type || t.purpose) && (
+                    <span className="ml-1.5 rounded bg-wr-primary/10 px-1.5 py-0.5 text-[11px] font-semibold text-wr-primary">
+                      {[t.year && `${t.year}년`, t.term_type, t.purpose].filter(Boolean).join(" ")}
+                    </span>
+                  )}
                   <span className="ml-1.5 text-slate-400">
                     열 {t.headers.length}개 · {t.last_used_at ? `최근 사용 ${formatDate(t.last_used_at)}` : "미사용"}
                   </span>
@@ -834,6 +938,7 @@ function FormApplicationImportSection({ adminEmail }: { adminEmail: string }) {
             <table className="w-full text-xs">
               <thead className="sticky top-0 bg-slate-50 text-left text-slate-400">
                 <tr>
+                  <th className="px-2 py-1">학기/목적</th>
                   <th className="px-2 py-1">이름</th>
                   <th className="px-2 py-1">연락처</th>
                   <th className="px-2 py-1">학년</th>
@@ -843,6 +948,9 @@ function FormApplicationImportSection({ adminEmail }: { adminEmail: string }) {
               <tbody>
                 {recent.map((s) => (
                   <tr key={s.id} className="border-t border-slate-100">
+                    <td className="px-2 py-1 text-slate-500">
+                      {[s.year && `${s.year}년`, s.term_type, s.purpose].filter(Boolean).join(" ") || "-"}
+                    </td>
                     <td className="px-2 py-1">{s.mapped.name || "-"}</td>
                     <td className="px-2 py-1">{s.mapped.phone || "-"}</td>
                     <td className="px-2 py-1">{s.mapped.grade || "-"}</td>

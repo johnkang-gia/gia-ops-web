@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getCurrentAppUser } from "@/lib/currentUser";
-import { isDeveloperEmail } from "@/lib/roles";
+import { isAdminUser } from "@/lib/roles";
 import SchoolImportClient from "@/components/school/SchoolImportClient";
 import GuideButton from "@/components/common/GuideButton";
 
@@ -34,7 +34,7 @@ export default async function SchoolImportPage() {
   const me = await getCurrentAppUser();
   if (!me) redirect("/login");
 
-  const isAdmin = isDeveloperEmail(me.email) || me.position === "관리자";
+  const isAdmin = isAdminUser(me);
   if (!isAdmin) redirect("/school");
 
   return (

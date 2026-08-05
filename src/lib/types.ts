@@ -549,6 +549,13 @@ export type FormImportTemplate = {
   id: string;
   name: string;
   kind: FormImportKind;
+  // 붙여넣기 전에 먼저 선택하는 분류값입니다(요청: "구글시트 붙여넣기 전에 무슨학기의 어떤
+  // 행사인지... 선택해서"). year/term_type은 terms 테이블과 같은 값 체계를 씁니다(@/lib/termTypes)
+  // - 아직 terms에 해당 학기 행이 없어도(다음 학기를 미리 준비하는 경우) 먼저 지정할 수 있고,
+  // 학기준비 화면에서 term_type으로 지난 같은 학기의 템플릿을 찾아옵니다.
+  year: string;
+  term_type: string;
+  purpose: string;
   headers: string[];
   column_mapping: Record<string, string>;
   created_by: string;
@@ -560,6 +567,11 @@ export type FormSubmission = {
   id: string;
   template_id: string | null;
   kind: FormImportKind;
+  // 템플릿(재사용 매칭 규칙)과 달리 이 값은 그 회차에 실제 선택했던 값 그대로 고정됩니다 -
+  // 템플릿이 나중에 다른 연도로 재사용되어도 지난 기록 조회에 영향이 없습니다.
+  year: string;
+  term_type: string;
+  purpose: string;
   term_id: string | null;
   event_id: string | null;
   raw: Record<string, string>;

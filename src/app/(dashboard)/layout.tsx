@@ -7,6 +7,7 @@ import { getCurrentTerm } from "@/lib/currentTerm";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isDeveloperEmail, isAdminUser, isTeacherOnly, isStaffOrAboveUser } from "@/lib/roles";
 import SignOutButton from "@/components/SignOutButton";
+import RolePreviewDropdown from "@/components/dev/RolePreviewDropdown";
 import { SidebarNavLinks, MobileNavLinks, type NavCategory } from "@/components/NavLinks";
 import MainArea from "@/components/MainArea";
 import DateTimeCard from "@/components/home/DateTimeCard";
@@ -203,10 +204,16 @@ export default async function DashboardLayout({
   const isAdmin = isAdminUser(me);
   const isTeacher = isTeacherOnly(me);
   const isStaffOrAbove = isStaffOrAboveUser(me);
+  // email은 미리보기 중에도 절대 바뀌지 않으므로(@/lib/currentUser) isDeveloper는 언제나
+  // "진짜 개발자 계정인지"를 뜻합니다 - 미리보기 드롭다운 노출 여부 등에 씁니다.
   const isDeveloper = isDeveloperEmail(me.email);
+  // 권한 미리보기 중이면(요청: "그 권한에서만 볼 수 있는 화면으로") 개발자 전용 표시/메뉴를
+  // 전부 감추고 그 직위가 실제로 보는 화면 그대로 재현합니다.
+  const isPreviewing = !!me.previewOf;
   // 뱃지는 우리 권한 체계의 실제 값(position)을 그대로 보여줍니다 - 자유 입력이 아니라 관리자가
-  // [사용자 관리]에서 지정한 값입니다. 개발자 계정은 position과 무관하게 항상 "개발자"로 표시됩니다.
-  const badgeLabel = isDeveloper ? "개발자" : me.position;
+  // [사용자 관리]에서 지정한 값입니다. 개발자 계정은 미리보기 중이 아닐 때만 position과 무관하게
+  // 항상 "개발자"로 표시됩니다.
+  const badgeLabel = isDeveloper && !isPreviewing ? "개발자" : me.position;
 
   const homeHref = isTeacher ? "/weekly-report" : "/home";
 
@@ -220,8 +227,18 @@ export default async function DashboardLayout({
       { key: "subjects", label: "내 담당과목", labelEn: "My Subjects", icon: "📘", href: "/weekly-report/subjects", accent: "teal" },
       // 학사일정은 학기 시작/종료 전에 전 직원이 준비해야 할 일을 달력으로 보여주는
       // 화면이라, 정보 열람이 제한적인 교사 계정에도 예외적으로 노출합니다(요청: "모든
-      // 직원들이 준비하고 체크할 수 있는").
-      { key: "academic-calendar", label: "학사일정", icon: "📅", href: "/academic-calendar", accent: "teal" },
+      // 직원들이 준비하고 체크할 수 있는"). 학사일정달력/학기준비 두 화면으로 나뉩니다(요청:
+      // "학사일정에 '학사일정달력','학기준비' 부메뉴를 만들어서").
+      {
+        key: "academic-calendar",
+        label: "학사일정",
+        icon: "📅",
+        accent: "teal",
+        items: [
+          { href: "/academic-calendar", label: "학사일정달력", icon: "📅" },
+          { href: "/academic-calendar/prep", label: "학기준비", icon: "🧭" },
+        ],
+      },
     ];
   } else {
     categories = [
@@ -233,14 +250,25 @@ export default async function DashboardLayout({
       { key: "staff-manual", label: "실무자 매뉴얼", icon: "📚", href: "/staff-manual", accent: "amber" },
       // 학사일정 - 학기 시작/종료 며칠 전에 뭘 준비해야 하는지를 달력으로 한눈에 보고 체크하는
       // 화면입니다(요청: "학기시작 2주전에뭘하고 1주전에 뭘하고 가 달력으로 한번에 보여서").
-      { key: "academic-calendar", label: "학사일정", icon: "📅", href: "/academic-calendar", accent: "teal" },
+      // 학사일정달력(기존 화면)/학기준비(신규 - 지난 같은 학기 신청서·준비 기록 참고) 두 부메뉴로
+      // 나뉩니다(요청: "학사일정에 '학사일정달력','학기준비' 부메뉴를 만들어서").
+      {
+        key: "academic-calendar",
+        label: "학사일정",
+        icon: "📅",
+        accent: "teal",
+        items: [
+          { href: "/academic-calendar", label: "학사일정달력", icon: "📅" },
+          { href: "/academic-calendar/prep", label: "학기준비", icon: "🧭" },
+        ],
+      },
       buildOpsCategory(pendingProposals, pendingAdopted),
       buildSchoolCategory(isAdmin, isStaffOrAbove),
       buildSchoolDocumentsCategory(),
     ];
     if (isStaffOrAbove) categories.push(buildWeeklyReportCategory(isAdmin));
     if (isAdmin) categories.push(buildAdminCategory());
-    if (isDeveloper) {
+    if (isDeveloper && !isPreviewing) {
       categories.push({ key: "dev", label: "개발자", icon: "🧑‍💻", href: "/dev", accent: "red" });
     }
   }
@@ -346,6 +374,9 @@ export default async function DashboardLayout({
           🏷️ v{APP_VERSION}
         </Link>
         <div className="border-t border-[var(--shell-border)] pt-3">
+          {/* 요청("개발자 계정의 경우 로그아웃 바로위에 드롭다운메뉴로 권한을 변경할 수 있게") -
+              실제 개발자 계정에게만 보이고, 다른 직위는 이 드롭다운 자체를 볼 수 없습니다. */}
+          {isDeveloper && <RolePreviewDropdown currentPreview={me.previewOf} />}
           <SignOutButton />
         </div>
       </aside>

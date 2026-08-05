@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
-import { isDeveloperEmail } from "@/lib/roles";
+import { isAdminUser } from "@/lib/roles";
 import type { TeamMember, WrClass, WrStudent, WrSubject } from "@/lib/types";
 import SubjectManageClient from "@/components/weeklyReport/admin/SubjectManageClient";
 import GuideButton from "@/components/common/GuideButton";
@@ -19,7 +19,7 @@ export default async function SubjectManagePage() {
   const supabase = await createClient();
   const me = await getCurrentAppUser();
   if (!me) redirect("/login");
-  if (!isDeveloperEmail(me.email) && me.position !== "관리자") redirect("/weekly-report");
+  if (!isAdminUser(me)) redirect("/weekly-report");
 
   const [{ data: subjectsData }, { data: teamData }, { data: classesData }, { data: studentsData }] = await Promise.all([
     supabase.from("wr_subjects").select("*").order("name", { ascending: true }),

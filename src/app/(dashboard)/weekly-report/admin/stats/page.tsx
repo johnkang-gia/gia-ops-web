@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
-import { isDeveloperEmail } from "@/lib/roles";
+import { isAdminUser } from "@/lib/roles";
 import { getCurrentTerm } from "@/lib/currentTerm";
 import { getWeekRange } from "@/lib/weeklyReport/week";
 import type { Term, WrClass, WrReport } from "@/lib/types";
@@ -36,7 +36,7 @@ export default async function WeeklyReportStatsPage() {
   const supabase = await createClient();
   const me = await getCurrentAppUser();
   if (!me) redirect("/login");
-  if (!isDeveloperEmail(me.email) && me.position !== "관리자") redirect("/weekly-report");
+  if (!isAdminUser(me)) redirect("/weekly-report");
 
   const term = await getCurrentTerm();
   const { start, end } = getWeekRange();

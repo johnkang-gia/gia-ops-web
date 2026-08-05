@@ -2407,3 +2407,22 @@ begin
     alter publication supabase_realtime add table form_submissions;
   end if;
 end $$;
+
+-- ===== 64. 신청서 템플릿/기록에 연도·학기타입·목적 구조화 필드 추가 =====
+-- 요청("신청서 탭에서는 구글시트 붙여넣기 전에 무슨학기의 어떤 행사인지... 선택해서 구글폼올리고,
+-- 그것에 학사일정에 기록으로 남아서... 이전 학기 준비사항들을 참고하여"). year/term_type은 학기
+-- 관리 화면(terms)과 같은 값 체계를 씁니다 - 아직 terms에 해당 학기 행이 없어도(다음 학기를 미리
+-- 준비하는 경우) 먼저 지정할 수 있습니다. form_import_templates의 값은 "가장 최근 사용" 기준으로
+-- 갱신되고, form_submissions의 값은 그 회차에 실제 선택했던 값 그대로 고정되어(요청 답변: "같은
+-- 데이터는 통합관리를 해서 검색이나 색인이 쉽게") 학기준비 화면에서 term_type으로 지난 같은
+-- 학기의 신청서 기록을 정확히 찾아올 수 있습니다.
+alter table form_import_templates add column if not exists year text not null default '';
+alter table form_import_templates add column if not exists term_type text not null default '';
+alter table form_import_templates add column if not exists purpose text not null default '';
+
+alter table form_submissions add column if not exists year text not null default '';
+alter table form_submissions add column if not exists term_type text not null default '';
+alter table form_submissions add column if not exists purpose text not null default '';
+
+create index if not exists form_import_templates_term_type_idx on form_import_templates (term_type, year desc);
+create index if not exists form_submissions_term_type_idx on form_submissions (term_type, year desc);

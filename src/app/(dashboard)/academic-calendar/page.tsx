@@ -1,10 +1,11 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { getCurrentTerm } from "@/lib/currentTerm";
 import { isAdminUser } from "@/lib/roles";
 import { ensureChecklistItemsForTerm } from "@/lib/academicChecklist";
-import type { ChecklistItem, ChecklistTemplate } from "@/lib/types";
+import type { ChecklistItem, ChecklistTemplate, FormImportTemplate } from "@/lib/types";
 import AcademicCalendarClient from "@/components/academic/AcademicCalendarClient";
 
 export const dynamic = "force-dynamic";
@@ -37,13 +38,50 @@ export default async function AcademicCalendarPage() {
     .order("due_date", { ascending: true });
   const items = (itemsData as ChecklistItem[] | null) ?? [];
 
+  // 요청("그것에 학사일정에 기록으로 남아서") - 신청서 탭에서 이 학기 유형으로 붙여넣어둔
+  // 구글폼 템플릿이 있으면, 지금 학기 화면에서도 바로 보이도록 작게 보여줍니다(자세한 지난
+  // 회차 비교는 학기준비 화면에서).
+  let formTemplates: FormImportTemplate[] = [];
+  if (currentTerm) {
+    const { data: templatesFormData } = await supabase
+      .from("form_import_templates")
+      .select("*")
+      .eq("term_type", currentTerm.term_type)
+      .order("last_used_at", { ascending: false, nullsFirst: false })
+      .limit(5);
+    formTemplates = (templatesFormData as FormImportTemplate[] | null) ?? [];
+  }
+
   return (
-    <AcademicCalendarClient
-      items={items}
-      templates={templates}
-      currentTerm={currentTerm}
-      isAdmin={isAdmin}
-      currentUserEmail={me.email}
-    />
+    <div className="mx-auto flex h-full max-w-6xl flex-col gap-3 overflow-hidden">
+      {currentTerm && formTemplates.length > 0 && (
+        <div className="shrink-0 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs font-bold text-slate-600">
+              📋 이 학기({currentTerm.year}년 {currentTerm.term_type}) 신청서 템플릿
+            </p>
+            <Link href="/academic-calendar/prep" className="text-[11px] text-wr-primary hover:underline">
+              지난 학기와 비교해서 보기 →
+            </Link>
+          </div>
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {formTemplates.map((t) => (
+              <span key={t.id} className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] text-slate-600">
+                {t.purpose || t.name}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+      <div className="min-h-0 flex-1">
+        <AcademicCalendarClient
+          items={items}
+          templates={templates}
+          currentTerm={currentTerm}
+          isAdmin={isAdmin}
+          currentUserEmail={me.email}
+        />
+      </div>
+    </div>
   );
 }

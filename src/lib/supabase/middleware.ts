@@ -2,6 +2,7 @@ import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { authOkCookieMaxAge, authOkCookieName, makeAuthOkCookieValue, readAuthOkCookie } from "@/lib/authCookie";
 import { isDeveloperEmail } from "@/lib/roles";
+import { ROLE_PREVIEW_COOKIE, isValidPreviewPosition } from "@/lib/rolePreview";
 
 const ALLOWED_DOMAIN = "@giamicro.com";
 
@@ -77,7 +78,9 @@ export async function updateSession(request: NextRequest) {
       return NextResponse.redirect(url);
     }
 
-    if (!isDeveloperEmail(email) && user.id) {
+    const isDev = isDeveloperEmail(email);
+
+    if (!isDev && user.id) {
       // 승인 여부를 매 요청마다 DB에서 조회하면 페이지 이동마다 네트워크 왕복이 늘어나 체감
       // 속도가 떨어집니다. 한 번 승인 확인이 끝나면 짧은 시간(5분) 동안은 서명된 쿠키만으로
       // 통과시키고, 쿠키가 없거나 만료됐을 때만 실제로 DB를 조회합니다. 이 쿠키에는 직위
@@ -129,6 +132,20 @@ export async function updateSession(request: NextRequest) {
       // 행정직원/개발자와 달리 아예 접근 자체를 막습니다. 내 계정 설정(/account)은 직위와
       // 무관하게 누구나 자기 프로필을 관리할 수 있어야 하므로 예외로 둡니다.
       if (position === "교사" && !path.startsWith("/weekly-report") && !path.startsWith("/account")) {
+        const url = request.nextUrl.clone();
+        url.pathname = "/weekly-report";
+        return NextResponse.redirect(url);
+      }
+    }
+
+    // 개발자 권한 미리보기(요청: "개발자 계정의 경우... 권한을 변경할 수 있게... 그 권한에서만
+    // 볼 수 있는 화면으로 나오도록"). 평소 개발자는 위 승인/직위 제한을 전부 면제받지만,
+    // 미리보기 쿠키가 "교사"로 켜져 있으면 실제 교사 계정이 겪는 라우트 단계 제한(위클리
+    // 리포트 전용)까지 그대로 재현해서, 화면뿐 아니라 이동 자체도 테스트할 수 있게 합니다.
+    // 미리보기가 꺼져 있으면(쿠키 없음) 예전처럼 개발자는 아무 제한도 받지 않습니다.
+    if (isDev) {
+      const preview = request.cookies.get(ROLE_PREVIEW_COOKIE)?.value ?? null;
+      if (isValidPreviewPosition(preview) && preview === "교사" && !path.startsWith("/weekly-report") && !path.startsWith("/account")) {
         const url = request.nextUrl.clone();
         url.pathname = "/weekly-report";
         return NextResponse.redirect(url);

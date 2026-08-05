@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
-import { isDeveloperEmail } from "@/lib/roles";
+import { isStaffOrAboveUser } from "@/lib/roles";
 import type { WrStudent } from "@/lib/types";
 import StudentSearchClient from "@/components/students/StudentSearchClient";
 import GuideButton from "@/components/common/GuideButton";
@@ -29,7 +29,7 @@ export default async function StudentsSearchPage() {
   const me = await getCurrentAppUser();
   if (!me) redirect("/login");
 
-  if (!isDeveloperEmail(me.email) && me.position !== "관리자" && me.position !== "행정직원") {
+  if (!isStaffOrAboveUser(me)) {
     redirect("/home");
   }
 

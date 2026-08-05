@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { getCurrentTerm } from "@/lib/currentTerm";
-import { isDeveloperEmail } from "@/lib/roles";
+import { isDeveloperEmail, isAdminUser, isStaffOrAboveUser } from "@/lib/roles";
 import type { AppUser, Department, Task, WrClass, WrReport, WrStudent, WrSubject } from "@/lib/types";
 import StatCard from "@/components/admin/StatCard";
 import GroupedBarChart, { type BarDataPoint } from "@/components/admin/GroupedBarChart";
@@ -79,8 +79,8 @@ export default async function SchoolDashboardPage() {
   const me = await getCurrentAppUser();
   if (!me) redirect("/login");
 
-  const isAdmin = isDeveloperEmail(me.email) || me.position === "관리자";
-  const isStaffOrAbove = isAdmin || me.position === "행정직원";
+  const isAdmin = isAdminUser(me);
+  const isStaffOrAbove = isStaffOrAboveUser(me);
   if (!isStaffOrAbove) redirect("/home");
 
   const months = lastMonths(6);

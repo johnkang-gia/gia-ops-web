@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
-import { isDeveloperEmail } from "@/lib/roles";
+import { isAdminUser } from "@/lib/roles";
 import type { BackupSummary } from "@/lib/types";
 import AdminBackupsClient from "@/components/admin/AdminBackupsClient";
 
@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
 export default async function AdminBackupsPage() {
   const me = await getCurrentAppUser();
   if (!me) redirect("/login");
-  if (!isDeveloperEmail(me.email) && me.position !== "관리자") {
+  if (!isAdminUser(me)) {
     redirect("/home");
   }
 

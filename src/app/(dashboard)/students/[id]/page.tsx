@@ -2,7 +2,7 @@ import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
-import { isDeveloperEmail } from "@/lib/roles";
+import { isStaffOrAboveUser } from "@/lib/roles";
 import type { Incident, Task, TaskComment, ChatMessage, WrClass, WrEnrollment, WrReport, WrStudent, WrStudentFieldDef } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +24,7 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
   const me = await getCurrentAppUser();
   if (!me) redirect("/login");
 
-  if (!isDeveloperEmail(me.email) && me.position !== "관리자" && me.position !== "행정직원") {
+  if (!isStaffOrAboveUser(me)) {
     redirect("/home");
   }
 

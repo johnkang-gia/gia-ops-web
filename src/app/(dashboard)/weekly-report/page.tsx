@@ -12,7 +12,10 @@ export default async function WeeklyReportLandingPage() {
 
   const email = me.email;
 
-  if (isDeveloperEmail(email)) redirect("/weekly-report/students");
+  // 미리보기 중이 아닐 때만 개발자 전용 지름길을 씁니다 - 미리보기 중에는(요청: "그 권한에서만
+  // 볼 수 있는 화면으로") 아래 실제 직위 기준 분기(관리자/행정직원 → 학생현황, 교사 → 담임/
+  // 담당과목)를 그대로 타야 합니다.
+  if (isDeveloperEmail(email) && !me.previewOf) redirect("/weekly-report/students");
 
   if (me.position === "관리자" || me.position === "행정직원") {
     redirect("/weekly-report/students");

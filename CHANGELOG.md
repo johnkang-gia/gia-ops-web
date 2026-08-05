@@ -4,6 +4,50 @@
 `version` 값과 항상 일치시킵니다. 업데이트할 때마다 이 파일 맨 위에 새 항목을 추가하고,
 같은 내용을 GitHub Desktop의 커밋 Summary/Description에도 그대로 사용하면 됩니다.
 
+## v0.63.0 - 2026-08-05 (staging)
+
+요청 "신청서 탭에서는 구글시트 붙여넣기 전에 무슨학기의 어떤 행사인지... 선택해서 구글폼올리고,
+그것에 학사일정에 기록으로 남아서... 학기준비... 다음 같은 학기를 준비할 수 있도록... 개발자
+계정의 경우... 권한을 변경할 수 있게"를 반영했습니다.
+
+- **신청서 붙여넣기 전 학기/목적 선택**: 신청서(학기/행사) 탭에서 구글시트를 붙여넣기 전에
+  연도·학기(또는 캠프)·목적을 먼저 선택하도록 바꿨습니다(예: "26년 3학기 인원모집", "26년
+  여름캠프2 바자회 행사"). 아직 실제 학기 행이 없어도(다음 학기를 미리 준비하는 경우) 먼저
+  지정해둘 수 있습니다. 템플릿은 "최근 사용" 기준으로 갱신되고, 실제 가져온 기록(신청서
+  제출건)은 그 회차의 값 그대로 고정되어 나중에 지난 학기 기록을 정확히 찾을 수 있습니다.
+- **학사일정 → 학사일정달력 / 학기준비 두 화면으로 분리**: 기존 학사일정 화면은
+  "학사일정달력"으로 이름을 유지하고(체크리스트 그대로), 새로 "학기준비" 화면을 추가했습니다.
+  학사일정달력에는 지금 학기의 신청서 템플릿을 작게 보여주는 카드가 추가됐습니다.
+- **학기준비 화면 신설**: 연도와 학기(또는 캠프)를 선택하면 같은 학기 유형의 지난 회차 기록을
+  한 번에 모아 보여줍니다 - ①지난 학기 돌아보기(잘한 점/아쉬운 점/다음 제안), ②그때 가져온
+  신청서(구글폼) 기록(연도·목적별 건수), ③그 학기 준비 기간에 있었던 업무·회의 타임라인(요청
+  답변: "신청서 + 업무/회의록 타임라인"). 다음 같은 학기를 준비할 때 지난 회차를 참고할 수
+  있습니다.
+- **개발자 권한 미리보기(역할 전환)**: 개발자 계정 사이드바의 로그아웃 버튼 바로 위에 "🎭 권한
+  미리보기" 드롭다운이 생겼습니다. 교사/행정직원/관리자 중 하나를 고르면 실제 그 직위 계정으로
+  로그인한 것처럼 메뉴 구성·화면 접근·라우트 이동 제한(예: 교사는 위클리 리포트만)까지 그대로
+  재현됩니다 - 화면만 바뀌는 흉내가 아니라 실제 로그인 계정(app_users.position 기준 판정)이
+  바뀐 것과 같은 화면 범위로 동작해서, 각 권한이 실수로 보면 안 되는 화면을 보고 있지는 않은지
+  QA할 수 있습니다. 실제 로그인 이메일은 절대 바뀌지 않고(RLS는 그대로 진짜 계정 기준으로
+  걸립니다), 관리자 승인/사용자 이름·부서 편집 같은 실제 데이터 변경 API는 미리보기와 무관하게
+  항상 진짜 권한으로만 판정하도록 분리해뒀습니다. 미리보기는 12시간 뒤 자동으로 꺼집니다.
+
+아래 SQL을 Supabase SQL Editor에서 실행해주세요(신청서 템플릿/기록에 연도·학기타입·목적 컬럼
+추가 - 권한 미리보기는 쿠키 기반이라 별도 DB 변경이 없습니다):
+
+```sql
+alter table form_import_templates add column if not exists year text not null default '';
+alter table form_import_templates add column if not exists term_type text not null default '';
+alter table form_import_templates add column if not exists purpose text not null default '';
+
+alter table form_submissions add column if not exists year text not null default '';
+alter table form_submissions add column if not exists term_type text not null default '';
+alter table form_submissions add column if not exists purpose text not null default '';
+
+create index if not exists form_import_templates_term_type_idx on form_import_templates (term_type, year desc);
+create index if not exists form_submissions_term_type_idx on form_submissions (term_type, year desc);
+```
+
 ## v0.62.0 - 2026-08-05 (staging)
 
 세 가지 요청을 반영했습니다: "1. GIA테마일 때 로고가 잘안보임 / 2. 개발자는 사용자관리에서

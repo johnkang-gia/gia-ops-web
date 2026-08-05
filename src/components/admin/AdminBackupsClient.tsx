@@ -86,7 +86,7 @@ export default function AdminBackupsClient({ initialBackups }: { initialBackups:
         <h1 className="text-lg font-bold text-slate-800">데이터 백업/복원</h1>
         <p className="mt-1 text-sm text-slate-500">
           사건·회의·행사·제안함·채택예정·매뉴얼·업무·서류함의 현재 상태를 스냅샷으로 저장하고,
-          필요하면 그 시점으로 되돌립니다. 관리자/개발자만 볼 수 있습니다.
+          필요하면 그 시점으로 되돌립니다. 관리자만 볼 수 있습니다.
         </p>
       </div>
 

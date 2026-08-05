@@ -68,7 +68,8 @@ export function NotificationProvider({
     async function loadCounts() {
       const { data } = await supabase
         .from("tasks")
-        .select("id, title, department, owner_email, assignee_emails, origin_mode, status, acknowledged_by");
+        .select("id, title, department, owner_email, assignee_emails, origin_mode, status, acknowledged_by")
+        .is("deleted_at", null);
       if (cancelled) return;
 
       const mine = ((data as TaskRow[] | null) ?? []).filter(

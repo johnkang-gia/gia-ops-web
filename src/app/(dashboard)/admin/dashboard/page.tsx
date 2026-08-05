@@ -14,7 +14,7 @@ const GUIDE_SECTIONS = [
     title: "🏛️ 관리자 통합 대시보드란?",
     lines: [
       "업무 · 운영(사건·행사·회의) · 주간 학생 관찰기록 세 영역의 최근 추이를 한 화면에서 확인합니다.",
-      "반복되는 사건 유형, 반복적으로 지도가 필요한/우수한 학생을 자동으로 짚어주고, 부서별 업무 완료율도 함께 보여줍니다. 관리자(개발자 포함)에게만 보입니다.",
+      "반복되는 사건 유형, 반복적으로 지도가 필요한/우수한 학생을 자동으로 짚어주고, 부서별 업무 완료율도 함께 보여줍니다. 관리자에게만 보입니다.",
     ],
   },
 ];
@@ -82,7 +82,7 @@ export default async function AdminDashboardPage() {
     supabase.from("incidents").select("date, manual_cat").gte("date", rangeStart).order("date", { ascending: false }),
     supabase.from("events").select("date").gte("date", rangeStart),
     supabase.from("meetings").select("date").gte("date", rangeStart),
-    supabase.from("tasks").select("id, status, department"),
+    supabase.from("tasks").select("id, status, department").is("deleted_at", null),
     supabase.from("departments").select("*").order("sort_order", { ascending: true }),
     supabase.from("wr_reports").select("id, student_id, term_id, eval_badges, status, report_date").gte("report_date", rangeStart),
   ]);

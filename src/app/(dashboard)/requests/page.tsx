@@ -16,10 +16,18 @@ export default async function StaffRequestsPage() {
   const me = await getCurrentAppUser();
   const isManager = isStaffOrAboveUser(me);
 
-  const [{ data }, { data: categoriesData }] = await Promise.all([
+  const [{ data }, { data: categoriesData }, { data: usersData }] = await Promise.all([
     supabase.from("staff_requests").select("*").order("created_at", { ascending: false }).limit(300),
     supabase.from("staff_request_categories").select("*").order("sort_order", { ascending: true }),
+    supabase.from("app_users").select("email, name").eq("status", "approved"),
   ]);
+
+  // 요청을 완료 처리한 사람(resolved_by, 이메일)을 이름으로 보여주기 위한 매핑입니다(요청:
+  // "그 업무를 완료에 넣은 사람을 트래킹해서 교사가 보는 진행상황에... 알 수 있게").
+  const staffNames: Record<string, string> = {};
+  for (const u of (usersData as { email: string; name: string | null }[] | null) ?? []) {
+    if (u.name) staffNames[u.email] = u.name;
+  }
 
   return (
     <StaffRequestsClient
@@ -27,6 +35,7 @@ export default async function StaffRequestsPage() {
       initialCategories={(categoriesData as StaffRequestCategoryRow[]) ?? []}
       isManager={isManager}
       myEmail={me?.email ?? ""}
+      staffNames={staffNames}
     />
   );
 }

@@ -58,7 +58,7 @@ async function loadHomeData() {
       .gte("date", ninetyDaysAgoStr)
       .order("date", { ascending: false }),
     getCurrentTerm(),
-    supabase.from("tasks").select("status, assignee_emails"),
+    supabase.from("tasks").select("status, assignee_emails").is("deleted_at", null),
   ]);
 
   // 업무(칸반) 요약: 상태별 건수 + 내가 담당자로 태그된, 아직 완료되지 않은 업무 건수.

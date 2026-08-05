@@ -708,3 +708,26 @@ export type StaffRequestComment = {
   content_en: string | null;
   created_at: string;
 };
+
+// 학생 출석부(요청: "학생출석부를 교사가 실시간 체크할 수 있게... 결석학생 보호자에게 연락할
+// 수 있는 출석부 시스템"). 학생-날짜 조합으로 하루 한 행만 존재합니다.
+export type AttendanceStatus = "출석" | "지각" | "결석" | "조퇴" | "기타";
+
+export type AttendanceRecord = {
+  id: string;
+  student_id: string;
+  class_id: string | null;
+  date: string;
+  status: AttendanceStatus;
+  note: string | null;
+  checked_by: string | null;
+  checked_by_name: string | null;
+  checked_at: string | null;
+  contacted_guardian: boolean;
+  contact_note: string | null;
+  contacted_by: string | null;
+  contacted_by_name: string | null;
+  contacted_at: string | null;
+  created_at: string;
+  updated_at: string;
+};

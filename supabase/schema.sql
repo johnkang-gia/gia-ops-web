@@ -2348,9 +2348,11 @@ drop policy if exists "giamicro_update_tasks" on tasks;
 create policy "giamicro_update_tasks" on tasks
   for update using (is_giamicro_user()) with check (is_giamicro_user());
 
+-- 이 시점에는 앱에 "완전 삭제" UI가 없어서 giamicro.com 계정이면 누구나 하드 삭제할 수 있게
+-- 열어뒀는데, 이제 휴지통에 "영구삭제/휴지통 비우기" 버튼을 추가하면서(요청) 그대로 두면 본인
+-- 소유가 아닌 업무도 아무나 영구 삭제할 수 있게 되어 있었습니다. owner_delete_tasks(44번
+-- 섹션 - 등록자 또는 관리자만) 하나만 남기고 이 정책은 제거합니다.
 drop policy if exists "giamicro_delete_tasks" on tasks;
-create policy "giamicro_delete_tasks" on tasks
-  for delete using (is_giamicro_user());
 
 -- ===== 63. 신청서(구글폼 연동) 가져오기 - 학기/행사 신청을 붙여넣기로 정리 + 양식 기억 =====
 -- 요청("구글폼으로 보통 새로운 학기 등록 신청을 받거나, 행사 신청을 받거나 하는데... 구글폼에
@@ -3093,3 +3095,56 @@ insert into gia_systems (major, category, name, status, description, source) val
 -- 남겨서 화면에 "OOO 항목을 세분화한 제안"이라고 표시합니다. 원본 항목 자체는 절대 수정/삭제
 -- 대상이 아니며(API는 여전히 "없을 때만 추가"만 수행), 이 컬럼은 순수 참고용 텍스트입니다.
 alter table gia_systems add column if not exists refines_name text;
+
+-- ===== 73. 학생 출석부(실시간 체크 + 보호자 연락) =====
+-- 요청: "학생출석부를 교사가 실시간 체크할 수 있게 해주고 다른권한의 교직원들도 그것을
+-- 실시간으로 보고 결석학생 보호자에게 연락할 수 있는 출석부 시스템을 메뉴로 만들어줘". 반(학급)
+-- 담임교사가 매일 학생별 출결 상태를 체크하면, 행정직원/관리자 등 다른 직원도 같은 화면을
+-- Realtime으로 동시에 보고, 결석/조퇴한 학생의 보호자에게 바로 연락(전화/이메일)한 뒤 연락
+-- 완료 여부를 기록할 수 있게 합니다. 학생-날짜 조합으로 하루 한 행만 존재합니다(unique).
+create table if not exists attendance_records (
+  id uuid primary key default gen_random_uuid(),
+  student_id uuid not null references wr_students(id) on delete cascade,
+  class_id uuid references wr_classes(id) on delete set null,
+  date date not null default current_date,
+  status text not null default '출석' check (status in ('출석', '지각', '결석', '조퇴', '기타')),
+  note text,
+  checked_by text,
+  checked_by_name text,
+  checked_at timestamptz,
+  contacted_guardian boolean not null default false,
+  contact_note text,
+  contacted_by text,
+  contacted_by_name text,
+  contacted_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (student_id, date)
+);
+create index if not exists attendance_records_date_idx on attendance_records(date);
+create index if not exists attendance_records_class_date_idx on attendance_records(class_id, date);
+
+drop trigger if exists attendance_records_set_updated_at on attendance_records;
+create trigger attendance_records_set_updated_at
+  before update on attendance_records
+  for each row execute function set_updated_at();
+
+alter table attendance_records enable row level security;
+
+-- 기존 관례(tasks/messages/wr_* 등)와 동일하게 giamicro 승인 사용자에게 테이블 단위로 넓게
+-- 열어두고(담임교사가 결석을 체크하거나, 다른 직원이 대신 체크/보호자 연락을 기록하는 등 누구나
+-- 쓸 수 있어야 하는 화면이라), "교사는 기본적으로 자기 반만 본다" 같은 세부 규칙은 화면(서버
+-- 쿼리) 쪽에서 처리합니다.
+drop policy if exists "giamicro_all_attendance_records" on attendance_records;
+create policy "giamicro_all_attendance_records" on attendance_records
+  for all using (is_giamicro_user()) with check (is_giamicro_user());
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'attendance_records'
+  ) then
+    alter publication supabase_realtime add table attendance_records;
+  end if;
+end $$;

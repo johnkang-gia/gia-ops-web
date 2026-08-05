@@ -23,6 +23,7 @@ const GUIDE_SECTIONS = [
       "사물함 파손, 물품 구입, 아픈 학생 인계, 출결 상황 문의처럼 행정직원에게 부탁할 일을 등록하는 곳입니다. / Use this to send requests to admin staff — locker damage, supply requests, sick student handoffs, attendance questions, and more.",
       "등록하면 초등부 전체 업무창에도 자동으로 등록되어 행정직원이 확인·처리합니다. 담당자가 확인하면 🟢, 완료되면 완료 목록으로 이동합니다. / Submitting also creates a task on the Elementary team board automatically. A green dot 🟢 appears once staff acknowledge it, and it moves to your Completed list when done.",
       "댓글로 대화할 수 있고, 한국어/영어 어느 쪽으로 적어도 자동으로 번역되어 함께 보입니다. / You can leave comments, and everything is auto-translated so it's readable in both Korean and English.",
+      "완료되면 누가 처리했는지(처리자 이름)가 함께 표시됩니다. / Once completed, you'll see who handled it.",
     ],
   },
 ];
@@ -212,11 +213,13 @@ export default function StaffRequestsClient({
   initialCategories,
   isManager,
   myEmail,
+  staffNames,
 }: {
   initialItems: StaffRequest[];
   initialCategories: StaffRequestCategoryRow[];
   isManager: boolean;
   myEmail: string;
+  staffNames: Record<string, string>;
 }) {
   const notify = useToast();
   const [items, setItems] = useRealtimeTable<StaffRequest>("staff_requests", initialItems);
@@ -336,6 +339,11 @@ export default function StaffRequestsClient({
               {it.requested_by_name || it.requested_by}
             </span>
           )}
+          {it.status === "완료" && it.resolved_by && (
+            <span className="hidden shrink-0 text-xs text-emerald-600 sm:inline">
+              ✅ {staffNames[it.resolved_by] || it.resolved_by}
+            </span>
+          )}
           <span className={"shrink-0 rounded-full px-2 py-0.5 text-xs " + meta.style}>
             {meta.ko} · {meta.en}
           </span>
@@ -358,6 +366,20 @@ export default function StaffRequestsClient({
                 {it.content_ko && it.content_ko !== it.content && it.content_ko !== it.content_en && (
                   <p className="mt-1 whitespace-pre-wrap text-xs italic text-slate-400">🌐 {it.content_ko}</p>
                 )}
+              </div>
+            )}
+
+            {/* 완료 처리자 표시(요청: "그 업무를 완료에 넣은 사람을 트래킹해서 교사가 보는
+                진행상황에 누가 행정요청업무를 처리했는지 알 수 있게"). 업무보드에서 담당자가
+                완료로 옮긴 경우와 이 화면에서 직접 완료 처리한 경우 모두 resolved_by에 남아서
+                (스키마 72-4 트리거 + 이 API의 PATCH 핸들러) 교사/관리자 모두에게 동일하게
+                보입니다. */}
+            {it.status === "완료" && it.resolved_by && (
+              <div className="mb-2 flex items-center gap-1.5 text-xs text-emerald-700">
+                <span className="rounded-full bg-emerald-100 px-2 py-0.5 font-semibold">
+                  ✅ 처리자 · Handled by {staffNames[it.resolved_by] || it.resolved_by}
+                </span>
+                {it.resolved_at && <span className="text-slate-400">{it.resolved_at.slice(0, 10)}</span>}
               </div>
             )}
 

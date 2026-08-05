@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
+import { isAdminUser } from "@/lib/roles";
 import TaskTrashClient from "@/components/work/TaskTrashClient";
 import type { Task } from "@/lib/types";
 
@@ -25,9 +26,14 @@ export default async function WorkTrashPage() {
       <h1 className="mb-1 text-lg font-bold">🗑 업무 휴지통</h1>
       <p className="mb-6 text-xs text-slate-500">
         삭제한 업무는 7일 동안 여기서 복구할 수 있고, 그 이후에는 자동으로 완전히 삭제됩니다.
-        본인이 등록했거나 태그된 업무, 또는 관리자만 볼 수 있습니다.
+        본인이 등록했거나 태그된 업무, 또는 관리자만 볼 수 있습니다. 등록자 본인이거나 관리자면
+        기다리지 않고 바로 영구삭제할 수도 있습니다.
       </p>
-      <TaskTrashClient tasks={(data as Task[] | null) ?? []} />
+      <TaskTrashClient
+        tasks={(data as Task[] | null) ?? []}
+        currentUserEmail={me.email}
+        isAdmin={isAdminUser(me)}
+      />
     </div>
   );
 }

@@ -13,7 +13,7 @@ const PAGE_SIZE = 10;
 const GUIDE_SECTIONS = [
   {
     title: "🗣️ 문의및 건의사항이란?",
-    lines: ["시스템 오류 신고나 개선 건의사항을 남기는 곳입니다. 카테고리(오류/건의 등)를 골라 작성하면 개발자가 확인 후 처리 상태를 갱신합니다."],
+    lines: ["시스템 오류 신고나 개선 건의사항을 남기는 곳입니다. 카테고리(오류/건의 등)를 골라 작성하면 담당자가 확인 후 처리 상태를 갱신합니다."],
   },
 ];
 
@@ -119,7 +119,7 @@ export default function InquiriesClient({
           <GuideButton title="문의및 건의사항 사용 가이드" sections={GUIDE_SECTIONS} />
         </div>
         <p className="mb-4 text-xs text-slate-500">
-          오류를 발견했거나 앱에 추가되면 좋을 기능이 있으면 남겨주세요. 개발자가 확인 후 상태와
+          오류를 발견했거나 앱에 추가되면 좋을 기능이 있으면 남겨주세요. 담당자가 확인 후 상태와
           답변을 남깁니다.
         </p>
 
@@ -210,7 +210,7 @@ export default function InquiriesClient({
 
                   {!isDeveloper && it.developer_note && (
                     <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs">
-                      <div className="mb-1 font-semibold text-blue-800">개발자 답변</div>
+                      <div className="mb-1 font-semibold text-blue-800">담당자 답변</div>
                       <p className="whitespace-pre-wrap text-blue-900">{it.developer_note}</p>
                     </div>
                   )}

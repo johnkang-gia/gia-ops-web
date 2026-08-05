@@ -72,6 +72,7 @@ export default function MeetingsClient({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [cleaning, setCleaning] = useState(false);
+  const [rescanning, setRescanning] = useState(false);
   const [audioUrls, setAudioUrls] = useState<Record<string, string>>({});
   const [composerKey, setComposerKey] = useState(0);
 
@@ -136,6 +137,28 @@ export default function MeetingsClient({
       stopEditing();
     }
     setSaving(false);
+  }
+
+  // 요청: "한번 사건분석요청한 사건들은... 다시 분석하기를 눌러야만 재분석하도록" - 회의도
+  // 동일하게, 이미 제안함에 들어온 회의라도 이 버튼을 누르면 force:true로 재분석을 강제합니다.
+  async function rescanMeeting() {
+    if (!editingId) return;
+    setRescanning(true);
+    setError("");
+    try {
+      const res = await fetch("/api/ai/scan", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ type: "meetings", id: editingId, force: true }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || "다시 분석하지 못했습니다.");
+      }
+    } catch {
+      setError("다시 분석하지 못했습니다.");
+    }
+    setRescanning(false);
   }
 
   async function handleCleanUp() {
@@ -242,13 +265,24 @@ export default function MeetingsClient({
           >
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-bold">회의록 수정</h2>
-              <button
-                type="button"
-                onClick={stopEditing}
-                className="text-xs font-semibold text-slate-500 hover:text-slate-700"
-              >
-                새로 작성하기
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={rescanMeeting}
+                  disabled={rescanning}
+                  title="이미 제안함에 들어온 제안이 있어도 새로 분석해 대체합니다."
+                  className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  {rescanning ? "분석 중..." : "🔄 다시 분석"}
+                </button>
+                <button
+                  type="button"
+                  onClick={stopEditing}
+                  className="text-xs font-semibold text-slate-500 hover:text-slate-700"
+                >
+                  새로 작성하기
+                </button>
+              </div>
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label className="flex flex-col gap-1 text-xs text-slate-500">

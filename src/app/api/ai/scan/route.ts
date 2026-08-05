@@ -27,16 +27,23 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}));
   const type = body.type as ScanType;
   const id = typeof body.id === "string" ? body.id : undefined;
+  // caseId: 제안함(ProposalsClient) 화면은 원본 기록의 UUID(id)가 아니라 case_id(예: INC-xxxx)만
+  // 들고 있어서, id 대신 case_id로도 대상을 찾을 수 있게 합니다.
+  const caseId = typeof body.caseId === "string" ? body.caseId : undefined;
+  // force: 이미 한 번 분석된(scanned_at이 채워진) 기록도 "다시 분석하기"를 눌렀을 때만 재처리하도록
+  // 하는 명시적 플래그입니다. 고유번호(id/case_id)로 단건 지정된 경우에만 의미가 있고, 배치 스캔
+  // (여러 건 자동 처리)에는 적용하지 않습니다.
+  const force = body.force === true;
   if (!["incidents", "events", "meetings"].includes(type)) {
     return NextResponse.json({ error: "type은 incidents/events/meetings 중 하나여야 합니다." }, { status: 400 });
   }
 
   try {
     if (type === "meetings") {
-      const created = await scanMeetings(supabase, id);
+      const created = await scanMeetings(supabase, { id, caseId, force });
       return NextResponse.json({ success: true, created });
     }
-    const created = await scanIncidentOrEvent(supabase, type, id);
+    const created = await scanIncidentOrEvent(supabase, type, { id, caseId, force });
     return NextResponse.json({ success: true, created });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -45,11 +52,18 @@ export async function POST(request: Request) {
   }
 }
 
+type ScanOpts = { id?: string; caseId?: string; force?: boolean };
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function scanIncidentOrEvent(supabase: any, type: "incidents" | "events", id?: string) {
+async function scanIncidentOrEvent(supabase: any, type: "incidents" | "events", opts: ScanOpts = {}) {
+  const { id, caseId, force } = opts;
   let query = supabase.from(type).select("*");
   if (id) {
-    query = query.eq("id", id).is("scanned_at", null);
+    query = query.eq("id", id);
+    if (!force) query = query.is("scanned_at", null);
+  } else if (caseId) {
+    query = query.eq("case_id", caseId);
+    if (!force) query = query.is("scanned_at", null);
   } else {
     query = query.is("scanned_at", null).order("date", { ascending: true }).limit(BATCH_SIZE);
   }
@@ -65,16 +79,26 @@ async function scanIncidentOrEvent(supabase: any, type: "incidents" | "events", 
     // 여러 사람이 거의 동시에 "새 기록 분석"을 눌러도 같은 기록을 두 번 처리(=AI 이중 호출 +
     // 제안 중복 생성)하지 않도록, AI를 부르기 전에 먼저 이 행을 원자적으로 "찜"합니다. 두 요청이
     // 동시에 같은 행을 읽어왔더라도 이 UPDATE(WHERE scanned_at IS NULL)는 Postgres가 하나만
-    // 통과시키므로, 뒤에 도착한 요청은 claimed가 비어 있어 이 행을 조용히 건너뜁니다.
-    const { data: claimed, error: claimErr } = await supabase
-      .from(type)
-      .update({ scanned_at: new Date().toISOString() })
-      .eq("id", row.id)
-      .is("scanned_at", null)
-      .select()
-      .maybeSingle();
+    // 통과시키므로, 뒤에 도착한 요청은 claimed가 비어 있어 이 행을 조용히 건너뜁니다. force일 때는
+    // "다시 분석하기"를 누른 사용자의 명시적 의도이므로 scanned_at 조건 없이 그대로 다시 찜합니다.
+    let claimQuery = supabase.from(type).update({ scanned_at: new Date().toISOString() }).eq("id", row.id);
+    if (!force) claimQuery = claimQuery.is("scanned_at", null);
+    const { data: claimed, error: claimErr } = await claimQuery.select().maybeSingle();
     if (claimErr) throw new Error(claimErr.message);
     if (!claimed) continue; // 다른 요청이 먼저 이 기록을 가져가 처리 중(또는 이미 처리 완료)
+
+    // 다시 분석하기: 이미 제안함(검토대기)에 들어와 있는 이 기록의 이전 제안을 지우고 새로
+    // 생성합니다. 그대로 두면 DB 유니크 제약(source+source_id+target_doc)에 걸려 새 제안이
+    // 조용히 버려지므로(23505), 재분석의 의미가 없어집니다. 이미 승인/보류되어 검토대기를
+    // 벗어난 이력은 건드리지 않습니다.
+    if (force) {
+      await supabase
+        .from("proposals")
+        .delete()
+        .eq("source", type)
+        .eq("source_id", row.case_id)
+        .eq("status", "검토대기");
+    }
 
     try {
       const entry = {
@@ -153,10 +177,15 @@ async function scanIncidentOrEvent(supabase: any, type: "incidents" | "events", 
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function scanMeetings(supabase: any, id?: string) {
+async function scanMeetings(supabase: any, opts: ScanOpts = {}) {
+  const { id, caseId, force } = opts;
   let query = supabase.from("meetings").select("*");
   if (id) {
-    query = query.eq("id", id).is("scanned_at", null);
+    query = query.eq("id", id);
+    if (!force) query = query.is("scanned_at", null);
+  } else if (caseId) {
+    query = query.eq("case_id", caseId);
+    if (!force) query = query.is("scanned_at", null);
   } else {
     query = query.is("scanned_at", null).order("date", { ascending: true }).limit(BATCH_SIZE);
   }
@@ -169,16 +198,19 @@ async function scanMeetings(supabase: any, id?: string) {
 
   for (const row of rows) {
     // 사건/행사 스캔과 동일하게, AI를 부르기 전에 이 회의를 원자적으로 먼저 찜해서 두 사람이
-    // 동시에 "새 기록 분석"을 눌러도 같은 회의를 중복 처리하지 않게 합니다.
-    const { data: claimed, error: claimErr } = await supabase
-      .from("meetings")
-      .update({ scanned_at: new Date().toISOString() })
-      .eq("id", row.id)
-      .is("scanned_at", null)
-      .select()
-      .maybeSingle();
+    // 동시에 "새 기록 분석"을 눌러도 같은 회의를 중복 처리하지 않게 합니다. force일 때는
+    // scanned_at 조건 없이 그대로 다시 찜합니다.
+    let claimQuery = supabase.from("meetings").update({ scanned_at: new Date().toISOString() }).eq("id", row.id);
+    if (!force) claimQuery = claimQuery.is("scanned_at", null);
+    const { data: claimed, error: claimErr } = await claimQuery.select().maybeSingle();
     if (claimErr) throw new Error(claimErr.message);
     if (!claimed) continue; // 다른 요청이 먼저 이 회의를 가져가 처리 중(또는 이미 처리 완료)
+
+    // 다시 분석하기: 이전에 이 회의에서 나온 검토대기 제안을 지우고 새로 생성합니다(사건/행사와
+    // 동일한 이유 - 유니크 제약으로 조용히 버려지는 것을 막기 위함).
+    if (force) {
+      await supabase.from("proposals").delete().eq("source", "meetings").eq("source_id", row.case_id).eq("status", "검토대기");
+    }
 
     try {
       const systemPrompt = buildMeetingClassifySystemPrompt();
@@ -269,12 +301,20 @@ async function scanMeetings(supabase: any, id?: string) {
       const nextAgendaText = (result.nextAgendaItems || []).join("\n");
       const futurePlanText = futurePlanItems.join("\n");
 
+      // 다시 분석하기(force)로 재실행하면 next_agenda/final_record는 자유 텍스트라 이전 스캔
+      // 결과와 새 결과를 구분할 수 없어, 단순히 이어붙이면(join) 재분석할 때마다 같은 내용이
+      // 계속 중복 누적됩니다. 그래서 force일 때는 이 두 필드를 이어붙이지 않고 이번 분석 결과로
+      // 갈음합니다(제안함/항목 태그는 그대로 최신화됨).
       await supabase
         .from("meetings")
         .update({
           scanned_at: new Date().toISOString(),
-          next_agenda: [row.next_agenda, nextAgendaText].filter(Boolean).join("\n") || null,
-          final_record: [row.final_record, futurePlanText].filter(Boolean).join("\n") || null,
+          next_agenda: force
+            ? nextAgendaText || row.next_agenda || null
+            : [row.next_agenda, nextAgendaText].filter(Boolean).join("\n") || null,
+          final_record: force
+            ? futurePlanText || row.final_record || null
+            : [row.final_record, futurePlanText].filter(Boolean).join("\n") || null,
           manual_cat: firstManualCat,
           op_plan_cat: firstOpPlanCat,
         })

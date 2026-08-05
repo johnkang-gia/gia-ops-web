@@ -34,6 +34,10 @@ const SOURCE_LABEL: Record<string, string> = {
 // 묶습니다. complaint/system은 origin 개념이 다르거나(complaint는 origin 없음, system은 UUID
 // 참조) 중복 생성 케이스가 아니라서 그룹화 대상에서 제외합니다.
 const GROUPABLE_SOURCES = new Set(["incidents", "events", "meetings", "manual"]);
+// 요청: "제안함 사건들도 다시돌리기 가능하게" - AI 스캔(/api/ai/scan)이 실제로 지원하는 원본
+// 유형만 재분석 대상이 됩니다(manual/complaint/system은 사건/행사/회의 원본이 아니라 이 API로
+// 재분석할 수 없어 버튼을 노출하지 않습니다).
+const RESCANNABLE_SOURCES = new Set(["incidents", "events", "meetings"]);
 const TARGET_DOC_ORDER: Record<string, number> = { 학부모용: 0, 실무자용: 1 };
 
 function oneLine(text: string, maxLen = 70) {
@@ -114,6 +118,7 @@ export default function ProposalsClient({
   // 골랐는지만 기억해서 라디오 표시를 유지합니다(실제 값은 drafts에 들어갑니다).
   const [selectedOption, setSelectedOption] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [rescanGroupKey, setRescanGroupKey] = useState<string | null>(null);
   const [scanBusy, setScanBusy] = useState<string | null>(null);
   const [scanMsg, setScanMsg] = useState("");
   const [tab, setTab] = useState<CategoryTab>("all");
@@ -175,6 +180,27 @@ export default function ProposalsClient({
         ? `${SOURCE_LABEL[type]} ${data.created}건에서 새 제안을 만들었습니다. 대기 중인 기록이 더 있으면 다시 눌러주세요.`
         : `${SOURCE_LABEL[type]} 중 아직 분석하지 않은 기록이 없습니다.`
     );
+  }
+
+  // 요청: "제안함 사건들도 다시돌리기 가능하게" - 이 화면은 원본 기록의 UUID(id)가 아니라
+  // case_id(g.sourceId)만 갖고 있으므로, scan API에 caseId로 대상을 지정하고 force:true로
+  // "다시 분석하기"를 명시적으로 요청합니다(이미 검토대기인 이전 제안은 API에서 지우고 새로
+  // 만듭니다). 처리 결과는 실시간 구독(postgres_changes)으로 카드에 자동 반영됩니다.
+  async function rescanGroup(g: ProposalGroup) {
+    if (!g.sourceId || !RESCANNABLE_SOURCES.has(g.source)) return;
+    setRescanGroupKey(g.key);
+    const res = await fetch("/api/ai/scan", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ type: g.source, caseId: g.sourceId, force: true }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setRescanGroupKey(null);
+    if (!res.ok) {
+      notify(data.error || "다시 분석하지 못했습니다.", "error");
+    } else {
+      notify("다시 분석했습니다 - 제안 내용이 새로 갱신됩니다.", "success");
+    }
   }
 
   async function saveText(id: string) {
@@ -519,7 +545,7 @@ export default function ProposalsClient({
                       className="rounded-lg bg-gia-navy px-3 py-1.5 text-xs font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50"
                       title={g.variants.length > 1 ? "운영계획안·실무자매뉴얼 둘 다 함께 채택예정으로 보냅니다." : undefined}
                     >
-                      승인{g.variants.length > 1 ? " (둘 다)" : ""}
+                      {g.variants.length > 1 ? "통합승인" : "승인"}
                     </button>
                     <button
                       onClick={() => decideGroup(g, "보류")}
@@ -535,6 +561,16 @@ export default function ProposalsClient({
                     >
                       삭제
                     </button>
+                    {RESCANNABLE_SOURCES.has(g.source) && g.sourceId && (
+                      <button
+                        onClick={() => rescanGroup(g)}
+                        disabled={rescanGroupKey === g.key || busy}
+                        title="이 기록을 AI로 다시 분석해 제안 내용을 새로 만듭니다(기존 검토대기 제안은 대체됩니다)."
+                        className="ml-auto rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                      >
+                        {rescanGroupKey === g.key ? "다시 분석 중..." : "🔄 다시 분석"}
+                      </button>
+                    )}
                   </div>
                 </div>
               )}

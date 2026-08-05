@@ -115,6 +115,7 @@ export default function IncidentsClient({
   const [error, setError] = useState("");
   const [justSavedMsg, setJustSavedMsg] = useState("");
   const [filling, setFilling] = useState(false);
+  const [rescanning, setRescanning] = useState(false);
 
   // 동명이인이 있어도 정확히 어느 학생인지 고유번호(student_no) 기준으로 연결하기 위한 상태입니다
   // (incidents.students 자유 텍스트는 그대로 두고, incident_students 조인 테이블에 실제 학생
@@ -217,6 +218,33 @@ export default function IncidentsClient({
       lack: result.lack || f.lack,
       suggest: result.suggest || f.suggest,
     }));
+  }
+
+  // 요청: "한번 사건분석요청한 사건들은... 다시 분석하기를 눌러야만 재분석하도록" - 자동/일괄
+  // 스캔은 고유번호(scanned_at) 기준으로 이미 분석된 건을 건너뛰지만, 사용자가 명시적으로
+  // 이 버튼을 누르면 force:true로 재분석을 강제합니다(제안함에 이미 들어온 이전 제안은 새
+  // 제안으로 대체됩니다).
+  async function rescanIncident() {
+    if (!editingId) return;
+    setRescanning(true);
+    setError("");
+    setJustSavedMsg("");
+    try {
+      const res = await fetch("/api/ai/scan", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ type: "incidents", id: editingId, force: true }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || "다시 분석하지 못했습니다.");
+      } else {
+        setJustSavedMsg("다시 분석을 요청했습니다. 오른쪽 AI 제안이 곧 갱신됩니다.");
+      }
+    } catch {
+      setError("다시 분석하지 못했습니다.");
+    }
+    setRescanning(false);
   }
 
   function startEdit(it: Incident) {
@@ -354,13 +382,24 @@ export default function IncidentsClient({
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-bold">{editingId ? "사건 수정" : "새 사건 입력"}</h2>
             {editingId && (
-              <button
-                type="button"
-                onClick={startNew}
-                className="text-xs font-semibold text-slate-500 hover:text-slate-700"
-              >
-                새로 작성하기
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={rescanIncident}
+                  disabled={rescanning}
+                  title="이미 제안함에 들어온 제안이 있어도 새로 분석해 대체합니다."
+                  className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  {rescanning ? "분석 중..." : "🔄 다시 분석"}
+                </button>
+                <button
+                  type="button"
+                  onClick={startNew}
+                  className="text-xs font-semibold text-slate-500 hover:text-slate-700"
+                >
+                  새로 작성하기
+                </button>
+              </div>
             )}
           </div>
           {!editingId && (

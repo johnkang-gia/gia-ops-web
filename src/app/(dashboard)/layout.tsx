@@ -139,6 +139,10 @@ function buildSchoolDocumentsCategory(): NavCategory {
       { href: "/manuals?doc=실무자용", label: "매뉴얼", icon: "📗" },
       { href: "/manuals?doc=학부모용", label: "운영계획안", icon: "📘" },
       { href: "/documents", label: "서류함", icon: "📁", dividerBefore: "" },
+      // 요청: "필요한 서류들이 없을 경우 AI의 도움을 받아 초안을 작성하고 싶은데... 만들어진
+      // 문서는 자동으로 시스템의 항목으로 분류되어서 들어가도록". 서류함 바로 아래에 둬서 같은
+      // 묶음으로 보이게 합니다(구분선은 서류함 쪽에 이미 있으니 여기는 생략).
+      { href: "/documents/new", label: "AI 서류 작성", icon: "🪄" },
       // 운영계획안/매뉴얼의 고정 항목 목록을 관리자·행정직원이 직접 추가/수정/삭제하는
       // 화면입니다(요청: "모든 항목들은 편집 가능하도록"). GIA시스템과 달리 관리자 전용이
       // 아니라 여기(행정직원도 보이는 문서함 부메뉴)에 둡니다.

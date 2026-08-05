@@ -431,6 +431,53 @@ export function buildDocumentDraftEntryBlock(doc: { name: string; category: stri
   return `[작성할 서류]\n서류명: ${doc.name}\n분류: ${doc.category}\n담당자 메모: ${doc.notes || "(없음)"}`;
 }
 
+// "학교 문서함 > AI 서류 작성" - 요청: "필요한 서류들이 없을 경우 AI의 도움을 받아 초안을
+// 작성하고 싶은데... 만들어진 문서는 자동으로 시스템의 항목으로 분류되어서 들어가도록". 위
+// buildDocumentDraftSystemPrompt()는 서류함에 이미 등록된 행(서류명/분류만 있음)을 다듬는
+// 용도라 근무시간·급여처럼 담당자가 자유롭게 적은 구체적 조건을 반영하지 못합니다. 이 함수는
+// 상황을 통째로 받아 (1) 문서 초안 (2) 문서명 (3) GIA시스템 분류체계 기준 분류를 한 번에
+// 만들어냅니다.
+export function buildQuickDocumentDraftSystemPrompt(): string {
+  return (
+    SHARED_CACHE_CONTEXT +
+    "\n\n" +
+    "당신은 GIA 학교 행정 담당자가 설명한 상황을 보고, 실제로 바로 쓸 수 있는 행정 서류(근로계약서, " +
+    "내부 규정, 동의서, 확인서 등) 초안을 작성하는 보조자입니다.\n\n" +
+    "[작성 원칙]\n" +
+    "1. 담당자가 알려준 구체적 조건(근무시간/휴게시간/업무내용/급여/기간 등)은 그대로 반영하세요. " +
+    "담당자가 알려주지 않은 정보(주소, 서명란, 담당자명 등)만 [ ] 괄호로 채울 자리를 표시하세요.\n" +
+    "2. 근로계약서류라면 근로기준법상 필수 기재사항(계약기간, 근무 장소, 업무 내용, 소정근로시간과 " +
+    "휴게시간, 근무일/휴일, 임금의 구성항목·계산방법·지급방법·지급일, 연차유급휴가)을 빠짐없이 " +
+    "포함하세요. 담당자가 말한 시급/월급이 최저임금에 못 미치는 것으로 보이면 초안 하단에 " +
+    "\"⚠️ 확인 필요\" 메모로 짧게 짚어주되(지어내지 말고 계산이 명확할 때만), 초안 자체는 요청받은 " +
+    "조건 그대로 작성하세요(당신은 참고용 초안을 만들 뿐, 최종 준수 여부는 담당자가 판단합니다).\n" +
+    "3. 제목, 조항/항목 구조를 갖춘 정식 문서 형태로 작성하세요.\n" +
+    "4. suggestedName에는 이 서류를 서류함에 등록할 때 쓸 간결한 이름(예: \"주방보조 아르바이트 " +
+    "근로계약서\")을 지으세요.\n" +
+    "5. [GIA시스템 기존 분류 목록]에 이 서류와 정확히 맞아떨어지는 항목이 있으면 그 major/category/" +
+    "name을 그대로 categoryMajor/category/matchedItemName에 옮겨 적으세요(목록에 없는 이름을 " +
+    "matchedItemName에 지어내지 마세요). 맞는 항목이 없으면 matchedItemName은 빈 문자열로 두고, " +
+    "categoryMajor/category는 목록에 쓰인 대분류 어휘(예: 재정, 인사·교직원, 학사, 운영, 시설·안전, " +
+    "입학·홍보, 행정·문서, 정보보안·법무 등) 중 가장 가까운 것을 골라 적으세요.\n\n" +
+    "아래 JSON 형식으로만 답하세요(다른 텍스트 금지). 줄바꿈은 JSON 문자열 규칙에 맞게 \\n으로 " +
+    "표시하세요:\n" +
+    '{"suggestedName":"...", "categoryMajor":"...", "category":"...", "matchedItemName":"...", "draftText":"서류 초안 전문"}'
+  );
+}
+
+export function buildQuickDocumentDraftEntryBlock(
+  situation: string,
+  giaSystems: { major: string; category: string; name: string }[]
+): string {
+  const systemsBlock = giaSystems.length
+    ? giaSystems.map((s) => `${s.major} > ${s.category} > ${s.name}`).join("\n")
+    : "(등록된 항목 없음)";
+  return (
+    `[담당자가 설명한 상황]\n${situation}\n\n` +
+    `[GIA시스템 기존 분류 목록 - major > category > name]\n${systemsBlock}`
+  );
+}
+
 export function buildEventCompareSystemPrompt(): string {
   return (
     INSTITUTION_CONTEXT +

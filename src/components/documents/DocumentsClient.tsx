@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import type { SchoolDocument } from "@/lib/types";
 import { genCaseId } from "@/lib/caseId";
@@ -19,6 +20,7 @@ const GUIDE_SECTIONS = [
     lines: [
       "학교 운영에 필요한 서류를 정리하고 상태를 관리합니다.",
       "\"AI 서류 추천받기\"로 대안교육기관이 갖추면 좋은 서류를 AI가 찾아 목록에 추가하고, 각 서류의 \"AI 초안 만들기\"로 바로 다듬어 쓸 수 있는 초안을 만들 수 있습니다.",
+      "목록에 없는 새 서류(예: 근로계약서)가 필요하면 \"🪄 AI 서류 작성\"에서 상황을 설명해 처음부터 초안을 만들 수 있습니다.",
     ],
   },
 ];
@@ -256,6 +258,12 @@ export default function DocumentsClient({ initialItems }: { initialItems: School
           >
             {showForm ? "닫기" : "+ 직접 추가"}
           </button>
+          <Link
+            href="/documents/new"
+            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+          >
+            🪄 AI 서류 작성
+          </Link>
           {recommendMsg && <span className="text-xs text-slate-500">{recommendMsg}</span>}
         </div>
 

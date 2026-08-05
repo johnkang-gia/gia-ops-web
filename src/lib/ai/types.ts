@@ -52,6 +52,20 @@ export type DocumentDraftResult = {
   draftText: string;
 };
 
+// "학교 문서함 > AI 서류 작성" - 담당자가 상황을 자유 문장으로 설명하면(예: 아르바이트 근로계약
+// 조건) AI가 문서명/초안을 만들고, GIA시스템 항목 중 맞는 게 있으면 그 분류(대분류/중분류)를
+// 그대로 골라서 서류함 저장 시 자동으로 같은 분류 체계에 들어가도록 합니다(요청: "만들어진 문서는
+// 자동으로 시스템의 항목으로 분류되어서 들어가도록"). matchedItemName은 GIA시스템 목록 중 정확히
+// 일치하는 항목이 있을 때만 그 이름 그대로를 돌려주고(서버가 gia_system_id를 찾는 데 씀), 없으면
+// 빈 문자열입니다(지어내지 않음 - 억지로 아무 항목에나 갖다 붙이지 않도록).
+export type QuickDocumentDraftResult = {
+  suggestedName: string;
+  categoryMajor: string;
+  category: string;
+  matchedItemName: string;
+  draftText: string;
+};
+
 export type EventCompareResult = {
   improvements: string[];
   recurringIssues: string[];

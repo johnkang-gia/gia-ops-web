@@ -2,6 +2,7 @@
 
 import type { Task } from "@/lib/types";
 import TaskListPane from "./TaskListPane";
+import DashboardArea from "./DashboardArea";
 
 // "전체 업무목록" - "내 업무목록"의 짝으로, 필터 없이 지금 화면에 올라온(=서버 RLS로 내가 볼
 // 권한이 있는) 업무를 전부(완료 제외) 마감 임박 순으로 보여줍니다(요청: "전체목록은 올라오는
@@ -13,9 +14,16 @@ import TaskListPane from "./TaskListPane";
 export default function AllTasksWidget({
   tasks,
   onOpenTask,
+  activeDepartmentName,
+  deptColorMap,
 }: {
   tasks: Task[];
   onOpenTask: (id: string) => void;
+  // 업무상황판을 여기 제목 옆에 아주 작게 붙입니다(요청: "업무상황판을 오른쪽 전체 업무목록
+  // 제목 옆에 아주 작게 배치하고"). 둘 다 없으면(예: 모바일 레이아웃에서 아직 안 넘겨준 경우)
+  // 상황판 없이 목록만 보여줍니다.
+  activeDepartmentName?: string;
+  deptColorMap?: Map<string, string>;
 }) {
   const all = tasks
     .filter((t) => t.status !== "완료")
@@ -25,5 +33,24 @@ export default function AllTasksWidget({
       return at - bt;
     });
 
-  return <TaskListPane tasks={all} title="전체 업무목록" icon="🗂️" emptyText="등록된 업무가 없습니다" onOpenTask={onOpenTask} />;
+  return (
+    <TaskListPane
+      tasks={all}
+      title="전체 업무목록"
+      icon="🗂️"
+      emptyText="등록된 업무가 없습니다"
+      onOpenTask={onOpenTask}
+      headerExtra={
+        activeDepartmentName && deptColorMap ? (
+          <DashboardArea
+            compact
+            tasks={tasks}
+            activeDepartmentName={activeDepartmentName}
+            deptColorMap={deptColorMap}
+            onSelectTask={onOpenTask}
+          />
+        ) : undefined
+      }
+    />
+  );
 }

@@ -19,9 +19,9 @@ export function useRealtimeTable<T extends WithId>(
     | "manual_drafts"
     | "inquiries"
     | "tasks"
-    | "staff_requests"
     | "attendance_records"
-    | "policy_categories",
+    | "policy_categories"
+    | "google_chat_mirror_messages",
   initialItems: T[]
 ) {
   const [items, setItems] = useState<T[]>(initialItems);

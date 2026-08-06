@@ -14,20 +14,27 @@ export default function TaskListPane({
   icon,
   emptyText,
   onOpenTask,
+  headerExtra,
 }: {
   tasks: Task[];
   title: string;
   icon: string;
   emptyText: string;
   onOpenTask: (id: string) => void;
+  // "전체 업무목록" 제목 옆에 업무상황판을 아주 작게 붙이기 위한 슬롯입니다(요청: "업무상황판을
+  // 오른쪽 전체 업무목록 제목 옆에 아주 작게 배치"). 다른 목록(내 업무목록)은 그냥 비워둡니다.
+  headerExtra?: React.ReactNode;
 }) {
   return (
     <div className="glass flex h-full flex-col overflow-hidden p-3">
-      <div className="mb-2 flex shrink-0 items-center justify-between text-[13px] font-bold text-blue-600">
-        <span>
-          {icon} {title}
+      <div className="mb-2 flex shrink-0 items-center justify-between gap-2 text-[13px] font-bold text-blue-600">
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className="shrink-0">
+            {icon} {title}
+          </span>
+          {headerExtra}
         </span>
-        <span className="rounded-full bg-black/5 px-1.5 py-0.5 text-[11px] text-slate-600">{tasks.length}건</span>
+        <span className="shrink-0 rounded-full bg-black/5 px-1.5 py-0.5 text-[11px] text-slate-600">{tasks.length}건</span>
       </div>
       {tasks.length === 0 ? (
         <div className="flex flex-1 items-center justify-center text-xs opacity-40">{emptyText}</div>

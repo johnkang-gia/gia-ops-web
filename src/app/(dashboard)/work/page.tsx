@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isAdminUser } from "@/lib/roles";
 import WorkBoardClient from "@/components/work/WorkBoardClient";
-import type { Task, Department, TeamMember, TaskModeColor, StaffRequestCategoryRow } from "@/lib/types";
+import type { Task, Department, TeamMember, TaskModeColor, GoogleChatMirrorMessage } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +15,7 @@ export default async function WorkPage() {
   const me = await getCurrentAppUser();
   if (!me) redirect("/login");
 
-  const [tasksRes, teamRes, deptRes, modeColorRes, pendingRequestsRes, requestCategoriesRes] = await Promise.all([
+  const [tasksRes, teamRes, deptRes, modeColorRes, mirrorRes] = await Promise.all([
     // deleted_at도 명시적으로 걸러야 합니다 - RLS는 등록자/담당자/관리자에게 휴지통 조회용으로
     // deleted_at is not null(7일 이내) 행도 select 허용하는 별도 정책이 OR로 붙어있어서, 여기서
     // 걸러주지 않으면 방금 삭제한 업무가 등록자/담당자 눈에는 업무보드에 계속 남아있게 됩니다
@@ -24,11 +24,14 @@ export default async function WorkPage() {
     supabase.from("app_users").select("email, name").eq("status", "approved").order("email", { ascending: true }),
     supabase.from("departments").select("*").order("sort_order", { ascending: true }),
     supabase.from("task_mode_colors").select("*"),
-    // 행정요청 메뉴가 이제 여기(관리자/행정직원)에는 따로 없으므로(요청: "행정요청메뉴는 교사에게만
-    // 보이고, 나머지에게는 업무에 등록되는 것으로 알수있게 해줘"), 업무상황판 오른쪽에 보여줄
-    // 미처리(완료 제외) 건수를 함께 가져옵니다.
-    supabase.from("staff_requests").select("id", { count: "exact", head: true }).neq("status", "완료"),
-    supabase.from("staff_request_categories").select("*").order("sort_order", { ascending: true }),
+    // 구글챗 미러링(출결알림/선생님요청) 최근 메시지입니다. 아직 SQL 마이그레이션을 실행하지
+    // 않은 상태(테이블이 없는 상태)에서도 페이지가 죽지 않도록, supabase-js는 테이블이 없으면
+    // 에러 없이 {data:null,error}를 돌려주는 특성을 이용해 아래에서 항상 ?? []로 방어합니다.
+    supabase
+      .from("google_chat_mirror_messages")
+      .select("*")
+      .order("created_at_google", { ascending: false })
+      .limit(200),
   ]);
 
   const team = (teamRes.data as TeamMember[] | null) ?? [];
@@ -43,8 +46,7 @@ export default async function WorkPage() {
         departments={(deptRes.data as Department[] | null) ?? []}
         isAdmin={isAdmin}
         initialModeColors={(modeColorRes.data as TaskModeColor[] | null) ?? []}
-        pendingRequestCount={pendingRequestsRes.count ?? 0}
-        initialRequestCategories={(requestCategoriesRes.data as StaffRequestCategoryRow[] | null) ?? []}
+        initialMirrorMessages={(mirrorRes.data as GoogleChatMirrorMessage[] | null) ?? []}
       />
     </div>
   );

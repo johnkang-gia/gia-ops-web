@@ -6,7 +6,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useRealtimeTable } from "@/lib/useRealtimeTable";
 import { useOnlineUsers } from "@/lib/useOnlineUsers";
-import type { Task, TaskStatus, Department, TeamMember, TaskModeColor, StaffRequestCategoryRow } from "@/lib/types";
+import type { Task, TaskStatus, Department, TeamMember, TaskModeColor, GoogleChatMirrorMessage } from "@/lib/types";
 import { nameFor } from "@/lib/teamName";
 import { renewRecurringTask } from "@/lib/recurrence";
 import { useRefreshTaskCounts } from "@/components/NotificationBell";
@@ -25,8 +25,7 @@ export default function WorkBoardClient({
   departments,
   isAdmin,
   initialModeColors,
-  pendingRequestCount,
-  initialRequestCategories,
+  initialMirrorMessages,
 }: {
   initialTasks: Task[];
   team: TeamMember[];
@@ -34,8 +33,7 @@ export default function WorkBoardClient({
   departments: Department[];
   isAdmin: boolean;
   initialModeColors: TaskModeColor[];
-  pendingRequestCount: number;
-  initialRequestCategories: StaffRequestCategoryRow[];
+  initialMirrorMessages: GoogleChatMirrorMessage[];
 }) {
   const [tasks, setTasks] = useRealtimeTable<Task>("tasks", initialTasks);
   const notify = useToast();
@@ -43,9 +41,10 @@ export default function WorkBoardClient({
   // 나/전체/공유 뱃지 색상은 관리자가 가끔만 바꾸는 설정값이라(부서 색상과 동일한 패턴),
   // 실시간 구독 없이 로컬 상태 + 낙관적 업데이트로 충분합니다.
   const [modeColors, setModeColors] = useState<TaskModeColor[]>(initialModeColors);
-  // 행정요청 카테고리 - 업무상황판 오른쪽 톱니바퀴 아이콘에서 관리합니다(요청: "업무상황판을
-  // 둘로 나누고... 그 옆에 톱니바퀴 아이콘을 만들어서 거기에서 카테고리 관리할 수 있도록").
-  const [requestCategories, setRequestCategories] = useState<StaffRequestCategoryRow[]>(initialRequestCategories);
+  // 구글챗 미러링(출결알림/선생님요청) - tasks와 동일한 이유로, 여기 한 곳에서만
+  // useRealtimeTable을 부르고 배열을 그대로 WorkspaceArea에 내려줍니다. 패널마다 따로 구독하면
+  // 같은 채널 이름이 중복돼 페이지가 열리지 않는 문제가 있었던 전례가 있습니다.
+  const [mirrorMessages] = useRealtimeTable<GoogleChatMirrorMessage>("google_chat_mirror_messages", initialMirrorMessages);
   const online = useOnlineUsers(userEmail);
 
   const [activeDeptId, setActiveDeptId] = useState<string | null>(deptList[0]?.id ?? null);
@@ -320,9 +319,7 @@ export default function WorkBoardClient({
           onChangeStatus={changeStatus}
           onToggleAck={toggleAck}
           onTaskCreated={addTaskRow}
-          pendingRequestCount={pendingRequestCount}
-          requestCategories={requestCategories}
-          onRequestCategoriesChange={setRequestCategories}
+          mirrorMessages={mirrorMessages}
         />
       </div>
 

@@ -1,19 +1,22 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { Department, StaffRequestCategoryRow, Task, TaskModeColor, TaskStatus, TeamMember } from "@/lib/types";
-import DashboardArea from "./DashboardArea";
-import RequestStatusWidget from "./RequestStatusWidget";
+import type { Department, GoogleChatMirrorMessage, Task, TaskModeColor, TaskStatus, TeamMember } from "@/lib/types";
 import ChatPanel from "./ChatPanel";
 import TaskBoard from "./TaskBoard";
 import MyTasksWidget from "./MyTasksWidget";
 import AllTasksWidget from "./AllTasksWidget";
 import QuickTaskWidget from "./QuickTaskWidget";
+import GoogleChatMirrorPanel from "./GoogleChatMirrorPanel";
 
 // 참조 소스코드(WorkspaceArea.tsx)의 마우스 드래그 리사이저를 그대로 옮겼습니다 - 서드파티
 // 라이브러리 없이 mousedown/mousemove/mouseup만으로 좌측 폭(%)과 좌측 상단 높이(%)를 조절합니다.
 const LAYOUT_STORAGE_KEY = "gia-ops-work-layout-v1";
-const DEFAULT_LAYOUT = { leftWidth: 45, leftTopHeight: 14, rightTopHeight: 30 };
+// 요청: "지금 업무 상황판을 살짝 늘려서, 반으로 나누고, 왼쪽은 출결알림, 오른쪽은 선생님요청
+// 으로 만들어줘" - 예전에 업무상황판+행정요청위젯이 있던 좌측 상단 자리를(업무상황판은 전체
+// 업무목록 제목 옆으로 옮기고, 행정요청은 제거했으므로) 구글챗 미러링 두 스트림 자리로
+// 재활용합니다. 텍스트 몇 줄이 보여야 하니 기존(14%)보다 살짝 늘렸습니다.
+const DEFAULT_LAYOUT = { leftWidth: 45, leftTopHeight: 22, rightTopHeight: 30 };
 
 function loadSavedLayout(): typeof DEFAULT_LAYOUT {
   if (typeof window === "undefined") return DEFAULT_LAYOUT;
@@ -45,9 +48,7 @@ export default function WorkspaceArea({
   onChangeStatus,
   onToggleAck,
   onTaskCreated,
-  pendingRequestCount,
-  requestCategories,
-  onRequestCategoriesChange,
+  mirrorMessages,
 }: {
   activeDepartment: Department;
   tasks: Task[];
@@ -62,9 +63,12 @@ export default function WorkspaceArea({
   onChangeStatus: (taskId: string, status: TaskStatus) => void;
   onToggleAck: (taskId: string, checked: boolean) => void;
   onTaskCreated?: (task: Task) => void;
-  pendingRequestCount: number;
-  requestCategories: StaffRequestCategoryRow[];
-  onRequestCategoriesChange: (next: StaffRequestCategoryRow[]) => void;
+  // 구글챗 두 방(출결알림/선생님요청)을 실시간 미러링한 결과입니다. useRealtimeTable을 여기서
+  // 두 번(패널마다 한 번씩) 부르면 같은 테이블 이름으로 채널이 중복 구독되어 페이지가 아예
+  // 열리지 않는 문제가 있었던 전례가 있어서(tasks/채팅과 동일한 이유), 상위인
+  // WorkBoardClient에서 한 번만 구독하고 배열을 그대로 내려받아 각 패널이 sourceKey로만
+  // 걸러서 보여줍니다.
+  mirrorMessages: GoogleChatMirrorMessage[];
 }) {
   // 부서 헤더는 상위(WorkBoardClient)의 부서탭 바 하나로 통합했기 때문에 여기서는 별도
   // 헤더 없이 바로 본문을 채웁니다(세로 공간 절약).
@@ -226,15 +230,32 @@ export default function WorkspaceArea({
           )}
           {mobileTab === "mine" && (
             <div className="flex h-full flex-col overflow-hidden">
-              <div className="flex shrink-0 items-stretch gap-1" style={{ height: "40%" }}>
+              {/* 예전 업무상황판+행정요청 자리를 구글챗 미러링 두 방(출결알림/선생님요청)으로
+                  바꿨습니다(요청 2, 3). 업무상황판은 아래 "전체 업무목록" 제목 옆으로 옮겼습니다
+                  (요청 1). */}
+              <div className="flex shrink-0 divide-x divide-black/5" style={{ height: "40%" }}>
                 <div className="min-w-0 flex-1 overflow-hidden">
-                  <DashboardArea tasks={tasks} activeDepartmentName={activeDepartment.name} deptColorMap={deptColorMap} onSelectTask={onOpenTask} />
+                  <GoogleChatMirrorPanel
+                    sourceKey="attendance"
+                    title="출결알림"
+                    icon="🚸"
+                    messages={mirrorMessages}
+                    team={team}
+                    userEmail={currentUserEmail}
+                    department={activeDepartment.name}
+                    onTaskCreated={onTaskCreated}
+                  />
                 </div>
-                <div className="shrink-0">
-                  <RequestStatusWidget
-                    pendingCount={pendingRequestCount}
-                    categories={requestCategories}
-                    onCategoriesChange={onRequestCategoriesChange}
+                <div className="min-w-0 flex-1 overflow-hidden">
+                  <GoogleChatMirrorPanel
+                    sourceKey="teacher_requests"
+                    title="선생님요청"
+                    icon="🛠️"
+                    messages={mirrorMessages}
+                    team={team}
+                    userEmail={currentUserEmail}
+                    department={activeDepartment.name}
+                    onTaskCreated={onTaskCreated}
                   />
                 </div>
               </div>
@@ -247,7 +268,12 @@ export default function WorkspaceArea({
                   <MyTasksWidget tasks={tasks} currentUserEmail={currentUserEmail} onOpenTask={onOpenTask} />
                 </div>
                 <div className="min-w-0 flex-1 overflow-hidden">
-                  <AllTasksWidget tasks={tasks} onOpenTask={onOpenTask} />
+                  <AllTasksWidget
+                    tasks={tasks}
+                    onOpenTask={onOpenTask}
+                    activeDepartmentName={activeDepartment.name}
+                    deptColorMap={deptColorMap}
+                  />
                 </div>
               </div>
             </div>
@@ -260,17 +286,34 @@ export default function WorkspaceArea({
   // 데스크톱(그 외 화면 폭): 기존 마우스 드래그로 폭/높이를 조절하는 2단 레이아웃 그대로 유지
   return (
     <div className="flex h-full overflow-hidden">
-      {/* 왼쪽: 업무 상황판(숫자만, 작게) + 빠른 업무등록 위젯(항상 고정) + 채팅(나머지 공간) */}
+      {/* 왼쪽: 구글챗 미러링 두 방(출결알림/선생님요청, 반씩) + 빠른 업무등록 위젯(항상 고정) +
+          채팅(나머지 공간). 예전 업무상황판+행정요청 자리였는데, 업무상황판은 오른쪽 "전체
+          업무목록" 제목 옆으로 옮기고(요청 1) 행정요청은 없앴습니다(요청 2, 구글챗 미러링으로
+          대체). */}
       <div className="flex flex-col overflow-hidden" style={{ width: `${leftWidth}%` }}>
-        <div className="flex items-stretch gap-1 overflow-hidden" style={{ height: `${leftTopHeight}%` }}>
+        <div className="flex items-stretch divide-x divide-black/5 overflow-hidden" style={{ height: `${leftTopHeight}%` }}>
           <div className="min-w-0 flex-1 overflow-hidden">
-            <DashboardArea tasks={tasks} activeDepartmentName={activeDepartment.name} deptColorMap={deptColorMap} onSelectTask={onOpenTask} />
+            <GoogleChatMirrorPanel
+              sourceKey="attendance"
+              title="출결알림"
+              icon="🚸"
+              messages={mirrorMessages}
+              team={team}
+              userEmail={currentUserEmail}
+              department={activeDepartment.name}
+              onTaskCreated={onTaskCreated}
+            />
           </div>
-          <div className="shrink-0">
-            <RequestStatusWidget
-              pendingCount={pendingRequestCount}
-              categories={requestCategories}
-              onCategoriesChange={onRequestCategoriesChange}
+          <div className="min-w-0 flex-1 overflow-hidden">
+            <GoogleChatMirrorPanel
+              sourceKey="teacher_requests"
+              title="선생님요청"
+              icon="🛠️"
+              messages={mirrorMessages}
+              team={team}
+              userEmail={currentUserEmail}
+              department={activeDepartment.name}
+              onTaskCreated={onTaskCreated}
             />
           </div>
         </div>
@@ -315,7 +358,12 @@ export default function WorkspaceArea({
             <MyTasksWidget tasks={tasks} currentUserEmail={currentUserEmail} onOpenTask={onOpenTask} />
           </div>
           <div className="min-w-0 flex-1 overflow-hidden">
-            <AllTasksWidget tasks={tasks} onOpenTask={onOpenTask} />
+            <AllTasksWidget
+              tasks={tasks}
+              onOpenTask={onOpenTask}
+              activeDepartmentName={activeDepartment.name}
+              deptColorMap={deptColorMap}
+            />
           </div>
         </div>
         <div

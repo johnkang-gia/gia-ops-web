@@ -3291,3 +3291,62 @@ on conflict (target_doc, category) do nothing;
 -- 조치를 취했는지 적을 수 있도록". good/lack/suggest(회고·제안)와 별개로, 실제로 어떤 조치를
 -- 취했는지를 남기는 칸입니다(업무탭 tasks.resolution_note와 동일한 패턴).
 alter table incidents add column if not exists resolution_note text;
+
+-- ===== 행정요청 제거 + 구글챗 미러링(출결알림/선생님요청) 도입 =====
+-- 요청: "행정요청도 없애줘, 구글챗 미러링이 된다면 행정요청도 여기로 받을거라서 상관없어".
+-- 행정요청 기능(교사가 앱 안에서 직접 입력하던 방식)을 완전히 걷어내고, 대신 교사들이 이미 쓰고
+-- 있는 구글챗의 두 방(출결알림/선생님요청)을 읽기전용으로 실시간 미러링해서 같은 역할을
+-- 대신합니다. 아래 DROP은 71~72번 섹션에서 만든 행정요청 관련 테이블/함수/트리거를 전부
+-- 정리합니다 - 앱 코드가 더 이상 이 테이블들을 참조하지 않으므로 안전합니다.
+drop trigger if exists tasks_sync_staff_request on tasks;
+drop function if exists sync_staff_request_from_task();
+drop trigger if exists staff_request_comments_bump_count on staff_request_comments;
+drop function if exists bump_staff_request_comment_count();
+drop function if exists create_staff_request(text, text, text, text, text, text, text, text, text[], text);
+drop table if exists staff_request_comments cascade;
+drop table if exists staff_requests cascade;
+drop table if exists staff_request_categories cascade;
+
+-- 구글챗 미러링 메시지 저장 테이블입니다. 실제 적재는 /api/google-chat/webhook 라우트(서비스
+-- 롤 키 사용)가 Google Workspace Events API(Pub/Sub) 알림을 받아 insert하고, 여기서는 조회/
+-- (업무등록 표시용) 갱신 정책만 둡니다. google_message_id에 unique를 걸어 Pub/Sub 재전송으로
+-- 인한 중복 저장을 막습니다(on conflict do nothing으로 webhook에서 흡수).
+create table if not exists google_chat_mirror_messages (
+  id uuid primary key default gen_random_uuid(),
+  source_key text not null check (source_key in ('attendance', 'teacher_requests')),
+  google_message_id text not null unique,
+  google_space_id text,
+  sender_display_name text,
+  sender_email text,
+  content text not null,
+  created_at_google timestamptz not null,
+  received_at timestamptz not null default now(),
+  task_id uuid references tasks(id) on delete set null
+);
+
+create index if not exists google_chat_mirror_messages_source_created_idx
+  on google_chat_mirror_messages(source_key, created_at_google desc);
+
+alter table google_chat_mirror_messages enable row level security;
+
+-- "업무탭에서 전체 행정직원들이 보고" - is_wr_manager()(관리자 또는 행정직원)로 조회를
+-- 제한합니다. 교사는 여전히 구글챗 자체에서 보고 씁니다(이 테이블에는 접근 권한이 없습니다).
+drop policy if exists "wr_manager_select_google_chat_mirror_messages" on google_chat_mirror_messages;
+create policy "wr_manager_select_google_chat_mirror_messages" on google_chat_mirror_messages
+  for select using (is_wr_manager());
+
+-- insert는 webhook 라우트가 서비스 롤 키로 처리하므로(RLS 우회) 별도 insert 정책이 필요
+-- 없습니다. update는 "🔧 업무로 등록" 클릭 시 task_id를 표시하는 용도로만 씁니다.
+drop policy if exists "wr_manager_update_google_chat_mirror_messages" on google_chat_mirror_messages;
+create policy "wr_manager_update_google_chat_mirror_messages" on google_chat_mirror_messages
+  for update using (is_wr_manager()) with check (is_wr_manager());
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'google_chat_mirror_messages'
+  ) then
+    alter publication supabase_realtime add table google_chat_mirror_messages;
+  end if;
+end $$;

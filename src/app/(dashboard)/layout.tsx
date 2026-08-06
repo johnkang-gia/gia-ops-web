@@ -251,10 +251,10 @@ export default async function DashboardLayout({
     categories = [
       { key: "homeroom", label: "내 담임반", labelEn: "My Homeroom", icon: "🏠", href: "/weekly-report/homeroom", accent: "teal" },
       { key: "subjects", label: "내 담당과목", labelEn: "My Subjects", icon: "📘", href: "/weekly-report/subjects", accent: "teal" },
-      // 학사일정은 교사에게는 감추고(요청: "교사권한은 학사일정 안보이게"), 대신 사물함 파손·
-      // 물품 구입·아픈 학생 인계·출결 상황 문의처럼 행정직원에게 부탁할 일을 등록하는
-      // "행정요청" 메뉴를 그 자리에 둡니다(요청: "교사는 행정부에... 요청하는 여러 일들").
-      { key: "requests", label: "행정요청", labelEn: "Staff Requests", icon: "🧾", href: "/requests", accent: "teal" },
+      // 학사일정은 교사에게는 감춥니다(요청: "교사권한은 학사일정 안보이게"). 예전에는 이 자리에
+      // "행정요청" 메뉴가 있었지만 제거되었습니다(요청: "행정요청도 없애줘, 구글챗 미러링이
+      // 된다면 행정요청도 여기로 받을거라서 상관없어") - 교사는 계속 구글챗으로 행정직원에게
+      // 요청하고, 관리자/행정직원은 업무탭에서 그 내용을 실시간으로 확인합니다.
       // 출석부 메뉴는 요청("일단 지금 출석부를 쓸건 아니니까 출석부메뉴는 감춰줘")에 따라
       // 당분간 사이드바에서 숨겨둡니다. /attendance 화면 자체와 기능은 그대로 남아있어서,
       // 나중에 이 항목의 주석만 풀면 바로 다시 노출할 수 있습니다.
@@ -282,12 +282,6 @@ export default async function DashboardLayout({
           { href: "/academic-calendar/prep", label: "학기준비", icon: "🧭" },
         ],
       },
-      // 행정요청 메뉴는 여기(관리자/행정직원 등)에는 따로 두지 않습니다(요청: "행정요청메뉴는
-      // 교사에게만 보이고, 나머지에게는 업무에 등록되는 것으로 알수있게 해줘") - 교사가 등록한
-      // 요청은 자동으로 업무보드에도 등록되므로(요청 575), 업무 탭 안의 업무상황판 오른쪽에
-      // 들어온 행정요청 건수가 뜨고 처리도 업무 확인/완료로 자동 동기화됩니다. /requests
-      // 페이지 자체는 남아 있어(주소로 직접 접근하거나 업무상황판에서 링크로 들어갈 수 있음)
-      // 전체 목록·상태변경도 그대로 가능합니다.
       buildOpsCategory(pendingProposals, pendingAdopted),
       buildSchoolCategory(isAdmin, isStaffOrAbove),
       buildSchoolDocumentsCategory(),

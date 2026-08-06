@@ -21,11 +21,17 @@ export default function DashboardArea({
   activeDepartmentName,
   deptColorMap,
   onSelectTask,
+  compact = false,
 }: {
   tasks: Task[];
   activeDepartmentName: string;
   deptColorMap: Map<string, string>;
   onSelectTask: (id: string) => void;
+  // "전체 업무목록" 제목 옆에 아주 작게 넣기 위한 모드입니다(요청: "업무상황판을 오른쪽 전체
+  // 업무목록 제목 옆에 아주 작게 배치") - 진행률 원형 그래프와 "[부서] 업무 상황판" 라벨을
+  // 빼고, 상태별 숫자 뱃지 4개만 아이콘+숫자로 줄여서 보여줍니다(클릭하면 여전히 팝업으로
+  // 목록을 볼 수 있습니다).
+  compact?: boolean;
 }) {
   const [openKey, setOpenKey] = useState<GroupKey | null>(null);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
@@ -44,6 +50,72 @@ export default function DashboardArea({
 
   const activeGroup = GROUPS.find((g) => g.key === openKey);
   const popupTasks = activeGroup ? tasks.filter(activeGroup.filter) : [];
+
+  if (compact) {
+    return (
+      <div className="flex shrink-0 items-center gap-1">
+        {GROUPS.map((g) => {
+          const count = tasks.filter(g.filter).length;
+          return (
+            <button
+              key={g.key}
+              onClick={(e) => openPopup(g.key, e.currentTarget)}
+              title={`${g.label} ${count}건`}
+              style={{ backgroundColor: g.color + "1a", color: g.color }}
+              className="flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold transition hover:brightness-95"
+            >
+              <span>{g.icon}</span>
+              <span>{count}</span>
+            </button>
+          );
+        })}
+
+        {activeGroup &&
+          pos &&
+          typeof document !== "undefined" &&
+          createPortal(
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setOpenKey(null)} />
+              <div
+                style={{ position: "fixed", top: pos.top, left: pos.left }}
+                className="z-50 max-h-80 w-72 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-xl"
+              >
+                <div className="mb-1.5 flex items-center justify-between px-1.5 pt-0.5 text-[12px] font-bold" style={{ color: activeGroup.color }}>
+                  <span>
+                    {activeGroup.icon} {activeGroup.label}
+                  </span>
+                  <span>{popupTasks.length}건</span>
+                </div>
+                {popupTasks.length === 0 ? (
+                  <div className="px-2 py-4 text-center text-xs opacity-50">업무 없음</div>
+                ) : (
+                  <div className="flex flex-col gap-1">
+                    {popupTasks.map((task) => {
+                      const deptColor = task.department ? deptColorMap.get(task.department) : null;
+                      return (
+                        <button
+                          key={task.id}
+                          onClick={() => {
+                            onSelectTask(task.id);
+                            setOpenKey(null);
+                          }}
+                          style={{ borderLeftColor: deptColor || activeGroup.color }}
+                          className="truncate rounded-lg border-l-[3px] bg-black/[0.02] px-2 py-1.5 text-left text-[12px] hover:bg-black/5"
+                          title={task.title}
+                        >
+                          {task.title}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </>,
+            document.body
+          )}
+      </div>
+    );
+  }
 
   return (
     <div className="glass flex h-full items-center gap-2 overflow-x-auto px-3 py-1.5">

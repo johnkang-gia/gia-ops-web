@@ -5,11 +5,13 @@ import { createClient } from "@/lib/supabase/client";
 import { useRealtimeTable } from "@/lib/useRealtimeTable";
 import { genCaseId } from "@/lib/caseId";
 import { getMeetingAudioUrl } from "@/lib/storage";
+import { useCollapsedPanel } from "@/lib/useCollapsedPanel";
 import type { Meeting, PolicyCategory, Term } from "@/lib/types";
 import MeetingChatComposer from "./MeetingChatComposer";
 import AiSourcePanel from "@/components/ai/AiSourcePanel";
 import Pagination from "@/components/Pagination";
 import GuideButton from "@/components/common/GuideButton";
+import CollapsedStrip from "@/components/common/CollapsedStrip";
 
 // 회의가 쌓일수록 목록이 끝없이 길어지지 않도록, 게시판처럼 페이지 단위로 잘라 보여줍니다.
 const PAGE_SIZE = 10;
@@ -57,12 +59,14 @@ export default function MeetingsClient({
   initialItems,
   currentTerm,
   policyCategories,
+  currentUserEmail,
 }: {
   initialItems: Meeting[];
   currentTerm: Term | null;
   // 매뉴얼(실무자용)/운영계획안(학부모용) 고정 항목 목록 - incidents와 동일하게 이 목록
   // 중에서만 골라 태그합니다.
   policyCategories: PolicyCategory[];
+  currentUserEmail: string;
 }) {
   // 요청: "항목들은 기본적으로 가나다순으로 정렬" - 드롭다운에서도 항목명 한글 가나다순으로 보여줍니다.
   const manualCatOptions = policyCategories
@@ -80,6 +84,18 @@ export default function MeetingsClient({
   const [rescanning, setRescanning] = useState(false);
   const [audioUrls, setAudioUrls] = useState<Record<string, string>>({});
   const [composerKey, setComposerKey] = useState(0);
+
+  // 요청: "좁게 사용하는 사람들이 있기 때문에... 접고 펼 수 있도록... 개인별로 기억"
+  const [leftCollapsed, setLeftCollapsed] = useCollapsedPanel("meetings", "list", currentUserEmail);
+  const [rightCollapsed, setRightCollapsed] = useCollapsedPanel("meetings", "ai", currentUserEmail);
+  const gridColsClass =
+    leftCollapsed && rightCollapsed
+      ? "lg:grid-cols-[40px_1fr_40px]"
+      : leftCollapsed
+        ? "lg:grid-cols-[40px_1fr_340px]"
+        : rightCollapsed
+          ? "lg:grid-cols-[300px_1fr_40px]"
+          : "lg:grid-cols-[300px_1fr_340px]";
 
   const [page, setPage] = useState(1);
   const pageItems = useMemo(
@@ -188,52 +204,65 @@ export default function MeetingsClient({
   }
 
   return (
-    <div className="grid h-full grid-cols-1 gap-4 overflow-y-auto lg:grid-cols-[300px_1fr_340px] lg:overflow-hidden">
+    <div className={`grid h-full grid-cols-1 gap-4 overflow-y-auto ${gridColsClass} lg:overflow-hidden`}>
       {/* 왼쪽: 날짜별 목록 - 계속 늘어지는 스크롤 대신 게시판처럼 페이지 번호로 넘겨봅니다 */}
-      <div className="order-2 flex flex-col gap-2 lg:order-1 lg:h-full lg:min-h-0 lg:overflow-hidden">
-        <div className="flex items-center justify-between">
-          <h1 className="text-sm font-bold text-slate-700">회의 ({items.length}건)</h1>
-          <div className="flex items-center gap-1.5">
-          {editingId && (
-            <button
-              onClick={stopEditing}
-              className="rounded-lg bg-gia-navy px-2.5 py-1 text-xs font-semibold text-white hover:bg-gia-navy-2"
-            >
-              + 새 회의
-            </button>
-          )}
-          <GuideButton title="회의기록 사용 가이드" sections={GUIDE_SECTIONS} />
-          </div>
-        </div>
-        <div className="flex flex-1 flex-col gap-1.5 overflow-y-auto lg:min-h-0">
-          {items.length === 0 && (
-            <div className="rounded-lg bg-white p-3 text-xs text-slate-400 shadow-sm">등록된 회의가 없습니다.</div>
-          )}
-          {pageItems.map((it) => (
-            <button
-              key={it.id}
-              onClick={() => {
-                startEdit(it);
-                loadAudioUrl(it);
-              }}
-              className={
-                "flex flex-col gap-0.5 rounded-lg border px-3 py-2 text-left shadow-sm transition " +
-                (editingId === it.id
-                  ? "border-gia-navy bg-gia-gold-soft/20"
-                  : "border-slate-200 bg-white hover:border-slate-300")
-              }
-            >
-              <div className="flex items-center gap-2">
-                <span className="min-w-0 flex-1 truncate text-xs font-medium">{oneLine(it.content)}</span>
-                {it.audio_path && <span className="shrink-0 text-[10px]">🎙️</span>}
+      <div className="order-2 lg:order-1 lg:h-full lg:min-h-0">
+        {leftCollapsed ? (
+          <CollapsedStrip label={`회의 목록 (${items.length})`} onExpand={() => setLeftCollapsed(false)} />
+        ) : (
+          <div className="flex h-full flex-col gap-2 lg:min-h-0 lg:overflow-hidden">
+            <div className="flex items-center justify-between">
+              <h1 className="text-sm font-bold text-slate-700">회의 ({items.length}건)</h1>
+              <div className="flex items-center gap-1.5">
+              {editingId && (
+                <button
+                  onClick={stopEditing}
+                  className="rounded-lg bg-gia-navy px-2.5 py-1 text-xs font-semibold text-white hover:bg-gia-navy-2"
+                >
+                  + 새 회의
+                </button>
+              )}
+              <GuideButton title="회의기록 사용 가이드" sections={GUIDE_SECTIONS} />
+              <button
+                onClick={() => setLeftCollapsed(true)}
+                title="목록 접기"
+                className="rounded-lg border border-slate-300 px-1.5 py-1 text-xs text-slate-500 hover:bg-slate-50"
+              >
+                ‹
+              </button>
               </div>
-              <span className="text-[10px] text-slate-400">{it.date}</span>
-            </button>
-          ))}
-        </div>
-        <div className="shrink-0">
-          <Pagination page={page} totalPages={totalPages} onChange={setPage} />
-        </div>
+            </div>
+            <div className="flex flex-1 flex-col gap-1.5 overflow-y-auto lg:min-h-0">
+              {items.length === 0 && (
+                <div className="rounded-lg bg-white p-3 text-xs text-slate-400 shadow-sm">등록된 회의가 없습니다.</div>
+              )}
+              {pageItems.map((it) => (
+                <button
+                  key={it.id}
+                  onClick={() => {
+                    startEdit(it);
+                    loadAudioUrl(it);
+                  }}
+                  className={
+                    "flex flex-col gap-0.5 rounded-lg border px-3 py-2 text-left shadow-sm transition " +
+                    (editingId === it.id
+                      ? "border-gia-navy bg-gia-gold-soft/20"
+                      : "border-slate-200 bg-white hover:border-slate-300")
+                  }
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="min-w-0 flex-1 truncate text-xs font-medium">{oneLine(it.content)}</span>
+                    {it.audio_path && <span className="shrink-0 text-[10px]">🎙️</span>}
+                  </div>
+                  <span className="text-[10px] text-slate-400">{it.date}</span>
+                </button>
+              ))}
+            </div>
+            <div className="shrink-0">
+              <Pagination page={page} totalPages={totalPages} onChange={setPage} />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 가운데: 채팅 작성창(신규) 또는 수정 폼 */}
@@ -417,8 +446,25 @@ export default function MeetingsClient({
       </div>
 
       {/* 오른쪽: AI 제안 */}
-      <div className="order-3">
-        <AiSourcePanel source="meetings" scanType="meetings" />
+      <div className="order-3 lg:h-full lg:min-h-0">
+        {rightCollapsed ? (
+          <CollapsedStrip label="AI 제안" onExpand={() => setRightCollapsed(false)} />
+        ) : (
+          <div className="flex h-full flex-col gap-2 lg:min-h-0 lg:overflow-hidden">
+            <div className="flex items-center justify-end">
+              <button
+                onClick={() => setRightCollapsed(true)}
+                title="AI 제안 접기"
+                className="rounded-lg border border-slate-300 px-1.5 py-1 text-xs text-slate-500 hover:bg-slate-50"
+              >
+                ›
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <AiSourcePanel source="meetings" scanType="meetings" />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

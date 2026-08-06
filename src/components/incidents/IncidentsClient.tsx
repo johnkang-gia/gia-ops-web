@@ -4,10 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRealtimeTable } from "@/lib/useRealtimeTable";
 import { genCaseId } from "@/lib/caseId";
+import { useCollapsedPanel } from "@/lib/useCollapsedPanel";
 import type { Incident, PolicyCategory, Term, WrStudent } from "@/lib/types";
 import AiSourcePanel from "@/components/ai/AiSourcePanel";
 import Pagination from "@/components/Pagination";
 import GuideButton from "@/components/common/GuideButton";
+import CollapsedStrip from "@/components/common/CollapsedStrip";
 
 // 사건이 쌓일수록 목록이 끝없이 길어지지 않도록, 게시판처럼 페이지 단위로 잘라 보여줍니다.
 const PAGE_SIZE = 10;
@@ -34,6 +36,7 @@ type FormState = {
   manual_cat: string;
   op_plan_cat: string;
   status: string;
+  resolution_note: string;
 };
 
 function emptyForm(ownerDefault: string): FormState {
@@ -49,6 +52,7 @@ function emptyForm(ownerDefault: string): FormState {
     manual_cat: "",
     op_plan_cat: "",
     status: "",
+    resolution_note: "",
   };
 }
 
@@ -121,6 +125,20 @@ export default function IncidentsClient({
   const [justSavedMsg, setJustSavedMsg] = useState("");
   const [filling, setFilling] = useState(false);
   const [rescanning, setRescanning] = useState(false);
+
+  // 요청: "좁게 사용하는 사람들이 있기 때문에... 사건목록이나 AI제안들의 탭을 접고 펼 수
+  // 있도록 해주고, 개인별로 접은 부분 기억해서 다시 그 페이지로 돌아가도 계속 접혀있도록".
+  // 왼쪽(목록)/오른쪽(AI 제안) 컬럼만 접을 수 있게 하고, 가운데 입력폼은 항상 보이게 둡니다.
+  const [leftCollapsed, setLeftCollapsed] = useCollapsedPanel("incidents", "list", currentUserEmail);
+  const [rightCollapsed, setRightCollapsed] = useCollapsedPanel("incidents", "ai", currentUserEmail);
+  const gridColsClass =
+    leftCollapsed && rightCollapsed
+      ? "lg:grid-cols-[40px_1fr_40px]"
+      : leftCollapsed
+        ? "lg:grid-cols-[40px_1fr_340px]"
+        : rightCollapsed
+          ? "lg:grid-cols-[300px_1fr_40px]"
+          : "lg:grid-cols-[300px_1fr_340px]";
 
   // 동명이인이 있어도 정확히 어느 학생인지 고유번호(student_no) 기준으로 연결하기 위한 상태입니다
   // (incidents.students 자유 텍스트는 그대로 두고, incident_students 조인 테이블에 실제 학생
@@ -266,6 +284,7 @@ export default function IncidentsClient({
       manual_cat: it.manual_cat ?? "",
       op_plan_cat: it.op_plan_cat ?? "",
       status: it.status ?? "",
+      resolution_note: it.resolution_note ?? "",
     });
     setStudentQuery("");
     setLinkedStudentIds([]);
@@ -331,51 +350,64 @@ export default function IncidentsClient({
   }
 
   return (
-    <div className="grid h-full grid-cols-1 gap-4 overflow-y-auto lg:grid-cols-[300px_1fr_340px] lg:overflow-hidden">
+    <div className={`grid h-full grid-cols-1 gap-4 overflow-y-auto ${gridColsClass} lg:overflow-hidden`}>
       {/* 왼쪽: 목록 - 계속 늘어지는 스크롤 대신 게시판처럼 페이지 번호로 넘겨봅니다 */}
-      <div className="order-2 flex flex-col gap-2 lg:order-1 lg:h-full lg:min-h-0 lg:overflow-hidden">
-        <div className="flex items-center justify-between">
-          <h1 className="text-sm font-bold text-slate-700">사건 ({items.length}건)</h1>
-          <div className="flex items-center gap-1.5">
-            <button
-              onClick={startNew}
-              className="rounded-lg bg-gia-navy px-2.5 py-1 text-xs font-semibold text-white hover:bg-gia-navy-2"
-            >
-              + 새 사건
-            </button>
-            <GuideButton title="사건기록 사용 가이드" sections={GUIDE_SECTIONS} />
-          </div>
-        </div>
-        <div className="flex flex-1 flex-col gap-1.5 overflow-y-auto lg:min-h-0">
-          {items.length === 0 && (
-            <div className="rounded-lg bg-white p-3 text-xs text-slate-400 shadow-sm">등록된 사건이 없습니다.</div>
-          )}
-          {pageItems.map((it) => (
-            <button
-              key={it.id}
-              onClick={() => startEdit(it)}
-              className={
-                "flex flex-col gap-0.5 rounded-lg border px-3 py-2 text-left shadow-sm transition " +
-                (editingId === it.id
-                  ? "border-gia-navy bg-gia-gold-soft/20"
-                  : "border-slate-200 bg-white hover:border-slate-300")
-              }
-            >
-              <div className="flex items-center gap-2">
-                <span className="min-w-0 flex-1 truncate text-xs font-medium">{oneLine(it.title)}</span>
-                <span className="shrink-0 text-[10px] text-slate-400">{it.date}</span>
+      <div className="order-2 lg:order-1 lg:h-full lg:min-h-0">
+        {leftCollapsed ? (
+          <CollapsedStrip label={`사건 목록 (${items.length})`} onExpand={() => setLeftCollapsed(false)} />
+        ) : (
+          <div className="flex h-full flex-col gap-2 lg:min-h-0 lg:overflow-hidden">
+            <div className="flex items-center justify-between">
+              <h1 className="text-sm font-bold text-slate-700">사건 ({items.length}건)</h1>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={startNew}
+                  className="rounded-lg bg-gia-navy px-2.5 py-1 text-xs font-semibold text-white hover:bg-gia-navy-2"
+                >
+                  + 새 사건
+                </button>
+                <GuideButton title="사건기록 사용 가이드" sections={GUIDE_SECTIONS} />
+                <button
+                  onClick={() => setLeftCollapsed(true)}
+                  title="목록 접기"
+                  className="rounded-lg border border-slate-300 px-1.5 py-1 text-xs text-slate-500 hover:bg-slate-50"
+                >
+                  ‹
+                </button>
               </div>
-              {it.status && (
-                <span className="w-fit rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600">
-                  {it.status}
-                </span>
+            </div>
+            <div className="flex flex-1 flex-col gap-1.5 overflow-y-auto lg:min-h-0">
+              {items.length === 0 && (
+                <div className="rounded-lg bg-white p-3 text-xs text-slate-400 shadow-sm">등록된 사건이 없습니다.</div>
               )}
-            </button>
-          ))}
-        </div>
-        <div className="shrink-0">
-          <Pagination page={page} totalPages={totalPages} onChange={setPage} />
-        </div>
+              {pageItems.map((it) => (
+                <button
+                  key={it.id}
+                  onClick={() => startEdit(it)}
+                  className={
+                    "flex flex-col gap-0.5 rounded-lg border px-3 py-2 text-left shadow-sm transition " +
+                    (editingId === it.id
+                      ? "border-gia-navy bg-gia-gold-soft/20"
+                      : "border-slate-200 bg-white hover:border-slate-300")
+                  }
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="min-w-0 flex-1 truncate text-xs font-medium">{oneLine(it.title)}</span>
+                    <span className="shrink-0 text-[10px] text-slate-400">{it.date}</span>
+                  </div>
+                  {it.status && (
+                    <span className="w-fit rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600">
+                      {it.status}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+            <div className="shrink-0">
+              <Pagination page={page} totalPages={totalPages} onChange={setPage} />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 가운데: 입력폼 (항상 표시) */}
@@ -518,6 +550,20 @@ export default function IncidentsClient({
             </label>
           </div>
 
+          {/* 요청: "사건이 어떻게 완료되었는지 적을 수 있는 조치사항 공간을 만들어줘 - 어떤
+              조치를 취했는지 적을 수 있도록". good/lack/suggest(회고·제안)와 달리, 실제로
+              무엇을 했는지를 남기는 칸입니다(업무탭 resolution_note와 같은 패턴). */}
+          <label className="flex flex-col gap-1 text-xs text-slate-500">
+            조치사항 (어떤 조치를 취했는지)
+            <textarea
+              value={form.resolution_note}
+              onChange={(e) => setForm({ ...form, resolution_note: e.target.value })}
+              rows={3}
+              placeholder="예: 보건실에서 1차 처치 후 학부모에게 전화 안내, 병원 진료 동행, 재발 방지를 위해 담당 교사 안전교육 실시 등"
+              className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+            />
+          </label>
+
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label className="flex flex-col gap-1 text-xs text-slate-500">
               매뉴얼 항목(실무자용)
@@ -627,8 +673,25 @@ export default function IncidentsClient({
       </div>
 
       {/* 오른쪽: AI 제안 */}
-      <div className="order-3">
-        <AiSourcePanel source="incidents" scanType="incidents" />
+      <div className="order-3 lg:h-full lg:min-h-0">
+        {rightCollapsed ? (
+          <CollapsedStrip label="AI 제안" onExpand={() => setRightCollapsed(false)} />
+        ) : (
+          <div className="flex h-full flex-col gap-2 lg:min-h-0 lg:overflow-hidden">
+            <div className="flex items-center justify-end">
+              <button
+                onClick={() => setRightCollapsed(true)}
+                title="AI 제안 접기"
+                className="rounded-lg border border-slate-300 px-1.5 py-1 text-xs text-slate-500 hover:bg-slate-50"
+              >
+                ›
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <AiSourcePanel source="incidents" scanType="incidents" />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

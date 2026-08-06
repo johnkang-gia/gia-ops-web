@@ -18,6 +18,10 @@ export type Incident = {
   op_plan_cat: string | null;
   status: string | null;
   term_id: string | null;
+  // 요청: "사건이 어떻게 완료되었는지 적을 수 있는 조치사항 공간을 만들어줘 - 어떤 조치를
+  // 취했는지 적을 수 있도록". good/lack/suggest(회고·제안)와 별개로, 실제로 취한 조치를
+  // 남기는 칸입니다(업무탭 tasks.resolution_note와 같은 패턴).
+  resolution_note: string | null;
   created_at: string;
   updated_at: string;
 };

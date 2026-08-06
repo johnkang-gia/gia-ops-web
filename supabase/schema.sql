@@ -3285,3 +3285,9 @@ insert into policy_categories (target_doc, domain, category, description, status
   ('실무자용', '학습지원', '특수교육대상·학습지원 학생 관련 민원 대응 지침', '학습지원이 필요한 학생에 대한 학부모 민원을 다루는 별도 지침이 없습니다.', '미보유', 'benchmark', 21),
   ('실무자용', '위생·보건', '감염병 발생 시 등교중지 및 보고 절차', '전염병 의심 학생의 등교중지 기준과 보건당국 보고 절차가 마련되어 있지 않습니다.', '미보유', 'benchmark', 22)
 on conflict (target_doc, category) do nothing;
+
+-- ===== 사건기록 조치사항(resolution_note) =====
+-- 요청: "사건기록에서 사건이 어떻게 완료되었는지 적을 수 있는 조치사항 공간을 만들어줘 - 어떤
+-- 조치를 취했는지 적을 수 있도록". good/lack/suggest(회고·제안)와 별개로, 실제로 어떤 조치를
+-- 취했는지를 남기는 칸입니다(업무탭 tasks.resolution_note와 동일한 패턴).
+alter table incidents add column if not exists resolution_note text;

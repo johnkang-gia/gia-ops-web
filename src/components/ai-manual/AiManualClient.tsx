@@ -5,6 +5,8 @@ import { useRealtimeTable } from "@/lib/useRealtimeTable";
 import type { Proposal, ManualDraft } from "@/lib/types";
 import AiSourcePanel from "@/components/ai/AiSourcePanel";
 import GuideButton from "@/components/common/GuideButton";
+import { useCollapsedPanel } from "@/lib/useCollapsedPanel";
+import CollapsedStrip from "@/components/common/CollapsedStrip";
 
 const GUIDE_SECTIONS = [
   {
@@ -31,7 +33,13 @@ const SOURCE_LABEL: Record<RelatedRecord["source"], string> = {
 };
 
 // 왼쪽(과거 작성 이력) · 가운데(입력폼) · 오른쪽(AI 제안) 3단 레이아웃입니다.
-export default function AiManualClient({ initialItems }: { initialItems: ManualDraft[] }) {
+export default function AiManualClient({
+  initialItems,
+  currentUserEmail,
+}: {
+  initialItems: ManualDraft[];
+  currentUserEmail: string;
+}) {
   const [drafts] = useRealtimeTable<ManualDraft>("manual_drafts", initialItems);
   const [rawText, setRawText] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -39,6 +47,18 @@ export default function AiManualClient({ initialItems }: { initialItems: ManualD
   const [result, setResult] = useState<{ proposals: Proposal[]; reason: string; relatedRecords: RelatedRecord[] } | null>(
     null
   );
+
+  // 좁은 화면 사용자를 위해 목록/AI 패널을 접고 펼 수 있게 합니다(개인별 기억).
+  const [leftCollapsed, setLeftCollapsed] = useCollapsedPanel("ai-manual", "list", currentUserEmail);
+  const [rightCollapsed, setRightCollapsed] = useCollapsedPanel("ai-manual", "ai", currentUserEmail);
+  const gridColsClass =
+    leftCollapsed && rightCollapsed
+      ? "lg:grid-cols-[40px_1fr_40px]"
+      : leftCollapsed
+        ? "lg:grid-cols-[40px_1fr_340px]"
+        : rightCollapsed
+          ? "lg:grid-cols-[300px_1fr_40px]"
+          : "lg:grid-cols-[300px_1fr_340px]";
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -66,12 +86,27 @@ export default function AiManualClient({ initialItems }: { initialItems: ManualD
   }
 
   return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[300px_1fr_340px] lg:items-start">
+    <div className={`grid grid-cols-1 gap-4 ${gridColsClass} lg:items-start`}>
       {/* 왼쪽: 과거 작성 이력 */}
+      {leftCollapsed ? (
+        <div className="order-2 hidden lg:order-1 lg:block">
+          <CollapsedStrip label={`작성 이력 (${drafts.length})`} onExpand={() => setLeftCollapsed(false)} />
+        </div>
+      ) : (
       <div className="order-2 flex flex-col gap-2 lg:order-1">
         <div className="flex items-center justify-between">
           <h1 className="text-sm font-bold text-slate-700">작성 이력 ({drafts.length}건)</h1>
-          <GuideButton title="AI 매뉴얼 작성 사용 가이드" sections={GUIDE_SECTIONS} />
+          <div className="flex items-center gap-1">
+            <GuideButton title="AI 매뉴얼 작성 사용 가이드" sections={GUIDE_SECTIONS} />
+            <button
+              type="button"
+              onClick={() => setLeftCollapsed(true)}
+              title="접기"
+              className="hidden rounded-md border border-slate-200 px-1.5 py-0.5 text-xs text-slate-400 hover:bg-slate-50 lg:inline-block"
+            >
+              ‹
+            </button>
+          </div>
         </div>
         <div className="flex max-h-[75vh] flex-col gap-1.5 overflow-y-auto lg:max-h-[calc(100vh-8rem)]">
           {drafts.length === 0 && (
@@ -93,6 +128,7 @@ export default function AiManualClient({ initialItems }: { initialItems: ManualD
           ))}
         </div>
       </div>
+      )}
 
       {/* 가운데: 입력폼 */}
       <div className="order-1 lg:order-2">
@@ -174,9 +210,23 @@ export default function AiManualClient({ initialItems }: { initialItems: ManualD
       </div>
 
       {/* 오른쪽: AI 제안 */}
-      <div className="order-3">
-        <AiSourcePanel source="manual" />
-      </div>
+      {rightCollapsed ? (
+        <div className="order-3 hidden lg:block">
+          <CollapsedStrip label="AI 제안" onExpand={() => setRightCollapsed(false)} />
+        </div>
+      ) : (
+        <div className="order-3 relative">
+          <button
+            type="button"
+            onClick={() => setRightCollapsed(true)}
+            title="접기"
+            className="absolute -left-2 top-0 z-10 hidden rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-xs text-slate-400 hover:bg-slate-50 lg:inline-block"
+          >
+            ›
+          </button>
+          <AiSourcePanel source="manual" />
+        </div>
+      )}
     </div>
   );
 }

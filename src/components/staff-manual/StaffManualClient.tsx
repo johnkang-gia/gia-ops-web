@@ -7,6 +7,8 @@ import type { ManualSection, WrStudent } from "@/lib/types";
 import { toDisplayHtml, htmlToPlainText } from "@/lib/manualHtml";
 import StudentQuickLookup from "./StudentQuickLookup";
 import GuideButton from "@/components/common/GuideButton";
+import { useCollapsedPanel } from "@/lib/useCollapsedPanel";
+import CollapsedStrip from "@/components/common/CollapsedStrip";
 
 const GUIDE_SECTIONS = [
   {
@@ -15,7 +17,15 @@ const GUIDE_SECTIONS = [
   },
 ];
 
-export default function StaffManualClient({ initialItems, students }: { initialItems: ManualSection[]; students: WrStudent[] }) {
+export default function StaffManualClient({
+  initialItems,
+  students,
+  currentUserEmail,
+}: {
+  initialItems: ManualSection[];
+  students: WrStudent[];
+  currentUserEmail: string;
+}) {
   const [items, setItems] = useState<ManualSection[]>(initialItems);
   const [query, setQuery] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -24,6 +34,18 @@ export default function StaffManualClient({ initialItems, students }: { initialI
   const [hint, setHint] = useState("");
   const [generating, setGenerating] = useState(false);
   const [genMsg, setGenMsg] = useState("");
+
+  // 좁은 화면 사용자를 위해 좌(매뉴얼 검색)/우(학생 검색) 패널을 접고 펼 수 있게 합니다(개인별 기억).
+  const [leftCollapsed, setLeftCollapsed] = useCollapsedPanel("staff-manual", "manual", currentUserEmail);
+  const [rightCollapsed, setRightCollapsed] = useCollapsedPanel("staff-manual", "student", currentUserEmail);
+  const gridColsClass =
+    leftCollapsed && rightCollapsed
+      ? "lg:grid-cols-[40px_40px]"
+      : leftCollapsed
+        ? "lg:grid-cols-[40px_1fr]"
+        : rightCollapsed
+          ? "lg:grid-cols-[1fr_40px]"
+          : "lg:grid-cols-2";
 
   useEffect(() => {
     const supabase = createClient();
@@ -105,9 +127,24 @@ export default function StaffManualClient({ initialItems, students }: { initialI
       </div>
 
       {/* 좌: 매뉴얼 검색 / 우: 학생 검색+기록 - 전화 한 통 안에서 둘 다 동시에 열어볼 수 있게
-          화면을 반으로 나눴습니다. */}
-      <div className="grid flex-1 grid-cols-1 gap-4 overflow-hidden lg:grid-cols-2">
+          화면을 반으로 나눴습니다. 좁은 화면에서는 각 절반을 접어서 볼 수 있습니다(개인별 기억). */}
+      <div className={`grid flex-1 grid-cols-1 gap-4 overflow-hidden ${gridColsClass}`}>
+        {leftCollapsed ? (
+          <div className="hidden lg:block">
+            <CollapsedStrip label="매뉴얼 검색" onExpand={() => setLeftCollapsed(false)} />
+          </div>
+        ) : (
         <div className="flex flex-col overflow-hidden">
+          <div className="mb-1.5 flex items-center justify-end">
+            <button
+              type="button"
+              onClick={() => setLeftCollapsed(true)}
+              title="접기"
+              className="hidden rounded-md border border-slate-200 px-1.5 py-0.5 text-xs text-slate-400 hover:bg-slate-50 lg:inline-block"
+            >
+              ‹
+            </button>
+          </div>
           <div className="mb-3 shrink-0 rounded-xl border border-blue-200 bg-blue-50 p-3">
             <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
               <div className="text-xs font-semibold text-blue-800">✨ AI로 예상 문의/컴플레인 제안받기</div>
@@ -182,10 +219,27 @@ export default function StaffManualClient({ initialItems, students }: { initialI
             </div>
           </div>
         </div>
+        )}
 
+        {rightCollapsed ? (
+          <div className="hidden lg:block">
+            <CollapsedStrip label="학생 검색" onExpand={() => setRightCollapsed(false)} />
+          </div>
+        ) : (
         <div className="flex flex-col overflow-hidden border-t border-slate-200 pt-4 lg:border-l lg:border-t-0 lg:pl-4 lg:pt-0">
+          <div className="mb-1.5 flex items-center justify-start">
+            <button
+              type="button"
+              onClick={() => setRightCollapsed(true)}
+              title="접기"
+              className="hidden rounded-md border border-slate-200 px-1.5 py-0.5 text-xs text-slate-400 hover:bg-slate-50 lg:inline-block"
+            >
+              ›
+            </button>
+          </div>
           <StudentQuickLookup students={students} />
         </div>
+        )}
       </div>
     </div>
   );

@@ -173,14 +173,21 @@ export default function GoogleChatMirrorPanel({
                       ✅ 업무 등록됨
                     </span>
                   ) : (
-                    <button
-                      type="button"
-                      onClick={() => registerAsTask(m)}
-                      disabled={registeringId === m.id}
-                      className="mt-1 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-600 transition hover:bg-blue-100 disabled:opacity-50"
-                    >
-                      {registeringId === m.id ? "등록 중..." : "🔧 업무로 등록"}
-                    </button>
+                    <div className="group relative mt-1 inline-block">
+                      <button
+                        type="button"
+                        onClick={() => registerAsTask(m)}
+                        disabled={registeringId === m.id}
+                        className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-50 text-[11px] text-blue-600 transition hover:bg-blue-100 disabled:opacity-50"
+                      >
+                        {registeringId === m.id ? "⏳" : "🔧"}
+                      </button>
+                      {/* 아이콘만 두고, 호버 시에만 작은 글씨로 설명을 띄웁니다(요청: "아이콘만
+                          표시하고 마우스를 아이콘에 호버링할때 '업무등록'글씨만 작게 뜨도록"). */}
+                      <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1 -translate-x-1/2 whitespace-nowrap rounded bg-slate-800 px-1.5 py-0.5 text-[9px] text-white opacity-0 transition group-hover:opacity-100">
+                        {registeringId === m.id ? "등록 중..." : "업무등록"}
+                      </span>
+                    </div>
                   )}
                 </div>
               </div>

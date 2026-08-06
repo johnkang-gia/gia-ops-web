@@ -167,28 +167,31 @@ export default function GoogleChatMirrorPanel({
                     <span className="truncate font-semibold text-slate-500">{m.sender_display_name || "구글챗"}</span>
                     <span className="shrink-0">{timeStr(m.created_at_google)}</span>
                   </div>
-                  <p className="whitespace-pre-wrap break-words text-slate-700">{m.content}</p>
-                  {m.task_id ? (
-                    <span className="mt-1 inline-block rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-600">
-                      ✅ 업무 등록됨
-                    </span>
-                  ) : (
-                    <div className="group relative mt-1 inline-block">
-                      <button
-                        type="button"
-                        onClick={() => registerAsTask(m)}
-                        disabled={registeringId === m.id}
-                        className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-50 text-[11px] text-blue-600 transition hover:bg-blue-100 disabled:opacity-50"
-                      >
-                        {registeringId === m.id ? "⏳" : "🔧"}
-                      </button>
-                      {/* 아이콘만 두고, 호버 시에만 작은 글씨로 설명을 띄웁니다(요청: "아이콘만
-                          표시하고 마우스를 아이콘에 호버링할때 '업무등록'글씨만 작게 뜨도록"). */}
-                      <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1 -translate-x-1/2 whitespace-nowrap rounded bg-slate-800 px-1.5 py-0.5 text-[9px] text-white opacity-0 transition group-hover:opacity-100">
-                        {registeringId === m.id ? "등록 중..." : "업무등록"}
+                  {/* 내용을 깔끔하게 보이도록, 업무등록 아이콘을 아래 별도 줄이 아니라 내용
+                      옆에 아주 작게 붙였습니다(요청: "구글챗 글자 옆에 아주작게 아이콘 붙여줘,
+                      내용만 깔끔하게 보고싶어"). */}
+                  <div className="flex items-start gap-1.5">
+                    <p className="min-w-0 flex-1 whitespace-pre-wrap break-words text-slate-700">{m.content}</p>
+                    {m.task_id ? (
+                      <span title="업무 등록됨" className="mt-0.5 shrink-0 text-[10px] leading-none text-emerald-500">
+                        ✅
                       </span>
-                    </div>
-                  )}
+                    ) : (
+                      <div className="group relative mt-0.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => registerAsTask(m)}
+                          disabled={registeringId === m.id}
+                          className="flex h-4 w-4 items-center justify-center rounded-full text-[10px] leading-none opacity-50 transition hover:bg-blue-50 hover:opacity-100 disabled:opacity-30"
+                        >
+                          {registeringId === m.id ? "⏳" : "🔧"}
+                        </button>
+                        <span className="pointer-events-none absolute bottom-full right-0 z-20 mb-1 whitespace-nowrap rounded bg-slate-800 px-1.5 py-0.5 text-[9px] text-white opacity-0 transition group-hover:opacity-100">
+                          {registeringId === m.id ? "등록 중..." : "업무등록"}
+                        </span>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             );

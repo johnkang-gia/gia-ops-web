@@ -98,6 +98,9 @@ export default function StudentManageClient({
   const [gradeFilter, setGradeFilter] = useState("");
   const [classFilter, setClassFilter] = useState("");
 
+  // ── 이름 검색 (요청: "학생추가와 리스트 사이에 검색창도 넣어주고") ──
+  const [nameQuery, setNameQuery] = useState("");
+
   function toggleSort(key: SortKey) {
     if (sortKeyEq(sortKey, key)) {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -252,10 +255,15 @@ export default function StudentManageClient({
     return [...new Set(pool.map((s) => s.class_name).filter((c): c is string => !!c))].sort((a, b) => a.localeCompare(b, "ko", { numeric: true }));
   }, [active, gradeFilter]);
 
-  const filtered = useMemo(
-    () => active.filter((s) => (!gradeFilter || s.grade === gradeFilter) && (!classFilter || s.class_name === classFilter)),
-    [active, gradeFilter, classFilter]
-  );
+  const filtered = useMemo(() => {
+    const q = nameQuery.trim().toLowerCase();
+    return active.filter(
+      (s) =>
+        (!gradeFilter || s.grade === gradeFilter) &&
+        (!classFilter || s.class_name === classFilter) &&
+        (!q || s.name.toLowerCase().includes(q) || (s.name_en ?? "").toLowerCase().includes(q))
+    );
+  }, [active, gradeFilter, classFilter, nameQuery]);
 
   const sorted = useMemo(() => {
     const list = [...filtered];
@@ -341,6 +349,13 @@ export default function StudentManageClient({
         </select>
         <span className="text-[11px] text-slate-400">칼럼 제목을 클릭하면 그 칼럼 기준으로 정렬돼요. 전체 명단이 아래에서 스크롤됩니다.</span>
       </div>
+
+      <input
+        value={nameQuery}
+        onChange={(e) => setNameQuery(e.target.value)}
+        placeholder="이름 또는 영어 이름으로 검색"
+        className="mb-3 w-full shrink-0 rounded-lg border border-slate-300 px-3 py-2 text-sm sm:max-w-xs"
+      />
 
       {showAddForm && (
         <form onSubmit={addStudent} className="mb-3 grid shrink-0 grid-cols-2 gap-2 rounded-xl border border-slate-200 bg-white p-3 sm:grid-cols-4">

@@ -36,17 +36,24 @@ export default async function StudentManagePage() {
   ]);
 
   return (
-    <div className="mx-auto max-w-6xl">
-      <div className="mb-1 flex items-center justify-between gap-2">
-        <h1 className="text-lg font-bold">학생 명부 관리</h1>
-        <GuideButton title="학생 명부 관리 사용 가이드" sections={GUIDE_SECTIONS} />
+    // 요청("학생명부관리 스크롤이 안돼")의 원인은 이 감싸는 div에 h-full/flex 구조가 없어서
+    // 안쪽 표의 overflow-auto가 기준으로 삼을 높이가 없었던 것입니다(/students 검색 화면과
+    // 같은 구조로 맞췄습니다) - 이제 표 영역만 화면 높이에 맞춰 자체적으로 스크롤됩니다.
+    <div className="mx-auto flex h-full max-w-6xl flex-col overflow-hidden">
+      <div className="shrink-0">
+        <div className="mb-1 flex items-center justify-between gap-2">
+          <h1 className="text-lg font-bold">학생 명부 관리</h1>
+          <GuideButton title="학생 명부 관리 사용 가이드" sections={GUIDE_SECTIONS} />
+        </div>
+        <p className="mb-4 text-xs text-slate-500">학생을 등록하면 반 배정(반/담임 배정 관리)과 과목 배정(과목반 세팅)에서 바로 선택할 수 있습니다.</p>
       </div>
-      <p className="mb-4 text-xs text-slate-500">학생을 등록하면 반 배정(반/담임 배정 관리)과 과목 배정(과목반 세팅)에서 바로 선택할 수 있습니다.</p>
-      <StudentManageClient
-        initialStudents={(studentsData as WrStudent[] | null) ?? []}
-        initialFieldDefs={(fieldDefsData as WrStudentFieldDef[] | null) ?? []}
-        currentUserEmail={me.email}
-      />
+      <div className="min-h-0 flex-1">
+        <StudentManageClient
+          initialStudents={(studentsData as WrStudent[] | null) ?? []}
+          initialFieldDefs={(fieldDefsData as WrStudentFieldDef[] | null) ?? []}
+          currentUserEmail={me.email}
+        />
+      </div>
     </div>
   );
 }

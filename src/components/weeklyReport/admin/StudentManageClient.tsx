@@ -3,10 +3,7 @@
 import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { WrStudent, WrStudentFieldDef } from "@/lib/types";
-import Pagination from "@/components/Pagination";
 import { useConfirm } from "@/components/common/ConfirmProvider";
-
-const PAGE_SIZE = 20;
 
 type SortKey =
   | "grade"
@@ -96,6 +93,10 @@ export default function StudentManageClient({
   // ── 정렬(구글시트처럼 칼럼 제목 클릭) ─────────────────────────────
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  // ── 학년/반 필터 (요청: "학년별, 반별로도 볼 수 있도록") ───────────
+  const [gradeFilter, setGradeFilter] = useState("");
+  const [classFilter, setClassFilter] = useState("");
 
   function toggleSort(key: SortKey) {
     if (sortKeyEq(sortKey, key)) {
@@ -241,8 +242,23 @@ export default function StudentManageClient({
 
   const active = students.filter((s) => s.status === "active");
 
+  // 필터에 쓸 학년/반 선택지는 실제 등록된 학생 데이터에서 뽑습니다(가나다/숫자 순 정렬).
+  const gradeOptions = useMemo(
+    () => [...new Set(active.map((s) => s.grade).filter((g): g is string => !!g))].sort((a, b) => a.localeCompare(b, "ko", { numeric: true })),
+    [active]
+  );
+  const classOptions = useMemo(() => {
+    const pool = gradeFilter ? active.filter((s) => s.grade === gradeFilter) : active;
+    return [...new Set(pool.map((s) => s.class_name).filter((c): c is string => !!c))].sort((a, b) => a.localeCompare(b, "ko", { numeric: true }));
+  }, [active, gradeFilter]);
+
+  const filtered = useMemo(
+    () => active.filter((s) => (!gradeFilter || s.grade === gradeFilter) && (!classFilter || s.class_name === classFilter)),
+    [active, gradeFilter, classFilter]
+  );
+
   const sorted = useMemo(() => {
-    const list = [...active];
+    const list = [...filtered];
     if (!sortKey) {
       // 기본 정렬: 학년 → 반 → 이름(가나다) 순 (요청: "1학년부터 5학년까지 정렬하고,
       // 학년다음에 반, 그리고 이름 가나다로")
@@ -260,11 +276,7 @@ export default function StudentManageClient({
       return sortDir === "asc" ? cmp : -cmp;
     });
     return list;
-  }, [active, sortKey, sortDir]);
-
-  const [page, setPage] = useState(1);
-  const pageItems = useMemo(() => sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), [sorted, page]);
-  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  }, [filtered, sortKey, sortDir]);
 
   function SortTh({ label, sortKeyFor, className = "" }: { label: string; sortKeyFor: SortKey; className?: string }) {
     const isActive = sortKeyEq(sortKey, sortKeyFor);
@@ -303,7 +315,31 @@ export default function StudentManageClient({
         >
           + 칼럼 추가
         </button>
-        <span className="text-[11px] text-slate-400">칼럼 제목을 클릭하면 그 칼럼 기준으로 정렬돼요.</span>
+        <span className="mx-1 h-5 w-px bg-slate-200" />
+        <select
+          value={gradeFilter}
+          onChange={(e) => {
+            setGradeFilter(e.target.value);
+            setClassFilter("");
+          }}
+          className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-600"
+        >
+          <option value="">전체 학년</option>
+          {gradeOptions.map((g) => (
+            <option key={g} value={g}>{g}학년</option>
+          ))}
+        </select>
+        <select
+          value={classFilter}
+          onChange={(e) => setClassFilter(e.target.value)}
+          className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-600"
+        >
+          <option value="">전체 반</option>
+          {classOptions.map((c) => (
+            <option key={c} value={c}>{c}반</option>
+          ))}
+        </select>
+        <span className="text-[11px] text-slate-400">칼럼 제목을 클릭하면 그 칼럼 기준으로 정렬돼요. 전체 명단이 아래에서 스크롤됩니다.</span>
       </div>
 
       {showAddForm && (
@@ -445,7 +481,7 @@ export default function StudentManageClient({
             </tr>
           </thead>
           <tbody>
-            {pageItems.map((s) => (
+            {sorted.map((s) => (
               <tr key={s.id} className="border-t border-slate-100">
                 <td className="px-3 py-1.5 text-slate-500">
                   <EditableCell value={s.grade ?? ""} onSave={(v) => updateField(s.id, "grade", v)} width="w-12" />
@@ -510,18 +546,15 @@ export default function StudentManageClient({
                 </td>
               </tr>
             ))}
-            {active.length === 0 && (
+            {sorted.length === 0 && (
               <tr>
                 <td colSpan={11 + fieldDefs.length} className="px-3 py-6 text-center text-slate-400">
-                  등록된 학생이 없습니다.
+                  {active.length === 0 ? "등록된 학생이 없습니다." : "이 조건에 맞는 학생이 없습니다."}
                 </td>
               </tr>
             )}
           </tbody>
         </table>
-      </div>
-      <div className="shrink-0 pt-2">
-        <Pagination page={page} totalPages={totalPages} onChange={setPage} />
       </div>
     </div>
   );

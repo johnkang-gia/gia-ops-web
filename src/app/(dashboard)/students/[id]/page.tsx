@@ -38,6 +38,7 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
     enrollmentsRes,
     reportsRes,
     incidentLinksRes,
+    incidentTextRes,
     tasksRes,
     taskCommentsRes,
     messagesRes,
@@ -47,6 +48,10 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
     supabase.from("wr_enrollments").select("*").eq("student_id", id).order("created_at", { ascending: false }),
     supabase.from("wr_reports").select("*").eq("student_id", id).order("report_date", { ascending: false }),
     supabase.from("incident_students").select("incident_id").eq("student_id", id),
+    // 사건 입력화면의 "관련 학생(정확히 연결)" 선택은 선택사항이라(안 눌러도 저장됨), 그것만 믿으면
+    // 자유 텍스트 "관련 학생 이름" 칸에만 이름이 적힌 과거/현재 사건이 전부 빠집니다(요청 확인:
+    // "백서아 사건기록에 올라와있음에도 0으로 나와"). 텍스트 칸도 함께 검색해 합칩니다.
+    supabase.from("incidents").select("*").ilike("students", `%${searchName}%`).order("date", { ascending: false }),
     supabase
       .from("tasks")
       .select("*")
@@ -68,10 +73,15 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
   const messages = (messagesRes.data as ChatMessage[] | null) ?? [];
   const currentClass = currentClassRes.data as WrClass | null;
 
-  const { data: incidentsData } = incidentIds.length
+  const { data: incidentsById } = incidentIds.length
     ? await supabase.from("incidents").select("*").in("id", incidentIds).order("date", { ascending: false })
     : { data: [] as Incident[] };
-  const incidents = (incidentsData as Incident[] | null) ?? [];
+  // 구조적 연결(incident_students) + 텍스트 언급을 id 기준으로 합쳐 중복 없이 최신순으로 보여줍니다.
+  const incidentMap = new Map<string, Incident>();
+  for (const it of [...((incidentsById as Incident[] | null) ?? []), ...((incidentTextRes.data as Incident[] | null) ?? [])]) {
+    incidentMap.set(it.id, it);
+  }
+  const incidents = [...incidentMap.values()].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
 
   // 학기(연도+학기유형) 라벨을 붙이기 위해 재학이력/리포트에 등장하는 term_id를 한 번에 조회합니다.
   const termIds = [...new Set([...enrollments.map((e) => e.term_id), ...reports.map((r) => r.term_id)].filter((x): x is string => !!x))];

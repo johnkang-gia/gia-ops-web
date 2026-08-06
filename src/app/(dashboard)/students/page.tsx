@@ -33,12 +33,13 @@ export default async function StudentsSearchPage() {
     redirect("/home");
   }
 
+  // "재적" 학생만 보이던 것을, 검색이 안 된다는 문의에 맞춰 전체 학생(비재적 포함)으로 넓혔습니다.
+  // 비재적 학생은 프로필 화면 상단 뱃지로 구분됩니다.
   const { data } = await supabase
     .from("wr_students")
     .select(
       "id, student_no, name, name_en, grade, class_name, class_id, birth_date, phone, parent_phone, parent_email, gender, allergies, address, note, custom_fields, status, created_at"
     )
-    .eq("status", "active")
     .order("name", { ascending: true });
 
   return (

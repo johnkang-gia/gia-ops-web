@@ -36,10 +36,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
   const searchName = coreName(student.name);
 
-  const [enrollmentsRes, reportsRes, incidentLinksRes, currentClassRes] = await Promise.all([
+  const [enrollmentsRes, reportsRes, incidentLinksRes, incidentTextRes, currentClassRes] = await Promise.all([
     supabase.from("wr_enrollments").select("*").eq("student_id", id).order("created_at", { ascending: false }),
     supabase.from("wr_reports").select("*").eq("student_id", id).order("report_date", { ascending: false }),
     supabase.from("incident_students").select("incident_id").eq("student_id", id),
+    // /students/[id] 페이지와 동일하게, 구조적 연결(incident_students)만 보면 "관련 학생" 자유
+    // 텍스트 칸에만 이름이 적힌 사건이 빠지므로 텍스트도 함께 검색해 합칩니다.
+    supabase.from("incidents").select("*").ilike("students", `%${searchName}%`).order("date", { ascending: false }),
     student.class_id ? supabase.from("wr_classes").select("*").eq("id", student.class_id).maybeSingle() : Promise.resolve({ data: null }),
   ]);
 
@@ -48,10 +51,14 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const incidentIds = ((incidentLinksRes.data as { incident_id: string }[] | null) ?? []).map((r) => r.incident_id);
   const currentClass = currentClassRes.data as WrClass | null;
 
-  const { data: incidentsData } = incidentIds.length
+  const { data: incidentsById } = incidentIds.length
     ? await supabase.from("incidents").select("*").in("id", incidentIds).order("date", { ascending: false })
     : { data: [] as Incident[] };
-  const incidents = (incidentsData as Incident[] | null) ?? [];
+  const incidentMap = new Map<string, Incident>();
+  for (const it of [...((incidentsById as Incident[] | null) ?? []), ...((incidentTextRes.data as Incident[] | null) ?? [])]) {
+    incidentMap.set(it.id, it);
+  }
+  const incidents = [...incidentMap.values()].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
 
   const termIds = [...new Set([...enrollments.map((e) => e.term_id), ...reports.map((r) => r.term_id)].filter((x): x is string => !!x))];
   const { data: termsData } = termIds.length

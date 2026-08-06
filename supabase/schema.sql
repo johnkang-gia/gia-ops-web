@@ -3350,3 +3350,20 @@ begin
     alter publication supabase_realtime add table google_chat_mirror_messages;
   end if;
 end $$;
+
+-- 구글챗 미러링용 Workspace Events API 구독 상태를 기억해두는 테이블입니다. 구독은 만료
+--시각(TTL)이 있어 /api/cron/renew-chat-subscriptions가 매일 확인해 연장하는데, 연장하려면
+-- 처음 만들 때 받은 구독 리소스 이름(subscriptions/xxxxx)이 필요해서 여기 저장해둡니다. 이
+-- 테이블은 서버(크론/웹훅, 서비스 롤 키)만 다루고 화면에서 직접 조회하지는 않습니다.
+create table if not exists google_chat_subscriptions (
+  source_key text primary key check (source_key in ('attendance', 'teacher_requests')),
+  subscription_name text,
+  expire_time timestamptz,
+  updated_at timestamptz not null default now()
+);
+
+alter table google_chat_subscriptions enable row level security;
+
+drop policy if exists "wr_manager_select_google_chat_subscriptions" on google_chat_subscriptions;
+create policy "wr_manager_select_google_chat_subscriptions" on google_chat_subscriptions
+  for select using (is_wr_manager());

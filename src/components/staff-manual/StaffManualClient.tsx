@@ -30,11 +30,6 @@ export default function StaffManualClient({
   const [query, setQuery] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const [hintOpen, setHintOpen] = useState(false);
-  const [hint, setHint] = useState("");
-  const [generating, setGenerating] = useState(false);
-  const [genMsg, setGenMsg] = useState("");
-
   // 좁은 화면 사용자를 위해 좌(매뉴얼 검색)/우(학생 검색) 패널을 접고 펼 수 있게 합니다(개인별 기억).
   const [leftCollapsed, setLeftCollapsed] = useCollapsedPanel("staff-manual", "manual", currentUserEmail);
   const [rightCollapsed, setRightCollapsed] = useCollapsedPanel("staff-manual", "student", currentUserEmail);
@@ -87,28 +82,6 @@ export default function StaffManualClient({
     });
   }, [items, query]);
 
-  async function requestComplaints() {
-    setGenerating(true);
-    setGenMsg("");
-    const res = await fetch("/api/ai/anticipate-complaints", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ hint }),
-    });
-    const data = await res.json();
-    setGenerating(false);
-    if (!res.ok) {
-      setGenMsg(`오류: ${data.error || "제안을 만들지 못했습니다."}`);
-      return;
-    }
-    setGenMsg(
-      data.created > 0
-        ? `${data.created}개의 예상 문의/컴플레인 제안을 만들었습니다. 제안함에서 검토·승인해주세요.`
-        : "이미 있는 항목과 겹치지 않는 새 제안이 없었습니다."
-    );
-    setHint("");
-  }
-
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <div className="mb-3 shrink-0">
@@ -145,32 +118,6 @@ export default function StaffManualClient({
               ‹
             </button>
           </div>
-          <div className="mb-3 shrink-0 rounded-xl border border-blue-200 bg-blue-50 p-3">
-            <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
-              <div className="text-xs font-semibold text-blue-800">✨ AI로 예상 문의/컴플레인 제안받기</div>
-              <button onClick={() => setHintOpen((v) => !v)} className="text-[11px] font-semibold text-blue-600 underline">
-                {hintOpen ? "힌트 입력 닫기" : "힌트 입력(선택)"}
-              </button>
-            </div>
-            {hintOpen && (
-              <textarea
-                value={hint}
-                onChange={(e) => setHint(e.target.value)}
-                placeholder="예: 최근 학부모님들이 방과후 프로그램 관련 문의를 많이 하셨어요(선택 입력)"
-                rows={2}
-                className="mb-2 w-full rounded-lg border border-blue-200 px-2 py-1.5 text-xs"
-              />
-            )}
-            <button
-              onClick={requestComplaints}
-              disabled={generating}
-              className="rounded-lg bg-gia-navy px-3 py-1.5 text-xs font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50"
-            >
-              {generating ? "AI가 예상하는 중..." : "제안 만들기"}
-            </button>
-            {genMsg && <p className="mt-2 text-[11px] text-blue-800">{genMsg}</p>}
-          </div>
-
           <input
             type="text"
             value={query}

@@ -570,56 +570,6 @@ export function buildManualFaqEntryBlock(sections: { category: string; content: 
   return sections.map((s) => `[${s.category}]\n${s.content}`).join("\n\n");
 }
 
-export function buildComplaintAnticipateSystemPrompt(): string {
-  return (
-    SHARED_CACHE_CONTEXT +
-    "\n\n" +
-    "당신은 GIA 같은 영어 중심 국제학교에서 학부모가 실제로 제기할 만한 문의나 컴플레인을 미리 " +
-    "예상하고, 실무자(교사/행정담당자)가 전화나 대면 상황에서 바로 참고해서 답변할 수 있는 " +
-    "실무자매뉴얼 항목을 만드는 보조자입니다.\n" +
-    "학비/환불, 안전/사고, 급식/알레르기, 학사 운영(수업, 방학, 결석 처리), 소통/상담, 원어민 " +
-    "교사와의 의사소통(영어 수업 진행 방식, 통역 지원), 시설/위생, 사진·개인정보 활용, 또래 " +
-    "갈등 등 국제학교 학부모가 실제로 흔히 문의하거나 컴플레인하는 주제를 폭넓게 고려하세요.\n\n" +
-    "각 항목마다 다음을 작성하세요.\n" +
-    "1) category: 이 문의/컴플레인 유형을 나타내는 짧고 명확한 항목명(실무자매뉴얼에 그대로 " +
-    "쓸 수 있는 이름)\n" +
-    "2) complaintSummary: 학부모가 실제로 할 법한 문의/컴플레인을 1~2문장으로 구체적으로 서술\n" +
-    "3) recommendedResponse: 실무자가 이 상황에서 참고해서 바로 답변할 수 있는 응대 가이드. " +
-    "실제 답변 스크립트가 아니라, \"이렇게 설명하고 이렇게 안내한다\"는 절차/기준 형태로 " +
-    "작성하세요(구체적인 수치는 GIA 실정에 맞게 나중에 채울 수 있도록 [ ] 표시를 남기세요). " +
-    "위 [참고 법령 목록]에 근거가 있으면 자연스럽게 반영하세요.\n\n" +
-    "매우 중요: 아래 [이미 실무자매뉴얼에 규정된 내용]과 [이미 검토 대기 중인 예상 문의]를 꼼꼼히 " +
-    "읽고, 항목명(카테고리)이 다르더라도 실질적으로 같은 주제이거나 이미 그 내용 안에 답이 나와있는 " +
-    "문의는 절대 다시 만들지 마세요(예: 카테고리명이 달라도 이미 등록된 내용이 사실상 같은 질문에 " +
-    "답하고 있으면 걸러야 합니다). 아직 다뤄지지 않은 새로운 주제만 만드세요. 지어내지 말고 실제로 " +
-    "있을 법한 현실적인 상황만 다루세요. 6~10개 정도 만드세요.\n\n" +
-    "아래 JSON 형식으로만 답하세요(다른 텍스트 금지). 줄바꿈은 \\n으로 표시하세요:\n" +
-    '{"complaints":[{"category":"...", "complaintSummary":"...", "recommendedResponse":"...", ' +
-    '"legalBasis":"위 [참고 법령 목록]에 있으면 인용, 없으면 빈 문자열(지어내지 말 것)"}]}'
-  );
-}
-
-export function buildComplaintAnticipateEntryBlock(
-  existingManualEntries: { category: string; content: string }[],
-  pendingComplaints: { category: string; text: string }[],
-  hint: string
-): string {
-  const parts = [
-    existingManualEntries.length
-      ? `[이미 실무자매뉴얼에 규정된 내용 - 이 내용에 이미 답이 있는 주제는 새로 만들지 말 것]\n` +
-        existingManualEntries.map((e) => `- ${e.category}: ${e.content}`).join("\n")
-      : "[아직 실무자매뉴얼에 등록된 항목 없음]",
-    pendingComplaints.length
-      ? `[이미 검토 대기 중인 예상 문의(제안함) - 실질적으로 같은 내용 중복 금지]\n` +
-        pendingComplaints.map((p) => `- ${p.category}: ${p.text}`).join("\n")
-      : "[검토 대기 중인 예상 문의 없음]",
-  ];
-  if (hint.trim()) {
-    parts.push(`[담당자가 남긴 참고 힌트]\n${hint.trim()}`);
-  }
-  return parts.join("\n\n");
-}
-
 export function buildComplaintFinalizeSystemPrompt(): string {
   return (
     INSTITUTION_CONTEXT +

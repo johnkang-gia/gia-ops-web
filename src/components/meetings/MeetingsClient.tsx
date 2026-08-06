@@ -6,7 +6,7 @@ import { useRealtimeTable } from "@/lib/useRealtimeTable";
 import { genCaseId } from "@/lib/caseId";
 import { getMeetingAudioUrl } from "@/lib/storage";
 import { useCollapsedPanel } from "@/lib/useCollapsedPanel";
-import type { Meeting, PolicyCategory, Term } from "@/lib/types";
+import type { Meeting, GiaSystem, Term } from "@/lib/types";
 import MeetingChatComposer from "./MeetingChatComposer";
 import AiSourcePanel from "@/components/ai/AiSourcePanel";
 import Pagination from "@/components/Pagination";
@@ -58,23 +58,31 @@ function oneLine(text: string, maxLen = 40) {
 export default function MeetingsClient({
   initialItems,
   currentTerm,
-  policyCategories,
+  giaSystems,
   currentUserEmail,
 }: {
   initialItems: Meeting[];
   currentTerm: Term | null;
-  // 매뉴얼(실무자용)/운영계획안(학부모용) 고정 항목 목록 - incidents와 동일하게 이 목록
-  // 중에서만 골라 태그합니다.
-  policyCategories: PolicyCategory[];
+  // 매뉴얼(실무자용)/운영계획안(학부모용) 고정 항목 목록 - incidents와 동일하게 policy_categories
+  // 대신 gia_systems(대분류>중분류>세부항목)에서 골라 태그합니다.
+  giaSystems: GiaSystem[];
   currentUserEmail: string;
 }) {
-  // 요청: "항목들은 기본적으로 가나다순으로 정렬" - 드롭다운에서도 항목명 한글 가나다순으로 보여줍니다.
-  const manualCatOptions = policyCategories
-    .filter((c) => c.target_doc === "실무자용")
-    .sort((a, b) => a.category.localeCompare(b.category, "ko"));
-  const opPlanCatOptions = policyCategories
-    .filter((c) => c.target_doc === "학부모용")
-    .sort((a, b) => a.category.localeCompare(b.category, "ko"));
+  // 요청: "항목들은 기본적으로 가나다순으로 정렬" - 대분류 순서 안에서는 중분류>세부항목 가나다순.
+  const GIA_MAJOR_ORDER = ["재정", "인사·교직원", "학사", "운영", "시설·안전", "입학·홍보", "행정·문서", "정보보안·법무"];
+  const giaSystemOptions = [...giaSystems].sort((a, b) => {
+    const ia = GIA_MAJOR_ORDER.indexOf(a.major);
+    const ib = GIA_MAJOR_ORDER.indexOf(b.major);
+    if (ia !== ib) return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
+    if (a.category !== b.category) return a.category.localeCompare(b.category, "ko");
+    return a.name.localeCompare(b.name, "ko");
+  });
+  const giaSystemsByMajor = new Map<string, GiaSystem[]>();
+  for (const g of giaSystemOptions) {
+    const list = giaSystemsByMajor.get(g.major) ?? [];
+    list.push(g);
+    giaSystemsByMajor.set(g.major, list);
+  }
   const [items, setItems] = useRealtimeTable<Meeting>("meetings", initialItems);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -393,11 +401,14 @@ export default function MeetingsClient({
                   className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
                 >
                   <option value="">(선택 안 함 - AI가 나중에 분류)</option>
-                  {manualCatOptions.map((c) => (
-                    <option key={c.id} value={c.category}>
-                      {c.domain ? `${c.domain} · ` : ""}
-                      {c.category}
-                    </option>
+                  {[...giaSystemsByMajor.entries()].map(([major, items]) => (
+                    <optgroup key={major} label={major}>
+                      {items.map((g) => (
+                        <option key={g.id} value={g.name}>
+                          {g.category} · {g.name}
+                        </option>
+                      ))}
+                    </optgroup>
                   ))}
                 </select>
               </label>
@@ -409,11 +420,14 @@ export default function MeetingsClient({
                   className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
                 >
                   <option value="">(선택 안 함 - AI가 나중에 분류)</option>
-                  {opPlanCatOptions.map((c) => (
-                    <option key={c.id} value={c.category}>
-                      {c.domain ? `${c.domain} · ` : ""}
-                      {c.category}
-                    </option>
+                  {[...giaSystemsByMajor.entries()].map(([major, items]) => (
+                    <optgroup key={major} label={major}>
+                      {items.map((g) => (
+                        <option key={g.id} value={g.name}>
+                          {g.category} · {g.name}
+                        </option>
+                      ))}
+                    </optgroup>
                   ))}
                 </select>
               </label>

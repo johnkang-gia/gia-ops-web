@@ -1,20 +1,21 @@
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { getCurrentTerm } from "@/lib/currentTerm";
-import type { Incident, PolicyCategory } from "@/lib/types";
+import type { Incident, GiaSystem } from "@/lib/types";
 import IncidentsClient from "@/components/incidents/IncidentsClient";
 
 export const dynamic = "force-dynamic";
 
 export default async function RecordsPage() {
   const supabase = await createClient();
-  const [{ data }, currentTerm, me, { data: policyCategories }] = await Promise.all([
+  const [{ data }, currentTerm, me, { data: giaSystems }] = await Promise.all([
     supabase.from("incidents").select("*").order("date", { ascending: false }).limit(200),
     getCurrentTerm(),
     getCurrentAppUser(),
-    // 매뉴얼(실무자용)/운영계획안(학부모용) 항목 선택 드롭다운용 - 고정 목록이라 통째로
-    // 가져와도 부담이 없습니다(요청: "그 항목을 기준으로 사건,회의,운영계획안을 항목화").
-    supabase.from("policy_categories").select("*").order("target_doc").order("domain").order("sort_order"),
+    // 매뉴얼(실무자용)/운영계획안(학부모용) 항목 선택 드롭다운용. 요청("사건기록의 매뉴얼항목·
+    // 운영계획안항목을 GIA시스템에 나온 항목으로 분류")에 따라 policy_categories 대신
+    // gia_systems(대분류>중분류>세부항목)에서 고정 목록을 가져옵니다.
+    supabase.from("gia_systems").select("*").order("major").order("category").order("name"),
   ]);
 
   return (
@@ -23,7 +24,7 @@ export default async function RecordsPage() {
       currentTerm={currentTerm}
       currentUserEmail={me?.email ?? ""}
       currentUserName={me?.name || me?.email || ""}
-      policyCategories={(policyCategories as PolicyCategory[] | null) ?? []}
+      giaSystems={(giaSystems as GiaSystem[] | null) ?? []}
     />
   );
 }

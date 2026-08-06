@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useRealtimeTable } from "@/lib/useRealtimeTable";
 import { genCaseId } from "@/lib/caseId";
 import { useCollapsedPanel } from "@/lib/useCollapsedPanel";
-import type { Incident, PolicyCategory, Term, WrStudent } from "@/lib/types";
+import type { Incident, GiaSystem, Term, WrStudent } from "@/lib/types";
 import AiSourcePanel from "@/components/ai/AiSourcePanel";
 import Pagination from "@/components/Pagination";
 import GuideButton from "@/components/common/GuideButton";
@@ -97,24 +97,34 @@ export default function IncidentsClient({
   currentTerm,
   currentUserEmail,
   currentUserName,
-  policyCategories,
+  giaSystems,
 }: {
   initialItems: Incident[];
   currentTerm: Term | null;
   currentUserEmail: string;
   currentUserName: string;
-  // 매뉴얼(실무자용)/운영계획안(학부모용) 고정 항목 목록 - AI가 자유롭게 짓던 항목명을 이
-  // 목록으로 완전히 대체했으므로(요청: "그 항목을 기준으로 사건,회의,운영계획안을 항목화"),
-  // 직접 입력이 아니라 이 목록에서 골라서 태그합니다.
-  policyCategories: PolicyCategory[];
+  // 매뉴얼(실무자용)/운영계획안(학부모용) 고정 항목 목록 - 요청("사건기록의 매뉴얼항목·
+  // 운영계획안항목을 GIA시스템에 나온 항목으로 분류"에 대한 확인 답변 "GIA시스템 목록으로
+  // 완전 대체")에 따라 policy_categories 대신 gia_systems(대분류>중분류>세부항목)에서
+  // 골라서 태그합니다. GIA시스템에는 학부모용/실무자용 구분이 없어 두 드롭다운이 같은
+  // 목록을 공유합니다(예: "비상연락망 및 위기대응체계"는 두 문서 어느 쪽에도 해당될 수 있음).
+  giaSystems: GiaSystem[];
 }) {
-  // 요청: "항목들은 기본적으로 가나다순으로 정렬" - 드롭다운에서도 항목명 한글 가나다순으로 보여줍니다.
-  const manualCatOptions = policyCategories
-    .filter((c) => c.target_doc === "실무자용")
-    .sort((a, b) => a.category.localeCompare(b.category, "ko"));
-  const opPlanCatOptions = policyCategories
-    .filter((c) => c.target_doc === "학부모용")
-    .sort((a, b) => a.category.localeCompare(b.category, "ko"));
+  // 요청: "항목들은 기본적으로 가나다순으로 정렬" - 대분류 순서 안에서는 중분류>세부항목 가나다순.
+  const GIA_MAJOR_ORDER = ["재정", "인사·교직원", "학사", "운영", "시설·안전", "입학·홍보", "행정·문서", "정보보안·법무"];
+  const giaSystemOptions = [...giaSystems].sort((a, b) => {
+    const ia = GIA_MAJOR_ORDER.indexOf(a.major);
+    const ib = GIA_MAJOR_ORDER.indexOf(b.major);
+    if (ia !== ib) return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
+    if (a.category !== b.category) return a.category.localeCompare(b.category, "ko");
+    return a.name.localeCompare(b.name, "ko");
+  });
+  const giaSystemsByMajor = new Map<string, GiaSystem[]>();
+  for (const g of giaSystemOptions) {
+    const list = giaSystemsByMajor.get(g.major) ?? [];
+    list.push(g);
+    giaSystemsByMajor.set(g.major, list);
+  }
   const [items, setItems] = useRealtimeTable<Incident>("incidents", initialItems);
   // 담당자 기본값은 로그인 이메일이 아니라 [내 계정 설정]에서 정한 표시 이름을 씁니다(이름이
   // 아직 없으면 이메일로 대체). 물론 자유 텍스트라 필요하면 그대로 고쳐 쓸 수 있습니다.
@@ -528,7 +538,10 @@ export default function IncidentsClient({
               />
             </label>
           ))}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {/* 요청: "사건기록 새사건 입력할때 처리상태는 없애줘" - 새로 입력할 때는 처리상태
+              칸을 보여주지 않습니다. 이미 처리상태가 적혀 있는 기존 기록을 수정할 때만(과거
+              데이터가 남아있으므로) 계속 편집할 수 있게 둡니다. */}
+          <div className={`grid grid-cols-1 gap-3 ${editingId ? "sm:grid-cols-2" : ""}`}>
             <label className="flex flex-col gap-1 text-xs text-slate-500">
               관련 학생 이름(쉼표 구분, 메모용)
               <input
@@ -538,16 +551,18 @@ export default function IncidentsClient({
                 className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
               />
             </label>
-            <label className="flex flex-col gap-1 text-xs text-slate-500">
-              처리상태
-              <input
-                type="text"
-                value={form.status}
-                onChange={(e) => setForm({ ...form, status: e.target.value })}
-                placeholder="예: 처리중, 완료"
-                className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
-              />
-            </label>
+            {editingId && (
+              <label className="flex flex-col gap-1 text-xs text-slate-500">
+                처리상태
+                <input
+                  type="text"
+                  value={form.status}
+                  onChange={(e) => setForm({ ...form, status: e.target.value })}
+                  placeholder="예: 처리중, 완료"
+                  className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+                />
+              </label>
+            )}
           </div>
 
           {/* 요청: "사건이 어떻게 완료되었는지 적을 수 있는 조치사항 공간을 만들어줘 - 어떤
@@ -573,11 +588,14 @@ export default function IncidentsClient({
                 className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
               >
                 <option value="">(선택 안 함 - AI가 나중에 분류)</option>
-                {manualCatOptions.map((c) => (
-                  <option key={c.id} value={c.category}>
-                    {c.domain ? `${c.domain} · ` : ""}
-                    {c.category}
-                  </option>
+                {[...giaSystemsByMajor.entries()].map(([major, items]) => (
+                  <optgroup key={major} label={major}>
+                    {items.map((g) => (
+                      <option key={g.id} value={g.name}>
+                        {g.category} · {g.name}
+                      </option>
+                    ))}
+                  </optgroup>
                 ))}
               </select>
             </label>
@@ -589,11 +607,14 @@ export default function IncidentsClient({
                 className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
               >
                 <option value="">(선택 안 함 - AI가 나중에 분류)</option>
-                {opPlanCatOptions.map((c) => (
-                  <option key={c.id} value={c.category}>
-                    {c.domain ? `${c.domain} · ` : ""}
-                    {c.category}
-                  </option>
+                {[...giaSystemsByMajor.entries()].map(([major, items]) => (
+                  <optgroup key={major} label={major}>
+                    {items.map((g) => (
+                      <option key={g.id} value={g.name}>
+                        {g.category} · {g.name}
+                      </option>
+                    ))}
+                  </optgroup>
                 ))}
               </select>
             </label>

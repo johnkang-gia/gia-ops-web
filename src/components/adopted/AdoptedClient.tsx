@@ -26,7 +26,6 @@ const SOURCE_LABEL: Record<string, string> = {
   events: "🎉 행사",
   meetings: "💬 회의",
   manual: "✨ AI매뉴얼",
-  complaint: "🗣️ 예상 문의/컴플레인",
   system: "🧩 GIA시스템",
 };
 
@@ -41,7 +40,7 @@ function oneLine(text: string, maxLen = 70) {
   return t.length > maxLen ? t.slice(0, maxLen) + "…" : t;
 }
 
-type CategoryTab = "all" | "incidents" | "events" | "meetings" | "manual" | "complaint" | "system";
+type CategoryTab = "all" | "incidents" | "events" | "meetings" | "manual" | "system";
 
 type AdoptedGroup = {
   key: string;
@@ -260,7 +259,6 @@ export default function AdoptedClient({
     events: allGroups.filter((g) => g.source === "events").length,
     meetings: allGroups.filter((g) => g.source === "meetings").length,
     manual: allGroups.filter((g) => g.source === "manual").length,
-    complaint: allGroups.filter((g) => g.source === "complaint").length,
     system: allGroups.filter((g) => g.source === "system").length,
   };
   const filteredGroups = tab === "all" ? allGroups : allGroups.filter((g) => g.source === tab);
@@ -275,7 +273,6 @@ export default function AdoptedClient({
     { key: "events", label: "🎉 행사" },
     { key: "meetings", label: "💬 회의" },
     { key: "manual", label: "✨ AI매뉴얼" },
-    { key: "complaint", label: "🗣️ 예상 문의/컴플레인" },
     { key: "system", label: "🧩 GIA시스템" },
   ];
 

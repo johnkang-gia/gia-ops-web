@@ -36,7 +36,6 @@ export const AI_FEATURES: { key: string; label: string; group: string }[] = [
   { key: "manual-faq", label: "매뉴얼 FAQ AI", group: "매뉴얼 · 문서" },
   { key: "document-draft", label: "서류 초안작성 AI", group: "매뉴얼 · 문서" },
   { key: "document-recommend", label: "서류 추천 AI", group: "매뉴얼 · 문서" },
-  { key: "anticipate-complaints", label: "민원예측 AI", group: "제안함 · 채택예정" },
   { key: "review-adopted", label: "채택예정 검토 AI", group: "제안함 · 채택예정" },
   { key: "proposals-decide", label: "제안 승인 정리 AI", group: "제안함 · 채택예정" },
   { key: "proposals-decide-parent-tone", label: "학부모용 승인 톤 다듬기 AI", group: "제안함 · 채택예정" },

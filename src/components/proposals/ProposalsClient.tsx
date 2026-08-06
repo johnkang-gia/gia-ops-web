@@ -14,7 +14,7 @@ const GUIDE_SECTIONS = [
   {
     title: "📝 제안함이란?",
     lines: [
-      "사건/행사/회의/AI매뉴얼/예상 문의 등에서 AI가 만든 제안을 검토합니다. 같은 사건에서 나온 학부모용·실무자용 제안은 카드 하나로 묶여 안의 탭으로 전환해서 봅니다.",
+      "사건/행사/회의/AI매뉴얼 등에서 AI가 만든 제안을 검토합니다. 같은 사건에서 나온 학부모용·실무자용 제안은 카드 하나로 묶여 안의 탭으로 전환해서 봅니다.",
       "승인/보류/삭제는 항상 학부모용·실무자용 둘 다 함께 처리됩니다(운영계획안 내용은 자동으로 실무자매뉴얼에도 들어가야 하므로 체크박스로 따로 나누지 않습니다). 실무자매뉴얼에만 반영하고 싶은 사소한 건은 채택예정 화면에서 \"실무자발행\"으로 나중에 골라서 발행할 수 있습니다.",
       "상단 \"AI 분석 실행\"으로 최근 기록을 스캔해 새 제안을 만들 수 있습니다.",
     ],
@@ -26,17 +26,16 @@ const SOURCE_LABEL: Record<string, string> = {
   events: "🎉 행사",
   meetings: "💬 회의",
   manual: "✨ AI매뉴얼",
-  complaint: "🗣️ 예상 문의/컴플레인",
   system: "🧩 GIA시스템",
 };
 
 // 그룹화 대상(같은 원본 기록에서 학부모용/실무자용 두 건이 동시에 나올 수 있는 출처)만 source_id로
-// 묶습니다. complaint/system은 origin 개념이 다르거나(complaint는 origin 없음, system은 UUID
-// 참조) 중복 생성 케이스가 아니라서 그룹화 대상에서 제외합니다.
+// 묶습니다. system은 origin 개념이 다르거나(UUID 참조) 중복 생성 케이스가 아니라서 그룹화 대상에서
+// 제외합니다.
 const GROUPABLE_SOURCES = new Set(["incidents", "events", "meetings", "manual"]);
 // 요청: "제안함 사건들도 다시돌리기 가능하게" - AI 스캔(/api/ai/scan)이 실제로 지원하는 원본
-// 유형만 재분석 대상이 됩니다(manual/complaint/system은 사건/행사/회의 원본이 아니라 이 API로
-// 재분석할 수 없어 버튼을 노출하지 않습니다).
+// 유형만 재분석 대상이 됩니다(manual/system은 사건/행사/회의 원본이 아니라 이 API로 재분석할 수
+// 없어 버튼을 노출하지 않습니다).
 const RESCANNABLE_SOURCES = new Set(["incidents", "events", "meetings"]);
 const TARGET_DOC_ORDER: Record<string, number> = { 학부모용: 0, 실무자용: 1 };
 
@@ -69,7 +68,7 @@ function parseOptions(raw: string | null): string[] {
   return [t];
 }
 
-type CategoryTab = "all" | "incidents" | "events" | "meetings" | "manual" | "complaint" | "system";
+type CategoryTab = "all" | "incidents" | "events" | "meetings" | "manual" | "system";
 
 type ProposalGroup = {
   key: string;
@@ -286,7 +285,6 @@ export default function ProposalsClient({
     events: allGroups.filter((g) => g.source === "events").length,
     meetings: allGroups.filter((g) => g.source === "meetings").length,
     manual: allGroups.filter((g) => g.source === "manual").length,
-    complaint: allGroups.filter((g) => g.source === "complaint").length,
     system: allGroups.filter((g) => g.source === "system").length,
   };
   const filteredGroups = tab === "all" ? allGroups : allGroups.filter((g) => g.source === tab);
@@ -301,7 +299,6 @@ export default function ProposalsClient({
     { key: "events", label: "🎉 행사기록제안" },
     { key: "meetings", label: "💬 회의록제안" },
     { key: "manual", label: "✨ AI매뉴얼제안" },
-    { key: "complaint", label: "🗣️ 예상 문의/컴플레인" },
     { key: "system", label: "🧩 GIA시스템" },
   ];
 

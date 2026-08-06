@@ -13,14 +13,25 @@ const GUIDE_SECTIONS = [
     title: "🪄 AI 서류 작성이란?",
     lines: [
       "근로계약서, 내부 규정, 동의서처럼 서류함에 아직 없는 서류가 필요할 때, 상황을 문장으로 설명하면 AI가 초안을 만들어줍니다.",
-      "예: \"오늘 GIA 식당에서 근무하는 주방보조 아르바이트 면접을 보는데, 6시간 근로에 1시간 휴게시간 포함, 업무는 주방보조 및 마감/식당청소, 급여는 첫달 수습기간 150만원 이후 160만원으로 고용하려고 합니다. 필요한 근로계약서를 만들어주세요.\"",
+      "예: \"다음 달 초등부 2박3일 제주도 현장학습을 가는데, 참가비는 1인 30만원이고 인솔교사는 3명입니다. 응급상황 연락처와 사진·영상 활용 동의 항목을 포함한 학부모 동의서를 만들어주세요.\"",
       "AI가 문서명과 GIA시스템 분류(대분류/중분류)도 함께 제안하니, 확인 후 저장하면 서류함에 그 분류로 자동 등록됩니다.",
+      "GIA는 국제학교라 학부모/외국인 교사에게 나가는 서류는 영어나 한/영 병기가 필요할 수 있습니다 - 작성 언어를 한국어/영어/한국어+영어 중에서 고를 수 있습니다.",
       "실제 수치·인명 등은 [ ] 표시된 자리에 직접 채워주세요. 법적 검토가 꼭 필요한 서류는 초안을 참고용으로만 쓰고 최종 확인을 거쳐주세요.",
     ],
   },
 ];
 
 const STATUS_OPTIONS: SchoolDocument["status"][] = ["필요", "준비중", "보유", "만료임박", "해당없음"];
+
+// 요청: "서류작성의 경우 영문,한글 둘다 작성할 수 있게 해줘 국제학교라 영어문서가 필요할 경우도
+// 있어". GIA시스템 분류(대분류/중분류)는 언어와 무관하게 항상 한국어로 유지되고(서버가 강제),
+// 여기서 고르는 언어는 초안 본문(draftText)/서류명에만 적용됩니다.
+type DraftLanguage = "ko" | "en" | "bilingual";
+const LANGUAGE_OPTIONS: { value: DraftLanguage; label: string }[] = [
+  { value: "ko", label: "한국어" },
+  { value: "en", label: "영어" },
+  { value: "bilingual", label: "한국어 + 영어" },
+];
 
 type DraftResult = {
   suggestedName: string;
@@ -34,6 +45,7 @@ export default function AiDocumentDraftClient() {
   const router = useRouter();
   const notify = useToast();
   const [situation, setSituation] = useState("");
+  const [language, setLanguage] = useState<DraftLanguage>("ko");
   const [drafting, setDrafting] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<DraftResult | null>(null);
@@ -58,7 +70,7 @@ export default function AiDocumentDraftClient() {
     const res = await fetch("/api/ai/document-quick-draft", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ situation }),
+      body: JSON.stringify({ situation, language }),
     });
     const data = await res.json();
     setDrafting(false);
@@ -120,9 +132,29 @@ export default function AiDocumentDraftClient() {
           value={situation}
           onChange={(e) => setSituation(e.target.value)}
           rows={6}
-          placeholder="예: 오늘 GIA 식당에서 근무하는 주방보조 아르바이트 면접을 보는데, 6시간 근로에 1시간 휴게시간 포함, 업무는 주방보조 및 마감/식당청소, 급여는 첫달 수습기간 150만원 이후 160만원으로 고용하려고 합니다. 필요한 근로계약서를 만들어주세요."
+          placeholder="예: 다음 달 초등부 2박3일 제주도 현장학습을 가는데, 참가비는 1인 30만원이고 인솔교사는 3명입니다. 응급상황 연락처와 사진·영상 활용 동의 항목을 포함한 학부모 동의서를 만들어주세요."
           className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
         />
+
+        <label className="mt-1 text-xs font-semibold text-slate-500">작성 언어</label>
+        <div className="flex flex-wrap gap-1.5">
+          {LANGUAGE_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => setLanguage(opt.value)}
+              className={
+                "rounded-full border px-3 py-1.5 text-xs font-semibold transition " +
+                (language === opt.value
+                  ? "border-gia-navy bg-gia-navy text-white"
+                  : "border-slate-200 bg-white text-slate-500 hover:border-slate-300")
+              }
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+
         {error && <p className="text-sm text-red-600">{error}</p>}
         <button
           type="submit"

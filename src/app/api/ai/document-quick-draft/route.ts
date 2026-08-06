@@ -20,6 +20,11 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}));
   const situation = String(body.situation || "").trim();
   if (!situation) return NextResponse.json({ error: "상황을 설명해주세요." }, { status: 400 });
+  // 요청: "국제학교라 영어문서가 필요할 경우도 있어" - 잘못된 값이 오면 조용히 한국어로
+  // 기본 처리합니다(알 수 없는 값 때문에 요청 자체가 실패하지 않도록).
+  const rawLanguage = String(body.language || "ko");
+  const language: "ko" | "en" | "bilingual" =
+    rawLanguage === "en" || rawLanguage === "bilingual" ? rawLanguage : "ko";
 
   try {
     const { data: systemsData } = await supabase
@@ -30,7 +35,7 @@ export async function POST(request: Request) {
       .order("name", { ascending: true });
     const giaSystems = (systemsData || []) as { major: string; category: string; name: string }[];
 
-    const systemPrompt = buildQuickDocumentDraftSystemPrompt();
+    const systemPrompt = buildQuickDocumentDraftSystemPrompt(language);
     const userPrompt = buildQuickDocumentDraftEntryBlock(situation, giaSystems);
     // 실제 서류 초안 작성은 정확도가 중요해 고품질 모델을 사용합니다.
     const result = (await callClaudeJson(systemPrompt, userPrompt, {

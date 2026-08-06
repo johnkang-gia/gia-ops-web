@@ -437,24 +437,43 @@ export function buildDocumentDraftEntryBlock(doc: { name: string; category: stri
 // 용도라 근무시간·급여처럼 담당자가 자유롭게 적은 구체적 조건을 반영하지 못합니다. 이 함수는
 // 상황을 통째로 받아 (1) 문서 초안 (2) 문서명 (3) GIA시스템 분류체계 기준 분류를 한 번에
 // 만들어냅니다.
-export function buildQuickDocumentDraftSystemPrompt(): string {
+// language: 요청("국제학교라 영어문서가 필요할 경우도 있어")에 따라 문서 자체(제목/조항/
+// suggestedName)의 작성 언어를 고를 수 있게 했습니다. GIA시스템 분류(categoryMajor/category/
+// matchedItemName)는 문서 언어와 상관없이 항상 한국어로 남겨둡니다 - [GIA시스템 기존 분류 목록]
+// 자체가 한국어라서, 영어 문서를 만들 때도 이 값들을 영어로 바꿔버리면 서류함 분류 매칭이
+// 깨지기 때문입니다.
+export function buildQuickDocumentDraftSystemPrompt(language: "ko" | "en" | "bilingual" = "ko"): string {
+  const languageInstruction =
+    language === "en"
+      ? "draftText와 suggestedName은 전부 영어로 작성하세요(제목, 조항, 문구 모두 영어). " +
+        "categoryMajor/category/matchedItemName은 언어와 무관하게 항상 한국어(아래 GIA시스템 " +
+        "목록에 쓰인 그대로)로 남겨두세요."
+      : language === "bilingual"
+        ? "draftText는 한국어와 영어를 함께 실으세요(조항/문장 단위로 한국어 문장 다음 줄에 그 " +
+          "영어 번역을 붙이는 방식). suggestedName은 \"한국어명 (English Name)\" 형태로 " +
+          "지으세요. categoryMajor/category/matchedItemName은 언어와 무관하게 항상 한국어(아래 " +
+          "GIA시스템 목록에 쓰인 그대로)로 남겨두세요."
+        : "draftText와 suggestedName은 한국어로 작성하세요.";
   return (
     SHARED_CACHE_CONTEXT +
     "\n\n" +
     "당신은 GIA 학교 행정 담당자가 설명한 상황을 보고, 실제로 바로 쓸 수 있는 행정 서류(근로계약서, " +
-    "내부 규정, 동의서, 확인서 등) 초안을 작성하는 보조자입니다.\n\n" +
+    "내부 규정, 동의서, 확인서 등) 초안을 작성하는 보조자입니다. GIA는 영어를 주 사용 언어로 하는 " +
+    "국제학교라 상황에 따라 학부모·외국인 교사에게 나가는 서류는 영어 또는 한/영 병기로 작성해야 " +
+    "할 수 있습니다.\n\n" +
     "[작성 원칙]\n" +
     "1. 담당자가 알려준 구체적 조건(근무시간/휴게시간/업무내용/급여/기간 등)은 그대로 반영하세요. " +
     "담당자가 알려주지 않은 정보(주소, 서명란, 담당자명 등)만 [ ] 괄호로 채울 자리를 표시하세요.\n" +
     "2. 근로계약서류라면 근로기준법상 필수 기재사항(계약기간, 근무 장소, 업무 내용, 소정근로시간과 " +
     "휴게시간, 근무일/휴일, 임금의 구성항목·계산방법·지급방법·지급일, 연차유급휴가)을 빠짐없이 " +
-    "포함하세요. 담당자가 말한 시급/월급이 최저임금에 못 미치는 것으로 보이면 초안 하단에 " +
-    "\"⚠️ 확인 필요\" 메모로 짧게 짚어주되(지어내지 말고 계산이 명확할 때만), 초안 자체는 요청받은 " +
-    "조건 그대로 작성하세요(당신은 참고용 초안을 만들 뿐, 최종 준수 여부는 담당자가 판단합니다).\n" +
+    "포함하세요(영어로 작성하더라도 이 항목들은 빠뜨리지 마세요). 담당자가 말한 시급/월급이 " +
+    "최저임금에 못 미치는 것으로 보이면 초안 하단에 \"⚠️ 확인 필요\" 메모로 짧게 짚어주되(지어내지 " +
+    "말고 계산이 명확할 때만), 초안 자체는 요청받은 조건 그대로 작성하세요(당신은 참고용 초안을 " +
+    "만들 뿐, 최종 준수 여부는 담당자가 판단합니다).\n" +
     "3. 제목, 조항/항목 구조를 갖춘 정식 문서 형태로 작성하세요.\n" +
-    "4. suggestedName에는 이 서류를 서류함에 등록할 때 쓸 간결한 이름(예: \"주방보조 아르바이트 " +
-    "근로계약서\")을 지으세요.\n" +
-    "5. [GIA시스템 기존 분류 목록]에 이 서류와 정확히 맞아떨어지는 항목이 있으면 그 major/category/" +
+    `4. [작성 언어] ${languageInstruction}\n` +
+    "5. suggestedName에는 이 서류를 서류함에 등록할 때 쓸 간결한 이름을 지으세요.\n" +
+    "6. [GIA시스템 기존 분류 목록]에 이 서류와 정확히 맞아떨어지는 항목이 있으면 그 major/category/" +
     "name을 그대로 categoryMajor/category/matchedItemName에 옮겨 적으세요(목록에 없는 이름을 " +
     "matchedItemName에 지어내지 마세요). 맞는 항목이 없으면 matchedItemName은 빈 문자열로 두고, " +
     "categoryMajor/category는 목록에 쓰인 대분류 어휘(예: 재정, 인사·교직원, 학사, 운영, 시설·안전, " +

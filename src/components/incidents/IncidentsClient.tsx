@@ -188,15 +188,6 @@ export default function IncidentsClient({
 
   function addLinkedStudent(s: WrStudent) {
     setLinkedStudentIds((prev) => [...prev, s.id]);
-    // 자유 텍스트 필드에도 이름을 같이 남겨서(기존 화면 호환) 목록에서 빠르게 훑어볼 수 있게 합니다.
-    setForm((f) => {
-      const names = f.students
-        .split(",")
-        .map((n) => n.trim())
-        .filter(Boolean);
-      if (names.includes(s.name)) return f;
-      return { ...f, students: [...names, s.name].join(", ") };
-    });
     setStudentQuery("");
     setShowStudentMenu(false);
   }
@@ -319,10 +310,19 @@ export default function IncidentsClient({
     setJustSavedMsg("");
     const supabase = createClient();
 
+    // 요청: "학생이름이나 학생의 정보들은 학생기록으로 무조건 통합관리 되도록" - 자유 텍스트로
+    // 직접 타이핑하는 칸은 없애고, 위 검색 선택(고유번호로 정확히 연결)에서 고른 학생만
+    // incidents.students(목록 표시용 요약 텍스트)에도 그대로 반영합니다. 즉 표시되는 이름은
+    // 항상 실제 학생 레코드에서 나온 이름입니다.
+    const studentsText = linkedStudentIds
+      .map((id) => allStudents.find((s) => s.id === id)?.name)
+      .filter((n): n is string => !!n)
+      .join(", ");
+
     if (editingId) {
       const { data, error: err } = await supabase
         .from("incidents")
-        .update({ ...form })
+        .update({ ...form, students: studentsText })
         .eq("id", editingId)
         .select()
         .single();
@@ -336,7 +336,7 @@ export default function IncidentsClient({
     } else {
       const { data, error: err } = await supabase
         .from("incidents")
-        .insert({ ...form, case_id: genCaseId("INC"), term_id: currentTerm?.id ?? null })
+        .insert({ ...form, students: studentsText, case_id: genCaseId("INC"), term_id: currentTerm?.id ?? null })
         .select()
         .single();
       if (err) {
@@ -541,29 +541,18 @@ export default function IncidentsClient({
           {/* 요청: "사건기록 새사건 입력할때 처리상태는 없애줘" - 새로 입력할 때는 처리상태
               칸을 보여주지 않습니다. 이미 처리상태가 적혀 있는 기존 기록을 수정할 때만(과거
               데이터가 남아있으므로) 계속 편집할 수 있게 둡니다. */}
-          <div className={`grid grid-cols-1 gap-3 ${editingId ? "sm:grid-cols-2" : ""}`}>
+          {editingId && (
             <label className="flex flex-col gap-1 text-xs text-slate-500">
-              관련 학생 이름(쉼표 구분, 메모용)
+              처리상태
               <input
                 type="text"
-                value={form.students}
-                onChange={(e) => setForm({ ...form, students: e.target.value })}
+                value={form.status}
+                onChange={(e) => setForm({ ...form, status: e.target.value })}
+                placeholder="예: 처리중, 완료"
                 className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
               />
             </label>
-            {editingId && (
-              <label className="flex flex-col gap-1 text-xs text-slate-500">
-                처리상태
-                <input
-                  type="text"
-                  value={form.status}
-                  onChange={(e) => setForm({ ...form, status: e.target.value })}
-                  placeholder="예: 처리중, 완료"
-                  className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
-                />
-              </label>
-            )}
-          </div>
+          )}
 
           {/* 요청: "사건이 어떻게 완료되었는지 적을 수 있는 조치사항 공간을 만들어줘 - 어떤
               조치를 취했는지 적을 수 있도록". good/lack/suggest(회고·제안)와 달리, 실제로
@@ -621,7 +610,7 @@ export default function IncidentsClient({
           </div>
 
           <div className="relative flex flex-col gap-1 text-xs text-slate-500">
-            <span>관련 학생(정확히 연결 - 동명이인 방지용)</span>
+            <span>관련 학생</span>
             {linkedStudentIds.length > 0 && (
               <div className="mb-1 flex flex-wrap gap-1.5">
                 {linkedStudentIds.map((id) => {
@@ -652,7 +641,7 @@ export default function IncidentsClient({
                 setShowStudentMenu(true);
               }}
               onFocus={() => setShowStudentMenu(true)}
-              placeholder="학생 이름으로 검색해서 정확한 학생을 골라주세요"
+              placeholder="학생 이름을 입력하면 명부에서 찾아드립니다 (예: 백서아)"
               className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
             />
             {showStudentMenu && studentMatches.length > 0 && (
@@ -673,8 +662,8 @@ export default function IncidentsClient({
               </div>
             )}
             <p className="text-[11px] text-slate-400">
-              같은 이름의 학생이 여러 명일 수 있어, 학년·반·학번까지 보고 정확히 골라야 [학생 정보
-              조회]에서 이 사건이 그 학생 기록으로 정확히 모입니다.
+              직접 타이핑하지 않고 항상 이 목록에서 골라야, 같은 이름의 학생이 있어도 학년·반·학번까지
+              정확히 구분되어 [학생 정보 조회]에서 그 학생 기록으로 자동으로 모입니다.
             </p>
           </div>
 

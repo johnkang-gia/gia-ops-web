@@ -6,12 +6,21 @@ export async function notifySlack(text: string): Promise<void> {
   const webhookUrl = process.env.SLACK_WEBHOOK_URL;
   if (!webhookUrl) return;
   try {
-    await fetch(webhookUrl, {
+    const res = await fetch(webhookUrl, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ text }),
     });
-  } catch {
-    // Slack 전송 실패는 무시합니다(요청 처리와 무관한 부가 기능).
+    // fetch는 4xx/5xx 응답에도 예외를 던지지 않아서, Slack이 웹훅을 거부해도(예: 웹훅 삭제됨,
+    // 채널 보관됨, payload 형식 오류) 지금까지는 아무 흔적 없이 조용히 실패하고 있었습니다
+    // (요청: "슬랙연결했는데 가입 메세지가 안와"). 이제 실패 시 상태코드와 Slack의 응답 본문을
+    // Vercel 함수 로그(console.error)에 남겨서, 정확한 실패 사유(웹훅 URL 문제 vs 그 외)를
+    // Vercel 대시보드 → 프로젝트 → Logs에서 확인할 수 있게 했습니다.
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      console.error(`[slack] webhook rejected: ${res.status} ${res.statusText} - ${body.slice(0, 300)}`);
+    }
+  } catch (err) {
+    console.error(`[slack] webhook request failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 }

@@ -3367,3 +3367,18 @@ alter table google_chat_subscriptions enable row level security;
 drop policy if exists "wr_manager_select_google_chat_subscriptions" on google_chat_subscriptions;
 create policy "wr_manager_select_google_chat_subscriptions" on google_chat_subscriptions
   for select using (is_wr_manager());
+
+-- 구글챗 미러링 인증 방식을 서비스 계정+도메인 위임에서 본인 계정 OAuth로 바꿨습니다(요청: "나는
+-- 직원이라 관리자 권한이 없고... 관리자 계정 없이 방법이 없을까?" - Workspace Events API는 본인
+-- 자격증명으로도 동작하므로 도메인 관리자 승인 없이 강경원님 본인 계정만으로 설정 가능합니다).
+-- 여기 저장되는 refresh_token은 이 앱이 구글챗을 대신 읽을 수 있는 열쇠라, select 정책을 아예
+-- 두지 않아 서비스 롤 키를 쓰는 서버 라우트(크론/콜백)만 접근할 수 있습니다 - 화면 어디에서도
+-- 조회할 수 없습니다. 행은 id='default' 하나만 존재합니다(계정이 한 명뿐이므로).
+create table if not exists google_chat_oauth_tokens (
+  id text primary key default 'default',
+  refresh_token text not null,
+  updated_by text,
+  updated_at timestamptz not null default now()
+);
+
+alter table google_chat_oauth_tokens enable row level security;

@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
         existing?.expire_time && new Date(existing.expire_time).getTime() - Date.now() < 24 * 60 * 60 * 1000;
 
       if (!existing) {
-        const created = await createSubscription(sourceKey);
+        const created = await createSubscription(supabase, sourceKey);
         await supabase.from("google_chat_subscriptions").upsert({
           source_key: sourceKey,
           subscription_name: created.name,
@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
         });
         results[sourceKey] = "created";
       } else if (needsRenew) {
-        const renewed = await renewSubscription(existing.subscription_name);
+        const renewed = await renewSubscription(supabase, existing.subscription_name);
         await supabase
           .from("google_chat_subscriptions")
           .update({ expire_time: renewed.expireTime, updated_at: new Date().toISOString() })

@@ -3307,10 +3307,15 @@ drop table if exists staff_request_comments cascade;
 drop table if exists staff_requests cascade;
 drop table if exists staff_request_categories cascade;
 
--- 구글챗 미러링 메시지 저장 테이블입니다. 실제 적재는 /api/google-chat/webhook 라우트(서비스
--- 롤 키 사용)가 Google Workspace Events API(Pub/Sub) 알림을 받아 insert하고, 여기서는 조회/
--- (업무등록 표시용) 갱신 정책만 둡니다. google_message_id에 unique를 걸어 Pub/Sub 재전송으로
--- 인한 중복 저장을 막습니다(on conflict do nothing으로 webhook에서 흡수).
+-- 구글챗 미러링 메시지 저장 테이블입니다. 실제 적재는 /api/cron/poll-chat-messages 라우트
+-- (서비스 롤 키 사용, 외부 무료 스케줄러가 1분마다 호출)가 Chat API(spaces.messages.list)를
+-- 직접 조회해 insert하고, 여기서는 조회/(업무등록 표시용) 갱신 정책만 둡니다.
+-- google_message_id에 unique를 걸어 폴링 구간이 겹쳐도 중복 저장을 막습니다(upsert
+-- ignoreDuplicates로 흡수). 참고: 처음에는 Google Workspace Events API + Pub/Sub push
+-- 방식(진짜 실시간)으로 설계했지만, Pub/Sub 주제에 구글 시스템 계정을 Publisher로 추가하는
+-- 단계가 조직의 Domain Restricted Sharing 정책에 막혀서(GCP 조직 정책 관리자 권한 필요 -
+-- 이번 설계의 출발점인 "관리자 승인 없이 혼자 끝내기"와 상충) IAM 변경이 전혀 필요 없는
+-- 폴링 방식으로 다시 바꿨습니다.
 create table if not exists google_chat_mirror_messages (
   id uuid primary key default gen_random_uuid(),
   source_key text not null check (source_key in ('attendance', 'teacher_requests')),
@@ -3351,22 +3356,9 @@ begin
   end if;
 end $$;
 
--- 구글챗 미러링용 Workspace Events API 구독 상태를 기억해두는 테이블입니다. 구독은 만료
---시각(TTL)이 있어 /api/cron/renew-chat-subscriptions가 매일 확인해 연장하는데, 연장하려면
--- 처음 만들 때 받은 구독 리소스 이름(subscriptions/xxxxx)이 필요해서 여기 저장해둡니다. 이
--- 테이블은 서버(크론/웹훅, 서비스 롤 키)만 다루고 화면에서 직접 조회하지는 않습니다.
-create table if not exists google_chat_subscriptions (
-  source_key text primary key check (source_key in ('attendance', 'teacher_requests')),
-  subscription_name text,
-  expire_time timestamptz,
-  updated_at timestamptz not null default now()
-);
-
-alter table google_chat_subscriptions enable row level security;
-
-drop policy if exists "wr_manager_select_google_chat_subscriptions" on google_chat_subscriptions;
-create policy "wr_manager_select_google_chat_subscriptions" on google_chat_subscriptions
-  for select using (is_wr_manager());
+-- Pub/Sub push 구독 방식을 쓸 때 구독 상태를 기억해두던 테이블이었는데, 폴링 방식으로
+-- 바꾸면서 더 이상 쓰지 않아 정리합니다(앱 코드가 더 이상 참조하지 않으므로 안전합니다).
+drop table if exists google_chat_subscriptions cascade;
 
 -- 구글챗 미러링 인증 방식을 서비스 계정+도메인 위임에서 본인 계정 OAuth로 바꿨습니다(요청: "나는
 -- 직원이라 관리자 권한이 없고... 관리자 계정 없이 방법이 없을까?" - Workspace Events API는 본인

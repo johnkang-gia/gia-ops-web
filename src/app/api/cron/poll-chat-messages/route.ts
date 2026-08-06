@@ -1,0 +1,50 @@
+import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+import { logApiError } from "@/lib/logging";
+import { pollNewMessages, type GoogleChatSourceKey } from "@/lib/googleChat";
+
+const SOURCE_KEYS: GoogleChatSourceKey[] = ["attendance", "teacher_requests"];
+
+// 외부 무료 스케줄러(cron-job.org 등, 가이드 참고)가 1분마다 이 라우트를 호출합니다. Vercel
+// 무료(Hobby) 플랜은 Pub/Sub 같은 진짜 실시간 push를 못 받고, 외부 스케줄러도 1분보다 잦은
+// 간격은 대부분 유료입니다 - 그래서 라우트가 호출된 뒤 함수 실행시간 예산(최대 60초) 안에서
+// 직접 여러 번 반복 폴링을 돌려, 외부 호출은 1분에 한 번이어도 실제 메시지 반영은 수 초~십수
+// 초 안에 이뤄지도록 합니다(요청: "1분의 지연은 너무 큰데 최대한 빠르게 반영되었으면 좋겠어").
+export const maxDuration = 60;
+
+const LOOP_BUDGET_MS = 55_000; // maxDuration(60s)보다 여유를 둬서 응답을 못 보내는 사고를 방지
+const LOOP_INTERVAL_MS = 4_000;
+
+export async function GET(req: NextRequest) {
+  const authHeader = req.headers.get("authorization");
+  if (!process.env.CRON_SECRET || authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !serviceKey) return NextResponse.json({ error: "service role key not configured" }, { status: 500 });
+  const supabase = createClient(url, serviceKey, { auth: { persistSession: false } });
+
+  const startedAt = Date.now();
+  let totalNew = 0;
+  let rounds = 0;
+  let lastError: string | null = null;
+
+  while (Date.now() - startedAt < LOOP_BUDGET_MS) {
+    rounds += 1;
+    for (const sourceKey of SOURCE_KEYS) {
+      try {
+        totalNew += await pollNewMessages(supabase, sourceKey);
+      } catch (err) {
+        lastError = err instanceof Error ? err.message : String(err);
+        await logApiError(supabase, `cron:poll-chat-messages:${sourceKey}`, err);
+      }
+    }
+    const elapsed = Date.now() - startedAt;
+    if (elapsed >= LOOP_BUDGET_MS) break;
+    await new Promise((resolve) => setTimeout(resolve, Math.min(LOOP_INTERVAL_MS, LOOP_BUDGET_MS - elapsed)));
+  }
+
+  return NextResponse.json({ ok: true, rounds, newMessages: totalNew, lastError });
+}

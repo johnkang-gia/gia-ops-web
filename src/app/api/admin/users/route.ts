@@ -53,9 +53,21 @@ export async function PATCH(request: Request) {
   const position = body.position !== undefined ? String(body.position) : undefined;
   const name = body.name !== undefined ? String(body.name) : undefined;
   const department = body.department !== undefined ? String(body.department) : undefined;
+  // 교직원 통합기록(요청: "언제 입사하였고, 퇴사는 언제했는지... 고유 데이터로 기록 유지") -
+  // 입사일/퇴사일은 status/position과 같은 권한 경계(is_app_admin())로 관리자가 직접 넣습니다.
+  // 빈 문자열을 보내면 "날짜 지움"으로 처리합니다(퇴사 취소 등).
+  const hireDate = body.hire_date !== undefined ? String(body.hire_date) : undefined;
+  const leaveDate = body.leave_date !== undefined ? String(body.leave_date) : undefined;
+  const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
   if (!email) {
     return NextResponse.json({ error: "email이 필요합니다." }, { status: 400 });
+  }
+  if (hireDate !== undefined && hireDate !== "" && !DATE_RE.test(hireDate)) {
+    return NextResponse.json({ error: "입사일 형식이 올바르지 않습니다(YYYY-MM-DD)." }, { status: 400 });
+  }
+  if (leaveDate !== undefined && leaveDate !== "" && !DATE_RE.test(leaveDate)) {
+    return NextResponse.json({ error: "퇴사일 형식이 올바르지 않습니다(YYYY-MM-DD)." }, { status: 400 });
   }
   if (status !== undefined && !["approved", "rejected", "pending"].includes(status)) {
     return NextResponse.json({ error: "status는 approved/rejected/pending 중 하나여야 합니다." }, { status: 400 });
@@ -69,7 +81,14 @@ export async function PATCH(request: Request) {
   if (name !== undefined && name.trim() === "") {
     return NextResponse.json({ error: "이름은 비워둘 수 없습니다." }, { status: 400 });
   }
-  if (status === undefined && position === undefined && name === undefined && department === undefined) {
+  if (
+    status === undefined &&
+    position === undefined &&
+    name === undefined &&
+    department === undefined &&
+    hireDate === undefined &&
+    leaveDate === undefined
+  ) {
     return NextResponse.json({ error: "변경할 값이 없습니다." }, { status: 400 });
   }
   if (isDeveloperEmail(email)) {
@@ -93,6 +112,12 @@ export async function PATCH(request: Request) {
   }
   if (department !== undefined) {
     update.department = department || null;
+  }
+  if (hireDate !== undefined) {
+    update.hire_date = hireDate || null;
+  }
+  if (leaveDate !== undefined) {
+    update.leave_date = leaveDate || null;
   }
 
   const { error } = await supabase.from("app_users").update(update).eq("email", email);

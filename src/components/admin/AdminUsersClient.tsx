@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import type { AppUser } from "@/lib/types";
 import { isDeveloperEmail } from "@/lib/roles";
@@ -342,6 +343,12 @@ export default function AdminUsersClient({
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
+                  <Link
+                    href={`/staff/${encodeURIComponent(u.email)}`}
+                    className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-500 hover:bg-slate-50"
+                  >
+                    📋 근무기록
+                  </Link>
                   <select
                     value={u.position ?? ""}
                     onChange={(e) => updatePosition(u.email, e.target.value)}

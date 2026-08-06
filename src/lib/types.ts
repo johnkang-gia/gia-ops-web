@@ -448,6 +448,23 @@ export type AppUser = {
   department: Department3 | null;
   position: StaffPosition | null;
   avatar_url: string | null;
+  hire_date: string | null;
+  leave_date: string | null;
+};
+
+// 교직원 통합기록의 연도/학기별 이력 한 줄(학생의 WrEnrollment와 같은 역할) - 소속·직위·담당
+// 반/역할이 그 시점 스냅샷으로 남습니다.
+export type StaffAssignment = {
+  id: string;
+  staff_email: string;
+  term_id: string | null;
+  department: Department3 | null;
+  position: StaffPosition | null;
+  role_label: string;
+  grade: string | null;
+  class_id: string | null;
+  note: string | null;
+  created_at: string;
 };
 
 export type TeamMember = {

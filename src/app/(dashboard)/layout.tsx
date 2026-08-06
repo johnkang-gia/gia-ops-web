@@ -106,7 +106,15 @@ function buildOpsCategory(pendingProposals: number, pendingAdopted: number): Nav
 // 대시보드) 안에 이미 진입 카드가 있어서 부메뉴에 중복으로 둘 필요가 없습니다.
 function buildSchoolCategory(isAdmin: boolean, isStaffOrAbove: boolean): NavCategory {
   const items: NavCategory["items"] = [];
-  if (isStaffOrAbove) items!.push({ href: "/students", label: "학생 정보 조회", icon: "🔎" });
+  if (isStaffOrAbove) {
+    items!.push(
+      { href: "/students", label: "학생 정보 조회", icon: "🔎" },
+      // 학생 통합기록(wr_students+wr_enrollments)과 같은 구조로 교직원도 입사일/퇴사일/연도별
+      // 담당 이력을 한 화면에서 볼 수 있게 추가했습니다(요청: "교직원에 대한 정보도... 통합으로
+      // 관리되게끔").
+      { href: "/staff", label: "교직원 정보 조회", icon: "🧑‍💼" }
+    );
+  }
   if (isAdmin) {
     items!.push(
       { href: "/weekly-report/admin/students", label: "학생 관리", labelEn: "Manage Students", icon: "🧑‍🎓", dividerBefore: "명부 관리" },

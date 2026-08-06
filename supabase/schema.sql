@@ -3374,3 +3374,50 @@ create table if not exists google_chat_oauth_tokens (
 );
 
 alter table google_chat_oauth_tokens enable row level security;
+
+-- ===== 75. 교직원 통합기록 (요청: "학생처럼 교직원도 통합으로 관리, 입사/퇴사, 연도별 담당
+-- 반 등 고유 데이터로 기록 유지") =====
+-- 학생 쪽(wr_students + wr_enrollments)과 같은 구조입니다: 로그인 계정(app_users.email)을
+-- 그대로 영구 식별자로 쓰고(별도 명부 테이블을 새로 만들지 않음 - 계정이 삭제되지 않는 한
+-- 퇴사해도 행이 남아있어 기록이 계속 유지됩니다), 연도/학기별로 달라지는 값(소속·직위·담당
+-- 반/역할)은 staff_assignments에 이력으로 쌓습니다.
+alter table app_users add column if not exists hire_date date;
+alter table app_users add column if not exists leave_date date;
+
+create table if not exists staff_assignments (
+  id uuid primary key default gen_random_uuid(),
+  staff_email text not null references app_users(email) on delete cascade,
+  term_id uuid references terms(id) on delete set null,
+  department text,
+  position text,
+  role_label text not null,   -- 자유 입력: "3학년 2반 담임", "영어 부담임", "체육 교사" 등
+  grade text,
+  class_id uuid references wr_classes(id) on delete set null,
+  note text,
+  created_at timestamptz not null default now()
+);
+create index if not exists staff_assignments_staff_idx on staff_assignments(staff_email, created_at desc);
+create index if not exists staff_assignments_term_idx on staff_assignments(term_id);
+
+alter table staff_assignments enable row level security;
+
+-- 조회는 학생 정보 조회와 동일하게 관리자·행정직원까지(is_wr_manager) - 동료의 입사/퇴사일 같은
+-- 인사 정보라 교사에게는 노출하지 않습니다.
+drop policy if exists "wr_manager_select_staff_assignments" on staff_assignments;
+create policy "wr_manager_select_staff_assignments" on staff_assignments
+  for select using (is_wr_manager());
+
+-- 기록 추가/수정/삭제는 관리자만(기존 사용자관리 승인/직위 변경과 같은 권한 경계).
+drop policy if exists "admin_write_staff_assignments" on staff_assignments;
+create policy "admin_write_staff_assignments" on staff_assignments
+  for all using (is_app_admin()) with check (is_app_admin());
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'staff_assignments'
+  ) then
+    alter publication supabase_realtime add table staff_assignments;
+  end if;
+end $$;

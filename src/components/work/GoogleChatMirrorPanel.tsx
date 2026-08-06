@@ -12,6 +12,26 @@ function timeStr(iso: string) {
   return new Date(iso).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
 }
 
+// 날짜 구분선에 쓰는 표시입니다 - 오늘/어제는 그렇게 쓰고, 그 외에는 "8월 6일 (수)" 형식으로
+// 보여줍니다(요청: "날짜별로 구분이 되도록 해줄 수 있어?").
+function dateLabel(iso: string) {
+  const d = new Date(iso);
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+  const sameDay = (a: Date, b: Date) =>
+    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  if (sameDay(d, today)) return "오늘";
+  if (sameDay(d, yesterday)) return "어제";
+  return d.toLocaleDateString("ko-KR", { month: "long", day: "numeric", weekday: "short" });
+}
+
+// 같은 날짜인지 그룹 나누기용으로 비교할 키(연-월-일)입니다.
+function dateKey(iso: string) {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
 // 구글챗 두 방(출결알림/선생님요청)을 읽기전용으로 실시간 미러링해서 보여줍니다(요청: "구글챗과
 // 이 앱을 왔다갔다 하지않고 이앱에서 모든 업무작업이 이루어지도록"). 실제 수신은
 // /api/google-chat/webhook이 Google Workspace Events API(Pub/Sub)로부터 받아
@@ -129,29 +149,43 @@ export default function GoogleChatMirrorPanel({
         </div>
       ) : (
         <div className="flex flex-1 flex-col gap-1 overflow-y-auto pr-1">
-          {items.map((m) => (
-            <div key={m.id} className="rounded-lg bg-black/[0.02] px-2 py-1.5 text-[11px]">
-              <div className="mb-0.5 flex items-center justify-between gap-1 text-[10px] text-slate-400">
-                <span className="truncate font-semibold text-slate-500">{m.sender_display_name || "구글챗"}</span>
-                <span className="shrink-0">{timeStr(m.created_at_google)}</span>
+          {items.map((m, i) => {
+            const showDateDivider = i === 0 || dateKey(m.created_at_google) !== dateKey(items[i - 1].created_at_google);
+            return (
+              <div key={m.id}>
+                {showDateDivider && (
+                  <div className="sticky top-0 z-10 my-1 flex items-center gap-2 first:mt-0">
+                    <div className="h-px flex-1 bg-black/5" />
+                    <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">
+                      {dateLabel(m.created_at_google)}
+                    </span>
+                    <div className="h-px flex-1 bg-black/5" />
+                  </div>
+                )}
+                <div className="rounded-lg bg-black/[0.02] px-2 py-1.5 text-[11px]">
+                  <div className="mb-0.5 flex items-center justify-between gap-1 text-[10px] text-slate-400">
+                    <span className="truncate font-semibold text-slate-500">{m.sender_display_name || "구글챗"}</span>
+                    <span className="shrink-0">{timeStr(m.created_at_google)}</span>
+                  </div>
+                  <p className="whitespace-pre-wrap break-words text-slate-700">{m.content}</p>
+                  {m.task_id ? (
+                    <span className="mt-1 inline-block rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-600">
+                      ✅ 업무 등록됨
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => registerAsTask(m)}
+                      disabled={registeringId === m.id}
+                      className="mt-1 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-600 transition hover:bg-blue-100 disabled:opacity-50"
+                    >
+                      {registeringId === m.id ? "등록 중..." : "🔧 업무로 등록"}
+                    </button>
+                  )}
+                </div>
               </div>
-              <p className="whitespace-pre-wrap break-words text-slate-700">{m.content}</p>
-              {m.task_id ? (
-                <span className="mt-1 inline-block rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-600">
-                  ✅ 업무 등록됨
-                </span>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => registerAsTask(m)}
-                  disabled={registeringId === m.id}
-                  className="mt-1 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-600 transition hover:bg-blue-100 disabled:opacity-50"
-                >
-                  {registeringId === m.id ? "등록 중..." : "🔧 업무로 등록"}
-                </button>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

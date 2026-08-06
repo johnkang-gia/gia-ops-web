@@ -6,7 +6,7 @@ import { LAW_REFERENCE } from "./lawReference";
 // 매뉴얼 항목의 정책영역(상위 분류) - 요청 4번 "정책영역 상위 항목화". 실무자매뉴얼/운영계획안
 // AI 분류 호출(scan/manual-draft)에 이미 나가는 응답에 필드 하나만 추가하는 방식이라 별도
 // AI 호출이 늘지 않습니다(과금에 영향 없음).
-export const MANUAL_DOMAINS = [
+const MANUAL_DOMAINS = [
   "안전/보건",
   "학사/생활지도",
   "시설/차량/급식",
@@ -25,7 +25,7 @@ function domainInstructionBlock(): string {
   );
 }
 
-export const INSTITUTION_CONTEXT =
+const INSTITUTION_CONTEXT =
   "[GIA 운영 맥락]\n" +
   "GIA는 영어를 주 사용 언어로 하는 교육기관입니다(원어민 외국인 선생님이 아이들을 가르치고, 한국어는 " +
   "보조적으로만 사용됩니다). 유치원/초등/중고등 과정으로 나뉘어 있으며, 이 매뉴얼 자동화 시스템은 " +
@@ -155,7 +155,7 @@ export function buildIncidentEntryBlock(
 // category를 자유롭게 지어내서 같은 주제인데 이름만 다른 항목이 계속 늘어났는데(요청: "비슷한
 // 내용들을 항목화... 최대한 기존 항목에 넣는 방향으로"), 이제는 이 목록을 완전히 대체 기준으로
 // 삼아 AI가 반드시 이 목록 중에서만 골라야 합니다(요청 확인: "새 항목 체계로 완전히 대체").
-export function buildExistingCategoriesBlock(existingCategories?: { parent: string[]; staff: string[] }): string {
+function buildExistingCategoriesBlock(existingCategories?: { parent: string[]; staff: string[] }): string {
   const parent = existingCategories?.parent ?? [];
   const staff = existingCategories?.staff ?? [];
   return (

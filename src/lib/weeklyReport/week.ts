@@ -14,8 +14,3 @@ export function getWeekRange(base: Date = new Date()): { start: string; end: str
   const fmt = (x: Date) => x.toISOString().slice(0, 10);
   return { start: fmt(monday), end: fmt(sunday) };
 }
-
-export function isInCurrentWeek(dateStr: string): boolean {
-  const { start, end } = getWeekRange();
-  return dateStr >= start && dateStr <= end;
-}

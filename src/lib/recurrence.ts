@@ -6,7 +6,7 @@ import { genCaseId } from "./caseId";
 // - 매주: 지정한 요일(weekday) 중 다음으로 오는 날짜
 // - 매월: 지정한 날짜(day_of_month), 다음 달에 그 날짜가 없으면(예: 31일→2월) 그 달의
 //   마지막 날로 자동 보정
-export function computeNextOccurrence(recurrence: NonNullable<TaskRecurrence>, baseDueAt: string | null): string {
+function computeNextOccurrence(recurrence: NonNullable<TaskRecurrence>, baseDueAt: string | null): string {
   const base = baseDueAt ? new Date(baseDueAt) : new Date();
   const hh = base.getHours();
   const mm = base.getMinutes();

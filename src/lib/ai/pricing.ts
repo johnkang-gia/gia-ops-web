@@ -4,7 +4,7 @@
 //
 // ⚠️ Sonnet 5는 2026-08-31까지 도입 특가($2/$10)이고, 이후 정가($3/$15/백만 토큰)로 오릅니다.
 // 날짜가 지나면 아래 두 상수를 갱신해주세요.
-export const MODEL_PRICING_USD_PER_MTOK: Record<string, { in: number; out: number }> = {
+const MODEL_PRICING_USD_PER_MTOK: Record<string, { in: number; out: number }> = {
   "claude-sonnet-5": { in: 2.0, out: 10.0 },
   "claude-haiku-4-5-20251001": { in: 1.0, out: 5.0 },
 };

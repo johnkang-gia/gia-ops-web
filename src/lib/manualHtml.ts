@@ -7,7 +7,7 @@ function escapeHtml(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-export function looksLikeHtml(content: string): boolean {
+function looksLikeHtml(content: string): boolean {
   return /<\/?(p|div|br|ul|ol|li|h[1-6]|strong|em|b|i)[^>]*>/i.test(content);
 }
 
@@ -49,11 +49,4 @@ export function htmlToPlainText(html: string): string {
     .join("\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
-}
-
-/** 채택예정 발행 시, 기존 매뉴얼 항목 뒤에 새 내용을 문단으로 이어붙입니다(HTML 기준). */
-export function appendHtmlSection(existingContent: string, additionPlainOrHtml: string): string {
-  const existing = plainTextToHtml(existingContent);
-  const addition = plainTextToHtml(additionPlainOrHtml);
-  return [existing, addition].filter(Boolean).join("");
 }

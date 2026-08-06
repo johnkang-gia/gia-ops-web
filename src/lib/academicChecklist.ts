@@ -10,7 +10,7 @@ export function toDateStr(d: Date): string {
 // 템플릿의 anchor(학기 시작일/종료일)에서 offset_days만큼 앞선 실제 날짜를 계산합니다.
 // 학기에 시작일/종료일이 아직 입력되지 않았으면(학기 관리에서 날짜를 안 넣은 경우) null을
 // 돌려주고, 호출하는 쪽에서 그 템플릿은 건너뜁니다.
-export function computeDueDate(term: Term, anchor: ChecklistAnchor, offsetDays: number): string | null {
+function computeDueDate(term: Term, anchor: ChecklistAnchor, offsetDays: number): string | null {
   const base = anchor === "term_start" ? term.start_date : term.end_date;
   if (!base) return null;
   const d = new Date(base);

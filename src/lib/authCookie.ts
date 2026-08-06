@@ -43,11 +43,6 @@ export function makeAuthOkCookieValue(userId: string, position: string | null = 
   return `${payload}:${sign(payload)}`;
 }
 
-/** 이 쿠키가 특정 userId에 대해 아직(TTL 이내) 유효한지 검사. */
-export function isAuthOkCookieValid(userId: string, cookieValue: string | undefined): boolean {
-  return readAuthOkCookie(userId, cookieValue) !== null;
-}
-
 /** 쿠키가 유효하면 안에 담긴 직위(position)를 반환하고, 유효하지 않으면 null을 반환. */
 export function readAuthOkCookie(userId: string, cookieValue: string | undefined): { position: string } | null {
   if (!cookieValue) return null;

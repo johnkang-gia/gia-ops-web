@@ -44,7 +44,7 @@ export function buildOAuthClient(): OAuth2Client | null {
 // 명뿐이라 굳이 여러 행을 둘 이유가 없습니다). RLS에 select 정책을 두지 않아, 서비스 롤 키를
 // 쓰는 서버 라우트(크론)만 이 값을 읽고 쓸 수 있습니다 - refresh_token은 사실상 이 앱이
 // 구글챗을 대신 읽을 수 있는 열쇠라 화면 어디에도 노출하지 않습니다.
-export async function getStoredRefreshToken(supabase: SupabaseClient): Promise<string | null> {
+async function getStoredRefreshToken(supabase: SupabaseClient): Promise<string | null> {
   const { data } = await supabase.from("google_chat_oauth_tokens").select("refresh_token").eq("id", "default").maybeSingle();
   return data?.refresh_token ?? null;
 }

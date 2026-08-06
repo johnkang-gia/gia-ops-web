@@ -59,7 +59,13 @@ export async function updateSession(request: NextRequest) {
     path.startsWith("/auth") ||
     path.startsWith("/pending") ||
     path.startsWith("/onboarding") ||
-    path.startsWith("/api/onboarding");
+    path.startsWith("/api/onboarding") ||
+    // 크론(외부 스케줄러/Vercel Cron)이 부르는 라우트입니다. 이 요청들은 로그인 세션 쿠키가
+    // 없는 서버-서버 호출이라, 세션이 없다고 여기서 /login으로 리다이렉트해버리면(307) 라우트
+    // 자체의 CRON_SECRET Authorization 헤더 검사까지 가지도 못하고 항상 실패합니다(발견 계기:
+    // 구글챗 폴링 크론이 cron-job.org에서 "307 Temporary Redirect"로 실패). 인증은 각 라우트가
+    // Authorization: Bearer <CRON_SECRET>로 자체적으로 확인하므로 세션 검사만 건너뜁니다.
+    path.startsWith("/api/cron");
 
   if (!user && !isAuthRoute) {
     const url = request.nextUrl.clone();

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
-import { isTeacherOnly } from "@/lib/roles";
+import { isTeacherOnly, isStaffOrAboveUser } from "@/lib/roles";
 import type { WrClass, WrSubject } from "@/lib/types";
 
 export type SearchResult = {
@@ -57,13 +57,18 @@ export async function GET(request: NextRequest) {
     studentQuery = studentQuery.in("id", [...allowedStudentIds]);
   }
   const { data: students } = await studentQuery;
+  // 관리자·행정직원은 사건기록·업무언급까지 한 화면에서 보이는 통합 프로필(/students/[id])로
+  // 보냅니다. 교사는 그 화면 접근 권한이 없으므로(isStaffOrAboveUser만 접근 가능) 기존처럼
+  // 위클리 리포트 화면(/weekly-report/students/[id])으로 보냅니다(발견: "백서아를 검색해서
+  // 누르면 관련 사건이 안보여" - 통합 프로필이 아니라 위클리 리포트 화면으로 가고 있던 버그).
+  const studentHrefBase = isStaffOrAboveUser(me) ? "/students" : "/weekly-report/students";
   for (const s of students ?? []) {
     results.push({
       type: "student",
       id: s.id,
       title: s.name_en ? `${s.name} (${s.name_en})` : s.name,
       subtitle: `학생 · ${s.grade ?? "-"}학년 ${s.class_name ?? "-"}`,
-      href: `/weekly-report/students/${s.id}`,
+      href: `${studentHrefBase}/${s.id}`,
     });
   }
 

@@ -10,6 +10,7 @@ import AiSourcePanel from "@/components/ai/AiSourcePanel";
 import Pagination from "@/components/Pagination";
 import GuideButton from "@/components/common/GuideButton";
 import CollapsedStrip from "@/components/common/CollapsedStrip";
+import AutoGrowTextarea from "@/components/common/AutoGrowTextarea";
 
 // 사건이 쌓일수록 목록이 끝없이 길어지지 않도록, 게시판처럼 페이지 단위로 잘라 보여줍니다.
 const PAGE_SIZE = 10;
@@ -512,10 +513,11 @@ export default function IncidentsClient({
                 {filling ? "채우는 중..." : "🧹 AI로 채우기"}
               </button>
             </div>
-            <textarea
+            <AutoGrowTextarea
               value={form.detail}
               onChange={(e) => setForm({ ...form, detail: e.target.value })}
-              rows={3}
+              minRows={3}
+              maxRows={10}
               className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
             />
           </label>
@@ -530,10 +532,11 @@ export default function IncidentsClient({
           ].map(([key, label]) => (
             <label key={key} className="flex flex-col gap-1 text-xs text-slate-500">
               {label}
-              <textarea
+              <AutoGrowTextarea
                 value={form[key as keyof FormState]}
                 onChange={(e) => setForm({ ...form, [key]: e.target.value })}
-                rows={2}
+                minRows={2}
+                maxRows={10}
                 className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
               />
             </label>
@@ -559,10 +562,11 @@ export default function IncidentsClient({
               무엇을 했는지를 남기는 칸입니다(업무탭 resolution_note와 같은 패턴). */}
           <label className="flex flex-col gap-1 text-xs text-slate-500">
             조치사항 (어떤 조치를 취했는지)
-            <textarea
+            <AutoGrowTextarea
               value={form.resolution_note}
               onChange={(e) => setForm({ ...form, resolution_note: e.target.value })}
-              rows={3}
+              minRows={3}
+              maxRows={10}
               placeholder="예: 보건실에서 1차 처치 후 학부모에게 전화 안내, 병원 진료 동행, 재발 방지를 위해 담당 교사 안전교육 실시 등"
               className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
             />

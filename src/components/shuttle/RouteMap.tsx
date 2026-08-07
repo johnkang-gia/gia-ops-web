@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { loadKakaoMaps } from "@/lib/kakaoMap";
 import type { ShuttleRoutePath, ShuttleStop } from "@/lib/types";
@@ -31,17 +31,31 @@ function geocodeAddress(kakao: Kakao, address: string): Promise<{ lat: number; l
   });
 }
 
+// "8:27" / "08:27:00" 등을 자정 기준 분(0~1439)으로 바꿉니다.
+function timeToMinutes(t: string): number | null {
+  const m = t.match(/^(\d{1,2}):(\d{2})/);
+  if (!m) return null;
+  return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+}
+function minutesToTime(min: number): string {
+  const h = Math.floor(((min % 1440) + 1440) % 1440 / 60);
+  const m = Math.round(min) % 60;
+  return `${String(h).padStart(2, "0")}:${String(((m % 60) + 60) % 60).padStart(2, "0")}`;
+}
+
 export default function RouteMap({
   routeId,
   stops,
   direction,
   routeLabel,
+  departTime,
   canEdit,
 }: {
   routeId: string;
   stops: ShuttleStop[]; // 이미 seq 오름차순으로 정렬되어 들어온다고 가정합니다.
   direction: "등원" | "하원";
   routeLabel: string;
+  departTime: string; // 이 노선의 등록된 출발 기준시각(HH:MM)
   canEdit: boolean;
 }) {
   const notify = useToast();
@@ -59,6 +73,7 @@ export default function RouteMap({
   const [pinTarget, setPinTarget] = useState<string | null>(null); // 지도를 클릭해 좌표를 지정할 정류장 id
   const [routePath, setRoutePath] = useState<ShuttleRoutePath | null>(null);
   const [pathComputing, setPathComputing] = useState(false);
+  const autoTriedRef = useRef<Set<string>>(new Set());
 
   useEffect(() => setLocalStops(stops), [stops]);
 
@@ -66,6 +81,25 @@ export default function RouteMap({
   const geocoded = localStops.filter((s) => s.lat != null && s.lng != null);
   const currentStopIds = geocoded.map((s) => s.id);
   const pathStale = !routePath || routePath.stop_ids.length !== currentStopIds.length || routePath.stop_ids.some((id, i) => id !== currentStopIds[i]);
+
+  // 지도 마커와 아래쪽 시간표가 같은 순서를 쓰도록 한 곳에서만 계산합니다. 등원은 정류장을 돈
+  // 뒤 GIA에서 끝나고, 하원은 GIA에서 출발해 정류장을 순서대로 돕니다.
+  const orderedPoints = useMemo(() => {
+    const stopPts = geocoded.map((s) => ({
+      key: s.id,
+      lat: s.lat!,
+      lng: s.lng!,
+      label: String(s.seq),
+      address: s.address ?? "",
+      isSchool: false,
+    }));
+    const schoolPt = giaCoord
+      ? { key: "gia", lat: giaCoord.lat, lng: giaCoord.lng, label: "GIA", address: "GIA 본원(논현로131길 45)", isSchool: true }
+      : null;
+    if (!schoolPt) return stopPts;
+    return direction === "등원" ? [...stopPts, schoolPt] : [schoolPt, ...stopPts];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [geocoded, giaCoord, direction]);
 
   // 이 노선의 캐시된 실제 도로 경로를 불러옵니다(노선을 바꿀 때마다).
   useEffect(() => {
@@ -81,9 +115,9 @@ export default function RouteMap({
     };
   }, [routeId]);
 
-  async function computeRoadPath() {
+  async function computeRoadPath(auto = false) {
     if (!giaCoord) {
-      notify("GIA 본원 좌표를 아직 못 찾았습니다. 잠시 후 다시 시도해주세요.", "error");
+      if (!auto) notify("GIA 본원 좌표를 아직 못 찾았습니다. 잠시 후 다시 시도해주세요.", "error");
       return;
     }
     setPathComputing(true);
@@ -95,17 +129,37 @@ export default function RouteMap({
       });
       const json = await res.json();
       if (!res.ok) {
-        notify(json.error ?? "실제 도로 경로 계산에 실패했습니다.", "error");
+        if (!auto) notify(json.error ?? "실제 도로 경로 계산에 실패했습니다.", "error");
         return;
       }
-      setRoutePath({ route_id: routeId, path: json.path, distance_m: json.distance_m, duration_s: json.duration_s, stop_ids: json.stop_ids, computed_at: new Date().toISOString() });
-      notify("실제 도로 경로를 계산했습니다.", "success");
+      setRoutePath({
+        route_id: routeId,
+        path: json.path,
+        distance_m: json.distance_m,
+        duration_s: json.duration_s,
+        legs: json.legs ?? [],
+        stop_ids: json.stop_ids,
+        computed_at: new Date().toISOString(),
+      });
+      if (!auto) notify("실제 도로 경로를 계산했습니다.", "success");
     } catch {
-      notify("실제 도로 경로 계산 중 오류가 발생했습니다.", "error");
+      if (!auto) notify("실제 도로 경로 계산 중 오류가 발생했습니다.", "error");
     } finally {
       setPathComputing(false);
     }
   }
+
+  // 노선을 열었는데 실도로 경로가 아직 없거나(또는 정류장이 바뀌어 낡았으면), 편집 권한이 있는
+  // 사용자에 한해 자동으로 한 번 계산해둡니다(매번 손으로 버튼을 누르지 않아도 되도록). 실패해도
+  // 이 노선에서는 다시 자동 시도하지 않고(같은 실패가 반복 호출되는 것을 막음) 수동 버튼으로 재시도할 수 있습니다.
+  useEffect(() => {
+    if (!canEdit || !giaCoord || geocoded.length === 0) return;
+    if (routePath && !pathStale) return;
+    if (autoTriedRef.current.has(routeId)) return;
+    autoTriedRef.current.add(routeId);
+    computeRoadPath(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canEdit, giaCoord, geocoded.length, pathStale, routePath, routeId]);
 
   // 지도 SDK를 불러오고, 이 노선에 속한 정류장 중 좌표가 없는 것들을 순서대로 자동 지오코딩합니다.
   useEffect(() => {
@@ -178,14 +232,7 @@ export default function RouteMap({
       lineRef.current?.setMap(null);
       lineRef.current = null;
 
-      const stopPts = localStops
-        .filter((s) => s.lat != null && s.lng != null)
-        .map((s) => ({ key: s.id, lat: s.lat!, lng: s.lng!, label: String(s.seq), isSchool: false }));
-
-      // 정류장 DB에는 학생 주소만 있어 학교 지점이 없으므로, 등원은 끝에·하원은 앞에 GIA를
-      // 덧붙여서 실제 운행 순서(집→학교 / 학교→집)를 지도에 그대로 보여줍니다.
-      const schoolPt = giaCoord ? { key: "gia", lat: giaCoord.lat, lng: giaCoord.lng, label: "GIA", isSchool: true } : null;
-      const pts = schoolPt ? (direction === "등원" ? [...stopPts, schoolPt] : [schoolPt, ...stopPts]) : stopPts;
+      const pts = orderedPoints;
       if (pts.length === 0) return;
 
       const path: Kakao[] = [];
@@ -238,7 +285,7 @@ export default function RouteMap({
       map.setBounds(bounds, 60, 60, 60, 60);
     }
     render();
-  }, [localStops, sdkStatus, direction, giaCoord, routePath, pathStale]);
+  }, [orderedPoints, sdkStatus, direction, routePath, pathStale]);
 
   // 수동 좌표 지정 모드: 지도를 클릭하면 그 위치를 pinTarget 정류장의 좌표로 저장합니다.
   useEffect(() => {
@@ -273,6 +320,26 @@ export default function RouteMap({
     if (sdkStatus === "ready") attach();
   }, [pinTarget, sdkStatus, notify]);
 
+  // 정류장별 소요시간·도착예정시간 표. 실도로 경로(구간별 소요시간)가 최신일 때만 실제 시간을
+  // 계산하고, 없으면 순서·주소만 보여줍니다(엉뚱한 시간을 보여주지 않기 위함).
+  const hasLegTimes = !!routePath && !pathStale && routePath.legs.length === orderedPoints.length - 1 && orderedPoints.length > 1;
+  const baseMin = timeToMinutes(departTime);
+  const scheduleRows = useMemo(() => {
+    if (baseMin == null || orderedPoints.length === 0) return [];
+    let cum = baseMin;
+    return orderedPoints.map((p, i) => {
+      let legMinutes: number | null = null;
+      let arrival: number | null = i === 0 ? baseMin : null;
+      if (i > 0 && hasLegTimes) {
+        legMinutes = Math.round(routePath!.legs[i - 1].duration_s / 60);
+        cum += legMinutes;
+        arrival = cum;
+      }
+      return { ...p, arrival, legMinutes };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderedPoints, hasLegTimes, baseMin]);
+
   if (!process.env.NEXT_PUBLIC_KAKAO_MAP_KEY) {
     return (
       <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-sm text-slate-400">
@@ -298,7 +365,7 @@ export default function RouteMap({
         <div className="flex items-center gap-2">
           {canEdit && (
             <button
-              onClick={computeRoadPath}
+              onClick={() => computeRoadPath()}
               disabled={pathComputing || !giaCoord || geocoded.length === 0}
               className="rounded-lg border border-slate-300 px-2.5 py-1 text-[11px] text-slate-600 hover:bg-slate-50 disabled:opacity-50"
             >
@@ -341,6 +408,38 @@ export default function RouteMap({
               <span className="truncate text-slate-600">{s.address}</span>
             </button>
           ))}
+        </div>
+      )}
+
+      {scheduleRows.length > 0 && (
+        <div className="min-h-0 flex-[2] overflow-y-auto rounded-lg border border-slate-200 p-2.5">
+          <p className="mb-1.5 text-[11px] font-semibold text-slate-600">
+            🕐 {minutesToTime(scheduleRows[0].arrival ?? baseMin ?? 0)} {scheduleRows[0].isSchool ? "GIA" : `${scheduleRows[0].label}번 정류장`} 출발
+          </p>
+          {!hasLegTimes && (
+            <p className="mb-1.5 text-[11px] text-amber-600">
+              위 [🛣️ 실제 도로 경로 계산]을 하면 정류장별 소요시간·도착예정시각이 채워집니다. 지금은 순서만 보여드립니다.
+            </p>
+          )}
+          <ol className="space-y-1">
+            {scheduleRows.slice(1).map((p) => (
+              <li key={p.key} className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-[11px]">
+                <span
+                  className={
+                    "shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold text-white " +
+                    (p.isSchool ? "bg-slate-800" : direction === "등원" ? "bg-amber-600" : "bg-indigo-600")
+                  }
+                >
+                  {p.isSchool ? "GIA" : `${p.label}번`}
+                </span>
+                <span className="text-slate-600">{p.address}</span>
+                {p.legMinutes != null && <span className="text-slate-400">(전 구간 {p.legMinutes}분)</span>}
+                <span className="ml-auto shrink-0 font-semibold text-slate-700">
+                  {p.arrival != null ? minutesToTime(p.arrival) : "-"} {p.isSchool ? "도착 예정" : "도착"}
+                </span>
+              </li>
+            ))}
+          </ol>
         </div>
       )}
     </div>

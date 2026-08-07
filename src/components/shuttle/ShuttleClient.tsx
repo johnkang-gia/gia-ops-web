@@ -166,7 +166,17 @@ export default function ShuttleClient({
             >
               <div className="flex items-center justify-between gap-1">
                 <span className="text-xs font-bold text-slate-700">{r.route_no}호</span>
-                <span className="text-[10px] text-slate-400">{countByRoute.get(r.id) ?? 0}명</span>
+                <span
+                  className={
+                    "text-[10px] " +
+                    (r.usable_capacity != null && (countByRoute.get(r.id) ?? 0) > r.usable_capacity
+                      ? "font-semibold text-red-600"
+                      : "text-slate-400")
+                  }
+                >
+                  {countByRoute.get(r.id) ?? 0}명
+                  {r.usable_capacity != null && (countByRoute.get(r.id) ?? 0) > r.usable_capacity && " ⚠️"}
+                </span>
               </div>
               <div className="truncate text-[11px] text-slate-500">{r.name}</div>
               {r.driver_name && <div className="truncate text-[10px] text-slate-400">🚐 {r.driver_name}</div>}
@@ -188,6 +198,13 @@ export default function ShuttleClient({
                 </h2>
                 <p className="text-[11px] text-slate-400">
                   출발 기준 {selected.depart_time?.slice(0, 5)} · 총 {countByRoute.get(selected.id) ?? 0}명
+                  {selected.usable_capacity != null && (
+                    <span className={(countByRoute.get(selected.id) ?? 0) > selected.usable_capacity ? "ml-1 font-semibold text-red-600" : "ml-1"}>
+                      {" "}
+                      (탑승가능 {selected.usable_capacity}명{selected.seat_capacity ? ` · ${selected.seat_capacity}인승` : ""})
+                      {(countByRoute.get(selected.id) ?? 0) > selected.usable_capacity && " ⚠️ 정원 초과"}
+                    </span>
+                  )}
                   {attentionCount > 0 && (
                     <span className="ml-1 text-amber-600">· ⚠️ 명부 확인 {attentionCount}명</span>
                   )}
@@ -237,6 +254,7 @@ export default function ShuttleClient({
                   stops={selectedStops}
                   direction={selected.direction}
                   routeLabel={`${selected.direction} ${selected.route_no}호 ${selected.name ?? ""}`}
+                  departTime={selected.depart_time}
                   canEdit={canEdit}
                 />
               </div>

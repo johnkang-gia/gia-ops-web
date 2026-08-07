@@ -143,6 +143,7 @@ function buildShuttleCategory(): NavCategory {
     href: "/shuttle",
     items: [
       { href: "/shuttle", label: "셔틀 현황", icon: "📋" },
+      { href: "/shuttle/regions", label: "지역별 현황", icon: "🗺️" },
       { href: "/shuttle/routes", label: "노선 관리", icon: "🛣️", dividerBefore: "기준정보" },
       { href: "/shuttle/students", label: "탑승 배정", icon: "🧑‍🎓" },
     ],

@@ -768,6 +768,9 @@ export type ShuttleRoute = {
   depart_time: string;
   sort_order: number;
   active: boolean;
+  seat_capacity: number | null; // 차량 정원(몇 인승)
+  usable_capacity: number | null; // 실제 탑승 가능 인원(정원보다 적을 수 있음)
+  regions: string[]; // 지역별 대시보드용 정규화 지역 태그(자동 백필 후 노선 관리에서 수정)
   created_at: string;
   updated_at: string;
 };
@@ -828,6 +831,7 @@ export type ShuttleRoutePath = {
   path: { lat: number; lng: number }[];
   distance_m: number | null;
   duration_s: number | null;
+  legs: { distance_m: number; duration_s: number }[]; // 지점 순서(정류장+GIA)에 대응하는 구간별 소요시간
   stop_ids: string[];
   computed_at: string;
 };

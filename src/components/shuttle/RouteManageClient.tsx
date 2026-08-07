@@ -46,6 +46,10 @@ export default function RouteManageClient({
     () => (selected ? stops.filter((s) => s.route_id === selected.id).sort((a, b) => a.seq - b.seq) : []),
     [stops, selected]
   );
+  const selectedRiderCount = useMemo(
+    () => selectedStops.reduce((sum, s) => sum + (asgCountByStop.get(s.id) ?? 0), 0),
+    [selectedStops, asgCountByStop]
+  );
 
   // ── 노선 ──────────────────────────────────────────────────────────
   async function addRoute() {
@@ -255,7 +259,54 @@ export default function RouteManageClient({
                   className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs"
                 />
               </div>
+              <div>
+                <label className="mb-1 block text-[11px] text-slate-400">차량 정원(인승)</label>
+                <input
+                  type="number"
+                  min={0}
+                  defaultValue={selected.seat_capacity ?? ""}
+                  placeholder="예: 15"
+                  onBlur={(e) => {
+                    const n = e.target.value.trim() ? parseInt(e.target.value, 10) : null;
+                    if (n !== selected.seat_capacity) updateRoute(selected.id, { seat_capacity: n });
+                  }}
+                  className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] text-slate-400">실제 탑승 가능 인원</label>
+                <input
+                  type="number"
+                  min={0}
+                  defaultValue={selected.usable_capacity ?? ""}
+                  placeholder="예: 12"
+                  onBlur={(e) => {
+                    const n = e.target.value.trim() ? parseInt(e.target.value, 10) : null;
+                    if (n !== selected.usable_capacity) updateRoute(selected.id, { usable_capacity: n });
+                  }}
+                  className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs"
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="mb-1 block text-[11px] text-slate-400">지역 태그(쉼표로 구분, 지역별 대시보드에서 씁니다)</label>
+                <input
+                  defaultValue={selected.regions.join(", ")}
+                  placeholder="예: 청담, 압구정"
+                  onBlur={(e) => {
+                    const arr = e.target.value.split(",").map((v) => v.trim()).filter(Boolean);
+                    if (arr.join(",") !== selected.regions.join(",")) updateRoute(selected.id, { regions: arr });
+                  }}
+                  className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs"
+                />
+              </div>
             </div>
+
+            {selected.usable_capacity != null && (
+              <p className={"mb-3 -mt-2 text-[11px] " + (selectedRiderCount > selected.usable_capacity ? "font-semibold text-red-600" : "text-slate-400")}>
+                현재 배정 인원 {selectedRiderCount}명 / 탑승가능 {selected.usable_capacity}명
+                {selectedRiderCount > selected.usable_capacity && " ⚠️ 정원을 초과했습니다"}
+              </p>
+            )}
 
             <div className="mb-2 flex items-center justify-between">
               <h3 className="text-sm font-bold text-slate-700">🚏 정류장 ({selectedStops.length})</h3>

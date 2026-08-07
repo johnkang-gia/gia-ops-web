@@ -11,7 +11,7 @@ type KakaoDirectionsResponse = {
     result_code: number;
     result_msg: string;
     summary: { distance: number; duration: number };
-    sections: { roads: { vertexes: number[] }[] }[];
+    sections: { distance: number; duration: number; roads: { vertexes: number[] }[] }[];
   }[];
 };
 
@@ -90,7 +90,11 @@ export async function POST(req: Request) {
   }
 
   const path: { lat: number; lng: number }[] = [];
+  // 구간(section) 하나가 지점 하나에서 다음 지점까지의 이동(=정류장 사이 소요시간 표시에 씀)이라,
+  // 지점 순서(정류장+GIA)와 legs 배열이 1:1로 대응합니다.
+  const legs: { distance_m: number; duration_s: number }[] = [];
   for (const section of result.sections ?? []) {
+    legs.push({ distance_m: section.distance, duration_s: section.duration });
     for (const road of section.roads ?? []) {
       const v = road.vertexes ?? [];
       for (let i = 0; i + 1 < v.length; i += 2) {
@@ -105,6 +109,7 @@ export async function POST(req: Request) {
       path,
       distance_m: result.summary.distance,
       duration_s: result.summary.duration,
+      legs,
       stop_ids: stopsWithCoord.map((s) => s.id),
       computed_at: new Date().toISOString(),
     },
@@ -116,6 +121,7 @@ export async function POST(req: Request) {
     path,
     distance_m: result.summary.distance,
     duration_s: result.summary.duration,
+    legs,
     stop_ids: stopsWithCoord.map((s) => s.id),
   });
 }

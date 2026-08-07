@@ -3549,7 +3549,23 @@ begin
   end loop;
 end $$;
 
--- 77. 학생 차량탑승 여부 + 노선 실도로 경로 캐시 ------------------------------------------
+-- 77-a. 노선: 차량 정원 + 지역 태그 ------------------------------------------------------
+alter table shuttle_routes add column if not exists seat_capacity int;      -- 차량 정원(예: 15인승 → 15)
+alter table shuttle_routes add column if not exists usable_capacity int;    -- 실제 탑승 가능 인원(안전벨트 좌석 수 등 정원보다 적을 수 있음)
+-- 노선 이름(name)이 "청담1", "용산/이태원", "메이플자이 Gate2"처럼 표기가 제각각이라 그대로
+-- 지역 필터에 쓰기 어려워, 별도로 정규화한 지역 태그를 둡니다. 아래 백필은 name에서 숫자 접미사를
+-- 떼고 '/'로 나눈 값을 1차 추정치로 채워줄 뿐이니, 노선 관리 화면에서 꼭 확인 후 다듬어주세요.
+alter table shuttle_routes add column if not exists regions text[] not null default '{}';
+update shuttle_routes
+set regions = coalesce((
+  select array_agg(distinct trimmed)
+  from unnest(string_to_array(coalesce(name, ''), '/')) as part
+  cross join lateral (select trim(regexp_replace(part, '[0-9]+$', '')) as trimmed) t
+  where trimmed <> ''
+), '{}')
+where name is not null and regions = '{}';
+
+-- 77-b. 학생 차량탑승 여부 + 노선 실도로 경로 캐시 ------------------------------------------
 -- 학생 명부에서 "차량탑승 여부"를 체크하면 주소를 지오코딩해 좌표를 캐시해두고,
 -- 그 좌표로 가장 가까운 셔틀 정류장/노선을 추천합니다(직선거리 기준).
 alter table wr_students add column if not exists shuttle_mode text not null default '없음'
@@ -3566,6 +3582,8 @@ create table if not exists shuttle_route_paths (
   path jsonb not null,              -- [{lat, lng}, ...] 도로를 따라가는 좌표 배열(GIA 지점 포함)
   distance_m int,                   -- 전체 경로 거리(미터)
   duration_s int,                   -- 예상 소요 시간(초)
+  legs jsonb not null default '[]', -- 구간별[{distance_m, duration_s}, ...] - 정류장 사이 소요시간
+                                     -- 표시용. 지점 순서(정류장+GIA)와 1:1로 대응합니다.
   stop_ids uuid[] not null default '{}', -- 계산 당시의 정류장 id 순서 - 정류장이 바뀌면 이 배열과
                                           -- 달라지므로 재계산이 필요한지 판단하는 데 씁니다.
   computed_at timestamptz not null default now()

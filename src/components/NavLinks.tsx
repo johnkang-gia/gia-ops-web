@@ -160,7 +160,6 @@ export function SidebarNavLinks({ categories }: { categories: NavCategory[] }) {
         const accent = cat.accent ?? "navy";
         const hasChildren = !!cat.items && cat.items.length > 0;
         const targetHref = cat.href ?? cat.items?.[0]?.href ?? "#";
-        const categoryBadgeTotal = cat.items?.reduce((sum, i) => sum + (i.badge ?? 0), 0) ?? 0;
 
         return (
           <div
@@ -197,7 +196,9 @@ export function SidebarNavLinks({ categories }: { categories: NavCategory[] }) {
                   <span className="block truncate text-[10px] font-normal text-slate-400">{cat.labelEn}</span>
                 )}
               </span>
-              <NavBadge count={categoryBadgeTotal} />
+              {/* 카테고리(주메뉴) 옆에 하위 배지 합계를 띄우던 숫자는 없앴습니다(요청: "운영관리
+                  옆에 숫자가 계속 떠있으니까 보기가 불편해") - 부메뉴 항목별 배지는 그대로
+                  두고, 운영관리의 건수는 등록사건목록 대시보드 제목 옆에서 확인합니다. */}
               {hasChildren && <span className="shrink-0 text-[10px] text-slate-300">›</span>}
             </button>
           </div>

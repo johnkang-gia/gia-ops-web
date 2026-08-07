@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -15,6 +15,7 @@ import {
 } from "@dnd-kit/core";
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import type { Task, TaskStatus, TeamMember } from "@/lib/types";
+import { isMyTask } from "@/lib/myTask";
 import TaskCard from "./TaskCard";
 import ActivityLog from "./ActivityLog";
 import { STATUS_ORDER, STATUS_LABEL, STATUS_COLOR } from "./statusConfig";
@@ -108,14 +109,19 @@ export default function TaskBoard({
 }) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [holdOpen, setHoldOpen] = useState(false);
-  const holdTasks = tasks.filter((t) => t.status === HOLD_STATUS);
+
+  // 업무 흐름판은 "내가 태그된 업무"만 보여줍니다(요청: "내 업무가 아닌데도 진행대기 목록에
+  // 업무가 뜨는 문제... 진행대기, 진행중, 완료의 경우 내 업무만 보이도록"). 부서 전체 업무를
+  // 훑어보는 용도는 오른쪽 위 "전체 업무목록" 위젯이 계속 담당합니다.
+  const myTasks = useMemo(() => tasks.filter((t) => isMyTask(t, currentUserEmail)), [tasks, currentUserEmail]);
+  const holdTasks = myTasks.filter((t) => t.status === HOLD_STATUS);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
-  const activeTask = tasks.find((t) => t.id === activeId) ?? null;
+  const activeTask = myTasks.find((t) => t.id === activeId) ?? null;
 
   function handleDragStart(event: DragStartEvent) {
     setActiveId(String(event.active.id));
@@ -130,11 +136,11 @@ export default function TaskBoard({
     if ((STATUS_ORDER as string[]).includes(String(over.id))) {
       targetStatus = over.id as TaskStatus;
     } else {
-      const overTask = tasks.find((t) => t.id === over.id);
+      const overTask = myTasks.find((t) => t.id === over.id);
       if (overTask) targetStatus = overTask.status;
     }
 
-    const task = tasks.find((t) => t.id === active.id);
+    const task = myTasks.find((t) => t.id === active.id);
     if (task && targetStatus && task.status !== targetStatus) {
       onChangeStatus(task.id, targetStatus);
     }
@@ -148,12 +154,19 @@ export default function TaskBoard({
         <div className="flex-1 overflow-y-auto p-3">
           {/* 진행대기/진행중/완료 3열을 항상 위에 쾌적하게 보여주고, 보류/이슈는 아래로 빼서
               평소엔 접어둡니다(요청 #10) - 넓은 화면에선 3열, 좁으면 1~2열로 쌓입니다. */}
+          {/* 이 영역의 이름을 "업무 흐름판"으로 붙였습니다(요청: 진행대기/진행중/완료 흐름을
+              보는 공간의 이름 추천) - 진행대기→진행중→완료로 업무가 흘러가는 걸 보는 곳이고,
+              칸반이라는 외래어보다 뜻이 바로 읽힙니다. */}
+          <div className="mb-2 flex items-center gap-2 px-1">
+            <h2 className="text-[13px] font-bold text-slate-600">🔀 업무 흐름판</h2>
+            <span className="rounded-full bg-black/5 px-2 py-0.5 text-[10px] text-slate-400">내가 태그된 업무만</span>
+          </div>
           <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {MAIN_STATUS_ORDER.map((status) => (
               <DroppableColumn
                 key={status}
                 status={status}
-                tasks={tasks.filter((t) => t.status === status)}
+                tasks={myTasks.filter((t) => t.status === status)}
                 team={team}
                 deptColorMap={deptColorMap}
                 modeColorMap={modeColorMap}

@@ -81,13 +81,17 @@ export default function TaskCard({
       <div
         ref={setNodeRef}
         style={{ ...style, borderLeftColor: color }}
-        className="glass mb-1.5 flex cursor-grab items-center gap-1.5 overflow-hidden rounded-lg border-l-4 px-3 py-1.5 opacity-70 shadow-sm transition hover:opacity-100"
+        className="glass mb-1.5 flex items-center gap-1.5 overflow-hidden rounded-lg border-l-4 px-3 py-1.5 opacity-70 shadow-sm transition hover:opacity-100"
         {...attributes}
-        {...listeners}
-        onClick={onOpen}
       >
         <span className="shrink-0 text-xs">✅</span>
-        <span className="min-w-0 flex-1 truncate text-[13px] text-slate-500 line-through">{task.title}</span>
+        <span
+          {...listeners}
+          onClick={onOpen}
+          className="min-w-0 flex-1 cursor-grab truncate text-[13px] text-slate-500 line-through active:cursor-grabbing"
+        >
+          {task.title}
+        </span>
         <select
           value={task.status}
           onChange={(e) => onChangeStatus(e.target.value as TaskStatus)}
@@ -106,16 +110,22 @@ export default function TaskCard({
     );
   }
 
+  // 평소에는 제목 + 확인여부 + 마감기한만 있는 얇은 "바"로 두고, 마우스를 올리면 그 아래로
+  // 상세(내용·담당자·확인현황·상태 바꾸기)가 펼쳐집니다(요청: "등록당시에는 제목하고 확인여부,
+  // 마감기한만 뜨도록하고, 마우스를 업무바 위에 올리면 펼쳐지면서 확인현황등이 뜨고"). 이렇게
+  // 하면 흐름판에 업무가 여러 건 쌓여도 한 화면에 한눈에 들어옵니다.
+  //
+  // 드래그(listeners)는 카드 전체가 아니라 제목 영역에만 붙였습니다(요청: "제목쪽을 드래그해서
+  // 옮기도록") - 펼쳐진 상태에서 체크박스·드롭다운을 누를 때 카드가 딸려 움직이지 않습니다.
   return (
     <div
       ref={setNodeRef}
       style={{ ...style, borderLeftColor: borderColor }}
-      className={"glass mb-2 cursor-grab overflow-hidden rounded-lg border-l-4 p-3 shadow-sm transition " + urgencyRing}
+      className={"glass group mb-1.5 overflow-hidden rounded-lg border-l-4 shadow-sm transition " + urgencyRing}
       {...attributes}
-      {...listeners}
-      onClick={onOpen}
     >
-      <div className="mb-1.5 flex items-start gap-2">
+      {/* 항상 보이는 한 줄: 확인 체크 · 제목(드래그 손잡이) · 마감 */}
+      <div className="flex items-center gap-1.5 px-2.5 py-1.5">
         {iAmAssignee && (
           <input
             type="checkbox"
@@ -123,78 +133,85 @@ export default function TaskCard({
             onChange={(e) => onToggleAcknowledge(e.target.checked)}
             onClick={(e) => e.stopPropagation()}
             onPointerDown={(e) => e.stopPropagation()}
-            className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer"
+            className="h-3.5 w-3.5 shrink-0 cursor-pointer"
             title="업무 확인"
           />
         )}
         {task.priority === "긴급" && (
-          <span className="mt-0.5 shrink-0 rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-600">
-            긴급
-          </span>
+          <span className="shrink-0 rounded bg-red-100 px-1 py-0.5 text-[9px] font-bold text-red-600">긴급</span>
         )}
         {task.recurrence && (
-          <span
-            title={recurrenceLabel(task.recurrence)}
-            className="mt-0.5 shrink-0 rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-bold text-indigo-600"
-          >
+          <span title={recurrenceLabel(task.recurrence)} className="shrink-0 text-[10px]">
             🔁
           </span>
         )}
-        <span className={"min-w-0 flex-1 text-sm font-semibold text-slate-800" + (iAmAssignee && myAck ? " opacity-60" : "")}>
+        <span
+          {...listeners}
+          onClick={onOpen}
+          title="드래그해서 다른 칸으로 옮기거나, 클릭해서 상세를 엽니다"
+          className={
+            "min-w-0 flex-1 cursor-grab truncate text-[13px] font-semibold text-slate-800 active:cursor-grabbing" +
+            (iAmAssignee && myAck ? " opacity-60" : "")
+          }
+        >
           {task.title}
         </span>
-        {totalAckRequired > 0 && (
-          <span className="shrink-0 text-[10px] font-semibold text-slate-400">
-            확인 {ackListRequired.length}/{totalAckRequired}
+        {overdue && <span className="shrink-0 animate-pulse text-[10px]">🔥</span>}
+        {dueSoon && <span className="shrink-0 text-[10px]">⏰</span>}
+        {deadline && (
+          <span
+            className={
+              "shrink-0 text-[10px] " +
+              (overdue ? "font-semibold text-red-500" : dueSoon ? "font-semibold text-amber-600" : "text-slate-400")
+            }
+          >
+            {deadline}
           </span>
         )}
       </div>
 
-      {task.description && <div className="mb-2 text-xs text-slate-500">{task.description}</div>}
+      {/* 마우스를 올렸을 때만 펼쳐지는 상세 영역 */}
+      <div className="hidden border-t border-dashed border-slate-200 px-2.5 py-1.5 group-hover:block">
+        {task.description && <div className="mb-1 text-[11px] text-slate-500">{task.description}</div>}
 
-      <div className="flex items-center justify-between gap-2 text-[11px] text-slate-500">
-        <span className="flex items-center gap-1">
-          {overdue && (
-            <span className="animate-pulse rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-600">🔥 지연</span>
-          )}
-          {dueSoon && <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-600">⏰ 임박</span>}
-          <span className={overdue ? "font-semibold text-red-500" : dueSoon ? "font-semibold text-amber-600" : ""}>{deadline ?? ""}</span>
-        </span>
-        {assigneeSummary && <span>👤 {assigneeSummary}</span>}
-      </div>
-
-      {/* 드래그가 불편한 터치 환경(모바일/태블릿)에서도 상태를 바로 바꿀 수 있도록, 드래그
-          외에 이 드롭다운으로도 상태 변경이 가능합니다 - 데스크톱에서도 그대로 씁니다. */}
-      <div className="mt-1.5 flex justify-end">
-        <select
-          value={task.status}
-          onChange={(e) => onChangeStatus(e.target.value as TaskStatus)}
-          onClick={(e) => e.stopPropagation()}
-          onPointerDown={(e) => e.stopPropagation()}
-          title="상태를 바로 바꾸기 (드래그 없이도 가능)"
-          className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-500"
-        >
-          {STATUS_ORDER.map((s) => (
-            <option key={s} value={s}>
-              {STATUS_LABEL[s]}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {isAdmin && totalAckRequired > 0 && (
-        <div className="mt-2 flex flex-col gap-0.5 border-t border-dashed border-slate-200 pt-2 text-[11px]">
-          <div className="font-semibold text-slate-400">[관리자] 확인 현황 ({ackListRequired.length}/{totalAckRequired})</div>
-          {ackListRequired.length > 0 && (
-            <div className="text-emerald-600">
-              {ackListRequired.map((a) => `✓ ${nameFor(team, a.email)}`).join(" · ")}
-            </div>
-          )}
-          {unacknowledged.length > 0 && (
-            <div className="text-red-500">! 미확인: {unacknowledged.map((e) => nameFor(team, e)).join(", ")}</div>
+        <div className="flex items-center justify-between gap-2 text-[11px] text-slate-500">
+          {assigneeSummary && <span>👤 {assigneeSummary}</span>}
+          {totalAckRequired > 0 && (
+            <span className="font-semibold text-slate-400">
+              확인 {ackListRequired.length}/{totalAckRequired}
+            </span>
           )}
         </div>
-      )}
+
+        {totalAckRequired > 0 && (
+          <div className="mt-1 flex flex-col gap-0.5 text-[10px]">
+            {ackListRequired.length > 0 && (
+              <div className="text-emerald-600">{ackListRequired.map((a) => `✓ ${nameFor(team, a.email)}`).join(" · ")}</div>
+            )}
+            {unacknowledged.length > 0 && (
+              <div className="text-red-500">! 미확인: {unacknowledged.map((e) => nameFor(team, e)).join(", ")}</div>
+            )}
+          </div>
+        )}
+
+        {/* 드래그가 불편한 터치 환경(모바일/태블릿)에서도 상태를 바로 바꿀 수 있는 대체 수단입니다. */}
+        <div className="mt-1.5 flex justify-end">
+          <select
+            value={task.status}
+            onChange={(e) => onChangeStatus(e.target.value as TaskStatus)}
+            onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+            title="상태를 바로 바꾸기 (드래그 없이도 가능)"
+            className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-500"
+          >
+            {STATUS_ORDER.map((s) => (
+              <option key={s} value={s}>
+                {STATUS_LABEL[s]}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
     </div>
   );
 }

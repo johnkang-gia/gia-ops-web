@@ -28,6 +28,7 @@ const BOUNDED_LIST_PATHS = [
   "/academic-calendar",
   "/inquiries",
   "/admin/users",
+  "/ops",
   "/students",
   "/terms",
   "/weekly-report/admin/students",

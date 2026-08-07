@@ -132,7 +132,12 @@ export default function QuickTaskWidget({
 
     setSubmitting(true);
     const parsed = parseTaskFromMessage(raw);
-    const assigneeEmails = mode === "나" ? [currentUserEmail] : mode === "전체" ? team.map((t) => t.email) : selected;
+    // 등록자 본인은 어떤 모드로 등록하든 항상 담당자(태그)에 포함시킵니다 - 이제 "내 업무목록"과
+    // 업무 흐름판(진행대기/진행중/완료)이 모두 "내가 태그되었는가" 하나만 기준으로 삼기 때문에,
+    // 내가 등록한 업무가 내 목록에서 빠지지 않으려면 등록 시점에 자기 자신도 태그되어야 합니다
+    // ([공유] 모드로 다른 사람만 골라 등록한 경우가 여기 해당됩니다).
+    const baseAssignees = mode === "나" ? [currentUserEmail] : mode === "전체" ? team.map((t) => t.email) : selected;
+    const assigneeEmails = baseAssignees.includes(currentUserEmail) ? baseAssignees : [...baseAssignees, currentUserEmail];
     const dueAt = explicitDueAt ?? parsed.dueAt;
 
     const recurrence: TaskRecurrence = recurrenceFreq

@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import type { ShuttleAssignment, ShuttleDirection, ShuttleRoute, ShuttleStop } from "@/lib/types";
 import { useToast } from "@/components/common/ToastProvider";
 import { DIVISION_BADGE, divisionFromClassRaw, needsRosterAttention } from "@/lib/shuttleDivision";
+import RouteMap from "@/components/shuttle/RouteMap";
 
 const WEEKDAY_LABEL = ["", "월", "화", "수", "목", "금"];
 
@@ -33,6 +34,7 @@ export default function ShuttleClient({
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<Partial<ShuttleRoute>>({});
+  const [view, setView] = useState<"table" | "map">("table");
 
   const stopsByRoute = useMemo(() => {
     const m = new Map<string, ShuttleStop[]>();
@@ -192,19 +194,52 @@ export default function ShuttleClient({
                 </p>
               </div>
               <div className="flex gap-1.5 print:hidden">
-                {canEdit && !editing && (
+                <div className="flex gap-0.5 rounded-lg bg-slate-100 p-0.5">
+                  <button
+                    onClick={() => setView("table")}
+                    className={
+                      "rounded-md px-2 py-1 text-xs font-semibold transition " +
+                      (view === "table" ? "bg-white text-slate-700 shadow-sm" : "text-slate-400 hover:text-slate-600")
+                    }
+                  >
+                    📋 배차표
+                  </button>
+                  <button
+                    onClick={() => setView("map")}
+                    className={
+                      "rounded-md px-2 py-1 text-xs font-semibold transition " +
+                      (view === "map" ? "bg-white text-slate-700 shadow-sm" : "text-slate-400 hover:text-slate-600")
+                    }
+                  >
+                    🗺️ 노선도
+                  </button>
+                </div>
+                {canEdit && !editing && view === "table" && (
                   <button onClick={startEdit} className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-500 hover:bg-slate-50">
                     ✏️ 담당자 수정
                   </button>
                 )}
-                <button
-                  onClick={() => window.print()}
-                  className="rounded-lg bg-gia-navy px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-gia-navy-2"
-                >
-                  🖨️ 배차표 인쇄
-                </button>
+                {view === "table" && (
+                  <button
+                    onClick={() => window.print()}
+                    className="rounded-lg bg-gia-navy px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-gia-navy-2"
+                  >
+                    🖨️ 배차표 인쇄
+                  </button>
+                )}
               </div>
             </div>
+
+            {view === "map" ? (
+              <div className="h-[calc(100%-4rem)]">
+                <RouteMap
+                  stops={selectedStops}
+                  direction={selected.direction}
+                  routeLabel={`${selected.direction} ${selected.route_no}호 ${selected.name ?? ""}`}
+                />
+              </div>
+            ) : (
+              <>
 
             {editing ? (
               <div className="mb-3 flex flex-wrap items-end gap-2 rounded-xl bg-slate-50 p-3 print:hidden">
@@ -321,6 +356,8 @@ export default function ShuttleClient({
               담당 기사님: {selected.driver_name} {selected.driver_phone} · 담당 선생님: {selected.teacher_name}{" "}
               {selected.teacher_phone}
             </p>
+              </>
+            )}
           </>
         )}
       </div>

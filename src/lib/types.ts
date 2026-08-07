@@ -775,6 +775,9 @@ export type ShuttleStop = {
   address: string | null;
   gate: string | null;
   note: string | null;
+  lat: number | null;
+  lng: number | null;
+  geocoded_at: string | null;
   created_at: string;
 };
 

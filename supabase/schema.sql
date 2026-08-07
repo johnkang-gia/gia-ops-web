@@ -3457,6 +3457,9 @@ create table if not exists shuttle_stops (
   address text,
   gate text,                                 -- 메이플자이처럼 게이트가 나뉘는 경우
   note text,
+  lat double precision,                      -- 노선 지도용 좌표(카카오 지오코딩 결과 또는 수동 보정)
+  lng double precision,
+  geocoded_at timestamptz,                   -- 좌표를 마지막으로 채운 시각(자동/수동 공통)
   created_at timestamptz not null default now()
 );
 create index if not exists shuttle_stops_route_idx on shuttle_stops(route_id, seq);

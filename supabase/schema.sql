@@ -3441,9 +3441,13 @@ create table if not exists shuttle_routes (
   sort_order int not null default 0,
   active boolean not null default true,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  unique (direction, route_no)
+  updated_at timestamptz not null default now()
 );
+-- 호차 번호에 유니크 제약을 두지 않습니다 - 실제 배차표(2026BUS.pdf)에 "등원 22호"가 청담1과
+-- 청담4 두 노선에 중복으로 적혀 있었습니다. 운영 중에도 노선이 갈라지거나 번호를 잠시 겹쳐
+-- 쓰는 일이 있어서, 제약으로 막기보다 화면에서 보고 정리하는 편이 실무에 맞습니다.
+alter table shuttle_routes drop constraint if exists shuttle_routes_direction_route_no_key;
+create index if not exists shuttle_routes_direction_no_idx on shuttle_routes(direction, route_no);
 
 create table if not exists shuttle_stops (
   id uuid primary key default gen_random_uuid(),

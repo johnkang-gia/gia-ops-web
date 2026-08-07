@@ -11,6 +11,12 @@ type Kakao = any;
 
 const DEFAULT_CENTER = { lat: 37.5172, lng: 127.0473 }; // 강남/논현 일대 기본값(좌표를 하나도 못 구했을 때)
 
+// GIA마이크로랩(학교) 주소 - 등원 노선은 항상 이 지점에서 끝나고, 하원 노선은 항상 이 지점에서
+// 출발합니다. 정류장 DB에는 학생 주소만 들어있어 학교 지점이 없으므로, 지도에는 이 좌표를
+// 매번 방향에 맞는 끝에 덧붙여 그립니다.
+const GIA_ADDRESS = "서울 강남구 논현로131길 45";
+let giaCoordCache: { lat: number; lng: number } | null = null; // 노선을 바꿔도 같은 세션이면 다시 지오코딩하지 않도록 모듈 스코프에 캐시합니다.
+
 // 주소 하나를 좌표로 변환합니다. 카카오 Geocoder는 콜백 방식이라 Promise로 감쌌습니다.
 function geocodeAddress(kakao: Kakao, address: string): Promise<{ lat: number; lng: number } | null> {
   return new Promise((resolve) => {
@@ -42,6 +48,7 @@ export default function RouteMap({
   const clickListenerRef = useRef<Kakao>(null);
 
   const [localStops, setLocalStops] = useState(stops);
+  const [giaCoord, setGiaCoord] = useState<{ lat: number; lng: number } | null>(giaCoordCache);
   const [sdkStatus, setSdkStatus] = useState<"loading" | "ready" | "error">("loading");
   const [sdkError, setSdkError] = useState("");
   const [geocoding, setGeocoding] = useState(false);
@@ -66,6 +73,15 @@ export default function RouteMap({
           });
         }
         setSdkStatus("ready");
+
+        // GIA 본원 좌표는 노선마다 공통이라 한 번만 지오코딩하고 모듈 캐시에 저장해둡니다.
+        if (!giaCoordCache) {
+          const schoolCoord = await geocodeAddress(kakao, GIA_ADDRESS);
+          if (schoolCoord) {
+            giaCoordCache = schoolCoord;
+            if (!cancelled) setGiaCoord(schoolCoord);
+          }
+        }
 
         // 주소는 있는데 좌표가 없는 정류장을 하나씩 지오코딩(카카오 API가 콜백 기반이라 순차 처리).
         const toGeocode = stops.filter((s) => s.address && (s.lat == null || s.lng == null));
@@ -114,27 +130,41 @@ export default function RouteMap({
       lineRef.current?.setMap(null);
       lineRef.current = null;
 
-      const pts = localStops.filter((s) => s.lat != null && s.lng != null);
+      const stopPts = localStops
+        .filter((s) => s.lat != null && s.lng != null)
+        .map((s) => ({ key: s.id, lat: s.lat!, lng: s.lng!, label: String(s.seq), isSchool: false }));
+
+      // 정류장 DB에는 학생 주소만 있어 학교 지점이 없으므로, 등원은 끝에·하원은 앞에 GIA를
+      // 덧붙여서 실제 운행 순서(집→학교 / 학교→집)를 지도에 그대로 보여줍니다.
+      const schoolPt = giaCoord ? { key: "gia", lat: giaCoord.lat, lng: giaCoord.lng, label: "GIA", isSchool: true } : null;
+      const pts = schoolPt ? (direction === "등원" ? [...stopPts, schoolPt] : [schoolPt, ...stopPts]) : stopPts;
       if (pts.length === 0) return;
 
       const path: Kakao[] = [];
-      pts.forEach((s, i) => {
-        const pos = new kakao.maps.LatLng(s.lat!, s.lng!);
+      pts.forEach((p) => {
+        const pos = new kakao.maps.LatLng(p.lat, p.lng);
         path.push(pos);
         const overlay = new kakao.maps.CustomOverlay({
           position: pos,
           yAnchor: 1,
-          content: `<div style="display:flex;flex-direction:column;align-items:center;transform:translateY(-4px)">
+          content: p.isSchool
+            ? `<div style="display:flex;flex-direction:column;align-items:center;transform:translateY(-4px)">
+                <div style="background:#0f172a;color:#fff;border-radius:9999px;
+                  padding:2px 8px;display:flex;align-items:center;justify-content:center;
+                  font-size:11px;font-weight:700;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.3)">
+                  🏫 GIA
+                </div>
+              </div>`
+            : `<div style="display:flex;flex-direction:column;align-items:center;transform:translateY(-4px)">
             <div style="background:${direction === "등원" ? "#d97706" : "#4f46e5"};color:#fff;border-radius:9999px;
               width:22px;height:22px;display:flex;align-items:center;justify-content:center;
               font-size:11px;font-weight:700;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.3)">
-              ${s.seq}
+              ${p.label}
             </div>
           </div>`,
         });
         overlay.setMap(map);
         markersRef.current.push(overlay);
-        void i;
       });
 
       if (path.length >= 2) {
@@ -154,7 +184,7 @@ export default function RouteMap({
       map.setBounds(bounds, 60, 60, 60, 60);
     }
     render();
-  }, [localStops, sdkStatus, direction]);
+  }, [localStops, sdkStatus, direction, giaCoord]);
 
   // 수동 좌표 지정 모드: 지도를 클릭하면 그 위치를 pinTarget 정류장의 좌표로 저장합니다.
   useEffect(() => {
@@ -202,6 +232,7 @@ export default function RouteMap({
       <div className="flex shrink-0 items-center justify-between gap-2">
         <p className="text-xs text-slate-500">
           {routeLabel} · 정류장 {localStops.length}곳 중 좌표 {geocoded.length}곳 표시
+          {giaCoord && <span className="ml-1">· 🏫 GIA 본원 {direction === "등원" ? "도착점" : "출발점"} 표시</span>}
           {geocoding && <span className="ml-1 text-amber-600">· 주소로 좌표 찾는 중…</span>}
         </p>
         {pinTarget && (

@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import type { ShuttleAssignment, ShuttleDirection, ShuttleRoute, ShuttleStop } from "@/lib/types";
 import { useToast } from "@/components/common/ToastProvider";
 import { useConfirm } from "@/components/common/ConfirmProvider";
+import { geocodeAddress } from "@/lib/kakaoMap";
 
 type StopDraft = { stop_time: string; address: string; gate: string };
 
@@ -124,6 +125,28 @@ export default function RouteManageClient({
     const supabase = createClient();
     const { error } = await supabase.from("shuttle_stops").update(patch).eq("id", id);
     if (error) notify("저장하지 못했습니다: " + error.message, "error");
+    if (patch.address !== undefined) await regeocodeStop(id, patch.address);
+  }
+
+  // 주소가 새로 생기거나 바뀌면, 지도 탭을 열어야만 채워지던 구/동/좌표를 그 자리에서 바로
+  // 갱신합니다(주소를 지운 경우엔 옛 위치가 남지 않도록 좌표/구·동도 함께 비웁니다).
+  async function regeocodeStop(id: string, address: string) {
+    const supabase = createClient();
+    const trimmed = address.trim();
+    if (!trimmed) {
+      const cleared = { lat: null, lng: null, gu: null, dong: null, geocoded_at: null };
+      setStops((prev) => prev.map((s) => (s.id === id ? ({ ...s, ...cleared } as ShuttleStop) : s)));
+      await supabase.from("shuttle_stops").update(cleared).eq("id", id);
+      return;
+    }
+    const geo = await geocodeAddress(trimmed).catch(() => null);
+    if (!geo) {
+      notify("주소를 좌표로 변환하지 못했습니다 - 지도에서 직접 위치를 지정해주세요.", "error");
+      return;
+    }
+    const upd = { lat: geo.lat, lng: geo.lng, gu: geo.gu, dong: geo.dong, geocoded_at: new Date().toISOString() };
+    setStops((prev) => prev.map((s) => (s.id === id ? ({ ...s, ...upd } as ShuttleStop) : s)));
+    await supabase.from("shuttle_stops").update(upd).eq("id", id);
   }
 
   async function deleteStop(s: ShuttleStop) {

@@ -3596,3 +3596,40 @@ drop policy if exists "giamicro_select_shuttle_route_paths" on shuttle_route_pat
 create policy "giamicro_select_shuttle_route_paths" on shuttle_route_paths for select using (is_giamicro_user());
 drop policy if exists "wr_manager_write_shuttle_route_paths" on shuttle_route_paths;
 create policy "wr_manager_write_shuttle_route_paths" on shuttle_route_paths for all using (is_wr_manager()) with check (is_wr_manager());
+
+-- 77-c. 정류장 행정구역(구/동) - 지역별 대시보드 분류 기준 ------------------------------------
+-- shuttle_stops CREATE TABLE 블록에는 이미 들어있지만(신규 설치용), 기존 운영 DB에는 테이블이
+-- 먼저 만들어져 있어 컬럼을 별도로 추가해줘야 합니다.
+alter table shuttle_stops add column if not exists gu text;
+alter table shuttle_stops add column if not exists dong text;
+
+-- 77-d. 정류장이 바뀌면 캐시된 실도로 경로를 자동으로 지웁니다 ---------------------------------
+-- 정류장을 추가/삭제하거나 주소·순서·소속 노선이 바뀌면(차량 배정이 바뀌는 경우 포함), 예전
+-- 경로가 화면에 남아있지 않도록 shuttle_route_paths 캐시를 그 자리에서 지웁니다. 그러면 노선도를
+-- 다시 열 때 자동으로 새로 계산됩니다(RouteMap.tsx의 자동 계산 로직). 단, gu/dong/lat/lng처럼
+-- 지오코딩 결과만 채워지는 업데이트는 정류장 구성 자체가 바뀐 게 아니므로 무효화하지 않습니다.
+create or replace function shuttle_stops_invalidate_route_path()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if tg_op = 'UPDATE'
+     and old.address is not distinct from new.address
+     and old.seq is not distinct from new.seq
+     and old.route_id is not distinct from new.route_id then
+    return new; -- 지오코딩 결과(gu/dong/lat/lng/geocoded_at)만 바뀐 경우는 건너뜁니다.
+  end if;
+  delete from shuttle_route_paths where route_id = coalesce(new.route_id, old.route_id);
+  if tg_op = 'UPDATE' and old.route_id is distinct from new.route_id then
+    delete from shuttle_route_paths where route_id = old.route_id; -- 정류장이 다른 노선으로 옮겨간 경우
+  end if;
+  return coalesce(new, old);
+end;
+$$;
+
+drop trigger if exists trg_shuttle_stops_invalidate_path on shuttle_stops;
+create trigger trg_shuttle_stops_invalidate_path
+  after insert or update or delete on shuttle_stops
+  for each row execute function shuttle_stops_invalidate_route_path();

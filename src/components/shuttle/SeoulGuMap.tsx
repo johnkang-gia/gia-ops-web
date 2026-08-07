@@ -19,7 +19,8 @@ export default function SeoulGuMap({
 }) {
   const maxCount = Math.max(1, ...Object.values(counts));
 
-  function fillFor(gu: string) {
+  function fillFor(gu: string, isSelected: boolean) {
+    if (isSelected) return "#f59e0b"; // amber-500 - 선택한 구는 대수와 무관하게 확실히 눈에 띄도록
     const n = counts[gu] ?? 0;
     if (n === 0) return "#e2e8f0"; // slate-200
     const t = n / maxCount; // 0~1
@@ -36,26 +37,28 @@ export default function SeoulGuMap({
         const isSelected = selected === shape.name;
         const match = matches(shape.name);
         const n = counts[shape.name] ?? 0;
+        const dark = isSelected ? false : n / maxCount > 0.55;
         return (
           <g
             key={shape.name}
             onClick={() => onSelect(shape.name)}
-            style={{ cursor: "pointer", opacity: match ? 1 : 0.3 }}
+            style={{ cursor: "pointer", opacity: match ? 1 : 0.3, transition: "opacity 0.15s" }}
           >
             <path
               d={shape.d}
-              fill={fillFor(shape.name)}
+              fill={fillFor(shape.name, isSelected)}
               stroke={isSelected ? "#0f172a" : "#ffffff"}
               strokeWidth={isSelected ? 3.5 : 1.5}
+              style={{ transition: "fill 0.15s" }}
             />
             <text
               x={shape.labelX}
               y={shape.labelY}
               textAnchor="middle"
-              style={{ pointerEvents: "none", userSelect: "none" }}
-              fontSize={n > 0 ? 15 : 13}
-              fontWeight={n > 0 ? 700 : 500}
-              fill={n / maxCount > 0.55 ? "#ffffff" : "#1e293b"}
+              style={{ pointerEvents: "none", userSelect: "none", paintOrder: "stroke", stroke: dark ? "none" : "#ffffff", strokeWidth: dark ? 0 : 3 }}
+              fontSize={n > 0 || isSelected ? 15 : 13}
+              fontWeight={n > 0 || isSelected ? 700 : 500}
+              fill={dark ? "#ffffff" : "#1e293b"}
             >
               {shape.name.replace("구", "")}
               {n > 0 ? ` ${n}` : ""}

@@ -8,6 +8,7 @@ import MyTasksWidget from "./MyTasksWidget";
 import AllTasksWidget from "./AllTasksWidget";
 import QuickTaskWidget from "./QuickTaskWidget";
 import AttendancePanels from "./AttendancePanels";
+import type { RosterStudent } from "@/lib/attendanceDigest";
 
 // 참조 소스코드(WorkspaceArea.tsx)의 마우스 드래그 리사이저를 그대로 옮겼습니다 - 서드파티
 // 라이브러리 없이 mousedown/mousemove/mouseup만으로 좌측 폭(%)과 좌측 상단 높이(%)를 조절합니다.
@@ -49,7 +50,7 @@ export default function WorkspaceArea({
   onToggleAck,
   onTaskCreated,
   mirrorMessages,
-  rosterNames,
+  roster,
 }: {
   activeDepartment: Department;
   tasks: Task[];
@@ -70,7 +71,7 @@ export default function WorkspaceArea({
   // WorkBoardClient에서 한 번만 구독하고 배열을 그대로 내려받아 각 패널이 sourceKey로만
   // 걸러서 보여줍니다.
   mirrorMessages: GoogleChatMirrorMessage[];
-  rosterNames: string[];
+  roster: RosterStudent[];
 }) {
   // 부서 헤더는 상위(WorkBoardClient)의 부서탭 바 하나로 통합했기 때문에 여기서는 별도
   // 헤더 없이 바로 본문을 채웁니다(세로 공간 절약).
@@ -243,7 +244,7 @@ export default function WorkspaceArea({
                   team={team}
                   userEmail={currentUserEmail}
                   department={activeDepartment.name}
-                  rosterNames={rosterNames}
+                  roster={roster}
                   onTaskCreated={onTaskCreated}
                 />
               </div>
@@ -286,7 +287,7 @@ export default function WorkspaceArea({
             team={team}
             userEmail={currentUserEmail}
             department={activeDepartment.name}
-            rosterNames={rosterNames}
+            roster={roster}
             onTaskCreated={onTaskCreated}
           />
         </div>

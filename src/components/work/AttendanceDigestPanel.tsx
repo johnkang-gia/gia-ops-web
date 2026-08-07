@@ -7,9 +7,10 @@ import {
   ATTENDANCE_CATEGORIES,
   categorize,
   dedupeEntries,
-  matchRosterNames,
+  matchRosterStudents,
   type AttendanceCategory,
   type AttendanceEntry,
+  type RosterStudent,
 } from "@/lib/attendanceDigest";
 
 function timeStr(iso: string) {
@@ -26,13 +27,13 @@ function isSameDay(iso: string, base: Date) {
 export default function AttendanceDigestPanel({
   messages,
   department,
-  rosterNames,
+  roster,
 }: {
   messages: GoogleChatMirrorMessage[];
   department: string;
-  // 학생 명부 이름 목록 - 문장에서 이름을 "추측"하지 않고 실제 명부와 대조하기 위해 씁니다
-  // (요청 3의 정서안/정서안만 오탐 방지).
-  rosterNames: string[];
+  // 학생 명부 - 문장에서 이름을 "추측"하지 않고 실제 명부와 대조하기 위해 씁니다(정서안/정서안만
+  // 오탐 방지). 동명이인은 문장의 학년 힌트로 구분합니다.
+  roster: RosterStudent[];
 }) {
   // 부서 메모도 함께 훑습니다(요청: "부서메모에서도, 결석, 픽업이 있다면, 출결내역으로 올려주고").
   // 메모는 부서당 한 장이라 내용만 실시간으로 따라가면 됩니다.
@@ -80,15 +81,30 @@ export default function AttendanceDigestPanel({
       if (!isSameDay(m.created_at_google, today)) continue;
       const category = categorize(m.content);
       if (!category) continue;
-      const names = matchRosterNames(m.content, rosterNames);
-      // 명부에서 이름을 못 찾으면 버리지 않고 원문 앞부분을 이름 자리에 넣어 그대로 보여줍니다
-      // (전학생·오탈자 등으로 명부 대조가 실패해도 놓치지 않도록).
-      const labels = names.length > 0 ? names : [m.content.slice(0, 12)];
-      for (const name of labels) {
+      const students = matchRosterStudents(m.content, roster);
+      if (students.length === 0) {
+        // 명부에서 이름을 못 찾아도 버리지 않고 원문 앞부분을 그대로 보여줍니다(전학생·오탈자
+        // 등으로 대조가 실패해도 놓치지 않도록).
+        const fallback = m.content.slice(0, 12);
         out.push({
-          key: `chat-${m.id}-${name}`,
+          key: `chat-${m.id}-raw`,
           category,
-          studentName: name,
+          studentName: fallback,
+          studentKey: fallback,
+          ambiguous: false,
+          rawText: m.content,
+          time: m.created_at_google,
+          sourceLabel: "구글챗",
+        });
+        continue;
+      }
+      for (const s of students) {
+        out.push({
+          key: `chat-${m.id}-${s.studentKey}`,
+          category,
+          studentName: s.displayName,
+          studentKey: s.studentKey,
+          ambiguous: s.ambiguous,
           rawText: m.content,
           time: m.created_at_google,
           sourceLabel: "구글챗",
@@ -102,13 +118,14 @@ export default function AttendanceDigestPanel({
       if (!text) continue;
       const category = categorize(text);
       if (!category) continue;
-      const names = matchRosterNames(text, rosterNames);
       // 메모는 자유 서술이라 명부에 없는 이름을 넣으면 오탐이 많아, 명부에서 찾은 경우만 올립니다.
-      for (const name of names) {
+      for (const s of matchRosterStudents(text, roster)) {
         out.push({
-          key: `memo-${i}-${name}`,
+          key: `memo-${i}-${s.studentKey}`,
           category,
-          studentName: name,
+          studentName: s.displayName,
+          studentKey: s.studentKey,
+          ambiguous: s.ambiguous,
           rawText: text,
           time: null,
           sourceLabel: "부서메모",
@@ -118,7 +135,7 @@ export default function AttendanceDigestPanel({
 
     // 구글챗과 부서메모에 같은 내용이 겹쳐 적힌 경우 학생이 두 번 뜨지 않도록 정리합니다.
     return dedupeEntries(out);
-  }, [messages, memo, rosterNames]);
+  }, [messages, memo, roster]);
 
   const grouped = useMemo(() => {
     const map = new Map<AttendanceCategory, AttendanceEntry[]>();
@@ -172,7 +189,15 @@ export default function AttendanceDigestPanel({
                     {list.map((e) => (
                       <div key={e.key} className="px-2 py-1">
                         <div className="flex items-center justify-between gap-1">
-                          <span className="truncate text-[11px] font-semibold text-slate-700">{e.studentName}</span>
+                          <span
+                            className={
+                              "truncate text-[11px] font-semibold " + (e.ambiguous ? "text-amber-600" : "text-slate-700")
+                            }
+                            title={e.ambiguous ? "같은 이름의 학생이 여러 명입니다 - 학년을 함께 적어주세요(예: 2학년 김재이)" : undefined}
+                          >
+                            {e.ambiguous ? "⚠️ " : ""}
+                            {e.studentName}
+                          </span>
                           <span className="shrink-0 text-[9px] text-slate-400">
                             {e.sourceLabel === "부서메모" ? "📝" : ""}
                             {e.time ? timeStr(e.time) : e.sourceLabel}

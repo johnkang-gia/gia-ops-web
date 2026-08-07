@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { GoogleChatMirrorMessage, Task, TeamMember } from "@/lib/types";
+import type { RosterStudent } from "@/lib/attendanceDigest";
 import GoogleChatMirrorPanel from "./GoogleChatMirrorPanel";
 import AttendanceDigestPanel from "./AttendanceDigestPanel";
 
@@ -14,14 +15,14 @@ export default function AttendancePanels({
   team,
   userEmail,
   department,
-  rosterNames,
+  roster,
   onTaskCreated,
 }: {
   messages: GoogleChatMirrorMessage[];
   team: TeamMember[];
   userEmail: string;
   department: string;
-  rosterNames: string[];
+  roster: RosterStudent[];
   onTaskCreated?: (task: Task) => void;
 }) {
   const [tab, setTab] = useState<"digest" | "chat">("digest");
@@ -50,7 +51,7 @@ export default function AttendancePanels({
       </div>
       <div className="min-h-0 flex-1 overflow-hidden">
         {tab === "digest" ? (
-          <AttendanceDigestPanel messages={messages} department={department} rosterNames={rosterNames} />
+          <AttendanceDigestPanel messages={messages} department={department} roster={roster} />
         ) : (
           <GoogleChatMirrorPanel
             sourceKey="attendance"

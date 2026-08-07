@@ -15,6 +15,7 @@ import { STATUS_LABEL } from "./statusConfig";
 import WorkspaceArea from "./WorkspaceArea";
 import TaskDetailPanel from "./TaskDetailPanel";
 import WorkGuideModal from "./WorkGuideModal";
+import type { RosterStudent } from "@/lib/attendanceDigest";
 
 type StatusToast = { id: string; taskId: string; text: string };
 
@@ -26,7 +27,7 @@ export default function WorkBoardClient({
   isAdmin,
   initialModeColors,
   initialMirrorMessages,
-  rosterNames,
+  roster,
 }: {
   initialTasks: Task[];
   team: TeamMember[];
@@ -35,8 +36,9 @@ export default function WorkBoardClient({
   isAdmin: boolean;
   initialModeColors: TaskModeColor[];
   initialMirrorMessages: GoogleChatMirrorMessage[];
-  // 재적생 이름 목록 - 출결내역 위젯이 문장에서 학생 이름을 명부와 대조할 때 씁니다.
-  rosterNames: string[];
+  // 재적생 명단 - 출결내역 위젯이 문장에서 학생 이름을 명부와 대조할 때 씁니다(동명이인
+  // 구분을 위해 학년 포함).
+  roster: RosterStudent[];
 }) {
   const [tasks, setTasks] = useRealtimeTable<Task>("tasks", initialTasks);
   const notify = useToast();
@@ -323,7 +325,7 @@ export default function WorkBoardClient({
           onToggleAck={toggleAck}
           onTaskCreated={addTaskRow}
           mirrorMessages={mirrorMessages}
-          rosterNames={rosterNames}
+          roster={roster}
         />
       </div>
 

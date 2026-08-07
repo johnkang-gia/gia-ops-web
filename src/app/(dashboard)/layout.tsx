@@ -116,9 +116,7 @@ function buildSchoolCategory(isAdmin: boolean, isStaffOrAbove: boolean): NavCate
       // 학생 통합기록(wr_students+wr_enrollments)과 같은 구조로 교직원도 입사일/퇴사일/연도별
       // 담당 이력을 한 화면에서 볼 수 있게 추가했습니다(요청: "교직원에 대한 정보도... 통합으로
       // 관리되게끔").
-      { href: "/staff", label: "교직원 정보 조회", icon: "🧑‍💼" },
-      // 등하원 셔틀 노선/정류장/요일별 배정 관리 + 배차표 인쇄.
-      { href: "/shuttle", label: "셔틀 관리", icon: "🚌" }
+      { href: "/staff", label: "교직원 정보 조회", icon: "🧑‍💼" }
     );
   }
   if (isAdmin) {
@@ -131,6 +129,24 @@ function buildSchoolCategory(isAdmin: boolean, isStaffOrAbove: boolean): NavCate
   items!.push({ href: "/terms", label: "학기 관리", icon: "🗓️", dividerBefore: items!.length > 0 ? "" : undefined });
   if (isAdmin) items!.push({ href: "/admin/users", label: "사용자 관리", icon: "🔐", dividerBefore: "계정" });
   return { key: "school", label: "학교 관리", icon: "🏛️", accent: "purple", href: "/school", items };
+}
+
+// "셔틀" - 등하원 차량은 매일 아침·오후에 실제로 굴러가는 독립된 업무 흐름이라(기준정보 세팅,
+// 당일 운행, 대기 안내가 각각 다른 사람이 다른 시간에 씁니다) 학교관리 부메뉴 하나로는 부족해
+// 주메뉴로 뺐습니다. 부메뉴는 "기준정보(가끔 고침) → 매일 쓰는 것" 순으로 배치했습니다.
+function buildShuttleCategory(): NavCategory {
+  return {
+    key: "shuttle",
+    label: "셔틀",
+    icon: "🚌",
+    accent: "teal",
+    href: "/shuttle",
+    items: [
+      { href: "/shuttle", label: "셔틀 현황", icon: "📋" },
+      { href: "/shuttle/routes", label: "노선 관리", icon: "🛣️", dividerBefore: "기준정보" },
+      { href: "/shuttle/students", label: "탑승 배정", icon: "🧑‍🎓" },
+    ],
+  };
 }
 
 // "학교 문서함" - 예전에는 업무 보고서·회의 보고서·매뉴얼·운영계획안·서류함이 운영관리/업무 등
@@ -298,6 +314,7 @@ export default async function DashboardLayout({
       },
       buildOpsCategory(pendingProposals, pendingAdopted),
       buildSchoolCategory(isAdmin, isStaffOrAbove),
+      ...(isStaffOrAbove ? [buildShuttleCategory()] : []),
       buildSchoolDocumentsCategory(),
       // 출석부 메뉴는 요청("일단 지금 출석부를 쓸건 아니니까 출석부메뉴는 감춰줘")에 따라
       // 당분간 사이드바에서 숨겨둡니다. /attendance 화면 자체와 기능은 그대로 남아있어서,

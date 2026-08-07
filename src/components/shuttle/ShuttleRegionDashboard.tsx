@@ -130,6 +130,7 @@ export default function ShuttleRegionDashboard({
         const gb = routeGeo.get(b.id)?.primaryGu ?? "(미상)";
         const gc = ga.localeCompare(gb, "ko");
         if (gc !== 0) return gc;
+        if (a.direction !== b.direction) return a.direction === "등원" ? -1 : 1;
         return natCompare(a.route_no, b.route_no);
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -168,32 +169,48 @@ export default function ShuttleRegionDashboard({
                   📍 {selectedGu} · 동 {dongBreakdown.length}곳 · 노선 {guCounts[selectedGu] ?? 0}대
                 </p>
                 <div className="space-y-2">
-                  {dongBreakdown.map(({ dong, routes: rs }) => (
-                    <div key={dong} className="rounded-lg bg-slate-50 px-2.5 py-2 text-[11px]">
-                      <div className="mb-1 flex items-center justify-between">
-                        <span className="font-semibold text-slate-700">{dong}</span>
-                        <span className="text-slate-400">{rs.length}대</span>
+                  {dongBreakdown.map(({ dong, routes: rs }) => {
+                    const going = rs.filter((r) => r.direction === "등원");
+                    const returning = rs.filter((r) => r.direction === "하원");
+                    const chip = (r: ShuttleRoute) => {
+                      const count = riderCountByRoute.get(r.id) ?? 0;
+                      const over = r.usable_capacity != null && count > r.usable_capacity;
+                      return (
+                        <span
+                          key={r.id}
+                          title={`${r.driver_name ?? "기사님 미정"} · ${count}명${r.usable_capacity != null ? `/${r.usable_capacity}` : ""}`}
+                          className={
+                            "rounded-full px-1.5 py-0.5 text-[10px] font-bold text-white " +
+                            (over ? "bg-red-500" : r.direction === "등원" ? "bg-amber-600" : "bg-indigo-600")
+                          }
+                        >
+                          {r.route_no}호{over && " ⚠️"}
+                        </span>
+                      );
+                    };
+                    return (
+                      <div key={dong} className="rounded-lg bg-slate-50 px-2.5 py-2 text-[11px]">
+                        <div className="mb-1 flex items-center justify-between">
+                          <span className="font-semibold text-slate-700">{dong}</span>
+                          <span className="text-slate-400">{rs.length}대</span>
+                        </div>
+                        <div className="space-y-1">
+                          {going.length > 0 && (
+                            <div className="flex flex-wrap items-center gap-1">
+                              <span className="w-8 shrink-0 text-[10px] font-semibold text-amber-700">등원</span>
+                              {going.map(chip)}
+                            </div>
+                          )}
+                          {returning.length > 0 && (
+                            <div className="flex flex-wrap items-center gap-1">
+                              <span className="w-8 shrink-0 text-[10px] font-semibold text-indigo-700">하원</span>
+                              {returning.map(chip)}
+                            </div>
+                          )}
+                        </div>
                       </div>
-                      <div className="flex flex-wrap gap-1">
-                        {rs.map((r) => {
-                          const count = riderCountByRoute.get(r.id) ?? 0;
-                          const over = r.usable_capacity != null && count > r.usable_capacity;
-                          return (
-                            <span
-                              key={r.id}
-                              title={`${r.driver_name ?? "기사님 미정"} · ${count}명${r.usable_capacity != null ? `/${r.usable_capacity}` : ""}`}
-                              className={
-                                "rounded-full px-1.5 py-0.5 text-[10px] font-bold text-white " +
-                                (over ? "bg-red-500" : r.direction === "등원" ? "bg-amber-600" : "bg-indigo-600")
-                              }
-                            >
-                              {r.direction[0]}·{r.route_no}호{over && " ⚠️"}
-                            </span>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </>
             )}

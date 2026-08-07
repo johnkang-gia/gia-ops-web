@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { ShuttleAssignment, ShuttleDirection, ShuttleRoute, ShuttleStop } from "@/lib/types";
 import { useToast } from "@/components/common/ToastProvider";
+import { DIVISION_BADGE, divisionFromClassRaw, needsRosterAttention } from "@/lib/shuttleDivision";
 
 const WEEKDAY_LABEL = ["", "월", "화", "수", "목", "금"];
 
@@ -81,6 +82,18 @@ export default function ShuttleClient({
 
   const selected = routes.find((r) => r.id === selectedId) ?? visibleRoutes[0] ?? null;
   const selectedStops = selected ? stopsByRoute.get(selected.id) ?? [] : [];
+
+  // 이 노선에서 "초등부인데 명부와 연결 안 된" 건수 - 유치부·중고등부는 아직 명부 등록 전이라
+  // 정상이므로 세지 않습니다.
+  const attentionCount = useMemo(
+    () =>
+      selectedStops.reduce(
+        (sum, st) =>
+          sum + (asgByStop.get(st.id) ?? []).filter((a) => needsRosterAttention(a.class_raw, a.student_id)).length,
+        0
+      ),
+    [selectedStops, asgByStop]
+  );
 
   function startEdit() {
     if (!selected) return;
@@ -173,6 +186,9 @@ export default function ShuttleClient({
                 </h2>
                 <p className="text-[11px] text-slate-400">
                   출발 기준 {selected.depart_time?.slice(0, 5)} · 총 {countByRoute.get(selected.id) ?? 0}명
+                  {attentionCount > 0 && (
+                    <span className="ml-1 text-amber-600">· ⚠️ 명부 확인 {attentionCount}명</span>
+                  )}
                 </p>
               </div>
               <div className="flex gap-1.5 print:hidden">
@@ -272,13 +288,21 @@ export default function ShuttleClient({
                       )}
                       <td className="px-2 py-1.5 font-semibold text-slate-700">
                         {a.student_name_raw}
-                        {!a.student_id && (
-                          <span title="학생 명부와 아직 연결되지 않았습니다" className="ml-1 text-[9px] text-amber-500">
+                        {/* 유치부·중고등부는 아직 명부에 등록 전이라 연결이 안 되는 게 정상이라
+                            경고를 띄우지 않습니다. 초등부(=반이 "학교")인데 연결이 안 된 경우만
+                            표기 차이/누락일 수 있어 확인 대상으로 표시합니다. */}
+                        {needsRosterAttention(a.class_raw, a.student_id) && (
+                          <span title="초등부인데 학생 명부와 연결되지 않았습니다 - 이름 표기를 확인해주세요" className="ml-1 text-[9px] text-amber-500">
                             ⚠️
                           </span>
                         )}
                       </td>
-                      <td className="px-2 py-1.5 text-slate-500">{a.class_raw ?? ""}</td>
+                      <td className="px-2 py-1.5 text-slate-500">
+                        {a.class_raw ?? ""}
+                        <span className={"ml-1 rounded-full px-1 text-[9px] font-semibold " + DIVISION_BADGE[divisionFromClassRaw(a.class_raw)]}>
+                          {divisionFromClassRaw(a.class_raw)}
+                        </span>
+                      </td>
                       <td className="px-2 py-1.5 text-slate-500">{a.guardian_phone ?? ""}</td>
                     </tr>
                   ));

@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isAdminUser } from "@/lib/roles";
-import type { WrStudent, WrStudentFieldDef } from "@/lib/types";
+import type { ShuttleRoute, ShuttleStop, WrStudent, WrStudentFieldDef } from "@/lib/types";
 import StudentManageClient from "@/components/weeklyReport/admin/StudentManageClient";
 import GuideButton from "@/components/common/GuideButton";
 
@@ -25,7 +25,7 @@ export default async function StudentManagePage() {
   if (!me) redirect("/login");
   if (!isAdminUser(me)) redirect("/weekly-report");
 
-  const [{ data: studentsData }, { data: fieldDefsData }] = await Promise.all([
+  const [{ data: studentsData }, { data: fieldDefsData }, { data: routesData }, { data: stopsData }] = await Promise.all([
     supabase
       .from("wr_students")
       .select("*")
@@ -33,6 +33,8 @@ export default async function StudentManagePage() {
       .order("class_name", { ascending: true })
       .order("name", { ascending: true }),
     supabase.from("wr_student_field_defs").select("*").order("sort_order", { ascending: true }),
+    supabase.from("shuttle_routes").select("*").eq("active", true),
+    supabase.from("shuttle_stops").select("*"),
   ]);
 
   return (
@@ -52,6 +54,8 @@ export default async function StudentManagePage() {
           initialStudents={(studentsData as WrStudent[] | null) ?? []}
           initialFieldDefs={(fieldDefsData as WrStudentFieldDef[] | null) ?? []}
           currentUserEmail={me.email}
+          shuttleRoutes={(routesData as ShuttleRoute[] | null) ?? []}
+          shuttleStops={(stopsData as ShuttleStop[] | null) ?? []}
         />
       </div>
     </div>

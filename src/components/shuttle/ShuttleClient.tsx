@@ -233,9 +233,11 @@ export default function ShuttleClient({
             {view === "map" ? (
               <div className="h-[calc(100%-4rem)]">
                 <RouteMap
+                  routeId={selected.id}
                   stops={selectedStops}
                   direction={selected.direction}
                   routeLabel={`${selected.direction} ${selected.route_no}호 ${selected.name ?? ""}`}
+                  canEdit={canEdit}
                 />
               </div>
             ) : (

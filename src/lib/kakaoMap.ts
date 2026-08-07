@@ -43,3 +43,19 @@ export function loadKakaoMaps(): Promise<KakaoNamespace> {
 
   return loadPromise;
 }
+
+// 주소 하나를 좌표로 변환합니다(카카오 Geocoder는 콜백 방식이라 Promise로 감쌌습니다).
+// 노선 지도, 학생 배치 추천 등 지오코딩이 필요한 곳에서 공통으로 씁니다.
+export async function geocodeAddress(address: string): Promise<{ lat: number; lng: number } | null> {
+  const kakao = await loadKakaoMaps();
+  return new Promise((resolve) => {
+    const geocoder = new kakao.maps.services.Geocoder();
+    geocoder.addressSearch(address, (result: KakaoNamespace, status: string) => {
+      if (status === kakao.maps.services.Status.OK && result[0]) {
+        resolve({ lat: parseFloat(result[0].y), lng: parseFloat(result[0].x) });
+      } else {
+        resolve(null);
+      }
+    });
+  });
+}

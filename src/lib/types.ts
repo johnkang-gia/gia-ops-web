@@ -510,6 +510,11 @@ export type WrStudent = {
   gender: "남" | "여" | null;
   allergies: string | null;
   address: string | null;
+  // 셔틀 차량탑승 여부 - 체크하면 address를 지오코딩해 lat/lng를 채우고 가까운 노선을 추천합니다.
+  shuttle_mode: "없음" | "등원" | "하원" | "등하원";
+  lat: number | null;
+  lng: number | null;
+  geocoded_at: string | null;
   note: string | null;
   // 관리자가 "+ 칼럼 추가"로 직접 만든 항목의 값입니다. 키는 wr_student_field_defs.field_key와
   // 짝을 이루고, 값은 항상 문자열로 저장합니다(숫자/날짜 칼럼도 표시용 문자열로 저장).
@@ -815,4 +820,14 @@ export type ShuttleRunEvent = {
   event: "출발" | "5분전" | "도착";
   created_by: string | null;
   created_at: string;
+};
+
+// 노선의 실제 도로 경로(카카오모빌리티 다중경유지 길찾기 결과) 캐시.
+export type ShuttleRoutePath = {
+  route_id: string;
+  path: { lat: number; lng: number }[];
+  distance_m: number | null;
+  duration_s: number | null;
+  stop_ids: string[];
+  computed_at: string;
 };

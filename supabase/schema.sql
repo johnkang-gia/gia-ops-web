@@ -3548,3 +3548,31 @@ begin
     end if;
   end loop;
 end $$;
+
+-- 77. 학생 차량탑승 여부 + 노선 실도로 경로 캐시 ------------------------------------------
+-- 학생 명부에서 "차량탑승 여부"를 체크하면 주소를 지오코딩해 좌표를 캐시해두고,
+-- 그 좌표로 가장 가까운 셔틀 정류장/노선을 추천합니다(직선거리 기준).
+alter table wr_students add column if not exists shuttle_mode text not null default '없음'
+  check (shuttle_mode in ('없음', '등원', '하원', '등하원'));
+alter table wr_students add column if not exists lat double precision;
+alter table wr_students add column if not exists lng double precision;
+alter table wr_students add column if not exists geocoded_at timestamptz;
+
+-- 노선의 실제 도로 경로(카카오모빌리티 다중경유지 길찾기 결과)를 캐시합니다. 정류장을
+-- 순서대로 지나는 경로라 노선이 바뀌지 않는 한 다시 계산할 필요가 없어, 볼 때마다 API를
+-- 부르지 않고 이 테이블에 한 번 저장해두고 재사용합니다.
+create table if not exists shuttle_route_paths (
+  route_id uuid primary key references shuttle_routes(id) on delete cascade,
+  path jsonb not null,              -- [{lat, lng}, ...] 도로를 따라가는 좌표 배열(GIA 지점 포함)
+  distance_m int,                   -- 전체 경로 거리(미터)
+  duration_s int,                   -- 예상 소요 시간(초)
+  stop_ids uuid[] not null default '{}', -- 계산 당시의 정류장 id 순서 - 정류장이 바뀌면 이 배열과
+                                          -- 달라지므로 재계산이 필요한지 판단하는 데 씁니다.
+  computed_at timestamptz not null default now()
+);
+
+alter table shuttle_route_paths enable row level security;
+drop policy if exists "giamicro_select_shuttle_route_paths" on shuttle_route_paths;
+create policy "giamicro_select_shuttle_route_paths" on shuttle_route_paths for select using (is_giamicro_user());
+drop policy if exists "wr_manager_write_shuttle_route_paths" on shuttle_route_paths;
+create policy "wr_manager_write_shuttle_route_paths" on shuttle_route_paths for all using (is_wr_manager()) with check (is_wr_manager());

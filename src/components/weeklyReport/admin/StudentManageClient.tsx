@@ -2,8 +2,11 @@
 
 import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import type { WrStudent, WrStudentFieldDef } from "@/lib/types";
+import type { ShuttleRoute, ShuttleStop, WrStudent, WrStudentFieldDef } from "@/lib/types";
 import { useConfirm } from "@/components/common/ConfirmProvider";
+import ShuttleRecommendModal from "@/components/shuttle/ShuttleRecommendModal";
+
+const SHUTTLE_MODES = ["없음", "등원", "하원", "등하원"] as const;
 
 type SortKey =
   | "grade"
@@ -60,14 +63,19 @@ export default function StudentManageClient({
   initialStudents,
   initialFieldDefs,
   currentUserEmail,
+  shuttleRoutes = [],
+  shuttleStops = [],
 }: {
   initialStudents: WrStudent[];
   initialFieldDefs: WrStudentFieldDef[];
   currentUserEmail: string;
+  shuttleRoutes?: ShuttleRoute[];
+  shuttleStops?: ShuttleStop[];
 }) {
   const confirmAction = useConfirm();
   const [students, setStudents] = useState<WrStudent[]>(initialStudents);
   const [fieldDefs, setFieldDefs] = useState<WrStudentFieldDef[]>(initialFieldDefs);
+  const [recommendFor, setRecommendFor] = useState<WrStudent | null>(null);
 
   // ── 새 학생 등록 폼 ──────────────────────────────────────────────
   const [showAddForm, setShowAddForm] = useState(false);
@@ -488,6 +496,7 @@ export default function StudentManageClient({
               <SortTh label="보호자 연락처" sortKeyFor="parent_phone" />
               <SortTh label="보호자 이메일" sortKeyFor="parent_email" />
               <SortTh label="주소" sortKeyFor="address" />
+              <th className="whitespace-nowrap px-3 py-2">🚌 차량탑승</th>
               <SortTh label="알러지" sortKeyFor="allergies" />
               {fieldDefs.map((f) => (
                 <SortTh key={f.id} label={f.label} sortKeyFor={{ custom: f.field_key }} />
@@ -538,6 +547,31 @@ export default function StudentManageClient({
                 <td className="px-3 py-1.5 text-slate-400">
                   <EditableCell value={s.address ?? ""} onSave={(v) => updateField(s.id, "address", v)} width="w-40" />
                 </td>
+                <td className="px-3 py-1.5">
+                  <div className="flex items-center gap-1">
+                    <select
+                      defaultValue={s.shuttle_mode}
+                      onChange={(e) => updateField(s.id, "shuttle_mode", e.target.value)}
+                      className="rounded-lg border border-transparent px-1.5 py-1 text-sm hover:border-slate-200 focus:border-slate-300"
+                    >
+                      {SHUTTLE_MODES.map((m) => (
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
+                      ))}
+                    </select>
+                    {s.shuttle_mode !== "없음" && (
+                      <button
+                        onClick={() => setRecommendFor(s)}
+                        disabled={!s.address}
+                        title={s.address ? "가까운 노선 추천받기" : "주소를 먼저 입력해주세요"}
+                        className="shrink-0 rounded-lg border border-slate-300 px-1.5 py-1 text-[10px] text-slate-500 hover:bg-slate-50 disabled:opacity-40"
+                      >
+                        추천
+                      </button>
+                    )}
+                  </div>
+                </td>
                 <td className="px-3 py-1.5 text-slate-400">
                   <EditableCell value={s.allergies ?? ""} onSave={(v) => updateField(s.id, "allergies", v)} width="w-28" />
                 </td>
@@ -563,7 +597,7 @@ export default function StudentManageClient({
             ))}
             {sorted.length === 0 && (
               <tr>
-                <td colSpan={11 + fieldDefs.length} className="px-3 py-6 text-center text-slate-400">
+                <td colSpan={12 + fieldDefs.length} className="px-3 py-6 text-center text-slate-400">
                   {active.length === 0 ? "등록된 학생이 없습니다." : "이 조건에 맞는 학생이 없습니다."}
                 </td>
               </tr>
@@ -571,6 +605,19 @@ export default function StudentManageClient({
           </tbody>
         </table>
       </div>
+
+      {recommendFor && (
+        <ShuttleRecommendModal
+          student={recommendFor}
+          routes={shuttleRoutes}
+          stops={shuttleStops}
+          onClose={() => setRecommendFor(null)}
+          onStudentUpdated={(patch) => {
+            setStudents((prev) => prev.map((s) => (s.id === recommendFor.id ? { ...s, ...patch } : s)));
+            setRecommendFor((prev) => (prev ? { ...prev, ...patch } : prev));
+          }}
+        />
+      )}
     </div>
   );
 }

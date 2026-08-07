@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { loadKakaoMaps } from "@/lib/kakaoMap";
+import { geocodeAddress, loadKakaoMaps } from "@/lib/kakaoMap";
 import type { ShuttleRoutePath, ShuttleStop } from "@/lib/types";
 import { useToast } from "@/components/common/ToastProvider";
 
@@ -16,20 +16,6 @@ const DEFAULT_CENTER = { lat: 37.5172, lng: 127.0473 }; // 강남/논현 일대 
 // 매번 방향에 맞는 끝에 덧붙여 그립니다.
 const GIA_ADDRESS = "서울 강남구 논현로131길 45";
 let giaCoordCache: { lat: number; lng: number } | null = null; // 노선을 바꿔도 같은 세션이면 다시 지오코딩하지 않도록 모듈 스코프에 캐시합니다.
-
-// 주소 하나를 좌표로 변환합니다. 카카오 Geocoder는 콜백 방식이라 Promise로 감쌌습니다.
-function geocodeAddress(kakao: Kakao, address: string): Promise<{ lat: number; lng: number } | null> {
-  return new Promise((resolve) => {
-    const geocoder = new kakao.maps.services.Geocoder();
-    geocoder.addressSearch(address, (result: Kakao, status: string) => {
-      if (status === kakao.maps.services.Status.OK && result[0]) {
-        resolve({ lat: parseFloat(result[0].y), lng: parseFloat(result[0].x) });
-      } else {
-        resolve(null);
-      }
-    });
-  });
-}
 
 // "8:27" / "08:27:00" 등을 자정 기준 분(0~1439)으로 바꿉니다.
 function timeToMinutes(t: string): number | null {
@@ -178,28 +164,30 @@ export default function RouteMap({
 
         // GIA 본원 좌표는 노선마다 공통이라 한 번만 지오코딩하고 모듈 캐시에 저장해둡니다.
         if (!giaCoordCache) {
-          const schoolCoord = await geocodeAddress(kakao, GIA_ADDRESS);
+          const schoolCoord = await geocodeAddress(GIA_ADDRESS);
           if (schoolCoord) {
-            giaCoordCache = schoolCoord;
-            if (!cancelled) setGiaCoord(schoolCoord);
+            giaCoordCache = { lat: schoolCoord.lat, lng: schoolCoord.lng };
+            if (!cancelled) setGiaCoord(giaCoordCache);
           }
         }
 
-        // 주소는 있는데 좌표가 없는 정류장을 하나씩 지오코딩(카카오 API가 콜백 기반이라 순차 처리).
-        const toGeocode = stops.filter((s) => s.address && (s.lat == null || s.lng == null));
+        // 주소는 있는데 좌표나 구/동 정보가 없는 정류장을 하나씩 지오코딩(카카오 API가 콜백
+        // 기반이라 순차 처리). 구/동은 지역별 대시보드 분류 기준이라, 기존에 좌표만 있고 구/동은
+        // 아직 없는 정류장도 이 화면을 열 때마다 자연스럽게 채워집니다.
+        const toGeocode = stops.filter((s) => s.address && (s.lat == null || s.lng == null || s.gu == null));
         if (toGeocode.length > 0) {
           setGeocoding(true);
           const supabase = createClient();
           for (const s of toGeocode) {
             if (cancelled) break;
-            const coord = await geocodeAddress(kakao, s.address!);
-            if (coord) {
+            const result = await geocodeAddress(s.address!);
+            if (result) {
               await supabase
                 .from("shuttle_stops")
-                .update({ lat: coord.lat, lng: coord.lng, geocoded_at: new Date().toISOString() })
+                .update({ lat: result.lat, lng: result.lng, gu: result.gu, dong: result.dong, geocoded_at: new Date().toISOString() })
                 .eq("id", s.id);
               if (!cancelled) {
-                setLocalStops((prev) => prev.map((p) => (p.id === s.id ? { ...p, ...coord } : p)));
+                setLocalStops((prev) => prev.map((p) => (p.id === s.id ? { ...p, ...result } : p)));
               }
             }
           }

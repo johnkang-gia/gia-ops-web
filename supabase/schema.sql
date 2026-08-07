@@ -3459,6 +3459,8 @@ create table if not exists shuttle_stops (
   note text,
   lat double precision,                      -- 노선 지도용 좌표(카카오 지오코딩 결과 또는 수동 보정)
   lng double precision,
+  gu text,                                   -- 지오코딩 결과의 행정구(예: 강남구) - 지역별 대시보드 분류 기준
+  dong text,                                 -- 지오코딩 결과의 행정동(예: 청담동)
   geocoded_at timestamptz,                   -- 좌표를 마지막으로 채운 시각(자동/수동 공통)
   created_at timestamptz not null default now()
 );

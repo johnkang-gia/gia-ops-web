@@ -44,15 +44,25 @@ export function loadKakaoMaps(): Promise<KakaoNamespace> {
   return loadPromise;
 }
 
-// 주소 하나를 좌표로 변환합니다(카카오 Geocoder는 콜백 방식이라 Promise로 감쌌습니다).
-// 노선 지도, 학생 배치 추천 등 지오코딩이 필요한 곳에서 공통으로 씁니다.
-export async function geocodeAddress(address: string): Promise<{ lat: number; lng: number } | null> {
+export type GeocodeResult = { lat: number; lng: number; gu: string | null; dong: string | null };
+
+// 주소 하나를 좌표로 변환합니다(카카오 Geocoder는 콜백 방식이라 Promise로 감쌌습니다). 지번/도로명
+// 주소 어느 쪽이든 카카오가 행정구역(구/동)까지 함께 파싱해서 돌려주므로, 노선 이름 문자열을
+// 억지로 파싱하는 대신 이 값을 지역별 대시보드의 구/동 분류 기준으로 씁니다.
+export async function geocodeAddress(address: string): Promise<GeocodeResult | null> {
   const kakao = await loadKakaoMaps();
   return new Promise((resolve) => {
     const geocoder = new kakao.maps.services.Geocoder();
     geocoder.addressSearch(address, (result: KakaoNamespace, status: string) => {
       if (status === kakao.maps.services.Status.OK && result[0]) {
-        resolve({ lat: parseFloat(result[0].y), lng: parseFloat(result[0].x) });
+        const r = result[0];
+        const region = r.address ?? r.road_address ?? null;
+        resolve({
+          lat: parseFloat(r.y),
+          lng: parseFloat(r.x),
+          gu: region?.region_2depth_name ?? null,
+          dong: region?.region_3depth_name ?? null,
+        });
       } else {
         resolve(null);
       }

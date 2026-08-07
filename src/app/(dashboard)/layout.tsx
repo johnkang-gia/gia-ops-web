@@ -116,7 +116,9 @@ function buildSchoolCategory(isAdmin: boolean, isStaffOrAbove: boolean): NavCate
       // 학생 통합기록(wr_students+wr_enrollments)과 같은 구조로 교직원도 입사일/퇴사일/연도별
       // 담당 이력을 한 화면에서 볼 수 있게 추가했습니다(요청: "교직원에 대한 정보도... 통합으로
       // 관리되게끔").
-      { href: "/staff", label: "교직원 정보 조회", icon: "🧑‍💼" }
+      { href: "/staff", label: "교직원 정보 조회", icon: "🧑‍💼" },
+      // 등하원 셔틀 노선/정류장/요일별 배정 관리 + 배차표 인쇄.
+      { href: "/shuttle", label: "셔틀 관리", icon: "🚌" }
     );
   }
   if (isAdmin) {

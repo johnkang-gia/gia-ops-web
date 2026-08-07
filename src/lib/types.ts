@@ -746,3 +746,70 @@ export type AttendanceRecord = {
   created_at: string;
   updated_at: string;
 };
+
+// ===== 셔틀(등하원 차량) =====
+export type ShuttleDirection = "등원" | "하원";
+
+export type ShuttleRoute = {
+  id: string;
+  direction: ShuttleDirection;
+  route_no: string;
+  name: string | null;
+  driver_name: string | null;
+  driver_phone: string | null;
+  vehicle_no: string | null;
+  teacher_name: string | null;
+  teacher_phone: string | null;
+  depart_time: string;
+  sort_order: number;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ShuttleStop = {
+  id: string;
+  route_id: string;
+  seq: number;
+  stop_time: string | null;
+  address: string | null;
+  gate: string | null;
+  note: string | null;
+  created_at: string;
+};
+
+// weekdays: 1=월 ... 5=금. 요일별로 내리는 곳이 다른 학생은 같은 학생이 여러 행을 갖습니다.
+export type ShuttleAssignment = {
+  id: string;
+  stop_id: string;
+  student_id: string | null;
+  student_name_raw: string;
+  class_raw: string | null;
+  weekdays: number[];
+  guardian_phone: string | null;
+  note: string | null;
+  created_at: string;
+};
+
+export type ShuttleBoardingStatus = "예정" | "탑승" | "미탑승" | "결석" | "픽업";
+
+export type ShuttleBoarding = {
+  id: string;
+  service_date: string;
+  assignment_id: string;
+  auto_status: "결석" | "픽업" | "지각" | "조퇴" | null;
+  status: ShuttleBoardingStatus;
+  checked_by: string | null;
+  checked_at: string | null;
+  note: string | null;
+  created_at: string;
+};
+
+export type ShuttleRunEvent = {
+  id: string;
+  service_date: string;
+  route_id: string;
+  event: "출발" | "5분전" | "도착";
+  created_by: string | null;
+  created_at: string;
+};

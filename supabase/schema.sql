@@ -3421,3 +3421,123 @@ begin
     alter publication supabase_realtime add table staff_assignments;
   end if;
 end $$;
+
+-- ===== 76. 셔틀(등하원 차량) 관리 =====
+-- 지입차량이라 기사님·차량번호·동승 선생님이 수시로 바뀌므로, 노선(shuttle_routes)에 현재
+-- 담당자를 직접 적어두고 바뀔 때마다 갱신합니다(별도 기사 마스터 테이블을 두면 매번 두 곳을
+-- 고쳐야 해서 실무에서 오히려 어긋납니다).
+create table if not exists shuttle_routes (
+  id uuid primary key default gen_random_uuid(),
+  direction text not null check (direction in ('등원', '하원')),
+  route_no text not null,                    -- '1', '1-1', '20-2' 등 (PDF의 호차)
+  name text,                                 -- '잠원', '메이플자이 Gate2' 등 권역명
+  driver_name text,
+  driver_phone text,
+  vehicle_no text,                           -- 차량번호(지입차량이라 바뀔 수 있음)
+  teacher_name text,
+  teacher_phone text,
+  -- 출발 기준시각: 등원 08:00, 하원 16:00(요청) - 노선별로 다르면 여기서 조정합니다.
+  depart_time time not null default '08:00',
+  sort_order int not null default 0,
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (direction, route_no)
+);
+
+create table if not exists shuttle_stops (
+  id uuid primary key default gen_random_uuid(),
+  route_id uuid not null references shuttle_routes(id) on delete cascade,
+  seq int not null default 0,                -- 노선 안에서의 순서
+  stop_time text,                            -- '8:27', '16:40-50' 등 표기 그대로(범위/미정이 섞여 있음)
+  address text,
+  gate text,                                 -- 메이플자이처럼 게이트가 나뉘는 경우
+  note text,
+  created_at timestamptz not null default now()
+);
+create index if not exists shuttle_stops_route_idx on shuttle_stops(route_id, seq);
+
+-- 어떤 학생이 어느 정류장에서 무슨 요일에 타는지. 요일별로 내리는 곳이 다른 학생이 있어서
+-- (요청 5) 같은 학생이 요일만 다르게 여러 행을 가질 수 있습니다.
+-- weekdays: 1=월 ... 5=금. 매일이면 {1,2,3,4,5}.
+create table if not exists shuttle_assignments (
+  id uuid primary key default gen_random_uuid(),
+  stop_id uuid not null references shuttle_stops(id) on delete cascade,
+  student_id uuid references wr_students(id) on delete set null,
+  student_name_raw text not null,            -- PDF 표기 그대로(김연우A 등) - 명부 연결 전/실패 시 대비
+  class_raw text,                            -- '5 Nightingale', '학교' 등 표기 그대로
+  weekdays int[] not null default '{1,2,3,4,5}',
+  guardian_phone text,
+  note text,
+  created_at timestamptz not null default now()
+);
+create index if not exists shuttle_assignments_stop_idx on shuttle_assignments(stop_id);
+create index if not exists shuttle_assignments_student_idx on shuttle_assignments(student_id);
+
+-- 하루치 탑승 체크 기록(동승 선생님 모바일 체크 + 자동 결석/픽업 반영).
+-- auto_status는 출결내역(구글챗/부서메모)에서 자동으로 반영된 값이고, status는 실무자가
+-- 더블체크해서 확정한 값입니다(요청 4: 자동체크하되 수정 가능하게).
+create table if not exists shuttle_boardings (
+  id uuid primary key default gen_random_uuid(),
+  service_date date not null,
+  assignment_id uuid not null references shuttle_assignments(id) on delete cascade,
+  auto_status text check (auto_status in ('결석', '픽업', '지각', '조퇴')),
+  status text not null default '예정' check (status in ('예정', '탑승', '미탑승', '결석', '픽업')),
+  checked_by text,
+  checked_at timestamptz,
+  note text,
+  created_at timestamptz not null default now(),
+  unique (service_date, assignment_id)
+);
+create index if not exists shuttle_boardings_date_idx on shuttle_boardings(service_date);
+
+-- 노선 단위 운행 상태(출발/도착 5분전/도착) - 동승 선생님이 누르면 기록되고, 대시보드와
+-- 학부모 알림이 이 값을 실시간으로 따라갑니다.
+create table if not exists shuttle_run_events (
+  id uuid primary key default gen_random_uuid(),
+  service_date date not null,
+  route_id uuid not null references shuttle_routes(id) on delete cascade,
+  event text not null check (event in ('출발', '5분전', '도착')),
+  created_by text,
+  created_at timestamptz not null default now()
+);
+create index if not exists shuttle_run_events_date_idx on shuttle_run_events(service_date, route_id);
+
+alter table shuttle_routes enable row level security;
+alter table shuttle_stops enable row level security;
+alter table shuttle_assignments enable row level security;
+alter table shuttle_boardings enable row level security;
+alter table shuttle_run_events enable row level security;
+
+-- 조회는 로그인한 giamicro.com 계정이면 누구나(동승 선생님이 교사 계정일 수 있어 교사도 포함).
+-- 편집(노선/정류장/배정)은 관리자·행정직원만, 탑승 체크는 동승 선생님이 해야 하므로 로그인
+-- 사용자 전체에게 허용합니다.
+do $$
+declare t text;
+begin
+  foreach t in array array['shuttle_routes','shuttle_stops','shuttle_assignments'] loop
+    execute format('drop policy if exists "giamicro_select_%1$s" on %1$s', t);
+    execute format('create policy "giamicro_select_%1$s" on %1$s for select using (is_giamicro_user())', t);
+    execute format('drop policy if exists "wr_manager_write_%1$s" on %1$s', t);
+    execute format('create policy "wr_manager_write_%1$s" on %1$s for all using (is_wr_manager()) with check (is_wr_manager())', t);
+  end loop;
+  foreach t in array array['shuttle_boardings','shuttle_run_events'] loop
+    execute format('drop policy if exists "giamicro_all_%1$s" on %1$s', t);
+    execute format('create policy "giamicro_all_%1$s" on %1$s for all using (is_giamicro_user()) with check (is_giamicro_user())', t);
+  end loop;
+end $$;
+
+drop trigger if exists shuttle_routes_set_updated_at on shuttle_routes;
+create trigger shuttle_routes_set_updated_at
+  before update on shuttle_routes
+  for each row execute function set_updated_at();
+
+do $$
+declare t text;
+begin
+  foreach t in array array['shuttle_routes','shuttle_stops','shuttle_assignments','shuttle_boardings','shuttle_run_events'] loop
+    if not exists (select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename=t) then
+      execute format('alter publication supabase_realtime add table %I', t);
+    end if;
+  end loop;
+end $$;

@@ -30,6 +30,7 @@ const BOUNDED_LIST_PATHS = [
   "/admin/users",
   "/ops",
   "/students",
+  "/shuttle",
   "/terms",
   "/weekly-report/admin/students",
   "/weekly-report/admin/classes",

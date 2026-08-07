@@ -54,6 +54,74 @@ export function categorize(text: string): AttendanceCategory | null {
   return null;
 }
 
+// ── 날짜/요일 인식 ────────────────────────────────────────────────────────────
+// "조영윤 금요일 결석입니다"처럼 오늘이 아닌 날의 출결을 미리 알려주는 경우가 많아서, 문장에
+// 적힌 날짜/요일을 읽어 "언제의 출결인지"를 따로 계산합니다(요청). 이게 없으면 금요일 결석이
+// 오늘 결석으로 잘못 집계됩니다.
+const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
+
+function toDateKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+export function todayKey(base: Date = new Date()): string {
+  return toDateKey(base);
+}
+
+// 문장에서 대상 날짜를 뽑습니다. baseDate는 그 문장이 적힌 날(구글챗 메시지 시각/오늘)이고,
+// 상대 표현(내일, 금요일 등)은 이 날을 기준으로 계산합니다. 날짜 언급이 전혀 없으면 null을
+// 돌려주고, 호출하는 쪽에서 "적힌 날 당일"로 봅니다.
+export function extractTargetDate(text: string, baseDate: Date): string | null {
+  // 1) 명시적 날짜: "8/12", "8월 12일", "12일"
+  const md = text.match(/(\d{1,2})\s*[./월]\s*(\d{1,2})\s*일?/);
+  if (md) {
+    const month = Number(md[1]);
+    const day = Number(md[2]);
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      const d = new Date(baseDate.getFullYear(), month - 1, day);
+      // 지난 달로 읽히면 내년이 아니라 올해 기준 그대로 둡니다(과거 날짜는 어차피 걸러집니다).
+      return toDateKey(d);
+    }
+  }
+  const dayOnly = text.match(/(?:^|[^\d])(\d{1,2})\s*일(?![가-힣])/);
+  if (dayOnly) {
+    const day = Number(dayOnly[1]);
+    if (day >= 1 && day <= 31) {
+      const d = new Date(baseDate.getFullYear(), baseDate.getMonth(), day);
+      // 이미 지난 날짜면 다음 달로 봅니다("30일 결석"을 월초에 적는 경우는 드물지만 안전하게).
+      if (d < new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate())) d.setMonth(d.getMonth() + 1);
+      return toDateKey(d);
+    }
+  }
+
+  // 2) 상대 표현
+  if (/모레|내일모레/.test(text)) {
+    const d = new Date(baseDate);
+    d.setDate(d.getDate() + 2);
+    return toDateKey(d);
+  }
+  if (/내일/.test(text)) {
+    const d = new Date(baseDate);
+    d.setDate(d.getDate() + 1);
+    return toDateKey(d);
+  }
+  if (/오늘/.test(text)) return toDateKey(baseDate);
+
+  // 3) 요일: 문장이 적힌 날 기준으로 "다음에 오는 그 요일"로 봅니다(같은 요일이면 그날 당일).
+  const wd = text.match(/([월화수목금토일])\s*요일/);
+  if (wd) {
+    const target = WEEKDAYS.indexOf(wd[1]);
+    if (target >= 0) {
+      const d = new Date(baseDate);
+      const diff = (target - d.getDay() + 7) % 7;
+      d.setDate(d.getDate() + diff);
+      return toDateKey(d);
+    }
+  }
+
+  return null;
+}
+
 // 학생 명부 한 명분(이름 대조에 필요한 최소 정보).
 export type RosterStudent = { name: string; grade: string | null };
 
@@ -172,7 +240,20 @@ export type AttendanceEntry = {
   rawText: string;
   time: string | null;
   sourceLabel: string;
+  // 이 출결이 "언제"의 것인지(YYYY-MM-DD). 문장에 날짜/요일이 적혀 있으면 그 날, 없으면 적힌 날.
+  targetDate: string;
 };
+
+// 날짜를 "오늘/내일/8월 12일 (금)" 형태로 보여줍니다.
+export function dateChipLabel(dateKey: string, base: Date = new Date()): string {
+  const d = new Date(dateKey + "T00:00:00");
+  const today = toDateKey(base);
+  const tomorrowDate = new Date(base);
+  tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+  if (dateKey === today) return "오늘";
+  if (dateKey === toDateKey(tomorrowDate)) return "내일";
+  return `${d.getMonth() + 1}/${d.getDate()}(${WEEKDAYS[d.getDay()]})`;
+}
 
 // 같은 학생이 같은 분류로 두 번 올라오지 않도록 정리합니다(요청: "단어를 대조해서 중복되는
 // 아동이 체크안되도록"). 구글챗과 부서메모에 같은 내용이 겹쳐 적히는 상황이 실제로 흔해서,
@@ -181,7 +262,8 @@ export function dedupeEntries(entries: AttendanceEntry[]): AttendanceEntry[] {
   const seen = new Set<string>();
   const out: AttendanceEntry[] = [];
   for (const e of entries) {
-    const key = `${e.category}::${e.studentKey}`;
+    // 날짜까지 키에 넣습니다 - 같은 학생이 오늘도 결석, 금요일도 결석인 경우는 서로 다른 건입니다.
+    const key = `${e.targetDate}::${e.category}::${e.studentKey}`;
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(e);

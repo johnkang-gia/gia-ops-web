@@ -2701,10 +2701,14 @@ where s85.seq = a.seq;
 -- 이름이 명부에 정확히 한 명만 있는 경우 자동으로 학생 레코드와 연결합니다.
 -- (김연우A처럼 A/B가 붙은 표기는 뒤 글자를 떼고 한 번 더 시도합니다. 동명이인이라 여러 명이
 --  잡히는 경우는 연결하지 않고 남겨두어 화면에서 직접 고르도록 합니다.)
+-- 이름이 명부에 정확히 한 명만 있는 경우 자동으로 학생 레코드와 연결합니다.
+-- (김연우A처럼 A/B가 붙은 표기는 뒤 글자를 떼고 맞춰봅니다. 동명이인이라 여러 명이 잡히는
+--  경우는 연결하지 않고 남겨두어 화면에서 직접 고르도록 합니다 - ⚠️로 표시됩니다.)
+-- uuid에는 min()이 없어서 array_agg로 하나를 꺼냅니다(having count(*)=1이라 어차피 한 건입니다).
 update shuttle_assignments sa
 set student_id = m.student_id
 from (
-  select sa2.id as asg_id, min(ws.id) as student_id
+  select sa2.id as asg_id, (array_agg(ws.id))[1] as student_id
   from shuttle_assignments sa2
   join wr_students ws
     on ws.status = 'active'

@@ -26,6 +26,7 @@ export default function WorkBoardClient({
   isAdmin,
   initialModeColors,
   initialMirrorMessages,
+  rosterNames,
 }: {
   initialTasks: Task[];
   team: TeamMember[];
@@ -34,6 +35,8 @@ export default function WorkBoardClient({
   isAdmin: boolean;
   initialModeColors: TaskModeColor[];
   initialMirrorMessages: GoogleChatMirrorMessage[];
+  // 재적생 이름 목록 - 출결내역 위젯이 문장에서 학생 이름을 명부와 대조할 때 씁니다.
+  rosterNames: string[];
 }) {
   const [tasks, setTasks] = useRealtimeTable<Task>("tasks", initialTasks);
   const notify = useToast();
@@ -320,6 +323,7 @@ export default function WorkBoardClient({
           onToggleAck={toggleAck}
           onTaskCreated={addTaskRow}
           mirrorMessages={mirrorMessages}
+          rosterNames={rosterNames}
         />
       </div>
 

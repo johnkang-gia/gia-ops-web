@@ -1,43 +1,16 @@
 "use client";
 
-import { useMemo } from "react";
-import type { GoogleChatMirrorMessage } from "@/lib/types";
-
-// 출결알림 방에 올라온 구글챗 메시지를 키워드로 분류해 "누가 결석이고 누가 픽업인지"만 뽑아
-// 정리해 보여줍니다(요청: "구글챗에서 결석,픽업 등의 글을 찾아서... 필터링해서 정리해서
-// 깔끔하게 보여주도록"). 왼쪽 출결알림 패널은 원문 그대로 흐르는 로그이고, 이 패널은 그
-// 원문에서 뽑아낸 요약본입니다 - 원문은 그대로 두고 읽기만 하므로 구글챗 쪽에는 아무 영향이
-// 없습니다.
-//
-// AI를 쓰지 않고 순수 키워드 규칙으로 분류합니다(추가 비용 0, 즉시 반영). 선생님들이 실제로
-// 쓰는 표현이 늘어나면 아래 CATEGORIES의 keywords에 단어만 더 넣으면 됩니다.
-type CategoryKey = "결석" | "픽업" | "지각" | "조퇴";
-
-const CATEGORIES: { key: CategoryKey; label: string; icon: string; color: string; keywords: string[] }[] = [
-  { key: "결석", label: "결석", icon: "🚫", color: "text-red-600", keywords: ["결석", "안 와", "안와", "못 와", "못와", "absent", "absence"] },
-  { key: "픽업", label: "픽업", icon: "🚗", color: "text-blue-600", keywords: ["픽업", "픽엄", "데리러", "하원", "pick up", "pickup", "pick-up"] },
-  { key: "지각", label: "지각", icon: "⏰", color: "text-amber-600", keywords: ["지각", "늦게", "늦어", "late"] },
-  { key: "조퇴", label: "조퇴", icon: "🏃", color: "text-purple-600", keywords: ["조퇴", "일찍", "early"] },
-];
-
-function categorize(text: string): CategoryKey | null {
-  const lower = text.toLowerCase();
-  for (const c of CATEGORIES) {
-    if (c.keywords.some((k) => lower.includes(k.toLowerCase()))) return c.key;
-  }
-  return null;
-}
-
-// 메시지에서 학생 이름으로 보이는 부분을 최대한 뽑아냅니다. 정확한 학생 레코드 연결이 아니라
-// (그건 사건기록의 "관련 학생 연결"처럼 사람이 직접 골라야 정확합니다) 한눈에 훑기 위한
-// 힌트라, 못 찾으면 그냥 원문 앞부분을 그대로 보여줍니다.
-function guessStudentName(text: string): string {
-  // "OOO 학생", "OOO 결석" 처럼 한글 이름(2~4자) 뒤에 조사/키워드가 붙는 흔한 형태를 먼저 봅니다.
-  const m = text.match(/([가-힣]{2,4})\s*(?:학생|어린이)?\s*(?:은|는|이|가|님)?\s*(?:오늘|내일)?\s*(?:결석|지각|조퇴|픽업|하원)/);
-  if (m) return m[1];
-  const first = text.match(/[가-힣]{2,4}/);
-  return first ? first[0] : text.slice(0, 12);
-}
+import { useEffect, useMemo, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
+import type { DepartmentMemo, GoogleChatMirrorMessage } from "@/lib/types";
+import {
+  ATTENDANCE_CATEGORIES,
+  categorize,
+  dedupeEntries,
+  matchRosterNames,
+  type AttendanceCategory,
+  type AttendanceEntry,
+} from "@/lib/attendanceDigest";
 
 function timeStr(iso: string) {
   return new Date(iso).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
@@ -48,64 +21,170 @@ function isSameDay(iso: string, base: Date) {
   return d.getFullYear() === base.getFullYear() && d.getMonth() === base.getMonth() && d.getDate() === base.getDate();
 }
 
-export default function AttendanceDigestPanel({ messages }: { messages: GoogleChatMirrorMessage[] }) {
-  // 출결은 "오늘 누가 안 오는지"가 핵심이라 오늘 것만 봅니다(어제 결석이 계속 쌓여 보이면
-  // 오히려 한눈에 안 들어옵니다).
-  const items = useMemo(() => {
+// 출결알림 방(구글챗)과 부서 메모에서 결석·픽업·지각·조퇴를 뽑아 학생별로 정리해 보여줍니다.
+// 왼쪽 출결알림 패널이 원문 로그라면, 여기는 그 원문에서 추려낸 요약본입니다.
+export default function AttendanceDigestPanel({
+  messages,
+  department,
+  rosterNames,
+}: {
+  messages: GoogleChatMirrorMessage[];
+  department: string;
+  // 학생 명부 이름 목록 - 문장에서 이름을 "추측"하지 않고 실제 명부와 대조하기 위해 씁니다
+  // (요청 3의 정서안/정서안만 오탐 방지).
+  rosterNames: string[];
+}) {
+  // 부서 메모도 함께 훑습니다(요청: "부서메모에서도, 결석, 픽업이 있다면, 출결내역으로 올려주고").
+  // 메모는 부서당 한 장이라 내용만 실시간으로 따라가면 됩니다.
+  const [memo, setMemo] = useState("");
+
+  useEffect(() => {
+    if (department === "전체") return;
+    const supabase = createClient();
+    let cancelled = false;
+
+    supabase
+      .from("department_memos")
+      .select("content")
+      .eq("department", department)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!cancelled) setMemo((data as DepartmentMemo | null)?.content ?? "");
+      });
+
+    const channel = supabase
+      .channel(`attendance-digest-memo-${department}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "department_memos", filter: `department=eq.${department}` },
+        (payload) => {
+          const row = payload.new as DepartmentMemo | undefined;
+          if (row) setMemo(row.content ?? "");
+        }
+      )
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(channel);
+    };
+  }, [department]);
+
+  const entries = useMemo(() => {
     const today = new Date();
-    return messages
-      .filter((m) => m.source_key === "attendance" && isSameDay(m.created_at_google, today))
-      .map((m) => ({ msg: m, category: categorize(m.content) }))
-      .filter((x): x is { msg: GoogleChatMirrorMessage; category: CategoryKey } => x.category !== null)
-      .sort((a, b) => a.msg.created_at_google.localeCompare(b.msg.created_at_google));
-  }, [messages]);
+    const out: AttendanceEntry[] = [];
+
+    // 1) 구글챗 출결알림 - 오늘 것만
+    for (const m of messages) {
+      if (m.source_key !== "attendance") continue;
+      if (!isSameDay(m.created_at_google, today)) continue;
+      const category = categorize(m.content);
+      if (!category) continue;
+      const names = matchRosterNames(m.content, rosterNames);
+      // 명부에서 이름을 못 찾으면 버리지 않고 원문 앞부분을 이름 자리에 넣어 그대로 보여줍니다
+      // (전학생·오탈자 등으로 명부 대조가 실패해도 놓치지 않도록).
+      const labels = names.length > 0 ? names : [m.content.slice(0, 12)];
+      for (const name of labels) {
+        out.push({
+          key: `chat-${m.id}-${name}`,
+          category,
+          studentName: name,
+          rawText: m.content,
+          time: m.created_at_google,
+          sourceLabel: "구글챗",
+        });
+      }
+    }
+
+    // 2) 부서 메모 - 줄 단위로 훑습니다(한 줄에 한 건씩 적는 게 보통이라).
+    for (const [i, line] of memo.split("\n").entries()) {
+      const text = line.trim();
+      if (!text) continue;
+      const category = categorize(text);
+      if (!category) continue;
+      const names = matchRosterNames(text, rosterNames);
+      // 메모는 자유 서술이라 명부에 없는 이름을 넣으면 오탐이 많아, 명부에서 찾은 경우만 올립니다.
+      for (const name of names) {
+        out.push({
+          key: `memo-${i}-${name}`,
+          category,
+          studentName: name,
+          rawText: text,
+          time: null,
+          sourceLabel: "부서메모",
+        });
+      }
+    }
+
+    // 구글챗과 부서메모에 같은 내용이 겹쳐 적힌 경우 학생이 두 번 뜨지 않도록 정리합니다.
+    return dedupeEntries(out);
+  }, [messages, memo, rosterNames]);
 
   const grouped = useMemo(() => {
-    const map = new Map<CategoryKey, { msg: GoogleChatMirrorMessage; category: CategoryKey }[]>();
-    for (const it of items) {
-      const arr = map.get(it.category) ?? [];
-      arr.push(it);
-      map.set(it.category, arr);
+    const map = new Map<AttendanceCategory, AttendanceEntry[]>();
+    for (const e of entries) {
+      const arr = map.get(e.category) ?? [];
+      arr.push(e);
+      map.set(e.category, arr);
     }
     return map;
-  }, [items]);
+  }, [entries]);
 
   return (
     <div className="glass flex h-full flex-col overflow-hidden p-2.5">
-      <div className="mb-1.5 flex shrink-0 items-center justify-between text-[12px] font-bold text-emerald-600">
+      {/* 제목 옆에 픽업/결석/지각 순서로 건수를 요약합니다(요청 1). */}
+      <div className="mb-1.5 flex shrink-0 flex-wrap items-center gap-1 text-[12px] font-bold text-emerald-600">
         <span>📊 출결내역</span>
-        <span className="rounded-full bg-black/5 px-1.5 py-0.5 text-[10px] text-slate-500">오늘 {items.length}건</span>
+        <div className="ml-auto flex items-center gap-1">
+          {ATTENDANCE_CATEGORIES.map((c) => {
+            const n = grouped.get(c.key)?.length ?? 0;
+            if (c.key === "조퇴" && n === 0) return null; // 조퇴는 있을 때만 표시(요약이 길어지지 않도록)
+            return (
+              <span key={c.key} className={"rounded-full px-1.5 py-0.5 text-[10px] font-semibold " + c.chipClass}>
+                {c.icon} {n}
+              </span>
+            );
+          })}
+        </div>
       </div>
 
-      {items.length === 0 ? (
+      {entries.length === 0 ? (
         <div className="flex flex-1 items-center justify-center px-2 text-center text-[11px] leading-relaxed opacity-40">
-          오늘 결석·픽업 관련 메시지가 아직 없습니다.
+          오늘 결석·픽업 관련 내용이 아직 없습니다.
         </div>
       ) : (
-        <div className="flex flex-1 flex-col gap-2 overflow-y-auto pr-1">
-          {CATEGORIES.map((c) => {
-            const list = grouped.get(c.key);
-            if (!list || list.length === 0) return null;
+        /* 픽업 / 결석 / 지각(+조퇴)을 위에서부터 각각의 칸으로 나눠 보여줍니다(요청 2). */
+        <div className="flex flex-1 flex-col gap-1.5 overflow-y-auto pr-1">
+          {ATTENDANCE_CATEGORIES.map((c) => {
+            const list = grouped.get(c.key) ?? [];
+            if (c.key === "조퇴" && list.length === 0) return null;
             return (
-              <div key={c.key}>
-                <div className={"mb-0.5 flex items-center gap-1 text-[11px] font-bold " + c.color}>
+              <div key={c.key} className="rounded-lg border border-black/5">
+                <div className={"flex items-center gap-1 rounded-t-lg px-2 py-1 text-[11px] font-bold " + c.chipClass}>
                   <span>{c.icon}</span>
                   <span>{c.label}</span>
-                  <span className="rounded-full bg-black/5 px-1.5 text-[9px] font-semibold text-slate-500">{list.length}</span>
+                  <span className="ml-auto rounded-full bg-white/70 px-1.5 text-[9px] font-semibold">{list.length}</span>
                 </div>
-                <div className="flex flex-col gap-1">
-                  {list.map(({ msg }) => (
-                    <div key={msg.id} className="rounded-lg bg-black/[0.02] px-2 py-1 text-[11px]">
-                      <div className="flex items-center justify-between gap-1">
-                        <span className="truncate font-semibold text-slate-700">{guessStudentName(msg.content)}</span>
-                        <span className="shrink-0 text-[9px] text-slate-400">{timeStr(msg.created_at_google)}</span>
+                {list.length === 0 ? (
+                  <p className="px-2 py-1 text-[10px] text-slate-300">없음</p>
+                ) : (
+                  <div className="flex flex-col divide-y divide-black/[0.03]">
+                    {list.map((e) => (
+                      <div key={e.key} className="px-2 py-1">
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="truncate text-[11px] font-semibold text-slate-700">{e.studentName}</span>
+                          <span className="shrink-0 text-[9px] text-slate-400">
+                            {e.sourceLabel === "부서메모" ? "📝" : ""}
+                            {e.time ? timeStr(e.time) : e.sourceLabel}
+                          </span>
+                        </div>
+                        <p className="truncate text-[10px] text-slate-500" title={e.rawText}>
+                          {e.rawText}
+                        </p>
                       </div>
-                      <p className="truncate text-[10px] text-slate-500" title={msg.content}>
-                        {msg.content}
-                      </p>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </div>
             );
           })}

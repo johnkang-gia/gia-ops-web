@@ -34,6 +34,11 @@ export default async function WorkPage() {
       .limit(200),
   ]);
 
+  // 출결내역 위젯이 "정서안만 픽업" 같은 문장에서 이름을 추측하지 않고 실제 명부와 대조하도록
+  // 재적생 이름만 따로 가져옵니다(요청: 정서안/정서안만 오탐 방지). 이름만 쓰므로 가볍습니다.
+  const { data: rosterData } = await supabase.from("wr_students").select("name").eq("status", "active");
+  const rosterNames = ((rosterData as { name: string }[] | null) ?? []).map((s) => s.name);
+
   const team = (teamRes.data as TeamMember[] | null) ?? [];
   const isAdmin = isAdminUser(me);
 
@@ -47,6 +52,7 @@ export default async function WorkPage() {
         isAdmin={isAdmin}
         initialModeColors={(modeColorRes.data as TaskModeColor[] | null) ?? []}
         initialMirrorMessages={(mirrorRes.data as GoogleChatMirrorMessage[] | null) ?? []}
+        rosterNames={rosterNames}
       />
     </div>
   );

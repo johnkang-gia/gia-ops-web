@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { youtubeEmbedSrc } from "@/lib/youtube";
 
 const POLL_MS = 6000;
@@ -70,12 +70,80 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
   const [searchResults, setSearchResults] = useState<YoutubeSearchResult[] | null>(null);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  // 요청: "유튜브 창과 도착한 차량 의 창크기를 조절할 수 있게 해줘" - 화면을 세로/가로 중 어느
+  // 방향으로 나눴는지(lg 기준)에 따라 폭(가로 배치) 또는 높이(세로 배치)를 사용자가 직접
+  // 드래그로 조절할 수 있게 합니다. 마지막으로 조절한 크기는 브라우저에 저장해서, 이 화면을
+  // 새로고침해도 유지됩니다(같은 TV·모니터에서 매번 다시 맞출 필요가 없도록).
+  const [panelWidth, setPanelWidth] = useState(420); // lg 이상(가로 배치)일 때 오른쪽 패널 폭(px)
+  const [panelHeight, setPanelHeight] = useState(320); // lg 미만(세로 배치)일 때 아래 패널 높이(px)
+  const [isRowLayout, setIsRowLayout] = useState(true);
+  const draggingRef = useRef(false);
   const prevArrivedRef = useRef<Set<string>>(new Set());
   const prevDepartedRef = useRef<Set<string>>(new Set());
   const audioCtxRef = useRef<AudioContext | null>(null);
   // 화면을 처음 열었을 때 이미 도착해 있던 차량까지 인트로를 재생하면 시끄러우니, 최초 1회
   // 폴링 결과는 인트로 없이 바로 공개합니다.
   const isFirstPollRef = useRef(true);
+
+  // 가로/세로 배치 여부(lg 브레이크포인트 1024px)를 추적해서, 드래그 방향(폭↔높이)을 그때그때
+  // 맞는 쪽으로 조절합니다.
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const update = () => setIsRowLayout(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+
+  // 마지막으로 조절한 크기를 불러오고, 바뀔 때마다 저장합니다.
+  useEffect(() => {
+    try {
+      const savedW = localStorage.getItem("gia-board-panel-width");
+      const savedH = localStorage.getItem("gia-board-panel-height");
+      if (savedW) setPanelWidth(Number(savedW));
+      if (savedH) setPanelHeight(Number(savedH));
+    } catch {
+      // 무시 - 저장된 값이 없어도 기본 크기로 동작합니다.
+    }
+  }, []);
+  useEffect(() => {
+    try {
+      localStorage.setItem("gia-board-panel-width", String(panelWidth));
+    } catch {
+      // 무시
+    }
+  }, [panelWidth]);
+  useEffect(() => {
+    try {
+      localStorage.setItem("gia-board-panel-height", String(panelHeight));
+    } catch {
+      // 무시
+    }
+  }, [panelHeight]);
+
+  // 구분선을 눌러서 드래그하면 유튜브 화면 vs "지금 도착한 차량" 패널의 크기 비율이 바뀝니다.
+  function startDrag(e: ReactPointerEvent) {
+    e.preventDefault();
+    draggingRef.current = true;
+    const row = isRowLayout;
+    function onMove(ev: PointerEvent) {
+      if (!draggingRef.current) return;
+      if (row) {
+        const next = window.innerWidth - ev.clientX;
+        setPanelWidth(Math.min(window.innerWidth - 240, Math.max(260, next)));
+      } else {
+        const next = window.innerHeight - ev.clientY;
+        setPanelHeight(Math.min(window.innerHeight - 160, Math.max(140, next)));
+      }
+    }
+    function onUp() {
+      draggingRef.current = false;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    }
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }
 
   // 인트로가 시작될 때 "빵빵" 경적 소리를 울립니다(요청: "노란색 셔틀차가 들어오는 애니메이션이
   // 있었으면 좋겠어" - 애니메이션과 함께 차가 다가오는 느낌을 소리로도 줍니다).
@@ -282,7 +350,7 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-slate-900 text-white lg:flex-row">
+    <div className="flex h-screen flex-col overflow-hidden bg-slate-900 text-white lg:flex-row">
       <style>{`
         @keyframes gia-card-in {
           0% { transform: translateX(-110%); opacity: 0; }
@@ -343,16 +411,16 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
         </div>
       )}
 
-      <div className="relative flex-1 bg-black">
+      <div className="relative min-h-0 min-w-0 flex-1 bg-black">
         {embedSrc ? (
           <iframe
             src={embedSrc}
-            className="h-full min-h-[40vh] w-full lg:min-h-screen"
+            className="h-full w-full"
             allow="autoplay; encrypted-media; picture-in-picture"
             allowFullScreen
           />
         ) : (
-          <div className="flex h-full min-h-[40vh] items-center justify-center text-slate-500 lg:min-h-screen">
+          <div className="flex h-full items-center justify-center text-slate-500">
             <p className="text-xl">관리자가 안내보드에 재생할 유튜브 영상을 아직 설정하지 않았습니다.</p>
           </div>
         )}
@@ -422,7 +490,21 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
         )}
       </div>
 
-      <div className="flex w-full flex-col gap-3 overflow-y-auto bg-slate-950 p-4 lg:w-[420px] lg:p-5">
+      {/* 요청: "유튜브 창과 도착한 차량 의 창크기를 조절할 수 있게 해줘" - 이 막대를 눌러
+          드래그하면 유튜브 화면과 오른쪽(모바일에서는 아래) "지금 도착한 차량" 패널의 크기
+          비율이 바뀝니다. 세로로 쌓이는 화면(lg 미만)에서는 위아래로, 가로로 나란한 화면
+          (lg 이상)에서는 좌우로 드래그합니다. */}
+      <div
+        onPointerDown={startDrag}
+        className="flex h-3 shrink-0 cursor-row-resize touch-none items-center justify-center bg-slate-800 hover:bg-slate-700 lg:h-auto lg:w-3 lg:cursor-col-resize"
+      >
+        <span className="h-1 w-10 rounded-full bg-slate-600 lg:h-10 lg:w-1" />
+      </div>
+
+      <div
+        className="flex w-full min-h-0 flex-col gap-3 overflow-y-auto bg-slate-950 p-4 lg:h-full lg:w-auto lg:p-5"
+        style={isRowLayout ? { width: panelWidth, flexShrink: 0 } : { height: panelHeight, flexShrink: 0 }}
+      >
         <p className="text-lg font-black text-amber-300">🚌 지금 도착한 차량</p>
         {boardingRoutes.length === 0 && departingRoutes.length === 0 ? (
           <p className="py-6 text-center text-sm text-slate-500">아직 도착한 차량이 없습니다</p>

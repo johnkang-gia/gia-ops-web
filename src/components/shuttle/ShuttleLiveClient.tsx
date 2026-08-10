@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { loadKakaoMaps } from "@/lib/kakaoMap";
 import { useToast } from "@/components/common/ToastProvider";
-import type { ShuttleDirection, ShuttlePilotPing, ShuttlePilotRoute, ShuttleRoute, ShuttleRunEvent } from "@/lib/types";
+import type { ShuttlePilotPing, ShuttlePilotRoute, ShuttleRoute, ShuttleRunEvent } from "@/lib/types";
 
 const POLL_MS = 7000;
 
@@ -37,7 +37,6 @@ export default function ShuttleLiveClient({
   userLabel: string;
 }) {
   const notify = useToast();
-  const [direction, setDirection] = useState<ShuttleDirection>("등원");
   const [pingByRoute, setPingByRoute] = useState<Record<string, ShuttlePilotPing | null>>({});
   const [eventsByRoute, setEventsByRoute] = useState<Record<string, ShuttleRunEvent[]>>({});
   const [boardingByAssignment, setBoardingByAssignment] = useState<Record<string, BoardingRow>>({});
@@ -122,29 +121,13 @@ export default function ShuttleLiveClient({
     setEventsByRoute((prev) => ({ ...prev, [routeId]: (prev[routeId] ?? []).filter((e) => e.id !== eventId) }));
   }
 
-  const routesInDirection = useMemo(
-    () => routes.filter((r) => r.direction === direction).sort((a, b) => natCompare(a.route_no, b.route_no)),
-    [routes, direction]
-  );
+  // 요청: "등원은 패스하고 하원만 진행되도록 우선 만들어줘" - routes prop 자체가 이미 하원
+  // 노선만 담겨오므로(page.tsx에서 필터링), 여기서는 정렬만 합니다. 등원/방향 탭은 없앴습니다.
+  const routesInDirection = useMemo(() => [...routes].sort((a, b) => natCompare(a.route_no, b.route_no)), [routes]);
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex gap-1.5 rounded-full bg-slate-100 p-1 w-fit">
-        {(["등원", "하원"] as ShuttleDirection[]).map((d) => (
-          <button
-            key={d}
-            onClick={() => setDirection(d)}
-            className={
-              "rounded-full px-4 py-1.5 text-sm font-semibold " +
-              (direction === d ? "bg-white text-slate-900 shadow-sm" : "text-slate-500")
-            }
-          >
-            {d === "등원" ? "🌅 등원" : "🌆 하원"}
-          </button>
-        ))}
-      </div>
-
-      {routesInDirection.length === 0 && <p className="py-8 text-center text-sm text-slate-400">{direction} 노선이 없습니다.</p>}
+      {routesInDirection.length === 0 && <p className="py-8 text-center text-sm text-slate-400">하원 노선이 없습니다.</p>}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {routesInDirection.map((route) => {

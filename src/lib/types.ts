@@ -846,7 +846,7 @@ export type ShuttleRoutePath = {
   computed_at: string;
 };
 
-// 정식 앱 이전 파일럿 검증용(학부모 제외, 기사님·동승선생님만) - 로그인 없이 토큰으로만 접속.
+// 정식 앱 이전 파일럿 검증용(학부모 제외, 동승선생님만 - 하원 우선 도입) - 로그인 없이 토큰으로만 접속.
 export type ShuttlePilotRoute = {
   id: string;
   route_id: string;

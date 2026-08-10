@@ -3,8 +3,9 @@ import PilotCheckinClient, { type BoardingRosterItem } from "@/components/shuttl
 
 export const dynamic = "force-dynamic";
 
-// 셔틀 실시간 위치(1단계 정식 기능) - 기사님·동승선생님이 회사 계정 로그인 없이 이 링크(토큰)
-// 하나로 접속합니다. 위치 전송에 더해, 오늘 이 노선에 배정된 학생별 탑승·하차 체크리스트도
+// 셔틀 실시간 위치(1단계 정식 기능) - 동승선생님이 회사 계정 로그인 없이 이 링크(토큰) 하나로
+// 접속합니다(요청: "기사님과 동승선생님 둘다 관리하기 보다는 동승선생님들만 설치해서 작동" -
+// 우선 하원 노선만 도입). 위치 전송에 더해, 오늘 이 노선에 배정된 학생별 탑승·하차 체크리스트도
 // 여기서 함께 처리합니다(2단계-a).
 export default async function ShuttlePilotPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;

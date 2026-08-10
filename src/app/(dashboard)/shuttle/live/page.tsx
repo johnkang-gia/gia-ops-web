@@ -16,12 +16,14 @@ export default async function ShuttleLivePage() {
   if (!me) redirect("/login");
 
   const supabase = await createClient();
-  const [routesRes, pilotsRes] = await Promise.all([
-    supabase.from("shuttle_routes").select("*").eq("active", true).order("direction").order("sort_order"),
-    supabase.from("shuttle_pilot_routes").select("*").order("created_at", { ascending: false }),
-  ]);
+  // 요청: "등원은 패스하고 하원만 진행되도록 우선 만들어줘" - 지금은 하원 노선만 보여줍니다.
+  const routesRes = await supabase.from("shuttle_routes").select("*").eq("active", true).eq("direction", "하원").order("sort_order");
   const routes = (routesRes.data as ShuttleRoute[] | null) ?? [];
   const routeIds = routes.map((r) => r.id);
+  const pilotsRes =
+    routeIds.length > 0
+      ? await supabase.from("shuttle_pilot_routes").select("*").in("route_id", routeIds).order("created_at", { ascending: false })
+      : { data: [] as ShuttlePilotRoute[] };
 
   let stopsData: { id: string; route_id: string; seq: number; stop_time: string | null }[] = [];
   let assignmentsData: { id: string; stop_id: string; student_name_raw: string; weekdays: number[] }[] = [];
@@ -53,14 +55,14 @@ export default async function ShuttleLivePage() {
   return (
     <div className="mx-auto max-w-6xl p-4 sm:p-6">
       <div className="mb-1 flex items-center justify-between gap-2">
-        <h1 className="text-lg font-bold">🚌 실시간 셔틀</h1>
+        <h1 className="text-lg font-bold">🚌 실시간 셔틀 (하원)</h1>
         <Link href="/shuttle-board" target="_blank" className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50">
           📺 안내보드 열기
         </Link>
       </div>
       <p className="mb-4 text-xs text-slate-500">
-        등원·하원 노선의 실시간 위치와 탑승 현황입니다. 하원 차량이 학교에 도착하면 &apos;현장도착&apos;을 눌러 학생들에게 안내해주세요. 복도·로비 화면에는
-        위 &apos;안내보드 열기&apos; 링크를 띄워두면 도착한 차량과 탑승할 학생이 자동으로 표시됩니다.
+        하원 노선의 실시간 위치와 탑승 현황입니다(등원은 추후 지원 예정). 차량이 학교에 도착하면 &apos;현장도착&apos;을 눌러 학생들에게 안내해주세요. 복도·로비
+        화면에는 위 &apos;안내보드 열기&apos; 링크를 띄워두면 도착한 차량과 탑승할 학생이 자동으로 표시됩니다.
       </p>
       <ShuttleLiveClient
         routes={routes}

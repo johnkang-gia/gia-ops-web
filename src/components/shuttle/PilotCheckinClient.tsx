@@ -27,13 +27,15 @@ const STATUS_BUTTONS: { value: BoardingStatusValue; label: string; color: string
   { value: "미탑승", label: "미탑승", color: "#d97706" },
 ];
 
-// 기사님·동승선생님이 로그인 없이 이 링크 하나로 접속하는 실시간 위치 체크인 화면입니다.
-// "운행 시작"을 누르면 5초 간격으로 위치만 서버에 보내고, 그 외 정보는 전혀 전송하지 않습니다.
-// 화면 조작 없이 내비게이션 앱으로 넘어가셔도 되지만, 브라우저 특성상 화면이 완전히 꺼지거나
-// 다른 앱으로 오래 전환하면 전송이 잠시 멈출 수 있습니다.
+// 동승선생님이 로그인 없이 이 링크 하나로 접속하는 하원 셔틀 체크인 화면입니다(요청: "일단은
+// 기사님과 동승선생님 둘다 관리하기 보다는 동승선생님들만 설치해서 작동하도록... 등원은 패스하고
+// 하원만 진행"). 화면 흐름은 ① 학생 탑승을 먼저 확인하고 ② 차량이 실제로 이동을 시작하면 '이동
+// 시작' 버튼을 눌러 위치 전송을 켜고 ③ 하원이 끝나면 '운행 종료'를 눌러 위치 전송을 즉시
+// 멈추는 순서입니다. 화면 조작 없이 내비게이션 앱으로 넘어가셔도 되지만, 브라우저 특성상 화면이
+// 완전히 꺼지거나 다른 앱으로 오래 전환하면 전송이 잠시 멈출 수 있습니다.
 // 2단계-a: 위치 전송과는 별개로, 오늘 이 노선에 배정된 학생별 탑승·결석·하차를 터치 한 번으로
 // 체크할 수 있습니다(옐로우버스 방식 - 목록에서 버튼 하나만 누르면 됩니다).
-// 3단계-a: 운행 중에는 휴대폰 가속도 센서로 급가속·급감속도 함께 감지해 안전운행지수 계산에 씁니다.
+// 3단계-a: 이동 중에는 휴대폰 가속도 센서로 급가속·급감속도 함께 감지해 안전운행지수 계산에 씁니다.
 export default function PilotCheckinClient({
   token,
   routeNo,
@@ -265,93 +267,19 @@ export default function PilotCheckinClient({
       }}
     >
       <div style={{ textAlign: "center" }}>
-        <p style={{ fontSize: 14, color: "#64748b", margin: 0 }}>GIA 셔틀 실시간 위치</p>
+        <p style={{ fontSize: 14, color: "#64748b", margin: 0 }}>GIA 하원 셔틀 · 동승선생님 체크인</p>
         <p style={{ fontSize: 24, fontWeight: 700, margin: "4px 0", color: "#0f172a" }}>
           {direction} {routeNo}호 {routeName && `· ${routeName}`}
         </p>
-      </div>
-
-      <div
-        style={{
-          width: "100%",
-          maxWidth: 360,
-          borderRadius: 16,
-          padding: 20,
-          background: "#fff",
-          border: "1px solid #e2e8f0",
-          textAlign: "center",
-        }}
-      >
-        <p style={{ fontSize: 16, fontWeight: 600, color: running ? "#1d4ed8" : "#64748b", margin: "0 0 4px" }}>
-          {status === "idle" && "운행 대기중"}
-          {status === "running" && "운행중 - 위치 전송 중"}
-          {status === "stopped" && "운행 종료됨"}
-        </p>
-        {running && (
-          <p style={{ fontSize: 13, color: "#64748b", margin: 0 }}>
-            {sentCount}회 전송{failCount > 0 ? ` · 실패 ${failCount}회` : ""}
-            {lastSentAt && ` · 마지막 ${lastSentAt.toLocaleTimeString("ko-KR")}`}
-          </p>
-        )}
-        {running && lastAccuracy != null && (
-          <p style={{ fontSize: 12, color: "#94a3b8", margin: "2px 0 0" }}>정확도 약 {Math.round(lastAccuracy)}m</p>
-        )}
-        {running && (accelCount > 0 || decelCount > 0) && (
-          <p style={{ fontSize: 12, color: "#d97706", margin: "4px 0 0" }}>
-            ⚠️ 급가속 {accelCount}회 · 급감속 {decelCount}회 감지됨
-          </p>
-        )}
       </div>
 
       {errorMsg && (
         <p style={{ color: "#dc2626", fontSize: 14, textAlign: "center", maxWidth: 320 }}>{errorMsg}</p>
       )}
 
-      {status !== "stopped" ? (
-        <button
-          onClick={running ? stop : start}
-          style={{
-            width: "100%",
-            maxWidth: 360,
-            padding: "18px 0",
-            borderRadius: 14,
-            border: "none",
-            fontSize: 18,
-            fontWeight: 700,
-            color: "#fff",
-            background: running ? "#dc2626" : "#2563eb",
-            cursor: "pointer",
-          }}
-        >
-          {running ? "운행 종료하기" : "운행 시작하기"}
-        </button>
-      ) : (
-        <button
-          onClick={start}
-          style={{
-            width: "100%",
-            maxWidth: 360,
-            padding: "18px 0",
-            borderRadius: 14,
-            border: "none",
-            fontSize: 18,
-            fontWeight: 700,
-            color: "#fff",
-            background: "#2563eb",
-            cursor: "pointer",
-          }}
-        >
-          다시 시작하기
-        </button>
-      )}
-
-      <p style={{ fontSize: 12, color: "#94a3b8", textAlign: "center", maxWidth: 320, lineHeight: 1.6 }}>
-        운행 시작을 누른 뒤부터 운행 종료를 누를 때까지만 위치가 전송됩니다. 그 외 정보는 전송되지 않습니다.
-      </p>
-
       {roster.length > 0 && (
         <div style={{ width: "100%", maxWidth: 360, display: "flex", flexDirection: "column", gap: 8 }}>
-          <p style={{ fontSize: 13, fontWeight: 700, color: "#334155", margin: "8px 0 0" }}>오늘 탑승 학생 ({roster.length}명)</p>
+          <p style={{ fontSize: 13, fontWeight: 700, color: "#334155", margin: 0 }}>① 학생 탑승 확인 ({roster.length}명)</p>
           {roster.map((r) => (
             <div
               key={r.assignmentId}
@@ -412,6 +340,81 @@ export default function PilotCheckinClient({
           ))}
         </div>
       )}
+
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 360,
+          borderRadius: 16,
+          padding: 20,
+          background: "#fff",
+          border: "1px solid #e2e8f0",
+          textAlign: "center",
+        }}
+      >
+        <p style={{ fontSize: 13, fontWeight: 700, color: "#334155", margin: "0 0 8px" }}>② 이동 시작 · 위치 전송</p>
+        <p style={{ fontSize: 16, fontWeight: 600, color: running ? "#1d4ed8" : "#64748b", margin: "0 0 4px" }}>
+          {status === "idle" && "이동 대기중"}
+          {status === "running" && "이동중 · 위치 전송 중"}
+          {status === "stopped" && "운행 종료됨"}
+        </p>
+        {running && (
+          <p style={{ fontSize: 13, color: "#64748b", margin: 0 }}>
+            {sentCount}회 전송{failCount > 0 ? ` · 실패 ${failCount}회` : ""}
+            {lastSentAt && ` · 마지막 ${lastSentAt.toLocaleTimeString("ko-KR")}`}
+          </p>
+        )}
+        {running && lastAccuracy != null && (
+          <p style={{ fontSize: 12, color: "#94a3b8", margin: "2px 0 0" }}>정확도 약 {Math.round(lastAccuracy)}m</p>
+        )}
+        {running && (accelCount > 0 || decelCount > 0) && (
+          <p style={{ fontSize: 12, color: "#d97706", margin: "4px 0 0" }}>
+            ⚠️ 급가속 {accelCount}회 · 급감속 {decelCount}회 감지됨
+          </p>
+        )}
+      </div>
+
+      {status !== "stopped" ? (
+        <button
+          onClick={running ? stop : start}
+          style={{
+            width: "100%",
+            maxWidth: 360,
+            padding: "18px 0",
+            borderRadius: 14,
+            border: "none",
+            fontSize: 18,
+            fontWeight: 700,
+            color: "#fff",
+            background: running ? "#dc2626" : "#2563eb",
+            cursor: "pointer",
+          }}
+        >
+          {running ? "운행 종료 (위치 전송 중지)" : "🚗 이동 시작 (위치 전송 시작)"}
+        </button>
+      ) : (
+        <button
+          onClick={start}
+          style={{
+            width: "100%",
+            maxWidth: 360,
+            padding: "18px 0",
+            borderRadius: 14,
+            border: "none",
+            fontSize: 18,
+            fontWeight: 700,
+            color: "#fff",
+            background: "#2563eb",
+            cursor: "pointer",
+          }}
+        >
+          다시 시작하기
+        </button>
+      )}
+
+      <p style={{ fontSize: 12, color: "#94a3b8", textAlign: "center", maxWidth: 320, lineHeight: 1.6 }}>
+        &apos;이동 시작&apos;을 누른 뒤부터 &apos;운행 종료&apos;를 누를 때까지만 위치가 전송되고, 누르는 즉시 전송이 멈춥니다. 그 외 정보는 전송되지 않습니다.
+      </p>
     </div>
   );
 }

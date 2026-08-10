@@ -146,7 +146,7 @@ function buildShuttleCategory(isStaffOrAbove: boolean): NavCategory {
     );
   }
   // 실시간 셔틀(교직원 전체 - 교사 포함, 요청: "교직원들이 등원과 하원셔틀의 실시간 위치를
-  // 바로 알 수 있고... 탑승확인"). 링크 관리(기사님·동승선생님용 토큰 발급)는 관리자·행정직원
+  // 바로 알 수 있고... 탑승확인"). 링크 관리(동승선생님용 토큰 발급)는 관리자·행정직원
   // 전용으로 그대로 둡니다.
   items.push({ href: "/shuttle/live", label: "실시간 셔틀", icon: "📍", dividerBefore: "실시간 셔틀" });
   if (isStaffOrAbove) {

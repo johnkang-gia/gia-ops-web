@@ -141,7 +141,10 @@ export async function updateSession(request: NextRequest) {
       // 보드는 계약직으로 짧게 근무할 수도 있는 교사에게는 내부 문서나 다름없어서, 관리자/
       // 행정직원/개발자와 달리 아예 접근 자체를 막습니다. 내 계정 설정(/account), 출석부
       // (/attendance, 요청: "학생출석부를 교사가 실시간 체크할 수 있게")는 직위와 무관하게
-      // 예외로 둡니다. 행정요청(/requests) 기능은 제거되었습니다(구글챗 미러링으로 대체) - 교사는
+      // 예외로 둡니다. 실시간 셔틀(/shuttle/live)도 예외입니다(요청: "교직원들이 등원과 하원셔틀의
+      // 실시간 위치를 바로 알 수 있고... 탑승확인" - 동승·담임 교사가 핵심 사용자라 교사도 반드시
+      // 볼 수 있어야 함). 노선관리·탑승배정 등 편집 화면은 여전히 관리자/행정직원 전용입니다.
+      // 행정요청(/requests) 기능은 제거되었습니다(구글챗 미러링으로 대체) - 교사는
       // 계속 구글챗을 그대로 씁니다. /api/로 시작하는 경로도 예외입니다 - 이 블록은 "화면 이동"을
       // 막기 위한 것이지 API 호출까지 페이지로 리다이렉트해버리면(예: 권한 미리보기 드롭다운이
       // 부르는 /api/dev/preview-role) fetch()가 조용히 실패해 원래 하려던 동작 자체가 먹통이
@@ -151,6 +154,7 @@ export async function updateSession(request: NextRequest) {
         !path.startsWith("/weekly-report") &&
         !path.startsWith("/account") &&
         !path.startsWith("/attendance") &&
+        !path.startsWith("/shuttle/live") &&
         !path.startsWith("/api/")
       ) {
         const url = request.nextUrl.clone();
@@ -172,6 +176,7 @@ export async function updateSession(request: NextRequest) {
         !path.startsWith("/weekly-report") &&
         !path.startsWith("/account") &&
         !path.startsWith("/attendance") &&
+        !path.startsWith("/shuttle/live") &&
         !path.startsWith("/api/")
       ) {
         const url = request.nextUrl.clone();

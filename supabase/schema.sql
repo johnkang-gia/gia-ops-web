@@ -3772,3 +3772,25 @@ create policy "wr_manager_select_shuttle_safety_events" on shuttle_safety_events
 -- - 앱 코드가 더 이상 이 테이블들을 참조하지 않으므로 안전합니다.
 drop table if exists shuttle_push_subscriptions cascade;
 drop table if exists shuttle_parent_links cascade;
+
+-- ===== 85. 교직원용 실시간 셔틀 현황 + 현장도착 체크 =====
+-- 요청: "교직원들이 등원과 하원셔틀의 실시간 위치를 바로 알 수 있고, 하원 차량에 학생들을
+-- 탑승하라고 안내하고, 탑승확인하는 용도로 사용". 지금까지 shuttle_pilot_routes(링크 관리)·
+-- shuttle_pilot_pings(위치)·shuttle_eta_cache(도착예정시각)는 관리자(is_wr_manager)만 조회할 수
+-- 있었는데, 이제 전체 교직원이 보는 화면(/shuttle/live)이 생기므로 조회 권한을 로그인한 교직원
+-- 전체(is_giamicro_user)로 넓힙니다. 쓰기(링크 생성/토글, 위치 기록)는 그대로 관리자·service
+-- role 전용으로 유지합니다 - 아래는 SELECT 정책만 추가하는 것이라 기존 wr_manager_all_* 정책과
+-- 함께 적용됩니다(권한은 OR로 합쳐지므로 기존 관리자 권한은 그대로 유지).
+drop policy if exists "giamicro_select_shuttle_pilot_routes" on shuttle_pilot_routes;
+create policy "giamicro_select_shuttle_pilot_routes" on shuttle_pilot_routes for select using (is_giamicro_user());
+drop policy if exists "giamicro_select_shuttle_pilot_pings" on shuttle_pilot_pings;
+create policy "giamicro_select_shuttle_pilot_pings" on shuttle_pilot_pings for select using (is_giamicro_user());
+drop policy if exists "giamicro_select_shuttle_eta_cache" on shuttle_eta_cache;
+create policy "giamicro_select_shuttle_eta_cache" on shuttle_eta_cache for select using (is_giamicro_user());
+
+-- '현장도착' - 하원 차량이 학교 승차 지점에 실제로 도착한 것을 교직원이 눈으로 보고 직접
+-- 체크하는 이벤트입니다(기사님 GPS 기반 출발/도착 이벤트와는 별개 - 교내 정확한 위치까지는
+-- GPS만으로 확신하기 어려워, 현장에 있는 교직원이 직접 확인하는 절차를 둡니다).
+alter table shuttle_run_events drop constraint if exists shuttle_run_events_event_check;
+alter table shuttle_run_events add constraint shuttle_run_events_event_check
+  check (event in ('출발', '5분전', '도착', '현장도착'));

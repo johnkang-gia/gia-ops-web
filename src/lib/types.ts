@@ -830,7 +830,7 @@ export type ShuttleRunEvent = {
   id: string;
   service_date: string;
   route_id: string;
-  event: "출발" | "5분전" | "도착";
+  event: "출발" | "5분전" | "도착" | "현장도착";
   created_by: string | null;
   created_at: string;
 };

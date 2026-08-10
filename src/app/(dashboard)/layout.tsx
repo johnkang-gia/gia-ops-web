@@ -137,19 +137,28 @@ function buildSchoolCategory(isAdmin: boolean, isStaffOrAbove: boolean): NavCate
 // 요청("셔틀메뉴를 눌렀을 때, 지역셔틀현황이 그냥 먼저 나오도록 해주고 부메뉴에서는 없애줘")에
 // 따라 상위 메뉴 href를 지역별 현황으로 바꾸고, 부메뉴 목록에서는 뺐습니다(기본 화면이 됐으니
 // 굳이 또 나열할 필요가 없습니다). 배차표 인쇄 등 기존 "셔틀 현황" 화면은 그대로 남겨뒀습니다.
-function buildShuttleCategory(): NavCategory {
+function buildShuttleCategory(isStaffOrAbove: boolean): NavCategory {
+  const items: NavLeaf[] = [{ href: "/shuttle", label: "셔틀 현황", icon: "📋" }];
+  if (isStaffOrAbove) {
+    items.push(
+      { href: "/shuttle/routes", label: "노선 관리", icon: "🛣️", dividerBefore: "기준정보" },
+      { href: "/shuttle/students", label: "탑승 배정", icon: "🧑‍🎓" }
+    );
+  }
+  // 실시간 셔틀(교직원 전체 - 교사 포함, 요청: "교직원들이 등원과 하원셔틀의 실시간 위치를
+  // 바로 알 수 있고... 탑승확인"). 링크 관리(기사님·동승선생님용 토큰 발급)는 관리자·행정직원
+  // 전용으로 그대로 둡니다.
+  items.push({ href: "/shuttle/live", label: "실시간 셔틀", icon: "📍", dividerBefore: "실시간 셔틀" });
+  if (isStaffOrAbove) {
+    items.push({ href: "/shuttle/pilot", label: "링크 관리", icon: "🔗" });
+  }
   return {
     key: "shuttle",
     label: "셔틀",
     icon: "🚌",
     accent: "teal",
     href: "/shuttle/regions",
-    items: [
-      { href: "/shuttle", label: "셔틀 현황", icon: "📋" },
-      { href: "/shuttle/routes", label: "노선 관리", icon: "🛣️", dividerBefore: "기준정보" },
-      { href: "/shuttle/students", label: "탑승 배정", icon: "🧑‍🎓" },
-      { href: "/shuttle/pilot", label: "실시간 위치", icon: "📍", dividerBefore: "실시간 셔틀(1단계)" },
-    ],
+    items,
   };
 }
 
@@ -285,6 +294,10 @@ export default async function DashboardLayout({
     categories = [
       { key: "homeroom", label: "내 담임반", labelEn: "My Homeroom", icon: "🏠", href: "/weekly-report/homeroom", accent: "teal" },
       { key: "subjects", label: "내 담당과목", labelEn: "My Subjects", icon: "📘", href: "/weekly-report/subjects", accent: "teal" },
+      // 실시간 셔틀 - 요청: "교직원들이 등원과 하원셔틀의 실시간 위치를 바로 알 수 있고,
+      // 하원 차량에 학생들을 탑승하라고 안내하고, 탑승확인하는 용도로 사용". 동승·담임 교사가
+      // 핵심 사용자라 다른 메뉴와 달리 교사에게도 예외로 열어둡니다(middleware.ts도 함께 수정).
+      { key: "shuttle-live", label: "실시간 셔틀", labelEn: "Live Shuttle", icon: "🚌", href: "/shuttle/live", accent: "teal" },
       // 학사일정은 교사에게는 감춥니다(요청: "교사권한은 학사일정 안보이게"). 예전에는 이 자리에
       // "행정요청" 메뉴가 있었지만 제거되었습니다(요청: "행정요청도 없애줘, 구글챗 미러링이
       // 된다면 행정요청도 여기로 받을거라서 상관없어") - 교사는 계속 구글챗으로 행정직원에게
@@ -318,7 +331,7 @@ export default async function DashboardLayout({
       },
       buildOpsCategory(pendingProposals, pendingAdopted),
       buildSchoolCategory(isAdmin, isStaffOrAbove),
-      ...(isStaffOrAbove ? [buildShuttleCategory()] : []),
+      ...(isStaffOrAbove ? [buildShuttleCategory(isStaffOrAbove)] : []),
       buildSchoolDocumentsCategory(),
       // 출석부 메뉴는 요청("일단 지금 출석부를 쓸건 아니니까 출석부메뉴는 감춰줘")에 따라
       // 당분간 사이드바에서 숨겨둡니다. /attendance 화면 자체와 기능은 그대로 남아있어서,

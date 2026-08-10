@@ -117,33 +117,37 @@ export default function PilotMonitorClient({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="rounded-xl border border-slate-200 bg-white p-3">
-        <p className="mb-2 text-xs font-bold text-slate-700">새 파일럿 노선 추가</p>
-        <div className="flex flex-wrap items-center gap-2">
-          <select
-            value={newRouteId}
-            onChange={(e) => setNewRouteId(e.target.value)}
-            className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
-          >
-            <option value="">노선 선택...</option>
-            {availableRoutes.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.direction} {r.route_no}호 {r.name ?? ""}
-              </option>
-            ))}
-          </select>
-          <button
-            onClick={createPilot}
-            disabled={!newRouteId || busy}
-            className="rounded-lg bg-teal-600 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
-          >
-            + 파일럿 링크 만들기
-          </button>
+      {/* 활성 노선은 등록되는 즉시 자동으로 링크가 생깁니다(DB 트리거) - 이 폼은 예외적으로
+          빠진 노선이 있을 때만 수동으로 채우는 용도입니다. */}
+      {availableRoutes.length > 0 && (
+        <div className="rounded-xl border border-slate-200 bg-white p-3">
+          <p className="mb-2 text-xs font-bold text-slate-700">누락된 노선 링크 추가</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={newRouteId}
+              onChange={(e) => setNewRouteId(e.target.value)}
+              className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+            >
+              <option value="">노선 선택...</option>
+              {availableRoutes.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.direction} {r.route_no}호 {r.name ?? ""}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={createPilot}
+              disabled={!newRouteId || busy}
+              className="rounded-lg bg-teal-600 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
+            >
+              + 링크 만들기
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {pilots.length === 0 && (
-        <p className="py-8 text-center text-sm text-slate-400">아직 파일럿 노선이 없습니다. 위에서 노선을 골라 링크를 만들어보세요.</p>
+        <p className="py-8 text-center text-sm text-slate-400">아직 노선 링크가 없습니다. 활성 노선을 등록하면 자동으로 만들어집니다.</p>
       )}
 
       {pilots.map((pilot) => {

@@ -66,10 +66,13 @@ export async function updateSession(request: NextRequest) {
     // 구글챗 폴링 크론이 cron-job.org에서 "307 Temporary Redirect"로 실패). 인증은 각 라우트가
     // Authorization: Bearer <CRON_SECRET>로 자체적으로 확인하므로 세션 검사만 건너뜁니다.
     path.startsWith("/api/cron") ||
-    // 셔틀 앱 파일럿 검증용 - 기사님·동승선생님이 회사 계정 로그인 없이 링크(토큰) 하나로
-    // 접속합니다. 인증은 이 페이지/API가 자체적으로 토큰으로 확인합니다.
+    // 셔틀 실시간 위치(1단계 정식 기능)용 - 기사님·동승선생님이 회사 계정 로그인 없이
+    // 링크(토큰) 하나로 접속합니다. 인증은 이 페이지/API가 자체적으로 토큰으로 확인합니다.
     path.startsWith("/shuttle-pilot") ||
-    path.startsWith("/api/shuttle/pilot");
+    path.startsWith("/api/shuttle/pilot") ||
+    // 학부모 테스트 조회(아직 실제 배포 전) - 마찬가지로 회사 계정 없이 토큰으로만 접속합니다.
+    path.startsWith("/shuttle-parent") ||
+    path.startsWith("/api/shuttle/parent");
 
   if (!user && !isAuthRoute) {
     const url = request.nextUrl.clone();

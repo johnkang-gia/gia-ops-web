@@ -860,3 +860,13 @@ export type ShuttlePilotPing = {
   accuracy: number | null;
   recorded_at: string;
 };
+
+// 학부모 테스트 조회용(요청: "학부모는 실질적으로 연결하지는 말고 기능만 구현해서 학부모계정도
+// 테스트할 수 있도록"). 실제 배포 전, 관리자가 학생을 골라 만드는 테스트 링크입니다.
+export type ShuttleParentLink = {
+  id: string;
+  student_id: string;
+  token: string;
+  enabled: boolean;
+  created_at: string;
+};

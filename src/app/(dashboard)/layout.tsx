@@ -148,7 +148,7 @@ function buildShuttleCategory(): NavCategory {
       { href: "/shuttle", label: "셔틀 현황", icon: "📋" },
       { href: "/shuttle/routes", label: "노선 관리", icon: "🛣️", dividerBefore: "기준정보" },
       { href: "/shuttle/students", label: "탑승 배정", icon: "🧑‍🎓" },
-      { href: "/shuttle/pilot", label: "파일럿 검증", icon: "🧪", dividerBefore: "정식 앱 이전 검증" },
+      { href: "/shuttle/pilot", label: "실시간 위치", icon: "📍", dividerBefore: "실시간 셔틀(1단계)" },
     ],
   };
 }

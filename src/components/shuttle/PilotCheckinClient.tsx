@@ -136,7 +136,7 @@ export default function PilotCheckinClient({
       }}
     >
       <div style={{ textAlign: "center" }}>
-        <p style={{ fontSize: 14, color: "#64748b", margin: 0 }}>GIA 셔틀 파일럿</p>
+        <p style={{ fontSize: 14, color: "#64748b", margin: 0 }}>GIA 셔틀 실시간 위치</p>
         <p style={{ fontSize: 24, fontWeight: 700, margin: "4px 0", color: "#0f172a" }}>
           {direction} {routeNo}호 {routeName && `· ${routeName}`}
         </p>

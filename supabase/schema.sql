@@ -3688,3 +3688,52 @@ end $$;
 alter table department_memos add column if not exists attendance_memo text not null default '';
 alter table department_memos add column if not exists attendance_memo_updated_by text;
 alter table department_memos add column if not exists attendance_memo_updated_at timestamptz;
+
+-- ===== 79. 셔틀 1단계 정식 도입 - 전체 노선 자동 확대 + 학부모 테스트 조회 =====
+-- 요청("제안서에 따라 시스템 구축을 시작하자... 1단계부터 도입시작하자")에 따라, 그동안 관리자가
+-- 고른 일부 노선에만 붙이던 파일럿 위치전송을 전체 활성 노선으로 자동 확대합니다(트리거로
+-- 신규 노선도 자동 포함). 위치전송 자체의 구조(로그인 없는 토큰 링크, service role 쓰기,
+-- 관리자만 조회)는 이미 검증된 그대로 유지합니다.
+--
+-- 새 노선이 등록되면(active=true) shuttle_pilot_routes에 자동으로 한 행을 만들어 링크가 바로
+-- 생기도록 합니다 - 앞으로는 관리자가 매번 수동으로 추가하지 않아도 됩니다.
+create or replace function shuttle_routes_auto_pilot_link() returns trigger
+language plpgsql as $$
+begin
+  if new.active then
+    insert into shuttle_pilot_routes(route_id) values (new.id)
+    on conflict (route_id) do nothing;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_shuttle_routes_auto_pilot_link on shuttle_routes;
+create trigger trg_shuttle_routes_auto_pilot_link
+  after insert on shuttle_routes
+  for each row execute function shuttle_routes_auto_pilot_link();
+
+-- 이미 등록되어 있던 활성 노선들도 지금 한 번에 백필합니다(이미 링크가 있는 노선은 건너뜀).
+insert into shuttle_pilot_routes (route_id)
+select id from shuttle_routes where active = true
+on conflict (route_id) do nothing;
+
+-- 학부모 테스트 조회(요청: "학부모는 실질적으로 연결하지는 말고 기능만 구현해서 학부모계정도
+-- 테스트할 수 있도록"). 실제 학부모에게 배포하지 않고, 관리자가 학생을 골라 테스트용 링크를
+-- 만들어 직접 확인해보는 용도입니다. 도착예정시각·알림은 아직 없고(2단계 예정), 지금은 "내 아이
+-- 셔틀이 지금 어디 있는지"만 보여줍니다. 정류장 하나가 아니라 학생 한 명 기준이라 파일럿
+-- 노선(shuttle_pilot_routes)과는 별개 테이블로 둡니다.
+create table if not exists shuttle_parent_links (
+  id uuid primary key default gen_random_uuid(),
+  student_id uuid not null references wr_students(id) on delete cascade,
+  token uuid not null default gen_random_uuid(),
+  enabled boolean not null default true,
+  created_at timestamptz not null default now(),
+  unique (student_id)
+);
+create unique index if not exists shuttle_parent_links_token_idx on shuttle_parent_links(token);
+
+alter table shuttle_parent_links enable row level security;
+drop policy if exists "wr_manager_all_shuttle_parent_links" on shuttle_parent_links;
+create policy "wr_manager_all_shuttle_parent_links" on shuttle_parent_links
+  for all using (is_wr_manager()) with check (is_wr_manager());

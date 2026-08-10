@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { youtubeEmbedSrc } from "@/lib/youtube";
 
 const POLL_MS = 6000;
@@ -14,6 +14,8 @@ type BoardRoute = {
 };
 
 type BoardData = { label: string; youtubeVideoId: string | null; routes: BoardRoute[] };
+
+type YoutubeSearchResult = { videoId: string; title: string; channelTitle: string; thumbnail: string };
 
 function natCompare(a: string, b: string) {
   return a.localeCompare(b, "ko", { numeric: true });
@@ -40,6 +42,15 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
   const [justArrived, setJustArrived] = useState<Set<string>>(new Set());
   const [justDeparted, setJustDeparted] = useState<Set<string>>(new Set());
   const [soundEnabled, setSoundEnabled] = useState(false);
+  // 요청: "링크를 걸어서 재생하는 시스템이 아니라... 자유롭게 서치 해서 클릭할 수 있게" -
+  // 관리자가 미리 설정해둔 영상(youtubeVideoId)과 별개로, 화면 앞에 있는 사람이 즉석에서
+  // 검색해 고른 영상을 우선 재생합니다(새로고침하면 다시 관리자 기본값으로 돌아갑니다).
+  const [manualVideoId, setManualVideoId] = useState<string | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<YoutubeSearchResult[] | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const prevArrivedRef = useRef<Set<string>>(new Set());
   const prevDepartedRef = useRef<Set<string>>(new Set());
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -152,7 +163,34 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
     return data.routes.filter((r) => justDeparted.has(r.routeId)).sort((a, b) => natCompare(a.routeNo, b.routeNo));
   }, [data, justDeparted]);
 
-  const embedSrc = youtubeEmbedSrc(data?.youtubeVideoId);
+  const embedSrc = youtubeEmbedSrc(manualVideoId ?? data?.youtubeVideoId);
+
+  async function runSearch(e: FormEvent) {
+    e.preventDefault();
+    const q = searchQuery.trim();
+    if (!q) return;
+    setSearching(true);
+    setSearchError(null);
+    try {
+      const res = await fetch(`/api/shuttle/board/youtube-search?token=${encodeURIComponent(token)}&q=${encodeURIComponent(q)}`);
+      const json = await res.json();
+      if (!res.ok) {
+        setSearchError(json?.error ?? "검색에 실패했습니다.");
+        setSearchResults(null);
+      } else {
+        setSearchResults(json.results ?? []);
+      }
+    } catch {
+      setSearchError("검색 중 연결에 실패했습니다.");
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  function pickVideo(videoId: string) {
+    setManualVideoId(videoId);
+    setSearchOpen(false);
+  }
 
   if (errorMsg && !data) {
     return (
@@ -202,6 +240,70 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
         ) : (
           <div className="flex h-full min-h-[40vh] items-center justify-center text-slate-500 lg:min-h-screen">
             <p className="text-xl">관리자가 안내보드에 재생할 유튜브 영상을 아직 설정하지 않았습니다.</p>
+          </div>
+        )}
+
+        {/* 요청: "링크를 걸어서 재생하는 시스템이 아니라... 자유롭게 서치 해서 클릭할 수 있게
+            해주고, 전체화면을 누르면 검색창 없어지고 우리 화면에 맞게 맞춰지게" - 유튜브
+            사이트 자체는 iframe 안에 넣을 수 없어서(보안 정책), 우리 화면에 검색창을 만들고
+            결과를 직접 그려줍니다. 영상을 고르면 검색창은 자동으로 닫히고, 유튜브 플레이어
+            자체의 전체화면 버튼을 누르면(allowFullScreen) 브라우저가 이 검색창을 포함한 나머지
+            화면을 자동으로 가리고 영상만 꽉 채웁니다 - 별도 코드 없이 브라우저 기본 동작입니다. */}
+        {manualVideoId && !searchOpen && (
+          <button
+            onClick={() => {
+              setManualVideoId(null);
+            }}
+            className="absolute left-3 top-3 z-10 rounded-lg bg-black/60 px-2.5 py-1.5 text-xs font-semibold text-white backdrop-blur hover:bg-black/80"
+          >
+            ↩ 기본 영상으로
+          </button>
+        )}
+        <button
+          onClick={() => setSearchOpen((v) => !v)}
+          className="absolute right-3 top-3 z-10 rounded-lg bg-black/60 px-2.5 py-1.5 text-xs font-semibold text-white backdrop-blur hover:bg-black/80"
+        >
+          {searchOpen ? "✕ 닫기" : "🔍 유튜브 검색"}
+        </button>
+
+        {searchOpen && (
+          <div className="absolute inset-x-0 top-12 z-10 mx-3 max-h-[80%] overflow-y-auto rounded-xl bg-slate-950/95 p-3 shadow-2xl backdrop-blur">
+            <form onSubmit={runSearch} className="flex gap-2">
+              <input
+                autoFocus
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="보고 싶은 영상을 검색해보세요"
+                className="flex-1 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white placeholder:text-slate-500"
+              />
+              <button
+                type="submit"
+                disabled={searching}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-40"
+              >
+                {searching ? "검색 중..." : "검색"}
+              </button>
+            </form>
+            {searchError && <p className="mt-2 text-xs text-red-400">{searchError}</p>}
+            {searchResults && searchResults.length === 0 && !searchError && (
+              <p className="mt-2 text-xs text-slate-400">검색 결과가 없습니다.</p>
+            )}
+            {searchResults && searchResults.length > 0 && (
+              <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {searchResults.map((r) => (
+                  <button
+                    key={r.videoId}
+                    onClick={() => pickVideo(r.videoId)}
+                    className="flex flex-col overflow-hidden rounded-lg border border-slate-700 bg-slate-900 text-left hover:border-blue-400"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={r.thumbnail} alt={r.title} className="aspect-video w-full object-cover" />
+                    <span className="line-clamp-2 px-2 py-1.5 text-[11px] font-semibold text-white">{r.title}</span>
+                    <span className="truncate px-2 pb-1.5 text-[10px] text-slate-400">{r.channelTitle}</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -58,19 +58,18 @@ export default async function ShuttleLivePage() {
     }
   }
 
-  // 오늘 요일(1=월...5=금)에 배정된 학생만 노선별로 묶어둡니다(체크인 화면과 같은 필터 기준).
+  // 오늘 요일(1=월...5=금)에 배정된 학생만 골라 평평한 목록으로 넘깁니다(체크인 화면과 같은
+  // 필터 기준). 어느 노선 카드에 보일지는 클라이언트에서 override_route_id(하원 체크표에서
+  // 오늘 하루만 옮긴 경우)를 폴링해가며 다시 묶습니다 - 요청: "표안에서 아이들의 이름을
+  // 자유롭게 끌어서 이동할 수 있게" 했을 때 이 화면에도 바로 반영되도록.
   const todayWeekday = new Date().getDay();
   const stopById = new Map(stopsData.map((s) => [s.id, s]));
-  const rosterByRoute: Record<string, LiveRosterItem[]> = {};
+  const allRoster: LiveRosterItem[] = [];
   for (const a of assignmentsData) {
     if (!a.weekdays.includes(todayWeekday)) continue;
     const stop = stopById.get(a.stop_id);
     if (!stop) continue;
-    const list = rosterByRoute[stop.route_id] ?? (rosterByRoute[stop.route_id] = []);
-    list.push({ assignmentId: a.id, studentName: a.student_name_raw, stopSeq: stop.seq, stopTime: stop.stop_time });
-  }
-  for (const key of Object.keys(rosterByRoute)) {
-    rosterByRoute[key].sort((x, y) => x.stopSeq - y.stopSeq || x.studentName.localeCompare(y.studentName, "ko"));
+    allRoster.push({ assignmentId: a.id, studentName: a.student_name_raw, stopSeq: stop.seq, stopTime: stop.stop_time, routeId: stop.route_id });
   }
 
   return (
@@ -98,7 +97,7 @@ export default async function ShuttleLivePage() {
       <ShuttleLiveClient
         routes={routes}
         pilots={(pilotsRes.data as ShuttlePilotRoute[] | null) ?? []}
-        rosterByRoute={rosterByRoute}
+        allRoster={allRoster}
         userLabel={me.name || me.email}
       />
     </div>

@@ -56,8 +56,12 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
   const [eventsRes, boardingsRes] = await Promise.all([
     supabase.from("shuttle_run_events").select("route_id, event, created_at").in("route_id", routeIds).eq("service_date", today).order("created_at", { ascending: true }),
     assignmentIds.length
-      ? supabase.from("shuttle_boardings").select("assignment_id, status").eq("service_date", today).in("assignment_id", assignmentIds)
-      : Promise.resolve({ data: [] as { assignment_id: string; status: string }[] }),
+      ? supabase
+          .from("shuttle_boardings")
+          .select("assignment_id, status, override_route_id")
+          .eq("service_date", today)
+          .in("assignment_id", assignmentIds)
+      : Promise.resolve({ data: [] as { assignment_id: string; status: string; override_route_id: string | null }[] }),
   ]);
 
   const eventsByRoute: Record<string, { event: string; created_at: string }[]> = {};
@@ -65,14 +69,19 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
     (eventsByRoute[e.route_id] ??= []).push({ event: e.event, created_at: e.created_at });
   }
 
-  const boardingByAssignment = new Map((boardingsRes.data ?? []).map((b) => [b.assignment_id, b.status]));
+  const boardingByAssignment = new Map((boardingsRes.data ?? []).map((b) => [b.assignment_id, b]));
+  const routeIdSet = new Set(routeIds);
 
+  // 하원 체크표에서 오늘 하루만 다른 노선으로 옮긴 학생은 원래 노선이 아니라 옮겨진 노선의
+  // 명단에 나타납니다(요청: "표안에서 아이들의 이름을 자유롭게 끌어서 이동할 수 있게").
   const rosterByRoute: Record<string, { studentName: string; status: string }[]> = {};
   for (const a of relevant) {
     const stop = stopById.get(a.stop_id);
     if (!stop) continue;
-    const list = rosterByRoute[stop.route_id] ?? (rosterByRoute[stop.route_id] = []);
-    list.push({ studentName: a.student_name_raw, status: boardingByAssignment.get(a.id) ?? "예정" });
+    const boarding = boardingByAssignment.get(a.id);
+    const targetRouteId = boarding?.override_route_id && routeIdSet.has(boarding.override_route_id) ? boarding.override_route_id : stop.route_id;
+    const list = rosterByRoute[targetRouteId] ?? (rosterByRoute[targetRouteId] = []);
+    list.push({ studentName: a.student_name_raw, status: boarding?.status ?? "예정" });
   }
   for (const key of Object.keys(rosterByRoute)) {
     rosterByRoute[key].sort((x, y) => x.studentName.localeCompare(y.studentName, "ko"));

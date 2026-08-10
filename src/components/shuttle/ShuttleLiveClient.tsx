@@ -8,8 +8,8 @@ import type { ShuttlePilotPing, ShuttlePilotRoute, ShuttleRoute, ShuttleRunEvent
 
 const POLL_MS = 7000;
 
-export type LiveRosterItem = { assignmentId: string; studentName: string; stopSeq: number; stopTime: string | null };
-type BoardingRow = { assignment_id: string; status: string; alighted_at: string | null };
+export type LiveRosterItem = { assignmentId: string; studentName: string; stopSeq: number; stopTime: string | null; routeId: string };
+type BoardingRow = { assignment_id: string; status: string; alighted_at: string | null; override_route_id: string | null };
 
 function natCompare(a: string, b: string) {
   return a.localeCompare(b, "ko", { numeric: true });
@@ -28,12 +28,12 @@ function todayStr() {
 export default function ShuttleLiveClient({
   routes,
   pilots,
-  rosterByRoute,
+  allRoster,
   userLabel,
 }: {
   routes: ShuttleRoute[];
   pilots: ShuttlePilotRoute[];
-  rosterByRoute: Record<string, LiveRosterItem[]>;
+  allRoster: LiveRosterItem[];
   userLabel: string;
 }) {
   const notify = useToast();
@@ -46,6 +46,23 @@ export default function ShuttleLiveClient({
 
   const pilotByRoute = useMemo(() => new Map(pilots.filter((p) => p.enabled).map((p) => [p.route_id, p])), [pilots]);
 
+  // 하원 체크표에서 오늘 하루만 다른 노선으로 옮긴 학생은(요청: "표안에서 아이들의 이름을
+  // 자유롭게 끌어서 이동할 수 있게") 원래 노선이 아니라 옮겨진 노선의 카드에 나타나야 하므로,
+  // 폴링으로 받아온 override_route_id를 기준으로 매번 다시 묶습니다.
+  const routeIdSet = useMemo(() => new Set(routes.map((r) => r.id)), [routes]);
+  const rosterByRoute = useMemo(() => {
+    const map: Record<string, LiveRosterItem[]> = {};
+    for (const item of allRoster) {
+      const override = boardingByAssignment[item.assignmentId]?.override_route_id;
+      const targetRouteId = override && routeIdSet.has(override) ? override : item.routeId;
+      (map[targetRouteId] ??= []).push(item);
+    }
+    for (const key of Object.keys(map)) {
+      map[key].sort((x, y) => x.stopSeq - y.stopSeq || x.studentName.localeCompare(y.studentName, "ko"));
+    }
+    return map;
+  }, [allRoster, boardingByAssignment, routeIdSet]);
+
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
@@ -53,7 +70,7 @@ export default function ShuttleLiveClient({
 
   useEffect(() => {
     const pilotRouteIds = pilots.filter((p) => p.enabled).map((p) => p.route_id);
-    const assignmentIds = Object.values(rosterByRoute).flat().map((r) => r.assignmentId);
+    const assignmentIds = allRoster.map((r) => r.assignmentId);
     if (pilotRouteIds.length === 0) return;
     const supabase = createClient();
 
@@ -63,7 +80,11 @@ export default function ShuttleLiveClient({
         supabase.from("shuttle_pilot_pings").select("*").in("route_id", pilotRouteIds).order("recorded_at", { ascending: false }).limit(500),
         supabase.from("shuttle_run_events").select("*").in("route_id", pilotRouteIds).eq("service_date", today).order("created_at", { ascending: true }),
         assignmentIds.length > 0
-          ? supabase.from("shuttle_boardings").select("assignment_id, status, alighted_at").eq("service_date", today).in("assignment_id", assignmentIds)
+          ? supabase
+              .from("shuttle_boardings")
+              .select("assignment_id, status, alighted_at, override_route_id")
+              .eq("service_date", today)
+              .in("assignment_id", assignmentIds)
           : Promise.resolve({ data: [] as BoardingRow[] }),
       ]);
 
@@ -90,7 +111,7 @@ export default function ShuttleLiveClient({
     const t = setInterval(poll, POLL_MS);
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pilots, rosterByRoute]);
+  }, [pilots, allRoster]);
 
   async function checkArrived(routeId: string) {
     setBusyRoute(routeId);

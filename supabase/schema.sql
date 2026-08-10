@@ -3863,3 +3863,10 @@ drop policy if exists "giamicro_select_shuttle_arrival_links" on shuttle_arrival
 create policy "giamicro_select_shuttle_arrival_links" on shuttle_arrival_links for select using (is_giamicro_user());
 alter table shuttle_arrival_links drop constraint if exists shuttle_arrival_links_term_check;
 alter table shuttle_arrival_links add constraint shuttle_arrival_links_term_check check (term in ('정규학기', '여름캠프2'));
+
+-- ===== 89. 하원 체크표 - 학생 당일 한정 노선 이동 =====
+-- 요청: "특정 학생이 특정 하루만 다른셔틀을 타는 경우도 있기때문에 표안에서 아이들의 이름을
+-- 자유롭게 끌어서 이동할 수 있게 해주고". 평소 배정(shuttle_assignments)은 그대로 두고, 그날
+-- 하루만 다른 노선을 타는 경우를 shuttle_boardings(하루치 기록 테이블)에 얹어서 표시합니다.
+-- null이면 평소 배정된 노선 그대로, 값이 있으면 그날은 이 노선 명단에 대신 나타납니다.
+alter table shuttle_boardings add column if not exists override_route_id uuid references shuttle_routes(id) on delete set null;

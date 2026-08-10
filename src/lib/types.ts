@@ -828,6 +828,10 @@ export type ShuttleBoarding = {
   alighted_at: string | null;
   note: string | null;
   created_at: string;
+  // 그날 하루만 다른 노선을 타는 경우(요청: "특정 학생이 특정 하루만 다른셔틀을 타는 경우도
+  // 있기때문에 표안에서 아이들의 이름을 자유롭게 끌어서 이동할 수 있게"). null이면 평소
+  // 배정된 노선 그대로입니다.
+  override_route_id: string | null;
 };
 
 export type ShuttleRunEvent = {

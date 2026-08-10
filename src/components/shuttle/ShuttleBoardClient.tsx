@@ -3,11 +3,12 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { youtubeEmbedSrc } from "@/lib/youtube";
 
-const POLL_MS = 6000;
-// 인트로(전체화면 노란 셔틀 애니메이션)가 끝나고 위젯이 실제로 나타나기까지 걸리는 시간과
-// 맞춥니다(아래 .gia-bus-cross 애니메이션 길이 1.6초 + 여유). 요청: "위젯이 나타나기 전에
-// 소리와함께 노란색 셔틀차가 들어오는 애니메이션이 있었으면 좋겠어".
-const INTRO_MS = 1700;
+// 요청: "차량 도착출발과 안내보드간에 연동이 너무 느리고" - 폴링 주기를 6초에서 3초로 줄여
+// 도착·출발 체크가 안내보드에 더 빨리 반영되도록 했습니다.
+const POLL_MS = 3000;
+// 인트로(패널 안 버스 애니메이션)가 끝나고 위젯이 실제로 나타나기까지 걸리는 시간과 맞춥니다
+// (아래 .gia-bus-cross-panel 애니메이션 길이 1.1초 + 여유).
+const INTRO_MS = 1100;
 
 type BoardRoute = {
   routeId: string;
@@ -57,8 +58,6 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
   const [revealedIds, setRevealedIds] = useState<Set<string>>(new Set());
   const [justArrived, setJustArrived] = useState<Set<string>>(new Set());
   const [justDeparted, setJustDeparted] = useState<Set<string>>(new Set());
-  // 동시에 여러 대가 도착해도 인트로가 겹치지 않도록 순서대로 처리하는 대기열입니다.
-  const [introQueue, setIntroQueue] = useState<IntroRoute[]>([]);
   const [activeIntro, setActiveIntro] = useState<IntroRoute | null>(null);
   const [soundEnabled, setSoundEnabled] = useState(false);
   // 요청: "링크를 걸어서 재생하는 시스템이 아니라... 자유롭게 서치 해서 클릭할 수 있게" -
@@ -83,6 +82,14 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
   // 버스가 지나가는 인트로를 보여줍니다. 패널이 스크롤되어 있어도 인트로가 보이도록 자동으로
   // 맨 위로 스크롤합니다.
   const introBannerRef = useRef<HTMLDivElement | null>(null);
+  // 요청: "여러대 도착을 누르니까 반응을 아예 안하고, 도착후에 아이들 명단이 안떠" - 대기열을
+  // React state(useState)로 관리하면, 인트로 재생 도중 새 차량이 폴링으로 대기열에 추가될 때마다
+  // useEffect가 재실행되면서 이미 걸려 있던 setTimeout이 취소되어 그 차량의 명단 공개가
+  // 영원히 멈추는 버그가 있었습니다. ref + 직접 호출하는 함수(advanceIntroQueue)로 바꿔서,
+  // 대기열이 바뀌어도 재생 중인 인트로의 타이머가 취소되지 않도록 했습니다.
+  const introQueueRef = useRef<IntroRoute[]>([]);
+  const activeIntroRef = useRef<IntroRoute | null>(null);
+  const pendingTimeoutsRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
   const prevArrivedRef = useRef<Set<string>>(new Set());
   const prevDepartedRef = useRef<Set<string>>(new Set());
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -149,6 +156,42 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
   }
+
+  // 대기열(introQueueRef)에 쌓인 인트로를 하나씩 순서대로 재생합니다: 경적 소리 → 패널 안 버스
+  // 애니메이션 → (끝나면) 위젯 공개 + 띵동 소리 → 다음 인트로. setTimeout을 직접 관리해서, 이
+  // 함수가 다시 호출돼도(새 차량이 대기열에 추가돼도) 이미 재생 중인 인트로의 타이머는 그대로
+  // 유지됩니다.
+  function advanceIntroQueue() {
+    if (activeIntroRef.current) return; // 이미 재생 중이면 이번 호출은 아무것도 하지 않습니다.
+    const next = introQueueRef.current.shift();
+    if (!next) return;
+    activeIntroRef.current = next;
+    setActiveIntro(next);
+    playBusHorn();
+    const t = setTimeout(() => {
+      pendingTimeoutsRef.current.delete(t);
+      activeIntroRef.current = null;
+      setActiveIntro(null);
+      setRevealedIds((prev) => new Set([...prev, next.routeId]));
+      setJustArrived((prev) => new Set([...prev, next.routeId]));
+      playDingDong();
+      const t2 = setTimeout(() => {
+        pendingTimeoutsRef.current.delete(t2);
+        setJustArrived((prev) => { const n = new Set(prev); n.delete(next.routeId); return n; });
+      }, 10000);
+      pendingTimeoutsRef.current.add(t2);
+      advanceIntroQueue(); // 대기열에 다음 차량이 있으면 이어서 재생합니다.
+    }, INTRO_MS);
+    pendingTimeoutsRef.current.add(t);
+  }
+
+  // 컴포넌트가 사라질 때 남아 있는 타이머를 정리합니다.
+  useEffect(() => {
+    return () => {
+      pendingTimeoutsRef.current.forEach((id) => clearTimeout(id));
+      pendingTimeoutsRef.current.clear();
+    };
+  }, []);
 
   // 인트로가 시작될 때 "빵빵" 경적 소리를 울립니다(요청: "노란색 셔틀차가 들어오는 애니메이션이
   // 있었으면 좋겠어" - 애니메이션과 함께 차가 다가오는 느낌을 소리로도 줍니다).
@@ -237,13 +280,13 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
             setRevealedIds((prev) => new Set([...prev, ...newlyArrived]));
           } else {
             const routeById = new Map(json.routes.map((r) => [r.routeId, r]));
-            setIntroQueue((prev) => [
-              ...prev,
+            introQueueRef.current.push(
               ...newlyArrived
                 .map((id) => routeById.get(id))
                 .filter((r): r is BoardRoute => !!r)
-                .map((r) => ({ routeId: r.routeId, routeNo: r.routeNo, name: r.name })),
-            ]);
+                .map((r) => ({ routeId: r.routeId, routeNo: r.routeNo, name: r.name }))
+            );
+            advanceIntroQueue();
           }
         }
         prevArrivedRef.current = nowArrived;
@@ -281,27 +324,6 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
-
-  // 대기열에 쌓인 인트로를 하나씩 순서대로 재생합니다: 경적 소리 → 전체화면 버스 애니메이션 →
-  // (끝나면) 위젯 공개 + 띵동 소리 → 다음 인트로.
-  useEffect(() => {
-    if (activeIntro || introQueue.length === 0) return;
-    const next = introQueue[0];
-    setIntroQueue((q) => q.slice(1));
-    setActiveIntro(next);
-    playBusHorn();
-    const t = setTimeout(() => {
-      setActiveIntro(null);
-      setRevealedIds((prev) => new Set([...prev, next.routeId]));
-      setJustArrived((prev) => new Set([...prev, next.routeId]));
-      playDingDong();
-      setTimeout(() => {
-        setJustArrived((prev) => { const n = new Set(prev); n.delete(next.routeId); return n; });
-      }, 10000);
-    }, INTRO_MS);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeIntro, introQueue]);
 
   useEffect(() => {
     if (activeIntro) introBannerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -383,7 +405,7 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
         }
         .gia-card-in { animation: gia-card-in 0.8s cubic-bezier(0.2, 0.8, 0.3, 1) both; }
         .gia-bus-out-card { animation: gia-bus-out 1.1s ease-in forwards; animation-delay: 2.6s; }
-        .gia-bus-cross-panel { animation: gia-bus-cross-panel 1.6s cubic-bezier(0.32, 0.1, 0.28, 1) both; }
+        .gia-bus-cross-panel { animation: gia-bus-cross-panel 1.1s cubic-bezier(0.32, 0.1, 0.28, 1) both; }
         .gia-names-in { animation: gia-names-in 0.5s ease-out 0.15s both; }
       `}</style>
       {!soundEnabled && (

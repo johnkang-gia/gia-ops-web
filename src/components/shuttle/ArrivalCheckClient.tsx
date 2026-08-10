@@ -2,7 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-const POLL_MS = 5000;
+// 요청: "차량 도착출발과 안내보드간에 연동이 너무 느리고" - 폴링 주기를 5초에서 3초로 줄여
+// 다른 교직원 화면·안내보드에 상태가 더 빨리 반영되도록 했습니다.
+const POLL_MS = 3000;
 
 type ArrivalRoute = {
   routeId: string;

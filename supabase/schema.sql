@@ -3782,3 +3782,23 @@ create table if not exists shuttle_push_subscriptions (
 alter table shuttle_push_subscriptions enable row level security;
 drop policy if exists "wr_manager_select_shuttle_push_subscriptions" on shuttle_push_subscriptions;
 create policy "wr_manager_select_shuttle_push_subscriptions" on shuttle_push_subscriptions for select using (is_wr_manager());
+
+-- ===== 83. 3단계-a: 안전운행지수(급가속·급감속) =====
+-- 체크인 화면(기사님·동승선생님 휴대폰)의 가속도 센서(DeviceMotion)로 급가속·급감속 순간을
+-- 감지해, 매 순간이 아니라 "기준치를 넘은 순간"만 기록합니다(위치 핑처럼 5초마다 다 쌓으면
+-- 배터리·데이터도 낭비고 의미도 없음 - 정말 급격한 변화만 이벤트로). 하루+노선 단위로 모아
+-- "안전운행지수"를 계산하는 데 씁니다.
+create table if not exists shuttle_safety_events (
+  id bigint generated always as identity primary key,
+  route_id uuid not null references shuttle_routes(id) on delete cascade,
+  service_date date not null,
+  event_type text not null check (event_type in ('급가속', '급감속')),
+  magnitude numeric,
+  recorded_at timestamptz not null default now()
+);
+
+create index if not exists idx_shuttle_safety_events_route_date on shuttle_safety_events (route_id, service_date);
+
+alter table shuttle_safety_events enable row level security;
+drop policy if exists "wr_manager_select_shuttle_safety_events" on shuttle_safety_events;
+create policy "wr_manager_select_shuttle_safety_events" on shuttle_safety_events for select using (is_wr_manager());

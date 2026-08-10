@@ -4,7 +4,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { loadKakaoMaps } from "@/lib/kakaoMap";
 import { useToast } from "@/components/common/ToastProvider";
-import type { ShuttlePilotPing, ShuttlePilotRoute, ShuttleRoute, ShuttleRunEvent } from "@/lib/types";
+import type { ShuttlePilotPing, ShuttlePilotRoute, ShuttleRoute, ShuttleRunEvent, ShuttleSafetyEvent } from "@/lib/types";
+
+// 안전운행지수(3단계-a) - 급가속·급감속 1건당 5점씩 깎습니다(정교한 보험사식 가중치가 아니라,
+// "오늘 얼마나 급격한 순간이 많았는지"를 한눈에 보는 용도의 단순 지표입니다).
+const SAFETY_PENALTY_PER_EVENT = 5;
 
 const POLL_MS = 7000;
 const EXPECTED_INTERVAL_S = 5; // 체크인 페이지가 보내기로 한 주기(검증 기준 계산의 분모)
@@ -26,6 +30,7 @@ export default function PilotMonitorClient({
   const [busy, setBusy] = useState(false);
   const [pingsByRoute, setPingsByRoute] = useState<Record<string, ShuttlePilotPing[]>>({});
   const [eventsByRoute, setEventsByRoute] = useState<Record<string, ShuttleRunEvent[]>>({});
+  const [safetyByRoute, setSafetyByRoute] = useState<Record<string, ShuttleSafetyEvent[]>>({});
   const [now, setNow] = useState(() => Date.now());
 
   const routeById = useMemo(() => new Map(routes.map((r) => [r.id, r])), [routes]);
@@ -51,7 +56,7 @@ export default function PilotMonitorClient({
     async function poll() {
       const results = await Promise.all(
         pilots.map(async (p) => {
-          const [pingsRes, eventsRes] = await Promise.all([
+          const [pingsRes, eventsRes, safetyRes] = await Promise.all([
             supabase
               .from("shuttle_pilot_pings")
               .select("*")
@@ -64,16 +69,23 @@ export default function PilotMonitorClient({
               .eq("route_id", p.route_id)
               .eq("service_date", today)
               .order("created_at", { ascending: true }),
+            supabase
+              .from("shuttle_safety_events")
+              .select("*")
+              .eq("route_id", p.route_id)
+              .eq("service_date", today),
           ]);
           return {
             routeId: p.route_id,
             pings: (pingsRes.data as ShuttlePilotPing[] | null) ?? [],
             events: (eventsRes.data as ShuttleRunEvent[] | null) ?? [],
+            safety: (safetyRes.data as ShuttleSafetyEvent[] | null) ?? [],
           };
         })
       );
       setPingsByRoute(Object.fromEntries(results.map((r) => [r.routeId, r.pings])));
       setEventsByRoute(Object.fromEntries(results.map((r) => [r.routeId, r.events])));
+      setSafetyByRoute(Object.fromEntries(results.map((r) => [r.routeId, r.safety])));
     }
 
     poll();
@@ -154,6 +166,7 @@ export default function PilotMonitorClient({
         const route = routeById.get(pilot.route_id);
         const pings = pingsByRoute[pilot.route_id] ?? [];
         const events = eventsByRoute[pilot.route_id] ?? [];
+        const safety = safetyByRoute[pilot.route_id] ?? [];
         return (
           <PilotRouteCard
             key={pilot.id}
@@ -161,6 +174,7 @@ export default function PilotMonitorClient({
             route={route}
             pings={pings}
             events={events}
+            safety={safety}
             now={now}
             onCopyLink={() => copyLink(pilot.token)}
             onToggleEnabled={() => toggleEnabled(pilot)}
@@ -176,6 +190,7 @@ function PilotRouteCard({
   route,
   pings,
   events,
+  safety,
   now,
   onCopyLink,
   onToggleEnabled,
@@ -184,6 +199,7 @@ function PilotRouteCard({
   route: ShuttleRoute | undefined;
   pings: ShuttlePilotPing[]; // recorded_at 내림차순(최신이 [0])
   events: ShuttleRunEvent[]; // created_at 오름차순
+  safety: ShuttleSafetyEvent[]; // 오늘 이 노선의 급가속·급감속 이벤트
   now: number;
   onCopyLink: () => void;
   onToggleEnabled: () => void;
@@ -214,6 +230,10 @@ function PilotRouteCard({
       : null;
 
   const fresh = freshnessSec != null && freshnessSec < 20;
+
+  const accelCount = safety.filter((s) => s.event_type === "급가속").length;
+  const decelCount = safety.filter((s) => s.event_type === "급감속").length;
+  const safetyScore = Math.max(0, 100 - (accelCount + decelCount) * SAFETY_PENALTY_PER_EVENT);
 
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
@@ -247,11 +267,16 @@ function PilotRouteCard({
 
       <div className="grid grid-cols-1 gap-3 p-3 sm:grid-cols-[220px_1fr]">
         <PilotLiveMap lat={last?.lat} lng={last?.lng} />
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
           <Metric label="마지막 수신" value={freshnessSec == null ? "-" : `${freshnessSec}초 전`} warn={freshnessSec != null && freshnessSec >= 20 && running} />
           <Metric label="최근 10분 수신 성공률" value={successRate == null ? "-" : `${successRate}%`} warn={successRate != null && successRate < 80} />
           <Metric label="평균 갱신 간격" value={avgInterval == null ? "-" : `${avgInterval.toFixed(1)}초`} warn={avgInterval != null && Math.abs(avgInterval - EXPECTED_INTERVAL_S) > 5} />
           <Metric label="위치 정확도" value={last?.accuracy != null ? `약 ${Math.round(last.accuracy)}m` : "-"} />
+          <Metric
+            label="오늘 안전운행지수"
+            value={accelCount + decelCount === 0 ? "100점" : `${safetyScore}점 (급가속${accelCount}·급감속${decelCount})`}
+            warn={safetyScore < 80}
+          />
         </div>
       </div>
     </div>

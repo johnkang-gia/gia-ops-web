@@ -883,3 +883,15 @@ export type ShuttlePushSubscription = {
   auth: string;
   created_at: string;
 };
+
+// 안전운행지수(3단계-a) - 급가속·급감속 "기준치 초과 순간"만 기록합니다.
+export type ShuttleSafetyEventType = "급가속" | "급감속";
+
+export type ShuttleSafetyEvent = {
+  id: number;
+  route_id: string;
+  service_date: string;
+  event_type: ShuttleSafetyEventType;
+  magnitude: number | null;
+  recorded_at: string;
+};

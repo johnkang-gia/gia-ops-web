@@ -3,6 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 
 const PING_INTERVAL_MS = 5000;
+// 안전운행지수(3단계-a) 튜닝값 - 실측 없이 시작하는 v1이라 다소 보수적으로 잡았습니다(오탐이
+// 잦으면 의미가 없으므로). magnitude는 "직전 완만한 평균(중력 포함) 대비 이번 순간의 차이"로,
+// 급브레이크·급출발처럼 짧고 강한 변화만 잡아내고 평소 흔들림(방지턱, 손떨림)은 걸러냅니다.
+const ACCEL_THRESHOLD = 4.5; // m/s^2
+const SAFETY_EVENT_COOLDOWN_MS = 4000; // 같은 종류 이벤트 연속 전송 방지
 
 type Status = "idle" | "running" | "stopped";
 type BoardingStatusValue = "예정" | "탑승" | "미탑승" | "결석" | "픽업";
@@ -28,6 +33,7 @@ const STATUS_BUTTONS: { value: BoardingStatusValue; label: string; color: string
 // 다른 앱으로 오래 전환하면 전송이 잠시 멈출 수 있습니다.
 // 2단계-a: 위치 전송과는 별개로, 오늘 이 노선에 배정된 학생별 탑승·결석·하차를 터치 한 번으로
 // 체크할 수 있습니다(옐로우버스 방식 - 목록에서 버튼 하나만 누르면 됩니다).
+// 3단계-a: 운행 중에는 휴대폰 가속도 센서로 급가속·급감속도 함께 감지해 안전운행지수 계산에 씁니다.
 export default function PilotCheckinClient({
   token,
   routeNo,
@@ -48,8 +54,13 @@ export default function PilotCheckinClient({
   const [lastAccuracy, setLastAccuracy] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [roster, setRoster] = useState(initialRoster);
+  const [accelCount, setAccelCount] = useState(0);
+  const [decelCount, setDecelCount] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const wakeLockRef = useRef<{ release: () => Promise<void> } | null>(null);
+  const motionBaselineRef = useRef<number | null>(null);
+  const lastSafetyEventAtRef = useRef<{ 급가속: number; 급감속: number }>({ 급가속: 0, 급감속: 0 });
+  const motionHandlerRef = useRef<((e: DeviceMotionEvent) => void) | null>(null);
 
   async function setBoardingStatus(assignmentId: string, next: BoardingStatusValue) {
     // 이미 같은 상태를 누르면 "예정"으로 되돌립니다(잘못 눌렀을 때 취소하는 용도).
@@ -78,6 +89,68 @@ export default function PilotCheckinClient({
       });
     } catch {
       // 조용히 무시(위와 동일).
+    }
+  }
+
+  function sendSafetyEvent(eventType: "급가속" | "급감속", magnitude: number) {
+    setAccelCount((c) => (eventType === "급가속" ? c + 1 : c));
+    setDecelCount((c) => (eventType === "급감속" ? c + 1 : c));
+    fetch("/api/shuttle/pilot/safety-event", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, eventType, magnitude }),
+    }).catch(() => {
+      // 안전지표는 참고용이라 전송 실패해도 조용히 넘어갑니다(위치 전송을 막지 않음).
+    });
+  }
+
+  // 가속도 센서로 급가속/급감속을 감지합니다(3단계-a). accelerationIncludingGravity(중력 포함
+  // 값 - 기종에 상관없이 항상 지원됨)의 크기를 완만한 이동평균(baseline)과 비교해, 그 차이가
+  // 기준치를 넘는 "순간"만 이벤트로 봅니다. baseline 자체가 중력·기울기를 서서히 따라가므로
+  // 별도 보정 없이도 방지턱 같은 잔진동이 아니라 급브레이크·급출발처럼 짧고 강한 변화만 걸러집니다.
+  function startMotion() {
+    if (typeof DeviceMotionEvent === "undefined") return;
+    const requestPermission = (
+      DeviceMotionEvent as unknown as { requestPermission?: () => Promise<"granted" | "denied"> }
+    ).requestPermission;
+
+    function attach() {
+      motionBaselineRef.current = null;
+      const handler = (e: DeviceMotionEvent) => {
+        const g = e.accelerationIncludingGravity;
+        if (!g || g.x == null || g.y == null || g.z == null) return;
+        const magnitude = Math.sqrt(g.x * g.x + g.y * g.y + g.z * g.z);
+        if (motionBaselineRef.current == null) {
+          motionBaselineRef.current = magnitude;
+          return;
+        }
+        const delta = magnitude - motionBaselineRef.current;
+        motionBaselineRef.current = motionBaselineRef.current * 0.9 + magnitude * 0.1;
+        const now = Date.now();
+        if (Math.abs(delta) < ACCEL_THRESHOLD) return;
+        const type: "급가속" | "급감속" = delta > 0 ? "급가속" : "급감속";
+        if (now - lastSafetyEventAtRef.current[type] < SAFETY_EVENT_COOLDOWN_MS) return;
+        lastSafetyEventAtRef.current[type] = now;
+        sendSafetyEvent(type, Math.abs(delta));
+      };
+      motionHandlerRef.current = handler;
+      window.addEventListener("devicemotion", handler);
+    }
+
+    if (typeof requestPermission === "function") {
+      // iOS 13+는 사용자 동작(이 버튼 탭) 안에서 명시적으로 권한을 물어야 합니다.
+      requestPermission().then((res) => {
+        if (res === "granted") attach();
+      }).catch(() => {});
+    } else {
+      attach();
+    }
+  }
+
+  function stopMotion() {
+    if (motionHandlerRef.current) {
+      window.removeEventListener("devicemotion", motionHandlerRef.current);
+      motionHandlerRef.current = null;
     }
   }
 
@@ -138,9 +211,12 @@ export default function PilotCheckinClient({
     setStatus("running");
     setSentCount(0);
     setFailCount(0);
+    setAccelCount(0);
+    setDecelCount(0);
     await sendEvent("출발");
     sendPing();
     timerRef.current = setInterval(sendPing, PING_INTERVAL_MS);
+    startMotion();
     try {
       // 화면이 꺼지면 위치 전송이 멈출 수 있어, 지원하는 브라우저에서는 화면이 자동으로
       // 꺼지지 않도록 요청합니다(운행 중에만, 미지원 브라우저에서는 조용히 무시됩니다).
@@ -154,6 +230,7 @@ export default function PilotCheckinClient({
   async function stop() {
     if (timerRef.current) clearInterval(timerRef.current);
     timerRef.current = null;
+    stopMotion();
     setStatus("stopped");
     await sendEvent("도착");
     if (wakeLockRef.current) {
@@ -166,7 +243,9 @@ export default function PilotCheckinClient({
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
       if (wakeLockRef.current) wakeLockRef.current.release().catch(() => {});
+      stopMotion();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const running = status === "running";
@@ -216,6 +295,11 @@ export default function PilotCheckinClient({
         )}
         {running && lastAccuracy != null && (
           <p style={{ fontSize: 12, color: "#94a3b8", margin: "2px 0 0" }}>정확도 약 {Math.round(lastAccuracy)}m</p>
+        )}
+        {running && (accelCount > 0 || decelCount > 0) && (
+          <p style={{ fontSize: 12, color: "#d97706", margin: "4px 0 0" }}>
+            ⚠️ 급가속 {accelCount}회 · 급감속 {decelCount}회 감지됨
+          </p>
         )}
       </div>
 

@@ -222,7 +222,7 @@ export async function GET(request: Request) {
 
   const stops = stopsData ?? [];
   const stopIds = stops.map((s) => s.id);
-  // 그 날짜의 요일(1=월...5=금)에 해당하는 배정만 - 실제 체크인 화면·학부모 화면과 같은 필터 기준입니다.
+  // 그 날짜의 요일(1=월...5=금)에 해당하는 배정만 - 실제 체크인 화면과 같은 필터 기준입니다.
   const weekday = new Date(`${date}T00:00:00`).getDay();
 
   let roster: RosterRow[] = [];

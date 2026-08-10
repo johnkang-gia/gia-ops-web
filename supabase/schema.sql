@@ -3689,7 +3689,7 @@ alter table department_memos add column if not exists attendance_memo text not n
 alter table department_memos add column if not exists attendance_memo_updated_by text;
 alter table department_memos add column if not exists attendance_memo_updated_at timestamptz;
 
--- ===== 79. 셔틀 1단계 정식 도입 - 전체 노선 자동 확대 + 학부모 테스트 조회 =====
+-- ===== 79. 셔틀 1단계 정식 도입 - 전체 노선 자동 확대 =====
 -- 요청("제안서에 따라 시스템 구축을 시작하자... 1단계부터 도입시작하자")에 따라, 그동안 관리자가
 -- 고른 일부 노선에만 붙이던 파일럿 위치전송을 전체 활성 노선으로 자동 확대합니다(트리거로
 -- 신규 노선도 자동 포함). 위치전송 자체의 구조(로그인 없는 토큰 링크, service role 쓰기,
@@ -3718,26 +3718,6 @@ insert into shuttle_pilot_routes (route_id)
 select id from shuttle_routes where active = true
 on conflict (route_id) do nothing;
 
--- 학부모 테스트 조회(요청: "학부모는 실질적으로 연결하지는 말고 기능만 구현해서 학부모계정도
--- 테스트할 수 있도록"). 실제 학부모에게 배포하지 않고, 관리자가 학생을 골라 테스트용 링크를
--- 만들어 직접 확인해보는 용도입니다. 도착예정시각·알림은 아직 없고(2단계 예정), 지금은 "내 아이
--- 셔틀이 지금 어디 있는지"만 보여줍니다. 정류장 하나가 아니라 학생 한 명 기준이라 파일럿
--- 노선(shuttle_pilot_routes)과는 별개 테이블로 둡니다.
-create table if not exists shuttle_parent_links (
-  id uuid primary key default gen_random_uuid(),
-  student_id uuid not null references wr_students(id) on delete cascade,
-  token uuid not null default gen_random_uuid(),
-  enabled boolean not null default true,
-  created_at timestamptz not null default now(),
-  unique (student_id)
-);
-create unique index if not exists shuttle_parent_links_token_idx on shuttle_parent_links(token);
-
-alter table shuttle_parent_links enable row level security;
-drop policy if exists "wr_manager_all_shuttle_parent_links" on shuttle_parent_links;
-create policy "wr_manager_all_shuttle_parent_links" on shuttle_parent_links
-  for all using (is_wr_manager()) with check (is_wr_manager());
-
 -- ===== 80. 2단계-a: 학생별 탑승·하차 체크리스트 =====
 -- 요청("순서대로 진행해줘")에 따라 벤치마킹 제안서 2단계 첫 항목을 구현합니다. 새 테이블을 만드는
 -- 대신, 이미 만들어져 있었지만 어떤 화면에서도 아직 쓰이지 않던 shuttle_boardings(하루치 탑승
@@ -3764,25 +3744,6 @@ alter table shuttle_eta_cache enable row level security;
 drop policy if exists "wr_manager_select_shuttle_eta_cache" on shuttle_eta_cache;
 create policy "wr_manager_select_shuttle_eta_cache" on shuttle_eta_cache for select using (is_wr_manager());
 
--- ===== 82. 2단계-c: 학부모 자동 푸시 알림 =====
--- 브라우저 표준 Web Push(VAPID)를 씁니다 - 별도 앱스토어 배포나 Firebase 프로젝트 가입 없이
--- 웹페이지(학부모 테스트 화면)에서 바로 구독할 수 있습니다. 학생 1명이 여러 기기(부모 폰 여러 대)를
--- 구독할 수 있어 student_id+endpoint 조합을 키로 둡니다. 구독/발송 모두 service role로만
--- 이루어지므로(토큰 검증은 API 라우트에서 수행) RLS는 잠가둡니다.
-create table if not exists shuttle_push_subscriptions (
-  id uuid primary key default gen_random_uuid(),
-  student_id uuid not null references wr_students(id) on delete cascade,
-  endpoint text not null,
-  p256dh text not null,
-  auth text not null,
-  created_at timestamptz not null default now(),
-  unique (student_id, endpoint)
-);
-
-alter table shuttle_push_subscriptions enable row level security;
-drop policy if exists "wr_manager_select_shuttle_push_subscriptions" on shuttle_push_subscriptions;
-create policy "wr_manager_select_shuttle_push_subscriptions" on shuttle_push_subscriptions for select using (is_wr_manager());
-
 -- ===== 83. 3단계-a: 안전운행지수(급가속·급감속) =====
 -- 체크인 화면(기사님·동승선생님 휴대폰)의 가속도 센서(DeviceMotion)로 급가속·급감속 순간을
 -- 감지해, 매 순간이 아니라 "기준치를 넘은 순간"만 기록합니다(위치 핑처럼 5초마다 다 쌓으면
@@ -3802,3 +3763,12 @@ create index if not exists idx_shuttle_safety_events_route_date on shuttle_safet
 alter table shuttle_safety_events enable row level security;
 drop policy if exists "wr_manager_select_shuttle_safety_events" on shuttle_safety_events;
 create policy "wr_manager_select_shuttle_safety_events" on shuttle_safety_events for select using (is_wr_manager());
+
+-- ===== 84. 학부모 기능 제거 =====
+-- 요청: "학부모님들의 사용은 제외하고... 교직원들이... 실시간으로 체크할 수 있도록". 학부모 실시간
+-- 위치 조회 화면은 노선이 지연되거나 교통상황으로 도착이 늦어지는 상황을 학부모가 오해해 문의가
+-- 상충할 수 있다는 판단으로 완전히 걷어내고, 교직원 전용 체계로 재편합니다. 아래 DROP은 79번
+-- 섹션(shuttle_parent_links)과 82번 섹션(shuttle_push_subscriptions)에서 만든 테이블을 정리합니다
+-- - 앱 코드가 더 이상 이 테이블들을 참조하지 않으므로 안전합니다.
+drop table if exists shuttle_push_subscriptions cascade;
+drop table if exists shuttle_parent_links cascade;

@@ -864,26 +864,6 @@ export type ShuttlePilotPing = {
   recorded_at: string;
 };
 
-// 학부모 테스트 조회용(요청: "학부모는 실질적으로 연결하지는 말고 기능만 구현해서 학부모계정도
-// 테스트할 수 있도록"). 실제 배포 전, 관리자가 학생을 골라 만드는 테스트 링크입니다.
-export type ShuttleParentLink = {
-  id: string;
-  student_id: string;
-  token: string;
-  enabled: boolean;
-  created_at: string;
-};
-
-// 학부모 자동 푸시 알림용 Web Push 구독(2단계-c) - 학생 1명이 여러 기기를 구독할 수 있습니다.
-export type ShuttlePushSubscription = {
-  id: string;
-  student_id: string;
-  endpoint: string;
-  p256dh: string;
-  auth: string;
-  created_at: string;
-};
-
 // 안전운행지수(3단계-a) - 급가속·급감속 "기준치 초과 순간"만 기록합니다.
 export type ShuttleSafetyEventType = "급가속" | "급감속";
 

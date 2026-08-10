@@ -421,8 +421,12 @@ export default function IncidentsClient({
         )}
       </div>
 
-      {/* 가운데: 입력폼 (항상 표시) */}
-      <div className="order-1 lg:order-2">
+      {/* 가운데: 입력폼 (항상 표시) - 요청: "새사건입력할때 밑으로 내려가면 아래로 화면을
+          못내려" - 양옆 목록/AI제안 칸(lg:h-full lg:min-h-0)과 달리 이 칸에는 높이 제한이
+          없어서, 데스크톱(lg:overflow-hidden인 바깥 grid)에서 폼이 화면보다 길어지면 아래
+          내용(저장 버튼 포함)이 그냥 잘려나가고 스크롤도 안 됐습니다. 다른 두 칸과 같은
+          패턴으로 이 칸 자체를 스크롤 가능하게 만들어 해결합니다. */}
+      <div className="order-1 lg:order-2 lg:h-full lg:min-h-0 lg:overflow-y-auto">
         <form
           onSubmit={handleSubmit}
           className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"

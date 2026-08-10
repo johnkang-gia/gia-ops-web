@@ -113,8 +113,46 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
   const body = await req.json().catch(() => null);
   const routeId = body?.routeId as string | undefined;
   const action = body?.action as string | undefined;
+  const today = new Date().toISOString().slice(0, 10);
+
+  // 요청: "출발함 상태에서 한번 더 누르면 다시 원래상태로 돌아올 수 있도록" - 매일 반복되는
+  // 체크라 실수해도 바로 되돌릴 수 있어야 합니다(정규학기 실시간 셔틀 화면의 "취소" 버튼과
+  // 같은 방식으로, 그날 기록된 도착·출발 이벤트를 지워서 "미도착" 상태로 되돌립니다).
+  if (action === "reset") {
+    if (!routeId) return NextResponse.json({ error: "routeId가 필요합니다." }, { status: 400 });
+    const { data: route } = await supabase.from("shuttle_routes").select("id, term").eq("id", routeId).maybeSingle();
+    if (!route || route.term !== link.term) {
+      return NextResponse.json({ error: "이 링크에서 다룰 수 없는 노선입니다." }, { status: 403 });
+    }
+    const { error: deleteError } = await supabase
+      .from("shuttle_run_events")
+      .delete()
+      .eq("service_date", today)
+      .eq("route_id", routeId)
+      .in("event", ["현장도착", "출발"]);
+    if (deleteError) return NextResponse.json({ error: deleteError.message }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
+
+  // 요청: "매일매일 체크하는거니까, 전체 리셋 할 수 있고" - 이 링크의 term에 속한 오늘의 모든
+  // 노선을 한 번에 "미도착" 상태로 되돌립니다(잘못 누른 걸 하나하나 되돌리는 대신 한 번에).
+  if (action === "reset_all") {
+    const { data: routes } = await supabase.from("shuttle_routes").select("id").eq("active", true).eq("direction", "하원").eq("term", link.term);
+    const routeIds = (routes ?? []).map((r) => r.id);
+    if (routeIds.length > 0) {
+      const { error: deleteError } = await supabase
+        .from("shuttle_run_events")
+        .delete()
+        .eq("service_date", today)
+        .in("route_id", routeIds)
+        .in("event", ["현장도착", "출발"]);
+      if (deleteError) return NextResponse.json({ error: deleteError.message }, { status: 500 });
+    }
+    return NextResponse.json({ ok: true });
+  }
+
   if (!routeId || !action || !["arrive", "depart"].includes(action)) {
-    return NextResponse.json({ error: "routeId, action(arrive|depart)이 필요합니다." }, { status: 400 });
+    return NextResponse.json({ error: "routeId, action(arrive|depart|reset|reset_all)이 필요합니다." }, { status: 400 });
   }
 
   // 이 링크의 term에 속한 노선인지 확인(다른 term의 노선 id를 넣어도 기록되지 않게).
@@ -123,7 +161,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
     return NextResponse.json({ error: "이 링크에서 다룰 수 없는 노선입니다." }, { status: 403 });
   }
 
-  const today = new Date().toISOString().slice(0, 10);
   const event = action === "arrive" ? "현장도착" : "출발";
   const { error: insertError } = await supabase.from("shuttle_run_events").insert({
     service_date: today,

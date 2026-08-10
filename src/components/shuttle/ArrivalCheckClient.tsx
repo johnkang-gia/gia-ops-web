@@ -34,10 +34,16 @@ function natCompare(a: string, b: string) {
 // 누르면 출발함이 되어서" - 노선당 버튼 하나가 상태(미도착/도착함/출발함)를 겸해서, 누를 때마다
 // 색과 글자가 바뀝니다. 나중에 학생별 개별 탑승 체크가 생기기 전까지는 이 버튼이 도착·출발을
 // 알리는 유일한 조작입니다.
+//
+// 요청: "출발함 상태에서는 다시 못돌려, 매일매일 체크하는거니까, 전체 리셋 할 수 있고, 출발함
+// 상태에서 한번 더 누르면 다시 원래상태로 돌아올 수 있도록" - 출발함에서 한 번 더 누르면
+// 미도착으로 되돌아가고(미도착 → 도착함 → 출발함 → 미도착 순환), 위쪽 "전체 리셋" 버튼으로
+// 오늘 체크한 모든 차량을 한 번에 미도착 상태로 되돌릴 수 있습니다.
 export default function ArrivalCheckClient({ token }: { token: string }) {
   const [data, setData] = useState<ArrivalData | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [busyRoute, setBusyRoute] = useState<string | null>(null);
+  const [resetting, setResetting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -64,7 +70,7 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
     };
   }, [token]);
 
-  async function act(routeId: string, action: "arrive" | "depart") {
+  async function act(routeId: string, action: "arrive" | "depart" | "reset") {
     setBusyRoute(routeId);
     try {
       const res = await fetch(`/api/shuttle/arrival/${token}`, {
@@ -78,22 +84,44 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
           if (!prev) return prev;
           return {
             ...prev,
-            routes: prev.routes.map((r) =>
-              r.routeId === routeId
-                ? {
-                    ...r,
-                    events: [
-                      ...r.events,
-                      { event: action === "arrive" ? "현장도착" : "출발", created_at: new Date().toISOString() },
-                    ],
-                  }
-                : r
-            ),
+            routes: prev.routes.map((r) => {
+              if (r.routeId !== routeId) return r;
+              if (action === "reset") {
+                return { ...r, events: r.events.filter((e) => e.event !== "현장도착" && e.event !== "출발") };
+              }
+              return {
+                ...r,
+                events: [...r.events, { event: action === "arrive" ? "현장도착" : "출발", created_at: new Date().toISOString() }],
+              };
+            }),
           };
         });
       }
     } finally {
       setBusyRoute(null);
+    }
+  }
+
+  // 요청: "매일매일 체크하는거니까, 전체 리셋 할 수 있고" - 오늘 체크한 모든 차량의 도착·출발
+  // 기록을 한 번에 지워서 전부 미도착 상태로 되돌립니다.
+  async function resetAll() {
+    if (!window.confirm("오늘 체크한 모든 차량의 도착·출발 상태를 초기화할까요?")) return;
+    setResetting(true);
+    try {
+      const res = await fetch(`/api/shuttle/arrival/${token}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reset_all" }),
+      });
+      if (res.ok) {
+        setData((prev) =>
+          prev
+            ? { ...prev, routes: prev.routes.map((r) => ({ ...r, events: r.events.filter((e) => e.event !== "현장도착" && e.event !== "출발") })) }
+            : prev
+        );
+      }
+    } finally {
+      setResetting(false);
     }
   }
 
@@ -111,10 +139,19 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
 
   return (
     <div className="min-h-screen bg-slate-50 p-2 pb-10">
-      <div className="mb-2 pt-1 text-center">
-        <p className="text-xs font-bold text-slate-500">{data?.label ?? "도착체크"}</p>
-        <h1 className="text-base font-black text-slate-800">🚌 차량 도착·출발 체크</h1>
-        <p className="mt-0.5 text-[10px] text-slate-400">버튼을 누르면 미도착 → 도착함 → 출발함 순서로 바뀝니다</p>
+      <div className="mb-2 flex items-center justify-between gap-2 pt-1">
+        <div className="flex-1 text-center">
+          <p className="text-xs font-bold text-slate-500">{data?.label ?? "도착체크"}</p>
+          <h1 className="text-base font-black text-slate-800">🚌 차량 도착·출발 체크</h1>
+          <p className="mt-0.5 text-[10px] text-slate-400">버튼을 누르면 미도착 → 도착함 → 출발함 → 미도착 순서로 바뀝니다</p>
+        </div>
+        <button
+          onClick={resetAll}
+          disabled={resetting || routes.length === 0}
+          className="shrink-0 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-[10px] font-bold text-slate-500 active:scale-95 disabled:opacity-40"
+        >
+          ⟲ 전체 리셋
+        </button>
       </div>
 
       {routes.length === 0 ? (
@@ -139,8 +176,8 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
                 }
               >
                 <button
-                  onClick={() => act(r.routeId, status === "waiting" ? "arrive" : "depart")}
-                  disabled={isBusy || status === "departed"}
+                  onClick={() => act(r.routeId, status === "waiting" ? "arrive" : status === "arrived" ? "depart" : "reset")}
+                  disabled={isBusy}
                   className={
                     "flex w-full flex-col items-center gap-0.5 px-0.5 py-1.5 active:scale-95 disabled:opacity-70 " +
                     (status === "arrived"

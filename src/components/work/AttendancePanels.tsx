@@ -51,7 +51,7 @@ export default function AttendancePanels({
       </div>
       <div className="min-h-0 flex-1 overflow-hidden">
         {tab === "digest" ? (
-          <AttendanceDigestPanel messages={messages} department={department} roster={roster} />
+          <AttendanceDigestPanel messages={messages} department={department} roster={roster} currentUserEmail={userEmail} />
         ) : (
           <GoogleChatMirrorPanel
             sourceKey="attendance"

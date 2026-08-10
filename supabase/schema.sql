@@ -3678,3 +3678,13 @@ begin
     alter publication supabase_realtime add table shuttle_run_events;
   end if;
 end $$;
+
+-- ===== 78. 출결내역 전용 메모칸(부서 메모와 분리) =====
+-- 요청: "부서메모에 출결사항을 메모하고 반영하니까 사실상 메모기능으로 쓸 수가 없어서, 부서
+-- 메모는 그냥 반영하지 말고... 출결 메모로 적을 수 있게 해줘". department_memos.content(기존
+-- 부서 공유 메모)와 완전히 독립된 칼럼을 같은 행(부서당 1행)에 추가합니다 - 출결내역 패널에
+-- 자동으로 파싱되어 올라가지 않는 순수 메모 용도입니다(픽업/결석/퇴소 메모, 며칠 뒤 출결 미리
+-- 적어두기 등).
+alter table department_memos add column if not exists attendance_memo text not null default '';
+alter table department_memos add column if not exists attendance_memo_updated_by text;
+alter table department_memos add column if not exists attendance_memo_updated_at timestamptz;

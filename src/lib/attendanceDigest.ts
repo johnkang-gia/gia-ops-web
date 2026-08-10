@@ -122,8 +122,9 @@ export function extractTargetDate(text: string, baseDate: Date): string | null {
   return null;
 }
 
-// 학생 명부 한 명분(이름 대조에 필요한 최소 정보).
-export type RosterStudent = { name: string; grade: string | null };
+// 학생 명부 한 명분(이름 대조에 필요한 최소 정보). nameEn은 영어이름 대조용(요청: "영어이름의
+// 경우 학생목록에서 대조해서 한글이름(영어이름)으로 병기표기").
+export type RosterStudent = { name: string; grade: string | null; nameEn?: string | null };
 
 // 문장에서 찾아낸 학생 한 명.
 export type MatchedStudent = {
@@ -161,6 +162,62 @@ function normalizeGrade(g: string | null): string | null {
   if (!g) return null;
   const m = g.match(/\d{1,2}/);
   return m ? m[0] : null;
+}
+
+// ── 영어 이름 대조 ────────────────────────────────────────────────────────────
+// 구글챗 출결알림 중에는 "@Teneqha Form Jino Park will be absent tomorrow"처럼 학생 이름이
+// 영어로 적힌 경우가 있습니다. 이때 "@"로 시작하는 부분은 실제 학생 이름이 아니라 구글챗이
+// 자동으로 붙이는 멘션/태그이고(요청: "@로시작되는 글자는 태그라서 실제 학생의 이름이 아니야"),
+// 진짜 이름은 "will be absent" 같은 출결 문구 바로 앞에 있습니다. 그래서 문장 전체에서 영어
+// 단어를 아무거나 이름으로 추측하지 않고, 이 출결 문구 바로 앞 1~2단어만 후보로 보고 학생
+// 명부의 영어이름과 대조합니다(요청: "will be absent가 나오면 그 앞에 두 블럭인 한블럭을
+// 학생목록과 대조하고, 이름이 있으면 그 이름 표기").
+const EN_NAME_STOP_WORDS = new Set([
+  "will", "be", "is", "are", "was", "were", "the", "a", "an", "to", "today",
+  "tomorrow", "not", "student", "child", "kids", "and", "for", "this", "that",
+  "he", "she", "they", "pick", "picked", "up", "from", "at", "on", "in",
+  "early", "late", "school", "class", "please", "hi", "hello", "dear", "im", "i",
+]);
+
+function normalizeEnName(s: string): string {
+  return s.toLowerCase().replace(/[^a-z\s]/g, "").replace(/\s+/g, " ").trim();
+}
+
+// ATTENDANCE_CATEGORIES에 이미 등록된 키워드 중 영어로만 된 것들을 "이 문구 앞에 이름이 있다"는
+// 닻(anchor)으로 재사용합니다 - 별도 문구 목록을 새로 관리할 필요가 없습니다.
+const EN_NAME_ANCHORS = ATTENDANCE_CATEGORIES.flatMap((c) => c.keywords.filter((k) => /^[a-z][a-z\s-]*$/i.test(k)));
+
+function findEnglishNameCandidates(text: string): string[] {
+  const lower = text.toLowerCase();
+  const out: string[] = [];
+  for (const anchor of EN_NAME_ANCHORS) {
+    let from = 0;
+    for (;;) {
+      const idx = lower.indexOf(anchor, from);
+      if (idx === -1) break;
+      from = idx + anchor.length;
+      const tokens = text
+        .slice(0, idx)
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((t) => t.replace(/^[^A-Za-z]+|[^A-Za-z']+$/g, ""))
+        .filter((t) => t.length > 0 && !EN_NAME_STOP_WORDS.has(t.toLowerCase()));
+      const last2 = tokens.slice(-2);
+      if (last2.length === 2) out.push(last2.join(" "));
+      if (last2.length >= 1) out.push(last2.slice(-1).join(" "));
+    }
+  }
+  return out;
+}
+
+// 원문 미리보기에서 구글챗 멘션("@이름")을 걷어냅니다. "@"로 시작하는 토큰은 태그이지 학생
+// 이름이 아니므로(요청), 명부 대조에 실패해 원문을 그대로 보여줘야 할 때도 이 부분은 뺍니다.
+export function stripLeadingMention(text: string): string {
+  const m = text.match(/^(\s*@\S+)+\s*/);
+  if (!m) return text;
+  const rest = text.slice(m[0].length).trim();
+  return rest || text;
 }
 
 // 문장에서 실제 학생 명부에 있는 이름만 골라냅니다.
@@ -224,6 +281,40 @@ export function matchRosterStudents(text: string, roster: RosterStudent[]): Matc
     });
 
     remaining = remaining.slice(0, idx) + " ".repeat(name.length) + remaining.slice(idx + name.length);
+  }
+
+  // 한글 이름으로 아무도 못 찾은 경우에만 영어 이름 대조를 시도합니다(한글 문장에 우연히 영어
+  // 단어가 섞여 있어도 이미 한글로 찾은 학생과 중복으로 잡히지 않도록).
+  const byNameEn = new Map<string, RosterStudent[]>();
+  for (const s of roster) {
+    if (!s.nameEn) continue;
+    const key = normalizeEnName(s.nameEn);
+    if (!key) continue;
+    const arr = byNameEn.get(key) ?? [];
+    arr.push(s);
+    byNameEn.set(key, arr);
+  }
+
+  if (byNameEn.size > 0) {
+    const alreadyFound = new Set(found.map((f) => f.name));
+    for (const candidate of findEnglishNameCandidates(text)) {
+      const key = normalizeEnName(candidate);
+      if (!key) continue;
+      const list = byNameEn.get(key);
+      if (!list || list.length === 0) continue;
+      const picked = list[0];
+      if (alreadyFound.has(picked.name)) continue;
+      const hasHomonym = list.length > 1;
+      found.push({
+        name: picked.name,
+        grade: picked.grade,
+        // 영어이름으로 대조된 경우 "한글이름(영어이름)"으로 병기합니다(요청).
+        displayName: `${picked.name}(${picked.nameEn})`,
+        studentKey: hasHomonym ? `${picked.name}#${normalizeGrade(picked.grade)}` : picked.name,
+        ambiguous: hasHomonym,
+      });
+      alreadyFound.add(picked.name);
+    }
   }
 
   return found;

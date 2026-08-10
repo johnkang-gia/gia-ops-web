@@ -333,6 +333,11 @@ export type DepartmentMemo = {
   content: string;
   updated_by: string | null;
   updated_at: string;
+  // 출결내역 패널 전용 메모(요청: "부서 메모는 그냥 반영하지 말고... 출결 메모로 적을 수 있게").
+  // 위 content(부서 공유 메모)와 완전히 독립된 값으로, 자동 파싱되지 않는 순수 메모입니다.
+  attendance_memo: string;
+  attendance_memo_updated_by: string | null;
+  attendance_memo_updated_at: string | null;
 };
 
 export type TaskModeColor = {

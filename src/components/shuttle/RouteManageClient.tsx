@@ -349,7 +349,7 @@ export default function RouteManageClient({
                   <th className="w-14 px-2 py-1.5">순서</th>
                   <th className="w-24 px-2 py-1.5">시간</th>
                   <th className="px-2 py-1.5">주소</th>
-                  <th className="w-24 px-2 py-1.5">게이트</th>
+                  <th className="w-24 px-2 py-1.5">도착장소</th>
                   <th className="w-16 px-2 py-1.5">인원</th>
                   <th className="w-10 px-2 py-1.5" />
                 </tr>
@@ -392,7 +392,7 @@ export default function RouteManageClient({
                     <td className="px-1 py-1">
                       <input
                         defaultValue={s.gate ?? ""}
-                        placeholder="gate 1-1"
+                        placeholder="정문 앞"
                         onBlur={(e) => e.target.value !== (s.gate ?? "") && updateStop(s.id, { gate: e.target.value })}
                         className="w-full rounded border border-transparent px-1 py-0.5 hover:border-slate-200 focus:border-slate-300"
                       />

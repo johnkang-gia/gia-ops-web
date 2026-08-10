@@ -134,16 +134,18 @@ function buildSchoolCategory(isAdmin: boolean, isStaffOrAbove: boolean): NavCate
 // "셔틀" - 등하원 차량은 매일 아침·오후에 실제로 굴러가는 독립된 업무 흐름이라(기준정보 세팅,
 // 당일 운행, 대기 안내가 각각 다른 사람이 다른 시간에 씁니다) 학교관리 부메뉴 하나로는 부족해
 // 주메뉴로 뺐습니다. 부메뉴는 "기준정보(가끔 고침) → 매일 쓰는 것" 순으로 배치했습니다.
+// 요청("셔틀메뉴를 눌렀을 때, 지역셔틀현황이 그냥 먼저 나오도록 해주고 부메뉴에서는 없애줘")에
+// 따라 상위 메뉴 href를 지역별 현황으로 바꾸고, 부메뉴 목록에서는 뺐습니다(기본 화면이 됐으니
+// 굳이 또 나열할 필요가 없습니다). 배차표 인쇄 등 기존 "셔틀 현황" 화면은 그대로 남겨뒀습니다.
 function buildShuttleCategory(): NavCategory {
   return {
     key: "shuttle",
     label: "셔틀",
     icon: "🚌",
     accent: "teal",
-    href: "/shuttle",
+    href: "/shuttle/regions",
     items: [
       { href: "/shuttle", label: "셔틀 현황", icon: "📋" },
-      { href: "/shuttle/regions", label: "지역별 현황", icon: "🗺️" },
       { href: "/shuttle/routes", label: "노선 관리", icon: "🛣️", dividerBefore: "기준정보" },
       { href: "/shuttle/students", label: "탑승 배정", icon: "🧑‍🎓" },
       { href: "/shuttle/pilot", label: "파일럿 검증", icon: "🧪", dividerBefore: "정식 앱 이전 검증" },

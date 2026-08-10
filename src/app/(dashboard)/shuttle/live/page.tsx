@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
+import Link from "next/link";
 import type { ShuttleRoute, ShuttlePilotRoute } from "@/lib/types";
 import ShuttleLiveClient, { type LiveRosterItem } from "@/components/shuttle/ShuttleLiveClient";
 
@@ -51,9 +52,15 @@ export default async function ShuttleLivePage() {
 
   return (
     <div className="mx-auto max-w-6xl p-4 sm:p-6">
-      <h1 className="mb-1 text-lg font-bold">🚌 실시간 셔틀</h1>
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <h1 className="text-lg font-bold">🚌 실시간 셔틀</h1>
+        <Link href="/shuttle-board" target="_blank" className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50">
+          📺 안내보드 열기
+        </Link>
+      </div>
       <p className="mb-4 text-xs text-slate-500">
-        등원·하원 노선의 실시간 위치와 탑승 현황입니다. 하원 차량이 학교에 도착하면 &apos;현장도착&apos;을 눌러 학생들에게 안내해주세요.
+        등원·하원 노선의 실시간 위치와 탑승 현황입니다. 하원 차량이 학교에 도착하면 &apos;현장도착&apos;을 눌러 학생들에게 안내해주세요. 복도·로비 화면에는
+        위 &apos;안내보드 열기&apos; 링크를 띄워두면 도착한 차량과 탑승할 학생이 자동으로 표시됩니다.
       </p>
       <ShuttleLiveClient
         routes={routes}

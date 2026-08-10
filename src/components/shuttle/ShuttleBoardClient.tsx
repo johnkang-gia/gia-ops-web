@@ -78,6 +78,11 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
   const [panelHeight, setPanelHeight] = useState(320); // lg 미만(세로 배치)일 때 아래 패널 높이(px)
   const [isRowLayout, setIsRowLayout] = useState(true);
   const draggingRef = useRef(false);
+  // 요청: "도착하고 출발 애니메이션은 전체화면보다, 지금도착한 차량페이지에서만 이루어지도록
+  // 해줘" - 화면 전체를 덮지 않고, 오른쪽(모바일에서는 아래) "지금 도착한 차량" 패널 안에서만
+  // 버스가 지나가는 인트로를 보여줍니다. 패널이 스크롤되어 있어도 인트로가 보이도록 자동으로
+  // 맨 위로 스크롤합니다.
+  const introBannerRef = useRef<HTMLDivElement | null>(null);
   const prevArrivedRef = useRef<Set<string>>(new Set());
   const prevDepartedRef = useRef<Set<string>>(new Set());
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -298,6 +303,10 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeIntro, introQueue]);
 
+  useEffect(() => {
+    if (activeIntro) introBannerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [activeIntro]);
+
   const boardingRoutes = useMemo(() => {
     if (!data) return [];
     return data.routes
@@ -362,15 +371,11 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
           0% { transform: translateX(0); opacity: 1; }
           100% { transform: translateX(140%); opacity: 0; }
         }
-        @keyframes gia-bus-cross {
-          0% { transform: translateX(-70vw) scaleX(-1); }
-          92% { transform: translateX(70vw) scaleX(-1); }
-          100% { transform: translateX(70vw) scaleX(-1); opacity: 0; }
-        }
-        @keyframes gia-intro-pop {
-          0% { opacity: 0; transform: scale(0.7); }
-          35% { opacity: 1; transform: scale(1.08); }
-          100% { opacity: 1; transform: scale(1); }
+        @keyframes gia-bus-cross-panel {
+          0% { left: -18%; opacity: 0; }
+          12% { opacity: 1; }
+          88% { opacity: 1; }
+          100% { left: 104%; opacity: 0; }
         }
         @keyframes gia-names-in {
           0% { opacity: 0; transform: translateY(6px); }
@@ -378,8 +383,7 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
         }
         .gia-card-in { animation: gia-card-in 0.8s cubic-bezier(0.2, 0.8, 0.3, 1) both; }
         .gia-bus-out-card { animation: gia-bus-out 1.1s ease-in forwards; animation-delay: 2.6s; }
-        .gia-bus-cross { animation: gia-bus-cross 1.6s cubic-bezier(0.32, 0.1, 0.28, 1) both; }
-        .gia-intro-text { animation: gia-intro-pop 0.6s ease-out both; }
+        .gia-bus-cross-panel { animation: gia-bus-cross-panel 1.6s cubic-bezier(0.32, 0.1, 0.28, 1) both; }
         .gia-names-in { animation: gia-names-in 0.5s ease-out 0.15s both; }
       `}</style>
       {!soundEnabled && (
@@ -393,21 +397,6 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
           >
             🔊 소리 켜고 시작하기
           </button>
-        </div>
-      )}
-
-      {/* 요청: "위젯이 나타나기 전에 소리와함께 노란색 셔틀차가 들어오는 애니메이션이 있었으면
-          좋겠어 아이들이 시각적으로 집중해서 탑승하도록" - 위젯이 뜨기 전, 화면 전체를 덮는 큰
-          버스가 경적과 함께 왼쪽에서 오른쪽으로 지나갑니다. */}
-      {activeIntro && (
-        <div className="fixed inset-0 z-40 flex flex-col items-center justify-center gap-6 overflow-hidden bg-slate-950/92">
-          <p className="gia-intro-text text-center text-3xl font-black text-amber-300 sm:text-6xl">
-            🚏 {activeIntro.routeNo}호차 도착!
-          </p>
-          <div className="gia-bus-cross text-[100px] leading-none sm:text-[180px]">🚌</div>
-          {activeIntro.name && (
-            <p className="gia-intro-text text-lg font-semibold text-slate-300 sm:text-2xl">{activeIntro.name}</p>
-          )}
         </div>
       )}
 
@@ -506,6 +495,20 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
         style={isRowLayout ? { width: panelWidth, flexShrink: 0 } : { height: panelHeight, flexShrink: 0 }}
       >
         <p className="text-lg font-black text-amber-300">🚌 지금 도착한 차량</p>
+
+        {/* 요청: "도착하고 출발 애니메이션은 전체화면보다, 지금도착한 차량페이지에서만
+            이루어지도록 해줘" - 화면 전체가 아니라 이 패널 폭 안에서만 버스가 지나갑니다. */}
+        {activeIntro && (
+          <div ref={introBannerRef} className="relative h-20 w-full shrink-0 overflow-hidden rounded-lg border border-amber-400/40 bg-slate-900">
+            <p className="absolute inset-x-0 top-1.5 text-center text-xs font-black text-amber-300">
+              🚏 {activeIntro.routeNo}호차 도착!
+            </p>
+            <div className="gia-bus-cross-panel absolute text-4xl" style={{ top: "58%", transform: "translateY(-50%)" }}>
+              🚌
+            </div>
+          </div>
+        )}
+
         {boardingRoutes.length === 0 && departingRoutes.length === 0 ? (
           <p className="py-6 text-center text-sm text-slate-500">아직 도착한 차량이 없습니다</p>
         ) : (

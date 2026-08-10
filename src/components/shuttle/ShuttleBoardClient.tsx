@@ -329,11 +329,18 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
     if (activeIntro) introBannerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [activeIntro]);
 
+  // 요청: "도착한 차량을 정렬하기보다는 도착누른 순서대로 위쪽에서 아래로 배치... 시간으로
+  // 정렬해줘" - 호차 번호 순서가 아니라, 먼저 도착한 차가 위쪽에 오도록 도착 시각 순으로
+  // 정렬합니다(어떤 차가 오래 기다리고 있는지 한눈에 보이도록).
   const boardingRoutes = useMemo(() => {
     if (!data) return [];
     return data.routes
       .filter((r) => r.events.some((e) => e.event === "현장도착") && !r.events.some((e) => e.event === "출발") && revealedIds.has(r.routeId))
-      .sort((a, b) => natCompare(a.routeNo, b.routeNo));
+      .sort((a, b) => {
+        const at = a.events.find((e) => e.event === "현장도착")?.created_at ?? "";
+        const bt = b.events.find((e) => e.event === "현장도착")?.created_at ?? "";
+        return at.localeCompare(bt);
+      });
   }, [data, revealedIds]);
 
   // 방금 '출발'이 찍힌 노선은 boardingRoutes에서는 바로 빠지지만, 잠깐(4초) 떠나는 애니메이션을

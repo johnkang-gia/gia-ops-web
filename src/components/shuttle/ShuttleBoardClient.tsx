@@ -4,6 +4,10 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { youtubeEmbedSrc } from "@/lib/youtube";
 
 const POLL_MS = 6000;
+// 인트로(전체화면 노란 셔틀 애니메이션)가 끝나고 위젯이 실제로 나타나기까지 걸리는 시간과
+// 맞춥니다(아래 .gia-bus-cross 애니메이션 길이 1.6초 + 여유). 요청: "위젯이 나타나기 전에
+// 소리와함께 노란색 셔틀차가 들어오는 애니메이션이 있었으면 좋겠어".
+const INTRO_MS = 1700;
 
 type BoardRoute = {
   routeId: string;
@@ -17,6 +21,8 @@ type BoardData = { label: string; youtubeVideoId: string | null; routes: BoardRo
 
 type YoutubeSearchResult = { videoId: string; title: string; channelTitle: string; thumbnail: string };
 
+type IntroRoute = { routeId: string; routeNo: string; name: string | null };
+
 function natCompare(a: string, b: string) {
   return a.localeCompare(b, "ko", { numeric: true });
 }
@@ -28,19 +34,32 @@ function fmtTime(iso: string) {
 
 // 안내보드(로그인 없음) - 로비/복도 화면입니다(요청: "아이들 기다릴때... 유튜브를 보여주는데
 // 유튜브를 시청하다가 차가 도착하면 몇호차인지, 그리고 아이들은 누가 가야하는지 나오도록").
-// 평소에는 유튜브 영상이 화면 대부분을 채우고, 오른쪽(모바일에서는 아래) 패널에 "지금 탈 수
-// 있는 차량"이 항상 보입니다. 차가 새로 도착하면 노란 버스 아이콘이 미끄러져 들어오는
-// 애니메이션 + 알람 소리를 한 번 울리고(요청: "노란색 셔틀이 도착하는 애니메이션 넣어주고" /
-// "그냥 도착했을 때만 도착알림음 해주고" - 처음엔 20초마다 반복 알람도 있었지만 여러 차가
-// 동시에 서 있으면 시끄럽기만 해서 도착 순간 1회로 되돌렸습니다), 다 태우고 '출발'을 누르면
-// 카드가 오른쪽으로 미끄러지며 사라집니다(요청: "다타고 떠나면 떠나는 애니메이션 넣어주고").
-// 학생별 개별 탑승 체크는 쓰지 않고(요청: "명단만 표시") 도착한 차량의 전체 명단이 계속
-// 보입니다. 데이터는 로그인 세션이 필요 없는 /api/shuttle/board/[token]을 폴링해서 가져옵니다.
+// 평소에는 유튜브 영상이 화면 대부분을 채우고, 오른쪽(모바일에서는 아래) 패널에 "지금 도착한
+// 차량"이 항상 보입니다(요청: "탈 수 있는 차량보다 도착한 차량으로 하고" - 아직 안 탄 아이가
+// 있어도 도착 자체가 기준입니다).
+//
+// 차가 새로 도착하면 두 단계로 아이들의 시선을 끕니다(요청: "위젯이 나타나기 전에 소리와함께
+// 노란색 셔틀차가 들어오는 애니메이션이 있었으면 좋겠어 아이들이 시각적으로 집중해서
+// 탑승하도록"):
+//   1) 화면 전체를 덮는 큰 노란 버스가 경적 소리와 함께 왼쪽에서 오른쪽으로 지나가는 인트로
+//   2) 인트로가 끝나면 오른쪽 패널에 그 차량 위젯이 "띵동" 소리와 함께 왼쪽에서 미끄러져
+//      들어오고, 타야 할 학생 이름이 자동으로 표시됩니다(요청: "차량 위젯이 왼쪽에서
+//      오른쪽으로 자동차가 도착하듯한 애니메이션으로 들어오고, 소리도 띵동 하고 알람음이
+//      나고, 타야할 학생의 이름이 자동으로 뜨도록").
+// 다 태우고 '출발'을 누르면 카드가 오른쪽으로 미끄러지며 사라집니다. 학생별 개별 탑승 체크는
+// 쓰지 않고(요청: "명단만 표시") 도착한 차량의 전체 명단이 계속 보입니다. 데이터는 로그인
+// 세션이 필요 없는 /api/shuttle/board/[token]을 폴링해서 가져옵니다.
 export default function ShuttleBoardClient({ token }: { token: string }) {
   const [data, setData] = useState<BoardData | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  // 인트로(전체화면 버스 애니메이션)를 거쳐 위젯으로 "공개된" 노선입니다. 여기 없는, 방금 도착한
+  // 노선은 인트로가 끝나기 전까지 오른쪽 패널에 나타나지 않습니다.
+  const [revealedIds, setRevealedIds] = useState<Set<string>>(new Set());
   const [justArrived, setJustArrived] = useState<Set<string>>(new Set());
   const [justDeparted, setJustDeparted] = useState<Set<string>>(new Set());
+  // 동시에 여러 대가 도착해도 인트로가 겹치지 않도록 순서대로 처리하는 대기열입니다.
+  const [introQueue, setIntroQueue] = useState<IntroRoute[]>([]);
+  const [activeIntro, setActiveIntro] = useState<IntroRoute | null>(null);
   const [soundEnabled, setSoundEnabled] = useState(false);
   // 요청: "링크를 걸어서 재생하는 시스템이 아니라... 자유롭게 서치 해서 클릭할 수 있게" -
   // 관리자가 미리 설정해둔 영상(youtubeVideoId)과 별개로, 화면 앞에 있는 사람이 즉석에서
@@ -54,33 +73,59 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
   const prevArrivedRef = useRef<Set<string>>(new Set());
   const prevDepartedRef = useRef<Set<string>>(new Set());
   const audioCtxRef = useRef<AudioContext | null>(null);
+  // 화면을 처음 열었을 때 이미 도착해 있던 차량까지 인트로를 재생하면 시끄러우니, 최초 1회
+  // 폴링 결과는 인트로 없이 바로 공개합니다.
+  const isFirstPollRef = useRef(true);
 
-  // 차가 도착해 아이들 이름이 뜨는 순간 "삐삐-삐" 3음 알람을 울립니다(요청: "탑승할 아이들
-  // 이름이 뜨면서, 알람을 울려줬으면 좋겠어"). 브라우저는 사용자가 한 번 화면을 눌러야만
-  // 소리를 허용하므로(자동재생 정책), 처음 화면을 열면 "소리 켜고 시작하기" 안내가 먼저
-  // 뜨고, 그걸 누른 뒤부터는 계속 소리가 울립니다.
-  function playAlarm() {
+  // 인트로가 시작될 때 "빵빵" 경적 소리를 울립니다(요청: "노란색 셔틀차가 들어오는 애니메이션이
+  // 있었으면 좋겠어" - 애니메이션과 함께 차가 다가오는 느낌을 소리로도 줍니다).
+  function playBusHorn() {
     const ctx = audioCtxRef.current;
     if (!ctx) return;
     try {
-      const beepAt = (offsetSec: number, freq: number) => {
+      const honk = (offsetSec: number) => {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
-        osc.type = "square";
+        osc.type = "sawtooth";
+        osc.frequency.value = 320;
+        const t0 = ctx.currentTime + offsetSec;
+        gain.gain.setValueAtTime(0.0001, t0);
+        gain.gain.exponentialRampToValueAtTime(0.3, t0 + 0.05);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.28);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(t0);
+        osc.stop(t0 + 0.3);
+      };
+      honk(0);
+      honk(0.35);
+    } catch {
+      // 브라우저 자동재생 정책 등으로 소리가 막혀도 화면 표시는 그대로 동작합니다.
+    }
+  }
+
+  // 인트로가 끝나고 위젯이 나타나는 순간 "띵동" 초인종 소리를 울립니다(요청: "소리도 띵동 하고
+  // 알람음이 나고").
+  function playDingDong() {
+    const ctx = audioCtxRef.current;
+    if (!ctx) return;
+    try {
+      const chime = (offsetSec: number, freq: number, dur: number) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "sine";
         osc.frequency.value = freq;
         const t0 = ctx.currentTime + offsetSec;
         gain.gain.setValueAtTime(0.0001, t0);
-        gain.gain.exponentialRampToValueAtTime(0.35, t0 + 0.04);
-        gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.32);
+        gain.gain.exponentialRampToValueAtTime(0.4, t0 + 0.03);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
         osc.connect(gain).connect(ctx.destination);
         osc.start(t0);
-        osc.stop(t0 + 0.35);
+        osc.stop(t0 + dur + 0.05);
       };
-      beepAt(0, 880);
-      beepAt(0.42, 880);
-      beepAt(0.84, 1175); // 마지막 음을 살짝 높여 "다 왔어요!" 느낌으로 마무리
+      chime(0, 1318.5, 0.5); // "띵" - E6
+      chime(0.28, 987.8, 0.7); // "동" - B5
     } catch {
-      // 브라우저 자동재생 정책 등으로 소리가 막혀도 화면 표시는 그대로 동작합니다.
+      // 무시 - 화면 표시는 그대로 진행합니다.
     }
   }
 
@@ -93,7 +138,7 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
       // 무시 - 아래에서 화면은 어차피 진행시킵니다.
     }
     setSoundEnabled(true);
-    playAlarm(); // 확인용으로 한 번 울려서 소리가 켜졌음을 알려줍니다.
+    playDingDong(); // 확인용으로 한 번 울려서 소리가 켜졌음을 알려줍니다.
   }
 
   useEffect(() => {
@@ -114,21 +159,36 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
         );
         const newlyArrived = [...nowArrived].filter((id) => !prevArrivedRef.current.has(id));
         if (newlyArrived.length > 0) {
-          playAlarm();
-          setJustArrived((prev) => new Set([...prev, ...newlyArrived]));
-          newlyArrived.forEach((id) => {
-            setTimeout(() => setJustArrived((prev) => { const next = new Set(prev); next.delete(id); return next; }), 10000);
-          });
+          if (isFirstPollRef.current) {
+            // 화면을 처음 열었을 때 이미 도착해 있던 차량은 인트로 없이 바로 표시합니다.
+            setRevealedIds((prev) => new Set([...prev, ...newlyArrived]));
+          } else {
+            const routeById = new Map(json.routes.map((r) => [r.routeId, r]));
+            setIntroQueue((prev) => [
+              ...prev,
+              ...newlyArrived
+                .map((id) => routeById.get(id))
+                .filter((r): r is BoardRoute => !!r)
+                .map((r) => ({ routeId: r.routeId, routeNo: r.routeNo, name: r.name })),
+            ]);
+          }
         }
         prevArrivedRef.current = nowArrived;
+        isFirstPollRef.current = false;
 
         // 요청: "출발하면 출발한표시 해줘... 다타고 떠나면 떠나는 애니메이션 넣어주고" - 도착
         // 상태였다가 '출발' 이벤트가 새로 생긴 노선은 카드가 바로 사라지는 대신, 잠깐 "떠나는"
-        // 애니메이션을 보여준 뒤 목록에서 빠집니다.
+        // 애니메이션을 보여준 뒤 목록에서 빠집니다. 나중에 같은 노선이 다시 도착하면 처음부터
+        // 인트로를 다시 볼 수 있도록 공개 상태도 함께 초기화합니다.
         const nowDeparted = new Set(json.routes.filter((r) => r.events.some((e) => e.event === "출발")).map((r) => r.routeId));
         const newlyDeparted = [...nowDeparted].filter((id) => !prevDepartedRef.current.has(id));
         if (newlyDeparted.length > 0) {
           setJustDeparted((prev) => new Set([...prev, ...newlyDeparted]));
+          setRevealedIds((prev) => {
+            const next = new Set(prev);
+            newlyDeparted.forEach((id) => next.delete(id));
+            return next;
+          });
           newlyDeparted.forEach((id) => {
             setTimeout(() => setJustDeparted((prev) => { const next = new Set(prev); next.delete(id); return next; }), 4000);
           });
@@ -149,12 +209,33 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
+  // 대기열에 쌓인 인트로를 하나씩 순서대로 재생합니다: 경적 소리 → 전체화면 버스 애니메이션 →
+  // (끝나면) 위젯 공개 + 띵동 소리 → 다음 인트로.
+  useEffect(() => {
+    if (activeIntro || introQueue.length === 0) return;
+    const next = introQueue[0];
+    setIntroQueue((q) => q.slice(1));
+    setActiveIntro(next);
+    playBusHorn();
+    const t = setTimeout(() => {
+      setActiveIntro(null);
+      setRevealedIds((prev) => new Set([...prev, next.routeId]));
+      setJustArrived((prev) => new Set([...prev, next.routeId]));
+      playDingDong();
+      setTimeout(() => {
+        setJustArrived((prev) => { const n = new Set(prev); n.delete(next.routeId); return n; });
+      }, 10000);
+    }, INTRO_MS);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeIntro, introQueue]);
+
   const boardingRoutes = useMemo(() => {
     if (!data) return [];
     return data.routes
-      .filter((r) => r.events.some((e) => e.event === "현장도착") && !r.events.some((e) => e.event === "출발"))
+      .filter((r) => r.events.some((e) => e.event === "현장도착") && !r.events.some((e) => e.event === "출발") && revealedIds.has(r.routeId))
       .sort((a, b) => natCompare(a.routeNo, b.routeNo));
-  }, [data]);
+  }, [data, revealedIds]);
 
   // 방금 '출발'이 찍힌 노선은 boardingRoutes에서는 바로 빠지지만, 잠깐(4초) 떠나는 애니메이션을
   // 보여주기 위해 원본 데이터에서 다시 찾아 별도로 렌더링합니다.
@@ -203,18 +284,35 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
   return (
     <div className="flex min-h-screen flex-col bg-slate-900 text-white lg:flex-row">
       <style>{`
-        @keyframes gia-bus-in {
-          0% { transform: translateX(-120%); opacity: 0; }
-          60% { transform: translateX(8%); opacity: 1; }
-          80% { transform: translateX(-3%); }
+        @keyframes gia-card-in {
+          0% { transform: translateX(-110%); opacity: 0; }
+          60% { transform: translateX(6%); opacity: 1; }
+          80% { transform: translateX(-2%); }
           100% { transform: translateX(0); opacity: 1; }
         }
         @keyframes gia-bus-out {
           0% { transform: translateX(0); opacity: 1; }
           100% { transform: translateX(140%); opacity: 0; }
         }
-        .gia-bus-in-icon { animation: gia-bus-in 0.9s cubic-bezier(0.2, 0.8, 0.3, 1) both; }
+        @keyframes gia-bus-cross {
+          0% { transform: translateX(-70vw) scaleX(-1); }
+          92% { transform: translateX(70vw) scaleX(-1); }
+          100% { transform: translateX(70vw) scaleX(-1); opacity: 0; }
+        }
+        @keyframes gia-intro-pop {
+          0% { opacity: 0; transform: scale(0.7); }
+          35% { opacity: 1; transform: scale(1.08); }
+          100% { opacity: 1; transform: scale(1); }
+        }
+        @keyframes gia-names-in {
+          0% { opacity: 0; transform: translateY(6px); }
+          100% { opacity: 1; transform: translateY(0); }
+        }
+        .gia-card-in { animation: gia-card-in 0.8s cubic-bezier(0.2, 0.8, 0.3, 1) both; }
         .gia-bus-out-card { animation: gia-bus-out 1.1s ease-in forwards; animation-delay: 2.6s; }
+        .gia-bus-cross { animation: gia-bus-cross 1.6s cubic-bezier(0.32, 0.1, 0.28, 1) both; }
+        .gia-intro-text { animation: gia-intro-pop 0.6s ease-out both; }
+        .gia-names-in { animation: gia-names-in 0.5s ease-out 0.15s both; }
       `}</style>
       {!soundEnabled && (
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-slate-950/95 p-6 text-center text-white">
@@ -229,6 +327,22 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
           </button>
         </div>
       )}
+
+      {/* 요청: "위젯이 나타나기 전에 소리와함께 노란색 셔틀차가 들어오는 애니메이션이 있었으면
+          좋겠어 아이들이 시각적으로 집중해서 탑승하도록" - 위젯이 뜨기 전, 화면 전체를 덮는 큰
+          버스가 경적과 함께 왼쪽에서 오른쪽으로 지나갑니다. */}
+      {activeIntro && (
+        <div className="fixed inset-0 z-40 flex flex-col items-center justify-center gap-6 overflow-hidden bg-slate-950/92">
+          <p className="gia-intro-text text-center text-3xl font-black text-amber-300 sm:text-6xl">
+            🚏 {activeIntro.routeNo}호차 도착!
+          </p>
+          <div className="gia-bus-cross text-[100px] leading-none sm:text-[180px]">🚌</div>
+          {activeIntro.name && (
+            <p className="gia-intro-text text-lg font-semibold text-slate-300 sm:text-2xl">{activeIntro.name}</p>
+          )}
+        </div>
+      )}
+
       <div className="relative flex-1 bg-black">
         {embedSrc ? (
           <iframe
@@ -309,7 +423,7 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
       </div>
 
       <div className="flex w-full flex-col gap-3 overflow-y-auto bg-slate-950 p-4 lg:w-[420px] lg:p-5">
-        <p className="text-lg font-black text-amber-300">🚌 지금 탈 수 있는 차량</p>
+        <p className="text-lg font-black text-amber-300">🚌 지금 도착한 차량</p>
         {boardingRoutes.length === 0 && departingRoutes.length === 0 ? (
           <p className="py-6 text-center text-sm text-slate-500">아직 도착한 차량이 없습니다</p>
         ) : (
@@ -327,12 +441,12 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
                   key={route.routeId}
                   className={
                     "rounded-xl border-2 p-3 transition-colors " +
-                    (isNew ? "border-amber-300 bg-amber-500/20" : "border-slate-700 bg-slate-800")
+                    (isNew ? "gia-card-in border-amber-300 bg-amber-500/20" : "border-slate-700 bg-slate-800")
                   }
                 >
                   <div className="mb-1 flex items-center justify-between">
                     <p className="flex items-center gap-2 text-2xl font-black text-amber-300">
-                      {isNew && <span className="gia-bus-in-icon inline-block">🚌</span>}
+                      {isNew && <span className="inline-block">🚌</span>}
                       {route.routeNo}호차 {route.name ?? ""}
                     </p>
                     <p className="text-xs text-slate-400">{fmtTime(arrivedEvent.created_at)} 도착</p>
@@ -340,7 +454,7 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
                   {waiting.length === 0 ? (
                     <p className="text-base font-bold text-emerald-400">✅ 전원 탑승 완료</p>
                   ) : (
-                    <p className="flex flex-wrap gap-2 text-lg font-bold leading-snug">
+                    <p className={"flex flex-wrap gap-2 text-lg font-bold leading-snug " + (isNew ? "gia-names-in" : "")}>
                       {waiting.map((r, i) => (
                         <span key={i}>{r.studentName}</span>
                       ))}

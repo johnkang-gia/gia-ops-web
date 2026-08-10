@@ -873,3 +873,13 @@ export type ShuttleParentLink = {
   enabled: boolean;
   created_at: string;
 };
+
+// 학부모 자동 푸시 알림용 Web Push 구독(2단계-c) - 학생 1명이 여러 기기를 구독할 수 있습니다.
+export type ShuttlePushSubscription = {
+  id: string;
+  student_id: string;
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  created_at: string;
+};

@@ -3763,3 +3763,22 @@ create table if not exists shuttle_eta_cache (
 alter table shuttle_eta_cache enable row level security;
 drop policy if exists "wr_manager_select_shuttle_eta_cache" on shuttle_eta_cache;
 create policy "wr_manager_select_shuttle_eta_cache" on shuttle_eta_cache for select using (is_wr_manager());
+
+-- ===== 82. 2단계-c: 학부모 자동 푸시 알림 =====
+-- 브라우저 표준 Web Push(VAPID)를 씁니다 - 별도 앱스토어 배포나 Firebase 프로젝트 가입 없이
+-- 웹페이지(학부모 테스트 화면)에서 바로 구독할 수 있습니다. 학생 1명이 여러 기기(부모 폰 여러 대)를
+-- 구독할 수 있어 student_id+endpoint 조합을 키로 둡니다. 구독/발송 모두 service role로만
+-- 이루어지므로(토큰 검증은 API 라우트에서 수행) RLS는 잠가둡니다.
+create table if not exists shuttle_push_subscriptions (
+  id uuid primary key default gen_random_uuid(),
+  student_id uuid not null references wr_students(id) on delete cascade,
+  endpoint text not null,
+  p256dh text not null,
+  auth text not null,
+  created_at timestamptz not null default now(),
+  unique (student_id, endpoint)
+);
+
+alter table shuttle_push_subscriptions enable row level security;
+drop policy if exists "wr_manager_select_shuttle_push_subscriptions" on shuttle_push_subscriptions;
+create policy "wr_manager_select_shuttle_push_subscriptions" on shuttle_push_subscriptions for select using (is_wr_manager());

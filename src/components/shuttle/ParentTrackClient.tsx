@@ -5,6 +5,16 @@ import { loadKakaoMaps } from "@/lib/kakaoMap";
 
 const POLL_MS = 7000;
 
+// PushManager.subscribe에 넘길 공개키는 base64url 문자열을 Uint8Array로 바꿔야 합니다(표준 패턴).
+function urlBase64ToUint8Array(base64: string): Uint8Array {
+  const padding = "=".repeat((4 - (base64.length % 4)) % 4);
+  const b64 = (base64 + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(b64);
+  const arr = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+  return arr;
+}
+
 type TrackDirection = {
   direction: "등원" | "하원";
   routeNo: string;
@@ -36,6 +46,60 @@ export default function ParentTrackClient({ token }: { token: string }) {
   const [data, setData] = useState<TrackData | null>(null);
   const [tab, setTab] = useState<"등원" | "하원">("등원");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [pushState, setPushState] = useState<"idle" | "checking" | "subscribed" | "unsupported">("checking");
+  const [pushBusy, setPushBusy] = useState(false);
+
+  // 이미 구독돼 있는지(예: 페이지 새로고침) 조용히 확인합니다.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (typeof window === "undefined" || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+        if (!cancelled) setPushState("unsupported");
+        return;
+      }
+      try {
+        const reg = await navigator.serviceWorker.register("/sw.js");
+        const existing = await reg.pushManager.getSubscription();
+        if (!cancelled) setPushState(existing ? "subscribed" : "idle");
+      } catch {
+        if (!cancelled) setPushState("unsupported");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function handleSubscribe() {
+    const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+    if (!vapidKey) {
+      setErrorMsg("알림 기능이 아직 서버에 설정되지 않았습니다.");
+      return;
+    }
+    setPushBusy(true);
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") {
+        setPushBusy(false);
+        return;
+      }
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(vapidKey) as BufferSource,
+      });
+      await fetch(`/api/shuttle/parent/subscribe/${token}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(sub.toJSON()),
+      });
+      setPushState("subscribed");
+    } catch {
+      setErrorMsg("알림 신청에 실패했습니다.");
+    } finally {
+      setPushBusy(false);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -146,8 +210,32 @@ export default function ParentTrackClient({ token }: { token: string }) {
 
           <ParentLiveMap lat={current.lastPing?.lat} lng={current.lastPing?.lng} />
 
+          {pushState === "subscribed" ? (
+            <p style={{ fontSize: 13, fontWeight: 700, color: "#059669", textAlign: "center", margin: 0 }}>
+              🔔 알림이 켜져 있습니다 (탑승·하차 시 알림)
+            </p>
+          ) : pushState === "idle" ? (
+            <button
+              onClick={handleSubscribe}
+              disabled={pushBusy}
+              style={{
+                border: "none",
+                borderRadius: 12,
+                padding: "10px 16px",
+                fontSize: 14,
+                fontWeight: 700,
+                cursor: pushBusy ? "default" : "pointer",
+                background: "#1d4ed8",
+                color: "#fff",
+                opacity: pushBusy ? 0.6 : 1,
+              }}
+            >
+              🔔 탑승·하차 알림 받기
+            </button>
+          ) : null}
+
           <p style={{ fontSize: 11, color: "#94a3b8", textAlign: "center", lineHeight: 1.6 }}>
-            지금은 테스트 화면이라 자동 알림(푸시)은 아직 오지 않습니다. 실제 학부모 서비스는 정식 개발 완료 후 안내드릴 예정입니다.
+            지금은 테스트 화면입니다. 실제 학부모 서비스는 정식 개발 완료 후 안내드릴 예정입니다.
           </p>
         </div>
       )}

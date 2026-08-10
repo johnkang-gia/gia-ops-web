@@ -119,12 +119,22 @@ export default function PilotMonitorClient({
     if (error) notify("변경하지 못했습니다: " + error.message, "error");
   }
 
+  function pilotLinkUrl(token: string) {
+    return `${window.location.origin}/shuttle-pilot/${token}`;
+  }
+
   function copyLink(token: string) {
-    const link = `${window.location.origin}/shuttle-pilot/${token}`;
+    const link = pilotLinkUrl(token);
     navigator.clipboard.writeText(link).then(
       () => notify("링크를 복사했습니다.", "success"),
       () => notify(link, "info")
     );
+  }
+
+  // 요청: "링크복사와 함께 링크열기버튼도 만들어줘" - 복사만 하지 않고 바로 새 탭으로 열어서
+  // 확인할 수 있게 합니다.
+  function openLink(token: string) {
+    window.open(pilotLinkUrl(token), "_blank");
   }
 
   return (
@@ -177,6 +187,7 @@ export default function PilotMonitorClient({
             safety={safety}
             now={now}
             onCopyLink={() => copyLink(pilot.token)}
+            onOpenLink={() => openLink(pilot.token)}
             onToggleEnabled={() => toggleEnabled(pilot)}
           />
         );
@@ -193,6 +204,7 @@ function PilotRouteCard({
   safety,
   now,
   onCopyLink,
+  onOpenLink,
   onToggleEnabled,
 }: {
   pilot: ShuttlePilotRoute;
@@ -202,6 +214,7 @@ function PilotRouteCard({
   safety: ShuttleSafetyEvent[]; // 오늘 이 노선의 급가속·급감속 이벤트
   now: number;
   onCopyLink: () => void;
+  onOpenLink: () => void;
   onToggleEnabled: () => void;
 }) {
   const last = pings[0];
@@ -261,6 +274,9 @@ function PilotRouteCard({
           </button>
           <button onClick={onCopyLink} className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50">
             🔗 링크 복사
+          </button>
+          <button onClick={onOpenLink} className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50">
+            ↗ 링크 열기
           </button>
           <button
             onClick={onToggleEnabled}

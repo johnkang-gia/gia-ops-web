@@ -52,12 +52,22 @@ export default function ArrivalLinkManager({ initialLinks }: { initialLinks: Shu
     if (error) notify("변경하지 못했습니다: " + error.message, "error");
   }
 
+  function arrivalLinkUrl(token: string) {
+    return `${window.location.origin}/shuttle-arrival/${token}`;
+  }
+
   function copyLink(token: string) {
-    const link = `${window.location.origin}/shuttle-arrival/${token}`;
+    const link = arrivalLinkUrl(token);
     navigator.clipboard.writeText(link).then(
       () => notify("도착체크 링크를 복사했습니다.", "success"),
       () => notify(link, "info")
     );
+  }
+
+  // 요청: "링크복사와 함께 링크열기버튼도 만들어줘" - 복사만 하지 않고 바로 새 탭으로 열어서
+  // 확인할 수 있게 합니다.
+  function openLink(token: string) {
+    window.open(arrivalLinkUrl(token), "_blank");
   }
 
   return (
@@ -107,6 +117,9 @@ export default function ArrivalLinkManager({ initialLinks }: { initialLinks: Shu
               <div className="flex flex-1 items-center justify-end gap-2">
                 <button onClick={() => copyLink(l.token)} className="rounded-lg border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-50">
                   🔗 링크 복사
+                </button>
+                <button onClick={() => openLink(l.token)} className="rounded-lg border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-50">
+                  ↗ 링크 열기
                 </button>
                 <button
                   onClick={() => toggleEnabled(l)}

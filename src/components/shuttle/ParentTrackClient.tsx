@@ -15,6 +15,8 @@ type TrackDirection = {
   lastPing: { lat: number; lng: number; accuracy: number | null; recorded_at: string } | null;
   running: boolean;
   completed: boolean;
+  boardingStatus: "예정" | "탑승" | "미탑승" | "결석" | "픽업";
+  alighted: boolean;
 };
 
 type TrackData = { studentName: string; studentNameEn: string | null; directions: TrackDirection[] };
@@ -118,6 +120,13 @@ export default function ParentTrackClient({ token }: { token: string }) {
             {current.stopTime && (
               <p style={{ fontSize: 12, color: "#94a3b8", margin: "2px 0 0" }}>
                 내 정류장 예정 시각 {current.stopTime}
+              </p>
+            )}
+            {(current.boardingStatus !== "예정" || current.alighted) && (
+              <p style={{ fontSize: 13, fontWeight: 700, margin: "6px 0 0", color: "#1d4ed8" }}>
+                {current.boardingStatus !== "예정" && `${current.boardingStatus} 확인됨`}
+                {current.boardingStatus !== "예정" && current.alighted && " · "}
+                {current.alighted && "하차 확인됨"}
               </p>
             )}
           </div>

@@ -33,7 +33,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
 
   const { data: assignments } = await supabase
     .from("shuttle_assignments")
-    .select("stop_id")
+    .select("id, stop_id")
     .eq("student_id", link.student_id);
 
   const stopIds = [...new Set((assignments ?? []).map((a) => a.stop_id))];
@@ -55,9 +55,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
       .filter((r, i, arr) => arr.findIndex((x) => x.direction === r.direction) === i)
       .map(async (route) => {
         const stop = (stops ?? []).find((s) => s.route_id === route.id);
-        const [pingRes, eventsRes] = await Promise.all([
+        const assignment = (assignments ?? []).find((a) => a.stop_id === stop?.id);
+        const [pingRes, eventsRes, boardingRes] = await Promise.all([
           supabase.from("shuttle_pilot_pings").select("lat, lng, accuracy, recorded_at").eq("route_id", route.id).order("recorded_at", { ascending: false }).limit(1).maybeSingle(),
           supabase.from("shuttle_run_events").select("event, created_at").eq("route_id", route.id).eq("service_date", today).order("created_at", { ascending: true }),
+          assignment
+            ? supabase.from("shuttle_boardings").select("status, alighted_at").eq("service_date", today).eq("assignment_id", assignment.id).maybeSingle()
+            : Promise.resolve({ data: null }),
         ]);
         const events = eventsRes.data ?? [];
         const startEvent = events.find((e) => e.event === "출발");
@@ -72,6 +76,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
           lastPing: pingRes.data ?? null,
           running: !!startEvent && !endEvent,
           completed: !!startEvent && !!endEvent,
+          boardingStatus: boardingRes.data?.status ?? "예정",
+          alighted: !!boardingRes.data?.alighted_at,
         };
       })
   );

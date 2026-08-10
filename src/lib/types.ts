@@ -819,6 +819,9 @@ export type ShuttleBoarding = {
   status: ShuttleBoardingStatus;
   checked_by: string | null;
   checked_at: string | null;
+  // 정류장에서 내렸는지 별도 확인(요청: 2단계-a, 하원 자동화 제안 11장). status(탑승했는지)와
+  // 별개로 관리합니다 - 탑승은 했지만 아직 하차 전인 상태를 구분하기 위해서입니다.
+  alighted_at: string | null;
   note: string | null;
   created_at: string;
 };

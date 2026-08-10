@@ -3737,3 +3737,11 @@ alter table shuttle_parent_links enable row level security;
 drop policy if exists "wr_manager_all_shuttle_parent_links" on shuttle_parent_links;
 create policy "wr_manager_all_shuttle_parent_links" on shuttle_parent_links
   for all using (is_wr_manager()) with check (is_wr_manager());
+
+-- ===== 80. 2단계-a: 학생별 탑승·하차 체크리스트 =====
+-- 요청("순서대로 진행해줘")에 따라 벤치마킹 제안서 2단계 첫 항목을 구현합니다. 새 테이블을 만드는
+-- 대신, 이미 만들어져 있었지만 어떤 화면에서도 아직 쓰이지 않던 shuttle_boardings(하루치 탑승
+-- 체크, service_date+assignment_id 유니크, RLS·realtime 이미 설정됨)를 그대로 씁니다. 다만 이
+-- 테이블은 "탑승했는지"(status)만 다루고 "정류장에서 내렸는지"는 다루지 않아서, 하차 확인용
+-- 칼럼만 추가합니다(요청: "정류장에서 내렸는지" 별도 확인 - 하원 자동화 제안 11장과 동일한 필요).
+alter table shuttle_boardings add column if not exists alighted_at timestamptz;

@@ -5,22 +5,41 @@ import { useEffect, useRef, useState } from "react";
 const PING_INTERVAL_MS = 5000;
 
 type Status = "idle" | "running" | "stopped";
+type BoardingStatusValue = "예정" | "탑승" | "미탑승" | "결석" | "픽업";
 
-// 기사님·동승선생님이 로그인 없이 이 링크 하나로 접속하는 파일럿 체크인 화면입니다.
+export type BoardingRosterItem = {
+  assignmentId: string;
+  studentName: string;
+  stopSeq: number;
+  stopTime: string | null;
+  status: BoardingStatusValue;
+  alighted: boolean;
+};
+
+const STATUS_BUTTONS: { value: BoardingStatusValue; label: string; color: string }[] = [
+  { value: "탑승", label: "탑승", color: "#16a34a" },
+  { value: "결석", label: "결석", color: "#dc2626" },
+  { value: "미탑승", label: "미탑승", color: "#d97706" },
+];
+
+// 기사님·동승선생님이 로그인 없이 이 링크 하나로 접속하는 실시간 위치 체크인 화면입니다.
 // "운행 시작"을 누르면 5초 간격으로 위치만 서버에 보내고, 그 외 정보는 전혀 전송하지 않습니다.
 // 화면 조작 없이 내비게이션 앱으로 넘어가셔도 되지만, 브라우저 특성상 화면이 완전히 꺼지거나
-// 다른 앱으로 오래 전환하면 전송이 잠시 멈출 수 있습니다(이번 파일럿에서 바로 이 부분도 함께
-// 확인합니다 - 문제가 확인되면 정식 앱은 처음부터 네이티브로 만드는 근거 자료가 됩니다).
+// 다른 앱으로 오래 전환하면 전송이 잠시 멈출 수 있습니다.
+// 2단계-a: 위치 전송과는 별개로, 오늘 이 노선에 배정된 학생별 탑승·결석·하차를 터치 한 번으로
+// 체크할 수 있습니다(옐로우버스 방식 - 목록에서 버튼 하나만 누르면 됩니다).
 export default function PilotCheckinClient({
   token,
   routeNo,
   direction,
   routeName,
+  initialRoster,
 }: {
   token: string;
   routeNo: string;
   direction: "등원" | "하원";
   routeName: string;
+  initialRoster: BoardingRosterItem[];
 }) {
   const [status, setStatus] = useState<Status>("idle");
   const [sentCount, setSentCount] = useState(0);
@@ -28,8 +47,39 @@ export default function PilotCheckinClient({
   const [lastSentAt, setLastSentAt] = useState<Date | null>(null);
   const [lastAccuracy, setLastAccuracy] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [roster, setRoster] = useState(initialRoster);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const wakeLockRef = useRef<{ release: () => Promise<void> } | null>(null);
+
+  async function setBoardingStatus(assignmentId: string, next: BoardingStatusValue) {
+    // 이미 같은 상태를 누르면 "예정"으로 되돌립니다(잘못 눌렀을 때 취소하는 용도).
+    const wasSame = roster.find((r) => r.assignmentId === assignmentId)?.status === next;
+    const finalValue: BoardingStatusValue = wasSame ? "예정" : next;
+    setRoster((prev) => prev.map((r) => (r.assignmentId === assignmentId ? { ...r, status: finalValue } : r)));
+    try {
+      await fetch("/api/shuttle/pilot/board", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, assignmentId, field: "status", value: finalValue }),
+      });
+    } catch {
+      // 네트워크 오류는 조용히 무시 - 화면은 이미 낙관적으로 갱신됨. 필요하면 다시 눌러 재시도.
+    }
+  }
+
+  async function toggleAlighted(assignmentId: string) {
+    const nextValue = !roster.find((r) => r.assignmentId === assignmentId)?.alighted;
+    setRoster((prev) => prev.map((r) => (r.assignmentId === assignmentId ? { ...r, alighted: nextValue } : r)));
+    try {
+      await fetch("/api/shuttle/pilot/board", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, assignmentId, field: "alighted", value: nextValue }),
+      });
+    } catch {
+      // 조용히 무시(위와 동일).
+    }
+  }
 
   async function sendEvent(event: "출발" | "도착") {
     try {
@@ -214,6 +264,70 @@ export default function PilotCheckinClient({
       <p style={{ fontSize: 12, color: "#94a3b8", textAlign: "center", maxWidth: 320, lineHeight: 1.6 }}>
         운행 시작을 누른 뒤부터 운행 종료를 누를 때까지만 위치가 전송됩니다. 그 외 정보는 전송되지 않습니다.
       </p>
+
+      {roster.length > 0 && (
+        <div style={{ width: "100%", maxWidth: 360, display: "flex", flexDirection: "column", gap: 8 }}>
+          <p style={{ fontSize: 13, fontWeight: 700, color: "#334155", margin: "8px 0 0" }}>오늘 탑승 학생 ({roster.length}명)</p>
+          {roster.map((r) => (
+            <div
+              key={r.assignmentId}
+              style={{
+                background: "#fff",
+                border: "1px solid #e2e8f0",
+                borderRadius: 12,
+                padding: "10px 12px",
+                display: "flex",
+                flexDirection: "column",
+                gap: 6,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span style={{ fontSize: 15, fontWeight: 700, color: "#0f172a" }}>{r.studentName}</span>
+                <span style={{ fontSize: 11, color: "#94a3b8" }}>{r.stopTime ?? ""}</span>
+              </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {STATUS_BUTTONS.map((b) => (
+                  <button
+                    key={b.value}
+                    onClick={() => setBoardingStatus(r.assignmentId, b.value)}
+                    style={{
+                      flex: 1,
+                      minWidth: 64,
+                      padding: "8px 0",
+                      borderRadius: 8,
+                      border: "none",
+                      fontSize: 13,
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      color: r.status === b.value ? "#fff" : b.color,
+                      background: r.status === b.value ? b.color : `${b.color}18`,
+                    }}
+                  >
+                    {r.status === b.value ? `✓ ${b.label}` : b.label}
+                  </button>
+                ))}
+                <button
+                  onClick={() => toggleAlighted(r.assignmentId)}
+                  style={{
+                    flex: 1,
+                    minWidth: 64,
+                    padding: "8px 0",
+                    borderRadius: 8,
+                    border: "none",
+                    fontSize: 13,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    color: r.alighted ? "#fff" : "#2563eb",
+                    background: r.alighted ? "#2563eb" : "#2563eb18",
+                  }}
+                >
+                  {r.alighted ? "✓ 하차" : "하차"}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

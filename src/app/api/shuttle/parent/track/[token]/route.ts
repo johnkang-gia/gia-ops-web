@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { fetchDrivingEta } from "@/lib/kakaoDirections";
 
 export const dynamic = "force-dynamic";
+
+const ETA_CACHE_TTL_MS = 30_000; // 갱신주기가 카카오 API 비용에 가장 민감해(제안서 10장), 30초로 제한
 
 // 학부모 테스트 조회 화면(로그인 없음)이 폴링으로 부르는 읽기 전용 API입니다. 회사 계정 세션이
 // 없으므로 shuttle_parent_links.token(추측 불가능한 uuid)만으로 어느 학생인지 확인하고, service
@@ -41,7 +44,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
     return NextResponse.json({ studentName: student?.name ?? "학생", directions: [] });
   }
 
-  const { data: stops } = await supabase.from("shuttle_stops").select("id, route_id, stop_time, address").in("id", stopIds);
+  const { data: stops } = await supabase.from("shuttle_stops").select("id, route_id, stop_time, address, lat, lng").in("id", stopIds);
   const routeIds = [...new Set((stops ?? []).map((s) => s.route_id))];
   const { data: routes } = await supabase
     .from("shuttle_routes")
@@ -66,6 +69,38 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
         const events = eventsRes.data ?? [];
         const startEvent = events.find((e) => e.event === "출발");
         const endEvent = [...events].reverse().find((e) => e.event === "도착");
+        const running = !!startEvent && !endEvent;
+
+        // 도착예정시각: 운행 중이고, 정류장 좌표가 있고, 최근 위치가 있을 때만 계산합니다.
+        let etaSeconds: number | null = null;
+        const ping = pingRes.data;
+        if (running && stop?.lat != null && stop?.lng != null && ping) {
+          const { data: cached } = await supabase
+            .from("shuttle_eta_cache")
+            .select("eta_seconds, computed_at")
+            .eq("route_id", route.id)
+            .eq("stop_id", stop.id)
+            .maybeSingle();
+          const isFresh = cached && Date.now() - new Date(cached.computed_at).getTime() < ETA_CACHE_TTL_MS;
+          if (isFresh) {
+            etaSeconds = cached.eta_seconds;
+          } else {
+            const restKey = process.env.KAKAO_REST_API_KEY;
+            const result = restKey
+              ? await fetchDrivingEta(restKey, { lat: ping.lat, lng: ping.lng }, { lat: stop.lat, lng: stop.lng })
+              : null;
+            etaSeconds = result?.etaSeconds ?? cached?.eta_seconds ?? null; // 실패 시 이전 캐시라도 재사용
+            if (result) {
+              await supabase
+                .from("shuttle_eta_cache")
+                .upsert(
+                  { route_id: route.id, stop_id: stop.id, eta_seconds: result.etaSeconds, distance_m: result.distanceM, computed_at: new Date().toISOString() },
+                  { onConflict: "route_id,stop_id" }
+                );
+            }
+          }
+        }
+
         return {
           direction: route.direction,
           routeNo: route.route_no,
@@ -73,11 +108,12 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
           departTime: route.depart_time,
           stopTime: stop?.stop_time ?? null,
           stopAddress: stop?.address ?? null,
-          lastPing: pingRes.data ?? null,
-          running: !!startEvent && !endEvent,
+          lastPing: ping ?? null,
+          running,
           completed: !!startEvent && !!endEvent,
           boardingStatus: boardingRes.data?.status ?? "예정",
           alighted: !!boardingRes.data?.alighted_at,
+          etaSeconds,
         };
       })
   );

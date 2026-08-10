@@ -17,7 +17,15 @@ type TrackDirection = {
   completed: boolean;
   boardingStatus: "예정" | "탑승" | "미탑승" | "결석" | "픽업";
   alighted: boolean;
+  etaSeconds: number | null;
 };
+
+function formatEta(etaSeconds: number): string {
+  const min = Math.max(1, Math.round(etaSeconds / 60));
+  const arrival = new Date(Date.now() + etaSeconds * 1000);
+  const arrivalLabel = arrival.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
+  return `약 ${min}분 후 도착 예정 (${arrivalLabel})`;
+}
 
 type TrackData = { studentName: string; studentNameEn: string | null; directions: TrackDirection[] };
 
@@ -122,6 +130,11 @@ export default function ParentTrackClient({ token }: { token: string }) {
                 내 정류장 예정 시각 {current.stopTime}
               </p>
             )}
+            {current.running && current.etaSeconds != null && (
+              <p style={{ fontSize: 14, fontWeight: 700, margin: "6px 0 0", color: "#0f172a" }}>
+                {formatEta(current.etaSeconds)}
+              </p>
+            )}
             {(current.boardingStatus !== "예정" || current.alighted) && (
               <p style={{ fontSize: 13, fontWeight: 700, margin: "6px 0 0", color: "#1d4ed8" }}>
                 {current.boardingStatus !== "예정" && `${current.boardingStatus} 확인됨`}
@@ -134,7 +147,7 @@ export default function ParentTrackClient({ token }: { token: string }) {
           <ParentLiveMap lat={current.lastPing?.lat} lng={current.lastPing?.lng} />
 
           <p style={{ fontSize: 11, color: "#94a3b8", textAlign: "center", lineHeight: 1.6 }}>
-            지금은 테스트 화면이라 도착예정시각·알림은 아직 표시되지 않습니다. 실제 서비스는 정식 개발 완료 후 안내드릴 예정입니다.
+            지금은 테스트 화면이라 자동 알림(푸시)은 아직 오지 않습니다. 실제 학부모 서비스는 정식 개발 완료 후 안내드릴 예정입니다.
           </p>
         </div>
       )}

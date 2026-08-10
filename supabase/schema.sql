@@ -3745,3 +3745,21 @@ create policy "wr_manager_all_shuttle_parent_links" on shuttle_parent_links
 -- 테이블은 "탑승했는지"(status)만 다루고 "정류장에서 내렸는지"는 다루지 않아서, 하차 확인용
 -- 칼럼만 추가합니다(요청: "정류장에서 내렸는지" 별도 확인 - 하원 자동화 제안 11장과 동일한 필요).
 alter table shuttle_boardings add column if not exists alighted_at timestamptz;
+
+-- ===== 81. 2단계-b: 도착예정시각(ETA) 캐시 =====
+-- 현재 위치 → 학생 정류장까지 카카오모빌리티 길찾기로 예상 소요시간을 계산합니다. 매 폴링(7초)마다
+-- 호출하면 비용이 커지므로(제안서 10장 참고 - 갱신주기가 비용에 가장 민감), 노선+정류장 조합별로
+-- 결과를 캐시해 30초에 한 번만 실제로 API를 호출합니다. 기존에 노선 경로 계산에 쓰던
+-- KAKAO_REST_API_KEY를 그대로 재사용합니다(새 키 발급 불필요).
+create table if not exists shuttle_eta_cache (
+  route_id uuid not null references shuttle_routes(id) on delete cascade,
+  stop_id uuid not null references shuttle_stops(id) on delete cascade,
+  eta_seconds int,
+  distance_m int,
+  computed_at timestamptz not null default now(),
+  primary key (route_id, stop_id)
+);
+
+alter table shuttle_eta_cache enable row level security;
+drop policy if exists "wr_manager_select_shuttle_eta_cache" on shuttle_eta_cache;
+create policy "wr_manager_select_shuttle_eta_cache" on shuttle_eta_cache for select using (is_wr_manager());

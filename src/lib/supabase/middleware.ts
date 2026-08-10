@@ -69,7 +69,11 @@ export async function updateSession(request: NextRequest) {
     // 셔틀 실시간 위치(1단계 정식 기능)용 - 동승선생님이 회사 계정 로그인 없이
     // 링크(토큰) 하나로 접속합니다. 인증은 이 페이지/API가 자체적으로 토큰으로 확인합니다.
     path.startsWith("/shuttle-pilot") ||
-    path.startsWith("/api/shuttle/pilot");
+    path.startsWith("/api/shuttle/pilot") ||
+    // 안내보드(로비/복도 공용 화면)용 - 개인 계정 로그인 없이 링크(토큰) 하나로 접속합니다
+    // (요청: "운영앱에서 로그인하지 않고 별도의 페이지로 안내보드는 나오도록").
+    path.startsWith("/shuttle-board") ||
+    path.startsWith("/api/shuttle/board");
 
   if (!user && !isAuthRoute) {
     const url = request.nextUrl.clone();
@@ -155,7 +159,6 @@ export async function updateSession(request: NextRequest) {
         !path.startsWith("/account") &&
         !path.startsWith("/attendance") &&
         !path.startsWith("/shuttle/live") &&
-        !path.startsWith("/shuttle-board") &&
         !path.startsWith("/api/")
       ) {
         const url = request.nextUrl.clone();
@@ -178,7 +181,6 @@ export async function updateSession(request: NextRequest) {
         !path.startsWith("/account") &&
         !path.startsWith("/attendance") &&
         !path.startsWith("/shuttle/live") &&
-        !path.startsWith("/shuttle-board") &&
         !path.startsWith("/api/")
       ) {
         const url = request.nextUrl.clone();

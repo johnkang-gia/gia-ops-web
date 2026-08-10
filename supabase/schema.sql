@@ -3794,3 +3794,36 @@ create policy "giamicro_select_shuttle_eta_cache" on shuttle_eta_cache for selec
 alter table shuttle_run_events drop constraint if exists shuttle_run_events_event_check;
 alter table shuttle_run_events add constraint shuttle_run_events_event_check
   check (event in ('출발', '5분전', '도착', '현장도착'));
+
+-- ===== 86. 안내보드 로그인 없는 링크 + 유튜브 =====
+-- 요청: "운영앱에서 로그인하지 않고 별도의 페이지로 안내보드는 나오도록... 안내보드에서 유튜브
+-- 시청가능하도록". 로비/복도의 공용 화면이라 개인 계정으로 로그인시키기 어색하므로, 파일럿
+-- 체크인·과거 학부모 테스트 링크와 같은 토큰 방식을 씁니다. 화면(로비용/복도용 등)마다 이름표
+-- (label)와 재생할 유튜브 영상을 따로 둘 수 있습니다.
+create table if not exists shuttle_board_links (
+  id uuid primary key default gen_random_uuid(),
+  label text not null default '안내보드',
+  token uuid not null default gen_random_uuid(),
+  youtube_video_id text,
+  enabled boolean not null default true,
+  created_at timestamptz not null default now()
+);
+create unique index if not exists shuttle_board_links_token_idx on shuttle_board_links(token);
+
+alter table shuttle_board_links enable row level security;
+-- 쓰기(생성/토글/유튜브 변경)는 관리자만, 조회는 로그인한 교직원 전체가 할 수 있어야
+-- /shuttle/live 화면의 "안내보드 열기" 버튼이 누구에게나 정상 동작합니다.
+drop policy if exists "wr_manager_all_shuttle_board_links" on shuttle_board_links;
+create policy "wr_manager_all_shuttle_board_links" on shuttle_board_links for all using (is_wr_manager()) with check (is_wr_manager());
+drop policy if exists "giamicro_select_shuttle_board_links" on shuttle_board_links;
+create policy "giamicro_select_shuttle_board_links" on shuttle_board_links for select using (is_giamicro_user());
+
+-- ===== 87. 동시 도착 중복 방지 =====
+-- 요청: "여러차가 동시에 도착해서 도착버튼이 여러개 눌릴 수도 있으니까, 그에 대해서 어떻게
+-- 해야 수월하게 체크가 될지". 같은 노선에 여러 교직원이 거의 동시에 '현장도착'을 누르면
+-- 하루에 여러 건이 쌓일 수 있어, 노선+날짜 조합으로 '현장도착'은 하루 1건만 남도록 부분
+-- 유니크 인덱스를 둡니다. 이미 있으면 새로 넣지 않고 그대로 두면 되므로(23505 오류를
+-- "이미 체크됨"으로 간주), 클라이언트는 에러를 조용히 무시하고 최신 상태만 다시 읽어옵니다.
+create unique index if not exists shuttle_run_events_arrival_unique_idx
+  on shuttle_run_events (route_id, service_date)
+  where event = '현장도착';

@@ -100,6 +100,13 @@ export default function ShuttleLiveClient({
       .insert({ service_date: todayStr(), route_id: routeId, event: "현장도착", created_by: userLabel });
     setBusyRoute(null);
     if (error) {
+      // 여러 차가 동시에 도착해서 여러 교직원이 거의 동시에 "현장도착"을 누를 수 있습니다
+      // (요청: "여러차가 동시에 도착해서 도착버튼이 여러개 눌릴 수도 있으니까"). DB에 부분
+      // 유니크 인덱스(shuttle_run_events_arrival_unique_idx)를 걸어둬서, 같은 노선·같은 날
+      // 두 번째 이후 체크는 Postgres 유니크 제약 위반(23505)으로 거절됩니다. 이건 실패가
+      // 아니라 "이미 다른 분이 체크했다"는 정상 상황이므로 에러 토스트 없이 조용히 넘어가고,
+      // 다음 폴링에서 실제 상태(이미 체크됨)를 그대로 화면에 반영합니다.
+      if (error.code === "23505") return;
       notify("현장도착 체크에 실패했습니다: " + error.message, "error");
       return;
     }
@@ -125,35 +132,75 @@ export default function ShuttleLiveClient({
   // 노선만 담겨오므로(page.tsx에서 필터링), 여기서는 정렬만 합니다. 등원/방향 탭은 없앴습니다.
   const routesInDirection = useMemo(() => [...routes].sort((a, b) => natCompare(a.route_no, b.route_no)), [routes]);
 
+  // 요청: "여러차가 동시에 도착해서 도착버튼이 여러개 눌릴 수도 있으니까, 어떻게 해야 수월하게
+  // 체크가 될지 제안해주고" - 아직 도착하지 않은(체크 안 된) 노선만 큰 버튼으로 따로 모아
+  // "미도착 · 빠른 체크" 섹션에 둡니다. 위치·탑승현황 같은 상세 정보 없이 노선 번호와 버튼만
+  // 크게 보여줘서, 픽업 서클처럼 여러 차가 몰리는 순간에도 한눈에 훑고 바로 누를 수 있게
+  // 했습니다. 누른 뒤에는 그 카드가 자동으로 아래 "상세 현황"으로 넘어갑니다. 중복 탭은 DB의
+  // 부분 유니크 인덱스 + 클라이언트의 23505 무시 처리로 안전합니다(checkArrived 참고).
+  const quickCheckRoutes = routesInDirection.filter((route) => {
+    const pilot = pilotByRoute.get(route.id);
+    const events = pilot ? eventsByRoute[route.id] ?? [] : [];
+    const arrivedEvent = events.find((e) => e.event === "현장도착");
+    const endEvent = [...events].reverse().find((e) => e.event === "도착");
+    return !!pilot && !arrivedEvent && !endEvent;
+  });
+  const detailRoutes = routesInDirection.filter((route) => !quickCheckRoutes.includes(route));
+
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       {routesInDirection.length === 0 && <p className="py-8 text-center text-sm text-slate-400">하원 노선이 없습니다.</p>}
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {routesInDirection.map((route) => {
-          const pilot = pilotByRoute.get(route.id);
-          const ping = pilot ? pingByRoute[route.id] : null;
-          const events = pilot ? eventsByRoute[route.id] ?? [] : [];
-          const roster = rosterByRoute[route.id] ?? [];
-          return (
-            <LiveRouteCard
-              key={route.id}
-              route={route}
-              hasPilot={!!pilot}
-              ping={ping ?? null}
-              events={events}
-              roster={roster}
-              boardingByAssignment={boardingByAssignment}
-              now={now}
-              expanded={!!expanded[route.id]}
-              onToggleExpand={() => setExpanded((prev) => ({ ...prev, [route.id]: !prev[route.id] }))}
-              busy={busyRoute === route.id}
-              onCheckArrived={() => checkArrived(route.id)}
-              onCancelArrived={(eventId) => cancelArrived(route.id, eventId)}
-            />
-          );
-        })}
-      </div>
+      {quickCheckRoutes.length > 0 && (
+        <div>
+          <p className="mb-2 text-xs font-bold text-amber-600">🟡 미도착 · 빠른 체크 (차량이 보이면 바로 눌러주세요)</p>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
+            {quickCheckRoutes.map((route) => (
+              <button
+                key={route.id}
+                onClick={() => checkArrived(route.id)}
+                disabled={busyRoute === route.id}
+                className="rounded-xl border-2 border-blue-200 bg-blue-50 px-2 py-4 text-center font-black text-blue-700 active:scale-95 disabled:opacity-40"
+              >
+                <div className="text-2xl">{route.route_no}호</div>
+                <div className="mt-0.5 truncate text-[11px] font-semibold text-blue-500">{route.name ?? ""}</div>
+                <div className="mt-1 text-[11px] font-bold text-blue-600">🚌 도착 체크</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {detailRoutes.length > 0 && (
+        <div>
+          {quickCheckRoutes.length > 0 && <p className="mb-2 text-xs font-bold text-slate-500">상세 현황</p>}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {detailRoutes.map((route) => {
+              const pilot = pilotByRoute.get(route.id);
+              const ping = pilot ? pingByRoute[route.id] : null;
+              const events = pilot ? eventsByRoute[route.id] ?? [] : [];
+              const roster = rosterByRoute[route.id] ?? [];
+              return (
+                <LiveRouteCard
+                  key={route.id}
+                  route={route}
+                  hasPilot={!!pilot}
+                  ping={ping ?? null}
+                  events={events}
+                  roster={roster}
+                  boardingByAssignment={boardingByAssignment}
+                  now={now}
+                  expanded={!!expanded[route.id]}
+                  onToggleExpand={() => setExpanded((prev) => ({ ...prev, [route.id]: !prev[route.id] }))}
+                  busy={busyRoute === route.id}
+                  onCheckArrived={() => checkArrived(route.id)}
+                  onCancelArrived={(eventId) => cancelArrived(route.id, eventId)}
+                />
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

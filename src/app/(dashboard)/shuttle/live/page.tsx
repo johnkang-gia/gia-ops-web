@@ -25,6 +25,18 @@ export default async function ShuttleLivePage() {
       ? await supabase.from("shuttle_pilot_routes").select("*").in("route_id", routeIds).order("created_at", { ascending: false })
       : { data: [] as ShuttlePilotRoute[] };
 
+  // 안내보드 링크(로그인 없는 토큰 링크) - 활성화된 링크 중 가장 최근 것을 "안내보드 열기"
+  // 버튼에 연결합니다(요청: "교직원도 모바일로 차량상황 띄워놓고..."의 연장선 - 로비 화면을
+  // 여기서 바로 열 수 있어야 함). 관리자는 /shuttle/pilot에서 여러 개를 만들고 관리할 수 있습니다.
+  const boardLinkRes = await supabase
+    .from("shuttle_board_links")
+    .select("token, label")
+    .eq("enabled", true)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const boardLink = boardLinkRes.data as { token: string; label: string } | null;
+
   let stopsData: { id: string; route_id: string; seq: number; stop_time: string | null }[] = [];
   let assignmentsData: { id: string; stop_id: string; student_name_raw: string; weekdays: number[] }[] = [];
   if (routeIds.length > 0) {
@@ -56,9 +68,19 @@ export default async function ShuttleLivePage() {
     <div className="mx-auto max-w-6xl p-4 sm:p-6">
       <div className="mb-1 flex items-center justify-between gap-2">
         <h1 className="text-lg font-bold">🚌 실시간 셔틀 (하원)</h1>
-        <Link href="/shuttle-board" target="_blank" className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50">
-          📺 안내보드 열기
-        </Link>
+        {boardLink ? (
+          <Link
+            href={`/shuttle-board/${boardLink.token}`}
+            target="_blank"
+            className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+          >
+            📺 안내보드 열기
+          </Link>
+        ) : (
+          <span className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-300">
+            📺 안내보드 미설정
+          </span>
+        )}
       </div>
       <p className="mb-4 text-xs text-slate-500">
         하원 노선의 실시간 위치와 탑승 현황입니다(등원은 추후 지원 예정). 차량이 학교에 도착하면 &apos;현장도착&apos;을 눌러 학생들에게 안내해주세요. 복도·로비

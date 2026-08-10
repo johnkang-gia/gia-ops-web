@@ -864,6 +864,17 @@ export type ShuttlePilotPing = {
   recorded_at: string;
 };
 
+// 안내보드(로그인 없는 전용 화면) 링크(요청: "운영앱에서 로그인하지 않고 별도의 페이지로
+// 안내보드는 나오도록"). 화면(로비용/복도용 등)마다 유튜브 영상을 따로 설정할 수 있습니다.
+export type ShuttleBoardLink = {
+  id: string;
+  label: string;
+  token: string;
+  youtube_video_id: string | null;
+  enabled: boolean;
+  created_at: string;
+};
+
 // 안전운행지수(3단계-a) - 급가속·급감속 "기준치 초과 순간"만 기록합니다.
 export type ShuttleSafetyEventType = "급가속" | "급감속";
 

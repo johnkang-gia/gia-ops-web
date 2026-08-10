@@ -2,8 +2,9 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isAdminUser } from "@/lib/roles";
-import type { ShuttleRoute, ShuttlePilotRoute } from "@/lib/types";
+import type { ShuttleRoute, ShuttlePilotRoute, ShuttleBoardLink } from "@/lib/types";
 import PilotMonitorClient from "@/components/shuttle/PilotMonitorClient";
+import BoardLinkManager from "@/components/shuttle/BoardLinkManager";
 import GuideButton from "@/components/common/GuideButton";
 
 const GUIDE_SECTIONS = [
@@ -35,6 +36,7 @@ export default async function ShuttlePilotPage() {
     routeIds.length > 0
       ? await supabase.from("shuttle_pilot_routes").select("*").in("route_id", routeIds).order("created_at", { ascending: false })
       : { data: [] as ShuttlePilotRoute[] };
+  const boardLinksRes = await supabase.from("shuttle_board_links").select("*").order("created_at", { ascending: false });
 
   return (
     <div className="mx-auto max-w-5xl p-4 sm:p-6">
@@ -46,6 +48,7 @@ export default async function ShuttlePilotPage() {
         하원 노선에만 우선 적용됩니다(등원은 추후 지원). 동승선생님용 링크를 여기서 관리합니다.
       </p>
       <div className="flex flex-col gap-4">
+        <BoardLinkManager initialLinks={(boardLinksRes.data as ShuttleBoardLink[] | null) ?? []} />
         <PilotMonitorClient
           routes={(routesRes.data as ShuttleRoute[] | null) ?? []}
           initialPilots={(pilotsRes.data as ShuttlePilotRoute[] | null) ?? []}

@@ -27,9 +27,12 @@ function fmtTime(iso: string) {
 // 안내보드(로그인 없음) - 로비/복도 화면입니다(요청: "아이들 기다릴때... 유튜브를 보여주는데
 // 유튜브를 시청하다가 차가 도착하면 몇호차인지, 그리고 아이들은 누가 가야하는지 나오도록").
 // 평소에는 유튜브 영상이 화면 대부분을 채우고, 오른쪽(모바일에서는 아래) 패널에 "지금 탈 수
-// 있는 차량"이 항상 보입니다. 새로 도착한 차량은 잠깐 반짝이는 효과 + 알람 소리로 눈에 띄게
-// 만들고(요청: "탑승할 아이들 이름이 뜨면서, 알람을 울려줬으면 좋겠어"), 아직 타지 않은 아이가
-// 남아있는 동안은 20초마다 알람을 다시 울립니다. 데이터는 로그인 세션이 필요 없는
+// 있는 차량"이 항상 보입니다. 차가 새로 도착한 그 순간에만 반짝이는 효과 + 알람 소리를 한 번
+// 울립니다(요청: "여러 차량이 정차하기 때문에 20초마다 울리게 하면 정신이 하나도 없으니까
+// 그냥 도착했을 때만 도착알림음 해주고" - 처음엔 20초마다 반복 알람도 있었지만, 여러 차가
+// 동시에 서 있는 상황에서는 시끄럽기만 해서 도착 순간 1회로 되돌렸습니다). 학생이 탑승하면
+// 그 이름은 바로 목록에서 사라져 남은 학생만 한눈에 보입니다(요청: "탑승 누르면 아이이름
+// 지워지고... 남은학생을 한눈에 볼 수 있게"). 데이터는 로그인 세션이 필요 없는
 // /api/shuttle/board/[token]을 폴링해서 가져옵니다.
 export default function ShuttleBoardClient({ token }: { token: string }) {
   const [data, setData] = useState<BoardData | null>(null);
@@ -38,7 +41,6 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
   const [soundEnabled, setSoundEnabled] = useState(false);
   const prevArrivedRef = useRef<Set<string>>(new Set());
   const audioCtxRef = useRef<AudioContext | null>(null);
-  const boardingRoutesRef = useRef<BoardRoute[]>([]);
 
   // 차가 도착해 아이들 이름이 뜨는 순간 "삐삐-삐" 3음 알람을 울립니다(요청: "탑승할 아이들
   // 이름이 뜨면서, 알람을 울려줬으면 좋겠어"). 브라우저는 사용자가 한 번 화면을 눌러야만
@@ -127,23 +129,6 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
       .filter((r) => r.events.some((e) => e.event === "현장도착") && !r.events.some((e) => e.event === "출발"))
       .sort((a, b) => natCompare(a.routeNo, b.routeNo));
   }, [data]);
-
-  useEffect(() => {
-    boardingRoutesRef.current = boardingRoutes;
-  }, [boardingRoutes]);
-
-  // 한 번 울리고 끝나면 화면을 계속 보고 있지 않는 이상 놓치기 쉬우므로, 아직 타지 않은
-  // 아이가 남아있는 동안은 20초마다 알람을 다시 울려서 계속 신경 쓰게 합니다. 전원 탑승하면
-  // (boardingRoutesRef에 남는 "미탑승" 학생이 없어지면) 자동으로 조용해집니다.
-  useEffect(() => {
-    const t = setInterval(() => {
-      if (!soundEnabled) return;
-      const hasWaiting = boardingRoutesRef.current.some((r) => r.roster.some((s) => s.status !== "탑승"));
-      if (hasWaiting) playAlarm();
-    }, 20000);
-    return () => clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [soundEnabled]);
 
   const embedSrc = youtubeEmbedSrc(data?.youtubeVideoId);
 

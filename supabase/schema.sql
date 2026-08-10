@@ -3633,3 +3633,48 @@ drop trigger if exists trg_shuttle_stops_invalidate_path on shuttle_stops;
 create trigger trg_shuttle_stops_invalidate_path
   after insert or update or delete on shuttle_stops
   for each row execute function shuttle_stops_invalidate_route_path();
+
+-- 77-e. 파일럿 검증(학부모 제외, 기사님·동승선생님만 참여하는 기술 검증 단계) --------------------
+-- 정식 앱을 개발/배포하기 전에, 실제 노선으로 위치 전송이 무리 없이 되는지 먼저 확인하기 위한
+-- 임시 검증 인프라입니다. 개발자 계정·앱스토어 배포가 전혀 필요 없도록 로그인 없는 웹페이지로
+-- 만들고(링크 하나로 접속), 토큰으로만 인증합니다. 검증이 끝나면 이 두 테이블은 통째로 지워도
+-- 무방합니다(정식 앱은 별도 인프라로 만듭니다).
+create table if not exists shuttle_pilot_routes (
+  id uuid primary key default gen_random_uuid(),
+  route_id uuid not null references shuttle_routes(id) on delete cascade,
+  token uuid not null default gen_random_uuid(),  -- 이 값이 곧 접속 링크의 비밀키입니다(로그인 대체).
+  enabled boolean not null default true,
+  created_at timestamptz not null default now(),
+  unique (route_id)
+);
+create unique index if not exists shuttle_pilot_routes_token_idx on shuttle_pilot_routes(token);
+
+-- 위치 이력(검증용 - 수신 성공률·갱신 간격 계산에 씀). 정식 서비스가 아니므로 학생 개인정보와는
+-- 무관하며, 노선의 좌표·시각만 담습니다.
+create table if not exists shuttle_pilot_pings (
+  id bigint generated always as identity primary key,
+  route_id uuid not null references shuttle_routes(id) on delete cascade,
+  lat double precision not null,
+  lng double precision not null,
+  accuracy double precision,          -- 브라우저가 보고하는 위치 정확도(미터)
+  recorded_at timestamptz not null default now()
+);
+create index if not exists shuttle_pilot_pings_route_idx on shuttle_pilot_pings(route_id, recorded_at desc);
+
+alter table shuttle_pilot_routes enable row level security;
+alter table shuttle_pilot_pings enable row level security;
+-- 체크인 페이지는 로그인 없이(토큰 기반) 서버가 service role 키로만 씁니다. 조회는 관리자만.
+drop policy if exists "wr_manager_all_shuttle_pilot_routes" on shuttle_pilot_routes;
+create policy "wr_manager_all_shuttle_pilot_routes" on shuttle_pilot_routes for all using (is_wr_manager()) with check (is_wr_manager());
+drop policy if exists "wr_manager_select_shuttle_pilot_pings" on shuttle_pilot_pings;
+create policy "wr_manager_select_shuttle_pilot_pings" on shuttle_pilot_pings for select using (is_wr_manager());
+
+do $$
+begin
+  if not exists (select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='shuttle_pilot_pings') then
+    alter publication supabase_realtime add table shuttle_pilot_pings;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='shuttle_run_events') then
+    alter publication supabase_realtime add table shuttle_run_events;
+  end if;
+end $$;

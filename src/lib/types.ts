@@ -837,3 +837,21 @@ export type ShuttleRoutePath = {
   stop_ids: string[];
   computed_at: string;
 };
+
+// 정식 앱 이전 파일럿 검증용(학부모 제외, 기사님·동승선생님만) - 로그인 없이 토큰으로만 접속.
+export type ShuttlePilotRoute = {
+  id: string;
+  route_id: string;
+  token: string;
+  enabled: boolean;
+  created_at: string;
+};
+
+export type ShuttlePilotPing = {
+  id: number;
+  route_id: string;
+  lat: number;
+  lng: number;
+  accuracy: number | null;
+  recorded_at: string;
+};

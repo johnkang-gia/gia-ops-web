@@ -27,34 +27,58 @@ function fmtTime(iso: string) {
 // 안내보드(로그인 없음) - 로비/복도 화면입니다(요청: "아이들 기다릴때... 유튜브를 보여주는데
 // 유튜브를 시청하다가 차가 도착하면 몇호차인지, 그리고 아이들은 누가 가야하는지 나오도록").
 // 평소에는 유튜브 영상이 화면 대부분을 채우고, 오른쪽(모바일에서는 아래) 패널에 "지금 탈 수
-// 있는 차량"이 항상 보입니다. 새로 도착한 차량은 잠깐 반짝이는 효과로 눈에 띄게 만듭니다.
-// 데이터는 로그인 세션이 필요 없는 /api/shuttle/board/[token]을 폴링해서 가져옵니다.
+// 있는 차량"이 항상 보입니다. 새로 도착한 차량은 잠깐 반짝이는 효과 + 알람 소리로 눈에 띄게
+// 만들고(요청: "탑승할 아이들 이름이 뜨면서, 알람을 울려줬으면 좋겠어"), 아직 타지 않은 아이가
+// 남아있는 동안은 20초마다 알람을 다시 울립니다. 데이터는 로그인 세션이 필요 없는
+// /api/shuttle/board/[token]을 폴링해서 가져옵니다.
 export default function ShuttleBoardClient({ token }: { token: string }) {
   const [data, setData] = useState<BoardData | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [justArrived, setJustArrived] = useState<Set<string>>(new Set());
+  const [soundEnabled, setSoundEnabled] = useState(false);
   const prevArrivedRef = useRef<Set<string>>(new Set());
   const audioCtxRef = useRef<AudioContext | null>(null);
+  const boardingRoutesRef = useRef<BoardRoute[]>([]);
 
-  function playChime() {
+  // 차가 도착해 아이들 이름이 뜨는 순간 "삐삐-삐" 3음 알람을 울립니다(요청: "탑승할 아이들
+  // 이름이 뜨면서, 알람을 울려줬으면 좋겠어"). 브라우저는 사용자가 한 번 화면을 눌러야만
+  // 소리를 허용하므로(자동재생 정책), 처음 화면을 열면 "소리 켜고 시작하기" 안내가 먼저
+  // 뜨고, 그걸 누른 뒤부터는 계속 소리가 울립니다.
+  function playAlarm() {
+    const ctx = audioCtxRef.current;
+    if (!ctx) return;
     try {
-      const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-      if (!Ctx) return;
-      if (!audioCtxRef.current) audioCtxRef.current = new Ctx();
-      const ctx = audioCtxRef.current;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = "sine";
-      osc.frequency.value = 880;
-      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + 0.05);
-      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.6);
-      osc.connect(gain).connect(ctx.destination);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.6);
+      const beepAt = (offsetSec: number, freq: number) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "square";
+        osc.frequency.value = freq;
+        const t0 = ctx.currentTime + offsetSec;
+        gain.gain.setValueAtTime(0.0001, t0);
+        gain.gain.exponentialRampToValueAtTime(0.35, t0 + 0.04);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.32);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(t0);
+        osc.stop(t0 + 0.35);
+      };
+      beepAt(0, 880);
+      beepAt(0.42, 880);
+      beepAt(0.84, 1175); // 마지막 음을 살짝 높여 "다 왔어요!" 느낌으로 마무리
     } catch {
       // 브라우저 자동재생 정책 등으로 소리가 막혀도 화면 표시는 그대로 동작합니다.
     }
+  }
+
+  function enableSound() {
+    try {
+      const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (Ctx && !audioCtxRef.current) audioCtxRef.current = new Ctx();
+      audioCtxRef.current?.resume?.();
+    } catch {
+      // 무시 - 아래에서 화면은 어차피 진행시킵니다.
+    }
+    setSoundEnabled(true);
+    playAlarm(); // 확인용으로 한 번 울려서 소리가 켜졌음을 알려줍니다.
   }
 
   useEffect(() => {
@@ -74,8 +98,8 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
           json.routes.filter((r) => r.events.some((e) => e.event === "현장도착") && !r.events.some((e) => e.event === "출발")).map((r) => r.routeId)
         );
         const newlyArrived = [...nowArrived].filter((id) => !prevArrivedRef.current.has(id));
-        if (newlyArrived.length > 0 && prevArrivedRef.current.size + nowArrived.size > 0) {
-          playChime();
+        if (newlyArrived.length > 0) {
+          playAlarm();
           setJustArrived((prev) => new Set([...prev, ...newlyArrived]));
           newlyArrived.forEach((id) => {
             setTimeout(() => setJustArrived((prev) => { const next = new Set(prev); next.delete(id); return next; }), 10000);
@@ -104,6 +128,23 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
       .sort((a, b) => natCompare(a.routeNo, b.routeNo));
   }, [data]);
 
+  useEffect(() => {
+    boardingRoutesRef.current = boardingRoutes;
+  }, [boardingRoutes]);
+
+  // 한 번 울리고 끝나면 화면을 계속 보고 있지 않는 이상 놓치기 쉬우므로, 아직 타지 않은
+  // 아이가 남아있는 동안은 20초마다 알람을 다시 울려서 계속 신경 쓰게 합니다. 전원 탑승하면
+  // (boardingRoutesRef에 남는 "미탑승" 학생이 없어지면) 자동으로 조용해집니다.
+  useEffect(() => {
+    const t = setInterval(() => {
+      if (!soundEnabled) return;
+      const hasWaiting = boardingRoutesRef.current.some((r) => r.roster.some((s) => s.status !== "탑승"));
+      if (hasWaiting) playAlarm();
+    }, 20000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [soundEnabled]);
+
   const embedSrc = youtubeEmbedSrc(data?.youtubeVideoId);
 
   if (errorMsg && !data) {
@@ -116,6 +157,19 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
 
   return (
     <div className="flex min-h-screen flex-col bg-slate-900 text-white lg:flex-row">
+      {!soundEnabled && (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-slate-950/95 p-6 text-center text-white">
+          <p className="text-4xl">🔔</p>
+          <p className="text-xl font-bold">화면을 눌러 안내보드를 시작해주세요</p>
+          <p className="text-sm text-slate-400">차량 도착 알람 소리를 켜기 위한 절차입니다 (한 번만 눌러주세요)</p>
+          <button
+            onClick={enableSound}
+            className="rounded-2xl bg-blue-600 px-8 py-4 text-lg font-black active:scale-95"
+          >
+            🔊 소리 켜고 시작하기
+          </button>
+        </div>
+      )}
       <div className="relative flex-1 bg-black">
         {embedSrc ? (
           <iframe

@@ -3,13 +3,13 @@
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
-import { parseYoutubeInput } from "@/lib/youtube";
-import type { ShuttleBoardLink } from "@/lib/types";
+import type { ShuttleArrivalLink } from "@/lib/types";
 
-// 안내보드(로비/복도 화면) 링크 관리 - 관리자 전용(요청: "운영앱에서 로그인하지 않고 별도의
-// 페이지로 안내보드는 나오도록"). 화면마다 이름(label)과 재생할 유튜브 영상을 따로 설정할 수
-// 있습니다. 여기서 만든 토큰 링크를 그 화면(TV/모니터 브라우저)에 띄워두면 됩니다.
-export default function BoardLinkManager({ initialLinks }: { initialLinks: ShuttleBoardLink[] }) {
+// 교직원용 도착·출발 체크 단독 링크 관리 - 관리자 전용(요청: "교직원이 모바일로 도착한 차량
+// 누를 수 있는 단독 링크"). GPS 위치 전송이나 학생별 개별 탑승 체크 없이, 차량이 왔다/떠났다만
+// 빠르게 알리면 되는 경우(여름캠프 등)에 씁니다. 여기서 만든 토큰 링크를 교직원 여러 명이
+// 함께 써도 됩니다(동시에 눌러도 DB 부분 유니크 인덱스가 중복을 막아줍니다).
+export default function ArrivalLinkManager({ initialLinks }: { initialLinks: ShuttleArrivalLink[] }) {
   const notify = useToast();
   const [links, setLinks] = useState(initialLinks);
   const [busy, setBusy] = useState(false);
@@ -18,53 +18,44 @@ export default function BoardLinkManager({ initialLinks }: { initialLinks: Shutt
     setBusy(true);
     const supabase = createClient();
     const { data, error } = await supabase
-      .from("shuttle_board_links")
-      .insert({ label: term === "여름캠프2" ? "여름캠프2 안내보드" : "새 안내보드", term })
+      .from("shuttle_arrival_links")
+      .insert({ label: term === "여름캠프2" ? "여름캠프2 도착체크" : "도착체크", term })
       .select()
       .single();
     setBusy(false);
     if (error || !data) {
-      notify("안내보드 링크를 만들지 못했습니다: " + (error?.message ?? ""), "error");
+      notify("도착체크 링크를 만들지 못했습니다: " + (error?.message ?? ""), "error");
       return;
     }
-    setLinks((prev) => [data as ShuttleBoardLink, ...prev]);
-  }
-
-  async function saveTerm(id: string, term: "정규학기" | "여름캠프2") {
-    setLinks((prev) => prev.map((l) => (l.id === id ? { ...l, term } : l)));
-    const supabase = createClient();
-    const { error } = await supabase.from("shuttle_board_links").update({ term }).eq("id", id);
-    if (error) notify("구분을 저장하지 못했습니다: " + error.message, "error");
+    setLinks((prev) => [data as ShuttleArrivalLink, ...prev]);
   }
 
   async function saveLabel(id: string, label: string) {
     setLinks((prev) => prev.map((l) => (l.id === id ? { ...l, label } : l)));
     const supabase = createClient();
-    const { error } = await supabase.from("shuttle_board_links").update({ label }).eq("id", id);
+    const { error } = await supabase.from("shuttle_arrival_links").update({ label }).eq("id", id);
     if (error) notify("이름을 저장하지 못했습니다: " + error.message, "error");
   }
 
-  async function saveYoutube(id: string, raw: string) {
-    const parsed = parseYoutubeInput(raw);
-    setLinks((prev) => prev.map((l) => (l.id === id ? { ...l, youtube_video_id: parsed } : l)));
+  async function saveTerm(id: string, term: "정규학기" | "여름캠프2") {
+    setLinks((prev) => prev.map((l) => (l.id === id ? { ...l, term } : l)));
     const supabase = createClient();
-    const { error } = await supabase.from("shuttle_board_links").update({ youtube_video_id: parsed }).eq("id", id);
-    if (error) notify("유튜브 영상을 저장하지 못했습니다: " + error.message, "error");
-    else notify("유튜브 영상이 저장되었습니다.", "success");
+    const { error } = await supabase.from("shuttle_arrival_links").update({ term }).eq("id", id);
+    if (error) notify("구분을 저장하지 못했습니다: " + error.message, "error");
   }
 
-  async function toggleEnabled(link: ShuttleBoardLink) {
+  async function toggleEnabled(link: ShuttleArrivalLink) {
     const supabase = createClient();
     const next = !link.enabled;
     setLinks((prev) => prev.map((l) => (l.id === link.id ? { ...l, enabled: next } : l)));
-    const { error } = await supabase.from("shuttle_board_links").update({ enabled: next }).eq("id", link.id);
+    const { error } = await supabase.from("shuttle_arrival_links").update({ enabled: next }).eq("id", link.id);
     if (error) notify("변경하지 못했습니다: " + error.message, "error");
   }
 
   function copyLink(token: string) {
-    const link = `${window.location.origin}/shuttle-board/${token}`;
+    const link = `${window.location.origin}/shuttle-arrival/${token}`;
     navigator.clipboard.writeText(link).then(
-      () => notify("안내보드 링크를 복사했습니다.", "success"),
+      () => notify("도착체크 링크를 복사했습니다.", "success"),
       () => notify(link, "info")
     );
   }
@@ -72,27 +63,27 @@ export default function BoardLinkManager({ initialLinks }: { initialLinks: Shutt
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-3">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs font-bold text-slate-700">📺 안내보드 링크 (로비·복도 화면 - 로그인 불필요)</p>
+        <p className="text-xs font-bold text-slate-700">📍 교직원 도착체크 단독 링크 (GPS·개별 탑승체크 없음)</p>
         <div className="flex items-center gap-1.5">
           <button
             onClick={() => createLink("정규학기")}
             disabled={busy}
-            className="rounded-lg bg-teal-600 px-2.5 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
+            className="rounded-lg bg-blue-600 px-2.5 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
           >
-            + 정규학기 안내보드
+            + 정규학기 도착체크
           </button>
           <button
             onClick={() => createLink("여름캠프2")}
             disabled={busy}
             className="rounded-lg bg-amber-500 px-2.5 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
           >
-            + 여름캠프2 안내보드
+            + 여름캠프2 도착체크
           </button>
         </div>
       </div>
 
       {links.length === 0 ? (
-        <p className="py-4 text-center text-xs text-slate-400">아직 만든 안내보드 링크가 없습니다.</p>
+        <p className="py-4 text-center text-xs text-slate-400">아직 만든 도착체크 링크가 없습니다.</p>
       ) : (
         <div className="flex flex-col gap-2">
           {links.map((l) => (
@@ -113,13 +104,7 @@ export default function BoardLinkManager({ initialLinks }: { initialLinks: Shutt
                 <option value="정규학기">정규학기</option>
                 <option value="여름캠프2">여름캠프2</option>
               </select>
-              <input
-                defaultValue={l.youtube_video_id ?? ""}
-                placeholder="유튜브 영상/재생목록 URL 붙여넣기"
-                onBlur={(e) => e.target.value.trim() && saveYoutube(l.id, e.target.value)}
-                className="w-full flex-1 rounded-lg border border-slate-300 px-2 py-1 text-xs"
-              />
-              <div className="flex items-center gap-2">
+              <div className="flex flex-1 items-center justify-end gap-2">
                 <button onClick={() => copyLink(l.token)} className="rounded-lg border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-50">
                   🔗 링크 복사
                 </button>

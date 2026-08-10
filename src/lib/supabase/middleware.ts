@@ -73,7 +73,12 @@ export async function updateSession(request: NextRequest) {
     // 안내보드(로비/복도 공용 화면)용 - 개인 계정 로그인 없이 링크(토큰) 하나로 접속합니다
     // (요청: "운영앱에서 로그인하지 않고 별도의 페이지로 안내보드는 나오도록").
     path.startsWith("/shuttle-board") ||
-    path.startsWith("/api/shuttle/board");
+    path.startsWith("/api/shuttle/board") ||
+    // 교직원용 도착·출발 체크 단독 화면(여름캠프2 등 GPS 트래킹이 필요 없는 임시 셔틀용) -
+    // 개인 계정 로그인 없이 링크(토큰) 하나로 접속합니다(요청: "교직원이 모바일로 도착한 차량
+    // 누를 수 있는 단독 링크").
+    path.startsWith("/shuttle-arrival") ||
+    path.startsWith("/api/shuttle/arrival");
 
   if (!user && !isAuthRoute) {
     const url = request.nextUrl.clone();

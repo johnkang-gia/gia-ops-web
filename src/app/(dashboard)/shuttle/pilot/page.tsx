@@ -2,9 +2,10 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isAdminUser } from "@/lib/roles";
-import type { ShuttleRoute, ShuttlePilotRoute, ShuttleBoardLink } from "@/lib/types";
+import type { ShuttleRoute, ShuttlePilotRoute, ShuttleBoardLink, ShuttleArrivalLink } from "@/lib/types";
 import PilotMonitorClient from "@/components/shuttle/PilotMonitorClient";
 import BoardLinkManager from "@/components/shuttle/BoardLinkManager";
+import ArrivalLinkManager from "@/components/shuttle/ArrivalLinkManager";
 import GuideButton from "@/components/common/GuideButton";
 
 const GUIDE_SECTIONS = [
@@ -30,13 +31,21 @@ export default async function ShuttlePilotPage() {
   const supabase = await createClient();
   // 요청: "등원은 패스하고 하원만 진행되도록 우선 만들어줘" - 하원 노선만 링크 관리 대상으로
   // 보여줍니다(등원 노선/링크 자체는 DB에 남아있지만 이 화면에서는 노출하지 않습니다).
-  const routesRes = await supabase.from("shuttle_routes").select("*").eq("active", true).eq("direction", "하원").order("sort_order");
+  // term='정규학기'만 대상으로 합니다(여름캠프2 같은 임시 노선은 섞이지 않게 분리).
+  const routesRes = await supabase
+    .from("shuttle_routes")
+    .select("*")
+    .eq("active", true)
+    .eq("direction", "하원")
+    .eq("term", "정규학기")
+    .order("sort_order");
   const routeIds = (routesRes.data ?? []).map((r) => r.id);
   const pilotsRes =
     routeIds.length > 0
       ? await supabase.from("shuttle_pilot_routes").select("*").in("route_id", routeIds).order("created_at", { ascending: false })
       : { data: [] as ShuttlePilotRoute[] };
   const boardLinksRes = await supabase.from("shuttle_board_links").select("*").order("created_at", { ascending: false });
+  const arrivalLinksRes = await supabase.from("shuttle_arrival_links").select("*").order("created_at", { ascending: false });
 
   return (
     <div className="mx-auto max-w-5xl p-4 sm:p-6">
@@ -49,6 +58,7 @@ export default async function ShuttlePilotPage() {
       </p>
       <div className="flex flex-col gap-4">
         <BoardLinkManager initialLinks={(boardLinksRes.data as ShuttleBoardLink[] | null) ?? []} />
+        <ArrivalLinkManager initialLinks={(arrivalLinksRes.data as ShuttleArrivalLink[] | null) ?? []} />
         <PilotMonitorClient
           routes={(routesRes.data as ShuttleRoute[] | null) ?? []}
           initialPilots={(pilotsRes.data as ShuttlePilotRoute[] | null) ?? []}

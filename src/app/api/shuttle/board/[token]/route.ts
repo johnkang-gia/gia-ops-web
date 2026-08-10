@@ -6,7 +6,11 @@ export const dynamic = "force-dynamic";
 // 안내보드(로그인 없음) 전용 읽기 API - 로비/복도 화면은 개인 계정 세션이 없으므로,
 // shuttle_board_links.token(추측 불가능한 uuid)만으로 인증하고 service role로 조회합니다.
 // 파일럿 체크인/과거 학부모 테스트 API와 같은 패턴입니다. 하원 노선만 대상으로 합니다
-// (요청: "등원은 패스하고 하원만 진행").
+// (요청: "등원은 패스하고 하원만 진행"). 링크가 가진 term(정규학기/여름캠프2)과 같은 노선만
+// 보여줍니다(요청: "지금데이터는 정규학기에 사용할예정으로 분류해주고... 여름캠프2 셔틀목록을
+// 만들어줘" - 두 term이 안내보드에서 서로 섞이지 않도록). 예전에는 "파일럿(GPS) 링크가 켜진
+// 노선만" 보여줬지만, 여름캠프처럼 GPS 없이 도착체크만 쓰는 노선도 보여야 하므로 term 일치
+// 여부로 기준을 바꿨습니다.
 export async function GET(_req: Request, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -18,7 +22,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
 
   const { data: link, error: linkError } = await supabase
     .from("shuttle_board_links")
-    .select("label, youtube_video_id, enabled")
+    .select("label, youtube_video_id, term, enabled")
     .eq("token", token)
     .maybeSingle();
   if (linkError) return NextResponse.json({ error: linkError.message }, { status: 500 });
@@ -29,14 +33,12 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
     .select("id, route_no, name")
     .eq("active", true)
     .eq("direction", "하원")
+    .eq("term", link.term)
     .order("sort_order");
   const routeIds = (routes ?? []).map((r) => r.id);
   if (routeIds.length === 0) {
     return NextResponse.json({ label: link.label, youtubeVideoId: link.youtube_video_id, routes: [] });
   }
-
-  const { data: pilots } = await supabase.from("shuttle_pilot_routes").select("route_id, enabled").in("route_id", routeIds);
-  const pilotedRouteIds = new Set((pilots ?? []).filter((p) => p.enabled).map((p) => p.route_id));
 
   const today = new Date().toISOString().slice(0, 10);
   const todayWeekday = new Date().getDay();
@@ -76,15 +78,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
     rosterByRoute[key].sort((x, y) => x.studentName.localeCompare(y.studentName, "ko"));
   }
 
-  const payload = (routes ?? [])
-    .filter((r) => pilotedRouteIds.has(r.id))
-    .map((r) => ({
-      routeId: r.id,
-      routeNo: r.route_no,
-      name: r.name,
-      events: eventsByRoute[r.id] ?? [],
-      roster: rosterByRoute[r.id] ?? [],
-    }));
+  const payload = (routes ?? []).map((r) => ({
+    routeId: r.id,
+    routeNo: r.route_no,
+    name: r.name,
+    events: eventsByRoute[r.id] ?? [],
+    roster: rosterByRoute[r.id] ?? [],
+  }));
 
   return NextResponse.json({ label: link.label, youtubeVideoId: link.youtube_video_id, routes: payload });
 }

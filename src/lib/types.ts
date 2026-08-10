@@ -776,6 +776,10 @@ export type ShuttleRoute = {
   seat_capacity: number | null; // 차량 정원(몇 인승)
   usable_capacity: number | null; // 실제 탑승 가능 인원(정원보다 적을 수 있음)
   regions: string[]; // 지역별 대시보드용 정규화 지역 태그(자동 백필 후 노선 관리에서 수정)
+  // 정규학기 vs 방학 캠프 등 학기 외 임시 셔틀을 구분합니다(요청: "지금 여름캠프2 기간이야...
+  // 지금데이터는 정규학기에 사용할예정으로 분류해주고"). 기존 노선은 모두 '정규학기'이고,
+  // 실시간 셔틀·파일럿 관리자 화면은 term='정규학기'만 보여줍니다.
+  term: "정규학기" | "여름캠프2";
   created_at: string;
   updated_at: string;
 };
@@ -871,6 +875,19 @@ export type ShuttleBoardLink = {
   label: string;
   token: string;
   youtube_video_id: string | null;
+  term: "정규학기" | "여름캠프2";
+  enabled: boolean;
+  created_at: string;
+};
+
+// 교직원이 로그인 없이 링크 하나로 접속해 노선별 "도착"/"출발" 두 버튼만 누르는 단독 화면용
+// 링크입니다(요청: "교직원이 모바일로 도착한 차량 누를 수 있는 단독 링크" - 여름캠프처럼 GPS
+// 위치 전송이나 학생별 탑승 체크 없이 빠르게 도착·출발만 알리면 되는 경우에 씁니다).
+export type ShuttleArrivalLink = {
+  id: string;
+  label: string;
+  token: string;
+  term: "정규학기" | "여름캠프2";
   enabled: boolean;
   created_at: string;
 };

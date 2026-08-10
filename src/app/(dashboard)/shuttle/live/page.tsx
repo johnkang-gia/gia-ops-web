@@ -17,7 +17,16 @@ export default async function ShuttleLivePage() {
 
   const supabase = await createClient();
   // 요청: "등원은 패스하고 하원만 진행되도록 우선 만들어줘" - 지금은 하원 노선만 보여줍니다.
-  const routesRes = await supabase.from("shuttle_routes").select("*").eq("active", true).eq("direction", "하원").order("sort_order");
+  // term='정규학기'로 한정해서, 여름캠프2 같은 학기 외 임시 노선은 여기 섞이지 않습니다
+  // (요청: "지금데이터는 정규학기에 사용할예정으로 분류해주고" - 캠프는 별도 도착체크 단독
+  // 링크·안내보드로 운영합니다).
+  const routesRes = await supabase
+    .from("shuttle_routes")
+    .select("*")
+    .eq("active", true)
+    .eq("direction", "하원")
+    .eq("term", "정규학기")
+    .order("sort_order");
   const routes = (routesRes.data as ShuttleRoute[] | null) ?? [];
   const routeIds = routes.map((r) => r.id);
   const pilotsRes =

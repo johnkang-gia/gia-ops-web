@@ -3827,3 +3827,39 @@ create policy "giamicro_select_shuttle_board_links" on shuttle_board_links for s
 create unique index if not exists shuttle_run_events_arrival_unique_idx
   on shuttle_run_events (route_id, service_date)
   where event = '현장도착';
+
+-- ===== 88. 여름캠프2(학기 외 임시 셔틀) 구분 + 교직원 도착·출발 단독 링크 =====
+-- 요청: "우선 정규학기가 아니라, 지금 여름캠프2 기간이야... 셔틀에 한해서 지금데이터는
+-- 정규학기에 사용할예정으로 분류해주고... 여름캠프2 셔틀목록을 만들어줘... 정확한 정류장까지는
+-- 트래킹 필요없고... 안내보드 아이들이 볼 수 있도록 하는게 주요 목적... 교직원이 모바일로
+-- 도착한 차량 누를 수 있는 단독 링크와, 안내보드 링크 두개를 만들어줘". 기존 shuttle_routes
+-- 행은 전부 term 기본값('정규학기')을 그대로 갖게 되어 자동으로 "정규학기용으로 분류"됩니다.
+-- 여름캠프2 노선은 이 컬럼만 다르게 넣어서 같은 테이블에 함께 두되, 정규학기 화면(실시간
+-- 셔틀·파일럿 관리)과 서로 섞이지 않도록 각 화면 쪽 조회 쿼리에 term 조건을 추가합니다.
+alter table shuttle_routes add column if not exists term text not null default '정규학기';
+alter table shuttle_routes drop constraint if exists shuttle_routes_term_check;
+alter table shuttle_routes add constraint shuttle_routes_term_check check (term in ('정규학기', '여름캠프2'));
+
+alter table shuttle_board_links add column if not exists term text not null default '정규학기';
+alter table shuttle_board_links drop constraint if exists shuttle_board_links_term_check;
+alter table shuttle_board_links add constraint shuttle_board_links_term_check check (term in ('정규학기', '여름캠프2'));
+
+-- 교직원이 로그인 없이 링크 하나로 접속해 노선별 "도착" / "출발(다 태움)" 두 버튼만 누르는
+-- 단독 화면입니다. GPS 위치 전송이나 학생별 개별 탑승 체크는 없습니다(요청: "정확한 정류장
+-- 까지는 트래킹 필요없고" - 안내보드에는 도착 시 명단 전체가 뜨고, 출발을 누르면 사라집니다).
+create table if not exists shuttle_arrival_links (
+  id uuid primary key default gen_random_uuid(),
+  label text not null default '도착체크',
+  token uuid not null default gen_random_uuid(),
+  term text not null default '여름캠프2',
+  enabled boolean not null default true,
+  created_at timestamptz not null default now()
+);
+create unique index if not exists shuttle_arrival_links_token_idx on shuttle_arrival_links(token);
+alter table shuttle_arrival_links enable row level security;
+drop policy if exists "wr_manager_all_shuttle_arrival_links" on shuttle_arrival_links;
+create policy "wr_manager_all_shuttle_arrival_links" on shuttle_arrival_links for all using (is_wr_manager()) with check (is_wr_manager());
+drop policy if exists "giamicro_select_shuttle_arrival_links" on shuttle_arrival_links;
+create policy "giamicro_select_shuttle_arrival_links" on shuttle_arrival_links for select using (is_giamicro_user());
+alter table shuttle_arrival_links drop constraint if exists shuttle_arrival_links_term_check;
+alter table shuttle_arrival_links add constraint shuttle_arrival_links_term_check check (term in ('정규학기', '여름캠프2'));

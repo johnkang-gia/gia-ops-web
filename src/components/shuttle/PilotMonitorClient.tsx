@@ -253,6 +253,12 @@ function PilotRouteCard({
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => window.open(`/api/shuttle/run-log/pdf?routeId=${pilot.route_id}&date=${new Date().toISOString().slice(0, 10)}`, "_blank")}
+            className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+          >
+            📋 오늘 운행일지
+          </button>
           <button onClick={onCopyLink} className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50">
             🔗 링크 복사
           </button>

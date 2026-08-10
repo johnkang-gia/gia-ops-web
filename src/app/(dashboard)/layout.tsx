@@ -150,6 +150,9 @@ function buildShuttleCategory(isStaffOrAbove: boolean): NavCategory {
   // 전용으로 그대로 둡니다.
   items.push({ href: "/shuttle/live", label: "실시간 셔틀", icon: "📍", dividerBefore: "실시간 셔틀" });
   if (isStaffOrAbove) {
+    // 하원 체크표 - 노선별 오늘 학생 명단을 표로 보고, 픽업(부모님이 직접 데려가심) 학생을
+    // 눌러서 표시하는 화면(요청: "하원차량 체크표를 내가 준 표처럼 페이지를 만들어주고").
+    items.push({ href: "/shuttle/checklist", label: "하원 체크표", icon: "📋" });
     items.push({ href: "/shuttle/pilot", label: "링크 관리", icon: "🔗" });
   }
   return {

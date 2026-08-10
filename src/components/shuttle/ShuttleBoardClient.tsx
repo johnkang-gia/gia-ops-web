@@ -214,8 +214,11 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
           <>
             {boardingRoutes.map((route) => {
               const arrivedEvent = route.events.find((e) => e.event === "현장도착")!;
-              const waiting = route.roster.filter((r) => r.status !== "탑승");
+              // 픽업(부모님이 직접 데려가심)·결석 학생은 셔틀을 안 타므로 "아직 안 탄 아이"
+              // 목록에서 빠집니다(요청: "픽업으로 전환하면 바로 실시간 셔틀 판에 반영되도록").
+              const waiting = route.roster.filter((r) => r.status !== "탑승" && r.status !== "픽업" && r.status !== "결석");
               const boarded = route.roster.filter((r) => r.status === "탑승");
+              const pickedUp = route.roster.filter((r) => r.status === "픽업");
               const isNew = justArrived.has(route.routeId);
               return (
                 <div
@@ -241,7 +244,12 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
                       ))}
                     </p>
                   )}
-                  {boarded.length > 0 && <p className="mt-1 text-[11px] text-slate-500">탑승완료 {boarded.length}명</p>}
+                  {(boarded.length > 0 || pickedUp.length > 0) && (
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      {boarded.length > 0 && <>탑승완료 {boarded.length}명 </>}
+                      {pickedUp.length > 0 && <>· 픽업 {pickedUp.length}명</>}
+                    </p>
+                  )}
                 </div>
               );
             })}

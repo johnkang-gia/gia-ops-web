@@ -309,6 +309,7 @@ function LiveRouteCard({
           </p>
           <div className="flex flex-wrap gap-1.5 text-[11px]">
             <CountChip label="탑승" value={counts.탑승} color="#16a34a" />
+            <CountChip label="픽업" value={counts.픽업} color="#db2777" />
             <CountChip label="결석" value={counts.결석} color="#dc2626" />
             <CountChip label="미탑승" value={counts.미탑승} color="#d97706" />
             <CountChip label="예정" value={counts.예정} color="#94a3b8" />
@@ -327,7 +328,7 @@ function LiveRouteCard({
             const b = boardingByAssignment[r.assignmentId];
             const status = b?.status ?? "예정";
             const color =
-              status === "탑승" ? "#16a34a" : status === "결석" ? "#dc2626" : status === "미탑승" ? "#d97706" : "#94a3b8";
+              status === "탑승" ? "#16a34a" : status === "픽업" ? "#db2777" : status === "결석" ? "#dc2626" : status === "미탑승" ? "#d97706" : "#94a3b8";
             return (
               <div key={r.assignmentId} className="flex items-center justify-between py-0.5 text-xs">
                 <span className="text-slate-700">{r.studentName}</span>

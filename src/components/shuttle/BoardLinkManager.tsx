@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
-import { parseYoutubeInput } from "@/lib/youtube";
+import { parseYoutubeMultilineInput, youtubeValueToEditableText } from "@/lib/youtube";
 import type { ShuttleBoardLink } from "@/lib/types";
 
 // 안내보드(로비/복도 화면) 링크 관리 - 관리자 전용(요청: "운영앱에서 로그인하지 않고 별도의
@@ -45,7 +45,7 @@ export default function BoardLinkManager({ initialLinks }: { initialLinks: Shutt
   }
 
   async function saveYoutube(id: string, raw: string) {
-    const parsed = parseYoutubeInput(raw);
+    const parsed = parseYoutubeMultilineInput(raw);
     setLinks((prev) => prev.map((l) => (l.id === id ? { ...l, youtube_video_id: parsed } : l)));
     const supabase = createClient();
     const { error } = await supabase.from("shuttle_board_links").update({ youtube_video_id: parsed }).eq("id", id);
@@ -96,7 +96,7 @@ export default function BoardLinkManager({ initialLinks }: { initialLinks: Shutt
       ) : (
         <div className="flex flex-col gap-2">
           {links.map((l) => (
-            <div key={l.id} className="flex flex-col gap-2 rounded-lg bg-slate-50 p-2.5 sm:flex-row sm:items-center">
+            <div key={l.id} className="flex flex-col gap-2 rounded-lg bg-slate-50 p-2.5 sm:flex-row sm:items-start">
               <input
                 defaultValue={l.label}
                 onBlur={(e) => e.target.value.trim() && e.target.value !== l.label && saveLabel(l.id, e.target.value.trim())}
@@ -113,11 +113,12 @@ export default function BoardLinkManager({ initialLinks }: { initialLinks: Shutt
                 <option value="정규학기">정규학기</option>
                 <option value="여름캠프2">여름캠프2</option>
               </select>
-              <input
-                defaultValue={l.youtube_video_id ?? ""}
-                placeholder="유튜브 영상/재생목록 URL 붙여넣기"
+              <textarea
+                defaultValue={youtubeValueToEditableText(l.youtube_video_id)}
+                placeholder={"유튜브 영상 링크 붙여넣기\n(여러 개면 한 줄에 하나씩 - 순서대로 이어서 반복 재생됩니다.\n재생목록 링크를 붙여넣어도 됩니다)"}
+                rows={2}
                 onBlur={(e) => e.target.value.trim() && saveYoutube(l.id, e.target.value)}
-                className="w-full flex-1 rounded-lg border border-slate-300 px-2 py-1 text-xs"
+                className="w-full flex-1 resize-y rounded-lg border border-slate-300 px-2 py-1 text-xs"
               />
               <div className="flex items-center gap-2">
                 <button onClick={() => copyLink(l.token)} className="rounded-lg border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-50">

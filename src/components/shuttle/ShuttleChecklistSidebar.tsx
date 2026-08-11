@@ -17,21 +17,37 @@ import {
 
 const POLL_MS = 15000;
 
+// 사이드바 세 번째 위젯("오늘 차량 변경")에 쓰는 항목 - 값은 부모(ShuttleChecklistClient)가
+// 실시간 items 상태에서 계산해 내려줍니다(이 컴포넌트는 shuttle_boardings/assignments를
+// 직접 구독하지 않습니다 - 이미 부모가 구독 중인 값을 그대로 받아씁니다).
+export type ChangedRouteEntry = {
+  key: string;
+  studentName: string;
+  fromRouteNo: string;
+  toRouteNo: string;
+  mode: "today" | "permanent";
+};
+
 // 업무 메뉴까지 가지 않아도 오늘 픽업·결석 학생과 출결 메모를 바로 볼 수 있게 하는 좁은
 // 사이드바입니다(요청: "하원체크표에는 업무메뉴에있는 결석과 픽업아이들이 목록으로 떴으면
 // 좋겠어... 업무쪽으로 가지 않아도 알수 있도록"). 위쪽 위젯은 구글챗 출결알림방을
 // AttendanceDigestPanel과 같은 규칙(명부 대조 우선, 실패 시 한글이름 추정)으로 다시 집계하고,
-// 아래쪽 위젯은 출결 메모(department_memos.attendance_memo)를 읽기 전용으로 보여줍니다 - 이
-// 메모는 절대 자동 파싱되지 않는 자유 메모라서(요청) 여기서도 손대지 않고 그대로 보여주기만
-// 합니다.
+// 가운데 위젯은 오늘 노선이 바뀐 학생 목록(요청: "요일별로 따로타는 아이들을... 픽업과 결석외에
+// 하나더 표시해서"), 아래쪽 위젯은 출결 메모(department_memos.attendance_memo)를 읽기
+// 전용으로 보여줍니다 - 이 메모는 절대 자동 파싱되지 않는 자유 메모라서(요청) 여기서도
+// 손대지 않고 그대로 보여주기만 합니다.
 export default function ShuttleChecklistSidebar({
   roster,
   initialMessages,
+  changedToday = [],
   department = "초등부",
+  className = "",
 }: {
   roster: RosterStudent[];
   initialMessages: GoogleChatMirrorMessage[];
+  changedToday?: ChangedRouteEntry[];
   department?: string;
+  className?: string;
 }) {
   const [messages, setMessages] = useState(initialMessages);
   const [memoContent, setMemoContent] = useState<string | null>(null);
@@ -165,7 +181,7 @@ export default function ShuttleChecklistSidebar({
   }
 
   return (
-    <div className="flex w-full shrink-0 flex-col gap-3 lg:w-52">
+    <div className={"flex w-full shrink-0 flex-col gap-3 lg:w-52 " + className}>
       <div className="rounded-xl border border-slate-200 bg-white p-3">
         <p className="mb-2 text-[11px] font-bold text-slate-600">📊 오늘 픽업·결석 (업무 출결내역)</p>
         <div className="mb-2">
@@ -184,6 +200,34 @@ export default function ShuttleChecklistSidebar({
             <div className="flex flex-wrap gap-1">{absent.map((e) => nameChip(e, "red"))}</div>
           )}
         </div>
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-white p-3">
+        <p className="mb-2 text-[11px] font-bold text-slate-600">🚌 오늘 차량 변경 {changedToday.length > 0 && `(${changedToday.length})`}</p>
+        {changedToday.length === 0 ? (
+          <p className="text-[10px] text-slate-300">없음</p>
+        ) : (
+          <div className="flex flex-col gap-1">
+            {changedToday.map((c) => (
+              <div key={c.key} className="flex items-center justify-between gap-1 rounded-lg bg-slate-50 px-1.5 py-1 text-[10px]">
+                <span className="min-w-0 truncate font-semibold text-slate-700">{c.studentName}</span>
+                <span className="flex shrink-0 items-center gap-1">
+                  <span className="text-slate-400">
+                    {c.fromRouteNo}호→{c.toRouteNo}호
+                  </span>
+                  <span
+                    className={
+                      "rounded-full px-1.5 py-0.5 font-bold " +
+                      (c.mode === "today" ? "bg-amber-100 text-amber-700" : "bg-purple-100 text-purple-700")
+                    }
+                  >
+                    {c.mode === "today" ? "오늘만" : "계속"}
+                  </span>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-white p-3">

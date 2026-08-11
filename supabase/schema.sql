@@ -3877,3 +3877,32 @@ alter table shuttle_boardings add column if not exists override_route_id uuid re
 -- 같은 안내보드에 접속할 수 있도록 /b/[code] 리다이렉트 경로를 추가합니다.
 alter table shuttle_board_links add column if not exists short_code text;
 create unique index if not exists shuttle_board_links_short_code_idx on shuttle_board_links(short_code) where short_code is not null;
+
+-- ===== 91. 하원 체크표 - 학생 영구 노선 변경 =====
+-- 요청: "부모님이 개인사정으로 원래는 다른요일에 타는 차량인데 태워달라고 요청할 수도 있기
+-- 때문에 자유롭게 전환할 수 있도록... 차량을 수정하면 계속 수정된채로 있을건지, 오늘만
+-- 차량이 바뀌는 건지 물어보고". shuttle_boardings.override_route_id(89번)는 그날 하루만
+-- 적용되는 임시 이동이고, 이 컬럼은 오늘 이후로도 계속 유지되는 영구 이동입니다. null이면
+-- 평소 배정된 정류장(shuttle_stops.route_id) 그대로, 값이 있으면 그 노선이 새 기본 노선이
+-- 됩니다. 정류장(물리적 승하차 위치)은 바꾸지 않고 "어느 차량 명단에 뜨는지"만 바꿉니다 -
+-- 임시 이동과 같은 방식이라 별도의 정류장 재배정 UI 없이도 바로 쓸 수 있습니다.
+alter table shuttle_assignments add column if not exists override_route_id uuid references shuttle_routes(id) on delete set null;
+
+-- 요청: "하원체크표에 표시하면 실시간으로 반영되도록 해주고" - 지금까지는 8초 폴링으로
+-- 화면을 갱신했는데, 이 두 테이블을 Supabase Realtime 발행 목록에 추가해서 다른 사람이
+-- 픽업/결석/노선이동을 누르면 다른 화면에도 거의 즉시 반영되도록 합니다.
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'shuttle_boardings'
+  ) then
+    alter publication supabase_realtime add table shuttle_boardings;
+  end if;
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'shuttle_assignments'
+  ) then
+    alter publication supabase_realtime add table shuttle_assignments;
+  end if;
+end $$;

@@ -3,67 +3,112 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
+import ShuttleChecklistTable, { effectiveRouteId } from "./ShuttleChecklistTable";
+import ShuttleChecklistSidebar, { type ChangedRouteEntry } from "./ShuttleChecklistSidebar";
+import type { GoogleChatMirrorMessage } from "@/lib/types";
+import type { RosterStudent } from "@/lib/attendanceDigest";
 
-const POLL_MS = 8000;
+// 실시간 반영을 postgres_changes로 하더라도, 네트워크가 잠깐 끊기는 등의 이유로 이벤트를
+// 놓칠 수 있어(요청: "하원체크표에 표시하면 실시간으로 반영되도록") 안전망으로 느슨한 폴링을
+// 같이 둡니다. 실시간이 정상이면 이 폴링은 사실상 아무 변화도 못 찾고 조용히 지나갑니다.
+const FALLBACK_POLL_MS = 20000;
 
 export type ChecklistRoute = { id: string; route_no: string; name: string | null; driver_name: string | null };
 export type ChecklistItem = {
   assignmentId: string;
   studentName: string;
   stopSeq: number;
-  naturalRouteId: string; // 평소 배정된 노선
-  overrideRouteId: string | null; // 오늘 하루만 다른 노선을 타는 경우(null이면 평소 노선 그대로)
+  homeRouteId: string; // 정류장 기준 평소(절대 원래) 노선 - 바뀌지 않는 기준점
+  permanentRouteId: string | null; // 계속 유지되는 영구 이동 - null이면 homeRouteId 그대로
+  overrideRouteId: string | null; // 오늘 하루만의 이동 - null이면 적용 안 됨
   status: "예정" | "탑승" | "미탑승" | "결석" | "픽업";
 };
-
-function natCompare(a: string, b: string) {
-  return a.localeCompare(b, "ko", { numeric: true });
-}
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
 }
 
-// PDF(하원차량 체크표)와 같은 형태의 노선별 학생 명단 표입니다. 이름을 드래그해서 다른 노선
-// 칸에 놓으면 오늘 하루만 그 차를 타는 것으로 바뀌고(요청: "표안에서 아이들의 이름을 자유롭게
-// 끌어서 이동할 수 있게"), 🚗(픽업)·🚫(결석) 버튼으로 상태를 표시합니다. 전부 shuttle_boardings에
-// 바로 저장되어(RLS가 로그인한 교직원 전체의 쓰기를 허용) 실시간 셔틀·안내보드에도 반영됩니다.
-export default function ShuttleChecklistClient({ routes, items: initialItems }: { routes: ChecklistRoute[]; items: ChecklistItem[] }) {
+type PendingMove = { assignmentId: string; studentName: string; targetRouteId: string; targetRouteNo: string; homeRouteNo: string };
+
+// PDF(하원차량 체크표)와 같은 형태의 노선별 학생 명단 화면입니다. 상태(items)와 실시간 동기화,
+// 노선 이동 확인창을 이 파일이 관장하고, 실제 표는 ShuttleChecklistTable에, 왼쪽 위젯은
+// ShuttleChecklistSidebar에 맡깁니다. 전부 shuttle_boardings/shuttle_assignments에 바로
+// 저장되어(RLS가 로그인한 교직원 전체의 쓰기를 허용) 실시간 셔틀·안내보드에도 그대로
+// 반영됩니다.
+export default function ShuttleChecklistClient({
+  routes,
+  items: initialItems,
+  roster,
+  initialMessages,
+  term,
+}: {
+  routes: ChecklistRoute[];
+  items: ChecklistItem[];
+  roster: RosterStudent[];
+  initialMessages: GoogleChatMirrorMessage[];
+  term: string;
+}) {
   const notify = useToast();
   const [items, setItems] = useState(initialItems);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [dragOverRoute, setDragOverRoute] = useState<string | null>(null);
-  const draggingIdRef = useRef<string | null>(null);
+  const [pendingMove, setPendingMove] = useState<PendingMove | null>(null);
+  const [movingBusy, setMovingBusy] = useState(false);
 
   const assignmentIds = useMemo(() => initialItems.map((i) => i.assignmentId), [initialItems]);
   const assignmentIdsRef = useRef(assignmentIds);
   assignmentIdsRef.current = assignmentIds;
 
+  const routeById = useMemo(() => new Map(routes.map((r) => [r.id, r])), [routes]);
+
+  // 오늘 실제로 자리에 남는 인원(픽업·결석은 셔틀을 안 타므로 뺍니다) - 요청: "탑승예정인원이
+  // 나타나도록".
+  const expectedCount = useMemo(() => items.filter((i) => i.status !== "픽업" && i.status !== "결석").length, [items]);
+
+  // shuttle_boardings(오늘 하루 상태·오늘만 이동)와 shuttle_assignments(영구 이동)를 각각
+  // realtime으로 구독해서, 다른 사람이 체크표를 바꾸면 폴링을 기다리지 않고 바로 반영합니다
+  // (요청: "하원체크표에 표시하면 실시간으로 반영되도록").
   useEffect(() => {
     if (assignmentIdsRef.current.length === 0) return;
     const supabase = createClient();
-    async function poll() {
-      const { data } = await supabase
-        .from("shuttle_boardings")
-        .select("assignment_id, status, override_route_id")
-        .eq("service_date", todayStr())
-        .in("assignment_id", assignmentIdsRef.current);
-      if (!data) return;
-      const byAssignment = new Map(data.map((b) => [b.assignment_id, b]));
+    const ids = assignmentIdsRef.current;
+    const idFilter = `id=in.(${ids.join(",")})`;
+
+    async function reload() {
+      const [{ data: boardings }, { data: assignments }] = await Promise.all([
+        supabase
+          .from("shuttle_boardings")
+          .select("assignment_id, status, override_route_id")
+          .eq("service_date", todayStr())
+          .in("assignment_id", ids),
+        supabase.from("shuttle_assignments").select("id, override_route_id").in("id", ids),
+      ]);
+      const boardingByAssignment = new Map((boardings ?? []).map((b) => [b.assignment_id, b]));
+      const permanentByAssignment = new Map((assignments ?? []).map((a) => [a.id, a.override_route_id as string | null]));
       setItems((prev) =>
         prev.map((it) => {
-          const b = byAssignment.get(it.assignmentId);
+          const b = boardingByAssignment.get(it.assignmentId);
           return {
             ...it,
             status: (b?.status as ChecklistItem["status"]) ?? "예정",
             overrideRouteId: b?.override_route_id ?? null,
+            permanentRouteId: permanentByAssignment.has(it.assignmentId) ? permanentByAssignment.get(it.assignmentId)! : it.permanentRouteId,
           };
         })
       );
     }
-    const t = setInterval(poll, POLL_MS);
-    return () => clearInterval(t);
-  }, []);
+
+    const channel = supabase
+      .channel(`shuttle-checklist-${term}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "shuttle_boardings", filter: `service_date=eq.${todayStr()}` }, () => reload())
+      .on("postgres_changes", { event: "*", schema: "public", table: "shuttle_assignments", filter: idFilter }, () => reload())
+      .subscribe();
+
+    const t = setInterval(reload, FALLBACK_POLL_MS);
+    return () => {
+      clearInterval(t);
+      supabase.removeChannel(channel);
+    };
+  }, [term]);
 
   async function setStatus(item: ChecklistItem, nextStatus: ChecklistItem["status"]) {
     const finalStatus = item.status === nextStatus ? "예정" : nextStatus;
@@ -83,161 +128,158 @@ export default function ShuttleChecklistClient({ routes, items: initialItems }: 
     }
   }
 
-  async function moveToRoute(assignmentId: string, targetRouteId: string) {
+  // 드래그로 놓으면 바로 옮기지 않고, 계속 유지할지 오늘만 적용할지부터 물어봅니다(요청:
+  // "차량을 수정하면 계속 수정된채로 있을건지, 오늘만 차량이 바뀌는 건지 물어보고").
+  function requestMove(assignmentId: string, targetRouteId: string) {
     const item = items.find((i) => i.assignmentId === assignmentId);
     if (!item) return;
-    const nextOverride = targetRouteId === item.naturalRouteId ? null : targetRouteId;
-    if (nextOverride === item.overrideRouteId) return; // 같은 자리에 놓은 경우 - 아무것도 안 함
-    const prevOverride = item.overrideRouteId;
-    setItems((prev) => prev.map((it) => (it.assignmentId === assignmentId ? { ...it, overrideRouteId: nextOverride } : it)));
-    const supabase = createClient();
-    const { error } = await supabase
-      .from("shuttle_boardings")
-      .upsert(
-        { service_date: todayStr(), assignment_id: assignmentId, override_route_id: nextOverride },
-        { onConflict: "service_date,assignment_id" }
-      );
-    if (error) {
-      notify("노선 이동을 저장하지 못했습니다: " + error.message, "error");
-      setItems((prev) => prev.map((it) => (it.assignmentId === assignmentId ? { ...it, overrideRouteId: prevOverride } : it)));
+    if (targetRouteId === effectiveRouteId(item)) return; // 지금 있는 자리에 그대로 놓은 경우
+    const targetRoute = routeById.get(targetRouteId);
+    const homeRoute = routeById.get(item.homeRouteId);
+    setPendingMove({
+      assignmentId,
+      studentName: item.studentName,
+      targetRouteId,
+      targetRouteNo: targetRoute?.route_no ?? "?",
+      homeRouteNo: homeRoute?.route_no ?? "?",
+    });
+  }
+
+  async function confirmMove(mode: "today" | "permanent") {
+    if (!pendingMove) return;
+    const { assignmentId, targetRouteId } = pendingMove;
+    const item = items.find((i) => i.assignmentId === assignmentId);
+    if (!item) {
+      setPendingMove(null);
       return;
     }
-    notify(
-      nextOverride
-        ? `${item.studentName} 학생을 오늘만 다른 차량으로 옮겼습니다.`
-        : `${item.studentName} 학생을 원래 노선으로 되돌렸습니다.`,
-      "success"
-    );
+    setMovingBusy(true);
+    const supabase = createClient();
+
+    if (mode === "today") {
+      const baseline = item.permanentRouteId ?? item.homeRouteId;
+      const nextOverride = targetRouteId === baseline ? null : targetRouteId;
+      const prevOverride = item.overrideRouteId;
+      setItems((prev) => prev.map((it) => (it.assignmentId === assignmentId ? { ...it, overrideRouteId: nextOverride } : it)));
+      const { error } = await supabase
+        .from("shuttle_boardings")
+        .upsert({ service_date: todayStr(), assignment_id: assignmentId, override_route_id: nextOverride }, { onConflict: "service_date,assignment_id" });
+      if (error) {
+        notify("노선 이동을 저장하지 못했습니다: " + error.message, "error");
+        setItems((prev) => prev.map((it) => (it.assignmentId === assignmentId ? { ...it, overrideRouteId: prevOverride } : it)));
+      } else {
+        notify(
+          nextOverride ? `${item.studentName} 학생을 오늘만 다른 차량으로 옮겼습니다.` : `${item.studentName} 학생을 원래 노선으로 되돌렸습니다.`,
+          "success"
+        );
+      }
+    } else {
+      const nextPermanent = targetRouteId === item.homeRouteId ? null : targetRouteId;
+      const prevPermanent = item.permanentRouteId;
+      const prevOverride = item.overrideRouteId;
+      setItems((prev) =>
+        prev.map((it) => (it.assignmentId === assignmentId ? { ...it, permanentRouteId: nextPermanent, overrideRouteId: null } : it))
+      );
+      const [assignmentRes] = await Promise.all([
+        supabase.from("shuttle_assignments").update({ override_route_id: nextPermanent }).eq("id", assignmentId),
+        // 계속 유지로 바꾸는 순간, 남아있던 "오늘만" 이동은 헷갈리지 않도록 함께 정리합니다.
+        supabase.from("shuttle_boardings").update({ override_route_id: null }).eq("service_date", todayStr()).eq("assignment_id", assignmentId),
+      ]);
+      if (assignmentRes.error) {
+        notify("노선 이동을 저장하지 못했습니다: " + assignmentRes.error.message, "error");
+        setItems((prev) =>
+          prev.map((it) => (it.assignmentId === assignmentId ? { ...it, permanentRouteId: prevPermanent, overrideRouteId: prevOverride } : it))
+        );
+      } else {
+        notify(
+          nextPermanent ? `${item.studentName} 학생을 앞으로 계속 다른 차량으로 옮겼습니다.` : `${item.studentName} 학생을 원래 노선으로 되돌렸습니다.`,
+          "success"
+        );
+      }
+    }
+    setMovingBusy(false);
+    setPendingMove(null);
   }
 
-  const routeById = useMemo(() => new Map(routes.map((r) => [r.id, r])), [routes]);
-  const sortedRoutes = useMemo(() => [...routes].sort((a, b) => natCompare(a.route_no, b.route_no)), [routes]);
-
-  const itemsByRoute = useMemo(() => {
-    const map: Record<string, ChecklistItem[]> = {};
-    for (const it of items) {
-      const routeId = it.overrideRouteId && routeById.has(it.overrideRouteId) ? it.overrideRouteId : it.naturalRouteId;
-      (map[routeId] ??= []).push(it);
-    }
-    for (const key of Object.keys(map)) {
-      map[key].sort((x, y) => x.stopSeq - y.stopSeq || x.studentName.localeCompare(y.studentName, "ko"));
-    }
-    return map;
+  // 사이드바 세 번째 위젯("오늘 차량 변경")용 - 평소와 다른 노선에 있는 학생만 추려서 보여줍니다.
+  const changedToday: ChangedRouteEntry[] = useMemo(() => {
+    return items
+      .filter((it) => effectiveRouteId(it) !== it.homeRouteId)
+      .map((it) => {
+        const isToday = !!it.overrideRouteId && it.overrideRouteId !== (it.permanentRouteId ?? it.homeRouteId);
+        const toRouteId = effectiveRouteId(it);
+        return {
+          key: it.assignmentId,
+          studentName: it.studentName,
+          fromRouteNo: routeById.get(it.homeRouteId)?.route_no ?? "?",
+          toRouteNo: routeById.get(toRouteId)?.route_no ?? "?",
+          mode: isToday ? ("today" as const) : ("permanent" as const),
+        };
+      })
+      .sort((a, b) => a.studentName.localeCompare(b.studentName, "ko"));
   }, [items, routeById]);
 
-  if (sortedRoutes.length === 0) {
-    return <p className="py-8 text-center text-sm text-slate-400">노선이 없습니다.</p>;
-  }
-
   return (
-    <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-      <table className="w-full min-w-[760px] border-collapse text-sm">
-        <thead>
-          <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs text-slate-500">
-            <th className="w-24 px-3 py-2 font-semibold">호차</th>
-            <th className="w-32 px-3 py-2 font-semibold">지역</th>
-            <th className="w-24 px-3 py-2 font-semibold">기사님</th>
-            <th className="px-3 py-2 font-semibold">학생 (이름 드래그로 노선 이동 · 🚗픽업 · 🚫결석)</th>
-          </tr>
-        </thead>
-        <tbody>
-          {sortedRoutes.map((route) => {
-            const roster = itemsByRoute[route.id] ?? [];
-            const isDragOver = dragOverRoute === route.id;
-            return (
-              <tr key={route.id} className="border-b border-slate-100 align-top last:border-b-0">
-                <td className="px-3 py-2.5 font-bold text-slate-700">{route.route_no}호</td>
-                <td className="px-3 py-2.5 text-xs text-slate-600">{route.name ?? ""}</td>
-                <td className="px-3 py-2.5 text-xs text-slate-400">{route.driver_name ?? ""}</td>
-                <td
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    setDragOverRoute(route.id);
-                  }}
-                  onDragLeave={() => setDragOverRoute((prev) => (prev === route.id ? null : prev))}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    setDragOverRoute(null);
-                    const assignmentId = draggingIdRef.current ?? e.dataTransfer.getData("text/plain");
-                    if (assignmentId) moveToRoute(assignmentId, route.id);
-                  }}
-                  className={"px-3 py-2.5 transition-colors " + (isDragOver ? "bg-blue-50 outline outline-2 outline-blue-300 -outline-offset-2" : "")}
-                >
-                  {roster.length === 0 ? (
-                    <span className="text-xs text-slate-300">{isDragOver ? "여기로 놓으면 이 노선으로 이동" : "배정된 학생 없음"}</span>
-                  ) : (
-                    <div className="flex flex-wrap gap-1.5">
-                      {roster.map((item) => {
-                        const isPickup = item.status === "픽업";
-                        const isAbsent = item.status === "결석";
-                        const isMoved = !!item.overrideRouteId && item.overrideRouteId !== item.naturalRouteId;
-                        const naturalRoute = routeById.get(item.naturalRouteId);
-                        return (
-                          <div
-                            key={item.assignmentId}
-                            draggable
-                            onDragStart={(e) => {
-                              draggingIdRef.current = item.assignmentId;
-                              e.dataTransfer.setData("text/plain", item.assignmentId);
-                              e.dataTransfer.effectAllowed = "move";
-                            }}
-                            onDragEnd={() => {
-                              draggingIdRef.current = null;
-                              setDragOverRoute(null);
-                            }}
-                            title={isMoved ? `평소 노선: ${naturalRoute?.route_no ?? "?"}호 (오늘만 이동됨 - 드래그해서 되돌릴 수 있어요)` : "드래그해서 다른 노선으로 이동"}
-                            className={
-                              "flex cursor-grab select-none flex-col items-center gap-0.5 rounded-lg border px-2 py-1 text-xs font-semibold active:cursor-grabbing " +
-                              (isAbsent
-                                ? "border-red-300 bg-red-50 text-red-500 line-through"
-                                : isPickup
-                                  ? "border-pink-400 bg-pink-100 text-pink-700"
-                                  : isMoved
-                                    ? "border-amber-400 bg-amber-50 text-amber-700"
-                                    : "border-slate-300 bg-white text-slate-700")
-                            }
-                          >
-                            <span>
-                              {isMoved && "↔ "}
-                              {item.studentName}
-                            </span>
-                            <span className="flex gap-1">
-                              <button
-                                type="button"
-                                onClick={() => setStatus(item, "픽업")}
-                                disabled={busyId === item.assignmentId}
-                                title="픽업(부모님이 직접 데려가심)"
-                                className={
-                                  "rounded px-1 text-[10px] disabled:opacity-40 " +
-                                  (isPickup ? "bg-pink-500 text-white" : "bg-slate-100 text-slate-400 hover:bg-pink-100")
-                                }
-                              >
-                                🚗
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setStatus(item, "결석")}
-                                disabled={busyId === item.assignmentId}
-                                title="결석"
-                                className={
-                                  "rounded px-1 text-[10px] disabled:opacity-40 " +
-                                  (isAbsent ? "bg-red-500 text-white" : "bg-slate-100 text-slate-400 hover:bg-red-100")
-                                }
-                              >
-                                🚫
-                              </button>
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+    <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+      <ShuttleChecklistSidebar
+        roster={roster}
+        initialMessages={initialMessages}
+        changedToday={changedToday}
+        className="print:hidden lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:self-start lg:overflow-y-auto"
+      />
+      <div className="min-w-0 flex-1">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 print:border-black">
+          <span>
+            📅 {new Date().toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric", weekday: "short" })} · 🧒 탑승예정{" "}
+            <span className="text-sm font-bold text-slate-800">{expectedCount}</span>명
+          </span>
+          <button
+            type="button"
+            onClick={() => window.print()}
+            className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 print:hidden"
+          >
+            🖨 인쇄
+          </button>
+        </div>
+        <ShuttleChecklistTable routes={routes} items={items} busyId={busyId} onSetStatus={setStatus} onRequestMove={requestMove} />
+      </div>
+
+      {pendingMove && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 print:hidden">
+          <div className="w-full max-w-sm rounded-xl bg-white p-4 shadow-xl">
+            <p className="mb-1 text-sm font-bold text-slate-800">
+              {pendingMove.studentName} 학생을 {pendingMove.homeRouteNo}호 → {pendingMove.targetRouteNo}호로 옮길까요?
+            </p>
+            <p className="mb-4 text-xs text-slate-500">계속 이 노선을 탈지, 오늘 하루만 옮길지 선택해주세요.</p>
+            <div className="flex flex-col gap-1.5">
+              <button
+                type="button"
+                disabled={movingBusy}
+                onClick={() => confirmMove("permanent")}
+                className="rounded-lg bg-gia-navy px-3 py-2 text-sm font-bold text-white disabled:opacity-50"
+              >
+                계속 유지 (내일부터도 이 노선)
+              </button>
+              <button
+                type="button"
+                disabled={movingBusy}
+                onClick={() => confirmMove("today")}
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-bold text-slate-700 disabled:opacity-50"
+              >
+                오늘만 (내일은 원래대로)
+              </button>
+              <button
+                type="button"
+                disabled={movingBusy}
+                onClick={() => setPendingMove(null)}
+                className="rounded-lg px-3 py-2 text-xs font-semibold text-slate-400 disabled:opacity-50"
+              >
+                취소
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

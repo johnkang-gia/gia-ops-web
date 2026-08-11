@@ -47,21 +47,26 @@ export default async function ShuttleLivePage() {
   const boardLink = boardLinkRes.data as { token: string; label: string } | null;
 
   let stopsData: { id: string; route_id: string; seq: number; stop_time: string | null }[] = [];
-  let assignmentsData: { id: string; stop_id: string; student_name_raw: string; weekdays: number[] }[] = [];
+  let assignmentsData: { id: string; stop_id: string; student_name_raw: string; weekdays: number[]; override_route_id: string | null }[] = [];
   if (routeIds.length > 0) {
     const stopsRes = await supabase.from("shuttle_stops").select("id, route_id, seq, stop_time").in("route_id", routeIds).order("seq");
     stopsData = stopsRes.data ?? [];
     const stopIds = stopsData.map((s) => s.id);
     if (stopIds.length > 0) {
-      const assignRes = await supabase.from("shuttle_assignments").select("id, stop_id, student_name_raw, weekdays").in("stop_id", stopIds);
+      const assignRes = await supabase
+        .from("shuttle_assignments")
+        .select("id, stop_id, student_name_raw, weekdays, override_route_id")
+        .in("stop_id", stopIds);
       assignmentsData = assignRes.data ?? [];
     }
   }
 
   // 오늘 요일(1=월...5=금)에 배정된 학생만 골라 평평한 목록으로 넘깁니다(체크인 화면과 같은
-  // 필터 기준). 어느 노선 카드에 보일지는 클라이언트에서 override_route_id(하원 체크표에서
-  // 오늘 하루만 옮긴 경우)를 폴링해가며 다시 묶습니다 - 요청: "표안에서 아이들의 이름을
-  // 자유롭게 끌어서 이동할 수 있게" 했을 때 이 화면에도 바로 반영되도록.
+  // 필터 기준). routeId는 "영구로 옮긴 노선(shuttle_assignments.override_route_id)이 있으면
+  // 그 노선, 없으면 평소 정류장 노선"입니다 - 어느 노선 카드에 보일지는 여기에 클라이언트에서
+  // 그날 하루만의 override_route_id(하원 체크표에서 오늘만 옮긴 경우)를 폴링해가며 한 번 더
+  // 얹어 다시 묶습니다(요청: "표안에서 아이들의 이름을 자유롭게 끌어서 이동할 수 있게" +
+  // "계속 수정이면 계속 바뀐그대로 고정" 했을 때 이 화면에도 바로 반영되도록).
   const todayWeekday = new Date().getDay();
   const stopById = new Map(stopsData.map((s) => [s.id, s]));
   const allRoster: LiveRosterItem[] = [];
@@ -69,7 +74,8 @@ export default async function ShuttleLivePage() {
     if (!a.weekdays.includes(todayWeekday)) continue;
     const stop = stopById.get(a.stop_id);
     if (!stop) continue;
-    allRoster.push({ assignmentId: a.id, studentName: a.student_name_raw, stopSeq: stop.seq, stopTime: stop.stop_time, routeId: stop.route_id });
+    const permanentRouteId = a.override_route_id && routeIds.includes(a.override_route_id) ? a.override_route_id : stop.route_id;
+    allRoster.push({ assignmentId: a.id, studentName: a.student_name_raw, stopSeq: stop.seq, stopTime: stop.stop_time, routeId: permanentRouteId });
   }
 
   return (

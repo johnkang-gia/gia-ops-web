@@ -48,8 +48,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
   const stopById = new Map((stops ?? []).map((s) => [s.id, s]));
 
   const { data: assignments } = stopIds.length
-    ? await supabase.from("shuttle_assignments").select("id, stop_id, student_name_raw, weekdays").in("stop_id", stopIds)
-    : { data: [] };
+    ? await supabase
+        .from("shuttle_assignments")
+        .select("id, stop_id, student_name_raw, weekdays, override_route_id")
+        .in("stop_id", stopIds)
+    : { data: [] as { id: string; stop_id: string; student_name_raw: string; weekdays: number[]; override_route_id: string | null }[] };
   const relevant = (assignments ?? []).filter((a) => (a.weekdays as number[]).includes(todayWeekday));
   const assignmentIds = relevant.map((a) => a.id);
 
@@ -73,13 +76,16 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
   const routeIdSet = new Set(routeIds);
 
   // 하원 체크표에서 오늘 하루만 다른 노선으로 옮긴 학생은 원래 노선이 아니라 옮겨진 노선의
-  // 명단에 나타납니다(요청: "표안에서 아이들의 이름을 자유롭게 끌어서 이동할 수 있게").
+  // 명단에 나타납니다(요청: "표안에서 아이들의 이름을 자유롭게 끌어서 이동할 수 있게"). 계속
+  // 유지되도록 영구로 옮긴 경우(shuttle_assignments.override_route_id)는 오늘 하루만의 이동이
+  // 없으면 그 노선을 기본값으로 씁니다.
   const rosterByRoute: Record<string, { studentName: string; status: string }[]> = {};
   for (const a of relevant) {
     const stop = stopById.get(a.stop_id);
     if (!stop) continue;
     const boarding = boardingByAssignment.get(a.id);
-    const targetRouteId = boarding?.override_route_id && routeIdSet.has(boarding.override_route_id) ? boarding.override_route_id : stop.route_id;
+    const permanentRouteId = a.override_route_id && routeIdSet.has(a.override_route_id) ? a.override_route_id : stop.route_id;
+    const targetRouteId = boarding?.override_route_id && routeIdSet.has(boarding.override_route_id) ? boarding.override_route_id : permanentRouteId;
     const list = rosterByRoute[targetRouteId] ?? (rosterByRoute[targetRouteId] = []);
     list.push({ studentName: a.student_name_raw, status: boarding?.status ?? "예정" });
   }

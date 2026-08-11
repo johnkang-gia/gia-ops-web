@@ -1,15 +1,22 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 // 요청: "차량 도착출발과 안내보드간에 연동이 너무 느리고" - 폴링 주기를 5초에서 3초로 줄여
 // 다른 교직원 화면·안내보드에 상태가 더 빨리 반영되도록 했습니다.
 const POLL_MS = 3000;
 
+// 요청: "모바일에서 호차 꾹누르면 기사님께 전화하기 메뉴가 떴으면 좋겠어" - 이 시간(ms) 이상
+// 눌러야 "꾹 누름"으로 보고 전화 메뉴를 띄웁니다. 이보다 짧으면 원래대로 도착·출발 상태가
+// 바뀝니다(누르고 있는 동안 상태가 바뀌면 안 되니, 길게 누른 경우는 클릭 동작을 건너뜁니다).
+const LONG_PRESS_MS = 550;
+
 type ArrivalRoute = {
   routeId: string;
   routeNo: string;
   name: string | null;
+  driverName: string | null;
+  driverPhone: string | null;
   roster: string[];
   events: { event: string; created_at: string }[];
 };
@@ -44,6 +51,24 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [busyRoute, setBusyRoute] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
+  const [callSheet, setCallSheet] = useState<{ routeNo: string; driverName: string | null; driverPhone: string | null } | null>(null);
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const suppressClickRef = useRef(false);
+
+  function startLongPress(r: ArrivalRoute) {
+    if (longPressTimer.current) clearTimeout(longPressTimer.current);
+    longPressTimer.current = setTimeout(() => {
+      suppressClickRef.current = true;
+      if (typeof navigator !== "undefined" && "vibrate" in navigator) navigator.vibrate?.(30);
+      setCallSheet({ routeNo: r.routeNo, driverName: r.driverName, driverPhone: r.driverPhone });
+    }, LONG_PRESS_MS);
+  }
+  function cancelLongPress() {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -176,7 +201,17 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
                 }
               >
                 <button
-                  onClick={() => act(r.routeId, status === "waiting" ? "arrive" : status === "arrived" ? "depart" : "reset")}
+                  onClick={() => {
+                    if (suppressClickRef.current) {
+                      suppressClickRef.current = false;
+                      return;
+                    }
+                    act(r.routeId, status === "waiting" ? "arrive" : status === "arrived" ? "depart" : "reset");
+                  }}
+                  onTouchStart={() => startLongPress(r)}
+                  onTouchEnd={cancelLongPress}
+                  onTouchMove={cancelLongPress}
+                  onContextMenu={(e) => e.preventDefault()}
                   disabled={isBusy}
                   className={
                     "flex w-full flex-col items-center gap-0.5 px-0.5 py-1.5 active:scale-95 disabled:opacity-70 " +
@@ -208,6 +243,33 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {callSheet && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center" onClick={() => setCallSheet(null)}>
+          <div className="w-full max-w-xs rounded-t-2xl bg-white p-4 pb-6 shadow-xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+            <p className="mb-3 text-center text-sm font-bold text-slate-800">{callSheet.routeNo}호 {callSheet.driverName ?? ""} 기사님</p>
+            {callSheet.driverPhone ? (
+              <a
+                href={`tel:${callSheet.driverPhone}`}
+                className="block rounded-xl bg-emerald-500 px-3 py-3 text-center text-sm font-bold text-white active:scale-95"
+              >
+                📞 {callSheet.driverPhone} 전화 걸기
+              </a>
+            ) : (
+              <p className="rounded-xl bg-slate-100 px-3 py-3 text-center text-xs font-semibold text-slate-400">
+                등록된 기사님 연락처가 없습니다.
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={() => setCallSheet(null)}
+              className="mt-2 w-full rounded-xl px-3 py-2 text-xs font-semibold text-slate-400"
+            >
+              취소
+            </button>
+          </div>
         </div>
       )}
     </div>

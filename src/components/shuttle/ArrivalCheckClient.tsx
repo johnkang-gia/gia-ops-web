@@ -52,6 +52,7 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [busyRoute, setBusyRoute] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const [callSheet, setCallSheet] = useState<{ routeNo: string; driverName: string | null; driverPhone: string | null } | null>(null);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const suppressClickRef = useRef(false);
@@ -172,13 +173,27 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
           <h1 className="text-base font-black text-slate-800">🚌 차량 도착·출발 체크</h1>
           <p className="mt-0.5 text-[10px] text-slate-400">버튼을 누르면 미도착 → 도착함 → 출발함 → 미도착 순서로 바뀝니다</p>
         </div>
-        <button
-          onClick={resetAll}
-          disabled={resetting || routes.length === 0}
-          className="shrink-0 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-[10px] font-bold text-slate-500 active:scale-95 disabled:opacity-40"
-        >
-          ⟲ 전체 리셋
-        </button>
+        {/* 요청: "전체 리셋을 반으로 잘라서, 전체리셋은 그냥 원 화살표(리셋로고로 많이씀)와
+            물음표로 아이콘만 띄워서 누르면 리셋은 리셋되고, 물음표는 안내하도록" - 글자 버튼
+            대신 절반씩 나눈 아이콘 두 개로 바꿨습니다: 왼쪽은 눌러서 바로 리셋, 오른쪽은
+            사용법 안내 팝업만 띄웁니다. */}
+        <div className="flex shrink-0 overflow-hidden rounded-lg border border-slate-300 bg-white">
+          <button
+            onClick={resetAll}
+            disabled={resetting || routes.length === 0}
+            title="전체 리셋"
+            className="flex h-8 w-8 items-center justify-center border-r border-slate-300 text-base font-bold text-slate-500 active:scale-95 disabled:opacity-40"
+          >
+            ⟲
+          </button>
+          <button
+            onClick={() => setShowHelp(true)}
+            title="사용법 안내"
+            className="flex h-8 w-8 items-center justify-center text-sm font-bold text-slate-500 active:scale-95"
+          >
+            ?
+          </button>
+        </div>
       </div>
 
       {routes.length === 0 ? (
@@ -283,6 +298,27 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
               className="mt-2 w-full rounded-xl px-3 py-2 text-xs font-semibold text-slate-400"
             >
               취소
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showHelp && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setShowHelp(false)}>
+          <div className="w-full max-w-xs rounded-2xl bg-white p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <p className="mb-2 text-sm font-bold text-slate-800">ℹ️ 사용법</p>
+            <ul className="list-disc space-y-1.5 pl-4 text-[11px] leading-relaxed text-slate-600">
+              <li>차량 카드를 누르면 미도착 → 도착함 → 출발함 → 미도착 순서로 바뀝니다.</li>
+              <li>차량 카드를 꾹 누르면 기사님께 바로 전화할 수 있습니다.</li>
+              <li>카드 아래 빨간 뱃지는 아직 안 탄 학생이고, 픽업·결석 학생은 자동으로 빠집니다.</li>
+              <li>⟲를 누르면 오늘 체크한 모든 차량의 도착·출발 상태가 한 번에 초기화됩니다.</li>
+            </ul>
+            <button
+              type="button"
+              onClick={() => setShowHelp(false)}
+              className="mt-3 w-full rounded-xl bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-500"
+            >
+              닫기
             </button>
           </div>
         </div>

@@ -302,6 +302,43 @@ export function guessKoreanName(text: string, category?: AttendanceCategory | nu
   return candidates[0] ?? null;
 }
 
+// ── 형제자매(성 공유) 이름 대조 도우미 ──────────────────────────────────────
+// 요청: "박라온, 박다온 같은 형제자매가 있을 경우 잘 안돼고... 박라온,다온/라온다온과 같이
+// 한쪽만 성을 쓰거나 아니면 둘 다 안 쓰는 경우도 있어 이 경우도 각각 파악해서 각각이름을
+// 대조해서 명단이 올라오도록". 성은 한 글자로 가정하고(대부분의 한국 성이 그렇습니다 - 남궁·
+// 선우 같은 두 글자 성은 이 로직으로는 못 잡습니다) 명부 이름의 첫 글자를 성, 나머지를
+// 이름(given name)으로 나눠 대조에 씁니다.
+function hangulWordSpans(text: string): { word: string; start: number; end: number }[] {
+  const spans: { word: string; start: number; end: number }[] = [];
+  const re = /[가-힣]+/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    spans.push({ word: m[0], start: m.index, end: m.index + m[0].length });
+  }
+  return spans;
+}
+
+function blankSpan(text: string, start: number, end: number): string {
+  return text.slice(0, start) + " ".repeat(end - start) + text.slice(end);
+}
+
+// 토큰이 사전(givenNameIndex)의 이름과 정확히 같거나, 조사 한 글자가 붙은 채로 같으면
+// 매칭합니다(예: "다온이" → "다온"). 사전에 있는 것만 인정하므로, "재이"처럼 우연히 조사로
+// 끝나는 진짜 이름도 사전에 그대로 있으면 먼저 그대로 매칭되어 안전합니다.
+function resolveGivenNameToken(
+  token: string,
+  givenNameIndex: Map<string, RosterStudent[]>
+): { candidates: RosterStudent[] } | null {
+  const exact = givenNameIndex.get(token);
+  if (exact) return { candidates: exact };
+  if (token.length >= 3 && TRAILING_PARTICLES.has(token[token.length - 1])) {
+    const trimmed = token.slice(0, -1);
+    const list = givenNameIndex.get(trimmed);
+    if (list) return { candidates: list };
+  }
+  return null;
+}
+
 // 문장에서 실제 학생 명부에 있는 이름만 골라냅니다.
 //
 // 예전에는 정규식으로 한글 2~4자를 그냥 집어냈는데, 그러면 "정서안만 픽업"에서 "정서안만"이
@@ -314,6 +351,11 @@ export function guessKoreanName(text: string, category?: AttendanceCategory | nu
 //
 // 동명이인: 같은 이름이 명부에 여러 명 있으면 문장의 학년 힌트로 좁히고, 힌트가 없으면 임의로
 // 고르지 않고 ambiguous로 표시해 사람이 확인하게 합니다.
+//
+// 형제자매: 정식 이름 대조가 끝난 뒤, 이미 찾은 학생과 성이 같은 형제자매를 성 없이 이름만
+// 적힌 경우("박라온, 다온")에도 찾고, 성을 아예 안 쓰고 이름끼리 붙여 쓴 경우("라온다온")도
+// 명부 이름 사전으로 둘로 쪼개 찾습니다(요청: "박라온, 박다온 같은 형제자매가 있을 경우...
+// 한쪽만 성을 쓰거나 아니면 둘 다 안 쓰는 경우도 있어 이 경우도 각각 파악해서").
 export function matchRosterStudents(text: string, roster: RosterStudent[]): MatchedStudent[] {
   // 같은 이름을 가진 학생들을 묶어둡니다(동명이인 판정용).
   const byName = new Map<string, RosterStudent[]>();
@@ -363,6 +405,131 @@ export function matchRosterStudents(text: string, roster: RosterStudent[]): Matc
     });
 
     remaining = remaining.slice(0, idx) + " ".repeat(name.length) + remaining.slice(idx + name.length);
+  }
+
+  const foundNames = new Set(found.map((f) => f.name));
+
+  // ── 2단계: 이미 정식 이름으로 찾은 학생(anchor)과 성이 같은 형제자매를, 성 없이 이름만
+  // 적힌 경우에도 찾습니다(예: "박라온, 다온" → "다온"을 "박다온"으로 인식). 이름(성 뗀
+  // 나머지)이 두 글자 이상인 경우만 다룹니다 - 한 글자는 흔한 낱말과 겹쳐 오탐이 너무 많습니다.
+  if (found.length > 0) {
+    const siblingsBySurname = new Map<string, RosterStudent[]>();
+    for (const s of roster) {
+      if (!s.name || s.name.length < 3 || foundNames.has(s.name)) continue;
+      const givenName = s.name.slice(1);
+      if (givenName.length < 2) continue;
+      const arr = siblingsBySurname.get(s.name[0]) ?? [];
+      arr.push(s);
+      siblingsBySurname.set(s.name[0], arr);
+    }
+
+    if (siblingsBySurname.size > 0) {
+      const givenNameIndex = new Map<string, RosterStudent[]>();
+      for (const list of siblingsBySurname.values()) {
+        for (const s of list) {
+          const givenName = s.name.slice(1);
+          const arr = givenNameIndex.get(givenName) ?? [];
+          arr.push(s);
+          givenNameIndex.set(givenName, arr);
+        }
+      }
+
+      for (const anchor of [...found]) {
+        const siblings = siblingsBySurname.get(anchor.name[0]);
+        if (!siblings || siblings.length === 0) continue;
+
+        for (const span of hangulWordSpans(remaining)) {
+          const resolved = resolveGivenNameToken(span.word, givenNameIndex);
+          if (!resolved) continue;
+          const candidates = resolved.candidates.filter((c) => !foundNames.has(c.name));
+          if (candidates.length === 0) continue;
+          // 성이 같은 후보(형제자매일 가능성이 가장 높음)를 우선합니다.
+          const sameSurname = candidates.filter((c) => c.name[0] === anchor.name[0]);
+          const pool = sameSurname.length > 0 ? sameSurname : candidates;
+
+          let picked: RosterStudent;
+          let ambiguous = false;
+          if (pool.length === 1) {
+            picked = pool[0];
+          } else {
+            const hint = normalizeGrade(findGradeHint(remaining, span.start, span.end));
+            const matched = hint ? pool.filter((c) => normalizeGrade(c.grade) === hint) : [];
+            if (matched.length === 1) {
+              picked = matched[0];
+            } else {
+              picked = pool[0];
+              ambiguous = true;
+            }
+          }
+
+          const hasHomonym = pool.length > 1;
+          found.push({
+            name: picked.name,
+            grade: picked.grade,
+            displayName: hasHomonym
+              ? `${picked.name}(${ambiguous ? "학년 확인 필요" : `${normalizeGrade(picked.grade) ?? "?"}학년`})`
+              : picked.name,
+            studentKey: hasHomonym && !ambiguous ? `${picked.name}#${normalizeGrade(picked.grade)}` : picked.name,
+            ambiguous,
+          });
+          foundNames.add(picked.name);
+          remaining = blankSpan(remaining, span.start, span.end);
+        }
+      }
+    }
+  }
+
+  // ── 3단계: 성 없이 형제자매 이름을 붙여 쓴 경우("라온다온")를 다룹니다. 명부의 모든 학생
+  // 이름에서 성을 뗀 나머지(이름)로 사전을 만들어 두 조각으로 쪼개봅니다. 양쪽 조각이 모두
+  // 실제 명부 이름일 때만 인정하므로, 아무 낱말이나 두 학생으로 잘못 읽힐 위험은 낮습니다.
+  // 성이 같은 조합(형제자매)을 우선하고, 그런 조합이 없으면 양쪽 다 명부 전체에서 유일한
+  // 이름일 때만 인정합니다(후보가 여러 명이면 누구인지 특정할 수 없어 건너뜁니다).
+  {
+    const globalGivenNameIndex = new Map<string, RosterStudent[]>();
+    for (const s of roster) {
+      if (!s.name || s.name.length < 3 || foundNames.has(s.name)) continue;
+      const givenName = s.name.slice(1);
+      if (givenName.length < 2) continue;
+      const arr = globalGivenNameIndex.get(givenName) ?? [];
+      arr.push(s);
+      globalGivenNameIndex.set(givenName, arr);
+    }
+
+    if (globalGivenNameIndex.size > 0) {
+      for (const span of hangulWordSpans(remaining)) {
+        const word = span.word;
+        if (word.length < 4) continue; // 최소 두 글자 + 두 글자
+        let matchedPair: RosterStudent[] | null = null;
+        for (let i = 2; i <= word.length - 2; i++) {
+          const leftCandidates = (globalGivenNameIndex.get(word.slice(0, i)) ?? []).filter((c) => !foundNames.has(c.name));
+          const rightCandidates = (globalGivenNameIndex.get(word.slice(i)) ?? []).filter((c) => !foundNames.has(c.name));
+          if (leftCandidates.length === 0 || rightCandidates.length === 0) continue;
+          let pair: RosterStudent[] | null = null;
+          for (const l of leftCandidates) {
+            const r = rightCandidates.find((c) => c.name[0] === l.name[0] && c.name !== l.name);
+            if (r) {
+              pair = [l, r];
+              break;
+            }
+          }
+          if (!pair && leftCandidates.length === 1 && rightCandidates.length === 1) {
+            pair = [leftCandidates[0], rightCandidates[0]];
+          }
+          if (pair) {
+            matchedPair = pair;
+            break;
+          }
+        }
+
+        if (!matchedPair) continue;
+        for (const s of matchedPair) {
+          if (foundNames.has(s.name)) continue;
+          found.push({ name: s.name, grade: s.grade, displayName: s.name, studentKey: s.name, ambiguous: false });
+          foundNames.add(s.name);
+        }
+        remaining = blankSpan(remaining, span.start, span.end);
+      }
+    }
   }
 
   // 한글 이름으로 아무도 못 찾은 경우에만 영어 이름 대조를 시도합니다(한글 문장에 우연히 영어

@@ -17,7 +17,7 @@ type ArrivalRoute = {
   name: string | null;
   driverName: string | null;
   driverPhone: string | null;
-  roster: string[];
+  roster: { studentName: string; status: string }[];
   events: { event: string; created_at: string }[];
 };
 
@@ -188,6 +188,12 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
             const hasDeparted = r.events.some((e) => e.event === "출발");
             const status: "waiting" | "arrived" | "departed" = hasDeparted ? "departed" : hasArrived ? "arrived" : "waiting";
             const isBusy = busyRoute === r.routeId;
+            // 하원 체크표에서 픽업(부모님이 직접 데려가심)·결석으로 체크한 학생은 이 차를 안
+            // 타므로 "미도착 명단"에서 뺍니다(요청: "결석이나, 픽업을 체크하면 실시간으로 교직원
+            // 차량 도착 출발체크에 반영이 되고" - 안내보드와 같은 필터링 방식).
+            const waiting = r.roster.filter((s) => s.status !== "탑승" && s.status !== "픽업" && s.status !== "결석");
+            const pickedUpCount = r.roster.filter((s) => s.status === "픽업").length;
+            const absentCount = r.roster.filter((s) => s.status === "결석").length;
             return (
               <div
                 key={r.routeId}
@@ -228,16 +234,23 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
                     {status === "waiting" ? "미도착" : status === "arrived" ? "도착함" : "출발함"}
                   </span>
                 </button>
-                {r.roster.length > 0 && (
+                {(waiting.length > 0 || pickedUpCount > 0 || absentCount > 0) && (
                   <div className="flex flex-wrap gap-0.5 bg-slate-50 p-1">
-                    {r.roster.map((name, i) => (
+                    {waiting.map((s, i) => (
                       <span
                         key={i}
                         className="rounded border border-red-300 bg-red-50 px-1 py-0.5 text-[8px] font-semibold leading-none text-red-600"
                       >
-                        {name}
+                        {s.studentName}
                       </span>
                     ))}
+                    {(pickedUpCount > 0 || absentCount > 0) && (
+                      <span className="px-0.5 py-0.5 text-[7px] font-semibold leading-none text-slate-400">
+                        {pickedUpCount > 0 && <>픽업 {pickedUpCount}</>}
+                        {pickedUpCount > 0 && absentCount > 0 && " · "}
+                        {absentCount > 0 && <>결석 {absentCount}</>}
+                      </span>
+                    )}
                   </div>
                 )}
               </div>

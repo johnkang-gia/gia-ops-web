@@ -71,24 +71,27 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
   // 하원 체크표에서 오늘 하루만 다른 노선으로 옮긴 학생은 그 노선 명단에 나타납니다(요청:
   // "표안에서 아이들의 이름을 자유롭게 끌어서 이동할 수 있게"). 계속 유지되도록 영구로 옮긴
   // 경우(shuttle_assignments.override_route_id)는 오늘 하루만의 이동이 없으면 그 노선을 씁니다.
-  const { data: overrides } = assignmentIds.length
+  // status도 함께 가져와서 픽업·결석 학생은 명단에서 뺍니다(요청: "결석이나 픽업을 체크하면
+  // 실시간으로 교직원 차량 도착 출발체크에 반영이 되고" - 안내보드(shuttle-board)와 같은
+  // 방식으로 shuttle_boardings.status를 조회합니다).
+  const { data: boardings } = assignmentIds.length
     ? await supabase
         .from("shuttle_boardings")
-        .select("assignment_id, override_route_id")
+        .select("assignment_id, status, override_route_id")
         .eq("service_date", today)
         .in("assignment_id", assignmentIds)
-    : { data: [] as { assignment_id: string; override_route_id: string | null }[] };
-  const overrideByAssignment = new Map((overrides ?? []).map((o) => [o.assignment_id, o.override_route_id]));
+    : { data: [] as { assignment_id: string; status: string; override_route_id: string | null }[] };
+  const boardingByAssignment = new Map((boardings ?? []).map((b) => [b.assignment_id, b]));
   const routeIdSet = new Set(routeIds);
 
-  const rosterByRoute: Record<string, string[]> = {};
+  const rosterByRoute: Record<string, { studentName: string; status: string }[]> = {};
   for (const a of relevant) {
     const stop = stopById.get(a.stop_id);
     if (!stop) continue;
-    const todayOverride = overrideByAssignment.get(a.id);
+    const boarding = boardingByAssignment.get(a.id);
     const permanentRouteId = a.override_route_id && routeIdSet.has(a.override_route_id) ? a.override_route_id : stop.route_id;
-    const targetRouteId = todayOverride && routeIdSet.has(todayOverride) ? todayOverride : permanentRouteId;
-    (rosterByRoute[targetRouteId] ??= []).push(a.student_name_raw);
+    const targetRouteId = boarding?.override_route_id && routeIdSet.has(boarding.override_route_id) ? boarding.override_route_id : permanentRouteId;
+    (rosterByRoute[targetRouteId] ??= []).push({ studentName: a.student_name_raw, status: boarding?.status ?? "예정" });
   }
 
   const eventsByRoute: Record<string, { event: string; created_at: string }[]> = {};
@@ -102,7 +105,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
     name: r.name,
     driverName: r.driver_name,
     driverPhone: r.driver_phone,
-    roster: (rosterByRoute[r.id] ?? []).sort((a, b) => a.localeCompare(b, "ko")),
+    roster: (rosterByRoute[r.id] ?? []).sort((a, b) => a.studentName.localeCompare(b.studentName, "ko")),
     events: eventsByRoute[r.id] ?? [],
   }));
 

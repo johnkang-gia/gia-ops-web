@@ -384,14 +384,26 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
 
   if (errorMsg && !data) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-900 text-center text-white">
-        <p className="text-2xl font-bold">{errorMsg}</p>
+      <div
+        className="flex min-h-screen items-center justify-center bg-slate-900 text-center text-white"
+        style={{ backgroundColor: "#0f172a", color: "#ffffff", display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh" }}
+      >
+        <p className="text-2xl font-bold" style={{ fontSize: 24, fontWeight: 700 }}>
+          {errorMsg}
+        </p>
       </div>
     );
   }
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-slate-900 text-white lg:flex-row">
+    // 요청: "전자칠판 내부 브라우저로 안내보드를 여니까 글만 나오고 적용이 안돼" - 전자칠판
+    // 내장 브라우저는 흔히 아주 오래된 엔진이라 Tailwind가 쓰는 최신 CSS 문법(색상 함수 등)을
+    // 못 읽는 경우가 있습니다. 안내보드는 화면 앞에 아무도 관리자가 없는 "그냥 켜두는" 용도라
+    // 스타일이 아예 안 먹으면 무슨 차가 왔는지조차 알아볼 수 없으므로, 이 화면의 핵심
+    // 요소(배경·카드·글자색)에는 className과 별개로 순수 인라인 style도 같이 넣었습니다.
+    // 인라인 style은 어떤 브라우저든 항상 그대로 읽으므로, 외부 스타일시트가 전혀 안 먹는
+    // 아주 오래된 브라우저에서도 최소한 글자 크기·배경·강조색은 보이게 하는 안전장치입니다.
+    <div className="flex h-screen flex-col overflow-hidden bg-slate-900 text-white lg:flex-row" style={{ backgroundColor: "#0f172a", color: "#ffffff" }}>
       <style>{`
         @keyframes gia-card-in {
           0% { transform: translateX(-110%); opacity: 0; }
@@ -419,13 +431,19 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
         .gia-names-in { animation: gia-names-in 0.5s ease-out 0.15s both; }
       `}</style>
       {!soundEnabled && (
-        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-slate-950/95 p-6 text-center text-white">
+        <div
+          className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-slate-950/95 p-6 text-center text-white"
+          style={{ backgroundColor: "rgba(2,6,23,0.95)", color: "#ffffff" }}
+        >
           <p className="text-4xl">🔔</p>
           <p className="text-xl font-bold">화면을 눌러 안내보드를 시작해주세요</p>
-          <p className="text-sm text-slate-400">차량 도착 알람 소리를 켜기 위한 절차입니다 (한 번만 눌러주세요)</p>
+          <p className="text-sm text-slate-400" style={{ color: "#94a3b8" }}>
+            차량 도착 알람 소리를 켜기 위한 절차입니다 (한 번만 눌러주세요)
+          </p>
           <button
             onClick={enableSound}
             className="rounded-2xl bg-blue-600 px-8 py-4 text-lg font-black active:scale-95"
+            style={{ backgroundColor: "#2563eb", color: "#ffffff", border: "none" }}
           >
             🔊 소리 켜고 시작하기
           </button>
@@ -524,9 +542,15 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
 
       <div
         className="flex w-full min-h-0 flex-col gap-3 overflow-y-auto bg-slate-950 p-4 lg:h-full lg:w-auto lg:p-5"
-        style={isRowLayout ? { width: panelWidth, flexShrink: 0 } : { height: panelHeight, flexShrink: 0 }}
+        style={{
+          backgroundColor: "#020617",
+          padding: 16,
+          ...(isRowLayout ? { width: panelWidth, flexShrink: 0 } : { height: panelHeight, flexShrink: 0 }),
+        }}
       >
-        <p className="text-lg font-black text-amber-300">🚌 지금 도착한 차량</p>
+        <p className="text-lg font-black text-amber-300" style={{ color: "#fcd34d", fontSize: 20, fontWeight: 900 }}>
+          🚌 지금 도착한 차량
+        </p>
 
         {/* 요청: "도착하고 출발 애니메이션은 전체화면보다, 지금도착한 차량페이지에서만
             이루어지도록 해줘" - 화면 전체가 아니라 이 패널 폭 안에서만 버스가 지나갑니다. */}
@@ -542,7 +566,9 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
         )}
 
         {displayRoutes.length === 0 ? (
-          <p className="py-6 text-center text-sm text-slate-500">아직 도착한 차량이 없습니다</p>
+          <p className="py-6 text-center text-sm text-slate-500" style={{ color: "#64748b", textAlign: "center" }}>
+            아직 도착한 차량이 없습니다
+          </p>
         ) : (
           displayRoutes.map((route) => {
             const isDeparting = justDeparted.has(route.routeId);
@@ -555,11 +581,14 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
                 <div
                   key={route.routeId}
                   className="gia-bus-out-card rounded-xl border-2 border-emerald-500 bg-emerald-500/10 p-3"
+                  style={{ border: "2px solid #10b981", backgroundColor: "rgba(16,185,129,0.1)", borderRadius: 12, padding: 12 }}
                 >
-                  <p className="flex items-center gap-2 text-2xl font-black text-emerald-300">
+                  <p className="flex items-center gap-2 text-2xl font-black text-emerald-300" style={{ color: "#6ee7b7", fontSize: 24, fontWeight: 900 }}>
                     🚌💨 {route.routeNo}호차 {route.name ?? ""}
                   </p>
-                  <p className="text-base font-bold text-emerald-400">✅ 출발했습니다 - 다음에 만나요!</p>
+                  <p className="text-base font-bold text-emerald-400" style={{ color: "#34d399", fontWeight: 700 }}>
+                    ✅ 출발했습니다 - 다음에 만나요!
+                  </p>
                 </div>
               );
             }
@@ -578,25 +607,38 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
                   "rounded-xl border-2 p-3 transition-colors " +
                   (isNew ? "gia-card-in border-amber-300 bg-amber-500/20" : "border-slate-700 bg-slate-800")
                 }
+                style={{
+                  borderRadius: 12,
+                  padding: 12,
+                  border: isNew ? "2px solid #fcd34d" : "2px solid #334155",
+                  backgroundColor: isNew ? "rgba(245,158,11,0.2)" : "#1e293b",
+                }}
               >
-                <div className="mb-1 flex items-center justify-between">
-                  <p className="flex items-center gap-2 text-2xl font-black text-amber-300">
+                <div className="mb-1 flex items-center justify-between" style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                  <p className="flex items-center gap-2 text-2xl font-black text-amber-300" style={{ color: "#fcd34d", fontSize: 24, fontWeight: 900 }}>
                     {isNew && <span className="inline-block">🚌</span>}
                     {route.routeNo}호차 {route.name ?? ""}
                   </p>
-                  <p className="text-xs text-slate-400">{fmtTime(arrivedEvent.created_at)} 도착</p>
+                  <p className="text-xs text-slate-400" style={{ color: "#94a3b8", fontSize: 12 }}>
+                    {fmtTime(arrivedEvent.created_at)} 도착
+                  </p>
                 </div>
                 {waiting.length === 0 ? (
-                  <p className="text-base font-bold text-emerald-400">✅ 전원 탑승 완료</p>
+                  <p className="text-base font-bold text-emerald-400" style={{ color: "#34d399", fontWeight: 700 }}>
+                    ✅ 전원 탑승 완료
+                  </p>
                 ) : (
-                  <p className={"flex flex-wrap gap-2 text-lg font-bold leading-snug " + (isNew ? "gia-names-in" : "")}>
+                  <p
+                    className={"flex flex-wrap gap-2 text-lg font-bold leading-snug " + (isNew ? "gia-names-in" : "")}
+                    style={{ display: "flex", flexWrap: "wrap", gap: 8, fontSize: 18, fontWeight: 700, color: "#ffffff" }}
+                  >
                     {waiting.map((r, i) => (
                       <span key={i}>{r.studentName}</span>
                     ))}
                   </p>
                 )}
                 {(boarded.length > 0 || pickedUp.length > 0) && (
-                  <p className="mt-1 text-[11px] text-slate-500">
+                  <p className="mt-1 text-[11px] text-slate-500" style={{ marginTop: 4, fontSize: 11, color: "#64748b" }}>
                     {boarded.length > 0 && <>탑승완료 {boarded.length}명 </>}
                     {pickedUp.length > 0 && <>· 픽업 {pickedUp.length}명</>}
                   </p>

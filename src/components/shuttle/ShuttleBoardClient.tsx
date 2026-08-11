@@ -332,23 +332,26 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
   // 요청: "도착한 차량을 정렬하기보다는 도착누른 순서대로 위쪽에서 아래로 배치... 시간으로
   // 정렬해줘" - 호차 번호 순서가 아니라, 먼저 도착한 차가 위쪽에 오도록 도착 시각 순으로
   // 정렬합니다(어떤 차가 오래 기다리고 있는지 한눈에 보이도록).
-  const boardingRoutes = useMemo(() => {
+  //
+  // 요청: "셔틀이 출발할때는 정렬이 되고 출발하는게 아니라 그자리에서 그대로 출발할 수 있도록
+  // 해줘... 그중에서 빠지는 차량은 거기에서 그대로 출발하도록" - 예전에는 출발한 차량을 목록
+  // 맨 아래로 옮겨서 따로 그렸는데, 그러면 출발 직전에 순서가 훌쩍 바뀌는 것처럼 보였습니다.
+  // 이제는 도착~출발(애니메이션 끝) 전까지 하나의 목록·하나의 정렬 기준(도착 시각)으로 함께
+  // 관리해서, 출발하는 차량이 원래 있던 자리에서 그대로 슬라이드아웃됩니다.
+  const displayRoutes = useMemo(() => {
     if (!data) return [];
     return data.routes
-      .filter((r) => r.events.some((e) => e.event === "현장도착") && !r.events.some((e) => e.event === "출발") && revealedIds.has(r.routeId))
+      .filter((r) => {
+        if (!revealedIds.has(r.routeId)) return false;
+        if (justDeparted.has(r.routeId)) return true; // 출발 애니메이션 재생 중 - 자리 유지
+        return r.events.some((e) => e.event === "현장도착") && !r.events.some((e) => e.event === "출발");
+      })
       .sort((a, b) => {
         const at = a.events.find((e) => e.event === "현장도착")?.created_at ?? "";
         const bt = b.events.find((e) => e.event === "현장도착")?.created_at ?? "";
         return at.localeCompare(bt);
       });
-  }, [data, revealedIds]);
-
-  // 방금 '출발'이 찍힌 노선은 boardingRoutes에서는 바로 빠지지만, 잠깐(4초) 떠나는 애니메이션을
-  // 보여주기 위해 원본 데이터에서 다시 찾아 별도로 렌더링합니다.
-  const departingRoutes = useMemo(() => {
-    if (!data) return [];
-    return data.routes.filter((r) => justDeparted.has(r.routeId)).sort((a, b) => natCompare(a.routeNo, b.routeNo));
-  }, [data, justDeparted]);
+  }, [data, revealedIds, justDeparted]);
 
   const embedSrc = youtubeEmbedSrc(manualVideoId ?? data?.youtubeVideoId);
 
@@ -538,66 +541,69 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
           </div>
         )}
 
-        {boardingRoutes.length === 0 && departingRoutes.length === 0 ? (
+        {displayRoutes.length === 0 ? (
           <p className="py-6 text-center text-sm text-slate-500">아직 도착한 차량이 없습니다</p>
         ) : (
-          <>
-            {boardingRoutes.map((route) => {
-              const arrivedEvent = route.events.find((e) => e.event === "현장도착")!;
-              // 픽업(부모님이 직접 데려가심)·결석 학생은 셔틀을 안 타므로 "아직 안 탄 아이"
-              // 목록에서 빠집니다(요청: "픽업으로 전환하면 바로 실시간 셔틀 판에 반영되도록").
-              const waiting = route.roster.filter((r) => r.status !== "탑승" && r.status !== "픽업" && r.status !== "결석");
-              const boarded = route.roster.filter((r) => r.status === "탑승");
-              const pickedUp = route.roster.filter((r) => r.status === "픽업");
-              const isNew = justArrived.has(route.routeId);
+          displayRoutes.map((route) => {
+            const isDeparting = justDeparted.has(route.routeId);
+
+            // 요청: "다타고 떠나면 떠나는 애니메이션 넣어주고" - 출발 이벤트가 막 찍힌 노선은
+            // 목록 맨 아래로 옮기지 않고, 도착 시각 순 자리 그대로에서 오른쪽으로 미끄러지며
+            // 사라집니다(약 4초).
+            if (isDeparting) {
               return (
                 <div
                   key={route.routeId}
-                  className={
-                    "rounded-xl border-2 p-3 transition-colors " +
-                    (isNew ? "gia-card-in border-amber-300 bg-amber-500/20" : "border-slate-700 bg-slate-800")
-                  }
+                  className="gia-bus-out-card rounded-xl border-2 border-emerald-500 bg-emerald-500/10 p-3"
                 >
-                  <div className="mb-1 flex items-center justify-between">
-                    <p className="flex items-center gap-2 text-2xl font-black text-amber-300">
-                      {isNew && <span className="inline-block">🚌</span>}
-                      {route.routeNo}호차 {route.name ?? ""}
-                    </p>
-                    <p className="text-xs text-slate-400">{fmtTime(arrivedEvent.created_at)} 도착</p>
-                  </div>
-                  {waiting.length === 0 ? (
-                    <p className="text-base font-bold text-emerald-400">✅ 전원 탑승 완료</p>
-                  ) : (
-                    <p className={"flex flex-wrap gap-2 text-lg font-bold leading-snug " + (isNew ? "gia-names-in" : "")}>
-                      {waiting.map((r, i) => (
-                        <span key={i}>{r.studentName}</span>
-                      ))}
-                    </p>
-                  )}
-                  {(boarded.length > 0 || pickedUp.length > 0) && (
-                    <p className="mt-1 text-[11px] text-slate-500">
-                      {boarded.length > 0 && <>탑승완료 {boarded.length}명 </>}
-                      {pickedUp.length > 0 && <>· 픽업 {pickedUp.length}명</>}
-                    </p>
-                  )}
+                  <p className="flex items-center gap-2 text-2xl font-black text-emerald-300">
+                    🚌💨 {route.routeNo}호차 {route.name ?? ""}
+                  </p>
+                  <p className="text-base font-bold text-emerald-400">✅ 출발했습니다 - 다음에 만나요!</p>
                 </div>
               );
-            })}
+            }
 
-            {/* 요청: "다타고 떠나면 떠나는 애니메이션 넣어주고" - 출발 이벤트가 막 찍힌 노선을
-                잠깐(약 4초) 더 보여주며 오른쪽으로 미끄러지듯 사라지게 합니다. */}
-            {departingRoutes.map((route) => (
+            const arrivedEvent = route.events.find((e) => e.event === "현장도착")!;
+            // 픽업(부모님이 직접 데려가심)·결석 학생은 셔틀을 안 타므로 "아직 안 탄 아이"
+            // 목록에서 빠집니다(요청: "픽업으로 전환하면 바로 실시간 셔틀 판에 반영되도록").
+            const waiting = route.roster.filter((r) => r.status !== "탑승" && r.status !== "픽업" && r.status !== "결석");
+            const boarded = route.roster.filter((r) => r.status === "탑승");
+            const pickedUp = route.roster.filter((r) => r.status === "픽업");
+            const isNew = justArrived.has(route.routeId);
+            return (
               <div
-                key={"departing-" + route.routeId}
-                className="gia-bus-out-card rounded-xl border-2 border-emerald-500 bg-emerald-500/10 p-3"
+                key={route.routeId}
+                className={
+                  "rounded-xl border-2 p-3 transition-colors " +
+                  (isNew ? "gia-card-in border-amber-300 bg-amber-500/20" : "border-slate-700 bg-slate-800")
+                }
               >
-                <p className="flex items-center gap-2 text-2xl font-black text-emerald-300">
-                  🚌💨 {route.routeNo}호차 {route.name ?? ""}
-                </p>
-                <p className="text-base font-bold text-emerald-400">✅ 출발했습니다 - 다음에 만나요!</p>
+                <div className="mb-1 flex items-center justify-between">
+                  <p className="flex items-center gap-2 text-2xl font-black text-amber-300">
+                    {isNew && <span className="inline-block">🚌</span>}
+                    {route.routeNo}호차 {route.name ?? ""}
+                  </p>
+                  <p className="text-xs text-slate-400">{fmtTime(arrivedEvent.created_at)} 도착</p>
+                </div>
+                {waiting.length === 0 ? (
+                  <p className="text-base font-bold text-emerald-400">✅ 전원 탑승 완료</p>
+                ) : (
+                  <p className={"flex flex-wrap gap-2 text-lg font-bold leading-snug " + (isNew ? "gia-names-in" : "")}>
+                    {waiting.map((r, i) => (
+                      <span key={i}>{r.studentName}</span>
+                    ))}
+                  </p>
+                )}
+                {(boarded.length > 0 || pickedUp.length > 0) && (
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    {boarded.length > 0 && <>탑승완료 {boarded.length}명 </>}
+                    {pickedUp.length > 0 && <>· 픽업 {pickedUp.length}명</>}
+                  </p>
+                )}
               </div>
-            ))}
-          </>
+            );
+          })
         )}
       </div>
     </div>

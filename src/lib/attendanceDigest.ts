@@ -212,11 +212,11 @@ function findEnglishNameCandidates(text: string): string[] {
 }
 
 // 원문 미리보기에서 구글챗 멘션("@이름")을 걷어냅니다. "@"로 시작하는 토큰은 태그이지 학생
-// 이름이 아니므로(요청), 명부 대조에 실패해 원문을 그대로 보여줘야 할 때도 이 부분은 뺍니다.
+// 이름이 아니므로(요청). 처음에는 문장 맨 앞에 붙은 멘션만 지웠는데, "@쌤 확인 부탁드려요
+// 정서안 결석입니다"처럼 멘션이 문장 중간에도 섞여 나오는 경우가 있어(요청: "결석에 @
+// 또 나왔다"), 위치에 상관없이 문장 안의 모든 "@토큰"을 지우도록 넓혔습니다.
 export function stripLeadingMention(text: string): string {
-  const m = text.match(/^(\s*@\S+)+\s*/);
-  if (!m) return text;
-  const rest = text.slice(m[0].length).trim();
+  const rest = text.replace(/@\S+/g, " ").replace(/\s+/g, " ").trim();
   return rest || text;
 }
 
@@ -229,22 +229,77 @@ const NON_NAME_WORDS = new Set([
   "합니다", "입니다", "안녕하세요", "죄송합니다", "감사합니다", "부탁드립니다", "부탁드려요",
   "오전", "오후", "지금", "확인", "안내", "말씀", "학년", "우리", "관련", "때문", "그리고",
   "다름", "아이", "친구", "학교", "차량", "버스", "셔틀", "동생", "학원", "연락", "번호",
+  "문의", "부탁", "안녕", "감사",
   ...ATTENDANCE_CATEGORIES.flatMap((c) => c.keywords.filter((k) => /[가-힣]/.test(k))),
 ]);
 
-// 명부 대조(matchRosterStudents)가 실패했을 때 마지막으로 시도하는 추정입니다. 원문에서
-// 한글 2~4자 토큰을 순서대로 훑어, 위 흔한 단어 목록에 없는 첫 토큰을 "이름일 가능성이 가장
-// 높은 후보"로 돌려줍니다. 완벽하지 않지만(오탈자·전학생 등은 여전히 놓칠 수 있음), 문장을
-// 아무 데서나 잘라 보여주는 것보다는 실제 이름일 확률이 훨씬 높습니다.
-export function guessKoreanName(text: string): string | null {
-  const stripped = stripLeadingMention(text);
-  const tokens = stripped.match(/[가-힣]{2,4}/g);
-  if (!tokens) return null;
-  for (const t of tokens) {
-    if (NON_NAME_WORDS.has(t)) continue;
-    return t;
+// 토큰이 흔한 단어(위 목록)에서 시작하는지도 봅니다 - "선생님께", "결석입니다"처럼 흔한 단어
+// 뒤에 조사·어미가 붙어 정확히 같은 글자로는 안 걸리는 경우가 많아서(요청: "저거같은 경우
+// 글을 해석해서 이름을 따오게 할 수 있어?"), 완전히 같을 때만 거르던 것보다 훨씬 잘 걸러집니다.
+function looksLikeNonName(token: string): boolean {
+  for (const w of NON_NAME_WORDS) {
+    if (token === w || token.startsWith(w)) return true;
   }
-  return null;
+  return false;
+}
+
+// 이름 뒤에 흔히 붙는 조사 한 글자입니다("정서안은" → "정서안"). 4글자 낱말에만 적용합니다 -
+// 2~3글자 낱말은 "김재이"처럼 조사와 똑같은 글자(이/가 등)로 끝나는 진짜 이름이 실제로 있어서,
+// 함부로 떼면 오히려 이름이 망가집니다. 4글자는 "이름(2~3자)+조사(1자)" 조합일 가능성이
+// 훨씬 높아 비교적 안전합니다.
+const TRAILING_PARTICLES = new Set(["은", "는", "이", "가", "을", "를", "도", "만", "과", "와", "의", "께"]);
+
+function trimTrailingParticle(word: string): string {
+  if (word.length !== 4) return word;
+  const last = word[word.length - 1];
+  return TRAILING_PARTICLES.has(last) ? word.slice(0, -1) : word;
+}
+
+// 문장에서 "이름일 법한 한글 낱말" 후보를 순서대로 뽑습니다. 예전에는 한글 2~4자를 그냥
+// 정해진 길이로 잘라냈는데, 그러면 "문의드립니다"의 중간 토막인 "니다"가 이름처럼 남는 등
+// 낱말 경계를 무시한 문제가 있었습니다. 이제는 공백·문장부호 등 한글이 아닌 글자를 기준으로
+// 먼저 진짜 낱말 단위로 나눈 뒤, 그중 이름 길이(2~4자)에 맞고 흔한 단어가 아닌 것만 후보로
+// 남깁니다.
+function extractNameCandidates(text: string): string[] {
+  const words = text.split(/[^가-힣]+/).filter(Boolean);
+  const out: string[] = [];
+  for (const w of words) {
+    const trimmed = trimTrailingParticle(w);
+    if (trimmed.length < 2 || trimmed.length > 4) continue;
+    if (looksLikeNonName(trimmed)) continue;
+    out.push(trimmed);
+  }
+  return out;
+}
+
+// 명부 대조(matchRosterStudents)가 실패했을 때 마지막으로 시도하는 추정입니다. "정서안
+// 결석입니다"처럼 이름은 대개 결석/픽업 같은 출결 키워드 바로 앞에 오므로, 어떤 분류로
+// 잡혔는지(category) 알고 있으면 그 키워드 바로 앞 구간에서 먼저 후보를 찾습니다 - 문장
+// 앞쪽에 섞인 다른 한글 단어("확인 부탁드려요")를 이름으로 잘못 고르는 일을 줄여줍니다
+// (요청: "저거같은 경우 글을 해석해서 이름을 따오게 할 수 있어?"). 키워드 근처에서 못 찾으면
+// 문장 전체에서 낱말을 순서대로 훑어 첫 후보를 씁니다. 완벽하지 않지만(오탈자·전학생 등은
+// 여전히 놓칠 수 있음), 문장을 아무 데서나 잘라 보여주는 것보다는 실제 이름일 확률이 훨씬
+// 높습니다.
+export function guessKoreanName(text: string, category?: AttendanceCategory | null): string | null {
+  const stripped = stripLeadingMention(text);
+
+  if (category) {
+    const cat = ATTENDANCE_CATEGORIES.find((c) => c.key === category);
+    if (cat) {
+      const lower = stripped.toLowerCase();
+      for (const kw of cat.keywords) {
+        const idx = lower.indexOf(kw.toLowerCase());
+        if (idx === -1) continue;
+        const before = stripped.slice(Math.max(0, idx - 12), idx);
+        const nearCandidates = extractNameCandidates(before);
+        // 키워드에 가장 가까운(=배열 맨 뒤) 낱말을 우선합니다.
+        if (nearCandidates.length > 0) return nearCandidates[nearCandidates.length - 1];
+      }
+    }
+  }
+
+  const candidates = extractNameCandidates(stripped);
+  return candidates[0] ?? null;
 }
 
 // 문장에서 실제 학생 명부에 있는 이름만 골라냅니다.

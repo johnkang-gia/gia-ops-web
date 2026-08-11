@@ -172,7 +172,7 @@ export default function AttendanceDigestPanel({
         // 법한 한글 단어를 추정해보고(guessKoreanName), 그마저 없을 때만 원문 앞부분을 씁니다.
         // "@멘션"은 태그일 뿐 학생 이름이 아니므로 둘 다 건너뜁니다.
         const stripped = stripLeadingMention(m.content);
-        const guess = guessKoreanName(m.content) ?? stripped.slice(0, 12);
+        const guess = guessKoreanName(m.content, category) ?? stripped.slice(0, 12);
         out.push({
           key: `chat-${m.id}-raw`,
           category,

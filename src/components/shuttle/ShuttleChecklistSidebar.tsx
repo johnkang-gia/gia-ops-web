@@ -106,7 +106,7 @@ export default function ShuttleChecklistSidebar({
       if (targetDate !== today) continue;
       const students = matchRosterStudents(m.content, roster);
       if (students.length === 0) {
-        const guess = guessKoreanName(m.content) ?? stripLeadingMention(m.content).slice(0, 12);
+        const guess = guessKoreanName(m.content, category) ?? stripLeadingMention(m.content).slice(0, 12);
         out.push({
           key: `sc-${m.id}-raw`,
           category,

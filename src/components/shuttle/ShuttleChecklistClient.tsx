@@ -289,6 +289,7 @@ export default function ShuttleChecklistClient({
         changedToday={changedToday}
         specialNotes={specialNotes}
         className="print:hidden lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:self-start lg:overflow-y-auto"
+        onSelectStudentName={setSearchTerm}
       />
       <div className="min-w-0 flex-1">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 print:border-black">

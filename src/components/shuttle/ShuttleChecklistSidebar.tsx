@@ -47,6 +47,7 @@ export default function ShuttleChecklistSidebar({
   specialNotes = [],
   department = "초등부",
   className = "",
+  onSelectStudentName,
 }: {
   roster: RosterStudent[];
   initialMessages: GoogleChatMirrorMessage[];
@@ -54,6 +55,10 @@ export default function ShuttleChecklistSidebar({
   specialNotes?: SpecialNoteEntry[];
   department?: string;
   className?: string;
+  // 이름을 누르면 오른쪽 체크표에서 같은 이름을 바로 찾아 하이라이트합니다(요청: "왼쪽
+  // 위젯에 이름을 누르면 체크표에 있는 같은 이름으로 자동으로 이동하도록... 빠르게 체크할
+  // 수 있도록"). 검색창에 입력한 것과 똑같은 방식이라, 여기서는 검색어만 채워주면 됩니다.
+  onSelectStudentName?: (name: string) => void;
 }) {
   const [messages, setMessages] = useState(initialMessages);
   const [memoContent, setMemoContent] = useState<string | null>(null);
@@ -174,15 +179,20 @@ export default function ShuttleChecklistSidebar({
         : tone === "blue"
           ? "bg-blue-50 text-blue-600"
           : "bg-red-50 text-red-600";
+    // 동명이인 표시("김재이(2학년)")나 영어이름 병기("김재이(Jane)")가 붙어 있으면 체크표의
+    // 원본 이름(student_name_raw)과 안 맞을 수 있어, 괄호 앞부분만 검색어로 씁니다.
+    const coreName = e.studentName.replace(/\(.*$/, "").trim() || e.studentName;
     return (
-      <span
+      <button
         key={e.key}
-        className={"rounded-full px-1.5 py-0.5 text-[10px] font-semibold " + toneClass}
-        title={e.unmatched ? "명부와 대조되지 않아 추정한 이름입니다" : e.rawText}
+        type="button"
+        onClick={() => onSelectStudentName?.(coreName)}
+        className={"rounded-full px-1.5 py-0.5 text-[10px] font-semibold transition hover:ring-2 hover:ring-offset-1 " + toneClass}
+        title={(e.unmatched ? "명부와 대조되지 않아 추정한 이름입니다" : e.rawText) + " · 누르면 체크표에서 찾습니다"}
       >
         {e.unmatched ? "🔎 " : e.ambiguous ? "⚠️ " : ""}
         {e.studentName}
-      </span>
+      </button>
     );
   }
 

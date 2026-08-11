@@ -878,6 +878,10 @@ export type ShuttleBoardLink = {
   id: string;
   label: string;
   token: string;
+  // 요청: "주소가 너무 복잡해서... 짧은 주소로 만들어줘" - 공용컴퓨터 주소창에 바로 입력할 수
+  // 있는 짧은 코드입니다(/b/[short_code]로 접속하면 이 안내보드로 자동 연결됩니다). null이면
+  // 아직 짧은 주소가 없는(예전에 만든) 링크입니다.
+  short_code: string | null;
   youtube_video_id: string | null;
   term: "정규학기" | "여름캠프2";
   enabled: boolean;

@@ -3870,3 +3870,10 @@ alter table shuttle_arrival_links add constraint shuttle_arrival_links_term_chec
 -- 하루만 다른 노선을 타는 경우를 shuttle_boardings(하루치 기록 테이블)에 얹어서 표시합니다.
 -- null이면 평소 배정된 노선 그대로, 값이 있으면 그날은 이 노선 명단에 대신 나타납니다.
 alter table shuttle_boardings add column if not exists override_route_id uuid references shuttle_routes(id) on delete set null;
+
+-- ===== 90. 안내보드 짧은 주소(short code) =====
+-- 요청: "주소가 너무 복잡해서 바로 주소를 공용컴퓨터 주소창에 치는게 어려워... 짧은 주소로
+-- 만들어줘". 기존 토큰(uuid) 링크는 그대로 유지하면서, 짧고 외우기 쉬운 코드(예: "b3k9")로도
+-- 같은 안내보드에 접속할 수 있도록 /b/[code] 리다이렉트 경로를 추가합니다.
+alter table shuttle_board_links add column if not exists short_code text;
+create unique index if not exists shuttle_board_links_short_code_idx on shuttle_board_links(short_code) where short_code is not null;

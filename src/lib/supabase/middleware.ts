@@ -78,7 +78,10 @@ export async function updateSession(request: NextRequest) {
     // 개인 계정 로그인 없이 링크(토큰) 하나로 접속합니다(요청: "교직원이 모바일로 도착한 차량
     // 누를 수 있는 단독 링크").
     path.startsWith("/shuttle-arrival") ||
-    path.startsWith("/api/shuttle/arrival");
+    path.startsWith("/api/shuttle/arrival") ||
+    // 안내보드 짧은 주소(요청: "주소가 너무 복잡해서... 짧은 주소로 만들어줘") - /b/{코드}로
+    // 접속하면 로그인 없이 실제 안내보드 링크로 바로 이동합니다.
+    path.startsWith("/b/");
 
   if (!user && !isAuthRoute) {
     const url = request.nextUrl.clone();

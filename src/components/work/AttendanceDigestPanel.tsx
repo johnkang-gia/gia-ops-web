@@ -9,6 +9,7 @@ import {
   dateChipLabel,
   dedupeEntries,
   extractTargetDate,
+  guessKoreanName,
   matchRosterStudents,
   stripLeadingMention,
   todayKey,
@@ -165,16 +166,20 @@ export default function AttendanceDigestPanel({
       const targetDate = extractTargetDate(m.content, sentAt) ?? todayKey(sentAt);
       const students = matchRosterStudents(m.content, roster);
       if (students.length === 0) {
-        // 명부에서 이름을 못 찾아도 버리지 않고 원문 앞부분을 그대로 보여줍니다(전학생·오탈자
-        // 등으로 대조가 실패해도 놓치지 않도록). "@멘션"은 태그일 뿐 학생 이름이 아니므로
-        // 미리보기에서는 건너뜁니다(요청: "@의 경우 태그하는사람 표시라서 빼주고").
-        const fallback = stripLeadingMention(m.content).slice(0, 12);
+        // 명부에서 이름을 못 찾아도 버리지 않고 보여줍니다(전학생·오탈자 등으로 대조가 실패해도
+        // 놓치지 않도록). 그냥 원문을 잘라 보여주면 아무 단어나 이름처럼 뜨는 문제가 있어서
+        // (요청: "대조하고 없으니까 그냥 아무거나 표시하는거 같아"), 먼저 문장에서 그나마 이름일
+        // 법한 한글 단어를 추정해보고(guessKoreanName), 그마저 없을 때만 원문 앞부분을 씁니다.
+        // "@멘션"은 태그일 뿐 학생 이름이 아니므로 둘 다 건너뜁니다.
+        const stripped = stripLeadingMention(m.content);
+        const guess = guessKoreanName(m.content) ?? stripped.slice(0, 12);
         out.push({
           key: `chat-${m.id}-raw`,
           category,
-          studentName: fallback,
-          studentKey: fallback,
+          studentName: guess,
+          studentKey: guess,
           ambiguous: false,
+          unmatched: true,
           rawText: m.content,
           time: m.created_at_google,
           sourceLabel: "구글챗",
@@ -189,6 +194,7 @@ export default function AttendanceDigestPanel({
           studentName: s.displayName,
           studentKey: s.studentKey,
           ambiguous: s.ambiguous,
+          unmatched: false,
           rawText: m.content,
           time: m.created_at_google,
           sourceLabel: "구글챗",
@@ -267,11 +273,18 @@ export default function AttendanceDigestPanel({
                         <div className="flex items-center justify-between gap-1">
                           <span
                             className={
-                              "truncate text-[11px] font-semibold " + (e.ambiguous ? "text-amber-600" : "text-slate-700")
+                              "truncate text-[11px] font-semibold " +
+                              (e.unmatched ? "text-slate-400" : e.ambiguous ? "text-amber-600" : "text-slate-700")
                             }
-                            title={e.ambiguous ? "같은 이름의 학생이 여러 명입니다 - 학년을 함께 적어주세요(예: 2학년 김재이)" : undefined}
+                            title={
+                              e.unmatched
+                                ? "명부와 대조되지 않아 추정한 이름입니다 - 원문을 확인해주세요"
+                                : e.ambiguous
+                                  ? "같은 이름의 학생이 여러 명입니다 - 학년을 함께 적어주세요(예: 2학년 김재이)"
+                                  : undefined
+                            }
                           >
-                            {e.ambiguous ? "⚠️ " : ""}
+                            {e.unmatched ? "🔎 " : e.ambiguous ? "⚠️ " : ""}
                             {e.studentName}
                           </span>
                           <span className="shrink-0 text-[9px] text-slate-400">
@@ -310,11 +323,18 @@ export default function AttendanceDigestPanel({
                           </span>
                           <span
                             className={
-                              "truncate text-[11px] font-semibold " + (e.ambiguous ? "text-amber-600" : "text-slate-700")
+                              "truncate text-[11px] font-semibold " +
+                              (e.unmatched ? "text-slate-400" : e.ambiguous ? "text-amber-600" : "text-slate-700")
                             }
-                            title={e.ambiguous ? "같은 이름의 학생이 여러 명입니다 - 학년을 함께 적어주세요(예: 2학년 김재이)" : undefined}
+                            title={
+                              e.unmatched
+                                ? "명부와 대조되지 않아 추정한 이름입니다 - 원문을 확인해주세요"
+                                : e.ambiguous
+                                  ? "같은 이름의 학생이 여러 명입니다 - 학년을 함께 적어주세요(예: 2학년 김재이)"
+                                  : undefined
+                            }
                           >
-                            {e.ambiguous ? "⚠️ " : ""}
+                            {e.unmatched ? "🔎 " : e.ambiguous ? "⚠️ " : ""}
                             {e.studentName}
                           </span>
                         </span>

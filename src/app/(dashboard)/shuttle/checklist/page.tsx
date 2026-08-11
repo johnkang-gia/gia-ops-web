@@ -3,6 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import Link from "next/link";
 import ShuttleChecklistClient, { type ChecklistRoute, type ChecklistItem } from "@/components/shuttle/ShuttleChecklistClient";
+import ShuttleChecklistSidebar from "@/components/shuttle/ShuttleChecklistSidebar";
+import type { GoogleChatMirrorMessage } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -83,6 +85,22 @@ export default async function ShuttleChecklistPage({
     .filter((x): x is ChecklistItem => !!x)
     .sort((x, y) => x.stopSeq - y.stopSeq || x.studentName.localeCompare(y.studentName, "ko"));
 
+  // 왼쪽 사이드바용 - 업무 메뉴의 출결내역(구글챗 출결알림)과 같은 자료를 다시 훑어 오늘
+  // 픽업·결석 학생을 보여줍니다(요청: "업무메뉴에있는 결석과 픽업아이들이 목록으로 떴으면
+  // 좋겠어... 업무쪽으로 가지 않아도 알수 있도록"). 셔틀은 초등부 한정 기능이라 부서는
+  // 항상 초등부로 고정합니다.
+  const mirrorRes = await supabase
+    .from("google_chat_mirror_messages")
+    .select("*")
+    .order("created_at_google", { ascending: false })
+    .limit(200);
+  const { data: rosterData } = await supabase.from("wr_students").select("name, grade, name_en").eq("status", "active");
+  const roster = ((rosterData as { name: string; grade: string | null; name_en: string | null }[] | null) ?? []).map((s) => ({
+    name: s.name,
+    grade: s.grade,
+    nameEn: s.name_en,
+  }));
+
   return (
     <div className="mx-auto max-w-6xl p-4 sm:p-6">
       <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
@@ -107,7 +125,12 @@ export default async function ShuttleChecklistPage({
         🚫(결석)을 눌러주세요 - 다시 누르면 취소됩니다. 오늘 하루만 다른 차를 타는 학생은 이름을 눌러 원하는 노선 칸으로
         끌어다 놓으면 됩니다.
       </p>
-      <ShuttleChecklistClient routes={routes} items={items} />
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+        <ShuttleChecklistSidebar roster={roster} initialMessages={(mirrorRes.data as GoogleChatMirrorMessage[] | null) ?? []} />
+        <div className="min-w-0 flex-1">
+          <ShuttleChecklistClient routes={routes} items={items} />
+        </div>
+      </div>
     </div>
   );
 }

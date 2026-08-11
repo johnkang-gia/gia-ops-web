@@ -220,6 +220,33 @@ export function stripLeadingMention(text: string): string {
   return rest || text;
 }
 
+// 이름이 아닌 흔한 한글 단어입니다 - matchRosterStudents가 명부에서 아무도 못 찾았을 때, 원문
+// 앞부분을 그냥 잘라 보여주는 대신 "그나마 이름처럼 생긴 한글 단어"를 먼저 찾아보는데(요청:
+// "대조하고 없으니까 그냥 아무거나 표시하는거 같아... 한글이름을 메인으로 뽑아줘"), 이 단어들은
+// 후보에서 제외합니다.
+const NON_NAME_WORDS = new Set([
+  "오늘", "내일", "모레", "선생님", "학부모", "어머니", "아버지", "보호자", "학생", "저희",
+  "합니다", "입니다", "안녕하세요", "죄송합니다", "감사합니다", "부탁드립니다", "부탁드려요",
+  "오전", "오후", "지금", "확인", "안내", "말씀", "학년", "우리", "관련", "때문", "그리고",
+  "다름", "아이", "친구", "학교", "차량", "버스", "셔틀", "동생", "학원", "연락", "번호",
+  ...ATTENDANCE_CATEGORIES.flatMap((c) => c.keywords.filter((k) => /[가-힣]/.test(k))),
+]);
+
+// 명부 대조(matchRosterStudents)가 실패했을 때 마지막으로 시도하는 추정입니다. 원문에서
+// 한글 2~4자 토큰을 순서대로 훑어, 위 흔한 단어 목록에 없는 첫 토큰을 "이름일 가능성이 가장
+// 높은 후보"로 돌려줍니다. 완벽하지 않지만(오탈자·전학생 등은 여전히 놓칠 수 있음), 문장을
+// 아무 데서나 잘라 보여주는 것보다는 실제 이름일 확률이 훨씬 높습니다.
+export function guessKoreanName(text: string): string | null {
+  const stripped = stripLeadingMention(text);
+  const tokens = stripped.match(/[가-힣]{2,4}/g);
+  if (!tokens) return null;
+  for (const t of tokens) {
+    if (NON_NAME_WORDS.has(t)) continue;
+    return t;
+  }
+  return null;
+}
+
 // 문장에서 실제 학생 명부에 있는 이름만 골라냅니다.
 //
 // 예전에는 정규식으로 한글 2~4자를 그냥 집어냈는데, 그러면 "정서안만 픽업"에서 "정서안만"이
@@ -328,6 +355,9 @@ export type AttendanceEntry = {
   // 동명이인 구분까지 반영한 중복 제거용 키.
   studentKey: string;
   ambiguous: boolean;
+  // 명부 대조에 실패해 studentName이 확정된 이름이 아니라 추정치(guessKoreanName) 또는
+  // 원문 일부라는 표시입니다. true면 UI에서 확정 매칭과 구분해 보여줘야 합니다.
+  unmatched: boolean;
   rawText: string;
   time: string | null;
   sourceLabel: string;

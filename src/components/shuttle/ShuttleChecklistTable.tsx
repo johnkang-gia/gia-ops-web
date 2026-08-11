@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChecklistItem, ChecklistRoute } from "./ShuttleChecklistClient";
 
 function natCompare(a: string, b: string) {
@@ -17,22 +17,30 @@ export function effectiveRouteId(item: ChecklistItem): string {
 // 실시간 동기화는 부모인 ShuttleChecklistClient가 갖고 있습니다). 이름을 드래그해서 다른
 // 노선 칸에 놓으면 부모에게 "이동 요청"만 전달하고, 계속 유지할지 오늘만 적용할지는 부모가
 // 띄우는 확인창에서 결정됩니다(요청: "차량을 수정하면 계속 수정된채로 있을건지, 오늘만
-// 차량이 바뀌는 건지 물어보고").
+// 차량이 바뀌는 건지 물어보고"). 뱃지 코너의 메모 아이콘은 특이사항 편집을 부모에게 요청만
+// 하고, searchTerm이 있으면 이름이 맞는 뱃지를 노란색으로 강조하고 첫 번째로 맞은 뱃지로
+// 스크롤합니다(요청: "이름을 치면 그 학생 이름뱃지 바로 찾을 수 있게... 색이 변해서 어디있는지
+// 바로 알 수 있게끔").
 export default function ShuttleChecklistTable({
   routes,
   items,
   busyId,
+  searchTerm,
   onSetStatus,
   onRequestMove,
+  onRequestEditNote,
 }: {
   routes: ChecklistRoute[];
   items: ChecklistItem[];
   busyId: string | null;
+  searchTerm: string;
   onSetStatus: (item: ChecklistItem, nextStatus: ChecklistItem["status"]) => void;
   onRequestMove: (assignmentId: string, targetRouteId: string) => void;
+  onRequestEditNote: (assignmentId: string) => void;
 }) {
   const [dragOverRoute, setDragOverRoute] = useState<string | null>(null);
   const draggingIdRef = useRef<string | null>(null);
+  const badgeRefs = useRef(new Map<string, HTMLDivElement>());
 
   const routeById = useMemo(() => new Map(routes.map((r) => [r.id, r])), [routes]);
   const sortedRoutes = useMemo(() => [...routes].sort((a, b) => natCompare(a.route_no, b.route_no)), [routes]);
@@ -49,6 +57,23 @@ export default function ShuttleChecklistTable({
     return map;
   }, [items, routeById]);
 
+  const trimmedSearch = searchTerm.trim();
+  const matchedIds = useMemo(() => {
+    if (!trimmedSearch) return new Set<string>();
+    return new Set(items.filter((it) => it.studentName.includes(trimmedSearch)).map((it) => it.assignmentId));
+  }, [items, trimmedSearch]);
+
+  // 검색어가 바뀔 때만 스크롤합니다(items가 실시간으로 계속 갱신되어도 검색 중에 화면이
+  // 제멋대로 다시 스크롤되지 않도록).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (matchedIds.size === 0) return;
+    const firstId = [...matchedIds][0];
+    const el = badgeRefs.current.get(firstId);
+    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trimmedSearch]);
+
   if (sortedRoutes.length === 0) {
     return <p className="py-8 text-center text-sm text-slate-400">노선이 없습니다.</p>;
   }
@@ -61,7 +86,7 @@ export default function ShuttleChecklistTable({
             <th className="w-24 px-3 py-2 font-semibold">호차</th>
             <th className="w-32 px-3 py-2 font-semibold">지역</th>
             <th className="w-24 px-3 py-2 font-semibold">기사님</th>
-            <th className="px-3 py-2 font-semibold print:hidden">학생 (이름 드래그로 노선 이동 · 🚗픽업 · 🚫결석)</th>
+            <th className="px-3 py-2 font-semibold print:hidden">학생 (이름 드래그로 노선 이동 · 🚗픽업 · 🚫결석 · 📝특이사항)</th>
             <th className="hidden px-3 py-2 font-semibold print:table-cell">학생</th>
           </tr>
         </thead>
@@ -91,13 +116,15 @@ export default function ShuttleChecklistTable({
                   {roster.length === 0 ? (
                     <span className="text-xs text-slate-300">{isDragOver ? "여기로 놓으면 이 노선으로 이동" : "배정된 학생 없음"}</span>
                   ) : (
-                    <div className="flex flex-wrap gap-1.5">
+                    <div className="flex flex-wrap gap-2">
                       {roster.map((item) => {
                         const isPickup = item.status === "픽업";
                         const isAbsent = item.status === "결석";
                         const isMovedToday = !!item.overrideRouteId && item.overrideRouteId !== (item.permanentRouteId ?? item.homeRouteId);
                         const isMovedPermanently = !!item.permanentRouteId && item.permanentRouteId !== item.homeRouteId;
                         const isMoved = isMovedToday || isMovedPermanently;
+                        const hasNote = !!item.note && item.note.trim().length > 0;
+                        const isHighlighted = matchedIds.has(item.assignmentId);
                         const homeRoute = routeById.get(item.homeRouteId);
                         const tooltip = isMovedToday
                           ? `오늘만 이동됨 (평소 노선: ${homeRoute?.route_no ?? "?"}호) - 드래그해서 되돌릴 수 있어요`
@@ -107,6 +134,10 @@ export default function ShuttleChecklistTable({
                         return (
                           <div
                             key={item.assignmentId}
+                            ref={(el) => {
+                              if (el) badgeRefs.current.set(item.assignmentId, el);
+                              else badgeRefs.current.delete(item.assignmentId);
+                            }}
                             draggable
                             onDragStart={(e) => {
                               draggingIdRef.current = item.assignmentId;
@@ -119,18 +150,35 @@ export default function ShuttleChecklistTable({
                             }}
                             title={tooltip}
                             className={
-                              "flex cursor-grab select-none flex-col items-center gap-0.5 rounded-lg border px-2 py-1 text-xs font-semibold active:cursor-grabbing print:border-black print:px-1 print:py-0.5 " +
-                              (isAbsent
-                                ? "border-red-300 bg-red-50 text-red-500 line-through"
-                                : isPickup
-                                  ? "border-pink-400 bg-pink-100 text-pink-700"
-                                  : isMovedToday
-                                    ? "border-amber-400 bg-amber-50 text-amber-700"
-                                    : isMovedPermanently
-                                      ? "border-purple-400 bg-purple-50 text-purple-700"
-                                      : "border-slate-300 bg-white text-slate-700")
+                              "relative flex cursor-grab select-none flex-col items-center gap-0.5 rounded-lg border px-2 py-1 text-xs font-semibold transition-all active:cursor-grabbing print:border-black print:px-1 print:py-0.5 " +
+                              (isHighlighted
+                                ? "border-yellow-500 bg-yellow-300 text-yellow-950 ring-4 ring-yellow-300"
+                                : isAbsent
+                                  ? "border-red-300 bg-red-50 text-red-500 line-through"
+                                  : isPickup
+                                    ? "border-pink-400 bg-pink-100 text-pink-700"
+                                    : isMovedToday
+                                      ? "border-amber-400 bg-amber-50 text-amber-700"
+                                      : isMovedPermanently
+                                        ? "border-purple-400 bg-purple-50 text-purple-700"
+                                        : "border-slate-300 bg-white text-slate-700")
                             }
                           >
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onRequestEditNote(item.assignmentId);
+                              }}
+                              onMouseDown={(e) => e.stopPropagation()}
+                              title={hasNote ? `특이사항: ${item.note}` : "특이사항 메모 추가"}
+                              className={
+                                "absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full border text-[8px] font-bold leading-none print:hidden " +
+                                (hasNote ? "border-orange-500 bg-orange-500 text-white" : "border-slate-300 bg-white text-slate-300 hover:text-slate-500")
+                              }
+                            >
+                              {hasNote ? "!" : "+"}
+                            </button>
                             <span>
                               {isMoved && (isMovedToday ? "↔ " : "⇄ ")}
                               {item.studentName}

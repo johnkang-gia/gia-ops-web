@@ -22,6 +22,7 @@ export type ChecklistItem = {
   permanentRouteId: string | null; // 계속 유지되는 영구 이동 - null이면 homeRouteId 그대로
   overrideRouteId: string | null; // 오늘 하루만의 이동 - null이면 적용 안 됨
   status: "예정" | "탑승" | "미탑승" | "결석" | "픽업";
+  note: string | null; // 학생별 특이사항 메모(요청: "특이사항있는 아이들... 메모적을 수 있게")
 };
 
 function todayStr() {
@@ -80,18 +81,20 @@ export default function ShuttleChecklistClient({
           .select("assignment_id, status, override_route_id")
           .eq("service_date", todayStr())
           .in("assignment_id", ids),
-        supabase.from("shuttle_assignments").select("id, override_route_id").in("id", ids),
+        supabase.from("shuttle_assignments").select("id, override_route_id, note").in("id", ids),
       ]);
       const boardingByAssignment = new Map((boardings ?? []).map((b) => [b.assignment_id, b]));
-      const permanentByAssignment = new Map((assignments ?? []).map((a) => [a.id, a.override_route_id as string | null]));
+      const assignmentById = new Map((assignments ?? []).map((a) => [a.id, a]));
       setItems((prev) =>
         prev.map((it) => {
           const b = boardingByAssignment.get(it.assignmentId);
+          const a = assignmentById.get(it.assignmentId);
           return {
             ...it,
             status: (b?.status as ChecklistItem["status"]) ?? "예정",
             overrideRouteId: b?.override_route_id ?? null,
-            permanentRouteId: permanentByAssignment.has(it.assignmentId) ? permanentByAssignment.get(it.assignmentId)! : it.permanentRouteId,
+            permanentRouteId: a ? (a.override_route_id as string | null) : it.permanentRouteId,
+            note: a ? ((a.note as string | null) ?? null) : it.note,
           };
         })
       );
@@ -180,13 +183,21 @@ export default function ShuttleChecklistClient({
       setItems((prev) =>
         prev.map((it) => (it.assignmentId === assignmentId ? { ...it, permanentRouteId: nextPermanent, overrideRouteId: null } : it))
       );
+      // shuttle_assignments는 노선관리 같은 마스터데이터라 RLS가 행정직원·관리자 쓰기만 허용하는데,
+      // 체크표는 동승 선생님을 포함한 로그인 사용자 전체가 쓰는 화면이라 전용 API로 우회합니다
+      // (요청: "계속 수정이면 계속 바뀐그대로 고정해주고").
       const [assignmentRes] = await Promise.all([
-        supabase.from("shuttle_assignments").update({ override_route_id: nextPermanent }).eq("id", assignmentId),
+        fetch("/api/shuttle/checklist/assignment", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ assignmentId, permanentRouteId: nextPermanent }),
+        }),
         // 계속 유지로 바꾸는 순간, 남아있던 "오늘만" 이동은 헷갈리지 않도록 함께 정리합니다.
         supabase.from("shuttle_boardings").update({ override_route_id: null }).eq("service_date", todayStr()).eq("assignment_id", assignmentId),
       ]);
-      if (assignmentRes.error) {
-        notify("노선 이동을 저장하지 못했습니다: " + assignmentRes.error.message, "error");
+      if (!assignmentRes.ok) {
+        const body = await assignmentRes.json().catch(() => ({}));
+        notify("노선 이동을 저장하지 못했습니다: " + (body.error ?? assignmentRes.statusText), "error");
         setItems((prev) =>
           prev.map((it) => (it.assignmentId === assignmentId ? { ...it, permanentRouteId: prevPermanent, overrideRouteId: prevOverride } : it))
         );
@@ -200,6 +211,57 @@ export default function ShuttleChecklistClient({
     setMovingBusy(false);
     setPendingMove(null);
   }
+
+  // 뱃지 코너의 메모 아이콘으로 학생별 특이사항을 적습니다(요청: "특이사항있는 아이들
+  // 아이들별로 뱃지 코너에 메모적을 수 있게"). shuttle_assignments.note에 저장되고,
+  // shuttle_assignments가 admin/행정직원 전용 RLS라 노선이동과 같은 전용 API를 씁니다.
+  const [noteEditor, setNoteEditor] = useState<{ assignmentId: string; studentName: string; note: string } | null>(null);
+  const [noteBusy, setNoteBusy] = useState(false);
+
+  function openNoteEditor(assignmentId: string) {
+    const item = items.find((i) => i.assignmentId === assignmentId);
+    if (!item) return;
+    setNoteEditor({ assignmentId, studentName: item.studentName, note: item.note ?? "" });
+  }
+
+  async function saveNote() {
+    if (!noteEditor) return;
+    const { assignmentId, note } = noteEditor;
+    const trimmed = note.trim();
+    const prev = items.find((i) => i.assignmentId === assignmentId)?.note ?? null;
+    setNoteBusy(true);
+    setItems((cur) => cur.map((it) => (it.assignmentId === assignmentId ? { ...it, note: trimmed || null } : it)));
+    const res = await fetch("/api/shuttle/checklist/assignment", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ assignmentId, note: trimmed }),
+    });
+    setNoteBusy(false);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      notify("메모를 저장하지 못했습니다: " + (body.error ?? res.statusText), "error");
+      setItems((cur) => cur.map((it) => (it.assignmentId === assignmentId ? { ...it, note: prev } : it)));
+      return;
+    }
+    notify(trimmed ? "특이사항을 저장했습니다." : "특이사항을 지웠습니다.", "success");
+    setNoteEditor(null);
+  }
+
+  // 사이드바 특이사항 위젯용 - "학생이름: 메모" 형태로 정리합니다(요청: "학생이름: 메모 이렇게
+  // 정리되도록").
+  const specialNotes = useMemo(
+    () =>
+      items
+        .filter((it) => !!it.note && it.note.trim().length > 0)
+        .map((it) => ({ key: it.assignmentId, studentName: it.studentName, note: it.note as string }))
+        .sort((a, b) => a.studentName.localeCompare(b.studentName, "ko")),
+    [items]
+  );
+
+  // 이름을 치면 그 학생 뱃지를 바로 찾을 수 있게(요청: "검색할수 있게 해줘서 이름을 치면 그
+  // 학생 이름뱃지 바로 찾을 수 있게... 색이 변해서 어디있는지 바로 알 수 있게끔") - 실제
+  // 하이라이트·스크롤은 ShuttleChecklistTable이 이 검색어를 받아 처리합니다.
+  const [searchTerm, setSearchTerm] = useState("");
 
   // 사이드바 세 번째 위젯("오늘 차량 변경")용 - 평소와 다른 노선에 있는 학생만 추려서 보여줍니다.
   const changedToday: ChangedRouteEntry[] = useMemo(() => {
@@ -225,6 +287,7 @@ export default function ShuttleChecklistClient({
         roster={roster}
         initialMessages={initialMessages}
         changedToday={changedToday}
+        specialNotes={specialNotes}
         className="print:hidden lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:self-start lg:overflow-y-auto"
       />
       <div className="min-w-0 flex-1">
@@ -233,15 +296,32 @@ export default function ShuttleChecklistClient({
             📅 {new Date().toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric", weekday: "short" })} · 🧒 탑승예정{" "}
             <span className="text-sm font-bold text-slate-800">{expectedCount}</span>명
           </span>
-          <button
-            type="button"
-            onClick={() => window.print()}
-            className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 print:hidden"
-          >
-            🖨 인쇄
-          </button>
+          <div className="flex items-center gap-1.5 print:hidden">
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="🔍 학생 이름 검색"
+              className="w-32 rounded-lg border border-slate-300 px-2 py-1 text-xs outline-none focus:border-blue-400 sm:w-40"
+            />
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+            >
+              🖨 인쇄
+            </button>
+          </div>
         </div>
-        <ShuttleChecklistTable routes={routes} items={items} busyId={busyId} onSetStatus={setStatus} onRequestMove={requestMove} />
+        <ShuttleChecklistTable
+          routes={routes}
+          items={items}
+          busyId={busyId}
+          searchTerm={searchTerm}
+          onSetStatus={setStatus}
+          onRequestMove={requestMove}
+          onRequestEditNote={openNoteEditor}
+        />
       </div>
 
       {pendingMove && (
@@ -273,6 +353,40 @@ export default function ShuttleChecklistClient({
                 disabled={movingBusy}
                 onClick={() => setPendingMove(null)}
                 className="rounded-lg px-3 py-2 text-xs font-semibold text-slate-400 disabled:opacity-50"
+              >
+                취소
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {noteEditor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 print:hidden">
+          <div className="w-full max-w-sm rounded-xl bg-white p-4 shadow-xl">
+            <p className="mb-2 text-sm font-bold text-slate-800">{noteEditor.studentName} 학생 특이사항</p>
+            <textarea
+              value={noteEditor.note}
+              onChange={(e) => setNoteEditor((prev) => (prev ? { ...prev, note: e.target.value } : prev))}
+              placeholder="예: 땅콩 알레르기, 하차 시 보호자 직접 확인 필요 등"
+              rows={3}
+              className="mb-3 w-full resize-none rounded-lg border border-slate-300 px-2.5 py-2 text-sm outline-none focus:border-blue-400"
+              autoFocus
+            />
+            <div className="flex gap-1.5">
+              <button
+                type="button"
+                disabled={noteBusy}
+                onClick={saveNote}
+                className="flex-1 rounded-lg bg-gia-navy px-3 py-2 text-sm font-bold text-white disabled:opacity-50"
+              >
+                저장
+              </button>
+              <button
+                type="button"
+                disabled={noteBusy}
+                onClick={() => setNoteEditor(null)}
+                className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-600 disabled:opacity-50"
               >
                 취소
               </button>

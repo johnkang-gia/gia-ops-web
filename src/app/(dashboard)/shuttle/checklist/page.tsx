@@ -38,7 +38,14 @@ export default async function ShuttleChecklistPage({
   const routeIds = routes.map((r) => r.id);
 
   let stopsData: { id: string; route_id: string; seq: number }[] = [];
-  let assignmentsData: { id: string; stop_id: string; student_name_raw: string; weekdays: number[]; override_route_id: string | null }[] = [];
+  let assignmentsData: {
+    id: string;
+    stop_id: string;
+    student_name_raw: string;
+    weekdays: number[];
+    override_route_id: string | null;
+    note: string | null;
+  }[] = [];
   if (routeIds.length > 0) {
     const stopsRes = await supabase.from("shuttle_stops").select("id, route_id, seq").in("route_id", routeIds).order("seq");
     stopsData = stopsRes.data ?? [];
@@ -46,7 +53,7 @@ export default async function ShuttleChecklistPage({
     if (stopIds.length > 0) {
       const assignRes = await supabase
         .from("shuttle_assignments")
-        .select("id, stop_id, student_name_raw, weekdays, override_route_id")
+        .select("id, stop_id, student_name_raw, weekdays, override_route_id, note")
         .in("stop_id", stopIds);
       assignmentsData = assignRes.data ?? [];
     }
@@ -85,6 +92,7 @@ export default async function ShuttleChecklistPage({
         permanentRouteId: a.override_route_id && routeIdSet.has(a.override_route_id) ? a.override_route_id : null,
         overrideRouteId: boarding?.override_route_id ?? null,
         status: (boarding?.status as ChecklistItem["status"]) ?? "예정",
+        note: a.note ?? null,
       };
       return item;
     })

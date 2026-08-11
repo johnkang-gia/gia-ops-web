@@ -28,6 +28,10 @@ export type ChangedRouteEntry = {
   mode: "today" | "permanent";
 };
 
+// 뱃지 코너 메모로 적은 학생별 특이사항입니다(요청: "특이사항있는 아이들 아이들별로 뱃지
+// 코너에 메모적을 수 있게... 학생이름: 메모 이렇게 정리되도록").
+export type SpecialNoteEntry = { key: string; studentName: string; note: string };
+
 // 업무 메뉴까지 가지 않아도 오늘 픽업·결석 학생과 출결 메모를 바로 볼 수 있게 하는 좁은
 // 사이드바입니다(요청: "하원체크표에는 업무메뉴에있는 결석과 픽업아이들이 목록으로 떴으면
 // 좋겠어... 업무쪽으로 가지 않아도 알수 있도록"). 위쪽 위젯은 구글챗 출결알림방을
@@ -40,12 +44,14 @@ export default function ShuttleChecklistSidebar({
   roster,
   initialMessages,
   changedToday = [],
+  specialNotes = [],
   department = "초등부",
   className = "",
 }: {
   roster: RosterStudent[];
   initialMessages: GoogleChatMirrorMessage[];
   changedToday?: ChangedRouteEntry[];
+  specialNotes?: SpecialNoteEntry[];
   department?: string;
   className?: string;
 }) {
@@ -225,6 +231,21 @@ export default function ShuttleChecklistSidebar({
                   </span>
                 </span>
               </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-white p-3">
+        <p className="mb-2 text-[11px] font-bold text-slate-600">⚠️ 특이사항 {specialNotes.length > 0 && `(${specialNotes.length})`}</p>
+        {specialNotes.length === 0 ? (
+          <p className="text-[10px] text-slate-300">없음</p>
+        ) : (
+          <div className="flex flex-col gap-1">
+            {specialNotes.map((n) => (
+              <p key={n.key} className="rounded-lg bg-orange-50 px-1.5 py-1 text-[10px] leading-relaxed text-orange-800">
+                <span className="font-bold">{n.studentName}</span>: {n.note}
+              </p>
             ))}
           </div>
         )}

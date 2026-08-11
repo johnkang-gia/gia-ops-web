@@ -6,9 +6,13 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "GIA 운영",
   description: "GIA 학교 운영 자동화 시스템",
-  // 홈 화면에 추가했을 때 브라우저 주소창 없이 앱처럼 열리도록(standalone) 하는 최소 PWA
-  // 설정입니다. 오프라인 캐싱(서비스워커)까지는 아직 없고, "설치 가능한 아이콘/이름" 수준입니다.
-  manifest: "/manifest.json",
+  // manifest는 여기(전체 앱 루트)가 아니라 (dashboard)/layout.tsx에서만 붙입니다. iOS
+  // Safari는 16.4부터 "홈 화면에 추가"할 때 manifest.json의 start_url을 따라가는데, 이 파일이
+  // 루트에 있으면 안내보드·도착체크·파일럿 체크인 같은 로그인 없는 토큰 링크(/shuttle-board,
+  // /shuttle-arrival, /shuttle-pilot 등)를 홈 화면에 추가해도 그 링크가 아니라 앱 메인
+  // (start_url="/home")으로 등록돼버립니다(요청: "이 링크 그대로는 아이콘 등록이 안돼"). 로그인
+  // 사용자가 쓰는 (dashboard) 영역에만 manifest를 둬서, 토큰 링크는 지금 보고 있는 그 주소
+  // 그대로 홈 화면에 등록됩니다.
 };
 
 export default function RootLayout({

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { Suspense } from "react";
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentTerm } from "@/lib/currentTerm";
@@ -20,6 +21,15 @@ import { ConfirmProvider } from "@/components/common/ConfirmProvider";
 import ConnectionBanner from "@/components/common/ConnectionBanner";
 import CommandPalette from "@/components/common/CommandPalette";
 import type { AiFeatureFlag } from "@/lib/types";
+
+// 홈 화면에 추가했을 때 브라우저 주소창 없이 앱처럼 열리도록(standalone) 하는 최소 PWA
+// 설정입니다. 로그인이 필요한 이 (dashboard) 영역에만 둡니다 - 루트에 두면 안내보드·도착체크
+// 같은 로그인 없는 토큰 링크를 홈 화면에 추가할 때도 이 manifest를 따라가서, 그 링크가 아니라
+// 앱 메인(manifest의 start_url)으로 등록돼버리는 문제가 있었습니다(요청: "이 링크 그대로는
+// 아이콘 등록이 안돼").
+export const metadata: Metadata = {
+  manifest: "/manifest.json",
+};
 
 // 학기 배지 - 로그인 인증(me)과 달리 이 화면을 막을 이유가 없는 "장식성" 정보라서, layout
 // 전체가 이 조회가 끝날 때까지 기다리지 않도록 별도 컴포넌트로 분리해 <Suspense>로 감쌌습니다

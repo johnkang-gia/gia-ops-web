@@ -43,7 +43,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
   const today = new Date().toISOString().slice(0, 10);
   const todayWeekday = new Date().getDay();
 
-  const { data: stops } = await supabase.from("shuttle_stops").select("id, route_id, seq").in("route_id", routeIds);
+  // run_events는 routeIds만 있으면 바로 조회할 수 있어 stops와 무관하므로, stops 조회와
+  // 동시에 시작합니다(요청: "실시간 반영 속도 더 개선") - 안내보드는 3초마다 폴링해서, 왕복을
+  // 하나 줄이면 화면이 그만큼 더 빠르게 갱신됩니다.
+  const [{ data: stops }, eventsRes] = await Promise.all([
+    supabase.from("shuttle_stops").select("id, route_id, seq").in("route_id", routeIds),
+    supabase.from("shuttle_run_events").select("route_id, event, created_at").in("route_id", routeIds).eq("service_date", today).order("created_at", { ascending: true }),
+  ]);
   const stopIds = (stops ?? []).map((s) => s.id);
   const stopById = new Map((stops ?? []).map((s) => [s.id, s]));
 
@@ -56,16 +62,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
   const relevant = (assignments ?? []).filter((a) => (a.weekdays as number[]).includes(todayWeekday));
   const assignmentIds = relevant.map((a) => a.id);
 
-  const [eventsRes, boardingsRes] = await Promise.all([
-    supabase.from("shuttle_run_events").select("route_id, event, created_at").in("route_id", routeIds).eq("service_date", today).order("created_at", { ascending: true }),
-    assignmentIds.length
-      ? supabase
-          .from("shuttle_boardings")
-          .select("assignment_id, status, override_route_id")
-          .eq("service_date", today)
-          .in("assignment_id", assignmentIds)
-      : Promise.resolve({ data: [] as { assignment_id: string; status: string; override_route_id: string | null }[] }),
-  ]);
+  const boardingsRes = assignmentIds.length
+    ? await supabase
+        .from("shuttle_boardings")
+        .select("assignment_id, status, override_route_id")
+        .eq("service_date", today)
+        .in("assignment_id", assignmentIds)
+    : { data: [] as { assignment_id: string; status: string; override_route_id: string | null }[] };
 
   const eventsByRoute: Record<string, { event: string; created_at: string }[]> = {};
   for (const e of eventsRes.data ?? []) {

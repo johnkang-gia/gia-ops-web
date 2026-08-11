@@ -46,46 +46,42 @@ export default function PilotMonitorClient({
     return () => clearInterval(t);
   }, []);
 
-  // 실시간 채널 대신 짧은 주기 조회(폴링)로 최신 위치·이벤트를 가져옵니다 - 기존 채팅·알림 등이
-  // 쓰는 Supabase 실시간 자원과 전혀 경합하지 않고, 이 파일럿만의 부하로 완전히 격리됩니다.
+  // 예전에는 파일럿(노선)마다 위치·이벤트·안전이벤트 3개씩 따로 조회해서(요청: "실시간 반영
+  // 속도 더 개선"하는 김에 발견한 비효율 - 파일럿이 10개면 매 폴링마다 쿼리가 30개), 노선이
+  // 늘수록 요청 수가 그만큼 늘어 느려지는 구조였습니다. route_id를 한 번에 in(...)으로 묶어
+  // 테이블당 쿼리 1개씩(총 3개)으로 줄였습니다 - 파일럿이 몇 개든 요청 수는 그대로입니다.
   useEffect(() => {
     if (pilots.length === 0) return;
     const supabase = createClient();
     const today = new Date().toISOString().slice(0, 10);
+    const routeIds = pilots.map((p) => p.route_id);
 
     async function poll() {
-      const results = await Promise.all(
-        pilots.map(async (p) => {
-          const [pingsRes, eventsRes, safetyRes] = await Promise.all([
-            supabase
-              .from("shuttle_pilot_pings")
-              .select("*")
-              .eq("route_id", p.route_id)
-              .order("recorded_at", { ascending: false })
-              .limit(200),
-            supabase
-              .from("shuttle_run_events")
-              .select("*")
-              .eq("route_id", p.route_id)
-              .eq("service_date", today)
-              .order("created_at", { ascending: true }),
-            supabase
-              .from("shuttle_safety_events")
-              .select("*")
-              .eq("route_id", p.route_id)
-              .eq("service_date", today),
-          ]);
-          return {
-            routeId: p.route_id,
-            pings: (pingsRes.data as ShuttlePilotPing[] | null) ?? [],
-            events: (eventsRes.data as ShuttleRunEvent[] | null) ?? [],
-            safety: (safetyRes.data as ShuttleSafetyEvent[] | null) ?? [],
-          };
-        })
-      );
-      setPingsByRoute(Object.fromEntries(results.map((r) => [r.routeId, r.pings])));
-      setEventsByRoute(Object.fromEntries(results.map((r) => [r.routeId, r.events])));
-      setSafetyByRoute(Object.fromEntries(results.map((r) => [r.routeId, r.safety])));
+      // 화면에서 실제로 쓰는 건 최근 10분 이내(신선도·수신주기 계산)뿐이라(아래 recent/
+      // intervalSamples 참고), row 개수로 자르는 대신 시간으로 잘라야 노선마다 공평합니다 -
+      // 한 노선이 유난히 자주 핑을 보내도 다른 노선 몫을 뺏어가지 않습니다.
+      const pingCutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+      const [pingsRes, eventsRes, safetyRes] = await Promise.all([
+        supabase.from("shuttle_pilot_pings").select("*").in("route_id", routeIds).gte("recorded_at", pingCutoff).order("recorded_at", { ascending: false }),
+        supabase.from("shuttle_run_events").select("*").in("route_id", routeIds).eq("service_date", today).order("created_at", { ascending: true }),
+        supabase.from("shuttle_safety_events").select("*").in("route_id", routeIds).eq("service_date", today),
+      ]);
+
+      const pingsByRouteMap: Record<string, ShuttlePilotPing[]> = {};
+      for (const p of (pingsRes.data as ShuttlePilotPing[] | null) ?? []) {
+        (pingsByRouteMap[p.route_id] ??= []).push(p);
+      }
+      const eventsByRouteMap: Record<string, ShuttleRunEvent[]> = {};
+      for (const e of (eventsRes.data as ShuttleRunEvent[] | null) ?? []) {
+        (eventsByRouteMap[e.route_id] ??= []).push(e);
+      }
+      const safetyByRouteMap: Record<string, ShuttleSafetyEvent[]> = {};
+      for (const s of (safetyRes.data as ShuttleSafetyEvent[] | null) ?? []) {
+        (safetyByRouteMap[s.route_id] ??= []).push(s);
+      }
+      setPingsByRoute(pingsByRouteMap);
+      setEventsByRoute(eventsByRouteMap);
+      setSafetyByRoute(safetyByRouteMap);
     }
 
     poll();

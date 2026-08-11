@@ -6,7 +6,12 @@ import { loadKakaoMaps } from "@/lib/kakaoMap";
 import { useToast } from "@/components/common/ToastProvider";
 import type { ShuttlePilotPing, ShuttlePilotRoute, ShuttleRoute, ShuttleRunEvent } from "@/lib/types";
 
-const POLL_MS = 7000;
+// 예전에는 7초마다 세 테이블(위치·운행이벤트·탑승현황)을 통째로 다시 불러왔는데, 이 세
+// 테이블이 모두 Supabase Realtime 발행 목록에 있어서(shuttle_pilot_pings·shuttle_run_events는
+// 기존부터, shuttle_boardings는 하원 체크표 실시간화 때 추가) 대신 실시간 이벤트를 직접
+// 구독해 훨씬 빠르게(초 단위가 아니라 사실상 즉시) 반영하도록 바꿨습니다(요청: "실시간 반영
+// 속도 더 개선"). 재연결 등으로 이벤트를 놓쳤을 때를 대비한 안전망 폴링만 느슨하게 남겨둡니다.
+const FALLBACK_POLL_MS = 25000;
 
 export type LiveRosterItem = { assignmentId: string; studentName: string; stopSeq: number; stopTime: string | null; routeId: string };
 type BoardingRow = { assignment_id: string; status: string; alighted_at: string | null; override_route_id: string | null };
@@ -73,9 +78,11 @@ export default function ShuttleLiveClient({
     const assignmentIds = allRoster.map((r) => r.assignmentId);
     if (pilotRouteIds.length === 0) return;
     const supabase = createClient();
+    const today = todayStr();
+    const pilotRouteIdSet = new Set(pilotRouteIds);
+    const assignmentIdSet = new Set(assignmentIds);
 
-    async function poll() {
-      const today = todayStr();
+    async function fullReload() {
       const [pingsRes, eventsRes, boardingsRes] = await Promise.all([
         supabase.from("shuttle_pilot_pings").select("*").in("route_id", pilotRouteIds).order("recorded_at", { ascending: false }).limit(500),
         supabase.from("shuttle_run_events").select("*").in("route_id", pilotRouteIds).eq("service_date", today).order("created_at", { ascending: true }),
@@ -107,9 +114,53 @@ export default function ShuttleLiveClient({
       setBoardingByAssignment(boardMap);
     }
 
-    poll();
-    const t = setInterval(poll, POLL_MS);
-    return () => clearInterval(t);
+    fullReload();
+
+    // 세 테이블 모두 realtime 발행 목록에 있어서, 새 위치·도착체크·탑승체크가 들어오는 즉시
+    // 서버 왕복 없이 화면에 반영합니다(요청: "실시간 반영 속도 더 개선"). 위치(ping)는 GPS가
+    // 자주 보내는 값이라 전체를 다시 훑지 않고 그 노선의 "최신 값"만 교체합니다.
+    const channel = supabase
+      .channel("shuttle-live")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "shuttle_pilot_pings", filter: `route_id=in.(${pilotRouteIds.join(",")})` }, (payload) => {
+        const p = payload.new as ShuttlePilotPing;
+        if (!pilotRouteIdSet.has(p.route_id)) return;
+        setPingByRoute((prev) => ({ ...prev, [p.route_id]: p }));
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "shuttle_run_events", filter: `route_id=in.(${pilotRouteIds.join(",")})` }, (payload) => {
+        const isDelete = payload.eventType === "DELETE";
+        const row = (isDelete ? payload.old : payload.new) as ShuttleRunEvent | undefined;
+        if (!row?.route_id || !pilotRouteIdSet.has(row.route_id) || row.service_date !== today) return;
+        setEventsByRoute((prev) => {
+          const existing = prev[row.route_id] ?? [];
+          if (isDelete) return { ...prev, [row.route_id]: existing.filter((e) => e.id !== row.id) };
+          // checkArrived가 누른 즉시 "temp-" 임시 id로 먼저 화면에 넣어두는데(요청: 여러 대가
+          // 몰려도 버벅이지 않도록), 그 직후 도착하는 realtime 이벤트가 진짜 id를 가져오면
+          // 임시 항목을 진짜 값으로 바꿔치기해서 같은 이벤트가 두 번 보이지 않게 합니다.
+          const withoutTemp = existing.filter((e) => !(e.event === row.event && e.id.startsWith("temp-")));
+          if (withoutTemp.some((e) => e.id === row.id)) return prev;
+          return { ...prev, [row.route_id]: [...withoutTemp, row].sort((a, b) => a.created_at.localeCompare(b.created_at)) };
+        });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "shuttle_boardings", filter: `service_date=eq.${today}` }, (payload) => {
+        const isDelete = payload.eventType === "DELETE";
+        const row = (isDelete ? payload.old : payload.new) as BoardingRow | undefined;
+        if (!row?.assignment_id || !assignmentIdSet.has(row.assignment_id)) return;
+        setBoardingByAssignment((prev) => {
+          if (isDelete) {
+            const next = { ...prev };
+            delete next[row.assignment_id];
+            return next;
+          }
+          return { ...prev, [row.assignment_id]: row };
+        });
+      })
+      .subscribe();
+
+    const t = setInterval(fullReload, FALLBACK_POLL_MS);
+    return () => {
+      clearInterval(t);
+      supabase.removeChannel(channel);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pilots, allRoster]);
 

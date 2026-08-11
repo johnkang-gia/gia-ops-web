@@ -49,7 +49,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
   const today = new Date().toISOString().slice(0, 10);
   const todayWeekday = new Date().getDay();
 
-  const { data: stops } = await supabase.from("shuttle_stops").select("id, route_id").in("route_id", routeIds);
+  // stops와 run_events는 서로 무관하게 routeIds만 있으면 바로 조회할 수 있어서 병렬로
+  // 묶었습니다(요청: "실시간 반영 속도 더 개선") - 이 화면은 3초마다 폴링하는 화면이라, 매
+  // 요청의 왕복 횟수를 하나 줄이면 그만큼 화면 반영이 빨라집니다.
+  const [{ data: stops }, { data: events }] = await Promise.all([
+    supabase.from("shuttle_stops").select("id, route_id").in("route_id", routeIds),
+    supabase.from("shuttle_run_events").select("route_id, event, created_at").in("route_id", routeIds).eq("service_date", today).order("created_at", { ascending: true }),
+  ]);
   const stopIds = (stops ?? []).map((s) => s.id);
   const stopById = new Map((stops ?? []).map((s) => [s.id, s]));
 
@@ -85,12 +91,6 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
     (rosterByRoute[targetRouteId] ??= []).push(a.student_name_raw);
   }
 
-  const { data: events } = await supabase
-    .from("shuttle_run_events")
-    .select("route_id, event, created_at")
-    .in("route_id", routeIds)
-    .eq("service_date", today)
-    .order("created_at", { ascending: true });
   const eventsByRoute: Record<string, { event: string; created_at: string }[]> = {};
   for (const e of events ?? []) {
     (eventsByRoute[e.route_id] ??= []).push({ event: e.event, created_at: e.created_at });

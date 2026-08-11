@@ -67,20 +67,25 @@ export default function ShuttleChecklistClient({
 
   // shuttle_boardings(오늘 하루 상태·오늘만 이동)와 shuttle_assignments(영구 이동)를 각각
   // realtime으로 구독해서, 다른 사람이 체크표를 바꾸면 폴링을 기다리지 않고 바로 반영합니다
-  // (요청: "하원체크표에 표시하면 실시간으로 반영되도록").
+  // (요청: "하원체크표에 표시하면 실시간으로 반영되도록"). 처음에는 이벤트가 오면 두 테이블을
+  // 통째로 다시 조회했는데(reload), 그러면 "실시간으로 바뀌었다는 신호"를 받고도 서버 왕복을
+  // 한 번 더 기다려야 해서 체감 속도가 느렸습니다. postgres_changes 이벤트에는 바뀐 행의
+  // 실제 값이 이미 담겨 오므로, 그 값을 곧장 items에 반영해 서버 왕복 없이 즉시 갱신합니다
+  // (요청: "실시간 반영 속도 더 개선"). shuttle_boardings 행은 이 화면에서 항상 upsert만
+  // 하고 지우지 않으므로 DELETE는 사실상 발생하지 않지만, 혹시 모를 경우를 위해 안전하게
+  // "예정"으로 되돌립니다. 재연결처럼 이벤트를 놓칠 수 있는 상황에 대비해 느슨한 전체 재조회
+  // 폴링도 안전망으로 남겨둡니다.
   useEffect(() => {
     if (assignmentIdsRef.current.length === 0) return;
     const supabase = createClient();
     const ids = assignmentIdsRef.current;
+    const idSet = new Set(ids);
     const idFilter = `id=in.(${ids.join(",")})`;
+    const today = todayStr();
 
-    async function reload() {
+    async function fullReload() {
       const [{ data: boardings }, { data: assignments }] = await Promise.all([
-        supabase
-          .from("shuttle_boardings")
-          .select("assignment_id, status, override_route_id")
-          .eq("service_date", todayStr())
-          .in("assignment_id", ids),
+        supabase.from("shuttle_boardings").select("assignment_id, status, override_route_id").eq("service_date", today).in("assignment_id", ids),
         supabase.from("shuttle_assignments").select("id, override_route_id, note").in("id", ids),
       ]);
       const boardingByAssignment = new Map((boardings ?? []).map((b) => [b.assignment_id, b]));
@@ -102,11 +107,39 @@ export default function ShuttleChecklistClient({
 
     const channel = supabase
       .channel(`shuttle-checklist-${term}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "shuttle_boardings", filter: `service_date=eq.${todayStr()}` }, () => reload())
-      .on("postgres_changes", { event: "*", schema: "public", table: "shuttle_assignments", filter: idFilter }, () => reload())
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "shuttle_boardings", filter: `service_date=eq.${today}` },
+        (payload) => {
+          const isDelete = payload.eventType === "DELETE";
+          const row = (isDelete ? payload.old : payload.new) as
+            | { assignment_id?: string; status?: string; override_route_id?: string | null }
+            | undefined;
+          const assignmentId = row?.assignment_id;
+          if (!assignmentId || !idSet.has(assignmentId)) return;
+          setItems((prev) =>
+            prev.map((it) =>
+              it.assignmentId === assignmentId
+                ? {
+                    ...it,
+                    status: isDelete ? "예정" : ((row?.status as ChecklistItem["status"]) ?? "예정"),
+                    overrideRouteId: isDelete ? null : (row?.override_route_id ?? null),
+                  }
+                : it
+            )
+          );
+        }
+      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "shuttle_assignments", filter: idFilter }, (payload) => {
+        const row = payload.new as { id?: string; override_route_id?: string | null; note?: string | null } | undefined;
+        if (!row?.id) return;
+        setItems((prev) =>
+          prev.map((it) => (it.assignmentId === row.id ? { ...it, permanentRouteId: row.override_route_id ?? null, note: row.note ?? null } : it))
+        );
+      })
       .subscribe();
 
-    const t = setInterval(reload, FALLBACK_POLL_MS);
+    const t = setInterval(fullReload, FALLBACK_POLL_MS);
     return () => {
       clearInterval(t);
       supabase.removeChannel(channel);

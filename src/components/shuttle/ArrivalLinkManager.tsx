@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import QRCode from "qrcode";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
 import type { ShuttleArrivalLink } from "@/lib/types";
@@ -13,6 +14,8 @@ export default function ArrivalLinkManager({ initialLinks }: { initialLinks: Shu
   const notify = useToast();
   const [links, setLinks] = useState(initialLinks);
   const [busy, setBusy] = useState(false);
+  const [qrLink, setQrLink] = useState<{ token: string; label: string } | null>(null);
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
 
   async function createLink(term: "정규학기" | "여름캠프2") {
     setBusy(true);
@@ -70,6 +73,22 @@ export default function ArrivalLinkManager({ initialLinks }: { initialLinks: Shu
     window.open(arrivalLinkUrl(token), "_blank");
   }
 
+  // 요청: "못하는 사람들 하나하나 찾아다니면서 설명할 수가 없어, 더 간단하게 자기 핸드폰에
+  // 추가하게 하는 방법 없을까?" - 주소를 복사해서 붙여넣는 대신, QR코드를 카톡방 등에 공유하면
+  // 카메라로 스캔만 해도 바로 그 링크가 열립니다(브라우저 안에서 client 전용 qrcode 패키지로
+  // 만들어 서버 왕복 없이 즉시 생성).
+  async function showQr(l: ShuttleArrivalLink) {
+    setQrLink({ token: l.token, label: l.label });
+    setQrDataUrl(null);
+    try {
+      const dataUrl = await QRCode.toDataURL(arrivalLinkUrl(l.token), { width: 320, margin: 1 });
+      setQrDataUrl(dataUrl);
+    } catch {
+      notify("QR코드를 만들지 못했습니다.", "error");
+      setQrLink(null);
+    }
+  }
+
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-3">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -121,6 +140,9 @@ export default function ArrivalLinkManager({ initialLinks }: { initialLinks: Shu
                 <button onClick={() => openLink(l.token)} className="rounded-lg border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-50">
                   ↗ 링크 열기
                 </button>
+                <button onClick={() => showQr(l)} className="rounded-lg border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-50">
+                  📱 QR코드
+                </button>
                 <button
                   onClick={() => toggleEnabled(l)}
                   className={"rounded-lg px-2 py-1 text-[11px] font-semibold " + (l.enabled ? "bg-red-50 text-red-600" : "bg-slate-100 text-slate-500")}
@@ -130,6 +152,37 @@ export default function ArrivalLinkManager({ initialLinks }: { initialLinks: Shu
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {qrLink && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setQrLink(null)}>
+          <div className="w-full max-w-xs rounded-2xl bg-white p-4 text-center shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <p className="mb-2 text-sm font-bold text-slate-800">{qrLink.label} QR코드</p>
+            {qrDataUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={qrDataUrl} alt="QR코드" className="mx-auto h-64 w-64" />
+            ) : (
+              <div className="mx-auto flex h-64 w-64 items-center justify-center text-xs text-slate-400">만드는 중...</div>
+            )}
+            <p className="mt-3 text-[11px] leading-relaxed text-slate-500">
+              휴대폰 카메라로 이 QR코드를 비추면 링크가 바로 열립니다. 연 다음 화면의 공유 버튼을 눌러 &quot;홈 화면에 추가&quot;를 선택하면 아이콘이 생깁니다.
+            </p>
+            <div className="mt-3 flex gap-2">
+              {qrDataUrl && (
+                <a
+                  href={qrDataUrl}
+                  download={`${qrLink.label}_QR.png`}
+                  className="flex-1 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white"
+                >
+                  ⬇ 이미지로 저장
+                </a>
+              )}
+              <button onClick={() => setQrLink(null)} className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-500">
+                닫기
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

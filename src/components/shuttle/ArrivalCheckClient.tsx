@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import AddToHomeScreenBanner from "./AddToHomeScreenBanner";
 
 // 요청: "차량 도착출발과 안내보드간에 연동이 너무 느리고" - 폴링 주기를 5초에서 3초로 줄여
 // 다른 교직원 화면·안내보드에 상태가 더 빨리 반영되도록 했습니다.
@@ -164,6 +165,7 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
 
   return (
     <div className="min-h-screen bg-slate-50 p-2 pb-10">
+      <AddToHomeScreenBanner />
       <div className="mb-2 flex items-center justify-between gap-2 pt-1">
         <div className="flex-1 text-center">
           <p className="text-xs font-bold text-slate-500">{data?.label ?? "도착체크"}</p>

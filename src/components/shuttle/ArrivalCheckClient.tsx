@@ -19,7 +19,7 @@ type ArrivalRoute = {
   driverName: string | null;
   driverPhone: string | null;
   roster: { studentName: string; status: string }[];
-  events: { event: string; created_at: string }[];
+  events: { event: string; created_at: string; createdBy: string | null }[];
 };
 
 type ArrivalData = { label: string; term: string; routes: ArrivalRoute[] };
@@ -118,7 +118,10 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
               }
               return {
                 ...r,
-                events: [...r.events, { event: action === "arrive" ? "현장도착" : "출발", created_at: new Date().toISOString() }],
+                events: [
+                  ...r.events,
+                  { event: action === "arrive" ? "현장도착" : "출발", created_at: new Date().toISOString(), createdBy: null },
+                ],
               };
             }),
           };
@@ -202,9 +205,17 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
         <div className="grid grid-cols-4 gap-1.5">
           {routes.map((r) => {
             const hasArrived = r.events.some((e) => e.event === "현장도착");
-            const hasDeparted = r.events.some((e) => e.event === "출발");
+            const departEvent = r.events.find((e) => e.event === "출발");
+            const hasDeparted = !!departEvent;
             const status: "waiting" | "arrived" | "departed" = hasDeparted ? "departed" : hasArrived ? "arrived" : "waiting";
             const isBusy = busyRoute === r.routeId;
+            // 요청: "출발 체크를 까먹거나 늦어져서 계속 화면에 차량이 뜨는 경우가 너무 많아" -
+            // 사람이 안 눌러도 GPS로 학교에서 멀어진 걸 감지하거나(정확), 그마저 없으면 20분
+            // 시간 초과로 자동 정리됩니다(정리 목적, 실제 출발 확인은 아님). 자동으로 처리된
+            // 경우 사람이 직접 누른 것과 구분해 작게 표시해서, 왜 출발함으로 바뀌었는지 알 수
+            // 있게 합니다.
+            const autoLabel =
+              departEvent?.createdBy === "GPS 자동감지" ? "GPS 감지" : departEvent?.createdBy === "시간초과 자동정리" ? "시간 초과" : null;
             // 하원 체크표에서 픽업(부모님이 직접 데려가심)·결석으로 체크한 학생은 이 차를 안
             // 타므로 "미도착 명단"에서 뺍니다(요청: "결석이나, 픽업을 체크하면 실시간으로 교직원
             // 차량 도착 출발체크에 반영이 되고" - 안내보드와 같은 필터링 방식).
@@ -250,6 +261,9 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
                   <span className="text-[9px] font-bold leading-tight">
                     {status === "waiting" ? "미도착" : status === "arrived" ? "도착함" : "출발함"}
                   </span>
+                  {status === "departed" && autoLabel && (
+                    <span className="text-[7px] font-semibold leading-none text-slate-400">자동·{autoLabel}</span>
+                  )}
                 </button>
                 {(waiting.length > 0 || pickedUpCount > 0 || absentCount > 0) && (
                   <div className="flex flex-wrap gap-0.5 bg-slate-50 p-1">

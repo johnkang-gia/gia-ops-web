@@ -54,7 +54,12 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
   // 요청의 왕복 횟수를 하나 줄이면 그만큼 화면 반영이 빨라집니다.
   const [{ data: stops }, { data: events }] = await Promise.all([
     supabase.from("shuttle_stops").select("id, route_id").in("route_id", routeIds),
-    supabase.from("shuttle_run_events").select("route_id, event, created_at").in("route_id", routeIds).eq("service_date", today).order("created_at", { ascending: true }),
+    supabase
+      .from("shuttle_run_events")
+      .select("route_id, event, created_at, created_by")
+      .in("route_id", routeIds)
+      .eq("service_date", today)
+      .order("created_at", { ascending: true }),
   ]);
   const stopIds = (stops ?? []).map((s) => s.id);
   const stopById = new Map((stops ?? []).map((s) => [s.id, s]));
@@ -94,9 +99,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
     (rosterByRoute[targetRouteId] ??= []).push({ studentName: a.student_name_raw, status: boarding?.status ?? "예정" });
   }
 
-  const eventsByRoute: Record<string, { event: string; created_at: string }[]> = {};
+  const eventsByRoute: Record<string, { event: string; created_at: string; createdBy: string | null }[]> = {};
   for (const e of events ?? []) {
-    (eventsByRoute[e.route_id] ??= []).push({ event: e.event, created_at: e.created_at });
+    (eventsByRoute[e.route_id] ??= []).push({ event: e.event, created_at: e.created_at, createdBy: e.created_by ?? null });
   }
 
   const payload = (routes ?? []).map((r) => ({

@@ -797,6 +797,40 @@ export type ShuttleStop = {
   gu: string | null;
   dong: string | null;
   geocoded_at: string | null;
+  // 실제 주행 GPS에서 학습한 좌표(요청: "gps를 통해서 정류장과... 정확도를 높여서"). 기존
+  // lat/lng(주소 지오코딩 결과)를 덮어쓰지 않고 따로 담아두고, 담당자가 확인 후 반영합니다.
+  gps_lat: number | null;
+  gps_lng: number | null;
+  gps_sample_count: number;
+  gps_updated_at: string | null;
+  created_at: string;
+};
+
+// Traccar Client(기사님 휴대폰의 무료 위치 전송 앱)와 노선을 연결하는 등록 정보입니다.
+export type ShuttleTrackerDevice = {
+  id: string;
+  device_id: string;
+  route_id: string;
+  label: string | null;
+  enabled: boolean;
+  last_seen_at: string | null;
+  created_at: string;
+};
+
+// 주행 기록에서 찾아낸 "차가 실제로 멈춰 있던 지점".
+export type ShuttleStopObservation = {
+  id: number;
+  route_id: string;
+  service_date: string;
+  lat: number;
+  lng: number;
+  arrived_at: string;
+  departed_at: string;
+  dwell_seconds: number;
+  sample_count: number;
+  order_index: number | null;
+  matched_stop_id: string | null;
+  distance_m: number | null;
   created_at: string;
 };
 

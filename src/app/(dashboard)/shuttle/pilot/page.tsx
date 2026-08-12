@@ -2,10 +2,19 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isAdminUser } from "@/lib/roles";
-import type { ShuttleRoute, ShuttlePilotRoute, ShuttleBoardLink, ShuttleArrivalLink } from "@/lib/types";
+import type {
+  ShuttleRoute,
+  ShuttlePilotRoute,
+  ShuttleBoardLink,
+  ShuttleArrivalLink,
+  ShuttleTrackerDevice,
+  ShuttleStop,
+  ShuttleStopObservation,
+} from "@/lib/types";
 import PilotMonitorClient from "@/components/shuttle/PilotMonitorClient";
 import BoardLinkManager from "@/components/shuttle/BoardLinkManager";
 import ArrivalLinkManager from "@/components/shuttle/ArrivalLinkManager";
+import TrackerDeviceManager from "@/components/shuttle/TrackerDeviceManager";
 import GuideButton from "@/components/common/GuideButton";
 
 const GUIDE_SECTIONS = [
@@ -47,6 +56,24 @@ export default async function ShuttlePilotPage() {
   const boardLinksRes = await supabase.from("shuttle_board_links").select("*").order("created_at", { ascending: false });
   const arrivalLinksRes = await supabase.from("shuttle_arrival_links").select("*").order("created_at", { ascending: false });
 
+  // Traccar(기사님 휴대폰 GPS) 등록 기기와, 그 위치에서 학습한 정류장 좌표·정차 관측을 함께
+  // 불러옵니다. 관측은 최근 것만 봐도 충분해서 최신 200건으로 제한합니다.
+  const devicesRes =
+    routeIds.length > 0
+      ? await supabase.from("shuttle_tracker_devices").select("*").in("route_id", routeIds).order("created_at", { ascending: false })
+      : { data: [] as ShuttleTrackerDevice[] };
+  const stopsRes =
+    routeIds.length > 0 ? await supabase.from("shuttle_stops").select("*").in("route_id", routeIds).order("seq") : { data: [] as ShuttleStop[] };
+  const observationsRes =
+    routeIds.length > 0
+      ? await supabase
+          .from("shuttle_stop_observations")
+          .select("*")
+          .in("route_id", routeIds)
+          .order("arrived_at", { ascending: false })
+          .limit(200)
+      : { data: [] as ShuttleStopObservation[] };
+
   return (
     <div className="mx-auto max-w-5xl p-4 sm:p-6">
       <div className="mb-1 flex items-center justify-between gap-2">
@@ -59,6 +86,12 @@ export default async function ShuttlePilotPage() {
       <div className="flex flex-col gap-4">
         <BoardLinkManager initialLinks={(boardLinksRes.data as ShuttleBoardLink[] | null) ?? []} />
         <ArrivalLinkManager initialLinks={(arrivalLinksRes.data as ShuttleArrivalLink[] | null) ?? []} />
+        <TrackerDeviceManager
+          routes={(routesRes.data as ShuttleRoute[] | null) ?? []}
+          initialDevices={(devicesRes.data as ShuttleTrackerDevice[] | null) ?? []}
+          stops={(stopsRes.data as ShuttleStop[] | null) ?? []}
+          observations={(observationsRes.data as ShuttleStopObservation[] | null) ?? []}
+        />
         <PilotMonitorClient
           routes={(routesRes.data as ShuttleRoute[] | null) ?? []}
           initialPilots={(pilotsRes.data as ShuttlePilotRoute[] | null) ?? []}

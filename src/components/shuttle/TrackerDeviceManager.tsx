@@ -1,0 +1,342 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { useToast } from "@/components/common/ToastProvider";
+import type { ShuttleRoute, ShuttleTrackerDevice, ShuttleStop, ShuttleStopObservation } from "@/lib/types";
+
+// 요청: "기사님들은 네비를 핸드폰으로 하시는 경우도 많아서... 백그라운드에서 돌아갈 수 있도록",
+// "각 정류장도 우리는 지금 정확한 정보를 가지고 있지 않아서, gps를 통해서... 정확도를 높여서"
+//
+// 기사님 휴대폰에 무료 앱(Traccar Client)을 깔고 여기서 발급한 기기 ID와 서버 주소만 한 번
+// 넣어드리면, 그 뒤로는 조작 없이 백그라운드로 위치가 들어옵니다. 들어온 주행 기록에서 차가
+// 실제로 멈춘 자리를 찾아 정류장 좌표를 학습하고, 담당자가 확인 후 반영할 수 있습니다.
+export default function TrackerDeviceManager({
+  routes,
+  initialDevices,
+  stops,
+  observations,
+}: {
+  routes: ShuttleRoute[];
+  initialDevices: ShuttleTrackerDevice[];
+  stops: ShuttleStop[];
+  observations: ShuttleStopObservation[];
+}) {
+  const notify = useToast();
+  const [devices, setDevices] = useState(initialDevices);
+  const [stopList, setStopList] = useState(stops);
+  const [obs, setObs] = useState(observations);
+  const [busy, setBusy] = useState(false);
+  const [newRouteId, setNewRouteId] = useState("");
+  const [newLabel, setNewLabel] = useState("");
+  const [showGuide, setShowGuide] = useState(false);
+
+  const routeById = useMemo(() => new Map(routes.map((r) => [r.id, r])), [routes]);
+  const stopsByRoute = useMemo(() => {
+    const map = new Map<string, ShuttleStop[]>();
+    for (const s of stopList) {
+      const list = map.get(s.route_id) ?? [];
+      list.push(s);
+      map.set(s.route_id, list);
+    }
+    for (const list of map.values()) list.sort((a, b) => a.seq - b.seq);
+    return map;
+  }, [stopList]);
+
+  const trackedRouteIds = useMemo(() => new Set(devices.map((d) => d.route_id)), [devices]);
+  const unmatched = useMemo(() => obs.filter((o) => !o.matched_stop_id), [obs]);
+
+  function serverUrl() {
+    return typeof window === "undefined" ? "" : `${window.location.origin}/api/shuttle/track`;
+  }
+
+  async function call(body: Record<string, unknown>) {
+    setBusy(true);
+    try {
+      const res = await fetch("/api/shuttle/tracker", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        notify(json.error ?? "처리하지 못했습니다.", "error");
+        return null;
+      }
+      return json;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function addDevice() {
+    if (!newRouteId) {
+      notify("노선을 먼저 선택해주세요.", "error");
+      return;
+    }
+    const json = await call({ action: "create", routeId: newRouteId, label: newLabel || null });
+    if (!json?.device) return;
+    setDevices((prev) => [json.device as ShuttleTrackerDevice, ...prev]);
+    setNewLabel("");
+    notify("기기를 등록했습니다. 기사님 휴대폰에 아래 값을 넣어주세요.", "success");
+  }
+
+  async function toggleDevice(device: ShuttleTrackerDevice) {
+    const next = !device.enabled;
+    setDevices((prev) => prev.map((d) => (d.id === device.id ? { ...d, enabled: next } : d)));
+    await call({ action: "toggle", id: device.id, enabled: next });
+  }
+
+  async function removeDevice(device: ShuttleTrackerDevice) {
+    if (!window.confirm(`${routeById.get(device.route_id)?.route_no ?? ""}호 기기 등록을 삭제할까요?`)) return;
+    const json = await call({ action: "delete", id: device.id });
+    if (json) setDevices((prev) => prev.filter((d) => d.id !== device.id));
+  }
+
+  async function applyGps(stop: ShuttleStop) {
+    const json = await call({ action: "apply_gps", stopId: stop.id });
+    if (!json) return;
+    setStopList((prev) =>
+      prev.map((s) => (s.id === stop.id ? { ...s, lat: s.gps_lat, lng: s.gps_lng, geocoded_at: new Date().toISOString() } : s))
+    );
+    notify("정류장 좌표를 GPS 학습값으로 바꿨습니다.", "success");
+  }
+
+  async function assignObservation(observationId: number, stopId: string) {
+    const json = await call({ action: "assign_observation", observationId, stopId: stopId || null });
+    if (!json) return;
+    setObs((prev) => prev.map((o) => (o.id === observationId ? { ...o, matched_stop_id: stopId || null } : o)));
+  }
+
+  function copy(text: string) {
+    navigator.clipboard.writeText(text).then(
+      () => notify("복사했습니다.", "success"),
+      () => notify("복사하지 못했습니다.", "error")
+    );
+  }
+
+  // 학습 좌표가 있고, 기존 좌표와 눈에 띄게 차이 나는 정류장만 보여줍니다(그대로인 곳은 볼 필요 없음).
+  const learnedStops = useMemo(
+    () =>
+      stopList
+        .filter((s) => s.gps_lat != null && s.gps_lng != null && trackedRouteIds.has(s.route_id))
+        .sort((a, b) => (b.gps_sample_count ?? 0) - (a.gps_sample_count ?? 0)),
+    [stopList, trackedRouteIds]
+  );
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-4">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h2 className="text-sm font-bold text-slate-800">🛰️ 기사님 휴대폰 GPS 추적 (Traccar Client)</h2>
+        <button
+          type="button"
+          onClick={() => setShowGuide((v) => !v)}
+          className="rounded-lg border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-500"
+        >
+          {showGuide ? "설치 안내 닫기" : "설치 안내 보기"}
+        </button>
+      </div>
+      <p className="mb-3 text-[11px] leading-relaxed text-slate-500">
+        기사님 휴대폰에 무료 앱을 한 번만 설정해드리면, 그 뒤로는 조작 없이 백그라운드로 위치가 들어옵니다. 네비 화면은 가려지지
+        않습니다. 하원 시간대(12~20시, 평일) 밖의 위치는 서버에 저장하지 않습니다.
+      </p>
+
+      {showGuide && (
+        <ol className="mb-4 list-decimal space-y-1.5 rounded-lg bg-slate-50 p-3 pl-7 text-[11px] leading-relaxed text-slate-600">
+          <li>기사님 휴대폰 앱스토어(아이폰) 또는 Play 스토어(안드로이드)에서 <b>Traccar Client</b>를 설치합니다.</li>
+          <li>앱 설정에서 <b>서버 주소(Server URL)</b>에 아래 주소를, <b>기기 식별자(Device identifier)</b>에 노선별 기기 ID를 넣습니다.</li>
+          <li>위치 권한을 <b>&quot;항상 허용&quot;</b>으로 설정합니다(백그라운드 전송에 필수).</li>
+          <li>정확도 <b>Highest</b>, 간격(Interval) <b>15초</b>, 거리(Distance) <b>0</b>, <b>정차 감지(Stop detection) 끄기</b>로 설정합니다. 정류장 좌표를 학습하려면 멈춰 있는 동안에도 위치가 계속 와야 합니다.</li>
+          <li>안드로이드는 <b>배터리 최적화 예외</b>를 켜주세요(설정 → 앱 → 배터리 → 제한 없음). 안 하면 절전 모드에서 전송이 끊깁니다.</li>
+          <li>마지막으로 앱 상단 스위치를 켜면 끝입니다. 이후 휴대폰을 재시작해도 자동으로 다시 켜집니다.</li>
+        </ol>
+      )}
+
+      <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
+        <span className="text-[11px] font-bold text-slate-500">서버 주소</span>
+        <code className="flex-1 truncate rounded bg-white px-2 py-1 text-[11px] text-slate-700">{serverUrl()}</code>
+        <button
+          type="button"
+          onClick={() => copy(serverUrl())}
+          className="rounded-lg bg-slate-700 px-2 py-1 text-[11px] font-semibold text-white"
+        >
+          복사
+        </button>
+      </div>
+
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <select
+          value={newRouteId}
+          onChange={(e) => setNewRouteId(e.target.value)}
+          className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs"
+        >
+          <option value="">노선 선택</option>
+          {routes.map((r) => (
+            <option key={r.id} value={r.id}>
+              {r.route_no}호 {r.name ?? ""}
+            </option>
+          ))}
+        </select>
+        <input
+          value={newLabel}
+          onChange={(e) => setNewLabel(e.target.value)}
+          placeholder="기사님 성함 / 차량번호 (선택)"
+          className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs"
+        />
+        <button
+          type="button"
+          onClick={addDevice}
+          disabled={busy}
+          className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-50"
+        >
+          기기 ID 발급
+        </button>
+      </div>
+
+      {devices.length === 0 ? (
+        <p className="py-4 text-center text-xs text-slate-400">아직 등록된 기기가 없습니다.</p>
+      ) : (
+        <div className="mb-5 flex flex-col gap-1.5">
+          {devices.map((d) => {
+            const route = routeById.get(d.route_id);
+            return (
+              <div key={d.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 p-2">
+                <span className="text-xs font-bold text-slate-700">
+                  {route?.route_no ?? "?"}호 {route?.name ?? ""}
+                </span>
+                {d.label && <span className="text-[11px] text-slate-400">{d.label}</span>}
+                <code className="rounded bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-800">{d.device_id}</code>
+                <button
+                  type="button"
+                  onClick={() => copy(d.device_id)}
+                  className="rounded border border-slate-300 px-1.5 py-0.5 text-[11px] text-slate-500"
+                >
+                  복사
+                </button>
+                <span className={"text-[11px] " + (d.last_seen_at ? "text-emerald-600" : "text-slate-400")}>
+                  {d.last_seen_at ? `최근 수신 ${new Date(d.last_seen_at).toLocaleString("ko-KR")}` : "아직 수신 없음"}
+                </span>
+                <div className="ml-auto flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => toggleDevice(d)}
+                    className={
+                      "rounded-lg px-2 py-1 text-[11px] font-semibold " +
+                      (d.enabled ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-400")
+                    }
+                  >
+                    {d.enabled ? "사용중" : "중지됨"}
+                  </button>
+                  <button type="button" onClick={() => removeDevice(d)} className="text-[11px] font-semibold text-red-500">
+                    삭제
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <h3 className="mb-1 text-xs font-bold text-slate-700">📍 GPS로 학습한 정류장 좌표</h3>
+      <p className="mb-2 text-[11px] leading-relaxed text-slate-500">
+        실제 주행에서 차가 멈춰 있던 자리를 모아 평균 낸 좌표입니다. 관측 횟수가 쌓일수록 정확해집니다. 확인 후 &quot;반영&quot;을
+        누르면 정류장의 실제 좌표가 이 값으로 바뀝니다.
+      </p>
+      {learnedStops.length === 0 ? (
+        <p className="mb-5 py-3 text-center text-xs text-slate-400">아직 학습된 좌표가 없습니다. 운행 기록이 쌓이면 표시됩니다.</p>
+      ) : (
+        <div className="mb-5 flex flex-col gap-1.5">
+          {learnedStops.map((s) => {
+            const route = routeById.get(s.route_id);
+            const shift =
+              s.lat != null && s.lng != null && s.gps_lat != null && s.gps_lng != null
+                ? Math.round(distanceMeters(s.lat, s.lng, s.gps_lat, s.gps_lng))
+                : null;
+            return (
+              <div key={s.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 p-2 text-[11px]">
+                <span className="font-bold text-slate-700">
+                  {route?.route_no ?? "?"}호 · {s.seq}번
+                </span>
+                <span className="max-w-[220px] truncate text-slate-500">{s.address ?? "(주소 없음)"}</span>
+                <span className="text-slate-400">관측 {s.gps_sample_count}회</span>
+                {shift != null && (
+                  <span className={shift > 100 ? "font-bold text-orange-600" : "text-slate-400"}>기존 좌표와 {shift}m 차이</span>
+                )}
+                <a
+                  href={`https://map.kakao.com/link/map/${encodeURIComponent(s.address ?? "정차지점")},${s.gps_lat},${s.gps_lng}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded border border-slate-300 px-1.5 py-0.5 text-slate-500"
+                >
+                  지도
+                </a>
+                <button
+                  type="button"
+                  onClick={() => applyGps(s)}
+                  disabled={busy}
+                  className="ml-auto rounded-lg bg-blue-600 px-2 py-1 font-semibold text-white disabled:opacity-50"
+                >
+                  반영
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {unmatched.length > 0 && (
+        <>
+          <h3 className="mb-1 text-xs font-bold text-slate-700">❓ 어느 정류장인지 모르는 정차 지점</h3>
+          <p className="mb-2 text-[11px] leading-relaxed text-slate-500">
+            차가 멈춰 있었지만 기존 정류장과 연결되지 않은 자리입니다. 등록되지 않은 정류장이거나, 기존 좌표가 많이 틀린
+            경우입니다. 어느 정류장인지 골라주시면 다음부터 그 정류장의 학습에 함께 반영됩니다.
+          </p>
+          <div className="flex flex-col gap-1.5">
+            {unmatched.slice(0, 30).map((o) => {
+              const route = routeById.get(o.route_id);
+              return (
+                <div key={o.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-[11px]">
+                  <span className="font-bold text-slate-700">{route?.route_no ?? "?"}호</span>
+                  <span className="text-slate-500">
+                    {o.service_date} · {new Date(o.arrived_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })} ·{" "}
+                    {o.order_index ?? "?"}번째 정차 · {Math.round(o.dwell_seconds)}초
+                  </span>
+                  <a
+                    href={`https://map.kakao.com/link/map/정차지점,${o.lat},${o.lng}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-500"
+                  >
+                    지도
+                  </a>
+                  <select
+                    defaultValue=""
+                    onChange={(e) => assignObservation(o.id, e.target.value)}
+                    className="ml-auto rounded-lg border border-slate-300 px-1.5 py-1 text-[11px]"
+                  >
+                    <option value="">정류장 지정...</option>
+                    {(stopsByRoute.get(o.route_id) ?? []).map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.seq}번 {s.address ?? ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// 화면 표시용 간단 거리 계산(서버의 haversineMeters와 같은 식).
+function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const R = 6371000;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}

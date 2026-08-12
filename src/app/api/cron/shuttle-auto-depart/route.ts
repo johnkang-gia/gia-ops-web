@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { logApiError } from "@/lib/logging";
 import { haversineMeters } from "@/lib/shuttleRecommend";
+import { ensureCampusLocation } from "@/lib/shuttleCampus";
 
 // 요청: "여러대가 한꺼번에 도착해서 그 아이들을 차로 인계하고 태우다보면, 출발하는 것을
 // 체크하는걸 까먹거나, 늦어져서 계속 화면에 차량이 뜨는 경우가 너무 많아" - 교직원 도착체크
@@ -31,48 +32,6 @@ const MIN_DWELL_MS = 90 * 1000;
 const DEPART_RADIUS_M = 100;
 // GPS 핑이 아예 없는 노선을 위한 시간 기반 안전장치(분).
 const TIME_FALLBACK_MIN = 20;
-
-const CAMPUS_NAME = "본교";
-const CAMPUS_ADDRESS = "서울 강남구 논현로131길 45";
-
-async function ensureCampusLocation(supabase: SupabaseClient): Promise<{ lat: number; lng: number } | null> {
-  const { data: existing } = await supabase
-    .from("shuttle_campus_locations")
-    .select("id, lat, lng")
-    .eq("name", CAMPUS_NAME)
-    .maybeSingle();
-
-  if (existing?.lat != null && existing?.lng != null) {
-    return { lat: existing.lat, lng: existing.lng };
-  }
-
-  const kakaoKey = process.env.KAKAO_REST_API_KEY;
-  if (!kakaoKey) return null;
-
-  try {
-    const res = await fetch(`https://dapi.kakao.com/v2/local/search/address.json?query=${encodeURIComponent(CAMPUS_ADDRESS)}`, {
-      headers: { Authorization: `KakaoAK ${kakaoKey}` },
-    });
-    if (!res.ok) return null;
-    const json = await res.json();
-    const doc = json.documents?.[0];
-    if (!doc) return null;
-    const lat = parseFloat(doc.y);
-    const lng = parseFloat(doc.x);
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-
-    if (existing?.id) {
-      await supabase.from("shuttle_campus_locations").update({ lat, lng, geocoded_at: new Date().toISOString() }).eq("id", existing.id);
-    } else {
-      await supabase
-        .from("shuttle_campus_locations")
-        .insert({ name: CAMPUS_NAME, address: CAMPUS_ADDRESS, lat, lng, geocoded_at: new Date().toISOString() });
-    }
-    return { lat, lng };
-  } catch {
-    return null;
-  }
-}
 
 async function runAutoDepartPass(supabase: SupabaseClient): Promise<{ gpsDeparted: number; timeoutDeparted: number }> {
   const today = new Date().toISOString().slice(0, 10);

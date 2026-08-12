@@ -215,8 +215,20 @@ function findEnglishNameCandidates(text: string): string[] {
 // 이름이 아니므로(요청). 처음에는 문장 맨 앞에 붙은 멘션만 지웠는데, "@쌤 확인 부탁드려요
 // 정서안 결석입니다"처럼 멘션이 문장 중간에도 섞여 나오는 경우가 있어(요청: "결석에 @
 // 또 나왔다"), 위치에 상관없이 문장 안의 모든 "@토큰"을 지우도록 넓혔습니다.
+//
+// 요청: "@뒤에는 이름/성으로 이루어져있어서 무조건 제거해주고, 그 이후에 이름을 유추하는
+// 필터링이 되었으면 좋겠어" - 구글챗 멘션은 "이름 성" 두 단어로 된 경우가 있는데(예:
+// "@Teneqha Form Jino Park will be absent tomorrow"에서 실제 멘션은 "Teneqha Form"),
+// 이전에는 "@" 뒤 첫 한 단어만 지워서 두 번째 단어("Form")가 그대로 남아 이름처럼 잘못
+// 뽑히곤 했습니다. 영문 멘션은 대문자로 시작하는 단어가 바로 이어지면 최대 두 단어(이름+성)
+// 까지 함께 지우고, 한글 멘션은 원래대로 공백 전까지 한 단어만 지웁니다(한글 이름은 성+이름을
+// 띄어쓰지 않고 붙여 쓰므로 애초에 한 단어입니다) - 뒤에 이어지는 실제 문장(예: "Jino Park
+// will be absent tomorrow")까지 지워버리지 않도록 정확히 두 단어까지만으로 제한합니다.
 export function stripLeadingMention(text: string): string {
-  const rest = text.replace(/@\S+/g, " ").replace(/\s+/g, " ").trim();
+  const rest = text
+    .replace(/@[A-Za-z][A-Za-z'.-]*\s+[A-Z][A-Za-z'.-]*|@\S+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
   return rest || text;
 }
 

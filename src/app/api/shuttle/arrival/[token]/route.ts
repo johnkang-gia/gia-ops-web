@@ -36,7 +36,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
 
   const { data: routes } = await supabase
     .from("shuttle_routes")
-    .select("id, route_no, name, driver_name, driver_phone")
+    .select("id, route_no, name, driver_name, driver_phone, vehicle_no")
     .eq("active", true)
     .eq("direction", "하원")
     .eq("term", link.term)
@@ -110,6 +110,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
     name: r.name,
     driverName: r.driver_name,
     driverPhone: r.driver_phone,
+    vehicleNo: r.vehicle_no,
     roster: (rosterByRoute[r.id] ?? []).sort((a, b) => a.studentName.localeCompare(b.studentName, "ko")),
     events: eventsByRoute[r.id] ?? [],
   }));

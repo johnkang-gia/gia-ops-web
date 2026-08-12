@@ -18,6 +18,7 @@ type ArrivalRoute = {
   name: string | null;
   driverName: string | null;
   driverPhone: string | null;
+  vehicleNo: string | null;
   roster: { studentName: string; status: string }[];
   events: { event: string; created_at: string; createdBy: string | null }[];
 };
@@ -258,6 +259,8 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
                 >
                   <span className="text-base font-black leading-tight">{r.routeNo}호</span>
                   {r.name && <span className="max-w-full truncate text-[8px] font-semibold leading-tight opacity-80">{r.name}</span>}
+                  {/* 요청: "차량도착 출발체크 교직원용에 차 번호도 나오게 해줘 작게" */}
+                  {r.vehicleNo && <span className="max-w-full truncate text-[7px] font-medium leading-tight opacity-70">{r.vehicleNo}</span>}
                   <span className="text-[9px] font-bold leading-tight">
                     {status === "waiting" ? "미도착" : status === "arrived" ? "도착함" : "출발함"}
                   </span>

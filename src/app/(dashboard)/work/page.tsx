@@ -1,9 +1,9 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
-import { isAdminUser } from "@/lib/roles";
+import { isAdminUser, isStaffOrAboveUser } from "@/lib/roles";
 import WorkBoardClient from "@/components/work/WorkBoardClient";
-import type { Task, Department, TeamMember, TaskModeColor, GoogleChatMirrorMessage } from "@/lib/types";
+import type { Task, Department, TeamMember, TaskModeColor, GoogleChatMirrorMessage, WorkNotice } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -47,6 +47,16 @@ export default async function WorkPage() {
   const team = (teamRes.data as TeamMember[] | null) ?? [];
   const isAdmin = isAdminUser(me);
 
+  // 업무 보드 상단 전체공지(요청: "업무에서 전체공지가 있을경우 바로 상단으로 옮겨지고").
+  // 최신 하나만 상단에 뜨지만 히스토리도 같은 목록에서 보여주므로 최근 100건을 함께 가져오고,
+  // 내가 접어둔 공지 id도 같이 받아서 첫 화면부터 접힌 상태로 그려지게 합니다.
+  const [noticesRes, collapsesRes] = await Promise.all([
+    supabase.from("work_notices").select("*").is("archived_at", null).order("created_at", { ascending: false }).limit(100),
+    supabase.from("work_notice_collapses").select("notice_id").eq("user_email", me.email),
+  ]);
+  const notices = (noticesRes.data as WorkNotice[] | null) ?? [];
+  const collapsedNoticeIds = ((collapsesRes.data as { notice_id: string }[] | null) ?? []).map((c) => c.notice_id);
+
   return (
     <div className="h-full">
       <WorkBoardClient
@@ -58,6 +68,9 @@ export default async function WorkPage() {
         initialModeColors={(modeColorRes.data as TaskModeColor[] | null) ?? []}
         initialMirrorMessages={(mirrorRes.data as GoogleChatMirrorMessage[] | null) ?? []}
         roster={roster}
+        initialNotices={notices}
+        collapsedNoticeIds={collapsedNoticeIds}
+        canManageNotices={isStaffOrAboveUser(me)}
       />
     </div>
   );

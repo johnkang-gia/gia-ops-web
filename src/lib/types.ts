@@ -934,6 +934,20 @@ export type ShuttleArrivalLink = {
   created_at: string;
 };
 
+// 업무 보드 상단 전체공지(요청: "업무에서 전체공지가 있을경우 바로 상단으로 옮겨지고, 새로운
+// 공지가 있으면 이전공지가 사라지고, 다음공지가 상단으로"). 공지는 지우지 않고 쌓아두고 가장
+// 최근 것 하나만 상단에 띄웁니다 - 나머지는 히스토리에서 볼 수 있습니다.
+export type WorkNotice = {
+  id: string;
+  scope: "전체" | "부서";
+  department: string | null;
+  title: string;
+  body: string | null;
+  author_email: string;
+  archived_at: string | null;
+  created_at: string;
+};
+
 // 안전운행지수(3단계-a) - 급가속·급감속 "기준치 초과 순간"만 기록합니다.
 export type ShuttleSafetyEventType = "급가속" | "급감속";
 

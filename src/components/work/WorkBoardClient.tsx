@@ -6,7 +6,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useRealtimeTable } from "@/lib/useRealtimeTable";
 import { useOnlineUsers } from "@/lib/useOnlineUsers";
-import type { Task, TaskStatus, Department, TeamMember, TaskModeColor, GoogleChatMirrorMessage } from "@/lib/types";
+import type { Task, TaskStatus, Department, TeamMember, TaskModeColor, GoogleChatMirrorMessage, WorkNotice } from "@/lib/types";
 import { nameFor } from "@/lib/teamName";
 import { renewRecurringTask } from "@/lib/recurrence";
 import { useRefreshTaskCounts } from "@/components/NotificationBell";
@@ -15,6 +15,7 @@ import { STATUS_LABEL } from "./statusConfig";
 import WorkspaceArea from "./WorkspaceArea";
 import TaskDetailPanel from "./TaskDetailPanel";
 import WorkGuideModal from "./WorkGuideModal";
+import NoticeBanner from "./NoticeBanner";
 import type { RosterStudent } from "@/lib/attendanceDigest";
 
 type StatusToast = { id: string; taskId: string; text: string };
@@ -28,6 +29,9 @@ export default function WorkBoardClient({
   initialModeColors,
   initialMirrorMessages,
   roster,
+  initialNotices,
+  collapsedNoticeIds,
+  canManageNotices,
 }: {
   initialTasks: Task[];
   team: TeamMember[];
@@ -39,6 +43,10 @@ export default function WorkBoardClient({
   // 재적생 명단 - 출결내역 위젯이 문장에서 학생 이름을 명부와 대조할 때 씁니다(동명이인
   // 구분을 위해 학년 포함).
   roster: RosterStudent[];
+  // 상단 전체공지(요청) - 최신 하나만 배너로 뜨고 나머지는 히스토리에서 봅니다.
+  initialNotices: WorkNotice[];
+  collapsedNoticeIds: string[];
+  canManageNotices: boolean;
 }) {
   const [tasks, setTasks] = useRealtimeTable<Task>("tasks", initialTasks);
   const notify = useToast();
@@ -306,6 +314,17 @@ export default function WorkBoardClient({
           ❓
         </button>
       </div>
+
+      {/* 요청: "전체공지가 있을경우 바로 상단으로 옮겨지고" - 부서 탭 바로 아래, 업무 화면
+          맨 위에 배너로 띄웁니다. 최신 공지 하나만 뜨고, 사람마다 따로 접을 수 있습니다. */}
+      <NoticeBanner
+        initialNotices={initialNotices}
+        collapsedIds={collapsedNoticeIds}
+        activeDepartmentName={activeDepartment.name}
+        team={team}
+        userEmail={userEmail}
+        canManage={canManageNotices}
+      />
 
       {guideOpen && <WorkGuideModal onClose={() => setGuideOpen(false)} />}
 

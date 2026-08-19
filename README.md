@@ -34,7 +34,11 @@ npm run dev
 - `src/lib/pinCookie.ts` - PIN 2차 보안 쿠키 서명/검증.
 - `src/assets/fonts` - PDF 생성에 쓰이는 한글 폰트(Pretendard) 내장 파일.
 - `src/proxy.ts` - 로그인 세션 확인 + giamicro.com 도메인 검사 + PIN 확인(Next.js 16의 미들웨어).
-- `supabase/schema.sql` - Supabase에 붙여넣고 실행할 테이블/보안규칙(RLS)/실시간 설정 전체.
+- `supabase/schema.sql` - 테이블/보안규칙(RLS)/실시간 설정 **전체 구조를 한눈에 보는 참고 문서**.
+- `supabase/migrations/` - 실제로 DB에 반영되는 변경분. main에 머지되면 GitHub Actions
+  (`.github/workflows/supabase-migrate.yml`)가 아직 반영되지 않은 파일만 자동으로 실행합니다.
+  새 변경은 `YYYYMMDDHHMMSS_설명.sql` 형식으로 이 폴더에 추가하고, 같은 내용을 `schema.sql`
+  아래에도 덧붙여 둡니다.
 - `scripts/migrate-from-export.mjs` - 구글 시트에서 내보낸 JSON을 Supabase로 옮기는 스크립트.
 
 자세한 설치·배포·데이터 이전·AI 워크플로우 사용법은 함께 전달된

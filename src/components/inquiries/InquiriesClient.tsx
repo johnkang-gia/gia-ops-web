@@ -12,15 +12,26 @@ const PAGE_SIZE = 10;
 
 const GUIDE_SECTIONS = [
   {
-    title: "🗣️ 문의및 건의사항이란?",
-    lines: ["시스템 오류 신고나 개선 건의사항을 남기는 곳입니다. 카테고리(오류/건의 등)를 골라 작성하면 담당자가 확인 후 처리 상태를 갱신합니다."],
+    title: "🗣️ 문의및 건의사항이란? / What is this?",
+    lines: [
+      "시스템 오류 신고나 개선 건의사항을 남기는 곳입니다. 카테고리(오류/건의 등)를 골라 작성하면 담당자가 확인 후 처리 상태를 갱신합니다.",
+      "This is where you report problems or suggest improvements. Pick a category, write it in Korean or English, and a staff member will reply and update the status.",
+    ],
   },
 ];
 
+// 요청: "문의할 수 있는 창구도 한글/영어 병기할 수 있게 해줘" - 원어민 선생님도 바로 알아볼 수
+// 있도록 카테고리·상태 이름에 영어를 함께 적습니다.
 const CATEGORY_LABEL: Record<string, string> = {
-  오류: "🐞 오류",
-  기능제안: "💡 기능제안",
-  기타: "💬 기타",
+  오류: "🐞 오류 Bug",
+  기능제안: "💡 기능제안 Idea",
+  기타: "💬 기타 Other",
+};
+
+const STATUS_LABEL_EN: Record<string, string> = {
+  접수: "Received",
+  처리중: "In progress",
+  완료: "Done",
 };
 
 const STATUS_STYLE: Record<string, string> = {
@@ -115,12 +126,17 @@ export default function InquiriesClient({
     <div className="mx-auto flex h-full max-w-3xl flex-col overflow-hidden">
       <div className="shrink-0">
         <div className="mb-1 flex items-center justify-between gap-2">
-          <h1 className="text-lg font-bold">문의및 건의사항</h1>
-          <GuideButton title="문의및 건의사항 사용 가이드" sections={GUIDE_SECTIONS} />
+          <h1 className="text-lg font-bold">
+            문의및 건의사항 <span className="text-sm font-normal text-slate-400">Questions &amp; Suggestions</span>
+          </h1>
+          <GuideButton title="문의및 건의사항 사용 가이드 / Guide" sections={GUIDE_SECTIONS} />
         </div>
-        <p className="mb-4 text-xs text-slate-500">
-          오류를 발견했거나 앱에 추가되면 좋을 기능이 있으면 남겨주세요. 담당자가 확인 후 상태와
-          답변을 남깁니다.
+        <p className="mb-4 text-xs leading-relaxed text-slate-500">
+          오류를 발견했거나 앱에 추가되면 좋을 기능이 있으면 남겨주세요. 담당자가 확인 후 상태와 답변을 남깁니다.
+          <br />
+          <span className="text-slate-400">
+            Found a problem, or have an idea for the app? Write it here in Korean or English — a staff member will reply.
+          </span>
         </p>
 
         <form onSubmit={handleSubmit} className="mb-6 flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -142,22 +158,22 @@ export default function InquiriesClient({
             ))}
           </div>
           <label className="flex flex-col gap-1 text-xs text-slate-500">
-            제목
+            제목 <span className="text-slate-400">Title</span>
             <input
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder={category === "오류" ? "예: 회의록 저장 시 오류 발생" : "예: 사건기록에 사진 첨부 기능 추가"}
+              placeholder={category === "오류" ? "예: 저장할 때 오류가 납니다 / e.g. Error when saving" : "예: 사진 첨부 기능이 있으면 좋겠습니다 / e.g. Please add photo upload"}
               className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
             />
           </label>
           <label className="flex flex-col gap-1 text-xs text-slate-500">
-            내용
+            내용 <span className="text-slate-400">Details</span>
             <textarea
               value={content}
               onChange={(e) => setContent(e.target.value)}
               rows={4}
-              placeholder="어떤 상황에서 무슨 일이 있었는지, 또는 어떤 기능이 필요한지 자유롭게 적어주세요."
+              placeholder="어떤 상황에서 무슨 일이 있었는지, 또는 어떤 기능이 필요한지 자유롭게 적어주세요. 한국어·영어 모두 괜찮습니다.&#10;Describe what happened or what you need. Korean or English is fine."
               className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
             />
           </label>
@@ -167,12 +183,14 @@ export default function InquiriesClient({
             disabled={submitting}
             className="w-fit rounded-lg bg-gia-navy px-4 py-2 text-sm font-semibold text-white hover:bg-gia-navy-2 disabled:opacity-50"
           >
-            {submitting ? "등록 중..." : "등록"}
+            {submitting ? "등록 중... Submitting..." : "등록 Submit"}
           </button>
         </form>
 
         <h2 className="mb-2 text-sm font-bold text-slate-700">
-          {isDeveloper ? `전체 문의 (${visibleItems.length}건)` : `내가 남긴 문의 (${visibleItems.length}건)`}
+          {isDeveloper
+            ? `전체 문의 All inquiries (${visibleItems.length})`
+            : `내가 남긴 문의 My inquiries (${visibleItems.length})`}
         </h2>
       </div>
       <div className="flex flex-1 flex-col gap-2 overflow-y-auto">
@@ -198,8 +216,9 @@ export default function InquiriesClient({
                 )}
                 <span className={"shrink-0 rounded-full px-2 py-0.5 text-xs " + (STATUS_STYLE[it.status] ?? "")}>
                   {it.status}
+                  {STATUS_LABEL_EN[it.status] && <span className="ml-1 opacity-70">{STATUS_LABEL_EN[it.status]}</span>}
                 </span>
-                <span className="shrink-0 text-xs font-bold text-blue-600">{expanded ? "접기 ‹" : "더보기 ›"}</span>
+                <span className="shrink-0 text-xs font-bold text-blue-600">{expanded ? "접기 ‹ Close" : "더보기 › More"}</span>
               </button>
               {expanded && (
                 <div className="border-t border-slate-100 px-4 py-3 text-sm">

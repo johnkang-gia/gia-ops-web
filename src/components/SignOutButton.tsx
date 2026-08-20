@@ -23,7 +23,7 @@ export default function SignOutButton({ dark = false }: { dark?: boolean }) {
           : "text-[var(--shell-text-muted,#64748b)] hover:text-[var(--shell-text,#0f172a)]")
       }
     >
-      로그아웃
+      로그아웃 <span className="opacity-60">Sign out</span>
     </button>
   );
 }

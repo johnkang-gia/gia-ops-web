@@ -172,6 +172,7 @@ export async function updateSession(request: NextRequest) {
         !path.startsWith("/account") &&
         !path.startsWith("/attendance") &&
         !path.startsWith("/pickup") &&
+        !path.startsWith("/inquiries") &&
         !path.startsWith("/api/")
       ) {
         const url = request.nextUrl.clone();
@@ -194,6 +195,7 @@ export async function updateSession(request: NextRequest) {
         !path.startsWith("/account") &&
         !path.startsWith("/attendance") &&
         !path.startsWith("/pickup") &&
+        !path.startsWith("/inquiries") &&
         !path.startsWith("/api/")
       ) {
         const url = request.nextUrl.clone();

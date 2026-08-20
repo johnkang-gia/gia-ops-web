@@ -32,8 +32,15 @@ export default async function WeeklyReportLandingPage() {
 
   return (
     <div className="mx-auto max-w-lg py-16 text-center">
-      <p className="text-lg font-semibold text-slate-700">아직 배정된 담임반/담당과목이 없습니다.</p>
-      <p className="mt-2 text-sm text-slate-400">관리자에게 반 또는 과목 배정을 요청해주세요.</p>
+      <p className="text-lg font-semibold text-slate-700">
+        아직 배정된 담임반/담당과목이 없습니다.
+        <span className="mt-1 block text-sm font-normal text-slate-400">No homeroom class or subject is assigned to you yet.</span>
+      </p>
+      <p className="mt-3 text-sm text-slate-400">
+        관리자에게 반 또는 과목 배정을 요청해주세요.
+        <br />
+        Please ask an administrator to assign you a class or subject.
+      </p>
     </div>
   );
 }

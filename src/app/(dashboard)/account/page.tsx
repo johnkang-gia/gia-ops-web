@@ -32,7 +32,7 @@ export default async function AccountPage() {
   return (
     <div className="mx-auto max-w-lg">
       <div className="mb-1 flex items-center justify-between gap-2">
-        <h1 className="text-lg font-bold">내 계정 설정</h1>
+        <h1 className="text-lg font-bold">내 계정 설정 <span className="text-sm font-normal text-slate-400">My Account</span></h1>
         <GuideButton title="내 계정 설정 사용 가이드" sections={GUIDE_SECTIONS} />
       </div>
       <p className="mb-6 text-xs text-slate-500">

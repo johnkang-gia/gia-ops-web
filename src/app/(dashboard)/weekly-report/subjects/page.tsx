@@ -8,10 +8,11 @@ import GuideButton from "@/components/common/GuideButton";
 
 const GUIDE_SECTIONS = [
   {
-    title: "📘 내 담당과목이란?",
+    title: "📘 내 담당과목이란? / What is this?",
     lines: [
       "내가 담당 교사로 지정된 과목의 수강 학생 명단이 자동으로 나타납니다.",
       "학생 카드를 눌러 학업/향상점/참여도/행동/사회성 등 주간 관찰기록을 작성·수정할 수 있습니다.",
+      "Subjects you are assigned to teach appear here with their enrolled students. Tap a student card to write or edit this week's observation record.",
     ],
   },
 ];
@@ -46,8 +47,8 @@ export default async function MySubjectsPage() {
   return (
     <div className="mx-auto max-w-5xl">
       <div className="mb-1 flex items-center justify-between gap-2">
-        <h1 className="text-lg font-bold">내 담당과목</h1>
-        <GuideButton title="내 담당과목 사용 가이드" sections={GUIDE_SECTIONS} />
+        <h1 className="text-lg font-bold">내 담당과목 <span className="text-sm font-normal text-slate-400">My Subjects</span></h1>
+        <GuideButton title="내 담당과목 사용 가이드 / Guide" sections={GUIDE_SECTIONS} />
       </div>
       <p className="mb-4 text-xs text-slate-500">
         {term ? `현재 학기: ${term.year}년 ${term.term_type}` : "진행중인 학기가 없습니다. 관리자에게 학기 설정을 요청해주세요."}

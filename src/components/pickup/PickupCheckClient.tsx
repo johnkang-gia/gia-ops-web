@@ -94,7 +94,12 @@ export default function PickupCheckClient({ groups: initialGroups, today }: { gr
   }
 
   if (groups.length === 0) {
-    return <p className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-400">우리 반 학생 명단이 아직 없습니다.</p>;
+    return (
+      <p className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-400">
+        우리 반 학생 명단이 아직 없습니다.
+        <span className="mt-1 block">No students are listed for your class yet.</span>
+      </p>
+    );
   }
 
   return (
@@ -106,12 +111,12 @@ export default function PickupCheckClient({ groups: initialGroups, today }: { gr
           <div key={g.classId}>
             <div className="mb-2 flex items-center gap-2">
               <h2 className="text-sm font-bold text-slate-700">{g.label}</h2>
-              <span className="text-[11px] text-slate-400">{g.items.length}명</span>
+              <span className="text-[11px] text-slate-400">{g.items.length}명 students</span>
               {pickupCount > 0 && (
-                <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-bold text-sky-600">픽업 {pickupCount}</span>
+                <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-bold text-sky-600">픽업 Pickup {pickupCount}</span>
               )}
               {absentCount > 0 && (
-                <span className="rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-bold text-red-600">결석 {absentCount}</span>
+                <span className="rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-bold text-red-600">결석 Absent {absentCount}</span>
               )}
             </div>
             <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
@@ -130,7 +135,7 @@ export default function PickupCheckClient({ groups: initialGroups, today }: { gr
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-bold text-slate-800">{it.name}</div>
                       <div className="text-[11px] text-slate-400">
-                        {noShuttle ? "셔틀 미탑승" : it.routeLabel ?? "노선 미배정"}
+                        {noShuttle ? "셔틀 미탑승 No shuttle" : it.routeLabel ? `${it.routeLabel} Bus` : "노선 미배정 No route"}
                       </div>
                     </div>
                     {noShuttle ? (
@@ -146,7 +151,7 @@ export default function PickupCheckClient({ groups: initialGroups, today }: { gr
                             (isPickup ? "bg-sky-500 text-white" : "bg-sky-50 text-sky-600")
                           }
                         >
-                          {isPickup ? "✓ 픽업" : "픽업"}
+                          {isPickup ? "✓ 픽업 Pickup" : "픽업 Pickup"}
                         </button>
                         <button
                           type="button"
@@ -157,7 +162,7 @@ export default function PickupCheckClient({ groups: initialGroups, today }: { gr
                             (isAbsent ? "bg-red-500 text-white" : "bg-red-50 text-red-600")
                           }
                         >
-                          {isAbsent ? "✓ 결석" : "결석"}
+                          {isAbsent ? "✓ 결석 Absent" : "결석 Absent"}
                         </button>
                       </div>
                     )}

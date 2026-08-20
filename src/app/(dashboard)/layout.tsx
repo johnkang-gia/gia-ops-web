@@ -460,16 +460,16 @@ export default async function DashboardLayout({
           <SidebarNavLinks categories={categories} />
         </nav>
         {/* 문의및건의사항은 특정 부서/직급 전용 기능이 아니라 버그 제보·건의 창구라, 관리자
-            메뉴에 묶지 않고 누구나 눈에 띄게 맨 아래에 작은 링크로 둡니다(교사는 애초에
-            위클리 리포트 화면만 쓰므로 노출하지 않습니다). */}
-        {!isTeacher && (
-          <Link
-            href="/inquiries"
-            className="mb-1 flex items-center gap-1.5 px-3 py-1.5 text-xs text-[var(--shell-text-muted)] hover:text-[var(--shell-text)]"
-          >
-            🗣️ 문의및건의사항
-          </Link>
-        )}
+            메뉴에 묶지 않고 누구나 눈에 띄게 맨 아래에 작은 링크로 둡니다. 교사에게도 엽니다
+            (요청: "문의할 수 있는 창구도 한글/영어 병기할 수 있게 해줘") - 원어민 선생님도
+            읽을 수 있도록 영어를 함께 적습니다. */}
+        <Link
+          href="/inquiries"
+          className="mb-1 flex flex-col px-3 py-1.5 text-xs text-[var(--shell-text-muted)] hover:text-[var(--shell-text)]"
+        >
+          <span>🗣️ 문의및건의사항</span>
+          <span className="text-[10px] opacity-70">Questions &amp; Suggestions</span>
+        </Link>
         {/* 요청("현재 버전을 문의사항 아래에 표시해주고 어떤 버전에서 무엇이 개선되었는지
             버전로그 볼 수 있도록") - 누르면 /changelog로 이동합니다. */}
         <Link
@@ -512,11 +512,9 @@ export default async function DashboardLayout({
         </div>
         <nav className="shell-blur flex items-center gap-1 overflow-x-auto border-b border-[var(--shell-border)] bg-[var(--shell-bg)] px-2 py-2 sm:hidden">
           <MobileNavLinks categories={categories} />
-          {!isTeacher && (
-            <Link href="/inquiries" className="ml-auto shrink-0 rounded-lg px-2 py-1.5 text-xs text-[var(--shell-text-muted)]">
-              🗣️ 문의
-            </Link>
-          )}
+          <Link href="/inquiries" className="ml-auto shrink-0 rounded-lg px-2 py-1.5 text-xs text-[var(--shell-text-muted)]">
+            🗣️ 문의 / Ask
+          </Link>
         </nav>
         <MainArea>{children}</MainArea>
       </div>

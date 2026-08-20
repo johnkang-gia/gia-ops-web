@@ -199,8 +199,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   );
 
   // ── ④ 하원 차량 화면 전환 시각인지 ─────────────────────────────────────────
+  // 전환 시각이 지나면 하원 운행 화면(지도 + 차량 체크)으로 바뀝니다. 예전에는 안내보드
+  // 링크를 따로 골라야 전환됐지만, 이제 대시보드가 자체 하원 화면을 갖고 있어 별도 설정 없이
+  // 시각만 지나면 전환됩니다.
   const switchMinutes = link.shuttle_switch_hour * 60 + link.shuttle_switch_minute;
-  const shuttleMode = !!link.shuttle_board_token && nowMinutes >= switchMinutes;
+  const shuttleMode = nowMinutes >= switchMinutes;
 
   return NextResponse.json({
     label: link.label,

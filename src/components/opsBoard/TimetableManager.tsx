@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
-import type { WrClass, WrPeriod, WrTimetableEntry, OpsBoardLink, ShuttleBoardLink } from "@/lib/types";
+import type { WrClass, WrPeriod, WrTimetableEntry, OpsBoardLink } from "@/lib/types";
 import { departmentOf, gradeSortKey, VISIBLE_DEPARTMENTS } from "@/lib/department";
 
 // 요청: "지금 시간에 각반이 무슨 수업시간인지" - 대시보드가 이 정보를 보여주려면 교시(몇 시부터
@@ -29,13 +29,11 @@ export default function TimetableManager({
   initialPeriods,
   initialEntries,
   initialBoardLinks,
-  shuttleBoardLinks,
 }: {
   classes: WrClass[];
   initialPeriods: WrPeriod[];
   initialEntries: WrTimetableEntry[];
   initialBoardLinks: OpsBoardLink[];
-  shuttleBoardLinks: ShuttleBoardLink[];
 }) {
   const notify = useToast();
   const [department, setDepartment] = useState<Department>(DEPARTMENTS[0]);
@@ -177,8 +175,8 @@ export default function TimetableManager({
           </button>
         </div>
         <p className="mb-3 text-[11px] leading-relaxed text-slate-500">
-          사무실 큰 모니터에 띄우는 화면입니다. 로그인 없이 주소만으로 열리므로 하루 종일 켜두어도 세션이 풀리지 않습니다. 설정한
-          시각이 되면 화면 전체가 하원 차량 안내보드로 자동 전환됩니다.
+          사무실 큰 모니터에 띄우는 화면입니다. 로그인 없이 주소만으로 열리므로 하루 종일 켜두어도 세션이 풀리지 않습니다. 설정한 시각이 되면 화면 전체가
+          하원 운행 화면(위 실시간 지도 + 아래 차량별 도착·출발·탑승 현황)으로 자동 전환됩니다.
         </p>
         {links.length === 0 ? (
           <p className="py-3 text-center text-xs text-slate-400">아직 만든 링크가 없습니다.</p>
@@ -220,18 +218,7 @@ export default function TimetableManager({
                   onChange={(e) => patchLink(l.id, { shuttle_switch_minute: Number(e.target.value) })}
                   className="w-12 rounded border border-slate-300 px-1.5 py-1 text-center"
                 />
-                <span className="text-slate-400">분 →</span>
-                <select
-                  value={l.shuttle_board_token ?? ""}
-                  onChange={(e) => patchLink(l.id, { shuttle_board_token: e.target.value || null })}
-                  className="rounded border border-slate-300 px-1.5 py-1"
-                  title="전환했을 때 띄울 안내보드"
-                >
-                  <option value="">차량화면 없음</option>
-                  {shuttleBoardLinks.map((b) => (
-                    <option key={b.id} value={b.token}>{b.label}</option>
-                  ))}
-                </select>
+                <span className="text-slate-400">분부터 하원 운행 화면</span>
                 <div className="ml-auto flex items-center gap-1.5">
                   <button onClick={() => copyUrl(l.token)} className="rounded border border-slate-300 px-2 py-1 font-semibold text-slate-600">
                     주소 복사

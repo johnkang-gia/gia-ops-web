@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isStaffOrAboveUser } from "@/lib/roles";
-import type { WrClass, WrPeriod, WrTimetableEntry, OpsBoardLink, ShuttleBoardLink } from "@/lib/types";
+import type { WrClass, WrPeriod, WrTimetableEntry, OpsBoardLink } from "@/lib/types";
 import TimetableManager from "@/components/opsBoard/TimetableManager";
 import GuideButton from "@/components/common/GuideButton";
 
@@ -12,7 +12,7 @@ const GUIDE_SECTIONS = [
     lines: [
       "사무실 큰 모니터에 띄워두는 화면입니다(요청: \"업무 탭을 사무실 가운데에 큰 모니터에 띄워서 전체가 한눈에 보고 파악할 수 있는 통합 대시보드\"). 화면 절반은 CCTV, 나머지 절반에 이 대시보드를 띄우는 구성을 전제로 만들었습니다.",
       "지금 각 반이 무슨 수업 중인지, 오늘 결석·지각·픽업 학생이 누구인지, 오늘 마감이거나 새로 등록된 업무가 무엇인지를 한 화면에 보여주고 30초마다 자동으로 갱신됩니다.",
-      "설정한 시각(기본 16:00)이 되면 화면 전체가 하원 차량 안내보드로 자동 전환됩니다. 전환할 안내보드는 아래 링크 목록에서 골라주세요.",
+      "설정한 시각(기본 16:00)이 되면 화면 전체가 하원 운행 화면으로 자동 전환됩니다. 위쪽에는 전체 셔틀 실시간 지도, 아래쪽에는 노선별 도착·출발과 탑승 진행 현황이 뜹니다.",
       "로그인 없이 주소만으로 열리므로 하루 종일 켜두어도 세션이 풀리지 않습니다.",
     ],
   },
@@ -34,12 +34,11 @@ export default async function OpsBoardAdminPage() {
   if (!isStaffOrAboveUser(me)) redirect("/home");
 
   const supabase = await createClient();
-  const [classesRes, periodsRes, entriesRes, linksRes, shuttleLinksRes] = await Promise.all([
+  const [classesRes, periodsRes, entriesRes, linksRes] = await Promise.all([
     supabase.from("wr_classes").select("*").order("grade").order("class_name"),
     supabase.from("wr_periods").select("*").order("start_time"),
     supabase.from("wr_timetable").select("*"),
     supabase.from("ops_board_links").select("*").order("created_at", { ascending: false }),
-    supabase.from("shuttle_board_links").select("*").eq("enabled", true).order("created_at", { ascending: false }),
   ]);
 
   return (
@@ -56,7 +55,6 @@ export default async function OpsBoardAdminPage() {
         initialPeriods={(periodsRes.data as WrPeriod[] | null) ?? []}
         initialEntries={(entriesRes.data as WrTimetableEntry[] | null) ?? []}
         initialBoardLinks={(linksRes.data as OpsBoardLink[] | null) ?? []}
-        shuttleBoardLinks={(shuttleLinksRes.data as ShuttleBoardLink[] | null) ?? []}
       />
     </div>
   );

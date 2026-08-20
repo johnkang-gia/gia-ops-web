@@ -34,7 +34,7 @@ export default async function MySubjectsPage() {
     subjects.map(async (s) => {
       if (s.student_ids.length === 0) return { subject: s, students: [] as WrStudent[] };
       const { data } = await supabase
-        .from("wr_students")
+        .from("wr_students_basic")
         .select("*")
         .in("id", s.student_ids)
         .eq("status", "active")

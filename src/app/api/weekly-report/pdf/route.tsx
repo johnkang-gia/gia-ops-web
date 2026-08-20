@@ -115,7 +115,7 @@ export async function GET(request: Request) {
   const isTermMode = searchParams.get("mode") === "term" && !!termId;
 
   const [{ data: student }, { data: reportsData }, termRow] = await Promise.all([
-    supabase.from("wr_students").select("*").eq("id", studentId).maybeSingle(),
+    supabase.from("wr_students_basic").select("*").eq("id", studentId).maybeSingle(),
     supabase
       .from("wr_reports")
       .select("*")

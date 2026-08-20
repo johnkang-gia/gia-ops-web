@@ -525,8 +525,45 @@ export type WrStudent = {
   // 짝을 이루고, 값은 항상 문자열로 저장합니다(숫자/날짜 칼럼도 표시용 문자열로 저장).
   custom_fields: Record<string, string>;
   status: "active" | "inactive";
+  // 부서 - 학년 글자로 추측하지 않고 명시적으로 저장합니다(유치부는 별도 프로그램으로 분리 예정).
+  department: "유치부" | "초등부" | "중고등부" | null;
+  // 방과후 수업 참여 여부.
+  afterschool: boolean;
+  // 배우는 악기(하나만) - 없으면 null.
+  instrument: WrInstrument | null;
+  // 형제자매 묶음 - 같은 집 아이들에게 같은 값을 넣어두면 부서를 넘나들어도 한 가족으로
+  // 이어집니다(유치부 동생 ↔ 초등부 형). 셔틀·보호자 연락·출결 이름 대조에 씁니다.
+  family_id: string | null;
   created_at: string;
 };
+
+export const WR_INSTRUMENTS = ["첼로", "우쿨렐레", "클라리넷", "바이올린", "플룻"] as const;
+export type WrInstrument = (typeof WR_INSTRUMENTS)[number];
+
+// 교직원 누구나 볼 수 있는 공용 학생 명부(뷰 wr_students_basic)입니다. 보호자 연락처·주소·좌표
+// 같은 개인정보는 빠져 있고, 요청하신 항목만 담겨 있습니다(요청: "이름(영어이름), 나이(생년월일),
+// 성별, 방과후수업진행여부, 악기, 셔틀탑승여부, 특이사항(알러지, 형제자매링크 등)").
+// 원본 표(wr_students)는 행정직원·관리자·개발자만 읽고 쓸 수 있습니다.
+export type WrStudentBasic = Pick<
+  WrStudent,
+  | "id"
+  | "name"
+  | "name_en"
+  | "grade"
+  | "class_name"
+  | "class_id"
+  | "department"
+  | "status"
+  | "birth_date"
+  | "gender"
+  | "afterschool"
+  | "instrument"
+  | "shuttle_mode"
+  | "allergies"
+  | "note"
+  | "family_id"
+  | "created_at"
+>;
 
 // 학생 명부에 관리자가 직접 추가한 커스텀 칼럼의 정의입니다.
 export type WrStudentFieldDef = {

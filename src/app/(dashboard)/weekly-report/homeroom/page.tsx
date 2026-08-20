@@ -33,7 +33,7 @@ export default async function HomeroomPage() {
   const studentsByClass = await Promise.all(
     classes.map(async (c) => {
       const { data } = await supabase
-        .from("wr_students")
+        .from("wr_students_basic")
         .select("*")
         .eq("grade", c.grade ?? "")
         .eq("class_name", c.class_name ?? "")

@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
     ]);
     const classIds = ((ownClasses as WrClass[] | null) ?? []).map((c) => c.id);
     const { data: classStudents } = classIds.length
-      ? await supabase.from("wr_students").select("id").in("class_id", classIds)
+      ? await supabase.from("wr_students_basic").select("id").in("class_id", classIds)
       : { data: [] as { id: string }[] };
     const ids = new Set<string>((classStudents ?? []).map((s) => s.id));
     for (const sub of (ownSubjects as WrSubject[] | null) ?? []) {
@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
   }
 
   let studentQuery = supabase
-    .from("wr_students")
+    .from("wr_students_basic")
     .select("id, name, name_en, grade, class_name")
     .or(`name.ilike.${like},name_en.ilike.${like},student_no.ilike.${like}`)
     .eq("status", "active")

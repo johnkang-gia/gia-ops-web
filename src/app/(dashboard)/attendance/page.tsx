@@ -53,7 +53,7 @@ export default async function AttendancePage({
     const classIds = classes.map((c) => c.id);
     if (classIds.length > 0) {
       const res = await supabase
-        .from("wr_students")
+        .from("wr_students_basic")
         .select("*")
         .in("class_id", classIds)
         .eq("status", "active")
@@ -61,7 +61,7 @@ export default async function AttendancePage({
       studentsData = res.data as WrStudent[] | null;
     }
   } else {
-    const res = await supabase.from("wr_students").select("*").eq("status", "active").order("name", { ascending: true });
+    const res = await supabase.from("wr_students_basic").select("*").eq("status", "active").order("name", { ascending: true });
     studentsData = res.data as WrStudent[] | null;
   }
 

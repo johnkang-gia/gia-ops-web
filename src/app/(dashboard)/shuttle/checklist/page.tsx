@@ -108,7 +108,7 @@ export default async function ShuttleChecklistPage({
     .select("*")
     .order("created_at_google", { ascending: false })
     .limit(200);
-  const { data: rosterData } = await supabase.from("wr_students").select("name, grade, name_en").eq("status", "active");
+  const { data: rosterData } = await supabase.from("wr_students_basic").select("name, grade, name_en").eq("status", "active");
   const roster = ((rosterData as { name: string; grade: string | null; name_en: string | null }[] | null) ?? []).map((s) => ({
     name: s.name,
     grade: s.grade,

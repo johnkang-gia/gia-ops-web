@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import ShuttleBoardClient from "@/components/shuttle/ShuttleBoardClient";
+import { VISIBLE_DEPARTMENTS } from "@/lib/department";
 
 // 요청: "gia운영에 있는 업무 탭을 사무실 가운데에 큰 모니터에 띄워서 전체가 한눈에 보고 파악할
 // 수 있는 통합 대시보드... 페이지를 반으로 나눠서 한쪽은 cctv 그리고 한쪽은 우리 gia운영 앱"
@@ -13,7 +14,6 @@ import ShuttleBoardClient from "@/components/shuttle/ShuttleBoardClient";
 // 오후 4시(설정값)가 되면 요청대로 이 절반이 통째로 하원 차량 화면으로 바뀝니다.
 
 const POLL_MS = 30_000;
-const DEPARTMENTS = ["유치부", "초등부", "중고등부"] as const;
 
 type Lesson = { subjectName: string; teacherName: string | null; room: string | null };
 type BoardData = {
@@ -24,7 +24,7 @@ type BoardData = {
   isWeekday: boolean;
   currentPeriod: { id: string; label: string; startTime: string; endTime: string } | null;
   nextPeriod: { id: string; label: string; startTime: string; endTime: string } | null;
-  classes: { id: string; grade: string; className: string; current: Lesson | null; next: Lesson | null }[];
+  grades: { grade: string; classes: { id: string; className: string; current: Lesson | null; next: Lesson | null }[] }[];
   studentCount: number;
   absences: { name: string; grade: string | null; className: string | null; status: string; note: string | null; contacted: boolean }[];
   pickups: string[];
@@ -101,7 +101,7 @@ export default function OpsBoardClient({ token }: { token: string }) {
         <span style={{ fontSize: 30, fontWeight: 800, color: "#fff" }}>{data.nowLabel}</span>
         <span style={{ fontSize: 15, color: "#94a3b8" }}>{data.today}</span>
         <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
-          {DEPARTMENTS.map((d) => {
+          {VISIBLE_DEPARTMENTS.map((d) => {
             const active = data.department === d;
             return (
               <button
@@ -130,26 +130,46 @@ export default function OpsBoardClient({ token }: { token: string }) {
         right={data.nextPeriod ? `다음 ${data.nextPeriod.label} ${data.nextPeriod.startTime}` : null}>
         {!data.isWeekday ? (
           <Empty text="주말입니다" />
-        ) : data.classes.length === 0 ? (
+        ) : data.grades.length === 0 ? (
           <Empty text="이 부서에 등록된 반이 없습니다" />
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 8 }}>
-            {data.classes.map((c) => (
-              <div key={c.id} style={{ background: "#1e293b", borderRadius: 10, padding: "8px 10px" }}>
-                <div style={{ fontSize: 13, color: "#94a3b8", fontWeight: 700 }}>
-                  {c.grade} {c.className}
+          /* 요청: "각 학년과 반별로 어느수업이 진행되는지 뜨도록" - 학년을 왼쪽에 세로로 두고,
+             그 학년의 반들을 오른쪽에 가로로 늘어놓아 학년 단위로 훑어볼 수 있게 했습니다. */
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {data.grades.map((g) => (
+              <div key={g.grade || "미지정"} style={{ display: "flex", alignItems: "stretch", gap: 8 }}>
+                <div
+                  style={{
+                    minWidth: 58,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    background: "#1e3a5f",
+                    borderRadius: 10,
+                    fontSize: 17,
+                    fontWeight: 800,
+                    color: "#bfdbfe",
+                    padding: "0 8px",
+                  }}
+                >
+                  {g.grade || "미지정"}
                 </div>
-                <div style={{ fontSize: 20, fontWeight: 800, color: c.current ? "#fff" : "#475569", marginTop: 2 }}>
-                  {c.current?.subjectName ?? "—"}
+                <div style={{ flex: 1, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(138px, 1fr))", gap: 6 }}>
+                  {g.classes.map((c) => (
+                    <div key={c.id} style={{ background: "#1e293b", borderRadius: 10, padding: "7px 10px" }}>
+                      <div style={{ fontSize: 12, color: "#94a3b8", fontWeight: 700 }}>{c.className}</div>
+                      <div style={{ fontSize: 19, fontWeight: 800, color: c.current ? "#fff" : "#475569", marginTop: 1 }}>
+                        {c.current?.subjectName ?? "—"}
+                      </div>
+                      {c.current && (c.current.teacherName || c.current.room) && (
+                        <div style={{ fontSize: 11, color: "#64748b" }}>
+                          {[c.current.teacherName, c.current.room].filter(Boolean).join(" · ")}
+                        </div>
+                      )}
+                      {c.next && <div style={{ fontSize: 11, color: "#475569", marginTop: 3 }}>다음 {c.next.subjectName}</div>}
+                    </div>
+                  ))}
                 </div>
-                {c.current && (c.current.teacherName || c.current.room) && (
-                  <div style={{ fontSize: 12, color: "#64748b", marginTop: 1 }}>
-                    {[c.current.teacherName, c.current.room].filter(Boolean).join(" · ")}
-                  </div>
-                )}
-                {c.next && (
-                  <div style={{ fontSize: 12, color: "#475569", marginTop: 4 }}>다음 {c.next.subjectName}</div>
-                )}
               </div>
             ))}
           </div>

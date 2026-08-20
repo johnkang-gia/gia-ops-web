@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { kstParts } from "@/lib/shuttleTracking";
+import { departmentOf, gradeSortKey, isVisibleDepartment, VISIBLE_DEPARTMENTS, type VisibleDepartment } from "@/lib/department";
 
 export const dynamic = "force-dynamic";
 
@@ -14,20 +15,6 @@ export const dynamic = "force-dynamic";
 //   ② 오늘의 결석·지각·조퇴 학생과 하원 픽업 학생
 //   ③ 오늘 업무 요약(상태별 개수 + 오늘 마감/오늘 등록된 업무 목록)
 //   ④ 지금이 하원 차량 화면으로 전환할 시각인지
-
-type Department = "유치부" | "초등부" | "중고등부";
-
-// 부서별로 어떤 학년이 속하는지 - wr_classes.grade 값 앞부분으로 판단합니다. 학교마다 표기가
-// 달라질 수 있어 한 곳에 모아뒀습니다(예: '1', '초1', 'K' 등이 섞여 들어와도 걸러지도록).
-function departmentOf(grade: string | null): Department | null {
-  if (!grade) return null;
-  const g = grade.trim();
-  if (/유치|^K|^유/i.test(g)) return "유치부";
-  const num = parseInt(g.replace(/[^0-9]/g, ""), 10);
-  if (!Number.isFinite(num)) return null;
-  if (/중|고/.test(g) || num >= 7) return "중고등부";
-  return "초등부";
-}
 
 export async function GET(req: Request, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
@@ -43,9 +30,15 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     .maybeSingle();
   if (!link || !link.enabled) return NextResponse.json({ error: "유효하지 않거나 종료된 링크입니다." }, { status: 403 });
 
-  // 화면에서 부서를 바꾸면 ?department=초등부 로 다시 부릅니다.
+  // 화면에서 부서를 바꾸면 ?department=초등부 로 다시 부릅니다. 유치부는 별도 프로그램으로
+  // 분리하기로 해서 이 대시보드에서는 고를 수 없습니다(요청: "유치부는 우선 분리해서 표면적으로는
+  // 안보이게") - 링크 기본값이 유치부로 남아 있어도 초등부로 대신 엽니다.
   const requested = new URL(req.url).searchParams.get("department");
-  const department = (["유치부", "초등부", "중고등부"].includes(requested ?? "") ? requested : link.default_department) as Department;
+  const department: VisibleDepartment = isVisibleDepartment(requested)
+    ? requested
+    : isVisibleDepartment(link.default_department)
+      ? (link.default_department as VisibleDepartment)
+      : VISIBLE_DEPARTMENTS[0];
 
   const now = new Date();
   const { iso: today, weekday, hour } = kstParts(now);
@@ -55,10 +48,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   // ── ① 시간표 ────────────────────────────────────────────────────────────────
   const [{ data: periods }, { data: classes }] = await Promise.all([
     supabase.from("wr_periods").select("id, period_no, label, start_time, end_time").eq("department", department).order("start_time"),
-    supabase.from("wr_classes").select("id, grade, class_name").order("grade").order("class_name"),
+    supabase.from("wr_classes").select("id, grade, class_name, department").order("grade").order("class_name"),
   ]);
 
-  const deptClasses = (classes ?? []).filter((c) => departmentOf(c.grade) === department);
+  const deptClasses = (classes ?? [])
+    .filter((c) => departmentOf(c) === department)
+    .sort((a, b) => gradeSortKey(a.grade) - gradeSortKey(b.grade) || (a.class_name ?? "").localeCompare(b.class_name ?? "", "ko"));
   const classIds = deptClasses.map((c) => c.id);
 
   function toMinutes(t: string): number {
@@ -99,9 +94,30 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     });
   }
 
+  // 요청: "각 학년과 반별로 어느수업이 진행되는지 뜨도록" - 학년 단위로 묶어서 내려줍니다.
+  type Lesson = { subjectName: string; teacherName: string | null; room: string | null };
+  const gradeGroups: { grade: string; classes: { id: string; className: string; current: Lesson | null; next: Lesson | null }[] }[] = [];
+  for (const c of deptClasses) {
+    const grade = (c.grade as string | null) ?? "";
+    let group = gradeGroups.find((g) => g.grade === grade);
+    if (!group) {
+      group = { grade, classes: [] };
+      gradeGroups.push(group);
+    }
+    group.classes.push({
+      id: c.id as string,
+      className: (c.class_name as string | null) ?? "",
+      current: currentPeriod ? lessonByClassPeriod.get(`${c.id}|${currentPeriod.id}`) ?? null : null,
+      next: nextPeriod ? lessonByClassPeriod.get(`${c.id}|${nextPeriod.id}`) ?? null : null,
+    });
+  }
+
   // ── ② 출결 + 픽업 ──────────────────────────────────────────────────────────
-  const { data: students } = await supabase.from("wr_students").select("id, name, grade, class_name").eq("status", "active");
-  const deptStudents = (students ?? []).filter((s) => departmentOf(s.grade) === department);
+  const { data: students } = await supabase
+    .from("wr_students")
+    .select("id, name, grade, class_name, department")
+    .eq("status", "active");
+  const deptStudents = (students ?? []).filter((s) => departmentOf(s) === department);
   const studentById = new Map((students ?? []).map((s) => [s.id, s]));
   const deptStudentIds = new Set(deptStudents.map((s) => s.id));
 
@@ -196,13 +212,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     periods: periodList,
     currentPeriod,
     nextPeriod,
-    classes: deptClasses.map((c) => ({
-      id: c.id as string,
-      grade: (c.grade as string | null) ?? "",
-      className: (c.class_name as string | null) ?? "",
-      current: currentPeriod ? lessonByClassPeriod.get(`${c.id}|${currentPeriod.id}`) ?? null : null,
-      next: nextPeriod ? lessonByClassPeriod.get(`${c.id}|${nextPeriod.id}`) ?? null : null,
-    })),
+    // 요청: "각 학년과 반별로 어느수업이 진행되는지 뜨도록" - 학년으로 묶어서 내려주면
+    // 화면에서 학년 제목 아래에 그 학년의 반들이 나란히 놓입니다.
+    grades: gradeGroups,
     studentCount: deptStudents.length,
     absences,
     pickups,

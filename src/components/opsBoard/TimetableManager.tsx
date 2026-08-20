@@ -4,12 +4,16 @@ import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
 import type { WrClass, WrPeriod, WrTimetableEntry, OpsBoardLink, ShuttleBoardLink } from "@/lib/types";
+import { departmentOf, gradeSortKey, VISIBLE_DEPARTMENTS } from "@/lib/department";
 
 // 요청: "지금 시간에 각반이 무슨 수업시간인지" - 대시보드가 이 정보를 보여주려면 교시(몇 시부터
 // 몇 시까지가 몇 교시인지)와 시간표(어느 반이 무슨 요일 몇 교시에 무슨 수업인지)가 있어야 하는데
 // 시스템에 없던 데이터라 여기서 입력합니다. 데이터는 나중에 한 번에 받기로 해서 지금은 틀만
 // 만들어두고, 화면에서 한 칸씩 채워 넣을 수 있게 했습니다.
-const DEPARTMENTS = ["유치부", "초등부", "중고등부"] as const;
+// 유치부는 별도 프로그램으로 분리하기로 해서 이 화면에서는 감춥니다(요청: "유치부는 우선
+// 분리해서 표면적으로는 안보이게"). 데이터는 그대로 남아 있고, 나중에 다시 보이게 하려면
+// src/lib/department.ts의 VISIBLE_DEPARTMENTS에 넣기만 하면 됩니다.
+const DEPARTMENTS = VISIBLE_DEPARTMENTS;
 const WEEKDAYS = [
   { value: 1, label: "월" },
   { value: 2, label: "화" },
@@ -19,17 +23,6 @@ const WEEKDAYS = [
 ] as const;
 
 type Department = (typeof DEPARTMENTS)[number];
-
-// wr_classes.grade 값으로 부서를 판정합니다(대시보드 API의 departmentOf와 같은 규칙).
-function departmentOf(grade: string | null): Department | null {
-  if (!grade) return null;
-  const g = grade.trim();
-  if (/유치|^K|^유/i.test(g)) return "유치부";
-  const num = parseInt(g.replace(/[^0-9]/g, ""), 10);
-  if (!Number.isFinite(num)) return null;
-  if (/중|고/.test(g) || num >= 7) return "중고등부";
-  return "초등부";
-}
 
 export default function TimetableManager({
   classes,
@@ -45,7 +38,7 @@ export default function TimetableManager({
   shuttleBoardLinks: ShuttleBoardLink[];
 }) {
   const notify = useToast();
-  const [department, setDepartment] = useState<Department>("초등부");
+  const [department, setDepartment] = useState<Department>(DEPARTMENTS[0]);
   const [weekday, setWeekday] = useState<number>(() => {
     const d = new Date().getDay();
     return d >= 1 && d <= 5 ? d : 1;
@@ -57,7 +50,10 @@ export default function TimetableManager({
   const [newPeriod, setNewPeriod] = useState({ periodNo: "", label: "", start: "", end: "" });
 
   const deptClasses = useMemo(
-    () => classes.filter((c) => departmentOf(c.grade) === department).sort((a, b) => (a.grade ?? "").localeCompare(b.grade ?? "", "ko") || (a.class_name ?? "").localeCompare(b.class_name ?? "", "ko")),
+    () =>
+      classes
+        .filter((c) => departmentOf(c) === department)
+        .sort((a, b) => gradeSortKey(a.grade) - gradeSortKey(b.grade) || (a.class_name ?? "").localeCompare(b.class_name ?? "", "ko")),
     [classes, department]
   );
   const deptPeriods = useMemo(

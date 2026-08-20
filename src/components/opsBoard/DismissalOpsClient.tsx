@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { loadKakaoMaps } from "@/lib/kakaoMap";
+import { useKstClock } from "@/lib/useKstClock";
 
 // 요청: "셔틀시작시간때(4:00)가 되면 화면이 전환되면서 실시간 셔틀 운행지도가 뜨고 지도에서 각
 // 셔틀이 어떤 경로로 가고있는지 볼 수 있게 하면서, 아래쪽에는 아이들이 차량을 다 탑승했는지
@@ -57,6 +58,8 @@ function hhmm(iso: string | null): string {
 
 export default function DismissalOpsClient({ token }: { token: string }) {
   const [data, setData] = useState<Data | null>(null);
+  // 하원 운행 중에는 "지금 몇 시 몇 분 몇 초"가 중요해서 여기도 초까지 보여줍니다.
+  const clock = useKstClock();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -91,6 +94,9 @@ export default function DismissalOpsClient({ token }: { token: string }) {
     <div style={{ height: "100dvh", background: "#0f172a", color: "#e2e8f0", display: "flex", flexDirection: "column", fontFamily: "sans-serif" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 14px", flexWrap: "wrap" }}>
         <span style={{ fontSize: 20, fontWeight: 800, color: "#fff" }}>🚌 하원 운행</span>
+        {clock && (
+          <span style={{ fontSize: 22, fontWeight: 800, color: "#fff", fontVariantNumeric: "tabular-nums" }}>{clock}</span>
+        )}
         <Chip label="운행중" value={running} color="#34d399" />
         <Chip label="도착함" value={arrived} color="#fdba74" />
         <Chip label="탑승" value={`${totalBoarded}/${totalExpected}`} color="#93c5fd" />

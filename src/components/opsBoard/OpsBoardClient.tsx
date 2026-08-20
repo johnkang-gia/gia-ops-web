@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import DismissalOpsClient from "./DismissalOpsClient";
 import { VISIBLE_DEPARTMENTS } from "@/lib/department";
+import { useKstClock } from "@/lib/useKstClock";
 
 // 요청: "gia운영에 있는 업무 탭을 사무실 가운데에 큰 모니터에 띄워서 전체가 한눈에 보고 파악할
 // 수 있는 통합 대시보드... 페이지를 반으로 나눠서 한쪽은 cctv 그리고 한쪽은 우리 gia운영 앱"
@@ -45,6 +46,8 @@ const STATUS_COLOR: Record<string, string> = {
 
 export default function OpsBoardClient({ token }: { token: string }) {
   const [data, setData] = useState<BoardData | null>(null);
+  // 요청: "대시보드 분말고 초까지 나오도록" - 1초마다 도는 시계(서버 갱신 주기와 무관).
+  const clock = useKstClock();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   // 부서는 화면에서 바로 바꿀 수 있습니다(요청: "화면에서 유치부,초등부,중고등부 선택할 수
   // 있게"). null이면 링크에 설정된 기본 부서를 씁니다.
@@ -100,7 +103,7 @@ export default function OpsBoardClient({ token }: { token: string }) {
     <div style={{ minHeight: "100dvh", background: "#0f172a", color: "#e2e8f0", padding: 16, fontFamily: "sans-serif", display: "flex", flexDirection: "column", gap: 12 }}>
       {/* 상단 - 날짜/시각/부서 선택 */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        <span style={{ fontSize: 30, fontWeight: 800, color: "#fff" }}>{data.nowLabel}</span>
+        <span style={{ fontSize: 30, fontWeight: 800, color: "#fff", fontVariantNumeric: "tabular-nums" }}>{clock ?? data.nowLabel}</span>
         <span style={{ fontSize: 15, color: "#94a3b8" }}>{data.today}</span>
         <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
           {VISIBLE_DEPARTMENTS.map((d) => {

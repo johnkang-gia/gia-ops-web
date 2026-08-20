@@ -297,6 +297,18 @@ export default async function DashboardLayout({
   // 항상 "개발자"로 표시됩니다.
   const badgeLabel = isDeveloper && !isPreviewing ? "개발자" : me.position;
 
+  // 담임(또는 부담임)으로 배정된 반이 있는지 - "내 반 픽업 체크" 메뉴를 담임에게만 보여주기
+  // 위해서입니다(요청: "담임교사는 자기 반만 보이고, 과목교사선생님은 보이지 않도록").
+  // 교사가 아닌 경우에는 조회 자체를 건너뜁니다(메뉴가 교사 목록에만 있으므로).
+  let isHomeroomTeacher = false;
+  if (isTeacher) {
+    const { count } = await supabase
+      .from("wr_classes")
+      .select("id", { count: "exact", head: true })
+      .or(`teacher_email.eq.${me.email},sub_teacher_email.eq.${me.email}`);
+    isHomeroomTeacher = (count ?? 0) > 0;
+  }
+
   const homeHref = isTeacher ? "/weekly-report" : "/home";
 
   // 교사는 GIA ops/업무 등 다른 메뉴를 아예 볼 수 없고 위클리 리포트만 보입니다(계약직으로
@@ -307,10 +319,14 @@ export default async function DashboardLayout({
     categories = [
       { key: "homeroom", label: "내 담임반", labelEn: "My Homeroom", icon: "🏠", href: "/weekly-report/homeroom", accent: "teal" },
       { key: "subjects", label: "내 담당과목", labelEn: "My Subjects", icon: "📘", href: "/weekly-report/subjects", accent: "teal" },
-      // 실시간 셔틀 - 요청: "교직원들이 등원과 하원셔틀의 실시간 위치를 바로 알 수 있고,
-      // 하원 차량에 학생들을 탑승하라고 안내하고, 탑승확인하는 용도로 사용". 동승·담임 교사가
-      // 핵심 사용자라 다른 메뉴와 달리 교사에게도 예외로 열어둡니다(middleware.ts도 함께 수정).
-      { key: "shuttle-live", label: "실시간 셔틀", labelEn: "Live Shuttle", icon: "🚌", href: "/shuttle/live", accent: "teal" },
+      // 실시간 셔틀은 교사 메뉴에서 뺐습니다(요청: "교사화면에서 실시간 셔틀은 안보여도 되고").
+      // 대신 담임 선생님이 학부모께 직접 연락받은 픽업을 체크하는 화면을 둡니다(요청: "교사가
+      // 전화나, 다른 메세지로 픽업을 받은 경우, 체크를 할 수 있도록... 담임교사는 자기 반만
+      // 보이고, 과목교사선생님은 보이지 않도록"). 담임 배정이 없는 과목 교사에게는 이 항목
+      // 자체가 뜨지 않습니다(아래 isHomeroomTeacher).
+      ...(isHomeroomTeacher
+        ? [{ key: "pickup", label: "내 반 픽업 체크", labelEn: "Pickup Check", icon: "🚗", href: "/pickup", accent: "teal" } as NavCategory]
+        : []),
       // 학사일정은 교사에게는 감춥니다(요청: "교사권한은 학사일정 안보이게"). 예전에는 이 자리에
       // "행정요청" 메뉴가 있었지만 제거되었습니다(요청: "행정요청도 없애줘, 구글챗 미러링이
       // 된다면 행정요청도 여기로 받을거라서 상관없어") - 교사는 계속 구글챗으로 행정직원에게

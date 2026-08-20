@@ -171,7 +171,7 @@ export async function updateSession(request: NextRequest) {
         !path.startsWith("/weekly-report") &&
         !path.startsWith("/account") &&
         !path.startsWith("/attendance") &&
-        !path.startsWith("/shuttle/live") &&
+        !path.startsWith("/pickup") &&
         !path.startsWith("/api/")
       ) {
         const url = request.nextUrl.clone();
@@ -193,7 +193,7 @@ export async function updateSession(request: NextRequest) {
         !path.startsWith("/weekly-report") &&
         !path.startsWith("/account") &&
         !path.startsWith("/attendance") &&
-        !path.startsWith("/shuttle/live") &&
+        !path.startsWith("/pickup") &&
         !path.startsWith("/api/")
       ) {
         const url = request.nextUrl.clone();

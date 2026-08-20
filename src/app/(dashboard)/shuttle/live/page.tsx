@@ -54,7 +54,7 @@ export default async function ShuttleLivePage() {
     const stopIds = stopsData.map((s) => s.id);
     if (stopIds.length > 0) {
       const assignRes = await supabase
-        .from("shuttle_assignments")
+        .from("shuttle_assignments_basic")
         .select("id, stop_id, student_name_raw, weekdays, override_route_id")
         .in("stop_id", stopIds);
       assignmentsData = assignRes.data ?? [];

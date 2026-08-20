@@ -86,7 +86,7 @@ export default function ShuttleChecklistClient({
     async function fullReload() {
       const [{ data: boardings }, { data: assignments }] = await Promise.all([
         supabase.from("shuttle_boardings").select("assignment_id, status, override_route_id").eq("service_date", today).in("assignment_id", ids),
-        supabase.from("shuttle_assignments").select("id, override_route_id, note").in("id", ids),
+        supabase.from("shuttle_assignments_basic").select("id, override_route_id, note").in("id", ids),
       ]);
       const boardingByAssignment = new Map((boardings ?? []).map((b) => [b.assignment_id, b]));
       const assignmentById = new Map((assignments ?? []).map((a) => [a.id, a]));

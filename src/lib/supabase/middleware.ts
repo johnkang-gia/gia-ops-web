@@ -79,6 +79,11 @@ export async function updateSession(request: NextRequest) {
     // 누를 수 있는 단독 링크").
     path.startsWith("/shuttle-arrival") ||
     path.startsWith("/api/shuttle/arrival") ||
+    // 사무실 대형 모니터용 통합 운영 대시보드(요청: "큰 모니터에 띄워서 전체가 한눈에 보고
+    // 파악할 수 있는 통합 대시보드") - 하루 종일 켜두는 화면이라 세션 만료로 로그인이 풀리면
+    // 안 되므로, 안내보드와 같은 토큰 링크 방식으로 엽니다.
+    path.startsWith("/ops-board") ||
+    path.startsWith("/api/ops-board") ||
     // 안내보드 짧은 주소(요청: "주소가 너무 복잡해서... 짧은 주소로 만들어줘") - /b/{코드}로
     // 접속하면 로그인 없이 실제 안내보드 링크로 바로 이동합니다.
     path.startsWith("/b/");

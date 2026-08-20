@@ -1,0 +1,216 @@
+import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+import { kstParts } from "@/lib/shuttleTracking";
+
+export const dynamic = "force-dynamic";
+
+// 사무실 대형 모니터에 띄우는 통합 운영 대시보드용 데이터입니다(요청: "업무 탭을 사무실
+// 가운데에 큰 모니터에 띄워서 전체가 한눈에 보고 파악할 수 있는 통합 대시보드"). 로그인 없이
+// 토큰 하나로 접속하므로 안내보드(shuttle-board)와 같은 방식으로 service role 키를 서버에서만
+// 씁니다. 화면이 주기적으로 이 API를 다시 불러 하루 종일 자동으로 갱신됩니다.
+//
+// 한 번에 내려주는 것
+//   ① 지금 몇 교시이고 각 반이 무슨 수업 중인지(+다음 교시)
+//   ② 오늘의 결석·지각·조퇴 학생과 하원 픽업 학생
+//   ③ 오늘 업무 요약(상태별 개수 + 오늘 마감/오늘 등록된 업무 목록)
+//   ④ 지금이 하원 차량 화면으로 전환할 시각인지
+
+type Department = "유치부" | "초등부" | "중고등부";
+
+// 부서별로 어떤 학년이 속하는지 - wr_classes.grade 값 앞부분으로 판단합니다. 학교마다 표기가
+// 달라질 수 있어 한 곳에 모아뒀습니다(예: '1', '초1', 'K' 등이 섞여 들어와도 걸러지도록).
+function departmentOf(grade: string | null): Department | null {
+  if (!grade) return null;
+  const g = grade.trim();
+  if (/유치|^K|^유/i.test(g)) return "유치부";
+  const num = parseInt(g.replace(/[^0-9]/g, ""), 10);
+  if (!Number.isFinite(num)) return null;
+  if (/중|고/.test(g) || num >= 7) return "중고등부";
+  return "초등부";
+}
+
+export async function GET(req: Request, { params }: { params: Promise<{ token: string }> }) {
+  const { token } = await params;
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !serviceKey) return NextResponse.json({ error: "서버 설정 오류입니다." }, { status: 500 });
+  const supabase = createClient(url, serviceKey, { auth: { persistSession: false } });
+
+  const { data: link } = await supabase
+    .from("ops_board_links")
+    .select("label, default_department, shuttle_switch_hour, shuttle_switch_minute, shuttle_board_token, enabled")
+    .eq("token", token)
+    .maybeSingle();
+  if (!link || !link.enabled) return NextResponse.json({ error: "유효하지 않거나 종료된 링크입니다." }, { status: 403 });
+
+  // 화면에서 부서를 바꾸면 ?department=초등부 로 다시 부릅니다.
+  const requested = new URL(req.url).searchParams.get("department");
+  const department = (["유치부", "초등부", "중고등부"].includes(requested ?? "") ? requested : link.default_department) as Department;
+
+  const now = new Date();
+  const { iso: today, weekday, hour } = kstParts(now);
+  const minute = new Date(now.getTime() + 9 * 60 * 60 * 1000).getUTCMinutes();
+  const nowMinutes = hour * 60 + minute;
+
+  // ── ① 시간표 ────────────────────────────────────────────────────────────────
+  const [{ data: periods }, { data: classes }] = await Promise.all([
+    supabase.from("wr_periods").select("id, period_no, label, start_time, end_time").eq("department", department).order("start_time"),
+    supabase.from("wr_classes").select("id, grade, class_name").order("grade").order("class_name"),
+  ]);
+
+  const deptClasses = (classes ?? []).filter((c) => departmentOf(c.grade) === department);
+  const classIds = deptClasses.map((c) => c.id);
+
+  function toMinutes(t: string): number {
+    const [h, m] = t.split(":").map(Number);
+    return h * 60 + (m || 0);
+  }
+
+  const periodList = (periods ?? []).map((p) => ({
+    id: p.id as string,
+    periodNo: p.period_no as number,
+    label: (p.label as string | null) ?? `${p.period_no}교시`,
+    startTime: (p.start_time as string).slice(0, 5),
+    endTime: (p.end_time as string).slice(0, 5),
+  }));
+
+  const currentPeriod = periodList.find((p) => nowMinutes >= toMinutes(p.startTime) && nowMinutes < toMinutes(p.endTime)) ?? null;
+  const nextPeriod = periodList.find((p) => toMinutes(p.startTime) > nowMinutes) ?? null;
+
+  // 주말이면 시간표가 없으므로 조회 자체를 건너뜁니다(weekday 0=일, 6=토).
+  const isWeekday = weekday >= 1 && weekday <= 5;
+  const periodIds = [currentPeriod?.id, nextPeriod?.id].filter(Boolean) as string[];
+  const { data: timetable } =
+    isWeekday && classIds.length > 0 && periodIds.length > 0
+      ? await supabase
+          .from("wr_timetable")
+          .select("class_id, period_id, subject_name, teacher_name, room")
+          .in("class_id", classIds)
+          .eq("weekday", weekday)
+          .in("period_id", periodIds)
+      : { data: [] as { class_id: string; period_id: string; subject_name: string; teacher_name: string | null; room: string | null }[] };
+
+  const lessonByClassPeriod = new Map<string, { subjectName: string; teacherName: string | null; room: string | null }>();
+  for (const t of timetable ?? []) {
+    lessonByClassPeriod.set(`${t.class_id}|${t.period_id}`, {
+      subjectName: t.subject_name,
+      teacherName: t.teacher_name,
+      room: t.room,
+    });
+  }
+
+  // ── ② 출결 + 픽업 ──────────────────────────────────────────────────────────
+  const { data: students } = await supabase.from("wr_students").select("id, name, grade, class_name").eq("status", "active");
+  const deptStudents = (students ?? []).filter((s) => departmentOf(s.grade) === department);
+  const studentById = new Map((students ?? []).map((s) => [s.id, s]));
+  const deptStudentIds = new Set(deptStudents.map((s) => s.id));
+
+  const { data: attendance } = await supabase
+    .from("attendance_records")
+    .select("student_id, status, note, contacted_guardian")
+    .eq("date", today)
+    .neq("status", "출석");
+
+  const absences = (attendance ?? [])
+    .filter((a) => deptStudentIds.has(a.student_id))
+    .map((a) => {
+      const s = studentById.get(a.student_id);
+      return {
+        name: s?.name ?? "?",
+        grade: s?.grade ?? null,
+        className: s?.class_name ?? null,
+        status: a.status as string,
+        note: (a.note as string | null) ?? null,
+        contacted: !!a.contacted_guardian,
+      };
+    })
+    .sort((a, b) => a.status.localeCompare(b.status, "ko") || a.name.localeCompare(b.name, "ko"));
+
+  // 하원 픽업(부모님이 직접 데려가심)은 하원 체크표에서 찍힌 값입니다.
+  const { data: boardings } = await supabase
+    .from("shuttle_boardings")
+    .select("assignment_id, status")
+    .eq("service_date", today)
+    .in("status", ["픽업", "결석"]);
+  const pickupAssignmentIds = (boardings ?? []).filter((b) => b.status === "픽업").map((b) => b.assignment_id);
+  const { data: pickupAssignments } = pickupAssignmentIds.length
+    ? await supabase.from("shuttle_assignments").select("id, student_name_raw").in("id", pickupAssignmentIds)
+    : { data: [] as { id: string; student_name_raw: string }[] };
+  const pickups = (pickupAssignments ?? []).map((a) => a.student_name_raw).sort((a, b) => a.localeCompare(b, "ko"));
+
+  // ── ③ 업무 요약 ────────────────────────────────────────────────────────────
+  const { data: tasks } = await supabase
+    .from("tasks")
+    .select("id, title, status, department, due_at, priority, created_at")
+    .is("archived_at", null)
+    .is("deleted_at", null);
+
+  const statusCounts: Record<string, number> = {};
+  const todayTasks: {
+    title: string;
+    status: string;
+    department: string | null;
+    dueLabel: string | null;
+    urgent: boolean;
+    kind: "마감" | "지남" | "신규";
+  }[] = [];
+  for (const t of tasks ?? []) {
+    statusCounts[t.status as string] = (statusCounts[t.status as string] ?? 0) + 1;
+    // due_at은 시각까지 담긴 값이라 한국시간 기준 날짜로 바꿔서 오늘과 비교합니다.
+    const dueIso = typeof t.due_at === "string" ? kstParts(new Date(t.due_at)).iso : null;
+    const createdIso = typeof t.created_at === "string" ? kstParts(new Date(t.created_at)).iso : null;
+    const overdue = !!dueIso && dueIso < today && t.status !== "완료";
+    const dueToday = dueIso === today;
+    const createdToday = createdIso === today;
+    if (overdue || dueToday || createdToday) {
+      todayTasks.push({
+        title: t.title as string,
+        status: t.status as string,
+        department: (t.department as string | null) ?? null,
+        dueLabel: dueIso,
+        urgent: t.priority === "긴급",
+        kind: overdue ? "지남" : dueToday ? "마감" : "신규",
+      });
+    }
+  }
+  // 기한이 지난 것 → 오늘 마감 → 오늘 등록 순으로, 같은 묶음 안에서는 긴급을 위로 올립니다.
+  const kindOrder = { 지남: 0, 마감: 1, 신규: 2 } as const;
+  todayTasks.sort(
+    (a, b) =>
+      kindOrder[a.kind] - kindOrder[b.kind] ||
+      Number(b.urgent) - Number(a.urgent) ||
+      a.title.localeCompare(b.title, "ko")
+  );
+
+  // ── ④ 하원 차량 화면 전환 시각인지 ─────────────────────────────────────────
+  const switchMinutes = link.shuttle_switch_hour * 60 + link.shuttle_switch_minute;
+  const shuttleMode = !!link.shuttle_board_token && nowMinutes >= switchMinutes;
+
+  return NextResponse.json({
+    label: link.label,
+    department,
+    today,
+    weekday,
+    nowLabel: `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`,
+    isWeekday,
+    periods: periodList,
+    currentPeriod,
+    nextPeriod,
+    classes: deptClasses.map((c) => ({
+      id: c.id as string,
+      grade: (c.grade as string | null) ?? "",
+      className: (c.class_name as string | null) ?? "",
+      current: currentPeriod ? lessonByClassPeriod.get(`${c.id}|${currentPeriod.id}`) ?? null : null,
+      next: nextPeriod ? lessonByClassPeriod.get(`${c.id}|${nextPeriod.id}`) ?? null : null,
+    })),
+    studentCount: deptStudents.length,
+    absences,
+    pickups,
+    taskSummary: { statusCounts, todayTasks: todayTasks.slice(0, 20), todayTotal: todayTasks.length },
+    shuttle: {
+      mode: shuttleMode,
+      boardToken: (link.shuttle_board_token as string | null) ?? null,
+      switchLabel: `${String(link.shuttle_switch_hour).padStart(2, "0")}:${String(link.shuttle_switch_minute).padStart(2, "0")}`,
+    },
+  });
+}

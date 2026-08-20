@@ -327,6 +327,10 @@ export default async function DashboardLayout({
       // 업무가 가장 자주 쓰는 메인 화면이라 맨 위로 올렸고, 전화 응대 중 바로 열어야 하는
       // 실무자 매뉴얼을 바로 그 아래에 뒀습니다.
       { key: "work", label: "업무", icon: "🗂️", href: "/work", accent: "blue" },
+      // 사무실 대형 모니터에 띄우는 통합 대시보드의 관리 화면입니다(요청: "큰 모니터에 띄워서
+      // 전체가 한눈에 보고 파악할 수 있는 통합 대시보드"). 여기서 대시보드 링크를 만들고,
+      // 대시보드가 보여줄 교시·시간표를 입력합니다.
+      { key: "ops-board", label: "운영 대시보드", icon: "🖥️", href: "/ops-board", accent: "blue" },
       { key: "staff-manual", label: "실무자 매뉴얼", icon: "📚", href: "/staff-manual", accent: "amber" },
       // 학사일정 - 학기 시작/종료 며칠 전에 뭘 준비해야 하는지를 달력으로 한눈에 보고 체크하는
       // 화면입니다(요청: "학기시작 2주전에뭘하고 1주전에 뭘하고 가 달력으로 한번에 보여서").

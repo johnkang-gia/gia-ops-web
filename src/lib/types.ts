@@ -934,6 +934,46 @@ export type ShuttleArrivalLink = {
   created_at: string;
 };
 
+// 교시 정의 - 부서마다 교시 수와 시각이 달라서 부서별로 둡니다(요청: "지금 시간에 각반이 무슨
+// 수업시간인지"를 판단하는 기준).
+export type WrPeriod = {
+  id: string;
+  department: "유치부" | "초등부" | "중고등부";
+  period_no: number;
+  label: string | null;
+  start_time: string; // 'HH:MM:SS'
+  end_time: string;
+  created_at: string;
+};
+
+// 시간표 한 칸 = 어느 반이 무슨 요일 몇 교시에 무슨 수업을 하는지(weekday 1=월 ... 5=금).
+export type WrTimetableEntry = {
+  id: string;
+  class_id: string;
+  weekday: number;
+  period_id: string;
+  subject_name: string;
+  subject_id: string | null;
+  teacher_name: string | null;
+  room: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+// 사무실 대형 모니터용 통합 운영 대시보드 접속 링크(안내보드와 같은 토큰 방식).
+export type OpsBoardLink = {
+  id: string;
+  label: string;
+  token: string;
+  default_department: "유치부" | "초등부" | "중고등부";
+  // 이 시각(KST)이 되면 대시보드가 통째로 하원 차량 화면으로 바뀝니다.
+  shuttle_switch_hour: number;
+  shuttle_switch_minute: number;
+  shuttle_board_token: string | null;
+  enabled: boolean;
+  created_at: string;
+};
+
 // 업무 보드 상단 전체공지(요청: "업무에서 전체공지가 있을경우 바로 상단으로 옮겨지고, 새로운
 // 공지가 있으면 이전공지가 사라지고, 다음공지가 상단으로"). 공지는 지우지 않고 쌓아두고 가장
 // 최근 것 하나만 상단에 띄웁니다 - 나머지는 히스토리에서 볼 수 있습니다.

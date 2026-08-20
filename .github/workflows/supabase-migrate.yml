@@ -1,0 +1,72 @@
+# Supabase 스키마 자동 반영
+#
+# 요청: "supabase도 자동으로 업데이트 하게 만들수 있어?" - 그동안은 새 기능을 배포할 때마다
+# SQL을 Supabase SQL Editor에 직접 붙여넣어야 했는데, 이제 main에 머지되면 이 워크플로가
+# supabase/migrations 폴더의 "아직 반영되지 않은 파일만" 자동으로 실행합니다.
+#
+# 어떻게 중복 실행을 막나요?
+#   Supabase CLI가 원격 DB에 supabase_migrations.schema_migrations 라는 기록표를 만들어두고,
+#   이미 실행한 파일 이름(앞의 숫자 = 버전)을 적어둡니다. 다음 실행 때는 그 표에 없는 파일만
+#   골라서 실행하므로, 워크플로가 여러 번 돌아도 같은 SQL이 두 번 실행되지 않습니다.
+#
+# 새 마이그레이션은 어떻게 추가하나요?
+#   supabase/migrations/ 에 `YYYYMMDDHHMMSS_설명.sql` 형식으로 파일을 하나 추가하면 됩니다
+#   (예: 20260901090000_add_notice_pin.sql). 앞의 14자리 숫자가 실행 순서를 정합니다.
+#   supabase/schema.sql 은 전체 구조를 한눈에 보는 참고 문서로 계속 유지하고, 같은 내용을
+#   그쪽에도 덧붙여 둡니다.
+
+name: Supabase 마이그레이션
+
+on:
+  push:
+    branches: [main]
+    # 마이그레이션 파일이 바뀐 커밋에서만 돌립니다(코드만 고친 배포에서는 그냥 넘어갑니다).
+    paths:
+      - "supabase/migrations/**"
+      - ".github/workflows/supabase-migrate.yml"
+  # 필요할 때 GitHub의 Actions 탭에서 직접 실행할 수도 있게 열어둡니다.
+  workflow_dispatch:
+
+# 같은 시간에 두 번 돌아 서로 같은 SQL을 실행하는 일이 없도록 한 번에 하나만 돌립니다.
+concurrency:
+  group: supabase-migrate
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 시크릿을 아직 등록하지 않았다면 실패(빨간 X) 대신 안내만 남기고 조용히 넘어갑니다.
+      - name: 시크릿 등록 여부 확인
+        id: check
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            echo "::warning::SUPABASE_DB_URL 시크릿이 없어 마이그레이션을 건너뜁니다. 저장소 Settings > Secrets and variables > Actions 에서 등록해주세요."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Supabase CLI 설치
+        if: steps.check.outputs.ready == 'true'
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      # 무엇이 실행될지 먼저 로그에 남깁니다 - 나중에 문제가 생겼을 때 어떤 파일이 들어갔는지
+      # 바로 확인할 수 있습니다.
+      - name: 적용될 마이그레이션 미리보기
+        if: steps.check.outputs.ready == 'true'
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: supabase db push --dry-run --db-url "$SUPABASE_DB_URL"
+
+      - name: 마이그레이션 적용
+        if: steps.check.outputs.ready == 'true'
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: supabase db push --db-url "$SUPABASE_DB_URL"

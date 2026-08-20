@@ -36,7 +36,7 @@ jobs:
   migrate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # 시크릿을 아직 등록하지 않았다면 실패(빨간 X) 대신 안내만 남기고 조용히 넘어갑니다.
       - name: 시크릿 등록 여부 확인
@@ -53,7 +53,7 @@ jobs:
 
       - name: Supabase CLI 설치
         if: steps.check.outputs.ready == 'true'
-        uses: supabase/setup-cli@v1
+        uses: supabase/setup-cli@v3
         with:
           version: latest
 

@@ -2,8 +2,7 @@
 --  GIA 운영앱 - 손으로 적용하는 SQL 3/3 : 마이그레이션 기록표 정리
 -- ============================================================================
 --  ▶ Supabase 대시보드 → SQL Editor → New query → 이 파일 전체 붙여넣기 → Run
---  ▶ 순서대로 1 → 2 → 3 을 각각 실행해주세요.
---  ▶ 여러 번 실행해도 안전합니다.
+--  ▶ 순서대로 1 → 2 → 3 을 각각 실행해주세요.  ▶ 여러 번 실행해도 안전합니다.
 -- ============================================================================
 
 
@@ -28,5 +27,6 @@ insert into supabase_migrations.schema_migrations (version, name) values
   ('20260821230000', 'ops_board_short_code'),
   ('20260822000000', 'ops_board_dismissal_end'),
   ('20260822120000', 'term3_school_data'),
-  ('20260822180000', 'duty_roster')
+  ('20260822180000', 'duty_roster'),
+  ('20260823000000', 'primary_only_roster')
 on conflict (version) do nothing;

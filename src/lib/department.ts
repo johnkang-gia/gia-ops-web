@@ -9,10 +9,15 @@
 export const ALL_DEPARTMENTS = ["유치부", "초등부", "중고등부"] as const;
 export type Department = (typeof ALL_DEPARTMENTS)[number];
 
-// 지금 운영 화면(대시보드·시간표 등)에서 보여줄 부서입니다. 유치부는 별도 프로그램으로 따로
-// 만들기로 해서 당분간 화면에서 감춥니다 - 데이터는 그대로 남아 있고, 나중에 유치부를 다시
-// 노출하거나 전용 앱에서 쓸 때 이 배열에 넣기만 하면 됩니다.
-export const VISIBLE_DEPARTMENTS = ["초등부", "중고등부"] as const;
+// 지금 운영 화면(대시보드·시간표 등)에서 보여줄 부서입니다.
+//
+// 2026학년도 3학기 기준으로 **초등부만** 보여줍니다(요청: "초등부니까 초등만 보여주고").
+// 이번에 넣은 명부가 초등부 명부이고, 중고등부는 아직 이 앱으로 운영하지 않습니다.
+// 유치부도 별도 프로그램으로 따로 만들기로 해서 감춰져 있습니다.
+//
+// 데이터는 어느 쪽도 지우지 않았습니다 - 중고등부·유치부 학생은 그대로 남아 있고, 나중에 그
+// 부서를 이 앱에서 쓰기로 하면 이 배열에 이름만 넣으면 바로 화면에 나타납니다.
+export const VISIBLE_DEPARTMENTS = ["초등부"] as const;
 export type VisibleDepartment = (typeof VISIBLE_DEPARTMENTS)[number];
 
 export function isVisibleDepartment(value: string | null | undefined): value is VisibleDepartment {

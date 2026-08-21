@@ -22,7 +22,8 @@ const GUIDE_SECTIONS = [
     title: "📊 위쪽 숫자는 무엇인가요?",
     lines: [
       "지금 앱에 들어 있는 학생·반·시간표·과목 수입니다. 명부를 넣은 직후 이 숫자가 기대한 값과 맞는지 확인하는 용도입니다.",
-      "2026학년도 3학기 기준 예상값 - 재학생 100명, 반 8개, 시간표 280칸, 과목 16개.",
+      "2026학년도 3학기 기준 예상값 - 초등부 재학생 100명, 반 8개, 시간표 280칸, 과목 16개.",
+      "이번 명부는 초등부 명부라서, 명부에 없던 재학생은 중고등부로 옮겨 화면에서 빠졌습니다(지우지 않았습니다). 그 인원이 [중고등부 (화면 제외)]에 나옵니다 - 아래 목록에서 누가 옮겨졌는지 확인하고, 초등부 학생인데 명부에서 누락된 경우라면 [학생 관리]에서 부서를 되돌려주세요.",
       "숫자가 0이면 아직 데이터가 반영되지 않은 것입니다(자동 반영에 1~2분 걸립니다).",
     ],
   },
@@ -36,16 +37,19 @@ export default async function DataCheckPage() {
   if (!isStaffOrAboveUser(me)) redirect("/home");
 
   const supabase = await createClient();
-  const [studentsRes, leftRes, classesRes, timetableRes, subjectsRes, periodsRes, termRes, issuesRes] =
+  const [studentsRes, leftRes, classesRes, timetableRes, subjectsRes, periodsRes, termRes, issuesRes, secondaryRes] =
     await Promise.all([
-      supabase.from("wr_students").select("id", { count: "exact", head: true }).eq("status", "active").eq("is_demo", false),
+      supabase.from("wr_students").select("id", { count: "exact", head: true }).eq("status", "active").eq("is_demo", false).eq("department", "초등부"),
       supabase.from("wr_students").select("id", { count: "exact", head: true }).eq("status", "inactive").eq("is_demo", false),
-      supabase.from("wr_classes").select("id", { count: "exact", head: true }).eq("is_demo", false),
+      supabase.from("wr_classes").select("id", { count: "exact", head: true }).eq("is_demo", false).eq("department", "초등부"),
       supabase.from("wr_timetable").select("id", { count: "exact", head: true }),
       supabase.from("wr_subjects").select("id", { count: "exact", head: true }),
       supabase.from("wr_periods").select("id", { count: "exact", head: true }).eq("department", "초등부"),
       supabase.from("terms").select("term_type, year, start_date, end_date").eq("status", "진행중").order("start_date", { ascending: false }).limit(1).maybeSingle(),
       supabase.from("wr_import_issues").select("*").order("resolved").order("created_at", { ascending: false }).limit(300),
+      // 화면에서 빠져 있는 중고등부 재학생. 숫자가 0이 아니어야 정상이며, 명부에 없던 학생들이
+      // 여기로 옮겨졌다는 뜻입니다.
+      supabase.from("wr_students").select("id", { count: "exact", head: true }).eq("status", "active").eq("is_demo", false).eq("department", "중고등부"),
     ]);
 
   const term = termRes.data as { term_type: string; year: string; start_date: string | null; end_date: string | null } | null;
@@ -53,9 +57,10 @@ export default async function DataCheckPage() {
   const openCount = issues.filter((i) => !i.resolved).length;
 
   const stats: { label: string; value: number | null; expected?: number; href?: string }[] = [
-    { label: "재학생", value: studentsRes.count, expected: 100, href: "/weekly-report/admin/students" },
+    { label: "재학생 (초등부)", value: studentsRes.count, expected: 100, href: "/weekly-report/admin/students" },
+    { label: "중고등부 (화면 제외)", value: secondaryRes.count },
     { label: "퇴원·전출", value: leftRes.count, expected: 26 },
-    { label: "반", value: classesRes.count, expected: 8, href: "/weekly-report/admin/classes" },
+    { label: "반 (초등부)", value: classesRes.count, expected: 8, href: "/weekly-report/admin/classes" },
     { label: "교시 (초등부)", value: periodsRes.count, expected: 7, href: "/ops-board" },
     { label: "시간표 칸", value: timetableRes.count, expected: 280, href: "/ops-board" },
     { label: "과목", value: subjectsRes.count, expected: 16, href: "/weekly-report/admin/subjects" },

@@ -1,9 +1,8 @@
 -- ============================================================================
---  GIA 운영앱 - 손으로 적용하는 SQL 2/3 : 2026학년도 3학기 학교 데이터
+--  GIA 운영앱 - 손으로 적용하는 SQL 2/3 : 3학기 학교 데이터 + 명부 기준 정리
 -- ============================================================================
 --  ▶ Supabase 대시보드 → SQL Editor → New query → 이 파일 전체 붙여넣기 → Run
---  ▶ 순서대로 1 → 2 → 3 을 각각 실행해주세요.
---  ▶ 여러 번 실행해도 안전합니다.
+--  ▶ 순서대로 1 → 2 → 3 을 각각 실행해주세요.  ▶ 여러 번 실행해도 안전합니다.
 -- ============================================================================
 
 
@@ -2159,3 +2158,141 @@ on conflict (class_id, weekday, period_id) do update
       teacher_name = coalesce(excluded.teacher_name, wr_timetable.teacher_name);
 
 drop table if exists _roster;
+
+-- ════════════════════════════════════════════════════════════════
+-- 20260822180000_duty_roster.sql
+-- ════════════════════════════════════════════════════════════════
+-- ===== 104. 당번표 =====
+-- 요청: "당번표는 대시보드에 필요없고, 일단은 데이터만 넣을 수 있게 해주고"
+--
+-- 명부 PDF에 급식 당번(Lunch Duty), 체육관·코딩실 예약, 도서관 일정 같은 "누가 언제 어디를
+-- 맡는가" 표가 여러 개 들어 있습니다. 지금은 화면에 띄워 보여줄 필요가 없다고 하셔서, 표를 하나만
+-- 두고 종류(kind)로 구분해 담아둡니다. 나중에 대시보드나 달력에 띄우기로 하면 이 표를 그대로
+-- 읽어가면 됩니다.
+--
+-- 종류마다 표를 따로 만들지 않은 이유: 담는 내용이 "언제 / 어디를 / 누가"로 전부 같아서,
+-- 표를 나누면 화면도 종류만큼 따로 만들어야 하고 새 당번이 생길 때마다 배포가 필요해집니다.
+-- 지금 방식은 종류 이름만 새로 적으면 바로 쓸 수 있습니다.
+
+create table if not exists duty_roster (
+  id uuid primary key default gen_random_uuid(),
+  -- '급식당번', '체육관 사용', '도서관 당번' 등. 자유 입력이지만 화면에서 기존 값 중에 고르게
+  -- 해서 표기가 어긋나지 않게 합니다.
+  kind text not null,
+  -- 반복형은 weekday(1=월~5=금), 특정일 지정형은 service_date를 씁니다. 둘 다 비어 있으면
+  -- "기간 무관"으로 보고 목록 맨 아래에 둡니다.
+  weekday int check (weekday is null or weekday between 1 and 7),
+  service_date date,
+  -- '1층', '점심 1부', '코딩실' 처럼 같은 종류 안에서 자리를 나누는 값입니다.
+  slot text,
+  -- 담당자는 이름만으로도 넣을 수 있습니다. 아직 앱에 가입하지 않은 선생님도 많고, 당번은
+  -- 계정과 상관없이 종이로도 돌기 때문입니다. 계정이 있으면 staff_email까지 채워둡니다.
+  staff_name text not null,
+  staff_email text,
+  note text,
+  sort_order int not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists duty_roster_kind_idx on duty_roster(kind, weekday, service_date);
+
+drop trigger if exists duty_roster_set_updated_at on duty_roster;
+create trigger duty_roster_set_updated_at
+  before update on duty_roster
+  for each row execute function set_updated_at();
+
+alter table duty_roster enable row level security;
+
+-- 조회는 교직원 누구나(당번은 모두가 봐야 하는 정보입니다), 편집은 행정직원·관리자·개발자만.
+drop policy if exists "giamicro_select_duty_roster" on duty_roster;
+create policy "giamicro_select_duty_roster" on duty_roster
+  for select using (is_giamicro_user());
+drop policy if exists "wr_manager_write_duty_roster" on duty_roster;
+create policy "wr_manager_write_duty_roster" on duty_roster
+  for all using (is_wr_manager()) with check (is_wr_manager());
+
+
+-- ════════════════════════════════════════════════════════════════
+-- 20260823000000_primary_only_roster.sql
+-- ════════════════════════════════════════════════════════════════
+-- ===== 105. 명부를 기준으로 정리 - 명부에 없는 재학생은 중고등부로 =====
+-- 요청: "일단 명부 기준으로 전부 바꿔주고 명부에 없는데 재학으로 되어있는 아이들은
+-- 중고등학생이기때문에 일단 빼주고 초등부니까 초등만 보여주고"
+--
+-- 이번에 넣은 명부는 "26-27 GIA Primary Roster"로 **초등부만** 담고 있습니다. 그런데 DB에는
+-- 예전에 들어온 학생들이 재학 상태로 남아 있고, 그 학생들은 중고등부입니다. 명부에 없다는
+-- 이유만으로 지우면 지난 관찰기록·출결의 주인이 사라지므로, 지우지 않고 부서만 중고등부로
+-- 옮겨 화면에서 빠지게 합니다(화면은 초등부만 보여줍니다).
+--
+-- "명부에 있는 학생"을 어떻게 알아보나요?
+--   3학기 명부를 넣을 때 8개 반에 고정 UUID(3a000000-0000-4000-a000-...)를 줬습니다. 그 반에
+--   속한 학생이 이번 명부의 학생입니다. 이름 대조 같은 애매한 방법을 쓰지 않아 오차가 없습니다.
+--
+-- 유치부는 건드리지 않습니다
+--   요청: "유치부는 반을 보고 구별할 수 있고, 중고등부는 유치부 명단에 없는데 하원셔틀에 있는
+--   아이들이니". 이미 부서가 유치부로 적혀 있거나 학년 표기가 유치부 형태(K·유치·유…)인 학생은
+--   그대로 둡니다. 유치부 반 이름 목록을 주시면 반 표기로도 정확히 갈라낼 수 있습니다.
+--
+-- 하원 셔틀 명단은 이 정리와 무관하게 그대로입니다
+--   요청: "일단은 셔틀만 지금 준 명단에 없는 애들 나오도록 해주고". 하원 체크표·실시간 셔틀은
+--   셔틀 배정표(shuttle_assignments)를 이름으로 읽기 때문에, 부서가 무엇이든 배정된 학생은
+--   전부 그대로 나옵니다. 초등부 화면(관찰기록·픽업체크·대시보드)만 이번 명부의 8개 반으로
+--   좁혀집니다.
+--
+-- 되돌리려면? department를 원래 값으로 바꾸면 됩니다. 학생 자체는 그대로 있습니다.
+
+-- 무엇이 옮겨졌는지 화면([학교 > 명부 점검])에서 확인할 수 있게 기록부터 남깁니다.
+-- 사람이 눈으로 확인해야 하는 일이라 조용히 처리하지 않습니다 - 혹시 초등부 학생인데 명부에서
+-- 빠진 경우라면 여기서 발견해야 합니다.
+delete from wr_import_issues where source = '26-27 Primary Roster' and kind = '명부에 없는 재학생';
+
+insert into wr_import_issues (source, kind, student_name, detail)
+select
+  '26-27 Primary Roster',
+  '명부에 없는 재학생',
+  s.name,
+  format(
+    '3학기 초등부 명부에 없어서 중고등부로 옮겼습니다(예전 부서: %s / 학년: %s). 화면에는 초등부만 보이므로 이 학생은 목록에서 빠집니다. 초등부 학생인데 명부에서 누락된 경우라면 [학생 관리]에서 부서를 초등부로 되돌려주세요.',
+    coalesce(s.department, '미지정'), coalesce(s.grade, '미지정')
+  )
+from wr_students s
+where s.is_demo = false
+  and s.status = 'active'
+  and coalesce(s.department, '') <> '유치부'
+  and coalesce(s.grade, '') !~* '유치|^K|^유'
+  and (s.class_id is null or s.class_id not in (
+    '3a000000-0000-4000-a000-000000000001', '3a000000-0000-4000-a000-000000000002',
+    '3a000000-0000-4000-a000-000000000003', '3a000000-0000-4000-a000-000000000004',
+    '3a000000-0000-4000-a000-000000000005', '3a000000-0000-4000-a000-000000000006',
+    '3a000000-0000-4000-a000-000000000007', '3a000000-0000-4000-a000-000000000008'
+  ));
+
+-- 실제로 부서를 옮깁니다. 유치부 학생은 그대로 둡니다(이미 화면에서 빠져 있고, 별도 프로그램으로
+-- 관리하기로 한 대상입니다).
+update wr_students s
+   set department = '중고등부'
+ where s.is_demo = false
+   and s.status = 'active'
+   and coalesce(s.department, '') <> '유치부'
+   and coalesce(s.grade, '') !~* '유치|^K|^유'
+   and (s.class_id is null or s.class_id not in (
+     '3a000000-0000-4000-a000-000000000001', '3a000000-0000-4000-a000-000000000002',
+     '3a000000-0000-4000-a000-000000000003', '3a000000-0000-4000-a000-000000000004',
+     '3a000000-0000-4000-a000-000000000005', '3a000000-0000-4000-a000-000000000006',
+     '3a000000-0000-4000-a000-000000000007', '3a000000-0000-4000-a000-000000000008'
+   ));
+
+-- 반도 같은 기준으로 정리합니다. 이번 명부의 8개 반이 아닌데 초등부로 되어 있는 반은 예전
+-- 학기의 반이므로 중고등부로 옮겨 화면에서 빠지게 합니다.
+update wr_classes c
+   set department = '중고등부'
+ where c.is_demo = false
+   and coalesce(c.department, '') <> '유치부'
+   and coalesce(c.grade, '') !~* '유치|^K|^유'
+   and c.id not in (
+     '3a000000-0000-4000-a000-000000000001', '3a000000-0000-4000-a000-000000000002',
+     '3a000000-0000-4000-a000-000000000003', '3a000000-0000-4000-a000-000000000004',
+     '3a000000-0000-4000-a000-000000000005', '3a000000-0000-4000-a000-000000000006',
+     '3a000000-0000-4000-a000-000000000007', '3a000000-0000-4000-a000-000000000008'
+   );

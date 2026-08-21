@@ -203,8 +203,10 @@ export default function OpsBoardClient({ token }: { token: string }) {
             🚌 하원 화면 다시 열기
           </button>
         )}
+        {/* 지금은 초등부만 운영하므로 선택지가 하나뿐입니다. 고를 것이 없는 버튼은 화면만
+            차지하므로, 부서가 둘 이상일 때만 보여줍니다. */}
         <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
-          {VISIBLE_DEPARTMENTS.map((d) => {
+          {(VISIBLE_DEPARTMENTS.length > 1 ? VISIBLE_DEPARTMENTS : []).map((d) => {
             const active = data.department === d;
             return (
               <button

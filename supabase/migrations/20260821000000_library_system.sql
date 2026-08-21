@@ -215,6 +215,10 @@ revoke all on lib_students from anon;
 grant select on lib_students to authenticated;
 
 -- ── ⑨ 실시간 반영 ───────────────────────────────────────────────────────────
+-- 실시간 구독 등록(alter publication)은 Supabase에서 소유자 권한이 필요합니다. 대시보드
+-- SQL Editor에서는 되지만, GitHub Actions가 쓰는 연결에서는 "must be owner of publication"으로
+-- 막힐 수 있습니다. 이 한 줄 때문에 마이그레이션 전체가 멈추면 학생 명부까지 못 들어가므로,
+-- 실패해도 안내만 남기고 넘어갑니다(그 경우 대시보드 > Database > Replication에서 켜주세요).
 do $$
 begin
   if not exists (
@@ -229,6 +233,8 @@ begin
   ) then
     alter publication supabase_realtime add table lib_visits;
   end if;
+exception when others then
+  raise notice '도서관 표 실시간 구독 등록을 건너뜁니다(대시보드 > Database > Replication에서 켜주세요): %', sqlerrm;
 end $$;
 
 -- ── ⑩ 도서관 가계정을 운영앱 계정 목록에 등록 ───────────────────────────────

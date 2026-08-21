@@ -53,9 +53,15 @@ create policy "own_work_notice_collapses" on work_notice_collapses for all
   with check (user_email = lower(auth.jwt() ->> 'email'));
 
 -- 새 공지가 올라오면 보고 있던 사람들 화면에 새로고침 없이 바로 뜨도록 실시간 구독에 넣습니다.
+-- 실시간 구독 등록(alter publication)은 Supabase에서 소유자 권한이 필요합니다. 대시보드
+-- SQL Editor에서는 되지만, GitHub Actions가 쓰는 연결에서는 "must be owner of publication"으로
+-- 막힐 수 있습니다. 이 한 줄 때문에 마이그레이션 전체가 멈추면 학생 명부까지 못 들어가므로,
+-- 실패해도 안내만 남기고 넘어갑니다(그 경우 대시보드 > Database > Replication에서 켜주세요).
 do $$
 begin
   if not exists (select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='work_notices') then
     alter publication supabase_realtime add table work_notices;
   end if;
+exception when others then
+  raise notice 'work_notices 실시간 구독 등록을 건너뜁니다(대시보드 > Database > Replication에서 켜주세요): %', sqlerrm;
 end $$;

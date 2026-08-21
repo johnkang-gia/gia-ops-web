@@ -1,9 +1,6 @@
 -- ============================================================================
 --  GIA 운영앱 - 손으로 적용하는 SQL 1/3 : 스키마 (표·보안규칙·함수)
 -- ============================================================================
---  GitHub Actions의 자동 반영이 v0.127.0 실행부터 실패해서, 그 뒤로 만든 스키마와 3학기 학교
---  데이터가 실서버에 하나도 들어가지 않았습니다. 자동 반영을 고치기 전에 우선 손으로 넣습니다.
---
 --  ▶ 사용법 - Supabase 대시보드 → SQL Editor → New query → 이 파일 전체 붙여넣기 → Run
 --  ▶ 순서대로 1 → 2 → 3 을 각각 실행해주세요.
 --  ▶ 빨간 오류가 나면 그 문구를 그대로 알려주세요. 어디서 막혔는지 바로 알 수 있습니다.
@@ -194,11 +191,17 @@ create policy "own_work_notice_collapses" on work_notice_collapses for all
   with check (user_email = lower(auth.jwt() ->> 'email'));
 
 -- 새 공지가 올라오면 보고 있던 사람들 화면에 새로고침 없이 바로 뜨도록 실시간 구독에 넣습니다.
+-- 실시간 구독 등록(alter publication)은 Supabase에서 소유자 권한이 필요합니다. 대시보드
+-- SQL Editor에서는 되지만, GitHub Actions가 쓰는 연결에서는 "must be owner of publication"으로
+-- 막힐 수 있습니다. 이 한 줄 때문에 마이그레이션 전체가 멈추면 학생 명부까지 못 들어가므로,
+-- 실패해도 안내만 남기고 넘어갑니다(그 경우 대시보드 > Database > Replication에서 켜주세요).
 do $$
 begin
   if not exists (select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='work_notices') then
     alter publication supabase_realtime add table work_notices;
   end if;
+exception when others then
+  raise notice 'work_notices 실시간 구독 등록을 건너뜁니다(대시보드 > Database > Replication에서 켜주세요): %', sqlerrm;
 end $$;
 
 
@@ -661,6 +664,10 @@ revoke all on lib_students from anon;
 grant select on lib_students to authenticated;
 
 -- ── ⑨ 실시간 반영 ───────────────────────────────────────────────────────────
+-- 실시간 구독 등록(alter publication)은 Supabase에서 소유자 권한이 필요합니다. 대시보드
+-- SQL Editor에서는 되지만, GitHub Actions가 쓰는 연결에서는 "must be owner of publication"으로
+-- 막힐 수 있습니다. 이 한 줄 때문에 마이그레이션 전체가 멈추면 학생 명부까지 못 들어가므로,
+-- 실패해도 안내만 남기고 넘어갑니다(그 경우 대시보드 > Database > Replication에서 켜주세요).
 do $$
 begin
   if not exists (
@@ -675,6 +682,8 @@ begin
   ) then
     alter publication supabase_realtime add table lib_visits;
   end if;
+exception when others then
+  raise notice '도서관 표 실시간 구독 등록을 건너뜁니다(대시보드 > Database > Replication에서 켜주세요): %', sqlerrm;
 end $$;
 
 -- ── ⑩ 도서관 가계정을 운영앱 계정 목록에 등록 ───────────────────────────────

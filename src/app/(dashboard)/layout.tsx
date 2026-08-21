@@ -83,147 +83,156 @@ async function DisabledFeaturesSection() {
   return <PausedFeaturesBanner disabledFeatures={(data as AiFeatureFlag[] | null) ?? []} />;
 }
 
-// 메뉴를 "카테고리" 단위로 재구성했습니다(이전에는 세로로 긴 그룹 목록이라 계속 스크롤해야
-// 했는데, 지금은 주메뉴 몇 개만 보이고 하위 항목은 마우스를 올리면 오른쪽으로 펼쳐집니다).
-// accent는 이 카테고리가 어느 "앱"에 속하는지 색으로 알려줍니다: 홈/운영 관리=네이비(GIA ops),
-// 업무=블루(WorkFlatform), 학교관리=퍼플, 주간 학생 관찰기록=틸, 지원·관리/개발자=앰버·레드.
-// pendingProposals/pendingAdopted - 제안함(검토대기)·채택예정(발행대기) 건수입니다. 예전에는
-// 이 메뉴를 직접 열어봐야만 검토할 게 있는지 알 수 있었는데, 사이드바에서 바로 빨간 숫자로
-// 보이도록 배지를 붙였습니다(요청: "검토 대기 배지 추가").
-function buildOpsCategory(pendingProposals: number, pendingAdopted: number, isAdmin: boolean): NavCategory {
+// 메뉴 구조 - 2026학년도 3학기를 앞두고 전면 재분류했습니다(요청: "이제 메뉴가 너무 많아져서
+// 통합할거 통합하고 분류할건 분류하고 싶어... 주간학생관찰기록은 제외하고 나머지의 메뉴들을
+// 최대한 통합하고 관리할 수 있도록 메뉴를 다시 분류해줘").
+//
+// 예전에는 주메뉴가 10개였습니다. 기능이 생길 때마다 최상위에 하나씩 붙인 결과라, "실무자
+// 매뉴얼"과 "학교 문서함"처럼 성격이 같은 메뉴가 따로 떨어져 있고 "학사일정"처럼 항목이 두 개뿐인
+// 메뉴도 최상위 한 칸을 차지하고 있었습니다. 메뉴가 많아지면 찾는 시간이 늘 뿐 아니라, 새 기능을
+// 어디에 넣어야 할지도 매번 애매해집니다.
+//
+// 그래서 "무엇에 대한 일인가"를 기준으로 6개로 묶었습니다.
+//   업무      - 오늘 할 일 (매일 엶)
+//   학교      - 사람과 학사 (학생·교직원·반·과목·학기·학사일정)
+//   셔틀      - 등하원 차량
+//   기록      - 일어난 일과 그로부터 나온 개선안 (사건·회의·행사 → 제안 → 발행)
+//   문서·매뉴얼 - 참고해서 읽는 것
+//   관리      - 관리자만 쓰는 설정 (계정·시스템·데이터)
+// 여기에 주간 학생 관찰기록(요청대로 손대지 않음)과 개발자 메뉴가 더해집니다.
+//
+// accent는 이 카테고리가 어느 "앱"에 속하는지 색으로 알려줍니다.
+// pendingProposals/pendingAdopted - 제안함(검토대기)·채택예정(발행대기) 건수입니다. 메뉴를 열어
+// 보지 않아도 검토할 게 있는지 사이드바에서 바로 빨간 숫자로 보입니다.
+
+// ── 업무 ────────────────────────────────────────────────────────────────────
+// 가장 자주 여는 화면이라 맨 위에 둡니다. 예전에는 하위 화면(보고서·지난 업무·휴지통)이 메뉴에
+// 없어서 업무 보드 안에서만 오갈 수 있었는데, 부메뉴로 꺼내 바로 갈 수 있게 했습니다.
+function buildWorkCategory(): NavCategory {
   return {
-    key: "ops",
-    label: "운영 관리",
-    icon: "📋",
-    accent: "navy",
-    // 카테고리를 직접 누르면 등록사건목록 대시보드가 열립니다(요청 4) - 예전에는 첫 부메뉴인
-    // 사건기록(/records) 입력화면으로 바로 갔는데, 먼저 "무슨 일이 있었는지" 훑어볼 수 있는
-    // 요약 화면을 앞에 두었습니다.
-    href: "/ops",
-    // 부메뉴 항목이 많아 목적별로 구분선을 넣었습니다(요청: "부메뉴들도 구분에 맞게... 구분선으로
-    // 구분해주고") - 기록(사건/회의/회의보고서/행사) → AI 매뉴얼(작성 도구) → 검토·발행(제안함/
-    // 채택예정) 순서입니다. "매뉴얼"(조회/편집) 항목은 뺐습니다(메뉴 통합 제안 채택 #1) - 학교
-    // 문서함 부메뉴에 매뉴얼/운영계획안 진입점이 이미 있어 여기 있으면 같은 화면(/manuals)으로
-    // 가는 입구가 두 군데로 겹쳤습니다.
+    key: "work",
+    label: "업무",
+    icon: "🗂️",
+    accent: "blue",
+    href: "/work",
     items: [
-      { href: "/records", label: "사건기록", icon: "📋" },
-      { href: "/meetings", label: "회의기록", icon: "💬" },
-      { href: "/meetings/report", label: "회의 보고서", icon: "📊" },
-      { href: "/events", label: "행사기록", icon: "🎉" },
-      { href: "/ai-manual", label: "AI 매뉴얼", icon: "✨", dividerBefore: "AI 매뉴얼" },
-      { href: "/proposals", label: "제안함", icon: "📝", badge: pendingProposals, dividerBefore: "검토 · 발행" },
-      { href: "/adopted", label: "채택예정", icon: "📬", badge: pendingAdopted },
-      // 사무실 대형 모니터용 대시보드의 관리 화면입니다. 예전에는 사이드바 맨 위 독립 메뉴였는데,
-      // 매일 열어보는 화면이 아니라 한 번 설정해두고 두는 성격이라 운영 관리 안으로 옮겼습니다
-      // (요청: "운영 대시보드 운영 관리 메뉴에 넣어주고, 운영 대시 보드는 관리자,개발자만
-      // 보이도록"). 대시보드 링크는 로그인 없이 열리는 주소를 만들어내는 것이라 관리자·개발자에게만
-      // 보여줍니다 - 화면 자체(/ops-board)에서도 같은 확인을 다시 합니다.
-      ...(isAdmin
-        ? [{ href: "/ops-board", label: "운영 대시보드", icon: "🖥️", dividerBefore: "대형 모니터" } as NavLeaf]
-        : []),
+      { href: "/work", label: "업무 보드", icon: "🗂️" },
+      { href: "/work/report", label: "업무 보고서", icon: "📊" },
+      { href: "/work/history", label: "지난 업무", icon: "🗃️", dividerBefore: "" },
+      { href: "/work/trash", label: "휴지통", icon: "🗑️" },
     ],
   };
 }
 
-// "학교관리" - 학생/반/학기/교직원(교사·관리자 등 계정) 관리를 한곳에 모았습니다. 예전에는
-// 학기가 운영관리에도, 위클리 리포트 하위에도 중복으로 있었고 학생 관리도 두 군데(학생 명부 ·
-// 학생 정보 조회)에 흩어져 있어 헷갈렸는데, 여기 하나로 통합했습니다. 반/과목/학생 명부/사용자
-// 관리는 관리자만, 학기와 학생 정보 조회는 행정직원 이상 누구나 볼 수 있습니다(기존 권한 그대로).
-// "구글시트로 가져오기"는 부메뉴에서 뺐습니다(요청: "부메뉴에 구글시트로 가져오기 빼줘 어차피
-// 학교관리 대시보드 위에 있으니까") - /school 화면(학교 관리 카테고리를 클릭하면 바로 가는
-// 대시보드) 안에 이미 진입 카드가 있어서 부메뉴에 중복으로 둘 필요가 없습니다.
+// ── 학교 ────────────────────────────────────────────────────────────────────
+// 학생·교직원·반·과목·학기·학사일정을 한곳에 모았습니다. 예전에는 "학교 관리"와 "학사일정"이
+// 따로 있었는데, 둘 다 "학교라는 조직을 굴리는 기준정보"라 나눌 이유가 없었습니다.
+// 급식 당번·시설 예약처럼 앞으로 추가될 학사 운영 항목도 이 아래 [학사] 구분선에 붙입니다.
 function buildSchoolCategory(isAdmin: boolean, isStaffOrAbove: boolean): NavCategory {
-  const items: NavCategory["items"] = [];
+  const items: NavLeaf[] = [];
   if (isStaffOrAbove) {
-    items!.push(
-      { href: "/students", label: "학생 정보 조회", icon: "🔎" },
-      // 학생 통합기록(wr_students+wr_enrollments)과 같은 구조로 교직원도 입사일/퇴사일/연도별
-      // 담당 이력을 한 화면에서 볼 수 있게 추가했습니다(요청: "교직원에 대한 정보도... 통합으로
-      // 관리되게끔").
-      { href: "/staff", label: "교직원 정보 조회", icon: "🧑‍💼" }
+    items.push(
+      { href: "/students", label: "학생 조회", icon: "🔎" },
+      // 학생 통합기록과 같은 구조로 교직원도 입사일/퇴사일/연도별 담당 이력을 한 화면에서
+      // 볼 수 있습니다(요청: "교직원에 대한 정보도... 통합으로 관리되게끔").
+      { href: "/staff", label: "교직원 조회", icon: "🧑‍💼" }
     );
   }
   if (isAdmin) {
-    items!.push(
+    items.push(
       { href: "/weekly-report/admin/students", label: "학생 관리", labelEn: "Manage Students", icon: "🧑‍🎓", dividerBefore: "명부 관리" },
-      { href: "/weekly-report/admin/classes", label: "반 관리", labelEn: "Manage Classes", icon: "🏫" },
-      { href: "/weekly-report/admin/subjects", label: "과목반 세팅", labelEn: "Manage Subjects", icon: "📘" }
+      { href: "/weekly-report/admin/classes", label: "반·담임 관리", labelEn: "Manage Classes", icon: "🏫" },
+      { href: "/weekly-report/admin/subjects", label: "과목 관리", labelEn: "Manage Subjects", icon: "📘" }
     );
   }
-  items!.push({ href: "/terms", label: "학기 관리", icon: "🗓️", dividerBefore: items!.length > 0 ? "" : undefined });
-  if (isAdmin) items!.push({ href: "/admin/users", label: "사용자 관리", icon: "🔐", dividerBefore: "계정" });
-  return { key: "school", label: "학교 관리", icon: "🏛️", accent: "purple", href: "/school", items };
+  if (isStaffOrAbove) {
+    // 명부를 넣은 결과가 맞는지, 사람이 판단해야 할 건이 남았는지 보는 화면입니다
+    // (요청: "대시보드에서 확인 어떻게 할 수 있어?").
+    items.push({ href: "/school/data-check", label: "명부 점검", icon: "🩺", dividerBefore: isAdmin ? undefined : "명부 관리" });
+  }
+  items.push(
+    { href: "/terms", label: "학기 관리", icon: "🗓️", dividerBefore: "학사" },
+    { href: "/academic-calendar", label: "학사일정", icon: "📅" },
+    { href: "/academic-calendar/prep", label: "학기 준비", icon: "🧭" }
+  );
+  if (isAdmin) {
+    // 사무실 대형 모니터 대시보드의 관리 화면입니다. 시간표를 여기서 입력하므로 학사에 둡니다
+    // (요청: "운영 대시 보드는 관리자,개발자만 보이도록").
+    items.push({ href: "/ops-board", label: "시간표 · 운영 대시보드", icon: "🖥️" });
+  }
+  return { key: "school", label: "학교", icon: "🏛️", accent: "purple", href: "/school", items };
 }
 
-// "셔틀" - 등하원 차량은 매일 아침·오후에 실제로 굴러가는 독립된 업무 흐름이라(기준정보 세팅,
-// 당일 운행, 대기 안내가 각각 다른 사람이 다른 시간에 씁니다) 학교관리 부메뉴 하나로는 부족해
-// 주메뉴로 뺐습니다. 부메뉴는 "기준정보(가끔 고침) → 매일 쓰는 것" 순으로 배치했습니다.
-// 요청("셔틀메뉴를 눌렀을 때, 지역셔틀현황이 그냥 먼저 나오도록 해주고 부메뉴에서는 없애줘")에
-// 따라 상위 메뉴 href를 지역별 현황으로 바꾸고, 부메뉴 목록에서는 뺐습니다(기본 화면이 됐으니
-// 굳이 또 나열할 필요가 없습니다). 배차표 인쇄 등 기존 "셔틀 현황" 화면은 그대로 남겨뒀습니다.
+// ── 셔틀 ────────────────────────────────────────────────────────────────────
+// 등하원 차량은 매일 아침·오후에 실제로 굴러가는 독립된 업무 흐름이라(기준정보 세팅, 당일 운행,
+// 대기 안내를 각각 다른 사람이 다른 시간에 씁니다) 그대로 주메뉴로 둡니다. 다만 순서를 "매일
+// 쓰는 것 → 가끔 고치는 기준정보"로 바꿨습니다 - 예전에는 기준정보가 먼저 나와서, 하루에 몇 번씩
+// 여는 하원 체크표가 목록 아래쪽에 있었습니다.
 function buildShuttleCategory(isStaffOrAbove: boolean): NavCategory {
-  const items: NavLeaf[] = [{ href: "/shuttle", label: "셔틀 현황", icon: "📋" }];
+  const items: NavLeaf[] = [
+    { href: "/shuttle/checklist", label: "하원 체크표", icon: "📋" },
+    { href: "/shuttle/live", label: "실시간 위치", icon: "📍" },
+  ];
   if (isStaffOrAbove) {
     items.push(
       { href: "/shuttle/routes", label: "노선 관리", icon: "🛣️", dividerBefore: "기준정보" },
-      { href: "/shuttle/students", label: "탑승 배정", icon: "🧑‍🎓" }
+      { href: "/shuttle/students", label: "탑승 배정", icon: "🧑‍🎓" },
+      { href: "/shuttle", label: "배차표 · 인쇄", icon: "🖨️" },
+      { href: "/shuttle/pilot", label: "링크 · 기기 관리", icon: "🔗" }
     );
   }
-  // 실시간 셔틀(교직원 전체 - 교사 포함, 요청: "교직원들이 등원과 하원셔틀의 실시간 위치를
-  // 바로 알 수 있고... 탑승확인"). 링크 관리(동승선생님용 토큰 발급)는 관리자·행정직원
-  // 전용으로 그대로 둡니다.
-  items.push({ href: "/shuttle/live", label: "실시간 셔틀", icon: "📍", dividerBefore: "실시간 셔틀" });
-  if (isStaffOrAbove) {
-    // 하원 체크표 - 노선별 오늘 학생 명단을 표로 보고, 픽업(부모님이 직접 데려가심) 학생을
-    // 눌러서 표시하는 화면(요청: "하원차량 체크표를 내가 준 표처럼 페이지를 만들어주고").
-    items.push({ href: "/shuttle/checklist", label: "하원 체크표", icon: "📋" });
-    items.push({ href: "/shuttle/pilot", label: "링크 관리", icon: "🔗" });
-  }
-  return {
-    key: "shuttle",
-    label: "셔틀",
-    icon: "🚌",
-    accent: "teal",
-    href: "/shuttle/regions",
-    items,
-  };
+  // 카테고리를 직접 누르면 지역별 현황이 열립니다(요청: "셔틀메뉴를 눌렀을 때, 지역셔틀현황이
+  // 그냥 먼저 나오도록 해주고 부메뉴에서는 없애줘").
+  return { key: "shuttle", label: "셔틀", icon: "🚌", accent: "blue", href: "/shuttle/regions", items };
 }
 
-// "학교 문서함" - 예전에는 업무 보고서·회의 보고서·매뉴얼·운영계획안·서류함이 운영관리/업무 등
-// 여러 메뉴에 흩어져 있어서, 구두로 처리되던 업무·회의를 문서로 정리해도 정작 어디서 다시
-// 찾아보고 인쇄할지 한눈에 안 보였습니다(요청: "gia의 모든 서류와 보고서들을 통합 관리해서
-// 이 메뉴에서 전부 인쇄하거나, 열람, 검색할 수 있도록"). 학교관리 바로 아래에 이 메뉴 하나를
-// 두고, 열람·검색·인쇄가 필요한 문서류를 전부 여기로 모았습니다. 매뉴얼/운영계획안은 실제
-// 작성·편집은 여전히 운영관리(채택예정 발행 워크플로우)에서 이뤄지지만, 열람·인쇄 진입점은
-// 여기에도 부메뉴로 함께 둡니다. 서류함은 운영관리에서 완전히 이쪽으로 옮겼습니다.
-function buildSchoolDocumentsCategory(): NavCategory {
+// ── 기록 ────────────────────────────────────────────────────────────────────
+// 예전 이름은 "운영 관리"였는데, 실제로 하는 일은 "일어난 일을 남기고 → 거기서 개선안을 뽑아 →
+// 매뉴얼로 발행"하는 한 줄기라 이름을 [기록]으로 바꿨습니다. 무엇을 하는 메뉴인지 이름만 보고
+// 알 수 있어야 새 사람이 헤매지 않습니다.
+function buildRecordsCategory(pendingProposals: number, pendingAdopted: number): NavCategory {
   return {
-    key: "school-documents",
-    label: "학교 문서함",
-    icon: "🗄️",
-    accent: "purple",
-    href: "/school/documents",
+    key: "records",
+    label: "기록",
+    icon: "📋",
+    accent: "navy",
+    // 카테고리를 누르면 "무슨 일이 있었는지" 훑어보는 등록사건목록 대시보드가 열립니다.
+    href: "/ops",
     items: [
-      { href: "/school/documents", label: "문서함 홈", icon: "🗄️" },
-      { href: "/school/documents/reports", label: "보고서 (업무·회의)", icon: "📊" },
-      { href: "/manuals?doc=실무자용", label: "매뉴얼", icon: "📗" },
-      { href: "/manuals?doc=학부모용", label: "운영계획안", icon: "📘" },
-      { href: "/documents", label: "서류함", icon: "📁", dividerBefore: "" },
-      // 요청: "필요한 서류들이 없을 경우 AI의 도움을 받아 초안을 작성하고 싶은데... 만들어진
-      // 문서는 자동으로 시스템의 항목으로 분류되어서 들어가도록". 서류함 바로 아래에 둬서 같은
-      // 묶음으로 보이게 합니다(구분선은 서류함 쪽에 이미 있으니 여기는 생략).
-      { href: "/documents/new", label: "AI 서류 작성", icon: "🪄" },
-      // 운영계획안/매뉴얼의 고정 항목 목록을 관리자·행정직원이 직접 추가/수정/삭제하는
-      // 화면입니다(요청: "모든 항목들은 편집 가능하도록"). GIA시스템과 달리 관리자 전용이
-      // 아니라 여기(행정직원도 보이는 문서함 부메뉴)에 둡니다.
-      { href: "/admin/policy-categories", label: "정책 항목 관리", icon: "🗂️", dividerBefore: "" },
-      // GIA시스템도 편집 권한이 관리자·행정직원까지 넓어졌으므로(요청: "관리자·행정직원까지"),
-      // 관리자 전용이던 buildAdminCategory()에서 이쪽(행정직원도 보이는 문서함 부메뉴)으로
-      // 옮겼습니다.
-      { href: "/admin/gia-systems", label: "GIA시스템", icon: "🧩" },
+      { href: "/records", label: "사건기록", icon: "📋" },
+      { href: "/meetings", label: "회의기록", icon: "💬" },
+      { href: "/events", label: "행사기록", icon: "🎉" },
+      { href: "/meetings/report", label: "회의 보고서", icon: "📊", dividerBefore: "" },
+      { href: "/ai-manual", label: "AI 매뉴얼 작성", icon: "✨", dividerBefore: "개선 제안" },
+      { href: "/proposals", label: "제안함", icon: "📝", badge: pendingProposals },
+      { href: "/adopted", label: "채택예정", icon: "📬", badge: pendingAdopted },
     ],
   };
 }
+
+// ── 문서·매뉴얼 ─────────────────────────────────────────────────────────────
+// 예전에는 "실무자 매뉴얼"이 최상위 메뉴로 따로 있고, 같은 성격의 "학교 문서함"이 또 다른
+// 최상위 메뉴로 있었습니다. 둘 다 "필요할 때 찾아 읽는 것"이라 하나로 합쳤습니다.
+// 전화 응대 중 가장 급하게 여는 실무자 매뉴얼을 맨 위에 두고, 카테고리를 직접 눌러도 그 화면이
+// 바로 열리게 했습니다 - 합치면서 손이 더 가면 안 되기 때문입니다.
+function buildDocumentsCategory(isAdmin: boolean): NavCategory {
+  const items: NavLeaf[] = [
+    { href: "/staff-manual", label: "실무자 매뉴얼", icon: "📚" },
+    { href: "/manuals?doc=실무자용", label: "매뉴얼 (실무자용)", icon: "📗" },
+    { href: "/manuals?doc=학부모용", label: "운영계획안 (학부모용)", icon: "📘" },
+    { href: "/school/documents", label: "문서함 홈", icon: "🗄️", dividerBefore: "문서함" },
+    { href: "/documents", label: "서류함", icon: "📁" },
+    { href: "/documents/new", label: "AI 서류 작성", icon: "🪄" },
+    { href: "/school/documents/reports", label: "보고서 모음", icon: "📊" },
+  ];
+  if (isAdmin) {
+    // 매뉴얼·운영계획안·서류를 어떤 항목으로 나눌지 정하는 기준표입니다. 문서를 쓰는 사람이
+    // 아니라 체계를 정하는 사람이 건드리는 화면이라 맨 아래에 둡니다.
+    items.push({ href: "/admin/policy-categories", label: "정책 항목 관리", icon: "🗂️", dividerBefore: "분류 기준" });
+  }
+  return { key: "docs", label: "문서 · 매뉴얼", icon: "📚", accent: "amber", href: "/staff-manual", items };
+}
+
 
 function buildWeeklyReportCategory(isAdmin: boolean): NavCategory {
   const items: NavLeaf[] = [
@@ -236,29 +245,28 @@ function buildWeeklyReportCategory(isAdmin: boolean): NavCategory {
   return { key: "weekly", label: "주간 학생 관찰기록", labelEn: "Weekly Student Reports", icon: "📈", accent: "teal", items };
 }
 
-// "관리자" - 관리자(부이사장/이사장 등)만 보는 학교 발전 현황 메뉴입니다. 예전에 여기 있던
-// "통합 대시보드"(반복 사건·학생 랭킹·월별 추이·부서별 완료율 분석)를 한때 /school(학교 관리
-// 대시보드) 안으로 합쳤었는데, 관리자 전용 분석이 로스터 화면 맨 아래에 묻혀 찾기 어렵다는
-// 요청("관리자 통합 대시보드가 없어졌어, 관리자 페이지에서 관리자만 볼 수 있게")에 따라 다시
-// 독립된 화면(/admin/dashboard)으로 분리했습니다. "학교 현황판"(/school)과는 별개 주소라 두
-// 메뉴가 함께 하이라이트되는 예전 문제 없이 안전하게 추가할 수 있습니다. 다른 국제학교/공립
-// 학교와 비교해 GIA가 어떤 시스템을 갖췄고 뭘 더 갖춰야 하는지 한눈에 보는 GIA시스템, 국제교육
-// 관련 소식을 주 2회(월/수) AI가 정리해주는 교육뉴스, 데이터 백업도 여기 모았습니다. 문의및
-// 건의사항은 관리자 전용이 아니라 모든 직원이 쓰는 기능이라 이 카테고리에서 빼고 사이드바 맨
-// 아래에 작은 링크로 따로 둡니다.
+// ── 관리 ────────────────────────────────────────────────────────────────────
+// 관리자만 쓰는 설정을 모았습니다. 예전에는 계정 관리가 "학교 관리" 안에, 정책 분류와 GIA시스템이
+// "학교 문서함" 안에 흩어져 있어서 "설정을 바꾸려면 어디로 가야 하지?"가 매번 헷갈렸습니다.
+// 매일 쓰는 화면이 아니라 가끔 손보는 것들이므로 목록 맨 아래에 둡니다.
+// 문의및건의사항은 모든 직원이 쓰는 기능이라 여기가 아니라 사이드바 맨 아래 작은 링크로 둡니다.
 function buildAdminCategory(): NavCategory {
   return {
     key: "admin",
-    label: "관리자",
-    icon: "🏢",
+    label: "관리",
+    icon: "⚙️",
     accent: "amber",
+    href: "/admin/dashboard",
     items: [
       { href: "/admin/dashboard", label: "통합 대시보드", icon: "📊" },
+      // 다른 국제학교/공립학교와 비교해 GIA가 어떤 시스템을 갖췄고 뭘 더 갖춰야 하는지 보는 화면.
+      { href: "/admin/gia-systems", label: "GIA시스템", icon: "🧩" },
       { href: "/admin/education-news", label: "교육뉴스", icon: "📰" },
+      { href: "/admin/users", label: "사용자 관리", icon: "🔐", dividerBefore: "계정" },
       // 도서관 노트북·신입교사 오리엔테이션용 공용 계정(아이디+비밀번호 로그인) 관리 화면입니다
-      // (요청: "도서관이랑, 오리엔테이션용 가계정을 만들어서 관리하게 해줘"). 계정을 새로 만들 수
-      // 있는 화면이라 관리자 메뉴에만 둡니다.
-      { href: "/admin/shared-accounts", label: "공용 계정 관리", icon: "🔑", dividerBefore: "" },
+      // (요청: "도서관이랑, 오리엔테이션용 가계정을 만들어서 관리하게 해줘").
+      { href: "/admin/shared-accounts", label: "공용 계정 관리", icon: "🔑" },
+      { href: "/school/import", label: "구글시트 가져오기", icon: "📥", dividerBefore: "데이터" },
       { href: "/admin/backups", label: "데이터 백업", icon: "💾" },
     ],
   };
@@ -365,32 +373,18 @@ export default async function DashboardLayout({
     categories = [
       // "홈" 메뉴는 없앴습니다 - 왼쪽 로고(사이드바)/상단 로고(모바일)를 누르면 항상 홈으로
       // 이동하므로(아래 homeHref), 메뉴에 따로 자리를 차지할 필요가 없습니다.
-      // 업무가 가장 자주 쓰는 메인 화면이라 맨 위로 올렸고, 전화 응대 중 바로 열어야 하는
-      // 실무자 매뉴얼을 바로 그 아래에 뒀습니다.
-      { key: "work", label: "업무", icon: "🗂️", href: "/work", accent: "blue" },
-      { key: "staff-manual", label: "실무자 매뉴얼", icon: "📚", href: "/staff-manual", accent: "amber" },
-      // 학사일정 - 학기 시작/종료 며칠 전에 뭘 준비해야 하는지를 달력으로 한눈에 보고 체크하는
-      // 화면입니다(요청: "학기시작 2주전에뭘하고 1주전에 뭘하고 가 달력으로 한번에 보여서").
-      // 학사일정달력(기존 화면)/학기준비(신규 - 지난 같은 학기 신청서·준비 기록 참고) 두 부메뉴로
-      // 나뉩니다(요청: "학사일정에 '학사일정달력','학기준비' 부메뉴를 만들어서").
-      {
-        key: "academic-calendar",
-        label: "학사일정",
-        icon: "📅",
-        accent: "teal",
-        items: [
-          { href: "/academic-calendar", label: "학사일정달력", icon: "📅" },
-          { href: "/academic-calendar/prep", label: "학기준비", icon: "🧭" },
-        ],
-      },
-      buildOpsCategory(pendingProposals, pendingAdopted, isAdmin),
+      //
+      // 순서는 "얼마나 자주 여는가"입니다. 업무와 셔틀은 매일 여러 번, 학교·기록은 필요할 때,
+      // 문서는 찾아볼 때, 관리는 가끔입니다.
+      buildWorkCategory(),
       buildSchoolCategory(isAdmin, isStaffOrAbove),
       ...(isStaffOrAbove ? [buildShuttleCategory(isStaffOrAbove)] : []),
-      buildSchoolDocumentsCategory(),
+      buildRecordsCategory(pendingProposals, pendingAdopted),
+      buildDocumentsCategory(isAdmin),
       // 출석부 메뉴는 요청("일단 지금 출석부를 쓸건 아니니까 출석부메뉴는 감춰줘")에 따라
-      // 당분간 사이드바에서 숨겨둡니다. /attendance 화면 자체와 기능은 그대로 남아있어서,
-      // 나중에 이 항목의 주석만 풀면 바로 다시 노출할 수 있습니다.
-      // { key: "attendance", label: "출석부", labelEn: "Attendance", icon: "🗒️", href: "/attendance", accent: "teal" },
+      // 당분간 숨겨둡니다. /attendance 화면 자체와 기능은 그대로 남아있어서, 나중에 이 항목의
+      // 주석만 풀면 [학교] 아래에 바로 다시 노출할 수 있습니다.
+      // { href: "/attendance", label: "출석부", labelEn: "Attendance", icon: "🗒️" },
     ];
     if (isStaffOrAbove) categories.push(buildWeeklyReportCategory(isAdmin));
     if (isAdmin) categories.push(buildAdminCategory());

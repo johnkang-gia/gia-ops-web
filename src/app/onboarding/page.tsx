@@ -6,7 +6,7 @@ import { getLang } from "@/lib/langServer";
 import { makeT } from "@/lib/lang";
 import { LanguageProvider } from "@/components/common/LanguageProvider";
 import LanguageToggle from "@/components/common/LanguageToggle";
-import OnboardingForm from "@/components/onboarding/OnboardingForm";
+import OnboardingForm, { type OpenClass, type OpenSubject } from "@/components/onboarding/OnboardingForm";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +32,24 @@ export default async function OnboardingPage() {
     .select("name, department, position")
     .eq("email", email)
     .maybeSingle();
+
+  // 담임이 아직 비어 있는 반 / 담당 교사가 없는 과목만 보여줍니다(요청: "교사가 가입을 할 때,
+  // 반이나 과목을 선택할 수있게"). 이미 배정된 곳은 목록에 없으니 남의 반을 고를 수 없습니다.
+  // 데모 계정용 가짜 반은 제외합니다.
+  const [{ data: classRows }, { data: subjectRows }] = await Promise.all([
+    supabase
+      .from("wr_classes")
+      .select("id, grade, class_name, teacher_name, is_demo")
+      .is("teacher_email", null)
+      .order("grade")
+      .order("class_name"),
+    supabase.from("wr_subjects").select("id, name, teacher_name").is("teacher_email", null).order("name"),
+  ]);
+  const openClasses: OpenClass[] = ((classRows as { id: string; grade: string | null; class_name: string | null; teacher_name: string | null; is_demo: boolean | null }[] | null) ?? [])
+    .filter((c) => !c.is_demo)
+    .map((c) => ({ id: c.id, grade: c.grade, className: c.class_name, teacherName: c.teacher_name }));
+  const openSubjects: OpenSubject[] = ((subjectRows as { id: string; name: string; teacher_name: string | null }[] | null) ?? [])
+    .map((s) => ({ id: s.id, name: s.name, teacherName: s.teacher_name }));
 
   // 이미 이름을 입력했다면(온보딩 완료) 다시 올 필요가 없습니다 - 승인 대기 중이면 /pending으로,
   // 승인됐다면 /home으로 미들웨어가 알아서 보내줍니다.
@@ -68,6 +86,8 @@ export default async function OnboardingPage() {
             <OnboardingForm
               initialDepartment={appUser?.department ?? null}
               initialPosition={appUser?.position ?? null}
+              openClasses={openClasses}
+              openSubjects={openSubjects}
             />
           </div>
         </div>

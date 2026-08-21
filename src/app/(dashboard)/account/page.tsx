@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getCurrentAppUser } from "@/lib/currentUser";
+import { createClient } from "@/lib/supabase/server";
 import { isDeveloperEmail } from "@/lib/roles";
 import AccountSettingsForm from "@/components/account/AccountSettingsForm";
 import GuideButton from "@/components/common/GuideButton";
@@ -51,6 +52,10 @@ export default async function AccountPage() {
 
   const lang = await getLang();
   const t = makeT(lang);
+  // 담당 업무는 행정직원·관리자만 씁니다(교사는 담임반·담당과목이 그 역할을 합니다).
+  const supabase = await createClient();
+  const { data: row } = await supabase.from("app_users").select("duty").eq("email", me.email).maybeSingle();
+  const showDuty = me.position === "행정직원" || me.position === "관리자" || isDeveloperEmail(me.email);
   const roleLabel = translatePosition(me.position ?? (isDeveloperEmail(me.email) ? "개발자" : null), lang) || null;
 
   return (
@@ -72,6 +77,8 @@ export default async function AccountPage() {
         initialAvatarUrl={me.avatar_url}
         positionLabel={roleLabel}
         initialTheme={me.theme}
+        initialDuty={((row as { duty?: string | null } | null)?.duty) ?? ""}
+        showDuty={showDuty}
       />
     </div>
   );

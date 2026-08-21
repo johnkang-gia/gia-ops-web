@@ -29,6 +29,8 @@ export default function AccountSettingsForm({
   initialAvatarUrl,
   positionLabel,
   initialTheme,
+  initialDuty,
+  showDuty,
 }: {
   userId: string;
   email: string;
@@ -36,12 +38,16 @@ export default function AccountSettingsForm({
   initialAvatarUrl: string | null;
   positionLabel: string | null;
   initialTheme: ShellTheme;
+  // 행정직원·관리자만 쓰는 칸입니다(교사는 담임반·담당과목이 그 역할을 대신합니다).
+  initialDuty: string;
+  showDuty: boolean;
 }) {
   const router = useRouter();
   const t = useT();
   const [name, setName] = useState(initialName);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(initialAvatarUrl);
   const [theme, setTheme] = useState<ShellTheme>(initialTheme);
+  const [duty, setDuty] = useState(initialDuty);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -82,6 +88,7 @@ export default function AccountSettingsForm({
         name: name.trim(),
         avatar_url: avatarUrl,
         theme,
+        ...(showDuty ? { duty: duty.trim() || null } : {}),
       })
       .eq("email", email);
     setSaving(false);
@@ -151,6 +158,24 @@ export default function AccountSettingsForm({
           )}
         </p>
       </div>
+
+      {showDuty && (
+        <div>
+          <label className="mb-1 block text-xs font-semibold text-slate-500">{t("담당 업무", "Main duties")}</label>
+          <input
+            value={duty}
+            onChange={(e) => setDuty(e.target.value)}
+            placeholder={t("예: 학부모 상담, 셔틀 운영", "e.g. Parent counselling, shuttle operations")}
+            className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm"
+          />
+          <p className="mt-1 text-[11px] text-slate-400">
+            {t(
+              "가입할 때 적으신 담당 업무입니다. 업무 배정과 문의 연결에 쓰입니다.",
+              "The duties you entered when signing up. Used for assigning work and routing questions."
+            )}
+          </p>
+        </div>
+      )}
 
       <div>
         <label className="mb-1 block text-xs font-semibold text-slate-500">{t("테마", "Theme")}</label>

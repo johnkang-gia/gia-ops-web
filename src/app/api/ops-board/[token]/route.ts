@@ -48,7 +48,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   // ── ① 시간표 ────────────────────────────────────────────────────────────────
   const [{ data: periods }, { data: classes }] = await Promise.all([
     supabase.from("wr_periods").select("id, period_no, label, start_time, end_time").eq("department", department).order("start_time"),
-    supabase.from("wr_classes").select("id, grade, class_name, department").order("grade").order("class_name"),
+    // is_demo=false - 신입교사 오리엔테이션용 가짜 반/학생은 사무실 대시보드에 절대 나오면
+    // 안 됩니다. 이 API는 service role 키로 조회해서 DB 보안규칙을 통과해버리므로(로그인 없는
+    // 토큰 링크라 그래야 합니다), 여기서는 조건을 직접 붙여 걸러냅니다.
+    supabase.from("wr_classes").select("id, grade, class_name, department").eq("is_demo", false).order("grade").order("class_name"),
   ]);
 
   const deptClasses = (classes ?? [])
@@ -116,7 +119,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   const { data: students } = await supabase
     .from("wr_students")
     .select("id, name, grade, class_name, department")
-    .eq("status", "active");
+    .eq("status", "active")
+    .eq("is_demo", false);
   const deptStudents = (students ?? []).filter((s) => departmentOf(s) === department);
   const studentById = new Map((students ?? []).map((s) => [s.id, s]));
   const deptStudentIds = new Set(deptStudents.map((s) => s.id));

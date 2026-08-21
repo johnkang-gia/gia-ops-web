@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { WrReport, WrStudent, WrTerm } from "@/lib/types";
 import { getWeekRange } from "@/lib/weeklyReport/week";
+import { useLang, useT } from "@/components/common/LanguageProvider";
+import { classLabel } from "@/lib/i18nLabels";
 import ReportFormModal from "./ReportFormModal";
 
 export default function StudentReportBoard({
@@ -25,6 +27,8 @@ export default function StudentReportBoard({
   title?: string; // 반별 위젯 등에서 카드 상단에 반 이름 + 진행률을 함께 보여줄 때 사용
   meta?: string; // 담임 이름 등 title 아래 보조 설명
 }) {
+  const t = useT();
+  const { lang } = useLang();
   const [reports, setReports] = useState<WrReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<WrStudent | null>(null);
@@ -110,10 +114,10 @@ export default function StudentReportBoard({
   const writtenCount = students.filter((s) => myWeekStatus(s.id) !== null).length;
 
   const grid = loading ? (
-    <p className="text-sm text-slate-400">불러오는 중...</p>
+    <p className="text-sm text-slate-400">{t("불러오는 중...", "Loading...")}</p>
   ) : students.length === 0 ? (
     <p className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-400">
-      {emptyMessage ?? "표시할 학생이 없습니다."}
+      {emptyMessage ?? t("표시할 학생이 없습니다.", "There are no students to show.")}
     </p>
   ) : (
     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -133,20 +137,38 @@ export default function StudentReportBoard({
             }
           >
             <div className="flex items-start justify-between gap-2">
+              {/* 영어 화면에서는 영어 이름을 크게, 한글 이름을 작게 - 원어민 교사가 학생을
+                  찾기 쉽도록 순서를 뒤집습니다. 영어 이름이 없으면 한글 이름만 보여줍니다. */}
               <span className="min-w-0 flex-1 font-semibold leading-tight text-slate-800">
-                <span className="block break-words">{student.name}</span>
+                <span className="block break-words">
+                  {lang === "en" && student.name_en ? student.name_en : student.name}
+                </span>
                 {student.name_en && (
-                  <span className="block break-words text-[10px] font-normal leading-snug text-slate-400">{student.name_en}</span>
+                  <span className="block break-words text-[10px] font-normal leading-snug text-slate-400">
+                    {lang === "en" ? student.name : student.name_en}
+                  </span>
                 )}
               </span>
               <span className="shrink-0 whitespace-nowrap text-[11px] text-slate-400">
-                {student.grade}학년 {student.class_name}
+                {classLabel(student.grade, student.class_name, lang)}
               </span>
             </div>
             <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
-              {status === "published" && <span className="whitespace-nowrap rounded-full bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-600">✅ 발행됨 Published</span>}
-              {status === "draft" && <span className="whitespace-nowrap rounded-full bg-amber-50 px-2 py-0.5 font-semibold text-amber-600">📝 임시저장 Draft</span>}
-              {!status && <span className="whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 text-slate-400">미작성 Not started</span>}
+              {status === "published" && (
+                <span className="whitespace-nowrap rounded-full bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-600">
+                  ✅ {t("발행됨", "Published")}
+                </span>
+              )}
+              {status === "draft" && (
+                <span className="whitespace-nowrap rounded-full bg-amber-50 px-2 py-0.5 font-semibold text-amber-600">
+                  📝 {t("임시저장", "Draft")}
+                </span>
+              )}
+              {!status && (
+                <span className="whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 text-slate-400">
+                  {t("미작성", "Not started")}
+                </span>
+              )}
               {excellent && <span>🌟</span>}
               {warning && <span>⚠️</span>}
             </div>
@@ -174,7 +196,7 @@ export default function StudentReportBoard({
                     : "bg-amber-50 text-amber-600")
                 }
               >
-                {writtenCount}/{students.length} 작성
+                {writtenCount}/{students.length} {t("작성", "written")}
               </span>
             )}
           </div>

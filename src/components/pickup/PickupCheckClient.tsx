@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
+import { useLang, useT } from "@/components/common/LanguageProvider";
 
 // 요청: "교사가 전화나, 다른 메세지로 픽업을 받은 경우, 체크를 할 수 있도록... 담임교사는 자기
 // 반만 보이고, 과목교사선생님은 보이지 않도록"
@@ -27,6 +28,8 @@ export type PickupClassGroup = { classId: string; label: string; items: PickupIt
 
 export default function PickupCheckClient({ groups: initialGroups, today }: { groups: PickupClassGroup[]; today: string }) {
   const notify = useToast();
+  const t = useT();
+  const { lang } = useLang();
   const [groups, setGroups] = useState(initialGroups);
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -89,15 +92,14 @@ export default function PickupCheckClient({ groups: initialGroups, today }: { gr
 
     if (error) {
       applyStatus(item.studentId, previous);
-      notify("저장하지 못했습니다: " + error.message, "error");
+      notify(t("저장하지 못했습니다: ", "Could not save: ") + error.message, "error");
     }
   }
 
   if (groups.length === 0) {
     return (
       <p className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-400">
-        우리 반 학생 명단이 아직 없습니다.
-        <span className="mt-1 block">No students are listed for your class yet.</span>
+        {t("우리 반 학생 명단이 아직 없습니다.", "No students are listed for your class yet.")}
       </p>
     );
   }
@@ -111,12 +113,18 @@ export default function PickupCheckClient({ groups: initialGroups, today }: { gr
           <div key={g.classId}>
             <div className="mb-2 flex items-center gap-2">
               <h2 className="text-sm font-bold text-slate-700">{g.label}</h2>
-              <span className="text-[11px] text-slate-400">{g.items.length}명 students</span>
+              <span className="text-[11px] text-slate-400">
+                {t(`${g.items.length}명`, `${g.items.length} students`)}
+              </span>
               {pickupCount > 0 && (
-                <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-bold text-sky-600">픽업 Pickup {pickupCount}</span>
+                <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-bold text-sky-600">
+                  {t("픽업", "Pickup")} {pickupCount}
+                </span>
               )}
               {absentCount > 0 && (
-                <span className="rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-bold text-red-600">결석 Absent {absentCount}</span>
+                <span className="rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-bold text-red-600">
+                  {t("결석", "Absent")} {absentCount}
+                </span>
               )}
             </div>
             <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
@@ -133,9 +141,18 @@ export default function PickupCheckClient({ groups: initialGroups, today }: { gr
                     }
                   >
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-bold text-slate-800">{it.name}</div>
+                      {/* 영어 화면에서는 명부에 저장된 영어 이름을 우선 보여줍니다 - 원어민
+                          선생님이 한글 이름만 보고 학생을 찾기는 어렵습니다. 영어 이름이 아직
+                          없는 학생은 한글 이름을 그대로 씁니다. */}
+                      <div className="truncate text-sm font-bold text-slate-800">
+                        {lang === "en" && it.nameEn ? it.nameEn : it.name}
+                      </div>
                       <div className="text-[11px] text-slate-400">
-                        {noShuttle ? "셔틀 미탑승 No shuttle" : it.routeLabel ? `${it.routeLabel} Bus` : "노선 미배정 No route"}
+                        {noShuttle
+                          ? t("셔틀 미탑승", "No shuttle")
+                          : it.routeLabel
+                            ? t(it.routeLabel, `Bus ${it.routeLabel.replace("호", "")}`)
+                            : t("노선 미배정", "No route")}
                       </div>
                     </div>
                     {noShuttle ? (
@@ -151,7 +168,8 @@ export default function PickupCheckClient({ groups: initialGroups, today }: { gr
                             (isPickup ? "bg-sky-500 text-white" : "bg-sky-50 text-sky-600")
                           }
                         >
-                          {isPickup ? "✓ 픽업 Pickup" : "픽업 Pickup"}
+                          {isPickup ? "✓ " : ""}
+                          {t("픽업", "Pickup")}
                         </button>
                         <button
                           type="button"
@@ -162,7 +180,8 @@ export default function PickupCheckClient({ groups: initialGroups, today }: { gr
                             (isAbsent ? "bg-red-500 text-white" : "bg-red-50 text-red-600")
                           }
                         >
-                          {isAbsent ? "✓ 결석 Absent" : "결석 Absent"}
+                          {isAbsent ? "✓ " : ""}
+                          {t("결석", "Absent")}
                         </button>
                       </div>
                     )}

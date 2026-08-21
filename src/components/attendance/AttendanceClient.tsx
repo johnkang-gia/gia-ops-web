@@ -7,17 +7,31 @@ import { useRealtimeTable } from "@/lib/useRealtimeTable";
 import { useToast } from "@/components/common/ToastProvider";
 import GuideButton from "@/components/common/GuideButton";
 import type { AttendanceRecord, AttendanceStatus, WrClass, WrStudent } from "@/lib/types";
+import { useLang, useT } from "@/components/common/LanguageProvider";
+import { classLabel } from "@/lib/i18nLabels";
+import type { Lang, T } from "@/lib/lang";
 
-const GUIDE_SECTIONS = [
-  {
-    title: "🗒️ 출석부란? / What is this?",
-    lines: [
-      "학생별로 오늘 출결 상태(출석/지각/결석/조퇴/기타)를 눌러서 체크합니다. 누가 언제 체크했는지 자동으로 기록되고, 다른 교직원 화면에도 실시간으로 바로 반영됩니다. / Tap a student's attendance status — it's recorded with your name and time, and instantly visible to every other staff member's screen.",
-      "결석 또는 조퇴로 표시된 학생은 보호자 연락처(전화/이메일)가 함께 나타납니다. 연락 후 '연락완료'를 체크하면 누가 언제 연락했는지 남습니다. / Absent or early-leave students show the guardian's phone/email right there. After contacting them, check 'Contacted' to log who reached out and when.",
-      "상단 날짜를 바꾸면 지난 날짜의 출결 기록도 조회할 수 있습니다. / Change the date at the top to look up attendance from a previous day.",
-    ],
-  },
-];
+function guideSections(t: T) {
+  return [
+    {
+      title: t("🗒️ 출석부란?", "🗒️ What is this page?"),
+      lines: [
+        t(
+          "학생별로 오늘 출결 상태(출석/지각/결석/조퇴/기타)를 눌러서 체크합니다. 누가 언제 체크했는지 자동으로 기록되고, 다른 교직원 화면에도 실시간으로 바로 반영됩니다.",
+          "Tap a student's attendance status. It is saved with your name and the time, and appears instantly on every other staff member's screen."
+        ),
+        t(
+          "결석 또는 조퇴로 표시된 학생은 보호자 연락처(전화/이메일)가 함께 나타납니다. 연락 후 '연락완료'를 체크하면 누가 언제 연락했는지 남습니다.",
+          "Students marked absent or early-leave show the guardian's phone and email. After contacting them, tick 'Contacted' to record who called and when."
+        ),
+        t(
+          "상단 날짜를 바꾸면 지난 날짜의 출결 기록도 조회할 수 있습니다.",
+          "Change the date at the top to look up attendance from a previous day."
+        ),
+      ],
+    },
+  ];
+}
 
 const STATUS_LIST: AttendanceStatus[] = ["출석", "지각", "결석", "조퇴", "기타"];
 const STATUS_META: Record<AttendanceStatus, { emoji: string; active: string; en: string }> = {
@@ -29,8 +43,8 @@ const STATUS_META: Record<AttendanceStatus, { emoji: string; active: string; en:
 };
 const NEEDS_CONTACT: AttendanceStatus[] = ["결석", "조퇴"];
 
-function timeOnly(iso: string) {
-  return new Date(iso).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
+function timeOnly(iso: string, lang: Lang) {
+  return new Date(iso).toLocaleTimeString(lang === "en" ? "en-US" : "ko-KR", { hour: "2-digit", minute: "2-digit" });
 }
 
 function StudentRow({
@@ -52,6 +66,8 @@ function StudentRow({
   onContact: (student: WrStudent, record: AttendanceRecord, contacted: boolean, note: string) => void;
   busy: boolean;
 }) {
+  const t = useT();
+  const { lang } = useLang();
   const [noteDraft, setNoteDraft] = useState(record?.contact_note ?? "");
   const needsContact = record && NEEDS_CONTACT.includes(record.status);
 
@@ -61,8 +77,12 @@ function StudentRow({
   return (
     <div className="flex h-full flex-col gap-1.5 rounded-lg border border-slate-100 bg-white px-3 py-2.5 shadow-sm">
       <div className="min-w-0">
-        <div className="truncate text-sm font-semibold text-slate-700">{student.name}</div>
-        {student.name_en && <div className="truncate text-[11px] text-slate-400">{student.name_en}</div>}
+        <div className="truncate text-sm font-semibold text-slate-700">
+          {lang === "en" && student.name_en ? student.name_en : student.name}
+        </div>
+        {student.name_en && (
+          <div className="truncate text-[11px] text-slate-400">{lang === "en" ? student.name : student.name_en}</div>
+        )}
       </div>
       <div className="flex flex-wrap gap-1">
         {STATUS_LIST.map((s) => {
@@ -73,13 +93,13 @@ function StudentRow({
               type="button"
               disabled={busy}
               onClick={() => onSetStatus(student, s)}
-              title={STATUS_META[s].en}
+              title={t(s, STATUS_META[s].en)}
               className={
                 "rounded-full border px-2 py-1 text-xs font-semibold transition disabled:opacity-50 " +
                 (active ? STATUS_META[s].active : "border-slate-200 text-slate-500 hover:bg-slate-50")
               }
             >
-              {STATUS_META[s].emoji} {s}
+              {STATUS_META[s].emoji} {t(s, STATUS_META[s].en)}
             </button>
           );
         })}
@@ -87,21 +107,21 @@ function StudentRow({
 
       {record?.checked_by && (
         <div className="mt-1 text-[11px] text-slate-400">
-          체크: {record.checked_by_name || staffNames[record.checked_by] || record.checked_by}
-          {record.checked_at && <> · {timeOnly(record.checked_at)}</>}
+          {t("체크", "Checked by")}: {record.checked_by_name || staffNames[record.checked_by] || record.checked_by}
+          {record.checked_at && <> · {timeOnly(record.checked_at, lang)}</>}
         </div>
       )}
 
       {needsContact && (
         <div className="mt-2 rounded-lg border border-red-100 bg-red-50/60 p-2.5">
           <div className="mb-1.5 flex flex-wrap items-center gap-2 text-xs text-red-700">
-            <span className="font-semibold">📞 보호자 연락</span>
+            <span className="font-semibold">📞 {t("보호자 연락", "Contact guardian")}</span>
             {student.parent_phone ? (
               <a href={`tel:${student.parent_phone}`} className="rounded-full bg-white px-2 py-0.5 font-semibold text-red-700 shadow-sm hover:bg-red-100">
                 {student.parent_phone}
               </a>
             ) : (
-              <span className="text-red-300">연락처 없음</span>
+              <span className="text-red-300">{t("연락처 없음", "No phone number")}</span>
             )}
             {student.parent_email && (
               <a href={`mailto:${student.parent_email}`} className="rounded-full bg-white px-2 py-0.5 font-semibold text-red-700 shadow-sm hover:bg-red-100">
@@ -118,11 +138,11 @@ function StudentRow({
               className="mt-0.5"
             />
             <span className="flex-1">
-              <span className="font-semibold">연락완료</span>
+              <span className="font-semibold">{t("연락완료", "Contacted")}</span>
               {record!.contacted_guardian && record!.contacted_by && (
                 <span className="ml-1 text-red-500">
                   ({record!.contacted_by_name || staffNames[record!.contacted_by] || record!.contacted_by}
-                  {record!.contacted_at && ` · ${timeOnly(record!.contacted_at)}`})
+                  {record!.contacted_at && ` · ${timeOnly(record!.contacted_at, lang)}`})
                 </span>
               )}
             </span>
@@ -136,7 +156,10 @@ function StudentRow({
                 onContact(student, record!, true, noteDraft);
               }
             }}
-            placeholder="연락 메모 (예: 감기로 결석, 내일 등원 예정) · Contact note"
+            placeholder={t(
+              "연락 메모 (예: 감기로 결석, 내일 등원 예정)",
+              "Contact note (e.g. off sick with a cold, back tomorrow)"
+            )}
             className="mt-1.5 w-full rounded-lg border border-red-200 bg-white px-2 py-1 text-xs"
           />
         </div>
@@ -166,6 +189,8 @@ export default function AttendanceClient({
 }) {
   const router = useRouter();
   const notify = useToast();
+  const t = useT();
+  const { lang } = useLang();
   const [records, setRecords] = useRealtimeTable<AttendanceRecord>("attendance_records", initialRecords);
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -234,7 +259,7 @@ export default function AttendanceClient({
       .single();
     setBusyId(null);
     if (error) {
-      notify("출결 상태를 저장하지 못했습니다. · Failed to save.", "error");
+      notify(t("출결 상태를 저장하지 못했습니다.", "Could not save the attendance status."), "error");
       return;
     }
     const row = data as AttendanceRecord;
@@ -262,7 +287,7 @@ export default function AttendanceClient({
       .single();
     setBusyId(null);
     if (error) {
-      notify("연락 상태를 저장하지 못했습니다. · Failed to save.", "error");
+      notify(t("연락 상태를 저장하지 못했습니다.", "Could not save the contact status."), "error");
       return;
     }
     const row = data as AttendanceRecord;
@@ -279,18 +304,24 @@ export default function AttendanceClient({
   return (
     <div>
       <div className="mb-1 flex items-center justify-between gap-2">
-        <h1 className="text-lg font-bold">🗒️ 출석부</h1>
-        <GuideButton title="출석부 사용 가이드 · Guide" sections={GUIDE_SECTIONS} />
+        <h1 className="text-lg font-bold">🗒️ {t("출석부", "Attendance")}</h1>
+        <GuideButton title={t("출석부 사용 가이드", "Attendance guide")} sections={guideSections(t)} />
       </div>
       <p className="mb-4 text-xs text-slate-500">
         {isTeacher
-          ? "내 담임/부담임 반 학생들의 출결을 실시간으로 체크합니다. · Check attendance for your homeroom class in real time."
-          : "전체 반 학생들의 출결 현황을 실시간으로 보고, 결석 학생 보호자에게 연락할 수 있습니다. · View attendance for all classes in real time and contact guardians of absent students."}
+          ? t(
+              "내 담임/부담임 반 학생들의 출결을 실시간으로 체크합니다.",
+              "Check attendance for your homeroom class in real time."
+            )
+          : t(
+              "전체 반 학생들의 출결 현황을 실시간으로 보고, 결석 학생 보호자에게 연락할 수 있습니다.",
+              "See attendance for every class in real time, and contact the guardians of absent students."
+            )}
       </p>
 
       <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white p-2.5 shadow-sm">
         <button type="button" onClick={() => shiftDate(-1)} className="rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-500 hover:bg-slate-50">
-          ‹ 이전
+          ‹ {t("이전", "Previous")}
         </button>
         <input
           type="date"
@@ -299,7 +330,7 @@ export default function AttendanceClient({
           className="rounded-lg border border-slate-300 px-2 py-1 text-sm"
         />
         <button type="button" onClick={() => shiftDate(1)} className="rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-500 hover:bg-slate-50">
-          다음 ›
+          {t("다음", "Next")} ›
         </button>
         {!isToday && (
           <button
@@ -307,21 +338,29 @@ export default function AttendanceClient({
             onClick={() => changeDate(new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" }))}
             className="rounded-lg bg-gia-navy px-2 py-1 text-xs font-semibold text-white hover:bg-gia-navy-2"
           >
-            오늘로
+            {t("오늘로", "Today")}
           </button>
         )}
         <div className="ml-auto flex flex-wrap items-center gap-2 text-xs text-slate-500">
-          <span>전체 {totalStudents}명</span>
-          {absentCount > 0 && <span className="rounded-full bg-red-100 px-2 py-0.5 font-semibold text-red-700">결석 {absentCount}</span>}
+          <span>{t(`전체 ${totalStudents}명`, `${totalStudents} students`)}</span>
+          {absentCount > 0 && (
+            <span className="rounded-full bg-red-100 px-2 py-0.5 font-semibold text-red-700">
+              {t("결석", "Absent")} {absentCount}
+            </span>
+          )}
           {uncontactedAbsent > 0 && (
-            <span className="rounded-full bg-amber-100 px-2 py-0.5 font-semibold text-amber-700">📞 미연락 {uncontactedAbsent}</span>
+            <span className="rounded-full bg-amber-100 px-2 py-0.5 font-semibold text-amber-700">
+              📞 {t("미연락", "Not contacted")} {uncontactedAbsent}
+            </span>
           )}
         </div>
       </div>
 
       {groups.length === 0 && (
         <div className="rounded-xl border border-dashed border-slate-200 p-8 text-center text-sm text-slate-400">
-          {isTeacher ? "배정된 담임반이 없습니다." : "재학중인 학생이 없습니다."}
+          {isTeacher
+            ? t("배정된 담임반이 없습니다.", "No homeroom class is assigned to you.")
+            : t("재학중인 학생이 없습니다.", "There are no enrolled students.")}
         </div>
       )}
 
@@ -340,11 +379,16 @@ export default function AttendanceClient({
             <div key={key}>
               <div className="mb-2 flex flex-wrap items-center gap-2">
                 <h2 className="text-sm font-bold text-slate-700">
-                  {cls ? `${cls.grade ?? ""}학년 ${cls.class_name ?? ""}` : "미배정"}
-                  {teacherLabel && <span className="ml-1 font-normal text-slate-400">(담임: {teacherLabel})</span>}
+                  {cls ? classLabel(cls.grade, cls.class_name, lang) : t("미배정", "Unassigned")}
+                  {teacherLabel && (
+                    <span className="ml-1 font-normal text-slate-400">
+                      ({t("담임", "Homeroom")}: {teacherLabel})
+                    </span>
+                  )}
                 </h2>
                 <span className="text-[11px] text-slate-400">
-                  {STATUS_LIST.map((s) => `${STATUS_META[s].emoji}${counts[s]}`).join(" ")} · 미체크 {counts.미체크}
+                  {STATUS_LIST.map((s) => `${STATUS_META[s].emoji}${counts[s]}`).join(" ")} ·{" "}
+                  {t("미체크", "Not checked")} {counts.미체크}
                 </span>
               </div>
               {/* 요청: "출석부 공간 넓으니까 페이지 다섯열로 나눠서" - 화면이 넓을 때는 한 줄에

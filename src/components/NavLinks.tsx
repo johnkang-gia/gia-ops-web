@@ -3,6 +3,7 @@
 import { usePathname, useRouter } from "next/navigation";
 import { useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useLang } from "@/components/common/LanguageProvider";
 
 // labelEn이 있으면 한글 라벨 아래 작게 영어 라벨을 함께 보여줍니다 - 주간 학생 관찰기록은
 // 영어 원어민 교사도 쓰기 때문에, 그 메뉴만이라도 영어를 병기해둡니다(요청).
@@ -30,6 +31,18 @@ export type NavCategory = {
   href?: string;
   items?: NavLeaf[];
 };
+
+// 메뉴 이름을 지금 선택된 언어 하나로만 보여줍니다.
+//
+// 예전에는 한글 아래 영어를 작게 병기했는데, 병기는 메뉴 한 줄의 높이가 두 배가 되어 항목이
+// 몇 개만 늘어도 사이드바를 스크롤해야 했고, 원어민 교사에게는 여전히 한글이 먼저 눈에
+// 들어왔습니다(요청: "교사권한이 볼 수 있는 페이지는 영/한 완전히 변환할 수 있게").
+// 영어 이름이 아직 없는 메뉴는 한글을 그대로 보여줍니다 - 관리자 전용 메뉴 등 원어민이 볼 일이
+// 없는 항목까지 억지로 번역해두면 오히려 용어가 어긋납니다.
+function NavLabel({ label, labelEn, className = "" }: { label: string; labelEn?: string; className?: string }) {
+  const { lang } = useLang();
+  return <span className={"block truncate " + className}>{lang === "en" && labelEn ? labelEn : label}</span>;
+}
 
 // 검토 대기 배지 - 제안함/채택예정처럼 "지금 처리해야 할 게 몇 건인지"를 메뉴를 열어보지
 // 않아도 사이드바에서 바로 알 수 있게 빨간 숫자로 보여줍니다.
@@ -191,10 +204,7 @@ export function SidebarNavLinks({ categories }: { categories: NavCategory[] }) {
             >
               <span className="shrink-0">{cat.icon}</span>
               <span className="min-w-0 flex-1 leading-tight">
-                <span className="block truncate">{cat.label}</span>
-                {cat.labelEn && (
-                  <span className="block truncate text-[10px] font-normal text-slate-400">{cat.labelEn}</span>
-                )}
+                <NavLabel label={cat.label} labelEn={cat.labelEn} />
               </span>
               {/* 카테고리(주메뉴) 옆에 하위 배지 합계를 띄우던 숫자는 없앴습니다(요청: "운영관리
                   옆에 숫자가 계속 떠있으니까 보기가 불편해") - 부메뉴 항목별 배지는 그대로
@@ -248,10 +258,7 @@ export function SidebarNavLinks({ categories }: { categories: NavCategory[] }) {
                   >
                     <span className="shrink-0">{item.icon}</span>
                     <span className="min-w-0 flex-1 leading-tight">
-                      <span className="block truncate">{item.label}</span>
-                      {item.labelEn && (
-                        <span className="block truncate text-[10px] font-normal text-slate-400">{item.labelEn}</span>
-                      )}
+                      <NavLabel label={item.label} labelEn={item.labelEn} />
                     </span>
                     <NavBadge count={item.badge ?? 0} />
                   </button>
@@ -305,17 +312,7 @@ export function MobileNavLinks({ categories }: { categories: NavCategory[] }) {
           >
             <span>{item.icon}</span>
             <span className="leading-tight">
-              {item.label}
-              {item.labelEn && (
-                <span
-                  className={
-                    "ml-1 text-[10px] font-normal " +
-                    (active ? "opacity-80" : "text-slate-400")
-                  }
-                >
-                  {item.labelEn}
-                </span>
-              )}
+              <NavLabel label={item.label} labelEn={item.labelEn} />
             </span>
             <NavBadge count={item.badge ?? 0} />
           </button>

@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { authOkCookieMaxAge, authOkCookieName, makeAuthOkCookieValue, readAuthOkCookie } from "@/lib/authCookie";
 import { isDeveloperEmail } from "@/lib/roles";
 import { ROLE_PREVIEW_COOKIE, isValidPreviewPosition } from "@/lib/rolePreview";
+import { isLibraryAccount } from "@/lib/sharedAccounts";
 
 const ALLOWED_DOMAIN = "@giamicro.com";
 
@@ -109,7 +110,7 @@ export async function updateSession(request: NextRequest) {
     // 도서관 노트북은 하루 종일 로그인된 채로 열려 있어서, 그 계정으로 운영앱까지 볼 수 있으면
     // 사건기록·학생 개인정보가 그대로 노출됩니다. DB 쪽에서도 is_giamicro_user()가 이 계정을
     // 제외하도록 막아두었고(마이그레이션 99번), 여기서는 화면 진입 자체를 한 번 더 막습니다.
-    if (/^gia-library[^@]*@giamicro\.com$/i.test(email)) {
+    if (isLibraryAccount(email)) {
       await supabase.auth.signOut();
       const url = request.nextUrl.clone();
       url.pathname = "/login";

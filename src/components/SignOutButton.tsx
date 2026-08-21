@@ -2,9 +2,11 @@
 
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { useT } from "@/components/common/LanguageProvider";
 
 export default function SignOutButton({ dark = false }: { dark?: boolean }) {
   const router = useRouter();
+  const t = useT();
 
   async function handleSignOut() {
     const supabase = createClient();
@@ -23,7 +25,7 @@ export default function SignOutButton({ dark = false }: { dark?: boolean }) {
           : "text-[var(--shell-text-muted,#64748b)] hover:text-[var(--shell-text,#0f172a)]")
       }
     >
-      로그아웃 <span className="opacity-60">Sign out</span>
+      {t("로그아웃", "Sign out")}
     </button>
   );
 }

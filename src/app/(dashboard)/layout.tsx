@@ -18,6 +18,12 @@ import NotificationBell, { NotificationProvider, TaskCountBadge } from "@/compon
 import { APP_VERSION } from "@/lib/version";
 import { ToastProvider } from "@/components/common/ToastProvider";
 import { ConfirmProvider } from "@/components/common/ConfirmProvider";
+import { LanguageProvider } from "@/components/common/LanguageProvider";
+import LanguageToggle from "@/components/common/LanguageToggle";
+import { getLang } from "@/lib/langServer";
+import { makeT } from "@/lib/lang";
+import { positionLabel } from "@/lib/i18nLabels";
+import { isDemoAccount } from "@/lib/sharedAccounts";
 import ConnectionBanner from "@/components/common/ConnectionBanner";
 import CommandPalette from "@/components/common/CommandPalette";
 import type { AiFeatureFlag } from "@/lib/types";
@@ -241,7 +247,11 @@ function buildAdminCategory(): NavCategory {
     items: [
       { href: "/admin/dashboard", label: "통합 대시보드", icon: "📊" },
       { href: "/admin/education-news", label: "교육뉴스", icon: "📰" },
-      { href: "/admin/backups", label: "데이터 백업", icon: "💾", dividerBefore: "" },
+      // 도서관 노트북·신입교사 오리엔테이션용 공용 계정(아이디+비밀번호 로그인) 관리 화면입니다
+      // (요청: "도서관이랑, 오리엔테이션용 가계정을 만들어서 관리하게 해줘"). 계정을 새로 만들 수
+      // 있는 화면이라 관리자 메뉴에만 둡니다.
+      { href: "/admin/shared-accounts", label: "공용 계정 관리", icon: "🔑", dividerBefore: "" },
+      { href: "/admin/backups", label: "데이터 백업", icon: "💾" },
     ],
   };
 }
@@ -277,6 +287,13 @@ export default async function DashboardLayout({
     redirect("/login");
   }
 
+  // 화면 언어(요청: "교사권한이 볼 수 있는 페이지는 영/한 완전히 변환할 수 있게"). 쿠키에서
+  // 읽어 서버가 렌더링할 때부터 적용하므로, 영어로 켜둔 원어민 교사에게는 첫 화면부터 영어로
+  // 뜹니다(한글로 그렸다가 영어로 바뀌는 깜빡임이 없습니다).
+  const lang = await getLang();
+  const t = makeT(lang);
+  const isDemoAccountUser = isDemoAccount(me.email);
+
   const displayName = me.name || me.email;
   // 요청("테마구현 : 라이트(지금), 다크, 리퀴드글라스, GIA")에 따라 계정에 저장된 테마를
   // 공용 셸(사이드바/헤더/카드)에만 적용합니다("전체 공통 틀만") - 업무/위클리 리포트 등
@@ -295,7 +312,7 @@ export default async function DashboardLayout({
   // 뱃지는 우리 권한 체계의 실제 값(position)을 그대로 보여줍니다 - 자유 입력이 아니라 관리자가
   // [사용자 관리]에서 지정한 값입니다. 개발자 계정은 미리보기 중이 아닐 때만 position과 무관하게
   // 항상 "개발자"로 표시됩니다.
-  const badgeLabel = isDeveloper && !isPreviewing ? "개발자" : me.position;
+  const badgeLabel = positionLabel(isDeveloper && !isPreviewing ? "개발자" : me.position, lang);
 
   // 담임(또는 부담임)으로 배정된 반이 있는지 - "내 반 픽업 체크" 메뉴를 담임에게만 보여주기
   // 위해서입니다(요청: "담임교사는 자기 반만 보이고, 과목교사선생님은 보이지 않도록").
@@ -385,6 +402,7 @@ export default async function DashboardLayout({
     // "채팅을 계속치니까 채팅창이 아래로 쭉 내려가면서 메뉴랑 화면들이 전부 위로 올라가버려").
     // 높이를 화면 크기로 고정해야 그 안의 각 화면(예: 업무 탭 채팅)이 자기 영역 안에서만
     // 스크롤되고, 사이드바 메뉴는 항상 제자리에 그대로 있습니다.
+    <LanguageProvider initialLang={lang}>
     <ToastProvider>
     <ConfirmProvider>
     <NotificationProvider userEmail={isTeacher ? null : me.email}>
@@ -465,11 +483,16 @@ export default async function DashboardLayout({
             읽을 수 있도록 영어를 함께 적습니다. */}
         <Link
           href="/inquiries"
-          className="mb-1 flex flex-col px-3 py-1.5 text-xs text-[var(--shell-text-muted)] hover:text-[var(--shell-text)]"
+          className="mb-1 flex px-3 py-1.5 text-xs text-[var(--shell-text-muted)] hover:text-[var(--shell-text)]"
         >
-          <span>🗣️ 문의및건의사항</span>
-          <span className="text-[10px] opacity-70">Questions &amp; Suggestions</span>
+          🗣️ {t("문의및건의사항", "Questions & Suggestions")}
         </Link>
+        {/* 한국어 ↔ English 전환(요청: "교사권한이 볼 수 있는 페이지는 영/한 완전히 변환할 수
+            있게"). 원어민 교사가 스스로 바꿀 수 있어야 해서 관리자 설정이 아니라 항상 손닿는
+            사이드바 하단에 둡니다. 선택은 쿠키에 1년간 저장되어 다음 로그인에도 유지됩니다. */}
+        <div className="mb-2 px-3">
+          <LanguageToggle />
+        </div>
         {/* 요청("현재 버전을 문의사항 아래에 표시해주고 어떤 버전에서 무엇이 개선되었는지
             버전로그 볼 수 있도록") - 누르면 /changelog로 이동합니다. */}
         <Link
@@ -513,14 +536,27 @@ export default async function DashboardLayout({
         <nav className="shell-blur flex items-center gap-1 overflow-x-auto border-b border-[var(--shell-border)] bg-[var(--shell-bg)] px-2 py-2 sm:hidden">
           <MobileNavLinks categories={categories} />
           <Link href="/inquiries" className="ml-auto shrink-0 rounded-lg px-2 py-1.5 text-xs text-[var(--shell-text-muted)]">
-            🗣️ 문의 / Ask
+            🗣️ {t("문의", "Ask")}
           </Link>
+          <LanguageToggle className="shrink-0" />
         </nav>
+        {/* 오리엔테이션(교육용) 계정 표시. 이 계정에 보이는 학생은 전부 가짜라, 설명을 듣는
+            신입 선생님이 "지금 실제 학생 기록을 건드리고 있나?" 하고 헷갈리지 않도록 화면 위에
+            항상 띄워둡니다. 스크롤해도 사라지지 않게 본문 영역 바깥에 둡니다. */}
+        {isDemoAccountUser && (
+          <div className="shrink-0 bg-amber-400 px-4 py-1.5 text-center text-xs font-bold text-amber-950">
+            {t(
+              "연습용 계정입니다. 여기 보이는 학생은 모두 가짜이며, 무엇을 저장해도 실제 기록에는 반영되지 않습니다.",
+              "Training account. Every student shown here is fictional — nothing you save affects real records."
+            )}
+          </div>
+        )}
         <MainArea>{children}</MainArea>
       </div>
     </div>
     </NotificationProvider>
     </ConfirmProvider>
     </ToastProvider>
+    </LanguageProvider>
   );
 }

@@ -4546,7 +4546,7 @@ end $$;
 -- 넣어두면 관리자가 운영앱의 계정 관리 화면에서 함께 보고, 승인 취소로 즉시 정지시킬 수
 -- 있습니다(도서관 앱이 로그인할 때마다 이 상태를 확인합니다).
 insert into app_users (email, status, name, position, decided_at, decided_by)
-values ('gia-library@giamicro.com', 'approved', 'GIA 도서관(공용 단말)', '교직원', now(), 'system')
+values ('gia-library@giamicro.com', 'approved', 'GIA 도서관(공용 단말)', '행정직원', now(), 'system')
 on conflict (email) do nothing;
 
 -- ===== 100. 도서관 구역(책장 위치) 체계 =====

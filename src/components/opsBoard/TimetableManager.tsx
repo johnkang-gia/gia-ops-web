@@ -250,6 +250,9 @@ export default function TimetableManager({
           사무실 큰 모니터에 띄우는 화면입니다. 로그인 없이 주소만으로 열리므로 하루 종일 켜두어도 세션이 풀리지 않습니다. 설정한 시각이 되면 화면 전체가
           하원 운행 화면(위 실시간 지도 + 아래 차량별 도착·출발·탑승 현황)으로 자동 전환됩니다.
           <br />
+          <strong className="text-slate-600">하원 시간대</strong>에는 화면이 하원 운행 화면으로 바뀌면서 <strong className="text-slate-600">전체화면</strong>으로 전환되어 옆의 CCTV를 덮습니다.
+          종료 시각이 되거나 화면 오른쪽 위 [하원 종료]를 누르면 전체화면이 풀리고 원래 반반 배치로 돌아옵니다.
+          <br />
           <strong className="text-slate-600">짧은 주소</strong>는 다른 컴퓨터에서 주소창에 직접 쳐서 들어갈 때 쓰는 지름길입니다 —
           <span className="font-mono"> 우리주소/d/코드 </span>
           네 글자만 치면 바로 열립니다. 원하는 이름(예: <span className="font-mono">office</span>)으로 바꿔도 됩니다.
@@ -294,7 +297,26 @@ export default function TimetableManager({
                   onChange={(e) => patchLink(l.id, { shuttle_switch_minute: Number(e.target.value) })}
                   className="w-12 rounded border border-slate-300 px-1.5 py-1 text-center"
                 />
-                <span className="text-slate-400">분부터 하원 운행 화면</span>
+                <span className="text-slate-400">분 ~</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={23}
+                  value={l.shuttle_end_hour ?? 17}
+                  onChange={(e) => patchLink(l.id, { shuttle_end_hour: Number(e.target.value) })}
+                  className="w-12 rounded border border-slate-300 px-1.5 py-1 text-center"
+                />
+                <span className="text-slate-400">시</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={59}
+                  step={5}
+                  value={l.shuttle_end_minute ?? 30}
+                  onChange={(e) => patchLink(l.id, { shuttle_end_minute: Number(e.target.value) })}
+                  className="w-12 rounded border border-slate-300 px-1.5 py-1 text-center"
+                />
+                <span className="text-slate-400">분 하원 화면(전체화면)</span>
                 <div className="ml-auto flex flex-wrap items-center gap-1.5">
                   <span className="text-[10px] font-bold text-slate-400">/d/</span>
                   <input

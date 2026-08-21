@@ -90,7 +90,7 @@ async function DisabledFeaturesSection() {
 // pendingProposals/pendingAdopted - 제안함(검토대기)·채택예정(발행대기) 건수입니다. 예전에는
 // 이 메뉴를 직접 열어봐야만 검토할 게 있는지 알 수 있었는데, 사이드바에서 바로 빨간 숫자로
 // 보이도록 배지를 붙였습니다(요청: "검토 대기 배지 추가").
-function buildOpsCategory(pendingProposals: number, pendingAdopted: number): NavCategory {
+function buildOpsCategory(pendingProposals: number, pendingAdopted: number, isAdmin: boolean): NavCategory {
   return {
     key: "ops",
     label: "운영 관리",
@@ -113,6 +113,14 @@ function buildOpsCategory(pendingProposals: number, pendingAdopted: number): Nav
       { href: "/ai-manual", label: "AI 매뉴얼", icon: "✨", dividerBefore: "AI 매뉴얼" },
       { href: "/proposals", label: "제안함", icon: "📝", badge: pendingProposals, dividerBefore: "검토 · 발행" },
       { href: "/adopted", label: "채택예정", icon: "📬", badge: pendingAdopted },
+      // 사무실 대형 모니터용 대시보드의 관리 화면입니다. 예전에는 사이드바 맨 위 독립 메뉴였는데,
+      // 매일 열어보는 화면이 아니라 한 번 설정해두고 두는 성격이라 운영 관리 안으로 옮겼습니다
+      // (요청: "운영 대시보드 운영 관리 메뉴에 넣어주고, 운영 대시 보드는 관리자,개발자만
+      // 보이도록"). 대시보드 링크는 로그인 없이 열리는 주소를 만들어내는 것이라 관리자·개발자에게만
+      // 보여줍니다 - 화면 자체(/ops-board)에서도 같은 확인을 다시 합니다.
+      ...(isAdmin
+        ? [{ href: "/ops-board", label: "운영 대시보드", icon: "🖥️", dividerBefore: "대형 모니터" } as NavLeaf]
+        : []),
     ],
   };
 }
@@ -360,10 +368,6 @@ export default async function DashboardLayout({
       // 업무가 가장 자주 쓰는 메인 화면이라 맨 위로 올렸고, 전화 응대 중 바로 열어야 하는
       // 실무자 매뉴얼을 바로 그 아래에 뒀습니다.
       { key: "work", label: "업무", icon: "🗂️", href: "/work", accent: "blue" },
-      // 사무실 대형 모니터에 띄우는 통합 대시보드의 관리 화면입니다(요청: "큰 모니터에 띄워서
-      // 전체가 한눈에 보고 파악할 수 있는 통합 대시보드"). 여기서 대시보드 링크를 만들고,
-      // 대시보드가 보여줄 교시·시간표를 입력합니다.
-      { key: "ops-board", label: "운영 대시보드", icon: "🖥️", href: "/ops-board", accent: "blue" },
       { key: "staff-manual", label: "실무자 매뉴얼", icon: "📚", href: "/staff-manual", accent: "amber" },
       // 학사일정 - 학기 시작/종료 며칠 전에 뭘 준비해야 하는지를 달력으로 한눈에 보고 체크하는
       // 화면입니다(요청: "학기시작 2주전에뭘하고 1주전에 뭘하고 가 달력으로 한번에 보여서").
@@ -379,7 +383,7 @@ export default async function DashboardLayout({
           { href: "/academic-calendar/prep", label: "학기준비", icon: "🧭" },
         ],
       },
-      buildOpsCategory(pendingProposals, pendingAdopted),
+      buildOpsCategory(pendingProposals, pendingAdopted, isAdmin),
       buildSchoolCategory(isAdmin, isStaffOrAbove),
       ...(isStaffOrAbove ? [buildShuttleCategory(isStaffOrAbove)] : []),
       buildSchoolDocumentsCategory(),

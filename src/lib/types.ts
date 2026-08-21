@@ -1006,6 +1006,10 @@ export type OpsBoardLink = {
   // 이 시각(KST)이 되면 대시보드가 통째로 하원 차량 화면으로 바뀝니다.
   shuttle_switch_hour: number;
   shuttle_switch_minute: number;
+  // 이 시각이 되면 하원 화면이 끝나고 평소 대시보드(CCTV 반반 배치)로 돌아갑니다. 전체화면도
+  // 함께 풀립니다(요청: "종료시간이 되면 다시 화면 되돌리게").
+  shuttle_end_hour: number;
+  shuttle_end_minute: number;
   shuttle_board_token: string | null;
   // 주소창에 직접 칠 수 있는 짧은 코드입니다(/d/{short_code}로 접속하면 이 대시보드로 자동
   // 연결됩니다). 토큰(36자리)은 그대로 두고 지름길만 하나 더 두는 방식입니다.

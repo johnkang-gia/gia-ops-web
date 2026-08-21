@@ -25,7 +25,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
 
   const { data: link } = await supabase
     .from("ops_board_links")
-    .select("label, default_department, shuttle_switch_hour, shuttle_switch_minute, shuttle_board_token, enabled")
+    .select(
+      "label, default_department, shuttle_switch_hour, shuttle_switch_minute, shuttle_end_hour, shuttle_end_minute, shuttle_board_token, enabled"
+    )
     .eq("token", token)
     .maybeSingle();
   if (!link || !link.enabled) return NextResponse.json({ error: "유효하지 않거나 종료된 링크입니다." }, { status: 403 });
@@ -206,8 +208,18 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   // 전환 시각이 지나면 하원 운행 화면(지도 + 차량 체크)으로 바뀝니다. 예전에는 안내보드
   // 링크를 따로 골라야 전환됐지만, 이제 대시보드가 자체 하원 화면을 갖고 있어 별도 설정 없이
   // 시각만 지나면 전환됩니다.
+  //
+  // 종료 시각도 함께 봅니다(요청: "하원종료버튼을 누르거나 종료시간이 되면 다시 화면 되돌리게").
+  // 예전에는 시작 시각만 있어서 한 번 하원 화면이 되면 자정까지 그대로 남아 있었습니다.
+  // 종료 시각이 아직 DB에 반영되기 전이면 기본값(17:30)으로 계산해, 반영 전후 어느 쪽이든
+  // 화면이 멈추지 않게 합니다.
   const switchMinutes = link.shuttle_switch_hour * 60 + link.shuttle_switch_minute;
-  const shuttleMode = nowMinutes >= switchMinutes;
+  const endHour = (link as { shuttle_end_hour?: number }).shuttle_end_hour ?? 17;
+  const endMinute = (link as { shuttle_end_minute?: number }).shuttle_end_minute ?? 30;
+  const endMinutes = endHour * 60 + endMinute;
+  // 종료 시각을 시작 시각보다 앞으로 잘못 넣어두면 하원 화면이 아예 뜨지 않게 되므로, 그런
+  // 경우에는 종료 시각을 무시하고 예전처럼 "시작 시각 이후 계속"으로 둡니다.
+  const shuttleMode = nowMinutes >= switchMinutes && (endMinutes <= switchMinutes || nowMinutes < endMinutes);
 
   return NextResponse.json({
     label: link.label,
@@ -230,6 +242,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
       mode: shuttleMode,
       boardToken: (link.shuttle_board_token as string | null) ?? null,
       switchLabel: `${String(link.shuttle_switch_hour).padStart(2, "0")}:${String(link.shuttle_switch_minute).padStart(2, "0")}`,
+      endLabel: `${String(endHour).padStart(2, "0")}:${String(endMinute).padStart(2, "0")}`,
     },
   });
 }

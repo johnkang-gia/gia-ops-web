@@ -56,7 +56,22 @@ function hhmm(iso: string | null): string {
   return new Date(iso).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
 }
 
-export default function DismissalOpsClient({ token }: { token: string }) {
+export default function DismissalOpsClient({
+  token,
+  endLabel,
+  isFullscreen,
+  onToggleFullscreen,
+  onEnd,
+}: {
+  token: string;
+  // 자동으로 평소 대시보드로 돌아가는 시각(기본 17:30). 상단에 적어두면 "이 화면이 언제까지
+  // 떠 있는지"를 지나가며 볼 수 있습니다.
+  endLabel?: string;
+  isFullscreen?: boolean;
+  onToggleFullscreen?: () => void;
+  // [하원 종료]를 누르면 전체화면이 풀리고 평소 대시보드(CCTV 반반 배치)로 돌아갑니다.
+  onEnd?: () => void;
+}) {
   const [data, setData] = useState<Data | null>(null);
   // 하원 운행 중에는 "지금 몇 시 몇 분 몇 초"가 중요해서 여기도 초까지 보여줍니다.
   const clock = useKstClock();
@@ -100,7 +115,50 @@ export default function DismissalOpsClient({ token }: { token: string }) {
         <Chip label="운행중" value={running} color="#34d399" />
         <Chip label="도착함" value={arrived} color="#fdba74" />
         <Chip label="탑승" value={`${totalBoarded}/${totalExpected}`} color="#93c5fd" />
-        <span style={{ marginLeft: "auto", fontSize: 12, color: "#475569" }}>10초마다 자동 갱신</span>
+
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 12, color: "#475569" }}>
+            10초마다 자동 갱신{endLabel ? ` · ${endLabel} 자동 종료` : ""}
+          </span>
+          {onToggleFullscreen && (
+            <button
+              onClick={onToggleFullscreen}
+              title={isFullscreen ? "전체화면 끄기" : "전체화면으로 보기"}
+              style={{
+                background: "transparent",
+                border: "1px solid #334155",
+                borderRadius: 8,
+                color: "#94a3b8",
+                fontSize: 13,
+                padding: "5px 10px",
+                cursor: "pointer",
+              }}
+            >
+              {isFullscreen ? "⤡ 전체화면 끄기" : "⤢ 전체화면"}
+            </button>
+          )}
+          {/* 요청: "하원종료버튼을 누르거나 종료시간이 되면 다시 화면 되돌리게" - 마지막 차가
+              일찍 복귀한 날에는 종료 시각까지 기다리지 않고 바로 되돌릴 수 있어야 합니다.
+              눌러도 오늘 하루만 종료되고, 잘못 눌렀으면 평소 화면 위쪽의 [하원 화면 다시 열기]로
+              되돌아올 수 있습니다. */}
+          {onEnd && (
+            <button
+              onClick={onEnd}
+              style={{
+                background: "#7f1d1d",
+                border: "none",
+                borderRadius: 8,
+                color: "#fecaca",
+                fontSize: 14,
+                fontWeight: 800,
+                padding: "6px 14px",
+                cursor: "pointer",
+              }}
+            >
+              하원 종료
+            </button>
+          )}
+        </div>
       </div>
 
       {/* 위: 전체 셔틀 지도 */}

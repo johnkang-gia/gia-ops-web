@@ -4,6 +4,19 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isTeacherOnly } from "@/lib/roles";
 import type { Incident } from "@/lib/types";
+import GuideButton from "@/components/common/GuideButton";
+
+const GUIDE_SECTIONS = [
+  {
+    title: "📋 등록사건목록이란?",
+    lines: [
+      "최근 등록된 사건을 날짜순으로 모아 개요까지 함께 보여주는 요약 화면입니다. [기록] 메뉴를 누르면 가장 먼저 열립니다.",
+      "사건기록 화면은 하나씩 자세히 보고 쓰는 곳인 반면, 여기는 \"요즘 무슨 일이 있었지\"를 훑어보는 곳입니다.",
+      "제목을 누르면 그 사건의 사건기록 화면으로 바로 이동합니다.",
+      "개요가 비어 있는 사건은 회색으로 표시됩니다. 사건기록에서 개요를 채워주시면 여기에도 나타납니다.",
+    ],
+  },
+];
 
 export const dynamic = "force-dynamic";
 
@@ -60,11 +73,12 @@ export default async function OpsDashboardPage() {
       <div className="shrink-0 text-center">
         {/* 사이드바 "운영 관리" 옆에 상시로 떠 있던 숫자를 없앤 대신, 여기 제목 옆에 총 건수를
             표시합니다(요청 5). */}
-        <h1 className="text-lg font-bold">
+        <h1 className="flex items-center justify-center gap-2 text-lg font-bold">
           등록사건목록
           <span className="ml-2 rounded-full bg-gia-gold-soft/40 px-2 py-0.5 align-middle text-xs font-semibold text-gia-navy">
             {incidents.length}건
           </span>
+          <GuideButton title="등록사건목록 사용 가이드" sections={GUIDE_SECTIONS} />
         </h1>
         <p className="mb-4 mt-1 text-xs text-slate-500">
           최근 등록된 사건을 날짜순으로 모아 개요까지 함께 보여줍니다. 제목을 누르면 사건기록 화면으로 이동합니다.

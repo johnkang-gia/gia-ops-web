@@ -6,6 +6,7 @@ import { friendlyError } from "@/lib/errorMessage";
 import type { BackupSummary } from "@/lib/types";
 import { useConfirm } from "@/components/common/ConfirmProvider";
 import { useToast } from "@/components/common/ToastProvider";
+import GuideButton from "@/components/common/GuideButton";
 
 const TABLE_LABELS: Record<string, string> = {
   incidents: "사건기록",
@@ -31,6 +32,25 @@ function tableLabel(t: string) {
 // 로직은 DB 함수(create_backup/restore_backup)에서 처리하고, 이 화면은 그 함수를 호출/결과
 // 표시만 합니다 - 함수 안에서 다시 한 번 관리자/개발자 여부를 확인하므로, 화면 접근 제한이
 // 뚫려도 DB가 최종 방어선이 됩니다.
+const GUIDE_SECTIONS = [
+  {
+    title: "💾 데이터 백업이란?",
+    lines: [
+      "사건·회의·행사·제안함·채택예정·매뉴얼·업무·서류함의 지금 상태를 통째로 저장해두는 기능입니다.",
+      "잘못된 일괄 수정이나 실수로 인한 대량 삭제처럼 되돌리기 어려운 사고가 났을 때, 저장해둔 시점으로 되돌릴 수 있습니다.",
+      "매일 자동으로도 저장되지만, 큰 작업(명부 일괄 반영, 학기 전환 등) 직전에는 직접 한 번 눌러 저장해두시면 안전합니다.",
+    ],
+  },
+  {
+    title: "⚠️ 복원할 때 주의할 점",
+    lines: [
+      "복원은 그 시점 이후에 쌓인 내용을 덮어씁니다. 되돌리기 전에 \"무엇을 잃게 되는지\"를 먼저 확인해주세요.",
+      "학생 명부·셔틀 배정은 이 백업에 들어 있지 않습니다. 그쪽은 [학교 > 명부 점검]과 마이그레이션으로 관리됩니다.",
+      "확실하지 않으면 복원 전에 지금 상태를 한 번 더 저장해두세요. 되돌린 것을 다시 되돌릴 수 있습니다.",
+    ],
+  },
+];
+
 export default function AdminBackupsClient({ initialBackups }: { initialBackups: BackupSummary[] }) {
   const confirmAction = useConfirm();
   const notify = useToast();
@@ -83,7 +103,10 @@ export default function AdminBackupsClient({ initialBackups }: { initialBackups:
   return (
     <div className="mx-auto max-w-3xl">
       <div className="mb-4">
-        <h1 className="text-lg font-bold text-slate-800">데이터 백업/복원</h1>
+        <div className="flex items-center justify-between gap-2">
+          <h1 className="text-lg font-bold text-slate-800">데이터 백업/복원</h1>
+          <GuideButton title="데이터 백업 사용 가이드" sections={GUIDE_SECTIONS} />
+        </div>
         <p className="mt-1 text-sm text-slate-500">
           사건·회의·행사·제안함·채택예정·매뉴얼·업무·서류함의 현재 상태를 스냅샷으로 저장하고,
           필요하면 그 시점으로 되돌립니다. 관리자만 볼 수 있습니다.

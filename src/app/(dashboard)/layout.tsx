@@ -153,7 +153,11 @@ function buildSchoolCategory(isAdmin: boolean, isStaffOrAbove: boolean): NavCate
   items.push(
     { href: "/terms", label: "학기 관리", icon: "🗓️", dividerBefore: "학사" },
     { href: "/academic-calendar", label: "학사일정", icon: "📅" },
-    { href: "/academic-calendar/prep", label: "학기 준비", icon: "🧭" }
+    { href: "/academic-calendar/prep", label: "학기 준비", icon: "🧭" },
+    // 급식 당번·체육관 사용 같은 "누가 언제 어디를 맡는가" 표입니다(요청: "당번표는 대시보드에
+    // 필요없고, 일단은 데이터만 넣을 수 있게"). 종류만 새로 적으면 새 당번표가 생기므로,
+    // 앞으로 당번이 늘어도 메뉴가 늘어나지 않습니다.
+    { href: "/school/duty", label: "당번표", icon: "🍚" }
   );
   if (isAdmin) {
     // 사무실 대형 모니터 대시보드의 관리 화면입니다. 시간표를 여기서 입력하므로 학사에 둡니다

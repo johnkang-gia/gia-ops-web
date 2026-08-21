@@ -4,6 +4,34 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import Link from "next/link";
 import ShuttleChecklistClient, { type ChecklistRoute, type ChecklistItem } from "@/components/shuttle/ShuttleChecklistClient";
 import type { GoogleChatMirrorMessage } from "@/lib/types";
+import GuideButton from "@/components/common/GuideButton";
+
+const GUIDE_SECTIONS = [
+  {
+    title: "📋 하원 체크표란?",
+    lines: [
+      "오늘 하원 차량별로 누가 타는지 보여주는 명단입니다. 하루에도 여러 번 여는 화면이라 셔틀 메뉴 맨 위에 있습니다.",
+      "부모님이 직접 데리러 오셔서 셔틀을 타지 않는 학생은 🚗(픽업), 결석한 학생은 🚫(결석)을 눌러주세요. 다시 누르면 취소됩니다.",
+      "여기서 누른 내용은 안내보드·차량 도착체크·사무실 대시보드에 즉시 반영됩니다. 기사님과 동승 선생님이 기다리지 않습니다.",
+      "담임 선생님이 [내 반 픽업 체크]에서 누른 것과, 구글챗에 올라온 픽업 글도 같은 칸에 자동으로 들어옵니다 - 세 방법을 함께 써도 충돌하지 않습니다.",
+    ],
+  },
+  {
+    title: "🚌 다른 차를 타야 할 때",
+    lines: [
+      "학생 이름을 눌러 원하는 노선 칸으로 끌어다 놓으면 차가 바뀝니다.",
+      "옮긴 뒤 [계속 유지]와 [오늘만] 중에 고릅니다. 이사처럼 계속 바뀌는 경우는 [계속 유지], 오늘 하루 사정은 [오늘만]입니다.",
+      "[오늘만]으로 옮긴 학생은 내일 원래 노선으로 돌아옵니다.",
+    ],
+  },
+  {
+    title: "🖨️ 인쇄와 학기 전환",
+    lines: [
+      "오른쪽 위 인쇄 버튼으로 종이 체크표를 뽑을 수 있습니다. 화면 버튼과 안내문은 인쇄본에서 빠집니다.",
+      "상단에서 정규학기와 여름캠프2를 오갈 수 있습니다. 두 기간은 노선과 명단이 완전히 분리되어 있어 서로 섞이지 않습니다.",
+    ],
+  },
+];
 
 export const dynamic = "force-dynamic";
 
@@ -119,6 +147,7 @@ export default async function ShuttleChecklistPage({
     <div className="mx-auto max-w-6xl p-4 sm:p-6 print:max-w-none print:p-0">
       <div className="mb-1 flex flex-wrap items-center justify-between gap-2 print:hidden">
         <h1 className="text-lg font-bold">📋 하원 체크표</h1>
+        <GuideButton className="print:hidden flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-black/5 text-[12px] font-bold text-slate-600 transition hover:bg-black/10" title="하원 체크표 사용 가이드" sections={GUIDE_SECTIONS} />
         <div className="flex items-center gap-1.5 text-xs font-semibold">
           <Link
             href="/shuttle/checklist?term=정규학기"

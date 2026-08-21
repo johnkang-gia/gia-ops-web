@@ -26,7 +26,10 @@ type BoardData = {
   isWeekday: boolean;
   currentPeriod: { id: string; label: string; startTime: string; endTime: string } | null;
   nextPeriod: { id: string; label: string; startTime: string; endTime: string } | null;
-  grades: { grade: string; classes: { id: string; className: string; current: Lesson | null; next: Lesson | null }[] }[];
+  grades: {
+    grade: string;
+    classes: { id: string; className: string; homeroom: string | null; room: string | null; current: Lesson | null; next: Lesson | null }[];
+  }[];
   studentCount: number;
   absences: { name: string; grade: string | null; className: string | null; status: string; note: string | null; contacted: boolean }[];
   pickups: string[];
@@ -231,7 +234,7 @@ export default function OpsBoardClient({ token }: { token: string }) {
         {!data.isWeekday ? (
           <Empty text="주말입니다" />
         ) : data.grades.length === 0 ? (
-          <Empty text="이 부서에 등록된 반이 없습니다" />
+          <Empty text="이 부서에 등록된 반이 없습니다 — [학교 > 반·담임 관리]에서 반을 먼저 만들어주세요" />
         ) : (
           /* 요청: "각 학년과 반별로 어느수업이 진행되는지 뜨도록" - 학년을 왼쪽에 세로로 두고,
              그 학년의 반들을 오른쪽에 가로로 늘어놓아 학년 단위로 훑어볼 수 있게 했습니다. */
@@ -257,7 +260,13 @@ export default function OpsBoardClient({ token }: { token: string }) {
                 <div style={{ flex: 1, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(138px, 1fr))", gap: 6 }}>
                   {g.classes.map((c) => (
                     <div key={c.id} style={{ background: "#1e293b", borderRadius: 10, padding: "7px 10px" }}>
-                      <div style={{ fontSize: 12, color: "#94a3b8", fontWeight: 700 }}>{c.className}</div>
+                      {/* 반 이름 옆에 담임 이름을 함께 둡니다 - 멀리서 보는 화면이라 "G3JU"보다
+                          "G3JU · Ms. June"이 훨씬 빨리 읽힙니다. 담임이 아직 정해지지 않은 반은
+                          반 이름만 나옵니다. */}
+                      <div style={{ fontSize: 12, color: "#94a3b8", fontWeight: 700 }}>
+                        {c.className}
+                        {c.homeroom && <span style={{ fontWeight: 500, color: "#64748b" }}> · {c.homeroom}</span>}
+                      </div>
                       <div style={{ fontSize: 19, fontWeight: 800, color: c.current ? "#fff" : "#475569", marginTop: 1 }}>
                         {c.current?.subjectName ?? "—"}
                       </div>
@@ -267,6 +276,9 @@ export default function OpsBoardClient({ token }: { token: string }) {
                         </div>
                       )}
                       {c.next && <div style={{ fontSize: 11, color: "#475569", marginTop: 3 }}>다음 {c.next.subjectName}</div>}
+                      {c.room && !c.current?.room && (
+                        <div style={{ fontSize: 10, color: "#334155", marginTop: 2 }}>{c.room}</div>
+                      )}
                     </div>
                   ))}
                 </div>

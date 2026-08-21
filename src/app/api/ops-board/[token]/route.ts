@@ -53,7 +53,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     // is_demo=false - 신입교사 오리엔테이션용 가짜 반/학생은 사무실 대시보드에 절대 나오면
     // 안 됩니다. 이 API는 service role 키로 조회해서 DB 보안규칙을 통과해버리므로(로그인 없는
     // 토큰 링크라 그래야 합니다), 여기서는 조건을 직접 붙여 걸러냅니다.
-    supabase.from("wr_classes").select("id, grade, class_name, department").eq("is_demo", false).order("grade").order("class_name"),
+    supabase
+      .from("wr_classes")
+      .select("id, grade, class_name, department, teacher_name, teacher_email, room")
+      .eq("is_demo", false)
+      .order("grade")
+      .order("class_name"),
   ]);
 
   const deptClasses = (classes ?? [])
@@ -101,7 +106,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
 
   // 요청: "각 학년과 반별로 어느수업이 진행되는지 뜨도록" - 학년 단위로 묶어서 내려줍니다.
   type Lesson = { subjectName: string; teacherName: string | null; room: string | null };
-  const gradeGroups: { grade: string; classes: { id: string; className: string; current: Lesson | null; next: Lesson | null }[] }[] = [];
+  const gradeGroups: {
+    grade: string;
+    classes: { id: string; className: string; homeroom: string | null; room: string | null; current: Lesson | null; next: Lesson | null }[];
+  }[] = [];
   for (const c of deptClasses) {
     const grade = (c.grade as string | null) ?? "";
     let group = gradeGroups.find((g) => g.grade === grade);
@@ -112,6 +120,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     group.classes.push({
       id: c.id as string,
       className: (c.class_name as string | null) ?? "",
+      // 담임 이름 - 계정이 연결되기 전에는 명부에 적어둔 이름(teacher_name)을 그대로 보여줍니다.
+      // 멀리서 보는 화면이라 "3학년 G3JU"보다 "G3JU · Ms. June"이 훨씬 빨리 읽힙니다.
+      homeroom: (c.teacher_name as string | null) ?? null,
+      room: (c.room as string | null) ?? null,
       current: currentPeriod ? lessonByClassPeriod.get(`${c.id}|${currentPeriod.id}`) ?? null : null,
       next: nextPeriod ? lessonByClassPeriod.get(`${c.id}|${nextPeriod.id}`) ?? null : null,
     });

@@ -4,6 +4,27 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import Link from "next/link";
 import type { ShuttleRoute, ShuttlePilotRoute } from "@/lib/types";
 import ShuttleLiveClient, { type LiveRosterItem } from "@/components/shuttle/ShuttleLiveClient";
+import GuideButton from "@/components/common/GuideButton";
+
+const GUIDE_SECTIONS = [
+  {
+    title: "🚌 실시간 셔틀이란?",
+    lines: [
+      "하원 노선이 지금 어디쯤 가고 있는지, 어느 차가 학교에 도착했는지 보는 화면입니다(등원은 추후 지원 예정).",
+      "차량 위치는 기사님 휴대폰의 Traccar 앱에서 자동으로 들어옵니다. 기사님이 따로 조작하실 것은 없습니다.",
+      "차량이 학교에 도착하면 [현장도착]을 눌러주세요. 누르는 즉시 복도·로비 안내보드에 그 차와 탑승할 학생 명단이 뜹니다.",
+      "위치가 안 들어오는 차량은 회색으로 표시됩니다. 기사님 휴대폰이 꺼져 있거나 앱이 멈춘 경우이니 전화로 확인해주세요.",
+    ],
+  },
+  {
+    title: "📺 안내보드",
+    lines: [
+      "상단 [안내보드 열기]는 복도·로비 화면에 띄워두는 주소입니다. 로그인이 필요 없어 하루 종일 켜두어도 세션이 풀리지 않습니다.",
+      "도착한 차량과 탑승할 학생이 자동으로 나타나고, 출발하면 사라집니다.",
+      "안내보드가 아직 없으면 [셔틀 > 링크·기기 관리]에서 만들 수 있습니다.",
+    ],
+  },
+];
 
 export const dynamic = "force-dynamic";
 
@@ -82,6 +103,7 @@ export default async function ShuttleLivePage() {
     <div className="mx-auto max-w-6xl p-4 sm:p-6">
       <div className="mb-1 flex items-center justify-between gap-2">
         <h1 className="text-lg font-bold">🚌 실시간 셔틀 (하원)</h1>
+        <GuideButton title="실시간 셔틀 사용 가이드" sections={GUIDE_SECTIONS} />
         {boardLink ? (
           <Link
             href={`/shuttle-board/${boardLink.token}`}

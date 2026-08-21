@@ -108,6 +108,7 @@ export default function StudentManageClient({
 
   // ── 이름 검색 (요청: "학생추가와 리스트 사이에 검색창도 넣어주고") ──
   const [nameQuery, setNameQuery] = useState("");
+  const [showOnHold, setShowOnHold] = useState(false);
 
   function toggleSort(key: SortKey) {
     if (sortKeyEq(sortKey, key)) {
@@ -209,6 +210,13 @@ export default function StudentManageClient({
     await supabase.from("wr_students").update({ status: "inactive" }).eq("id", id);
   }
 
+  // 보류 → 재학으로 되돌리기. 확정 명부에서 누락됐을 뿐 실제로는 우리 학생인 경우에 씁니다.
+  async function restoreStudent(id: string) {
+    setStudents((prev) => prev.map((s) => (s.id === id ? { ...s, status: "active" } : s)));
+    const supabase = createClient();
+    await supabase.from("wr_students").update({ status: "active" }).eq("id", id);
+  }
+
   async function removeStudent(id: string) {
     if (!(await confirmAction("이 학생을 완전히 삭제할까요? 관련 리포트도 함께 삭제됩니다.", { danger: true }))) return;
     setStudents((prev) => prev.filter((s) => s.id !== id));
@@ -252,6 +260,8 @@ export default function StudentManageClient({
   }
 
   const active = students.filter((s) => s.status === "active");
+  // 확정 명부에 없어 보류로 넘어간 학생들. 평소에는 접혀 있고, 필요할 때만 펼쳐서 되돌립니다.
+  const onHold = students.filter((s) => s.status === "보류");
 
   // 필터에 쓸 학년/반 선택지는 실제 등록된 학생 데이터에서 뽑습니다(가나다/숫자 순 정렬).
   const gradeOptions = useMemo(
@@ -364,6 +374,47 @@ export default function StudentManageClient({
         placeholder="이름 또는 영어 이름으로 검색"
         className="mb-3 w-full shrink-0 rounded-lg border border-slate-300 px-3 py-2 text-sm sm:max-w-xs"
       />
+
+      {/* 확정 명부에 없어 보류로 넘어간 학생들.
+          요청: "일단 지금 명단에 없으면 전부 보류하고, 나중에 중등부 명단을 주면 다시 비교해서...
+          중고등학생 명단에도 없으면 퇴소처리 해줘"
+          퇴소로 단정하지 않고 여기 모아둡니다. 초등부 학생인데 명부에서 누락된 경우라면
+          [재학으로] 한 번으로 되돌립니다. 평소에는 접혀 있어 표를 가리지 않습니다. */}
+      {onHold.length > 0 && (
+        <div className="mb-3 shrink-0 rounded-xl border border-amber-200 bg-amber-50 p-3">
+          <button
+            type="button"
+            onClick={() => setShowOnHold((v) => !v)}
+            className="flex w-full items-center gap-2 text-left"
+          >
+            <span className="text-sm font-bold text-amber-900">⏸️ 보류 {onHold.length}명</span>
+            <span className="text-[11px] text-amber-700">
+              3학기 확정 명부에 없어 화면에서 빠진 학생입니다. 중고등부 명단을 받으면 대조 후 정리합니다.
+            </span>
+            <span className="ml-auto text-xs font-bold text-amber-700">{showOnHold ? "접기 ‹" : "펼치기 ›"}</span>
+          </button>
+          {showOnHold && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {onHold.map((s) => (
+                <span
+                  key={s.id}
+                  className="flex items-center gap-1.5 rounded-full border border-amber-300 bg-white px-2 py-1 text-xs"
+                >
+                  <span className="font-semibold text-slate-700">{s.name}</span>
+                  {s.grade && <span className="text-[10px] text-slate-400">{s.grade}</span>}
+                  <button
+                    type="button"
+                    onClick={() => restoreStudent(s.id)}
+                    className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800 hover:bg-amber-200"
+                  >
+                    재학으로
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {showAddForm && (
         <form onSubmit={addStudent} className="mb-3 grid shrink-0 grid-cols-2 gap-2 rounded-xl border border-slate-200 bg-white p-3 sm:grid-cols-4">

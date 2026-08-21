@@ -524,7 +524,10 @@ export type WrStudent = {
   // 관리자가 "+ 칼럼 추가"로 직접 만든 항목의 값입니다. 키는 wr_student_field_defs.field_key와
   // 짝을 이루고, 값은 항상 문자열로 저장합니다(숫자/날짜 칼럼도 표시용 문자열로 저장).
   custom_fields: Record<string, string>;
-  status: "active" | "inactive";
+  // active(재학) / 보류(확정 명부에 없어 판단 보류) / inactive(퇴원·전출).
+  // '보류'는 초등부 확정 명부에 없던 학생을 담아두는 자리입니다 - 중고등부 명단을 받아 대조하기
+  // 전까지는 퇴소로 단정할 수 없어서 따로 둡니다.
+  status: "active" | "inactive" | "보류";
   // 부서 - 학년 글자로 추측하지 않고 명시적으로 저장합니다(유치부는 별도 프로그램으로 분리 예정).
   department: "유치부" | "초등부" | "중고등부" | null;
   // 방과후 수업 참여 여부.

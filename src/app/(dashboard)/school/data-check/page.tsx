@@ -23,7 +23,9 @@ const GUIDE_SECTIONS = [
     lines: [
       "지금 앱에 들어 있는 학생·반·시간표·과목 수입니다. 명부를 넣은 직후 이 숫자가 기대한 값과 맞는지 확인하는 용도입니다.",
       "2026학년도 3학기 기준 예상값 - 초등부 재학생 100명, 반 8개, 시간표 280칸, 과목 16개.",
-      "이번 명부는 초등부 명부라서, 명부에 없던 재학생은 중고등부로 옮겨 화면에서 빠졌습니다(지우지 않았습니다). 그 인원이 [중고등부 (화면 제외)]에 나옵니다 - 아래 목록에서 누가 옮겨졌는지 확인하고, 초등부 학생인데 명부에서 누락된 경우라면 [학생 관리]에서 부서를 되돌려주세요.",
+      "이번 명부는 초등부 확정 명부입니다. 명부에 없던 재학생은 지우지 않고 [보류]로 두었고, 그 인원이 [보류 (명부에 없음)]에 나옵니다. 중고등부 명단을 받으면 이름으로 대조해서, 그 명단에도 없는 학생만 그때 퇴소로 넘깁니다.",
+      "초등부 학생인데 명부에서 누락된 경우라면 [학생 관리] 화면 위쪽의 [⏸️ 보류] 상자를 펼쳐 [재학으로]를 누르면 바로 되돌아옵니다.",
+      "확정 명부에 없던 반은 아예 삭제했습니다(요청: \"초등부는 이 명단이 확정이라 다른 반이 있어서는 안돼\"). 학생·관찰기록·출결은 지워지지 않고 연결만 끊어졌습니다 - 아래 목록에서 어떤 반이 사라졌는지 확인할 수 있습니다.",
       "숫자가 0이면 아직 데이터가 반영되지 않은 것입니다(자동 반영에 1~2분 걸립니다).",
     ],
   },
@@ -47,9 +49,8 @@ export default async function DataCheckPage() {
       supabase.from("wr_periods").select("id", { count: "exact", head: true }).eq("department", "초등부"),
       supabase.from("terms").select("term_type, year, start_date, end_date").eq("status", "진행중").order("start_date", { ascending: false }).limit(1).maybeSingle(),
       supabase.from("wr_import_issues").select("*").order("resolved").order("created_at", { ascending: false }).limit(300),
-      // 화면에서 빠져 있는 중고등부 재학생. 숫자가 0이 아니어야 정상이며, 명부에 없던 학생들이
-      // 여기로 옮겨졌다는 뜻입니다.
-      supabase.from("wr_students").select("id", { count: "exact", head: true }).eq("status", "active").eq("is_demo", false).eq("department", "중고등부"),
+      // 확정 명부에 없어 보류로 넘어간 학생. 명부에 없던 학생들이 여기 모여 있습니다.
+      supabase.from("wr_students").select("id", { count: "exact", head: true }).eq("status", "보류").eq("is_demo", false),
     ]);
 
   const term = termRes.data as { term_type: string; year: string; start_date: string | null; end_date: string | null } | null;
@@ -58,7 +59,7 @@ export default async function DataCheckPage() {
 
   const stats: { label: string; value: number | null; expected?: number; href?: string }[] = [
     { label: "재학생 (초등부)", value: studentsRes.count, expected: 100, href: "/weekly-report/admin/students" },
-    { label: "중고등부 (화면 제외)", value: secondaryRes.count },
+    { label: "보류 (명부에 없음)", value: secondaryRes.count, href: "/weekly-report/admin/students" },
     { label: "퇴원·전출", value: leftRes.count, expected: 26 },
     { label: "반 (초등부)", value: classesRes.count, expected: 8, href: "/weekly-report/admin/classes" },
     { label: "교시 (초등부)", value: periodsRes.count, expected: 7, href: "/ops-board" },

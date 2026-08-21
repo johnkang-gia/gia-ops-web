@@ -9,6 +9,7 @@ function LoginForm() {
   const [loading, setLoading] = useState(false);
   const searchParams = useSearchParams();
   const domainError = searchParams.get("error") === "domain";
+  const libraryError = searchParams.get("error") === "library";
 
   async function handleGoogleLogin() {
     setLoading(true);
@@ -30,6 +31,12 @@ function LoginForm() {
       <p className="text-sm text-slate-500 mb-6">
         giamicro.com 회사 구글 계정으로 로그인하세요.
       </p>
+
+      {libraryError && (
+        <p className="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">
+          도서관 전용 계정은 운영앱에 접속할 수 없습니다. 도서관 시스템 주소로 접속해 주세요.
+        </p>
+      )}
 
       {domainError && (
         <p className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">

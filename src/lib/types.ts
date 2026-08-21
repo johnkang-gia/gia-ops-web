@@ -1007,6 +1007,9 @@ export type OpsBoardLink = {
   shuttle_switch_hour: number;
   shuttle_switch_minute: number;
   shuttle_board_token: string | null;
+  // 주소창에 직접 칠 수 있는 짧은 코드입니다(/d/{short_code}로 접속하면 이 대시보드로 자동
+  // 연결됩니다). 토큰(36자리)은 그대로 두고 지름길만 하나 더 두는 방식입니다.
+  short_code: string | null;
   enabled: boolean;
   created_at: string;
 };

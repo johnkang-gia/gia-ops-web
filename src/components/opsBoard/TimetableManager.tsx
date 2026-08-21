@@ -13,6 +13,15 @@ import { departmentOf, gradeSortKey, VISIBLE_DEPARTMENTS } from "@/lib/departmen
 // 유치부는 별도 프로그램으로 분리하기로 해서 이 화면에서는 감춥니다(요청: "유치부는 우선
 // 분리해서 표면적으로는 안보이게"). 데이터는 그대로 남아 있고, 나중에 다시 보이게 하려면
 // src/lib/department.ts의 VISIBLE_DEPARTMENTS에 넣기만 하면 됩니다.
+// 짧은 주소 코드에서 헷갈리는 글자(0/O, 1/I/l)를 뺐습니다 - 눈으로 보고 손으로 옮겨 치는
+// 값이라 가장 흔한 실수가 0과 O를 헷갈리는 것입니다.
+const SHORT_CODE_CHARS = "23456789abcdefghjkmnpqrstuvwxyz";
+function randomShortCode(len = 4) {
+  let out = "";
+  for (let i = 0; i < len; i++) out += SHORT_CODE_CHARS[Math.floor(Math.random() * SHORT_CODE_CHARS.length)];
+  return out;
+}
+
 const DEPARTMENTS = VISIBLE_DEPARTMENTS;
 const WEEKDAYS = [
   { value: 1, label: "월" },
@@ -140,13 +149,58 @@ export default function TimetableManager({
   async function createLink() {
     setBusy(true);
     const supabase = createClient();
-    const { data, error } = await supabase.from("ops_board_links").insert({ default_department: department }).select().single();
+    // 짧은 코드가 다른 링크와 우연히 겹치면(유니크 제약 위반, 23505) 다시 뽑습니다.
+    // 4자리라 실제로 겹칠 확률은 매우 낮습니다.
+    let data: OpsBoardLink | null = null;
+    let error: { code?: string; message: string } | null = null;
+    for (let attempt = 0; attempt < 5 && !data; attempt++) {
+      const res = await supabase
+        .from("ops_board_links")
+        .insert({ default_department: department, short_code: randomShortCode() })
+        .select()
+        .single();
+      data = res.data as OpsBoardLink | null;
+      error = res.error;
+      if (!error) break;
+      if (error.code !== "23505") break;
+    }
     setBusy(false);
     if (error || !data) {
       notify("링크를 만들지 못했습니다: " + (error?.message ?? ""), "error");
       return;
     }
     setLinks((prev) => [data as OpsBoardLink, ...prev]);
+  }
+
+  // 짧은 주소는 사람이 주소창에 직접 치는 값이라, 바꿀 때 영문 소문자·숫자만 남깁니다.
+  async function saveShortCode(id: string, raw: string) {
+    const code = raw.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (!code) {
+      notify("짧은 주소는 비워둘 수 없습니다.", "error");
+      setLinks((prev) => [...prev]); // 입력칸을 이전 값으로 되돌리기 위한 강제 리렌더링
+      return;
+    }
+    const previous = links;
+    setLinks((prev) => prev.map((l) => (l.id === id ? { ...l, short_code: code } : l)));
+    const supabase = createClient();
+    const { error } = await supabase.from("ops_board_links").update({ short_code: code }).eq("id", id);
+    if (error) {
+      setLinks(previous);
+      notify(
+        error.code === "23505"
+          ? `"${code}"는 이미 다른 링크가 쓰고 있습니다. 다른 값으로 정해주세요.`
+          : "짧은 주소를 바꾸지 못했습니다: " + error.message,
+        "error"
+      );
+    }
+  }
+
+  function copyShortUrl(code: string) {
+    const url = `${window.location.origin}/d/${code}`;
+    navigator.clipboard.writeText(url).then(
+      () => notify("짧은 주소를 복사했습니다.", "success"),
+      () => notify("복사하지 못했습니다.", "error")
+    );
   }
 
   async function patchLink(id: string, patch: Partial<OpsBoardLink>) {
@@ -177,6 +231,10 @@ export default function TimetableManager({
         <p className="mb-3 text-[11px] leading-relaxed text-slate-500">
           사무실 큰 모니터에 띄우는 화면입니다. 로그인 없이 주소만으로 열리므로 하루 종일 켜두어도 세션이 풀리지 않습니다. 설정한 시각이 되면 화면 전체가
           하원 운행 화면(위 실시간 지도 + 아래 차량별 도착·출발·탑승 현황)으로 자동 전환됩니다.
+          <br />
+          <strong className="text-slate-600">짧은 주소</strong>는 다른 컴퓨터에서 주소창에 직접 쳐서 들어갈 때 쓰는 지름길입니다 —
+          <span className="font-mono"> 우리주소/d/코드 </span>
+          네 글자만 치면 바로 열립니다. 원하는 이름(예: <span className="font-mono">office</span>)으로 바꿔도 됩니다.
         </p>
         {links.length === 0 ? (
           <p className="py-3 text-center text-xs text-slate-400">아직 만든 링크가 없습니다.</p>
@@ -219,9 +277,30 @@ export default function TimetableManager({
                   className="w-12 rounded border border-slate-300 px-1.5 py-1 text-center"
                 />
                 <span className="text-slate-400">분부터 하원 운행 화면</span>
-                <div className="ml-auto flex items-center gap-1.5">
+                <div className="ml-auto flex flex-wrap items-center gap-1.5">
+                  <span className="text-[10px] font-bold text-slate-400">/d/</span>
+                  <input
+                    key={l.id + ":" + (l.short_code ?? "")}
+                    defaultValue={l.short_code ?? ""}
+                    placeholder="office"
+                    title="주소창에 직접 칠 수 있는 짧은 주소"
+                    onBlur={(e) =>
+                      e.target.value.trim() &&
+                      e.target.value.trim().toLowerCase() !== l.short_code &&
+                      saveShortCode(l.id, e.target.value)
+                    }
+                    className="w-20 rounded border border-slate-300 px-2 py-1 font-mono text-[11px] font-semibold"
+                  />
+                  {l.short_code && (
+                    <button
+                      onClick={() => copyShortUrl(l.short_code!)}
+                      className="rounded border border-slate-300 px-2 py-1 font-semibold text-slate-600"
+                    >
+                      짧은 주소 복사
+                    </button>
+                  )}
                   <button onClick={() => copyUrl(l.token)} className="rounded border border-slate-300 px-2 py-1 font-semibold text-slate-600">
-                    주소 복사
+                    원본 복사
                   </button>
                   <a href={`/ops-board/${l.token}`} target="_blank" rel="noreferrer" className="rounded bg-slate-700 px-2 py-1 font-semibold text-white">
                     열기

@@ -87,7 +87,10 @@ export async function updateSession(request: NextRequest) {
     path.startsWith("/api/ops-board") ||
     // 안내보드 짧은 주소(요청: "주소가 너무 복잡해서... 짧은 주소로 만들어줘") - /b/{코드}로
     // 접속하면 로그인 없이 실제 안내보드 링크로 바로 이동합니다.
-    path.startsWith("/b/");
+    path.startsWith("/b/") ||
+    // 운영 대시보드 짧은 주소(요청: "운영안내 대시보드 주소 간결하게 만들어주고, 다른곳에서
+    // 바로 주소만쳐서 들어갈 수 있게") - /d/{코드}. 안내보드(/b/)와 같은 방식입니다.
+    path.startsWith("/d/");
 
   if (!user && !isAuthRoute) {
     const url = request.nextUrl.clone();

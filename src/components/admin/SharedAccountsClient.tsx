@@ -142,7 +142,7 @@ export default function SharedAccountsClient() {
           </div>
 
           <div>
-            <label className="mb-1 block text-xs font-semibold text-slate-500">비밀번호 (10자 이상)</label>
+            <label className="mb-1 block text-xs font-semibold text-slate-500">비밀번호</label>
             <div className="flex gap-1.5">
               <input
                 value={password}
@@ -159,8 +159,9 @@ export default function SharedAccountsClient() {
                 자동 생성
               </button>
             </div>
-            <p className="mt-1 text-[11px] text-slate-400">
-              여러 사람이 나눠 쓰는 계정이라, 개인 계정에 쓰는 비밀번호는 절대 쓰지 마세요.
+            <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
+              길이 제한은 없습니다. 여러 사람이 하루에도 몇 번씩 입력하는 계정이라면 짧고 외우기 쉬운 편이 오히려 낫습니다 — 길고 복잡하면
+              결국 모니터에 붙여두게 됩니다. 다만 <strong>개인 계정에 쓰는 비밀번호는 절대 쓰지 마세요.</strong>
             </p>
           </div>
         </div>

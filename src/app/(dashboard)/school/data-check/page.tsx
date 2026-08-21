@@ -112,8 +112,10 @@ export default async function DataCheckPage() {
           })}
         </div>
         <p className="mt-3 text-[11px] leading-relaxed text-slate-400">
-          숫자가 모두 0이면 아직 반영 전입니다(자동 반영에 1~2분 걸립니다). 잠시 뒤 새로고침해보세요. 칸을 누르면 해당 관리
-          화면으로 이동합니다.
+          칸을 누르면 해당 관리 화면으로 이동합니다. 숫자가 모두 0이면 아직 반영 전입니다 — 배포 직후라면 1~2분 뒤
+          새로고침해보시고, 한참 지나도 0이면 <strong className="text-slate-500">자동 반영(GitHub Actions)이 실패한 것</strong>이니
+          저장소의 <span className="font-mono">supabase/manual/</span> 폴더에 있는 SQL을 Supabase SQL Editor에 1 → 2 → 3 순서로
+          붙여넣어 실행해주세요.
         </p>
       </div>
 

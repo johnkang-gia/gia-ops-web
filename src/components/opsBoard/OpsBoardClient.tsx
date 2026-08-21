@@ -258,27 +258,16 @@ export default function OpsBoardClient({ token }: { token: string }) {
                   {g.grade || "미지정"}
                 </div>
                 <div style={{ flex: 1, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(138px, 1fr))", gap: 6 }}>
+                  {/* 요청: "그냥 지금 어느학년 어느반이 무슨시간인지 한눈에 볼 수있도록만 해주고".
+                      반 이름과 지금 과목 두 줄만 남기고 담임·다음교시·담당교사는 뺐습니다 - 멀리서
+                      보는 화면에서는 글자가 많을수록 오히려 안 읽힙니다. 수업이 없는 시간에만
+                      교실 위치를 대신 보여줍니다(요청: "수업중이 아닐때 교실위치 보여주는 것은 좋고"). */}
                   {g.classes.map((c) => (
-                    <div key={c.id} style={{ background: "#1e293b", borderRadius: 10, padding: "7px 10px" }}>
-                      {/* 반 이름 옆에 담임 이름을 함께 둡니다 - 멀리서 보는 화면이라 "G3JU"보다
-                          "G3JU · Ms. June"이 훨씬 빨리 읽힙니다. 담임이 아직 정해지지 않은 반은
-                          반 이름만 나옵니다. */}
-                      <div style={{ fontSize: 12, color: "#94a3b8", fontWeight: 700 }}>
-                        {c.className}
-                        {c.homeroom && <span style={{ fontWeight: 500, color: "#64748b" }}> · {c.homeroom}</span>}
+                    <div key={c.id} style={{ background: "#1e293b", borderRadius: 10, padding: "8px 10px" }}>
+                      <div style={{ fontSize: 13, color: "#94a3b8", fontWeight: 700 }}>{c.className}</div>
+                      <div style={{ fontSize: 22, fontWeight: 800, color: c.current ? "#fff" : "#475569", marginTop: 2, lineHeight: 1.15 }}>
+                        {c.current?.subjectName ?? (c.room || "—")}
                       </div>
-                      <div style={{ fontSize: 19, fontWeight: 800, color: c.current ? "#fff" : "#475569", marginTop: 1 }}>
-                        {c.current?.subjectName ?? "—"}
-                      </div>
-                      {c.current && (c.current.teacherName || c.current.room) && (
-                        <div style={{ fontSize: 11, color: "#64748b" }}>
-                          {[c.current.teacherName, c.current.room].filter(Boolean).join(" · ")}
-                        </div>
-                      )}
-                      {c.next && <div style={{ fontSize: 11, color: "#475569", marginTop: 3 }}>다음 {c.next.subjectName}</div>}
-                      {c.room && !c.current?.room && (
-                        <div style={{ fontSize: 10, color: "#334155", marginTop: 2 }}>{c.room}</div>
-                      )}
                     </div>
                   ))}
                 </div>

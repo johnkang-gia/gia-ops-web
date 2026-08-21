@@ -3,7 +3,7 @@
 -- ============================================================================
 --  ▶ Supabase 대시보드 → SQL Editor → New query → 이 파일 전체 붙여넣기 → Run
 --  ▶ 순서대로 1 → 2 → 3 을 각각 실행해주세요.
---  ▶ 여러 번 실행해도 안전합니다 - 모든 문장이 "없으면 만들고 있으면 갱신"하는 방식입니다.
+--  ▶ 여러 번 실행해도 안전합니다.
 -- ============================================================================
 
 
@@ -13,7 +13,6 @@ create table if not exists supabase_migrations.schema_migrations (
 );
 alter table supabase_migrations.schema_migrations add column if not exists statements text[];
 alter table supabase_migrations.schema_migrations add column if not exists name text;
-
 insert into supabase_migrations.schema_migrations (version, name) values
   ('20260811000000', 'shuttle_auto_depart'),
   ('20260813000000', 'shuttle_traccar_tracking'),

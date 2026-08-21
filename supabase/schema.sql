@@ -5166,13 +5166,9 @@ on conflict (case_id) do update
   set term_type = excluded.term_type, year = excluded.year,
       start_date = excluded.start_date, end_date = excluded.end_date, status = excluded.status;
 
--- 주간 관찰기록용 학기(별도 표). 새 학기가 시작되면 이전 학기는 자동으로 내려갑니다.
-update wr_terms set is_active = false where is_active = true;
-insert into wr_terms (id, name, start_date, end_date, is_active)
-values ('3a000000-0000-4000-9100-000000000003', '2026학년도 3학기', '2026-08-24', '2026-11-13', true)
-on conflict (id) do update
-  set name = excluded.name, start_date = excluded.start_date,
-      end_date = excluded.end_date, is_active = true;
+-- 주간 관찰기록도 같은 terms를 씁니다(wr_terms는 v0.36에서 통합되며 삭제된 표입니다).
+update terms set status = '종료'
+ where status = '진행중' and case_id <> 'TRM-2026-T3';
 
 
 -- ── ② 반 8개 ───────────────────────────────────────────────────────────────

@@ -22,6 +22,13 @@ function randomShortCode(len = 4) {
   return out;
 }
 
+// 짧은 주소 칸(short_code)이 아직 DB에 없거나, DB에는 생겼지만 Supabase의 API 계층이 아직
+// 예전 구조를 캐시하고 있는 상태를 알아냅니다. 배포 직후 몇 분 동안 실제로 일어나는 일이라,
+// 그냥 원문 오류를 보여주면 "무엇이 잘못됐는지" 알 수 없는 영문 메시지만 뜹니다.
+function isMissingShortCodeColumn(error: { code?: string; message?: string }): boolean {
+  return error.code === "PGRST204" || !!error.message?.includes("short_code");
+}
+
 const DEPARTMENTS = VISIBLE_DEPARTMENTS;
 const WEEKDAYS = [
   { value: 1, label: "월" },
@@ -164,6 +171,15 @@ export default function TimetableManager({
       if (!error) break;
       if (error.code !== "23505") break;
     }
+    // 짧은 주소 칸이 아직 DB에 반영되기 전이면 그 칸 때문에 링크 만들기 자체가 막힙니다.
+    // 링크를 만드는 것이 더 중요한 일이라, 그럴 때는 짧은 주소 없이 먼저 만들어 둡니다
+    // (반영이 끝난 뒤 목록에서 코드만 채워 넣으면 됩니다).
+    if (error && isMissingShortCodeColumn(error)) {
+      const res = await supabase.from("ops_board_links").insert({ default_department: department }).select().single();
+      data = res.data as OpsBoardLink | null;
+      error = res.error;
+      if (!error) notify("링크를 만들었습니다. 짧은 주소 기능은 아직 준비 중이라 잠시 후 코드를 정해주세요.", "success");
+    }
     setBusy(false);
     if (error || !data) {
       notify("링크를 만들지 못했습니다: " + (error?.message ?? ""), "error");
@@ -189,7 +205,9 @@ export default function TimetableManager({
       notify(
         error.code === "23505"
           ? `"${code}"는 이미 다른 링크가 쓰고 있습니다. 다른 값으로 정해주세요.`
-          : "짧은 주소를 바꾸지 못했습니다: " + error.message,
+          : isMissingShortCodeColumn(error)
+            ? "짧은 주소 기능이 아직 DB에 반영되지 않았습니다. 1~2분 뒤 새로고침하고 다시 시도해주세요."
+            : "짧은 주소를 바꾸지 못했습니다: " + error.message,
         "error"
       );
     }

@@ -466,12 +466,18 @@ export default async function DashboardLayout({
 
         {/* 검색+달력을 한 상자로 합쳤습니다(요청: "프로필 아래 검색과 달력위젯을 합쳐줘 검색아래에
             달력있게"). 위쪽엔 통합 검색(학생/사건/회의/행사/업무/서류), 아래쪽엔 축소 달력을
-            같은 테두리 안에 둬서 메뉴 영역을 더 넓게 확보했습니다(요청: "이 위젯 좀더 작게"). */}
+            같은 테두리 안에 둬서 메뉴 영역을 더 넓게 확보했습니다(요청: "이 위젯 좀더 작게").
+
+            교사에게는 검색창을 감춥니다(요청: "교사계정은 달력위에 검색창 없애주고"). 이 검색은
+            사건기록·회의·업무·학교문서를 훑는 통합 검색인데, 교사는 그 화면들에 애초에 들어갈 수
+            없어서 무엇을 쳐도 결과가 나오지 않습니다. 달력만 남깁니다. */}
         <div className="mb-2 shrink-0 rounded-lg border border-[var(--shell-border)] bg-[var(--shell-card-bg)] p-1.5">
-          <GlobalSearchBar compact />
-          <div className="mt-1.5 border-t border-[var(--shell-border)] pt-1.5">
-            <DateTimeCard compact />
-          </div>
+          {!isTeacher && (
+            <div className="mb-1.5 border-b border-[var(--shell-border)] pb-1.5">
+              <GlobalSearchBar compact />
+            </div>
+          )}
+          <DateTimeCard compact />
         </div>
 
         <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto overflow-x-visible">
@@ -530,9 +536,13 @@ export default async function DashboardLayout({
             <SignOutButton />
           </div>
         </header>
-        <div className="shell-blur border-b border-[var(--shell-border)] bg-[var(--shell-bg)] px-3 py-2 sm:hidden">
-          <GlobalSearchBar compact />
-        </div>
+        {/* 모바일에서도 같은 이유로 교사에게는 검색줄을 감춥니다 - 화면이 좁을수록 쓸 수 없는
+            입력칸이 차지하는 자리가 아깝습니다. */}
+        {!isTeacher && (
+          <div className="shell-blur border-b border-[var(--shell-border)] bg-[var(--shell-bg)] px-3 py-2 sm:hidden">
+            <GlobalSearchBar compact />
+          </div>
+        )}
         <nav className="shell-blur flex items-center gap-1 overflow-x-auto border-b border-[var(--shell-border)] bg-[var(--shell-bg)] px-2 py-2 sm:hidden">
           <MobileNavLinks categories={categories} />
           <Link href="/inquiries" className="ml-auto shrink-0 rounded-lg px-2 py-1.5 text-xs text-[var(--shell-text-muted)]">

@@ -7,17 +7,39 @@
 
 // 기사님 개인 휴대폰을 쓰는 방식이라, 하원 운행과 무관한 시간의 위치는 아예 저장하지 않습니다
 // (앱은 24시간 켜져 있지만 서버가 이 창 밖의 좌표를 받아서 버립니다 - 개인정보 최소 수집).
-// 우선 하원만 시험하므로 하원 시간대만 열어두고, 나중에 등원까지 넓힐 때 이 값만 바꾸면 됩니다.
-export const TRACK_WINDOW_START_HOUR = 12; // KST 12:00부터
-export const TRACK_WINDOW_END_HOUR = 20; // KST 20:00 직전까지
+//
+// 요청: "위치저장은 딱 등원과 하원하는 시간이고 등원시간대는 내가 나중에 알려줄거고 일단은
+// 하원만 트래킹되도록해줘 하원트래킹은 오후 3:30분 부터 오후 6시 30분까지 3시간이야 그 이후에는
+// 위치추적안하고"
+//
+// 이 창은 문서로만 약속한 것이 아니라 서버가 실제로 강제합니다(/api/shuttle/track). 창 밖에서
+// 들어온 좌표는 저장하지 않고 버리므로, 기사님이 앱을 끄지 않으셔도 퇴근 후 동선은 남지 않습니다.
+// 나중에 등원 시간대를 알려주시면 TRACK_WINDOWS에 한 줄만 더하면 됩니다.
+export type TrackWindow = { startMinute: number; endMinute: number; label: string };
+
+const hm = (hour: number, minute: number) => hour * 60 + minute;
+
+export const TRACK_WINDOWS: TrackWindow[] = [
+  // 하원: 평일 15:30 ~ 18:30 (3시간)
+  { startMinute: hm(15, 30), endMinute: hm(18, 30), label: "하원" },
+  // 등원: 시간대 확정 후 추가 예정
+];
+
+// 화면·문서에 같은 문구를 쓰기 위한 표시용 문자열입니다("15:30~18:30").
+export function formatTrackWindows(): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const at = (m: number) => `${pad(Math.floor(m / 60))}:${pad(m % 60)}`;
+  return TRACK_WINDOWS.map((w) => `${at(w.startMinute)}~${at(w.endMinute)}`).join(", ");
+}
 
 // 서버는 UTC로 돌기 때문에, 한국 기준 날짜·시각이 필요한 곳에서는 항상 이 함수를 씁니다
 // (term-switch 크론에서 쓰던 +9시간 방식과 동일).
-export function kstParts(date: Date): { iso: string; hour: number; weekday: number } {
+export function kstParts(date: Date): { iso: string; hour: number; minute: number; weekday: number } {
   const shifted = new Date(date.getTime() + 9 * 60 * 60 * 1000);
   return {
     iso: shifted.toISOString().slice(0, 10),
     hour: shifted.getUTCHours(),
+    minute: shifted.getUTCMinutes(),
     weekday: shifted.getUTCDay(), // 0=일 ... 6=토
   };
 }
@@ -26,7 +48,8 @@ export function kstParts(date: Date): { iso: string; hour: number; weekday: numb
 // 아예 받지 않습니다. Traccar Client는 통신이 끊기면 저장했다가 나중에 몰아서 보내므로,
 // "지금 시각"이 아니라 "그 좌표가 기록된 시각" 기준으로 판단해야 합니다.
 export function isWithinTrackingWindow(recordedAt: Date): boolean {
-  const { hour, weekday } = kstParts(recordedAt);
+  const { hour, minute, weekday } = kstParts(recordedAt);
   if (weekday === 0 || weekday === 6) return false;
-  return hour >= TRACK_WINDOW_START_HOUR && hour < TRACK_WINDOW_END_HOUR;
+  const at = hour * 60 + minute;
+  return TRACK_WINDOWS.some((w) => at >= w.startMinute && at < w.endMinute);
 }

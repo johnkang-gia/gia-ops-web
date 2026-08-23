@@ -28,5 +28,6 @@ insert into supabase_migrations.schema_migrations (version, name) values
   ('20260822000000', 'ops_board_dismissal_end'),
   ('20260822120000', 'term3_school_data'),
   ('20260822180000', 'duty_roster'),
-  ('20260823000000', 'primary_only_roster')
+  ('20260823000000', 'primary_only_roster'),
+  ('20260823120000', 'driver_setup_link')
 on conflict (version) do nothing;

@@ -1,7 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import QRCode from "qrcode";
 import { useToast } from "@/components/common/ToastProvider";
+import { driverSetupPath, setupMessage, smsHref } from "@/lib/driverSetup";
+import { formatTrackWindows } from "@/lib/shuttleTracking";
 import type { ShuttleRoute, ShuttleTrackerDevice, ShuttleStop, ShuttleStopObservation } from "@/lib/types";
 
 // 요청: "기사님들은 네비를 핸드폰으로 하시는 경우도 많아서... 백그라운드에서 돌아갈 수 있도록",
@@ -29,6 +32,9 @@ export default function TrackerDeviceManager({
   const [newRouteId, setNewRouteId] = useState("");
   const [newLabel, setNewLabel] = useState("");
   const [showGuide, setShowGuide] = useState(false);
+  // 설정 링크 QR을 크게 띄우는 창. 기사님이 오셨을 때 이 화면을 모니터에 띄워두고 기사님
+  // 휴대폰 카메라로 찍으시면, 주소를 한 글자도 치지 않고 설정 안내로 넘어갑니다.
+  const [qrFor, setQrFor] = useState<ShuttleTrackerDevice | null>(null);
 
   const routeById = useMemo(() => new Map(routes.map((r) => [r.id, r])), [routes]);
   const stopsByRoute = useMemo(() => {
@@ -47,6 +53,27 @@ export default function TrackerDeviceManager({
 
   function serverUrl() {
     return typeof window === "undefined" ? "" : `${window.location.origin}/api/shuttle/track`;
+  }
+
+  function setupUrl(device: ShuttleTrackerDevice) {
+    if (typeof window === "undefined" || !device.setup_code) return "";
+    return `${window.location.origin}${driverSetupPath(device.setup_code)}`;
+  }
+
+  function routeLabelOf(device: ShuttleTrackerDevice) {
+    const route = routeById.get(device.route_id);
+    return route ? `${route.route_no}호차${route.name ? ` (${route.name})` : ""}` : "하원 차량";
+  }
+
+  async function reissue(device: ShuttleTrackerDevice) {
+    if (!window.confirm(`${routeLabelOf(device)}의 설정 링크를 새로 발급할까요?\n\n예전 링크는 더 이상 열리지 않습니다. 이미 설정을 마친 휴대폰은 영향을 받지 않습니다.`)) return;
+    const json = await call({ action: "reissue_setup_code", id: device.id });
+    if (!json?.setupCode) return;
+    setDevices((prev) =>
+      prev.map((d) => (d.id === device.id ? { ...d, setup_code: json.setupCode as string, setup_opened_at: null } : d))
+    );
+    setQrFor(null);
+    notify("설정 링크를 새로 발급했습니다.", "success");
   }
 
   async function call(body: Record<string, unknown>) {
@@ -125,6 +152,19 @@ export default function TrackerDeviceManager({
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4">
+      {qrFor && (
+        <SetupLinkModal
+          url={setupUrl(qrFor)}
+          routeLabel={routeLabelOf(qrFor)}
+          driverName={routeById.get(qrFor.route_id)?.driver_name ?? null}
+          driverPhone={routeById.get(qrFor.route_id)?.driver_phone ?? null}
+          deviceId={qrFor.device_id}
+          onCopy={copy}
+          onReissue={() => reissue(qrFor)}
+          onClose={() => setQrFor(null)}
+        />
+      )}
+
       <div className="mb-2 flex items-center justify-between gap-2">
         <h2 className="text-sm font-bold text-slate-800">🛰️ 기사님 휴대폰 GPS 추적 (Traccar Client)</h2>
         <button
@@ -137,15 +177,26 @@ export default function TrackerDeviceManager({
       </div>
       <p className="mb-3 text-[11px] leading-relaxed text-slate-500">
         기사님 휴대폰에 무료 앱을 한 번만 설정해드리면, 그 뒤로는 조작 없이 백그라운드로 위치가 들어옵니다. 네비 화면은 가려지지
-        않습니다. 하원 시간대(12~20시, 평일) 밖의 위치는 서버에 저장하지 않습니다.
+        않습니다. <b className="text-slate-700">하원 시간대(평일 {formatTrackWindows()})</b> 밖의 위치는 서버가 받는 즉시
+        버리고 저장하지 않습니다.
       </p>
+
+      {/* 설정 방법 - 값을 손으로 불러주는 대신 링크 하나로 끝내는 방식입니다 */}
+      <div className="mb-3 rounded-lg border border-blue-200 bg-blue-50 p-3">
+        <p className="mb-1 text-xs font-bold text-blue-900">📲 기사님 설정은 아래 [설정 링크] 버튼 하나로 끝냅니다</p>
+        <p className="text-[11px] leading-relaxed text-blue-800">
+          호차 옆 <b>[설정 링크]</b>를 누르면 QR과 문자 보내기가 나옵니다. 기사님이 <b>학교에 오셨다면</b> 이 화면의 QR을
+          휴대폰 카메라로 찍으시게 하고, <b>안 오셨다면</b> [문자로 보내기]를 누르세요. 기사님은 링크를 열어 순서대로 누르기만
+          하시면 되고, 서버 주소나 기기 번호를 한 글자도 치지 않으십니다.
+        </p>
+      </div>
 
       {showGuide && (
         <ol className="mb-4 list-decimal space-y-1.5 rounded-lg bg-slate-50 p-3 pl-7 text-[11px] leading-relaxed text-slate-600">
           <li>기사님 휴대폰 앱스토어(아이폰) 또는 Play 스토어(안드로이드)에서 <b>Traccar Client</b>를 설치합니다.</li>
           <li>앱 설정에서 <b>서버 주소(Server URL)</b>에 아래 주소를, <b>기기 식별자(Device identifier)</b>에 노선별 기기 ID를 넣습니다.</li>
           <li>위치 권한을 <b>&quot;항상 허용&quot;</b>으로 설정합니다(백그라운드 전송에 필수).</li>
-          <li>정확도 <b>Highest</b>, 간격(Interval) <b>15초</b>, 거리(Distance) <b>0</b>, <b>정차 감지(Stop detection) 끄기</b>로 설정합니다. 정류장 좌표를 학습하려면 멈춰 있는 동안에도 위치가 계속 와야 합니다.</li>
+          <li>정확도 <b>Highest</b>, 간격(Interval) <b>30초</b>, 거리(Distance) <b>0</b>, 각도(Angle) <b>0</b>, <b>정차 감지(Stop detection) 끄기</b>로 설정합니다. 정류장 좌표를 학습하려면 멈춰 있는 동안에도 위치가 계속 와야 합니다.</li>
           <li>안드로이드는 <b>배터리 최적화 예외</b>를 켜주세요(설정 → 앱 → 배터리 → 제한 없음). 안 하면 절전 모드에서 전송이 끊깁니다.</li>
           <li>마지막으로 앱 상단 스위치를 켜면 끝입니다. 이후 휴대폰을 재시작해도 자동으로 다시 켜집니다.</li>
         </ol>
@@ -215,7 +266,21 @@ export default function TrackerDeviceManager({
                 <span className={"text-[11px] " + (d.last_seen_at ? "text-emerald-600" : "text-slate-400")}>
                   {d.last_seen_at ? `최근 수신 ${new Date(d.last_seen_at).toLocaleString("ko-KR")}` : "아직 수신 없음"}
                 </span>
+                {/* 링크를 여셨는지까지 보여주면, "보내드렸는데 하셨나?"를 전화로 묻지 않아도 됩니다 */}
+                {!d.last_seen_at && d.setup_opened_at && (
+                  <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-semibold text-amber-700">
+                    링크는 여심 · 설정 미완료
+                  </span>
+                )}
                 <div className="ml-auto flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setQrFor(d)}
+                    disabled={!d.setup_code}
+                    className="rounded-lg bg-blue-600 px-2 py-1 text-[11px] font-bold text-white disabled:opacity-40"
+                  >
+                    설정 링크
+                  </button>
                   <button
                     type="button"
                     onClick={() => toggleDevice(d)}
@@ -326,6 +391,138 @@ export default function TrackerDeviceManager({
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+// 설정 링크를 QR과 문자로 내보내는 창입니다.
+//
+// 왜 QR인가요? 기사님이 학교에 오셔서 휴대폰을 맡기시는 경우, 담당자가 남의 휴대폰 자판으로
+// 60자짜리 주소를 치는 것이 가장 오래 걸리는 일이었습니다. 이 창을 사무실 모니터에 띄워두고
+// 기사님 휴대폰 카메라(기본 카메라 앱, 두 운영체제 모두 됨)로 찍으시면 바로 설정 화면이
+// 열립니다. 타자가 한 글자도 없습니다.
+//
+// 왜 문자인가요? 기사님이 안 오셨을 때 쓰는 길입니다. 별도 문자 발송 API(유료 가입·심사 필요)
+// 대신 담당자 휴대폰의 기본 문자 앱을 열어 내용을 채워드립니다 - 지금 당장, 비용 없이 됩니다.
+// 카카오톡으로 보내시려면 [링크 복사] 후 붙여넣으시면 됩니다.
+function SetupLinkModal({
+  url,
+  routeLabel,
+  driverName,
+  driverPhone,
+  deviceId,
+  onCopy,
+  onReissue,
+  onClose,
+}: {
+  url: string;
+  routeLabel: string;
+  driverName: string | null;
+  driverPhone: string | null;
+  deviceId: string;
+  onCopy: (text: string) => void;
+  onReissue: () => void;
+  onClose: () => void;
+}) {
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    if (!url) return;
+    QRCode.toDataURL(url, { width: 640, margin: 1 }).then(
+      (dataUrl) => {
+        if (alive) setQrDataUrl(dataUrl);
+      },
+      () => {
+        if (alive) setQrDataUrl(null);
+      }
+    );
+    return () => {
+      alive = false;
+    };
+  }, [url]);
+
+  const message = setupMessage(routeLabel, url);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      onClick={onClose}
+      role="presentation"
+    >
+      <div
+        className="max-h-[92vh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-5 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+        role="presentation"
+      >
+        <div className="mb-3 flex items-start justify-between gap-2">
+          <div>
+            <h3 className="text-base font-bold text-slate-800">{routeLabel} 설정 링크</h3>
+            <p className="text-[11px] text-slate-500">
+              {driverName ? `${driverName} 기사님` : "기사님 성함 미등록"} · 기기 ID{" "}
+              <code className="font-bold text-slate-700">{deviceId}</code>
+            </p>
+          </div>
+          <button type="button" onClick={onClose} className="text-lg text-slate-400">
+            ✕
+          </button>
+        </div>
+
+        <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-center">
+          <p className="mb-2 text-xs font-bold text-slate-600">기사님이 학교에 오셨다면 — 휴대폰 카메라로 찍어주세요</p>
+          {qrDataUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={qrDataUrl} alt={`${routeLabel} 설정 링크 QR 코드`} className="mx-auto h-56 w-56" />
+          ) : (
+            <div className="mx-auto flex h-56 w-56 items-center justify-center text-xs text-slate-400">QR 만드는 중...</div>
+          )}
+          <code className="mt-2 block break-all text-[11px] text-slate-500">{url}</code>
+        </div>
+
+        <p className="mb-1.5 text-xs font-bold text-slate-600">기사님이 안 오셨다면 — 보내드리세요</p>
+        <div className="mb-3 flex flex-col gap-1.5">
+          {driverPhone ? (
+            <a
+              href={smsHref(driverPhone, message)}
+              className="rounded-xl bg-blue-600 px-4 py-3 text-center text-sm font-bold text-white"
+            >
+              📩 {driverPhone} 으로 문자 보내기
+            </a>
+          ) : (
+            <p className="rounded-lg bg-amber-50 p-2.5 text-[11px] leading-relaxed text-amber-700">
+              이 노선에 기사님 연락처가 등록되어 있지 않습니다. [셔틀 → 노선 관리]에서 연락처를 넣으시면 여기에 문자 보내기
+              버튼이 생깁니다. 지금은 아래 [문구 복사]로 카카오톡에 붙여넣어 주세요.
+            </p>
+          )}
+          <div className="flex gap-1.5">
+            <button
+              type="button"
+              onClick={() => onCopy(url)}
+              className="flex-1 rounded-xl border border-slate-300 px-3 py-2.5 text-xs font-bold text-slate-700"
+            >
+              링크만 복사
+            </button>
+            <button
+              type="button"
+              onClick={() => onCopy(message)}
+              className="flex-1 rounded-xl border border-slate-300 px-3 py-2.5 text-xs font-bold text-slate-700"
+            >
+              문구 통째로 복사 (카톡용)
+            </button>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={onReissue}
+          className="w-full rounded-xl border border-red-200 px-3 py-2 text-[11px] font-semibold text-red-500"
+        >
+          링크가 엉뚱한 곳으로 갔다면 — 새로 발급
+        </button>
+        <p className="mt-1.5 text-[11px] leading-relaxed text-slate-400">
+          새로 발급하면 예전 링크는 즉시 열리지 않습니다. 이미 설정을 마친 휴대폰은 영향을 받지 않습니다(기기 ID는 그대로).
+        </p>
+      </div>
     </div>
   );
 }

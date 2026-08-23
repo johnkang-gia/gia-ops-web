@@ -90,7 +90,13 @@ export async function updateSession(request: NextRequest) {
     path.startsWith("/b/") ||
     // 운영 대시보드 짧은 주소(요청: "운영안내 대시보드 주소 간결하게 만들어주고, 다른곳에서
     // 바로 주소만쳐서 들어갈 수 있게") - /d/{코드}. 안내보드(/b/)와 같은 방식입니다.
-    path.startsWith("/d/");
+    path.startsWith("/d/") ||
+    // 기사님 휴대폰 설정 안내(요청: "웹앱으로 몇호차 기사님께 보내기하면 기사님 카톡이나
+    // 문자로 링크가 가서 누르면 웹앱으로 접속되고") - /s/{코드}. 기사님은 학교 계정이 없으시고,
+    // 계정을 만들어드리는 것 자체가 이 화면이 없애려는 번거로움입니다. 이 화면은 설정에 필요한
+    // 값만 보여주고 위치 기록은 전혀 보여주지 않습니다.
+    path.startsWith("/s/") ||
+    path.startsWith("/api/shuttle/setup");
 
   if (!user && !isAuthRoute) {
     const url = request.nextUrl.clone();

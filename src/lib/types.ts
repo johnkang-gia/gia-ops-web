@@ -855,6 +855,11 @@ export type ShuttleTrackerDevice = {
   enabled: boolean;
   last_seen_at: string | null;
   created_at: string;
+  // 기사님께 문자로 보내는 설정 링크(/s/{코드})의 코드. device_id와 따로 두어, 링크가 새어
+  // 나가도 이 코드만 새로 발급하면 되고 기사님 휴대폰 설정은 건드리지 않아도 됩니다.
+  // 기사님 성함·연락처는 shuttle_routes 쪽 값을 그대로 씁니다.
+  setup_code: string | null;
+  setup_opened_at: string | null;
 };
 
 // 주행 기록에서 찾아낸 "차가 실제로 멈춰 있던 지점".

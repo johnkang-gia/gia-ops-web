@@ -11,11 +11,16 @@ export const dynamic = "force-dynamic";
 
 // 기사님이 손으로 입력하실 값이라 헷갈리는 글자(0/O, 1/l/I)는 빼고 8자리로 만듭니다.
 const ID_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789";
-function generateDeviceId(): string {
+function randomCode(length: number): string {
   let out = "";
-  for (let i = 0; i < 8; i += 1) out += ID_ALPHABET[Math.floor(Math.random() * ID_ALPHABET.length)];
+  for (let i = 0; i < length; i += 1) out += ID_ALPHABET[Math.floor(Math.random() * ID_ALPHABET.length)];
   return out;
 }
+const generateDeviceId = () => randomCode(8);
+
+// 설정 링크(/s/{코드})는 문자 한 줄에 들어가야 해서 더 짧게 6자리입니다. 위치를 보내는 열쇠가
+// 아니라 안내 화면을 여는 열쇠일 뿐이라, 짧아도 위험이 낮습니다.
+const generateSetupCode = () => randomCode(6);
 
 export async function POST(req: Request) {
   const me = await getCurrentAppUser();
@@ -30,11 +35,30 @@ export async function POST(req: Request) {
     if (!routeId) return NextResponse.json({ error: "routeId가 필요합니다." }, { status: 400 });
     const { data, error } = await supabase
       .from("shuttle_tracker_devices")
-      .insert({ device_id: generateDeviceId(), route_id: routeId, label: (body?.label as string | undefined) ?? null })
+      .insert({
+        device_id: generateDeviceId(),
+        setup_code: generateSetupCode(),
+        route_id: routeId,
+        label: (body?.label as string | undefined) ?? null,
+      })
       .select()
       .single();
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json({ ok: true, device: data });
+  }
+
+  // 설정 링크가 엉뚱한 곳으로 갔을 때 쓰는 기능입니다. 새 코드를 넣으면 예전 링크는 즉시
+  // 열리지 않게 되고, 이미 설정을 마친 휴대폰은 아무 영향을 받지 않습니다(기기 ID는 그대로).
+  if (action === "reissue_setup_code") {
+    const id = body?.id as string | undefined;
+    if (!id) return NextResponse.json({ error: "id가 필요합니다." }, { status: 400 });
+    const setupCode = generateSetupCode();
+    const { error } = await supabase
+      .from("shuttle_tracker_devices")
+      .update({ setup_code: setupCode, setup_opened_at: null })
+      .eq("id", id);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true, setupCode });
   }
 
   if (action === "toggle") {

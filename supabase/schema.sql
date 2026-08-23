@@ -3969,8 +3969,13 @@ create table if not exists shuttle_tracker_devices (
   label text,                                 -- 기사님 성함·차량번호 등 식별용 메모
   enabled boolean not null default true,
   last_seen_at timestamptz,                   -- 마지막으로 위치를 보내온 시각(설치 확인용)
+  -- 기사님께 문자·카카오톡으로 보내는 설정 링크(/s/{코드})의 6자리 코드. device_id와 따로 두어,
+  -- 링크가 새어 나가도 이 코드만 새로 발급하면 되고 기사님 휴대폰 설정은 건드리지 않아도 됩니다.
+  setup_code text,
+  setup_opened_at timestamptz,                -- 기사님이 설정 링크를 처음 열어본 시각
   created_at timestamptz not null default now()
 );
+create unique index if not exists shuttle_tracker_devices_setup_code_idx on shuttle_tracker_devices(setup_code);
 create index if not exists shuttle_tracker_devices_route_idx on shuttle_tracker_devices(route_id);
 
 alter table shuttle_tracker_devices enable row level security;

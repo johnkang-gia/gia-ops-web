@@ -17,6 +17,10 @@ import { logApiError } from "@/lib/logging";
 // 아니라 "이 정류장이 어디인가"라는 장소 정보이고, 원본 위치 기록에서 이미 평균만 뽑아낸 값입니다.
 const RETENTION_DAYS = 90;
 
+// 픽업 연락의 원문은 더 짧게 둡니다. 위치와 달리 "지난달 그 차가 몇 시에 도착했나" 같은 확인
+// 용도가 없고, 학부모가 쓴 문장 그대로라 더 민감합니다. 30일이면 그달의 착오를 되짚기에 충분합니다.
+const PICKUP_TEXT_RETENTION_DAYS = 30;
+
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get("authorization");
   if (!process.env.CRON_SECRET || authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -49,11 +53,27 @@ export async function GET(req: NextRequest) {
       .select("id");
     if (obsError) throw obsError;
 
+    // 픽업 연락의 원문(학부모가 보낸 문장)도 함께 지웁니다.
+    //
+    // 픽업 인박스는 학부모 대화를 쌓아두는 시스템이 아닙니다. 픽업이 아니라고 판단된 메시지는
+    // 애초에 본문을 저장하지 않고, 픽업 건의 본문도 여기서 기간이 지나면 비웁니다. 행을 통째로
+    // 지우지 않고 본문만 비우는 이유는, 같은 메시지를 다시 읽어 또 AI에 보내는 일을 막는
+    // 표시(출처 식별자)는 남아 있어야 하기 때문입니다.
+    const textCutoff = new Date(Date.now() - PICKUP_TEXT_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
+    const { data: purgedTexts, error: pickupError } = await supabase
+      .from("pickup_requests")
+      .update({ raw_text: null })
+      .lt("received_at", textCutoff)
+      .not("raw_text", "is", null)
+      .select("id");
+    if (pickupError) throw pickupError;
+
     return NextResponse.json({
       ok: true,
       retentionDays: RETENTION_DAYS,
       purgedPings: pings?.length ?? 0,
       purgedObservations: observations?.length ?? 0,
+      purgedPickupTexts: purgedTexts?.length ?? 0,
     });
   } catch (err) {
     await logApiError(supabase, "cron:purge-shuttle-locations", err);

@@ -163,5 +163,58 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
     };
   });
 
-  return NextResponse.json({ label: link.label, today, school, routes: payload });
+  // ── 오늘 픽업 학생 ──────────────────────────────────────────────────────────
+  // 요청: "아래에 차량호수는 필요없고 운영대시보드에서는 혹시 하원차량운행중에 픽업으로
+  // 전환되는 경우 표시되도록 만들어주고"
+  //
+  // 하원 화면에서 정작 눈으로 좇아야 하는 건 "몇 호차가 있다"가 아니라 "누가 차를 안 타는가"
+  // 입니다. 특히 차가 이미 출발한 뒤에 픽업으로 바뀌면 그 아이를 태우고 떠난 것이 되므로,
+  // 그 경우를 따로 표시해 바로 눈에 띄게 합니다.
+  const { data: pickupReqs } = await supabase
+    .from("pickup_requests")
+    .select("matched_name, ai_pickup_time, resolved_at, source")
+    .eq("service_date", today)
+    .eq("status", "확정");
+
+  const reqByName = new Map<string, { time: string | null; resolvedAt: string | null; source: string }>();
+  for (const p of pickupReqs ?? []) {
+    const name = (p.matched_name as string | null)?.trim();
+    if (name) reqByName.set(name, { time: p.ai_pickup_time, resolvedAt: p.resolved_at, source: p.source });
+  }
+
+  const departedAtByRoute = new Map<string, string | null>();
+  for (const r of routes ?? []) {
+    departedAtByRoute.set(r.id, (eventsByRoute.get(r.id) ?? []).find((e) => e.event === "출발")?.createdAt ?? null);
+  }
+
+  const pickups: {
+    name: string;
+    routeNo: string | null;
+    time: string | null;
+    source: string | null;
+    justChanged: boolean;
+    afterDeparture: boolean;
+  }[] = [];
+  for (const [routeId, riders] of ridersByRoute) {
+    const route = (routes ?? []).find((r) => r.id === routeId);
+    for (const rider of riders) {
+      if (rider.status !== "픽업") continue;
+      const req = reqByName.get(rider.name.trim()) ?? null;
+      const resolvedMs = req?.resolvedAt ? new Date(req.resolvedAt).getTime() : null;
+      const departedAt = departedAtByRoute.get(routeId) ?? null;
+      pickups.push({
+        name: rider.name,
+        routeNo: (route?.route_no as string | null) ?? null,
+        time: req?.time ?? null,
+        source: req?.source ?? null,
+        // 최근 15분 안에 픽업으로 바뀐 건 - 화면에서 잠깐 강조합니다.
+        justChanged: resolvedMs != null && now - resolvedMs < 15 * 60 * 1000,
+        // 차가 이미 떠난 뒤에 픽업으로 바뀐 건 - 그 아이를 태우고 갔다는 뜻이라 바로 알아야 합니다.
+        afterDeparture: resolvedMs != null && !!departedAt && resolvedMs > new Date(departedAt).getTime(),
+      });
+    }
+  }
+  pickups.sort((a, b) => Number(b.afterDeparture) - Number(a.afterDeparture) || Number(b.justChanged) - Number(a.justChanged) || (a.time ?? "99").localeCompare(b.time ?? "99") || a.name.localeCompare(b.name, "ko"));
+
+  return NextResponse.json({ label: link.label, today, school, routes: payload, pickups });
 }

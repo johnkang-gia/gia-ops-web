@@ -41,7 +41,21 @@ type RouteRow = {
   pickupCount: number;
   absentCount: number;
 };
-type Data = { label: string; today: string; school: { lat: number; lng: number } | null; routes: RouteRow[] };
+type PickupRow = {
+  name: string;
+  routeNo: string | null;
+  time: string | null;
+  source: string | null;
+  justChanged: boolean;
+  afterDeparture: boolean;
+};
+type Data = {
+  label: string;
+  today: string;
+  school: { lat: number; lng: number } | null;
+  routes: RouteRow[];
+  pickups?: PickupRow[];
+};
 
 // 노선마다 다른 색을 줘서 지도에서 어느 차인지 구분되게 합니다.
 const ROUTE_COLORS = ["#f97316", "#22d3ee", "#a3e635", "#f472b6", "#facc15", "#818cf8", "#34d399", "#fb7185"];
@@ -176,102 +190,146 @@ export default function DismissalOpsClient({
         <AllRoutesMap routes={data.routes} school={data.school} />
       </div>
 
-      {/* 아래: 하원차량 체크 */}
+      {/* 아래: 호차 요약 띠 + 픽업 학생.
+          요청: "아래에 차량호수는 필요없고... 픽업하는 아이들이 누구인지 실시간으로 보여주는게
+          낫다" - 호차는 탑승 진행률만 남긴 한 줄짜리 띠로 줄이고, 남는 자리를 전부 픽업 목록에
+          줍니다. 하원 중에 눈으로 좇아야 하는 건 "몇 호차가 있다"가 아니라 "누가 차를 안 타는가"
+          입니다. */}
       <div
         style={{
           flex: sc.narrow ? "1 1 58%" : "1 1 45%",
           minHeight: 0,
-          overflowY: "auto",
+          display: "flex",
+          flexDirection: "column",
+          gap: sc.s(8, 5),
           padding: `${sc.s(10, 6)}px ${sc.s(14, 8)}px ${sc.s(14, 8)}px`,
         }}
       >
         {data.routes.length === 0 ? (
           <p style={{ textAlign: "center", color: "#475569", fontSize: sc.s(15, 12) }}>운행 중인 하원 노선이 없습니다.</p>
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(${sc.s(210, 148)}px, 1fr))`, gap: sc.s(8, 5) }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: sc.s(6, 4), flexShrink: 0 }}>
             {data.routes.map((r, i) => (
-              <RouteCard key={r.routeId} route={r} color={ROUTE_COLORS[i % ROUTE_COLORS.length]} sc={sc} />
+              <RouteChip key={r.routeId} route={r} color={ROUTE_COLORS[i % ROUTE_COLORS.length]} sc={sc} />
             ))}
           </div>
         )}
+
+        <PickupPanel pickups={data.pickups ?? []} sc={sc} />
       </div>
     </div>
   );
 }
 
-function RouteCard({ route: r, color, sc }: { route: RouteRow; color: string; sc: BoardScale }) {
-  const s = STATUS_STYLE[r.status];
-  const pct = r.expectedCount > 0 ? Math.round((r.boardedCount / r.expectedCount) * 100) : 0;
+// 호차 한 줄 요약. 예전 카드에는 미탑승 학생 이름까지 들어 있어 세로로 길었는데, 하원 중에
+// 정작 봐야 하는 건 "다 탔는가"와 "누가 안 타는가"입니다. 앞엣것은 이 띠가, 뒤엣것은 아래 픽업
+// 목록이 맡습니다.
+function RouteChip({ route: r, color, sc }: { route: RouteRow; color: string; sc: BoardScale }) {
+  const st = STATUS_STYLE[r.status];
   const complete = r.expectedCount > 0 && r.boardedCount === r.expectedCount;
-  const notBoarded = r.riders.filter((x) => !x.boarded);
-  // 좁은 창에서는 카드가 작아져 이름이 여덟이면 카드가 세로로 길어집니다. 몇 명이 남았는지는
-  // +N으로 알 수 있으니, 이름은 줄이고 카드 개수가 다 보이는 쪽을 택합니다.
-  const nameLimit = sc.narrow ? 5 : 8;
-
   return (
-    <div style={{ background: "#111c33", borderRadius: sc.s(12, 7), padding: `${sc.s(8, 5)}px ${sc.s(10, 6)}px`, borderLeft: `5px solid ${color}`, minWidth: 0 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: sc.s(6, 4) }}>
-        <span style={{ fontSize: sc.s(19, 13), fontWeight: 900, color: "#fff" }}>{r.routeNo}호</span>
-        {r.vehicleNo && <span style={{ fontSize: sc.s(10, 9), color: "#64748b" }}>{r.vehicleNo}</span>}
-        <span style={{ marginLeft: "auto", background: s.bg, color: s.fg, fontSize: sc.s(11, 9), fontWeight: 800, padding: `2px ${sc.s(8, 5)}px`, borderRadius: 999 }}>
-          {s.label}
-        </span>
-      </div>
-      {r.name && <div style={{ fontSize: sc.s(11, 9), color: "#94a3b8", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.name}</div>}
+    <div
+      title={`${r.routeNo}호${r.name ? " " + r.name : ""}${r.vehicleNo ? " · " + r.vehicleNo : ""}${r.arrivedAt ? " · 도착 " + hhmm(r.arrivedAt) : ""}${r.departedAt ? " · 출발 " + hhmm(r.departedAt) : ""}`}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: sc.s(6, 4),
+        background: "#111c33",
+        borderRadius: sc.s(10, 6),
+        borderLeft: `4px solid ${color}`,
+        padding: `${sc.s(5, 3)}px ${sc.s(9, 6)}px`,
+      }}
+    >
+      <span style={{ fontSize: sc.s(17, 12), fontWeight: 900, color: "#fff" }}>{r.routeNo}</span>
+      <span
+        style={{
+          background: st.bg,
+          color: st.fg,
+          fontSize: sc.s(10, 9),
+          fontWeight: 800,
+          padding: `1px ${sc.s(6, 4)}px`,
+          borderRadius: 999,
+        }}
+      >
+        {st.label}
+      </span>
+      <span style={{ fontSize: sc.s(14, 11), fontWeight: 800, color: complete ? "#34d399" : "#e2e8f0" }}>
+        {r.boardedCount}/{r.expectedCount}
+      </span>
+      {/* GPS가 끊기면 자동 도착·출발 감지가 멈춥니다. 작게라도 계속 보여야 그날 안에 알아챕니다. */}
+      <span style={{ fontSize: sc.s(9, 8), color: r.pingFresh ? "#34d399" : "#64748b" }}>{r.pingFresh ? "●" : "○"}</span>
+    </div>
+  );
+}
 
-      {/* 탑승 진행률 */}
-      <div style={{ marginTop: sc.s(6, 4) }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-          <span style={{ fontSize: sc.s(17, 12), fontWeight: 800, color: complete ? "#34d399" : "#fff" }}>
-            {r.boardedCount}/{r.expectedCount}
+// 오늘 픽업하는 아이들. 이 화면에서 가장 크게 보여야 하는 정보입니다.
+//
+// 특히 "차가 이미 출발한 뒤에 픽업으로 바뀐" 경우를 맨 위에 빨갛게 띄웁니다 - 그건 그 아이를
+// 태우고 떠났다는 뜻이라, 알아채는 것이 몇 분 늦으면 학부모가 빈 학교에서 기다리게 됩니다.
+function PickupPanel({ pickups, sc }: { pickups: PickupRow[]; sc: BoardScale }) {
+  const urgent = pickups.filter((p) => p.afterDeparture);
+  return (
+    <div
+      style={{
+        flex: 1,
+        minHeight: 0,
+        display: "flex",
+        flexDirection: "column",
+        background: "#111c33",
+        borderRadius: sc.s(12, 7),
+        padding: sc.s(10, 6),
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "baseline", gap: sc.s(8, 5), marginBottom: sc.s(8, 5), flexShrink: 0 }}>
+        <span style={{ fontSize: sc.s(16, 12), fontWeight: 800, color: "#e2e8f0" }}>🚶 오늘 픽업</span>
+        <span style={{ fontSize: sc.s(20, 14), fontWeight: 900, color: "#38bdf8" }}>{pickups.length}</span>
+        {urgent.length > 0 && (
+          <span
+            style={{
+              marginLeft: "auto",
+              background: "#7f1d1d",
+              color: "#fecaca",
+              fontSize: sc.s(12, 10),
+              fontWeight: 800,
+              padding: `${sc.s(3, 2)}px ${sc.s(9, 6)}px`,
+              borderRadius: 999,
+            }}
+          >
+            ⚠ 출발 후 변경 {urgent.length}건 — 차량에 연락하세요
           </span>
-          <span style={{ fontSize: sc.s(11, 9), color: "#64748b" }}>탑승</span>
-          {complete && <span style={{ fontSize: sc.s(11, 9), color: "#34d399", fontWeight: 700 }}>완료</span>}
-          {(r.pickupCount > 0 || r.absentCount > 0) && (
-            <span style={{ marginLeft: "auto", fontSize: sc.s(10, 9), color: "#475569" }}>
-              {r.pickupCount > 0 && `픽업 ${r.pickupCount}`}
-              {r.pickupCount > 0 && r.absentCount > 0 && " · "}
-              {r.absentCount > 0 && `결석 ${r.absentCount}`}
-            </span>
-          )}
-        </div>
-        <div style={{ height: sc.s(5, 3), background: "#1e293b", borderRadius: 999, marginTop: 3, overflow: "hidden" }}>
-          <div style={{ width: `${pct}%`, height: "100%", background: complete ? "#10b981" : color }} />
-        </div>
+        )}
       </div>
 
-      {/* 아직 안 탄 학생 */}
-      {notBoarded.length > 0 && (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 3, marginTop: sc.s(5, 3) }}>
-          {notBoarded.slice(0, nameLimit).map((x, i) => (
-            <span key={i} style={{ background: "#3f1d1d", color: "#fca5a5", fontSize: sc.s(10, 9), padding: `2px ${sc.s(5, 4)}px`, borderRadius: 4 }}>
-              {x.name}
+      {pickups.length === 0 ? (
+        <p style={{ margin: 0, padding: `${sc.s(10, 6)}px 0`, fontSize: sc.s(14, 11), color: "#475569" }}>
+          오늘 픽업 예정 없음
+        </p>
+      ) : (
+        <div style={{ minHeight: 0, overflowY: "auto", display: "flex", flexWrap: "wrap", gap: sc.s(6, 4), alignContent: "flex-start" }}>
+          {pickups.map((p, i) => (
+            <span
+              key={i}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: sc.s(6, 4),
+                background: p.afterDeparture ? "#7f1d1d" : p.justChanged ? "#1e3a5f" : "#1e293b",
+                borderLeft: `4px solid ${p.afterDeparture ? "#ef4444" : p.justChanged ? "#38bdf8" : "#0ea5e9"}`,
+                borderRadius: sc.s(8, 5),
+                padding: `${sc.s(6, 4)}px ${sc.s(10, 6)}px`,
+              }}
+            >
+              <b style={{ fontSize: sc.s(18, 13), color: "#fff" }}>{p.name}</b>
+              {p.routeNo && <span style={{ fontSize: sc.s(11, 9), color: "#94a3b8" }}>{p.routeNo}호</span>}
+              {p.time && <span style={{ fontSize: sc.s(13, 10), fontWeight: 800, color: "#7dd3fc" }}>{p.time}</span>}
+              {p.afterDeparture && <span style={{ fontSize: sc.s(11, 9), fontWeight: 800, color: "#fecaca" }}>출발 후</span>}
+              {!p.afterDeparture && p.justChanged && (
+                <span style={{ fontSize: sc.s(11, 9), fontWeight: 800, color: "#7dd3fc" }}>NEW</span>
+              )}
             </span>
           ))}
-          {notBoarded.length > nameLimit && (
-            <span style={{ fontSize: sc.s(10, 9), color: "#64748b" }}>+{notBoarded.length - nameLimit}</span>
-          )}
         </div>
       )}
-
-      {/* 도착·출발 시각 + 자동 감지 여부 */}
-      <div style={{ display: "flex", gap: sc.s(8, 5), marginTop: sc.s(6, 4), fontSize: sc.s(10, 9), color: "#64748b", flexWrap: "wrap" }}>
-        {r.arrivedAt && (
-          <span>
-            도착 {hhmm(r.arrivedAt)}
-            {r.arrivedAuto && <span style={{ color: "#38bdf8" }}> ·자동</span>}
-          </span>
-        )}
-        {r.departedAt && (
-          <span>
-            출발 {hhmm(r.departedAt)}
-            {r.departedAuto && <span style={{ color: "#38bdf8" }}> ·자동</span>}
-          </span>
-        )}
-        <span style={{ marginLeft: "auto", color: r.pingFresh ? "#34d399" : "#475569" }}>
-          {r.pingFresh ? "GPS 수신중" : "GPS 없음"}
-        </span>
-      </div>
     </div>
   );
 }

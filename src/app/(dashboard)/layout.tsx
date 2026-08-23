@@ -175,6 +175,9 @@ function buildSchoolCategory(isAdmin: boolean, isStaffOrAbove: boolean): NavCate
 function buildShuttleCategory(isStaffOrAbove: boolean): NavCategory {
   const items: NavLeaf[] = [
     { href: "/shuttle/checklist", label: "하원 체크표", icon: "📋" },
+    // 요청: "전체 학부모의 채팅을 하나하나 실시간으로 보면서 아이들의 픽업을 처리하는게 너무
+    // 힘든데" - 토들·전화·교사·직접입력 어디로 들어온 픽업이든 여기 한 곳에 모입니다.
+    { href: "/pickup/inbox", label: "픽업 인박스", icon: "📥" },
     { href: "/shuttle/live", label: "실시간 위치", icon: "📍" },
   ];
   if (isStaffOrAbove) {

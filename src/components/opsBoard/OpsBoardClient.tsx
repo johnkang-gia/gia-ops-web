@@ -5,6 +5,7 @@ import DismissalOpsClient from "./DismissalOpsClient";
 import { VISIBLE_DEPARTMENTS } from "@/lib/department";
 import { useKstClock } from "@/lib/useKstClock";
 import { useFullscreen } from "@/lib/useFullscreen";
+import { useBoardDensity, type BoardScale, type Density } from "@/lib/useBoardDensity";
 
 // 요청: "gia운영에 있는 업무 탭을 사무실 가운데에 큰 모니터에 띄워서 전체가 한눈에 보고 파악할
 // 수 있는 통합 대시보드... 페이지를 반으로 나눠서 한쪽은 cctv 그리고 한쪽은 우리 gia운영 앱"
@@ -50,6 +51,10 @@ const STATUS_COLOR: Record<string, string> = {
 
 export default function OpsBoardClient({ token }: { token: string }) {
   const [data, setData] = useState<BoardData | null>(null);
+  // 요청: "cctv프로그램이 너무 많이 차지해서 공간이 많이 없더라고... 시간표랑함께 모든정보들이
+  // 뜰 수 있도록" - 창 크기를 재서 글자·여백을 자동으로 줄입니다. 화면 절반을 가정하고 크기를
+  // 숫자로 박아두면, CCTV가 절반보다 더 차지할 때 아래 내용이 화면 밖으로 밀려납니다.
+  const sc = useBoardDensity(`opsBoardDensity:${token}`);
   // 요청: "대시보드 분말고 초까지 나오도록" - 1초마다 도는 시계(서버 갱신 주기와 무관).
   const clock = useKstClock();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -179,11 +184,25 @@ export default function OpsBoardClient({ token }: { token: string }) {
   const lateCount = data.absences.filter((a) => a.status === "지각").length;
 
   return (
-    <div style={{ minHeight: "100dvh", background: "#0f172a", color: "#e2e8f0", padding: 16, fontFamily: "sans-serif", display: "flex", flexDirection: "column", gap: 12 }}>
+    // height + overflow:hidden - 대시보드는 아무도 스크롤하지 않으므로, 넘치면 화면 안에서
+    // 각 패널이 알아서 줄어들도록 합니다(밀려나서 안 보이는 것보다 낫습니다).
+    <div
+      style={{
+        height: "100dvh",
+        overflow: "hidden",
+        background: "#0f172a",
+        color: "#e2e8f0",
+        padding: sc.s(16, 8),
+        fontFamily: "sans-serif",
+        display: "flex",
+        flexDirection: "column",
+        gap: sc.s(12, 6),
+      }}
+    >
       {/* 상단 - 날짜/시각/부서 선택 */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        <span style={{ fontSize: 30, fontWeight: 800, color: "#fff", fontVariantNumeric: "tabular-nums" }}>{clock ?? data.nowLabel}</span>
-        <span style={{ fontSize: 15, color: "#94a3b8" }}>{data.today}</span>
+      <div style={{ display: "flex", alignItems: "center", gap: sc.s(12, 6), flexWrap: "wrap", flexShrink: 0 }}>
+        <span style={{ fontSize: sc.s(30, 18), fontWeight: 800, color: "#fff", fontVariantNumeric: "tabular-nums" }}>{clock ?? data.nowLabel}</span>
+        <span style={{ fontSize: sc.s(15, 11), color: "#94a3b8" }}>{data.today}</span>
         {/* 오늘 하원을 이미 종료한 경우 - 잘못 눌렀거나 늦게 도착한 차가 있으면 다시 열 수 있게
             합니다. 종료 시각(기본 17:30)이 지나면 이 버튼도 사라집니다. */}
         {data.shuttle.mode && endedOn === data.today && (
@@ -205,7 +224,7 @@ export default function OpsBoardClient({ token }: { token: string }) {
         )}
         {/* 지금은 초등부만 운영하므로 선택지가 하나뿐입니다. 고를 것이 없는 버튼은 화면만
             차지하므로, 부서가 둘 이상일 때만 보여줍니다. */}
-        <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
+        <div style={{ display: "flex", gap: sc.s(6, 4), marginLeft: "auto", alignItems: "center" }}>
           {(VISIBLE_DEPARTMENTS.length > 1 ? VISIBLE_DEPARTMENTS : []).map((d) => {
             const active = data.department === d;
             return (
@@ -213,10 +232,10 @@ export default function OpsBoardClient({ token }: { token: string }) {
                 key={d}
                 onClick={() => setDepartment(d)}
                 style={{
-                  padding: "6px 14px",
+                  padding: `${sc.s(6, 4)}px ${sc.s(14, 9)}px`,
                   borderRadius: 999,
                   border: "none",
-                  fontSize: 15,
+                  fontSize: sc.s(15, 11),
                   fontWeight: 700,
                   cursor: "pointer",
                   background: active ? "#2563eb" : "#1e293b",
@@ -227,47 +246,73 @@ export default function OpsBoardClient({ token }: { token: string }) {
               </button>
             );
           })}
+          {/* 자동 배율이 이 자리에 딱 맞지 않을 때를 위한 손잡이입니다. 모니터 크기·시력·서서
+              보는 거리에 따라 적당한 크기가 다를 수밖에 없어서, 한 번 정해두면 저장됩니다. */}
+          <DensityPicker sc={sc} />
         </div>
       </div>
 
-      {/* ① 지금 수업 */}
-      <Panel title={data.currentPeriod ? `지금 ${data.currentPeriod.label} (${data.currentPeriod.startTime}~${data.currentPeriod.endTime})` : "수업 시간 아님"}
-        right={data.nextPeriod ? `다음 ${data.nextPeriod.label} ${data.nextPeriod.startTime}` : null}>
+      {/* ① 지금 수업 (시간표) - 화면에서 가장 중요한 정보라 남는 공간을 가장 많이 가져갑니다 */}
+      <Panel
+        sc={sc}
+        grow={3}
+        title={data.currentPeriod ? `지금 ${data.currentPeriod.label} (${data.currentPeriod.startTime}~${data.currentPeriod.endTime})` : "수업 시간 아님"}
+        right={data.nextPeriod ? `다음 ${data.nextPeriod.label} ${data.nextPeriod.startTime}` : null}
+      >
         {!data.isWeekday ? (
-          <Empty text="주말입니다" />
+          <Empty sc={sc} text="주말입니다" />
         ) : data.grades.length === 0 ? (
-          <Empty text="이 부서에 등록된 반이 없습니다 — [학교 > 반·담임 관리]에서 반을 먼저 만들어주세요" />
+          <Empty sc={sc} text="이 부서에 등록된 반이 없습니다 — [학교 > 반·담임 관리]에서 반을 먼저 만들어주세요" />
         ) : (
           /* 요청: "각 학년과 반별로 어느수업이 진행되는지 뜨도록" - 학년을 왼쪽에 세로로 두고,
              그 학년의 반들을 오른쪽에 가로로 늘어놓아 학년 단위로 훑어볼 수 있게 했습니다. */
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: sc.s(8, 4) }}>
             {data.grades.map((g) => (
-              <div key={g.grade || "미지정"} style={{ display: "flex", alignItems: "stretch", gap: 8 }}>
+              <div key={g.grade || "미지정"} style={{ display: "flex", alignItems: "stretch", gap: sc.s(8, 4) }}>
                 <div
                   style={{
-                    minWidth: 58,
+                    minWidth: sc.s(58, 36),
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
                     background: "#1e3a5f",
-                    borderRadius: 10,
-                    fontSize: 17,
+                    borderRadius: sc.s(10, 6),
+                    fontSize: sc.s(17, 12),
                     fontWeight: 800,
                     color: "#bfdbfe",
-                    padding: "0 8px",
+                    padding: `0 ${sc.s(8, 5)}px`,
                   }}
                 >
                   {g.grade || "미지정"}
                 </div>
-                <div style={{ flex: 1, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(138px, 1fr))", gap: 6 }}>
+                <div
+                  style={{
+                    flex: 1,
+                    display: "grid",
+                    // 칸 최소폭도 함께 줄여야 좁은 창에서 한 줄에 두 반이라도 들어갑니다.
+                    gridTemplateColumns: `repeat(auto-fill, minmax(${sc.s(138, 86)}px, 1fr))`,
+                    gap: sc.s(6, 4),
+                  }}
+                >
                   {/* 요청: "그냥 지금 어느학년 어느반이 무슨시간인지 한눈에 볼 수있도록만 해주고".
                       반 이름과 지금 과목 두 줄만 남기고 담임·다음교시·담당교사는 뺐습니다 - 멀리서
                       보는 화면에서는 글자가 많을수록 오히려 안 읽힙니다. 수업이 없는 시간에만
                       교실 위치를 대신 보여줍니다(요청: "수업중이 아닐때 교실위치 보여주는 것은 좋고"). */}
                   {g.classes.map((c) => (
-                    <div key={c.id} style={{ background: "#1e293b", borderRadius: 10, padding: "8px 10px" }}>
-                      <div style={{ fontSize: 13, color: "#94a3b8", fontWeight: 700 }}>{c.className}</div>
-                      <div style={{ fontSize: 22, fontWeight: 800, color: c.current ? "#fff" : "#475569", marginTop: 2, lineHeight: 1.15 }}>
+                    <div key={c.id} style={{ background: "#1e293b", borderRadius: sc.s(10, 6), padding: `${sc.s(8, 4)}px ${sc.s(10, 6)}px`, minWidth: 0 }}>
+                      <div style={{ fontSize: sc.s(13, 10), color: "#94a3b8", fontWeight: 700 }}>{c.className}</div>
+                      <div
+                        style={{
+                          fontSize: sc.s(22, 14),
+                          fontWeight: 800,
+                          color: c.current ? "#fff" : "#475569",
+                          marginTop: 2,
+                          lineHeight: 1.15,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
                         {c.current?.subjectName ?? (c.room || "—")}
                       </div>
                     </div>
@@ -279,13 +324,22 @@ export default function OpsBoardClient({ token }: { token: string }) {
         )}
       </Panel>
 
-      {/* ② 오늘 출결 + 픽업 */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <Panel title={`오늘 출결 · 결석 ${absentCount} 지각 ${lateCount}`} right={`재적 ${data.studentCount}명`}>
+      {/* ② 오늘 출결 + 픽업 - 좁은 창에서는 두 칸으로 나누면 이름이 한 명씩만 들어가므로
+          위아래로 쌓습니다. */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: sc.narrow ? "1fr" : "1fr 1fr",
+          gap: sc.s(12, 6),
+          flex: "2 1 0",
+          minHeight: 0,
+        }}
+      >
+        <Panel sc={sc} title={`오늘 출결 · 결석 ${absentCount} 지각 ${lateCount}`} right={`재적 ${data.studentCount}명`}>
           {data.absences.length === 0 ? (
-            <Empty text="전원 출석" tone="good" />
+            <Empty sc={sc} text="전원 출석" tone="good" />
           ) : (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: sc.s(6, 4) }}>
               {data.absences.map((a, i) => (
                 <span
                   key={i}
@@ -293,30 +347,41 @@ export default function OpsBoardClient({ token }: { token: string }) {
                   style={{
                     display: "inline-flex",
                     alignItems: "center",
-                    gap: 5,
+                    gap: sc.s(5, 3),
                     background: "#1e293b",
                     borderLeft: `4px solid ${STATUS_COLOR[a.status] ?? "#64748b"}`,
                     borderRadius: 6,
-                    padding: "5px 9px",
-                    fontSize: 16,
+                    padding: `${sc.s(5, 3)}px ${sc.s(9, 6)}px`,
+                    fontSize: sc.s(16, 12),
                   }}
                 >
                   <b style={{ color: "#fff" }}>{a.name}</b>
-                  <span style={{ fontSize: 12, color: STATUS_COLOR[a.status] ?? "#94a3b8", fontWeight: 700 }}>{a.status}</span>
-                  {!a.contacted && <span style={{ fontSize: 11, color: "#f59e0b" }}>연락전</span>}
+                  <span style={{ fontSize: sc.s(12, 10), color: STATUS_COLOR[a.status] ?? "#94a3b8", fontWeight: 700 }}>{a.status}</span>
+                  {!a.contacted && <span style={{ fontSize: sc.s(11, 9), color: "#f59e0b" }}>연락전</span>}
                 </span>
               ))}
             </div>
           )}
         </Panel>
 
-        <Panel title={`오늘 하원 픽업 ${data.pickups.length}명`}>
+        <Panel sc={sc} title={`오늘 하원 픽업 ${data.pickups.length}명`}>
           {data.pickups.length === 0 ? (
-            <Empty text="픽업 예정 없음" />
+            <Empty sc={sc} text="픽업 예정 없음" />
           ) : (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: sc.s(6, 4) }}>
               {data.pickups.map((name, i) => (
-                <span key={i} style={{ background: "#1e293b", borderLeft: "4px solid #0ea5e9", borderRadius: 6, padding: "5px 9px", fontSize: 16, color: "#fff", fontWeight: 600 }}>
+                <span
+                  key={i}
+                  style={{
+                    background: "#1e293b",
+                    borderLeft: "4px solid #0ea5e9",
+                    borderRadius: 6,
+                    padding: `${sc.s(5, 3)}px ${sc.s(9, 6)}px`,
+                    fontSize: sc.s(16, 12),
+                    color: "#fff",
+                    fontWeight: 600,
+                  }}
+                >
                   {name}
                 </span>
               ))}
@@ -327,62 +392,131 @@ export default function OpsBoardClient({ token }: { token: string }) {
 
       {/* ③ 오늘 업무 */}
       <Panel
+        sc={sc}
+        grow={2}
         title={`오늘 업무 ${data.taskSummary.todayTotal}건`}
         right={Object.entries(data.taskSummary.statusCounts)
           .map(([k, v]) => `${k} ${v}`)
           .join(" · ")}
       >
         {data.taskSummary.todayTasks.length === 0 ? (
-          <Empty text="오늘 마감·신규 업무 없음" />
+          <Empty sc={sc} text="오늘 마감·신규 업무 없음" />
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: sc.s(4, 3) }}>
             {data.taskSummary.todayTasks.map((t, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, background: "#1e293b", borderRadius: 8, padding: "6px 10px" }}>
+              <div
+                key={i}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: sc.s(8, 5),
+                  background: "#1e293b",
+                  borderRadius: sc.s(8, 5),
+                  padding: `${sc.s(6, 3)}px ${sc.s(10, 6)}px`,
+                }}
+              >
                 <span
                   style={{
-                    fontSize: 11,
+                    fontSize: sc.s(11, 9),
                     fontWeight: 800,
-                    padding: "2px 7px",
+                    padding: `2px ${sc.s(7, 5)}px`,
                     borderRadius: 999,
+                    flexShrink: 0,
                     background: t.kind === "지남" ? "#7f1d1d" : t.kind === "마감" ? "#78350f" : "#1e3a8a",
                     color: t.kind === "지남" ? "#fca5a5" : t.kind === "마감" ? "#fcd34d" : "#93c5fd",
                   }}
                 >
                   {t.kind}
                 </span>
-                {t.urgent && <span style={{ fontSize: 13 }}>🔥</span>}
-                <span style={{ fontSize: 16, color: "#fff", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {t.urgent && <span style={{ fontSize: sc.s(13, 10) }}>🔥</span>}
+                <span style={{ fontSize: sc.s(16, 12), color: "#fff", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {t.title}
                 </span>
-                {t.department && <span style={{ fontSize: 12, color: "#64748b" }}>{t.department}</span>}
-                <span style={{ fontSize: 12, color: "#94a3b8" }}>{t.status}</span>
+                {/* 좁은 창에서는 부서까지 넣으면 제목이 잘립니다 - 제목이 먼저입니다. */}
+                {t.department && !sc.narrow && <span style={{ fontSize: sc.s(12, 10), color: "#64748b", flexShrink: 0 }}>{t.department}</span>}
+                <span style={{ fontSize: sc.s(12, 10), color: "#94a3b8", flexShrink: 0 }}>{t.status}</span>
               </div>
             ))}
           </div>
         )}
       </Panel>
 
-      <div style={{ marginTop: "auto", fontSize: 12, color: "#475569", textAlign: "center" }}>
+      <div style={{ fontSize: sc.s(12, 9), color: "#475569", textAlign: "center", flexShrink: 0 }}>
         {data.label} · 30초마다 자동 갱신 · {data.shuttle.switchLabel}~{data.shuttle.endLabel} 하원 운행 화면(전체화면)
       </div>
     </div>
   );
 }
 
-function Panel({ title, right, children }: { title: string; right?: string | null; children: React.ReactNode }) {
+// grow를 주면 남는 세로 공간을 그 비율만큼 가져가고, 내용이 넘치면 패널 안에서만 스크롤됩니다.
+// 패널이 커져서 아래 패널을 화면 밖으로 밀어내는 일이 없어집니다 - 대시보드는 아무도 스크롤하지
+// 않기 때문에, 밀려난 정보는 없는 것과 같습니다.
+function Panel({
+  title,
+  right,
+  children,
+  sc,
+  grow,
+}: {
+  title: string;
+  right?: string | null;
+  children: React.ReactNode;
+  sc: BoardScale;
+  grow?: number;
+}) {
   return (
-    <div style={{ background: "#111c33", borderRadius: 14, padding: 12 }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8 }}>
-        <h2 style={{ fontSize: 17, fontWeight: 800, color: "#e2e8f0", margin: 0 }}>{title}</h2>
-        {right && <span style={{ fontSize: 13, color: "#64748b", marginLeft: "auto" }}>{right}</span>}
+    <div
+      style={{
+        background: "#111c33",
+        borderRadius: sc.s(14, 8),
+        padding: sc.s(12, 7),
+        display: "flex",
+        flexDirection: "column",
+        minHeight: 0,
+        ...(grow ? { flex: `${grow} 1 0` } : {}),
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "baseline", gap: sc.s(8, 5), marginBottom: sc.s(8, 5), flexShrink: 0 }}>
+        <h2 style={{ fontSize: sc.s(17, 12), fontWeight: 800, color: "#e2e8f0", margin: 0 }}>{title}</h2>
+        {right && <span style={{ fontSize: sc.s(13, 10), color: "#64748b", marginLeft: "auto", textAlign: "right" }}>{right}</span>}
       </div>
-      {children}
+      <div style={{ minHeight: 0, overflowY: "auto", flex: 1 }}>{children}</div>
     </div>
   );
 }
 
-function Empty({ text, tone }: { text: string; tone?: "good" }) {
-  return <p style={{ margin: 0, padding: "10px 0", fontSize: 16, color: tone === "good" ? "#10b981" : "#475569" }}>{text}</p>;
+function Empty({ text, tone, sc }: { text: string; tone?: "good"; sc: BoardScale }) {
+  return (
+    <p style={{ margin: 0, padding: `${sc.s(10, 5)}px 0`, fontSize: sc.s(16, 12), color: tone === "good" ? "#10b981" : "#475569" }}>{text}</p>
+  );
+}
+
+// 글자 크기 손잡이. 자동 배율이 기본이고, 모니터·시력·보는 거리에 따라 한 단계씩 올리거나
+// 내릴 수 있습니다. 고른 값은 그 컴퓨터에 저장됩니다.
+const DENSITY_LABEL: Record<Density, string> = { auto: "자동", large: "크게", normal: "보통", small: "작게" };
+
+function DensityPicker({ sc }: { sc: BoardScale }) {
+  const order: Density[] = ["auto", "large", "normal", "small"];
+  const next = order[(order.indexOf(sc.density) + 1) % order.length];
+  return (
+    <button
+      onClick={() => sc.setDensity(next)}
+      title="화면 글자 크기 (자동 → 크게 → 보통 → 작게)"
+      style={{
+        padding: `${sc.s(6, 4)}px ${sc.s(12, 8)}px`,
+        borderRadius: 999,
+        border: "1px solid #334155",
+        background: "transparent",
+        color: "#94a3b8",
+        fontSize: sc.s(13, 10),
+        fontWeight: 700,
+        cursor: "pointer",
+        whiteSpace: "nowrap",
+      }}
+    >
+      🔍 {DENSITY_LABEL[sc.density]}
+    </button>
+  );
 }
 
 // 브라우저가 자동 전체화면을 거절했을 때 뜨는 안내입니다.

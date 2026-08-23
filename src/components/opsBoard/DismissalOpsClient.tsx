@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { loadKakaoMaps } from "@/lib/kakaoMap";
 import { useKstClock } from "@/lib/useKstClock";
+import { useBoardDensity, type BoardScale } from "@/lib/useBoardDensity";
 
 // 요청: "셔틀시작시간때(4:00)가 되면 화면이 전환되면서 실시간 셔틀 운행지도가 뜨고 지도에서 각
 // 셔틀이 어떤 경로로 가고있는지 볼 수 있게 하면서, 아래쪽에는 아이들이 차량을 다 탑승했는지
@@ -75,6 +76,9 @@ export default function DismissalOpsClient({
   const [data, setData] = useState<Data | null>(null);
   // 하원 운행 중에는 "지금 몇 시 몇 분 몇 초"가 중요해서 여기도 초까지 보여줍니다.
   const clock = useKstClock();
+  // 요청: "cctv프로그램이 너무 많이 차지해서 공간이 많이 없더라고" - 전체화면을 못 쓰는 날에는
+  // 이 화면도 같은 좁은 창에 들어가므로, 창 크기에 맞춰 글자·여백을 함께 줄입니다.
+  const sc = useBoardDensity("opsBoardDensity:dismissal");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -107,19 +111,23 @@ export default function DismissalOpsClient({
 
   return (
     <div style={{ height: "100dvh", background: "#0f172a", color: "#e2e8f0", display: "flex", flexDirection: "column", fontFamily: "sans-serif" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 14px", flexWrap: "wrap" }}>
-        <span style={{ fontSize: 20, fontWeight: 800, color: "#fff" }}>🚌 하원 운행</span>
+      <div style={{ display: "flex", alignItems: "center", gap: sc.s(12, 6), padding: `${sc.s(8, 5)}px ${sc.s(14, 8)}px`, flexWrap: "wrap", flexShrink: 0 }}>
+        <span style={{ fontSize: sc.s(20, 14), fontWeight: 800, color: "#fff" }}>🚌 하원 운행</span>
         {clock && (
-          <span style={{ fontSize: 22, fontWeight: 800, color: "#fff", fontVariantNumeric: "tabular-nums" }}>{clock}</span>
+          <span style={{ fontSize: sc.s(22, 15), fontWeight: 800, color: "#fff", fontVariantNumeric: "tabular-nums" }}>{clock}</span>
         )}
-        <Chip label="운행중" value={running} color="#34d399" />
-        <Chip label="도착함" value={arrived} color="#fdba74" />
-        <Chip label="탑승" value={`${totalBoarded}/${totalExpected}`} color="#93c5fd" />
+        <Chip label="운행중" value={running} color="#34d399" sc={sc} />
+        <Chip label="도착함" value={arrived} color="#fdba74" sc={sc} />
+        <Chip label="탑승" value={`${totalBoarded}/${totalExpected}`} color="#93c5fd" sc={sc} />
 
-        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 12, color: "#475569" }}>
-            10초마다 자동 갱신{endLabel ? ` · ${endLabel} 자동 종료` : ""}
-          </span>
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: sc.s(8, 5) }}>
+          {/* 좁은 창에서는 이 안내 문구가 한 줄을 통째로 차지해 지도가 그만큼 작아집니다.
+              버튼이 먼저입니다. */}
+          {!sc.narrow && (
+            <span style={{ fontSize: sc.s(12, 10), color: "#475569" }}>
+              10초마다 자동 갱신{endLabel ? ` · ${endLabel} 자동 종료` : ""}
+            </span>
+          )}
           {onToggleFullscreen && (
             <button
               onClick={onToggleFullscreen}
@@ -129,8 +137,8 @@ export default function DismissalOpsClient({
                 border: "1px solid #334155",
                 borderRadius: 8,
                 color: "#94a3b8",
-                fontSize: 13,
-                padding: "5px 10px",
+                fontSize: sc.s(13, 10),
+                padding: `${sc.s(5, 3)}px ${sc.s(10, 7)}px`,
                 cursor: "pointer",
               }}
             >
@@ -149,9 +157,9 @@ export default function DismissalOpsClient({
                 border: "none",
                 borderRadius: 8,
                 color: "#fecaca",
-                fontSize: 14,
+                fontSize: sc.s(14, 11),
                 fontWeight: 800,
-                padding: "6px 14px",
+                padding: `${sc.s(6, 4)}px ${sc.s(14, 9)}px`,
                 cursor: "pointer",
               }}
             >
@@ -161,19 +169,28 @@ export default function DismissalOpsClient({
         </div>
       </div>
 
-      {/* 위: 전체 셔틀 지도 */}
-      <div style={{ flex: "1 1 55%", minHeight: 0, padding: "0 14px" }}>
+      {/* 위: 전체 셔틀 지도.
+          좁은 창에서는 지도 비중을 줄입니다 - 폭이 좁으면 지도에 담기는 범위가 어차피 작아서
+          "어디쯤인지"를 읽기 어렵고, 그보다 아래 차량 카드가 다 보이는 편이 실제로 쓸모 있습니다. */}
+      <div style={{ flex: sc.narrow ? "1 1 42%" : "1 1 55%", minHeight: 0, padding: `0 ${sc.s(14, 8)}px` }}>
         <AllRoutesMap routes={data.routes} school={data.school} />
       </div>
 
       {/* 아래: 하원차량 체크 */}
-      <div style={{ flex: "1 1 45%", minHeight: 0, overflowY: "auto", padding: "10px 14px 14px" }}>
+      <div
+        style={{
+          flex: sc.narrow ? "1 1 58%" : "1 1 45%",
+          minHeight: 0,
+          overflowY: "auto",
+          padding: `${sc.s(10, 6)}px ${sc.s(14, 8)}px ${sc.s(14, 8)}px`,
+        }}
+      >
         {data.routes.length === 0 ? (
-          <p style={{ textAlign: "center", color: "#475569", fontSize: 15 }}>운행 중인 하원 노선이 없습니다.</p>
+          <p style={{ textAlign: "center", color: "#475569", fontSize: sc.s(15, 12) }}>운행 중인 하원 노선이 없습니다.</p>
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))", gap: 8 }}>
+          <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(${sc.s(210, 148)}px, 1fr))`, gap: sc.s(8, 5) }}>
             {data.routes.map((r, i) => (
-              <RouteCard key={r.routeId} route={r} color={ROUTE_COLORS[i % ROUTE_COLORS.length]} />
+              <RouteCard key={r.routeId} route={r} color={ROUTE_COLORS[i % ROUTE_COLORS.length]} sc={sc} />
             ))}
           </div>
         )}
@@ -182,58 +199,63 @@ export default function DismissalOpsClient({
   );
 }
 
-function RouteCard({ route: r, color }: { route: RouteRow; color: string }) {
+function RouteCard({ route: r, color, sc }: { route: RouteRow; color: string; sc: BoardScale }) {
   const s = STATUS_STYLE[r.status];
   const pct = r.expectedCount > 0 ? Math.round((r.boardedCount / r.expectedCount) * 100) : 0;
   const complete = r.expectedCount > 0 && r.boardedCount === r.expectedCount;
   const notBoarded = r.riders.filter((x) => !x.boarded);
+  // 좁은 창에서는 카드가 작아져 이름이 여덟이면 카드가 세로로 길어집니다. 몇 명이 남았는지는
+  // +N으로 알 수 있으니, 이름은 줄이고 카드 개수가 다 보이는 쪽을 택합니다.
+  const nameLimit = sc.narrow ? 5 : 8;
 
   return (
-    <div style={{ background: "#111c33", borderRadius: 12, padding: "8px 10px", borderLeft: `5px solid ${color}` }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        <span style={{ fontSize: 19, fontWeight: 900, color: "#fff" }}>{r.routeNo}호</span>
-        {r.vehicleNo && <span style={{ fontSize: 10, color: "#64748b" }}>{r.vehicleNo}</span>}
-        <span style={{ marginLeft: "auto", background: s.bg, color: s.fg, fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 999 }}>
+    <div style={{ background: "#111c33", borderRadius: sc.s(12, 7), padding: `${sc.s(8, 5)}px ${sc.s(10, 6)}px`, borderLeft: `5px solid ${color}`, minWidth: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: sc.s(6, 4) }}>
+        <span style={{ fontSize: sc.s(19, 13), fontWeight: 900, color: "#fff" }}>{r.routeNo}호</span>
+        {r.vehicleNo && <span style={{ fontSize: sc.s(10, 9), color: "#64748b" }}>{r.vehicleNo}</span>}
+        <span style={{ marginLeft: "auto", background: s.bg, color: s.fg, fontSize: sc.s(11, 9), fontWeight: 800, padding: `2px ${sc.s(8, 5)}px`, borderRadius: 999 }}>
           {s.label}
         </span>
       </div>
-      {r.name && <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 1 }}>{r.name}</div>}
+      {r.name && <div style={{ fontSize: sc.s(11, 9), color: "#94a3b8", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.name}</div>}
 
       {/* 탑승 진행률 */}
-      <div style={{ marginTop: 6 }}>
+      <div style={{ marginTop: sc.s(6, 4) }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-          <span style={{ fontSize: 17, fontWeight: 800, color: complete ? "#34d399" : "#fff" }}>
+          <span style={{ fontSize: sc.s(17, 12), fontWeight: 800, color: complete ? "#34d399" : "#fff" }}>
             {r.boardedCount}/{r.expectedCount}
           </span>
-          <span style={{ fontSize: 11, color: "#64748b" }}>탑승</span>
-          {complete && <span style={{ fontSize: 11, color: "#34d399", fontWeight: 700 }}>완료</span>}
+          <span style={{ fontSize: sc.s(11, 9), color: "#64748b" }}>탑승</span>
+          {complete && <span style={{ fontSize: sc.s(11, 9), color: "#34d399", fontWeight: 700 }}>완료</span>}
           {(r.pickupCount > 0 || r.absentCount > 0) && (
-            <span style={{ marginLeft: "auto", fontSize: 10, color: "#475569" }}>
+            <span style={{ marginLeft: "auto", fontSize: sc.s(10, 9), color: "#475569" }}>
               {r.pickupCount > 0 && `픽업 ${r.pickupCount}`}
               {r.pickupCount > 0 && r.absentCount > 0 && " · "}
               {r.absentCount > 0 && `결석 ${r.absentCount}`}
             </span>
           )}
         </div>
-        <div style={{ height: 5, background: "#1e293b", borderRadius: 999, marginTop: 3, overflow: "hidden" }}>
+        <div style={{ height: sc.s(5, 3), background: "#1e293b", borderRadius: 999, marginTop: 3, overflow: "hidden" }}>
           <div style={{ width: `${pct}%`, height: "100%", background: complete ? "#10b981" : color }} />
         </div>
       </div>
 
       {/* 아직 안 탄 학생 */}
       {notBoarded.length > 0 && (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 3, marginTop: 5 }}>
-          {notBoarded.slice(0, 8).map((x, i) => (
-            <span key={i} style={{ background: "#3f1d1d", color: "#fca5a5", fontSize: 10, padding: "2px 5px", borderRadius: 4 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 3, marginTop: sc.s(5, 3) }}>
+          {notBoarded.slice(0, nameLimit).map((x, i) => (
+            <span key={i} style={{ background: "#3f1d1d", color: "#fca5a5", fontSize: sc.s(10, 9), padding: `2px ${sc.s(5, 4)}px`, borderRadius: 4 }}>
               {x.name}
             </span>
           ))}
-          {notBoarded.length > 8 && <span style={{ fontSize: 10, color: "#64748b" }}>+{notBoarded.length - 8}</span>}
+          {notBoarded.length > nameLimit && (
+            <span style={{ fontSize: sc.s(10, 9), color: "#64748b" }}>+{notBoarded.length - nameLimit}</span>
+          )}
         </div>
       )}
 
       {/* 도착·출발 시각 + 자동 감지 여부 */}
-      <div style={{ display: "flex", gap: 8, marginTop: 6, fontSize: 10, color: "#64748b" }}>
+      <div style={{ display: "flex", gap: sc.s(8, 5), marginTop: sc.s(6, 4), fontSize: sc.s(10, 9), color: "#64748b", flexWrap: "wrap" }}>
         {r.arrivedAt && (
           <span>
             도착 {hhmm(r.arrivedAt)}
@@ -352,11 +374,11 @@ function AllRoutesMap({ routes, school }: { routes: RouteRow[]; school: { lat: n
   );
 }
 
-function Chip({ label, value, color }: { label: string; value: number | string; color: string }) {
+function Chip({ label, value, color, sc }: { label: string; value: number | string; color: string; sc: BoardScale }) {
   return (
-    <span style={{ display: "inline-flex", alignItems: "baseline", gap: 4, background: "#1e293b", borderRadius: 999, padding: "3px 10px" }}>
-      <span style={{ fontSize: 11, color: "#64748b" }}>{label}</span>
-      <b style={{ fontSize: 15, color }}>{value}</b>
+    <span style={{ display: "inline-flex", alignItems: "baseline", gap: 4, background: "#1e293b", borderRadius: 999, padding: `3px ${sc.s(10, 7)}px` }}>
+      <span style={{ fontSize: sc.s(11, 9), color: "#64748b" }}>{label}</span>
+      <b style={{ fontSize: sc.s(15, 11), color }}>{value}</b>
     </span>
   );
 }

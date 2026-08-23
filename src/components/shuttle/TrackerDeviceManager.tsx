@@ -29,8 +29,6 @@ export default function TrackerDeviceManager({
   const [stopList, setStopList] = useState(stops);
   const [obs, setObs] = useState(observations);
   const [busy, setBusy] = useState(false);
-  const [newRouteId, setNewRouteId] = useState("");
-  const [newLabel, setNewLabel] = useState("");
   const [showGuide, setShowGuide] = useState(false);
   // 설정 링크 QR을 크게 띄우는 창. 기사님이 오셨을 때 이 화면을 모니터에 띄워두고 기사님
   // 휴대폰 카메라로 찍으시면, 주소를 한 글자도 치지 않고 설정 안내로 넘어갑니다.
@@ -50,6 +48,25 @@ export default function TrackerDeviceManager({
 
   const trackedRouteIds = useMemo(() => new Set(devices.map((d) => d.route_id)), [devices]);
   const unmatched = useMemo(() => obs.filter((o) => !o.matched_stop_id), [obs]);
+
+  // 노선을 기준으로 목록을 만듭니다(기기 기준이 아니라). 기기가 아직 없는 노선도 줄이 생겨야
+  // "무엇이 남았는지"가 눈에 보입니다.
+  const rows = useMemo(() => {
+    const deviceByRoute = new Map(devices.map((d) => [d.route_id, d]));
+    return routes.map((route) => ({ route, device: deviceByRoute.get(route.id) ?? null }));
+  }, [routes, devices]);
+
+  const summary = useMemo(() => {
+    let connected = 0;
+    let pending = 0;
+    let missing = 0;
+    for (const { device } of rows) {
+      if (!device) missing += 1;
+      else if (isFresh(device.last_seen_at)) connected += 1;
+      else pending += 1;
+    }
+    return { connected, pending, missing };
+  }, [rows]);
 
   function serverUrl() {
     return typeof window === "undefined" ? "" : `${window.location.origin}/api/shuttle/track`;
@@ -95,16 +112,24 @@ export default function TrackerDeviceManager({
     }
   }
 
-  async function addDevice() {
-    if (!newRouteId) {
-      notify("노선을 먼저 선택해주세요.", "error");
-      return;
-    }
-    const json = await call({ action: "create", routeId: newRouteId, label: newLabel || null });
+  async function addDevice(routeId: string) {
+    const json = await call({ action: "create", routeId });
     if (!json?.device) return;
     setDevices((prev) => [json.device as ShuttleTrackerDevice, ...prev]);
-    setNewLabel("");
-    notify("기기를 등록했습니다. 기사님 휴대폰에 아래 값을 넣어주세요.", "success");
+    notify("기기를 발급했습니다. [설정 링크]를 눌러 기사님께 보내주세요.", "success");
+  }
+
+  // 아직 기기가 없는 노선 전부에 한 번에 발급합니다(요청: "오시는 분마다 내가 설정해 드리는것도
+  // 문제"). 기기 ID는 노선당 하나면 되는 값이라, 미리 다 만들어두면 기사님이 오시기를 기다릴
+  // 이유가 없습니다.
+  async function bulkCreate() {
+    const missing = rows.filter((r) => !r.device).map((r) => r.route.id);
+    if (missing.length === 0) return;
+    const json = await call({ action: "bulk_create", routeIds: missing });
+    if (!json?.devices) return;
+    const created = json.devices as ShuttleTrackerDevice[];
+    setDevices((prev) => [...created, ...prev]);
+    notify(`${created.length}개 노선에 기기를 발급했습니다.`, "success");
   }
 
   async function toggleDevice(device: ShuttleTrackerDevice) {
@@ -214,86 +239,104 @@ export default function TrackerDeviceManager({
         </button>
       </div>
 
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <select
-          value={newRouteId}
-          onChange={(e) => setNewRouteId(e.target.value)}
-          className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs"
-        >
-          <option value="">노선 선택</option>
-          {routes.map((r) => (
-            <option key={r.id} value={r.id}>
-              {r.route_no}호 {r.name ?? ""}
-            </option>
-          ))}
-        </select>
-        <input
-          value={newLabel}
-          onChange={(e) => setNewLabel(e.target.value)}
-          placeholder="기사님 성함 / 차량번호 (선택)"
-          className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs"
-        />
-        <button
-          type="button"
-          onClick={addDevice}
-          disabled={busy}
-          className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-50"
-        >
-          기기 ID 발급
-        </button>
+      {/* 설정 현황 - 기기가 없는 노선까지 함께 보여줍니다.
+          기존에는 "발급된 기기"만 목록에 떠서, 아직 발급하지 않은 노선은 화면에 아예 없었습니다.
+          그러면 무엇이 남았는지 담당자가 머리로 세어야 합니다. 노선 전체를 놓고 상태를 붙이면
+          "몇 대 중 몇 대가 연결됐는지"가 한눈에 보입니다. */}
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <span className="text-xs font-bold text-slate-700">설정 현황</span>
+        <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
+          연결 {summary.connected}
+        </span>
+        {summary.pending > 0 && (
+          <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-700">
+            대기 {summary.pending}
+          </span>
+        )}
+        <span className="text-[11px] text-slate-400">전체 {rows.length}개 노선</span>
+        {summary.missing > 0 && (
+          <button
+            type="button"
+            onClick={bulkCreate}
+            disabled={busy}
+            className="ml-auto rounded-lg bg-slate-800 px-3 py-1.5 text-[11px] font-bold text-white disabled:opacity-50"
+          >
+            기기 없는 {summary.missing}개 노선에 한 번에 발급
+          </button>
+        )}
       </div>
 
-      {devices.length === 0 ? (
-        <p className="py-4 text-center text-xs text-slate-400">아직 등록된 기기가 없습니다.</p>
+      {rows.length === 0 ? (
+        <p className="mb-5 py-4 text-center text-xs text-slate-400">
+          등록된 하원 노선이 없습니다. [셔틀 → 노선 관리]에서 먼저 노선을 만들어주세요.
+        </p>
       ) : (
         <div className="mb-5 flex flex-col gap-1.5">
-          {devices.map((d) => {
-            const route = routeById.get(d.route_id);
+          {rows.map(({ route, device }) => {
+            const s = statusOf(device);
             return (
-              <div key={d.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 p-2">
+              <div
+                key={route.id}
+                className={"flex flex-wrap items-center gap-2 rounded-lg border p-2 " + s.tone}
+              >
                 <span className="text-xs font-bold text-slate-700">
-                  {route?.route_no ?? "?"}호 {route?.name ?? ""}
+                  {route.route_no}호 {route.name ?? ""}
                 </span>
-                {d.label && <span className="text-[11px] text-slate-400">{d.label}</span>}
-                <code className="rounded bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-800">{d.device_id}</code>
-                <button
-                  type="button"
-                  onClick={() => copy(d.device_id)}
-                  className="rounded border border-slate-300 px-1.5 py-0.5 text-[11px] text-slate-500"
-                >
-                  복사
-                </button>
-                <span className={"text-[11px] " + (d.last_seen_at ? "text-emerald-600" : "text-slate-400")}>
-                  {d.last_seen_at ? `최근 수신 ${new Date(d.last_seen_at).toLocaleString("ko-KR")}` : "아직 수신 없음"}
+                <span className="text-[11px] text-slate-500">
+                  {route.driver_name ?? "기사님 미등록"}
+                  {route.driver_phone ? ` · ${route.driver_phone}` : ""}
                 </span>
-                {/* 링크를 여셨는지까지 보여주면, "보내드렸는데 하셨나?"를 전화로 묻지 않아도 됩니다 */}
-                {!d.last_seen_at && d.setup_opened_at && (
-                  <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-semibold text-amber-700">
-                    링크는 여심 · 설정 미완료
-                  </span>
+                <span className={"rounded px-1.5 py-0.5 text-[11px] font-bold " + s.chip}>{s.label}</span>
+                {device && (
+                  <button
+                    type="button"
+                    onClick={() => copy(device.device_id)}
+                    title="기기 ID 복사"
+                    className="rounded bg-slate-100 px-2 py-0.5 font-mono text-[11px] font-bold text-slate-600"
+                  >
+                    {device.device_id}
+                  </button>
                 )}
+
                 <div className="ml-auto flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => setQrFor(d)}
-                    disabled={!d.setup_code}
-                    className="rounded-lg bg-blue-600 px-2 py-1 text-[11px] font-bold text-white disabled:opacity-40"
-                  >
-                    설정 링크
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => toggleDevice(d)}
-                    className={
-                      "rounded-lg px-2 py-1 text-[11px] font-semibold " +
-                      (d.enabled ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-400")
-                    }
-                  >
-                    {d.enabled ? "사용중" : "중지됨"}
-                  </button>
-                  <button type="button" onClick={() => removeDevice(d)} className="text-[11px] font-semibold text-red-500">
-                    삭제
-                  </button>
+                  {device ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setQrFor(device)}
+                        disabled={!device.setup_code}
+                        className="rounded-lg bg-blue-600 px-2 py-1 text-[11px] font-bold text-white disabled:opacity-40"
+                      >
+                        설정 링크
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => toggleDevice(device)}
+                        className={
+                          "rounded-lg px-2 py-1 text-[11px] font-semibold " +
+                          (device.enabled ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-400")
+                        }
+                      >
+                        {device.enabled ? "사용중" : "중지됨"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removeDevice(device)}
+                        className="text-[11px] font-semibold text-red-500"
+                      >
+                        삭제
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => addDevice(route.id)}
+                      disabled={busy}
+                      className="rounded-lg border border-slate-300 px-2 py-1 text-[11px] font-bold text-slate-600 disabled:opacity-40"
+                    >
+                      기기 발급
+                    </button>
+                  )}
                 </div>
               </div>
             );
@@ -393,6 +436,37 @@ export default function TrackerDeviceManager({
       )}
     </div>
   );
+}
+
+// 최근 10분 안에 위치를 보내왔는지. 전송 간격이 30초라 정상이면 훨씬 자주 들어오고, 터널을
+// 잠깐 지나는 정도로는 끊기지 않을 만큼 넉넉한 기준입니다(하원 운영화면과 같은 값).
+function isFresh(lastSeenAt: string | null): boolean {
+  if (!lastSeenAt) return false;
+  return Date.now() - new Date(lastSeenAt).getTime() < 10 * 60 * 1000;
+}
+
+// 노선 한 줄의 상태를 정합니다. 담당자가 다음에 무엇을 해야 하는지가 바로 읽히도록 문구를
+// "상태"가 아니라 "할 일"에 가깝게 적었습니다.
+function statusOf(device: ShuttleTrackerDevice | null): { label: string; chip: string; tone: string } {
+  if (!device) {
+    return { label: "기기 없음", chip: "bg-slate-200 text-slate-600", tone: "border-slate-200 bg-slate-50" };
+  }
+  if (isFresh(device.last_seen_at)) {
+    return { label: "✓ 연결됨", chip: "bg-emerald-500 text-white", tone: "border-emerald-200 bg-emerald-50/50" };
+  }
+  if (device.last_seen_at) {
+    // 예전에 들어온 적은 있는데 지금은 조용한 경우입니다. 아이폰의 "계속 허용하시겠습니까?"를
+    // 잘못 누르셨거나 절전 설정이 되돌아간 경우가 대부분이라, 그냥 넘기면 안 됩니다.
+    return {
+      label: `신호 끊김 · 최근 ${new Date(device.last_seen_at).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}`,
+      chip: "bg-red-100 text-red-700",
+      tone: "border-red-200 bg-red-50/50",
+    };
+  }
+  if (device.setup_opened_at) {
+    return { label: "링크 열어보심 · 설정 미완료", chip: "bg-amber-100 text-amber-700", tone: "border-amber-200 bg-amber-50/50" };
+  }
+  return { label: "링크 보내야 함", chip: "bg-blue-100 text-blue-700", tone: "border-slate-200 bg-white" };
 }
 
 // 설정 링크를 QR과 문자로 내보내는 창입니다.

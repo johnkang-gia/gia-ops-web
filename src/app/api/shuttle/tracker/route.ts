@@ -47,6 +47,35 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, device: data });
   }
 
+  // 아직 기기가 없는 하원 노선에 한 번에 발급합니다.
+  //
+  // 왜 필요한가요? 기사님이 오실 때마다 담당자가 노선을 고르고 발급 버튼을 누르는 일이
+  // 반복됩니다(요청: "오시는 분마다 내가 설정해 드리는것도 문제"). 기기 ID는 어차피 노선마다
+  // 하나씩 있으면 되는 값이라, 미리 전부 만들어두면 그 단계가 통째로 사라집니다. 그러면 담당자는
+  // "링크 보내기"만 하면 되고, 기사님이 오시지 않아도 설정이 진행됩니다.
+  if (action === "bulk_create") {
+    const routeIds = Array.isArray(body?.routeIds) ? (body.routeIds as string[]) : [];
+    if (routeIds.length === 0) return NextResponse.json({ error: "routeIds가 필요합니다." }, { status: 400 });
+
+    // 이미 있는 노선은 건너뜁니다. 한 노선에 기기가 둘이면 어느 쪽이 진짜인지 알 수 없습니다.
+    const { data: existing, error: existingError } = await supabase
+      .from("shuttle_tracker_devices")
+      .select("route_id")
+      .in("route_id", routeIds);
+    if (existingError) return NextResponse.json({ error: existingError.message }, { status: 500 });
+
+    const taken = new Set((existing ?? []).map((d) => d.route_id as string));
+    const missing = routeIds.filter((id) => !taken.has(id));
+    if (missing.length === 0) return NextResponse.json({ ok: true, devices: [], skipped: routeIds.length });
+
+    const { data, error } = await supabase
+      .from("shuttle_tracker_devices")
+      .insert(missing.map((routeId) => ({ device_id: generateDeviceId(), setup_code: generateSetupCode(), route_id: routeId })))
+      .select();
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true, devices: data, skipped: taken.size });
+  }
+
   // 설정 링크가 엉뚱한 곳으로 갔을 때 쓰는 기능입니다. 새 코드를 넣으면 예전 링크는 즉시
   // 열리지 않게 되고, 이미 설정을 마친 휴대폰은 아무 영향을 받지 않습니다(기기 ID는 그대로).
   if (action === "reissue_setup_code") {

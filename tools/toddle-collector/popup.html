@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <title>GIA 토들 픽업 수집기</title>
+    <style>
+      body { width: 340px; margin: 0; padding: 14px; font-family: "맑은 고딕", sans-serif; font-size: 13px; color: #1e293b; }
+      h1 { margin: 0 0 10px; font-size: 15px; }
+      label { display: block; margin: 10px 0 4px; font-size: 11px; font-weight: 700; color: #64748b; }
+      input { width: 100%; box-sizing: border-box; padding: 7px 8px; border: 1px solid #cbd5e1; border-radius: 7px; font-size: 12px; }
+      button { width: 100%; margin-top: 10px; padding: 9px; border: 0; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; }
+      .primary { background: #2563eb; color: #fff; }
+      .ghost { background: #f1f5f9; color: #475569; }
+      .box { margin-top: 12px; padding: 9px 10px; border-radius: 8px; font-size: 12px; line-height: 1.6; }
+      .ok { background: #ecfdf5; color: #047857; }
+      .warn { background: #fef3c7; color: #92400e; }
+      .bad { background: #fee2e2; color: #b91c1c; }
+      .hint { margin-top: 10px; font-size: 11px; line-height: 1.6; color: #94a3b8; }
+    </style>
+  </head>
+  <body>
+    <h1>📥 토들 픽업 수집기</h1>
+
+    <label>운영앱 주소</label>
+    <input id="serverUrl" placeholder="https://gia-ops-web.vercel.app" />
+
+    <label>수집 키 (PICKUP_INGEST_SECRET)</label>
+    <input id="secret" type="password" placeholder="관리자에게 받은 키" />
+
+    <button id="save" class="primary">저장</button>
+    <button id="run" class="ghost">지금 확인</button>
+
+    <div id="state" class="box warn">상태를 불러오는 중...</div>
+
+    <p class="hint">
+      이 PC 크롬에 <b>토들 메시지 화면</b>을 항상 열어두세요. 1분마다 새 학부모 메시지를 확인해
+      픽업 인박스로 보냅니다. 토들의 <b>안 읽음 표시는 바뀌지 않습니다.</b>
+    </p>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

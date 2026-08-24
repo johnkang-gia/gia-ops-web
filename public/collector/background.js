@@ -169,34 +169,6 @@ async function runOnceInner() {
       await heartbeat("login_required", "토들 로그인이 풀렸습니다.");
       return;
     }
-    if (err === "NEEDS_TRAINING") {
-      // 아직 서식을 못 배운 상태입니다.
-      //
-      // 수집기는 토들이 스스로 보내는 요청을 옆에서 보고 배웁니다. 그런데 확장이 나중에 끼어들면
-      // (설치 직후, 또는 크롬이 탭을 재웠다 깨운 뒤) 페이지가 이미 보낸 요청을 못 봅니다. 화면을
-      // 가만히 두면 그 요청이 다시 일어나지 않아 영원히 못 배웁니다.
-      //
-      // 그래서 두 번 연속 이 상태면 탭을 한 번 새로고침해 스스로 낫게 합니다. 매번 새로고침하면
-      // 담당자가 토들을 보고 있을 때 방해가 되므로, 정말 막혔을 때만 합니다.
-      const { trainFails = 0 } = await chrome.storage.local.get(["trainFails"]);
-      const next = trainFails + 1;
-      await chrome.storage.local.set({ trainFails: next });
-
-      if (next >= 2) {
-        await chrome.storage.local.set({ trainFails: 0 });
-        try {
-          await chrome.tabs.reload(tabId);
-          await setState({ status: "준비 중", detail: "토들 페이지를 새로고침했습니다. 1분 뒤 자동으로 다시 확인합니다." });
-          await heartbeat("error", "수집기 준비 중(자동 새로고침).");
-          return;
-        } catch {
-          /* 새로고침 실패 - 아래 안내로 넘어갑니다 */
-        }
-      }
-      await setState({ status: "준비 중", detail: "토들 페이지에서 F5를 한 번 눌러주세요. 곧 자동으로도 시도합니다." });
-      await heartbeat("error", "수집기가 아직 준비되지 않았습니다.");
-      return;
-    }
     await setState({ status: "오류", detail: err || "알 수 없는 오류" });
     await heartbeat("error", err || "알 수 없는 오류");
     return;
@@ -231,25 +203,13 @@ async function runOnceInner() {
     }
   }
 
-  await chrome.storage.local.set({ trainFails: 0 });
 
+  // 이제는 목록을 못 읽으면 오류로 올라옵니다(로그인 풀림 등). 여기까지 왔는데 0개면
+  // 정말로 새 학부모 메시지가 없는 것입니다.
   const diag = reply.diag ?? {};
   if (items.length === 0) {
-    // 아는 방이 하나도 없으면 아직 목록을 못 읽고 있는 것입니다. 이걸 "정상"이라고 하면
-    // 조용히 아무것도 안 하면서 괜찮다고 말하는 셈이 됩니다.
-    if (!diag.knownRooms) {
-      await setState({
-        status: "목록 못 읽음",
-        detail: `채팅목록서식 ${diag.hasChatList ? "있음" : "없음"} · 대화서식 ${diag.hasMessages ? "있음" : "없음"} · 토들 페이지에서 F5를 눌러주세요.`,
-      });
-      await heartbeat("error", "채팅 목록을 읽지 못했습니다.");
-      return;
-    }
-    await setState({
-      status: "정상",
-      detail: `새 메시지 없음 (전체 ${diag.knownRooms}개 · 안 읽은 방 ${diag.unreadRooms ?? 0}개)`,
-    });
-    await heartbeat("ok", `새 메시지 없음 (안 읽은 방 ${diag.unreadRooms ?? 0}개)`);
+    await setState({ status: "정상", detail: `새 메시지 없음 (안 읽은 방 ${diag.knownRooms ?? 0}개)` });
+    await heartbeat("ok", `새 메시지 없음 (안 읽은 방 ${diag.knownRooms ?? 0}개)`);
     return;
   }
 
@@ -261,7 +221,7 @@ async function runOnceInner() {
     // 보낸 기록이 무한정 쌓이지 않게 최근 2000건만 남깁니다.
     const entries = Object.entries(nextSent).sort((a, b) => b[1] - a[1]).slice(0, 2000);
     await chrome.storage.local.set({ sent: Object.fromEntries(entries) });
-    await setState({ status: "정상", detail: `${items.length}건 보냄 (안 읽은 방 ${diag.unreadRooms ?? 0}개)` });
+    await setState({ status: "정상", detail: `${items.length}건 보냄 (안 읽은 방 ${diag.knownRooms ?? 0}개)` });
   } catch (err) {
     await setState({ status: "전송 실패", detail: String(err.message ?? err) });
     await heartbeat("error", `전송 실패: ${String(err.message ?? err)}`);
@@ -281,16 +241,6 @@ chrome.runtime.onMessage.addListener((msg, _s, sendResponse) => {
   // 팝업에서 [지금 확인]을 누를 때
   if (msg?.cmd === "runNow") {
     runOnce().then(() => sendResponse({ ok: true }));
-    return true;
-  }
-  // 페이지가 배운 서식을 저장합니다. 토들은 채팅 목록을 한 번만 받아 캐시하므로, 배울 기회를
-  // 놓치면 영영 못 배웁니다. 저장해두면 다음 로드부터는 바로 씁니다.
-  if (msg?.cmd === "saveLearned") {
-    chrome.storage.local.set({ learned: msg.data, learnedAt: Date.now() }).then(() => sendResponse({ ok: true }));
-    return true;
-  }
-  if (msg?.cmd === "loadLearned") {
-    chrome.storage.local.get(["learned"]).then((c) => sendResponse(c.learned ?? null));
     return true;
   }
   return false;

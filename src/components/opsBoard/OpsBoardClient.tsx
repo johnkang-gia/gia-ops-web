@@ -16,6 +16,8 @@ import { useBoardDensity, type BoardScale, type Density } from "@/lib/useBoardDe
 //
 // 오후 4시(설정값)가 되면 요청대로 이 절반이 통째로 하원 차량 화면으로 바뀝니다.
 
+import { lessonPlace } from "@/lib/lessonLocation";
+
 const POLL_MS = 30_000;
 
 type Lesson = { subjectName: string; teacherName: string | null; room: string | null };
@@ -34,6 +36,7 @@ type BoardData = {
   studentCount: number;
   absences: { name: string; grade: string | null; className: string | null; status: string; note: string | null; contacted: boolean }[];
   pickups: string[];
+  inquiries: { id: string; student: string; type: string | null; summary: string; urgent: boolean; at: string }[];
   taskSummary: {
     statusCounts: Record<string, number>;
     todayTasks: { title: string; status: string; department: string | null; dueLabel: string | null; urgent: boolean; kind: string }[];
@@ -41,6 +44,16 @@ type BoardData = {
   };
   shuttle: { mode: boolean; boardToken: string | null; switchLabel: string; endLabel: string };
 };
+
+// 언제 온 문의인지. 오늘 것은 시각만, 그 전 것은 요일까지 적습니다 - 멀리서 보는 화면이라
+// "3시간 전" 같은 표현보다 시각이 바로 읽힙니다.
+function inquiryTime(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  const hhmm = d.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
+  if (d.toDateString() === now.toDateString()) return hhmm;
+  return `${["일", "월", "화", "수", "목", "금", "토"][d.getDay()]} ${hhmm}`;
+}
 
 const STATUS_COLOR: Record<string, string> = {
   결석: "#dc2626",
@@ -182,6 +195,7 @@ export default function OpsBoardClient({ token }: { token: string }) {
 
   const absentCount = data.absences.filter((a) => a.status === "결석").length;
   const lateCount = data.absences.filter((a) => a.status === "지각").length;
+  const urgentInquiries = (data.inquiries ?? []).filter((q) => q.urgent).length;
 
   return (
     // height + overflow:hidden - 대시보드는 아무도 스크롤하지 않으므로, 넘치면 화면 안에서
@@ -298,25 +312,61 @@ export default function OpsBoardClient({ token }: { token: string }) {
                       반 이름과 지금 과목 두 줄만 남기고 담임·다음교시·담당교사는 뺐습니다 - 멀리서
                       보는 화면에서는 글자가 많을수록 오히려 안 읽힙니다. 수업이 없는 시간에만
                       교실 위치를 대신 보여줍니다(요청: "수업중이 아닐때 교실위치 보여주는 것은 좋고"). */}
-                  {g.classes.map((c) => (
-                    <div key={c.id} style={{ background: "#1e293b", borderRadius: sc.s(10, 6), padding: `${sc.s(8, 4)}px ${sc.s(10, 6)}px`, minWidth: 0 }}>
-                      <div style={{ fontSize: sc.s(13, 10), color: "#94a3b8", fontWeight: 700 }}>{c.className}</div>
+                  {g.classes.map((c) => {
+                    // 요청: "위치도 알 수 있게 표시해줘 (...) 일단 특수교실들은 장소를 바로
+                    // 표시하지말고, 그냥 교실이 아닌곳에 있다는 표시만 해줬으면 좋겠어"
+                    //
+                    // 그래서 어느 방인지까지는 적지 않고, 교실을 비웠다는 것만 알립니다.
+                    // 반을 찾으러 갈 때 "교실에 갔는데 없더라"를 막는 것이 목적입니다.
+                    const place = lessonPlace(c.current?.subjectName);
+                    return (
                       <div
+                        key={c.id}
                         style={{
-                          fontSize: sc.s(22, 14),
-                          fontWeight: 800,
-                          color: c.current ? "#fff" : "#475569",
-                          marginTop: 2,
-                          lineHeight: 1.15,
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
+                          background: place.special ? "#3f2d16" : "#1e293b",
+                          border: place.special ? "1px solid #a16207" : "1px solid transparent",
+                          borderRadius: sc.s(10, 6),
+                          padding: `${sc.s(8, 4)}px ${sc.s(10, 6)}px`,
+                          minWidth: 0,
                         }}
                       >
-                        {c.current?.subjectName ?? (c.room || "—")}
+                        <div style={{ display: "flex", alignItems: "center", gap: sc.s(4, 3), minWidth: 0 }}>
+                          <span style={{ fontSize: sc.s(13, 10), color: "#94a3b8", fontWeight: 700, whiteSpace: "nowrap" }}>
+                            {c.className}
+                          </span>
+                          {place.special && (
+                            <span
+                              style={{
+                                fontSize: sc.s(11, 9),
+                                fontWeight: 800,
+                                color: "#fbbf24",
+                                background: "#78350f",
+                                borderRadius: sc.s(5, 4),
+                                padding: `0 ${sc.s(5, 3)}px`,
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              교실 밖
+                            </span>
+                          )}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: sc.s(22, 14),
+                            fontWeight: 800,
+                            color: c.current ? "#fff" : "#475569",
+                            marginTop: 2,
+                            lineHeight: 1.15,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {c.current?.subjectName ?? (c.room || "—")}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             ))}
@@ -389,6 +439,68 @@ export default function OpsBoardClient({ token }: { token: string }) {
           )}
         </Panel>
       </div>
+
+      {/* ②-b 학부모 문의사항 - 요청: "운영 대시보드에 이 학부모 문의사항도 띄워줘"
+          아직 답하지 않은 것만 올립니다. 처리된 것까지 섞이면 훑어보는 의미가 없습니다. */}
+      <Panel
+        sc={sc}
+        grow={1}
+        title={`학부모 문의 ${data.inquiries?.length ?? 0}건`}
+        right={urgentInquiries > 0 ? `급한 것 ${urgentInquiries}건` : null}
+      >
+        {!data.inquiries || data.inquiries.length === 0 ? (
+          <Empty sc={sc} text="답할 문의 없음" tone="good" />
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: sc.s(4, 3) }}>
+            {data.inquiries.slice(0, sc.narrow ? 5 : 8).map((q) => (
+              <div
+                key={q.id}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: sc.s(6, 4),
+                  background: "#1e293b",
+                  borderLeft: `4px solid ${q.urgent ? "#dc2626" : "#0284c7"}`,
+                  borderRadius: 6,
+                  padding: `${sc.s(5, 3)}px ${sc.s(9, 6)}px`,
+                  minWidth: 0,
+                }}
+              >
+                <b style={{ fontSize: sc.s(15, 11), color: "#fff", whiteSpace: "nowrap" }}>{q.student}</b>
+                {q.type && (
+                  <span
+                    style={{
+                      fontSize: sc.s(11, 9),
+                      fontWeight: 700,
+                      color: "#93c5fd",
+                      background: "#1e3a5f",
+                      borderRadius: 5,
+                      padding: `0 ${sc.s(5, 3)}px`,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {q.type}
+                  </span>
+                )}
+                <span
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    fontSize: sc.s(14, 11),
+                    color: "#cbd5e1",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {q.summary}
+                </span>
+                <span style={{ fontSize: sc.s(11, 9), color: "#64748b", whiteSpace: "nowrap" }}>{inquiryTime(q.at)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </Panel>
 
       {/* ③ 오늘 업무 */}
       <Panel

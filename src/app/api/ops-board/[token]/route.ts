@@ -172,6 +172,33 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     : { data: [] as { id: string; student_name_raw: string }[] };
   const pickups = (pickupAssignments ?? []).map((a) => a.student_name_raw).sort((a, b) => a.localeCompare(b, "ko"));
 
+  // ── 학부모 문의사항 ────────────────────────────────────────────────────────
+  // 요청: "운영 대시보드에 이 학부모 문의사항도 띄워줘"
+  //
+  // 아직 답하지 않은 것만, 급한 것부터 올립니다. 이 화면은 사무실에서 멀찍이 두고 보는
+  // 화면이라 "지금 손대야 할 것"만 보여야 합니다 - 처리된 것까지 섞이면 훑어보는 의미가
+  // 없어집니다.
+  const { data: inquiryRows } = await supabase
+    .from("pickup_requests")
+    .select("id, received_at, matched_name, ai_student_name, channel_label, inquiry_type, summary, urgency")
+    .eq("kind", "문의")
+    .is("answered_at", null)
+    .gte("received_at", new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString())
+    .order("received_at", { ascending: false })
+    .limit(40);
+
+  const inquiries = (inquiryRows ?? [])
+    .map((r) => ({
+      id: r.id as string,
+      student:
+        (r.matched_name as string | null) ?? (r.ai_student_name as string | null) ?? (r.channel_label as string | null) ?? "미확인",
+      type: (r.inquiry_type as string | null) ?? null,
+      summary: (r.summary as string | null) ?? "",
+      urgent: r.urgency === "높음",
+      at: r.received_at as string,
+    }))
+    .sort((a, b) => Number(b.urgent) - Number(a.urgent) || b.at.localeCompare(a.at));
+
   // ── ③ 업무 요약 ────────────────────────────────────────────────────────────
   const { data: tasks } = await supabase
     .from("tasks")
@@ -249,6 +276,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     studentCount: deptStudents.length,
     absences,
     pickups,
+    inquiries,
     taskSummary: { statusCounts, todayTasks: todayTasks.slice(0, 20), todayTotal: todayTasks.length },
     shuttle: {
       mode: shuttleMode,

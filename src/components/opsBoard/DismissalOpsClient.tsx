@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { loadKakaoMaps } from "@/lib/kakaoMap";
 import { useKstClock } from "@/lib/useKstClock";
 import { useBoardDensity, type BoardScale } from "@/lib/useBoardDensity";
+import { useIdleCursor } from "@/lib/useIdleCursor";
 
 // 요청: "셔틀시작시간때(4:00)가 되면 화면이 전환되면서 실시간 셔틀 운행지도가 뜨고 지도에서 각
 // 셔틀이 어떤 경로로 가고있는지 볼 수 있게 하면서, 아래쪽에는 아이들이 차량을 다 탑승했는지
@@ -73,6 +74,7 @@ type Data = {
   routes: RouteRow[];
   pickups?: PickupRow[];
   testMarkers?: TestMarker[];
+  gpsAlerts?: { routeNo: string; driverName: string | null }[];
 };
 
 // 노선마다 색을 줍니다. 요청: "셔틀색도 각 번호 색으로 (...) 각 번호는 지역으로 나눠져 있도록".
@@ -168,6 +170,8 @@ export default function DismissalOpsClient({
     const t = setInterval(() => setFocusIdx((n) => n + 1), 7000);
     return () => clearInterval(t);
   }, []);
+  // 일정 시간 안 움직이면 마우스 커서를 숨깁니다(요청).
+  const cursorHidden = useIdleCursor(4000);
   // 하원 운행 중에는 "지금 몇 시 몇 분 몇 초"가 중요해서 여기도 초까지 보여줍니다.
   const clock = useKstClock();
   // 요청: "cctv프로그램이 너무 많이 차지해서 공간이 많이 없더라고" - 전체화면을 못 쓰는 날에는
@@ -204,7 +208,7 @@ export default function DismissalOpsClient({
   const totalExpected = data.routes.reduce((s, r) => s + r.expectedCount, 0);
 
   return (
-    <div style={{ height: "100dvh", background: "#0f172a", color: "#e2e8f0", display: "flex", flexDirection: "column", fontFamily: "sans-serif" }}>
+    <div style={{ height: "100dvh", background: "#0f172a", color: "#e2e8f0", display: "flex", flexDirection: "column", fontFamily: "sans-serif", cursor: cursorHidden ? "none" : undefined }}>
       <div style={{ display: "flex", alignItems: "center", gap: sc.s(12, 6), padding: `${sc.s(8, 5)}px ${sc.s(14, 8)}px`, flexWrap: "wrap", flexShrink: 0 }}>
         <span style={{ fontSize: sc.s(20, 14), fontWeight: 800, color: "#fff" }}>🚌 하원 운행</span>
         {clock && (
@@ -263,22 +267,45 @@ export default function DismissalOpsClient({
         </div>
       </div>
 
+      {/* GPS 미시작 경고(요청: "3:50분부터 신호가 안오면 (...) 켜달라고 안내"). 기사님이 직접
+          켜고 끄는 방식이라, 켜는 걸 잊으신 노선을 여기 띄워 사무실에서 전화로 안내합니다. */}
+      {(data.gpsAlerts?.length ?? 0) > 0 && (
+        <div style={{ flexShrink: 0, margin: `0 ${sc.s(14, 8)}px ${sc.s(6, 4)}px`, background: "#7f1d1d", borderRadius: sc.s(10, 6), padding: `${sc.s(6, 4)}px ${sc.s(12, 8)}px`, display: "flex", alignItems: "center", gap: sc.s(8, 5), flexWrap: "wrap" }}>
+          <span style={{ fontSize: sc.s(15, 12), fontWeight: 900, color: "#fecaca" }}>⚠ GPS 미시작</span>
+          <span style={{ fontSize: sc.s(13, 11), color: "#fee2e2" }}>기사님께 GPS 켜달라고 안내:</span>
+          {(data.gpsAlerts ?? []).map((a, i) => (
+            <span key={i} style={{ fontSize: sc.s(14, 11), fontWeight: 800, color: "#fff", background: "#991b1b", borderRadius: 999, padding: `${sc.s(2, 1)}px ${sc.s(9, 6)}px` }}>
+              {a.routeNo}호{a.driverName ? ` ${a.driverName}` : ""}
+            </span>
+          ))}
+        </div>
+      )}
+
       {/* 위: 지도 영역을 7:3으로 좌우 분할(요청). 왼쪽은 전체 지도(작은 번호 점), 오른쪽은 지금
           운행 중인 노선을 하나씩 순환하며 가까이(위에서 본 밴) 보여줍니다. */}
       {(() => {
         // 순환 대상: GPS가 살아있거나 오늘 자취가 있는 "지금 길 위의 노선". 없으면 전체에서 순환.
         const trackable = data.routes.filter((r) => r.pingFresh || (r.trail?.length ?? 0) > 0);
         const focusList = trackable.length > 0 ? trackable : data.routes;
-        const focusRoute = focusList.length > 0 ? focusList[focusIdx % focusList.length] : null;
-        // 오른쪽 노선 색은 전체 지도와 같은 규칙(전체 목록 기준 index)으로 맞춥니다.
-        const focusColor = focusRoute ? routeColorAt(data.routes.indexOf(focusRoute), data.routes.length) : "#f59e0b";
+        const total = focusList.length;
+        const per = 4; // 오른쪽은 2x2 = 4개 노선을 동시에, 겹치지 않게 순환(요청).
+        const start = total > 0 ? (focusIdx * per) % total : 0;
+        const slots: (RouteRow | null)[] = [];
+        for (let k = 0; k < per; k += 1) slots.push(k < total ? focusList[(start + k) % total] : null);
+        const colorOf = (r: RouteRow | null) => (r ? routeColorAt(data.routes.indexOf(r), data.routes.length) : "#334155");
         return (
           <div style={{ flex: sc.narrow ? "1 1 42%" : "1 1 55%", minHeight: 0, display: "flex", gap: sc.s(8, 5), padding: `0 ${sc.s(14, 8)}px` }}>
+            {/* 왼쪽(7): 전체 지도 - 작은 번호 점 */}
             <div style={{ flex: "7 1 0", minWidth: 0 }}>
               <AllRoutesMap routes={data.routes} school={data.school} testMarkers={data.testMarkers ?? []} />
             </div>
-            <div style={{ flex: "3 1 0", minWidth: 0 }}>
-              <RouteFocusMap route={focusRoute} school={data.school} color={focusColor} sc={sc} />
+            {/* 오른쪽(3): 노선을 4개씩 순환하며 가까이(위에서 본 밴) */}
+            <div style={{ flex: "3 1 0", minWidth: 0, display: "grid", gridTemplateColumns: "1fr 1fr", gridTemplateRows: "1fr 1fr", gap: sc.s(6, 4) }}>
+              {slots.map((r, k) => (
+                <div key={k} style={{ minWidth: 0, minHeight: 0 }}>
+                  <RouteFocusMap route={r} school={data.school} color={colorOf(r)} sc={sc} />
+                </div>
+              ))}
             </div>
           </div>
         );
@@ -661,40 +688,36 @@ function RouteFocusMap({ route, school, color, sc }: { route: RouteRow | null; s
         overlaysRef.current = [];
         if (!route) return;
 
-        const bounds = new kakao.maps.LatLngBounds();
-        let has = false;
-        const extend = (p: { lat: number; lng: number }) => { bounds.extend(new kakao.maps.LatLng(p.lat, p.lng)); has = true; };
-
         if (school) {
           const m = new kakao.maps.CustomOverlay({
             position: new kakao.maps.LatLng(school.lat, school.lng),
             content: `<div style="background:#2563eb;color:#fff;font-size:11px;font-weight:800;padding:2px 7px;border-radius:999px;white-space:nowrap">GIA</div>`,
             yAnchor: 0.5,
           });
-          m.setMap(map); overlaysRef.current.push(m); extend(school);
+          m.setMap(map); overlaysRef.current.push(m);
         }
 
         // 예상 경로(연한 실선).
         const planned = route.path?.length ? route.path : route.stops.map((s) => ({ lat: s.lat as number, lng: s.lng as number }));
         if (planned.length > 1) {
           const l = new kakao.maps.Polyline({ path: planned.map((p) => new kakao.maps.LatLng(p.lat, p.lng)), strokeWeight: 4, strokeColor: color, strokeOpacity: 0.5, strokeStyle: "solid" });
-          l.setMap(map); overlaysRef.current.push(l); for (const p of planned) extend(p);
+          l.setMap(map); overlaysRef.current.push(l);
         }
         // 정류장 점.
-        for (const s of route.stops) {
-          if (s.lat == null || s.lng == null) continue;
+        const stopPts = route.stops.filter((s) => s.lat != null && s.lng != null) as { lat: number; lng: number }[];
+        for (const s of stopPts) {
           const dot = new kakao.maps.CustomOverlay({
             position: new kakao.maps.LatLng(s.lat, s.lng),
             content: `<div style="width:9px;height:9px;border-radius:999px;background:#fff;border:2px solid ${color}"></div>`,
             yAnchor: 0.5,
           });
-          dot.setMap(map); overlaysRef.current.push(dot); extend({ lat: s.lat, lng: s.lng });
+          dot.setMap(map); overlaysRef.current.push(dot);
         }
         // 지나온 자취(진한 실선).
         const trail = route.trail ?? [];
         if (trail.length > 1) {
           const l = new kakao.maps.Polyline({ path: trail.map((p) => new kakao.maps.LatLng(p.lat, p.lng)), strokeWeight: 7, strokeColor: color, strokeOpacity: 1, strokeStyle: "solid" });
-          l.setMap(map); overlaysRef.current.push(l); for (const p of trail) extend(p);
+          l.setMap(map); overlaysRef.current.push(l);
         }
         // 위에서 본 밴(진행 방향).
         if (route.ping && route.pingFresh) {
@@ -704,10 +727,33 @@ function RouteFocusMap({ route, school, color, sc }: { route: RouteRow | null; s
             content: vanMarkerHtml(route.routeNo, color, heading),
             xAnchor: 0.5, yAnchor: 0.5, zIndex: 10,
           });
-          van.setMap(map); overlaysRef.current.push(van); extend({ lat: route.ping.lat, lng: route.ping.lng });
+          van.setMap(map); overlaysRef.current.push(van);
         }
 
-        if (has) map.setBounds(bounds, 36, 36, 36, 36);
+        // 화면 맞춤: 요청 "어느정도 도로 보이게 확대 (...) 계획노선과 지나온 노선이 어느정도
+        // 보이게 (...) 현재 위치를 보이도록". 운행 중(핑 있음)이면 현재 위치 주변(최근 자취 +
+        // 가까운 정류장)만 맞춰 도로가 보일 만큼 확대하고, 아직 출발 전이면 노선 전체를 보여줍니다.
+        const fitPts: { lat: number; lng: number }[] = [];
+        if (route.ping && route.pingFresh) {
+          fitPts.push({ lat: route.ping.lat, lng: route.ping.lng });
+          for (const p of trail.slice(-14)) fitPts.push(p);
+          // 현재 위치에서 대략 1.2km 안의 정류장·계획경로점만 포함(주변 맥락).
+          const near = (p: { lat: number; lng: number }) =>
+            Math.abs(p.lat - route.ping!.lat) < 0.011 && Math.abs(p.lng - route.ping!.lng) < 0.014;
+          for (const s of stopPts) if (near(s)) fitPts.push(s);
+          for (const p of planned) if (near(p)) fitPts.push(p);
+        } else {
+          for (const p of planned) fitPts.push(p);
+          for (const s of stopPts) fitPts.push(s);
+          if (school) fitPts.push(school);
+        }
+        if (fitPts.length > 0) {
+          const b = new kakao.maps.LatLngBounds();
+          for (const p of fitPts) b.extend(new kakao.maps.LatLng(p.lat, p.lng));
+          map.setBounds(b, 30, 30, 30, 30);
+          // 너무 바짝 붙지 않게(멈춰 있으면 window가 한 점이라 과확대) 최소 도로 스케일 확보.
+          if (typeof map.getLevel === "function" && map.getLevel() < 4) map.setLevel(4);
+        }
       } catch {
         if (!cancelled) setMapError("지도를 불러오지 못했습니다.");
       }

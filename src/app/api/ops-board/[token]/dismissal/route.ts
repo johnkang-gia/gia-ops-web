@@ -29,7 +29,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
   if (!link || !link.enabled) return NextResponse.json({ error: "유효하지 않거나 종료된 링크입니다." }, { status: 403 });
 
   const now = Date.now();
-  const { iso: today, weekday } = kstParts(new Date(now));
+  const { iso: today, weekday, hour, minute } = kstParts(new Date(now));
+  // 요청: "3:50분부터 신호가 안오면 자동으로 켜달라고 안내". 평일 15:50 이후면 GPS 미시작 경고 켜기.
+  const afterGpsPromptTime = weekday >= 1 && weekday <= 5 && (hour > 15 || (hour === 15 && minute >= 50)) && hour < 19;
 
   const { data: routes } = await supabase
     .from("shuttle_routes")
@@ -103,6 +105,15 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
     list.push({ lat: p.lat as number, lng: p.lng as number });
     trailByRoute.set(p.route_id, list);
   }
+
+  // GPS 기기가 있는데 오늘 신호가 아직 없는 노선(요청: "신호가 안오면 켜달라고 안내"). 기기 없는
+  // 노선은 애초에 GPS를 안 쓰므로 경고 대상이 아닙니다.
+  const { data: routeDevices } = await supabase
+    .from("shuttle_tracker_devices")
+    .select("route_id, enabled")
+    .in("route_id", routeIds)
+    .eq("enabled", true);
+  const hasDeviceSet = new Set((routeDevices ?? []).map((d) => d.route_id as string));
 
   // ── 탑승 현황 ────────────────────────────────────────────────────────────────
   // 하원 체크표에서 오늘 하루만 다른 노선으로 옮긴 학생까지 반영합니다(도착체크 API와 같은 규칙).
@@ -212,6 +223,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
       path: pathByRoute.get(r.id) ?? null,
       // 오늘 실제 지나온 자취(GIA 출발 → 현재). 노선 색 실선으로 그립니다(요청).
       trail: trailByRoute.get(r.id) ?? [],
+      // GPS 기기가 있는데 오늘 신호가 없고, 15:50이 지났으면 "기사님께 GPS 켜달라고 안내" 경고.
+      needsGpsStart: afterGpsPromptTime && hasDeviceSet.has(r.id) && (trailByRoute.get(r.id)?.length ?? 0) === 0 && !ping,
       stops: (stopsByRoute.get(r.id) ?? []).filter((s) => s.lat != null && s.lng != null),
       riders: expected.map((x) => ({ name: x.name, boarded: x.status === "탑승" })),
       boardedCount: boarded.length,
@@ -311,5 +324,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
     }
   }
 
-  return NextResponse.json({ label: link.label, today, school, routes: payload, pickups, testMarkers });
+  // GPS 미시작 경고 목록(요청: 15:50 이후 신호 없는 노선을 모아 "기사님께 켜달라고 안내").
+  const gpsAlerts = payload
+    .filter((p) => p.needsGpsStart)
+    .map((p) => ({ routeNo: p.routeNo, driverName: p.driverName }));
+
+  return NextResponse.json({ label: link.label, today, school, routes: payload, pickups, testMarkers, gpsAlerts });
 }

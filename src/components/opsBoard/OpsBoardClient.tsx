@@ -5,6 +5,7 @@ import DismissalOpsClient from "./DismissalOpsClient";
 import { VISIBLE_DEPARTMENTS } from "@/lib/department";
 import { useKstClock } from "@/lib/useKstClock";
 import { useFullscreen } from "@/lib/useFullscreen";
+import { useIdleCursor } from "@/lib/useIdleCursor";
 import { useBoardDensity, type BoardScale, type Density } from "@/lib/useBoardDensity";
 
 // 요청: "gia운영에 있는 업무 탭을 사무실 가운데에 큰 모니터에 띄워서 전체가 한눈에 보고 파악할
@@ -66,6 +67,8 @@ const STATUS_COLOR: Record<string, string> = {
 
 export default function OpsBoardClient({ token }: { token: string }) {
   const [data, setData] = useState<BoardData | null>(null);
+  // 일정 시간 안 움직이면 마우스 커서를 숨깁니다(요청: 대시보드 상시 표시라 커서가 거슬림).
+  const cursorHidden = useIdleCursor(4000);
   // 요청: "cctv프로그램이 너무 많이 차지해서 공간이 많이 없더라고... 시간표랑함께 모든정보들이
   // 뜰 수 있도록" - 창 크기를 재서 글자·여백을 자동으로 줄입니다. 화면 절반을 가정하고 크기를
   // 숫자로 박아두면, CCTV가 절반보다 더 차지할 때 아래 내용이 화면 밖으로 밀려납니다.
@@ -105,22 +108,13 @@ export default function OpsBoardClient({ token }: { token: string }) {
 
   const shuttleMode = !!data && data.shuttle.mode && endedOn !== data.today;
 
-  // 하원 화면으로 바뀌면 전체화면을 시도하고, 끝나면 원래 반반 화면으로 돌려놓습니다.
+  // 요청: "전체화면 안해도 될거같아 지금 업무대시보드를 전체화면으로 계속 띄울거라서" - 앱이
+  // 스스로 전체화면을 강제하거나 안내창을 띄우지 않습니다. 담당자가 브라우저를 이미 전체화면으로
+  // 띄워두므로, 여기서는 아무것도 하지 않습니다. (원하면 상단의 전체화면 버튼으로 직접 전환 가능)
   useEffect(() => {
-    if (shuttleMode) {
-      if (autoTriedRef.current) return;
-      autoTriedRef.current = true;
-      // 브라우저는 "사용자가 방금 누른 직후"가 아니면 전체화면을 거절합니다. 사무실 PC가 크롬
-      // 기업정책으로 자동 전체화면을 허용해 뒀다면 여기서 바로 성공하고, 아니면 버튼을 띄웁니다.
-      enter().then((ok) => setNeedsManualFullscreen(!ok));
-      return;
-    }
     autoTriedRef.current = false;
     setNeedsManualFullscreen(false);
-    // 종료 시각이 지났거나 [하원 종료]를 눌렀을 때 - 전체화면에서 빠져나오는 것은 브라우저
-    // 제약이 없어 완전히 자동으로 됩니다.
-    exit();
-  }, [shuttleMode, enter, exit]);
+  }, [shuttleMode]);
 
   function endDismissal() {
     if (!data) return;
@@ -275,6 +269,7 @@ export default function OpsBoardClient({ token }: { token: string }) {
         touchAction: "manipulation",
         WebkitUserSelect: "none",
         userSelect: "none",
+        cursor: cursorHidden ? "none" : undefined,
         background: "#0f172a",
         color: "#e2e8f0",
         padding: sc.s(16, 8),

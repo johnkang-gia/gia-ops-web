@@ -113,8 +113,12 @@ export default function DriverSetupClient({
         <h2 className="mb-2 text-[15px] font-bold text-slate-800">잠깐, 이것부터 확인해주세요</h2>
         <ul className="space-y-2 text-[14px] leading-relaxed text-slate-600">
           <li>
-            위치는 <b className="text-slate-900">평일 오후 3시 30분 ~ 6시 30분</b>에만 저장됩니다. 그 밖의 시간에 앱이 보낸
-            위치는 학교 서버가 <b className="text-slate-900">받는 즉시 버립니다.</b> 주말·퇴근 후 동선은 남지 않습니다.
+            <b className="text-slate-900">켜고 끄는 것은 기사님이 직접 하십니다.</b> 하원 운행 전에 앱 스위치를 켜고, 운행이
+            끝나면 <b className="text-slate-900">꺼주세요.</b> 꺼두시면 위치가 전혀 전송되지 않습니다.
+          </li>
+          <li>
+            켜두셔도 위치는 <b className="text-slate-900">평일 오후 3시 30분 ~ 6시 30분</b>에만 저장됩니다. 그 밖의 시간에
+            앱이 보낸 위치는 학교 서버가 <b className="text-slate-900">받는 즉시 버립니다.</b>
           </li>
           <li>
             이 위치는 <b className="text-slate-900">하원 차량이 제대로 운행되는지 확인하는 용도로만</b> 씁니다. 근무 평가에
@@ -126,7 +130,7 @@ export default function DriverSetupClient({
         </ul>
         {!enabled && (
           <p className="mt-3 rounded-lg bg-amber-50 p-2.5 text-[13px] font-semibold text-amber-700">
-            지금은 이 차량의 위치 수집이 중지되어 있습니다. 설정만 해두시면 학교에서 켜드립니다.
+            설정만 해두시면 됩니다. 이후 운행 때 앱 스위치를 직접 켜고, 끝나면 꺼주세요.
           </p>
         )}
       </section>
@@ -270,7 +274,9 @@ export default function DriverSetupClient({
                 <div className="text-4xl">✅</div>
                 <p className="mt-2 text-[17px] font-black text-emerald-700">연결되었습니다</p>
                 <p className="mt-1 text-[14px] leading-relaxed text-emerald-700">
-                  설정이 모두 끝났습니다. 앞으로는 아무것도 하지 않으셔도 됩니다. 휴대폰을 다시 켜셔도 자동으로 이어집니다.
+                  설정이 끝났습니다. 이제부터는 <b>기사님이 직접 켜고 끄시면 됩니다.</b> 하원 운행을 시작하기 전에 앱 맨 위
+                  <b>스위치를 켜고</b>, 운행이 끝나면 <b>스위치를 꺼주세요(운행 종료)</b>. 스위치를 꺼두시면 위치가 전혀
+                  전송되지 않습니다.
                 </p>
               </>
             ) : (

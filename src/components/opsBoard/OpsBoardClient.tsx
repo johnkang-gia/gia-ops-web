@@ -253,6 +253,13 @@ export default function OpsBoardClient({ token }: { token: string }) {
   const lateCount = data.absences.filter((a) => a.status === "지각").length;
   const urgentInquiries = (data.inquiries ?? []).filter((q) => q.urgent).length;
 
+  // 요청: "오늘업무는 오늘거만 보이게 해줘"
+  //
+  // 지금까지는 마감이 지난 것까지 함께 올라와서, 오늘 할 일을 보려는데 지난주 것이 위에
+  // 쌓여 있었습니다. 오늘 마감이거나 오늘 새로 들어온 것만 남깁니다.
+  // 스크롤이 없는 화면이라 개수도 함께 제한합니다 - 넘치면 그냥 잘려서 안 보입니다.
+  const todayOnlyTasks = (data.taskSummary.todayTasks ?? []).filter((t) => t.kind !== "지남").slice(0, 8);
+
   return (
     // height + overflow:hidden - 대시보드는 아무도 스크롤하지 않으므로, 넘치면 화면 안에서
     // 각 패널이 알아서 줄어들도록 합니다(밀려나서 안 보이는 것보다 낫습니다).
@@ -322,368 +329,392 @@ export default function OpsBoardClient({ token }: { token: string }) {
         </div>
       </div>
 
-      {/* ① 지금 수업 (시간표) - 화면에서 가장 중요한 정보라 남는 공간을 가장 많이 가져갑니다 */}
-      <Panel
-        sc={sc}
-        /* 요청: "학년 반 시간표 줄이지말고 확실하게 전체 보이게 만들어줘"
-           반이 늘어나도 잘리지 않도록 이 칸이 남는 공간을 크게 가져가고, 그래도 모자라면
-           아래에서 스크롤됩니다(칸 자체를 줄이지 않습니다). */
-        grow={6}
-        /* 요청: "쉬는 시간에는 쉬는시간이라고 뜨게 해주고, 다음교시 무슨시간인지를 미리
-           보여주되 지금시간이 아니라는것을 표시해줘"
-           수업 중이 아닌데 다음 교시가 남아 있으면 쉬는 시간입니다. 수업이 다 끝난 뒤와는
-           다른 상황이라 구분해서 적습니다. */
-        title={
-          data.currentPeriod
-            ? `지금 ${data.currentPeriod.label} (${data.currentPeriod.startTime}~${data.currentPeriod.endTime})`
-            : data.nextPeriod
-            ? `쉬는 시간 · ${data.nextPeriod.startTime}에 ${data.nextPeriod.label} 시작`
-            : "오늘 수업이 모두 끝났습니다"
-        }
-        right={
-          data.currentPeriod && data.nextPeriod
-            ? `다음 ${data.nextPeriod.label} ${data.nextPeriod.startTime}`
-            : null
-        }
-      >
-        {!data.isWeekday ? (
-          <Empty sc={sc} text="주말입니다" />
-        ) : data.grades.length === 0 ? (
-          <Empty sc={sc} text="이 부서에 등록된 반이 없습니다 — [학교 > 반·담임 관리]에서 반을 먼저 만들어주세요" />
-        ) : (
-          /* 요청: "각 학년과 반별로 어느수업이 진행되는지 뜨도록" - 학년을 왼쪽에 세로로 두고,
-             그 학년의 반들을 오른쪽에 가로로 늘어놓아 학년 단위로 훑어볼 수 있게 했습니다. */
-          <div style={{ display: "flex", flexDirection: "column", gap: sc.s(8, 4) }}>
-            {data.grades.map((g) => (
-              <div key={g.grade || "미지정"} style={{ display: "flex", alignItems: "stretch", gap: sc.s(8, 4) }}>
-                <div
-                  style={{
-                    minWidth: sc.s(58, 36),
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    background: "#1e3a5f",
-                    borderRadius: sc.s(10, 6),
-                    fontSize: sc.s(17, 12),
-                    fontWeight: 800,
-                    color: "#bfdbfe",
-                    padding: `0 ${sc.s(8, 5)}px`,
-                  }}
-                >
-                  {g.grade || "미지정"}
-                </div>
-                <div
-                  style={{
-                    flex: 1,
-                    display: "grid",
-                    // 칸 최소폭도 함께 줄여야 좁은 창에서 한 줄에 두 반이라도 들어갑니다.
-                    gridTemplateColumns: `repeat(auto-fill, minmax(${sc.s(138, 86)}px, 1fr))`,
-                    gap: sc.s(6, 4),
-                  }}
-                >
-                  {/* 요청: "그냥 지금 어느학년 어느반이 무슨시간인지 한눈에 볼 수있도록만 해주고".
-                      반 이름과 지금 과목 두 줄만 남기고 담임·다음교시·담당교사는 뺐습니다 - 멀리서
-                      보는 화면에서는 글자가 많을수록 오히려 안 읽힙니다. 수업이 없는 시간에만
-                      교실 위치를 대신 보여줍니다(요청: "수업중이 아닐때 교실위치 보여주는 것은 좋고"). */}
-                  {g.classes.map((c) => {
-                    // 요청: "위치도 알 수 있게 표시해줘 (...) 일단 특수교실들은 장소를 바로
-                    // 표시하지말고, 그냥 교실이 아닌곳에 있다는 표시만 해줬으면 좋겠어"
-                    //
-                    // 그래서 어느 방인지까지는 적지 않고, 교실을 비웠다는 것만 알립니다.
-                    // 반을 찾으러 갈 때 "교실에 갔는데 없더라"를 막는 것이 목적입니다.
-                    // 쉬는 시간에는 다음 교시를 미리 보여주되, 지금이 아니라는 것을 분명히
-                    // 합니다(요청). 색을 죽이고 앞에 "다음"을 붙여, 지금 수업으로 잘못 읽는
-                    // 일이 없게 했습니다.
-                    const inBreak = !data.currentPeriod && !!data.nextPeriod;
-                    const shown = data.currentPeriod ? c.current : inBreak ? c.next : null;
-                    const place = lessonPlace(shown?.subjectName);
-                    return (
-                      <div
-                        key={c.id}
-                        style={{
-                          background: inBreak ? "#172033" : place.special ? "#3f2d16" : "#1e293b",
-                          border:
-                            place.special && !inBreak ? "1px solid #a16207" : "1px dashed " + (inBreak ? "#334155" : "transparent"),
-                          borderRadius: sc.s(10, 6),
-                          padding: `${sc.s(8, 4)}px ${sc.s(10, 6)}px`,
-                          minWidth: 0,
-                        }}
-                      >
-                        {/* 요청: "각반 위치를 항상 (...) 나타나게 해주고 밖이면 교실밖이라고
-                            변화되게 해줘" + "교실명 옆에 나오게 해도 되 학년과 반이 우선이야"
-                            그래서 반 이름을 앞에 크게 두고, 위치는 바로 옆에 작게 붙입니다.
-                            위치는 늘 같은 자리에 있어야 눈이 그 자리를 찾습니다 - 있다 없다
-                            하면 매번 다시 훑게 됩니다. 교실에 있으면 교실 이름을, 나가면 그
-                            자리 글자만 [교실 밖]으로 바뀝니다. */}
-                        <div style={{ display: "flex", alignItems: "center", gap: sc.s(4, 3), minWidth: 0 }}>
-                          <span
-                            style={{
-                              fontSize: sc.s(13, 10),
-                              color: "#cbd5e1",
-                              fontWeight: 800,
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            {c.className}
-                          </span>
-                          <span
-                            style={{
-                              fontSize: sc.s(11, 9),
-                              fontWeight: 700,
-                              color: place.special ? "#fbbf24" : "#64748b",
-                              background: place.special ? "#78350f" : "#0f172a",
-                              borderRadius: sc.s(5, 4),
-                              padding: `0 ${sc.s(5, 3)}px`,
-                              whiteSpace: "nowrap",
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                              minWidth: 0,
-                            }}
-                          >
-                            {place.special ? "교실 밖" : c.room || "교실"}
-                          </span>
-                          {inBreak && shown && (
-                            <span style={{ fontSize: sc.s(11, 9), fontWeight: 800, color: "#64748b", whiteSpace: "nowrap" }}>
-                              다음
-                            </span>
-                          )}
-                        </div>
-                        <div
-                          style={{
-                            fontSize: sc.s(22, 14),
-                            fontWeight: 800,
-                            // 쉬는 시간의 "다음 교시"는 색을 죽여 지금 수업과 헷갈리지 않게 합니다.
-                            color: data.currentPeriod ? (c.current ? "#fff" : "#475569") : shown ? "#7b8ba3" : "#475569",
-                            marginTop: 2,
-                            lineHeight: 1.15,
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          {shown?.subjectName ?? "—"}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </Panel>
-
-      {/* ② 오늘 출결 + 픽업 - 좁은 창에서는 두 칸으로 나누면 이름이 한 명씩만 들어가므로
-          위아래로 쌓습니다. */}
+      {/* ── 위: 교실 상황(좌) + 학부모 문의(우) ──────────────────────────────
+          요청: "교실 상황을 반으로 나누고, 오른쪽에 학부모 문의를 많이 보이게 해줘"
+          이 두 가지가 하루 중 가장 자주 보는 것이라 위쪽 절반씩을 나눠 씁니다. */}
       <div
         style={{
           display: "grid",
           gridTemplateColumns: sc.narrow ? "1fr" : "1fr 1fr",
           gap: sc.s(12, 6),
-          flex: "2 1 0",
+          flex: "5 1 0",
           minHeight: 0,
         }}
       >
-        <Panel sc={sc} title={`오늘 출결 · 결석 ${absentCount} 지각 ${lateCount}`} right={`재적 ${data.studentCount}명`}>
-          {data.absences.length === 0 ? (
-            <Empty sc={sc} text="전원 출석" tone="good" />
+        {/* ① 지금 수업 (시간표) - 화면에서 가장 중요한 정보라 남는 공간을 가장 많이 가져갑니다 */}
+        <Panel
+          sc={sc}
+          /* 요청: "학년 반 시간표 줄이지말고 확실하게 전체 보이게 만들어줘"
+             반이 늘어나도 잘리지 않도록 이 칸이 남는 공간을 크게 가져가고, 그래도 모자라면
+             아래에서 스크롤됩니다(칸 자체를 줄이지 않습니다). */
+          grow={6}
+          /* 요청: "쉬는 시간에는 쉬는시간이라고 뜨게 해주고, 다음교시 무슨시간인지를 미리
+             보여주되 지금시간이 아니라는것을 표시해줘"
+             수업 중이 아닌데 다음 교시가 남아 있으면 쉬는 시간입니다. 수업이 다 끝난 뒤와는
+             다른 상황이라 구분해서 적습니다. */
+          title={
+            data.currentPeriod
+              ? `지금 ${data.currentPeriod.label} (${data.currentPeriod.startTime}~${data.currentPeriod.endTime})`
+              : data.nextPeriod
+              ? `쉬는 시간 · ${data.nextPeriod.startTime}에 ${data.nextPeriod.label} 시작`
+              : "오늘 수업이 모두 끝났습니다"
+          }
+          right={
+            data.currentPeriod && data.nextPeriod
+              ? `다음 ${data.nextPeriod.label} ${data.nextPeriod.startTime}`
+              : null
+          }
+        >
+          {!data.isWeekday ? (
+            <Empty sc={sc} text="주말입니다" />
+          ) : data.grades.length === 0 ? (
+            <Empty sc={sc} text="이 부서에 등록된 반이 없습니다 — [학교 > 반·담임 관리]에서 반을 먼저 만들어주세요" />
           ) : (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: sc.s(6, 4) }}>
-              {data.absences.map((a, i) => (
-                <span
-                  key={i}
-                  title={a.note ?? undefined}
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: sc.s(5, 3),
-                    background: "#1e293b",
-                    borderLeft: `4px solid ${STATUS_COLOR[a.status] ?? "#64748b"}`,
-                    borderRadius: 6,
-                    padding: `${sc.s(5, 3)}px ${sc.s(9, 6)}px`,
-                    fontSize: sc.s(16, 12),
-                  }}
-                >
-                  <b style={{ color: "#fff" }}>{a.name}</b>
-                  <span style={{ fontSize: sc.s(12, 10), color: STATUS_COLOR[a.status] ?? "#94a3b8", fontWeight: 700 }}>{a.status}</span>
-                  {!a.contacted && <span style={{ fontSize: sc.s(11, 9), color: "#f59e0b" }}>연락전</span>}
-                </span>
+            /* 요청: "각 학년과 반별로 어느수업이 진행되는지 뜨도록" - 학년을 왼쪽에 세로로 두고,
+               그 학년의 반들을 오른쪽에 가로로 늘어놓아 학년 단위로 훑어볼 수 있게 했습니다. */
+            <div style={{ display: "flex", flexDirection: "column", gap: sc.s(8, 4) }}>
+              {data.grades.map((g) => (
+                <div key={g.grade || "미지정"} style={{ display: "flex", alignItems: "stretch", gap: sc.s(8, 4) }}>
+                  <div
+                    style={{
+                      minWidth: sc.s(58, 36),
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      background: "#1e3a5f",
+                      borderRadius: sc.s(10, 6),
+                      fontSize: sc.s(17, 12),
+                      fontWeight: 800,
+                      color: "#bfdbfe",
+                      padding: `0 ${sc.s(8, 5)}px`,
+                    }}
+                  >
+                    {g.grade || "미지정"}
+                  </div>
+                  <div
+                    style={{
+                      flex: 1,
+                      display: "grid",
+                      // 요청: "교실들 아이콘 좀더 크게 해서 수업명이 잘리지않게해줘"
+                      // 칸을 넓게 잡아 'Computer Science' 같은 긴 과목명도 들어갑니다.
+                      gridTemplateColumns: `repeat(auto-fill, minmax(${sc.s(178, 120)}px, 1fr))`,
+                      gap: sc.s(6, 4),
+                    }}
+                  >
+                    {/* 요청: "그냥 지금 어느학년 어느반이 무슨시간인지 한눈에 볼 수있도록만 해주고".
+                        반 이름과 지금 과목 두 줄만 남기고 담임·다음교시·담당교사는 뺐습니다 - 멀리서
+                        보는 화면에서는 글자가 많을수록 오히려 안 읽힙니다. 수업이 없는 시간에만
+                        교실 위치를 대신 보여줍니다(요청: "수업중이 아닐때 교실위치 보여주는 것은 좋고"). */}
+                    {g.classes.map((c) => {
+                      // 요청: "위치도 알 수 있게 표시해줘 (...) 일단 특수교실들은 장소를 바로
+                      // 표시하지말고, 그냥 교실이 아닌곳에 있다는 표시만 해줬으면 좋겠어"
+                      //
+                      // 그래서 어느 방인지까지는 적지 않고, 교실을 비웠다는 것만 알립니다.
+                      // 반을 찾으러 갈 때 "교실에 갔는데 없더라"를 막는 것이 목적입니다.
+                      // 쉬는 시간에는 다음 교시를 미리 보여주되, 지금이 아니라는 것을 분명히
+                      // 합니다(요청). 색을 죽이고 앞에 "다음"을 붙여, 지금 수업으로 잘못 읽는
+                      // 일이 없게 했습니다.
+                      const inBreak = !data.currentPeriod && !!data.nextPeriod;
+                      const shown = data.currentPeriod ? c.current : inBreak ? c.next : null;
+                      const place = lessonPlace(shown?.subjectName);
+                      return (
+                        <div
+                          key={c.id}
+                          style={{
+                            background: inBreak ? "#172033" : place.special ? "#3f2d16" : "#1e293b",
+                            border:
+                              place.special && !inBreak ? "1px solid #a16207" : "1px dashed " + (inBreak ? "#334155" : "transparent"),
+                            borderRadius: sc.s(10, 6),
+                            padding: `${sc.s(10, 5)}px ${sc.s(12, 7)}px`,
+                            minWidth: 0,
+                          }}
+                        >
+                          {/* 요청: "각반 위치를 항상 (...) 나타나게 해주고 밖이면 교실밖이라고
+                              변화되게 해줘" + "교실명 옆에 나오게 해도 되 학년과 반이 우선이야"
+                              그래서 반 이름을 앞에 크게 두고, 위치는 바로 옆에 작게 붙입니다.
+                              위치는 늘 같은 자리에 있어야 눈이 그 자리를 찾습니다 - 있다 없다
+                              하면 매번 다시 훑게 됩니다. 교실에 있으면 교실 이름을, 나가면 그
+                              자리 글자만 [교실 밖]으로 바뀝니다. */}
+                          <div style={{ display: "flex", alignItems: "center", gap: sc.s(4, 3), minWidth: 0 }}>
+                            <span
+                              style={{
+                                fontSize: sc.s(13, 10),
+                                color: "#cbd5e1",
+                                fontWeight: 800,
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {c.className}
+                            </span>
+                            <span
+                              style={{
+                                fontSize: sc.s(11, 9),
+                                fontWeight: 700,
+                                color: place.special ? "#fbbf24" : "#64748b",
+                                background: place.special ? "#78350f" : "#0f172a",
+                                borderRadius: sc.s(5, 4),
+                                padding: `0 ${sc.s(5, 3)}px`,
+                                whiteSpace: "nowrap",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                minWidth: 0,
+                              }}
+                            >
+                              {place.special ? "교실 밖" : c.room || "교실"}
+                            </span>
+                            {inBreak && shown && (
+                              <span style={{ fontSize: sc.s(11, 9), fontWeight: 800, color: "#64748b", whiteSpace: "nowrap" }}>
+                                다음
+                              </span>
+                            )}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: sc.s(24, 15),
+                              fontWeight: 800,
+                              // 쉬는 시간의 "다음 교시"는 색을 죽여 지금 수업과 헷갈리지 않게 합니다.
+                              color: data.currentPeriod ? (c.current ? "#fff" : "#475569") : shown ? "#7b8ba3" : "#475569",
+                              marginTop: 2,
+                              lineHeight: 1.15,
+                              // 잘라서 "Comput…"으로 보이면 무슨 수업인지 알 수 없습니다.
+                              // 길면 두 줄까지 내려 씁니다.
+                              overflowWrap: "anywhere",
+                              display: "-webkit-box",
+                              WebkitLineClamp: 2,
+                              WebkitBoxOrient: "vertical" as const,
+                              overflow: "hidden",
+                            }}
+                          >
+                            {shown?.subjectName ?? "—"}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               ))}
             </div>
           )}
         </Panel>
 
-        <Panel sc={sc} title={`오늘 하원 픽업 ${data.pickups.length}명`}>
-          {data.pickups.length === 0 ? (
-            <Empty sc={sc} text="픽업 예정 없음" />
+        {/* ②-b 학부모 문의사항 - 요청: "운영 대시보드에 이 학부모 문의사항도 띄워줘"
+            아직 답하지 않은 것만 올립니다. 처리된 것까지 섞이면 훑어보는 의미가 없습니다. */}
+        <Panel
+          sc={sc}
+          grow={1}
+          title={`학부모 문의 ${data.inquiries?.length ?? 0}건`}
+          right={
+            /* 수집기가 멈추면 문의가 안 들어옵니다. 그런데 화면은 "문의 없음"으로 똑같이
+               보여서, 조용히 아무것도 안 하면서 정상인 척하게 됩니다. 그래서 여기 적습니다. */
+            data.collector?.stale
+              ? "⚠ 토들 수집기 멈춤"
+              : urgentInquiries > 0
+              ? `급한 것 ${urgentInquiries}건`
+              : data.collector?.lastSeen
+              ? `수집 ${new Date(data.collector.lastSeen).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}`
+              : null
+          }
+        >
+          {data.collector?.stale ? (
+            <div
+              style={{
+                background: "#3f1d1d",
+                border: "1px solid #b91c1c",
+                borderRadius: sc.s(8, 6),
+                padding: sc.s(9, 6),
+                fontSize: sc.s(14, 11),
+                color: "#fca5a5",
+                lineHeight: 1.5,
+              }}
+            >
+              <b>토들 수집기가 멈춰 있습니다.</b>
+              <br />
+              {data.collector.status === "login_required"
+                ? "사무실 PC 크롬에서 토들에 다시 로그인해주세요."
+                : data.collector.lastSeen
+                ? `마지막 신호 ${new Date(data.collector.lastSeen).toLocaleString("ko-KR")} · 지금은 토들 문의가 자동으로 들어오지 않습니다.`
+                : "아직 한 번도 연결된 적이 없습니다."}
+            </div>
+          ) : !data.inquiries || data.inquiries.length === 0 ? (
+            <Empty sc={sc} text="답할 문의 없음" tone="good" />
           ) : (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: sc.s(6, 4) }}>
-              {data.pickups.map((name, i) => (
-                <span
-                  key={i}
+            <div style={{ display: "flex", flexDirection: "column", gap: sc.s(4, 3) }}>
+              {/* 요청: "오른쪽에 학부모 문의를 많이 보이게 해줘"
+                  오른쪽 절반을 통으로 쓰므로 넉넉히 올립니다. 스크롤이 없어 넘치면 잘리는데,
+                  급한 것과 최근 것이 위에 오도록 이미 정렬해 두어 잘리는 쪽은 덜 급한 것입니다. */}
+              {data.inquiries.slice(0, sc.narrow ? 6 : 16).map((q) => (
+                <div
+                  key={q.id}
                   style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: sc.s(6, 4),
                     background: "#1e293b",
-                    borderLeft: "4px solid #0ea5e9",
+                    borderLeft: `4px solid ${q.urgent ? "#dc2626" : "#0284c7"}`,
                     borderRadius: 6,
                     padding: `${sc.s(5, 3)}px ${sc.s(9, 6)}px`,
-                    fontSize: sc.s(16, 12),
-                    color: "#fff",
-                    fontWeight: 600,
+                    minWidth: 0,
                   }}
                 >
-                  {name}
-                </span>
+                  <b style={{ fontSize: sc.s(15, 11), color: "#fff", whiteSpace: "nowrap" }}>{q.student}</b>
+                  {q.type && (
+                    <span
+                      style={{
+                        fontSize: sc.s(11, 9),
+                        fontWeight: 700,
+                        color: "#93c5fd",
+                        background: "#1e3a5f",
+                        borderRadius: 5,
+                        padding: `0 ${sc.s(5, 3)}px`,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {q.type}
+                    </span>
+                  )}
+                  <span
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      fontSize: sc.s(14, 11),
+                      color: "#cbd5e1",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {q.summary}
+                  </span>
+                  <span style={{ fontSize: sc.s(11, 9), color: "#64748b", whiteSpace: "nowrap" }}>{inquiryTime(q.at)}</span>
+                </div>
               ))}
             </div>
           )}
         </Panel>
       </div>
 
-      {/* ②-b 학부모 문의사항 - 요청: "운영 대시보드에 이 학부모 문의사항도 띄워줘"
-          아직 답하지 않은 것만 올립니다. 처리된 것까지 섞이면 훑어보는 의미가 없습니다. */}
-      <Panel
-        sc={sc}
-        grow={1}
-        title={`학부모 문의 ${data.inquiries?.length ?? 0}건`}
-        right={
-          /* 수집기가 멈추면 문의가 안 들어옵니다. 그런데 화면은 "문의 없음"으로 똑같이
-             보여서, 조용히 아무것도 안 하면서 정상인 척하게 됩니다. 그래서 여기 적습니다. */
-          data.collector?.stale
-            ? "⚠ 토들 수집기 멈춤"
-            : urgentInquiries > 0
-            ? `급한 것 ${urgentInquiries}건`
-            : data.collector?.lastSeen
-            ? `수집 ${new Date(data.collector.lastSeen).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}`
-            : null
-        }
+      {/* ── 아래: 출결 · 픽업 · 오늘 업무 ────────────────────────────────────
+          요청: "출결과 픽업은 아래로 내려주고". 셋 다 "있으면 보는" 정보라 아래에 나란히
+          둡니다. 위쪽 둘과 달리 대개 몇 줄이면 끝납니다. */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: sc.narrow ? "1fr" : "1fr 1fr 1.4fr",
+          gap: sc.s(12, 6),
+          flex: "3 1 0",
+          minHeight: 0,
+        }}
       >
-        {data.collector?.stale ? (
-          <div
-            style={{
-              background: "#3f1d1d",
-              border: "1px solid #b91c1c",
-              borderRadius: sc.s(8, 6),
-              padding: sc.s(9, 6),
-              fontSize: sc.s(14, 11),
-              color: "#fca5a5",
-              lineHeight: 1.5,
-            }}
-          >
-            <b>토들 수집기가 멈춰 있습니다.</b>
-            <br />
-            {data.collector.status === "login_required"
-              ? "사무실 PC 크롬에서 토들에 다시 로그인해주세요."
-              : data.collector.lastSeen
-              ? `마지막 신호 ${new Date(data.collector.lastSeen).toLocaleString("ko-KR")} · 지금은 토들 문의가 자동으로 들어오지 않습니다.`
-              : "아직 한 번도 연결된 적이 없습니다."}
-          </div>
-        ) : !data.inquiries || data.inquiries.length === 0 ? (
-          <Empty sc={sc} text="답할 문의 없음" tone="good" />
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: sc.s(4, 3) }}>
-            {data.inquiries.slice(0, sc.narrow ? 5 : 8).map((q) => (
-              <div
-                key={q.id}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: sc.s(6, 4),
-                  background: "#1e293b",
-                  borderLeft: `4px solid ${q.urgent ? "#dc2626" : "#0284c7"}`,
-                  borderRadius: 6,
-                  padding: `${sc.s(5, 3)}px ${sc.s(9, 6)}px`,
-                  minWidth: 0,
-                }}
-              >
-                <b style={{ fontSize: sc.s(15, 11), color: "#fff", whiteSpace: "nowrap" }}>{q.student}</b>
-                {q.type && (
+        {/* ② 오늘 출결 + 픽업 - 아래 줄에서 오늘 업무와 나란히 놓입니다(요청). */}
+          <Panel sc={sc} title={`오늘 출결 · 결석 ${absentCount} 지각 ${lateCount}`} right={`재적 ${data.studentCount}명`}>
+            {data.absences.length === 0 ? (
+              <Empty sc={sc} text="전원 출석" tone="good" />
+            ) : (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: sc.s(6, 4) }}>
+                {data.absences.slice(0, 14).map((a, i) => (
+                  <span
+                    key={i}
+                    title={a.note ?? undefined}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: sc.s(5, 3),
+                      background: "#1e293b",
+                      borderLeft: `4px solid ${STATUS_COLOR[a.status] ?? "#64748b"}`,
+                      borderRadius: 6,
+                      padding: `${sc.s(5, 3)}px ${sc.s(9, 6)}px`,
+                      fontSize: sc.s(16, 12),
+                    }}
+                  >
+                    <b style={{ color: "#fff" }}>{a.name}</b>
+                    <span style={{ fontSize: sc.s(12, 10), color: STATUS_COLOR[a.status] ?? "#94a3b8", fontWeight: 700 }}>{a.status}</span>
+                    {!a.contacted && <span style={{ fontSize: sc.s(11, 9), color: "#f59e0b" }}>연락전</span>}
+                  </span>
+                ))}
+              </div>
+            )}
+          </Panel>
+
+          <Panel sc={sc} title={`오늘 하원 픽업 ${data.pickups.length}명`}>
+            {data.pickups.length === 0 ? (
+              <Empty sc={sc} text="픽업 예정 없음" />
+            ) : (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: sc.s(6, 4) }}>
+                {data.pickups.slice(0, 14).map((name, i) => (
+                  <span
+                    key={i}
+                    style={{
+                      background: "#1e293b",
+                      borderLeft: "4px solid #0ea5e9",
+                      borderRadius: 6,
+                      padding: `${sc.s(5, 3)}px ${sc.s(9, 6)}px`,
+                      fontSize: sc.s(16, 12),
+                      color: "#fff",
+                      fontWeight: 600,
+                    }}
+                  >
+                    {name}
+                  </span>
+                ))}
+              </div>
+            )}
+          </Panel>
+        {/* ③ 오늘 업무 */}
+        <Panel
+          sc={sc}
+          grow={2}
+          title={`오늘 업무 ${todayOnlyTasks.length}건`}
+          right={Object.entries(data.taskSummary.statusCounts)
+            .map(([k, v]) => `${k} ${v}`)
+            .join(" · ")}
+        >
+          {todayOnlyTasks.length === 0 ? (
+            <Empty sc={sc} text="오늘 마감·신규 업무 없음" />
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: sc.s(4, 3) }}>
+              {todayOnlyTasks.map((t, i) => (
+                <div
+                  key={i}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: sc.s(8, 5),
+                    background: "#1e293b",
+                    borderRadius: sc.s(8, 5),
+                    padding: `${sc.s(6, 3)}px ${sc.s(10, 6)}px`,
+                  }}
+                >
                   <span
                     style={{
                       fontSize: sc.s(11, 9),
-                      fontWeight: 700,
-                      color: "#93c5fd",
-                      background: "#1e3a5f",
-                      borderRadius: 5,
-                      padding: `0 ${sc.s(5, 3)}px`,
-                      whiteSpace: "nowrap",
+                      fontWeight: 800,
+                      padding: `2px ${sc.s(7, 5)}px`,
+                      borderRadius: 999,
+                      flexShrink: 0,
+                      background: t.kind === "지남" ? "#7f1d1d" : t.kind === "마감" ? "#78350f" : "#1e3a8a",
+                      color: t.kind === "지남" ? "#fca5a5" : t.kind === "마감" ? "#fcd34d" : "#93c5fd",
                     }}
                   >
-                    {q.type}
+                    {t.kind}
                   </span>
-                )}
-                <span
-                  style={{
-                    flex: 1,
-                    minWidth: 0,
-                    fontSize: sc.s(14, 11),
-                    color: "#cbd5e1",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {q.summary}
-                </span>
-                <span style={{ fontSize: sc.s(11, 9), color: "#64748b", whiteSpace: "nowrap" }}>{inquiryTime(q.at)}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </Panel>
+                  {t.urgent && <span style={{ fontSize: sc.s(13, 10) }}>🔥</span>}
+                  <span style={{ fontSize: sc.s(16, 12), color: "#fff", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {t.title}
+                  </span>
+                  {/* 좁은 창에서는 부서까지 넣으면 제목이 잘립니다 - 제목이 먼저입니다. */}
+                  {t.department && !sc.narrow && <span style={{ fontSize: sc.s(12, 10), color: "#64748b", flexShrink: 0 }}>{t.department}</span>}
+                  <span style={{ fontSize: sc.s(12, 10), color: "#94a3b8", flexShrink: 0 }}>{t.status}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </Panel>
+      </div>
 
-      {/* ③ 오늘 업무 */}
-      <Panel
-        sc={sc}
-        grow={2}
-        title={`오늘 업무 ${data.taskSummary.todayTotal}건`}
-        right={Object.entries(data.taskSummary.statusCounts)
-          .map(([k, v]) => `${k} ${v}`)
-          .join(" · ")}
-      >
-        {data.taskSummary.todayTasks.length === 0 ? (
-          <Empty sc={sc} text="오늘 마감·신규 업무 없음" />
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: sc.s(4, 3) }}>
-            {data.taskSummary.todayTasks.map((t, i) => (
-              <div
-                key={i}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: sc.s(8, 5),
-                  background: "#1e293b",
-                  borderRadius: sc.s(8, 5),
-                  padding: `${sc.s(6, 3)}px ${sc.s(10, 6)}px`,
-                }}
-              >
-                <span
-                  style={{
-                    fontSize: sc.s(11, 9),
-                    fontWeight: 800,
-                    padding: `2px ${sc.s(7, 5)}px`,
-                    borderRadius: 999,
-                    flexShrink: 0,
-                    background: t.kind === "지남" ? "#7f1d1d" : t.kind === "마감" ? "#78350f" : "#1e3a8a",
-                    color: t.kind === "지남" ? "#fca5a5" : t.kind === "마감" ? "#fcd34d" : "#93c5fd",
-                  }}
-                >
-                  {t.kind}
-                </span>
-                {t.urgent && <span style={{ fontSize: sc.s(13, 10) }}>🔥</span>}
-                <span style={{ fontSize: sc.s(16, 12), color: "#fff", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {t.title}
-                </span>
-                {/* 좁은 창에서는 부서까지 넣으면 제목이 잘립니다 - 제목이 먼저입니다. */}
-                {t.department && !sc.narrow && <span style={{ fontSize: sc.s(12, 10), color: "#64748b", flexShrink: 0 }}>{t.department}</span>}
-                <span style={{ fontSize: sc.s(12, 10), color: "#94a3b8", flexShrink: 0 }}>{t.status}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </Panel>
 
       <div style={{ fontSize: sc.s(12, 9), color: "#475569", textAlign: "center", flexShrink: 0 }}>
-        {data.label} · 30초마다 자동 갱신 · {data.shuttle.switchLabel}~{data.shuttle.endLabel} 하원 운행 화면(전체화면)
+        {data.label} · 15초마다 자동 갱신 · 새 버전이 올라오면 스스로 새로고침 ·{" "}
+        {data.shuttle.switchLabel}~{data.shuttle.endLabel} 하원 운행 화면(전체화면)
       </div>
     </div>
   );
@@ -721,7 +752,11 @@ function Panel({
         <h2 style={{ fontSize: sc.s(17, 12), fontWeight: 800, color: "#e2e8f0", margin: 0 }}>{title}</h2>
         {right && <span style={{ fontSize: sc.s(13, 10), color: "#64748b", marginLeft: "auto", textAlign: "right" }}>{right}</span>}
       </div>
-      <div style={{ minHeight: 0, overflowY: "auto", flex: 1 }}>{children}</div>
+      {/* 요청: "공용모니터에 연결한거라 스크롤이 되면 내릴사람이 없어, 때문에 스크롤안되게"
+          스크롤을 막으면 넘치는 것은 잘립니다. 그래서 각 칸에서 보여줄 개수를 미리 줄여
+          애초에 넘치지 않게 했습니다 - 아래에 뭔가 더 있는데 아무도 못 보는 것보다,
+          중요한 것부터 화면 안에 들어오게 하는 편이 낫습니다. */}
+      <div style={{ minHeight: 0, overflow: "hidden", flex: 1 }}>{children}</div>
     </div>
   );
 }

@@ -1,3 +1,13 @@
+// 지금 돌고 있는 확장의 버전.
+//
+// 이게 없어서 "고쳤는데 그대로다"를 여러 번 주고받았습니다. 업데이트 스크립트가 파일을
+// 내려받아도 크롬 확장을 새로고침하지 않으면 예전 코드가 계속 돌고, 화면만 봐서는
+// 어느 쪽인지 알 수가 없었습니다. 눈에 보이게 둡니다.
+document.addEventListener("DOMContentLoaded", () => {
+  const el = document.getElementById("ver");
+  if (el) el.textContent = "v" + chrome.runtime.getManifest().version;
+});
+
 // 설정 화면 겸 상태판입니다. 담당자가 여기만 보면 "지금 잘 돌고 있는지"를 알 수 있어야 합니다.
 
 const $ = (id) => document.getElementById(id);

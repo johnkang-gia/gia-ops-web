@@ -100,8 +100,16 @@
     return out;
   }
 
-  const originalFetch = window.fetch;
-  window.fetch = async function (...args) {
+  // 후킹을 한 번만 씌우면 안 됩니다.
+  //
+  // 실제로 확인해보니 이렇습니다:
+  //   - 페이지가 다 뜬 뒤에 씌우면 → 요청이 잡힙니다.
+  //   - 페이지 맨 처음에 씌우면 → 안 잡힙니다.
+  // 토들 번들이 나중에 로드되면서 window.fetch를 통째로 갈아끼워, 먼저 씌운 우리 것을
+  // 버리기 때문입니다. 그래서 계속 지켜보다가 우리 것이 아니게 되면 다시 씌웁니다.
+  // (비교 한 번이라 부담은 없습니다.)
+  let originalFetch = window.fetch;
+  const hookedFetch = async function (...args) {
     const req = args[0];
     const url = typeof req === "string" ? req : (req && req.url) || "";
     const init = args[1];
@@ -184,6 +192,42 @@
     return res;
   };
 
+  function installHook() {
+    if (window.fetch === hookedFetch) return;
+    // 지금 그 자리에 있는 것을 원본으로 삼아 그 위에 다시 씌웁니다.
+    originalFetch = window.fetch;
+    window.fetch = hookedFetch;
+  }
+  installHook();
+  setInterval(installHook, 500);
+
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  // 목록 서식을 아직 못 배웠을 때, 화면을 잠깐 왕복시켜 요청을 일으킵니다.
+  //
+  // 토들은 채팅 목록을 한 번 받아 캐시하므로, 가만히 두면 아무리 기다려도 요청이 다시 오지
+  // 않습니다. 다른 화면에 갔다가 돌아오면 목록을 새로 받아옵니다(실측으로 확인했습니다).
+  // 이 컴퓨터는 수집 전용이라 화면이 잠깐 바뀌어도 누구도 불편하지 않습니다.
+  let retraining = false;
+  async function retrain() {
+    if (retraining) return false;
+    retraining = true;
+    try {
+      // 토들 왼쪽 메뉴는 <a>가 아니라 id가 붙은 <div>입니다(실제 화면에서 확인).
+      //   #chat = Messages, #monitor = Overview
+      const toMessaging = document.querySelector("#chat");
+      const toElsewhere = document.querySelector("#monitor") ?? document.querySelector("#flagged");
+      if (!toMessaging || !toElsewhere) return false;
+      toElsewhere.click();
+      await sleep(2500);
+      toMessaging.click();
+      await sleep(6000);
+      return !!learned.chatListItem;
+    } finally {
+      retraining = false;
+    }
+  }
+
   // 배운 서식을 그대로 쓰되, 변수에서 chat id로 보이는 값만 바꿉니다.
   // 어느 변수가 chat id인지 이름으로 단정하지 않고 "값이 원래 chat id와 같은 칸"을 찾아 바꿉니다
   // - 토들이 변수 이름을 바꿔도 계속 동작합니다.
@@ -253,6 +297,7 @@
     // 채팅 목록 요청도 못 배웠고 갈무리해 둔 목록도 없으면, 아직 아무것도 볼 수 없는 상태입니다.
     // 이때 빈 목록을 돌려주면 "새 메시지 없음"이라는 거짓 안심을 주게 됩니다 - 조용히 아무것도
     // 안 하면서 정상이라고 말하는 것이 이 시스템에서 가장 나쁜 실패입니다.
+    if (!learned.chatListItem) await retrain();
     if (!learned.chatListItem && chats.size === 0) throw new Error("NEEDS_TRAINING");
     if (!learned.chatListItem) return [...chats.entries()].map(([id, v]) => ({ id, ...v }));
     try {

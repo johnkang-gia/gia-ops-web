@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { APP_VERSION } from "@/lib/version";
 import { categorize, extractTargetDate, matchRosterStudents, todayKey, type RosterStudent } from "@/lib/attendanceDigest";
+import { toKoreanDisplayName, type RosterEntry } from "@/lib/pickupParse";
 import { createClient } from "@supabase/supabase-js";
 import { kstParts } from "@/lib/shuttleTracking";
 import { departmentOf, gradeSortKey, isVisibleDepartment, VISIBLE_DEPARTMENTS, type VisibleDepartment } from "@/lib/department";
@@ -236,6 +237,20 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   // 아직 답하지 않은 것만, 급한 것부터 올립니다. 이 화면은 사무실에서 멀찍이 두고 보는
   // 화면이라 "지금 손대야 할 것"만 보여야 합니다 - 처리된 것까지 섞이면 훑어보는 의미가
   // 없어집니다.
+  // 문의 이름을 한글로 바꾸기 위한 전체 명부(부서 무관). 학부모 채널 이름이 영어라
+  // "Diane & Sunwoo Lim"으로 뜨는 것을 "임다이앤 & 임선우"로 바꿔줍니다.
+  const { data: allRoster } = await supabase
+    .from("wr_students")
+    .select("id, name, name_en, grade")
+    .eq("status", "active")
+    .eq("is_demo", false);
+  const nameRoster: RosterEntry[] = (allRoster ?? []).map((s) => ({
+    id: s.id as string,
+    name: (s.name as string) ?? "",
+    name_en: (s.name_en as string | null) ?? null,
+    grade: (s.grade as string | null) ?? null,
+  }));
+
   const { data: inquiryRows } = await supabase
     .from("pickup_requests")
     // 칸을 콕 집어 달라고 하면, 마이그레이션이 아직 안 걸린 동안 조회가 통째로 실패해
@@ -251,7 +266,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     .map((r) => ({
       id: r.id as string,
       student:
-        (r.matched_name as string | null) ?? (r.ai_student_name as string | null) ?? (r.channel_label as string | null) ?? "미확인",
+        toKoreanDisplayName(
+          (r.matched_name as string | null) ?? (r.ai_student_name as string | null),
+          r.channel_label as string | null,
+          nameRoster
+        ) ??
+        (r.channel_label as string | null) ??
+        "미확인",
       type: (r.inquiry_type as string | null) ?? null,
       summary: (r.summary as string | null) ?? "",
       urgent: r.urgency === "높음",

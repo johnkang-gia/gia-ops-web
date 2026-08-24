@@ -128,3 +128,60 @@ export function normalizeTime(raw: unknown): string | null {
   if (h < 0 || h > 23 || min < 0 || min > 59) return null;
   return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
 }
+
+/**
+ * 화면에 보여줄 이름을 한글로 다듬습니다.
+ *
+ * 요청: "영어이름으로 문의를 올렸다면 학생명부와 대조후에 한글이름으로 올려줘 지금
+ * 'diane & sunwoo lim'으로 되어있는것도 그렇고, 'soo j'로 되어있는것도"
+ *
+ * 학부모 채팅방 이름은 영어입니다("Diane & Sunwoo Lim"). 화면에 그대로 뜨면 우리 직원이
+ * 누구인지 한 번 더 머릿속에서 바꿔야 합니다. 그래서 명부와 대조해 한글 이름으로 바꿉니다.
+ *
+ *   - 형제방("Diane & Sunwoo Lim")은 각각을 대조해 "임다이앤 & 임선우"처럼 이어 붙입니다.
+ *   - 한 명이면 그 사람 한글 이름.
+ *   - 이미 한글이거나 명부에서 못 찾으면 원래 값을 그대로 둡니다(억지로 바꾸지 않습니다).
+ */
+export function toKoreanDisplayName(
+  current: string | null | undefined,
+  channelLabel: string | null | undefined,
+  roster: RosterEntry[]
+): string | null {
+  const has = (v: string | null | undefined) => !!v && v.trim().length > 0;
+  // 이미 한글이 섞여 있으면 손대지 않습니다.
+  const hasHangul = (v: string) => /[가-힣]/.test(v);
+  if (has(current) && hasHangul(current as string)) return current as string;
+
+  // 채널 이름에서 사람들을 뽑아 각각 대조합니다. 채널이 가장 규칙적이라 먼저 씁니다.
+  const parsed = parseChannelLabel(channelLabel);
+  if (parsed) {
+    const kos = parsed.names.map((n) => {
+      const grade = parsed.grades[0] ?? null;
+      const m = matchStudent(n, roster, grade);
+      return m?.name ?? null;
+    });
+    // 모두 한글로 바뀌었을 때만 채널 기반 이름을 씁니다. 하나라도 못 찾으면 아래로 넘어갑니다.
+    if (kos.every(Boolean)) return kos.join(" & ");
+  }
+
+  // 채널이 없거나 일부만 맞으면, 지금 값 자체를 한 명으로 보고 대조해봅니다("Soo J").
+  if (has(current)) {
+    const m = matchStudent(current as string, roster);
+    if (m?.name) return m.name;
+
+    // 마지막 수단: 이름이 잘려 온 경우("Soo J" → "Soo Jin Kim"). 영문명이 이 값으로
+    // 시작하는 학생이 **딱 한 명**일 때만 바꿉니다. 여럿이면 누구인지 알 수 없으니 그대로 둡니다
+    // - 엉뚱한 학생 이름으로 바꾸는 것이 영어로 두는 것보다 나쁩니다.
+    const prefix = normalizeName(current as string);
+    if (prefix.length >= 3) {
+      const starts = roster.filter((r) => {
+        const en = normalizeName(r.name_en ?? "");
+        const ko = normalizeName(r.name);
+        return (en && en.startsWith(prefix)) || (ko && ko.startsWith(prefix));
+      });
+      if (starts.length === 1) return starts[0].name;
+    }
+  }
+
+  return has(current) ? (current as string) : null;
+}

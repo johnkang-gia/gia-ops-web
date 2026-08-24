@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
+import { toKoreanDisplayName, type RosterEntry } from "@/lib/pickupParse";
 
 // 학부모 문의사항 — 예전 실시간 로그가 있던 자리입니다.
 //
@@ -108,6 +109,9 @@ export default function ParentInquiryPanel({
   // 나중에 문의사항 검색할 수 있게" - 지우지 않고 숨겨두었다가 여기서 다시 꺼내 봅니다.
   const [showDone, setShowDone] = useState(false);
   const [query, setQuery] = useState("");
+  // 영어로 온 이름을 한글로 바꾸기 위한 명부. 요청: "영어이름으로 문의를 올렸다면 학생명부와
+  // 대조후에 한글이름으로 올려줘". 한 번만 읽어 재사용합니다.
+  const [roster, setRoster] = useState<RosterEntry[]>([]);
 
   const load = useCallback(async () => {
     const supabase = createClient();
@@ -127,6 +131,23 @@ export default function ParentInquiryPanel({
   }, []);
 
   useEffect(() => {
+    // 명부는 자주 바뀌지 않으므로 처음 한 번만 읽습니다.
+    (async () => {
+      const supabase = createClient();
+      const { data } = await supabase
+        .from("wr_students")
+        .select("id, name, name_en, grade")
+        .eq("status", "active")
+        .eq("is_demo", false);
+      setRoster(
+        ((data as { id: string; name: string; name_en: string | null; grade: string | null }[] | null) ?? []).map((s) => ({
+          id: s.id,
+          name: s.name ?? "",
+          name_en: s.name_en ?? null,
+          grade: s.grade ?? null,
+        }))
+      );
+    })();
     load();
     const supabase = createClient();
     const channel = supabase
@@ -200,7 +221,12 @@ export default function ParentInquiryPanel({
   }
 
   function studentOf(r: Inquiry) {
-    return r.matched_name ?? r.ai_student_name ?? r.channel_label ?? "미확인";
+    // 명부와 대조해 한글 이름으로 바꿉니다. 명부가 아직 안 왔거나 못 찾으면 원래 값을 씁니다.
+    return (
+      toKoreanDisplayName(r.matched_name ?? r.ai_student_name, r.channel_label, roster) ??
+      r.channel_label ??
+      "미확인"
+    );
   }
 
   const Row = ({ r, full }: { r: Inquiry; full?: boolean }) => (

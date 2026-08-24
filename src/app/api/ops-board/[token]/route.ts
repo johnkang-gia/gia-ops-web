@@ -282,6 +282,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
       at: r.received_at as string,
       // 답글이 달렸지만 아직 처리로 넘기지 않은 건. 이름 뒤에 초록 체크가 붙습니다.
       replied: !!r.replied_at,
+      // 터치하면 토들 원문으로 바로 갈 수 있게(요청: "터치가능하게").
+      url: (r.source_url as string | null) ?? null,
     }))
     // 요청: "예전문의보다 최근문의가 위로 올라오게" - 급한 것 우선이 아니라 순수 최신순으로
     // 둡니다. 급한 것은 화면에서 빨간 테두리로 이미 구분되므로, 위에 올릴 필요까지는 없습니다.

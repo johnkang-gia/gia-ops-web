@@ -267,6 +267,11 @@ export default function OpsBoardClient({ token }: { token: string }) {
       style={{
         height: "100dvh",
         overflow: "hidden",
+        // 요청: "업무 대시보드 터치가능하게" - 터치스크린에서 눌러 조작할 수 있도록 합니다.
+        // manipulation은 더블탭 확대 지연을 없애 탭이 바로 먹게 합니다.
+        touchAction: "manipulation",
+        WebkitUserSelect: "none",
+        userSelect: "none",
         background: "#0f172a",
         color: "#e2e8f0",
         padding: sc.s(16, 8),
@@ -503,7 +508,9 @@ export default function OpsBoardClient({ token }: { token: string }) {
                           </div>
                           <div
                             style={{
-                              fontSize: sc.s(24, 15),
+                              // 요청: "4교시 좀더 글자 키워주고" - 멀리서 읽는 화면이라 과목명을
+                              // 키웠습니다. 학년 행 높이가 균등해지며 생긴 공간을 여기에 씁니다.
+                              fontSize: sc.s(30, 18),
                               fontWeight: 800,
                               // 쉬는 시간의 "다음 교시"는 색을 죽여 지금 수업과 헷갈리지 않게 합니다.
                               color: data.currentPeriod ? (c.current ? "#fff" : "#475569") : shown ? "#7b8ba3" : "#475569",
@@ -574,7 +581,7 @@ export default function OpsBoardClient({ token }: { token: string }) {
             /* 요청: "글자를 좀더 크게 (...) 이름을 좀더 크게 그리고 그아래에 문의내용 간단히
                요약해서 (...) 스크롤이 내려간다면 계속 몇초에 한번씩 다음페이지 보여줬다가
                돌아왔다가" - 스크롤을 내릴 사람이 없으니 장을 넘기는 쪽으로 했습니다. */
-            <InquiryBoard items={data.inquiries} perPage={sc.narrow ? 4 : 6} s={sc.s} />
+            <InquiryBoard items={data.inquiries} s={sc.s} />
           )}
         </Panel>
       </div>

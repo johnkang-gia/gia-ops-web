@@ -246,8 +246,6 @@ export default function OpsBoardClient({ token }: { token: string }) {
     );
   }
 
-  const absentCount = data.absences.filter((a) => a.status === "결석").length;
-  const lateCount = data.absences.filter((a) => a.status === "지각").length;
   const urgentInquiries = (data.inquiries ?? []).filter((q) => q.urgent).length;
 
   // 요청: "오늘업무는 오늘거만 보이게 해줘"
@@ -647,36 +645,7 @@ export default function OpsBoardClient({ token }: { token: string }) {
           minHeight: 0,
         }}
       >
-        {/* ② 오늘 출결 + 픽업 - 아래 줄에서 오늘 업무와 나란히 놓입니다(요청). */}
-          <Panel sc={sc} title={`오늘 출결 · 결석 ${absentCount} 지각 ${lateCount}`} right={`재적 ${data.studentCount}명`}>
-            {data.absences.length === 0 ? (
-              <Empty sc={sc} text="전원 출석" tone="good" />
-            ) : (
-              <div style={{ display: "flex", flexWrap: "wrap", gap: sc.s(6, 4) }}>
-                {data.absences.slice(0, 14).map((a, i) => (
-                  <span
-                    key={i}
-                    title={a.note ?? undefined}
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: sc.s(5, 3),
-                      background: "#1e293b",
-                      borderLeft: `4px solid ${STATUS_COLOR[a.status] ?? "#64748b"}`,
-                      borderRadius: 6,
-                      padding: `${sc.s(5, 3)}px ${sc.s(9, 6)}px`,
-                      fontSize: sc.s(16, 12),
-                    }}
-                  >
-                    <b style={{ color: "#fff" }}>{a.name}</b>
-                    <span style={{ fontSize: sc.s(12, 10), color: STATUS_COLOR[a.status] ?? "#94a3b8", fontWeight: 700 }}>{a.status}</span>
-                    {!a.contacted && <span style={{ fontSize: sc.s(11, 9), color: "#f59e0b" }}>연락전</span>}
-                  </span>
-                ))}
-              </div>
-            )}
-          </Panel>
-
+        {/* ② 하원 픽업 - 파란색으로 맨 앞(요청: "하원 픽업은 지금같은 파란색으로 앞에 표시"). */}
           <Panel sc={sc} title={`오늘 하원 픽업 ${data.pickups.length}명`}>
             {data.pickups.length === 0 ? (
               <Empty sc={sc} text="픽업 예정 없음" />
@@ -686,7 +655,7 @@ export default function OpsBoardClient({ token }: { token: string }) {
                   <span
                     key={i}
                     style={{
-                      background: "#1e293b",
+                      background: "#0c2740",
                       borderLeft: "4px solid #0ea5e9",
                       borderRadius: 6,
                       padding: `${sc.s(5, 3)}px ${sc.s(9, 6)}px`,
@@ -697,6 +666,58 @@ export default function OpsBoardClient({ token }: { token: string }) {
                   >
                     {name}
                   </span>
+                ))}
+              </div>
+            )}
+          </Panel>
+
+        {/* ③ 오늘 출결 - 결석(빨강)/지각(주황)을 반으로 나눠 한눈에 구분(요청). 조퇴는 지각 쪽에
+            자기 색(보라)으로 함께 둡니다. */}
+          <Panel sc={sc} title="오늘 출결" right={`재적 ${data.studentCount}명`}>
+            {data.absences.length === 0 ? (
+              <Empty sc={sc} text="전원 출석" tone="good" />
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: sc.s(8, 5), height: "100%", minHeight: 0 }}>
+                {([
+                  { key: "결석", color: "#dc2626", items: data.absences.filter((a) => a.status === "결석") },
+                  { key: "지각", color: "#d97706", items: data.absences.filter((a) => a.status !== "결석") },
+                ] as const).map((col) => (
+                  <div key={col.key} style={{ display: "flex", flexDirection: "column", minHeight: 0, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: sc.s(5, 3), marginBottom: sc.s(5, 3) }}>
+                      <span style={{ width: sc.s(9, 7), height: sc.s(9, 7), borderRadius: 3, background: col.color }} />
+                      <span style={{ fontSize: sc.s(13, 11), fontWeight: 800, color: col.color }}>
+                        {col.key} {col.items.length}
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: sc.s(5, 3), overflowY: "auto", minHeight: 0, alignContent: "flex-start" }}>
+                      {col.items.length === 0 ? (
+                        <span style={{ fontSize: sc.s(12, 10), color: "#475569" }}>없음</span>
+                      ) : (
+                        col.items.slice(0, 16).map((a, i) => (
+                          <span
+                            key={i}
+                            title={a.note ?? undefined}
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: sc.s(4, 3),
+                              background: "#1e293b",
+                              borderLeft: `4px solid ${STATUS_COLOR[a.status] ?? col.color}`,
+                              borderRadius: 6,
+                              padding: `${sc.s(4, 3)}px ${sc.s(8, 5)}px`,
+                              fontSize: sc.s(15, 12),
+                            }}
+                          >
+                            <b style={{ color: "#fff" }}>{a.name}</b>
+                            {a.status === "조퇴" && (
+                              <span style={{ fontSize: sc.s(11, 9), color: STATUS_COLOR["조퇴"], fontWeight: 700 }}>조퇴</span>
+                            )}
+                            {!a.contacted && <span style={{ fontSize: sc.s(10, 9), color: "#f59e0b" }}>연락전</span>}
+                          </span>
+                        ))
+                      )}
+                    </div>
+                  </div>
                 ))}
               </div>
             )}

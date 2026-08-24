@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { APP_VERSION } from "@/lib/version";
-import { categorize, extractTargetDate, matchRosterStudents, todayKey, type RosterStudent } from "@/lib/attendanceDigest";
+import { categorize, extractTargetDate, matchRosterStudents, todayKey, looksLikePronounReply, type RosterStudent } from "@/lib/attendanceDigest";
 import { toKoreanDisplayName, type RosterEntry } from "@/lib/pickupParse";
 import { createClient } from "@supabase/supabase-js";
 import { kstParts } from "@/lib/shuttleTracking";
@@ -194,6 +194,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
 
   for (const m of mirror ?? []) {
     const content = (m.content as string | null) ?? "";
+    // "he will be late"처럼 대명사로 시작하는 답글은 다른 통보에 대한 답이라 새 결석/지각이
+    // 아닙니다(요청). 학생 이름이 없으므로 어차피 대조도 안 되지만, 명시적으로 걸러 둡니다.
+    if (looksLikePronounReply(content)) continue;
     const category = categorize(content);
     // 대시보드 출결 칸에는 결석·지각·조퇴만 올립니다(픽업은 아래 별도 칸에서 다룹니다).
     if (!category || category === "픽업") continue;

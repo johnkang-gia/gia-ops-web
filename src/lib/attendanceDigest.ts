@@ -26,7 +26,7 @@ export const ATTENDANCE_CATEGORIES: {
     icon: "🚫",
     color: "text-red-600",
     chipClass: "bg-red-50 text-red-600",
-    keywords: ["결석", "안 와", "안와", "못 와", "못와", "안 옵니다", "absent", "absence"],
+    keywords: ["결석", "안 와", "안와", "못 와", "못와", "안 옵니다", "absent", "absence", "not here", "not be here", "not in school", "not coming"],
   },
   {
     key: "지각",
@@ -45,6 +45,16 @@ export const ATTENDANCE_CATEGORIES: {
     keywords: ["조퇴", "일찍", "early"],
   },
 ];
+
+// "he will be late", "she is not coming" 처럼 **주어가 대명사뿐이고 이름이 없는** 문장은
+// 대개 다른 사람 메시지에 대한 답글입니다(요청: "he will be late의 경우 seojun in G2A is not
+// here에 관한 답변인데 이걸 그냥 긁어왔더라고"). 이런 문장은 그 자체로 새 결석/지각 통보가
+// 아니므로, 문장에서 학생 이름을 전혀 못 찾았을 때 이 함수가 true면 집계에서 제외합니다.
+export function looksLikePronounReply(text: string): boolean {
+  const t = (text ?? "").trim().toLowerCase();
+  // 문장 앞이 he/she/they + (is/will/won't/isn't ...) 로 시작.
+  return /^(he|she|they|he's|she's|they're)\b/.test(t);
+}
 
 export function categorize(text: string): AttendanceCategory | null {
   const lower = text.toLowerCase();
@@ -202,13 +212,22 @@ function findEnglishNameCandidates(text: string): string[] {
         .split(/\s+/)
         .filter(Boolean)
         .map((t) => t.replace(/^[^A-Za-z]+|[^A-Za-z']+$/g, ""))
-        .filter((t) => t.length > 0 && !EN_NAME_STOP_WORDS.has(t.toLowerCase()));
+        // 'G2A'·'2A'처럼 학년/반 표기는 이름이 아니므로 후보에서 뺍니다(숫자가 섞인 토큰).
+        .filter((t) => t.length > 0 && !/\d/.test(t) && !EN_NAME_STOP_WORDS.has(t.toLowerCase()));
       const last2 = tokens.slice(-2);
       if (last2.length === 2) out.push(last2.join(" "));
-      if (last2.length >= 1) out.push(last2.slice(-1).join(" "));
+      // 마지막 두 토막뿐 아니라 각 토막도 후보로 넣습니다 - 'Benecia will be absent'나
+      // 'seojun ... is not here'처럼 이름(first name)만 적힌 경우를 first-name 색인으로 잡기 위함.
+      for (const t of tokens.slice(-3)) out.push(t);
     }
   }
   return out;
+}
+
+// 문장에서 'G2A'·'G2'·'2A'·'grade 2' 같은 학년 힌트를 뽑습니다(영문 first-name 동명이인 구분용).
+function extractGradeHintFromText(text: string): string | null {
+  const m = text.match(/\bG\s?(\d{1,2})\b/i) || text.match(/\bgrade\s?(\d{1,2})\b/i) || text.match(/\b(\d{1,2})\s?[A-Za-z]\b/);
+  return m ? m[1] : null;
 }
 
 // 원문 미리보기에서 구글챗 멘션("@이름")을 걷어냅니다. "@"로 시작하는 토큰은 태그이지 학생
@@ -546,23 +565,34 @@ export function matchRosterStudents(text: string, roster: RosterStudent[]): Matc
 
   // 한글 이름으로 아무도 못 찾은 경우에만 영어 이름 대조를 시도합니다(한글 문장에 우연히 영어
   // 단어가 섞여 있어도 이미 한글로 찾은 학생과 중복으로 잡히지 않도록).
+  // 영어 이름 색인: (1) 전체 이름("benecia kim") (2) 이름(first name)만("benecia"). 학부모가
+  // 성 없이 이름만 적는 경우("Benecia will be absent", "seojun is not here")가 흔해서, 이름만으로도
+  // 대조되게 first-name 색인을 함께 둡니다. 같은 이름이 여러 명이면 문장의 학년(G2A 등)으로 좁힙니다.
   const byNameEn = new Map<string, RosterStudent[]>();
+  const byFirstEn = new Map<string, RosterStudent[]>();
   for (const s of roster) {
     if (!s.nameEn) continue;
     const key = normalizeEnName(s.nameEn);
     if (!key) continue;
-    const arr = byNameEn.get(key) ?? [];
-    arr.push(s);
-    byNameEn.set(key, arr);
+    (byNameEn.get(key) ?? byNameEn.set(key, []).get(key)!).push(s);
+    const first = key.split(" ")[0];
+    if (first && first.length >= 2) (byFirstEn.get(first) ?? byFirstEn.set(first, []).get(first)!).push(s);
   }
 
   if (byNameEn.size > 0) {
     const alreadyFound = new Set(found.map((f) => f.name));
+    const gradeHint = normalizeGrade(extractGradeHintFromText(text));
     for (const candidate of findEnglishNameCandidates(text)) {
       const key = normalizeEnName(candidate);
       if (!key) continue;
-      const list = byNameEn.get(key);
-      if (!list || list.length === 0) continue;
+      // 전체 이름 우선, 없으면 first-name으로.
+      let list = byNameEn.get(key) ?? byFirstEn.get(key) ?? [];
+      if (list.length === 0) continue;
+      // 여러 명이면 학년으로 좁혀 한 명만 남을 때 채택(못 좁히면 건너뜀 - 엉뚱한 아이 방지).
+      if (list.length > 1 && gradeHint) {
+        const narrowed = list.filter((s) => normalizeGrade(s.grade) === gradeHint);
+        if (narrowed.length >= 1) list = narrowed;
+      }
       const picked = list[0];
       if (alreadyFound.has(picked.name)) continue;
       const hasHomonym = list.length > 1;

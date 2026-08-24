@@ -26,7 +26,10 @@ export const ATTENDANCE_CATEGORIES: {
     icon: "🚫",
     color: "text-red-600",
     chipClass: "bg-red-50 text-red-600",
-    keywords: ["결석", "안 와", "안와", "못 와", "못와", "안 옵니다", "absent", "absence", "not here", "not be here", "not in school", "not coming"],
+    // 주의: "not here / isn't here / not here yet"는 담임 선생님이 "아이가 아직 교실에 안 왔다"고
+    // 문의하는 문구라 결석 판단이 아닙니다(요청). 그래서 결석 키워드에서 제외합니다 - 이런 문의는
+    // 행정실이 학부모께 등원/지각/결석을 되물어 확인합니다. 확실한 결석 표현만 남깁니다.
+    keywords: ["결석", "안 와", "안와", "못 와", "못와", "안 옵니다", "absent", "absence", "not coming"],
   },
   {
     key: "지각",

@@ -72,6 +72,7 @@ export default async function ShuttleChecklistPage({
   let assignmentsData: {
     id: string;
     stop_id: string;
+    student_id: string | null;
     student_name_raw: string;
     weekdays: number[];
     override_route_id: string | null;
@@ -84,11 +85,29 @@ export default async function ShuttleChecklistPage({
     if (stopIds.length > 0) {
       const assignRes = await supabase
         .from("shuttle_assignments_basic")
-        .select("id, stop_id, student_name_raw, weekdays, override_route_id, note")
+        .select("id, stop_id, student_id, student_name_raw, weekdays, override_route_id, note")
         .in("stop_id", stopIds);
       assignmentsData = assignRes.data ?? [];
     }
   }
+
+  // 요청: "유치부랑 다있는거 같은데 우리 명단만 보이게 (...) 명단에 없는 이름들은 전부 숨김".
+  // 하원 셔틀은 초등부(우리 명부)만 다룹니다. 버스에 함께 실린 유치부·중고등부는 명부의 부서로
+  // 걸러 숨깁니다. 배정에 student_id가 연결돼 있으면 그 학생의 부서로, 없으면 이름으로 대조합니다.
+  const { data: elemStudents } = await supabase
+    .from("wr_students_basic")
+    .select("id, name, department")
+    .eq("status", "active");
+  const elemIdSet = new Set(
+    (elemStudents ?? []).filter((s) => s.department === "초등부").map((s) => s.id as string)
+  );
+  const elemNameSet = new Set(
+    (elemStudents ?? []).filter((s) => s.department === "초등부").map((s) => (s.name as string).replace(/\s+/g, ""))
+  );
+  assignmentsData = assignmentsData.filter((a) => {
+    if (a.student_id) return elemIdSet.has(a.student_id);
+    return elemNameSet.has((a.student_name_raw ?? "").replace(/\s+/g, ""));
+  });
 
   const todayWeekday = new Date().getDay();
   const today = new Date().toISOString().slice(0, 10);

@@ -75,24 +75,53 @@ type Data = {
   testMarkers?: TestMarker[];
 };
 
-// 노선마다 다른 색을 줘서 지도에서 어느 차인지 구분되게 합니다.
-const ROUTE_COLORS = ["#f97316", "#22d3ee", "#a3e635", "#f472b6", "#facc15", "#818cf8", "#34d399", "#fb7185"];
+// 노선마다 색을 줍니다. 요청: "셔틀색도 각 번호 색으로 (...) 각 번호는 지역으로 나눠져 있도록".
+// 노선 목록은 sort_order(대체로 지역 묶음) 순서라, 순서대로 색상환(HSL)을 고르게 나눠주면
+// 가까운 노선끼리 비슷한 계열, 전체적으로는 서로 구분되는 색이 됩니다. 48개 노선이어도 겹치지
+// 않게 index로 색을 만듭니다.
+function routeColorAt(i: number, total: number): string {
+  const hue = Math.round((i / Math.max(1, total)) * 360);
+  return `hsl(${hue}, 72%, 45%)`;
+}
 
-// 지도 위 차량 마커 - 노란 셔틀 밴 그림 안에 노선 번호만 적습니다(요청: "노란색셔틀밴 그림으로
-// 표시하고 그안에 숫자만 (...) 실제 셔틀이 가는느낌"). 노선 색은 얇은 테두리로만 살짝 넣어 어느
-// 노선인지 구분되게 하되, 밴 자체는 노란색으로 통일합니다.
-function vanMarkerHtml(routeNo: string, routeColor: string): string {
+// 두 좌표 사이 진행 방향(북=0, 시계방향 도). 요청: "가는 방향도 알 수 있도록".
+function bearingDeg(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const toDeg = (r: number) => (r * 180) / Math.PI;
+  const y = Math.sin(toRad(b.lng - a.lng)) * Math.cos(toRad(b.lat));
+  const x =
+    Math.cos(toRad(a.lat)) * Math.sin(toRad(b.lat)) -
+    Math.sin(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.cos(toRad(b.lng - a.lng));
+  return (toDeg(Math.atan2(y, x)) + 360) % 360;
+}
+
+// 지도 위 차량 마커 - "위에서 본" 셔틀 밴(요청: "옆에서보는 모양말고 위에서 본 모양"). 밴은
+// 노선 색으로 칠하고(요청: "셔틀색도 각 번호 색으로"), 진행 방향으로 회전합니다(요청: "가는
+// 방향도 알 수 있도록"). 번호는 회전과 무관하게 항상 똑바로 읽히게 밴 위에 겹쳐 올립니다.
+function vanMarkerHtml(routeNo: string, routeColor: string, heading: number): string {
   const n = String(routeNo).replace(/호$/, "");
-  const fs = n.length >= 3 ? 10 : 13;
-  return `<div style="filter:drop-shadow(0 2px 3px rgba(0,0,0,.45))">
-    <svg width="60" height="32" viewBox="0 0 60 32" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="17" cy="27" r="4.5" fill="#1f2937"/><circle cx="17" cy="27" r="1.8" fill="#cbd5e1"/>
-      <circle cx="44" cy="27" r="4.5" fill="#1f2937"/><circle cx="44" cy="27" r="1.8" fill="#cbd5e1"/>
-      <path d="M4 22 L4 10 Q4 6 8 6 L41 6 Q46 6 50 10 L56 17 Q57 18 57 20 L57 21 Q57 24 54 24 L7 24 Q4 24 4 22 Z" fill="#facc15" stroke="${routeColor}" stroke-width="2"/>
-      <path d="M42 9 L49 15 L49 17 L42 17 Z" fill="#bae6fd" stroke="#7dd3fc" stroke-width="0.5"/>
-      <rect x="53.5" y="18" width="3" height="2.6" rx="1" fill="#fef3c7"/>
-      <text x="22" y="18.5" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="${fs}" font-weight="900" fill="#1f2937">${n}</text>
-    </svg>
+  const fs = n.length >= 3 ? 11 : 15;
+  // 위에서 본 밴(기본은 북쪽=위를 향함). 앞유리(연파랑)가 있는 쪽이 앞. heading만큼 회전.
+  const van = `
+    <svg width="40" height="52" viewBox="0 0 40 52" xmlns="http://www.w3.org/2000/svg"
+         style="transform:rotate(${Math.round(heading)}deg);transform-origin:50% 50%;display:block">
+      <!-- 진행방향 화살촉 -->
+      <path d="M20 0 L26 8 L14 8 Z" fill="${routeColor}"/>
+      <!-- 차체 -->
+      <rect x="8" y="6" width="24" height="42" rx="7" fill="${routeColor}" stroke="#111827" stroke-width="1.6"/>
+      <!-- 앞유리(앞쪽) -->
+      <rect x="11" y="9" width="18" height="7" rx="2.5" fill="#dbeafe" opacity="0.95"/>
+      <!-- 뒷유리(뒤쪽) -->
+      <rect x="12" y="40" width="16" height="4.5" rx="2" fill="#0f172a" opacity="0.35"/>
+      <!-- 사이드미러 -->
+      <rect x="4" y="15" width="4" height="3" rx="1.5" fill="#111827"/>
+      <rect x="32" y="15" width="4" height="3" rx="1.5" fill="#111827"/>
+    </svg>`;
+  return `<div style="position:relative;width:40px;height:52px;filter:drop-shadow(0 2px 3px rgba(0,0,0,.5))">
+    ${van}
+    <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+                font-family:Arial,Helvetica,sans-serif;font-size:${fs}px;font-weight:900;color:#fff;
+                text-shadow:0 0 3px rgba(0,0,0,.9),0 1px 2px rgba(0,0,0,.9)">${n}</div>
   </div>`;
 }
 
@@ -246,12 +275,12 @@ export default function DismissalOpsClient({
         ) : (
           <div style={{ display: "flex", flexWrap: "wrap", gap: sc.s(6, 4), flexShrink: 0 }}>
             {data.routes.map((r, i) => (
-              <RouteChip key={r.routeId} route={r} color={ROUTE_COLORS[i % ROUTE_COLORS.length]} sc={sc} />
+              <RouteChip key={r.routeId} route={r} color={routeColorAt(i, data.routes.length)} sc={sc} />
             ))}
           </div>
         )}
 
-        <RunningPanel routes={data.routes} colors={ROUTE_COLORS} sc={sc} />
+        <RunningPanel routes={data.routes} sc={sc} />
 
         <PickupPanel pickups={data.pickups ?? []} sc={sc} />
       </div>
@@ -306,10 +335,10 @@ function RouteChip({ route: r, color, sc }: { route: RouteRow; color: string; sc
 // GPS가 정류장 반경에 들어오면 그 정류장을 도착으로 잡고(track), 여기서 "방금 어느 정류장에
 // 닿았고 거기서 누가 내리며, 다음은 어느 정류장인지"를 한 줄로 보여줍니다. 아직 정류장 좌표가
 // 학습되지 않았거나 GPS가 없는 차는 이 목록에 나타나지 않습니다(카드 띠의 도착·출발만 표시).
-function RunningPanel({ routes, colors, sc }: { routes: RouteRow[]; colors: string[]; sc: BoardScale }) {
+function RunningPanel({ routes, sc }: { routes: RouteRow[]; sc: BoardScale }) {
   // 출발했거나(운행중) 정류장 도착이 하나라도 잡힌 차만 - "지금 길 위에 있는 차"에 집중합니다.
   const active = routes
-    .map((r, i) => ({ r, color: colors[i % colors.length] }))
+    .map((r, i) => ({ r, color: routeColorAt(i, routes.length) }))
     .filter(({ r }) => r.status === "운행중" || (r.stopProgress ?? []).some((s) => s.arrived));
   if (active.length === 0) return null;
 
@@ -475,32 +504,34 @@ function AllRoutesMap({ routes, school, testMarkers = [] }: { routes: RouteRow[]
         }
 
         routes.forEach((r, i) => {
-          const color = ROUTE_COLORS[i % ROUTE_COLORS.length];
+          const color = routeColorAt(i, routes.length);
           const active = r.status === "운행중";
 
-          // 계획 경로선(참고용) - 실도로 캐시가 있으면 그것, 없으면 정류장을 이은 직선. 실제
-          // 이동 자취가 위에 덮이므로 연한 점선으로만 둡니다.
+          // 예상(계획) 경로선 - 실도로 캐시가 있으면 그것, 없으면 정류장을 이은 직선. 요청: "예상
+          // 노선과, 지나온 노선 실선으로" - 예상 경로도 실선으로(단, 지나온 자취와 구분되게 조금
+          // 연하게). 전체 노선이 보이도록 이 경로 점들도 화면 맞춤(bounds)에 넣습니다.
           const line = r.path?.length ? r.path : r.stops.map((s) => ({ lat: s.lat as number, lng: s.lng as number }));
           if (line.length > 1) {
             const polyline = new kakao.maps.Polyline({
               path: line.map((p) => new kakao.maps.LatLng(p.lat, p.lng)),
-              strokeWeight: 2,
+              strokeWeight: 3,
               strokeColor: color,
-              strokeOpacity: 0.3,
-              strokeStyle: "shortdash",
+              strokeOpacity: 0.45,
+              strokeStyle: "solid",
             });
             polyline.setMap(map);
             overlaysRef.current.push(polyline);
+            for (const p of line) { bounds.extend(new kakao.maps.LatLng(p.lat, p.lng)); hasPoint = true; }
           }
 
-          // 오늘 실제 지나온 자취 - 노선 색 실선(요청: "전체노선 다 실선으로 (...) 각 노선 색으로").
+          // 오늘 실제 지나온 자취 - 노선 색 진한 실선.
           const trail = r.trail ?? [];
           if (trail.length > 1) {
             const tline = new kakao.maps.Polyline({
               path: trail.map((p) => new kakao.maps.LatLng(p.lat, p.lng)),
-              strokeWeight: active ? 6 : 5,
+              strokeWeight: active ? 7 : 6,
               strokeColor: color,
-              strokeOpacity: 0.95,
+              strokeOpacity: 1,
               strokeStyle: "solid",
             });
             tline.setMap(map);
@@ -509,11 +540,13 @@ function AllRoutesMap({ routes, school, testMarkers = [] }: { routes: RouteRow[]
             hasPoint = true;
           }
 
-          // 차량 마커 - 기사님 휴대폰에서 들어온 최신 위치. 노란 셔틀 밴 그림 안에 번호만.
+          // 차량 마커 - 위에서 본 셔틀 밴을 진행 방향으로 회전해 그립니다.
           if (r.ping && r.pingFresh) {
+            // 진행 방향: 자취 마지막 두 점으로 계산. 자취가 짧으면 정면(위)으로 둡니다.
+            const heading = trail.length >= 2 ? bearingDeg(trail[trail.length - 2], trail[trail.length - 1]) : 0;
             const overlay = new kakao.maps.CustomOverlay({
               position: new kakao.maps.LatLng(r.ping.lat, r.ping.lng),
-              content: vanMarkerHtml(r.routeNo, color),
+              content: vanMarkerHtml(r.routeNo, color, heading),
               xAnchor: 0.5,
               yAnchor: 0.5,
               zIndex: 10,

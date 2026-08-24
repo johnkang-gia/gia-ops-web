@@ -114,6 +114,8 @@ async function askTab(tabId, cmd) {
 // 더해집니다). 알람은 1분마다 울리므로, 앞의 수집이 아직 도는 중이면 이번 차례는 거릅니다.
 // 겹쳐 돌면 같은 메시지를 두 번 보내고 화면도 두 번 왕복합니다.
 let running = false;
+// 마지막으로 '로그인 필요'를 만나 탭을 새로고침해 본 시각. 매 분 새로고침하지 않도록 쿨다운.
+let lastLoginReload = 0;
 
 async function runOnce() {
   if (running) return;
@@ -165,13 +167,41 @@ async function runOnceInner() {
   if (!reply?.ok) {
     const err = String(reply?.error ?? "");
     if (err === "LOGIN_REQUIRED") {
-      await setState({ status: "로그인 필요", detail: "이 PC 크롬에서 토들에 다시 로그인해주세요." });
-      await heartbeat("login_required", "토들 로그인이 풀렸습니다.");
+      // 실제로 로그인이 풀린 경우도 있지만, 크롬이 밤새 탭을 잠재웠다 깨울 때 로그인 정보를
+      // 잠깐 못 읽어 생기는 '가짜 로그인 필요'도 많습니다(요청: "로그인이 되어있는데 로그인
+      // 필요라고"). 그래서 8분에 한 번, 토들 탭을 새로고침하고 한 번 더 시도해 스스로 낫게
+      // 합니다. 그래도 안 되면 진짜로 로그인이 풀린 것이라 안내를 띄웁니다.
+      const now = Date.now();
+      if (tabId != null && now - lastLoginReload > 8 * 60 * 1000) {
+        lastLoginReload = now;
+        try {
+          await chrome.tabs.reload(tabId);
+        } catch {}
+        await new Promise((r) => setTimeout(r, 6000));
+        const retry = await askTab(tabId, "collect");
+        if (retry && retry.ok) {
+          reply = retry; // 새로고침으로 복구됨 - 아래에서 정상 처리로 이어집니다.
+        } else {
+          await setState({
+            status: "로그인 필요",
+            detail: "화면은 로그인돼 보여도 토들 접속이 만료됐을 수 있습니다. 토들 탭에서 새로고침(F5) 후 로그인 화면이 뜨면 다시 로그인해주세요.",
+          });
+          await heartbeat("login_required", "토들 로그인이 풀렸습니다(자동 복구 실패).");
+          return;
+        }
+      } else {
+        await setState({
+          status: "로그인 필요",
+          detail: "화면은 로그인돼 보여도 토들 접속이 만료됐을 수 있습니다. 토들 탭에서 새로고침(F5) 후 로그인 화면이 뜨면 다시 로그인해주세요.",
+        });
+        await heartbeat("login_required", "토들 로그인이 풀렸습니다.");
+        return;
+      }
+    } else {
+      await setState({ status: "오류", detail: err || "알 수 없는 오류" });
+      await heartbeat("error", err || "알 수 없는 오류");
       return;
     }
-    await setState({ status: "오류", detail: err || "알 수 없는 오류" });
-    await heartbeat("error", err || "알 수 없는 오류");
-    return;
   }
 
   // ── 아직 보내지 않은 메시지만 골라냅니다 ──────────────────────────────────

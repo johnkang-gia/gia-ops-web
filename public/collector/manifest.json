@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "GIA 토들 픽업 수집기",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "description": "토들에 새로 온 학부모 메시지를 읽어 GIA 운영앱의 픽업 인박스로 보냅니다. 토들의 '안 읽음' 표시는 그대로 둡니다.",
   "permissions": [
     "storage",

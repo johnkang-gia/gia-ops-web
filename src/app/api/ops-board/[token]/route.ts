@@ -237,6 +237,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     .limit(400);
 
   for (const r of reqRows ?? []) {
+    if (r.is_demo) continue; // 데모 연습용 문의는 실제 대시보드 집계에서 제외.
     const text = ((r.raw_text as string | null) ?? (r.summary as string | null) ?? "").toString();
     const category = categorize(text);
     // kind='픽업'은 AI가 이미 픽업으로 확정한 건이라, 본문에 픽업 키워드가 없어도 픽업으로 봅니다.
@@ -332,6 +333,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     .limit(40);
 
   const inquiries = (inquiryRows ?? [])
+    .filter((r) => !r.is_demo) // 데모 연습용 문의 제외.
     .map((r) => ({
       id: r.id as string,
       student:

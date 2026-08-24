@@ -352,7 +352,10 @@ export default async function DashboardLayout({
     isHomeroomTeacher = (count ?? 0) > 0;
   }
 
-  const homeHref = isTeacher ? "/weekly-report" : "/home";
+  // 교사는 로그인하면 "우리 반 현황"(자기반 문의·픽업 대시보드)이 첫 화면입니다(요청: "교사
+  // 권한으로 로그인했을때 (...) 제일 첫화면으로 나오는 대시보드"). 담임 배정이 없는 과목 교사는
+  // 볼 문의가 없으므로 기존처럼 위클리 리포트를 첫 화면으로 둡니다.
+  const homeHref = isTeacher ? (isHomeroomTeacher ? "/my-class" : "/weekly-report") : "/home";
 
   // 교사는 GIA ops/업무 등 다른 메뉴를 아예 볼 수 없고 위클리 리포트만 보입니다(계약직으로
   // 짧게 근무할 수도 있어 내부 문서 성격의 다른 메뉴를 감춥니다 - middleware.ts에서 실제
@@ -360,6 +363,10 @@ export default async function DashboardLayout({
   let categories: NavCategory[];
   if (isTeacher) {
     categories = [
+      // 담임 선생님에게만 "우리 반 현황"(자기반 문의·픽업)을 첫 항목으로 둡니다.
+      ...(isHomeroomTeacher
+        ? [{ key: "myclass", label: "우리 반 현황", labelEn: "My Class", icon: "🏫", href: "/my-class", accent: "teal" } as NavCategory]
+        : []),
       { key: "homeroom", label: "내 담임반", labelEn: "My Homeroom", icon: "🏠", href: "/weekly-report/homeroom", accent: "teal" },
       { key: "subjects", label: "내 담당과목", labelEn: "My Subjects", icon: "📘", href: "/weekly-report/subjects", accent: "teal" },
       // 실시간 셔틀은 교사 메뉴에서 뺐습니다(요청: "교사화면에서 실시간 셔틀은 안보여도 되고").

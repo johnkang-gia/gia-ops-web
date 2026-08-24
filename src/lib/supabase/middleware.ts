@@ -195,6 +195,7 @@ export async function updateSession(request: NextRequest) {
       if (
         position === "교사" &&
         !path.startsWith("/weekly-report") &&
+        !path.startsWith("/my-class") &&
         !path.startsWith("/account") &&
         !path.startsWith("/attendance") &&
         !path.startsWith("/pickup") &&
@@ -202,7 +203,9 @@ export async function updateSession(request: NextRequest) {
         !path.startsWith("/api/")
       ) {
         const url = request.nextUrl.clone();
-        url.pathname = "/weekly-report";
+        // 담임 교사는 /my-class가 첫 화면입니다. 담임 배정이 없는 과목 교사는 그 페이지에서
+        // 다시 /weekly-report로 넘어갑니다(page.tsx의 가드).
+        url.pathname = "/my-class";
         return NextResponse.redirect(url);
       }
     }
@@ -218,6 +221,7 @@ export async function updateSession(request: NextRequest) {
         isValidPreviewPosition(preview) &&
         preview === "교사" &&
         !path.startsWith("/weekly-report") &&
+        !path.startsWith("/my-class") &&
         !path.startsWith("/account") &&
         !path.startsWith("/attendance") &&
         !path.startsWith("/pickup") &&
@@ -225,7 +229,9 @@ export async function updateSession(request: NextRequest) {
         !path.startsWith("/api/")
       ) {
         const url = request.nextUrl.clone();
-        url.pathname = "/weekly-report";
+        // 담임 교사는 /my-class가 첫 화면입니다. 담임 배정이 없는 과목 교사는 그 페이지에서
+        // 다시 /weekly-report로 넘어갑니다(page.tsx의 가드).
+        url.pathname = "/my-class";
         return NextResponse.redirect(url);
       }
     }

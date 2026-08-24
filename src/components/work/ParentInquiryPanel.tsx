@@ -129,7 +129,9 @@ export default function ParentInquiryPanel({
       .eq("kind", "문의")
       .order("received_at", { ascending: false })
       .limit(200);
-    setRows((data as Inquiry[] | null) ?? []);
+    // 데모 계정 연습용 문의(is_demo)는 실제 행정실 문의 목록에 섞이지 않게 걸러냅니다.
+    // 마이그레이션 전(칸이 아직 없음)이라도 undefined는 통과하므로 화면이 깨지지 않습니다.
+    setRows(((data as (Inquiry & { is_demo?: boolean })[] | null) ?? []).filter((r) => !r.is_demo));
   }, []);
 
   useEffect(() => {

@@ -18,7 +18,14 @@ import { useBoardDensity, type BoardScale, type Density } from "@/lib/useBoardDe
 
 import { lessonPlace } from "@/lib/lessonLocation";
 
-const POLL_MS = 30_000;
+// 요청: "바뀌면 자동으로 새로고침해서 페이지를 수정해줘"
+//
+// 30초마다 받아오면 교시가 바뀐 뒤 최대 30초 동안 지난 시간표가 걸려 있습니다. 종이 쳤는데
+// 화면은 아직 지난 교시를 보여주면, 보는 사람이 화면을 안 믿게 됩니다. 그래서 두 가지를
+// 함께 씁니다.
+//   - 평소에는 15초마다 받아옵니다.
+//   - 교시가 끝나는 시각을 미리 알고 있으므로, 그 순간에 맞춰 한 번 더 받아옵니다.
+const POLL_MS = 15_000;
 
 type Lesson = { subjectName: string; teacherName: string | null; room: string | null };
 type BoardData = {
@@ -155,6 +162,24 @@ export default function OpsBoardClient({ token }: { token: string }) {
     return () => clearInterval(t);
   }, [load]);
 
+  // 교시가 바뀌는 바로 그 순간에 맞춰 한 번 더 받아옵니다.
+  //
+  // 지금 교시의 끝나는 시각(또는 다음 교시의 시작 시각)까지 남은 시간을 재서, 그때 딱 맞춰
+  // 다시 부릅니다. 종이 치는 순간 화면도 같이 바뀝니다.
+  const boundary = data?.currentPeriod?.endTime ?? data?.nextPeriod?.startTime ?? null;
+  useEffect(() => {
+    if (!boundary) return;
+    const [h, m] = boundary.split(":").map(Number);
+    if (Number.isNaN(h) || Number.isNaN(m)) return;
+    const now = new Date();
+    const at = new Date(now);
+    at.setHours(h, m, 2, 0); // 2초 여유 - 서버와 시계가 조금 어긋나도 지난 교시를 안 잡도록
+    const wait = at.getTime() - now.getTime();
+    if (wait <= 0 || wait > 2 * 60 * 60 * 1000) return;
+    const t = setTimeout(load, wait);
+    return () => clearTimeout(t);
+  }, [boundary, load]);
+
   if (errorMsg && !data) {
     return (
       <div style={{ minHeight: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", background: "#0f172a", color: "#e2e8f0", fontSize: 22 }}>
@@ -269,9 +294,26 @@ export default function OpsBoardClient({ token }: { token: string }) {
       {/* ① 지금 수업 (시간표) - 화면에서 가장 중요한 정보라 남는 공간을 가장 많이 가져갑니다 */}
       <Panel
         sc={sc}
-        grow={3}
-        title={data.currentPeriod ? `지금 ${data.currentPeriod.label} (${data.currentPeriod.startTime}~${data.currentPeriod.endTime})` : "수업 시간 아님"}
-        right={data.nextPeriod ? `다음 ${data.nextPeriod.label} ${data.nextPeriod.startTime}` : null}
+        /* 요청: "학년 반 시간표 줄이지말고 확실하게 전체 보이게 만들어줘"
+           반이 늘어나도 잘리지 않도록 이 칸이 남는 공간을 크게 가져가고, 그래도 모자라면
+           아래에서 스크롤됩니다(칸 자체를 줄이지 않습니다). */
+        grow={6}
+        /* 요청: "쉬는 시간에는 쉬는시간이라고 뜨게 해주고, 다음교시 무슨시간인지를 미리
+           보여주되 지금시간이 아니라는것을 표시해줘"
+           수업 중이 아닌데 다음 교시가 남아 있으면 쉬는 시간입니다. 수업이 다 끝난 뒤와는
+           다른 상황이라 구분해서 적습니다. */
+        title={
+          data.currentPeriod
+            ? `지금 ${data.currentPeriod.label} (${data.currentPeriod.startTime}~${data.currentPeriod.endTime})`
+            : data.nextPeriod
+            ? `쉬는 시간 · ${data.nextPeriod.startTime}에 ${data.nextPeriod.label} 시작`
+            : "오늘 수업이 모두 끝났습니다"
+        }
+        right={
+          data.currentPeriod && data.nextPeriod
+            ? `다음 ${data.nextPeriod.label} ${data.nextPeriod.startTime}`
+            : null
+        }
       >
         {!data.isWeekday ? (
           <Empty sc={sc} text="주말입니다" />
@@ -318,13 +360,19 @@ export default function OpsBoardClient({ token }: { token: string }) {
                     //
                     // 그래서 어느 방인지까지는 적지 않고, 교실을 비웠다는 것만 알립니다.
                     // 반을 찾으러 갈 때 "교실에 갔는데 없더라"를 막는 것이 목적입니다.
-                    const place = lessonPlace(c.current?.subjectName);
+                    // 쉬는 시간에는 다음 교시를 미리 보여주되, 지금이 아니라는 것을 분명히
+                    // 합니다(요청). 색을 죽이고 앞에 "다음"을 붙여, 지금 수업으로 잘못 읽는
+                    // 일이 없게 했습니다.
+                    const inBreak = !data.currentPeriod && !!data.nextPeriod;
+                    const shown = data.currentPeriod ? c.current : inBreak ? c.next : null;
+                    const place = lessonPlace(shown?.subjectName);
                     return (
                       <div
                         key={c.id}
                         style={{
-                          background: place.special ? "#3f2d16" : "#1e293b",
-                          border: place.special ? "1px solid #a16207" : "1px solid transparent",
+                          background: inBreak ? "#172033" : place.special ? "#3f2d16" : "#1e293b",
+                          border:
+                            place.special && !inBreak ? "1px solid #a16207" : "1px dashed " + (inBreak ? "#334155" : "transparent"),
                           borderRadius: sc.s(10, 6),
                           padding: `${sc.s(8, 4)}px ${sc.s(10, 6)}px`,
                           minWidth: 0,
@@ -334,7 +382,22 @@ export default function OpsBoardClient({ token }: { token: string }) {
                           <span style={{ fontSize: sc.s(13, 10), color: "#94a3b8", fontWeight: 700, whiteSpace: "nowrap" }}>
                             {c.className}
                           </span>
-                          {place.special && (
+                          {inBreak && shown && (
+                            <span
+                              style={{
+                                fontSize: sc.s(11, 9),
+                                fontWeight: 800,
+                                color: "#64748b",
+                                background: "#1e293b",
+                                borderRadius: sc.s(5, 4),
+                                padding: `0 ${sc.s(5, 3)}px`,
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              다음
+                            </span>
+                          )}
+                          {place.special && !inBreak && (
                             <span
                               style={{
                                 fontSize: sc.s(11, 9),
@@ -354,7 +417,8 @@ export default function OpsBoardClient({ token }: { token: string }) {
                           style={{
                             fontSize: sc.s(22, 14),
                             fontWeight: 800,
-                            color: c.current ? "#fff" : "#475569",
+                            // 쉬는 시간의 "다음 교시"는 색을 죽여 지금 수업과 헷갈리지 않게 합니다.
+                            color: data.currentPeriod ? (c.current ? "#fff" : "#475569") : shown ? "#7b8ba3" : "#475569",
                             marginTop: 2,
                             lineHeight: 1.15,
                             overflow: "hidden",
@@ -362,7 +426,7 @@ export default function OpsBoardClient({ token }: { token: string }) {
                             whiteSpace: "nowrap",
                           }}
                         >
-                          {c.current?.subjectName ?? (c.room || "—")}
+                          {shown?.subjectName ?? (data.currentPeriod ? c.room || "—" : "—")}
                         </div>
                       </div>
                     );

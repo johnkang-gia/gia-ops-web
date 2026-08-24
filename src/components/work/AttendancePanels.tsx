@@ -5,6 +5,7 @@ import type { GoogleChatMirrorMessage, Task, TeamMember } from "@/lib/types";
 import type { RosterStudent } from "@/lib/attendanceDigest";
 import GoogleChatMirrorPanel from "./GoogleChatMirrorPanel";
 import AttendanceDigestPanel from "./AttendanceDigestPanel";
+import ParentInquiryPanel from "./ParentInquiryPanel";
 
 // 출결내역(정리본)과 출결알림(구글챗 원문)을 좌우로 나란히 두는 대신 탭으로 전환합니다(요청:
 // "출결알림창과, 출결 내력창을 탭으로 전환할 수 있게... 기본은 출결내역 탭이 먼저"). 필터링이
@@ -25,13 +26,19 @@ export default function AttendancePanels({
   roster: RosterStudent[];
   onTaskCreated?: (task: Task) => void;
 }) {
-  const [tab, setTab] = useState<"digest" | "chat">("digest");
+  // 요청: "업무메뉴에서 출결내역을 지금 학부모 문의사항으로 넣고, 출결내역쪽에 학부모
+  // 문의사항을 넣어서 더 크게 보게 해주고"
+  //
+  // 학부모 문의가 이 자리에서 가장 자주 보는 것이 되었으므로 기본 탭으로 둡니다. 출결내역은
+  // 옆 탭으로 그대로 남습니다 - 없애는 게 아니라 자리를 바꾸는 것입니다.
+  const [tab, setTab] = useState<"inquiry" | "digest" | "chat">("inquiry");
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <div className="flex shrink-0 gap-1 px-2.5 pt-2">
         {(
           [
+            { key: "inquiry", label: "💬 학부모 문의" },
             { key: "digest", label: "📊 출결내역" },
             { key: "chat", label: "🚸 출결알림" },
           ] as const
@@ -50,7 +57,9 @@ export default function AttendancePanels({
         ))}
       </div>
       <div className="min-h-0 flex-1 overflow-hidden">
-        {tab === "digest" ? (
+        {tab === "inquiry" ? (
+          <ParentInquiryPanel currentUserEmail={userEmail} full />
+        ) : tab === "digest" ? (
           <AttendanceDigestPanel messages={messages} department={department} roster={roster} currentUserEmail={userEmail} />
         ) : (
           <GoogleChatMirrorPanel

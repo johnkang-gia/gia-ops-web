@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import ParentInquiryPanel from "./ParentInquiryPanel";
 import type { DepartmentMemo } from "@/lib/types";
 import { useToast } from "@/components/common/ToastProvider";
 
@@ -152,9 +151,10 @@ export default function ActivityLog({
 
   return (
     <div className="glass mb-2 px-3 py-2">
-      <div className="flex gap-3 divide-x divide-black/5">
+      {/* 학부모 문의사항은 위쪽 넓은 자리(출결내역이 있던 탭)로 옮겼습니다 - 세 줄로 보는
+          것은 사실상 안 보는 것과 같아서였습니다(요청). 여기는 부서 메모가 전체 폭을 씁니다. */}
+      <div className="flex gap-3">
         <MemoPanel department={department} currentUserEmail={currentUserEmail} />
-        <ParentInquiryPanel currentUserEmail={currentUserEmail} />
       </div>
     </div>
   );

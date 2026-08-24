@@ -77,7 +77,21 @@ function whenLabel(iso: string): string {
 const ROW_HEIGHT = 22;
 const VISIBLE_ROWS = 3;
 
-export default function ParentInquiryPanel({ currentUserEmail }: { currentUserEmail: string }) {
+export default function ParentInquiryPanel({
+  currentUserEmail,
+  /**
+   * 넓은 자리에 놓을 때 켭니다.
+   *
+   * 요청: "출결내역쪽에 학부모 문의사항을 넣어서 더 크게 보게 해주고"
+   * 좁은 자리에서는 세 줄만 보여주고 [전체보기]로 창을 띄웠는데, 하루에 열 건 넘게 오는
+   * 것을 세 줄로 보는 건 사실상 안 보는 것과 같습니다. 넓은 자리에서는 목록을 그대로
+   * 다 펼치고 줄 간격도 넉넉하게 둡니다.
+   */
+  full = false,
+}: {
+  currentUserEmail: string;
+  full?: boolean;
+}) {
   const notify = useToast();
   const [rows, setRows] = useState<Inquiry[]>([]);
   const [expanded, setExpanded] = useState(false);
@@ -192,9 +206,15 @@ export default function ParentInquiryPanel({ currentUserEmail }: { currentUserEm
   );
 
   return (
-    <div className="flex min-w-0 flex-1 flex-col pl-3">
-      <div className="mb-1.5 flex w-full items-center justify-between gap-1">
-        <button type="button" onClick={() => setExpanded(true)} className="flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:underline">
+    <div className={"flex min-w-0 flex-1 flex-col " + (full ? "h-full px-2.5 pt-2" : "pl-3")}>
+      <div className="mb-1.5 flex w-full shrink-0 items-center justify-between gap-1">
+        <button
+          type="button"
+          onClick={() => !full && setExpanded(true)}
+          className={
+            "flex items-center gap-1.5 font-bold text-blue-600 " + (full ? "text-sm" : "text-xs hover:underline")
+          }
+        >
           <span>💬 학부모 문의사항</span>
           {openCount > 0 && (
             <span className={"rounded-full px-1.5 text-[10px] font-bold " + (urgentCount > 0 ? "bg-red-100 text-red-600" : "bg-amber-100 text-amber-700")}>
@@ -211,18 +231,23 @@ export default function ParentInquiryPanel({ currentUserEmail }: { currentUserEm
           >
             내 반
           </button>
-          <button type="button" onClick={() => setExpanded(true)} className="text-[10px] font-medium text-blue-400 hover:underline">
-            전체보기 →
-          </button>
+          {!full && (
+            <button type="button" onClick={() => setExpanded(true)} className="text-[10px] font-medium text-blue-400 hover:underline">
+              전체보기 →
+            </button>
+          )}
         </div>
       </div>
 
       {sorted.length === 0 ? (
-        <p className="text-[11px] opacity-40">아직 들어온 문의가 없습니다.</p>
+        <p className={full ? "text-xs opacity-40" : "text-[11px] opacity-40"}>아직 들어온 문의가 없습니다.</p>
       ) : (
-        <div className="flex flex-1 flex-col overflow-y-auto" style={{ maxHeight: ROW_HEIGHT * VISIBLE_ROWS }}>
+        <div
+          className="flex min-h-0 flex-1 flex-col overflow-y-auto"
+          style={full ? undefined : { maxHeight: ROW_HEIGHT * VISIBLE_ROWS }}
+        >
           {sorted.map((r) => (
-            <Row key={r.id} r={r} />
+            <Row key={r.id} r={r} full={full} />
           ))}
         </div>
       )}

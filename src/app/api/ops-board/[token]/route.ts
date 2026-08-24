@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { APP_VERSION } from "@/lib/version";
 import { createClient } from "@supabase/supabase-js";
 import { kstParts } from "@/lib/shuttleTracking";
 import { departmentOf, gradeSortKey, isVisibleDepartment, VISIBLE_DEPARTMENTS, type VisibleDepartment } from "@/lib/department";
@@ -280,6 +281,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   const shuttleMode = nowMinutes >= switchMinutes && (endMinutes <= switchMinutes || nowMinutes < endMinutes);
 
   return NextResponse.json({
+    // 지금 서버에 올라가 있는 앱 버전.
+    //
+    // 이 화면은 공용 모니터에 며칠씩 그대로 켜져 있습니다. 그래서 새 버전을 배포해도 화면은
+    // 예전 코드를 계속 씁니다 - 누군가 가서 F5를 눌러야 바뀝니다. 화면 쪽에서 이 값을 자기
+    // 버전과 견주어 보고, 다르면 스스로 새로고침합니다.
+    appVersion: APP_VERSION,
     label: link.label,
     department,
     today,

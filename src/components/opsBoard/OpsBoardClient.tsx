@@ -17,6 +17,7 @@ import { useBoardDensity, type BoardScale, type Density } from "@/lib/useBoardDe
 // 오후 4시(설정값)가 되면 요청대로 이 절반이 통째로 하원 차량 화면으로 바뀝니다.
 
 import { lessonPlace } from "@/lib/lessonLocation";
+import { APP_VERSION } from "@/lib/version";
 
 // 요청: "바뀌면 자동으로 새로고침해서 페이지를 수정해줘"
 //
@@ -29,6 +30,7 @@ const POLL_MS = 15_000;
 
 type Lesson = { subjectName: string; teacherName: string | null; room: string | null };
 type BoardData = {
+  appVersion?: string;
   label: string;
   department: string;
   today: string;
@@ -162,6 +164,34 @@ export default function OpsBoardClient({ token }: { token: string }) {
     const t = setInterval(load, POLL_MS);
     return () => clearInterval(t);
   }, [load]);
+
+  // 새 버전이 올라오면 스스로 새로고침합니다.
+  //
+  // 요청: "공용 모니터라서 내가 가서 새로고침 누르는것 보다 자체적으로 새로고침이 되었으면"
+  //
+  // 이 화면은 며칠씩 켜둔 채로 둡니다. 그동안 새 버전을 배포해도 브라우저는 처음 받아둔
+  // 코드를 계속 쓰기 때문에, 고친 것이 화면에 하나도 반영되지 않습니다. 그래서 서버가
+  // 알려준 버전과 지금 돌고 있는 코드의 버전을 견주어 보고, 다르면 알아서 새로고침합니다.
+  //
+  // 새 버전이 올라왔을 때만 딱 한 번입니다(요청). 시간이 됐다고 새로고침하지 않습니다 -
+  // 보고 있는 중에 화면이 깜빡이면 그것대로 방해가 됩니다.
+  //
+  // 새로고침한 뒤에도 버전이 그대로면(배포 캐시 등) 무한히 반복될 수 있어, 한 번 새로고침한
+  // 뒤에는 10분 동안 다시 하지 않습니다. 새로고침이 계속 도는 화면은 아무것도 못 읽습니다.
+  const serverVersion = data?.appVersion ?? null;
+  useEffect(() => {
+    if (!serverVersion || serverVersion === APP_VERSION) return;
+    try {
+      const last = Number(sessionStorage.getItem("opsBoardReloadAt") ?? "0");
+      if (Date.now() - last < 10 * 60 * 1000) return;
+      sessionStorage.setItem("opsBoardReloadAt", String(Date.now()));
+    } catch {
+      /* 저장이 막혀 있으면 그냥 새로고침합니다 */
+    }
+    // 잠깐 뒤에 새로고침합니다 - 배포 직후에는 파일이 아직 다 퍼지지 않았을 수 있습니다.
+    const t = setTimeout(() => window.location.reload(), 3000);
+    return () => clearTimeout(t);
+  }, [serverVersion]);
 
   // 교시가 바뀌는 바로 그 순간에 맞춰 한 번 더 받아옵니다.
   //

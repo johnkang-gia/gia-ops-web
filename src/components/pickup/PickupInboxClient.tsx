@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useToast } from "@/components/common/ToastProvider";
+import UpcomingPickups, { type ScheduleRow } from "@/components/pickup/UpcomingPickups";
 
 // 픽업 인박스. 토들·전화·교사·직접입력 어디로 들어왔든 여기 한 곳에 모입니다.
 //
@@ -46,10 +47,12 @@ export default function PickupInboxClient({
   initialRows,
   students,
   collector,
+  schedules,
 }: {
   initialRows: PickupRow[];
   students: StudentOption[];
   collector: { last_seen_at: string; status: string | null; detail: string | null } | null;
+  schedules: ScheduleRow[];
 }) {
   const notify = useToast();
   const [rows, setRows] = useState(initialRows);
@@ -143,6 +146,9 @@ export default function PickupInboxClient({
           <>✓ 토들 수집기 정상 · 마지막 신호 {hhmm(collector.last_seen_at)}</>
         )}
       </div>
+
+      {/* 앞으로 예정된 픽업 - 오늘 것만 보면 "이번주 목금" 같은 예약을 놓칩니다 */}
+      <UpcomingPickups initialRows={schedules} />
 
       {/* 확인이 필요한 건 */}
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">

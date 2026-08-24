@@ -5,6 +5,7 @@ import { isStaffOrAboveUser } from "@/lib/roles";
 import { kstParts } from "@/lib/shuttleTracking";
 import GuideButton from "@/components/common/GuideButton";
 import PickupInboxClient, { type PickupRow, type StudentOption } from "@/components/pickup/PickupInboxClient";
+import { type ScheduleRow } from "@/components/pickup/UpcomingPickups";
 
 export const dynamic = "force-dynamic";
 
@@ -52,7 +53,7 @@ export default async function PickupInboxPage() {
   const supabase = await createClient();
   const today = kstParts(new Date()).iso;
 
-  const [rowsRes, studentsRes, heartbeatRes] = await Promise.all([
+  const [rowsRes, studentsRes, heartbeatRes, schedulesRes] = await Promise.all([
     supabase
       .from("pickup_requests")
       .select("*")
@@ -66,6 +67,14 @@ export default async function PickupInboxPage() {
       .eq("status", "active")
       .order("name"),
     supabase.from("integration_heartbeats").select("last_seen_at, status, detail").eq("key", "toddle-collector").maybeSingle(),
+    // 앞으로 예정된 픽업. 오늘 것만 보면 "이번주 목금" 같은 예약을 놓칩니다.
+    supabase
+      .from("pickup_schedules")
+      .select("id, service_date, pickup_time, student_name, student_id, status, needs_confirm, source_note, homeroom_email")
+      .gte("service_date", today)
+      .in("status", ["예정", "적용됨", "실패"])
+      .order("service_date", { ascending: true })
+      .limit(200),
   ]);
 
   return (
@@ -85,6 +94,7 @@ export default async function PickupInboxPage() {
         collector={
           (heartbeatRes.data as { last_seen_at: string; status: string | null; detail: string | null } | null) ?? null
         }
+        schedules={(schedulesRes.data as ScheduleRow[] | null) ?? []}
       />
     </div>
   );

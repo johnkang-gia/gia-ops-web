@@ -33,6 +33,9 @@ export type IngestResult = {
   status?: "확인대기" | "확정" | "무시";
   studentName?: string | null;
   pickupTime?: string | null;
+  /** 이 연락으로 예약된 날짜들(오늘 것 포함). */
+  scheduledDates?: string[];
+  scheduledCount?: number;
 };
 
 // 판단은 기계적인 편이고 사람이 인박스에서 한 번 더 보므로 저렴한 모델(Haiku)을 씁니다.
@@ -43,7 +46,9 @@ const SYSTEM = `당신은 국제학교 행정실의 보조입니다. 학부모�
   "kind": "픽업" | "문의" | "기타",
   "student_name": "본문에 언급된 학생 이름(없으면 null)",
   "pickup_time": "HH:MM 24시간 형식(픽업이고 시각 언급이 있을 때만, 없으면 null)",
-  "date_hint": "today | tomorrow | null",
+  "pickup_dates": [
+    { "date": "YYYY-MM-DD", "time": "HH:MM 또는 null", "certain": true 또는 false, "why": "이 날짜로 본 근거를 짧게" }
+  ],
   "inquiry_type": "출결 | 수업·학습 | 생활·교우 | 건강·안전 | 차량·하원 | 행사·일정 | 납부·행정 | 기타",
   "summary": "한국어 한 줄 요약(25자 안팎). 학부모 문장을 그대로 옮기지 말고 무엇을 원하는지 적으세요.",
   "urgency": "높음 | 보통 | 낮음",
@@ -70,12 +75,28 @@ urgency 기준
 - 픽업이면서 문의이기도 한 경우(예: "오늘 데리러 갈게요, 그리고 숙제가 뭔가요?")는 "픽업"으로
   분류하고 summary에 문의 내용도 함께 적으세요.
 - 애매하면 confidence를 0.5 미만으로 주세요. 낮은 값은 사람이 확인하라는 뜻이지 틀렸다는
-  뜻이 아닙니다. 확실하지 않은데 높은 값을 주는 것이 가장 나쁩니다.`;
+  뜻이 아닙니다. 확실하지 않은데 높은 값을 주는 것이 가장 나쁩니다.
+
+pickup_dates 규칙 (픽업일 때만 채우고, 아니면 빈 배열)
+- 학부모가 말한 날을 **하나도 빠뜨리지 말고** 모두 적으세요. 연락 한 건이 여러 날을 가리키는
+  경우가 많습니다. 예)
+  - "이번주 목금 픽업입니다" → 이번 주 목요일과 금요일, 두 줄
+  - "내일부터 금요일까지 제가 데려갑니다" → 내일부터 그 주 금요일까지 평일 전부
+  - "오늘 3시에 데리러 갈게요" → 오늘 한 줄, time은 "15:00"
+  - "8/26, 8/27 픽업" → 그 두 날짜
+- 반드시 아래에 주어진 [오늘] 정보를 기준으로 실제 달력 날짜를 계산해 YYYY-MM-DD로 쓰세요.
+- 토요일·일요일은 넣지 마세요(하원 차량이 없습니다).
+- 지난 날짜는 넣지 마세요. 이미 지난 요일을 말한 것 같으면 다음 주로 보지 말고 빼세요.
+- certain: 날짜를 분명히 짚을 수 있으면 true. "이번주 목금"처럼 어느 주인지 해석이 필요하거나
+  "며칠간", "당분간"처럼 범위가 흐릿하면 false로 주세요. false여도 날짜는 최선으로 채워
+  넣으세요 - 비워두면 그냥 잊힙니다.
+- 시각이 날짜마다 다르면 각 줄의 time에 따로 적으세요.`;
 
 type AiOut = {
   kind?: unknown;
   student_name?: unknown;
   pickup_time?: unknown;
+  pickup_dates?: unknown;
   date_hint?: unknown;
   inquiry_type?: unknown;
   summary?: unknown;
@@ -92,6 +113,57 @@ const pick = (v: unknown, allowed: string[]): string | null =>
 // 이 값 이상이면 사람 확인 없이 바로 픽업으로 확정합니다. 픽업은 "아이를 누구에게 보내느냐"의
 // 문제라 기준을 넉넉히 잡았습니다 - 틀린 자동 확정보다 한 번 더 눌러 확인하는 편이 낫습니다.
 const AUTO_CONFIRM_MIN = 0.85;
+
+/** 예약을 잡아둘 수 있는 최대 앞날. 이보다 먼 날짜는 잘못 읽은 것으로 봅니다. */
+const MAX_SCHEDULE_DAYS = 45;
+
+function addDays(iso: string, days: number): string {
+  const d = new Date(iso + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/** 그 주의 월요일. AI가 "이번주 목금"을 실제 날짜로 옮길 때 기준으로 씁니다. */
+function mondayOfWeek(iso: string, weekday: number): string {
+  // weekday: 0=일 … 6=토. 일요일은 그 주가 이미 끝났으므로 다음 날 월요일을 기준으로 봅니다.
+  const back = weekday === 0 ? -1 : weekday - 1;
+  return addDays(iso, -back);
+}
+
+export type ParsedPickupDate = { date: string; time: string | null; certain: boolean; why: string | null };
+
+/**
+ * AI가 준 날짜 목록을 다듬습니다.
+ *
+ * AI는 날짜 계산을 틀릴 수 있습니다. 틀린 날짜로 예약을 걸면 엉뚱한 날 아이가 차를 못 타거나
+ * 반대로 태워 보내게 되므로, 여기서 걸러냅니다 - 지난 날, 너무 먼 날, 주말, 중복.
+ */
+export function normalizePickupDates(raw: unknown, todayKst: string): ParsedPickupDate[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const out: ParsedPickupDate[] = [];
+  const limit = addDays(todayKst, MAX_SCHEDULE_DAYS);
+
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const o = item as Record<string, unknown>;
+    const date = typeof o.date === "string" ? o.date.trim() : "";
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+    if (date < todayKst || date > limit) continue;
+    // 주말은 하원 차량이 없습니다.
+    const wd = new Date(date + "T00:00:00Z").getUTCDay();
+    if (wd === 0 || wd === 6) continue;
+    if (seen.has(date)) continue;
+    seen.add(date);
+    out.push({
+      date,
+      time: normalizeTime(o.time),
+      certain: o.certain === true,
+      why: typeof o.why === "string" ? o.why.slice(0, 120) : null,
+    });
+  }
+  return out.sort((a, b) => a.date.localeCompare(b.date));
+}
 
 export async function ingestPickup(
   supabase: SupabaseClient,
@@ -113,7 +185,7 @@ export async function ingestPickup(
   }
 
   const receivedAt = input.receivedAt ? new Date(input.receivedAt) : new Date();
-  const { iso: todayKst } = kstParts(receivedAt);
+  const { iso: todayKst, weekday: todayWeekday } = kstParts(receivedAt);
 
   const channel = parseChannelLabel(input.channelLabel);
   const channelHint = channel
@@ -122,7 +194,10 @@ export async function ingestPickup(
 
   let ai: AiOut = {};
   try {
-    const raw = await callClaudeJson(SYSTEM, `연락 내용:\n"""\n${text}\n"""${channelHint}`, {
+    // AI가 "이번주 목요일"을 실제 날짜로 옮기려면 오늘이 며칠 무슨 요일인지 알아야 합니다.
+    const wd = ["일", "월", "화", "수", "목", "금", "토"][todayWeekday] ?? "?";
+    const todayHint = `\n\n[오늘] ${todayKst} (${wd}요일). 이번 주 월요일은 ${mondayOfWeek(todayKst, todayWeekday)}입니다.`;
+    const raw = await callClaudeJson(SYSTEM, `연락 내용:\n"""\n${text}\n"""${channelHint}${todayHint}`, {
       model: CLAUDE_MODEL_FAST,
       maxTokens: 500,
       route: "pickup-ingest",
@@ -177,9 +252,12 @@ export async function ingestPickup(
     return { kind: "기타", isPickup: false, status: "무시" };
   }
 
-  // 날짜: "내일"이라고 하면 하루 뒤로 잡습니다.
-  let serviceDate = todayKst;
-  if (ai.date_hint === "tomorrow") {
+  // 앞으로의 날짜들. "이번주 목금"처럼 한 연락이 여러 날을 가리키는 경우가 많습니다.
+  const dates = kind === "픽업" ? normalizePickupDates(ai.pickup_dates, todayKst) : [];
+
+  // 대표 날짜는 그중 가장 이른 날로 잡습니다. 목록이 비었으면 예전처럼 오늘/내일로 봅니다.
+  let serviceDate = dates[0]?.date ?? todayKst;
+  if (dates.length === 0 && ai.date_hint === "tomorrow") {
     serviceDate = kstParts(new Date(receivedAt.getTime() + 24 * 60 * 60 * 1000)).iso;
   }
 
@@ -221,15 +299,44 @@ export async function ingestPickup(
 
   if (error) throw error;
 
+  const requestId = data?.id as string | undefined;
+
+  // ── 앞으로의 날짜를 예약해둡니다 ──────────────────────────────────────────
+  // 오늘 것은 바로 반영하고, 나머지는 그날 아침 크론이 꺼내갑니다. 사람이 기억하고 있다가
+  // 그날 손으로 거는 방식은 반드시 언젠가 빠집니다.
+  let scheduled = 0;
+  if (isPickup && requestId && dates.length > 0) {
+    const rows = dates.map((d) => ({
+      request_id: requestId,
+      student_id: matched?.id ?? null,
+      student_name: matched?.name ?? candidateName,
+      service_date: d.date,
+      pickup_time: d.time ?? normalizeTime(ai.pickup_time),
+      // 오늘 것은 아래에서 바로 반영하므로 곧장 적용됨으로 적습니다.
+      status: d.date === todayKst && autoConfirm && matched ? "적용됨" : "예정",
+      // 확실치 않은 표현이거나 학생을 특정하지 못했으면 사람이 한 번 봐야 합니다.
+      needs_confirm: !d.certain || !matched,
+      source_note: d.why,
+      homeroom_email: homeroomEmail,
+      applied_at: d.date === todayKst && autoConfirm && matched ? new Date().toISOString() : null,
+    }));
+    const { error: schedErr } = await supabase.from("pickup_schedules").upsert(rows, {
+      onConflict: "request_id,service_date",
+    });
+    if (!schedErr) scheduled = rows.length;
+  }
+
   if (autoConfirm && matched) await applyPickup(supabase, matched.id, serviceDate);
 
   return {
-    id: data?.id as string | undefined,
+    id: requestId,
     kind,
     isPickup,
     status: autoConfirm ? "확정" : "확인대기",
     studentName: matched?.name ?? candidateName,
     pickupTime: isPickup ? normalizeTime(ai.pickup_time) : null,
+    scheduledDates: dates.map((d) => d.date),
+    scheduledCount: scheduled,
   };
 }
 

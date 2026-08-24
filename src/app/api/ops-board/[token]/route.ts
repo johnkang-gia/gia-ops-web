@@ -134,7 +134,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   // ── ② 출결 + 픽업 ──────────────────────────────────────────────────────────
   const { data: students } = await supabase
     .from("wr_students")
-    .select("id, name, grade, class_name, department")
+    .select("id, name, name_en, grade, class_name, department")
     .eq("status", "active")
     .eq("is_demo", false);
   const deptStudents = (students ?? []).filter((s) => departmentOf(s) === department);
@@ -183,9 +183,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     .order("created_at_google", { ascending: false })
     .limit(300);
 
+  // 영문명까지 넘겨야 "Diane Lim 결석"처럼 영어로 온 출결도 대조됩니다(업무 화면 출결내역은
+  // 이미 이렇게 합니다). 이게 빠져서 대시보드에만 안 떴습니다.
   const roster: RosterStudent[] = deptStudents.map((s) => ({
     name: (s.name as string) ?? "",
     grade: (s.grade as string | null) ?? null,
+    nameEn: (s.name_en as string | null) ?? null,
   }));
 
   for (const m of mirror ?? []) {

@@ -18,6 +18,7 @@ import { useBoardDensity, type BoardScale, type Density } from "@/lib/useBoardDe
 
 import { lessonPlace } from "@/lib/lessonLocation";
 import { APP_VERSION } from "@/lib/version";
+import LunchCountdown from "./LunchCountdown";
 
 // 요청: "바뀌면 자동으로 새로고침해서 페이지를 수정해줘"
 //
@@ -260,6 +261,80 @@ export default function OpsBoardClient({ token }: { token: string }) {
   // 스크롤이 없는 화면이라 개수도 함께 제한합니다 - 넘치면 그냥 잘려서 안 보입니다.
   const todayOnlyTasks = (data.taskSummary.todayTasks ?? []).filter((t) => t.kind !== "지남").slice(0, 8);
 
+  // ── 새 문의가 오면 소리로 알립니다 ────────────────────────────────────────
+  //
+  // 요청: "문의가 오면 알람소리도 들리게 해줘"
+  //
+  // 소리 파일을 두는 대신 브라우저가 직접 짧은 음을 냅니다(파일을 받을 필요가 없어 끊길
+  // 일이 없습니다). 두 음을 이어 붙여 "딩-동" 비슷하게 만들었습니다.
+  //
+  // 브라우저는 사람이 한 번이라도 누르기 전에는 소리를 못 내게 막습니다. 공용 모니터에는
+  // 아무도 클릭하지 않으므로, 화면에 [🔔 소리 켜기] 버튼을 두고 지나가는 사람이 한 번만
+  // 눌러주면 그 뒤로는 계속 울립니다. 켜졌는지 여부도 버튼에 그대로 보입니다.
+  const audioRef = useRef<AudioContext | null>(null);
+  const [soundOn, setSoundOn] = useState(false);
+  const lastInquiryIdRef = useRef<string | null>(null);
+  const firstLoadRef = useRef(true);
+
+  const beep = useCallback(() => {
+    const ctx = audioRef.current;
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    // 딩(880Hz) → 동(660Hz)
+    for (const [freq, at] of [
+      [880, 0],
+      [660, 0.18],
+    ] as const) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      // 뚝 끊기면 귀에 거슬려서 소리를 서서히 줄입니다.
+      gain.gain.setValueAtTime(0.0001, now + at);
+      gain.gain.exponentialRampToValueAtTime(0.25, now + at + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + at + 0.35);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(now + at);
+      osc.stop(now + at + 0.4);
+    }
+  }, []);
+
+  const enableSound = useCallback(async () => {
+    try {
+      const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const ctx = audioRef.current ?? new Ctor();
+      audioRef.current = ctx;
+      if (ctx.state === "suspended") await ctx.resume();
+      setSoundOn(true);
+      beep(); // 잘 들리는지 바로 확인할 수 있게 한 번 울립니다.
+    } catch {
+      setSoundOn(false);
+    }
+  }, [beep]);
+
+  // 가장 최근 문의가 바뀌면 새 문의가 온 것입니다.
+  const newestInquiryId = data?.inquiries?.[0]?.id ?? null;
+  useEffect(() => {
+    if (!newestInquiryId) return;
+    // 화면을 처음 열 때는 울리지 않습니다 - 켜자마자 밀린 문의로 울리면 놀라기만 합니다.
+    if (firstLoadRef.current) {
+      firstLoadRef.current = false;
+      lastInquiryIdRef.current = newestInquiryId;
+      return;
+    }
+    if (lastInquiryIdRef.current === newestInquiryId) return;
+    lastInquiryIdRef.current = newestInquiryId;
+    if (soundOn) beep();
+  }, [newestInquiryId, soundOn, beep]);
+
+  // 지금이 점심시간인지.
+  //
+  // 시간표에 등록된 교시 이름으로 봅니다("점심", "중식", "Lunch"). 시각을 코드에 박아두면
+  // 학기마다 시간이 바뀔 때 아무도 여기를 고칠 생각을 못 합니다 - 시간표를 고치면 이 화면도
+  // 따라오는 것이 맞습니다.
+  const lunchPeriod =
+    data.currentPeriod && /점심|중식|lunch/i.test(data.currentPeriod.label) ? data.currentPeriod : null;
+
   return (
     // height + overflow:hidden - 대시보드는 아무도 스크롤하지 않으므로, 넘치면 화면 안에서
     // 각 패널이 알아서 줄어들도록 합니다(밀려나서 안 보이는 것보다 낫습니다).
@@ -276,8 +351,20 @@ export default function OpsBoardClient({ token }: { token: string }) {
         gap: sc.s(12, 6),
       }}
     >
-      {/* 상단 - 날짜/시각/부서 선택 */}
-      <div style={{ display: "flex", alignItems: "center", gap: sc.s(12, 6), flexWrap: "wrap", flexShrink: 0 }}>
+      {/* 상단 - 시각/날짜(왼쪽) · 로고(가운데) · 부서(오른쪽)
+          로고를 진짜 화면 한가운데 두려면 양옆이 같은 폭이어야 합니다. 그래서 세 칸짜리
+          격자로 두고 가운데 칸에만 로고를 넣었습니다 - flex로 하면 왼쪽 글자 길이에 따라
+          로고가 조금씩 움직입니다. */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr auto 1fr",
+          alignItems: "center",
+          gap: sc.s(12, 6),
+          flexShrink: 0,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: sc.s(12, 6), flexWrap: "wrap", minWidth: 0 }}>
         <span style={{ fontSize: sc.s(30, 18), fontWeight: 800, color: "#fff", fontVariantNumeric: "tabular-nums" }}>{clock ?? data.nowLabel}</span>
         <span style={{ fontSize: sc.s(15, 11), color: "#94a3b8" }}>{data.today}</span>
         {/* 오늘 하원을 이미 종료한 경우 - 잘못 눌렀거나 늦게 도착한 차가 있으면 다시 열 수 있게
@@ -299,6 +386,37 @@ export default function OpsBoardClient({ token }: { token: string }) {
             🚌 하원 화면 다시 열기
           </button>
         )}
+          {/* 소리를 켜려면 사람이 한 번은 눌러야 합니다(브라우저 규칙). 켜고 나면 사라집니다. */}
+          {!soundOn && (
+            <button
+              onClick={enableSound}
+              style={{
+              padding: `${sc.s(5, 3)}px ${sc.s(12, 8)}px`,
+              borderRadius: 999,
+              border: "1px solid #334155",
+              background: "transparent",
+              color: "#94a3b8",
+              fontSize: sc.s(13, 10),
+              fontWeight: 700,
+              cursor: "pointer",
+              whiteSpace: "nowrap",
+            }}
+              title="새 학부모 문의가 오면 소리로 알립니다. 브라우저 규칙상 한 번은 눌러주셔야 합니다."
+            >
+              🔔 소리 켜기
+            </button>
+          )}
+
+        </div>
+
+        {/* 학교 로고 - 공용 모니터라 지나가는 분들도 봅니다. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/logo-main.png"
+          alt="GIA"
+          style={{ height: sc.s(38, 24), width: "auto", objectFit: "contain", opacity: 0.95 }}
+        />
+
         {/* 지금은 초등부만 운영하므로 선택지가 하나뿐입니다. 고를 것이 없는 버튼은 화면만
             차지하므로, 부서가 둘 이상일 때만 보여줍니다. */}
         <div style={{ display: "flex", gap: sc.s(6, 4), marginLeft: "auto", alignItems: "center" }}>
@@ -353,7 +471,9 @@ export default function OpsBoardClient({ token }: { token: string }) {
              수업 중이 아닌데 다음 교시가 남아 있으면 쉬는 시간입니다. 수업이 다 끝난 뒤와는
              다른 상황이라 구분해서 적습니다. */
           title={
-            data.currentPeriod
+            lunchPeriod
+              ? `${lunchPeriod.label}`
+              : data.currentPeriod
               ? `지금 ${data.currentPeriod.label} (${data.currentPeriod.startTime}~${data.currentPeriod.endTime})`
               : data.nextPeriod
               ? `쉬는 시간 · ${data.nextPeriod.startTime}에 ${data.nextPeriod.label} 시작`
@@ -365,7 +485,16 @@ export default function OpsBoardClient({ token }: { token: string }) {
               : null
           }
         >
-          {!data.isWeekday ? (
+          {lunchPeriod ? (
+            /* 점심시간에는 시간표 대신 남은 시간을 크게 보여줍니다 - 이 시간에 반별 과목은
+               볼 것이 없고, 정작 궁금한 것은 "얼마나 남았나" 하나입니다. */
+            <LunchCountdown
+              startTime={lunchPeriod.startTime}
+              endTime={lunchPeriod.endTime}
+              label={lunchPeriod.label}
+              size={sc.s(230, 150)}
+            />
+          ) : !data.isWeekday ? (
             <Empty sc={sc} text="주말입니다" />
           ) : data.grades.length === 0 ? (
             <Empty sc={sc} text="이 부서에 등록된 반이 없습니다 — [학교 > 반·담임 관리]에서 반을 먼저 만들어주세요" />

@@ -71,3 +71,15 @@ chrome.storage.onChanged.addListener((changes) => {
 });
 
 load();
+
+// 이미 보낸 것으로 표시된 메시지를 다시 보냅니다.
+//
+// 수집기는 같은 메시지를 두 번 보내지 않으려고 보낸 것을 기억해둡니다. 그런데 서버 쪽에서
+// 잘못 처리했거나 시험 중에 지운 경우에는, 기억 때문에 다시 보내지 않아 막힌 것처럼 보입니다.
+// 그때 이걸 누르면 됩니다. 같은 메시지가 다시 올라와도 서버가 중복을 걸러냅니다.
+document.getElementById("resend")?.addEventListener("click", async () => {
+  if (!confirm("보낸 기록을 지우고 다시 확인할까요?\n(같은 문의가 다시 올라올 수 있습니다)")) return;
+  await chrome.runtime.sendMessage({ cmd: "clearSent" });
+  await chrome.runtime.sendMessage({ cmd: "runNow" });
+  location.reload();
+});

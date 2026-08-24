@@ -177,14 +177,30 @@ async function runOnceInner() {
   // ── 아직 보내지 않은 메시지만 골라냅니다 ──────────────────────────────────
   const items = [];
   const nextSent = { ...sent };
+  // 왜 안 보냈는지를 세어 둡니다. "0건"만 보여주면 정상인지 막힌 건지 알 수가 없어서,
+  // 이걸 알아내려고 여러 번 헛짚었습니다.
+  const skipped = { 빈글: 0, 직원: 0, 읽음: 0, 이미보냄: 0, 방없음: 0 };
   for (const chat of reply.chats ?? []) {
+    if (!chat.messages || chat.messages.length === 0) skipped.방없음 += 1;
     for (const m of chat.messages ?? []) {
-      if (!m.text || !m.text.trim()) continue;
+      if (!m.text || !m.text.trim()) {
+        skipped.빈글 += 1;
+        continue;
+      }
       // 우리 직원이 쓴 글은 보내지 않습니다. 학부모가 보낸 것만 픽업 후보입니다.
-      if (m.senderType && String(m.senderType).toUpperCase() === "STAFF") continue;
+      if (m.senderType && String(m.senderType).toUpperCase() === "STAFF") {
+        skipped.직원 += 1;
+        continue;
+      }
       // 이미 읽은 메시지는 예전 것이므로 건너뜁니다(수집기를 처음 켠 날 과거를 몰아 보내지 않도록).
-      if (m.isRead) continue;
-      if (nextSent[m.id]) continue;
+      if (m.isRead) {
+        skipped.읽음 += 1;
+        continue;
+      }
+      if (nextSent[m.id]) {
+        skipped.이미보냄 += 1;
+        continue;
+      }
       items.push({
         source: "토들",
         sourceRef: m.id,
@@ -228,7 +244,16 @@ async function runOnceInner() {
       return;
     }
     const total = diag.totalRooms != null ? ` / 전체 ${diag.totalRooms}개` : "";
-    await setState({ status: "정상", detail: `새 메시지 없음 (안 읽은 방 ${diag.knownRooms ?? 0}개${total})${suffix}` });
+    // 무엇을 걸렀는지 적습니다. 방은 있는데 보낼 게 없다면 그 이유가 보여야 합니다.
+    const reasons = Object.entries(skipped)
+      .filter(([, n]) => n > 0)
+      .map(([k, n]) => `${k} ${n}`)
+      .join(", ");
+    const why = reasons ? ` · 거른 것: ${reasons}` : "";
+    await setState({
+      status: "정상",
+      detail: `새 메시지 없음 (안 읽은 방 ${diag.knownRooms ?? 0}개${total})${why}${suffix}`,
+    });
     await heartbeat("ok", `새 메시지 없음 (안 읽은 방 ${diag.knownRooms ?? 0}개)`);
     return;
   }
@@ -281,6 +306,11 @@ chrome.runtime.onMessage.addListener((msg, _s, sendResponse) => {
   // 팝업에서 [지금 확인]을 누를 때
   if (msg?.cmd === "runNow") {
     runOnce().then(() => sendResponse({ ok: true }));
+    return true;
+  }
+  // 보낸 기록 지우기. 서버 쪽에서 지웠는데 수집기가 "이미 보냈다"고 기억해 다시 안 보낼 때 씁니다.
+  if (msg?.cmd === "clearSent") {
+    chrome.storage.local.set({ sent: {} }).then(() => sendResponse({ ok: true }));
     return true;
   }
   return false;

@@ -180,6 +180,23 @@ export function toKoreanDisplayName(
         return (en && en.startsWith(prefix)) || (ko && ko.startsWith(prefix));
       });
       if (starts.length === 1) return starts[0].name;
+
+      // 여럿이 걸리는 경우(예: 'Soo J' → 'Soo Ji'(지수)와 'Soo Jin'(수진)이 함께 걸림).
+      // 이름에 공백이 있어 "이름 + 성/두번째이름의 첫머리"처럼 꽤 구체적으로 적혔을 때만,
+      // '가장 가깝게 완성되는'(덧붙는 글자가 가장 적은) 한 명을 고릅니다. 'Soo J'는 'Soo Ji'
+      // (한 글자 더)가 'Soo Jin'(두 글자 더)보다 가까우므로 지수로 확정됩니다. 짧은 한 단어
+      // (예: 'Min')만 온 경우는 후보가 너무 벌어져 이 규칙을 쓰지 않습니다 - 잘못 고르면
+      // 영어로 두는 것보다 나쁩니다.
+      if (starts.length > 1 && prefix.includes(" ")) {
+        const scored = starts
+          .map((r) => {
+            const forms = [normalizeName(r.name_en ?? ""), normalizeName(r.name)].filter((f) => f.startsWith(prefix));
+            return { r, len: Math.min(...forms.map((f) => f.length)) };
+          })
+          .sort((a, b) => a.len - b.len);
+        // 가장 가까운 후보가 '유일하게' 가장 가까울 때만 확정합니다(동점이면 여전히 애매).
+        if (scored.length === 1 || scored[0].len < scored[1].len) return scored[0].r.name;
+      }
     }
   }
 

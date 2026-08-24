@@ -218,6 +218,65 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     }
   }
 
+  // (3) 학부모 문의(pickup_requests)에서 온 결석·지각·픽업.
+  //
+  // 요청: "문의에서도 결석이나, 픽업 등 다 올라오는데 결석은 아직도 업무 대시보드에 1로 떠
+  // 픽업은 심지어 0이야 제대로 반영해줘".
+  //
+  // 원인: 결석 칸은 attendance_records + 구글챗 미러만, 픽업 칸은 하원 체크표(shuttle_boardings)
+  // 만 읽고 있었습니다. 그런데 토들로 들어온 학부모 연락은 pickup_requests에 쌓일 뿐 두 곳
+  // 어디에도 들어가지 않아, 문의 목록엔 떠도 결석·픽업 숫자엔 반영되지 않았습니다. 그래서
+  // 여기서 pickup_requests도 같은 규칙(categorize + 명부대조)으로 함께 집계합니다.
+  const pickupNamesFromReq = new Set<string>();
+  const { data: reqRows } = await supabase
+    .from("pickup_requests")
+    .select("*")
+    .neq("status", "무시")
+    .gte("received_at", new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString())
+    .order("received_at", { ascending: false })
+    .limit(400);
+
+  for (const r of reqRows ?? []) {
+    const text = ((r.raw_text as string | null) ?? (r.summary as string | null) ?? "").toString();
+    const category = categorize(text);
+    // kind='픽업'은 AI가 이미 픽업으로 확정한 건이라, 본문에 픽업 키워드가 없어도 픽업으로 봅니다.
+    const treatAsPickup = r.kind === "픽업" || category === "픽업";
+    if (!treatAsPickup && !category) continue;
+
+    const receivedAt = new Date((r.received_at as string) ?? Date.now());
+    // 대상 날짜: 본문에 적힌 날짜(내일·금요일 등) > AI가 계산한 service_date > 받은 날.
+    const targetDate =
+      extractTargetDate(text, receivedAt) ?? ((r.service_date as string | null) ?? todayKey(receivedAt));
+    if (targetDate !== todayK) continue; // 오늘 것만
+
+    // 학생 확정: AI가 명부와 연결해둔 student_id를 최우선으로 씁니다(가장 정확). 이 부서 학생이
+    // 아니면 이 대시보드에는 올리지 않습니다. 연결이 없으면 본문을 명부와 대조해 찾습니다.
+    type R = { name: string; grade: string | null; className: string | null; display: string };
+    const resolved: R[] = [];
+    const sid = r.student_id as string | null;
+    if (sid && deptStudentIds.has(sid)) {
+      const s = studentById.get(sid) as { name?: string; grade?: string | null; class_name?: string | null } | undefined;
+      if (s?.name) resolved.push({ name: s.name, grade: s.grade ?? null, className: s.class_name ?? null, display: s.name });
+    }
+    if (resolved.length === 0) {
+      for (const st of matchRosterStudents(text, roster)) {
+        const full = deptStudents.find((s) => s.name === st.name);
+        resolved.push({ name: st.name, grade: st.grade, className: (full?.class_name as string | null) ?? null, display: st.displayName });
+      }
+    }
+    if (resolved.length === 0) continue;
+
+    if (treatAsPickup) {
+      for (const st of resolved) pickupNamesFromReq.add(st.display);
+    } else {
+      for (const st of resolved) {
+        const key = `${st.name}-${category}`;
+        if (absenceByKey.has(key)) continue; // 교사 직접입력·구글챗을 덮어쓰지 않습니다.
+        absenceByKey.set(key, { name: st.display, grade: st.grade, className: st.className, status: category as string, note: null, contacted: false });
+      }
+    }
+  }
+
   const absences = [...absenceByKey.values()].sort(
     (a, b) => a.status.localeCompare(b.status, "ko") || a.name.localeCompare(b.name, "ko")
   );
@@ -234,12 +293,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     : { data: [] as { id: string; student_id: string | null; student_name_raw: string }[] };
   // 요청: "꼭 이름만 뜨지않고 성까지 뜨도록" - 탑승표에 적힌 이름(성이 빠졌을 수 있음) 대신,
   // 학생 번호로 명부의 전체 이름(성+이름)을 씁니다. 같은 이름 아이를 성으로 구분합니다.
-  const pickups = (pickupAssignments ?? [])
-    .map((a) => {
-      const full = a.student_id ? (studentById.get(a.student_id) as { name?: string } | undefined)?.name : null;
-      return full || a.student_name_raw;
-    })
-    .sort((a, b) => a.localeCompare(b, "ko"));
+  const boardingPickups = (pickupAssignments ?? []).map((a) => {
+    const full = a.student_id ? (studentById.get(a.student_id) as { name?: string } | undefined)?.name : null;
+    return full || a.student_name_raw;
+  });
+  // 하원 체크표 픽업 + 문의로 들어온 픽업을 합치고, 같은 이름은 한 번만 셉니다.
+  const pickups = [...new Set([...boardingPickups, ...pickupNamesFromReq])].sort((a, b) => a.localeCompare(b, "ko"));
 
   // ── 학부모 문의사항 ────────────────────────────────────────────────────────
   // 요청: "운영 대시보드에 이 학부모 문의사항도 띄워줘"

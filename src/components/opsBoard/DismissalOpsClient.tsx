@@ -40,6 +40,20 @@ type RouteRow = {
   expectedCount: number;
   pickupCount: number;
   absentCount: number;
+  // 정류장별 도착·하차(GPS). 요청: "어디정류장에 도착 (...) 누가 내리는지".
+  stopProgress?: StopProgress[];
+  currentStopSeq?: number | null;
+  nextStopSeq?: number | null;
+  nextStopAddress?: string | null;
+};
+type StopProgress = {
+  stopId: string;
+  seq: number;
+  address: string | null;
+  stopTime: string | null;
+  arrived: boolean;
+  arrivedAt: string | null;
+  alighting: string[];
 };
 type PickupRow = {
   name: string;
@@ -215,6 +229,8 @@ export default function DismissalOpsClient({
           </div>
         )}
 
+        <RunningPanel routes={data.routes} colors={ROUTE_COLORS} sc={sc} />
+
         <PickupPanel pickups={data.pickups ?? []} sc={sc} />
       </div>
     </div>
@@ -258,6 +274,65 @@ function RouteChip({ route: r, color, sc }: { route: RouteRow; color: string; sc
       </span>
       {/* GPS가 끊기면 자동 도착·출발 감지가 멈춥니다. 작게라도 계속 보여야 그날 안에 알아챕니다. */}
       <span style={{ fontSize: sc.s(9, 8), color: r.pingFresh ? "#34d399" : "#64748b" }}>{r.pingFresh ? "●" : "○"}</span>
+    </div>
+  );
+}
+
+// 운행 중인 차량의 "지금 어디쯤"을 GPS로 보여줍니다.
+//
+// 요청: "출발했다면 어느정류장으로 가고있는지, 정류장에 도착했다면 누가 내리는지". 기사님 휴대폰
+// GPS가 정류장 반경에 들어오면 그 정류장을 도착으로 잡고(track), 여기서 "방금 어느 정류장에
+// 닿았고 거기서 누가 내리며, 다음은 어느 정류장인지"를 한 줄로 보여줍니다. 아직 정류장 좌표가
+// 학습되지 않았거나 GPS가 없는 차는 이 목록에 나타나지 않습니다(카드 띠의 도착·출발만 표시).
+function RunningPanel({ routes, colors, sc }: { routes: RouteRow[]; colors: string[]; sc: BoardScale }) {
+  // 출발했거나(운행중) 정류장 도착이 하나라도 잡힌 차만 - "지금 길 위에 있는 차"에 집중합니다.
+  const active = routes
+    .map((r, i) => ({ r, color: colors[i % colors.length] }))
+    .filter(({ r }) => r.status === "운행중" || (r.stopProgress ?? []).some((s) => s.arrived));
+  if (active.length === 0) return null;
+
+  return (
+    <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", gap: sc.s(5, 3), background: "#111c33", borderRadius: sc.s(12, 7), padding: sc.s(10, 6) }}>
+      <span style={{ fontSize: sc.s(15, 12), fontWeight: 800, color: "#e2e8f0" }}>🛰️ 운행 상황 (GPS)</span>
+      <div style={{ display: "flex", flexDirection: "column", gap: sc.s(5, 3), maxHeight: sc.narrow ? "34%" : undefined, overflowY: "auto" }}>
+        {active.map(({ r, color }) => {
+          const progress = r.stopProgress ?? [];
+          const arrivedStops = progress.filter((s) => s.arrived);
+          const current = arrivedStops.length ? arrivedStops[arrivedStops.length - 1] : null;
+          const nextAddr = r.nextStopAddress ?? null;
+          const doneCount = arrivedStops.length;
+          return (
+            <div key={r.routeId} style={{ display: "flex", alignItems: "flex-start", gap: sc.s(7, 5), background: "#1e293b", borderLeft: `4px solid ${color}`, borderRadius: sc.s(8, 5), padding: `${sc.s(5, 3)}px ${sc.s(9, 6)}px` }}>
+              <span style={{ fontSize: sc.s(15, 12), fontWeight: 900, color: "#fff", whiteSpace: "nowrap" }}>{r.routeNo}호</span>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                {current ? (
+                  <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: sc.s(5, 3) }}>
+                    <span style={{ fontSize: sc.s(12, 10), fontWeight: 800, color: "#fdba74", whiteSpace: "nowrap" }}>
+                      📍 {current.address ?? `${current.seq + 1}번째 정류장`} 도착
+                    </span>
+                    {current.arrivedAt && <span style={{ fontSize: sc.s(10, 9), color: "#94a3b8" }}>{hhmm(current.arrivedAt)}</span>}
+                    {current.alighting.length > 0 && (
+                      <span style={{ fontSize: sc.s(11, 9), color: "#cbd5e1" }}>
+                        하차: <b style={{ color: "#fff" }}>{current.alighting.join(", ")}</b>
+                      </span>
+                    )}
+                  </div>
+                ) : (
+                  <span style={{ fontSize: sc.s(12, 10), fontWeight: 700, color: "#6ee7b7" }}>출발 · 운행 중</span>
+                )}
+                {nextAddr && (
+                  <div style={{ fontSize: sc.s(10, 9), color: "#7dd3fc", marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    → 다음: {nextAddr}
+                  </div>
+                )}
+              </div>
+              {progress.length > 0 && (
+                <span style={{ fontSize: sc.s(10, 9), color: "#64748b", whiteSpace: "nowrap" }}>{doneCount}/{progress.length}</span>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

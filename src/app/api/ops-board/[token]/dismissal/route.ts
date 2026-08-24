@@ -125,6 +125,30 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
     return data?.lat != null && data?.lng != null ? { lat: data.lat as number, lng: data.lng as number } : null;
   })();
 
+  // ── 정류장별 도착·하차 ───────────────────────────────────────────────────────
+  // 요청: "정류장에 도착했다면 어디정류장에 도착했는지 (...) 누가 내리는지까지". GPS가 정류장
+  // 반경에 들어오면 track이 남긴 shuttle_stop_arrivals로 "몇 번째 정류장까지 갔는지"를 알고,
+  // 각 정류장의 하차 명단은 그 정류장에 배정된 학생(오늘 요일, 픽업·결석 제외)입니다.
+  const { data: stopArrivals } = await supabase
+    .from("shuttle_stop_arrivals")
+    .select("stop_id, arrived_at")
+    .eq("service_date", today)
+    .in("route_id", routeIds);
+  const arrivedByStop = new Map<string, string>();
+  for (const a of stopArrivals ?? []) arrivedByStop.set(a.stop_id as string, a.arrived_at as string);
+
+  // 정류장별 하차 학생(배정 기준). override로 다른 차에 태워도 물리적 하차 정류장은 그대로라,
+  // 여기서는 배정된 stop_id 기준으로 모읍니다. 픽업·결석은 빼서 "실제로 내리는 아이"만 남깁니다.
+  const alightingByStop = new Map<string, string[]>();
+  for (const a of relevant) {
+    const b = boardingByAssignment.get(a.id);
+    const st = b?.status ?? "예정";
+    if (st === "픽업" || st === "결석") continue;
+    const list = alightingByStop.get(a.stop_id) ?? [];
+    list.push(a.student_name_raw);
+    alightingByStop.set(a.stop_id, list);
+  }
+
   const payload = (routes ?? []).map((r) => {
     const evts = eventsByRoute.get(r.id) ?? [];
     const arrived = evts.find((e) => e.event === "현장도착");
@@ -134,6 +158,21 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
     const expected = riders.filter((x) => x.status !== "픽업" && x.status !== "결석");
     const boarded = expected.filter((x) => x.status === "탑승");
     const ping = latestPingByRoute.get(r.id) ?? null;
+
+    // 정류장 진행 상황: seq 순서로 각 정류장의 도착여부·도착시각·하차명단.
+    const allStops = (stopsByRoute.get(r.id) ?? []).slice().sort((a, b) => a.seq - b.seq);
+    const stopProgress = allStops.map((s) => ({
+      stopId: s.id,
+      seq: s.seq,
+      address: s.address,
+      stopTime: s.stopTime,
+      arrived: arrivedByStop.has(s.id),
+      arrivedAt: arrivedByStop.get(s.id) ?? null,
+      alighting: (alightingByStop.get(s.id) ?? []).sort((a, b) => a.localeCompare(b, "ko")),
+    }));
+    const arrivedSeqs = stopProgress.filter((s) => s.arrived).map((s) => s.seq);
+    const currentStopSeq = arrivedSeqs.length ? Math.max(...arrivedSeqs) : null; // 마지막으로 닿은 정류장
+    const nextStop = stopProgress.find((s) => !s.arrived && (currentStopSeq == null || s.seq > currentStopSeq)) ?? null;
 
     return {
       routeId: r.id as string,
@@ -158,6 +197,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
       riders: expected.map((x) => ({ name: x.name, boarded: x.status === "탑승" })),
       boardedCount: boarded.length,
       expectedCount: expected.length,
+      // 정류장별 도착·하차(요청: "어디정류장에 도착 (...) 누가 내리는지").
+      stopProgress,
+      currentStopSeq,
+      nextStopSeq: nextStop?.seq ?? null,
+      nextStopAddress: nextStop?.address ?? null,
       pickupCount: riders.filter((x) => x.status === "픽업").length,
       absentCount: riders.filter((x) => x.status === "결석").length,
     };

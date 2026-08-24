@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import { isWithinTrackingWindow } from "@/lib/shuttleTracking";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { isWithinTrackingWindow, kstParts } from "@/lib/shuttleTracking";
+import { haversineMeters } from "@/lib/shuttleRecommend";
+
+// 기사님 휴대폰이 이 반경(m) 안에 들어오면 그 정류장에 "도착"한 것으로 봅니다. 학교 도착 감지
+// (auto-arrive)와 비슷한 값이되, 도심 정류장은 더 촘촘해서 조금 좁게 둡니다.
+const STOP_ARRIVE_RADIUS_M = 120;
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +42,42 @@ function parseTimestamp(raw: string | null): Date {
   }
   const parsed = new Date(raw.includes("T") ? raw : raw.replace(" ", "T") + "Z");
   return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+}
+
+// 이 노선의 정류장 중 현재 위치에서 반경 안에 있는 가장 가까운 정류장을 찾아, 오늘 도착으로
+// 기록합니다. unique(service_date, stop_id)라 같은 정류장을 여러 번 지나가도 첫 도착만 남습니다.
+async function detectStopArrival(
+  supabase: SupabaseClient,
+  routeId: string,
+  lat: number,
+  lng: number,
+  recordedAt: Date
+) {
+  const { data: stops } = await supabase
+    .from("shuttle_stops")
+    .select("id, gps_lat, gps_lng, lat, lng")
+    .eq("route_id", routeId);
+  if (!stops || stops.length === 0) return;
+
+  let best: { id: string; dist: number } | null = null;
+  for (const s of stops) {
+    const sLat = (s.gps_lat as number | null) ?? (s.lat as number | null);
+    const sLng = (s.gps_lng as number | null) ?? (s.lng as number | null);
+    if (sLat == null || sLng == null) continue;
+    const dist = haversineMeters(lat, lng, sLat, sLng);
+    if (!best || dist < best.dist) best = { id: s.id as string, dist };
+  }
+  if (!best || best.dist > STOP_ARRIVE_RADIUS_M) return;
+
+  const serviceDate = kstParts(recordedAt).iso;
+  // 중복은 유니크 인덱스(23505)로 조용히 막힙니다 - 이미 기록된 정상 상황입니다.
+  await supabase.from("shuttle_stop_arrivals").insert({
+    service_date: serviceDate,
+    route_id: routeId,
+    stop_id: best.id,
+    distance_m: Math.round(best.dist),
+    arrived_at: recordedAt.toISOString(),
+  });
 }
 
 async function handle(params: URLSearchParams) {
@@ -95,6 +136,13 @@ async function handle(params: URLSearchParams) {
     recorded_at: recordedAt.toISOString(),
   });
   await supabase.from("shuttle_tracker_devices").update({ last_seen_at: new Date().toISOString() }).eq("id", device.id);
+
+  // ── 정류장 도착 감지 ─────────────────────────────────────────────────────────
+  // 요청: "정류장에 도착했다면 어디정류장에 도착했는지 체크되게". 이 노선의 정류장 좌표 중
+  // 지금 위치와 가장 가까운 것이 반경 안이면, 오늘 그 정류장 도착으로 한 줄 남깁니다(하루 한 번).
+  // 좌표는 GPS 학습(gps_lat/lng)이 우선이고, 없으면 지오코딩 좌표(lat/lng)를 씁니다. 좌표가
+  // 아직 없는 정류장은 건너뜁니다(며칠 운행하면 학습으로 채워집니다).
+  await detectStopArrival(supabase, device.route_id as string, lat, lng, recordedAt);
 
   return new NextResponse("OK", { status: 200 });
 }

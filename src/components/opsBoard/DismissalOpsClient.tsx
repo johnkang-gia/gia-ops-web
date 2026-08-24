@@ -78,6 +78,24 @@ type Data = {
 // 노선마다 다른 색을 줘서 지도에서 어느 차인지 구분되게 합니다.
 const ROUTE_COLORS = ["#f97316", "#22d3ee", "#a3e635", "#f472b6", "#facc15", "#818cf8", "#34d399", "#fb7185"];
 
+// 지도 위 차량 마커 - 노란 셔틀 밴 그림 안에 노선 번호만 적습니다(요청: "노란색셔틀밴 그림으로
+// 표시하고 그안에 숫자만 (...) 실제 셔틀이 가는느낌"). 노선 색은 얇은 테두리로만 살짝 넣어 어느
+// 노선인지 구분되게 하되, 밴 자체는 노란색으로 통일합니다.
+function vanMarkerHtml(routeNo: string, routeColor: string): string {
+  const n = String(routeNo).replace(/호$/, "");
+  const fs = n.length >= 3 ? 10 : 13;
+  return `<div style="filter:drop-shadow(0 2px 3px rgba(0,0,0,.45))">
+    <svg width="60" height="32" viewBox="0 0 60 32" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="17" cy="27" r="4.5" fill="#1f2937"/><circle cx="17" cy="27" r="1.8" fill="#cbd5e1"/>
+      <circle cx="44" cy="27" r="4.5" fill="#1f2937"/><circle cx="44" cy="27" r="1.8" fill="#cbd5e1"/>
+      <path d="M4 22 L4 10 Q4 6 8 6 L41 6 Q46 6 50 10 L56 17 Q57 18 57 20 L57 21 Q57 24 54 24 L7 24 Q4 24 4 22 Z" fill="#facc15" stroke="${routeColor}" stroke-width="2"/>
+      <path d="M42 9 L49 15 L49 17 L42 17 Z" fill="#bae6fd" stroke="#7dd3fc" stroke-width="0.5"/>
+      <rect x="53.5" y="18" width="3" height="2.6" rx="1" fill="#fef3c7"/>
+      <text x="22" y="18.5" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="${fs}" font-weight="900" fill="#1f2937">${n}</text>
+    </svg>
+  </div>`;
+}
+
 const STATUS_STYLE: Record<RouteRow["status"], { bg: string; fg: string; label: string }> = {
   대기: { bg: "#1e293b", fg: "#64748b", label: "대기" },
   도착함: { bg: "#7c2d12", fg: "#fdba74", label: "도착함" },
@@ -491,11 +509,12 @@ function AllRoutesMap({ routes, school, testMarkers = [] }: { routes: RouteRow[]
             hasPoint = true;
           }
 
-          // 차량 마커 - 기사님 휴대폰에서 들어온 최신 위치.
+          // 차량 마커 - 기사님 휴대폰에서 들어온 최신 위치. 노란 셔틀 밴 그림 안에 번호만.
           if (r.ping && r.pingFresh) {
             const overlay = new kakao.maps.CustomOverlay({
               position: new kakao.maps.LatLng(r.ping.lat, r.ping.lng),
-              content: `<div style="background:${color};color:#0f172a;font-size:13px;font-weight:900;padding:3px 9px;border-radius:999px;box-shadow:0 2px 8px rgba(0,0,0,.5);white-space:nowrap">${r.routeNo}호</div>`,
+              content: vanMarkerHtml(r.routeNo, color),
+              xAnchor: 0.5,
               yAnchor: 0.5,
               zIndex: 10,
             });

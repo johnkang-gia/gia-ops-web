@@ -275,6 +275,9 @@ function buildAdminCategory(): NavCategory {
       { href: "/admin/shared-accounts", label: "공용 계정 관리", icon: "🔑" },
       { href: "/school/import", label: "구글시트 가져오기", icon: "📥", dividerBefore: "데이터" },
       { href: "/admin/backups", label: "데이터 백업", icon: "💾" },
+      // 새 기능을 올린 뒤 마이그레이션이 제대로 걸렸는지 한 번에 확인하는 화면입니다
+      // (요청: "제대로 반영되는지 안되는지 편하게 확인할 수 있는 방법이 없을까?").
+      { href: "/admin/schema", label: "데이터베이스 점검", icon: "🗄️" },
     ],
   };
 }

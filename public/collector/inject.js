@@ -100,15 +100,12 @@
     return out;
   }
 
-  // 후킹을 한 번만 씌우면 안 됩니다.
+  // 원본은 여기서 딱 한 번만 붙잡고, 이후 절대 바꾸지 않습니다.
   //
-  // 실제로 확인해보니 이렇습니다:
-  //   - 페이지가 다 뜬 뒤에 씌우면 → 요청이 잡힙니다.
-  //   - 페이지 맨 처음에 씌우면 → 안 잡힙니다.
-  // 토들 번들이 나중에 로드되면서 window.fetch를 통째로 갈아끼워, 먼저 씌운 우리 것을
-  // 버리기 때문입니다. 그래서 계속 지켜보다가 우리 것이 아니게 되면 다시 씌웁니다.
-  // (비교 한 번이라 부담은 없습니다.)
-  let originalFetch = window.fetch;
+  // v1.5.0에서 "지워졌으면 다시 씌운다"며 이 값을 갱신했다가, 토들이 우리 위에 덧씌운 것을
+  // 다시 원본으로 삼는 바람에 우리 함수가 우리 함수를 부르는 고리가 생겼습니다. 토들의 모든
+  // 통신이 막혀 "오프라인"이 되고 로그아웃도 안 되었습니다. 원본은 고정입니다.
+  const originalFetch = window.fetch;
   const hookedFetch = async function (...args) {
     const req = args[0];
     const url = typeof req === "string" ? req : (req && req.url) || "";
@@ -192,14 +189,7 @@
     return res;
   };
 
-  function installHook() {
-    if (window.fetch === hookedFetch) return;
-    // 지금 그 자리에 있는 것을 원본으로 삼아 그 위에 다시 씌웁니다.
-    originalFetch = window.fetch;
-    window.fetch = hookedFetch;
-  }
-  installHook();
-  setInterval(installHook, 500);
+  window.fetch = hookedFetch;
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -209,8 +199,12 @@
   // 않습니다. 다른 화면에 갔다가 돌아오면 목록을 새로 받아옵니다(실측으로 확인했습니다).
   // 이 컴퓨터는 수집 전용이라 화면이 잠깐 바뀌어도 누구도 불편하지 않습니다.
   let retraining = false;
+  let lastRetrainAt = 0;
   async function retrain() {
     if (retraining) return false;
+    // 못 배우는 상태가 이어질 때 1분마다 화면이 왔다갔다 하면 곤란합니다.
+    if (Date.now() - lastRetrainAt < 10 * 60 * 1000) return false;
+    lastRetrainAt = Date.now();
     retraining = true;
     try {
       // 토들 왼쪽 메뉴는 <a>가 아니라 id가 붙은 <div>입니다(실제 화면에서 확인).

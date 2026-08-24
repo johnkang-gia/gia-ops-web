@@ -55,6 +55,25 @@ function timeAgo(iso: string) {
   return new Date(iso).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" });
 }
 
+// 요청: "시간이 나와 요일도나오고 오늘이라면 시간도 나와, 이것들도 크롤링해서 언제문의가
+// 온건지도 기록해줘"
+//
+// 토들 목록과 같은 방식으로 적습니다 - 오늘 온 것은 시각만, 그 전 것은 요일이나 날짜.
+// "3시간 전"만 있으면 "오전에 온 건가 점심에 온 건가"를 가늠할 수 없어서, 정확한 시각이
+// 필요합니다(특히 하원 픽업은 몇 시에 왔는지가 판단에 직접 영향을 줍니다).
+function whenLabel(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  if (sameDay) return d.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
+
+  const days = Math.floor((now.getTime() - d.getTime()) / 86400000);
+  if (days < 7) {
+    return `${["일", "월", "화", "수", "목", "금", "토"][d.getDay()]} ${d.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}`;
+  }
+  return d.toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" });
+}
+
 const ROW_HEIGHT = 22;
 const VISIBLE_ROWS = 3;
 
@@ -166,7 +185,9 @@ export default function ParentInquiryPanel({ currentUserEmail }: { currentUserEm
       )}
       <span className="min-w-0 flex-1 truncate text-slate-500">{r.summary ?? r.raw_text ?? ""}</span>
       {r.task_id && <span className="shrink-0 text-[10px] text-blue-500">업무</span>}
-      <span className="shrink-0 text-[10px] text-slate-400">{timeAgo(r.received_at)}</span>
+      <span className="shrink-0 text-[10px] text-slate-400" title={new Date(r.received_at).toLocaleString("ko-KR")}>
+        {whenLabel(r.received_at)}
+      </span>
     </button>
   );
 

@@ -96,15 +96,27 @@
           const one = arr[i];
           const req = items[i];
           const edges = one?.data?.node?.chats?.edges;
-          if (Array.isArray(edges)) {
-            if (req?.query) learned.chatListItem = req;
+          if (Array.isArray(edges) && edges.length > 0) {
+            // 채팅 목록을 돌려주는 요청이 두 종류입니다.
+            //   getChatAndChannelList - 방 이름·안 읽은 수가 들어 있는 진짜 목록
+            //   getChatUnreadCount    - 안 읽은 "개수"만 세는 요청(이름이 없습니다)
+            // 둘 다 data.node.chats 모양이라, 응답에 chats가 있다는 것만으로 고르면 나중에 오는
+            // 개수 세기 요청이 진짜 목록을 덮어씁니다. 그래서 "방 이름이 들어 있는 응답"만
+            // 목록으로 인정합니다. 이름으로 고르지 않으므로 토들이 요청 이름을 바꿔도 맞습니다.
+            const hasLabels = edges.some((e) => typeof e?.node?.label === "string" && e.node.label);
+            if (hasLabels && req?.query) learned.chatListItem = req;
+
             for (const e of edges) {
               const n = e?.node;
               if (!n?.id) continue;
-              chats.set(String(n.id), {
-                label: n.label ?? null,
-                unread: Number(n.unreadMessageCount ?? 0),
-                lastActiveAt: n.lastActiveAt ?? null,
+              const id = String(n.id);
+              const prev = chats.get(id);
+              chats.set(id, {
+                // 개수 세기 응답에는 이름이 없으므로, 없으면 예전에 알아둔 이름을 지키고
+                // 덮어쓰지 않습니다.
+                label: n.label ?? prev?.label ?? null,
+                unread: n.unreadMessageCount != null ? Number(n.unreadMessageCount) : (prev?.unread ?? 0),
+                lastActiveAt: n.lastActiveAt ?? prev?.lastActiveAt ?? null,
               });
             }
           }
@@ -242,7 +254,7 @@
             // 씁니다 - 학교 번호를 코드에 박아두면 다른 학교/과정에서 안 맞습니다.
             const base = location.href.match(/^(https:\/\/[^/]+\/platform\/[^/]+)\/messaging/);
             const url = base ? `${base[1]}/messaging/${c.id}` : null;
-            out.push({ chatId: c.id, label: c.label, unread: c.unread, url, messages });
+            out.push({ chatId: c.id, label: c.label, unread: c.unread, lastActiveAt: c.lastActiveAt, url, messages });
           } catch (err) {
             if (String(err.message) === "LOGIN_REQUIRED") throw err;
             // 한 방이 실패해도 나머지는 계속합니다.

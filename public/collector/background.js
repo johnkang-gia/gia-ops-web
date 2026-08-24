@@ -204,7 +204,10 @@ async function runOnce() {
         channelLabel: chat.label,
         senderName: m.senderName,
         text: m.text,
-        receivedAt: m.createdAt,
+        // 언제 온 문의인지가 목록에서 중요합니다(요청: "시간이 나와 요일도나오고... 언제문의가
+        // 온건지도 기록해줘"). 메시지 자체의 시각을 쓰고, 없으면 그 방의 마지막 활동 시각으로
+        // 대신합니다. 둘 다 없으면 서버가 받은 시각을 씁니다.
+        receivedAt: m.createdAt ?? chat.lastActiveAt ?? null,
         chatId: chat.chatId,
         // 문의 목록에서 눌러 원문으로 바로 갈 수 있게 주소를 함께 보냅니다.
         sourceUrl: chat.url ?? null,

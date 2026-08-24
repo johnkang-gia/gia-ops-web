@@ -222,6 +222,20 @@ async function runOnceInner() {
 
   // 이제는 목록을 못 읽으면 오류로 올라옵니다(로그인 풀림 등). 여기까지 왔는데 0개면
   // 정말로 새 학부모 메시지가 없는 것입니다.
+  // 이미 답글이 달린 방들. 서버가 그 방의 미처리 문의를 처리됨으로 바꿉니다.
+  // 다른 선생님이 벌써 답했는데 인박스에 남아 있으면, 또 답하거나 계속 신경 쓰게 됩니다.
+  // 보낼 새 메시지가 하나도 없어도 이 소식은 전해야 하므로 여기서 먼저 처리합니다.
+  const replies = (reply.chats ?? [])
+    .filter((c) => c.reply && c.chatId)
+    .map((c) => ({ chatId: c.chatId, at: c.reply.at, by: c.reply.by }));
+  if (replies.length > 0) {
+    try {
+      await post("/api/pickup/ingest", secret, serverUrl, { items: [], replies });
+    } catch {
+      /* 답글 표시가 늦어지는 것은 큰 문제가 아닙니다 - 다음 회차에 다시 보냅니다 */
+    }
+  }
+
   const diag = reply.diag ?? {};
   // 페이지 쪽 코드가 몇 버전인지 함께 적습니다. 확장 카드의 버전과 다르면 낡은 코드가
   // 아직 돌고 있다는 뜻이고, 그걸 화면에서 바로 알 수 있어야 합니다.
@@ -263,6 +277,7 @@ async function runOnceInner() {
     for (let i = 0; i < items.length; i += 25) {
       await post("/api/pickup/ingest", secret, serverUrl, { items: items.slice(i, i + 25) });
     }
+
     // 보낸 기록이 무한정 쌓이지 않게 최근 2000건만 남깁니다.
     const entries = Object.entries(nextSent).sort((a, b) => b[1] - a[1]).slice(0, 2000);
     await chrome.storage.local.set({ sent: Object.fromEntries(entries) });

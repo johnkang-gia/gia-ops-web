@@ -35,6 +35,9 @@ export type Inquiry = {
   task_id: string | null;
   /** 같은 내용이 다른 경로로도 들어왔을 때, 그 경로들. 화면에는 이 줄 하나만 뜹니다. */
   merged_sources: string[] | null;
+  /** '수동'이면 직원이 체크한 것, '답글'이면 토들에서 답글이 확인된 것. */
+  answered_via: string | null;
+  replied_by: string | null;
 };
 
 const TYPE_STYLE: Record<string, string> = {
@@ -101,13 +104,17 @@ export default function ParentInquiryPanel({
   const [busy, setBusy] = useState(false);
   // 내 반 것만 볼지. 담임 선생님은 대개 자기 반만 보면 됩니다.
   const [mineOnly, setMineOnly] = useState(false);
+  // 처리한 것까지 볼지. 요청: "체크를 하면 (...) 빼주고, 대신 문의기록으로 저장해줘
+  // 나중에 문의사항 검색할 수 있게" - 지우지 않고 숨겨두었다가 여기서 다시 꺼내 봅니다.
+  const [showDone, setShowDone] = useState(false);
+  const [query, setQuery] = useState("");
 
   const load = useCallback(async () => {
     const supabase = createClient();
     const { data } = await supabase
       .from("pickup_requests")
       .select(
-        "id, received_at, channel_label, matched_name, ai_student_name, inquiry_type, summary, urgency, raw_text, source, source_url, homeroom_email, answered_at, answered_by, task_id, merged_sources"
+        "id, received_at, channel_label, matched_name, ai_student_name, inquiry_type, summary, urgency, raw_text, source, source_url, homeroom_email, answered_at, answered_by, task_id, merged_sources, answered_via, replied_by"
       )
       .eq("kind", "문의")
       .order("received_at", { ascending: false })
@@ -127,10 +134,20 @@ export default function ParentInquiryPanel({
     };
   }, [load]);
 
-  const filtered = useMemo(
-    () => (mineOnly ? rows.filter((r) => r.homeroom_email === currentUserEmail) : rows),
-    [rows, mineOnly, currentUserEmail]
-  );
+  const filtered = useMemo(() => {
+    let list = mineOnly ? rows.filter((r) => r.homeroom_email === currentUserEmail) : rows;
+    // 처리한 것은 기본으로 숨깁니다. 손댈 것만 남아 있어야 목록이 쓸모 있습니다.
+    if (!showDone) list = list.filter((r) => !r.answered_at);
+    const q = query.trim().toLowerCase();
+    if (q) {
+      list = list.filter((r) =>
+        [r.matched_name, r.ai_student_name, r.channel_label, r.summary, r.raw_text, r.inquiry_type]
+          .filter(Boolean)
+          .some((v) => String(v).toLowerCase().includes(q))
+      );
+    }
+    return list;
+  }, [rows, mineOnly, currentUserEmail, showDone, query]);
   // 답 안 한 것 먼저, 그 안에서 긴급한 것 먼저. 목록을 훑을 때 손댈 것이 위에 있어야 합니다.
   const sorted = useMemo(
     () =>
@@ -183,17 +200,35 @@ export default function ParentInquiryPanel({
   }
 
   const Row = ({ r, full }: { r: Inquiry; full?: boolean }) => (
-    <button
-      type="button"
-      onClick={() => setDetail(r)}
+    <div
       className={
-        "flex w-full items-center gap-1.5 truncate rounded px-1 text-left text-[11px] transition hover:bg-black/5 " +
-        (full ? "py-1.5" : "py-0.5") +
+        "flex w-full items-center gap-1.5 rounded px-1 text-left transition hover:bg-black/5 " +
+        (full ? "py-1.5 text-xs" : "py-0.5 text-[11px]") +
         (r.answered_at ? " opacity-40" : "")
       }
     >
+      {/* 요청: "체크박스를 만들어서 체크를 하면 대시보드, 학부모 문의에서 빼주고" */}
+      <input
+        type="checkbox"
+        checked={!!r.answered_at}
+        disabled={busy}
+        onChange={(e) => markAnswered(r, e.target.checked)}
+        onClick={(e) => e.stopPropagation()}
+        className="h-3.5 w-3.5 shrink-0 cursor-pointer accent-emerald-500"
+        title={r.answered_at ? "처리 취소" : "처리 완료로 표시(기록에는 남습니다)"}
+      />
+      <button type="button" onClick={() => setDetail(r)} className="flex min-w-0 flex-1 items-center gap-1.5 truncate text-left">
       {r.urgency === "높음" && !r.answered_at && <span className="shrink-0 text-red-500">●</span>}
-      <span className="shrink-0 font-semibold text-slate-700">{studentOf(r)}</span>
+      <span className={"shrink-0 font-semibold text-slate-700 " + (full ? "text-sm" : "")}>{studentOf(r)}</span>
+      {/* 요청: "답글달렸다는 표시로 이름 뒤에 초록색 체크표시" */}
+      {r.answered_via === "답글" && (
+        <span
+          className="shrink-0 font-bold text-emerald-500"
+          title={r.replied_by ? `${r.replied_by} 선생님이 답글을 다셨습니다` : "이미 답글이 달렸습니다"}
+        >
+          ✓
+        </span>
+      )}
       {r.inquiry_type && (
         <span className={"shrink-0 rounded px-1 text-[10px] font-semibold " + (TYPE_STYLE[r.inquiry_type] ?? "bg-slate-100")}>
           {r.inquiry_type}
@@ -214,7 +249,8 @@ export default function ParentInquiryPanel({
       <span className="shrink-0 text-[10px] text-slate-400" title={new Date(r.received_at).toLocaleString("ko-KR")}>
         {whenLabel(r.received_at)}
       </span>
-    </button>
+      </button>
+    </div>
   );
 
   return (
@@ -243,6 +279,16 @@ export default function ParentInquiryPanel({
           >
             내 반
           </button>
+          {/* 처리한 문의는 지우지 않고 남겨둡니다 - "그때 그 학부모가 뭐라고 하셨더라"를
+              나중에 찾을 수 있어야 하고, 같은 문의가 반복되면 그것 자체가 신호입니다. */}
+          <button
+            type="button"
+            onClick={() => setShowDone((v) => !v)}
+            className={"rounded-full px-1.5 py-0.5 text-[10px] font-semibold " + (showDone ? "bg-emerald-100 text-emerald-600" : "text-slate-400 hover:bg-black/5")}
+            title="처리한 문의까지 함께 보기"
+          >
+            기록
+          </button>
           {!full && (
             <button type="button" onClick={() => setExpanded(true)} className="text-[10px] font-medium text-blue-400 hover:underline">
               전체보기 →
@@ -251,8 +297,20 @@ export default function ParentInquiryPanel({
         </div>
       </div>
 
+      {/* 넓은 자리에서만 검색창을 둡니다. 좁은 자리에서는 줄 하나가 아깝습니다. */}
+      {full && (
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="학생 이름·내용으로 찾기"
+          className="mb-1.5 w-full shrink-0 rounded-lg border border-black/5 bg-white/60 px-2 py-1 text-[11px] outline-none focus:border-blue-300"
+        />
+      )}
+
       {sorted.length === 0 ? (
-        <p className={full ? "text-xs opacity-40" : "text-[11px] opacity-40"}>아직 들어온 문의가 없습니다.</p>
+        <p className={full ? "text-xs opacity-40" : "text-[11px] opacity-40"}>
+          {query ? "찾는 문의가 없습니다." : showDone ? "기록이 없습니다." : "손댈 문의가 없습니다."}
+        </p>
       ) : (
         <div
           className="flex min-h-0 flex-1 flex-col overflow-y-auto"

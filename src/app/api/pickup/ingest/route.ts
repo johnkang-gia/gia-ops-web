@@ -27,8 +27,43 @@ export async function POST(req: Request) {
   const supabase = createClient(url, serviceKey, { auth: { persistSession: false } });
 
   const body = await req.json().catch(() => null);
-  const rawItems = Array.isArray(body?.items) ? body.items : body ? [body] : [];
-  if (rawItems.length === 0) return NextResponse.json({ error: "items가 필요합니다." }, { status: 400 });
+  const rawItems = Array.isArray(body?.items) ? body.items : body?.items === undefined && body ? [body] : [];
+
+  // ── 이미 답글이 달린 방 ────────────────────────────────────────────────────
+  // 요청: "혹시나 다른 직원이 답글을 달았다면 해결된 것으로 체크해줘"
+  //
+  // 다른 선생님이 벌써 답했는데 인박스에 남아 있으면, 또 답하거나 계속 신경 쓰게 됩니다.
+  // 학부모는 같은 얘기를 두 번 듣게 되고요. 그래서 답글이 확인되면 처리됨으로 넘깁니다.
+  // 사람이 누른 것과 구분되도록 answered_via에 '답글'로 남깁니다.
+  const rawReplies = Array.isArray(body?.replies) ? body.replies : [];
+  let repliedCount = 0;
+  for (const r of rawReplies.slice(0, 50)) {
+    const chatId = typeof r?.chatId === "string" ? r.chatId : null;
+    const at = typeof r?.at === "string" ? r.at : null;
+    if (!chatId || !at) continue;
+    const { data: updated } = await supabase
+      .from("pickup_requests")
+      .update({
+        answered_at: at,
+        answered_by: typeof r?.by === "string" ? r.by : null,
+        answered_via: "답글",
+        replied_by: typeof r?.by === "string" ? r.by : null,
+        replied_at: at,
+      })
+      .eq("source_chat_id", chatId)
+      .eq("kind", "문의")
+      .is("answered_at", null)
+      // 답글보다 나중에 온 문의는 아직 답을 못 받은 것입니다.
+      .lt("received_at", at)
+      .select("id");
+    repliedCount += updated?.length ?? 0;
+  }
+
+  if (rawItems.length === 0) {
+    // 답글 소식만 전해오는 경우도 있습니다(새 메시지 없이).
+    if (rawReplies.length > 0) return NextResponse.json({ ok: true, replied: repliedCount, saved: 0 });
+    return NextResponse.json({ error: "items가 필요합니다." }, { status: 400 });
+  }
   // 한 번에 너무 많이 보내면 AI 호출이 몰려 응답이 늦어집니다. 수집기가 나눠 보내도록 제한합니다.
   if (rawItems.length > 30) return NextResponse.json({ error: "한 번에 30건까지 보낼 수 있습니다." }, { status: 400 });
 

@@ -181,7 +181,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   // 없어집니다.
   const { data: inquiryRows } = await supabase
     .from("pickup_requests")
-    .select("id, received_at, matched_name, ai_student_name, channel_label, inquiry_type, summary, urgency")
+    .select(
+      "id, received_at, matched_name, ai_student_name, channel_label, inquiry_type, summary, urgency, replied_at, replied_by"
+    )
     .eq("kind", "문의")
     .is("answered_at", null)
     .gte("received_at", new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString())
@@ -197,6 +199,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
       summary: (r.summary as string | null) ?? "",
       urgent: r.urgency === "높음",
       at: r.received_at as string,
+      // 답글이 달렸지만 아직 처리로 넘기지 않은 건. 이름 뒤에 초록 체크가 붙습니다.
+      replied: !!r.replied_at,
     }))
     .sort((a, b) => Number(b.urgent) - Number(a.urgent) || b.at.localeCompare(a.at));
 

@@ -26,7 +26,7 @@
 // '안 읽음' 표시가 사라지지 않습니다. 선생님들 업무를 건드리지 않는다는 뜻입니다.
 
 (() => {
-  const VERSION = "2.1.0";
+  const VERSION = "2.2.0";
 
   // 같은 버전이 이미 돌고 있으면 그대로 둡니다.
   //
@@ -171,12 +171,34 @@
    * 메시지까지 전부 "안 읽음"으로 나옵니다(실제로 64개 전부 그랬습니다). 그래서 그 값을
    * 믿지 않고, 방의 안 읽은 개수만큼 **최신 것부터** 잘라 씁니다. 목록은 최신이 앞입니다.
    */
+  /**
+   * 이 방에 마지막으로 답글을 단 선생님.
+   *
+   * 요청: "혹시나 다른 직원이 답글을 달았다면 해결된 것으로 체크해줘"
+   * 학부모 문의 뒤에 선생님 글이 있으면 누군가 이미 답한 것입니다. 그걸 모르고 또 답하면
+   * 학부모는 같은 얘기를 두 번 듣게 됩니다.
+   */
+  function lastStaffReply(edges) {
+    for (const e of edges) {
+      const n = e?.node;
+      if (!n) continue;
+      if (String(n.type || "").toUpperCase() !== "NORMAL") continue;
+      // 목록은 최신이 앞입니다. 학부모 글을 먼저 만나면 그 뒤로는 답글이 없는 것입니다.
+      if (String(n.createdBy?.type || "").toUpperCase() !== "STAFF") return null;
+      return {
+        at: n.createdAt ?? null,
+        by: [n.createdBy?.firstName, n.createdBy?.lastName].filter(Boolean).join(" ") || null,
+      };
+    }
+    return null;
+  }
+
   async function fetchMessages(chatId, unread) {
     const one = await gql("giaMessages", MESSAGES_QUERY, { chatId });
     const edges = one?.data?.node?.messagesV2?.edges;
-    if (!Array.isArray(edges)) return [];
+    if (!Array.isArray(edges)) return { messages: [], reply: null };
     const cutoff = Date.now() - MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
-    return edges
+    const messages = edges
       .slice(0, Math.max(1, Math.min(unread, 20)))
       .map((e) => e?.node)
       .filter(Boolean)
@@ -192,6 +214,7 @@
         senderType: m.createdBy?.type ?? null,
         senderName: [m.createdBy?.firstName, m.createdBy?.lastName].filter(Boolean).join(" ") || null,
       }));
+    return { messages, reply: lastStaffReply(edges) };
   }
 
   // ── 확장(content.js)과의 대화 ──────────────────────────────────────────────
@@ -217,7 +240,7 @@
         const out = [];
         for (const room of targets) {
           try {
-            const messages = await fetchMessages(room.id, room.unread);
+            const { messages, reply } = await fetchMessages(room.id, room.unread);
             // 원문으로 돌아가는 주소. 지금 보고 있는 화면 주소에서 학교 부분을 그대로 떼어
             // 씁니다 - 번호를 코드에 박아두면 다른 과정에서 안 맞습니다.
             const base = location.href.match(/^(https:\/\/[^/]+\/platform\/[^/]+)/);
@@ -229,6 +252,8 @@
               lastActiveAt: room.lastActiveAt,
               url,
               messages,
+              // 이 방에 이미 답글이 달렸는지. 서버가 해당 문의를 처리됨으로 표시합니다.
+              reply,
             });
           } catch (err) {
             if (String(err.message) === "LOGIN_REQUIRED") throw err;

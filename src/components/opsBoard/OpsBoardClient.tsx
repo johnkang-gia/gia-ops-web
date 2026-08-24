@@ -19,6 +19,7 @@ import { useBoardDensity, type BoardScale, type Density } from "@/lib/useBoardDe
 import { lessonPlace } from "@/lib/lessonLocation";
 import { APP_VERSION } from "@/lib/version";
 import LunchCountdown from "./LunchCountdown";
+import InquiryBoard from "./InquiryBoard";
 
 // 요청: "바뀌면 자동으로 새로고침해서 페이지를 수정해줘"
 //
@@ -46,7 +47,7 @@ type BoardData = {
   studentCount: number;
   absences: { name: string; grade: string | null; className: string | null; status: string; note: string | null; contacted: boolean }[];
   pickups: string[];
-  inquiries: { id: string; student: string; type: string | null; summary: string; urgent: boolean; at: string }[];
+  inquiries: { id: string; student: string; type: string | null; summary: string; urgent: boolean; at: string; replied?: boolean }[];
   collector: { lastSeen: string | null; status: string | null; stale: boolean } | null;
   taskSummary: {
     statusCounts: Record<string, number>;
@@ -55,16 +56,6 @@ type BoardData = {
   };
   shuttle: { mode: boolean; boardToken: string | null; switchLabel: string; endLabel: string };
 };
-
-// 언제 온 문의인지. 오늘 것은 시각만, 그 전 것은 요일까지 적습니다 - 멀리서 보는 화면이라
-// "3시간 전" 같은 표현보다 시각이 바로 읽힙니다.
-function inquiryTime(iso: string): string {
-  const d = new Date(iso);
-  const now = new Date();
-  const hhmm = d.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
-  if (d.toDateString() === now.toDateString()) return hhmm;
-  return `${["일", "월", "화", "수", "목", "금", "토"][d.getDay()]} ${hhmm}`;
-}
 
 const STATUS_COLOR: Record<string, string> = {
   결석: "#dc2626",
@@ -667,57 +658,10 @@ export default function OpsBoardClient({ token }: { token: string }) {
           ) : !data.inquiries || data.inquiries.length === 0 ? (
             <Empty sc={sc} text="답할 문의 없음" tone="good" />
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: sc.s(4, 3) }}>
-              {/* 요청: "오른쪽에 학부모 문의를 많이 보이게 해줘"
-                  오른쪽 절반을 통으로 쓰므로 넉넉히 올립니다. 스크롤이 없어 넘치면 잘리는데,
-                  급한 것과 최근 것이 위에 오도록 이미 정렬해 두어 잘리는 쪽은 덜 급한 것입니다. */}
-              {data.inquiries.slice(0, sc.narrow ? 6 : 16).map((q) => (
-                <div
-                  key={q.id}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: sc.s(6, 4),
-                    background: "#1e293b",
-                    borderLeft: `4px solid ${q.urgent ? "#dc2626" : "#0284c7"}`,
-                    borderRadius: 6,
-                    padding: `${sc.s(5, 3)}px ${sc.s(9, 6)}px`,
-                    minWidth: 0,
-                  }}
-                >
-                  <b style={{ fontSize: sc.s(15, 11), color: "#fff", whiteSpace: "nowrap" }}>{q.student}</b>
-                  {q.type && (
-                    <span
-                      style={{
-                        fontSize: sc.s(11, 9),
-                        fontWeight: 700,
-                        color: "#93c5fd",
-                        background: "#1e3a5f",
-                        borderRadius: 5,
-                        padding: `0 ${sc.s(5, 3)}px`,
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {q.type}
-                    </span>
-                  )}
-                  <span
-                    style={{
-                      flex: 1,
-                      minWidth: 0,
-                      fontSize: sc.s(14, 11),
-                      color: "#cbd5e1",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {q.summary}
-                  </span>
-                  <span style={{ fontSize: sc.s(11, 9), color: "#64748b", whiteSpace: "nowrap" }}>{inquiryTime(q.at)}</span>
-                </div>
-              ))}
-            </div>
+            /* 요청: "글자를 좀더 크게 (...) 이름을 좀더 크게 그리고 그아래에 문의내용 간단히
+               요약해서 (...) 스크롤이 내려간다면 계속 몇초에 한번씩 다음페이지 보여줬다가
+               돌아왔다가" - 스크롤을 내릴 사람이 없으니 장을 넘기는 쪽으로 했습니다. */
+            <InquiryBoard items={data.inquiries} perPage={sc.narrow ? 4 : 7} s={sc.s} />
           )}
         </Panel>
       </div>

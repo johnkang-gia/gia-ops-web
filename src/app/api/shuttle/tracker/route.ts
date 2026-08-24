@@ -98,6 +98,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true });
   }
 
+  // 24시간 테스트 켜기/끄기. 요청: 하원 시간대가 아니어도 지금 바로 위치가 저장되는지 테스트.
+  // 켜두면 그 기기는 시간대와 무관하게 위치를 기록합니다(테스트가 끝나면 꺼서 평소대로 돌립니다).
+  if (action === "toggle_always_on") {
+    const id = body?.id as string | undefined;
+    if (!id) return NextResponse.json({ error: "id가 필요합니다." }, { status: 400 });
+    const { error } = await supabase.from("shuttle_tracker_devices").update({ always_on: !!body?.always_on }).eq("id", id);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
+
   if (action === "delete") {
     const id = body?.id as string | undefined;
     if (!id) return NextResponse.json({ error: "id가 필요합니다." }, { status: 400 });

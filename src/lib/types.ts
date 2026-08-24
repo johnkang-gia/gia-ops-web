@@ -860,6 +860,11 @@ export type ShuttleTrackerDevice = {
   // 기사님 성함·연락처는 shuttle_routes 쪽 값을 그대로 씁니다.
   setup_code: string | null;
   setup_opened_at: string | null;
+  // 시간대와 무관하게 항상 위치를 기록하는 테스트 기기인지(기사님 배포 전 확인용).
+  always_on?: boolean;
+  // 진단: 앱이 마지막으로 신호를 보낸 시각과 그때 서버 판정('stored'|'out_of_window'|'no_coords').
+  last_hit_at?: string | null;
+  last_hit_reason?: string | null;
 };
 
 // 주행 기록에서 찾아낸 "차가 실제로 멈춰 있던 지점".

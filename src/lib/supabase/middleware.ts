@@ -97,6 +97,13 @@ export async function updateSession(request: NextRequest) {
     // 값만 보여주고 위치 기록은 전혀 보여주지 않습니다.
     path.startsWith("/s/") ||
     path.startsWith("/api/shuttle/setup") ||
+    // 기사님 휴대폰(Traccar Client)이 위치를 보내오는 라우트입니다. 세션 쿠키가 없는
+    // 서버-서버(앱→서버) 호출이라, 여기서 /login으로 리다이렉트해버리면 앱이 "Upload response
+    // 307"로 실패하고 위치가 한 번도 저장되지 않습니다(실제 발견: 27호차 테스트 로그의 307).
+    // 인증은 기기 ID(추측 어려운 임의 문자열)로 track 라우트가 자체 확인합니다.
+    // /api/shuttle/track-test(관리자용)도 이 접두사에 걸리지만, 그 라우트는 안에서 다시 로그인·
+    // 권한을 검사하므로 안전합니다.
+    path.startsWith("/api/shuttle/track") ||
     // 토들 수집기(크롬 확장) 파일 - 사무실 PC가 여기서 최신 파일을 내려받아 스스로 갱신합니다.
     // 로그인 없이 열려야 합니다(확장은 브라우저 세션이 없는 상태로 받습니다). 확장 코드에는
     // 비밀값이 없습니다 - 수집 키는 담당자가 그 PC에서 직접 넣고 그 PC에만 저장됩니다.

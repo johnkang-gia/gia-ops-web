@@ -84,20 +84,6 @@ async function handle(params: URLSearchParams) {
   const deviceId = (params.get("id") ?? params.get("deviceid") ?? "").trim();
   if (!deviceId) return new NextResponse("missing id", { status: 400 });
 
-  let lat = pickNumber(params, "lat", "latitude");
-  let lng = pickNumber(params, "lon", "lng", "longitude");
-  // location=위도,경도 형태로 오는 경우도 프로토콜상 허용됩니다.
-  const location = params.get("location");
-  if ((lat == null || lng == null) && location?.includes(",")) {
-    const [rawLat, rawLng] = location.split(",");
-    lat = Number(rawLat);
-    lng = Number(rawLng);
-  }
-  if (lat == null || lng == null || !Number.isFinite(lat) || !Number.isFinite(lng)) {
-    // 좌표 없이 상태만 보내는 요청(하트비트)도 있어서 에러로 취급하지 않습니다.
-    return new NextResponse("OK", { status: 200 });
-  }
-
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !serviceKey) return new NextResponse("server not configured", { status: 500 });
@@ -110,15 +96,40 @@ async function handle(params: URLSearchParams) {
     .maybeSingle();
 
   // 등록되지 않았거나 꺼둔 기기는 조용히 무시합니다. 200을 돌려줘야 앱이 "전송 실패"로 보고
-  // 계속 재시도하며 배터리를 쓰지 않습니다.
+  // 계속 재시도하며 배터리를 쓰지 않습니다. (등록 안 된 기기는 남길 곳이 없어 진단도 못 남깁니다 -
+  // 기기관리 화면에 "앱 신호 없음"으로 보이면 기기 ID가 다른지 먼저 확인하시면 됩니다.)
   if (!device || !device.enabled) return new NextResponse("OK", { status: 200 });
+
+  // 진단: 앱이 신호를 보냈다는 사실 자체를 기기에 기록해 둡니다(요청: "앱 로그 가져오게 못하나").
+  // reason으로 "저장됨 / 시간대밖 / 좌표없음"을 남겨, 셔틀탭에서 왜 위치가 안 뜨는지 바로 봅니다.
+  const nowIso = new Date().toISOString();
+  const markHit = (reason: string, alsoSeen: boolean) =>
+    supabase
+      .from("shuttle_tracker_devices")
+      .update({ last_hit_at: nowIso, last_hit_reason: reason, ...(alsoSeen ? { last_seen_at: nowIso } : {}) })
+      .eq("id", device.id);
+
+  let lat = pickNumber(params, "lat", "latitude");
+  let lng = pickNumber(params, "lon", "lng", "longitude");
+  // location=위도,경도 형태로 오는 경우도 프로토콜상 허용됩니다.
+  const location = params.get("location");
+  if ((lat == null || lng == null) && location?.includes(",")) {
+    const [rawLat, rawLng] = location.split(",");
+    lat = Number(rawLat);
+    lng = Number(rawLng);
+  }
+  if (lat == null || lng == null || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+    // 좌표 없이 상태만 보내는 요청(하트비트)도 있어서 에러로 취급하지 않습니다.
+    await markHit("no_coords", false);
+    return new NextResponse("OK", { status: 200 });
+  }
 
   const recordedAt = parseTimestamp(params.get("timestamp"));
 
   // 하원 운행 시간대 밖의 위치는 저장하지 않습니다(기사님 개인 휴대폰이라 필요한 시간만 수집).
-  // 단, always_on 기기(강경원 24시간 테스트)는 시간대와 무관하게 항상 기록합니다.
+  // 단, always_on 기기(테스트)는 시간대와 무관하게 항상 기록합니다.
   if (!device.always_on && !isWithinTrackingWindow(recordedAt)) {
-    await supabase.from("shuttle_tracker_devices").update({ last_seen_at: new Date().toISOString() }).eq("id", device.id);
+    await markHit("out_of_window", true);
     return new NextResponse("OK", { status: 200 });
   }
 
@@ -136,7 +147,7 @@ async function handle(params: URLSearchParams) {
     source: "traccar",
     recorded_at: recordedAt.toISOString(),
   });
-  await supabase.from("shuttle_tracker_devices").update({ last_seen_at: new Date().toISOString() }).eq("id", device.id);
+  await markHit("stored", true);
 
   // ── 정류장 도착 감지 ─────────────────────────────────────────────────────────
   // 요청: "정류장에 도착했다면 어디정류장에 도착했는지 체크되게". 이 노선의 정류장 좌표 중

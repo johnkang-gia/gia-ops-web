@@ -138,6 +138,13 @@ export default function TrackerDeviceManager({
     await call({ action: "toggle", id: device.id, enabled: next });
   }
 
+  // 24시간 테스트 켜기/끄기 - 하원 시간대가 아니어도 위치가 저장되는지 지금 바로 확인용.
+  async function toggleAlwaysOn(device: ShuttleTrackerDevice) {
+    const next = !device.always_on;
+    setDevices((prev) => prev.map((d) => (d.id === device.id ? { ...d, always_on: next } : d)));
+    await call({ action: "toggle_always_on", id: device.id, always_on: next });
+  }
+
   async function removeDevice(device: ShuttleTrackerDevice) {
     if (!window.confirm(`${routeById.get(device.route_id)?.route_no ?? ""}호 기기 등록을 삭제할까요?`)) return;
     const json = await call({ action: "delete", id: device.id });
@@ -299,6 +306,19 @@ export default function TrackerDeviceManager({
                 )}
 
                 <div className="ml-auto flex items-center gap-1.5">
+                  {device && (
+                    <button
+                      type="button"
+                      onClick={() => toggleAlwaysOn(device)}
+                      title="하원 시간대가 아니어도 지금 위치가 저장되는지 테스트합니다. 확인 후 꺼주세요."
+                      className={
+                        "rounded-lg px-2 py-1 text-[11px] font-semibold " +
+                        (device.always_on ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-400")
+                      }
+                    >
+                      {device.always_on ? "24h 테스트 켜짐" : "24h 테스트"}
+                    </button>
+                  )}
                   {device ? (
                     <>
                       <button
@@ -338,6 +358,12 @@ export default function TrackerDeviceManager({
                     </button>
                   )}
                 </div>
+
+                {/* 진단: 앱이 신호를 보냈는지 + 왜 위치가 저장/미저장인지(요청: "앱 로그 가져오게
+                    못하나"). 서버가 받은 마지막 요청을 그대로 보여줍니다. */}
+                {device && (
+                  <div className="w-full text-[11px] text-slate-500">{hitDiag(device)}</div>
+                )}
               </div>
             );
           })}
@@ -443,6 +469,32 @@ export default function TrackerDeviceManager({
 function isFresh(lastSeenAt: string | null): boolean {
   if (!lastSeenAt) return false;
   return Date.now() - new Date(lastSeenAt).getTime() < 10 * 60 * 1000;
+}
+
+// 앱이 서버로 보낸 마지막 요청을 사람 말로 풀어줍니다(요청: 앱 로그 대신 서버에서 확인).
+function ago(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 60) return `${s}초 전`;
+  if (s < 3600) return `${Math.floor(s / 60)}분 전`;
+  if (s < 86400) return `${Math.floor(s / 3600)}시간 전`;
+  return `${Math.floor(s / 86400)}일 전`;
+}
+function hitDiag(device: ShuttleTrackerDevice): string {
+  if (!device.last_hit_at) {
+    return "앱 신호 없음 — 앱이 아직 서버에 도달하지 못했습니다(설치·기기ID 확인, 또는 잠시 대기).";
+  }
+  const when = ago(device.last_hit_at);
+  switch (device.last_hit_reason) {
+    case "stored":
+      return `앱 신호 ${when} · 위치 저장됨 ✓ (정상)`;
+    case "out_of_window":
+      return `앱 신호 ${when} · 연결은 정상이나 지금은 하원 시간대(평일 15:30~18:30)가 아니라 위치를 저장하지 않습니다. 지금 테스트하려면 [24h 테스트]를 켜세요.`;
+    case "no_coords":
+      return `앱 신호 ${when} · 신호는 오는데 위치(좌표)가 비어 있습니다. 휴대폰 위치 권한을 '항상 허용'으로 확인해 주세요.`;
+    default:
+      return `앱 신호 ${when}`;
+  }
 }
 
 // 노선 한 줄의 상태를 정합니다. 담당자가 다음에 무엇을 해야 하는지가 바로 읽히도록 문구를

@@ -83,31 +83,33 @@
         if (Object.keys(h).length) learned.headers = h;
 
         const items = pickItems(body);
-        for (const item of items) {
-          const op = item?.operationName;
-          // 대화 조회 요청 - 이 서식을 chat id만 바꿔 재사용합니다.
-          if (op === "getChatConversations" && item.query) learned.messagesItem = item;
-          // 채팅 목록 요청 - 안 읽은 방을 찾는 데 씁니다.
-          if (item.query && /chats\s*\(/.test(item.query) && /unreadMessageCount/.test(item.query)) {
-            learned.chatListItem = item;
-          }
-        }
-
-        // 응답에서 채팅 목록을 갈무리해 둡니다. 토들 화면이 목록을 새로 받을 때마다 갱신됩니다.
         const json = await res.clone().json();
         const arr = Array.isArray(json) ? json : [json];
-        for (const one of arr) {
+
+        // 어느 요청이 무엇을 돌려주는지는 "응답"을 보고 판단합니다.
+        //
+        // 처음에는 요청 본문의 이름(operationName)이나 질의문 글자를 보고 골랐는데, 토들이
+        // 이름을 조금만 바꿔도 못 알아봅니다. 토들은 여러 요청을 배열로 묶어 한 번에 보내고
+        // 응답도 같은 순서의 배열로 오므로, "몇 번째 응답에 채팅 목록이 들어 있나"를 보면
+        // 그 자리의 요청이 곧 채팅 목록 요청입니다. 이름이 바뀌어도 계속 맞습니다.
+        for (let i = 0; i < arr.length; i += 1) {
+          const one = arr[i];
+          const req = items[i];
           const edges = one?.data?.node?.chats?.edges;
-          if (!Array.isArray(edges)) continue;
-          for (const e of edges) {
-            const n = e?.node;
-            if (!n?.id) continue;
-            chats.set(String(n.id), {
-              label: n.label ?? null,
-              unread: Number(n.unreadMessageCount ?? 0),
-              lastActiveAt: n.lastActiveAt ?? null,
-            });
+          if (Array.isArray(edges)) {
+            if (req?.query) learned.chatListItem = req;
+            for (const e of edges) {
+              const n = e?.node;
+              if (!n?.id) continue;
+              chats.set(String(n.id), {
+                label: n.label ?? null,
+                unread: Number(n.unreadMessageCount ?? 0),
+                lastActiveAt: n.lastActiveAt ?? null,
+              });
+            }
           }
+          // 대화 조회 요청 - 이 서식을 chat id만 바꿔 재사용합니다.
+          if (one?.data?.node?.messagesV2 && req?.query) learned.messagesItem = req;
         }
       } catch {
         /* 응답이 JSON이 아니거나 이미 읽힌 경우 - 무시 */
@@ -183,6 +185,10 @@
 
   // 채팅 목록을 새로 받아옵니다(화면을 건드리지 않고). 실패하면 갈무리해 둔 목록을 씁니다.
   async function refreshChatList() {
+    // 채팅 목록 요청도 못 배웠고 갈무리해 둔 목록도 없으면, 아직 아무것도 볼 수 없는 상태입니다.
+    // 이때 빈 목록을 돌려주면 "새 메시지 없음"이라는 거짓 안심을 주게 됩니다 - 조용히 아무것도
+    // 안 하면서 정상이라고 말하는 것이 이 시스템에서 가장 나쁜 실패입니다.
+    if (!learned.chatListItem && chats.size === 0) throw new Error("NEEDS_TRAINING");
     if (!learned.chatListItem) return [...chats.entries()].map(([id, v]) => ({ id, ...v }));
     try {
       const json = await callGraphql([JSON.parse(JSON.stringify(learned.chatListItem))]);

@@ -130,9 +130,13 @@ async function runOnce() {
 
   // 열려 있는 토들 탭을 차례로 시도합니다. 한 탭이 굳어 있어도 다른 탭으로 넘어갑니다.
   let reply = null;
+  let tabId = null;
   for (const tab of tabs) {
     reply = await askTab(tab.id, "collect");
-    if (reply) break;
+    if (reply) {
+      tabId = tab.id;
+      break;
+    }
   }
   if (!reply) {
     await setState({
@@ -151,9 +155,31 @@ async function runOnce() {
       return;
     }
     if (err === "NEEDS_TRAINING") {
-      // 아직 대화 조회 서식을 못 배운 상태입니다. 사람이 채팅방을 한 번 열면 배웁니다.
-      await setState({ status: "준비 중", detail: "토들에서 채팅방을 하나만 열어주세요(한 번이면 됩니다)." });
-      await heartbeat("error", "수집기가 아직 준비되지 않았습니다(채팅방 1회 열기 필요).");
+      // 아직 서식을 못 배운 상태입니다.
+      //
+      // 수집기는 토들이 스스로 보내는 요청을 옆에서 보고 배웁니다. 그런데 확장이 나중에 끼어들면
+      // (설치 직후, 또는 크롬이 탭을 재웠다 깨운 뒤) 페이지가 이미 보낸 요청을 못 봅니다. 화면을
+      // 가만히 두면 그 요청이 다시 일어나지 않아 영원히 못 배웁니다.
+      //
+      // 그래서 두 번 연속 이 상태면 탭을 한 번 새로고침해 스스로 낫게 합니다. 매번 새로고침하면
+      // 담당자가 토들을 보고 있을 때 방해가 되므로, 정말 막혔을 때만 합니다.
+      const { trainFails = 0 } = await chrome.storage.local.get(["trainFails"]);
+      const next = trainFails + 1;
+      await chrome.storage.local.set({ trainFails: next });
+
+      if (next >= 2) {
+        await chrome.storage.local.set({ trainFails: 0 });
+        try {
+          await chrome.tabs.reload(tabId);
+          await setState({ status: "준비 중", detail: "토들 페이지를 새로고침했습니다. 1분 뒤 자동으로 다시 확인합니다." });
+          await heartbeat("error", "수집기 준비 중(자동 새로고침).");
+          return;
+        } catch {
+          /* 새로고침 실패 - 아래 안내로 넘어갑니다 */
+        }
+      }
+      await setState({ status: "준비 중", detail: "토들 페이지에서 F5를 한 번 눌러주세요. 곧 자동으로도 시도합니다." });
+      await heartbeat("error", "수집기가 아직 준비되지 않았습니다.");
       return;
     }
     await setState({ status: "오류", detail: err || "알 수 없는 오류" });
@@ -186,6 +212,8 @@ async function runOnce() {
       nextSent[m.id] = Date.now();
     }
   }
+
+  await chrome.storage.local.set({ trainFails: 0 });
 
   if (items.length === 0) {
     await setState({ status: "정상", detail: `새 메시지 없음 (안 읽은 방 ${(reply.chats ?? []).length}개)` });

@@ -21,7 +21,22 @@ type ArrivalRoute = {
   vehicleNo: string | null;
   roster: { studentName: string; status: string }[];
   events: { event: string; created_at: string; createdBy: string | null }[];
+  // 기사님 휴대폰이 마지막으로 위치를 보내온 시각(GPS 살아있는지 확인용). 미설정이면 null.
+  gpsLastSeen?: string | null;
+  hasDevice?: boolean;
 };
+
+// GPS 상태를 화면 표시용으로 정리합니다. 마지막 위치 신호가 얼마나 최근인지로 "운행중(살아있음)/
+// 끊김/미설정"을 가릅니다. 이 화면은 3초마다 새로 그려지므로 별도 타이머 없이도 갱신됩니다.
+function gpsInfo(r: ArrivalRoute): { live: boolean; label: string; tone: "live" | "stale" | "none" } {
+  if (!r.hasDevice) return { live: false, label: "GPS 미설정", tone: "none" };
+  if (!r.gpsLastSeen) return { live: false, label: "GPS 대기", tone: "none" };
+  const ageMs = Date.now() - new Date(r.gpsLastSeen).getTime();
+  const min = Math.floor(ageMs / 60000);
+  if (ageMs < 4 * 60 * 1000) return { live: true, label: min <= 0 ? "📍 방금" : `📍 ${min}분 전`, tone: "live" };
+  if (ageMs < 60 * 60 * 1000) return { live: false, label: `📍 ${min}분 전`, tone: "stale" };
+  return { live: false, label: "GPS 끊김", tone: "stale" };
+}
 
 type ArrivalData = { label: string; term: string; routes: ArrivalRoute[] };
 
@@ -217,6 +232,11 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
             // 있게 합니다.
             const autoLabel =
               departEvent?.createdBy === "GPS 자동감지" ? "GPS 감지" : departEvent?.createdBy === "시간초과 자동정리" ? "시간 초과" : null;
+            // 도착이 GPS로 자동 잡혔는지(사람이 누른 게 아니라).
+            const arrivedByGps = r.events.find((e) => e.event === "현장도착")?.createdBy === "GPS 자동감지";
+            // GPS 신호 상태(살아있음/끊김/미설정)와, 아직 도착 전인데 GPS가 살아있으면 "운행중".
+            const gps = gpsInfo(r);
+            const enRoute = status === "waiting" && gps.live;
             // 하원 체크표에서 픽업(부모님이 직접 데려가심)·결석으로 체크한 학생은 이 차를 안
             // 타므로 "미도착 명단"에서 뺍니다(요청: "결석이나, 픽업을 체크하면 실시간으로 교직원
             // 차량 도착 출발체크에 반영이 되고" - 안내보드와 같은 필터링 방식).
@@ -232,7 +252,9 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
                     ? "border-orange-400"
                     : status === "departed"
                       ? "border-slate-200"
-                      : "border-blue-200")
+                      : enRoute
+                        ? "border-emerald-400"
+                        : "border-blue-200")
                 }
               >
                 <button
@@ -254,7 +276,9 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
                       ? "bg-orange-500 text-white"
                       : status === "departed"
                         ? "bg-slate-200 text-slate-500"
-                        : "bg-white text-blue-700")
+                        : enRoute
+                          ? "bg-emerald-50 text-emerald-700"
+                          : "bg-white text-blue-700")
                   }
                 >
                   <span className="text-base font-black leading-tight">{r.routeNo}호</span>
@@ -262,11 +286,30 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
                   {/* 요청: "차량도착 출발체크 교직원용에 차 번호도 나오게 해줘 작게" */}
                   {r.vehicleNo && <span className="max-w-full truncate text-[7px] font-medium leading-tight opacity-70">{r.vehicleNo}</span>}
                   <span className="text-[9px] font-bold leading-tight">
-                    {status === "waiting" ? "미도착" : status === "arrived" ? "도착함" : "출발함"}
+                    {status === "waiting" ? (enRoute ? "운행중" : "미도착") : status === "arrived" ? "도착함" : "출발함"}
                   </span>
+                  {status === "arrived" && arrivedByGps && (
+                    <span className="text-[7px] font-semibold leading-none text-orange-100">자동·GPS 감지</span>
+                  )}
                   {status === "departed" && autoLabel && (
                     <span className="text-[7px] font-semibold leading-none text-slate-400">자동·{autoLabel}</span>
                   )}
+                  {/* GPS 살아있는지 확인용. 요청: "모바일로 제대로 (GPS가) 돌아가는지 체크". 최근에
+                      위치를 보내오면 초록, 오래됐으면 회색으로 한눈에 구분됩니다. */}
+                  <span
+                    className={
+                      "mt-0.5 text-[7px] font-semibold leading-none " +
+                      (gps.tone === "live"
+                        ? status === "arrived"
+                          ? "text-emerald-100"
+                          : "text-emerald-600"
+                        : status === "arrived"
+                          ? "text-orange-100"
+                          : "text-slate-400")
+                    }
+                  >
+                    {gps.label}
+                  </span>
                 </button>
                 {(waiting.length > 0 || pickedUpCount > 0 || absentCount > 0) && (
                   <div className="flex flex-wrap gap-0.5 bg-slate-50 p-1">
@@ -326,6 +369,9 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
             <p className="mb-2 text-sm font-bold text-slate-800">ℹ️ 사용법</p>
             <ul className="list-disc space-y-1.5 pl-4 text-[11px] leading-relaxed text-slate-600">
               <li>차량 카드를 누르면 미도착 → 도착함 → 출발함 → 미도착 순서로 바뀝니다.</li>
+              <li><b>GPS가 켜진 차량은 자동으로 색이 바뀝니다</b> — 운행 중이면 초록, 학교 근처에 도착하면 주황(도착함), 멀어지면 회색(출발함).</li>
+              <li>카드 맨 아래 <b>📍 표시</b>로 기사님 휴대폰 GPS가 살아있는지 확인할 수 있습니다(초록=방금 신호, 회색=끊김/미설정).</li>
+              <li>자동으로 안 바뀌어도 카드를 눌러 직접 도착·출발을 표시할 수 있습니다.</li>
               <li>차량 카드를 꾹 누르면 기사님께 바로 전화할 수 있습니다.</li>
               <li>카드 아래 빨간 뱃지는 아직 안 탄 학생이고, 픽업·결석 학생은 자동으로 빠집니다.</li>
               <li>⟲를 누르면 오늘 체크한 모든 차량의 도착·출발 상태가 한 번에 초기화됩니다.</li>

@@ -104,6 +104,22 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
     (eventsByRoute[e.route_id] ??= []).push({ event: e.event, created_at: e.created_at, createdBy: e.created_by ?? null });
   }
 
+  // 요청: "모바일로 제대로 (GPS가) 돌아가는지 체크할 수 있도록" - 노선별로 기사님 휴대폰이
+  // 마지막으로 위치를 보내온 시각을 함께 내려, 화면에서 "GPS 살아있음/끊김"을 눈으로 확인할 수
+  // 있게 합니다. 기기가 아직 없거나(설정 전) 꺼둔 노선은 null입니다.
+  const { data: devices } = await supabase
+    .from("shuttle_tracker_devices")
+    .select("route_id, last_seen_at, enabled")
+    .in("route_id", routeIds);
+  const gpsByRoute = new Map<string, string | null>();
+  for (const d of devices ?? []) {
+    if (d.enabled === false) continue;
+    // 한 노선에 기기가 여럿이면 가장 최근 신호를 씁니다.
+    const prev = gpsByRoute.get(d.route_id as string);
+    const cur = d.last_seen_at as string | null;
+    if (!prev || (cur && cur > prev)) gpsByRoute.set(d.route_id as string, cur);
+  }
+
   const payload = (routes ?? []).map((r) => ({
     routeId: r.id,
     routeNo: r.route_no,
@@ -113,6 +129,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
     vehicleNo: r.vehicle_no,
     roster: (rosterByRoute[r.id] ?? []).sort((a, b) => a.studentName.localeCompare(b.studentName, "ko")),
     events: eventsByRoute[r.id] ?? [],
+    // 기사님 휴대폰이 마지막으로 위치를 보내온 시각(GPS 살아있는지 확인용). 기기 미설정이면 null.
+    gpsLastSeen: gpsByRoute.has(r.id) ? gpsByRoute.get(r.id) ?? null : null,
+    hasDevice: gpsByRoute.has(r.id),
   }));
 
   return NextResponse.json({ label: link.label, term: link.term, routes: payload });

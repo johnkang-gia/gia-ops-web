@@ -203,72 +203,6 @@ export default function OpsBoardClient({ token }: { token: string }) {
     return () => clearTimeout(t);
   }, [boundary, load]);
 
-  // ── 새 문의가 오면 소리로 알립니다 ────────────────────────────────────────
-  //
-  // 요청: "문의가 오면 알람소리도 들리게 해줘"
-  //
-  // 소리 파일을 두는 대신 브라우저가 직접 짧은 음을 냅니다(파일을 받을 필요가 없어 끊길
-  // 일이 없습니다). 두 음을 이어 붙여 "딩-동" 비슷하게 만들었습니다.
-  //
-  // 브라우저는 사람이 한 번이라도 누르기 전에는 소리를 못 내게 막습니다. 공용 모니터에는
-  // 아무도 클릭하지 않으므로, 화면에 [🔔 소리 켜기] 버튼을 두고 지나가는 사람이 한 번만
-  // 눌러주면 그 뒤로는 계속 울립니다. 켜졌는지 여부도 버튼에 그대로 보입니다.
-  const audioRef = useRef<AudioContext | null>(null);
-  const [soundOn, setSoundOn] = useState(false);
-  const lastInquiryIdRef = useRef<string | null>(null);
-  const firstLoadRef = useRef(true);
-
-  const beep = useCallback(() => {
-    const ctx = audioRef.current;
-    if (!ctx) return;
-    const now = ctx.currentTime;
-    // 딩(880Hz) → 동(660Hz)
-    for (const [freq, at] of [
-      [880, 0],
-      [660, 0.18],
-    ] as const) {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = "sine";
-      osc.frequency.value = freq;
-      // 뚝 끊기면 귀에 거슬려서 소리를 서서히 줄입니다.
-      gain.gain.setValueAtTime(0.0001, now + at);
-      gain.gain.exponentialRampToValueAtTime(0.25, now + at + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + at + 0.35);
-      osc.connect(gain).connect(ctx.destination);
-      osc.start(now + at);
-      osc.stop(now + at + 0.4);
-    }
-  }, []);
-
-  const enableSound = useCallback(async () => {
-    try {
-      const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      const ctx = audioRef.current ?? new Ctor();
-      audioRef.current = ctx;
-      if (ctx.state === "suspended") await ctx.resume();
-      setSoundOn(true);
-      beep(); // 잘 들리는지 바로 확인할 수 있게 한 번 울립니다.
-    } catch {
-      setSoundOn(false);
-    }
-  }, [beep]);
-
-  // 가장 최근 문의가 바뀌면 새 문의가 온 것입니다.
-  const newestInquiryId = data?.inquiries?.[0]?.id ?? null;
-  useEffect(() => {
-    if (!newestInquiryId) return;
-    // 화면을 처음 열 때는 울리지 않습니다 - 켜자마자 밀린 문의로 울리면 놀라기만 합니다.
-    if (firstLoadRef.current) {
-      firstLoadRef.current = false;
-      lastInquiryIdRef.current = newestInquiryId;
-      return;
-    }
-    if (lastInquiryIdRef.current === newestInquiryId) return;
-    lastInquiryIdRef.current = newestInquiryId;
-    if (soundOn) beep();
-  }, [newestInquiryId, soundOn, beep]);
-
   if (errorMsg && !data) {
     return (
       <div style={{ minHeight: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", background: "#0f172a", color: "#e2e8f0", fontSize: 22 }}>
@@ -377,27 +311,6 @@ export default function OpsBoardClient({ token }: { token: string }) {
             🚌 하원 화면 다시 열기
           </button>
         )}
-          {/* 소리를 켜려면 사람이 한 번은 눌러야 합니다(브라우저 규칙). 켜고 나면 사라집니다. */}
-          {!soundOn && (
-            <button
-              onClick={enableSound}
-              style={{
-              padding: `${sc.s(5, 3)}px ${sc.s(12, 8)}px`,
-              borderRadius: 999,
-              border: "1px solid #334155",
-              background: "transparent",
-              color: "#94a3b8",
-              fontSize: sc.s(13, 10),
-              fontWeight: 700,
-              cursor: "pointer",
-              whiteSpace: "nowrap",
-            }}
-              title="새 학부모 문의가 오면 소리로 알립니다. 브라우저 규칙상 한 번은 눌러주셔야 합니다."
-            >
-              🔔 소리 켜기
-            </button>
-          )}
-
         </div>
 
         {/* 학교 로고 - 공용 모니터라 지나가는 분들도 봅니다. */}

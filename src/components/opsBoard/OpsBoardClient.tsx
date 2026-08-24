@@ -44,7 +44,6 @@ type BoardData = {
     grade: string;
     classes: { id: string; className: string; homeroom: string | null; room: string | null; current: Lesson | null; next: Lesson | null }[];
   }[];
-  idleTeachers?: string[];
   studentCount: number;
   absences: { name: string; grade: string | null; className: string | null; status: string; note: string | null; contacted: boolean }[];
   pickups: string[];
@@ -542,26 +541,22 @@ export default function OpsBoardClient({ token }: { token: string }) {
                           {/* 요청: "수업하시는 선생님들은 각교실 과목아래에 작게 누구수업인지
                               적어주고, 담임이면 담임이름 적어주고" - 지금 수업의 담당 선생님을,
                               수업이 없으면 담임을 작게 적습니다. */}
-                          {(() => {
-                            const who = shown?.teacherName ?? (data.currentPeriod ? null : c.homeroom);
-                            const isHomeroom = !shown?.teacherName;
-                            if (!who) return null;
-                            return (
-                              <div
-                                style={{
-                                  fontSize: sc.s(12, 9),
-                                  color: "#64748b",
-                                  marginTop: 2,
-                                  whiteSpace: "nowrap",
-                                  overflow: "hidden",
-                                  textOverflow: "ellipsis",
-                                }}
-                              >
-                                {isHomeroom ? "담임 " : ""}
-                                {who}
-                              </div>
-                            );
-                          })()}
+                          {/* 요청: "시간표에서 지금수업하시는 선생님만 표시되게" - 지금 교시의
+                              담당 선생님만 적습니다. 담임 폴백·유휴 로스터는 뺐습니다. */}
+                          {shown?.teacherName && (
+                            <div
+                              style={{
+                                fontSize: sc.s(12, 9),
+                                color: "#64748b",
+                                marginTop: 2,
+                                whiteSpace: "nowrap",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                              }}
+                            >
+                              {shown.teacherName}
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -571,42 +566,6 @@ export default function OpsBoardClient({ token }: { token: string }) {
             </div>
           )}
 
-          {/* 요청: "지금 수업이 아닌 선생님들은 시간표 아래에 로스터로 표시" - 지금 비어 있는
-              선생님(스페셜티 포함)을 한 줄로 모아 보여줍니다. 누가 지금 손이 비는지 한눈에
-              보이면 급한 일을 부탁하기 좋습니다. */}
-          {!lunchPeriod && data.isWeekday && (data.idleTeachers?.length ?? 0) > 0 && (
-            <div
-              style={{
-                marginTop: sc.s(8, 5),
-                paddingTop: sc.s(8, 5),
-                borderTop: "1px solid #1e293b",
-                display: "flex",
-                flexWrap: "wrap",
-                alignItems: "center",
-                gap: sc.s(6, 4),
-                flexShrink: 0,
-              }}
-            >
-              <span style={{ fontSize: sc.s(12, 10), color: "#475569", fontWeight: 700, whiteSpace: "nowrap" }}>
-                지금 수업 없음
-              </span>
-              {(data.idleTeachers ?? []).map((t) => (
-                <span
-                  key={t}
-                  style={{
-                    fontSize: sc.s(13, 10),
-                    color: "#cbd5e1",
-                    background: "#1e293b",
-                    borderRadius: sc.s(6, 4),
-                    padding: `${sc.s(2, 1)}px ${sc.s(8, 5)}px`,
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {t}
-                </span>
-              ))}
-            </div>
-          )}
         </Panel>
 
         {/* ②-b 학부모 문의사항 - 요청: "운영 대시보드에 이 학부모 문의사항도 띄워줘"

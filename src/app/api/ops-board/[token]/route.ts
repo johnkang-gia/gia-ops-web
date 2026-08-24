@@ -132,43 +132,6 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     });
   }
 
-  // ── 지금 수업 안 하는 선생님 로스터 ──────────────────────────────────────────
-  // 요청: "지금 수업이 아닌 선생님들은 시간표 아래에 로스터로 표시"
-  //
-  // 오늘 하루 시간표 전체에서 나오는 선생님과 담임 선생님을 모두 모은 뒤, 지금 교시에 수업
-  // 중인 선생님을 빼면 "지금 비어 있는 선생님"이 됩니다. 스페셜티(전담) 선생님은 반이 없어
-  // 담임 명단에는 없지만 시간표의 teacher_name에는 나오므로 이렇게 하면 함께 잡힙니다.
-  let idleTeachers: string[] = [];
-  if (isWeekday && classIds.length > 0) {
-    const { data: allToday } = await supabase
-      .from("wr_timetable")
-      .select("teacher_name, period_id")
-      .in("class_id", classIds)
-      .eq("weekday", weekday);
-
-    const everyone = new Set<string>();
-    for (const c of deptClasses) {
-      const hr = (c.teacher_name as string | null)?.trim();
-      if (hr) everyone.add(hr);
-    }
-    for (const t of allToday ?? []) {
-      const n = (t.teacher_name as string | null)?.trim();
-      if (n) everyone.add(n);
-    }
-
-    // 지금 교시에 수업 중인 선생님.
-    const teachingNow = new Set<string>();
-    if (currentPeriod) {
-      for (const t of allToday ?? []) {
-        if (t.period_id === currentPeriod.id) {
-          const n = (t.teacher_name as string | null)?.trim();
-          if (n) teachingNow.add(n);
-        }
-      }
-    }
-    idleTeachers = [...everyone].filter((n) => !teachingNow.has(n)).sort((a, b) => a.localeCompare(b, "ko"));
-  }
-
   // ── ② 출결 + 픽업 ──────────────────────────────────────────────────────────
   const { data: students } = await supabase
     .from("wr_students")
@@ -267,9 +230,16 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     .in("status", ["픽업", "결석"]);
   const pickupAssignmentIds = (boardings ?? []).filter((b) => b.status === "픽업").map((b) => b.assignment_id);
   const { data: pickupAssignments } = pickupAssignmentIds.length
-    ? await supabase.from("shuttle_assignments").select("id, student_name_raw").in("id", pickupAssignmentIds)
-    : { data: [] as { id: string; student_name_raw: string }[] };
-  const pickups = (pickupAssignments ?? []).map((a) => a.student_name_raw).sort((a, b) => a.localeCompare(b, "ko"));
+    ? await supabase.from("shuttle_assignments").select("id, student_id, student_name_raw").in("id", pickupAssignmentIds)
+    : { data: [] as { id: string; student_id: string | null; student_name_raw: string }[] };
+  // 요청: "꼭 이름만 뜨지않고 성까지 뜨도록" - 탑승표에 적힌 이름(성이 빠졌을 수 있음) 대신,
+  // 학생 번호로 명부의 전체 이름(성+이름)을 씁니다. 같은 이름 아이를 성으로 구분합니다.
+  const pickups = (pickupAssignments ?? [])
+    .map((a) => {
+      const full = a.student_id ? (studentById.get(a.student_id) as { name?: string } | undefined)?.name : null;
+      return full || a.student_name_raw;
+    })
+    .sort((a, b) => a.localeCompare(b, "ko"));
 
   // ── 학부모 문의사항 ────────────────────────────────────────────────────────
   // 요청: "운영 대시보드에 이 학부모 문의사항도 띄워줘"
@@ -428,7 +398,6 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     // 요청: "각 학년과 반별로 어느수업이 진행되는지 뜨도록" - 학년으로 묶어서 내려주면
     // 화면에서 학년 제목 아래에 그 학년의 반들이 나란히 놓입니다.
     grades: gradeGroups,
-    idleTeachers,
     studentCount: deptStudents.length,
     absences,
     pickups,

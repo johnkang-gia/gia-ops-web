@@ -96,7 +96,11 @@ export async function updateSession(request: NextRequest) {
     // 계정을 만들어드리는 것 자체가 이 화면이 없애려는 번거로움입니다. 이 화면은 설정에 필요한
     // 값만 보여주고 위치 기록은 전혀 보여주지 않습니다.
     path.startsWith("/s/") ||
-    path.startsWith("/api/shuttle/setup");
+    path.startsWith("/api/shuttle/setup") ||
+    // 토들 수집기(크롬 확장) 파일 - 사무실 PC가 여기서 최신 파일을 내려받아 스스로 갱신합니다.
+    // 로그인 없이 열려야 합니다(확장은 브라우저 세션이 없는 상태로 받습니다). 확장 코드에는
+    // 비밀값이 없습니다 - 수집 키는 담당자가 그 PC에서 직접 넣고 그 PC에만 저장됩니다.
+    path.startsWith("/collector");
 
   if (!user && !isAuthRoute) {
     const url = request.nextUrl.clone();

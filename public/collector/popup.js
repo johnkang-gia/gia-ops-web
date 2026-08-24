@@ -3,10 +3,25 @@
 const $ = (id) => document.getElementById(id);
 
 async function load() {
-  const c = await chrome.storage.local.get(["serverUrl", "secret", "state"]);
+  const c = await chrome.storage.local.get(["serverUrl", "secret", "state", "newVersion"]);
   $("serverUrl").value = c.serverUrl ?? "";
   $("secret").value = c.secret ?? "";
   render(c.state);
+  renderUpdate(c.newVersion);
+}
+
+// 새 버전이 있으면 알려줍니다. 손으로 설치한 확장이라 크롬이 알아서 갱신해주지 않습니다.
+function renderUpdate(newVersion) {
+  const box = $("update");
+  if (!newVersion) {
+    box.style.display = "none";
+    return;
+  }
+  box.style.display = "block";
+  box.innerHTML =
+    `<b>새 버전 ${newVersion}이 있습니다.</b><br>` +
+    `수집기 폴더의 <b>업데이트</b> 파일을 더블클릭한 뒤, ` +
+    `chrome://extensions 에서 이 확장의 🔄 를 눌러주세요.`;
 }
 
 function render(state) {
@@ -42,6 +57,7 @@ $("run").addEventListener("click", async () => {
 // 화면을 열어둔 동안 상태가 바뀌면 바로 반영합니다.
 chrome.storage.onChanged.addListener((changes) => {
   if (changes.state) render(changes.state.newValue);
+  if (changes.newVersion) renderUpdate(changes.newVersion.newValue);
 });
 
 load();

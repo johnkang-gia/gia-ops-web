@@ -1,0 +1,16 @@
+{
+  "version": "1.2.0",
+  "note": "업데이트 스크립트가 이 목록을 보고 파일을 내려받습니다. 파일이 늘어나면 여기에만 추가하면 되고, 사용자는 아무것도 다시 옮기지 않아도 됩니다.",
+  "files": [
+    "manifest.json",
+    "background.js",
+    "content.js",
+    "inject.js",
+    "popup.html",
+    "popup.js",
+    "files.json",
+    "설치안내.md",
+    "업데이트.command",
+    "업데이트.bat"
+  ]
+}

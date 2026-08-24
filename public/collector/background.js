@@ -39,6 +39,24 @@ async function setState(state) {
   await chrome.storage.local.set({ state: { ...state, at: new Date().toISOString() } });
 }
 
+// 새 버전이 올라왔는지 확인합니다.
+//
+// 확장을 손으로 설치했기 때문에 크롬이 알아서 갱신해주지 않습니다. 그렇다고 담당자가 매번
+// "혹시 새 버전 있나?"를 물으러 올 수는 없으니, 수집기가 스스로 확인해 팝업에 알려줍니다.
+// 실제 갱신은 폴더의 [업데이트] 파일을 더블클릭하면 됩니다.
+async function checkUpdate(serverUrl) {
+  try {
+    const res = await fetch(`${serverUrl}/collector/files.json`, { cache: "no-store" });
+    if (!res.ok) return null;
+    const json = await res.json();
+    const latest = String(json.version ?? "");
+    const mine = chrome.runtime.getManifest().version;
+    return latest && latest !== mine ? latest : null;
+  } catch {
+    return null; // 확인 실패는 조용히 넘어갑니다 - 수집 자체에는 지장이 없습니다.
+  }
+}
+
 // 토들 탭을 찾습니다. 여러 개 열려 있을 수 있으므로 전부 돌려주되, 메시지 화면을 먼저 씁니다
 // (로그인 탭이나 다른 화면 탭을 골라 실패하는 일이 없도록).
 async function findToddleTabs() {
@@ -98,6 +116,10 @@ async function runOnce() {
     await setState({ status: "설정 필요", detail: "확장 아이콘을 눌러 서버 주소와 키를 넣어주세요." });
     return;
   }
+
+  // 새 버전 확인은 수집과 별개로 돌립니다(실패해도 수집은 계속되어야 합니다).
+  const newVersion = await checkUpdate(serverUrl);
+  await chrome.storage.local.set({ newVersion });
 
   const tabs = await findToddleTabs();
   if (tabs.length === 0) {

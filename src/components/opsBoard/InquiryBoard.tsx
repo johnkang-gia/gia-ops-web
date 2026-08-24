@@ -23,6 +23,9 @@ export type BoardInquiry = {
 };
 
 const PAGE_MS = 8000;
+// 이 시간 안에 들어온 문의는 "새 것"으로 강조합니다(요청). 화면이 15초마다 갱신되므로
+// 넉넉히 잡아, 잠깐 자리를 비운 사이 올라온 것도 눈에 띄게 합니다.
+const NEW_MS = 3 * 60 * 1000;
 
 function timeLabel(iso: string): string {
   const d = new Date(iso);
@@ -64,26 +67,53 @@ export default function InquiryBoard({
 
   const shown = pages[Math.min(page, pages.length - 1)] ?? [];
 
+  // 지금 시각 기준으로 "새 문의"를 가립니다. 1초마다 다시 그려, 3분이 지나면 강조가 저절로
+  // 풀립니다(계속 강조돼 있으면 어느 게 진짜 새 것인지 알 수 없습니다).
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
       <div style={{ display: "flex", flexDirection: "column", gap: s(7, 4), flex: 1, minHeight: 0 }}>
-        {shown.map((q) => (
+        {shown.map((q) => {
+          const isNew = Date.now() - new Date(q.at).getTime() < NEW_MS && now >= 0;
+          return (
           <div
             key={q.id}
             style={{
               display: "flex",
               alignItems: "flex-start",
               gap: s(10, 6),
-              background: "#1e293b",
-              borderLeft: `${s(5, 3)}px solid ${q.urgent ? "#dc2626" : q.replied ? "#16a34a" : "#0284c7"}`,
+              // 새 문의는 배경을 살짝 밝혀 눈이 먼저 가게 합니다.
+              background: isNew ? "#1e3352" : "#1e293b",
+              borderLeft: `${s(5, 3)}px solid ${q.urgent ? "#dc2626" : q.replied ? "#16a34a" : isNew ? "#38bdf8" : "#0284c7"}`,
               borderRadius: s(9, 6),
               padding: `${s(8, 5)}px ${s(12, 7)}px`,
               minWidth: 0,
+              boxShadow: isNew ? "0 0 0 1px #38bdf8" : "none",
             }}
           >
             <div style={{ flex: 1, minWidth: 0 }}>
               {/* 이름 줄 - 멀리서도 누구 얘기인지 먼저 보여야 합니다. */}
               <div style={{ display: "flex", alignItems: "center", gap: s(7, 4), minWidth: 0 }}>
+                {isNew && (
+                  <span
+                    style={{
+                      fontSize: s(12, 9),
+                      fontWeight: 800,
+                      color: "#0f172a",
+                      background: "#38bdf8",
+                      borderRadius: s(5, 4),
+                      padding: `${s(1, 1)}px ${s(6, 4)}px`,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    NEW
+                  </span>
+                )}
                 <b
                   style={{
                     fontSize: s(21, 14),
@@ -141,7 +171,8 @@ export default function InquiryBoard({
               </div>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* 여러 장일 때만 아래에 점을 찍습니다. 지금 몇 번째 장인지 알 수 있어야

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { APP_VERSION } from "@/lib/version";
+import { categorize, extractTargetDate, matchRosterStudents, todayKey, type RosterStudent } from "@/lib/attendanceDigest";
 import { createClient } from "@supabase/supabase-js";
 import { kstParts } from "@/lib/shuttleTracking";
 import { departmentOf, gradeSortKey, isVisibleDepartment, VISIBLE_DEPARTMENTS, type VisibleDepartment } from "@/lib/department";
@@ -146,20 +147,76 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     .eq("date", today)
     .neq("status", "출석");
 
-  const absences = (attendance ?? [])
-    .filter((a) => deptStudentIds.has(a.student_id))
-    .map((a) => {
-      const s = studentById.get(a.student_id);
-      return {
-        name: s?.name ?? "?",
-        grade: s?.grade ?? null,
-        className: s?.class_name ?? null,
-        status: a.status as string,
-        note: (a.note as string | null) ?? null,
-        contacted: !!a.contacted_guardian,
-      };
-    })
-    .sort((a, b) => a.status.localeCompare(b.status, "ko") || a.name.localeCompare(b.name, "ko"));
+  type Absence = { name: string; grade: string | null; className: string | null; status: string; note: string | null; contacted: boolean };
+  const absenceByKey = new Map<string, Absence>();
+
+  // (1) 교사가 출결 화면에서 직접 입력한 것.
+  for (const a of attendance ?? []) {
+    if (!deptStudentIds.has(a.student_id)) continue;
+    const s = studentById.get(a.student_id);
+    absenceByKey.set(`${s?.name}-${a.status}`, {
+      name: s?.name ?? "?",
+      grade: s?.grade ?? null,
+      className: s?.class_name ?? null,
+      status: a.status as string,
+      note: (a.note as string | null) ?? null,
+      contacted: !!a.contacted_guardian,
+    });
+  }
+
+  // (2) 구글챗 출결알림에서 뽑은 것.
+  //
+  // 요청: "출결,지각 상황 표시 안되는거 같아 구글에서 긁어오는데 문제가 있는지 확인해주고
+  // 없다면 실시간으로 반영해줘"
+  //
+  // 원인: 대시보드는 attendance_records(교사가 직접 입력) 만 읽고 있었고, 구글챗 출결알림은
+  // 그 표에 들어가지 않아 화면에 안 떴습니다. 그래서 여기서 미러 메시지를 같은 규칙으로
+  // 파싱해 함께 올립니다. 업무 화면의 출결내역과 같은 로직(attendanceDigest)을 씁니다.
+  const nowKst = new Date();
+  const todayK = todayKey(nowKst);
+  const scanFrom = new Date(nowKst.getTime() - 14 * 24 * 60 * 60 * 1000);
+  const { data: mirror } = await supabase
+    .from("google_chat_mirror_messages")
+    .select("id, content, created_at_google, source_key")
+    .eq("source_key", "attendance")
+    .gte("created_at_google", scanFrom.toISOString())
+    .order("created_at_google", { ascending: false })
+    .limit(300);
+
+  const roster: RosterStudent[] = deptStudents.map((s) => ({
+    name: (s.name as string) ?? "",
+    grade: (s.grade as string | null) ?? null,
+  }));
+
+  for (const m of mirror ?? []) {
+    const content = (m.content as string | null) ?? "";
+    const category = categorize(content);
+    // 대시보드 출결 칸에는 결석·지각·조퇴만 올립니다(픽업은 아래 별도 칸에서 다룹니다).
+    if (!category || category === "픽업") continue;
+    const sentAt = new Date(m.created_at_google as string);
+    const targetDate = extractTargetDate(content, sentAt) ?? todayKey(sentAt);
+    if (targetDate !== todayK) continue; // 오늘 것만
+    const matched = matchRosterStudents(content, roster);
+    if (matched.length === 0) continue; // 이 부서 학생과 대조되지 않으면 넘어갑니다.
+    for (const st of matched) {
+      const key = `${st.name}-${category}`;
+      // 교사가 이미 직접 입력한 학생이면 그 값을 존중하고 덮어쓰지 않습니다.
+      if (absenceByKey.has(key)) continue;
+      const full = deptStudents.find((s) => s.name === st.name);
+      absenceByKey.set(key, {
+        name: st.displayName,
+        grade: st.grade,
+        className: (full?.class_name as string | null) ?? null,
+        status: category,
+        note: null,
+        contacted: false,
+      });
+    }
+  }
+
+  const absences = [...absenceByKey.values()].sort(
+    (a, b) => a.status.localeCompare(b.status, "ko") || a.name.localeCompare(b.name, "ko")
+  );
 
   // 하원 픽업(부모님이 직접 데려가심)은 하원 체크표에서 찍힌 값입니다.
   const { data: boardings } = await supabase
@@ -202,7 +259,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
       // 답글이 달렸지만 아직 처리로 넘기지 않은 건. 이름 뒤에 초록 체크가 붙습니다.
       replied: !!r.replied_at,
     }))
-    .sort((a, b) => Number(b.urgent) - Number(a.urgent) || b.at.localeCompare(a.at));
+    // 요청: "예전문의보다 최근문의가 위로 올라오게" - 급한 것 우선이 아니라 순수 최신순으로
+    // 둡니다. 급한 것은 화면에서 빨간 테두리로 이미 구분되므로, 위에 올릴 필요까지는 없습니다.
+    .sort((a, b) => b.at.localeCompare(a.at));
 
   // 수집기가 살아 있는지.
   //

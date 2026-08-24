@@ -574,7 +574,7 @@ export default function OpsBoardClient({ token }: { token: string }) {
             /* 요청: "글자를 좀더 크게 (...) 이름을 좀더 크게 그리고 그아래에 문의내용 간단히
                요약해서 (...) 스크롤이 내려간다면 계속 몇초에 한번씩 다음페이지 보여줬다가
                돌아왔다가" - 스크롤을 내릴 사람이 없으니 장을 넘기는 쪽으로 했습니다. */
-            <InquiryBoard items={data.inquiries} perPage={sc.narrow ? 4 : 7} s={sc.s} />
+            <InquiryBoard items={data.inquiries} perPage={sc.narrow ? 4 : 6} s={sc.s} />
           )}
         </Panel>
       </div>

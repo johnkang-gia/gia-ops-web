@@ -284,6 +284,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
       replied: !!r.replied_at,
       // 터치하면 토들 원문으로 바로 갈 수 있게(요청: "터치가능하게").
       url: (r.source_url as string | null) ?? null,
+      // 짧게 누르면 작은 창에 이 원문을 보여줍니다(요청). 토들에 다시 접속하지 않아도 됩니다.
+      raw: (r.raw_text as string | null) ?? (r.summary as string | null) ?? null,
+      channel: (r.channel_label as string | null) ?? null,
     }))
     // 요청: "예전문의보다 최근문의가 위로 올라오게" - 급한 것 우선이 아니라 순수 최신순으로
     // 둡니다. 급한 것은 화면에서 빨간 테두리로 이미 구분되므로, 위에 올릴 필요까지는 없습니다.

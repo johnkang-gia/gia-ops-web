@@ -21,6 +21,9 @@ export type BoardInquiry = {
   at: string;
   replied?: boolean;
   url?: string | null;
+  /** 짧게 누르면 작은 창에 보여줄 원문. */
+  raw?: string | null;
+  channel?: string | null;
 };
 
 const PAGE_MS = 8000;
@@ -39,9 +42,15 @@ function timeLabel(iso: string): string {
 export default function InquiryBoard({
   items,
   s,
+  onOpen,
+  onDismiss,
 }: {
   items: BoardInquiry[];
   s: (px: number, min: number) => number;
+  /** 짧게 누름 - 작은 창으로 원문 보기. */
+  onOpen: (q: BoardInquiry) => void;
+  /** 길게 누름 - 목록에서 없애기(처리 완료). */
+  onDismiss: (q: BoardInquiry) => void;
 }) {
   // 한 장에 몇 건이 들어가는지. 칸 높이를 실제로 재서 정합니다.
   const [perPage, setPerPage] = useState(6);
@@ -101,9 +110,29 @@ export default function InquiryBoard({
 
   const shown = pages[Math.min(page, pages.length - 1)] ?? [];
 
-  function openInquiry(q: BoardInquiry) {
+  // 짧게 누름 vs 길게 누름을 가립니다.
+  //
+  // 요청: "길게 눌러서 없앨수있고 짧게 누르면 해당 토들 메시지 따로 작은 창으로"
+  // 누른 순간 타이머를 걸고, 0.6초 안에 떼면 짧게(원문 보기), 넘으면 길게(없애기)로 봅니다.
+  // 길게 눌러 없애질 때는 떼는 순간의 짧게 동작이 겹쳐 일어나지 않도록 표시해 둡니다.
+  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longFired = useRef(false);
+
+  function pressStart(q: BoardInquiry) {
     setPausedUntil(Date.now() + PAUSE_MS);
-    if (q.url) window.open(q.url, "_blank", "noopener");
+    longFired.current = false;
+    pressTimer.current = setTimeout(() => {
+      longFired.current = true;
+      onDismiss(q);
+    }, 600);
+  }
+  function pressEnd(q: BoardInquiry) {
+    if (pressTimer.current) clearTimeout(pressTimer.current);
+    if (!longFired.current) onOpen(q); // 짧게 뗐으면 원문 보기
+  }
+  function pressCancel() {
+    if (pressTimer.current) clearTimeout(pressTimer.current);
+    longFired.current = true; // 밖으로 벗어나면 아무 동작 안 함
   }
 
   return (
@@ -115,7 +144,9 @@ export default function InquiryBoard({
             return (
               <div
                 key={q.id}
-                onClick={() => openInquiry(q)}
+                onPointerDown={() => pressStart(q)}
+                onPointerUp={() => pressEnd(q)}
+                onPointerLeave={pressCancel}
                 role="button"
                 style={{
                   display: "flex",

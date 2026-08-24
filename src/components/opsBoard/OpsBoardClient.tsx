@@ -89,6 +89,11 @@ export default function OpsBoardClient({ token }: { token: string }) {
   // 같은 하원 시간에 자동 전환을 반복해서 시도하지 않도록 하는 표시입니다.
   const autoTriedRef = useRef(false);
 
+  // 터치 상호작용용 작은 창들.
+  // 요청: "짧게 누르면 해당 토들 메시지 따로 작은 창으로" + "각반을 누르면 일주일 시간표가 팝업"
+  const [inquiryView, setInquiryView] = useState<{ student: string; channel: string | null; raw: string | null; at: string } | null>(null);
+  const [weekClass, setWeekClass] = useState<{ id: string; name: string } | null>(null);
+
   const endedKey = `opsBoardDismissalEnded:${token}`;
   useEffect(() => {
     try {
@@ -458,6 +463,9 @@ export default function OpsBoardClient({ token }: { token: string }) {
                       return (
                         <div
                           key={c.id}
+                          // 요청: "각반을 누르면 일주일 시간표가 팝업창으로 뜨도록"
+                          onClick={() => setWeekClass({ id: c.id, name: `${g.grade ?? ""} ${c.className}`.trim() })}
+                          role="button"
                           style={{
                             background: inBreak ? "#172033" : place.special ? "#3f2d16" : "#1e293b",
                             border:
@@ -465,6 +473,7 @@ export default function OpsBoardClient({ token }: { token: string }) {
                             borderRadius: sc.s(10, 6),
                             padding: `${sc.s(10, 5)}px ${sc.s(12, 7)}px`,
                             minWidth: 0,
+                            cursor: "pointer",
                           }}
                         >
                           {/* 요청: "각반 위치를 항상 (...) 나타나게 해주고 밖이면 교실밖이라고
@@ -581,7 +590,24 @@ export default function OpsBoardClient({ token }: { token: string }) {
             /* 요청: "글자를 좀더 크게 (...) 이름을 좀더 크게 그리고 그아래에 문의내용 간단히
                요약해서 (...) 스크롤이 내려간다면 계속 몇초에 한번씩 다음페이지 보여줬다가
                돌아왔다가" - 스크롤을 내릴 사람이 없으니 장을 넘기는 쪽으로 했습니다. */
-            <InquiryBoard items={data.inquiries} s={sc.s} />
+            <InquiryBoard
+              items={data.inquiries}
+              s={sc.s}
+              onOpen={(q) => setInquiryView({ student: q.student, channel: q.channel ?? null, raw: q.raw ?? null, at: q.at })}
+              onDismiss={async (q) => {
+                // 낙관적으로 화면에서 먼저 빼고, 서버에 처리 완료로 표시합니다.
+                setData((prev) => (prev ? { ...prev, inquiries: prev.inquiries.filter((x) => x.id !== q.id) } : prev));
+                try {
+                  await fetch(`/api/ops-board/${token}/inquiry`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ id: q.id }),
+                  });
+                } catch {
+                  load(); // 실패하면 되돌립니다(다음 갱신에서 다시 나타납니다).
+                }
+              }}
+            />
           )}
         </Panel>
       </div>
@@ -708,6 +734,144 @@ export default function OpsBoardClient({ token }: { token: string }) {
       <div style={{ fontSize: sc.s(12, 9), color: "#475569", textAlign: "center", flexShrink: 0 }}>
         {data.label} · 15초마다 자동 갱신 · 새 버전이 올라오면 스스로 새로고침 ·{" "}
         {data.shuttle.switchLabel}~{data.shuttle.endLabel} 하원 운행 화면(전체화면)
+      </div>
+
+      {/* 짧게 누른 문의의 원문을 작은 창으로 보여줍니다(요청). */}
+      {inquiryView && <InquiryPopup view={inquiryView} onClose={() => setInquiryView(null)} />}
+
+      {/* 반을 누르면 일주일 시간표(요청). 토큰으로 서버에서 받아옵니다. */}
+      {weekClass && <WeekTimetablePopup token={token} classId={weekClass.id} title={weekClass.name} onClose={() => setWeekClass(null)} />}
+    </div>
+  );
+}
+
+// 학부모 문의 원문 - 작은 창.
+function InquiryPopup({
+  view,
+  onClose,
+}: {
+  view: { student: string; channel: string | null; raw: string | null; at: string };
+  onClose: () => void;
+}) {
+  return (
+    <div
+      onClick={onClose}
+      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 20 }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{ background: "#0f172a", border: "1px solid #334155", borderRadius: 16, maxWidth: 560, width: "100%", maxHeight: "80vh", overflow: "auto", padding: 22 }}
+      >
+        <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 12 }}>
+          <b style={{ fontSize: 22, color: "#fff" }}>{view.student}</b>
+          <span style={{ fontSize: 13, color: "#64748b" }}>{new Date(view.at).toLocaleString("ko-KR")}</span>
+          <button onClick={onClose} style={{ marginLeft: "auto", background: "transparent", border: "none", color: "#94a3b8", fontSize: 26, cursor: "pointer", lineHeight: 1 }}>
+            ×
+          </button>
+        </div>
+        {view.channel && <div style={{ fontSize: 13, color: "#64748b", marginBottom: 10 }}>{view.channel}</div>}
+        <div style={{ fontSize: 18, color: "#e2e8f0", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
+          {view.raw || "원문이 저장되어 있지 않습니다."}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type WeekGrid = {
+  className: string;
+  weekdays: string[];
+  grid: {
+    period: { id: string; label: string; startTime: string; endTime: string };
+    days: ({ subject: string; teacher: string | null; room: string | null } | null)[];
+  }[];
+};
+
+// 반 일주일 시간표 - 팝업.
+function WeekTimetablePopup({ token, classId, title, onClose }: { token: string; classId: string; title: string; onClose: () => void }) {
+  const [grid, setGrid] = useState<WeekGrid | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(`/api/ops-board/${token}/timetable?classId=${encodeURIComponent(classId)}`, { cache: "no-store" });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json?.error ?? "불러오지 못했습니다.");
+        setGrid(json as WeekGrid);
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : String(e));
+      }
+    })();
+  }, [token, classId]);
+
+  return (
+    <div
+      onClick={onClose}
+      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 20 }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{ background: "#0f172a", border: "1px solid #334155", borderRadius: 16, maxWidth: 900, width: "100%", maxHeight: "88vh", overflow: "auto", padding: 22 }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+          <b style={{ fontSize: 24, color: "#fff" }}>📅 {title} 시간표</b>
+          <button onClick={onClose} style={{ marginLeft: "auto", background: "transparent", border: "none", color: "#94a3b8", fontSize: 28, cursor: "pointer", lineHeight: 1 }}>
+            ×
+          </button>
+        </div>
+
+        {err ? (
+          <div style={{ color: "#fca5a5", fontSize: 15 }}>{err}</div>
+        ) : !grid ? (
+          <div style={{ color: "#64748b", fontSize: 15 }}>불러오는 중…</div>
+        ) : grid.grid.length === 0 ? (
+          <div style={{ color: "#64748b", fontSize: 15 }}>등록된 시간표가 없습니다.</div>
+        ) : (
+          <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+            <thead>
+              <tr>
+                <th style={{ padding: 8, fontSize: 14, color: "#64748b", width: 90 }}>교시</th>
+                {grid.weekdays.map((d) => (
+                  <th key={d} style={{ padding: 8, fontSize: 16, color: "#93c5fd", fontWeight: 800 }}>
+                    {d}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {grid.grid.map((row) => (
+                <tr key={row.period.id}>
+                  <td style={{ padding: 8, textAlign: "center", verticalAlign: "middle", background: "#1e293b", borderRadius: 8 }}>
+                    <div style={{ fontSize: 15, fontWeight: 800, color: "#cbd5e1" }}>{row.period.label}</div>
+                    <div style={{ fontSize: 11, color: "#64748b" }}>
+                      {row.period.startTime}~{row.period.endTime}
+                    </div>
+                  </td>
+                  {row.days.map((cell, i) => (
+                    <td key={i} style={{ padding: 4 }}>
+                      <div
+                        style={{
+                          minHeight: 44,
+                          background: cell ? "#172033" : "transparent",
+                          border: cell ? "1px solid #334155" : "1px dashed #1e293b",
+                          borderRadius: 8,
+                          padding: "6px 8px",
+                          display: "flex",
+                          flexDirection: "column",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <div style={{ fontSize: 16, fontWeight: 700, color: cell ? "#fff" : "#334155" }}>{cell?.subject ?? "—"}</div>
+                        {cell?.room && <div style={{ fontSize: 11, color: "#64748b" }}>{cell.room}</div>}
+                      </div>
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   );

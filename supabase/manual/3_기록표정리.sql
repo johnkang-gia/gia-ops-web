@@ -30,5 +30,6 @@ insert into supabase_migrations.schema_migrations (version, name) values
   ('20260822180000', 'duty_roster'),
   ('20260823000000', 'primary_only_roster'),
   ('20260823120000', 'driver_setup_link'),
-  ('20260824090000', 'pickup_inbox')
+  ('20260824090000', 'pickup_inbox'),
+  ('20260824140000', 'parent_inquiries')
 on conflict (version) do nothing;

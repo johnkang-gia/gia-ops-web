@@ -225,7 +225,11 @@
         for (const c of targets) {
           try {
             const messages = await fetchMessages(c.id);
-            out.push({ chatId: c.id, label: c.label, unread: c.unread, messages });
+            // 원문으로 돌아가는 주소. 지금 보고 있는 화면 주소에서 학교 부분을 그대로 떼어
+            // 씁니다 - 학교 번호를 코드에 박아두면 다른 학교/과정에서 안 맞습니다.
+            const base = location.href.match(/^(https:\/\/[^/]+\/platform\/[^/]+)\/messaging/);
+            const url = base ? `${base[1]}/messaging/${c.id}` : null;
+            out.push({ chatId: c.id, label: c.label, unread: c.unread, url, messages });
           } catch (err) {
             if (String(err.message) === "LOGIN_REQUIRED") throw err;
             // 한 방이 실패해도 나머지는 계속합니다.

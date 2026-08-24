@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import ActivityLogTicker from "./ActivityLogTicker";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
@@ -266,9 +267,14 @@ export default function WorkBoardClient({
             </button>
           );
         })}
+        {/* 요청: "실시간 로그를 맨위에 초등부 부서 나오는칸 가운데로 로그를 옮기고 한줄만
+            표시되도록해서 누르면 전체로그가 뜨도록" - 부서 탭과 오른쪽 배지들 사이 가운데
+            자리입니다. 남는 폭만큼만 차지하고, 넘치면 말줄임으로 줄어듭니다. */}
+        <ActivityLogTicker department={activeDepartment.name} isAdmin={isAdmin} currentUserEmail={userEmail} />
+
         {/* 브라우저 기본 title 툴팁은 뜨는 데 시간이 걸리고 눈에 잘 안 띄어서, 직접 그린
             호버 팝오버로 바꿨습니다 - 배지에 마우스를 올리면 바로 접속자 이름 목록이 뜹니다. */}
-        <div className="group relative ml-auto shrink-0">
+        <div className="group relative shrink-0">
           <span className="flex cursor-default items-center gap-1 whitespace-nowrap rounded-full bg-black/5 px-2.5 py-1 text-[11px] text-slate-500">
             🟢 {online.length}명 접속중
           </span>

@@ -103,6 +103,9 @@ async function runOnce() {
         senderName: m.senderName,
         text: m.text,
         receivedAt: m.createdAt,
+        chatId: chat.chatId,
+        // 문의 목록에서 눌러 원문으로 바로 갈 수 있게 주소를 함께 보냅니다.
+        sourceUrl: chat.url ?? null,
       });
       nextSent[m.id] = Date.now();
     }

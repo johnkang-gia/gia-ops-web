@@ -227,7 +227,7 @@ async function runOnceInner() {
   // 보낼 새 메시지가 하나도 없어도 이 소식은 전해야 하므로 여기서 먼저 처리합니다.
   const replies = (reply.chats ?? [])
     .filter((c) => c.reply && c.chatId)
-    .map((c) => ({ chatId: c.chatId, at: c.reply.at, by: c.reply.by }));
+    .map((c) => ({ chatId: c.chatId, at: c.reply.at, by: c.reply.by, text: c.reply.text ?? "" }));
   if (replies.length > 0) {
     try {
       await post("/api/pickup/ingest", secret, serverUrl, { items: [], replies });

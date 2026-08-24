@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { ingestPickup, loadRoster, type IngestInput } from "@/lib/pickupIngest";
 import { logApiError } from "@/lib/logging";
+import { callClaudeJson, CLAUDE_MODEL_FAST } from "@/lib/ai/claude";
 
 export const dynamic = "force-dynamic";
 
@@ -41,19 +42,49 @@ export async function POST(req: Request) {
     const chatId = typeof r?.chatId === "string" ? r.chatId : null;
     const at = typeof r?.at === "string" ? r.at : null;
     if (!chatId || !at) continue;
-    const { data: updated } = await supabase
+    const by = typeof r?.by === "string" ? r.by : null;
+    const text = typeof r?.text === "string" ? r.text : "";
+
+    // 이 방에 아직 답 안 한 문의가 있는지 먼저 봅니다(없으면 AI를 부르지 않습니다).
+    const { data: open } = await supabase
       .from("pickup_requests")
-      .update({
-        answered_at: at,
-        answered_by: typeof r?.by === "string" ? r.by : null,
-        answered_via: "답글",
-        replied_by: typeof r?.by === "string" ? r.by : null,
-        replied_at: at,
-      })
+      .select("id")
       .eq("source_chat_id", chatId)
       .eq("kind", "문의")
       .is("answered_at", null)
-      // 답글보다 나중에 온 문의는 아직 답을 못 받은 것입니다.
+      .lt("received_at", at);
+    if (!open || open.length === 0) continue;
+
+    // 직원 답글이 "해결"인지 "진행중"인지 판단합니다.
+    // 요청: "우리직원이 쓴글이라면 문의가 해결되었는지 안되었는지 표시"
+    let resolved = true; // 판단 실패 시엔 해결로 봅니다(예전 동작과 같게 - 답이 달렸으니).
+    if (text.trim()) {
+      try {
+        const out = await callClaudeJson(
+          "학교 직원이 학부모 문의에 남긴 답글입니다. 이 답으로 문의가 끝났는지 판단하세요. " +
+            "\"확인 후 다시 연락드리겠습니다\", \"알아보겠습니다\", \"잠시만요\"처럼 아직 처리 중이면 resolved=false. " +
+            "\"처리했습니다\", \"네 알겠습니다\", \"반영했습니다\", 구체적 답변을 준 경우는 resolved=true. " +
+            "반드시 JSON만: {\"resolved\": true 또는 false}",
+          `답글: """${text.slice(0, 500)}"""`,
+          { model: CLAUDE_MODEL_FAST, maxTokens: 60, route: "reply-status" }
+        );
+        if ((out as { resolved?: unknown } | null)?.resolved === false) resolved = false;
+      } catch {
+        // AI 실패 - 예전처럼 해결로 처리합니다(답은 달렸으므로).
+      }
+    }
+
+    const patch = resolved
+      ? { answered_at: at, answered_by: by, answered_via: "답글", replied_by: by, replied_at: at, reply_status: "resolved" }
+      // 진행중: 답은 달렸지만 목록에는 남겨 "답변중"으로 보이게 합니다(answered_at은 비워둠).
+      : { replied_by: by, replied_at: at, reply_status: "pending" };
+
+    const { data: updated } = await supabase
+      .from("pickup_requests")
+      .update(patch)
+      .eq("source_chat_id", chatId)
+      .eq("kind", "문의")
+      .is("answered_at", null)
       .lt("received_at", at)
       .select("id");
     repliedCount += updated?.length ?? 0;

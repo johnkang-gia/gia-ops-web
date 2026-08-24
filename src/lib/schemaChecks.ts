@@ -64,6 +64,13 @@ export const SCHEMA_CHECKS: SchemaCheck[] = [
     impact: "체크로 넘기기와 답글 자동 감지가 동작하지 않습니다.",
   },
   {
+    feature: "답글 해결/진행중 판단",
+    table: "pickup_requests",
+    columns: ["reply_status"],
+    migration: "20260824230000_reply_status.sql",
+    impact: "직원 답글이 해결인지 진행중인지 구분되지 않습니다.",
+  },
+  {
     feature: "기사님 설정 링크",
     table: "shuttle_tracker_devices",
     columns: ["setup_code", "setup_opened_at"],

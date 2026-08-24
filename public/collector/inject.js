@@ -26,7 +26,7 @@
 // '안 읽음' 표시가 사라지지 않습니다. 선생님들 업무를 건드리지 않는다는 뜻입니다.
 
 (() => {
-  const VERSION = "2.2.0";
+  const VERSION = "2.3.0";
 
   // 같은 버전이 이미 돌고 있으면 그대로 둡니다.
   //
@@ -188,6 +188,8 @@
       return {
         at: n.createdAt ?? null,
         by: [n.createdBy?.firstName, n.createdBy?.lastName].filter(Boolean).join(" ") || null,
+        // 직원이 뭐라고 답했는지. 서버가 이 글을 보고 "해결됨/진행중"을 판단합니다(요청).
+        text: typeof n.label === "string" ? n.label : "",
       };
     }
     return null;

@@ -44,6 +44,7 @@ type BoardData = {
     grade: string;
     classes: { id: string; className: string; homeroom: string | null; room: string | null; current: Lesson | null; next: Lesson | null }[];
   }[];
+  idleTeachers?: string[];
   studentCount: number;
   absences: { name: string; grade: string | null; className: string | null; status: string; note: string | null; contacted: boolean }[];
   pickups: string[];
@@ -369,7 +370,9 @@ export default function OpsBoardClient({ token }: { token: string }) {
           display: "grid",
           gridTemplateColumns: sc.narrow ? "1fr" : "1fr 1fr",
           gap: sc.s(12, 6),
-          flex: "5 1 0",
+          // 요청: "출결을 필업 업무장을 조금 줄이고, 학부모문의 6개를 한페이지로" - 위쪽(교실·문의)
+          // 비중을 키워 문의가 여섯 개까지 한 장에 들어가게 합니다.
+          flex: "7 1 0",
           minHeight: 0,
         }}
       >
@@ -415,7 +418,7 @@ export default function OpsBoardClient({ token }: { token: string }) {
           ) : (
             /* 요청: "각 학년과 반별로 어느수업이 진행되는지 뜨도록" - 학년을 왼쪽에 세로로 두고,
                그 학년의 반들을 오른쪽에 가로로 늘어놓아 학년 단위로 훑어볼 수 있게 했습니다. */
-            <div style={{ display: "flex", flexDirection: "column", gap: sc.s(8, 4) }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: sc.s(8, 4), flex: 1, minHeight: 0 }}>
               {data.grades.map((g) => (
                 <div key={g.grade || "미지정"} style={{ display: "flex", alignItems: "stretch", gap: sc.s(8, 4) }}>
                   <div
@@ -536,11 +539,71 @@ export default function OpsBoardClient({ token }: { token: string }) {
                           >
                             {shown?.subjectName ?? "—"}
                           </div>
+                          {/* 요청: "수업하시는 선생님들은 각교실 과목아래에 작게 누구수업인지
+                              적어주고, 담임이면 담임이름 적어주고" - 지금 수업의 담당 선생님을,
+                              수업이 없으면 담임을 작게 적습니다. */}
+                          {(() => {
+                            const who = shown?.teacherName ?? (data.currentPeriod ? null : c.homeroom);
+                            const isHomeroom = !shown?.teacherName;
+                            if (!who) return null;
+                            return (
+                              <div
+                                style={{
+                                  fontSize: sc.s(12, 9),
+                                  color: "#64748b",
+                                  marginTop: 2,
+                                  whiteSpace: "nowrap",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                }}
+                              >
+                                {isHomeroom ? "담임 " : ""}
+                                {who}
+                              </div>
+                            );
+                          })()}
                         </div>
                       );
                     })}
                   </div>
                 </div>
+              ))}
+            </div>
+          )}
+
+          {/* 요청: "지금 수업이 아닌 선생님들은 시간표 아래에 로스터로 표시" - 지금 비어 있는
+              선생님(스페셜티 포함)을 한 줄로 모아 보여줍니다. 누가 지금 손이 비는지 한눈에
+              보이면 급한 일을 부탁하기 좋습니다. */}
+          {!lunchPeriod && data.isWeekday && (data.idleTeachers?.length ?? 0) > 0 && (
+            <div
+              style={{
+                marginTop: sc.s(8, 5),
+                paddingTop: sc.s(8, 5),
+                borderTop: "1px solid #1e293b",
+                display: "flex",
+                flexWrap: "wrap",
+                alignItems: "center",
+                gap: sc.s(6, 4),
+                flexShrink: 0,
+              }}
+            >
+              <span style={{ fontSize: sc.s(12, 10), color: "#475569", fontWeight: 700, whiteSpace: "nowrap" }}>
+                지금 수업 없음
+              </span>
+              {(data.idleTeachers ?? []).map((t) => (
+                <span
+                  key={t}
+                  style={{
+                    fontSize: sc.s(13, 10),
+                    color: "#cbd5e1",
+                    background: "#1e293b",
+                    borderRadius: sc.s(6, 4),
+                    padding: `${sc.s(2, 1)}px ${sc.s(8, 5)}px`,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {t}
+                </span>
               ))}
             </div>
           )}
@@ -620,7 +683,8 @@ export default function OpsBoardClient({ token }: { token: string }) {
           display: "grid",
           gridTemplateColumns: sc.narrow ? "1fr" : "1fr 1fr 1.4fr",
           gap: sc.s(12, 6),
-          flex: "3 1 0",
+          // 아래쪽(출결·픽업·오늘업무)은 조금 줄입니다(요청).
+          flex: "2 1 0",
           minHeight: 0,
         }}
       >
@@ -913,7 +977,7 @@ function Panel({
           스크롤을 막으면 넘치는 것은 잘립니다. 그래서 각 칸에서 보여줄 개수를 미리 줄여
           애초에 넘치지 않게 했습니다 - 아래에 뭔가 더 있는데 아무도 못 보는 것보다,
           중요한 것부터 화면 안에 들어오게 하는 편이 낫습니다. */}
-      <div style={{ minHeight: 0, overflow: "hidden", flex: 1 }}>{children}</div>
+      <div style={{ minHeight: 0, overflow: "hidden", flex: 1, display: "flex", flexDirection: "column" }}>{children}</div>
     </div>
   );
 }

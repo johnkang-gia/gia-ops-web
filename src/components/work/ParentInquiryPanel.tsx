@@ -39,6 +39,8 @@ export type Inquiry = {
   /** '수동'이면 직원이 체크한 것, '답글'이면 토들에서 답글이 확인된 것. */
   answered_via?: string | null;
   replied_by?: string | null;
+  replied_at?: string | null;
+  reply_status?: string | null;
 };
 
 const TYPE_STYLE: Record<string, string> = {
@@ -257,6 +259,15 @@ export default function ParentInquiryPanel({
           title={r.replied_by ? `${r.replied_by} 선생님이 답글을 다셨습니다` : "이미 답글이 달렸습니다"}
         >
           ✓
+        </span>
+      )}
+      {/* 직원이 답은 했지만 아직 끝나지 않은 건(요청: 해결됐는지 안됐는지 표시). */}
+      {!r.answered_at && r.reply_status === "pending" && (
+        <span
+          className="shrink-0 rounded bg-amber-100 px-1 text-[10px] font-bold text-amber-700"
+          title={r.replied_by ? `${r.replied_by} 선생님이 답변 중입니다(아직 미해결)` : "답변 중"}
+        >
+          답변중
         </span>
       )}
       {r.inquiry_type && (

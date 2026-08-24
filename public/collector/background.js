@@ -207,8 +207,25 @@ async function runOnceInner() {
   // 이제는 목록을 못 읽으면 오류로 올라옵니다(로그인 풀림 등). 여기까지 왔는데 0개면
   // 정말로 새 학부모 메시지가 없는 것입니다.
   const diag = reply.diag ?? {};
+  const who = diag.account ? ` · ${diag.account}` : "";
+
   if (items.length === 0) {
-    await setState({ status: "정상", detail: `새 메시지 없음 (안 읽은 방 ${diag.knownRooms ?? 0}개)` });
+    // 0개일 때는 "왜 0개인지"까지 적어야 합니다.
+    //
+    // 토들의 '안 읽음'은 계정마다 따로 셉니다. 그래서 0개에는 서로 다른 세 가지가 섞여 있고,
+    // 그냥 "정상"이라고만 하면 어느 쪽인지 알 수 없어 원격에서 짐작만 하게 됩니다.
+    //   ① 방이 아예 안 보임 → 이 계정이 학부모 채팅방의 참여자가 아닙니다.
+    //   ② 방은 보이는데 다 읽음 → 진짜 정상입니다.
+    if (diag.totalRooms === 0) {
+      await setState({
+        status: "계정 확인 필요",
+        detail: `이 계정에는 채팅방이 하나도 보이지 않습니다${who}. 학부모 채널에 참여한 계정으로 로그인해주세요.`,
+      });
+      await heartbeat("error", `채팅방이 보이지 않는 계정입니다${who}`);
+      return;
+    }
+    const total = diag.totalRooms != null ? ` / 전체 ${diag.totalRooms}개` : "";
+    await setState({ status: "정상", detail: `새 메시지 없음 (안 읽은 방 ${diag.knownRooms ?? 0}개${total})${who}` });
     await heartbeat("ok", `새 메시지 없음 (안 읽은 방 ${diag.knownRooms ?? 0}개)`);
     return;
   }
@@ -221,7 +238,7 @@ async function runOnceInner() {
     // 보낸 기록이 무한정 쌓이지 않게 최근 2000건만 남깁니다.
     const entries = Object.entries(nextSent).sort((a, b) => b[1] - a[1]).slice(0, 2000);
     await chrome.storage.local.set({ sent: Object.fromEntries(entries) });
-    await setState({ status: "정상", detail: `${items.length}건 보냄 (안 읽은 방 ${diag.knownRooms ?? 0}개)` });
+    await setState({ status: "정상", detail: `${items.length}건 보냄 (안 읽은 방 ${diag.knownRooms ?? 0}개)${who}` });
   } catch (err) {
     await setState({ status: "전송 실패", detail: String(err.message ?? err) });
     await heartbeat("error", `전송 실패: ${String(err.message ?? err)}`);

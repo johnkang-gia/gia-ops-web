@@ -78,14 +78,31 @@
   }
 }`;
 
-  /** 학교 번호. 로그인되어 있으면 브라우저에 저장되어 있습니다. */
-  function getOrgId() {
+  /** 로그인한 사람 정보. 로그인되어 있으면 브라우저에 저장되어 있습니다. */
+  function getUserInfo() {
     try {
-      const info = JSON.parse(localStorage.getItem("userInfo") || "null");
-      return info && info.org_id ? String(info.org_id) : null;
+      return JSON.parse(localStorage.getItem("userInfo") || "null");
     } catch {
       return null;
     }
+  }
+
+  function getOrgId() {
+    const info = getUserInfo();
+    return info && info.org_id ? String(info.org_id) : null;
+  }
+
+  /**
+   * 어느 계정으로 보고 있는지.
+   *
+   * 토들의 '안 읽음'은 **계정마다 따로** 셉니다. 그 계정이 학부모 채팅방의 참여자가 아니면
+   * 방이 아예 안 보이고, 참여자여도 이미 읽었으면 0개입니다. 둘은 전혀 다른 상황인데
+   * 화면에는 똑같이 "0개"로 보여서, 원인을 짚으려면 계정을 알아야 합니다.
+   */
+  function whoAmI() {
+    const info = getUserInfo();
+    if (!info) return null;
+    return info.email || [info.first_name, info.last_name].filter(Boolean).join(" ") || null;
   }
 
   async function gql(operationName, query, variables) {
@@ -106,25 +123,35 @@
     return one;
   }
 
-  /** 안 읽은 메시지가 있는 방들. */
-  async function fetchRooms() {
+  /**
+   * 방 목록.
+   *
+   * onlyUnread=false 로도 한 번 부르는 이유: "이 계정에 방이 아예 안 보이는 것"과 "방은
+   * 보이는데 다 읽은 것"은 원인이 완전히 다른데, 둘 다 안 읽은 방 0개로 나옵니다.
+   * 전체 방 수를 함께 알면 어느 쪽인지 바로 갈립니다.
+   */
+  async function fetchRoomList(onlyUnread) {
     const organizationId = getOrgId();
     if (!organizationId) throw new Error("LOGIN_REQUIRED");
-    const one = await gql("giaChatList", CHAT_LIST_QUERY, {
-      organizationId,
-      input: { first: 50, isRead: false },
-    });
+    const input = onlyUnread ? { first: 50, isRead: false } : { first: 50 };
+    const one = await gql("giaChatList", CHAT_LIST_QUERY, { organizationId, input });
     const edges = one?.data?.node?.chats?.edges;
     if (!Array.isArray(edges)) return [];
     return edges
       .map((e) => e?.node)
-      .filter((n) => n && n.id && !n.isArchived && Number(n.unreadMessageCount ?? 0) > 0)
+      .filter((n) => n && n.id && !n.isArchived)
       .map((n) => ({
         id: String(n.id),
         label: n.label ?? null,
         unread: Number(n.unreadMessageCount ?? 0),
         lastActiveAt: n.lastActiveAt ?? null,
       }));
+  }
+
+  /** 안 읽은 메시지가 있는 방들. */
+  async function fetchRooms() {
+    const all = await fetchRoomList(true);
+    return all.filter((n) => n.unread > 0);
   }
 
   /**
@@ -167,12 +194,14 @@
 
     try {
       if (msg.cmd === "status") {
-        reply({ ok: true, loggedIn: !!getOrgId() });
+        reply({ ok: true, loggedIn: !!getOrgId(), account: whoAmI() });
         return;
       }
 
       if (msg.cmd === "collect") {
         const rooms = await fetchRooms();
+        // 안 읽은 방이 없을 때만 전체를 세어봅니다(평소에는 쓸데없는 요청을 하지 않도록).
+        const totalRooms = rooms.length === 0 ? (await fetchRoomList(false)).length : null;
         const targets = rooms.slice(0, MAX_ROOMS);
         const out = [];
         for (const room of targets) {
@@ -195,7 +224,16 @@
             // 한 방이 실패해도 나머지는 계속합니다.
           }
         }
-        reply({ ok: true, chats: out, diag: { knownRooms: rooms.length, unreadRooms: targets.length } });
+        reply({
+          ok: true,
+          chats: out,
+          diag: {
+            knownRooms: rooms.length,
+            unreadRooms: targets.length,
+            totalRooms,
+            account: whoAmI(),
+          },
+        });
         return;
       }
 

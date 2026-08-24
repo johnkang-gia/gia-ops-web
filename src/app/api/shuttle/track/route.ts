@@ -3,9 +3,10 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { isWithinTrackingWindow, kstParts } from "@/lib/shuttleTracking";
 import { haversineMeters } from "@/lib/shuttleRecommend";
 
-// 기사님 휴대폰이 이 반경(m) 안에 들어오면 그 정류장에 "도착"한 것으로 봅니다. 학교 도착 감지
-// (auto-arrive)와 비슷한 값이되, 도심 정류장은 더 촘촘해서 조금 좁게 둡니다.
-const STOP_ARRIVE_RADIUS_M = 120;
+// 기사님 휴대폰이 이 반경(m) 안에 들어와야 그 정류장에 "도착"한 것으로 봅니다. 요청: "신호대기랑
+// 정류장 정차 헷갈리지 않게 정류장 근처일때만 정류장으로 인식" - 도심 정류장이 촘촘하고 GPS가
+// 흔들려도 엉뚱한 정류장을 잡지 않도록 좁게(80m) 둡니다. 이보다 멀면 "정류장 아님(운행/대기)".
+const STOP_ARRIVE_RADIUS_M = 80;
 
 export const dynamic = "force-dynamic";
 

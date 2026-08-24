@@ -199,6 +199,25 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     }))
     .sort((a, b) => Number(b.urgent) - Number(a.urgent) || b.at.localeCompare(a.at));
 
+  // 수집기가 살아 있는지.
+  //
+  // 요청: "토들을 이제 긁어오기때문에 실시간으로 토들긁어오는거 반영해줘"
+  // 문의가 안 뜨는 것이 "문의가 없어서"인지 "수집기가 멈춰서"인지는 전혀 다른 얘기인데,
+  // 화면에는 똑같이 비어 보입니다. 그래서 마지막 신호 시각을 함께 내려보내 5분 넘게
+  // 소식이 없으면 화면에 빨갛게 알립니다.
+  const { data: hb } = await supabase
+    .from("integration_heartbeats")
+    .select("last_seen_at, status, detail")
+    .eq("key", "toddle-collector")
+    .maybeSingle();
+
+  const lastSeen = (hb?.last_seen_at as string | null) ?? null;
+  const collector = {
+    lastSeen,
+    status: (hb?.status as string | null) ?? null,
+    stale: !lastSeen || Date.now() - new Date(lastSeen).getTime() > 5 * 60 * 1000,
+  };
+
   // ── ③ 업무 요약 ────────────────────────────────────────────────────────────
   const { data: tasks } = await supabase
     .from("tasks")
@@ -277,6 +296,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     absences,
     pickups,
     inquiries,
+    collector,
     taskSummary: { statusCounts, todayTasks: todayTasks.slice(0, 20), todayTotal: todayTasks.length },
     shuttle: {
       mode: shuttleMode,

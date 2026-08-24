@@ -44,6 +44,7 @@ type BoardData = {
   absences: { name: string; grade: string | null; className: string | null; status: string; note: string | null; contacted: boolean }[];
   pickups: string[];
   inquiries: { id: string; student: string; type: string | null; summary: string; urgent: boolean; at: string }[];
+  collector: { lastSeen: string | null; status: string | null; stale: boolean } | null;
   taskSummary: {
     statusCounts: Record<string, number>;
     todayTasks: { title: string; status: string; department: string | null; dueLabel: string | null; urgent: boolean; kind: string }[];
@@ -378,38 +379,42 @@ export default function OpsBoardClient({ token }: { token: string }) {
                           minWidth: 0,
                         }}
                       >
+                        {/* 요청: "각반 위치를 항상 (...) 나타나게 해주고 밖이면 교실밖이라고
+                            변화되게 해줘" + "교실명 옆에 나오게 해도 되 학년과 반이 우선이야"
+                            그래서 반 이름을 앞에 크게 두고, 위치는 바로 옆에 작게 붙입니다.
+                            위치는 늘 같은 자리에 있어야 눈이 그 자리를 찾습니다 - 있다 없다
+                            하면 매번 다시 훑게 됩니다. 교실에 있으면 교실 이름을, 나가면 그
+                            자리 글자만 [교실 밖]으로 바뀝니다. */}
                         <div style={{ display: "flex", alignItems: "center", gap: sc.s(4, 3), minWidth: 0 }}>
-                          <span style={{ fontSize: sc.s(13, 10), color: "#94a3b8", fontWeight: 700, whiteSpace: "nowrap" }}>
+                          <span
+                            style={{
+                              fontSize: sc.s(13, 10),
+                              color: "#cbd5e1",
+                              fontWeight: 800,
+                              whiteSpace: "nowrap",
+                            }}
+                          >
                             {c.className}
                           </span>
+                          <span
+                            style={{
+                              fontSize: sc.s(11, 9),
+                              fontWeight: 700,
+                              color: place.special ? "#fbbf24" : "#64748b",
+                              background: place.special ? "#78350f" : "#0f172a",
+                              borderRadius: sc.s(5, 4),
+                              padding: `0 ${sc.s(5, 3)}px`,
+                              whiteSpace: "nowrap",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              minWidth: 0,
+                            }}
+                          >
+                            {place.special ? "교실 밖" : c.room || "교실"}
+                          </span>
                           {inBreak && shown && (
-                            <span
-                              style={{
-                                fontSize: sc.s(11, 9),
-                                fontWeight: 800,
-                                color: "#64748b",
-                                background: "#1e293b",
-                                borderRadius: sc.s(5, 4),
-                                padding: `0 ${sc.s(5, 3)}px`,
-                                whiteSpace: "nowrap",
-                              }}
-                            >
+                            <span style={{ fontSize: sc.s(11, 9), fontWeight: 800, color: "#64748b", whiteSpace: "nowrap" }}>
                               다음
-                            </span>
-                          )}
-                          {place.special && !inBreak && (
-                            <span
-                              style={{
-                                fontSize: sc.s(11, 9),
-                                fontWeight: 800,
-                                color: "#fbbf24",
-                                background: "#78350f",
-                                borderRadius: sc.s(5, 4),
-                                padding: `0 ${sc.s(5, 3)}px`,
-                                whiteSpace: "nowrap",
-                              }}
-                            >
-                              교실 밖
                             </span>
                           )}
                         </div>
@@ -426,7 +431,7 @@ export default function OpsBoardClient({ token }: { token: string }) {
                             whiteSpace: "nowrap",
                           }}
                         >
-                          {shown?.subjectName ?? (data.currentPeriod ? c.room || "—" : "—")}
+                          {shown?.subjectName ?? "—"}
                         </div>
                       </div>
                     );
@@ -510,9 +515,39 @@ export default function OpsBoardClient({ token }: { token: string }) {
         sc={sc}
         grow={1}
         title={`학부모 문의 ${data.inquiries?.length ?? 0}건`}
-        right={urgentInquiries > 0 ? `급한 것 ${urgentInquiries}건` : null}
+        right={
+          /* 수집기가 멈추면 문의가 안 들어옵니다. 그런데 화면은 "문의 없음"으로 똑같이
+             보여서, 조용히 아무것도 안 하면서 정상인 척하게 됩니다. 그래서 여기 적습니다. */
+          data.collector?.stale
+            ? "⚠ 토들 수집기 멈춤"
+            : urgentInquiries > 0
+            ? `급한 것 ${urgentInquiries}건`
+            : data.collector?.lastSeen
+            ? `수집 ${new Date(data.collector.lastSeen).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}`
+            : null
+        }
       >
-        {!data.inquiries || data.inquiries.length === 0 ? (
+        {data.collector?.stale ? (
+          <div
+            style={{
+              background: "#3f1d1d",
+              border: "1px solid #b91c1c",
+              borderRadius: sc.s(8, 6),
+              padding: sc.s(9, 6),
+              fontSize: sc.s(14, 11),
+              color: "#fca5a5",
+              lineHeight: 1.5,
+            }}
+          >
+            <b>토들 수집기가 멈춰 있습니다.</b>
+            <br />
+            {data.collector.status === "login_required"
+              ? "사무실 PC 크롬에서 토들에 다시 로그인해주세요."
+              : data.collector.lastSeen
+              ? `마지막 신호 ${new Date(data.collector.lastSeen).toLocaleString("ko-KR")} · 지금은 토들 문의가 자동으로 들어오지 않습니다.`
+              : "아직 한 번도 연결된 적이 없습니다."}
+          </div>
+        ) : !data.inquiries || data.inquiries.length === 0 ? (
           <Empty sc={sc} text="답할 문의 없음" tone="good" />
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: sc.s(4, 3) }}>

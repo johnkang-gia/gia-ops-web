@@ -110,7 +110,22 @@ async function askTab(tabId, cmd) {
   }
 }
 
+// 수집 한 번이 1분을 넘을 수 있습니다(다시 배우는 데만 9초, 방마다 메시지 받아오는 시간이
+// 더해집니다). 알람은 1분마다 울리므로, 앞의 수집이 아직 도는 중이면 이번 차례는 거릅니다.
+// 겹쳐 돌면 같은 메시지를 두 번 보내고 화면도 두 번 왕복합니다.
+let running = false;
+
 async function runOnce() {
+  if (running) return;
+  running = true;
+  try {
+    await runOnceInner();
+  } finally {
+    running = false;
+  }
+}
+
+async function runOnceInner() {
   const { serverUrl, secret, sent } = await getConfig();
   if (!serverUrl || !secret) {
     await setState({ status: "설정 필요", detail: "확장 아이콘을 눌러 서버 주소와 키를 넣어주세요." });

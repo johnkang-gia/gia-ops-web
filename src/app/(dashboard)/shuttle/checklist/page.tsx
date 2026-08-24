@@ -4,6 +4,7 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import Link from "next/link";
 import ShuttleChecklistClient, { type ChecklistRoute, type ChecklistItem } from "@/components/shuttle/ShuttleChecklistClient";
 import type { GoogleChatMirrorMessage } from "@/lib/types";
+import { categorize } from "@/lib/attendanceDigest";
 import GuideButton from "@/components/common/GuideButton";
 
 const GUIDE_SECTIONS = [
@@ -52,7 +53,9 @@ export default async function ShuttleChecklistPage({
   if (!me) redirect("/login");
 
   const { term: termParam } = await searchParams;
-  const term: "정규학기" | "여름캠프2" = termParam === "정규학기" ? "정규학기" : "여름캠프2";
+  // 요청: "하원체크표에 정규학기 애들 체크가 하나도 안되어 있어" - 여름캠프2가 끝났으므로
+  // 기본을 정규학기로 둡니다(예전엔 기본이 여름캠프2라 정규학기 명단이 비어 보였습니다).
+  const term: "정규학기" | "여름캠프2" = termParam === "여름캠프2" ? "여름캠프2" : "정규학기";
 
   const supabase = await createClient();
   const routesRes = await supabase
@@ -91,27 +94,59 @@ export default async function ShuttleChecklistPage({
   const today = new Date().toISOString().slice(0, 10);
   const stopById = new Map(stopsData.map((s) => [s.id, s]));
   const routeIdSet = new Set(routeIds);
-  const relevant = assignmentsData.filter((a) => a.weekdays.includes(todayWeekday));
-  const assignmentIds = relevant.map((a) => a.id);
 
-  const boardingsRes = assignmentIds.length
+  // 요청: "안타는 아이도 옅은 회색으로 표시 (...) 갑자기 탑승하게 되면 눌러서 탑승으로" - 오늘
+  // 요일에 안 타는 학생도 명단에 넣되, ridingToday=false로 표시해 회색으로 보여줍니다. 탑승 상태를
+  // 저장할 수 있어야 하므로 오늘 탑승 기록도 전체 배정에 대해 함께 조회합니다.
+  const allAssignmentIds = assignmentsData.map((a) => a.id);
+  const boardingsRes = allAssignmentIds.length
     ? await supabase
         .from("shuttle_boardings")
         .select("assignment_id, status, override_route_id")
         .eq("service_date", today)
-        .in("assignment_id", assignmentIds)
+        .in("assignment_id", allAssignmentIds)
     : { data: [] as { assignment_id: string; status: string; override_route_id: string | null }[] };
   const boardingByAssignment = new Map((boardingsRes.data ?? []).map((b) => [b.assignment_id, b]));
 
-  // 그룹핑은 클라이언트에서 하도록, 노선별로 나누지 않은 평평한 목록으로 넘깁니다 - 드래그로
-  // 옮길 때마다 서버를 다시 안 거치고 화면에서 바로 다시 묶어 보여주기 위해서입니다.
-  // homeRouteId는 정류장 기준 절대 원래 노선(불변), permanentRouteId는 계속 유지되는 영구
-  // 이동, overrideRouteId는 오늘 하루만의 이동입니다.
-  const items: ChecklistItem[] = relevant
+  // 요청: "이제 토들도 가져오니까 하원체크표에 오늘픽업 결석에 여기도 반영" - 토들·전화·구글챗으로
+  // 들어온 오늘 픽업/결석(pickup_requests)을 명단에 자동으로 얹습니다. 사람이 직접 누른 값이
+  // 있으면 그걸 존중하고, 없을 때만 자동으로 채웁니다.
+  const norm = (s: string) => (s ?? "").replace(/\s+/g, "").trim();
+  const nameMatch = (a: string, b: string) => {
+    const x = norm(a), y = norm(b);
+    if (x.length < 2 || y.length < 2) return false;
+    return x === y || x.includes(y) || y.includes(x);
+  };
+  const { data: preqRows } = await supabase
+    .from("pickup_requests")
+    .select("*")
+    .eq("is_demo", false)
+    .neq("status", "무시")
+    .eq("service_date", today);
+  const pickupNames: string[] = [];
+  const absentNames: string[] = [];
+  for (const r of preqRows ?? []) {
+    const name = ((r.matched_name as string | null) ?? (r.ai_student_name as string | null) ?? "").trim();
+    if (!name) continue;
+    const text = ((r.raw_text as string | null) ?? (r.summary as string | null) ?? "").toString();
+    const cat = categorize(text);
+    if (r.kind === "픽업" || cat === "픽업") pickupNames.push(name);
+    else if (cat === "결석") absentNames.push(name);
+  }
+
+  // 그룹핑은 클라이언트에서 하도록, 노선별로 나누지 않은 평평한 목록으로 넘깁니다.
+  const items: ChecklistItem[] = assignmentsData
     .map((a) => {
       const stop = stopById.get(a.stop_id);
       if (!stop) return null;
       const boarding = boardingByAssignment.get(a.id);
+      const ridingToday = a.weekdays.includes(todayWeekday);
+      let status: ChecklistItem["status"] = (boarding?.status as ChecklistItem["status"]) ?? "예정";
+      // 오늘 타는 학생 & 아직 사람이 안 누른 경우에만 토들 픽업/결석을 자동 반영.
+      if (ridingToday && status === "예정") {
+        if (pickupNames.some((n) => nameMatch(n, a.student_name_raw))) status = "픽업";
+        else if (absentNames.some((n) => nameMatch(n, a.student_name_raw))) status = "결석";
+      }
       const item: ChecklistItem = {
         assignmentId: a.id,
         studentName: a.student_name_raw,
@@ -119,8 +154,9 @@ export default async function ShuttleChecklistPage({
         homeRouteId: stop.route_id,
         permanentRouteId: a.override_route_id && routeIdSet.has(a.override_route_id) ? a.override_route_id : null,
         overrideRouteId: boarding?.override_route_id ?? null,
-        status: (boarding?.status as ChecklistItem["status"]) ?? "예정",
+        status,
         note: a.note ?? null,
+        ridingToday,
       };
       return item;
     })

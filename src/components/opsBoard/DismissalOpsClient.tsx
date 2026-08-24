@@ -288,7 +288,7 @@ export default function DismissalOpsClient({
         const trackable = data.routes.filter((r) => r.pingFresh || (r.trail?.length ?? 0) > 0);
         const focusList = trackable.length > 0 ? trackable : data.routes;
         const total = focusList.length;
-        const per = 4; // 오른쪽은 2x2 = 4개 노선을 동시에, 겹치지 않게 순환(요청).
+        const per = 2; // 오른쪽은 위아래 2칸으로, 겹치지 않게 순환(요청). 지금은 27호만 있어 한 칸에 27호.
         const start = total > 0 ? (focusIdx * per) % total : 0;
         const slots: (RouteRow | null)[] = [];
         for (let k = 0; k < per; k += 1) slots.push(k < total ? focusList[(start + k) % total] : null);
@@ -299,8 +299,8 @@ export default function DismissalOpsClient({
             <div style={{ flex: "7 1 0", minWidth: 0 }}>
               <AllRoutesMap routes={data.routes} school={data.school} testMarkers={data.testMarkers ?? []} />
             </div>
-            {/* 오른쪽(3): 노선을 4개씩 순환하며 가까이(위에서 본 밴) */}
-            <div style={{ flex: "3 1 0", minWidth: 0, display: "grid", gridTemplateColumns: "1fr 1fr", gridTemplateRows: "1fr 1fr", gap: sc.s(6, 4) }}>
+            {/* 오른쪽(3): 노선을 위아래 2칸으로 순환하며 가까이(위에서 본 밴) */}
+            <div style={{ flex: "3 1 0", minWidth: 0, display: "grid", gridTemplateColumns: "1fr", gridTemplateRows: "1fr 1fr", gap: sc.s(6, 4) }}>
               {slots.map((r, k) => (
                 <div key={k} style={{ minWidth: 0, minHeight: 0 }}>
                   <RouteFocusMap route={r} school={data.school} color={colorOf(r)} sc={sc} />

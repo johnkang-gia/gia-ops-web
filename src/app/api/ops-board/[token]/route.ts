@@ -435,6 +435,20 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   // 예전에는 시작 시각만 있어서 한 번 하원 화면이 되면 자정까지 그대로 남아 있었습니다.
   // 종료 시각이 아직 DB에 반영되기 전이면 기본값(17:30)으로 계산해, 반영 전후 어느 쪽이든
   // 화면이 멈추지 않게 합니다.
+  // ── 야간/하원 이후 정보(요청: "하원시간이 되면 시간표 자리 (...) 학교 정보 그리고 학사일정
+  // 달력을 보이게") ────────────────────────────────────────────────────────────
+  // 다가오는 학사일정과 이번 주 위클리 리포트 작성 건수를 함께 내려, 저녁~다음날 아침에는
+  // 시간표 대신 이 정보를 보여줍니다.
+  const sinceWeek = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const [{ data: eventRows }, reportsCountRes] = await Promise.all([
+    supabase.from("events").select("date, name").gte("date", today).order("date", { ascending: true }).limit(12),
+    supabase.from("wr_reports").select("id", { count: "exact", head: true }).eq("status", "published").gte("report_date", sinceWeek),
+  ]);
+  const nightInfo = {
+    events: (eventRows ?? []).map((e) => ({ date: e.date as string, name: e.name as string })),
+    reportsThisWeek: reportsCountRes.count ?? 0,
+  };
+
   const switchMinutes = link.shuttle_switch_hour * 60 + link.shuttle_switch_minute;
   const endHour = (link as { shuttle_end_hour?: number }).shuttle_end_hour ?? 17;
   const endMinute = (link as { shuttle_end_minute?: number }).shuttle_end_minute ?? 30;
@@ -463,6 +477,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     // 화면에서 학년 제목 아래에 그 학년의 반들이 나란히 놓입니다.
     grades: gradeGroups,
     studentCount: deptStudents.length,
+    nightInfo,
     absences,
     pickups,
     inquiries,

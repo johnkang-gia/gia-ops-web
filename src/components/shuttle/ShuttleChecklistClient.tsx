@@ -23,6 +23,9 @@ export type ChecklistItem = {
   overrideRouteId: string | null; // 오늘 하루만의 이동 - null이면 적용 안 됨
   status: "예정" | "탑승" | "미탑승" | "결석" | "픽업";
   note: string | null; // 학생별 특이사항 메모(요청: "특이사항있는 아이들... 메모적을 수 있게")
+  // 오늘 요일에 이 차를 타는 학생인지. false면 회색으로 흐리게 보이고, 눌러서 오늘 탑승으로
+  // 바꿀 수 있습니다(요청: "안타는 아이도 옅은 회색으로 (...) 눌러서 탑승으로").
+  ridingToday?: boolean;
 };
 
 function todayStr() {
@@ -63,7 +66,13 @@ export default function ShuttleChecklistClient({
 
   // 오늘 실제로 자리에 남는 인원(픽업·결석은 셔틀을 안 타므로 뺍니다) - 요청: "탑승예정인원이
   // 나타나도록".
-  const expectedCount = useMemo(() => items.filter((i) => i.status !== "픽업" && i.status !== "결석").length, [items]);
+  const expectedCount = useMemo(
+    () =>
+      items.filter(
+        (i) => (i.ridingToday !== false || i.status === "탑승") && i.status !== "픽업" && i.status !== "결석"
+      ).length,
+    [items]
+  );
 
   // shuttle_boardings(오늘 하루 상태·오늘만 이동)와 shuttle_assignments(영구 이동)를 각각
   // realtime으로 구독해서, 다른 사람이 체크표를 바꾸면 폴링을 기다리지 않고 바로 반영합니다
@@ -96,7 +105,12 @@ export default function ShuttleChecklistClient({
           const a = assignmentById.get(it.assignmentId);
           return {
             ...it,
-            status: (b?.status as ChecklistItem["status"]) ?? "예정",
+            // 토들에서 자동으로 온 픽업/결석은 boarding 행이 없습니다 - 안전망 재조회가 이를
+            // 지우지 않도록, boarding이 없으면 기존 픽업/결석 상태를 유지합니다(사람이 직접 바꾸면
+            // boarding 행이 생겨 그 값이 우선합니다).
+            status:
+              (b?.status as ChecklistItem["status"]) ??
+              (it.status === "픽업" || it.status === "결석" ? it.status : "예정"),
             overrideRouteId: b?.override_route_id ?? null,
             permanentRouteId: a ? (a.override_route_id as string | null) : it.permanentRouteId,
             note: a ? ((a.note as string | null) ?? null) : it.note,

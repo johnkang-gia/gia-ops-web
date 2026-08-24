@@ -120,6 +120,9 @@ export default function ShuttleChecklistTable({
                       {roster.map((item) => {
                         const isPickup = item.status === "픽업";
                         const isAbsent = item.status === "결석";
+                        const isBoarded = item.status === "탑승";
+                        // 오늘 안 타는 학생(요청: 옅은 회색). 단, 눌러서 탑승으로 바꾼 경우는 정상 표시.
+                        const isNonRiding = item.ridingToday === false && !isBoarded;
                         const isMovedToday = !!item.overrideRouteId && item.overrideRouteId !== (item.permanentRouteId ?? item.homeRouteId);
                         const isMovedPermanently = !!item.permanentRouteId && item.permanentRouteId !== item.homeRouteId;
                         const isMoved = isMovedToday || isMovedPermanently;
@@ -157,11 +160,15 @@ export default function ShuttleChecklistTable({
                                   ? "border-red-300 bg-red-50 text-red-500 line-through"
                                   : isPickup
                                     ? "border-pink-400 bg-pink-100 text-pink-700"
-                                    : isMovedToday
-                                      ? "border-amber-400 bg-amber-50 text-amber-700"
-                                      : isMovedPermanently
-                                        ? "border-purple-400 bg-purple-50 text-purple-700"
-                                        : "border-slate-300 bg-white text-slate-700")
+                                    : isBoarded
+                                      ? "border-emerald-400 bg-emerald-50 text-emerald-700"
+                                      : isNonRiding
+                                        ? "border-slate-200 bg-slate-50 text-slate-300 opacity-70"
+                                        : isMovedToday
+                                          ? "border-amber-400 bg-amber-50 text-amber-700"
+                                          : isMovedPermanently
+                                            ? "border-purple-400 bg-purple-50 text-purple-700"
+                                            : "border-slate-300 bg-white text-slate-700")
                             }
                           >
                             <button
@@ -184,30 +191,48 @@ export default function ShuttleChecklistTable({
                               {item.studentName}
                             </span>
                             <span className="flex gap-1 print:hidden">
-                              <button
-                                type="button"
-                                onClick={() => onSetStatus(item, "픽업")}
-                                disabled={busyId === item.assignmentId}
-                                title="픽업(부모님이 직접 데려가심)"
-                                className={
-                                  "rounded px-1 text-[10px] disabled:opacity-40 " +
-                                  (isPickup ? "bg-pink-500 text-white" : "bg-slate-100 text-slate-400 hover:bg-pink-100")
-                                }
-                              >
-                                🚗
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => onSetStatus(item, "결석")}
-                                disabled={busyId === item.assignmentId}
-                                title="결석"
-                                className={
-                                  "rounded px-1 text-[10px] disabled:opacity-40 " +
-                                  (isAbsent ? "bg-red-500 text-white" : "bg-slate-100 text-slate-400 hover:bg-red-100")
-                                }
-                              >
-                                🚫
-                              </button>
+                              {item.ridingToday === false ? (
+                                // 오늘 안 타는 학생 - 눌러서 오늘 탑승으로(요청). 다시 누르면 취소.
+                                <button
+                                  type="button"
+                                  onClick={() => onSetStatus(item, "탑승")}
+                                  disabled={busyId === item.assignmentId}
+                                  title={isBoarded ? "오늘 탑승 취소" : "오늘 갑자기 탑승"}
+                                  className={
+                                    "rounded px-1.5 text-[10px] font-bold disabled:opacity-40 " +
+                                    (isBoarded ? "bg-emerald-500 text-white" : "bg-slate-100 text-slate-400 hover:bg-emerald-100")
+                                  }
+                                >
+                                  🚌 탑승
+                                </button>
+                              ) : (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => onSetStatus(item, "픽업")}
+                                    disabled={busyId === item.assignmentId}
+                                    title="픽업(부모님이 직접 데려가심)"
+                                    className={
+                                      "rounded px-1 text-[10px] disabled:opacity-40 " +
+                                      (isPickup ? "bg-pink-500 text-white" : "bg-slate-100 text-slate-400 hover:bg-pink-100")
+                                    }
+                                  >
+                                    🚗
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => onSetStatus(item, "결석")}
+                                    disabled={busyId === item.assignmentId}
+                                    title="결석"
+                                    className={
+                                      "rounded px-1 text-[10px] disabled:opacity-40 " +
+                                      (isAbsent ? "bg-red-500 text-white" : "bg-slate-100 text-slate-400 hover:bg-red-100")
+                                    }
+                                  >
+                                    🚫
+                                  </button>
+                                </>
+                              )}
                             </span>
                           </div>
                         );

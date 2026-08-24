@@ -46,6 +46,7 @@ type BoardData = {
     classes: { id: string; className: string; homeroom: string | null; room: string | null; current: Lesson | null; next: Lesson | null }[];
   }[];
   studentCount: number;
+  nightInfo?: { events: { date: string; name: string }[]; reportsThisWeek: number };
   absences: { name: string; grade: string | null; className: string | null; status: string; note: string | null; contacted: boolean }[];
   pickups: string[];
   inquiries: { id: string; student: string; type: string | null; summary: string; urgent: boolean; at: string; replied?: boolean }[];
@@ -257,6 +258,11 @@ export default function OpsBoardClient({ token }: { token: string }) {
   const lunchPeriod =
     data.currentPeriod && /점심|중식|lunch/i.test(data.currentPeriod.label) ? data.currentPeriod : null;
 
+  // 요청: "하원시간이 되면 시간표 자리 다음날 오전8시까지는 (...) 학교 정보 그리고 학사일정 달력을".
+  // 하원 시작(대략 오후 4시)부터 다음날 오전 8시까지는 시간표 자리에 학교 정보·학사일정을 띄웁니다.
+  const nowHour = parseInt((data.nowLabel ?? "00:00").split(":")[0] || "0", 10);
+  const nightMode = nowHour >= 16 || nowHour < 8;
+
   return (
     // height + overflow:hidden - 대시보드는 아무도 스크롤하지 않으므로, 넘치면 화면 안에서
     // 각 패널이 알아서 줄어들도록 합니다(밀려나서 안 보이는 것보다 낫습니다).
@@ -368,7 +374,10 @@ export default function OpsBoardClient({ token }: { token: string }) {
           minHeight: 0,
         }}
       >
-        {/* ① 지금 수업 (시간표) - 화면에서 가장 중요한 정보라 남는 공간을 가장 많이 가져갑니다 */}
+        {/* ① 지금 수업(시간표) - 낮에는 시간표, 하원 시작~다음날 아침에는 학교 정보·학사일정. */}
+        {nightMode ? (
+          <NightInfoPanel sc={sc} data={data} />
+        ) : (
         <Panel
           sc={sc}
           /* 요청: "학년 반 시간표 줄이지말고 확실하게 전체 보이게 만들어줘"
@@ -560,6 +569,7 @@ export default function OpsBoardClient({ token }: { token: string }) {
           )}
 
         </Panel>
+        )}
 
         {/* ②-b 학부모 문의사항 - 요청: "운영 대시보드에 이 학부모 문의사항도 띄워줘"
             아직 답하지 않은 것만 올립니다. 처리된 것까지 섞이면 훑어보는 의미가 없습니다. */}
@@ -919,6 +929,113 @@ function WeekTimetablePopup({ token, classId, title, onClose }: { token: string;
 // grow를 주면 남는 세로 공간을 그 비율만큼 가져가고, 내용이 넘치면 패널 안에서만 스크롤됩니다.
 // 패널이 커져서 아래 패널을 화면 밖으로 밀어내는 일이 없어집니다 - 대시보드는 아무도 스크롤하지
 // 않기 때문에, 밀려난 정보는 없는 것과 같습니다.
+// 하원 시작~다음날 아침에 시간표 자리에 띄우는 학교 정보·학사일정 패널(요청). 밤에는 시간표가
+// 쓸모없으므로, 대신 "오늘의 학교 요약"과 이번 달 학사일정 달력을 보여줍니다.
+function NightInfoPanel({ sc, data }: { sc: BoardScale; data: BoardData }) {
+  const events = data.nightInfo?.events ?? [];
+  const reports = data.nightInfo?.reportsThisWeek ?? 0;
+  const absent = data.absences.filter((a) => a.status === "결석").length;
+  const late = data.absences.filter((a) => a.status === "지각").length;
+  const pickupCount = data.pickups.length;
+
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const todayDate = now.getDate();
+  const startDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const eventByDay = new Map<number, string>();
+  for (const e of events) {
+    const d = new Date(e.date + "T00:00:00");
+    if (d.getFullYear() === year && d.getMonth() === month) eventByDay.set(d.getDate(), e.name);
+  }
+  const cells: (number | null)[] = [];
+  for (let i = 0; i < startDay; i += 1) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d += 1) cells.push(d);
+  const weekdayLabels = ["일", "월", "화", "수", "목", "금", "토"];
+
+  const stat = (label: string, value: number | string, color: string) => (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", background: "#0c1729", borderRadius: sc.s(10, 6), padding: `${sc.s(8, 5)}px ${sc.s(10, 6)}px`, flex: 1, minWidth: 0 }}>
+      <span style={{ fontSize: sc.s(22, 15), fontWeight: 900, color }}>{value}</span>
+      <span style={{ fontSize: sc.s(12, 9), color: "#94a3b8", whiteSpace: "nowrap" }}>{label}</span>
+    </div>
+  );
+
+  return (
+    <div style={{ background: "#111c33", borderRadius: sc.s(14, 8), padding: sc.s(12, 7), display: "flex", flexDirection: "column", minHeight: 0, flex: "6 1 0" }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: sc.s(8, 5), marginBottom: sc.s(8, 5), flexShrink: 0 }}>
+        <h2 style={{ fontSize: sc.s(17, 12), fontWeight: 800, color: "#e2e8f0", margin: 0 }}>🌙 오늘의 학교 · 학사일정</h2>
+        <span style={{ fontSize: sc.s(13, 10), color: "#64748b", marginLeft: "auto" }}>
+          {year}년 {month + 1}월
+        </span>
+      </div>
+      <div style={{ minHeight: 0, overflow: "hidden", flex: 1, display: "flex", flexDirection: "column", gap: sc.s(10, 6) }}>
+        {/* 오늘 학교 요약 */}
+        <div style={{ display: "flex", gap: sc.s(8, 5), flexShrink: 0 }}>
+          {stat("재적", data.studentCount, "#e2e8f0")}
+          {stat("결석", absent, "#f87171")}
+          {stat("지각", late, "#fb923c")}
+          {stat("하원 픽업", pickupCount, "#38bdf8")}
+          {stat("이번주 리포트", reports, "#34d399")}
+        </div>
+
+        {/* 이번 달 학사일정 달력 */}
+        <div style={{ flex: 1, minHeight: 0, display: "flex", gap: sc.s(10, 6) }}>
+          <div style={{ flex: 3, minWidth: 0, display: "flex", flexDirection: "column" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 2, marginBottom: 2 }}>
+              {weekdayLabels.map((w, i) => (
+                <div key={w} style={{ textAlign: "center", fontSize: sc.s(11, 9), fontWeight: 700, color: i === 0 ? "#f87171" : i === 6 ? "#60a5fa" : "#64748b" }}>{w}</div>
+              ))}
+            </div>
+            <div style={{ flex: 1, display: "grid", gridTemplateColumns: "repeat(7,1fr)", gridAutoRows: "1fr", gap: 2 }}>
+              {cells.map((d, i) => {
+                const isToday = d === todayDate;
+                const hasEvent = d != null && eventByDay.has(d);
+                return (
+                  <div
+                    key={i}
+                    title={hasEvent ? eventByDay.get(d as number) : undefined}
+                    style={{
+                      borderRadius: sc.s(7, 5),
+                      background: isToday ? "#2563eb" : hasEvent ? "#1e3a5f" : "#0c1729",
+                      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+                      minHeight: 0, padding: 2,
+                    }}
+                  >
+                    {d != null && (
+                      <>
+                        <span style={{ fontSize: sc.s(13, 10), fontWeight: isToday ? 900 : 600, color: isToday ? "#fff" : hasEvent ? "#bfdbfe" : "#94a3b8" }}>{d}</span>
+                        {hasEvent && <span style={{ width: sc.s(5, 4), height: sc.s(5, 4), borderRadius: 999, background: "#38bdf8", marginTop: 1 }} />}
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          {/* 다가오는 학사일정 목록 */}
+          <div style={{ flex: 2, minWidth: 0, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column", gap: sc.s(4, 3) }}>
+            <span style={{ fontSize: sc.s(13, 10), fontWeight: 700, color: "#cbd5e1" }}>다가오는 일정</span>
+            {events.length === 0 ? (
+              <span style={{ fontSize: sc.s(12, 10), color: "#475569" }}>등록된 학사일정이 없습니다</span>
+            ) : (
+              events.slice(0, 7).map((e, i) => {
+                const d = new Date(e.date + "T00:00:00");
+                return (
+                  <div key={i} style={{ display: "flex", alignItems: "baseline", gap: sc.s(6, 4), background: "#0c1729", borderRadius: sc.s(7, 5), padding: `${sc.s(4, 3)}px ${sc.s(8, 5)}px` }}>
+                    <span style={{ fontSize: sc.s(12, 10), fontWeight: 800, color: "#38bdf8", whiteSpace: "nowrap" }}>{d.getMonth() + 1}/{d.getDate()}</span>
+                    <span style={{ fontSize: sc.s(13, 10), color: "#e2e8f0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.name}</span>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Panel({
   title,
   right,

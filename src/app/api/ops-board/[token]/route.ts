@@ -181,9 +181,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   // 없어집니다.
   const { data: inquiryRows } = await supabase
     .from("pickup_requests")
-    .select(
-      "id, received_at, matched_name, ai_student_name, channel_label, inquiry_type, summary, urgency, replied_at, replied_by"
-    )
+    // 칸을 콕 집어 달라고 하면, 마이그레이션이 아직 안 걸린 동안 조회가 통째로 실패해
+    // 대시보드가 오류 화면이 됩니다. 전부 달라고 하면 있는 것만 돌아옵니다.
+    .select("*")
     .eq("kind", "문의")
     .is("answered_at", null)
     .gte("received_at", new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString())

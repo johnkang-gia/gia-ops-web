@@ -34,10 +34,10 @@ export type Inquiry = {
   answered_by: string | null;
   task_id: string | null;
   /** 같은 내용이 다른 경로로도 들어왔을 때, 그 경로들. 화면에는 이 줄 하나만 뜹니다. */
-  merged_sources: string[] | null;
+  merged_sources?: string[] | null;
   /** '수동'이면 직원이 체크한 것, '답글'이면 토들에서 답글이 확인된 것. */
-  answered_via: string | null;
-  replied_by: string | null;
+  answered_via?: string | null;
+  replied_by?: string | null;
 };
 
 const TYPE_STYLE: Record<string, string> = {
@@ -113,9 +113,13 @@ export default function ParentInquiryPanel({
     const supabase = createClient();
     const { data } = await supabase
       .from("pickup_requests")
-      .select(
-        "id, received_at, channel_label, matched_name, ai_student_name, inquiry_type, summary, urgency, raw_text, source, source_url, homeroom_email, answered_at, answered_by, task_id, merged_sources, answered_via, replied_by"
-      )
+      // 칸을 하나씩 적지 않고 전부 가져옵니다.
+      //
+      // 새 기능을 올리면 코드가 먼저 배포되고 마이그레이션이 조금 뒤에 걸리는 순간이 있습니다.
+      // 그 사이에 아직 없는 칸을 콕 집어 달라고 하면 **조회 자체가 실패해 화면이 통째로**
+      // 비어버립니다. 실제로 그렇게 깨졌습니다. 전부 달라고 하면 있는 것만 돌아오고,
+      // 없는 칸은 undefined로 남아 화면은 그대로 뜹니다.
+      .select("*")
       .eq("kind", "문의")
       .order("received_at", { ascending: false })
       .limit(200);

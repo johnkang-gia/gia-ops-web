@@ -216,7 +216,9 @@ async function findDuplicate(
 ): Promise<DupCandidate | null> {
   const { data } = await supabase
     .from("pickup_requests")
-    .select("id, raw_text, source, merged_sources")
+    // merged_sources 는 나중에 추가된 칸입니다. 콕 집어 달라고 하면 마이그레이션이 아직
+    // 안 걸린 동안 조회가 실패하고, 그러면 들어온 연락이 통째로 버려집니다.
+    .select("*")
     .eq("student_id", opts.studentId)
     .eq("service_date", opts.serviceDate)
     .eq("kind", opts.kind)

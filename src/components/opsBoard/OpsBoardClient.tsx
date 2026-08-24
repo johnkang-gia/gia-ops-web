@@ -203,55 +203,6 @@ export default function OpsBoardClient({ token }: { token: string }) {
     return () => clearTimeout(t);
   }, [boundary, load]);
 
-  if (errorMsg && !data) {
-    return (
-      <div style={{ minHeight: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", background: "#0f172a", color: "#e2e8f0", fontSize: 22 }}>
-        {errorMsg}
-      </div>
-    );
-  }
-  if (!data) {
-    return (
-      <div style={{ minHeight: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", background: "#0f172a", color: "#64748b", fontSize: 20 }}>
-        불러오는 중...
-      </div>
-    );
-  }
-
-  // 요청: "셔틀시작시간때(4:00)가 되면 화면이 전환되면서 실시간 셔틀 운행지도가 뜨고... 아래쪽에는
-  // 아이들이 차량을 다 탑승했는지 하원차량 체크화면이 뜨고" - 설정한 시각이 되면 이 대시보드
-  // 전체가 하원 운행 화면(위 지도 + 아래 차량 체크)으로 바뀝니다.
-  if (shuttleMode) {
-    return (
-      <>
-        <DismissalOpsClient
-          token={token}
-          endLabel={data.shuttle.endLabel}
-          isFullscreen={isFullscreen}
-          onToggleFullscreen={() => (isFullscreen ? exit() : enter().then((ok) => setNeedsManualFullscreen(!ok)))}
-          onEnd={endDismissal}
-        />
-        {needsManualFullscreen && !isFullscreen && (
-          <FullscreenPrompt
-            onClick={() => enter().then((ok) => setNeedsManualFullscreen(!ok))}
-            onDismiss={() => setNeedsManualFullscreen(false)}
-          />
-        )}
-      </>
-    );
-  }
-
-  const absentCount = data.absences.filter((a) => a.status === "결석").length;
-  const lateCount = data.absences.filter((a) => a.status === "지각").length;
-  const urgentInquiries = (data.inquiries ?? []).filter((q) => q.urgent).length;
-
-  // 요청: "오늘업무는 오늘거만 보이게 해줘"
-  //
-  // 지금까지는 마감이 지난 것까지 함께 올라와서, 오늘 할 일을 보려는데 지난주 것이 위에
-  // 쌓여 있었습니다. 오늘 마감이거나 오늘 새로 들어온 것만 남깁니다.
-  // 스크롤이 없는 화면이라 개수도 함께 제한합니다 - 넘치면 그냥 잘려서 안 보입니다.
-  const todayOnlyTasks = (data.taskSummary.todayTasks ?? []).filter((t) => t.kind !== "지남").slice(0, 8);
-
   // ── 새 문의가 오면 소리로 알립니다 ────────────────────────────────────────
   //
   // 요청: "문의가 오면 알람소리도 들리게 해줘"
@@ -317,6 +268,55 @@ export default function OpsBoardClient({ token }: { token: string }) {
     lastInquiryIdRef.current = newestInquiryId;
     if (soundOn) beep();
   }, [newestInquiryId, soundOn, beep]);
+
+  if (errorMsg && !data) {
+    return (
+      <div style={{ minHeight: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", background: "#0f172a", color: "#e2e8f0", fontSize: 22 }}>
+        {errorMsg}
+      </div>
+    );
+  }
+  if (!data) {
+    return (
+      <div style={{ minHeight: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", background: "#0f172a", color: "#64748b", fontSize: 20 }}>
+        불러오는 중...
+      </div>
+    );
+  }
+
+  // 요청: "셔틀시작시간때(4:00)가 되면 화면이 전환되면서 실시간 셔틀 운행지도가 뜨고... 아래쪽에는
+  // 아이들이 차량을 다 탑승했는지 하원차량 체크화면이 뜨고" - 설정한 시각이 되면 이 대시보드
+  // 전체가 하원 운행 화면(위 지도 + 아래 차량 체크)으로 바뀝니다.
+  if (shuttleMode) {
+    return (
+      <>
+        <DismissalOpsClient
+          token={token}
+          endLabel={data.shuttle.endLabel}
+          isFullscreen={isFullscreen}
+          onToggleFullscreen={() => (isFullscreen ? exit() : enter().then((ok) => setNeedsManualFullscreen(!ok)))}
+          onEnd={endDismissal}
+        />
+        {needsManualFullscreen && !isFullscreen && (
+          <FullscreenPrompt
+            onClick={() => enter().then((ok) => setNeedsManualFullscreen(!ok))}
+            onDismiss={() => setNeedsManualFullscreen(false)}
+          />
+        )}
+      </>
+    );
+  }
+
+  const absentCount = data.absences.filter((a) => a.status === "결석").length;
+  const lateCount = data.absences.filter((a) => a.status === "지각").length;
+  const urgentInquiries = (data.inquiries ?? []).filter((q) => q.urgent).length;
+
+  // 요청: "오늘업무는 오늘거만 보이게 해줘"
+  //
+  // 지금까지는 마감이 지난 것까지 함께 올라와서, 오늘 할 일을 보려는데 지난주 것이 위에
+  // 쌓여 있었습니다. 오늘 마감이거나 오늘 새로 들어온 것만 남깁니다.
+  // 스크롤이 없는 화면이라 개수도 함께 제한합니다 - 넘치면 그냥 잘려서 안 보입니다.
+  const todayOnlyTasks = (data.taskSummary.todayTasks ?? []).filter((t) => t.kind !== "지남").slice(0, 8);
 
   // 지금이 점심시간인지.
   //

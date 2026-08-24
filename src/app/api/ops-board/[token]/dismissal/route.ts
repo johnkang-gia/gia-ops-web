@@ -260,5 +260,37 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
   }
   pickups.sort((a, b) => Number(b.afterDeparture) - Number(a.afterDeparture) || Number(b.justChanged) - Number(a.justChanged) || (a.time ?? "99").localeCompare(b.time ?? "99") || a.name.localeCompare(b.name, "ko"));
 
-  return NextResponse.json({ label: link.label, today, school, routes: payload, pickups });
+  // ── 테스트 기기(강경원 24시간 테스트) 실시간 위치 ────────────────────────────
+  // 요청: "내 위치 업무 대시보드에 실시간으로 보이도록". always_on 기기의 최신 위치를 지도에
+  // 별도 마커로 띄웁니다(정규 노선과 무관하므로 목록에는 넣지 않습니다).
+  const testMarkers: { label: string; lat: number; lng: number; at: string; fresh: boolean }[] = [];
+  const { data: testDevices } = await supabase
+    .from("shuttle_tracker_devices")
+    .select("route_id, label, always_on, enabled")
+    .eq("always_on", true)
+    .eq("enabled", true);
+  const testRouteIds = (testDevices ?? []).map((d) => d.route_id as string);
+  if (testRouteIds.length > 0) {
+    const { data: tpings } = await supabase
+      .from("shuttle_pilot_pings")
+      .select("route_id, lat, lng, recorded_at")
+      .in("route_id", testRouteIds)
+      .gte("recorded_at", new Date(now - 30 * 60 * 1000).toISOString())
+      .order("recorded_at", { ascending: false });
+    const labelByRoute = new Map((testDevices ?? []).map((d) => [d.route_id as string, (d.label as string | null) ?? "테스트"]));
+    const seen = new Set<string>();
+    for (const p of tpings ?? []) {
+      if (seen.has(p.route_id as string)) continue;
+      seen.add(p.route_id as string);
+      testMarkers.push({
+        label: labelByRoute.get(p.route_id as string) ?? "테스트",
+        lat: p.lat as number,
+        lng: p.lng as number,
+        at: p.recorded_at as string,
+        fresh: now - new Date(p.recorded_at as string).getTime() < PING_FRESH_MS,
+      });
+    }
+  }
+
+  return NextResponse.json({ label: link.label, today, school, routes: payload, pickups, testMarkers });
 }

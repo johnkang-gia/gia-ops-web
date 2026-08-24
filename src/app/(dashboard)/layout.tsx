@@ -185,7 +185,8 @@ function buildShuttleCategory(isStaffOrAbove: boolean): NavCategory {
       { href: "/shuttle/routes", label: "노선 관리", icon: "🛣️", dividerBefore: "기준정보" },
       { href: "/shuttle/students", label: "탑승 배정", icon: "🧑‍🎓" },
       { href: "/shuttle", label: "배차표 · 인쇄", icon: "🖨️" },
-      { href: "/shuttle/pilot", label: "링크 · 기기 관리", icon: "🔗" }
+      { href: "/shuttle/pilot", label: "링크 · 기기 관리", icon: "🔗" },
+      { href: "/shuttle/track-test", label: "GPS 테스트(내 폰)", icon: "🛰️" }
     );
   }
   // 카테고리를 직접 누르면 지역별 현황이 열립니다(요청: "셔틀메뉴를 눌렀을 때, 지역셔틀현황이

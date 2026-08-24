@@ -105,7 +105,7 @@ async function handle(params: URLSearchParams) {
 
   const { data: device } = await supabase
     .from("shuttle_tracker_devices")
-    .select("id, route_id, enabled")
+    .select("id, route_id, enabled, always_on")
     .eq("device_id", deviceId)
     .maybeSingle();
 
@@ -116,7 +116,8 @@ async function handle(params: URLSearchParams) {
   const recordedAt = parseTimestamp(params.get("timestamp"));
 
   // 하원 운행 시간대 밖의 위치는 저장하지 않습니다(기사님 개인 휴대폰이라 필요한 시간만 수집).
-  if (!isWithinTrackingWindow(recordedAt)) {
+  // 단, always_on 기기(강경원 24시간 테스트)는 시간대와 무관하게 항상 기록합니다.
+  if (!device.always_on && !isWithinTrackingWindow(recordedAt)) {
     await supabase.from("shuttle_tracker_devices").update({ last_seen_at: new Date().toISOString() }).eq("id", device.id);
     return new NextResponse("OK", { status: 200 });
   }

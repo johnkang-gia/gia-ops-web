@@ -63,12 +63,14 @@ type PickupRow = {
   justChanged: boolean;
   afterDeparture: boolean;
 };
+type TestMarker = { label: string; lat: number; lng: number; at: string; fresh: boolean };
 type Data = {
   label: string;
   today: string;
   school: { lat: number; lng: number } | null;
   routes: RouteRow[];
   pickups?: PickupRow[];
+  testMarkers?: TestMarker[];
 };
 
 // 노선마다 다른 색을 줘서 지도에서 어느 차인지 구분되게 합니다.
@@ -201,7 +203,7 @@ export default function DismissalOpsClient({
           좁은 창에서는 지도 비중을 줄입니다 - 폭이 좁으면 지도에 담기는 범위가 어차피 작아서
           "어디쯤인지"를 읽기 어렵고, 그보다 아래 차량 카드가 다 보이는 편이 실제로 쓸모 있습니다. */}
       <div style={{ flex: sc.narrow ? "1 1 42%" : "1 1 55%", minHeight: 0, padding: `0 ${sc.s(14, 8)}px` }}>
-        <AllRoutesMap routes={data.routes} school={data.school} />
+        <AllRoutesMap routes={data.routes} school={data.school} testMarkers={data.testMarkers ?? []} />
       </div>
 
       {/* 아래: 호차 요약 띠 + 픽업 학생.
@@ -411,7 +413,7 @@ function PickupPanel({ pickups, sc }: { pickups: PickupRow[]; sc: BoardScale }) 
 
 // 모든 노선을 한 지도에 올립니다. 운행 중인 노선은 경로선을 진하게, 나머지는 흐리게 그려서
 // 지금 움직이는 차가 어디를 지나는지 한눈에 보이도록 했습니다.
-function AllRoutesMap({ routes, school }: { routes: RouteRow[]; school: { lat: number; lng: number } | null }) {
+function AllRoutesMap({ routes, school, testMarkers = [] }: { routes: RouteRow[]; school: { lat: number; lng: number } | null; testMarkers?: TestMarker[] }) {
   const divRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const mapRef = useRef<any>(null);
@@ -485,6 +487,21 @@ function AllRoutesMap({ routes, school }: { routes: RouteRow[]; school: { lat: n
           }
         });
 
+        // 테스트 기기(강경원 24시간 테스트) 위치 - 초록 점으로 별도 표시(요청: "내 위치 업무
+        // 대시보드에 실시간으로"). 정규 노선과 구분되도록 색과 라벨을 다르게 둡니다.
+        for (const t of testMarkers) {
+          const overlay = new kakao.maps.CustomOverlay({
+            position: new kakao.maps.LatLng(t.lat, t.lng),
+            content: `<div style="background:${t.fresh ? "#16a34a" : "#64748b"};color:#fff;font-size:12px;font-weight:800;padding:3px 9px;border-radius:999px;box-shadow:0 2px 8px rgba(0,0,0,.5);white-space:nowrap">📍 ${t.label}</div>`,
+            yAnchor: 1,
+            zIndex: 20,
+          });
+          overlay.setMap(map);
+          overlaysRef.current.push(overlay);
+          bounds.extend(new kakao.maps.LatLng(t.lat, t.lng));
+          hasPoint = true;
+        }
+
         if (hasPoint) map.setBounds(bounds, 40, 40, 40, 40);
       } catch (err) {
         if (!cancelled) setMapError(err instanceof Error ? err.message : "지도를 불러오지 못했습니다.");
@@ -493,7 +510,7 @@ function AllRoutesMap({ routes, school }: { routes: RouteRow[]; school: { lat: n
     return () => {
       cancelled = true;
     };
-  }, [routes, school]);
+  }, [routes, school, testMarkers]);
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%", borderRadius: 14, overflow: "hidden", background: "#1e293b" }}>

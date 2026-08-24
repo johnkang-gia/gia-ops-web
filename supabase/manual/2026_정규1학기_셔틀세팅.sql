@@ -10,197 +10,209 @@ begin;
 update shuttle_board_links   set term = '정규학기' where term <> '정규학기';
 update shuttle_arrival_links set term = '정규학기' where term <> '정규학기';
 
+-- ①-b 여름캠프2 노선 정리: 남은 여름캠프2 노선을 비활성화합니다(정규학기만 보이도록).
+--     기록 보존을 위해 삭제하지 않고 active=false 로만 둡니다. 모든 운영 화면은 active=true
+--     + term='정규학기'만 조회하므로 화면에서는 완전히 사라집니다.
+update shuttle_routes set active = false where term = '여름캠프2' and active = true;
+
+-- ①-c 도착·출발 기준점을 GIA마이크로랩(서울 강남구 논현로131길 45)로 고정합니다.
+--     주소를 정확히 맞추고 좌표를 비워, 다음 크론 실행 때 카카오로 이 주소를 다시 지오코딩해
+--     정확한 학교 좌표로 채웁니다(도착·출발 감지가 모두 이 좌표 반경으로 계산됩니다).
+update shuttle_campus_locations set address = '서울 강남구 논현로131길 45', lat = null, lng = null, geocoded_at = null where name = '본교';
+insert into shuttle_campus_locations (name, address)
+  select '본교', '서울 강남구 논현로131길 45' where not exists (select 1 from shuttle_campus_locations where name = '본교');
+
 -- ② 기사님 GPS 기기·설정코드 발급(노선별 1개, 없을 때만). label에는 기사님 성함을 적어둡니다.
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select 'yf3m3pm6', 'wx8snt', id, '문형신' from shuttle_routes sr
+  select 'cq5fvr83', 'agnjsy', id, '문형신' from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='1'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select '5kjt9kqe', 'u2jcma', id, '최종진' from shuttle_routes sr
+  select '6f685bvv', 't934xn', id, '최종진' from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='1-1'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select '9dw2azwf', 'ddsvk3', id, '유완철' from shuttle_routes sr
+  select 'sjbxqcc4', 'fqbgxj', id, '유완철' from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='1-2'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select 'wexfh3hy', 'nkekf8', id, '최병로' from shuttle_routes sr
+  select 'fbcez3v9', 'vx4z26', id, '최병로' from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='2'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select 'hr7r32by', 'b24248', id, '고재현' from shuttle_routes sr
+  select 'j3sjugtk', 'ttj7tb', id, '고재현' from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='2-1'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select 'j63prbj8', 'a98dws', id, '손창기' from shuttle_routes sr
+  select 'ty27m4ud', '9vcymt', id, '손창기' from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='2-2'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select 'v5xktfk4', 'b32ten', id, '김연운' from shuttle_routes sr
+  select 'chfrtbzx', 'mhtejf', id, '김연운' from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='3'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select '8wkza3dj', 'cpuw7y', id, null from shuttle_routes sr
+  select 'qt7gntcr', 'de5r87', id, null from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='4'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select 'wxs9sd8g', 'sygca4', id, '최상락' from shuttle_routes sr
+  select '7ah9e7r7', 'rr6u2k', id, '최상락' from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='4-1'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select '5kgdbc4g', 'zq9hve', id, '전명섭' from shuttle_routes sr
+  select 'ee4b6ntr', 'q8euvx', id, '전명섭' from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='4-2'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select 'ar97grc9', 'xfh9uw', id, null from shuttle_routes sr
+  select 'f2w9rm3h', '8gzqfk', id, null from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='5'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select 'au9d9ew9', 'nbh7da', id, '김경태' from shuttle_routes sr
+  select '732prczz', 'qse2da', id, '김경태' from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='6'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select '4zcn9jvt', '37dktf', id, null from shuttle_routes sr
+  select 'mgz4wtb7', '6hrvvu', id, null from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='7'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select 'uam2m3w8', 'xfy7dw', id, '김동도' from shuttle_routes sr
+  select 'y48kt9xh', 'xgq7vk', id, '김동도' from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='8'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select 'njv2hd3d', 'gb2pga', id, '정홍균' from shuttle_routes sr
+  select '4ghd88v5', 'x32j72', id, '정홍균' from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='9'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select 'ej47fjd7', '96dkyv', id, '이재남' from shuttle_routes sr
+  select 'yzzavjwq', '3xabu7', id, '이재남' from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='9-1'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select 'hpsy28cj', 'spvn7z', id, '마상훈' from shuttle_routes sr
+  select 'zkmzwcft', 'hwt964', id, '마상훈' from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='9-2'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select 'z2ex7hwr', '49uvyt', id, '이만기' from shuttle_routes sr
+  select 'q55suehq', '722wqw', id, '이만기' from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='10'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select '7ej8hfd3', 'drpe8x', id, null from shuttle_routes sr
+  select 'hqj3page', 'm3ufk6', id, null from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='11'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select '2ekq2kz2', 'adb4c4', id, '최상균' from shuttle_routes sr
+  select 'mkv936wn', 'az39d5', id, '최상균' from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='12'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select 'h8bp3nqh', '9vjvry', id, '강호' from shuttle_routes sr
+  select 'mxnnhjue', 'wc35gv', id, '강호' from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='12-1'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select '5sz847bu', 't4fduw', id, '차명신' from shuttle_routes sr
+  select 'mdepk83n', '2ftgr8', id, '차명신' from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='13'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select 'k4yezht2', 'qsd3hj', id, '정재오' from shuttle_routes sr
+  select 'kqsqmwzu', 'watqb2', id, '정재오' from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='14'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select 'hbeh3t6p', 'p6u7yv', id, '김천석' from shuttle_routes sr
+  select 'qa4euvxy', 't6m726', id, '김천석' from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='15'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select 'yu7uqyg2', 'fkhbt9', id, '김정남' from shuttle_routes sr
+  select '5dd8tb24', 'u27btu', id, '김정남' from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='16'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select 'x3xc43vw', 'rnz3as', id, '김인홍' from shuttle_routes sr
+  select '2vbvk3kf', '9jxmgr', id, '김인홍' from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='16-1'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select 'mmnp5tte', '5wzce5', id, '이남희' from shuttle_routes sr
+  select 'xndxsdx9', 'f8kqpz', id, '이남희' from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='17'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select '6ryugp85', '4kncz4', id, '안용해' from shuttle_routes sr
+  select '5kg7qbgd', 'ztbyn8', id, '안용해' from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='18'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select 'rfe4b9sh', '6mcubz', id, '박유생' from shuttle_routes sr
+  select '2pxyanap', '592w9y', id, '박유생' from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='19'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select 'ev4e54n4', '9w5u56', id, '정재필' from shuttle_routes sr
+  select 'ynp5mv3b', 'v7hkbv', id, '정재필' from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='20'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select 'wucsy8w5', 'bacrmn', id, '송창훈' from shuttle_routes sr
+  select 'gx3f8k8g', 'ndgutx', id, '송창훈' from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='20-1'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select 'g9beymc2', '9wj8kh', id, '김진배' from shuttle_routes sr
+  select '7kwhcgny', '7su9sx', id, '김진배' from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='21'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select 'dzajjr72', '27fw4t', id, '박남홍' from shuttle_routes sr
+  select 'qtazf6c6', 'cee6a7', id, '박남홍' from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='22'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select 'n34gktc2', 'etwugy', id, '이종근' from shuttle_routes sr
+  select '6tmuh35g', 'hrbg6u', id, '이종근' from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='23'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select '5pryvbw5', 'kjw5us', id, '이종진' from shuttle_routes sr
+  select '6b3mze35', 'q8qat2', id, '이종진' from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='23-1'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select 'edkmk42a', '8k35sg', id, '최재호' from shuttle_routes sr
+  select 'bfyet5yb', '382hne', id, '최재호' from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='23-2'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select 'qeurxem9', '7a4p6y', id, '방현주' from shuttle_routes sr
+  select '3cvg37xu', 'w87h98', id, '방현주' from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='24'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select 'r57xwzcm', 'mj8pcb', id, '송창석' from shuttle_routes sr
+  select '2ga5frp2', 'nzpbf4', id, '송창석' from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='25'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select 'h4b6qy4u', '5z9mmk', id, '주의식' from shuttle_routes sr
+  select '3xxyvr7y', 'bj4963', id, '주의식' from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='26'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select '89ac9pg9', '6df448', id, '류강희' from shuttle_routes sr
+  select '29a9at95', 'muueuu', id, '류강희' from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='26-1'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select 'mzejka64', 'kju3qa', id, '임남혁' from shuttle_routes sr
+  select '7q72c5s5', 'yxukmt', id, '임남혁' from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='26-2'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select 'ckmj3c22', '8rgg5s', id, '박광득' from shuttle_routes sr
+  select 'km28tp3n', 'munjky', id, '박광득' from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='27'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select 'v8dz65b7', 'dmsxqe', id, '정재용' from shuttle_routes sr
+  select 'qnq4aduv', '8x8n5g', id, '정재용' from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='28'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select '5eyggrgw', '8skn44', id, '이기수' from shuttle_routes sr
+  select 'btfp6hva', 'x9n9vc', id, '이기수' from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='29'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select 'jw9c6zw7', 's6v8pj', id, '김경갑' from shuttle_routes sr
+  select '7g3z4xjh', 'mgp75z', id, '김경갑' from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='30'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select '9y9ytvyk', 'kfxywr', id, '함오식' from shuttle_routes sr
+  select '78qp977s', 'f9e3hg', id, '함오식' from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='30-1'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select '46w4uv6q', '9f3aha', id, '손창기' from shuttle_routes sr
+  select 'yc7mh6ha', 'n49m6c', id, '손창기' from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='31'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 insert into shuttle_tracker_devices (device_id, setup_code, route_id, label)
-  select 'q5j3fuxa', 'g7m4nx', id, '이종근' from shuttle_routes sr
+  select 'u8hg36r9', '2qfbcm', id, '이종근' from shuttle_routes sr
   where sr.direction='하원' and sr.term='정규학기' and sr.route_no='31-1'
     and not exists (select 1 from shuttle_tracker_devices d where d.route_id = sr.id);
 

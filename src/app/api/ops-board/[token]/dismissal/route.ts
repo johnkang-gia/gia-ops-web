@@ -87,6 +87,23 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
     eventsByRoute.set(e.route_id, list);
   }
 
+  // ── 오늘 실제 이동 자취(트레일) ───────────────────────────────────────────────
+  // 요청: "전체노선 다 실선으로 (...) GIA에서부터 실선으로 이어줘 각 노선 색으로". 각 노선의 오늘
+  // 위치 핑을 시간 순으로 이어 지도에 노선 색 실선으로 그립니다(최신 위치 마커와 별개).
+  const { data: trailPings } = await supabase
+    .from("shuttle_pilot_pings")
+    .select("route_id, lat, lng, recorded_at")
+    .in("route_id", routeIds)
+    .gte("recorded_at", `${today}T00:00:00Z`)
+    .order("recorded_at", { ascending: true })
+    .limit(20000);
+  const trailByRoute = new Map<string, { lat: number; lng: number }[]>();
+  for (const p of trailPings ?? []) {
+    const list = trailByRoute.get(p.route_id) ?? [];
+    list.push({ lat: p.lat as number, lng: p.lng as number });
+    trailByRoute.set(p.route_id, list);
+  }
+
   // ── 탑승 현황 ────────────────────────────────────────────────────────────────
   // 하원 체크표에서 오늘 하루만 다른 노선으로 옮긴 학생까지 반영합니다(도착체크 API와 같은 규칙).
   const stopIds = (stops ?? []).map((s) => s.id);
@@ -193,6 +210,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
       ping,
       pingFresh: !!ping && now - new Date(ping.recordedAt).getTime() < PING_FRESH_MS,
       path: pathByRoute.get(r.id) ?? null,
+      // 오늘 실제 지나온 자취(GIA 출발 → 현재). 노선 색 실선으로 그립니다(요청).
+      trail: trailByRoute.get(r.id) ?? [],
       stops: (stopsByRoute.get(r.id) ?? []).filter((s) => s.lat != null && s.lng != null),
       riders: expected.map((x) => ({ name: x.name, boarded: x.status === "탑승" })),
       boardedCount: boarded.length,

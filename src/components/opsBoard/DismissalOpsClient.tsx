@@ -34,6 +34,8 @@ type RouteRow = {
   ping: Ping | null;
   pingFresh: boolean;
   path: { lat: number; lng: number }[] | null;
+  // 오늘 실제 지나온 자취(GIA 출발 → 현재). 노선 색 실선으로 그립니다.
+  trail?: { lat: number; lng: number }[];
   stops: { id: string; seq: number; stopTime: string | null; address: string | null; lat: number | null; lng: number | null }[];
   riders: { name: string; boarded: boolean }[];
   boardedCount: number;
@@ -458,18 +460,35 @@ function AllRoutesMap({ routes, school, testMarkers = [] }: { routes: RouteRow[]
           const color = ROUTE_COLORS[i % ROUTE_COLORS.length];
           const active = r.status === "운행중";
 
-          // 경로선 - 실도로 캐시가 있으면 그것, 없으면 정류장을 이은 직선.
+          // 계획 경로선(참고용) - 실도로 캐시가 있으면 그것, 없으면 정류장을 이은 직선. 실제
+          // 이동 자취가 위에 덮이므로 연한 점선으로만 둡니다.
           const line = r.path?.length ? r.path : r.stops.map((s) => ({ lat: s.lat as number, lng: s.lng as number }));
           if (line.length > 1) {
             const polyline = new kakao.maps.Polyline({
               path: line.map((p) => new kakao.maps.LatLng(p.lat, p.lng)),
-              strokeWeight: active ? 5 : 2,
+              strokeWeight: 2,
               strokeColor: color,
-              strokeOpacity: active ? 0.9 : 0.25,
-              strokeStyle: "solid",
+              strokeOpacity: 0.3,
+              strokeStyle: "shortdash",
             });
             polyline.setMap(map);
             overlaysRef.current.push(polyline);
+          }
+
+          // 오늘 실제 지나온 자취 - 노선 색 실선(요청: "전체노선 다 실선으로 (...) 각 노선 색으로").
+          const trail = r.trail ?? [];
+          if (trail.length > 1) {
+            const tline = new kakao.maps.Polyline({
+              path: trail.map((p) => new kakao.maps.LatLng(p.lat, p.lng)),
+              strokeWeight: active ? 6 : 5,
+              strokeColor: color,
+              strokeOpacity: 0.95,
+              strokeStyle: "solid",
+            });
+            tline.setMap(map);
+            overlaysRef.current.push(tline);
+            for (const p of trail) bounds.extend(new kakao.maps.LatLng(p.lat, p.lng));
+            hasPoint = true;
           }
 
           // 차량 마커 - 기사님 휴대폰에서 들어온 최신 위치.

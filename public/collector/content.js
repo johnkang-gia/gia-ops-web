@@ -16,6 +16,23 @@ function install() {
 let seq = 0;
 const waiting = new Map();
 
+// 페이지가 배운 서식을 확장 저장소에 넣고, 필요할 때 돌려줍니다.
+window.addEventListener("message", (ev) => {
+  if (ev.source !== window) return;
+  const m = ev.data;
+  if (m?.__gia === "save" && m.data) {
+    chrome.runtime.sendMessage({ cmd: "saveLearned", data: m.data }).catch(() => {});
+    return;
+  }
+  if (m?.__gia === "load") {
+    chrome.runtime
+      .sendMessage({ cmd: "loadLearned" })
+      .then((d) => window.postMessage({ __gia: "restore", data: d ?? null }, "*"))
+      .catch(() => {});
+    return;
+  }
+});
+
 window.addEventListener("message", (ev) => {
   if (ev.source !== window) return;
   const msg = ev.data;

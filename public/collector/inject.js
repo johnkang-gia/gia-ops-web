@@ -36,6 +36,48 @@
   /** 마지막으로 본 채팅 목록: id → { label, unread, lastActiveAt } */
   const chats = new Map();
 
+  // 배운 서식을 확장에 맡겨 저장합니다.
+  //
+  // 왜 필요한가요?
+  //   토들은 채팅 목록을 한 번 받아 캐시해두고, 화면을 아무리 눌러도 다시 요청하지 않습니다.
+  //   즉 "Messages 화면에 처음 들어갈 때" 딱 한 번만 배울 기회가 있습니다. 그 순간을 놓치면
+  //   (확장을 나중에 켰거나, 크롬이 탭을 재웠다 깨웠거나) 영영 못 배웁니다.
+  //   그래서 한 번 배우면 확장에 저장해두고, 다음부터는 그걸 그대로 씁니다.
+  let saveTimer = null;
+  function persist() {
+    if (saveTimer) clearTimeout(saveTimer);
+    // 연달아 배울 때 매번 저장하지 않도록 잠깐 모아서 한 번만 보냅니다.
+    saveTimer = setTimeout(() => {
+      window.postMessage(
+        {
+          __gia: "save",
+          data: {
+            url: learned.url,
+            headers: learned.headers,
+            chatListItem: learned.chatListItem,
+            messagesItem: learned.messagesItem,
+          },
+        },
+        "*"
+      );
+    }, 1500);
+  }
+
+  // 확장이 저장해둔 서식을 돌려주면 복원합니다. 이미 배운 것이 있으면 덮어쓰지 않습니다
+  // (지금 막 본 것이 더 최신입니다 - 특히 인증 헤더).
+  window.addEventListener("message", (ev) => {
+    if (ev.source !== window || ev.data?.__gia !== "restore") return;
+    const d = ev.data.data;
+    if (!d) return;
+    if (!learned.url && d.url) learned.url = d.url;
+    if (!learned.headers && d.headers) learned.headers = d.headers;
+    if (!learned.chatListItem && d.chatListItem) learned.chatListItem = d.chatListItem;
+    if (!learned.messagesItem && d.messagesItem) learned.messagesItem = d.messagesItem;
+  });
+
+  // 페이지가 준비되면 저장된 서식을 달라고 청합니다.
+  setTimeout(() => window.postMessage({ __gia: "load" }, "*"), 300);
+
   function pickItems(body) {
     try {
       const parsed = JSON.parse(body);
@@ -80,7 +122,12 @@
       try {
         learned.url = url;
         const h = headersToObject(init?.headers ?? (req && req.headers));
-        if (Object.keys(h).length) learned.headers = h;
+        if (Object.keys(h).length) {
+          // 인증 토큰이 바뀔 수 있어 최신 헤더로 계속 갱신합니다.
+          const changed = JSON.stringify(h) !== JSON.stringify(learned.headers);
+          learned.headers = h;
+          if (changed && (learned.chatListItem || learned.messagesItem)) persist();
+        }
 
         const items = pickItems(body);
         const json = await res.clone().json();
@@ -104,7 +151,10 @@
             // 개수 세기 요청이 진짜 목록을 덮어씁니다. 그래서 "방 이름이 들어 있는 응답"만
             // 목록으로 인정합니다. 이름으로 고르지 않으므로 토들이 요청 이름을 바꿔도 맞습니다.
             const hasLabels = edges.some((e) => typeof e?.node?.label === "string" && e.node.label);
-            if (hasLabels && req?.query) learned.chatListItem = req;
+            if (hasLabels && req?.query) {
+            learned.chatListItem = req;
+            persist();
+          }
 
             for (const e of edges) {
               const n = e?.node;
@@ -121,7 +171,10 @@
             }
           }
           // 대화 조회 요청 - 이 서식을 chat id만 바꿔 재사용합니다.
-          if (one?.data?.node?.messagesV2 && req?.query) learned.messagesItem = req;
+          if (one?.data?.node?.messagesV2 && req?.query) {
+            learned.messagesItem = req;
+            persist();
+          }
         }
       } catch {
         /* 응답이 JSON이 아니거나 이미 읽힌 경우 - 무시 */
@@ -237,7 +290,8 @@
         reply({
           ok: true,
           sawTraffic: !!learned.url,
-          trained: !!learned.messagesItem,
+          hasChatList: !!learned.chatListItem,
+          hasMessages: !!learned.messagesItem,
           chatCount: chats.size,
           unreadCount: [...chats.values()].filter((c) => c.unread > 0).length,
         });
@@ -260,7 +314,16 @@
             // 한 방이 실패해도 나머지는 계속합니다.
           }
         }
-        reply({ ok: true, chats: out, trained: !!learned.messagesItem, sawTraffic: !!learned.url });
+        reply({
+          ok: true,
+          chats: out,
+          diag: {
+            hasChatList: !!learned.chatListItem,
+            hasMessages: !!learned.messagesItem,
+            knownRooms: list.length,
+            unreadRooms: targets.length,
+          },
+        });
         return;
       }
       reply({ ok: false, error: "unknown command" });

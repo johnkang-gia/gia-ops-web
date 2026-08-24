@@ -218,9 +218,23 @@ async function runOnce() {
 
   await chrome.storage.local.set({ trainFails: 0 });
 
+  const diag = reply.diag ?? {};
   if (items.length === 0) {
-    await setState({ status: "정상", detail: `새 메시지 없음 (안 읽은 방 ${(reply.chats ?? []).length}개)` });
-    await heartbeat("ok", "새 메시지 없음");
+    // 아는 방이 하나도 없으면 아직 목록을 못 읽고 있는 것입니다. 이걸 "정상"이라고 하면
+    // 조용히 아무것도 안 하면서 괜찮다고 말하는 셈이 됩니다.
+    if (!diag.knownRooms) {
+      await setState({
+        status: "목록 못 읽음",
+        detail: `채팅목록서식 ${diag.hasChatList ? "있음" : "없음"} · 대화서식 ${diag.hasMessages ? "있음" : "없음"} · 토들 페이지에서 F5를 눌러주세요.`,
+      });
+      await heartbeat("error", "채팅 목록을 읽지 못했습니다.");
+      return;
+    }
+    await setState({
+      status: "정상",
+      detail: `새 메시지 없음 (전체 ${diag.knownRooms}개 · 안 읽은 방 ${diag.unreadRooms ?? 0}개)`,
+    });
+    await heartbeat("ok", `새 메시지 없음 (안 읽은 방 ${diag.unreadRooms ?? 0}개)`);
     return;
   }
 
@@ -232,7 +246,7 @@ async function runOnce() {
     // 보낸 기록이 무한정 쌓이지 않게 최근 2000건만 남깁니다.
     const entries = Object.entries(nextSent).sort((a, b) => b[1] - a[1]).slice(0, 2000);
     await chrome.storage.local.set({ sent: Object.fromEntries(entries) });
-    await setState({ status: "정상", detail: `${items.length}건 보냄` });
+    await setState({ status: "정상", detail: `${items.length}건 보냄 (안 읽은 방 ${diag.unreadRooms ?? 0}개)` });
   } catch (err) {
     await setState({ status: "전송 실패", detail: String(err.message ?? err) });
     await heartbeat("error", `전송 실패: ${String(err.message ?? err)}`);
@@ -248,10 +262,20 @@ chrome.runtime.onStartup.addListener(() => {
 chrome.alarms.onAlarm.addListener((a) => {
   if (a.name === ALARM) runOnce();
 });
-// 팝업에서 [지금 확인]을 누를 때도 같은 일을 합니다.
 chrome.runtime.onMessage.addListener((msg, _s, sendResponse) => {
+  // 팝업에서 [지금 확인]을 누를 때
   if (msg?.cmd === "runNow") {
     runOnce().then(() => sendResponse({ ok: true }));
+    return true;
+  }
+  // 페이지가 배운 서식을 저장합니다. 토들은 채팅 목록을 한 번만 받아 캐시하므로, 배울 기회를
+  // 놓치면 영영 못 배웁니다. 저장해두면 다음 로드부터는 바로 씁니다.
+  if (msg?.cmd === "saveLearned") {
+    chrome.storage.local.set({ learned: msg.data, learnedAt: Date.now() }).then(() => sendResponse({ ok: true }));
+    return true;
+  }
+  if (msg?.cmd === "loadLearned") {
+    chrome.storage.local.get(["learned"]).then((c) => sendResponse(c.learned ?? null));
     return true;
   }
   return false;

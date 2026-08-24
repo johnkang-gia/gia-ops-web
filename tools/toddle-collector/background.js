@@ -39,9 +39,57 @@ async function setState(state) {
   await chrome.storage.local.set({ state: { ...state, at: new Date().toISOString() } });
 }
 
-async function findToddleTab() {
+// 토들 탭을 찾습니다. 여러 개 열려 있을 수 있으므로 전부 돌려주되, 메시지 화면을 먼저 씁니다
+// (로그인 탭이나 다른 화면 탭을 골라 실패하는 일이 없도록).
+async function findToddleTabs() {
   const tabs = await chrome.tabs.query({ url: "https://web.toddleapp.com/*" });
-  return tabs[0] ?? null;
+  return tabs.sort((a, b) => Number((b.url || "").includes("/messaging")) - Number((a.url || "").includes("/messaging")));
+}
+
+// 그 탭에 수집기 코드를 심습니다.
+//
+// 왜 필요한가요?
+//   크롬은 확장을 설치해도 "이미 열려 있던 탭"에는 코드를 넣지 않습니다. 그래서 설치 직후에는
+//   항상 "탭 응답 없음"이 납니다. 사람에게 새로고침을 시키는 대신, 우리가 직접 심어서 스스로
+//   낫게 만듭니다. 토들 탭을 오래 열어두면 크롬이 탭을 잠재웠다가 깨우는 경우에도 같은 일이
+//   생기는데, 그때도 이 길로 복구됩니다.
+async function injectInto(tabId) {
+  // 페이지 쪽(MAIN)과 확장 쪽(ISOLATED)을 각각 심습니다. 순서가 중요합니다 - 페이지 쪽이
+  // 먼저 준비되어 있어야 다리(content.js)가 말을 걸 상대가 있습니다.
+  await chrome.scripting.executeScript({ target: { tabId }, files: ["inject.js"], world: "MAIN" });
+  await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"], world: "ISOLATED" });
+}
+
+// 탭에 물어봅니다. 대답이 없으면 코드를 심고 한 번 더 물어봅니다.
+//
+// 대답이 없는 경우는 둘입니다.
+//   ① 다리(content.js)조차 없어서 sendMessage 자체가 실패 - 확장 설치 전부터 열려 있던 탭
+//   ② 다리는 있는데 페이지 쪽(inject.js)이 없어 시간초과(PAGE_TIMEOUT) - 둘 중 하나만 심긴 경우
+// 둘 다 "심고 다시 물어보기"로 낫습니다.
+async function askTab(tabId, cmd) {
+  const send = () => chrome.tabs.sendMessage(tabId, { cmd });
+
+  let first = null;
+  try {
+    first = await send();
+  } catch {
+    first = null;
+  }
+  if (first && !(first.ok === false && first.error === "PAGE_TIMEOUT")) return first;
+
+  try {
+    await injectInto(tabId);
+  } catch {
+    return null; // 심는 것조차 실패 - 이 탭은 포기하고 다음 탭으로
+  }
+  // 심은 직후에는 아직 준비 중일 수 있어 잠깐 기다립니다.
+  await new Promise((r) => setTimeout(r, 800));
+  try {
+    const second = await send();
+    return second && !(second.ok === false && second.error === "PAGE_TIMEOUT") ? second : null;
+  } catch {
+    return null;
+  }
 }
 
 async function runOnce() {
@@ -51,18 +99,24 @@ async function runOnce() {
     return;
   }
 
-  const tab = await findToddleTab();
-  if (!tab) {
+  const tabs = await findToddleTabs();
+  if (tabs.length === 0) {
     await setState({ status: "토들 탭 없음", detail: "이 PC 크롬에 토들 메시지 화면을 열어두세요." });
     await heartbeat("error", "토들 탭이 열려 있지 않습니다.");
     return;
   }
 
-  let reply;
-  try {
-    reply = await chrome.tabs.sendMessage(tab.id, { cmd: "collect" });
-  } catch {
-    await setState({ status: "탭 응답 없음", detail: "토들 페이지를 새로고침해주세요." });
+  // 열려 있는 토들 탭을 차례로 시도합니다. 한 탭이 굳어 있어도 다른 탭으로 넘어갑니다.
+  let reply = null;
+  for (const tab of tabs) {
+    reply = await askTab(tab.id, "collect");
+    if (reply) break;
+  }
+  if (!reply) {
+    await setState({
+      status: "탭 응답 없음",
+      detail: "토들 페이지에서 F5(새로고침)를 한 번 눌러주세요. 그래도 안 되면 크롬을 껐다 켜주세요.",
+    });
     await heartbeat("error", "토들 탭이 응답하지 않습니다.");
     return;
   }

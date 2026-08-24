@@ -15,6 +15,13 @@
 //   '안 읽음' 표시가 그대로 남고, 답장이 필요한 진짜 문의는 예전처럼 사람이 처리합니다.
 
 (() => {
+  // 두 번 심겨도 한 번만 설치합니다.
+  // 크롬은 확장 설치 전부터 열려 있던 탭에 코드를 넣지 않아서, 배경 일꾼이 나중에 직접
+  // 심습니다(background.js의 injectInto). 그때 이미 설치된 탭에 또 심기면 fetch를 두 겹으로
+  // 감싸고 같은 질문에 두 번 답하게 됩니다.
+  if (window.__giaCollectorInstalled) return;
+  window.__giaCollectorInstalled = true;
+
   const ENDPOINT_RE = /toddleapp\.com\/graphql/i;
 
   // 배운 것들. 새로고침하면 사라지지만, 화면을 열어두면 몇 초 안에 다시 배웁니다.

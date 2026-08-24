@@ -104,9 +104,18 @@ export default async function ShuttleChecklistPage({
   const elemNameSet = new Set(
     (elemStudents ?? []).filter((s) => s.department === "초등부").map((s) => (s.name as string).replace(/\s+/g, ""))
   );
+  // 요청: "내가 알려준 명단의 아이들만 숨기지 말고 보여달라" - 초등부 명부 외에, 아래 중고등부
+  // 탑승 명단(직접 알려주신 이름)만 함께 보여주고, 그 밖의 이름(유치부 등)은 숨깁니다.
+  const EXTRA_RIDERS = [
+    "이준서", "이준우", "김도율", "김샤론", "이하은", "최온유", "위준완", "김승후",
+    "노다은", "노다혜", "강하영", "박진우", "제이콥", "장하영", "에이바", "강하엘",
+  ];
+  const extraNameSet = new Set(EXTRA_RIDERS.map((n) => n.replace(/\s+/g, "")));
   assignmentsData = assignmentsData.filter((a) => {
-    if (a.student_id) return elemIdSet.has(a.student_id);
-    return elemNameSet.has((a.student_name_raw ?? "").replace(/\s+/g, ""));
+    const rawName = (a.student_name_raw ?? "").replace(/\s+/g, "");
+    if (extraNameSet.has(rawName)) return true; // 알려주신 중고등부 탑승자
+    if (a.student_id) return elemIdSet.has(a.student_id); // 초등부(명부 연결)
+    return elemNameSet.has(rawName); // 초등부(이름 대조)
   });
 
   const todayWeekday = new Date().getDay();

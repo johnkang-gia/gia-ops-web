@@ -207,7 +207,10 @@ async function runOnceInner() {
   // 이제는 목록을 못 읽으면 오류로 올라옵니다(로그인 풀림 등). 여기까지 왔는데 0개면
   // 정말로 새 학부모 메시지가 없는 것입니다.
   const diag = reply.diag ?? {};
-  const who = diag.account ? ` · ${diag.account}` : "";
+  // 페이지 쪽 코드가 몇 버전인지 함께 적습니다. 확장 카드의 버전과 다르면 낡은 코드가
+  // 아직 돌고 있다는 뜻이고, 그걸 화면에서 바로 알 수 있어야 합니다.
+  const who = [diag.pageVersion ? `p${diag.pageVersion}` : null, diag.account].filter(Boolean).join(" · ");
+  const suffix = who ? ` · ${who}` : "";
 
   if (items.length === 0) {
     // 0개일 때는 "왜 0개인지"까지 적어야 합니다.
@@ -219,13 +222,13 @@ async function runOnceInner() {
     if (diag.totalRooms === 0) {
       await setState({
         status: "계정 확인 필요",
-        detail: `이 계정에는 채팅방이 하나도 보이지 않습니다${who}. 학부모 채널에 참여한 계정으로 로그인해주세요.`,
+        detail: `이 계정에는 채팅방이 하나도 보이지 않습니다${suffix}. 학부모 채널에 참여한 계정으로 로그인해주세요.`,
       });
-      await heartbeat("error", `채팅방이 보이지 않는 계정입니다${who}`);
+      await heartbeat("error", `채팅방이 보이지 않는 계정입니다${suffix}`);
       return;
     }
     const total = diag.totalRooms != null ? ` / 전체 ${diag.totalRooms}개` : "";
-    await setState({ status: "정상", detail: `새 메시지 없음 (안 읽은 방 ${diag.knownRooms ?? 0}개${total})${who}` });
+    await setState({ status: "정상", detail: `새 메시지 없음 (안 읽은 방 ${diag.knownRooms ?? 0}개${total})${suffix}` });
     await heartbeat("ok", `새 메시지 없음 (안 읽은 방 ${diag.knownRooms ?? 0}개)`);
     return;
   }
@@ -238,15 +241,35 @@ async function runOnceInner() {
     // 보낸 기록이 무한정 쌓이지 않게 최근 2000건만 남깁니다.
     const entries = Object.entries(nextSent).sort((a, b) => b[1] - a[1]).slice(0, 2000);
     await chrome.storage.local.set({ sent: Object.fromEntries(entries) });
-    await setState({ status: "정상", detail: `${items.length}건 보냄 (안 읽은 방 ${diag.knownRooms ?? 0}개)${who}` });
+    await setState({ status: "정상", detail: `${items.length}건 보냄 (안 읽은 방 ${diag.knownRooms ?? 0}개)${suffix}` });
   } catch (err) {
     await setState({ status: "전송 실패", detail: String(err.message ?? err) });
     await heartbeat("error", `전송 실패: ${String(err.message ?? err)}`);
   }
 }
 
+// 확장을 새로고침해도 이미 열려 있는 토들 탭 안에서는 **예전 코드가 그대로 돕니다.**
+//
+// 크롬이 새 코드를 그 탭에 다시 넣어주긴 하는데, 페이지에는 이전 스크립트가 이미 자리를
+// 잡고 있어서 "이미 설치됨" 표시에 걸려 새 코드가 곧장 빠져나갑니다. 그래서 확장 카드에는
+// 새 버전이 찍히는데 동작은 하나도 안 바뀌는, 아주 헷갈리는 상태가 됩니다.
+// (실제로 이것 때문에 "고쳤는데 그대로다"를 여러 번 주고받았습니다.)
+//
+// 사람에게 F5를 눌러달라고 부탁하는 대신, 확장이 새로 올라오면 알아서 새로고침합니다.
+async function reloadToddleTabs() {
+  try {
+    const tabs = await chrome.tabs.query({ url: "https://web.toddleapp.com/*" });
+    for (const t of tabs) {
+      if (t.id != null) await chrome.tabs.reload(t.id);
+    }
+  } catch {
+    /* 탭이 없거나 권한이 없으면 그냥 넘어갑니다 */
+  }
+}
+
 chrome.runtime.onInstalled.addListener(() => {
   chrome.alarms.create(ALARM, { periodInMinutes: PERIOD_MIN });
+  reloadToddleTabs();
 });
 chrome.runtime.onStartup.addListener(() => {
   chrome.alarms.create(ALARM, { periodInMinutes: PERIOD_MIN });

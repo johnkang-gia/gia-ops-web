@@ -26,8 +26,18 @@
 // '안 읽음' 표시가 사라지지 않습니다. 선생님들 업무를 건드리지 않는다는 뜻입니다.
 
 (() => {
-  if (window.__giaCollectorInstalled) return;
-  window.__giaCollectorInstalled = true;
+  const VERSION = "2.1.0";
+
+  // 같은 버전이 이미 돌고 있으면 그대로 둡니다.
+  //
+  // 예전에는 버전을 따지지 않고 "설치된 적 있으면 무조건 그만"이었습니다. 그래서 새 코드가
+  // 들어와도 낡은 코드가 계속 응답했고, 확장 버전만 올라가고 동작은 안 바뀌었습니다.
+  // 이제 버전이 다르면 낡은 것을 걷어내고 새로 답니다.
+  if (window.__giaCollectorVersion === VERSION) return;
+  if (window.__giaCollectorHandler) {
+    window.removeEventListener("message", window.__giaCollectorHandler);
+  }
+  window.__giaCollectorVersion = VERSION;
 
   const ENDPOINT = "https://ap-southeast-1-production-apis.toddleapp.com/graphql";
   const HEADERS = { "content-type": "application/json", "x-tod-source": "WEB" };
@@ -185,7 +195,8 @@
   }
 
   // ── 확장(content.js)과의 대화 ──────────────────────────────────────────────
-  window.addEventListener("message", async (ev) => {
+  // 나중에 새 버전이 들어오면 이 함수를 걷어낼 수 있도록 창에 남겨둡니다.
+  const onMessage = async (ev) => {
     if (ev.source !== window) return;
     const msg = ev.data;
     if (!msg || msg.__gia !== "req") return;
@@ -232,6 +243,7 @@
             unreadRooms: targets.length,
             totalRooms,
             account: whoAmI(),
+            pageVersion: VERSION,
           },
         });
         return;
@@ -241,5 +253,8 @@
     } catch (err) {
       reply({ ok: false, error: String(err?.message ?? err) });
     }
-  });
+  };
+
+  window.__giaCollectorHandler = onMessage;
+  window.addEventListener("message", onMessage);
 })();

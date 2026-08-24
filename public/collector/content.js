@@ -4,11 +4,12 @@
 // 있지만 우리 서버로 요청을 보낼 수 없고, 배경 쪽은 그 반대입니다. 그래서 "페이지가 토들에서
 // 읽고 → 다리가 넘기고 → 배경이 우리 서버로 보내는" 구조가 됩니다.
 
-// 두 번 심겨도 한 번만 설치합니다(background.js의 injectInto가 다시 심을 수 있습니다).
-if (window.__giaBridgeInstalled) {
-  // 이미 다리가 놓여 있으면 아무것도 하지 않습니다.
-} else {
-  window.__giaBridgeInstalled = true;
+// 같은 버전이 이미 놓여 있을 때만 건너뜁니다.
+//
+// 예전에는 버전을 따지지 않아서, 확장을 새로고침해도 낡은 다리가 그대로 남아 있었습니다.
+const BRIDGE_VERSION = "2.1.0";
+if (window.__giaBridgeVersion !== BRIDGE_VERSION) {
+  window.__giaBridgeVersion = BRIDGE_VERSION;
   install();
 }
 

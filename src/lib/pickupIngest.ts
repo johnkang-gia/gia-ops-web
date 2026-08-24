@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { callClaudeJson, CLAUDE_MODEL_FAST } from "@/lib/ai/claude";
 import { kstParts } from "@/lib/shuttleTracking";
+import { hasConflictingIntent, similarity } from "@/lib/textSimilarity";
 import {
   matchStudent,
   normalizeTime,
@@ -165,6 +166,97 @@ export function normalizePickupDates(raw: unknown, todayKst: string): ParsedPick
   return out.sort((a, b) => a.date.localeCompare(b.date));
 }
 
+// ── 같은 연락이 두 경로로 들어오는 경우 ──────────────────────────────────────
+//
+// 요청: "토들과 지금 구글챗 긁어오는것 중복되지않게 분석해서 하나만 뜰 수 있도록 해줘,
+// 문장이 완전히 똑같지 않을거라서 잘 분석해줘"
+//
+// 학부모가 토들로 보낸 것과, 담임 선생님이 구글챗 출결방에 옮겨 적은 것이 같은 일인 경우가
+// 많습니다. 쓴 사람이 다르니 문장은 전혀 다릅니다.
+//
+//   토들:   "선생님 안녕하세요. 유겸이가 어제부터 장염이라 오늘 결석하겠습니다."
+//   구글챗: "@노유겸 결석 - 장염"
+//
+// 판단은 세 단계로 좁힙니다. 넓게 잡아 엉뚱한 것끼리 묶으면 한쪽 내용이 통째로 사라지므로,
+// 확실하지 않으면 따로 두는 쪽을 택했습니다.
+//
+//   1) 같은 학생·같은 날짜·같은 종류(픽업/문의)인 것만 후보로 봅니다.
+//      학생을 특정하지 못한 건은 아예 묶지 않습니다 - 잘못 묶는 것이 두 줄 뜨는 것보다 나쁩니다.
+//   2) 픽업은 후보가 있으면 같은 건으로 봅니다. 같은 아이를 같은 날 두 번 데려갈 일은 없습니다.
+//   3) 문의는 글자가 얼마나 겹치는지 보고, 애매하면 AI에게 한 번 더 묻습니다.
+
+const DUP_SURE = 0.6; // 이 이상 겹치면 물어볼 것도 없이 같은 건
+const DUP_MAYBE = 0.2; // 이 아래면 물어볼 것도 없이 다른 건
+
+const DUP_SYSTEM = `두 개의 학교 연락이 **같은 사안**을 말하는지 판단합니다.
+
+하나는 학부모가 직접 보낸 글이고, 다른 하나는 선생님이 그 내용을 옮겨 적은 메모일 수 있습니다.
+그래서 말투와 길이가 많이 다를 수 있습니다.
+
+반드시 아래 JSON만 출력하세요.
+{ "same": true 또는 false, "why": "한 문장 근거" }
+
+같다고 볼 때
+- 같은 아이의 같은 날 일에 대해 같은 것을 알리고 있을 때.
+  예) "유겸이가 장염이라 오늘 결석합니다" 와 "@노유겸 결석 - 장염"
+  예) "오늘 제가 3시에 데리러 갈게요" 와 "@이라엘 3시 픽업"
+
+다르다고 볼 때
+- 알리는 내용이 다를 때(결석 vs 지각, 결석 vs 픽업).
+- 한쪽에만 있는 별개의 요청이 핵심일 때(예: 한쪽은 결석 통보, 다른 쪽은 방과후 등록 문의).
+- 같은 아이 얘기지만 서로 다른 날의 일일 때.
+
+애매하면 false를 주세요. 잘못 묶으면 한쪽 내용이 통째로 사라집니다. 두 줄로 남는 것이 낫습니다.`;
+
+type DupCandidate = { id: string; raw_text: string | null; source: string; merged_sources: string[] | null };
+
+async function findDuplicate(
+  supabase: SupabaseClient,
+  opts: { studentId: string; serviceDate: string; kind: "픽업" | "문의"; text: string; source: string }
+): Promise<DupCandidate | null> {
+  const { data } = await supabase
+    .from("pickup_requests")
+    .select("id, raw_text, source, merged_sources")
+    .eq("student_id", opts.studentId)
+    .eq("service_date", opts.serviceDate)
+    .eq("kind", opts.kind)
+    .neq("status", "무시")
+    .order("received_at", { ascending: false })
+    .limit(5);
+
+  const rows = (data ?? []) as DupCandidate[];
+  if (rows.length === 0) return null;
+
+  for (const row of rows) {
+    // 같은 경로로 또 들어온 것은 원래 source_ref 로 걸러집니다. 여기서 볼 것은 다른 경로입니다.
+    if (row.source === opts.source) continue;
+    const other = row.raw_text ?? "";
+    if (!other.trim()) continue;
+
+    // 픽업은 같은 아이·같은 날이면 같은 건입니다. 시각이 다르면 그건 정정이지 별건이 아닙니다.
+    if (opts.kind === "픽업") return row;
+
+    if (hasConflictingIntent(opts.text, other)) continue;
+
+    const score = similarity(opts.text, other);
+    if (score >= DUP_SURE) return row;
+    if (score < DUP_MAYBE) continue;
+
+    // 애매한 구간만 AI에게 묻습니다. 후보가 있을 때만이라 호출이 잦지 않습니다.
+    try {
+      const raw = await callClaudeJson(
+        DUP_SYSTEM,
+        `연락 A:\n"""\n${other.slice(0, 800)}\n"""\n\n연락 B:\n"""\n${opts.text.slice(0, 800)}\n"""`,
+        { model: CLAUDE_MODEL_FAST, maxTokens: 200, route: "pickup-dedupe" }
+      );
+      if ((raw as { same?: unknown } | null)?.same === true) return row;
+    } catch {
+      // 물어보지 못했으면 묶지 않습니다. 확실하지 않을 때는 따로 두는 쪽이 안전합니다.
+    }
+  }
+  return null;
+}
+
 export async function ingestPickup(
   supabase: SupabaseClient,
   input: IngestInput,
@@ -259,6 +351,31 @@ export async function ingestPickup(
   let serviceDate = dates[0]?.date ?? todayKst;
   if (dates.length === 0 && ai.date_hint === "tomorrow") {
     serviceDate = kstParts(new Date(receivedAt.getTime() + 24 * 60 * 60 * 1000)).iso;
+  }
+
+  // ── 이미 다른 경로로 들어온 건인지 ────────────────────────────────────────
+  // 같은 일이면 새 줄을 만들지 않고 먼저 들어온 줄에 붙입니다. 두 줄이 뜨면 같은 일을 두 번
+  // 처리하게 되고, 한쪽만 처리하면 다른 쪽이 미처리로 남아 계속 눈에 걸립니다.
+  if (matched) {
+    const dup = await findDuplicate(supabase, {
+      studentId: matched.id,
+      serviceDate: dates[0]?.date ?? todayKst,
+      kind,
+      text,
+      source: input.source,
+    });
+    if (dup) {
+      const already = dup.merged_sources ?? [];
+      await supabase
+        .from("pickup_requests")
+        .update({
+          merged_sources: already.includes(input.source) ? already : [...already, input.source],
+          merged_count: (already.length || 0) + 1,
+          merged_at: new Date().toISOString(),
+        })
+        .eq("id", dup.id);
+      return { skipped: "duplicate", id: dup.id, kind, isPickup: kind === "픽업" };
+    }
   }
 
   const isPickup = kind === "픽업";

@@ -33,6 +33,8 @@ export type Inquiry = {
   answered_at: string | null;
   answered_by: string | null;
   task_id: string | null;
+  /** 같은 내용이 다른 경로로도 들어왔을 때, 그 경로들. 화면에는 이 줄 하나만 뜹니다. */
+  merged_sources: string[] | null;
 };
 
 const TYPE_STYLE: Record<string, string> = {
@@ -105,7 +107,7 @@ export default function ParentInquiryPanel({
     const { data } = await supabase
       .from("pickup_requests")
       .select(
-        "id, received_at, channel_label, matched_name, ai_student_name, inquiry_type, summary, urgency, raw_text, source, source_url, homeroom_email, answered_at, answered_by, task_id"
+        "id, received_at, channel_label, matched_name, ai_student_name, inquiry_type, summary, urgency, raw_text, source, source_url, homeroom_email, answered_at, answered_by, task_id, merged_sources"
       )
       .eq("kind", "문의")
       .order("received_at", { ascending: false })
@@ -198,6 +200,16 @@ export default function ParentInquiryPanel({
         </span>
       )}
       <span className="min-w-0 flex-1 truncate text-slate-500">{r.summary ?? r.raw_text ?? ""}</span>
+      {/* 같은 일이 토들·구글챗 양쪽으로 들어온 경우. 한 줄로 묶었다는 것을 보여줍니다 -
+          "구글챗에도 올렸는데 왜 여기 없지?" 하고 찾게 되는 것을 막습니다. */}
+      {r.merged_sources && r.merged_sources.length > 0 && (
+        <span
+          className="shrink-0 rounded bg-slate-100 px-1 text-[10px] font-semibold text-slate-500"
+          title={`같은 내용이 ${r.merged_sources.join(", ")}로도 들어와 하나로 묶었습니다.`}
+        >
+          +{r.merged_sources.join(",")}
+        </span>
+      )}
       {r.task_id && <span className="shrink-0 text-[10px] text-blue-500">업무</span>}
       <span className="shrink-0 text-[10px] text-slate-400" title={new Date(r.received_at).toLocaleString("ko-KR")}>
         {whenLabel(r.received_at)}

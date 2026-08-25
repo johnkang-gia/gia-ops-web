@@ -18,6 +18,8 @@ export type RouteStat = {
   lastStopAvg: string | null;
   todayLast: string | null;
   delayMin: number | null;
+  skipStops: number;
+  adjustedLast: string | null;
   gps: "live" | "idle" | "none";
 };
 export type OverviewKpi = {
@@ -234,6 +236,7 @@ export default function ShuttleOverviewClient({
               <th className="px-3 py-2 font-semibold">기사·차량</th>
               <th className="px-3 py-2 text-center font-semibold">오늘/정원</th>
               <th className="px-3 py-2 text-center font-semibold">막차 평균</th>
+              <th className="px-3 py-2 text-center font-semibold">오늘 건너뜀</th>
               <th className="px-3 py-2 text-center font-semibold">오늘 지연</th>
               <th className="px-3 py-2 text-center font-semibold">GPS</th>
             </tr>
@@ -254,7 +257,17 @@ export default function ShuttleOverviewClient({
                   {r.capacity != null ? `/${r.capacity}` : ""}
                   {r.over && " ⚠"}
                 </td>
-                <td className="px-3 py-1.5 text-center text-slate-600">{r.lastStopAvg ?? "-"}</td>
+                <td className="px-3 py-1.5 text-center text-slate-600">
+                  {r.lastStopAvg ?? "-"}
+                  {r.adjustedLast && <span className="ml-1 text-[11px] font-semibold text-emerald-600">→ {r.adjustedLast}</span>}
+                </td>
+                <td className="px-3 py-1.5 text-center">
+                  {r.skipStops > 0 ? (
+                    <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[11px] font-bold text-amber-700">{r.skipStops}곳</span>
+                  ) : (
+                    <span className="text-slate-300">-</span>
+                  )}
+                </td>
                 <td className="px-3 py-1.5 text-center">
                   {r.delayMin == null ? (
                     <span className="text-slate-300">-</span>

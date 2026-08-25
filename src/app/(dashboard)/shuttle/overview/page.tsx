@@ -84,20 +84,33 @@ export default async function ShuttleOverviewPage() {
 
   // 집계
   const perRouteToday = new Map<string, number>();
+  const stopRiders = new Map<string, number>(); // 정류장별 오늘 탑승 예정 수
+  const stopOut = new Map<string, number>(); // 정류장별 오늘 픽업+결석 수
   let expected = 0, pickup = 0, absent = 0, boarded = 0;
   for (const a of assigns) {
     const riding = (a.weekdays ?? []).includes(todayWeekday);
     if (!riding) continue;
     const rid = routeByStop.get(a.stop_id);
     if (rid) perRouteToday.set(rid, (perRouteToday.get(rid) ?? 0) + 1);
+    stopRiders.set(a.stop_id, (stopRiders.get(a.stop_id) ?? 0) + 1);
     const st = boardStatus.get(a.id);
     const isPickup = st === "픽업" || pickupNames.some((n) => nameMatch(n, a.student_name_raw));
     const isAbsent = st === "결석" || absentNames.some((n) => nameMatch(n, a.student_name_raw));
+    if (isPickup || isAbsent) stopOut.set(a.stop_id, (stopOut.get(a.stop_id) ?? 0) + 1);
     if (st === "탑승") boarded += 1;
     if (isPickup) pickup += 1;
     else if (isAbsent) absent += 1;
     else expected += 1;
   }
+  // 결석·픽업으로 오늘 전원이 안 타는 정류장은 건너뜁니다(요청 채택: 정류장 스킵 + ETA 재계산).
+  const perRouteSkips = new Map<string, number>();
+  for (const [sid, riders] of stopRiders) {
+    if (riders > 0 && (stopOut.get(sid) ?? 0) >= riders) {
+      const rid = routeByStop.get(sid);
+      if (rid) perRouteSkips.set(rid, (perRouteSkips.get(rid) ?? 0) + 1);
+    }
+  }
+  const MIN_PER_STOP = 3; // 정류장 1곳 건너뛸 때 아끼는 대략 시간(분)
 
   // 지속 특이사항 수
   const { count: notesCount } = await supabase
@@ -174,6 +187,8 @@ export default async function ShuttleOverviewPage() {
     const avg = lastStop ? avgByStop.get(lastStop) : undefined;
     const todayLast = lastStop ? todayByStop.get(lastStop) : undefined;
     const delayMin = avg != null && todayLast != null ? Math.round(todayLast - avg) : null;
+    const skipStops = perRouteSkips.get(rid) ?? 0;
+    const adjustedLast = avg != null && skipStops > 0 ? fmtMin(Math.max(0, avg - skipStops * MIN_PER_STOP)) : null;
     return {
       routeNo: r.route_no as string,
       name: (r.name as string | null) ?? null,
@@ -186,6 +201,8 @@ export default async function ShuttleOverviewPage() {
       lastStopAvg: avg != null ? fmtMin(avg) : null,
       todayLast: todayLast != null ? fmtMin(todayLast) : null,
       delayMin,
+      skipStops,
+      adjustedLast,
       gps,
     };
   });

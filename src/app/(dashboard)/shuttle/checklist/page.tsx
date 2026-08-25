@@ -92,41 +92,11 @@ export default async function ShuttleChecklistPage({
     }
   }
 
-  // 요청: "유치부랑 다있는거 같은데 우리 명단만 보이게 (...) 명단에 없는 이름들은 전부 숨김".
-  // 하원 셔틀은 초등부(우리 명부)만 다룹니다. 버스에 함께 실린 유치부·중고등부는 명부의 부서로
-  // 걸러 숨깁니다. 배정에 student_id가 연결돼 있으면 그 학생의 부서로, 없으면 이름으로 대조합니다.
-  const { data: elemStudents } = await supabase
-    .from("wr_students_basic")
-    .select("id, name, department")
-    .eq("status", "active");
-  const elemIdSet = new Set(
-    (elemStudents ?? []).filter((s) => s.department === "초등부").map((s) => s.id as string)
-  );
-  const elemNameSet = new Set(
-    (elemStudents ?? []).filter((s) => s.department === "초등부").map((s) => (s.name as string).replace(/\s+/g, ""))
-  );
-  // 요청: "내가 알려준 명단의 아이들만 숨기지 말고 보여달라" - 초등부 명부 외에, 아래 중고등부
-  // 탑승 명단(직접 알려주신 이름)만 함께 보여주고, 그 밖의 이름(유치부 등)은 숨깁니다.
-  const EXTRA_RIDERS = [
-    "이준서", "이준우", "김도율", "김샤론", "이하은", "최온유", "위준완", "김승후",
-    "노다은", "노다혜", "강하영", "박진우", "제이콥", "장하영", "에이바", "강하엘",
-    // 요청: 초등 졸업으로 중등부가 되었지만 하원 셔틀은 계속 타므로 명단에 표시(숨기지 않음).
-    "박준후", "문수민", "이도후", "곽호율", "박지음", "강여명", "정서안",
-  ];
-  const extraNameSet = new Set(EXTRA_RIDERS.map((n) => n.replace(/\s+/g, "")));
-  // 유치부인데 초등부 동명이인 때문에 이름 대조로 잘못 딸려오는 학생을 콕 집어 숨깁니다
-  // (요청: "2호 김사랑은 유치부야 하원 체크표에 있으면 안돼"). "호차:이름"으로 지정합니다.
-  const HIDE_RIDERS = new Set(["2:김사랑"]);
-  const routeNoById = new Map(routes.map((r) => [r.id, r.route_no]));
-  const stopRouteNo = new Map(stopsData.map((s) => [s.id, routeNoById.get(s.route_id) ?? ""]));
-  assignmentsData = assignmentsData.filter((a) => {
-    const rawName = (a.student_name_raw ?? "").replace(/\s+/g, "");
-    const rno = (stopRouteNo.get(a.stop_id) ?? "").replace(/호$/, "");
-    if (HIDE_RIDERS.has(`${rno}:${rawName}`)) return false; // 유치부 동명이인 제외
-    if (extraNameSet.has(rawName)) return true; // 알려주신 중고등·중등부 탑승자
-    if (a.student_id) return elemIdSet.has(a.student_id); // 초등부(명부 연결)
-    return elemNameSet.has(rawName); // 초등부(이름 대조)
-  });
+  // 예전에는 PDF에서 통째로 들어온 배정(유치부 포함)을 초등부 명부+허용목록으로 걸러냈지만,
+  // 하원 명단 재세팅(v0.228, 사용자 원문 1-1호~31호 그대로) 이후에는 shuttle_assignments 자체가
+  // 확정 명단입니다. 필터를 걸면 오히려 구분표기 이름(김재이(G2A)·이준서(중등)·에이바(일라이아나)
+  // 등)이 명부 이름과 달라 떨어져 나가므로, 배정된 학생을 전부 그대로 보여줍니다(요청: "내가
+  // 보내준 정규학기 하원명단하고 달라 체크해서 반영해줘").
 
   const todayWeekday = new Date().getDay();
   const today = new Date().toISOString().slice(0, 10);

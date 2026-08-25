@@ -16,6 +16,8 @@ export default function ClassManageClient({ initialClasses, team }: { initialCla
   const [teacherEmail, setTeacherEmail] = useState("");
   const [subTeacherEmail, setSubTeacherEmail] = useState("");
   const [saving, setSaving] = useState(false);
+  // 담임 미배정 반 정리(요청 ⑦). 미배정만 모아 보고, 삭제 전 목록으로 확인합니다.
+  const [onlyNoTeacher, setOnlyNoTeacher] = useState(false);
 
   async function addClass(e: React.FormEvent) {
     e.preventDefault();
@@ -59,12 +61,25 @@ export default function ClassManageClient({ initialClasses, team }: { initialCla
     await supabase.from("wr_classes").delete().eq("id", id);
   }
 
+  const noTeacher = useMemo(() => classes.filter((c) => !c.teacher_email && !c.teacher_name), [classes]);
+  const displayList = onlyNoTeacher ? noTeacher : classes;
+
+  async function deleteAllNoTeacher() {
+    if (noTeacher.length === 0) return;
+    const listStr = noTeacher.map((c) => `${c.grade ?? ""}학년 ${c.class_name ?? ""}`).join(", ");
+    if (!(await confirmAction(`담임 미배정 반 ${noTeacher.length}개를 모두 삭제할까요?\n${listStr}`, { danger: true }))) return;
+    const ids = noTeacher.map((c) => c.id);
+    setClasses((prev) => prev.filter((c) => !ids.includes(c.id)));
+    const supabase = createClient();
+    await supabase.from("wr_classes").delete().in("id", ids);
+  }
+
   const [page, setPage] = useState(1);
   const pageItems = useMemo(
-    () => classes.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
-    [classes, page]
+    () => displayList.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [displayList, page]
   );
-  const totalPages = Math.max(1, Math.ceil(classes.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(displayList.length / PAGE_SIZE));
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -104,6 +119,29 @@ export default function ClassManageClient({ initialClasses, team }: { initialCla
         </button>
       </form>
 
+      {/* 담임 미배정 반 정리(요청 ⑦) */}
+      <div className="mb-2 flex shrink-0 flex-wrap items-center gap-2 text-xs">
+        <span className="text-slate-500">전체 {classes.length}개 · 담임 미배정 <b className={noTeacher.length ? "text-red-600" : "text-slate-600"}>{noTeacher.length}</b>개</span>
+        {noTeacher.length > 0 && (
+          <>
+            <button
+              type="button"
+              onClick={() => setOnlyNoTeacher((v) => !v)}
+              className={"rounded-lg px-2.5 py-1 font-semibold " + (onlyNoTeacher ? "bg-purple-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200")}
+            >
+              {onlyNoTeacher ? "전체 보기" : "미배정만 보기"}
+            </button>
+            <button
+              type="button"
+              onClick={deleteAllNoTeacher}
+              className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 font-semibold text-red-600 hover:bg-red-100"
+            >
+              미배정 반 모두 삭제
+            </button>
+          </>
+        )}
+      </div>
+
       <div className="flex-1 overflow-y-auto rounded-xl border border-slate-200 bg-white">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-400">
@@ -115,10 +153,13 @@ export default function ClassManageClient({ initialClasses, team }: { initialCla
             </tr>
           </thead>
           <tbody>
-            {pageItems.map((c) => (
-              <tr key={c.id} className="border-t border-slate-100">
+            {pageItems.map((c) => {
+              const missing = !c.teacher_email && !c.teacher_name;
+              return (
+              <tr key={c.id} className={"border-t border-slate-100 " + (missing ? "bg-red-50/50" : "")}>
                 <td className="px-3 py-2 font-medium">
                   {c.grade}학년 {c.class_name}
+                  {missing && <span className="ml-1 rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-600">담임 미배정</span>}
                 </td>
                 <td className="px-3 py-2">
                   <select
@@ -174,7 +215,8 @@ export default function ClassManageClient({ initialClasses, team }: { initialCla
                   </button>
                 </td>
               </tr>
-            ))}
+              );
+            })}
             {classes.length === 0 && (
               <tr>
                 <td colSpan={4} className="px-3 py-6 text-center text-slate-400">

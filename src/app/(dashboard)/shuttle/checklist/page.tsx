@@ -6,6 +6,7 @@ import ShuttleChecklistClient, { type ChecklistRoute, type ChecklistItem, type P
 import type { GoogleChatMirrorMessage } from "@/lib/types";
 import { categorize } from "@/lib/attendanceDigest";
 import GuideButton from "@/components/common/GuideButton";
+import ChecklistSubTabs from "@/components/shuttle/ChecklistSubTabs";
 
 const GUIDE_SECTIONS = [
   {
@@ -238,6 +239,7 @@ export default async function ShuttleChecklistPage({
 
   return (
     <div className="mx-auto max-w-6xl p-4 sm:p-6 print:max-w-none print:p-0">
+      <ChecklistSubTabs />
       <div className="mb-1 flex flex-wrap items-center justify-between gap-2 print:hidden">
         <h1 className="text-lg font-bold">📋 하원 체크표</h1>
         <GuideButton className="print:hidden flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-black/5 text-[12px] font-bold text-slate-600 transition hover:bg-black/10" title="하원 체크표 사용 가이드" sections={GUIDE_SECTIONS} />

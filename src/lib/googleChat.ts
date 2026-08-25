@@ -103,8 +103,21 @@ export async function pollNewMessages(supabase: SupabaseClient, sourceKey: Googl
   const filter = `createTime > "${sinceIso}"`;
 
   const url = `${CHAT_API_BASE}/${spaceId}/messages?filter=${encodeURIComponent(filter)}&orderBy=${encodeURIComponent("createTime asc")}&pageSize=100`;
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-  if (!res.ok) throw new Error(`메시지 조회 실패(${sourceKey}): ${res.status} ${await res.text()}`);
+
+  // 구글챗 API는 종종 일시적인 500(INTERNAL)·503·429를 돌려줍니다("Retry the request later").
+  // 이때 그냥 실패로 끝내면 그 라운드의 출결 메시지를 통째로 못 읽으므로, 짧은 지수 백오프로
+  // 최대 4번까지 다시 시도합니다. 400/401/403 같은 "다시 해도 똑같은" 오류는 바로 던집니다.
+  let res: Response | null = null;
+  let lastText = "";
+  for (let attempt = 0; attempt < 4; attempt++) {
+    res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (res.ok) break;
+    const retriable = res.status === 429 || res.status >= 500;
+    lastText = await res.text().catch(() => "");
+    if (!retriable) throw new Error(`메시지 조회 실패(${sourceKey}): ${res.status} ${lastText}`);
+    if (attempt < 3) await new Promise((r) => setTimeout(r, 500 * Math.pow(2, attempt))); // 0.5s, 1s, 2s
+  }
+  if (!res || !res.ok) throw new Error(`메시지 조회 실패(${sourceKey}, 재시도 후에도 실패): ${res?.status ?? "?"} ${lastText}`);
 
   const body = (await res.json()) as { messages?: ChatMessageResource[] };
   const messages = body.messages ?? [];

@@ -94,6 +94,7 @@ export default function TaskBoard({
   onChangeStatus,
   onToggleAck,
   mineOnly,
+  compact = false,
 }: {
   tasks: Task[];
   team: TeamMember[];
@@ -108,6 +109,9 @@ export default function TaskBoard({
   // 스크롤되는 본문 안에 있으면 아래로 내렸을 때 사라져서, 지금 무엇을 보고 있는지 알 수 없었고
   // 다른 두 칸의 머리글과 줄도 맞지 않았습니다.
   mineOnly: boolean;
+  // 흐름판이 오른쪽 좁은 칸으로 옮겨가면서(등록·채팅이 가운데를 차지), 좁은 폭에 3열을
+  // 욱여넣는 대신 예정→진행중→완료를 위에서 아래로 쌓습니다. 드래그 이동은 그대로 됩니다.
+  compact?: boolean;
 }) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [holdOpen, setHoldOpen] = useState(false);
@@ -155,10 +159,10 @@ export default function TaskBoard({
           떠 있었습니다. 메모는 소통 칸 한 곳으로 모으고 흐름판은 카드에만 집중합니다. */}
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
         <div className="flex-1 overflow-y-auto p-3">
-          {/* 진행대기/진행중/완료 3열을 항상 위에 쾌적하게 보여주고, 보류/이슈는 아래로 빼서
-              평소엔 접어둡니다(요청 #10) - 넓은 화면에선 3열, 좁으면 1~2열로 쌓입니다.
+          {/* compact(오른쪽 좁은 칸)에서는 예정→진행중→완료를 세로로 쌓고, 전체 폭을 쓸 때
+              (모바일 탭 등)는 화면 폭에 따라 1~3열로 폅니다. 보류/이슈는 아래에 접어둡니다.
               제목과 [내 업무만|전체] 토글은 존 머리글로 올라갔습니다. */}
-          <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <div className={"grid items-start gap-3 " + (compact ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2 xl:grid-cols-3")}>
             {MAIN_STATUS_ORDER.map((status) => (
               <DroppableColumn
                 key={status}

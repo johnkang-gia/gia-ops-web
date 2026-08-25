@@ -12,22 +12,27 @@ import type { RosterStudent } from "@/lib/attendanceDigest";
 
 // 업무 보드 = 3존 관제탑(요청: "행정직원들이 이 페이지만 띄워놓고도 업무가 가능하도록").
 //
-// 예전 구조는 사실상 2단이었습니다. 왼쪽 한 칸에 인박스와 채팅을 위아래로 욱여넣고 오른쪽에
-// 흐름판을 둬서, 정작 하루 종일 보는 흐름판은 화면의 절반뿐이고 인박스·채팅은 둘 다 좁았습니다.
+// 칸의 자리는 실제로 쓰는 빈도로 정했습니다(요청: "가장 많이 쓰이는 것이 업무등록(등록창+채팅창)과
+// 인박스인데 업무흐름판이 떡하니 가운데에 있어서 실용성이 떨어져").
 //
-// 이제 하는 일의 성격대로 세로 3칸으로 나눕니다. 관제 화면(Front·Missive·Linear 등)이 공통으로
-// 쓰는 배치입니다 - 들어오는 것을 왼쪽에서 받고, 가운데에서 처리하고, 오른쪽에서 이야기합니다.
+//   · 등록·채팅 - 하루 종일 손이 가는 "입력 도구"입니다. 글을 쓰는 곳이니 눈과 손이 머무는
+//     가운데, 가장 넓게 둡니다.
+//   · 인박스   - 수시로 확인하는 "수신함"입니다. 읽는 흐름이 왼쪽에서 시작하니 왼쪽입니다.
+//     인박스에서 [→업무등록]을 누르면 바로 옆 가운데에서 이어서 처리합니다.
+//   · 흐름판   - 드래그로 진행상황을 옮기고 훑어보는 "현황판"입니다. 계속 보는 게 아니라
+//     가끔 확인하는 것이니 오른쪽 좁은 칸에 두고, 안 볼 때는 접어서 막대만 남깁니다.
 //
-//   📥 인박스        🔀 업무 흐름판                💬 소통
-//   학부모 문의      예정 → 진행중 → 완료          부서 메모(고정)
-//   출결내역         보류·이슈(접기)               빠른 업무등록
-//   출결알림                                       부서 채팅
+//   📥 인박스        💬 등록 · 채팅(가장 넓게)      🔀 업무 흐름판
+//   학부모 문의      부서 메모(고정)                예정 ↓ 진행중 ↓ 완료 (세로)
+//   출결내역         빠른 업무등록                  보류·이슈(접기)
+//   출결알림         부서 채팅
 //   선생님요청
 //
-// 양옆 칸은 접을 수 있습니다. 접으면 세로 막대만 남고 흐름판이 화면을 거의 다 씁니다 - 업무를
-// 몰아서 정리할 때 쓰는 집중 모드입니다. 폭과 접힘 상태는 이 브라우저에 기억해둡니다.
-const LAYOUT_STORAGE_KEY = "gia-ops-work-layout-v2";
-const DEFAULT_LAYOUT = { leftWidth: 26, rightWidth: 28, leftOpen: true, rightOpen: true };
+// 양옆 칸은 접을 수 있습니다. 접으면 세로 막대만 남고 가운데가 그만큼 넓어집니다. 흐름판이
+// 옆 칸이 되면서 3열 대신 위에서 아래로(예정→진행중→완료) 쌓이는 세로 배치를 씁니다 - 좁은
+// 폭에 3열을 욱여넣으면 카드 제목이 다 잘립니다. 폭과 접힘 상태는 이 브라우저에 기억해둡니다.
+const LAYOUT_STORAGE_KEY = "gia-ops-work-layout-v3";
+const DEFAULT_LAYOUT = { leftWidth: 26, rightWidth: 27, leftOpen: true, rightOpen: true };
 type Layout = typeof DEFAULT_LAYOUT;
 
 // 한 칸이 이보다 좁아지면 안에 든 표·채팅이 읽을 수 없게 되므로 드래그를 여기서 멈춥니다.
@@ -164,7 +169,8 @@ export default function WorkspaceArea({
   // 레이아웃이 동시에 마운트되어 ChatPanel이 같은 실시간 채널을 두 번 구독하면서 업무탭이
   // 아예 열리지 않는 문제가 있었으므로, 실제 폭을 보고 둘 중 하나만 마운트합니다.
   const [isMobileView, setIsMobileView] = useState(false);
-  const [mobileTab, setMobileTab] = useState<"inbox" | "board" | "talk">("board");
+  // 모바일 기본 탭도 가장 많이 쓰는 등록·채팅입니다.
+  const [mobileTab, setMobileTab] = useState<"inbox" | "board" | "talk">("talk");
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 767px)");
@@ -231,6 +237,7 @@ export default function WorkspaceArea({
     />
   );
 
+  // compact: 흐름판이 오른쪽 좁은 칸에 들어가므로 3열 대신 세로로 쌓습니다.
   const board = (
     <TaskBoard
       tasks={tasks}
@@ -243,6 +250,7 @@ export default function WorkspaceArea({
       onChangeStatus={onChangeStatus}
       onToggleAck={onToggleAck}
       mineOnly={mineOnly}
+      compact={!isMobileView}
     />
   );
 
@@ -308,8 +316,8 @@ export default function WorkspaceArea({
           {(
             [
               { key: "inbox", label: "📥 인박스" },
+              { key: "talk", label: "💬 등록·채팅" },
               { key: "board", label: "🔀 흐름판" },
-              { key: "talk", label: "💬 소통" },
             ] as const
           ).map((t) => (
             <button
@@ -352,24 +360,32 @@ export default function WorkspaceArea({
         <CollapsedRail icon="📥" title="인박스" side="left" onOpen={() => setLayout((p) => ({ ...p, leftOpen: true }))} />
       )}
 
-      {/* ② 처리하는 곳 - 남는 폭을 전부 씁니다. 양옆을 접으면 화면 전체가 흐름판이 됩니다. */}
-      <Zone icon="🔀" title="업무 흐름판" right={boardControls} className="flex-1">
-        {board}
+      {/* ② 일하는 곳 - 등록창+채팅창. 가장 많이 쓰는 도구라 남는 폭을 전부 씁니다(요청).
+          양옆을 접으면 화면 전체가 등록·채팅이 됩니다. */}
+      <Zone icon="💬" title="등록 · 채팅" className="flex-1">
+        {talk}
       </Zone>
 
-      {/* ③ 이야기하는 곳 - 메모·빠른 등록·채팅. */}
+      {/* ③ 현황판 - 흐름판은 드래그로 진행상황을 옮기고 훑어보는 용도라 오른쪽 좁은 칸이면
+          충분합니다. 세로 스택(compact)이라 좁아도 카드가 잘리지 않고, 안 볼 때는 접습니다. */}
       {layout.rightOpen ? (
         <>
           <div
             onMouseDown={startResize("right")}
             className="w-1 shrink-0 cursor-col-resize bg-black/5 transition hover:bg-blue-400"
           />
-          <Zone icon="💬" title="소통" onCollapse={() => setLayout((p) => ({ ...p, rightOpen: false }))} style={{ width: `${layout.rightWidth}%` }}>
-            {talk}
+          <Zone
+            icon="🔀"
+            title="흐름판"
+            right={boardControls}
+            onCollapse={() => setLayout((p) => ({ ...p, rightOpen: false }))}
+            style={{ width: `${layout.rightWidth}%` }}
+          >
+            {board}
           </Zone>
         </>
       ) : (
-        <CollapsedRail icon="💬" title="소통" side="right" onOpen={() => setLayout((p) => ({ ...p, rightOpen: true }))} />
+        <CollapsedRail icon="🔀" title="흐름판" side="right" onOpen={() => setLayout((p) => ({ ...p, rightOpen: true }))} />
       )}
     </div>
   );

@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import type { Meeting } from "@/lib/types";
 import MeetingReportClient from "@/components/meetings/MeetingReportClient";
-import WorkTabs from "@/components/work/WorkTabs";
+import DocsTabs from "@/components/documents/DocsTabs";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +22,7 @@ export default async function MeetingReportPage() {
 
   return (
     <div className="p-4 sm:p-6">
-      <WorkTabs />
+      <DocsTabs />
       <MeetingReportClient meetings={(data as Meeting[] | null) ?? []} />
     </div>
   );

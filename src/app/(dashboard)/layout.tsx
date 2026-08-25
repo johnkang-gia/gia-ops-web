@@ -121,20 +121,12 @@ function buildWorkCategory(pendingProposals: number, pendingAdopted: number): Na
     href: "/work",
     items: [
       // 개요 대시보드는 뺐습니다(요청: 업무 보드 자체가 관제탑이라 개요가 필요 없음).
+      // 서브메뉴 = 상단탭(WorkTabs)과 항상 같은 항목·같은 순서입니다(요청: "상단탭이랑
+      // 서브메뉴랑 일치해야해"). 사건·회의·행사 기록과 제안·채택은 [문서·매뉴얼]로
+      // 되돌렸습니다(요청: 이미 문서·매뉴얼로 이전한 것들).
       { href: "/work", label: "업무 보드", icon: "🗂️" },
-      { href: "/work/report", label: "업무 보고서", icon: "📈" },
-      // 예전 [기록] 대분류를 흡수(요청: 대분류 통합).
-      { href: "/ops", label: "등록사건목록", icon: "📋", dividerBefore: "기록" },
-      // 기록 드라이브(요청 ④): 사건·회의·행사를 연/월 폴더 + 검색으로 탐색.
-      { href: "/records/drive", label: "기록 드라이브", icon: "🗄️" },
-      { href: "/records", label: "사건기록", icon: "🗂️" },
-      { href: "/meetings", label: "회의기록", icon: "💬" },
-      { href: "/events", label: "행사기록", icon: "🎉" },
-      { href: "/meetings/report", label: "회의 보고서", icon: "📊" },
-      { href: "/ai-manual", label: "AI 매뉴얼 작성", icon: "✨", dividerBefore: "개선 제안" },
-      { href: "/proposals", label: "제안함", icon: "📝", badge: pendingProposals },
-      { href: "/adopted", label: "채택예정", icon: "📬", badge: pendingAdopted },
-      { href: "/work/history", label: "지난 업무", icon: "🗃️", dividerBefore: "보관" },
+      { href: "/work/report", label: "보고서", icon: "📈" },
+      { href: "/work/history", label: "지난 업무", icon: "🗃️" },
       { href: "/work/trash", label: "휴지통", icon: "🗑️" },
     ],
   };
@@ -146,41 +138,52 @@ function buildWorkCategory(pendingProposals: number, pendingAdopted: number): Na
 // 급식 당번·시설 예약처럼 앞으로 추가될 학사 운영 항목도 이 아래 [학사] 구분선에 붙입니다.
 function buildSchoolCategory(isAdmin: boolean, isStaffOrAbove: boolean): NavCategory {
   const items: NavLeaf[] = [];
+  // 상단탭에는 없는 보조·설정 화면들. 탭 항목을 모두 넣은 뒤 [설정] 구분선 아래로 붙입니다.
+  const extra: NavLeaf[] = [];
   if (isStaffOrAbove) {
     items.push(
-      { href: "/school/overview", label: "개요 대시보드", icon: "📊", dividerBefore: "학교 현황" },
-      { href: "/students", label: "학생 조회", icon: "🔎" },
+      // 서브메뉴 = 상단탭(SchoolTabs)과 항상 같은 항목·같은 순서입니다(요청: "상단탭이랑
+      // 서브메뉴랑 일치해야해"). 탭에 없는 보조 화면(명부 점검·학기 관리·운영 대시보드)은
+      // 아래 [설정] 구분선으로 내려 관리자만 보게 합니다.
+      { href: "/school/overview", label: "개요", icon: "📊" },
+      { href: "/students", label: "학생 조회", icon: "🎓" },
       // 학생 통합기록과 같은 구조로 교직원도 입사일/퇴사일/연도별 담당 이력을 한 화면에서
       // 볼 수 있습니다(요청: "교직원에 대한 정보도... 통합으로 관리되게끔").
-      { href: "/staff", label: "교직원 조회", icon: "🧑‍💼" }
+      { href: "/staff", label: "교직원", icon: "🧑‍💼" }
     );
   }
   if (isAdmin) {
     items.push(
-      { href: "/weekly-report/admin/students", label: "학생 관리", labelEn: "Manage Students", icon: "🧑‍🎓", dividerBefore: "명부 관리" },
-      { href: "/weekly-report/admin/classes", label: "반·담임 관리", labelEn: "Manage Classes", icon: "🏫" },
-      { href: "/weekly-report/admin/subjects", label: "과목 관리", labelEn: "Manage Subjects", icon: "📘" }
+      { href: "/weekly-report/admin/students", label: "명부 관리", labelEn: "Manage Students", icon: "📇" },
+      { href: "/weekly-report/admin/classes", label: "반·과목", labelEn: "Manage Classes", icon: "🏫" }
     );
   }
   if (isStaffOrAbove) {
     // 명부를 넣은 결과가 맞는지, 사람이 판단해야 할 건이 남았는지 보는 화면입니다
     // (요청: "대시보드에서 확인 어떻게 할 수 있어?").
-    items.push({ href: "/school/data-check", label: "명부 점검", icon: "🩺", dividerBefore: isAdmin ? undefined : "명부 관리" });
+    // 탭에 없는 보조 화면입니다(관리자만) - 아래 [설정] 구분선 그룹으로 내립니다.
+    extra.push({ href: "/school/data-check", label: "명부 점검", icon: "🩺" });
   }
   items.push(
-    { href: "/school/timetable", label: "수업·시간표", icon: "🗓️", dividerBefore: "학사" },
-    { href: "/terms", label: "학기 관리", icon: "📓" },
+    { href: "/school/timetable", label: "수업·시간표", icon: "🗓️" },
     { href: "/academic-calendar", label: "학사일정", icon: "📅" },
-    { href: "/academic-calendar/prep", label: "학기 준비", icon: "🧭" },
     // 급식 당번·체육관 사용 같은 "누가 언제 어디를 맡는가" 표입니다(요청: "당번표는 대시보드에
     // 필요없고, 일단은 데이터만 넣을 수 있게"). 종류만 새로 적으면 새 당번표가 생기므로,
     // 앞으로 당번이 늘어도 메뉴가 늘어나지 않습니다.
-    { href: "/school/duty", label: "당번표", icon: "🍚" }
+    { href: "/school/duty", label: "당번표", icon: "🍚" },
+    { href: "/academic-calendar/prep", label: "학기 준비", icon: "🧭" }
   );
+  // 여기부터는 탭에 없는 설정 화면입니다(관리자 전용).
+  extra.push({ href: "/terms", label: "학기 관리", icon: "📓" });
   if (isAdmin) {
-    // 사무실 대형 모니터 대시보드의 관리 화면입니다. 시간표를 여기서 입력하므로 학사에 둡니다
-    // (요청: "운영 대시 보드는 관리자,개발자만 보이도록").
-    items.push({ href: "/ops-board", label: "시간표 · 운영 대시보드", icon: "🖥️" });
+    // 사무실 대형 모니터 대시보드의 관리 화면입니다(요청: "운영 대시보드는 관리자만").
+    extra.push({ href: "/ops-board", label: "운영 대시보드", icon: "🖥️" });
+  }
+  // 탭에 없는 보조·설정 화면은 맨 아래 [설정] 구분선 아래로 모읍니다 - 위쪽 항목은 상단탭과
+  // 1:1로 같아서, 사이드바와 탭이 어긋나 보이지 않습니다.
+  if (extra.length > 0) {
+    extra[0] = { ...extra[0], dividerBefore: "설정" };
+    items.push(...extra);
   }
   return { key: "school", label: "학교", icon: "🏛️", accent: "purple", href: "/school/overview", items };
 }
@@ -224,7 +227,7 @@ function buildShuttleCategory(isStaffOrAbove: boolean): NavCategory {
 // 최상위 메뉴로 있었습니다. 둘 다 "필요할 때 찾아 읽는 것"이라 하나로 합쳤습니다.
 // 전화 응대 중 가장 급하게 여는 실무자 매뉴얼을 맨 위에 두고, 카테고리를 직접 눌러도 그 화면이
 // 바로 열리게 했습니다 - 합치면서 손이 더 가면 안 되기 때문입니다.
-function buildDocumentsCategory(isAdmin: boolean): NavCategory {
+function buildDocumentsCategory(isAdmin: boolean, pendingProposals: number, pendingAdopted: number): NavCategory {
   const items: NavLeaf[] = [
     { href: "/staff-manual", label: "실무자 매뉴얼", icon: "📚" },
     { href: "/manuals?doc=실무자용", label: "매뉴얼 (실무자용)", icon: "📗" },
@@ -233,6 +236,17 @@ function buildDocumentsCategory(isAdmin: boolean): NavCategory {
     { href: "/documents", label: "서류함", icon: "📁" },
     { href: "/documents/new", label: "AI 서류 작성", icon: "🪄" },
     { href: "/school/documents/reports", label: "보고서 모음", icon: "📊" },
+    // 사건·회의·행사 기록과 제안·채택은 "남기고 찾아보는 것"이라 문서·매뉴얼에 둡니다
+    // (요청: 이미 문서·매뉴얼로 이전했던 항목들). 상단탭(DocsTabs)과 항목·순서가 같습니다.
+    { href: "/records/drive", label: "기록 드라이브", icon: "🗄️", dividerBefore: "기록" },
+    { href: "/ops", label: "등록사건목록", icon: "📋" },
+    { href: "/records", label: "사건기록", icon: "🗂️" },
+    { href: "/meetings", label: "회의기록", icon: "💬" },
+    { href: "/events", label: "행사기록", icon: "🎉" },
+    { href: "/meetings/report", label: "회의 보고서", icon: "📊" },
+    { href: "/ai-manual", label: "AI 매뉴얼 작성", icon: "✨", dividerBefore: "개선 제안" },
+    { href: "/proposals", label: "제안함", icon: "📝", badge: pendingProposals },
+    { href: "/adopted", label: "채택예정", icon: "📬", badge: pendingAdopted },
   ];
   if (isAdmin) {
     // 매뉴얼·운영계획안·서류를 어떤 항목으로 나눌지 정하는 기준표입니다. 문서를 쓰는 사람이
@@ -399,7 +413,7 @@ export default async function DashboardLayout({
       buildWorkCategory(pendingProposals, pendingAdopted),
       buildSchoolCategory(isAdmin, isStaffOrAbove),
       ...(isStaffOrAbove ? [buildShuttleCategory(isStaffOrAbove)] : []),
-      buildDocumentsCategory(isAdmin),
+      buildDocumentsCategory(isAdmin, pendingProposals, pendingAdopted),
       // 출석부 메뉴는 요청("일단 지금 출석부를 쓸건 아니니까 출석부메뉴는 감춰줘")에 따라
       // 당분간 숨겨둡니다. /attendance 화면 자체와 기능은 그대로 남아있어서, 나중에 이 항목의
       // 주석만 풀면 [학교] 아래에 바로 다시 노출할 수 있습니다.

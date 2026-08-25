@@ -5,7 +5,7 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { isTeacherOnly } from "@/lib/roles";
 import type { Incident } from "@/lib/types";
 import GuideButton from "@/components/common/GuideButton";
-import WorkTabs from "@/components/work/WorkTabs";
+import DocsTabs from "@/components/documents/DocsTabs";
 
 const GUIDE_SECTIONS = [
   {
@@ -71,7 +71,7 @@ export default async function OpsDashboardPage() {
 
   return (
     <div className="mx-auto flex h-full max-w-4xl flex-col overflow-hidden">
-      <div className="shrink-0"><WorkTabs /></div>
+      <div className="shrink-0"><DocsTabs /></div>
       <div className="shrink-0 text-center">
         {/* 사이드바 "운영 관리" 옆에 상시로 떠 있던 숫자를 없앤 대신, 여기 제목 옆에 총 건수를
             표시합니다(요청 5). */}

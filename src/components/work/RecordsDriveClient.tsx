@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import WorkTabs from "./WorkTabs";
+import DocsTabs from "@/components/documents/DocsTabs";
 
 // 기록 드라이브(요청 ④): 사건·회의·행사를 드라이브처럼 연 → 월 폴더로 내려가며 탐색 + 검색.
 // 왼쪽에 연/월 트리(건수 배지), 오른쪽에 그 달의 기록 목록. 검색하면 전체 기간에서 찾습니다.
@@ -82,7 +82,7 @@ export default function RecordsDriveClient({ items }: { items: DriveItem[] }) {
 
   return (
     <div className="mx-auto max-w-6xl p-4 sm:p-6">
-      <WorkTabs />
+      <DocsTabs />
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <h1 className="text-lg font-bold">🗄️ 기록 드라이브</h1>
         <div className="flex gap-1">

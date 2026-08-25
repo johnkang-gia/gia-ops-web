@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import type { ManualSection, SchoolDocument } from "@/lib/types";
 import SchoolDocumentsHubClient from "@/components/documents/SchoolDocumentsHubClient";
+import DocsTabs from "@/components/documents/DocsTabs";
 
 export const dynamic = "force-dynamic";
 
@@ -23,9 +24,12 @@ export default async function SchoolDocumentsHubPage() {
   ]);
 
   return (
-    <SchoolDocumentsHubClient
+    <div className="p-4 sm:p-6">
+      <DocsTabs />
+      <SchoolDocumentsHubClient
       manuals={(manualsData as ManualSection[] | null) ?? []}
       documents={(documentsData as SchoolDocument[] | null) ?? []}
     />
+    </div>
   );
 }

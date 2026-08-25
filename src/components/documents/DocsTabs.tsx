@@ -2,19 +2,20 @@
 
 import { usePathname, useRouter } from "next/navigation";
 
-// 업무 대분류를 "개요 + 탭" 하나의 관제탑처럼 묶는 상단 고정 탭바(요청: 업무 메뉴만 띄워두고도
-// 모든 상황을 확인·처리). '기록'(사건·회의·행사·제안) 대분류를 업무 안 탭으로 흡수했습니다(7→5).
-// 사이드바 서브메뉴와 항상 같은 항목·같은 순서를 유지합니다(요청: "상단탭이랑 서브메뉴랑
-// 일치해야해"). 사건·회의·행사 기록과 제안·채택은 [문서·매뉴얼] 대분류로 옮겼습니다.
+// 문서·매뉴얼 대분류의 상단 고정 탭바. 사이드바 서브메뉴와 항상 같은 항목·같은 순서입니다
+// (요청: "상단탭이랑 서브메뉴랑 일치해야해"). 사건·회의·행사 기록과 제안·채택도 여기 속합니다.
 const TABS: { key: string; label: string; icon: string; href: string; match: string[] }[] = [
-  { key: "board", label: "업무 보드", icon: "🗂️", href: "/work", match: ["/work"] },
-  { key: "report", label: "보고서", icon: "📈", href: "/work/report", match: ["/work/report"] },
-  { key: "history", label: "지난 업무", icon: "🗃️", href: "/work/history", match: ["/work/history"] },
-  { key: "trash", label: "휴지통", icon: "🗑️", href: "/work/trash", match: ["/work/trash"] },
+  { key: "manual", label: "실무자 매뉴얼", icon: "📚", href: "/staff-manual", match: ["/staff-manual", "/manuals"] },
+  { key: "docs", label: "문서함", icon: "🗄️", href: "/school/documents", match: ["/school/documents", "/documents"] },
+  { key: "drive", label: "기록 드라이브", icon: "🗄️", href: "/records/drive", match: ["/records/drive"] },
+  { key: "incidents", label: "사건", icon: "🗂️", href: "/ops", match: ["/ops", "/records"] },
+  { key: "meetings", label: "회의", icon: "💬", href: "/meetings", match: ["/meetings"] },
+  { key: "events", label: "행사", icon: "🎉", href: "/events", match: ["/events"] },
+  { key: "proposals", label: "제안·채택", icon: "📝", href: "/proposals", match: ["/proposals", "/adopted", "/ai-manual"] },
 ];
 
 function activeKey(pathname: string | null): string {
-  if (!pathname) return "board";
+  if (!pathname) return "manual";
   let best = "";
   let bestLen = -1;
   for (const t of TABS) {
@@ -25,16 +26,16 @@ function activeKey(pathname: string | null): string {
       }
     }
   }
-  return best || "board";
+  return best || "manual";
 }
 
-export default function WorkTabs() {
+export default function DocsTabs() {
   const pathname = usePathname();
   const router = useRouter();
   const active = activeKey(pathname);
   return (
     <div className="mb-3 flex flex-wrap items-center gap-x-1 gap-y-1 border-b border-slate-200 print:hidden">
-      <span className="mr-2 text-base font-extrabold text-blue-700">🗂️ 업무</span>
+      <span className="mr-2 text-base font-extrabold text-amber-700">📚 문서 · 기록</span>
       {TABS.map((t) => {
         const on = t.key === active;
         return (
@@ -46,7 +47,7 @@ export default function WorkTabs() {
             className={
               "relative -mb-px rounded-t-lg px-3 py-2 text-sm font-semibold transition-colors " +
               (on
-                ? "border-b-2 border-blue-600 text-blue-700"
+                ? "border-b-2 border-amber-600 text-amber-700"
                 : "border-b-2 border-transparent text-slate-500 hover:bg-slate-50 hover:text-slate-800")
             }
           >

@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import type { Proposal, ProposalSourceContext } from "@/lib/types";
 import ProposalsClient from "@/components/proposals/ProposalsClient";
-import WorkTabs from "@/components/work/WorkTabs";
+import DocsTabs from "@/components/documents/DocsTabs";
 
 export const dynamic = "force-dynamic";
 
@@ -68,7 +68,7 @@ export default async function ProposalsPage() {
 
   return (
     <div className="p-4 sm:p-6">
-      <WorkTabs />
+      <DocsTabs />
       <ProposalsClient initialItems={items} sourceContext={sourceContext} />
     </div>
   );

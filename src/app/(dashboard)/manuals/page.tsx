@@ -3,6 +3,7 @@ import type { ManualSection, ManualReviewFlag } from "@/lib/types";
 import ManualsClient from "@/components/manuals/ManualsClient";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isAdminUser } from "@/lib/roles";
+import DocsTabs from "@/components/documents/DocsTabs";
 
 export const dynamic = "force-dynamic";
 
@@ -58,7 +59,9 @@ export default async function ManualsPage({
   const initialDoc = doc === "학부모용" || doc === "실무자용" ? doc : undefined;
 
   return (
-    <ManualsClient
+    <div className="p-4 sm:p-6">
+      <DocsTabs />
+      <ManualsClient
       initialItems={(data as ManualSection[]) ?? []}
       initialDoc={initialDoc}
       me={me ? { email: me.email, name: me.name || me.email } : null}
@@ -66,5 +69,6 @@ export default async function ManualsPage({
       initialReviewFlags={(flagRows as ManualReviewFlag[]) ?? []}
       isAdmin={isAdminUser(me ? { email: me.email, position: me.position, previewOf: me.previewOf } : null)}
     />
+    </div>
   );
 }

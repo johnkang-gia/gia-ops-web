@@ -10,6 +10,7 @@ const TABS: { key: string; label: string; icon: string; href: string; match: str
   { key: "overview", label: "개요", icon: "📊", href: "/school/overview", match: ["/school/overview"] },
   { key: "students", label: "학생 조회", icon: "🎓", href: "/students", match: ["/students"] },
   { key: "staff", label: "교직원", icon: "🧑‍💼", href: "/staff", match: ["/staff"] },
+  // 사이드바 서브메뉴와 항상 같은 항목·같은 순서입니다(요청: "상단탭이랑 서브메뉴랑 일치").
   { key: "roster", label: "명부 관리", icon: "📇", href: "/weekly-report/admin/students", match: ["/weekly-report/admin/students"] },
   { key: "classes", label: "반·과목", icon: "🏫", href: "/weekly-report/admin/classes", match: ["/weekly-report/admin/classes", "/weekly-report/admin/subjects"] },
   { key: "timetable", label: "수업·시간표", icon: "🗓️", href: "/school/timetable", match: ["/school/timetable"] },

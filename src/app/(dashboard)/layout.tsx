@@ -173,21 +173,28 @@ function buildSchoolCategory(isAdmin: boolean, isStaffOrAbove: boolean): NavCate
 // 쓰는 것 → 가끔 고치는 기준정보"로 바꿨습니다 - 예전에는 기준정보가 먼저 나와서, 하루에 몇 번씩
 // 여는 하원 체크표가 목록 아래쪽에 있었습니다.
 function buildShuttleCategory(isStaffOrAbove: boolean): NavCategory {
+  // 셔틀 하위메뉴를 목적별 3그룹으로 분류합니다(요청: "셔틀쪽 메뉴들 너무 복잡해졌어, 통합할거
+  // 통합하고 분류할거 분류"): ① 매일 하원 운영(매일 쓰는 것) ② 기준정보·설정(학기 초에 한 번
+  // 세팅하고 가끔 손대는 것) ③ 기록·분석(쌓인 데이터 보기).
+  // 셔틀 하위메뉴를 목적별 3그룹으로 분류합니다(요청: "셔틀쪽 메뉴들 너무 복잡해졌어, 통합할거
+  // 통합하고 분류할거 분류"): ① 매일 하원 운영(매일 쓰는 것) ② 기준정보·설정(학기 초에 한 번
+  // 세팅하고 가끔 손대는 것) ③ 기록·분석(쌓인 데이터 보기).
   const items: NavLeaf[] = [
-    { href: "/shuttle/checklist", label: "하원 체크표", icon: "📋" },
+    { href: "/shuttle/checklist", label: "하원 체크표", icon: "📋", dividerBefore: "매일 하원 운영" },
     // 요청: "전체 학부모의 채팅을 하나하나 실시간으로 보면서 아이들의 픽업을 처리하는게 너무
     // 힘든데" - 토들·전화·교사·직접입력 어디로 들어온 픽업이든 여기 한 곳에 모입니다.
     { href: "/pickup/inbox", label: "픽업 인박스", icon: "📥" },
     { href: "/shuttle/live", label: "실시간 위치", icon: "📍" },
+    { href: "/shuttle/regions", label: "지역별 현황", icon: "🗺️" },
   ];
   if (isStaffOrAbove) {
     items.push(
-      { href: "/shuttle/routes", label: "노선 관리", icon: "🛣️", dividerBefore: "기준정보" },
+      { href: "/shuttle/routes", label: "노선 관리", icon: "🛣️", dividerBefore: "기준정보 · 설정" },
       { href: "/shuttle/students", label: "탑승 배정", icon: "🧑‍🎓" },
       { href: "/shuttle", label: "배차표 · 인쇄", icon: "🖨️" },
       { href: "/shuttle/pilot", label: "링크 · 기기 관리", icon: "🔗" },
       { href: "/shuttle/track-test", label: "GPS 테스트(내 폰)", icon: "🛰️" },
-      { href: "/shuttle/stop-times", label: "정류장 도착시간", icon: "⏱️" }
+      { href: "/shuttle/stop-times", label: "정류장 도착시간", icon: "⏱️", dividerBefore: "기록 · 분석" }
     );
   }
   // 카테고리를 직접 누르면 지역별 현황이 열립니다(요청: "셔틀메뉴를 눌렀을 때, 지역셔틀현황이

@@ -5,6 +5,7 @@ import { getCurrentTerm } from "@/lib/currentTerm";
 import type { WrClass, WrStudent } from "@/lib/types";
 import StudentReportBoard from "@/components/weeklyReport/StudentReportBoard";
 import GuideButton from "@/components/common/GuideButton";
+import TeacherTabs from "@/components/teacher/TeacherTabs";
 import { getLang } from "@/lib/langServer";
 import { makeT, type T } from "@/lib/lang";
 import { classLabel } from "@/lib/i18nLabels";
@@ -62,6 +63,7 @@ export default async function HomeroomPage() {
 
   return (
     <div className="mx-auto max-w-5xl">
+      <TeacherTabs isHomeroom />
       <div className="mb-1 flex items-center justify-between gap-2">
         <h1 className="text-lg font-bold">{t("내 담임반", "My Homeroom")}</h1>
         <GuideButton title={t("내 담임반 사용 가이드", "My Homeroom guide")} sections={guideSections(t)} />

@@ -365,7 +365,7 @@ export default async function DashboardLayout({
   // 교사는 로그인하면 "우리 반 현황"(자기반 문의·픽업 대시보드)이 첫 화면입니다(요청: "교사
   // 권한으로 로그인했을때 (...) 제일 첫화면으로 나오는 대시보드"). 담임 배정이 없는 과목 교사는
   // 볼 문의가 없으므로 기존처럼 위클리 리포트를 첫 화면으로 둡니다.
-  const homeHref = isTeacher ? (isHomeroomTeacher ? "/my-class" : "/weekly-report") : "/home";
+  const homeHref = isTeacher ? "/my-class" : "/home";
 
   // 교사는 GIA ops/업무 등 다른 메뉴를 아예 볼 수 없고 위클리 리포트만 보입니다(계약직으로
   // 짧게 근무할 수도 있어 내부 문서 성격의 다른 메뉴를 감춥니다 - middleware.ts에서 실제
@@ -373,20 +373,21 @@ export default async function DashboardLayout({
   let categories: NavCategory[];
   if (isTeacher) {
     categories = [
-      // 담임 선생님에게만 "우리 반 현황"(자기반 문의·픽업)을 첫 항목으로 둡니다.
+      // 교사 로그인 첫 화면 = "우리 반 개요"(담임) / "내 시간표"(과목). 상단탭 고정으로 다른
+      // 교사 화면(주간 리포트·픽업·행정실 문의)으로 이동합니다(요청 3).
+      { key: "myclass", label: isHomeroomTeacher ? "우리 반 개요" : "내 시간표", labelEn: isHomeroomTeacher ? "My Class" : "My Schedule", icon: "🏫", href: "/my-class", accent: "teal" },
+      // 주간 리포트는 담임 선생님만 작성합니다(요청 3: 내 과목 없애기).
       ...(isHomeroomTeacher
-        ? [{ key: "myclass", label: "우리 반 현황", labelEn: "My Class", icon: "🏫", href: "/my-class", accent: "teal" } as NavCategory]
+        ? [{ key: "homeroom", label: "주간 리포트", labelEn: "Weekly Report", icon: "📝", href: "/weekly-report/homeroom", accent: "teal" } as NavCategory]
         : []),
-      { key: "homeroom", label: "내 담임반", labelEn: "My Homeroom", icon: "🏠", href: "/weekly-report/homeroom", accent: "teal" },
-      { key: "subjects", label: "내 담당과목", labelEn: "My Subjects", icon: "📘", href: "/weekly-report/subjects", accent: "teal" },
       // 실시간 셔틀은 교사 메뉴에서 뺐습니다(요청: "교사화면에서 실시간 셔틀은 안보여도 되고").
-      // 대신 담임 선생님이 학부모께 직접 연락받은 픽업을 체크하는 화면을 둡니다(요청: "교사가
-      // 전화나, 다른 메세지로 픽업을 받은 경우, 체크를 할 수 있도록... 담임교사는 자기 반만
-      // 보이고, 과목교사선생님은 보이지 않도록"). 담임 배정이 없는 과목 교사에게는 이 항목
-      // 자체가 뜨지 않습니다(아래 isHomeroomTeacher).
+      // 대신 담임 선생님이 학부모께 직접 연락받은 픽업을 체크하는 화면을 둡니다. 담임 배정이
+      // 없는 과목 교사에게는 이 항목 자체가 뜨지 않습니다.
       ...(isHomeroomTeacher
-        ? [{ key: "pickup", label: "내 반 픽업 체크", labelEn: "Pickup Check", icon: "🚗", href: "/pickup", accent: "teal" } as NavCategory]
+        ? [{ key: "pickup", label: "우리 반 픽업", labelEn: "Pickup Check", icon: "🚗", href: "/pickup", accent: "teal" } as NavCategory]
         : []),
+      // 담임/과목 선생님 → 행정실 문의·도움요청 창구(요청 4).
+      { key: "office", label: "행정실 문의", labelEn: "Office Request", icon: "💬", href: "/my-class/office", accent: "teal" },
       // 학사일정은 교사에게는 감춥니다(요청: "교사권한은 학사일정 안보이게"). 예전에는 이 자리에
       // "행정요청" 메뉴가 있었지만 제거되었습니다(요청: "행정요청도 없애줘, 구글챗 미러링이
       // 된다면 행정요청도 여기로 받을거라서 상관없어") - 교사는 계속 구글챗으로 행정직원에게

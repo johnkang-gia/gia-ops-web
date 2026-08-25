@@ -42,10 +42,10 @@ export default async function ShuttleOverviewPage() {
   };
 
   // 정류장 → 배정 → 오늘 탑승자(요일 포함)
-  let stops: { id: string; route_id: string; seq: number }[] = [];
+  let stops: { id: string; route_id: string; seq: number; gu: string | null; dong: string | null }[] = [];
   let assigns: { id: string; stop_id: string; student_name_raw: string; weekdays: number[] }[] = [];
   if (routeIds.length) {
-    const { data: s } = await supabase.from("shuttle_stops").select("id, route_id, seq").in("route_id", routeIds);
+    const { data: s } = await supabase.from("shuttle_stops").select("id, route_id, seq, gu, dong").in("route_id", routeIds);
     stops = s ?? [];
     const stopIds = stops.map((x) => x.id);
     if (stopIds.length) {
@@ -57,6 +57,24 @@ export default async function ShuttleOverviewPage() {
     }
   }
   const routeByStop = new Map(stops.map((s) => [s.id, s.route_id]));
+
+  // 노선(호차)별 대표 구 + 동 목록(요청: 지역을 호차 표에 통합). 정류장이 가장 많은 구를 대표로.
+  const geoByRoute = new Map<string, { primaryGu: string | null; dongs: string[] }>();
+  {
+    const acc = new Map<string, { guCount: Map<string, number>; dongs: Set<string> }>();
+    for (const s of stops) {
+      const e = acc.get(s.route_id) ?? { guCount: new Map<string, number>(), dongs: new Set<string>() };
+      if (s.gu) e.guCount.set(s.gu, (e.guCount.get(s.gu) ?? 0) + 1);
+      if (s.dong) e.dongs.add(s.dong);
+      acc.set(s.route_id, e);
+    }
+    for (const [rid, e] of acc) {
+      let primaryGu: string | null = null;
+      let best = 0;
+      for (const [g, c] of e.guCount) if (c > best) { best = c; primaryGu = g; }
+      geoByRoute.set(rid, { primaryGu, dongs: [...e.dongs] });
+    }
+  }
 
   // 오늘 픽업/결석(체크표와 동일: pickup_requests)
   const { data: preq } = await supabase
@@ -208,9 +226,12 @@ export default async function ShuttleOverviewPage() {
     const delayMin = avg != null && todayLast != null ? Math.round(todayLast - avg) : null;
     const skipStops = perRouteSkips.get(rid) ?? 0;
     const adjustedLast = avg != null && skipStops > 0 ? fmtMin(Math.max(0, avg - skipStops * MIN_PER_STOP)) : null;
+    const geo = geoByRoute.get(rid);
     return {
       routeNo: r.route_no as string,
       name: (r.name as string | null) ?? null,
+      gu: geo?.primaryGu ?? null,
+      dong: geo && geo.dongs.length > 0 ? geo.dongs.join(", ") : null,
       driver: (r.driver_name as string | null) ?? null,
       vehicleNo: (r.vehicle_no as string | null) ?? null,
       color: routeColorAt(i, routes.length),

@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import SchoolTabs from "./SchoolTabs";
 
@@ -78,7 +78,6 @@ export default function SchoolOverviewClient({
   term: TermInfo | null;
   date: string;
 }) {
-  const [openClass, setOpenClass] = useState<string | null>(null);
   const maxGrade = Math.max(1, ...grades.map((g) => g.count));
   const maxDept = Math.max(1, ...deptCounts.map((d) => d.count));
   const [barW, setBarW] = useState(0);
@@ -86,6 +85,19 @@ export default function SchoolOverviewClient({
     const t = setTimeout(() => setBarW(1), 50);
     return () => clearTimeout(t);
   }, []);
+
+  // 반을 학년별로 묶습니다(요청: 학년 위젯 → 반 위젯 → 학생 이름 뱃지의 3중 위젯 구조).
+  const gradeGroups: { grade: string; classes: ClassRow[] }[] = [];
+  {
+    const order: string[] = [];
+    const map = new Map<string, ClassRow[]>();
+    for (const c of classRows) {
+      const g = c.grade || "";
+      if (!map.has(g)) { map.set(g, []); order.push(g); }
+      map.get(g)!.push(c);
+    }
+    for (const g of order) gradeGroups.push({ grade: g, classes: map.get(g)! });
+  }
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -139,70 +151,56 @@ export default function SchoolOverviewClient({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1.5fr_1fr]">
-        {/* 반별 현황 (담임 + 학생 펼치기) */}
-        <div className="rounded-2xl border border-slate-200 bg-white p-4">
-          <div className="mb-2 flex items-center justify-between">
-            <b className="text-sm">반별 현황 · 담임 · 학생</b>
-            <span className="text-[11px] text-slate-400">반을 누르면 학생 명단 · 담임 미배정 {kpi.noHomeroom}</span>
-          </div>
-          <div className="max-h-[460px] overflow-y-auto">
-            <table className="w-full border-collapse text-sm">
-              <thead className="sticky top-0 bg-white">
-                <tr className="border-b border-slate-200 text-left text-xs text-slate-500">
-                  <th className="px-2 py-1.5 font-semibold">학년</th>
-                  <th className="px-2 py-1.5 font-semibold">반</th>
-                  <th className="px-2 py-1.5 font-semibold">담임</th>
-                  <th className="px-2 py-1.5 text-center font-semibold">학생</th>
-                </tr>
-              </thead>
-              <tbody>
-                {classRows.length === 0 ? (
-                  <tr><td colSpan={4} className="px-2 py-6 text-center text-slate-400">등록된 반이 없습니다.</td></tr>
-                ) : (
-                  classRows.map((c, i) => {
-                    const key = `${c.grade}-${c.className}-${i}`;
-                    const open = openClass === key;
-                    return (
-                      <Fragment key={key}>
-                        <tr
-                          className="cursor-pointer border-b border-slate-100 hover:bg-purple-50/40"
-                          onClick={() => setOpenClass(open ? null : key)}
-                        >
-                          <td className="px-2 py-1.5 text-xs text-slate-500">{c.grade || "-"}</td>
-                          <td className="px-2 py-1.5 font-semibold text-slate-700">
-                            <span className="mr-1 text-purple-300">{open ? "▾" : "▸"}</span>
-                            {c.className || "-"}
-                          </td>
-                          <td className={"px-2 py-1.5 " + (c.teacher ? "text-slate-600" : "font-semibold text-red-500")}>{c.teacher ?? "미배정"}</td>
-                          <td className="px-2 py-1.5 text-center tabular-nums text-slate-700">{c.students}</td>
-                        </tr>
-                        {open && (
-                          <tr className="border-b border-slate-100 bg-slate-50/60">
-                            <td colSpan={4} className="px-3 py-2">
-                              {c.studentNames.length === 0 ? (
-                                <span className="text-xs text-slate-400">학생 정보가 없습니다.</span>
-                              ) : (
-                                <div className="flex flex-wrap gap-1">
-                                  {c.studentNames.map((n, j) => (
-                                    <span key={j} className="rounded-full bg-white px-2 py-0.5 text-[11px] text-slate-600 shadow-sm">{n}</span>
-                                  ))}
-                                </div>
-                              )}
-                            </td>
-                          </tr>
-                        )}
-                      </Fragment>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+      {/* 학년 → 반 → 학생 위젯(요청: 학년 위젯 안에 반 위젯, 반 위젯 안에 학생 이름 뱃지) */}
+      <div className="mb-3 rounded-2xl border border-slate-200 bg-white p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <b className="text-sm">학년 · 반 · 학생 현황</b>
+          <span className="text-[11px] text-slate-400">반을 학년별로 묶어 한눈에 · 담임 미배정 {kpi.noHomeroom}</span>
         </div>
+        {gradeGroups.length === 0 ? (
+          <p className="text-xs text-slate-400">등록된 반이 없습니다.</p>
+        ) : (
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {gradeGroups.map((g, gi) => {
+              const accent = barColors[gi % barColors.length];
+              const total = g.classes.reduce((s, c) => s + c.students, 0);
+              return (
+                <div key={g.grade || gi} className="rounded-xl border border-slate-200 bg-slate-50/50 p-2.5" style={{ borderTopColor: accent, borderTopWidth: 3 }}>
+                  <div className="mb-2 flex items-center justify-between px-0.5">
+                    <b className="text-[13px]" style={{ color: accent }}>{g.grade || "학년 미상"}</b>
+                    <span className="text-[11px] text-slate-400">{g.classes.length}반 · {total}명</span>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    {g.classes.map((c, ci) => (
+                      <div key={ci} className="rounded-lg border border-slate-200 bg-white p-2 transition-all hover:shadow-sm">
+                        <div className="mb-1 flex items-center justify-between gap-2">
+                          <span className="text-[12px] font-bold text-slate-700">{c.className || "-"}</span>
+                          <span className={"shrink-0 text-[10px] " + (c.teacher ? "text-slate-500" : "font-bold text-red-500")}>
+                            {c.teacher ? `👤 ${c.teacher}` : "⚠ 담임 미배정"}
+                            <span className="ml-1 rounded-full bg-slate-100 px-1 py-0.5 tabular-nums text-slate-400">{c.students}</span>
+                          </span>
+                        </div>
+                        {c.studentNames.length === 0 ? (
+                          <span className="text-[10px] text-slate-300">학생 없음</span>
+                        ) : (
+                          <div className="flex flex-wrap gap-1">
+                            {c.studentNames.map((n, j) => (
+                              <span key={j} className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600">{n}</span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
-        {/* 우측: 학년 분포 + 과목·선생님 + 학사일정 */}
-        <div className="flex flex-col gap-3">
+      {/* 학년별 재학생 분포 + 과목·선생님 + 학사일정 */}
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
           <div className="rounded-2xl border border-slate-200 bg-white p-4">
             <div className="mb-3 flex items-center justify-between">
               <b className="text-sm">학년별 재학생</b>
@@ -258,7 +256,6 @@ export default function SchoolOverviewClient({
               </div>
             )}
           </div>
-        </div>
       </div>
     </div>
   );

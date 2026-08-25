@@ -17,10 +17,13 @@ export default function ShuttleRegionDashboard({
   routes,
   stops,
   assignments,
+  hideList = false,
 }: {
   routes: ShuttleRoute[];
   stops: ShuttleStop[];
   assignments: Pick<ShuttleAssignment, "stop_id">[];
+  // 개요 상단에 지도만 크게 쓸 때(전체 노선 목록은 개요의 통합 표로 관리) 아래 리스트를 감춥니다.
+  hideList?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [selectedGu, setSelectedGu] = useState<string | null>(null);
@@ -154,7 +157,7 @@ export default function ShuttleRegionDashboard({
         )}
       </div>
 
-      <div className="flex min-h-0 flex-[3] gap-3">
+      <div className={"flex min-h-0 gap-3 " + (hideList ? "flex-1" : "flex-[3]")}>
         <div className="min-w-0 flex-1 overflow-hidden rounded-xl border border-slate-200 bg-white p-2">
           <SeoulGuMap counts={guCounts} selected={selectedGu} onSelect={(gu) => setSelectedGu((prev) => (prev === gu ? null : gu))} matches={guMatchesQuery} />
         </div>
@@ -218,6 +221,7 @@ export default function ShuttleRegionDashboard({
         </div>
       </div>
 
+      {!hideList && (
       <div className="min-h-0 flex-[2] overflow-y-auto rounded-xl border border-slate-200 bg-white p-3">
         <p className="mb-2 text-xs font-bold text-slate-700">전체 노선 - 지역순 · 호차 오름차순 ({fullList.length})</p>
         <table className="w-full text-left text-[11px]">
@@ -278,6 +282,7 @@ export default function ShuttleRegionDashboard({
           </tbody>
         </table>
       </div>
+      )}
     </div>
   );
 }

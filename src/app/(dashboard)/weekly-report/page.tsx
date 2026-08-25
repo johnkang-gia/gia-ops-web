@@ -2,7 +2,6 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isDeveloperEmail } from "@/lib/roles";
-import { getT } from "@/lib/langServer";
 
 export const dynamic = "force-dynamic";
 
@@ -22,24 +21,13 @@ export default async function WeeklyReportLandingPage() {
     redirect("/weekly-report/students");
   }
 
-  // 교사 - 담임반이 있으면 담임반으로, 없으면 담당과목으로, 둘 다 없으면 안내 메시지.
-  const [{ data: classes }, { data: subjects }] = await Promise.all([
-    supabase.from("wr_classes").select("id").or(`teacher_email.eq.${email},sub_teacher_email.eq.${email}`),
-    supabase.from("wr_subjects").select("id").eq("teacher_email", email),
-  ]);
+  // 주간 리포트는 담임 선생님만 작성합니다(요청 3: 내 과목 없애고 담임만). 담임반이 있으면
+  // 담임 리포트로, 없으면(과목 선생님) 내 시간표 개요로 보냅니다.
+  const { data: classes } = await supabase
+    .from("wr_classes")
+    .select("id")
+    .or(`teacher_email.eq.${email},sub_teacher_email.eq.${email}`);
 
   if ((classes?.length ?? 0) > 0) redirect("/weekly-report/homeroom");
-  if ((subjects?.length ?? 0) > 0) redirect("/weekly-report/subjects");
-
-  const t = await getT();
-  return (
-    <div className="mx-auto max-w-lg py-16 text-center">
-      <p className="text-lg font-semibold text-slate-700">
-        {t("아직 배정된 담임반/담당과목이 없습니다.", "No homeroom class or subject is assigned to you yet.")}
-      </p>
-      <p className="mt-3 text-sm text-slate-400">
-        {t("관리자에게 반 또는 과목 배정을 요청해주세요.", "Please ask an administrator to assign you a class or subject.")}
-      </p>
-    </div>
-  );
+  redirect("/my-class");
 }

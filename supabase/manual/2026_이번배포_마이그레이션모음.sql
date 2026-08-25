@@ -314,4 +314,28 @@ values
 on conflict (id) do update
   set name = excluded.name, teacher_name = excluded.teacher_name, color = excluded.color;
 
+
+-- ===== 행정실 문의 창구 (교사→행정실, 요청 4) =====
+create table if not exists public.teacher_office_requests (
+  id uuid primary key default gen_random_uuid(),
+  teacher_email text not null,
+  teacher_name text,
+  class_label text,
+  category text not null default '문의',
+  message text not null,
+  status text not null default '접수',
+  is_demo boolean not null default false,
+  created_at timestamptz not null default now(),
+  resolved_at timestamptz
+);
+create index if not exists teacher_office_requests_open_idx on public.teacher_office_requests (status, created_at desc);
+create index if not exists teacher_office_requests_teacher_idx on public.teacher_office_requests (teacher_email, created_at desc);
+alter table public.teacher_office_requests enable row level security;
+drop policy if exists teacher_office_requests_select on public.teacher_office_requests;
+create policy teacher_office_requests_select on public.teacher_office_requests for select using (auth.role() = 'authenticated');
+drop policy if exists teacher_office_requests_insert on public.teacher_office_requests;
+create policy teacher_office_requests_insert on public.teacher_office_requests for insert with check (auth.role() = 'authenticated');
+drop policy if exists teacher_office_requests_update on public.teacher_office_requests;
+create policy teacher_office_requests_update on public.teacher_office_requests for update using (auth.role() = 'authenticated');
+
 commit;

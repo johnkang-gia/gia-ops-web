@@ -11,6 +11,8 @@ import ShuttleRegionDashboard from "./ShuttleRegionDashboard";
 export type RouteStat = {
   routeNo: string;
   name: string | null;
+  gu: string | null;
+  dong: string | null;
   driver: string | null;
   vehicleNo: string | null;
   color: string;
@@ -118,7 +120,7 @@ export default function ShuttleOverviewClient({
   const gpsColor = (g: RouteStat["gps"]) => (g === "live" ? "#16a34a" : g === "idle" ? "#f59e0b" : "#cbd5e1");
 
   return (
-    <div className="mx-auto max-w-6xl">
+    <div className="w-full">
       <style>{`
         @keyframes gpspulse { 0%,100%{transform:scale(1);opacity:1} 50%{transform:scale(1.6);opacity:.35} }
         @keyframes rise { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
@@ -127,10 +129,11 @@ export default function ShuttleOverviewClient({
 
       <div className="mb-3 text-right text-xs text-slate-400">정규학기 · {date}</div>
 
-      {/* 실시간·지역 지도(요청: 실시간·지역 탭을 개요에 통합, 맨 위에 지도). */}
+      {/* 실시간·지역 지도(요청: 맨 위에는 지도만 크게. 구를 누르면 그 지역 노선이 옆에 뜸.
+          전체 노선 목록은 아래 통합 표로 관리하므로 지도 아래 리스트는 감춥니다). */}
       {regionRoutes.length > 0 && (
-        <div className="ov-rise mb-3 h-[420px] overflow-hidden rounded-2xl border border-slate-200 bg-white">
-          <ShuttleRegionDashboard routes={regionRoutes} stops={regionStops} assignments={regionAssignments} />
+        <div className="ov-rise mb-3 h-[600px] overflow-hidden rounded-2xl border border-slate-200 bg-white p-3">
+          <ShuttleRegionDashboard routes={regionRoutes} stops={regionStops} assignments={regionAssignments} hideList />
         </div>
       )}
 
@@ -294,7 +297,17 @@ export default function ShuttleOverviewClient({
                 <td className="px-3 py-1.5 font-bold" style={{ color: r.color }}>
                   {r.routeNo}호
                 </td>
-                <td className="px-3 py-1.5 text-xs text-slate-600">{r.name ?? "-"}</td>
+                <td className="px-3 py-1.5 text-xs text-slate-600">
+                  {r.gu || r.dong ? (
+                    <>
+                      {r.gu && <span className="font-semibold text-slate-700">{r.gu}</span>}
+                      {r.dong && <span className="text-slate-400"> · {r.dong}</span>}
+                      {r.name && <div className="text-[10px] text-slate-400">{r.name}</div>}
+                    </>
+                  ) : (
+                    r.name ?? "-"
+                  )}
+                </td>
                 <td className="px-3 py-1.5 text-xs text-slate-500">
                   {r.driver ?? "-"}
                   {r.vehicleNo ? ` · ${r.vehicleNo}` : ""}

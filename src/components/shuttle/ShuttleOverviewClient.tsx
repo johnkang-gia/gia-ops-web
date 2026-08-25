@@ -58,14 +58,6 @@ function Kpi({ label, value, tone, sub }: { label: string; value: number; tone: 
   );
 }
 
-const TABS = [
-  { key: "overview", label: "개요", href: "/shuttle/overview", icon: "📊" },
-  { key: "checklist", label: "하원 체크표", href: "/shuttle/checklist", icon: "📋" },
-  { key: "live", label: "실시간·지역", href: "/shuttle/regions", icon: "🗺️" },
-  { key: "routes", label: "노선·배정", href: "/shuttle/routes", icon: "🛣️" },
-  { key: "records", label: "기록·분석", href: "/shuttle/stop-times", icon: "⏱️" },
-];
-
 export default function ShuttleOverviewClient({
   date,
   kpi,
@@ -108,29 +100,7 @@ export default function ShuttleOverviewClient({
         .ov-rise{animation:rise .4s ease both}
       `}</style>
 
-      {/* 상단: 타이틀 + 탭 */}
-      <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-slate-200 pb-2">
-        <h1 className="text-lg font-extrabold">🚌 셔틀</h1>
-        <div className="flex gap-1 text-sm font-semibold">
-          {TABS.map((t) => (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => router.push(t.href)}
-              className={
-                "rounded-t-md px-3 py-1.5 transition-colors " +
-                (t.key === "overview"
-                  ? "border-b-2 border-gia-navy text-gia-navy"
-                  : "border-b-2 border-transparent text-slate-500 hover:text-slate-800")
-              }
-            >
-              <span className="mr-1">{t.icon}</span>
-              {t.label}
-            </button>
-          ))}
-        </div>
-        <div className="ml-auto text-xs text-slate-400">정규학기 · {date}</div>
-      </div>
+      <div className="mb-3 text-right text-xs text-slate-400">정규학기 · {date}</div>
 
       {/* KPI row: 도넛 + 카드 */}
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">

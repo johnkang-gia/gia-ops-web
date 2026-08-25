@@ -4,6 +4,7 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import TaskHistoryClient from "@/components/work/TaskHistoryClient";
 import type { Task, Term, TeamMember, Department } from "@/lib/types";
 import GuideButton from "@/components/common/GuideButton";
+import WorkTabs from "@/components/work/WorkTabs";
 
 const GUIDE_SECTIONS = [
   {
@@ -35,6 +36,7 @@ export default async function WorkHistoryPage() {
 
   return (
     <div className="flex flex-col">
+      <WorkTabs />
       <div className="flex justify-end">
         <GuideButton title="지난 업무 사용 가이드" sections={GUIDE_SECTIONS} />
       </div>

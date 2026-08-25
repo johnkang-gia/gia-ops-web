@@ -108,17 +108,31 @@ async function DisabledFeaturesSection() {
 // ── 업무 ────────────────────────────────────────────────────────────────────
 // 가장 자주 여는 화면이라 맨 위에 둡니다. 예전에는 하위 화면(보고서·지난 업무·휴지통)이 메뉴에
 // 없어서 업무 보드 안에서만 오갈 수 있었는데, 부메뉴로 꺼내 바로 갈 수 있게 했습니다.
-function buildWorkCategory(): NavCategory {
+// 업무는 "이 메뉴만 띄워두고도 모든 상황을 확인·처리하는 관제탑"입니다(요청). 그래서 개요
+// 대시보드를 맨 앞에 두고, 예전 [기록] 대분류(사건·회의·행사·제안·채택)를 업무 안으로 흡수해
+// 7→5 대분류로 줄였습니다. 각 업무 화면 상단에는 WorkTabs(개요·보드·보고서·기록·제안·보관)가
+// 고정으로 붙습니다.
+function buildWorkCategory(pendingProposals: number, pendingAdopted: number): NavCategory {
   return {
     key: "work",
     label: "업무",
     icon: "🗂️",
     accent: "blue",
-    href: "/work",
+    href: "/work/overview",
     items: [
+      { href: "/work/overview", label: "개요 대시보드", icon: "📊" },
       { href: "/work", label: "업무 보드", icon: "🗂️" },
-      { href: "/work/report", label: "업무 보고서", icon: "📊" },
-      { href: "/work/history", label: "지난 업무", icon: "🗃️", dividerBefore: "" },
+      { href: "/work/report", label: "업무 보고서", icon: "📈" },
+      // 예전 [기록] 대분류를 흡수(요청: 대분류 통합).
+      { href: "/ops", label: "등록사건목록", icon: "📋", dividerBefore: "기록" },
+      { href: "/records", label: "사건기록", icon: "🗂️" },
+      { href: "/meetings", label: "회의기록", icon: "💬" },
+      { href: "/events", label: "행사기록", icon: "🎉" },
+      { href: "/meetings/report", label: "회의 보고서", icon: "📊" },
+      { href: "/ai-manual", label: "AI 매뉴얼 작성", icon: "✨", dividerBefore: "개선 제안" },
+      { href: "/proposals", label: "제안함", icon: "📝", badge: pendingProposals },
+      { href: "/adopted", label: "채택예정", icon: "📬", badge: pendingAdopted },
+      { href: "/work/history", label: "지난 업무", icon: "🗃️", dividerBefore: "보관" },
       { href: "/work/trash", label: "휴지통", icon: "🗑️" },
     ],
   };
@@ -201,30 +215,6 @@ function buildShuttleCategory(isStaffOrAbove: boolean): NavCategory {
   // 카테고리를 직접 누르면 지역별 현황이 열립니다(요청: "셔틀메뉴를 눌렀을 때, 지역셔틀현황이
   // 그냥 먼저 나오도록 해주고 부메뉴에서는 없애줘").
   return { key: "shuttle", label: "셔틀", icon: "🚌", accent: "blue", href: "/shuttle/overview", items };
-}
-
-// ── 기록 ────────────────────────────────────────────────────────────────────
-// 예전 이름은 "운영 관리"였는데, 실제로 하는 일은 "일어난 일을 남기고 → 거기서 개선안을 뽑아 →
-// 매뉴얼로 발행"하는 한 줄기라 이름을 [기록]으로 바꿨습니다. 무엇을 하는 메뉴인지 이름만 보고
-// 알 수 있어야 새 사람이 헤매지 않습니다.
-function buildRecordsCategory(pendingProposals: number, pendingAdopted: number): NavCategory {
-  return {
-    key: "records",
-    label: "기록",
-    icon: "📋",
-    accent: "navy",
-    // 카테고리를 누르면 "무슨 일이 있었는지" 훑어보는 등록사건목록 대시보드가 열립니다.
-    href: "/ops",
-    items: [
-      { href: "/records", label: "사건기록", icon: "📋" },
-      { href: "/meetings", label: "회의기록", icon: "💬" },
-      { href: "/events", label: "행사기록", icon: "🎉" },
-      { href: "/meetings/report", label: "회의 보고서", icon: "📊", dividerBefore: "" },
-      { href: "/ai-manual", label: "AI 매뉴얼 작성", icon: "✨", dividerBefore: "개선 제안" },
-      { href: "/proposals", label: "제안함", icon: "📝", badge: pendingProposals },
-      { href: "/adopted", label: "채택예정", icon: "📬", badge: pendingAdopted },
-    ],
-  };
 }
 
 // ── 문서·매뉴얼 ─────────────────────────────────────────────────────────────
@@ -404,10 +394,9 @@ export default async function DashboardLayout({
       //
       // 순서는 "얼마나 자주 여는가"입니다. 업무와 셔틀은 매일 여러 번, 학교·기록은 필요할 때,
       // 문서는 찾아볼 때, 관리는 가끔입니다.
-      buildWorkCategory(),
+      buildWorkCategory(pendingProposals, pendingAdopted),
       buildSchoolCategory(isAdmin, isStaffOrAbove),
       ...(isStaffOrAbove ? [buildShuttleCategory(isStaffOrAbove)] : []),
-      buildRecordsCategory(pendingProposals, pendingAdopted),
       buildDocumentsCategory(isAdmin),
       // 출석부 메뉴는 요청("일단 지금 출석부를 쓸건 아니니까 출석부메뉴는 감춰줘")에 따라
       // 당분간 숨겨둡니다. /attendance 화면 자체와 기능은 그대로 남아있어서, 나중에 이 항목의

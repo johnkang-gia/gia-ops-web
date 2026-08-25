@@ -67,14 +67,22 @@ function Kpi({ label, value, tone, sub }: { label: string; value: number; tone: 
   );
 }
 
+export type OverviewNote = { studentName: string; routeNo: string | null; content: string; effLabel: string };
+
 export default function ShuttleOverviewClient({
   date,
   kpi,
   routes,
+  pickupNames = [],
+  absentNames = [],
+  notes = [],
 }: {
   date: string;
   kpi: OverviewKpi;
   routes: RouteStat[];
+  pickupNames?: string[];
+  absentNames?: string[];
+  notes?: OverviewNote[];
 }) {
   const router = useRouter();
   const donutRef = useRef<HTMLDivElement | null>(null);
@@ -222,6 +230,51 @@ export default function ShuttleOverviewClient({
               </span>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* 오늘 픽업·결석 명단 + 지속 특이사항(요청: 숫자만 말고 실제 정보를 자세히). */}
+      <div className="ov-rise mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+          <div className="mb-2 flex items-center gap-3 text-xs font-bold">
+            <span className="text-amber-600">🚗 오늘 픽업 {pickupNames.length}</span>
+            <span className="text-red-500">🚫 결석 {absentNames.length}</span>
+          </div>
+          {pickupNames.length + absentNames.length === 0 ? (
+            <p className="text-xs text-slate-400">오늘 픽업·결석으로 들어온 학생이 없습니다.</p>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {pickupNames.map((n, i) => (
+                <span key={"p" + i} className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+                  {n}
+                </span>
+              ))}
+              {absentNames.map((n, i) => (
+                <span key={"a" + i} className="rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-600 line-through">
+                  {n}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="rounded-2xl border border-orange-200 bg-orange-50/40 p-4">
+          <div className="mb-2 text-xs font-bold text-orange-700">📌 지속 특이사항 {notes.length}건 (셔틀 자동 반영)</div>
+          {notes.length === 0 ? (
+            <p className="text-xs text-slate-400">등록된 지속 특이사항이 없습니다.</p>
+          ) : (
+            <div className="flex flex-col gap-1">
+              {notes.map((n, i) => (
+                <div key={i} className="flex items-center gap-1.5 text-[12px]">
+                  <span className="font-bold text-orange-900">
+                    {n.studentName}
+                    {n.routeNo ? `(${n.routeNo})` : ""}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-orange-800">· {n.content}</span>
+                  <span className="shrink-0 rounded-full bg-orange-100 px-1.5 py-0.5 text-[9px] font-bold text-orange-700">{n.effLabel}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 

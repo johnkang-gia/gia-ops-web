@@ -14,6 +14,7 @@ export type SchoolKpi = {
   reportsThisWeek: number;
 };
 export type SchoolEvent = { date: string; name: string };
+export type ClassRow = { grade: string; className: string; teacher: string | null; students: number };
 
 function useCountUp(target: number, ms = 650) {
   const [v, setV] = useState(0);
@@ -85,11 +86,13 @@ export default function SchoolOverviewClient({
   kpi,
   grades,
   events,
+  classRows,
   date,
 }: {
   kpi: SchoolKpi;
   grades: GradeCount[];
   events: SchoolEvent[];
+  classRows: ClassRow[];
   date: string;
 }) {
   return (
@@ -106,16 +109,58 @@ export default function SchoolOverviewClient({
         <Kpi label="이번주 리포트" value={kpi.reportsThisWeek} tone="#0d9488" sub="위클리 작성" href="/weekly-report/students" />
       </div>
 
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_320px]">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1.5fr_1fr]">
+        {/* 반별 현황(요청: 숫자만 말고 정보를 자세히). 반·담임·학생수를 표로. */}
         <div className="rounded-2xl border border-slate-200 bg-white p-4">
-          <div className="mb-3 flex items-center justify-between">
-            <b className="text-sm">학년별 재학생 분포</b>
-            <span className="text-[11px] text-slate-400">총 {kpi.active}명</span>
+          <div className="mb-2 flex items-center justify-between">
+            <b className="text-sm">반별 현황</b>
+            <span className="text-[11px] text-slate-400">{classRows.length}개 반 · 담임 미배정 {kpi.noHomeroom}</span>
           </div>
-          <GradeBars data={grades} />
+          <div className="max-h-[420px] overflow-y-auto">
+            <table className="w-full border-collapse text-sm">
+              <thead className="sticky top-0 bg-white">
+                <tr className="border-b border-slate-200 text-left text-xs text-slate-500">
+                  <th className="px-2 py-1.5 font-semibold">학년</th>
+                  <th className="px-2 py-1.5 font-semibold">반</th>
+                  <th className="px-2 py-1.5 font-semibold">담임</th>
+                  <th className="px-2 py-1.5 text-center font-semibold">학생</th>
+                </tr>
+              </thead>
+              <tbody>
+                {classRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="px-2 py-6 text-center text-slate-400">
+                      등록된 반이 없습니다.
+                    </td>
+                  </tr>
+                ) : (
+                  classRows.map((c, i) => (
+                    <tr key={i} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
+                      <td className="px-2 py-1.5 text-xs text-slate-500">{c.grade || "-"}</td>
+                      <td className="px-2 py-1.5 font-semibold text-slate-700">{c.className || "-"}</td>
+                      <td className={"px-2 py-1.5 text-sm " + (c.teacher ? "text-slate-600" : "font-semibold text-red-500")}>
+                        {c.teacher ?? "미배정"}
+                      </td>
+                      <td className="px-2 py-1.5 text-center tabular-nums text-slate-700">{c.students}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+        {/* 우측: 학년 분포 + 학사일정 */}
+        <div className="flex flex-col gap-3">
+          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <b className="text-sm">학년별 재학생 분포</b>
+              <span className="text-[11px] text-slate-400">총 {kpi.active}명</span>
+            </div>
+            <GradeBars data={grades} />
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-4">
           <div className="mb-3 flex items-center justify-between">
             <b className="text-sm">📅 다가오는 학사일정</b>
             <button type="button" className="text-[11px] text-purple-600 hover:underline" onClick={() => (window.location.href = "/academic-calendar")}>
@@ -136,6 +181,7 @@ export default function SchoolOverviewClient({
               ))}
             </div>
           )}
+          </div>
         </div>
       </div>
     </div>

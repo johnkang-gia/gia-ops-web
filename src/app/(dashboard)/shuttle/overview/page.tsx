@@ -112,12 +112,30 @@ export default async function ShuttleOverviewPage() {
   }
   const MIN_PER_STOP = 3; // 정류장 1곳 건너뛸 때 아끼는 대략 시간(분)
 
-  // 지속 특이사항 수
-  const { count: notesCount } = await supabase
+  // 지속 특이사항 목록(개요에 요약 표시)
+  const { data: noteRows } = await supabase
     .from("shuttle_persistent_notes")
-    .select("id", { count: "exact", head: true })
+    .select("student_name, route_no, content, effect_kind, effect_days")
     .eq("term", term)
-    .eq("active", true);
+    .eq("active", true)
+    .order("created_at", { ascending: false });
+  const notes = (noteRows ?? []).map((n) => {
+    const kind = n.effect_kind as string;
+    const days = (n.effect_days as number[] | null) ?? [];
+    const effLabel =
+      kind === "no_shuttle"
+        ? "개별하원"
+        : kind === "skip_days"
+          ? `${days.map((d) => "일월화수목금토"[d]).join("")}요일 제외`
+          : "메모";
+    return {
+      studentName: n.student_name as string,
+      routeNo: (n.route_no as string | null) ?? null,
+      content: (n.content as string) ?? "",
+      effLabel,
+    };
+  });
+  const notesCount = notes.length;
 
   // 노선별 막차(마지막 정류장) 평균 도착시각과 오늘 지연(요청 ⑭ 채택: 노선별 예상 소요·지연).
   // 각 노선의 seq가 가장 큰 정류장을 막차 정류장으로 보고, shuttle_stop_arrivals의 도착시각을
@@ -227,7 +245,14 @@ export default async function ShuttleOverviewPage() {
 
   return (
     <div className="p-4 sm:p-6">
-      <ShuttleOverviewClient date={dateStr} kpi={kpi} routes={routeStats} />
+      <ShuttleOverviewClient
+        date={dateStr}
+        kpi={kpi}
+        routes={routeStats}
+        pickupNames={[...new Set(pickupNames)]}
+        absentNames={[...new Set(absentNames)]}
+        notes={notes}
+      />
     </div>
   );
 }

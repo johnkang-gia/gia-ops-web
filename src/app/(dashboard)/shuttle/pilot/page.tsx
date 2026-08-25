@@ -15,6 +15,7 @@ import PilotMonitorClient from "@/components/shuttle/PilotMonitorClient";
 import BoardLinkManager from "@/components/shuttle/BoardLinkManager";
 import ArrivalLinkManager from "@/components/shuttle/ArrivalLinkManager";
 import TrackerDeviceManager from "@/components/shuttle/TrackerDeviceManager";
+import TestTrackClient from "@/components/shuttle/TestTrackClient";
 import GuideButton from "@/components/common/GuideButton";
 
 const GUIDE_SECTIONS = [
@@ -74,15 +75,39 @@ export default async function ShuttlePilotPage() {
           .limit(200)
       : { data: [] as ShuttleStopObservation[] };
 
-  return (
-    <div className="mx-auto max-w-5xl p-4 sm:p-6">
-      <div className="mb-1 flex items-center justify-between gap-2">
-        <h1 className="text-lg font-bold">📍 하원 셔틀 실시간 위치 - 링크 관리 (1단계)</h1>
-        <GuideButton title="실시간 위치 사용 가이드" sections={GUIDE_SECTIONS} />
+  // 링크·기기 개요(요청 ⑰: 한눈에 정보를 볼 수 있는 개요). 등록 기기·연결(최근 10분 내 신호)·
+  // 미설치, 안내보드/도착 링크 수를 위에 요약합니다.
+  const devices = (devicesRes.data as ShuttleTrackerDevice[] | null) ?? [];
+  const nowMs = Date.now();
+  const liveCount = devices.filter((d) => d.last_hit_at && nowMs - new Date(d.last_hit_at as unknown as string).getTime() < 10 * 60 * 1000).length;
+  const unsetCount = devices.filter((d) => !d.last_hit_at).length;
+  const boardLinkCount = (boardLinksRes.data ?? []).length;
+  const arrivalLinkCount = (arrivalLinksRes.data ?? []).length;
+  const stat = (label: string, value: number | string, tone = "#0f172a") => (
+    <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+      <div className="text-[11px] text-slate-500">{label}</div>
+      <div className="text-xl font-extrabold" style={{ color: tone }}>
+        {value}
       </div>
-      <p className="mb-4 text-xs text-slate-500">
-        하원 노선에만 우선 적용됩니다(등원은 추후 지원). 동승선생님용 링크를 여기서 관리합니다.
+    </div>
+  );
+
+  return (
+    <div className="mx-auto w-full max-w-none p-4 sm:p-6">
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <h1 className="text-lg font-bold">🔗 링크 · 기기 · GPS</h1>
+        <GuideButton title="링크·기기 사용 가이드" sections={GUIDE_SECTIONS} />
+      </div>
+      <p className="mb-3 text-xs text-slate-500">
+        동승선생님용 링크와 기사님 GPS 기기를 관리하고, 내 폰으로 GPS를 테스트합니다.
       </p>
+      <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
+        {stat("등록 기기", devices.length)}
+        {stat("연결 중", liveCount, "#16a34a")}
+        {stat("미설치·신호없음", unsetCount, unsetCount ? "#dc2626" : "#0f172a")}
+        {stat("안내보드 링크", boardLinkCount)}
+        {stat("도착 링크", arrivalLinkCount)}
+      </div>
       <div className="flex flex-col gap-4">
         <BoardLinkManager initialLinks={(boardLinksRes.data as ShuttleBoardLink[] | null) ?? []} />
         <ArrivalLinkManager initialLinks={(arrivalLinksRes.data as ShuttleArrivalLink[] | null) ?? []} />
@@ -96,6 +121,13 @@ export default async function ShuttlePilotPage() {
           routes={(routesRes.data as ShuttleRoute[] | null) ?? []}
           initialPilots={(pilotsRes.data as ShuttlePilotRoute[] | null) ?? []}
         />
+        {/* 내 폰 GPS 테스트(요청 ⑰: 링크·기기와 통합). 자주 쓰지 않으므로 접어둡니다. */}
+        <details className="rounded-xl border border-slate-200 bg-white">
+          <summary className="cursor-pointer px-4 py-3 text-sm font-bold text-slate-700">🛰️ 내 폰 GPS 테스트 (강경원)</summary>
+          <div className="border-t border-slate-100 p-2">
+            <TestTrackClient />
+          </div>
+        </details>
       </div>
     </div>
   );

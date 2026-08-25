@@ -192,8 +192,8 @@ function buildShuttleCategory(isStaffOrAbove: boolean): NavCategory {
     items.push(
       // 노선 관리·탑승 배정·배차표 인쇄는 /shuttle(종합 관리 화면)이 모두 담당하므로 하나로 통합.
       { href: "/shuttle", label: "노선·배정·배차표", icon: "🛣️", dividerBefore: "기준정보 · 설정" },
-      { href: "/shuttle/pilot", label: "링크 · 기기 관리", icon: "🔗" },
-      { href: "/shuttle/track-test", label: "GPS 테스트(내 폰)", icon: "🛰️" },
+      // 내 폰 GPS 테스트는 링크·기기 화면 안(접이식)으로 통합했습니다.
+      { href: "/shuttle/pilot", label: "링크·기기·GPS", icon: "🔗" },
       { href: "/shuttle/stop-times", label: "정류장 도착시간", icon: "⏱️", dividerBefore: "기록 · 분석" }
     );
   }

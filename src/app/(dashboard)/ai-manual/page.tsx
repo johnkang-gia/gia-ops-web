@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import type { ManualDraft } from "@/lib/types";
 import AiManualClient from "@/components/ai-manual/AiManualClient";
+import WorkTabs from "@/components/work/WorkTabs";
 
 export const dynamic = "force-dynamic";
 
@@ -17,9 +18,11 @@ export default async function AiManualPage() {
   ]);
 
   return (
-    <AiManualClient
+    <div className="p-4 sm:p-6">
+      <WorkTabs />
+      <AiManualClient
       initialItems={(data as ManualDraft[]) ?? []}
       currentUserEmail={me?.email ?? ""}
     />
-  );
+    </div>  );
 }

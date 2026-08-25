@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import type { Meeting } from "@/lib/types";
 import MeetingReportClient from "@/components/meetings/MeetingReportClient";
+import WorkTabs from "@/components/work/WorkTabs";
 
 export const dynamic = "force-dynamic";
 
@@ -19,5 +20,10 @@ export default async function MeetingReportPage() {
     .order("date", { ascending: false })
     .limit(1000);
 
-  return <MeetingReportClient meetings={(data as Meeting[] | null) ?? []} />;
+  return (
+    <div className="p-4 sm:p-6">
+      <WorkTabs />
+      <MeetingReportClient meetings={(data as Meeting[] | null) ?? []} />
+    </div>
+  );
 }

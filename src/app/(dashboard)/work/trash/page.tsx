@@ -5,6 +5,7 @@ import { isAdminUser } from "@/lib/roles";
 import TaskTrashClient from "@/components/work/TaskTrashClient";
 import type { Task } from "@/lib/types";
 import GuideButton from "@/components/common/GuideButton";
+import WorkTabs from "@/components/work/WorkTabs";
 
 const GUIDE_SECTIONS = [
   {
@@ -36,6 +37,7 @@ export default async function WorkTrashPage() {
 
   return (
     <div className="mx-auto max-w-2xl">
+      <WorkTabs />
       <div className="mb-1 flex items-center justify-between gap-2">
         <h1 className="text-lg font-bold">🗑 업무 휴지통</h1>
         <GuideButton title="업무 휴지통 사용 가이드" sections={GUIDE_SECTIONS} />

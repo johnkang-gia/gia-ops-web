@@ -57,6 +57,21 @@ export default function ShuttleChecklistTable({
     return map;
   }, [items, routeById]);
 
+  // 요일별로 여러 차에 등록된 학생(예: 곽호율 19호·20호)을 "스위치"처럼 다룹니다(요청: 20호
+  // 곽호율을 탑승으로 체크하면 19호 곽호율이 자동으로 옅어지게). 같은 학생이 오늘 다른 차에서
+  // 이미 탑승 체크됐으면 나머지 차의 뱃지는 안 타는 것처럼 흐려집니다. 동명이인 구분표기
+  // (김재이(G2A) 등)는 괄호 앞부분이 같아도 표기가 다르면 다른 학생이므로 전체 표기로 비교합니다.
+  const boardedElsewhere = useMemo(() => {
+    const boardedNames = new Map<string, string>(); // studentName -> 탑승 체크된 assignmentId
+    for (const it of items) if (it.status === "탑승") boardedNames.set(it.studentName, it.assignmentId);
+    const set = new Set<string>();
+    for (const it of items) {
+      const b = boardedNames.get(it.studentName);
+      if (b && b !== it.assignmentId) set.add(it.assignmentId);
+    }
+    return set;
+  }, [items]);
+
   const trimmedSearch = searchTerm.trim();
   const matchedIds = useMemo(() => {
     if (!trimmedSearch) return new Set<string>();
@@ -121,8 +136,10 @@ export default function ShuttleChecklistTable({
                         const isPickup = item.status === "픽업";
                         const isAbsent = item.status === "결석";
                         const isBoarded = item.status === "탑승";
+                        // 다른 차에서 이미 탑승 체크된 학생(요일별 복수 등록) - 스위치처럼 이쪽을 흐리게(요청).
+                        const isSwitchedOff = boardedElsewhere.has(item.assignmentId) && !isPickup && !isAbsent;
                         // 오늘 안 타는 학생(요청: 옅은 회색). 단, 눌러서 탑승으로 바꾼 경우는 정상 표시.
-                        const isNonRiding = item.ridingToday === false && !isBoarded;
+                        const isNonRiding = (item.ridingToday === false && !isBoarded) || isSwitchedOff;
                         const isMovedToday = !!item.overrideRouteId && item.overrideRouteId !== (item.permanentRouteId ?? item.homeRouteId);
                         const isMovedPermanently = !!item.permanentRouteId && item.permanentRouteId !== item.homeRouteId;
                         const isMoved = isMovedToday || isMovedPermanently;
@@ -133,7 +150,7 @@ export default function ShuttleChecklistTable({
                         // 셔틀은 선명하게(진한 배경+링), 안 타는 날 셔틀은 옅게 보여줍니다(모두
                         // 보이도록 - 갑자기 다른 날 셔틀을 태워달라는 요청에 대비).
                         const gc = item.groupColor ?? null;
-                        const isSpecial = isHighlighted || isAbsent || isPickup || isBoarded || isMoved;
+                        const isSpecial = isHighlighted || isAbsent || isPickup || isBoarded || isMoved || isSwitchedOff;
                         const useGroup = !!gc && !isSpecial;
                         const ridesToday = item.ridingToday !== false;
                         const groupStyle: CSSProperties | undefined = useGroup
@@ -145,7 +162,9 @@ export default function ShuttleChecklistTable({
                               boxShadow: ridesToday ? `0 0 0 2px ${gc}33` : undefined,
                             }
                           : undefined;
-                        const tooltip = isMovedToday
+                        const tooltip = isSwitchedOff
+                          ? "다른 차에서 탑승 체크됨(스위치 전환)"
+                          : isMovedToday
                           ? `오늘만 이동됨 (평소 노선: ${homeRoute?.route_no ?? "?"}호) - 드래그해서 되돌릴 수 있어요`
                           : isMovedPermanently
                             ? `계속 이동됨 (평소 노선: ${homeRoute?.route_no ?? "?"}호) - 드래그해서 되돌릴 수 있어요`
@@ -205,6 +224,17 @@ export default function ShuttleChecklistTable({
                             >
                               {hasNote ? "!" : "+"}
                             </button>
+                            {/* 픽업·결석은 뱃지 전체에 사선 실선을 그어 "오늘 이 차를 안 탄다"를
+                                시각적으로 확실하게 보여줍니다(요청 3). 결석=빨간 사선, 픽업=분홍 사선. */}
+                            {(isPickup || isAbsent) && (
+                              <span
+                                aria-hidden
+                                className="pointer-events-none absolute inset-0 rounded-lg"
+                                style={{
+                                  backgroundImage: `linear-gradient(to top right, transparent 46.5%, ${isAbsent ? "rgba(220,38,38,0.75)" : "rgba(219,39,119,0.65)"} 46.5%, ${isAbsent ? "rgba(220,38,38,0.75)" : "rgba(219,39,119,0.65)"} 53.5%, transparent 53.5%)`,
+                                }}
+                              />
+                            )}
                             <span>
                               {isMoved && (isMovedToday ? "↔ " : "⇄ ")}
                               {item.studentName}

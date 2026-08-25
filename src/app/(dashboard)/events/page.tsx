@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import type { EventRecord } from "@/lib/types";
 import EventsClient from "@/components/events/EventsClient";
+import WorkTabs from "@/components/work/WorkTabs";
 
 export const dynamic = "force-dynamic";
 
@@ -12,5 +13,10 @@ export default async function EventsPage() {
     .order("date", { ascending: false })
     .limit(200);
 
-  return <EventsClient initialItems={(data as EventRecord[]) ?? []} />;
+  return (
+    <div className="p-4 sm:p-6">
+      <WorkTabs />
+      <EventsClient initialItems={(data as EventRecord[]) ?? []} />
+    </div>
+  );
 }

@@ -54,5 +54,18 @@ export async function GET(req: NextRequest) {
     await new Promise((resolve) => setTimeout(resolve, Math.min(LOOP_INTERVAL_MS, LOOP_BUDGET_MS - elapsed)));
   }
 
+  // 구글챗 연결상태 하트비트(요청: "구글챗, 토들 연결상태를 업무보드에서 볼 수 있게").
+  // 토들 수집기와 같은 원칙입니다 - 미러링이 조용히 멈추면(토큰 만료, 크론 중단) 화면에는
+  // 그저 "새 메시지가 없는 것"처럼 보여서 멈춘 줄 모릅니다. 크론이 돌 때마다 여기 신호를
+  // 남기고, 업무 보드 인박스가 이 시각이 오래됐으면 빨간불을 켭니다. 폴링이 전부 실패한
+  // 회차는 status를 error로 남겨 "돌고는 있는데 못 읽는" 상태도 구분합니다.
+  await supabase.from("integration_heartbeats").upsert({
+    key: "google-chat-poll",
+    last_seen_at: new Date().toISOString(),
+    status: lastError ? "error" : "ok",
+    detail: lastError ? lastError.slice(0, 300) : null,
+    updated_at: new Date().toISOString(),
+  });
+
   return NextResponse.json({ ok: true, rounds, newMessages: totalNew, lastError });
 }

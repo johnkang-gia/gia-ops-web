@@ -7,6 +7,7 @@ import TaskBoard from "./TaskBoard";
 import QuickTaskWidget from "./QuickTaskWidget";
 import AttendancePanels from "./AttendancePanels";
 import PinnedMemo from "./PinnedMemo";
+import IntegrationStatus from "./IntegrationStatus";
 import { isMyTask } from "@/lib/myTask";
 import type { RosterStudent } from "@/lib/attendanceDigest";
 
@@ -330,7 +331,15 @@ export default function WorkspaceArea({
           ))}
         </div>
         <div className="min-h-0 flex-1 overflow-hidden">
-          {mobileTab === "inbox" && inbox}
+          {mobileTab === "inbox" && (
+            <div className="flex h-full flex-col overflow-hidden">
+              {/* 모바일에서도 연결상태를 볼 수 있게 인박스 탭 위에 한 줄로 둡니다. */}
+              <div className="flex h-7 shrink-0 items-center justify-end border-b border-black/5 px-2.5">
+                <IntegrationStatus />
+              </div>
+              <div className="min-h-0 flex-1 overflow-hidden">{inbox}</div>
+            </div>
+          )}
           {mobileTab === "board" && (
             <div className="flex h-full flex-col overflow-hidden">
               <div className="flex h-8 shrink-0 items-center justify-end gap-1 border-b border-black/5 px-2.5">{boardControls}</div>
@@ -345,10 +354,18 @@ export default function WorkspaceArea({
 
   return (
     <div ref={containerRef} className="flex h-full overflow-hidden">
-      {/* ① 들어오는 것 - 학부모 문의·출결·선생님 요청을 한 곳에서 받습니다. */}
+      {/* ① 들어오는 것 - 학부모 문의·출결·선생님 요청을 한 곳에서 받습니다. 머리글 오른쪽에
+          토들·구글챗 연결상태 불이 들어옵니다(요청: "인박스탭제목 오른쪽 빈공간에 토들: 초록불
+          구글챗: 초록불 형식으로"). */}
       {layout.leftOpen ? (
         <>
-          <Zone icon="📥" title="인박스" onCollapse={() => setLayout((p) => ({ ...p, leftOpen: false }))} style={{ width: `${layout.leftWidth}%` }}>
+          <Zone
+            icon="📥"
+            title="인박스"
+            right={<IntegrationStatus />}
+            onCollapse={() => setLayout((p) => ({ ...p, leftOpen: false }))}
+            style={{ width: `${layout.leftWidth}%` }}
+          >
             {inbox}
           </Zone>
           <div

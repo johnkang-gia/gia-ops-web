@@ -8,7 +8,7 @@ import ShuttleTabs from "@/components/shuttle/ShuttleTabs";
 export default function ShuttleSectionLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="mx-auto w-full max-w-6xl shrink-0 px-4 pt-1 sm:px-6">
+      <div className="w-full shrink-0 px-4 pt-1 sm:px-6">
         <ShuttleTabs />
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>

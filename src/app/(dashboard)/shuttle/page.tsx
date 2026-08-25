@@ -38,7 +38,7 @@ export default async function ShuttlePage() {
   ]);
 
   return (
-    <div className="mx-auto flex h-full max-w-6xl flex-col overflow-hidden">
+    <div className="mx-auto flex h-full w-full max-w-none flex-col overflow-hidden">
       <div className="shrink-0">
         <div className="mb-1 flex items-center justify-between gap-2">
           <h1 className="text-lg font-bold">🚌 셔틀 관리</h1>

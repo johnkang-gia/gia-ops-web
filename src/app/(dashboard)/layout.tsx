@@ -190,9 +190,8 @@ function buildShuttleCategory(isStaffOrAbove: boolean): NavCategory {
   ];
   if (isStaffOrAbove) {
     items.push(
-      { href: "/shuttle/routes", label: "노선 관리", icon: "🛣️", dividerBefore: "기준정보 · 설정" },
-      { href: "/shuttle/students", label: "탑승 배정", icon: "🧑‍🎓" },
-      { href: "/shuttle", label: "배차표 · 인쇄", icon: "🖨️" },
+      // 노선 관리·탑승 배정·배차표 인쇄는 /shuttle(종합 관리 화면)이 모두 담당하므로 하나로 통합.
+      { href: "/shuttle", label: "노선·배정·배차표", icon: "🛣️", dividerBefore: "기준정보 · 설정" },
       { href: "/shuttle/pilot", label: "링크 · 기기 관리", icon: "🔗" },
       { href: "/shuttle/track-test", label: "GPS 테스트(내 폰)", icon: "🛰️" },
       { href: "/shuttle/stop-times", label: "정류장 도착시간", icon: "⏱️", dividerBefore: "기록 · 분석" }

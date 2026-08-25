@@ -118,9 +118,9 @@ function buildWorkCategory(pendingProposals: number, pendingAdopted: number): Na
     label: "업무",
     icon: "🗂️",
     accent: "blue",
-    href: "/work/overview",
+    href: "/work",
     items: [
-      { href: "/work/overview", label: "개요 대시보드", icon: "📊" },
+      // 개요 대시보드는 뺐습니다(요청: 업무 보드 자체가 관제탑이라 개요가 필요 없음).
       { href: "/work", label: "업무 보드", icon: "🗂️" },
       { href: "/work/report", label: "업무 보고서", icon: "📈" },
       // 예전 [기록] 대분류를 흡수(요청: 대분류 통합).

@@ -109,11 +109,15 @@ export default function TaskBoard({
 }) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [holdOpen, setHoldOpen] = useState(false);
+  // 커맨드센터 개편: 내 업무목록/전체 업무목록 위젯 2개를 이 토글 하나로 흡수했습니다(같은
+  // tasks를 세 번 그리던 중복 제거). 기본은 "내 업무만"(기존 흐름판 동작 그대로), 부서 전체를
+  // 훑고 싶으면 [전체]로 전환합니다.
+  const [mineOnly, setMineOnly] = useState(true);
 
-  // 업무 흐름판은 "내가 태그된 업무"만 보여줍니다(요청: "내 업무가 아닌데도 진행대기 목록에
-  // 업무가 뜨는 문제... 진행대기, 진행중, 완료의 경우 내 업무만 보이도록"). 부서 전체 업무를
-  // 훑어보는 용도는 오른쪽 위 "전체 업무목록" 위젯이 계속 담당합니다.
-  const myTasks = useMemo(() => tasks.filter((t) => isMyTask(t, currentUserEmail)), [tasks, currentUserEmail]);
+  const myTasks = useMemo(
+    () => (mineOnly ? tasks.filter((t) => isMyTask(t, currentUserEmail)) : tasks),
+    [tasks, currentUserEmail, mineOnly]
+  );
   const holdTasks = myTasks.filter((t) => t.status === HOLD_STATUS);
 
   const sensors = useSensors(
@@ -159,7 +163,26 @@ export default function TaskBoard({
               칸반이라는 외래어보다 뜻이 바로 읽힙니다. */}
           <div className="mb-2 flex items-center gap-2 px-1">
             <h2 className="text-[13px] font-bold text-slate-600">🔀 업무 흐름판</h2>
-            <span className="rounded-full bg-black/5 px-2 py-0.5 text-[10px] text-slate-400">내가 태그된 업무만</span>
+            {/* 내 업무만 ↔ 전체 토글(내/전체 업무목록 위젯을 흡수). */}
+            <div className="flex overflow-hidden rounded-full border border-black/10 text-[10px] font-bold">
+              <button
+                type="button"
+                onClick={() => setMineOnly(true)}
+                className={"px-2 py-0.5 transition " + (mineOnly ? "bg-blue-600 text-white" : "bg-white text-slate-400 hover:bg-slate-50")}
+              >
+                🙋 내 업무만
+              </button>
+              <button
+                type="button"
+                onClick={() => setMineOnly(false)}
+                className={"px-2 py-0.5 transition " + (!mineOnly ? "bg-blue-600 text-white" : "bg-white text-slate-400 hover:bg-slate-50")}
+              >
+                🗂️ 전체
+              </button>
+            </div>
+            <span className="ml-auto rounded-full bg-black/5 px-2 py-0.5 text-[10px] tabular-nums text-slate-400">
+              진행 {myTasks.filter((t) => t.status !== "완료").length}건
+            </span>
           </div>
           <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {MAIN_STATUS_ORDER.map((status) => (

@@ -4,10 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import type { Department, GoogleChatMirrorMessage, Task, TaskModeColor, TaskStatus, TeamMember } from "@/lib/types";
 import ChatPanel from "./ChatPanel";
 import TaskBoard from "./TaskBoard";
-import MyTasksWidget from "./MyTasksWidget";
-import AllTasksWidget from "./AllTasksWidget";
 import QuickTaskWidget from "./QuickTaskWidget";
 import AttendancePanels from "./AttendancePanels";
+import PinnedMemo from "./PinnedMemo";
 import type { RosterStudent } from "@/lib/attendanceDigest";
 
 // 참조 소스코드(WorkspaceArea.tsx)의 마우스 드래그 리사이저를 그대로 옮겼습니다 - 서드파티
@@ -17,7 +16,7 @@ const LAYOUT_STORAGE_KEY = "gia-ops-work-layout-v1";
 // 으로 만들어줘" - 예전에 업무상황판+행정요청위젯이 있던 좌측 상단 자리를(업무상황판은 전체
 // 업무목록 제목 옆으로 옮기고, 행정요청은 제거했으므로) 구글챗 미러링 두 스트림 자리로
 // 재활용합니다. 텍스트 몇 줄이 보여야 하니 기존(14%)보다 살짝 늘렸습니다.
-const DEFAULT_LAYOUT = { leftWidth: 45, leftTopHeight: 22, rightTopHeight: 30 };
+const DEFAULT_LAYOUT = { leftWidth: 45, leftTopHeight: 22 };
 
 function loadSavedLayout(): typeof DEFAULT_LAYOUT {
   if (typeof window === "undefined") return DEFAULT_LAYOUT;
@@ -28,7 +27,6 @@ function loadSavedLayout(): typeof DEFAULT_LAYOUT {
     return {
       leftWidth: typeof parsed.leftWidth === "number" ? parsed.leftWidth : DEFAULT_LAYOUT.leftWidth,
       leftTopHeight: typeof parsed.leftTopHeight === "number" ? parsed.leftTopHeight : DEFAULT_LAYOUT.leftTopHeight,
-      rightTopHeight: typeof parsed.rightTopHeight === "number" ? parsed.rightTopHeight : DEFAULT_LAYOUT.rightTopHeight,
     };
   } catch {
     return DEFAULT_LAYOUT;
@@ -84,12 +82,11 @@ export default function WorkspaceArea({
   // useState 초기값은 항상 기본값으로 두고, 마운트된 다음에만 저장된 값을 불러와 반영합니다.
   const [leftWidth, setLeftWidth] = useState(DEFAULT_LAYOUT.leftWidth);
   const [leftTopHeight, setLeftTopHeight] = useState(DEFAULT_LAYOUT.leftTopHeight);
-  const [rightTopHeight, setRightTopHeight] = useState(DEFAULT_LAYOUT.rightTopHeight);
   const hydratedRef = useRef(false);
   // 마우스 드래그로 폭을 나누는 좌우 2단 레이아웃은 손가락 터치 화면에서는 쓸 수 없어서(요청:
   // 모바일에서도 모든 메뉴를 수월하게), 작은 화면에서는 탭으로 채팅/칸반/내업무를 전체 폭으로
   // 하나씩 보여주는 별도 레이아웃을 씁니다(아래 mobileTab 상태).
-  const [mobileTab, setMobileTab] = useState<"board" | "chat" | "mine">("chat");
+  const [mobileTab, setMobileTab] = useState<"board" | "chat" | "inbox">("chat");
 
   // 모바일/데스크톱 레이아웃을 CSS(hidden/sm:flex)로만 나누면 두 레이아웃이 동시에 DOM에
   // 마운트되어, ChatPanel·TaskBoard(ActivityLog)가 같은 실시간 채널 이름으로 두 번 구독하게
@@ -110,18 +107,17 @@ export default function WorkspaceArea({
     const saved = loadSavedLayout();
     setLeftWidth(saved.leftWidth);
     setLeftTopHeight(saved.leftTopHeight);
-    setRightTopHeight(saved.rightTopHeight);
     hydratedRef.current = true;
   }, []);
 
   useEffect(() => {
     if (!hydratedRef.current) return; // 저장된 값을 아직 불러오기 전이면(기본값 상태) 덮어쓰지 않습니다.
     try {
-      localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify({ leftWidth, leftTopHeight, rightTopHeight }));
+      localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify({ leftWidth, leftTopHeight }));
     } catch {
       // 시크릿 모드 등 localStorage를 쓸 수 없는 환경이면 그냥 이번 세션만 기억하지 않고 넘어갑니다.
     }
-  }, [leftWidth, leftTopHeight, rightTopHeight]);
+  }, [leftWidth, leftTopHeight]);
 
   function startColResize(e: React.MouseEvent) {
     e.preventDefault();
@@ -175,8 +171,8 @@ export default function WorkspaceArea({
           {(
             [
               { key: "chat", label: "💬 채팅" },
-              { key: "board", label: "🗂️ 칸반" },
-              { key: "mine", label: "📋 내 업무" },
+              { key: "board", label: "🔀 흐름판" },
+              { key: "inbox", label: "📥 인박스" },
             ] as const
           ).map((t) => (
             <button
@@ -231,41 +227,17 @@ export default function WorkspaceArea({
               onToggleAck={onToggleAck}
             />
           )}
-          {mobileTab === "mine" && (
-            <div className="flex h-full flex-col overflow-hidden">
-              {/* 예전 업무상황판+행정요청 자리를 구글챗 미러링(출결알림)으로 바꿨습니다(요청
-                  2, 3). 업무상황판은 아래 "전체 업무목록" 제목 옆으로 옮겼습니다(요청 1).
-                  선생님요청 방은 아직 만들어지지 않아서(구글챗_미러링_설정가이드 STEP 5) 패널
-                  자체를 잠시 빼뒀습니다 - 방이 생기고 환경변수를 넣으면 다시 추가하면 됩니다. */}
-              {/* 출결내역(정리본, 기본) ↔ 출결알림(구글챗 원문)을 탭으로 전환합니다. */}
-              <div className="shrink-0 overflow-hidden" style={{ height: "40%" }}>
-                <AttendancePanels
-                  messages={mirrorMessages}
-                  team={team}
-                  userEmail={currentUserEmail}
-                  department={activeDepartment.name}
-                  roster={roster}
-                  onTaskCreated={onTaskCreated}
-                />
-              </div>
-              {/* 내 업무목록 / 전체 업무목록을 좌우로 나눠 보여줍니다(요청: "내 업무목록을
-                  반으로 나눠서 한쪽은 내업무목록, 다른쪽은 전체 업무목록으로"). 모바일은 폭이
-                  좁아 두 칸이 빡빡하지만, 항목 자체가 제목 한 줄+마감/상태 뱃지로 짧아서
-                  좌우분할로도 충분히 읽힙니다. */}
-              <div className="flex min-h-0 flex-1 divide-x divide-black/5 overflow-hidden border-t border-black/5">
-                <div className="min-w-0 flex-1 overflow-hidden">
-                  <MyTasksWidget tasks={tasks} currentUserEmail={currentUserEmail} onOpenTask={onOpenTask} />
-                </div>
-                <div className="min-w-0 flex-1 overflow-hidden">
-                  <AllTasksWidget
-                    tasks={tasks}
-                    onOpenTask={onOpenTask}
-                    activeDepartmentName={activeDepartment.name}
-                    deptColorMap={deptColorMap}
-                  />
-                </div>
-              </div>
-            </div>
+          {mobileTab === "inbox" && (
+            /* 통합 인박스(학부모 문의·출결내역·출결알림·선생님요청)를 전체 폭으로. 내/전체
+               업무목록 위젯은 흐름판의 [내 업무만|전체] 토글로 흡수되어 별도 탭이 필요 없습니다. */
+            <AttendancePanels
+              messages={mirrorMessages}
+              team={team}
+              userEmail={currentUserEmail}
+              department={activeDepartment.name}
+              roster={roster}
+              onTaskCreated={onTaskCreated}
+            />
           )}
         </div>
       </div>
@@ -296,6 +268,8 @@ export default function WorkspaceArea({
           className="h-1 shrink-0 cursor-row-resize bg-black/5 transition hover:bg-blue-400"
         />
         <div className="flex min-h-0 flex-col overflow-hidden" style={{ height: `${100 - leftTopHeight}%` }}>
+          {/* 부서메모 고정핀(커맨드센터 개편): 부서 공유 메모를 채팅 위에 상시 고정합니다. */}
+          <PinnedMemo department={activeDepartment.name} currentUserEmail={currentUserEmail} />
           <div className="shrink-0 border-b border-black/5 pb-1">
             <QuickTaskWidget
               department={activeDepartment.name}
@@ -322,29 +296,11 @@ export default function WorkspaceArea({
 
       <div onMouseDown={startColResize} className="w-1 shrink-0 cursor-col-resize bg-black/5 transition hover:bg-blue-400" />
 
-      {/* 오른쪽: 내 업무목록/전체 업무목록(좌우 분할 위젯) + 칸반보드(진행대기/진행중/보류이슈/완료, 드래그앤드롭) */}
+      {/* 오른쪽: 업무 흐름판(칸반)이 세로 전체를 씁니다. 내/전체 업무목록 위젯 2개는 흐름판의
+          [내 업무만|전체] 토글로 흡수했습니다(같은 업무가 화면에 세 번 그려지던 중복 제거 +
+          칸반이 두 배로 넓어짐). */}
       <div className="flex flex-col overflow-hidden" style={{ width: `${100 - leftWidth}%` }}>
-        {/* 내 업무목록을 좌우로 나눠, 왼쪽은 나와 관계있는 업무만(내가 등록·태그되거나 전체
-            모드), 오른쪽은 지금 볼 수 있는 업무 전체를 보여줍니다(요청: "내 업무목록을 반으로
-            나눠서 한쪽은 내업무목록, 다른쪽은 전체 업무목록으로 표시되도록"). */}
-        <div className="flex divide-x divide-black/5 overflow-hidden" style={{ height: `${rightTopHeight}%` }}>
-          <div className="min-w-0 flex-1 overflow-hidden">
-            <MyTasksWidget tasks={tasks} currentUserEmail={currentUserEmail} onOpenTask={onOpenTask} />
-          </div>
-          <div className="min-w-0 flex-1 overflow-hidden">
-            <AllTasksWidget
-              tasks={tasks}
-              onOpenTask={onOpenTask}
-              activeDepartmentName={activeDepartment.name}
-              deptColorMap={deptColorMap}
-            />
-          </div>
-        </div>
-        <div
-          onMouseDown={startRowResize(setRightTopHeight, rightTopHeight)}
-          className="h-1 shrink-0 cursor-row-resize bg-black/5 transition hover:bg-blue-400"
-        />
-        <div className="overflow-hidden" style={{ height: `${100 - rightTopHeight}%` }}>
+        <div className="min-h-0 flex-1 overflow-hidden">
           <TaskBoard
             tasks={tasks}
             team={team}

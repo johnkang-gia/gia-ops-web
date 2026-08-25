@@ -3,7 +3,6 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isAdminUser, isStaffOrAboveUser } from "@/lib/roles";
 import WorkBoardClient from "@/components/work/WorkBoardClient";
-import OfficeRequestsBanner from "@/components/work/OfficeRequestsBanner";
 import WorkTabs from "@/components/work/WorkTabs";
 import type { Task, Department, TeamMember, TaskModeColor, GoogleChatMirrorMessage, WorkNotice } from "@/lib/types";
 import GuideButton from "@/components/common/GuideButton";
@@ -110,8 +109,7 @@ export default async function WorkPage() {
           <GuideButton title="업무 보드 사용 가이드" sections={GUIDE_SECTIONS} />
         </div>
       </div>
-      {/* 선생님 → 행정실 문의·도움요청(요청 4): 미완료 건을 해당 반과 함께 빨간 느낌표로. */}
-      <OfficeRequestsBanner />
+      {/* 선생님 행정실 요청은 왼쪽 통합 인박스의 [선생님요청] 탭으로 이동했습니다(배너 제거). */}
       {/* 칸반이 남은 높이를 전부 쓰도록 - min-h-0이 없으면 내용이 길어질 때 이 칸이 늘어나
           화면 전체가 스크롤됩니다. */}
       <div className="min-h-0 flex-1">

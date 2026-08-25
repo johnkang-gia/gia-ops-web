@@ -6,11 +6,11 @@ import type { RosterStudent } from "@/lib/attendanceDigest";
 import GoogleChatMirrorPanel from "./GoogleChatMirrorPanel";
 import AttendanceDigestPanel from "./AttendanceDigestPanel";
 import ParentInquiryPanel from "./ParentInquiryPanel";
+import OfficeRequestsPanel from "./OfficeRequestsPanel";
 
-// 출결내역(정리본)과 출결알림(구글챗 원문)을 좌우로 나란히 두는 대신 탭으로 전환합니다(요청:
-// "출결알림창과, 출결 내력창을 탭으로 전환할 수 있게... 기본은 출결내역 탭이 먼저"). 필터링이
-// 잘 되고 있어 평소에는 정리본만 보면 되고, 원문 확인이 필요할 때만 알림 탭으로 넘어갑니다.
-// 좁은 자리를 반으로 쪼개지 않으니 각 패널이 폭을 온전히 다 쓸 수 있는 이점도 있습니다.
+// 통합 인박스(커맨드센터 개편): 학부모 문의·출결내역·출결알림·선생님요청 등 "들어오는 소식"을
+// 필터 탭 하나의 패널로 모았습니다. 예전에는 학부모 문의/픽업/선생님요청 배너가 화면 곳곳에
+// 흩어져 있어 "지금 뭘 확인해야 하지?"가 한눈에 안 됐습니다. 미처리 건수는 탭에 배지로 뜹니다.
 export default function AttendancePanels({
   messages,
   team,
@@ -26,42 +26,51 @@ export default function AttendancePanels({
   roster: RosterStudent[];
   onTaskCreated?: (task: Task) => void;
 }) {
-  // 요청: "업무메뉴에서 출결내역을 지금 학부모 문의사항으로 넣고, 출결내역쪽에 학부모
-  // 문의사항을 넣어서 더 크게 보게 해주고"
-  //
-  // 학부모 문의가 이 자리에서 가장 자주 보는 것이 되었으므로 기본 탭으로 둡니다. 출결내역은
-  // 옆 탭으로 그대로 남습니다 - 없애는 게 아니라 자리를 바꾸는 것입니다.
-  const [tab, setTab] = useState<"inquiry" | "digest" | "chat">("inquiry");
+  // 학부모 문의가 가장 자주 보는 것이므로 기본 탭입니다(기존 유지).
+  const [tab, setTab] = useState<"inquiry" | "digest" | "chat" | "office">("inquiry");
+  const [officeOpen, setOfficeOpen] = useState(0);
+
+  const tabs = [
+    { key: "inquiry", label: "💬 학부모 문의", badge: 0 },
+    { key: "digest", label: "📊 출결내역", badge: 0 },
+    { key: "chat", label: "🚸 출결알림", badge: 0 },
+    { key: "office", label: "❗ 선생님요청", badge: officeOpen },
+  ] as const;
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <div className="flex shrink-0 gap-1 px-2.5 pt-2">
-        {(
-          [
-            { key: "inquiry", label: "💬 학부모 문의" },
-            { key: "digest", label: "📊 출결내역" },
-            { key: "chat", label: "🚸 출결알림" },
-          ] as const
-        ).map((t) => (
+      <div className="flex shrink-0 items-center gap-1 px-2.5 pt-2">
+        <span className="mr-0.5 text-[11px] font-extrabold text-slate-400">📥 인박스</span>
+        {tabs.map((t) => (
           <button
             key={t.key}
             type="button"
             onClick={() => setTab(t.key)}
             className={
-              "rounded-full px-2.5 py-1 text-[11px] font-bold transition " +
+              "flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold transition " +
               (tab === t.key ? "bg-emerald-500 text-white" : "bg-black/5 text-slate-500 hover:bg-black/10")
             }
           >
             {t.label}
+            {t.badge > 0 && (
+              <span className={"rounded-full px-1 text-[9px] font-black " + (tab === t.key ? "bg-white text-emerald-600" : "bg-red-500 text-white")}>
+                {t.badge}
+              </span>
+            )}
           </button>
         ))}
       </div>
       <div className="min-h-0 flex-1 overflow-hidden">
-        {tab === "inquiry" ? (
-          <ParentInquiryPanel currentUserEmail={userEmail} full />
-        ) : tab === "digest" ? (
+        {/* 선생님요청 탭은 배지 숫자(미완료 건수)를 유지하기 위해 항상 마운트해두고 표시만
+            전환합니다 - 다른 탭을 보고 있어도 새 요청이 오면 배지가 올라갑니다. */}
+        <div className={tab === "office" ? "h-full" : "hidden"}>
+          <OfficeRequestsPanel onOpenCountChange={setOfficeOpen} />
+        </div>
+        {tab === "inquiry" && <ParentInquiryPanel currentUserEmail={userEmail} full />}
+        {tab === "digest" && (
           <AttendanceDigestPanel messages={messages} department={department} roster={roster} currentUserEmail={userEmail} />
-        ) : (
+        )}
+        {tab === "chat" && (
           <GoogleChatMirrorPanel
             sourceKey="attendance"
             title="출결알림"

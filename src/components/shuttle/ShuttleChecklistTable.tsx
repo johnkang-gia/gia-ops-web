@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { ChecklistItem, ChecklistRoute } from "./ShuttleChecklistClient";
 
 function natCompare(a: string, b: string) {
@@ -129,6 +129,22 @@ export default function ShuttleChecklistTable({
                         const hasNote = !!item.note && item.note.trim().length > 0;
                         const isHighlighted = matchedIds.has(item.assignmentId);
                         const homeRoute = routeById.get(item.homeRouteId);
+                        // 요일마다 다른 셔틀을 타는 학생은 같은 색 테두리로 묶고(요청), 오늘 타는
+                        // 셔틀은 선명하게(진한 배경+링), 안 타는 날 셔틀은 옅게 보여줍니다(모두
+                        // 보이도록 - 갑자기 다른 날 셔틀을 태워달라는 요청에 대비).
+                        const gc = item.groupColor ?? null;
+                        const isSpecial = isHighlighted || isAbsent || isPickup || isBoarded || isMoved;
+                        const useGroup = !!gc && !isSpecial;
+                        const ridesToday = item.ridingToday !== false;
+                        const groupStyle: CSSProperties | undefined = useGroup
+                          ? {
+                              borderColor: gc as string,
+                              backgroundColor: ridesToday ? `${gc}14` : "#ffffff",
+                              color: ridesToday ? undefined : (gc as string),
+                              opacity: ridesToday ? 1 : 0.55,
+                              boxShadow: ridesToday ? `0 0 0 2px ${gc}33` : undefined,
+                            }
+                          : undefined;
                         const tooltip = isMovedToday
                           ? `오늘만 이동됨 (평소 노선: ${homeRoute?.route_no ?? "?"}호) - 드래그해서 되돌릴 수 있어요`
                           : isMovedPermanently
@@ -151,7 +167,8 @@ export default function ShuttleChecklistTable({
                               draggingIdRef.current = null;
                               setDragOverRoute(null);
                             }}
-                            title={tooltip}
+                            title={useGroup && !ridesToday ? `${tooltip} · 오늘은 이 차를 안 타는 날(다른 요일 셔틀)` : tooltip}
+                            style={groupStyle}
                             className={
                               "relative flex cursor-grab select-none flex-col items-center gap-0.5 rounded-lg border px-2 py-1 text-xs font-semibold transition-all active:cursor-grabbing print:border-black print:px-1 print:py-0.5 " +
                               (isHighlighted
@@ -162,13 +179,15 @@ export default function ShuttleChecklistTable({
                                     ? "border-pink-400 bg-pink-100 text-pink-700"
                                     : isBoarded
                                       ? "border-emerald-400 bg-emerald-50 text-emerald-700"
-                                      : isNonRiding
-                                        ? "border-slate-200 bg-slate-50 text-slate-300 opacity-70"
-                                        : isMovedToday
-                                          ? "border-amber-400 bg-amber-50 text-amber-700"
-                                          : isMovedPermanently
-                                            ? "border-purple-400 bg-purple-50 text-purple-700"
-                                            : "border-slate-300 bg-white text-slate-700")
+                                      : useGroup
+                                        ? "border-2"
+                                        : isNonRiding
+                                          ? "border-slate-200 bg-slate-50 text-slate-300 opacity-70"
+                                          : isMovedToday
+                                            ? "border-amber-400 bg-amber-50 text-amber-700"
+                                            : isMovedPermanently
+                                              ? "border-purple-400 bg-purple-50 text-purple-700"
+                                              : "border-slate-300 bg-white text-slate-700")
                             }
                           >
                             <button
@@ -189,6 +208,9 @@ export default function ShuttleChecklistTable({
                             <span>
                               {isMoved && (isMovedToday ? "↔ " : "⇄ ")}
                               {item.studentName}
+                              {item.individualPickup && (
+                                <span className="ml-1 rounded-full bg-orange-100 px-1 text-[8px] font-bold text-orange-700 print:hidden">개별하원</span>
+                              )}
                             </span>
                             <span className="flex gap-1 print:hidden">
                               {item.ridingToday === false ? (

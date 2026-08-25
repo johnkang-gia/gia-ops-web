@@ -40,6 +40,15 @@ export type SpecialNoteEntry = { key: string; studentName: string; note: string 
 // 하나더 표시해서"), 아래쪽 위젯은 출결 메모(department_memos.attendance_memo)를 읽기
 // 전용으로 보여줍니다 - 이 메모는 절대 자동 파싱되지 않는 자유 메모라서(요청) 여기서도
 // 손대지 않고 그대로 보여주기만 합니다.
+// 왼쪽 "지속 특이사항 입력" 창구가 부모에게 넘기는 값입니다(요청: 지속 반영사항을 적는 창구).
+export type PersistentNoteInput = {
+  studentName: string;
+  routeNo: string | null;
+  content: string;
+  effectKind: "none" | "skip_days" | "no_shuttle";
+  effectDays: number[];
+};
+
 export default function ShuttleChecklistSidebar({
   roster,
   initialMessages,
@@ -48,6 +57,8 @@ export default function ShuttleChecklistSidebar({
   department = "초등부",
   className = "",
   onSelectStudentName,
+  onAddPersistentNote,
+  persistNoteBusy = false,
 }: {
   roster: RosterStudent[];
   initialMessages: GoogleChatMirrorMessage[];
@@ -59,7 +70,44 @@ export default function ShuttleChecklistSidebar({
   // 위젯에 이름을 누르면 체크표에 있는 같은 이름으로 자동으로 이동하도록... 빠르게 체크할
   // 수 있도록"). 검색창에 입력한 것과 똑같은 방식이라, 여기서는 검색어만 채워주면 됩니다.
   onSelectStudentName?: (name: string) => void;
+  // 지속 특이사항 창구에서 새 항목을 저장할 때 부모(ShuttleChecklistClient)로 넘깁니다.
+  onAddPersistentNote?: (input: PersistentNoteInput) => Promise<boolean>;
+  persistNoteBusy?: boolean;
 }) {
+  // 지속 특이사항 입력 창구 상태(요청: 왼쪽에 지속 반영사항을 적는 창구, 예: "이라엘 수요일
+  // 수영학원", "4호 김재이 개별하원"). 효과를 고르면 셔틀이 자동으로 바뀝니다.
+  const WD = [
+    { d: 1, label: "월" },
+    { d: 2, label: "화" },
+    { d: 3, label: "수" },
+    { d: 4, label: "목" },
+    { d: 5, label: "금" },
+  ];
+  const [pnName, setPnName] = useState("");
+  const [pnRoute, setPnRoute] = useState("");
+  const [pnContent, setPnContent] = useState("");
+  const [pnEffect, setPnEffect] = useState<"none" | "skip_days" | "no_shuttle">("none");
+  const [pnDays, setPnDays] = useState<number[]>([]);
+  const [pnOpen, setPnOpen] = useState(false);
+
+  async function submitPersistentNote() {
+    if (!onAddPersistentNote) return;
+    const ok = await onAddPersistentNote({
+      studentName: pnName,
+      routeNo: pnRoute.trim() || null,
+      content: pnContent,
+      effectKind: pnEffect,
+      effectDays: pnDays,
+    });
+    if (ok) {
+      setPnName("");
+      setPnRoute("");
+      setPnContent("");
+      setPnEffect("none");
+      setPnDays([]);
+      setPnOpen(false);
+    }
+  }
   const [messages, setMessages] = useState(initialMessages);
   const [memoContent, setMemoContent] = useState<string | null>(null);
   const [memoUpdatedBy, setMemoUpdatedBy] = useState<string | null>(null);
@@ -198,6 +246,88 @@ export default function ShuttleChecklistSidebar({
 
   return (
     <div className={"flex w-full shrink-0 flex-col gap-3 lg:w-52 " + className}>
+      {onAddPersistentNote && (
+        <div className="rounded-xl border border-orange-200 bg-white p-3">
+          <button
+            type="button"
+            onClick={() => setPnOpen((v) => !v)}
+            className="flex w-full items-center justify-between text-[11px] font-bold text-orange-700"
+          >
+            <span>📌 지속 특이사항 입력</span>
+            <span className="text-orange-400">{pnOpen ? "▾" : "＋"}</span>
+          </button>
+          {pnOpen && (
+            <div className="mt-2 flex flex-col gap-1.5">
+              <p className="text-[9px] leading-relaxed text-slate-400">
+                계속 반영할 사항을 적으면 오른쪽에 요약으로 뜨고 셔틀이 자동으로 바뀝니다. 나중에 요약에서 지우면 원래
+                셔틀로 돌아옵니다.
+              </p>
+              <input
+                list="pn-roster"
+                value={pnName}
+                onChange={(e) => setPnName(e.target.value)}
+                placeholder="학생 이름 (예: 이라엘)"
+                className="rounded-lg border border-slate-300 px-2 py-1 text-[11px] outline-none focus:border-orange-400"
+              />
+              <datalist id="pn-roster">
+                {roster.map((s) => (
+                  <option key={s.name} value={s.name} />
+                ))}
+              </datalist>
+              <input
+                value={pnRoute}
+                onChange={(e) => setPnRoute(e.target.value)}
+                placeholder="호차 (동명이인일 때만, 예: 4호)"
+                className="rounded-lg border border-slate-300 px-2 py-1 text-[11px] outline-none focus:border-orange-400"
+              />
+              <textarea
+                value={pnContent}
+                onChange={(e) => setPnContent(e.target.value)}
+                rows={2}
+                placeholder="내용 (예: 수요일 수영학원 / 당분간 개별하원)"
+                className="resize-none rounded-lg border border-slate-300 px-2 py-1 text-[11px] outline-none focus:border-orange-400"
+              />
+              <select
+                value={pnEffect}
+                onChange={(e) => setPnEffect(e.target.value as typeof pnEffect)}
+                className="rounded-lg border border-slate-300 px-2 py-1 text-[11px] outline-none focus:border-orange-400"
+              >
+                <option value="none">셔틀 그대로 (메모만)</option>
+                <option value="skip_days">특정 요일 셔틀 제외</option>
+                <option value="no_shuttle">개별하원 (셔틀 전면 제외)</option>
+              </select>
+              {pnEffect === "skip_days" && (
+                <div className="flex gap-1">
+                  {WD.map((w) => {
+                    const on = pnDays.includes(w.d);
+                    return (
+                      <button
+                        key={w.d}
+                        type="button"
+                        onClick={() => setPnDays((prev) => (on ? prev.filter((x) => x !== w.d) : [...prev, w.d]))}
+                        className={
+                          "h-6 w-6 rounded-full text-[11px] font-bold " +
+                          (on ? "bg-orange-500 text-white" : "bg-slate-100 text-slate-400 hover:bg-orange-100")
+                        }
+                      >
+                        {w.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              <button
+                type="button"
+                disabled={persistNoteBusy}
+                onClick={submitPersistentNote}
+                className="rounded-lg bg-orange-500 px-2 py-1.5 text-[11px] font-bold text-white disabled:opacity-50"
+              >
+                추가
+              </button>
+            </div>
+          )}
+        </div>
+      )}
       <div className="rounded-xl border border-slate-200 bg-white p-3">
         <p className="mb-2 text-[11px] font-bold text-slate-600">📊 오늘 픽업·결석 (업무 출결내역)</p>
         <div className="mb-2">

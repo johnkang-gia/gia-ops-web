@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import Link from "next/link";
-import ShuttleChecklistClient, { type ChecklistRoute, type ChecklistItem } from "@/components/shuttle/ShuttleChecklistClient";
+import ShuttleChecklistClient, { type ChecklistRoute, type ChecklistItem, type PersistentNote } from "@/components/shuttle/ShuttleChecklistClient";
 import type { GoogleChatMirrorMessage } from "@/lib/types";
 import { categorize } from "@/lib/attendanceDigest";
 import GuideButton from "@/components/common/GuideButton";
@@ -162,6 +162,25 @@ export default async function ShuttleChecklistPage({
     else if (cat === "결석") absentNames.push(name);
   }
 
+  // 지속 특이사항(요청: 왼쪽 창구에 적으면 오른쪽에 요약으로 계속 뜨고, 차량 셔틀도 자동
+  // 수정되며, 삭제하면 원래대로 복귀). 효과는 클라이언트에서 items에 덧씌우므로, 여기서는
+  // 활성 행만 읽어 넘깁니다.
+  const { data: noteRows } = await supabase
+    .from("shuttle_persistent_notes")
+    .select("id, term, student_name, student_id, route_no, content, effect_kind, effect_days, active")
+    .eq("term", term)
+    .eq("active", true)
+    .order("created_at", { ascending: false });
+  const persistentNotes: PersistentNote[] = (noteRows ?? []).map((n) => ({
+    id: n.id as string,
+    studentName: (n.student_name as string) ?? "",
+    studentId: (n.student_id as string | null) ?? null,
+    routeNo: (n.route_no as string | null) ?? null,
+    content: (n.content as string) ?? "",
+    effectKind: (n.effect_kind as PersistentNote["effectKind"]) ?? "none",
+    effectDays: (n.effect_days as number[] | null) ?? [],
+  }));
+
   // 그룹핑은 클라이언트에서 하도록, 노선별로 나누지 않은 평평한 목록으로 넘깁니다.
   const items: ChecklistItem[] = assignmentsData
     .map((a) => {
@@ -177,6 +196,7 @@ export default async function ShuttleChecklistPage({
       }
       const item: ChecklistItem = {
         assignmentId: a.id,
+        studentId: a.student_id,
         studentName: a.student_name_raw,
         stopSeq: stop.seq,
         homeRouteId: stop.route_id,
@@ -233,7 +253,7 @@ export default async function ShuttleChecklistPage({
         놓고, 계속 유지할지 오늘만 바꿀지 골라주세요.
       </p>
       <p className="mb-2 hidden text-sm font-bold print:block">GIA 하원 체크표 · {today}</p>
-      <ShuttleChecklistClient routes={routes} items={items} roster={roster} initialMessages={(mirrorRes.data as GoogleChatMirrorMessage[] | null) ?? []} term={term} />
+      <ShuttleChecklistClient routes={routes} items={items} roster={roster} initialMessages={(mirrorRes.data as GoogleChatMirrorMessage[] | null) ?? []} term={term} persistentNotes={persistentNotes} />
     </div>
   );
 }

@@ -169,4 +169,37 @@ on conflict (id) do update
 alter table shuttle_tracker_devices add column if not exists last_hit_at timestamptz;   -- 앱이 마지막으로 요청을 보내온 시각(좌표 유무 무관)
 alter table shuttle_tracker_devices add column if not exists last_hit_reason text;       -- 그때 서버 판정: 'stored'|'out_of_window'|'no_coords'
 
+-- ===== 20260825120000_shuttle_persistent_notes.sql =====
+-- 하원 체크표 "지속 특이사항" 창구 (요청: 왼쪽에 지속 반영사항을 적으면 오른쪽에 요약으로
+-- 계속 뜨고, 셔틀도 자동 수정되며, 삭제하면 원래 셔틀로 복귀). effect_kind:
+--   none / skip_days(effect_days 요일 셔틀 제외) / no_shuttle(개별하원 전면 제외)
+create table if not exists public.shuttle_persistent_notes (
+  id uuid primary key default gen_random_uuid(),
+  term text not null default '정규학기',
+  student_name text not null,
+  student_id uuid null references public.wr_students(id) on delete set null,
+  route_no text null,
+  content text not null,
+  effect_kind text not null default 'none' check (effect_kind in ('none','skip_days','no_shuttle')),
+  effect_days int[] not null default '{}',
+  active boolean not null default true,
+  created_by text null,
+  created_at timestamptz not null default now()
+);
+create index if not exists shuttle_persistent_notes_term_active_idx
+  on public.shuttle_persistent_notes (term, active);
+alter table public.shuttle_persistent_notes enable row level security;
+drop policy if exists shuttle_persistent_notes_select on public.shuttle_persistent_notes;
+create policy shuttle_persistent_notes_select on public.shuttle_persistent_notes
+  for select using (auth.role() = 'authenticated');
+drop policy if exists shuttle_persistent_notes_insert on public.shuttle_persistent_notes;
+create policy shuttle_persistent_notes_insert on public.shuttle_persistent_notes
+  for insert with check (auth.role() = 'authenticated');
+drop policy if exists shuttle_persistent_notes_update on public.shuttle_persistent_notes;
+create policy shuttle_persistent_notes_update on public.shuttle_persistent_notes
+  for update using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+drop policy if exists shuttle_persistent_notes_delete on public.shuttle_persistent_notes;
+create policy shuttle_persistent_notes_delete on public.shuttle_persistent_notes
+  for delete using (auth.role() = 'authenticated');
+
 commit;

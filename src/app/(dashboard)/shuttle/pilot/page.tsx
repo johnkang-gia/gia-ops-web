@@ -54,6 +54,25 @@ export default async function ShuttlePilotPage() {
     routeIds.length > 0
       ? await supabase.from("shuttle_pilot_routes").select("*").in("route_id", routeIds).order("created_at", { ascending: false })
       : { data: [] as ShuttlePilotRoute[] };
+  // 기사·차량 변경 이력(요청 채택). 트리거가 자동으로 쌓아둔 스냅샷을 최신순으로 보여줍니다.
+  const historyRes =
+    routeIds.length > 0
+      ? await supabase
+          .from("shuttle_route_vehicle_history")
+          .select("route_no, driver_name, driver_phone, vehicle_no, teacher_name, note, changed_at")
+          .in("route_id", routeIds)
+          .order("changed_at", { ascending: false })
+          .limit(200)
+      : { data: [] as Record<string, unknown>[] };
+  const history = (historyRes.data ?? []) as {
+    route_no: string | null;
+    driver_name: string | null;
+    driver_phone: string | null;
+    vehicle_no: string | null;
+    teacher_name: string | null;
+    note: string | null;
+    changed_at: string;
+  }[];
   const boardLinksRes = await supabase.from("shuttle_board_links").select("*").order("created_at", { ascending: false });
   const arrivalLinksRes = await supabase.from("shuttle_arrival_links").select("*").order("created_at", { ascending: false });
 
@@ -121,6 +140,50 @@ export default async function ShuttlePilotPage() {
           routes={(routesRes.data as ShuttleRoute[] | null) ?? []}
           initialPilots={(pilotsRes.data as ShuttlePilotRoute[] | null) ?? []}
         />
+        {/* 기사·차량 변경 이력(요청 채택). 지입차량 교대·차량번호 변경을 자동 기록합니다. */}
+        <details className="rounded-xl border border-slate-200 bg-white">
+          <summary className="cursor-pointer px-4 py-3 text-sm font-bold text-slate-700">🧾 기사 · 차량 변경 이력 ({history.length})</summary>
+          <div className="overflow-x-auto border-t border-slate-100">
+            <table className="w-full min-w-[640px] border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs text-slate-500">
+                  <th className="px-3 py-2 font-semibold">호차</th>
+                  <th className="px-3 py-2 font-semibold">기사</th>
+                  <th className="px-3 py-2 font-semibold">차량번호</th>
+                  <th className="px-3 py-2 font-semibold">동승</th>
+                  <th className="px-3 py-2 font-semibold">변경</th>
+                  <th className="px-3 py-2 font-semibold">일시</th>
+                </tr>
+              </thead>
+              <tbody>
+                {history.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-3 py-6 text-center text-slate-400">
+                      아직 기록이 없습니다. 노선의 기사·차량을 바꾸면 여기에 자동으로 남습니다.
+                    </td>
+                  </tr>
+                ) : (
+                  history.map((h, i) => (
+                    <tr key={i} className="border-b border-slate-100 last:border-0">
+                      <td className="px-3 py-1.5 font-bold text-slate-700">{h.route_no ?? "-"}호</td>
+                      <td className="px-3 py-1.5 text-slate-600">
+                        {h.driver_name ?? "-"}
+                        {h.driver_phone ? <span className="ml-1 text-xs text-slate-400">{h.driver_phone}</span> : null}
+                      </td>
+                      <td className="px-3 py-1.5 text-slate-600">{h.vehicle_no ?? "-"}</td>
+                      <td className="px-3 py-1.5 text-slate-600">{h.teacher_name ?? "-"}</td>
+                      <td className="px-3 py-1.5 text-xs text-slate-500">{h.note ?? ""}</td>
+                      <td className="px-3 py-1.5 text-xs text-slate-400">
+                        {new Date(h.changed_at).toLocaleString("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </details>
+
         {/* 내 폰 GPS 테스트(요청 ⑰: 링크·기기와 통합). 자주 쓰지 않으므로 접어둡니다. */}
         <details className="rounded-xl border border-slate-200 bg-white">
           <summary className="cursor-pointer px-4 py-3 text-sm font-bold text-slate-700">🛰️ 내 폰 GPS 테스트 (강경원)</summary>

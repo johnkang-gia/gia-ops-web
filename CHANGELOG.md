@@ -2397,3 +2397,5 @@ GIA WorkFlatform 통합 1단계:
 - AI 제안 워크플로우(스캔 → 제안 → 승인/보류/삭제 → 채택예정 → 발행).
 - 매뉴얼(운영계획안/실무자매뉴얼) 앱 내 직접 편집(CRUD) + PDF 생성.
 - 모바일 반응형 전체 적용.
+
+<!-- deploy: production 빌드 트리거(같은 SHA가 staging에 먼저 올라가면 Vercel이 main 빌드를 건너뛰므로, 앞으로는 main 먼저 푸시합니다) -->

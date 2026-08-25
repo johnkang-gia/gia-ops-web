@@ -4,27 +4,7 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { isAdminUser, isStaffOrAboveUser } from "@/lib/roles";
 import WorkBoardClient from "@/components/work/WorkBoardClient";
 import type { Task, Department, TeamMember, TaskModeColor, GoogleChatMirrorMessage, WorkNotice } from "@/lib/types";
-import GuideButton from "@/components/common/GuideButton";
 
-const GUIDE_SECTIONS = [
-  {
-    title: "🗂️ 업무 보드란?",
-    lines: [
-      "학교에서 오가는 일을 카드 한 장씩으로 만들어 상태(예정·진행중·완료·보류)를 옮겨가며 관리하는 화면입니다. 앱에서 가장 자주 여는 곳입니다.",
-      "카드에 사람을 태그하면 그 사람 화면에 알림이 뜹니다. 부서를 지정하면 부서 탭에서 묶여 보입니다.",
-      "구글챗에 올라온 글이 자동으로 이 화면에 미러링됩니다. 챗을 따로 열지 않아도 무슨 요청이 들어왔는지 여기서 함께 볼 수 있습니다.",
-      "완료한 업무는 사라지지 않고 [지난 업무]에 학기별로 쌓입니다. 지운 업무는 [휴지통]에서 7일간 되살릴 수 있습니다.",
-    ],
-  },
-  {
-    title: "📢 전체공지",
-    lines: [
-      "관리자·행정직원이 올린 전체공지는 이 화면 맨 위에 뜹니다. 새 공지가 올라오면 이전 공지는 내려가고 새 공지가 올라옵니다.",
-      "다 읽은 공지는 각자 접어둘 수 있고, 접어도 다른 사람 화면에는 그대로 보입니다.",
-      "지난 공지는 공지 오른쪽 위 히스토리 아이콘에서 전부 볼 수 있습니다.",
-    ],
-  },
-];
 
 export const dynamic = "force-dynamic";
 
@@ -89,28 +69,11 @@ export default async function WorkPage() {
   const elemActive = elemCountRes.count ?? 0;
 
   return (
-    <div className="flex h-full flex-col">
-      {/* 업무 대시보드 상단 학교 요약(학기·학기말 D-day·초등부 재학생) + 가이드 버튼. */}
-      <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 pb-1">
-        {termLabel && (
-          <span className="rounded-full bg-purple-50 px-2.5 py-1 text-xs font-bold text-purple-800">📚 {termLabel}</span>
-        )}
-        {termDday != null && (
-          <span className="rounded-full bg-purple-600 px-2 py-0.5 text-[11px] font-bold text-white">
-            {termDday > 0 ? `학기말 D-${termDday}` : termDday === 0 ? "오늘 학기말" : "학기 종료"}
-          </span>
-        )}
-        <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
-          🎓 초등부 재학생 <b>{elemActive}</b>명
-        </span>
-        <div className="ml-auto">
-          <GuideButton title="업무 보드 사용 가이드" sections={GUIDE_SECTIONS} />
-        </div>
-      </div>
-      {/* 선생님 행정실 요청은 왼쪽 통합 인박스의 [선생님요청] 탭으로 이동했습니다(배너 제거). */}
-      {/* 칸반이 남은 높이를 전부 쓰도록 - min-h-0이 없으면 내용이 길어질 때 이 칸이 늘어나
-          화면 전체가 스크롤됩니다. */}
-      <div className="min-h-0 flex-1">
+    // 이 화면만의 헤더 줄은 없앴습니다(요청: 업무탭을 제대로 깔끔하게). 학기·재학생 배지와
+    // 가이드 버튼은 전부 WorkBoardClient의 머리줄 한 곳으로 합쳤습니다 - 예전에는 대분류
+    // 상단탭 + 이 헤더 + 부서 줄, 세 겹이 쌓여 일하는 화면이 그만큼 아래로 밀렸습니다.
+    // 선생님 행정실 요청은 왼쪽 통합 인박스의 [선생님요청] 탭에 있습니다(배너 제거).
+    <div className="flex h-full min-h-0 flex-col">
       <WorkBoardClient
         initialTasks={(tasksRes.data as Task[] | null) ?? []}
         team={team}
@@ -123,8 +86,10 @@ export default async function WorkPage() {
         initialNotices={notices}
         collapsedNoticeIds={collapsedNoticeIds}
         canManageNotices={isStaffOrAboveUser(me)}
+        termLabel={termLabel}
+        termDday={termDday}
+        elemActive={elemActive}
       />
-      </div>
     </div>
   );
 }

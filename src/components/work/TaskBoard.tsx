@@ -17,7 +17,6 @@ import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrate
 import type { Task, TaskStatus, TeamMember } from "@/lib/types";
 import { isMyTask } from "@/lib/myTask";
 import TaskCard from "./TaskCard";
-import ActivityLog from "./ActivityLog";
 import { STATUS_ORDER, STATUS_LABEL, STATUS_COLOR } from "./statusConfig";
 
 function DroppableColumn({
@@ -91,10 +90,10 @@ export default function TaskBoard({
   modeColorMap,
   isAdmin,
   currentUserEmail,
-  deptFilter,
   onOpenTask,
   onChangeStatus,
   onToggleAck,
+  mineOnly,
 }: {
   tasks: Task[];
   team: TeamMember[];
@@ -102,17 +101,16 @@ export default function TaskBoard({
   modeColorMap: Map<string, string>;
   isAdmin: boolean;
   currentUserEmail: string;
-  deptFilter: string;
   onOpenTask: (id: string) => void;
   onChangeStatus: (taskId: string, status: TaskStatus) => void;
   onToggleAck: (taskId: string, checked: boolean) => void;
+  // 내 업무만 ↔ 전체 토글. 3존 개편에서 이 조작부를 존 머리글(WorkspaceArea)로 올렸습니다 -
+  // 스크롤되는 본문 안에 있으면 아래로 내렸을 때 사라져서, 지금 무엇을 보고 있는지 알 수 없었고
+  // 다른 두 칸의 머리글과 줄도 맞지 않았습니다.
+  mineOnly: boolean;
 }) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [holdOpen, setHoldOpen] = useState(false);
-  // 커맨드센터 개편: 내 업무목록/전체 업무목록 위젯 2개를 이 토글 하나로 흡수했습니다(같은
-  // tasks를 세 번 그리던 중복 제거). 기본은 "내 업무만"(기존 흐름판 동작 그대로), 부서 전체를
-  // 훑고 싶으면 [전체]로 전환합니다.
-  const [mineOnly, setMineOnly] = useState(true);
 
   const myTasks = useMemo(
     () => (mineOnly ? tasks.filter((t) => isMyTask(t, currentUserEmail)) : tasks),
@@ -152,38 +150,14 @@ export default function TaskBoard({
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <ActivityLog department={deptFilter} isAdmin={isAdmin} currentUserEmail={currentUserEmail} />
-
+      {/* 예전에는 여기 위에 부서 메모(ActivityLog)가 한 번 더 그려졌는데, 오른쪽 [소통] 칸의
+          고정 메모(PinnedMemo)와 department_memos의 같은 행을 보는 것이라 화면에 같은 글이 두 번
+          떠 있었습니다. 메모는 소통 칸 한 곳으로 모으고 흐름판은 카드에만 집중합니다. */}
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
         <div className="flex-1 overflow-y-auto p-3">
           {/* 진행대기/진행중/완료 3열을 항상 위에 쾌적하게 보여주고, 보류/이슈는 아래로 빼서
-              평소엔 접어둡니다(요청 #10) - 넓은 화면에선 3열, 좁으면 1~2열로 쌓입니다. */}
-          {/* 이 영역의 이름을 "업무 흐름판"으로 붙였습니다(요청: 진행대기/진행중/완료 흐름을
-              보는 공간의 이름 추천) - 진행대기→진행중→완료로 업무가 흘러가는 걸 보는 곳이고,
-              칸반이라는 외래어보다 뜻이 바로 읽힙니다. */}
-          <div className="mb-2 flex items-center gap-2 px-1">
-            <h2 className="text-[13px] font-bold text-slate-600">🔀 업무 흐름판</h2>
-            {/* 내 업무만 ↔ 전체 토글(내/전체 업무목록 위젯을 흡수). */}
-            <div className="flex overflow-hidden rounded-full border border-black/10 text-[10px] font-bold">
-              <button
-                type="button"
-                onClick={() => setMineOnly(true)}
-                className={"px-2 py-0.5 transition " + (mineOnly ? "bg-blue-600 text-white" : "bg-white text-slate-400 hover:bg-slate-50")}
-              >
-                🙋 내 업무만
-              </button>
-              <button
-                type="button"
-                onClick={() => setMineOnly(false)}
-                className={"px-2 py-0.5 transition " + (!mineOnly ? "bg-blue-600 text-white" : "bg-white text-slate-400 hover:bg-slate-50")}
-              >
-                🗂️ 전체
-              </button>
-            </div>
-            <span className="ml-auto rounded-full bg-black/5 px-2 py-0.5 text-[10px] tabular-nums text-slate-400">
-              진행 {myTasks.filter((t) => t.status !== "완료").length}건
-            </span>
-          </div>
+              평소엔 접어둡니다(요청 #10) - 넓은 화면에선 3열, 좁으면 1~2열로 쌓입니다.
+              제목과 [내 업무만|전체] 토글은 존 머리글로 올라갔습니다. */}
           <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {MAIN_STATUS_ORDER.map((status) => (
               <DroppableColumn

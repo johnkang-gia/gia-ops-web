@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import ActivityLogTicker from "./ActivityLogTicker";
 import { createPortal } from "react-dom";
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useRealtimeTable } from "@/lib/useRealtimeTable";
 import { useOnlineUsers } from "@/lib/useOnlineUsers";
@@ -33,6 +32,9 @@ export default function WorkBoardClient({
   initialNotices,
   collapsedNoticeIds,
   canManageNotices,
+  termLabel,
+  termDday,
+  elemActive,
 }: {
   initialTasks: Task[];
   team: TeamMember[];
@@ -48,6 +50,11 @@ export default function WorkBoardClient({
   initialNotices: WorkNotice[];
   collapsedNoticeIds: string[];
   canManageNotices: boolean;
+  // 학기 요약 배지(예: "26-27 1학기", 학기말 D-day, 초등부 재학생 수). 예전에는 페이지가
+  // 자기 헤더 줄에 따로 그렸는데, 머리줄을 하나로 합치면서 이리로 넘겨받습니다.
+  termLabel: string | null;
+  termDday: number | null;
+  elemActive: number;
 }) {
   const [tasks, setTasks] = useRealtimeTable<Task>("tasks", initialTasks);
   const notify = useToast();
@@ -239,9 +246,14 @@ export default function WorkBoardClient({
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      {/* 부서 선택 - 참조 소스코드의 좌측 세로 부서 목록 대신, 이미 있는 메인 사이드바와 중복되지
-          않도록 상단 가로 탭으로 배치했습니다(색상 점 클릭 시 관리자만 색상 변경 가능한 것은 동일). */}
-      <div className="glass-panel flex shrink-0 flex-wrap items-center gap-1 border-b border-black/5 px-3 py-2">
+      {/* 업무 보드 머리줄 - 한 줄만 씁니다.
+          예전에는 ① 대분류 상단탭 ② 페이지 헤더(학기·재학생·가이드) ③ 부서 줄, 이렇게 세 겹이
+          쌓여 있어서 정작 일하는 화면이 시작되기까지 세로 100px 넘게 잡아먹었습니다. 게다가 이
+          줄에 있던 [업무기록]·[휴지통]·[업무 보고서] 링크는 대분류 상단탭의 [지난 업무]·[휴지통]·
+          [보고서]와 같은 곳으로 가는 중복이었고, "채팅 위 업무등록 위젯에서…" 안내 문구는 한 번
+          읽으면 그만인 글이 매일 자리를 차지하고 있었습니다. 전부 정리하고 지금 상황을 알려주는
+          것(부서·학기·실시간 로그·접속자)만 남겼습니다. */}
+      <div className="glass-panel flex shrink-0 flex-wrap items-center gap-1 border-b border-black/5 px-3 py-1.5">
         {deptList.map((dept) => {
           const active = dept.id === activeDeptId;
           return (
@@ -287,30 +299,21 @@ export default function WorkBoardClient({
             </div>
           )}
         </div>
-        <span className="hidden shrink-0 whitespace-nowrap rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-medium text-blue-600 lg:inline-flex">
-          🏷️ 채팅 위 업무등록 위젯에서 나/전체/공유를 골라 빠르게 등록하세요
+        {/* 학기·학기말 D-day·재학생 수. 예전에는 이 화면만을 위한 별도 헤더 줄에 있었는데,
+            "지금 상황"을 알려주는 배지라는 점에서 부서·접속자와 성격이 같아 한 줄로 모았습니다. */}
+        {termLabel && (
+          <span className="shrink-0 whitespace-nowrap rounded-full bg-purple-50 px-2.5 py-1 text-[11px] font-bold text-purple-800">
+            📚 {termLabel}
+          </span>
+        )}
+        {termDday != null && (
+          <span className="shrink-0 whitespace-nowrap rounded-full bg-purple-600 px-2 py-1 text-[11px] font-bold text-white">
+            {termDday > 0 ? `학기말 D-${termDday}` : termDday === 0 ? "오늘 학기말" : "학기 종료"}
+          </span>
+        )}
+        <span className="shrink-0 whitespace-nowrap rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700">
+          🎓 초등부 <b>{elemActive}</b>명
         </span>
-        <Link
-          href="/work/history"
-          title="완료된 업무를 연도·학기·날짜별로 모아봅니다"
-          className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-black/5 px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition hover:bg-black/10"
-        >
-          🗂 업무기록
-        </Link>
-        <Link
-          href="/work/trash"
-          title="삭제한 업무를 7일 안에 복구할 수 있습니다"
-          className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-black/5 px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition hover:bg-black/10"
-        >
-          🗑 휴지통
-        </Link>
-        <Link
-          href="/work/report"
-          title="일간·주간·월간 업무 보고서를 문서로 정리하고 바로 인쇄할 수 있습니다"
-          className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-black/5 px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition hover:bg-black/10"
-        >
-          📊 업무 보고서
-        </Link>
         <button
           type="button"
           onClick={() => setGuideOpen(true)}

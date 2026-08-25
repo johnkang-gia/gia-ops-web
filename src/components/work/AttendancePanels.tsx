@@ -39,15 +39,17 @@ export default function AttendancePanels({
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <div className="flex shrink-0 items-center gap-1 px-2.5 pt-2">
-        <span className="mr-0.5 text-[11px] font-extrabold text-slate-400">📥 인박스</span>
+      {/* "📥 인박스" 제목은 이 패널을 감싸는 존 머리글(WorkspaceArea)이 그리므로 여기서는
+          필터 탭만 둡니다 - 같은 제목이 두 줄에 걸쳐 나오면 좁은 칸에서 자리가 아깝습니다.
+          탭이 많아 좁을 때는 가로로 넘겨 볼 수 있게 합니다. */}
+      <div className="flex shrink-0 items-center gap-1 overflow-x-auto px-2 py-1.5">
         {tabs.map((t) => (
           <button
             key={t.key}
             type="button"
             onClick={() => setTab(t.key)}
             className={
-              "flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold transition " +
+              "flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold transition " +
               (tab === t.key ? "bg-emerald-500 text-white" : "bg-black/5 text-slate-500 hover:bg-black/10")
             }
           >

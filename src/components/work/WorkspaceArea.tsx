@@ -1,36 +1,114 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Department, GoogleChatMirrorMessage, Task, TaskModeColor, TaskStatus, TeamMember } from "@/lib/types";
 import ChatPanel from "./ChatPanel";
 import TaskBoard from "./TaskBoard";
 import QuickTaskWidget from "./QuickTaskWidget";
 import AttendancePanels from "./AttendancePanels";
 import PinnedMemo from "./PinnedMemo";
+import { isMyTask } from "@/lib/myTask";
 import type { RosterStudent } from "@/lib/attendanceDigest";
 
-// 참조 소스코드(WorkspaceArea.tsx)의 마우스 드래그 리사이저를 그대로 옮겼습니다 - 서드파티
-// 라이브러리 없이 mousedown/mousemove/mouseup만으로 좌측 폭(%)과 좌측 상단 높이(%)를 조절합니다.
-const LAYOUT_STORAGE_KEY = "gia-ops-work-layout-v1";
-// 요청: "지금 업무 상황판을 살짝 늘려서, 반으로 나누고, 왼쪽은 출결알림, 오른쪽은 선생님요청
-// 으로 만들어줘" - 예전에 업무상황판+행정요청위젯이 있던 좌측 상단 자리를(업무상황판은 전체
-// 업무목록 제목 옆으로 옮기고, 행정요청은 제거했으므로) 구글챗 미러링 두 스트림 자리로
-// 재활용합니다. 텍스트 몇 줄이 보여야 하니 기존(14%)보다 살짝 늘렸습니다.
-const DEFAULT_LAYOUT = { leftWidth: 45, leftTopHeight: 22 };
+// 업무 보드 = 3존 관제탑(요청: "행정직원들이 이 페이지만 띄워놓고도 업무가 가능하도록").
+//
+// 예전 구조는 사실상 2단이었습니다. 왼쪽 한 칸에 인박스와 채팅을 위아래로 욱여넣고 오른쪽에
+// 흐름판을 둬서, 정작 하루 종일 보는 흐름판은 화면의 절반뿐이고 인박스·채팅은 둘 다 좁았습니다.
+//
+// 이제 하는 일의 성격대로 세로 3칸으로 나눕니다. 관제 화면(Front·Missive·Linear 등)이 공통으로
+// 쓰는 배치입니다 - 들어오는 것을 왼쪽에서 받고, 가운데에서 처리하고, 오른쪽에서 이야기합니다.
+//
+//   📥 인박스        🔀 업무 흐름판                💬 소통
+//   학부모 문의      예정 → 진행중 → 완료          부서 메모(고정)
+//   출결내역         보류·이슈(접기)               빠른 업무등록
+//   출결알림                                       부서 채팅
+//   선생님요청
+//
+// 양옆 칸은 접을 수 있습니다. 접으면 세로 막대만 남고 흐름판이 화면을 거의 다 씁니다 - 업무를
+// 몰아서 정리할 때 쓰는 집중 모드입니다. 폭과 접힘 상태는 이 브라우저에 기억해둡니다.
+const LAYOUT_STORAGE_KEY = "gia-ops-work-layout-v2";
+const DEFAULT_LAYOUT = { leftWidth: 26, rightWidth: 28, leftOpen: true, rightOpen: true };
+type Layout = typeof DEFAULT_LAYOUT;
 
-function loadSavedLayout(): typeof DEFAULT_LAYOUT {
+// 한 칸이 이보다 좁아지면 안에 든 표·채팅이 읽을 수 없게 되므로 드래그를 여기서 멈춥니다.
+const MIN_SIDE = 16;
+const MAX_SIDE = 42;
+
+function loadSavedLayout(): Layout {
   if (typeof window === "undefined") return DEFAULT_LAYOUT;
   try {
     const raw = window.localStorage.getItem(LAYOUT_STORAGE_KEY);
     if (!raw) return DEFAULT_LAYOUT;
-    const parsed = JSON.parse(raw);
+    const p = JSON.parse(raw) as Partial<Layout>;
     return {
-      leftWidth: typeof parsed.leftWidth === "number" ? parsed.leftWidth : DEFAULT_LAYOUT.leftWidth,
-      leftTopHeight: typeof parsed.leftTopHeight === "number" ? parsed.leftTopHeight : DEFAULT_LAYOUT.leftTopHeight,
+      leftWidth: typeof p.leftWidth === "number" ? p.leftWidth : DEFAULT_LAYOUT.leftWidth,
+      rightWidth: typeof p.rightWidth === "number" ? p.rightWidth : DEFAULT_LAYOUT.rightWidth,
+      leftOpen: typeof p.leftOpen === "boolean" ? p.leftOpen : DEFAULT_LAYOUT.leftOpen,
+      rightOpen: typeof p.rightOpen === "boolean" ? p.rightOpen : DEFAULT_LAYOUT.rightOpen,
     };
   } catch {
     return DEFAULT_LAYOUT;
   }
+}
+
+// 세 칸이 모두 똑같이 생긴 머리글을 씁니다 - 어디를 보고 있는지가 같은 자리에서 같은 크기로
+// 읽혀야 화면이 정돈돼 보입니다(요청: "제대로 깔끔하게 보이도록").
+function Zone({
+  icon,
+  title,
+  right,
+  onCollapse,
+  children,
+  style,
+  className,
+}: {
+  icon: string;
+  title: string;
+  right?: React.ReactNode;
+  onCollapse?: () => void;
+  children: React.ReactNode;
+  style?: React.CSSProperties;
+  className?: string;
+}) {
+  return (
+    <section className={"flex min-w-0 flex-col overflow-hidden " + (className ?? "")} style={style}>
+      <header className="flex h-8 shrink-0 items-center gap-1.5 border-b border-black/5 bg-white/50 px-2.5">
+        <span className="shrink-0 text-[11px] font-extrabold tracking-tight text-slate-500">
+          {icon} {title}
+        </span>
+        <div className="ml-auto flex min-w-0 items-center gap-1">{right}</div>
+        {onCollapse && (
+          <button
+            type="button"
+            onClick={onCollapse}
+            title={`${title} 접기`}
+            className="shrink-0 rounded px-1 text-[11px] text-slate-300 transition hover:bg-black/5 hover:text-slate-600"
+          >
+            ✕
+          </button>
+        )}
+      </header>
+      <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
+    </section>
+  );
+}
+
+// 접힌 칸 - 세로 막대만 남습니다. 눌러서 다시 펼칩니다.
+function CollapsedRail({ icon, title, side, onOpen }: { icon: string; title: string; side: "left" | "right"; onOpen: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      title={`${title} 펼치기`}
+      className={
+        "flex w-8 shrink-0 flex-col items-center gap-2 bg-black/[0.02] py-3 text-slate-400 transition hover:bg-black/5 hover:text-slate-700 " +
+        (side === "left" ? "border-r border-black/5" : "border-l border-black/5")
+      }
+    >
+      <span className="text-[13px]">{icon}</span>
+      <span className="text-[11px] font-bold [writing-mode:vertical-rl]">{title}</span>
+    </button>
+  );
 }
 
 export default function WorkspaceArea({
@@ -71,32 +149,25 @@ export default function WorkspaceArea({
   mirrorMessages: GoogleChatMirrorMessage[];
   roster: RosterStudent[];
 }) {
-  // 부서 헤더는 상위(WorkBoardClient)의 부서탭 바 하나로 통합했기 때문에 여기서는 별도
-  // 헤더 없이 바로 본문을 채웁니다(세로 공간 절약).
-  // 왼쪽: 업무 상황판(숫자 배지 한 줄뿐이라 아주 작게) + 채팅(크게, 실제 업무 도구라 화면을
-  // 최대한 내줍니다). 오른쪽: 내 업무목록(위젯) + 칸반보드(진행대기/진행중/보류이슈/완료).
-  // 크기를 한 번 조절하면 다음에 업무탭에 다시 들어와도 그대로 유지되도록(요청) 브라우저
-  // localStorage에 저장해둡니다 - 서버에 저장할 만큼 중요한 값은 아니고, 이 기기에서만
-  // 기억하면 충분합니다.
   // 서버 렌더링(첫 화면)과 클라이언트 첫 렌더가 반드시 같아야 하므로(hydration 불일치 방지),
-  // useState 초기값은 항상 기본값으로 두고, 마운트된 다음에만 저장된 값을 불러와 반영합니다.
-  const [leftWidth, setLeftWidth] = useState(DEFAULT_LAYOUT.leftWidth);
-  const [leftTopHeight, setLeftTopHeight] = useState(DEFAULT_LAYOUT.leftTopHeight);
+  // 초기값은 항상 기본값으로 두고 마운트된 다음에만 저장된 값을 반영합니다.
+  const [layout, setLayout] = useState<Layout>(DEFAULT_LAYOUT);
   const hydratedRef = useRef(false);
-  // 마우스 드래그로 폭을 나누는 좌우 2단 레이아웃은 손가락 터치 화면에서는 쓸 수 없어서(요청:
-  // 모바일에서도 모든 메뉴를 수월하게), 작은 화면에서는 탭으로 채팅/칸반/내업무를 전체 폭으로
-  // 하나씩 보여주는 별도 레이아웃을 씁니다(아래 mobileTab 상태).
-  const [mobileTab, setMobileTab] = useState<"board" | "chat" | "inbox">("chat");
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  // 모바일/데스크톱 레이아웃을 CSS(hidden/sm:flex)로만 나누면 두 레이아웃이 동시에 DOM에
-  // 마운트되어, ChatPanel·TaskBoard(ActivityLog)가 같은 실시간 채널 이름으로 두 번 구독하게
-  // 되면서 페이지 자체가 열리지 않는 문제가 있었습니다. 실제 화면 폭을 봐서 둘 중 하나만
-  // 마운트하도록 바꿨습니다(서버 렌더링과 첫 렌더는 항상 데스크톱 기준으로 맞춰 hydration
-  // 불일치를 피하고, 마운트된 다음에만 실제 폭을 반영합니다).
+  // 흐름판의 [내 업무만 | 전체]는 존 머리글에 두려고 여기로 올렸습니다 - 스크롤되는 본문 안이
+  // 아니라 항상 같은 자리에 고정돼 있어야 다른 칸의 머리글과 줄이 맞습니다.
+  const [mineOnly, setMineOnly] = useState(true);
+
+  // 마우스 드래그로 폭을 나누는 3단 레이아웃은 손가락 터치 화면에서 쓸 수 없어서, 작은
+  // 화면에서는 탭으로 한 칸씩 전체 폭으로 보여줍니다. CSS(hidden/sm:flex)로만 나누면 두
+  // 레이아웃이 동시에 마운트되어 ChatPanel이 같은 실시간 채널을 두 번 구독하면서 업무탭이
+  // 아예 열리지 않는 문제가 있었으므로, 실제 폭을 보고 둘 중 하나만 마운트합니다.
   const [isMobileView, setIsMobileView] = useState(false);
+  const [mobileTab, setMobileTab] = useState<"inbox" | "board" | "talk">("board");
 
   useEffect(() => {
-    const mq = window.matchMedia("(max-width: 639px)");
+    const mq = window.matchMedia("(max-width: 767px)");
     setIsMobileView(mq.matches);
     const onChange = (e: MediaQueryListEvent) => setIsMobileView(e.matches);
     mq.addEventListener("change", onChange);
@@ -104,217 +175,202 @@ export default function WorkspaceArea({
   }, []);
 
   useEffect(() => {
-    const saved = loadSavedLayout();
-    setLeftWidth(saved.leftWidth);
-    setLeftTopHeight(saved.leftTopHeight);
+    setLayout(loadSavedLayout());
     hydratedRef.current = true;
   }, []);
 
   useEffect(() => {
-    if (!hydratedRef.current) return; // 저장된 값을 아직 불러오기 전이면(기본값 상태) 덮어쓰지 않습니다.
+    if (!hydratedRef.current) return; // 저장된 값을 불러오기 전이면(기본값 상태) 덮어쓰지 않습니다.
     try {
-      localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify({ leftWidth, leftTopHeight }));
+      localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(layout));
     } catch {
-      // 시크릿 모드 등 localStorage를 쓸 수 없는 환경이면 그냥 이번 세션만 기억하지 않고 넘어갑니다.
+      // 시크릿 모드 등 localStorage를 못 쓰는 환경이면 이번 세션만 기억하지 않고 넘어갑니다.
     }
-  }, [leftWidth, leftTopHeight]);
+  }, [layout]);
 
-  function startColResize(e: React.MouseEvent) {
-    e.preventDefault();
-    const startX = e.clientX;
-    const startLeft = leftWidth;
-    function onMove(moveEvent: MouseEvent) {
-      const containerWidth = window.innerWidth - 224; // 사이드바 폭(w-56=224px) 대략 보정
-      const deltaPercent = ((moveEvent.clientX - startX) / containerWidth) * 100;
-      let next = startLeft + deltaPercent;
-      if (next < 25) next = 25;
-      if (next > 65) next = 65;
-      setLeftWidth(next);
-    }
-    function onUp() {
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
-    }
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup", onUp);
-  }
-
-  function startRowResize(setter: (v: number) => void, current: number, min = 15, max = 60) {
-    return (e: React.MouseEvent) => {
+  // 드래그로 좌/우 칸 폭 조절. 예전에는 window.innerWidth에서 사이드바 폭을 어림잡아 빼는
+  // 방식이라 화면 크기나 사이드바 상태가 바뀌면 손끝과 경계선이 어긋났습니다. 실제 컨테이너
+  // 폭을 재서 계산하면 항상 마우스를 따라옵니다.
+  const startResize = useCallback(
+    (side: "left" | "right") => (e: React.MouseEvent) => {
       e.preventDefault();
-      const startY = e.clientY;
-      function onMove(moveEvent: MouseEvent) {
-        const containerHeight = window.innerHeight - 130;
-        const deltaPercent = ((moveEvent.clientY - startY) / containerHeight) * 100;
-        let next = current + deltaPercent;
-        if (next < min) next = min;
-        if (next > max) next = max;
-        setter(next);
+      const box = containerRef.current?.getBoundingClientRect();
+      if (!box) return;
+      const startX = e.clientX;
+      const startValue = side === "left" ? layout.leftWidth : layout.rightWidth;
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+
+      function onMove(ev: MouseEvent) {
+        const deltaPercent = ((ev.clientX - startX) / box!.width) * 100;
+        // 오른쪽 칸은 마우스를 왼쪽으로 끌수록 넓어지므로 부호가 반대입니다.
+        let next = side === "left" ? startValue + deltaPercent : startValue - deltaPercent;
+        next = Math.min(MAX_SIDE, Math.max(MIN_SIDE, next));
+        setLayout((p) => (side === "left" ? { ...p, leftWidth: next } : { ...p, rightWidth: next }));
       }
       function onUp() {
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
         document.removeEventListener("mousemove", onMove);
         document.removeEventListener("mouseup", onUp);
       }
       document.addEventListener("mousemove", onMove);
       document.addEventListener("mouseup", onUp);
-    };
-  }
+    },
+    [layout.leftWidth, layout.rightWidth]
+  );
+
+  const inbox = (
+    <AttendancePanels
+      messages={mirrorMessages}
+      team={team}
+      userEmail={currentUserEmail}
+      department={activeDepartment.name}
+      roster={roster}
+      onTaskCreated={onTaskCreated}
+    />
+  );
+
+  const board = (
+    <TaskBoard
+      tasks={tasks}
+      team={team}
+      deptColorMap={deptColorMap}
+      modeColorMap={modeColorMap}
+      isAdmin={isAdmin}
+      currentUserEmail={currentUserEmail}
+      onOpenTask={onOpenTask}
+      onChangeStatus={onChangeStatus}
+      onToggleAck={onToggleAck}
+      mineOnly={mineOnly}
+    />
+  );
+
+  const talk = (
+    <div className="flex h-full flex-col overflow-hidden">
+      {/* 부서 공유 메모를 채팅 맨 위에 고정합니다 - 매일 봐야 하는 메모라 접힌 상태에서도 첫 줄이
+          보입니다. 예전에는 흐름판 위에도 같은 메모가 한 번 더 그려지고 있었는데(ActivityLog),
+          같은 내용이 화면에 두 번 나올 이유가 없어 이쪽만 남겼습니다. */}
+      <PinnedMemo department={activeDepartment.name} currentUserEmail={currentUserEmail} />
+      <div className="shrink-0 border-b border-black/5 pb-1">
+        <QuickTaskWidget
+          department={activeDepartment.name}
+          team={team}
+          currentUserEmail={currentUserEmail}
+          onTaskCreated={onTaskCreated}
+          modeColorMap={modeColorMap}
+          isAdmin={isAdmin}
+          onModeColorChange={onModeColorChange}
+        />
+      </div>
+      <div className="min-h-0 flex-1 overflow-hidden">
+        <ChatPanel
+          department={activeDepartment.name}
+          departments={departments}
+          team={team}
+          userEmail={currentUserEmail}
+          tasks={tasks}
+          onTaskCreated={onTaskCreated}
+        />
+      </div>
+    </div>
+  );
+
+  // 흐름판 머리글에 들어가는 조작부 - 세 칸의 머리글 높이를 맞추려고 여기서 그립니다.
+  // 흐름판과 똑같은 기준(isMyTask)으로 세야 머리글 숫자와 카드 수가 어긋나지 않습니다.
+  const openCount = tasks.filter((t) => t.status !== "완료" && (!mineOnly || isMyTask(t, currentUserEmail))).length;
+  const boardControls = (
+    <>
+      <div className="flex shrink-0 overflow-hidden rounded-full border border-black/10 text-[10px] font-bold">
+        <button
+          type="button"
+          onClick={() => setMineOnly(true)}
+          className={"px-2 py-0.5 transition " + (mineOnly ? "bg-blue-600 text-white" : "bg-white text-slate-400 hover:bg-slate-50")}
+        >
+          🙋 내 업무만
+        </button>
+        <button
+          type="button"
+          onClick={() => setMineOnly(false)}
+          className={"px-2 py-0.5 transition " + (!mineOnly ? "bg-blue-600 text-white" : "bg-white text-slate-400 hover:bg-slate-50")}
+        >
+          🗂️ 전체
+        </button>
+      </div>
+      <span className="shrink-0 rounded-full bg-black/5 px-2 py-0.5 text-[10px] tabular-nums text-slate-400">진행 {openCount}건</span>
+    </>
+  );
 
   if (isMobileView) {
     return (
-      /* 모바일(작은 화면): 마우스 드래그로 나누는 2단 레이아웃 대신, 탭으로 채팅/칸반/내업무를
-          하나씩 전체 폭으로 보여줍니다 - 터치 화면에서 리사이저를 쓸 수 없어서(요청). 데스크톱
-          레이아웃과 동시에 마운트하면 ChatPanel/ActivityLog의 실시간 채널이 중복 구독되어 업무탭
-          자체가 열리지 않는 문제가 있었으므로, 둘 중 하나만 마운트합니다. */
       <div className="flex h-full flex-col overflow-hidden">
         <div className="glass-panel flex shrink-0 divide-x divide-black/5 border-b border-black/5">
           {(
             [
-              { key: "chat", label: "💬 채팅" },
-              { key: "board", label: "🔀 흐름판" },
               { key: "inbox", label: "📥 인박스" },
+              { key: "board", label: "🔀 흐름판" },
+              { key: "talk", label: "💬 소통" },
             ] as const
           ).map((t) => (
             <button
               key={t.key}
               onClick={() => setMobileTab(t.key)}
-              className={
-                "flex-1 py-2.5 text-xs font-bold transition " +
-                (mobileTab === t.key ? "bg-blue-50 text-blue-600" : "text-slate-500")
-              }
+              className={"flex-1 py-2.5 text-xs font-bold transition " + (mobileTab === t.key ? "bg-blue-50 text-blue-600" : "text-slate-500")}
             >
               {t.label}
             </button>
           ))}
         </div>
         <div className="min-h-0 flex-1 overflow-hidden">
-          {mobileTab === "chat" && (
+          {mobileTab === "inbox" && inbox}
+          {mobileTab === "board" && (
             <div className="flex h-full flex-col overflow-hidden">
-              <div className="shrink-0 border-b border-black/5 pb-1">
-                <QuickTaskWidget
-                  department={activeDepartment.name}
-                  team={team}
-                  currentUserEmail={currentUserEmail}
-                  onTaskCreated={onTaskCreated}
-                  modeColorMap={modeColorMap}
-                  isAdmin={isAdmin}
-                  onModeColorChange={onModeColorChange}
-                />
-              </div>
-              <div className="min-h-0 flex-1 overflow-hidden">
-                <ChatPanel
-                  department={activeDepartment.name}
-                  departments={departments}
-                  team={team}
-                  userEmail={currentUserEmail}
-                  tasks={tasks}
-                  onTaskCreated={onTaskCreated}
-                />
-              </div>
+              <div className="flex h-8 shrink-0 items-center justify-end gap-1 border-b border-black/5 px-2.5">{boardControls}</div>
+              <div className="min-h-0 flex-1 overflow-hidden">{board}</div>
             </div>
           )}
-          {mobileTab === "board" && (
-            <TaskBoard
-              tasks={tasks}
-              team={team}
-              deptColorMap={deptColorMap}
-              modeColorMap={modeColorMap}
-              isAdmin={isAdmin}
-              currentUserEmail={currentUserEmail}
-              deptFilter={activeDepartment.name}
-              onOpenTask={onOpenTask}
-              onChangeStatus={onChangeStatus}
-              onToggleAck={onToggleAck}
-            />
-          )}
-          {mobileTab === "inbox" && (
-            /* 통합 인박스(학부모 문의·출결내역·출결알림·선생님요청)를 전체 폭으로. 내/전체
-               업무목록 위젯은 흐름판의 [내 업무만|전체] 토글로 흡수되어 별도 탭이 필요 없습니다. */
-            <AttendancePanels
-              messages={mirrorMessages}
-              team={team}
-              userEmail={currentUserEmail}
-              department={activeDepartment.name}
-              roster={roster}
-              onTaskCreated={onTaskCreated}
-            />
-          )}
+          {mobileTab === "talk" && talk}
         </div>
       </div>
     );
   }
 
-  // 데스크톱(그 외 화면 폭): 기존 마우스 드래그로 폭/높이를 조절하는 2단 레이아웃 그대로 유지
   return (
-    <div className="flex h-full overflow-hidden">
-      {/* 왼쪽: 구글챗 미러링 두 방(출결알림/선생님요청, 반씩) + 빠른 업무등록 위젯(항상 고정) +
-          채팅(나머지 공간). 예전 업무상황판+행정요청 자리였는데, 업무상황판은 오른쪽 "전체
-          업무목록" 제목 옆으로 옮기고(요청 1) 행정요청은 없앴습니다(요청 2, 구글챗 미러링으로
-          대체). */}
-      <div className="flex flex-col overflow-hidden" style={{ width: `${leftWidth}%` }}>
-        {/* 출결내역(정리본, 기본) ↔ 출결알림(구글챗 원문)을 탭으로 전환합니다(요청 2). */}
-        <div className="overflow-hidden" style={{ height: `${leftTopHeight}%` }}>
-          <AttendancePanels
-            messages={mirrorMessages}
-            team={team}
-            userEmail={currentUserEmail}
-            department={activeDepartment.name}
-            roster={roster}
-            onTaskCreated={onTaskCreated}
+    <div ref={containerRef} className="flex h-full overflow-hidden">
+      {/* ① 들어오는 것 - 학부모 문의·출결·선생님 요청을 한 곳에서 받습니다. */}
+      {layout.leftOpen ? (
+        <>
+          <Zone icon="📥" title="인박스" onCollapse={() => setLayout((p) => ({ ...p, leftOpen: false }))} style={{ width: `${layout.leftWidth}%` }}>
+            {inbox}
+          </Zone>
+          <div
+            onMouseDown={startResize("left")}
+            className="w-1 shrink-0 cursor-col-resize bg-black/5 transition hover:bg-blue-400"
           />
-        </div>
-        <div
-          onMouseDown={startRowResize(setLeftTopHeight, leftTopHeight, 8, 40)}
-          className="h-1 shrink-0 cursor-row-resize bg-black/5 transition hover:bg-blue-400"
-        />
-        <div className="flex min-h-0 flex-col overflow-hidden" style={{ height: `${100 - leftTopHeight}%` }}>
-          {/* 부서메모 고정핀(커맨드센터 개편): 부서 공유 메모를 채팅 위에 상시 고정합니다. */}
-          <PinnedMemo department={activeDepartment.name} currentUserEmail={currentUserEmail} />
-          <div className="shrink-0 border-b border-black/5 pb-1">
-            <QuickTaskWidget
-              department={activeDepartment.name}
-              team={team}
-              currentUserEmail={currentUserEmail}
-              onTaskCreated={onTaskCreated}
-              modeColorMap={modeColorMap}
-              isAdmin={isAdmin}
-              onModeColorChange={onModeColorChange}
-            />
-          </div>
-          <div className="min-h-0 flex-1 overflow-hidden">
-            <ChatPanel
-              department={activeDepartment.name}
-              departments={departments}
-              team={team}
-              userEmail={currentUserEmail}
-              tasks={tasks}
-              onTaskCreated={onTaskCreated}
-            />
-          </div>
-        </div>
-      </div>
+        </>
+      ) : (
+        <CollapsedRail icon="📥" title="인박스" side="left" onOpen={() => setLayout((p) => ({ ...p, leftOpen: true }))} />
+      )}
 
-      <div onMouseDown={startColResize} className="w-1 shrink-0 cursor-col-resize bg-black/5 transition hover:bg-blue-400" />
+      {/* ② 처리하는 곳 - 남는 폭을 전부 씁니다. 양옆을 접으면 화면 전체가 흐름판이 됩니다. */}
+      <Zone icon="🔀" title="업무 흐름판" right={boardControls} className="flex-1">
+        {board}
+      </Zone>
 
-      {/* 오른쪽: 업무 흐름판(칸반)이 세로 전체를 씁니다. 내/전체 업무목록 위젯 2개는 흐름판의
-          [내 업무만|전체] 토글로 흡수했습니다(같은 업무가 화면에 세 번 그려지던 중복 제거 +
-          칸반이 두 배로 넓어짐). */}
-      <div className="flex flex-col overflow-hidden" style={{ width: `${100 - leftWidth}%` }}>
-        <div className="min-h-0 flex-1 overflow-hidden">
-          <TaskBoard
-            tasks={tasks}
-            team={team}
-            deptColorMap={deptColorMap}
-            modeColorMap={modeColorMap}
-            isAdmin={isAdmin}
-            currentUserEmail={currentUserEmail}
-            deptFilter={activeDepartment.name}
-            onOpenTask={onOpenTask}
-            onChangeStatus={onChangeStatus}
-            onToggleAck={onToggleAck}
+      {/* ③ 이야기하는 곳 - 메모·빠른 등록·채팅. */}
+      {layout.rightOpen ? (
+        <>
+          <div
+            onMouseDown={startResize("right")}
+            className="w-1 shrink-0 cursor-col-resize bg-black/5 transition hover:bg-blue-400"
           />
-        </div>
-      </div>
+          <Zone icon="💬" title="소통" onCollapse={() => setLayout((p) => ({ ...p, rightOpen: false }))} style={{ width: `${layout.rightWidth}%` }}>
+            {talk}
+          </Zone>
+        </>
+      ) : (
+        <CollapsedRail icon="💬" title="소통" side="right" onOpen={() => setLayout((p) => ({ ...p, rightOpen: true }))} />
+      )}
     </div>
   );
 }

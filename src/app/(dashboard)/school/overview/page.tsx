@@ -32,7 +32,7 @@ export default async function SchoolOverviewPage() {
       supabase.from("events").select("date, name").gte("date", today).order("date", { ascending: true }).limit(8),
       supabase.from("wr_reports").select("id", { count: "exact", head: true }).eq("status", "published").gte("report_date", sinceWeek),
       supabase.from("app_users").select("email, name").eq("status", "approved"),
-      supabase.from("wr_subjects").select("name, teacher_email"),
+      supabase.from("wr_subjects").select("name, teacher_email, teacher_name"),
       supabase.from("terms").select("term_type, year, start_date, end_date, status").eq("status", "진행중").order("start_date", { ascending: false }).limit(1),
     ]);
   const userNameByEmail = new Map((appUsers ?? []).map((u) => [u.email as string, (u.name as string | null) ?? null]));
@@ -90,7 +90,8 @@ export default async function SchoolOverviewPage() {
   const subjects: SubjectRow[] = (subjectRows ?? [])
     .map((s) => {
       const email = (s.teacher_email as string | null) ?? null;
-      return { name: (s.name as string) ?? "", teacher: email ? userNameByEmail.get(email) ?? email : null };
+      const teacher = (email ? userNameByEmail.get(email) ?? email : null) ?? (s.teacher_name as string | null) ?? null;
+      return { name: (s.name as string) ?? "", teacher };
     })
     .sort((a, b) => a.name.localeCompare(b.name, "ko"));
 
@@ -100,7 +101,10 @@ export default async function SchoolOverviewPage() {
     if (c.teacher_email) teacherSet.add("e:" + (c.teacher_email as string));
     else if (c.teacher_name) teacherSet.add("n:" + (c.teacher_name as string));
   }
-  for (const s of subjectRows ?? []) if (s.teacher_email) teacherSet.add("e:" + (s.teacher_email as string));
+  for (const s of subjectRows ?? []) {
+    if (s.teacher_email) teacherSet.add("e:" + (s.teacher_email as string));
+    else if (s.teacher_name) teacherSet.add("n:" + (s.teacher_name as string));
+  }
   const teacherCount = teacherSet.size;
 
   // 현재 학기 정보(요청: 지금 무슨 학기인지, 언제까지인지)

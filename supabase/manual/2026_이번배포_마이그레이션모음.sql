@@ -297,4 +297,21 @@ $$;
 
 grant execute on function public.bump_pickup_feedback(text, boolean) to authenticated, service_role;
 
+
+-- ===== 과목반(과목 선생님) 데이터 (⑦) =====
+alter table public.wr_subjects add column if not exists teacher_name text;
+insert into public.wr_subjects (id, name, teacher_name, color)
+values
+  ('5b000000-0000-4000-c000-000000000001', '중국어', '박은지 (Eunji Park)', '#ef4444'),
+  ('5b000000-0000-4000-c000-000000000002', '한국사', '조진형 (Joseph Cho)', '#f59e0b'),
+  ('5b000000-0000-4000-c000-000000000003', '코딩', 'Eamonn', '#0ea5e9'),
+  ('5b000000-0000-4000-c000-000000000004', '중국어·ASD', '조주은 (June Cho)', '#8b5cf6'),
+  ('5b000000-0000-4000-c000-000000000005', 'ASD', 'Teneqha Ford', '#10b981'),
+  ('5b000000-0000-4000-c000-000000000006', 'ASD', 'Sophia Shim', '#10b981'),
+  ('5b000000-0000-4000-c000-000000000007', 'ASD', 'Celine', '#10b981'),
+  ('5b000000-0000-4000-c000-000000000008', 'ASD', 'Anna', '#10b981'),
+  ('5b000000-0000-4000-c000-000000000009', 'ASD 보조', 'Crystal Jung', '#14b8a6')
+on conflict (id) do update
+  set name = excluded.name, teacher_name = excluded.teacher_name, color = excluded.color;
+
 commit;

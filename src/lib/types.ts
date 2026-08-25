@@ -602,6 +602,7 @@ export type WrSubject = {
   id: string;
   name: string;
   teacher_email: string | null;
+  teacher_name: string | null;
   class_id: string | null;
   color: string | null;
   student_ids: string[];

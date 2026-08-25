@@ -128,6 +128,16 @@ export default function SubjectManageClient({
                     </option>
                   ))}
                 </select>
+                {!s.teacher_email && (
+                  <input
+                    key={s.id + (s.teacher_name ?? "")}
+                    defaultValue={s.teacher_name ?? ""}
+                    onBlur={(e) => updateSubject(s.id, { teacher_name: e.target.value || null })}
+                    placeholder="계정 없을 때 이름만"
+                    title="아직 계정이 없는 과목 선생님의 이름만 임시로 적어둘 수 있습니다. 계정이 생기면 위 선택으로 바꿔주세요."
+                    className="w-32 rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-500"
+                  />
+                )}
                 <span className="text-xs text-slate-400">학생 {s.student_ids.length}명</span>
               </div>
               <div className="flex gap-2">

@@ -8,10 +8,13 @@ import type { WrStudent } from "@/lib/types";
 // 한눈에 파악되게 합니다. 카드를 누르면 통합 프로필(/students/[id])로 이동합니다.
 type Bucket = "active" | "graduated" | "withdrawn";
 
-function bucketOf(status: string | null): Bucket {
+// 보관(inactive·보류) 학생과 유치부는 이 화면에 아예 나타나지 않습니다(요청: "재학생 명단에는
+// 안뜨게... 아예 페이지에서 기록되지 않도록"). null을 돌려주면 어느 탭에도 들어가지 않습니다.
+function bucketOf(status: string | null): Bucket | null {
   if (status === "졸업" || status === "graduated") return "graduated";
-  if (status === "퇴학" || status === "전출" || status === "withdrawn") return "withdrawn";
-  return "active";
+  if (status === "퇴학" || status === "전출" || status === "전출예정" || status === "withdrawn") return "withdrawn";
+  if (status === "active" || status === "재학") return "active";
+  return null; // inactive·보류 등 = 보관
 }
 
 const TAB_LABEL: Record<Bucket, string> = { active: "재학", graduated: "졸업", withdrawn: "퇴학·전출" };
@@ -23,7 +26,12 @@ export default function StudentSearchClient({ students }: { students: WrStudent[
 
   const byBucket = useMemo(() => {
     const m: Record<Bucket, WrStudent[]> = { active: [], graduated: [], withdrawn: [] };
-    for (const s of students) m[bucketOf(s.status)].push(s);
+    for (const s of students) {
+      // 유치부·보관(inactive 등) 학생은 화면에 아예 나타나지 않습니다(요청).
+      if (((s.department as string | null) ?? "").includes("유치")) continue;
+      const b = bucketOf(s.status);
+      if (b) m[b].push(s);
+    }
     for (const k of Object.keys(m) as Bucket[]) m[k].sort((a, b) => a.name.localeCompare(b.name, "ko"));
     return m;
   }, [students]);

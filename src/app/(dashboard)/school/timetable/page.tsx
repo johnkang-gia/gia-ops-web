@@ -45,7 +45,8 @@ export default async function TimetablePage() {
   const classCount = new Map<string, number>();
   for (const s of studsRaw ?? []) {
     const st = (s.status as string | null) ?? null;
-    if (st === "졸업" || st === "graduated" || st === "퇴학" || st === "전출" || st === "withdrawn") continue;
+    // 재학(active)만 셉니다 - 보관(inactive)·전출예정 등은 제외(요청: 명부 리셋).
+    if (st !== "active" && st !== "재학") continue;
     const cid = s.class_id as string | null;
     if (cid) classCount.set(cid, (classCount.get(cid) ?? 0) + 1);
   }

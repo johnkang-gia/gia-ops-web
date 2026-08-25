@@ -90,7 +90,8 @@ export default async function MyClassPage() {
     const studentsByClass = new Map<string, string[]>();
     for (const s of studs ?? []) {
       const st = (s.status as string | null) ?? null;
-      if (st === "졸업" || st === "graduated" || st === "퇴학" || st === "전출" || st === "withdrawn") continue;
+      // 재학(active)만 - 보관(inactive)·전출예정 등은 명단에서 제외(요청: 명부 리셋).
+      if (st !== "active" && st !== "재학") continue;
       const cid = s.class_id as string | null;
       if (!cid) continue;
       const arr = studentsByClass.get(cid) ?? [];

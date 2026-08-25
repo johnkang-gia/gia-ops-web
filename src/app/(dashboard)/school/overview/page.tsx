@@ -48,6 +48,8 @@ export default async function SchoolOverviewPage() {
   const deptMap = new Map<string, number>(); // 유치/초등/중고등
   const deptKey = (d: string) => (d.includes("유치") ? "유치부" : d.includes("초등") ? "초등부" : d.includes("중") || d.includes("고") ? "중고등부" : "기타");
   for (const s of students ?? []) {
+    // 유치부는 카운트에서 제외합니다(요청: "유치부 아이들은 그냥 무시하고 카운팅하지도 말고").
+    if (((s.department as string | null) ?? "").includes("유치")) continue;
     const st = (s.status as string | null) ?? null;
     if (isGrad(st)) graduated += 1;
     else if (isWithdrawn(st)) withdrawn += 1;
@@ -65,7 +67,7 @@ export default async function SchoolOverviewPage() {
       deptMap.set(dk, (deptMap.get(dk) ?? 0) + 1);
     }
   }
-  const deptOrder = ["유치부", "초등부", "중고등부", "기타"];
+  const deptOrder = ["초등부", "중고등부", "기타"];
   const deptCounts: DeptCount[] = deptOrder.filter((d) => deptMap.has(d)).map((dept) => ({ dept, count: deptMap.get(dept) ?? 0 }));
   const grades: GradeCount[] = [...gradeMap.entries()]
     .map(([grade, count]) => ({ grade, count }))

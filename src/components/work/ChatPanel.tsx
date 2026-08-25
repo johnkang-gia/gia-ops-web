@@ -1155,6 +1155,22 @@ export default function ChatPanel({
 
                       {!isSystemConfirmation && (
                         <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition group-hover:opacity-100">
+                          {/* 호버 시 바로 보이는 "→업무" 버튼(커맨드센터 개편): 메시지를 클릭해야
+                              뜨던 업무 등록 팝업을 눈에 띄는 액션으로 꺼냈습니다(Slack의
+                              메시지→태스크 패턴). 동작은 기존 클릭 팝업과 동일합니다. */}
+                          {!linkedTask && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openTaskPopup(e, m);
+                              }}
+                              title="이 메시지를 업무로 등록"
+                              className="rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-bold text-blue-600 hover:bg-blue-100"
+                            >
+                              →업무
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={(e) => openReactionPopup(e, m.id)}

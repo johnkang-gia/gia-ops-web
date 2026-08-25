@@ -23,7 +23,7 @@ export default async function ShuttleOverviewPage() {
 
   const { data: routesRaw } = await supabase
     .from("shuttle_routes")
-    .select("id, route_no, name, driver_name, sort_order")
+    .select("id, route_no, name, driver_name, vehicle_no, seat_capacity, usable_capacity, sort_order")
     .eq("active", true)
     .eq("direction", "하원")
     .eq("term", term)
@@ -41,10 +41,10 @@ export default async function ShuttleOverviewPage() {
   };
 
   // 정류장 → 배정 → 오늘 탑승자(요일 포함)
-  let stops: { id: string; route_id: string }[] = [];
+  let stops: { id: string; route_id: string; seq: number }[] = [];
   let assigns: { id: string; stop_id: string; student_name_raw: string; weekdays: number[] }[] = [];
   if (routeIds.length) {
-    const { data: s } = await supabase.from("shuttle_stops").select("id, route_id").in("route_id", routeIds);
+    const { data: s } = await supabase.from("shuttle_stops").select("id, route_id, seq").in("route_id", routeIds);
     stops = s ?? [];
     const stopIds = stops.map((x) => x.id);
     if (stopIds.length) {
@@ -106,6 +106,47 @@ export default async function ShuttleOverviewPage() {
     .eq("term", term)
     .eq("active", true);
 
+  // 노선별 막차(마지막 정류장) 평균 도착시각과 오늘 지연(요청 ⑭ 채택: 노선별 예상 소요·지연).
+  // 각 노선의 seq가 가장 큰 정류장을 막차 정류장으로 보고, shuttle_stop_arrivals의 도착시각을
+  // KST 기준 '자정 이후 분'으로 바꿔 평균과 오늘값을 비교합니다.
+  const lastStopByRoute = new Map<string, string>(); // route_id -> stop_id(막차)
+  {
+    const maxSeq = new Map<string, number>();
+    for (const s of stops) {
+      const rid = s.route_id;
+      if (!maxSeq.has(rid) || s.seq > (maxSeq.get(rid) as number)) {
+        maxSeq.set(rid, s.seq);
+        lastStopByRoute.set(rid, s.id);
+      }
+    }
+  }
+  const lastStopIds = [...lastStopByRoute.values()];
+  const kstMinutes = (iso: string) => {
+    const d = new Date(iso);
+    const p = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(d);
+    const h = Number(p.find((x) => x.type === "hour")?.value ?? "0");
+    const m = Number(p.find((x) => x.type === "minute")?.value ?? "0");
+    return h * 60 + m;
+  };
+  const fmtMin = (mins: number) => `${String(Math.floor(mins / 60)).padStart(2, "0")}:${String(Math.round(mins % 60)).padStart(2, "0")}`;
+  const avgByStop = new Map<string, number>();
+  const todayByStop = new Map<string, number>();
+  if (lastStopIds.length) {
+    const { data: arr } = await supabase
+      .from("shuttle_stop_arrivals")
+      .select("stop_id, arrived_at, service_date")
+      .in("stop_id", lastStopIds)
+      .order("service_date", { ascending: false })
+      .limit(1500);
+    const acc = new Map<string, number[]>();
+    for (const a of arr ?? []) {
+      const mins = kstMinutes(a.arrived_at as string);
+      (acc.get(a.stop_id as string) ?? acc.set(a.stop_id as string, []).get(a.stop_id as string)!).push(mins);
+      if ((a.service_date as string) === today) todayByStop.set(a.stop_id as string, mins);
+    }
+    for (const [sid, list] of acc) avgByStop.set(sid, list.reduce((x, y) => x + y, 0) / list.length);
+  }
+
   // GPS 기기 상태
   const { data: devices } = await supabase
     .from("shuttle_tracker_devices")
@@ -127,16 +168,30 @@ export default async function ShuttleOverviewPage() {
   const routeStats: RouteStat[] = routes.map((r, i) => {
     const rid = r.id as string;
     const gps: RouteStat["gps"] = liveByRoute.get(rid) ? "live" : hasDeviceRoute.has(rid) ? "idle" : "none";
+    const cap = (r.usable_capacity as number | null) ?? (r.seat_capacity as number | null) ?? null;
+    const today = perRouteToday.get(rid) ?? 0;
+    const lastStop = lastStopByRoute.get(rid);
+    const avg = lastStop ? avgByStop.get(lastStop) : undefined;
+    const todayLast = lastStop ? todayByStop.get(lastStop) : undefined;
+    const delayMin = avg != null && todayLast != null ? Math.round(todayLast - avg) : null;
     return {
       routeNo: r.route_no as string,
       name: (r.name as string | null) ?? null,
       driver: (r.driver_name as string | null) ?? null,
+      vehicleNo: (r.vehicle_no as string | null) ?? null,
       color: routeColorAt(i, routes.length),
-      today: perRouteToday.get(rid) ?? 0,
+      today,
+      capacity: cap,
+      over: cap != null && today > cap,
+      lastStopAvg: avg != null ? fmtMin(avg) : null,
+      todayLast: todayLast != null ? fmtMin(todayLast) : null,
+      delayMin,
       gps,
     };
   });
 
+  const avgValues = [...avgByStop.values()];
+  const schoolAvg = avgValues.length ? avgValues.reduce((x, y) => x + y, 0) / avgValues.length : null;
   const kpi: OverviewKpi = {
     expected,
     pickup,
@@ -145,9 +200,10 @@ export default async function ShuttleOverviewPage() {
     running,
     totalDevices: (devices ?? []).length,
     notes: notesCount ?? 0,
-    lastStopAvg: null,
+    lastStopAvg: schoolAvg != null ? fmtMin(schoolAvg) : null,
     pendingPickups: pickupNames.length,
     unsetDevices,
+    overCount: routeStats.filter((r) => r.over).length,
   };
 
   const dateStr = new Date().toLocaleDateString("ko-KR", { month: "long", day: "numeric", weekday: "short" });

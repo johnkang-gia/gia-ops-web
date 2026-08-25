@@ -10,8 +10,14 @@ export type RouteStat = {
   routeNo: string;
   name: string | null;
   driver: string | null;
+  vehicleNo: string | null;
   color: string;
   today: number;
+  capacity: number | null;
+  over: boolean;
+  lastStopAvg: string | null;
+  todayLast: string | null;
+  delayMin: number | null;
   gps: "live" | "idle" | "none";
 };
 export type OverviewKpi = {
@@ -25,6 +31,7 @@ export type OverviewKpi = {
   lastStopAvg: string | null;
   pendingPickups: number;
   unsetDevices: number;
+  overCount: number;
 };
 
 function useCountUp(target: number, ms = 650) {
@@ -150,7 +157,21 @@ export default function ShuttleOverviewClient({
                     style={{ background: gpsColor(r.gps), animation: r.gps === "live" ? "gpspulse 1.6s infinite" : undefined }}
                   />
                 </div>
-                <div className="mt-0.5 text-[11px] text-slate-500">🧒 {r.today}명</div>
+                <div className={"mt-0.5 text-[11px] " + (r.over ? "font-bold text-red-600" : "text-slate-500")}>
+                  🧒 {r.today}
+                  {r.capacity != null && <span className="text-slate-400">/{r.capacity}</span>}명{r.over && " ⚠"}
+                </div>
+                {(r.lastStopAvg || r.delayMin != null) && (
+                  <div className="mt-0.5 text-[10px] text-slate-400">
+                    막차 {r.lastStopAvg ?? "-"}
+                    {r.delayMin != null && r.delayMin !== 0 && (
+                      <span className={r.delayMin > 0 ? "text-red-500" : "text-emerald-600"}>
+                        {" "}
+                        {r.delayMin > 0 ? `+${r.delayMin}` : r.delayMin}분
+                      </span>
+                    )}
+                  </div>
+                )}
               </button>
             ))}
           </div>
@@ -186,12 +207,76 @@ export default function ShuttleOverviewClient({
               <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">
                 ⏱️ 막차 평균 <b>{kpi.lastStopAvg ?? "-"}</b>
               </span>
+              <span
+                className={
+                  "rounded-full border px-2.5 py-1 " +
+                  (kpi.overCount ? "border-red-300 bg-red-50 text-red-700" : "border-slate-200 bg-slate-50")
+                }
+              >
+                🚸 정원 초과 <b>{kpi.overCount}</b>
+              </span>
               <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">
                 🔗 미설치 기기 <b>{kpi.unsetDevices}</b>
               </span>
             </div>
           </div>
         </div>
+      </div>
+
+      {/* 노선 상세 요약(요청 ⑨: 전체노선 하단 여백을 정보로 채움). 기사·차량·정원 대비 인원·
+          막차 평균·오늘 지연·GPS를 한 표로. */}
+      <div className="ov-rise mt-3 overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+        <table className="w-full min-w-[720px] border-collapse text-sm">
+          <thead>
+            <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs text-slate-500">
+              <th className="px-3 py-2 font-semibold">호차</th>
+              <th className="px-3 py-2 font-semibold">지역</th>
+              <th className="px-3 py-2 font-semibold">기사·차량</th>
+              <th className="px-3 py-2 text-center font-semibold">오늘/정원</th>
+              <th className="px-3 py-2 text-center font-semibold">막차 평균</th>
+              <th className="px-3 py-2 text-center font-semibold">오늘 지연</th>
+              <th className="px-3 py-2 text-center font-semibold">GPS</th>
+            </tr>
+          </thead>
+          <tbody>
+            {routes.map((r) => (
+              <tr key={r.routeNo} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
+                <td className="px-3 py-1.5 font-bold" style={{ color: r.color }}>
+                  {r.routeNo}호
+                </td>
+                <td className="px-3 py-1.5 text-xs text-slate-600">{r.name ?? "-"}</td>
+                <td className="px-3 py-1.5 text-xs text-slate-500">
+                  {r.driver ?? "-"}
+                  {r.vehicleNo ? ` · ${r.vehicleNo}` : ""}
+                </td>
+                <td className={"px-3 py-1.5 text-center " + (r.over ? "font-bold text-red-600" : "text-slate-700")}>
+                  {r.today}
+                  {r.capacity != null ? `/${r.capacity}` : ""}
+                  {r.over && " ⚠"}
+                </td>
+                <td className="px-3 py-1.5 text-center text-slate-600">{r.lastStopAvg ?? "-"}</td>
+                <td className="px-3 py-1.5 text-center">
+                  {r.delayMin == null ? (
+                    <span className="text-slate-300">-</span>
+                  ) : r.delayMin > 0 ? (
+                    <span className="text-red-500">+{r.delayMin}분</span>
+                  ) : r.delayMin < 0 ? (
+                    <span className="text-emerald-600">{r.delayMin}분</span>
+                  ) : (
+                    <span className="text-slate-400">정시</span>
+                  )}
+                </td>
+                <td className="px-3 py-1.5 text-center">
+                  <span
+                    className="inline-block h-2.5 w-2.5 rounded-full"
+                    style={{ background: gpsColor(r.gps) }}
+                    title={r.gps === "live" ? "연결 중" : r.gps === "idle" ? "신호 없음" : "기기 없음"}
+                  />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );

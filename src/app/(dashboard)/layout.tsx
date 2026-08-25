@@ -125,6 +125,8 @@ function buildWorkCategory(pendingProposals: number, pendingAdopted: number): Na
       { href: "/work/report", label: "업무 보고서", icon: "📈" },
       // 예전 [기록] 대분류를 흡수(요청: 대분류 통합).
       { href: "/ops", label: "등록사건목록", icon: "📋", dividerBefore: "기록" },
+      // 기록 드라이브(요청 ④): 사건·회의·행사를 연/월 폴더 + 검색으로 탐색.
+      { href: "/records/drive", label: "기록 드라이브", icon: "🗄️" },
       { href: "/records", label: "사건기록", icon: "🗂️" },
       { href: "/meetings", label: "회의기록", icon: "💬" },
       { href: "/events", label: "행사기록", icon: "🎉" },

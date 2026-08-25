@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import type { Task, TaskStatus } from "@/lib/types";
 import { STATUS_LABEL, STATUS_COLOR } from "./statusConfig";
 import GuideButton from "@/components/common/GuideButton";
+import WorkTabs from "./WorkTabs";
 import {
   type ReportPeriodType,
   PERIOD_TYPE_LABEL,
@@ -77,10 +78,63 @@ export default function WorkReportClient({
 
   const nameOf = (email: string) => nameByEmail[email] ?? email;
 
+  // 보고서 시각화(요청 ③): 이 기간 완료 업무를 담당자별·부서별·일자별 막대로 보여줍니다.
+  // 숫자 나열보다 "누가·어느 부서가·언제 일이 몰렸는지"가 한눈에 잡히도록.
+  const viz = useMemo(() => {
+    const byPerson = new Map<string, number>();
+    const byDept = new Map<string, number>();
+    const byDay = new Map<string, number>();
+    for (const t of completed) {
+      for (const e of t.assignee_emails?.length ? t.assignee_emails : [t.owner_email]) {
+        byPerson.set(e, (byPerson.get(e) ?? 0) + 1);
+      }
+      byDept.set(t.department ?? "미지정", (byDept.get(t.department ?? "미지정") ?? 0) + 1);
+      const d = (t.completed_at ?? "").slice(5, 10).replace("-", "/");
+      if (d) byDay.set(d, (byDay.get(d) ?? 0) + 1);
+    }
+    const top = (m: Map<string, number>, n: number) => [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, n);
+    return {
+      person: top(byPerson, 8),
+      dept: top(byDept, 8),
+      day: [...byDay.entries()].sort((a, b) => a[0].localeCompare(b[0])),
+    };
+  }, [completed]);
+
+  const VIZ_COLORS = ["#2563eb", "#0ea5e9", "#10b981", "#8b5cf6", "#f59e0b", "#ef4444", "#ec4899", "#64748b"];
+
+  function BarList({ title, data, labelFn }: { title: string; data: [string, number][]; labelFn?: (k: string) => string }) {
+    const max = Math.max(1, ...data.map(([, v]) => v));
+    return (
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <h3 className="mb-2 text-xs font-bold text-slate-600">{title}</h3>
+        {data.length === 0 ? (
+          <p className="text-[11px] text-slate-300">데이터 없음</p>
+        ) : (
+          <div className="flex flex-col gap-1.5">
+            {data.map(([k, v], i) => (
+              <div key={k} className="flex items-center gap-2">
+                <span className="w-20 shrink-0 truncate text-[11px] font-semibold text-slate-600">{labelFn ? labelFn(k) : k}</span>
+                <div className="h-4 flex-1 overflow-hidden rounded bg-slate-100">
+                  <div
+                    className="flex h-full items-center justify-end rounded pr-1.5 text-[10px] font-bold text-white transition-all duration-700"
+                    style={{ width: `${(v / max) * 100}%`, background: VIZ_COLORS[i % VIZ_COLORS.length], minWidth: 20 }}
+                  >
+                    {v}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   const pdfHref = `/api/work/report/pdf?type=${periodType}&date=${toDateStr(anchor)}&department=${encodeURIComponent(department)}`;
 
   return (
     <div className="mx-auto flex h-full max-w-5xl flex-col overflow-hidden">
+      <div className="shrink-0"><WorkTabs /></div>
       <div className="mb-3 flex shrink-0 flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="text-lg font-bold">🗂 업무 보고서</h1>
@@ -163,6 +217,15 @@ export default function WorkReportClient({
             </div>
           ))}
         </div>
+
+        {/* 시각화(요청 ③): 담당자별·부서별·일자별 완료 막대 */}
+        {completed.length > 0 && (
+          <div className="mb-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
+            <BarList title="👤 담당자별 완료" data={viz.person} labelFn={nameOf} />
+            <BarList title="🏷️ 부서별 완료" data={viz.dept} />
+            <BarList title="📅 일자별 완료" data={viz.day} />
+          </div>
+        )}
 
         <section className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <h2 className="mb-2 text-sm font-bold text-slate-700">✅ 이 기간에 완료된 업무 ({completed.length}건)</h2>

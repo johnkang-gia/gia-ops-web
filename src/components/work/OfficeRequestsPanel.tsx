@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createTaskFromInbox } from "@/lib/taskFromInbox";
+import { useToast } from "@/components/common/ToastProvider";
 
 // 통합 인박스의 "선생님요청" 탭(커맨드센터 개편). 담임/과목 선생님이 행정실 문의 창구에 남긴
 // 도움요청·문의를 실시간(20초 폴링)으로 보여주고, 확인/완료 처리를 바로 합니다. 예전에는 업무
@@ -15,9 +17,35 @@ export type OfficeReq = {
   created_at: string;
 };
 
-export default function OfficeRequestsPanel({ onOpenCountChange }: { onOpenCountChange?: (n: number) => void }) {
+export default function OfficeRequestsPanel({
+  onOpenCountChange,
+  department,
+  userEmail,
+}: {
+  onOpenCountChange?: (n: number) => void;
+  department?: string;
+  userEmail?: string;
+}) {
+  const notify = useToast();
   const [reqs, setReqs] = useState<OfficeReq[]>([]);
   const [loading, setLoading] = useState(true);
+  const [taskedIds, setTaskedIds] = useState<Set<string>>(new Set());
+
+  // 인박스 항목을 클릭 한 번으로 업무 카드로(커맨드센터 개편 ⓑ).
+  async function toTask(r: OfficeReq) {
+    if (!department || !userEmail) return;
+    const { error } = await createTaskFromInbox({
+      title: `[${r.class_label || "선생님"} 요청] ${r.message.slice(0, 50)}`,
+      description: `${r.teacher_name ?? ""} 선생님 행정실 요청(${r.category})\n\n${r.message}`,
+      department,
+      userEmail,
+    });
+    if (error) notify("업무 등록 실패: " + error, "error");
+    else {
+      notify("업무로 등록했습니다.", "success");
+      setTaskedIds((prev) => new Set(prev).add(r.id));
+    }
+  }
 
   async function load() {
     try {
@@ -80,6 +108,13 @@ export default function OfficeRequestsPanel({ onOpenCountChange }: { onOpenCount
                     <span className="rounded-md bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-600">확인됨</span>
                   )}
                   <button onClick={() => setStatus(r.id, "완료")} className="rounded-md bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-600 hover:bg-emerald-100">완료</button>
+                  {department && userEmail && (
+                    taskedIds.has(r.id) ? (
+                      <span className="rounded-md bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-400">✓ 업무 등록됨</span>
+                    ) : (
+                      <button onClick={() => toTask(r)} className="rounded-md bg-blue-600 px-2 py-0.5 text-[10px] font-bold text-white hover:bg-blue-700">→업무등록</button>
+                    )
+                  )}
                 </div>
               </div>
             ))}

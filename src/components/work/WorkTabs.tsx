@@ -9,7 +9,7 @@ const TABS: { key: string; label: string; icon: string; href: string; match: str
   // 통합 인박스·흐름판을 갖춘 관제탑이므로 보드가 첫 탭입니다.
   { key: "board", label: "업무 보드", icon: "🗂️", href: "/work", match: ["/work"] },
   { key: "report", label: "보고서", icon: "📈", href: "/work/report", match: ["/work/report", "/meetings/report"] },
-  { key: "records", label: "기록", icon: "📋", href: "/ops", match: ["/ops", "/records", "/meetings", "/events"] },
+  { key: "records", label: "기록", icon: "📋", href: "/ops", match: ["/ops", "/records", "/meetings", "/events", "/records/drive"] },
   { key: "proposals", label: "제안·채택", icon: "📝", href: "/proposals", match: ["/proposals", "/adopted", "/ai-manual"] },
   { key: "archive", label: "보관", icon: "🗃️", href: "/work/history", match: ["/work/history", "/work/trash"] },
 ];

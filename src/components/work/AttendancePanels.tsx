@@ -64,7 +64,7 @@ export default function AttendancePanels({
         {/* 선생님요청 탭은 배지 숫자(미완료 건수)를 유지하기 위해 항상 마운트해두고 표시만
             전환합니다 - 다른 탭을 보고 있어도 새 요청이 오면 배지가 올라갑니다. */}
         <div className={tab === "office" ? "h-full" : "hidden"}>
-          <OfficeRequestsPanel onOpenCountChange={setOfficeOpen} />
+          <OfficeRequestsPanel onOpenCountChange={setOfficeOpen} department={department} userEmail={userEmail} />
         </div>
         {tab === "inquiry" && <ParentInquiryPanel currentUserEmail={userEmail} full />}
         {tab === "digest" && (

@@ -35,11 +35,20 @@ export default async function TimetablePage() {
   if (!isStaffOrAboveUser(me)) redirect("/home");
 
   const supabase = await createClient();
-  const [{ data: periodsRaw }, { data: ttRaw }, { data: classesRaw }] = await Promise.all([
+  const [{ data: periodsRaw }, { data: ttRaw }, { data: classesRaw }, { data: studsRaw }] = await Promise.all([
     supabase.from("wr_periods").select("id, department, period_no, label, start_time, end_time").order("start_time"),
     supabase.from("wr_timetable").select("class_id, weekday, period_id, subject_name, teacher_name, room"),
     supabase.from("wr_classes").select("id, grade, class_name, department"),
+    supabase.from("wr_students").select("class_id, status"),
   ]);
+  // 반별 재학생 수(요청 ③: 각 반 몇 명인지 뱃지로). '재학'/active만 셉니다.
+  const classCount = new Map<string, number>();
+  for (const s of studsRaw ?? []) {
+    const st = (s.status as string | null) ?? null;
+    if (st === "졸업" || st === "graduated" || st === "퇴학" || st === "전출" || st === "withdrawn") continue;
+    const cid = s.class_id as string | null;
+    if (cid) classCount.set(cid, (classCount.get(cid) ?? 0) + 1);
+  }
 
   const periods: TtPeriod[] = (periodsRaw ?? []).map((p) => ({
     id: p.id as string,
@@ -56,6 +65,7 @@ export default async function TimetablePage() {
     grade: (c.grade as string | null) ?? "",
     className: (c.class_name as string | null) ?? "",
     department: (c.department as string | null) ?? "",
+    students: classCount.get(c.id as string) ?? 0,
   }));
 
   const cells: TtCell[] = (ttRaw ?? []).map((t) => {

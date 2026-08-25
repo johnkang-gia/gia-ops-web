@@ -78,12 +78,34 @@ export default async function WorkPage() {
   const notices = (noticesRes.data as WorkNotice[] | null) ?? [];
   const collapsedNoticeIds = ((collapsesRes.data as { notice_id: string }[] | null) ?? []).map((c) => c.notice_id);
 
+  // 상단 학교 요약(요청: 업무 대시보드에도 지금 무슨 학기·학기말까지 남은 기간, 초등부 재학생 수).
+  const [{ data: termRows }, elemCountRes] = await Promise.all([
+    supabase.from("terms").select("term_type, year, end_date").eq("status", "진행중").order("start_date", { ascending: false }).limit(1),
+    supabase.from("wr_students_basic").select("id", { count: "exact", head: true }).eq("status", "active").eq("department", "초등부"),
+  ]);
+  const tr = (termRows ?? [])[0] as { term_type?: string; year?: string; end_date?: string | null } | undefined;
+  const termLabel = tr ? `${tr.year ?? ""} ${tr.term_type ?? ""}`.trim() : null;
+  const termDday = tr?.end_date ? Math.ceil((new Date(tr.end_date).getTime() - Date.now()) / (24 * 60 * 60 * 1000)) : null;
+  const elemActive = elemCountRes.count ?? 0;
+
   return (
     <div className="flex h-full flex-col">
-      {/* 업무 보드는 화면 전체를 쓰는 칸반이라 제목줄을 따로 두지 않았습니다. 가이드 버튼만
-          오른쪽 위에 작게 얹습니다. */}
-      <div className="flex shrink-0 justify-end pb-1">
-        <GuideButton title="업무 보드 사용 가이드" sections={GUIDE_SECTIONS} />
+      {/* 업무 대시보드 상단 학교 요약(학기·학기말 D-day·초등부 재학생) + 가이드 버튼. */}
+      <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 pb-1">
+        {termLabel && (
+          <span className="rounded-full bg-purple-50 px-2.5 py-1 text-xs font-bold text-purple-800">📚 {termLabel}</span>
+        )}
+        {termDday != null && (
+          <span className="rounded-full bg-purple-600 px-2 py-0.5 text-[11px] font-bold text-white">
+            {termDday > 0 ? `학기말 D-${termDday}` : termDday === 0 ? "오늘 학기말" : "학기 종료"}
+          </span>
+        )}
+        <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
+          🎓 초등부 재학생 <b>{elemActive}</b>명
+        </span>
+        <div className="ml-auto">
+          <GuideButton title="업무 보드 사용 가이드" sections={GUIDE_SECTIONS} />
+        </div>
       </div>
       {/* 칸반이 남은 높이를 전부 쓰도록 - min-h-0이 없으면 내용이 길어질 때 이 칸이 늘어나
           화면 전체가 스크롤됩니다. */}

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import SchoolTabs from "./SchoolTabs";
 
 export type TtPeriod = { id: string; department: string; periodNo: number; label: string; start: string; end: string };
-export type TtClass = { id: string; grade: string; className: string; department: string };
+export type TtClass = { id: string; grade: string; className: string; department: string; students: number };
 export type TtCell = { classId: string; grade: string; className: string; department: string; weekday: number; periodId: string; subject: string; teacher: string | null; room: string | null };
 export type RoomStatus = { name: string; inUse: boolean; by: string | null; subject: string | null; teacher: string | null };
 export type TeacherHours = { teacher: string; hours: number; busyNow: boolean };
@@ -58,6 +58,14 @@ export default function TimetableClient({
 
   const inUseRooms = rooms.filter((r) => r.inUse);
   const freeRooms = rooms.filter((r) => !r.inUse);
+
+  // 선택 부서의 학년별/전체 학생 수(요청 ③: 학년별 몇 명, 각 반 몇 명 뱃지).
+  const gradeTotals = useMemo(() => {
+    const g = new Map<string, number>();
+    for (const c of deptClasses) g.set(c.grade || "미지정", (g.get(c.grade || "미지정") ?? 0) + c.students);
+    return [...g.entries()].sort((a, b) => a[0].localeCompare(b[0], "ko", { numeric: true }));
+  }, [deptClasses]);
+  const deptTotal = deptClasses.reduce((s, c) => s + c.students, 0);
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -119,6 +127,21 @@ export default function TimetableClient({
         </button>
       </div>
 
+      {/* 학년별 학생 수(선택 부서) */}
+      <div className="mb-3 flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2">
+        <span className="text-xs font-bold text-slate-600">{dept} 재학생 {deptTotal}명</span>
+        <span className="text-slate-300">·</span>
+        {gradeTotals.length === 0 ? (
+          <span className="text-xs text-slate-400">학년 정보 없음</span>
+        ) : (
+          gradeTotals.map(([g, n]) => (
+            <span key={g} className="rounded-full bg-purple-50 px-2 py-0.5 text-[11px] font-semibold text-purple-700">
+              {g} {n}명
+            </span>
+          ))
+        )}
+      </div>
+
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_260px]">
         <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
           {deptPeriods.length === 0 || deptClasses.length === 0 ? (
@@ -130,7 +153,8 @@ export default function TimetableClient({
                   <th className="sticky left-0 z-10 border-b border-r border-slate-200 bg-slate-50 px-2 py-2 text-left font-semibold">교시</th>
                   {deptClasses.map((c) => (
                     <th key={c.id} className="border-b border-slate-200 px-2 py-2 font-semibold">
-                      {c.grade} {c.className}
+                      <div>{c.grade} {c.className}</div>
+                      <div className="mt-0.5 inline-block rounded-full bg-slate-100 px-1.5 text-[10px] font-bold text-slate-500">{c.students}명</div>
                     </th>
                   ))}
                 </tr>

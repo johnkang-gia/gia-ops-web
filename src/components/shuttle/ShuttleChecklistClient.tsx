@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
 import ShuttleChecklistTable, { effectiveRouteId } from "./ShuttleChecklistTable";
+import ChecklistPrintSheet from "./ChecklistPrintSheet";
 import ShuttleChecklistSidebar, { type ChangedRouteEntry } from "./ShuttleChecklistSidebar";
 import type { GoogleChatMirrorMessage } from "@/lib/types";
 import type { RosterStudent } from "@/lib/attendanceDigest";
@@ -13,7 +14,15 @@ import type { RosterStudent } from "@/lib/attendanceDigest";
 // 같이 둡니다. 실시간이 정상이면 이 폴링은 사실상 아무 변화도 못 찾고 조용히 지나갑니다.
 const FALLBACK_POLL_MS = 20000;
 
-export type ChecklistRoute = { id: string; route_no: string; name: string | null; driver_name: string | null };
+export type ChecklistRoute = {
+  id: string;
+  route_no: string;
+  name: string | null;
+  driver_name: string | null;
+  // 인쇄본(하원차량 체크표 PDF와 같은 서식)에 쓰는 기사님 연락처·차량번호입니다.
+  driver_phone?: string | null;
+  vehicle_no?: string | null;
+};
 export type ChecklistItem = {
   assignmentId: string;
   studentId?: string | null;
@@ -27,6 +36,8 @@ export type ChecklistItem = {
   // 오늘 요일에 이 차를 타는 학생인지. false면 회색으로 흐리게 보이고, 눌러서 오늘 탑승으로
   // 바꿀 수 있습니다(요청: "안타는 아이도 옅은 회색으로 (...) 눌러서 탑승으로").
   ridingToday?: boolean;
+  // 이 학생이 이 차를 타는 요일들(1=월~5=금). 인쇄본에서 PDF처럼 "(월수금)이름"으로 씁니다.
+  weekdays?: number[];
   // 지속 특이사항 효과로 이 학생을 요일별 셔틀에서 묶어 볼 때 쓰는 표시용 값들(클라이언트에서
   // 계산해 채웁니다). groupColor: 요일마다 다른 셔틀을 타는 학생을 같은 색 테두리로 묶기 위한
   // 색, individualPickup: 개별하원(셔틀 전면 제외)로 표시.
@@ -603,14 +614,23 @@ export default function ShuttleChecklistClient({
             </button>
           </div>
         </div>
-        <ShuttleChecklistTable
+        {/* 화면용 표(드래그·버튼·색상)는 인쇄에서 감추고, 아래 인쇄 전용 표만 나갑니다
+            (요청: 보내주신 하원차량 체크 PDF와 같은 서식으로 인쇄되도록). */}
+        <div className="print:hidden">
+          <ShuttleChecklistTable
+            routes={routes}
+            items={displayItems}
+            busyId={busyId}
+            searchTerm={searchTerm}
+            onSetStatus={setStatus}
+            onRequestMove={requestMove}
+            onRequestEditNote={openNoteEditor}
+          />
+        </div>
+        <ChecklistPrintSheet
           routes={routes}
           items={displayItems}
-          busyId={busyId}
-          searchTerm={searchTerm}
-          onSetStatus={setStatus}
-          onRequestMove={requestMove}
-          onRequestEditNote={openNoteEditor}
+          dateLabel={new Date().toLocaleDateString("ko-KR", { month: "2-digit", day: "2-digit" }).replace(/\.\s*$/, "").replace(". ", "월 ") + "일"}
         />
       </div>
 

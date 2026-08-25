@@ -61,7 +61,7 @@ export default async function ShuttleChecklistPage({
   const supabase = await createClient();
   const routesRes = await supabase
     .from("shuttle_routes")
-    .select("id, route_no, name, driver_name")
+    .select("id, route_no, name, driver_name, driver_phone, vehicle_no")
     .eq("active", true)
     .eq("direction", "하원")
     .eq("term", term)
@@ -185,6 +185,7 @@ export default async function ShuttleChecklistPage({
         status,
         note: a.note ?? null,
         ridingToday,
+        weekdays: a.weekdays ?? [],
       };
       return item;
     })

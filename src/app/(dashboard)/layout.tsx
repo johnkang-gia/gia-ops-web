@@ -426,7 +426,8 @@ export default async function DashboardLayout({
     <div data-theme={theme} className="shell-page-bg relative flex h-screen flex-1">
       <ConnectionBanner />
       <CommandPalette categories={categories} homeHref={homeHref} />
-      <aside className="shell-blur hidden w-56 shrink-0 border-r border-[var(--shell-border)] bg-[var(--shell-bg)] p-4 sm:flex sm:flex-col">
+      {/* 인쇄할 때는 사이드바를 감춥니다 - 체크표 인쇄본이 종이 폭을 온전히 쓰도록. */}
+      <aside className="shell-blur hidden w-56 shrink-0 border-r border-[var(--shell-border)] bg-[var(--shell-bg)] p-4 sm:flex sm:flex-col print:!hidden">
         <div className="mb-3 px-2">
           {/* 로고 아래 학기 표시를 가운데 정렬합니다(요청: "로고아래 학기표시 가운데정렬"). */}
           <div className="flex flex-col items-center text-center">
@@ -533,7 +534,7 @@ export default async function DashboardLayout({
       </aside>
 
       <div className="flex h-screen flex-1 flex-col">
-        <header className="shell-blur flex items-center justify-between border-b border-[var(--shell-border)] bg-[var(--shell-bg)] px-4 py-3 sm:hidden">
+        <header className="shell-blur flex items-center justify-between border-b border-[var(--shell-border)] bg-[var(--shell-bg)] px-4 py-3 sm:hidden print:!hidden">
           <Link href={homeHref} className="inline-block cursor-pointer">
             <Image src="/logo-main.png" alt="GIA Micro Lab" width={538} height={120} className="shell-logo-mark h-7 w-auto" />
           </Link>

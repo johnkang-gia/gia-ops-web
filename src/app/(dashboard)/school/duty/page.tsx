@@ -3,7 +3,6 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isStaffOrAboveUser } from "@/lib/roles";
 import GuideButton from "@/components/common/GuideButton";
-import SchoolTabs from "@/components/school/SchoolTabs";
 import DutyRosterClient, { type DutyRow } from "@/components/school/DutyRosterClient";
 
 export const dynamic = "force-dynamic";
@@ -52,7 +51,6 @@ export default async function DutyRosterPage() {
 
   return (
     <div className="mx-auto max-w-6xl p-4 sm:p-6">
-      <SchoolTabs />
       <div className="mb-1 flex items-center justify-between gap-2">
         <h1 className="text-lg font-bold">🍚 당번표</h1>
         <GuideButton title="당번표 사용 가이드" sections={GUIDE_SECTIONS} />

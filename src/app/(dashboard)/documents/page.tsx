@@ -1,7 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import type { SchoolDocument } from "@/lib/types";
 import DocumentsClient from "@/components/documents/DocumentsClient";
-import DocsTabs from "@/components/documents/DocsTabs";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +14,6 @@ export default async function DocumentsPage() {
 
   return (
     <div className="p-4 sm:p-6">
-      <DocsTabs />
       <DocumentsClient initialItems={(data as SchoolDocument[]) ?? []} />
     </div>
   );

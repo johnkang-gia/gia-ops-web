@@ -4,7 +4,6 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import type { AppUser, Meeting, Task } from "@/lib/types";
 import ReportsHubClient from "@/components/documents/ReportsHubClient";
 import GuideButton from "@/components/common/GuideButton";
-import DocsTabs from "@/components/documents/DocsTabs";
 
 const GUIDE_SECTIONS = [
   {
@@ -50,7 +49,6 @@ export default async function DocumentReportsHubPage() {
 
   return (
     <div className="flex flex-col">
-      <DocsTabs />
       <div className="flex justify-end">
         <GuideButton title="보고서 모음 사용 가이드" sections={GUIDE_SECTIONS} />
       </div>

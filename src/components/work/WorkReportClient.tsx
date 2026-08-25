@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import type { Task, TaskStatus } from "@/lib/types";
 import { STATUS_LABEL, STATUS_COLOR } from "./statusConfig";
 import GuideButton from "@/components/common/GuideButton";
-import WorkTabs from "./WorkTabs";
 import {
   type ReportPeriodType,
   PERIOD_TYPE_LABEL,
@@ -134,7 +133,6 @@ export default function WorkReportClient({
 
   return (
     <div className="mx-auto flex h-full max-w-5xl flex-col overflow-hidden">
-      <div className="shrink-0"><WorkTabs /></div>
       <div className="mb-3 flex shrink-0 flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="text-lg font-bold">🗂 업무 보고서</h1>

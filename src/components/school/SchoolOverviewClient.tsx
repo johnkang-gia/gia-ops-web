@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import SchoolTabs from "./SchoolTabs";
 
 export type GradeCount = { grade: string; count: number };
 export type DeptCount = { dept: string; count: number };
@@ -101,7 +100,6 @@ export default function SchoolOverviewClient({
 
   return (
     <div className="mx-auto max-w-6xl">
-      <SchoolTabs />
 
       {/* 현재 학기 배너 */}
       <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-2xl border border-purple-200 bg-purple-50/50 px-4 py-2.5">

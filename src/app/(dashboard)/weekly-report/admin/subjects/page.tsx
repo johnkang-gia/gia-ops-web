@@ -5,7 +5,6 @@ import { isAdminUser } from "@/lib/roles";
 import type { TeamMember, WrClass, WrStudent, WrSubject } from "@/lib/types";
 import SubjectManageClient from "@/components/weeklyReport/admin/SubjectManageClient";
 import GuideButton from "@/components/common/GuideButton";
-import SchoolTabs from "@/components/school/SchoolTabs";
 
 const GUIDE_SECTIONS = [
   {
@@ -31,7 +30,6 @@ export default async function SubjectManagePage() {
 
   return (
     <div className="mx-auto max-w-6xl">
-      <SchoolTabs />
       <div className="mb-1 flex items-center justify-between gap-2">
         <h1 className="text-lg font-bold">과목반 세팅</h1>
         <GuideButton title="과목반 세팅 사용 가이드" sections={GUIDE_SECTIONS} />

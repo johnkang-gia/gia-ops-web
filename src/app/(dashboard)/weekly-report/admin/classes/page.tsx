@@ -5,7 +5,6 @@ import { isAdminUser } from "@/lib/roles";
 import type { TeamMember, WrClass } from "@/lib/types";
 import ClassManageClient from "@/components/weeklyReport/admin/ClassManageClient";
 import GuideButton from "@/components/common/GuideButton";
-import SchoolTabs from "@/components/school/SchoolTabs";
 
 const GUIDE_SECTIONS = [
   {
@@ -29,7 +28,6 @@ export default async function ClassManagePage() {
 
   return (
     <div className="mx-auto max-w-6xl">
-      <SchoolTabs />
       <div className="mb-1 flex items-center justify-between gap-2">
         <h1 className="text-lg font-bold">반/담임 배정 관리</h1>
         <GuideButton title="반/담임 배정 관리 사용 가이드" sections={GUIDE_SECTIONS} />

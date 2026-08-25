@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import SchoolTabs from "./SchoolTabs";
 
 export type TtPeriod = { id: string; department: string; periodNo: number; label: string; start: string; end: string };
 export type TtClass = { id: string; grade: string; className: string; department: string; students: number };
@@ -69,7 +68,6 @@ export default function TimetableClient({
 
   return (
     <div className="mx-auto max-w-6xl">
-      <SchoolTabs />
 
       {/* 지금 상황 + 공간 사용 현황 */}
       <div className="mb-3 rounded-2xl border border-slate-200 bg-white p-4">

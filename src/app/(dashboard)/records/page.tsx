@@ -3,7 +3,6 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { getCurrentTerm } from "@/lib/currentTerm";
 import type { Incident, GiaSystem } from "@/lib/types";
 import IncidentsClient from "@/components/incidents/IncidentsClient";
-import DocsTabs from "@/components/documents/DocsTabs";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +20,6 @@ export default async function RecordsPage() {
 
   return (
     <div className="p-4 sm:p-6">
-      <DocsTabs />
       <IncidentsClient
       initialItems={(data as Incident[]) ?? []}
       currentTerm={currentTerm}

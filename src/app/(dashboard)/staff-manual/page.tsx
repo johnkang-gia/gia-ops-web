@@ -2,7 +2,6 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import type { ManualSection, WrStudent } from "@/lib/types";
 import StaffManualClient from "@/components/staff-manual/StaffManualClient";
-import DocsTabs from "@/components/documents/DocsTabs";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +17,6 @@ export default async function StaffManualPage() {
 
   return (
     <div className="h-full">
-      <DocsTabs />
       <StaffManualClient
         initialItems={(data as ManualSection[]) ?? []}
         students={(studentsData as WrStudent[] | null) ?? []}

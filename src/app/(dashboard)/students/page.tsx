@@ -4,7 +4,6 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { isStaffOrAboveUser } from "@/lib/roles";
 import type { WrStudent } from "@/lib/types";
 import StudentSearchClient from "@/components/students/StudentSearchClient";
-import SchoolTabs from "@/components/school/SchoolTabs";
 import GuideButton from "@/components/common/GuideButton";
 
 const GUIDE_SECTIONS = [
@@ -46,7 +45,6 @@ export default async function StudentsSearchPage() {
   return (
     <div className="mx-auto flex h-full w-full max-w-none flex-col overflow-hidden">
       <div className="shrink-0">
-        <SchoolTabs />
         <div className="mb-1 flex items-center justify-between gap-2">
           <h1 className="text-lg font-bold">🎓 학생 조회</h1>
           <GuideButton title="학생 정보 조회 사용 가이드" sections={GUIDE_SECTIONS} />

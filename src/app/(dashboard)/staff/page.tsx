@@ -5,7 +5,6 @@ import { isStaffOrAboveUser, isDeveloperEmail } from "@/lib/roles";
 import type { AppUser } from "@/lib/types";
 import StaffSearchClient from "@/components/staff/StaffSearchClient";
 import GuideButton from "@/components/common/GuideButton";
-import SchoolTabs from "@/components/school/SchoolTabs";
 
 const GUIDE_SECTIONS = [
   {
@@ -42,7 +41,6 @@ export default async function StaffSearchPage() {
 
   return (
     <div className="mx-auto flex h-full w-full max-w-none flex-col overflow-hidden">
-      <div className="shrink-0"><SchoolTabs /></div>
       <div className="shrink-0">
         <div className="mb-1 flex items-center justify-between gap-2">
           <h1 className="text-lg font-bold">교직원 정보 조회</h1>

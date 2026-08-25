@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { geocodeAddress, loadKakaoMaps } from "@/lib/kakaoMap";
+import { CAMPUS_ADDRESS, CAMPUS_FALLBACK } from "@/lib/shuttleCampus";
 import type { ShuttleRoutePath, ShuttleStop } from "@/lib/types";
 import { useToast } from "@/components/common/ToastProvider";
 
@@ -14,7 +15,7 @@ const DEFAULT_CENTER = { lat: 37.5172, lng: 127.0473 }; // 강남/논현 일대 
 // GIA마이크로랩(학교) 주소 - 등원 노선은 항상 이 지점에서 끝나고, 하원 노선은 항상 이 지점에서
 // 출발합니다. 정류장 DB에는 학생 주소만 들어있어 학교 지점이 없으므로, 지도에는 이 좌표를
 // 매번 방향에 맞는 끝에 덧붙여 그립니다.
-const GIA_ADDRESS = "서울 강남구 논현로131길 45";
+const GIA_ADDRESS = CAMPUS_ADDRESS;
 let giaCoordCache: { lat: number; lng: number } | null = null; // 노선을 바꿔도 같은 세션이면 다시 지오코딩하지 않도록 모듈 스코프에 캐시합니다.
 
 // "8:27" / "08:27:00" 등을 자정 기준 분(0~1439)으로 바꿉니다.
@@ -67,7 +68,11 @@ export default function RouteMap({
       map.panTo?.(new kakao.maps.LatLng(s.lat, s.lng));
     }
   }, [focusStopId, localStops]);
-  const [giaCoord, setGiaCoord] = useState<{ lat: number; lng: number } | null>(giaCoordCache);
+  // GIA는 등원의 종점·하원의 기점이라 지도의 시작/끝이 이 점으로 고정돼야 순서 체크가 됩니다
+  // (요청: "등원은 마지막 정류장이 gia로, 하원은 출발 첫 정류장이 gia로 해줘야 체크가 돼").
+  // 그래서 주소 지오코딩을 기다리지 않고 고정 좌표로 먼저 채워둔 뒤, 지오코딩이 끝나면 더
+  // 정확한 값으로 바꿉니다 - 키가 없거나 조회가 실패해도 GIA가 빠지는 일은 없습니다.
+  const [giaCoord, setGiaCoord] = useState<{ lat: number; lng: number }>(giaCoordCache ?? CAMPUS_FALLBACK);
   const [sdkStatus, setSdkStatus] = useState<"loading" | "ready" | "error">("loading");
   const [sdkError, setSdkError] = useState("");
   const [geocoding, setGeocoding] = useState(false);
@@ -94,10 +99,8 @@ export default function RouteMap({
       address: s.address ?? "",
       isSchool: false,
     }));
-    const schoolPt = giaCoord
-      ? { key: "gia", lat: giaCoord.lat, lng: giaCoord.lng, label: "GIA", address: "GIA 본원(논현로131길 45)", isSchool: true }
-      : null;
-    if (!schoolPt) return stopPts;
+    const schoolPt = { key: "gia", lat: giaCoord.lat, lng: giaCoord.lng, label: "GIA", address: "GIA 본원(논현로131길 45)", isSchool: true };
+    // 등원: 정류장을 다 돈 뒤 GIA 도착(마지막). 하원: GIA에서 출발해 정류장 순회(첫 번째).
     return direction === "등원" ? [...stopPts, schoolPt] : [schoolPt, ...stopPts];
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [geocoded, giaCoord, direction]);
@@ -383,68 +386,80 @@ export default function RouteMap({
         </div>
       </div>
 
-      {sdkStatus === "error" ? (
-        <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-red-200 bg-red-50 p-6 text-center text-sm text-red-500">
-          {sdkError || "지도를 불러오지 못했습니다."}
-        </div>
-      ) : (
-        <div className="min-h-0 flex-[3] overflow-hidden rounded-xl border border-slate-200">
-          <div ref={mapDivRef} className="h-full w-full" />
-        </div>
-      )}
+      {/* 좌우 2단(요청 ①: "지도가 너무 얇고 길게 나와서 지도가 하나도 안 보여 - 좌에 네모모양으로
+          지도만, 오른쪽에 위치 못 찾은 정류장과 0번 정류장 출발 부분"). 예전에는 지도·경고·시간표를
+          위에서 아래로 쌓아서, 높이가 정해진 상자 안에서 지도 몫이 얇은 띠가 됐습니다. 이제 지도는
+          왼쪽 정사각형에 가깝게 넓게 쓰고, 목록은 전부 오른쪽 한 칸에 모읍니다. 좁은 화면에서는
+          예전처럼 위아래로 자동 전환됩니다. */}
+      <div className="flex min-h-0 flex-1 flex-col gap-2 lg:flex-row">
+        {sdkStatus === "error" ? (
+          <div className="flex min-h-[240px] flex-1 items-center justify-center rounded-xl border border-dashed border-red-200 bg-red-50 p-6 text-center text-sm text-red-500">
+            {sdkError || "지도를 불러오지 못했습니다."}
+          </div>
+        ) : (
+          <div className="min-h-[240px] flex-1 overflow-hidden rounded-xl border border-slate-200 lg:min-h-0">
+            <div ref={mapDivRef} className="h-full w-full" />
+          </div>
+        )}
 
-      {missing.length > 0 && (
-        <div className="max-h-32 shrink-0 space-y-1 overflow-y-auto rounded-lg border border-amber-200 bg-amber-50 p-2">
-          <p className="text-[11px] font-semibold text-amber-700">
-            ⚠️ 자동으로 위치를 못 찾은 정류장 {missing.length}곳 (동 이름만 있는 주소 등) - 눌러서 지도에 직접 표시하세요.
-          </p>
-          {missing.map((s) => (
-            <button
-              key={s.id}
-              onClick={() => setPinTarget(s.id)}
-              className={
-                "flex w-full items-center gap-2 rounded-lg px-2 py-1 text-left text-[11px] transition " +
-                (pinTarget === s.id ? "bg-amber-200" : "bg-white hover:bg-amber-100")
-              }
-            >
-              <span className="shrink-0 rounded-full bg-slate-200 px-1.5 py-0.5 font-bold text-slate-600">{s.seq}</span>
-              <span className="truncate text-slate-600">{s.address}</span>
-            </button>
-          ))}
-        </div>
-      )}
-
-      {scheduleRows.length > 0 && (
-        <div className="min-h-0 flex-[2] overflow-y-auto rounded-lg border border-slate-200 p-2.5">
-          <p className="mb-1.5 text-[11px] font-semibold text-slate-600">
-            🕐 {minutesToTime(scheduleRows[0].arrival ?? baseMin ?? 0)} {scheduleRows[0].isSchool ? "GIA" : `${scheduleRows[0].label}번 정류장`} 출발
-          </p>
-          {!hasLegTimes && (
-            <p className="mb-1.5 text-[11px] text-amber-600">
-              위 [🛣️ 실제 도로 경로 계산]을 하면 정류장별 소요시간·도착예정시각이 채워집니다. 지금은 순서만 보여드립니다.
-            </p>
-          )}
-          <ol className="space-y-1">
-            {scheduleRows.slice(1).map((p) => (
-              <li key={p.key} className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-[11px]">
-                <span
+        <div className="flex min-h-0 shrink-0 flex-col gap-2 lg:w-[340px]">
+          {missing.length > 0 && (
+            <div className="max-h-32 shrink-0 space-y-1 overflow-y-auto rounded-lg border border-amber-200 bg-amber-50 p-2">
+              <p className="text-[11px] font-semibold text-amber-700">
+                ⚠️ 자동으로 위치를 못 찾은 정류장 {missing.length}곳 (동 이름만 있는 주소 등) - 눌러서 지도에 직접 표시하세요.
+              </p>
+              {missing.map((s) => (
+                <button
+                  key={s.id}
+                  onClick={() => setPinTarget(s.id)}
                   className={
-                    "shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold text-white " +
-                    (p.isSchool ? "bg-slate-800" : direction === "등원" ? "bg-amber-600" : "bg-indigo-600")
+                    "flex w-full items-center gap-2 rounded-lg px-2 py-1 text-left text-[11px] transition " +
+                    (pinTarget === s.id ? "bg-amber-200" : "bg-white hover:bg-amber-100")
                   }
                 >
-                  {p.isSchool ? "GIA" : `${p.label}번`}
-                </span>
-                <span className="text-slate-600">{p.address}</span>
-                {p.legMinutes != null && <span className="text-slate-400">(전 구간 {p.legMinutes}분)</span>}
-                <span className="ml-auto shrink-0 font-semibold text-slate-700">
-                  {p.arrival != null ? minutesToTime(p.arrival) : "-"} {p.isSchool ? "도착 예정" : "도착"}
-                </span>
-              </li>
-            ))}
-          </ol>
+                  <span className="shrink-0 rounded-full bg-slate-200 px-1.5 py-0.5 font-bold text-slate-600">{s.seq}</span>
+                  <span className="truncate text-slate-600">{s.address}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {scheduleRows.length > 0 && (
+            <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-slate-200 p-2.5">
+              {/* 등원이면 첫 줄이 1번 정류장, 하원이면 첫 줄이 GIA입니다(orderedPoints에서 방향에
+                  맞게 GIA를 끝/앞에 붙입니다). */}
+              <p className="mb-1.5 text-[11px] font-semibold text-slate-600">
+                {direction === "하원" ? "🚩" : "🕐"} {minutesToTime(scheduleRows[0].arrival ?? baseMin ?? 0)}{" "}
+                {scheduleRows[0].isSchool ? "GIA" : `${scheduleRows[0].label}번 정류장`} 출발
+              </p>
+              {!hasLegTimes && (
+                <p className="mb-1.5 text-[11px] text-amber-600">
+                  위 [🛣️ 실제 도로 경로 계산]을 하면 정류장별 소요시간·도착예정시각이 채워집니다. 지금은 순서만 보여드립니다.
+                </p>
+              )}
+              <ol className="space-y-1">
+                {scheduleRows.slice(1).map((p) => (
+                  <li key={p.key} className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-[11px]">
+                    <span
+                      className={
+                        "shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold text-white " +
+                        (p.isSchool ? "bg-slate-800" : direction === "등원" ? "bg-amber-600" : "bg-indigo-600")
+                      }
+                    >
+                      {p.isSchool ? "🏫 GIA" : `${p.label}번`}
+                    </span>
+                    <span className="text-slate-600">{p.address}</span>
+                    {p.legMinutes != null && <span className="text-slate-400">(전 구간 {p.legMinutes}분)</span>}
+                    <span className="ml-auto shrink-0 font-semibold text-slate-700">
+                      {p.arrival != null ? minutesToTime(p.arrival) : "-"} {p.isSchool ? "도착 예정" : "도착"}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }

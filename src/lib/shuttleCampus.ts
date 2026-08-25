@@ -5,6 +5,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 // 저장해두고 다음부터는 지오코딩 없이 바로 씁니다.
 export const CAMPUS_NAME = "본교";
 export const CAMPUS_ADDRESS = "서울 강남구 논현로131길 45";
+// 지오코딩이 실패하거나(카카오 키 없음·일시 장애) 아직 응답 전일 때 쓰는 고정 좌표입니다.
+// 노선 지도에서 GIA는 등원의 종점·하원의 기점이라 이 점이 없으면 순서 자체가 성립하지 않아,
+// "주소를 못 찾아서 학교가 안 보이는" 상황이 생기지 않도록 항상 대체값을 갖고 시작합니다.
+export const CAMPUS_FALLBACK = { lat: 37.5108, lng: 127.0322 };
 
 export async function ensureCampusLocation(supabase: SupabaseClient): Promise<{ lat: number; lng: number } | null> {
   const { data: existing } = await supabase

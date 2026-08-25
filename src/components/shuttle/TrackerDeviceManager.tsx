@@ -30,6 +30,9 @@ export default function TrackerDeviceManager({
   const [obs, setObs] = useState(observations);
   const [busy, setBusy] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
+  // 연결된 차량만 보기(요청 ②: "연결된 차량과 미연결 차량을 분리해서 연결된 차량들만 볼 수
+  // 있도록 탭을 나눠줘"). 노선이 38개까지 늘어나면서 한 줄씩 훑어 상태를 세는 게 일이 됐습니다.
+  const [deviceFilter, setDeviceFilter] = useState<"all" | "connected" | "unconnected">("all");
   // 설정 링크 QR을 크게 띄우는 창. 기사님이 오셨을 때 이 화면을 모니터에 띄워두고 기사님
   // 휴대폰 카메라로 찍으시면, 주소를 한 글자도 치지 않고 설정 안내로 넘어갑니다.
   const [qrFor, setQrFor] = useState<ShuttleTrackerDevice | null>(null);
@@ -166,6 +169,27 @@ export default function TrackerDeviceManager({
     setObs((prev) => prev.map((o) => (o.id === observationId ? { ...o, matched_stop_id: stopId || null } : o)));
   }
 
+  // 탭에 맞춰 걸러진 목록. "연결됨"은 최근 10분 안에 위치 신호가 들어온 노선입니다(isFresh) -
+  // 기기만 발급하고 설정이 안 끝난 노선, 예전엔 들어왔는데 지금 끊긴 노선은 모두 미연결입니다.
+  const visibleRows = useMemo(() => {
+    if (deviceFilter === "connected") return rows.filter((r) => r.device && isFresh(r.device.last_seen_at));
+    if (deviceFilter === "unconnected") return rows.filter((r) => !r.device || !isFresh(r.device.last_seen_at));
+    return rows;
+  }, [rows, deviceFilter]);
+
+  // 기사님께 드릴 인쇄물(요청 ②). 호차·성함·차량번호·연락처를 채운 채로 새 탭에서 열리고,
+  // 그 화면이 뜨자마자 인쇄 대화상자가 자동으로 올라옵니다.
+  function printDocs(doc: "notice" | "consent" | "both", route?: ShuttleRoute) {
+    const q = new URLSearchParams({ doc });
+    if (route) {
+      q.set("route", `${route.route_no}호${route.name ? ` (${route.name})` : ""}`);
+      if (route.driver_name) q.set("driver", route.driver_name);
+      if (route.driver_phone) q.set("phone", route.driver_phone);
+      if (route.vehicle_no) q.set("vehicle", route.vehicle_no);
+    }
+    window.open(`/print/driver-docs?${q.toString()}`, "_blank", "noopener");
+  }
+
   function copy(text: string) {
     navigator.clipboard.writeText(text).then(
       () => notify("복사했습니다.", "success"),
@@ -250,17 +274,64 @@ export default function TrackerDeviceManager({
           기존에는 "발급된 기기"만 목록에 떠서, 아직 발급하지 않은 노선은 화면에 아예 없었습니다.
           그러면 무엇이 남았는지 담당자가 머리로 세어야 합니다. 노선 전체를 놓고 상태를 붙이면
           "몇 대 중 몇 대가 연결됐는지"가 한눈에 보입니다. */}
+      {/* 기사님께 드릴 인쇄물(요청 ②). 특정 호차를 고르지 않은 빈 양식이라, 여러 분께 미리
+          뽑아두거나 아직 배정 전인 기사님께 드릴 때 씁니다. 호차별 인쇄는 아래 각 줄에 있습니다. */}
+      <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2.5">
+        <span className="text-xs font-bold text-slate-700">🖨️ 기사님 인쇄물</span>
+        <button
+          type="button"
+          onClick={() => printDocs("notice")}
+          className="rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-100"
+        >
+          안내문
+        </button>
+        <button
+          type="button"
+          onClick={() => printDocs("consent")}
+          className="rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-100"
+        >
+          동의서
+        </button>
+        <button
+          type="button"
+          onClick={() => printDocs("both")}
+          className="rounded-lg bg-slate-800 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-slate-700"
+        >
+          안내문 + 동의서
+        </button>
+        <span className="text-[11px] text-slate-400">동의서는 2부(학교 보관 1 · 기사님 1) 인쇄하세요.</span>
+      </div>
+
+      {/* 설정 현황 - 기기가 없는 노선까지 함께 보여주되, 탭으로 연결/미연결을 갈라 봅니다. */}
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <span className="text-xs font-bold text-slate-700">설정 현황</span>
-        <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
-          연결 {summary.connected}
-        </span>
-        {summary.pending > 0 && (
-          <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-700">
-            대기 {summary.pending}
-          </span>
-        )}
-        <span className="text-[11px] text-slate-400">전체 {rows.length}개 노선</span>
+        <div className="flex gap-1">
+          {(
+            [
+              ["all", `전체 ${rows.length}`],
+              ["connected", `✓ 연결됨 ${summary.connected}`],
+              ["unconnected", `미연결 ${summary.pending + summary.missing}`],
+            ] as const
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setDeviceFilter(key)}
+              className={
+                "rounded-full px-2.5 py-1 text-[11px] font-bold transition " +
+                (deviceFilter === key
+                  ? key === "connected"
+                    ? "bg-emerald-600 text-white"
+                    : key === "unconnected"
+                      ? "bg-red-500 text-white"
+                      : "bg-slate-700 text-white"
+                  : "bg-slate-100 text-slate-500 hover:bg-slate-200")
+              }
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         {summary.missing > 0 && (
           <button
             type="button"
@@ -277,9 +348,13 @@ export default function TrackerDeviceManager({
         <p className="mb-5 py-4 text-center text-xs text-slate-400">
           등록된 하원 노선이 없습니다. [셔틀 → 노선 관리]에서 먼저 노선을 만들어주세요.
         </p>
+      ) : visibleRows.length === 0 ? (
+        <p className="mb-5 py-4 text-center text-xs text-slate-400">
+          {deviceFilter === "connected" ? "지금 연결된 차량이 없습니다." : "미연결 차량이 없습니다. 전부 연결되었습니다 🎉"}
+        </p>
       ) : (
         <div className="mb-5 flex flex-col gap-1.5">
-          {rows.map(({ route, device }) => {
+          {visibleRows.map(({ route, device }) => {
             const s = statusOf(device);
             return (
               <div
@@ -306,6 +381,15 @@ export default function TrackerDeviceManager({
                 )}
 
                 <div className="ml-auto flex items-center gap-1.5">
+                  {/* 이 호차의 안내문+동의서를 성함·차량번호까지 채워 인쇄합니다(요청 ②). */}
+                  <button
+                    type="button"
+                    onClick={() => printDocs("both", route)}
+                    title={`${route.route_no}호 안내문 + 동의서 인쇄 (기사님 성함·차량번호 자동 입력)`}
+                    className="rounded-lg border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-500 hover:bg-slate-100"
+                  >
+                    🖨️ 인쇄
+                  </button>
                   {device && (
                     <button
                       type="button"

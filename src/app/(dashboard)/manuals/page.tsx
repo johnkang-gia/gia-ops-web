@@ -3,7 +3,6 @@ import type { ManualSection, ManualReviewFlag } from "@/lib/types";
 import ManualsClient from "@/components/manuals/ManualsClient";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isAdminUser } from "@/lib/roles";
-import DocsTabs from "@/components/documents/DocsTabs";
 
 export const dynamic = "force-dynamic";
 
@@ -60,7 +59,6 @@ export default async function ManualsPage({
 
   return (
     <div className="p-4 sm:p-6">
-      <DocsTabs />
       <ManualsClient
       initialItems={(data as ManualSection[]) ?? []}
       initialDoc={initialDoc}

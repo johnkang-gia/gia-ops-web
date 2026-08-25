@@ -1,7 +1,6 @@
 "use client";
 
 import { useT } from "@/components/common/LanguageProvider";
-import TeacherTabs from "./TeacherTabs";
 
 export type TtPeriod = { id: string; department: string; periodNo: number; label: string; start: string; end: string };
 export type TtCell = { weekday: number; periodId: string; subject: string; teacher: string | null; classLabel: string | null; room: string | null };
@@ -70,7 +69,6 @@ export default function TeacherOverviewClient({
 
   return (
     <div className="mx-auto max-w-5xl">
-      <TeacherTabs isHomeroom={isHomeroom} />
 
       {/* 학기 배너 */}
       <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-2xl border border-teal-200 bg-teal-50/50 px-4 py-2.5">

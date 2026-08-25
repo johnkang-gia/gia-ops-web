@@ -47,8 +47,11 @@ export default function MainArea({ children }: { children: React.ReactNode }) {
   const isStaffManual = pathname?.startsWith("/staff-manual");
   const isBoundedList = BOUNDED_LIST_PATHS.some((p) => pathname === p);
 
+  // 업무 보드는 칸반이 화면을 꽉 채워야 해서 예전에는 여백이 아예 없었는데, 그러면 상단탭이
+  // 페이지 내용에 딱 붙어 답답합니다(요청 ③: "업무탭부분 너무 페이지랑 가까워 조금 여유는 줘").
+  // 좌우는 상단탭과 같은 px를 써서 왼쪽 선을 맞추고, 위쪽에만 작은 숨통을 둡니다.
   if (isWork) {
-    return <main className="workflatform-theme flex-1 overflow-hidden">{children}</main>;
+    return <main className="workflatform-theme flex-1 overflow-hidden px-4 pb-3 pt-3 sm:px-6 sm:pb-4">{children}</main>;
   }
 
   // 실무자매뉴얼은 좌(매뉴얼)/우(학생검색) 두 영역이 각자 스크롤되며 화면 안에 같이 떠 있어야
@@ -65,8 +68,10 @@ export default function MainArea({ children }: { children: React.ReactNode }) {
     );
   }
 
+  // 좌우 여백(sm:p-6)은 상단탭바의 sm:px-6과 같은 값입니다. 예전에는 여기만 sm:p-8이라
+  // 탭바보다 본문이 더 안쪽에서 시작해, 화면을 옮길 때마다 탭 위치가 어긋나 보였습니다(요청 ④).
   return (
-    <main className={"flex-1 overflow-x-hidden p-4 sm:p-8 " + (isWeekly ? "bg-wr-bg" : "shell-content shell-content-bg")}>
+    <main className={"flex-1 overflow-x-hidden p-4 sm:p-6 " + (isWeekly ? "bg-wr-bg" : "shell-content shell-content-bg")}>
       {children}
     </main>
   );

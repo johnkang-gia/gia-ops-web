@@ -226,9 +226,11 @@ export default function ShuttleClient({
             </div>
 
             {/* 요청 ⑬: 노선 상단에 지도를 항상 띄우고, 아래 정류장 목록에서 정류장을 누르면 지도가
-                그 정류장으로 이동합니다. */}
+                그 정류장으로 이동합니다.
+                지도는 좌우 2단(왼쪽 지도 / 오른쪽 목록)이라 정사각형에 가깝게 보이도록 높이를
+                키웠습니다 - 요청 ①: h-72(288px)에서는 지도가 얇은 띠로 눌려 아무것도 안 보였습니다. */}
             {selectedStops.length > 0 && (
-              <div className="mb-3 h-72 overflow-hidden rounded-xl border border-slate-200 print:hidden">
+              <div className="mb-3 h-[460px] overflow-hidden rounded-xl border border-slate-200 print:hidden">
                 <RouteMap
                   routeId={selected.id}
                   stops={selectedStops}

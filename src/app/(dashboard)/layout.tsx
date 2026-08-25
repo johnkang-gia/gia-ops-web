@@ -11,6 +11,7 @@ import SignOutButton from "@/components/SignOutButton";
 import RolePreviewDropdown from "@/components/dev/RolePreviewDropdown";
 import { SidebarNavLinks, MobileNavLinks, type NavCategory, type NavLeaf } from "@/components/NavLinks";
 import MainArea from "@/components/MainArea";
+import SectionTabs from "@/components/common/SectionTabs";
 import DateTimeCard from "@/components/home/DateTimeCard";
 import GlobalSearchBar from "@/components/GlobalSearchBar";
 import PausedFeaturesBanner from "@/components/dev/PausedFeaturesBanner";
@@ -137,53 +138,35 @@ function buildWorkCategory(pendingProposals: number, pendingAdopted: number): Na
 // 따로 있었는데, 둘 다 "학교라는 조직을 굴리는 기준정보"라 나눌 이유가 없었습니다.
 // 급식 당번·시설 예약처럼 앞으로 추가될 학사 운영 항목도 이 아래 [학사] 구분선에 붙입니다.
 function buildSchoolCategory(isAdmin: boolean, isStaffOrAbove: boolean): NavCategory {
+  // 요청("학교메뉴도 길게 복잡해 - 통합·최적화해서 줄여줘")에 따라 9개를 5개로 합쳤습니다.
+  // 이 5개는 상단탭(SectionTabs의 SCHOOL_TABS)과 항목·순서가 정확히 같습니다(요청: "결과적으로
+  // 상단탭이랑 서브메뉴랑 일치해야해").
+  //
+  // 합치면서 없어진 화면은 하나도 없습니다. 성격이 같은 것끼리 묶고, 묶인 화면들은 그 탭이
+  // 열렸을 때 상단탭 바로 아래 작은 줄로 펼쳐집니다:
+  //   학생      = 학생 조회 · 명부 관리 · 명부 점검
+  //   반·시간표 = 반 관리 · 과목 · 수업 시간표
+  //   학사운영  = 학사일정 · 당번표 · 학기 준비 · 학기 관리
+  // 사이드바에 11줄을 늘어놓는 대신, 대분류 5줄만 두고 세부는 화면 안에서 고르는 구조입니다.
   const items: NavLeaf[] = [];
-  // 상단탭에는 없는 보조·설정 화면들. 탭 항목을 모두 넣은 뒤 [설정] 구분선 아래로 붙입니다.
-  const extra: NavLeaf[] = [];
   if (isStaffOrAbove) {
     items.push(
-      // 서브메뉴 = 상단탭(SchoolTabs)과 항상 같은 항목·같은 순서입니다(요청: "상단탭이랑
-      // 서브메뉴랑 일치해야해"). 탭에 없는 보조 화면(명부 점검·학기 관리·운영 대시보드)은
-      // 아래 [설정] 구분선으로 내려 관리자만 보게 합니다.
       { href: "/school/overview", label: "개요", icon: "📊" },
-      { href: "/students", label: "학생 조회", icon: "🎓" },
+      { href: "/students", label: "학생", icon: "🎓" },
       // 학생 통합기록과 같은 구조로 교직원도 입사일/퇴사일/연도별 담당 이력을 한 화면에서
       // 볼 수 있습니다(요청: "교직원에 대한 정보도... 통합으로 관리되게끔").
       { href: "/staff", label: "교직원", icon: "🧑‍💼" }
     );
   }
   if (isAdmin) {
-    items.push(
-      { href: "/weekly-report/admin/students", label: "명부 관리", labelEn: "Manage Students", icon: "📇" },
-      { href: "/weekly-report/admin/classes", label: "반·과목", labelEn: "Manage Classes", icon: "🏫" }
-    );
+    items.push({ href: "/weekly-report/admin/classes", label: "반 · 시간표", labelEn: "Classes", icon: "🏫" });
   }
-  if (isStaffOrAbove) {
-    // 명부를 넣은 결과가 맞는지, 사람이 판단해야 할 건이 남았는지 보는 화면입니다
-    // (요청: "대시보드에서 확인 어떻게 할 수 있어?").
-    // 탭에 없는 보조 화면입니다(관리자만) - 아래 [설정] 구분선 그룹으로 내립니다.
-    extra.push({ href: "/school/data-check", label: "명부 점검", icon: "🩺" });
-  }
-  items.push(
-    { href: "/school/timetable", label: "수업·시간표", icon: "🗓️" },
-    { href: "/academic-calendar", label: "학사일정", icon: "📅" },
-    // 급식 당번·체육관 사용 같은 "누가 언제 어디를 맡는가" 표입니다(요청: "당번표는 대시보드에
-    // 필요없고, 일단은 데이터만 넣을 수 있게"). 종류만 새로 적으면 새 당번표가 생기므로,
-    // 앞으로 당번이 늘어도 메뉴가 늘어나지 않습니다.
-    { href: "/school/duty", label: "당번표", icon: "🍚" },
-    { href: "/academic-calendar/prep", label: "학기 준비", icon: "🧭" }
-  );
-  // 여기부터는 탭에 없는 설정 화면입니다(관리자 전용).
-  extra.push({ href: "/terms", label: "학기 관리", icon: "📓" });
+  // 학사일정·당번표·학기 준비·학기 관리를 하나로 묶은 대분류입니다.
+  items.push({ href: "/academic-calendar", label: "학사운영", icon: "📅" });
   if (isAdmin) {
     // 사무실 대형 모니터 대시보드의 관리 화면입니다(요청: "운영 대시보드는 관리자만").
-    extra.push({ href: "/ops-board", label: "운영 대시보드", icon: "🖥️" });
-  }
-  // 탭에 없는 보조·설정 화면은 맨 아래 [설정] 구분선 아래로 모읍니다 - 위쪽 항목은 상단탭과
-  // 1:1로 같아서, 사이드바와 탭이 어긋나 보이지 않습니다.
-  if (extra.length > 0) {
-    extra[0] = { ...extra[0], dividerBefore: "설정" };
-    items.push(...extra);
+    // 상단탭에는 없는 유일한 항목이라 [설정] 구분선 아래에 둡니다.
+    items.push({ href: "/ops-board", label: "운영 대시보드", icon: "🖥️", dividerBefore: "설정" });
   }
   return { key: "school", label: "학교", icon: "🏛️", accent: "purple", href: "/school/overview", items };
 }
@@ -200,9 +183,10 @@ function buildShuttleCategory(isStaffOrAbove: boolean): NavCategory {
   // 셔틀 하위메뉴를 목적별 3그룹으로 분류합니다(요청: "셔틀쪽 메뉴들 너무 복잡해졌어, 통합할거
   // 통합하고 분류할거 분류"): ① 매일 하원 운영(매일 쓰는 것) ② 기준정보·설정(학기 초에 한 번
   // 세팅하고 가끔 손대는 것) ③ 기록·분석(쌓인 데이터 보기).
+  // 상단탭(SectionTabs의 SHUTTLE_TABS)과 항목·순서가 정확히 같습니다.
   const items: NavLeaf[] = [
     // 실시간 위치·지역별 현황은 개요 대시보드 상단 지도로 통합했습니다(요청).
-    { href: "/shuttle/overview", label: "개요 대시보드", icon: "📊", dividerBefore: "매일 하원 운영" },
+    { href: "/shuttle/overview", label: "개요", icon: "📊" },
     { href: "/shuttle/checklist", label: "하원 체크표", icon: "📋" },
     // 요청: "전체 학부모의 채팅을 하나하나 실시간으로 보면서 아이들의 픽업을 처리하는게 너무
     // 힘든데" - 토들·전화·교사·직접입력 어디로 들어온 픽업이든 여기 한 곳에 모입니다.
@@ -210,11 +194,11 @@ function buildShuttleCategory(isStaffOrAbove: boolean): NavCategory {
   ];
   if (isStaffOrAbove) {
     items.push(
-      // 노선 관리·탑승 배정·배차표 인쇄는 /shuttle(종합 관리 화면)이 모두 담당하므로 하나로 통합.
-      { href: "/shuttle", label: "노선·배정·배차표", icon: "🛣️", dividerBefore: "기준정보 · 설정" },
+      // 배차표·노선 관리·탑승 배정·지역별·실시간은 이 대분류의 하위 줄로 펼쳐집니다.
+      { href: "/shuttle", label: "노선 · 배정", icon: "🛣️" },
       // 내 폰 GPS 테스트는 링크·기기 화면 안(접이식)으로 통합했습니다.
-      { href: "/shuttle/pilot", label: "링크·기기·GPS", icon: "🔗" },
-      { href: "/shuttle/stop-times", label: "정류장 도착시간", icon: "⏱️", dividerBefore: "기록 · 분석" }
+      { href: "/shuttle/pilot", label: "링크 · 기기", icon: "🔗" },
+      { href: "/shuttle/stop-times", label: "기록 · 분석", icon: "⏱️" }
     );
   }
   // 카테고리를 직접 누르면 지역별 현황이 열립니다(요청: "셔틀메뉴를 눌렀을 때, 지역셔틀현황이
@@ -228,25 +212,22 @@ function buildShuttleCategory(isStaffOrAbove: boolean): NavCategory {
 // 전화 응대 중 가장 급하게 여는 실무자 매뉴얼을 맨 위에 두고, 카테고리를 직접 눌러도 그 화면이
 // 바로 열리게 했습니다 - 합치면서 손이 더 가면 안 되기 때문입니다.
 function buildDocumentsCategory(isAdmin: boolean, pendingProposals: number, pendingAdopted: number): NavCategory {
+  // 학교와 같은 방식으로 17줄이던 목록을 7개 대분류로 줄였습니다(요청: "통합, 최적화, 줄여줘").
+  // 상단탭(SectionTabs의 DOCS_TABS)과 항목·순서가 정확히 같고, 흡수한 화면(매뉴얼 종류, 서류함,
+  // AI 서류 작성, 보고서 모음, 등록사건목록, 회의 보고서, 제안함·채택예정·AI 매뉴얼)은 그 탭이
+  // 열렸을 때 상단탭 바로 아래 작은 줄로 펼쳐집니다. 사라진 화면은 없습니다.
   const items: NavLeaf[] = [
     { href: "/staff-manual", label: "실무자 매뉴얼", icon: "📚" },
-    { href: "/manuals?doc=실무자용", label: "매뉴얼 (실무자용)", icon: "📗" },
-    { href: "/manuals?doc=학부모용", label: "운영계획안 (학부모용)", icon: "📘" },
-    { href: "/school/documents", label: "문서함 홈", icon: "🗄️", dividerBefore: "문서함" },
-    { href: "/documents", label: "서류함", icon: "📁" },
-    { href: "/documents/new", label: "AI 서류 작성", icon: "🪄" },
-    { href: "/school/documents/reports", label: "보고서 모음", icon: "📊" },
+    { href: "/school/documents", label: "문서함", icon: "🗄️" },
     // 사건·회의·행사 기록과 제안·채택은 "남기고 찾아보는 것"이라 문서·매뉴얼에 둡니다
-    // (요청: 이미 문서·매뉴얼로 이전했던 항목들). 상단탭(DocsTabs)과 항목·순서가 같습니다.
-    { href: "/records/drive", label: "기록 드라이브", icon: "🗄️", dividerBefore: "기록" },
-    { href: "/ops", label: "등록사건목록", icon: "📋" },
-    { href: "/records", label: "사건기록", icon: "🗂️" },
-    { href: "/meetings", label: "회의기록", icon: "💬" },
-    { href: "/events", label: "행사기록", icon: "🎉" },
-    { href: "/meetings/report", label: "회의 보고서", icon: "📊" },
-    { href: "/ai-manual", label: "AI 매뉴얼 작성", icon: "✨", dividerBefore: "개선 제안" },
-    { href: "/proposals", label: "제안함", icon: "📝", badge: pendingProposals },
-    { href: "/adopted", label: "채택예정", icon: "📬", badge: pendingAdopted },
+    // (요청: 이미 문서·매뉴얼로 이전했던 항목들).
+    { href: "/records/drive", label: "기록 드라이브", icon: "🗃️" },
+    { href: "/ops", label: "사건", icon: "🗂️" },
+    { href: "/meetings", label: "회의", icon: "💬" },
+    { href: "/events", label: "행사", icon: "🎉" },
+    // 검토대기(제안함) + 발행대기(채택예정)를 합쳐 하나의 빨간 숫자로 보여줍니다 - 두 화면이
+    // 한 대분류로 합쳐졌으므로 배지도 합칩니다.
+    { href: "/proposals", label: "제안 · 채택", icon: "📝", badge: pendingProposals + pendingAdopted },
   ];
   if (isAdmin) {
     // 매뉴얼·운영계획안·서류를 어떤 항목으로 나눌지 정하는 기준표입니다. 문서를 쓰는 사람이
@@ -593,6 +574,11 @@ export default async function DashboardLayout({
             )}
           </div>
         )}
+        {/* 대분류 상단 탭바(요청 ④: "어떤 페이지를 보건 상단탭 자리는 고정해줘"). 예전에는 각
+            페이지가 본문 안에서 직접 탭바를 그려서, 페이지마다 다른 바깥 상자(max-w·padding)
+            때문에 탭의 시작점과 폭이 화면을 옮길 때마다 달라졌습니다. 본문 위 한 자리에서 한 번만
+            그리면 어떤 화면에서든 같은 자리·같은 크기입니다. */}
+        <SectionTabs isTeacher={isTeacher} isHomeroom={isHomeroomTeacher} />
         <MainArea>{children}</MainArea>
       </div>
     </div>

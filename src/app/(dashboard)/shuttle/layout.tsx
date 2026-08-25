@@ -1,16 +1,10 @@
-import ShuttleTabs from "@/components/shuttle/ShuttleTabs";
-
-// 셔틀 섹션 공용 레이아웃(요청: "다른 탭을 누르면 그냥 페이지로 이동해서 다시 개요로 와야
-// 한다 → 탭으로 이동할 수 있게"). 탭바를 이 레이아웃에 두면 /shuttle/* 사이를 오갈 때
-// Next.js가 레이아웃(탭바)은 그대로 두고 아래 내용만 바꿔치기하므로, 셸을 벗어나지 않고
-// 탭처럼 전환됩니다. 앞으로 다른 대분류(학교·업무)의 개요+탭도 같은 방식(섹션 layout에 탭바)을
-// 씁니다. 탭바는 고정, 그 아래 영역만 스크롤됩니다.
+// 셔틀 섹션 공용 레이아웃. 상단 탭바는 이제 대시보드 레이아웃이 본문 위 한 자리에서 그리므로
+// (요청 ④: "어떤 페이지를 보건 상단탭 자리는 고정해줘") 여기서는 스크롤 영역만 잡아줍니다.
+// 셔틀 화면들은 지도·표가 화면 높이를 꽉 채워야 해서, 본문 전체가 늘어나는 대신 이 안쪽만
+// 스크롤되도록 h-full + min-h-0 구조를 유지합니다.
 export default function ShuttleSectionLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="w-full shrink-0 px-4 pt-1 sm:px-6">
-        <ShuttleTabs />
-      </div>
       <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
     </div>
   );

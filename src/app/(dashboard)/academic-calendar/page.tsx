@@ -4,7 +4,6 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { getCurrentTerm } from "@/lib/currentTerm";
 import { isAdminUser } from "@/lib/roles";
-import SchoolTabs from "@/components/school/SchoolTabs";
 import { ensureChecklistItemsForTerm } from "@/lib/academicChecklist";
 import type { ChecklistItem, ChecklistTemplate, FormImportTemplate } from "@/lib/types";
 import AcademicCalendarClient from "@/components/academic/AcademicCalendarClient";
@@ -55,7 +54,6 @@ export default async function AcademicCalendarPage() {
 
   return (
     <div className="mx-auto flex h-full max-w-6xl flex-col gap-3 overflow-hidden">
-      <div className="shrink-0"><SchoolTabs /></div>
       {currentTerm && formTemplates.length > 0 && (
         <div className="shrink-0 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-2">

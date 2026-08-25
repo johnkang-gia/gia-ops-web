@@ -4,7 +4,6 @@ import { getCurrentTerm } from "@/lib/currentTerm";
 import { TERM_TYPES } from "@/lib/termTypes";
 import TermPrepClient from "@/components/academic/TermPrepClient";
 import GuideButton from "@/components/common/GuideButton";
-import SchoolTabs from "@/components/school/SchoolTabs";
 
 const GUIDE_SECTIONS = [
   {
@@ -37,7 +36,6 @@ export default async function AcademicPrepPage() {
 
   return (
     <div className="mx-auto max-w-5xl">
-      <SchoolTabs />
       <div className="mb-1 flex items-center justify-between gap-2">
         <h1 className="text-lg font-bold">🧭 학기준비</h1>
         <GuideButton title="학기준비 사용 가이드" sections={GUIDE_SECTIONS} />

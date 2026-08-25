@@ -1,7 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import type { Adopted, ProposalSourceContext } from "@/lib/types";
 import AdoptedClient from "@/components/adopted/AdoptedClient";
-import DocsTabs from "@/components/documents/DocsTabs";
 
 export const dynamic = "force-dynamic";
 
@@ -68,7 +67,6 @@ export default async function AdoptedPage() {
 
   return (
     <div className="p-4 sm:p-6">
-      <DocsTabs />
       <AdoptedClient initialItems={items} sourceContext={sourceContext} />
     </div>
   );

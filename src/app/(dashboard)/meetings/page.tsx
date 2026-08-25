@@ -3,7 +3,6 @@ import { getCurrentTerm } from "@/lib/currentTerm";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import type { Meeting, GiaSystem } from "@/lib/types";
 import MeetingsClient from "@/components/meetings/MeetingsClient";
-import DocsTabs from "@/components/documents/DocsTabs";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +19,6 @@ export default async function MeetingsPage() {
 
   return (
     <div className="p-4 sm:p-6">
-      <DocsTabs />
       <MeetingsClient
       initialItems={(data as Meeting[]) ?? []}
       currentTerm={currentTerm}

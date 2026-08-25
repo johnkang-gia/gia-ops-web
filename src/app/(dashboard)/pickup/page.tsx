@@ -3,7 +3,6 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import PickupCheckClient, { type PickupClassGroup, type PickupItem } from "@/components/pickup/PickupCheckClient";
 import GuideButton from "@/components/common/GuideButton";
-import TeacherTabs from "@/components/teacher/TeacherTabs";
 import { getLang } from "@/lib/langServer";
 import { makeT, type T } from "@/lib/lang";
 import { classLabel } from "@/lib/i18nLabels";
@@ -194,7 +193,6 @@ export default async function PickupPage() {
 
   return (
     <div className="mx-auto max-w-3xl p-4 sm:p-6">
-      <TeacherTabs isHomeroom />
       <div className="mb-1 flex items-center justify-between gap-2">
         <h1 className="text-lg font-bold">🚗 {t("내 반 픽업 체크", "My Class Pickup Check")}</h1>
         <GuideButton title={t("픽업 체크 사용 가이드", "Pickup check guide")} sections={guideSections(t)} />

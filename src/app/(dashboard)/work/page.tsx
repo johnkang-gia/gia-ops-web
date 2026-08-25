@@ -3,7 +3,6 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isAdminUser, isStaffOrAboveUser } from "@/lib/roles";
 import WorkBoardClient from "@/components/work/WorkBoardClient";
-import WorkTabs from "@/components/work/WorkTabs";
 import type { Task, Department, TeamMember, TaskModeColor, GoogleChatMirrorMessage, WorkNotice } from "@/lib/types";
 import GuideButton from "@/components/common/GuideButton";
 
@@ -91,7 +90,6 @@ export default async function WorkPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="shrink-0"><WorkTabs /></div>
       {/* 업무 대시보드 상단 학교 요약(학기·학기말 D-day·초등부 재학생) + 가이드 버튼. */}
       <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 pb-1">
         {termLabel && (

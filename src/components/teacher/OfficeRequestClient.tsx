@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useT } from "@/components/common/LanguageProvider";
-import TeacherTabs from "./TeacherTabs";
 
 type Req = {
   id: string;
@@ -68,7 +67,6 @@ export default function OfficeRequestClient({ isHomeroom }: { isHomeroom: boolea
 
   return (
     <div className="mx-auto max-w-2xl">
-      <TeacherTabs isHomeroom={isHomeroom} />
 
       <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-4">
         <h1 className="mb-1 text-base font-bold text-slate-800">💬 {t("행정실 문의·도움요청", "Office Request")}</h1>

@@ -65,7 +65,7 @@ export async function POST() {
     const result = (await callClaudeJsonWithWebSearch(
       systemPrompt,
       `대분류: ${MAJORS.join(", ")}. 위 기준으로 GIA에 부족한 시스템을 제안해주세요.`,
-      { route: "gia-systems-suggest", maxTokens: 4000, maxSearches: 8 }
+      { route: "gia-systems-suggest", maxTokens: 4000, maxSearches: 4 }
     )) as {
       suggestions?: {
         major: string;

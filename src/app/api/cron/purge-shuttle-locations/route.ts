@@ -68,12 +68,54 @@ export async function GET(req: NextRequest) {
       .select("id");
     if (pickupError) throw pickupError;
 
+    // ── 기록만 쌓이고 아무도 지우지 않던 표들 ──────────────────────────────────
+    //
+    // 위치·정차 기록에는 보관 기간이 있었는데, 운영하며 늘어난 아래 표들에는 없었습니다.
+    // Supabase 무료 플랜 데이터베이스는 500MB가 상한이고, 이 표들은 하루도 쉬지 않고 행이
+    // 늘어납니다(운행 이벤트는 노선 38개 × 매일, AI 사용기록은 호출마다 한 줄). 그대로 두면
+    // 언젠가 학생 명부를 넣을 자리가 없어서 저장이 실패합니다.
+    //
+    // 기간은 "그 기록을 되짚어 볼 일이 실제로 남아 있는 기간"으로 잡았습니다.
+    //   운행 이벤트·안전운행  90일 - 위치 기록과 같은 주기(그 기록들과 짝을 이루는 자료)
+    //   AI 사용기록          90일 - 한 분기 비용 추이를 보면 충분
+    //   오류 로그            30일 - 한 달 지난 오류는 이미 고쳤거나 재현되지 않습니다
+    //   구글챗 미러링        180일 - 한 학기치. 원본은 구글챗에 그대로 남아 있습니다
+    const cutoff90 = cutoff; // 위와 같은 90일 기준
+    const cutoff30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const cutoff180 = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString();
+
+    // 표가 아직 없거나(마이그레이션 전) 칸 이름이 다른 경우에도 크론 전체가 실패하지 않도록
+    // 한 건씩 따로 감쌉니다 - 하나가 안 지워진다고 나머지까지 안 지워지면 안 됩니다.
+    async function purge(table: string, column: string, cutoffIso: string): Promise<number> {
+      try {
+        const { data, error } = await supabase.from(table).delete().lt(column, cutoffIso).select("id");
+        if (error) return 0;
+        return data?.length ?? 0;
+      } catch {
+        return 0;
+      }
+    }
+
+    const [runEvents, safetyEvents, aiLogs, errorLogs, mirrored] = await Promise.all([
+      purge("shuttle_run_events", "created_at", cutoff90),
+      // 안전운행 기록만 시각 칸 이름이 recorded_at입니다(다른 표는 created_at).
+      purge("shuttle_safety_events", "recorded_at", cutoff90),
+      purge("ai_usage_logs", "created_at", cutoff90),
+      purge("error_logs", "created_at", cutoff30),
+      purge("google_chat_mirror_messages", "created_at_google", cutoff180),
+    ]);
+
     return NextResponse.json({
       ok: true,
       retentionDays: RETENTION_DAYS,
       purgedPings: pings?.length ?? 0,
       purgedObservations: observations?.length ?? 0,
       purgedPickupTexts: purgedTexts?.length ?? 0,
+      purgedRunEvents: runEvents,
+      purgedSafetyEvents: safetyEvents,
+      purgedAiLogs: aiLogs,
+      purgedErrorLogs: errorLogs,
+      purgedMirroredMessages: mirrored,
     });
   } catch (err) {
     await logApiError(supabase, "cron:purge-shuttle-locations", err);

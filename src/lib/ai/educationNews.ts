@@ -55,7 +55,7 @@ export async function generateEducationNews(supabaseAdmin: any): Promise<Generat
   const result = (await callClaudeJsonWithWebSearch(SYSTEM_PROMPT, buildUserPrompt(todayLabel), {
     route: "education-news",
     maxTokens: 6000,
-    maxSearches: 8,
+    maxSearches: 4,
   })) as { title?: string; summary?: string; items?: EducationNewsItem[] };
 
   const title = result.title?.trim() || `${todayLabel} 교육뉴스`;

@@ -68,7 +68,7 @@ export async function POST(req: Request) {
     const result = await callClaudeJsonWithWebSearch(system, user, {
       route: "term-prep-analyze",
       maxTokens: 3500,
-      maxSearches: 5,
+      maxSearches: 3,
     });
     return NextResponse.json({ result });
   } catch (err) {

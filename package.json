@@ -1,6 +1,6 @@
 {
   "name": "gia-ops-web",
-  "version": "0.239.0",
+  "version": "0.240.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -15,7 +15,6 @@
     "@react-pdf/renderer": "^4.5.1",
     "@supabase/ssr": "^0.5",
     "@supabase/supabase-js": "^2",
-    "@tiptap/pm": "^3.29.2",
     "@tiptap/react": "^3.29.2",
     "@tiptap/starter-kit": "^3.29.2",
     "@vercel/analytics": "^2.0.1",

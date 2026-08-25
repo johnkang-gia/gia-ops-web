@@ -5,6 +5,7 @@ import { isAdminUser } from "@/lib/roles";
 import type { ShuttleRoute, ShuttleStop, WrStudent, WrStudentFieldDef } from "@/lib/types";
 import StudentManageClient from "@/components/weeklyReport/admin/StudentManageClient";
 import GuideButton from "@/components/common/GuideButton";
+import SchoolTabs from "@/components/school/SchoolTabs";
 
 const GUIDE_SECTIONS = [
   {
@@ -41,8 +42,9 @@ export default async function StudentManagePage() {
     // 요청("학생명부관리 스크롤이 안돼")의 원인은 이 감싸는 div에 h-full/flex 구조가 없어서
     // 안쪽 표의 overflow-auto가 기준으로 삼을 높이가 없었던 것입니다(/students 검색 화면과
     // 같은 구조로 맞췄습니다) - 이제 표 영역만 화면 높이에 맞춰 자체적으로 스크롤됩니다.
-    <div className="mx-auto flex h-full max-w-6xl flex-col overflow-hidden">
+    <div className="mx-auto flex h-full w-full max-w-none flex-col overflow-hidden">
       <div className="shrink-0">
+        <SchoolTabs />
         <div className="mb-1 flex items-center justify-between gap-2">
           <h1 className="text-lg font-bold">학생 명부 관리</h1>
           <GuideButton title="학생 명부 관리 사용 가이드" sections={GUIDE_SECTIONS} />

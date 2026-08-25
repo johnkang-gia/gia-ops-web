@@ -132,6 +132,7 @@ function buildSchoolCategory(isAdmin: boolean, isStaffOrAbove: boolean): NavCate
   const items: NavLeaf[] = [];
   if (isStaffOrAbove) {
     items.push(
+      { href: "/school/overview", label: "개요 대시보드", icon: "📊", dividerBefore: "학교 현황" },
       { href: "/students", label: "학생 조회", icon: "🔎" },
       // 학생 통합기록과 같은 구조로 교직원도 입사일/퇴사일/연도별 담당 이력을 한 화면에서
       // 볼 수 있습니다(요청: "교직원에 대한 정보도... 통합으로 관리되게끔").
@@ -164,7 +165,7 @@ function buildSchoolCategory(isAdmin: boolean, isStaffOrAbove: boolean): NavCate
     // (요청: "운영 대시 보드는 관리자,개발자만 보이도록").
     items.push({ href: "/ops-board", label: "시간표 · 운영 대시보드", icon: "🖥️" });
   }
-  return { key: "school", label: "학교", icon: "🏛️", accent: "purple", href: "/school", items };
+  return { key: "school", label: "학교", icon: "🏛️", accent: "purple", href: "/school/overview", items };
 }
 
 // ── 셔틀 ────────────────────────────────────────────────────────────────────

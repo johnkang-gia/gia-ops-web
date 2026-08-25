@@ -34,7 +34,7 @@ export default function ShuttleClient({
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<Partial<ShuttleRoute>>({});
-  const [view, setView] = useState<"table" | "map">("table");
+  const [focusStopId, setFocusStopId] = useState<string | null>(null);
 
   const stopsByRoute = useMemo(() => {
     const m = new Map<string, ShuttleStop[]>();
@@ -211,44 +211,24 @@ export default function ShuttleClient({
                 </p>
               </div>
               <div className="flex gap-1.5 print:hidden">
-                <div className="flex gap-0.5 rounded-lg bg-slate-100 p-0.5">
-                  <button
-                    onClick={() => setView("table")}
-                    className={
-                      "rounded-md px-2 py-1 text-xs font-semibold transition " +
-                      (view === "table" ? "bg-white text-slate-700 shadow-sm" : "text-slate-400 hover:text-slate-600")
-                    }
-                  >
-                    📋 배차표
-                  </button>
-                  <button
-                    onClick={() => setView("map")}
-                    className={
-                      "rounded-md px-2 py-1 text-xs font-semibold transition " +
-                      (view === "map" ? "bg-white text-slate-700 shadow-sm" : "text-slate-400 hover:text-slate-600")
-                    }
-                  >
-                    🗺️ 노선도
-                  </button>
-                </div>
-                {canEdit && !editing && view === "table" && (
+                {canEdit && !editing && (
                   <button onClick={startEdit} className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-500 hover:bg-slate-50">
                     ✏️ 담당자 수정
                   </button>
                 )}
-                {view === "table" && (
-                  <button
-                    onClick={() => window.print()}
-                    className="rounded-lg bg-gia-navy px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-gia-navy-2"
-                  >
-                    🖨️ 배차표 인쇄
-                  </button>
-                )}
+                <button
+                  onClick={() => window.print()}
+                  className="rounded-lg bg-gia-navy px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-gia-navy-2"
+                >
+                  🖨️ 배차표 인쇄
+                </button>
               </div>
             </div>
 
-            {view === "map" ? (
-              <div className="h-[calc(100%-4rem)]">
+            {/* 요청 ⑬: 노선 상단에 지도를 항상 띄우고, 아래 정류장 목록에서 정류장을 누르면 지도가
+                그 정류장으로 이동합니다. */}
+            {selectedStops.length > 0 && (
+              <div className="mb-3 h-72 overflow-hidden rounded-xl border border-slate-200 print:hidden">
                 <RouteMap
                   routeId={selected.id}
                   stops={selectedStops}
@@ -256,9 +236,12 @@ export default function ShuttleClient({
                   routeLabel={`${selected.direction} ${selected.route_no}호 ${selected.name ?? ""}`}
                   departTime={selected.depart_time}
                   canEdit={canEdit}
+                  focusStopId={focusStopId}
                 />
               </div>
-            ) : (
+            )}
+
+            {(
               <>
 
             {editing ? (
@@ -315,7 +298,12 @@ export default function ShuttleClient({
                       <tr key={s.id} className="border-b border-slate-100">
                         <td className="px-2 py-1.5 align-top">{s.stop_time ?? ""}</td>
                         <td className="px-2 py-1.5 align-top" />
-                        <td className="px-2 py-1.5 align-top">
+                        <td
+                          className="cursor-pointer px-2 py-1.5 align-top hover:bg-blue-50 print:cursor-auto"
+                          onClick={() => setFocusStopId(s.id)}
+                          title="눌러서 지도에서 이 정류장 보기"
+                        >
+                          <span className="mr-0.5 text-blue-400 print:hidden">📍</span>
                           {s.address}
                           {s.gate && <span className="ml-1 text-slate-400">({s.gate})</span>}
                         </td>
@@ -335,7 +323,13 @@ export default function ShuttleClient({
                           <td className="px-2 py-1.5 align-top" rowSpan={list.length}>
                             {weekdaysLabel(a.weekdays)}
                           </td>
-                          <td className="px-2 py-1.5 align-top" rowSpan={list.length}>
+                          <td
+                            className="cursor-pointer px-2 py-1.5 align-top hover:bg-blue-50 print:cursor-auto"
+                            rowSpan={list.length}
+                            onClick={() => setFocusStopId(s.id)}
+                            title="눌러서 지도에서 이 정류장 보기"
+                          >
+                            <span className="mr-0.5 text-blue-400 print:hidden">📍</span>
                             {s.address}
                             {s.gate && <span className="ml-1 text-slate-400">({s.gate})</span>}
                           </td>

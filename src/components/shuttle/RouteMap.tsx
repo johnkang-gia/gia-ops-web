@@ -36,6 +36,7 @@ export default function RouteMap({
   routeLabel,
   departTime,
   canEdit,
+  focusStopId,
 }: {
   routeId: string;
   stops: ShuttleStop[]; // 이미 seq 오름차순으로 정렬되어 들어온다고 가정합니다.
@@ -43,6 +44,7 @@ export default function RouteMap({
   routeLabel: string;
   departTime: string; // 이 노선의 등록된 출발 기준시각(HH:MM)
   canEdit: boolean;
+  focusStopId?: string | null; // 목록에서 정류장을 클릭하면 그 정류장으로 지도를 이동합니다(요청 ⑬).
 }) {
   const notify = useToast();
   const mapDivRef = useRef<HTMLDivElement>(null);
@@ -52,6 +54,19 @@ export default function RouteMap({
   const clickListenerRef = useRef<Kakao>(null);
 
   const [localStops, setLocalStops] = useState(stops);
+
+  // 목록에서 정류장을 클릭하면(focusStopId) 그 정류장 좌표로 지도를 부드럽게 이동·확대합니다.
+  useEffect(() => {
+    if (!focusStopId) return;
+    const map = mapObjRef.current as { panTo?: (v: unknown) => void; setLevel?: (n: number) => void } | null;
+    const kakao = (window as unknown as { kakao?: { maps?: { LatLng: new (a: number, b: number) => unknown } } }).kakao;
+    if (!map || !kakao?.maps) return;
+    const s = localStops.find((x) => x.id === focusStopId);
+    if (s && s.lat != null && s.lng != null) {
+      map.setLevel?.(3);
+      map.panTo?.(new kakao.maps.LatLng(s.lat, s.lng));
+    }
+  }, [focusStopId, localStops]);
   const [giaCoord, setGiaCoord] = useState<{ lat: number; lng: number } | null>(giaCoordCache);
   const [sdkStatus, setSdkStatus] = useState<"loading" | "ready" | "error">("loading");
   const [sdkError, setSdkError] = useState("");

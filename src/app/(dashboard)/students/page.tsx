@@ -4,6 +4,7 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { isStaffOrAboveUser } from "@/lib/roles";
 import type { WrStudent } from "@/lib/types";
 import StudentSearchClient from "@/components/students/StudentSearchClient";
+import SchoolTabs from "@/components/school/SchoolTabs";
 import GuideButton from "@/components/common/GuideButton";
 
 const GUIDE_SECTIONS = [
@@ -43,18 +44,19 @@ export default async function StudentsSearchPage() {
     .order("name", { ascending: true });
 
   return (
-    <div className="mx-auto flex h-full max-w-2xl flex-col overflow-hidden">
+    <div className="mx-auto flex h-full w-full max-w-none flex-col overflow-hidden">
       <div className="shrink-0">
+        <SchoolTabs />
         <div className="mb-1 flex items-center justify-between gap-2">
-          <h1 className="text-lg font-bold">학생 정보 조회</h1>
+          <h1 className="text-lg font-bold">🎓 학생 조회</h1>
           <GuideButton title="학생 정보 조회 사용 가이드" sections={GUIDE_SECTIONS} />
         </div>
-        <p className="mb-4 text-xs text-slate-500">
-          업무 · 사건기록 · 주간 학생 관찰기록에서 같은 학생은 항상 같은 학번(고유번호)으로 관리됩니다.
-          이름이나 학번으로 검색해 그 학생의 인적사항·학적사항·관련 기록을 한 화면에서 확인하세요.
+        <p className="mb-3 text-xs text-slate-500">
+          재학·졸업·퇴학 탭으로 나눠 봅니다. 같은 학생은 항상 같은 학번(고유번호)으로 관리되며, 카드를 누르면 통합
+          프로필로 이동합니다.
         </p>
       </div>
-      <div className="min-h-0 flex-1">
+      <div className="min-h-0 flex-1 overflow-y-auto pb-4">
         <StudentSearchClient students={(data as WrStudent[] | null) ?? []} />
       </div>
     </div>

@@ -2,10 +2,13 @@
 
 import { useEffect, useMemo, useRef, useState, type FormEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { youtubeEmbedSrc } from "@/lib/youtube";
+import { pollDelay } from "@/lib/useSmartPoll";
 
 // 요청: "차량 도착출발과 안내보드간에 연동이 너무 느리고" - 폴링 주기를 6초에서 3초로 줄여
 // 도착·출발 체크가 안내보드에 더 빨리 반영되도록 했습니다.
 const POLL_MS = 3000;
+// 하원 시간대가 아닐 때(새벽·주말 등) 폴링 간격 - 화면을 종일 켜둬도 호출이 적게 나갑니다.
+const IDLE_POLL_MS = 60000;
 // 인트로(패널 안 버스 애니메이션)가 끝나고 위젯이 실제로 나타나기까지 걸리는 시간과 맞춥니다
 // (아래 .gia-bus-cross-panel 애니메이션 길이 1.1초 + 여유).
 const INTRO_MS = 1100;
@@ -317,10 +320,24 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
       }
     }
     poll();
-    const t = setInterval(poll, POLL_MS);
+    // 서버 호출 절감(Vercel 무료 한도): 화면이 안 보이면 건너뛰고, 하원 시간대가 아니면
+    // 훨씬 느리게 돕니다. 창을 다시 보면 즉시 한 번 새로고침해 화면이 낡아 보이지 않습니다.
+    let t: ReturnType<typeof setTimeout>;
+    const tick = () => {
+      t = setTimeout(() => {
+        if (typeof document === "undefined" || document.visibilityState === "visible") void poll();
+        tick();
+      }, pollDelay(POLL_MS, IDLE_POLL_MS));
+    };
+    tick();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void poll();
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       cancelled = true;
-      clearInterval(t);
+      clearTimeout(t);
+      document.removeEventListener("visibilitychange", onVisible);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);

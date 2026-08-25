@@ -5,6 +5,7 @@ import { loadKakaoMaps } from "@/lib/kakaoMap";
 import { useKstClock } from "@/lib/useKstClock";
 import { useBoardDensity, type BoardScale } from "@/lib/useBoardDensity";
 import { useIdleCursor } from "@/lib/useIdleCursor";
+import { useSmartPoll } from "@/lib/useSmartPoll";
 
 // 요청: "셔틀시작시간때(4:00)가 되면 화면이 전환되면서 실시간 셔틀 운행지도가 뜨고 지도에서 각
 // 셔틀이 어떤 경로로 가고있는지 볼 수 있게 하면서, 아래쪽에는 아이들이 차량을 다 탑승했는지
@@ -17,6 +18,8 @@ import { useIdleCursor } from "@/lib/useIdleCursor";
 //     잡은 것을 구분해 표시합니다.
 
 const POLL_MS = 10_000;
+// 하원 시간대가 아닐 때 폴링 간격(새벽·주말 등).
+const IDLE_POLL_MS = 120_000;
 
 type Ping = { lat: number; lng: number; speed: number | null; recordedAt: string };
 type RouteRow = {
@@ -195,9 +198,10 @@ export default function DismissalOpsClient({
 
   useEffect(() => {
     load();
-    const t = setInterval(load, POLL_MS);
-    return () => clearInterval(t);
   }, [load]);
+  // 서버 호출 절감(Vercel 무료 한도): 화면이 안 보이면 멈추고, 하원 시간대(평일 14~19시)가
+  // 아니면 느리게 돕니다. 대형 모니터에 하루 종일 띄워둬도 호출량이 크게 줄어듭니다.
+  useSmartPoll(load, { activeMs: POLL_MS, idleMs: IDLE_POLL_MS });
 
   if (errorMsg && !data) return <Center text={errorMsg} />;
   if (!data) return <Center text="불러오는 중..." muted />;

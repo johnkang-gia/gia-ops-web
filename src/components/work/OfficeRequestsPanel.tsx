@@ -63,7 +63,7 @@ export default function OfficeRequestsPanel({
   }
   useEffect(() => {
     load();
-    const i = setInterval(load, 20000);
+    const i = setInterval(() => { if (typeof document === "undefined" || document.visibilityState === "visible") void load(); }, 20000);
     return () => clearInterval(i);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

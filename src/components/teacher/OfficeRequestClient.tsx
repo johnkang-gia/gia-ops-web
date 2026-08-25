@@ -37,7 +37,7 @@ export default function OfficeRequestClient({ isHomeroom }: { isHomeroom: boolea
   }
   useEffect(() => {
     load();
-    const i = setInterval(load, 30000);
+    const i = setInterval(() => { if (typeof document === "undefined" || document.visibilityState === "visible") void load(); }, 30000);
     return () => clearInterval(i);
   }, []);
 

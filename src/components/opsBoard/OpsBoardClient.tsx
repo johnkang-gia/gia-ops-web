@@ -21,6 +21,7 @@ import { lessonPlace } from "@/lib/lessonLocation";
 import { APP_VERSION } from "@/lib/version";
 import LunchCountdown from "./LunchCountdown";
 import InquiryBoard from "./InquiryBoard";
+import { useSmartPoll } from "@/lib/useSmartPoll";
 
 // 요청: "바뀌면 자동으로 새로고침해서 페이지를 수정해줘"
 //
@@ -30,6 +31,8 @@ import InquiryBoard from "./InquiryBoard";
 //   - 평소에는 15초마다 받아옵니다.
 //   - 교시가 끝나는 시각을 미리 알고 있으므로, 그 순간에 맞춰 한 번 더 받아옵니다.
 const POLL_MS = 15_000;
+// 하원 시간대가 아닐 때 폴링 간격(새벽·주말 등).
+const IDLE_POLL_MS = 120_000;
 
 type Lesson = { subjectName: string; teacherName: string | null; room: string | null };
 type BoardData = {
@@ -153,9 +156,10 @@ export default function OpsBoardClient({ token }: { token: string }) {
 
   useEffect(() => {
     load();
-    const t = setInterval(load, POLL_MS);
-    return () => clearInterval(t);
   }, [load]);
+  // 서버 호출 절감(Vercel 무료 한도): 화면이 안 보이면 멈추고, 하원 시간대(평일 14~19시)가
+  // 아니면 느리게 돕니다. 대형 모니터에 하루 종일 띄워둬도 호출량이 크게 줄어듭니다.
+  useSmartPoll(load, { activeMs: POLL_MS, idleMs: IDLE_POLL_MS });
 
   // 새 버전이 올라오면 스스로 새로고침합니다.
   //

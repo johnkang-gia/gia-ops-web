@@ -56,7 +56,7 @@ export default function MyClassClient() {
       }
     }
     poll();
-    const t = setInterval(poll, POLL_MS);
+    const t = setInterval(() => { if (typeof document === "undefined" || document.visibilityState === "visible") void poll(); }, POLL_MS);
     return () => {
       cancelled = true;
       clearInterval(t);

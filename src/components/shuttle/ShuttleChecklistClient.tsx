@@ -243,7 +243,7 @@ export default function ShuttleChecklistClient({
       })
       .subscribe();
 
-    const t = setInterval(fullReload, FALLBACK_POLL_MS);
+    const t = setInterval(() => { if (typeof document === "undefined" || document.visibilityState === "visible") void fullReload(); }, FALLBACK_POLL_MS);
     return () => {
       clearInterval(t);
       supabase.removeChannel(channel);

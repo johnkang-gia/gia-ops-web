@@ -2,10 +2,13 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import AddToHomeScreenBanner from "./AddToHomeScreenBanner";
+import { pollDelay } from "@/lib/useSmartPoll";
 
 // 요청: "차량 도착출발과 안내보드간에 연동이 너무 느리고" - 폴링 주기를 5초에서 3초로 줄여
 // 다른 교직원 화면·안내보드에 상태가 더 빨리 반영되도록 했습니다.
 const POLL_MS = 3000;
+// 하원 시간대가 아닐 때(새벽·주말 등) 폴링 간격 - 화면을 종일 켜둬도 호출이 적게 나갑니다.
+const IDLE_POLL_MS = 60000;
 
 // 요청: "모바일에서 호차 꾹누르면 기사님께 전화하기 메뉴가 떴으면 좋겠어" - 이 시간(ms) 이상
 // 눌러야 "꾹 누름"으로 보고 전화 메뉴를 띄웁니다. 이보다 짧으면 원래대로 도착·출발 상태가
@@ -106,10 +109,24 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
       }
     }
     poll();
-    const t = setInterval(poll, POLL_MS);
+    // 서버 호출 절감(Vercel 무료 한도): 화면이 안 보이면 건너뛰고, 하원 시간대가 아니면
+    // 훨씬 느리게 돕니다. 창을 다시 보면 즉시 한 번 새로고침해 화면이 낡아 보이지 않습니다.
+    let t: ReturnType<typeof setTimeout>;
+    const tick = () => {
+      t = setTimeout(() => {
+        if (typeof document === "undefined" || document.visibilityState === "visible") void poll();
+        tick();
+      }, pollDelay(POLL_MS, IDLE_POLL_MS));
+    };
+    tick();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void poll();
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       cancelled = true;
-      clearInterval(t);
+      clearTimeout(t);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [token]);
 

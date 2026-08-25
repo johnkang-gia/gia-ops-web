@@ -153,7 +153,7 @@ export default function ShuttleChecklistSidebar({
         .limit(200);
       if (!cancelled && data) setMessages(data as GoogleChatMirrorMessage[]);
     }
-    const t = setInterval(pollMessages, POLL_MS);
+    const t = setInterval(() => { if (typeof document === "undefined" || document.visibilityState === "visible") void pollMessages(); }, POLL_MS);
 
     return () => {
       cancelled = true;

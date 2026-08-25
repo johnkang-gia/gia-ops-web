@@ -375,3 +375,30 @@ button:not(:disabled),
 button:disabled {
   cursor: not-allowed;
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   PC 전용 와이드 레이아웃 (요청: "모바일로는 안 쓸 예정이니 PC 환경 고정, 페이지를 더
+   폭넓게 사용해 UI/UX 최적화"). 각 페이지가 max-w-6xl(1152px)로 폭을 좁게 잡아 큰 화면에서
+   좌우 여백이 과했습니다. Carbon/Ant 같은 관리자 UI처럼 넓은 화면을 꽉 쓰도록, 데이터가
+   많은 넓은 컨테이너(6xl/7xl)만 큰 화면에서 더 넓혀줍니다. 폼·읽기용 좁은 컨테이너
+   (md/lg/xl/2xl 등)는 가독성을 위해 그대로 둡니다. */
+@media screen and (min-width: 1280px) {
+  .shell-content .max-w-6xl,
+  .bg-wr-bg .max-w-6xl {
+    max-width: 84rem; /* 1152px → 1344px */
+  }
+  .shell-content .max-w-7xl,
+  .bg-wr-bg .max-w-7xl {
+    max-width: 96rem; /* 1280px → 1536px */
+  }
+}
+@media screen and (min-width: 1720px) {
+  .shell-content .max-w-6xl,
+  .bg-wr-bg .max-w-6xl {
+    max-width: 96rem;
+  }
+  .shell-content .max-w-7xl,
+  .bg-wr-bg .max-w-7xl {
+    max-width: 110rem;
+  }
+}

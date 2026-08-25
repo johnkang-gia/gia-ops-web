@@ -109,6 +109,8 @@ export default function StudentManageClient({
   // ── 이름 검색 (요청: "학생추가와 리스트 사이에 검색창도 넣어주고") ──
   const [nameQuery, setNameQuery] = useState("");
   const [showOnHold, setShowOnHold] = useState(false);
+  // 재학/졸업/퇴학/보류 탭(요청 ⑥). 기본은 재학.
+  const [statusTab, setStatusTab] = useState<"active" | "졸업" | "퇴학" | "보류" | "기타">("active");
 
   function toggleSort(key: SortKey) {
     if (sortKeyEq(sortKey, key)) {
@@ -204,10 +206,11 @@ export default function StudentManageClient({
     await supabase.from("wr_students").update({ custom_fields: nextCustom }).eq("id", id);
   }
 
-  async function archiveStudent(id: string) {
-    setStudents((prev) => prev.map((s) => (s.id === id ? { ...s, status: "inactive" } : s)));
+  // 학적 상태를 바꿉니다(요청 ⑥: 재학/졸업/퇴학/보류로 관리). status 값을 그대로 저장합니다.
+  async function setStudentStatus(id: string, status: WrStudent["status"]) {
+    setStudents((prev) => prev.map((s) => (s.id === id ? { ...s, status } : s)));
     const supabase = createClient();
-    await supabase.from("wr_students").update({ status: "inactive" }).eq("id", id);
+    await supabase.from("wr_students").update({ status }).eq("id", id);
   }
 
   // 보류 → 재학으로 되돌리기. 확정 명부에서 누락됐을 뿐 실제로는 우리 학생인 경우에 씁니다.
@@ -260,22 +263,28 @@ export default function StudentManageClient({
   }
 
   const active = students.filter((s) => s.status === "active");
+  const graduated = students.filter((s) => s.status === "졸업");
+  const withdrawn = students.filter((s) => s.status === "퇴학" || s.status === "전출");
   // 확정 명부에 없어 보류로 넘어간 학생들. 평소에는 접혀 있고, 필요할 때만 펼쳐서 되돌립니다.
   const onHold = students.filter((s) => s.status === "보류");
+  const others = students.filter((s) => !["active", "졸업", "퇴학", "전출", "보류"].includes(s.status ?? ""));
+  // 지금 탭에서 보여줄 학생들.
+  const pool =
+    statusTab === "active" ? active : statusTab === "졸업" ? graduated : statusTab === "퇴학" ? withdrawn : statusTab === "보류" ? onHold : others;
 
   // 필터에 쓸 학년/반 선택지는 실제 등록된 학생 데이터에서 뽑습니다(가나다/숫자 순 정렬).
   const gradeOptions = useMemo(
-    () => [...new Set(active.map((s) => s.grade).filter((g): g is string => !!g))].sort((a, b) => a.localeCompare(b, "ko", { numeric: true })),
-    [active]
+    () => [...new Set(pool.map((s) => s.grade).filter((g): g is string => !!g))].sort((a, b) => a.localeCompare(b, "ko", { numeric: true })),
+    [pool]
   );
   const classOptions = useMemo(() => {
-    const pool = gradeFilter ? active.filter((s) => s.grade === gradeFilter) : active;
-    return [...new Set(pool.map((s) => s.class_name).filter((c): c is string => !!c))].sort((a, b) => a.localeCompare(b, "ko", { numeric: true }));
-  }, [active, gradeFilter]);
+    const base = gradeFilter ? pool.filter((s) => s.grade === gradeFilter) : pool;
+    return [...new Set(base.map((s) => s.class_name).filter((c): c is string => !!c))].sort((a, b) => a.localeCompare(b, "ko", { numeric: true }));
+  }, [pool, gradeFilter]);
 
   const filtered = useMemo(() => {
     const q = nameQuery.trim().toLowerCase();
-    return active.filter(
+    return pool.filter(
       (s) =>
         (!gradeFilter || s.grade === gradeFilter) &&
         (!classFilter || s.class_name === classFilter) &&
@@ -534,10 +543,36 @@ export default function StudentManageClient({
         </div>
       )}
 
+      {/* 학적 상태 탭(요청 ⑥) */}
+      <div className="mb-2 flex shrink-0 flex-wrap gap-1">
+        {([
+          ["active", "재학", active.length],
+          ["졸업", "졸업", graduated.length],
+          ["퇴학", "퇴학·전출", withdrawn.length],
+          ["보류", "보류", onHold.length],
+          ["기타", "기타", others.length],
+        ] as [typeof statusTab, string, number][])
+          .filter(([key, , n]) => key === "active" || n > 0)
+          .map(([key, label, n]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setStatusTab(key)}
+              className={
+                "rounded-lg px-3 py-1.5 text-sm font-semibold transition " +
+                (statusTab === key ? "bg-purple-600 text-white" : "bg-slate-100 text-slate-500 hover:text-slate-700")
+              }
+            >
+              {label} {n}
+            </button>
+          ))}
+      </div>
+
       <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-slate-200 bg-white">
         <table className="w-full whitespace-nowrap text-sm">
           <thead className="sticky top-0 z-10 bg-slate-50 text-left text-xs text-slate-400 shadow-sm">
             <tr>
+              <th className="whitespace-nowrap px-3 py-2" title="학생 고유코드(편집 불가) - 이 코드로 관련 자료를 찾습니다">학번(코드)</th>
               <SortTh label="학년" sortKeyFor="grade" />
               <SortTh label="반" sortKeyFor="class_name" />
               <SortTh label="이름" sortKeyFor="name" />
@@ -558,6 +593,11 @@ export default function StudentManageClient({
           <tbody>
             {sorted.map((s) => (
               <tr key={s.id} className="border-t border-slate-100">
+                <td className="whitespace-nowrap px-3 py-1.5">
+                  <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] text-slate-500" title="고유코드(편집 불가)">
+                    {s.student_no || "-"}
+                  </span>
+                </td>
                 <td className="px-3 py-1.5 text-slate-500">
                   <EditableCell value={s.grade ?? ""} onSave={(v) => updateField(s.id, "grade", v)} width="w-12" />
                 </td>
@@ -637,9 +677,20 @@ export default function StudentManageClient({
                   </td>
                 ))}
                 <td className="px-3 py-1.5 text-right">
-                  <button onClick={() => archiveStudent(s.id)} className="mr-2 text-xs text-amber-500 hover:text-amber-600">
-                    보관
-                  </button>
+                  {/* 학적 상태 변경(요청 ⑥: 재학/졸업/퇴학/보류). */}
+                  <select
+                    value={s.status ?? "active"}
+                    onChange={(e) => setStudentStatus(s.id, e.target.value as WrStudent["status"])}
+                    title="학적 상태"
+                    className="mr-2 rounded-lg border border-slate-200 px-1.5 py-1 text-xs text-slate-600 hover:border-slate-300"
+                  >
+                    <option value="active">재학</option>
+                    <option value="졸업">졸업</option>
+                    <option value="퇴학">퇴학</option>
+                    <option value="전출">전출</option>
+                    <option value="보류">보류</option>
+                    <option value="inactive">보관</option>
+                  </select>
                   <button onClick={() => removeStudent(s.id)} className="text-xs text-red-400 hover:text-red-600">
                     삭제
                   </button>

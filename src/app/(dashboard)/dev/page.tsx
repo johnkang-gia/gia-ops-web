@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isDeveloperEmail } from "@/lib/roles";
 import type { ErrorLog, AiUsageLog, AiFeatureFlag } from "@/lib/types";
+import ErrorLogCopy from "@/components/dev/ErrorLogCopy";
 import { estimateCostUsd, formatUsd, AI_FEATURES } from "@/lib/ai/pricing";
 import AiFeatureTogglesClient from "@/components/dev/AiFeatureTogglesClient";
 import GuideButton from "@/components/common/GuideButton";
@@ -354,22 +355,7 @@ export default async function DevDashboardPage() {
         <AiFeatureTogglesClient initialFeatures={featureItems} myEmail={me?.email ?? ""} />
       </div>
 
-      <div className="mb-2 text-xs font-semibold text-slate-400">최근 오류 로그 (최신 20건)</div>
-      <div className="mb-6 flex flex-col gap-1.5">
-        {errorLogs.length === 0 && (
-          <div className="rounded-lg bg-white p-3 text-sm text-slate-400 shadow-sm">기록된 오류가 없습니다.</div>
-        )}
-        {errorLogs.map((e) => (
-          <div key={e.id} className="rounded-lg border border-slate-200 bg-white p-3 text-xs shadow-sm">
-            <div className="mb-1 flex items-center gap-2">
-              <span className="shrink-0 rounded-full bg-red-50 px-2 py-0.5 font-mono text-red-600">{e.route}</span>
-              <span className="shrink-0 text-slate-400">{e.created_at.slice(0, 19).replace("T", " ")}</span>
-              {e.user_email && <span className="shrink-0 text-slate-400">{e.user_email}</span>}
-            </div>
-            <p className="whitespace-pre-wrap text-slate-700">{e.message}</p>
-          </div>
-        ))}
-      </div>
+      <ErrorLogCopy logs={errorLogs} />
     </div>
   );
 }

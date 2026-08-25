@@ -152,7 +152,8 @@ function buildSchoolCategory(isAdmin: boolean, isStaffOrAbove: boolean): NavCate
     items.push({ href: "/school/data-check", label: "명부 점검", icon: "🩺", dividerBefore: isAdmin ? undefined : "명부 관리" });
   }
   items.push(
-    { href: "/terms", label: "학기 관리", icon: "🗓️", dividerBefore: "학사" },
+    { href: "/school/timetable", label: "수업·시간표", icon: "🗓️", dividerBefore: "학사" },
+    { href: "/terms", label: "학기 관리", icon: "📓" },
     { href: "/academic-calendar", label: "학사일정", icon: "📅" },
     { href: "/academic-calendar/prep", label: "학기 준비", icon: "🧭" },
     // 급식 당번·체육관 사용 같은 "누가 언제 어디를 맡는가" 표입니다(요청: "당번표는 대시보드에

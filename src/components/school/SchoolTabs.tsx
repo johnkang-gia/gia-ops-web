@@ -12,6 +12,7 @@ const TABS: { key: string; label: string; icon: string; href: string; match: str
   { key: "staff", label: "교직원", icon: "🧑‍💼", href: "/staff", match: ["/staff"] },
   { key: "roster", label: "명부 관리", icon: "📇", href: "/weekly-report/admin/students", match: ["/weekly-report/admin/students"] },
   { key: "classes", label: "반·과목", icon: "🏫", href: "/weekly-report/admin/classes", match: ["/weekly-report/admin/classes", "/weekly-report/admin/subjects"] },
+  { key: "timetable", label: "수업·시간표", icon: "🗓️", href: "/school/timetable", match: ["/school/timetable"] },
   { key: "calendar", label: "학사일정", icon: "📅", href: "/academic-calendar", match: ["/academic-calendar"] },
   { key: "duty", label: "당번표", icon: "🍚", href: "/school/duty", match: ["/school/duty"] },
   { key: "prep", label: "학기 준비", icon: "🧭", href: "/academic-calendar/prep", match: ["/academic-calendar/prep"] },

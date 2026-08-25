@@ -303,7 +303,28 @@ export async function ingestPickup(
   }
 
   const kind = (pick(ai.kind, ["픽업", "문의", "기타"]) ?? "문의") as "픽업" | "문의" | "기타";
-  const confidence = typeof ai.confidence === "number" ? Math.max(0, Math.min(1, ai.confidence)) : 0;
+  let confidence = typeof ai.confidence === "number" ? Math.max(0, Math.min(1, ai.confidence)) : 0;
+
+  // 발신자별 학습(요청 ⑩): 이 발신자를 과거에 어떻게 정정했는지로 신뢰도를 조정합니다.
+  // 분류(kind)는 바꾸지 않고, 자동확정 여부만 조정해 오분류를 만들지 않습니다.
+  // - 대개 픽업이었던 발신자의 픽업 → 신뢰도↑(더 빨리 자동확정)
+  // - 대개 픽업이 아니었던 발신자의 픽업 → 신뢰도↓(사람이 한 번 더 확인)
+  if (kind === "픽업") {
+    const senderKey = ((input.senderName ?? "") || (input.channelLabel ?? "")).trim();
+    if (senderKey) {
+      const { data: fb } = await supabase
+        .from("pickup_sender_feedback")
+        .select("pickup_count, not_pickup_count")
+        .eq("sender_key", senderKey)
+        .maybeSingle();
+      if (fb) {
+        const p = (fb.pickup_count as number) ?? 0;
+        const np = (fb.not_pickup_count as number) ?? 0;
+        if (np >= 2 && np > p) confidence = Math.min(confidence, 0.4);
+        else if (p >= 3 && p > np * 2) confidence = Math.max(confidence, 0.9);
+      }
+    }
+  }
 
   // ── 학생 연결 ─────────────────────────────────────────────────────────────
   // 채널 이름을 먼저 믿습니다. 학교가 정한 규칙이라 자유 문장보다 훨씬 정확합니다.

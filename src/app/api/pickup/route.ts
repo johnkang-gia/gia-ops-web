@@ -7,6 +7,19 @@ import { kstParts } from "@/lib/shuttleTracking";
 
 export const dynamic = "force-dynamic";
 
+// 픽업/픽업아님 정정을 발신자별로 학습에 누적합니다(요청 ⑩). 발신자 키는 어머니 성함,
+// 없으면 채널 라벨을 씁니다. 이 이력은 ingest 분류의 신뢰도(자동확정)에 반영됩니다.
+async function bumpPickupFeedback(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  id: string,
+  isPickup: boolean
+) {
+  const { data } = await supabase.from("pickup_requests").select("sender_name, channel_label").eq("id", id).maybeSingle();
+  const sender = ((data?.sender_name as string | null) || (data?.channel_label as string | null) || "").trim();
+  if (!sender) return;
+  await supabase.rpc("bump_pickup_feedback", { p_sender: sender, p_is_pickup: isPickup });
+}
+
 // 픽업 인박스에서 담당자가 누르는 버튼들이 오는 곳입니다.
 // 여기는 로그인한 교직원만 쓰며(수집기가 쓰는 /api/pickup/ingest와 인증 방식이 다릅니다),
 // 누가 확정했는지 기록에 남깁니다.
@@ -52,6 +65,7 @@ export async function POST(req: Request) {
       .eq("id", id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+    await bumpPickupFeedback(supabase, id, true);
     const applied = await applyPickup(supabase, finalStudentId, row.service_date as string);
     return NextResponse.json({ ok: true, applied });
   }
@@ -65,6 +79,7 @@ export async function POST(req: Request) {
       .update({ status: "무시", resolved_by: me.email, resolved_at: new Date().toISOString() })
       .eq("id", id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    await bumpPickupFeedback(supabase, id, false);
     return NextResponse.json({ ok: true });
   }
 

@@ -182,7 +182,7 @@ export default function ShuttleChecklistTable({
                                       : useGroup
                                         ? "border-2"
                                         : isNonRiding
-                                          ? "border-slate-200 bg-slate-50 text-slate-300 opacity-70"
+                                          ? "border-slate-100 bg-white text-slate-200 opacity-40 grayscale"
                                           : isMovedToday
                                             ? "border-amber-400 bg-amber-50 text-amber-700"
                                             : isMovedPermanently

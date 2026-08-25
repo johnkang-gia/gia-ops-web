@@ -109,11 +109,20 @@ export default async function ShuttleChecklistPage({
   const EXTRA_RIDERS = [
     "이준서", "이준우", "김도율", "김샤론", "이하은", "최온유", "위준완", "김승후",
     "노다은", "노다혜", "강하영", "박진우", "제이콥", "장하영", "에이바", "강하엘",
+    // 요청: 초등 졸업으로 중등부가 되었지만 하원 셔틀은 계속 타므로 명단에 표시(숨기지 않음).
+    "박준후", "문수민", "이도후", "곽호율", "박지음", "강여명", "정서안",
   ];
   const extraNameSet = new Set(EXTRA_RIDERS.map((n) => n.replace(/\s+/g, "")));
+  // 유치부인데 초등부 동명이인 때문에 이름 대조로 잘못 딸려오는 학생을 콕 집어 숨깁니다
+  // (요청: "2호 김사랑은 유치부야 하원 체크표에 있으면 안돼"). "호차:이름"으로 지정합니다.
+  const HIDE_RIDERS = new Set(["2:김사랑"]);
+  const routeNoById = new Map(routes.map((r) => [r.id, r.route_no]));
+  const stopRouteNo = new Map(stopsData.map((s) => [s.id, routeNoById.get(s.route_id) ?? ""]));
   assignmentsData = assignmentsData.filter((a) => {
     const rawName = (a.student_name_raw ?? "").replace(/\s+/g, "");
-    if (extraNameSet.has(rawName)) return true; // 알려주신 중고등부 탑승자
+    const rno = (stopRouteNo.get(a.stop_id) ?? "").replace(/호$/, "");
+    if (HIDE_RIDERS.has(`${rno}:${rawName}`)) return false; // 유치부 동명이인 제외
+    if (extraNameSet.has(rawName)) return true; // 알려주신 중고등·중등부 탑승자
     if (a.student_id) return elemIdSet.has(a.student_id); // 초등부(명부 연결)
     return elemNameSet.has(rawName); // 초등부(이름 대조)
   });

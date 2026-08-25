@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import type { ShuttleRoute, ShuttleStop, ShuttleAssignment } from "@/lib/types";
+import ShuttleRegionDashboard from "./ShuttleRegionDashboard";
 
 // 셔틀 "개요 대시보드"(요청: 메뉴 여러 개를 개요+탭으로 통합, 여백을 시각화로 채우고 매일
 // 확인할 것들을 한 화면에서). 숫자 카운트업·도넛·펄스·hover 리프트 등 은은한 모션으로
@@ -76,6 +78,9 @@ export default function ShuttleOverviewClient({
   pickupNames = [],
   absentNames = [],
   notes = [],
+  regionRoutes = [],
+  regionStops = [],
+  regionAssignments = [],
 }: {
   date: string;
   kpi: OverviewKpi;
@@ -83,6 +88,9 @@ export default function ShuttleOverviewClient({
   pickupNames?: string[];
   absentNames?: string[];
   notes?: OverviewNote[];
+  regionRoutes?: ShuttleRoute[];
+  regionStops?: ShuttleStop[];
+  regionAssignments?: Pick<ShuttleAssignment, "stop_id">[];
 }) {
   const router = useRouter();
   const donutRef = useRef<HTMLDivElement | null>(null);
@@ -118,6 +126,13 @@ export default function ShuttleOverviewClient({
       `}</style>
 
       <div className="mb-3 text-right text-xs text-slate-400">정규학기 · {date}</div>
+
+      {/* 실시간·지역 지도(요청: 실시간·지역 탭을 개요에 통합, 맨 위에 지도). */}
+      {regionRoutes.length > 0 && (
+        <div className="ov-rise mb-3 h-[420px] overflow-hidden rounded-2xl border border-slate-200 bg-white">
+          <ShuttleRegionDashboard routes={regionRoutes} stops={regionStops} assignments={regionAssignments} />
+        </div>
+      )}
 
       {/* KPI row: 도넛 + 카드 */}
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
@@ -188,27 +203,6 @@ export default function ShuttleOverviewClient({
         </div>
 
         <div className="flex flex-col gap-3">
-          <button
-            type="button"
-            onClick={() => router.push("/shuttle/regions")}
-            className="ov-rise relative h-[150px] overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 text-left"
-          >
-            <div
-              className="absolute inset-0 opacity-70"
-              style={{
-                background:
-                  "repeating-linear-gradient(0deg,#e2e8f0 0 1px,transparent 1px 26px),repeating-linear-gradient(90deg,#e2e8f0 0 1px,transparent 1px 26px)",
-              }}
-            />
-            <svg viewBox="0 0 300 150" className="absolute inset-0 h-full w-full">
-              <polyline points="20,120 70,90 120,100 170,60 230,70 280,40" fill="none" stroke="#2563eb" strokeWidth="3" strokeLinecap="round" />
-              <polyline points="20,120 60,130 130,135 200,120 260,130" fill="none" stroke="#f97316" strokeWidth="3" strokeLinecap="round" />
-              <circle cx="280" cy="40" r="6" fill="#2563eb">
-                <animate attributeName="r" values="6;9;6" dur="1.6s" repeatCount="indefinite" />
-              </circle>
-            </svg>
-            <span className="absolute left-2 top-1.5 text-[11px] font-bold text-gia-navy">실시간 지도 열기 →</span>
-          </button>
           <div className="ov-rise rounded-2xl border border-slate-200 bg-white p-3 text-xs">
             <div className="flex flex-wrap gap-2">
               <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">

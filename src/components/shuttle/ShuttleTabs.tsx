@@ -9,8 +9,7 @@ import { usePathname, useRouter } from "next/navigation";
 const TABS: { key: string; label: string; icon: string; href: string; match: string[] }[] = [
   { key: "overview", label: "개요", icon: "📊", href: "/shuttle/overview", match: ["/shuttle/overview"] },
   { key: "checklist", label: "하원 체크표", icon: "📋", href: "/shuttle/checklist", match: ["/shuttle/checklist"] },
-  { key: "live", label: "실시간·지역", icon: "🗺️", href: "/shuttle/regions", match: ["/shuttle/regions", "/shuttle/live"] },
-  { key: "routes", label: "노선·배정·배차표", icon: "🛣️", href: "/shuttle", match: ["/shuttle", "/shuttle/routes", "/shuttle/students"] },
+  { key: "routes", label: "노선·배정·배차표", icon: "🛣️", href: "/shuttle", match: ["/shuttle", "/shuttle/routes", "/shuttle/students", "/shuttle/regions", "/shuttle/live"] },
   { key: "devices", label: "링크·기기·GPS", icon: "🔗", href: "/shuttle/pilot", match: ["/shuttle/pilot", "/shuttle/track-test"] },
   { key: "records", label: "기록·분석", icon: "⏱️", href: "/shuttle/stop-times", match: ["/shuttle/stop-times"] },
 ];

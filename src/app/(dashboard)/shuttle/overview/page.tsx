@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { categorize } from "@/lib/attendanceDigest";
+import type { ShuttleRoute, ShuttleStop, ShuttleAssignment } from "@/lib/types";
 import ShuttleOverviewClient, { type RouteStat, type OverviewKpi } from "@/components/shuttle/ShuttleOverviewClient";
 
 export const dynamic = "force-dynamic";
@@ -243,6 +244,14 @@ export default async function ShuttleOverviewPage() {
 
   const dateStr = new Date().toLocaleDateString("ko-KR", { month: "long", day: "numeric", weekday: "short" });
 
+  // 실시간·지역 지도(요청: 실시간·지역 탭을 개요에 통합, 맨 위에 지도). 지역별 현황과 같은
+  // 데이터(활성 노선·정류장·배정)를 실어 개요 상단 지도에 그대로 씁니다.
+  const [regionRoutesRes, regionStopsRes, regionAsgRes] = await Promise.all([
+    supabase.from("shuttle_routes").select("*").eq("active", true).order("direction").order("sort_order"),
+    supabase.from("shuttle_stops").select("*").order("seq"),
+    supabase.from("shuttle_assignments").select("id, stop_id"),
+  ]);
+
   return (
     <div className="p-4 sm:p-6">
       <ShuttleOverviewClient
@@ -252,6 +261,9 @@ export default async function ShuttleOverviewPage() {
         pickupNames={[...new Set(pickupNames)]}
         absentNames={[...new Set(absentNames)]}
         notes={notes}
+        regionRoutes={(regionRoutesRes.data as ShuttleRoute[] | null) ?? []}
+        regionStops={(regionStopsRes.data as ShuttleStop[] | null) ?? []}
+        regionAssignments={(regionAsgRes.data as Pick<ShuttleAssignment, "stop_id">[] | null) ?? []}
       />
     </div>
   );

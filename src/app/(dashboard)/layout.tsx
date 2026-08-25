@@ -182,13 +182,12 @@ function buildShuttleCategory(isStaffOrAbove: boolean): NavCategory {
   // 통합하고 분류할거 분류"): ① 매일 하원 운영(매일 쓰는 것) ② 기준정보·설정(학기 초에 한 번
   // 세팅하고 가끔 손대는 것) ③ 기록·분석(쌓인 데이터 보기).
   const items: NavLeaf[] = [
+    // 실시간 위치·지역별 현황은 개요 대시보드 상단 지도로 통합했습니다(요청).
     { href: "/shuttle/overview", label: "개요 대시보드", icon: "📊", dividerBefore: "매일 하원 운영" },
     { href: "/shuttle/checklist", label: "하원 체크표", icon: "📋" },
     // 요청: "전체 학부모의 채팅을 하나하나 실시간으로 보면서 아이들의 픽업을 처리하는게 너무
     // 힘든데" - 토들·전화·교사·직접입력 어디로 들어온 픽업이든 여기 한 곳에 모입니다.
     { href: "/pickup/inbox", label: "픽업 인박스", icon: "📥" },
-    { href: "/shuttle/live", label: "실시간 위치", icon: "📍" },
-    { href: "/shuttle/regions", label: "지역별 현황", icon: "🗺️" },
   ];
   if (isStaffOrAbove) {
     items.push(

@@ -8,7 +8,11 @@ import { pollDelay } from "@/lib/useSmartPoll";
 // 다른 교직원 화면·안내보드에 상태가 더 빨리 반영되도록 했습니다.
 const POLL_MS = 3000;
 // 하원 시간대가 아닐 때(새벽·주말 등) 폴링 간격 - 화면을 종일 켜둬도 호출이 적게 나갑니다.
-const IDLE_POLL_MS = 60000;
+// 하원 시간대가 아닐 때. 담당자 확인: "하원에 관한 대시보드나 도착체크는 하원시간에만
+// 쓰고 있어" - 그 시간 밖에는 화면 앞에 아무도 없으므로 사실상 멈춰도 됩니다. 다만 완전히
+// 끊으면 다음 하원 때 스스로 깨어나지 못해서(벽/모바일 화면이라 아무도 새로고침 안 함),
+// 15분에 한 번만 남겨둡니다. pollDelay가 하원 시작 시각을 넘겨 자지 않게 잡아줍니다.
+const IDLE_POLL_MS = 15 * 60_000;
 
 // 요청: "모바일에서 호차 꾹누르면 기사님께 전화하기 메뉴가 떴으면 좋겠어" - 이 시간(ms) 이상
 // 눌러야 "꾹 누름"으로 보고 전화 메뉴를 띄웁니다. 이보다 짧으면 원래대로 도착·출발 상태가
@@ -116,7 +120,7 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
       t = setTimeout(() => {
         if (typeof document === "undefined" || document.visibilityState === "visible") void poll();
         tick();
-      }, pollDelay(POLL_MS, IDLE_POLL_MS));
+      }, pollDelay(POLL_MS, IDLE_POLL_MS, 15, 19));
     };
     tick();
     const onVisible = () => {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { logApiError } from "@/lib/logging";
+import { shouldRunShuttleCron } from "@/lib/shuttleTracking";
 import { haversineMeters } from "@/lib/shuttleRecommend";
 import { ensureCampusLocation } from "@/lib/shuttleCampus";
 
@@ -112,6 +113,16 @@ export async function GET(req: NextRequest) {
   const authHeader = req.headers.get("authorization");
   if (!process.env.CRON_SECRET || authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+
+  // 운행 시간대 밖이면 루프에 들어가지 않고 바로 돌아섭니다.
+  //
+  // 이 크론은 1분마다 불리고 한 번에 25초 동안 함수를 붙잡습니다. 차가 다니는 시간은 하루
+  // 3시간뿐인데 24시간 내내 그렇게 돌아서, 이것 하나가 월 300시간을 썼습니다. 창 밖에는
+  // 애초에 볼 위치 자체가 저장되지 않으므로(/api/shuttle/track이 버립니다) 없는 데이터를
+  // 5초마다 다시 확인하고 있었던 셈입니다.
+  if (!shouldRunShuttleCron()) {
+    return NextResponse.json({ ok: true, skipped: "out_of_service_window" });
   }
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;

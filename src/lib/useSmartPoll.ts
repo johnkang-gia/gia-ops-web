@@ -45,9 +45,16 @@ function kstHourAndDay(): { hour: number; minute: number; day: number } {
 // 훅을 쓰기 어려운 자리(useEffect 안에서 poll을 정의한 기존 코드)를 위한 계산 전용 헬퍼입니다.
 // 하원 시간대(평일 14~19시 KST)면 activeMs, 그 밖에는 idleMs를 돌려줍니다.
 export function pollDelay(activeMs: number, idleMs: number, fromHour = 14, toHour = 19): number {
-  const { hour, day } = kstHourAndDay();
+  const { hour, minute, day } = kstHourAndDay();
   const weekday = day >= 1 && day <= 5;
-  return weekday && hour >= fromHour && hour < toHour ? activeMs : idleMs;
+  if (weekday && hour >= fromHour && hour < toHour) return activeMs;
+
+  // 쉬는 동안 길게 자되, 다음 시작 시각을 넘겨서 자지는 않습니다.
+  // (useSmartPoll과 같은 이유 - 15분씩 자면 15:50 하원 시작을 놓치고 16:05에 깨어납니다.)
+  const nowMin = hour * 60 + minute;
+  const startMin = fromHour * 60;
+  const untilStartMin = nowMin < startMin ? startMin - nowMin : 24 * 60 - nowMin + startMin;
+  return Math.min(idleMs, untilStartMin * 60 * 1000 + 1000);
 }
 
 export function useSmartPoll(fn: () => void | Promise<void>, opts: SmartPollOptions) {

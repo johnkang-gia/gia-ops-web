@@ -53,3 +53,52 @@ export function isWithinTrackingWindow(recordedAt: Date): boolean {
   const at = hour * 60 + minute;
   return TRACK_WINDOWS.some((w) => at >= w.startMinute && at < w.endMinute);
 }
+
+// ── 크론 문지기 ──────────────────────────────────────────────────────────────
+//
+// 셔틀 자동 도착·출발 감지 크론은 외부 스케줄러가 1분마다 부르고, 한 번 불릴 때마다 25초 동안
+// 함수를 붙잡고 5초마다 DB를 다시 봅니다. 차가 실제로 다니는 시간은 하루 3시간뿐인데 24시간
+// 내내 그렇게 돌고 있어서, 이 크론 하나가 월 300시간을 씁니다(앱 전체 함수 실행시간의 3분의 1).
+//
+// 그런데 운행 시간대 밖에는 애초에 볼 것이 없습니다 - 위치 자체가 저장되지 않으니까요
+// (isWithinTrackingWindow가 /api/shuttle/track에서 창 밖 좌표를 버립니다). 없는 데이터를
+// 5초마다 다시 확인하는 셈이라, 창 밖에서는 루프에 들어가지 않고 바로 돌아섭니다.
+//
+// 끝 시각에 30분을 더한 이유: 18:30에 딱 맞춰 끊으면, 그 직전에 도착한 차의 '출발'이 아직
+// 안 찍힌 상태로 남습니다(자동 출발은 도착 후 최소 90초, 늦으면 20분까지 기다립니다).
+// 꼬리를 조금 남겨 그날 마지막 차까지 마무리되게 합니다.
+const SHUTTLE_CRON_TAIL_MIN = 30;
+
+export function shouldRunShuttleCron(now: Date = new Date()): boolean {
+  const { hour, minute, weekday } = kstParts(now);
+  if (weekday === 0 || weekday === 6) return false; // 주말은 운행 없음
+  const at = hour * 60 + minute;
+  return TRACK_WINDOWS.some((w) => at >= w.startMinute && at < w.endMinute + SHUTTLE_CRON_TAIL_MIN);
+}
+
+// ── 구글챗 출결알림을 촘촘히 봐야 하는 시간 ──────────────────────────────────
+//
+// 담당자 확인(요청): "아침 시간과, 하원이 시작되는 4시의 두 시간 전, 그리고 하원이 직접
+// 시작되는 3시 50분부터 4시 30분까지는 거의 실시간으로 긁어와야 해 — 그때 직원들이 나가서
+// 하원지도를 하기 때문에, 미뤄지면 픽업인데 그 알림이 오기 전에 차에 태워버리는 경우가 있어서."
+//
+// 마지막 문장이 이 설정의 이유 전부입니다. 픽업 연락이 1분 늦게 반영되면 아이가 이미 차에
+// 타 있을 수 있습니다. 그래서 하원 지도 시간대는 비용을 아끼는 대상이 아니라 **가장 촘촘해야
+// 하는 구간**입니다. 반대로 그 밖의 시간은 몇 분 늦어도 아무 일도 생기지 않습니다.
+//
+// 창 밖이라고 아예 건너뛰지는 않습니다 - 셔틀 위치와 달리 채팅은 "안 보면 영영 놓치는" 자료라,
+// 창 밖에서는 25초 루프 대신 딱 한 번만 확인합니다(그래도 1분 안에는 들어옵니다).
+export const CHAT_PEAK_WINDOWS: TrackWindow[] = [
+  // 아침 - 당일 결석·지각 연락이 등원 전에 몰립니다.
+  { startMinute: hm(7, 0), endMinute: hm(9, 0), label: "아침 출결" },
+  // 하원 준비 - 4시 하원 두 시간 전부터 픽업 연락이 들어오기 시작합니다.
+  // 하원 지도(15:50~16:30)까지 끊기지 않고 이어지도록 한 구간으로 묶었습니다.
+  { startMinute: hm(14, 0), endMinute: hm(16, 30), label: "하원 준비·지도" },
+];
+
+export function isChatPollPeakHour(now: Date = new Date()): boolean {
+  const { hour, minute, weekday } = kstParts(now);
+  if (weekday === 0 || weekday === 6) return false;
+  const at = hour * 60 + minute;
+  return CHAT_PEAK_WINDOWS.some((w) => at >= w.startMinute && at < w.endMinute);
+}

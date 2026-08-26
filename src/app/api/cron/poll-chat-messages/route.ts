@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { logApiError } from "@/lib/logging";
 import { pollNewMessages, type GoogleChatSourceKey } from "@/lib/googleChat";
+import { isChatPollPeakHour } from "@/lib/shuttleTracking";
 
 // 선생님요청 방은 아직 만들어지지 않았습니다(구글챗_미러링_설정가이드 STEP 5) - 목록에
 // 없는 소스를 계속 폴링하면 헛수고일 뿐 아니라, GOOGLE_CHAT_SPACE_TEACHER_REQUESTS가
@@ -34,12 +35,24 @@ export async function GET(req: NextRequest) {
   if (!url || !serviceKey) return NextResponse.json({ error: "service role key not configured" }, { status: 500 });
   const supabase = createClient(url, serviceKey, { auth: { persistSession: false } });
 
+  // 촘촘히 볼 시간대인지 먼저 봅니다.
+  //
+  // 담당자 확인: 아침(07~09시)과 하원 준비·지도(14:00~16:30)에는 거의 실시간이어야 합니다 -
+  // 그 시간에 직원들이 나가서 하원지도를 하는데, 픽업 연락이 늦게 반영되면 **알림이 오기 전에
+  // 아이를 차에 태워버리는** 일이 생깁니다. 비용을 아낄 구간이 아니라 가장 촘촘해야 할 구간입니다.
+  //
+  // 그 밖의 시간은 몇 분 늦어도 아무 일도 생기지 않으므로, 25초 루프 대신 한 번만 확인합니다.
+  // 아예 건너뛰지는 않습니다 - 셔틀 위치와 달리 채팅은 안 보면 영영 놓치는 자료이고, 한 번
+  // 확인은 1초면 끝나서 부담이 없습니다(그래도 1분 안에는 반영됩니다).
+  const peak = isChatPollPeakHour();
+  const budgetMs = peak ? LOOP_BUDGET_MS : 0;
+
   const startedAt = Date.now();
   let totalNew = 0;
   let rounds = 0;
   let lastError: string | null = null;
 
-  while (Date.now() - startedAt < LOOP_BUDGET_MS) {
+  do {
     rounds += 1;
     for (const sourceKey of SOURCE_KEYS) {
       try {
@@ -50,9 +63,9 @@ export async function GET(req: NextRequest) {
       }
     }
     const elapsed = Date.now() - startedAt;
-    if (elapsed >= LOOP_BUDGET_MS) break;
-    await new Promise((resolve) => setTimeout(resolve, Math.min(LOOP_INTERVAL_MS, LOOP_BUDGET_MS - elapsed)));
-  }
+    if (elapsed >= budgetMs) break;
+    await new Promise((resolve) => setTimeout(resolve, Math.min(LOOP_INTERVAL_MS, budgetMs - elapsed)));
+  } while (Date.now() - startedAt < budgetMs);
 
   // 구글챗 연결상태 하트비트(요청: "구글챗, 토들 연결상태를 업무보드에서 볼 수 있게").
   // 토들 수집기와 같은 원칙입니다 - 미러링이 조용히 멈추면(토큰 만료, 크론 중단) 화면에는
@@ -67,5 +80,5 @@ export async function GET(req: NextRequest) {
     updated_at: new Date().toISOString(),
   });
 
-  return NextResponse.json({ ok: true, rounds, newMessages: totalNew, lastError });
+  return NextResponse.json({ ok: true, peak, rounds, newMessages: totalNew, lastError });
 }

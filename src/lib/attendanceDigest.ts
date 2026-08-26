@@ -59,8 +59,35 @@ export function looksLikePronounReply(text: string): boolean {
   return /^(he|she|they|he's|she's|they're)\b/.test(t);
 }
 
-export function categorize(text: string): AttendanceCategory | null {
+// ── 사람이 가르친 규칙 ────────────────────────────────────────────────────────
+//
+// 출결내역은 AI가 아니라 규칙으로 돌아갑니다. 그래서 처음 보는 표기(영문 이름 'Maya',
+// 오탈자 '조영운')나 처음 보는 표현("일찍 데려갈게요")은 못 잡고 🔎가 붙습니다. 그 🔎를 보는
+// 사람이 답을 알고 있으므로, 한 번 눌러 알려주면 그 교정이 규칙으로 저장되어 다음부터
+// 자동으로 적용됩니다(attendance_learning_rules). AI 호출이 없어 비용이 들지 않고 즉시 반영됩니다.
+export type LearningRule = {
+  kind: "alias" | "category" | "ignore";
+  pattern: string;
+  student_name?: string | null;
+  category?: string | null;
+};
+
+// 비교는 소문자·공백 제거 후에 합니다("Maya Kim"과 "maya  kim"이 같게 취급되도록).
+export function normalizeRulePattern(s: string): string {
+  return s.toLowerCase().replace(/\s+/g, "").trim();
+}
+
+export function categorize(text: string, rules?: LearningRule[]): AttendanceCategory | null {
   const lower = text.toLowerCase();
+  // 사람이 가르친 분류가 기본 키워드보다 우선입니다 - 기본 규칙이 틀렸을 때 고치려고 가르친
+  // 것이므로, 기본 규칙이 이기면 아무리 가르쳐도 안 바뀝니다.
+  const flat = normalizeRulePattern(text);
+  for (const r of rules ?? []) {
+    if (r.kind !== "category" || !r.category) continue;
+    if (flat.includes(normalizeRulePattern(r.pattern))) {
+      return r.category as AttendanceCategory;
+    }
+  }
   for (const c of ATTENDANCE_CATEGORIES) {
     if (c.keywords.some((k) => lower.includes(k.toLowerCase()))) return c.key;
   }
@@ -470,7 +497,48 @@ function resolveGivenNameToken(
 // 적힌 경우("박라온, 다온")에도 찾고, 성을 아예 안 쓰고 이름끼리 붙여 쓴 경우("라온다온")도
 // 명부 이름 사전으로 둘로 쪼개 찾습니다(요청: "박라온, 박다온 같은 형제자매가 있을 경우...
 // 한쪽만 성을 쓰거나 아니면 둘 다 안 쓰는 경우도 있어 이 경우도 각각 파악해서").
-export function matchRosterStudents(text: string, roster: RosterStudent[]): MatchedStudent[] {
+export function matchRosterStudents(text: string, roster: RosterStudent[], rules?: LearningRule[]): MatchedStudent[] {
+  // ── 0단계: 사람이 가르친 별칭을 가장 먼저 봅니다 ───────────────────────────
+  //
+  // 'Maya', '조영운'(오탈자)처럼 명부 이름과 글자가 다른 표기는 아래 어떤 단계로도 못 잡습니다.
+  // 사람이 한 번 "이건 김마야예요"라고 알려준 것이 있으면 그게 가장 확실한 근거이므로 먼저
+  // 적용하고, 찾은 부분은 지워서 뒤 단계가 같은 자리를 다시 읽지 않게 합니다.
+  const learned: MatchedStudent[] = [];
+  let scratch = text;
+  const aliasRules = (rules ?? []).filter((r) => r.kind === "alias" && r.student_name);
+  // 긴 표기부터 봅니다("Maya Kim"이 "Maya"보다 먼저 잡히도록).
+  for (const r of [...aliasRules].sort((a, b) => b.pattern.length - a.pattern.length)) {
+    const idx = scratch.toLowerCase().indexOf(r.pattern.toLowerCase());
+    if (idx === -1) continue;
+    const name = r.student_name as string;
+    if (learned.some((m) => m.name === name)) continue;
+    const hit = roster.find((s) => s.name === name) ?? null;
+    learned.push({
+      name,
+      grade: hit?.grade ?? null,
+      displayName: name,
+      studentKey: name,
+      ambiguous: false,
+    });
+    scratch = scratch.slice(0, idx) + " ".repeat(r.pattern.length) + scratch.slice(idx + r.pattern.length);
+  }
+
+  // 사람이 "이건 학생 이름이 아니다"라고 알려준 낱말도 미리 지웁니다(선생님 이름·흔한 낱말).
+  for (const r of (rules ?? []).filter((x) => x.kind === "ignore")) {
+    let idx = scratch.toLowerCase().indexOf(r.pattern.toLowerCase());
+    while (idx !== -1) {
+      scratch = scratch.slice(0, idx) + " ".repeat(r.pattern.length) + scratch.slice(idx + r.pattern.length);
+      idx = scratch.toLowerCase().indexOf(r.pattern.toLowerCase());
+    }
+  }
+
+  const base = matchRosterStudentsCore(scratch, roster);
+  // 별칭으로 이미 찾은 학생은 중복해서 넣지 않습니다.
+  const seen = new Set(learned.map((m) => m.name));
+  return [...learned, ...base.filter((m) => !seen.has(m.name))];
+}
+
+function matchRosterStudentsCore(text: string, roster: RosterStudent[]): MatchedStudent[] {
   // 같은 이름을 가진 학생들을 묶어둡니다(동명이인 판정용).
   const byName = new Map<string, RosterStudent[]>();
   for (const s of roster) {

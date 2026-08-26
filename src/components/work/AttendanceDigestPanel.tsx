@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { DepartmentMemo, GoogleChatMirrorMessage } from "@/lib/types";
+import AttendanceTeachModal from "./AttendanceTeachModal";
 import {
   ATTENDANCE_CATEGORIES,
   categorize,
@@ -15,6 +16,7 @@ import {
   todayKey,
   type AttendanceCategory,
   type AttendanceEntry,
+  type LearningRule,
   type RosterStudent,
 } from "@/lib/attendanceDigest";
 
@@ -144,6 +146,28 @@ export default function AttendanceDigestPanel({
   roster: RosterStudent[];
   currentUserEmail: string;
 }) {
+  // 사람이 가르친 규칙(별칭·분류·제외). 규칙이 바뀌면 화면이 바로 따라오도록 실시간 구독합니다.
+  const [rules, setRules] = useState<LearningRule[]>([]);
+  const [teach, setTeach] = useState<{ rawText: string; guessedName: string } | null>(null);
+
+  const loadRules = useCallback(async () => {
+    const supabase = createClient();
+    const { data } = await supabase.from("attendance_learning_rules").select("kind, pattern, student_name, category");
+    setRules((data as LearningRule[] | null) ?? []);
+  }, []);
+
+  useEffect(() => {
+    loadRules();
+    const supabase = createClient();
+    const channel = supabase
+      .channel("attendance-learning-rules")
+      .on("postgres_changes", { event: "*", schema: "public", table: "attendance_learning_rules" }, () => loadRules())
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [loadRules]);
+
   const allEntries = useMemo(() => {
     const now = new Date();
     const today = todayKey(now);
@@ -160,11 +184,11 @@ export default function AttendanceDigestPanel({
       if (m.source_key !== "attendance") continue;
       const sentAt = new Date(m.created_at_google);
       if (sentAt < scanFrom) continue;
-      const category = categorize(m.content);
+      const category = categorize(m.content, rules);
       if (!category) continue;
       // 날짜 언급이 없으면 그 메시지가 온 날의 출결로 봅니다.
       const targetDate = extractTargetDate(m.content, sentAt) ?? todayKey(sentAt);
-      const students = matchRosterStudents(m.content, roster);
+      const students = matchRosterStudents(m.content, roster, rules);
       if (students.length === 0) {
         // 명부에서 이름을 못 찾아도 버리지 않고 보여줍니다(전학생·오탈자 등으로 대조가 실패해도
         // 놓치지 않도록). 그냥 원문을 잘라 보여주면 아무 단어나 이름처럼 뜨는 문제가 있어서
@@ -206,7 +230,7 @@ export default function AttendanceDigestPanel({
     // 같은 메시지가 겹쳐 올라온 경우 학생이 두 번 뜨지 않도록 정리합니다. 지난 날짜는 이미
     // 끝난 일이라 화면에서 뺍니다.
     return dedupeEntries(out).filter((e) => e.targetDate >= today);
-  }, [messages, roster]);
+  }, [messages, roster, rules]);
 
   const today = todayKey();
   // 오늘 것만 위쪽 픽업/결석/지각 칸에 넣고, 앞으로 예정된 건은 아래 "예정" 칸으로 따로 뺍니다.
@@ -271,22 +295,29 @@ export default function AttendanceDigestPanel({
                     {list.map((e) => (
                       <div key={e.key} className="px-2 py-1">
                         <div className="flex items-center justify-between gap-1">
-                          <span
-                            className={
-                              "truncate text-[11px] font-semibold " +
-                              (e.unmatched ? "text-slate-400" : e.ambiguous ? "text-amber-600" : "text-slate-700")
-                            }
-                            title={
-                              e.unmatched
-                                ? "명부와 대조되지 않아 추정한 이름입니다 - 원문을 확인해주세요"
-                                : e.ambiguous
-                                  ? "같은 이름의 학생이 여러 명입니다 - 학년을 함께 적어주세요(예: 2학년 김재이)"
-                                  : undefined
-                            }
-                          >
-                            {e.unmatched ? "🔎 " : e.ambiguous ? "⚠️ " : ""}
-                            {e.studentName}
-                          </span>
+                          {/* 🔎(대조 실패)·⚠️(동명이인 미확정)은 눌러서 한 번 가르치면 규칙으로
+                              저장되어 다음부터 자동 적용됩니다(요청: "내가 판별 기준을 적으면
+                              학습해서 더 정확하게"). 정상 대조된 이름은 누를 것이 없으므로 그대로 둡니다. */}
+                          {e.unmatched || e.ambiguous ? (
+                            <button
+                              type="button"
+                              onClick={() => setTeach({ rawText: e.rawText, guessedName: e.studentName })}
+                              className={
+                                "truncate text-left text-[11px] font-semibold underline decoration-dotted underline-offset-2 " +
+                                (e.unmatched ? "text-slate-400 hover:text-blue-600" : "text-amber-600 hover:text-amber-700")
+                              }
+                              title={
+                                e.unmatched
+                                  ? "명부와 대조되지 않아 추정한 이름입니다 - 눌러서 어느 학생인지 알려주면 다음부터 자동으로 연결됩니다"
+                                  : "같은 이름의 학생이 여러 명입니다 - 눌러서 어느 학생인지 알려주거나, 원문에 학년·생일을 함께 적어주세요"
+                              }
+                            >
+                              {e.unmatched ? "🔎 " : "⚠️ "}
+                              {e.studentName}
+                            </button>
+                          ) : (
+                            <span className="truncate text-[11px] font-semibold text-slate-700">{e.studentName}</span>
+                          )}
                           <span className="shrink-0 text-[9px] text-slate-400">
                             {e.time ? timeStr(e.time) : e.sourceLabel}
                           </span>
@@ -321,22 +352,29 @@ export default function AttendanceDigestPanel({
                           <span className={"shrink-0 rounded-full px-1.5 text-[9px] font-semibold " + (cat?.chipClass ?? "")}>
                             {cat?.icon} {cat?.label}
                           </span>
-                          <span
-                            className={
-                              "truncate text-[11px] font-semibold " +
-                              (e.unmatched ? "text-slate-400" : e.ambiguous ? "text-amber-600" : "text-slate-700")
-                            }
-                            title={
-                              e.unmatched
-                                ? "명부와 대조되지 않아 추정한 이름입니다 - 원문을 확인해주세요"
-                                : e.ambiguous
-                                  ? "같은 이름의 학생이 여러 명입니다 - 학년을 함께 적어주세요(예: 2학년 김재이)"
-                                  : undefined
-                            }
-                          >
-                            {e.unmatched ? "🔎 " : e.ambiguous ? "⚠️ " : ""}
-                            {e.studentName}
-                          </span>
+                          {/* 🔎(대조 실패)·⚠️(동명이인 미확정)은 눌러서 한 번 가르치면 규칙으로
+                              저장되어 다음부터 자동 적용됩니다(요청: "내가 판별 기준을 적으면
+                              학습해서 더 정확하게"). 정상 대조된 이름은 누를 것이 없으므로 그대로 둡니다. */}
+                          {e.unmatched || e.ambiguous ? (
+                            <button
+                              type="button"
+                              onClick={() => setTeach({ rawText: e.rawText, guessedName: e.studentName })}
+                              className={
+                                "truncate text-left text-[11px] font-semibold underline decoration-dotted underline-offset-2 " +
+                                (e.unmatched ? "text-slate-400 hover:text-blue-600" : "text-amber-600 hover:text-amber-700")
+                              }
+                              title={
+                                e.unmatched
+                                  ? "명부와 대조되지 않아 추정한 이름입니다 - 눌러서 어느 학생인지 알려주면 다음부터 자동으로 연결됩니다"
+                                  : "같은 이름의 학생이 여러 명입니다 - 눌러서 어느 학생인지 알려주거나, 원문에 학년·생일을 함께 적어주세요"
+                              }
+                            >
+                              {e.unmatched ? "🔎 " : "⚠️ "}
+                              {e.studentName}
+                            </button>
+                          ) : (
+                            <span className="truncate text-[11px] font-semibold text-slate-700">{e.studentName}</span>
+                          )}
                         </span>
                         <span className="shrink-0 rounded-full bg-slate-100 px-1.5 text-[9px] font-semibold text-slate-500">
                           {dateChipLabel(e.targetDate)}
@@ -358,6 +396,19 @@ export default function AttendanceDigestPanel({
       <div className="min-w-0 flex-[3] border-l border-black/5 pl-2.5">
         <AttendanceMemoPanel department={department} currentUserEmail={currentUserEmail} />
       </div>
+
+      {/* 🔎·⚠️를 누르면 뜨는 가르치기 창. 한 번 알려준 것은 규칙으로 저장되어 다음부터 자동 적용됩니다. */}
+      {teach && (
+        <AttendanceTeachModal
+          rawText={teach.rawText}
+          guessedName={teach.guessedName}
+          roster={roster}
+          rules={rules}
+          currentUserEmail={currentUserEmail}
+          onClose={() => setTeach(null)}
+          onSaved={loadRules}
+        />
+      )}
     </div>
   );
 }

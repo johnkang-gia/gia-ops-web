@@ -78,14 +78,20 @@ export async function scanIntoEntries(
     const range = extractTargetRange(m.text, m.sentAt);
 
     // 학생 특정: AI가 연결해 둔 student_id가 가장 정확하고, 없으면 본문을 명부와 대조합니다.
-    let matched = matchRosterStudents(m.text, roster, rules).map((s) => ({
-      name: s.name,
-      display: s.displayName,
-      grade: s.grade,
-    }));
+    //
+    // 여기서 **명부의 id를 반드시 같이 들고 나옵니다.** 이름만 들고 가면 저장할 때 다시 찾아야
+    // 하는데, 그때 못 찾으면 학생 없는 줄이 만들어집니다. student_id는 NOT NULL로 잠겨 있어
+    // (20260827090000_lock_student_fk.sql) 그런 줄은 애초에 저장되지 않아야 합니다.
+    let matched = matchRosterStudents(m.text, roster, rules)
+      .map((s) => {
+        const full = roster.find((r) => r.name === s.name);
+        return { id: full?.id ?? null, name: s.name, display: s.displayName, grade: s.grade, className: full?.className ?? null };
+      })
+      .filter((s): s is { id: string; name: string; display: string; grade: string | null; className: string | null } => !!s.id);
+
     if (matched.length === 0 && m.studentId) {
       const s = roster.find((r) => r.id === m.studentId);
-      if (s) matched = [{ name: s.name, display: s.name, grade: s.grade }];
+      if (s?.id) matched = [{ id: s.id, name: s.name, display: s.name, grade: s.grade, className: s.className ?? null }];
     }
 
     // 애매한 이유를 남깁니다. 화면의 물음표를 눌렀을 때 "왜 확인이 필요한지"가 보여야
@@ -119,14 +125,13 @@ export async function scanIntoEntries(
       }
       existing.add(key);
       if (state === "확인필요") needsReview += 1;
-      const full = roster.find((r) => r.name === st.name);
       rows.push({
         source: m.source,
         source_message_id: m.messageId,
-        student_id: full?.id ?? m.studentId ?? null,
+        student_id: st.id, // 위에서 id 없는 건 걸러냈으므로 항상 값이 있습니다.
         student_name: st.display,
         grade: st.grade,
-        class_name: full?.className ?? null,
+        class_name: st.className,
         status: category,
         date_from: from,
         date_to: to,

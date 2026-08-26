@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { geocodeAddress, loadKakaoMaps } from "@/lib/kakaoMap";
+import { geocodeAddress, loadKakaoMaps, searchPlaces, type PlaceResult } from "@/lib/kakaoMap";
 import { CAMPUS_ADDRESS, CAMPUS_FALLBACK } from "@/lib/shuttleCampus";
 import type { ShuttleRoutePath, ShuttleStop } from "@/lib/types";
 import { useToast } from "@/components/common/ToastProvider";
@@ -28,6 +28,101 @@ function minutesToTime(min: number): string {
   const h = Math.floor(((min % 1440) + 1440) % 1440 / 60);
   const m = Math.round(min) % 60;
   return `${String(h).padStart(2, "0")}:${String(((m % 60) + 60) % 60).padStart(2, "0")}`;
+}
+
+/**
+ * 위치를 못 찾은 정류장 한 줄. 지도 클릭으로 찍거나, **장소 이름으로 검색**해서 고릅니다.
+ *
+ * 지도를 눈으로 찾아 클릭하는 건 정확한 위치를 이미 알 때만 되는 방법입니다. 대부분은
+ * "반포 자이 후문"처럼 이름은 아는데 지도 어디인지는 모르는 경우라, 검색이 훨씬 빠릅니다.
+ * 처음 검색어로 적힌 주소를 넣어둬서, 대개 [찾기] 한 번이면 끝납니다.
+ */
+function MissingStopRow({
+  stop,
+  active,
+  onPin,
+  onPick,
+}: {
+  stop: ShuttleStop;
+  active: boolean;
+  onPin: () => void;
+  onPick: (p: PlaceResult) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState(stop.address ?? "");
+  const [results, setResults] = useState<PlaceResult[] | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function run() {
+    setBusy(true);
+    setResults(await searchPlaces(q).catch(() => []));
+    setBusy(false);
+  }
+
+  return (
+    <div className={"rounded-lg " + (active ? "bg-amber-200" : "bg-white")}>
+      <div className="flex items-center gap-1 px-2 py-1 text-[11px]">
+        <span className="shrink-0 rounded-full bg-slate-200 px-1.5 py-0.5 font-bold text-slate-600">{stop.seq}</span>
+        <span className="min-w-0 flex-1 truncate text-slate-600" title={stop.address ?? ""}>
+          {stop.address}
+        </span>
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="shrink-0 rounded bg-blue-50 px-1.5 py-0.5 font-semibold text-blue-600 hover:bg-blue-100"
+        >
+          🔍 검색
+        </button>
+        <button
+          type="button"
+          onClick={onPin}
+          className="shrink-0 rounded px-1.5 py-0.5 font-semibold text-slate-500 hover:bg-amber-100"
+          title="지도를 클릭해 직접 찍습니다"
+        >
+          📍 지도
+        </button>
+      </div>
+
+      {open && (
+        <div className="space-y-1 px-2 pb-2">
+          <div className="flex gap-1">
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && run()}
+              placeholder="장소 이름 (예: 반포자이 후문)"
+              className="min-w-0 flex-1 rounded border border-slate-300 px-1.5 py-1 text-[11px] outline-none focus:border-blue-400"
+            />
+            <button
+              type="button"
+              onClick={run}
+              disabled={busy}
+              className="shrink-0 rounded bg-blue-500 px-2 py-1 text-[11px] font-semibold text-white disabled:opacity-40"
+            >
+              {busy ? "…" : "찾기"}
+            </button>
+          </div>
+          {results && results.length === 0 && (
+            <p className="text-[10px] text-slate-400">결과가 없습니다. 다른 말로 찾아보거나 [📍 지도]로 직접 찍어주세요.</p>
+          )}
+          {results?.map((r, i) => (
+            <button
+              key={`${r.lat}-${r.lng}-${i}`}
+              type="button"
+              onClick={() => {
+                onPick(r);
+                setOpen(false);
+              }}
+              className="block w-full rounded border border-slate-200 px-1.5 py-1 text-left text-[11px] hover:border-blue-300 hover:bg-blue-50"
+            >
+              <span className="font-semibold text-slate-700">{r.name}</span>
+              <span className="ml-1 text-[10px] text-slate-400">{r.roadAddress ?? r.address}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function RouteMap({
@@ -326,6 +421,34 @@ export default function RouteMap({
     if (sdkStatus === "ready") attach();
   }, [pinTarget, sdkStatus, notify]);
 
+  /**
+   * 장소 검색 결과를 정류장에 그대로 붙입니다.
+   *
+   * 담당자 요청: "못 찾은 정류장은 카카오 지도 검색해서 위치 검색해서 넣을 수 있게."
+   *
+   * 좌표뿐 아니라 **구·동과 주소도 함께** 저장합니다. 지역별 대시보드가 구/동으로 묶기
+   * 때문에 좌표만 채우면 지도에는 점이 찍혀도 지역 집계에서는 여전히 빠집니다.
+   * 원래 적혀 있던 말("반포 자이 후문")은 지우지 않고 남겨둡니다 - 기사님·학부모가 쓰는
+   * 말이라 정식 주소로 바꿔버리면 현장에서 알아보지 못합니다.
+   */
+  async function applyPlace(stopId: string, p: PlaceResult) {
+    const supabase = createClient();
+    const patch = {
+      lat: p.lat,
+      lng: p.lng,
+      gu: p.gu,
+      dong: p.dong,
+      geocoded_at: new Date().toISOString(),
+    };
+    const { error } = await supabase.from("shuttle_stops").update(patch).eq("id", stopId);
+    if (error) {
+      notify("위치를 저장하지 못했습니다: " + error.message, "error");
+      return;
+    }
+    setLocalStops((prev) => prev.map((x) => (x.id === stopId ? ({ ...x, ...patch } as ShuttleStop) : x)));
+    notify(`${p.name} 위치로 지정했습니다.`, "success");
+  }
+
   // 정류장별 소요시간·도착예정시간 표. 실도로 경로(구간별 소요시간)가 최신일 때만 실제 시간을
   // 계산하고, 없으면 순서·주소만 보여줍니다(엉뚱한 시간을 보여주지 않기 위함).
   const hasLegTimes = !!routePath && !pathStale && routePath.legs.length === orderedPoints.length - 1 && orderedPoints.length > 1;
@@ -409,17 +532,13 @@ export default function RouteMap({
                 ⚠️ 자동으로 위치를 못 찾은 정류장 {missing.length}곳 (동 이름만 있는 주소 등) - 눌러서 지도에 직접 표시하세요.
               </p>
               {missing.map((s) => (
-                <button
+                <MissingStopRow
                   key={s.id}
-                  onClick={() => setPinTarget(s.id)}
-                  className={
-                    "flex w-full items-center gap-2 rounded-lg px-2 py-1 text-left text-[11px] transition " +
-                    (pinTarget === s.id ? "bg-amber-200" : "bg-white hover:bg-amber-100")
-                  }
-                >
-                  <span className="shrink-0 rounded-full bg-slate-200 px-1.5 py-0.5 font-bold text-slate-600">{s.seq}</span>
-                  <span className="truncate text-slate-600">{s.address}</span>
-                </button>
+                  stop={s}
+                  active={pinTarget === s.id}
+                  onPin={() => setPinTarget(s.id)}
+                  onPick={(p) => applyPlace(s.id, p)}
+                />
               ))}
             </div>
           )}

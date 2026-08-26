@@ -64,6 +64,18 @@ type BoardData = {
 
 const WEEKDAY_KO = ["일", "월", "화", "수", "목", "금", "토"];
 
+// 출결·픽업 칸에 쓸 짧은 이름(요청: "칸이 작으니 마야 같은 경우 이름 전체 말고 Maya만").
+//
+// 이 칸은 화면의 작은 한 조각인데 'Maya Rodriguez Kim' 같은 이름이 들어오면 배지 하나가
+// 줄을 통째로 먹고, 정작 몇 명인지가 안 보입니다. 누구인지 알아보는 데는 첫 이름이면
+// 충분하고(같은 반에 같은 이름이 겹치는 일은 드뭅니다), 전체 이름은 마우스를 올리면 뜹니다.
+// 한글 이름은 원래 붙여 쓰므로 그대로 둡니다.
+function shortName(name: string): string {
+  const trimmed = name.trim();
+  if (/[가-힣]/.test(trimmed)) return trimmed; // 한글 이름은 이미 짧습니다
+  return trimmed.split(/\s+/)[0] || trimmed;
+}
+
 const STATUS_COLOR: Record<string, string> = {
   결석: "#dc2626",
   지각: "#d97706",
@@ -144,7 +156,12 @@ export default function OpsBoardClient({ token }: { token: string }) {
   const load = useCallback(async () => {
     try {
       const qs = department ? `?department=${encodeURIComponent(department)}` : "";
-      const res = await fetch(`/api/ops-board/${token}${qs}`);
+      // cache: "no-store"가 없으면 브라우저·CDN이 같은 주소의 지난 응답을 그대로 다시 내줍니다.
+      // 이 화면은 주소가 늘 똑같아서(토큰 하나) 캐시가 붙기 딱 좋은 조건이었고, 그래서 업무
+      // 보드에서 학부모 문의를 처리 완료로 체크해도 대시보드에는 계속 남아 있었습니다
+      // (요청: "업무보드에서 학부모문의 체크표시로 지웠는데 대시보드에 반영이 안돼").
+      // 15초마다 새로 물어보는 화면이니 캐시는 도움이 되지 않고 방해만 됩니다.
+      const res = await fetch(`/api/ops-board/${token}${qs}`, { cache: "no-store" });
       if (!res.ok) {
         setErrorMsg("유효하지 않거나 종료된 링크입니다.");
         return;
@@ -940,7 +957,9 @@ function AttendancePanel({ sc, data }: { sc: BoardScale; data: BoardData }) {
   const absent = data.absences.filter((a) => a.status === "결석");
   const late = data.absences.filter((a) => a.status !== "결석");
   const groups = [
-    { key: "결석", color: "#dc2626", names: absent.map((a) => ({ name: a.name, note: a.note, tag: !a.contacted ? "연락전" : null })) },
+    // '연락전' 꼬리표는 뺐습니다(요청) - 이 화면은 지나가며 훑어보는 현황판이고, 연락 여부는
+    // 업무 보드에서 처리하는 일이라 여기 붙어 있어도 손이 가지 않았습니다.
+    { key: "결석", color: "#dc2626", names: absent.map((a) => ({ name: a.name, note: a.note, tag: null as string | null })) },
     {
       key: "지각·조퇴",
       color: "#d97706",
@@ -983,7 +1002,8 @@ function AttendancePanel({ sc, data }: { sc: BoardScale; data: BoardData }) {
                   g.names.slice(0, 18).map((n, i) => (
                     <span
                       key={i}
-                      title={n.note ?? undefined}
+                      // 짧게 줄인 이름만 보여주고, 전체 이름과 메모는 마우스를 올리면 뜹니다.
+                      title={[n.name, n.note].filter(Boolean).join(" · ")}
                       style={{
                         display: "inline-flex",
                         alignItems: "center",
@@ -995,7 +1015,7 @@ function AttendancePanel({ sc, data }: { sc: BoardScale; data: BoardData }) {
                         fontSize: sc.s(15, 12),
                       }}
                     >
-                      <b style={{ color: "#fff" }}>{n.name}</b>
+                      <b style={{ color: "#fff" }}>{shortName(n.name)}</b>
                       {n.tag && (
                         <span style={{ fontSize: sc.s(10, 9), color: n.tag === "조퇴" ? STATUS_COLOR["조퇴"] : "#f59e0b", fontWeight: 700 }}>
                           {n.tag}

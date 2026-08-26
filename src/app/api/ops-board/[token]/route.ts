@@ -458,7 +458,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   // 경우에는 종료 시각을 무시하고 예전처럼 "시작 시각 이후 계속"으로 둡니다.
   const shuttleMode = nowMinutes >= switchMinutes && (endMinutes <= switchMinutes || nowMinutes < endMinutes);
 
-  return NextResponse.json({
+  // 서버 쪽에서도 캐시를 막습니다. dynamic = "force-dynamic"은 "이 라우트를 미리 만들어두지
+  // 말라"는 뜻일 뿐, 만들어진 응답이 CDN·브라우저에 캐시되는 것까지 막아주지는 않습니다.
+  // 늘 같은 주소로 오는 요청이라 한 번 캐시되면 처리한 문의가 계속 남아 보입니다.
+  return NextResponse.json(
+    {
     // 지금 서버에 올라가 있는 앱 버전.
     //
     // 이 화면은 공용 모니터에 며칠씩 그대로 켜져 있습니다. 그래서 새 버전을 배포해도 화면은
@@ -484,11 +488,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     inquiries,
     collector,
     taskSummary: { statusCounts, todayTasks: todayTasks.slice(0, 20), todayTotal: todayTasks.length },
-    shuttle: {
-      mode: shuttleMode,
-      boardToken: (link.shuttle_board_token as string | null) ?? null,
-      switchLabel: `${String(link.shuttle_switch_hour).padStart(2, "0")}:${String(link.shuttle_switch_minute).padStart(2, "0")}`,
-      endLabel: `${String(endHour).padStart(2, "0")}:${String(endMinute).padStart(2, "0")}`,
+      shuttle: {
+        mode: shuttleMode,
+        boardToken: (link.shuttle_board_token as string | null) ?? null,
+        switchLabel: `${String(link.shuttle_switch_hour).padStart(2, "0")}:${String(link.shuttle_switch_minute).padStart(2, "0")}`,
+        endLabel: `${String(endHour).padStart(2, "0")}:${String(endMinute).padStart(2, "0")}`,
+      },
     },
-  });
+    { headers: { "Cache-Control": "no-store, no-cache, must-revalidate" } }
+  );
 }

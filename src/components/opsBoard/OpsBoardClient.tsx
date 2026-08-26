@@ -62,6 +62,8 @@ type BoardData = {
   shuttle: { mode: boolean; boardToken: string | null; switchLabel: string; endLabel: string };
 };
 
+const WEEKDAY_KO = ["일", "월", "화", "수", "목", "금", "토"];
+
 const STATUS_COLOR: Record<string, string> = {
   결석: "#dc2626",
   지각: "#d97706",
@@ -247,12 +249,10 @@ export default function OpsBoardClient({ token }: { token: string }) {
 
   const urgentInquiries = (data.inquiries ?? []).filter((q) => q.urgent).length;
 
-  // 요청: "오늘업무는 오늘거만 보이게 해줘"
   //
   // 지금까지는 마감이 지난 것까지 함께 올라와서, 오늘 할 일을 보려는데 지난주 것이 위에
   // 쌓여 있었습니다. 오늘 마감이거나 오늘 새로 들어온 것만 남깁니다.
   // 스크롤이 없는 화면이라 개수도 함께 제한합니다 - 넘치면 그냥 잘려서 안 보입니다.
-  const todayOnlyTasks = (data.taskSummary.todayTasks ?? []).filter((t) => t.kind !== "지남").slice(0, 8);
 
   // 지금이 점심시간인지.
   //
@@ -304,7 +304,11 @@ export default function OpsBoardClient({ token }: { token: string }) {
       >
         <div style={{ display: "flex", alignItems: "center", gap: sc.s(12, 6), flexWrap: "wrap", minWidth: 0 }}>
         <span style={{ fontSize: sc.s(30, 18), fontWeight: 800, color: "#fff", fontVariantNumeric: "tabular-nums" }}>{clock ?? data.nowLabel}</span>
-        <span style={{ fontSize: sc.s(15, 11), color: "#94a3b8" }}>{data.today}</span>
+        {/* 요일까지 함께 적습니다(요청: "날짜 옆에 요일도 표시"). 공용 모니터에서 날짜만
+            보고 무슨 요일인지 세는 일이 잦아서, 요일제 셔틀·시간표를 볼 때 특히 헷갈렸습니다. */}
+        <span style={{ fontSize: sc.s(15, 11), color: "#94a3b8" }}>
+          {data.today} ({WEEKDAY_KO[new Date(`${data.today}T12:00:00+09:00`).getDay()]})
+        </span>
         {/* 오늘 하원을 이미 종료한 경우 - 잘못 눌렀거나 늦게 도착한 차가 있으면 다시 열 수 있게
             합니다. 종료 시각(기본 17:30)이 지나면 이 버튼도 사라집니다. */}
         {data.shuttle.mode && endedOn === data.today && (
@@ -364,30 +368,36 @@ export default function OpsBoardClient({ token }: { token: string }) {
         </div>
       </div>
 
-      {/* ── 위: 교실 상황(좌) + 학부모 문의(우) ──────────────────────────────
-          요청: "교실 상황을 반으로 나누고, 오른쪽에 학부모 문의를 많이 보이게 해줘"
-          이 두 가지가 하루 중 가장 자주 보는 것이라 위쪽 절반씩을 나눠 씁니다. */}
+      {/* ── 화면을 세로로 반 가르기 ───────────────────────────────────────────
+          요청: "학부모문의칸을 아예 화면 반으로 쓸 수 있도록", "오늘업무를 지우고, 결석·지각·
+          픽업을 한 탭에서 분류해서".
+
+          왼쪽 = 지금 무슨 수업인지(시간표, 크기 고정) + 오늘 출결(결석·지각·픽업 한 칸).
+          오른쪽 = 학부모 문의. 위아래로 잘라 쓰던 것을 통째로 오른쪽 절반에 줘서, 스크롤 없이
+          한 번에 보이는 문의 수가 두 배가 됐습니다. */}
       <div
         style={{
           display: "grid",
           gridTemplateColumns: sc.narrow ? "1fr" : "1fr 1fr",
           gap: sc.s(12, 6),
-          // 요청: "출결을 필업 업무장을 조금 줄이고, 학부모문의 6개를 한페이지로" - 위쪽(교실·문의)
-          // 비중을 키워 문의가 여섯 개까지 한 장에 들어가게 합니다.
-          flex: "7 1 0",
+          flex: "1 1 0",
           minHeight: 0,
         }}
       >
+        {/* ── 왼쪽: 시간표(고정) + 오늘 출결 ───────────────────────────────── */}
+        <div style={{ display: "flex", flexDirection: "column", gap: sc.s(12, 6), minHeight: 0, minWidth: 0 }}>
         {/* ① 지금 수업(시간표) - 낮에는 시간표, 하원 시작~다음날 아침에는 학교 정보·학사일정. */}
         {nightMode ? (
           <NightInfoPanel sc={sc} data={data} />
         ) : (
         <Panel
           sc={sc}
-          /* 요청: "학년 반 시간표 줄이지말고 확실하게 전체 보이게 만들어줘"
-             반이 늘어나도 잘리지 않도록 이 칸이 남는 공간을 크게 가져가고, 그래도 모자라면
-             아래에서 스크롤됩니다(칸 자체를 줄이지 않습니다). */
-          grow={6}
+          /* 요청: "시간표의 경우 어차피 두 줄이 맥시멈이니까 칸 크기 계속 바꾸지 말고, 그냥
+             두 칸 크기로 고정해서 시간표 위젯의 크기가 계속 안 바뀌게".
+             예전에는 남는 공간을 비율(grow)로 나눠 가져서, 출결·문의 건수가 바뀔 때마다
+             시간표 칸 높이가 같이 출렁였습니다. 학년 줄은 최대 두 줄이므로 그 두 줄이 들어갈
+             높이로 못 박아 두면 하루 종일 같은 자리에 같은 크기로 붙어 있습니다. */
+          fixedHeight={sc.s(238, 168)}
           /* 요청: "쉬는 시간에는 쉬는시간이라고 뜨게 해주고, 다음교시 무슨시간인지를 미리
              보여주되 지금시간이 아니라는것을 표시해줘"
              수업 중이 아닌데 다음 교시가 남아 있으면 쉬는 시간입니다. 수업이 다 끝난 뒤와는
@@ -575,11 +585,18 @@ export default function OpsBoardClient({ token }: { token: string }) {
         </Panel>
         )}
 
-        {/* ②-b 학부모 문의사항 - 요청: "운영 대시보드에 이 학부모 문의사항도 띄워줘"
-            아직 답하지 않은 것만 올립니다. 처리된 것까지 섞이면 훑어보는 의미가 없습니다. */}
+        {/* ② 오늘 출결 - 결석·지각·픽업을 한 칸에서 분류해 봅니다(요청).
+            예전에는 [하원 픽업]과 [오늘 출결]이 아래쪽에 따로 있어서, 같은 학생이 두 칸에
+            나뉘어 뜨고 눈이 두 번 왔다 갔다 해야 했습니다. 셋 다 "오늘 이 아이가 평소와 다르다"는
+            같은 종류의 정보라 한 칸에 모으고, 분류는 색 있는 머리표로 나눴습니다. */}
+        <AttendancePanel sc={sc} data={data} />
+        </div>
+
+        {/* ── 오른쪽: 학부모 문의 (화면 세로 절반 전체) ─────────────────────────
+            요청: "학부모문의칸을 아예 화면 반으로 쓸 수 있도록". 아직 답하지 않은 것만
+            올립니다 - 처리된 것까지 섞이면 훑어보는 의미가 없습니다. */}
         <Panel
           sc={sc}
-          grow={1}
           title={`학부모 문의 ${data.inquiries?.length ?? 0}건`}
           right={
             /* 수집기가 멈추면 문의가 안 들어옵니다. 그런데 화면은 "문의 없음"으로 똑같이
@@ -640,149 +657,6 @@ export default function OpsBoardClient({ token }: { token: string }) {
           )}
         </Panel>
       </div>
-
-      {/* ── 아래: 출결 · 픽업 · 오늘 업무 ────────────────────────────────────
-          요청: "출결과 픽업은 아래로 내려주고". 셋 다 "있으면 보는" 정보라 아래에 나란히
-          둡니다. 위쪽 둘과 달리 대개 몇 줄이면 끝납니다. */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: sc.narrow ? "1fr" : "1fr 1fr 1.4fr",
-          gap: sc.s(12, 6),
-          // 아래쪽(출결·픽업·오늘업무)은 조금 줄입니다(요청).
-          flex: "2 1 0",
-          minHeight: 0,
-        }}
-      >
-        {/* ② 하원 픽업 - 파란색으로 맨 앞(요청: "하원 픽업은 지금같은 파란색으로 앞에 표시"). */}
-          <Panel sc={sc} title={`오늘 하원 픽업 ${data.pickups.length}명`}>
-            {data.pickups.length === 0 ? (
-              <Empty sc={sc} text="픽업 예정 없음" />
-            ) : (
-              <div style={{ display: "flex", flexWrap: "wrap", gap: sc.s(6, 4) }}>
-                {data.pickups.slice(0, 14).map((name, i) => (
-                  <span
-                    key={i}
-                    style={{
-                      background: "#0c2740",
-                      borderLeft: "4px solid #0ea5e9",
-                      borderRadius: 6,
-                      padding: `${sc.s(5, 3)}px ${sc.s(9, 6)}px`,
-                      fontSize: sc.s(16, 12),
-                      color: "#fff",
-                      fontWeight: 600,
-                    }}
-                  >
-                    {name}
-                  </span>
-                ))}
-              </div>
-            )}
-          </Panel>
-
-        {/* ③ 오늘 출결 - 결석(빨강)/지각(주황)을 반으로 나눠 한눈에 구분(요청). 조퇴는 지각 쪽에
-            자기 색(보라)으로 함께 둡니다. */}
-          <Panel sc={sc} title="오늘 출결" right={`재적 ${data.studentCount}명`}>
-            {data.absences.length === 0 ? (
-              <Empty sc={sc} text="전원 출석" tone="good" />
-            ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: sc.s(8, 5), height: "100%", minHeight: 0 }}>
-                {([
-                  { key: "결석", color: "#dc2626", items: data.absences.filter((a) => a.status === "결석") },
-                  { key: "지각", color: "#d97706", items: data.absences.filter((a) => a.status !== "결석") },
-                ] as const).map((col) => (
-                  <div key={col.key} style={{ display: "flex", flexDirection: "column", minHeight: 0, minWidth: 0 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: sc.s(5, 3), marginBottom: sc.s(5, 3) }}>
-                      <span style={{ width: sc.s(9, 7), height: sc.s(9, 7), borderRadius: 3, background: col.color }} />
-                      <span style={{ fontSize: sc.s(13, 11), fontWeight: 800, color: col.color }}>
-                        {col.key} {col.items.length}
-                      </span>
-                    </div>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: sc.s(5, 3), overflowY: "auto", minHeight: 0, alignContent: "flex-start" }}>
-                      {col.items.length === 0 ? (
-                        <span style={{ fontSize: sc.s(12, 10), color: "#475569" }}>없음</span>
-                      ) : (
-                        col.items.slice(0, 16).map((a, i) => (
-                          <span
-                            key={i}
-                            title={a.note ?? undefined}
-                            style={{
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: sc.s(4, 3),
-                              background: "#1e293b",
-                              borderLeft: `4px solid ${STATUS_COLOR[a.status] ?? col.color}`,
-                              borderRadius: 6,
-                              padding: `${sc.s(4, 3)}px ${sc.s(8, 5)}px`,
-                              fontSize: sc.s(15, 12),
-                            }}
-                          >
-                            <b style={{ color: "#fff" }}>{a.name}</b>
-                            {a.status === "조퇴" && (
-                              <span style={{ fontSize: sc.s(11, 9), color: STATUS_COLOR["조퇴"], fontWeight: 700 }}>조퇴</span>
-                            )}
-                            {!a.contacted && <span style={{ fontSize: sc.s(10, 9), color: "#f59e0b" }}>연락전</span>}
-                          </span>
-                        ))
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Panel>
-        {/* ③ 오늘 업무 */}
-        <Panel
-          sc={sc}
-          grow={2}
-          title={`오늘 업무 ${todayOnlyTasks.length}건`}
-          right={Object.entries(data.taskSummary.statusCounts)
-            .map(([k, v]) => `${k} ${v}`)
-            .join(" · ")}
-        >
-          {todayOnlyTasks.length === 0 ? (
-            <Empty sc={sc} text="오늘 마감·신규 업무 없음" />
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: sc.s(4, 3) }}>
-              {todayOnlyTasks.map((t, i) => (
-                <div
-                  key={i}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: sc.s(8, 5),
-                    background: "#1e293b",
-                    borderRadius: sc.s(8, 5),
-                    padding: `${sc.s(6, 3)}px ${sc.s(10, 6)}px`,
-                  }}
-                >
-                  <span
-                    style={{
-                      fontSize: sc.s(11, 9),
-                      fontWeight: 800,
-                      padding: `2px ${sc.s(7, 5)}px`,
-                      borderRadius: 999,
-                      flexShrink: 0,
-                      background: t.kind === "지남" ? "#7f1d1d" : t.kind === "마감" ? "#78350f" : "#1e3a8a",
-                      color: t.kind === "지남" ? "#fca5a5" : t.kind === "마감" ? "#fcd34d" : "#93c5fd",
-                    }}
-                  >
-                    {t.kind}
-                  </span>
-                  {t.urgent && <span style={{ fontSize: sc.s(13, 10) }}>🔥</span>}
-                  <span style={{ fontSize: sc.s(16, 12), color: "#fff", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {t.title}
-                  </span>
-                  {/* 좁은 창에서는 부서까지 넣으면 제목이 잘립니다 - 제목이 먼저입니다. */}
-                  {t.department && !sc.narrow && <span style={{ fontSize: sc.s(12, 10), color: "#64748b", flexShrink: 0 }}>{t.department}</span>}
-                  <span style={{ fontSize: sc.s(12, 10), color: "#94a3b8", flexShrink: 0 }}>{t.status}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </Panel>
-      </div>
-
 
       <div style={{ fontSize: sc.s(12, 9), color: "#475569", textAlign: "center", flexShrink: 0 }}>
         {data.label} · 15초마다 자동 갱신 · 새 버전이 올라오면 스스로 새로고침 ·{" "}
@@ -1040,18 +914,103 @@ function NightInfoPanel({ sc, data }: { sc: BoardScale; data: BoardData }) {
   );
 }
 
+// 오늘 출결 한 칸 - 결석 · 지각/조퇴 · 하원 픽업을 머리표로 나눠 담습니다.
+//
+// 요청: "결석, 지각, 픽업을 한 탭에서 분류해서 보이게". 예전에는 [오늘 하원 픽업]과
+// [오늘 출결]이 화면 아래에 따로 놓여 있어서, 같은 아이가 두 칸에 나뉘어 뜨고 눈이 두 번
+// 오갔습니다. 셋 다 "오늘 이 아이가 평소와 다르다"는 같은 종류의 소식이라 한 칸에 모읍니다.
+//
+// 공용 모니터는 아무도 스크롤하지 않으므로, 탭으로 감춰두지 않고 세 갈래를 한눈에 폅니다.
+// 어느 갈래가 비었는지도 정보이기 때문입니다(픽업 0명 = 오늘은 전원 차량 하원).
+function AttendancePanel({ sc, data }: { sc: BoardScale; data: BoardData }) {
+  const absent = data.absences.filter((a) => a.status === "결석");
+  const late = data.absences.filter((a) => a.status !== "결석");
+  const groups = [
+    { key: "결석", color: "#dc2626", names: absent.map((a) => ({ name: a.name, note: a.note, tag: !a.contacted ? "연락전" : null })) },
+    {
+      key: "지각·조퇴",
+      color: "#d97706",
+      names: late.map((a) => ({ name: a.name, note: a.note, tag: a.status === "조퇴" ? "조퇴" : null })),
+    },
+    { key: "하원 픽업", color: "#0ea5e9", names: data.pickups.map((n) => ({ name: n, note: null, tag: null })) },
+  ];
+  const total = groups.reduce((s, g) => s + g.names.length, 0);
+
+  return (
+    <Panel sc={sc} grow={1} title="오늘 출결 · 픽업" right={`재적 ${data.studentCount}명`}>
+      {total === 0 ? (
+        <Empty sc={sc} text="전원 출석 · 픽업 없음" tone="good" />
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: sc.s(10, 6), height: "100%", minHeight: 0 }}>
+          {groups.map((g) => (
+            <div key={g.key} style={{ display: "flex", flexDirection: "column", minHeight: 0, minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: sc.s(5, 3), marginBottom: sc.s(6, 4), flexShrink: 0 }}>
+                <span style={{ width: sc.s(9, 7), height: sc.s(9, 7), borderRadius: 3, background: g.color }} />
+                <span style={{ fontSize: sc.s(14, 11), fontWeight: 800, color: g.color }}>
+                  {g.key} {g.names.length}
+                </span>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: sc.s(5, 3),
+                  overflowY: "auto",
+                  minHeight: 0,
+                  alignContent: "flex-start",
+                }}
+              >
+                {g.names.length === 0 ? (
+                  <span style={{ fontSize: sc.s(12, 10), color: "#475569" }}>없음</span>
+                ) : (
+                  g.names.slice(0, 18).map((n, i) => (
+                    <span
+                      key={i}
+                      title={n.note ?? undefined}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: sc.s(4, 3),
+                        background: "#1e293b",
+                        borderLeft: `4px solid ${g.color}`,
+                        borderRadius: 6,
+                        padding: `${sc.s(4, 3)}px ${sc.s(8, 5)}px`,
+                        fontSize: sc.s(15, 12),
+                      }}
+                    >
+                      <b style={{ color: "#fff" }}>{n.name}</b>
+                      {n.tag && (
+                        <span style={{ fontSize: sc.s(10, 9), color: n.tag === "조퇴" ? STATUS_COLOR["조퇴"] : "#f59e0b", fontWeight: 700 }}>
+                          {n.tag}
+                        </span>
+                      )}
+                    </span>
+                  ))
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Panel>
+  );
+}
+
 function Panel({
   title,
   right,
   children,
   sc,
   grow,
+  fixedHeight,
 }: {
   title: string;
   right?: string | null;
   children: React.ReactNode;
   sc: BoardScale;
   grow?: number;
+  /** 높이를 못 박습니다(시간표처럼 내용이 늘어도 칸 크기가 흔들리면 안 되는 위젯용). */
+  fixedHeight?: number;
 }) {
   return (
     <div
@@ -1062,7 +1021,7 @@ function Panel({
         display: "flex",
         flexDirection: "column",
         minHeight: 0,
-        ...(grow ? { flex: `${grow} 1 0` } : {}),
+        ...(fixedHeight ? { height: fixedHeight, flex: "0 0 auto" } : grow ? { flex: `${grow} 1 0` } : {}),
       }}
     >
       <div style={{ display: "flex", alignItems: "baseline", gap: sc.s(8, 5), marginBottom: sc.s(8, 5), flexShrink: 0 }}>

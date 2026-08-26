@@ -111,6 +111,9 @@ export default function ParentInquiryPanel({
   // 나중에 문의사항 검색할 수 있게" - 지우지 않고 숨겨두었다가 여기서 다시 꺼내 봅니다.
   const [showDone, setShowDone] = useState(false);
   const [query, setQuery] = useState("");
+  // 분류 탭(요청: "학부모 문의사항을 탭으로 쪼개서 지금 분류한 방법으로 분류한대로 볼 수 있게").
+  // AI가 이미 inquiry_type으로 나눠놓은 값을 그대로 씁니다 - 새 분류를 만들지 않습니다.
+  const [typeFilter, setTypeFilter] = useState<string | null>(null);
   // 영어로 온 이름을 한글로 바꾸기 위한 명부. 요청: "영어이름으로 문의를 올렸다면 학생명부와
   // 대조후에 한글이름으로 올려줘". 한 번만 읽어 재사용합니다.
   const [roster, setRoster] = useState<RosterEntry[]>([]);
@@ -167,6 +170,7 @@ export default function ParentInquiryPanel({
     let list = mineOnly ? rows.filter((r) => r.homeroom_email === currentUserEmail) : rows;
     // 처리한 것은 기본으로 숨깁니다. 손댈 것만 남아 있어야 목록이 쓸모 있습니다.
     if (!showDone) list = list.filter((r) => !r.answered_at);
+    if (typeFilter) list = list.filter((r) => (r.inquiry_type ?? "기타") === typeFilter);
     const q = query.trim().toLowerCase();
     if (q) {
       list = list.filter((r) =>
@@ -176,7 +180,22 @@ export default function ParentInquiryPanel({
       );
     }
     return list;
-  }, [rows, mineOnly, currentUserEmail, showDone, query]);
+  }, [rows, mineOnly, currentUserEmail, showDone, query, typeFilter]);
+
+  // 분류 탭에 붙는 건수 - 분류 필터 자체는 빼고 센 값이라, 탭을 눌러도 다른 탭 숫자가
+  // 변하지 않습니다("출결 3건"이 출결 탭에 들어가면 사라지는 일이 없습니다).
+  const typeCounts = useMemo(() => {
+    const base = (mineOnly ? rows.filter((r) => r.homeroom_email === currentUserEmail) : rows).filter(
+      (r) => showDone || !r.answered_at
+    );
+    const m = new Map<string, number>();
+    for (const r of base) {
+      const k = r.inquiry_type ?? "기타";
+      m.set(k, (m.get(k) ?? 0) + 1);
+    }
+    // 실제로 들어온 분류만, 많은 순으로 보여줍니다 - 늘 비어 있는 탭은 자리만 차지합니다.
+    return [...m.entries()].sort((a, b) => b[1] - a[1]);
+  }, [rows, mineOnly, currentUserEmail, showDone]);
   // 답 안 한 것 먼저, 그 안에서 긴급한 것 먼저. 목록을 훑을 때 손댈 것이 위에 있어야 합니다.
   const sorted = useMemo(
     () =>
@@ -222,6 +241,54 @@ export default function ParentInquiryPanel({
     notify("업무로 등록했습니다.", "success");
     setDetail(null);
     load();
+  }
+
+  // ── 문의 자리에서 바로 셔틀 출결 처리(요청 1) ────────────────────────────────
+  //
+  // "오늘 지호 결석해요" 같은 문의를 읽고 나서 [셔틀 → 하원 체크표]로 가서 다시 찾아 체크하고
+  // 돌아오는 왕복을 없앱니다. 여기서 누르면 하원 체크표가 쓰는 표(shuttle_boardings)에 같은
+  // 모양으로 기록되므로, 체크표·안내보드·도착체크·운영 대시보드에 그대로 반영됩니다.
+  const [acted, setActed] = useState<Record<string, string>>({});
+
+  async function attendanceAction(r: Inquiry, action: "결석" | "픽업" | "탑승") {
+    const studentName = toKoreanDisplayName(r.matched_name ?? r.ai_student_name, r.channel_label, roster) ?? r.matched_name ?? r.ai_student_name;
+    if (!studentName) {
+      notify("학생 이름을 확정하지 못했습니다. 문의를 열어 이름을 확인해주세요.", "error");
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await fetch("/api/work/attendance-action", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ studentName, action, inquiryId: r.id }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        notify(json.error ?? "처리하지 못했습니다.", "error");
+        return;
+      }
+      if (json.ok === false) {
+        // 셔틀 배정이 없는 학생 - 조용히 성공한 척하지 않고 그대로 알립니다.
+        notify(json.message ?? "셔틀 배정을 찾지 못했습니다.", "error");
+        return;
+      }
+      setActed((p) => ({ ...p, [r.id]: action }));
+      notify(`${json.studentName} · ${action} 처리했습니다(하원 체크표에 반영됨).`, "success");
+      load();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // 출결·차량 관련 문의에만 버튼을 답니다. 학습 상담 같은 문의에 [결석] 버튼이 붙으면
+  // 잘못 누를 위험만 커집니다.
+  const ATTENDANCE_TYPES = new Set(["출결", "차량·하원"]);
+  function isAttendanceInquiry(r: Inquiry): boolean {
+    if (r.inquiry_type && ATTENDANCE_TYPES.has(r.inquiry_type)) return true;
+    // 분류가 비었거나 '기타'로 온 경우를 위한 보조 판단(원문에 출결 낱말이 있으면).
+    const t = `${r.summary ?? ""} ${r.raw_text ?? ""}`;
+    return /결석|안 ?가|안 ?와|픽업|데리러|하원|지각|조퇴|absent|pick ?up|late/i.test(t);
   }
 
   function studentOf(r: Inquiry) {
@@ -293,6 +360,35 @@ export default function ParentInquiryPanel({
         {whenLabel(r.received_at)}
       </span>
       </button>
+
+      {/* 출결 원클릭(요청 1) - 셔틀 화면으로 넘어가지 않고 여기서 바로 하원 체크표에 반영합니다.
+          출결·차량 문의에만 붙습니다(학습 상담에 [결석] 버튼이 있으면 오조작만 늘어납니다). */}
+      {!r.answered_at && isAttendanceInquiry(r) && (
+        <div className="flex shrink-0 items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+          {acted[r.id] ? (
+            <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">🚌 {acted[r.id]}</span>
+          ) : (
+            (
+              [
+                ["결석", "bg-red-50 text-red-600 hover:bg-red-100"],
+                ["픽업", "bg-sky-50 text-sky-600 hover:bg-sky-100"],
+                ["탑승", "bg-emerald-50 text-emerald-600 hover:bg-emerald-100"],
+              ] as const
+            ).map(([label, cls]) => (
+              <button
+                key={label}
+                type="button"
+                disabled={busy}
+                onClick={() => attendanceAction(r, label)}
+                title={`${studentOf(r)} 학생을 오늘 하원 ${label}(으)로 바로 처리합니다 - 셔틀 체크표에 반영됩니다`}
+                className={"rounded px-1.5 py-0.5 text-[10px] font-bold transition disabled:opacity-40 " + cls}
+              >
+                {label}
+              </button>
+            ))
+          )}
+        </div>
+      )}
     </div>
   );
 
@@ -339,6 +435,35 @@ export default function ParentInquiryPanel({
           )}
         </div>
       </div>
+
+      {/* 분류 탭(요청 2). AI가 매긴 inquiry_type 그대로입니다. 실제로 들어온 분류만 뜹니다. */}
+      {typeCounts.length > 1 && (
+        <div className="mb-1.5 flex shrink-0 flex-wrap items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setTypeFilter(null)}
+            className={
+              "rounded-full px-2 py-0.5 text-[10px] font-bold transition " +
+              (typeFilter === null ? "bg-slate-700 text-white" : "bg-black/5 text-slate-500 hover:bg-black/10")
+            }
+          >
+            전체 {typeCounts.reduce((s, [, n]) => s + n, 0)}
+          </button>
+          {typeCounts.map(([t, n]) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setTypeFilter(typeFilter === t ? null : t)}
+              className={
+                "rounded-full px-2 py-0.5 text-[10px] font-bold transition " +
+                (typeFilter === t ? (TYPE_STYLE[t] ?? "bg-slate-200 text-slate-700") + " ring-1 ring-current" : "bg-black/5 text-slate-500 hover:bg-black/10")
+              }
+            >
+              {t} {n}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* 넓은 자리에서만 검색창을 둡니다. 좁은 자리에서는 줄 하나가 아깝습니다. */}
       {full && (

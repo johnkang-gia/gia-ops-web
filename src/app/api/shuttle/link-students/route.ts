@@ -307,6 +307,26 @@ export async function GET(req: NextRequest) {
     );
   }
 
+  // 반영 전에 unlinked_reason 칸이 실제로 있는지 확인합니다.
+  //
+  // 없으면 아래 update가 줄마다 실패하는데, Supabase는 실패해도 예외를 던지지 않아서
+  // **반은 붙고 반은 안 붙은 채로 "완료"라고 뜹니다.** 그게 제일 나쁜 결과입니다.
+  // 마이그레이션을 안 돌렸다는 뜻이므로 그 사실을 그대로 알려주고 멈춥니다.
+  if (apply) {
+    const { error: colErr } = await db.from("shuttle_assignments").select("unlinked_reason").limit(1);
+    if (colErr) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "unlinked_reason 칸이 아직 없습니다. SQL을 먼저 실행해주세요.",
+          실행할것: "20260827110000_shuttle_link_reason.sql",
+          원문: colErr.message,
+        },
+        { status: 409 },
+      );
+    }
+  }
+
   if (apply) {
     for (const l of linked) {
       await db.from("shuttle_assignments").update({ student_id: l.to, unlinked_reason: null }).eq("id", l.id);

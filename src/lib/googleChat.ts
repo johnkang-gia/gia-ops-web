@@ -55,7 +55,7 @@ export async function saveRefreshToken(supabase: SupabaseClient, refreshToken: s
     .upsert({ id: "default", refresh_token: refreshToken, updated_by: updatedBy, updated_at: new Date().toISOString() });
 }
 
-async function getAccessToken(supabase: SupabaseClient): Promise<string | null> {
+export async function getAccessToken(supabase: SupabaseClient): Promise<string | null> {
   const client = buildOAuthClient();
   const refreshToken = await getStoredRefreshToken(supabase);
   if (!client || !refreshToken) return null;

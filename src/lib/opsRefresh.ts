@@ -28,3 +28,29 @@ export async function notifyOpsBoardRefresh(): Promise<void> {
     /* 다음 폴링에서 반영됩니다 */
   }
 }
+
+// 서버(크론·수집 라우트)에서 같은 신호를 보냅니다.
+//
+// 브라우저용 위 함수는 서버에서 못 씁니다(로그인 세션이 없음). 그리고 서버리스 함수에서
+// 웹소켓을 새로 여는 것도 낭비라, Realtime의 HTTP 방송 창구를 씁니다 - 요청 한 번이면 끝입니다.
+//
+// 왜 필요한가요? 토들 수집기가 새 문의를 넣는 것은 **서버에서 일어나는 일**입니다. 표 구독
+// (postgres_changes)만으로도 화면이 따라와야 하지만, 발행목록이나 RLS가 어긋나면 조용히
+// 아무 일도 안 일어납니다. 실제로 그래서 업무보드가 새로고침해야만 뜨고 있었습니다.
+// 방송은 표 권한과 무관해서, 표 구독이 막혀 있어도 화면은 깨어납니다.
+export async function notifyRefreshFromServer(): Promise<void> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return;
+  try {
+    await fetch(`${url}/realtime/v1/api/broadcast`, {
+      method: "POST",
+      headers: { "content-type": "application/json", apikey: key, authorization: `Bearer ${key}` },
+      body: JSON.stringify({
+        messages: [{ topic: OPS_REFRESH_CHANNEL, event: OPS_REFRESH_EVENT, payload: {} }],
+      }),
+    });
+  } catch {
+    /* 못 보내도 폴링·구독이 받아줍니다 - 수집 자체가 실패하면 안 됩니다 */
+  }
+}

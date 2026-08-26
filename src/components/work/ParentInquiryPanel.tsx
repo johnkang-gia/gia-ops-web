@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
-import { notifyOpsBoardRefresh } from "@/lib/opsRefresh";
+import { notifyOpsBoardRefresh, OPS_REFRESH_CHANNEL, OPS_REFRESH_EVENT } from "@/lib/opsRefresh";
 import { useToast } from "@/components/common/ToastProvider";
 import { toKoreanDisplayName, type RosterEntry } from "@/lib/pickupParse";
 
@@ -162,8 +162,29 @@ export default function ParentInquiryPanel({
       .channel("parent-inquiries")
       .on("postgres_changes", { event: "*", schema: "public", table: "pickup_requests" }, () => load())
       .subscribe();
+
+    // 표 구독과 **별개로** 서버 방송도 듣습니다.
+    //
+    // 토들 수집기가 새 문의를 넣는 것은 서버에서 일어나는 일이고, 표 구독은 발행목록이나
+    // RLS가 어긋나면 조용히 아무 일도 안 합니다(실제로 그래서 새로고침해야만 떴습니다).
+    // 방송은 표 권한과 무관해서, 표 구독이 막혀도 이쪽이 화면을 깨웁니다.
+    const refresh = supabase
+      .channel(OPS_REFRESH_CHANNEL)
+      .on("broadcast", { event: OPS_REFRESH_EVENT }, () => load())
+      .subscribe();
+
+    // 다른 창을 보다 돌아왔을 때도 한 번 새로 부릅니다 - 잠깐 끊긴 사이의 것을 놓치지 않도록.
+    const onFocus = () => {
+      if (document.visibilityState === "visible") load();
+    };
+    document.addEventListener("visibilitychange", onFocus);
+    window.addEventListener("focus", onFocus);
+
     return () => {
       supabase.removeChannel(channel);
+      supabase.removeChannel(refresh);
+      document.removeEventListener("visibilitychange", onFocus);
+      window.removeEventListener("focus", onFocus);
     };
   }, [load]);
 

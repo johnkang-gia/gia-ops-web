@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { ingestPickup, loadRoster, type IngestInput } from "@/lib/pickupIngest";
 import { logApiError } from "@/lib/logging";
+import { notifyRefreshFromServer } from "@/lib/opsRefresh";
 import { callClaudeJson, CLAUDE_MODEL_FAST } from "@/lib/ai/claude";
 
 export const dynamic = "force-dynamic";
@@ -128,6 +129,17 @@ export async function POST(req: Request) {
       detail: `${rawItems.length}건 수신`,
       updated_at: new Date().toISOString(),
     });
+
+    // 열려 있는 업무보드를 곧바로 깨웁니다.
+    //
+    // 담당자 확인: "업무대시보드에는 뜨는데 정작 업무보드에는 새로고침을 해야 떠. 업무보드가
+    // 메인이고 업무대시보드는 뷰어야."
+    //
+    // 순서가 뒤집혀 있던 이유: 대시보드는 30초마다 스스로 다시 부르는데, 업무보드는 표 구독
+    // (postgres_changes)에만 기대고 있었고 pickup_requests가 실시간 발행목록에 없어서 아무
+    // 소식도 못 받고 있었습니다. 발행목록은 SQL로 고쳤고, 여기서 방송도 함께 보내
+    // 둘 중 하나가 어긋나도 화면이 멈추지 않게 합니다.
+    await notifyRefreshFromServer();
 
     return NextResponse.json({ ok: true, results });
   } catch (err) {

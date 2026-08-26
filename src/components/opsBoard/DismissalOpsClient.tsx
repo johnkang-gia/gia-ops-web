@@ -181,6 +181,8 @@ export default function DismissalOpsClient({
   // 이 화면도 같은 좁은 창에 들어가므로, 창 크기에 맞춰 글자·여백을 함께 줄입니다.
   const sc = useBoardDensity("opsBoardDensity:dismissal");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  // GPS 미시작 경고를 접어둘지. 기본은 접힘 - 지금은 기기가 1대뿐이라 거의 모든 노선이 걸립니다.
+  const [gpsOpen, setGpsOpen] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -275,13 +277,28 @@ export default function DismissalOpsClient({
           켜고 끄는 방식이라, 켜는 걸 잊으신 노선을 여기 띄워 사무실에서 전화로 안내합니다. */}
       {(data.gpsAlerts?.length ?? 0) > 0 && (
         <div style={{ flexShrink: 0, margin: `0 ${sc.s(14, 8)}px ${sc.s(6, 4)}px`, background: "#7f1d1d", borderRadius: sc.s(10, 6), padding: `${sc.s(6, 4)}px ${sc.s(12, 8)}px`, display: "flex", alignItems: "center", gap: sc.s(8, 5), flexWrap: "wrap" }}>
-          <span style={{ fontSize: sc.s(15, 12), fontWeight: 900, color: "#fecaca" }}>⚠ GPS 미시작</span>
-          <span style={{ fontSize: sc.s(13, 11), color: "#fee2e2" }}>기사님께 GPS 켜달라고 안내:</span>
-          {(data.gpsAlerts ?? []).map((a, i) => (
-            <span key={i} style={{ fontSize: sc.s(14, 11), fontWeight: 800, color: "#fff", background: "#991b1b", borderRadius: 999, padding: `${sc.s(2, 1)}px ${sc.s(9, 6)}px` }}>
-              {a.routeNo}호{a.driverName ? ` ${a.driverName}` : ""}
-            </span>
-          ))}
+          {/* 접을 수 있게.
+              담당자: "GPS 미시작은 지금은 테스트라 1대 빼고 전부니까 이 항목은 접을 수 있게 해줘."
+              거의 모든 노선이 걸려 있으면 경고가 아니라 배경 소음이 됩니다. 화면에서 가장 큰
+              자리를 차지하면서 정작 알려주는 게 없으니, 접어두고 숫자만 남깁니다.
+              나중에 기기를 다 나눠주면 몇 대만 남을 테고, 그때는 펴두고 쓰시면 됩니다. */}
+          <button
+            type="button"
+            onClick={() => setGpsOpen((v) => !v)}
+            style={{ fontSize: sc.s(15, 12), fontWeight: 900, color: "#fecaca", background: "none", border: 0, cursor: "pointer", padding: 0 }}
+          >
+            {gpsOpen ? "▾" : "▸"} ⚠ GPS 미시작 {(data.gpsAlerts ?? []).length}대
+          </button>
+          {gpsOpen && (
+            <>
+              <span style={{ fontSize: sc.s(13, 11), color: "#fee2e2" }}>기사님께 GPS 켜달라고 안내:</span>
+              {(data.gpsAlerts ?? []).map((a, i) => (
+                <span key={i} style={{ fontSize: sc.s(14, 11), fontWeight: 800, color: "#fff", background: "#991b1b", borderRadius: 999, padding: `${sc.s(2, 1)}px ${sc.s(9, 6)}px` }}>
+                  {a.routeNo}호{a.driverName ? ` ${a.driverName}` : ""}
+                </span>
+              ))}
+            </>
+          )}
         </div>
       )}
 
@@ -771,8 +788,10 @@ function RouteFocusMap({ route, school, color, sc }: { route: RouteRow | null; s
           // 도로 이름이 사라짐)로 묶습니다.
           if (typeof map.getLevel === "function") {
             const lv = map.getLevel();
+            // 담당자: "차가 어느 도로를 가는지 볼 수 있게 충분히 확대해줘."
+            // level 3 = 골목 이름까지 보이는 정도. 4를 넘기면 큰길만 남습니다.
             if (lv < 3) map.setLevel(3);
-            else if (lv > 5) map.setLevel(5);
+            else if (lv > 4) map.setLevel(4);
           }
         }
       } catch {

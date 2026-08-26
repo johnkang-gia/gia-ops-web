@@ -105,7 +105,7 @@ export default async function PickupPage() {
   const gradeClassPairs = myClasses.map((c) => `${c.grade ?? ""}|${c.class_name ?? ""}`);
   const { data: studentsData } = await supabase
     .from("wr_students_basic")
-    .select("id, name, name_en, grade, class_name, class_id")
+    .select("id, name, name_en, grade, class_name, class_id, birth_date")
     .eq("status", "active")
     .order("name");
   // class_id가 아직 안 채워진 학생도 있어서 학년+반 이름으로도 한 번 더 걸러 붙입니다.
@@ -178,6 +178,7 @@ export default async function PickupPage() {
           studentId: s.id,
           name: s.name,
           nameEn: s.name_en,
+          birthDate: s.birth_date,
           assignmentId: a?.id ?? null,
           routeLabel: route ? `${route.route_no}호` : null,
           status: (b?.status as PickupItem["status"]) ?? "예정",

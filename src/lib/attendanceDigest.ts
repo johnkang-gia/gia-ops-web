@@ -137,7 +137,10 @@ export function extractTargetDate(text: string, baseDate: Date): string | null {
 
 // 학생 명부 한 명분(이름 대조에 필요한 최소 정보). nameEn은 영어이름 대조용(요청: "영어이름의
 // 경우 학생목록에서 대조해서 한글이름(영어이름)으로 병기표기").
-export type RosterStudent = { name: string; grade: string | null; nameEn?: string | null };
+// birthDate는 생년월일("2019-05-10")입니다. 같은 학년에 같은 이름이 둘 있으면 학년으로는
+// 구분이 안 되어(요청: "김재이가 3명인데 두 명은 학년까지 같아서 생일을 적어 구분한다"),
+// 선생님들이 "김재이(190510)"처럼 생일을 붙여 씁니다. 그걸 알아듣기 위한 칸입니다.
+export type RosterStudent = { name: string; grade: string | null; nameEn?: string | null; birthDate?: string | null };
 
 // 문장에서 찾아낸 학생 한 명.
 export type MatchedStudent = {
@@ -161,13 +164,90 @@ function findGradeHint(text: string, nameStart: number, nameEnd: number): string
   const before = text.slice(Math.max(0, nameStart - 8), nameStart);
   const after = text.slice(nameEnd, nameEnd + 8);
 
-  const afterMatch = after.match(/^\s*\(?\s*(\d{1,2})\s*(?:학년)?\s*\)?/);
+  // (?!\d)가 없으면 "김재이(190510)"의 앞 두 자리를 학년 19로 잘못 읽습니다 - 생년월일
+  // 표기가 들어오면서 실제로 부딪히는 경우라, 숫자가 더 이어지면 학년이 아닌 것으로 봅니다.
+  const afterMatch = after.match(/^\s*\(?\s*(\d{1,2})(?!\d)\s*(?:학년)?\s*\)?/);
   if (afterMatch) return afterMatch[1];
 
   const beforeMatch = before.match(/(\d{1,2})\s*(?:학년|-\d+)?\s*$/);
   if (beforeMatch) return beforeMatch[1];
 
   return null;
+}
+
+// ── 생년월일 힌트 ────────────────────────────────────────────────────────────
+// 같은 학년에 동명이인이 있으면 학년으로는 갈라지지 않습니다. 그럴 때 선생님들은 이름 뒤
+// 괄호에 생일을 적습니다(요청: "김재이(190510), 김재이(190828)").
+//
+// 받아들이는 형태(괄호 안 숫자만 뽑아 자릿수로 판단):
+//   8자리 20190510 / 2019-05-10 / 2019.05.10   → 연월일 전체
+//   6자리 190510                                → 연(뒤 2자리)월일
+//   4자리 0510                                  → 월일만
+// 4자리(월일)는 같은 이름·같은 학년이면 생일 연도가 대개 같으므로 실무에서 충분히 구분됩니다.
+function findBirthHint(text: string, nameEnd: number): string | null {
+  const after = text.slice(nameEnd, nameEnd + 16);
+  const m = after.match(/^\s*\(\s*([\d.\-/]{4,12})\s*\)/);
+  if (!m) return null;
+  const digits = m[1].replace(/\D/g, "");
+  return digits.length === 4 || digits.length === 6 || digits.length === 8 ? digits : null;
+}
+
+// 명부의 생년월일(2019-05-10)이 문장에 적힌 힌트와 같은 사람을 가리키는지 봅니다.
+function birthMatches(birthDate: string | null | undefined, hint: string): boolean {
+  if (!birthDate) return false;
+  const d = String(birthDate).replace(/\D/g, "");
+  if (d.length < 8) return false;
+  const ymd = d.slice(0, 8); // 20190510
+  if (hint.length === 8) return ymd === hint;
+  if (hint.length === 6) return ymd.slice(2) === hint; // YYMMDD
+  if (hint.length === 4) return ymd.slice(4) === hint; // MMDD
+  return false;
+}
+
+// 화면에 보여줄 때 쓰는 짧은 생일 표기("2019-05-10" → "190510").
+function shortBirth(birthDate: string | null | undefined): string | null {
+  if (!birthDate) return null;
+  const d = String(birthDate).replace(/\D/g, "");
+  return d.length >= 8 ? d.slice(2, 8) : null;
+}
+
+// 동명이인 후보 중 한 명을 고릅니다. 생일이 학년보다 구체적이므로 생일을 먼저 봅니다
+// (같은 학년 동명이인은 학년으로 아무리 봐도 갈라지지 않기 때문입니다).
+function pickHomonym(
+  candidates: RosterStudent[],
+  text: string,
+  nameStart: number,
+  nameEnd: number
+): { picked: RosterStudent; ambiguous: boolean; by: "birth" | "grade" | null } {
+  const birthHint = findBirthHint(text, nameEnd);
+  if (birthHint) {
+    const hit = candidates.filter((c) => birthMatches(c.birthDate, birthHint));
+    if (hit.length === 1) return { picked: hit[0], ambiguous: false, by: "birth" };
+  }
+  const gradeHint = normalizeGrade(findGradeHint(text, nameStart, nameEnd));
+  if (gradeHint) {
+    const hit = candidates.filter((c) => normalizeGrade(c.grade) === gradeHint);
+    if (hit.length === 1) return { picked: hit[0], ambiguous: false, by: "grade" };
+  }
+  // 확정하지 못하면 임의로 한 명을 고르지 않고 "확인 필요"로 표시합니다 - 조용히 틀리는 것이
+  // 가장 나쁩니다.
+  return { picked: candidates[0], ambiguous: true, by: null };
+}
+
+// 동명이인일 때 화면에 붙일 꼬리표. 무엇으로 갈랐는지가 보여야 사람이 검증할 수 있습니다.
+function homonymLabel(picked: RosterStudent, ambiguous: boolean, by: "birth" | "grade" | null): string {
+  if (ambiguous) {
+    // 같은 학년에 같은 이름이 또 있으면 학년을 물어봐야 소용없으니 생일을 물어봅니다.
+    return "확인 필요";
+  }
+  if (by === "birth") return shortBirth(picked.birthDate) ?? "생일 확인";
+  return `${normalizeGrade(picked.grade) ?? "?"}학년`;
+}
+
+// 중복 제거 키. 같은 학년 동명이인까지 갈라야 하므로 생일이 있으면 생일까지 씁니다.
+function homonymKey(picked: RosterStudent): string {
+  const b = shortBirth(picked.birthDate);
+  return b ? `${picked.name}#${b}` : `${picked.name}#${normalizeGrade(picked.grade)}`;
 }
 
 // 학년 표기를 비교 가능한 형태로 정규화합니다("2", "2학년", "초2" → "2").
@@ -410,31 +490,21 @@ export function matchRosterStudents(text: string, roster: RosterStudent[]): Matc
     if (idx === -1) continue;
 
     const candidates = byName.get(name)!;
-    let picked: RosterStudent | null = candidates.length === 1 ? candidates[0] : null;
-    let ambiguous = false;
-
-    if (candidates.length > 1) {
-      // 학년 힌트는 원문(text)에서 찾아야 합니다 - remaining은 앞서 매칭된 구간이 공백으로
-      // 지워져 있어서 힌트까지 사라졌을 수 있습니다.
-      const hint = normalizeGrade(findGradeHint(text, idx, idx + name.length));
-      const matched = hint ? candidates.filter((c) => normalizeGrade(c.grade) === hint) : [];
-      if (matched.length === 1) {
-        picked = matched[0];
-      } else {
-        picked = candidates[0];
-        ambiguous = true;
-      }
-    }
-
-    const grade = picked?.grade ?? null;
     const hasHomonym = candidates.length > 1;
+
+    // 힌트는 원문(text)에서 찾아야 합니다 - remaining은 앞서 매칭된 구간이 공백으로 지워져
+    // 있어서 힌트까지 사라졌을 수 있습니다.
+    const { picked, ambiguous, by } = hasHomonym
+      ? pickHomonym(candidates, text, idx, idx + name.length)
+      : { picked: candidates[0], ambiguous: false, by: null as "birth" | "grade" | null };
+
     found.push({
       name,
-      grade,
-      displayName: hasHomonym ? `${name}(${ambiguous ? "학년 확인 필요" : `${normalizeGrade(grade) ?? "?"}학년`})` : name,
-      // 동명이인이 확정된 경우에만 학년으로 구분합니다. 확정 못 한 경우는 이름만으로 묶어서
+      grade: picked.grade ?? null,
+      displayName: hasHomonym ? `${name}(${homonymLabel(picked, ambiguous, by)})` : name,
+      // 동명이인이 확정된 경우에만 학년/생일로 구분합니다. 확정 못 한 경우는 이름만으로 묶어서
       // 같은 문장이 여러 번 들어와도 중복으로 쌓이지 않게 합니다.
-      studentKey: hasHomonym && !ambiguous ? `${name}#${normalizeGrade(grade)}` : name,
+      studentKey: hasHomonym && !ambiguous ? homonymKey(picked) : name,
       ambiguous,
     });
 
@@ -481,29 +551,16 @@ export function matchRosterStudents(text: string, roster: RosterStudent[]): Matc
           const sameSurname = candidates.filter((c) => c.name[0] === anchor.name[0]);
           const pool = sameSurname.length > 0 ? sameSurname : candidates;
 
-          let picked: RosterStudent;
-          let ambiguous = false;
-          if (pool.length === 1) {
-            picked = pool[0];
-          } else {
-            const hint = normalizeGrade(findGradeHint(remaining, span.start, span.end));
-            const matched = hint ? pool.filter((c) => normalizeGrade(c.grade) === hint) : [];
-            if (matched.length === 1) {
-              picked = matched[0];
-            } else {
-              picked = pool[0];
-              ambiguous = true;
-            }
-          }
-
           const hasHomonym = pool.length > 1;
+          const { picked, ambiguous, by } = hasHomonym
+            ? pickHomonym(pool, remaining, span.start, span.end)
+            : { picked: pool[0], ambiguous: false, by: null as "birth" | "grade" | null };
+
           found.push({
             name: picked.name,
             grade: picked.grade,
-            displayName: hasHomonym
-              ? `${picked.name}(${ambiguous ? "학년 확인 필요" : `${normalizeGrade(picked.grade) ?? "?"}학년`})`
-              : picked.name,
-            studentKey: hasHomonym && !ambiguous ? `${picked.name}#${normalizeGrade(picked.grade)}` : picked.name,
+            displayName: hasHomonym ? `${picked.name}(${homonymLabel(picked, ambiguous, by)})` : picked.name,
+            studentKey: hasHomonym && !ambiguous ? homonymKey(picked) : picked.name,
             ambiguous,
           });
           foundNames.add(picked.name);

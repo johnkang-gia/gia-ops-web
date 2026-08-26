@@ -135,7 +135,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   // ── ② 출결 + 픽업 ──────────────────────────────────────────────────────────
   const { data: students } = await supabase
     .from("wr_students")
-    .select("id, name, name_en, grade, class_name, department")
+    .select("id, name, name_en, grade, class_name, department, birth_date")
     .eq("status", "active")
     .eq("is_demo", false);
   const deptStudents = (students ?? []).filter((s) => departmentOf(s) === department);
@@ -190,6 +190,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     name: (s.name as string) ?? "",
     grade: (s.grade as string | null) ?? null,
     nameEn: (s.name_en as string | null) ?? null,
+    birthDate: (s.birth_date as string | null) ?? null,
   }));
 
   for (const m of mirror ?? []) {

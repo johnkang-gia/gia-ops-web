@@ -168,8 +168,8 @@ export async function GET(req: NextRequest) {
   }
 
   const linked: { id: string; raw: string; to: string; name: string }[] = [];
-  const kinder: { id: string; raw: string; cls: string | null }[] = [];
-  const review: { id: string; raw: string; cls: string | null; when: string | null; why: string; candidates?: string[] }[] = [];
+  const kinder: { id: string; raw: string; cls: string | null; stopId: string | null }[] = [];
+  const review: { id: string; raw: string; cls: string | null; when: string | null; stopId: string | null; why: string; candidates?: string[] }[] = [];
 
   // 이 표에서 반 이름이 들어 있을 만한 칸을 찾습니다(이름을 모르므로 후보를 훑습니다).
   // 반 이름이 든 칸. 실제 칸 이름은 class_raw 였습니다("반 이름을 적힌 그대로 담는다"는 뜻).
@@ -186,16 +186,17 @@ export async function GET(req: NextRequest) {
     // 언제 만들어진 줄인지. 남은 것들이 전부 오래된 날짜면 **지난 학기 배정**이라는 뜻이라,
     // 이름을 아무리 들여다봐도 명부에 없는 게 당연합니다. 그 판단을 숫자로 하기 위해 함께 냅니다.
     const when = ((r.created_at as string | null) ?? null)?.slice(0, 10) ?? null;
+    const stopId = (r.stop_id as string | null) ?? null;
     const clsDept = departmentFromClassName(cls);
 
     if (!raw) {
-      review.push({ id, raw: "(이름 없음)", cls, when, why: "이름 칸이 비어 있습니다" });
+      review.push({ id, raw: "(이름 없음)", cls, when, stopId, why: "이름 칸이 비어 있습니다" });
       continue;
     }
 
     // 반 이름이 유치부면 명부를 볼 것도 없습니다.
     if (clsDept === "유치부") {
-      kinder.push({ id, raw, cls });
+      kinder.push({ id, raw, cls, stopId });
       continue;
     }
 
@@ -237,7 +238,7 @@ export async function GET(req: NextRequest) {
     }
     if (ambiguous) {
       review.push({
-        id, raw, cls, when,
+        id, raw, cls, when, stopId,
         why: `같은 이름이 ${ambiguous.length}명 - 생일이나 학년을 함께 적어주세요`,
         candidates: ambiguous.map((s) => `${s.name}${s.grade ? `(${s.grade})` : ""}${s.birth_date ? ` ${s.birth_date}` : ""}`),
       });
@@ -246,9 +247,9 @@ export async function GET(req: NextRequest) {
 
     // 명부에 없습니다. 반 이름이 유치부 형식이면 유치부, 아니면 사람이 봐야 합니다.
     if (clsDept === null && cls) {
-      review.push({ id, raw, cls, when, why: `명부에 없음 · 반 이름을 읽을 수 없음 ("${cls}")` });
+      review.push({ id, raw, cls, when, stopId, why: `명부에 없음 · 반 이름을 읽을 수 없음 ("${cls}")` });
     } else {
-      review.push({ id, raw, cls, when, why: "명부에 없음 - 유치부이거나 이름 표기가 다를 수 있습니다" });
+      review.push({ id, raw, cls, when, stopId, why: "명부에 없음 - 유치부이거나 이름 표기가 다를 수 있습니다" });
     }
   }
 
@@ -302,6 +303,25 @@ export async function GET(req: NextRequest) {
       },
       연결_예시: linked.slice(0, 15).map((l) => `${l.raw} → ${l.name}`),
       유치부_반이름: [...new Set(kinder.map((k) => k.cls ?? "(반 없음)"))].sort(),
+      // 남은 74건이 유치부인지 판단할 단서.
+      //
+      // 같은 정류장에 이미 유치부로 확정된 줄이 있다면, 반 칸만 비어 있을 뿐 그 아이도
+      // 유치부일 가능성이 큽니다(기사님이 그 정류장에 들르는 이유가 같으니까요).
+      // 반대로 초등·중고등 아이만 서는 정류장에 섞여 있다면 이름 표기 문제일 수 있습니다.
+      정류장_단서: (() => {
+        const kinderStops = new Set(kinder.map((k) => k.stopId).filter(Boolean));
+        const linkedStops = new Set(
+          (rows ?? []).filter((r) => linked.some((l) => l.id === (r as Record<string, unknown>).id))
+            .map((r) => (r as Record<string, unknown>).stop_id as string | null).filter(Boolean),
+        );
+        let 유치부정류장 = 0, 우리학생정류장 = 0, 둘다 = 0, 알수없음 = 0;
+        for (const v of review) {
+          const k = v.stopId ? kinderStops.has(v.stopId) : false;
+          const l = v.stopId ? linkedStops.has(v.stopId) : false;
+          if (k && l) 둘다++; else if (k) 유치부정류장++; else if (l) 우리학생정류장++; else 알수없음++;
+        }
+        return { 유치부만_서는_정류장: 유치부정류장, 우리학생만_서는_정류장: 우리학생정류장, 둘다_서는_정류장: 둘다, 판단불가: 알수없음 };
+      })(),
       // 남은 것들이 언제 만들어진 줄인지 한눈에. 전부 오래된 날짜면 지난 학기 배정이라
       // 이름을 들여다볼 것이 아니라 정리 대상입니다.
       확인필요_생성일_분포: Object.entries(

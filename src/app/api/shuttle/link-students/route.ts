@@ -92,7 +92,16 @@ export async function GET(req: NextRequest) {
   const apply = req.nextUrl.searchParams.get("apply") === "1";
 
   const [{ data: studentRows }, { data: rows }] = await Promise.all([
-    db.from("wr_students").select("id, name, name_en, grade, department, birth_date, class_name").eq("is_demo", false),
+    // **재학 중인 학생만** 명부로 씁니다.
+    //
+    // 처음엔 이 조건을 빼먹어서 454행 중 292명이 대조 대상으로 잡혔습니다. 실제 명부는 137명
+    // (초등 101 + 중고등 36)인데, 지난 학기 학생과 중복 행까지 섞여 들어간 것입니다.
+    // 그 상태로 연결했다면 셔틀 배정이 **이미 나간 학생에게 붙었을** 수 있습니다.
+    // 미리보기로 돌려서 다행이었습니다.
+    db.from("wr_students")
+      .select("id, name, name_en, grade, department, birth_date, class_name, status")
+      .eq("is_demo", false)
+      .eq("status", "active"),
     // 칸을 콕 집지 않고 전부 가져옵니다 - 이 표는 마이그레이션 밖에서 만들어져서 어떤 칸이
     // 있는지 코드로 확신할 수 없습니다. 아래 debug에 실제 칸 목록을 함께 돌려줍니다.
     db.from("shuttle_assignments").select("*").is("student_id", null),
@@ -122,9 +131,11 @@ export async function GET(req: NextRequest) {
   const review: { id: string; raw: string; cls: string | null; why: string; candidates?: string[] }[] = [];
 
   // 이 표에서 반 이름이 들어 있을 만한 칸을 찾습니다(이름을 모르므로 후보를 훑습니다).
+  // 반 이름이 든 칸. 실제 칸 이름은 class_raw 였습니다("반 이름을 적힌 그대로 담는다"는 뜻).
+  // 처음에 후보 목록에 넣지 않아서 반 정보를 하나도 못 읽었고, 그래서 유치부가 0건으로 나왔습니다.
   const sample = (rows ?? [])[0] as Record<string, unknown> | undefined;
   const classKey = sample
-    ? ["class_name", "class_label", "class", "grade_label", "homeroom", "grade"].find((k) => k in sample) ?? null
+    ? ["class_raw", "class_name", "class_label", "class", "grade_label", "homeroom", "grade"].find((k) => k in sample) ?? null
     : null;
 
   for (const r of (rows ?? []) as Record<string, unknown>[]) {
@@ -182,6 +193,26 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // 명부 인원 검산 - 초등 101 + 중고등 36 = 137.
+  //
+  // 명부가 흐트러진 채로 연결하면 셔틀 배정이 엉뚱한 학생(지난 학기·중복 행)에 붙습니다.
+  // 그건 조용히 잘못되는 종류라, **숫자가 안 맞으면 반영을 아예 막습니다.**
+  const 초등 = roster.filter((s) => (departmentOf({ department: s.department, grade: s.grade }) ?? departmentFromClassName(s.class_name)) === "초등부").length;
+  const 중고등 = roster.length - 초등;
+  const 명부정상 = roster.length === 137;
+
+  if (apply && !명부정상) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "명부 인원이 기대(137명)와 다릅니다. 명부를 먼저 정리해야 합니다.",
+        명부기준: { 대조대상: roster.length, 초등부: 초등, 중고등부: 중고등, 기대: 137 },
+        안내: "지난 학기 학생이나 중복 행이 status='active'로 남아 있을 수 있습니다. 이 상태로 연결하면 셔틀 배정이 엉뚱한 학생에게 붙습니다.",
+      },
+      { status: 409 },
+    );
+  }
+
   if (apply) {
     for (const l of linked) {
       await db.from("shuttle_assignments").update({ student_id: l.to, unlinked_reason: null }).eq("id", l.id);
@@ -196,7 +227,14 @@ export async function GET(req: NextRequest) {
     {
       ok: true,
       mode: apply ? "반영함" : "미리보기 (아무것도 바꾸지 않았습니다)",
-      명부기준: { 대조대상: roster.length, 전체학생행: all.length },
+      명부기준: {
+        대조대상: roster.length,
+        초등부: 초등,
+        중고등부: 중고등,
+        기대: 137,
+        판정: 명부정상 ? "✅ 명부 정상" : `⚠️ 기대와 ${roster.length - 137 > 0 ? "+" : ""}${roster.length - 137}명 차이 — 반영이 막힙니다`,
+        재학중_전체행: all.length,
+      },
       요약: {
         대상: rows?.length ?? 0,
         연결됨: linked.length,

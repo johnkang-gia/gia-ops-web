@@ -14,6 +14,17 @@
 -- **이미 연결된 줄은 건드리지 않습니다.** 사람이 화면에서 손으로 지정한 것을 덮어쓰지
 -- 않기 위해서입니다. 여러 번 실행해도 결과가 같습니다.
 
+-- 필요한 칸을 스스로 만듭니다.
+--
+-- 앞선 마이그레이션(20260827110000)을 먼저 돌려야 하는 구조였는데, 순서를 지켜야 하는 SQL이
+-- 여러 개면 결국 하나는 빠집니다(실제로 여기서 막혔습니다). 이 파일 하나만 돌려도 되도록
+-- 필요한 것을 여기서 다 갖춥니다.
+alter table public.shuttle_assignments
+  add column if not exists unlinked_reason text;
+
+comment on column public.shuttle_assignments.unlinked_reason is
+  '학생과 연결되지 않은 이유. ''유치부''=별도 운영이라 연결하지 않음 / ''퇴소''=명부에 없는(나간) 아이 / ''확인필요''=동명이인 등 사람이 봐야 함. student_id가 있으면 비어 있어야 합니다.';
+
 -- 반 이름 → 부서. 화면(shuttleDivision.ts)과 같은 규칙입니다.
 create or replace function public.shuttle_class_department(cls text)
 returns text language sql immutable as $$
@@ -108,6 +119,45 @@ begin
 
   raise notice '연결 %건 · 유치부 %건 · 확인필요 %건 · 퇴소 %건', n_linked, n_kinder, n_dup, n_left;
 end $$;
+
+-- 이제 "말 없이 비어 있는 줄"이 없으므로 제약을 겁니다.
+--
+-- student_id가 있으면 이유는 비어 있어야 하고, 없으면 반드시 이유가 있어야 합니다.
+-- NOT NULL을 걸 수 없는 표(유치부 줄은 정당하게 학생과 안 붙습니다)에서 같은 보장을
+-- 얻는 방법입니다.
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'shuttle_assignments_link_ok'
+      and conrelid = 'public.shuttle_assignments'::regclass
+  ) then
+    alter table public.shuttle_assignments
+      add constraint shuttle_assignments_link_ok check (
+        (student_id is not null and unlinked_reason is null)
+        or (student_id is null and unlinked_reason is not null)
+      );
+  end if;
+
+  if not exists (
+    select 1
+    from information_schema.table_constraints tc
+    join information_schema.key_column_usage k
+      on k.constraint_name = tc.constraint_name
+     and k.constraint_schema = tc.constraint_schema
+    where tc.constraint_schema = 'public'
+      and tc.table_name = 'shuttle_assignments'
+      and tc.constraint_type = 'FOREIGN KEY'
+      and k.column_name = 'student_id'
+  ) then
+    alter table public.shuttle_assignments
+      add constraint shuttle_assignments_student_id_fkey
+      foreign key (student_id) references public.wr_students(id) on delete restrict;
+  end if;
+end $$;
+
+create index if not exists shuttle_assignments_student_id_idx
+  on public.shuttle_assignments (student_id);
 
 -- 결과
 select

@@ -263,6 +263,16 @@ export default function RouteManageClient({
                 <div key={key}>
                   <label className="mb-1 block text-[11px] text-slate-400">{label}</label>
                   <input
+                    // key에 노선 id를 넣어 **노선이 바뀌면 입력칸을 새로 만들게** 합니다.
+                    //
+                    // 담당자: "노선관리 탭 기사님 정보가 안 들어가 있어. 하원 쪽 아무나 눌러도
+                    // 전부 박찬원 기사님으로 나와."
+                    //
+                    // 원인: defaultValue는 **처음 그려질 때 한 번만** 읽힙니다. 노선을 바꿔도
+                    // React가 보기엔 같은 자리의 같은 입력칸이라 다시 만들지 않고, 그래서 처음
+                    // 열었던 노선의 값이 계속 남아 있었습니다. 실제 데이터는 멀쩡한데 화면만
+                    // 낡은 값을 붙들고 있던 것이라, 저장하면 다른 노선 정보를 덮어쓸 뻔했습니다.
+                    key={`${selected.id}-${key}`}
                     defaultValue={(selected[key] as string) ?? ""}
                     placeholder={ph}
                     onBlur={(e) => {
@@ -277,6 +287,7 @@ export default function RouteManageClient({
                 <label className="mb-1 block text-[11px] text-slate-400">출발 기준시각</label>
                 <input
                   type="time"
+                  key={`${selected.id}-depart_time`}
                   defaultValue={selected.depart_time?.slice(0, 5)}
                   onBlur={(e) => updateRoute(selected.id, { depart_time: e.target.value })}
                   className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs"
@@ -287,6 +298,7 @@ export default function RouteManageClient({
                 <input
                   type="number"
                   min={0}
+                  key={`${selected.id}-seat_capacity`}
                   defaultValue={selected.seat_capacity ?? ""}
                   placeholder="예: 15"
                   onBlur={(e) => {
@@ -301,6 +313,7 @@ export default function RouteManageClient({
                 <input
                   type="number"
                   min={0}
+                  key={`${selected.id}-usable_capacity`}
                   defaultValue={selected.usable_capacity ?? ""}
                   placeholder="예: 12"
                   onBlur={(e) => {
@@ -313,6 +326,7 @@ export default function RouteManageClient({
               <div className="col-span-2">
                 <label className="mb-1 block text-[11px] text-slate-400">지역 태그(쉼표로 구분, 지역별 대시보드에서 씁니다)</label>
                 <input
+                  key={`${selected.id}-regions",`}
                   defaultValue={selected.regions.join(", ")}
                   placeholder="예: 청담, 압구정"
                   onBlur={(e) => {

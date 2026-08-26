@@ -148,6 +148,19 @@ export async function GET(req: NextRequest) {
     db.from("shuttle_assignments").select("*").is("student_id", null),
   ]);
 
+  // 사람이 가르쳐 둔 별칭. 출결에서 쓰던 표(attendance_learning_rules)를 그대로 씁니다.
+  //
+  // 담당자 확인: "마야, 에이바, 제이콥은 각각 초등부 maya의 한글, 8th grade의 elliana ma
+  // (일라이아나), jacob dylan ma의 한글 표기야."
+  //
+  // 영어이름을 한글로 적은 표기는 규칙으로 풀 수 없습니다 - Maya를 '마야'로 옮길지 '마이아'로
+  // 옮길지는 사람이 정하는 것이지 규칙이 아닙니다. 그래서 **한 번 알려주면 기억하는** 방식이
+  // 맞고, 그 자리가 이미 있습니다. 여기에 세 명을 박아 넣으면 네 번째 아이에게 또 막힙니다.
+  const { data: aliasRows } = await db
+    .from("attendance_learning_rules")
+    .select("kind, pattern, student_name, student_id")
+    .eq("kind", "alias");
+
   const all = (studentRows ?? []) as Student[];
 
   // ── 명부 = 절대 기준 ──────────────────────────────────────────────────────
@@ -165,6 +178,21 @@ export async function GET(req: NextRequest) {
   for (const s of roster) {
     add(norm(s.name ?? ""), s);
     if (s.name_en) add(norm(s.name_en), s);
+  }
+
+  // 별칭을 이름표에 얹습니다. student_id가 있으면 그걸 최우선으로 씁니다(가장 정확).
+  const byId = new Map(roster.map((s) => [s.id, s]));
+  let aliasUsed = 0;
+  for (const a of aliasRows ?? []) {
+    const target =
+      (a.student_id ? byId.get(a.student_id as string) : null) ??
+      roster.find((s) => s.name === a.student_name) ??
+      roster.find((s) => norm(s.name_en ?? "") === norm((a.student_name as string) ?? ""));
+    if (!target) continue; // 그 학생이 이제 명부에 없으면 별칭도 의미가 없습니다.
+    // 별칭은 **덮어씁니다**(추가가 아니라). 사람이 "이건 이 아이"라고 못 박은 것이므로
+    // 동명이인 후보로 남겨 두면 안 됩니다.
+    byName.set(norm((a.pattern as string) ?? ""), [target]);
+    aliasUsed += 1;
   }
 
   const linked: { id: string; raw: string; to: string; name: string }[] = [];
@@ -304,6 +332,7 @@ export async function GET(req: NextRequest) {
         기대: 137,
         판정: 명부정상 ? "✅ 명부 정상" : `⚠️ 기대와 ${roster.length - 137 > 0 ? "+" : ""}${roster.length - 137}명 차이 — 반영이 막힙니다`,
         재학중_전체행: all.length,
+        적용된_별칭: aliasUsed,
       },
       요약: {
         대상: rows?.length ?? 0,

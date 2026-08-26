@@ -30,11 +30,20 @@ begin
   foreach pair slice 1 in array pairs loop
     -- 재학 중인 학생 중에서 영문 이름으로 찾습니다. 딱 한 명일 때만 별칭을 겁니다 -
     -- 둘 이상이면 어느 쪽인지 기계가 정할 일이 아닙니다.
-    select count(*), min(id) into hits, target
+    --
+    -- (uuid에는 min()이 없어서 세는 것과 고르는 것을 나눕니다. 한 번에 하려다 실패했습니다.)
+    select count(*) into hits
     from public.wr_students
     where status = 'active'
       and is_demo = false
       and name_en ilike '%' || pair[2] || '%';
+
+    select id into target
+    from public.wr_students
+    where status = 'active'
+      and is_demo = false
+      and name_en ilike '%' || pair[2] || '%'
+    limit 1;
 
     if hits = 0 then
       raise notice '건너뜀 · 명부에서 "%" 를 찾지 못했습니다 (별칭: %)', pair[2], pair[1];

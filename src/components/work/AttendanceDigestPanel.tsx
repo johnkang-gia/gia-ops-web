@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { DepartmentMemo, GoogleChatMirrorMessage } from "@/lib/types";
 import AttendanceTeachModal from "./AttendanceTeachModal";
+import AttendanceRulesModal from "./AttendanceRulesModal";
 import { notifyOpsBoardRefresh } from "@/lib/opsRefresh";
 import {
   ATTENDANCE_CATEGORIES,
@@ -231,6 +232,8 @@ export default function AttendanceDigestPanel({
   // 사람이 가르친 규칙(별칭·분류·제외). 규칙이 바뀌면 화면이 바로 따라오도록 실시간 구독합니다.
   const [rules, setRules] = useState<LearningRule[]>([]);
   const [teach, setTeach] = useState<{ rawText: string; guessedName: string } | null>(null);
+  // 가르친 규칙을 다시 꺼내 보는 창. 넣기만 되고 꺼내 볼 수 없으면 잘못 가르친 것을 고칠 방법이 없습니다.
+  const [showRules, setShowRules] = useState(false);
 
   // 등록 상태(attendance_entries). 담당자 요청: "출결의 경우 등록이 되었는지 여부를 알 수 있고
   // 업무보드에서 등록이 가능하도록 만들어줘 (지금 매번 확인을 하고 지워야 해서 왔다갔다 엄청
@@ -401,6 +404,14 @@ export default function AttendanceDigestPanel({
       {/* 제목 옆에 픽업/결석/지각 순서로 건수를 요약합니다(요청 1). */}
       <div className="mb-1.5 flex shrink-0 flex-wrap items-center gap-1 text-[12px] font-bold text-emerald-600">
         <span>📊 출결내역</span>
+        <button
+          type="button"
+          onClick={() => setShowRules(true)}
+          className="rounded px-1 text-[10px] font-medium text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+          title="🔎·⚠️ 로 가르친 규칙을 보고 고치거나 지웁니다"
+        >
+          가르친 규칙
+        </button>
         <div className="ml-auto flex items-center gap-1">
           {ATTENDANCE_CATEGORIES.map((c) => {
             const n = grouped.get(c.key)?.length ?? 0;
@@ -542,6 +553,7 @@ export default function AttendanceDigestPanel({
       </div>
 
       {/* 🔎·⚠️를 누르면 뜨는 가르치기 창. 한 번 알려준 것은 규칙으로 저장되어 다음부터 자동 적용됩니다. */}
+      {showRules && <AttendanceRulesModal onClose={() => setShowRules(false)} />}
       {teach && (
         <AttendanceTeachModal
           rawText={teach.rawText}

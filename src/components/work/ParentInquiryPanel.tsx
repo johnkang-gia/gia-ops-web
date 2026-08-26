@@ -83,6 +83,66 @@ function whenLabel(iso: string): string {
   return d.toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" });
 }
 
+// 날짜 구분선.
+//
+// 담당자 요청: "학부모 문의사항 날짜별로 구분선 줘서 구별할 수 있게 해줘. 지금은 옆에
+// 시간·날짜가 너무 비슷해서 제대로 구분이 안 될 수도 있을 거 같아."
+//
+// 맞는 지적입니다. 줄 끝의 작은 회색 글씨만으로는 "어제 온 것"과 "오늘 온 것"이 한눈에
+// 안 갈립니다. 출결·픽업은 **날짜를 잘못 읽으면 아이가 잘못된 날 차를 타는** 문제라,
+// 날짜 경계는 눈에 띄어야 합니다.
+function dayLabel(iso: string): string {
+  const d = new Date(iso);
+  const today = new Date();
+  const yest = new Date(today);
+  yest.setDate(yest.getDate() - 1);
+  const same = (a: Date, b: Date) => a.toDateString() === b.toDateString();
+  if (same(d, today)) return "오늘";
+  if (same(d, yest)) return "어제";
+  const wd = ["일", "월", "화", "수", "목", "금", "토"][d.getDay()];
+  return `${d.getMonth() + 1}월 ${d.getDate()}일 (${wd})`;
+}
+
+function DayDivider({ iso, count }: { iso: string; count: number }) {
+  const isToday = dayLabel(iso) === "오늘";
+  return (
+    <div className="sticky top-0 z-10 flex items-center gap-2 bg-white/95 px-0.5 py-1 backdrop-blur">
+      <span
+        className={
+          "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold " +
+          (isToday ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-500")
+        }
+      >
+        {dayLabel(iso)}
+      </span>
+      <span className="shrink-0 text-[10px] text-slate-400">{count}건</span>
+      <span className="h-px flex-1 bg-slate-200" />
+    </div>
+  );
+}
+
+// 정렬된 목록을 날짜별로 묶습니다. 정렬 자체는 그대로 두고 경계만 찾습니다 -
+// "답 안 한 것 먼저"라는 기존 순서를 날짜가 흔들면 안 되기 때문에, 그 순서 안에서
+// 날짜가 바뀌는 지점에만 선을 넣습니다.
+function withDayDividers<T extends { id: string; received_at: string }>(list: T[]) {
+  const out: { key: string; divider?: { iso: string; count: number }; row?: T }[] = [];
+  const counts = new Map<string, number>();
+  for (const r of list) {
+    const k = r.received_at.slice(0, 10);
+    counts.set(k, (counts.get(k) ?? 0) + 1);
+  }
+  let last: string | null = null;
+  for (const r of list) {
+    const k = r.received_at.slice(0, 10);
+    if (k !== last) {
+      out.push({ key: `d-${k}`, divider: { iso: r.received_at, count: counts.get(k) ?? 0 } });
+      last = k;
+    }
+    out.push({ key: r.id, row: r });
+  }
+  return out;
+}
+
 const ROW_HEIGHT = 22;
 const VISIBLE_ROWS = 3;
 
@@ -512,9 +572,13 @@ export default function ParentInquiryPanel({
           className="flex min-h-0 flex-1 flex-col overflow-y-auto"
           style={full ? undefined : { maxHeight: ROW_HEIGHT * VISIBLE_ROWS }}
         >
-          {sorted.map((r) => (
-            <Row key={r.id} r={r} full={full} />
-          ))}
+          {withDayDividers(sorted).map((it) =>
+            it.divider ? (
+              <DayDivider key={it.key} iso={it.divider.iso} count={it.divider.count} />
+            ) : (
+              <Row key={it.key} r={it.row!} full={full} />
+            )
+          )}
         </div>
       )}
 
@@ -537,9 +601,13 @@ export default function ParentInquiryPanel({
                   <p className="text-xs text-slate-300">아직 들어온 문의가 없습니다.</p>
                 ) : (
                   <div className="flex flex-col">
-                    {sorted.map((r) => (
-                      <Row key={r.id} r={r} full />
-                    ))}
+                    {withDayDividers(sorted).map((it) =>
+                      it.divider ? (
+                        <DayDivider key={it.key} iso={it.divider.iso} count={it.divider.count} />
+                      ) : (
+                        <Row key={it.key} r={it.row!} full />
+                      )
+                    )}
                   </div>
                 )}
               </div>

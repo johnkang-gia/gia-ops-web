@@ -475,7 +475,30 @@ export default function TrackerDeviceManager({
                   {route?.route_no ?? "?"}호 · {s.seq}번
                 </span>
                 <span className="max-w-[220px] truncate text-slate-500">{s.address ?? "(주소 없음)"}</span>
-                <span className="text-slate-400">관측 {s.gps_sample_count}회</span>
+                {/* 며칠 중 며칠 섰는지가 정류장 판별의 핵심 근거입니다(신호대기는 드문드문).
+                    비율이 높을수록 "매일 서는 자리" = 정류장일 가능성이 큽니다. */}
+                {s.gps_day_count != null ? (
+                  <span
+                    className={
+                      "rounded px-1.5 py-0.5 font-bold " +
+                      ((s.gps_confidence ?? 0) >= 0.8
+                        ? "bg-emerald-100 text-emerald-700"
+                        : (s.gps_confidence ?? 0) >= 0.5
+                          ? "bg-amber-100 text-amber-700"
+                          : "bg-slate-100 text-slate-500")
+                    }
+                    title={`최근 운행일 중 ${s.gps_day_count}일 이 자리에서 정차했습니다(관측 ${s.gps_sample_count}회). 비율이 높을수록 정류장일 가능성이 큽니다 - 신호대기는 어떤 날은 서고 어떤 날은 그냥 지나가서 비율이 낮습니다.`}
+                  >
+                    {s.gps_day_count}일 관측 · {Math.round((s.gps_confidence ?? 0) * 100)}%
+                  </span>
+                ) : (
+                  <span className="text-slate-400">관측 {s.gps_sample_count}회</span>
+                )}
+                {s.gps_dwell_seconds != null && (
+                  <span className="text-slate-400" title="평균 체류시간 - 승하차는 20~60초로 일정한 편입니다">
+                    평균 {s.gps_dwell_seconds}초
+                  </span>
+                )}
                 {shift != null && (
                   <span className={shift > 100 ? "font-bold text-orange-600" : "text-slate-400"}>기존 좌표와 {shift}m 차이</span>
                 )}

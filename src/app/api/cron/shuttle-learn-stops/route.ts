@@ -211,22 +211,138 @@ async function learnForDate(supabase: SupabaseClient, serviceDate: string): Prom
     }
   }
 
-  // 관측이 새로 들어온 정류장은 지금까지의 모든 관측을 평균 내어 gps_* 값을 다시 계산합니다
-  // (매번 전체를 다시 계산하므로 크론이 몇 번 돌든 결과가 같습니다).
-  let stopsUpdated = 0;
-  for (const stopId of touchedStopIds) {
-    const { data: rows } = await supabase.from("shuttle_stop_observations").select("lat, lng").eq("matched_stop_id", stopId);
-    if (!rows || rows.length === 0) continue;
-    const lat = rows.reduce((sum, r) => sum + r.lat, 0) / rows.length;
-    const lng = rows.reduce((sum, r) => sum + r.lng, 0) / rows.length;
-    const { error } = await supabase
-      .from("shuttle_stops")
-      .update({ gps_lat: lat, gps_lng: lng, gps_sample_count: rows.length, gps_updated_at: new Date().toISOString() })
-      .eq("id", stopId);
-    if (!error) stopsUpdated += 1;
-  }
-
+  const stopsUpdated = await recomputeStopCoords(supabase, routeIds);
   return { observed, stopsUpdated };
+}
+
+// ── 정류장인가, 신호대기인가 ────────────────────────────────────────────────────
+//
+// 요청: "신호대기도 오랫동안 멈추는 경우가 있잖아. 신호대기는 어떨 때는 그냥 갈 때가 있고
+// 멈출 때가 있고 하지만, 정류장은 결석이 아니면 무조건 멈추니까."
+//
+// 정확히 그 성질이 유일한 판별 근거입니다. **하루치 기록으로는 둘을 절대 구별할 수 없습니다** -
+// 신호에 걸려 60초 선 것과 정류장에서 60초 선 것은 GPS만 보면 똑같이 생겼습니다.
+// 여러 날을 겹쳐놓아야 갈라집니다.
+//
+//   · 정류장  : 같은 자리에서 거의 매일 선다 → 겹쳐 보면 한 점에 촘촘히 모입니다.
+//   · 신호대기: 어떤 날은 서고 어떤 날은 통과한다. 서는 자리도 앞차 상황에 따라 매번 다릅니다
+//               → 겹쳐 보면 드문드문 흩어집니다.
+//
+// 그래서 최근 관측을 자리별로 묶고(40m), 묶음마다 "운행한 날 중 며칠이나 여기서 섰는가"를
+// 세어 그 비율이 높은 묶음만 정류장으로 인정합니다. 예전에는 반경 400m 안의 모든 정차를
+// 그냥 평균 내서, 정류장 300m 앞 신호등에 걸린 기록이 정류장 좌표를 그쪽으로 끌고 갔습니다.
+const LEARN_WINDOW_DAYS = 60;
+// 같은 자리로 볼 반경(m). 정차 지점의 GPS 오차와 차량 길이를 감안한 값입니다.
+const CLUSTER_RADIUS_M = 40;
+// 운행일 대비 이 비율 이상 관측돼야 정류장으로 인정합니다.
+const RECUR_MIN_RATE = 0.5;
+// 비율이 높아도 표본이 적으면(운행 이틀째 등) 아직 판단하지 않습니다.
+const RECUR_MIN_DAYS = 3;
+
+type Obs = { id: number; lat: number; lng: number; service_date: string; dwell_seconds: number; route_id: string };
+type Cluster = { lat: number; lng: number; days: Set<string>; dwellTotal: number; count: number; ids: number[] };
+
+// 관측을 가까운 것끼리 묶습니다(중심에서 CLUSTER_RADIUS_M 안이면 같은 묶음).
+function clusterObservations(rows: Obs[]): Cluster[] {
+  const clusters: Cluster[] = [];
+  for (const r of rows) {
+    let hit: Cluster | null = null;
+    for (const c of clusters) {
+      if (haversineMeters(c.lat, c.lng, r.lat, r.lng) <= CLUSTER_RADIUS_M) {
+        hit = c;
+        break;
+      }
+    }
+    if (!hit) {
+      clusters.push({ lat: r.lat, lng: r.lng, days: new Set([r.service_date]), dwellTotal: r.dwell_seconds, count: 1, ids: [r.id] });
+      continue;
+    }
+    // 중심을 새 점까지 포함해 다시 평균 냅니다(관측이 쌓일수록 중심이 정확해집니다).
+    hit.lat = (hit.lat * hit.count + r.lat) / (hit.count + 1);
+    hit.lng = (hit.lng * hit.count + r.lng) / (hit.count + 1);
+    hit.count += 1;
+    hit.days.add(r.service_date);
+    hit.dwellTotal += r.dwell_seconds;
+    hit.ids.push(r.id);
+  }
+  return clusters;
+}
+
+async function recomputeStopCoords(supabase: SupabaseClient, routeIds: string[]): Promise<number> {
+  const since = new Date(Date.now() - LEARN_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  let updated = 0;
+
+  for (const routeId of routeIds) {
+    const { data: obsRows } = await supabase
+      .from("shuttle_stop_observations")
+      .select("id, lat, lng, service_date, dwell_seconds, route_id")
+      .eq("route_id", routeId)
+      .gte("service_date", since);
+    const rows = (obsRows as Obs[] | null) ?? [];
+    if (rows.length === 0) continue;
+
+    // 운행한 날 = 관측이 하나라도 있는 날. 방학·주말처럼 안 다닌 날이 분모에 섞이면 모든
+    // 정류장의 비율이 낮게 나와 아무것도 인정되지 않습니다.
+    const runDays = new Set(rows.map((r) => r.service_date)).size;
+    const clusters = clusterObservations(rows);
+
+    const { data: stopRows } = await supabase.from("shuttle_stops").select("id, lat, lng, gps_lat, gps_lng").eq("route_id", routeId);
+    const stops = ((stopRows as { id: string; lat: number | null; lng: number | null; gps_lat: number | null; gps_lng: number | null }[] | null) ?? [])
+      .filter((s) => (s.gps_lat ?? s.lat) != null && (s.gps_lng ?? s.lng) != null);
+
+    // 묶음을 신뢰도(관측된 날 수) 높은 순으로 보면서, 가장 가까운 정류장에 하나씩 붙입니다.
+    // 한 정류장에 두 묶음이 붙지 않도록 이미 쓴 정류장은 건너뜁니다.
+    const taken = new Set<string>();
+    const ranked = [...clusters].sort((a, b) => b.days.size - a.days.size);
+
+    for (const c of ranked) {
+      const dayCount = c.days.size;
+      const rate = runDays > 0 ? dayCount / runDays : 0;
+      const isStop = dayCount >= RECUR_MIN_DAYS && rate >= RECUR_MIN_RATE;
+
+      // 판단 결과를 관측에 남겨 화면에서 "왜 제외됐는지" 볼 수 있게 합니다.
+      // 이 칸이 아직 없는 DB(마이그레이션 전)에서도 크론이 죽지 않도록 조용히 넘어갑니다.
+      await supabase
+        .from("shuttle_stop_observations")
+        .update({ verdict: isStop ? "stop" : "transit" })
+        .in("id", c.ids)
+        .then(undefined, () => undefined);
+
+      if (!isStop) continue;
+
+      let best: { id: string; dist: number } | null = null;
+      for (const s of stops) {
+        if (taken.has(s.id)) continue;
+        const sLat = (s.gps_lat ?? s.lat) as number;
+        const sLng = (s.gps_lng ?? s.lng) as number;
+        const dist = haversineMeters(sLat, sLng, c.lat, c.lng);
+        if (dist <= MATCH_RADIUS_M && (best == null || dist < best.dist)) best = { id: s.id, dist };
+      }
+      if (!best) continue;
+      taken.add(best.id);
+
+      const patch = {
+        gps_lat: c.lat,
+        gps_lng: c.lng,
+        gps_sample_count: c.count,
+        gps_updated_at: new Date().toISOString(),
+        gps_day_count: dayCount,
+        gps_confidence: Number(rate.toFixed(2)),
+        gps_dwell_seconds: Math.round(c.dwellTotal / c.count),
+      };
+      let { error } = await supabase.from("shuttle_stops").update(patch).eq("id", best.id);
+      if (error) {
+        // 새 칸이 아직 없는 DB - 예전 칸만으로 다시 시도합니다.
+        const { gps_day_count, gps_confidence, gps_dwell_seconds, ...legacy } = patch;
+        void gps_day_count;
+        void gps_confidence;
+        void gps_dwell_seconds;
+        ({ error } = await supabase.from("shuttle_stops").update(legacy).eq("id", best.id));
+      }
+      if (!error) updated += 1;
+    }
+  }
+  return updated;
 }
 
 export async function GET(req: NextRequest) {

@@ -843,6 +843,11 @@ export type ShuttleStop = {
   gps_lat: number | null;
   gps_lng: number | null;
   gps_sample_count: number;
+  // 정류장/신호대기 판별 근거(v0.245~). 며칠 중 며칠 관측됐는지와 그 비율, 평균 체류시간입니다.
+  // 마이그레이션 전 DB에서는 없을 수 있어 옵셔널입니다.
+  gps_day_count?: number | null;
+  gps_confidence?: number | null;
+  gps_dwell_seconds?: number | null;
   gps_updated_at: string | null;
   created_at: string;
 };

@@ -552,6 +552,14 @@ export default function OpsBoardClient({ token }: { token: string }) {
                               WebkitLineClamp: 2,
                               WebkitBoxOrient: "vertical" as const,
                               overflow: "hidden",
+                              // 항상 두 줄 높이를 차지합니다(요청: "컴퓨터 사이언스일 때의 크기로
+                              // 아예 고정해서 수업이 바뀌어도 시간표 위젯 크기가 안 변하게").
+                              //
+                              // 예전에는 최대 두 줄까지 늘어나기만 해서, 'Math'인 반은 한 줄,
+                              // 'Computer Science'인 반은 두 줄이 됐습니다. 그래서 교시가 바뀔
+                              // 때마다 학년 줄 높이가, 나아가 시간표 위젯 전체 높이가 출렁였습니다.
+                              // 짧은 과목명일 때도 두 줄 자리를 비워두면 무슨 수업이든 같은 크기입니다.
+                              height: Math.round(sc.s(30, 18) * 1.15 * 2),
                             }}
                           >
                             {shown?.subjectName ?? "—"}
@@ -561,7 +569,10 @@ export default function OpsBoardClient({ token }: { token: string }) {
                               수업이 없으면 담임을 작게 적습니다. */}
                           {/* 요청: "시간표에서 지금수업하시는 선생님만 표시되게" - 지금 교시의
                               담당 선생님만 적습니다. 담임 폴백·유휴 로스터는 뺐습니다. */}
-                          {shown?.teacherName && (
+                          {/* 선생님 이름 줄도 늘 자리를 차지합니다 - 있다 없다 하면 그것만으로
+                              카드 높이가 한 줄씩 달라져서 위젯이 또 출렁입니다. 이름이 없으면
+                              빈 줄로 둡니다. */}
+                          {(
                             <div
                               style={{
                                 fontSize: sc.s(12, 9),
@@ -570,9 +581,10 @@ export default function OpsBoardClient({ token }: { token: string }) {
                                 whiteSpace: "nowrap",
                                 overflow: "hidden",
                                 textOverflow: "ellipsis",
+                                height: Math.round(sc.s(12, 9) * 1.3),
                               }}
                             >
-                              {shown.teacherName}
+                              {shown?.teacherName ?? " "}
                             </div>
                           )}
                         </div>

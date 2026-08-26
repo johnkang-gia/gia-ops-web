@@ -4,12 +4,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { DepartmentMemo, GoogleChatMirrorMessage } from "@/lib/types";
 import AttendanceTeachModal from "./AttendanceTeachModal";
+import { notifyOpsBoardRefresh } from "@/lib/opsRefresh";
 import {
   ATTENDANCE_CATEGORIES,
   categorize,
   dateChipLabel,
   dedupeEntries,
   extractTargetDate,
+  extractTargetRange,
   guessKoreanName,
   matchRosterStudents,
   stripLeadingMention,
@@ -22,6 +24,86 @@ import {
 
 function timeStr(iso: string) {
   return new Date(iso).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
+}
+
+// attendance_entries 한 줄(등록 상태).
+type RegRow = {
+  id: string;
+  source_message_id: string | null;
+  student_name: string;
+  status: string;
+  state: "등록" | "확인필요" | "무시";
+  date_from: string;
+  date_to: string;
+  reason: string | null;
+};
+
+// 기간을 짧게: 하루면 생략하고, 여러 날이면 "~8/28"처럼 마지막 날만 보여줍니다.
+// 칸이 좁아서 "2026-08-26 ~ 2026-08-28"을 그대로 쓰면 이름이 밀립니다.
+function rangeChip(from: string, to: string): string | null {
+  if (from === to) return null;
+  const [, m, d] = to.split("-");
+  return `~${Number(m)}/${Number(d)}`;
+}
+
+// 한 줄의 등록 상태를 보여주고, 눌러서 바로 등록·해제합니다.
+//
+//   ✅ 초록 체크 : 이미 등록됨(대시보드에 떠 있음). 누르면 내립니다.
+//   ❓ 물음표   : 자동 판단이 애매해 대기 중. 누르면 확인하고 등록합니다.
+//   ⬜ 빈 네모   : 아직 등록 대상이 아님(스캔 전이거나 학생 대조 실패).
+//
+// 담당자가 셔틀 화면까지 왔다 갔다 하지 않아도 여기서 끝나야 한다는 것이 요점입니다.
+function RegBadge({
+  entry,
+  regs,
+  busyKey,
+  onSet,
+}: {
+  entry: AttendanceEntry;
+  regs: Map<string, RegRow>;
+  busyKey: string | null;
+  onSet: (e: AttendanceEntry, next: "등록" | "무시") => void;
+}) {
+  const key = `${entry.messageId}|${entry.studentName}|${entry.category}`;
+  const row = regs.get(key);
+  const busy = busyKey === key;
+
+  if (!row) {
+    return (
+      <span className="shrink-0 text-[10px] text-slate-300" title="아직 등록 대상으로 잡히지 않았습니다(학생 대조 실패 등).">
+        ⬜
+      </span>
+    );
+  }
+
+  const span = rangeChip(row.date_from, row.date_to);
+  const registered = row.state === "등록";
+
+  return (
+    <span className="flex shrink-0 items-center gap-0.5">
+      {span && (
+        <span className="rounded bg-slate-100 px-1 text-[9px] font-semibold text-slate-500" title={`${row.date_from} ~ ${row.date_to}`}>
+          {span}
+        </span>
+      )}
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => onSet(entry, registered ? "무시" : "등록")}
+        className={
+          "rounded px-0.5 text-[11px] leading-none transition disabled:opacity-40 " +
+          (registered ? "hover:bg-emerald-50" : "hover:bg-amber-50")
+        }
+        title={
+          registered
+            ? `등록됨 (${row.date_from}${span ? ` ~ ${row.date_to}` : ""}) - 누르면 내립니다`
+            : `확인 필요: ${row.reason ?? "확인 후 등록해주세요"} - 누르면 등록합니다`
+        }
+      >
+        {busy ? "…" : registered ? "✅" : "❓"}
+      </button>
+    </span>
+  );
 }
 
 const MEMO_SAVE_DELAY = 800;
@@ -150,6 +232,52 @@ export default function AttendanceDigestPanel({
   const [rules, setRules] = useState<LearningRule[]>([]);
   const [teach, setTeach] = useState<{ rawText: string; guessedName: string } | null>(null);
 
+  // 등록 상태(attendance_entries). 담당자 요청: "출결의 경우 등록이 되었는지 여부를 알 수 있고
+  // 업무보드에서 등록이 가능하도록 만들어줘 (지금 매번 확인을 하고 지워야 해서 왔다갔다 엄청
+  // 해서 힘들어)."
+  //
+  // 키는 "메시지id|학생이름|종류"입니다. 한 메시지에 두 학생이 있으면 각각 따로 등록됩니다.
+  const [regs, setRegs] = useState<Map<string, RegRow>>(new Map());
+  const [busyKey, setBusyKey] = useState<string | null>(null);
+
+  const loadRegs = useCallback(async () => {
+    try {
+      const res = await fetch("/api/attendance/entries", { cache: "no-store" });
+      const json = (await res.json()) as { entries?: RegRow[] };
+      const m = new Map<string, RegRow>();
+      for (const e of json.entries ?? []) {
+        if (e.source_message_id) m.set(`${e.source_message_id}|${e.student_name}|${e.status}`, e);
+      }
+      setRegs(m);
+    } catch {
+      /* 못 불러와도 목록 자체는 보여야 합니다 - 배지만 안 뜰 뿐입니다. */
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadRegs();
+  }, [loadRegs, messages.length]);
+
+  // 등록 / 해제. 해제는 '무시'로 남깁니다 - 지운 것이 다시 살아나지 않게 하려면 "없음"이
+  // 아니라 "아니라고 판단했음"이 기록으로 남아야 합니다.
+  async function setState(entry: AttendanceEntry, next: "등록" | "무시") {
+    const key = `${entry.messageId}|${entry.studentName}|${entry.category}`;
+    const row = regs.get(key);
+    if (!row) return;
+    setBusyKey(key);
+    const res = await fetch("/api/attendance/entries", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: row.id, state: next }),
+    });
+    setBusyKey(null);
+    if (res.ok) {
+      await loadRegs();
+      // 사무실 벽면 대시보드도 곧바로 따라오도록 신호를 보냅니다.
+      void notifyOpsBoardRefresh();
+    }
+  }
+
   const loadRules = useCallback(async () => {
     const supabase = createClient();
     const { data } = await supabase.from("attendance_learning_rules").select("kind, pattern, student_name, category");
@@ -187,7 +315,12 @@ export default function AttendanceDigestPanel({
       const category = categorize(m.content, rules);
       if (!category) continue;
       // 날짜 언급이 없으면 그 메시지가 온 날의 출결로 봅니다.
-      const targetDate = extractTargetDate(m.content, sentAt) ?? todayKey(sentAt);
+      //
+      // "수요일까지"처럼 기간으로 적힌 경우 시작일과 마지막일을 모두 잡습니다(요청). 하루로만
+      // 읽으면 나머지 날은 아무 데도 안 남아, 그 며칠 동안 아이를 찾게 됩니다.
+      const range = extractTargetRange(m.content, sentAt);
+      const targetDate = range?.from ?? extractTargetDate(m.content, sentAt) ?? todayKey(sentAt);
+      const targetDateTo = range?.to ?? targetDate;
       const students = matchRosterStudents(m.content, roster, rules);
       if (students.length === 0) {
         // 명부에서 이름을 못 찾아도 버리지 않고 보여줍니다(전학생·오탈자 등으로 대조가 실패해도
@@ -208,6 +341,8 @@ export default function AttendanceDigestPanel({
           time: m.created_at_google,
           sourceLabel: "구글챗",
           targetDate,
+          targetDateTo,
+          messageId: String(m.id),
         });
         continue;
       }
@@ -223,18 +358,26 @@ export default function AttendanceDigestPanel({
           time: m.created_at_google,
           sourceLabel: "구글챗",
           targetDate,
+          targetDateTo,
+          messageId: String(m.id),
         });
       }
     }
 
     // 같은 메시지가 겹쳐 올라온 경우 학생이 두 번 뜨지 않도록 정리합니다. 지난 날짜는 이미
     // 끝난 일이라 화면에서 뺍니다.
-    return dedupeEntries(out).filter((e) => e.targetDate >= today);
+    // 기간의 마지막 날이 오늘 이후면 아직 살아 있는 건입니다("월요일부터 수요일까지"를
+    // 화요일에 봐도 남아 있어야 합니다).
+    return dedupeEntries(out).filter((e) => (e.targetDateTo ?? e.targetDate) >= today);
   }, [messages, roster, rules]);
 
   const today = todayKey();
   // 오늘 것만 위쪽 픽업/결석/지각 칸에 넣고, 앞으로 예정된 건은 아래 "예정" 칸으로 따로 뺍니다.
-  const entries = useMemo(() => allEntries.filter((e) => e.targetDate === today), [allEntries, today]);
+  // 기간이 오늘을 품으면 "오늘"입니다 - 시작일이 지났어도 아직 결석 중이니까요.
+  const entries = useMemo(
+    () => allEntries.filter((e) => e.targetDate <= today && (e.targetDateTo ?? e.targetDate) >= today),
+    [allEntries, today]
+  );
   const upcoming = useMemo(
     () => allEntries.filter((e) => e.targetDate > today).sort((a, b) => a.targetDate.localeCompare(b.targetDate)),
     [allEntries, today]
@@ -318,6 +461,7 @@ export default function AttendanceDigestPanel({
                           ) : (
                             <span className="truncate text-[11px] font-semibold text-slate-700">{e.studentName}</span>
                           )}
+                          <RegBadge entry={e} regs={regs} busyKey={busyKey} onSet={setState} />
                           <span className="shrink-0 text-[9px] text-slate-400">
                             {e.time ? timeStr(e.time) : e.sourceLabel}
                           </span>

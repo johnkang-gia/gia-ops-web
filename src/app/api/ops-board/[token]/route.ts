@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { APP_VERSION } from "@/lib/version";
-import { categorize, extractTargetDate, matchRosterStudents, todayKey, looksLikePronounReply, type RosterStudent } from "@/lib/attendanceDigest";
+import { categorize, extractTargetDate, matchRosterStudents, todayKey, type RosterStudent } from "@/lib/attendanceDigest";
+import { loadActiveEntries } from "@/lib/attendanceEntries";
 import { toKoreanDisplayName, type RosterEntry } from "@/lib/pickupParse";
 import { createClient } from "@supabase/supabase-js";
 import { kstParts } from "@/lib/shuttleTracking";
@@ -193,36 +194,35 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     birthDate: (s.birth_date as string | null) ?? null,
   }));
 
-  for (const m of mirror ?? []) {
-    const content = (m.content as string | null) ?? "";
-    // "he will be late"처럼 대명사로 시작하는 답글은 다른 통보에 대한 답이라 새 결석/지각이
-    // 아닙니다(요청). 학생 이름이 없으므로 어차피 대조도 안 되지만, 명시적으로 걸러 둡니다.
-    if (looksLikePronounReply(content)) continue;
-    const category = categorize(content);
-    // 대시보드 출결 칸에는 결석·지각·조퇴만 올립니다(픽업은 아래 별도 칸에서 다룹니다).
-    if (!category || category === "픽업") continue;
-    const sentAt = new Date(m.created_at_google as string);
-    const targetDate = extractTargetDate(content, sentAt) ?? todayKey(sentAt);
-    if (targetDate !== todayK) continue; // 오늘 것만
-    const matched = matchRosterStudents(content, roster);
-    if (matched.length === 0) continue; // 이 부서 학생과 대조되지 않으면 넘어갑니다.
-    for (const st of matched) {
-      const key = `${st.name}-${category}`;
-      // 교사가 이미 직접 입력한 학생이면 그 값을 존중하고 덮어쓰지 않습니다.
-      if (absenceByKey.has(key)) continue;
-      const full = deptStudents.find((s) => s.name === st.name);
-      absenceByKey.set(key, {
-        name: st.displayName,
-        grade: st.grade,
-        className: (full?.class_name as string | null) ?? null,
-        status: category,
-        note: null,
-        contacted: false,
-      });
-    }
+  // (2-a) 행정실이 등록한 출결(attendance_entries) - 기간이 오늘을 품는 것만.
+  //
+  // 이게 이제 **구글챗·토들에서 온 출결의 유일한 통로**입니다.
+  //
+  // 예전에는 아래에서 구글챗 메시지를 매번 다시 파싱해 올렸는데, 원본 메시지에는 "처리했다"는
+  // 개념이 없어서 업무보드에서 아무리 지워도 다음 새로고침에 되살아났습니다
+  // (담당자: "기존게 계속 남아있어"). 지울 자리가 없었던 게 원인이라, 등록 여부를 담는 표를
+  // 따로 두고 대시보드는 그 표만 보게 했습니다. 지우면 지워진 채로 남습니다.
+  for (const e of await loadActiveEntries(supabase, todayK)) {
+    if (e.status === "픽업") continue; // 픽업은 아래 별도 칸에서 다룹니다.
+    const sid = e.student_id as string | null;
+    // 이 대시보드가 맡은 부서 학생이 아니면 올리지 않습니다.
+    if (sid ? !deptStudentIds.has(sid) : !deptStudents.some((s) => s.name === e.student_name)) continue;
+    const key = `${e.student_name}-${e.status}`;
+    if (absenceByKey.has(key)) continue; // 선생님이 직접 입력한 값을 덮어쓰지 않습니다.
+    absenceByKey.set(key, {
+      name: e.student_name as string,
+      grade: (e.grade as string | null) ?? null,
+      className: (e.class_name as string | null) ?? null,
+      status: e.status as string,
+      note: (e.note as string | null) ?? null,
+      contacted: false,
+    });
   }
 
-  // (3) 학부모 문의(pickup_requests)에서 온 결석·지각·픽업.
+  // 구글챗 메시지를 여기서 직접 파싱하던 자리였습니다. 위 (2-a)로 옮겼습니다 - 원본을 매번
+  // 다시 읽는 방식으로는 "처리했음"을 남길 데가 없어, 업무보드에서 지운 것이 계속 되살아났습니다.
+
+  // (3) 학부모 문의(pickup_requests)에서 온 픽업.
   //
   // 요청: "문의에서도 결석이나, 픽업 등 다 올라오는데 결석은 아직도 업무 대시보드에 1로 떠
   // 픽업은 심지어 0이야 제대로 반영해줘".
@@ -246,7 +246,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     const category = categorize(text);
     // kind='픽업'은 AI가 이미 픽업으로 확정한 건이라, 본문에 픽업 키워드가 없어도 픽업으로 봅니다.
     const treatAsPickup = r.kind === "픽업" || category === "픽업";
-    if (!treatAsPickup && !category) continue;
+    // 결석·지각은 여기서 다루지 않습니다 - attendance_entries(2-a)를 거쳐야 지운 것이 지워진
+    // 채로 남습니다. 이 칸은 픽업만 맡습니다.
+    if (!treatAsPickup) continue;
 
     const receivedAt = new Date((r.received_at as string) ?? Date.now());
     // 대상 날짜: 본문에 적힌 날짜(내일·금요일 등) > AI가 계산한 service_date > 받은 날.
@@ -271,15 +273,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     }
     if (resolved.length === 0) continue;
 
-    if (treatAsPickup) {
-      for (const st of resolved) pickupNamesFromReq.add(st.display);
-    } else {
-      for (const st of resolved) {
-        const key = `${st.name}-${category}`;
-        if (absenceByKey.has(key)) continue; // 교사 직접입력·구글챗을 덮어쓰지 않습니다.
-        absenceByKey.set(key, { name: st.display, grade: st.grade, className: st.className, status: category as string, note: null, contacted: false });
-      }
-    }
+    for (const st of resolved) pickupNamesFromReq.add(st.display);
   }
 
   const absences = [...absenceByKey.values()].sort(

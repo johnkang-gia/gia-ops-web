@@ -162,6 +162,118 @@ export function extractTargetDate(text: string, baseDate: Date): string | null {
   return null;
 }
 
+// ── 기간 파싱 ────────────────────────────────────────────────────────────────
+//
+// 요청: "출결의 경우 수요일까지라던지 이번주 금요일, 아니면 특정날짜까지 반영해서 출결
+// 특이사항에 반영해줘."
+//
+// extractTargetDate는 날짜 하나만 돌려줍니다. 그런데 학부모 연락의 상당수는 하루가 아니라
+// **기간**입니다 - "수요일까지 결석할게요"는 오늘·내일·수요일 사흘이 다 결석입니다. 하루로만
+// 읽으면 나머지 이틀은 아무 데도 안 남아서, 그 이틀 동안 아이를 찾게 됩니다.
+//
+// 여기서는 "언제부터 언제까지"를 뽑습니다. 끝날만 적힌 경우(대부분)가 흔해서, 시작은 문장에
+// 따로 없으면 **적힌 날**로 봅니다.
+export type TargetRange = { from: string; to: string };
+
+// 주말은 등교일이 아니라 기간에서 잘라냅니다. "금요일까지"를 목요일에 적었는데 토·일까지
+// 결석으로 남으면, 월요일 대시보드에 지난 주말이 유령처럼 떠 있게 됩니다.
+function trimToSchoolDays(from: Date, to: Date): { from: Date; to: Date } | null {
+  const f = new Date(from);
+  while (f <= to && (f.getDay() === 0 || f.getDay() === 6)) f.setDate(f.getDate() + 1);
+  const t = new Date(to);
+  while (t >= f && (t.getDay() === 0 || t.getDay() === 6)) t.setDate(t.getDate() - 1);
+  return f <= t ? { from: f, to: t } : null;
+}
+
+function addDays(d: Date, n: number): Date {
+  const x = new Date(d);
+  x.setDate(x.getDate() + n);
+  return x;
+}
+
+/**
+ * 문장에서 "언제부터 언제까지"를 뽑습니다. 날짜 언급이 전혀 없으면 null.
+ *
+ * baseDate는 그 문장이 적힌 날입니다(구글챗 메시지 시각 / 문의 받은 시각).
+ */
+export function extractTargetRange(text: string, baseDate: Date): TargetRange | null {
+  const base = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate());
+
+  // ① "N일간 / N일 동안" - 적힌 날부터 셉니다.
+  const span = text.match(/(\d{1,2})\s*일\s*(?:간|동안)/);
+  if (span) {
+    const n = Number(span[1]);
+    if (n >= 1 && n <= 30) return clamp(base, addDays(base, n - 1));
+  }
+
+  // ② "이번주 내내 / 이번주 끝까지" - 이번 주 금요일까지.
+  if (/이번\s*주\s*(?:내내|끝까지|말까지)/.test(text)) {
+    return clamp(base, addDays(base, (5 - base.getDay() + 7) % 7));
+  }
+
+  // ③ "~까지" 가 붙은 끝날. 이게 이 함수의 핵심입니다.
+  //
+  //    "까지" 앞부분만 떼어 extractTargetDate에 넘깁니다. 문장 전체를 넘기면 "오늘부터
+  //    수요일까지"에서 앞의 '오늘'이 먼저 잡혀 하루짜리가 돼버립니다.
+  const untilIdx = text.search(/까지/);
+  if (untilIdx > 0) {
+    const head = text.slice(0, untilIdx);
+    // '이번주 금요일까지'처럼 주 표현이 섞이면 '이번주'를 떼고 요일만 봅니다.
+    const endText = head.replace(/이번\s*주|금주/g, "").trim();
+    // 앞이 아니라 **뒤에서부터** 찾습니다.
+    //
+    // "오늘 몸이 안좋아서 금요일까지"에서 앞부터 훑으면 '오늘'이 먼저 걸려 하루짜리가 됩니다.
+    // 끝날은 '까지' 바로 앞에 붙는 말이므로, 오른쪽에서 가장 가까운 날짜 표현이 답입니다.
+    // 짧은 꼬리부터 길게 늘려가며 처음 걸리는 것이 곧 가장 오른쪽 표현입니다.
+    const end = lastDateIn(endText, base) ?? lastDateIn(head, base);
+    if (end) {
+      // 시작날: "오늘부터"/"내일부터"처럼 따로 적혀 있으면 그걸, 없으면 적힌 날.
+      const fromMatch = text.match(/(오늘|내일|모레|\d{1,2}\s*[./월]\s*\d{1,2}\s*일?)\s*부터/);
+      const start = fromMatch ? extractTargetDate(fromMatch[1], base) ?? toDateKey(base) : toDateKey(base);
+      return clamp(fromKey(start), fromKey(end));
+    }
+  }
+
+  // ④ 기간 표현이 없으면 하루짜리로 봅니다(기존 동작 그대로).
+  const one = extractTargetDate(text, base);
+  return one ? { from: one, to: one } : null;
+}
+
+// 문장에서 **가장 오른쪽** 날짜 표현을 찾습니다(위 주석 참고).
+function lastDateIn(text: string, base: Date): string | null {
+  for (let i = text.length - 1; i >= 0; i--) {
+    const hit = extractTargetDate(text.slice(i), base);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+function fromKey(key: string): Date {
+  const [y, m, d] = key.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+
+// 뒤집힌 기간을 바로잡고, 주말을 잘라내고, 너무 긴 기간은 자릅니다.
+//
+// 상한을 두는 이유: 날짜 파싱이 어긋나면(예: "12일"을 다음 달로 읽는 경우) 몇 주짜리 결석이
+// 잘못 만들어질 수 있습니다. 그런 실수가 조용히 굳는 것보다, 잘려서 사람 눈에 띄는 편이 낫습니다.
+const MAX_RANGE_DAYS = 21;
+
+function clamp(fromD: Date, toD: Date): TargetRange | null {
+  let a = fromD;
+  let b = toD;
+  if (b < a) [a, b] = [b, a];
+  if ((b.getTime() - a.getTime()) / 86_400_000 > MAX_RANGE_DAYS) b = addDays(a, MAX_RANGE_DAYS);
+  const trimmed = trimToSchoolDays(a, b);
+  if (!trimmed) return null; // 주말만 걸린 기간 - 등교일이 없습니다.
+  return { from: toDateKey(trimmed.from), to: toDateKey(trimmed.to) };
+}
+
+/** 이 기간이 그 날짜를 품고 있는지. */
+export function rangeCovers(range: { from: string; to: string }, dateKey: string): boolean {
+  return range.from <= dateKey && dateKey <= range.to;
+}
+
 // 학생 명부 한 명분(이름 대조에 필요한 최소 정보). nameEn은 영어이름 대조용(요청: "영어이름의
 // 경우 학생목록에서 대조해서 한글이름(영어이름)으로 병기표기").
 // birthDate는 생년월일("2019-05-10")입니다. 같은 학년에 같은 이름이 둘 있으면 학년으로는
@@ -755,6 +867,11 @@ export type AttendanceEntry = {
   sourceLabel: string;
   // 이 출결이 "언제"의 것인지(YYYY-MM-DD). 문장에 날짜/요일이 적혀 있으면 그 날, 없으면 적힌 날.
   targetDate: string;
+  // 기간으로 적힌 경우의 마지막 날("수요일까지"). 하루짜리면 targetDate와 같습니다.
+  targetDateTo?: string;
+  // 원본 메시지 id. attendance_entries(등록 상태)와 짝지을 때 씁니다 - 이게 있어야 인박스에서
+  // "이미 등록됨(초록 체크)"인지 "확인 필요(물음표)"인지 보여줄 수 있습니다.
+  messageId?: string;
 };
 
 // 날짜를 "오늘/내일/8월 12일 (금)" 형태로 보여줍니다.

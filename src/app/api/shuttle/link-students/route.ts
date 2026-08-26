@@ -170,6 +170,12 @@ export async function GET(req: NextRequest) {
   const linked: { id: string; raw: string; to: string; name: string }[] = [];
   const kinder: { id: string; raw: string; cls: string | null; stopId: string | null }[] = [];
   const review: { id: string; raw: string; cls: string | null; when: string | null; stopId: string | null; why: string; candidates?: string[] }[] = [];
+  // 퇴소: 유치부도 아닌데 명부에 없는 아이.
+  //
+  // 담당자 확인: "유치부도 아닌데 이름이 명단에 없는 아이들은 퇴소한 아이들로 넘겨줘."
+  // 명부가 절대 기준이므로, 유치부 반이 아닌데 명부에 없다면 답은 하나뿐입니다 - 나간 아이입니다.
+  // '확인필요'로 두면 아무도 손대지 않은 채 영영 남습니다. 사실을 그대로 적어두는 편이 낫습니다.
+  const left: { id: string; raw: string; when: string | null }[] = [];
 
   // 이 표에서 반 이름이 들어 있을 만한 칸을 찾습니다(이름을 모르므로 후보를 훑습니다).
   // 반 이름이 든 칸. 실제 칸 이름은 class_raw 였습니다("반 이름을 적힌 그대로 담는다"는 뜻).
@@ -249,7 +255,7 @@ export async function GET(req: NextRequest) {
     if (clsDept === null && cls) {
       review.push({ id, raw, cls, when, stopId, why: `명부에 없음 · 반 이름을 읽을 수 없음 ("${cls}")` });
     } else {
-      review.push({ id, raw, cls, when, stopId, why: "명부에 없음 - 유치부이거나 이름 표기가 다를 수 있습니다" });
+      left.push({ id, raw, when });
     }
   }
 
@@ -277,6 +283,10 @@ export async function GET(req: NextRequest) {
     for (const l of linked) {
       await db.from("shuttle_assignments").update({ student_id: l.to, unlinked_reason: null }).eq("id", l.id);
     }
+    for (let i = 0; i < left.length; i += 100) {
+      await db.from("shuttle_assignments").update({ unlinked_reason: "퇴소" })
+        .in("id", left.slice(i, i + 100).map((k) => k.id));
+    }
     for (let i = 0; i < kinder.length; i += 100) {
       await db.from("shuttle_assignments").update({ unlinked_reason: "유치부" })
         .in("id", kinder.slice(i, i + 100).map((k) => k.id));
@@ -299,6 +309,7 @@ export async function GET(req: NextRequest) {
         대상: rows?.length ?? 0,
         연결됨: linked.length,
         유치부표시: kinder.length,
+        퇴소표시: left.length,
         확인필요: review.length,
       },
       연결_예시: linked.slice(0, 15).map((l) => `${l.raw} → ${l.name}`),
@@ -331,6 +342,7 @@ export async function GET(req: NextRequest) {
           return acc;
         }, {}),
       ).sort(),
+      퇴소_이름들: [...new Set(left.map((l) => l.raw))].sort(),
       확인필요_목록: review.slice(0, 150),
       debug: {
         반칸으로_쓴_컬럼: classKey,

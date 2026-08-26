@@ -22,7 +22,7 @@ alter table public.shuttle_assignments
   add column if not exists unlinked_reason text;
 
 comment on column public.shuttle_assignments.unlinked_reason is
-  '학생과 연결되지 않은 이유. ''유치부''=별도 운영이라 연결하지 않음 / ''확인필요''=사람이 봐야 함 / ''외부''=우리 학생이 아님. student_id가 있으면 비어 있어야 합니다.';
+  '학생과 연결되지 않은 이유. ''유치부''=별도 운영이라 연결하지 않음 / ''퇴소''=유치부도 아닌데 명부에 없음(나간 아이) / ''확인필요''=동명이인 등 사람이 봐야 함. student_id가 있으면 비어 있어야 합니다.';
 
 -- 지금 있는 줄들에 임시로 표시를 답니다.
 -- 아직 무엇인지 모르므로 전부 '확인필요'입니다. 다음 단계(자동 매칭)에서 대부분 정리됩니다.

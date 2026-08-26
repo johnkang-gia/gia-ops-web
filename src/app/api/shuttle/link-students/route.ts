@@ -46,25 +46,66 @@ function norm(s: string): string {
 
 // "김재이(190510)" 처럼 생일을 붙여 쓴 표기를 나눕니다.
 // 같은 학년에 같은 이름이 둘 있을 때 선생님들이 실제로 쓰는 방식입니다.
-function splitBirthHint(raw: string): { name: string; birth: string | null } {
-  const m = raw.match(/^(.*?)[(（]\s*(\d{6})\s*[)）]\s*$/);
-  return m ? { name: m[1].trim(), birth: m[2] } : { name: raw.trim(), birth: null };
-}
+// (parseHint 로 대체됨 - 괄호 안이 생일 말고 반 코드·부서일 수도 있어서)
 
 function birthKey(d: string | null): string | null {
   const m = d?.match(/^(\d{4})-(\d{2})-(\d{2})/);
   return m ? `${m[1].slice(2)}${m[2]}${m[3]}` : null;
 }
 
-/** 반 이름으로 부서를 읽습니다. 못 읽으면 null. */
+/**
+ * 반 이름으로 부서를 읽습니다. 못 읽으면 null.
+ *
+ * 처음엔 "숫자 + 공백 + 영단어"만 유치부로 봤는데, 실제 데이터는 훨씬 지저분했습니다.
+ * 미리보기에서 나온 것들:
+ *
+ *   "5Falcon"            공백 없음
+ *   "Pelican 4"          영단어가 앞
+ *   "Emu 7"              영단어가 앞
+ *   "7Crane/5Toucan"     두 반을 겹쳐 씀
+ *   "Swan/"              잘려 있음
+ *   "7 Albatorss"        오타
+ *   "6 seahwak/4pelican" 오타 + 겹침
+ *
+ * 이걸 전부 규칙으로 잡으려 하면 끝이 없습니다. 그래서 뒤집었습니다 -
+ * **초등부·중고등부 형식이 아니면서 영문이 들어 있으면 유치부**입니다.
+ * 담당자가 알려준 대로 반 이름 형식은 세 가지뿐이니, 앞의 둘을 정확히 알면 나머지는 전부
+ * 유치부입니다. 새 새 이름(유치부 반은 새 이름을 씁니다)이 생겨도 규칙을 안 고쳐도 됩니다.
+ */
 export function departmentFromClassName(cls: string | null | undefined): "유치부" | "초등부" | "중고등부" | null {
   if (!cls) return null;
   const c = cls.trim();
-  if (/^\d+\s*(st|nd|rd|th)\s*grade/i.test(c)) return "중고등부";
-  if (/^g\s*\d+\s*[a-z]{1,2}$/i.test(c)) return "초등부";
-  // "4 sparrow" - 숫자 뒤에 영단어. 위 두 규칙에 걸리지 않은 것만 여기로 옵니다.
-  if (/^\d+\s+[a-z]{2,}/i.test(c)) return "유치부";
+  if (!c) return null;
+
+  // 중고등부: "6TH GRADE", "7th". 숫자 바로 뒤에 서수 어미가 **단어로 끊겨야** 합니다.
+  // (이 조건이 없으면 "5Starling"의 "5St"가 걸립니다.)
+  if (/\b\d+\s*(st|nd|rd|th)\b/i.test(c)) return "중고등부";
+
+  // 초등부: G + 학년 + 알파벳 1~2개. "G3A", "G5AB", "G 4 A", "G3J"
+  if (/\bg\s*\d+\s*[a-z]{1,2}\b/i.test(c)) return "초등부";
+
+  // 나머지 중 영문이 들어 있으면 유치부(새 이름).
+  if (/[a-z]{2,}/i.test(c)) return "유치부";
+
   return null;
+}
+
+/**
+ * "김재이(G3J)", "이준서(중등)", "김재이(190510)" 처럼 이름 뒤 괄호에 든 힌트를 읽습니다.
+ *
+ * 동명이인을 구분하려고 선생님들이 실제로 쓰는 표기입니다. 생일만 쓰는 줄 알았는데
+ * 미리보기에서 반 코드와 부서로 구분한 것들이 나왔습니다 - 사람은 그때그때 편한 걸 씁니다.
+ */
+function parseHint(raw: string): { name: string; birth: string | null; cls: string | null; dept: string | null } {
+  const m = raw.match(/^(.*?)[(（]\s*([^)）]+?)\s*[)）]\s*$/);
+  if (!m) return { name: raw.trim(), birth: null, cls: null, dept: null };
+  const name = m[1].trim();
+  const hint = m[2].trim();
+  if (/^\d{6}$/.test(hint)) return { name, birth: hint, cls: null, dept: null };
+  if (/^g\s*\d+\s*[a-z]{0,2}$/i.test(hint)) return { name, birth: null, cls: hint, dept: null };
+  if (/중등|중학|고등|고교/.test(hint)) return { name, birth: null, cls: null, dept: "중고등부" };
+  if (/초등/.test(hint)) return { name, birth: null, cls: null, dept: "초등부" };
+  return { name, birth: null, cls: null, dept: null };
 }
 
 // 한 칸에 이름이 둘 들어 있는 경우("김서준 김서연", "김서준/김서연")를 나눕니다.
@@ -162,12 +203,21 @@ export async function GET(req: NextRequest) {
     let ambiguous: Student[] | null = null;
 
     for (const cand of candidatesRaw) {
-      const { name, birth } = splitBirthHint(cand);
+      const { name, birth, cls: hintCls, dept: hintDept } = parseHint(cand);
       let hits = byName.get(norm(name)) ?? [];
-      if (hits.length > 1 && birth) {
-        const narrowed = hits.filter((s) => birthKey(s.birth_date) === birth);
-        if (narrowed.length > 0) hits = narrowed;
+
+      // 괄호 힌트로 좁힙니다. 좁혀서 하나도 안 남으면 힌트가 틀린 것이니 원래대로 둡니다
+      // (엉뚱한 학생에게 붙이는 것보다, 사람에게 넘기는 편이 낫습니다).
+      const narrow = (fn: (s: Student) => boolean) => {
+        const n = hits.filter(fn);
+        if (n.length > 0) hits = n;
+      };
+      if (hits.length > 1 && birth) narrow((s) => birthKey(s.birth_date) === birth);
+      if (hits.length > 1 && hintCls) narrow((s) => norm(s.class_name ?? "") === norm(hintCls));
+      if (hits.length > 1 && hintDept) {
+        narrow((s) => (departmentOf({ department: s.department, grade: s.grade }) ?? departmentFromClassName(s.class_name)) === hintDept);
       }
+
       if (hits.length === 1) { hit = hits[0]; break; }
       if (hits.length > 1) { ambiguous = hits; break; }
     }

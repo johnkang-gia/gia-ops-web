@@ -1,6 +1,7 @@
 "use client";
 
-import { useT } from "@/components/common/LanguageProvider";
+import { useT, useLang } from "@/components/common/LanguageProvider";
+import { periodLabel } from "@/lib/lang";
 
 export type TtPeriod = { id: string; department: string; periodNo: number; label: string; start: string; end: string };
 export type TtCell = { weekday: number; periodId: string; subject: string; teacher: string | null; classLabel: string | null; room: string | null };
@@ -276,6 +277,9 @@ function Timetable({
   render: (cell: TtCell) => React.ReactNode;
   emptyLabel: string;
 }) {
+  // 교시 이름(1교시·점심)은 DB에 한국어로만 저장되어 있어, 영어 화면에서도 여기만 한글로
+  // 남아 있었습니다(요청). 저장은 한 벌로 두고 화면에 낼 때만 언어에 맞춰 바꿉니다.
+  const { lang } = useLang();
   if (rowPeriods.length === 0) {
     return <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-xs text-slate-400">{emptyLabel}</p>;
   }
@@ -294,7 +298,7 @@ function Timetable({
           {rowPeriods.map((p) => (
             <tr key={p.id}>
               <td className="border border-slate-100 bg-slate-50 px-1 py-1 text-left">
-                <div className="font-semibold text-slate-600">{p.label}</div>
+                <div className="font-semibold text-slate-600">{periodLabel(p.label, lang)}</div>
                 <div className="text-[9px] text-slate-400">{p.start}~{p.end}</div>
               </td>
               {WEEKDAYS.map((wd) => {

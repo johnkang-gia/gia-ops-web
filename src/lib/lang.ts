@@ -42,6 +42,33 @@ export function normalizeLang(value: unknown): Lang {
 // 빈칸으로 남아 화면이 깨지는 것보다 낫습니다.
 export type T = (ko: string, en?: string) => string;
 
+// 교시 이름은 DB(wr_periods.label)에 한국어로 저장되어 있습니다("1교시", "점심"). 영어로 쓰는
+// 원어민 선생님 화면에서도 이 값만 한글로 남아 있었는데(요청: "1교시 한글표기되어있고"),
+// 저장된 값을 언어별로 두 벌 만들면 학기마다 교시를 고칠 때 한쪽만 고쳐져 어긋납니다.
+// 그래서 저장은 한 벌로 두고, 화면에 낼 때만 규칙으로 바꿔 씁니다.
+//   "3교시" → "Period 3" · "점심"/"중식" → "Lunch" · "방과후" → "After School"
+// 규칙에 없는 자유 입력 라벨은 그대로 둡니다(임의로 번역하면 오히려 못 알아봅니다).
+const PERIOD_LABEL_EN: Record<string, string> = {
+  점심: "Lunch",
+  중식: "Lunch",
+  석식: "Dinner",
+  아침: "Morning",
+  조회: "Homeroom",
+  종례: "Closing",
+  방과후: "After School",
+  자습: "Study",
+  휴식: "Break",
+};
+
+export function periodLabel(label: string | null | undefined, lang: Lang): string {
+  const raw = (label ?? "").trim();
+  if (!raw) return "";
+  if (lang !== "en") return raw;
+  const m = raw.match(/^(\d{1,2})\s*교시$/);
+  if (m) return `Period ${m[1]}`;
+  return PERIOD_LABEL_EN[raw] ?? raw;
+}
+
 export function makeT(lang: Lang): T {
   return (ko: string, en?: string) => (lang === "en" && en ? en : ko);
 }

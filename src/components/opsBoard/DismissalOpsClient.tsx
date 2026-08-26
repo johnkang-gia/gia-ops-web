@@ -759,49 +759,41 @@ function RouteFocusMap({ route, school, color, sc }: { route: RouteRow | null; s
           van.setMap(map); overlaysRef.current.push(van);
         }
 
-        // 화면 맞춤: 요청 "어느정도 도로 보이게 확대 (...) 계획노선과 지나온 노선이 어느정도
-        // 보이게 (...) 현재 위치를 보이도록". 운행 중(핑 있음)이면 현재 위치 주변(최근 자취 +
-        // 가까운 정류장)만 맞춰 도로가 보일 만큼 확대하고, 아직 출발 전이면 노선 전체를 보여줍니다.
-        const fitPts: { lat: number; lng: number }[] = [];
+        // 화면 맞춤.
+        //
+        // 담당자: "오른쪽 화면은 차량 트래킹이라서, 차량이 항상 가운데에 있어야 해."
+        //
+        // 그래서 **운행 중이면 차를 화면 정중앙에 고정**합니다. 예전에는 자취와 주변
+        // 정류장을 모두 담는 setBounds를 썼는데, 그러면 화면 중심이 그 덩어리의 한가운데가
+        // 되어 차는 가장자리로 밀립니다. 차가 움직일수록 자취가 뒤로 길어지므로 차는 점점
+        // 더 구석으로 갑니다 - 정확히 반대로 동작하고 있었습니다.
+        //
+        // 자취와 정류장은 그대로 그려지므로 지나온 길과 다음 정류장은 여전히 보입니다.
+        // 다만 화면의 기준점이 "덩어리"가 아니라 "차"가 됩니다.
         if (route.ping && route.pingFresh) {
-          fitPts.push({ lat: route.ping.lat, lng: route.ping.lng });
-          for (const p of trail.slice(-14)) fitPts.push(p);
-          // 현재 위치에서 대략 1.2km 안의 정류장·계획경로점만 포함(주변 맥락).
-          const near = (p: { lat: number; lng: number }) =>
-            Math.abs(p.lat - route.ping!.lat) < 0.011 && Math.abs(p.lng - route.ping!.lng) < 0.014;
-          for (const s of stopPts) if (near(s)) fitPts.push(s);
-          for (const p of planned) if (near(p)) fitPts.push(p);
+          // level 3 = 골목 이름까지 보이는 정도. 고정해 두어야 차가 멈췄다 움직일 때
+          // 배율이 출렁이지 않습니다.
+          if (typeof map.setLevel === "function") map.setLevel(3);
+          map.setCenter(new kakao.maps.LatLng(route.ping.lat, route.ping.lng));
         } else {
+          // 아직 출발 전이면 맞출 차가 없으니 노선 전체를 보여줍니다.
+          //
+          // GIA는 화면 맞추기에 넣지 않습니다. 하원 차는 학교에서 점점 멀어지므로 GIA까지
+          // 한 화면에 넣으려 하면 시간이 갈수록 계속 축소되고, 그러면 도로 이름이 사라져
+          // "지금 어디쯤인지"를 알 수 없게 됩니다.
+          const fitPts: { lat: number; lng: number }[] = [];
           for (const p of planned) fitPts.push(p);
           for (const s of stopPts) fitPts.push(s);
-          // GIA는 화면 맞추기에 넣지 않습니다.
-          //
-          // 담당자 요청: "오른쪽 두 개 화면은 GIA 꼭 안 보여도 되니까, 차가 어느 도로를
-          // 가는지 볼 수 있게 충분히 확대해줘."
-          //
-          // 하원 차는 학교에서 점점 멀어지므로 GIA까지 한 화면에 넣으려 하면 시간이 갈수록
-          // 계속 축소됩니다. 그러면 도로 이름이 사라져서 "지금 어디쯤인지"를 알 수 없게
-          // 됩니다. 이 화면의 목적은 학교와의 거리가 아니라 **차가 지금 어느 길에 있는지**라,
-          // 차 주변만 크게 보는 편이 맞습니다.
-        }
-        if (fitPts.length > 0) {
-          const b = new kakao.maps.LatLngBounds();
-          for (const p of fitPts) b.extend(new kakao.maps.LatLng(p.lat, p.lng));
-          map.setBounds(b, 30, 30, 30, 30);
-          // 도로가 보이는 배율로 붙잡아 둡니다.
-          //
-          //   level 3 = 골목까지 / level 5 = 큰길 이름이 보이는 정도 / level 7+ = 동네 덩어리
-          //
-          // 아래로는 3(멈춰 있으면 한 점이라 과확대되는 것 방지), 위로는 5(그 이상 축소되면
-          // 도로 이름이 사라짐)로 묶습니다.
-          if (typeof map.getLevel === "function") {
-            const lv = map.getLevel();
-            // 담당자: "차가 어느 도로를 가는지 볼 수 있게 충분히 확대해줘."
-            // level 3 = 골목 이름까지 보이는 정도. 4를 넘기면 큰길만 남습니다.
-            // 한 칸을 크게 쓰므로 더 바짝 붙여도 화면이 답답하지 않습니다.
-            // level 2 = 건물·골목 이름까지, 3 = 골목, 4를 넘으면 큰길만 남습니다.
-            if (lv < 2) map.setLevel(2);
-            else if (lv > 3) map.setLevel(3);
+          if (fitPts.length > 0) {
+            const b = new kakao.maps.LatLngBounds();
+            for (const p of fitPts) b.extend(new kakao.maps.LatLng(p.lat, p.lng));
+            map.setBounds(b, 30, 30, 30, 30);
+            if (typeof map.getLevel === "function") {
+              const lv = map.getLevel();
+              // level 2 = 건물·골목 이름까지, 3 = 골목, 4를 넘으면 큰길만 남습니다.
+              if (lv < 2) map.setLevel(2);
+              else if (lv > 5) map.setLevel(5);
+            }
           }
         }
       } catch {

@@ -34,6 +34,8 @@ export default function PilotMonitorClient({
   const [now, setNow] = useState(() => Date.now());
 
   const routeById = useMemo(() => new Map(routes.map((r) => [r.id, r])), [routes]);
+  // GPS 미연결 목록은 기본으로 접어둡니다 - 지금은 기기가 1대라 거의 전부가 여기 들어갑니다.
+  const [showNoGps, setShowNoGps] = useState(false);
   const pilotedRouteIds = useMemo(() => new Set(pilots.map((p) => p.route_id)), [pilots]);
   const availableRoutes = useMemo(
     () => routes.filter((r) => !pilotedRouteIds.has(r.id)).sort((a, b) => natCompare(a.route_no, b.route_no)),
@@ -168,26 +170,55 @@ export default function PilotMonitorClient({
         <p className="py-8 text-center text-sm text-slate-400">아직 노선 링크가 없습니다. 활성 노선을 등록하면 자동으로 만들어집니다.</p>
       )}
 
-      {pilots.map((pilot) => {
-        const route = routeById.get(pilot.route_id);
-        const pings = pingsByRoute[pilot.route_id] ?? [];
-        const events = eventsByRoute[pilot.route_id] ?? [];
-        const safety = safetyByRoute[pilot.route_id] ?? [];
-        return (
+      {/* GPS가 붙은 노선과 아직 안 붙은 노선을 나눠 보여줍니다.
+          담당자: "기록분석도 GPS 연결과 미연결을 구별해서 두 줄로 나오도록 해줘."
+          지금은 기기가 1대뿐이라 목록 대부분이 빈 카드입니다. 섞여 있으면 실제로 신호가
+          들어오는 노선을 찾는 데만 한참 걸립니다. */}
+      {(() => {
+        const withGps = pilots.filter((p) => (pingsByRoute[p.route_id] ?? []).length > 0);
+        const withoutGps = pilots.filter((p) => (pingsByRoute[p.route_id] ?? []).length === 0);
+        const card = (pilot: (typeof pilots)[number]) => (
           <PilotRouteCard
             key={pilot.id}
             pilot={pilot}
-            route={route}
-            pings={pings}
-            events={events}
-            safety={safety}
+            route={routeById.get(pilot.route_id)}
+            pings={pingsByRoute[pilot.route_id] ?? []}
+            events={eventsByRoute[pilot.route_id] ?? []}
+            safety={safetyByRoute[pilot.route_id] ?? []}
             now={now}
             onCopyLink={() => copyLink(pilot.token)}
             onOpenLink={() => openLink(pilot.token)}
             onToggleEnabled={() => toggleEnabled(pilot)}
           />
         );
-      })}
+        return (
+          <>
+            <div className="flex items-center gap-2 pt-1">
+              <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
+                🟢 GPS 연결 {withGps.length}
+              </span>
+              <span className="h-px flex-1 bg-emerald-200" />
+            </div>
+            {withGps.length === 0 ? (
+              <p className="px-1 py-2 text-xs text-slate-400">최근 신호가 들어온 노선이 없습니다.</p>
+            ) : (
+              withGps.map(card)
+            )}
+
+            <div className="flex items-center gap-2 pt-3">
+              <button
+                type="button"
+                onClick={() => setShowNoGps((v) => !v)}
+                className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-500 hover:bg-slate-200"
+              >
+                {showNoGps ? "▾" : "▸"} ⚪ GPS 미연결 {withoutGps.length}
+              </button>
+              <span className="h-px flex-1 bg-slate-200" />
+            </div>
+            {showNoGps && withoutGps.map(card)}
+          </>
+        );
+      })()}
     </div>
   );
 }

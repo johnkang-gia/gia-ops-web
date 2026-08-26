@@ -169,7 +169,7 @@ export async function GET(req: NextRequest) {
 
   const linked: { id: string; raw: string; to: string; name: string }[] = [];
   const kinder: { id: string; raw: string; cls: string | null }[] = [];
-  const review: { id: string; raw: string; cls: string | null; why: string; candidates?: string[] }[] = [];
+  const review: { id: string; raw: string; cls: string | null; when: string | null; why: string; candidates?: string[] }[] = [];
 
   // 이 표에서 반 이름이 들어 있을 만한 칸을 찾습니다(이름을 모르므로 후보를 훑습니다).
   // 반 이름이 든 칸. 실제 칸 이름은 class_raw 였습니다("반 이름을 적힌 그대로 담는다"는 뜻).
@@ -183,10 +183,13 @@ export async function GET(req: NextRequest) {
     const id = r.id as string;
     const raw = ((r.student_name_raw as string | null) ?? "").trim();
     const cls = classKey ? ((r[classKey] as string | null) ?? null) : null;
+    // 언제 만들어진 줄인지. 남은 것들이 전부 오래된 날짜면 **지난 학기 배정**이라는 뜻이라,
+    // 이름을 아무리 들여다봐도 명부에 없는 게 당연합니다. 그 판단을 숫자로 하기 위해 함께 냅니다.
+    const when = ((r.created_at as string | null) ?? null)?.slice(0, 10) ?? null;
     const clsDept = departmentFromClassName(cls);
 
     if (!raw) {
-      review.push({ id, raw: "(이름 없음)", cls, why: "이름 칸이 비어 있습니다" });
+      review.push({ id, raw: "(이름 없음)", cls, when, why: "이름 칸이 비어 있습니다" });
       continue;
     }
 
@@ -214,6 +217,12 @@ export async function GET(req: NextRequest) {
       };
       if (hits.length > 1 && birth) narrow((s) => birthKey(s.birth_date) === birth);
       if (hits.length > 1 && hintCls) narrow((s) => norm(s.class_name ?? "") === norm(hintCls));
+      // 반 코드가 명부의 반 이름과 표기가 달라 못 맞출 때가 있습니다("G3J" vs 명부 표기).
+      // 그래도 **학년**은 읽을 수 있습니다 - G3J의 3. 학년만으로도 대개 한 명으로 좁혀집니다.
+      if (hits.length > 1 && hintCls) {
+        const g = hintCls.match(/\d+/)?.[0];
+        if (g) narrow((s) => (s.grade ?? "").replace(/[^0-9]/g, "") === g);
+      }
       if (hits.length > 1 && hintDept) {
         narrow((s) => (departmentOf({ department: s.department, grade: s.grade }) ?? departmentFromClassName(s.class_name)) === hintDept);
       }
@@ -228,7 +237,7 @@ export async function GET(req: NextRequest) {
     }
     if (ambiguous) {
       review.push({
-        id, raw, cls,
+        id, raw, cls, when,
         why: `같은 이름이 ${ambiguous.length}명 - 생일이나 학년을 함께 적어주세요`,
         candidates: ambiguous.map((s) => `${s.name}${s.grade ? `(${s.grade})` : ""}${s.birth_date ? ` ${s.birth_date}` : ""}`),
       });
@@ -237,9 +246,9 @@ export async function GET(req: NextRequest) {
 
     // 명부에 없습니다. 반 이름이 유치부 형식이면 유치부, 아니면 사람이 봐야 합니다.
     if (clsDept === null && cls) {
-      review.push({ id, raw, cls, why: `명부에 없음 · 반 이름을 읽을 수 없음 ("${cls}")` });
+      review.push({ id, raw, cls, when, why: `명부에 없음 · 반 이름을 읽을 수 없음 ("${cls}")` });
     } else {
-      review.push({ id, raw, cls, why: "명부에 없음 - 유치부이거나 이름 표기가 다를 수 있습니다" });
+      review.push({ id, raw, cls, when, why: "명부에 없음 - 유치부이거나 이름 표기가 다를 수 있습니다" });
     }
   }
 
@@ -293,6 +302,15 @@ export async function GET(req: NextRequest) {
       },
       연결_예시: linked.slice(0, 15).map((l) => `${l.raw} → ${l.name}`),
       유치부_반이름: [...new Set(kinder.map((k) => k.cls ?? "(반 없음)"))].sort(),
+      // 남은 것들이 언제 만들어진 줄인지 한눈에. 전부 오래된 날짜면 지난 학기 배정이라
+      // 이름을 들여다볼 것이 아니라 정리 대상입니다.
+      확인필요_생성일_분포: Object.entries(
+        review.reduce<Record<string, number>>((acc, r) => {
+          const k = r.when?.slice(0, 7) ?? "(모름)";
+          acc[k] = (acc[k] ?? 0) + 1;
+          return acc;
+        }, {}),
+      ).sort(),
       확인필요_목록: review.slice(0, 150),
       debug: {
         반칸으로_쓴_컬럼: classKey,

@@ -749,14 +749,31 @@ function RouteFocusMap({ route, school, color, sc }: { route: RouteRow | null; s
         } else {
           for (const p of planned) fitPts.push(p);
           for (const s of stopPts) fitPts.push(s);
-          if (school) fitPts.push(school);
+          // GIA는 화면 맞추기에 넣지 않습니다.
+          //
+          // 담당자 요청: "오른쪽 두 개 화면은 GIA 꼭 안 보여도 되니까, 차가 어느 도로를
+          // 가는지 볼 수 있게 충분히 확대해줘."
+          //
+          // 하원 차는 학교에서 점점 멀어지므로 GIA까지 한 화면에 넣으려 하면 시간이 갈수록
+          // 계속 축소됩니다. 그러면 도로 이름이 사라져서 "지금 어디쯤인지"를 알 수 없게
+          // 됩니다. 이 화면의 목적은 학교와의 거리가 아니라 **차가 지금 어느 길에 있는지**라,
+          // 차 주변만 크게 보는 편이 맞습니다.
         }
         if (fitPts.length > 0) {
           const b = new kakao.maps.LatLngBounds();
           for (const p of fitPts) b.extend(new kakao.maps.LatLng(p.lat, p.lng));
           map.setBounds(b, 30, 30, 30, 30);
-          // 너무 바짝 붙지 않게(멈춰 있으면 window가 한 점이라 과확대) 최소 도로 스케일 확보.
-          if (typeof map.getLevel === "function" && map.getLevel() < 4) map.setLevel(4);
+          // 도로가 보이는 배율로 붙잡아 둡니다.
+          //
+          //   level 3 = 골목까지 / level 5 = 큰길 이름이 보이는 정도 / level 7+ = 동네 덩어리
+          //
+          // 아래로는 3(멈춰 있으면 한 점이라 과확대되는 것 방지), 위로는 5(그 이상 축소되면
+          // 도로 이름이 사라짐)로 묶습니다.
+          if (typeof map.getLevel === "function") {
+            const lv = map.getLevel();
+            if (lv < 3) map.setLevel(3);
+            else if (lv > 5) map.setLevel(5);
+          }
         }
       } catch {
         if (!cancelled) setMapError("지도를 불러오지 못했습니다.");

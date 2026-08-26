@@ -39,6 +39,92 @@ type Row = {
   grade: string | null;
 };
 
+// 배정 한 줄의 학생 칸.
+//
+// 연결된 아이는 **명부의 이름**을, 연결 안 된 아이는 적힌 원문을 흐리게 보여주고 왜 안 됐는지를
+// 답니다. 예전처럼 원문만 그리면 "이 이름이 명부의 그 아이인지" 알 방법이 없었습니다.
+const REASON_CHIP: Record<string, { label: string; cls: string; help: string }> = {
+  유치부: { label: "유치", cls: "bg-amber-50 text-amber-600", help: "유치부 - 기사님이 이 정류장에 들르는 이유입니다. 명부와 연결하지 않습니다." },
+  퇴소: { label: "퇴소", cls: "bg-slate-100 text-slate-400", help: "유치부도 아닌데 명부에 없는 아이입니다. 배정을 정리할 대상입니다." },
+  확인필요: { label: "확인", cls: "bg-red-50 text-red-500", help: "동명이인 등으로 자동 연결이 안 됐습니다. 사람이 지정해야 합니다." },
+};
+
+function StudentCell({
+  d,
+  raw,
+  students,
+  onLink,
+}: {
+  d: { name: string; grade: string | null; linked: boolean; reason: string | null };
+  raw: string;
+  students: StudentLite[];
+  onLink: (studentId: string | null) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+
+  // 고칠 수 없는 화면은 보여주기만 하는 화면입니다. 여기서 바로 붙일 수 있어야
+  // "확인필요"가 실제로 줄어듭니다 - 다른 화면으로 넘어가야 하면 아무도 안 합니다.
+  if (editing) {
+    return (
+      <select
+        autoFocus
+        defaultValue={d.linked ? "" : ""}
+        onBlur={() => setEditing(false)}
+        onChange={(e) => {
+          onLink(e.target.value || null);
+          setEditing(false);
+        }}
+        className="w-24 shrink-0 rounded border border-blue-300 bg-white px-1 py-0.5 text-[10px] outline-none"
+      >
+        <option value="">{d.linked ? "(연결 해제)" : "학생 선택…"}</option>
+        {students.map((s) => (
+          <option key={s.id} value={s.id}>
+            {s.name}
+            {s.grade ? ` (${s.grade})` : ""}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
+  if (d.linked) {
+    return (
+      <button
+        type="button"
+        onClick={() => setEditing(true)}
+        className="flex w-24 shrink-0 items-center gap-1 truncate text-left"
+        title={raw !== d.name ? `명단 표기: ${raw} · 눌러서 바꾸기` : `${d.name} · 눌러서 바꾸기`}
+      >
+        <span className="truncate text-[11px] font-semibold text-slate-700">{d.name}</span>
+      </button>
+    );
+  }
+  return <UnlinkedCell d={d} onEdit={() => setEditing(true)} />;
+}
+
+function UnlinkedCell({
+  d,
+  onEdit,
+}: {
+  d: { name: string; reason: string | null };
+  onEdit: () => void;
+}) {
+  {
+    const chip = REASON_CHIP[d.reason ?? "확인필요"] ?? REASON_CHIP.확인필요;
+    return (
+      <button
+        type="button"
+        onClick={onEdit}
+        className="flex w-24 shrink-0 items-center gap-1 truncate text-left"
+        title={chip.help + " · 눌러서 학생을 지정할 수 있습니다"}
+      >
+        <span className="truncate text-[11px] font-medium text-slate-400">{d.name}</span>
+        <span className={"shrink-0 rounded px-1 text-[9px] font-bold " + chip.cls}>{chip.label}</span>
+      </button>
+    );
+  }
+}
+
 export default function AssignmentClient({
   routes,
   stops,
@@ -62,14 +148,52 @@ export default function AssignmentClient({
   const routeById = useMemo(() => new Map(routes.map((r) => [r.id, r])), [routes]);
   const stopById = useMemo(() => new Map(stops.map((s) => [s.id, s])), [stops]);
 
-  // 학생별 학년 조회용 - 배정에는 학년이 없어서, 명부(students)에서 student_id 또는 이름으로
-  // 찾아옵니다. 명부에 없는 유치부·중고등부 학생은 학년을 알 수 없어 정렬에서 맨 뒤로 갑니다.
-  const gradeByStudentId = useMemo(() => new Map(students.map((s) => [s.id, s.grade])), [students]);
-  const gradeByName = useMemo(() => new Map(students.map((s) => [s.name.split("(")[0].trim(), s.grade])), [students]);
+  // ── 명부와의 연결 ────────────────────────────────────────────────────────
+  //
+  // 담당자: "노선·배정 탭에 아이들이 제대로 우리 명부와 매칭되지 않아."
+  //
+  // 원인: 이 화면이 **student_name_raw(적힌 그대로의 문자열)만 보고 있었습니다.** 배정에
+  // student_id를 채워 넣어도 화면은 여전히 원문을 그리니, 연결이 됐는지 안 됐는지 알 수가
+  // 없었습니다. 이름이 조금만 달라도(공백·꼬리표) 명부와 따로 놀고요.
+  //
+  // 이제 student_id로 명부에서 찾아 **명부의 이름·학년**을 보여주고, 연결이 안 된 줄은
+  // 왜 안 됐는지(유치부/퇴소/확인필요)를 눈에 보이게 답니다. 화면이 데이터의 실제 상태를
+  // 그대로 비추게 하는 것이 요점입니다 - 그래야 뭘 고쳐야 하는지 보입니다.
+  const studentById = useMemo(() => new Map(students.map((s) => [s.id, s])), [students]);
+
+  type Display = { name: string; grade: string | null; linked: boolean; reason: string | null };
+  function displayFor(a: ShuttleAssignment): Display {
+    const s = a.student_id ? studentById.get(a.student_id) : undefined;
+    if (s) return { name: s.name, grade: s.grade ?? null, linked: true, reason: null };
+    return {
+      name: a.student_name_raw,
+      grade: null,
+      linked: false,
+      reason: a.unlinked_reason ?? "확인필요",
+    };
+  }
 
   function gradeFor(a: ShuttleAssignment): string | null {
-    if (a.student_id && gradeByStudentId.has(a.student_id)) return gradeByStudentId.get(a.student_id) ?? null;
-    return gradeByName.get(a.student_name_raw) ?? null;
+    return displayFor(a).grade;
+  }
+
+  /** 배정 한 줄을 학생에게 붙이거나(또는 떼거나) 합니다. */
+  async function linkStudent(a: ShuttleAssignment, studentId: string | null) {
+    const supabase = createClient();
+    // CHECK 제약: student_id가 있으면 unlinked_reason은 비어 있어야 하고, 없으면 반드시 있어야
+    // 합니다. 둘을 항상 함께 바꿔야 저장이 됩니다.
+    const patch = studentId
+      ? { student_id: studentId, unlinked_reason: null }
+      : { student_id: null, unlinked_reason: "확인필요" };
+    setAssignments((prev) => prev.map((x) => (x.id === a.id ? { ...x, ...patch } : x)));
+    const { error } = await supabase.from("shuttle_assignments").update(patch).eq("id", a.id);
+    if (error) {
+      notify("바꾸지 못했습니다: " + error.message, "error");
+      setAssignments((prev) => prev.map((x) => (x.id === a.id ? a : x)));
+      return;
+    }
+    const s = studentId ? studentById.get(studentId) : null;
+    notify(s ? `${a.student_name_raw} → ${s.name} 으로 연결했습니다` : "연결을 해제했습니다", "success");
   }
 
   // 요청 2: "탑승배정의 경우, 학생학년별, 셔틀호수별로 정렬해서 볼 수 있게... 우선적으로 셔틀
@@ -90,7 +214,7 @@ export default function AssignmentClient({
       g.rows.sort((x, y) => {
         const gd = gradeSortKey(x.grade) - gradeSortKey(y.grade);
         if (gd !== 0) return gd;
-        return x.assignment.student_name_raw.localeCompare(y.assignment.student_name_raw, "ko");
+        return displayFor(x.assignment).name.localeCompare(displayFor(y.assignment).name, "ko");
       });
     }
     return [...groups.values()].sort((x, y) => {
@@ -101,13 +225,34 @@ export default function AssignmentClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [assignments, direction, stopById, routeById]);
 
+  // 연결 상태 요약. 화면 위에 숫자로 떠 있어야 "지금 몇 개가 안 붙어 있는지"가 보입니다.
+  const linkSummary = useMemo(() => {
+    let linked = 0;
+    const byReason = new Map<string, number>();
+    for (const g of busGroups) {
+      for (const r of g.rows) {
+        const d = displayFor(r.assignment);
+        if (d.linked) linked += 1;
+        else byReason.set(d.reason ?? "확인필요", (byReason.get(d.reason ?? "확인필요") ?? 0) + 1);
+      }
+    }
+    return { linked, byReason: [...byReason.entries()].sort((a, b) => b[1] - a[1]) };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busGroups, studentById]);
+
   const visibleGroups = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return busGroups;
     return busGroups
       .map((g) => {
         const routeMatches = `${g.route.route_no} ${g.route.name ?? ""}`.toLowerCase().includes(q);
-        const rows = routeMatches ? g.rows : g.rows.filter((r) => r.assignment.student_name_raw.toLowerCase().includes(q));
+        // 원문과 명부 이름 둘 다로 찾습니다 - 선생님은 어느 쪽으로 기억하고 계실지 모릅니다.
+        const rows = routeMatches
+          ? g.rows
+          : g.rows.filter((r) => {
+              const d = displayFor(r.assignment);
+              return d.name.toLowerCase().includes(q) || r.assignment.student_name_raw.toLowerCase().includes(q);
+            });
         return { ...g, rows };
       })
       .filter((g) => g.rows.length > 0);
@@ -202,6 +347,20 @@ export default function AssignmentClient({
         <span className="shrink-0 text-[11px] text-slate-400">
           {direction} {visibleGroups.reduce((n, g) => n + g.rows.length, 0)}명 · {visibleGroups.length}개 호차
         </span>
+        {/* 명부 연결 상태 - 이름 옆 회색 꼬리표가 몇 개인지 위에서 바로 보이게. */}
+        <span className="flex shrink-0 items-center gap-1 text-[10px]">
+          <span className="rounded bg-emerald-50 px-1.5 py-0.5 font-bold text-emerald-700" title="명부와 연결된 배정">
+            명부연결 {linkSummary.linked}
+          </span>
+          {linkSummary.byReason.map(([reason, n]) => {
+            const chip = REASON_CHIP[reason] ?? REASON_CHIP.확인필요;
+            return (
+              <span key={reason} className={"rounded px-1.5 py-0.5 font-bold " + chip.cls} title={chip.help}>
+                {reason} {n}
+              </span>
+            );
+          })}
+        </span>
       </div>
 
       <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
@@ -277,9 +436,7 @@ export default function AssignmentClient({
               <div className="space-y-1">
                 {g.rows.map(({ assignment: a, grade }) => (
                   <div key={a.id} className="flex flex-wrap items-center gap-2 rounded-lg bg-slate-50 px-2.5 py-1.5">
-                    <span className="w-24 shrink-0 truncate text-[11px] font-semibold text-slate-700" title={a.student_name_raw}>
-                      {a.student_name_raw}
-                    </span>
+                    <StudentCell d={displayFor(a)} raw={a.student_name_raw} students={students} onLink={(sid) => linkStudent(a, sid)} />
                     {grade && <span className="shrink-0 rounded-full bg-white px-1.5 py-0.5 text-[9px] text-slate-400">{grade}학년</span>}
                     {a.class_raw && !grade && (
                       <span className={"shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-semibold " + DIVISION_BADGE[divisionFromClassRaw(a.class_raw)]}>

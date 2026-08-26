@@ -901,6 +901,11 @@ export type ShuttleAssignment = {
   guardian_phone: string | null;
   note: string | null;
   created_at: string;
+  /**
+   * 학생과 연결되지 않은 이유. student_id가 있으면 비어 있습니다.
+   * '유치부' = 별도 운영이라 연결하지 않음 / '퇴소' = 명부에 없는(나간) 아이 / '확인필요' = 사람이 봐야 함
+   */
+  unlinked_reason?: string | null;
 };
 
 export type ShuttleBoardingStatus = "예정" | "탑승" | "미탑승" | "결석" | "픽업";

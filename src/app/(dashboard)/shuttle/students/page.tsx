@@ -35,7 +35,7 @@ export default async function ShuttleAssignmentsPage() {
     supabase.from("shuttle_routes").select("*").order("direction").order("sort_order"),
     supabase.from("shuttle_stops").select("*").order("seq"),
     supabase.from("shuttle_assignments").select("*"),
-    supabase.from("wr_students").select("id, name, grade, class_name").eq("status", "active").order("name"),
+    supabase.from("wr_students").select("id, name, grade, class_name").eq("status", "active").eq("is_demo", false).order("name"),
   ]);
 
   return (

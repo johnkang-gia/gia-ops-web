@@ -7,7 +7,7 @@
 // 같은 버전이 이미 놓여 있을 때만 건너뜁니다.
 //
 // 예전에는 버전을 따지지 않아서, 확장을 새로고침해도 낡은 다리가 그대로 남아 있었습니다.
-const BRIDGE_VERSION = "2.1.0";
+const BRIDGE_VERSION = "2.5.0";
 if (window.__giaBridgeVersion !== BRIDGE_VERSION) {
   window.__giaBridgeVersion = BRIDGE_VERSION;
   install();
@@ -57,4 +57,60 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
   return false;
 });
+
+// ── 새 메시지가 오면 곧바로 알리기(어깨 두드리기) ───────────────────────────────
+//
+// 지금까지는 배경 일꾼이 1분마다 "새 거 있나요?"를 물었습니다. 그런데 **1분은 크롬이 허용하는
+// 가장 짧은 주기**라(chrome.alarms의 하한) 그 아래로는 내릴 수가 없습니다.
+//
+// 담당자 확인: "미뤄지면 픽업인데 그 알림이 오기 전에 차에 태워버리는 경우 있어서."
+// 1분 늦게 반영되면 아이가 이미 차에 타 있을 수 있습니다. 시계를 더 빨리 돌릴 수 없다면,
+// **묻지 말고 알림을 받으면** 됩니다.
+//
+// 사무실 PC에는 토들 탭이 늘 열려 있습니다. 새 메시지가 오면 그 탭의 화면이 바뀌므로,
+// 화면 변화를 지켜보다가 배경 일꾼의 어깨를 두드립니다. 1분 주기는 그대로 두어 안전망으로
+// 남깁니다 - 화면 구조가 바뀌어 이 감지가 헛돌더라도 예전만큼은 동작합니다.
+//
+// 두 가지를 봅니다.
+//   ① 탭 제목 - 토들은 안 읽은 개수를 제목에 "(3) ..." 처럼 씁니다. 가장 확실한 신호라
+//      바뀌는 즉시 두드립니다.
+//   ② 본문 - 제목이 안 바뀌는 경우(이미 안 읽음이 있던 방에 한 건 더 오는 등)를 위한 보조
+//      신호입니다. 스크롤·애니메이션에도 반응하므로 조용해질 때까지 기다렸다가, 그리고
+//      한동안 두드린 적이 없을 때만 두드립니다.
+const QUIET_MS = 1200; // 화면이 이만큼 잠잠해지면 "다 그려졌다"고 봅니다
+const BODY_COOLDOWN_MS = 20_000; // 본문 신호는 이 간격보다 자주 두드리지 않습니다
+
+let lastNudgeAt = 0;
+let quietTimer = null;
+
+function nudge(reason, cooldownMs) {
+  const now = Date.now();
+  if (now - lastNudgeAt < cooldownMs) return;
+  lastNudgeAt = now;
+  // 배경 일꾼이 잠들어 있으면 이 메시지가 깨웁니다. 이미 수집 중이면 배경 쪽에서 무시합니다.
+  try {
+    chrome.runtime.sendMessage({ cmd: "nudge", reason }, () => void chrome.runtime.lastError);
+  } catch {
+    /* 확장이 새로고침되는 중이면 실패할 수 있습니다 - 1분 주기가 받아줍니다 */
+  }
+}
+
+// ① 탭 제목
+// 이 스크립트는 document_start에 돌기 때문에 <title>이 아직 없을 수 있습니다. 생길 때까지 기다립니다.
+function watchTitle() {
+  const el = document.querySelector("title");
+  if (!el) return void setTimeout(watchTitle, 500);
+  new MutationObserver(() => nudge("title", 3_000)).observe(el, { childList: true, characterData: true, subtree: true });
+}
+watchTitle();
+
+// ② 본문
+function watchBody() {
+  if (!document.body) return void setTimeout(watchBody, 500);
+  new MutationObserver(() => {
+    if (quietTimer) clearTimeout(quietTimer);
+    quietTimer = setTimeout(() => nudge("dom", BODY_COOLDOWN_MS), QUIET_MS);
+  }).observe(document.body, { childList: true, subtree: true });
+}
+watchBody();
 }

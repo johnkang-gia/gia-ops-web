@@ -95,7 +95,7 @@ export function shouldRunShuttleCron(now: Date = new Date()): boolean {
 // 비용은 감당 가능합니다 - 크론 문지기와 셔틀 크론 통합으로 월 800시간 넘게 비웠고,
 // 이 구간을 근무시간 전체로 넓혀도 그중 100시간 남짓만 다시 씁니다.
 export const CHAT_PEAK_WINDOWS: TrackWindow[] = [
-  { startMinute: hm(7, 0), endMinute: hm(20, 0), label: "근무시간" },
+  { startMinute: hm(7, 0), endMinute: hm(19, 0), label: "근무시간" },
 ];
 
 export function isChatPollPeakHour(now: Date = new Date()): boolean {

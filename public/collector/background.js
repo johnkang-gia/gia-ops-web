@@ -347,7 +347,34 @@ chrome.runtime.onStartup.addListener(() => {
 chrome.alarms.onAlarm.addListener((a) => {
   if (a.name === ALARM) runOnce();
 });
+// 토들 탭이 "화면이 바뀌었어요"라고 두드릴 때(content.js) 곧바로 확인합니다.
+//
+// 1분 주기는 크롬이 허용하는 하한이라 더 줄일 수 없습니다. 대신 새 메시지가 오는 그 순간
+// 탭이 알려주면 기다릴 이유가 없습니다 - 픽업 연락이 1분 늦으면 아이가 이미 차에 타 있을 수
+// 있습니다. 1분 주기는 안전망으로 그대로 둡니다.
+//
+// 근무시간 밖에는 두드려도 무시합니다. 밤에 누가 토들 탭을 스크롤하는 것만으로 수집이
+// 도는 일을 막습니다(서버의 크론 시간대와 같은 기준: 평일 07~19시).
+function isWorkHours() {
+  const p = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Seoul",
+    weekday: "short",
+    hour: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date());
+  const day = p.find((x) => x.type === "weekday")?.value;
+  const hour = Number(p.find((x) => x.type === "hour")?.value ?? "0");
+  if (day === "Sat" || day === "Sun") return false;
+  return hour >= 7 && hour < 19;
+}
+
 chrome.runtime.onMessage.addListener((msg, _s, sendResponse) => {
+  if (msg?.cmd === "nudge") {
+    // running 이면 runOnce가 알아서 그냥 돌아섭니다 - 겹쳐 도는 일은 없습니다.
+    if (isWorkHours()) runOnce();
+    sendResponse({ ok: true });
+    return false;
+  }
   // 팝업에서 [지금 확인]을 누를 때
   if (msg?.cmd === "runNow") {
     runOnce().then(() => sendResponse({ ok: true }));

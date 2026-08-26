@@ -22,6 +22,8 @@ import { APP_VERSION } from "@/lib/version";
 import LunchCountdown from "./LunchCountdown";
 import InquiryBoard from "./InquiryBoard";
 import { useSmartPoll } from "@/lib/useSmartPoll";
+import { createClient } from "@/lib/supabase/client";
+import { OPS_REFRESH_CHANNEL, OPS_REFRESH_EVENT } from "@/lib/opsRefresh";
 
 // 요청: "바뀌면 자동으로 새로고침해서 페이지를 수정해줘"
 //
@@ -178,7 +180,31 @@ export default function OpsBoardClient({ token }: { token: string }) {
   }, [load]);
   // 서버 호출 절감(Vercel 무료 한도): 화면이 안 보이면 멈추고, 하원 시간대(평일 14~19시)가
   // 아니면 느리게 돕니다. 대형 모니터에 하루 종일 띄워둬도 호출량이 크게 줄어듭니다.
-  useSmartPoll(load, { activeMs: POLL_MS, idleMs: IDLE_POLL_MS });
+  // 빠른 주기를 쓰는 시간대를 학교가 돌아가는 내내(평일 07~20시)로 넓혔습니다.
+  //
+  // 예전에는 하원 시간대(14~19시)에만 15초였고 그 밖에는 120초였습니다. 서버 호출을 줄이려고
+  // 넣은 값인데, 이 화면은 사무실 벽에 하루 종일 띄워두고 계속 쳐다보는 모니터입니다. 오전에
+  // 업무 보드에서 문의를 처리해도 대시보드에서 2분이 지나야 사라지니 "반영이 안 된다"고
+  // 느껴질 수밖에 없었습니다(요청). 사람이 없는 밤·주말에만 느리게 돌면 충분합니다.
+  useSmartPoll(load, { activeMs: POLL_MS, idleMs: IDLE_POLL_MS, activeFromHour: 7, activeToHour: 20 });
+
+  // 즉시 반영 - 업무 보드에서 문의를 처리하면 그 순간 이 화면도 다시 불러옵니다.
+  //
+  // 폴링만으로는 아무리 촘촘해도 최대 한 주기(15초)만큼 늦습니다. 처리한 문의가 화면에 남아
+  // 있는 동안 다른 사람이 또 처리하려 들 수 있어서, 이런 화면은 "곧" 말고 "즉시"여야 합니다.
+  // 표를 직접 구독하지 않고 방송(broadcast)을 쓰는 이유: 이 화면은 로그인 없이 토큰으로만
+  // 열리는데, pickup_requests 표 구독은 로그인 사용자(is_giamicro_user)에게만 허용되어 있어
+  // 아무 소식도 받지 못합니다. 방송은 표 권한과 무관한 단순 신호라 이 화면에서도 받습니다.
+  useEffect(() => {
+    const supabase = createClient();
+    const channel = supabase
+      .channel(OPS_REFRESH_CHANNEL)
+      .on("broadcast", { event: OPS_REFRESH_EVENT }, () => void load())
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [load]);
 
   // 새 버전이 올라오면 스스로 새로고침합니다.
   //

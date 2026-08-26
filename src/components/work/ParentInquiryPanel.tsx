@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
+import { notifyOpsBoardRefresh } from "@/lib/opsRefresh";
 import { useToast } from "@/components/common/ToastProvider";
 import { toKoreanDisplayName, type RosterEntry } from "@/lib/pickupParse";
 
@@ -222,7 +223,11 @@ export default function ParentInquiryPanel({
     if (error) {
       notify("바꾸지 못했습니다: " + error.message, "error");
       load();
+      return;
     }
+    // 사무실 벽면 모니터(운영 대시보드)에서도 바로 사라지도록 신호를 보냅니다 - 폴링을
+    // 기다리면 이미 처리한 문의가 화면에 남아 다른 사람이 또 처리하려 들 수 있습니다.
+    void notifyOpsBoardRefresh();
   }
 
   async function toTask(row: Inquiry) {
@@ -276,6 +281,8 @@ export default function ParentInquiryPanel({
       setActed((p) => ({ ...p, [r.id]: action }));
       notify(`${json.studentName} · ${action} 처리했습니다(하원 체크표에 반영됨).`, "success");
       load();
+      // 이 처리도 문의를 완료로 넘기므로, 벽면 모니터에서도 바로 사라지게 신호를 보냅니다.
+      void notifyOpsBoardRefresh();
     } finally {
       setBusy(false);
     }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { departmentOf } from "@/lib/department";
+import { departmentFromClassName } from "@/lib/shuttleDivision";
 
 // 셔틀 배정(shuttle_assignments)의 이름 문자열을 학생 ID로 승격시킵니다.
 //
@@ -53,42 +54,12 @@ function birthKey(d: string | null): string | null {
   return m ? `${m[1].slice(2)}${m[2]}${m[3]}` : null;
 }
 
-/**
- * 반 이름으로 부서를 읽습니다. 못 읽으면 null.
- *
- * 처음엔 "숫자 + 공백 + 영단어"만 유치부로 봤는데, 실제 데이터는 훨씬 지저분했습니다.
- * 미리보기에서 나온 것들:
- *
- *   "5Falcon"            공백 없음
- *   "Pelican 4"          영단어가 앞
- *   "Emu 7"              영단어가 앞
- *   "7Crane/5Toucan"     두 반을 겹쳐 씀
- *   "Swan/"              잘려 있음
- *   "7 Albatorss"        오타
- *   "6 seahwak/4pelican" 오타 + 겹침
- *
- * 이걸 전부 규칙으로 잡으려 하면 끝이 없습니다. 그래서 뒤집었습니다 -
- * **초등부·중고등부 형식이 아니면서 영문이 들어 있으면 유치부**입니다.
- * 담당자가 알려준 대로 반 이름 형식은 세 가지뿐이니, 앞의 둘을 정확히 알면 나머지는 전부
- * 유치부입니다. 새 새 이름(유치부 반은 새 이름을 씁니다)이 생겨도 규칙을 안 고쳐도 됩니다.
- */
-export function departmentFromClassName(cls: string | null | undefined): "유치부" | "초등부" | "중고등부" | null {
-  if (!cls) return null;
-  const c = cls.trim();
-  if (!c) return null;
-
-  // 중고등부: "6TH GRADE", "7th". 숫자 바로 뒤에 서수 어미가 **단어로 끊겨야** 합니다.
-  // (이 조건이 없으면 "5Starling"의 "5St"가 걸립니다.)
-  if (/\b\d+\s*(st|nd|rd|th)\b/i.test(c)) return "중고등부";
-
-  // 초등부: G + 학년 + 알파벳 1~2개. "G3A", "G5AB", "G 4 A", "G3J"
-  if (/\bg\s*\d+\s*[a-z]{1,2}\b/i.test(c)) return "초등부";
-
-  // 나머지 중 영문이 들어 있으면 유치부(새 이름).
-  if (/[a-z]{2,}/i.test(c)) return "유치부";
-
-  return null;
-}
+// 반 이름 판정은 화면(배차표)과 **같은 규칙**을 써야 합니다.
+//
+// 예전에는 이 파일과 shuttleDivision.ts가 서로 다른 규칙을 갖고 있었습니다. 그래서 매칭은
+// 유치부로 봤는데 배차표는 "중고등부·미상"으로 그리는 일이 생겼습니다 - 같은 데이터를 두
+// 곳에서 다르게 읽으면 어느 쪽이 맞는지 아무도 알 수 없습니다. shuttleDivision.ts 하나로
+// 합쳤습니다(departmentFromClassName).
 
 /**
  * "김재이(G3J)", "이준서(중등)", "김재이(190510)" 처럼 이름 뒤 괄호에 든 힌트를 읽습니다.

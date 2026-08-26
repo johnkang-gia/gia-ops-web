@@ -5,13 +5,23 @@ import { departmentOf } from "@/lib/department";
 
 // 셔틀 배정(shuttle_assignments)의 이름 문자열을 학생 ID로 승격시킵니다.
 //
-// 배경: 462줄 중 444줄이 student_name_raw("김서준") 문자열로만 붙어 있습니다. 문자열로는
-// 6년을 이을 수 없습니다 - 동명이인·개명·오탈자에 다 끊깁니다.
+// ── 이 코드의 유일한 원칙 ────────────────────────────────────────────────────
 //
-// 유치부는 붙이지 않습니다(담당자 확인): 유치부 아이는 기사님이 그 정류장에 들르는 이유로만
-// 명단에 있고, 별도 프로그램으로 따로 운영합니다. 그래서 '연결 실패'가 아니라
-// **'유치부라서 연결 안 함'** 으로 명시해 둡니다 - 나중에 누가 봐도 미완성이 아니라 결정임을
-// 알 수 있어야 합니다.
+// 담당자 확인: "우리에게는 정확한 초등학교·중고등학교 아이들의 명부가 있어. 이걸 기준으로
+// 이외의 모든 명단은 제외. (...) 지금 우리 명단(초등 101명, 중고등 36명)을 **절대적 기준**으로
+// 삼고 분류해줘."
+//
+// 그래서 이 코드는 추측하지 않습니다. **명부에 있으면 우리 학생, 없으면 아닙니다.**
+// 반 이름 규칙은 명부에 없는 줄이 "왜" 없는지를 설명하는 데만 씁니다 - 없는 아이를 있다고
+// 만들어내지 않습니다.
+//
+// 반 이름 규칙(담당자 설명):
+//   유치부   "4 sparrow"      숫자 + 영단어
+//   초등부   "G3A", "G5AB"    G + 학년 + 알파벳 1~2개
+//   중고등부 "6TH GRADE"      숫자 + TH/ST/ND/RD + GRADE
+//
+// 유치부는 연결하지 않습니다. 기사님이 그 정류장에 들르는 이유로만 명단에 있고, 별도
+// 프로그램으로 따로 운영하기 때문입니다.
 //
 // 사용법 (로그인한 채로 브라우저에서 열면 됩니다):
 //   GET  /api/shuttle/link-students          → 미리보기. 아무것도 바꾸지 않습니다.
@@ -20,27 +30,53 @@ import { departmentOf } from "@/lib/department";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-type Student = { id: string; name: string; name_en: string | null; grade: string | null; department: string | null; birth_date: string | null };
+type Student = {
+  id: string;
+  name: string;
+  name_en: string | null;
+  grade: string | null;
+  department: string | null;
+  birth_date: string | null;
+  class_name: string | null;
+};
 
-// 이름 대조용으로 다듬습니다 - 공백·괄호를 없애고 소문자로.
-// "김 서준", "김서준 ", "Kim Seojun" 이 서로 다른 이름으로 갈라지지 않게 합니다.
 function norm(s: string): string {
   return s.toLowerCase().replace(/\s+/g, "").replace(/[()（）]/g, "").trim();
 }
 
-// "김재이(190510)" 처럼 생일을 붙여 쓴 표기에서 생일 부분을 떼어냅니다.
+// "김재이(190510)" 처럼 생일을 붙여 쓴 표기를 나눕니다.
 // 같은 학년에 같은 이름이 둘 있을 때 선생님들이 실제로 쓰는 방식입니다.
 function splitBirthHint(raw: string): { name: string; birth: string | null } {
   const m = raw.match(/^(.*?)[(（]\s*(\d{6})\s*[)）]\s*$/);
-  if (m) return { name: m[1].trim(), birth: m[2] };
-  return { name: raw.trim(), birth: null };
+  return m ? { name: m[1].trim(), birth: m[2] } : { name: raw.trim(), birth: null };
 }
 
-// 생년월일 "2019-05-10" 을 "190510" 으로.
 function birthKey(d: string | null): string | null {
-  if (!d) return null;
-  const m = d.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  const m = d?.match(/^(\d{4})-(\d{2})-(\d{2})/);
   return m ? `${m[1].slice(2)}${m[2]}${m[3]}` : null;
+}
+
+/** 반 이름으로 부서를 읽습니다. 못 읽으면 null. */
+export function departmentFromClassName(cls: string | null | undefined): "유치부" | "초등부" | "중고등부" | null {
+  if (!cls) return null;
+  const c = cls.trim();
+  if (/^\d+\s*(st|nd|rd|th)\s*grade/i.test(c)) return "중고등부";
+  if (/^g\s*\d+\s*[a-z]{1,2}$/i.test(c)) return "초등부";
+  // "4 sparrow" - 숫자 뒤에 영단어. 위 두 규칙에 걸리지 않은 것만 여기로 옵니다.
+  if (/^\d+\s+[a-z]{2,}/i.test(c)) return "유치부";
+  return null;
+}
+
+// 한 칸에 이름이 둘 들어 있는 경우("김서준 김서연", "김서준/김서연")를 나눕니다.
+// 담당자 확인: "이름은 두 개인데 반이 한 개만 적힌 경우". 먼저 통째로 대조해보고, 안 되면
+// 쪼개서 각각 대조합니다 - 통째로 맞는 이름을 괜히 쪼개지 않기 위해서입니다.
+function splitNames(raw: string): string[] {
+  const parts = raw.split(/[,/·|]|\s{2,}/).map((s) => s.trim()).filter(Boolean);
+  if (parts.length > 1) return parts;
+  // 구분자가 없으면 공백으로. 한글 이름 2~4자가 둘 이상 붙어 있을 때만 쪼갭니다.
+  const tokens = raw.trim().split(/\s+/);
+  if (tokens.length >= 2 && tokens.every((t) => /^[가-힣]{2,4}$/.test(t))) return tokens;
+  return [raw.trim()];
 }
 
 export async function GET(req: NextRequest) {
@@ -56,102 +92,124 @@ export async function GET(req: NextRequest) {
   const apply = req.nextUrl.searchParams.get("apply") === "1";
 
   const [{ data: studentRows }, { data: rows }] = await Promise.all([
-    db.from("wr_students").select("id, name, name_en, grade, department, birth_date").eq("is_demo", false),
-    db.from("shuttle_assignments").select("id, student_id, student_name_raw").is("student_id", null),
+    db.from("wr_students").select("id, name, name_en, grade, department, birth_date, class_name").eq("is_demo", false),
+    // 칸을 콕 집지 않고 전부 가져옵니다 - 이 표는 마이그레이션 밖에서 만들어져서 어떤 칸이
+    // 있는지 코드로 확신할 수 없습니다. 아래 debug에 실제 칸 목록을 함께 돌려줍니다.
+    db.from("shuttle_assignments").select("*").is("student_id", null),
   ]);
 
-  const students = (studentRows ?? []) as Student[];
+  const all = (studentRows ?? []) as Student[];
 
-  // 이름 → 학생들. 동명이인이 있으면 여러 명이 담깁니다.
+  // ── 명부 = 절대 기준 ──────────────────────────────────────────────────────
+  // 초등부·중고등부만 대조 대상입니다. 유치부는 명부에 있더라도 연결하지 않습니다.
+  const roster = all.filter((s) => {
+    const d = departmentOf({ department: s.department, grade: s.grade }) ?? departmentFromClassName(s.class_name);
+    return d === "초등부" || d === "중고등부";
+  });
+
   const byName = new Map<string, Student[]>();
   const add = (k: string, s: Student) => {
     if (!k) return;
-    const arr = byName.get(k) ?? [];
-    arr.push(s);
-    byName.set(k, arr);
+    byName.set(k, [...(byName.get(k) ?? []), s]);
   };
-  for (const s of students) {
+  for (const s of roster) {
     add(norm(s.name ?? ""), s);
     if (s.name_en) add(norm(s.name_en), s);
   }
 
-  const linked: { id: string; raw: string; to: string; name: string; dept: string | null }[] = [];
-  const kinder: { id: string; raw: string }[] = [];
-  const review: { id: string; raw: string; why: string; candidates?: string[] }[] = [];
+  const linked: { id: string; raw: string; to: string; name: string }[] = [];
+  const kinder: { id: string; raw: string; cls: string | null }[] = [];
+  const review: { id: string; raw: string; cls: string | null; why: string; candidates?: string[] }[] = [];
 
-  for (const r of rows ?? []) {
+  // 이 표에서 반 이름이 들어 있을 만한 칸을 찾습니다(이름을 모르므로 후보를 훑습니다).
+  const sample = (rows ?? [])[0] as Record<string, unknown> | undefined;
+  const classKey = sample
+    ? ["class_name", "class_label", "class", "grade_label", "homeroom", "grade"].find((k) => k in sample) ?? null
+    : null;
+
+  for (const r of (rows ?? []) as Record<string, unknown>[]) {
+    const id = r.id as string;
     const raw = ((r.student_name_raw as string | null) ?? "").trim();
+    const cls = classKey ? ((r[classKey] as string | null) ?? null) : null;
+    const clsDept = departmentFromClassName(cls);
+
     if (!raw) {
-      review.push({ id: r.id as string, raw: "(이름 없음)", why: "이름 칸이 비어 있습니다" });
+      review.push({ id, raw: "(이름 없음)", cls, why: "이름 칸이 비어 있습니다" });
       continue;
     }
 
-    const { name, birth } = splitBirthHint(raw);
-    let hits = byName.get(norm(name)) ?? [];
-
-    // 생일 힌트가 있으면 그걸로 좁힙니다("김재이(190510)").
-    if (hits.length > 1 && birth) {
-      const narrowed = hits.filter((s) => birthKey(s.birth_date) === birth);
-      if (narrowed.length > 0) hits = narrowed;
-    }
-
-    if (hits.length === 0) {
-      // 명부에 없는 이름 - 유치부이거나 외부 아이일 가능성이 높습니다.
-      // 여기서 자동으로 '유치부'라고 단정하지 않습니다. 사람이 확인해야 합니다.
-      review.push({ id: r.id as string, raw, why: "명부에 없는 이름" });
+    // 반 이름이 유치부면 명부를 볼 것도 없습니다.
+    if (clsDept === "유치부") {
+      kinder.push({ id, raw, cls });
       continue;
     }
 
-    if (hits.length > 1) {
+    // 통째로 → 안 되면 쪼개서. 여러 명이 나오면 첫 명만 연결하고 나머지는 사람에게 넘깁니다
+    // (한 줄에 두 아이를 넣는 것은 이 표 구조로는 표현할 수 없습니다).
+    const candidatesRaw = [raw, ...splitNames(raw).filter((n) => n !== raw)];
+    let hit: Student | null = null;
+    let ambiguous: Student[] | null = null;
+
+    for (const cand of candidatesRaw) {
+      const { name, birth } = splitBirthHint(cand);
+      let hits = byName.get(norm(name)) ?? [];
+      if (hits.length > 1 && birth) {
+        const narrowed = hits.filter((s) => birthKey(s.birth_date) === birth);
+        if (narrowed.length > 0) hits = narrowed;
+      }
+      if (hits.length === 1) { hit = hits[0]; break; }
+      if (hits.length > 1) { ambiguous = hits; break; }
+    }
+
+    if (hit) {
+      linked.push({ id, raw, to: hit.id, name: hit.name });
+      continue;
+    }
+    if (ambiguous) {
       review.push({
-        id: r.id as string,
-        raw,
-        why: `같은 이름이 ${hits.length}명`,
-        candidates: hits.map((s) => `${s.name}${s.grade ? `(${s.grade})` : ""}${s.birth_date ? ` ${s.birth_date}` : ""}`),
+        id, raw, cls,
+        why: `같은 이름이 ${ambiguous.length}명 - 생일이나 학년을 함께 적어주세요`,
+        candidates: ambiguous.map((s) => `${s.name}${s.grade ? `(${s.grade})` : ""}${s.birth_date ? ` ${s.birth_date}` : ""}`),
       });
       continue;
     }
 
-    const s = hits[0];
-    const dept = departmentOf({ department: s.department, grade: s.grade });
-
-    // 유치부는 연결하지 않고 그렇게 표시만 합니다(담당자 요청).
-    if (dept === "유치부") {
-      kinder.push({ id: r.id as string, raw });
-      continue;
+    // 명부에 없습니다. 반 이름이 유치부 형식이면 유치부, 아니면 사람이 봐야 합니다.
+    if (clsDept === null && cls) {
+      review.push({ id, raw, cls, why: `명부에 없음 · 반 이름을 읽을 수 없음 ("${cls}")` });
+    } else {
+      review.push({ id, raw, cls, why: "명부에 없음 - 유치부이거나 이름 표기가 다를 수 있습니다" });
     }
-
-    linked.push({ id: r.id as string, raw, to: s.id, name: s.name, dept });
   }
 
   if (apply) {
-    // 연결
     for (const l of linked) {
       await db.from("shuttle_assignments").update({ student_id: l.to, unlinked_reason: null }).eq("id", l.id);
     }
-    // 유치부 표시
     for (let i = 0; i < kinder.length; i += 100) {
-      await db
-        .from("shuttle_assignments")
-        .update({ unlinked_reason: "유치부" })
+      await db.from("shuttle_assignments").update({ unlinked_reason: "유치부" })
         .in("id", kinder.slice(i, i + 100).map((k) => k.id));
     }
-    // 나머지는 '확인필요' 그대로 둡니다.
   }
 
   return NextResponse.json(
     {
       ok: true,
       mode: apply ? "반영함" : "미리보기 (아무것도 바꾸지 않았습니다)",
+      명부기준: { 대조대상: roster.length, 전체학생행: all.length },
       요약: {
         대상: rows?.length ?? 0,
         연결됨: linked.length,
         유치부표시: kinder.length,
         확인필요: review.length,
       },
-      확인필요_목록: review.slice(0, 200),
-      유치부_이름들: [...new Set(kinder.map((k) => k.raw))].sort(),
-      연결_예시: linked.slice(0, 20).map((l) => `${l.raw} → ${l.name}${l.dept ? ` (${l.dept})` : ""}`),
+      연결_예시: linked.slice(0, 15).map((l) => `${l.raw} → ${l.name}`),
+      유치부_반이름: [...new Set(kinder.map((k) => k.cls ?? "(반 없음)"))].sort(),
+      확인필요_목록: review.slice(0, 150),
+      debug: {
+        반칸으로_쓴_컬럼: classKey,
+        shuttle_assignments_컬럼: sample ? Object.keys(sample) : [],
+      },
     },
     { headers: { "Cache-Control": "no-store" } },
   );

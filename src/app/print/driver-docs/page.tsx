@@ -200,9 +200,25 @@ function DriverDocsInner() {
                 <td>학교 도착을 100m 안에서 정확히 잡습니다</td>
               </tr>
               <tr>
-                <td>Interval / Distance / Angle</td>
-                <td>30 / 0 / 0</td>
-                <td>30초마다 한 번씩 보냅니다</td>
+                <td>Interval (간격)</td>
+                <td>30 (초)</td>
+                <td>운행 중 30초마다 위치를 확인합니다</td>
+              </tr>
+              <tr>
+                <td>
+                  <b>★ Distance (거리)</b>
+                </td>
+                <td>
+                  <b>80 (m)</b>
+                </td>
+                <td>
+                  80m 이상 움직였을 때만 보냅니다. 차가 서 있는 밤·주말에는 아무것도 보내지 않아 데이터·배터리를 아낍니다
+                </td>
+              </tr>
+              <tr>
+                <td>Angle (각도)</td>
+                <td>0</td>
+                <td>방향이 바뀔 때마다 추가로 보내지 않습니다</td>
               </tr>
               <tr>
                 <td>

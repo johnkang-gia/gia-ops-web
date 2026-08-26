@@ -92,7 +92,7 @@ async function handle(params: URLSearchParams) {
 
   const { data: device } = await supabase
     .from("shuttle_tracker_devices")
-    .select("id, route_id, enabled, always_on")
+    .select("id, route_id, enabled, always_on, last_hit_at, last_hit_reason")
     .eq("device_id", deviceId)
     .maybeSingle();
 
@@ -104,11 +104,23 @@ async function handle(params: URLSearchParams) {
   // 진단: 앱이 신호를 보냈다는 사실 자체를 기기에 기록해 둡니다(요청: "앱 로그 가져오게 못하나").
   // reason으로 "저장됨 / 시간대밖 / 좌표없음"을 남겨, 셔틀탭에서 왜 위치가 안 뜨는지 바로 봅니다.
   const nowIso = new Date().toISOString();
-  const markHit = (reason: string, alsoSeen: boolean) =>
-    supabase
+  // 신호 도달 기록은 1분에 한 번만 씁니다.
+  //
+  // 기기가 35대로 늘면 이 한 줄이 그대로 곱해집니다. 30초마다 들어오는 핑마다 기기 행을
+  // 업데이트하면, 저장할 위치(핑 insert)와 같은 수만큼 UPDATE가 더 생깁니다 - 정작 이 값은
+  // 화면에서 "몇 분 전 신호"를 보여주는 용도라 분 단위면 충분합니다. 마지막 기록이 1분 안이면
+  // 건너뛰어, 같은 정보를 얻으면서 쓰기를 절반으로 줄입니다.
+  // 상태(reason)가 바뀌는 순간은 진단에 중요하므로 그때는 주기와 상관없이 남깁니다.
+  const HIT_THROTTLE_MS = 60_000;
+  const lastHitAt = device.last_hit_at ? new Date(device.last_hit_at as string).getTime() : 0;
+  const markHit = (reason: string, alsoSeen: boolean) => {
+    const reasonChanged = device.last_hit_reason !== reason;
+    if (!reasonChanged && Date.now() - lastHitAt < HIT_THROTTLE_MS) return Promise.resolve();
+    return supabase
       .from("shuttle_tracker_devices")
       .update({ last_hit_at: nowIso, last_hit_reason: reason, ...(alsoSeen ? { last_seen_at: nowIso } : {}) })
       .eq("id", device.id);
+  };
 
   let lat = pickNumber(params, "lat", "latitude");
   let lng = pickNumber(params, "lon", "lng", "longitude");

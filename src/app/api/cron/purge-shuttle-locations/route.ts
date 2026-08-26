@@ -17,6 +17,17 @@ import { logApiError } from "@/lib/logging";
 // 아니라 "이 정류장이 어디인가"라는 장소 정보이고, 원본 위치 기록에서 이미 평균만 뽑아낸 값입니다.
 const RETENTION_DAYS = 90;
 
+// 위치 원본(점 하나하나)만 더 짧게 둡니다.
+//
+// 기기가 35대로 늘면 이 표가 연 240만 행까지 갑니다 - 전체 데이터 증가량의 8할이 여기입니다.
+// 그런데 며칠만 지나면 실제로 들여다보는 것은 원본 점이 아니라 거기서 뽑아낸 요약입니다:
+// 정류장 도착(shuttle_stop_arrivals) · 정차 관측(shuttle_stop_observations) · 운행 이벤트
+// (shuttle_run_events)는 그대로 90일 남습니다. "지난달 그 차가 몇 시에 어느 정류장에
+// 도착했나"는 요약만으로 답할 수 있고, 원본 점이 필요한 것은 "오늘·이번 주 경로를 지도에
+// 그려보는" 정도라 30일이면 충분합니다. 동의서의 "90일 뒤 삭제" 약속보다 더 짧으므로
+// 약속을 어기는 방향이 아닙니다.
+const PING_RETENTION_DAYS = 30;
+
 // 픽업 연락의 원문은 더 짧게 둡니다. 위치와 달리 "지난달 그 차가 몇 시에 도착했나" 같은 확인
 // 용도가 없고, 학부모가 쓴 문장 그대로라 더 민감합니다. 30일이면 그달의 착오를 되짚기에 충분합니다.
 const PICKUP_TEXT_RETENTION_DAYS = 30;
@@ -38,10 +49,11 @@ export async function GET(req: NextRequest) {
     const cutoff = new Date(Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
     // 위치 원본(기사님 휴대폰이 보낸 점 하나하나)
+    const pingCutoff = new Date(Date.now() - PING_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
     const { data: pings, error: pingError } = await supabase
       .from("shuttle_pilot_pings")
       .delete()
-      .lt("recorded_at", cutoff)
+      .lt("recorded_at", pingCutoff)
       .select("id");
     if (pingError) throw pingError;
 

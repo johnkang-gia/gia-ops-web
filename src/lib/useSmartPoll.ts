@@ -26,16 +26,18 @@ export type SmartPollOptions = {
   enabled?: boolean;
 };
 
-function kstHourAndDay(): { hour: number; day: number } {
+function kstHourAndDay(): { hour: number; minute: number; day: number } {
   const p = new Intl.DateTimeFormat("en-US", {
     timeZone: "Asia/Seoul",
     weekday: "short",
     hour: "2-digit",
+    minute: "2-digit",
     hour12: false,
   }).formatToParts(new Date());
   const map: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
   return {
     hour: Number(p.find((x) => x.type === "hour")?.value ?? "0"),
+    minute: Number(p.find((x) => x.type === "minute")?.value ?? "0"),
     day: map[p.find((x) => x.type === "weekday")?.value ?? "Mon"] ?? 1,
   };
 }
@@ -68,10 +70,21 @@ export function useSmartPoll(fn: () => void | Promise<void>, opts: SmartPollOpti
     let stopped = false;
 
     const currentDelay = () => {
-      const { hour, day } = kstHourAndDay();
+      const { hour, minute, day } = kstHourAndDay();
       const weekday = day >= 1 && day <= 5;
       const inWindow = hour >= activeFromHour && hour < activeToHour;
-      return inWindow && (weekday || activeOnWeekend) ? activeMs : idleMs;
+      if (inWindow && (weekday || activeOnWeekend)) return activeMs;
+
+      // 쉬는 시간에는 아주 띄엄띄엄 돌되, 근무 시작 시각을 넘겨서 자지는 않습니다.
+      //
+      // 밤에 30분씩 자면 호출은 거의 없어져서 좋은데, 그 상태로 두면 06:45에 잠든 화면이
+      // 07:15에야 깨어나 근무 시작 15분 동안 낡은 화면을 띄우고 있게 됩니다. 그래서 다음
+      // 근무 시작까지 남은 시간과 견줘 더 짧은 쪽으로 잡습니다 - 07:00 정각에 깨어납니다.
+      // (자정을 넘겨야 하는 경우는 하루를 더해 계산합니다.)
+      const nowMin = hour * 60 + minute;
+      const startMin = activeFromHour * 60;
+      const untilStartMin = nowMin < startMin ? startMin - nowMin : 24 * 60 - nowMin + startMin;
+      return Math.min(idleMs, untilStartMin * 60 * 1000 + 1000);
     };
 
     const schedule = () => {

@@ -170,7 +170,7 @@ export default function DismissalOpsClient({
   // 오른쪽 화면이 노선을 하나씩 순환하며 보여줄 때 지금 몇 번째인지(요청: "각 노선별로 순환").
   const [focusIdx, setFocusIdx] = useState(0);
   useEffect(() => {
-    const t = setInterval(() => setFocusIdx((n) => n + 1), 7000);
+    const t = setInterval(() => setFocusIdx((n) => n + 1), 6000);
     return () => clearInterval(t);
   }, []);
   // 일정 시간 안 움직이면 마우스 커서를 숨깁니다(요청).
@@ -309,7 +309,15 @@ export default function DismissalOpsClient({
         const trackable = data.routes.filter((r) => r.pingFresh || (r.trail?.length ?? 0) > 0);
         const focusList = trackable.length > 0 ? trackable : data.routes;
         const total = focusList.length;
-        const per = 2; // 오른쪽은 위아래 2칸으로, 겹치지 않게 순환(요청). 지금은 27호만 있어 한 칸에 27호.
+        // 오른쪽은 **한 칸**입니다.
+        //
+        // 담당자: "왼쪽 지도는 넓게 전체 노선 운행상황을 트래킹하는 거고, 오른쪽은 차량이 어느
+        // 골목을 가는지 세밀한 지도를 보려는 의도라서 오른쪽 두 개 화면을 하나로 줄이고
+        // 충분히 확대해줘."
+        //
+        // 두 칸으로 나누면 각 칸이 작아져서 골목이 안 보입니다. 넓게 보는 일은 왼쪽이 이미
+        // 하고 있으니, 오른쪽은 한 칸을 크게 쓰고 순환 주기로 여러 노선을 훑는 편이 낫습니다.
+        const per = 1;
         const start = total > 0 ? (focusIdx * per) % total : 0;
         const slots: (RouteRow | null)[] = [];
         for (let k = 0; k < per; k += 1) slots.push(k < total ? focusList[(start + k) % total] : null);
@@ -317,11 +325,11 @@ export default function DismissalOpsClient({
         return (
           <div style={{ flex: sc.narrow ? "1 1 42%" : "1 1 55%", minHeight: 0, display: "flex", gap: sc.s(8, 5), padding: `0 ${sc.s(14, 8)}px` }}>
             {/* 왼쪽(7): 전체 지도 - 작은 번호 점 */}
-            <div style={{ flex: "7 1 0", minWidth: 0 }}>
+            <div style={{ flex: "6 1 0", minWidth: 0 }}>
               <AllRoutesMap routes={data.routes} school={data.school} testMarkers={data.testMarkers ?? []} />
             </div>
-            {/* 오른쪽(3): 노선을 위아래 2칸으로 순환하며 가까이(위에서 본 밴) */}
-            <div style={{ flex: "3 1 0", minWidth: 0, display: "grid", gridTemplateColumns: "1fr", gridTemplateRows: "1fr 1fr", gap: sc.s(6, 4) }}>
+            {/* 오른쪽(4): 한 칸을 크게 - 골목이 보이도록 */}
+            <div style={{ flex: "4 1 0", minWidth: 0, display: "grid", gridTemplateColumns: "1fr", gridTemplateRows: "1fr", gap: sc.s(6, 4) }}>
               {slots.map((r, k) => (
                 <div key={k} style={{ minWidth: 0, minHeight: 0 }}>
                   <RouteFocusMap route={r} school={data.school} color={colorOf(r)} sc={sc} />
@@ -790,8 +798,10 @@ function RouteFocusMap({ route, school, color, sc }: { route: RouteRow | null; s
             const lv = map.getLevel();
             // 담당자: "차가 어느 도로를 가는지 볼 수 있게 충분히 확대해줘."
             // level 3 = 골목 이름까지 보이는 정도. 4를 넘기면 큰길만 남습니다.
-            if (lv < 3) map.setLevel(3);
-            else if (lv > 4) map.setLevel(4);
+            // 한 칸을 크게 쓰므로 더 바짝 붙여도 화면이 답답하지 않습니다.
+            // level 2 = 건물·골목 이름까지, 3 = 골목, 4를 넘으면 큰길만 남습니다.
+            if (lv < 2) map.setLevel(2);
+            else if (lv > 3) map.setLevel(3);
           }
         }
       } catch {

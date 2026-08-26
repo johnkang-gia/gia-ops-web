@@ -855,7 +855,18 @@ select st.id,a.student,nullif(a.class_raw,''),a.weekdays,nullif(a.phone,''),u.st
       union all
       select public.norm_name(pattern),student_id from attendance_learning_rules where kind='alias' and student_id is not null
     ) z group by key having count(distinct id)=1
-  ) u on u.key=public.norm_name(a.student);
+  ) u on u.key=public.norm_name(a.student)
+ -- ★ 명부에 연결된 학생만 태웁니다.
+ --
+ -- 담당자: "이전에 하원체크표에는 (유치부) 애들 없었어. 기준을 애써서 확실하게 하원차량을
+ --          찾았는데 새로운 명단을 또 아무런 제약 없이 들여버렸어."
+ --
+ -- 맞습니다. 제가 엑셀 시트를 통째로 밀어 넣었습니다. 그 시트에는 유치부 아이와 등교 구간까지
+ -- 섞여 있는데 아무 조건 없이 다 넣어서, 애써 정리해 두신 하원 명단을 덮어버렸습니다.
+ --
+ -- 정류장은 엑셀대로 다 만듭니다(기사님이 들르는 이유가 남아야 하니까요). 다만 **체크표에
+ -- 오르는 사람은 명부의 우리 학생뿐**입니다.
+ where u.student_id is not null;
 
 commit;
 

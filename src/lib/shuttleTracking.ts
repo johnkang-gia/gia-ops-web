@@ -88,12 +88,14 @@ export function shouldRunShuttleCron(now: Date = new Date()): boolean {
 //
 // 창 밖이라고 아예 건너뛰지는 않습니다 - 셔틀 위치와 달리 채팅은 "안 보면 영영 놓치는" 자료라,
 // 창 밖에서는 25초 루프 대신 딱 한 번만 확인합니다(그래도 1분 안에는 들어옵니다).
+// 담당자 확인(2차): "구글챗이나 토들 같은 경우 굉장히 중요한 거라서 업무시간에 바로바로
+// 업데이트되어야 해." 그래서 아침·하원 두 토막으로 나누지 않고 **근무시간 전체**를 촘촘한
+// 구간으로 둡니다. 출결·픽업 연락은 예고 없이 들어오고, 놓쳤을 때의 대가가 비용보다 큽니다.
+//
+// 비용은 감당 가능합니다 - 크론 문지기와 셔틀 크론 통합으로 월 800시간 넘게 비웠고,
+// 이 구간을 근무시간 전체로 넓혀도 그중 100시간 남짓만 다시 씁니다.
 export const CHAT_PEAK_WINDOWS: TrackWindow[] = [
-  // 아침 - 당일 결석·지각 연락이 등원 전에 몰립니다.
-  { startMinute: hm(7, 0), endMinute: hm(9, 0), label: "아침 출결" },
-  // 하원 준비 - 4시 하원 두 시간 전부터 픽업 연락이 들어오기 시작합니다.
-  // 하원 지도(15:50~16:30)까지 끊기지 않고 이어지도록 한 구간으로 묶었습니다.
-  { startMinute: hm(14, 0), endMinute: hm(16, 30), label: "하원 준비·지도" },
+  { startMinute: hm(7, 0), endMinute: hm(20, 0), label: "근무시간" },
 ];
 
 export function isChatPollPeakHour(now: Date = new Date()): boolean {

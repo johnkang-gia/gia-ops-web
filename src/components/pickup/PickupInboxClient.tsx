@@ -38,6 +38,8 @@ export type StudentOption = {
   class_name?: string | null;
   name_en?: string | null;
   student_no?: string | null;
+  /** 동명이인 판정에 씁니다("jay kim(190828)"의 괄호). 없으면 아무도 못 고릅니다. */
+  birth_date?: string | null;
 };
 
 const SOURCE_STYLE: Record<string, string> = {
@@ -120,6 +122,7 @@ export default function PickupInboxClient({
         name_en: s.name_en ?? null,
         grade: s.grade,
         class_name: s.class_name ?? null,
+        birth_date: s.birth_date ?? null,
       })),
     [students]
   );

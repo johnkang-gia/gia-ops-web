@@ -62,7 +62,7 @@ export default async function PickupInboxPage() {
       .limit(200),
     supabase
       .from("wr_students")
-      .select("id, name, grade, class_name, name_en, student_no")
+      .select("id, name, grade, class_name, name_en, student_no, birth_date")
       .eq("is_demo", false)
       .eq("status", "active")
       .order("name"),

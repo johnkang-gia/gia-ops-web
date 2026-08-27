@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
 import StudentPicker from "@/components/pickup/StudentPicker";
+import { matchStudent, type RosterEntry } from "@/lib/pickupParse";
 
 // 앞으로 예정된 픽업.
 //
@@ -51,7 +52,17 @@ function dateLabel(iso: string): string {
 }
 
 // 학생 고르기 목록에 쓰는 최소 정보. 동명이인이 있으면 반을 붙여 구별합니다.
-type StudentOption = { id: string; name: string; grade: string | null; class_name: string | null; name_en: string | null; student_no: string | null };
+type StudentOption = {
+  id: string;
+  name: string;
+  grade: string | null;
+  class_name: string | null;
+  name_en: string | null;
+  student_no: string | null;
+  // 동명이인을 가르는 데 꼭 필요합니다. 김재이 셋이 영문명을 모두 'Jay Kim'으로 쓰기 때문에,
+  // 이 칸이 없으면 "jay kim(190828)"의 괄호를 읽어도 아무도 못 고릅니다.
+  birth_date: string | null;
+};
 
 export default function UpcomingPickups({ initialRows }: { initialRows: ScheduleRow[] }) {
   const notify = useToast();
@@ -71,13 +82,68 @@ export default function UpcomingPickups({ initialRows }: { initialRows: Schedule
     void (async () => {
       const { data } = await createClient()
         .from("wr_students")
-        .select("id, name, grade, class_name, name_en, student_no")
+        .select("id, name, grade, class_name, name_en, student_no, birth_date")
         .eq("status", "active")
         .eq("is_demo", false)
         .order("name");
       setStudents((data as StudentOption[] | null) ?? []);
     })();
   }, []);
+
+  // ── 규칙으로 다시 맞추기 ──────────────────────────────────────────────────
+  //
+  // 담당자: "예정된 픽업에서 학생 연결 아직도 안 되어 있다고 하는데, 이번에 업데이트한
+  //          규칙을 적용해서 매칭이 되는지 보고 다시 매칭해서 수정해줘."
+  //
+  // 지난번에 만든 재매칭 단추는 **픽업 인박스(pickup_requests)** 쪽에만 있었습니다.
+  // 예정된 픽업은 다른 표(pickup_schedules)라 그 단추가 닿지 않았습니다. 같은 화면에
+  // 나란히 있으니 하나로 보이지만, 안에서는 별개입니다 - 제가 놓친 부분입니다.
+  //
+  // 여기서도 지금 규칙으로 다시 훑되, **한 명으로 확정된 것만** 저장합니다.
+  const rosterForMatch = useMemo<RosterEntry[]>(
+    () =>
+      students.map((s) => ({
+        id: s.id,
+        name: s.name,
+        name_en: s.name_en,
+        grade: s.grade,
+        class_name: s.class_name,
+        birth_date: s.birth_date,
+      })),
+    [students]
+  );
+
+  async function rematchAll() {
+    const targets = rows.filter((r) => !r.student_id && r.status !== "적용됨" && (r.student_name ?? "").trim());
+    if (targets.length === 0) {
+      notify("연결이 필요한 예약이 없습니다.", "success");
+      return;
+    }
+    setBusy(true);
+    const supabase = createClient();
+    let fixed = 0;
+    const failed: string[] = [];
+    for (const r of targets) {
+      const hit = matchStudent((r.student_name ?? "").trim(), rosterForMatch);
+      if (!hit) {
+        failed.push(r.student_name ?? "");
+        continue;
+      }
+      const { error } = await supabase
+        .from("pickup_schedules")
+        .update({ student_id: hit.id, student_name: hit.name, needs_confirm: false })
+        .eq("id", r.id);
+      if (!error) fixed += 1;
+    }
+    setBusy(false);
+    await load();
+    notify(
+      fixed > 0
+        ? `${fixed}건을 이었습니다.${failed.length > 0 ? ` 남은 ${failed.length}건(${failed.slice(0, 3).join(", ")}${failed.length > 3 ? "…" : ""})은 직접 골라주세요.` : ""}`
+        : "지금 규칙으로도 확정되는 건이 없습니다. 직접 골라주세요.",
+      fixed > 0 ? "success" : "error"
+    );
+  }
 
   const load = useCallback(async () => {
     const supabase = createClient();
@@ -179,6 +245,17 @@ export default function UpcomingPickups({ initialRows }: { initialRows: Schedule
           </span>
         )}
         <span className="text-[11px] text-slate-400">당일 아침에 하원 체크표에 자동으로 걸립니다</span>
+        {/* 규칙을 고쳐도 이미 저장된 예약에는 소용이 없습니다 - 학생 연결은 들어오는 순간
+            한 번만 하기 때문입니다. 지금 규칙으로 다시 훑습니다. */}
+        <button
+          type="button"
+          onClick={rematchAll}
+          disabled={busy}
+          title="지금 매칭 규칙으로 미연결 예약을 다시 맞춰봅니다. 한 명으로 확정된 것만 저장합니다."
+          className="ml-auto rounded-lg border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-600 disabled:opacity-50"
+        >
+          🔁 규칙으로 다시 맞추기
+        </button>
       </div>
 
       <div className="flex flex-col gap-2">

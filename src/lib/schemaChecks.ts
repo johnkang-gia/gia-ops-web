@@ -21,6 +21,53 @@ export type SchemaCheck = {
 };
 
 export const SCHEMA_CHECKS: SchemaCheck[] = [
+  // ── 이 아래는 이번 주에 만든 것들입니다 ──────────────────────────────────
+  //
+  // 여기 없으면 점검 화면이 못 잡습니다. 실제로 지속 특이사항 표가 통째로 없는 채로
+  // 며칠이 지났는데 아무도 몰랐습니다 - 위젯에 적으면 조용히 사라졌을 겁니다.
+  // 새 마이그레이션을 만들 때는 반드시 여기에도 한 줄 적습니다.
+  {
+    feature: "지속 특이사항",
+    table: "shuttle_persistent_notes",
+    columns: ["student_name", "content", "effect_kind", "effect_days"],
+    migration: "20260827200000_persistent_note_period.sql",
+    impact: "하원체크표의 '지속 특이사항 입력'이 조용히 저장되지 않습니다.",
+  },
+  {
+    feature: "기간 픽업·결석",
+    table: "shuttle_persistent_notes",
+    columns: ["effect_from", "effect_to", "request_id"],
+    migration: "20260827200000_persistent_note_period.sql",
+    impact: '"금요일까지 픽업"처럼 기간으로 온 연락이 반영되지 않습니다.',
+  },
+  {
+    feature: "출결 등록 상태",
+    table: "attendance_entries",
+    columns: ["source", "source_message_id", "student_name", "status", "date_from"],
+    migration: "20260826230000_attendance_entries.sql",
+    impact: "인박스에서 등록한 출결이 대시보드에 반영되지 않고, 지운 것이 되살아납니다.",
+  },
+  {
+    feature: "출결 이름 가르치기",
+    table: "attendance_learning_rules",
+    columns: ["kind", "pattern", "student_id"],
+    migration: "20260826170000_attendance_learning.sql",
+    impact: "🔎로 가르쳐도 저장되지 않아 같은 이름을 매번 다시 묻습니다.",
+  },
+  {
+    feature: "셔틀 배정 미연결 사유",
+    table: "shuttle_assignments",
+    columns: ["unlinked_reason"],
+    migration: "20260827110000_shuttle_link_reason.sql",
+    impact: "명부와 안 붙은 배정이 왜 안 붙었는지 구분되지 않습니다.",
+  },
+  {
+    feature: "구글챗 실시간 푸시",
+    table: "google_chat_event_subscriptions",
+    columns: ["subscription_name", "expire_time"],
+    migration: "20260826210000_chat_event_subscriptions.sql",
+    impact: "구글챗이 1분 주기 폴링으로만 들어오고 실시간 푸시가 동작하지 않습니다.",
+  },
   {
     feature: "픽업 인박스",
     table: "pickup_requests",

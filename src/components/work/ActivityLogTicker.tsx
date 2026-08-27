@@ -113,7 +113,12 @@ export default function ActivityLogTicker({
         type="button"
         onClick={openFull}
         title="전체 로그 보기"
-        className="mx-2 flex min-w-0 flex-1 items-center gap-1.5 rounded-full bg-black/5 px-3 py-1 text-left text-[11px] text-slate-500 transition hover:bg-black/10"
+        // 담당자: "위쪽 로그 부분 너무 기니까 조금 줄이고."
+        //
+        // 예전에는 flex-1로 남는 폭을 전부 먹었습니다. 로그는 "무슨 일이 있었나" 훑는 용도지
+        // 자세히 읽는 자리가 아닌데, 화면에서 가장 넓은 칸을 차지하고 있었습니다. 최대 폭을
+        // 두어 절반 아래로 줄이고, 남은 자리는 오른쪽 배지들이 씁니다. 전체 내용은 눌러서 봅니다.
+        className="mx-2 flex min-w-0 max-w-[22rem] flex-1 items-center gap-1.5 rounded-full bg-black/5 px-3 py-1 text-left text-[11px] text-slate-500 transition hover:bg-black/10"
       >
         <span className="shrink-0">🔔</span>
         <span className="min-w-0 flex-1 truncate">

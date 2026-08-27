@@ -34,6 +34,8 @@ export type Inquiry = {
   homeroom_email: string | null;
   /** 명부와 연결된 학생. 이름을 눌러 통합 프로필로 가기 위해 씁니다. */
   student_id?: string | null;
+  /** 토들 채팅방 id. source_url이 비어 있을 때 주소를 되살리는 데 씁니다. */
+  source_chat_id?: string | null;
   answered_at: string | null;
   answered_by: string | null;
   task_id: string | null;
@@ -193,6 +195,31 @@ export default function ParentInquiryPanel({
   // 영어로 온 이름을 한글로 바꾸기 위한 명부. 요청: "영어이름으로 문의를 올렸다면 학생명부와
   // 대조후에 한글이름으로 올려줘". 한 번만 읽어 재사용합니다.
   const [roster, setRoster] = useState<RosterEntry[]>([]);
+
+  // 토들 원문 주소.
+  //
+  // 담당자: "학부모 문의사항에서 눌러서 토들에서 보기 버튼 만들어줘."
+  //
+  // 버튼은 이미 있었는데 **source_url이 비어 있는 줄에는 안 떴습니다.** 그 칸은 8월 24일에
+  // 생겼고, 수집기가 주소를 못 읽은 경우에도 비어 있습니다. 다행히 방 id(source_chat_id)는
+  // 처음부터 저장하고 있었고, 토들 주소는 "학교 주소 + /messaging/ + 방 id" 형태입니다.
+  // 학교 주소는 모든 줄이 같으므로, 주소가 있는 줄 하나에서 뽑아 나머지에 그대로 씁니다.
+  const toddleBase = useMemo(() => {
+    for (const r of rows) {
+      const m = (r.source_url ?? "").match(/^(https:\/\/[^/]+\/platform\/[^/]+)/);
+      if (m) return m[1];
+    }
+    return null;
+  }, [rows]);
+
+  const toddleUrlOf = useCallback(
+    (r: Inquiry): string | null => {
+      if (r.source_url) return r.source_url;
+      if (toddleBase && r.source_chat_id) return `${toddleBase}/messaging/${r.source_chat_id}`;
+      return null;
+    },
+    [toddleBase]
+  );
 
   const load = useCallback(async () => {
     const supabase = createClient();
@@ -468,9 +495,9 @@ export default function ParentInquiryPanel({
       {/* 목록에서 바로 토들 원문으로. 담당자: "메시지 내용과 함께 토들에서 보기 버튼."
           예전에는 상세 창을 한 번 더 열어야 이 버튼이 보였습니다. 답을 하려면 어차피 토들로
           가야 하는데, 한 번 더 누르게 할 이유가 없습니다. */}
-      {r.source_url && (
+      {toddleUrlOf(r) && (
         <a
-          href={r.source_url}
+          href={toddleUrlOf(r)!}
           target="_blank"
           rel="noreferrer"
           onClick={(e) => e.stopPropagation()}
@@ -707,11 +734,11 @@ export default function ParentInquiryPanel({
               </div>
 
               <div className="flex flex-wrap gap-1.5 border-t border-black/5 px-4 py-3">
-                {detail.source_url && (
+                {toddleUrlOf(detail) && (
                   // 토들 원문으로. 여는 사람의 토들 로그인으로 열리므로, 그 방 멤버인
                   // 선생님은 바로 열리고 아니면 토들이 권한 없다고 막습니다.
                   <a
-                    href={detail.source_url}
+                    href={toddleUrlOf(detail)!}
                     target="_blank"
                     rel="noreferrer"
                     className="rounded-lg bg-slate-800 px-3 py-2 text-xs font-bold text-white"

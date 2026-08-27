@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import ActivityLogTicker from "./ActivityLogTicker";
+import CronStatusBadge from "./CronStatusBadge";
 import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import { useRealtimeTable } from "@/lib/useRealtimeTable";
@@ -283,6 +284,10 @@ export default function WorkBoardClient({
             표시되도록해서 누르면 전체로그가 뜨도록" - 부서 탭과 오른쪽 배지들 사이 가운데
             자리입니다. 남는 폭만큼만 차지하고, 넘치면 말줄임으로 줄어듭니다. */}
         <ActivityLogTicker department={activeDepartment.name} isAdmin={isAdmin} currentUserEmail={userEmail} />
+
+        {/* 크론 연동 요약(담당자 요청). 자세한 판은 관리 → 연동 상태에 있지만, 들어가야만
+            보이는 정보는 결국 아무도 안 봅니다. 매일 여는 이 자리에 숫자로 걸어둡니다. */}
+        <CronStatusBadge />
 
         {/* 브라우저 기본 title 툴팁은 뜨는 데 시간이 걸리고 눈에 잘 안 띄어서, 직접 그린
             호버 팝오버로 바꿨습니다 - 배지에 마우스를 올리면 바로 접속자 이름 목록이 뜹니다. */}

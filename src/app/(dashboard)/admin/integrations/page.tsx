@@ -1,5 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
+import { getCurrentAppUser } from "@/lib/currentUser";
+import { isAdminUser } from "@/lib/roles";
 import { INTEGRATIONS } from "@/lib/heartbeat";
 import IntegrationsClient, { type Row, type DataStat } from "@/components/admin/IntegrationsClient";
 
@@ -15,11 +17,14 @@ export const dynamic = "force-dynamic";
 // 고장난 날이 똑같이 보입니다. 그래서 "돌고 있다"는 신호를 따로 남기고 여기서 확인합니다.
 export default async function IntegrationsPage() {
   const supabase = await createClient();
-  const { data: auth } = await supabase.auth.getUser();
-  if (!auth.user) redirect("/login");
-
-  const { data: me } = await supabase.from("app_users").select("position").eq("email", auth.user.email!).maybeSingle();
-  if ((me?.position ?? "") !== "관리자") redirect("/home");
+  // 권한 판정은 앱 전체가 쓰는 isAdminUser로 합니다.
+  //
+  // 처음에는 app_users.position이 "관리자"인지 직접 비교했는데, 그러면 개발자 계정과
+  // 역할 미리보기 상태가 걸러집니다. 실제로 관리 메뉴에서 눌러도 홈으로 튕겼습니다 -
+  // 같은 판단을 두 군데서 다르게 하면 이런 일이 생깁니다.
+  const me = await getCurrentAppUser();
+  if (!me) redirect("/login");
+  if (!isAdminUser(me)) redirect("/home");
 
   const { data: beats } = await supabase.from("integration_heartbeats").select("key, last_seen_at, status, detail");
   const byKey = new Map((beats ?? []).map((b) => [b.key as string, b]));

@@ -9,6 +9,7 @@ import {
   pickSiblingFromText,
   type RosterEntry,
 } from "@/lib/pickupParse";
+import { extractTargetRange } from "@/lib/attendanceDigest";
 
 // 어느 경로로 들어온 연락이든 이 함수 하나를 거쳐 픽업으로 바뀝니다.
 // 토들 수집기, 전화 통화 텍스트, 교사 전달, 직접 입력이 모두 같은 판단을 받도록 하기 위해서입니다.
@@ -259,6 +260,38 @@ async function findDuplicate(
   return null;
 }
 
+// 기간으로 온 연락인지 봅니다.
+//
+// "~까지"라는 말이 있고 그 끝날이 오늘보다 뒤면 기간입니다. 하루짜리는 여기서 걸리지
+// 않습니다("오늘 3시 픽업"에는 끝날이 없습니다).
+//
+// 기간을 읽는 일은 출결 인박스가 이미 하고 있으므로(extractTargetRange) 그 도구를 그대로
+// 씁니다 - 같은 문장을 두 곳이 다르게 읽으면 언젠가 답이 갈립니다.
+function detectPeriod(
+  text: string,
+  base: Date
+): { kind: "pickup" | "absent"; from: string; to: string; why: string } | null {
+  if (!text) return null;
+  // "까지"가 없으면 기간으로 보지 않습니다. 원칙은 "그날 하루"입니다(담당자).
+  if (!/(까지|until|through)/i.test(text)) return null;
+
+  const range = extractTargetRange(text, base);
+  if (!range || range.from === range.to) return null;
+
+  // 결석인지 픽업인지. 결석 쪽 표현이 있으면 결석으로 봅니다 - 결석이 더 센 상태라,
+  // 두 말이 섞여 있으면 결석으로 두는 편이 안전합니다(안 오는 아이를 태우러 가지 않도록).
+  const isAbsent = /(결석|안\s*가|못\s*가|등원\s*안|병결|absent|not\s+com)/i.test(text);
+  const isPickupWord = /(픽업|데리러|하원\s*안|차\s*안\s*타|pick\s*up)/i.test(text);
+  if (!isAbsent && !isPickupWord) return null;
+
+  return {
+    kind: isAbsent ? "absent" : "pickup",
+    from: range.from,
+    to: range.to,
+    why: text.slice(0, 60),
+  };
+}
+
 export async function ingestPickup(
   supabase: SupabaseClient,
   input: IngestInput,
@@ -441,11 +474,48 @@ export async function ingestPickup(
 
   const requestId = data?.id as string | undefined;
 
+  // ── 하루짜리인가, 기간인가 ────────────────────────────────────────────────
+  //
+  // 담당자: "우선 원칙은 그날만 일시적인 픽업인 거야. 근데 '~까지 픽업', 또는 '언제까지
+  //          결석'이라는 문구가 나오면 그건 특이사항에 올려서 그 기간 동안 반영되게."
+  //
+  // 두 가지는 성격이 다릅니다.
+  //   "오늘 3시에 픽업이요"        → 그날 하루. 예약 한 줄이면 됩니다.
+  //   "금요일까지 픽업이요"        → 한 상태가 며칠 이어지는 것.
+  //
+  // 뒤쪽을 날짜마다 예약으로 흩뿌리면 **중간에 하나가 빠져도 아무도 모릅니다.** 그리고
+  // 하원체크표를 보는 사람은 "이 아이가 언제까지 이런 상태인지"를 알 수 없습니다 - 오늘
+  // 한 줄만 보이니까요. 그래서 특이사항 한 줄로 두고 매일 그날 해당하는지 봅니다.
+  const period = detectPeriod(text, receivedAt);
+  let persistentNoteId: string | null = null;
+
+  if (period && requestId && matched) {
+    const { data: noteRow } = await supabase
+      .from("shuttle_persistent_notes")
+      .insert({
+        term: "정규학기",
+        student_name: matched.name,
+        student_id: matched.id,
+        content: `${period.kind === "pickup" ? "픽업" : "결석"} · ${period.from} ~ ${period.to} (${period.why})`,
+        effect_kind: period.kind,
+        effect_from: period.from,
+        effect_to: period.to,
+        request_id: requestId,
+        created_by: "AI(수집기)",
+      })
+      .select("id")
+      .single();
+    persistentNoteId = (noteRow?.id as string | undefined) ?? null;
+  }
+
   // ── 앞으로의 날짜를 예약해둡니다 ──────────────────────────────────────────
   // 오늘 것은 바로 반영하고, 나머지는 그날 아침 크론이 꺼내갑니다. 사람이 기억하고 있다가
   // 그날 손으로 거는 방식은 반드시 언젠가 빠집니다.
+  //
+  // 기간으로 잡힌 건은 특이사항이 맡으므로 예약을 따로 만들지 않습니다 - 두 곳이 같은 날을
+  // 각각 반영하면 화면에 두 번 뜨고, 하나를 취소해도 다른 하나가 남습니다.
   let scheduled = 0;
-  if (isPickup && requestId && dates.length > 0) {
+  if (isPickup && requestId && dates.length > 0 && !persistentNoteId) {
     const rows = dates.map((d) => ({
       request_id: requestId,
       student_id: matched?.id ?? null,

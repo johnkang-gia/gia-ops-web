@@ -114,6 +114,42 @@ export async function GET(req: Request) {
     }
   }
 
+  // ── 기간으로 잡힌 특이사항 ────────────────────────────────────────────────
+  //
+  // 담당자: "'~까지 픽업' 또는 '언제까지 결석'이라는 문구가 나오면 그건 특이사항에 올려서
+  //          그 기간 동안 반영되게 만들어야 해."
+  //
+  // 예약(pickup_schedules)은 날짜마다 한 줄이라 하루짜리에 맞습니다. 며칠 이어지는 상태는
+  // 특이사항 한 줄로 두고 매일 아침 "오늘이 그 기간 안인가"만 봅니다. 그래야 중간에 한 줄이
+  // 빠져 조용히 넘어가는 일이 없고, 하원체크표 옆 위젯에서 "언제까지인지"가 보입니다.
+  let periodApplied = 0;
+  const { data: notes } = await supabase
+    .from("shuttle_persistent_notes")
+    .select("id, student_id, student_name, effect_kind, effect_from, effect_to")
+    .eq("active", true)
+    .in("effect_kind", ["pickup", "absent"])
+    .lte("effect_from", today)
+    .gte("effect_to", today);
+
+  for (const n of (notes as { id: string; student_id: string | null; student_name: string; effect_kind: string }[] | null) ?? []) {
+    if (!n.student_id) continue; // 학생이 안 붙은 것은 사람이 봐야 합니다.
+    if (n.effect_kind === "pickup") {
+      periodApplied += (await applyPickup(supabase, n.student_id, today)) > 0 ? 1 : 0;
+      continue;
+    }
+    // 결석: 그날 그 아이의 배정을 결석으로 표시합니다.
+    const { data: asg } = await supabase.from("shuttle_assignments").select("id").eq("student_id", n.student_id);
+    for (const a of (asg as { id: string }[] | null) ?? []) {
+      await supabase
+        .from("shuttle_boardings")
+        .upsert(
+          { service_date: today, assignment_id: a.id, status: "결석", updated_by: "AI(기간 특이사항)" },
+          { onConflict: "service_date,assignment_id" }
+        );
+    }
+    if ((asg ?? []).length > 0) periodApplied += 1;
+  }
+
   await touchHeartbeat(supabase, "cron:pickup-schedules");
-  return NextResponse.json({ ok: true, date: today, applied, failed, notified });
+  return NextResponse.json({ ok: true, date: today, applied, failed, notified, periodApplied });
 }

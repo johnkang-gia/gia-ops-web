@@ -463,6 +463,21 @@ export default function ParentInquiryPanel({
         {whenLabel(r.received_at)}
       </span>
       </button>
+      {/* 목록에서 바로 토들 원문으로. 담당자: "메시지 내용과 함께 토들에서 보기 버튼."
+          예전에는 상세 창을 한 번 더 열어야 이 버튼이 보였습니다. 답을 하려면 어차피 토들로
+          가야 하는데, 한 번 더 누르게 할 이유가 없습니다. */}
+      {r.source_url && (
+        <a
+          href={r.source_url}
+          target="_blank"
+          rel="noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600 transition hover:bg-slate-800 hover:text-white"
+          title="토들에서 이 대화 열기"
+        >
+          토들 ↗
+        </a>
+      )}
 
       {/* 출결 원클릭(요청 1) - 셔틀 화면으로 넘어가지 않고 여기서 바로 하원 체크표에 반영합니다.
           출결·차량 문의에만 붙습니다(학습 상담에 [결석] 버튼이 있으면 오조작만 늘어납니다). */}

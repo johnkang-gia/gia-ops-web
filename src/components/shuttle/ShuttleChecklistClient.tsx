@@ -400,6 +400,28 @@ export default function ShuttleChecklistClient({
   // 하이라이트·스크롤은 ShuttleChecklistTable이 이 검색어를 받아 처리합니다.
   const [searchTerm, setSearchTerm] = useState("");
 
+  // 화면 빈 곳을 누르면 찾기(하이라이트)를 풉니다 - 담당자 요청.
+  //
+  // 누르는 대상이 버튼·입력칸·링크·표의 줄이면 그건 "일하려고 누른 것"이므로 놔둡니다.
+  // 그 외(배경·여백)를 누르면 해제합니다. Esc로도 풀립니다 - 손이 키보드에 있을 때 더 빠릅니다.
+  useEffect(() => {
+    if (!searchTerm) return;
+    function onDocClick(e: MouseEvent) {
+      const el = e.target as HTMLElement | null;
+      if (el?.closest("button, a, input, select, textarea, label, tr, [data-keep-search]")) return;
+      setSearchTerm("");
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setSearchTerm("");
+    }
+    document.addEventListener("click", onDocClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("click", onDocClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [searchTerm]);
+
   // 지속 특이사항 - 왼쪽 창구에서 새로 적으면 저장하고, 오른쪽 요약에서 지우면(=원래 셔틀로
   // 복귀) active를 false로 내립니다. RLS가 로그인 사용자 전체 쓰기를 허용해 클라이언트에서
   // 바로 씁니다(픽업/결석 토글과 같은 정책). 다른 사람이 적은 것도 보이도록 realtime 구독을
@@ -605,6 +627,20 @@ export default function ShuttleChecklistClient({
               placeholder="🔍 학생 이름 검색"
               className="w-32 rounded-lg border border-slate-300 px-2 py-1 text-xs outline-none focus:border-blue-400 sm:w-40"
             />
+            {/* 담당자: "백서아를 누르니까 찾아서 색이 바뀌었는데 해제할 수 없어."
+                왼쪽 위젯에서 이름을 누르면 이 검색어가 채워지는데, 그 뒤로 지우는 방법이
+                검색창을 직접 비우는 것뿐이었습니다. 위젯을 눌러서 켰으면 끄는 것도 그만큼
+                쉬워야 합니다. 화면 아무 곳이나 눌러도 풀리고(아래 onClick), 이 ✕로도 풉니다. */}
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm("")}
+                className="rounded-lg border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-500 hover:bg-slate-50"
+                title="찾기 해제"
+              >
+                ✕ 해제
+              </button>
+            )}
             <button
               type="button"
               onClick={() => window.print()}

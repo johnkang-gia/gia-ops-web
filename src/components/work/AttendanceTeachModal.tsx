@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
 import { normalizeRulePattern, type LearningRule, type RosterStudent } from "@/lib/attendanceDigest";
@@ -86,8 +87,20 @@ export default function AttendanceTeachModal({
     onClose();
   }
 
-  return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+  // 화면 맨 위에 그립니다(createPortal → document.body).
+  //
+  // 담당자: "하원체크표에서 돋보기 누르니까 가르치기 창이 나오는데, 이 창 위로 아이들 위젯이
+  //          나와 있어."
+  //
+  // 원인은 `fixed`가 화면이 아니라 **부모 기준**이 될 수 있다는 것입니다. 조상 중에 transform·
+  // filter·sticky 같은 속성을 가진 요소가 있으면 그 요소가 새 기준이 되고, z-index도 그 안에서만
+  // 셉니다. 하원체크표 사이드바가 바로 그런 구조라 z-[80]을 줘도 옆 위젯을 못 이겼습니다.
+  // 같은 파일의 AttendanceRulesModal은 이미 portal을 쓰고 있어서 멀쩡했습니다.
+  //
+  // body에 직접 그리면 조상이 없으니 이런 일이 생기지 않습니다.
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div
         onClick={(e) => e.stopPropagation()}
         className="flex max-h-[80vh] w-full max-w-md flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
@@ -161,6 +174,7 @@ export default function AttendanceTeachModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

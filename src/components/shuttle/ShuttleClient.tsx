@@ -6,6 +6,7 @@ import type { ShuttleAssignment, ShuttleDirection, ShuttleRoute, ShuttleStop } f
 import { useToast } from "@/components/common/ToastProvider";
 import { DIVISION_BADGE, divisionFromClassRaw, needsRosterAttention } from "@/lib/shuttleDivision";
 import RouteMap from "@/components/shuttle/RouteMap";
+import { byRouteNo } from "@/lib/routeSort";
 
 const WEEKDAY_LABEL = ["", "월", "화", "수", "목", "금"];
 
@@ -79,7 +80,9 @@ export default function ShuttleClient({
           (asgByStop.get(s.id) ?? []).some((a) => a.student_name_raw.toLowerCase().includes(q))
         );
       })
-      .sort((a, b) => a.sort_order - b.sort_order);
+      // 담당자: "등원·하원 모두 호수 오름차순으로." 예전에는 sort_order(엑셀에 적힌 지역별
+      // 순서)로 세워서 "4-2호 다음 12호"처럼 튀었습니다. 사람은 번호순으로 훑습니다.
+      .sort(byRouteNo((r) => r.route_no));
   }, [routes, direction, query, stopsByRoute, asgByStop]);
 
   const selected = routes.find((r) => r.id === selectedId) ?? visibleRoutes[0] ?? null;
@@ -125,7 +128,10 @@ export default function ShuttleClient({
   return (
     <div className="flex h-full gap-3 overflow-hidden">
       {/* 왼쪽: 노선 목록 */}
-      <div className="flex w-64 shrink-0 flex-col overflow-hidden print:hidden">
+      {/* 담당자: "한 줄로 너무 길게 하지 말고 두 줄로 만들어도 될 것 같아."
+          노선이 40개 가까이 되어 한 칸씩 세우면 스크롤이 깁니다. 두 칸으로 나누면 한 화면에
+          거의 다 들어옵니다. 폭은 그만큼 넓혔습니다. */}
+      <div className="flex w-80 shrink-0 flex-col overflow-hidden print:hidden">
         <div className="mb-2 flex shrink-0 gap-1">
           {(["등원", "하원"] as ShuttleDirection[]).map((d) => (
             <button
@@ -149,9 +155,9 @@ export default function ShuttleClient({
           placeholder="노선·기사님·학생 이름 검색"
           className="mb-2 w-full shrink-0 rounded-lg border border-slate-300 px-2 py-1.5 text-xs"
         />
-        <div className="min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
+        <div className="grid min-h-0 flex-1 grid-cols-2 content-start gap-1 overflow-y-auto pr-1">
           {visibleRoutes.length === 0 && (
-            <p className="px-1 py-4 text-center text-xs text-slate-400">
+            <p className="col-span-2 px-1 py-4 text-center text-xs text-slate-400">
               노선이 없습니다. 먼저 셔틀 데이터 SQL을 실행해주세요.
             </p>
           )}

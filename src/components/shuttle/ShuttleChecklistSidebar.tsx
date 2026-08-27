@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { DepartmentMemo, GoogleChatMirrorMessage } from "@/lib/types";
 import {
@@ -12,8 +12,11 @@ import {
   stripLeadingMention,
   todayKey,
   type AttendanceEntry,
+  type LearningRule,
   type RosterStudent,
 } from "@/lib/attendanceDigest";
+import AttendanceTeachModal from "@/components/work/AttendanceTeachModal";
+import AttendanceRulesModal from "@/components/work/AttendanceRulesModal";
 
 const POLL_MS = 15000;
 
@@ -89,6 +92,35 @@ export default function ShuttleChecklistSidebar({
   const [pnEffect, setPnEffect] = useState<"none" | "skip_days" | "no_shuttle">("none");
   const [pnDays, setPnDays] = useState<number[]>([]);
   const [pnOpen, setPnOpen] = useState(false);
+
+  // ── 가르치기 ──────────────────────────────────────────────────────────────
+  // 담당자: "하원체크표의 오늘 픽업·결석에서도 돋보기 눌러서 학습시킬 수 있도록 해주고,
+  //          학습시킨 거 목록을 보고 수정·삭제할 수 있도록 해줘."
+  //
+  // 잘못 읽힌 이름을 발견하는 자리는 업무 인박스가 아니라 **여기**입니다. 하원 직전에 체크표를
+  // 보다가 "이 아이 이름이 왜 이렇게 나오지?" 하고 알아채니까요. 그때 업무 메뉴까지 건너가야
+  // 고칠 수 있으면 대부분 그냥 넘어갑니다. 발견한 자리에서 바로 고칠 수 있어야 합니다.
+  //
+  // 규칙과 로그인 계정은 여기서 직접 읽습니다 - 부모(ShuttleChecklistClient)에 새 prop을
+  // 요구하면 이 화면을 쓰는 다른 곳까지 다 손봐야 해서, 자기 것만 챙기게 두었습니다.
+  const [rules, setRules] = useState<LearningRule[]>([]);
+  const [myEmail, setMyEmail] = useState("");
+  const [teachTarget, setTeachTarget] = useState<AttendanceEntry | null>(null);
+  const [rulesOpen, setRulesOpen] = useState(false);
+
+  const loadRules = useCallback(async () => {
+    const supabase = createClient();
+    const { data } = await supabase.from("attendance_learning_rules").select("*");
+    setRules((data as LearningRule[] | null) ?? []);
+  }, []);
+
+  useEffect(() => {
+    void loadRules();
+    void (async () => {
+      const { data } = await createClient().auth.getUser();
+      setMyEmail(data.user?.email ?? "");
+    })();
+  }, [loadRules]);
 
   async function submitPersistentNote() {
     if (!onAddPersistentNote) return;
@@ -175,11 +207,13 @@ export default function ShuttleChecklistSidebar({
       if (m.source_key !== "attendance") continue;
       const sentAt = new Date(m.created_at_google);
       if (sentAt < scanFrom) continue;
-      const category = categorize(m.content);
+      // 가르친 규칙을 함께 넘깁니다. 업무 인박스는 이미 이렇게 하는데 여기만 빠져 있어서,
+      // 같은 문장이 두 화면에서 다르게 읽히고 있었습니다.
+      const category = categorize(m.content, rules);
       if (category !== "픽업" && category !== "결석") continue;
       const targetDate = extractTargetDate(m.content, sentAt) ?? todayKey(sentAt);
       if (targetDate !== today) continue;
-      const students = matchRosterStudents(m.content, roster);
+      const students = matchRosterStudents(m.content, roster, rules);
       if (students.length === 0) {
         const guess = guessKoreanName(m.content, category) ?? stripLeadingMention(m.content).slice(0, 12);
         out.push({
@@ -217,7 +251,7 @@ export default function ShuttleChecklistSidebar({
       pickup: deduped.filter((e) => e.category === "픽업"),
       absent: deduped.filter((e) => e.category === "결석"),
     };
-  }, [messages, roster]);
+  }, [messages, roster, rules]);
 
   function nameChip(e: AttendanceEntry, tone: "blue" | "red") {
     const toneClass = e.unmatched
@@ -227,20 +261,31 @@ export default function ShuttleChecklistSidebar({
         : tone === "blue"
           ? "bg-blue-50 text-blue-600"
           : "bg-red-50 text-red-600";
-    // 동명이인 표시("김재이(2학년)")나 영어이름 병기("김재이(Jane)")가 붙어 있으면 체크표의
+    // 동명이인 표시("김재이(G3JA)")나 영어이름 병기("김재이(Jane)")가 붙어 있으면 체크표의
     // 원본 이름(student_name_raw)과 안 맞을 수 있어, 괄호 앞부분만 검색어로 씁니다.
     const coreName = e.studentName.replace(/\(.*$/, "").trim() || e.studentName;
     return (
-      <button
-        key={e.key}
-        type="button"
-        onClick={() => onSelectStudentName?.(coreName)}
-        className={"rounded-full px-1.5 py-0.5 text-[10px] font-semibold transition hover:ring-2 hover:ring-offset-1 " + toneClass}
-        title={(e.unmatched ? "명부와 대조되지 않아 추정한 이름입니다" : e.rawText) + " · 누르면 체크표에서 찾습니다"}
-      >
-        {e.unmatched ? "🔎 " : e.ambiguous ? "⚠️ " : ""}
-        {e.studentName}
-      </button>
+      <span key={e.key} className={"inline-flex items-center gap-0.5 rounded-full pr-0.5 " + toneClass}>
+        <button
+          type="button"
+          onClick={() => onSelectStudentName?.(coreName)}
+          className="rounded-full px-1.5 py-0.5 text-[10px] font-semibold transition hover:ring-2 hover:ring-offset-1"
+          title={(e.unmatched ? "명부와 대조되지 않아 추정한 이름입니다" : e.rawText) + " · 누르면 체크표에서 찾습니다"}
+        >
+          {e.ambiguous ? "⚠️ " : ""}
+          {e.studentName}
+        </button>
+        {/* 돋보기 = 가르치기. 이름이 틀리게 읽힌 걸 여기서 발견하므로 여기서 바로 고칩니다. */}
+        <button
+          type="button"
+          onClick={() => setTeachTarget(e)}
+          className="rounded-full px-0.5 text-[10px] leading-none opacity-60 transition hover:opacity-100"
+          title="이 표기가 누구인지 가르치기"
+          aria-label="가르치기"
+        >
+          🔎
+        </button>
+      </span>
     );
   }
 
@@ -329,7 +374,18 @@ export default function ShuttleChecklistSidebar({
         </div>
       )}
       <div className="rounded-xl border border-slate-200 bg-white p-3">
-        <p className="mb-2 text-[11px] font-bold text-slate-600">📊 오늘 픽업·결석 (업무 출결내역)</p>
+        <div className="mb-2 flex items-center justify-between gap-1">
+          <p className="text-[11px] font-bold text-slate-600">📊 오늘 픽업·결석 (업무 출결내역)</p>
+          {/* 가르친 것을 되돌릴 자리. 학습 기능에는 반드시 함께 있어야 합니다. */}
+          <button
+            type="button"
+            onClick={() => setRulesOpen(true)}
+            className="shrink-0 rounded px-1 text-[10px] text-slate-400 transition hover:text-slate-700"
+            title="가르친 규칙 목록 보기·고치기·지우기"
+          >
+            가르친 목록
+          </button>
+        </div>
         <div className="mb-2">
           <p className="mb-1 text-[10px] font-bold text-blue-600">🚗 픽업 {pickup.length}</p>
           {pickup.length === 0 ? (
@@ -400,6 +456,30 @@ export default function ShuttleChecklistSidebar({
         )}
         {memoUpdatedBy && <p className="mt-1 text-[9px] text-slate-400">{memoUpdatedBy} 수정</p>}
       </div>
+
+      {teachTarget && (
+        <AttendanceTeachModal
+          rawText={teachTarget.rawText}
+          guessedName={teachTarget.studentName.replace(/\(.*$/, "").trim() || teachTarget.studentName}
+          roster={roster}
+          rules={rules}
+          currentUserEmail={myEmail}
+          onClose={() => setTeachTarget(null)}
+          onSaved={() => {
+            setTeachTarget(null);
+            // 가르친 즉시 목록이 다시 읽히도록 - 고쳤는데 화면이 그대로면 안 된 줄 압니다.
+            void loadRules();
+          }}
+        />
+      )}
+      {rulesOpen && (
+        <AttendanceRulesModal
+          onClose={() => {
+            setRulesOpen(false);
+            void loadRules();
+          }}
+        />
+      )}
     </div>
   );
 }

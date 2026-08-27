@@ -37,10 +37,44 @@ function dateLabel(iso: string): string {
   return `${d.getMonth() + 1}/${d.getDate()}(${wd})`;
 }
 
+// 학생 고르기 목록에 쓰는 최소 정보. 동명이인이 있으면 반을 붙여 구별합니다.
+type StudentOption = { id: string; name: string; grade: string | null; class_name: string | null };
+
 export default function UpcomingPickups({ initialRows }: { initialRows: ScheduleRow[] }) {
   const notify = useToast();
   const [rows, setRows] = useState(initialRows);
   const [busy, setBusy] = useState(false);
+
+  // ── 학생 연결 ────────────────────────────────────────────────────────────
+  // 담당자: "앞으로 예정된 픽업에서 확인필요 버튼 눌러서 학생 연결해줄 수 있도록 해줘."
+  //
+  // 지금까지 '확인 필요'에 할 수 있는 일은 "맞음"(그대로 두기)과 "✕"(취소) 둘뿐이었습니다.
+  // 정작 가장 흔한 경우 - 이름은 읽혔는데 **누구인지 못 정한 경우** - 를 고칠 방법이
+  // 없었습니다. 사람이 보고 "이 아이입니다" 하고 짚어줄 자리가 필요합니다.
+  const [linking, setLinking] = useState<string | null>(null);
+  const [students, setStudents] = useState<StudentOption[]>([]);
+
+  useEffect(() => {
+    void (async () => {
+      const { data } = await createClient()
+        .from("wr_students")
+        .select("id, name, grade, class_name")
+        .eq("status", "active")
+        .eq("is_demo", false)
+        .order("name");
+      setStudents((data as StudentOption[] | null) ?? []);
+    })();
+  }, []);
+
+  // 같은 이름이 둘 이상이면 반을 붙입니다("김재이(G3JA)") - 반이 없으면 학년으로.
+  const optionLabel = useCallback(
+    (s: StudentOption) => {
+      const homonym = students.filter((o) => o.name === s.name).length > 1;
+      if (!homonym) return s.name;
+      return s.class_name ? `${s.name}(${s.class_name})` : `${s.name}(${s.grade ?? "?"}학년)`;
+    },
+    [students]
+  );
 
   const load = useCallback(async () => {
     const supabase = createClient();
@@ -95,6 +129,30 @@ export default function UpcomingPickups({ initialRows }: { initialRows: Schedule
     }
   }
 
+  // 사람이 고른 학생으로 연결합니다. 이름도 명부 이름으로 맞춰둡니다 - 예약에 남은 이름이
+  // 원문 그대로("jay kim(190828)")면 나중에 체크표에서 또 못 찾습니다.
+  async function linkStudent(row: ScheduleRow, studentId: string) {
+    const s = students.find((x) => x.id === studentId);
+    if (!s) return;
+    setBusy(true);
+    const supabase = createClient();
+    setRows((prev) =>
+      prev.map((r) => (r.id === row.id ? { ...r, student_id: s.id, student_name: s.name, needs_confirm: false } : r))
+    );
+    setLinking(null);
+    const { error } = await supabase
+      .from("pickup_schedules")
+      .update({ student_id: s.id, student_name: s.name, needs_confirm: false })
+      .eq("id", row.id);
+    setBusy(false);
+    if (error) {
+      notify("연결하지 못했습니다: " + error.message, "error");
+      load();
+      return;
+    }
+    notify(`${s.name} 학생으로 연결했습니다.`, "success");
+  }
+
   async function confirm(row: ScheduleRow) {
     setBusy(true);
     const supabase = createClient();
@@ -142,10 +200,45 @@ export default function UpcomingPickups({ initialRows }: { initialRows: Schedule
                   title={r.source_note ?? undefined}
                 >
                   <span className="font-semibold">{r.student_name ?? "학생 미확인"}</span>
+                  {/* 명부에 붙지 않은 줄은 눈에 띄게 표시합니다 - 이 상태로 당일이 되면 체크표에
+                      아무것도 걸리지 않고 조용히 지나갑니다. */}
+                  {!r.student_id && <span className="text-[10px] text-amber-600">미연결</span>}
                   {r.pickup_time && <span className="text-[11px] text-slate-500">{r.pickup_time}</span>}
                   {r.status === "적용됨" && <span className="text-[10px] text-emerald-600">반영됨</span>}
                   {r.status === "실패" && <span className="text-[10px]">확인 필요</span>}
-                  {r.needs_confirm && r.status === "예정" && (
+
+                  {/* 확인 필요 / 미연결이면 학생을 직접 고를 수 있게 합니다(담당자 요청). */}
+                  {(r.needs_confirm || !r.student_id) && r.status !== "적용됨" && (
+                    linking === r.id ? (
+                      <select
+                        autoFocus
+                        disabled={busy}
+                        defaultValue=""
+                        onChange={(e) => e.target.value && linkStudent(r, e.target.value)}
+                        onBlur={() => setLinking(null)}
+                        className="max-w-[9rem] rounded border border-slate-300 bg-white px-1 py-0.5 text-[10px]"
+                      >
+                        <option value="">학생 고르기…</option>
+                        {students.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {optionLabel(s)}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => setLinking(r.id)}
+                        className="rounded border border-amber-300 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 disabled:opacity-50"
+                        title="이 픽업이 어느 학생인지 직접 고릅니다"
+                      >
+                        학생 연결
+                      </button>
+                    )
+                  )}
+
+                  {r.needs_confirm && r.status === "예정" && r.student_id && linking !== r.id && (
                     <button
                       type="button"
                       disabled={busy}

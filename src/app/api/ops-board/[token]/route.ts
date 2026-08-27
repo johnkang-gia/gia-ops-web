@@ -192,6 +192,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     grade: (s.grade as string | null) ?? null,
     nameEn: (s.name_en as string | null) ?? null,
     birthDate: (s.birth_date as string | null) ?? null,
+    className: (s.class_name as string | null) ?? null,
   }));
 
   // (2-a) 행정실이 등록한 출결(attendance_entries) - 기간이 오늘을 품는 것만.

@@ -201,12 +201,14 @@ export default async function ShuttleChecklistPage({
     .select("*")
     .order("created_at_google", { ascending: false })
     .limit(200);
-  const { data: rosterData } = await supabase.from("wr_students_basic").select("name, grade, name_en, birth_date").eq("status", "active");
-  const roster = ((rosterData as { name: string; grade: string | null; name_en: string | null; birth_date: string | null }[] | null) ?? []).map((s) => ({
+  const { data: rosterData } = await supabase.from("wr_students_basic").select("name, grade, name_en, birth_date, class_name").eq("status", "active");
+  const roster = ((rosterData as { name: string; grade: string | null; name_en: string | null; birth_date: string | null; class_name: string | null }[] | null) ?? []).map((s) => ({
     name: s.name,
     grade: s.grade,
     nameEn: s.name_en,
     birthDate: s.birth_date,
+    // 동명이인을 화면에 "김재이(G3JA)"로 보여주려면 반이 있어야 합니다(담당자 요청).
+    className: s.class_name,
   }));
 
   return (

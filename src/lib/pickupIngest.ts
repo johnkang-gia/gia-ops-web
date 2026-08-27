@@ -525,7 +525,7 @@ export async function applyPickup(supabase: SupabaseClient, studentId: string, s
 export async function loadRoster(supabase: SupabaseClient): Promise<RosterEntry[]> {
   const { data } = await supabase
     .from("wr_students")
-    .select("id, name, name_en, grade")
+    .select("id, name, name_en, grade, birth_date, class_name")
     .eq("is_demo", false)
     .in("status", ["active", "보류"]);
   return (data ?? []) as RosterEntry[];

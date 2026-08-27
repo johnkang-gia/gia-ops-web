@@ -279,7 +279,18 @@ export function rangeCovers(range: { from: string; to: string }, dateKey: string
 // birthDate는 생년월일("2019-05-10")입니다. 같은 학년에 같은 이름이 둘 있으면 학년으로는
 // 구분이 안 되어(요청: "김재이가 3명인데 두 명은 학년까지 같아서 생일을 적어 구분한다"),
 // 선생님들이 "김재이(190510)"처럼 생일을 붙여 씁니다. 그걸 알아듣기 위한 칸입니다.
-export type RosterStudent = { name: string; grade: string | null; nameEn?: string | null; birthDate?: string | null };
+// className(반 이름, 예: G3JA)이 있으면 동명이인을 화면에 보여줄 때 이걸 씁니다.
+//
+// 담당자: "셔틀 목록이든 어디든, 동명이인은 교실을 뒤에 괄호로 표시해서 누구인지 특정할 수
+// 있게 해줘." 학년("2학년")만으로는 같은 학년 동명이인이 갈라지지 않고, 생일("190828")은
+// 사람이 보고 바로 누군지 알기 어렵습니다. 반 이름은 담임 선생님도 기사님도 아는 말입니다.
+export type RosterStudent = {
+  name: string;
+  grade: string | null;
+  nameEn?: string | null;
+  birthDate?: string | null;
+  className?: string | null;
+};
 
 // 문장에서 찾아낸 학생 한 명.
 export type MatchedStudent = {
@@ -331,8 +342,20 @@ function findBirthHint(text: string, nameEnd: number): string | null {
   return digits.length === 4 || digits.length === 6 || digits.length === 8 ? digits : null;
 }
 
+// 이름 문자열에 괄호로 붙은 생일을 뽑습니다("Jay Kim(190828)" → "190828").
+//
+// findBirthHint는 "긴 문장 안에서 이름 뒤"를 보는 반면, 이건 이미 잘라낸 이름 한 덩어리를
+// 봅니다. 픽업 인박스처럼 채널 이름에서 뽑은 후보를 다룰 때 필요합니다.
+export function birthDigitsIn(raw: string): string | null {
+  for (const m of raw.matchAll(/\(([^)]*)\)/g)) {
+    const digits = m[1].replace(/\D/g, "");
+    if (digits.length === 4 || digits.length === 6 || digits.length === 8) return digits;
+  }
+  return null;
+}
+
 // 명부의 생년월일(2019-05-10)이 문장에 적힌 힌트와 같은 사람을 가리키는지 봅니다.
-function birthMatches(birthDate: string | null | undefined, hint: string): boolean {
+export function birthMatches(birthDate: string | null | undefined, hint: string): boolean {
   if (!birthDate) return false;
   const d = String(birthDate).replace(/\D/g, "");
   if (d.length < 8) return false;
@@ -373,12 +396,20 @@ function pickHomonym(
   return { picked: candidates[0], ambiguous: true, by: null };
 }
 
-// 동명이인일 때 화면에 붙일 꼬리표. 무엇으로 갈랐는지가 보여야 사람이 검증할 수 있습니다.
+// 동명이인일 때 화면에 붙일 꼬리표.
+//
+// 담당자 요청대로 **반 이름을 먼저** 씁니다("김재이(G3JA)"). 반은 담임 선생님도 기사님도
+// 아는 말이라 그 자리에서 누구인지 알 수 있습니다. 생일("190828")은 기계가 가르기엔 정확하지만
+// 사람이 보고 누군지 떠올리기 어렵고, 학년("2학년")은 같은 학년 동명이인을 못 가릅니다.
+//
+// 반이 명부에 없을 때만 예전처럼 생일·학년으로 되돌아갑니다.
 function homonymLabel(picked: RosterStudent, ambiguous: boolean, by: "birth" | "grade" | null): string {
   if (ambiguous) {
-    // 같은 학년에 같은 이름이 또 있으면 학년을 물어봐야 소용없으니 생일을 물어봅니다.
+    // 확정하지 못했으면 아무 꼬리표도 달지 않습니다 - 반을 적으면 확정된 것처럼 보입니다.
     return "확인 필요";
   }
+  const cls = (picked.className ?? "").trim();
+  if (cls) return cls;
   if (by === "birth") return shortBirth(picked.birthDate) ?? "생일 확인";
   return `${normalizeGrade(picked.grade) ?? "?"}학년`;
 }
@@ -444,6 +475,27 @@ function findEnglishNameCandidates(text: string): string[] {
     }
   }
   return out;
+}
+
+// 이름(한글이든 영문이든) 바로 뒤에 붙은 생일 괄호를 찾습니다.
+//
+// 한글 이름은 위치를 알고 있어서 findBirthHint를 바로 쓸 수 있는데, 영문 이름은 후보를
+// 문자열로만 뽑아 와서 위치가 없었습니다. 그래서 "jay kim(190828)"의 생일이 무시되고 학년으로만
+// 갈라려다 실패했습니다 - 담당자가 발견한 그 문제입니다.
+//
+// 같은 이름이 문장에 여러 번 나올 수 있으므로, 생일 괄호가 붙은 자리를 찾을 때까지 훑습니다.
+function birthHintNear(text: string, candidate: string): string | null {
+  const key = candidate.trim().toLowerCase();
+  if (!key) return null;
+  const lower = text.toLowerCase();
+  let from = 0;
+  for (;;) {
+    const idx = lower.indexOf(key, from);
+    if (idx === -1) return null;
+    const hint = findBirthHint(text, idx + key.length);
+    if (hint) return hint;
+    from = idx + key.length;
+  }
 }
 
 // 문장에서 'G2A'·'G2'·'2A'·'grade 2' 같은 학년 힌트를 뽑습니다(영문 first-name 동명이인 구분용).
@@ -828,7 +880,23 @@ function matchRosterStudentsCore(text: string, roster: RosterStudent[]): Matched
       // 전체 이름 우선, 없으면 first-name으로.
       let list = byNameEn.get(key) ?? byFirstEn.get(key) ?? [];
       if (list.length === 0) continue;
-      // 여러 명이면 학년으로 좁혀 한 명만 남을 때 채택(못 좁히면 건너뜀 - 엉뚱한 아이 방지).
+
+      // 이름 뒤 괄호의 생일을 **먼저** 봅니다. 담당자 지적:
+      // "jay kim(190828) 이거 김재이 영어이름이고, 뒤에 생일로 구분하는 게 적용이 안 되어 있어."
+      //
+      // 한글 이름 경로에는 이 처리가 있었는데 영문 경로에만 빠져 있었습니다. 영문 후보를
+      // 위치 없이 문자열로만 뽑아 오다 보니 "이름 바로 뒤"를 볼 수가 없었던 것이고,
+      // birthHintNear가 그 위치를 되찾아 줍니다.
+      //
+      // 생일이 학년보다 구체적입니다 - 같은 학년 동명이인은 학년으로 아무리 봐도 안 갈라집니다.
+      if (list.length > 1) {
+        const birthHint = birthHintNear(text, candidate);
+        if (birthHint) {
+          const narrowed = list.filter((s) => birthMatches(s.birthDate, birthHint));
+          if (narrowed.length === 1) list = narrowed;
+        }
+      }
+      // 그래도 여러 명이면 학년으로 좁힙니다.
       if (list.length > 1 && gradeHint) {
         const narrowed = list.filter((s) => normalizeGrade(s.grade) === gradeHint);
         if (narrowed.length >= 1) list = narrowed;
@@ -840,7 +908,11 @@ function matchRosterStudentsCore(text: string, roster: RosterStudent[]): Matched
         name: picked.name,
         grade: picked.grade,
         // 영어이름으로 대조된 경우 "한글이름(영어이름)"으로 병기합니다(요청).
-        displayName: `${picked.name}(${picked.nameEn})`,
+        // 아직 동명이인이 남아 있으면 영어이름만으로는 누구인지 알 수 없으므로 반을 함께
+        // 적습니다 - "김재이(Jay Kim · G3JA)".
+        displayName: hasHomonym && picked.className
+          ? `${picked.name}(${picked.nameEn} · ${picked.className})`
+          : `${picked.name}(${picked.nameEn})`,
         studentKey: hasHomonym ? `${picked.name}#${normalizeGrade(picked.grade)}` : picked.name,
         ambiguous: hasHomonym,
       });

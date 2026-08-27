@@ -10,6 +10,8 @@
 //     'G3&G6_Ije & Ryeomyeong Kang_Office'  - 다른 학년 두 자녀
 //   이때만 본문에서 누구인지 가려내야 하고, 가려내지 못하면 사람에게 넘깁니다.
 
+import { birthDigitsIn, birthMatches } from "@/lib/attendanceDigest";
+
 export type ChannelParse = {
   grades: string[];
   /** 채널 이름에서 뽑은 학생 이름 후보(형제면 둘 이상). */
@@ -74,7 +76,15 @@ export function parseChannelLabel(label: string | null | undefined): ChannelPars
   return { grades, names, isSibling: true };
 }
 
-export type RosterEntry = { id: string; name: string; name_en: string | null; grade: string | null };
+export type RosterEntry = {
+  id: string;
+  name: string;
+  name_en: string | null;
+  grade: string | null;
+  // 동명이인을 가르는 두 칸. birth_date는 기계가 확실히 가르고, class_name은 사람이 보고 압니다.
+  birth_date?: string | null;
+  class_name?: string | null;
+};
 
 /**
  * 이름 후보 하나를 명부와 대조합니다. 완전히 같은 이름만 인정합니다 - 픽업은 아이를 누구에게
@@ -96,6 +106,22 @@ export function matchStudent(candidate: string, roster: RosterEntry[], grade?: s
   });
 
   if (hits.length === 1) return hits[0];
+
+  // 동명이인이면 **생일을 먼저** 봅니다.
+  //
+  // 담당자 지적: "픽업 인박스에 jay kim(190828), 이거 김재이 영어이름이고 뒤에 생일로
+  // 구분하는 게 적용이 안 되어 있어."
+  //
+  // 김재이 세 명이 영문명을 모두 'Jay Kim'으로 쓰고, 그중 둘은 같은 2학년이라 학년으로도
+  // 안 갈라집니다. 그래서 이름 뒤 괄호에 생일을 적어 오시는데 그걸 읽지 않고 있었습니다.
+  if (hits.length > 1) {
+    const birthHint = birthDigitsIn(candidate);
+    if (birthHint) {
+      const byBirth = hits.filter((s) => birthMatches(s.birth_date, birthHint));
+      if (byBirth.length === 1) return byBirth[0];
+    }
+  }
+
   if (hits.length > 1 && grade) {
     // 동명이인이라도 학년이 다르면 채널 이름의 학년으로 가릴 수 있습니다.
     const g = grade.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -103,6 +129,14 @@ export function matchStudent(candidate: string, roster: RosterEntry[], grade?: s
     if (byGrade.length === 1) return byGrade[0];
   }
   return null;
+}
+
+/** 화면에 보여줄 이름. 동명이인이면 반을 붙입니다("김재이(G3JA)") - 담당자 요청. */
+export function studentLabel(s: RosterEntry, roster: RosterEntry[]): string {
+  const homonym = roster.filter((o) => o.name === s.name).length > 1;
+  if (!homonym) return s.name;
+  const cls = (s.class_name ?? "").trim();
+  return cls ? `${s.name}(${cls})` : `${s.name}(${s.grade ?? "?"}학년)`;
 }
 
 /**
@@ -158,7 +192,8 @@ export function toKoreanDisplayName(
     const kos = parsed.names.map((n) => {
       const grade = parsed.grades[0] ?? null;
       const m = matchStudent(n, roster, grade);
-      return m?.name ?? null;
+      // 동명이인이면 반을 붙여 누구인지 알아볼 수 있게 합니다(담당자 요청).
+      return m ? studentLabel(m, roster) : null;
     });
     // 모두 한글로 바뀌었을 때만 채널 기반 이름을 씁니다. 하나라도 못 찾으면 아래로 넘어갑니다.
     if (kos.every(Boolean)) return kos.join(" & ");
@@ -167,7 +202,7 @@ export function toKoreanDisplayName(
   // 채널이 없거나 일부만 맞으면, 지금 값 자체를 한 명으로 보고 대조해봅니다("Soo J").
   if (has(current)) {
     const m = matchStudent(current as string, roster);
-    if (m?.name) return m.name;
+    if (m?.name) return studentLabel(m, roster);
 
     // 마지막 수단: 이름이 잘려 온 경우("Soo J" → "Soo Jin Kim"). 영문명이 이 값으로
     // 시작하는 학생이 **딱 한 명**일 때만 바꿉니다. 여럿이면 누구인지 알 수 없으니 그대로 둡니다

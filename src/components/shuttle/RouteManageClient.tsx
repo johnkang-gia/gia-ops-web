@@ -6,6 +6,7 @@ import type { ShuttleAssignment, ShuttleDirection, ShuttleRoute, ShuttleStop } f
 import { useToast } from "@/components/common/ToastProvider";
 import { useConfirm } from "@/components/common/ConfirmProvider";
 import { geocodeAddress } from "@/lib/kakaoMap";
+import { byRouteNo } from "@/lib/routeSort";
 
 type StopDraft = { stop_time: string; address: string; gate: string };
 
@@ -39,7 +40,8 @@ export default function RouteManageClient({
     return routes
       .filter((r) => r.direction === direction)
       .filter((r) => !q || `${r.route_no} ${r.name ?? ""} ${r.driver_name ?? ""} ${r.teacher_name ?? ""}`.toLowerCase().includes(q))
-      .sort((a, b) => a.sort_order - b.sort_order);
+      // 호수 오름차순(담당자 요청). sort_order는 엑셀에 적힌 지역별 순서라 화면에서 튑니다.
+      .sort(byRouteNo((r) => r.route_no));
   }, [routes, direction, query]);
 
   const selected = routes.find((r) => r.id === selectedId) ?? visibleRoutes[0] ?? null;

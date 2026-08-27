@@ -128,6 +128,44 @@ export function matchStudent(candidate: string, roster: RosterEntry[], grade?: s
     const byGrade = hits.filter((s) => (s.grade ?? "").toLowerCase().replace(/[^a-z0-9]/g, "") === g);
     if (byGrade.length === 1) return byGrade[0];
   }
+  if (hits.length > 0) return null; // 여럿인데 못 좁혔으면 사람에게.
+
+  // ── 성이 잘려서 온 경우 ─────────────────────────────────────────────────
+  //
+  // 담당자: "dongha k, Seohu k 의 경우에도 김동하(dongha Kim), 강서후(seohu Kang) 영어이름인데
+  //          아예 조금이라도 끊어지면 이름을 인식 못하나봐."
+  //
+  // 맞습니다. 지금까지는 **완전히 같은 글자**만 인정했습니다. 채널 이름이 'Dongha K' 처럼
+  // 성을 이니셜로만 쓰거나 뒤가 잘려 오는 경우가 흔한데, 그러면 'dongha kim'과 한 글자도
+  // 안 맞는 것으로 취급돼 전부 확인 대기로 갔습니다.
+  //
+  // 그래서 **앞에서부터 이어지면** 인정합니다("dongha k" ⊂ "dongha kim").
+  // 다만 한 명으로 좁혀질 때만입니다 - 'kim'만 적혀 있으면 수십 명이 걸리므로 사람에게 넘깁니다.
+  // 그리고 4글자 이상일 때만 봅니다. 두세 글자로 앞을 맞추면 엉뚱한 아이가 걸립니다.
+  if (target.length >= 4) {
+    const prefixHits = roster.filter((s) => {
+      for (const form of [s.name, s.name_en ?? ""]) {
+        const f = normalizeName(form);
+        if (f && f.startsWith(target)) return true;
+      }
+      return false;
+    });
+    if (prefixHits.length === 1) return prefixHits[0];
+    if (prefixHits.length > 1 && grade) {
+      const g = grade.toLowerCase().replace(/[^a-z0-9]/g, "");
+      const byGrade = prefixHits.filter((s) => (s.grade ?? "").toLowerCase().replace(/[^a-z0-9]/g, "") === g);
+      if (byGrade.length === 1) return byGrade[0];
+    }
+  }
+
+  // 마지막 수단: 이름(first name)만 적혀 있고 성이 아예 없는 경우("Dongha 오늘 픽업").
+  // 이 역시 한 명으로 좁혀질 때만 인정합니다.
+  const firstToken = target.split(" ")[0];
+  if (firstToken.length >= 3) {
+    const firstHits = roster.filter((s) => normalizeName(s.name_en ?? "").split(" ")[0] === firstToken);
+    if (firstHits.length === 1) return firstHits[0];
+  }
+
   return null;
 }
 

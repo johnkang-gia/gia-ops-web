@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
+import StudentPicker from "@/components/pickup/StudentPicker";
 
 // 앞으로 예정된 픽업.
 //
@@ -25,6 +26,18 @@ export type ScheduleRow = {
   needs_confirm: boolean;
   source_note: string | null;
   homeroom_email: string | null;
+  request_id?: string | null;
+  /** 이 예약이 나온 원래 연락. 담당자: "예정된 픽업에서 전문을 못 보니까 업무보드를
+   *  갔다가 다시 돌아와야 해." 맞다/아니다를 정하려면 원문을 봐야 하는데, 그걸 보려고
+   *  화면을 옮기게 하면 아무도 확인을 안 하게 됩니다. */
+  pickup_requests?: {
+    raw_text: string | null;
+    summary: string | null;
+    channel_label: string | null;
+    source_url: string | null;
+    source_chat_id: string | null;
+    received_at: string | null;
+  } | null;
 };
 
 function dateLabel(iso: string): string {
@@ -38,7 +51,7 @@ function dateLabel(iso: string): string {
 }
 
 // 학생 고르기 목록에 쓰는 최소 정보. 동명이인이 있으면 반을 붙여 구별합니다.
-type StudentOption = { id: string; name: string; grade: string | null; class_name: string | null };
+type StudentOption = { id: string; name: string; grade: string | null; class_name: string | null; name_en: string | null; student_no: string | null };
 
 export default function UpcomingPickups({ initialRows }: { initialRows: ScheduleRow[] }) {
   const notify = useToast();
@@ -51,14 +64,14 @@ export default function UpcomingPickups({ initialRows }: { initialRows: Schedule
   // 지금까지 '확인 필요'에 할 수 있는 일은 "맞음"(그대로 두기)과 "✕"(취소) 둘뿐이었습니다.
   // 정작 가장 흔한 경우 - 이름은 읽혔는데 **누구인지 못 정한 경우** - 를 고칠 방법이
   // 없었습니다. 사람이 보고 "이 아이입니다" 하고 짚어줄 자리가 필요합니다.
-  const [linking, setLinking] = useState<string | null>(null);
+  const [openText, setOpenText] = useState<string | null>(null);
   const [students, setStudents] = useState<StudentOption[]>([]);
 
   useEffect(() => {
     void (async () => {
       const { data } = await createClient()
         .from("wr_students")
-        .select("id, name, grade, class_name")
+        .select("id, name, grade, class_name, name_en, student_no")
         .eq("status", "active")
         .eq("is_demo", false)
         .order("name");
@@ -66,22 +79,12 @@ export default function UpcomingPickups({ initialRows }: { initialRows: Schedule
     })();
   }, []);
 
-  // 같은 이름이 둘 이상이면 반을 붙입니다("김재이(G3JA)") - 반이 없으면 학년으로.
-  const optionLabel = useCallback(
-    (s: StudentOption) => {
-      const homonym = students.filter((o) => o.name === s.name).length > 1;
-      if (!homonym) return s.name;
-      return s.class_name ? `${s.name}(${s.class_name})` : `${s.name}(${s.grade ?? "?"}학년)`;
-    },
-    [students]
-  );
-
   const load = useCallback(async () => {
     const supabase = createClient();
     const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
     const { data } = await supabase
       .from("pickup_schedules")
-      .select("id, service_date, pickup_time, student_name, student_id, status, needs_confirm, source_note, homeroom_email")
+      .select("id, service_date, pickup_time, student_name, student_id, status, needs_confirm, source_note, homeroom_email, request_id, pickup_requests(raw_text, summary, channel_label, source_url, source_chat_id, received_at)")
       .gte("service_date", today)
       .in("status", ["예정", "적용됨", "실패"])
       .order("service_date", { ascending: true })
@@ -139,7 +142,6 @@ export default function UpcomingPickups({ initialRows }: { initialRows: Schedule
     setRows((prev) =>
       prev.map((r) => (r.id === row.id ? { ...r, student_id: s.id, student_name: s.name, needs_confirm: false } : r))
     );
-    setLinking(null);
     const { error } = await supabase
       .from("pickup_schedules")
       .update({ student_id: s.id, student_name: s.name, needs_confirm: false })
@@ -208,37 +210,32 @@ export default function UpcomingPickups({ initialRows }: { initialRows: Schedule
                   {r.status === "실패" && <span className="text-[10px]">확인 필요</span>}
 
                   {/* 확인 필요 / 미연결이면 학생을 직접 고를 수 있게 합니다(담당자 요청). */}
-                  {(r.needs_confirm || !r.student_id) && r.status !== "적용됨" && (
-                    linking === r.id ? (
-                      <select
-                        autoFocus
-                        disabled={busy}
-                        defaultValue=""
-                        onChange={(e) => e.target.value && linkStudent(r, e.target.value)}
-                        onBlur={() => setLinking(null)}
-                        className="max-w-[9rem] rounded border border-slate-300 bg-white px-1 py-0.5 text-[10px]"
-                      >
-                        <option value="">학생 고르기…</option>
-                        {students.map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {optionLabel(s)}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => setLinking(r.id)}
-                        className="rounded border border-amber-300 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 disabled:opacity-50"
-                        title="이 픽업이 어느 학생인지 직접 고릅니다"
-                      >
-                        학생 연결
-                      </button>
-                    )
+                  {/* 원문 보기(담당자 요청). 맞다/아니다를 정하려면 원문을 봐야 하는데, 그걸
+                      보려고 업무보드로 갔다 오게 하면 아무도 확인을 안 하게 됩니다. */}
+                  {(r.pickup_requests?.raw_text || r.source_note) && (
+                    <button
+                      type="button"
+                      onClick={() => setOpenText(openText === r.id ? null : r.id)}
+                      className="rounded px-1 text-[11px] text-slate-400 hover:text-slate-700"
+                      title="이 예약이 나온 원문 보기"
+                    >
+                      💬
+                    </button>
                   )}
 
-                  {r.needs_confirm && r.status === "예정" && r.student_id && linking !== r.id && (
+                  {/* 확인 필요 / 미연결이면 학생을 직접 고를 수 있게 합니다. 137명 목록을
+                      눈으로 훑는 대신 두 글자만 쳐도 좁혀집니다(담당자 요청). */}
+                  {(r.needs_confirm || !r.student_id) && r.status !== "적용됨" && (
+                    <StudentPicker
+                      students={students}
+                      disabled={busy}
+                      label="학생 연결"
+                      autoFocusQuery={(r.student_name ?? "").replace(/\(.*$/, "").trim()}
+                      onPick={(s) => linkStudent(r, s.id)}
+                    />
+                  )}
+
+                  {r.needs_confirm && r.status === "예정" && r.student_id && (
                     <button
                       type="button"
                       disabled={busy}
@@ -260,6 +257,35 @@ export default function UpcomingPickups({ initialRows }: { initialRows: Schedule
                 </div>
               ))}
             </div>
+
+            {/* 펼친 원문. 칩 줄 아래 넓게 펴야 읽힙니다 - 칩 안에 넣으면 줄이 깨집니다. */}
+            {list.filter((r) => openText === r.id).map((r) => (
+              <div key={`t-${r.id}`} className="mt-1.5 rounded-lg border border-slate-200 bg-white p-2">
+                <div className="mb-1 flex flex-wrap items-center gap-1.5 text-[10px] text-slate-400">
+                  <span className="font-semibold text-slate-600">{r.student_name ?? "학생 미확인"}</span>
+                  {r.pickup_requests?.channel_label && <span>{r.pickup_requests.channel_label}</span>}
+                  {r.pickup_requests?.received_at && (
+                    <span>{new Date(r.pickup_requests.received_at).toLocaleString("ko-KR")}</span>
+                  )}
+                  {r.pickup_requests?.source_url && (
+                    <a
+                      href={r.pickup_requests.source_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="ml-auto rounded bg-slate-100 px-1.5 py-0.5 font-bold text-slate-600 hover:bg-slate-800 hover:text-white"
+                    >
+                      토들 ↗
+                    </a>
+                  )}
+                </div>
+                <p className="whitespace-pre-wrap text-[11px] leading-relaxed text-slate-700">
+                  {r.pickup_requests?.raw_text || r.source_note}
+                </p>
+                {r.source_note && r.pickup_requests?.raw_text && (
+                  <p className="mt-1 text-[10px] text-slate-400">판단 근거: {r.source_note}</p>
+                )}
+              </div>
+            ))}
           </div>
         ))}
       </div>

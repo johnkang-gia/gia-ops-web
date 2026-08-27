@@ -62,7 +62,7 @@ export default async function PickupInboxPage() {
       .limit(200),
     supabase
       .from("wr_students")
-      .select("id, name, grade")
+      .select("id, name, grade, class_name, name_en, student_no")
       .eq("is_demo", false)
       .eq("status", "active")
       .order("name"),
@@ -70,7 +70,7 @@ export default async function PickupInboxPage() {
     // 앞으로 예정된 픽업. 오늘 것만 보면 "이번주 목금" 같은 예약을 놓칩니다.
     supabase
       .from("pickup_schedules")
-      .select("id, service_date, pickup_time, student_name, student_id, status, needs_confirm, source_note, homeroom_email")
+      .select("id, service_date, pickup_time, student_name, student_id, status, needs_confirm, source_note, homeroom_email, request_id, pickup_requests(raw_text, summary, channel_label, source_url, source_chat_id, received_at)")
       .gte("service_date", today)
       .in("status", ["예정", "적용됨", "실패"])
       .order("service_date", { ascending: true })

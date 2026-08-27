@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { CURRENT_SHUTTLE_TERM } from "@/lib/shuttleTerm";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isStaffOrAboveUser } from "@/lib/roles";
 import type { ShuttleAssignment, ShuttleRoute, ShuttleStop, WrStudent } from "@/lib/types";
@@ -26,7 +27,7 @@ const GUIDE_SECTIONS = [
 export const dynamic = "force-dynamic";
 
 // 지금 쓰는 학기. 여름캠프2가 끝난 뒤로 운영은 정규학기 하나뿐입니다.
-const TERM = "정규학기";
+const TERM = CURRENT_SHUTTLE_TERM;
 
 export default async function ShuttleAssignmentsPage() {
   const supabase = await createClient();

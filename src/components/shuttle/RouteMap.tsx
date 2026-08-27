@@ -174,6 +174,12 @@ export default function RouteMap({
   const [pinTarget, setPinTarget] = useState<string | null>(null); // 지도를 클릭해 좌표를 지정할 정류장 id
   const [routePath, setRoutePath] = useState<ShuttleRoutePath | null>(null);
   const [pathComputing, setPathComputing] = useState(false);
+  // 기사님이 실제로 다니신 길(가장 최근 운행일의 GPS 자취). 끊긴 구간이 있어 토막으로 옵니다.
+  const [actualSegments, setActualSegments] = useState<{ lat: number; lng: number }[][]>([]);
+  const [actualDate, setActualDate] = useState<string | null>(null);
+  const [actualReason, setActualReason] = useState<string | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const actualLinesRef = useRef<any[]>([]);
   const autoTriedRef = useRef<Set<string>>(new Set());
 
   useEffect(() => setLocalStops(stops), [stops]);
@@ -209,6 +215,34 @@ export default function RouteMap({
       if (!cancelled) setRoutePath((data as ShuttleRoutePath | null) ?? null);
     }
     run();
+    return () => {
+      cancelled = true;
+    };
+  }, [routeId]);
+
+  // 기사님이 실제로 다니신 길(가장 최근 운행일의 GPS 자취).
+  useEffect(() => {
+    let cancelled = false;
+    setActualSegments([]);
+    setActualDate(null);
+    setActualReason(null);
+    (async () => {
+      try {
+        const res = await fetch(`/api/shuttle/actual-path?routeId=${encodeURIComponent(routeId)}`, { cache: "no-store" });
+        if (!res.ok) return;
+        const json = (await res.json()) as {
+          segments?: { lat: number; lng: number }[][];
+          serviceDate?: string | null;
+          reason?: string | null;
+        };
+        if (cancelled) return;
+        setActualSegments(json.segments ?? []);
+        setActualDate(json.serviceDate ?? null);
+        setActualReason(json.reason ?? null);
+      } catch {
+        // 실제 경로를 못 불러와도 계산한 경로는 그대로 보입니다.
+      }
+    })();
     return () => {
       cancelled = true;
     };
@@ -332,6 +366,10 @@ export default function RouteMap({
       markersRef.current = [];
       lineRef.current?.setMap(null);
       lineRef.current = null;
+      actualLinesRef.current.forEach((l) => l.setMap(null));
+      actualLinesRef.current = [];
+      // 실제 주행 자취까지 화면에 담기 위한 좌표 모음(아래 setBounds에서 씁니다).
+      const bounds0: Kakao[] = [];
 
       const pts = orderedPoints;
       if (pts.length === 0) return;
@@ -368,25 +406,52 @@ export default function RouteMap({
       const useRoadPath = routePath && !pathStale && routePath.path.length >= 2;
       const linePath = useRoadPath ? routePath!.path.map((p) => new kakao.maps.LatLng(p.lat, p.lng)) : path;
 
+      // ── 실제 주행 경로가 있으면 그쪽이 주인공입니다 ──────────────────────
+      //
+      // 담당자: "경로 계산한 것, GPS 데이터를 바탕으로 기사님이 실제 가시는 경로로 바꿔줘."
+      //
+      // 계산한 선은 "이 정류장들을 도는 최단 경로"일 뿐입니다. 기사님은 상습 정체 구간을
+      // 피하시고, 좌회전이 어려운 교차로를 돌아가시고, 아파트도 들어가는 문이 정해져
+      // 있습니다. 그 차이는 지도만 봐서는 알 수 없고 실제 자취에만 남습니다.
+      //
+      // 그래서 GPS 자취가 있으면 **그것을 진한 선으로** 그리고, 계산한 선은 옅은 점선으로
+      // 뒤에 남깁니다(둘을 겹쳐 보면 어디서 갈리는지가 그대로 보입니다).
+      const hasActual = actualSegments.length > 0;
+
       if (linePath.length >= 2) {
         const polyline = new kakao.maps.Polyline({
           path: linePath,
-          strokeWeight: 4,
+          strokeWeight: hasActual ? 3 : 4,
           strokeColor: direction === "등원" ? "#d97706" : "#4f46e5",
-          strokeOpacity: useRoadPath ? 0.85 : 0.6,
-          strokeStyle: "solid",
+          strokeOpacity: hasActual ? 0.28 : useRoadPath ? 0.85 : 0.6,
+          strokeStyle: hasActual ? "shortdash" : "solid",
         });
         polyline.setMap(map);
         lineRef.current = polyline;
       }
 
+      for (const seg of actualSegments) {
+        if (seg.length < 2) continue;
+        const l = new kakao.maps.Polyline({
+          path: seg.map((p) => new kakao.maps.LatLng(p.lat, p.lng)),
+          strokeWeight: 6,
+          strokeColor: "#059669",
+          strokeOpacity: 0.9,
+          strokeStyle: "solid",
+        });
+        l.setMap(map);
+        actualLinesRef.current.push(l);
+        for (const p of seg) bounds0.push(new kakao.maps.LatLng(p.lat, p.lng));
+      }
+
       const bounds = new kakao.maps.LatLngBounds();
       linePath.forEach((p: Kakao) => bounds.extend(p));
       path.forEach((p) => bounds.extend(p));
+      bounds0.forEach((p: Kakao) => bounds.extend(p));
       map.setBounds(bounds, 60, 60, 60, 60);
     }
     render();
-  }, [orderedPoints, sdkStatus, direction, routePath, pathStale]);
+  }, [orderedPoints, sdkStatus, direction, routePath, pathStale, actualSegments]);
 
   // 수동 좌표 지정 모드: 지도를 클릭하면 그 위치를 pinTarget 정류장의 좌표로 저장합니다.
   useEffect(() => {
@@ -490,6 +555,20 @@ export default function RouteMap({
             </span>
           )}
           {routePath && pathStale && <span className="ml-1 text-amber-600">· 정류장이 바뀌어 경로를 다시 계산해야 합니다</span>}
+          {/* 두 선을 겹쳐 보여주므로 어느 것이 무엇인지 말해줘야 합니다.
+              담당자: "GPS 데이터를 바탕으로 기사님이 실제 가시는 경로로 바꿔줘." */}
+          {actualSegments.length > 0 ? (
+            <span className="ml-1">
+              ·{" "}
+              <span className="inline-block h-[3px] w-4 align-middle" style={{ background: "#059669" }} />{" "}
+              <b className="text-emerald-700">실제 주행({actualDate})</b>
+              {" · "}
+              <span className="inline-block h-[2px] w-4 align-middle" style={{ background: "#94a3b8" }} />{" "}
+              <span className="text-slate-400">계산한 경로</span>
+            </span>
+          ) : (
+            actualReason && <span className="ml-1 text-slate-400">· 실제 주행 경로 없음({actualReason})</span>
+          )}
         </p>
         <div className="flex items-center gap-2">
           {canEdit && (

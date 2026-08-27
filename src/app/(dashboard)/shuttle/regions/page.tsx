@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { CURRENT_SHUTTLE_TERM } from "@/lib/shuttleTerm";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isStaffOrAboveUser } from "@/lib/roles";
 import type { ShuttleAssignment, ShuttleRoute, ShuttleStop } from "@/lib/types";
@@ -26,7 +27,8 @@ export default async function ShuttleRegionsPage() {
   if (!isStaffOrAboveUser(me)) redirect("/home");
 
   const [routesRes, stopsRes, asgRes] = await Promise.all([
-    supabase.from("shuttle_routes").select("*").eq("active", true).order("direction").order("sort_order"),
+    // 지금 학기 노선만(여름캠프 노선이 섞이면 지역별 인원이 두 배로 보입니다).
+    supabase.from("shuttle_routes").select("*").eq("term", CURRENT_SHUTTLE_TERM).eq("active", true).order("direction").order("sort_order"),
     supabase.from("shuttle_stops").select("*").order("seq"),
     supabase.from("shuttle_assignments").select("id, stop_id"),
   ]);

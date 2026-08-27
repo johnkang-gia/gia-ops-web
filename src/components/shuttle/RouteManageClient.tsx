@@ -7,6 +7,7 @@ import { useToast } from "@/components/common/ToastProvider";
 import { useConfirm } from "@/components/common/ConfirmProvider";
 import { geocodeAddress } from "@/lib/kakaoMap";
 import { byRouteNo } from "@/lib/routeSort";
+import { CURRENT_SHUTTLE_TERM } from "@/lib/shuttleTerm";
 
 type StopDraft = { stop_time: string; address: string; gate: string };
 
@@ -102,6 +103,11 @@ export default function RouteManageClient({
         name: "",
         depart_time: direction === "등원" ? "08:00" : "16:00",
         sort_order: maxOrder + 1,
+        // 학기를 명시합니다. 예전에는 안 넣어서 데이터베이스 기본값에 맡겼는데, 그 값이
+        // 다르면 방금 만든 노선이 **화면에서 바로 사라집니다**(화면은 지금 학기만 보므로).
+        // 만든 사람은 "저장이 안 됐나?" 하고 또 만들게 되고, 그렇게 중복이 쌓입니다.
+        term: CURRENT_SHUTTLE_TERM,
+        active: true,
       })
       .select()
       .single();

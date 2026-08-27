@@ -8,6 +8,7 @@ import {
   dedupeEntries,
   extractTargetDate,
   guessKoreanName,
+  buildStaffNames,
   matchRosterStudents,
   stripLeadingMention,
   todayKey,
@@ -153,8 +154,8 @@ export default function ShuttleChecklistSidebar({
     void loadRules();
     void loadDismissed();
     void (async () => {
-      const { data } = await createClient().from("app_users").select("name").not("name", "is", null).limit(500);
-      setStaffNames(((data as { name: string | null }[] | null) ?? []).map((r) => (r.name ?? "").trim()).filter((n) => n.length >= 2));
+      const { data } = await createClient().from("app_users").select("name, email").limit(500);
+      setStaffNames(buildStaffNames((data as { name: string | null; email: string | null }[] | null) ?? []));
     })();
     void (async () => {
       const { data } = await createClient().auth.getUser();

@@ -110,10 +110,10 @@ export default async function ShuttleChecklistPage({
   const boardingsRes = allAssignmentIds.length
     ? await supabase
         .from("shuttle_boardings")
-        .select("assignment_id, status, override_route_id")
+        .select("assignment_id, status, override_route_id, checked_by, updated_by, checked_at")
         .eq("service_date", today)
         .in("assignment_id", allAssignmentIds)
-    : { data: [] as { assignment_id: string; status: string; override_route_id: string | null }[] };
+    : { data: [] as { assignment_id: string; status: string; override_route_id: string | null; checked_by: string | null; updated_by: string | null; checked_at: string | null }[] };
   const boardingByAssignment = new Map((boardingsRes.data ?? []).map((b) => [b.assignment_id, b]));
 
   // 요청: "이제 토들도 가져오니까 하원체크표에 오늘픽업 결석에 여기도 반영" - 토들·전화·구글챗으로
@@ -218,6 +218,33 @@ export default async function ShuttleChecklistPage({
       // 다음에 화면을 열 때 자동 표시가 되살아납니다. 사람이 되돌린 것을 기계가 다시 뒤집는
       // 셈이라, 줄이 하나라도 있으면 사람 판단으로 봅니다.
       let autoSource: AutoSource | null = null;
+
+      // 사람이나 크론이 찍은 경우에도 **근거를 남깁니다.**
+      //
+      // 담당자: "자동으로 체크한 애들 전부 다, 그 체크한 근거를 볼 수 있도록."
+      //
+      // 예전에는 토들에서 자동으로 붙은 것만 근거가 있었습니다. 그런데 아침 크론이
+      // 지속 특이사항·예약 픽업으로 찍어놓은 것도 "누가 왜 찍었는지" 모르기는 마찬가지입니다.
+      // 표에 사선이 그어져 있는데 이유를 모르면, 결국 사람이 전화로 확인하게 됩니다.
+      if (boarding && (boarding.status === "픽업" || boarding.status === "결석")) {
+        const who = (boarding.updated_by as string | null) ?? (boarding.checked_by as string | null) ?? "";
+        autoSource = {
+          requestId: "",
+          kind: boarding.status as "픽업" | "결석",
+          source: who || "사람",
+          channelLabel: null,
+          senderName: who || null,
+          receivedAt: (boarding.checked_at as string | null) ?? "",
+          rawText: who.includes("AI") || who.includes("자동")
+            ? `${who}이(가) 오늘 ${boarding.status}으로 표시했습니다.`
+            : `${who || "담당자"}가 체크표에서 ${boarding.status}으로 표시했습니다.`,
+          aiNote: null,
+          matchedName: a.student_name_raw,
+          sourceUrl: null,
+          sourceChatId: null,
+        };
+      }
+
       if (ridingToday && !boarding) {
         const hit = (list: string[]) => list.find((n) => nameMatch(n, a.student_name_raw));
         const p = hit(pickupNames);

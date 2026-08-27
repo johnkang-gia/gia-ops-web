@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { APP_VERSION } from "@/lib/version";
-import { categorize, extractTargetDate, matchRosterStudents, todayKey, type RosterStudent } from "@/lib/attendanceDigest";
+import { buildStaffNames, categorize, extractTargetDate, matchRosterStudents, todayKey, type RosterStudent } from "@/lib/attendanceDigest";
 import { loadActiveEntries } from "@/lib/attendanceEntries";
 import { toKoreanDisplayName, type RosterEntry } from "@/lib/pickupParse";
 import { createClient } from "@supabase/supabase-js";
@@ -182,10 +182,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   // 담당자: "@Carina Ann John까지가 이름인데 carina ann까지만 읽어서 john이 요한이로 매칭돼."
   // 낱말 수로는 "@Janelle Story Maya"(마야는 학생)와 구별할 수 없습니다. 실제 성함인지가
   // 유일한 근거라, 계정 명단을 그대로 씁니다 - 선생님이 오시면 저절로 반영됩니다.
-  const { data: staffRows } = await supabase.from("app_users").select("name").not("name", "is", null).limit(500);
-  const staffNames = ((staffRows as { name: string | null }[] | null) ?? [])
-    .map((r) => (r.name ?? "").trim())
-    .filter((n) => n.length >= 2);
+  const { data: staffRows } = await supabase.from("app_users").select("name, email").limit(500);
+  const staffNames = buildStaffNames((staffRows as { name: string | null; email: string | null }[] | null) ?? []);
 
   const scanFrom = new Date(nowKst.getTime() - 14 * 24 * 60 * 60 * 1000);
   const { data: mirror } = await supabase

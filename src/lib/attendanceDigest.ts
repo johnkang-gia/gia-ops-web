@@ -199,6 +199,35 @@ function addDays(d: Date, n: number): Date {
 export function extractTargetRange(text: string, baseDate: Date): TargetRange | null {
   const base = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate());
 
+  // ⓪ "9/16~23", "9/16~9/23", "9.16 - 9.23", "9월16일~23일" 처럼 **날짜를 직접 적은 기간**.
+  //
+  // 담당자: "한우영의 경우 9/16~23이라고 기간이 나와 있어. 그래서 지금 결석이 아니라
+  //          9월 16일부터 23일까지 체크가 되도록 해줘."
+  //
+  // 이 형태를 못 읽어서 기간이 통째로 무시되고, 글이 온 날 하루짜리로 등록됐습니다.
+  // 그래서 9월 얘기인데 오늘 결석으로 떴습니다 - 가장 명확하게 적어준 형태를 못 읽고 있었으니
+  // 다른 어떤 추측보다 먼저 봐야 합니다.
+  //
+  // 뒤쪽 달이 생략되면(9/16~23) 앞의 달을 그대로 씁니다. 사람이 그렇게 읽으니까요.
+  const explicit = text.match(
+    /(\d{1,2})\s*[./월]\s*(\d{1,2})\s*일?\s*[~\-–—]\s*(?:(\d{1,2})\s*[./월]\s*)?(\d{1,2})\s*일?/
+  );
+  if (explicit) {
+    const m1 = Number(explicit[1]);
+    const d1 = Number(explicit[2]);
+    const m2 = explicit[3] ? Number(explicit[3]) : m1;
+    const d2 = Number(explicit[4]);
+    const okMonth = (m: number) => m >= 1 && m <= 12;
+    const okDay = (d: number) => d >= 1 && d <= 31;
+    if (okMonth(m1) && okMonth(m2) && okDay(d1) && okDay(d2)) {
+      // 연도: 적힌 달이 지금보다 뒤면 올해, 많이 지났으면 내년으로 봅니다(학기 중 앞날 통보).
+      const y = base.getMonth() + 1 > m1 + 6 ? base.getFullYear() + 1 : base.getFullYear();
+      const from = new Date(y, m1 - 1, d1);
+      const to = new Date(m2 < m1 ? y + 1 : y, m2 - 1, d2);
+      return clamp(from, to);
+    }
+  }
+
   // ① "N일간 / N일 동안" - 적힌 날부터 셉니다.
   const span = text.match(/(\d{1,2})\s*일\s*(?:간|동안)/);
   if (span) {
@@ -750,12 +779,48 @@ function resolveGivenNameToken(
 // 선생님이 새로 오시면 계정이 생기면서 저절로 반영됩니다. 사람이 목록을 관리하지 않습니다.
 const MENTION_MAX_WORDS = 4;
 
+// 아직 계정을 안 만드신 선생님들 중 **성함이 두 낱말이 아닌 분들**.
+//
+// 담당자: "@carina ann john과 @Emily Farner-Alroth, @Lee moung wha 이 셋을 제외하고는
+//          @뒤에 2개까지가 이름인데, 나중에 선생님들이 가입을 다 하시게 되면 직장 구글메일
+//          @giamicro.com 앞의 글자들을 선생님 이름으로 분류하고 멘션 규칙에서 필터링 하면 돼.
+//          근데 아직 교사가 전부 등록하기 전이라서 그래."
+//
+// 그래서 이 목록은 **임시 다리**입니다. 계정이 생기면 app_users에서 저절로 들어오므로 여기
+// 적힌 것과 겹쳐도 아무 문제가 없고, 다 등록되신 뒤에는 지워도 됩니다.
+// (Emily Farner-Alroth는 하이픈이 붙어 원래도 두 낱말로 읽히지만, 표기가 흔들릴 때를 대비해
+//  함께 적어둡니다.)
+const SEED_STAFF_NAMES = ["Carina Ann John", "Emily Farner-Alroth", "Lee Moung Wha"];
+
 function normStaff(s: string): string {
   return s.toLowerCase().replace(/[\s.'-]/g, "");
 }
 
+/**
+ * 멘션에서 지울 선생님 성함 목록을 만듭니다.
+ *
+ * 세 갈래를 합칩니다.
+ *   ① 계정에 적힌 성함(app_users.name)
+ *   ② 직장 메일 아이디(@giamicro.com 앞부분) - 담당자 안내대로, 계정이 늘수록 이쪽이 주력이 됩니다
+ *   ③ 아직 계정이 없는 분들의 임시 목록(SEED_STAFF_NAMES)
+ *
+ * ②를 함께 보는 이유: 성함 칸이 비어 있어도 메일 아이디는 반드시 있습니다.
+ */
+export function buildStaffNames(rows: { name?: string | null; email?: string | null }[]): string[] {
+  const out = new Set<string>(SEED_STAFF_NAMES);
+  for (const r of rows) {
+    const n = (r.name ?? "").trim();
+    if (n.length >= 2) out.add(n);
+    const local = (r.email ?? "").split("@")[0]?.trim() ?? "";
+    // 'carinaannjohn', 'carina.ann.john' 둘 다 normStaff를 거치면 같아집니다.
+    if (local.length >= 3) out.add(local);
+  }
+  return [...out];
+}
+
 export function blankMentions(text: string, staffNames?: string[]): string {
-  const known = new Set((staffNames ?? []).map(normStaff).filter((s) => s.length >= 3));
+  // 넘겨받은 목록이 없어도 임시 목록은 늘 켜 둡니다 - 세 낱말 성함 세 분이 여기 걸립니다.
+  const known = new Set([...SEED_STAFF_NAMES, ...(staffNames ?? [])].map(normStaff).filter((s) => s.length >= 3));
 
   // 한글 멘션(@김선생)이나 이메일형은 한 덩어리로 지웁니다.
   const out = text.replace(/@(?![A-Za-z])[^\s@]+/g, (m) => " ".repeat(m.length));

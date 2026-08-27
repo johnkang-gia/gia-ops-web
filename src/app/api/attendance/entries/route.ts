@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { scanIntoEntries, type ScanSource } from "@/lib/attendanceEntries";
-import { todayKey, type LearningRule, type RosterStudent } from "@/lib/attendanceDigest";
+import { buildStaffNames, todayKey, type LearningRule, type RosterStudent } from "@/lib/attendanceDigest";
 
 // 업무보드 인박스가 쓰는 출결 등록 창구입니다.
 //
@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
     db.from("wr_students").select("id, name, name_en, grade, class_name, birth_date").eq("status", "active").eq("is_demo", false),
     db.from("attendance_learning_rules").select("kind, pattern, student_name, category"),
     // 멘션을 지울 때 쓸 교직원 성함(세 낱말짜리 성함 대응).
-    db.from("app_users").select("name").not("name", "is", null).limit(500),
+    db.from("app_users").select("name, email").limit(500),
     db
       .from("google_chat_mirror_messages")
       .select("id, content, created_at_google")
@@ -91,9 +91,7 @@ export async function GET(req: NextRequest) {
       })),
   ];
 
-  const staffNames = ((staffRows as { name: string | null }[] | null) ?? [])
-    .map((r) => (r.name ?? "").trim())
-    .filter((n) => n.length >= 2);
+  const staffNames = buildStaffNames((staffRows as { name: string | null; email: string | null }[] | null) ?? []);
 
   const scan = await scanIntoEntries(db, messages, roster, (rules ?? []) as LearningRule[], staffNames);
 

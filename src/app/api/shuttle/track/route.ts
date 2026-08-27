@@ -47,38 +47,49 @@ function parseTimestamp(raw: string | null): Date {
 
 // 이 노선의 정류장 중 현재 위치에서 반경 안에 있는 가장 가까운 정류장을 찾아, 오늘 도착으로
 // 기록합니다. unique(service_date, stop_id)라 같은 정류장을 여러 번 지나가도 첫 도착만 남습니다.
+// 돌려주는 값은 "왜 안 찍혔는지"를 사람 말로 적은 한 줄입니다. 기기 진단에 그대로 실립니다.
 async function detectStopArrival(
   supabase: SupabaseClient,
   routeId: string,
   lat: number,
   lng: number,
   recordedAt: Date
-) {
+): Promise<string> {
   const { data: stops } = await supabase
     .from("shuttle_stops")
     .select("id, gps_lat, gps_lng, lat, lng")
     .eq("route_id", routeId);
-  if (!stops || stops.length === 0) return;
+  if (!stops || stops.length === 0) return "정류장 없음";
 
   let best: { id: string; dist: number } | null = null;
+  let withCoords = 0;
   for (const s of stops) {
     const sLat = (s.gps_lat as number | null) ?? (s.lat as number | null);
     const sLng = (s.gps_lng as number | null) ?? (s.lng as number | null);
     if (sLat == null || sLng == null) continue;
+    withCoords += 1;
     const dist = haversineMeters(lat, lng, sLat, sLng);
     if (!best || dist < best.dist) best = { id: s.id as string, dist };
   }
-  if (!best || best.dist > STOP_ARRIVE_RADIUS_M) return;
+  if (withCoords === 0) return "정류장 좌표 없음";
+  if (!best) return "정류장 좌표 없음";
+  if (best.dist > STOP_ARRIVE_RADIUS_M) return `가장 가까운 정류장 ${Math.round(best.dist)}m`;
 
   const serviceDate = kstParts(recordedAt).iso;
-  // 중복은 유니크 인덱스(23505)로 조용히 막힙니다 - 이미 기록된 정상 상황입니다.
-  await supabase.from("shuttle_stop_arrivals").insert({
+  const { error } = await supabase.from("shuttle_stop_arrivals").insert({
     service_date: serviceDate,
     route_id: routeId,
     stop_id: best.id,
     distance_m: Math.round(best.dist),
     arrived_at: recordedAt.toISOString(),
   });
+  // 중복(23505)은 이미 기록된 정상 상황입니다. 그 밖의 오류는 **삼키지 않습니다.**
+  //
+  // 여기서 조용히 넘어가는 바람에 "위치는 들어오는데 정류장만 안 찍힌다"가 되어도
+  // 화면에는 아무 단서가 없었습니다. 이유를 기기 행에 남겨, 셔틀 탭의 기기 진단에서
+  // 바로 보이게 합니다.
+  if (error && error.code !== "23505") return `정류장 저장 실패: ${error.message}`;
+  return "정류장 도착 기록";
 }
 
 async function handle(params: URLSearchParams) {
@@ -160,14 +171,17 @@ async function handle(params: URLSearchParams) {
     source: "traccar",
     recorded_at: recordedAt.toISOString(),
   });
-  await markHit("stored", true);
 
   // ── 정류장 도착 감지 ─────────────────────────────────────────────────────────
   // 요청: "정류장에 도착했다면 어디정류장에 도착했는지 체크되게". 이 노선의 정류장 좌표 중
   // 지금 위치와 가장 가까운 것이 반경 안이면, 오늘 그 정류장 도착으로 한 줄 남깁니다(하루 한 번).
   // 좌표는 GPS 학습(gps_lat/lng)이 우선이고, 없으면 지오코딩 좌표(lat/lng)를 씁니다. 좌표가
   // 아직 없는 정류장은 건너뜁니다(며칠 운행하면 학습으로 채워집니다).
-  await detectStopArrival(supabase, device.route_id as string, lat, lng, recordedAt);
+  const stopNote = await detectStopArrival(supabase, device.route_id as string, lat, lng, recordedAt);
+
+  // 위치 저장 결과와 정류장 판정을 **함께** 남깁니다. 예전에는 "stored"만 남겨서,
+  // 위치는 들어오는데 정류장만 안 찍히는 상황을 화면에서 알아볼 방법이 없었습니다.
+  await markHit(`stored · ${stopNote}`, true);
 
   return new NextResponse("OK", { status: 200 });
 }

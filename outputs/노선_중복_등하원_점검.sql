@@ -23,8 +23,8 @@ select r.direction                      as "방향",
           join public.shuttle_stops s2 on s2.id = a.stop_id
          where s2.route_id = r.id)                                                    as "배정 인원",
        case
-         when r.direction = '하원' and r.depart_time < '12:00' then '⚠️ 하원인데 오전 출발 - 등원일 가능성'
-         when r.direction = '등원' and r.depart_time >= '12:00' then '⚠️ 등원인데 오후 출발 - 하원일 가능성'
+         when r.direction = '하원' and r.depart_time < '12:00'::time then '⚠️ 하원인데 오전 출발 - 등원일 가능성'
+         when r.direction = '등원' and r.depart_time >= '12:00'::time then '⚠️ 등원인데 오후 출발 - 하원일 가능성'
          else '정상'
        end                              as "진단",
        r.id::text                       as "노선 id"
@@ -37,7 +37,9 @@ select r.term                as "학기",
        r.direction           as "방향",
        r.route_no            as "호차",
        count(*)              as "줄 수",
-       string_agg(coalesce(r.depart_time, '?') || '(' || r.active::text || ')', ' · ' order by r.depart_time) as "출발시각(사용중)"
+       -- depart_time은 time 형식이라 글자로 바꾼 뒤에 이어붙입니다.
+       string_agg(coalesce(r.depart_time::text, '(없음)') || ' · 사용중=' || r.active::text, '   /   ' order by r.depart_time)
+         as "출발시각(사용중)"
   from public.shuttle_routes r
  group by r.term, r.direction, r.route_no
 having count(*) > 1
@@ -55,8 +57,8 @@ select r.direction    as "지금 방향",
          where s.route_id = r.id)  as "배정 인원",
        case when r.direction = '하원' then '등원이어야 할 듯' else '하원이어야 할 듯' end as "아마도"
   from public.shuttle_routes r
- where (r.direction = '하원' and r.depart_time <  '12:00')
-    or (r.direction = '등원' and r.depart_time >= '12:00')
+ where (r.direction = '하원' and r.depart_time <  '12:00'::time)
+    or (r.direction = '등원' and r.depart_time >= '12:00'::time)
  order by r.term, r.route_no;
 
 -- ── ④ 학기별 노선 수 ─────────────────────────────────────────────────────

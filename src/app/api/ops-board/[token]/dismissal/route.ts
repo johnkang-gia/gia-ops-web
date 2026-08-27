@@ -99,10 +99,20 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
     .gte("recorded_at", `${today}T00:00:00Z`)
     .order("recorded_at", { ascending: true })
     .limit(20000);
-  const trailByRoute = new Map<string, { lat: number; lng: number }[]>();
+  //
+  // 시각(at)을 함께 실어 보냅니다.
+  //
+  // 담당자: "차량 이동이 띄엄띄엄 움직이는 것 같아, 자주 멈춰 보이고 (...) 차량 운행 동선을
+  //          보는 것처럼 보여줄 수 없어?"
+  //
+  // 지금은 화면이 10초마다 새로 그리면서 차를 마지막 위치로 **순간이동**시킵니다. 그래서
+  // 서 있다가 툭 뛰고, 다시 서 있는 것처럼 보입니다. 실제로는 그 10초 동안 계속 달리고
+  // 있었습니다. 부드럽게 이으려면 "몇 시에 어디였는지"가 있어야 두 점 사이를 시간에
+  // 비례해 채울 수 있습니다.
+  const trailByRoute = new Map<string, { lat: number; lng: number; at: string }[]>();
   for (const p of trailPings ?? []) {
     const list = trailByRoute.get(p.route_id) ?? [];
-    list.push({ lat: p.lat as number, lng: p.lng as number });
+    list.push({ lat: p.lat as number, lng: p.lng as number, at: p.recorded_at as string });
     trailByRoute.set(p.route_id, list);
   }
 

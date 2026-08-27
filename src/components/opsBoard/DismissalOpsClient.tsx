@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { loadKakaoMaps } from "@/lib/kakaoMap";
 import { useKstClock } from "@/lib/useKstClock";
 import { useBoardDensity, type BoardScale } from "@/lib/useBoardDensity";
@@ -39,7 +39,7 @@ type RouteRow = {
   pingFresh: boolean;
   path: { lat: number; lng: number }[] | null;
   // 오늘 실제 지나온 자취(GIA 출발 → 현재). 노선 색 실선으로 그립니다.
-  trail?: { lat: number; lng: number }[];
+  trail?: { lat: number; lng: number; at?: string }[];
   stops: { id: string; seq: number; stopTime: string | null; address: string | null; lat: number | null; lng: number | null }[];
   riders: { name: string; boarded: boolean }[];
   boardedCount: number;
@@ -715,13 +715,68 @@ function AllRoutesMap({ routes, school, testMarkers = [] }: { routes: RouteRow[]
 // 오른쪽 화면 - 노선 하나만 가까이 보여줍니다(요청: "각 노선별로 순환해가면서 어디인지 (...)
 // 오른쪽 화면에서 (...) 위에서 내려다보는 차화면으로"). 위에서 본 밴, 예상 경로, 지나온 자취,
 // 정류장을 그리고 그 노선에 딱 맞게 확대합니다. route가 바뀌면(순환) 다시 맞춥니다.
+// 부드럽게 따라가는 재생 지연(ms).
+//
+// 담당자: "차량 이동이 띄엄띄엄 움직이는 것 같아, 자주 멈춰 보이고."
+//
+// 원인은 GPS가 아니라 **그리는 방식**이었습니다. 화면이 10초마다 마지막 위치로 차를
+// 순간이동시키니, 서 있다가 툭 뛰고 다시 서 있는 것처럼 보입니다. 실제로는 그 사이에도
+// 계속 달리고 있었습니다.
+//
+// 그래서 내비게이션처럼 **조금 뒤처져서 재생**합니다. 지금 이 순간이 아니라 20초 전을
+// 그리면, 그 뒤에 이미 도착해 있는 점들 사이를 시간에 비례해 채우며 지날 수 있습니다.
+// "20초 늦은 부드러운 동선"이 "지금이지만 툭툭 끊기는 점"보다 운행 파악에 낫습니다.
+const PLAYBACK_LAG_MS = 20000;
+// 이보다 오래 비면 그 사이는 이어 그리지 않습니다(터널·음영지역). 없는 길을 지어내지 않습니다.
+const PLAYBACK_MAX_GAP_MS = 180000;
+
+type TimedPoint = { lat: number; lng: number; t: number };
+
+// 재생 시각에 해당하는 위치를 두 점 사이에서 비례로 구합니다.
+function interpolateAt(points: TimedPoint[], atMs: number): { lat: number; lng: number; heading: number } | null {
+  if (points.length === 0) return null;
+  if (points.length === 1 || atMs <= points[0].t) {
+    return { lat: points[0].lat, lng: points[0].lng, heading: 0 };
+  }
+  const last = points[points.length - 1];
+  if (atMs >= last.t) {
+    const prev = points[points.length - 2];
+    return { lat: last.lat, lng: last.lng, heading: prev ? bearingDeg(prev, last) : 0 };
+  }
+  for (let i = 1; i < points.length; i += 1) {
+    const a = points[i - 1];
+    const b = points[i];
+    if (atMs > b.t) continue;
+    const span = b.t - a.t;
+    // 사이가 너무 벌어졌으면(신호 끊김) 이어 그리지 않고 앞 점에 머뭅니다.
+    if (span <= 0 || span > PLAYBACK_MAX_GAP_MS) return { lat: a.lat, lng: a.lng, heading: bearingDeg(a, b) };
+    const r = (atMs - a.t) / span;
+    return { lat: a.lat + (b.lat - a.lat) * r, lng: a.lng + (b.lng - a.lng) * r, heading: bearingDeg(a, b) };
+  }
+  return { lat: last.lat, lng: last.lng, heading: 0 };
+}
+
 function RouteFocusMap({ route, school, color, sc }: { route: RouteRow | null; school: { lat: number; lng: number } | null; color: string; sc: BoardScale }) {
   const divRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const mapRef = useRef<any>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const overlaysRef = useRef<any[]>([]);
+  // 매 프레임 움직이는 것들은 다시 만들지 않고 위치만 바꿉니다(다시 만들면 깜빡입니다).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const vanRef = useRef<any>(null);
   const [mapError, setMapError] = useState<string | null>(null);
+
+  // 시각이 붙은 자취. 부드러운 재생의 재료입니다.
+  const timedTrail: TimedPoint[] = useMemo(() => {
+    const out: TimedPoint[] = [];
+    for (const p of route?.trail ?? []) {
+      if (!p.at) continue;
+      const t = new Date(p.at).getTime();
+      if (Number.isFinite(t)) out.push({ lat: p.lat, lng: p.lng, t });
+    }
+    return out;
+  }, [route?.trail]);
 
   useEffect(() => {
     let cancelled = false;
@@ -772,14 +827,22 @@ function RouteFocusMap({ route, school, color, sc }: { route: RouteRow | null; s
           l.setMap(map); overlaysRef.current.push(l);
         }
         // 위에서 본 밴(진행 방향).
+        //
+        // 이 자리는 아래 재생 루프가 매 프레임 위치를 바꿉니다. 여기서는 만들어 두기만 하고,
+        // 다시 그릴 때도 지우지 않습니다(지웠다 만들면 깜빡입니다).
         if (route.ping && route.pingFresh) {
           const heading = trail.length >= 2 ? bearingDeg(trail[trail.length - 2], trail[trail.length - 1]) : 0;
+          if (vanRef.current) vanRef.current.setMap(null);
           const van = new kakao.maps.CustomOverlay({
             position: new kakao.maps.LatLng(route.ping.lat, route.ping.lng),
             content: vanMarkerHtml(route.routeNo, color, heading),
             xAnchor: 0.5, yAnchor: 0.5, zIndex: 10,
           });
-          van.setMap(map); overlaysRef.current.push(van);
+          van.setMap(map);
+          vanRef.current = van;
+        } else if (vanRef.current) {
+          vanRef.current.setMap(null);
+          vanRef.current = null;
         }
 
         // 화면 맞춤.
@@ -796,8 +859,10 @@ function RouteFocusMap({ route, school, color, sc }: { route: RouteRow | null; s
         if (route.ping && route.pingFresh) {
           // level 3 = 골목 이름까지 보이는 정도. 고정해 두어야 차가 멈췄다 움직일 때
           // 배율이 출렁이지 않습니다.
+          //
+          // 중심 맞추기는 아래 재생 루프가 매 프레임 합니다. 여기서 setCenter를 하면
+          // 10초마다 화면이 한 번 툭 튀어 부드럽게 흐르던 것이 도로 끊깁니다.
           if (typeof map.setLevel === "function") map.setLevel(3);
-          map.setCenter(new kakao.maps.LatLng(route.ping.lat, route.ping.lng));
         } else {
           // 아직 출발 전이면 맞출 차가 없으니 노선 전체를 보여줍니다.
           //
@@ -826,9 +891,65 @@ function RouteFocusMap({ route, school, color, sc }: { route: RouteRow | null; s
     return () => { cancelled = true; };
   }, [route, school, color]);
 
+  // ── 부드러운 재생 ──────────────────────────────────────────────────────────
+  //
+  // 담당자: "차량 이동이 띄엄띄엄 움직이는 것 같아, 자주 멈춰 보이고. 차량 운행 동선을
+  //          보는 것처럼 보여줄 수 없어?"
+  //
+  // GPS는 30m마다 오므로 점 사이가 몇 초씩 벌어집니다. 그 점들을 그대로 찍으면 차가
+  // 뛰었다 서기를 반복합니다. 여기서는 매 프레임(초당 60번) **20초 전 시점의 위치를
+  // 두 점 사이에서 비례로 계산해** 밴과 지도 중심을 함께 옮깁니다.
+  //
+  // 위치를 지어내는 것이 아니라, 이미 지나간 두 지점 사이를 시간에 맞춰 채우는 것입니다.
+  // 그래서 20초 늦지만 실제로 지난 길 위를 벗어나지 않습니다.
+  const trackingActive = !!route?.pingFresh && timedTrail.length >= 2;
+  useEffect(() => {
+    if (!trackingActive) return;
+    let raf = 0;
+    const tick = () => {
+      const map = mapRef.current;
+      const van = vanRef.current;
+      if (map && van) {
+        const pos = interpolateAt(timedTrail, Date.now() - PLAYBACK_LAG_MS);
+        if (pos) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const kakao = (window as any).kakao;
+          if (kakao?.maps) {
+            const ll = new kakao.maps.LatLng(pos.lat, pos.lng);
+            van.setPosition(ll);
+            map.setCenter(ll);
+          }
+        }
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [trackingActive, timedTrail]);
+
   return (
     <div style={{ position: "relative", width: "100%", height: "100%", borderRadius: 14, overflow: "hidden", background: "#1e293b" }}>
       <div ref={divRef} style={{ width: "100%", height: "100%" }} />
+      {/* 20초 늦게 보여준다는 사실을 숨기지 않습니다. 도착 시각을 이 화면으로 재는 분이
+          있을 수 있어서, 몇 초 차이가 나는지 알고 봐야 합니다. */}
+      {trackingActive && (
+        <div
+          style={{
+            position: "absolute",
+            bottom: 8,
+            right: 8,
+            background: "rgba(15,23,42,.72)",
+            color: "#94a3b8",
+            borderRadius: 999,
+            padding: "3px 9px",
+            fontSize: 10,
+            fontWeight: 700,
+          }}
+          title="GPS 점 사이를 이어 부드럽게 보여주기 위해 20초 뒤처져 재생합니다. 실제 위치는 조금 더 앞서 있습니다."
+        >
+          ▶ 부드럽게 재생 중 (20초 지연)
+        </div>
+      )}
       {/* 지금 보고 있는 노선 표시 */}
       {route && (
         <div style={{ position: "absolute", top: 8, left: 8, display: "flex", alignItems: "center", gap: 6, background: "rgba(15,23,42,.82)", borderRadius: 999, padding: `${sc.s(4, 3)}px ${sc.s(10, 7)}px` }}>

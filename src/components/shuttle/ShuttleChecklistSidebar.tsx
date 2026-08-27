@@ -62,6 +62,7 @@ export default function ShuttleChecklistSidebar({
   onSelectStudentName,
   onAddPersistentNote,
   persistNoteBusy = false,
+  onStatusReverted,
 }: {
   roster: RosterStudent[];
   initialMessages: GoogleChatMirrorMessage[];
@@ -76,6 +77,8 @@ export default function ShuttleChecklistSidebar({
   // 지속 특이사항 창구에서 새 항목을 저장할 때 부모(ShuttleChecklistClient)로 넘깁니다.
   onAddPersistentNote?: (input: PersistentNoteInput) => Promise<boolean>;
   persistNoteBusy?: boolean;
+  // 위젯에서 ✕로 내렸을 때, 오른쪽 체크표도 다시 읽어 사선을 지우도록 알립니다.
+  onStatusReverted?: () => void;
 }) {
   // 지속 특이사항 입력 창구 상태(요청: 왼쪽에 지속 반영사항을 적는 창구, 예: "이라엘 수요일
   // 수영학원", "4호 김재이 개별하원"). 효과를 고르면 셔틀이 자동으로 바뀝니다.
@@ -117,6 +120,8 @@ export default function ShuttleChecklistSidebar({
   // 이미 고쳤는데 여기만 옛 방식으로 남아 있었습니다 - 같은 판단을 두 곳이 다르게 하고
   // 있었던 셈입니다.
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  const [removing, setRemoving] = useState<string | null>(null);
+  const [removeError, setRemoveError] = useState<string | null>(null);
 
   const loadDismissed = useCallback(async () => {
     const supabase = createClient();
@@ -294,6 +299,46 @@ export default function ShuttleChecklistSidebar({
     };
   }, [messages, roster, rules, dismissed]);
 
+  // 잘못 잡힌 픽업·결석 하나를 내립니다. 목록에서만 지우면 체크표에는 사선이 남으니,
+  // 셔틀 표시까지 함께 되돌립니다.
+  async function removeEntry(e: AttendanceEntry, coreName: string) {
+    setRemoving(e.key);
+    const key = `${e.messageId ?? ""}|${e.studentName}|${e.category}`;
+    try {
+      // ① 출결 등록표에 '무시'로 남깁니다(다시 안 묻도록).
+      const res = await fetch("/api/attendance/entries", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dismissKey: {
+            messageId: e.messageId ?? "",
+            studentName: e.studentName,
+            status: e.category,
+            date: e.targetDate,
+          },
+        }),
+      });
+      if (!res.ok) {
+        const j = (await res.json().catch(() => ({}))) as { error?: string };
+        setRemoveError(j.error || "내리지 못했습니다.");
+        return;
+      }
+      // ② 그 아이의 오늘 셔틀 표시를 '예정'으로 되돌립니다. 배정이 없으면 조용히 넘어갑니다
+      //    (도보·자차 하원이면 되돌릴 것도 없습니다).
+      await fetch("/api/work/attendance-action", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ studentName: coreName, action: "예정" }),
+      }).catch(() => null);
+
+      setDismissed((prev) => new Set(prev).add(key));
+      setRemoveError(null);
+      onStatusReverted?.();
+    } finally {
+      setRemoving(null);
+    }
+  }
+
   function nameChip(e: AttendanceEntry, tone: "blue" | "red") {
     const toneClass = e.unmatched
       ? "bg-slate-100 text-slate-400"
@@ -325,6 +370,22 @@ export default function ShuttleChecklistSidebar({
           aria-label="가르치기"
         >
           🔎
+        </button>
+        {/* 잘못 잡힌 아이를 지우는 자리.
+            담당자: "오늘 픽업·결석에도 지울 수 있게 해주고, 지우면 전부 반영되게 만들어줘."
+            그래서 여기서 지우면 **두 곳을 함께** 되돌립니다.
+              ① 출결 등록표에 '무시'로 남김 → 이 위젯·업무보드·운영 대시보드에서 사라짐
+              ② 그 아이의 오늘 셔틀 표시를 '예정'으로 → 체크표·안내보드·도착체크 원복
+            ①만 하면 표에는 결석 사선이 그대로 남아 기사님이 아이를 안 태웁니다. */}
+        <button
+          type="button"
+          disabled={removing === e.key}
+          onClick={() => removeEntry(e, coreName)}
+          className="rounded-full px-0.5 text-[10px] leading-none opacity-50 transition hover:opacity-100 disabled:opacity-20"
+          title="이 아이는 오늘 픽업·결석이 아닙니다 - 목록에서 내리고 체크표 표시도 되돌립니다"
+          aria-label="지우기"
+        >
+          {removing === e.key ? "…" : "✕"}
         </button>
       </span>
     );
@@ -437,6 +498,9 @@ export default function ShuttleChecklistSidebar({
             </button>
           </div>
         </div>
+        {removeError && (
+          <p className="mb-1 rounded bg-red-50 px-1.5 py-1 text-[9px] leading-snug text-red-600">내리지 못했습니다: {removeError}</p>
+        )}
         <div className="mb-2">
           <p className="mb-1 text-[10px] font-bold text-blue-600">🚗 픽업 {pickup.length}</p>
           {pickup.length === 0 ? (

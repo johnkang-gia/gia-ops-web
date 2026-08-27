@@ -170,7 +170,13 @@ export default async function ShuttleChecklistPage({
       const ridingToday = a.weekdays.includes(todayWeekday);
       let status: ChecklistItem["status"] = (boarding?.status as ChecklistItem["status"]) ?? "예정";
       // 오늘 타는 학생 & 아직 사람이 안 누른 경우에만 토들 픽업/결석을 자동 반영.
-      if (ridingToday && status === "예정") {
+      //
+      // 판단 기준은 **줄이 있는지**이지 값이 '예정'인지가 아닙니다.
+      // 담당자: "잘못 표기된 애들 더블클릭하면 다시 돌아오게 해줘 (...) 지우면 전부 반영되게."
+      // 되돌리기는 '예정' 줄을 남기는 방식인데, 값만 보면 그게 "아무도 안 누름"과 똑같이 보여
+      // 다음에 화면을 열 때 자동 표시가 되살아납니다. 사람이 되돌린 것을 기계가 다시 뒤집는
+      // 셈이라, 줄이 하나라도 있으면 사람 판단으로 봅니다.
+      if (ridingToday && !boarding) {
         if (pickupNames.some((n) => nameMatch(n, a.student_name_raw))) status = "픽업";
         else if (absentNames.some((n) => nameMatch(n, a.student_name_raw))) status = "결석";
       }

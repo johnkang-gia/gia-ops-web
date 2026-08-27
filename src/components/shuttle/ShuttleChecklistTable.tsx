@@ -101,7 +101,9 @@ export default function ShuttleChecklistTable({
             <th className="w-24 px-3 py-2 font-semibold">호차</th>
             <th className="w-32 px-3 py-2 font-semibold">지역</th>
             <th className="w-24 px-3 py-2 font-semibold">기사님</th>
-            <th className="px-3 py-2 font-semibold print:hidden">학생 (이름 드래그로 노선 이동 · 🚗픽업 · 🚫결석 · 📝특이사항)</th>
+            <th className="px-3 py-2 font-semibold print:hidden">
+              학생 (드래그로 노선 이동 · 🚗픽업 · 🚫결석 · <span className="text-blue-600">더블클릭 = 표시 지우기</span>)
+            </th>
             <th className="hidden px-3 py-2 font-semibold print:table-cell">학생</th>
           </tr>
         </thead>
@@ -162,8 +164,18 @@ export default function ShuttleChecklistTable({
                               boxShadow: ridesToday ? `0 0 0 2px ${gc}33` : undefined,
                             }
                           : undefined;
+                        // 잘못 붙은 픽업·결석을 되돌리는 자리.
+                        //
+                        // 담당자: "아까 멘션까지 읽어서 김요한·이준서·임예나 세 명으로 골라서
+                        //          김요한이랑 이준서가 결석으로 됐어 - 더블클릭하면 돌아오게 해줘."
+                        //
+                        // 작은 🚗/🚫 단추를 정확히 다시 누르는 것보다, 이름을 두 번 치는 쪽이
+                        // 빠릅니다. 잘못된 표시는 급할 때 눈에 띄므로 손이 가는 자리에 있어야 합니다.
+                        const canReset = isPickup || isAbsent || isBoarded;
                         const tooltip = isSwitchedOff
                           ? "다른 차에서 탑승 체크됨(스위치 전환)"
+                          : canReset
+                          ? `더블클릭하면 '${item.status}' 표시를 지우고 원래대로 돌립니다`
                           : isMovedToday
                           ? `오늘만 이동됨 (평소 노선: ${homeRoute?.route_no ?? "?"}호) - 드래그해서 되돌릴 수 있어요`
                           : isMovedPermanently
@@ -185,6 +197,10 @@ export default function ShuttleChecklistTable({
                             onDragEnd={() => {
                               draggingIdRef.current = null;
                               setDragOverRoute(null);
+                            }}
+                            // 같은 상태를 다시 보내면 setStatus가 '예정'으로 되돌립니다(토글).
+                            onDoubleClick={() => {
+                              if (canReset) onSetStatus(item, item.status);
                             }}
                             title={useGroup && !ridesToday ? `${tooltip} · 오늘은 이 차를 안 타는 날(다른 요일 셔틀)` : tooltip}
                             style={groupStyle}

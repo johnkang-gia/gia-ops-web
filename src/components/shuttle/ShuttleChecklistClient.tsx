@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
 import ShuttleChecklistTable, { effectiveRouteId } from "./ShuttleChecklistTable";
@@ -92,6 +93,7 @@ export default function ShuttleChecklistClient({
   persistentNotes?: PersistentNote[];
 }) {
   const notify = useToast();
+  const router = useRouter();
   const [items, setItems] = useState(initialItems);
   const [notes, setNotes] = useState<PersistentNote[]>(initialNotes);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -561,6 +563,9 @@ export default function ShuttleChecklistClient({
         onSelectStudentName={setSearchTerm}
         onAddPersistentNote={addPersistentNote}
         persistNoteBusy={noteBusyPersist}
+        // 위젯에서 ✕로 내리면 그 아이의 셔틀 표시도 '예정'으로 돌아갑니다. 실시간 구독이
+        // 잡아주긴 하지만, 배정이 여러 줄인 경우를 놓치지 않도록 서버에서 한 번 다시 읽습니다.
+        onStatusReverted={() => router.refresh()}
       />
       <div className="min-w-0 flex-1">
         {notes.length > 0 && (

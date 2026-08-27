@@ -726,6 +726,21 @@ function resolveGivenNameToken(
 // 적힌 경우("박라온, 다온")에도 찾고, 성을 아예 안 쓰고 이름끼리 붙여 쓴 경우("라온다온")도
 // 명부 이름 사전으로 둘로 쪼개 찾습니다(요청: "박라온, 박다온 같은 형제자매가 있을 경우...
 // 한쪽만 성을 쓰거나 아니면 둘 다 안 쓰는 경우도 있어 이 경우도 각각 파악해서").
+// 멘션(@…)을 **같은 길이의 공백**으로 바꿉니다.
+//
+// 지우지 않고 공백으로 바꾸는 이유: 뒤 단계들이 "이름 바로 뒤 괄호"에서 생일·반을 읽는데,
+// 글자를 없애면 그 위치가 밀려 힌트를 놓칩니다.
+//
+// 잡는 형태
+//   @이름          한글은 성+이름을 붙여 쓰므로 한 덩어리
+//   @First Last    영문은 대문자로 시작하는 다음 낱말까지 두 낱말
+//   @First         뒤에 대문자 낱말이 없으면 한 낱말만
+//
+// 두 낱말까지만 지웁니다. 더 욕심내면 "@John Kang 오늘 임예나…"에서 실제 문장까지 먹습니다.
+export function blankMentions(text: string): string {
+  return text.replace(/@[A-Za-z][A-Za-z'.-]*(?:\s+[A-Z][A-Za-z'.-]*)?|@[^\s@]+/g, (m) => " ".repeat(m.length));
+}
+
 export function matchRosterStudents(text: string, roster: RosterStudent[], rules?: LearningRule[]): MatchedStudent[] {
   // ── 0단계: 사람이 가르친 별칭을 가장 먼저 봅니다 ───────────────────────────
   //
@@ -733,7 +748,25 @@ export function matchRosterStudents(text: string, roster: RosterStudent[], rules
   // 사람이 한 번 "이건 김마야예요"라고 알려준 것이 있으면 그게 가장 확실한 근거이므로 먼저
   // 적용하고, 찾은 부분은 지워서 뒤 단계가 같은 자리를 다시 읽지 않게 합니다.
   const learned: MatchedStudent[] = [];
-  let scratch = text;
+
+  // ── 멘션부터 지웁니다 ─────────────────────────────────────────────────────
+  //
+  // 담당자: "@은 무조건 선생님만 쓰니까, 멘션한 것을 구분해서 대조하기 전에 먼저 지우고
+  //          대조해줘."
+  //
+  // 이게 지금까지 가장 큰 오탐 원인이었습니다.
+  //
+  //   "@Jueun Cho @Paul Lee @John Kang 오늘 임예나 3시 픽업입니다"
+  //     → 실제 학생은 임예나 한 명인데 이준서(Paul Lee)·김요한(John Kim)까지 세 명으로 잡혔습니다.
+  //
+  // 선생님 이름이 학생 영문명과 겹치는 경우가 있어서(Paul, John 등) 벌어진 일입니다.
+  // 멘션을 지우는 함수(stripLeadingMention)는 있었지만 **화면에 보여줄 때만** 쓰고 있었고,
+  // 이름을 찾을 때는 원문을 그대로 넘기고 있었습니다 - 두 곳이 서로 다른 글을 보고 있었던
+  // 셈입니다.
+  //
+  // "@ 뒤는 선생님"이라는 규칙이 학교에서 지켜지고 있으므로, 지우고 시작하는 것이 맞습니다.
+  // 길이를 유지하며 공백으로 바꿔야 뒤 단계의 위치 계산(생일·반 힌트)이 어긋나지 않습니다.
+  let scratch = blankMentions(text);
   const aliasRules = (rules ?? []).filter((r) => r.kind === "alias" && r.student_name);
   // 긴 표기부터 봅니다("Maya Kim"이 "Maya"보다 먼저 잡히도록).
   for (const r of [...aliasRules].sort((a, b) => b.pattern.length - a.pattern.length)) {

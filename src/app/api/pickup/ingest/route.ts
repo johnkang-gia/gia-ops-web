@@ -110,6 +110,16 @@ export async function POST(req: Request) {
         senderName: typeof raw?.senderName === "string" ? raw.senderName : null,
         text: typeof raw?.text === "string" ? raw.text : "",
         receivedAt: typeof raw?.receivedAt === "string" ? raw.receivedAt : null,
+        // 토들 원문으로 돌아가는 재료.
+        //
+        // 수집기는 처음부터 이 둘을 보내고 있었는데 **여기서 옮겨 담지 않아 버려졌습니다.**
+        // 저장 함수(ingestPickup)도, DB 칸도, 화면 버튼도 다 준비되어 있었는데 이 한 곳이
+        // 비어서 `source_url`·`source_chat_id`가 늘 null이었습니다.
+        //
+        // 새 칸을 만들 때는 "보내는 쪽 → 받는 쪽 → 저장 → 화면" 네 곳을 다 고쳐야 하는데,
+        // 받는 쪽만 빠뜨려도 조용히 아무 일도 일어나지 않습니다 - 오류가 안 나기 때문입니다.
+        chatId: typeof raw?.chatId === "string" ? raw.chatId : null,
+        sourceUrl: typeof raw?.sourceUrl === "string" ? raw.sourceUrl : null,
       };
       try {
         results.push(await ingestPickup(supabase, item, roster));

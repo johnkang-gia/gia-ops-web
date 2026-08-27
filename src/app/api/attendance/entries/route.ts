@@ -150,10 +150,23 @@ export async function PATCH(req: NextRequest) {
   if (!body.id && body.dismissKey) {
     const k = body.dismissKey;
     const day = /^\d{4}-\d{2}-\d{2}$/.test(k.date ?? "") ? k.date! : todayKey(new Date());
+
+    // 학생을 찾을 수 있으면 채워둡니다(나중에 "누구 것을 내렸는지" 되짚을 수 있도록).
+    // 못 찾아도 그대로 진행합니다 - 내려야 하는 것들은 애초에 학생을 못 찾은 것들이라,
+    // 여기서 막으면 가장 지워야 할 것을 가장 지울 수 없게 됩니다.
+    const bare = k.studentName.replace(/\(.*$/, "").trim();
+    let studentId: string | null = null;
+    if (bare.length >= 2) {
+      const { data: hit } = await db.from("wr_students").select("id").eq("status", "active").eq("name", bare).limit(2);
+      const rows = (hit as { id: string }[] | null) ?? [];
+      if (rows.length === 1) studentId = rows[0].id; // 동명이인이면 비워둡니다(엉뚱한 아이에 붙는 것이 더 나쁩니다).
+    }
+
     const { error } = await db.from("attendance_entries").upsert(
       {
         source: "googlechat",
         source_message_id: k.messageId,
+        student_id: studentId,
         student_name: k.studentName,
         status: k.status,
         date_from: day,

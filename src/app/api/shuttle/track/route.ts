@@ -69,7 +69,8 @@ async function detectStopArrival(
   routeId: string,
   lat: number,
   lng: number,
-  recordedAt: Date
+  recordedAt: Date,
+  speedKmh: number | null
 ): Promise<string> {
   const { data: stops } = await supabase
     .from("shuttle_stops")
@@ -106,6 +107,19 @@ async function detectStopArrival(
 
   if (withCoords === 0) return "정류장 좌표 없음";
   if (!best) return `가장 가까운 정류장 ${Math.round(nearest ?? 0)}m`;
+
+  // 반경을 넓히면 **그냥 지나가는 것**까지 도착으로 잡힙니다.
+  //
+  // 250m는 차로 20초 거리입니다. 정류장 옆 도로를 달려 지나가기만 해도 "도착"이 찍히면,
+  // 그 기록으로 만드는 시간표와 통계가 조용히 틀어집니다. 정류장에 서는 차는 반드시
+  // 속도를 줄이므로, 넓은 반경을 쓸 때는 **느려졌는지**를 함께 봅니다.
+  //
+  // 80m(학습 완료)에서는 이 조건을 걸지 않습니다 - 그 거리면 지나가는 중이어도 사실상
+  // 그 정류장 자리이고, 신호에 걸려 서 있는 경우와 구분할 필요도 없습니다.
+  const APPROACH_MAX_KMH = 15;
+  if (best.radius > RADIUS_LEARNED_M && speedKmh != null && speedKmh > APPROACH_MAX_KMH) {
+    return `${Math.round(best.dist)}m 지나가는 중(${Math.round(speedKmh)}km/h)`;
+  }
 
   const serviceDate = kstParts(recordedAt).iso;
   const { error } = await supabase.from("shuttle_stop_arrivals").insert({
@@ -212,7 +226,7 @@ async function handle(params: URLSearchParams) {
   // 지금 위치와 가장 가까운 것이 반경 안이면, 오늘 그 정류장 도착으로 한 줄 남깁니다(하루 한 번).
   // 좌표는 GPS 학습(gps_lat/lng)이 우선이고, 없으면 지오코딩 좌표(lat/lng)를 씁니다. 좌표가
   // 아직 없는 정류장은 건너뜁니다(며칠 운행하면 학습으로 채워집니다).
-  const stopNote = await detectStopArrival(supabase, device.route_id as string, lat, lng, recordedAt);
+  const stopNote = await detectStopArrival(supabase, device.route_id as string, lat, lng, recordedAt, speedKmh);
 
   // 위치 저장 결과와 정류장 판정을 **함께** 남깁니다. 예전에는 "stored"만 남겨서,
   // 위치는 들어오는데 정류장만 안 찍히는 상황을 화면에서 알아볼 방법이 없었습니다.

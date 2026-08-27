@@ -25,6 +25,9 @@ const GUIDE_SECTIONS = [
 
 export const dynamic = "force-dynamic";
 
+// 지금 쓰는 학기. 여름캠프2가 끝난 뒤로 운영은 정규학기 하나뿐입니다.
+const TERM = "정규학기";
+
 export default async function ShuttleAssignmentsPage() {
   const supabase = await createClient();
   const me = await getCurrentAppUser();
@@ -32,7 +35,15 @@ export default async function ShuttleAssignmentsPage() {
   if (!isStaffOrAboveUser(me)) redirect("/home");
 
   const [routesRes, stopsRes, asgRes, studentsRes] = await Promise.all([
-    supabase.from("shuttle_routes").select("*").order("direction").order("sort_order"),
+    // 학기와 사용여부로 걸러냅니다.
+    //
+    // 담당자: "탑승 배정에 중복 차들이 많고 이전 데이터에 중복되는 것 같아."
+    //
+    // 맞습니다. 이 화면은 지금까지 **모든 학기, 꺼둔 노선까지 전부** 불러왔습니다.
+    // 여름캠프2 노선이 남아 있으면 같은 호차가 두 번씩 보입니다 - 하원 체크표는
+    // term으로 거르는데 여기만 안 걸렀습니다. 같은 자료를 두 화면이 다르게 보고
+    // 있었던 셈입니다.
+    supabase.from("shuttle_routes").select("*").eq("term", TERM).eq("active", true).order("direction").order("sort_order"),
     supabase.from("shuttle_stops").select("*").order("seq"),
     supabase.from("shuttle_assignments").select("*"),
     supabase.from("wr_students").select("id, name, grade, class_name").eq("status", "active").eq("is_demo", false).order("name"),

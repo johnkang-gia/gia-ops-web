@@ -285,6 +285,40 @@ export default function RouteManageClient({
               </button>
             </div>
 
+            {/* 방향이 출발 시각과 어긋나는 노선을 짚어줍니다.
+                담당자: "하원 27호차가 두 개인데 하나는 오전 8시 출발 - 등원·하원이 섞인 것 같아."
+                등원은 오전, 하원은 오후입니다. 어긋나면 방향이 잘못 박힌 것이고, 그러면
+                하원 목록에 등원 차가 끼어 "같은 호차가 두 개"로 보입니다. */}
+            {(() => {
+              const t = selected.depart_time ?? "";
+              const wrong =
+                (selected.direction === "하원" && t && t < "12:00") ||
+                (selected.direction === "등원" && t && t >= "12:00");
+              if (!wrong) return null;
+              const should: ShuttleDirection = selected.direction === "하원" ? "등원" : "하원";
+              return (
+                <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+                  <span>
+                    ⚠️ <b>{selected.direction}</b>인데 출발이 <b>{t}</b>입니다. 방향이 잘못 박힌 것 같습니다
+                    (등원=오전 · 하원=오후).
+                  </span>
+                  <button
+                    onClick={async () => {
+                      const ok = await confirmAction(
+                        `${selected.route_no}호를 ${selected.direction} → ${should}으로 옮길까요?\n배정된 학생과 정류장은 그대로 따라갑니다.`
+                      );
+                      if (!ok) return;
+                      await updateRoute(selected.id, { direction: should });
+                      setDirection(should);
+                    }}
+                    className="rounded-lg border border-amber-400 bg-white px-2 py-1 font-bold text-amber-700 hover:bg-amber-100"
+                  >
+                    {should}으로 바꾸기
+                  </button>
+                </div>
+              );
+            })()}
+
             <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
               {(
                 [

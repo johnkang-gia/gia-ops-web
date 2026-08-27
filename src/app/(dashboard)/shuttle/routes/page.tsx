@@ -25,6 +25,9 @@ const GUIDE_SECTIONS = [
 
 export const dynamic = "force-dynamic";
 
+// 지금 쓰는 학기. 여름캠프2가 끝난 뒤로 운영은 정규학기 하나뿐입니다.
+const TERM = "정규학기";
+
 export default async function ShuttleRoutesPage() {
   const supabase = await createClient();
   const me = await getCurrentAppUser();
@@ -32,7 +35,9 @@ export default async function ShuttleRoutesPage() {
   if (!isStaffOrAboveUser(me)) redirect("/home");
 
   const [routesRes, stopsRes, asgRes] = await Promise.all([
-    supabase.from("shuttle_routes").select("*").order("direction").order("sort_order"),
+    // 탑승 배정 화면과 같은 이유로 학기·사용여부를 겁니다. 노선 관리에서 여름캠프2 노선까지
+    // 보이면 "27호가 왜 두 개지?"가 됩니다.
+    supabase.from("shuttle_routes").select("*").eq("term", TERM).eq("active", true).order("direction").order("sort_order"),
     supabase.from("shuttle_stops").select("*").order("seq"),
     // 인원 숫자만 있으면 "이 정류장에 몇 명"까지는 알아도 "누가"는 모릅니다(담당자 요청).
     // 이름과 요일까지 함께 들고 와서 정류장 줄에 그대로 적습니다.

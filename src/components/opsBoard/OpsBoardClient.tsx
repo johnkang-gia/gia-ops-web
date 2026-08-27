@@ -147,7 +147,18 @@ export default function OpsBoardClient({ token }: { token: string }) {
     }
   }, [endedKey]);
 
-  const shuttleMode = !!data && data.shuttle.mode && endedOn !== data.today;
+  // 사람이 직접 켠 하원 화면.
+  //
+  // 담당자: "4시에 바뀌는 하원차량 화면 평상시에도 전환은 할 수 있게 해줘. 대신 전환했을 때
+  //          하원시간이 아니라면 하원시간 아니라고 표시해주고."
+  //
+  // 시각에만 맡기면 미리 확인하거나 늦게 다시 볼 방법이 없습니다. 다만 켰다는 사실이
+  // 안 보이면 "왜 낮인데 하원 화면이지?" 하고 헷갈리므로, 시간 밖일 때는 화면이 그렇다고
+  // 말합니다.
+  const [forcedShuttle, setForcedShuttle] = useState(false);
+  const shuttleMode = !!data && ((data.shuttle.mode && endedOn !== data.today) || forcedShuttle);
+  // 지금이 실제 하원 시간대인지(자동 전환 조건). 수동으로 켠 경우 이 값이 false입니다.
+  const inShuttleWindow = !!data?.shuttle.mode;
 
   // 요청: "전체화면 안해도 될거같아 지금 업무대시보드를 전체화면으로 계속 띄울거라서" - 앱이
   // 스스로 전체화면을 강제하거나 안내창을 띄우지 않습니다. 담당자가 브라우저를 이미 전체화면으로
@@ -158,6 +169,13 @@ export default function OpsBoardClient({ token }: { token: string }) {
   }, [shuttleMode]);
 
   function endDismissal() {
+    // 수동으로 켠 것을 끄는 경우에는 '오늘 종료' 기록을 남기지 않습니다. 남기면 정작
+    // 4시에 자동으로 떠야 할 화면이 안 뜹니다.
+    if (forcedShuttle && !inShuttleWindow) {
+      setForcedShuttle(false);
+      return;
+    }
+    setForcedShuttle(false);
     if (!data) return;
     try {
       localStorage.setItem(endedKey, data.today);
@@ -300,6 +318,7 @@ export default function OpsBoardClient({ token }: { token: string }) {
           isFullscreen={isFullscreen}
           onToggleFullscreen={() => (isFullscreen ? exit() : enter().then((ok) => setNeedsManualFullscreen(!ok)))}
           onEnd={endDismissal}
+          offHoursLabel={inShuttleWindow ? null : `지금은 하원 시간이 아닙니다 · 하원 ${data.shuttle.switchLabel}~${data.shuttle.endLabel}`}
         />
         {needsManualFullscreen && !isFullscreen && (
           <FullscreenPrompt
@@ -390,6 +409,25 @@ export default function OpsBoardClient({ token }: { token: string }) {
             }}
           >
             🚌 하원 화면 다시 열기
+          </button>
+        )}
+        {/* 하원 시간이 아니어도 미리 열어볼 수 있게(요청). 열면 화면 위에 "지금은 하원
+            시간이 아닙니다"가 뜹니다 - 켰다는 사실이 안 보이면 지나가는 사람이 헷갈립니다. */}
+        {!data.shuttle.mode && (
+          <button
+            onClick={() => setForcedShuttle(true)}
+            style={{
+              padding: "5px 12px",
+              borderRadius: 999,
+              border: "1px solid #334155",
+              background: "transparent",
+              color: "#94a3b8",
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+          >
+            🚌 하원 화면 미리 보기
           </button>
         )}
         </div>

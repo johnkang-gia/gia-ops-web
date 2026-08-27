@@ -156,6 +156,7 @@ export default function DismissalOpsClient({
   isFullscreen,
   onToggleFullscreen,
   onEnd,
+  offHoursLabel = null,
 }: {
   token: string;
   // 자동으로 평소 대시보드로 돌아가는 시각(기본 17:30). 상단에 적어두면 "이 화면이 언제까지
@@ -165,6 +166,13 @@ export default function DismissalOpsClient({
   onToggleFullscreen?: () => void;
   // [하원 종료]를 누르면 전체화면이 풀리고 평소 대시보드(CCTV 반반 배치)로 돌아갑니다.
   onEnd?: () => void;
+  // 하원 시간이 아닌데 사람이 직접 켠 경우의 안내 문구.
+  //
+  // 담당자: "전환했을 때 하원시간이 아니라면 하원시간 아니라고 표시해주고."
+  // 이 화면은 공용 모니터에 걸려 있어서, 낮에 켜져 있으면 지나가는 분들이 "지금 차가
+  // 나가나?" 하고 오해합니다. 그리고 이 시간대에는 GPS가 아예 안 들어오므로(15:30~18:30만
+  // 저장) 지도가 비어 있는 것도 정상입니다 - 그 사실도 함께 말해줍니다.
+  offHoursLabel?: string | null;
 }) {
   const [data, setData] = useState<Data | null>(null);
   // 오른쪽 화면이 노선을 하나씩 순환하며 보여줄 때 지금 몇 번째인지(요청: "각 노선별로 순환").
@@ -217,6 +225,21 @@ export default function DismissalOpsClient({
     <div style={{ height: "100dvh", background: "#0f172a", color: "#e2e8f0", display: "flex", flexDirection: "column", fontFamily: "sans-serif", cursor: cursorHidden ? "none" : undefined }}>
       <div style={{ display: "flex", alignItems: "center", gap: sc.s(12, 6), padding: `${sc.s(8, 5)}px ${sc.s(14, 8)}px`, flexWrap: "wrap", flexShrink: 0 }}>
         <span style={{ fontSize: sc.s(20, 14), fontWeight: 800, color: "#fff" }}>🚌 하원 운행</span>
+        {offHoursLabel && (
+          <span
+            style={{
+              background: "#78350f",
+              color: "#fde68a",
+              borderRadius: 999,
+              padding: `${sc.s(4, 3)}px ${sc.s(12, 8)}px`,
+              fontSize: sc.s(13, 10),
+              fontWeight: 800,
+            }}
+            title="이 시간대에는 GPS가 저장되지 않아 지도가 비어 있는 것이 정상입니다."
+          >
+            ⚠️ {offHoursLabel}
+          </span>
+        )}
         {clock && (
           <span style={{ fontSize: sc.s(22, 15), fontWeight: 800, color: "#fff", fontVariantNumeric: "tabular-nums" }}>{clock}</span>
         )}

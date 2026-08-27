@@ -2,13 +2,31 @@
 
 import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import type { ShuttleAssignment, ShuttleDirection, ShuttleRoute, ShuttleStop } from "@/lib/types";
+import type { ShuttleDirection, ShuttleRoute, ShuttleStop } from "@/lib/types";
 import { useToast } from "@/components/common/ToastProvider";
 import { useConfirm } from "@/components/common/ConfirmProvider";
 import { geocodeAddress } from "@/lib/kakaoMap";
 import { byRouteNo } from "@/lib/routeSort";
 
 type StopDraft = { stop_time: string; address: string; gate: string };
+
+// 정류장에 배정된 학생 한 명. 이름과 요일까지 들고 옵니다.
+export type RouteAssignment = {
+  id: string;
+  stop_id: string;
+  student_name_raw: string;
+  weekdays: number[] | null;
+};
+
+const WEEKDAY_LABEL = ["일", "월", "화", "수", "목", "금", "토"];
+
+// 요일이 월~금 전부면 굳이 적지 않습니다(대부분이 그렇습니다). 빠지는 요일이 있을 때만
+// "(월수금)"처럼 붙여, 눈에 띄어야 할 것만 눈에 띄게 합니다.
+function weekdayTag(days: number[] | null): string {
+  const d = (days ?? []).filter((n) => n >= 1 && n <= 5).sort();
+  if (d.length === 0 || d.length === 5) return "";
+  return `(${d.map((n) => WEEKDAY_LABEL[n]).join("")})`;
+}
 
 export default function RouteManageClient({
   initialRoutes,
@@ -17,7 +35,7 @@ export default function RouteManageClient({
 }: {
   initialRoutes: ShuttleRoute[];
   initialStops: ShuttleStop[];
-  assignmentCounts: Pick<ShuttleAssignment, "id" | "stop_id">[];
+  assignmentCounts: RouteAssignment[];
 }) {
   const notify = useToast();
   const confirmAction = useConfirm();
@@ -28,12 +46,29 @@ export default function RouteManageClient({
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
 
-  // 정류장별 배정 인원 - 정류장을 지울 때 "학생 N명 배정도 함께 사라진다"고 경고하기 위해 씁니다.
-  const asgCountByStop = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const a of assignmentCounts) m.set(a.stop_id, (m.get(a.stop_id) ?? 0) + 1);
+  // 정류장별 배정 학생.
+  //
+  // 담당자: "노선관리에 인원만 뜨고 누가 타는지 안 나와 - 같이 기록되게 해줘."
+  //
+  // 맞는 지적입니다. "3명"만으로는 정류장을 지울 때 무엇을 잃는지도, 명단이 맞는지도
+  // 알 수 없어서 매번 다른 화면(탑승 배정·하원 체크표)으로 넘어가 대조해야 했습니다.
+  const asgByStop = useMemo(() => {
+    const m = new Map<string, RouteAssignment[]>();
+    for (const a of assignmentCounts) {
+      const list = m.get(a.stop_id) ?? [];
+      list.push(a);
+      m.set(a.stop_id, list);
+    }
+    for (const list of m.values()) {
+      list.sort((x, y) => (x.student_name_raw ?? "").localeCompare(y.student_name_raw ?? "", "ko"));
+    }
     return m;
   }, [assignmentCounts]);
+  const asgCountByStop = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const [stopId, list] of asgByStop) m.set(stopId, list.length);
+    return m;
+  }, [asgByStop]);
 
   const visibleRoutes = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -366,7 +401,9 @@ export default function RouteManageClient({
                   <th className="w-24 px-2 py-1.5">시간</th>
                   <th className="px-2 py-1.5">주소</th>
                   <th className="w-24 px-2 py-1.5">도착장소</th>
-                  <th className="w-16 px-2 py-1.5">인원</th>
+                  {/* 담당자: "인원만 뜨고 누가 타는지 안 나와." 숫자만으로는 정류장을 지울 때
+                      무엇을 잃는지도, 명단이 맞는지도 알 수 없었습니다. */}
+                  <th className="w-64 px-2 py-1.5">타는 학생</th>
                   <th className="w-10 px-2 py-1.5" />
                 </tr>
               </thead>
@@ -413,7 +450,37 @@ export default function RouteManageClient({
                         className="w-full rounded border border-transparent px-1 py-0.5 hover:border-slate-200 focus:border-slate-300"
                       />
                     </td>
-                    <td className="px-2 py-1 text-slate-400">{asgCountByStop.get(s.id) ?? 0}명</td>
+                    <td className="px-2 py-1 align-top">
+                      {(() => {
+                        const riders = asgByStop.get(s.id) ?? [];
+                        if (riders.length === 0) return <span className="text-slate-300">없음</span>;
+                        return (
+                          <div className="flex flex-wrap items-center gap-1">
+                            <span className="shrink-0 rounded-full bg-slate-100 px-1.5 text-[10px] font-bold text-slate-500">
+                              {riders.length}명
+                            </span>
+                            {riders.map((a) => {
+                              const tag = weekdayTag(a.weekdays);
+                              return (
+                                <span
+                                  key={a.id}
+                                  className={
+                                    "rounded px-1 py-0.5 text-[10px] font-semibold " +
+                                    // 요일이 빠지는 학생은 색으로 구분합니다 - 명단을 훑을 때
+                                    // 가장 자주 틀리는 자리입니다.
+                                    (tag ? "bg-amber-50 text-amber-700" : "bg-white text-slate-600")
+                                  }
+                                  title={tag ? `${a.student_name_raw} · ${tag.slice(1, -1)}요일만 탑승` : a.student_name_raw}
+                                >
+                                  {a.student_name_raw}
+                                  {tag && <span className="ml-0.5 font-normal">{tag}</span>}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
+                    </td>
                     <td className="px-2 py-1 text-right">
                       <button onClick={() => deleteStop(s)} className="text-slate-300 hover:text-red-500" title="정류장 삭제">
                         ✕

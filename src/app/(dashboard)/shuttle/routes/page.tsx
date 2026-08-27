@@ -2,8 +2,8 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isStaffOrAboveUser } from "@/lib/roles";
-import type { ShuttleAssignment, ShuttleRoute, ShuttleStop } from "@/lib/types";
-import RouteManageClient from "@/components/shuttle/RouteManageClient";
+import type { ShuttleRoute, ShuttleStop } from "@/lib/types";
+import RouteManageClient, { type RouteAssignment } from "@/components/shuttle/RouteManageClient";
 import GuideButton from "@/components/common/GuideButton";
 
 const GUIDE_SECTIONS = [
@@ -34,7 +34,9 @@ export default async function ShuttleRoutesPage() {
   const [routesRes, stopsRes, asgRes] = await Promise.all([
     supabase.from("shuttle_routes").select("*").order("direction").order("sort_order"),
     supabase.from("shuttle_stops").select("*").order("seq"),
-    supabase.from("shuttle_assignments").select("id, stop_id"),
+    // 인원 숫자만 있으면 "이 정류장에 몇 명"까지는 알아도 "누가"는 모릅니다(담당자 요청).
+    // 이름과 요일까지 함께 들고 와서 정류장 줄에 그대로 적습니다.
+    supabase.from("shuttle_assignments_basic").select("id, stop_id, student_name_raw, weekdays"),
   ]);
 
   return (
@@ -52,7 +54,7 @@ export default async function ShuttleRoutesPage() {
         <RouteManageClient
           initialRoutes={(routesRes.data as ShuttleRoute[] | null) ?? []}
           initialStops={(stopsRes.data as ShuttleStop[] | null) ?? []}
-          assignmentCounts={(asgRes.data as Pick<ShuttleAssignment, "id" | "stop_id">[] | null) ?? []}
+          assignmentCounts={(asgRes.data as RouteAssignment[] | null) ?? []}
         />
       </div>
     </div>

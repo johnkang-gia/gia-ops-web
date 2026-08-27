@@ -29,6 +29,7 @@ export default function ShuttleChecklistTable({
   onSetStatus,
   onRequestMove,
   onRequestEditNote,
+  onShowSource,
 }: {
   routes: ChecklistRoute[];
   items: ChecklistItem[];
@@ -37,6 +38,8 @@ export default function ShuttleChecklistTable({
   onSetStatus: (item: ChecklistItem, nextStatus: ChecklistItem["status"]) => void;
   onRequestMove: (assignmentId: string, targetRouteId: string) => void;
   onRequestEditNote: (assignmentId: string) => void;
+  /** 자동 분류 근거(?)를 눌렀을 때. 근거가 있는 항목에만 표시됩니다. */
+  onShowSource?: (item: ChecklistItem) => void;
 }) {
   const [dragOverRoute, setDragOverRoute] = useState<string | null>(null);
   const draggingIdRef = useRef<string | null>(null);
@@ -240,6 +243,27 @@ export default function ShuttleChecklistTable({
                             >
                               {hasNote ? "!" : "+"}
                             </button>
+                            {/* 자동 분류 근거.
+                                담당자: "픽업 처리된 애들 어떤 토들이나 구글챗으로 분류되었는지
+                                         (...) 자동으로 분류되는 거 이유가 뭔지 보고 싶어."
+                                오른쪽 위 특이사항(!)과 헷갈리지 않도록 **왼쪽 아래**에 둡니다.
+                                사람이 직접 누른 경우에는 근거가 없으니 이 표시도 없습니다 -
+                                표시가 있다는 것 자체가 "이건 기계가 붙였다"는 뜻입니다. */}
+                            {item.autoSource && item.status === item.autoSource.kind && (
+                              <button
+                                type="button"
+                                onClick={(ev) => {
+                                  ev.stopPropagation();
+                                  onShowSource?.(item);
+                                }}
+                                onMouseDown={(ev) => ev.stopPropagation()}
+                                onDoubleClick={(ev) => ev.stopPropagation()}
+                                title={`${item.autoSource.source}에서 자동으로 ${item.autoSource.kind} 처리됨 - 눌러서 원문 보기`}
+                                className="absolute -bottom-1.5 -left-1.5 flex h-4 w-4 items-center justify-center rounded-full border border-sky-500 bg-sky-500 text-[8px] font-bold leading-none text-white print:hidden"
+                              >
+                                ?
+                              </button>
+                            )}
                             {/* 픽업·결석은 뱃지 전체에 사선 실선을 그어 "오늘 이 차를 안 탄다"를
                                 시각적으로 확실하게 보여줍니다(요청 3). 결석=빨간 사선, 픽업=분홍 사선. */}
                             {(isPickup || isAbsent) && (

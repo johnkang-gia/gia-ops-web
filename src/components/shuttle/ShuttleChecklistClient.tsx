@@ -24,6 +24,26 @@ export type ChecklistRoute = {
   driver_phone?: string | null;
   vehicle_no?: string | null;
 };
+// 픽업·결석이 **자동으로** 붙은 경우, 그 근거가 된 연락 한 건.
+//
+// 담당자: "자동으로 분류되는 거 이유가 뭔지 보고 싶어."
+// 근거가 결과 옆에 없으면 사람은 결과를 못 믿고, 매번 인박스로 넘어가 다시 찾게 됩니다.
+export type AutoSource = {
+  requestId: string;
+  kind: "픽업" | "결석";
+  /** '토들' | '구글챗' | '전화' | '교사' | '직접입력' | '학부모링크' */
+  source: string;
+  channelLabel: string | null;
+  senderName: string | null;
+  receivedAt: string;
+  rawText: string;
+  /** AI가 남긴 판단 근거 한 줄. */
+  aiNote: string | null;
+  matchedName: string | null;
+  sourceUrl: string | null;
+  sourceChatId: string | null;
+};
+
 export type ChecklistItem = {
   assignmentId: string;
   studentId?: string | null;
@@ -44,6 +64,8 @@ export type ChecklistItem = {
   // 색, individualPickup: 개별하원(셔틀 전면 제외)로 표시.
   groupColor?: string | null;
   individualPickup?: boolean;
+  /** 픽업·결석이 자동으로 붙었다면 그 근거. 사람이 직접 누른 경우에는 null입니다. */
+  autoSource?: AutoSource | null;
 };
 
 // 지속 특이사항(요청: 왼쪽 창구에 지속 반영사항을 적으면 오른쪽에 요약으로 뜨고, 차량
@@ -84,6 +106,7 @@ export default function ShuttleChecklistClient({
   initialMessages,
   term,
   persistentNotes: initialNotes = [],
+  toddleBase = null,
 }: {
   routes: ChecklistRoute[];
   items: ChecklistItem[];
@@ -91,12 +114,16 @@ export default function ShuttleChecklistClient({
   initialMessages: GoogleChatMirrorMessage[];
   term: string;
   persistentNotes?: PersistentNote[];
+  /** 토들 학교 주소("…/platform/xxx"). 방 id와 합쳐 원문 링크를 만듭니다. */
+  toddleBase?: string | null;
 }) {
   const notify = useToast();
   const router = useRouter();
   const [items, setItems] = useState(initialItems);
   const [notes, setNotes] = useState<PersistentNote[]>(initialNotes);
   const [busyId, setBusyId] = useState<string | null>(null);
+  // 자동 분류 근거 창(요청: "느낌표 아이콘 만들고 누르면 채팅 나오고 연결도 되게끔").
+  const [sourceOf, setSourceOf] = useState<ChecklistItem | null>(null);
   const [pendingMove, setPendingMove] = useState<PendingMove | null>(null);
   const [movingBusy, setMovingBusy] = useState(false);
 
@@ -666,6 +693,7 @@ export default function ShuttleChecklistClient({
             onSetStatus={setStatus}
             onRequestMove={requestMove}
             onRequestEditNote={openNoteEditor}
+            onShowSource={setSourceOf}
           />
         </div>
         <ChecklistPrintSheet
@@ -674,6 +702,112 @@ export default function ShuttleChecklistClient({
           dateLabel={new Date().toLocaleDateString("ko-KR", { month: "2-digit", day: "2-digit" }).replace(/\.\s*$/, "").replace(". ", "월 ") + "일"}
         />
       </div>
+
+      {/* 자동 분류 근거 창.
+          담당자: "느낌표 아이콘 만들고 누르면 채팅 나오고 연결도 되게끔 만들어줘 -
+                   자동으로 분류되는 거 이유가 뭔지 보고 싶어."
+          기계가 붙인 표시 옆에 그 근거가 없으면, 맞는지 확인하려고 매번 인박스로 넘어가
+          그 아이를 다시 찾아야 합니다. */}
+      {sourceOf?.autoSource && (
+        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 p-4 print:hidden" onClick={() => setSourceOf(null)}>
+          <div
+            className="max-h-[80vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-4 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-2 flex flex-wrap items-center gap-1.5">
+              <span className="text-sm font-bold text-slate-800">{sourceOf.studentName}</span>
+              <span
+                className={
+                  "rounded-full px-1.5 py-0.5 text-[10px] font-bold " +
+                  (sourceOf.autoSource.kind === "픽업" ? "bg-pink-100 text-pink-700" : "bg-red-100 text-red-600")
+                }
+              >
+                {sourceOf.autoSource.kind}
+              </span>
+              <span className="rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-bold text-sky-700">
+                {sourceOf.autoSource.source}에서 자동
+              </span>
+            </div>
+
+            <dl className="mb-2 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-[11px] text-slate-500">
+              {sourceOf.autoSource.channelLabel && (
+                <>
+                  <dt className="font-semibold">채널</dt>
+                  <dd className="min-w-0 break-words">{sourceOf.autoSource.channelLabel}</dd>
+                </>
+              )}
+              {sourceOf.autoSource.senderName && (
+                <>
+                  <dt className="font-semibold">보낸 분</dt>
+                  <dd className="min-w-0 break-words">{sourceOf.autoSource.senderName}</dd>
+                </>
+              )}
+              {sourceOf.autoSource.receivedAt && (
+                <>
+                  <dt className="font-semibold">받은 때</dt>
+                  <dd>{new Date(sourceOf.autoSource.receivedAt).toLocaleString("ko-KR")}</dd>
+                </>
+              )}
+              <dt className="font-semibold">연결된 이름</dt>
+              <dd className="min-w-0 break-words">
+                {sourceOf.autoSource.matchedName ?? <span className="text-amber-600">명부와 대조되지 않음(이름만 비교)</span>}
+              </dd>
+            </dl>
+
+            <p className="whitespace-pre-wrap break-words rounded-lg bg-slate-50 p-3 text-[12px] leading-relaxed text-slate-700">
+              {sourceOf.autoSource.rawText || "(원문이 저장되지 않았습니다)"}
+            </p>
+
+            {sourceOf.autoSource.aiNote && (
+              <p className="mt-2 rounded-lg bg-amber-50 px-2 py-1.5 text-[11px] leading-relaxed text-amber-800">
+                <span className="font-bold">판단 근거</span> · {sourceOf.autoSource.aiNote}
+              </p>
+            )}
+
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              {(() => {
+                const s = sourceOf.autoSource!;
+                const url = s.sourceUrl ?? (toddleBase && s.sourceChatId ? `${toddleBase}/messaging/${s.sourceChatId}` : null);
+                return url ? (
+                  <a
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="rounded-lg bg-violet-600 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-violet-500"
+                  >
+                    토들에서 보기 ↗
+                  </a>
+                ) : null;
+              })()}
+              <a
+                href="/pickup/inbox"
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
+              >
+                픽업 인박스 ↗
+              </a>
+              {/* 근거를 보고 "아니네" 싶으면 그 자리에서 되돌립니다. 확인과 조치가 갈라져
+                  있으면 확인만 하고 넘어가게 됩니다. */}
+              <button
+                type="button"
+                onClick={() => {
+                  void setStatus(sourceOf, sourceOf.status);
+                  setSourceOf(null);
+                }}
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
+              >
+                ✕ 표시 지우기
+              </button>
+              <button
+                type="button"
+                onClick={() => setSourceOf(null)}
+                className="ml-auto rounded-lg bg-slate-800 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-slate-700"
+              >
+                닫기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {pendingMove && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 print:hidden">

@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import Link from "next/link";
-import ShuttleChecklistClient, { type ChecklistRoute, type ChecklistItem, type PersistentNote } from "@/components/shuttle/ShuttleChecklistClient";
+import ShuttleChecklistClient, { type ChecklistRoute, type ChecklistItem, type PersistentNote, type AutoSource } from "@/components/shuttle/ShuttleChecklistClient";
 import type { GoogleChatMirrorMessage } from "@/lib/types";
 import { categorize } from "@/lib/attendanceDigest";
 import GuideButton from "@/components/common/GuideButton";
@@ -131,16 +131,57 @@ export default async function ShuttleChecklistPage({
     .eq("is_demo", false)
     .neq("status", "무시")
     .eq("service_date", today);
+  // 이름만 뽑지 않고 **어느 연락에서 왔는지**를 함께 들고 갑니다.
+  //
+  // 담당자: "픽업 처리된 애들 어떤 토들이나 구글챗으로 분류되었는지 (...) 자동으로
+  //          분류되는 거 이유가 뭔지 보고 싶어."
+  //
+  // 지금까지는 이름만 넘겨서, 표에 사선이 그어진 이유를 확인하려면 인박스로 넘어가
+  // 그 아이를 다시 찾아야 했습니다. 근거가 결과 옆에 없으면 사람은 결과를 못 믿습니다.
   const pickupNames: string[] = [];
   const absentNames: string[] = [];
+  const autoSourceByName = new Map<string, AutoSource>();
   for (const r of preqRows ?? []) {
     const name = ((r.matched_name as string | null) ?? (r.ai_student_name as string | null) ?? "").trim();
     if (!name) continue;
     const text = ((r.raw_text as string | null) ?? (r.summary as string | null) ?? "").toString();
     const cat = categorize(text);
-    if (r.kind === "픽업" || cat === "픽업") pickupNames.push(name);
-    else if (cat === "결석") absentNames.push(name);
+    const isPickup = r.kind === "픽업" || cat === "픽업";
+    const isAbsent = !isPickup && cat === "결석";
+    if (!isPickup && !isAbsent) continue;
+    if (isPickup) pickupNames.push(name);
+    else absentNames.push(name);
+    // 같은 아이에게 여러 연락이 왔으면 가장 최근 것을 씁니다.
+    const prev = autoSourceByName.get(norm(name));
+    const at = (r.received_at as string | null) ?? "";
+    if (prev && prev.receivedAt >= at) continue;
+    autoSourceByName.set(norm(name), {
+      requestId: r.id as string,
+      kind: isPickup ? "픽업" : "결석",
+      source: (r.source as string | null) ?? "토들",
+      channelLabel: (r.channel_label as string | null) ?? null,
+      senderName: (r.sender_name as string | null) ?? null,
+      receivedAt: at,
+      rawText: text,
+      aiNote: (r.ai_note as string | null) ?? null,
+      matchedName: (r.matched_name as string | null) ?? null,
+      sourceUrl: (r.source_url as string | null) ?? null,
+      sourceChatId: (r.source_chat_id as string | null) ?? null,
+    });
   }
+
+  // 토들 주소는 "학교 주소 + /messaging/ + 방 id" 형태입니다. 주소 칸이 비어 있는 줄이
+  // 많아서(수집기가 못 읽은 경우), 주소가 있는 가장 최근 기록 하나에서 학교 주소만 뽑아
+  // 나머지에 그대로 씁니다 - 학부모 문의사항 화면과 같은 방식입니다.
+  const { data: baseRow } = await supabase
+    .from("pickup_requests")
+    .select("source_url")
+    .not("source_url", "is", null)
+    .order("received_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const toddleBase =
+    ((baseRow?.source_url as string | null) ?? "").match(/^(https:\/\/[^/]+\/platform\/[^/]+)/)?.[1] ?? null;
 
   // 지속 특이사항(요청: 왼쪽 창구에 적으면 오른쪽에 요약으로 계속 뜨고, 차량 셔틀도 자동
   // 수정되며, 삭제하면 원래대로 복귀). 효과는 클라이언트에서 items에 덧씌우므로, 여기서는
@@ -176,9 +217,18 @@ export default async function ShuttleChecklistPage({
       // 되돌리기는 '예정' 줄을 남기는 방식인데, 값만 보면 그게 "아무도 안 누름"과 똑같이 보여
       // 다음에 화면을 열 때 자동 표시가 되살아납니다. 사람이 되돌린 것을 기계가 다시 뒤집는
       // 셈이라, 줄이 하나라도 있으면 사람 판단으로 봅니다.
+      let autoSource: AutoSource | null = null;
       if (ridingToday && !boarding) {
-        if (pickupNames.some((n) => nameMatch(n, a.student_name_raw))) status = "픽업";
-        else if (absentNames.some((n) => nameMatch(n, a.student_name_raw))) status = "결석";
+        const hit = (list: string[]) => list.find((n) => nameMatch(n, a.student_name_raw));
+        const p = hit(pickupNames);
+        const b = p ? null : hit(absentNames);
+        if (p) {
+          status = "픽업";
+          autoSource = autoSourceByName.get(norm(p)) ?? null;
+        } else if (b) {
+          status = "결석";
+          autoSource = autoSourceByName.get(norm(b)) ?? null;
+        }
       }
       const item: ChecklistItem = {
         assignmentId: a.id,
@@ -192,6 +242,7 @@ export default async function ShuttleChecklistPage({
         note: a.note ?? null,
         ridingToday,
         weekdays: a.weekdays ?? [],
+        autoSource,
       };
       return item;
     })
@@ -244,7 +295,7 @@ export default async function ShuttleChecklistPage({
         놓고, 계속 유지할지 오늘만 바꿀지 골라주세요.
       </p>
       <p className="mb-2 hidden text-sm font-bold print:block">GIA 하원 체크표 · {today}</p>
-      <ShuttleChecklistClient routes={routes} items={items} roster={roster} initialMessages={(mirrorRes.data as GoogleChatMirrorMessage[] | null) ?? []} term={term} persistentNotes={persistentNotes} />
+      <ShuttleChecklistClient routes={routes} items={items} roster={roster} initialMessages={(mirrorRes.data as GoogleChatMirrorMessage[] | null) ?? []} term={term} persistentNotes={persistentNotes} toddleBase={toddleBase} />
     </div>
   );
 }

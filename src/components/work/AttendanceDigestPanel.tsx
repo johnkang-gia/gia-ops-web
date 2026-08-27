@@ -71,8 +71,20 @@ function RegBadge({
 
   if (!row) {
     return (
-      <span className="shrink-0 text-[10px] text-slate-300" title="아직 등록 대상으로 잡히지 않았습니다(학생 대조 실패 등).">
-        ⬜
+      <span className="flex shrink-0 items-center gap-0.5">
+        <span className="text-[10px] text-slate-300" title="아직 등록 대상으로 잡히지 않았습니다(학생 대조 실패 등).">
+          ⬜
+        </span>
+        {/* 등록은 못 해도 내릴 수는 있어야 합니다. 아닌 것이 계속 목록에 남는 게 더 나쁩니다. */}
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => onSet(entry, "무시")}
+          className="rounded px-0.5 text-[11px] leading-none text-slate-300 transition hover:bg-slate-100 hover:text-slate-600 disabled:opacity-40"
+          title="출결이 아닙니다 - 목록과 집계에서 내립니다"
+        >
+          ✕
+        </button>
       </span>
     );
   }
@@ -103,6 +115,24 @@ function RegBadge({
       >
         {busy ? "…" : registered ? "✅" : "❓"}
       </button>
+      {/* 출결이 아닌 것을 내리는 자리.
+          담당자: "기존의 픽업에 관한 채팅인데 그냥 '픽업'이 들어가 있어서 가져온 경우,
+                   픽업에 관한 글이 아닌데 계속 픽업으로 집계돼."
+          맞는 지적입니다. 지금까지 ❓에서 할 수 있는 일은 **등록뿐**이었습니다. '무시' 상태는
+          이미 있었는데 그리로 갈 버튼이 없어서, 아닌 것도 계속 물음표로 남아 세어졌습니다.
+          "픽업"이라는 낱말이 스쳐 지나간 문장까지 기계가 가려낼 수는 없으니, 사람이 한 번
+          내려주면 다시 안 묻는 자리가 필요합니다. */}
+      {!registered && (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => onSet(entry, "무시")}
+          className="rounded px-0.5 text-[11px] leading-none text-slate-300 transition hover:bg-slate-100 hover:text-slate-600 disabled:opacity-40"
+          title="출결이 아닙니다 - 목록과 집계에서 내립니다"
+        >
+          ✕
+        </button>
+      )}
     </span>
   );
 }
@@ -241,17 +271,20 @@ export default function AttendanceDigestPanel({
   //
   // 키는 "메시지id|학생이름|종류"입니다. 한 메시지에 두 학생이 있으면 각각 따로 등록됩니다.
   const [regs, setRegs] = useState<Map<string, RegRow>>(new Map());
+  // 사람이 "출결 아님"으로 내린 것들. 목록에서 아예 빼야 다시 안 묻습니다.
+  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [busyKey, setBusyKey] = useState<string | null>(null);
 
   const loadRegs = useCallback(async () => {
     try {
       const res = await fetch("/api/attendance/entries", { cache: "no-store" });
-      const json = (await res.json()) as { entries?: RegRow[] };
+      const json = (await res.json()) as { entries?: RegRow[]; dismissed?: string[] };
       const m = new Map<string, RegRow>();
       for (const e of json.entries ?? []) {
         if (e.source_message_id) m.set(`${e.source_message_id}|${e.student_name}|${e.status}`, e);
       }
       setRegs(m);
+      setDismissed(new Set(json.dismissed ?? []));
     } catch {
       /* 못 불러와도 목록 자체는 보여야 합니다 - 배지만 안 뜰 뿐입니다. */
     }
@@ -266,12 +299,25 @@ export default function AttendanceDigestPanel({
   async function setState(entry: AttendanceEntry, next: "등록" | "무시") {
     const key = `${entry.messageId}|${entry.studentName}|${entry.category}`;
     const row = regs.get(key);
-    if (!row) return;
+    // 등록 대상으로 잡히지 않은 항목(⬜)은 고칠 줄이 없습니다. 내리는 것만은 되어야 하므로
+    // 키를 보내 줄을 만들면서 곧바로 '무시'로 둡니다.
+    if (!row && next !== "무시") return;
     setBusyKey(key);
     const res = await fetch("/api/attendance/entries", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: row.id, state: next }),
+      body: JSON.stringify(
+        row
+          ? { id: row.id, state: next }
+          : {
+              dismissKey: {
+                messageId: entry.messageId ?? "",
+                studentName: entry.studentName,
+                status: entry.category,
+                date: entry.targetDate,
+              },
+            }
+      ),
     });
     setBusyKey(null);
     if (res.ok) {
@@ -377,13 +423,21 @@ export default function AttendanceDigestPanel({
   const today = todayKey();
   // 오늘 것만 위쪽 픽업/결석/지각 칸에 넣고, 앞으로 예정된 건은 아래 "예정" 칸으로 따로 뺍니다.
   // 기간이 오늘을 품으면 "오늘"입니다 - 시작일이 지났어도 아직 결석 중이니까요.
+  // 내린 것은 목록에서 뺍니다.
+  //
+  // 담당자: "'픽업'이 들어갔지만 픽업에 관한 글이 아닌 것 - 계속 픽업으로 집계돼."
+  // 낱말이 스쳐 지나간 문장까지 기계가 가려낼 수는 없으니, 한 번 내리면 다시 안 묻습니다.
+  const liveEntries = useMemo(
+    () => allEntries.filter((e) => !dismissed.has(`${e.messageId ?? ""}|${e.studentName}|${e.category}`)),
+    [allEntries, dismissed]
+  );
   const entries = useMemo(
-    () => allEntries.filter((e) => e.targetDate <= today && (e.targetDateTo ?? e.targetDate) >= today),
-    [allEntries, today]
+    () => liveEntries.filter((e) => e.targetDate <= today && (e.targetDateTo ?? e.targetDate) >= today),
+    [liveEntries, today]
   );
   const upcoming = useMemo(
-    () => allEntries.filter((e) => e.targetDate > today).sort((a, b) => a.targetDate.localeCompare(b.targetDate)),
-    [allEntries, today]
+    () => liveEntries.filter((e) => e.targetDate > today).sort((a, b) => a.targetDate.localeCompare(b.targetDate)),
+    [liveEntries, today]
   );
 
   const grouped = useMemo(() => {

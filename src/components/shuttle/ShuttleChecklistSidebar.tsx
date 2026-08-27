@@ -108,6 +108,34 @@ export default function ShuttleChecklistSidebar({
   const [teachTarget, setTeachTarget] = useState<AttendanceEntry | null>(null);
   const [rulesOpen, setRulesOpen] = useState(false);
 
+  // 사람이 "출결 아님"으로 내린 것들.
+  //
+  // 담당자: "픽업에 관한 글이 아닌데 계속 픽업으로 집계돼."
+  //
+  // 업무 인박스에서 내려도 이 위젯에는 그대로 남아 있었습니다. **이 위젯이 등록 상태를 아예
+  // 안 보고, 메시지를 매번 직접 세고 있었기 때문입니다.** 운영 대시보드는 등록된 것만 읽도록
+  // 이미 고쳤는데 여기만 옛 방식으로 남아 있었습니다 - 같은 판단을 두 곳이 다르게 하고
+  // 있었던 셈입니다.
+  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+
+  const loadDismissed = useCallback(async () => {
+    const supabase = createClient();
+    const from = new Date();
+    from.setDate(from.getDate() - 14);
+    const { data } = await supabase
+      .from("attendance_entries")
+      .select("source_message_id, student_name, status")
+      .eq("state", "무시")
+      .gte("date_from", from.toISOString().slice(0, 10));
+    setDismissed(
+      new Set(
+        ((data as { source_message_id: string | null; student_name: string; status: string }[] | null) ?? [])
+          .filter((r) => r.source_message_id)
+          .map((r) => `${r.source_message_id}|${r.student_name}|${r.status}`)
+      )
+    );
+  }, []);
+
   const loadRules = useCallback(async () => {
     const supabase = createClient();
     const { data } = await supabase.from("attendance_learning_rules").select("*");
@@ -116,11 +144,12 @@ export default function ShuttleChecklistSidebar({
 
   useEffect(() => {
     void loadRules();
+    void loadDismissed();
     void (async () => {
       const { data } = await createClient().auth.getUser();
       setMyEmail(data.user?.email ?? "");
     })();
-  }, [loadRules]);
+  }, [loadRules, loadDismissed]);
 
   async function submitPersistentNote() {
     if (!onAddPersistentNote) return;
@@ -185,14 +214,20 @@ export default function ShuttleChecklistSidebar({
         .limit(200);
       if (!cancelled && data) setMessages(data as GoogleChatMirrorMessage[]);
     }
-    const t = setInterval(() => { if (typeof document === "undefined" || document.visibilityState === "visible") void pollMessages(); }, POLL_MS);
+    const t = setInterval(() => {
+      if (typeof document === "undefined" || document.visibilityState === "visible") {
+        void pollMessages();
+        // 업무 인박스에서 방금 내린 것이 여기에도 바로 반영되도록 함께 다시 읽습니다.
+        void loadDismissed();
+      }
+    }, POLL_MS);
 
     return () => {
       cancelled = true;
       clearInterval(t);
       supabase.removeChannel(channel);
     };
-  }, [department]);
+  }, [department, loadDismissed]);
 
   // AttendanceDigestPanel과 동일한 규칙: 명부와 대조해 이름을 뽑고, 실패하면 아무거나 보여주지
   // 않고 문장에서 한글이름을 추정합니다(요청: "한글이름을 메인으로 뽑아줘").
@@ -227,6 +262,7 @@ export default function ShuttleChecklistSidebar({
           time: m.created_at_google,
           sourceLabel: "구글챗",
           targetDate,
+          messageId: m.id,
         });
         continue;
       }
@@ -242,16 +278,21 @@ export default function ShuttleChecklistSidebar({
           time: m.created_at_google,
           sourceLabel: "구글챗",
           targetDate,
+          messageId: m.id,
         });
       }
     }
 
-    const deduped = dedupeEntries(out);
+    // 사람이 "출결 아님"으로 내린 것은 빼고 셉니다. 등록 상태와 이 위젯의 판단이 갈리면
+    // 업무 인박스에서 내려도 여기서는 계속 세어지는데, 그게 담당자가 겪은 일입니다.
+    const deduped = dedupeEntries(out).filter(
+      (e) => !dismissed.has(`${e.messageId ?? ""}|${e.studentName}|${e.category}`)
+    );
     return {
       pickup: deduped.filter((e) => e.category === "픽업"),
       absent: deduped.filter((e) => e.category === "결석"),
     };
-  }, [messages, roster, rules]);
+  }, [messages, roster, rules, dismissed]);
 
   function nameChip(e: AttendanceEntry, tone: "blue" | "red") {
     const toneClass = e.unmatched

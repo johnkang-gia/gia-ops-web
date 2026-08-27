@@ -23,6 +23,13 @@ function serviceClient() {
   return createServiceClient(url, key, { auth: { persistSession: false } });
 }
 
+// 'YYYY-MM-DD'에 며칠을 더하거나 뺍니다.
+function addDaysKey(key: string, days: number): string {
+  const d = new Date(`${key}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 export async function GET(req: NextRequest) {
   // 로그인 확인은 사용자 클라이언트로, 실제 조회는 서비스 롤로 합니다.
   // 구글챗 미러는 RLS가 닫혀 있어 사용자 토큰으로는 읽을 수 없습니다.
@@ -95,8 +102,21 @@ export async function GET(req: NextRequest) {
     .order("date_from", { ascending: true })
     .limit(300);
 
+  // 사람이 "출결 아님"으로 내린 것들의 키.
+  //
+  // 위 entries에서는 무시를 빼고 있어서, 화면은 그 항목을 "아직 등록 안 된 것"으로 오해하고
+  // 계속 목록에 띄웁니다. 내린 것은 목록에서도 사라져야 하므로 키만 따로 실어 보냅니다.
+  const { data: ignored } = await db
+    .from("attendance_entries")
+    .select("source_message_id, student_name, status")
+    .eq("state", "무시")
+    .gte("date_to", addDaysKey(today, -30));
+  const dismissed = ((ignored as { source_message_id: string | null; student_name: string; status: string }[] | null) ?? [])
+    .filter((r) => r.source_message_id)
+    .map((r) => `${r.source_message_id}|${r.student_name}|${r.status}`);
+
   return NextResponse.json(
-    { ok: true, scan, today, entries: entries ?? [] },
+    { ok: true, scan, today, entries: entries ?? [], dismissed },
     { headers: { "Cache-Control": "no-store, no-cache, must-revalidate" } },
   );
 }
@@ -113,11 +133,42 @@ export async function PATCH(req: NextRequest) {
     dateFrom?: string;
     dateTo?: string;
     note?: string;
+    // 아직 등록 대상으로 잡히지 않은 항목(⬜)을 내릴 때 씁니다. id 대신 이 셋을 보냅니다.
+    dismissKey?: { messageId: string; studentName: string; status: string; date?: string };
   };
-  if (!body.id) return NextResponse.json({ error: "id가 필요합니다." }, { status: 400 });
 
   const db = serviceClient();
   if (!db) return NextResponse.json({ error: "service role key not configured" }, { status: 500 });
+
+  // ── 키로 내리기 ───────────────────────────────────────────────────────────
+  //
+  // 담당자: "'픽업'이 들어갔지만 픽업에 관한 글이 아닌 것 - 계속 픽업으로 집계돼."
+  //
+  // 이런 항목은 학생 대조에 실패해 등록 대상으로도 안 잡히는 경우가 있습니다(⬜). 그러면
+  // 고칠 줄 자체가 없어서 아무것도 못 합니다. 그래서 줄을 새로 만들면서 곧바로 '무시'로
+  // 둡니다 - "이 메시지의 이 항목은 출결이 아니다"라는 사실을 남기는 것입니다.
+  if (!body.id && body.dismissKey) {
+    const k = body.dismissKey;
+    const day = /^\d{4}-\d{2}-\d{2}$/.test(k.date ?? "") ? k.date! : todayKey(new Date());
+    const { error } = await db.from("attendance_entries").upsert(
+      {
+        source: "googlechat",
+        source_message_id: k.messageId,
+        student_name: k.studentName,
+        status: k.status,
+        date_from: day,
+        date_to: day,
+        state: "무시",
+        touched_by_human: true,
+        note: "사람이 출결이 아니라고 표시",
+      },
+      { onConflict: "source,source_message_id,student_name,status" }
+    );
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true, dismissed: true });
+  }
+
+  if (!body.id) return NextResponse.json({ error: "id가 필요합니다." }, { status: 400 });
 
   const patch: Record<string, unknown> = {
     // 사람이 손댄 표시. 이게 켜지면 자동 스캔이 다시는 이 줄을 건드리지 않습니다.

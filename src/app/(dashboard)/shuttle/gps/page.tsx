@@ -1,8 +1,11 @@
 import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isStaffOrAboveUser } from "@/lib/roles";
 import GpsStatusClient from "@/components/shuttle/GpsStatusClient";
+import PilotMonitorClient from "@/components/shuttle/PilotMonitorClient";
 import GuideButton from "@/components/common/GuideButton";
+import type { ShuttleRoute, ShuttlePilotRoute } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -49,6 +52,22 @@ export default async function ShuttleGpsPage() {
   if (!me) redirect("/login");
   if (!isStaffOrAboveUser(me)) redirect("/home");
 
+  // 실시간 지도 + 수신 지표 패널(예전 링크·기기 아래 'GPS 연결 N').
+  // 담당자: "지도랑 같이 마지막 수신, 최근 10분 수신 등등이 나와 있는 거 - 한눈에 보고 싶어."
+  const supabase = await createClient();
+  const routesRes = await supabase
+    .from("shuttle_routes")
+    .select("*")
+    .eq("term", "정규학기")
+    .eq("active", true)
+    .eq("direction", "하원")
+    .order("sort_order");
+  const routeIds = (routesRes.data ?? []).map((r) => r.id as string);
+  const pilotsRes =
+    routeIds.length > 0
+      ? await supabase.from("shuttle_pilot_routes").select("*").in("route_id", routeIds).order("created_at", { ascending: false })
+      : { data: [] as ShuttlePilotRoute[] };
+
   return (
     <div className="mx-auto flex h-full w-full max-w-none flex-col overflow-hidden">
       <div className="shrink-0">
@@ -60,8 +79,17 @@ export default async function ShuttleGpsPage() {
           GPS를 켜둔 차량의 신호·정류장 인식 상태를 한 줄씩 봅니다. 10초마다 자동으로 갱신됩니다.
         </p>
       </div>
-      <div className="min-h-0 flex-1">
-        <GpsStatusClient />
+      {/* 위: 전 호차 한 줄 요약 / 아래: 운행 중인 차의 지도와 수신 지표.
+          한 화면에 같이 두어야 "어느 차가 이상한가"에서 "그 차가 지금 어디인가"로 눈만
+          내리면 됩니다 - 예전에는 두 화면을 오가야 했습니다. */}
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
+        <div className="min-h-[220px]">
+          <GpsStatusClient />
+        </div>
+        <PilotMonitorClient
+          routes={(routesRes.data as ShuttleRoute[] | null) ?? []}
+          initialPilots={(pilotsRes.data as ShuttlePilotRoute[] | null) ?? []}
+        />
       </div>
     </div>
   );

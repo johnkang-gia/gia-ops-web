@@ -93,6 +93,10 @@ export default function ReportFormModal({
   const [showHistory, setShowHistory] = useState(false);
   const [templates, setTemplates] = useState<{ id: string; text: string }[]>([]);
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 저장이 실패한 이유. 예전에는 "실패" 넉 자뿐이라 선생님이 무엇을 해야 할지 몰랐습니다.
+  const [saveError, setSaveError] = useState<string | null>(null);
+  // 어느 탭의 내용을 마지막으로 불러왔는지. 쓰는 중에 서버 값이 덮어쓰는 것을 막는 데 씁니다.
+  const lastLoadedTab = useRef<string>("");
 
   const isArchiveMode = mode === "archive";
   const isReadOnly = isArchiveMode || (mode !== "admin" && activeTab !== mySubject);
@@ -109,6 +113,18 @@ export default function ReportFormModal({
   }, []);
 
   useEffect(() => {
+    // 쓰는 중에는 서버 값으로 덮어쓰지 않습니다.
+    //
+    // 자동 저장이 끝나면 onSaved → 부모 갱신 → subjectMap 변경 → 이 효과가 다시 돌면서
+    // formData를 **서버에서 온 값으로 되돌립니다.** 저장이 오가는 그 1~2초 사이에 선생님이
+    // 계속 타이핑하고 있었다면 그 글자들이 사라집니다. 네트워크가 느릴수록 더 많이 사라지고,
+    // 사람은 자기가 오타를 낸 줄 압니다.
+    //
+    // 탭을 바꾼 경우에는 당연히 새로 불러와야 하므로, "같은 탭인데 아직 안 쓴 게 있는" 때만
+    // 건너뜁니다.
+    if (isDirty && lastLoadedTab.current === activeTab) return;
+    lastLoadedTab.current = activeTab;
+
     const info = subjectMap[activeTab];
     const target = isArchiveMode ? info?.latest : info?.current;
     if (target) {
@@ -132,6 +148,11 @@ export default function ReportFormModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, subjectMap]);
 
+  // 한국 기준 오늘(YYYY-MM-DD).
+  function kstToday(): string {
+    return new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
+  }
+
   async function persist(status: "draft" | "published") {
     const supabase = createClient();
     const payload = {
@@ -149,7 +170,15 @@ export default function ReportFormModal({
       teacher_note: formData.teacherNote,
       eval_badges: formData.evalBadges,
       status,
-      report_date: new Date().toISOString().slice(0, 10),
+      // 한국 날짜로 저장합니다.
+      //
+      // 예전에는 `new Date().toISOString().slice(0,10)`이었는데 이건 **세계표준시(UTC)**라
+      // 한국 시간 오전 9시 이전에는 **어제 날짜**가 나옵니다. 두 가지가 한꺼번에 깨집니다.
+      //   · 아침 8시에 쓴 기록이 어제 것으로 남습니다.
+      //   · 8시 50분에 저장하고 9시 10분에 다시 저장하면 report_date가 달라져
+      //     **같은 주 같은 과목 기록이 두 줄**로 갈라집니다(열쇠가 달라지니 upsert가 안 묶임).
+      // 선생님들이 등교 직후 아침에 쓰시는 일이 많아 반드시 걸립니다.
+      report_date: kstToday(),
     };
 
     // 같은 학생·과목·주(report_date) 리포트는 upsert로 저장합니다 - 담임/과목교사가 동시에
@@ -162,8 +191,25 @@ export default function ReportFormModal({
       .single();
     if (!error && data) {
       setExistingReportId((data as WrReport).id);
+      setSaveError(null);
       return data as WrReport;
     }
+
+    // 실패한 이유를 반드시 남깁니다.
+    //
+    // 예전에는 그냥 `return null`이라 화면에 "자동 저장 실패" 넉 자만 떴습니다. 선생님은
+    // 왜인지도, 다시 시도해야 하는지도 알 수 없고, 그대로 창을 닫으면 **쓴 글이 사라집니다.**
+    // 오늘만 같은 종류(오류를 삼키는 코드)를 세 번 고쳤습니다 - 여기가 네 번째입니다.
+    //
+    // 특히 42P10("no unique or exclusion constraint matching the ON CONFLICT")은
+    // (student_id, subject, report_date) 유일 인덱스가 없을 때 나옵니다. 그 경우엔
+    // **모든 선생님의 모든 저장이 실패**하므로, 사람이 읽고 바로 알아챌 수 있게 적어둡니다.
+    const msg = error?.message ?? "알 수 없는 오류";
+    setSaveError(
+      error?.code === "42P10"
+        ? "저장 규칙(유일 인덱스)이 없어 저장되지 않습니다. 관리자에게 알려주세요. — 20260828000000_wr_reports_scale.sql"
+        : msg
+    );
     return null;
   }
 
@@ -440,6 +486,15 @@ export default function ReportFormModal({
                 {t("취소", "Cancel")}
               </button>
               <span className="text-xs italic text-slate-400">{saveStatusMsg}</span>
+              {/* 저장이 실패했으면 이유를 그 자리에서 보여줍니다. 선생님이 쓴 글을 잃지 않고
+                  다시 시도하거나 관리자에게 알릴 수 있어야 합니다. */}
+              {saveError && (
+                <span className="rounded bg-red-50 px-2 py-1 text-[11px] font-semibold leading-snug text-red-600">
+                  ⚠️ 저장 실패: {saveError}
+                  <br />
+                  <span className="font-normal">창을 닫지 마시고 잠시 뒤 다시 시도하거나, 내용을 따로 복사해 두세요.</span>
+                </span>
+              )}
             </div>
             <div className="flex gap-2">
               <button

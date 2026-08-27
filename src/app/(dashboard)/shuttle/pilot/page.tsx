@@ -136,10 +136,16 @@ export default async function ShuttlePilotPage() {
           stops={(stopsRes.data as ShuttleStop[] | null) ?? []}
           observations={(observationsRes.data as ShuttleStopObservation[] | null) ?? []}
         />
-        <PilotMonitorClient
-          routes={(routesRes.data as ShuttleRoute[] | null) ?? []}
-          initialPilots={(pilotsRes.data as ShuttlePilotRoute[] | null) ?? []}
-        />
+        {/* 실시간 지도·수신 지표 패널은 [GPS 현황]으로 옮겼습니다.
+            담당자: "GPS 연결 1이라고 뜬 그 탭을 GPS 현황에서 볼 수 있게 해줘 - 지도랑 같이
+                     마지막 수신, 최근 10분 수신 등등이 나와 있는 거. 한눈에 보고 싶어."
+            이 화면은 발급·설정하는 곳, GPS 현황은 지켜보는 곳으로 나눴습니다. */}
+        <a
+          href="/shuttle/gps"
+          className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-600 hover:border-blue-300 hover:text-blue-600"
+        >
+          📡 운행 중 GPS 상태(지도 · 마지막 수신 · 끊김)는 <b>GPS 현황</b>에서 봅니다 ↗
+        </a>
         {/* 기사·차량 변경 이력(요청 채택). 지입차량 교대·차량번호 변경을 자동 기록합니다. */}
         <details className="rounded-xl border border-slate-200 bg-white">
           <summary className="cursor-pointer px-4 py-3 text-sm font-bold text-slate-700">🧾 기사 · 차량 변경 이력 ({history.length})</summary>

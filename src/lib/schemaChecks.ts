@@ -64,6 +64,17 @@ export const SCHEMA_CHECKS: SchemaCheck[] = [
     impact: "인박스에서 등록한 출결이 대시보드에 반영되지 않고, 지운 것이 되살아납니다.",
   },
   {
+    feature: "관찰기록 저장(upsert)",
+    table: "wr_reports",
+    columns: ["student_id", "subject", "report_date", "term_id"],
+    migration: "20260828000000_wr_reports_scale.sql",
+    impact:
+      "유일 인덱스가 없으면 선생님들의 관찰기록 저장이 전부 실패합니다(42P10). 화면에는 '자동 저장 실패'만 뜹니다.",
+    // 여기는 넣어보기(upsertProbe)를 하지 않습니다. wr_reports.student_id가 NOT NULL이라
+    // 가짜 줄을 만들 수 없고, 아무 학생이나 골라 넣으면 그 아이 기록에 흔적이 남습니다.
+    // 대신 outputs/관찰기록_부하테스트.sql 의 ②가 유일 인덱스를 직접 확인합니다.
+  },
+  {
     feature: "정류장 도착 근거",
     table: "shuttle_stop_arrivals",
     columns: ["matched_by"],

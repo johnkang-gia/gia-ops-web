@@ -32,6 +32,40 @@ function StatCard({ label, value, tone }: { label: string; value: number; tone: 
   );
 }
 
+// 통계에 실제로 필요한 칸만. 본문(academic·improvement 등)은 길고 여기서 안 씁니다.
+type WeekReportLite = { student_id: string; status: string; eval_badges: Record<string, string[]> | null };
+
+const PAGE = 1000;
+
+// 상한에 걸려 조용히 잘리지 않도록 끝까지 나눠 읽습니다.
+async function fetchAllReports(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  termId: string,
+  start: string,
+  end: string
+): Promise<{ data: WeekReportLite[] }> {
+  const out: WeekReportLite[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from("wr_reports")
+      .select("student_id, status, eval_badges")
+      .eq("term_id", termId)
+      .gte("report_date", start)
+      .lte("report_date", end)
+      .order("student_id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) break;
+    const rows = (data as WeekReportLite[] | null) ?? [];
+    out.push(...rows);
+    // 한 장이 다 안 찼으면 마지막 장입니다.
+    if (rows.length < PAGE) break;
+    // 혹시 모를 무한 반복 방지(한 주에 5만 줄이 넘을 일은 없습니다).
+    if (out.length >= 50000) break;
+  }
+  return { data: out };
+}
+
 export default async function WeeklyReportStatsPage() {
   const supabase = await createClient();
   const me = await getCurrentAppUser();
@@ -44,14 +78,22 @@ export default async function WeeklyReportStatsPage() {
   const [{ count: activeStudentCount }, { data: weekReportsData }, { data: termsData }, { data: classesData }] =
     await Promise.all([
       supabase.from("wr_students").select("id", { count: "exact", head: true }).eq("status", "active"),
+      // 한 주치라도 137명 × 과목 수면 1,000줄을 훌쩍 넘습니다.
+      //
+      // Supabase는 한 번에 돌려주는 줄 수에 상한이 있어서(기본 1,000), `select("*")`로
+      // 통째로 달라고 하면 **말없이 잘린 채로** 옵니다. 그러면 "이번주 발행됨" 숫자가
+      // 조용히 실제보다 작게 나옵니다 - 틀렸다는 표시조차 없이.
+      //
+      // 그래서 ① 필요한 칸만 가져오고 ② 1,000줄씩 끝까지 나눠 읽습니다.
+      // 담임 선생님들이 한꺼번에 쓰기 시작하는 다음 주부터 바로 걸릴 자리였습니다.
       term
-        ? supabase.from("wr_reports").select("*").eq("term_id", term.id).gte("report_date", start).lte("report_date", end)
-        : Promise.resolve({ data: [] as WrReport[] }),
+        ? fetchAllReports(supabase, term.id, start, end)
+        : Promise.resolve({ data: [] as WeekReportLite[] }),
       supabase.from("terms").select("*").order("year", { ascending: false }).order("start_date", { ascending: false }),
       supabase.from("wr_classes").select("*").order("grade", { ascending: true }).order("class_name", { ascending: true }),
     ]);
 
-  const weekReports = (weekReportsData as WrReport[] | null) ?? [];
+  const weekReports = (weekReportsData as WeekReportLite[] | null) ?? [];
   const published = weekReports.filter((r) => r.status === "published").length;
   const draft = weekReports.filter((r) => r.status === "draft").length;
 

@@ -110,7 +110,19 @@ const SHUTTLE_TABS: TabDef[] = [
       { label: "실시간", href: "/shuttle/live" },
     ],
   },
-  { key: "devices", label: "링크 · 기기", icon: "🔗", href: "/shuttle/pilot", match: ["/shuttle/pilot", "/shuttle/track-test"] },
+  {
+    key: "devices",
+    label: "링크 · 기기",
+    icon: "🔗",
+    href: "/shuttle/pilot",
+    match: ["/shuttle/pilot", "/shuttle/track-test", "/shuttle/gps"],
+    children: [
+      { label: "링크 · 기기", href: "/shuttle/pilot", match: ["/shuttle/pilot"] },
+      // 요청: "GPS 연결차를 따로 탭을 만들어서 쭉 볼 수 있게." 발급하는 곳과 지켜보는 곳을
+      // 나눕니다 - 운행 중에는 카드가 아니라 한 줄씩 늘어선 표가 필요합니다.
+      { label: "GPS 현황", href: "/shuttle/gps" },
+    ],
+  },
   { key: "records", label: "기록 · 분석", icon: "⏱️", href: "/shuttle/stop-times", match: ["/shuttle/stop-times"] },
 ];
 

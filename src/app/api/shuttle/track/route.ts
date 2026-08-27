@@ -16,8 +16,15 @@ import { haversineMeters } from "@/lib/shuttleRecommend";
 // 상가 앞)와 수십~수백 미터씩 어긋나 있습니다. 그 상태에서 80m를 요구하면 영영 0건입니다.
 //
 // 그래서 좌표의 출처와 학습 정도에 따라 세 단계로 둡니다. 학습이 쌓이면 저절로 좁아집니다.
-const RADIUS_GEOCODED_M = 250; // 주소만 있는 상태 - 넓게 열어 재료부터 모읍니다
-const RADIUS_LEARNING_M = 150; // GPS로 배우는 중(며칠 안 됨)
+//
+// 담당자: "정류장으로 설정한 곳이 그냥 아파트라서 실제 정류장과는 더 많은 차이가 있을 수도
+//          있어. 반경을 좀 더 넓히고 통계를 보고 좁혀나가도록 설정해줘."
+//
+// 맞습니다. 지금 좌표는 **아파트 주소를 지오코딩한 값**이라 단지 한가운데를 가리킵니다.
+// 차는 단지 안으로 안 들어가고 정문·후문·상가 앞에 섭니다. 큰 단지면 그 차이가 400m를
+// 넘습니다(개포래미안포레스트가 첫날 228m였는데, 그건 운 좋은 편입니다).
+const RADIUS_GEOCODED_M = 500; // 주소(아파트 한가운데)만 있는 상태 - 넓게 열어 재료부터
+const RADIUS_LEARNING_M = 200; // GPS로 배우는 중(며칠 안 됨)
 const RADIUS_LEARNED_M = 80; // 여러 날 같은 자리에서 확인됨 - 원래 목표치
 
 // 학습된 좌표를 '믿을 만하다'고 보는 기준. 정류장 학습 크론과 같은 값입니다.
@@ -116,7 +123,9 @@ async function detectStopArrival(
   //
   // 80m(학습 완료)에서는 이 조건을 걸지 않습니다 - 그 거리면 지나가는 중이어도 사실상
   // 그 정류장 자리이고, 신호에 걸려 서 있는 경우와 구분할 필요도 없습니다.
-  const APPROACH_MAX_KMH = 15;
+  // 반경을 500m까지 넓히면 속도 조건이 유일한 방어선입니다. 그래서 더 엄하게 봅니다 -
+  // 정류장에 서는 차는 거의 멈춰 있습니다(10km/h면 사람 뛰는 속도).
+  const APPROACH_MAX_KMH = 10;
   if (best.radius > RADIUS_LEARNED_M && speedKmh != null && speedKmh > APPROACH_MAX_KMH) {
     return `${Math.round(best.dist)}m 지나가는 중(${Math.round(speedKmh)}km/h)`;
   }

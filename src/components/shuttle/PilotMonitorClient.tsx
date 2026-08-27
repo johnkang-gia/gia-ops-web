@@ -11,7 +11,17 @@ import type { ShuttlePilotPing, ShuttlePilotRoute, ShuttleRoute, ShuttleRunEvent
 const SAFETY_PENALTY_PER_EVENT = 5;
 
 const POLL_MS = 7000;
-const EXPECTED_INTERVAL_S = 5; // 체크인 페이지가 보내기로 한 주기(검증 기준 계산의 분모)
+// 이 화면의 "수신 성공률"은 **웹 체크인 페이지가 5초마다 보내던 시절**의 기준이었습니다.
+//
+// 지금은 Traccar가 30초 간격 + 30m 거리 필터로 보냅니다. 멈춰 있을 때는 아예 안 보내고,
+// 달릴 때는 30m마다 보내므로 몇 초 간격이 됩니다. 즉 **일정한 주기가 없습니다.**
+// 그런데 분모를 5초로 고정해 두어서 정상 동작인데도 47%처럼 나왔고, 담당자가 "30m로
+// 바꿔서 이러는 건가" 하고 걱정하게 됐습니다. 없는 문제를 화면이 만들어낸 셈입니다.
+//
+// 주기가 없는 자료에 "성공률"은 쓸 수 없습니다. 그래서 **실제로 판단에 쓰이는 것**으로
+// 바꿉니다 - 몇 건 들어왔는지, 그리고 **가장 오래 끊긴 구간이 얼마인지**.
+// 끊김이 길면 그 사이 정류장을 통째로 놓치므로, 이게 진짜 봐야 할 숫자입니다.
+const GAP_WARN_S = 120;
 
 function natCompare(a: string, b: string) {
   return a.localeCompare(b, "ko", { numeric: true });
@@ -249,15 +259,19 @@ function PilotRouteCard({
 
   const tenMinAgo = now - 10 * 60 * 1000;
   const recent = pings.filter((p) => new Date(p.recorded_at).getTime() >= tenMinAgo);
-  // 최근 10분 동안 5초 주기로 왔다면 몇 건이어야 하는지(분모) 대비 실제 수신 건수(분자) 비율.
-  const expectedInWindow = Math.max(1, Math.round((10 * 60) / EXPECTED_INTERVAL_S));
-  const successRate = recent.length > 0 ? Math.min(100, Math.round((recent.length / expectedInWindow) * 100)) : null;
+  // 최근 10분 수신 건수. 거리 필터 때문에 "정상값"이 정해져 있지 않으므로 비율이 아니라
+  // 건수 그대로 봅니다(0이면 문제, 그 밖에는 도로 사정에 따라 달라지는 게 정상).
+  const recentCount = recent.length;
 
-  // 최근 수신분(최대 20개)의 연속 간격 평균 - 설계한 5초 주기에 실제로 얼마나 가까운지 확인용.
+  // 최근 10분 안에서 **가장 오래 끊긴 구간**. 이게 진짜 위험 신호입니다 - 3분이 비면
+  // 그 사이에 지나간 정류장은 아무 기록도 남지 않습니다.
+  let maxGap: number | null = null;
   const intervalSamples: number[] = [];
-  for (let i = 0; i < Math.min(pings.length - 1, 20); i++) {
-    const diff = (new Date(pings[i].recorded_at).getTime() - new Date(pings[i + 1].recorded_at).getTime()) / 1000;
-    if (diff > 0 && diff < 120) intervalSamples.push(diff);
+  for (let i = 0; i < recent.length - 1; i++) {
+    const diff = (new Date(recent[i].recorded_at).getTime() - new Date(recent[i + 1].recorded_at).getTime()) / 1000;
+    if (diff <= 0) continue;
+    if (maxGap == null || diff > maxGap) maxGap = diff;
+    if (diff < 120) intervalSamples.push(diff);
   }
   const avgInterval = intervalSamples.length > 0 ? intervalSamples.reduce((a, b) => a + b, 0) / intervalSamples.length : null;
 
@@ -318,8 +332,14 @@ function PilotRouteCard({
         <PilotLiveMap lat={last?.lat} lng={last?.lng} />
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
           <Metric label="마지막 수신" value={freshnessSec == null ? "-" : `${freshnessSec}초 전`} warn={freshnessSec != null && freshnessSec >= 20 && running} />
-          <Metric label="최근 10분 수신 성공률" value={successRate == null ? "-" : `${successRate}%`} warn={successRate != null && successRate < 80} />
-          <Metric label="평균 갱신 간격" value={avgInterval == null ? "-" : `${avgInterval.toFixed(1)}초`} warn={avgInterval != null && Math.abs(avgInterval - EXPECTED_INTERVAL_S) > 5} />
+          <Metric label="최근 10분 수신" value={`${recentCount}건`} warn={running && recentCount === 0} />
+          {/* 정해진 주기가 없으므로(거리 필터) 평균 간격은 참고용입니다. 경고는 걸지 않습니다. */}
+          <Metric label="평균 간격 (참고)" value={avgInterval == null ? "-" : `${avgInterval.toFixed(1)}초`} />
+          <Metric
+            label="가장 긴 끊김"
+            value={maxGap == null ? "-" : maxGap >= 60 ? `${Math.round(maxGap / 60)}분 ${Math.round(maxGap % 60)}초` : `${Math.round(maxGap)}초`}
+            warn={maxGap != null && maxGap > GAP_WARN_S}
+          />
           <Metric label="위치 정확도" value={last?.accuracy != null ? `약 ${Math.round(last.accuracy)}m` : "-"} />
           <Metric
             label="오늘 안전운행지수"

@@ -204,13 +204,31 @@ export default function ParentInquiryPanel({
   // 생겼고, 수집기가 주소를 못 읽은 경우에도 비어 있습니다. 다행히 방 id(source_chat_id)는
   // 처음부터 저장하고 있었고, 토들 주소는 "학교 주소 + /messaging/ + 방 id" 형태입니다.
   // 학교 주소는 모든 줄이 같으므로, 주소가 있는 줄 하나에서 뽑아 나머지에 그대로 씁니다.
+  // 학교 주소를 저장해 둡니다. 화면에 뜬 줄에서만 찾으면, 그 줄들에 주소가 하나도 없을 때
+  // 버튼이 통째로 사라집니다(문의만 걸러 보면 실제로 그럴 수 있습니다). 그래서 화면 밖까지
+  // 포함해 **주소가 있는 가장 최근 기록 하나**를 따로 읽어 받쳐둡니다.
+  const [dbBase, setDbBase] = useState<string | null>(null);
+  useEffect(() => {
+    void (async () => {
+      const { data } = await createClient()
+        .from("pickup_requests")
+        .select("source_url")
+        .not("source_url", "is", null)
+        .order("received_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const m = ((data?.source_url as string | null) ?? "").match(/^(https:\/\/[^/]+\/platform\/[^/]+)/);
+      if (m) setDbBase(m[1]);
+    })();
+  }, []);
+
   const toddleBase = useMemo(() => {
     for (const r of rows) {
       const m = (r.source_url ?? "").match(/^(https:\/\/[^/]+\/platform\/[^/]+)/);
       if (m) return m[1];
     }
-    return null;
-  }, [rows]);
+    return dbBase;
+  }, [rows, dbBase]);
 
   const toddleUrlOf = useCallback(
     (r: Inquiry): string | null => {
@@ -713,9 +731,23 @@ export default function ParentInquiryPanel({
                     {detail.channel_label ? ` · ${detail.channel_label}` : ""}
                   </p>
                 </div>
-                <button onClick={() => setDetail(null)} className="shrink-0 rounded-lg px-2 py-1 text-sm text-slate-400 hover:bg-slate-100">
-                  ✕
-                </button>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  {/* 상세 창 맨 위에도 둡니다. 문의를 읽은 다음 하는 일이 거의 항상 "토들에서
+                      답하기"라, 아래로 스크롤해서 찾게 하면 안 됩니다. */}
+                  {toddleUrlOf(detail) && (
+                    <a
+                      href={toddleUrlOf(detail)!}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="rounded-lg bg-slate-800 px-2.5 py-1.5 text-[11px] font-bold text-white hover:bg-slate-700"
+                    >
+                      토들에서 열기 ↗
+                    </a>
+                  )}
+                  <button onClick={() => setDetail(null)} className="rounded-lg px-2 py-1 text-sm text-slate-400 hover:bg-slate-100">
+                    ✕
+                  </button>
+                </div>
               </div>
 
               <div className="px-4 py-3">

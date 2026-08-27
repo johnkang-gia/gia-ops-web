@@ -6,7 +6,23 @@ import { haversineMeters } from "@/lib/shuttleRecommend";
 // 기사님 휴대폰이 이 반경(m) 안에 들어와야 그 정류장에 "도착"한 것으로 봅니다. 요청: "신호대기랑
 // 정류장 정차 헷갈리지 않게 정류장 근처일때만 정류장으로 인식" - 도심 정류장이 촘촘하고 GPS가
 // 흔들려도 엉뚱한 정류장을 잡지 않도록 좁게(80m) 둡니다. 이보다 멀면 "정류장 아님(운행/대기)".
-const STOP_ARRIVE_RADIUS_M = 80;
+// 정류장 도착 반경은 **그 정류장 좌표를 얼마나 믿을 수 있느냐**에 따라 다릅니다.
+//
+// 담당자: "정류장 반경을 너무 빡빡하게 잡지 말고, 우선 조금이라도 길게 정차한 곳의 데이터를
+//          받아서 날짜별로 계속 대조해 점차 줄여나가면 될 것 같아."
+//
+// 맞는 순서입니다. 좁게 잡으면 **아무것도 안 들어와서 줄여나갈 재료조차 안 생깁니다.**
+// 지금 27호 정류장 좌표는 대부분 주소 지오코딩 결과라, 실제로 차가 서는 자리(아파트 후문,
+// 상가 앞)와 수십~수백 미터씩 어긋나 있습니다. 그 상태에서 80m를 요구하면 영영 0건입니다.
+//
+// 그래서 좌표의 출처와 학습 정도에 따라 세 단계로 둡니다. 학습이 쌓이면 저절로 좁아집니다.
+const RADIUS_GEOCODED_M = 250; // 주소만 있는 상태 - 넓게 열어 재료부터 모읍니다
+const RADIUS_LEARNING_M = 150; // GPS로 배우는 중(며칠 안 됨)
+const RADIUS_LEARNED_M = 80; // 여러 날 같은 자리에서 확인됨 - 원래 목표치
+
+// 학습된 좌표를 '믿을 만하다'고 보는 기준. 정류장 학습 크론과 같은 값입니다.
+const TRUSTED_DAYS = 3;
+const TRUSTED_CONFIDENCE = 0.5;
 
 export const dynamic = "force-dynamic";
 
@@ -57,23 +73,39 @@ async function detectStopArrival(
 ): Promise<string> {
   const { data: stops } = await supabase
     .from("shuttle_stops")
-    .select("id, gps_lat, gps_lng, lat, lng")
+    .select("id, gps_lat, gps_lng, lat, lng, gps_day_count, gps_confidence")
     .eq("route_id", routeId);
   if (!stops || stops.length === 0) return "정류장 없음";
 
-  let best: { id: string; dist: number } | null = null;
+  // 정류장마다 허용 반경이 다르므로, "가장 가까운 곳"이 아니라 **"자기 반경 안에 들어온 곳 중
+  // 가장 가까운 곳"** 을 찾아야 합니다. 학습된 정류장(80m) 옆에 아직 주소뿐인 정류장(250m)이
+  // 있을 때, 가까운 쪽만 보고 반경을 적용하면 엉뚱한 판정이 납니다.
+  let best: { id: string; dist: number; radius: number; kind: string } | null = null;
+  let nearest: number | null = null;
   let withCoords = 0;
+
   for (const s of stops) {
-    const sLat = (s.gps_lat as number | null) ?? (s.lat as number | null);
-    const sLng = (s.gps_lng as number | null) ?? (s.lng as number | null);
+    const learnedLat = s.gps_lat as number | null;
+    const learnedLng = s.gps_lng as number | null;
+    const sLat = learnedLat ?? (s.lat as number | null);
+    const sLng = learnedLng ?? (s.lng as number | null);
     if (sLat == null || sLng == null) continue;
     withCoords += 1;
+
+    const days = (s.gps_day_count as number | null) ?? 0;
+    const conf = (s.gps_confidence as number | null) ?? 0;
+    const trusted = learnedLat != null && days >= TRUSTED_DAYS && conf >= TRUSTED_CONFIDENCE;
+    const radius = learnedLat == null ? RADIUS_GEOCODED_M : trusted ? RADIUS_LEARNED_M : RADIUS_LEARNING_M;
+    const kind = learnedLat == null ? "주소" : trusted ? "학습됨" : "학습중";
+
     const dist = haversineMeters(lat, lng, sLat, sLng);
-    if (!best || dist < best.dist) best = { id: s.id as string, dist };
+    if (nearest == null || dist < nearest) nearest = dist;
+    if (dist > radius) continue;
+    if (!best || dist < best.dist) best = { id: s.id as string, dist, radius, kind };
   }
+
   if (withCoords === 0) return "정류장 좌표 없음";
-  if (!best) return "정류장 좌표 없음";
-  if (best.dist > STOP_ARRIVE_RADIUS_M) return `가장 가까운 정류장 ${Math.round(best.dist)}m`;
+  if (!best) return `가장 가까운 정류장 ${Math.round(nearest ?? 0)}m`;
 
   const serviceDate = kstParts(recordedAt).iso;
   const { error } = await supabase.from("shuttle_stop_arrivals").insert({
@@ -81,6 +113,9 @@ async function detectStopArrival(
     route_id: routeId,
     stop_id: best.id,
     distance_m: Math.round(best.dist),
+    // 어떤 좌표로 어떤 반경에서 잡았는지 남깁니다. 이게 있어야 "반경이 실제로 줄고 있는지"를
+    // 날짜별로 확인할 수 있습니다 - 줄이는 것은 눈으로 보면서 해야 합니다.
+    matched_by: `${best.kind}/${best.radius}m`,
     arrived_at: recordedAt.toISOString(),
   });
   // 중복(23505)은 이미 기록된 정상 상황입니다. 그 밖의 오류는 **삼키지 않습니다.**
@@ -89,7 +124,7 @@ async function detectStopArrival(
   // 화면에는 아무 단서가 없었습니다. 이유를 기기 행에 남겨, 셔틀 탭의 기기 진단에서
   // 바로 보이게 합니다.
   if (error && error.code !== "23505") return `정류장 저장 실패: ${error.message}`;
-  return "정류장 도착 기록";
+  return `정류장 도착(${best.kind} ${Math.round(best.dist)}m)`;
 }
 
 async function handle(params: URLSearchParams) {

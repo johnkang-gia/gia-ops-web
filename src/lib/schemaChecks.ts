@@ -64,6 +64,13 @@ export const SCHEMA_CHECKS: SchemaCheck[] = [
     impact: "인박스에서 등록한 출결이 대시보드에 반영되지 않고, 지운 것이 되살아납니다.",
   },
   {
+    feature: "정류장 도착 근거",
+    table: "shuttle_stop_arrivals",
+    columns: ["matched_by"],
+    migration: "20260827235500_stop_arrival_matched_by.sql",
+    impact: "정류장 반경을 어떻게 줄여왔는지 되짚을 수 없고, 도착 기록이 아예 저장되지 않습니다.",
+  },
+  {
     feature: "출결 저장(upsert)",
     table: "attendance_entries",
     columns: [],

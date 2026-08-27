@@ -274,6 +274,9 @@ export default function AttendanceDigestPanel({
   const [regs, setRegs] = useState<Map<string, RegRow>>(new Map());
   // 사람이 "출결 아님"으로 내린 것들. 목록에서 아예 빼야 다시 안 묻습니다.
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  // 멘션(@…)을 지울 때 쓰는 교직원 성함. 서버가 계정 명단에서 실어 보냅니다.
+  // 담당자: "@Carina Ann John까지가 이름인데 carina ann까지만 읽어서 john이 요한이로 매칭돼."
+  const [staffNames, setStaffNames] = useState<string[]>([]);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   // 저장이 실패하면 그 사실을 보여줍니다(예전엔 눌러도 아무 일이 없어 보였습니다).
   const [error, setError] = useState<string | null>(null);
@@ -284,13 +287,14 @@ export default function AttendanceDigestPanel({
   const loadRegs = useCallback(async () => {
     try {
       const res = await fetch("/api/attendance/entries", { cache: "no-store" });
-      const json = (await res.json()) as { entries?: RegRow[]; dismissed?: string[] };
+      const json = (await res.json()) as { entries?: RegRow[]; dismissed?: string[]; staffNames?: string[] };
       const m = new Map<string, RegRow>();
       for (const e of json.entries ?? []) {
         if (e.source_message_id) m.set(`${e.source_message_id}|${e.student_name}|${e.status}`, e);
       }
       setRegs(m);
       setDismissed(new Set(json.dismissed ?? []));
+      setStaffNames(json.staffNames ?? []);
     } catch {
       /* 못 불러와도 목록 자체는 보여야 합니다 - 배지만 안 뜰 뿐입니다. */
     }
@@ -387,7 +391,7 @@ export default function AttendanceDigestPanel({
       const range = extractTargetRange(m.content, sentAt);
       const targetDate = range?.from ?? extractTargetDate(m.content, sentAt) ?? todayKey(sentAt);
       const targetDateTo = range?.to ?? targetDate;
-      const students = matchRosterStudents(m.content, roster, rules);
+      const students = matchRosterStudents(m.content, roster, rules, staffNames);
       if (students.length === 0) {
         // 명부에서 이름을 못 찾아도 버리지 않고 보여줍니다(전학생·오탈자 등으로 대조가 실패해도
         // 놓치지 않도록). 그냥 원문을 잘라 보여주면 아무 단어나 이름처럼 뜨는 문제가 있어서
@@ -435,7 +439,7 @@ export default function AttendanceDigestPanel({
     // 기간의 마지막 날이 오늘 이후면 아직 살아 있는 건입니다("월요일부터 수요일까지"를
     // 화요일에 봐도 남아 있어야 합니다).
     return dedupeEntries(out).filter((e) => (e.targetDateTo ?? e.targetDate) >= today);
-  }, [messages, roster, rules]);
+  }, [messages, roster, rules, staffNames]);
 
   const today = todayKey();
   // 오늘 것만 위쪽 픽업/결석/지각 칸에 넣고, 앞으로 예정된 건은 아래 "예정" 칸으로 따로 뺍니다.

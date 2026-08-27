@@ -176,6 +176,17 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   // 파싱해 함께 올립니다. 업무 화면의 출결내역과 같은 로직(attendanceDigest)을 씁니다.
   const nowKst = new Date();
   const todayK = todayKey(nowKst);
+
+  // 멘션(@…)을 지울 때 쓸 교직원 성함.
+  //
+  // 담당자: "@Carina Ann John까지가 이름인데 carina ann까지만 읽어서 john이 요한이로 매칭돼."
+  // 낱말 수로는 "@Janelle Story Maya"(마야는 학생)와 구별할 수 없습니다. 실제 성함인지가
+  // 유일한 근거라, 계정 명단을 그대로 씁니다 - 선생님이 오시면 저절로 반영됩니다.
+  const { data: staffRows } = await supabase.from("app_users").select("name").not("name", "is", null).limit(500);
+  const staffNames = ((staffRows as { name: string | null }[] | null) ?? [])
+    .map((r) => (r.name ?? "").trim())
+    .filter((n) => n.length >= 2);
+
   const scanFrom = new Date(nowKst.getTime() - 14 * 24 * 60 * 60 * 1000);
   const { data: mirror } = await supabase
     .from("google_chat_mirror_messages")
@@ -267,7 +278,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
       if (s?.name) resolved.push({ name: s.name, grade: s.grade ?? null, className: s.class_name ?? null, display: s.name });
     }
     if (resolved.length === 0) {
-      for (const st of matchRosterStudents(text, roster)) {
+      for (const st of matchRosterStudents(text, roster, undefined, staffNames)) {
         const full = deptStudents.find((s) => s.name === st.name);
         resolved.push({ name: st.name, grade: st.grade, className: (full?.class_name as string | null) ?? null, display: st.displayName });
       }

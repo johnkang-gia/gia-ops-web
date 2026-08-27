@@ -736,12 +736,62 @@ function resolveGivenNameToken(
 //   @First Last    영문은 대문자로 시작하는 다음 낱말까지 두 낱말
 //   @First         뒤에 대문자 낱말이 없으면 한 낱말만
 //
-// 두 낱말까지만 지웁니다. 더 욕심내면 "@John Kang 오늘 임예나…"에서 실제 문장까지 먹습니다.
-export function blankMentions(text: string): string {
-  return text.replace(/@[A-Za-z][A-Za-z'.-]*(?:\s+[A-Z][A-Za-z'.-]*)?|@[^\s@]+/g, (m) => " ".repeat(m.length));
+// 기본은 두 낱말까지입니다. 더 욕심내면 실제 문장을 먹습니다 -
+//   "@Janelle Story Maya is absent today" 에서 세 낱말을 먹으면 **마야가 사라집니다.**
+//
+// 그런데 이름이 세 낱말인 선생님이 계십니다.
+// 담당자: "@Carina Ann John까지가 이름인데 carina ann까지만 읽어서 john이 요한이로 매칭돼."
+//
+// 낱말 수로는 이 둘을 구별할 수 없습니다. `Story Maya`와 `Ann John`은 생김새가 같습니다.
+// 구별할 수 있는 것은 **그게 실제 선생님 성함인지**뿐입니다. 그래서 교직원 명단(app_users)을
+// 받아, 멘션 뒤 낱말들이 실제 성함과 맞아떨어지는 만큼만 더 먹습니다. 명단에 없으면 예전처럼
+// 두 낱말에서 멈춥니다 - 모르면 덜 먹는 쪽이 안전합니다(학생을 지우는 것보다 낫습니다).
+//
+// 선생님이 새로 오시면 계정이 생기면서 저절로 반영됩니다. 사람이 목록을 관리하지 않습니다.
+const MENTION_MAX_WORDS = 4;
+
+function normStaff(s: string): string {
+  return s.toLowerCase().replace(/[\s.'-]/g, "");
 }
 
-export function matchRosterStudents(text: string, roster: RosterStudent[], rules?: LearningRule[]): MatchedStudent[] {
+export function blankMentions(text: string, staffNames?: string[]): string {
+  const known = new Set((staffNames ?? []).map(normStaff).filter((s) => s.length >= 3));
+
+  // 한글 멘션(@김선생)이나 이메일형은 한 덩어리로 지웁니다.
+  const out = text.replace(/@(?![A-Za-z])[^\s@]+/g, (m) => " ".repeat(m.length));
+
+  // 영문 멘션: @ 뒤에 오는 대문자 낱말들을 최대 3개까지 후보로 보고,
+  // 교직원 명단과 맞는 **가장 긴** 조합만큼 지웁니다. 못 맞추면 두 낱말에서 멈춥니다.
+  const re = new RegExp(`@([A-Za-z][A-Za-z'.-]*)((?:\\s+[A-Z][A-Za-z'.-]*){0,${MENTION_MAX_WORDS - 1}})`, "g");
+  return out.replace(re, (whole, first: string, rest: string) => {
+    // 뒤따르는 낱말들과 "그 낱말까지 먹었을 때의 길이"를 함께 모읍니다.
+    const tail: { tok: string; endInRest: number }[] = [];
+    const tokRe = /\s+([A-Z][A-Za-z'.-]*)/g;
+    let m: RegExpExecArray | null;
+    while ((m = tokRe.exec(rest)) !== null) tail.push({ tok: m[1], endInRest: m.index + m[0].length });
+
+    const lenUpTo = (k: number) => 1 + first.length + (k > 0 ? tail[k - 1].endInRest : 0);
+    const blankFirst = (len: number) => " ".repeat(len) + whole.slice(len);
+
+    // 명단과 맞는 가장 긴 조합(긴 것부터).
+    for (let k = tail.length; k >= 1; k -= 1) {
+      const candidate = [first, ...tail.slice(0, k).map((t) => t.tok)].join(" ");
+      if (known.has(normStaff(candidate))) return blankFirst(lenUpTo(k));
+    }
+    // 한 낱말짜리 성함도 명단에 있으면 그것만.
+    if (known.has(normStaff(first))) return blankFirst(lenUpTo(0));
+
+    // 명단에 없으면 예전처럼 두 낱말(이름+성)까지.
+    return blankFirst(tail.length >= 1 ? lenUpTo(1) : whole.length);
+  });
+}
+
+export function matchRosterStudents(
+  text: string,
+  roster: RosterStudent[],
+  rules?: LearningRule[],
+  staffNames?: string[]
+): MatchedStudent[] {
   // ── 0단계: 사람이 가르친 별칭을 가장 먼저 봅니다 ───────────────────────────
   //
   // 'Maya', '조영운'(오탈자)처럼 명부 이름과 글자가 다른 표기는 아래 어떤 단계로도 못 잡습니다.
@@ -766,7 +816,7 @@ export function matchRosterStudents(text: string, roster: RosterStudent[], rules
   //
   // "@ 뒤는 선생님"이라는 규칙이 학교에서 지켜지고 있으므로, 지우고 시작하는 것이 맞습니다.
   // 길이를 유지하며 공백으로 바꿔야 뒤 단계의 위치 계산(생일·반 힌트)이 어긋나지 않습니다.
-  let scratch = blankMentions(text);
+  let scratch = blankMentions(text, staffNames);
   const aliasRules = (rules ?? []).filter((r) => r.kind === "alias" && r.student_name);
   // 긴 표기부터 봅니다("Maya Kim"이 "Maya"보다 먼저 잡히도록).
   for (const r of [...aliasRules].sort((a, b) => b.pattern.length - a.pattern.length)) {

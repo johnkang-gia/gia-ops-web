@@ -43,6 +43,9 @@ export async function scanIntoEntries(
   messages: ScanSource[],
   roster: RosterFull[],
   rules?: LearningRule[],
+  // 멘션(@…)을 지울 때 쓰는 교직원 성함. 세 낱말짜리 성함(@Carina Ann John)을
+  // 두 낱말로 자르면 남은 낱말이 학생 영문명과 겹쳐 엉뚱한 아이가 잡힙니다.
+  staffNames?: string[],
 ): Promise<ScanResult> {
   if (messages.length === 0) return { created: 0, skipped: 0, needsReview: 0, failed: null };
 
@@ -82,7 +85,7 @@ export async function scanIntoEntries(
     // 여기서 **명부의 id를 반드시 같이 들고 나옵니다.** 이름만 들고 가면 저장할 때 다시 찾아야
     // 하는데, 그때 못 찾으면 학생 없는 줄이 만들어집니다. student_id는 NOT NULL로 잠겨 있어
     // (20260827090000_lock_student_fk.sql) 그런 줄은 애초에 저장되지 않아야 합니다.
-    let matched = matchRosterStudents(m.text, roster, rules)
+    let matched = matchRosterStudents(m.text, roster, rules, staffNames)
       .map((s) => {
         const full = roster.find((r) => r.name === s.name);
         return { id: full?.id ?? null, name: s.name, display: s.displayName, grade: s.grade, className: full?.className ?? null };
@@ -114,8 +117,30 @@ export async function scanIntoEntries(
 
     // 날짜가 없으면 "적힌 날 하루"로 봅니다 - 다만 자동 등록은 하지 않고 확인을 받습니다.
     const from = range?.from ?? todayKey(m.sentAt);
-    const to = range?.to ?? from;
-    const state: EntryState = reason ? "확인필요" : "등록";
+    let to = range?.to ?? from;
+
+    // 기간이 터무니없이 길면 자동으로 밀지 않습니다.
+    //
+    // 담당자: "출결과 픽업이 하루마다 갱신되지 않고 축적되는 것 같아."
+    //
+    // 대시보드는 "기간이 오늘을 품는 것"을 올립니다. 그래서 한 글에서 뽑은 기간이 잘못
+    // 길어지면(예: "9월까지"를 통째로 읽으면 한 달 내내) 그 아이가 **매일** 목록에 남습니다.
+    // 지운 적도 없는데 계속 쌓이는 것처럼 보이는 자리입니다.
+    //
+    // 사람이 진짜 한 달을 쉰다고 알려온 것일 수도 있으니 버리지는 않고, 하루로 줄인 뒤
+    // '확인필요'로 돌려 사람이 보고 기간을 직접 늘리게 합니다. 자동 판단이 길게 미는 것보다
+    // 사람이 짧게 시작하는 편이 되돌리기 쉽습니다.
+    const MAX_SPAN_DAYS = 21;
+    let spanTooLong = false;
+    if (to > from) {
+      const days = Math.round((new Date(`${to}T00:00:00Z`).getTime() - new Date(`${from}T00:00:00Z`).getTime()) / 86400000);
+      if (days > MAX_SPAN_DAYS) {
+        to = from;
+        spanTooLong = true;
+      }
+    }
+
+    const state: EntryState = reason || spanTooLong ? "확인필요" : "등록";
 
     for (const st of matched) {
       const key = `${m.source}|${m.messageId}|${st.display}|${category}`;
@@ -136,7 +161,7 @@ export async function scanIntoEntries(
         date_from: from,
         date_to: to,
         state,
-        reason,
+        reason: reason ?? (spanTooLong ? `기간이 ${MAX_SPAN_DAYS}일보다 길게 읽혔습니다 - 하루로 줄였으니 맞는지 확인해주세요` : null),
         raw_text: m.text.slice(0, 500),
         registered_at: state === "등록" ? new Date().toISOString() : null,
         registered_by: state === "등록" ? "자동" : null,

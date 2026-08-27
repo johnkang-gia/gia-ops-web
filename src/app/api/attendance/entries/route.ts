@@ -43,9 +43,11 @@ export async function GET(req: NextRequest) {
   const now = new Date();
   const since = new Date(now.getTime() - SCAN_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
-  const [{ data: students }, { data: rules }, { data: mirror }, { data: reqs }] = await Promise.all([
+  const [{ data: students }, { data: rules }, { data: staffRows }, { data: mirror }, { data: reqs }] = await Promise.all([
     db.from("wr_students").select("id, name, name_en, grade, class_name, birth_date").eq("status", "active").eq("is_demo", false),
     db.from("attendance_learning_rules").select("kind, pattern, student_name, category"),
+    // 멘션을 지울 때 쓸 교직원 성함(세 낱말짜리 성함 대응).
+    db.from("app_users").select("name").not("name", "is", null).limit(500),
     db
       .from("google_chat_mirror_messages")
       .select("id, content, created_at_google")
@@ -89,7 +91,11 @@ export async function GET(req: NextRequest) {
       })),
   ];
 
-  const scan = await scanIntoEntries(db, messages, roster, (rules ?? []) as LearningRule[]);
+  const staffNames = ((staffRows as { name: string | null }[] | null) ?? [])
+    .map((r) => (r.name ?? "").trim())
+    .filter((n) => n.length >= 2);
+
+  const scan = await scanIntoEntries(db, messages, roster, (rules ?? []) as LearningRule[], staffNames);
 
   // 목록은 오늘 이후로 아직 살아 있는 것 + 확인이 필요한 것.
   // 지난 건은 인박스에 남겨봐야 손댈 일이 없어 걷어냅니다.
@@ -116,7 +122,7 @@ export async function GET(req: NextRequest) {
     .map((r) => `${r.source_message_id}|${r.student_name}|${r.status}`);
 
   return NextResponse.json(
-    { ok: true, scan, today, entries: entries ?? [], dismissed },
+    { ok: true, scan, today, entries: entries ?? [], dismissed, staffNames },
     { headers: { "Cache-Control": "no-store, no-cache, must-revalidate" } },
   );
 }

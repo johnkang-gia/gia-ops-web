@@ -121,6 +121,8 @@ export default function ShuttleChecklistSidebar({
   // 있었던 셈입니다.
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [removing, setRemoving] = useState<string | null>(null);
+  // 멘션에서 지울 교직원 성함. 못 읽으면 빈 배열이고, 그때는 예전처럼 두 낱말까지만 지웁니다.
+  const [staffNames, setStaffNames] = useState<string[]>([]);
   const [removeError, setRemoveError] = useState<string | null>(null);
 
   const loadDismissed = useCallback(async () => {
@@ -150,6 +152,10 @@ export default function ShuttleChecklistSidebar({
   useEffect(() => {
     void loadRules();
     void loadDismissed();
+    void (async () => {
+      const { data } = await createClient().from("app_users").select("name").not("name", "is", null).limit(500);
+      setStaffNames(((data as { name: string | null }[] | null) ?? []).map((r) => (r.name ?? "").trim()).filter((n) => n.length >= 2));
+    })();
     void (async () => {
       const { data } = await createClient().auth.getUser();
       setMyEmail(data.user?.email ?? "");
@@ -253,7 +259,7 @@ export default function ShuttleChecklistSidebar({
       if (category !== "픽업" && category !== "결석") continue;
       const targetDate = extractTargetDate(m.content, sentAt) ?? todayKey(sentAt);
       if (targetDate !== today) continue;
-      const students = matchRosterStudents(m.content, roster, rules);
+      const students = matchRosterStudents(m.content, roster, rules, staffNames);
       if (students.length === 0) {
         const guess = guessKoreanName(m.content, category) ?? stripLeadingMention(m.content).slice(0, 12);
         out.push({
@@ -297,7 +303,7 @@ export default function ShuttleChecklistSidebar({
       pickup: deduped.filter((e) => e.category === "픽업"),
       absent: deduped.filter((e) => e.category === "결석"),
     };
-  }, [messages, roster, rules, dismissed]);
+  }, [messages, roster, rules, dismissed, staffNames]);
 
   // 잘못 잡힌 픽업·결석 하나를 내립니다. 목록에서만 지우면 체크표에는 사선이 남으니,
   // 셔틀 표시까지 함께 되돌립니다.

@@ -39,6 +39,19 @@ export async function GET() {
       note = error.message;
     }
 
+    // 칸이 다 있어도 저장이 안 되는 경우를 잡습니다. 실제로 넣어보고 곧바로 지웁니다.
+    if (!tableMissing && missing.length === 0 && check.upsertProbe) {
+      const p = check.upsertProbe;
+      const { error } = await supabase.from(check.table).upsert(p.row, { onConflict: p.onConflict, ignoreDuplicates: true });
+      if (error) {
+        missing.push("저장 실패");
+        note = error.message;
+      }
+      let q = supabase.from(check.table).delete();
+      for (const [col, val] of Object.entries(p.cleanup)) q = q.eq(col, val);
+      await q;
+    }
+
     results.push({
       feature: check.feature,
       table: check.table,

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import type { DepartmentMemo, GoogleChatMirrorMessage } from "@/lib/types";
 import AttendanceTeachModal from "./AttendanceTeachModal";
@@ -274,6 +275,11 @@ export default function AttendanceDigestPanel({
   // 사람이 "출결 아님"으로 내린 것들. 목록에서 아예 빼야 다시 안 묻습니다.
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  // 저장이 실패하면 그 사실을 보여줍니다(예전엔 눌러도 아무 일이 없어 보였습니다).
+  const [error, setError] = useState<string | null>(null);
+  // 원문 전체 보기. 한 줄로 잘린 미리보기만으로는 "이게 정말 픽업 얘기인지" 판단할 수 없어,
+  // 담당자가 매번 다른 화면으로 넘어가 확인해야 했습니다.
+  const [detail, setDetail] = useState<AttendanceEntry | null>(null);
 
   const loadRegs = useCallback(async () => {
     try {
@@ -320,11 +326,22 @@ export default function AttendanceDigestPanel({
       ),
     });
     setBusyKey(null);
-    if (res.ok) {
-      await loadRegs();
-      // 사무실 벽면 대시보드도 곧바로 따라오도록 신호를 보냅니다.
-      void notifyOpsBoardRefresh();
+    if (!res.ok) {
+      // 조용히 실패하지 않습니다. ✕를 눌러도 아무 일이 없던 동안, 서버는 매번 오류를
+      // 돌려주고 있었는데 화면이 그걸 버렸습니다. 눌렀는데 아무 반응이 없으면 사람은
+      // 자기가 잘못 눌렀다고 생각합니다.
+      const msg = await res.json().catch(() => ({ error: "" }));
+      setError((msg as { error?: string }).error || "저장하지 못했습니다.");
+      return;
     }
+    if (next === "무시") {
+      // 서버가 받아준 즉시 화면에서 내립니다. 다시 불러오기를 기다리지 않습니다.
+      setDismissed((prev) => new Set(prev).add(key));
+    }
+    setError(null);
+    await loadRegs();
+    // 사무실 벽면 대시보드도 곧바로 따라오도록 신호를 보냅니다.
+    void notifyOpsBoardRefresh();
   }
 
   const loadRules = useCallback(async () => {
@@ -479,6 +496,12 @@ export default function AttendanceDigestPanel({
         </div>
       </div>
 
+      {error && (
+        <p className="mb-1 rounded bg-red-50 px-2 py-1 text-[10px] leading-snug text-red-600">
+          저장 실패: {error}
+        </p>
+      )}
+
       {entries.length === 0 && upcoming.length === 0 ? (
         <div className="flex flex-1 items-center justify-center px-2 text-center text-[11px] leading-relaxed opacity-40">
           오늘 결석·픽업 관련 내용이 아직 없습니다.
@@ -531,9 +554,14 @@ export default function AttendanceDigestPanel({
                             {e.time ? timeStr(e.time) : e.sourceLabel}
                           </span>
                         </div>
-                        <p className="truncate text-[10px] text-slate-500" title={e.rawText}>
+                        <button
+                          type="button"
+                          onClick={() => setDetail(e)}
+                          className="block w-full truncate text-left text-[10px] text-slate-500 hover:text-blue-600 hover:underline"
+                          title="눌러서 원문 전체 보기"
+                        >
                           {e.rawText}
-                        </p>
+                        </button>
                       </div>
                     ))}
                   </div>
@@ -585,13 +613,19 @@ export default function AttendanceDigestPanel({
                             <span className="truncate text-[11px] font-semibold text-slate-700">{e.studentName}</span>
                           )}
                         </span>
+                        <RegBadge entry={e} regs={regs} busyKey={busyKey} onSet={setState} />
                         <span className="shrink-0 rounded-full bg-slate-100 px-1.5 text-[9px] font-semibold text-slate-500">
                           {dateChipLabel(e.targetDate)}
                         </span>
                       </div>
-                      <p className="truncate text-[10px] text-slate-500" title={e.rawText}>
+                      <button
+                        type="button"
+                        onClick={() => setDetail(e)}
+                        className="block w-full truncate text-left text-[10px] text-slate-500 hover:text-blue-600 hover:underline"
+                        title="눌러서 원문 전체 보기"
+                      >
                         {e.rawText}
-                      </p>
+                      </button>
                     </div>
                   );
                 })}
@@ -605,6 +639,60 @@ export default function AttendanceDigestPanel({
       <div className="min-w-0 flex-[3] border-l border-black/5 pl-2.5">
         <AttendanceMemoPanel department={department} currentUserEmail={currentUserEmail} />
       </div>
+
+      {/* 원문 전체 보기. 한 줄 미리보기로는 "정말 픽업 얘기인지" 알 수 없어, 담당자가 매번
+          다른 화면으로 넘어가 확인해야 했습니다. */}
+      {detail &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 p-4"
+            onClick={() => setDetail(null)}
+          >
+            <div
+              className="max-h-[80vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-4 shadow-xl"
+              onClick={(ev) => ev.stopPropagation()}
+            >
+              <div className="mb-2 flex items-center gap-2">
+                <span className="text-sm font-bold text-slate-800">{detail.studentName}</span>
+                <span
+                  className={
+                    "rounded-full px-1.5 py-0.5 text-[10px] font-semibold " +
+                    (ATTENDANCE_CATEGORIES.find((c) => c.key === detail.category)?.chipClass ?? "")
+                  }
+                >
+                  {detail.category}
+                </span>
+                <span className="ml-auto text-[10px] text-slate-400">
+                  {detail.sourceLabel}
+                  {detail.time ? ` · ${timeStr(detail.time)}` : ""}
+                </span>
+              </div>
+              <p className="whitespace-pre-wrap break-words rounded-lg bg-slate-50 p-3 text-[12px] leading-relaxed text-slate-700">
+                {detail.rawText}
+              </p>
+              <div className="mt-3 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    void setState(detail, "무시");
+                    setDetail(null);
+                  }}
+                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
+                >
+                  ✕ 출결 아님
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDetail(null)}
+                  className="ml-auto rounded-lg bg-slate-800 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-slate-700"
+                >
+                  닫기
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
 
       {/* 🔎·⚠️를 누르면 뜨는 가르치기 창. 한 번 알려준 것은 규칙으로 저장되어 다음부터 자동 적용됩니다. */}
       {showRules && <AttendanceRulesModal onClose={() => setShowRules(false)} />}

@@ -28,7 +28,7 @@ export type ScanSource = {
   studentId?: string | null;
 };
 
-export type ScanResult = { created: number; skipped: number; needsReview: number };
+export type ScanResult = { created: number; skipped: number; needsReview: number; failed?: string | null };
 
 type RosterFull = RosterStudent & { id?: string | null; className?: string | null };
 
@@ -44,7 +44,7 @@ export async function scanIntoEntries(
   roster: RosterFull[],
   rules?: LearningRule[],
 ): Promise<ScanResult> {
-  if (messages.length === 0) return { created: 0, skipped: 0, needsReview: 0 };
+  if (messages.length === 0) return { created: 0, skipped: 0, needsReview: 0, failed: null };
 
   // 이미 만들어 둔 것들을 한 번에 읽어옵니다(메시지마다 조회하면 왕복이 수백 번이 됩니다).
   const ids = messages.map((m) => m.messageId);
@@ -145,6 +145,7 @@ export async function scanIntoEntries(
   }
 
   let created = 0;
+  let failed: string | null = null;
   for (let i = 0; i < rows.length; i += 100) {
     const chunk = rows.slice(i, i + 100);
     // ignoreDuplicates: 이미 있는 줄은 조용히 넘어갑니다(사람이 바꿔둔 값을 지키기 위함).
@@ -152,9 +153,13 @@ export async function scanIntoEntries(
       .from("attendance_entries")
       .upsert(chunk, { onConflict: "source,source_message_id,student_name,status", ignoreDuplicates: true });
     if (!error) created += chunk.length;
+    // 오류를 삼키지 않습니다. 여기서 조용히 넘어가는 바람에, 유일 인덱스에 조건이 붙어 있어
+    // upsert가 매번 42P10으로 실패하는데도 화면은 "그냥 등록될 게 없나 보다"로 보였습니다.
+    // 출결내역이 전부 ⬜였던 진짜 이유입니다.
+    else if (!failed) failed = error.message;
   }
 
-  return { created, skipped, needsReview };
+  return { created, skipped, needsReview, failed };
 }
 
 /** 오늘 대시보드에 올릴 출결(등록된 것만, 기간이 오늘을 품는 것만). */

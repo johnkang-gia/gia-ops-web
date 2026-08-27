@@ -18,6 +18,22 @@ export type SchemaCheck = {
   migration: string;
   /** 없으면 무엇이 안 되는지. */
   impact: string;
+  /**
+   * 칸이 다 있어도 **저장이 안 되는** 경우를 잡습니다.
+   *
+   * 실제로 겪은 일입니다. attendance_entries는 칸이 전부 멀쩡했는데, 유일 인덱스에 조건이
+   * 붙어 있어(`where source_message_id is not null`) upsert가 매번 42P10으로 실패했습니다.
+   * 칸만 보는 점검은 초록불을 켰고, 화면은 조용히 아무것도 저장하지 않았습니다.
+   *
+   * 그래서 여기서는 **앱과 똑같이 한 줄을 넣어보고 곧바로 지웁니다.** 되는지 안 되는지는
+   * 해봐야 압니다.
+   */
+  upsertProbe?: {
+    onConflict: string;
+    row: Record<string, unknown>;
+    /** 넣어본 줄을 지울 때 쓸 조건(칸: 값). */
+    cleanup: Record<string, string>;
+  };
 };
 
 export const SCHEMA_CHECKS: SchemaCheck[] = [
@@ -46,6 +62,28 @@ export const SCHEMA_CHECKS: SchemaCheck[] = [
     columns: ["source", "source_message_id", "student_name", "status", "date_from"],
     migration: "20260826230000_attendance_entries.sql",
     impact: "인박스에서 등록한 출결이 대시보드에 반영되지 않고, 지운 것이 되살아납니다.",
+  },
+  {
+    feature: "출결 저장(upsert)",
+    table: "attendance_entries",
+    columns: [],
+    migration: "20260827230000_attendance_entries_uniq_fix.sql",
+    impact:
+      "출결내역이 전부 ⬜로만 보이고, ✕(출결 아님)을 눌러도 사라지지 않습니다. 유일 인덱스에 조건이 붙어 있으면 저장 자체가 실패합니다.",
+    upsertProbe: {
+      onConflict: "source,source_message_id,student_name,status",
+      row: {
+        source: "manual",
+        source_message_id: "__schema_probe__",
+        student_name: "__점검용__",
+        status: "결석",
+        date_from: "1900-01-01",
+        date_to: "1900-01-01",
+        state: "무시",
+        note: "스키마 점검용 - 자동으로 지워집니다",
+      },
+      cleanup: { source_message_id: "__schema_probe__" },
+    },
   },
   {
     feature: "출결 이름 가르치기",

@@ -4,6 +4,7 @@ import { logApiError } from "@/lib/logging";
 import { haversineMeters } from "@/lib/shuttleRecommend";
 import { ensureCampusLocation } from "@/lib/shuttleCampus";
 import { kstParts, isWithinTrackingWindow } from "@/lib/shuttleTracking";
+import { touchHeartbeat } from "@/lib/heartbeat";
 
 // 요청: "각 정류장도 우리는 지금 정확한 정보를 가지고 있지 않아서, gps를 통해서 정류장과, 도착
 // 또한 gps를 계속 갱신해서 정확도를 높여서 정류장도 파악이 되도록 만들어줘"
@@ -374,5 +375,6 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  await touchHeartbeat(supabase, "cron:shuttle-learn-stops");
   return NextResponse.json({ ok: true, observed, stopsUpdated, lastError });
 }

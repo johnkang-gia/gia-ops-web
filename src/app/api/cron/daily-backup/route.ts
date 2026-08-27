@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { logApiError } from "@/lib/logging";
+import { touchHeartbeat } from "@/lib/heartbeat";
 
 // 통합관리: 자동 일일 백업(요청: "통합관리를 위해... 방법들을 제안해줘" 답변 중 "자동 일일
 // 백업"). 관리자 화면(/admin/backups)의 수동 백업과 같은 create_backup 로직을, 아무도 수동으로
@@ -20,6 +21,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "service role key not configured" }, { status: 500 });
   }
   const supabase = createClient(url, serviceKey, { auth: { persistSession: false } });
+  // 이 크론이 실제로 불렸다는 표시(연동 상태 화면에서 봅니다).
+  await touchHeartbeat(supabase, "cron:daily-backup");
 
   try {
     const { data: backup, error } = await supabase.rpc("create_scheduled_backup").single();

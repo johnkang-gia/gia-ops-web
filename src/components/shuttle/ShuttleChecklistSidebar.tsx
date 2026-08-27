@@ -375,16 +375,26 @@ export default function ShuttleChecklistSidebar({
       )}
       <div className="rounded-xl border border-slate-200 bg-white p-3">
         <div className="mb-2 flex items-center justify-between gap-1">
-          <p className="text-[11px] font-bold text-slate-600">📊 오늘 픽업·결석 (업무 출결내역)</p>
-          {/* 가르친 것을 되돌릴 자리. 학습 기능에는 반드시 함께 있어야 합니다. */}
-          <button
-            type="button"
-            onClick={() => setRulesOpen(true)}
-            className="shrink-0 rounded px-1 text-[10px] text-slate-400 transition hover:text-slate-700"
-            title="가르친 규칙 목록 보기·고치기·지우기"
-          >
-            가르친 목록
-          </button>
+          <p className="text-[11px] font-bold text-slate-600">📊 오늘 픽업·결석</p>
+          <div className="flex shrink-0 items-center gap-1">
+            {/* 원문을 보거나 새 픽업을 넣으려면 메뉴로 돌아가야 했습니다. 여기서 바로 갑니다. */}
+            <a
+              href="/pickup/inbox"
+              className="rounded px-1 text-[10px] text-slate-400 transition hover:text-slate-700"
+              title="픽업 인박스 열기"
+            >
+              인박스 ↗
+            </a>
+            {/* 가르친 것을 되돌릴 자리. 학습 기능에는 반드시 함께 있어야 합니다. */}
+            <button
+              type="button"
+              onClick={() => setRulesOpen(true)}
+              className="rounded px-1 text-[10px] text-slate-400 transition hover:text-slate-700"
+              title="가르친 규칙 목록 보기·고치기·지우기"
+            >
+              가르친 목록
+            </button>
+          </div>
         </div>
         <div className="mb-2">
           <p className="mb-1 text-[10px] font-bold text-blue-600">🚗 픽업 {pickup.length}</p>

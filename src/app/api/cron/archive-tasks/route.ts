@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { logApiError } from "@/lib/logging";
+import { touchHeartbeat } from "@/lib/heartbeat";
 
 // Vercel Cron이 매일 자정 직후(KST)에 호출해서, 그때까지 '완료' 상태인 업무를 업무보드
 // 칸반에서 업무기록(보관)으로 넘깁니다. 행 자체는 지우거나 옮기지 않고 archived_at만
@@ -39,6 +40,7 @@ export async function GET(req: NextRequest) {
       .select("id");
     if (error) throw error;
 
+    await touchHeartbeat(supabase, "cron:archive-tasks");
     return NextResponse.json({ ok: true, archivedCount: archived?.length ?? 0, termId: currentTermId });
   } catch (err) {
     await logApiError(supabase, "cron:archive-tasks", err);

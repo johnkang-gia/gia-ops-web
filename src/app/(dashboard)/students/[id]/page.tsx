@@ -65,6 +65,47 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
   ]);
   const fieldDefs = (fieldDefsRes.data as WrStudentFieldDef[] | null) ?? [];
 
+  // 이 아이가 어느 셔틀을 타는지.
+  //
+  // 지금까지 학생 프로필에는 셔틀이 아예 없었습니다. 학부모 전화를 받으면 학생 조회 → 셔틀 →
+  // 노선·배정으로 세 번 옮겨 다녀야 "몇 호차 타는 아이인지"를 알 수 있었습니다. 이제 학생과
+  // 배정이 student_id로 이어져 있으니(하원 명단 재등록 때 정리했습니다) 바로 읽어옵니다.
+  const { data: asgData } = await supabase
+    .from("shuttle_assignments")
+    .select("id, weekdays, note, unlinked_reason, stop_id, shuttle_stops(seq, gate, address, route_id, shuttle_routes(route_no, name, direction, term, driver_name, driver_phone))")
+    .eq("student_id", id);
+
+  type StopJoin = {
+    seq: number | null;
+    gate: string | null;
+    address: string | null;
+    route_id: string;
+    shuttle_routes: { route_no: string; name: string | null; direction: string; term: string; driver_name: string | null; driver_phone: string | null } | null;
+  };
+  const WD = ["", "월", "화", "수", "목", "금"];
+  const shuttleRows = ((asgData as unknown as { id: string; weekdays: number[] | null; note: string | null; stop_id: string; shuttle_stops: StopJoin | null }[] | null) ?? [])
+    .map((a) => {
+      const s = a.shuttle_stops;
+      const r = s?.shuttle_routes ?? null;
+      const days = (a.weekdays ?? []).filter((d) => d >= 1 && d <= 5);
+      return {
+        id: a.id,
+        routeId: s?.route_id ?? null,
+        routeNo: r?.route_no ?? "?",
+        routeName: r?.name ?? null,
+        direction: r?.direction ?? "",
+        term: r?.term ?? "",
+        driver: r?.driver_name ?? null,
+        driverPhone: r?.driver_phone ?? null,
+        // 매일 타면 요일을 안 적습니다 - 다 적으면 예외인 아이가 안 보입니다.
+        daysLabel: days.length === 5 || days.length === 0 ? "" : days.map((d) => WD[d]).join(""),
+        stop: s?.gate || s?.address || null,
+        note: a.note,
+      };
+    })
+    .filter((x) => x.term === "정규학기")
+    .sort((a, b) => a.direction.localeCompare(b.direction, "ko") || a.routeNo.localeCompare(b.routeNo, "ko", { numeric: true }));
+
   const enrollments = (enrollmentsRes.data as WrEnrollment[] | null) ?? [];
   const reports = (reportsRes.data as WrReport[] | null) ?? [];
   const incidentIds = ((incidentLinksRes.data as { incident_id: string }[] | null) ?? []).map((r) => r.incident_id);
@@ -155,6 +196,41 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
           관찰기록 {reports.length}건
         </span>
       </div>
+
+      {/* 셔틀 - 학부모 전화를 받으면 가장 먼저 확인하는 것 중 하나인데, 여기 없어서 셔틀
+          메뉴까지 옮겨 다녀야 했습니다. 요일별로 다른 차를 타는 아이가 12명 있어서
+          "몇 호차"만으로는 답이 안 되고, 무슨 요일에 타는지가 같이 보여야 합니다. */}
+      {shuttleRows.length > 0 && (
+        <div className="mb-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <h2 className="mb-2 text-sm font-bold text-slate-700">🚌 셔틀</h2>
+          <div className="flex flex-col gap-1.5">
+            {shuttleRows.map((r) => (
+              <div key={r.id} className="flex flex-wrap items-center gap-2 rounded-lg bg-slate-50 px-2.5 py-2 text-xs">
+                <span className={"rounded px-1.5 py-0.5 font-bold " + (r.direction === "하원" ? "bg-orange-100 text-orange-700" : "bg-blue-100 text-blue-700")}>
+                  {r.direction}
+                </span>
+                <span className="font-bold text-slate-800">{r.routeNo}호</span>
+                {r.routeName && <span className="text-slate-500">{r.routeName}</span>}
+                {r.daysLabel && (
+                  <span className="rounded bg-violet-100 px-1.5 py-0.5 font-semibold text-violet-700">{r.daysLabel}</span>
+                )}
+                {r.stop && <span className="text-slate-500">📍 {r.stop}</span>}
+                {r.note && <span className="text-amber-600">{r.note}</span>}
+                {r.driver && (
+                  <span className="text-slate-400">
+                    {r.driver} 기사님{r.driverPhone ? ` · ${r.driverPhone}` : ""}
+                  </span>
+                )}
+                <Link href="/shuttle" className="ml-auto shrink-0 text-blue-500 hover:underline">
+                  노선 보기 ↗
+                </Link>
+              </div>
+            ))}
+          </div>
+          {/* 요일이 안 적힌 줄은 매일 타는 아이입니다. 다 적으면 예외인 아이가 안 보입니다. */}
+          <p className="mt-1.5 text-[11px] text-slate-400">요일 표시가 없으면 매일 탑니다.</p>
+        </div>
+      )}
 
       <div id="academic" className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2 scroll-mt-16">
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { WrStudent } from "@/lib/types";
 
@@ -39,6 +40,7 @@ function deptOf(s: WrStudent): Dept {
 }
 
 export default function StudentSearchClient({ students }: { students: WrStudent[] }) {
+  const router = useRouter();
   const [tab, setTab] = useState<Bucket>("active");
   const [dept, setDept] = useState<Dept>("초등부");
   // "전체"면 null. 담당자: "전체명단 해서 이렇게 뜨고, 전체탭 옆에 2학년 3학년 순으로."
@@ -135,7 +137,12 @@ export default function StudentSearchClient({ students }: { students: WrStudent[
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="🔍 이름 · 학번 · 영문이름"
+          // 결과가 한 명이면 Enter로 바로 그 학생 프로필로 갑니다. 이름을 다 치고 나서
+          // 마우스로 카드를 한 번 더 누르는 동작이 매번 반복되던 자리입니다.
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && results.length === 1) router.push(`/students/${results[0].id}`);
+          }}
+          placeholder="🔍 이름 · 학번 · 영문이름 (Enter로 바로 열기)"
           className="ml-auto w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-purple-400"
         />
       </div>

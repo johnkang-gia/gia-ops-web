@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { logApiError } from "@/lib/logging";
 import { shouldRunShuttleCron } from "@/lib/shuttleTracking";
 import { runAutoArrivePass, runAutoDepartPass } from "@/lib/shuttleAuto";
+import { touchHeartbeat } from "@/lib/heartbeat";
 
 // 하원 셔틀 자동 도착·출발 감지 — 하나로 합친 크론.
 //
@@ -63,5 +64,6 @@ export async function GET(req: NextRequest) {
     await new Promise((resolve) => setTimeout(resolve, Math.min(LOOP_INTERVAL_MS, LOOP_BUDGET_MS - elapsed)));
   }
 
+  await touchHeartbeat(supabase, "cron:shuttle-auto");
   return NextResponse.json({ ok: true, rounds, arrived, gpsDeparted, timeoutDeparted, lastError });
 }

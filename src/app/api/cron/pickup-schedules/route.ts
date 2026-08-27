@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { applyPickup } from "@/lib/pickupIngest";
 import { kstParts } from "@/lib/shuttleTracking";
 import { genCaseId } from "@/lib/caseId";
+import { touchHeartbeat } from "@/lib/heartbeat";
 
 // 오늘 예정된 픽업을 실제로 걸어줍니다.
 //
@@ -113,5 +114,6 @@ export async function GET(req: Request) {
     }
   }
 
+  await touchHeartbeat(supabase, "cron:pickup-schedules");
   return NextResponse.json({ ok: true, date: today, applied, failed, notified });
 }

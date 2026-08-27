@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { logApiError } from "@/lib/logging";
+import { touchHeartbeat } from "@/lib/heartbeat";
 
 // 기사님 휴대폰에서 받은 위치 기록을 90일이 지나면 완전히 지웁니다.
 //
@@ -44,6 +45,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "service role key not configured" }, { status: 500 });
   }
   const supabase = createClient(url, serviceKey, { auth: { persistSession: false } });
+  // 이 크론이 실제로 불렸다는 표시(연동 상태 화면에서 봅니다).
+  await touchHeartbeat(supabase, "cron:purge-shuttle-locations");
 
   try {
     const cutoff = new Date(Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();

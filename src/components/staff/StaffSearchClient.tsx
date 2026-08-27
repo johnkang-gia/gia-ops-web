@@ -9,7 +9,7 @@ const PAGE_SIZE = 15;
 
 // 학생 검색(StudentSearchClient)과 같은 패턴입니다 - 이름/이메일로 찾아서 클릭하면 그 교직원의
 // 통합 프로필(/staff/[email])로 이동합니다.
-export default function StaffSearchClient({ staff }: { staff: AppUser[] }) {
+export default function StaffSearchClient({ staff, homeroomMap = {} }: { staff: AppUser[]; homeroomMap?: Record<string, string> }) {
   const [query, setQuery] = useState("");
 
   const results = useMemo(() => {
@@ -49,7 +49,9 @@ export default function StaffSearchClient({ staff }: { staff: AppUser[] }) {
               <div className="flex items-center gap-2">
                 <span className="text-sm font-semibold text-slate-700">{s.name || "(이름 미입력)"}</span>
                 <span className="text-xs text-slate-400">
-                  {[s.department, s.position].filter(Boolean).join(" · ") || "-"}
+                  {[s.department, s.position, homeroomMap[s.email.toLowerCase()] ? `담임 ${homeroomMap[s.email.toLowerCase()]}` : null]
+                    .filter(Boolean)
+                    .join(" · ") || "-"}
                 </span>
                 {retired && (
                   <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">퇴사</span>

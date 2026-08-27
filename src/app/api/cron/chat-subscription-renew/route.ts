@@ -9,6 +9,7 @@ import {
   renewSubscription,
   saveSubscriptionRow,
 } from "@/lib/googleChatEvents";
+import { touchHeartbeat } from "@/lib/heartbeat";
 
 // 구글챗 푸시 구독을 만들고, 매일 한 번 기한을 되돌립니다.
 //
@@ -65,5 +66,6 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  await touchHeartbeat(supabase, "cron:chat-subscription-renew");
   return NextResponse.json({ ok: true, topic, results });
 }

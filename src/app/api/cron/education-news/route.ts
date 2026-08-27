@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { generateEducationNews } from "@/lib/ai/educationNews";
 import { logApiError } from "@/lib/logging";
+import { touchHeartbeat } from "@/lib/heartbeat";
 
 // Vercel Cron이 매주 월/수 아침(KST)에 이 라우트를 호출해 교육뉴스를 자동으로 새로 만듭니다
 // (vercel.json의 crons 설정 참고 - UTC 기준 일/화 22:00 = KST 월/수 07:00).
@@ -22,6 +23,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const row = await generateEducationNews(supabase);
+    await touchHeartbeat(supabase, "cron:education-news");
     return NextResponse.json({ ok: true, case_id: row.case_id });
   } catch (err) {
     await logApiError(supabase, "cron:education-news", err);

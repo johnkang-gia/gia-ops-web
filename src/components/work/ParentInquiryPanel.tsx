@@ -32,6 +32,8 @@ export type Inquiry = {
   source: string;
   source_url: string | null;
   homeroom_email: string | null;
+  /** 명부와 연결된 학생. 이름을 눌러 통합 프로필로 가기 위해 씁니다. */
+  student_id?: string | null;
   answered_at: string | null;
   answered_by: string | null;
   task_id: string | null;
@@ -655,7 +657,21 @@ export default function ParentInquiryPanel({
               <div className="flex shrink-0 items-start justify-between gap-2 border-b border-black/5 px-4 py-3">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="text-sm font-bold text-slate-800">{studentOf(detail)}</span>
+                    {/* 이름은 이미 명부와 연결돼 있는데 누를 수가 없었습니다. 문의를 읽다가
+                        "이 아이가 누구더라" 싶을 때 바로 통합 프로필로 갑니다. */}
+                    {detail.student_id ? (
+                      <a
+                        href={`/students/${detail.student_id}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-sm font-bold text-blue-600 hover:underline"
+                        title="이 학생의 통합 프로필 열기"
+                      >
+                        {studentOf(detail)} ↗
+                      </a>
+                    ) : (
+                      <span className="text-sm font-bold text-slate-800">{studentOf(detail)}</span>
+                    )}
                     {detail.inquiry_type && (
                       <span className={"rounded px-1.5 py-0.5 text-[10px] font-semibold " + (TYPE_STYLE[detail.inquiry_type] ?? "bg-slate-100")}>
                         {detail.inquiry_type}

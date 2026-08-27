@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { logApiError } from "@/lib/logging";
+import { touchHeartbeat } from "@/lib/heartbeat";
 
 // 요청 8번(매뉴얼 정기 리뷰 사이클): daily-backup 크론과 동일한 패턴(Bearer CRON_SECRET +
 // 서비스 역할 키)으로 주 1회 실행되어, "오래돼서 한번은 다시 봐야 할" 항목과 "최근 관련 사건이
@@ -90,6 +91,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    await touchHeartbeat(supabase, "cron:manual-review");
     return NextResponse.json({ ok: true, flagged });
   } catch (err) {
     await logApiError(supabase, "cron:manual-review", err);

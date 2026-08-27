@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { logApiError } from "@/lib/logging";
+import { touchHeartbeat } from "@/lib/heartbeat";
 
 // Vercel Cron이 매일 자정(KST)에 이 라우트를 호출해서, 학기/캠프의 시작일·종료일을
 // 기준으로 "진행중" 상태를 자동으로 갱신합니다(vercel.json의 crons 설정 참고).
@@ -24,6 +25,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "service role key not configured" }, { status: 500 });
   }
   const supabase = createClient(url, serviceKey, { auth: { persistSession: false } });
+  // 이 크론이 실제로 불렸다는 표시(연동 상태 화면에서 봅니다).
+  await touchHeartbeat(supabase, "cron:term-switch");
 
   try {
     // KST(UTC+9) 기준 오늘 날짜(YYYY-MM-DD).

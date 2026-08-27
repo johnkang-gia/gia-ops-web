@@ -223,13 +223,25 @@ export default function TrackerDeviceManager({
 
       <div className="mb-2 flex items-center justify-between gap-2">
         <h2 className="text-sm font-bold text-slate-800">🛰️ 기사님 휴대폰 GPS 추적 (Traccar Client)</h2>
-        <button
-          type="button"
-          onClick={() => setShowGuide((v) => !v)}
-          className="rounded-lg border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-500"
-        >
-          {showGuide ? "설치 안내 닫기" : "설치 안내 보기"}
-        </button>
+        <div className="flex items-center gap-1.5">
+          {/* 기기를 나눠드릴 때 함께 드리는 인쇄물입니다. 만들어 두고 어디에도 링크를 안 붙여서
+              주소를 직접 쳐야만 열렸습니다 - 배포 당일 이 화면에서 바로 뽑을 수 있어야 합니다. */}
+          <a
+            href="/print/driver-docs"
+            target="_blank"
+            rel="noreferrer"
+            className="rounded-lg border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-500 hover:bg-slate-50"
+          >
+            🖨 안내문 · 동의서
+          </a>
+          <button
+            type="button"
+            onClick={() => setShowGuide((v) => !v)}
+            className="rounded-lg border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-500"
+          >
+            {showGuide ? "설치 안내 닫기" : "설치 안내 보기"}
+          </button>
+        </div>
       </div>
       <p className="mb-3 text-[11px] leading-relaxed text-slate-500">
         기사님 휴대폰에 무료 앱을 한 번만 설정해드리면, 그 뒤로는 조작 없이 백그라운드로 위치가 들어옵니다. 네비 화면은 가려지지

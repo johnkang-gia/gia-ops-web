@@ -39,6 +39,22 @@ export default async function StaffSearchPage() {
   // 개발자 계정은 사용자 관리 화면과 마찬가지로 목록 자체에서 제외합니다.
   const staff = ((data as AppUser[] | null) ?? []).filter((u) => !isDeveloperEmail(u.email));
 
+  // 담임 선생님의 담당 반. 이름만 늘어놓으면 "이분이 몇 반 담임이시더라"를 매번 다시
+  // 찾아야 합니다 - 반은 그 선생님을 부르는 또 하나의 이름이라 함께 보여야 합니다.
+  const { data: classRows } = await supabase
+    .from("wr_classes")
+    .select("grade, class_name, homeroom_teacher_email")
+    .not("homeroom_teacher_email", "is", null);
+  const homeroomByEmail = new Map<string, string[]>();
+  for (const c of (classRows as { grade: string | null; class_name: string | null; homeroom_teacher_email: string | null }[] | null) ?? []) {
+    const e = (c.homeroom_teacher_email ?? "").toLowerCase();
+    if (!e) continue;
+    const label = c.class_name || [c.grade, "학년"].filter(Boolean).join("");
+    if (!label) continue;
+    homeroomByEmail.set(e, [...(homeroomByEmail.get(e) ?? []), label]);
+  }
+  const homeroomMap = Object.fromEntries([...homeroomByEmail.entries()].map(([k, v]) => [k, v.sort().join(", ")]));
+
   return (
     <div className="mx-auto flex h-full w-full max-w-none flex-col overflow-hidden">
       <div className="shrink-0">
@@ -51,7 +67,7 @@ export default async function StaffSearchPage() {
         </p>
       </div>
       <div className="min-h-0 flex-1">
-        <StaffSearchClient staff={staff} />
+        <StaffSearchClient staff={staff} homeroomMap={homeroomMap} />
       </div>
     </div>
   );

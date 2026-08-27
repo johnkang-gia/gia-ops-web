@@ -240,7 +240,31 @@ export default function AssignmentClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [busGroups, studentById]);
 
+  // 정류장이 아직 안 정해진 아이들.
+  //
+  // 하원 명단을 PDF 기준으로 다시 넣을 때 생긴 상태입니다. PDF는 배차표라 정류장이 없어서,
+  // 예전 배정에서 정류장을 물려받지 못한 아이는 각 노선의 '정류장 미지정' 자리(seq 999)에
+  // 모아뒀습니다. 탑승 명단과 요일은 정상이지만 정류장은 사람이 채워야 합니다.
+  //
+  // 이 숫자가 없으면 노선을 하나씩 열어봐야 몇 명이 남았는지 알 수 없습니다. 다 채우면
+  // 배지가 사라집니다 - 끝이 보이는 일은 끝이 보여야 합니다.
+  const unassignedStopCount = useMemo(() => {
+    let n = 0;
+    for (const g of busGroups) {
+      for (const r of g.rows) {
+        if ((stopById.get(r.assignment.stop_id)?.seq ?? 0) >= 999) n += 1;
+      }
+    }
+    return n;
+  }, [busGroups, stopById]);
+  const [onlyUnassignedStop, setOnlyUnassignedStop] = useState(false);
+
   const visibleGroups = useMemo(() => {
+    if (onlyUnassignedStop) {
+      return busGroups
+        .map((g) => ({ ...g, rows: g.rows.filter((r) => (stopById.get(r.assignment.stop_id)?.seq ?? 0) >= 999) }))
+        .filter((g) => g.rows.length > 0);
+    }
     const q = query.trim().toLowerCase();
     if (!q) return busGroups;
     return busGroups
@@ -360,8 +384,29 @@ export default function AssignmentClient({
               </span>
             );
           })}
+          {/* 정류장이 비어 있는 아이들. 누르면 그 아이들만 모아 보여줘 한 자리에서 채웁니다. */}
+          {unassignedStopCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setOnlyUnassignedStop((v) => !v)}
+              className={
+                "rounded px-1.5 py-0.5 font-bold transition " +
+                (onlyUnassignedStop ? "bg-violet-600 text-white" : "bg-violet-50 text-violet-700 hover:bg-violet-100")
+              }
+              title="정류장이 아직 안 정해진 아이들만 봅니다. 각 줄의 정류장 칸에서 골라주세요."
+            >
+              정류장 미지정 {unassignedStopCount}
+            </button>
+          )}
         </span>
       </div>
+
+      {onlyUnassignedStop && (
+        <div className="mb-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-[11px] text-violet-800">
+          정류장이 아직 안 정해진 아이들만 보고 있습니다. 각 줄의 <b>정류장</b> 칸에서 고르면 목록에서 사라집니다.
+          탑승 명단과 요일은 이미 정상이라, 정류장을 안 채워도 체크표·안내보드는 그대로 동작합니다.
+        </div>
+      )}
 
       <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
         {visibleGroups.map((g) => {

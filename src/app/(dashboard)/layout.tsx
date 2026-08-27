@@ -242,6 +242,8 @@ function buildWeeklyReportCategory(isAdmin: boolean): NavCategory {
   const items: NavLeaf[] = [
     { href: "/weekly-report/students", label: "반별 작성 현황", labelEn: "Class Status", icon: "🎓" },
     { href: "/weekly-report/print", label: "리포트 프린트", labelEn: "Print Reports", icon: "🖨️" },
+    // 과목별 관찰기록. 만들어 두고 메뉴에 안 붙여서 주소를 직접 쳐야만 열렸습니다.
+    { href: "/weekly-report/subjects", label: "과목별 기록", labelEn: "By Subject", icon: "📚" },
   ];
   if (isAdmin) {
     items.push({ href: "/weekly-report/admin/stats", label: "통계 대시보드", labelEn: "Statistics", icon: "📊", dividerBefore: "관리자용" });
@@ -270,6 +272,12 @@ function buildAdminCategory(): NavCategory {
       // 도서관 노트북·신입교사 오리엔테이션용 공용 계정(아이디+비밀번호 로그인) 관리 화면입니다
       // (요청: "도서관이랑, 오리엔테이션용 가계정을 만들어서 관리하게 해줘").
       { href: "/admin/shared-accounts", label: "공용 계정 관리", icon: "🔑" },
+      // 크론·수집기·GPS가 실제로 돌고 있는지 한 화면에서 봅니다.
+      //
+      // 27호 GPS 추적이 3일간 조용히 죽어 있었는데(크론 주소를 옮긴 뒤 스케줄러에 새 주소를
+      // 등록하지 않음) 아무도 몰랐던 일이 계기입니다. 이런 실패는 화면이 깨지지 않고 그냥
+      // 새 데이터가 안 들어올 뿐이라, 조용한 날과 고장난 날이 똑같이 보입니다.
+      { href: "/admin/integrations", label: "연동 상태", icon: "🔌", dividerBefore: "점검" },
       { href: "/school/import", label: "구글시트 가져오기", icon: "📥", dividerBefore: "데이터" },
       { href: "/admin/backups", label: "데이터 백업", icon: "💾" },
       // 새 기능을 올린 뒤 마이그레이션이 제대로 걸렸는지 한 번에 확인하는 화면입니다

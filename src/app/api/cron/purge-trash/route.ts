@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { logApiError } from "@/lib/logging";
+import { touchHeartbeat } from "@/lib/heartbeat";
 
 // 업무 휴지통(요청: "삭제 휴지통 7일 복구")의 뒷단 - 소프트 삭제(deleted_at)된 지 7일이 지난
 // 업무는 RLS가 이미 휴지통 화면에서도 안 보이게 숨기지만(schema.sql 섹션 62), 행 자체는
@@ -30,6 +31,7 @@ export async function GET(req: NextRequest) {
       .select("id");
     if (error) throw error;
 
+    await touchHeartbeat(supabase, "cron:purge-trash");
     return NextResponse.json({ ok: true, purgedCount: purged?.length ?? 0 });
   } catch (err) {
     await logApiError(supabase, "cron:purge-trash", err);

@@ -49,7 +49,7 @@ export default function StopTimesClient() {
   }, []);
 
   return (
-    <div className="mx-auto max-w-5xl p-4 sm:p-6">
+    <div className="mx-auto max-w-7xl p-4 sm:p-6">
       <h1 className="mb-1 text-lg font-bold">⏱️ 정류장 도착 시간</h1>
       <p className="mb-4 text-xs text-slate-500">
         기사님 GPS로 각 정류장에 도착한 시각을 매일 기록해 평균을 냅니다. 정류장을 누르면 위치와 지난 도착 기록을 볼 수 있습니다.
@@ -58,7 +58,10 @@ export default function StopTimesClient() {
       {err && <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">{err}</p>}
       {!routes && !err && <p className="py-10 text-center text-sm text-slate-400">불러오는 중…</p>}
 
-      <div className="space-y-4">
+      {/* 담당자: "정류장 도착시간 두 줄로 나오게 해줘, 두 줄로 충분할 것 같아."
+          노선이 40개 가까이 되는데 한 줄씩 쌓으면 아래로 한참 스크롤해야 원하는 호차가 나옵니다.
+          표 자체는 좁아서(순번·정류장·평균·오늘·관측) 두 칸으로 나눠도 글자가 안 잘립니다. */}
+      <div className="grid gap-4 lg:grid-cols-2">
         {(routes ?? []).map((r) => (
           <div key={r.routeId} className="overflow-hidden rounded-xl border border-slate-200">
             <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 bg-slate-50 px-3 py-2">

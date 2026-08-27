@@ -158,15 +158,29 @@ export default function AdminUsersClient({
     setPendingPage(1);
   }, [pending.length]);
 
+  // 직위 탭(담당자: "교직원도 행정·교사·관리자로 나눠놨으니까 탭을 나눠서 볼 수 있게 해줘").
+  // null = 전체. 직위가 아직 안 정해진 분들은 '미지정'으로 따로 모읍니다 - 전체에만 묻어
+  // 있으면 직위를 정해줘야 하는 분을 영영 못 찾습니다.
+  const [posTab, setPosTab] = useState<string | null>(null);
+  const posCount = useMemo(() => {
+    const c = new Map<string, number>();
+    for (const u of approved) c.set(u.position || "미지정", (c.get(u.position || "미지정") ?? 0) + 1);
+    return c;
+  }, [approved]);
+  const approvedFiltered = useMemo(
+    () => (posTab == null ? approved : approved.filter((u) => (u.position || "미지정") === posTab)),
+    [approved, posTab]
+  );
+
   const [approvedPage, setApprovedPage] = useState(1);
   const approvedPageItems = useMemo(
-    () => approved.slice((approvedPage - 1) * PAGE_SIZE, approvedPage * PAGE_SIZE),
-    [approved, approvedPage]
+    () => approvedFiltered.slice((approvedPage - 1) * PAGE_SIZE, approvedPage * PAGE_SIZE),
+    [approvedFiltered, approvedPage]
   );
-  const approvedTotalPages = Math.max(1, Math.ceil(approved.length / PAGE_SIZE));
+  const approvedTotalPages = Math.max(1, Math.ceil(approvedFiltered.length / PAGE_SIZE));
   useEffect(() => {
     setApprovedPage(1);
-  }, [approved.length]);
+  }, [approvedFiltered.length]);
 
   const [rejectedPage, setRejectedPage] = useState(1);
   const rejectedPageItems = useMemo(
@@ -330,6 +344,35 @@ export default function AdminUsersClient({
           <h2 className="mb-2 text-sm font-bold text-slate-700">
             승인됨 <span className="text-slate-400">({approved.length})</span>
           </h2>
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setPosTab(null)}
+              className={
+                "rounded-lg px-3 py-1.5 text-xs font-semibold transition " +
+                (posTab == null ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200")
+              }
+            >
+              전체 <span className="tabular-nums">{approved.length}</span>
+            </button>
+            {[...POSITIONS, "미지정"].map((p) => {
+              const n = posCount.get(p) ?? 0;
+              if (n === 0) return null;
+              return (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setPosTab(p)}
+                  className={
+                    "rounded-lg px-3 py-1.5 text-xs font-semibold transition " +
+                    (posTab === p ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200")
+                  }
+                >
+                  {p} <span className="tabular-nums">{n}</span>
+                </button>
+              );
+            })}
+          </div>
           <div className="flex flex-col gap-2">
             {approvedPageItems.map((u) => (
               <div

@@ -91,16 +91,18 @@ function whenLabel(iso: string): string {
 // 맞는 지적입니다. 줄 끝의 작은 회색 글씨만으로는 "어제 온 것"과 "오늘 온 것"이 한눈에
 // 안 갈립니다. 출결·픽업은 **날짜를 잘못 읽으면 아이가 잘못된 날 차를 타는** 문제라,
 // 날짜 경계는 눈에 띄어야 합니다.
+// 라벨도 묶기와 **같은 시간대(한국)**로 판단해야 합니다. 서버·브라우저 시간대가 무엇이든
+// 학교가 쓰는 날짜는 하나입니다.
 function dayLabel(iso: string): string {
-  const d = new Date(iso);
-  const today = new Date();
-  const yest = new Date(today);
-  yest.setDate(yest.getDate() - 1);
-  const same = (a: Date, b: Date) => a.toDateString() === b.toDateString();
-  if (same(d, today)) return "오늘";
-  if (same(d, yest)) return "어제";
+  const key = seoulDayKey(iso);
+  const todayKeyStr = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
+  const yestKeyStr = new Date(Date.now() - 86400000).toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
+  if (key === todayKeyStr) return "오늘";
+  if (key === yestKeyStr) return "어제";
+  // key는 'YYYY-MM-DD'. 정오로 만들어 시간대 경계에서 하루가 밀리지 않게 합니다.
+  const d = new Date(`${key}T12:00:00+09:00`);
   const wd = ["일", "월", "화", "수", "목", "금", "토"][d.getDay()];
-  return `${d.getMonth() + 1}월 ${d.getDate()}일 (${wd})`;
+  return `${Number(key.slice(5, 7))}월 ${Number(key.slice(8, 10))}일 (${wd})`;
 }
 
 function DayDivider({ iso, count }: { iso: string; count: number }) {
@@ -124,16 +126,27 @@ function DayDivider({ iso, count }: { iso: string; count: number }) {
 // 정렬된 목록을 날짜별로 묶습니다. 정렬 자체는 그대로 두고 경계만 찾습니다 -
 // "답 안 한 것 먼저"라는 기존 순서를 날짜가 흔들면 안 되기 때문에, 그 순서 안에서
 // 날짜가 바뀌는 지점에만 선을 넣습니다.
+// 한국 날짜 키. `received_at`은 UTC ISO 문자열이라 앞 10글자를 자르면 **UTC 날짜**가 나옵니다.
+//
+// 이게 담당자가 본 문제의 원인입니다. 아침 8시(KST)에 온 문의는 UTC로 전날 23시라, 묶기는
+// 전날로 묶이는데 라벨(dayLabel)은 한국 시각으로 읽어 "오늘"이라고 적혔습니다. 그래서
+// '오늘' 구분선 아래에 수요일 것이 들어앉았습니다. 두 곳이 서로 다른 시간대를 보고 있었습니다.
+//
+// 'sv-SE' 로캘은 YYYY-MM-DD 형태를 돌려줘서 날짜 키로 쓰기 좋습니다.
+function seoulDayKey(iso: string): string {
+  return new Date(iso).toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
+}
+
 function withDayDividers<T extends { id: string; received_at: string }>(list: T[]) {
   const out: { key: string; divider?: { iso: string; count: number }; row?: T }[] = [];
   const counts = new Map<string, number>();
   for (const r of list) {
-    const k = r.received_at.slice(0, 10);
+    const k = seoulDayKey(r.received_at);
     counts.set(k, (counts.get(k) ?? 0) + 1);
   }
   let last: string | null = null;
   for (const r of list) {
-    const k = r.received_at.slice(0, 10);
+    const k = seoulDayKey(r.received_at);
     if (k !== last) {
       out.push({ key: `d-${k}`, divider: { iso: r.received_at, count: counts.get(k) ?? 0 } });
       last = k;
@@ -279,14 +292,16 @@ export default function ParentInquiryPanel({
     return [...m.entries()].sort((a, b) => b[1] - a[1]);
   }, [rows, mineOnly, currentUserEmail, showDone]);
   // 답 안 한 것 먼저, 그 안에서 긴급한 것 먼저. 목록을 훑을 때 손댈 것이 위에 있어야 합니다.
+  // 담당자: "어차피 신규 메시지를 맨 위로 해서 아래로 정렬되는 거니까 그냥 요일별로
+  //          정렬되도록 해줘."
+  //
+  // 예전에는 "답 안 한 것 먼저 → 급한 것 먼저 → 최신순" 세 단계로 세웠습니다. 그러면 어제
+  // 답 안 한 건이 오늘 온 건보다 위로 올라가서, **날짜 구분선이 오르내립니다** - 오늘 칸
+  // 아래에 수요일 것이 섞여 보이던 게 이것 때문입니다. 날짜로만 세우면 구분선이 한 방향으로
+  // 흐르고 눈이 따라가기 쉽습니다. 답 안 한 건은 위쪽 '미답변 N건' 숫자와 줄의 색으로
+  // 이미 드러나므로 순서까지 흔들 이유가 없습니다.
   const sorted = useMemo(
-    () =>
-      [...filtered].sort(
-        (a, b) =>
-          Number(!!a.answered_at) - Number(!!b.answered_at) ||
-          Number(b.urgency === "높음") - Number(a.urgency === "높음") ||
-          b.received_at.localeCompare(a.received_at)
-      ),
+    () => [...filtered].sort((a, b) => b.received_at.localeCompare(a.received_at)),
     [filtered]
   );
   const openCount = filtered.filter((r) => !r.answered_at).length;

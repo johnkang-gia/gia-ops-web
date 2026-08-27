@@ -354,6 +354,21 @@ export function birthDigitsIn(raw: string): string | null {
   return null;
 }
 
+// 이름 바로 뒤 괄호가 **반 이름**인 경우를 잡습니다("김재이(G3JA)").
+// 숫자만 들어 있으면 생일이므로 여기서는 돌려주지 않습니다.
+function findClassHint(text: string, nameEnd: number): string | null {
+  const m = text.slice(nameEnd, nameEnd + 20).match(/^\s*\(\s*([^)]{1,10})\s*\)/);
+  if (!m) return null;
+  const v = m[1].trim();
+  if (!v || /^[\d.\-/]+$/.test(v)) return null;
+  return v;
+}
+
+// 반 이름 비교용 정규화("G3JA", "g3 ja", "G-3JA" → "g3ja").
+function norm(s: string | null | undefined): string {
+  return String(s ?? "").toLowerCase().replace(/[^a-z0-9가-힣]/g, "");
+}
+
 // 명부의 생년월일(2019-05-10)이 문장에 적힌 힌트와 같은 사람을 가리키는지 봅니다.
 export function birthMatches(birthDate: string | null | undefined, hint: string): boolean {
   if (!birthDate) return false;
@@ -385,6 +400,14 @@ function pickHomonym(
   if (birthHint) {
     const hit = candidates.filter((c) => birthMatches(c.birthDate, birthHint));
     if (hit.length === 1) return { picked: hit[0], ambiguous: false, by: "birth" };
+  }
+  // 반 이름 힌트("김재이(G3JA)"). 선생님들이 실제로 가장 많이 쓰는 표기인데 여태 읽지
+  // 않았습니다 - findGradeHint는 괄호 안이 숫자로 시작할 때만 보고, findBirthHint는 숫자만
+  // 봅니다. 그래서 "(G3JA)"는 어느 쪽에도 안 걸려 그냥 '확인 필요'가 됐습니다.
+  const clsHint = findClassHint(text, nameEnd);
+  if (clsHint) {
+    const hit = candidates.filter((c) => norm(c.className) === norm(clsHint));
+    if (hit.length === 1) return { picked: hit[0], ambiguous: false, by: "grade" };
   }
   const gradeHint = normalizeGrade(findGradeHint(text, nameStart, nameEnd));
   if (gradeHint) {
@@ -474,6 +497,33 @@ function findEnglishNameCandidates(text: string): string[] {
       for (const t of tokens.slice(-3)) out.push(t);
     }
   }
+
+  // ── 한글 문장 속의 영문 이름 ────────────────────────────────────────────────
+  //
+  // 담당자: "출결내역 채팅에서 아이들 한글이름과 영어이름 둘 다 매칭해서 맞는 걸 찾아서
+  //          매칭해줘."
+  //
+  // 위 닻(anchor) 방식은 'absent'·'will not come' 같은 **영어 문구 앞**만 봅니다. 그래서
+  // "Jay Kim 오늘 결석합니다"처럼 영어 이름 + 한국어 문장이면 후보를 하나도 못 뽑았습니다.
+  // 영어 이름을 쓰는 학부모가 문장은 한국어로 적는 경우가 흔한데, 그게 통째로 빠져 있었습니다.
+  //
+  // 그래서 문장 전체에서 라틴 문자 덩어리를 모아 후보로 넣습니다. 아무 영어 단어나 학생으로
+  // 읽히지 않는 이유는, 뒤에서 **명부의 영문명과 정확히 같을 때만** 채택하기 때문입니다.
+  // 흔한 낱말(EN_NAME_STOP_WORDS)은 미리 걸러 헛일을 줄입니다.
+  //
+  // 대문자로 시작하는 낱말만 봅니다. 이름은 대문자로 적히고, 한국어 문장에 섞인 소문자
+  // 영어 낱말은 대개 이름이 아닙니다("김재이 today 결석"의 today). 명부에 'May'·'June'처럼
+  // 흔한 낱말과 겹치는 이름이 있을 수 있어 한 겹 더 걸러둡니다.
+  const latin = text.match(/[A-Za-z][A-Za-z'.-]*/g) ?? [];
+  const words = latin
+    .map((t) => t.replace(/^[^A-Za-z]+|[^A-Za-z']+$/g, ""))
+    .filter((t) => t.length >= 2 && /^[A-Z]/.test(t) && !EN_NAME_STOP_WORDS.has(t.toLowerCase()));
+  for (let i = 0; i < words.length; i++) {
+    out.push(words[i]);
+    // 이어진 두 낱말은 "이름 성"일 수 있습니다("Jay Kim").
+    if (i + 1 < words.length) out.push(`${words[i]} ${words[i + 1]}`);
+  }
+
   return out;
 }
 
@@ -493,6 +543,21 @@ function birthHintNear(text: string, candidate: string): string | null {
     const idx = lower.indexOf(key, from);
     if (idx === -1) return null;
     const hint = findBirthHint(text, idx + key.length);
+    if (hint) return hint;
+    from = idx + key.length;
+  }
+}
+
+/** birthHintNear의 반 이름 판. "Jay Kim(G3JA)"처럼 영문 이름 뒤에 반이 붙은 경우. */
+function classHintNear(text: string, candidate: string): string | null {
+  const key = candidate.trim().toLowerCase();
+  if (!key) return null;
+  const lower = text.toLowerCase();
+  let from = 0;
+  for (;;) {
+    const idx = lower.indexOf(key, from);
+    if (idx === -1) return null;
+    const hint = findClassHint(text, idx + key.length);
     if (hint) return hint;
     from = idx + key.length;
   }
@@ -855,8 +920,17 @@ function matchRosterStudentsCore(text: string, roster: RosterStudent[]): Matched
     }
   }
 
-  // 한글 이름으로 아무도 못 찾은 경우에만 영어 이름 대조를 시도합니다(한글 문장에 우연히 영어
-  // 단어가 섞여 있어도 이미 한글로 찾은 학생과 중복으로 잡히지 않도록).
+  // 영어 이름 대조는 **항상** 함께 돌립니다.
+  //
+  // 담당자: "출결내역 채팅에서 아이들 한글이름과 영어이름 둘 다 매칭해서 맞는 걸 찾아서
+  //          매칭해줘."
+  //
+  // 예전 주석에는 "한글로 아무도 못 찾은 경우에만"이라고 적혀 있지만, 실제 코드는 이미
+  // 조건 없이 돌고 있었습니다(alreadyFound로 중복만 막습니다). 다만 한 가지가 문제였습니다 -
+  // 한 문장에 한글 이름과 영문 이름이 **같이** 오는 경우("김재이랑 Jay Kim 오늘 결석"),
+  // 또는 형제를 한글·영문 섞어 적는 경우입니다. alreadyFound가 이름 기준이라 같은 아이는
+  // 한 번만 들어가므로 안전하고, 다른 아이는 각각 잡힙니다.
+  //
   // 영어 이름 색인: (1) 전체 이름("benecia kim") (2) 이름(first name)만("benecia"). 학부모가
   // 성 없이 이름만 적는 경우("Benecia will be absent", "seojun is not here")가 흔해서, 이름만으로도
   // 대조되게 first-name 색인을 함께 둡니다. 같은 이름이 여러 명이면 문장의 학년(G2A 등)으로 좁힙니다.
@@ -874,7 +948,13 @@ function matchRosterStudentsCore(text: string, roster: RosterStudent[]): Matched
   if (byNameEn.size > 0) {
     const alreadyFound = new Set(found.map((f) => f.name));
     const gradeHint = normalizeGrade(extractGradeHintFromText(text));
-    for (const candidate of findEnglishNameCandidates(text)) {
+    // **긴 후보부터** 봅니다. "Jay Kim(190828)"에서 'Jay'를 먼저 처리하면 김재이 세 명 중
+    // 아무나 골라 alreadyFound에 넣어버리고, 정작 생일이 붙어 있는 'Jay Kim'은 건너뜁니다.
+    // 실제로 그렇게 동작하고 있었습니다 - 성까지 적어줘도 소용이 없었습니다.
+    const candidates = [...new Set(findEnglishNameCandidates(text))].sort(
+      (a, b) => b.trim().split(/\s+/).length - a.trim().split(/\s+/).length || b.length - a.length
+    );
+    for (const candidate of candidates) {
       const key = normalizeEnName(candidate);
       if (!key) continue;
       // 전체 이름 우선, 없으면 first-name으로.
@@ -896,6 +976,14 @@ function matchRosterStudentsCore(text: string, roster: RosterStudent[]): Matched
           if (narrowed.length === 1) list = narrowed;
         }
       }
+      // 반 이름이 붙어 있으면 그걸로("Jay Kim(G3JA)").
+      if (list.length > 1) {
+        const clsHint = classHintNear(text, candidate);
+        if (clsHint) {
+          const narrowed = list.filter((s) => norm(s.className) === norm(clsHint));
+          if (narrowed.length === 1) list = narrowed;
+        }
+      }
       // 그래도 여러 명이면 학년으로 좁힙니다.
       if (list.length > 1 && gradeHint) {
         const narrowed = list.filter((s) => normalizeGrade(s.grade) === gradeHint);
@@ -908,9 +996,11 @@ function matchRosterStudentsCore(text: string, roster: RosterStudent[]): Matched
         name: picked.name,
         grade: picked.grade,
         // 영어이름으로 대조된 경우 "한글이름(영어이름)"으로 병기합니다(요청).
-        // 아직 동명이인이 남아 있으면 영어이름만으로는 누구인지 알 수 없으므로 반을 함께
-        // 적습니다 - "김재이(Jay Kim · G3JA)".
-        displayName: hasHomonym && picked.className
+        //
+        // 명부에 같은 한글 이름이 여럿이면 반을 함께 적습니다 - "김재이(Jay Kim · G3JA)".
+        // 좁혀서 한 명으로 확정했더라도 마찬가지입니다. 확정했다는 사실은 우리만 알고,
+        // 화면을 보는 사람은 "김재이 셋 중 누구지?"를 여전히 물어야 하니까요.
+        displayName: (byName.get(picked.name)?.length ?? 1) > 1 && picked.className
           ? `${picked.name}(${picked.nameEn} · ${picked.className})`
           : `${picked.name}(${picked.nameEn})`,
         studentKey: hasHomonym ? `${picked.name}#${normalizeGrade(picked.grade)}` : picked.name,

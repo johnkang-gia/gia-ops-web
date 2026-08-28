@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import type { ChecklistItem, ChecklistRoute } from "./ShuttleChecklistClient";
 import { effectiveRouteId } from "./ShuttleChecklistTable";
 
@@ -45,7 +46,6 @@ export default function ChecklistPrintSheet({
   const todayW = new Date().getDay();
   const sheetRef = useRef<HTMLDivElement | null>(null);
   const [scale, setScale] = useState(1);
-  const [sheetH, setSheetH] = useState(0);
 
   // 오늘 타는 아이만. 판단은 화면이 이미 해둔 ridingToday를 그대로 씁니다 - 여기서 다시
   // 계산하면 화면과 종이가 서로 다른 답을 낼 수 있고, 그게 가장 위험합니다.
@@ -96,19 +96,31 @@ export default function ChecklistPrintSheet({
   useEffect(() => {
     const el = sheetRef.current;
     if (!el) return;
-    const measure = () => {
+
+    const measure = (sync: boolean) => {
       const h = el.scrollHeight;
-      setSheetH(h);
-      setScale(h > PAGE_H ? Math.max(0.4, (PAGE_H - 2) / h) : 1);
+      if (h <= 0) return;
+      // 여유 6px를 뺍니다. 딱 맞추면 반올림 하나에 다음 장이 생깁니다.
+      const next = h > PAGE_H - 6 ? Math.max(0.25, (PAGE_H - 6) / h) : 1;
+      const apply = () => setScale(next);
+      // 인쇄 직전에는 **화면에 즉시 반영**되어야 합니다. 평소처럼 다음 렌더를 기다리면
+      // 브라우저가 그 전 상태를 그대로 종이에 찍습니다 - 계산은 맞는데 종이만 틀린 상황.
+      if (sync) flushSync(apply);
+      else apply();
     };
-    measure();
-    const ro = new ResizeObserver(measure);
+
+    measure(false);
+    // 한글 글꼴이 늦게 붙으면 줄 높이가 달라집니다. 붙고 나서 한 번 더 잽니다.
+    if (typeof document !== "undefined" && document.fonts?.ready) {
+      void document.fonts.ready.then(() => measure(false));
+    }
+    const ro = new ResizeObserver(() => measure(false));
     ro.observe(el);
-    // 인쇄 창을 열기 직전에 한 번 더. 그 사이 글꼴이 늦게 로드되면 높이가 달라집니다.
-    window.addEventListener("beforeprint", measure);
+    const onBefore = () => measure(true);
+    window.addEventListener("beforeprint", onBefore);
     return () => {
       ro.disconnect();
-      window.removeEventListener("beforeprint", measure);
+      window.removeEventListener("beforeprint", onBefore);
     };
   }, [sortedRoutes, byRoute]);
 
@@ -154,7 +166,16 @@ export default function ChecklistPrintSheet({
             transform: `scale(${scale})`,
             transformOrigin: "top left",
             width: PAGE_W,
-            height: sheetH ? Math.ceil(sheetH * scale) : undefined,
+            // 상자 높이는 **한 장 그대로**입니다.
+            //
+            // 앞 판은 "잰 높이 × 축소비"로 잡았는데, 그 잰 값이 조금이라도 작으면 상자가
+            // 내용보다 짧아지고 overflow:hidden이 **나머지를 잘라 없앴습니다.** 담당자가
+            // 본 "26-2호까지밖에 안 나온다"가 정확히 그것입니다 - 다음 장으로 넘어간 게
+            // 아니라 그냥 사라진 겁니다.
+            //
+            // 한 장 높이로 두면, 재기가 틀려도 잘리는 일이 없습니다(축소가 조금 모자라면
+            // 한 장을 꽉 채울 뿐입니다).
+            height: PAGE_H,
             overflow: "hidden",
           }}
         >

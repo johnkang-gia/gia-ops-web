@@ -310,8 +310,18 @@ export default function ParentInquiryPanel({
 
   const filtered = useMemo(() => {
     let list = mineOnly ? rows.filter((r) => r.homeroom_email === currentUserEmail) : rows;
-    // 처리한 것은 기본으로 숨깁니다. 손댈 것만 남아 있어야 목록이 쓸모 있습니다.
-    if (!showDone) list = list.filter((r) => !r.answered_at);
+    // 자동으로 감지된 답글은 **숨기지 않습니다.**
+    //
+    // 담당자: "처리됨이 되어도 목록에는 나오게, 대신 처리됐다는 초록색 체크로 띄워줘.
+    //          일단 제대로 체크가 되었나 우리가 다시 한번 보고 업무보드에서 체크해서 없앨게."
+    //
+    // 맞는 순서입니다. 답글 감지는 **기계의 판단**입니다. 선생님이 "네~"라고 한 것을 답으로
+    // 셌을 수도 있고, 다른 이야기에 단 댓글을 셌을 수도 있습니다. 그걸 사람이 확인하기도
+    // 전에 목록에서 빼버리면, 틀렸을 때 알아챌 방법이 없습니다.
+    //
+    // 그래서 **사람이 직접 완료 처리한 것만** 숨깁니다(answered_via='수동').
+    // 기계가 감지한 것(answered_via='답글')은 초록 체크를 달고 목록에 남습니다.
+    if (!showDone) list = list.filter((r) => !(r.answered_at && r.answered_via !== "답글"));
     if (typeFilter) list = list.filter((r) => (r.inquiry_type ?? "기타") === typeFilter);
     const q = query.trim().toLowerCase();
     if (q) {
@@ -327,14 +337,14 @@ export default function ParentInquiryPanel({
   // 이미 답변돼서 목록에서 빠진 건수. 숨긴 것이지 없는 것이 아니라는 걸 알려주는 데 씁니다.
   const doneCount = useMemo(() => {
     const base = mineOnly ? rows.filter((r) => r.homeroom_email === currentUserEmail) : rows;
-    return base.filter((r) => !!r.answered_at).length;
+    return base.filter((r) => !!r.answered_at && r.answered_via !== "답글").length;
   }, [rows, mineOnly, currentUserEmail]);
 
   // 분류 탭에 붙는 건수 - 분류 필터 자체는 빼고 센 값이라, 탭을 눌러도 다른 탭 숫자가
   // 변하지 않습니다("출결 3건"이 출결 탭에 들어가면 사라지는 일이 없습니다).
   const typeCounts = useMemo(() => {
     const base = (mineOnly ? rows.filter((r) => r.homeroom_email === currentUserEmail) : rows).filter(
-      (r) => showDone || !r.answered_at
+      (r) => showDone || !(r.answered_at && r.answered_via !== "답글")
     );
     const m = new Map<string, number>();
     for (const r of base) {
@@ -363,9 +373,13 @@ export default function ParentInquiryPanel({
   async function markAnswered(row: Inquiry, done: boolean) {
     setBusy(true);
     const supabase = createClient();
+    // 사람이 누른 것은 반드시 answered_via='수동'으로 남깁니다.
+    //
+    // 이 칸 하나가 "기계가 답글을 봤다"와 "사람이 확인했다"를 가릅니다. 목록에서 내려도 되는
+    // 것은 뒤쪽뿐입니다. 앞쪽은 아직 맞는지 아무도 안 본 판단입니다.
     const patch = done
-      ? { answered_at: new Date().toISOString(), answered_by: currentUserEmail }
-      : { answered_at: null, answered_by: null };
+      ? { answered_at: new Date().toISOString(), answered_by: currentUserEmail, answered_via: "수동" }
+      : { answered_at: null, answered_by: null, answered_via: null };
     setRows((prev) => prev.map((r) => (r.id === row.id ? { ...r, ...patch } : r)));
     const { error } = await supabase.from("pickup_requests").update(patch).eq("id", row.id);
     setBusy(false);
@@ -467,12 +481,18 @@ export default function ParentInquiryPanel({
       {/* 요청: "체크박스를 만들어서 체크를 하면 대시보드, 학부모 문의에서 빼주고" */}
       <input
         type="checkbox"
-        checked={!!r.answered_at}
+        checked={!!r.answered_at && r.answered_via !== "답글"}
         disabled={busy}
         onChange={(e) => markAnswered(r, e.target.checked)}
         onClick={(e) => e.stopPropagation()}
         className="h-3.5 w-3.5 shrink-0 cursor-pointer accent-emerald-500"
-        title={r.answered_at ? "처리 취소" : "처리 완료로 표시(기록에는 남습니다)"}
+        title={
+          r.answered_via === "답글"
+            ? "토들에 답글이 달린 것을 자동으로 찾았습니다. 맞는지 보고 체크하면 목록에서 내려갑니다."
+            : r.answered_at
+              ? "처리 취소"
+              : "처리 완료로 표시(기록에는 남습니다)"
+        }
       />
       <button type="button" onClick={() => setDetail(r)} className="flex min-w-0 flex-1 items-center gap-1.5 truncate text-left">
       {r.urgency === "높음" && !r.answered_at && <span className="shrink-0 text-red-500">●</span>}

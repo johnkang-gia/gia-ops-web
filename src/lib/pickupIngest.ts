@@ -10,6 +10,7 @@ import {
   type RosterEntry,
 } from "@/lib/pickupParse";
 import { extractTargetRange } from "@/lib/attendanceDigest";
+import { genCaseId } from "@/lib/caseId";
 
 // 어느 경로로 들어온 연락이든 이 함수 하나를 거쳐 픽업으로 바뀝니다.
 // 토들 수집기, 전화 통화 텍스트, 교사 전달, 직접 입력이 모두 같은 판단을 받도록 하기 위해서입니다.
@@ -514,6 +515,35 @@ export async function ingestPickup(
           created_by: "AI(반복 픽업)",
         })
         .then(undefined, () => undefined); // 표가 아직 없어도 수집 자체는 멈추지 않습니다.
+
+      // 특이사항은 **임시 방편**입니다. 매일 아침 픽업으로 덮어써 주지만, 명단 자체는
+      // 그대로라 표에는 계속 그 아이가 타는 것으로 보입니다.
+      //
+      // 담당자: "매주 금요일 건은 특정 날짜가 아니라 계속 셔틀이 바뀌는 거라서,
+      //          셔틀 메뉴의 하원 셔틀 명단에서 아예 금요일 체크를 풀어서 바꿀게."
+      //
+      // 그게 맞습니다. 근본은 배정입니다. 그래서 사람이 손볼 일을 업무로 남깁니다 -
+      // 이걸 안 남기면 "특이사항으로 처리됐으니 됐지" 하고 명단은 영영 안 고쳐집니다.
+      const wdLabel = recurDays.map((n) => ["", "월", "화", "수", "목", "금"][n]).join("·");
+      await supabase
+        .from("tasks")
+        .insert({
+          case_id: genCaseId("TSK"),
+          title: `[셔틀 명단 수정] ${matched.name} - 매주 ${wdLabel}요일 픽업`,
+          status: "예정",
+          priority: "높음",
+          position: Date.now(),
+          due_date: todayKst,
+          description: [
+            `${matched.name} 학생이 매주 ${wdLabel}요일에는 보호자가 직접 데려갑니다.`,
+            "",
+            "셔틀 > 탑승배정에서 이 학생의 하원 배정에서 " + wdLabel + "요일 체크를 풀어주세요.",
+            "그 전까지는 매일 아침 자동으로 픽업 표시만 해둡니다(명단에는 그대로 남아 있습니다).",
+            "",
+            `학부모 원문: ${input.text.slice(0, 200)}`,
+          ].join("\n"),
+        })
+        .then(undefined, () => undefined);
     }
   }
 

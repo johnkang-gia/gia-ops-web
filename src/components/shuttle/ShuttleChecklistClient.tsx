@@ -124,6 +124,38 @@ export default function ShuttleChecklistClient({
   const [busyId, setBusyId] = useState<string | null>(null);
   // 자동 분류 근거 창(요청: "느낌표 아이콘 만들고 누르면 채팅 나오고 연결도 되게끔").
   const [sourceOf, setSourceOf] = useState<ChecklistItem | null>(null);
+  const [teaching, setTeaching] = useState(false);
+
+  // "이건 픽업이 아닙니다"를 연락 자체에 남깁니다.
+  //
+  // 오늘 표시만 지우면 원래 연락은 그대로라 내일 또 올라옵니다. 사람은 같은 것을 매일 지우게
+  // 되고, 그러다 지치면 그냥 두게 됩니다. 그래서 **세 가지를 한 번에** 합니다.
+  //   ① 그 연락을 '무시'로 → 체크표·대시보드에서 다시 안 올라옵니다
+  //   ② 발신자별 정정 기록에 +1 → 같은 발신자의 다음 픽업 판단이 낮아져 사람이 먼저 봅니다
+  //   ③ 오늘 표시를 '예정'으로 되돌림
+  async function teachNotPickup(item: ChecklistItem) {
+    const src = item.autoSource;
+    if (!src?.requestId) return;
+    setTeaching(true);
+    try {
+      const res = await fetch("/api/pickup/not-pickup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requestId: src.requestId, studentName: item.studentName }),
+      });
+      if (!res.ok) {
+        const j = (await res.json().catch(() => ({}))) as { error?: string };
+        notify("가르치지 못했습니다: " + (j.error ?? ""), "error");
+        return;
+      }
+      await setStatus(item, item.status); // 오늘 표시 되돌리기(같은 값 = 토글 → 예정)
+      notify("픽업이 아니라고 알려줬습니다. 다음부터 같은 발신자는 사람이 먼저 확인합니다.", "success");
+      setSourceOf(null);
+      router.refresh();
+    } finally {
+      setTeaching(false);
+    }
+  }
   const [pendingMove, setPendingMove] = useState<PendingMove | null>(null);
   const [movingBusy, setMovingBusy] = useState(false);
 
@@ -708,6 +740,49 @@ export default function ShuttleChecklistClient({
                    자동으로 분류되는 거 이유가 뭔지 보고 싶어."
           기계가 붙인 표시 옆에 그 근거가 없으면, 맞는지 확인하려고 매번 인박스로 넘어가
           그 아이를 다시 찾아야 합니다. */}
+      {sourceOf && !sourceOf.autoSource && (
+        // 사선은 그어져 있는데 근거를 못 찾은 경우.
+        //
+        // 담당자: "이유가 없이 사선 표시 되어 있어. 사선 표시는 무조건 사유가 있게 해주고,
+        //          내가 눌러서 체크한 거라면 이용자가 체크했다고 알려줘."
+        //
+        // 근거가 없다는 사실 자체를 숨기지 않습니다. 빈 창을 띄우거나 버튼을 감추면 사람은
+        // "왜 안 되지?" 하고 시간을 더 씁니다. 모르면 모른다고 적고, 지금 할 수 있는 일을
+        // 함께 놓아둡니다.
+        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 p-4 print:hidden" onClick={() => setSourceOf(null)}>
+          <div className="w-full max-w-sm rounded-xl bg-white p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <p className="mb-1 text-sm font-bold text-slate-800">
+              {sourceOf.studentName} · {sourceOf.status}
+            </p>
+            <p className="mb-3 rounded-lg bg-orange-50 px-3 py-2 text-[12px] leading-relaxed text-orange-800">
+              이 표시가 <b>왜 붙었는지 찾지 못했습니다.</b>
+              <br />
+              오늘 들어온 연락에도, 체크표 기록에도 근거가 없습니다. 어제 눌러둔 것이 남아 있거나,
+              연락이 지워졌을 수 있습니다.
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  void setStatus(sourceOf, sourceOf.status);
+                  setSourceOf(null);
+                }}
+                className="rounded-lg bg-slate-800 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-slate-700"
+              >
+                ✕ 표시 지우기
+              </button>
+              <button
+                type="button"
+                onClick={() => setSourceOf(null)}
+                className="ml-auto rounded-lg border border-slate-200 px-3 py-1.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
+              >
+                닫기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {sourceOf?.autoSource && (
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 p-4 print:hidden" onClick={() => setSourceOf(null)}>
           <div
@@ -745,7 +820,15 @@ export default function ShuttleChecklistClient({
               {sourceOf.autoSource.receivedAt && (
                 <>
                   <dt className="font-semibold">받은 때</dt>
-                  <dd>{new Date(sourceOf.autoSource.receivedAt).toLocaleString("ko-KR")}</dd>
+                  <dd>
+                    {new Date(sourceOf.autoSource.receivedAt).toLocaleString("ko-KR")}
+                    {/* 받은 날과 오늘이 다르면 짚어줍니다.
+                        담당자: "김리안의 경우 어제 픽업인데 오늘까지 반영되어 있어."
+                        어제 온 연락이 오늘 대상으로 잡혀 있으면 그게 바로 원인입니다. */}
+                    {sourceOf.autoSource.receivedAt.slice(0, 10) !== todayStr() && (
+                      <span className="ml-1 font-bold text-amber-600">← 오늘 온 연락이 아닙니다</span>
+                    )}
+                  </dd>
                 </>
               )}
               <dt className="font-semibold">연결된 이름</dt>
@@ -795,8 +878,25 @@ export default function ShuttleChecklistClient({
                 }}
                 className="rounded-lg border border-slate-200 px-3 py-1.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
               >
-                ✕ 표시 지우기
+                ✕ 표시만 지우기
               </button>
+              {/* 이게 이번 요청의 핵심입니다.
+                  담당자: "판단 근거를 수정해서 학습시키고 싶은데, 물음표로 근거 창이 나올 때
+                           학습시킬 수 있도록 해줘."
+                  "표시만 지우기"는 오늘 하루만 고칩니다. 원래 연락은 그대로 남아 있어서 내일
+                  또 같은 판단이 나옵니다. 여기서는 **연락 자체를 '픽업 아님'으로 되돌려**
+                  다시 안 올라오게 하고, 그 정정을 발신자별 기록에 남겨 다음 판단을 낮춥니다. */}
+              {sourceOf.autoSource.requestId && (
+                <button
+                  type="button"
+                  disabled={teaching}
+                  onClick={() => void teachNotPickup(sourceOf)}
+                  className="rounded-lg bg-amber-500 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-amber-600 disabled:opacity-40"
+                  title="이 연락은 픽업이 아니라고 알려줍니다. 오늘 표시도 함께 지워지고, 다음부터 같은 발신자의 비슷한 연락은 사람이 먼저 확인하게 됩니다."
+                >
+                  {teaching ? "…" : "🎓 픽업 아님으로 가르치기"}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setSourceOf(null)}

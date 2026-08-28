@@ -249,7 +249,7 @@ export default function ShuttleChecklistTable({
                                 오른쪽 위 특이사항(!)과 헷갈리지 않도록 **왼쪽 아래**에 둡니다.
                                 사람이 직접 누른 경우에는 근거가 없으니 이 표시도 없습니다 -
                                 표시가 있다는 것 자체가 "이건 기계가 붙였다"는 뜻입니다. */}
-                            {item.autoSource && item.status === item.autoSource.kind && (
+                            {(isPickup || isAbsent) && (
                               <button
                                 type="button"
                                 onClick={(ev) => {
@@ -258,8 +258,18 @@ export default function ShuttleChecklistTable({
                                 }}
                                 onMouseDown={(ev) => ev.stopPropagation()}
                                 onDoubleClick={(ev) => ev.stopPropagation()}
-                                title={`${item.autoSource.source}에서 자동으로 ${item.autoSource.kind} 처리됨 - 눌러서 원문 보기`}
-                                className="absolute -bottom-1.5 -left-1.5 flex h-4 w-4 items-center justify-center rounded-full border border-sky-500 bg-sky-500 text-[8px] font-bold leading-none text-white print:hidden"
+                                title={
+                                  item.autoSource
+                                    ? `${item.autoSource.source} · 눌러서 근거 보기`
+                                    : "왜 이렇게 표시됐는지 눌러서 확인하세요"
+                                }
+                                className={
+                                  "absolute -bottom-1.5 -left-1.5 flex h-4 w-4 items-center justify-center rounded-full border text-[8px] font-bold leading-none text-white print:hidden " +
+                                  // 근거를 못 찾은 것은 회색이 아니라 **주황**입니다. 사선이 그어져
+                                  // 있는데 이유를 모른다는 건 그냥 정보가 없는 게 아니라
+                                  // 확인해야 할 일이라서, 눈에 띄어야 합니다.
+                                  (item.autoSource ? "border-sky-500 bg-sky-500" : "border-orange-500 bg-orange-500")
+                                }
                               >
                                 ?
                               </button>

@@ -70,6 +70,7 @@ type PickupRow = {
   afterDeparture: boolean;
 };
 type TestMarker = { label: string; lat: number; lng: number; at: string; fresh: boolean };
+
 type Data = {
   label: string;
   today: string;

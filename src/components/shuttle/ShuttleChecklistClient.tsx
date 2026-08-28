@@ -731,7 +731,15 @@ export default function ShuttleChecklistClient({
         <ChecklistPrintSheet
           routes={routes}
           items={displayItems}
-          dateLabel={new Date().toLocaleDateString("ko-KR", { month: "2-digit", day: "2-digit" }).replace(/\.\s*$/, "").replace(". ", "월 ") + "일"}
+          // 담당자: "몇 년 몇 월 몇 일 몇 요일인지" - 종이는 며칠 뒤에도 굴러다닙니다.
+          // 연도까지 없으면 언제 것인지 알 수 없습니다.
+          dateLabel={new Date().toLocaleDateString("ko-KR", {
+            timeZone: "Asia/Seoul",
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+            weekday: "long",
+          })}
         />
       </div>
 

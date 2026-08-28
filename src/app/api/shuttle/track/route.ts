@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { runAutoArrivePass, runAutoDepartPass } from "@/lib/shuttleAuto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { isWithinTrackingWindow, kstParts } from "@/lib/shuttleTracking";
 import { haversineMeters } from "@/lib/shuttleRecommend";
@@ -237,9 +238,34 @@ async function handle(params: URLSearchParams) {
   // 아직 없는 정류장은 건너뜁니다(며칠 운행하면 학습으로 채워집니다).
   const stopNote = await detectStopArrival(supabase, device.route_id as string, lat, lng, recordedAt, speedKmh);
 
+  // ── 학교 도착·출발 판단 ────────────────────────────────────────────────────
+  //
+  // 담당자: "도착 안내보드에 27호차 도착했는데 표시가 안 돼. GPS로 도착한 상황 바로 나오게,
+  //          출발도 체크가 되게 만들어줘야 해."
+  //
+  // 판단 로직은 있었습니다. **부르는 사람이 없었습니다.**
+  // /api/cron/shuttle-auto 는 vercel.json 의 크론 목록에 없고, 바깥 스케줄러(cron-job.org)가
+  // 1분마다 불러주기로 되어 있었습니다. 그게 안 돌면 GPS가 아무리 들어와도 도착은 영영
+  // 안 찍힙니다 - 지금 그 상태입니다.
+  //
+  // 그래서 **핑이 들어온 그 자리에서** 판단합니다. 바깥 스케줄러에 기대지 않습니다.
+  // 방금 신호를 보낸 그 차 하나만 보므로 비용도 거의 없습니다(조회 서너 번).
+  // 크론이 살아 있어도 겹치지 않습니다 - 같은 줄은 유니크 제약(23505)이 막습니다.
+  let autoNote = "";
+  try {
+    const { arrived } = await runAutoArrivePass(supabase, device.route_id as string);
+    const { gpsDeparted } = await runAutoDepartPass(supabase, device.route_id as string);
+    if (arrived > 0) autoNote = " · 학교도착 기록";
+    else if (gpsDeparted > 0) autoNote = " · 출발 기록";
+  } catch (e) {
+    // 도착 판단이 실패해도 위치 수신 자체는 성공으로 둡니다. 다만 조용히 넘기지 않고
+    // 진단 줄에 남깁니다 - 안 보이면 또 "왜 도착이 안 찍히지"를 처음부터 찾게 됩니다.
+    autoNote = ` · 도착판단 실패(${e instanceof Error ? e.message : "알 수 없음"})`;
+  }
+
   // 위치 저장 결과와 정류장 판정을 **함께** 남깁니다. 예전에는 "stored"만 남겨서,
   // 위치는 들어오는데 정류장만 안 찍히는 상황을 화면에서 알아볼 방법이 없었습니다.
-  await markHit(`stored · ${stopNote}`, true);
+  await markHit(`stored · ${stopNote}${autoNote}`, true);
 
   return new NextResponse("OK", { status: 200 });
 }

@@ -24,7 +24,13 @@ const ARRIVE_MIN_DWELL_MS = 60 * 1000;
 // 반경 안에 있었다고 인정할 최소 핑 개수(한 점이 튀어서 오탐하는 것을 막습니다).
 const ARRIVE_MIN_SAMPLES = 2;
 
-export async function runAutoArrivePass(supabase: SupabaseClient): Promise<{ arrived: number }> {
+/**
+ * @param onlyRouteId 한 노선만 볼 때. GPS 핑이 들어온 그 순간 그 차만 판단하려고 씁니다.
+ */
+export async function runAutoArrivePass(
+  supabase: SupabaseClient,
+  onlyRouteId?: string
+): Promise<{ arrived: number }> {
   const now = Date.now();
   const today = kstParts(new Date(now)).iso;
 
@@ -37,7 +43,8 @@ export async function runAutoArrivePass(supabase: SupabaseClient): Promise<{ arr
   const handledRoutes = new Set((events ?? []).map((e) => e.route_id));
 
   // 추적 기기가 켜져 있는 노선만 대상으로 합니다.
-  const { data: devices } = await supabase.from("shuttle_tracker_devices").select("route_id").eq("enabled", true);
+  const deviceQuery = supabase.from("shuttle_tracker_devices").select("route_id").eq("enabled", true);
+  const { data: devices } = onlyRouteId ? await deviceQuery.eq("route_id", onlyRouteId) : await deviceQuery;
   const targetRouteIds = [...new Set((devices ?? []).map((d) => d.route_id))].filter((id) => !handledRoutes.has(id));
   if (targetRouteIds.length === 0) return { arrived: 0 };
 
@@ -98,8 +105,14 @@ const DEPART_RADIUS_M = 100;
 // GPS 핑이 아예 없는 노선을 위한 시간 기반 안전장치(분).
 const TIME_FALLBACK_MIN = 20;
 
-export async function runAutoDepartPass(supabase: SupabaseClient): Promise<{ gpsDeparted: number; timeoutDeparted: number }> {
-  const today = new Date().toISOString().slice(0, 10);
+export async function runAutoDepartPass(
+  supabase: SupabaseClient,
+  onlyRouteId?: string
+): Promise<{ gpsDeparted: number; timeoutDeparted: number }> {
+  // 날짜는 **한국 기준**이어야 합니다. 도착(runAutoArrivePass)은 kstParts로 한국 날짜를
+  // 쓰는데 여기만 toISOString()(UTC)이었습니다. 두 함수가 서로 다른 날을 보면, 도착은
+  // 찍혔는데 출발은 "오늘 도착한 차가 없다"며 영영 안 찍힙니다.
+  const today = kstParts(new Date()).iso;
   const now = Date.now();
 
   const { data: events } = await supabase
@@ -116,6 +129,7 @@ export async function runAutoDepartPass(supabase: SupabaseClient): Promise<{ gps
   }
 
   const pendingRouteIds = [...arrivedAt.keys()].filter((routeId) => {
+    if (onlyRouteId && routeId !== onlyRouteId) return false;
     if (departedRoutes.has(routeId)) return false;
     const arrivedTime = new Date(arrivedAt.get(routeId)!).getTime();
     return now - arrivedTime >= MIN_DWELL_MS;

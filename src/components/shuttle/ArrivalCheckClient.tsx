@@ -274,55 +274,6 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
         </div>
       </div>
 
-      {/* 담당자: "애들은 둘 다 비워두고 행선지 물어보고 결정하면 그때 둘 중 하나로 배정."
-          아이에게 직접 물어보는 사람이 이 화면을 들고 있습니다. 물어본 자리에서 바로
-          누르지 못하면 나중에 옮겨 적어야 하고, 옮겨 적는 일은 언젠가 빠집니다.
-          정하기 전까지 어느 호차 명단에도 안 뜨므로, 여기서 사라지지 않고 계속 남습니다. */}
-      {choiceByStudent.length > 0 && (
-        <div className="mb-2 rounded-xl border-2 border-amber-300 bg-amber-50 p-2">
-          <p className="mb-1.5 text-xs font-black text-amber-800">
-            ⚠ 행선지 확인 필요 · {choiceByStudent.length}명
-          </p>
-          <p className="mb-2 text-[10px] leading-tight text-amber-700">
-            어디 가는지 물어보고 눌러주세요. 누르기 전까지 어느 호차 명단에도 안 나옵니다.
-          </p>
-          <div className="space-y-1.5">
-            {choiceByStudent.map(([name, opts]) => (
-              <div key={name} className="flex flex-wrap items-center gap-1.5 rounded-lg bg-white p-1.5">
-                <span className="min-w-14 text-sm font-black text-slate-800">{name}</span>
-                {opts.map((o) => (
-                  <button
-                    key={o.assignmentId}
-                    onClick={() => choose(o.assignmentId, "ride")}
-                    disabled={busyRoute === o.assignmentId}
-                    className="rounded-lg bg-blue-600 px-2.5 py-1.5 text-xs font-bold text-white active:scale-95 disabled:opacity-40"
-                    title={o.stopAddress ?? undefined}
-                  >
-                    {o.routeNo}호
-                  </button>
-                ))}
-                <button
-                  onClick={() => choose(opts[0].assignmentId, "skip")}
-                  disabled={busyRoute === opts[0].assignmentId}
-                  className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-bold text-slate-500 active:scale-95 disabled:opacity-40"
-                >
-                  안 탐
-                </button>
-                {/* 어디서 내리는지. 호차 번호만으로는 형제가 서로 다른 곳에 내리게
-                    잘못 눌러도 아무도 모릅니다. */}
-                <div className="w-full space-y-0.5 pl-0.5">
-                  {opts.map((o) => (
-                    <p key={o.assignmentId} className="truncate text-[9px] leading-tight text-slate-500">
-                      <b className="text-slate-600">{o.routeNo}호</b> · {o.stopAddress ?? "정류장 주소 없음"}
-                    </p>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {routes.length === 0 ? (
         <p className="py-10 text-center text-sm text-slate-400">오늘 탈 학생이 있는 노선이 없습니다.</p>
       ) : (
@@ -401,13 +352,6 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
                   <span className="text-[9px] font-bold leading-tight">
                     {status === "waiting" ? (enRoute ? "운행중" : "미도착") : status === "arrived" ? "도착함" : "출발함"}
                   </span>
-                  {/* 담당자: "하원 차량을 도와주는 직원들에게 전부 줘서 다같이 같은 화면으로
-                      체크하면서 진행할 거야."
-                      여러 명이 같은 화면을 동시에 봅니다. 처음 쓰는 분은 "도착함"만 보고
-                      다음에 뭘 눌러야 할지 모릅니다. 누를 것을 한 줄로 적어둡니다. */}
-                  <span className="text-[7px] font-semibold leading-none opacity-60">
-                    {status === "waiting" ? "눌러서 도착" : status === "arrived" ? "눌러서 출발" : "눌러서 되돌리기"}
-                  </span>
                   {status === "arrived" && arrivedByGps && (
                     <span className="text-[7px] font-semibold leading-none text-orange-100">자동·GPS 감지</span>
                   )}
@@ -453,6 +397,41 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
               </div>
             );
           })}
+        </div>
+      )}
+
+
+      {/* 담당자: "이준서, 이준우 너무 많이 차지해. 몇 호인지만 선택하게 해주고 아래쪽으로 내려줘."
+          맞습니다 - 이건 하루에 두 번 누르는 일인데 화면 맨 위 절반을 잡아먹고 있었습니다.
+          차량 카드가 먼저 보여야 합니다. 정류장 주소는 버튼을 꾹 누르면 뜨게 남겨뒀습니다. */}
+      {choiceByStudent.length > 0 && (
+        <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1.5">
+          <p className="mb-1 text-[10px] font-bold text-amber-800">⚠ 행선지 확인 필요</p>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            {choiceByStudent.map(([name, opts]) => (
+              <div key={name} className="flex items-center gap-1 rounded bg-white px-1.5 py-1">
+                <span className="text-xs font-bold text-slate-800">{name}</span>
+                {opts.map((o) => (
+                  <button
+                    key={o.assignmentId}
+                    onClick={() => choose(o.assignmentId, "ride")}
+                    disabled={busyRoute === o.assignmentId}
+                    title={o.stopAddress ?? undefined}
+                    className="rounded bg-blue-600 px-1.5 py-0.5 text-[11px] font-bold text-white active:scale-95 disabled:opacity-40"
+                  >
+                    {o.routeNo}
+                  </button>
+                ))}
+                <button
+                  onClick={() => choose(opts[0].assignmentId, "skip")}
+                  disabled={busyRoute === opts[0].assignmentId}
+                  className="rounded border border-slate-300 px-1.5 py-0.5 text-[11px] font-semibold text-slate-500 active:scale-95 disabled:opacity-40"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

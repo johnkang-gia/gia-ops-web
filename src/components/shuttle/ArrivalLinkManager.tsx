@@ -47,6 +47,36 @@ export default function ArrivalLinkManager({ initialLinks }: { initialLinks: Shu
     if (error) notify("구분을 저장하지 못했습니다: " + error.message, "error");
   }
 
+  // 담당자: "링크들 만들기만 할 수 있어서 삭제도 할 수 있게 해줘."
+  //
+  // 켜기/끄기만 있어서 잘못 만든 링크가 목록에 영영 남았습니다. 목록이 길어지면 지금 쓰는
+  // 링크가 어느 것인지 헷갈리고, 헷갈리면 엉뚱한 링크를 나눠주게 됩니다.
+  //
+  // 지우기 전에 한 번 묻습니다. 이미 나눠준 링크를 지우면 **그 링크를 받은 분들 화면이
+  // 전부 막힙니다.** 되돌릴 수 없습니다.
+  async function removeLink(l: ShuttleArrivalLink) {
+    if (!confirm(`"${l.label}" 링크를 지웁니다.\n\n이미 나눠준 링크라면 받으신 분들 화면이 전부 막힙니다. 되돌릴 수 없습니다.\n\n계속할까요?`)) return;
+    setBusy(true);
+    const supabase = createClient();
+    // .select()를 붙여 **정말 지워졌는지** 확인합니다.
+    //
+    // 권한(RLS)이 지우기를 막고 있으면 오류 없이 0줄이 지워집니다. 그대로 화면에서만
+    // 빼면 지운 것처럼 보이다가 새로고침하면 되살아납니다 - 지웠다고 믿고 계속 쓰던
+    // 링크가 살아 있는 것이 가장 나쁩니다.
+    const { data: removed, error } = await supabase.from("shuttle_arrival_links").delete().eq("id", l.id).select("id");
+    setBusy(false);
+    if (error) {
+      notify("지우지 못했습니다: " + error.message, "error");
+      return;
+    }
+    if (!removed || removed.length === 0) {
+      notify("지울 권한이 없습니다. 관리자 계정으로 다시 시도해주세요.", "error");
+      return;
+    }
+    setLinks((prev) => prev.filter((x) => x.id !== l.id));
+    notify("링크를 지웠습니다.", "success");
+  }
+
   async function toggleEnabled(link: ShuttleArrivalLink) {
     const supabase = createClient();
     const next = !link.enabled;
@@ -148,6 +178,13 @@ export default function ArrivalLinkManager({ initialLinks }: { initialLinks: Shu
                   className={"rounded-lg px-2 py-1 text-[11px] font-semibold " + (l.enabled ? "bg-red-50 text-red-600" : "bg-slate-100 text-slate-500")}
                 >
                   {l.enabled ? "끄기" : "켜기"}
+                </button>
+                <button
+                  onClick={() => removeLink(l)}
+                  disabled={busy}
+                  className="rounded-lg border border-red-200 px-2 py-1 text-[11px] font-semibold text-red-500 hover:bg-red-50 disabled:opacity-40"
+                >
+                  🗑 삭제
                 </button>
               </div>
             </div>

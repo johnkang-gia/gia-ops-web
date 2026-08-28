@@ -10,10 +10,10 @@
 select r.route_no                                          as "호차",
        d.last_seen_at                                       as "마지막 신호",
        round(extract(epoch from (now() - d.last_seen_at)) / 60) as "몇 분 전",
-       (select count(*) from public.shuttle_positions p
+       (select count(*) from public.shuttle_pilot_pings p
          where p.route_id = r.id
            and p.recorded_at >= now() - interval '24 hours')   as "24시간 위치 수",
-       (select count(*) from public.shuttle_positions p
+       (select count(*) from public.shuttle_pilot_pings p
          where p.route_id = r.id
            and p.recorded_at::date = (now() at time zone 'Asia/Seoul')::date) as "오늘 위치 수"
   from public.shuttle_routes r

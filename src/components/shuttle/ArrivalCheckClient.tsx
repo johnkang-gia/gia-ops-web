@@ -381,10 +381,22 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
                 >
                   <span className="text-base font-black leading-tight">{r.routeNo}호</span>
                   {r.name && <span className="max-w-full truncate text-[8px] font-semibold leading-tight opacity-80">{r.name}</span>}
-                  {/* 요청: "차량도착 출발체크 교직원용에 차 번호도 나오게 해줘 작게" */}
+                  {/* 담당자: "호차 / 차량번호 / 기사님 / 타는 애들 뱃지 이렇게 뜨게."
+                      차량번호를 아직 못 적은 차도 있어서, 없으면 그 줄을 그냥 비워둡니다
+                      ("미등록" 같은 글자를 넣으면 좁은 칸에서 진짜 번호처럼 읽힙니다). */}
                   {r.vehicleNo && <span className="max-w-full truncate text-[7px] font-medium leading-tight opacity-70">{r.vehicleNo}</span>}
+                  {r.driverName && (
+                    <span className="max-w-full truncate text-[7px] font-medium leading-tight opacity-60">{r.driverName} 기사님</span>
+                  )}
                   <span className="text-[9px] font-bold leading-tight">
                     {status === "waiting" ? (enRoute ? "운행중" : "미도착") : status === "arrived" ? "도착함" : "출발함"}
+                  </span>
+                  {/* 담당자: "하원 차량을 도와주는 직원들에게 전부 줘서 다같이 같은 화면으로
+                      체크하면서 진행할 거야."
+                      여러 명이 같은 화면을 동시에 봅니다. 처음 쓰는 분은 "도착함"만 보고
+                      다음에 뭘 눌러야 할지 모릅니다. 누를 것을 한 줄로 적어둡니다. */}
+                  <span className="text-[7px] font-semibold leading-none opacity-60">
+                    {status === "waiting" ? "눌러서 도착" : status === "arrived" ? "눌러서 출발" : "눌러서 되돌리기"}
                   </span>
                   {status === "arrived" && arrivedByGps && (
                     <span className="text-[7px] font-semibold leading-none text-orange-100">자동·GPS 감지</span>

@@ -205,7 +205,17 @@ export default async function DevDashboardPage() {
     <div className="mx-auto max-w-5xl">
       <div className="mb-1 flex items-center justify-between gap-2">
         <h1 className="text-lg font-bold">개발자 대시보드</h1>
-        <GuideButton title="개발자 대시보드 사용 가이드" sections={GUIDE_SECTIONS} />
+        <div className="flex items-center gap-2">
+          {/* 담당자: "매번 SQL 내가 붙여넣는 게 싫어서 (...) 진단 화면 만들어줘."
+              뭔가 이상할 때 제일 먼저 열 곳입니다. 잘 보이는 자리에 둡니다. */}
+          <Link
+            href="/dev/diagnostics"
+            className="rounded-lg bg-slate-800 px-2.5 py-1 text-xs font-bold text-white hover:bg-slate-700"
+          >
+            🔎 진단
+          </Link>
+          <GuideButton title="개발자 대시보드 사용 가이드" sections={GUIDE_SECTIONS} />
+        </div>
       </div>
       <p className="mb-5 text-xs text-slate-500">
         전체 데이터 현황, 방치된 항목, AI 사용량, 최근 오류를 한눈에 확인합니다. 실사용자 페이지

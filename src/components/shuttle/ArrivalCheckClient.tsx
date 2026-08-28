@@ -46,7 +46,7 @@ function gpsInfo(r: ArrivalRoute): { live: boolean; label: string; tone: "live" 
 }
 
 /** 오늘 행선지를 아직 안 물어본 학생의 갈 수 있는 노선 한 칸. */
-type PendingChoice = { assignmentId: string; studentName: string; group: string; routeId: string; routeNo: string };
+type PendingChoice = { assignmentId: string; studentName: string; group: string; routeId: string; routeNo: string; stopAddress?: string | null };
 
 type ArrivalData = { label: string; term: string; routes: ArrivalRoute[]; pendingChoice?: PendingChoice[] };
 
@@ -296,6 +296,7 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
                     onClick={() => choose(o.assignmentId, "ride")}
                     disabled={busyRoute === o.assignmentId}
                     className="rounded-lg bg-blue-600 px-2.5 py-1.5 text-xs font-bold text-white active:scale-95 disabled:opacity-40"
+                    title={o.stopAddress ?? undefined}
                   >
                     {o.routeNo}호
                   </button>
@@ -307,6 +308,15 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
                 >
                   안 탐
                 </button>
+                {/* 어디서 내리는지. 호차 번호만으로는 형제가 서로 다른 곳에 내리게
+                    잘못 눌러도 아무도 모릅니다. */}
+                <div className="w-full space-y-0.5 pl-0.5">
+                  {opts.map((o) => (
+                    <p key={o.assignmentId} className="truncate text-[9px] leading-tight text-slate-500">
+                      <b className="text-slate-600">{o.routeNo}호</b> · {o.stopAddress ?? "정류장 주소 없음"}
+                    </p>
+                  ))}
+                </div>
               </div>
             ))}
           </div>

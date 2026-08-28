@@ -59,7 +59,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
   // 묶었습니다(요청: "실시간 반영 속도 더 개선") - 이 화면은 3초마다 폴링하는 화면이라, 매
   // 요청의 왕복 횟수를 하나 줄이면 그만큼 화면 반영이 빨라집니다.
   const [{ data: stops }, { data: events }] = await Promise.all([
-    supabase.from("shuttle_stops").select("id, route_id").in("route_id", routeIds),
+    supabase.from("shuttle_stops").select("id, route_id, address").in("route_id", routeIds),
     supabase
       .from("shuttle_run_events")
       .select("route_id, event, created_at, created_by")
@@ -97,7 +97,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
 
   // 행선지를 그날 정하는 학생. 정하기 전에는 어느 노선 명단에도 넣지 않고, 따로 모아
   // 화면 맨 위에 "아직 안 물어봤다"로 띄웁니다.
-  const pendingChoice: { assignmentId: string; studentName: string; group: string; routeId: string }[] = [];
+  const pendingChoice: { assignmentId: string; studentName: string; group: string; routeId: string; stopAddress: string | null }[] = [];
 
   const rosterByRoute: Record<string, { studentName: string; status: string }[]> = {};
   for (const a of relevant) {
@@ -110,6 +110,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
         studentName: a.student_name_raw,
         group: a.choice_group as string,
         routeId: (a.override_route_id && routeIdSet.has(a.override_route_id) ? a.override_route_id : stop.route_id) as string,
+        // 어디서 내리는지 함께 보냅니다. 호차 번호만 보고 누르면, 형제가 서로 다른 곳에
+        // 내리게 잘못 눌러도 아무도 모릅니다.
+        stopAddress: ((stop as { address?: string | null }).address ?? null),
       });
       continue;
     }

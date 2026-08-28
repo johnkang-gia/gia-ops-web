@@ -417,14 +417,22 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
                     onClick={() => choose(o.assignmentId, "ride")}
                     disabled={busyRoute === o.assignmentId}
                     title={`${o.routeNo}호${o.stopAddress ? ` · ${o.stopAddress}` : ""}`}
-                    className="rounded bg-blue-600 px-2 py-0.5 text-[11px] font-bold text-white active:scale-95 disabled:opacity-40"
+                    className={
+                      "rounded px-2 py-0.5 text-[11px] font-bold active:scale-95 disabled:opacity-40 " +
+                      // 갈 곳 이름이 안 붙은 줄은 회색으로 둡니다.
+                      //
+                      // 이름이 없다는 건 **우리도 그게 뭔지 모른다**는 뜻입니다. 파란 버튼으로
+                      // 나란히 두면 아는 것처럼 보여서, 물어본 대답과 상관없이 눌러버릴 수
+                      // 있습니다. 눌리면 그 호차에 태워집니다.
+                      (o.label ? "bg-blue-600 text-white" : "border border-slate-300 bg-white text-slate-400")
+                    }
                   >
                     {/* 담당자: "차량으로 하지 말고 학원인지 집·기업은행인지 누르도록.
                         우리가 물어보는 게 그거니까."
                         아이에게 "몇 호차 타?"라고 묻지 않습니다. "어디 가?"라고 묻습니다.
                         화면이 물어보는 말과 다르게 생기면 듣고 나서 머릿속으로 한 번 더
                         바꿔야 하고, 그때 틀립니다. 호차 배정은 눌린 뒤에 알아서 됩니다. */}
-                    {o.label ?? `${o.routeNo}호`}
+                    {o.label ?? `${o.routeNo}호?`}
                   </button>
                 ))}
                 <button

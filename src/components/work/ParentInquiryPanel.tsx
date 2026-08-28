@@ -160,6 +160,17 @@ function withDayDividers<T extends { id: string; received_at: string }>(list: T[
   return out;
 }
 
+// "이 건은 끝났는가"의 기준 하나.
+//
+// answered_at만 보면 **기계가 답글을 찾아 표시한 것까지 끝난 것으로 칩니다.** 그러면 아직
+// 아무도 확인하지 않은 판단이 회색으로 흐려지고, 급한 것 표시(●)도 사라집니다.
+// 담당자: "왜 글들 회색으로 처리되었어?" - 원인이 이것입니다.
+//
+// 끝난 것은 **사람이 체크한 것**뿐입니다.
+export function isDone(r: { answered_at: string | null; answered_via?: string | null }): boolean {
+  return !!r.answered_at && r.answered_via !== "답글";
+}
+
 const ROW_HEIGHT = 22;
 const VISIBLE_ROWS = 3;
 
@@ -321,7 +332,7 @@ export default function ParentInquiryPanel({
     //
     // 그래서 **사람이 직접 완료 처리한 것만** 숨깁니다(answered_via='수동').
     // 기계가 감지한 것(answered_via='답글')은 초록 체크를 달고 목록에 남습니다.
-    if (!showDone) list = list.filter((r) => !(r.answered_at && r.answered_via !== "답글"));
+    if (!showDone) list = list.filter((r) => !isDone(r));
     if (typeFilter) list = list.filter((r) => (r.inquiry_type ?? "기타") === typeFilter);
     const q = query.trim().toLowerCase();
     if (q) {
@@ -337,14 +348,14 @@ export default function ParentInquiryPanel({
   // 이미 답변돼서 목록에서 빠진 건수. 숨긴 것이지 없는 것이 아니라는 걸 알려주는 데 씁니다.
   const doneCount = useMemo(() => {
     const base = mineOnly ? rows.filter((r) => r.homeroom_email === currentUserEmail) : rows;
-    return base.filter((r) => !!r.answered_at && r.answered_via !== "답글").length;
+    return base.filter(isDone).length;
   }, [rows, mineOnly, currentUserEmail]);
 
   // 분류 탭에 붙는 건수 - 분류 필터 자체는 빼고 센 값이라, 탭을 눌러도 다른 탭 숫자가
   // 변하지 않습니다("출결 3건"이 출결 탭에 들어가면 사라지는 일이 없습니다).
   const typeCounts = useMemo(() => {
     const base = (mineOnly ? rows.filter((r) => r.homeroom_email === currentUserEmail) : rows).filter(
-      (r) => showDone || !(r.answered_at && r.answered_via !== "답글")
+      (r) => showDone || !isDone(r)
     );
     const m = new Map<string, number>();
     for (const r of base) {
@@ -367,8 +378,8 @@ export default function ParentInquiryPanel({
     () => [...filtered].sort((a, b) => b.received_at.localeCompare(a.received_at)),
     [filtered]
   );
-  const openCount = filtered.filter((r) => !r.answered_at).length;
-  const urgentCount = filtered.filter((r) => !r.answered_at && r.urgency === "높음").length;
+  const openCount = filtered.filter((r) => !isDone(r)).length;
+  const urgentCount = filtered.filter((r) => !isDone(r) && r.urgency === "높음").length;
 
   async function markAnswered(row: Inquiry, done: boolean) {
     setBusy(true);
@@ -475,13 +486,13 @@ export default function ParentInquiryPanel({
       className={
         "flex w-full items-center gap-1.5 rounded px-1 text-left transition hover:bg-black/5 " +
         (full ? "py-1.5 text-xs" : "py-0.5 text-[11px]") +
-        (r.answered_at ? " opacity-40" : "")
+        (isDone(r) ? " opacity-40" : "")
       }
     >
       {/* 요청: "체크박스를 만들어서 체크를 하면 대시보드, 학부모 문의에서 빼주고" */}
       <input
         type="checkbox"
-        checked={!!r.answered_at && r.answered_via !== "답글"}
+        checked={isDone(r)}
         disabled={busy}
         onChange={(e) => markAnswered(r, e.target.checked)}
         onClick={(e) => e.stopPropagation()}
@@ -495,7 +506,7 @@ export default function ParentInquiryPanel({
         }
       />
       <button type="button" onClick={() => setDetail(r)} className="flex min-w-0 flex-1 items-center gap-1.5 truncate text-left">
-      {r.urgency === "높음" && !r.answered_at && <span className="shrink-0 text-red-500">●</span>}
+      {r.urgency === "높음" && !isDone(r) && <span className="shrink-0 text-red-500">●</span>}
       <span className={"shrink-0 font-semibold text-slate-700 " + (full ? "text-sm" : "")}>{studentOf(r)}</span>
       {/* 요청: "답글달렸다는 표시로 이름 뒤에 초록색 체크표시" */}
       {r.answered_via === "답글" && (
@@ -507,7 +518,7 @@ export default function ParentInquiryPanel({
         </span>
       )}
       {/* 직원이 답은 했지만 아직 끝나지 않은 건(요청: 해결됐는지 안됐는지 표시). */}
-      {!r.answered_at && r.reply_status === "pending" && (
+      {!isDone(r) && r.reply_status === "pending" && (
         <span
           className="shrink-0 rounded bg-amber-100 px-1 text-[10px] font-bold text-amber-700"
           title={r.replied_by ? `${r.replied_by} 선생님이 답변 중입니다(아직 미해결)` : "답변 중"}
@@ -554,7 +565,7 @@ export default function ParentInquiryPanel({
 
       {/* 출결 원클릭(요청 1) - 셔틀 화면으로 넘어가지 않고 여기서 바로 하원 체크표에 반영합니다.
           출결·차량 문의에만 붙습니다(학습 상담에 [결석] 버튼이 있으면 오조작만 늘어납니다). */}
-      {!r.answered_at && isAttendanceInquiry(r) && (
+      {!isDone(r) && isAttendanceInquiry(r) && (
         <div className="flex shrink-0 items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
           {acted[r.id] ? (
             <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">🚌 {acted[r.id]}</span>

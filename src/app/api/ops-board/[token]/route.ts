@@ -234,56 +234,41 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
 
   // (3) 학부모 문의(pickup_requests)에서 온 픽업.
   //
-  // 요청: "문의에서도 결석이나, 픽업 등 다 올라오는데 결석은 아직도 업무 대시보드에 1로 떠
-  // 픽업은 심지어 0이야 제대로 반영해줘".
+  // 담당자: "업무 대시보드 하원픽업에 4명이나 떴어. 이예온 심규민 어디에도 없는데 계속 떠 있어."
   //
-  // 원인: 결석 칸은 attendance_records + 구글챗 미러만, 픽업 칸은 하원 체크표(shuttle_boardings)
-  // 만 읽고 있었습니다. 그런데 토들로 들어온 학부모 연락은 pickup_requests에 쌓일 뿐 두 곳
-  // 어디에도 들어가지 않아, 문의 목록엔 떠도 결석·픽업 숫자엔 반영되지 않았습니다. 그래서
-  // 여기서 pickup_requests도 같은 규칙(categorize + 명부대조)으로 함께 집계합니다.
+  // 원인은 이 자리가 **원문을 매번 다시 읽어 스스로 판단하고 있었다**는 것입니다. 14일치
+  // 학부모 연락을 긁어와 categorize()로 픽업인지 다시 정하고, extractTargetDate()로 날짜도
+  // 다시 계산했습니다. 그래서
+  //   · 하원 체크표에서 지워도 → 원문은 그대로니 다음 조회에서 되살아납니다.
+  //   · AI 분류를 고쳐도 → 여기서는 다시 자기 방식으로 판단합니다.
+  //   · 며칠 전 "금요일에 데리러 갈게요"가 → 오늘도 금요일이면 다시 오늘 것이 됩니다.
+  //
+  // 바로 위(232줄)에 결석 칸을 고치며 적어둔 것과 **똑같은 실수**입니다:
+  // "원본을 매번 다시 읽는 방식으로는 '처리했음'을 남길 데가 없어, 지운 것이 계속 되살아났습니다."
+  // 결석만 고치고 픽업은 그대로 뒀습니다.
+  //
+  // 이제 원문을 다시 읽지 않습니다. **하원 체크표(shuttle_boardings)가 유일한 기준**입니다.
+  // 학부모 연락은 이미 크론과 인박스를 거쳐 체크표에 픽업으로 찍히므로, 체크표만 보면 됩니다.
+  // 사람이 체크표에서 되돌리면 대시보드에서도 사라집니다 - 되살아날 곳이 없습니다.
+  //
+  // 딱 하나 예외를 둡니다: **차량을 안 타는 학생**은 체크표에 줄 자체가 없어서 체크표만
+  // 보면 영영 안 뜹니다. 그 학생만 확정된 오늘 픽업에서 가져옵니다(원문 재해석 없이,
+  // status='확정' + service_date=오늘 + student_id 연결된 것만).
   const pickupNamesFromReq = new Set<string>();
   const { data: reqRows } = await supabase
     .from("pickup_requests")
-    .select("*")
-    .neq("status", "무시")
-    .gte("received_at", new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString())
-    .order("received_at", { ascending: false })
-    .limit(400);
+    .select("id, student_id, service_date, kind, status, is_demo")
+    .eq("kind", "픽업")
+    .eq("status", "확정")
+    .eq("service_date", todayK)
+    .limit(200);
 
   for (const r of reqRows ?? []) {
-    if (r.is_demo) continue; // 데모 연습용 문의는 실제 대시보드 집계에서 제외.
-    const text = ((r.raw_text as string | null) ?? (r.summary as string | null) ?? "").toString();
-    const category = categorize(text);
-    // kind='픽업'은 AI가 이미 픽업으로 확정한 건이라, 본문에 픽업 키워드가 없어도 픽업으로 봅니다.
-    const treatAsPickup = r.kind === "픽업" || category === "픽업";
-    // 결석·지각은 여기서 다루지 않습니다 - attendance_entries(2-a)를 거쳐야 지운 것이 지워진
-    // 채로 남습니다. 이 칸은 픽업만 맡습니다.
-    if (!treatAsPickup) continue;
-
-    const receivedAt = new Date((r.received_at as string) ?? Date.now());
-    // 대상 날짜: 본문에 적힌 날짜(내일·금요일 등) > AI가 계산한 service_date > 받은 날.
-    const targetDate =
-      extractTargetDate(text, receivedAt) ?? ((r.service_date as string | null) ?? todayKey(receivedAt));
-    if (targetDate !== todayK) continue; // 오늘 것만
-
-    // 학생 확정: AI가 명부와 연결해둔 student_id를 최우선으로 씁니다(가장 정확). 이 부서 학생이
-    // 아니면 이 대시보드에는 올리지 않습니다. 연결이 없으면 본문을 명부와 대조해 찾습니다.
-    type R = { name: string; grade: string | null; className: string | null; display: string };
-    const resolved: R[] = [];
+    if (r.is_demo) continue;
     const sid = r.student_id as string | null;
-    if (sid && deptStudentIds.has(sid)) {
-      const s = studentById.get(sid) as { name?: string; grade?: string | null; class_name?: string | null } | undefined;
-      if (s?.name) resolved.push({ name: s.name, grade: s.grade ?? null, className: s.class_name ?? null, display: s.name });
-    }
-    if (resolved.length === 0) {
-      for (const st of matchRosterStudents(text, roster, undefined, staffNames)) {
-        const full = deptStudents.find((s) => s.name === st.name);
-        resolved.push({ name: st.name, grade: st.grade, className: (full?.class_name as string | null) ?? null, display: st.displayName });
-      }
-    }
-    if (resolved.length === 0) continue;
-
-    for (const st of resolved) pickupNamesFromReq.add(st.display);
+    if (!sid || !deptStudentIds.has(sid)) continue;
+    const s = studentById.get(sid) as { name?: string } | undefined;
+    if (s?.name) pickupNamesFromReq.add(s.name);
   }
 
   const absences = [...absenceByKey.values()].sort(
@@ -306,7 +291,27 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     const full = a.student_id ? (studentById.get(a.student_id) as { name?: string } | undefined)?.name : null;
     return full || a.student_name_raw;
   });
-  // 하원 체크표 픽업 + 문의로 들어온 픽업을 합치고, 같은 이름은 한 번만 셉니다.
+  // 차량을 타는 학생은 **체크표의 판단만** 따릅니다.
+  //
+  // 오늘 체크표에 줄이 있는 학생(탄다·픽업·결석 무엇이든 찍힌 학생)은 사람이 이미 보고
+  // 정한 상태입니다. 그 위에 학부모 연락을 덧씌우면, 되돌린 것이 다시 살아납니다.
+  const { data: todayBoardRows } = await supabase
+    .from("shuttle_boardings")
+    .select("assignment_id")
+    .eq("service_date", today);
+  const { data: boardedAsg } = (todayBoardRows ?? []).length
+    ? await supabase
+        .from("shuttle_assignments")
+        .select("student_id")
+        .in("id", (todayBoardRows ?? []).map((b) => b.assignment_id))
+    : { data: [] as { student_id: string | null }[] };
+  const decidedNames = new Set(
+    (boardedAsg ?? [])
+      .map((a) => (a.student_id ? (studentById.get(a.student_id) as { name?: string } | undefined)?.name : null))
+      .filter((n): n is string => !!n)
+  );
+  for (const n of decidedNames) if (!boardingPickups.includes(n)) pickupNamesFromReq.delete(n);
+
   const pickups = [...new Set([...boardingPickups, ...pickupNamesFromReq])].sort((a, b) => a.localeCompare(b, "ko"));
 
   // ── 학부모 문의사항 ────────────────────────────────────────────────────────
@@ -335,7 +340,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     // 대시보드가 오류 화면이 됩니다. 전부 달라고 하면 있는 것만 돌아옵니다.
     .select("*")
     .eq("kind", "문의")
-    .is("answered_at", null)
+    // 담당자: "업무 대시보드에도 안 떠."
+    //
+    // answered_at만 비었는지 보면, **기계가 토들 답글을 찾아 표시한 건까지 통째로 빠집니다.**
+    // 그건 아직 사람이 확인한 것이 아닙니다. 사람이 체크한 것(answered_via='수동')만 뺍니다.
+    .or("answered_at.is.null,answered_via.eq.답글")
     .gte("received_at", new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString())
     .order("received_at", { ascending: false })
     .limit(40);

@@ -25,7 +25,7 @@ export type TabDef = {
   children?: { label: string; labelEn?: string; href: string; match?: string[] }[];
 };
 
-type AccentKey = "blue" | "purple" | "navy" | "amber" | "teal";
+type AccentKey = "blue" | "purple" | "navy" | "amber" | "teal" | "red";
 
 // Tailwind는 문자열을 이어붙여 만든 클래스명을 빌드 시점에 알아보지 못하므로(그러면 그 색이
 // 통째로 빠집니다) 조합을 하드코딩해 둡니다.
@@ -35,7 +35,34 @@ const ACCENT: Record<AccentKey, { title: string; on: string; subOn: string }> = 
   navy: { title: "text-gia-navy", on: "border-gia-navy text-gia-navy", subOn: "bg-slate-100 text-gia-navy" },
   amber: { title: "text-amber-700", on: "border-amber-600 text-amber-700", subOn: "bg-amber-50 text-amber-700" },
   teal: { title: "text-teal-700", on: "border-teal-600 text-teal-700", subOn: "bg-teal-50 text-teal-700" },
+  red: { title: "text-red-700", on: "border-red-600 text-red-700", subOn: "bg-red-50 text-red-700" },
 };
+
+// ── 개발자 ──────────────────────────────────────────────────────────────────
+//
+// 담당자: "개발자 메뉴도 개요 메뉴와 상단 탭 형식으로 바꾸고."
+//
+// 지금까지 개발자 화면은 **한 장에 여섯 덩이**가 세로로 쌓여 있었습니다. 오류 로그는 맨
+// 아래라, 정작 오류가 났을 때 한참 스크롤해야 보였습니다. 급할 때 찾는 것을 맨 아래 두면
+// 안 됩니다. 다른 대분류와 같은 모양으로 갈랐습니다.
+const DEV_TABS: TabDef[] = [
+  { key: "overview", label: "개요", icon: "📊", href: "/dev", match: ["/dev"] },
+  { key: "diagnostics", label: "진단", icon: "🔎", href: "/dev/diagnostics", match: ["/dev/diagnostics"] },
+  { key: "errors", label: "오류", icon: "🚨", href: "/dev/errors", match: ["/dev/errors"] },
+  { key: "ai", label: "AI 과금", icon: "🤖", href: "/dev/ai", match: ["/dev/ai"] },
+  {
+    key: "data",
+    label: "데이터",
+    icon: "💾",
+    href: "/admin/backups",
+    match: ["/admin/backups", "/admin/schema-check"],
+    children: [
+      { label: "백업 · 복원", href: "/admin/backups" },
+      { label: "스키마 점검", href: "/admin/schema-check" },
+    ],
+  },
+  { key: "changelog", label: "변경 기록", icon: "📜", href: "/changelog", match: ["/changelog"] },
+];
 
 // ── 업무 ────────────────────────────────────────────────────────────────────
 const WORK_TABS: TabDef[] = [
@@ -222,6 +249,7 @@ function sectionFor(pathname: string, opts: { isTeacher: boolean; isHomeroom: bo
 
   const sections: Section[] = [
     { title: "업무", icon: "🗂️", accent: "blue", tabs: WORK_TABS },
+    { title: "개발자", icon: "🧑‍💻", accent: "red", tabs: DEV_TABS },
     { title: "학교", icon: "🏛️", accent: "purple", tabs: SCHOOL_TABS },
     { title: "셔틀", icon: "🚌", accent: "navy", tabs: SHUTTLE_TABS },
     { title: "문서 · 기록", icon: "📚", accent: "amber", tabs: DOCS_TABS },

@@ -324,6 +324,12 @@ export default function ParentInquiryPanel({
     return list;
   }, [rows, mineOnly, currentUserEmail, showDone, query, typeFilter]);
 
+  // 이미 답변돼서 목록에서 빠진 건수. 숨긴 것이지 없는 것이 아니라는 걸 알려주는 데 씁니다.
+  const doneCount = useMemo(() => {
+    const base = mineOnly ? rows.filter((r) => r.homeroom_email === currentUserEmail) : rows;
+    return base.filter((r) => !!r.answered_at).length;
+  }, [rows, mineOnly, currentUserEmail]);
+
   // 분류 탭에 붙는 건수 - 분류 필터 자체는 빼고 센 값이라, 탭을 눌러도 다른 탭 숫자가
   // 변하지 않습니다("출결 3건"이 출결 탭에 들어가면 사라지는 일이 없습니다).
   const typeCounts = useMemo(() => {
@@ -592,6 +598,15 @@ export default function ParentInquiryPanel({
             title="처리한 문의까지 함께 보기"
           >
             기록
+            {/* 숨긴 개수를 함께 보여줍니다.
+                담당자: "업무보드에 10건이 안 보여, 노유겸만 떠 있어."
+                실제로는 10건이 들어와 있었고, 선생님이 토들에서 답을 다신 9건이 자동으로
+                '처리됨'이 되어 조용히 빠진 것이었습니다. 목록이 스스로 줄어드는데 그 사실을
+                말해주지 않으면, 사람은 **수집이 안 된다고 생각합니다.** 숫자를 붙이면
+                "숨긴 것이지 없는 것이 아니다"가 한눈에 보입니다. */}
+            {!showDone && doneCount > 0 && (
+              <span className="ml-1 rounded-full bg-slate-200 px-1 text-[9px] font-bold text-slate-600">+{doneCount}</span>
+            )}
           </button>
           {!full && (
             <button type="button" onClick={() => setExpanded(true)} className="text-[10px] font-medium text-blue-400 hover:underline">

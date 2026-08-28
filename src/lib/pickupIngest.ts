@@ -51,6 +51,7 @@ const SYSTEM = `당신은 국제학교 행정실의 보조입니다. 학부모�
   "pickup_dates": [
     { "date": "YYYY-MM-DD", "time": "HH:MM 또는 null", "certain": true 또는 false, "why": "이 날짜로 본 근거를 짧게" }
   ],
+  "recurring_weekdays": ["월"|"화"|"수"|"목"|"금" 중 반복되는 요일들. 한 번뿐이면 빈 배열],
   "inquiry_type": "출결 | 수업·학습 | 생활·교우 | 건강·안전 | 차량·하원 | 행사·일정 | 납부·행정 | 기타",
   "summary": "한국어 한 줄 요약(25자 안팎). 학부모 문장을 그대로 옮기지 말고 무엇을 원하는지 적으세요.",
   "urgency": "높음 | 보통 | 낮음",
@@ -99,6 +100,13 @@ urgency 기준
 - 애매하면 confidence를 0.5 미만으로 주세요. 낮은 값은 사람이 확인하라는 뜻이지 틀렸다는
   뜻이 아닙니다. 확실하지 않은데 높은 값을 주는 것이 가장 나쁩니다.
 
+recurring_weekdays 규칙 (가장 자주 놓치는 부분)
+- "매주 금요일", "금요일마다", "앞으로 화·목은", "every Friday"처럼 **계속 반복되는** 약속이면
+  그 요일들을 적으세요. 예) "규민이는 매주 금요일 16시에 직접 픽업하겠습니다" → ["금"]
+- 이건 그날 하루가 아니라 **셔틀 배정 자체를 바꿔야 하는 일**입니다. 한 번짜리로 처리하면
+  다음 주 금요일에 아이가 차에 타버립니다.
+- "이번주 금요일", "내일", "오늘"처럼 한 번뿐이면 빈 배열로 두세요.
+
 pickup_dates 규칙 (픽업일 때만 채우고, 아니면 빈 배열)
 - 학부모가 말한 날을 **하나도 빠뜨리지 말고** 모두 적으세요. 연락 한 건이 여러 날을 가리키는
   경우가 많습니다. 예)
@@ -120,6 +128,7 @@ type AiOut = {
   pickup_time?: unknown;
   pickup_dates?: unknown;
   date_hint?: unknown;
+  recurring_weekdays?: unknown;
   inquiry_type?: unknown;
   summary?: unknown;
   urgency?: unknown;
@@ -463,6 +472,48 @@ export async function ingestPickup(
         })
         .eq("id", dup.id);
       return { skipped: "duplicate", id: dup.id, kind, isPickup: kind === "픽업" };
+    }
+  }
+
+  // ── 매주 반복되는 픽업 ────────────────────────────────────────────────────
+  //
+  // 담당자: "픽업 건도 매주 금요일이면 오늘이 금요일이라 오늘 건이야. 게다가 매주니까
+  //          오늘을 포함한 매주 금요일 셔틀을 안 타도록 수정해야 하는 거야."
+  //
+  // 정확합니다. "매주 금요일 픽업"은 그날 하루짜리 연락이 아니라 **셔틀 배정 자체를 바꾸는
+  // 일**입니다. 한 번짜리로 처리하면 다음 주 금요일에 아이가 그냥 차에 타버립니다.
+  //
+  // 그래서 지속 특이사항(shuttle_persistent_notes)으로 올립니다. 이 표는 매일 아침 크론이
+  // 읽어 그날 해당 요일이면 픽업으로 찍어줍니다 - 사람이 매주 다시 입력하지 않아도 됩니다.
+  const WD_NUM: Record<string, number> = { 월: 1, 화: 2, 수: 3, 목: 4, 금: 5 };
+  const recurDays = Array.isArray(ai.recurring_weekdays)
+    ? [...new Set((ai.recurring_weekdays as unknown[]).map((d) => WD_NUM[String(d).trim()]).filter((n): n is number => !!n))]
+    : [];
+
+  if (kind === "픽업" && recurDays.length > 0 && matched) {
+    // 이미 같은 학생·같은 요일로 올려둔 것이 있으면 또 만들지 않습니다.
+    const { data: dup } = await supabase
+      .from("shuttle_persistent_notes")
+      .select("id")
+      .eq("student_id", matched.id)
+      .eq("effect_kind", "pickup")
+      .eq("active", true)
+      .limit(1)
+      .maybeSingle();
+    if (!dup) {
+      await supabase
+        .from("shuttle_persistent_notes")
+        .insert({
+          term: "정규학기",
+          student_id: matched.id,
+          student_name: matched.name,
+          content: `매주 ${recurDays.map((n) => ["", "월", "화", "수", "목", "금"][n]).join("·")}요일 픽업 (학부모 연락으로 자동 등록)`,
+          effect_kind: "pickup",
+          effect_days: recurDays,
+          effect_from: todayKst,
+          created_by: "AI(반복 픽업)",
+        })
+        .then(undefined, () => undefined); // 표가 아직 없어도 수집 자체는 멈추지 않습니다.
     }
   }
 

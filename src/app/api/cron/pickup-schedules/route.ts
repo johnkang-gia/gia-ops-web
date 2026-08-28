@@ -123,16 +123,34 @@ export async function GET(req: Request) {
   // 특이사항 한 줄로 두고 매일 아침 "오늘이 그 기간 안인가"만 봅니다. 그래야 중간에 한 줄이
   // 빠져 조용히 넘어가는 일이 없고, 하원체크표 옆 위젯에서 "언제까지인지"가 보입니다.
   let periodApplied = 0;
+  // 끝날(effect_to)이 비어 있는 것도 함께 봅니다.
+  //
+  // 담당자: "매주니까 오늘을 포함한 매주 금요일 셔틀을 안 타도록 수정해야 하는 거야."
+  //
+  // "매주 금요일 픽업"에는 끝나는 날이 없습니다. 예전 조건(gte("effect_to", today))은
+  // 끝날이 비어 있으면 아예 걸러내서, 반복 픽업이 **한 번도 적용되지 않았습니다.**
   const { data: notes } = await supabase
     .from("shuttle_persistent_notes")
-    .select("id, student_id, student_name, effect_kind, effect_from, effect_to")
+    .select("id, student_id, student_name, effect_kind, effect_from, effect_to, effect_days")
     .eq("active", true)
     .in("effect_kind", ["pickup", "absent"])
     .lte("effect_from", today)
-    .gte("effect_to", today);
+    .or(`effect_to.is.null,effect_to.gte.${today}`);
 
-  for (const n of (notes as { id: string; student_id: string | null; student_name: string; effect_kind: string }[] | null) ?? []) {
+  // 오늘 요일(1=월 … 5=금).
+  const todayWd = new Date(`${today}T12:00:00+09:00`).getDay();
+
+  for (const n of (notes as {
+    id: string;
+    student_id: string | null;
+    student_name: string;
+    effect_kind: string;
+    effect_days: number[] | null;
+  }[] | null) ?? []) {
     if (!n.student_id) continue; // 학생이 안 붙은 것은 사람이 봐야 합니다.
+    // 요일이 정해진 것("매주 금요일")은 그 요일에만 적용합니다. 비어 있으면 기간 내내입니다.
+    const days = n.effect_days ?? [];
+    if (days.length > 0 && !days.includes(todayWd)) continue;
     if (n.effect_kind === "pickup") {
       periodApplied += (await applyPickup(supabase, n.student_id, today)) > 0 ? 1 : 0;
       continue;

@@ -73,9 +73,11 @@ function RegBadge({
   if (!row) {
     return (
       <span className="flex shrink-0 items-center gap-0.5">
-        <span className="text-[10px] text-slate-300" title="아직 등록 대상으로 잡히지 않았습니다(학생 대조 실패 등).">
-          ⬜
-        </span>
+        {/* 빈 네모(⬜)를 없앴습니다.
+            담당자: "출결내역 이름 옆에 아직도 네모칸 있어, 이거 거슬려."
+            맞는 말입니다. ⬜는 "아직 등록 대상이 아니다"라는 **없음**을 그린 것인데,
+            없는 것을 굳이 칸을 잡아 보여주면 이름이 밀리고 눈만 어지럽습니다.
+            정말 필요한 건 "내릴 수 있다"뿐이라 ✕만 남깁니다. */}
         {/* 등록은 못 해도 내릴 수는 있어야 합니다. 아닌 것이 계속 목록에 남는 게 더 나쁩니다. */}
         <button
           type="button"

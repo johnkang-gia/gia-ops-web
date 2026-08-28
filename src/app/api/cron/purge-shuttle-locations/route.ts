@@ -117,7 +117,13 @@ export async function GET(req: NextRequest) {
       purge("shuttle_safety_events", "recorded_at", cutoff90),
       purge("ai_usage_logs", "created_at", cutoff90),
       purge("error_logs", "created_at", cutoff30),
-      purge("google_chat_mirror_messages", "created_at_google", cutoff180),
+      // 구글챗 미러는 **한 달만** 둡니다(담당자 요청).
+      //
+      // 이건 우리 자료가 아니라 구글챗에 있는 대화를 복사해 온 것입니다. 원본은 구글에
+      // 그대로 남아 있으니 오래 쥐고 있을 이유가 없고, 학부모·학생 이야기가 담긴 글이라
+      // 필요 이상으로 오래 두는 것 자체가 위험입니다. 출결 판단은 이미 attendance_entries에
+      // 남으므로, 원문이 지워져도 기록은 남습니다.
+      purge("google_chat_mirror_messages", "created_at_google", cutoff30),
     ]);
 
     return NextResponse.json({

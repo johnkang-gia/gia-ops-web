@@ -61,7 +61,13 @@ export default function GoogleChatMirrorPanel({
     () =>
       messages
         .filter((m) => m.source_key === sourceKey)
-        .sort((a, b) => a.created_at_google.localeCompare(b.created_at_google)),
+        // 새 메시지가 맨 위로.
+        //
+        // 담당자: "출결알림의 경우 새로운 메시지가 위로 올라오도록."
+        // 채팅창은 보통 아래로 쌓이지만, 이 칸은 대화를 나누는 곳이 아니라 **오늘 처리할 것을
+        // 훑는 곳**입니다. 아침에 열자마자 방금 온 결석 통보가 보여야 하는데, 아래로 쌓이면
+        // 매번 끝까지 스크롤해야 합니다.
+        .sort((a, b) => b.created_at_google.localeCompare(a.created_at_google)),
     [messages, sourceKey]
   );
   const [registeringId, setRegisteringId] = useState<string | null>(null);

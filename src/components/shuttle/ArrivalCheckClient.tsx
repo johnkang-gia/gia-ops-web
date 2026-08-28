@@ -45,7 +45,10 @@ function gpsInfo(r: ArrivalRoute): { live: boolean; label: string; tone: "live" 
   return { live: false, label: "GPS 끊김", tone: "stale" };
 }
 
-type ArrivalData = { label: string; term: string; routes: ArrivalRoute[] };
+/** 오늘 행선지를 아직 안 물어본 학생의 갈 수 있는 노선 한 칸. */
+type PendingChoice = { assignmentId: string; studentName: string; group: string; routeId: string; routeNo: string };
+
+type ArrivalData = { label: string; term: string; routes: ArrivalRoute[]; pendingChoice?: PendingChoice[] };
 
 function natCompare(a: string, b: string) {
   return a.localeCompare(b, "ko", { numeric: true });
@@ -196,6 +199,41 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
     return [...(data?.routes ?? [])].sort((a, b) => natCompare(a.routeNo, b.routeNo));
   }, [data]);
 
+  // 행선지를 아직 안 물어본 학생을 이름별로 묶습니다. 한 아이가 갈 수 있는 노선이 여럿이라
+  // 이름 하나에 버튼이 여러 개 붙습니다.
+  const choiceByStudent = useMemo(() => {
+    const m = new Map<string, PendingChoice[]>();
+    for (const c of data?.pendingChoice ?? []) {
+      const list = m.get(c.studentName) ?? [];
+      list.push(c);
+      m.set(c.studentName, list);
+    }
+    for (const list of m.values()) list.sort((a, b) => natCompare(a.routeNo, b.routeNo));
+    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0], "ko"));
+  }, [data]);
+
+  async function choose(assignmentId: string, mode: "ride" | "skip") {
+    setBusyRoute(assignmentId);
+    try {
+      const res = await fetch(`/api/shuttle/arrival/${token}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "choose", assignmentId, mode }),
+      });
+      if (!res.ok) {
+        const j = (await res.json().catch(() => null)) as { error?: string } | null;
+        setErrorMsg(j?.error ?? "저장하지 못했습니다.");
+        return;
+      }
+      // 폴링을 기다리지 않고 바로 목록에서 뺍니다. 물어본 직후에 화면이 안 바뀌면
+      // 눌렸는지 확신할 수 없어 한 번 더 누르게 됩니다.
+      const fresh = await fetch(`/api/shuttle/arrival/${token}`);
+      if (fresh.ok) setData((await fresh.json()) as ArrivalData);
+    } finally {
+      setBusyRoute(null);
+    }
+  }
+
   if (errorMsg && !data) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50 p-6 text-center">
@@ -236,8 +274,47 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
         </div>
       </div>
 
+      {/* 담당자: "애들은 둘 다 비워두고 행선지 물어보고 결정하면 그때 둘 중 하나로 배정."
+          아이에게 직접 물어보는 사람이 이 화면을 들고 있습니다. 물어본 자리에서 바로
+          누르지 못하면 나중에 옮겨 적어야 하고, 옮겨 적는 일은 언젠가 빠집니다.
+          정하기 전까지 어느 호차 명단에도 안 뜨므로, 여기서 사라지지 않고 계속 남습니다. */}
+      {choiceByStudent.length > 0 && (
+        <div className="mb-2 rounded-xl border-2 border-amber-300 bg-amber-50 p-2">
+          <p className="mb-1.5 text-xs font-black text-amber-800">
+            ⚠ 행선지 확인 필요 · {choiceByStudent.length}명
+          </p>
+          <p className="mb-2 text-[10px] leading-tight text-amber-700">
+            어디 가는지 물어보고 눌러주세요. 누르기 전까지 어느 호차 명단에도 안 나옵니다.
+          </p>
+          <div className="space-y-1.5">
+            {choiceByStudent.map(([name, opts]) => (
+              <div key={name} className="flex flex-wrap items-center gap-1.5 rounded-lg bg-white p-1.5">
+                <span className="min-w-14 text-sm font-black text-slate-800">{name}</span>
+                {opts.map((o) => (
+                  <button
+                    key={o.assignmentId}
+                    onClick={() => choose(o.assignmentId, "ride")}
+                    disabled={busyRoute === o.assignmentId}
+                    className="rounded-lg bg-blue-600 px-2.5 py-1.5 text-xs font-bold text-white active:scale-95 disabled:opacity-40"
+                  >
+                    {o.routeNo}호
+                  </button>
+                ))}
+                <button
+                  onClick={() => choose(opts[0].assignmentId, "skip")}
+                  disabled={busyRoute === opts[0].assignmentId}
+                  className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-bold text-slate-500 active:scale-95 disabled:opacity-40"
+                >
+                  안 탐
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {routes.length === 0 ? (
-        <p className="py-10 text-center text-sm text-slate-400">노선이 없습니다.</p>
+        <p className="py-10 text-center text-sm text-slate-400">오늘 탈 학생이 있는 노선이 없습니다.</p>
       ) : (
         <div className="grid grid-cols-4 gap-1.5">
           {routes.map((r) => {

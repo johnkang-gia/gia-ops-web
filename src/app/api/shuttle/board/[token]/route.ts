@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isUndecidedChoice } from "@/lib/shuttleChoice";
 import { createClient } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
@@ -56,9 +57,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
   const { data: assignments } = stopIds.length
     ? await supabase
         .from("shuttle_assignments")
-        .select("id, stop_id, student_name_raw, weekdays, override_route_id")
+        .select("id, stop_id, student_name_raw, weekdays, override_route_id, choice_group")
         .in("stop_id", stopIds)
-    : { data: [] as { id: string; stop_id: string; student_name_raw: string; weekdays: number[]; override_route_id: string | null }[] };
+    : { data: [] as { id: string; stop_id: string; student_name_raw: string; weekdays: number[]; override_route_id: string | null; choice_group: string | null }[] };
   const relevant = (assignments ?? []).filter((a) => (a.weekdays as number[]).includes(todayWeekday));
   const assignmentIds = relevant.map((a) => a.id);
 
@@ -87,6 +88,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
     const stop = stopById.get(a.stop_id);
     if (!stop) continue;
     const boarding = boardingByAssignment.get(a.id);
+    // 행선지를 그날 정하는 학생은, 정하기 전까지 어느 명단에도 넣지 않습니다.
+    if (isUndecidedChoice(a, boarding)) continue;
     const permanentRouteId = a.override_route_id && routeIdSet.has(a.override_route_id) ? a.override_route_id : stop.route_id;
     const targetRouteId = boarding?.override_route_id && routeIdSet.has(boarding.override_route_id) ? boarding.override_route_id : permanentRouteId;
     const list = rosterByRoute[targetRouteId] ?? (rosterByRoute[targetRouteId] = []);

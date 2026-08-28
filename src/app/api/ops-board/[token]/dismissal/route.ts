@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isUndecidedChoice } from "@/lib/shuttleChoice";
 import { createClient } from "@supabase/supabase-js";
 import { kstParts } from "@/lib/shuttleTracking";
 
@@ -129,8 +130,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
   // 하원 체크표에서 오늘 하루만 다른 노선으로 옮긴 학생까지 반영합니다(도착체크 API와 같은 규칙).
   const stopIds = (stops ?? []).map((s) => s.id);
   const { data: assignments } = stopIds.length
-    ? await supabase.from("shuttle_assignments").select("id, stop_id, student_name_raw, weekdays, override_route_id").in("stop_id", stopIds)
-    : { data: [] as { id: string; stop_id: string; student_name_raw: string; weekdays: number[]; override_route_id: string | null }[] };
+    ? await supabase.from("shuttle_assignments").select("id, stop_id, student_name_raw, weekdays, override_route_id, choice_group").in("stop_id", stopIds)
+    : { data: [] as { id: string; stop_id: string; student_name_raw: string; weekdays: number[]; override_route_id: string | null; choice_group: string | null }[] };
   const relevant = (assignments ?? []).filter((a) => (a.weekdays as number[]).includes(weekday));
   const assignmentIds = relevant.map((a) => a.id);
 
@@ -151,6 +152,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
     const baseRouteId = stopRouteById.get(a.stop_id);
     if (!baseRouteId) continue;
     const b = boardingByAssignment.get(a.id);
+    // 행선지를 그날 정하는 학생은, 정하기 전까지 어느 명단에도 넣지 않습니다.
+    if (isUndecidedChoice(a, b)) continue;
     const permanent = a.override_route_id && routeIdSet.has(a.override_route_id) ? a.override_route_id : baseRouteId;
     const target = b?.override_route_id && routeIdSet.has(b.override_route_id) ? b.override_route_id : permanent;
     const list = ridersByRoute.get(target) ?? [];
@@ -180,6 +183,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
   const alightingByStop = new Map<string, string[]>();
   for (const a of relevant) {
     const b = boardingByAssignment.get(a.id);
+    if (isUndecidedChoice(a, b)) continue;
     const st = b?.status ?? "예정";
     if (st === "픽업" || st === "결석") continue;
     const list = alightingByStop.get(a.stop_id) ?? [];

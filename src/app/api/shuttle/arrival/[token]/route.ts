@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { kstParts } from "@/lib/shuttleTracking";
+import { isUndecidedChoice } from "@/lib/shuttleChoice";
 
 export const dynamic = "force-dynamic";
 
@@ -46,8 +48,12 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
     return NextResponse.json({ label: link.label, term: link.term, routes: [] });
   }
 
-  const today = new Date().toISOString().slice(0, 10);
-  const todayWeekday = new Date().getDay();
+  // 날짜·요일은 **한국 기준**이어야 합니다.
+  //
+  // toISOString()은 UTC라 한국 아침 9시 전에는 어제 날짜가 나옵니다. getDay()도 서버
+  // 시간대(Vercel=UTC)를 따라 요일이 하루 밀립니다. 그러면 아침에 이 화면을 열었을 때
+  // **어제 명단이 뜨거나, 오늘 안 타는 아이가 명단에 뜹니다.**
+  const { iso: today, weekday: todayWeekday } = kstParts(new Date());
 
   // stops와 run_events는 서로 무관하게 routeIds만 있으면 바로 조회할 수 있어서 병렬로
   // 묶었습니다(요청: "실시간 반영 속도 더 개선") - 이 화면은 3초마다 폴링하는 화면이라, 매
@@ -67,9 +73,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
   const { data: assignments } = stopIds.length
     ? await supabase
         .from("shuttle_assignments")
-        .select("id, stop_id, student_name_raw, weekdays, override_route_id")
+        .select("id, stop_id, student_name_raw, weekdays, override_route_id, choice_group")
         .in("stop_id", stopIds)
-    : { data: [] as { id: string; stop_id: string; student_name_raw: string; weekdays: number[]; override_route_id: string | null }[] };
+    : { data: [] as { id: string; stop_id: string; student_name_raw: string; weekdays: number[]; override_route_id: string | null; choice_group: string | null }[] };
   const relevant = (assignments ?? []).filter((a) => (a.weekdays as number[]).includes(todayWeekday));
   const assignmentIds = relevant.map((a) => a.id);
 
@@ -89,11 +95,24 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
   const boardingByAssignment = new Map((boardings ?? []).map((b) => [b.assignment_id, b]));
   const routeIdSet = new Set(routeIds);
 
+  // 행선지를 그날 정하는 학생. 정하기 전에는 어느 노선 명단에도 넣지 않고, 따로 모아
+  // 화면 맨 위에 "아직 안 물어봤다"로 띄웁니다.
+  const pendingChoice: { assignmentId: string; studentName: string; group: string; routeId: string }[] = [];
+
   const rosterByRoute: Record<string, { studentName: string; status: string }[]> = {};
   for (const a of relevant) {
     const stop = stopById.get(a.stop_id);
     if (!stop) continue;
     const boarding = boardingByAssignment.get(a.id);
+    if (isUndecidedChoice(a, boarding)) {
+      pendingChoice.push({
+        assignmentId: a.id,
+        studentName: a.student_name_raw,
+        group: a.choice_group as string,
+        routeId: (a.override_route_id && routeIdSet.has(a.override_route_id) ? a.override_route_id : stop.route_id) as string,
+      });
+      continue;
+    }
     const permanentRouteId = a.override_route_id && routeIdSet.has(a.override_route_id) ? a.override_route_id : stop.route_id;
     const targetRouteId = boarding?.override_route_id && routeIdSet.has(boarding.override_route_id) ? boarding.override_route_id : permanentRouteId;
     (rosterByRoute[targetRouteId] ??= []).push({ studentName: a.student_name_raw, status: boarding?.status ?? "예정" });
@@ -120,7 +139,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
     if (!prev || (cur && cur > prev)) gpsByRoute.set(d.route_id as string, cur);
   }
 
-  const payload = (routes ?? []).map((r) => ({
+  // 담당자: "차량 도착출발 체크에서 애들 배정되지 않은 호차는 없애고."
+  //
+  // 맞습니다. 아무도 안 타는 차의 [도착]·[출발] 버튼은 누를 일이 없는데 자리만 차지하고,
+  // 급할 때 옆 칸을 잘못 누르게 만듭니다. 오늘 탈 학생이 하나도 없는 노선은 뺍니다.
+  const payload = (routes ?? [])
+    .filter((r) => (rosterByRoute[r.id] ?? []).length > 0)
+    .map((r) => ({
     routeId: r.id,
     routeNo: r.route_no,
     name: r.name,
@@ -134,7 +159,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
     hasDevice: gpsByRoute.has(r.id),
   }));
 
-  return NextResponse.json({ label: link.label, term: link.term, routes: payload });
+  // 노선 번호를 붙여 화면에서 "학원(4-2호)" 처럼 보여줄 수 있게 합니다.
+  const routeNoById = new Map((routes ?? []).map((r) => [r.id, r.route_no as string]));
+  const choices = pendingChoice.map((p) => ({ ...p, routeNo: routeNoById.get(p.routeId) ?? "?" }));
+
+  return NextResponse.json({ label: link.label, term: link.term, routes: payload, pendingChoice: choices });
 }
 
 export async function POST(req: Request, { params }: { params: Promise<{ token: string }> }) {
@@ -148,7 +177,56 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
   const body = await req.json().catch(() => null);
   const routeId = body?.routeId as string | undefined;
   const action = body?.action as string | undefined;
-  const today = new Date().toISOString().slice(0, 10);
+  // 여기도 한국 날짜여야 합니다. 위(GET)와 다른 날짜를 쓰면 눌러도 화면이 안 바뀝니다.
+  const { iso: today } = kstParts(new Date());
+
+  // ── 행선지 선택 ──────────────────────────────────────────────────────────
+  //
+  // 담당자: "모바일로 볼 수 있었던 교직원 도착체크 단독 링크 부분에서 체크할 수 있도록
+  //          만들어줘."
+  //
+  // 아이에게 직접 물어보는 사람이 이 화면을 들고 있습니다. 물어본 그 자리에서 누르지 못하면
+  // 나중에 옮겨 적어야 하고, 옮겨 적는 일은 반드시 언젠가 빠집니다.
+  //
+  // 고른 배정에만 오늘치 탑승 줄을 만듭니다. 안 고른 쪽은 줄이 없으니 계속 숨어 있습니다.
+  if (action === "choose") {
+    const assignmentId = body?.assignmentId as string | undefined;
+    const mode = (body?.mode as string | undefined) ?? "ride"; // ride | skip | reset
+    if (!assignmentId) return NextResponse.json({ error: "assignmentId가 필요합니다." }, { status: 400 });
+
+    const { data: asg } = await supabase
+      .from("shuttle_assignments")
+      .select("id, choice_group")
+      .eq("id", assignmentId)
+      .maybeSingle();
+    if (!asg?.choice_group) {
+      return NextResponse.json({ error: "행선지를 고르는 학생이 아닙니다." }, { status: 400 });
+    }
+
+    // 같은 묶음의 다른 배정에 오늘 줄이 남아 있으면 지웁니다. 안 그러면 마음을 바꿨을 때
+    // **두 노선에 동시에 뜹니다** - 지금 고치려는 바로 그 상황입니다.
+    const { data: siblings } = await supabase
+      .from("shuttle_assignments")
+      .select("id")
+      .eq("choice_group", asg.choice_group);
+    const sibIds = (siblings ?? []).map((x) => x.id as string);
+    if (sibIds.length > 0) {
+      await supabase.from("shuttle_boardings").delete().eq("service_date", today).in("assignment_id", sibIds);
+    }
+
+    if (mode === "reset") return NextResponse.json({ ok: true, cleared: true });
+
+    const { error: insErr } = await supabase.from("shuttle_boardings").insert({
+      service_date: today,
+      assignment_id: assignmentId,
+      // 안 타는 날은 결석입니다. 셔틀을 안 탄다는 뜻이지 학교를 빠진다는 뜻이 아니라서
+      // updated_by에 이유를 남깁니다.
+      status: mode === "skip" ? "결석" : "예정",
+      updated_by: mode === "skip" ? "행선지 확인(오늘 안 탐)" : "행선지 확인",
+    });
+    if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
 
   // 요청: "출발함 상태에서 한번 더 누르면 다시 원래상태로 돌아올 수 있도록" - 매일 반복되는
   // 체크라 실수해도 바로 되돌릴 수 있어야 합니다(정규학기 실시간 셔틀 화면의 "취소" 버튼과

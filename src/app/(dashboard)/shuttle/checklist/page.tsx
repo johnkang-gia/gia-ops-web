@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { isUndecidedChoice } from "@/lib/shuttleChoice";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import Link from "next/link";
@@ -78,6 +79,8 @@ export default async function ShuttleChecklistPage({
     weekdays: number[];
     override_route_id: string | null;
     note: string | null;
+    /** 행선지를 그날 정하는 학생 묶음. 대부분의 학생은 null입니다. */
+    choice_group: string | null;
   }[] = [];
   if (routeIds.length > 0) {
     const stopsRes = await supabase.from("shuttle_stops").select("id, route_id, seq").in("route_id", routeIds).order("seq");
@@ -86,7 +89,7 @@ export default async function ShuttleChecklistPage({
     if (stopIds.length > 0) {
       const assignRes = await supabase
         .from("shuttle_assignments_basic")
-        .select("id, stop_id, student_id, student_name_raw, weekdays, override_route_id, note")
+        .select("id, stop_id, student_id, student_name_raw, weekdays, override_route_id, note, choice_group")
         .in("stop_id", stopIds);
       assignmentsData = assignRes.data ?? [];
     }
@@ -208,6 +211,11 @@ export default async function ShuttleChecklistPage({
       const stop = stopById.get(a.stop_id);
       if (!stop) return null;
       const boarding = boardingByAssignment.get(a.id);
+      // 행선지를 그날 물어보고 정하는 학생(이준서·이준우)은, 정하기 전까지 체크표에도
+      // 안 나옵니다. 도착체크 화면에서 물어보고 누르면 그때 해당 호차에 나타납니다.
+      // 한 화면에서만 숨기면 다른 화면에서 타는 것으로 보여, 지금 중복 배정과 같은
+      // 위험이 됩니다.
+      if (isUndecidedChoice(a, boarding)) return null;
       const ridingToday = a.weekdays.includes(todayWeekday);
       let status: ChecklistItem["status"] = (boarding?.status as ChecklistItem["status"]) ?? "예정";
       // 오늘 타는 학생 & 아직 사람이 안 누른 경우에만 토들 픽업/결석을 자동 반영.

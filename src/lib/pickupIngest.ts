@@ -409,7 +409,19 @@ export async function ingestPickup(
         source_ref: input.sourceRef,
         channel_label: input.channelLabel ?? null,
         received_at: receivedAt.toISOString(),
+        // 본문은 남기지 않습니다(학부모 대화를 쌓아두지 않겠다는 원칙 그대로).
         raw_text: null,
+        // 다만 **한 줄 요약과 판단 근거는 남깁니다.**
+        //
+        // 담당자: "토들 긁어오는데 업무보드, 업무 대시보드에 반영이 안 돼."
+        // 실측해보니 24시간에 들어온 31건 중 9건이 '기타'로 조용히 버려지고 있었고,
+        // 본문도 요약도 없어서 **무엇을 왜 버렸는지 확인할 방법이 아예 없었습니다.**
+        // 진짜 인사말이었는지 잘못 버린 것인지 사람이 검증할 수 없다는 뜻입니다.
+        //
+        // 요약 한 줄은 원문이 아니라 "무엇에 관한 글이었나"라서 쌓아두는 부담이 훨씬 작고,
+        // 대신 잘못 버린 것을 찾아낼 수 있게 됩니다. 안 남기는 것보다 이쪽이 낫습니다.
+        summary: typeof ai.summary === "string" ? ai.summary.slice(0, 120) : null,
+        ai_note: typeof ai.note === "string" ? ai.note.slice(0, 200) : null,
         ai_is_pickup: false,
         ai_confidence: confidence,
         status: "무시",

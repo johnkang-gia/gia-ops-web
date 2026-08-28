@@ -12,12 +12,16 @@ import { haversineMeters } from "@/lib/shuttleRecommend";
 import { ensureCampusLocation } from "@/lib/shuttleCampus";
 import { kstParts } from "@/lib/shuttleTracking";
 
-/** 'HH:MM[:SS]' → 자정부터의 분. 못 읽으면 null. */
-function timeToMinutes(t: string | null | undefined): number | null {
-  const m = /^(\d{1,2}):(\d{2})/.exec((t ?? "").trim());
-  if (!m) return null;
-  return Number(m[1]) * 60 + Number(m[2]);
-}
+// 하원 판정 기준 시각 - 오후 4시(한국).
+//
+// 담당자: "16시가 정확히 기준시간이니 16시에 측정해서 결과값으로 가리자. 16시에 학교
+//          근처에 있다면 도착으로 체크, (신호는 15시 30분부터 받지만 도착·미도착 표시는
+//          안 함) 16시 이후 멀어지면 그걸 출발로 하자."
+//
+// 노선별 출발 예정시각으로 각각 다르게 재던 것을 이 한 줄로 바꿉니다. 규칙이 하나면
+// 화면에서 "왜 저 차만 다르지"가 없고, 예정시각이 비어 있거나 틀린 노선에서도 똑같이
+// 동작합니다. 신호는 15시 30분부터 계속 받되, **판정만 4시부터** 합니다.
+const DISMISSAL_CUTOFF_MIN = 16 * 60;
 
 
 // ── arrive ──────────────────────────────────────────
@@ -30,12 +34,7 @@ const ARRIVE_RADIUS_M = 100;
 const ARRIVE_MIN_DWELL_MS = 60 * 1000;
 // 반경 안에 있었다고 인정할 최소 핑 개수(한 점이 튀어서 오탐하는 것을 막습니다).
 const ARRIVE_MIN_SAMPLES = 2;
-// 출발 예정시각보다 이만큼 앞서기 전에는 도착으로 찍지 않습니다.
-//
-// 기사님이 한 시간 일찍 와서 차를 대고 계실 수 있습니다. 그걸 "도착함"으로 띄우면
-// **안내보드를 보고 아이들이 그때 나가버립니다.** 차는 아직 태울 준비가 안 됐는데요.
-// 하원 시각이 가까워졌을 때의 도착만 하원 도착으로 봅니다.
-const ARRIVE_EARLIEST_BEFORE_MIN = 40;
+
 
 /**
  * @param onlyRouteId 한 노선만 볼 때. GPS 핑이 들어온 그 순간 그 차만 판단하려고 씁니다.
@@ -45,7 +44,14 @@ export async function runAutoArrivePass(
   onlyRouteId?: string
 ): Promise<{ arrived: number }> {
   const now = Date.now();
-  const today = kstParts(new Date(now)).iso;
+  const { iso: today, hour, minute } = kstParts(new Date(now));
+
+  // 4시 전에는 도착·미도착을 아예 표시하지 않습니다.
+  //
+  // 기사님이 일찍 와서 차를 대는 것은 하원과 무관한 일입니다. 그걸 "도착함"으로 띄우면
+  // **안내보드를 보고 아이들이 그때 나가버립니다.** 신호는 계속 받아 지도에 그리되,
+  // 판정은 4시부터 시작합니다.
+  if (hour * 60 + minute < DISMISSAL_CUTOFF_MIN) return { arrived: 0 };
 
   // 오늘 이미 도착/출발이 찍힌 노선은 건드리지 않습니다.
   const { data: events } = await supabase
@@ -64,17 +70,6 @@ export async function runAutoArrivePass(
   const campus = await ensureCampusLocation(supabase);
   if (!campus) return { arrived: 0 };
 
-  // 노선별 출발 예정시각. 너무 이른 도착을 걸러내는 데 씁니다.
-  const { data: routeRows } = await supabase
-    .from("shuttle_routes")
-    .select("id, depart_time")
-    .in("id", targetRouteIds);
-  const departMinByRoute = new Map<string, number | null>(
-    (routeRows ?? []).map((r) => [r.id as string, timeToMinutes(r.depart_time as string | null)])
-  );
-  const { hour: nowHour, minute: nowMinute } = kstParts(new Date(now));
-  const nowMinOfDay = nowHour * 60 + nowMinute;
-
   const pingCutoff = new Date(now - PING_FRESHNESS_MS).toISOString();
   const { data: pings } = await supabase
     .from("shuttle_pilot_pings")
@@ -92,10 +87,6 @@ export async function runAutoArrivePass(
 
   let arrived = 0;
   for (const routeId of targetRouteIds) {
-    // 하원 시각과 한참 떨어진 시간에 학교에 있는 것은 "하원 도착"이 아닙니다.
-    const departMin = departMinByRoute.get(routeId) ?? null;
-    if (departMin != null && nowMinOfDay < departMin - ARRIVE_EARLIEST_BEFORE_MIN) continue;
-
     const list = byRoute.get(routeId);
     if (!list || list.length < ARRIVE_MIN_SAMPLES) continue;
 
@@ -137,12 +128,6 @@ const MIN_DWELL_MS = 90 * 1000;
 // 골목 한 바퀴 돌면 그냥 넘습니다. 250m로 넓혔습니다.
 const DEPART_RADIUS_M = 250;
 
-// 출발 예정시각보다 이만큼 앞서기 전에는 자동 출발을 찍지 않습니다.
-//
-// 거리만으로는 절대 못 가립니다. 차를 옮기든 떠나든 GPS에는 똑같이 "멀어졌다"로 보입니다.
-// 가르는 것은 거리가 아니라 **시각**입니다 - 하원 출발은 아이들을 태우고 가는 일이라
-// 예정시각 언저리에만 일어납니다. 3시에 멀어진 것은 무슨 일이든 하원 출발이 아닙니다.
-const DEPART_EARLIEST_BEFORE_MIN = 15;
 
 // GPS 핑이 아예 없는 노선을 위한 시간 기반 안전장치(분).
 const TIME_FALLBACK_MIN = 20;
@@ -154,8 +139,12 @@ export async function runAutoDepartPass(
   // 날짜는 **한국 기준**이어야 합니다. 도착(runAutoArrivePass)은 kstParts로 한국 날짜를
   // 쓰는데 여기만 toISOString()(UTC)이었습니다. 두 함수가 서로 다른 날을 보면, 도착은
   // 찍혔는데 출발은 "오늘 도착한 차가 없다"며 영영 안 찍힙니다.
-  const today = kstParts(new Date()).iso;
   const now = Date.now();
+  const { iso: today, hour, minute } = kstParts(new Date(now));
+
+  // 도착과 같은 기준. 4시 전에 멀어진 것은 무슨 일이든 하원 출발이 아닙니다
+  // (일찍 와서 잠깐 댔다가 차 자리를 옮기는 중).
+  if (hour * 60 + minute < DISMISSAL_CUTOFF_MIN) return { gpsDeparted: 0, timeoutDeparted: 0 };
 
   const { data: events } = await supabase
     .from("shuttle_run_events")
@@ -199,44 +188,12 @@ export async function runAutoDepartPass(
   let gpsDeparted = 0;
   let timeoutDeparted = 0;
 
-  // 노선별 출발 예정시각. 이걸 봐야 "일찍 와서 차를 옮긴 것"과 "하원 출발"을 가릅니다.
-  const { data: routeRows } = await supabase
-    .from("shuttle_routes")
-    .select("id, depart_time")
-    .in("id", pendingRouteIds);
-  const departMinByRoute = new Map<string, number | null>(
-    (routeRows ?? []).map((r) => [r.id as string, timeToMinutes(r.depart_time as string | null)])
-  );
-
-  const { hour: nowHour, minute: nowMinute } = kstParts(new Date(now));
-  const nowMin = nowHour * 60 + nowMinute;
-
   for (const routeId of pendingRouteIds) {
     const ping = latestPingByRoute.get(routeId);
 
     if (campus && ping && (ping.accuracy == null || ping.accuracy <= DEPART_RADIUS_M)) {
       const distance = haversineMeters(campus.lat, campus.lng, ping.lat, ping.lng);
       if (distance >= DEPART_RADIUS_M) {
-        const departMin = departMinByRoute.get(routeId) ?? null;
-        const tooEarly = departMin != null && nowMin < departMin - DEPART_EARLIEST_BEFORE_MIN;
-
-        if (tooEarly) {
-          // 아직 하원 시각이 아닌데 학교를 벗어났습니다. 출발이 아니라 **아직 안 온 것**입니다
-          // (일찍 와서 잠깐 댔다가 자리를 옮기는 중).
-          //
-          // 그래서 출발로 찍지 않고, 앞서 찍힌 '현장도착'을 **되돌립니다.** 그대로 두면
-          // 안내보드에 차가 없는데 "도착함"으로 계속 떠 있고, 아이들이 나가버립니다.
-          // 다시 학교로 들어오면 도착이 새로 찍힙니다.
-          await supabase
-            .from("shuttle_run_events")
-            .delete()
-            .eq("service_date", today)
-            .eq("route_id", routeId)
-            .eq("event", "현장도착")
-            .eq("created_by", "GPS 자동감지"); // 사람이 누른 도착은 건드리지 않습니다.
-          continue;
-        }
-
         const { error } = await supabase
           .from("shuttle_run_events")
           .insert({ service_date: today, route_id: routeId, event: "출발", created_by: "GPS 자동감지" });

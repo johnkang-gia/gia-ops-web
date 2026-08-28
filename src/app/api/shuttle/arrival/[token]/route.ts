@@ -73,9 +73,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
   const { data: assignments } = stopIds.length
     ? await supabase
         .from("shuttle_assignments")
-        .select("id, stop_id, student_name_raw, weekdays, override_route_id, choice_group")
+        .select("id, stop_id, student_name_raw, weekdays, override_route_id, choice_group, choice_label")
         .in("stop_id", stopIds)
-    : { data: [] as { id: string; stop_id: string; student_name_raw: string; weekdays: number[]; override_route_id: string | null; choice_group: string | null }[] };
+    : { data: [] as { id: string; stop_id: string; student_name_raw: string; weekdays: number[]; override_route_id: string | null; choice_group: string | null; choice_label: string | null }[] };
   const relevant = (assignments ?? []).filter((a) => (a.weekdays as number[]).includes(todayWeekday));
   const assignmentIds = relevant.map((a) => a.id);
 
@@ -97,7 +97,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
 
   // 행선지를 그날 정하는 학생. 정하기 전에는 어느 노선 명단에도 넣지 않고, 따로 모아
   // 화면 맨 위에 "아직 안 물어봤다"로 띄웁니다.
-  const pendingChoice: { assignmentId: string; studentName: string; group: string; routeId: string; stopAddress: string | null }[] = [];
+  const pendingChoice: { assignmentId: string; studentName: string; group: string; routeId: string; stopAddress: string | null; label: string | null }[] = [];
 
   const rosterByRoute: Record<string, { studentName: string; status: string }[]> = {};
   for (const a of relevant) {
@@ -113,6 +113,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
         // 어디서 내리는지 함께 보냅니다. 호차 번호만 보고 누르면, 형제가 서로 다른 곳에
         // 내리게 잘못 눌러도 아무도 모릅니다.
         stopAddress: ((stop as { address?: string | null }).address ?? null),
+        // 아이에게 묻는 말 그대로("학원" / "집·기업은행"). 비어 있으면 호차 번호를 씁니다.
+        label: (a.choice_label as string | null) ?? null,
       });
       continue;
     }

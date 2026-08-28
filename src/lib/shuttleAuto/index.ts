@@ -23,6 +23,18 @@ import { kstParts } from "@/lib/shuttleTracking";
 // 동작합니다. 신호는 15시 30분부터 계속 받되, **판정만 4시부터** 합니다.
 const DISMISSAL_CUTOFF_MIN = 16 * 60;
 
+// 떠났던 차가 다시 학교로 돌아온 것을 잡는 반경.
+//
+// 담당자: "하원 시간이라도 차가 너무 막혀서 한 바퀴 돌고 오는 일도 있어. 갔던 차량이 다시
+//          접근(이때는 반경을 좀 더 줄임) 다시 근처로 오면 다시 도착으로 표시해야 할 것 같아."
+//
+// 반경을 줄이는 게 맞습니다. 처음 도착은 "학교 근처에 왔다"만 알면 되지만, 돌아옴은
+// **정말 학교 앞에 다시 섰는지**를 봐야 합니다. 근처를 스쳐 지나가는 것까지 도착으로
+// 되돌리면 안내보드가 켜졌다 꺼졌다 합니다.
+const RETURN_RADIUS_M = 60;
+// 돌아왔다고 인정할 최소 핑 개수. 한 점이 튀어서 되살아나는 것을 막습니다.
+const RETURN_MIN_SAMPLES = 2;
+
 
 // ── arrive ──────────────────────────────────────────
 
@@ -56,16 +68,30 @@ export async function runAutoArrivePass(
   // 오늘 이미 도착/출발이 찍힌 노선은 건드리지 않습니다.
   const { data: events } = await supabase
     .from("shuttle_run_events")
-    .select("route_id, event")
+    .select("route_id, event, created_by")
     .eq("service_date", today)
     .in("event", ["현장도착", "출발"]);
   const handledRoutes = new Set((events ?? []).map((e) => e.route_id));
 
+  // 떠난 것으로 표시된 노선은 따로 모읍니다. 이 차들은 "다시 왔는지"를 봐야 합니다.
+  // 사람이 직접 누른 출발은 되돌리지 않습니다 - 기계가 사람 판단을 뒤집으면 안 됩니다.
+  const departedAuto = new Set(
+    (events ?? [])
+      .filter((e) => e.event === "출발" && (e.created_by === "GPS 자동감지" || e.created_by === "시간초과 자동정리"))
+      .map((e) => e.route_id as string)
+  );
+  const arrivedRoutes = new Set(
+    (events ?? []).filter((e) => e.event === "현장도착").map((e) => e.route_id as string)
+  );
+
   // 추적 기기가 켜져 있는 노선만 대상으로 합니다.
   const deviceQuery = supabase.from("shuttle_tracker_devices").select("route_id").eq("enabled", true);
   const { data: devices } = onlyRouteId ? await deviceQuery.eq("route_id", onlyRouteId) : await deviceQuery;
-  const targetRouteIds = [...new Set((devices ?? []).map((d) => d.route_id))].filter((id) => !handledRoutes.has(id));
-  if (targetRouteIds.length === 0) return { arrived: 0 };
+  const enabledRouteIds = [...new Set((devices ?? []).map((d) => d.route_id as string))];
+  const targetRouteIds = enabledRouteIds.filter((id) => !handledRoutes.has(id));
+  // 이미 도착도 찍히고 출발도 (자동으로) 찍힌 차 = 돌아왔는지 볼 대상.
+  const returnRouteIds = enabledRouteIds.filter((id) => departedAuto.has(id) && arrivedRoutes.has(id));
+  if (targetRouteIds.length === 0 && returnRouteIds.length === 0) return { arrived: 0 };
 
   const campus = await ensureCampusLocation(supabase);
   if (!campus) return { arrived: 0 };
@@ -74,7 +100,7 @@ export async function runAutoArrivePass(
   const { data: pings } = await supabase
     .from("shuttle_pilot_pings")
     .select("route_id, lat, lng, accuracy, recorded_at")
-    .in("route_id", targetRouteIds)
+    .in("route_id", [...new Set([...targetRouteIds, ...returnRouteIds])])
     .gte("recorded_at", pingCutoff)
     .order("recorded_at", { ascending: true });
 
@@ -107,6 +133,34 @@ export async function runAutoArrivePass(
       .from("shuttle_run_events")
       .insert({ service_date: today, route_id: routeId, event: "현장도착", created_by: "GPS 자동감지" });
     // 23505는 다른 경로로 이미 도착이 찍힌 정상 상황이라 에러로 세지 않습니다.
+    if (!error) arrived += 1;
+  }
+
+  // ── 돌아옴 ────────────────────────────────────────────────────────────────
+  //
+  // 막혀서 한 바퀴 돌고 다시 온 차입니다. 도착을 새로 찍는 대신 **출발 기록을 지웁니다.**
+  // 도착 기록은 아직 살아 있으므로, 출발만 없어지면 화면은 그대로 "도착함"으로 돌아갑니다.
+  // (같은 날 같은 노선에 도착을 두 번 넣을 수는 없습니다 - 표가 한 줄만 허용합니다.)
+  for (const routeId of returnRouteIds) {
+    const list = byRoute.get(routeId);
+    if (!list || list.length < RETURN_MIN_SAMPLES) continue;
+
+    const near = list.filter(
+      (p) =>
+        (p.accuracy == null || p.accuracy <= RETURN_RADIUS_M) &&
+        haversineMeters(campus.lat, campus.lng, p.lat, p.lng) <= RETURN_RADIUS_M
+    );
+    if (near.length < RETURN_MIN_SAMPLES) continue;
+    // 가장 최근 핑이 학교 앞이어야 합니다. 아니면 스쳐 지나간 것입니다.
+    if (near[near.length - 1] !== list[list.length - 1]) continue;
+
+    const { error } = await supabase
+      .from("shuttle_run_events")
+      .delete()
+      .eq("service_date", today)
+      .eq("route_id", routeId)
+      .eq("event", "출발")
+      .in("created_by", ["GPS 자동감지", "시간초과 자동정리"]);
     if (!error) arrived += 1;
   }
 

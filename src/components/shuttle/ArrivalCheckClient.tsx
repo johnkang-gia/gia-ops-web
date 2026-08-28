@@ -46,7 +46,7 @@ function gpsInfo(r: ArrivalRoute): { live: boolean; label: string; tone: "live" 
 }
 
 /** 오늘 행선지를 아직 안 물어본 학생의 갈 수 있는 노선 한 칸. */
-type PendingChoice = { assignmentId: string; studentName: string; group: string; routeId: string; routeNo: string; stopAddress?: string | null };
+type PendingChoice = { assignmentId: string; studentName: string; group: string; routeId: string; routeNo: string; stopAddress?: string | null; label?: string | null };
 
 type ArrivalData = { label: string; term: string; routes: ArrivalRoute[]; pendingChoice?: PendingChoice[] };
 
@@ -416,10 +416,15 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
                     key={o.assignmentId}
                     onClick={() => choose(o.assignmentId, "ride")}
                     disabled={busyRoute === o.assignmentId}
-                    title={o.stopAddress ?? undefined}
-                    className="rounded bg-blue-600 px-1.5 py-0.5 text-[11px] font-bold text-white active:scale-95 disabled:opacity-40"
+                    title={`${o.routeNo}호${o.stopAddress ? ` · ${o.stopAddress}` : ""}`}
+                    className="rounded bg-blue-600 px-2 py-0.5 text-[11px] font-bold text-white active:scale-95 disabled:opacity-40"
                   >
-                    {o.routeNo}
+                    {/* 담당자: "차량으로 하지 말고 학원인지 집·기업은행인지 누르도록.
+                        우리가 물어보는 게 그거니까."
+                        아이에게 "몇 호차 타?"라고 묻지 않습니다. "어디 가?"라고 묻습니다.
+                        화면이 물어보는 말과 다르게 생기면 듣고 나서 머릿속으로 한 번 더
+                        바꿔야 하고, 그때 틀립니다. 호차 배정은 눌린 뒤에 알아서 됩니다. */}
+                    {o.label ?? `${o.routeNo}호`}
                   </button>
                 ))}
                 <button

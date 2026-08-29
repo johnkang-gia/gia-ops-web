@@ -2,8 +2,9 @@
 // 요금은 Anthropic 공식 요금표(https://platform.claude.com/docs/en/about-claude/pricing) 기준이며,
 // 실제 청구서와는 캐시/도구사용 등으로 소폭 차이가 날 수 있는 "추정치"입니다.
 //
-// ⚠️ Sonnet 5는 2026-08-31까지 도입 특가($2/$10)이고, 이후 정가($3/$15/백만 토큰)로 오릅니다.
-// 날짜가 지나면 아래 두 상수를 갱신해주세요.
+// ℹ️ Sonnet 5의 $2/$10은 원래 2026-08-31까지의 도입 특가였으나, 2026-08-11에 Anthropic이
+// 이 가격을 정가로 확정했습니다. 예정돼 있던 9월 1일 $3/$15 인상은 취소되었습니다.
+// (2026-08-29 공식 요금표에서 확인) 따라서 아래 값은 인상 없이 그대로 두면 됩니다.
 const MODEL_PRICING_USD_PER_MTOK: Record<string, { in: number; out: number }> = {
   "claude-sonnet-5": { in: 2.0, out: 10.0 },
   "claude-haiku-4-5-20251001": { in: 1.0, out: 5.0 },

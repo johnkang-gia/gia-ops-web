@@ -145,7 +145,16 @@ export async function loadSubscriptionRow(supabase: SupabaseClient, spaceId: str
 
 /** 미러링 중인 스페이스 ID들(환경변수에 설정된 것만). */
 export function mirroredSpaceIds(): string[] {
-  return [process.env.GOOGLE_CHAT_SPACE_ATTENDANCE, process.env.GOOGLE_CHAT_SPACE_TEACHER_REQUESTS].filter(
-    (v): v is string => typeof v === "string" && v.length > 0,
-  );
+  // 같은 값을 두 번 세지 않습니다.
+  //
+  // 지금 출결방과 교사요청방 환경변수에 **같은 스페이스**가 들어가 있습니다. 그대로 두면
+  // 같은 방에 구독을 두 번 만들고, 같은 오류도 두 번 기록되고, 메시지도 두 번 들어옵니다.
+  // 설정이 잘못된 것이지만, 코드가 그걸 그대로 두 배로 키울 이유는 없습니다.
+  return [
+    ...new Set(
+      [process.env.GOOGLE_CHAT_SPACE_ATTENDANCE, process.env.GOOGLE_CHAT_SPACE_TEACHER_REQUESTS].filter(
+        (v): v is string => typeof v === "string" && v.length > 0,
+      ),
+    ),
+  ];
 }

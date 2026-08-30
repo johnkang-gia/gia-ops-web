@@ -5,6 +5,7 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { isDeveloperEmail } from "@/lib/roles";
 import { SCHEMA_CHECKS } from "@/lib/schemaChecks";
 import { kstParts } from "@/lib/shuttleTracking";
+import RunCronButtons from "@/components/dev/RunCronButtons";
 
 // 진단 화면 - 개발자 전용.
 //
@@ -292,7 +293,15 @@ export default async function DevDiagnosticsPage() {
         )}
       </Card>
 
-      <Card title="⑤ 자동 작업(크론)" note="마지막으로 성공한 시각. 오래됐으면 그 기능은 지금 안 돌고 있는 것입니다.">
+      <Card
+        title="⑤ 자동 작업(크론)"
+        note="마지막으로 돈 시각. 오래됐으면 그 기능은 지금 멈춰 있는 것입니다. 아래 버튼으로 지금 바로 돌려볼 수 있습니다."
+      >
+        {/* 설정을 바꾸고 그게 먹었는지 다음 예약 시각까지 기다리면, 그 사이 다른 것을
+            건드리게 되고 무엇 때문에 됐는지도 흐려집니다. 바꾸고 → 눌러보고 → 결과를 본다. */}
+        <div className="mb-2 border-b border-slate-100 pb-2">
+          <RunCronButtons />
+        </div>
         {(beats ?? []).length === 0 ? (
           <Row label="기록" verdict="warn" detail="아직 기록이 없습니다." />
         ) : (

@@ -23,6 +23,29 @@ import { touchHeartbeat } from "@/lib/heartbeat";
 // 외부 스케줄러(cron-job.org)에 하루 한 번(예: 매일 06:30)으로 걸어주세요.
 export const maxDuration = 60;
 
+// "아직 설정을 안 했다"와 "설정은 됐는데 실패했다"는 전혀 다른 일입니다.
+//
+// 지금 매일 이 오류가 오류 로그에 쌓이고 있습니다:
+//   "Google Chat app not found. To create a Chat app, you must turn on the Chat API..."
+//
+// 이건 고장이 아니라 **아직 안 만든 것**입니다. 고칠 사람은 구글 클라우드 콘솔에 있고,
+// 코드가 몇 번을 다시 시도해도 달라지지 않습니다. 그런데 매일 오류로 기록되면
+//   · 오류 로그가 이걸로 채워져 진짜 오류가 묻히고
+//   · "최근 24시간 오류 급증" 판정이 늘 켜져 있어 경고가 무의미해집니다.
+//
+// 그래서 이 종류는 오류로 남기지 않고, 진단 화면에 **"설정 안 됨"으로 조용히 표시**합니다.
+// 숨기는 것이 아닙니다 - 있어야 할 자리로 옮기는 것입니다.
+function isNotConfigured(message: string): boolean {
+  const m = message.toLowerCase();
+  return (
+    m.includes("chat app not found") ||
+    m.includes("has not been used in project") ||
+    m.includes("api is not enabled") ||
+    m.includes("chat api") ||
+    m.includes("service_disabled")
+  );
+}
+
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get("authorization");
   if (!process.env.CRON_SECRET || authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -61,11 +84,32 @@ export async function GET(req: NextRequest) {
       results.push({ spaceId, action: "renewed", expireTime: renewed.expireTime ?? alive.expireTime ?? null });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      if (isNotConfigured(message)) {
+        // 설정이 안 된 상태. 오류 로그에는 남기지 않습니다.
+        results.push({ spaceId, action: "not_configured", error: message });
+        continue;
+      }
       await logApiError(supabase, "cron:chat-subscription-renew", err);
       results.push({ spaceId, action: "failed", error: message });
     }
   }
 
-  await touchHeartbeat(supabase, "cron:chat-subscription-renew");
-  return NextResponse.json({ ok: true, topic, results });
+  const notConfigured = results.filter((r) => r.action === "not_configured").length;
+  const failed = results.filter((r) => r.action === "failed").length;
+
+  if (failed > 0) {
+    await touchHeartbeat(supabase, "cron:chat-subscription-renew", "error", `${failed}개 방 갱신 실패`);
+  } else if (notConfigured > 0 && notConfigured === results.length) {
+    // 진단 화면에서 "왜 구글챗이 안 들어오지"를 여기서 바로 알 수 있어야 합니다.
+    await touchHeartbeat(
+      supabase,
+      "cron:chat-subscription-renew",
+      "skipped",
+      "구글 클라우드 콘솔에서 Chat API 사용 설정 + Chat 앱 구성이 아직 안 됐습니다."
+    );
+  } else {
+    await touchHeartbeat(supabase, "cron:chat-subscription-renew");
+  }
+
+  return NextResponse.json({ ok: true, topic, notConfigured, failed, results });
 }

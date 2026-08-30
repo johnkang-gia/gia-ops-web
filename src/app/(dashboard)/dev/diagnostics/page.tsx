@@ -302,14 +302,24 @@ export default async function DevDiagnosticsPage() {
               <Row
                 key={b.key as string}
                 label={b.key as string}
-                verdict={ago == null || b.status === "error" ? "bad" : ago <= 60 * 26 ? "ok" : "warn"}
+                verdict={
+                  b.status === "error"
+                    ? "bad"
+                    : b.status === "skipped"
+                      ? "warn" // 고장이 아니라 "아직 설정 안 됨". 빨강으로 두면 진짜 고장과 안 갈립니다.
+                      : ago == null
+                        ? "bad"
+                        : ago <= 60 * 26
+                          ? "ok"
+                          : "warn"
+                }
                 detail={
                   (ago == null
                     ? "한 번도 돈 적 없음"
                     : ago < 60
                       ? `${ago}분 전`
                       : `${Math.floor(ago / 60)}시간 전`) +
-                  (b.status && b.status !== "ok" ? ` · ${b.status}` : "") +
+                  (b.status === "skipped" ? " · 설정 안 됨" : b.status && b.status !== "ok" ? ` · ${b.status}` : "") +
                   (b.detail ? ` · ${b.detail}` : "")
                 }
               />

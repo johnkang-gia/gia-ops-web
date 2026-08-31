@@ -46,11 +46,15 @@ export type SpecialNoteEntry = { key: string; studentName: string; note: string 
 // 손대지 않고 그대로 보여주기만 합니다.
 // 왼쪽 "지속 특이사항 입력" 창구가 부모에게 넘기는 값입니다(요청: 지속 반영사항을 적는 창구).
 export type PersistentNoteInput = {
-  studentName: string;
+  /** 여러 명을 한 번에. 형제나 같이 여행 가는 아이들을 한 명씩 넣는 것은 일입니다. */
+  studentNames: string[];
   routeNo: string | null;
   content: string;
-  effectKind: "none" | "skip_days" | "no_shuttle";
+  effectKind: "none" | "skip_days" | "no_shuttle" | "absent" | "pickup";
   effectDays: number[];
+  /** 결석·픽업처럼 **날짜로 걸리는** 효과의 기간. 하루면 from만 넣습니다. */
+  effectFrom: string | null;
+  effectTo: string | null;
 };
 
 export default function ShuttleChecklistSidebar({
@@ -90,11 +94,17 @@ export default function ShuttleChecklistSidebar({
     { d: 4, label: "목" },
     { d: 5, label: "금" },
   ];
+  // 이름을 여러 개 담습니다(요청: "한명씩 등록해야하고"). 형제·같이 여행 가는 아이들을
+  // 한 줄씩 따로 넣는 것은 같은 일을 두 번 하는 것입니다.
+  const [pnNames, setPnNames] = useState<string[]>([]);
   const [pnName, setPnName] = useState("");
   const [pnRoute, setPnRoute] = useState("");
   const [pnContent, setPnContent] = useState("");
-  const [pnEffect, setPnEffect] = useState<"none" | "skip_days" | "no_shuttle">("none");
+  const [pnEffect, setPnEffect] = useState<PersistentNoteInput["effectKind"]>("none");
   const [pnDays, setPnDays] = useState<number[]>([]);
+  // 날짜로 걸리는 효과(결석·픽업)의 기간(요청: "셔틀 결석때문에 안타는데 미리 설정할 수도 없어").
+  const [pnFrom, setPnFrom] = useState("");
+  const [pnTo, setPnTo] = useState("");
   const [pnOpen, setPnOpen] = useState(false);
 
   // ── 가르치기 ──────────────────────────────────────────────────────────────
@@ -163,21 +173,39 @@ export default function ShuttleChecklistSidebar({
     })();
   }, [loadRules, loadDismissed]);
 
+  /** 칸에 남아 있는 이름도 함께 담습니다 - 엔터를 안 치고 [추가]를 눌러도 빠지지 않도록. */
+  function collectedNames(): string[] {
+    const typed = pnName.trim();
+    return [...new Set([...pnNames, ...(typed ? [typed] : [])])];
+  }
+
+  function addName() {
+    const v = pnName.trim();
+    if (!v) return;
+    setPnNames((prev) => (prev.includes(v) ? prev : [...prev, v]));
+    setPnName("");
+  }
+
   async function submitPersistentNote() {
     if (!onAddPersistentNote) return;
     const ok = await onAddPersistentNote({
-      studentName: pnName,
+      studentNames: collectedNames(),
       routeNo: pnRoute.trim() || null,
       content: pnContent,
       effectKind: pnEffect,
       effectDays: pnDays,
+      effectFrom: pnFrom || null,
+      effectTo: pnTo || null,
     });
     if (ok) {
+      setPnNames([]);
       setPnName("");
       setPnRoute("");
       setPnContent("");
       setPnEffect("none");
       setPnDays([]);
+      setPnFrom("");
+      setPnTo("");
       setPnOpen(false);
     }
   }
@@ -414,15 +442,62 @@ export default function ShuttleChecklistSidebar({
             <div className="mt-2 flex flex-col gap-1.5">
               <p className="text-[9px] leading-relaxed text-slate-400">
                 계속 반영할 사항을 적으면 오른쪽에 요약으로 뜨고 셔틀이 자동으로 바뀝니다. 나중에 요약에서 지우면 원래
-                셔틀로 돌아옵니다.
+                셔틀로 돌아옵니다. <b>여러 명</b>을 한 번에 넣을 수 있고, 결석·픽업은 <b>날짜를 미리</b> 정해둘 수 있습니다.
               </p>
-              <input
-                list="pn-roster"
-                value={pnName}
-                onChange={(e) => setPnName(e.target.value)}
-                placeholder="학생 이름 (예: 이라엘)"
-                className="rounded-lg border border-slate-300 px-2 py-1 text-[11px] outline-none focus:border-orange-400"
-              />
+              {/* 이름을 여러 개 담습니다. 고르면 칩으로 쌓이고, ×로 뺍니다. */}
+              {pnNames.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {pnNames.map((n) => (
+                    <span
+                      key={n}
+                      className="inline-flex items-center gap-0.5 rounded-full bg-orange-100 px-1.5 py-0.5 text-[10px] font-bold text-orange-700"
+                    >
+                      {n}
+                      <button
+                        type="button"
+                        onClick={() => setPnNames((prev) => prev.filter((x) => x !== n))}
+                        className="text-orange-400 hover:text-orange-700"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div className="flex gap-1">
+                <input
+                  list="pn-roster"
+                  value={pnName}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    // 명부에서 고르면(datalist) 곧바로 칩으로 만듭니다 - 한 번 더 누르게
+                    // 하면 그게 "한 명씩 등록"의 번거로움 그대로입니다.
+                    if (roster.some((r) => r.name === v)) {
+                      setPnNames((prev) => (prev.includes(v) ? prev : [...prev, v]));
+                      setPnName("");
+                    } else {
+                      setPnName(v);
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === ",") {
+                      e.preventDefault();
+                      addName();
+                    }
+                  }}
+                  placeholder={pnNames.length ? "이름 더 넣기" : "학생 이름 (여러 명 가능)"}
+                  className="min-w-0 flex-1 rounded-lg border border-slate-300 px-2 py-1 text-[11px] outline-none focus:border-orange-400"
+                />
+                <button
+                  type="button"
+                  onClick={addName}
+                  disabled={!pnName.trim()}
+                  className="shrink-0 rounded-lg border border-orange-300 px-1.5 text-[11px] font-bold text-orange-600 disabled:opacity-30"
+                  title="이름 담기"
+                >
+                  ＋
+                </button>
+              </div>
               <datalist id="pn-roster">
                 {roster.map((s) => (
                   <option key={s.name} value={s.name} />
@@ -447,9 +522,36 @@ export default function ShuttleChecklistSidebar({
                 className="rounded-lg border border-slate-300 px-2 py-1 text-[11px] outline-none focus:border-orange-400"
               >
                 <option value="none">셔틀 그대로 (메모만)</option>
+                <option value="absent">결석 (그 날짜에 셔틀 제외)</option>
+                <option value="pickup">픽업 (그 날짜에 보호자가 데려감)</option>
                 <option value="skip_days">특정 요일 셔틀 제외</option>
                 <option value="no_shuttle">개별하원 (셔틀 전면 제외)</option>
               </select>
+              {/* 날짜로 걸리는 효과. 미리 넣어두면 그 날이 왔을 때만 듣습니다 -
+                  오늘 넣어도 오늘 셔틀이 바뀌지 않습니다. */}
+              {(pnEffect === "absent" || pnEffect === "pickup") && (
+                <div className="flex flex-col gap-1 rounded-lg bg-orange-50 p-1.5">
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="date"
+                      value={pnFrom}
+                      onChange={(e) => setPnFrom(e.target.value)}
+                      className="min-w-0 flex-1 rounded border border-slate-300 px-1 py-0.5 text-[10px]"
+                    />
+                    <span className="text-[10px] text-slate-400">~</span>
+                    <input
+                      type="date"
+                      value={pnTo}
+                      min={pnFrom || undefined}
+                      onChange={(e) => setPnTo(e.target.value)}
+                      className="min-w-0 flex-1 rounded border border-slate-300 px-1 py-0.5 text-[10px]"
+                    />
+                  </div>
+                  <p className="text-[9px] leading-relaxed text-orange-700">
+                    하루만이면 <b>앞칸만</b> 넣으세요. 미리 넣어둬도 그 날이 와야 셔틀에서 빠집니다.
+                  </p>
+                </div>
+              )}
               {pnEffect === "skip_days" && (
                 <div className="flex gap-1">
                   {WD.map((w) => {
@@ -476,7 +578,9 @@ export default function ShuttleChecklistSidebar({
                 onClick={submitPersistentNote}
                 className="rounded-lg bg-orange-500 px-2 py-1.5 text-[11px] font-bold text-white disabled:opacity-50"
               >
-                추가
+                {pnNames.length + (pnName.trim() ? 1 : 0) > 1
+                  ? `${pnNames.length + (pnName.trim() ? 1 : 0)}명에게 추가`
+                  : "추가"}
               </button>
             </div>
           )}

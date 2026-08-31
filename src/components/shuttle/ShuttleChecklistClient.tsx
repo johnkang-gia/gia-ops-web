@@ -1,5 +1,6 @@
 "use client";
 
+import { todayKst } from "@/lib/kst";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -76,8 +77,14 @@ export type PersistentNote = {
   studentId: string | null;
   routeNo: string | null; // 동명이인 구분용(예: "4호")
   content: string;
-  effectKind: "none" | "skip_days" | "no_shuttle";
+  // 'absent'·'pickup'은 **날짜 기간**으로 걸리는 효과입니다(예: 9/23~9/28 가족여행 결석).
+  // 표에는 예전부터 있었는데(20260827200000) 이 화면이 안 읽고 있었습니다 - AI 수집기가
+  // 학부모 연락에서 뽑아 저장해도 체크표에는 그 아이가 그대로 타는 것으로 떴습니다.
+  effectKind: "none" | "skip_days" | "no_shuttle" | "absent" | "pickup";
   effectDays: number[]; // skip_days용 (1=월 ... 5=금)
+  /** 기간의 시작·끝(YYYY-MM-DD). 없으면 기간 제한 없음. */
+  effectFrom?: string | null;
+  effectTo?: string | null;
 };
 
 // 요일마다 다른 셔틀을 타는 학생을 같은 색으로 묶기 위한 팔레트(테두리·링용). 파스텔 계열로
@@ -88,8 +95,10 @@ const GROUP_COLORS = [
   "#f43f5e", "#22c55e", "#3b82f6", "#d946ef", "#f59e0b",
 ];
 
+// 예전에는 여기서 toISOString().slice(0,10)을 썼습니다 - UTC라서 한국 시간 자정~오전 9시
+// 사이에는 **하루 전** 날짜가 나왔습니다. 같은 실수를 네 번 반복한 뒤 kst.ts로 모았습니다.
 function todayStr() {
-  return new Date().toISOString().slice(0, 10);
+  return todayKst();
 }
 
 type PendingMove = { assignmentId: string; studentName: string; targetRouteId: string; targetRouteNo: string; homeRouteNo: string };
@@ -188,7 +197,9 @@ export default function ShuttleChecklistClient({
       }
     }
     const routeNoOf = (routeId: string) => routeById.get(routeId)?.route_no ?? "";
-    const todayW = new Date().getDay();
+    const today = todayStr();
+    // 요일도 한국 기준으로 셉니다.
+    const todayW = new Date(`${today}T12:00:00+09:00`).getDay();
     const matches = (note: PersistentNote, it: ChecklistItem) => {
       if (note.studentId && it.studentId) {
         if (note.studentId !== it.studentId) return false;
@@ -202,16 +213,43 @@ export default function ShuttleChecklistClient({
       const key = it.studentId ?? `n:${normName(it.studentName)}`;
       let riding = it.ridingToday;
       let individual = false;
+      // 특이사항이 정하는 오늘 상태. 사람이 표에서 이미 손으로 바꿔둔 것은 건드리지
+      // 않습니다 - 사람이 마지막에 본 것이 맞습니다.
+      let forcedStatus: "픽업" | "결석" | null = null;
       for (const note of notes) {
         if (!matches(note, it)) continue;
+        // 기간이 적힌 특이사항은 **오늘이 그 기간 안일 때만** 듣습니다.
+        // 9/23~9/28 결석을 9/10에 미리 등록해도 9/10에는 아무 일이 없어야 합니다 -
+        // 그게 "미리 넣어둘 수 있다"의 뜻입니다.
+        const inPeriod =
+          (!note.effectFrom || note.effectFrom <= today) && (!note.effectTo || today <= note.effectTo);
+
         if (note.effectKind === "no_shuttle") {
           individual = true;
           riding = false;
         } else if (note.effectKind === "skip_days" && note.effectDays.includes(todayW)) {
           riding = false;
+        } else if (note.effectKind === "absent" && inPeriod) {
+          // 결석은 셔틀만 빼는 게 아니라 그날 상태 자체가 결석입니다.
+          riding = false;
+          forcedStatus = "결석";
+        } else if (note.effectKind === "pickup" && inPeriod) {
+          // 픽업도 마찬가지 - 차는 안 타고, 보호자가 데려갑니다.
+          // 요일이 적혀 있으면(매주 수요일 픽업) 그 요일에만 겁니다.
+          if (note.effectDays.length === 0 || note.effectDays.includes(todayW)) {
+            riding = false;
+            forcedStatus = "픽업";
+          }
         }
       }
-      return { ...it, ridingToday: riding, individualPickup: individual, groupColor: colorByKey.get(key) ?? null };
+      return {
+        ...it,
+        ridingToday: riding,
+        // 사람이 표에서 이미 바꿔둔 줄은 그대로 둡니다 - 사람이 마지막에 본 것이 맞습니다.
+        status: it.status === "예정" && forcedStatus ? forcedStatus : it.status,
+        individualPickup: individual,
+        groupColor: colorByKey.get(key) ?? null,
+      };
     });
   }, [items, notes, routeById]);
 
@@ -499,7 +537,7 @@ export default function ShuttleChecklistClient({
         async () => {
           const { data } = await supabase
             .from("shuttle_persistent_notes")
-            .select("id, student_name, student_id, route_no, content, effect_kind, effect_days")
+            .select("id, student_name, student_id, route_no, content, effect_kind, effect_days, effect_from, effect_to")
             .eq("term", term)
             .eq("active", true)
             .order("created_at", { ascending: false });
@@ -511,6 +549,8 @@ export default function ShuttleChecklistClient({
               routeNo: (n.route_no as string | null) ?? null,
               content: (n.content as string) ?? "",
               effectKind: (n.effect_kind as PersistentNote["effectKind"]) ?? "none",
+              effectFrom: (n.effect_from as string | null) ?? null,
+              effectTo: (n.effect_to as string | null) ?? null,
               effectDays: (n.effect_days as number[] | null) ?? [],
             }))
           );
@@ -523,14 +563,17 @@ export default function ShuttleChecklistClient({
   }, [term]);
 
   async function addPersistentNote(input: {
-    studentName: string;
+    /** 여러 명을 한 번에 받습니다. 형제나 같이 여행 가는 아이들을 한 명씩 넣는 것은 일입니다. */
+    studentNames: string[];
     routeNo: string | null;
     content: string;
     effectKind: PersistentNote["effectKind"];
     effectDays: number[];
+    effectFrom: string | null;
+    effectTo: string | null;
   }) {
-    const studentName = input.studentName.trim();
-    if (!studentName) {
+    const names = input.studentNames.map((n) => n.trim()).filter(Boolean);
+    if (names.length === 0) {
       notify("학생 이름을 입력해주세요.", "error");
       return false;
     }
@@ -542,12 +585,21 @@ export default function ShuttleChecklistClient({
       notify("제외할 요일을 하나 이상 골라주세요.", "error");
       return false;
     }
+    // 결석·픽업은 **언제부터인지**가 없으면 아무 뜻이 없습니다. 오늘부터인지 다음 주부터인지
+    // 모르면 셔틀을 언제 빼야 할지 정할 수가 없습니다.
+    if ((input.effectKind === "absent" || input.effectKind === "pickup") && !input.effectFrom) {
+      notify("날짜를 골라주세요. 하루만이면 시작일만 넣으면 됩니다.", "error");
+      return false;
+    }
+    if (input.effectFrom && input.effectTo && input.effectTo < input.effectFrom) {
+      notify("끝나는 날이 시작일보다 앞섭니다.", "error");
+      return false;
+    }
     setNoteBusyPersist(true);
     const supabase = createClient();
-    const matched = items.find((it) => normName(it.studentName) === normName(studentName));
-    const { data, error } = await supabase
-      .from("shuttle_persistent_notes")
-      .insert({
+    const rows = names.map((studentName) => {
+      const matched = items.find((it) => normName(it.studentName) === normName(studentName));
+      return {
         term,
         student_name: studentName,
         student_id: matched?.studentId ?? null,
@@ -555,28 +607,44 @@ export default function ShuttleChecklistClient({
         content: input.content.trim().slice(0, 300),
         effect_kind: input.effectKind,
         effect_days: input.effectKind === "skip_days" ? input.effectDays : [],
+        effect_from: input.effectFrom,
+        // 하루짜리면 끝나는 날을 시작일과 같게 둡니다. 비워두면 "끝이 없는 결석"이 됩니다.
+        effect_to: input.effectTo ?? input.effectFrom,
         created_by: "체크표",
-      })
-      .select("id, student_name, student_id, route_no, content, effect_kind, effect_days")
-      .single();
+      };
+    });
+    const { data, error } = await supabase
+      .from("shuttle_persistent_notes")
+      .insert(rows)
+      .select("id, student_name, student_id, route_no, content, effect_kind, effect_days, effect_from, effect_to");
     setNoteBusyPersist(false);
     if (error || !data) {
       notify("특이사항을 저장하지 못했습니다: " + (error?.message ?? "알 수 없는 오류"), "error");
       return false;
     }
     setNotes((prev) => [
-      {
-        id: data.id as string,
-        studentName: data.student_name as string,
-        studentId: (data.student_id as string | null) ?? null,
-        routeNo: (data.route_no as string | null) ?? null,
-        content: data.content as string,
-        effectKind: (data.effect_kind as PersistentNote["effectKind"]) ?? "none",
-        effectDays: (data.effect_days as number[] | null) ?? [],
-      },
+      ...(data as Record<string, unknown>[]).map((d) => ({
+        id: d.id as string,
+        studentName: d.student_name as string,
+        studentId: (d.student_id as string | null) ?? null,
+        routeNo: (d.route_no as string | null) ?? null,
+        content: d.content as string,
+        effectKind: (d.effect_kind as PersistentNote["effectKind"]) ?? "none",
+        effectFrom: (d.effect_from as string | null) ?? null,
+        effectTo: (d.effect_to as string | null) ?? null,
+        effectDays: (d.effect_days as number[] | null) ?? [],
+      })),
       ...prev,
     ]);
-    notify("지속 특이사항을 추가했습니다.", "success");
+    // 못 찾은 이름을 조용히 넘기지 않습니다. 이름이 명부와 다르면 그 줄은 아무 아이에게도
+    // 안 붙는데, 화면은 "추가했습니다"만 말하고 끝나기 쉽습니다.
+    const unmatched = names.filter((n) => !items.some((it) => normName(it.studentName) === normName(n)));
+    notify(
+      unmatched.length > 0
+        ? `${names.length}명 추가했습니다. 다만 ${unmatched.join("·")}은(는) 오늘 명단에서 못 찾았습니다 - 이름을 확인해주세요.`
+        : `${names.length}명에게 지속 특이사항을 추가했습니다.`,
+      unmatched.length > 0 ? "error" : "success"
+    );
     return true;
   }
 
@@ -637,7 +705,25 @@ export default function ShuttleChecklistClient({
                     ? "개별하원(셔틀 안 탐)"
                     : n.effectKind === "skip_days"
                       ? `${n.effectDays.map((d) => "일월화수목금토"[d]).join("")}요일 셔틀 제외`
-                      : "메모";
+                      : n.effectKind === "absent"
+                        ? "결석(셔틀 제외)"
+                        : n.effectKind === "pickup"
+                          ? "픽업(보호자)"
+                          : "메모";
+                // 날짜와 "지금 듣고 있는지"를 함께 보여줍니다.
+                //
+                // 앞날 결석을 미리 넣어두면 오늘은 아무 일도 안 일어나는 것이 맞습니다. 그런데
+                // 화면이 그냥 목록에 섞어 보여주면, 넣은 사람은 "지금 셔틀에서 빠졌나?" 하고
+                // 헷갈립니다. 그래서 **오늘 적용중**인지 **9/23부터**인지를 못 박아 적습니다.
+                const today = todayStr();
+                const period =
+                  n.effectFrom || n.effectTo
+                    ? n.effectFrom && n.effectTo && n.effectFrom !== n.effectTo
+                      ? `${n.effectFrom.slice(5)}~${n.effectTo.slice(5)}`
+                      : (n.effectFrom ?? n.effectTo)!.slice(5)
+                    : null;
+                const upcoming = !!n.effectFrom && n.effectFrom > today;
+                const past = !!n.effectTo && n.effectTo < today;
                 return (
                   <span
                     key={n.id}
@@ -649,6 +735,22 @@ export default function ShuttleChecklistClient({
                     </span>
                     <span className="text-orange-700">· {n.content}</span>
                     <span className="rounded-full bg-orange-100 px-1.5 py-0.5 text-[9px] font-bold text-orange-700">{effLabel}</span>
+                    {period && (
+                      <span
+                        className={
+                          "rounded-full px-1.5 py-0.5 text-[9px] font-bold " +
+                          (upcoming
+                            ? "bg-slate-200 text-slate-600"
+                            : past
+                              ? "bg-slate-100 text-slate-400"
+                              : "bg-red-100 text-red-700")
+                        }
+                        title={upcoming ? "아직 시작 전입니다" : past ? "이미 지났습니다" : "오늘 적용 중입니다"}
+                      >
+                        {period}
+                        {upcoming ? " 예정" : past ? " 지남" : " 적용중"}
+                      </span>
+                    )}
                     <button
                       type="button"
                       onClick={() => setNoteMenuId((cur) => (cur === n.id ? null : n.id))}

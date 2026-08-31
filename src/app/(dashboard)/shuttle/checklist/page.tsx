@@ -192,7 +192,7 @@ export default async function ShuttleChecklistPage({
   // 활성 행만 읽어 넘깁니다.
   const { data: noteRows } = await supabase
     .from("shuttle_persistent_notes")
-    .select("id, term, student_name, student_id, route_no, content, effect_kind, effect_days, active")
+    .select("id, term, student_name, student_id, route_no, content, effect_kind, effect_days, effect_from, effect_to, active")
     .eq("term", term)
     .eq("active", true)
     .order("created_at", { ascending: false });
@@ -204,6 +204,9 @@ export default async function ShuttleChecklistPage({
     content: (n.content as string) ?? "",
     effectKind: (n.effect_kind as PersistentNote["effectKind"]) ?? "none",
     effectDays: (n.effect_days as number[] | null) ?? [],
+    // 기간(9/23~9/28 결석 같은 것). 표에는 예전부터 있었는데 이 화면이 안 읽고 있었습니다.
+    effectFrom: (n.effect_from as string | null) ?? null,
+    effectTo: (n.effect_to as string | null) ?? null,
   }));
 
   // 그룹핑은 클라이언트에서 하도록, 노선별로 나누지 않은 평평한 목록으로 넘깁니다.

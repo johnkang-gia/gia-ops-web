@@ -693,6 +693,60 @@ export type WrTermClassSnapshot = {
   created_at: string;
 };
 
+// ── 인보이스: 요금제와 할인 ─────────────────────────────────────────────
+// 금액을 하나하나 적어두지 않습니다. 기준 금액 1회분 + 납부 옵션(몇 회분을 묶고 몇 %
+// 깎는가)이면 안내문의 숫자가 전부 만들어집니다(검산 완료).
+export type FeePlan = {
+  id: string;
+  category: "학비" | "학비외";
+  name: string;
+  description: string | null;
+  base_amount: number;
+  unit: "월" | "학기" | "연" | "회";
+  active: boolean;
+  sort_order: number;
+  effective_from: string | null;
+  effective_to: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type FeePaymentOption = {
+  id: string;
+  plan_id: string;
+  name: string;
+  /** 기준 금액의 몇 회분인가. */
+  periods: number;
+  /** 0.10 = 10% 할인. */
+  discount_rate: number;
+  due_note: string | null;
+  active: boolean;
+  sort_order: number;
+  created_at: string;
+};
+
+// 할인 규칙. **지우지 않고 끕니다** - 지난 청구서가 왜 그 금액이었는지 설명할 수 있어야
+// 합니다. 이 표 전체가 재무 권한 뒤에 있어 이름조차 권한 없는 사람에게는 안 보입니다.
+export type FeeDiscount = {
+  id: string;
+  name: string;
+  description: string | null;
+  kind: "percent" | "amount";
+  value: number;
+  category: "학비" | "학비외" | null;
+  plan_id: string | null;
+  active: boolean;
+  effective_from: string | null;
+  effective_to: string | null;
+  /** 켜면 최고관리자 승인이 있어야 학생에게 붙일 수 있습니다. */
+  requires_approval: boolean;
+  sort_order: number;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type WrReport = {
   id: string;
   student_id: string;

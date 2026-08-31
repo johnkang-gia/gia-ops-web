@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentTerm } from "@/lib/currentTerm";
 import { getCurrentAppUser } from "@/lib/currentUser";
-import { isDeveloperEmail, isAdminUser, isTeacherOnly, isStaffOrAboveUser } from "@/lib/roles";
+import { isDeveloperEmail, isAdminUser, isTeacherOnly, isStaffOrAboveUser, hasFinanceAccess } from "@/lib/roles";
 import SignOutButton from "@/components/SignOutButton";
 import RolePreviewDropdown from "@/components/dev/RolePreviewDropdown";
 import { SidebarNavLinks, MobileNavLinks, type NavCategory, type NavLeaf } from "@/components/NavLinks";
@@ -410,6 +410,18 @@ export default async function DashboardLayout({
     ];
     if (isStaffOrAbove) categories.push(buildWeeklyReportCategory(isAdmin));
     if (isAdmin) categories.push(buildAdminCategory());
+    // 💰 재무. **직위가 아니라 열쇠로** 나옵니다 - 관리자여도 열쇠가 없으면 이 메뉴는
+    // 존재하지 않습니다(담당자: "재무관리자만 이 돈에 관한 메뉴를 볼 수 있도록").
+    if (hasFinanceAccess(me)) {
+      categories.push({
+        key: "finance",
+        label: "재무",
+        icon: "💰",
+        accent: "teal",
+        href: "/finance/plans",
+        items: [{ href: "/finance/plans", label: "요금제 · 할인", icon: "🧾" }],
+      });
+    }
     if (isDeveloper && !isPreviewing) {
       categories.push({ key: "dev", label: "개발자", icon: "🧑‍💻", href: "/dev", accent: "red" });
     }

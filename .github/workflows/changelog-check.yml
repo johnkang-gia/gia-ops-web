@@ -1,0 +1,26 @@
+# 체인지로그 작성 규칙 검사
+#
+# 규칙 자체는 CLAUDE.md에 적혀 있습니다. 글로만 적어둔 규칙은 잊히므로, 여기서 한 번 더
+# 막습니다. 로컬 `npm run build`에도 같은 검사가 걸려 있어서 대개는 여기까지 오지 않지만,
+# 빌드를 건너뛰고 올린 커밋을 잡는 마지막 그물입니다.
+name: 체인지로그 규칙
+
+on:
+  push:
+    paths:
+      - "CHANGELOG.md"
+      - "scripts/check-changelog.mjs"
+      - ".github/workflows/changelog-check.yml"
+  pull_request:
+    paths:
+      - "CHANGELOG.md"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: node scripts/check-changelog.mjs

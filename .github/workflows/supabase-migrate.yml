@@ -1,7 +1,7 @@
 # Supabase 스키마 자동 반영
 #
-# 요청: "supabase도 자동으로 업데이트 하게 만들수 있어?" - 그동안은 새 기능을 배포할 때마다
-# SQL을 Supabase SQL Editor에 직접 붙여넣어야 했는데, 이제 main에 머지되면 이 워크플로가
+# 그동안은 새 기능을 배포할 때마다 SQL을 Supabase SQL Editor에 직접 붙여넣어야 했습니다.
+# 이제 main에 머지되면 이 워크플로가
 # supabase/migrations 폴더의 "아직 반영되지 않은 파일만" 자동으로 실행합니다.
 #
 # 어떻게 중복 실행을 막나요?

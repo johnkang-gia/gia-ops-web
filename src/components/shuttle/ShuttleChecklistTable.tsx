@@ -138,7 +138,27 @@ export default function ShuttleChecklistTable({
             const isDragOver = dragOverRoute === route.id;
             return (
               <tr key={route.id} className="border-b border-slate-100 align-top last:border-b-0 print:border-black">
-                <td className="px-3 py-2.5 font-bold text-slate-700">{route.route_no}호</td>
+                {/* 호차 + 차량번호(담당자 요청).
+                    차량번호는 이미 노선에 저장돼 있었는데 **인쇄본에만** 쓰고 화면에서는
+                    안 보여주고 있었습니다. 정작 차를 찾는 건 화면 보면서 하는 일입니다.
+                    호차 아래 한 줄로 두는 이유: 옆에 붙이면 이 칸이 넓어져 학생 이름이
+                    들어갈 자리를 뺏습니다. */}
+                <td className="px-3 py-2.5 font-bold text-slate-700">
+                  <div>{route.route_no}호</div>
+                  {route.vehicle_no ? (
+                    <div className="mt-0.5 font-mono text-[10px] font-semibold text-slate-400">{route.vehicle_no}</div>
+                  ) : (
+                    // 비어 있으면 비었다고 말해줍니다 - 아무것도 없으면 "안 적었나 없나"를
+                    // 매번 다시 확인하게 됩니다. 눌러서 바로 채울 수 있게 노선 관리로 보냅니다.
+                    <a
+                      href="/shuttle/routes"
+                      className="mt-0.5 block text-[10px] font-medium text-slate-300 hover:text-blue-500 print:hidden"
+                      title="노선 관리에서 차량번호를 채울 수 있습니다"
+                    >
+                      차번호 없음
+                    </a>
+                  )}
+                </td>
                 <td className="px-3 py-2.5 text-xs text-slate-600">{route.name ?? ""}</td>
                 <td className="px-3 py-2.5 text-xs text-slate-400">{route.driver_name ?? ""}</td>
                 <td

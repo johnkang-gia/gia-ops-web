@@ -1,4 +1,5 @@
 import path from "node:path";
+import { todayKst } from "@/lib/kst";
 import { Document, Page, Text, View, StyleSheet, Font, renderToBuffer } from "@react-pdf/renderer";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
@@ -48,7 +49,7 @@ function ReportDocument({
   reports: WrReport[];
   termLabel?: string | null;
 }) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayKst();
   return (
     <Document>
       <Page size="A4" style={styles.page}>

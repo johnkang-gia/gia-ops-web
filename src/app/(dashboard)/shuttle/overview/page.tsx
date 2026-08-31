@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { todayKst } from "@/lib/kst";
 import { createClient } from "@/lib/supabase/server";
 import { CURRENT_SHUTTLE_TERM } from "@/lib/shuttleTerm";
 import { getCurrentAppUser } from "@/lib/currentUser";
@@ -33,7 +34,7 @@ export default async function ShuttleOverviewPage() {
   const routes = routesRaw ?? [];
   const routeIds = routes.map((r) => r.id as string);
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayKst();
   const todayWeekday = new Date().getDay();
   const norm = (s: string) => (s ?? "").replace(/\s+/g, "").trim();
   const nameMatch = (a: string, b: string) => {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
+import { todayKst } from "@/lib/kst";
 import { useToast } from "@/components/common/ToastProvider";
 import UpcomingPickups, { type ScheduleRow } from "@/components/pickup/UpcomingPickups";
 import StudentPicker from "@/components/pickup/StudentPicker";
@@ -299,7 +300,7 @@ export default function PickupInboxClient({
                       {r.ai_pickup_time} 픽업
                     </span>
                   )}
-                  {r.service_date !== new Date().toISOString().slice(0, 10) && (
+                  {r.service_date !== todayKst() && (
                     <span className="rounded bg-violet-100 px-1.5 py-0.5 text-[11px] font-bold text-violet-700">
                       {r.service_date}
                     </span>

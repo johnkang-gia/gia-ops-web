@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { todayKst } from "@/lib/kst";
 import { createClient } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
@@ -48,7 +49,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "이 노선에 속하지 않는 학생입니다." }, { status: 403 });
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayKst();
   const checkedBy = "체크인(" + token.slice(0, 8) + ")";
   const patch: Record<string, unknown> =
     field === "status"

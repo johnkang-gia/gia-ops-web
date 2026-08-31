@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { todayKst } from "@/lib/kst";
 import PilotCheckinClient, { type BoardingRosterItem } from "@/components/shuttle/PilotCheckinClient";
 
 export const dynamic = "force-dynamic";
@@ -35,7 +36,7 @@ export default async function ShuttlePilotPage({ params }: { params: Promise<{ t
 
   // 오늘 이 노선에 배정된 학생 목록을 정류장 순서대로 준비합니다(요일 필터: weekdays에 오늘이
   // 포함된 배정만). weekdays는 1=월...5=금으로 저장되어 있습니다.
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = todayKst();
   const todayWeekday = new Date().getDay();
 
   const { data: stops } = await supabase

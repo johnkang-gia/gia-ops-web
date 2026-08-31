@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { todayKst } from "@/lib/kst";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isStaffOrAboveUser } from "@/lib/roles";
 import { createClient } from "@/lib/supabase/server";
@@ -22,7 +23,7 @@ export default async function SchoolOverviewPage() {
   if (!isStaffOrAboveUser(me)) redirect("/home");
 
   const supabase = await createClient();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayKst();
   const sinceWeek = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
   const [{ data: students }, { data: classes }, { data: eventRows }, reportsRes, { data: appUsers }, { data: subjectRows }, { data: termRows }] =

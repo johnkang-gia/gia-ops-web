@@ -1,4 +1,5 @@
 import path from "node:path";
+import { todayKst } from "@/lib/kst";
 import { Document, Page, Text, View, StyleSheet, Font, renderToBuffer } from "@react-pdf/renderer";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
@@ -202,7 +203,7 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const routeId = searchParams.get("routeId");
-  const date = searchParams.get("date") || new Date().toISOString().slice(0, 10);
+  const date = searchParams.get("date") || todayKst();
   if (!routeId) return new Response("routeId가 필요합니다.", { status: 400 });
 
   const supabase = await createClient();

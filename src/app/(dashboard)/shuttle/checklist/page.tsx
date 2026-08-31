@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { todayKst } from "@/lib/kst";
 import { isUndecidedChoice } from "@/lib/shuttleChoice";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
@@ -102,7 +103,7 @@ export default async function ShuttleChecklistPage({
   // 보내준 정규학기 하원명단하고 달라 체크해서 반영해줘").
 
   const todayWeekday = new Date().getDay();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayKst();
   const stopById = new Map(stopsData.map((s) => [s.id, s]));
   const routeIdSet = new Set(routeIds);
 

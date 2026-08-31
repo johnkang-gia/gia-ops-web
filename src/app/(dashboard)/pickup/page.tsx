@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { todayKst } from "@/lib/kst";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import PickupCheckClient, { type PickupClassGroup, type PickupItem } from "@/components/pickup/PickupCheckClient";
@@ -118,7 +119,7 @@ export default async function PickupPage() {
   // 오늘 이 학생들이 타는 하원 셔틀 배정을 이름으로 찾아 붙입니다(배정표에는 학번이 없고
   // PDF 표기 그대로의 이름이 들어 있어서, 명부 이름과 맞춰봅니다).
   const todayWeekday = new Date().getDay();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayKst();
 
   const { data: routesData } = await supabase
     .from("shuttle_routes")

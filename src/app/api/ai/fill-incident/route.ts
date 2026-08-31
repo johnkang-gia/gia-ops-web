@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { todayKst } from "@/lib/kst";
 import { createClient } from "@/lib/supabase/server";
 import { callClaudeJson, CLAUDE_MODEL_FAST } from "@/lib/ai/claude";
 import { buildIncidentFillSystemPrompt, buildIncidentFillEntryBlock } from "@/lib/ai/prompts";
@@ -21,7 +22,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const todayDate = new Date().toISOString().slice(0, 10);
+    const todayDate = todayKst();
     const systemPrompt = buildIncidentFillSystemPrompt();
     const userPrompt = buildIncidentFillEntryBlock(detail, todayDate, currentTitle);
     // 자유 텍스트에서 필드를 나눠 담는 비교적 기계적인 작업이라 저렴한 모델(Haiku)로 처리합니다.

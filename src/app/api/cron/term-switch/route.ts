@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { todayKst } from "@/lib/kst";
 import { createClient } from "@supabase/supabase-js";
 import { logApiError } from "@/lib/logging";
 import { touchHeartbeat } from "@/lib/heartbeat";
@@ -29,8 +30,8 @@ export async function GET(req: NextRequest) {
   await touchHeartbeat(supabase, "cron:term-switch");
 
   try {
-    // KST(UTC+9) 기준 오늘 날짜(YYYY-MM-DD).
-    const todayKst = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    // 오늘(한국 기준). 예전에는 여기서 직접 +9시간을 더해 UTC 문자열을 잘랐습니다.
+    const today = todayKst();
 
     const { data: terms, error } = await supabase
       .from("terms")
@@ -39,7 +40,7 @@ export async function GET(req: NextRequest) {
 
     const rows = terms ?? [];
     const candidates = rows.filter(
-      (t) => t.start_date && t.start_date <= todayKst && (!t.end_date || t.end_date >= todayKst)
+      (t) => t.start_date && t.start_date <= today && (!t.end_date || t.end_date >= today)
     );
     candidates.sort((a, b) => (b.start_date as string).localeCompare(a.start_date as string));
     const target = candidates[0] ?? null;
@@ -58,7 +59,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      today: todayKst,
+      today,
       activated: target?.id ?? null,
       ended: toEnd.map((t) => t.id),
     });

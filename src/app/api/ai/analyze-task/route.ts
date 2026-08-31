@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { todayKst } from "@/lib/kst";
 import { createClient } from "@/lib/supabase/server";
 import { callClaudeJson, CLAUDE_MODEL_FAST } from "@/lib/ai/claude";
 import { buildTaskAnalyzeSystemPrompt, buildTaskAnalyzeEntryBlock } from "@/lib/ai/prompts";
@@ -23,7 +24,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const todayDate = new Date().toISOString().slice(0, 10);
+    const todayDate = todayKst();
     const systemPrompt = buildTaskAnalyzeSystemPrompt(teamNames);
     const userPrompt = buildTaskAnalyzeEntryBlock(content, todayDate);
     const result = (await callClaudeJson(systemPrompt, userPrompt, {

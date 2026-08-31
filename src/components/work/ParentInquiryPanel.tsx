@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { timeAgo } from "@/lib/kst";
 import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import { notifyOpsBoardRefresh, OPS_REFRESH_CHANNEL, OPS_REFRESH_EVENT } from "@/lib/opsRefresh";
@@ -58,15 +59,6 @@ const TYPE_STYLE: Record<string, string> = {
   "납부·행정": "bg-slate-100 text-slate-600",
   기타: "bg-slate-100 text-slate-500",
 };
-
-function timeAgo(iso: string) {
-  const min = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
-  if (min < 1) return "방금";
-  if (min < 60) return `${min}분 전`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}시간 전`;
-  return new Date(iso).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" });
-}
 
 // 요청: "시간이 나와 요일도나오고 오늘이라면 시간도 나와, 이것들도 크롤링해서 언제문의가
 // 온건지도 기록해줘"

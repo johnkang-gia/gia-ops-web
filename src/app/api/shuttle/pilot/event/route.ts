@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { todayKst } from "@/lib/kst";
 import { createClient } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +30,7 @@ export async function POST(req: Request) {
   if (pilotError) return NextResponse.json({ error: pilotError.message }, { status: 500 });
   if (!pilot || !pilot.enabled) return NextResponse.json({ error: "유효하지 않거나 종료된 링크입니다." }, { status: 403 });
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayKst();
   const { error: insertError } = await supabase.from("shuttle_run_events").insert({
     service_date: today,
     route_id: pilot.route_id,

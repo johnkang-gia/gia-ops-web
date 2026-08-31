@@ -1,4 +1,5 @@
 import path from "node:path";
+import { todayKst } from "@/lib/kst";
 import { Document, Page, Text, View, StyleSheet, Font, renderToBuffer } from "@react-pdf/renderer";
 import { createClient } from "@/lib/supabase/server";
 import type { ManualSection } from "@/lib/types";
@@ -45,7 +46,7 @@ function ManualDocument({
   title: string;
   sections: ManualSection[];
 }) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayKst();
   return (
     <Document>
       <Page size="A4" style={styles.page}>

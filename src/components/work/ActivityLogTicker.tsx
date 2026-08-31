@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { timeAgo } from "@/lib/kst";
 import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import { useConfirm } from "@/components/common/ConfirmProvider";
@@ -16,15 +17,6 @@ import type { TaskComment } from "@/lib/types";
 //   로그는 "무슨 일이 있었나"를 곁눈질로 확인하는 정보지, 자리를 크게 차지할 만큼 자주 들여다보는
 //   것이 아닙니다. 세 줄을 차지하던 자리를 학부모 문의사항에 내주고, 로그는 맨 윗줄에 한 줄로만
 //   흐르게 했습니다. 궁금하면 눌러서 전체를 봅니다.
-
-function timeAgo(iso: string) {
-  const min = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
-  if (min < 1) return "방금";
-  if (min < 60) return `${min}분 전`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}시간 전`;
-  return new Date(iso).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" });
-}
 
 export default function ActivityLogTicker({
   department,

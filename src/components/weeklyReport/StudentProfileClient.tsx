@@ -1,20 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import { timeAgo } from "@/lib/kst";
 import { createClient } from "@/lib/supabase/client";
 import type { WrComment, WrReport, WrStudent } from "@/lib/types";
 import ReportFormModal from "./ReportFormModal";
 import { useConfirm } from "@/components/common/ConfirmProvider";
-
-function timeAgo(iso: string) {
-  const diffMs = Date.now() - new Date(iso).getTime();
-  const min = Math.floor(diffMs / 60000);
-  if (min < 1) return "방금";
-  if (min < 60) return `${min}분 전`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}시간 전`;
-  return new Date(iso).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" });
-}
 
 export default function StudentProfileClient({
   student,

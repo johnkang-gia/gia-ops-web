@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { todayKst } from "@/lib/kst";
 import { isUndecidedChoice } from "@/lib/shuttleChoice";
 import { createClient } from "@supabase/supabase-js";
 
@@ -41,7 +42,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
     return NextResponse.json({ label: link.label, youtubeVideoId: link.youtube_video_id, routes: [] });
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayKst();
   const todayWeekday = new Date().getDay();
 
   // run_events는 routeIds만 있으면 바로 조회할 수 있어 stops와 무관하므로, stops 조회와

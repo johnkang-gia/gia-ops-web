@@ -4,6 +4,13 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { FeePlan, FeePaymentOption, FeeDiscount } from "@/lib/types";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input, Select } from "@/components/ui/input";
+import StatCard from "@/components/viz/StatCard";
+import BarRow from "@/components/viz/BarRow";
+import Donut from "@/components/viz/Donut";
 
 // 요금제 · 할인 (재무 전용)
 //
@@ -205,13 +212,36 @@ export default function FeePlansClient({
   return (
     <div className="mx-auto w-full max-w-[1500px] p-4">
       <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
-        <h1 className="text-lg font-bold text-slate-800">💰 요금제 · 할인</h1>
-        <span className="text-[11px] text-slate-400">재무 권한이 있는 사람만 볼 수 있는 화면입니다.</span>
+        <h1 className="text-lg font-extrabold text-[var(--g-ink)]">💰 요금제 · 할인</h1>
+        <Badge tone="accent">재무 권한 전용</Badge>
       </div>
-      <p className="mb-3 text-[11px] leading-relaxed text-slate-400">
+      <p className="mb-3 text-[11px] leading-relaxed text-[var(--g-muted)]">
         금액을 하나하나 적어두지 않습니다. <b>기준 금액 1회분</b>과 <b>납부 옵션</b>(몇 회분을 묶고 몇 % 깎는가)만
         정해두면 청구액이 저절로 나옵니다 — 요금이 오를 때 한 군데만 고치면 됩니다.
       </p>
+
+      {/* 한눈에 보는 요약. 목록만 있으면 "지금 이 학교의 요금 구조가 어떤 모양인지"를
+          매번 머리로 재구성해야 합니다. */}
+      <div className="mb-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatCard label="학비 요금제" value={plans.filter((p) => p.category === "학비" && p.active).length} unit="개" />
+        <StatCard label="학비외 요금제" value={plans.filter((p) => p.category === "학비외" && p.active).length} unit="개" tone="ok" />
+        <StatCard label="쓰는 중인 할인" value={discounts.filter((d) => d.active).length} unit="개" tone="warn" />
+        <Card hover className="flex items-center gap-3 px-4 py-3">
+          <Donut
+            value={discounts.filter((d) => d.active).length}
+            max={Math.max(1, discounts.length)}
+            size={64}
+            thickness={8}
+            color="var(--g-accent)"
+          />
+          <div className="min-w-0">
+            <div className="text-[11px] font-semibold text-[var(--g-muted)]">할인 중 켜둔 비율</div>
+            <div className="text-[11px] leading-relaxed text-[var(--g-muted)]">
+              꺼둔 것 {discounts.filter((d) => !d.active).length}개는 <b>지운 게 아니라 꺼둔 것</b>입니다.
+            </div>
+          </div>
+        </Card>
+      </div>
 
       {loadError && (
         <p className="mb-2 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-[11px] text-red-700">
@@ -227,16 +257,9 @@ export default function FeePlansClient({
 
       <div className="mb-3 flex flex-wrap items-center gap-1.5">
         {(["학비", "학비외", "할인"] as const).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={
-              "rounded-lg px-3 py-1.5 text-xs font-bold " +
-              (tab === t ? "bg-slate-800 text-white" : "border border-slate-300 text-slate-600 hover:bg-slate-50")
-            }
-          >
+          <Button key={t} size="sm" variant={tab === t ? "default" : "glass"} onClick={() => setTab(t)}>
             {t}
-          </button>
+          </Button>
         ))}
         <label className="ml-auto flex items-center gap-1 text-[11px] text-slate-500">
           <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />
@@ -246,46 +269,36 @@ export default function FeePlansClient({
 
       {tab !== "할인" ? (
         <>
-          <button
-            onClick={() => setShowPlanForm((v) => !v)}
-            className="mb-2 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50"
-          >
+          <Button variant="glass" size="sm" className="mb-2" onClick={() => setShowPlanForm((v) => !v)}>
             + {tab} 요금제 추가
-          </button>
+          </Button>
           {showPlanForm && (
-            <div className="mb-3 flex flex-wrap items-end gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
-              <input
+            <div className="g-panel mb-3 flex flex-wrap items-end gap-2 p-3">
+              <Input
                 value={planForm.name}
                 onChange={(e) => setPlanForm((f) => ({ ...f, name: e.target.value, category: tab }))}
                 placeholder={tab === "학비" ? "예: 정규과정 / 방과후 5일반" : "예: 셔틀 / 교재비 / 교복"}
-                className="w-56 rounded-lg border border-slate-300 px-2 py-1.5 text-xs"
+                className="w-56"
               />
               <label className="text-[11px] text-slate-500">
                 기준 금액
-                <input
+                <Input
                   type="number"
                   value={planForm.base_amount}
                   onChange={(e) => setPlanForm((f) => ({ ...f, base_amount: Number(e.target.value) || 0 }))}
-                  className="ml-1 w-32 rounded-lg border border-slate-300 px-2 py-1.5 text-xs"
+                  className="ml-1 w-32"
                 />
               </label>
-              <select
+              <Select
                 value={planForm.unit}
                 onChange={(e) => setPlanForm((f) => ({ ...f, unit: e.target.value as FeePlan["unit"] }))}
-                className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs"
-              >
+                >
                 <option value="월">월당</option>
                 <option value="학기">학기당</option>
                 <option value="연">연간</option>
                 <option value="회">1회</option>
-              </select>
-              <button
-                onClick={addPlan}
-                disabled={busy}
-                className="rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-50"
-              >
-                만들기
-              </button>
+              </Select>
+              <Button size="sm" onClick={addPlan} disabled={busy}>만들기</Button>
             </div>
           )}
 
@@ -296,63 +309,58 @@ export default function FeePlansClient({
               </p>
             )}
             {shownPlans.map((p) => (
-              <div
-                key={p.id}
-                className={"rounded-xl border bg-white p-3 " + (p.active ? "border-slate-200" : "border-slate-200 opacity-50")}
-              >
-                <div className="mb-1.5 flex flex-wrap items-baseline gap-2">
-                  <b className="text-sm text-slate-800">{p.name}</b>
-                  <span className="text-xs text-slate-500">
-                    {won(Number(p.base_amount))} / {p.unit}
-                  </span>
-                  {!p.active && <span className="rounded bg-slate-100 px-1.5 text-[10px] font-bold text-slate-500">꺼둠</span>}
-                  <button
-                    onClick={() => togglePlan(p)}
-                    className="ml-auto rounded border border-slate-300 px-1.5 py-0.5 text-[10px] font-bold text-slate-500 hover:bg-slate-50"
-                  >
-                    {p.active ? "끄기" : "켜기"}
-                  </button>
-                </div>
-                <table className="w-full text-left text-xs">
-                  <thead className="text-slate-400">
-                    <tr>
-                      <th className="py-1 font-semibold">납부 옵션</th>
-                      <th className="py-1 font-semibold">회차</th>
-                      <th className="py-1 font-semibold">할인</th>
-                      <th className="py-1 text-right font-semibold">청구액</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(optionsByPlan.get(p.id) ?? []).map((o) => (
-                      <tr key={o.id} className="border-t border-slate-100">
-                        <td className="py-1 font-semibold text-slate-700">{o.name}</td>
-                        <td className="py-1 text-slate-500">
-                          {o.periods}
-                          {p.unit}
-                        </td>
-                        <td className="py-1 text-slate-500">
-                          {Number(o.discount_rate) > 0 ? `${Math.round(Number(o.discount_rate) * 100)}%` : "-"}
-                        </td>
-                        <td className="py-1 text-right font-bold text-slate-800">{won(optionAmount(p, o))}</td>
-                      </tr>
-                    ))}
-                    {(optionsByPlan.get(p.id) ?? []).length === 0 && (
-                      <tr>
-                        <td colSpan={4} className="py-2 text-center text-[11px] text-slate-300">
+              (() => {
+                const opts = optionsByPlan.get(p.id) ?? [];
+                // 막대는 **가장 비싼 옵션**을 기준으로 그립니다. 그래야 "연납이 얼마나 큰
+                // 덩어리인지"와 "월납이 그중 얼마인지"가 한눈에 견줍니다.
+                const maxAmt = Math.max(1, ...opts.map((o) => optionAmount(p, o)));
+                return (
+                  <Card key={p.id} hover className={p.active ? "" : "opacity-55"}>
+                    <CardHeader>
+                      <div className="flex flex-wrap items-baseline gap-2">
+                        <CardTitle>{p.name}</CardTitle>
+                        <span className="text-[11px] font-semibold text-[var(--g-muted)]">
+                          {won(Number(p.base_amount))} / {p.unit}
+                        </span>
+                        {!p.active && <Badge>꺼둠</Badge>}
+                      </div>
+                      <Button size="sm" variant="glass" onClick={() => togglePlan(p)}>
+                        {p.active ? "끄기" : "켜기"}
+                      </Button>
+                    </CardHeader>
+                    <CardContent className="space-y-1.5">
+                      {opts.map((o) => (
+                        <div key={o.id}>
+                          <BarRow
+                            label={o.name}
+                            value={optionAmount(p, o)}
+                            max={maxAmt}
+                            suffix="원"
+                            color={Number(o.discount_rate) > 0 ? "#10b981" : "var(--g-accent)"}
+                          />
+                          <div className="ml-[5.25rem] text-[10px] text-[var(--g-muted)]">
+                            {o.periods}
+                            {p.unit}분
+                            {Number(o.discount_rate) > 0 && (
+                              <span className="ml-1 font-bold text-emerald-600">
+                                −{Math.round(Number(o.discount_rate) * 100)}%
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                      {opts.length === 0 && (
+                        <p className="py-2 text-center text-[11px] text-[var(--g-muted)]">
                           납부 옵션이 없습니다 — 학부모가 고를 것이 없다는 뜻입니다.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-                <button
-                  onClick={() => addOption(p)}
-                  disabled={busy}
-                  className="mt-1.5 rounded border border-slate-300 px-2 py-0.5 text-[11px] font-semibold text-slate-500 hover:bg-slate-50 disabled:opacity-50"
-                >
-                  + 납부 옵션
-                </button>
-              </div>
+                        </p>
+                      )}
+                      <Button size="sm" variant="soft" onClick={() => addOption(p)} disabled={busy} className="mt-1">
+                        + 납부 옵션
+                      </Button>
+                    </CardContent>
+                  </Card>
+                );
+              })()
             ))}
           </div>
         </>
@@ -363,70 +371,61 @@ export default function FeePlansClient({
             &quot;지금 쓰는 할인&quot;과 &quot;그때 썼던 할인&quot;은 다른 물음이고, 둘 다 답할 수 있어야 합니다.
             켜고 끈 기록은 이유와 함께 남습니다.
           </div>
-          <button
-            onClick={() => setShowDiscountForm((v) => !v)}
-            className="mb-2 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50"
-          >
+          <Button variant="glass" size="sm" className="mb-2" onClick={() => setShowDiscountForm((v) => !v)}>
             + 할인 항목 추가
-          </button>
+          </Button>
           {showDiscountForm && (
-            <div className="mb-3 flex flex-wrap items-end gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
-              <input
+            <div className="g-panel mb-3 flex flex-wrap items-end gap-2 p-3">
+              <Input
                 value={discountForm.name}
                 onChange={(e) => setDiscountForm((f) => ({ ...f, name: e.target.value }))}
                 placeholder="할인 이름 (예: 형제 할인)"
-                className="w-44 rounded-lg border border-slate-300 px-2 py-1.5 text-xs"
+                className="w-44"
               />
-              <select
+              <Select
                 value={discountForm.kind}
                 onChange={(e) => setDiscountForm((f) => ({ ...f, kind: e.target.value as "percent" | "amount" }))}
-                className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs"
+                
               >
                 <option value="percent">비율(%)</option>
                 <option value="amount">정액(원)</option>
-              </select>
-              <input
+              </Select>
+              <Input
                 type="number"
                 value={discountForm.value}
                 onChange={(e) => setDiscountForm((f) => ({ ...f, value: Number(e.target.value) || 0 }))}
-                className="w-24 rounded-lg border border-slate-300 px-2 py-1.5 text-xs"
+                className="w-24"
               />
-              <select
+              <Select
                 value={discountForm.category}
                 onChange={(e) => setDiscountForm((f) => ({ ...f, category: e.target.value as "" | "학비" | "학비외" }))}
-                className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs"
+                
               >
                 <option value="">학비·학비외 모두</option>
                 <option value="학비">학비만</option>
                 <option value="학비외">학비외만</option>
-              </select>
+              </Select>
               <label className="flex items-center gap-1 text-[11px] text-slate-600" title="금액이 큰 감면은 걸고 승인받는 것이 안전합니다.">
-                <input
+                <Input
                   type="checkbox"
                   checked={discountForm.requires_approval}
                   onChange={(e) => setDiscountForm((f) => ({ ...f, requires_approval: e.target.checked }))}
                 />
                 최고관리자 승인 필요
               </label>
-              <input
+              <Input
                 value={discountForm.description}
                 onChange={(e) => setDiscountForm((f) => ({ ...f, description: e.target.value }))}
                 placeholder="설명(선택)"
-                className="min-w-[10rem] flex-1 rounded-lg border border-slate-300 px-2 py-1.5 text-xs"
+                className="min-w-[10rem] flex-1"
               />
-              <button
-                onClick={addDiscount}
-                disabled={busy}
-                className="rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-50"
-              >
-                만들기
-              </button>
+              <Button size="sm" onClick={addDiscount} disabled={busy}>만들기</Button>
             </div>
           )}
 
-          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+          <div className="g-panel-solid overflow-hidden">
             <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 text-slate-500">
+              <thead className="bg-white/50 text-[var(--g-muted)]">
                 <tr>
                   <th className="px-2 py-1.5 font-semibold">할인 이름</th>
                   <th className="px-2 py-1.5 font-semibold">깎는 값</th>
@@ -484,12 +483,9 @@ export default function FeePlansClient({
         </>
       )}
 
-      <button
-        onClick={() => router.refresh()}
-        className="mt-3 rounded-lg border border-slate-300 px-2.5 py-1 text-[11px] font-semibold text-slate-500 hover:bg-slate-50"
-      >
+      <Button variant="ghost" size="sm" className="mt-3" onClick={() => router.refresh()}>
         새로 읽기
-      </button>
+      </Button>
     </div>
   );
 }

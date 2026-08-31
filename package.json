@@ -1,6 +1,6 @@
 {
   "name": "gia-ops-web",
-  "version": "0.343.0",
+  "version": "0.344.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -12,6 +12,10 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@hyunbinseo/holidays-kr": "^5.2027.1",
+    "@radix-ui/react-dialog": "^1.1.23",
+    "@radix-ui/react-select": "^2.3.7",
+    "@radix-ui/react-slot": "^1.3.3",
+    "@radix-ui/react-tabs": "^1.1.21",
     "@react-pdf/renderer": "^4.5.1",
     "@supabase/ssr": "^0.5",
     "@supabase/supabase-js": "^2",
@@ -19,11 +23,15 @@
     "@tiptap/starter-kit": "^3.29.2",
     "@vercel/analytics": "^2.0.1",
     "@vercel/speed-insights": "^2.0.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
     "google-auth-library": "^11.0.0",
+    "lucide-react": "^1.37.0",
     "next": "16.2.11",
     "qrcode": "^1.5.4",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

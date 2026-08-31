@@ -34,8 +34,12 @@
 }
 
 body {
-  font-family: Arial, Helvetica, sans-serif;
-  background-color: var(--color-gia-bg);
+  font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, -apple-system, sans-serif;
+  /* 페이지 바탕에 옅은 얼룩. 반투명 판은 **뒤에 뭔가 있어야** 유리처럼 보입니다 -
+     흰 배경 위의 반투명은 그냥 흰색입니다. */
+  background: var(--glass-mesh);
+  background-attachment: fixed;
+  color: var(--g-ink);
 }
 
 /* ===== 테마(라이트/다크/리퀴드글라스/GIA) - 공용 셸(사이드바/헤더/카드/버튼) 전용 =====
@@ -44,20 +48,23 @@ body {
    "전체 공통 틀만"이라, 업무/위클리 리포트 등 개별 화면 내부(workflatform-theme 등)는
    그대로 두고 이 변수들은 건드리지 않습니다. --shell-* 이름의 변수를 두고, layout.tsx의
    sidebar/header/card 요소들이 bg-[var(--shell-bg)]처럼 Tailwind 임의값 클래스로 읽어갑니다. */
+/* 기본 테마 = 글래스(요청: "부드러운형 + 글래스모피즘").
+   테마 고르는 구조는 그대로 두고 '라이트'의 값만 갈아끼웠습니다 - 이미 이 테마를 쓰고
+   계신 분들의 설정을 건드리지 않고 인상만 바뀝니다. */
 [data-theme="light"] {
-  --shell-page-bg: var(--color-gia-bg);
-  --shell-content-bg: var(--color-gia-bg);
-  --shell-bg: #ffffff;
-  --shell-border: #e2e8f0;
-  --shell-text: #334155;
-  --shell-text-muted: #94a3b8;
-  --shell-card-bg: rgba(248, 250, 252, 0.6);
-  --shell-hover-bg: #f8fafc;
-  --shell-accent: var(--color-gia-navy);
+  --shell-page-bg: var(--glass-mesh);
+  --shell-content-bg: transparent;
+  --shell-bg: rgba(255, 255, 255, 0.72);
+  --shell-border: rgba(255, 255, 255, 0.75);
+  --shell-text: #3a3f63;
+  --shell-text-muted: #8e93b4;
+  --shell-card-bg: rgba(255, 255, 255, 0.55);
+  --shell-hover-bg: rgba(255, 255, 255, 0.85);
+  --shell-accent: var(--g-accent);
   --shell-accent-text: #ffffff;
-  --shell-input-bg: #f8fafc;
-  --shell-input-border: #e2e8f0;
-  --shell-blur: 0px;
+  --shell-input-bg: rgba(255, 255, 255, 0.65);
+  --shell-input-border: rgba(255, 255, 255, 0.7);
+  --shell-blur: 14px;
 }
 
 [data-theme="dark"] {
@@ -453,4 +460,110 @@ button:disabled {
     top: 0 !important;
     width: auto !important;
   }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   글래스 디자인 시스템 (v0.344.0~)
+   ═══════════════════════════════════════════════════════════════════════
+
+   담당자: "부드러운형으로 하자. 전체적인 느낌은 글래스모피즘으로 하고 조금 더 시각화한
+           자료들이 많도록."
+
+   시안 세 장 중 B(부드러운형)를 고르셨습니다. 여기서는 그 토큰을 한곳에 모읍니다 -
+   화면마다 색을 직접 적으면 나중에 톤을 바꿀 때 93개 화면을 다 뒤져야 합니다.
+
+   ── 글래스가 성립하려면 ────────────────────────────────────────────────
+   반투명은 **뒤에 뭔가 있어야** 보입니다. 흰 배경 위의 반투명은 그냥 흰색입니다.
+   그래서 페이지 바탕에 옅은 색 얼룩(--glass-mesh)을 깔고, 그 위에 반투명 판을 얹습니다.
+
+   ── 읽기를 해치지 않기 ─────────────────────────────────────────────────
+   글래스는 예쁘지만 **글자 대비를 갉아먹습니다.** 이 앱은 하원 4시에 여러 명이 동시에
+   보는 실무 화면이 중심이라, 판은 불투명도를 0.72 아래로 내리지 않고 글자색은 진하게
+   유지합니다. 흐릿해서 못 읽는 화면은 아무리 예뻐도 실패입니다.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* 강조색 - 시안 B의 남보라 */
+  --g-accent: #6366f1;
+  --g-accent-strong: #4f46e5;
+  --g-accent-soft: #eef0fe;
+  --g-ink: #1e1b4b;
+  --g-muted: #6b7194;
+
+  /* 판(카드) */
+  --g-surface: rgba(255, 255, 255, 0.72);
+  --g-surface-strong: rgba(255, 255, 255, 0.88);
+  --g-border: rgba(255, 255, 255, 0.75);
+  --g-border-ink: rgba(99, 102, 241, 0.12);
+  --g-blur: 14px;
+  --g-radius: 18px;
+  --g-radius-sm: 12px;
+  --g-shadow: 0 6px 24px -8px rgba(67, 56, 202, 0.18), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --g-shadow-lg: 0 18px 48px -16px rgba(67, 56, 202, 0.28);
+
+  /* 페이지 바탕 얼룩 - 이게 없으면 반투명이 그냥 흰색으로 보입니다 */
+  --glass-mesh:
+    radial-gradient(1100px 620px at 8% -8%, rgba(129, 140, 248, 0.20), transparent 60%),
+    radial-gradient(900px 520px at 102% 4%, rgba(56, 189, 248, 0.18), transparent 58%),
+    radial-gradient(820px 620px at 46% 108%, rgba(196, 181, 253, 0.20), transparent 62%),
+    linear-gradient(168deg, #f7f8fd 0%, #f3f5fc 52%, #eef2fb 100%);
+}
+
+/* 판 하나. 카드·패널·표 겉면에 씁니다. */
+.g-panel {
+  background: var(--g-surface);
+  border: 1px solid var(--g-border);
+  border-radius: var(--g-radius);
+  box-shadow: var(--g-shadow);
+  backdrop-filter: blur(var(--g-blur)) saturate(1.35);
+  -webkit-backdrop-filter: blur(var(--g-blur)) saturate(1.35);
+}
+/* 글자가 빽빽한 판(표·목록)은 조금 더 불투명하게 - 읽기가 먼저입니다. */
+.g-panel-solid {
+  background: var(--g-surface-strong);
+  border: 1px solid var(--g-border);
+  border-radius: var(--g-radius);
+  box-shadow: var(--g-shadow);
+  backdrop-filter: blur(var(--g-blur)) saturate(1.2);
+  -webkit-backdrop-filter: blur(var(--g-blur)) saturate(1.2);
+}
+.g-panel-hover:hover {
+  box-shadow: var(--g-shadow-lg);
+  transform: translateY(-1px);
+}
+.g-panel, .g-panel-solid, .g-panel-hover {
+  transition: box-shadow 0.18s ease, transform 0.18s ease;
+}
+
+/* 페이지 바탕. 셸(layout)이 이걸 씁니다. */
+.g-mesh { background: var(--glass-mesh); background-attachment: fixed; }
+
+/* 작은 알약(상태 뱃지) */
+.g-chip {
+  display: inline-flex; align-items: center; gap: 0.25rem;
+  border-radius: 999px; padding: 0.125rem 0.5rem;
+  font-size: 10px; font-weight: 700; line-height: 1.5;
+}
+
+/* backdrop-filter를 못 쓰는 환경(구형 브라우저·안내보드 TV)에서는 불투명으로 떨어집니다.
+   반투명인 채로 blur만 빠지면 글자가 배경과 겹쳐 읽을 수 없게 됩니다 - 그 경우엔
+   투명도를 포기하는 쪽이 맞습니다. */
+@supports not ((backdrop-filter: blur(2px)) or (-webkit-backdrop-filter: blur(2px))) {
+  .g-panel, .g-panel-solid { background: #ffffff; border-color: #e6e8f5; }
+}
+
+/* 인쇄할 때는 유리도 그림자도 없습니다. 잉크만 낭비합니다. */
+@media print {
+  .g-panel, .g-panel-solid {
+    background: #fff !important; box-shadow: none !important;
+    backdrop-filter: none !important; -webkit-backdrop-filter: none !important;
+    border-color: #94a3b8 !important;
+  }
+  .g-mesh { background: #fff !important; }
+}
+
+/* 움직임을 줄이는 설정을 켠 사용자에게는 떠오르는 효과를 끕니다. */
+@media (prefers-reduced-motion: reduce) {
+  .g-panel, .g-panel-solid, .g-panel-hover { transition: none; }
+  .g-panel-hover:hover { transform: none; }
 }

@@ -11,6 +11,7 @@ import {
 } from "@/lib/pickupParse";
 import { extractTargetRange } from "@/lib/attendanceDigest";
 import { extractRecurringWeekdays, hasRecurringPhrase, weekdayLabel } from "@/lib/parentRecurrence";
+import { nameSurfaces, readSiblings } from "@/lib/attendanceIntent";
 import { genCaseId } from "@/lib/caseId";
 
 // 어느 경로로 들어온 연락이든 이 함수 하나를 거쳐 픽업으로 바뀝니다.
@@ -101,6 +102,17 @@ urgency 기준
   분류하고 summary에 문의 내용도 함께 적으세요.
 - 애매하면 confidence를 0.5 미만으로 주세요. 낮은 값은 사람이 확인하라는 뜻이지 틀렸다는
   뜻이 아닙니다. 확실하지 않은데 높은 값을 주는 것이 가장 나쁩니다.
+
+형제방 규칙 (실제로 아이를 잘못 짚었던 부분)
+- 한 대화방에 형제가 둘 있고, **한 아이는 쉬고 다른 아이는 정상등원**하는 글이 자주 옵니다.
+  예) "오늘 여명인 괜찮은데, 이제는 여전히 열나고 아파 하루 더 쉬도록 하겠습니다.
+       여명이는 정상등원 합니다!"
+  → 쉬는 아이는 **이제**입니다. 여명이는 정상등원입니다.
+- 먼저 나온 이름을 고르지 마세요. **"쉰다 / 결석 / 아프다"라는 말이 붙어 있는 이름**을
+  student_name에 적으세요.
+- "정상등원", "괜찮다", "등원합니다"라고 적힌 아이는 절대 결석 대상이 아닙니다.
+- 누구인지 확실하지 않으면 student_name을 null로 두고 confidence를 낮추세요. 엉뚱한 아이를
+  결석으로 만들면 **오는 아이가 셔틀을 못 탑니다.**
 
 recurring_weekdays 규칙 (가장 자주 놓치는 부분)
 - "매주 금요일", "금요일마다", "앞으로 화·목은", "every Friday"처럼 **계속 반복되는** 약속이면
@@ -400,8 +412,45 @@ export async function ingestPickup(
     // 형제 방 - 본문에서 누구인지 가려냅니다. 못 가리면 사람에게 넘깁니다.
     else candidateName = pickSiblingFromText(text, channel.names);
   }
+
+  // ── 형제방: 한 아이는 쉬고 한 아이는 가는 경우 ────────────────────────────
+  //
+  // 실제로 틀렸던 문장입니다.
+  //   "오늘 여명인 괜찮은데, 이제는 여전히 열나고 아파 하루 더 쉬도록 하겠습니다.
+  //    여명이는 정상등원 합니다!"
+  // 쉬는 아이는 이제인데 **여명이가 결석으로 들어갔습니다.** AI가 먼저 나온 이름을 골랐고,
+  // 채널 이름만으로는 둘 중 누구인지 가릴 수 없어 그대로 통과했습니다.
+  //
+  // 그래서 규칙으로 한 번 더 봅니다(@/lib/attendanceIntent). 이름이 있는 **절만** 읽어
+  // 아이마다 상태를 따로 정하고, 결석·픽업이라고 적힌 아이가 정확히 한 명이면 그 아이를
+  // 씁니다. **이 결과가 AI 답보다 우선입니다** - 규칙은 같은 문장에 늘 같은 답을 냅니다.
+  const siblingRead =
+    channel && channel.isSibling
+      ? readSiblings(
+          text,
+          channel.names
+            .map((n) => {
+              const hit = matchStudent(n, roster, channel.grades[0] ?? null);
+              return hit ? { key: hit.name, surfaces: nameSurfaces(hit.name, hit.name_en) } : null;
+            })
+            .filter((x): x is { key: string; surfaces: string[] } => !!x)
+        )
+      : null;
+  if (siblingRead?.pick) candidateName = siblingRead.pick.key;
+
   // 채널 정보가 없으면(전화·교사 전달 등) AI가 읽어낸 이름을 씁니다.
   if (!candidateName && typeof ai.student_name === "string") candidateName = ai.student_name;
+
+  // AI가 **정상등원이라고 적힌 아이**를 골랐다면 그건 확실한 오답입니다.
+  // 그 아이를 그대로 두면 오는 아이가 셔틀 명단에서 빠집니다.
+  if (
+    siblingRead &&
+    siblingRead.attending.length > 0 &&
+    candidateName &&
+    siblingRead.attending.some((n) => n === candidateName)
+  ) {
+    candidateName = siblingRead.pick?.key ?? null;
+  }
 
   const matched = candidateName ? matchStudent(candidateName, roster, grade) : null;
   // 담임을 함께 적어둡니다 - 문의를 담임별로 묶어 보거나, 업무로 넘길 때 담당자를 미리
@@ -574,7 +623,11 @@ export async function ingestPickup(
 
   // 픽업 자동 확정 조건: AI가 충분히 확신하고, 학생이 명부에서 하나로 특정되었을 때만.
   // 문의는 자동으로 처리할 것이 없으므로 항상 사람이 봅니다.
-  const autoConfirm = isPickup && confidence >= AUTO_CONFIRM_MIN && !!matched && !looksRecurringButUnclear;
+  // 형제가 서로 다른 상태면 사람이 반드시 봅니다. 한 아이는 오고 한 아이는 안 오는 글은
+  // 기계가 제일 자주 뒤집는 자리입니다.
+  const siblingConflict = !!siblingRead?.conflict;
+  const autoConfirm =
+    isPickup && confidence >= AUTO_CONFIRM_MIN && !!matched && !looksRecurringButUnclear && !siblingConflict;
 
   const { data, error } = await supabase
     .from("pickup_requests")
@@ -599,6 +652,11 @@ export async function ingestPickup(
         typeof ai.note === "string" ? ai.note : null,
         recurDays.length > 0 ? `반복 감지: 매주 ${weekdayLabel(recurDays)}요일 (지속 특이사항으로 등록)` : null,
         looksRecurringButUnclear ? "반복되는 약속으로 보이는데 요일을 읽지 못했습니다. 사람이 확인해주세요." : null,
+        // 형제방에서 한 아이만 쉬는 경우. AI 요약이 엉뚱한 아이를 가리킬 수 있으므로,
+        // 규칙이 읽어낸 결과를 함께 적어 사람이 대조할 수 있게 합니다.
+        siblingRead && siblingRead.attending.length > 0
+          ? `형제 구분: ${siblingRead.attending.join("·")} 정상등원${siblingRead.pick ? ` / ${siblingRead.pick.key} ${siblingRead.pick.intent}` : ""}`
+          : null,
       ]
         .filter(Boolean)
         .join(" / ")

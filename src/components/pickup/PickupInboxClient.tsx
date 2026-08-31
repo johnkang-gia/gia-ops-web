@@ -5,7 +5,8 @@ import { todayKst } from "@/lib/kst";
 import { useToast } from "@/components/common/ToastProvider";
 import UpcomingPickups, { type ScheduleRow } from "@/components/pickup/UpcomingPickups";
 import StudentPicker from "@/components/pickup/StudentPicker";
-import { matchStudent, type RosterEntry } from "@/lib/pickupParse";
+import { matchStudent, parseChannelLabel, type RosterEntry } from "@/lib/pickupParse";
+import { nameSurfaces, readSiblings } from "@/lib/attendanceIntent";
 import { extractTargetRange, todayKey } from "@/lib/attendanceDigest";
 import { extractRecurringWeekdays, hasRecurringPhrase, weekdayLabel } from "@/lib/parentRecurrence";
 
@@ -145,6 +146,34 @@ export default function PickupInboxClient({
     notify(fixed > 0 ? `${fixed}건을 학생과 이었습니다.` : "지금 규칙으로도 확정되는 건이 없습니다. 직접 골라주세요.", fixed > 0 ? "success" : "error");
     void refresh();
   }
+
+  // ── 형제방: 한 아이는 쉬고 한 아이는 가는 글 ─────────────────────────────
+  //
+  // 실제로 틀렸던 문장입니다.
+  //   "오늘 여명인 괜찮은데, 이제는 여전히 열나고 아파 하루 더 쉬도록 하겠습니다.
+  //    여명이는 정상등원 합니다!"
+  // 쉬는 아이는 이제인데 여명이가 결석으로 들어갔습니다.
+  //
+  // 수집할 때도 같은 판정을 하지만, **이미 쌓여 있는 줄**에는 그 판정이 안 붙어 있습니다.
+  // 여기서 다시 읽어, 오늘 화면을 보는 사람이 바로 알아챌 수 있게 합니다.
+  const siblingOf = useCallback(
+    (r: PickupRow) => {
+      const text = r.raw_text ?? "";
+      const ch = parseChannelLabel(r.channel_label);
+      if (!text || !ch || !ch.isSibling) return null;
+      const sibs = ch.names
+        .map((n) => {
+          const hit = matchStudent(n, rosterForMatch, ch.grades[0] ?? null);
+          return hit ? { key: hit.name, surfaces: nameSurfaces(hit.name, hit.name_en) } : null;
+        })
+        .filter((x): x is { key: string; surfaces: string[] } => !!x);
+      if (sibs.length < 2) return null;
+      const read = readSiblings(text, sibs);
+      if (!read.conflict && read.attending.length === 0) return null;
+      return read;
+    },
+    [rosterForMatch]
+  );
 
   // ── 반복 판정 ────────────────────────────────────────────────────────────
   //
@@ -336,6 +365,25 @@ export default function PickupInboxClient({
                              넣어버렸어."
                     이건 오늘 하루짜리가 아니라 **셔틀 배정을 바꿔야 하는 일**입니다. 한 번짜리로
                     확정해버리면 다음 주 같은 요일에 아이가 그냥 차를 탑니다. */}
+                {/* 형제 구분. 오는 아이를 결석으로 찍으면 그 아이가 셔틀을 못 탑니다. */}
+                {siblingOf(r) && (
+                  <div className="mb-2 rounded-lg border border-indigo-300 bg-indigo-50 p-2 text-[11px] leading-relaxed text-indigo-900">
+                    <b>👧🧒 형제가 서로 다릅니다.</b>{" "}
+                    {siblingOf(r)!.attending.length > 0 && (
+                      <>
+                        <b>{siblingOf(r)!.attending.join("·")}</b>은(는) <b>정상등원</b>이라고 적혀 있습니다.
+                      </>
+                    )}
+                    {siblingOf(r)!.pick && (
+                      <>
+                        {" "}
+                        쉬거나 데려가는 아이는 <b>{siblingOf(r)!.pick!.key}</b>({siblingOf(r)!.pick!.intent})입니다.
+                      </>
+                    )}{" "}
+                    AI 요약이 다른 아이를 가리키고 있으면 그건 잘못 읽은 것입니다 — 원문을 보고 직접 골라주세요.
+                  </div>
+                )}
+
                 {recurrenceOf(r) && (
                   <div className="mb-2 rounded-lg border border-amber-300 bg-amber-50 p-2 text-[11px] leading-relaxed text-amber-900">
                     {recurrenceOf(r)!.days.length > 0 ? (

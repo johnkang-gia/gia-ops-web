@@ -167,7 +167,7 @@ export default function ShuttleOverviewClient({
             <b className="text-sm">노선별 현황</b>
             {/* 그림 하나에 두 가지가 들어 있으니 무엇이 무엇인지 적어둡니다.
                 범례 없는 그림은 예쁘기만 하고 안 읽힙니다. */}
-            <span className="text-[11px] text-slate-400">진한 차 = 오늘 탑승 · 📶 초록 = GPS 연결</span>
+            <span className="text-[11px] text-slate-400">진한 차 = 오늘 탑승 · 지붕색 = GPS(초록 연결 · 빨강 미연결)</span>
           </div>
           {/* 담당자 요청 ⑦: 네모 대신 버스 앞모습.
               색칠한 네모 스무 개는 눈으로 훑을 때 다 같아 보입니다. 버스 모양이면 진한 차와

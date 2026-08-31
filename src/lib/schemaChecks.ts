@@ -125,6 +125,13 @@ export const SCHEMA_CHECKS: SchemaCheck[] = [
     impact: "학기가 끝나도 그 학기 반·담임·과목 세팅이 남지 않아, 학기를 바꿔도 지난 학기 세팅을 볼 수 없습니다.",
   },
   {
+    feature: "학사일정 회의",
+    table: "academic_checklist_meetings",
+    columns: ["item_id", "seq", "meet_date", "done"],
+    migration: "20260831160000_academic_schedule_automation.sql",
+    impact: "회의가 필요한 일정에 회의 줄이 만들어지지 않고, 업무보드에도 회의가 올라가지 않습니다.",
+  },
+  {
     feature: "과목 색",
     table: "wr_subject_colors",
     columns: ["name", "color"],

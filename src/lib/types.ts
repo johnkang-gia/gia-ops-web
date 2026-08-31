@@ -93,6 +93,21 @@ export type ChecklistTemplate = {
   offset_days: number;
   active: boolean;
   sort_order: number;
+  // ── 아래는 학사일정 자동화(요청 ④⑤⑥)에서 더한 칸들 ──
+  /** 기간(일). 0이면 하루짜리 - 지금까지 만들어진 항목은 전부 여기 해당합니다. */
+  duration_days: number;
+  /** 회의가 필요한 일인가. 켜면 항목과 함께 회의 줄이 만들어집니다. */
+  needs_meeting: boolean;
+  /** 몇 번 모일지. 담당자 기준 최소 2번. */
+  meeting_count: number;
+  /** 회의 간격(일). 주당 1번이 기본이라 7. */
+  meeting_interval_days: number;
+  /** 업무보드에 저절로 올릴지. */
+  auto_task: boolean;
+  /** 마감 며칠 전에 업무로 올릴지. */
+  task_lead_days: number;
+  /** 매 학기 되풀이되는 일인가(학기준비 분석용). */
+  recurring: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -104,11 +119,38 @@ export type ChecklistItem = {
   title: string;
   description: string | null;
   department: string | null;
+  /** 기간의 시작이자 하루짜리일 때의 그 날. 이름은 옛것 그대로 둡니다(읽는 곳이 많습니다). */
   due_date: string;
+  /** 기간의 끝. null이면 due_date 하루짜리. */
+  end_date: string | null;
   done: boolean;
   done_by: string | null;
   done_at: string | null;
   note: string | null;
+  /** 업무보드에 올라간 업무. 채워져 있으면 다시 올리지 않습니다. */
+  task_id: string | null;
+  task_created_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+// 학사일정 항목에 딸린 회의(요청 ⑤).
+// 담당자: "적어도 2주에 걸쳐 2번의 회의 - 주당 1번, 그 한 주 동안 일을 맡아 처리하고 다시
+//         모여서 처리한 일과 결정한 일에 대해 회의."
+// 회의마다 자기 날짜와 자기 완료 여부가 있어야 "2차는 했고 3차는 안 했다"를 적을 수 있습니다.
+export type ChecklistMeeting = {
+  id: string;
+  item_id: string;
+  term_id: string | null;
+  seq: number;
+  meet_date: string;
+  title: string | null;
+  note: string | null;
+  done: boolean;
+  done_by: string | null;
+  done_at: string | null;
+  task_id: string | null;
+  task_created_at: string | null;
   created_at: string;
   updated_at: string;
 };

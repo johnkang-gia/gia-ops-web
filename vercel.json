@@ -35,6 +35,10 @@
     {
       "path": "/api/cron/pickup-schedules",
       "schedule": "0 22 * * *"
+    },
+    {
+      "path": "/api/cron/academic-tasks",
+      "schedule": "20 15 * * *"
     }
   ]
 }

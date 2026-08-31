@@ -1,13 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { getHolidayPreset } from "@hyunbinseo/holidays-kr";
 import { createClient } from "@/lib/supabase/client";
-import type { ChecklistAnchor, ChecklistItem, ChecklistTemplate, Term } from "@/lib/types";
-import { ANCHOR_LABEL, toDateStr } from "@/lib/academicChecklist";
+import type { ChecklistAnchor, ChecklistItem, ChecklistMeeting, ChecklistTemplate, Term } from "@/lib/types";
+import { ANCHOR_LABEL, toDateStr, addDays } from "@/lib/academicChecklist";
 import { friendlyError } from "@/lib/errorMessage";
 import GuideButton from "@/components/common/GuideButton";
 import { useConfirm } from "@/components/common/ConfirmProvider";
+import AcademicItemDialog from "./AcademicItemDialog";
 
 const GUIDE_SECTIONS = [
   {
@@ -61,15 +63,19 @@ export default function AcademicCalendarClient({
   templates: initialTemplates,
   currentTerm,
   isAdmin,
+  meetings = [],
   currentUserEmail,
 }: {
   items: ChecklistItem[];
   templates: ChecklistTemplate[];
   currentTerm: Term | null;
   isAdmin: boolean;
+  /** 항목에 딸린 회의(요청 ⑤). */
+  meetings?: ChecklistMeeting[];
   currentUserEmail: string;
 }) {
   const confirmAction = useConfirm();
+  const router = useRouter();
   const [items, setItems] = useState<ChecklistItem[]>(initialItems);
   const [templates, setTemplates] = useState<ChecklistTemplate[]>(initialTemplates);
   const now = new Date();
@@ -81,8 +87,7 @@ export default function AcademicCalendarClient({
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
   const [savingTemplate, setSavingTemplate] = useState(false);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
-  const [quickTitle, setQuickTitle] = useState("");
-  const [quickDate, setQuickDate] = useState("");
+  const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   // 대한민국 공휴일 표시 - 사이드바 메인 달력(DateTimeCard)과 동일한 데이터 소스를 씁니다(요청:
   // "학사일정 달력에도 대한민국 휴일 표시 해줘"). 준비 업무 계획을 세울 때 공휴일도 함께
@@ -146,15 +151,37 @@ export default function AcademicCalendarClient({
     };
   }, []);
 
+  // 기간(요청 ④)은 **걸쳐 있는 날 전부**에 놓습니다.
+  //
+  // 시작일 한 칸에만 찍으면, 3월 2일~13일짜리 일이 3월 2일에만 보이고 그 뒤로는 달력에서
+  // 사라집니다. 3월 10일에 달력을 열어본 사람은 그 일이 진행 중인 줄 모릅니다.
   const itemsByDate = useMemo(() => {
     const map = new Map<string, ChecklistItem[]>();
     for (const it of items) {
-      const arr = map.get(it.due_date) ?? [];
-      arr.push(it);
-      map.set(it.due_date, arr);
+      const last = it.end_date && it.end_date > it.due_date ? it.end_date : it.due_date;
+      // 실수로 몇 년짜리 기간이 들어와도 달력이 멈추지 않도록 상한을 둡니다.
+      let d = it.due_date;
+      for (let guard = 0; guard < 400 && d <= last; guard++) {
+        const arr = map.get(d) ?? [];
+        arr.push(it);
+        map.set(d, arr);
+        d = addDays(d, 1);
+      }
     }
     return map;
   }, [items]);
+
+  /** 항목별 회의. 목록에서 항목 아래에 붙여 보여줍니다. */
+  const meetingsByItem = useMemo(() => {
+    const map = new Map<string, ChecklistMeeting[]>();
+    for (const m of meetings) {
+      const arr = map.get(m.item_id) ?? [];
+      arr.push(m);
+      map.set(m.item_id, arr);
+    }
+    for (const arr of map.values()) arr.sort((a, b) => a.seq - b.seq);
+    return map;
+  }, [meetings]);
 
   const firstWeekday = new Date(viewYear, viewMonth, 1).getDay();
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
@@ -166,10 +193,21 @@ export default function AcademicCalendarClient({
 
   const monthItems = useMemo(() => {
     const monthPrefix = `${viewYear}-${pad2(viewMonth + 1)}`;
-    return items.filter((it) => it.due_date.startsWith(monthPrefix)).sort((a, b) => a.due_date.localeCompare(b.due_date));
+    // 기간 항목은 시작이 지난달이어도 이번 달에 걸쳐 있으면 보여야 합니다.
+    return items
+      .filter((it) => {
+        const last = it.end_date && it.end_date > it.due_date ? it.end_date : it.due_date;
+        return it.due_date.slice(0, 7) <= monthPrefix && last.slice(0, 7) >= monthPrefix;
+      })
+      .sort((a, b) => a.due_date.localeCompare(b.due_date));
   }, [items, viewYear, viewMonth]);
 
-  const displayedItems = selectedDate ? monthItems.filter((it) => it.due_date === selectedDate) : monthItems;
+  const displayedItems = selectedDate
+    ? monthItems.filter((it) => {
+        const last = it.end_date && it.end_date > it.due_date ? it.end_date : it.due_date;
+        return it.due_date <= selectedDate && last >= selectedDate;
+      })
+    : monthItems;
 
   async function toggleDone(item: ChecklistItem) {
     const supabase = createClient();
@@ -189,27 +227,6 @@ export default function AcademicCalendarClient({
     setItems((prev) => prev.map((it) => (it.id === item.id ? { ...it, note } : it)));
     const { error: err } = await supabase.from("academic_checklist_items").update({ note }).eq("id", item.id);
     if (err) setError(friendlyError("메모를 저장하지 못했습니다.", err));
-  }
-
-  async function addQuickItem() {
-    if (!quickTitle.trim() || !quickDate) {
-      setError("제목과 날짜를 입력해주세요.");
-      return;
-    }
-    const supabase = createClient();
-    setError("");
-    const { error: err } = await supabase.from("academic_checklist_items").insert({
-      title: quickTitle.trim(),
-      due_date: quickDate,
-      term_id: currentTerm?.id ?? null,
-    });
-    if (err) {
-      setError(friendlyError("항목을 추가하지 못했습니다.", err));
-      return;
-    }
-    setQuickTitle("");
-    setQuickDate("");
-    setShowQuickAdd(false);
   }
 
   function startEditTemplate(t: ChecklistTemplate) {
@@ -310,22 +327,24 @@ export default function AcademicCalendarClient({
         </div>
       )}
 
+      {/* 항목 추가는 팝업으로(요청 ④). 예전에는 제목 한 칸 + 날짜 한 칸이 줄에 붙어 있어서
+          기간도, 학기 기준도, 회의도 넣을 자리가 없었습니다. */}
       {showQuickAdd && (
-        <div className="mb-3 flex shrink-0 flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-          <input
-            value={quickTitle}
-            onChange={(e) => setQuickTitle(e.target.value)}
-            placeholder="항목 제목 (예: 학예회 리허설)"
-            className="min-w-[10rem] flex-1 rounded-lg border border-slate-300 px-2 py-1.5 text-xs"
-          />
-          <input
-            type="date"
-            value={quickDate}
-            onChange={(e) => setQuickDate(e.target.value)}
-            className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs"
-          />
-          <button onClick={addQuickItem} className="rounded-lg bg-gia-navy px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90">
-            추가
+        <AcademicItemDialog
+          currentTerm={currentTerm}
+          templateCount={templates.length}
+          onClose={() => setShowQuickAdd(false)}
+          onSaved={(msg) => {
+            setNotice(msg);
+            router.refresh();
+          }}
+        />
+      )}
+      {notice && (
+        <div className="mb-2 shrink-0 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+          {notice}
+          <button onClick={() => setNotice("")} className="ml-2 font-semibold hover:underline">
+            닫기
           </button>
         </div>
       )}
@@ -541,7 +560,13 @@ export default function AcademicCalendarClient({
               ) : (
                 <div className="flex flex-col divide-y divide-slate-100">
                   {displayedItems.map((it) => (
-                    <ChecklistRow key={it.id} item={it} onToggle={() => toggleDone(it)} onSaveNote={(note) => saveNote(it, note)} />
+                    <ChecklistRow
+                      key={it.id}
+                      item={it}
+                      meetings={meetingsByItem.get(it.id) ?? []}
+                      onToggle={() => toggleDone(it)}
+                      onSaveNote={(note) => saveNote(it, note)}
+                    />
                   ))}
                 </div>
               )}
@@ -555,10 +580,12 @@ export default function AcademicCalendarClient({
 
 function ChecklistRow({
   item,
+  meetings,
   onToggle,
   onSaveNote,
 }: {
   item: ChecklistItem;
+  meetings: ChecklistMeeting[];
   onToggle: () => void;
   onSaveNote: (note: string) => void;
 }) {
@@ -574,11 +601,40 @@ function ChecklistRow({
             <span className={"font-semibold " + (item.done ? "text-slate-400 line-through" : "text-slate-700")}>{item.title}</span>
             {item.department && <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">{item.department}</span>}
             <span className="font-mono text-[10px] text-slate-400">
-              {item.due_date} · {dDayLabel(item.due_date)}
+              {/* 기간(요청 ④)이면 시작~끝을 함께 보여줍니다. 마감은 끝나는 날입니다. */}
+              {item.end_date && item.end_date !== item.due_date
+                ? `${item.due_date} ~ ${item.end_date}`
+                : item.due_date}{" "}
+              · {dDayLabel(item.end_date ?? item.due_date)}
             </span>
+            {item.task_id && (
+              <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-bold text-blue-600" title="업무보드에 등록되었습니다">
+                📋 업무 등록됨
+              </span>
+            )}
           </div>
           {item.done && item.done_by && <div className="mt-0.5 text-[10px] text-emerald-600">✅ {item.done_by} 처리</div>}
           {item.description && <p className="mt-0.5 text-[11px] text-slate-500">{item.description}</p>}
+          {/* 회의(요청 ⑤). 만들어만 두고 안 보여주면 "회의 필요"를 켜도 아무 일도
+              안 일어난 것처럼 보입니다. */}
+          {meetings.length > 0 && (
+            <div className="mt-1 flex flex-wrap items-center gap-1">
+              <span className="text-[10px] font-bold text-amber-700">🗣 회의</span>
+              {meetings.map((m) => (
+                <span
+                  key={m.id}
+                  title={m.title ?? undefined}
+                  className={
+                    "rounded px-1.5 py-0.5 text-[10px] font-semibold " +
+                    (m.done ? "bg-emerald-50 text-emerald-600 line-through" : "bg-amber-50 text-amber-800")
+                  }
+                >
+                  {m.seq}차 {m.meet_date.slice(5)}
+                  {m.task_id && " 📋"}
+                </span>
+              ))}
+            </div>
+          )}
           <button onClick={() => setNoteOpen((v) => !v)} className="mt-0.5 text-[10px] text-blue-500 hover:underline">
             {item.note ? "📝 메모 보기/수정" : "+ 메모 남기기"}
           </button>

@@ -26,6 +26,7 @@ const ALLOWED: Record<string, string> = {
   "shuttle-auto": "셔틀 도착·출발 자동감지",
   "pickup-schedules": "오늘 픽업 예약 적용",
   "shuttle-learn-stops": "정류장 좌표 학습",
+  "academic-tasks": "학사일정 → 업무보드 등록",
 };
 
 export async function POST(req: Request) {

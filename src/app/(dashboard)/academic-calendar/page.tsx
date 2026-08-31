@@ -5,7 +5,7 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { getCurrentTerm } from "@/lib/currentTerm";
 import { isAdminUser } from "@/lib/roles";
 import { ensureChecklistItemsForTerm } from "@/lib/academicChecklist";
-import type { ChecklistItem, ChecklistTemplate, FormImportTemplate } from "@/lib/types";
+import type { ChecklistItem, ChecklistMeeting, ChecklistTemplate, FormImportTemplate } from "@/lib/types";
 import AcademicCalendarClient from "@/components/academic/AcademicCalendarClient";
 
 export const dynamic = "force-dynamic";
@@ -37,6 +37,18 @@ export default async function AcademicCalendarPage() {
     .select("*")
     .order("due_date", { ascending: true });
   const items = (itemsData as ChecklistItem[] | null) ?? [];
+
+  // 항목에 딸린 회의(요청 ⑤). 항목만 보여주고 회의를 안 보여주면 "회의 필요"를 켜도
+  // 아무 일도 안 일어난 것처럼 보입니다 - 실제로는 만들어졌는데 화면이 안 비추는 것뿐입니다.
+  const itemIds = items.map((i) => i.id);
+  const { data: meetingRows } = itemIds.length
+    ? await supabase
+        .from("academic_checklist_meetings")
+        .select("*")
+        .in("item_id", itemIds)
+        .order("meet_date")
+    : { data: [] };
+  const meetings = (meetingRows as ChecklistMeeting[] | null) ?? [];
 
   // 요청("그것에 학사일정에 기록으로 남아서") - 신청서 탭에서 이 학기 유형으로 붙여넣어둔
   // 구글폼 템플릿이 있으면, 지금 학기 화면에서도 바로 보이도록 작게 보여줍니다(자세한 지난
@@ -79,6 +91,7 @@ export default async function AcademicCalendarPage() {
           templates={templates}
           currentTerm={currentTerm}
           isAdmin={isAdmin}
+          meetings={meetings}
           currentUserEmail={me.email}
         />
       </div>

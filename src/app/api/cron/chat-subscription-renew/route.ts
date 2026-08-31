@@ -38,12 +38,34 @@ export const maxDuration = 60;
 function isNotConfigured(message: string): boolean {
   const m = message.toLowerCase();
   return (
+    // ① Chat 앱 자체가 아직 없음
     m.includes("chat app not found") ||
     m.includes("has not been used in project") ||
     m.includes("api is not enabled") ||
     m.includes("chat api") ||
-    m.includes("service_disabled")
+    m.includes("service_disabled") ||
+    // ② Pub/Sub 주제에 게시 권한이 없음
+    //
+    // 담당자: "언젠가는 설정할 수도 있으니 토픽을 삭제하기보단 이 오류가 나오면 넘기도록."
+    //
+    // 맞습니다. 환경변수를 지우면 나중에 다시 켤 때 무엇을 넣었는지 찾아야 합니다.
+    // 설정은 그대로 두고, **이 오류만 '아직 안 됨'으로 보고 넘어가는** 편이 낫습니다.
+    //
+    // 이 권한은 구글 클라우드 조직 정책(도메인 제한 공유) 때문에 최고관리자만 줄 수
+    // 있습니다. 우리 쪽에서 다시 시도해도 절대 달라지지 않는 종류입니다.
+    m.includes("permission to access pub/sub topic") ||
+    m.includes("the topic doesn't exist") ||
+    m.includes("granted google workspace access to publish")
   );
+}
+
+/** 설정이 안 됐을 때, 무엇을 해야 하는지 한 줄로. 그날 다시 켤 사람이 볼 문장입니다. */
+function notConfiguredHint(message: string): string {
+  const m = message.toLowerCase();
+  if (m.includes("pub/sub")) {
+    return "Pub/Sub 주제에 게시 권한이 없습니다(조직 정책상 최고관리자만 부여 가능). 구글챗은 폴링으로 수집 중이라 지장 없습니다.";
+  }
+  return "구글 클라우드 콘솔에서 Chat API 사용 설정 + Chat 앱 구성이 아직 안 됐습니다.";
 }
 
 export async function GET(req: NextRequest) {
@@ -76,6 +98,8 @@ export async function GET(req: NextRequest) {
   const supabase = createClient(url, serviceKey, { auth: { persistSession: false } });
 
   const results: { spaceId: string; action: string; expireTime?: string | null; error?: string }[] = [];
+  // 왜 아직 안 됐는지 한 줄. 진단 화면 크론 줄에 그대로 보입니다.
+  let notConfiguredNote = "";
 
   for (const spaceId of mirroredSpaceIds()) {
     try {
@@ -100,6 +124,7 @@ export async function GET(req: NextRequest) {
       if (isNotConfigured(message)) {
         // 설정이 안 된 상태. 오류 로그에는 남기지 않습니다.
         results.push({ spaceId, action: "not_configured", error: message });
+        if (!notConfiguredNote) notConfiguredNote = notConfiguredHint(message);
         continue;
       }
       await logApiError(supabase, "cron:chat-subscription-renew", err);
@@ -114,12 +139,7 @@ export async function GET(req: NextRequest) {
     await touchHeartbeat(supabase, "cron:chat-subscription-renew", "error", `${failed}개 방 갱신 실패`);
   } else if (notConfigured > 0 && notConfigured === results.length) {
     // 진단 화면에서 "왜 구글챗이 안 들어오지"를 여기서 바로 알 수 있어야 합니다.
-    await touchHeartbeat(
-      supabase,
-      "cron:chat-subscription-renew",
-      "skipped",
-      "구글 클라우드 콘솔에서 Chat API 사용 설정 + Chat 앱 구성이 아직 안 됐습니다."
-    );
+    await touchHeartbeat(supabase, "cron:chat-subscription-renew", "skipped", notConfiguredNote);
   } else {
     await touchHeartbeat(supabase, "cron:chat-subscription-renew");
   }

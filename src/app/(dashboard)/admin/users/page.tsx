@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
-import { isDeveloperEmail, isAdminUser } from "@/lib/roles";
+import { isDeveloperEmail, isAdminUser, canManageFinanceAccess } from "@/lib/roles";
 import type { AppUser } from "@/lib/types";
 import AdminUsersClient from "@/components/admin/AdminUsersClient";
 
@@ -26,11 +26,26 @@ export default async function AdminUsersPage() {
 
   // 개발자 계정은 이 화면(및 화면을 보는 다른 관리자들)에게 존재 자체가 드러나지 않도록 아예
   // 목록에서 제외합니다 - 서버에서 걸러서 클라이언트로 데이터 자체를 내려보내지 않습니다.
-  const users = ((data as AppUser[]) ?? []).filter((u) => !isDeveloperEmail(u.email));
+  const canFinance = canManageFinanceAccess(me);
+
+  // 재무 열쇠는 **서버에서 지워서 내려보냅니다.**
+  //
+  // 화면에서 버튼만 감추면 값 자체는 브라우저까지 내려가 개발자도구에 그대로 보입니다.
+  // "재무관리자는 남들에게 그냥 관리자로 보인다"는 화면 뒤에서도 지켜져야 합니다 - 감추는
+  // 것과 안 보내는 것은 다릅니다.
+  const users = ((data as AppUser[]) ?? [])
+    .filter((u) => !isDeveloperEmail(u.email))
+    .map((u) => (canFinance ? u : { ...u, finance_access: undefined }));
 
   // 요청("개발자는 사용자관리에서 사용자의 이름,부서들을 바꿀 수 있도록") - 일반 관리자에게는
   // 이름/부서 편집 UI 자체를 숨기고, 개발자 계정에게만 노출합니다. 권한 미리보기 중에는(요청:
   // "그 권한에서만 볼 수 있는 화면으로") 실제 관리자가 보는 화면과 똑같아야 하므로 이 편집
   // 기능도 감춥니다.
-  return <AdminUsersClient initialUsers={users} viewerIsDeveloper={isDeveloperEmail(me.email) && !me.previewOf} />;
+  return (
+    <AdminUsersClient
+      initialUsers={users}
+      viewerIsDeveloper={isDeveloperEmail(me.email) && !me.previewOf}
+      canManageFinance={canFinance}
+    />
+  );
 }

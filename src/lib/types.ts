@@ -483,7 +483,9 @@ export type BackupSummary = {
 };
 
 export type Department3 = "유치부" | "초등부" | "중고등부";
-export type StaffPosition = "교사" | "행정직원" | "관리자" | "개발자";
+// 보이는 직위. 재무 열쇠(finance_access)는 여기 들어가지 않습니다 - 그건 직위가 아니라
+// 따로 주는 열쇠이고, 개발자·최고관리자에게만 보입니다(src/lib/roles.ts 참고).
+export type StaffPosition = "교사" | "행정직원" | "관리자" | "최고관리자" | "개발자";
 
 export type AppUser = {
   email: string;
@@ -497,6 +499,14 @@ export type AppUser = {
   avatar_url: string | null;
   hire_date: string | null;
   leave_date: string | null;
+  /**
+   * 재무 열쇠. 돈에 관한 화면을 볼 수 있는가.
+   *
+   * 직위와 별개입니다. 재무관리자 = position '관리자' + finance_access true이며, 그래서
+   * 남들에게는 그냥 관리자로 보입니다 - 숨기는 게 아니라 실제로 관리자입니다.
+   * 이 칸은 개발자·최고관리자 화면에서만 노출합니다.
+   */
+  finance_access?: boolean;
 };
 
 // 교직원 통합기록의 연도/학기별 이력 한 줄(학생의 WrEnrollment와 같은 역할) - 소속·직위·담당

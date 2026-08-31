@@ -21,6 +21,12 @@ export type CurrentAppUser = {
   // 미리보기 중이면 그 직위 문자열, 아니면 null입니다. @/lib/roles의 isAdminUser 등이 이 값을
   // 보고 개발자 우회를 끌지 판단합니다.
   previewOf: string | null;
+  /**
+   * 재무 열쇠. 돈에 관한 화면을 볼 수 있는가(@/lib/roles의 hasFinanceAccess가 씁니다).
+   *
+   * 직위와 별개입니다 - 관리자라고 자동으로 열리지 않습니다.
+   */
+  finance_access: boolean;
 } | null;
 
 // 사이드바(layout.tsx)와 각 페이지가 매 요청(탭 전환)마다 "로그인 확인 + app_users에서
@@ -42,7 +48,7 @@ export const getCurrentAppUser = cache(async (): Promise<CurrentAppUser> => {
   const email = user.email.toLowerCase();
   const { data: appUser } = await supabase
     .from("app_users")
-    .select("name, position, avatar_url, theme")
+    .select("name, position, avatar_url, theme, finance_access")
     .eq("email", email)
     .maybeSingle();
 
@@ -72,5 +78,8 @@ export const getCurrentAppUser = cache(async (): Promise<CurrentAppUser> => {
     theme: (appUser?.theme as ShellTheme | undefined) ?? "light",
     realPosition,
     previewOf,
+    // 권한 미리보기 중에는 열쇠도 함께 내려놓습니다. 그래야 "그 직위가 실제로 보게 될
+    // 화면"이 재현됩니다 - 개발자가 관리자인 척 볼 때 돈 화면이 보이면 시험이 안 됩니다.
+    finance_access: previewOf ? false : appUser?.finance_access === true,
   };
 });

@@ -9,7 +9,9 @@
 // "관리자 화면이 안 보이는지" 테스트하다가 실수로 진짜 관리자 권한까지 잃어버리는 일이 없습니다.
 export const ROLE_PREVIEW_COOKIE = "dev_preview_position";
 
-export const PREVIEW_POSITIONS = ["교사", "행정직원", "관리자"] as const;
+// 최고관리자도 미리보기에 넣습니다 - 계층을 새로 만들었으니 "그 사람 눈에 뭐가 보이나"를
+// 확인할 수 있어야 합니다. 재무 열쇠는 미리보기 중에는 항상 꺼집니다(currentUser.ts).
+export const PREVIEW_POSITIONS = ["교사", "행정직원", "관리자", "최고관리자"] as const;
 export type PreviewPosition = (typeof PREVIEW_POSITIONS)[number];
 
 export function isValidPreviewPosition(value: string | null | undefined): value is PreviewPosition {

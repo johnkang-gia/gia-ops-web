@@ -125,6 +125,20 @@ export const SCHEMA_CHECKS: SchemaCheck[] = [
     impact: "학기가 끝나도 그 학기 반·담임·과목 세팅이 남지 않아, 학기를 바꿔도 지난 학기 세팅을 볼 수 없습니다.",
   },
   {
+    feature: "재무 권한 분리",
+    table: "app_users",
+    columns: ["finance_access"],
+    migration: "20260831180000_finance_role.sql",
+    impact: "재무 열쇠를 줄 수 없어 돈 화면이 아무에게도(또는 모두에게) 열립니다. 최고관리자 직위도 저장되지 않습니다.",
+  },
+  {
+    feature: "재무 권한 기록",
+    table: "finance_access_log",
+    columns: ["target_email", "granted", "changed_by"],
+    migration: "20260831180000_finance_role.sql",
+    impact: "재무 권한을 누가 언제 주고 뺏었는지가 남지 않습니다.",
+  },
+  {
     feature: "학사일정 회의",
     table: "academic_checklist_meetings",
     columns: ["item_id", "seq", "meet_date", "done"],

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { isDeveloperEmail } from "@/lib/roles";
+import { isDeveloperEmail, canManageFinanceAccess } from "@/lib/roles";
+import { getCurrentAppUser } from "@/lib/currentUser";
 import type { AppUser } from "@/lib/types";
 
 export async function GET() {
@@ -28,7 +29,11 @@ export async function GET() {
   return NextResponse.json({ users: rows });
 }
 
+// 최고관리자를 여기 넣지 않은 것은 실수가 아닙니다. 최고관리자는 개발자 바로 밑이라
+// **개발자만** 올릴 수 있습니다(아래에서 따로 거릅니다). 관리자가 스스로를 최고관리자로
+// 올릴 수 있으면 계층이 계층이 아닙니다.
 const EDITABLE_POSITIONS = ["교사", "행정직원", "관리자"];
+const DEVELOPER_ONLY_POSITIONS = ["최고관리자"];
 const EDITABLE_DEPARTMENTS = ["유치부", "초등부", "중고등부"];
 
 // status(승인/거절/차단)와 position(직위=권한)을 둘 다 여기서 다룹니다. 둘 중 하나만 보내도
@@ -51,6 +56,9 @@ export async function PATCH(request: Request) {
   const email = String(body.email || "").toLowerCase().trim();
   const status = body.status !== undefined ? String(body.status) : undefined;
   const position = body.position !== undefined ? String(body.position) : undefined;
+  // 재무 열쇠(요청: "재무관리자만 이 돈에 관한 메뉴를 볼 수 있도록").
+  const financeAccess = body.financeAccess !== undefined ? Boolean(body.financeAccess) : undefined;
+  const financeReason = body.financeReason !== undefined ? String(body.financeReason) : undefined;
   const name = body.name !== undefined ? String(body.name) : undefined;
   const department = body.department !== undefined ? String(body.department) : undefined;
   // 교직원 통합기록(요청: "언제 입사하였고, 퇴사는 언제했는지... 고유 데이터로 기록 유지") -
@@ -73,7 +81,13 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "status는 approved/rejected/pending 중 하나여야 합니다." }, { status: 400 });
   }
   if (position !== undefined && position !== "" && !EDITABLE_POSITIONS.includes(position)) {
-    return NextResponse.json({ error: "position은 교사/행정직원/관리자 중 하나여야 합니다." }, { status: 400 });
+    // 최고관리자로 올리는 것은 개발자만 할 수 있습니다.
+    if (!(DEVELOPER_ONLY_POSITIONS.includes(position) && isDeveloperEmail(user.email))) {
+      return NextResponse.json(
+        { error: "position은 교사/행정직원/관리자 중 하나여야 합니다(최고관리자는 개발자만 지정)." },
+        { status: 400 }
+      );
+    }
   }
   if (department !== undefined && department !== "" && !EDITABLE_DEPARTMENTS.includes(department)) {
     return NextResponse.json({ error: "department는 유치부/초등부/중고등부 중 하나여야 합니다." }, { status: 400 });
@@ -98,6 +112,16 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "이름/부서 변경은 개발자만 할 수 있습니다." }, { status: 403 });
   }
 
+  // ── 재무 열쇠는 별도의 문을 씁니다 ──────────────────────────────────
+  //
+  // 이 라우트에 들어왔다는 것은 관리자라는 뜻일 뿐입니다. 열쇠를 주고 뺏는 것은 개발자와
+  // 최고관리자만 할 수 있습니다 - 관리자끼리 서로 열쇠를 나눠 가질 수 있으면 "재무관리자만
+  // 본다"가 아무 뜻도 없어집니다.
+  const me = await getCurrentAppUser();
+  if (financeAccess !== undefined && !canManageFinanceAccess(me)) {
+    return NextResponse.json({ error: "재무 권한은 최고관리자만 바꿀 수 있습니다." }, { status: 403 });
+  }
+
   const update: Record<string, unknown> = {};
   if (status !== undefined) {
     update.status = status;
@@ -119,9 +143,27 @@ export async function PATCH(request: Request) {
   if (leaveDate !== undefined) {
     update.leave_date = leaveDate || null;
   }
+  if (financeAccess !== undefined) {
+    update.finance_access = financeAccess;
+  }
 
   const { error } = await supabase.from("app_users").update(update).eq("email", email);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // 열쇠를 누가 언제 주고 뺏었는지 남깁니다. "지금 누가 갖고 있나"만으로는 나중에 문제가
+  // 생겼을 때 아무 설명도 못 합니다. 기록이 실패해도 권한 변경 자체는 되돌리지 않습니다
+  // (되돌리면 화면에는 실패로 보이는데 DB는 이미 바뀐 상태가 되어 더 헷갈립니다).
+  if (financeAccess !== undefined) {
+    await supabase
+      .from("finance_access_log")
+      .insert({
+        target_email: email,
+        granted: financeAccess,
+        changed_by: user.email,
+        reason: financeReason?.trim() || null,
+      })
+      .then(undefined, () => undefined);
+  }
 
   return NextResponse.json({ success: true });
 }

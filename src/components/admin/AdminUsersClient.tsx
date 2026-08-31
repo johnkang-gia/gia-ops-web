@@ -26,6 +26,9 @@ const GUIDE_SECTIONS = [
 // 나눠 보여줍니다.
 const PAGE_SIZE = 10;
 const POSITIONS = ["교사", "행정직원", "관리자"] as const;
+// 최고관리자는 개발자만 지정합니다(개발자 바로 밑 계층). 관리자가 스스로를 올릴 수 있으면
+// 계층이 계층이 아닙니다.
+const DEVELOPER_ONLY_POSITIONS = ["최고관리자"] as const;
 const DEPARTMENTS = ["유치부", "초등부", "중고등부"] as const;
 
 function formatDate(value: string | null) {
@@ -36,9 +39,18 @@ function formatDate(value: string | null) {
 export default function AdminUsersClient({
   initialUsers,
   viewerIsDeveloper = false,
+  canManageFinance = false,
 }: {
   initialUsers: AppUser[];
   viewerIsDeveloper?: boolean;
+  /**
+   * 재무 열쇠를 주고 뺏을 수 있는가(개발자·최고관리자만 true).
+   *
+   * 담당자: "재무관리자는 다른 사람들이 볼 때는 그냥 관리자로 보이도록."
+   * 그래서 이 값이 false면 열쇠 표시 자체가 **화면에 아예 없습니다** - 흐리게 보이거나
+   * 잠긴 채로 보이면 "저 사람 뭔가 더 있구나"가 드러납니다.
+   */
+  canManageFinance?: boolean;
 }) {
   const [users, setUsers] = useState<AppUser[]>(initialUsers);
   const [busyEmail, setBusyEmail] = useState<string | null>(null);
@@ -142,6 +154,29 @@ export default function AdminUsersClient({
     if (!res.ok) {
       setError(data.error || "처리하지 못했습니다.");
     }
+  }
+
+  // 재무 열쇠 주기·뺏기. 이유를 함께 남깁니다(나중에 "왜 줬더라"를 못 대면 기록이 반쪽입니다).
+  async function updateFinanceAccess(email: string, next: boolean) {
+    const reason = window.prompt(
+      next ? `${email} 에게 재무 권한을 줍니다. 이유를 적어주세요(기록에 남습니다).` : `${email} 의 재무 권한을 회수합니다. 이유를 적어주세요.`,
+      ""
+    );
+    if (reason === null) return; // 취소
+    setBusyEmail(email);
+    setError(null);
+    const res = await fetch("/api/admin/users", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email, financeAccess: next, financeReason: reason }),
+    });
+    const data = await res.json();
+    setBusyEmail(null);
+    if (!res.ok) {
+      setError(data.error || "처리하지 못했습니다.");
+      return;
+    }
+    setUsers((prev) => prev.map((u) => (u.email === email ? { ...u, finance_access: next } : u)));
   }
 
   const pending = users.filter((u) => u.status === "pending");
@@ -404,7 +439,34 @@ export default function AdminUsersClient({
                         {p}
                       </option>
                     ))}
+                    {/* 최고관리자는 개발자에게만 보입니다. */}
+                    {viewerIsDeveloper &&
+                      DEVELOPER_ONLY_POSITIONS.map((p) => (
+                        <option key={p} value={p}>
+                          {p}
+                        </option>
+                      ))}
                   </select>
+                  {/* 재무 열쇠. 개발자·최고관리자에게만 이 버튼 자체가 존재합니다. */}
+                  {canManageFinance && (
+                    <button
+                      onClick={() => updateFinanceAccess(u.email, !u.finance_access)}
+                      disabled={busyEmail === u.email}
+                      title={
+                        u.finance_access
+                          ? "재무 권한 있음 — 눌러서 회수합니다. (이 표시는 개발자·최고관리자에게만 보입니다)"
+                          : "재무 권한 없음 — 눌러서 부여합니다."
+                      }
+                      className={
+                        "rounded-lg px-2.5 py-1.5 text-xs font-bold disabled:opacity-50 " +
+                        (u.finance_access
+                          ? "border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                          : "border border-slate-200 text-slate-400 hover:bg-slate-50")
+                      }
+                    >
+                      {u.finance_access ? "💰 재무" : "재무"}
+                    </button>
+                  )}
                   <button
                     onClick={() => updateStatus(u.email, "rejected")}
                     disabled={busyEmail === u.email}

@@ -55,7 +55,7 @@ function StudentCell({
   students,
   onLink,
 }: {
-  d: { name: string; grade: string | null; linked: boolean; reason: string | null };
+  d: { name: string; grade: string | null; className: string | null; linked: boolean; reason: string | null };
   raw: string;
   students: StudentLite[];
   onLink: (studentId: string | null) => void;
@@ -74,13 +74,13 @@ function StudentCell({
           onLink(e.target.value || null);
           setEditing(false);
         }}
-        className="w-24 shrink-0 rounded border border-blue-300 bg-white px-1 py-0.5 text-[10px] outline-none"
+        className="w-36 shrink-0 rounded border border-blue-300 bg-white px-1 py-0.5 text-[10px] outline-none"
       >
         <option value="">{d.linked ? "(연결 해제)" : "학생 선택…"}</option>
         {students.map((s) => (
           <option key={s.id} value={s.id}>
             {s.name}
-            {s.grade ? ` (${s.grade})` : ""}
+            {s.grade ? ` (${s.grade}${s.class_name ? ` ${s.class_name}` : ""})` : ""}
           </option>
         ))}
       </select>
@@ -88,14 +88,24 @@ function StudentCell({
   }
 
   if (d.linked) {
+    // 담당자 요청 ⑨: 이름 옆에 몇 학년 몇 반인지, 그리고 명부와 이어져 있는지.
+    // ✓는 "명부에 실제로 있는 아이"라는 뜻입니다 - 이게 없으면 그 줄은 이름만 적힌
+    // 글자일 뿐이고, 학년·반·연락처 어느 것도 따라오지 않습니다.
+    const where = [d.grade, d.className].filter(Boolean).join(" ");
     return (
       <button
         type="button"
         onClick={() => setEditing(true)}
-        className="flex w-24 shrink-0 items-center gap-1 truncate text-left"
-        title={raw !== d.name ? `명단 표기: ${raw} · 눌러서 바꾸기` : `${d.name} · 눌러서 바꾸기`}
+        className="flex w-36 shrink-0 items-center gap-1 truncate text-left"
+        title={
+          (raw !== d.name ? `명단 표기: ${raw}` : d.name) +
+          (where ? ` · ${where}` : "") +
+          " · 학생 명부와 연결됨 · 눌러서 바꾸기"
+        }
       >
+        <span className="shrink-0 text-[9px] text-emerald-500" aria-label="명부 연결됨">✓</span>
         <span className="truncate text-[11px] font-semibold text-slate-700">{d.name}</span>
+        {where && <span className="shrink-0 text-[9px] font-medium text-slate-400">{where}</span>}
       </button>
     );
   }
@@ -106,7 +116,7 @@ function UnlinkedCell({
   d,
   onEdit,
 }: {
-  d: { name: string; reason: string | null };
+  d: { name: string; className: string | null; reason: string | null };
   onEdit: () => void;
 }) {
   {
@@ -115,10 +125,15 @@ function UnlinkedCell({
       <button
         type="button"
         onClick={onEdit}
-        className="flex w-24 shrink-0 items-center gap-1 truncate text-left"
-        title={chip.help + " · 눌러서 학생을 지정할 수 있습니다"}
+        className="flex w-36 shrink-0 items-center gap-1 truncate text-left"
+        title={chip.help + " · 학생 명부와 연결되지 않았습니다 · 눌러서 학생을 지정할 수 있습니다"}
       >
+        {/* 연결된 줄의 ✓ 자리를 비워둡니다. 자리가 어긋나면 두 줄을 나란히 놓고 비교할 때
+            눈이 걸립니다. */}
+        <span className="w-[9px] shrink-0" />
         <span className="truncate text-[11px] font-medium text-slate-400">{d.name}</span>
+        {/* 명부에 없으니 학년은 못 붙입니다. 명단에 적힌 반이라도 있으면 그거라도 보여줍니다. */}
+        {d.className && <span className="shrink-0 text-[9px] text-slate-300">{d.className}</span>}
         <span className={"shrink-0 rounded px-1 text-[9px] font-bold " + chip.cls}>{chip.label}</span>
       </button>
     );
@@ -161,13 +176,17 @@ export default function AssignmentClient({
   // 그대로 비추게 하는 것이 요점입니다 - 그래야 뭘 고쳐야 하는지 보입니다.
   const studentById = useMemo(() => new Map(students.map((s) => [s.id, s])), [students]);
 
-  type Display = { name: string; grade: string | null; linked: boolean; reason: string | null };
+  type Display = { name: string; grade: string | null; className: string | null; linked: boolean; reason: string | null };
   function displayFor(a: ShuttleAssignment): Display {
     const s = a.student_id ? studentById.get(a.student_id) : undefined;
-    if (s) return { name: s.name, grade: s.grade ?? null, linked: true, reason: null };
+    // 담당자: "아이들 이름 옆에 몇학년 몇반인지, 학생명부와 링크되어있는지 체크해줘."
+    // 반까지 붙이는 이유: 학년만으로는 동명이인을 못 가릅니다. 그리고 픽업·결석 연락이
+    // 오면 담임을 찾아야 하는데, 반을 모르면 그 자리에서 또 찾아봐야 합니다.
+    if (s) return { name: s.name, grade: s.grade ?? null, className: s.class_name ?? null, linked: true, reason: null };
     return {
       name: a.student_name_raw,
       grade: null,
+      className: a.class_raw ?? null,
       linked: false,
       reason: a.unlinked_reason ?? "확인필요",
     };

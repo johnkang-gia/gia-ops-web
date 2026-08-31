@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ShuttleRoute, ShuttleStop, ShuttleAssignment } from "@/lib/types";
 import ShuttleRegionDashboard from "./ShuttleRegionDashboard";
+import BusFront from "./BusFront";
 
 // 셔틀 "개요 대시보드"(요청: 메뉴 여러 개를 개요+탭으로 통합, 여백을 시각화로 채우고 매일
 // 확인할 것들을 한 화면에서). 숫자 카운트업·도넛·펄스·hover 리프트 등 은은한 모션으로
@@ -164,38 +165,49 @@ export default function ShuttleOverviewClient({
         <div className="ov-rise rounded-2xl border border-slate-200 bg-white p-3">
           <div className="mb-2.5 flex items-center justify-between">
             <b className="text-sm">노선별 현황</b>
-            <span className="text-[11px] text-slate-400">색 = 지역 · 점 = GPS</span>
+            {/* 그림 하나에 두 가지가 들어 있으니 무엇이 무엇인지 적어둡니다.
+                범례 없는 그림은 예쁘기만 하고 안 읽힙니다. */}
+            <span className="text-[11px] text-slate-400">진한 차 = 오늘 탑승 · 📶 초록 = GPS 연결</span>
           </div>
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(96px,1fr))] gap-2">
+          {/* 담당자 요청 ⑦: 네모 대신 버스 앞모습.
+              색칠한 네모 스무 개는 눈으로 훑을 때 다 같아 보입니다. 버스 모양이면 진한 차와
+              흐린 차의 차이가 글자를 읽기 전에 먼저 들어옵니다. */}
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(84px,1fr))] gap-2">
             {routes.map((r) => (
               <button
                 key={r.routeNo}
                 type="button"
                 onClick={() => router.push("/shuttle/regions")}
-                title={`${r.routeNo}호${r.driver ? " · " + r.driver : ""}`}
-                className="rounded-xl border-l-4 p-2 text-left transition-all hover:-translate-y-0.5 hover:shadow-sm"
-                style={{ borderColor: r.color, background: `${r.color}0d`, borderLeftColor: r.color }}
+                title={
+                  `${r.routeNo}호${r.driver ? " · " + r.driver : ""}` +
+                  ` · 오늘 ${r.today}명${r.capacity != null ? `/${r.capacity}` : ""}` +
+                  ` · ${r.gps === "live" ? "GPS 연결됨" : r.gps === "idle" ? "GPS 신호 끊김" : "GPS 미연결"}`
+                }
+                className={
+                  "flex flex-col items-center rounded-xl p-1.5 transition-all hover:-translate-y-0.5 hover:bg-slate-50 " +
+                  (r.today > 0 ? "" : "hover:opacity-100")
+                }
               >
-                <div className="flex items-center justify-between">
-                  <b className="text-[13px]" style={{ color: r.color }}>
-                    {r.routeNo}호
-                  </b>
-                  <span
-                    className="inline-block h-2 w-2 rounded-full"
-                    style={{ background: gpsColor(r.gps), animation: r.gps === "live" ? "gpspulse 1.6s infinite" : undefined }}
-                  />
+                <div className="h-12 w-full">
+                  <BusFront routeNo={r.routeNo} color={r.color} riders={r.today} gps={r.gps} />
                 </div>
-                <div className={"mt-0.5 text-[11px] " + (r.over ? "font-bold text-red-600" : "text-slate-500")}>
+                <div
+                  className={
+                    "mt-0.5 text-[11px] leading-tight " +
+                    (r.over ? "font-bold text-red-600" : r.today > 0 ? "text-slate-600" : "text-slate-300")
+                  }
+                >
                   🧒 {r.today}
-                  {r.capacity != null && <span className="text-slate-400">/{r.capacity}</span>}명{r.over && " ⚠"}
+                  {r.capacity != null && <span className="opacity-60">/{r.capacity}</span>}
+                  {r.over && " ⚠"}
                 </div>
-                {(r.lastStopAvg || r.delayMin != null) && (
-                  <div className="mt-0.5 text-[10px] text-slate-400">
-                    막차 {r.lastStopAvg ?? "-"}
+                {r.today > 0 && (r.lastStopAvg || r.delayMin != null) && (
+                  <div className="text-[10px] leading-tight text-slate-400">
+                    {r.lastStopAvg ?? "-"}
                     {r.delayMin != null && r.delayMin !== 0 && (
                       <span className={r.delayMin > 0 ? "text-red-500" : "text-emerald-600"}>
                         {" "}
-                        {r.delayMin > 0 ? `+${r.delayMin}` : r.delayMin}분
+                        {r.delayMin > 0 ? `+${r.delayMin}` : r.delayMin}
                       </span>
                     )}
                   </div>

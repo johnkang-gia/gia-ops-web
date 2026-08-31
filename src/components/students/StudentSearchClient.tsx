@@ -39,7 +39,14 @@ function deptOf(s: WrStudent): Dept {
   return gradeNum(s.grade) >= 7 ? "중고등부" : "초등부";
 }
 
-export default function StudentSearchClient({ students }: { students: WrStudent[] }) {
+export default function StudentSearchClient({
+  students,
+  shuttleByStudent = {},
+}: {
+  students: WrStudent[];
+  /** 학생 id → 실제 배정된 노선("하원 9호"). 명부의 shuttle_mode가 아니라 실제 배정입니다. */
+  shuttleByStudent?: Record<string, string>;
+}) {
   const router = useRouter();
   const [tab, setTab] = useState<Bucket>("active");
   const [dept, setDept] = useState<Dept>("초등부");
@@ -197,8 +204,29 @@ export default function StudentSearchClient({ students }: { students: WrStudent[
                   <span className="truncate text-sm font-bold text-slate-800">{s.name}</span>
                   {s.name_en && <span className="truncate text-[11px] text-slate-400">{s.name_en}</span>}
                 </div>
-                <div className="mt-0.5 text-[11px] text-slate-500">
-                  {s.grade ? `${s.grade}학년` : ""} {s.class_name ? `${s.class_name}반` : ""}
+                <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[11px] text-slate-500">
+                  <span>
+                    {s.grade ? `${s.grade}학년` : ""} {s.class_name ? `${s.class_name}반` : ""}
+                  </span>
+                  {/* 셔틀 여부(요청 ⑨). **실제 배정**을 보여줍니다 - 명부에 적어둔 값이 아니라
+                      그 아이가 실제로 어느 차에 올라 있는지. */}
+                  {shuttleByStudent[s.id] ? (
+                    <span className="rounded bg-amber-50 px-1 py-px text-[10px] font-bold text-amber-700">
+                      🚌 {shuttleByStudent[s.id]}
+                    </span>
+                  ) : (
+                    // 명부에는 "탄다"고 적혀 있는데 배정이 없는 경우. 이게 실제로 사고가 나는
+                    // 자리입니다 - 그날 아무 차에도 안 실립니다.
+                    s.shuttle_mode &&
+                    s.shuttle_mode !== "없음" && (
+                      <span
+                        className="rounded bg-red-50 px-1 py-px text-[10px] font-bold text-red-600"
+                        title={`명부에는 '${s.shuttle_mode}'으로 되어 있는데 배정된 노선이 없습니다. 셔틀 → 탑승 배정에서 확인해주세요.`}
+                      >
+                        🚌 배정 없음
+                      </span>
+                    )
+                  )}
                 </div>
               </div>
               <span className="shrink-0 rounded-md bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] text-slate-500">{s.student_no}</span>

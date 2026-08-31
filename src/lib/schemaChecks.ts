@@ -125,6 +125,13 @@ export const SCHEMA_CHECKS: SchemaCheck[] = [
     impact: "학기가 끝나도 그 학기 반·담임·과목 세팅이 남지 않아, 학기를 바꿔도 지난 학기 세팅을 볼 수 없습니다.",
   },
   {
+    feature: "과목 색",
+    table: "wr_subject_colors",
+    columns: ["name", "color"],
+    migration: "20260831140000_subject_colors.sql",
+    impact: "시간표에서 과목 색을 바꿔도 저장되지 않습니다(자동 색은 그대로 나옵니다).",
+  },
+  {
     feature: "구글챗 실시간 푸시",
     table: "google_chat_event_subscriptions",
     columns: ["subscription_name", "expire_time"],

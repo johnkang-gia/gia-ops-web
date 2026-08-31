@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
+import { subjectColor, SUBJECT_PALETTE } from "@/lib/subjectColor";
 
 export type TtPeriod = { id: string; department: string; periodNo: number; label: string; start: string; end: string };
 export type TtClass = { id: string; grade: string; className: string; department: string; students: number };
@@ -26,6 +28,7 @@ export default function TimetableClient({
   teacherHours,
   freeNow,
   nowInfo,
+  subjectColors,
 }: {
   periods: TtPeriod[];
   cells: TtCell[];
@@ -34,8 +37,28 @@ export default function TimetableClient({
   teacherHours: TeacherHours[];
   freeNow: string[];
   nowInfo: { weekdayLabel: string; periodLabel: string | null; inSession: boolean };
+  /** 과목 이름 → 색(팔레트 번호). 비어 있으면 이름을 섞어 자동으로 정합니다. */
+  subjectColors: Record<string, string>;
 }) {
   const router = useRouter();
+  // 과목 색(요청 ③). 화면에서 바로 바꾸고 곧장 반영되도록 여기서 들고 있습니다.
+  const [colors, setColors] = useState<Record<string, string>>(subjectColors);
+  const [paletteFor, setPaletteFor] = useState<string | null>(null);
+  const [showColors, setShowColors] = useState(false);
+
+  async function setSubjectColor(name: string, idx: number | null) {
+    // 되돌리기(자동으로): 적어둔 값을 지웁니다. 지우면 hash로 정한 색으로 돌아갑니다.
+    setColors((prev) => {
+      const next = { ...prev };
+      if (idx == null) delete next[name];
+      else next[name] = String(idx);
+      return next;
+    });
+    setPaletteFor(null);
+    const supabase = createClient();
+    if (idx == null) await supabase.from("wr_subject_colors").delete().eq("name", name);
+    else await supabase.from("wr_subject_colors").upsert({ name, color: String(idx), updated_at: new Date().toISOString() }, { onConflict: "name" });
+  }
   const deptsWithData = DEPTS.filter((d) => classes.some((c) => c.department === d) || periods.some((p) => p.department === d));
   const [dept, setDept] = useState(deptsWithData.includes("초등부") ? "초등부" : deptsWithData[0] ?? "초등부");
   const todayWd = (() => {
@@ -43,6 +66,12 @@ export default function TimetableClient({
     return map[nowInfo.weekdayLabel] ?? 1;
   })();
   const [weekday, setWeekday] = useState(todayWd >= 1 && todayWd <= 5 ? todayWd : 1);
+  // 색을 바꿀 수 있는 과목 목록. 시간표에 실제로 쓰인 이름만 모읍니다 - 과목반 세팅에만
+  // 있고 시간표에 안 들어간 과목은 색을 정해봐야 보일 데가 없습니다.
+  const subjectNames = useMemo(
+    () => [...new Set(cells.map((c) => c.subject).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ko")),
+    [cells]
+  );
 
   const deptPeriods = useMemo(() => periods.filter((p) => p.department === dept).sort((a, b) => a.periodNo - b.periodNo), [periods, dept]);
   const deptClasses = useMemo(
@@ -123,7 +152,73 @@ export default function TimetableClient({
         <button type="button" onClick={() => router.push("/weekly-report/admin/subjects")} className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">
           📘 과목 관리
         </button>
+        <button
+          type="button"
+          onClick={() => setShowColors((v) => !v)}
+          className={
+            "rounded-lg border px-2.5 py-1.5 text-xs font-semibold " +
+            (showColors ? "border-purple-300 bg-purple-50 text-purple-700" : "border-slate-200 text-slate-600 hover:bg-slate-50")
+          }
+        >
+          🎨 과목 색
+        </button>
       </div>
+
+      {/* 과목 색 바꾸기(요청 ③).
+          색은 이름을 섞어 자동으로 정해집니다 - 아무것도 안 해도 과목마다 다른 색이 나오고,
+          같은 과목은 어느 요일·어느 반에서든 늘 같은 색입니다. 여기는 그 자동 색이 마음에
+          안 들 때만 씁니다. */}
+      {showColors && (
+        <div className="mb-3 rounded-2xl border border-slate-200 bg-white p-3">
+          <p className="mb-2 text-[11px] leading-relaxed text-slate-400">
+            색은 과목 이름으로 저절로 정해집니다. 마음에 안 드는 과목만 눌러서 바꾸세요 —
+            바꾼 색은 <b>모든 부서·요일</b>에 함께 적용됩니다.
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {subjectNames.map((name) => {
+              const c = subjectColor(name, colors);
+              const open = paletteFor === name;
+              return (
+                <div key={name} className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setPaletteFor(open ? null : name)}
+                    className="rounded-lg border px-2 py-1 text-xs font-semibold"
+                    style={{ background: c.bg, color: c.fg, borderColor: c.dot }}
+                  >
+                    {name}
+                    {colors[name] != null && <span className="ml-1 text-[10px] opacity-60">✎</span>}
+                  </button>
+                  {open && (
+                    <div className="absolute left-0 top-full z-20 mt-1 w-44 rounded-xl border border-slate-200 bg-white p-2 shadow-lg">
+                      <div className="grid grid-cols-6 gap-1">
+                        {SUBJECT_PALETTE.map((p, i) => (
+                          <button
+                            key={i}
+                            type="button"
+                            title={`색 ${i + 1}`}
+                            onClick={() => void setSubjectColor(name, i)}
+                            className="h-6 rounded-md border border-slate-200 hover:scale-110"
+                            style={{ background: p.dot }}
+                          />
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void setSubjectColor(name, null)}
+                        className="mt-1.5 w-full rounded-md px-1 py-1 text-[11px] font-semibold text-slate-500 hover:bg-slate-50"
+                      >
+                        자동으로 되돌리기
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {subjectNames.length === 0 && <span className="text-xs text-slate-400">시간표에 과목이 아직 없습니다.</span>}
+          </div>
+        </div>
+      )}
 
       {/* 학년별 학생 수(선택 부서) */}
       <div className="mb-3 flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2">
@@ -169,13 +264,20 @@ export default function TimetableClient({
                       return (
                         <td key={c.id} className="border-l border-slate-100 px-1.5 py-1 align-top">
                           {cell ? (
-                            <div className="rounded-md bg-purple-50 px-1.5 py-1">
-                              <div className="font-semibold text-purple-900">{cell.subject}</div>
-                              <div className="text-[10px] text-purple-600">
-                                {cell.teacher ?? ""}
-                                {cell.room ? ` · ${cell.room}` : ""}
-                              </div>
-                            </div>
+                            // 과목마다 다른 색(요청 ③). 예전에는 모든 칸이 같은 보라색이라
+                            // 가로로 훑을 때 "이 줄에 같은 과목이 몇 개인지"가 눈에 안 들어왔습니다.
+                            (() => {
+                              const c = subjectColor(cell.subject, colors);
+                              return (
+                                <div className="rounded-md px-1.5 py-1" style={{ background: c.bg }}>
+                                  <div className="font-semibold" style={{ color: c.fg }}>{cell.subject}</div>
+                                  <div className="text-[10px]" style={{ color: c.sub }}>
+                                    {cell.teacher ?? ""}
+                                    {cell.room ? ` · ${cell.room}` : ""}
+                                  </div>
+                                </div>
+                              );
+                            })()
                           ) : (
                             <div className="px-1 py-1 text-center text-slate-200">·</div>
                           )}

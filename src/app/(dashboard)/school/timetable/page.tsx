@@ -41,6 +41,13 @@ export default async function TimetablePage() {
     supabase.from("wr_classes").select("id, grade, class_name, department"),
     supabase.from("wr_students").select("class_id, status"),
   ]);
+
+  // 과목 색 덮어쓰기(요청 ③). 비어 있는 것이 정상입니다 - 아무것도 없으면 과목 이름을
+  // 섞어 자동으로 색을 고릅니다(src/lib/subjectColor.ts).
+  const { data: colorRows } = await supabase.from("wr_subject_colors").select("name, color");
+  const subjectColors: Record<string, string> = {};
+  for (const r of (colorRows ?? []) as { name: string; color: string }[]) subjectColors[r.name] = r.color;
+
   // 반별 재학생 수(요청 ③: 각 반 몇 명인지 뱃지로). '재학'/active만 셉니다.
   const classCount = new Map<string, number>();
   for (const s of studsRaw ?? []) {
@@ -133,6 +140,7 @@ export default async function TimetablePage() {
         teacherHours={teacherHours}
         freeNow={freeNow}
         nowInfo={{ weekdayLabel, periodLabel: nowPeriodLabel, inSession: currentPeriodIds.size > 0 }}
+        subjectColors={subjectColors}
       />
     </div>
   );

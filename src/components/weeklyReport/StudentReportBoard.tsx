@@ -44,18 +44,47 @@ export default function StudentReportBoard({
       }
       setLoading(true);
       const supabase = createClient();
-      // WrReport 타입이 쓰는 컬럼만 명시적으로 지정합니다(전체 컬럼 대신) - 학생 수 x 리포트
-      // 개수가 쌓일수록 이 조회의 전송량이 커지므로, 화면에서 실제 쓰는 열만 받아옵니다.
-      let query = supabase
-        .from("wr_reports")
-        .select(
-          "id, student_id, term_id, class_id, grade, subject, academic, improvement, participation, behavior, social, teacher_note, eval_badges, status, report_date, is_archived, created_at, updated_at"
-        )
-        .in("student_id", studentIds);
-      if (term) query = query.eq("term_id", term.id);
-      const { data } = await query;
+
+      // **① 얼마나 옛날 것까지 가져올지 자릅니다.**
+      //
+      // 이 화면이 실제로 쓰는 것은 두 가지뿐입니다 - 이번 기간 리포트(뱃지·작성 여부)와,
+      // 창을 열었을 때 보여주는 직전 기간 리포트. 그런데 예전에는 **한 학기 전체**를
+      // 가져왔습니다. 137명이 쓰기 시작하면 한 반(15명)만 해도
+      // 15명 × 과목 8 × 기간 9 ≈ 1,000줄이 넘어갑니다.
+      //
+      // 60일이면 지금 기간 + 직전 네 기간이라, 한 번 걸렀어도 직전 기록이 남습니다.
+      const floor = new Date(`${getPeriodRange().start}T12:00:00Z`);
+      floor.setUTCDate(floor.getUTCDate() - 60);
+      const since = floor.toISOString().slice(0, 10);
+
+      // **② 1,000줄씩 끝까지 나눠 읽습니다.**
+      //
+      // Supabase는 한 번에 돌려주는 줄 수에 상한이 있어서, 통째로 달라고 하면 **말없이 잘린
+      // 채로** 옵니다. 잘리면 이미 쓴 리포트가 "미작성"으로 보이고, 선생님은 다 썼는데도
+      // 안 썼다는 화면을 보게 됩니다. 통계 화면은 이미 이렇게 읽고 있는데 여기만 빠져
+      // 있었습니다.
+      const PAGE = 1000;
+      const all: WrReport[] = [];
+      for (let from = 0; ; from += PAGE) {
+        let query = supabase
+          .from("wr_reports")
+          // WrReport 타입이 쓰는 컬럼만 명시적으로 지정합니다(전체 컬럼 대신).
+          .select(
+            "id, student_id, term_id, class_id, grade, subject, academic, improvement, participation, behavior, social, teacher_note, eval_badges, status, report_date, is_archived, created_at, updated_at"
+          )
+          .in("student_id", studentIds)
+          .gte("report_date", since)
+          .order("report_date", { ascending: false })
+          .range(from, from + PAGE - 1);
+        if (term) query = query.eq("term_id", term.id);
+        const { data, error } = await query;
+        if (error || !data) break;
+        all.push(...(data as WrReport[]));
+        if (data.length < PAGE) break;
+        if (cancelled) return;
+      }
       if (!cancelled) {
-        setReports((data as WrReport[] | null) ?? []);
+        setReports(all);
         setLoading(false);
       }
     }

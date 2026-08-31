@@ -85,6 +85,17 @@ export default function ReportFormModal({
   const [activeTab, setActiveTab] = useState(mySubject);
   const [formData, setFormData] = useState<FormState>(BLANK_FORM);
   const [existingReportId, setExistingReportId] = useState<string | null>(null);
+  // 지금 고치고 있는 리포트의 report_date.
+  //
+  // **왜 필요한가:** 저장 열쇠가 (학생, 과목, report_date)입니다. 그런데 예전에는 저장할 때마다
+  // report_date에 **그날 날짜**를 넣었습니다. 월요일에 쓰고 수요일에 이어 쓰면 열쇠가 달라져
+  // upsert가 안 묶이고 **같은 기간 같은 과목 리포트가 두 줄**이 됩니다. 화면은 최근 것만
+  // 보여주므로 월요일에 쓴 글이 조용히 사라진 것처럼 보이고, 통계의 '작성 건수'는 부풀려집니다.
+  //
+  // 주 단위일 때도 있던 문제인데, 2주로 늘리면 갈라질 수 있는 날이 7일에서 14일로 늘어납니다.
+  // 그래서 **이미 있는 리포트를 고칠 때는 그 리포트의 날짜를 그대로** 쓰고, 새로 쓸 때만
+  // 기간의 첫날로 시작합니다.
+  const [existingReportDate, setExistingReportDate] = useState<string | null>(null);
   const [isDirty, setIsDirty] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatusMsg, setSaveStatusMsg] = useState("");
@@ -133,20 +144,17 @@ export default function ReportFormModal({
         evalBadges: target.eval_badges && Object.keys(target.eval_badges).length ? target.eval_badges : initialBadges(),
       });
       setExistingReportId(target.id);
+      setExistingReportDate(target.report_date);
     } else {
       setFormData(BLANK_FORM);
       setExistingReportId(null);
+      setExistingReportDate(null);
     }
     setIsDirty(false);
     setSaveStatusMsg("");
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, subjectMap]);
-
-  // 한국 기준 오늘(YYYY-MM-DD).
-  function kstToday(): string {
-    return new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
-  }
 
   async function persist(status: "draft" | "published") {
     const supabase = createClient();
@@ -165,15 +173,19 @@ export default function ReportFormModal({
       teacher_note: formData.teacher_note,
       eval_badges: formData.evalBadges,
       status,
-      // 한국 날짜로 저장합니다.
+      // report_date는 **"쓴 날"이 아니라 "어느 기간의 리포트인가"** 입니다.
       //
-      // 예전에는 `new Date().toISOString().slice(0,10)`이었는데 이건 **세계표준시(UTC)**라
-      // 한국 시간 오전 9시 이전에는 **어제 날짜**가 나옵니다. 두 가지가 한꺼번에 깨집니다.
-      //   · 아침 8시에 쓴 기록이 어제 것으로 남습니다.
-      //   · 8시 50분에 저장하고 9시 10분에 다시 저장하면 report_date가 달라져
-      //     **같은 주 같은 과목 기록이 두 줄**로 갈라집니다(열쇠가 달라지니 upsert가 안 묶임).
-      // 선생님들이 등교 직후 아침에 쓰시는 일이 많아 반드시 걸립니다.
-      report_date: kstToday(),
+      // 이 값이 저장 열쇠의 일부(학생, 과목, report_date)입니다. 예전처럼 그날 날짜를 넣으면,
+      // 월요일에 쓰고 수요일에 이어 쓸 때 열쇠가 달라져 upsert가 안 묶이고 **같은 기간 같은
+      // 과목 리포트가 두 줄**이 됩니다. 화면은 최근 것만 보여주므로 월요일에 쓴 글이 조용히
+      // 사라진 것처럼 보이고, 통계의 작성 건수는 부풀려집니다.
+      //
+      //   · 이미 있는 리포트를 고치는 중이면 → 그 리포트의 날짜 그대로 (같은 줄을 고침)
+      //   · 이 기간에 처음 쓰는 것이면    → 기간의 첫날 (다음에 이어 써도 같은 줄)
+      //
+      // 기간 첫날을 쓰면 오전 9시 전후의 UTC 문제도 함께 사라집니다 - 하루가 밀리든 말든
+      // 같은 기간이면 같은 값이 나옵니다.
+      report_date: existingReportDate ?? getPeriodRange().start,
     };
 
     // 같은 학생·과목·주(report_date) 리포트는 upsert로 저장합니다 - 담임/과목교사가 동시에
@@ -186,6 +198,7 @@ export default function ReportFormModal({
       .single();
     if (!error && data) {
       setExistingReportId((data as WrReport).id);
+      setExistingReportDate((data as WrReport).report_date);
       setSaveError(null);
       return data as WrReport;
     }

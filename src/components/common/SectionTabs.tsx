@@ -122,6 +122,9 @@ const SCHOOL_TABS: TabDef[] = [
 const SHUTTLE_TABS: TabDef[] = [
   { key: "overview", label: "개요", icon: "📊", href: "/shuttle/overview", match: ["/shuttle/overview"] },
   { key: "checklist", label: "하원 체크표", icon: "📋", href: "/shuttle/checklist", match: ["/shuttle/checklist"] },
+  // 지금까지는 **오늘만** 볼 수 있었습니다. "이 아이 이번 달에 몇 번 빠졌지?"를 물으면
+  // 아무도 답을 못 했습니다. 기록은 다 쌓여 있는데 꺼내 볼 방법이 없었을 뿐입니다.
+  { key: "history", label: "결석·픽업 이력", icon: "📆", href: "/shuttle/history", match: ["/shuttle/history"] },
   { key: "pickup", label: "픽업 인박스", icon: "📥", href: "/pickup/inbox", match: ["/pickup/inbox"] },
   {
     key: "routes",

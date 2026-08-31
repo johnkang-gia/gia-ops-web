@@ -174,11 +174,18 @@ export default function ChecklistPrintSheet({
         .gia-print-sheet .c-veh  { width: 14%; text-align: center; }
         .gia-print-sheet .c-drv  { width: 17%; text-align: center; }
         .gia-print-sheet .c-cnt  { width: 6%;  text-align: center; font-weight: 700; }
-        .gia-print-sheet .c-kids { text-align: left; }
-        /* 이름은 칸 수 제한 없이 한 칸 안에 늘어놓습니다. 몇 명이든 다 나옵니다. */
+        .gia-print-sheet .c-kids { text-align: left; line-height: 1.45; }
+        /* 이름은 칸 수 제한 없이 한 칸 안에 늘어놓습니다. 몇 명이든 다 나옵니다.
+           **네모칸을 없앴습니다.**
+           담당자: "애들 그냥 이름만 뜨도록 해줘. 네모칸 안에 애들 이름이 있으니까 가시성이
+                    너무 안 좋아."
+           맞습니다. 이름 하나하나에 검은 테두리를 두르면 표의 격자선과 겹쳐 **선이 이름보다
+           많아집니다.** 종이에서 눈이 찾아야 하는 것은 선이 아니라 이름입니다.
+           테두리를 빼면서 남은 자리로 글자를 8.5pt → 10pt로 키웠습니다 - 줄어든 높이만큼
+           자동 축소도 덜 들어가서, 실제로는 두 배 가까이 크게 보입니다.
+           이름끼리 붙어 보이지 않도록 사이 간격만 넉넉히 둡니다. */
         .gia-print-sheet .kid {
-          display: inline-block; border: 1px solid #000; border-radius: 2px;
-          padding: 0 3px; margin: 1px 2px 1px 0; font-size: 8.5pt; white-space: nowrap;
+          display: inline-block; margin: 0 10px 0 0; font-size: 10pt; white-space: nowrap;
         }
         .gia-print-sheet .head { margin: 0 0 3px; font-size: 10pt; font-weight: 700; }
       `}</style>

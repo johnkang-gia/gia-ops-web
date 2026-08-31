@@ -823,7 +823,11 @@ export default function ShuttleChecklistClient({
             </div>
           </div>
         )}
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-2 g-panel-solid px-3 py-2 text-xs font-semibold text-slate-600 print:border-black">
+        {/* 이 줄은 인쇄에서 뺍니다.
+            같은 내용(날짜 · 탑승 인원)이 인쇄본 맨 윗줄에 이미 있는데, 여기까지 종이에 나가면
+            44px을 잡아먹어 표가 두 번째 장으로 밀립니다. 실측해보니 그 44px과 화면 여백 48px,
+            합쳐서 92px이 정확히 두 번째 장의 정체였습니다. */}
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2 g-panel-solid px-3 py-2 text-xs font-semibold text-slate-600 print:hidden">
           <span>
             📅 {new Date().toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric", weekday: "short" })} · 🧒 탑승예정{" "}
             <span className="text-sm font-bold text-slate-800">{expectedCount}</span>명

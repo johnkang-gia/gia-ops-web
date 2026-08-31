@@ -22,6 +22,8 @@ import { effectiveRouteId } from "./ShuttleChecklistTable";
 const MM = 96 / 25.4;
 const PAGE_W = Math.floor((210 - 14) * MM); // 741px
 const PAGE_H = Math.floor((297 - 14) * MM); // 1069px
+/** 한 장 높이에서 미리 빼두는 여유. 브라우저별 인쇄 배율 차이를 흡수합니다(약 6mm). */
+const SAFETY = 24;
 
 function natCompare(a: string, b: string) {
   return a.localeCompare(b, "ko", { numeric: true });
@@ -104,8 +106,12 @@ export default function ChecklistPrintSheet({
     const measure = (sync: boolean) => {
       const h = el.scrollHeight;
       if (h <= 0) return;
-      // 여유 6px를 뺍니다. 딱 맞추면 반올림 하나에 다음 장이 생깁니다.
-      const next = h > PAGE_H - 6 ? Math.max(0.25, (PAGE_H - 6) / h) : 1;
+      // 여유 24px를 뺍니다.
+      //
+      // 예전에는 6px였는데, 브라우저마다 인쇄 배율이 미세하게 달라서 **반올림 하나에 두 번째
+      // 장이 생겼습니다.** 24px(약 6mm)면 그 차이를 다 흡수합니다. 축소가 1~2% 더 들어가는
+      // 대신 "무조건 한 장"이 됩니다 - 담당자 요청이 정확히 그것입니다.
+      const next = h > PAGE_H - SAFETY ? Math.max(0.25, (PAGE_H - SAFETY) / h) : 1;
       const apply = () => setScale(next);
       // 인쇄 직전에는 **화면에 즉시 반영**되어야 합니다. 평소처럼 다음 렌더를 기다리면
       // 브라우저가 그 전 상태를 그대로 종이에 찍습니다 - 계산은 맞는데 종이만 틀린 상황.
@@ -135,13 +141,29 @@ export default function ChecklistPrintSheet({
         /* 화면에서는 자리를 차지하지 않게 밖으로 밀어둡니다(높이를 재려면 그려져 있어야 합니다). */
         .gia-print-wrap { position: absolute; left: -99999px; top: 0; }
         @media print {
-          .gia-print-wrap { position: static; left: auto; }
-          /* 화면용 요소는 인쇄에서 모두 감춥니다(체크표 화면 자체는 별도 print:hidden 처리). */
+          /* **두 번째 장이 생기던 진짜 이유는 표가 아니라 껍데기였습니다.**
+             표 자체는 이미 한 장에 맞게 축소되고 있었는데(실측 1175px → 0.90배 → 1063px,
+             한 장이 1069px), 그 위로 화면의 여백(main의 p-6 = 위아래 48px)과 남아 있던
+             날짜 줄(44px)이 얹혀서 92px이 넘쳤습니다. 딱 그만큼이 두 번째 장이었습니다.
+             종이에서는 이 표 말고 아무것도 자리를 차지하면 안 됩니다. */
+          html, body {
+            margin: 0 !important; padding: 0 !important;
+            height: auto !important; overflow: visible !important;
+            background: #fff !important;
+          }
+          main, .shell-content, .shell-page-bg {
+            margin: 0 !important; padding: 0 !important;
+            height: auto !important; max-height: none !important; overflow: visible !important;
+          }
+          .gia-print-wrap { position: absolute !important; left: 0 !important; top: 0 !important; }
+          .gia-print-sheet, .gia-print-sheet table, .gia-print-sheet tr {
+            break-inside: avoid; page-break-inside: avoid;
+          }
         }
         .gia-print-sheet { width: ${PAGE_W}px; color: #000; transform-origin: top left; }
         .gia-print-sheet table { width: 100%; border-collapse: collapse; table-layout: fixed; }
         .gia-print-sheet th, .gia-print-sheet td {
-          border: 1px solid #000; padding: 2px 3px; font-size: 9pt; line-height: 1.2;
+          border: 1px solid #000; padding: 1px 3px; font-size: 8.5pt; line-height: 1.15;
           color: #000; vertical-align: middle; word-break: keep-all; overflow-wrap: anywhere;
         }
         .gia-print-sheet thead th {
@@ -156,9 +178,9 @@ export default function ChecklistPrintSheet({
         /* 이름은 칸 수 제한 없이 한 칸 안에 늘어놓습니다. 몇 명이든 다 나옵니다. */
         .gia-print-sheet .kid {
           display: inline-block; border: 1px solid #000; border-radius: 2px;
-          padding: 0 3px; margin: 1px 2px 1px 0; font-size: 9pt; white-space: nowrap;
+          padding: 0 3px; margin: 1px 2px 1px 0; font-size: 8.5pt; white-space: nowrap;
         }
-        .gia-print-sheet .head { margin: 0 0 4px; font-size: 11pt; font-weight: 700; }
+        .gia-print-sheet .head { margin: 0 0 3px; font-size: 10pt; font-weight: 700; }
       `}</style>
 
       <div className="gia-print-wrap" aria-hidden>

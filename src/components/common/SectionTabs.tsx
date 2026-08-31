@@ -324,7 +324,11 @@ export default function SectionTabs({ isTeacher, isHomeroom }: { isTeacher: bool
     // 왼쪽 선이 항상 맞습니다. pb로 페이지 본문과의 간격도 확보합니다(요청: "업무탭부분 너무
     // 페이지랑 가까워 조금 여유는 줘").
     <div className="shrink-0 px-4 pt-3 sm:px-6 print:!hidden">
-      <div className="flex flex-wrap items-center gap-x-1 gap-y-1 border-b border-slate-200">
+      {/* 탭이 앉는 "선반"을 만듭니다.
+          담당자: "메뉴바 (...) 구분이 없어져서 가시성이 너무 떨어져."
+          유리 배경 위에 글자만 떠 있으면 탭인지 문장인지 구분이 안 됩니다. 아래에 실선을
+          한 줄 깔아 두면, 켜진 탭이 그 선 위에 올라앉은 모양이 되어 한눈에 읽힙니다. */}
+      <div className="flex flex-wrap items-center gap-x-1 gap-y-1 border-b-2 border-[var(--shell-border)]">
         <span className={"mr-2 text-base font-extrabold " + accent.title}>
           {section.icon} {section.titleEn ? t(section.title, section.titleEn) : section.title}
         </span>
@@ -338,7 +342,11 @@ export default function SectionTabs({ isTeacher, isHomeroom }: { isTeacher: bool
               onMouseEnter={() => router.prefetch(tab.href)}
               className={
                 "relative -mb-px rounded-t-lg px-3 py-2 text-sm font-semibold transition-colors " +
-                (on ? "border-b-2 " + accent.on : "border-b-2 border-transparent text-slate-500 hover:bg-slate-50 hover:text-slate-800")
+                // 꺼진 탭도 읽혀야 합니다 - slate-500은 유리 바탕에서 흐릿하게 묻힙니다.
+                // 마우스를 올렸을 때의 바탕도 반투명 흰색이어야 유리 위에서 보입니다.
+                (on
+                  ? "border-b-2 " + accent.on
+                  : "border-b-2 border-transparent text-slate-600 hover:bg-white/70 hover:text-slate-900")
               }
             >
               <span className="mr-1">{tab.icon}</span>
@@ -361,7 +369,7 @@ export default function SectionTabs({ isTeacher, isHomeroom }: { isTeacher: bool
                 onMouseEnter={() => router.prefetch(c.href)}
                 className={
                   "rounded-full px-2.5 py-1 text-xs font-semibold transition-colors " +
-                  (on ? accent.subOn : "text-slate-400 hover:bg-slate-100 hover:text-slate-700")
+                  (on ? accent.subOn : "text-slate-500 hover:bg-white/70 hover:text-slate-800")
                 }
               >
                 {c.labelEn ? t(c.label, c.labelEn) : c.label}

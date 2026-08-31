@@ -196,7 +196,9 @@ export function SidebarNavLinks({ categories }: { categories: NavCategory[] }) {
                 router.push(targetHref);
               }}
               className={
-                "shell-nav-btn flex w-full cursor-pointer items-center gap-2 rounded-lg border-l-2 px-3 py-1.5 text-left text-sm font-medium " +
+                // py-1.5 → py-2: 항목 사이 구분선(divide-y)이 다시 보이게 되면서, 줄 간격이
+                // 좁으면 선이 글자에 붙어 오히려 답답해 보입니다. 한 칸씩 숨 쉴 자리를 줍니다.
+                "shell-nav-btn flex w-full cursor-pointer items-center gap-2 rounded-lg border-l-2 px-3 py-2 text-left text-sm font-medium " +
                 (active
                   ? "shell-nav-btn-active " + ACCENT_BORDER[accent] + " " + ACCENT_BG_SOFT[accent] + " " + ACCENT_TEXT[accent] + " font-bold"
                   : "border-transparent text-[var(--shell-text-muted,#475569)] hover:bg-[var(--shell-hover-bg,#f1f5f9)] hover:text-[var(--shell-text,#0f172a)]")

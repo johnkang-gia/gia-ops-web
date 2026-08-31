@@ -8,6 +8,9 @@ const nextConfig: NextConfig = {
   // 포함시킵니다.
   outputFileTracingIncludes: {
     "/changelog": ["./CHANGELOG.md"],
+    // 진단 화면이 "파일은 몇 개인데 DB에는 몇 개 들어갔나"를 대조하려면 마이그레이션
+    // 파일 목록이 배포본에 있어야 합니다. 코드에서 import하지 않는 파일이라 명시합니다.
+    "/dev/diagnostics": ["./supabase/migrations/**"],
   },
   experimental: {
     // 사이드바 메뉴는 버튼+router.push()로 이동합니다(상태표시줄에 링크 주소가 뜨는 걸

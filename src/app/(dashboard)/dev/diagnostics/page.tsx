@@ -6,6 +6,9 @@ import { isDeveloperEmail } from "@/lib/roles";
 import { SCHEMA_CHECKS } from "@/lib/schemaChecks";
 import { kstParts } from "@/lib/shuttleTracking";
 import RunCronButtons from "@/components/dev/RunCronButtons";
+import { runIntegrityChecks } from "@/lib/integrityChecks";
+import fs from "node:fs";
+import path from "node:path";
 
 // 진단 화면 - 개발자 전용.
 //
@@ -169,6 +172,37 @@ export default async function DevDiagnosticsPage() {
     choiceByName.set(a.student_name_raw as string, list);
   }
 
+  // ── ⑧ 마이그레이션 실행 이력 ─────────────────────────────────────────────
+  //
+  // 담당자: "마이그레이션 실행 이력."
+  //
+  // `column ... does not exist` 오류의 원인은 늘 같습니다 - **무엇이 돌았고 무엇이 안
+  // 돌았는지 아무도 모른다.** 파일은 폴더에 있고 실행 기록은 DB 안쪽에 있어서, 맞춰보려면
+  // 매번 사람이 SQL을 쳐야 했습니다. 여기서 대조합니다.
+  let migFiles: string[] = [];
+  try {
+    migFiles = fs
+      .readdirSync(path.join(process.cwd(), "supabase", "migrations"))
+      .filter((f) => f.endsWith(".sql"))
+      .map((f) => f.replace(/\.sql$/, ""))
+      .sort();
+  } catch {
+    // 배포본에 파일이 안 실려 있으면 이 칸만 비워둡니다. 다른 점검은 그대로 돌아갑니다.
+  }
+  const { data: appliedRows, error: appliedError } = await supabase
+    .from("applied_migrations")
+    .select("version, name");
+  const applied = new Set(((appliedRows ?? []) as { version: string }[]).map((r) => r.version));
+  // 파일 이름은 `20260828120000_설명`, DB에는 앞의 숫자(version)만 들어갑니다.
+  const notApplied = migFiles.filter((f) => !applied.has(f.split("_")[0]));
+
+  // ── ⑦ 데이터 무결성 ──────────────────────────────────────────────────────
+  //
+  // 화면에서는 멀쩡해 보이는데 실제로는 틀린 것들을 미리 셉니다. 이번 주에 겪은 문제가
+  // 전부 이 종류였습니다 - 사고가 나거나 누가 이상하다고 말하기 전까지 아무도 몰랐습니다.
+  const integrity = await runIntegrityChecks(supabase);
+  const integrityBad = integrity.filter((i) => i.count > 0);
+
   // ── ⑤ 크론 심박 ──────────────────────────────────────────────────────────
   const { data: beats } = await supabase
     .from("integration_heartbeats")
@@ -290,6 +324,76 @@ export default async function DevDiagnosticsPage() {
               />
             );
           })
+        )}
+      </Card>
+
+      <Card
+        title="⑦ 데이터 무결성"
+        note="화면에서는 멀쩡해 보이는데 실제로는 틀린 것들. 여기서 고치지 않고, 무엇이 문제이고 어디서 고치는지만 알려줍니다."
+      >
+        {integrityBad.length === 0 ? (
+          <Row label="전체" verdict="ok" detail={`${integrity.length}가지 항목 모두 정상`} />
+        ) : (
+          integrity
+            .filter((i) => i.count > 0)
+            .sort((a, b) => (a.severity === b.severity ? b.count - a.count : a.severity === "high" ? -1 : 1))
+            .map((i) => (
+              <div key={i.label} className="border-b border-slate-100 py-1.5 last:border-0">
+                <div className="flex items-start gap-2">
+                  <span className="w-5 shrink-0 text-center text-sm">{i.severity === "high" ? "❌" : "⚠️"}</span>
+                  <span className="w-44 shrink-0 text-xs font-semibold text-slate-700">
+                    {i.label} <b className={i.severity === "high" ? "text-red-600" : "text-amber-700"}>{i.count}건</b>
+                  </span>
+                  <span className="min-w-0 flex-1 text-xs text-slate-500">
+                    {i.why}
+                    {i.href && (
+                      <>
+                        {" "}
+                        <Link href={i.href} className="underline">
+                          고치러 가기 →
+                        </Link>
+                      </>
+                    )}
+                  </span>
+                </div>
+                {i.samples.length > 0 && (
+                  <p className="ml-7 mt-0.5 truncate text-[11px] text-slate-400">
+                    {i.samples.join(" · ")}
+                    {i.count > i.samples.length && ` 외 ${i.count - i.samples.length}건`}
+                  </p>
+                )}
+              </div>
+            ))
+        )}
+      </Card>
+
+      <Card title="⑧ 마이그레이션" note="폴더의 파일과 DB에 실제로 실행된 기록을 대조합니다.">
+        {appliedError ? (
+          <Row
+            label="실행 기록"
+            verdict="warn"
+            detail={`아직 볼 수 없습니다 → 20260830120000_applied_migrations_view.sql 실행 필요 (${appliedError.message})`}
+          />
+        ) : migFiles.length === 0 ? (
+          <Row label="파일 목록" verdict="warn" detail="배포본에 마이그레이션 파일이 실려 있지 않습니다." />
+        ) : (
+          <>
+            <Row
+              label="대조"
+              verdict={notApplied.length === 0 ? "ok" : "bad"}
+              detail={
+                notApplied.length === 0
+                  ? `파일 ${migFiles.length}개 · DB ${applied.size}개 — 모두 반영됨`
+                  : `파일 ${migFiles.length}개 중 ${notApplied.length}개가 DB에 안 들어갔습니다`
+              }
+            />
+            {notApplied.slice(0, 10).map((f) => (
+              <Row key={f} label={`└ 안 걸림`} verdict="bad" detail={`${f}.sql`} />
+            ))}
+            {notApplied.length > 10 && (
+              <Row label="" verdict="info" detail={`외 ${notApplied.length - 10}개`} />
+            )}
+          </>
         )}
       </Card>
 

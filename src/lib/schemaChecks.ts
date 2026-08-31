@@ -118,6 +118,13 @@ export const SCHEMA_CHECKS: SchemaCheck[] = [
     impact: "명부와 안 붙은 배정이 왜 안 붙었는지 구분되지 않습니다.",
   },
   {
+    feature: "학기별 반·과목 기록",
+    table: "wr_term_class_snapshots",
+    columns: ["term_id", "classes", "subjects", "taken_at"],
+    migration: "20260831120000_term_class_snapshots.sql",
+    impact: "학기가 끝나도 그 학기 반·담임·과목 세팅이 남지 않아, 학기를 바꿔도 지난 학기 세팅을 볼 수 없습니다.",
+  },
+  {
     feature: "구글챗 실시간 푸시",
     table: "google_chat_event_subscriptions",
     columns: ["subscription_name", "expire_time"],

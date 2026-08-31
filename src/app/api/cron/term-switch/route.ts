@@ -3,6 +3,7 @@ import { todayKst } from "@/lib/kst";
 import { createClient } from "@supabase/supabase-js";
 import { logApiError } from "@/lib/logging";
 import { touchHeartbeat } from "@/lib/heartbeat";
+import { saveTermSnapshot } from "@/lib/termSnapshot";
 
 // Vercel Cron이 매일 자정(KST)에 이 라우트를 호출해서, 학기/캠프의 시작일·종료일을
 // 기준으로 "진행중" 상태를 자동으로 갱신합니다(vercel.json의 crons 설정 참고).
@@ -48,6 +49,17 @@ export async function GET(req: NextRequest) {
     const toEnd = rows.filter(
       (t) => t.status === "진행중" && (!target || t.id !== target.id)
     );
+    // 학기를 종료로 넘기기 **전에** 그 학기의 반·담임·과목 세팅을 통째로 떠둡니다.
+    //
+    // 지금 세팅(wr_classes / wr_subjects)은 한 벌뿐이라, 새 학기 반을 짜는 순간 지난 학기
+    // 모습은 아무 데도 남지 않고 사라집니다. "작년 2학기에 3학년이 몇 반이었고 담임이
+    // 누구였는지"를 나중에 물어볼 곳이 없어집니다. 넘기기 전이 마지막 기회입니다.
+    const snapshots: { termId: string; ok: boolean; error?: string }[] = [];
+    for (const t of toEnd) {
+      const res = await saveTermSnapshot(supabase, t.id, { source: "자동", takenBy: "cron:term-switch" });
+      snapshots.push({ termId: t.id, ok: res.ok, error: res.error });
+    }
+
     if (toEnd.length > 0) {
       await Promise.all(
         toEnd.map((t) => supabase.from("terms").update({ status: "종료" }).eq("id", t.id))
@@ -62,6 +74,7 @@ export async function GET(req: NextRequest) {
       today,
       activated: target?.id ?? null,
       ended: toEnd.map((t) => t.id),
+      snapshots,
     });
   } catch (err) {
     await logApiError(supabase, "cron:term-switch", err);

@@ -5,6 +5,9 @@ import { isAdminUser } from "@/lib/roles";
 import type { TeamMember, WrClass, WrStudent, WrSubject } from "@/lib/types";
 import SubjectManageClient from "@/components/weeklyReport/admin/SubjectManageClient";
 import GuideButton from "@/components/common/GuideButton";
+import TermSettingTabs from "@/components/school/TermSettingTabs";
+import { TermSnapshotSubjects } from "@/components/school/TermSnapshotView";
+import { loadTermSettingView } from "@/lib/termSettingView";
 
 const GUIDE_SECTIONS = [
   {
@@ -15,11 +18,18 @@ const GUIDE_SECTIONS = [
 
 export const dynamic = "force-dynamic";
 
-export default async function SubjectManagePage() {
+export default async function SubjectManagePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ term?: string }>;
+}) {
   const supabase = await createClient();
   const me = await getCurrentAppUser();
   if (!me) redirect("/login");
   if (!isAdminUser(me)) redirect("/weekly-report");
+
+  const sp = await searchParams;
+  const view = await loadTermSettingView(supabase, sp.term);
 
   const [{ data: subjectsData }, { data: teamData }, { data: classesData }, { data: studentsData }] = await Promise.all([
     supabase.from("wr_subjects").select("*").order("name", { ascending: true }),
@@ -35,12 +45,20 @@ export default async function SubjectManagePage() {
         <GuideButton title="과목반 세팅 사용 가이드" sections={GUIDE_SECTIONS} />
       </div>
       <p className="mb-4 text-xs text-slate-500">과목마다 담당 교사와 수강 학생 명단을 지정합니다.</p>
-      <SubjectManageClient
-        initialSubjects={(subjectsData as WrSubject[] | null) ?? []}
-        team={(teamData as TeamMember[] | null) ?? []}
-        classes={(classesData as WrClass[] | null) ?? []}
-        students={(studentsData as WrStudent[] | null) ?? []}
-      />
+
+      {/* 반/담임 배정 관리와 같은 학기 고르개(요청 ②). */}
+      <TermSettingTabs terms={view.terms} currentTermId={view.currentTermId} selectedTermId={view.selectedTermId} />
+
+      {view.isCurrent ? (
+        <SubjectManageClient
+          initialSubjects={(subjectsData as WrSubject[] | null) ?? []}
+          team={(teamData as TeamMember[] | null) ?? []}
+          classes={(classesData as WrClass[] | null) ?? []}
+          students={(studentsData as WrStudent[] | null) ?? []}
+        />
+      ) : (
+        <TermSnapshotSubjects snapshot={view.snapshot} termLabel={view.selectedLabel} />
+      )}
     </div>
   );
 }

@@ -609,6 +609,38 @@ export type WrSubject = {
   created_at: string;
 };
 
+// 학기별 반·담임·과목 세팅 보관본.
+//
+// 지금 세팅(wr_classes / wr_subjects)은 한 벌뿐이라 새 학기 반을 짜면 지난 학기 모습이
+// 사라집니다. 학기가 끝날 때 통째로 떠서 여기 값으로 남깁니다(참조가 아니라 값 - 반이
+// 없어지거나 교사가 그만두어도 그 학기 기록은 그대로여야 하기 때문입니다).
+// 만들고 읽는 곳: src/lib/termSnapshot.ts
+export type WrTermClassSnapshot = {
+  id: string;
+  term_id: string;
+  taken_at: string;
+  taken_by: string | null;
+  classes: {
+    grade: string | null;
+    class_name: string | null;
+    teacher_name: string | null;
+    sub_teacher_name: string | null;
+    student_count: number;
+    students: { name: string; student_no: string | null; grade: string | null }[];
+  }[];
+  subjects: {
+    name: string;
+    teacher_name: string | null;
+    class_name: string | null;
+    color: string | null;
+    student_count: number;
+    students: string[];
+  }[];
+  source: string;
+  note: string | null;
+  created_at: string;
+};
+
 export type WrReport = {
   id: string;
   student_id: string;

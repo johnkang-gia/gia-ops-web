@@ -148,35 +148,6 @@ export default function PilotMonitorClient({
 
   return (
     <div className="flex flex-col gap-4">
-      {/* 활성 노선은 등록되는 즉시 자동으로 링크가 생깁니다(DB 트리거) - 이 폼은 예외적으로
-          빠진 노선이 있을 때만 수동으로 채우는 용도입니다. */}
-      {availableRoutes.length > 0 && (
-        <div className="rounded-xl border border-slate-200 bg-white p-3">
-          <p className="mb-2 text-xs font-bold text-slate-700">누락된 노선 링크 추가</p>
-          <div className="flex flex-wrap items-center gap-2">
-            <select
-              value={newRouteId}
-              onChange={(e) => setNewRouteId(e.target.value)}
-              className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
-            >
-              <option value="">노선 선택...</option>
-              {availableRoutes.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.direction} {r.route_no}호 {r.name ?? ""}
-                </option>
-              ))}
-            </select>
-            <button
-              onClick={createPilot}
-              disabled={!newRouteId || busy}
-              className="rounded-lg bg-teal-600 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
-            >
-              + 링크 만들기
-            </button>
-          </div>
-        </div>
-      )}
-
       {pilots.length === 0 && (
         <p className="py-8 text-center text-sm text-slate-400">아직 노선 링크가 없습니다. 활성 노선을 등록하면 자동으로 만들어집니다.</p>
       )}
@@ -230,6 +201,38 @@ export default function PilotMonitorClient({
           </>
         );
       })()}
+
+      {/* 활성 노선은 등록되는 즉시 자동으로 링크가 생깁니다(DB 트리거) - 이 폼은 예외적으로
+          빠진 노선이 있을 때만 수동으로 채우는 용도입니다. 그래서 맨 아래에 접어둡니다:
+          매일 보는 것은 "지금 어느 차가 살아 있나"이지 이 폼이 아닙니다. */}
+      {availableRoutes.length > 0 && (
+        <details className="rounded-xl border border-slate-200 bg-white">
+          <summary className="cursor-pointer px-3 py-2 text-xs font-bold text-slate-600">
+            누락된 노선 링크 추가 ({availableRoutes.length})
+          </summary>
+          <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 p-3">
+            <select
+              value={newRouteId}
+              onChange={(e) => setNewRouteId(e.target.value)}
+              className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+            >
+              <option value="">노선 선택...</option>
+              {availableRoutes.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.direction} {r.route_no}호 {r.name ?? ""}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={createPilot}
+              disabled={!newRouteId || busy}
+              className="rounded-lg bg-teal-600 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
+            >
+              + 링크 만들기
+            </button>
+          </div>
+        </details>
+      )}
     </div>
   );
 }

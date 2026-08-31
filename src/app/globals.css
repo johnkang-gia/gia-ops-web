@@ -402,3 +402,55 @@ button:disabled {
     max-width: 110rem;
   }
 }
+
+/* ── 인쇄 ───────────────────────────────────────────────────────────────────
+ *
+ * 담당자: "아직도 인쇄를 누르면 잘려서 나와."
+ *
+ * 인쇄본 자체(ChecklistPrintSheet)는 A4 한 장에 맞게 재서 축소까지 하고 있었습니다.
+ * 그런데도 잘렸습니다. 원인은 인쇄본이 아니라 **앱 껍데기**였습니다.
+ *
+ * 대시보드는 `h-screen`(화면 높이에 고정) + `overflow` 구조입니다. 화면에서는 사이드바가
+ * 안 밀리게 해주는 좋은 구조지만, 인쇄에서는 **딱 한 화면 높이만큼만 찍고 나머지를 잘라냅니다.**
+ * 내용이 아무리 짧아도 그 상자를 넘어가면 종이에 안 나옵니다.
+ *
+ * 그래서 인쇄할 때만 껍데기를 무력화합니다. 화면 동작은 하나도 건드리지 않습니다.
+ */
+@media print {
+  html,
+  body {
+    height: auto !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+  }
+
+  /* h-screen·overflow-hidden으로 잠긴 모든 조상을 풀어줍니다. 이게 없으면 아래에서
+     아무리 잘 그려도 한 화면 높이에서 잘립니다. */
+  body * {
+    overflow: visible !important;
+  }
+  body .h-screen,
+  body [class*="max-h-"] {
+    height: auto !important;
+    max-height: none !important;
+  }
+
+  /* 인쇄 전용 종이가 있는 화면에서는 그것만 남깁니다.
+     display:none이 아니라 visibility를 쓰는 이유는, 인쇄본의 높이를 재는 코드가
+     레이아웃을 필요로 하기 때문입니다 - 없애버리면 잰 값이 0이 됩니다. */
+  body:has(.gia-print-wrap) * {
+    visibility: hidden !important;
+  }
+  body:has(.gia-print-wrap) .gia-print-wrap,
+  body:has(.gia-print-wrap) .gia-print-wrap * {
+    visibility: visible !important;
+  }
+  body:has(.gia-print-wrap) .gia-print-wrap {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: auto !important;
+  }
+}

@@ -128,8 +128,14 @@ export default async function ShuttlePilotPage() {
         {stat("도착 링크", arrivalLinkCount)}
       </div>
       <div className="flex flex-col gap-4">
-        <BoardLinkManager initialLinks={(boardLinksRes.data as ShuttleBoardLink[] | null) ?? []} />
-        <ArrivalLinkManager initialLinks={(arrivalLinksRes.data as ShuttleArrivalLink[] | null) ?? []} />
+        {/* 담당자: "안내보드 링크와 교직원 도착체크 링크가 길게 위아래로 있는 것보다,
+            왼쪽에 안내보드 오른쪽에 도착체크로 넣어서 페이지를 줄여줘."
+            둘 다 "링크를 만들어 나눠주는" 같은 성격이라 나란히 두는 게 맞습니다. 좁은 화면
+            (폰)에서는 원래대로 위아래로 쌓입니다 - 옆으로 붙이면 글자가 뭉개집니다. */}
+        <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+          <BoardLinkManager initialLinks={(boardLinksRes.data as ShuttleBoardLink[] | null) ?? []} />
+          <ArrivalLinkManager initialLinks={(arrivalLinksRes.data as ShuttleArrivalLink[] | null) ?? []} />
+        </div>
         <TrackerDeviceManager
           routes={(routesRes.data as ShuttleRoute[] | null) ?? []}
           initialDevices={(devicesRes.data as ShuttleTrackerDevice[] | null) ?? []}

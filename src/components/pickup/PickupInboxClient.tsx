@@ -254,9 +254,13 @@ export default function PickupInboxClient({
         )}
       </div>
 
-      {/* 앞으로 예정된 픽업 - 오늘 것만 보면 "이번주 목금" 같은 예약을 놓칩니다 */}
-      <UpcomingPickups initialRows={schedules} />
-
+      {/* 담당자: "픽업 인박스가 화면을 너무 좁게 써. 넓게 써서 한눈에 볼 수 있게."
+          넓은 화면에서는 왼쪽에 **손이 가는 것**(확인이 필요한 픽업), 오른쪽에 **눈으로
+          보는 것**(예정·오늘 확정·손접수)을 둡니다. 예전에는 이 다섯 덩어리가 한 줄로
+          쌓여 있어서, 확인할 건을 처리하다 오늘 확정 명단을 보려면 스크롤을 내렸다
+          올렸다 해야 했습니다. 좁은 화면(폰)에서는 원래대로 위아래로 쌓입니다. */}
+      <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+      <div className="flex flex-col gap-4">
       {/* 확인이 필요한 건 */}
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="mb-1 flex flex-wrap items-center gap-2">
@@ -370,6 +374,34 @@ export default function PickupInboxClient({
         )}
       </section>
 
+      {/* 픽업이 아니라고 판단한 건 - 접어둡니다. 확인이 필요한 건 바로 아래가 제자리입니다
+          ("사실은 픽업"으로 되돌리는 곳이라 같은 손놀림에 속합니다). */}
+      {ignored.length > 0 && (
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <button onClick={() => setShowDone((v) => !v)} className="text-xs font-bold text-slate-500">
+            {showDone ? "▾" : "▸"} 픽업이 아니라고 본 건 {ignored.length}개
+          </button>
+          {showDone && (
+            <div className="mt-2 flex flex-col gap-1.5">
+              {ignored.map((r) => (
+                <div key={r.id} className="rounded-lg bg-slate-50 p-2 text-[11px] text-slate-500">
+                  <span className="font-semibold">{r.channel_label ?? r.source}</span> · {r.raw_text}
+                  <button onClick={() => confirm(r)} className="ml-2 font-bold text-blue-600">
+                    사실은 픽업
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+      </div>
+
+      {/* 오른쪽: 눈으로 보는 것 */}
+      <div className="flex flex-col gap-4">
+      {/* 앞으로 예정된 픽업 - 오늘 것만 보면 "이번주 목금" 같은 예약을 놓칩니다 */}
+      <UpcomingPickups initialRows={schedules} />
+
       {/* 오늘 확정된 픽업 */}
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <h2 className="mb-2 text-sm font-bold text-slate-800">오늘 픽업 {confirmed.length}명</h2>
@@ -428,27 +460,8 @@ export default function PickupInboxClient({
           접수하기
         </button>
       </section>
-
-      {/* 픽업이 아니라고 판단한 건 - 접어둡니다 */}
-      {ignored.length > 0 && (
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <button onClick={() => setShowDone((v) => !v)} className="text-xs font-bold text-slate-500">
-            {showDone ? "▾" : "▸"} 픽업이 아니라고 본 건 {ignored.length}개
-          </button>
-          {showDone && (
-            <div className="mt-2 flex flex-col gap-1.5">
-              {ignored.map((r) => (
-                <div key={r.id} className="rounded-lg bg-slate-50 p-2 text-[11px] text-slate-500">
-                  <span className="font-semibold">{r.channel_label ?? r.source}</span> · {r.raw_text}
-                  <button onClick={() => confirm(r)} className="ml-2 font-bold text-blue-600">
-                    사실은 픽업
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-      )}
+      </div>
+      </div>
     </div>
   );
 }

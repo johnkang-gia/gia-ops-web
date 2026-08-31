@@ -79,17 +79,17 @@ export default async function ShuttleGpsPage() {
           GPS를 켜둔 차량의 신호·정류장 인식 상태를 한 줄씩 봅니다. 10초마다 자동으로 갱신됩니다.
         </p>
       </div>
-      {/* 위: 전 호차 한 줄 요약 / 아래: 운행 중인 차의 지도와 수신 지표.
-          한 화면에 같이 두어야 "어느 차가 이상한가"에서 "그 차가 지금 어디인가"로 눈만
-          내리면 됩니다 - 예전에는 두 화면을 오가야 했습니다. */}
+      {/* 담당자: "GPS 현황 탭에서 GPS 연결 부분이 맨 위로 오게."
+          지금 신호가 들어오는 차(지도·수신 지표)를 먼저 봅니다. 전 호차 한 줄 요약표는
+          "누가 빠졌나"를 훑는 용도라 그다음입니다 - 매일 보는 것은 살아 있는 차 쪽입니다. */}
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
-        <div className="min-h-[220px]">
-          <GpsStatusClient />
-        </div>
         <PilotMonitorClient
           routes={(routesRes.data as ShuttleRoute[] | null) ?? []}
           initialPilots={(pilotsRes.data as ShuttlePilotRoute[] | null) ?? []}
         />
+        <div className="min-h-[220px]">
+          <GpsStatusClient />
+        </div>
       </div>
     </div>
   );

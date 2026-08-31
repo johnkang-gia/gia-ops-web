@@ -78,7 +78,10 @@ export default async function PickupInboxPage() {
   ]);
 
   return (
-    <div className="mx-auto max-w-3xl p-4 sm:p-6">
+    // 담당자: "픽업 인박스가 화면을 너무 좁게 써." max-w-3xl(768px)은 폰을 기준으로 잡은
+    // 폭이라, 24인치 모니터에서 오른쪽 절반이 통째로 비어 있었습니다. 폭을 풀고 안쪽에서
+    // 두 단으로 나눕니다.
+    <div className="mx-auto w-full max-w-[1600px] p-4 sm:p-6">
       <div className="mb-1 flex items-center justify-between gap-2">
         <h1 className="text-lg font-bold">📥 픽업 인박스</h1>
         <GuideButton title="픽업 인박스 사용 가이드" sections={GUIDE_SECTIONS} />

@@ -46,7 +46,6 @@ export default function ShuttleChecklistTable({
   const badgeRefs = useRef(new Map<string, HTMLDivElement>());
 
   const routeById = useMemo(() => new Map(routes.map((r) => [r.id, r])), [routes]);
-  const sortedRoutes = useMemo(() => [...routes].sort((a, b) => natCompare(a.route_no, b.route_no)), [routes]);
 
   const itemsByRoute = useMemo(() => {
     const map: Record<string, ChecklistItem[]> = {};
@@ -60,6 +59,20 @@ export default function ShuttleChecklistTable({
     return map;
   }, [items, routeById]);
 
+
+  // 배정된 학생이 하나도 없는 호차는 표에서 뺍니다.
+  //
+  // 담당자: "하원체크표에 배정된 학생 없는 호차는 안 나오게 해줘."
+  //
+  // 빈 줄은 화면만 늘리는 게 아니라, 급할 때 **옆 줄을 잘못 짚게** 만듭니다.
+  // 이름을 끌어 옮길 자리가 필요할 수 있어 드래그 중에는 그대로 둡니다.
+  const sortedRoutes = useMemo(
+    () =>
+      [...routes]
+        .filter((r) => (itemsByRoute[r.id]?.length ?? 0) > 0 || dragOverRoute === r.id || draggingIdRef.current !== null)
+        .sort((a, b) => natCompare(a.route_no, b.route_no)),
+    [routes, itemsByRoute, dragOverRoute]
+  );
   // 요일별로 여러 차에 등록된 학생(예: 곽호율 19호·20호)을 "스위치"처럼 다룹니다(요청: 20호
   // 곽호율을 탑승으로 체크하면 19호 곽호율이 자동으로 옅어지게). 같은 학생이 오늘 다른 차에서
   // 이미 탑승 체크됐으면 나머지 차의 뱃지는 안 타는 것처럼 흐려집니다. 동명이인 구분표기

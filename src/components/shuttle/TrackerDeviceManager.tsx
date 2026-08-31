@@ -33,6 +33,11 @@ export default function TrackerDeviceManager({
   // 연결된 차량만 보기(요청 ②: "연결된 차량과 미연결 차량을 분리해서 연결된 차량들만 볼 수
   // 있도록 탭을 나눠줘"). 노선이 38개까지 늘어나면서 한 줄씩 훑어 상태를 세는 게 일이 됐습니다.
   const [deviceFilter, setDeviceFilter] = useState<"all" | "connected" | "unconnected">("all");
+  // 기사님 성함·호수·차량번호·연락처로 좁혀 찾기(담당자 요청). 38줄을 눈으로 훑는 대신 칩니다.
+  const [deviceQuery, setDeviceQuery] = useState("");
+  // 목록 접기(담당자 요청: "데이터가 너무 쭉 나와서 페이지가 길어지니까 접을 수 있도록").
+  // 찾는 중이거나 미연결 차가 있으면 접힌 채로 두면 안 됩니다 - 아래에서 자동으로 폅니다.
+  const [showDeviceRows, setShowDeviceRows] = useState(false);
   // 설정 링크 QR을 크게 띄우는 창. 기사님이 오셨을 때 이 화면을 모니터에 띄워두고 기사님
   // 휴대폰 카메라로 찍으시면, 주소를 한 글자도 치지 않고 설정 안내로 넘어갑니다.
   const [qrFor, setQrFor] = useState<ShuttleTrackerDevice | null>(null);
@@ -172,10 +177,31 @@ export default function TrackerDeviceManager({
   // 탭에 맞춰 걸러진 목록. "연결됨"은 최근 10분 안에 위치 신호가 들어온 노선입니다(isFresh) -
   // 기기만 발급하고 설정이 안 끝난 노선, 예전엔 들어왔는데 지금 끊긴 노선은 모두 미연결입니다.
   const visibleRows = useMemo(() => {
-    if (deviceFilter === "connected") return rows.filter((r) => r.device && isFresh(r.device.last_seen_at));
-    if (deviceFilter === "unconnected") return rows.filter((r) => !r.device || !isFresh(r.device.last_seen_at));
-    return rows;
-  }, [rows, deviceFilter]);
+    let list = rows;
+    if (deviceFilter === "connected") list = list.filter((r) => r.device && isFresh(r.device.last_seen_at));
+    else if (deviceFilter === "unconnected") list = list.filter((r) => !r.device || !isFresh(r.device.last_seen_at));
+    // 담당자: "기사님 이름이나 호수, 전화번호로 검색할 수 있게."
+    // 38줄을 눈으로 훑어 한 분을 찾는 것은 검색이 아니라 수색입니다. 전화번호는 사람마다
+    // 010-1234 / 01012345678로 적어 두므로, 찾을 때 숫자만 남겨 견줍니다.
+    const q = deviceQuery.trim().toLowerCase();
+    if (q) {
+      const digits = q.replace(/\D/g, "");
+      list = list.filter(({ route }) => {
+        const hay = [route.route_no, route.name, route.driver_name, route.vehicle_no, route.teacher_name]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        if (hay.includes(q)) return true;
+        if (digits && (route.driver_phone ?? "").replace(/\D/g, "").includes(digits)) return true;
+        return false;
+      });
+    }
+    return list;
+  }, [rows, deviceFilter, deviceQuery]);
+
+  // 접어두더라도 **찾는 중이거나 탭을 고른 상태**에서는 폅니다. 검색어를 치고 결과가 접혀
+  // 있으면 접기 기능이 오히려 일을 만듭니다.
+  const open = showDeviceRows || deviceQuery.trim().length > 0 || deviceFilter !== "all";
 
   // 기사님께 드릴 인쇄물(요청 ②). 호차·성함·차량번호·연락처를 채운 채로 새 탭에서 열리고,
   // 그 화면이 뜨자마자 인쇄 대화상자가 자동으로 올라옵니다.
@@ -316,7 +342,13 @@ export default function TrackerDeviceManager({
 
       {/* 설정 현황 - 기기가 없는 노선까지 함께 보여주되, 탭으로 연결/미연결을 갈라 봅니다. */}
       <div className="mb-2 flex flex-wrap items-center gap-2">
-        <span className="text-xs font-bold text-slate-700">설정 현황</span>
+        <button
+          type="button"
+          onClick={() => setShowDeviceRows((v) => !v)}
+          className="text-xs font-bold text-slate-700 hover:text-blue-600"
+        >
+          {open ? "▾" : "▸"} 설정 현황
+        </button>
         <div className="flex gap-1">
           {(
             [
@@ -344,6 +376,28 @@ export default function TrackerDeviceManager({
             </button>
           ))}
         </div>
+        {/* 기사님 성함·호수·차량번호·연락처로 좁혀 찾기. 010-1234로 쳐도 01012345678과
+            맞도록 숫자만 남겨 견줍니다. */}
+        <div className="relative">
+          <input
+            value={deviceQuery}
+            onChange={(e) => setDeviceQuery(e.target.value)}
+            placeholder="기사님 · 호수 · 전화번호"
+            className="w-48 rounded-lg border border-slate-300 py-1 pl-2 pr-6 text-[11px]"
+          />
+          {deviceQuery && (
+            <button
+              type="button"
+              onClick={() => setDeviceQuery("")}
+              className="absolute right-1 top-1/2 -translate-y-1/2 px-1 text-xs text-slate-400 hover:text-slate-700"
+            >
+              ×
+            </button>
+          )}
+        </div>
+        {deviceQuery.trim() && (
+          <span className="text-[11px] text-slate-400">{visibleRows.length}대</span>
+        )}
         {summary.missing > 0 && (
           <button
             type="button"
@@ -360,9 +414,24 @@ export default function TrackerDeviceManager({
         <p className="mb-5 py-4 text-center text-xs text-slate-400">
           등록된 하원 노선이 없습니다. [셔틀 → 노선 관리]에서 먼저 노선을 만들어주세요.
         </p>
+      ) : !open ? (
+        // 담당자: "데이터가 너무 쭉 나와서 페이지가 길어지니까 접을 수 있도록."
+        // 38줄이 늘 펼쳐져 있으면 아래 있는 정류장 좌표·미매칭 목록까지 가려면 한참
+        // 스크롤해야 합니다. 접어두되 숫자는 위 칩에 그대로 남습니다.
+        <button
+          type="button"
+          onClick={() => setShowDeviceRows(true)}
+          className="mb-5 w-full rounded-lg border border-dashed border-slate-300 py-2 text-xs font-semibold text-slate-500 hover:bg-slate-50"
+        >
+          ▾ {rows.length}개 노선 상태 펼치기
+        </button>
       ) : visibleRows.length === 0 ? (
         <p className="mb-5 py-4 text-center text-xs text-slate-400">
-          {deviceFilter === "connected" ? "지금 연결된 차량이 없습니다." : "미연결 차량이 없습니다. 전부 연결되었습니다 🎉"}
+          {deviceQuery.trim()
+            ? `'${deviceQuery.trim()}'로 찾은 차량이 없습니다.`
+            : deviceFilter === "connected"
+              ? "지금 연결된 차량이 없습니다."
+              : "미연결 차량이 없습니다. 전부 연결되었습니다 🎉"}
         </p>
       ) : (
         <div className="mb-5 flex flex-col gap-1.5">

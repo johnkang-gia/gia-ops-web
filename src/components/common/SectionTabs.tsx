@@ -67,6 +67,9 @@ const DEV_TABS: TabDef[] = [
 // ── 업무 ────────────────────────────────────────────────────────────────────
 const WORK_TABS: TabDef[] = [
   { key: "board", label: "업무 보드", icon: "🗂️", href: "/work", match: ["/work"] },
+  // 학부모 연락은 대개 **나중에** 필요해집니다 - 상담 전에, 같은 일이 또 생겼을 때.
+  // 지금 화면들은 최근 것만 보여줘서, 쌓이기만 하고 못 찾았습니다.
+  { key: "inqsearch", label: "연락 검색", icon: "🔍", href: "/work/inquiry-search", match: ["/work/inquiry-search"] },
   { key: "report", label: "보고서", icon: "📈", href: "/work/report", match: ["/work/report"] },
   { key: "history", label: "지난 업무", icon: "🗃️", href: "/work/history", match: ["/work/history"] },
   { key: "trash", label: "휴지통", icon: "🗑️", href: "/work/trash", match: ["/work/trash"] },

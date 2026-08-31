@@ -52,9 +52,22 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
+  const url0 = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key0 = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
   const topic = process.env.GOOGLE_CHAT_PUBSUB_TOPIC;
   if (!topic) {
-    return NextResponse.json({ error: "GOOGLE_CHAT_PUBSUB_TOPIC가 설정되지 않았습니다." }, { status: 500 });
+    // 주제를 안 정했으면 **이 기능을 안 쓰기로 한 것**입니다. 오류가 아닙니다.
+    //
+    // 구글챗 메시지는 Pub/Sub 없이도 들어옵니다(/api/cron/poll-chat-messages 가 몇 초마다
+    // 직접 읽어옵니다). Pub/Sub은 그걸 실시간 푸시로 바꾸는 **선택 사항**이었습니다.
+    // 조직 정책 때문에 못 쓰기로 했다면 환경변수만 비우면 되고, 그때 여기가 500을 뱉으면
+    // 안 쓰기로 한 기능이 매일 빨간 줄을 만듭니다.
+    if (url0 && key0) {
+      const sb = createClient(url0, key0, { auth: { persistSession: false } });
+      await touchHeartbeat(sb, "cron:chat-subscription-renew", "skipped", "Pub/Sub 미사용(폴링으로 수집 중)");
+    }
+    return NextResponse.json({ ok: true, skipped: "Pub/Sub 미사용", note: "구글챗은 폴링으로 수집됩니다." });
   }
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;

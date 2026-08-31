@@ -172,7 +172,22 @@ export default function ShuttleChecklistTable({
                 <td className="px-3 py-2.5 font-bold text-slate-700">
                   <div>{route.route_no}호</div>
                   {route.vehicle_no ? (
-                    <div className="mt-0.5 font-mono text-[10px] font-semibold text-slate-400">{route.vehicle_no}</div>
+                    // 뒤 네 자리를 크고 진하게.
+                    //
+                    // 담당자: "호차보다도 차량번호로 호차를 구별하는 경우가 많아서."
+                    // 사람이 외우고 부르는 건 뒤 네 자리입니다 - "77수"는 거의 모든 차가
+                    // 비슷해서 구별에 쓸모가 없습니다. 종이(인쇄본)와 같은 규칙으로 둡니다.
+                    (() => {
+                      const m = route.vehicle_no.trim().match(/^(.*?)(\d{4})$/);
+                      const head = m ? m[1].trim() : route.vehicle_no.trim();
+                      const tail = m ? m[2] : "";
+                      return (
+                        <div className="mt-0.5 leading-tight">
+                          {head && <div className="font-mono text-[9px] font-medium text-slate-400">{head}</div>}
+                          {tail && <div className="font-mono text-[13px] font-bold tracking-wide text-slate-600">{tail}</div>}
+                        </div>
+                      );
+                    })()
                   ) : (
                     // 비어 있으면 비었다고 말해줍니다 - 아무것도 없으면 "안 적었나 없나"를
                     // 매번 다시 확인하게 됩니다. 눌러서 바로 채울 수 있게 노선 관리로 보냅니다.

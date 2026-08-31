@@ -29,6 +29,25 @@ function natCompare(a: string, b: string) {
   return a.localeCompare(b, "ko", { numeric: true });
 }
 
+// 차번호를 "앞"과 "뒤 4자리"로 나눕니다.
+//
+// 담당자: "호차보다도 차량번호로 호차를 구별하는 경우가 많아서, 앞에 말고 뒤쪽 숫자
+//          (예를 들어 0340) 부분을 폰트 크기를 키워주고 굵게 해줘."
+//
+// 사람이 실제로 외우고 부르는 것은 뒤 네 자리입니다. "77수"는 거의 모든 차가 비슷해서
+// 구별에 쓸모가 없고, 종이에서 눈이 찾아야 하는 것은 0340 쪽입니다. 그래서 앞은 작게
+// 위에 얹고, 뒤 네 자리를 크고 굵게 아래 줄에 둡니다.
+//
+// 앞 글자가 없이 네 자리만 적힌 차(시트에 앞 칸이 비어 있는 11대)는 그 네 자리가 곧
+// 전부이므로 그대로 크게 나옵니다.
+function plateParts(v: string | null | undefined): { head: string; tail: string } {
+  const t = (v ?? "").trim();
+  if (!t) return { head: "", tail: "" };
+  const m = t.match(/^(.*?)(\d{4})$/);
+  if (!m) return { head: t, tail: "" };
+  return { head: m[1].trim(), tail: m[2] };
+}
+
 // 전화번호는 뒤 8자리만. 010은 다 같으니 종이에서는 자리만 차지합니다.
 function shortPhone(phone: string | null | undefined): string {
   const d = (phone ?? "").replace(/\D/g, "");
@@ -174,7 +193,11 @@ export default function ChecklistPrintSheet({
         .gia-print-sheet .c-veh  { width: 14%; text-align: center; }
         .gia-print-sheet .c-drv  { width: 17%; text-align: center; }
         .gia-print-sheet .c-cnt  { width: 6%;  text-align: center; font-weight: 700; }
-        .gia-print-sheet .c-kids { text-align: left; line-height: 1.45; }
+        /* 이름이 왼쪽 격자선에 딱 붙어 있으면 첫 아이 이름이 선에 먹힙니다(담당자 요청). */
+        .gia-print-sheet .c-kids { text-align: left; line-height: 1.45; padding-left: 9px; }
+        /* 앞 글자(77수)는 작게, 뒤 네 자리(0340)는 크고 굵게. 위 plateParts 주석 참고. */
+        .gia-print-sheet .veh-head { display: block; font-size: 7.5pt; line-height: 1.1; color: #333; }
+        .gia-print-sheet .veh-tail { display: block; font-size: 13pt; font-weight: 800; line-height: 1.15; letter-spacing: 0.5px; }
         /* 이름은 칸 수 제한 없이 한 칸 안에 늘어놓습니다. 몇 명이든 다 나옵니다.
            **네모칸을 없앴습니다.**
            담당자: "애들 그냥 이름만 뜨도록 해줘. 네모칸 안에 애들 이름이 있으니까 가시성이
@@ -238,7 +261,18 @@ export default function ChecklistPrintSheet({
                   return (
                     <tr key={r.id}>
                       <td className="c-bus">{r.route_no}호</td>
-                      <td className="c-veh">{r.vehicle_no ?? ""}</td>
+                      <td className="c-veh">
+                        {(() => {
+                          const { head, tail } = plateParts(r.vehicle_no);
+                          return (
+                            <>
+                              {head && <span className="veh-head">{head}</span>}
+                              {tail && <span className="veh-tail">{tail}</span>}
+                              {!head && !tail && ""}
+                            </>
+                          );
+                        })()}
+                      </td>
                       <td className="c-drv">
                         {r.driver_name ?? ""}
                         {tel && (

@@ -27,6 +27,7 @@ export default function ShuttleChecklistTable({
   items,
   busyId,
   searchTerm,
+  enByAssignment,
   onSetStatus,
   onRequestMove,
   onRequestEditNote,
@@ -44,6 +45,13 @@ export default function ShuttleChecklistTable({
   whereByName?: Map<string, string>;
   busyId: string | null;
   searchTerm: string;
+  /**
+   * 배정 id → 그 학생의 영어 이름. 검색에만 씁니다(표에는 한글 이름만 나옵니다).
+   *
+   * 명부와의 대조는 부모(ShuttleChecklistClient)에서 이미 끝냈습니다 - 여기서는 결과만
+   * 받습니다. 못 찾은 학생은 아예 들어 있지 않습니다.
+   */
+  enByAssignment?: Map<string, string>;
   onSetStatus: (item: ChecklistItem, nextStatus: ChecklistItem["status"]) => void;
   onRequestMove: (assignmentId: string, targetRouteId: string) => void;
   onRequestEditNote: (assignmentId: string) => void;
@@ -98,10 +106,28 @@ export default function ShuttleChecklistTable({
   }, [items]);
 
   const trimmedSearch = searchTerm.trim();
+  // 한글 이름과 영어 이름 **둘 다** 봅니다.
+  //
+  // 담당자: "하원 체크표에서 아이들 영어이름으로도 검색할 수 있게 해줘."
+  //
+  // 영어 이름은 대소문자를 가리지 않고, 공백도 무시합니다 - "Ella Kim"을 "ellakim"으로도,
+  // 성만 쳐도 찾히게 하기 위해서입니다. 표에 보이는 글자는 그대로 한글 이름입니다.
   const matchedIds = useMemo(() => {
     if (!trimmedSearch) return new Set<string>();
-    return new Set(items.filter((it) => it.studentName.includes(trimmedSearch)).map((it) => it.assignmentId));
-  }, [items, trimmedSearch]);
+    const q = trimmedSearch.toLowerCase();
+    const qNoSpace = normName(q);
+    return new Set(
+      items
+        .filter((it) => {
+          if (it.studentName.includes(trimmedSearch)) return true;
+          const en = enByAssignment?.get(it.assignmentId);
+          if (!en) return false;
+          const lower = en.toLowerCase();
+          return lower.includes(q) || normName(lower).includes(qNoSpace);
+        })
+        .map((it) => it.assignmentId),
+    );
+  }, [items, trimmedSearch, enByAssignment]);
 
   // 검색어가 바뀔 때만 스크롤합니다(items가 실시간으로 계속 갱신되어도 검색 중에 화면이
   // 제멋대로 다시 스크롤되지 않도록).
@@ -192,6 +218,11 @@ export default function ShuttleChecklistTable({
                         const isMoved = isMovedToday || isMovedPermanently;
                         const hasNote = !!item.note && item.note.trim().length > 0;
                         const isHighlighted = matchedIds.has(item.assignmentId);
+                        // 영어 이름으로 찾았을 때 **찾은 결과가 맞는지 확인할 수 있어야** 합니다.
+                        // 표는 한글 이름만 보여주므로, "Ella"로 찾았는데 노란 뱃지에 한글만
+                        // 떠 있으면 같은 아이인지 확신할 수 없습니다. 강조된 동안만 밑에
+                        // 영어 이름을 붙입니다 - 평소에는 표가 두 줄로 늘어나지 않습니다.
+                        const enName = isHighlighted ? enByAssignment?.get(item.assignmentId) : undefined;
                         const homeRoute = routeById.get(item.homeRouteId);
                         // 요일마다 다른 셔틀을 타는 학생은 같은 색 테두리로 묶고(요청), 오늘 타는
                         // 셔틀은 선명하게(진한 배경+링), 안 타는 날 셔틀은 옅게 보여줍니다(모두
@@ -344,6 +375,11 @@ export default function ShuttleChecklistTable({
                                 <span className="ml-1 rounded-full bg-orange-100 px-1 text-[8px] font-bold text-orange-700 print:hidden">개별하원</span>
                               )}
                             </span>
+                            {enName && (
+                              <span className="max-w-[9rem] truncate text-[9px] font-medium leading-none text-yellow-800/70 print:hidden">
+                                {enName}
+                              </span>
+                            )}
                             <span className="flex gap-1 print:hidden">
                               {item.ridingToday === false ? (
                                 // 오늘 안 타는 학생 - 눌러서 오늘 탑승으로(요청). 다시 누르면 취소.

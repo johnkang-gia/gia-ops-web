@@ -515,6 +515,31 @@ export default function ShuttleChecklistClient({
     return m;
   }, [roster, homonyms]);
 
+  // 영어 이름으로도 찾기 (담당자: "아이들 영어이름으로도 검색할 수 있게 해줘").
+  //
+  // 배정표(shuttle_assignments)에는 **한글 이름만** 들어 있습니다. 영어 이름은 학생 명부
+  // 쪽에만 있어서, 명부와 이어붙여야 검색이 됩니다. 그 이어붙이기를 여기서 한 번만 하고
+  // 표에는 결과(배정 → 영어 이름)만 넘깁니다 - 표가 명부까지 들고 다닐 이유가 없습니다.
+  //
+  // 배정표 이름에는 "김재이(G2A)"처럼 구분 표기가 붙은 것이 섞여 있어, 괄호 안을 떼고
+  // 맞춰봅니다. 그래도 못 찾으면 그냥 비워둡니다 - 억지로 비슷한 사람을 붙이면 엉뚱한
+  // 아이가 검색에 걸립니다.
+  const enByAssignment = useMemo(() => {
+    const enByKorean = new Map<string, string>();
+    for (const s of roster) {
+      const en = (s.nameEn ?? "").trim();
+      if (en) enByKorean.set(normStudentName(s.name), en);
+    }
+    const m = new Map<string, string>();
+    for (const it of items) {
+      const raw = normStudentName(it.studentName);
+      const bare = normStudentName(it.studentName.replace(/[（(].*?[）)]/g, ""));
+      const en = enByKorean.get(raw) ?? enByKorean.get(bare);
+      if (en) m.set(it.assignmentId, en);
+    }
+    return m;
+  }, [items, roster]);
+
   const [searchTerm, setSearchTerm] = useState("");
 
   // 화면 빈 곳을 누르면 찾기(하이라이트)를 풉니다 - 담당자 요청.
@@ -808,13 +833,21 @@ export default function ShuttleChecklistClient({
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="🔍 학생 이름 검색"
-              className="w-32 rounded-lg border border-slate-300 px-2 py-1 text-xs outline-none focus:border-blue-400 sm:w-40"
+              placeholder="🔍 이름 검색 (한글·영어)"
+              className="w-36 rounded-lg border border-slate-300 px-2 py-1 text-xs outline-none focus:border-blue-400 sm:w-48"
             />
             {/* 담당자: "백서아를 누르니까 찾아서 색이 바뀌었는데 해제할 수 없어."
                 왼쪽 위젯에서 이름을 누르면 이 검색어가 채워지는데, 그 뒤로 지우는 방법이
                 검색창을 직접 비우는 것뿐이었습니다. 위젯을 눌러서 켰으면 끄는 것도 그만큼
                 쉬워야 합니다. 화면 아무 곳이나 눌러도 풀리고(아래 onClick), 이 ✕로도 풉니다. */}
+            {/* 영어로 쳤는데 **명부에 영어 이름이 하나도 없으면** 아무 일도 안 일어납니다.
+                그러면 "이 아이가 없나"로 읽히지만 실제로는 "자료가 없다"입니다. 둘은
+                전혀 다른 이야기라, 화면이 어느 쪽인지 말해줘야 합니다. */}
+            {/[a-zA-Z]/.test(searchTerm) && enByAssignment.size === 0 && (
+              <span className="text-[10px] font-medium text-orange-600" data-keep-search>
+                명부에 영어 이름이 없어 영어 검색이 안 됩니다
+              </span>
+            )}
             {searchTerm && (
               <button
                 type="button"
@@ -842,6 +875,7 @@ export default function ShuttleChecklistClient({
             items={displayItems}
             busyId={busyId}
             searchTerm={searchTerm}
+            enByAssignment={enByAssignment}
             onSetStatus={setStatus}
             onRequestMove={requestMove}
             onRequestEditNote={openNoteEditor}

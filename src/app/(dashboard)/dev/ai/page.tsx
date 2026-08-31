@@ -79,7 +79,7 @@ export default async function DevAiPage() {
       <h1 className="mb-3 text-lg font-bold">🤖 AI 사용량 · 과금</h1>
 
       <div className="mb-2 text-xs font-semibold text-slate-400">최근 30일</div>
-      <div className="mb-6 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="mb-6 g-panel-solid p-4 shadow-sm">
         <div className="mb-3 flex flex-wrap items-center gap-4 text-xs text-slate-600">
           <span className="rounded-full bg-blue-50 px-2.5 py-1 text-sm font-bold text-blue-700">
             💰 예상 과금 {formatUsd(totalCost30d)}
@@ -113,7 +113,7 @@ export default async function DevAiPage() {
       </div>
 
       <div className="mb-2 text-xs font-semibold text-slate-400">기능 on/off</div>
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="g-panel-solid p-4 shadow-sm">
         <p className="mb-3 text-[11px] leading-snug text-slate-400">
           끄면 그 기능은 즉시 막히고(API 호출 자체가 없으므로 비용도 0원) 전 직원 사이드바에
           &quot;일시정지중&quot; 배너가 뜹니다.

@@ -1134,7 +1134,7 @@ export default function ChatPanel({
                                 href={attachmentUrls[m.attachment_path] || "#"}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] hover:bg-slate-50"
+                                className="flex items-center gap-2 g-panel-solid px-2.5 py-1.5 text-[11px] hover:bg-slate-50"
                               >
                                 <span>📎</span>
                                 <span className="min-w-0 max-w-[160px] truncate font-medium text-slate-700">{m.attachment_name}</span>
@@ -1393,7 +1393,7 @@ export default function ChatPanel({
             <div className="fixed inset-0 z-40" onClick={() => !analyzing && setTaskPopup(null)} />
             <div
               style={{ position: "fixed", top: taskPopup.top, left: taskPopup.left, width: registerError ? 200 : TASK_POPUP_WIDTH }}
-              className="z-50 rounded-lg border border-slate-200 bg-white p-1 shadow-lg"
+              className="z-50 g-panel-solid p-1 shadow-lg"
             >
               {analyzing ? (
                 <div className="px-1.5 py-1 text-center text-[10px] text-slate-400">분석 중…</div>
@@ -1428,7 +1428,7 @@ export default function ChatPanel({
             <div className="fixed inset-0 z-40" onClick={() => setReactionPopup(null)} />
             <div
               style={{ position: "fixed", top: reactionPopup.top, left: reactionPopup.left, width: REACTION_POPUP_WIDTH }}
-              className="z-50 flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-white p-1.5 shadow-lg"
+              className="z-50 flex flex-wrap gap-1 g-panel-solid p-1.5 shadow-lg"
             >
               {REACTION_EMOJIS.map((emoji) => {
                 // 내가 이미 이 이모지로 반응했다면 체크 표시를 겹쳐서 바로 알아볼 수 있게 합니다.

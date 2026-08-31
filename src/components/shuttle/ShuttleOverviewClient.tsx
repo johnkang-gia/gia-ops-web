@@ -62,7 +62,7 @@ function useCountUp(target: number, ms = 650) {
 function Kpi({ label, value, tone, sub }: { label: string; value: number; tone: string; sub?: string }) {
   const n = useCountUp(value);
   return (
-    <div className="group rounded-2xl border border-slate-200 bg-white p-4 transition-all hover:-translate-y-0.5 hover:shadow-md">
+    <div className="group g-panel-solid p-4 transition-all hover:-translate-y-0.5 hover:shadow-md">
       <div className="text-xs font-medium text-slate-500">{label}</div>
       <div className="mt-0.5 text-3xl font-extrabold tabular-nums" style={{ color: tone }}>
         {n}
@@ -133,14 +133,14 @@ export default function ShuttleOverviewClient({
       {/* 실시간·지역 지도(요청: 맨 위에는 지도만 크게. 구를 누르면 그 지역 노선이 옆에 뜸.
           전체 노선 목록은 아래 통합 표로 관리하므로 지도 아래 리스트는 감춥니다). */}
       {regionRoutes.length > 0 && (
-        <div className="ov-rise mb-3 h-[600px] overflow-hidden rounded-2xl border border-slate-200 bg-white p-3">
+        <div className="ov-rise mb-3 h-[600px] overflow-hidden g-panel-solid p-3">
           <ShuttleRegionDashboard routes={regionRoutes} stops={regionStops} assignments={regionAssignments} hideList />
         </div>
       )}
 
       {/* KPI row: 도넛 + 카드 */}
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <div className="ov-rise flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white p-3">
+        <div className="ov-rise flex flex-col items-center justify-center g-panel-solid p-3">
           <div ref={donutRef} className="flex h-24 w-24 items-center justify-center rounded-full" style={{ background: "#eef2f7" }}>
             <div className="flex h-16 w-16 flex-col items-center justify-center rounded-full bg-white">
               <b className="text-xl tabular-nums">{expectedNum}</b>
@@ -162,7 +162,7 @@ export default function ShuttleOverviewClient({
 
       {/* 본문: 노선 그리드 + 사이드 */}
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_300px]">
-        <div className="ov-rise rounded-2xl border border-slate-200 bg-white p-3">
+        <div className="ov-rise g-panel-solid p-3">
           <div className="mb-2.5 flex items-center justify-between">
             <b className="text-sm">노선별 현황</b>
             {/* 그림 하나에 두 가지가 들어 있으니 무엇이 무엇인지 적어둡니다.
@@ -218,7 +218,7 @@ export default function ShuttleOverviewClient({
         </div>
 
         <div className="flex flex-col gap-3">
-          <div className="ov-rise rounded-2xl border border-slate-200 bg-white p-3 text-xs">
+          <div className="ov-rise g-panel-solid p-3 text-xs">
             <div className="flex flex-wrap gap-2">
               <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">
                 📥 픽업 인박스 <b>{kpi.pendingPickups}</b>
@@ -244,7 +244,7 @@ export default function ShuttleOverviewClient({
 
       {/* 오늘 픽업·결석 명단 + 지속 특이사항(요청: 숫자만 말고 실제 정보를 자세히). */}
       <div className="ov-rise mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
-        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+        <div className="g-panel-solid p-4">
           <div className="mb-2 flex items-center gap-3 text-xs font-bold">
             <span className="text-amber-600">🚗 오늘 픽업 {pickupNames.length}</span>
             <span className="text-red-500">🚫 결석 {absentNames.length}</span>
@@ -289,7 +289,7 @@ export default function ShuttleOverviewClient({
 
       {/* 노선 상세 요약(요청 ⑨: 전체노선 하단 여백을 정보로 채움). 기사·차량·정원 대비 인원·
           막차 평균·오늘 지연·GPS를 한 표로. */}
-      <div className="ov-rise mt-3 overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+      <div className="ov-rise mt-3 overflow-x-auto g-panel-solid">
         <table className="w-full min-w-[720px] border-collapse text-sm">
           <thead>
             <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs text-slate-500">

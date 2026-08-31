@@ -319,7 +319,7 @@ export default function AttendanceClient({
             )}
       </p>
 
-      <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white p-2.5 shadow-sm">
+      <div className="mb-3 flex flex-wrap items-center gap-2 g-panel-solid p-2.5 shadow-sm">
         <button type="button" onClick={() => shiftDate(-1)} className="rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-500 hover:bg-slate-50">
           ‹ {t("이전", "Previous")}
         </button>

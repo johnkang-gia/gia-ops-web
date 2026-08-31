@@ -103,7 +103,7 @@ export default function DismissalRosterClient({ initialRoutes }: { initialRoutes
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
         {visible.map((r) => (
-          <div key={r.id} className="rounded-2xl border border-slate-200 bg-white p-3">
+          <div key={r.id} className="g-panel-solid p-3">
             <div className="mb-2 flex items-center justify-between">
               <b className="text-sm text-slate-800">{r.route_no}호{r.name && r.name !== `${r.route_no}호` ? ` · ${r.name}` : ""}</b>
               <span className="text-[11px] text-slate-400">

@@ -462,7 +462,7 @@ export default function ManualsClient({
         )}
 
         {addingOpen && (
-          <div className="mb-3 flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mb-3 flex flex-col gap-2 g-panel-solid p-4 shadow-sm">
             <input
               type="text"
               value={newCategory}
@@ -513,7 +513,7 @@ export default function ManualsClient({
             const busy = busyId === s.id;
             const otherEditors = editors.filter((e) => e.itemId === s.id);
             return (
-              <div key={s.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div key={s.id} className="g-panel-solid p-4 shadow-sm">
                 {otherEditors.length > 0 && !isEditing && (
                   <div className="mb-2 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] font-semibold text-amber-700">
                     ✏️ {otherEditors.map((e) => e.name).join(", ")}님이 지금 이 항목을 편집 중이에요 - 같이 수정하면 나중에 저장한 내용이 덮어쓸 수 있어요.

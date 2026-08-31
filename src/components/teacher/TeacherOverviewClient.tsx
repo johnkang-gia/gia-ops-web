@@ -126,7 +126,7 @@ function HomeroomView({
         const nowPid = nowPeriodIdsByDept.get(c.department);
         const nowCell = nowPid ? c.cells.find((x) => x.weekday === now.weekday && x.periodId === nowPid) : undefined;
         return (
-          <div key={ci} className="rounded-2xl border border-slate-200 bg-white p-4">
+          <div key={ci} className="g-panel-solid p-4">
             <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1">
               <b className="text-lg text-slate-800">{c.grade} {c.className}</b>
               {c.room && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">🚪 {c.room}</span>}
@@ -236,7 +236,7 @@ function SubjectView({
       </div>
 
       {/* 내 주간 시간표 */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-4">
+      <div className="g-panel-solid p-4">
         <div className="mb-2 text-xs font-bold text-slate-600">🗓️ {t("내 주간 시간표", "My Weekly Schedule")}</div>
         <Timetable
           rowPeriods={rowPeriods}

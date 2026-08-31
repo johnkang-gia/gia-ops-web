@@ -170,7 +170,7 @@ export default async function DevDashboardPage() {
           <Link
             key={card.label}
             href={card.href}
-            className="rounded-xl border border-slate-200 bg-white p-3 text-center shadow-sm hover:border-slate-300"
+            className="g-panel-solid p-3 text-center shadow-sm hover:border-slate-300"
           >
             <div className="text-lg font-bold">{card.value}</div>
             <div className="mt-1 text-xs text-slate-500">{card.label}</div>
@@ -229,7 +229,7 @@ export default async function DevDashboardPage() {
           {errors24hSpike && <p className="mt-1">평소(7일 평균 {Math.round(errors7dAvg * 10) / 10}건)보다 늘었습니다.</p>}
           <Link href="/dev/errors" className="mt-1 inline-block underline">오류 목록 열기 →</Link>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-600 shadow-sm">
+        <div className="g-panel-solid p-3 text-xs text-slate-600 shadow-sm">
           <div className="mb-1 font-semibold">💾 마지막 자동/수동 백업</div>
           {lastBackupRow ? (
             <>

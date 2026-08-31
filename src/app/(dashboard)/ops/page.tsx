@@ -102,7 +102,7 @@ export default async function OpsDashboardPage() {
                   <Link
                     key={it.id}
                     href="/records"
-                    className="block rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm transition hover:border-gia-navy hover:shadow"
+                    className="block g-panel-solid p-3.5 shadow-sm transition hover:border-gia-navy hover:shadow"
                   >
                     <div className="mb-1 flex flex-wrap items-center gap-2">
                       <span className="text-sm font-semibold text-slate-800">{it.title}</span>

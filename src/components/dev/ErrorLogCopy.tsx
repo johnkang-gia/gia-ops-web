@@ -68,7 +68,7 @@ export default function ErrorLogCopy({ logs }: { logs: DevErrorLog[] }) {
       </div>
       {logs.length === 0 && <div className="rounded-lg bg-white p-3 text-sm text-slate-400 shadow-sm">기록된 오류가 없습니다.</div>}
       {logs.map((e) => (
-        <div key={e.id} className="group rounded-lg border border-slate-200 bg-white p-3 text-xs shadow-sm">
+        <div key={e.id} className="group g-panel-solid p-3 text-xs shadow-sm">
           <div className="mb-1 flex items-center gap-2">
             <span className="shrink-0 rounded-full bg-red-50 px-2 py-0.5 font-mono text-red-600">{e.route}</span>
             <span className="shrink-0 text-slate-400">{e.created_at.slice(0, 19).replace("T", " ")}</span>

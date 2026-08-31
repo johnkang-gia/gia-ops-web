@@ -434,7 +434,7 @@ export default function AcademicCalendarClient({
       <div className="min-h-0 flex-1 overflow-hidden">
         <div className="flex h-full flex-col gap-3 overflow-hidden lg:flex-row">
           {/* 달력 */}
-          <div className="flex shrink-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white p-3 shadow-sm lg:w-[60%]">
+          <div className="flex shrink-0 flex-col overflow-hidden g-panel-solid p-3 shadow-sm lg:w-[60%]">
             <div className="mb-2 flex shrink-0 items-center justify-between">
               <button
                 onClick={() => {
@@ -543,7 +543,7 @@ export default function AcademicCalendarClient({
           </div>
 
           {/* 목록 */}
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden g-panel-solid p-3 shadow-sm">
             <div className="mb-2 flex shrink-0 items-center justify-between">
               <h2 className="text-sm font-bold text-slate-700">
                 {selectedDate ? `📌 ${selectedDate}` : `${viewYear}년 ${viewMonth + 1}월 전체 (${monthItems.length}건)`}

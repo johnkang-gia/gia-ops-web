@@ -103,7 +103,7 @@ export default async function ShuttlePilotPage() {
   const boardLinkCount = (boardLinksRes.data ?? []).length;
   const arrivalLinkCount = (arrivalLinksRes.data ?? []).length;
   const stat = (label: string, value: number | string, tone = "#0f172a") => (
-    <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+    <div className="g-panel-solid px-3 py-2">
       <div className="text-[11px] text-slate-500">{label}</div>
       <div className="text-xl font-extrabold" style={{ color: tone }}>
         {value}
@@ -148,12 +148,12 @@ export default async function ShuttlePilotPage() {
             이 화면은 발급·설정하는 곳, GPS 현황은 지켜보는 곳으로 나눴습니다. */}
         <a
           href="/shuttle/gps"
-          className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-600 hover:border-blue-300 hover:text-blue-600"
+          className="g-panel-solid px-4 py-3 text-sm font-semibold text-slate-600 hover:border-blue-300 hover:text-blue-600"
         >
           📡 운행 중 GPS 상태(지도 · 마지막 수신 · 끊김)는 <b>GPS 현황</b>에서 봅니다 ↗
         </a>
         {/* 기사·차량 변경 이력(요청 채택). 지입차량 교대·차량번호 변경을 자동 기록합니다. */}
-        <details className="rounded-xl border border-slate-200 bg-white">
+        <details className="g-panel-solid">
           <summary className="cursor-pointer px-4 py-3 text-sm font-bold text-slate-700">🧾 기사 · 차량 변경 이력 ({history.length})</summary>
           <div className="overflow-x-auto border-t border-slate-100">
             <table className="w-full min-w-[640px] border-collapse text-sm">
@@ -197,7 +197,7 @@ export default async function ShuttlePilotPage() {
         </details>
 
         {/* 내 폰 GPS 테스트(요청 ⑰: 링크·기기와 통합). 자주 쓰지 않으므로 접어둡니다. */}
-        <details className="rounded-xl border border-slate-200 bg-white">
+        <details className="g-panel-solid">
           <summary className="cursor-pointer px-4 py-3 text-sm font-bold text-slate-700">🛰️ 내 폰 GPS 테스트 (강경원)</summary>
           <div className="border-t border-slate-100 p-2">
             <TestTrackClient />

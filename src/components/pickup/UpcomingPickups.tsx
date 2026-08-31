@@ -236,7 +236,7 @@ export default function UpcomingPickups({ initialRows }: { initialRows: Schedule
   if (byDate.length === 0) return null;
 
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <section className="g-panel-solid p-4 shadow-sm">
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <h2 className="text-sm font-bold text-slate-800">앞으로 예정된 픽업</h2>
         {needsConfirmCount > 0 && (
@@ -337,7 +337,7 @@ export default function UpcomingPickups({ initialRows }: { initialRows: Schedule
 
             {/* 펼친 원문. 칩 줄 아래 넓게 펴야 읽힙니다 - 칩 안에 넣으면 줄이 깨집니다. */}
             {list.filter((r) => openText === r.id).map((r) => (
-              <div key={`t-${r.id}`} className="mt-1.5 rounded-lg border border-slate-200 bg-white p-2">
+              <div key={`t-${r.id}`} className="mt-1.5 g-panel-solid p-2">
                 <div className="mb-1 flex flex-wrap items-center gap-1.5 text-[10px] text-slate-400">
                   <span className="font-semibold text-slate-600">{r.student_name ?? "학생 미확인"}</span>
                   {r.pickup_requests?.channel_label && <span>{r.pickup_requests.channel_label}</span>}

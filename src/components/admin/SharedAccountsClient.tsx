@@ -105,7 +105,7 @@ export default function SharedAccountsClient() {
   return (
     <div className="flex flex-col gap-6">
       {/* 새 계정 만들기 / 비밀번호 바꾸기 */}
-      <form onSubmit={submit} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <form onSubmit={submit} className="g-panel-solid p-5 shadow-sm">
         <h2 className="text-sm font-bold text-slate-800">계정 만들기 · 비밀번호 바꾸기</h2>
         <p className="mt-1 text-xs leading-relaxed text-slate-500">
           아이디가 이미 있으면 비밀번호만 새로 정하고, 없으면 계정을 새로 만듭니다. 비밀번호는 저장하고 나면 다시 꺼내볼 수
@@ -202,7 +202,7 @@ export default function SharedAccountsClient() {
       )}
 
       {/* 계정 목록 */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="g-panel-solid p-5 shadow-sm">
         <h2 className="text-sm font-bold text-slate-800">등록된 공용 계정</h2>
         {items === null ? (
           <p className="mt-3 text-sm text-slate-400">불러오는 중...</p>

@@ -132,7 +132,7 @@ export default function RichTextEditor({
   if (!editor) return null;
 
   return (
-    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+    <div className="overflow-hidden g-panel-solid">
       {editable && <Toolbar editor={editor} />}
       <div style={{ minHeight }}>
         <EditorContent editor={editor} />

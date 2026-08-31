@@ -104,7 +104,7 @@ export default function WorkReportClient({
   function BarList({ title, data, labelFn }: { title: string; data: [string, number][]; labelFn?: (k: string) => string }) {
     const max = Math.max(1, ...data.map(([, v]) => v));
     return (
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="g-panel-solid p-4 shadow-sm">
         <h3 className="mb-2 text-xs font-bold text-slate-600">{title}</h3>
         {data.length === 0 ? (
           <p className="text-[11px] text-slate-300">데이터 없음</p>
@@ -152,7 +152,7 @@ export default function WorkReportClient({
       </div>
 
       <div className="mb-3 flex shrink-0 flex-wrap items-center gap-2">
-        <div className="flex gap-1 rounded-lg border border-slate-200 bg-white p-1">
+        <div className="flex gap-1 g-panel-solid p-1">
           {(["day", "week", "month"] as ReportPeriodType[]).map((t) => (
             <button
               key={t}
@@ -169,7 +169,7 @@ export default function WorkReportClient({
         <div className="flex items-center gap-1">
           <button
             onClick={() => setAnchor((a) => shiftAnchor(periodType, a, -1))}
-            className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-500 hover:bg-slate-50"
+            className="g-panel-solid px-2 py-1 text-xs text-slate-500 hover:bg-slate-50"
           >
             ◀
           </button>
@@ -178,13 +178,13 @@ export default function WorkReportClient({
           </span>
           <button
             onClick={() => setAnchor((a) => shiftAnchor(periodType, a, 1))}
-            className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-500 hover:bg-slate-50"
+            className="g-panel-solid px-2 py-1 text-xs text-slate-500 hover:bg-slate-50"
           >
             ▶
           </button>
           <button
             onClick={() => setAnchor(new Date())}
-            className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-500 hover:bg-slate-50"
+            className="g-panel-solid px-2 py-1 text-xs text-slate-500 hover:bg-slate-50"
           >
             오늘
           </button>
@@ -193,7 +193,7 @@ export default function WorkReportClient({
           <select
             value={department}
             onChange={(e) => setDepartment(e.target.value)}
-            className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600"
+            className="g-panel-solid px-2 py-1 text-xs text-slate-600"
           >
             {departments.map((d) => (
               <option key={d} value={d}>
@@ -207,7 +207,7 @@ export default function WorkReportClient({
       <div className="min-h-0 flex-1 overflow-y-auto pb-4">
         <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
           {(["완료", "진행중", "예정", "보류"] as TaskStatus[]).map((s) => (
-            <div key={s} className="rounded-xl border border-slate-200 bg-white p-3 text-center shadow-sm">
+            <div key={s} className="g-panel-solid p-3 text-center shadow-sm">
               <div className="text-lg font-bold" style={{ color: STATUS_COLOR[s] }}>
                 {statusCounts[s]}
               </div>
@@ -225,7 +225,7 @@ export default function WorkReportClient({
           </div>
         )}
 
-        <section className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <section className="mb-4 g-panel-solid p-4 shadow-sm">
           <h2 className="mb-2 text-sm font-bold text-slate-700">✅ 이 기간에 완료된 업무 ({completed.length}건)</h2>
           {completed.length === 0 ? (
             <p className="text-xs text-slate-400">이 기간에 완료된 업무가 없습니다.</p>
@@ -257,7 +257,7 @@ export default function WorkReportClient({
           )}
         </section>
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <section className="g-panel-solid p-4 shadow-sm">
           <h2 className="mb-2 text-sm font-bold text-slate-700">📌 이 기간 진행 중이던 업무 현황 ({active.length}건)</h2>
           {active.length === 0 ? (
             <p className="text-xs text-slate-400">이 기간에 진행 중이던 업무가 없습니다.</p>

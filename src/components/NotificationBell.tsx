@@ -167,7 +167,7 @@ export default function NotificationBell() {
             <div className="fixed inset-0 z-[95]" onClick={() => setOpen(false)} />
             <div
               style={{ position: "fixed", top: pos.top, left: pos.left }}
-              className="shell-dropdown z-[96] w-64 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl"
+              className="shell-dropdown z-[96] w-64 g-panel-solid p-1.5 shadow-xl"
             >
               <div className="px-2 pb-1 pt-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">
                 아직 확인하지 않은 업무

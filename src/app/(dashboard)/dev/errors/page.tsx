@@ -53,11 +53,11 @@ export default async function DevErrorsPage() {
           <div className="text-lg font-bold">{errors24h}건</div>
           {spike && <p className="mt-1">평소(7일 평균 {avgPerDay}건)보다 늘었습니다.</p>}
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-600 shadow-sm">
+        <div className="g-panel-solid p-3 text-xs text-slate-600 shadow-sm">
           <div className="mb-1 font-semibold">하루 평균 (7일)</div>
           <div className="text-lg font-bold">{avgPerDay}건</div>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-600 shadow-sm">
+        <div className="g-panel-solid p-3 text-xs text-slate-600 shadow-sm">
           <div className="mb-1 font-semibold">3일 넘은 미처리 문의</div>
           <div className="text-lg font-bold">{staleInquiries.data?.length ?? 0}건</div>
           <Link href="/inquiries" className="mt-1 inline-block underline">

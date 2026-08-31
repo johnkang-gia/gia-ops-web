@@ -83,7 +83,7 @@ export default function ClassManageClient({ initialClasses, team }: { initialCla
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <form onSubmit={addClass} className="mb-4 flex shrink-0 flex-wrap items-end gap-2 rounded-xl border border-slate-200 bg-white p-3">
+      <form onSubmit={addClass} className="mb-4 flex shrink-0 flex-wrap items-end gap-2 g-panel-solid p-3">
         <div>
           <label className="mb-1 block text-[11px] text-slate-400">학년</label>
           <input value={grade} onChange={(e) => setGrade(e.target.value)} placeholder="예: 3" className="w-20 rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
@@ -142,7 +142,7 @@ export default function ClassManageClient({ initialClasses, team }: { initialCla
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto rounded-xl border border-slate-200 bg-white">
+      <div className="flex-1 overflow-y-auto g-panel-solid">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-400">
             <tr>

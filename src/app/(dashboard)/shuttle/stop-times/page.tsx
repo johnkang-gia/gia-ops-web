@@ -121,7 +121,7 @@ export default async function StopTimesPage() {
 
   return (
     <div className="mx-auto w-full max-w-none p-4 sm:p-6">
-      <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-4">
+      <div className="mb-4 g-panel-solid p-4">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-bold text-slate-700">📈 {monthLabel} 운행 리포트</h2>
           <div className="flex gap-3 text-xs">

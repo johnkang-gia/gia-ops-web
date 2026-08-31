@@ -274,7 +274,7 @@ export default function RouteManageClient({
       </div>
 
       {/* 오른쪽: 노선 상세 + 정류장 */}
-      <div className="min-w-0 flex-1 overflow-y-auto rounded-xl border border-slate-200 bg-white p-4">
+      <div className="min-w-0 flex-1 overflow-y-auto g-panel-solid p-4">
         {!selected ? (
           <p className="py-10 text-center text-sm text-slate-400">왼쪽에서 노선을 선택하거나 새로 추가하세요.</p>
         ) : (

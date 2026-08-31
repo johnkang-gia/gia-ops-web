@@ -426,7 +426,7 @@ export default function StudentManageClient({
       )}
 
       {showAddForm && (
-        <form onSubmit={addStudent} className="mb-3 grid shrink-0 grid-cols-2 gap-2 rounded-xl border border-slate-200 bg-white p-3 sm:grid-cols-4">
+        <form onSubmit={addStudent} className="mb-3 grid shrink-0 grid-cols-2 gap-2 g-panel-solid p-3 sm:grid-cols-4">
           <div>
             <label className="mb-1 block text-[11px] text-slate-400">이름 Name</label>
             <input value={name} onChange={(e) => setName(e.target.value)} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
@@ -488,7 +488,7 @@ export default function StudentManageClient({
       )}
 
       {showBulk && (
-        <div className="mb-3 shrink-0 rounded-xl border border-slate-200 bg-white p-3">
+        <div className="mb-3 shrink-0 g-panel-solid p-3">
           <p className="mb-1.5 text-[11px] text-slate-400">
             한 줄에 하나씩, &quot;이름,영어이름,학년,반,보호자연락처&quot; 형식으로 붙여넣으세요. 영어이름은 비워둬도 됩니다.
             그 외 항목은 등록 후 표에서 바로 입력할 수 있습니다.
@@ -507,7 +507,7 @@ export default function StudentManageClient({
       )}
 
       {showFieldForm && (
-        <div className="mb-3 shrink-0 rounded-xl border border-slate-200 bg-white p-3">
+        <div className="mb-3 shrink-0 g-panel-solid p-3">
           <form onSubmit={addFieldDef} className="mb-2 flex flex-wrap items-end gap-2">
             <div>
               <label className="mb-1 block text-[11px] text-slate-400">새 칼럼 이름</label>
@@ -568,7 +568,7 @@ export default function StudentManageClient({
           ))}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-slate-200 bg-white">
+      <div className="min-h-0 flex-1 overflow-auto g-panel-solid">
         <table className="w-full whitespace-nowrap text-sm">
           <thead className="sticky top-0 z-10 bg-slate-50 text-left text-xs text-slate-400 shadow-sm">
             <tr>

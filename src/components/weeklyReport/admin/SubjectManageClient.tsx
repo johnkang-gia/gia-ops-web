@@ -76,7 +76,7 @@ export default function SubjectManageClient({
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <form onSubmit={addSubject} className="mb-4 flex shrink-0 flex-wrap items-end gap-2 rounded-xl border border-slate-200 bg-white p-3">
+      <form onSubmit={addSubject} className="mb-4 flex shrink-0 flex-wrap items-end gap-2 g-panel-solid p-3">
         <div>
           <label className="mb-1 block text-[11px] text-slate-400">과목명</label>
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="예: 영어" className="w-32 rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
@@ -111,7 +111,7 @@ export default function SubjectManageClient({
       <div className="flex-1 overflow-y-auto">
         <div className="flex flex-col gap-2">
         {pageItems.map((s) => (
-          <div key={s.id} className="rounded-xl border border-slate-200 bg-white p-3">
+          <div key={s.id} className="g-panel-solid p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: s.color ?? "#3B82F6" }} />
@@ -162,7 +162,7 @@ export default function SubjectManageClient({
           </div>
         ))}
         {subjects.length === 0 && (
-          <p className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-400">등록된 과목이 없습니다.</p>
+          <p className="g-panel-solid p-6 text-center text-sm text-slate-400">등록된 과목이 없습니다.</p>
         )}
         </div>
       </div>

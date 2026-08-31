@@ -183,7 +183,7 @@ export default async function AdminDashboardPage() {
         <div className="flex shrink-0 items-center gap-2">
           <Link
             href="/school"
-            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+            className="g-panel-solid px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
           >
             🏫 학교 관리(로스터) →
           </Link>
@@ -204,7 +204,7 @@ export default async function AdminDashboardPage() {
       </div>
 
       <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="g-panel-solid p-4 shadow-sm">
           <h3 className="mb-1 text-sm font-bold text-slate-700">⚠️ 반복되는 사건 유형 (최근 6개월, 3건 이상)</h3>
           <p className="mb-3 text-[11px] text-slate-400">
             같은 유형의 사건이 반복되고 있는지 자동으로 짚어드립니다.{" "}
@@ -215,7 +215,7 @@ export default async function AdminDashboardPage() {
           <RankedList items={recurringIncidents} color="#dc2626" emptyText="반복되는 사건 유형이 없습니다." />
         </div>
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="g-panel-solid p-4 shadow-sm">
           <h3 className="mb-1 text-sm font-bold text-slate-700">🌱 학생 평가 현황 (반복 지도필요 / 반복 우수)</h3>
           <p className="mb-3 text-[11px] text-slate-400">
             최근 6개월 기준 · 경고/미흡 배지 3회 이상은 추가 조치, 우수 배지 3회 이상은 보상을 검토해
@@ -238,7 +238,7 @@ export default async function AdminDashboardPage() {
       </div>
 
       <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="g-panel-solid p-4 shadow-sm">
           <h3 className="mb-3 text-sm font-bold text-slate-700">📈 월별 운영 기록 추이 (사건·행사·회의)</h3>
           <GroupedBarChart
             data={opsTrend}
@@ -250,7 +250,7 @@ export default async function AdminDashboardPage() {
           />
         </div>
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="g-panel-solid p-4 shadow-sm">
           <h3 className="mb-3 text-sm font-bold text-slate-700">📈 월별 학생평가 배지 추이 (경고/미흡 · 우수)</h3>
           <GroupedBarChart
             data={evalTrend}
@@ -262,7 +262,7 @@ export default async function AdminDashboardPage() {
         </div>
       </div>
 
-      <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="mb-6 g-panel-solid p-4 shadow-sm">
         <h3 className="mb-1 text-sm font-bold text-slate-700">💼 부서별 업무 완료율</h3>
         <p className="mb-3 text-[11px] text-slate-400">
           부서마다 등록된 전체 업무 대비 완료된 업무의 비율입니다.{" "}

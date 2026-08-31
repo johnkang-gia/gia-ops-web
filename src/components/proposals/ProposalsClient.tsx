@@ -310,7 +310,7 @@ export default function ProposalsClient({
         <GuideButton title="제안함 사용 가이드" sections={GUIDE_SECTIONS} />
       </div>
 
-      <div className="mb-6 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="mb-6 g-panel-solid p-4 shadow-sm">
         <div className="mb-2 text-sm font-semibold text-slate-700">AI 분석 실행</div>
         <p className="mb-3 text-xs text-slate-500">
           아직 분석하지 않은 사건/행사/회의를 한 번에 최대 5건씩 AI로 분석해 제안을 만듭니다. 남은 기록이
@@ -370,7 +370,7 @@ export default function ProposalsClient({
           const studentEduOptions = parseOptions(active.student_edu);
 
           return (
-            <div key={g.key} className="rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div key={g.key} className="g-panel-solid shadow-sm">
               <div className="flex w-full items-center gap-2 px-4 py-3 text-left">
                 <button
                   onClick={() => setExpandedKey(expanded ? null : g.key)}

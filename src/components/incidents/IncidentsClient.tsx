@@ -429,7 +429,7 @@ export default function IncidentsClient({
       <div className="order-1 lg:order-2 lg:h-full lg:min-h-0 lg:overflow-y-auto">
         <form
           onSubmit={handleSubmit}
-          className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+          className="flex flex-col gap-3 g-panel-solid p-4 shadow-sm"
         >
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-bold">{editingId ? "사건 수정" : "새 사건 입력"}</h2>
@@ -653,7 +653,7 @@ export default function IncidentsClient({
               className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
             />
             {showStudentMenu && studentMatches.length > 0 && (
-              <div className="absolute top-full z-10 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg">
+              <div className="absolute top-full z-10 mt-1 max-h-56 w-full overflow-y-auto g-panel-solid shadow-lg">
                 {studentMatches.map((s) => (
                   <button
                     key={s.id}

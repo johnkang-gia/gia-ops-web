@@ -52,7 +52,7 @@ function Row({ label, verdict, detail }: { label: string; verdict: Verdict; deta
 
 function Card({ title, note, children }: { title: string; note?: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-xl border border-slate-200 bg-white p-3">
+    <section className="g-panel-solid p-3">
       <h2 className="text-sm font-bold text-slate-800">{title}</h2>
       {note && <p className="mt-0.5 text-[11px] text-slate-400">{note}</p>}
       <div className="mt-2">{children}</div>

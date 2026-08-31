@@ -432,7 +432,7 @@ export default function AssignmentClient({
           const over = g.route.usable_capacity != null && g.rows.length > g.route.usable_capacity;
           const stopsOfRoute = stops.filter((s) => s.route_id === g.route.id).sort((a, b) => a.seq - b.seq);
           return (
-            <div key={g.route.id} className="rounded-xl border border-slate-200 bg-white p-3">
+            <div key={g.route.id} className="g-panel-solid p-3">
               <div className="mb-2 flex flex-wrap items-center gap-2">
                 <span
                   className={

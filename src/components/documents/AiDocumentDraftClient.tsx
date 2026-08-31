@@ -125,7 +125,7 @@ export default function AiDocumentDraftClient() {
 
       <form
         onSubmit={requestDraft}
-        className="mb-4 flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+        className="mb-4 flex flex-col gap-2 g-panel-solid p-4 shadow-sm"
       >
         <label className="text-xs font-semibold text-slate-500">상황 설명</label>
         <textarea
@@ -166,7 +166,7 @@ export default function AiDocumentDraftClient() {
       </form>
 
       {result && (
-        <div className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-col gap-2 g-panel-solid p-4 shadow-sm">
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
             <div className="sm:col-span-3">
               <label className="mb-1 block text-xs font-semibold text-slate-500">서류명</label>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { normName } from "@/lib/studentLabel";
 import { flushSync } from "react-dom";
 import type { ChecklistItem, ChecklistRoute } from "./ShuttleChecklistClient";
 import { effectiveRouteId } from "./ShuttleChecklistTable";
@@ -38,10 +39,13 @@ export default function ChecklistPrintSheet({
   routes,
   items,
   dateLabel,
+  whereByName,
 }: {
   routes: ChecklistRoute[];
   items: ChecklistItem[];
   dateLabel: string;
+  /** 동명이인 이름 → "3학년 Brown A". 겹치는 이름만 들어 있습니다. */
+  whereByName?: Map<string, string>;
 }) {
   const todayW = new Date().getDay();
   const sheetRef = useRef<HTMLDivElement | null>(null);
@@ -223,6 +227,13 @@ export default function ChecklistPrintSheet({
                         {roster.map((it) => (
                           <span key={it.assignmentId} className="kid">
                             {it.studentName}
+                            {/* 동명이인은 종이에서 헷갈리는 게 더 위험합니다 - 화면은 눌러
+                                확인할 수 있지만 종이는 그럴 수 없습니다. */}
+                            {whereByName?.get(normName(it.studentName)) && (
+                              <span className="ml-0.5 text-[7px] font-semibold text-slate-500">
+                                {whereByName.get(normName(it.studentName))}
+                              </span>
+                            )}
                           </span>
                         ))}
                       </td>

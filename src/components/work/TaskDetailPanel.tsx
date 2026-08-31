@@ -617,7 +617,7 @@ export default function TaskDetailPanel({
           {attachments.length > 0 && (
             <div className="flex flex-col gap-1">
               {attachments.map((a) => (
-                <div key={a.id} className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[11px]">
+                <div key={a.id} className="flex items-center justify-between gap-2 g-panel-solid px-2 py-1.5 text-[11px]">
                   <button onClick={() => openAttachment(a)} className="min-w-0 flex-1 truncate text-left text-slate-600 hover:text-blue-600" title={a.file_name}>
                     📄 {a.file_name} <span className="text-slate-300">{formatFileSize(a.file_size)}</span>
                   </button>
@@ -705,7 +705,7 @@ export default function TaskDetailPanel({
                 if (next !== task.resolution_note) patch({ resolution_note: next });
               }}
               placeholder="이 업무를 어떻게 처리·완료했는지 기록해두면, 완료 후 업무기록·업무 보고서에서 처리 결과를 함께 볼 수 있습니다."
-              className="min-h-0 flex-1 resize-none rounded-lg border border-slate-200 bg-white p-2 text-xs outline-none focus:border-blue-300"
+              className="min-h-0 flex-1 resize-none g-panel-solid p-2 text-xs outline-none focus:border-blue-300"
             />
           </div>
         </div>

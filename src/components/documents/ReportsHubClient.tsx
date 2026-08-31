@@ -25,7 +25,7 @@ export default function ReportsHubClient({
 
   return (
     <div className="mx-auto flex h-full max-w-5xl flex-col overflow-hidden">
-      <div className="mb-3 flex shrink-0 gap-1 rounded-lg border border-slate-200 bg-white p-1">
+      <div className="mb-3 flex shrink-0 gap-1 g-panel-solid p-1">
         {TABS.map((t) => (
           <button
             key={t.key}

@@ -192,7 +192,7 @@ export default function ShuttleClient({
       </div>
 
       {/* 오른쪽: 배차표 */}
-      <div className="min-w-0 flex-1 overflow-y-auto rounded-xl border border-slate-200 bg-white p-4 print:border-0 print:p-0">
+      <div className="min-w-0 flex-1 overflow-y-auto g-panel-solid p-4 print:border-0 print:p-0">
         {!selected ? (
           <p className="py-10 text-center text-sm text-slate-400">왼쪽에서 노선을 선택하세요.</p>
         ) : (

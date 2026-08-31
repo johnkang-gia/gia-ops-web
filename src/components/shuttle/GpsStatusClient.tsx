@@ -84,7 +84,7 @@ export default function GpsStatusClient() {
         </p>
       )}
 
-      <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-slate-200 bg-white">
+      <div className="min-h-0 flex-1 overflow-auto g-panel-solid">
         <table className="w-full min-w-[880px] border-collapse text-[11px]">
           <thead className="sticky top-0 bg-slate-50 text-left text-slate-500">
             <tr className="border-b border-slate-200">

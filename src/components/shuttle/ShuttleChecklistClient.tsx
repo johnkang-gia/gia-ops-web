@@ -1,6 +1,7 @@
 "use client";
 
 import { todayKst } from "@/lib/kst";
+import { buildHomonymSet, normName as normStudentName, whereLabel } from "@/lib/studentLabel";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -497,6 +498,23 @@ export default function ShuttleChecklistClient({
   // 이름을 치면 그 학생 뱃지를 바로 찾을 수 있게(요청: "검색할수 있게 해줘서 이름을 치면 그
   // 학생 이름뱃지 바로 찾을 수 있게... 색이 변해서 어디있는지 바로 알 수 있게끔") - 실제
   // 하이라이트·스크롤은 ShuttleChecklistTable이 이 검색어를 받아 처리합니다.
+  // 동명이인만 이름 옆에 학년·반을 붙입니다(담당자 요청).
+  //
+  // 한 명뿐인 이름에까지 붙이면 표가 글자로 가득 차고, 정작 구분이 필요한 이름이 묻힙니다.
+  // 판단은 @/lib/studentLabel 한 곳에서만 합니다 - 화면마다 따로 두면 같은 아이가 화면마다
+  // 다르게 불립니다.
+  const homonyms = useMemo(() => buildHomonymSet(roster), [roster]);
+  const whereByName = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const s of roster) {
+      const k = normStudentName(s.name);
+      if (!homonyms.has(k)) continue;
+      const w = whereLabel({ name: s.name, grade: s.grade, className: s.className });
+      if (w) m.set(k, w);
+    }
+    return m;
+  }, [roster, homonyms]);
+
   const [searchTerm, setSearchTerm] = useState("");
 
   // 화면 빈 곳을 누르면 찾기(하이라이트)를 풉니다 - 담당자 요청.
@@ -760,7 +778,7 @@ export default function ShuttleChecklistClient({
                       ⋯
                     </button>
                     {noteMenuId === n.id && (
-                      <span className="absolute right-0 top-full z-10 mt-1 flex flex-col rounded-lg border border-slate-200 bg-white p-1 shadow-lg print:hidden">
+                      <span className="absolute right-0 top-full z-10 mt-1 flex flex-col g-panel-solid p-1 shadow-lg print:hidden">
                         <button
                           type="button"
                           disabled={noteBusyPersist}
@@ -780,7 +798,7 @@ export default function ShuttleChecklistClient({
             </div>
           </div>
         )}
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 print:border-black">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2 g-panel-solid px-3 py-2 text-xs font-semibold text-slate-600 print:border-black">
           <span>
             📅 {new Date().toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric", weekday: "short" })} · 🧒 탑승예정{" "}
             <span className="text-sm font-bold text-slate-800">{expectedCount}</span>명
@@ -827,12 +845,14 @@ export default function ShuttleChecklistClient({
             onSetStatus={setStatus}
             onRequestMove={requestMove}
             onRequestEditNote={openNoteEditor}
+            whereByName={whereByName}
             onShowSource={setSourceOf}
           />
         </div>
         <ChecklistPrintSheet
           routes={routes}
           items={displayItems}
+          whereByName={whereByName}
           // 담당자: "몇 년 몇 월 몇 일 몇 요일인지" - 종이는 며칠 뒤에도 굴러다닙니다.
           // 연도까지 없으면 언제 것인지 알 수 없습니다.
           dateLabel={new Date().toLocaleDateString("ko-KR", {

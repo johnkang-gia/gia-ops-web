@@ -41,7 +41,7 @@ function Kpi({ label, value, tone, sub, href }: { label: string; value: number; 
     <button
       type="button"
       onClick={() => href && router.push(href)}
-      className={"rounded-2xl border border-slate-200 bg-white p-3.5 text-left transition-all hover:-translate-y-0.5 hover:shadow-md " + (href ? "cursor-pointer" : "cursor-default")}
+      className={"g-panel-solid p-3.5 text-left transition-all hover:-translate-y-0.5 hover:shadow-md " + (href ? "cursor-pointer" : "cursor-default")}
     >
       <div className="text-xs font-medium text-slate-500">{label}</div>
       <div className="mt-0.5 text-3xl font-extrabold tabular-nums" style={{ color: tone }}>{n}</div>
@@ -128,7 +128,7 @@ export default function SchoolOverviewClient({
       </div>
 
       {/* 부서별 재학생 */}
-      <div className="mb-3 rounded-2xl border border-slate-200 bg-white p-3">
+      <div className="mb-3 g-panel-solid p-3">
         <div className="mb-2 flex items-center justify-between">
           <b className="text-sm">부서별 재학생</b>
           <span className="text-[11px] text-slate-400">재학 {kpi.active} · 졸업 {kpi.graduated} · 퇴학·전출 {kpi.withdrawn}</span>
@@ -150,7 +150,7 @@ export default function SchoolOverviewClient({
       </div>
 
       {/* 학년 → 반 → 학생 위젯(요청: 학년 위젯 안에 반 위젯, 반 위젯 안에 학생 이름 뱃지) */}
-      <div className="mb-3 rounded-2xl border border-slate-200 bg-white p-4">
+      <div className="mb-3 g-panel-solid p-4">
         <div className="mb-3 flex items-center justify-between">
           <b className="text-sm">학년 · 반 · 학생 현황</b>
           <span className="text-[11px] text-slate-400">반을 학년별로 묶어 한눈에 · 담임 미배정 {kpi.noHomeroom}</span>
@@ -170,7 +170,7 @@ export default function SchoolOverviewClient({
                   </div>
                   <div className="flex flex-col gap-2">
                     {g.classes.map((c, ci) => (
-                      <div key={ci} className="rounded-lg border border-slate-200 bg-white p-2 transition-all hover:shadow-sm">
+                      <div key={ci} className="g-panel-solid p-2 transition-all hover:shadow-sm">
                         <div className="mb-1 flex items-center justify-between gap-2">
                           <span className="text-[12px] font-bold text-slate-700">{c.className || "-"}</span>
                           <span className={"shrink-0 text-[10px] " + (c.teacher ? "text-slate-500" : "font-bold text-red-500")}>
@@ -199,7 +199,7 @@ export default function SchoolOverviewClient({
 
       {/* 학년별 재학생 분포 + 과목·선생님 + 학사일정 */}
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+          <div className="g-panel-solid p-4">
             <div className="mb-3 flex items-center justify-between">
               <b className="text-sm">학년별 재학생</b>
               <span className="text-[11px] text-slate-400">총 {kpi.active}명</span>
@@ -217,7 +217,7 @@ export default function SchoolOverviewClient({
             </div>
           </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+          <div className="g-panel-solid p-4">
             <div className="mb-2 flex items-center justify-between">
               <b className="text-sm">과목 · 선생님</b>
               <span className="text-[11px] text-slate-400">{subjects.length}과목</span>
@@ -236,7 +236,7 @@ export default function SchoolOverviewClient({
             )}
           </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+          <div className="g-panel-solid p-4">
             <div className="mb-2 flex items-center justify-between">
               <b className="text-sm">📅 다가오는 학사일정</b>
               <button type="button" className="text-[11px] text-purple-600 hover:underline" onClick={() => (window.location.href = "/academic-calendar")}>전체 →</button>

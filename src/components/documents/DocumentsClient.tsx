@@ -164,7 +164,7 @@ export default function DocumentsClient({ initialItems }: { initialItems: School
   function renderRow(d: SchoolDocument) {
     const expanded = expandedId === d.id;
     return (
-      <div key={d.id} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+      <div key={d.id} className="g-panel-solid p-3 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
@@ -244,7 +244,7 @@ export default function DocumentsClient({ initialItems }: { initialItems: School
           (실제 수치·인명 등은 [ ] 표시된 자리에 직접 채워주세요).
         </p>
 
-        <div className="mb-6 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="mb-6 flex flex-wrap items-center gap-2 g-panel-solid p-4 shadow-sm">
           <button
             onClick={requestRecommend}
             disabled={recommending}
@@ -270,7 +270,7 @@ export default function DocumentsClient({ initialItems }: { initialItems: School
         {showForm && (
           <form
             onSubmit={addDocument}
-            className="mb-6 flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+            className="mb-6 flex flex-col gap-2 g-panel-solid p-4 shadow-sm"
           >
             <input
               type="text"

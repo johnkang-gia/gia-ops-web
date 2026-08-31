@@ -158,11 +158,11 @@ export default function ShuttleRegionDashboard({
       </div>
 
       <div className={"flex min-h-0 gap-3 " + (hideList ? "flex-1" : "flex-[3]")}>
-        <div className="min-w-0 flex-1 overflow-hidden rounded-xl border border-slate-200 bg-white p-2">
+        <div className="min-w-0 flex-1 overflow-hidden g-panel-solid p-2">
           <SeoulGuMap counts={guCounts} selected={selectedGu} onSelect={(gu) => setSelectedGu((prev) => (prev === gu ? null : gu))} matches={guMatchesQuery} />
         </div>
 
-        <div className="flex w-80 shrink-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <div className="flex w-80 shrink-0 flex-col overflow-hidden g-panel-solid">
           <div className="min-h-0 flex-1 overflow-y-auto p-2.5">
             {!selectedGu ? (
               <p className="py-8 text-center text-xs text-slate-400">지도에서 구를 눌러보세요. 숫자는 그 구로 가는 노선 수입니다.</p>
@@ -222,7 +222,7 @@ export default function ShuttleRegionDashboard({
       </div>
 
       {!hideList && (
-      <div className="min-h-0 flex-[2] overflow-y-auto rounded-xl border border-slate-200 bg-white p-3">
+      <div className="min-h-0 flex-[2] overflow-y-auto g-panel-solid p-3">
         <p className="mb-2 text-xs font-bold text-slate-700">전체 노선 - 지역순 · 호차 오름차순 ({fullList.length})</p>
         <table className="w-full text-left text-[11px]">
           <thead>

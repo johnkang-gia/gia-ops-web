@@ -98,7 +98,7 @@ export default function IntegrationsClient({ rows, stats }: { rows: Row[]; stats
         ))}
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+      <div className="overflow-hidden g-panel-solid">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-slate-100 text-left text-[11px] text-slate-400">

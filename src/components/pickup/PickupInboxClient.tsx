@@ -262,7 +262,7 @@ export default function PickupInboxClient({
       <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
       <div className="flex flex-col gap-4">
       {/* 확인이 필요한 건 */}
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <section className="g-panel-solid p-4 shadow-sm">
         <div className="mb-1 flex flex-wrap items-center gap-2">
           <h2 className="text-sm font-bold text-slate-800">확인이 필요한 픽업</h2>
           {pending.length > 0 ? (
@@ -377,7 +377,7 @@ export default function PickupInboxClient({
       {/* 픽업이 아니라고 판단한 건 - 접어둡니다. 확인이 필요한 건 바로 아래가 제자리입니다
           ("사실은 픽업"으로 되돌리는 곳이라 같은 손놀림에 속합니다). */}
       {ignored.length > 0 && (
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <section className="g-panel-solid p-4 shadow-sm">
           <button onClick={() => setShowDone((v) => !v)} className="text-xs font-bold text-slate-500">
             {showDone ? "▾" : "▸"} 픽업이 아니라고 본 건 {ignored.length}개
           </button>
@@ -403,7 +403,7 @@ export default function PickupInboxClient({
       <UpcomingPickups initialRows={schedules} />
 
       {/* 오늘 확정된 픽업 */}
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <section className="g-panel-solid p-4 shadow-sm">
         <h2 className="mb-2 text-sm font-bold text-slate-800">오늘 픽업 {confirmed.length}명</h2>
         {confirmed.length === 0 ? (
           <p className="py-3 text-center text-xs text-slate-400">아직 없습니다.</p>
@@ -425,7 +425,7 @@ export default function PickupInboxClient({
       </section>
 
       {/* 손으로 접수 */}
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <section className="g-panel-solid p-4 shadow-sm">
         <h2 className="mb-1 text-sm font-bold text-slate-800">손으로 접수</h2>
         <p className="mb-2 text-[11px] leading-relaxed text-slate-400">
           전화로 받은 내용, 선생님이 전달해주신 내용을 그대로 붙여넣으면 AI가 학생과 시각을 찾아냅니다. 여러 건이면 사이를 한

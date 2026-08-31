@@ -127,7 +127,7 @@ export default function TaskTrashClient({
         {tasks.map((t) => (
           <div
             key={t.id}
-            className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm"
+            className="flex items-center justify-between gap-3 g-panel-solid px-4 py-3 shadow-sm"
           >
             <div className="min-w-0">
               <div className="truncate text-sm font-semibold text-slate-700">{t.title}</div>

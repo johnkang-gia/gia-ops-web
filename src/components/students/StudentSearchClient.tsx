@@ -158,7 +158,7 @@ export default function StudentSearchClient({
           숫자를 보고 나서 그 학년만 보려면 결국 스크롤로 찾아야 했습니다. 인원수는 그대로
           보여주면서 누르면 걸러지도록 바꿨습니다 - 같은 자리에서 두 가지를 다 합니다. */}
       {gradeTabs.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5 rounded-2xl border border-slate-200 bg-white p-2.5">
+        <div className="flex flex-wrap items-center gap-1.5 g-panel-solid p-2.5">
           <button
             type="button"
             onClick={() => setGradeTab(null)}
@@ -197,7 +197,7 @@ export default function StudentSearchClient({
             <Link
               key={s.id}
               href={`/students/${s.id}`}
-              className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm transition hover:-translate-y-0.5 hover:border-purple-300 hover:shadow-md"
+              className="flex items-center justify-between gap-2 g-panel-solid px-3 py-2.5 shadow-sm transition hover:-translate-y-0.5 hover:border-purple-300 hover:shadow-md"
             >
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">

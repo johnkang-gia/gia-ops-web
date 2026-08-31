@@ -95,7 +95,7 @@ function StaffImportSection({ adminEmail }: { adminEmail: string }) {
   }
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="g-panel-solid p-4 shadow-sm">
       <h2 className="mb-1 text-sm font-bold text-slate-800">🧑‍🏫 교직원 명단</h2>
       <p className="mb-2 text-[11px] text-slate-500">
         열 순서: <code className="rounded bg-slate-100 px-1">이메일, 이름, 소속, 직위</code> (소속은
@@ -233,7 +233,7 @@ function ClassImportSection() {
   }
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="g-panel-solid p-4 shadow-sm">
       <h2 className="mb-1 text-sm font-bold text-slate-800">🏫 반 구성 (담임 · 부담임)</h2>
       <p className="mb-2 text-[11px] text-slate-500">
         열 순서: <code className="rounded bg-slate-100 px-1">학년, 반, 담임 이메일, 부담임 이메일</code>
@@ -368,7 +368,7 @@ function StudentImportSection() {
   }
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="g-panel-solid p-4 shadow-sm">
       <h2 className="mb-1 text-sm font-bold text-slate-800">🎓 학생 명부</h2>
       <p className="mb-2 text-[11px] text-slate-500">
         열 순서: <code className="rounded bg-slate-100 px-1">이름, 영어이름, 학년, 반, 보호자 연락처</code>
@@ -756,7 +756,7 @@ function FormApplicationImportSection({ adminEmail }: { adminEmail: string }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="g-panel-solid p-4 shadow-sm">
         <h2 className="mb-1 text-sm font-bold text-slate-800">📋 신청서(구글폼) 가져오기</h2>
         <p className="mb-3 text-[11px] text-slate-500">
           새 학기 등록 신청이나 행사 참가 신청을 구글폼으로 받을 때, 폼에 연결된 응답 구글시트를 열어
@@ -771,7 +771,7 @@ function FormApplicationImportSection({ adminEmail }: { adminEmail: string }) {
             ① 무슨 학기/행사의 신청서인가요? (예: 26년 3학기 인원모집, 26년 여름캠프2 바자회 행사)
           </p>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex gap-1 rounded-lg border border-slate-200 bg-white p-1">
+            <div className="flex gap-1 g-panel-solid p-1">
               {(["term", "event"] as FormKind[]).map((k) => (
                 <button
                   key={k}
@@ -973,7 +973,7 @@ function FormApplicationImportSection({ adminEmail }: { adminEmail: string }) {
         {result && <p className="mt-2 text-xs font-semibold text-slate-600">{result}</p>}
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="g-panel-solid p-4 shadow-sm">
         <h3 className="mb-2 text-xs font-bold text-slate-700">저장된 템플릿 ({templates.length})</h3>
         {templates.length === 0 ? (
           <p className="text-xs text-slate-400">아직 저장된 템플릿이 없습니다.</p>
@@ -1001,7 +1001,7 @@ function FormApplicationImportSection({ adminEmail }: { adminEmail: string }) {
         )}
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="g-panel-solid p-4 shadow-sm">
         <h3 className="mb-2 text-xs font-bold text-slate-700">최근 가져온 신청 (최대 20건)</h3>
         {recent.length === 0 ? (
           <p className="text-xs text-slate-400">아직 가져온 신청이 없습니다.</p>
@@ -1057,7 +1057,7 @@ export default function SchoolImportClient({ adminEmail }: { adminEmail: string 
   return (
     <div>
       <p className="mb-3 rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-700">💡 {order}</p>
-      <div className="mb-4 flex gap-1 rounded-lg border border-slate-200 bg-white p-1">
+      <div className="mb-4 flex gap-1 g-panel-solid p-1">
         {TABS.map((t) => (
           <button
             key={t.key}

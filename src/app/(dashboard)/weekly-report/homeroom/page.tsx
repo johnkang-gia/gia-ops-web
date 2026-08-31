@@ -76,7 +76,7 @@ export default async function HomeroomPage() {
       </p>
 
       {classes.length === 0 && (
-        <p className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-400">
+        <p className="g-panel-solid p-6 text-center text-sm text-slate-400">
           {t("배정된 담임반이 없습니다.", "No homeroom class is assigned to you.")}
         </p>
       )}

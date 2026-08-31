@@ -10,7 +10,7 @@ export default function StatCard({
   accent?: string;
 }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="g-panel-solid p-4 shadow-sm">
       <div className="text-[11px] font-semibold text-slate-400">{label}</div>
       <div className="mt-1 text-2xl font-bold" style={{ color: accent }}>
         {value}

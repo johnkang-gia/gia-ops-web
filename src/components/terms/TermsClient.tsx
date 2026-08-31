@@ -428,7 +428,7 @@ export default function TermsClient({
       {showForm && (
         <form
           onSubmit={handleSubmit}
-          className="mb-6 flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+          className="mb-6 flex flex-col gap-3 g-panel-solid p-4 shadow-sm"
         >
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label className="flex flex-col gap-1 text-xs text-slate-500">
@@ -587,7 +587,7 @@ function TermOccurrenceCard({
   }
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
+    <div className="g-panel-solid shadow-sm">
       <button onClick={toggle} className="flex w-full items-center gap-3 px-4 py-3 text-left">
         <span className="shrink-0 text-xs font-semibold text-slate-500">{item.year}</span>
         <span className="min-w-0 flex-1 truncate text-sm">

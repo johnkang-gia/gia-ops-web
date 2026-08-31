@@ -67,7 +67,7 @@ export default async function AcademicCalendarPage() {
   return (
     <div className="mx-auto flex h-full max-w-6xl flex-col gap-3 overflow-hidden">
       {currentTerm && formTemplates.length > 0 && (
-        <div className="shrink-0 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
+        <div className="shrink-0 g-panel-solid px-4 py-2.5 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-xs font-bold text-slate-600">
               📋 이 학기({currentTerm.year}년 {currentTerm.term_type}) 신청서 템플릿

@@ -136,7 +136,7 @@ export default function DutyRosterClient({
   return (
     <div className="flex flex-col gap-5">
       {canEdit && (
-        <form onSubmit={add} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <form onSubmit={add} className="g-panel-solid p-4 shadow-sm">
           <h2 className="mb-3 text-sm font-bold text-slate-800">당번 추가</h2>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             <div>
@@ -239,7 +239,7 @@ export default function DutyRosterClient({
         </p>
       ) : (
         grouped.map(([k, list]) => (
-          <div key={k} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div key={k} className="g-panel-solid p-4 shadow-sm">
             <div className="mb-2 flex items-center gap-2">
               <h2 className="text-sm font-bold text-slate-800">{k}</h2>
               <span className="text-[11px] text-slate-400">{list.length}건</span>

@@ -72,7 +72,7 @@ export default function EducationNewsClient({ initialNews }: { initialNews: Educ
       {error && <div className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{error}</div>}
 
       {news.length === 0 && !generating && (
-        <p className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-400">
+        <p className="g-panel-solid p-6 text-center text-sm text-slate-400">
           아직 생성된 교육뉴스가 없습니다. &quot;지금 새로 만들기&quot;로 첫 회차를 만들어보세요.
         </p>
       )}
@@ -81,7 +81,7 @@ export default function EducationNewsClient({ initialNews }: { initialNews: Educ
         {news.map((n) => {
           const open = openId === n.id;
           return (
-            <div key={n.id} className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+            <div key={n.id} className="overflow-hidden g-panel-solid">
               <button
                 onClick={() => setOpenId(open ? null : n.id)}
                 className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-slate-50"

@@ -83,7 +83,7 @@ export default function StudentQuickLookup({ students }: { students: WrStudent[]
                 <button
                   key={s.id}
                   onClick={() => openStudent(s.id)}
-                  className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-left shadow-sm transition hover:border-gia-navy hover:bg-gia-gold-soft/10"
+                  className="flex items-center justify-between gap-2 g-panel-solid px-3 py-2.5 text-left shadow-sm transition hover:border-gia-navy hover:bg-gia-gold-soft/10"
                 >
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-semibold text-slate-700">{s.name}</span>
@@ -107,7 +107,7 @@ export default function StudentQuickLookup({ students }: { students: WrStudent[]
             {error && <p className="text-sm text-red-500">{error}</p>}
             {profile && (
               <div className="flex flex-col gap-3">
-                <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm">
+                <div className="g-panel-solid p-3.5 shadow-sm">
                   <div className="mb-1 flex items-center gap-2">
                     <h3 className="text-base font-bold text-slate-800">{profile.student.name}</h3>
                     <span className="rounded-full bg-gia-gold-soft/40 px-2 py-0.5 text-[10px] font-semibold text-gia-navy">
@@ -124,7 +124,7 @@ export default function StudentQuickLookup({ students }: { students: WrStudent[]
                   </Link>
                 </div>
 
-                <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm">
+                <div className="g-panel-solid p-3.5 shadow-sm">
                   <h4 className="mb-1.5 text-xs font-bold text-slate-700">기본 인적사항</h4>
                   <dl className="flex flex-col gap-1 text-xs">
                     <div className="flex justify-between"><dt className="text-slate-400">생년월일</dt><dd>{fmtDate(profile.student.birth_date)}</dd></div>
@@ -137,7 +137,7 @@ export default function StudentQuickLookup({ students }: { students: WrStudent[]
                   </dl>
                 </div>
 
-                <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm">
+                <div className="g-panel-solid p-3.5 shadow-sm">
                   <h4 className="mb-1.5 text-xs font-bold text-slate-700">학적 이력</h4>
                   {profile.enrollments.length === 0 ? (
                     <p className="text-[11px] text-slate-400">등록된 재학 이력이 없습니다.</p>
@@ -156,7 +156,7 @@ export default function StudentQuickLookup({ students }: { students: WrStudent[]
                   )}
                 </div>
 
-                <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm">
+                <div className="g-panel-solid p-3.5 shadow-sm">
                   <h4 className="mb-1.5 text-xs font-bold text-slate-700">📋 관련 사건기록 ({profile.incidents.length}건)</h4>
                   {profile.incidents.length === 0 ? (
                     <p className="text-[11px] text-slate-400">연결된 사건기록이 없습니다.</p>
@@ -172,7 +172,7 @@ export default function StudentQuickLookup({ students }: { students: WrStudent[]
                   )}
                 </div>
 
-                <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm">
+                <div className="g-panel-solid p-3.5 shadow-sm">
                   <h4 className="mb-1.5 text-xs font-bold text-slate-700">📈 주간 학생 관찰기록 이력 ({profile.reports.length}건)</h4>
                   {profile.reports.length === 0 ? (
                     <p className="text-[11px] text-slate-400">작성된 주간 학생 관찰기록이 없습니다.</p>

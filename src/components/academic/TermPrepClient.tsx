@@ -198,7 +198,7 @@ export default function TermPrepClient({ defaultYear, defaultTermType }: { defau
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="g-panel-solid p-4 shadow-sm">
         <p className="mb-2 text-xs font-bold text-slate-600">어떤 학기를 준비하나요? (예: 27년 1학기)</p>
         <div className="flex flex-wrap items-center gap-2">
           <input
@@ -250,7 +250,7 @@ export default function TermPrepClient({ defaultYear, defaultTermType }: { defau
         )}
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="g-panel-solid p-4 shadow-sm">
         <div className="mb-2 flex items-center justify-between">
           <h3 className="text-sm font-bold text-slate-800">📝 지난 학기 돌아보기{prevTerm ? ` · ${prevTerm.year}년 ${prevTerm.term_type}` : ""}</h3>
           {prevTerm && !editing && (
@@ -352,7 +352,7 @@ export default function TermPrepClient({ defaultYear, defaultTermType }: { defau
         )}
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="g-panel-solid p-4 shadow-sm">
         <h3 className="mb-2 text-sm font-bold text-slate-800">📋 신청서(구글폼) 기록</h3>
         {submissionsByYear.length === 0 ? (
           <p className="text-xs text-slate-400">
@@ -378,7 +378,7 @@ export default function TermPrepClient({ defaultYear, defaultTermType }: { defau
         )}
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="g-panel-solid p-4 shadow-sm">
         <h3 className="mb-2 text-sm font-bold text-slate-800">🗂️ 준비 과정 업무·회의 타임라인</h3>
         {!prevTerm ? (
           <p className="text-xs text-slate-400">지난 회차가 없어 타임라인을 만들 수 없습니다.</p>

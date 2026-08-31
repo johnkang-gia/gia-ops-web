@@ -25,7 +25,7 @@ export const dynamic = "force-dynamic";
 
 function StatCard({ label, value, tone }: { label: string; value: number; tone: string }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 text-center shadow-sm">
+    <div className="g-panel-solid p-4 text-center shadow-sm">
       <div className={"text-2xl font-extrabold " + tone}>{value}</div>
       <div className="mt-1 text-xs text-slate-500">{label}</div>
     </div>

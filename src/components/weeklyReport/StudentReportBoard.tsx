@@ -116,7 +116,7 @@ export default function StudentReportBoard({
   const grid = loading ? (
     <p className="text-sm text-slate-400">{t("불러오는 중...", "Loading...")}</p>
   ) : students.length === 0 ? (
-    <p className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-400">
+    <p className="g-panel-solid p-6 text-center text-sm text-slate-400">
       {emptyMessage ?? t("표시할 학생이 없습니다.", "There are no students to show.")}
     </p>
   ) : (
@@ -181,7 +181,7 @@ export default function StudentReportBoard({
   return (
     <>
       {title ? (
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="g-panel-solid p-4 shadow-sm">
           <div className="mb-3 flex items-start justify-between gap-2">
             <div>
               <h3 className="text-sm font-bold text-slate-800">{title}</h3>

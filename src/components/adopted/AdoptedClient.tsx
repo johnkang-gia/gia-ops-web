@@ -324,7 +324,7 @@ export default function AdoptedClient({
             const busy = busyId === active.id || busyId === g.key;
 
             return (
-              <div key={g.key} className="rounded-xl border border-slate-200 bg-white shadow-sm">
+              <div key={g.key} className="g-panel-solid shadow-sm">
                 <button
                   onClick={() => setExpandedKey(expanded ? null : g.key)}
                   className="flex w-full items-center gap-2 px-4 py-3 text-left"

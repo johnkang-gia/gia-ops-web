@@ -239,7 +239,7 @@ export default function TimetableManager({
   return (
     <div className="flex flex-col gap-4">
       {/* ── 대시보드 링크 ─────────────────────────────────────────────── */}
-      <div className="rounded-xl border border-slate-200 bg-white p-4">
+      <div className="g-panel-solid p-4">
         <div className="mb-1 flex items-center justify-between gap-2">
           <h2 className="text-sm font-bold text-slate-800">🖥️ 운영 대시보드 링크</h2>
           <button onClick={createLink} disabled={busy} className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-50">
@@ -382,7 +382,7 @@ export default function TimetableManager({
       </div>
 
       {/* ── 교시 설정 ──────────────────────────────────────────────────── */}
-      <div className="rounded-xl border border-slate-200 bg-white p-4">
+      <div className="g-panel-solid p-4">
         <h2 className="mb-1 text-sm font-bold text-slate-800">⏰ {department} 교시</h2>
         <p className="mb-3 text-[11px] text-slate-500">
           지금이 몇 교시인지 판단하는 기준입니다. 부서마다 따로 설정하고, 점심·방과후처럼 수업이 아닌 시간대도 넣어두면 그대로 표시됩니다.
@@ -413,7 +413,7 @@ export default function TimetableManager({
       </div>
 
       {/* ── 시간표 표 ──────────────────────────────────────────────────── */}
-      <div className="rounded-xl border border-slate-200 bg-white p-4">
+      <div className="g-panel-solid p-4">
         <h2 className="mb-1 text-sm font-bold text-slate-800">
           📅 {department} 시간표 · {WEEKDAYS.find((w) => w.value === weekday)?.label}요일
         </h2>

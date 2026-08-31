@@ -280,7 +280,7 @@ export default function GiaSystemsClient({ initialSystems }: { initialSystems: G
           const majorOpen = openMajors.has(major);
           const majorCounts = countOf(majorItems);
           return (
-            <div key={major} className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+            <div key={major} className="overflow-hidden g-panel-solid">
               <button
                 type="button"
                 onClick={() => toggleMajor(major)}
@@ -313,7 +313,7 @@ export default function GiaSystemsClient({ initialSystems }: { initialSystems: G
                     const catOpen = openCategories.has(catKey);
                     const catCounts = countOf(items);
                     return (
-                      <div key={catKey} className="overflow-hidden rounded-lg border border-slate-200 bg-white pt-1.5 first:pt-0">
+                      <div key={catKey} className="overflow-hidden g-panel-solid pt-1.5 first:pt-0">
                         <button
                           type="button"
                           onClick={() => toggleCategory(catKey)}
@@ -470,7 +470,7 @@ export default function GiaSystemsClient({ initialSystems }: { initialSystems: G
           );
         })}
         {systems.length === 0 && (
-          <p className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-400">
+          <p className="g-panel-solid p-6 text-center text-sm text-slate-400">
             등록된 시스템이 없습니다. &quot;AI로 추가/세분화 체크&quot;로 시작해보세요.
           </p>
         )}

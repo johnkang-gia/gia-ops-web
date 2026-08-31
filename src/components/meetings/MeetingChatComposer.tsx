@@ -280,7 +280,7 @@ export default function MeetingChatComposer({
   }
 
   return (
-    <div className="mb-6 flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="mb-6 flex flex-col gap-3 g-panel-solid p-4 shadow-sm">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-bold">💬 채팅으로 회의록 작성</h2>
         <div className="flex items-center gap-2">

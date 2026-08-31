@@ -109,7 +109,7 @@ export default function DriverSetupClient({
       </header>
 
       {/* 무엇을 언제 수집하는지 - 설정을 시작하시기 전에 먼저 보셔야 할 내용입니다 */}
-      <section className="mx-4 -mt-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <section className="mx-4 -mt-3 g-panel-solid p-4 shadow-sm">
         <h2 className="mb-2 text-[15px] font-bold text-slate-800">잠깐, 이것부터 확인해주세요</h2>
         <ul className="space-y-2 text-[14px] leading-relaxed text-slate-600">
           <li>
@@ -227,7 +227,7 @@ export default function DriverSetupClient({
             이 두 가지를 안 하시면 <b>운행 중에 조용히 멈춥니다.</b> 꼭 해주세요.
           </p>
           <div className="flex flex-col gap-2">
-            <div className="rounded-xl border border-slate-200 bg-white p-3">
+            <div className="g-panel-solid p-3">
               <p className="text-[15px] font-bold text-slate-800">① 위치 권한을 &quot;항상 허용&quot;으로</p>
               <p className="mt-1 text-[13px] leading-relaxed text-slate-500">
                 {isIOS
@@ -238,7 +238,7 @@ export default function DriverSetupClient({
               </p>
             </div>
             {!isIOS && (
-              <div className="rounded-xl border border-slate-200 bg-white p-3">
+              <div className="g-panel-solid p-3">
                 <p className="text-[15px] font-bold text-slate-800">② 배터리 최적화 예외로</p>
                 <p className="mt-1 text-[13px] leading-relaxed text-slate-500">
                   설정 → 애플리케이션 → Traccar Client → 배터리 → [제한 없음]을 선택해주세요. 삼성 휴대폰은 설정 → 배터리 →
@@ -247,7 +247,7 @@ export default function DriverSetupClient({
               </div>
             )}
             {isIOS && (
-              <div className="rounded-xl border border-slate-200 bg-white p-3">
+              <div className="g-panel-solid p-3">
                 <p className="text-[15px] font-bold text-slate-800">② 저전력 모드 확인</p>
                 <p className="mt-1 text-[13px] leading-relaxed text-slate-500">
                   저전력 모드가 켜져 있으면 위치 전송이 느려질 수 있습니다. 운행 중에는 충전기를 꽂아두시는 것을 권합니다.

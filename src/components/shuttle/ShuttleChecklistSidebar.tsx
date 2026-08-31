@@ -586,7 +586,7 @@ export default function ShuttleChecklistSidebar({
           )}
         </div>
       )}
-      <div className="rounded-xl border border-slate-200 bg-white p-3">
+      <div className="g-panel-solid p-3">
         <div className="mb-2 flex items-center justify-between gap-1">
           <p className="text-[11px] font-bold text-slate-600">📊 오늘 픽업·결석</p>
           <div className="flex shrink-0 items-center gap-1">
@@ -630,7 +630,7 @@ export default function ShuttleChecklistSidebar({
         </div>
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-white p-3">
+      <div className="g-panel-solid p-3">
         <p className="mb-2 text-[11px] font-bold text-slate-600">🚌 오늘 차량 변경 {changedToday.length > 0 && `(${changedToday.length})`}</p>
         {changedToday.length === 0 ? (
           <p className="text-[10px] text-slate-300">없음</p>
@@ -658,7 +658,7 @@ export default function ShuttleChecklistSidebar({
         )}
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-white p-3">
+      <div className="g-panel-solid p-3">
         <p className="mb-2 text-[11px] font-bold text-slate-600">⚠️ 특이사항 {specialNotes.length > 0 && `(${specialNotes.length})`}</p>
         {specialNotes.length === 0 ? (
           <p className="text-[10px] text-slate-300">없음</p>
@@ -673,7 +673,7 @@ export default function ShuttleChecklistSidebar({
         )}
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-white p-3">
+      <div className="g-panel-solid p-3">
         <p className="mb-1.5 text-[11px] font-bold text-slate-600">📝 출결 메모</p>
         {memoContent ? (
           <p className="whitespace-pre-wrap text-[11px] leading-relaxed text-slate-700">{memoContent}</p>

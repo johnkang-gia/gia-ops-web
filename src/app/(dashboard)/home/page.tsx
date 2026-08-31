@@ -209,7 +209,7 @@ export default async function HomePage() {
               <Link
                 key={card.label}
                 href="/work"
-                className="rounded-xl border border-slate-200 bg-white p-3 text-center shadow-sm hover:border-slate-300 sm:p-4"
+                className="g-panel-solid p-3 text-center shadow-sm hover:border-slate-300 sm:p-4"
               >
                 <div className="text-xl font-bold sm:text-2xl">{card.value}</div>
                 <div className="mt-1 text-xs text-slate-500">{card.label}</div>
@@ -223,7 +223,7 @@ export default async function HomePage() {
               <Link
                 key={card.label}
                 href={card.href}
-                className="rounded-xl border border-slate-200 bg-white p-3 text-center shadow-sm hover:border-slate-300 sm:p-4"
+                className="g-panel-solid p-3 text-center shadow-sm hover:border-slate-300 sm:p-4"
               >
                 <div className="text-xl font-bold sm:text-2xl">{card.value}</div>
                 <div className="mt-1 text-xs text-slate-500">{card.label}</div>

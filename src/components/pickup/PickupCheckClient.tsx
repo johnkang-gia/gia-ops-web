@@ -98,7 +98,7 @@ export default function PickupCheckClient({ groups: initialGroups, today }: { gr
 
   if (groups.length === 0) {
     return (
-      <p className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-400">
+      <p className="g-panel-solid p-8 text-center text-sm text-slate-400">
         {t("우리 반 학생 명단이 아직 없습니다.", "No students are listed for your class yet.")}
       </p>
     );

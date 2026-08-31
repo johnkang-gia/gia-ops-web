@@ -73,7 +73,7 @@ export default async function DriverSetupPage({ params }: PageProps) {
 function NotFound({ reason }: { reason: string }) {
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-50 p-6">
-      <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-sm">
+      <div className="w-full max-w-sm g-panel-solid p-6 text-center shadow-sm">
         <div className="mb-2 text-3xl">🔎</div>
         <h1 className="mb-1 text-base font-bold text-slate-800">설정 링크를 찾을 수 없습니다</h1>
         <p className="text-sm leading-relaxed text-slate-500">{reason}</p>

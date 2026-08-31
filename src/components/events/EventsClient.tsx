@@ -468,7 +468,7 @@ function AdhocEventsSection({
       {(showForm || editingId) && (
         <form
           onSubmit={handleSubmit}
-          className="mb-6 flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+          className="mb-6 flex flex-col gap-3 g-panel-solid p-4 shadow-sm"
         >
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label className="flex flex-col gap-1 text-xs text-slate-500">
@@ -541,7 +541,7 @@ function AdhocEventsSection({
         {pageItems.map((it) => {
           const expanded = expandedId === it.id;
           return (
-            <div key={it.id} className="rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div key={it.id} className="g-panel-solid shadow-sm">
               <button
                 onClick={() => setExpandedId(expanded ? null : it.id)}
                 className="flex w-full items-center gap-3 px-4 py-3 text-left"
@@ -597,7 +597,7 @@ function EventForm({
   error: string;
 }) {
   return (
-    <form onSubmit={onSubmit} className="mb-6 flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <form onSubmit={onSubmit} className="mb-6 flex flex-col gap-3 g-panel-solid p-4 shadow-sm">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label className="flex flex-col gap-1 text-xs text-slate-500">
           날짜
@@ -685,7 +685,7 @@ function EventOccurrenceCard({
 }) {
   const [expanded, setExpanded] = useState(false);
   return (
-    <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
+    <div className="g-panel-solid shadow-sm">
       <button
         onClick={() => setExpanded((v) => !v)}
         className="flex w-full items-center gap-3 px-4 py-3 text-left"

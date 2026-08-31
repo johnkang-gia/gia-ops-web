@@ -412,7 +412,7 @@ export default function AdminUsersClient({
             {approvedPageItems.map((u) => (
               <div
                 key={u.email}
-                className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
+                className="flex flex-wrap items-center justify-between gap-2 g-panel-solid p-3 shadow-sm"
               >
                 <div>
                   {renderNameBlock(u)}

@@ -42,7 +42,7 @@ export default function RecordSearchPanel({ terms, classes }: { terms: Term[]; c
   }
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="g-panel-solid p-4 shadow-sm">
       <h2 className="mb-1 text-sm font-bold text-slate-700">🔍 연도-학기-학년-반 통합 검색</h2>
       <p className="mb-3 text-[11px] text-slate-400">
         조건을 고르지 않으면 전체에서 검색합니다. 최근 100건까지 표시됩니다.

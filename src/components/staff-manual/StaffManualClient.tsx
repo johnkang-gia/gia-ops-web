@@ -138,7 +138,7 @@ export default function StaffManualClient({
               {filteredItems.map((s) => {
                 const expanded = expandedId === s.id;
                 return (
-                  <div key={s.id} className="rounded-xl border border-slate-200 bg-white shadow-sm">
+                  <div key={s.id} className="g-panel-solid shadow-sm">
                     <button
                       onClick={() => setExpandedId(expanded ? null : s.id)}
                       className="flex w-full items-center gap-2 px-4 py-3 text-left"

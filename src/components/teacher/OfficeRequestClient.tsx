@@ -68,7 +68,7 @@ export default function OfficeRequestClient({ isHomeroom }: { isHomeroom: boolea
   return (
     <div className="mx-auto max-w-2xl">
 
-      <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-4">
+      <div className="mb-4 g-panel-solid p-4">
         <h1 className="mb-1 text-base font-bold text-slate-800">💬 {t("행정실 문의·도움요청", "Office Request")}</h1>
         <p className="mb-3 text-xs text-slate-500">{t("남기신 글은 행정실 업무 화면에 바로 표시됩니다.", "Your message appears on the office work board immediately.")}</p>
         <form onSubmit={submit} className="flex flex-col gap-2">
@@ -102,7 +102,7 @@ export default function OfficeRequestClient({ isHomeroom }: { isHomeroom: boolea
         {toast && <p className="mt-2 text-xs font-semibold text-teal-700">{toast}</p>}
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-4">
+      <div className="g-panel-solid p-4">
         <h2 className="mb-2 text-sm font-bold text-slate-700">{t("내 요청 내역", "My Requests")}</h2>
         {loading ? (
           <p className="py-6 text-center text-xs text-slate-400">{t("불러오는 중…", "Loading…")}</p>

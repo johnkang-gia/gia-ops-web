@@ -113,7 +113,7 @@ export default function AdminBackupsClient({ initialBackups }: { initialBackups:
         </p>
       </div>
 
-      <div className="mb-6 flex items-center gap-2 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+      <div className="mb-6 flex items-center gap-2 g-panel-solid p-3 shadow-sm">
         <input
           value={label}
           onChange={(e) => setLabel(e.target.value)}
@@ -136,7 +136,7 @@ export default function AdminBackupsClient({ initialBackups }: { initialBackups:
           </div>
         )}
         {backups.map((b) => (
-          <div key={b.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+          <div key={b.id} className="flex items-center justify-between gap-3 g-panel-solid p-3 shadow-sm">
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm font-semibold text-slate-800">{b.label || "(이름 없음)"}</div>
               <div className="mt-0.5 text-xs text-slate-400">

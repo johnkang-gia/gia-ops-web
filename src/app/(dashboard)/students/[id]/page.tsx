@@ -155,7 +155,7 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
         ← 학생 검색으로
       </Link>
 
-      <div className="mb-3 flex items-start justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="mb-3 flex items-start justify-between gap-3 g-panel-solid p-5 shadow-sm">
         <div>
           <div className="mb-1 flex items-center gap-2">
             <h1 className="text-xl font-bold text-slate-800">{student.name}</h1>
@@ -175,7 +175,7 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
 
       {/* 요약 수치 + 바로가기 - 페이지가 길어져도 지금 무엇이 몇 건 있는지 한눈에 보이고, 원하는
           섹션으로 바로 이동할 수 있습니다. */}
-      <div className="sticky top-0 z-10 mb-5 flex flex-wrap items-center gap-1.5 rounded-2xl border border-slate-200 bg-white/95 p-2.5 shadow-sm backdrop-blur">
+      <div className="sticky top-0 z-10 mb-5 flex flex-wrap items-center gap-1.5 g-panel-solid/95 p-2.5 shadow-sm backdrop-blur">
         {quickNav.map((n) => (
           <a
             key={n.href}
@@ -201,7 +201,7 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
           메뉴까지 옮겨 다녀야 했습니다. 요일별로 다른 차를 타는 아이가 12명 있어서
           "몇 호차"만으로는 답이 안 되고, 무슨 요일에 타는지가 같이 보여야 합니다. */}
       {shuttleRows.length > 0 && (
-        <div className="mb-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="mb-5 g-panel-solid p-4 shadow-sm">
           <h2 className="mb-2 text-sm font-bold text-slate-700">🚌 셔틀</h2>
           <div className="flex flex-col gap-1.5">
             {shuttleRows.map((r) => (
@@ -233,7 +233,7 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
       )}
 
       <div id="academic" className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2 scroll-mt-16">
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="g-panel-solid p-4 shadow-sm">
           <h2 className="mb-2 text-sm font-bold text-slate-700">기본 인적사항</h2>
           <dl className="flex flex-col gap-1.5 text-sm">
             <div className="flex justify-between"><dt className="text-slate-400">성별</dt><dd>{student.gender || "-"}</dd></div>
@@ -255,7 +255,7 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
           </dl>
         </div>
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="g-panel-solid p-4 shadow-sm">
           <h2 className="mb-2 text-sm font-bold text-slate-700">학적 이력(연도·학기별)</h2>
           {enrollments.length === 0 ? (
             <p className="text-xs text-slate-400">등록된 재학 이력이 없습니다.</p>
@@ -275,7 +275,7 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
         </div>
       </div>
 
-      <div id="incidents" className="mb-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm scroll-mt-16">
+      <div id="incidents" className="mb-5 g-panel-solid p-4 shadow-sm scroll-mt-16">
         <h2 className="mb-2 text-sm font-bold text-slate-700">📋 관련 사건기록 ({incidents.length}건)</h2>
         {incidents.length === 0 ? (
           <p className="text-xs text-slate-400">연결된 사건기록이 없습니다.</p>
@@ -291,7 +291,7 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
         )}
       </div>
 
-      <div id="reports" className="mb-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm scroll-mt-16">
+      <div id="reports" className="mb-5 g-panel-solid p-4 shadow-sm scroll-mt-16">
         <h2 className="mb-2 text-sm font-bold text-slate-700">📈 주간 학생 관찰기록 이력 ({reports.length}건)</h2>
         {reports.length === 0 ? (
           <p className="text-xs text-slate-400">작성된 주간 학생 관찰기록이 없습니다.</p>
@@ -310,7 +310,7 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
         )}
       </div>
 
-      <div id="mentions" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm scroll-mt-16">
+      <div id="mentions" className="g-panel-solid p-4 shadow-sm scroll-mt-16">
         <h2 className="mb-1 text-sm font-bold text-slate-700">🗂️ 업무/채팅 관련 언급 (참고용)</h2>
         <p className="mb-2 text-[11px] text-slate-400">
           &quot;{searchName}&quot; 이름이 들어간 업무·코멘트·채팅 메시지를 검색한 결과입니다. 자동 연결이 아니라

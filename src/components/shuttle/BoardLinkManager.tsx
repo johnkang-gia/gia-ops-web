@@ -168,7 +168,7 @@ export default function BoardLinkManager({ initialLinks }: { initialLinks: Shutt
   }
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-3">
+    <div className="g-panel-solid p-3">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs font-bold text-slate-700">📺 안내보드 링크 (로비·복도 화면 - 로그인 불필요)</p>
         <div className="flex items-center gap-1.5">

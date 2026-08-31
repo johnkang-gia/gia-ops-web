@@ -96,7 +96,7 @@ function ChangelogBody({ body }: { body: string }) {
 function EntryCard({ entry, index }: { entry: ChangelogEntry; index: number }) {
   return (
     <div
-      className="shell-entry-fade rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+      className="shell-entry-fade g-panel-solid p-4 shadow-sm"
       style={{ animationDelay: `${Math.min(index, 10) * 35}ms` }}
     >
       <div className="mb-1 flex flex-wrap items-center gap-2">

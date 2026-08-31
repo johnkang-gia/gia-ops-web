@@ -120,7 +120,7 @@ export default function ArrivalLinkManager({ initialLinks }: { initialLinks: Shu
   }
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-3">
+    <div className="g-panel-solid p-3">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs font-bold text-slate-700">📍 교직원 도착체크 단독 링크 (GPS·개별 탑승체크 없음)</p>
         <div className="flex items-center gap-1.5">

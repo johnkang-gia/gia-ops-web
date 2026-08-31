@@ -120,7 +120,7 @@ export default function StaffSearchClient({ staff, homeroomMap = {} }: { staff: 
             <Link
               key={s.email}
               href={`/staff/${encodeURIComponent(s.email)}`}
-              className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2.5 shadow-sm transition hover:border-gia-navy hover:bg-gia-gold-soft/10"
+              className="flex items-center justify-between gap-2 g-panel-solid px-3 py-2.5 shadow-sm transition hover:border-gia-navy hover:bg-gia-gold-soft/10"
             >
               <div className="flex items-center gap-2">
                 <span className="text-sm font-semibold text-slate-700">{s.name || "(이름 미입력)"}</span>

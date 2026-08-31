@@ -233,7 +233,7 @@ export default function TrackerDeviceManager({
   );
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4">
+    <div className="g-panel-solid p-4">
       {qrFor && (
         <SetupLinkModal
           url={setupUrl(qrFor)}

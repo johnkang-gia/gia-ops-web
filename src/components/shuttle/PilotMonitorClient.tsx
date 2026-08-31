@@ -206,7 +206,7 @@ export default function PilotMonitorClient({
           빠진 노선이 있을 때만 수동으로 채우는 용도입니다. 그래서 맨 아래에 접어둡니다:
           매일 보는 것은 "지금 어느 차가 살아 있나"이지 이 폼이 아닙니다. */}
       {availableRoutes.length > 0 && (
-        <details className="rounded-xl border border-slate-200 bg-white">
+        <details className="g-panel-solid">
           <summary className="cursor-pointer px-3 py-2 text-xs font-bold text-slate-600">
             누락된 노선 링크 추가 ({availableRoutes.length})
           </summary>
@@ -294,7 +294,7 @@ function PilotRouteCard({
   const safetyScore = Math.max(0, 100 - (accelCount + decelCount) * SAFETY_PENALTY_PER_EVENT);
 
   return (
-    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+    <div className="overflow-hidden g-panel-solid">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
         <div>
           <p className="text-sm font-bold text-slate-800">

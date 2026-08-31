@@ -86,7 +86,7 @@ export default function DateTimeCard({ compact = false }: { compact?: boolean })
     return compact ? (
       <div className="h-16 animate-pulse rounded-lg bg-[var(--shell-hover-bg,#f8fafc)]" />
     ) : (
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="g-panel-solid p-4 shadow-sm">
         <div className="h-40 animate-pulse rounded-lg bg-slate-50" />
       </div>
     );
@@ -127,7 +127,7 @@ export default function DateTimeCard({ compact = false }: { compact?: boolean })
       title="클릭하면 학사일정으로 이동합니다"
       className={
         "cursor-pointer " +
-        (compact ? "bg-transparent" : "rounded-xl border border-slate-200 bg-white p-4 shadow-sm hover:bg-slate-50")
+        (compact ? "bg-transparent" : "g-panel-solid p-4 shadow-sm hover:bg-slate-50")
       }
     >
       <div className={compact ? "mb-0.5 text-center" : "mb-3 text-center"}>

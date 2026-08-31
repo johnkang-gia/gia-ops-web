@@ -71,7 +71,7 @@ export default function TermClassOverviewClient({
       </div>
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex gap-1 rounded-lg border border-slate-200 bg-white p-1">
+        <div className="flex gap-1 g-panel-solid p-1">
           <button
             onClick={() => setView("widget")}
             className={
@@ -107,7 +107,7 @@ export default function TermClassOverviewClient({
       {view === "list" ? (
         <StudentsListClient students={allStudents} />
       ) : isEmpty ? (
-        <p className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-400">
+        <p className="g-panel-solid p-6 text-center text-sm text-slate-400">
           등록된 반이나 학생이 없습니다. 학교관리 &gt; 반 관리/학생 관리에서 먼저 등록해주세요.
         </p>
       ) : (

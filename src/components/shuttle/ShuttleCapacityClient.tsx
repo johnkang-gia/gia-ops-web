@@ -144,7 +144,7 @@ export default function ShuttleCapacityClient({
       {shown.length === 0 ? (
         <p className="py-10 text-center text-sm text-slate-400">{dir} 노선이 없습니다.</p>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <div className="overflow-hidden g-panel-solid">
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-50 text-slate-500">
               <tr>

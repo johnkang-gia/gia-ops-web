@@ -108,7 +108,7 @@ export default function RecordsDriveClient({ items }: { items: DriveItem[] }) {
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-[200px_1fr]">
         {/* 연/월 트리 */}
-        <div className="rounded-2xl border border-slate-200 bg-white p-2.5">
+        <div className="g-panel-solid p-2.5">
           {tree.length === 0 && <p className="py-4 text-center text-xs text-slate-300">기록 없음</p>}
           {tree.map((y) => (
             <div key={y.year} className="mb-1.5">
@@ -144,7 +144,7 @@ export default function RecordsDriveClient({ items }: { items: DriveItem[] }) {
         </div>
 
         {/* 결과 목록 */}
-        <div className="rounded-2xl border border-slate-200 bg-white p-3">
+        <div className="g-panel-solid p-3">
           <div className="mb-2 flex items-center justify-between">
             <b className="text-sm text-slate-700">{headerLabel}</b>
             <span className="text-[11px] text-slate-400">{results.length}건{results.length === 300 ? "+ (최대 300건 표시)" : ""}</span>

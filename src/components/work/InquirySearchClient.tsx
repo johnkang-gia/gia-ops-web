@@ -168,7 +168,7 @@ export default function InquirySearchClient({
               <span className="ml-1 text-slate-400">· 더 좁히려면 기간이나 분류를 함께 쓰세요</span>
             )}
           </p>
-          <div className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white">
+          <div className="divide-y divide-slate-100 overflow-hidden g-panel-solid">
             {rows.map((r) => {
               const who = r.matched_name ?? r.ai_student_name ?? r.channel_label ?? "이름 없음";
               const body = r.raw_text ?? r.summary ?? "";

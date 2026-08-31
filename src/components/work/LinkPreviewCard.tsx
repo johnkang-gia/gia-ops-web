@@ -49,7 +49,7 @@ export default function LinkPreviewCard({ url }: { url: string }) {
       target="_blank"
       rel="noopener noreferrer"
       onClick={(e) => e.stopPropagation()}
-      className="mt-1 flex max-w-xs items-stretch gap-2 overflow-hidden rounded-lg border border-slate-200 bg-white text-left transition hover:bg-slate-50"
+      className="mt-1 flex max-w-xs items-stretch gap-2 overflow-hidden g-panel-solid text-left transition hover:bg-slate-50"
     >
       {preview.image && (
         // eslint-disable-next-line @next/next/no-img-element

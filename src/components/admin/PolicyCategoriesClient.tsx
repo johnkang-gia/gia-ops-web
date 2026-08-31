@@ -271,7 +271,7 @@ export default function PolicyCategoriesClient({ initialCategories }: { initialC
 
       {/* 기존 사건/회의 소급 태깅 - 새 항목 체계 도입 전에 이미 저장된 기록에는 항목 태그가
           비어 있으므로, 버튼 하나로 AI가 이 목록 중에서 골라 채워 넣습니다. */}
-      <div className="mb-4 rounded-xl border border-slate-200 bg-white p-3">
+      <div className="mb-4 g-panel-solid p-3">
         <p className="mb-2 text-xs font-semibold text-slate-700">🔄 기존 기록 소급 태깅</p>
         <p className="mb-2 text-[11px] text-slate-400">
           새 항목 체계 도입 전에 저장된 사건/회의에는 항목 태그가 비어 있습니다. AI가 위 고정
@@ -342,7 +342,7 @@ export default function PolicyCategoriesClient({ initialCategories }: { initialC
           const domainOpen = openDomains.has(domain);
           const domainCounts = countOf(items);
           return (
-            <div key={domain} className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+            <div key={domain} className="overflow-hidden g-panel-solid">
               <button
                 type="button"
                 onClick={() => toggleDomain(domain)}
@@ -458,7 +458,7 @@ export default function PolicyCategoriesClient({ initialCategories }: { initialC
           );
         })}
         {tabItems.length === 0 && (
-          <p className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-400">
+          <p className="g-panel-solid p-6 text-center text-sm text-slate-400">
             등록된 항목이 없습니다. &quot;+ 새 항목&quot;으로 추가해보세요.
           </p>
         )}

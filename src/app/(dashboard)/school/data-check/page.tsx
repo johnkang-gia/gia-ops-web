@@ -79,7 +79,7 @@ export default async function DataCheckPage() {
       </p>
 
       {/* 지금 들어 있는 데이터 */}
-      <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="mb-6 g-panel-solid p-4 shadow-sm">
         <div className="mb-3 flex flex-wrap items-baseline gap-2">
           <h2 className="text-sm font-bold text-slate-800">지금 앱에 들어 있는 데이터</h2>
           {term && (
@@ -126,7 +126,7 @@ export default async function DataCheckPage() {
       </div>
 
       {/* 확인이 필요한 건 */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="g-panel-solid p-4 shadow-sm">
         <div className="mb-1 flex flex-wrap items-center gap-2">
           <h2 className="text-sm font-bold text-slate-800">확인이 필요한 건</h2>
           {openCount > 0 ? (

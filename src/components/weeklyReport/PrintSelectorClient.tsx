@@ -15,7 +15,7 @@ export default function PrintSelectorClient({ students, terms }: { students: WrS
   }, [students, query]);
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4">
+    <div className="g-panel-solid p-4">
       <input
         value={query}
         onChange={(e) => setQuery(e.target.value)}

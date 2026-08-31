@@ -27,7 +27,7 @@ export default function StudentsListClient({ students }: { students: WrStudent[]
         placeholder="이름/학년/반으로 검색..."
         className="mb-3 w-full max-w-sm rounded-lg border border-slate-300 px-3 py-2 text-sm"
       />
-      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+      <div className="overflow-x-auto g-panel-solid">
         <table className="w-full min-w-[560px] text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-400">
             <tr>

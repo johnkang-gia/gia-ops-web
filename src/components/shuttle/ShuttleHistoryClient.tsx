@@ -141,7 +141,7 @@ export default function ShuttleHistoryClient({
           이 기간에 픽업·결석 기록이 없습니다.
         </p>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <div className="overflow-hidden g-panel-solid">
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-50 text-slate-500">
               <tr>

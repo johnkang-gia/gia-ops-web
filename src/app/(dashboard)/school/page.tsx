@@ -95,7 +95,7 @@ export default async function SchoolDashboardPage() {
 
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {/* 연도는 항상 나오니 작게 위에, 학기(여름캠프 등)는 줄바꿈해서 가운데에 크게 보여줍니다. */}
-        <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white p-4 text-center shadow-sm">
+        <div className="flex flex-col items-center justify-center g-panel-solid p-4 text-center shadow-sm">
           {currentTerm ? (
             <>
               <div className="text-[11px] font-semibold text-slate-400">{currentTerm.year}</div>
@@ -114,7 +114,7 @@ export default async function SchoolDashboardPage() {
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* 개설된 반 */}
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <section className="g-panel-solid p-4 shadow-sm">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-sm font-bold text-slate-700">🏫 개설된 반</h2>
             <Link href="/weekly-report/admin/classes" className="text-[11px] font-semibold text-blue-600 hover:underline">
@@ -141,7 +141,7 @@ export default async function SchoolDashboardPage() {
         </section>
 
         {/* 과목 */}
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <section className="g-panel-solid p-4 shadow-sm">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-sm font-bold text-slate-700">📘 과목</h2>
             <Link href="/weekly-report/admin/subjects" className="text-[11px] font-semibold text-blue-600 hover:underline">
@@ -168,7 +168,7 @@ export default async function SchoolDashboardPage() {
         </section>
 
         {/* 교사 리스트 */}
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <section className="g-panel-solid p-4 shadow-sm">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-sm font-bold text-slate-700">🧑‍🏫 교사 리스트</h2>
             {isAdmin && (
@@ -195,7 +195,7 @@ export default async function SchoolDashboardPage() {
         </section>
 
         {/* 교직원 리스트 */}
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <section className="g-panel-solid p-4 shadow-sm">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-sm font-bold text-slate-700">🗂️ 교직원 리스트</h2>
             {isAdmin && (
@@ -222,7 +222,7 @@ export default async function SchoolDashboardPage() {
         </section>
 
         {/* 학생 리스트 (요약) */}
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:col-span-2">
+        <section className="g-panel-solid p-4 shadow-sm lg:col-span-2">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-sm font-bold text-slate-700">🎓 학생 리스트 ({students.length}명)</h2>
             <Link href="/students" className="text-[11px] font-semibold text-blue-600 hover:underline">

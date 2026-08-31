@@ -92,7 +92,7 @@ export default function SchoolDocumentsHubClient({
       <div className="mb-4 grid shrink-0 grid-cols-2 gap-2 sm:grid-cols-4">
         <Link
           href="/school/documents/reports"
-          className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm transition hover:border-gia-navy hover:shadow-md"
+          className="g-panel-solid p-3 shadow-sm transition hover:border-gia-navy hover:shadow-md"
         >
           <div className="text-lg">📊</div>
           <div className="mt-1 text-sm font-bold text-slate-700">보고서</div>
@@ -100,7 +100,7 @@ export default function SchoolDocumentsHubClient({
         </Link>
         <Link
           href="/manuals?doc=실무자용"
-          className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm transition hover:border-gia-navy hover:shadow-md"
+          className="g-panel-solid p-3 shadow-sm transition hover:border-gia-navy hover:shadow-md"
         >
           <div className="text-lg">📗</div>
           <div className="mt-1 text-sm font-bold text-slate-700">매뉴얼</div>
@@ -108,7 +108,7 @@ export default function SchoolDocumentsHubClient({
         </Link>
         <Link
           href="/manuals?doc=학부모용"
-          className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm transition hover:border-gia-navy hover:shadow-md"
+          className="g-panel-solid p-3 shadow-sm transition hover:border-gia-navy hover:shadow-md"
         >
           <div className="text-lg">📘</div>
           <div className="mt-1 text-sm font-bold text-slate-700">운영계획안</div>
@@ -116,7 +116,7 @@ export default function SchoolDocumentsHubClient({
         </Link>
         <Link
           href="/documents"
-          className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm transition hover:border-gia-navy hover:shadow-md"
+          className="g-panel-solid p-3 shadow-sm transition hover:border-gia-navy hover:shadow-md"
         >
           <div className="text-lg">📁</div>
           <div className="mt-1 text-sm font-bold text-slate-700">서류함</div>
@@ -135,7 +135,7 @@ export default function SchoolDocumentsHubClient({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <section className="g-panel-solid p-4 shadow-sm">
           <h2 className="mb-2 text-sm font-bold text-slate-700">
             {query.trim() ? `🔎 검색 결과 (${filtered.length}건)` : `🆕 최근 등록·수정된 문서`}
           </h2>

@@ -153,7 +153,7 @@ export default function InquiriesClient({
           )}
         </p>
 
-        <form onSubmit={handleSubmit} className="mb-6 flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <form onSubmit={handleSubmit} className="mb-6 flex flex-col gap-3 g-panel-solid p-4 shadow-sm">
           <div className="flex gap-1.5">
             {(["오류", "기능제안", "기타"] as const).map((c) => (
               <button
@@ -223,7 +223,7 @@ export default function InquiriesClient({
           const draft = drafts[it.id] ?? { status: it.status, note: it.developer_note ?? "" };
           const busy = busyId === it.id;
           return (
-            <div key={it.id} className="rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div key={it.id} className="g-panel-solid shadow-sm">
               <button
                 onClick={() => setExpandedId(expanded ? null : it.id)}
                 className="flex w-full items-center gap-2 px-4 py-3 text-left"

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { normName } from "@/lib/studentLabel";
 import type { ChecklistItem, ChecklistRoute } from "./ShuttleChecklistClient";
 
 function natCompare(a: string, b: string) {
@@ -30,9 +31,17 @@ export default function ShuttleChecklistTable({
   onRequestMove,
   onRequestEditNote,
   onShowSource,
+  whereByName,
 }: {
   routes: ChecklistRoute[];
   items: ChecklistItem[];
+  /**
+   * 동명이인 이름 → "3학년 Brown A".
+   *
+   * **겹치는 이름만** 들어 있습니다. 한 명뿐인 이름에까지 학년·반을 붙이면 표가 글자로
+   * 가득 차고, 정작 구분이 필요한 이름이 묻힙니다.
+   */
+  whereByName?: Map<string, string>;
   busyId: string | null;
   searchTerm: string;
   onSetStatus: (item: ChecklistItem, nextStatus: ChecklistItem["status"]) => void;
@@ -110,7 +119,7 @@ export default function ShuttleChecklistTable({
   }
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white print:overflow-visible print:rounded-none print:border-black">
+    <div className="overflow-x-auto g-panel-solid print:overflow-visible print:rounded-none print:border-black">
       <table className="w-full min-w-[760px] border-collapse text-sm print:min-w-0 print:text-xs">
         <thead>
           <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs text-slate-500 print:border-black print:bg-white">
@@ -301,6 +310,16 @@ export default function ShuttleChecklistTable({
                             <span>
                               {isMoved && (isMovedToday ? "↔ " : "⇄ ")}
                               {item.studentName}
+                              {/* 동명이인일 때만 학년·반(담당자 요청: "김재이" 같은 경우).
+                                  인쇄본에도 남깁니다 - 종이에서 헷갈리는 게 더 위험합니다. */}
+                              {whereByName?.get(normName(item.studentName)) && (
+                                <span
+                                  className="ml-0.5 align-baseline text-[8px] font-semibold text-slate-400"
+                                  title={`같은 이름이 여러 명이라 학년·반을 함께 적습니다`}
+                                >
+                                  {whereByName.get(normName(item.studentName))}
+                                </span>
+                              )}
                               {item.individualPickup && (
                                 <span className="ml-1 rounded-full bg-orange-100 px-1 text-[8px] font-bold text-orange-700 print:hidden">개별하원</span>
                               )}

@@ -118,7 +118,7 @@ export default function AiManualClient({
             <button
               key={d.id}
               onClick={() => setRawText(d.raw_text)}
-              className="flex flex-col gap-0.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left shadow-sm hover:border-slate-300"
+              className="flex flex-col gap-0.5 g-panel-solid px-3 py-2 text-left shadow-sm hover:border-slate-300"
             >
               <span className="truncate text-xs font-medium">{oneLine(d.raw_text)}</span>
               <span className="text-[10px] text-slate-400">
@@ -140,7 +140,7 @@ export default function AiManualClient({
 
         <form
           onSubmit={handleSubmit}
-          className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+          className="g-panel-solid p-4 shadow-sm"
         >
           <label className="mb-3 flex flex-col gap-1 text-xs text-slate-500">
             내용 (두서없이 편하게 써도 됩니다)

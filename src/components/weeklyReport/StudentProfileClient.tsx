@@ -69,7 +69,7 @@ export default function StudentProfileClient({
               .map((r) => (
                 <div
                   key={r.id}
-                  className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm hover:bg-slate-50"
+                  className="flex items-center justify-between gap-2 g-panel-solid px-3 py-2 text-sm hover:bg-slate-50"
                 >
                   <button onClick={() => setOpening({ subject })} className="flex flex-1 items-center justify-between text-left">
                     <span className="text-slate-600">{r.report_date}</span>
@@ -97,7 +97,7 @@ export default function StudentProfileClient({
         </div>
       ))}
       {bySubject.size === 0 && (
-        <p className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-400">
+        <p className="g-panel-solid p-6 text-center text-sm text-slate-400">
           아직 작성된 리포트가 없습니다.
         </p>
       )}
@@ -120,7 +120,7 @@ export default function StudentProfileClient({
         </form>
         <div className="flex flex-col gap-2">
           {comments.map((c) => (
-            <div key={c.id} className="rounded-lg border border-slate-200 bg-white p-2.5 text-sm">
+            <div key={c.id} className="g-panel-solid p-2.5 text-sm">
               <div className="mb-0.5 flex items-center justify-between">
                 <span className="font-semibold text-slate-600">{c.author_email}</span>
                 <span className="text-[11px] text-slate-300">{timeAgo(c.created_at)}</span>

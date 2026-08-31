@@ -8,7 +8,7 @@ export default function CollapsedStrip({ label, onExpand }: { label: string; onE
       type="button"
       onClick={onExpand}
       title={`${label} 펼치기`}
-      className="flex h-full w-full flex-col items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white py-3 text-slate-400 shadow-sm hover:border-slate-300 hover:text-slate-600 lg:h-full"
+      className="flex h-full w-full flex-col items-center justify-center gap-2 g-panel-solid py-3 text-slate-400 shadow-sm hover:border-slate-300 hover:text-slate-600 lg:h-full"
     >
       <span className="text-xs">›</span>
       <span className="text-[11px] font-semibold [writing-mode:vertical-rl]">{label}</span>

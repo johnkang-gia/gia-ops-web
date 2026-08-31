@@ -264,7 +264,7 @@ export default function AiSourcePanel({
             const draft = drafts[it.id] ?? it.final_text;
             const busy = busyId === it.id;
             return (
-              <div key={it.id} className="rounded-lg border border-slate-200 bg-white shadow-sm">
+              <div key={it.id} className="g-panel-solid shadow-sm">
                 <button
                   onClick={() => setExpandedId(expanded ? null : `p-${it.id}`)}
                   className="flex w-full items-start gap-1.5 px-2.5 py-2 text-left"
@@ -345,7 +345,7 @@ export default function AiSourcePanel({
             const draft = drafts[it.id] ?? it.specific_text;
             const busy = busyId === it.id;
             return (
-              <div key={it.id} className="rounded-lg border border-slate-200 bg-white shadow-sm">
+              <div key={it.id} className="g-panel-solid shadow-sm">
                 <button
                   onClick={() => setExpandedId(expanded ? null : `a-${it.id}`)}
                   className="flex w-full items-start gap-1.5 px-2.5 py-2 text-left"

@@ -99,7 +99,7 @@ export default function TimetableClient({
     <div className="mx-auto max-w-6xl">
 
       {/* 지금 상황 + 공간 사용 현황 */}
-      <div className="mb-3 rounded-2xl border border-slate-200 bg-white p-4">
+      <div className="mb-3 g-panel-solid p-4">
         <div className="mb-2 flex flex-wrap items-center gap-2">
           <b className="text-sm">🏫 공간 사용 현황</b>
           <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
@@ -169,7 +169,7 @@ export default function TimetableClient({
           같은 과목은 어느 요일·어느 반에서든 늘 같은 색입니다. 여기는 그 자동 색이 마음에
           안 들 때만 씁니다. */}
       {showColors && (
-        <div className="mb-3 rounded-2xl border border-slate-200 bg-white p-3">
+        <div className="mb-3 g-panel-solid p-3">
           <p className="mb-2 text-[11px] leading-relaxed text-slate-400">
             색은 과목 이름으로 저절로 정해집니다. 마음에 안 드는 과목만 눌러서 바꾸세요 —
             바꾼 색은 <b>모든 부서·요일</b>에 함께 적용됩니다.
@@ -190,7 +190,7 @@ export default function TimetableClient({
                     {colors[name] != null && <span className="ml-1 text-[10px] opacity-60">✎</span>}
                   </button>
                   {open && (
-                    <div className="absolute left-0 top-full z-20 mt-1 w-44 rounded-xl border border-slate-200 bg-white p-2 shadow-lg">
+                    <div className="absolute left-0 top-full z-20 mt-1 w-44 g-panel-solid p-2 shadow-lg">
                       <div className="grid grid-cols-6 gap-1">
                         {SUBJECT_PALETTE.map((p, i) => (
                           <button
@@ -221,7 +221,7 @@ export default function TimetableClient({
       )}
 
       {/* 학년별 학생 수(선택 부서) */}
-      <div className="mb-3 flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2">
+      <div className="mb-3 flex flex-wrap items-center gap-2 g-panel-solid px-3 py-2">
         <span className="text-xs font-bold text-slate-600">{dept} 재학생 {deptTotal}명</span>
         <span className="text-slate-300">·</span>
         {gradeTotals.length === 0 ? (
@@ -236,7 +236,7 @@ export default function TimetableClient({
       </div>
 
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_260px]">
-        <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+        <div className="overflow-x-auto g-panel-solid">
           {deptPeriods.length === 0 || deptClasses.length === 0 ? (
             <p className="p-8 text-center text-sm text-slate-400">이 부서의 시간표(교시·반)가 아직 없습니다.</p>
           ) : (
@@ -293,7 +293,7 @@ export default function TimetableClient({
 
         {/* 선생님 시수 + 지금 빈 선생님 */}
         <div className="flex flex-col gap-3">
-          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+          <div className="g-panel-solid p-4">
             <b className="text-sm">🟢 지금 수업 없는 선생님 {freeNow.length}</b>
             {freeNow.length === 0 ? (
               <p className="mt-1 text-xs text-slate-400">모두 수업 중이거나 수업 시간이 아닙니다.</p>
@@ -305,7 +305,7 @@ export default function TimetableClient({
               </div>
             )}
           </div>
-          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+          <div className="g-panel-solid p-4">
             <div className="mb-2 flex items-center justify-between">
               <b className="text-sm">선생님별 주간 시수</b>
               <span className="text-[11px] text-slate-400">{teacherHours.length}명</span>

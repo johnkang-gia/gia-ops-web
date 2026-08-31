@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { WrReport, WrStudent, WrTerm } from "@/lib/types";
-import { getWeekRange } from "@/lib/weeklyReport/week";
+import { getPeriodRange } from "@/lib/weeklyReport/week";
 import { useLang, useT } from "@/components/common/LanguageProvider";
 import { classLabel } from "@/lib/i18nLabels";
 import ReportFormModal from "./ReportFormModal";
@@ -79,7 +79,7 @@ export default function StudentReportBoard({
   }, [reports]);
 
   const currentWeekByStudent = useMemo(() => {
-    const { start, end } = getWeekRange();
+    const { start, end } = getPeriodRange();
     const map = new Map<string, WrReport>();
     for (const r of reports) {
       if (r.subject !== subjectName || r.is_archived) continue;

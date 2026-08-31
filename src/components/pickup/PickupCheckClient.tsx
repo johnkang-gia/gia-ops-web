@@ -22,6 +22,16 @@ export type PickupItem = {
   assignmentId: string | null;
   routeLabel: string | null;
   status: PickupStatus;
+  /**
+   * 오늘 이 아이가 무엇을 타고 가는지("1:55 메타프랩버스").
+   *
+   * 담당자: "하원수단 칸을 만들고 (...) 담임선생님 화면에서도 아이를 기준으로 떠서
+   *          선생님이 아이를 데리고 올 수 있도록."
+   *
+   * 셔틀을 안 타는 날은 노선 자리에 "셔틀 미탑승"만 떴습니다. 그건 **무엇을 안 타는지**만
+   * 알려주고 **무엇을 타는지**는 안 알려줘서, 선생님은 결국 아이를 어디로 보낼지 모릅니다.
+   */
+  dismissalLabel?: string | null;
 };
 
 export type PickupClassGroup = { classId: string; label: string; items: PickupItem[] };
@@ -154,6 +164,13 @@ export default function PickupCheckClient({ groups: initialGroups, today }: { gr
                             ? t(it.routeLabel, `Bus ${it.routeLabel.replace("호", "")}`)
                             : t("노선 미배정", "No route")}
                       </div>
+                      {/* 오늘의 하원수단. 학원 버스처럼 셔틀이 아닌 것도 여기 뜹니다 -
+                          선생님이 아이를 어디로 내보낼지 알아야 하기 때문입니다. */}
+                      {it.dismissalLabel && (
+                        <div className="mt-0.5 truncate text-[11px] font-semibold text-violet-600">
+                          🏠 {it.dismissalLabel}
+                        </div>
+                      )}
                     </div>
                     {noShuttle ? (
                       <span className="shrink-0 text-[11px] text-slate-300">—</span>

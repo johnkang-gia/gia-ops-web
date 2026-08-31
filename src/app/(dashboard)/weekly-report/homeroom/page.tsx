@@ -19,8 +19,8 @@ function guideSections(t: T) {
           "Students in the class where you are the homeroom (or co-homeroom) teacher appear here automatically."
         ),
         t(
-          "학생 카드를 눌러 학업/향상점/참여도/행동/사회성 등 주간 관찰기록을 작성·수정할 수 있습니다.",
-          "Tap a student card to write or edit this week's observation record \u2014 academics, improvement, participation, behaviour and social skills."
+          "학생 카드를 눌러 학업 / 생활 / 종합 의견 3가지 관찰기록을 작성·수정할 수 있습니다. 2주에 한 번 쓰시면 됩니다.",
+          "Tap a student card to write or edit this period's observation record (2 weeks) \u2014 academics, school life and an overall comment."
         ),
         t(
           "명단이 비어 있거나 학생이 빠져 있으면 행정실에 반 배정을 확인해달라고 요청해주세요.",

@@ -3,6 +3,8 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isStaffOrAboveUser } from "@/lib/roles";
+import DismissalPlanEditor from "@/components/students/DismissalPlanEditor";
+import type { DismissalPlan } from "@/lib/dismissalPlan";
 import type { Incident, Task, TaskComment, ChatMessage, WrClass, WrEnrollment, WrReport, WrStudent, WrStudentFieldDef } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -64,6 +66,15 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
     supabase.from("wr_student_field_defs").select("*").order("sort_order", { ascending: true }),
   ]);
   const fieldDefs = (fieldDefsRes.data as WrStudentFieldDef[] | null) ?? [];
+
+  // 요일별 하원수단(학원 버스·보호자 픽업·도보 등). 셔틀과 별개의 표입니다 - 셔틀을 안 타는
+  // 날은 셔틀 배정 자체가 없어서 적을 자리가 없었습니다.
+  const { data: dpData } = await supabase
+    .from("student_dismissal_plans")
+    .select("id, student_id, weekday, kind, label, depart_time, note, updated_by, updated_at")
+    .eq("student_id", id)
+    .order("weekday");
+  const dismissalPlans = (dpData as DismissalPlan[] | null) ?? [];
 
   // 이 아이가 어느 셔틀을 타는지.
   //
@@ -196,6 +207,17 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
           관찰기록 {reports.length}건
         </span>
       </div>
+
+      {/* 하원수단 - 요일마다 다른 차를 타는 아이가 있습니다(백서아: 월 셔틀, 화·목 메타프랩,
+          수·금 블루웨일). 셔틀 배정은 셔틀을 타는 날만 적을 수 있어서, 안 타는 날 이 아이가
+          어떻게 가는지는 어디에도 없었습니다. 담임 선생님이 아이를 어디로 내보낼지 알아야
+          하므로 **아이를 기준으로** 여기 둡니다. */}
+      <DismissalPlanEditor
+        studentId={student.id}
+        studentName={student.name}
+        initialPlans={dismissalPlans}
+        userEmail={me.email}
+      />
 
       {/* 셔틀 - 학부모 전화를 받으면 가장 먼저 확인하는 것 중 하나인데, 여기 없어서 셔틀
           메뉴까지 옮겨 다녀야 했습니다. 요일별로 다른 차를 타는 아이가 12명 있어서

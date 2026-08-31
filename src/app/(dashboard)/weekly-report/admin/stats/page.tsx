@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isAdminUser } from "@/lib/roles";
 import { getCurrentTerm } from "@/lib/currentTerm";
-import { getWeekRange } from "@/lib/weeklyReport/week";
+import { getPeriodRange } from "@/lib/weeklyReport/week";
 import type { Term, WrClass, WrReport } from "@/lib/types";
 import RecordSearchPanel from "@/components/weeklyReport/admin/RecordSearchPanel";
 import GuideButton from "@/components/common/GuideButton";
@@ -12,7 +12,7 @@ const GUIDE_SECTIONS = [
   {
     title: "📊 주간 학생 관찰기록 통계란?",
     lines: [
-      "이번 주 기준 재적 학생 수, 발행/임시저장 리포트 건수, 지도 필요·우수 평가 학생 수를 한눈에 확인합니다.",
+      "이번 작성기간(2주) 기준 재적 학생 수, 발행/임시저장 리포트 건수, 지도 필요·우수 평가 학생 수를 한눈에 확인합니다.",
     ],
   },
   {
@@ -73,7 +73,7 @@ export default async function WeeklyReportStatsPage() {
   if (!isAdminUser(me)) redirect("/weekly-report");
 
   const term = await getCurrentTerm();
-  const { start, end } = getWeekRange();
+  const { start, end } = getPeriodRange();
 
   const [{ count: activeStudentCount }, { data: weekReportsData }, { data: termsData }, { data: classesData }] =
     await Promise.all([
@@ -112,20 +112,20 @@ export default async function WeeklyReportStatsPage() {
         <GuideButton title="주간 학생 관찰기록 통계 사용 가이드" sections={GUIDE_SECTIONS} />
       </div>
       <p className="mb-4 text-xs text-slate-500">
-        {term ? `현재 학기: ${term.year}년 ${term.term_type}` : "진행중인 학기가 없습니다."} · 이번 주 ({start} ~ {end}) 기준
+        {term ? `현재 학기: ${term.year}년 ${term.term_type}` : "진행중인 학기가 없습니다."} · 이번 작성기간 2주 ({start} ~ {end}) 기준
       </p>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <StatCard label="재적 학생 수" value={activeStudentCount ?? 0} tone="text-slate-700" />
-        <StatCard label="이번주 발행됨" value={published} tone="text-emerald-600" />
-        <StatCard label="이번주 임시저장" value={draft} tone="text-amber-600" />
+        <StatCard label="이번 기간 발행됨" value={published} tone="text-emerald-600" />
+        <StatCard label="이번 기간 임시저장" value={draft} tone="text-amber-600" />
         <StatCard label="⚠️ 지도 필요 학생" value={warningStudentIds.size} tone="text-red-600" />
         <StatCard label="🌟 우수 평가 학생" value={excellentStudentIds.size} tone="text-indigo-600" />
-        <StatCard label="이번주 작성된 리포트 총합" value={weekReports.length} tone="text-slate-700" />
+        <StatCard label="이번 기간 작성 총합" value={weekReports.length} tone="text-slate-700" />
       </div>
 
       <p className="mb-6 mt-4 text-[11px] text-slate-400">
-        &quot;지도 필요/우수 학생&quot;은 이번 주 리포트 중 하나라도 해당 뱃지가 선택된 학생 수를 중복 없이 센 값입니다.
+        &quot;지도 필요/우수 학생&quot;은 이번 작성기간(2주) 리포트 중 하나라도 해당 뱃지가 선택된 학생 수를 중복 없이 센 값입니다.
       </p>
 
       <RecordSearchPanel terms={(termsData as Term[] | null) ?? []} classes={(classesData as WrClass[] | null) ?? []} />

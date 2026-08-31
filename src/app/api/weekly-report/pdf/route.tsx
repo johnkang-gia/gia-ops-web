@@ -5,8 +5,8 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isTeacherOnly } from "@/lib/roles";
 import type { WrClass, WrReport, WrStudent, WrSubject } from "@/lib/types";
-import { BADGE_MAP, EVAL_LABELS, EVAL_CATEGORIES } from "@/lib/weeklyReport/badges";
-import type { EvalCategory } from "@/lib/types";
+import { BADGE_MAP, EVAL_LABELS, EVAL_CATEGORIES, LEGACY_EVAL_LABELS } from "@/lib/weeklyReport/badges";
+import type { EvalCategory, LegacyEvalCategory } from "@/lib/types";
 
 const FONT_DIR = path.join(process.cwd(), "src/assets/fonts");
 let fontRegistered = false;
@@ -87,10 +87,19 @@ function ReportDocument({
                 </View>
               );
             })}
-            {r.teacher_note && (
+            {/* 항목을 3개로 줄이기 전(학업·보완·참여·태도·교우)에 쓴 기록은 옛 칸에 글이
+                남아 있습니다. 새 서식에 없다고 인쇄에서 빼면, 그 학기에 실제로 적힌 관찰이
+                종이에서 사라집니다. 있으면 '이전 서식'이라 밝히고 그대로 싣습니다. */}
+            {(Object.keys(LEGACY_EVAL_LABELS) as LegacyEvalCategory[]).some((k) => r[k]) && (
               <View style={styles.noteBox}>
-                <Text style={styles.noteLabel}>교사 종합 의견</Text>
-                <Text style={styles.catText}>{r.teacher_note}</Text>
+                <Text style={styles.noteLabel}>이전 서식(5항목)에 적힌 내용</Text>
+                {(Object.keys(LEGACY_EVAL_LABELS) as LegacyEvalCategory[]).map((k) =>
+                  r[k] ? (
+                    <Text key={k} style={styles.catText}>
+                      {LEGACY_EVAL_LABELS[k].ko}: {r[k]}
+                    </Text>
+                  ) : null
+                )}
               </View>
             )}
           </View>

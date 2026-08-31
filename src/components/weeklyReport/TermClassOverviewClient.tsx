@@ -10,7 +10,7 @@ const GUIDE_SECTIONS = [
   {
     title: "🎓 반별 작성 현황이란?",
     lines: [
-      "현재 학기를 상단에 표시하고, 그 아래 반별 위젯에서 학생별 이번 주 리포트 작성 뱃지(✅ 발행됨/📝 임시저장/미작성)를 한눈에 확인합니다.",
+      "현재 학기를 상단에 표시하고, 그 아래 반별 위젯에서 학생별 이번 작성기간(2주) 리포트 작성 뱃지(✅ 발행됨/📝 임시저장/미작성)를 한눈에 확인합니다.",
       "\"전체 목록\" 탭을 누르면 예전처럼 전교생을 표 형태(이름/학년/반/보호자 연락처 검색)로 볼 수 있습니다.",
     ],
   },
@@ -67,7 +67,7 @@ export default function TermClassOverviewClient({
             진행중인 학기가 없습니다. 학교관리 &gt; 학기 관리에서 학기를 먼저 시작해주세요.
           </div>
         )}
-        <p className="mt-1 text-xs text-slate-400">반별로 이번 주 담임 리포트 작성 현황을 확인하세요.</p>
+        <p className="mt-1 text-xs text-slate-400">반별로 이번 작성기간(2주) 담임 리포트 작성 현황을 확인하세요.</p>
       </div>
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">

@@ -7,6 +7,7 @@ import UpcomingPickups, { type ScheduleRow } from "@/components/pickup/UpcomingP
 import StudentPicker from "@/components/pickup/StudentPicker";
 import { matchStudent, type RosterEntry } from "@/lib/pickupParse";
 import { extractTargetRange, todayKey } from "@/lib/attendanceDigest";
+import { extractRecurringWeekdays, hasRecurringPhrase, weekdayLabel } from "@/lib/parentRecurrence";
 
 // 픽업 인박스. 토들·전화·교사·직접입력 어디로 들어왔든 여기 한 곳에 모입니다.
 //
@@ -144,6 +145,22 @@ export default function PickupInboxClient({
     notify(fixed > 0 ? `${fixed}건을 학생과 이었습니다.` : "지금 규칙으로도 확정되는 건이 없습니다. 직접 골라주세요.", fixed > 0 ? "success" : "error");
     void refresh();
   }
+
+  // ── 반복 판정 ────────────────────────────────────────────────────────────
+  //
+  // 담당자: "Theo is pick up everyfriday 3:10! 이걸 킴태오 픽업으로 만들었더라고.
+  //          everyfriday 매주 금요일인데 이 부분을 무시하고 그냥 태오 픽업으로 넣어버렸어."
+  //
+  // 수집할 때(pickupIngest) 이미 같은 판단을 하지만, 화면에서도 다시 봅니다 - **이미 쌓여
+  // 있는 줄**에는 그 판단이 안 붙어 있기 때문입니다. 고친 규칙이 어제 들어온 연락에는
+  // 소용없다면, 담당자는 여전히 손으로 찾아야 합니다.
+  const recurrenceOf = useCallback((r: PickupRow) => {
+    const text = r.raw_text ?? "";
+    if (!text) return null;
+    const days = extractRecurringWeekdays(text);
+    if (days.length > 0) return { days };
+    return hasRecurringPhrase(text) ? { days: [] as number[] } : null;
+  }, []);
 
   // ── 결석 판정 ────────────────────────────────────────────────────────────
   //
@@ -312,6 +329,29 @@ export default function PickupInboxClient({
                 </div>
 
                 {r.raw_text && <p className="mb-2 rounded-lg bg-white p-2 text-xs leading-relaxed text-slate-700">{r.raw_text}</p>}
+
+                {/* 반복되는 약속인지 그 자리에서 보여줍니다.
+                    담당자: "Theo is pick up everyfriday 3:10! 이걸 킴태오 픽업으로 만들었더라고.
+                             everyfriday 매주 금요일인데 이 부분을 무시하고 그냥 태오 픽업으로
+                             넣어버렸어."
+                    이건 오늘 하루짜리가 아니라 **셔틀 배정을 바꿔야 하는 일**입니다. 한 번짜리로
+                    확정해버리면 다음 주 같은 요일에 아이가 그냥 차를 탑니다. */}
+                {recurrenceOf(r) && (
+                  <div className="mb-2 rounded-lg border border-amber-300 bg-amber-50 p-2 text-[11px] leading-relaxed text-amber-900">
+                    {recurrenceOf(r)!.days.length > 0 ? (
+                      <>
+                        <b>🔁 매주 {weekdayLabel(recurrenceOf(r)!.days)}요일</b> 반복되는 약속으로 읽힙니다.
+                        오늘 하루만 처리하면 다음 주 같은 요일에 아이가 그대로 차를 탑니다 —
+                        <b> 셔틀 &gt; 탑승배정</b>에서 그 요일 체크를 풀어주세요.
+                      </>
+                    ) : (
+                      <>
+                        <b>🔁 반복되는 약속</b>으로 보이는데 요일을 읽지 못했습니다. 원문을 읽고
+                        직접 정해주세요 — 하루짜리로 처리하면 다음부터는 아무 표시도 남지 않습니다.
+                      </>
+                    )}
+                  </div>
+                )}
                 {r.ai_note && <p className="mb-2 text-[11px] text-slate-500">AI: {r.ai_note}</p>}
 
                 {/* 결석으로 읽히는 연락. 담당자: "AI가 결석으로 체크한 부분인데도 픽업이냐

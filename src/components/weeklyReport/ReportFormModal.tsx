@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { BadgeValue, EvalBadges, EvalCategory, WrReport, WrStudent } from "@/lib/types";
-import { BADGE_OPTIONS, EVAL_CATEGORIES, EVAL_LABELS, initialBadges } from "@/lib/weeklyReport/badges";
-import { getWeekRange } from "@/lib/weeklyReport/week";
+import { BADGE_OPTIONS, EVAL_CATEGORIES, EVAL_LABELS, LEGACY_EVAL_LABELS, initialBadges } from "@/lib/weeklyReport/badges";
+import { getPeriodRange, periodLabel } from "@/lib/weeklyReport/week";
 import { useToast } from "@/components/common/ToastProvider";
 import { useLang, useT } from "@/components/common/LanguageProvider";
 import { classLabel } from "@/lib/i18nLabels";
@@ -12,7 +12,7 @@ import { classLabel } from "@/lib/i18nLabels";
 type SubjectReportInfo = { current?: WrReport; previous?: WrReport; latest?: WrReport };
 
 function buildSubjectMap(reports: WrReport[]): Record<string, SubjectReportInfo> {
-  const { start } = getWeekRange();
+  const { start } = getPeriodRange();
   const bySubject: Record<string, WrReport[]> = {};
   for (const r of reports) {
     (bySubject[r.subject] ||= []).push(r);
@@ -31,23 +31,21 @@ function buildSubjectMap(reports: WrReport[]): Record<string, SubjectReportInfo>
 
 const TEMPLATE_KEY = "wr_teacherNoteTemplates";
 
+// 칸 이름을 DB 칼럼 이름과 **똑같이** 맞춥니다.
+//
+// 예전에는 teacher_note를 화면에서 teacherNote로 부르느라, 항목을 도는 코드와 종합 의견을
+// 다루는 코드가 따로 있었습니다. 이름이 하나면 EVAL_CATEGORIES 한 바퀴로 셋 다 그려집니다.
 type FormState = {
   academic: string;
-  improvement: string;
-  participation: string;
   behavior: string;
-  social: string;
-  teacherNote: string;
+  teacher_note: string;
   evalBadges: EvalBadges;
 };
 
 const BLANK_FORM: FormState = {
   academic: "",
-  improvement: "",
-  participation: "",
   behavior: "",
-  social: "",
-  teacherNote: "",
+  teacher_note: "",
   evalBadges: initialBadges(),
 };
 
@@ -130,11 +128,8 @@ export default function ReportFormModal({
     if (target) {
       setFormData({
         academic: target.academic ?? "",
-        improvement: target.improvement ?? "",
-        participation: target.participation ?? "",
         behavior: target.behavior ?? "",
-        social: target.social ?? "",
-        teacherNote: target.teacher_note ?? "",
+        teacher_note: target.teacher_note ?? "",
         evalBadges: target.eval_badges && Object.keys(target.eval_badges).length ? target.eval_badges : initialBadges(),
       });
       setExistingReportId(target.id);
@@ -162,12 +157,12 @@ export default function ReportFormModal({
       class_id: student.class_id,
       grade: student.grade,
       subject: mode === "admin" || mode === "archive" ? activeTab : mySubject,
+      // 3개 항목만 씁니다. improvement·participation·social은 **일부러 안 보냅니다** -
+      // upsert는 보낸 칸만 고치므로, 예전에 쌓인 그 칸들의 글이 그대로 남습니다.
+      // 빈 문자열로 덮으면 지난 기록이 사라집니다.
       academic: formData.academic,
-      improvement: formData.improvement,
-      participation: formData.participation,
       behavior: formData.behavior,
-      social: formData.social,
-      teacher_note: formData.teacherNote,
+      teacher_note: formData.teacher_note,
       eval_badges: formData.evalBadges,
       status,
       // 한국 날짜로 저장합니다.
@@ -254,7 +249,7 @@ export default function ReportFormModal({
 
   async function handleSave(status: "draft" | "published") {
     if (status === "published") {
-      if (!formData.academic || !formData.improvement || !formData.participation || !formData.behavior || !formData.social) {
+      if (!formData.academic.trim() || !formData.behavior.trim() || !formData.teacher_note.trim()) {
         notify(
           t(
             "발행하려면 모든 항목을 작성해야 합니다. 작성 중이라면 임시저장을 이용해주세요.",
@@ -277,11 +272,11 @@ export default function ReportFormModal({
   }
 
   function saveTemplate() {
-    if (!formData.teacherNote.trim()) {
+    if (!formData.teacher_note.trim()) {
       notify(t("저장할 종합 의견을 먼저 작성해주세요.", "Write the comment first, then save it as a snippet."), "error");
       return;
     }
-    const next = [...templates, { id: Date.now().toString(), text: formData.teacherNote }];
+    const next = [...templates, { id: Date.now().toString(), text: formData.teacher_note }];
     setTemplates(next);
     localStorage.setItem(TEMPLATE_KEY, JSON.stringify(next));
   }
@@ -304,6 +299,11 @@ export default function ReportFormModal({
           <div>
             <h3 className="flex flex-wrap items-center gap-2 text-base font-bold">
               📄 {t("리포트 열람 및 작성", "View / Write Report")}
+              {/* 지금이 어느 기간인지 제목 옆에 적습니다. 2주에 한 번 쓰기로 바뀌었으므로,
+                  "이번 것을 이미 썼는지"를 선생님이 날짜로 확인할 수 있어야 합니다. */}
+              <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-600">
+                {periodLabel()} ({t("2주", "2 weeks")})
+              </span>
               {existingReportId && (
                 <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-normal text-slate-400">
                   #{existingReportId.slice(0, 8)}
@@ -379,7 +379,43 @@ export default function ReportFormModal({
               <div key={cat}>
                 <label className="text-sm font-semibold text-slate-700">
                   {t(EVAL_LABELS[cat].ko, EVAL_LABELS[cat].en)}
+                  <em className="ml-1.5 text-xs font-normal not-italic text-slate-400">{EVAL_LABELS[cat].hint}</em>
                 </label>
+                {/* 종합 의견 칸에만 상용구(자주 쓰는 문장) 단추가 붙습니다.
+                    학부모께 그대로 나가는 글이라 매번 처음부터 쓰기가 가장 부담스러운 칸입니다. */}
+                {cat === "teacher_note" && !isReadOnly && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={saveTemplate}
+                      className="float-right rounded-md border border-slate-300 bg-slate-50 px-2 py-1 text-[11px] text-slate-500 hover:bg-slate-100"
+                    >
+                      🔖 {t("현재 내용 상용구로 저장", "Save as snippet")}
+                    </button>
+                    {templates.length > 0 && (
+                      <div className="mb-1.5 mt-1.5 flex flex-wrap gap-1.5">
+                        {templates.map((tpl) => (
+                          <div
+                            key={tpl.id}
+                            className="flex items-center gap-1 rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[11px] text-indigo-600"
+                          >
+                            <span
+                              className="cursor-pointer"
+                              onClick={() =>
+                                updateField("teacher_note", formData.teacher_note + (formData.teacher_note ? "\n" : "") + tpl.text)
+                              }
+                            >
+                              {tpl.text.length > 15 ? tpl.text.slice(0, 15) + "…" : tpl.text}
+                            </span>
+                            <button onClick={() => deleteTemplate(tpl.id)} className="text-indigo-300 hover:text-red-500">
+                              ✕
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
                 <div className="mb-1.5 mt-1.5 flex flex-wrap gap-1.5">
                   {BADGE_OPTIONS.map((b) => {
                     const checked = (formData.evalBadges[cat] || []).includes(b.value);
@@ -402,7 +438,7 @@ export default function ReportFormModal({
                   })}
                 </div>
                 <textarea
-                  rows={3}
+                  rows={cat === "teacher_note" ? 4 : 3}
                   value={formData[cat]}
                   onChange={(e) => updateField(cat, e.target.value)}
                   disabled={isReadOnly}
@@ -410,72 +446,44 @@ export default function ReportFormModal({
                 />
               </div>
             ))}
-
-            <div>
-              <div className="mb-1.5 flex items-center justify-between">
-                <label className="text-sm font-semibold text-slate-700">
-                  {t("교사 종합 의견", "Teacher's comment")}{" "}
-                  <em className="font-normal text-slate-400">
-                    {t("(학부모 리포트에 표시됩니다)", "(shown to parents)")}
-                  </em>
-                </label>
-                {!isReadOnly && (
-                  <button
-                    type="button"
-                    onClick={saveTemplate}
-                    className="rounded-md border border-slate-300 bg-slate-50 px-2 py-1 text-[11px] text-slate-500 hover:bg-slate-100"
-                  >
-                    🔖 {t("현재 내용 상용구로 저장", "Save as snippet")}
-                  </button>
-                )}
-              </div>
-              {!isReadOnly && templates.length > 0 && (
-                <div className="mb-1.5 flex flex-wrap gap-1.5">
-                  {templates.map((t) => (
-                    <div key={t.id} className="flex items-center gap-1 rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[11px] text-indigo-600">
-                      <span
-                        className="cursor-pointer"
-                        onClick={() => updateField("teacherNote", formData.teacherNote + (formData.teacherNote ? "\n" : "") + t.text)}
-                      >
-                        {t.text.length > 15 ? t.text.slice(0, 15) + "…" : t.text}
-                      </span>
-                      <button onClick={() => deleteTemplate(t.id)} className="text-indigo-300 hover:text-red-500">
-                        ✕
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <textarea
-                rows={4}
-                placeholder={t(
-                  "학부모님께 전달할 종합적인 코멘트를 작성해주세요.",
-                  "Write an overall comment to share with the family."
-                )}
-                value={formData.teacherNote}
-                onChange={(e) => updateField("teacherNote", e.target.value)}
-                disabled={isReadOnly}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-50"
-              />
-            </div>
           </div>
 
           {showHistory && (
             <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
               <h4 className="mb-2 flex items-center gap-1.5 font-semibold text-slate-700">
-                🕐 {t("지난 주 리포트", "Last week's report")} {previousReport ? `(${previousReport.report_date})` : ""}
+                🕐 {t("지난 기간 리포트", "Previous report")} {previousReport ? `(${previousReport.report_date})` : ""}
               </h4>
               {previousReport ? (
                 <div className="flex flex-col gap-1 text-slate-600">
-                  <p><strong>{t("학업", "Academics")}:</strong> {previousReport.academic}</p>
-                  <p><strong>{t("보완", "Improvement")}:</strong> {previousReport.improvement}</p>
-                  <p><strong>{t("참여", "Participation")}:</strong> {previousReport.participation}</p>
-                  <p><strong>{t("태도", "Behaviour")}:</strong> {previousReport.behavior}</p>
-                  <p><strong>{t("교우", "Social")}:</strong> {previousReport.social}</p>
-                  <p><strong>{t("교사 의견", "Teacher's comment")}:</strong> {previousReport.teacher_note}</p>
+                  {EVAL_CATEGORIES.map((cat) =>
+                    previousReport[cat] ? (
+                      <p key={cat}>
+                        <strong>{t(EVAL_LABELS[cat].ko, EVAL_LABELS[cat].en)}:</strong> {previousReport[cat]}
+                      </p>
+                    ) : null
+                  )}
+                  {/* 항목을 3개로 줄이기 전에 쓴 기록은 옛 칸에 글이 남아 있습니다.
+                      새 서식에 없다고 감추면, 선생님이 지난 학기에 적어둔 관찰이 사라진 것처럼
+                      보입니다. 있으면 '이전 서식'이라고 밝히고 그대로 보여줍니다. */}
+                  {(Object.keys(LEGACY_EVAL_LABELS) as (keyof typeof LEGACY_EVAL_LABELS)[]).some(
+                    (k) => previousReport[k]
+                  ) && (
+                    <div className="mt-1.5 border-t border-slate-200 pt-1.5">
+                      <p className="mb-1 text-[11px] font-semibold text-slate-400">
+                        {t("이전 서식(5항목)에 적힌 내용", "Written in the old 5-item format")}
+                      </p>
+                      {(Object.keys(LEGACY_EVAL_LABELS) as (keyof typeof LEGACY_EVAL_LABELS)[]).map((k) =>
+                        previousReport[k] ? (
+                          <p key={k}>
+                            <strong>{t(LEGACY_EVAL_LABELS[k].ko, LEGACY_EVAL_LABELS[k].en)}:</strong> {previousReport[k]}
+                          </p>
+                        ) : null
+                      )}
+                    </div>
+                  )}
                 </div>
               ) : (
-                <p className="text-center text-slate-400">{t("지난 주 리포트가 없습니다.", "There is no report from last week.")}</p>
+                <p className="text-center text-slate-400">{t("지난 기간 리포트가 없습니다.", "There is no report from the previous period.")}</p>
               )}
             </div>
           )}
@@ -501,7 +509,7 @@ export default function ReportFormModal({
                 onClick={() => setShowHistory((v) => !v)}
                 className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50"
               >
-                {showHistory ? t("과거 기록 닫기", "Hide history") : t("지난주 기록 보기", "Show last week")}
+                {showHistory ? t("과거 기록 닫기", "Hide history") : t("지난 기간 기록 보기", "Show previous period")}
               </button>
               {!isReadOnly && (
                 <>

@@ -10,6 +10,7 @@ import {
   type RosterEntry,
 } from "@/lib/pickupParse";
 import { extractTargetRange } from "@/lib/attendanceDigest";
+import { extractRecurringWeekdays, hasRecurringPhrase, weekdayLabel } from "@/lib/parentRecurrence";
 import { genCaseId } from "@/lib/caseId";
 
 // 어느 경로로 들어온 연락이든 이 함수 하나를 거쳐 픽업으로 바뀝니다.
@@ -487,9 +488,25 @@ export async function ingestPickup(
   // 그래서 지속 특이사항(shuttle_persistent_notes)으로 올립니다. 이 표는 매일 아침 크론이
   // 읽어 그날 해당 요일이면 픽업으로 찍어줍니다 - 사람이 매주 다시 입력하지 않아도 됩니다.
   const WD_NUM: Record<string, number> = { 월: 1, 화: 2, 수: 3, 목: 4, 금: 5 };
-  const recurDays = Array.isArray(ai.recurring_weekdays)
-    ? [...new Set((ai.recurring_weekdays as unknown[]).map((d) => WD_NUM[String(d).trim()]).filter((n): n is number => !!n))]
+  const aiRecurDays = Array.isArray(ai.recurring_weekdays)
+    ? (ai.recurring_weekdays as unknown[]).map((d) => WD_NUM[String(d).trim()]).filter((n): n is number => !!n)
     : [];
+
+  // AI 답과 **규칙**을 합칩니다.
+  //
+  // 담당자: "Theo is pick up everyfriday 3:10! 이걸 킴태오 픽업으로 만들었더라고.
+  //          everyfriday 매주 금요일인데 이 부분을 무시하고 그냥 태오 픽업으로 넣어버렸어."
+  //
+  // 프롬프트에는 'every Friday'를 반복으로 보라는 규칙이 이미 있었는데도 놓쳤습니다. 붙여
+  // 쓴 'everyfriday', 앞에 길게 붙은 멘션, 영어·한국어가 섞인 문장 - 모델이 흔들릴 이유는
+  // 많고, 놓쳤을 때 **아무 표시도 남지 않습니다.** 오늘 픽업으로 잘 들어간 것처럼 보이고
+  // 다음 주 금요일에 아이가 그냥 차를 탑니다.
+  //
+  // 그래서 규칙(@/lib/recurrence)으로 한 번 더 봅니다. 둘 중 하나라도 반복이라고 하면
+  // 반복으로 봅니다 - 한 번짜리를 반복으로 잘못 보면 사람이 특이사항에서 지우면 되지만,
+  // 반복을 한 번짜리로 잘못 보면 아무도 모른 채 지나갑니다.
+  const ruleRecurDays = extractRecurringWeekdays(text);
+  const recurDays = [...new Set([...aiRecurDays, ...ruleRecurDays])].sort((a, b) => a - b);
 
   if (kind === "픽업" && recurDays.length > 0 && matched) {
     // 이미 같은 학생·같은 요일로 올려둔 것이 있으면 또 만들지 않습니다.
@@ -508,7 +525,7 @@ export async function ingestPickup(
           term: "정규학기",
           student_id: matched.id,
           student_name: matched.name,
-          content: `매주 ${recurDays.map((n) => ["", "월", "화", "수", "목", "금"][n]).join("·")}요일 픽업 (학부모 연락으로 자동 등록)`,
+          content: `매주 ${weekdayLabel(recurDays)}요일 픽업 (학부모 연락으로 자동 등록)`,
           effect_kind: "pickup",
           effect_days: recurDays,
           effect_from: todayKst,
@@ -524,7 +541,7 @@ export async function ingestPickup(
       //
       // 그게 맞습니다. 근본은 배정입니다. 그래서 사람이 손볼 일을 업무로 남깁니다 -
       // 이걸 안 남기면 "특이사항으로 처리됐으니 됐지" 하고 명단은 영영 안 고쳐집니다.
-      const wdLabel = recurDays.map((n) => ["", "월", "화", "수", "목", "금"][n]).join("·");
+      const wdLabel = weekdayLabel(recurDays);
       await supabase
         .from("tasks")
         .insert({
@@ -548,9 +565,16 @@ export async function ingestPickup(
   }
 
   const isPickup = kind === "픽업";
+  // 반복인 것 같은데 **요일을 못 집어낸** 경우.
+  //
+  // "앞으로 계속 제가 데리러 갈게요"처럼 요일이 없는 반복도 있습니다. 이런 글을 하루짜리로
+  // 자동 확정해버리면 아무 표시도 안 남고, 다음부터는 아이가 그냥 차를 탑니다.
+  // 요일을 모르면 기계가 정할 수 없으니, **사람이 반드시 한 번 보게** 확정을 막습니다.
+  const looksRecurringButUnclear = recurDays.length === 0 && hasRecurringPhrase(text);
+
   // 픽업 자동 확정 조건: AI가 충분히 확신하고, 학생이 명부에서 하나로 특정되었을 때만.
   // 문의는 자동으로 처리할 것이 없으므로 항상 사람이 봅니다.
-  const autoConfirm = isPickup && confidence >= AUTO_CONFIRM_MIN && !!matched;
+  const autoConfirm = isPickup && confidence >= AUTO_CONFIRM_MIN && !!matched && !looksRecurringButUnclear;
 
   const { data, error } = await supabase
     .from("pickup_requests")
@@ -569,7 +593,16 @@ export async function ingestPickup(
       ai_student_name: candidateName,
       ai_pickup_time: isPickup ? normalizeTime(ai.pickup_time) : null,
       ai_confidence: confidence,
-      ai_note: typeof ai.note === "string" ? ai.note.slice(0, 300) : null,
+      // 반복으로 읽었으면 그 사실을 근거에 남깁니다. 인박스에서 "왜 확정이 안 됐지"를
+      // 그 자리에서 알 수 있어야 합니다.
+      ai_note: [
+        typeof ai.note === "string" ? ai.note : null,
+        recurDays.length > 0 ? `반복 감지: 매주 ${weekdayLabel(recurDays)}요일 (지속 특이사항으로 등록)` : null,
+        looksRecurringButUnclear ? "반복되는 약속으로 보이는데 요일을 읽지 못했습니다. 사람이 확인해주세요." : null,
+      ]
+        .filter(Boolean)
+        .join(" / ")
+        .slice(0, 300) || null,
       inquiry_type: isPickup ? null : pick(ai.inquiry_type, INQUIRY_TYPES),
       summary: typeof ai.summary === "string" ? ai.summary.slice(0, 200) : null,
       urgency: pick(ai.urgency, URGENCIES),

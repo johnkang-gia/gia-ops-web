@@ -531,8 +531,21 @@ export type TeamMember = {
 
 // ===== 위클리 리포트 (Weekly Student Report) =====
 export type BadgeValue = "excellent" | "good" | "warning" | "bad";
-export type EvalCategory = "academic" | "improvement" | "participation" | "behavior" | "social";
-export type EvalBadges = Partial<Record<EvalCategory | "overall", BadgeValue[]>>;
+// 리포트 항목은 **3개**입니다 - 학업 / 생활 / 종합.
+//
+// 담당자: "선생님들이 항목이 너무 많다고 하셨어. 통합할 건 통합해서 3개 항목으로 줄여줘."
+//
+// 예전 5개(학업·보완·참여·태도·교우)를 이렇게 묶었습니다.
+//   · 학업(academic)     ← 학업 성취 + 보완점
+//   · 생활(behavior)     ← 수업 참여 + 생활 태도 + 교우 관계
+//   · 종합(teacher_note) ← 학부모께 전달하는 종합 의견 (예전의 '교사 종합 의견')
+//
+// **칸 이름을 그대로 재사용합니다.** 새 칸을 만들면 이미 쌓인 기록을 전부 옮겨야 하는데,
+// 옮기는 순간 원본과 다른 글이 생깁니다. 이름은 좁아 보여도 자료는 그대로 남습니다.
+export type EvalCategory = "academic" | "behavior" | "teacher_note";
+/** 3개로 줄이기 전에 쓰던 칸. **읽기 전용**입니다 - 지난 기록을 보여줄 때만 씁니다. */
+export type LegacyEvalCategory = "improvement" | "participation" | "social";
+export type EvalBadges = Partial<Record<EvalCategory | LegacyEvalCategory | "overall", BadgeValue[]>>;
 
 // 위클리 리포트도 운영(gia-ops)과 동일한 학기 체계(Term: 연도+학기유형)를 씁니다 - 더 이상
 // 별도의 wr_terms를 쓰지 않습니다. 기존 코드에서 WrTerm을 쓰던 자리는 Term으로 바꿔주세요.

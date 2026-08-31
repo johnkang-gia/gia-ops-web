@@ -6,6 +6,8 @@ import { isDeveloperEmail } from "@/lib/roles";
 import { SCHEMA_CHECKS } from "@/lib/schemaChecks";
 import { kstParts } from "@/lib/shuttleTracking";
 import RunCronButtons from "@/components/dev/RunCronButtons";
+import DiagnosticsToolbar from "@/components/dev/DiagnosticsToolbar";
+import MigrationSqlButton from "@/components/dev/MigrationSqlButton";
 import { runIntegrityChecks } from "@/lib/integrityChecks";
 import fs from "node:fs";
 import path from "node:path";
@@ -29,7 +31,7 @@ export const revalidate = 0;
 
 type Verdict = "ok" | "warn" | "bad" | "info";
 
-function Row({ label, verdict, detail }: { label: string; verdict: Verdict; detail: string }) {
+function Row({ label, verdict, detail }: { label: string; verdict: Verdict; detail: React.ReactNode }) {
   const mark = verdict === "ok" ? "✅" : verdict === "warn" ? "⚠️" : verdict === "bad" ? "❌" : "·";
   const tone =
     verdict === "ok"
@@ -196,6 +198,21 @@ export default async function DevDiagnosticsPage() {
   // 파일 이름은 `20260828120000_설명`, DB에는 앞의 숫자(version)만 들어갑니다.
   const notApplied = migFiles.filter((f) => !applied.has(f.split("_")[0]));
 
+  // 빨간 줄로 뜬 점검이 필요로 하는 마이그레이션의 **내용**까지 함께 들고 갑니다.
+  //
+  // 지금까지는 파일 이름만 알려줬습니다. 그러면 담당자님은 깃허브에 들어가 폴더를 뒤지고
+  // 원문 보기를 눌러 전체 선택해 복사해야 합니다 - 다섯 단계입니다. 화면이 이미 어느
+  // 파일인지 아는데 굳이 사람이 찾아 헤맬 이유가 없습니다.
+  const neededSql: Record<string, string | null> = {};
+  for (const b of schemaBad) {
+    if (!b.migration || neededSql[b.migration] !== undefined) continue;
+    try {
+      neededSql[b.migration] = fs.readFileSync(path.join(process.cwd(), "supabase", "migrations", b.migration), "utf8");
+    } catch {
+      neededSql[b.migration] = null; // 배포본에 파일이 안 실렸으면 버튼을 감춥니다.
+    }
+  }
+
   // ── ⑦ 데이터 무결성 ──────────────────────────────────────────────────────
   //
   // 화면에서는 멀쩡해 보이는데 실제로는 틀린 것들을 미리 셉니다. 이번 주에 겪은 문제가
@@ -227,13 +244,27 @@ export default async function DevDiagnosticsPage() {
     .is("answered_at", null);
 
   return (
-    <div className="mx-auto max-w-4xl space-y-3 p-4">
-      <div className="flex items-baseline justify-between">
-        <h1 className="text-lg font-black text-slate-800">🔎 진단</h1>
-        <span className="text-[11px] text-slate-400">
-          {today} {nowLabel} (한국) · <Link href="/dev" className="underline">개발자 대시보드</Link>
-        </span>
+    // 담당자: "개발자 진단탭 아직도 화면 너무 좁게 써, 넓게 쓰고 화면 양쪽으로 나눠서
+    //          한눈에 보이게 만들어줘."
+    //
+    // max-w-4xl(896px)은 글 읽는 화면의 폭입니다. 여기는 **훑어보는 화면**이라 한 덩이씩
+    // 세로로 쌓으면 아래 것을 보려고 계속 스크롤하게 되고, 그러면 "지금 뭐가 빨간지"가
+    // 한눈에 안 들어옵니다. 폭을 풀고 두 단으로 나눕니다.
+    <div className="mx-auto w-full max-w-[1700px] p-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-baseline gap-3">
+          <h1 className="text-lg font-black text-slate-800">🔎 진단</h1>
+          <span className="text-[11px] text-slate-400">
+            {today} (한국) · <Link href="/dev" className="underline">개발자 대시보드</Link>
+          </span>
+        </div>
+        <DiagnosticsToolbar measuredAt={nowLabel} />
       </div>
+
+      {/* 왼쪽 = 지금 뭐가 잘못됐나(연결·스키마·GPS·무결성), 오른쪽 = 돌아가고 있나(크론·
+          마이그레이션·오늘 들어온 것). 급할 때 보는 것과 확인차 보는 것을 갈랐습니다. */}
+      <div className="grid grid-cols-1 items-start gap-3 xl:grid-cols-2">
+      <div className="space-y-3">
 
       <Card title="① Supabase 연결" note="붙는지, 얼마나 걸리는지. 여기가 빨간색이면 아래는 볼 것도 없습니다.">
         <Row
@@ -259,7 +290,18 @@ export default async function DevDiagnosticsPage() {
           }
         />
         {schemaBad.map((b) => (
-          <Row key={b.feature} label={`└ ${b.feature}`} verdict="bad" detail={`${b.impact} → ${b.migration} 실행 필요${b.note ? ` (${b.note})` : ""}`} />
+          <Row
+            key={b.feature}
+            label={`└ ${b.feature}`}
+            verdict="bad"
+            detail={
+              <>
+                {b.impact} → <span className="font-mono">{b.migration}</span> 실행 필요
+                {b.note ? ` (${b.note})` : ""}
+                <MigrationSqlButton file={b.migration} sql={neededSql[b.migration] ?? null} />
+              </>
+            }
+          />
         ))}
         {extraResults.map((e) => (
           <Row
@@ -367,6 +409,10 @@ export default async function DevDiagnosticsPage() {
         )}
       </Card>
 
+      </div>
+
+      {/* ── 오른쪽: 돌아가고 있나 ─────────────────────────── */}
+      <div className="space-y-3">
       <Card title="⑧ 마이그레이션" note="폴더의 파일과 DB에 실제로 실행된 기록을 대조합니다.">
         {appliedError ? (
           <Row
@@ -447,7 +493,10 @@ export default async function DevDiagnosticsPage() {
         <Row label="미답변 문의" verdict={(openInquiry ?? 0) > 20 ? "warn" : "info"} detail={`${openInquiry ?? 0}건`} />
       </Card>
 
-      <p className="pb-6 text-[11px] leading-relaxed text-slate-400">
+      </div>
+      </div>
+
+      <p className="pb-6 pt-3 text-[11px] leading-relaxed text-slate-400">
         새로 확인해야 할 것이 생기면 이 화면에 한 덩이 더 붙입니다. 다음부터는 SQL 없이 여기서 바로 보입니다.
       </p>
     </div>

@@ -46,11 +46,37 @@ export const getCurrentAppUser = cache(async (): Promise<CurrentAppUser> => {
   if (!user || !user.email) return null;
 
   const email = user.email.toLowerCase();
-  const { data: appUser } = await supabase
-    .from("app_users")
-    .select("name, position, avatar_url, theme, finance_access")
-    .eq("email", email)
-    .maybeSingle();
+
+  // ── 신분과 열쇠를 **따로** 읽습니다 ──────────────────────────────────────
+  //
+  // 예전에는 한 번의 조회에 finance_access까지 함께 넣었습니다. 그런데 그 칸을 만드는
+  // 마이그레이션이 아직 안 걸린 동안, PostgREST는 **조회 전체를 400으로 거절**했습니다
+  // (`column app_users.finance_access does not exist`). 그러면 appUser가 null이 되고,
+  // 직위도 null이 되고, 결국 **모든 행정직원·관리자가 권한 없는 사람**이 됐습니다.
+  //
+  // 실제로 이 일이 났습니다. 행정직원 화면에서 셔틀과 주간 학생 관찰기록이 통째로
+  // 사라졌는데, 화면 어디에도 오류가 없어서 "권한 설정이 잘못됐나" 쪽만 들여다보게
+  // 됐습니다. 개발자 계정은 이메일로 우회하므로 저에게만 멀쩡해 보였습니다.
+  //
+  // 그래서 **없어도 되는 값이 있어야 하는 값을 무너뜨리지 못하게** 나눕니다.
+  //   · 이름·직위 = 없으면 아무것도 못 하는 값. 실패하면 소리를 냅니다.
+  //   · 재무 열쇠 = 없으면 돈 화면만 안 열리는 값. 칸이 없으면 조용히 false.
+  const [idRes, finRes] = await Promise.all([
+    supabase.from("app_users").select("name, position, avatar_url, theme").eq("email", email).maybeSingle(),
+    supabase.from("app_users").select("finance_access").eq("email", email).maybeSingle(),
+  ]);
+
+  const appUser = idRes.data;
+  if (idRes.error) {
+    // 직위를 못 읽으면 그 사람은 화면 절반을 잃습니다. 조용히 넘기면 안 됩니다.
+    console.error(`[currentUser] ${email} 직위 조회 실패 — 메뉴가 비어 보입니다:`, idRes.error.message);
+  }
+
+  // 42703 = 칸 없음. 마이그레이션이 아직 안 걸린 것뿐이라 이건 정상 동작으로 넘어갑니다.
+  if (finRes.error && finRes.error.code !== "42703") {
+    console.error(`[currentUser] ${email} 재무 열쇠 조회 실패:`, finRes.error.message);
+  }
+  const financeAccess = (finRes.data as { finance_access?: boolean } | null)?.finance_access === true;
 
   const realPosition = appUser?.position ?? null;
 
@@ -80,6 +106,6 @@ export const getCurrentAppUser = cache(async (): Promise<CurrentAppUser> => {
     previewOf,
     // 권한 미리보기 중에는 열쇠도 함께 내려놓습니다. 그래야 "그 직위가 실제로 보게 될
     // 화면"이 재현됩니다 - 개발자가 관리자인 척 볼 때 돈 화면이 보이면 시험이 안 됩니다.
-    finance_access: previewOf ? false : appUser?.finance_access === true,
+    finance_access: previewOf ? false : financeAccess,
   };
 });

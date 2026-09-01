@@ -129,7 +129,7 @@ export const SCHEMA_CHECKS: SchemaCheck[] = [
     table: "app_users",
     columns: ["finance_access"],
     migration: "20260831180000_finance_role.sql",
-    impact: "재무 열쇠를 줄 수 없어 돈 화면이 아무에게도(또는 모두에게) 열립니다. 최고관리자 직위도 저장되지 않습니다.",
+    impact: "**모든 행정직원·관리자의 메뉴가 비어 보입니다.** 신분 조회가 이 칸을 함께 읽어서, 칸이 없으면 조회 전체가 실패하고 직위를 못 읽습니다. 재무 열쇠도 줄 수 없습니다.",
   },
   {
     feature: "납부 항목 · 할인",

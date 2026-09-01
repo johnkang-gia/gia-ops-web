@@ -766,7 +766,16 @@ async function findHomeroomEmail(supabase: SupabaseClient, studentId: string): P
  * 실제 하원 체크표에 픽업으로 표시합니다. 셔틀 배정이 있는 학생만 해당하며(차량을 안 타는
  * 학생은 애초에 하원 차량 명단에 없습니다), 그날 배정된 모든 좌석에 픽업을 겁니다.
  */
-export async function applyPickup(supabase: SupabaseClient, studentId: string, serviceDate: string): Promise<number> {
+export async function applyPickup(
+  supabase: SupabaseClient,
+  studentId: string,
+  serviceDate: string,
+  /**
+   * 누가 걸었는지. 체크표는 이 값을 그대로 "왜 픽업으로 표시됐나"의 근거로 보여줍니다.
+   * 비워두면 화면에 "담당자가 눌렀다"로 나와서, 기계가 한 일이 사람이 한 일로 보입니다.
+   */
+  updatedBy?: string,
+): Promise<number> {
   const { data: assignments } = await supabase
     .from("shuttle_assignments")
     .select("id")
@@ -784,12 +793,13 @@ export async function applyPickup(supabase: SupabaseClient, studentId: string, s
       .eq("assignment_id", assignmentId)
       .maybeSingle();
 
+    const stamp = updatedBy ? { updated_by: updatedBy } : {};
     if (existing) {
-      await supabase.from("shuttle_boardings").update({ status: "픽업" }).eq("id", existing.id);
+      await supabase.from("shuttle_boardings").update({ status: "픽업", ...stamp }).eq("id", existing.id);
     } else {
       await supabase
         .from("shuttle_boardings")
-        .insert({ service_date: serviceDate, assignment_id: assignmentId, status: "픽업" });
+        .insert({ service_date: serviceDate, assignment_id: assignmentId, status: "픽업", ...stamp });
     }
   }
   return ids.length;

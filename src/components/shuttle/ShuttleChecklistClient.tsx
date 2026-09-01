@@ -5,6 +5,7 @@ import { buildHomonymSet, normName as normStudentName, whereLabel } from "@/lib/
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { logChecklist, type ChecklistLogRow, type LogActor } from "@/lib/checklistLog";
 import { useToast } from "@/components/common/ToastProvider";
 import ShuttleChecklistTable, { effectiveRouteId } from "./ShuttleChecklistTable";
 import ChecklistPrintSheet from "./ChecklistPrintSheet";
@@ -68,6 +69,15 @@ export type ChecklistItem = {
   individualPickup?: boolean;
   /** 픽업·결석이 자동으로 붙었다면 그 근거. 사람이 직접 누른 경우에는 null입니다. */
   autoSource?: AutoSource | null;
+  /**
+   * 오늘 요일의 하원수단이 셔틀이 아닐 때 그 내용(학생 프로필의 🏠 하원수단).
+   *
+   * 요일마다 다른 차를 타는 아이가 있습니다. 그 아이는 셔틀 배정이 그대로 살아 있어서
+   * 체크표에는 계속 "탄다"로 떴습니다. 아무도 안 누르면 기사님은 오지 않는 아이를 기다리고,
+   * 담임은 아이를 셔틀 줄에 세웁니다. 학생 프로필에 이미 적힌 사실이 화면에 닿지 않은
+   * 것뿐이라 여기서 이어 붙입니다.
+   */
+  dismissalPlan?: { kind: string; label: string | null; departTime: string | null } | null;
 };
 
 // 지속 특이사항(요청: 왼쪽 창구에 지속 반영사항을 적으면 오른쪽에 요약으로 뜨고, 차량
@@ -117,6 +127,8 @@ export default function ShuttleChecklistClient({
   term,
   persistentNotes: initialNotes = [],
   toddleBase = null,
+  actor,
+  initialLog = [],
 }: {
   routes: ChecklistRoute[];
   items: ChecklistItem[];
@@ -126,10 +138,49 @@ export default function ShuttleChecklistClient({
   persistentNotes?: PersistentNote[];
   /** 토들 학교 주소("…/platform/xxx"). 방 id와 합쳐 원문 링크를 만듭니다. */
   toddleBase?: string | null;
+  /** 지금 이 화면을 보고 있는 사람. 활동 기록에 이름으로 남습니다. */
+  actor: LogActor;
+  /** 오늘 이 화면에서 있었던 일. 사이드바의 '오늘 한 일'이 씁니다. */
+  initialLog?: ChecklistLogRow[];
 }) {
   const notify = useToast();
   const router = useRouter();
   const [items, setItems] = useState(initialItems);
+  const [activityLog, setActivityLog] = useState<ChecklistLogRow[]>(initialLog);
+
+  /**
+   * 기록 한 줄을 남기고 화면에도 즉시 얹습니다.
+   *
+   * 화면에 바로 보여야 하는 이유: 옆자리에서 같은 표를 보고 있는 사람이 "내가 방금 누른 게
+   * 반영됐나"를 확인할 곳이 여기뿐입니다. 새로고침해야 보이면 아무도 안 봅니다.
+   */
+  async function record(entry: {
+    assignmentId: string | null;
+    studentName: string;
+    action: "상태변경" | "노선이동" | "메모";
+    before?: string | null;
+    after?: string | null;
+  }) {
+    const serviceDate = todayStr();
+    setActivityLog((prev) =>
+      [
+        {
+          id: `local-${Date.now()}`,
+          service_date: serviceDate,
+          assignment_id: entry.assignmentId,
+          student_name: entry.studentName,
+          action: entry.action,
+          before_value: entry.before ?? null,
+          after_value: entry.after ?? null,
+          actor_email: actor.email,
+          actor_name: actor.name,
+          created_at: new Date().toISOString(),
+        } satisfies ChecklistLogRow,
+        ...prev,
+      ].slice(0, 100),
+    );
+    await logChecklist(createClient(), { serviceDate, term, ...entry, actor });
+  }
   const [notes, setNotes] = useState<PersistentNote[]>(initialNotes);
   const [busyId, setBusyId] = useState<string | null>(null);
   // 자동 분류 근거 창(요청: "느낌표 아이콘 만들고 누르면 채팅 나오고 연결도 되게끔").
@@ -341,6 +392,27 @@ export default function ShuttleChecklistClient({
           prev.map((it) => (it.assignmentId === row.id ? { ...it, permanentRouteId: row.override_route_id ?? null, note: row.note ?? null } : it))
         );
       })
+      // 옆자리에서 누른 것도 '오늘 한 일'에 바로 뜨게 합니다. 같은 표를 둘이 보고 있을 때
+      // 서로의 손길이 늦게 보이면, 같은 아이를 두 번 고치게 됩니다.
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "shuttle_checklist_log" }, (payload) => {
+        const row = payload.new as ChecklistLogRow | undefined;
+        if (!row?.id) return;
+        setActivityLog((prev) => {
+          // 내가 방금 남긴 줄은 이미 화면에 있습니다(local-…). 같은 것이 두 번 보이지 않게
+          // 사람·학생·시각이 겹치는 임시 줄을 진짜 줄로 바꿔 끼웁니다.
+          const withoutMine = prev.filter(
+            (r) =>
+              !(
+                r.id.startsWith("local-") &&
+                r.student_name === row.student_name &&
+                r.actor_email === row.actor_email &&
+                r.action === row.action
+              ),
+          );
+          if (withoutMine.some((r) => r.id === row.id)) return withoutMine;
+          return [row, ...withoutMine].slice(0, 100);
+        });
+      })
       .subscribe();
 
     const t = setInterval(() => { if (typeof document === "undefined" || document.visibilityState === "visible") void fullReload(); }, FALLBACK_POLL_MS);
@@ -365,7 +437,15 @@ export default function ShuttleChecklistClient({
     if (error) {
       notify("저장하지 못했습니다: " + error.message, "error");
       setItems((prev) => prev.map((it) => (it.assignmentId === item.assignmentId ? { ...it, status: item.status } : it)));
+      return;
     }
+    void record({
+      assignmentId: item.assignmentId,
+      studentName: item.studentName,
+      action: "상태변경",
+      before: item.status,
+      after: finalStatus,
+    });
   }
 
   // 드래그로 놓으면 바로 옮기지 않고, 계속 유지할지 오늘만 적용할지부터 물어봅니다(요청:
@@ -412,6 +492,13 @@ export default function ShuttleChecklistClient({
           nextOverride ? `${item.studentName} 학생을 오늘만 다른 차량으로 옮겼습니다.` : `${item.studentName} 학생을 원래 노선으로 되돌렸습니다.`,
           "success"
         );
+        void record({
+          assignmentId,
+          studentName: item.studentName,
+          action: "노선이동",
+          before: `${routeById.get(prevOverride ?? baseline)?.route_no ?? "?"}호`,
+          after: `${routeById.get(nextOverride ?? baseline)?.route_no ?? "?"}호 (오늘만)`,
+        });
       }
     } else {
       const nextPermanent = targetRouteId === item.homeRouteId ? null : targetRouteId;
@@ -443,6 +530,13 @@ export default function ShuttleChecklistClient({
           nextPermanent ? `${item.studentName} 학생을 앞으로 계속 다른 차량으로 옮겼습니다.` : `${item.studentName} 학생을 원래 노선으로 되돌렸습니다.`,
           "success"
         );
+        void record({
+          assignmentId,
+          studentName: item.studentName,
+          action: "노선이동",
+          before: `${routeById.get(prevPermanent ?? item.homeRouteId)?.route_no ?? "?"}호`,
+          after: `${routeById.get(nextPermanent ?? item.homeRouteId)?.route_no ?? "?"}호 (계속)`,
+        });
       }
     }
     setMovingBusy(false);
@@ -481,6 +575,13 @@ export default function ShuttleChecklistClient({
       return;
     }
     notify(trimmed ? "특이사항을 저장했습니다." : "특이사항을 지웠습니다.", "success");
+    void record({
+      assignmentId,
+      studentName: noteEditor.studentName,
+      action: "메모",
+      before: prev,
+      after: trimmed || null,
+    });
     setNoteEditor(null);
   }
 
@@ -737,6 +838,7 @@ export default function ShuttleChecklistClient({
     <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
       <ShuttleChecklistSidebar
         roster={roster}
+        activityLog={activityLog}
         initialMessages={initialMessages}
         changedToday={changedToday}
         specialNotes={specialNotes}

@@ -18,6 +18,7 @@ import {
 } from "@/lib/attendanceDigest";
 import AttendanceTeachModal from "@/components/work/AttendanceTeachModal";
 import AttendanceRulesModal from "@/components/work/AttendanceRulesModal";
+import { describeLog, shortAgo, type ChecklistLogRow } from "@/lib/checklistLog";
 
 const POLL_MS = 15000;
 
@@ -59,6 +60,7 @@ export type PersistentNoteInput = {
 
 export default function ShuttleChecklistSidebar({
   roster,
+  activityLog = [],
   initialMessages,
   changedToday = [],
   specialNotes = [],
@@ -70,6 +72,8 @@ export default function ShuttleChecklistSidebar({
   onStatusReverted,
 }: {
   roster: RosterStudent[];
+  /** 오늘 이 표에서 있었던 일. 누가 언제 무엇을 했는지. */
+  activityLog?: ChecklistLogRow[];
   initialMessages: GoogleChatMirrorMessage[];
   changedToday?: ChangedRouteEntry[];
   specialNotes?: SpecialNoteEntry[];
@@ -87,6 +91,9 @@ export default function ShuttleChecklistSidebar({
 }) {
   // 지속 특이사항 입력 창구 상태(요청: 왼쪽에 지속 반영사항을 적는 창구, 예: "이라엘 수요일
   // 수영학원", "4호 김재이 개별하원"). 효과를 고르면 셔틀이 자동으로 바뀝니다.
+  // 기본은 펼침입니다. 접어두면 아무도 안 봅니다.
+  const [logOpen, setLogOpen] = useState(true);
+
   const WD = [
     { d: 1, label: "월" },
     { d: 2, label: "화" },
@@ -428,6 +435,44 @@ export default function ShuttleChecklistSidebar({
 
   return (
     <div className={"flex w-full shrink-0 flex-col gap-3 lg:w-52 " + className}>
+      {/* ── 오늘 한 일 ────────────────────────────────────────────────────
+          이 표는 행정실·담임·동승 선생님이 함께 씁니다. 표시가 바뀌어 있을 때
+          누가 한 일인지 물어볼 곳이 없으면 확인 전화가 돌고, 결국 화면을 안 믿게
+          됩니다. 가장 위에 두는 이유는, 오늘 아침에 무슨 일이 있었는지를 먼저
+          보고 나서 표를 봐야 하기 때문입니다. */}
+      <div className="rounded-xl border border-slate-200 bg-white p-3">
+        <button
+          type="button"
+          onClick={() => setLogOpen((v) => !v)}
+          className="flex w-full items-center justify-between text-[11px] font-bold text-slate-700"
+        >
+          <span>🕘 오늘 한 일 {activityLog.length > 0 && <span className="text-slate-400">{activityLog.length}</span>}</span>
+          <span className="text-slate-400">{logOpen ? "▾" : "▸"}</span>
+        </button>
+        {logOpen && (
+          <div className="mt-2 flex flex-col gap-1">
+            {activityLog.length === 0 ? (
+              <p className="text-[9px] leading-relaxed text-slate-400">
+                오늘은 아직 아무도 손대지 않았습니다. 픽업·결석을 누르거나 차를 바꾸면 여기에 남습니다.
+              </p>
+            ) : (
+              activityLog.slice(0, 40).map((r) => (
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() => onSelectStudentName?.(r.student_name)}
+                  title={`${new Date(r.created_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })} · ${r.actor_email}`}
+                  className="flex items-baseline gap-1 rounded px-1 py-0.5 text-left text-[10px] leading-snug text-slate-600 hover:bg-slate-50"
+                >
+                  <span className="shrink-0 tabular-nums text-[9px] text-slate-400">{shortAgo(r.created_at)}</span>
+                  <span className="min-w-0 flex-1">{describeLog(r)}</span>
+                </button>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+
       {onAddPersistentNote && (
         <div className="rounded-xl border border-orange-200 bg-white p-3">
           <button

@@ -34,6 +34,28 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: true, skipped: "주말" });
   }
 
+  // ── 오늘 요일의 하원수단부터 겁니다 ────────────────────────────────────
+  //
+  // 학생 프로필의 🏠 하원수단(요일별)에서 오늘이 셔틀이 아닌 아이를 셔틀에서 뺍니다.
+  // 체크표는 이 표를 직접 읽어 화면에서 이미 반영하지만, 안내보드·도착체크·사무실
+  // 대시보드는 shuttle_boardings만 봅니다. 화면마다 답이 다르면 결국 아무도 안 믿습니다.
+  let dismissalApplied = 0;
+  const { data: planRows, error: planErr } = await supabase
+    .from("student_dismissal_plans")
+    .select("student_id, kind, label, depart_time")
+    .eq("weekday", weekday)
+    .neq("kind", "셔틀");
+  if (planErr && planErr.code !== "PGRST205") {
+    console.error("[cron:pickup-schedules] 하원수단 조회 실패:", planErr.message);
+  }
+  for (const p of planRows ?? []) {
+    const sid = p.student_id as string | null;
+    if (!sid) continue;
+    const label = [p.depart_time as string | null, p.label as string | null].filter(Boolean).join(" ");
+    const seats = await applyPickup(supabase, sid, today, `하원수단(${(p.kind as string) + (label ? " " + label : "")})`);
+    if (seats > 0) dismissalApplied += 1;
+  }
+
   const { data: rows, error } = await supabase
     .from("pickup_schedules")
     .select(
@@ -43,7 +65,7 @@ export async function GET(req: Request) {
     .eq("status", "예정");
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  if (!rows || rows.length === 0) return NextResponse.json({ ok: true, applied: 0 });
+  if (!rows || rows.length === 0) return NextResponse.json({ ok: true, applied: 0, dismissalApplied });
 
   let applied = 0;
   let failed = 0;
@@ -169,5 +191,5 @@ export async function GET(req: Request) {
   }
 
   await touchHeartbeat(supabase, "cron:pickup-schedules");
-  return NextResponse.json({ ok: true, date: today, applied, failed, notified, periodApplied });
+  return NextResponse.json({ ok: true, date: today, applied, failed, notified, periodApplied, dismissalApplied });
 }

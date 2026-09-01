@@ -399,6 +399,18 @@ export default function ShuttleChecklistTable({
                               {item.individualPickup && (
                                 <span className="ml-1 rounded-full bg-orange-100 px-1 text-[8px] font-bold text-orange-700 print:hidden">개별하원</span>
                               )}
+                              {/* 오늘 요일의 하원수단이 셔틀이 아닌 아이. **인쇄본에도 남깁니다** -
+                                  종이를 들고 있는 동승 선생님이 "이 아이는 어디로 가는가"를
+                                  물어볼 곳이 종이뿐입니다. */}
+                              {item.dismissalPlan && (
+                                <span
+                                  className="ml-1 rounded-full bg-violet-100 px-1 text-[8px] font-bold text-violet-700"
+                                  title={`오늘 하원수단: ${item.dismissalPlan.kind}${item.dismissalPlan.label ? " " + item.dismissalPlan.label : ""}${item.dismissalPlan.departTime ? " " + item.dismissalPlan.departTime : ""} — 학생 프로필에서 고칩니다`}
+                                >
+                                  {item.dismissalPlan.departTime ? item.dismissalPlan.departTime + " " : ""}
+                                  {item.dismissalPlan.label ?? item.dismissalPlan.kind}
+                                </span>
+                              )}
                             </span>
                             {enName && (
                               <span className="max-w-[9rem] truncate text-[9px] font-medium leading-none text-yellow-800/70 print:hidden">

@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
-import { todayKst } from "@/lib/kst";
+import { todayKst, kstWeekday } from "@/lib/kst";
 import { isUndecidedChoice } from "@/lib/shuttleChoice";
+import { WEEKDAY_NAMES } from "@/lib/dismissalPlan";
+import type { ChecklistLogRow } from "@/lib/checklistLog";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import Link from "next/link";
@@ -102,7 +104,9 @@ export default async function ShuttleChecklistPage({
   // 등)이 명부 이름과 달라 떨어져 나가므로, 배정된 학생을 전부 그대로 보여줍니다(요청: "내가
   // 보내준 정규학기 하원명단하고 달라 체크해서 반영해줘").
 
-  const todayWeekday = new Date().getDay();
+  // 한국 요일입니다. new Date().getDay()는 서버(UTC)의 요일이라 한국시간 오전 9시 이전에는
+  // 어제 요일이 나옵니다 - 월요일 새벽에 열면 일요일이 되어 아무도 안 타는 표가 됩니다.
+  const todayWeekday = kstWeekday();
   const today = todayKst();
   const stopById = new Map(stopsData.map((s) => [s.id, s]));
   const routeIdSet = new Set(routeIds);
@@ -209,6 +213,42 @@ export default async function ShuttleChecklistPage({
     effectTo: (n.effect_to as string | null) ?? null,
   }));
 
+  // ── 오늘 요일의 하원수단 ────────────────────────────────────────────────
+  //
+  // 학생 프로필의 🏠 하원수단(요일별)입니다. 셔틀이 아닌 날은 그 아이가 셔틀에 안 탑니다.
+  // 이 사실이 체크표에 닿지 않으면, 프로필에 적어둔 것이 아무 일도 하지 않습니다.
+  //
+  // 셔틀 배정을 지우지 않는 이유: 요일마다 다르기 때문입니다. 월요일에는 같은 아이가 같은
+  // 차를 탑니다. 배정은 그대로 두고 **그날 하루만** 안 타는 것으로 표시합니다.
+  const { data: planRows, error: planErr } = await supabase
+    .from("student_dismissal_plans")
+    .select("student_id, kind, label, depart_time")
+    .eq("weekday", todayWeekday)
+    .neq("kind", "셔틀");
+  if (planErr && planErr.code !== "PGRST205") {
+    // 표가 아직 없는 경우(마이그레이션 전)는 정상입니다. 그 밖의 실패는 소리를 냅니다 -
+    // 조용히 넘기면 "적어뒀는데 반영이 안 된다"가 됩니다.
+    console.error("[checklist] 하원수단 조회 실패:", planErr.message);
+  }
+  type DismissalRow = { student_id: string; kind: string; label: string | null; depart_time: string | null };
+  const plans = (planRows as DismissalRow[] | null) ?? [];
+  const planByStudentId = new Map(plans.map((p) => [p.student_id, p]));
+  // 배정에 학생 연결이 안 된 줄이 아직 많아서, 이름으로도 한 번 더 찾습니다.
+  const planByName = new Map<string, DismissalRow>();
+  if (plans.length > 0) {
+    const { data: planStudents } = await supabase
+      .from("wr_students_basic")
+      .select("id, name")
+      .in("id", plans.map((p) => p.student_id));
+    const nameById = new Map(((planStudents as { id: string; name: string }[] | null) ?? []).map((r) => [r.id, r.name]));
+    for (const p of plans) {
+      const nm = nameById.get(p.student_id);
+      if (nm) planByName.set(norm(nm), p);
+    }
+  }
+  const planLabelOf = (p: DismissalRow) =>
+    [p.depart_time, p.label].filter(Boolean).join(" ") || p.kind;
+
   // 그룹핑은 클라이언트에서 하도록, 노선별로 나누지 않은 평평한 목록으로 넘깁니다.
   const items: ChecklistItem[] = assignmentsData
     .map((a) => {
@@ -269,6 +309,27 @@ export default async function ShuttleChecklistPage({
           autoSource = autoSourceByName.get(norm(b)) ?? null;
         }
       }
+
+      // 하원수단이 셔틀이 아닌 날. 사람이 아직 아무것도 안 눌렀을 때만 자동으로 붙입니다 -
+      // 사람이 "오늘은 그래도 탄다"고 눌렀으면 그 판단이 이깁니다.
+      const plan = (a.student_id ? planByStudentId.get(a.student_id) : undefined) ?? planByName.get(norm(a.student_name_raw));
+      if (plan && ridingToday && !boarding) {
+        status = "픽업";
+        autoSource = {
+          requestId: "",
+          kind: "픽업",
+          source: "하원수단",
+          channelLabel: null,
+          senderName: null,
+          receivedAt: "",
+          rawText: `${WEEKDAY_NAMES[todayWeekday] ?? ""}요일 하원수단이 ${plan.kind}(${planLabelOf(plan)})으로 적혀 있어 셔틀에서 뺐습니다. 학생 프로필의 🏠 하원수단에서 고칠 수 있습니다.`,
+          aiNote: null,
+          matchedName: a.student_name_raw,
+          sourceUrl: null,
+          sourceChatId: null,
+        };
+      }
+
       const item: ChecklistItem = {
         assignmentId: a.id,
         studentId: a.student_id,
@@ -282,6 +343,7 @@ export default async function ShuttleChecklistPage({
         ridingToday,
         weekdays: a.weekdays ?? [],
         autoSource,
+        dismissalPlan: plan ? { kind: plan.kind, label: plan.label, departTime: plan.depart_time } : null,
       };
       return item;
     })
@@ -306,6 +368,18 @@ export default async function ShuttleChecklistPage({
     // 동명이인을 화면에 "김재이(G3JA)"로 보여주려면 반이 있어야 합니다(담당자 요청).
     className: s.class_name,
   }));
+
+  // ── 오늘 이 표에서 있었던 일 ────────────────────────────────────────────
+  // 표가 바뀌어 있을 때 "누가 언제 무엇을" 물어볼 곳입니다.
+  const { data: logRows, error: logErr } = await supabase
+    .from("shuttle_checklist_log")
+    .select("id, service_date, assignment_id, student_name, action, before_value, after_value, actor_email, actor_name, created_at")
+    .eq("service_date", today)
+    .order("created_at", { ascending: false })
+    .limit(100);
+  if (logErr && logErr.code !== "PGRST205") {
+    console.error("[checklist] 활동 기록 조회 실패:", logErr.message);
+  }
 
   return (
     <div className="mx-auto max-w-6xl p-4 sm:p-6 print:max-w-none print:p-0">
@@ -334,7 +408,17 @@ export default async function ShuttleChecklistPage({
         놓고, 계속 유지할지 오늘만 바꿀지 골라주세요.
       </p>
       <p className="mb-2 hidden text-sm font-bold print:block">GIA 하원 체크표 · {today}</p>
-      <ShuttleChecklistClient routes={routes} items={items} roster={roster} initialMessages={(mirrorRes.data as GoogleChatMirrorMessage[] | null) ?? []} term={term} persistentNotes={persistentNotes} toddleBase={toddleBase} />
+      <ShuttleChecklistClient
+        routes={routes}
+        items={items}
+        roster={roster}
+        initialMessages={(mirrorRes.data as GoogleChatMirrorMessage[] | null) ?? []}
+        term={term}
+        persistentNotes={persistentNotes}
+        toddleBase={toddleBase}
+        actor={{ email: me.email, name: me.name }}
+        initialLog={(logRows as ChecklistLogRow[] | null) ?? []}
+      />
     </div>
   );
 }

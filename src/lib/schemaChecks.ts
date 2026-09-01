@@ -230,6 +230,13 @@ export const SCHEMA_CHECKS: SchemaCheck[] = [
     impact: "책의 '가야 할 자리'를 기록할 수 없어 도서정리 계획이 동작하지 않습니다.",
   },
   {
+    feature: "반 교실 위치",
+    table: "wr_classes",
+    columns: ["class_name", "grade", "room"],
+    migration: "(기본 스키마)",
+    impact: "학생 검색에서 '몇 동 몇 층'이 안 뜹니다. 아이를 찾아가야 하는 사람에게는 반 이름보다 이게 필요합니다.",
+  },
+  {
     feature: "오늘 탑승 기록",
     table: "shuttle_boardings",
     columns: ["service_date", "assignment_id", "status", "checked_by", "checked_at", "override_route_id"],

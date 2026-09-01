@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { todayKst } from "@/lib/kst";
+import { kstDate, todayKst } from "@/lib/kst";
 import { createClient } from "@/lib/supabase/client";
 import { loadKakaoMaps } from "@/lib/kakaoMap";
 import { useToast } from "@/components/common/ToastProvider";
@@ -43,6 +43,8 @@ export default function PilotMonitorClient({
   const [eventsByRoute, setEventsByRoute] = useState<Record<string, ShuttleRunEvent[]>>({});
   const [safetyByRoute, setSafetyByRoute] = useState<Record<string, ShuttleSafetyEvent[]>>({});
   const [now, setNow] = useState(() => Date.now());
+  /** 오늘 한 번이라도 신호를 보낸 노선. 'GPS 연결'을 가르는 기준입니다. */
+  const [liveToday, setLiveToday] = useState<Set<string>>(new Set());
 
   const routeById = useMemo(() => new Map(routes.map((r) => [r.id, r])), [routes]);
   // GPS 미연결 목록은 기본으로 접어둡니다 - 지금은 기기가 1대라 거의 전부가 여기 들어갑니다.
@@ -74,7 +76,8 @@ export default function PilotMonitorClient({
       // intervalSamples 참고), row 개수로 자르는 대신 시간으로 잘라야 노선마다 공평합니다 -
       // 한 노선이 유난히 자주 핑을 보내도 다른 노선 몫을 뺏어가지 않습니다.
       const pingCutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString();
-      const [pingsRes, eventsRes, safetyRes] = await Promise.all([
+      const [devRes, pingsRes, eventsRes, safetyRes] = await Promise.all([
+        supabase.from("shuttle_tracker_devices").select("route_id, last_seen_at"),
         supabase.from("shuttle_pilot_pings").select("*").in("route_id", routeIds).gte("recorded_at", pingCutoff).order("recorded_at", { ascending: false }),
         supabase.from("shuttle_run_events").select("*").in("route_id", routeIds).eq("service_date", today).order("created_at", { ascending: true }),
         supabase.from("shuttle_safety_events").select("*").in("route_id", routeIds).eq("service_date", today),
@@ -84,6 +87,35 @@ export default function PilotMonitorClient({
       for (const p of (pingsRes.data as ShuttlePilotPing[] | null) ?? []) {
         (pingsByRouteMap[p.route_id] ??= []).push(p);
       }
+
+      // ── 오늘 신호가 있었던 노선은 **하루치를 다시 읽습니다** ──────────────
+      //
+      // 예전에는 최근 15분 안에 들어온 위치만 읽었습니다. 그러면 하원이 끝난 뒤에는 신호가
+      // 하나도 없는 것이 되어, 오늘 종일 잘 돌던 차까지 "GPS 미연결"로 접혀 들어갔습니다.
+      // **지도도 함께 사라졌습니다** - 찍을 좌표가 없으니까요.
+      //
+      // 15분은 "지금 살아 있는가"를 재는 자입니다. "오늘 연결된 차가 무엇인가"는 다른
+      // 물음이고, 그건 기기가 오늘 마지막으로 신호를 보낸 시각으로 답합니다.
+      const todaySeen = new Set(
+        ((devRes.data as { route_id: string; last_seen_at: string | null }[] | null) ?? [])
+          .filter((d) => d.last_seen_at && kstDate(d.last_seen_at) === today)
+          .map((d) => d.route_id),
+      );
+      const needDayPings = [...todaySeen].filter((id) => (pingsByRouteMap[id] ?? []).length === 0);
+      if (needDayPings.length > 0) {
+        const dayStart = new Date(`${today}T00:00:00+09:00`).toISOString();
+        const { data: dayPings } = await supabase
+          .from("shuttle_pilot_pings")
+          .select("*")
+          .in("route_id", needDayPings)
+          .gte("recorded_at", dayStart)
+          .order("recorded_at", { ascending: false })
+          .limit(1500);
+        for (const p of (dayPings as ShuttlePilotPing[] | null) ?? []) {
+          (pingsByRouteMap[p.route_id] ??= []).push(p);
+        }
+      }
+      setLiveToday(todaySeen);
       const eventsByRouteMap: Record<string, ShuttleRunEvent[]> = {};
       for (const e of (eventsRes.data as ShuttleRunEvent[] | null) ?? []) {
         (eventsByRouteMap[e.route_id] ??= []).push(e);
@@ -157,8 +189,10 @@ export default function PilotMonitorClient({
           지금은 기기가 1대뿐이라 목록 대부분이 빈 카드입니다. 섞여 있으면 실제로 신호가
           들어오는 노선을 찾는 데만 한참 걸립니다. */}
       {(() => {
-        const withGps = pilots.filter((p) => (pingsByRoute[p.route_id] ?? []).length > 0);
-        const withoutGps = pilots.filter((p) => (pingsByRoute[p.route_id] ?? []).length === 0);
+        // 오늘 신호가 있었으면 연결로 봅니다(지금 이 순간 신호가 오는지와는 다른 물음입니다).
+        const isLive = (routeId: string) => liveToday.has(routeId) || (pingsByRoute[routeId] ?? []).length > 0;
+        const withGps = pilots.filter((p) => isLive(p.route_id));
+        const withoutGps = pilots.filter((p) => !isLive(p.route_id));
         const card = (pilot: (typeof pilots)[number]) => (
           <PilotRouteCard
             key={pilot.id}
@@ -177,12 +211,12 @@ export default function PilotMonitorClient({
           <>
             <div className="flex items-center gap-2 pt-1">
               <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
-                🟢 GPS 연결 {withGps.length}
+                🟢 GPS 연결 {withGps.length} <span className="font-medium opacity-70">(오늘 신호 있음)</span>
               </span>
               <span className="h-px flex-1 bg-emerald-200" />
             </div>
             {withGps.length === 0 ? (
-              <p className="px-1 py-2 text-xs text-slate-400">최근 신호가 들어온 노선이 없습니다.</p>
+              <p className="px-1 py-2 text-xs text-slate-400">오늘 신호가 들어온 노선이 없습니다.</p>
             ) : (
               withGps.map(card)
             )}

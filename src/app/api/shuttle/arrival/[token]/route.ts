@@ -73,9 +73,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
   const { data: assignments } = stopIds.length
     ? await supabase
         .from("shuttle_assignments")
-        .select("id, stop_id, student_name_raw, weekdays, override_route_id, choice_group, choice_label")
+        .select("id, stop_id, student_id, student_name_raw, weekdays, override_route_id, choice_group, choice_label")
         .in("stop_id", stopIds)
-    : { data: [] as { id: string; stop_id: string; student_name_raw: string; weekdays: number[]; override_route_id: string | null; choice_group: string | null; choice_label: string | null }[] };
+    : { data: [] as { id: string; stop_id: string; student_id: string | null; student_name_raw: string; weekdays: number[]; override_route_id: string | null; choice_group: string | null; choice_label: string | null }[] };
   const relevant = (assignments ?? []).filter((a) => (a.weekdays as number[]).includes(todayWeekday));
   const assignmentIds = relevant.map((a) => a.id);
 
@@ -97,6 +97,34 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
 
   // 행선지를 그날 정하는 학생. 정하기 전에는 어느 노선 명단에도 넣지 않고, 따로 모아
   // 화면 맨 위에 "아직 안 물어봤다"로 띄웁니다.
+  // ── 같은 이름이 두 명이면 학년을 붙입니다 ──────────────────────────────
+  //
+  // 이 화면에 이준서가 둘 나옵니다. 한 명은 7호를 매일 타는 초등 3학년이고, 한 명은 행선지를
+  // 그날 정하는 중고등 9학년입니다. 둘 다 그냥 "이준서"로 뜨면, 아이를 데리고 나가는 사람이
+  // 어느 쪽인지 알 방법이 없습니다. 하원 시간의 착오는 되돌릴 수 없습니다.
+  const studentIds = [...new Set(relevant.map((a) => a.student_id).filter((x): x is string => !!x))];
+  const { data: stuRows } = studentIds.length
+    ? await supabase.from("wr_students_basic").select("id, name, grade, class_name").in("id", studentIds)
+    : { data: [] as { id: string; name: string; grade: string | null; class_name: string | null }[] };
+  const stuById = new Map(((stuRows as { id: string; name: string; grade: string | null; class_name: string | null }[] | null) ?? []).map((r) => [r.id, r]));
+  const nameCount = new Map<string, number>();
+  for (const a of relevant) nameCount.set(a.student_name_raw, (nameCount.get(a.student_name_raw) ?? 0) + 1);
+  // 배정이 여러 줄인 아이(행선지 선택)도 있어서, 줄 수가 아니라 **사람 수**로 셉니다.
+  const peopleByName = new Map<string, Set<string>>();
+  for (const a of relevant) {
+    const key = a.student_name_raw;
+    const who = (a.student_id as string | null) ?? `raw:${key}`;
+    (peopleByName.get(key) ?? peopleByName.set(key, new Set()).get(key)!).add(who);
+  }
+  /** 같은 이름이 두 사람 이상일 때만 학년·반을 덧붙입니다. 한 명뿐인 이름까지 붙이면 화면이 글자로 찹니다. */
+  const displayName = (a: { student_name_raw: string; student_id?: string | null }) => {
+    const raw = a.student_name_raw;
+    if ((peopleByName.get(raw)?.size ?? 1) < 2) return raw;
+    const s = a.student_id ? stuById.get(a.student_id) : null;
+    const where = [s?.grade ? (s.class_name ? `${s.grade}` : `${s.grade}학년`) : null, s?.class_name].filter(Boolean).join(" ");
+    return where ? `${raw}(${where})` : raw;
+  };
+
   const pendingChoice: { assignmentId: string; studentName: string; group: string; routeId: string; stopAddress: string | null; label: string | null }[] = [];
 
   // assignmentId를 함께 보냅니다. 현장에서 아이 이름을 눌러 픽업으로 바꾸려면, 어느 배정
@@ -109,7 +137,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
     if (isUndecidedChoice(a, boarding)) {
       pendingChoice.push({
         assignmentId: a.id,
-        studentName: a.student_name_raw,
+        studentName: displayName(a),
         group: a.choice_group as string,
         routeId: (a.override_route_id && routeIdSet.has(a.override_route_id) ? a.override_route_id : stop.route_id) as string,
         // 어디서 내리는지 함께 보냅니다. 호차 번호만 보고 누르면, 형제가 서로 다른 곳에
@@ -122,7 +150,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
     }
     const permanentRouteId = a.override_route_id && routeIdSet.has(a.override_route_id) ? a.override_route_id : stop.route_id;
     const targetRouteId = boarding?.override_route_id && routeIdSet.has(boarding.override_route_id) ? boarding.override_route_id : permanentRouteId;
-    (rosterByRoute[targetRouteId] ??= []).push({ assignmentId: a.id, studentName: a.student_name_raw, status: boarding?.status ?? "예정" });
+    (rosterByRoute[targetRouteId] ??= []).push({ assignmentId: a.id, studentName: displayName(a), status: boarding?.status ?? "예정" });
   }
 
   const eventsByRoute: Record<string, { event: string; created_at: string; createdBy: string | null }[]> = {};

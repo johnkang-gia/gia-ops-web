@@ -1,6 +1,17 @@
--- 어떤 마이그레이션이 실제로 돌았는지 앱에서 볼 수 있게 합니다.
+-- ═══════════════════════════════════════════════════════════════════════════
+-- 마이그레이션 실행 이력 보기 — Supabase SQL Editor 붙여넣기용
 --
--- 담당자: "마이그레이션 실행 이력."
+-- 진단 화면 ⑧ 마이그레이션 칸이 아직 "아직 볼 수 없습니다"로 뜹니다. 폴더의 파일과 DB에
+-- 실제로 실행된 기록을 대조하려면 이 뷰가 필요합니다.
+--
+--   supabase/migrations/20260830120000_applied_migrations_view.sql
+--
+-- 여는 것은 실행된 버전 번호와 이름뿐입니다. SQL 본문은 넣지 않습니다.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+begin;
+
+-- 어떤 마이그레이션이 실제로 돌았는지 앱에서 볼 수 있게 합니다.
 --
 -- 이번 주에 `column a.choice_group does not exist` 오류를 겪었습니다. 원인은 단순합니다 -
 -- **무엇이 돌았고 무엇이 안 돌았는지 아무도 몰랐습니다.** 파일은 폴더에 있고, 실행 기록은
@@ -24,3 +35,12 @@ grant select on public.applied_migrations to authenticated;
 
 comment on view public.applied_migrations is
   '실제로 실행된 마이그레이션 목록(버전·이름만). 진단 화면이 파일 목록과 대조하는 데 씁니다.';
+
+insert into supabase_migrations.schema_migrations (version, name)
+values ('20260830120000', 'applied_migrations_view')
+on conflict (version) do nothing;
+
+commit;
+
+-- 확인 — 실행된 마이그레이션 개수가 나오면 성공입니다.
+select count(*) as 실행된_마이그레이션_수 from public.applied_migrations;

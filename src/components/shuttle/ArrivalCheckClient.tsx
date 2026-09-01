@@ -94,6 +94,13 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
   // 현장에서 아이 하나를 픽업으로 바꾸기 전에 한 번 묻습니다.
   // 잘못 누르면 그 아이가 명단에서 사라지고, 사라진 아이는 아무도 찾지 않습니다.
   const [pickupAsk, setPickupAsk] = useState<{ assignmentId: string; studentName: string; routeNo: string } | null>(null);
+  /**
+   * 차번호로 찾기.
+   *
+   * 차가 들어왔을 때 손에 있는 정보는 **번호판 네 자리**입니다. 호차 번호는 차에 안 붙어
+   * 있어서, 지금은 눈으로 표 전체를 훑어야 했습니다.
+   */
+  const [plateQuery, setPlateQuery] = useState("");
   const [pickupBusy, setPickupBusy] = useState(false);
 
   async function markStudentPickup(assignmentId: string) {
@@ -295,7 +302,10 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
         <div className="flex-1 text-center">
           <p className="text-xs font-bold text-slate-500">{data?.label ?? "도착체크"}</p>
           <h1 className="text-base font-black text-slate-800">🚌 차량 도착·출발 체크</h1>
-          <p className="mt-0.5 text-[10px] text-slate-400">버튼을 누르면 미도착 → 도착함 → 출발함 → 미도착 순서로 바뀝니다</p>
+          <p className="mt-0.5 text-[10px] text-slate-400">
+            눌러서 <b className="text-blue-600">●</b> 미도착 → <b className="text-emerald-600">●</b> 도착 →{" "}
+            <b className="text-slate-400">●</b> 출발 · 📍는 GPS 연결됨 · 이름을 누르면 개별하원
+          </p>
         </div>
         {/* 요청: "전체 리셋을 반으로 잘라서, 전체리셋은 그냥 원 화살표(리셋로고로 많이씀)와
             물음표로 아이콘만 띄워서 누르면 리셋은 리셋되고, 물음표는 안내하도록" - 글자 버튼
@@ -320,11 +330,41 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
         </div>
       </div>
 
+      {/* 차번호 네 자리로 바로 찾습니다. 호차로도 찾히게 해서, 무엇이 손에 있든 통합니다. */}
+      <div className="mb-2 flex items-center gap-1.5">
+        <input
+          value={plateQuery}
+          onChange={(e) => setPlateQuery(e.target.value)}
+          inputMode="numeric"
+          placeholder="차번호 뒤 4자리 · 호차로 찾기"
+          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400"
+        />
+        {plateQuery && (
+          <button
+            type="button"
+            onClick={() => setPlateQuery("")}
+            className="shrink-0 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-500 active:scale-95"
+          >
+            ✕
+          </button>
+        )}
+      </div>
+
       {routes.length === 0 ? (
         <p className="py-10 text-center text-sm text-slate-400">오늘 탈 학생이 있는 노선이 없습니다.</p>
       ) : (
         <div className="grid grid-cols-4 gap-1.5">
-          {routes.map((r) => {
+          {routes
+            .filter((r) => {
+              const k = plateQuery.replace(/\s+/g, "").toLowerCase();
+              if (!k) return true;
+              return (
+                (r.vehicleNo ?? "").replace(/\s+/g, "").toLowerCase().includes(k) ||
+                r.routeNo.toLowerCase().includes(k) ||
+                (r.name ?? "").toLowerCase().includes(k)
+              );
+            })
+            .map((r) => {
             const hasArrived = r.events.some((e) => e.event === "현장도착");
             const departEvent = r.events.find((e) => e.event === "출발");
             const hasDeparted = !!departEvent;
@@ -341,7 +381,6 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
             const arrivedByGps = r.events.find((e) => e.event === "현장도착")?.createdBy === "GPS 자동감지";
             // GPS 신호 상태(살아있음/끊김/미설정)와, 아직 도착 전인데 GPS가 살아있으면 "운행중".
             const gps = gpsInfo(r);
-            const enRoute = status === "waiting" && gps.live;
             // 하원 체크표에서 픽업(부모님이 직접 데려가심)·결석으로 체크한 학생은 이 차를 안
             // 타므로 "미도착 명단"에서 뺍니다(요청: "결석이나, 픽업을 체크하면 실시간으로 교직원
             // 차량 도착 출발체크에 반영이 되고" - 안내보드와 같은 필터링 방식).
@@ -352,14 +391,9 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
               <div
                 key={r.routeId}
                 className={
+                  // 색이 상태를 말합니다(요청). 청색=미도착 · 초록=도착 · 회색=출발.
                   "flex min-w-0 flex-col overflow-hidden rounded-lg border-2 " +
-                  (status === "arrived"
-                    ? "border-orange-400"
-                    : status === "departed"
-                      ? "border-slate-200"
-                      : enRoute
-                        ? "border-emerald-400"
-                        : "border-blue-200")
+                  (status === "arrived" ? "border-emerald-400" : status === "departed" ? "border-slate-200" : "border-blue-300")
                 }
               >
                 <button
@@ -378,15 +412,35 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
                   className={
                     "flex w-full flex-col items-center gap-0.5 px-0.5 py-1.5 active:scale-95 disabled:opacity-70 " +
                     (status === "arrived"
-                      ? "bg-orange-500 text-white"
+                      ? "bg-emerald-500 text-white"
                       : status === "departed"
                         ? "bg-slate-200 text-slate-500"
-                        : enRoute
-                          ? "bg-emerald-50 text-emerald-700"
-                          : "bg-white text-blue-700")
+                        : "bg-white text-blue-700")
                   }
                 >
-                  <span className="text-base font-black leading-tight">{r.routeNo}호</span>
+                  {/* 왼쪽 동그라미가 상태입니다. 청색=미도착 · 초록=도착 · 회색=출발.
+                      핀은 **GPS가 붙어 신호가 오는 차에만** 뜹니다. 핀이 없으면 GPS 대기입니다.
+                      글자로 또 적으면 좁은 칸이 글자로 가득 차서 정작 호차가 안 보입니다. */}
+                  <span className="flex items-center gap-1 leading-tight">
+                    <span
+                      aria-hidden
+                      className={
+                        "inline-block h-2.5 w-2.5 shrink-0 rounded-full " +
+                        (status === "arrived"
+                          ? "bg-emerald-300 ring-1 ring-white"
+                          : status === "departed"
+                            ? "bg-slate-400"
+                            : "bg-blue-500")
+                      }
+                      title={status === "arrived" ? "도착" : status === "departed" ? "출발" : "미도착"}
+                    />
+                    {gps.tone === "live" && (
+                      <span className="shrink-0 text-[10px] leading-none" title={`GPS 연결됨 · ${gps.label}`}>
+                        📍
+                      </span>
+                    )}
+                    <span className="text-base font-black">{r.routeNo}호</span>
+                  </span>
                   {r.name && <span className="max-w-full truncate text-[8px] font-semibold leading-tight opacity-80">{r.name}</span>}
                   {/* 담당자: "호차 / 차량번호 / 기사님 / 타는 애들 뱃지 이렇게 뜨게."
                       차량번호를 아직 못 적은 차도 있어서, 없으면 그 줄을 그냥 비워둡니다
@@ -402,34 +456,23 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
                   {r.driverName && (
                     <span className="max-w-full truncate text-[7px] font-medium leading-tight opacity-60">{r.driverName} 기사님</span>
                   )}
-                  <span className="text-[9px] font-bold leading-tight">
-                    {status === "waiting" ? (enRoute ? "운행중" : "미도착") : status === "arrived" ? "도착함" : "출발함"}
-                  </span>
-                  {status === "arrived" && arrivedByGps && (
-                    <span className="text-[7px] font-semibold leading-none text-orange-100">자동·GPS 감지</span>
-                  )}
-                  {status === "departed" && autoLabel && (
-                    <span className="text-[7px] font-semibold leading-none text-slate-400">자동·{autoLabel}</span>
-                  )}
-                  {/* GPS 살아있는지 확인용. 요청: "모바일로 제대로 (GPS가) 돌아가는지 체크". 최근에
-                      위치를 보내오면 초록, 오래됐으면 회색으로 한눈에 구분됩니다. */}
+                  {/* 상태는 위 동그라미가 말합니다. 여기에는 **연결 상태만** 아주 작게.
+                      사람이 누른 건지 GPS가 잡은 건지는 이 줄에 함께 붙입니다. */}
                   <span
                     className={
                       "mt-0.5 text-[7px] font-semibold leading-none " +
-                      (gps.tone === "live"
-                        ? status === "arrived"
-                          ? "text-emerald-100"
-                          : "text-emerald-600"
-                        : status === "arrived"
-                          ? "text-orange-100"
-                          : "text-slate-400")
+                      (status === "arrived" ? "text-emerald-100" : status === "departed" ? "text-slate-400" : "text-slate-400")
                     }
                   >
-                    {gps.label}
+                    {status === "departed" && autoLabel
+                      ? `자동·${autoLabel}`
+                      : status === "arrived" && arrivedByGps
+                        ? "자동·GPS"
+                        : gps.label}
                   </span>
                 </button>
                 {(waiting.length > 0 || pickedUpCount > 0 || absentCount > 0) && (
-                  <div className="flex flex-wrap gap-0.5 bg-slate-50 p-1">
+                  <div className="flex flex-wrap content-start gap-0.5 bg-slate-50 p-1">
                     {/* 이름을 누르면 그 아이만 픽업으로 바꿉니다.
                         하원 지도 중에 학부모님이 찾아오셔서 데려가시는 일이 하루에도 여러 번
                         있습니다. 그 자리에서 못 누르면 나중에 옮겨 적어야 하고, 옮겨 적는 일은
@@ -443,7 +486,7 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
                         key={s.assignmentId}
                         type="button"
                         onClick={() => setPickupAsk({ assignmentId: s.assignmentId, studentName: s.studentName, routeNo: r.routeNo })}
-                        className="min-h-[30px] rounded-md border border-red-300 bg-red-50 px-2 py-1 text-[12px] font-bold leading-none text-red-600 active:scale-95"
+                        className="min-h-[22px] rounded border border-red-300 bg-red-50 px-1 py-0.5 text-[10px] font-bold leading-tight text-red-600 active:scale-95"
                       >
                         {s.studentName}
                       </button>

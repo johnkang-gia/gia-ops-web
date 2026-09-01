@@ -1218,3 +1218,71 @@ export type ShuttleSafetyEvent = {
   magnitude: number | null;
   recorded_at: string;
 };
+
+// ── 학비외 수납(교재·악기·수리·교복)과 인보이스 ────────────────────────────
+//
+// 단가는 fee_items 한 곳에만 있고, 아이별로는 **기본 세트와 다른 것만** 남깁니다.
+// 발행한 인보이스는 그 순간의 이름·금액을 베껴 굳혀서, 나중에 값이 올라도 흔들리지 않습니다.
+
+export const FEE_ITEM_CATEGORIES = ["교재", "악기", "악기수리", "교복", "기타"] as const;
+export type FeeItemCategory = (typeof FEE_ITEM_CATEGORIES)[number];
+
+export type FeeItem = {
+  id: string;
+  category: string;
+  /** 인보이스에 그대로 찍히는 이름(영문 양식이라 이쪽이 본문). */
+  name: string;
+  /** 화면에서 고를 때 쓰는 한글 이름. */
+  name_ko: string | null;
+  unit_price: number;
+  /** 기본으로 붙는 학년. 비어 있으면 자동으로 붙지 않습니다. */
+  default_grades: string[];
+  default_classes: string[];
+  term_id: string | null;
+  active: boolean;
+  sort_order: number;
+  note: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type StudentFeeItem = {
+  id: string;
+  student_id: string;
+  item_id: string;
+  term_id: string | null;
+  /** include = 기본 대상이 아닌데 산다 · exclude = 기본 대상인데 안 산다 */
+  mode: "include" | "exclude";
+  qty: number;
+  note: string | null;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Invoice = {
+  id: string;
+  invoice_no: string;
+  student_id: string | null;
+  student_name: string;
+  student_name_ko: string | null;
+  grade_label: string | null;
+  issue_date: string;
+  due_date: string;
+  total_amount: number;
+  status: "발행" | "취소";
+  note: string | null;
+  issued_by: string | null;
+  created_at: string;
+};
+
+export type InvoiceLine = {
+  id: string;
+  invoice_id: string;
+  seq: number;
+  name: string;
+  qty: number;
+  unit_price: number;
+  amount: number;
+};

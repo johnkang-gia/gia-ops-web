@@ -12,7 +12,11 @@ import StatCard from "@/components/viz/StatCard";
 import BarRow from "@/components/viz/BarRow";
 import Donut from "@/components/viz/Donut";
 
-// 요금제 · 할인 (재무 전용)
+// 납부 항목 · 할인 (재무 전용)
+//
+// 용어는 학교 문서(‘25-26학년도 학비 납부옵션’)를 그대로 씁니다. '요금제'는 통신사 말이라
+// 학교에서 쓰지 않습니다. 무엇에 얼마를 받는가 = **납부 항목**(정규과정·방과후 5일반·셔틀·
+// 교재비), 몇 회분을 묶고 몇 % 깎는가 = **납부 옵션**(월 납부·5개월 납부·10개월 납부).
 //
 // 담당자: "할인률과 항목들을 자유롭게 설정할 수 있게 만들어줘. 형제할인 같은 부분 원래는
 //         있는데 없애신다고 하셨거든. 그래서 자유롭게 만들었다가 없앴다가 될 수 있게."
@@ -87,7 +91,7 @@ export default function FeePlansClient({
   const shownDiscounts = discounts.filter((d) => showInactive || d.active);
 
   async function addPlan() {
-    if (!planForm.name.trim()) return setErr("요금제 이름을 넣어주세요.");
+    if (!planForm.name.trim()) return setErr("항목 이름을 넣어주세요.");
     setBusy(true);
     setErr(null);
     const supabase = createClient();
@@ -212,7 +216,7 @@ export default function FeePlansClient({
   return (
     <div className="mx-auto w-full max-w-[1500px] p-4">
       <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
-        <h1 className="text-lg font-extrabold text-[var(--g-ink)]">💰 요금제 · 할인</h1>
+        <h1 className="text-lg font-extrabold text-[var(--g-ink)]">💰 납부 항목 · 할인</h1>
         <Badge tone="accent">재무 권한 전용</Badge>
       </div>
       <p className="mb-3 text-[11px] leading-relaxed text-[var(--g-muted)]">
@@ -223,8 +227,8 @@ export default function FeePlansClient({
       {/* 한눈에 보는 요약. 목록만 있으면 "지금 이 학교의 요금 구조가 어떤 모양인지"를
           매번 머리로 재구성해야 합니다. */}
       <div className="mb-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="학비 요금제" value={plans.filter((p) => p.category === "학비" && p.active).length} unit="개" />
-        <StatCard label="학비외 요금제" value={plans.filter((p) => p.category === "학비외" && p.active).length} unit="개" tone="ok" />
+        <StatCard label="학비 항목" value={plans.filter((p) => p.category === "학비" && p.active).length} unit="개" />
+        <StatCard label="학비외 항목" value={plans.filter((p) => p.category === "학비외" && p.active).length} unit="개" tone="ok" />
         <StatCard label="쓰는 중인 할인" value={discounts.filter((d) => d.active).length} unit="개" tone="warn" />
         <Card hover className="flex items-center gap-3 px-4 py-3">
           <Donut
@@ -270,7 +274,7 @@ export default function FeePlansClient({
       {tab !== "할인" ? (
         <>
           <Button variant="glass" size="sm" className="mb-2" onClick={() => setShowPlanForm((v) => !v)}>
-            + {tab} 요금제 추가
+            + {tab} 항목 추가
           </Button>
           {showPlanForm && (
             <div className="g-panel mb-3 flex flex-wrap items-end gap-2 p-3">
@@ -305,7 +309,7 @@ export default function FeePlansClient({
           <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
             {shownPlans.length === 0 && (
               <p className="col-span-full py-10 text-center text-sm text-slate-400">
-                아직 {tab} 요금제가 없습니다. 위에서 하나 만들어보세요.
+                아직 {tab} 항목이 없습니다. 위에서 하나 만들어보세요.
               </p>
             )}
             {shownPlans.map((p) => (

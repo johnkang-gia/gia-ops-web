@@ -132,11 +132,11 @@ export const SCHEMA_CHECKS: SchemaCheck[] = [
     impact: "재무 열쇠를 줄 수 없어 돈 화면이 아무에게도(또는 모두에게) 열립니다. 최고관리자 직위도 저장되지 않습니다.",
   },
   {
-    feature: "요금제 · 할인",
+    feature: "납부 항목 · 할인",
     table: "fee_discounts",
     columns: ["name", "kind", "value", "active"],
     migration: "20260831200000_fee_plans_discounts.sql",
-    impact: "재무 화면에서 요금제·할인을 만들 수 없습니다.",
+    impact: "재무 화면에서 납부 항목·할인을 만들 수 없습니다.",
   },
   {
     feature: "재무 권한 기록",

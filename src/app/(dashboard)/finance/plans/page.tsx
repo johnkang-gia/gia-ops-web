@@ -5,7 +5,7 @@ import { hasFinanceAccess, isSuperAdminUser } from "@/lib/roles";
 import type { FeePlan, FeePaymentOption, FeeDiscount } from "@/lib/types";
 import FeePlansClient from "@/components/finance/FeePlansClient";
 
-// 요금제 · 할인 (재무 전용)
+// 납부 항목 · 할인 (재무 전용)
 //
 // 담당자: "할인률과 항목들을 자유롭게 설정할 수 있게 (물론 재무 관련 권한이 있는 사람이)
 //         만들어줘. 형제할인 같은 부분 원래는 있는데 없애신다고 하셨거든. 그래서 할인 항목의

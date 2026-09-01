@@ -419,7 +419,7 @@ export default async function DashboardLayout({
         icon: "💰",
         accent: "teal",
         href: "/finance/plans",
-        items: [{ href: "/finance/plans", label: "요금제 · 할인", icon: "🧾" }],
+        items: [{ href: "/finance/plans", label: "납부 항목 · 할인", icon: "🧾" }],
       });
     }
     if (isDeveloper && !isPreviewing) {

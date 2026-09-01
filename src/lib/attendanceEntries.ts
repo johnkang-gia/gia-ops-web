@@ -4,6 +4,8 @@ import {
   extractTargetRange,
   looksLikePronounReply,
   matchRosterStudents,
+  categoryForStudent,
+  surfacesFor,
   todayKey,
   type LearningRule,
   type RosterStudent,
@@ -143,7 +145,16 @@ export async function scanIntoEntries(
     const state: EntryState = reason || spanTooLong ? "확인필요" : "등록";
 
     for (const st of matched) {
-      const key = `${m.source}|${m.messageId}|${st.display}|${category}`;
+      // 한 글에 아이가 여럿이면 아이마다 따로 읽습니다.
+      // "권수호, 황준호 픽업입니다, 라원 라윤이는 셔틀타요" - 뒤의 둘은 평소대로 셔틀입니다.
+      // 여기서 걸러내지 않으면 셔틀을 타는 아이가 자동으로 픽업 줄로 등록되고, 그 줄이
+      // 대시보드·체크표에 그대로 퍼집니다.
+      const status = categoryForStudent(m.text, surfacesFor(st.name, roster), category, rules);
+      if (!status) {
+        skipped += 1;
+        continue;
+      }
+      const key = `${m.source}|${m.messageId}|${st.display}|${status}`;
       if (existing.has(key)) {
         skipped += 1;
         continue;
@@ -157,7 +168,7 @@ export async function scanIntoEntries(
         student_name: st.display,
         grade: st.grade,
         class_name: st.className,
-        status: category,
+        status,
         date_from: from,
         date_to: to,
         state,

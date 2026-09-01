@@ -1,6 +1,9 @@
 // 출결알림(구글챗 미러링)과 부서 메모에서 "누가 결석/픽업/지각/조퇴인지"를 뽑아내는 규칙입니다.
 // AI를 쓰지 않고 학생 명부 대조 + 키워드 규칙으로만 처리합니다(추가 비용 0, 즉시 반영).
 
+import { splitClauses, nameSurfaces } from "@/lib/attendanceIntent";
+export { nameSurfaces };
+
 export type AttendanceCategory = "픽업" | "결석" | "지각" | "조퇴";
 
 // 화면에 보여주는 순서입니다(요청: "픽업,결석,지각순서로").
@@ -92,6 +95,68 @@ export function categorize(text: string, rules?: LearningRule[]): AttendanceCate
     if (c.keywords.some((k) => lower.includes(k.toLowerCase()))) return c.key;
   }
   return null;
+}
+
+// ── 한 글 안에서 아이마다 다르게 읽기 ────────────────────────────────────────
+//
+// 실제로 틀렸던 문장입니다.
+//
+//   "@Paul Lee @John Kang 오늘 권수호, 황준호 픽업입니다, 라원 라윤이는 셔틀타요"
+//
+// 픽업은 권수호·황준호 둘이고 황라원·황라윤은 평소대로 셔틀을 탑니다. 그런데 황라원까지
+// 픽업으로 들어갔습니다.
+//
+// **원인은 한 줄입니다.** 지금까지 한 메시지에 상태 하나(픽업/결석)를 정하고, 그 메시지에서
+// 찾은 학생 **전원**에게 똑같이 붙였습니다. 한 글에 아이가 여럿이고 서로 다른 이야기를 하는
+// 경우 - 형제방에서는 이게 예외가 아니라 보통입니다 - 이 전제가 그대로 깨집니다.
+//
+// 그래서 **이름이 있는 절(節)만** 보고 그 아이의 상태를 정합니다.
+
+/** "셔틀 안 타요", "태우지 말아주세요" - 셔틀이라는 말이 있어도 타는 게 아닙니다. */
+const NOT_RIDING = /((셔틀|스쿨\s*버스|버스|차)\s*(을|를|는|도)?\s*(안|못)\s*(타|탑|탈))|태우지\s*(마|말)|타지\s*(않|말|마)/;
+
+/** "셔틀타요", "기존처럼 스쿨버스", "평소대로" - 평소대로 차를 탄다는 신호. */
+const RIDING_AS_USUAL =
+  /((셔틀|스쿨\s*버스)\s*(을|를|는|도)?\s*(타|탑니|탈|태워|태우))|기존처럼|평소대로|정상\s*(등원|등교|하원)|as\s*usual|(take|takes|taking)\s*the\s*(school\s*)?bus/i;
+
+/**
+ * 이 학생이 **이 글에서** 어떤 상태인지.
+ *
+ * @param whole 글 전체의 분류. 그 아이 이름이 있는 절에서 아무 단서도 못 찾았을 때 씁니다.
+ * @returns null이면 "이 아이는 해당 없음"(평소대로 탑니다).
+ *
+ * 판단 순서:
+ *   1. 이름이 있는 절에 픽업·결석이 **적혀 있으면** 그것. 적힌 말이 가장 확실합니다.
+ *   2. 그 절이 "셔틀 탄다"고 말하면 해당 없음. 명시적으로 평소대로라고 한 것입니다.
+ *   3. 아무 단서도 없으면 글 전체의 분류를 따릅니다(예전과 같은 동작).
+ *
+ * 1번이 2번보다 앞인 이유: 한 절에 둘 다 들어 있으면("셔틀 대신 픽업") 적힌 쪽이 맞습니다.
+ */
+/** 명부에서 영문 이름을 찾아 그 학생의 표기들(한글·성 뗀 이름·영문 이름)을 만듭니다. */
+export function surfacesFor(name: string, roster: { name: string; nameEn?: string | null }[]): string[] {
+  return nameSurfaces(name, roster.find((r) => r.name === name)?.nameEn ?? null);
+}
+
+export function categoryForStudent(
+  text: string,
+  surfaces: readonly string[],
+  whole: AttendanceCategory,
+  rules?: LearningRule[],
+): AttendanceCategory | null {
+  if (surfaces.length === 0) return whole;
+  const flat = (v: string) => v.toLowerCase().replace(/\s+/g, "");
+  const own = splitClauses(text).filter((c) => surfaces.some((n) => flat(c).includes(flat(n))));
+  // 이름이 어느 절에도 없으면(별칭 규칙으로 잡힌 경우 등) 예전처럼 글 전체를 따릅니다.
+  if (own.length === 0) return whole;
+
+  for (const c of own) {
+    const cat = categorize(c, rules);
+    if (cat) return cat;
+  }
+  for (const c of own) {
+    if (RIDING_AS_USUAL.test(c) && !NOT_RIDING.test(c)) return null;
+  }
+  return whole;
 }
 
 // ── 날짜/요일 인식 ────────────────────────────────────────────────────────────

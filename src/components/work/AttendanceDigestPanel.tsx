@@ -16,6 +16,8 @@ import {
   extractTargetRange,
   guessKoreanName,
   matchRosterStudents,
+  categoryForStudent,
+  surfacesFor,
   stripLeadingMention,
   todayKey,
   type AttendanceCategory,
@@ -419,9 +421,12 @@ export default function AttendanceDigestPanel({
         continue;
       }
       for (const s of students) {
+        // 한 글 안에서도 아이마다 이야기가 다릅니다. 이름이 있는 절만 보고 정합니다.
+        const mine = categoryForStudent(m.content, surfacesFor(s.name, roster), category, rules);
+        if (!mine) continue;
         out.push({
           key: `chat-${m.id}-${s.studentKey}`,
-          category,
+          category: mine,
           studentName: s.displayName,
           studentKey: s.studentKey,
           ambiguous: s.ambiguous,

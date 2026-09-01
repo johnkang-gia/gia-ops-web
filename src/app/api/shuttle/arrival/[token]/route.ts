@@ -99,7 +99,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
   // 화면 맨 위에 "아직 안 물어봤다"로 띄웁니다.
   const pendingChoice: { assignmentId: string; studentName: string; group: string; routeId: string; stopAddress: string | null; label: string | null }[] = [];
 
-  const rosterByRoute: Record<string, { studentName: string; status: string }[]> = {};
+  // assignmentId를 함께 보냅니다. 현장에서 아이 이름을 눌러 픽업으로 바꾸려면, 어느 배정
+  // 줄인지 알아야 합니다. 이름만으로는 동명이인을 가릴 수 없습니다.
+  const rosterByRoute: Record<string, { assignmentId: string; studentName: string; status: string }[]> = {};
   for (const a of relevant) {
     const stop = stopById.get(a.stop_id);
     if (!stop) continue;
@@ -120,7 +122,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
     }
     const permanentRouteId = a.override_route_id && routeIdSet.has(a.override_route_id) ? a.override_route_id : stop.route_id;
     const targetRouteId = boarding?.override_route_id && routeIdSet.has(boarding.override_route_id) ? boarding.override_route_id : permanentRouteId;
-    (rosterByRoute[targetRouteId] ??= []).push({ studentName: a.student_name_raw, status: boarding?.status ?? "예정" });
+    (rosterByRoute[targetRouteId] ??= []).push({ assignmentId: a.id, studentName: a.student_name_raw, status: boarding?.status ?? "예정" });
   }
 
   const eventsByRoute: Record<string, { event: string; created_at: string; createdBy: string | null }[]> = {};
@@ -194,6 +196,29 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
   // 나중에 옮겨 적어야 하고, 옮겨 적는 일은 반드시 언젠가 빠집니다.
   //
   // 고른 배정에만 오늘치 탑승 줄을 만듭니다. 안 고른 쪽은 줄이 없으니 계속 숨어 있습니다.
+  // 하원 지도 중에 학부모님이 찾아오셔서 아이를 데려가시는 일이 하루에도 여러 번 있습니다.
+  // 그때 이 화면을 들고 있는 사람이 그 자리에서 누를 수 있어야 합니다. 나중에 사무실에 가서
+  // 옮겨 적기로 하면, 그 사이에 그 아이는 여전히 "차를 기다리는 아이"로 남습니다.
+  if (action === "student_pickup") {
+    const assignmentId = body?.assignmentId as string | undefined;
+    const on = body?.on !== false; // 기본은 픽업으로 켜기. 잘못 눌렀으면 on:false로 되돌립니다.
+    if (!assignmentId) return NextResponse.json({ error: "assignmentId가 필요합니다." }, { status: 400 });
+
+    const { error } = await supabase.from("shuttle_boardings").upsert(
+      {
+        service_date: today,
+        assignment_id: assignmentId,
+        status: on ? "픽업" : "예정",
+        // 누가 왜 바꿨는지. 이 화면은 로그인이 없어 사람 이름을 알 수 없으므로 자리를 적습니다.
+        checked_by: on ? "하원지도(현장 픽업)" : "하원지도(픽업 취소)",
+        checked_at: new Date().toISOString(),
+      },
+      { onConflict: "service_date,assignment_id" },
+    );
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
+
   if (action === "choose") {
     const assignmentId = body?.assignmentId as string | undefined;
     const mode = (body?.mode as string | undefined) ?? "ride"; // ride | skip | reset

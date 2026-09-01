@@ -5,6 +5,7 @@ import ActivityLogTicker from "./ActivityLogTicker";
 import Link from "next/link";
 import CronStatusBadge from "./CronStatusBadge";
 import ArrivalQrBadge from "./ArrivalQrBadge";
+import StudentSearchBadge from "./StudentSearchBadge";
 import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import { useRealtimeTable } from "@/lib/useRealtimeTable";
@@ -331,6 +332,7 @@ export default function WorkBoardClient({
           📋 하원 체크표
         </Link>
         <ArrivalQrBadge />
+        <StudentSearchBadge />
         <button
           type="button"
           onClick={() => setGuideOpen(true)}

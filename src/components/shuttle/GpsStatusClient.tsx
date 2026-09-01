@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import type { GpsRouteStatus } from "@/app/api/shuttle/gps-status/route";
 
 // 운행 중에 보는 GPS 상태판입니다.
@@ -22,6 +22,11 @@ function ago(sec: number | null): string {
   return `${Math.floor(sec / 3600)}시간 전`;
 }
 
+/** ISO 시각 → "16:42". 초는 버립니다 - 이 판에서 초 단위는 읽히지 않습니다. */
+function hhmm(iso: string): string {
+  return new Date(iso).toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit" });
+}
+
 function gapLabel(sec: number | null): string {
   if (sec == null) return "—";
   if (sec < 60) return `${sec}초`;
@@ -33,6 +38,8 @@ export default function GpsStatusClient() {
   const [error, setError] = useState<string | null>(null);
   // 기기가 없는 호차까지 다 보면 35줄이 넘어 정작 볼 것이 묻힙니다. 기본은 '기기 있는 것만'.
   const [onlyWithDevice, setOnlyWithDevice] = useState(true);
+  /** 정류장 진행을 펼쳐 볼 호차. 한 번에 하나만 - 다 펼치면 표가 아니라 목록이 됩니다. */
+  const [openRoute, setOpenRoute] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -105,7 +112,8 @@ export default function GpsStatusClient() {
               const alive = r.lastPingSec != null && r.lastPingSec < 300;
               const gapBad = r.maxGapSec != null && r.maxGapSec > 300;
               return (
-                <tr key={r.routeId} className="border-b border-slate-100 last:border-b-0">
+                <Fragment key={r.routeId}>
+                <tr className="border-b border-slate-100 last:border-b-0">
                   <td className="px-2 py-1.5 font-bold text-slate-700">
                     <span className={"mr-1 " + (alive ? "text-emerald-500" : "text-slate-300")}>●</span>
                     {r.routeNo}호
@@ -119,10 +127,20 @@ export default function GpsStatusClient() {
                   <td className={"px-2 py-1.5 " + (gapBad ? "font-bold text-red-600" : "text-slate-400")}>
                     {gapLabel(r.maxGapSec)}
                   </td>
+                  {/* 숫자만 보면 "어디서 안 잡혔는지"를 알 수 없습니다. 눌러서 펼치면 출발과
+                      정류장이 순서대로 나오고, 닿은 곳은 시각이, 못 닿은 곳은 회색 점이 뜹니다. */}
                   <td className="px-2 py-1.5">
-                    <span className={r.arrivedToday > 0 ? "font-bold text-blue-600" : "text-slate-300"}>
-                      {r.arrivedToday}/{r.stopCount}
-                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setOpenRoute((v) => (v === r.routeId ? null : r.routeId))}
+                      className={
+                        "rounded px-1 " +
+                        (r.arrivedToday > 0 ? "font-bold text-blue-600 hover:bg-blue-50" : "text-slate-400 hover:bg-slate-50")
+                      }
+                      title="눌러서 정류장별 도착 시각 보기"
+                    >
+                      {r.arrivedToday}/{r.stopCount} {openRoute === r.routeId ? "▾" : "▸"}
+                    </button>
                   </td>
                   {/* 학습이 얼마나 진행됐는지. 이 칸이 초록으로 차오르면 반경이 80m로 좁혀집니다. */}
                   <td className="px-2 py-1.5">
@@ -151,6 +169,41 @@ export default function GpsStatusClient() {
                     {r.lastHitReason ?? (r.deviceId ? "아직 신호 없음" : "기기 미발급")}
                   </td>
                 </tr>
+                {openRoute === r.routeId && (
+                  <tr className="border-b border-slate-100 bg-slate-50">
+                    <td colSpan={9} className="px-3 py-2">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span
+                          className={
+                            "rounded px-1.5 py-0.5 text-[11px] font-bold " +
+                            (r.departedAt ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-400")
+                          }
+                        >
+                          {r.departedAt ? `🚌 ${hhmm(r.departedAt)} 출발` : "🚌 아직 출발 안 함"}
+                        </span>
+                        {r.stopProgress.length === 0 ? (
+                          <span className="text-[11px] text-slate-400">정류장이 없습니다.</span>
+                        ) : (
+                          r.stopProgress.map((s) => (
+                            <span
+                              key={s.seq}
+                              title={s.address ?? ""}
+                              className={
+                                "flex max-w-[13rem] items-baseline gap-1 rounded px-1.5 py-0.5 text-[11px] " +
+                                (s.arrivedAt ? "bg-blue-100 font-semibold text-blue-700" : "bg-white text-slate-400")
+                              }
+                            >
+                              <b className="shrink-0">{s.seq}</b>
+                              <span className="truncate">{s.address ?? "(주소 없음)"}</span>
+                              <span className="shrink-0 tabular-nums">{s.arrivedAt ? hhmm(s.arrivedAt) : "—"}</span>
+                            </span>
+                          ))
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               );
             })}
             {rows.length === 0 && (

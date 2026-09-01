@@ -44,6 +44,14 @@ export type GpsRouteStatus = {
   stopsLearned: number;
   stopsGeocoded: number;
   stopsNoCoords: number;
+  /**
+   * 오늘 이 노선의 **출발과 정류장 도착**을 순서대로.
+   *
+   * 숫자만("3/5 도착") 보여주면 "어느 정류장에서 안 잡혔는지"를 알 수 없습니다. GPS가
+   * 제대로 도는지 확인하려면 어디까지 갔고 몇 시에 닿았는지를 봐야 합니다.
+   */
+  departedAt: string | null;
+  stopProgress: { seq: number; address: string | null; arrivedAt: string | null }[];
 };
 
 export async function GET() {
@@ -61,9 +69,9 @@ export async function GET() {
   const [{ data: routes }, { data: devices }, { data: stops }, { data: pings }, { data: arrivals }] = await Promise.all([
     db.from("shuttle_routes").select("id, route_no, name, driver_name").eq("term", "정규학기").eq("active", true).eq("direction", "하원"),
     db.from("shuttle_tracker_devices").select("route_id, device_id, enabled, always_on, last_seen_at, last_hit_at, last_hit_reason"),
-    db.from("shuttle_stops").select("id, route_id, gps_lat, lat"),
+    db.from("shuttle_stops").select("id, route_id, seq, address, gps_lat, lat"),
     db.from("shuttle_pilot_pings").select("route_id, recorded_at").gte("recorded_at", dayStart).order("recorded_at", { ascending: true }),
-    db.from("shuttle_stop_arrivals").select("route_id").eq("service_date", today),
+    db.from("shuttle_stop_arrivals").select("route_id, stop_id, arrived_at").eq("service_date", today),
   ]);
 
   const deviceByRoute = new Map((devices ?? []).map((d) => [d.route_id as string, d]));
@@ -76,8 +84,35 @@ export async function GET() {
   }
 
   const arrivalsByRoute = new Map<string, number>();
+  const arrivedAtByStop = new Map<string, string>();
   for (const a of arrivals ?? []) {
     arrivalsByRoute.set(a.route_id as string, (arrivalsByRoute.get(a.route_id as string) ?? 0) + 1);
+    const sid = a.stop_id as string | null;
+    const at = a.arrived_at as string | null;
+    // 같은 정류장에 여러 번 찍혔으면 **처음** 닿은 시각을 씁니다. 나중 것은 지나가며 다시
+    // 반경에 들어온 것일 수 있습니다.
+    if (sid && at && (!arrivedAtByStop.has(sid) || at < arrivedAtByStop.get(sid)!)) arrivedAtByStop.set(sid, at);
+  }
+
+  // 오늘 출발했는지. 정류장 도착만 보면 "아직 안 떠난 차"와 "떠났는데 아직 첫 정류장 전"이
+  // 똑같이 보입니다.
+  const { data: runEvents } = await db
+    .from("shuttle_run_events")
+    .select("route_id, event, created_at")
+    .eq("service_date", today)
+    .eq("event", "출발");
+  const departedByRoute = new Map<string, string>();
+  for (const e of runEvents ?? []) {
+    const id = e.route_id as string;
+    const at = e.created_at as string;
+    if (!departedByRoute.has(id) || at < departedByRoute.get(id)!) departedByRoute.set(id, at);
+  }
+
+  const stopListByRoute = new Map<string, { id: string; seq: number; address: string | null }[]>();
+  for (const s of stops ?? []) {
+    const list = stopListByRoute.get(s.route_id as string) ?? [];
+    list.push({ id: s.id as string, seq: (s.seq as number) ?? 0, address: (s.address as string | null) ?? null });
+    stopListByRoute.set(s.route_id as string, list);
   }
 
   const stopsByRoute = new Map<string, { learned: number; geocoded: number; none: number }>();
@@ -119,6 +154,13 @@ export async function GET() {
       arrivedToday: arrivalsByRoute.get(id) ?? 0,
       stopCount: st.learned + st.geocoded + st.none,
       stopsLearned: st.learned,
+      departedAt: departedByRoute.get(id) ?? null,
+      stopProgress: (stopListByRoute.get(id) ?? [])
+        .slice()
+        .sort((x, y) => x.seq - y.seq)
+        // 999는 "정류장 미지정" 자리표입니다. 실제로 차가 서는 곳이 아니라 목록에서 뺍니다.
+        .filter((x) => x.seq < 900)
+        .map((x) => ({ seq: x.seq, address: x.address, arrivedAt: arrivedAtByStop.get(x.id) ?? null })),
       stopsGeocoded: st.geocoded,
       stopsNoCoords: st.none,
     };

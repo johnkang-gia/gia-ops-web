@@ -57,6 +57,9 @@ function fmtTime(iso: string) {
 // 다 태우고 '출발'을 누르면 카드가 오른쪽으로 미끄러지며 사라집니다. 학생별 개별 탑승 체크는
 // 쓰지 않고(요청: "명단만 표시") 도착한 차량의 전체 명단이 계속 보입니다. 데이터는 로그인
 // 세션이 필요 없는 /api/shuttle/board/[token]을 폴링해서 가져옵니다.
+/** 도착 후 이 시간이 지나도록 안 탄 아이가 있으면 화면이 빨갛게 재촉합니다. */
+const HURRY_AFTER_SEC = 20;
+
 export default function ShuttleBoardClient({ token }: { token: string }) {
   const [data, setData] = useState<BoardData | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -64,6 +67,15 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
   // 노선은 인트로가 끝나기 전까지 오른쪽 패널에 나타나지 않습니다.
   const [revealedIds, setRevealedIds] = useState<Set<string>>(new Set());
   const [justArrived, setJustArrived] = useState<Set<string>>(new Set());
+  // 도착 후 얼마나 지났는지 세기 위한 1초 시계.
+  //
+  // 차가 와 있는데 아이가 안 나오면 그 차는 그 자리에 서서 기다립니다. 뒤차도 같이 밀립니다.
+  // 화면이 조용하면 아무도 서두르지 않으므로, 일정 시간이 지나면 색으로 재촉합니다.
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
   const [justDeparted, setJustDeparted] = useState<Set<string>>(new Set());
   const [activeIntro, setActiveIntro] = useState<IntroRoute | null>(null);
   const [soundEnabled, setSoundEnabled] = useState(false);
@@ -363,8 +375,11 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
     if (!data) return [];
     return data.routes
       .filter((r) => {
-        if (!revealedIds.has(r.routeId)) return false;
+        // **순서가 중요합니다.** 출발하는 순간 revealedIds에서도 빼기 때문에, revealedIds를
+        // 먼저 보면 출발 카드가 그 자리에서 걸러져 버립니다. 그래서 떠나는 모션이 한 번도
+        // 안 보이고 카드가 그냥 사라졌습니다.
         if (justDeparted.has(r.routeId)) return true; // 출발 애니메이션 재생 중 - 자리 유지
+        if (!revealedIds.has(r.routeId)) return false;
         return r.events.some((e) => e.event === "현장도착") && !r.events.some((e) => e.event === "출발");
       })
       .sort((a, b) => {
@@ -450,6 +465,11 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
         .gia-bus-out-card { animation: gia-bus-out 1.1s ease-in forwards; animation-delay: 2.6s; }
         .gia-bus-cross-panel { animation: gia-bus-cross-panel 1.1s cubic-bezier(0.32, 0.1, 0.28, 1) both; }
         .gia-names-in { animation: gia-names-in 0.5s ease-out 0.15s both; }
+        @keyframes gia-hurry {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0); }
+          50% { box-shadow: 0 0 0 6px rgba(239,68,68,0.35); }
+        }
+        .gia-hurry { animation: gia-hurry 1.2s ease-in-out infinite; }
       `}</style>
       {!soundEnabled && (
         <div
@@ -621,29 +641,52 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
             const boarded = route.roster.filter((r) => r.status === "탑승");
             const pickedUp = route.roster.filter((r) => r.status === "픽업");
             const isNew = justArrived.has(route.routeId);
+            // 도착한 지 얼마나 됐는가. 20초가 넘고 아직 안 탄 아이가 있으면 빨갛게 재촉합니다.
+            // 다 탄 차는 재촉할 이유가 없습니다 - 출발 표시를 기다리는 중일 뿐입니다.
+            const waitedSec = Math.max(0, Math.floor((nowMs - new Date(arrivedEvent.created_at).getTime()) / 1000));
+            const urgent = waitedSec >= HURRY_AFTER_SEC && waiting.length > 0;
             return (
               <div
                 key={route.routeId}
                 className={
                   "rounded-xl border-2 p-3 transition-colors " +
-                  (isNew ? "gia-card-in border-amber-300 bg-amber-500/20" : "border-slate-700 bg-slate-800")
+                  (isNew
+                    ? "gia-card-in border-amber-300 bg-amber-500/20"
+                    : urgent
+                      ? "gia-hurry border-red-400 bg-red-500/20"
+                      : "border-slate-700 bg-slate-800")
                 }
                 style={{
                   borderRadius: 12,
                   padding: 12,
-                  border: isNew ? "2px solid #fcd34d" : "2px solid #334155",
-                  backgroundColor: isNew ? "rgba(245,158,11,0.2)" : "#1e293b",
+                  border: isNew ? "2px solid #fcd34d" : urgent ? "2px solid #f87171" : "2px solid #334155",
+                  backgroundColor: isNew ? "rgba(245,158,11,0.2)" : urgent ? "rgba(239,68,68,0.2)" : "#1e293b",
                 }}
               >
                 <div className="mb-1 flex items-center justify-between" style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                  <p className="flex items-center gap-2 text-2xl font-black text-amber-300" style={{ color: "#fcd34d", fontSize: 24, fontWeight: 900 }}>
+                  <p
+                    className={"flex items-center gap-2 text-2xl font-black " + (urgent ? "text-red-300" : "text-amber-300")}
+                    style={{ color: urgent ? "#fca5a5" : "#fcd34d", fontSize: 24, fontWeight: 900 }}
+                  >
                     {isNew && <span className="inline-block">🚌</span>}
+                    {urgent && <span className="inline-block">⏳</span>}
                     {route.routeNo}호차 {route.name ?? ""}
                   </p>
-                  <p className="text-xs text-slate-400" style={{ color: "#94a3b8", fontSize: 12 }}>
+                  <p
+                    className={"text-xs " + (urgent ? "font-bold text-red-300" : "text-slate-400")}
+                    style={{ color: urgent ? "#fca5a5" : "#94a3b8", fontSize: 12, fontWeight: urgent ? 700 : 400 }}
+                  >
                     {fmtTime(arrivedEvent.created_at)} 도착
+                    {/* 몇 초 기다렸는지 숫자로도 보여줍니다. 색만으로는 "조금 늦었다"와
+                        "많이 늦었다"가 구분되지 않습니다. */}
+                    {urgent && ` · ${waitedSec >= 60 ? `${Math.floor(waitedSec / 60)}분 ` : ""}${waitedSec % 60}초 기다리는 중`}
                   </p>
                 </div>
+                {urgent && (
+                  <p className="mb-1 text-base font-black text-red-300" style={{ color: "#fca5a5", fontWeight: 900, marginBottom: 4 }}>
+                    ⚠️ 차가 기다리고 있어요 — 얼른 타주세요!
+                  </p>
+                )}
                 {waiting.length === 0 ? (
                   <p className="text-base font-bold text-emerald-400" style={{ color: "#34d399", fontWeight: 700 }}>
                     ✅ 전원 탑승 완료
@@ -658,10 +701,30 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
                     ))}
                   </p>
                 )}
-                {(boarded.length > 0 || pickedUp.length > 0) && (
+                {/* 개별하원은 **이름을 적습니다.** 숫자만 적으면 화면을 보는 아이도 선생님도
+                    누가 그 아이인지 모릅니다. 보호자가 데려가시는 아이를 그 자리에서 찾아
+                    인계하려면 이름이 필요합니다. */}
+                {pickedUp.length > 0 && (
+                  <p
+                    className="mt-1 flex flex-wrap items-center gap-1.5 text-base font-bold leading-snug"
+                    style={{ marginTop: 4, display: "flex", flexWrap: "wrap", gap: 6, fontSize: 16, fontWeight: 700 }}
+                  >
+                    <span
+                      className="rounded px-1.5 py-0.5 text-[11px] font-black text-pink-100"
+                      style={{ backgroundColor: "#9d174d", color: "#fce7f3", fontSize: 11, fontWeight: 900, borderRadius: 4, padding: "2px 6px" }}
+                    >
+                      🚗 개별하원
+                    </span>
+                    {pickedUp.map((r, i) => (
+                      <span key={i} style={{ color: "#f9a8d4" }} className="text-pink-300">
+                        {r.studentName}
+                      </span>
+                    ))}
+                  </p>
+                )}
+                {boarded.length > 0 && (
                   <p className="mt-1 text-[11px] text-slate-500" style={{ marginTop: 4, fontSize: 11, color: "#64748b" }}>
-                    {boarded.length > 0 && <>탑승완료 {boarded.length}명 </>}
-                    {pickedUp.length > 0 && <>· 픽업 {pickedUp.length}명</>}
+                    탑승완료 {boarded.length}명
                   </p>
                 )}
               </div>

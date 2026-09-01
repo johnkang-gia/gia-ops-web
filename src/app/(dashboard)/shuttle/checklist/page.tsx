@@ -394,6 +394,14 @@ export default async function ShuttleChecklistPage({
       <ChecklistSubTabs />
       <div className="mb-1 flex flex-wrap items-center justify-between gap-2 print:hidden">
         <h1 className="text-lg font-bold">📋 하원 체크표</h1>
+        {/* 업무보드에서 한 번에 왔으면 한 번에 돌아갈 수 있어야 합니다.
+            오는 길만 있고 가는 길이 없으면, 사람은 결국 뒤로가기를 누르거나 메뉴를 다시 찾습니다. */}
+        <Link
+          href="/work"
+          className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 print:hidden"
+        >
+          ← 업무보드
+        </Link>
         <GuideButton className="print:hidden flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-black/5 text-[12px] font-bold text-slate-600 transition hover:bg-black/10" title="하원 체크표 사용 가이드" sections={GUIDE_SECTIONS} />
         <div className="flex items-center gap-1.5 text-xs font-semibold">
           <Link

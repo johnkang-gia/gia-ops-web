@@ -26,7 +26,7 @@ type ArrivalRoute = {
   driverName: string | null;
   driverPhone: string | null;
   vehicleNo: string | null;
-  roster: { studentName: string; status: string }[];
+  roster: { assignmentId: string; studentName: string; status: string }[];
   events: { event: string; created_at: string; createdBy: string | null }[];
   // 기사님 휴대폰이 마지막으로 위치를 보내온 시각(GPS 살아있는지 확인용). 미설정이면 null.
   gpsLastSeen?: string | null;
@@ -46,6 +46,17 @@ function gpsInfo(r: ArrivalRoute): { live: boolean; label: string; tone: "live" 
 }
 
 /** 오늘 행선지를 아직 안 물어본 학생의 갈 수 있는 노선 한 칸. */
+/**
+ * 차번호에서 뒤 네 자리만.
+ *
+ * "77수 0340" → "0340". 네 자리가 안 보이면 빈 값을 돌려주고, 화면은 그 줄을 통째로
+ * 비웁니다 - "미등록" 같은 글자를 넣으면 좁은 칸에서 진짜 번호처럼 읽힙니다.
+ */
+function plateTail(v: string | null | undefined): string {
+  const m = (v ?? "").trim().match(/(\d{4})\s*$/);
+  return m ? m[1] : "";
+}
+
 type PendingChoice = { assignmentId: string; studentName: string; group: string; routeId: string; routeNo: string; stopAddress?: string | null; label?: string | null };
 
 type ArrivalData = { label: string; term: string; routes: ArrivalRoute[]; pendingChoice?: PendingChoice[] };
@@ -80,6 +91,41 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
   const [resetting, setResetting] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [callSheet, setCallSheet] = useState<{ routeNo: string; driverName: string | null; driverPhone: string | null } | null>(null);
+  // 현장에서 아이 하나를 픽업으로 바꾸기 전에 한 번 묻습니다.
+  // 잘못 누르면 그 아이가 명단에서 사라지고, 사라진 아이는 아무도 찾지 않습니다.
+  const [pickupAsk, setPickupAsk] = useState<{ assignmentId: string; studentName: string; routeNo: string } | null>(null);
+  const [pickupBusy, setPickupBusy] = useState(false);
+
+  async function markStudentPickup(assignmentId: string) {
+    setPickupBusy(true);
+    try {
+      const res = await fetch(`/api/shuttle/arrival/${token}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "student_pickup", assignmentId, on: true }),
+      });
+      if (!res.ok) {
+        const b = await res.json().catch(() => ({}));
+        alert("픽업으로 바꾸지 못했습니다: " + (b.error ?? res.statusText));
+        return;
+      }
+      // 폴링을 기다리지 않고 바로 명단에서 뺍니다. 옆에 학부모님이 서 계신 자리입니다.
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              routes: prev.routes.map((r) => ({
+                ...r,
+                roster: r.roster.map((s) => (s.assignmentId === assignmentId ? { ...s, status: "픽업" } : s)),
+              })),
+            }
+          : prev,
+      );
+      setPickupAsk(null);
+    } finally {
+      setPickupBusy(false);
+    }
+  }
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const suppressClickRef = useRef(false);
 
@@ -345,7 +391,14 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
                   {/* 담당자: "호차 / 차량번호 / 기사님 / 타는 애들 뱃지 이렇게 뜨게."
                       차량번호를 아직 못 적은 차도 있어서, 없으면 그 줄을 그냥 비워둡니다
                       ("미등록" 같은 글자를 넣으면 좁은 칸에서 진짜 번호처럼 읽힙니다). */}
-                  {r.vehicleNo && <span className="max-w-full truncate text-[7px] font-medium leading-tight opacity-70">{r.vehicleNo}</span>}
+                  {/* 차번호는 **뒤 네 자리만** 크게 적습니다.
+                      사람이 외우고 부르는 것은 뒤 네 자리입니다. 앞 글자("77수")까지 넣으면
+                      좁은 칸에서 전체가 작아져, 정작 필요한 네 자리가 안 보입니다. */}
+                  {plateTail(r.vehicleNo) && (
+                    <span className="max-w-full truncate text-sm font-black leading-tight tracking-wide">
+                      {plateTail(r.vehicleNo)}
+                    </span>
+                  )}
                   {r.driverName && (
                     <span className="max-w-full truncate text-[7px] font-medium leading-tight opacity-60">{r.driverName} 기사님</span>
                   )}
@@ -377,13 +430,23 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
                 </button>
                 {(waiting.length > 0 || pickedUpCount > 0 || absentCount > 0) && (
                   <div className="flex flex-wrap gap-0.5 bg-slate-50 p-1">
-                    {waiting.map((s, i) => (
-                      <span
-                        key={i}
-                        className="rounded border border-red-300 bg-red-50 px-1 py-0.5 text-[8px] font-semibold leading-none text-red-600"
+                    {/* 이름을 누르면 그 아이만 픽업으로 바꿉니다.
+                        하원 지도 중에 학부모님이 찾아오셔서 데려가시는 일이 하루에도 여러 번
+                        있습니다. 그 자리에서 못 누르면 나중에 옮겨 적어야 하고, 옮겨 적는 일은
+                        반드시 언젠가 빠집니다.
+
+                        **손가락으로 누를 수 있는 크기**로 키웠습니다. 8px 글자에 여백이 거의
+                        없던 뱃지는 휴대폰에서 사실상 못 누릅니다. 잘못 눌렀을 때가 더 위험하므로
+                        (아이가 명단에서 사라집니다) 누르면 바로 바꾸지 않고 한 번 묻습니다. */}
+                    {waiting.map((s) => (
+                      <button
+                        key={s.assignmentId}
+                        type="button"
+                        onClick={() => setPickupAsk({ assignmentId: s.assignmentId, studentName: s.studentName, routeNo: r.routeNo })}
+                        className="min-h-[30px] rounded-md border border-red-300 bg-red-50 px-2 py-1 text-[12px] font-bold leading-none text-red-600 active:scale-95"
                       >
                         {s.studentName}
-                      </span>
+                      </button>
                     ))}
                     {(pickedUpCount > 0 || absentCount > 0) && (
                       <span className="px-0.5 py-0.5 text-[7px] font-semibold leading-none text-slate-400">
@@ -444,6 +507,36 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
                 </button>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {pickupAsk && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3" onClick={() => setPickupAsk(null)}>
+          <div className="w-full max-w-sm rounded-2xl bg-white p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <p className="mb-1 text-lg font-black text-slate-800">{pickupAsk.studentName}</p>
+            <p className="mb-4 text-[13px] leading-relaxed text-slate-500">
+              {pickupAsk.routeNo}호를 타지 않고 <b className="text-slate-700">보호자가 데려가는 것</b>으로 표시합니다.
+              <br />
+              명단에서 빠지고, 아이들이 보는 안내보드에 <b className="text-slate-700">개별하원</b>으로 뜹니다.
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                disabled={pickupBusy}
+                onClick={() => void markStudentPickup(pickupAsk.assignmentId)}
+                className="flex-1 rounded-xl bg-pink-600 py-3 text-base font-bold text-white active:scale-95 disabled:opacity-50"
+              >
+                {pickupBusy ? "…" : "🚗 개별하원으로"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setPickupAsk(null)}
+                className="rounded-xl border border-slate-200 px-4 py-3 text-base font-semibold text-slate-600"
+              >
+                취소
+              </button>
+            </div>
           </div>
         </div>
       )}

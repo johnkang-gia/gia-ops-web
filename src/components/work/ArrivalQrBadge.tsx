@@ -28,9 +28,11 @@ export default function ArrivalQrBadge() {
     const supabase = createClient();
     const { data, error: err } = await supabase
       .from("shuttle_arrival_links")
-      .select("token, label, active")
+      // 칸 이름은 `enabled`입니다. `active`로 적어놨더니 조회 전체가 400으로 거절됐습니다 -
+      // 없는 칸 하나가 조회를 통째로 막는 것은 이 저장소에서 오늘만 세 번째입니다.
+      .select("token, label, enabled")
       .eq("term", "정규학기")
-      .eq("active", true)
+      .eq("enabled", true)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();

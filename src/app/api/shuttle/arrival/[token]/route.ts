@@ -103,12 +103,14 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
   // 그날 정하는 중고등 9학년입니다. 둘 다 그냥 "이준서"로 뜨면, 아이를 데리고 나가는 사람이
   // 어느 쪽인지 알 방법이 없습니다. 하원 시간의 착오는 되돌릴 수 없습니다.
   const studentIds = [...new Set(relevant.map((a) => a.student_id).filter((x): x is string => !!x))];
-  const { data: stuRows } = studentIds.length
-    ? await supabase.from("wr_students_basic").select("id, name, grade, class_name").in("id", studentIds)
-    : { data: [] as { id: string; name: string; grade: string | null; class_name: string | null }[] };
+  // **원본 표(wr_students)를 읽습니다.** 공용 뷰(wr_students_basic)에는 `where
+  // is_giamicro_user()`가 박혀 있어서, 로그인 없이 도는 이 화면(서비스 키)에서는 한 줄도
+  // 안 나옵니다. 오류도 안 납니다 - 그냥 빈 결과라, 학년이 조용히 안 붙었습니다.
+  const { data: stuRows, error: stuErr } = studentIds.length
+    ? await supabase.from("wr_students").select("id, name, grade, class_name").in("id", studentIds)
+    : { data: [] as { id: string; name: string; grade: string | null; class_name: string | null }[], error: null };
+  if (stuErr) console.error("[arrival] 학생 학년·반 조회 실패 — 동명이인 구분이 안 붙습니다:", stuErr.message);
   const stuById = new Map(((stuRows as { id: string; name: string; grade: string | null; class_name: string | null }[] | null) ?? []).map((r) => [r.id, r]));
-  const nameCount = new Map<string, number>();
-  for (const a of relevant) nameCount.set(a.student_name_raw, (nameCount.get(a.student_name_raw) ?? 0) + 1);
   // 배정이 여러 줄인 아이(행선지 선택)도 있어서, 줄 수가 아니라 **사람 수**로 셉니다.
   const peopleByName = new Map<string, Set<string>>();
   for (const a of relevant) {

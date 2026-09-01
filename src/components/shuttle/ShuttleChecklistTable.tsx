@@ -228,9 +228,19 @@ export default function ShuttleChecklistTable({
                         const isSwitchedOff = boardedElsewhere.has(item.assignmentId) && !isPickup && !isAbsent;
                         // 오늘 안 타는 학생(요청: 옅은 회색). 단, 눌러서 탑승으로 바꾼 경우는 정상 표시.
                         const isNonRiding = (item.ridingToday === false && !isBoarded) || isSwitchedOff;
+                        // **오늘만 옮긴 아이만 표시합니다.**
+                        //
+                        // 예전에는 "계속 유지"로 옮긴 아이에게도 보라색 ⇄ 딱지를 붙였습니다.
+                        // 그런데 계속 옮겨진 아이에게는 그게 평소 상태입니다 - 송우진·송윤진은
+                        // 28호에서 27호로 옮긴 뒤로 쭉 27호를 타는데, 매일 표에 "옮겨진 아이"로
+                        // 표시돼 있었습니다. 매일 켜져 있는 표시는 며칠이면 배경이 되고, 정작
+                        // 오늘 진짜 옮긴 아이가 그 옆에 있어도 묻힙니다.
+                        //
+                        // 계속 옮긴 아이는 다른 아이들과 똑같이 보입니다. 표시가 필요한 것은
+                        // "오늘 평소와 다른" 경우뿐입니다.
                         const isMovedToday = !!item.overrideRouteId && item.overrideRouteId !== (item.permanentRouteId ?? item.homeRouteId);
                         const isMovedPermanently = !!item.permanentRouteId && item.permanentRouteId !== item.homeRouteId;
-                        const isMoved = isMovedToday || isMovedPermanently;
+                        const isMoved = isMovedToday;
                         const hasNote = !!item.note && item.note.trim().length > 0;
                         const isHighlighted = matchedIds.has(item.assignmentId);
                         // 영어 이름으로 찾았을 때 **찾은 결과가 맞는지 확인할 수 있어야** 합니다.
@@ -270,7 +280,9 @@ export default function ShuttleChecklistTable({
                           : isMovedToday
                           ? `오늘만 이동됨 (평소 노선: ${homeRoute?.route_no ?? "?"}호) - 드래그해서 되돌릴 수 있어요`
                           : isMovedPermanently
-                            ? `계속 이동됨 (평소 노선: ${homeRoute?.route_no ?? "?"}호) - 드래그해서 되돌릴 수 있어요`
+                            // 화면에는 표시하지 않지만(이 아이에겐 이게 평소입니다), 마우스를
+                            // 올리면 원래 배정이 어디였는지는 알 수 있어야 합니다.
+                            ? `${homeRoute?.route_no ?? "?"}호에서 옮겨져 계속 이 차를 탑니다 - 드래그해서 되돌릴 수 있어요`
                             : "드래그해서 다른 노선으로 이동";
                         return (
                           <div
@@ -311,9 +323,7 @@ export default function ShuttleChecklistTable({
                                           ? "border-slate-100 bg-white text-slate-200 opacity-40 grayscale"
                                           : isMovedToday
                                             ? "border-amber-400 bg-amber-50 text-amber-700"
-                                            : isMovedPermanently
-                                              ? "border-purple-400 bg-purple-50 text-purple-700"
-                                              : "border-slate-300 bg-white text-slate-700")
+                                            : "border-slate-300 bg-white text-slate-700")
                             }
                           >
                             <button
@@ -374,7 +384,7 @@ export default function ShuttleChecklistTable({
                               />
                             )}
                             <span>
-                              {isMoved && (isMovedToday ? "↔ " : "⇄ ")}
+                              {isMovedToday && "↔ "}
                               {item.studentName}
                               {/* 동명이인일 때만 학년·반(담당자 요청: "김재이" 같은 경우).
                                   인쇄본에도 남깁니다 - 종이에서 헷갈리는 게 더 위험합니다. */}

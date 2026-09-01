@@ -27,9 +27,9 @@ const POLL_MS = 15000;
 export type ChangedRouteEntry = {
   key: string;
   studentName: string;
+  /** 평소 타는 노선(계속 옮겨둔 곳이 있으면 그곳). */
   fromRouteNo: string;
   toRouteNo: string;
-  mode: "today" | "permanent";
 };
 
 // 뱃지 코너 메모로 적은 학생별 특이사항입니다(요청: "특이사항있는 아이들 아이들별로 뱃지
@@ -643,14 +643,9 @@ export default function ShuttleChecklistSidebar({
                   <span className="text-slate-400">
                     {c.fromRouteNo}호→{c.toRouteNo}호
                   </span>
-                  <span
-                    className={
-                      "rounded-full px-1.5 py-0.5 font-bold " +
-                      (c.mode === "today" ? "bg-amber-100 text-amber-700" : "bg-purple-100 text-purple-700")
-                    }
-                  >
-                    {c.mode === "today" ? "오늘만" : "계속"}
-                  </span>
+                  {/* 이 목록에는 오늘만 바뀐 아이만 들어옵니다. '계속' 딱지는 없앴습니다 -
+                      계속 옮겨진 아이에게는 그게 평소 상태라 여기 뜰 이유가 없습니다. */}
+                  <span className="rounded-full bg-amber-100 px-1.5 py-0.5 font-bold text-amber-700">오늘만</span>
                 </span>
               </div>
             ))}

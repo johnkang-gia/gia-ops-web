@@ -176,12 +176,18 @@ export default function DismissalOpsClient({
   offHoursLabel?: string | null;
 }) {
   const [data, setData] = useState<Data | null>(null);
-  // 오른쪽 화면이 노선을 하나씩 순환하며 보여줄 때 지금 몇 번째인지(요청: "각 노선별로 순환").
+  // 오른쪽 화면이 노선을 하나씩 순환하며 보여줄 때 지금 몇 번째인지.
   const [focusIdx, setFocusIdx] = useState(0);
+  // 아래 호차 띠에서 하나를 누르면 그 노선에 **고정**됩니다(순환 멈춤).
+  //
+  // 차가 두 대가 되면서 순환만으로는 부족해졌습니다. 한 대를 지켜보고 싶을 때 6초마다
+  // 화면이 넘어가면 볼 수가 없습니다. 다시 누르면 고정이 풀리고 순환으로 돌아옵니다.
+  const [pinnedRouteId, setPinnedRouteId] = useState<string | null>(null);
   useEffect(() => {
+    if (pinnedRouteId) return; // 고정 중에는 순환하지 않습니다.
     const t = setInterval(() => setFocusIdx((n) => n + 1), 6000);
     return () => clearInterval(t);
-  }, []);
+  }, [pinnedRouteId]);
   // 일정 시간 안 움직이면 마우스 커서를 숨깁니다(요청).
   const cursorHidden = useIdleCursor(4000);
   // 하원 운행 중에는 "지금 몇 시 몇 분 몇 초"가 중요해서 여기도 초까지 보여줍니다.
@@ -341,24 +347,45 @@ export default function DismissalOpsClient({
         //
         // 두 칸으로 나누면 각 칸이 작아져서 골목이 안 보입니다. 넓게 보는 일은 왼쪽이 이미
         // 하고 있으니, 오른쪽은 한 칸을 크게 쓰고 순환 주기로 여러 노선을 훑는 편이 낫습니다.
-        const per = 1;
-        const start = total > 0 ? (focusIdx * per) % total : 0;
-        const slots: (RouteRow | null)[] = [];
-        for (let k = 0; k < per; k += 1) slots.push(k < total ? focusList[(start + k) % total] : null);
+        // 고정된 노선이 있으면 그것을, 없으면 순환 차례대로.
+        const pinned = pinnedRouteId ? data.routes.find((r) => r.routeId === pinnedRouteId) ?? null : null;
+        const start = total > 0 ? focusIdx % total : 0;
+        const focused: RouteRow | null = pinned ?? (total > 0 ? focusList[start] : null);
         const colorOf = (r: RouteRow | null) => (r ? routeColorAt(data.routes.indexOf(r), data.routes.length) : "#334155");
         return (
           <div style={{ flex: sc.narrow ? "1 1 42%" : "1 1 55%", minHeight: 0, display: "flex", gap: sc.s(8, 5), padding: `0 ${sc.s(14, 8)}px` }}>
-            {/* 왼쪽(7): 전체 지도 - 작은 번호 점 */}
+            {/* 왼쪽(7): 전체 지도.
+                **지금 길 위에 있는 차들에 맞춰 화면을 잡습니다.**
+                노선 48개 전부에 맞추면 서울 전체가 들어와 차가 점 두 개로 보입니다. 차가
+                두 대가 된 지금 필요한 것은 "그 두 대를 한눈에"이지 "노선 전부"가 아닙니다.
+                추적 중인 차가 하나도 없을 때만 예전처럼 전체에 맞춥니다. */}
             <div style={{ flex: "6 1 0", minWidth: 0 }}>
-              <AllRoutesMap routes={data.routes} school={data.school} testMarkers={data.testMarkers ?? []} />
+              <AllRoutesMap
+                routes={data.routes}
+                school={data.school}
+                testMarkers={data.testMarkers ?? []}
+                fitRouteIds={trackable.map((r) => r.routeId)}
+                highlightRouteId={focused?.routeId ?? null}
+              />
             </div>
             {/* 오른쪽(4): 한 칸을 크게 - 골목이 보이도록 */}
-            <div style={{ flex: "4 1 0", minWidth: 0, display: "grid", gridTemplateColumns: "1fr", gridTemplateRows: "1fr", gap: sc.s(6, 4) }}>
-              {slots.map((r, k) => (
-                <div key={k} style={{ minWidth: 0, minHeight: 0 }}>
-                  <RouteFocusMap route={r} school={data.school} color={colorOf(r)} sc={sc} />
-                </div>
-              ))}
+            <div style={{ flex: "4 1 0", minWidth: 0, position: "relative" }}>
+              <RouteFocusMap route={focused} school={data.school} color={colorOf(focused)} sc={sc} />
+              {/* 고정 중이면 그 사실을 알려줍니다. 순환이 멈춘 이유를 모르면 고장으로 봅니다. */}
+              {pinned && (
+                <button
+                  type="button"
+                  onClick={() => setPinnedRouteId(null)}
+                  style={{
+                    position: "absolute", top: sc.s(8, 5), right: sc.s(8, 5), zIndex: 5,
+                    background: "rgba(17,28,51,0.92)", color: "#fff", border: "1px solid #334155",
+                    borderRadius: 999, padding: `${sc.s(4, 2)}px ${sc.s(10, 7)}px`,
+                    fontSize: sc.s(11, 9), fontWeight: 800, cursor: "pointer",
+                  }}
+                >
+                  📌 {pinned.routeNo}호 고정 · 눌러서 순환
+                </button>
+              )}
             </div>
           </div>
         );
@@ -384,7 +411,14 @@ export default function DismissalOpsClient({
         ) : (
           <div style={{ display: "flex", flexWrap: "wrap", gap: sc.s(6, 4), flexShrink: 0 }}>
             {data.routes.map((r, i) => (
-              <RouteChip key={r.routeId} route={r} color={routeColorAt(i, data.routes.length)} sc={sc} />
+              <RouteChip
+                key={r.routeId}
+                route={r}
+                color={routeColorAt(i, data.routes.length)}
+                sc={sc}
+                pinned={pinnedRouteId === r.routeId}
+                onPick={() => setPinnedRouteId((cur) => (cur === r.routeId ? null : r.routeId))}
+              />
             ))}
           </div>
         )}
@@ -400,22 +434,42 @@ export default function DismissalOpsClient({
 // 호차 한 줄 요약. 예전 카드에는 미탑승 학생 이름까지 들어 있어 세로로 길었는데, 하원 중에
 // 정작 봐야 하는 건 "다 탔는가"와 "누가 안 타는가"입니다. 앞엣것은 이 띠가, 뒤엣것은 아래 픽업
 // 목록이 맡습니다.
-function RouteChip({ route: r, color, sc }: { route: RouteRow; color: string; sc: BoardScale }) {
+// 호차 한 줄 요약 딱지. **누르면 오른쪽 지도가 그 노선에 고정됩니다.**
+function RouteChip({
+  route: r,
+  color,
+  sc,
+  pinned = false,
+  onPick,
+}: {
+  route: RouteRow;
+  color: string;
+  sc: BoardScale;
+  pinned?: boolean;
+  onPick?: () => void;
+}) {
   const st = STATUS_STYLE[r.status];
   const complete = r.expectedCount > 0 && r.boardedCount === r.expectedCount;
   return (
-    <div
-      title={`${r.routeNo}호${r.name ? " " + r.name : ""}${r.vehicleNo ? " · " + r.vehicleNo : ""}${r.arrivedAt ? " · 도착 " + hhmm(r.arrivedAt) : ""}${r.departedAt ? " · 출발 " + hhmm(r.departedAt) : ""}`}
+    <button
+      type="button"
+      onClick={onPick}
+      title={`${r.routeNo}호${r.name ? " " + r.name : ""}${r.vehicleNo ? " · " + r.vehicleNo : ""}${r.arrivedAt ? " · 도착 " + hhmm(r.arrivedAt) : ""}${r.departedAt ? " · 출발 " + hhmm(r.departedAt) : ""} — 눌러서 오른쪽 지도에 고정`}
       style={{
         display: "inline-flex",
         alignItems: "center",
         gap: sc.s(6, 4),
-        background: "#111c33",
+        background: pinned ? "#1e3a5f" : "#111c33",
         borderRadius: sc.s(10, 6),
         borderLeft: `4px solid ${color}`,
+        border: pinned ? `1px solid ${color}` : "1px solid transparent",
+        boxShadow: pinned ? `0 0 0 2px ${color}55` : undefined,
         padding: `${sc.s(5, 3)}px ${sc.s(9, 6)}px`,
+        cursor: onPick ? "pointer" : "default",
+        font: "inherit",
       }}
     >
+      {pinned && <span style={{ fontSize: sc.s(11, 9) }}>📌</span>}
       <span style={{ fontSize: sc.s(17, 12), fontWeight: 900, color: "#fff" }}>{r.routeNo}</span>
       <span
         style={{
@@ -434,7 +488,7 @@ function RouteChip({ route: r, color, sc }: { route: RouteRow; color: string; sc
       </span>
       {/* GPS가 끊기면 자동 도착·출발 감지가 멈춥니다. 작게라도 계속 보여야 그날 안에 알아챕니다. */}
       <span style={{ fontSize: sc.s(9, 8), color: r.pingFresh ? "#34d399" : "#64748b" }}>{r.pingFresh ? "●" : "○"}</span>
-    </div>
+    </button>
   );
 }
 
@@ -571,13 +625,39 @@ function PickupPanel({ pickups, sc }: { pickups: PickupRow[]; sc: BoardScale }) 
 
 // 모든 노선을 한 지도에 올립니다. 운행 중인 노선은 경로선을 진하게, 나머지는 흐리게 그려서
 // 지금 움직이는 차가 어디를 지나는지 한눈에 보이도록 했습니다.
-function AllRoutesMap({ routes, school, testMarkers = [] }: { routes: RouteRow[]; school: { lat: number; lng: number } | null; testMarkers?: TestMarker[] }) {
+function AllRoutesMap({
+  routes,
+  school,
+  testMarkers = [],
+  fitRouteIds = [],
+  highlightRouteId = null,
+}: {
+  routes: RouteRow[];
+  school: { lat: number; lng: number } | null;
+  testMarkers?: TestMarker[];
+  /**
+   * 화면을 맞출 때 **기준으로 삼을 노선들**(지금 길 위에 있는 차).
+   *
+   * 비어 있으면 예전처럼 전체 노선에 맞춥니다. 차가 두 대가 되면서, 노선 48개 전부에 맞추면
+   * 서울 전체가 들어와 정작 그 두 대가 점으로 보이는 문제가 생겼습니다.
+   */
+  fitRouteIds?: string[];
+  /** 오른쪽 지도가 지금 보고 있는 노선. 왼쪽에서도 조금 더 굵게 그려 서로 이어 봅니다. */
+  highlightRouteId?: string | null;
+}) {
   const divRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const mapRef = useRef<any>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const overlaysRef = useRef<any[]>([]);
   const [mapError, setMapError] = useState<string | null>(null);
+
+  // 이 화면은 초 단위 시계 때문에 1초마다 다시 그려집니다. fitRouteIds/testMarkers를 그대로
+  // 의존성에 넣으면 내용이 같아도 배열이 매번 새로 만들어져서 지도를 1초마다 통째로 다시
+  // 그리게 됩니다(공용 모니터에서 화면이 눈에 띄게 끊깁니다). 그래서 **내용**을 문자열로
+  // 굳혀서 비교합니다.
+  const fitKey = fitRouteIds.join(",");
+  const markerKey = testMarkers.map((t) => `${t.lat},${t.lng}`).join("|");
 
   useEffect(() => {
     let cancelled = false;
@@ -599,6 +679,9 @@ function AllRoutesMap({ routes, school, testMarkers = [] }: { routes: RouteRow[]
 
         const bounds = new kakao.maps.LatLngBounds();
         let hasPoint = false;
+        // 화면 맞춤에 넣을 노선. 지금 길 위에 있는 차가 있으면 그 차들만 봅니다.
+        const fitSet = new Set(fitKey ? fitKey.split(",") : []);
+        const shouldFit = (routeId: string) => fitSet.size === 0 || fitSet.has(routeId);
 
         if (school) {
           const marker = new kakao.maps.CustomOverlay({
@@ -633,7 +716,9 @@ function AllRoutesMap({ routes, school, testMarkers = [] }: { routes: RouteRow[]
             });
             polyline.setMap(map);
             overlaysRef.current.push(polyline);
-            for (const p of line) { bounds.extend(new kakao.maps.LatLng(p.lat, p.lng)); hasPoint = true; }
+            if (shouldFit(r.routeId)) {
+              for (const p of line) { bounds.extend(new kakao.maps.LatLng(p.lat, p.lng)); hasPoint = true; }
+            }
           }
 
           // 오늘 실제 지나온 자취 - 노선 색 진한 실선.
@@ -641,18 +726,22 @@ function AllRoutesMap({ routes, school, testMarkers = [] }: { routes: RouteRow[]
           if (trail.length > 1) {
             const tline = new kakao.maps.Polyline({
               path: trail.map((p) => new kakao.maps.LatLng(p.lat, p.lng)),
-              strokeWeight: active ? 7 : 6,
+              strokeWeight: r.routeId === highlightRouteId ? 9 : active ? 7 : 6,
               strokeColor: color,
               strokeOpacity: 1,
               strokeStyle: "solid",
             });
             tline.setMap(map);
             overlaysRef.current.push(tline);
-            for (const p of trail) bounds.extend(new kakao.maps.LatLng(p.lat, p.lng));
-            hasPoint = true;
+            if (shouldFit(r.routeId)) {
+              for (const p of trail) bounds.extend(new kakao.maps.LatLng(p.lat, p.lng));
+              hasPoint = true;
+            }
           }
 
           // 차량 위치는 모아두고, 화면을 맞춘 뒤 작은 점으로 그립니다(전체 지도에서는 점).
+          // 지금 달리는 차의 위치는 **언제나** 화면 맞춤에 넣습니다 - 화면 밖으로 나간 차를
+          // 보려고 지도를 끌어야 한다면 이 지도는 제 몫을 못 하는 것입니다.
           if (r.ping && r.pingFresh) {
             vehicles.push({ lat: r.ping.lat, lng: r.ping.lng, routeNo: r.routeNo, color });
             bounds.extend(new kakao.maps.LatLng(r.ping.lat, r.ping.lng));
@@ -699,7 +788,8 @@ function AllRoutesMap({ routes, school, testMarkers = [] }: { routes: RouteRow[]
     return () => {
       cancelled = true;
     };
-  }, [routes, school, testMarkers]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fitRouteIds/testMarkers는 위의 fitKey/markerKey로 대신 비교합니다.
+  }, [routes, school, markerKey, fitKey, highlightRouteId]);
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%", borderRadius: 14, overflow: "hidden", background: "#1e293b" }}>

@@ -704,21 +704,32 @@ export default function ShuttleChecklistClient({
     notify("특이사항을 지우고 원래 셔틀로 되돌렸습니다.", "success");
   }
 
-  // 사이드바 세 번째 위젯("오늘 차량 변경")용 - 평소와 다른 노선에 있는 학생만 추려서 보여줍니다.
+  // 사이드바 세 번째 위젯("오늘 차량 변경")용.
+  //
+  // **오늘 하루만 바뀐 아이만 담습니다.**
+  //
+  // 예전에는 "계속 유지"로 옮긴 아이까지 함께 넣고 [계속] 딱지를 붙였습니다. 그런데 계속
+  // 옮겨진 아이에게는 그게 **평소 상태**입니다. 송우진·송윤진은 28호에서 27호로 옮긴 뒤로
+  // 쭉 27호를 타는데, 매일 아침 "오늘 차량 변경"에 이름이 떠 있었습니다. 매일 뜨는 알림은
+  // 며칠이면 배경이 되고, 그 옆에 정말 오늘만 바뀐 아이가 끼어도 눈에 안 들어옵니다.
+  //
+  // 이 위젯이 답해야 하는 물음은 "오늘 평소와 다른 아이가 누구인가" 하나입니다.
   const changedToday: ChangedRouteEntry[] = useMemo(() => {
     return items
-      .filter((it) => effectiveRouteId(it) !== it.homeRouteId)
-      .map((it) => {
-        const isToday = !!it.overrideRouteId && it.overrideRouteId !== (it.permanentRouteId ?? it.homeRouteId);
-        const toRouteId = effectiveRouteId(it);
-        return {
-          key: it.assignmentId,
-          studentName: it.studentName,
-          fromRouteNo: routeById.get(it.homeRouteId)?.route_no ?? "?",
-          toRouteNo: routeById.get(toRouteId)?.route_no ?? "?",
-          mode: isToday ? ("today" as const) : ("permanent" as const),
-        };
+      .filter((it) => {
+        // 오늘치 이동(overrideRouteId)이 있고, 그것이 '평소 노선'과 다를 때만.
+        // 평소 노선 = 계속 옮겨둔 곳이 있으면 그곳, 없으면 원래 배정된 곳.
+        const usual = it.permanentRouteId ?? it.homeRouteId;
+        return !!it.overrideRouteId && it.overrideRouteId !== usual;
       })
+      .map((it) => ({
+        key: it.assignmentId,
+        studentName: it.studentName,
+        // 어디서 옮겨왔는지도 **평소 노선** 기준입니다. 원래 배정된 곳을 적으면
+        // "27호→27호"처럼 말이 안 되는 줄이 나옵니다.
+        fromRouteNo: routeById.get(it.permanentRouteId ?? it.homeRouteId)?.route_no ?? "?",
+        toRouteNo: routeById.get(effectiveRouteId(it))?.route_no ?? "?",
+      }))
       .sort((a, b) => a.studentName.localeCompare(b.studentName, "ko"));
   }, [items, routeById]);
 

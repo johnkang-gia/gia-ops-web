@@ -230,6 +230,14 @@ export const SCHEMA_CHECKS: SchemaCheck[] = [
     impact: "책의 '가야 할 자리'를 기록할 수 없어 도서정리 계획이 동작하지 않습니다.",
   },
   {
+    feature: "오늘 탑승 기록",
+    table: "shuttle_boardings",
+    columns: ["service_date", "assignment_id", "status", "checked_by", "checked_at", "override_route_id"],
+    migration: "(기본 스키마)",
+    impact:
+      "하원 체크표가 오늘 눌러둔 픽업·결석·노선이동을 읽지 못합니다. 화면에는 오류가 없고 아무도 안 누른 것처럼 보입니다.",
+  },
+  {
     feature: "체크표 활동 기록",
     table: "shuttle_checklist_log",
     columns: ["service_date", "student_name", "action", "actor_email", "created_at"],

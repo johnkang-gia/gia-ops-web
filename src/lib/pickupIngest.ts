@@ -793,13 +793,16 @@ export async function applyPickup(
       .eq("assignment_id", assignmentId)
       .maybeSingle();
 
-    const stamp = updatedBy ? { updated_by: updatedBy } : {};
-    if (existing) {
-      await supabase.from("shuttle_boardings").update({ status: "픽업", ...stamp }).eq("id", existing.id);
-    } else {
-      await supabase
-        .from("shuttle_boardings")
-        .insert({ service_date: serviceDate, assignment_id: assignmentId, status: "픽업", ...stamp });
+    const stamp = updatedBy ? { checked_by: updatedBy } : {};
+    const { error } = existing
+      ? await supabase.from("shuttle_boardings").update({ status: "픽업", ...stamp }).eq("id", existing.id)
+      : await supabase
+          .from("shuttle_boardings")
+          .insert({ service_date: serviceDate, assignment_id: assignmentId, status: "픽업", ...stamp });
+    // 여기서 조용히 넘어가면 "걸었다"고 답해놓고 실제로는 아무 일도 안 일어납니다.
+    if (error) {
+      console.error(`[applyPickup] ${studentId} ${serviceDate} 픽업 표시 실패:`, error.message);
+      throw new Error(error.message);
     }
   }
   return ids.length;

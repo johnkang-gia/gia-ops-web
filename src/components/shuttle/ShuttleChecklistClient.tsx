@@ -479,10 +479,9 @@ export default function ShuttleChecklistClient({
           service_date: todayStr(),
           assignment_id: item.assignmentId,
           status: finalStatus,
-          checked_by: "체크표",
           // **누가** 눌렀는지를 줄 자체에 남깁니다. 예전에는 "체크표"만 남아서, 근거 창이
           // "체크표가 체크표에서 픽업으로 표시했습니다"라고 말하고 있었습니다.
-          updated_by: actor.name || actor.email,
+          checked_by: actor.name || actor.email,
           checked_at: new Date().toISOString(),
         },
         { onConflict: "service_date,assignment_id" }
@@ -538,7 +537,7 @@ export default function ShuttleChecklistClient({
       const { error } = await supabase
         .from("shuttle_boardings")
         .upsert(
-          { service_date: todayStr(), assignment_id: assignmentId, override_route_id: nextOverride, updated_by: actor.name || actor.email },
+          { service_date: todayStr(), assignment_id: assignmentId, override_route_id: nextOverride, checked_by: actor.name || actor.email },
           { onConflict: "service_date,assignment_id" },
         );
       if (error) {

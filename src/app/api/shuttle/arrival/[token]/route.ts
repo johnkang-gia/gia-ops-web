@@ -225,9 +225,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       service_date: today,
       assignment_id: assignmentId,
       // 안 타는 날은 결석입니다. 셔틀을 안 탄다는 뜻이지 학교를 빠진다는 뜻이 아니라서
-      // updated_by에 이유를 남깁니다.
+      // checked_by에 이유를 남깁니다.
+      //
+      // 예전에는 여기에 updated_by를 적었습니다. **그 칸은 이 표에 없습니다.** 그래서 이
+      // 저장이 매번 실패했고, 행선지를 정해줘도 그 아이는 체크표에 나타나지 않았습니다.
       status: mode === "skip" ? "결석" : "예정",
-      updated_by: mode === "skip" ? "행선지 확인(오늘 안 탐)" : "행선지 확인",
+      checked_by: mode === "skip" ? "행선지 확인(오늘 안 탐)" : "행선지 확인",
     });
     if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 });
     return NextResponse.json({ ok: true });

@@ -180,12 +180,15 @@ export async function GET(req: Request) {
     // 결석: 그날 그 아이의 배정을 결석으로 표시합니다.
     const { data: asg } = await supabase.from("shuttle_assignments").select("id").eq("student_id", n.student_id);
     for (const a of (asg as { id: string }[] | null) ?? []) {
-      await supabase
+      // checked_by에 적습니다. updated_by는 이 표에 없는 칸이라, 여기 적혀 있는 동안
+      // 이 저장이 매번 실패했습니다 - 기간 결석이 하나도 안 걸리고 있었습니다.
+      const { error: upErr } = await supabase
         .from("shuttle_boardings")
         .upsert(
-          { service_date: today, assignment_id: a.id, status: "결석", updated_by: "AI(기간 특이사항)" },
+          { service_date: today, assignment_id: a.id, status: "결석", checked_by: "AI(기간 특이사항)" },
           { onConflict: "service_date,assignment_id" }
         );
+      if (upErr) console.error("[cron:pickup-schedules] 기간 결석 표시 실패:", upErr.message);
     }
     if ((asg ?? []).length > 0) periodApplied += 1;
   }

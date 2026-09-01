@@ -118,10 +118,18 @@ export default async function ShuttleChecklistPage({
   const boardingsRes = allAssignmentIds.length
     ? await supabase
         .from("shuttle_boardings")
-        .select("assignment_id, status, override_route_id, checked_by, updated_by, checked_at")
+        // updated_by는 이 표에 **없는 칸**입니다. 여기 적혀 있는 동안 PostgREST가 이 조회
+        // 전체를 400으로 거절했고, 그래서 오늘 사람이 누른 픽업·결석·노선이동이 **하나도
+        // 화면에 반영되지 않았습니다.** 화면에는 오류가 없어서 아무도 몰랐습니다.
+        // 누가 눌렀는지는 checked_by에 적습니다 - 있는 칸을 씁니다.
+        .select("assignment_id, status, override_route_id, checked_by, checked_at")
         .eq("service_date", today)
         .in("assignment_id", allAssignmentIds)
-    : { data: [] as { assignment_id: string; status: string; override_route_id: string | null; checked_by: string | null; updated_by: string | null; checked_at: string | null }[] };
+    : { data: [] as { assignment_id: string; status: string; override_route_id: string | null; checked_by: string | null; checked_at: string | null }[], error: null };
+  // 이 조회가 실패하면 오늘 눌러둔 것이 전부 없는 것처럼 보입니다. 조용히 넘기지 않습니다.
+  if ("error" in boardingsRes && boardingsRes.error) {
+    console.error("[checklist] 오늘 탑승 기록 조회 실패 — 눌러둔 픽업·결석이 화면에 안 뜹니다:", boardingsRes.error.message);
+  }
   const boardingByAssignment = new Map((boardingsRes.data ?? []).map((b) => [b.assignment_id, b]));
 
   // 요청: "이제 토들도 가져오니까 하원체크표에 오늘픽업 결석에 여기도 반영" - 토들·전화·구글챗으로
@@ -279,7 +287,7 @@ export default async function ShuttleChecklistPage({
       // 지속 특이사항·예약 픽업으로 찍어놓은 것도 "누가 왜 찍었는지" 모르기는 마찬가지입니다.
       // 표에 사선이 그어져 있는데 이유를 모르면, 결국 사람이 전화로 확인하게 됩니다.
       if (boarding && (boarding.status === "픽업" || boarding.status === "결석")) {
-        const who = (boarding.updated_by as string | null) ?? (boarding.checked_by as string | null) ?? "";
+        const who = (boarding.checked_by as string | null) ?? "";
         autoSource = {
           requestId: "",
           kind: boarding.status as "픽업" | "결석",

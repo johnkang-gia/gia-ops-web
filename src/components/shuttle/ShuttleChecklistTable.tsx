@@ -32,6 +32,7 @@ export default function ShuttleChecklistTable({
   onRequestMove,
   onRequestEditNote,
   onShowSource,
+  touchedIds,
   whereByName,
 }: {
   routes: ChecklistRoute[];
@@ -57,6 +58,13 @@ export default function ShuttleChecklistTable({
   onRequestEditNote: (assignmentId: string) => void;
   /** 자동 분류 근거(?)를 눌렀을 때. 근거가 있는 항목에만 표시됩니다. */
   onShowSource?: (item: ChecklistItem) => void;
+  /**
+   * 오늘 이 표에서 사람이 손댄 배정.
+   *
+   * ❓는 지금까지 픽업·결석에만 붙었습니다. 그런데 차가 바뀌어 있을 때도 "누가 옮겼나"를
+   * 물어볼 곳이 필요합니다 - 없으면 결국 전화로 확인하게 됩니다.
+   */
+  touchedIds?: Set<string>;
 }) {
   const [dragOverRoute, setDragOverRoute] = useState<string | null>(null);
   const draggingIdRef = useRef<string | null>(null);
@@ -347,7 +355,7 @@ export default function ShuttleChecklistTable({
                                 오른쪽 위 특이사항(!)과 헷갈리지 않도록 **왼쪽 아래**에 둡니다.
                                 사람이 직접 누른 경우에는 근거가 없으니 이 표시도 없습니다 -
                                 표시가 있다는 것 자체가 "이건 기계가 붙였다"는 뜻입니다. */}
-                            {(isPickup || isAbsent) && (
+                            {(isPickup || isAbsent || touchedIds?.has(item.assignmentId)) && (
                               <button
                                 type="button"
                                 onClick={(ev) => {
@@ -359,14 +367,20 @@ export default function ShuttleChecklistTable({
                                 title={
                                   item.autoSource
                                     ? `${item.autoSource.source} · 눌러서 근거 보기`
-                                    : "왜 이렇게 표시됐는지 눌러서 확인하세요"
+                                    : touchedIds?.has(item.assignmentId)
+                                      ? "오늘 누가 바꿨는지 눌러서 보기"
+                                      : "왜 이렇게 표시됐는지 눌러서 확인하세요"
                                 }
                                 className={
                                   "absolute -bottom-1.5 -left-1.5 flex h-4 w-4 items-center justify-center rounded-full border text-[8px] font-bold leading-none text-white print:hidden " +
                                   // 근거를 못 찾은 것은 회색이 아니라 **주황**입니다. 사선이 그어져
                                   // 있는데 이유를 모른다는 건 그냥 정보가 없는 게 아니라
                                   // 확인해야 할 일이라서, 눈에 띄어야 합니다.
-                                  (item.autoSource ? "border-sky-500 bg-sky-500" : "border-orange-500 bg-orange-500")
+                                  // 파랑 = 왜 그런지 알고 있음(연락에서 자동 / 사람이 눌렀고 기록이 있음).
+                                  // 주황 = 사선이 그어져 있는데 이유를 모름. 확인해야 할 일입니다.
+                                  (item.autoSource || touchedIds?.has(item.assignmentId)
+                                    ? "border-sky-500 bg-sky-500"
+                                    : "border-orange-500 bg-orange-500")
                                 }
                               >
                                 ?

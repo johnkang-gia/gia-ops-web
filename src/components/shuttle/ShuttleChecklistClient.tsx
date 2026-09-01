@@ -185,6 +185,51 @@ export default function ShuttleChecklistClient({
   const [busyId, setBusyId] = useState<string | null>(null);
   // 자동 분류 근거 창(요청: "느낌표 아이콘 만들고 누르면 채팅 나오고 연결도 되게끔").
   const [sourceOf, setSourceOf] = useState<ChecklistItem | null>(null);
+
+  // 오늘 이 표에서 사람이 손댄 배정. ❓가 붙는 조건이자, 근거 창에 이력을 붙이는 기준입니다.
+  //
+  // 픽업·결석뿐 아니라 **노선을 옮긴 경우에도** ❓가 있어야 합니다. 차가 바뀌어 있는데
+  // 누가 옮겼는지 물어볼 곳이 없으면, 결국 사람이 전화로 확인하게 됩니다.
+  const touchedIds = useMemo(
+    () => new Set(activityLog.map((r) => r.assignment_id).filter((x): x is string => !!x)),
+    [activityLog],
+  );
+
+  /** 근거 창에 붙일 "이 학생에게 오늘 있었던 일". 배정이 여러 줄인 아이도 있어 이름으로도 봅니다. */
+  const historyOf = (item: ChecklistItem | null) =>
+    item
+      ? activityLog.filter((r) => r.assignment_id === item.assignmentId || r.student_name === item.studentName)
+      : [];
+
+  /** 근거 창 안에 넣는 "누가 언제 무엇을" 목록. 두 창이 같은 모양이어야 헷갈리지 않습니다. */
+  function HistoryBlock({ item }: { item: ChecklistItem }) {
+    const rows = historyOf(item);
+    if (rows.length === 0) return null;
+    return (
+      <div className="mt-3 rounded-lg border border-slate-200 bg-white p-2">
+        <p className="mb-1 text-[11px] font-bold text-slate-700">🕘 오늘 이 학생에게 있었던 일</p>
+        <ul className="flex flex-col gap-0.5">
+          {rows.map((r) => (
+            <li key={r.id} className="flex items-baseline gap-1.5 text-[11px] leading-snug text-slate-600">
+              <span className="shrink-0 tabular-nums text-[10px] text-slate-400">
+                {new Date(r.created_at).toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit" })}
+              </span>
+              <span className="shrink-0 rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{r.action}</span>
+              <span className="min-w-0">
+                <b className="text-slate-800">{r.actor_name || r.actor_email}</b>
+                {" · "}
+                {r.action === "메모"
+                  ? r.after_value
+                    ? `메모를 "${r.after_value}"로`
+                    : "메모를 지움"
+                  : `${r.before_value ?? "?"} → ${r.after_value ?? "?"}`}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
   const [teaching, setTeaching] = useState(false);
 
   // "이건 픽업이 아닙니다"를 연락 자체에 남깁니다.
@@ -430,7 +475,16 @@ export default function ShuttleChecklistClient({
     const { error } = await supabase
       .from("shuttle_boardings")
       .upsert(
-        { service_date: todayStr(), assignment_id: item.assignmentId, status: finalStatus, checked_by: "체크표", checked_at: new Date().toISOString() },
+        {
+          service_date: todayStr(),
+          assignment_id: item.assignmentId,
+          status: finalStatus,
+          checked_by: "체크표",
+          // **누가** 눌렀는지를 줄 자체에 남깁니다. 예전에는 "체크표"만 남아서, 근거 창이
+          // "체크표가 체크표에서 픽업으로 표시했습니다"라고 말하고 있었습니다.
+          updated_by: actor.name || actor.email,
+          checked_at: new Date().toISOString(),
+        },
         { onConflict: "service_date,assignment_id" }
       );
     setBusyId(null);
@@ -483,7 +537,10 @@ export default function ShuttleChecklistClient({
       setItems((prev) => prev.map((it) => (it.assignmentId === assignmentId ? { ...it, overrideRouteId: nextOverride } : it)));
       const { error } = await supabase
         .from("shuttle_boardings")
-        .upsert({ service_date: todayStr(), assignment_id: assignmentId, override_route_id: nextOverride }, { onConflict: "service_date,assignment_id" });
+        .upsert(
+          { service_date: todayStr(), assignment_id: assignmentId, override_route_id: nextOverride, updated_by: actor.name || actor.email },
+          { onConflict: "service_date,assignment_id" },
+        );
       if (error) {
         notify("노선 이동을 저장하지 못했습니다: " + error.message, "error");
         setItems((prev) => prev.map((it) => (it.assignmentId === assignmentId ? { ...it, overrideRouteId: prevOverride } : it)));
@@ -998,6 +1055,7 @@ export default function ShuttleChecklistClient({
             onRequestEditNote={openNoteEditor}
             whereByName={whereByName}
             onShowSource={setSourceOf}
+            touchedIds={touchedIds}
           />
         </div>
         <ChecklistPrintSheet
@@ -1035,12 +1093,20 @@ export default function ShuttleChecklistClient({
             <p className="mb-1 text-sm font-bold text-slate-800">
               {sourceOf.studentName} · {sourceOf.status}
             </p>
-            <p className="mb-3 rounded-lg bg-orange-50 px-3 py-2 text-[12px] leading-relaxed text-orange-800">
-              이 표시가 <b>왜 붙었는지 찾지 못했습니다.</b>
-              <br />
-              오늘 들어온 연락에도, 체크표 기록에도 근거가 없습니다. 어제 눌러둔 것이 남아 있거나,
-              연락이 지워졌을 수 있습니다.
-            </p>
+            {historyOf(sourceOf).length > 0 ? (
+              <p className="mb-1 rounded-lg bg-slate-50 px-3 py-2 text-[12px] leading-relaxed text-slate-700">
+                오늘 이 표에서 <b>사람이 직접 바꾼</b> 것입니다. 아래에 누가 언제 무엇을 했는지 적혀 있습니다.
+              </p>
+            ) : (
+              <p className="mb-3 rounded-lg bg-orange-50 px-3 py-2 text-[12px] leading-relaxed text-orange-800">
+                이 표시가 <b>왜 붙었는지 찾지 못했습니다.</b>
+                <br />
+                오늘 들어온 연락에도, 체크표 기록에도 근거가 없습니다. 어제 눌러둔 것이 남아 있거나,
+                연락이 지워졌을 수 있습니다.
+              </p>
+            )}
+            <HistoryBlock item={sourceOf} />
+            <div className="mb-3" />
             <div className="flex items-center gap-2">
               <button
                 type="button"
@@ -1127,6 +1193,10 @@ export default function ShuttleChecklistClient({
                 <span className="font-bold">판단 근거</span> · {sourceOf.autoSource.aiNote}
               </p>
             )}
+
+            {/* 자동으로 붙은 뒤에 사람이 손댔을 수 있습니다. 그 순서가 보여야 지금 화면이
+                왜 이 모양인지 설명이 됩니다. */}
+            <HistoryBlock item={sourceOf} />
 
             <div className="mt-3 flex flex-wrap items-center gap-2">
               {(() => {

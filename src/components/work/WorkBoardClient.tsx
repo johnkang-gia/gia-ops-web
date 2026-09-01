@@ -2,7 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import ActivityLogTicker from "./ActivityLogTicker";
+import Link from "next/link";
 import CronStatusBadge from "./CronStatusBadge";
+import ArrivalQrBadge from "./ArrivalQrBadge";
 import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import { useRealtimeTable } from "@/lib/useRealtimeTable";
@@ -319,6 +321,16 @@ export default function WorkBoardClient({
         <span className="shrink-0 whitespace-nowrap rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700">
           🎓 초등부 <b>{elemActive}</b>명
         </span>
+        {/* 업무와 하원, 이 둘이 하루 중 가장 자주 오가는 두 화면입니다. 셔틀 메뉴를 펼쳐
+            들어가는 두 번의 클릭이 매번 반복되고 있었습니다. */}
+        <Link
+          href="/shuttle/checklist"
+          title="오늘 하원 차량별 명단으로 바로 갑니다"
+          className="shrink-0 whitespace-nowrap rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-800 transition hover:bg-amber-100"
+        >
+          📋 하원 체크표
+        </Link>
+        <ArrivalQrBadge />
         <button
           type="button"
           onClick={() => setGuideOpen(true)}

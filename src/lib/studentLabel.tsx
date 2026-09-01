@@ -44,7 +44,9 @@ export function normName(name: string | null | undefined): string {
 export function whereLabel(s: NamedStudent | null | undefined): string {
   if (!s) return "";
   const cls = s.class_name ?? s.className ?? null;
-  return [s.grade ? `${s.grade}` : null, cls].filter(Boolean).join(" ").trim();
+  // 반이 없는 학년(중고등)은 숫자만 뜨면 무슨 뜻인지 모릅니다. "9"가 아니라 "9학년"입니다.
+  const grade = s.grade ? (cls ? `${s.grade}` : `${s.grade}학년`) : null;
+  return [grade, cls].filter(Boolean).join(" ").trim();
 }
 
 /**

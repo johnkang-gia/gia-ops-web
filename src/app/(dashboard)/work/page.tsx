@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { scopedTermId, termScoped } from "@/lib/termScope";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isAdminUser, isStaffOrAboveUser } from "@/lib/roles";
@@ -13,6 +14,8 @@ export const dynamic = "force-dynamic";
 // 구성했습니다(요청 #2: UI/UX 그대로 이식).
 export default async function WorkPage() {
   const supabase = await createClient();
+  // 지금 보고 있는 학기의 기록만. 학기를 바꾸면 그 학기 것이 보입니다.
+  const termId = await scopedTermId();
   const me = await getCurrentAppUser();
   if (!me) redirect("/login");
 
@@ -21,7 +24,7 @@ export default async function WorkPage() {
     // deleted_at is not null(7일 이내) 행도 select 허용하는 별도 정책이 OR로 붙어있어서, 여기서
     // 걸러주지 않으면 방금 삭제한 업무가 등록자/담당자 눈에는 업무보드에 계속 남아있게 됩니다
     // (요청: "업무를 삭제해도 계속 표시되").
-    supabase.from("tasks").select("*").is("archived_at", null).is("deleted_at", null).order("position", { ascending: true }),
+    termScoped(supabase.from("tasks").select("*"), termId).is("archived_at", null).is("deleted_at", null).order("position", { ascending: true }),
     supabase.from("app_users").select("email, name").eq("status", "approved").order("email", { ascending: true }),
     supabase.from("departments").select("*").order("sort_order", { ascending: true }),
     supabase.from("task_mode_colors").select("*"),

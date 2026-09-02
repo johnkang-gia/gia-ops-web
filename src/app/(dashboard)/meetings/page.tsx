@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { scopedTermId, termScoped } from "@/lib/termScope";
 import { getCurrentTerm } from "@/lib/currentTerm";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import type { Meeting, GiaSystem } from "@/lib/types";
@@ -8,8 +9,10 @@ export const dynamic = "force-dynamic";
 
 export default async function MeetingsPage() {
   const supabase = await createClient();
+  // 지금 보고 있는 학기의 기록만. 학기를 바꾸면 그 학기 것이 보입니다.
+  const termId = await scopedTermId();
   const [{ data }, currentTerm, { data: giaSystems }, me] = await Promise.all([
-    supabase.from("meetings").select("*").order("date", { ascending: false }).limit(200),
+    termScoped(supabase.from("meetings").select("*"), termId).order("date", { ascending: false }).limit(200),
     getCurrentTerm(),
     // 매뉴얼(실무자용)/운영계획안(학부모용) 항목 선택 드롭다운용 - GIA시스템(대분류>중분류>
     // 세부항목)에서 가져옵니다.

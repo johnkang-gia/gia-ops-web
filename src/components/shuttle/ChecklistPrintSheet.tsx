@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { normName } from "@/lib/studentLabel";
-import { flushSync } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 import type { ChecklistItem, ChecklistRoute } from "./ShuttleChecklistClient";
 import { effectiveRouteId } from "./ShuttleChecklistTable";
 
@@ -153,7 +153,17 @@ export default function ChecklistPrintSheet({
     };
   }, [sortedRoutes, byRoute]);
 
-  return (
+  // 인쇄용 종이를 **body 바로 아래로** 옮깁니다.
+  //
+  // 그러지 않으면 종이가 화면 내용 안에 들어 있게 되고, 인쇄할 때 그 화면 내용이 "안 보이게"만
+  // 될 뿐 **자리는 그대로 차지합니다.** 체크표 화면이 길어지면서 그 빈 자리가 두 장·세 장으로
+  // 늘어났습니다 - 담당자가 본 빈 2·3장이 그것입니다.
+  //
+  // body 바로 아래로 빼면, 인쇄할 때 나머지를 통째로 없앨 수 있습니다(자리까지).
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  const sheet = (
     <>
       <style>{`
         @page { size: A4 portrait; margin: 7mm; }
@@ -174,7 +184,10 @@ export default function ChecklistPrintSheet({
             margin: 0 !important; padding: 0 !important;
             height: auto !important; max-height: none !important; overflow: visible !important;
           }
-          .gia-print-wrap { position: absolute !important; left: 0 !important; top: 0 !important; }
+          /* 종이 말고는 **자리까지** 없앱니다. 안 보이게만 하면 그 빈 자리가 그대로 장수가
+             됩니다(visibility:hidden 은 자리를 남깁니다). */
+          body > *:not(.gia-print-wrap) { display: none !important; }
+          .gia-print-wrap { position: static !important; left: auto !important; top: auto !important; }
           .gia-print-sheet, .gia-print-sheet table, .gia-print-sheet tr {
             break-inside: avoid; page-break-inside: avoid;
           }
@@ -310,4 +323,7 @@ export default function ChecklistPrintSheet({
       </div>
     </>
   );
+
+  // 붙기 전(서버에서 그릴 때)에는 아무것도 내지 않습니다. document 가 없습니다.
+  return mounted ? createPortal(sheet, document.body) : null;
 }

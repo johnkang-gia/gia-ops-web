@@ -21,6 +21,8 @@ import { ToastProvider } from "@/components/common/ToastProvider";
 import { ConfirmProvider } from "@/components/common/ConfirmProvider";
 import { LanguageProvider } from "@/components/common/LanguageProvider";
 import LanguageToggle from "@/components/common/LanguageToggle";
+import TermScopeBar from "@/components/common/TermScopeBar";
+import { getTermScope } from "@/lib/termScope";
 import { getLang } from "@/lib/langServer";
 import { makeT } from "@/lib/lang";
 import { positionLabel } from "@/lib/i18nLabels";
@@ -323,6 +325,9 @@ export default async function DashboardLayout({
   // 뜹니다(한글로 그렸다가 영어로 바뀌는 깜빡임이 없습니다).
   const lang = await getLang();
   const t = makeT(lang);
+  // 지금 보고 있는 학기. 학기 표가 아직 없어도(마이그레이션 전) 화면은 그대로 떠야 하므로
+  // 안에서 오류를 삼키고 빈 값을 돌려줍니다.
+  const termScope = await getTermScope().catch(() => ({ term: null, terms: [], isPast: false }));
   const isDemoAccountUser = isDemoAccount(me.email);
 
   const displayName = me.name || me.email;
@@ -535,6 +540,11 @@ export default async function DashboardLayout({
         {/* 한국어 ↔ English 전환(요청: "교사권한이 볼 수 있는 페이지는 영/한 완전히 변환할 수
             있게"). 원어민 교사가 스스로 바꿀 수 있어야 해서 관리자 설정이 아니라 항상 손닿는
             사이드바 하단에 둡니다. 선택은 쿠키에 1년간 저장되어 다음 로그인에도 유지됩니다. */}
+        {/* 지금 보고 있는 학기. 지난 학기를 열어둔 채로 새 기록을 남기려다 "왜 안 보이지"가
+            되는 일이 가장 흔한 사고라, 사이드바에 늘 붙여둡니다. */}
+        <div className="mb-2 px-3">
+          <TermScopeBar term={termScope.term} terms={termScope.terms} />
+        </div>
         <div className="mb-2 px-3">
           <LanguageToggle />
         </div>

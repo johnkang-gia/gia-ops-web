@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { scopedTermId, termScoped } from "@/lib/termScope";
 import type { ManualSection, ManualReviewFlag } from "@/lib/types";
 import ManualsClient from "@/components/manuals/ManualsClient";
 import { getCurrentAppUser } from "@/lib/currentUser";
@@ -14,6 +15,8 @@ export default async function ManualsPage({
   searchParams: Promise<{ doc?: string }>;
 }) {
   const supabase = await createClient();
+  // 지금 보고 있는 학기의 것만. 학기를 바꾸면 그 학기 것이 보입니다.
+  const termId = await scopedTermId();
   const { doc } = await searchParams;
 
   const ninetyDaysAgo = new Date();
@@ -21,9 +24,7 @@ export default async function ManualsPage({
   const ninetyDaysAgoStr = ninetyDaysAgo.toISOString().slice(0, 10);
 
   const [{ data }, me, { data: patternRows }, { data: flagRows }] = await Promise.all([
-    supabase
-      .from("manual_sections")
-      .select("*")
+    termScoped(supabase.from("manual_sections").select("*"), termId)
       .order("target_doc", { ascending: true })
       .order("category", { ascending: true }),
     getCurrentAppUser(),

@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { scopedTermId, termScoped } from "@/lib/termScope";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { getCurrentTerm } from "@/lib/currentTerm";
 import type { Incident, GiaSystem } from "@/lib/types";
@@ -8,8 +9,10 @@ export const dynamic = "force-dynamic";
 
 export default async function RecordsPage() {
   const supabase = await createClient();
+  // 지금 보고 있는 학기의 기록만. 학기를 바꾸면 그 학기 것이 보입니다.
+  const termId = await scopedTermId();
   const [{ data }, currentTerm, me, { data: giaSystems }] = await Promise.all([
-    supabase.from("incidents").select("*").order("date", { ascending: false }).limit(200),
+    termScoped(supabase.from("incidents").select("*"), termId).order("date", { ascending: false }).limit(200),
     getCurrentTerm(),
     getCurrentAppUser(),
     // 매뉴얼(실무자용)/운영계획안(학부모용) 항목 선택 드롭다운용. 요청("사건기록의 매뉴얼항목·

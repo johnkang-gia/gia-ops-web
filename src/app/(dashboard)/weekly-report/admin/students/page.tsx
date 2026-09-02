@@ -28,7 +28,7 @@ export default async function StudentManagePage() {
   const [{ data: studentsData }, { data: fieldDefsData }, { data: routesData }, { data: stopsData }] = await Promise.all([
     supabase
       .from("wr_students")
-      .select("*")
+      .select("*").eq("is_demo", false)
       .order("grade", { ascending: true })
       .order("class_name", { ascending: true })
       .order("name", { ascending: true }),

@@ -37,7 +37,7 @@ export async function POST(req: Request) {
 
   let studentDepartment: string | null = null;
   if (row.student_id) {
-    const { data: s } = await supabase.from("wr_students").select("department").eq("id", row.student_id).maybeSingle();
+    const { data: s } = await supabase.from("wr_students").select("department").eq("is_demo", false).eq("id", row.student_id).maybeSingle();
     studentDepartment = (s?.department as string | null) ?? null;
   }
 

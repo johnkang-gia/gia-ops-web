@@ -82,7 +82,7 @@ export default async function PickupPage() {
   // 내가 담임 또는 부담임인 반. 하나도 없으면 이 화면을 쓸 일이 없습니다(과목 교사 등).
   const { data: classesData } = await supabase
     .from("wr_classes")
-    .select("id, grade, class_name")
+    .select("id, grade, class_name").eq("is_demo", isDemoAccount(me.email))
     .or(`teacher_email.eq.${me.email},sub_teacher_email.eq.${me.email}`);
   const myClasses = classesData ?? [];
 

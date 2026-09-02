@@ -161,7 +161,7 @@ export async function PATCH(req: NextRequest) {
     const bare = k.studentName.replace(/\(.*$/, "").trim();
     let studentId: string | null = null;
     if (bare.length >= 2) {
-      const { data: hit } = await db.from("wr_students").select("id").eq("status", "active").eq("name", bare).limit(2);
+      const { data: hit } = await db.from("wr_students").select("id").eq("is_demo", false).eq("status", "active").eq("name", bare).limit(2);
       const rows = (hit as { id: string }[] | null) ?? [];
       if (rows.length === 1) studentId = rows[0].id; // 동명이인이면 비워둡니다(엉뚱한 아이에 붙는 것이 더 나쁩니다).
     }

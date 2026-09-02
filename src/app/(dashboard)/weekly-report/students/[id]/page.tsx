@@ -1,4 +1,5 @@
 import { redirect, notFound } from "next/navigation";
+import { isDemoAccount } from "@/lib/sharedAccounts";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isStaffOrAboveUser, isTeacherOnly } from "@/lib/roles";
@@ -14,7 +15,7 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
   if (!me) redirect("/login");
 
   const [{ data: student }, { data: reports }, { data: comments }] = await Promise.all([
-    supabase.from("wr_students").select("*").eq("id", id).maybeSingle(),
+    supabase.from("wr_students").select("*").eq("is_demo", isDemoAccount(me.email)).eq("id", id).maybeSingle(),
     supabase.from("wr_reports").select("*").eq("student_id", id).order("report_date", { ascending: false }),
     supabase.from("wr_comments").select("*").eq("student_id", id).order("created_at", { ascending: false }),
   ]);
@@ -31,7 +32,7 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
       s.class_id
         ? supabase
             .from("wr_classes")
-            .select("id")
+            .select("id").eq("is_demo", isDemoAccount(me.email))
             .eq("id", s.class_id)
             .or(`teacher_email.eq.${me.email},sub_teacher_email.eq.${me.email}`)
         : Promise.resolve({ data: [] as WrClass[] }),

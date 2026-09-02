@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { isDemoAccount } from "@/lib/sharedAccounts";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { getCurrentTerm } from "@/lib/currentTerm";
@@ -25,12 +26,12 @@ export default async function StudentsPage() {
   const [{ data: studentsData }, { data: classesData }, term] = await Promise.all([
     supabase
       .from("wr_students")
-      .select("*")
+      .select("*").eq("is_demo", isDemoAccount(me.email))
       .eq("status", "active")
       .order("grade", { ascending: true })
       .order("class_name", { ascending: true })
       .order("name", { ascending: true }),
-    supabase.from("wr_classes").select("*").order("grade", { ascending: true }).order("class_name", { ascending: true }),
+    supabase.from("wr_classes").select("*").eq("is_demo", isDemoAccount(me.email)).order("grade", { ascending: true }).order("class_name", { ascending: true }),
     getCurrentTerm(),
   ]);
 

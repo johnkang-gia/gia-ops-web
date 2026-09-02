@@ -71,6 +71,8 @@ export async function POST(req: Request) {
         .update({ teacher_email: email })
         .eq("id", classId)
         .is("teacher_email", null)
+        // 데모 반에 실제 선생님이 배정되면 안 됩니다.
+        .eq("is_demo", false)
         .select("grade, class_name")
         .maybeSingle();
       if (updated) assigned.classLabel = `${updated.grade ?? ""}학년 ${updated.class_name ?? ""}`.trim();

@@ -1,4 +1,5 @@
 import path from "node:path";
+import { isDemoAccount } from "@/lib/sharedAccounts";
 import { todayKst } from "@/lib/kst";
 import { Document, Page, Text, View, StyleSheet, Font, renderToBuffer } from "@react-pdf/renderer";
 import { createClient } from "@/lib/supabase/server";
@@ -144,7 +145,7 @@ export async function GET(request: Request) {
       s.class_id
         ? supabase
             .from("wr_classes")
-            .select("id")
+            .select("id").eq("is_demo", isDemoAccount(me.email))
             .eq("id", s.class_id)
             .or(`teacher_email.eq.${me.email},sub_teacher_email.eq.${me.email}`)
         : Promise.resolve({ data: [] as WrClass[] }),

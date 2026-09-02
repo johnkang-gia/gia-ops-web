@@ -32,7 +32,7 @@ export default function StudentSearchBadge() {
       // 읽어 이어 붙입니다 - 아이를 찾아가야 하는 사람에게는 반 이름보다 이게 필요합니다.
       const [stuRes, clsRes] = await Promise.all([
         supabase.from("wr_students_basic").select("id, name, name_en, grade, class_name, class_id").eq("status", "active").order("name"),
-        supabase.from("wr_classes").select("id, grade, class_name, room"),
+        supabase.from("wr_classes").select("id, grade, class_name, room").eq("is_demo", false),
       ]);
       if (stuRes.error) {
         setError(`명부를 읽지 못했습니다: ${stuRes.error.message}`);

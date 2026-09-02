@@ -26,7 +26,7 @@ export default async function StaffProfilePage({ params }: { params: Promise<{ e
   const [assignmentsRes, termsRes, classesRes, tasksRes] = await Promise.all([
     supabase.from("staff_assignments").select("*").eq("staff_email", email).order("created_at", { ascending: false }),
     supabase.from("terms").select("id, year, term_type").order("start_date", { ascending: false }),
-    supabase.from("wr_classes").select("*").order("grade", { ascending: true }),
+    supabase.from("wr_classes").select("*").eq("is_demo", false).order("grade", { ascending: true }),
     supabase
       .from("tasks")
       .select("*")

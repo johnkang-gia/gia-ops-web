@@ -28,8 +28,8 @@ export default async function SchoolOverviewPage() {
 
   const [{ data: students }, { data: classes }, { data: eventRows }, reportsRes, { data: appUsers }, { data: subjectRows }, { data: termRows }] =
     await Promise.all([
-      supabase.from("wr_students").select("name, grade, status, class_name, department"),
-      supabase.from("wr_classes").select("grade, class_name, teacher_email, teacher_name").order("grade").order("class_name"),
+      supabase.from("wr_students").select("name, grade, status, class_name, department").eq("is_demo", false),
+      supabase.from("wr_classes").select("grade, class_name, teacher_email, teacher_name").eq("is_demo", false).order("grade").order("class_name"),
       supabase.from("events").select("date, name").gte("date", today).order("date", { ascending: true }).limit(8),
       supabase.from("wr_reports").select("id", { count: "exact", head: true }).eq("status", "published").gte("report_date", sinceWeek),
       supabase.from("app_users").select("email, name").eq("status", "approved"),

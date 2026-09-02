@@ -58,7 +58,7 @@ export default function AttendanceTeachModal({
     // 학생 id는 명부에서 찾아 넣습니다(이름이 바뀌어도 연결이 유지되도록).
     const { data: found } =
       kind === "alias" && student
-        ? await supabase.from("wr_students").select("id").eq("name", student.name).limit(1).maybeSingle()
+        ? await supabase.from("wr_students").select("id").eq("is_demo", false).eq("name", student.name).limit(1).maybeSingle()
         : { data: null };
 
     const { error } = await supabase.from("attendance_learning_rules").upsert(

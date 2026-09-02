@@ -78,7 +78,7 @@ export default async function AdminDashboardPage() {
     deptRes,
     wrReportsRes,
   ] = await Promise.all([
-    supabase.from("wr_students").select("id, name").eq("status", "active"),
+    supabase.from("wr_students").select("id, name").eq("is_demo", false).eq("status", "active"),
     supabase.from("incidents").select("date, manual_cat").gte("date", rangeStart).order("date", { ascending: false }),
     supabase.from("events").select("date").gte("date", rangeStart),
     supabase.from("meetings").select("date").gte("date", rangeStart),

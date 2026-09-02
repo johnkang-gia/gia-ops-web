@@ -211,7 +211,7 @@ function ClassImportSection() {
     if (valid.length === 0) return;
     setImporting(true);
     const supabase = createClient();
-    const { data: existing } = await supabase.from("wr_classes").select("id, grade, class_name");
+    const { data: existing } = await supabase.from("wr_classes").select("id, grade, class_name").eq("is_demo", false);
     let created = 0;
     let updated = 0;
     let failed = 0;
@@ -223,7 +223,7 @@ function ClassImportSection() {
         if (error) failed++;
         else updated++;
       } else {
-        const { error } = await supabase.from("wr_classes").insert(payload);
+        const { error } = await supabase.from("wr_classes").insert({ ...payload, is_demo: false });
         if (error) failed++;
         else created++;
       }
@@ -349,7 +349,7 @@ function StudentImportSection() {
     if (valid.length === 0) return;
     setImporting(true);
     const supabase = createClient();
-    const { data: classes } = await supabase.from("wr_classes").select("id, grade, class_name");
+    const { data: classes } = await supabase.from("wr_classes").select("id, grade, class_name").eq("is_demo", false);
     const payload = valid.map((r) => {
       const match = (classes ?? []).find((c) => (c.grade ?? "") === (r.grade ?? "") && (c.class_name ?? "") === (r.class_name ?? ""));
       return {
@@ -362,7 +362,7 @@ function StudentImportSection() {
         status: "active" as const,
       };
     });
-    const { error } = await supabase.from("wr_students").insert(payload);
+    const { error } = await supabase.from("wr_students").insert(payload.map((r) => ({ ...r, is_demo: false })));
     setImporting(false);
     setResult(error ? friendlyError("등록하지 못했습니다.", error) : `${valid.length}명 등록 완료 (새 학생으로 추가됩니다 - 이미 등록된 학생과 이름이 같아도 중복 확인 없이 추가되니, 재등록이 아닌지 확인 후 실행해주세요).`);
   }

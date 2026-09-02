@@ -67,7 +67,7 @@ export async function buildTermSnapshot(
     supabase.from("wr_classes").select("*").order("grade").order("class_name"),
     supabase.from("wr_subjects").select("*").order("name"),
     // 재학생만. 퇴원한 아이까지 담으면 그 학기 반 인원이 부풀려집니다.
-    supabase.from("wr_students").select("id, name, student_no, grade, class_id").eq("status", "active"),
+    supabase.from("wr_students").select("id, name, student_no, grade, class_id").eq("is_demo", false).eq("status", "active"),
     supabase.from("app_users").select("email, name").eq("status", "approved"),
   ]);
 

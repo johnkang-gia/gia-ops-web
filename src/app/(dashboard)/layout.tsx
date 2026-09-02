@@ -352,7 +352,7 @@ export default async function DashboardLayout({
   if (isTeacher) {
     const { count } = await supabase
       .from("wr_classes")
-      .select("id", { count: "exact", head: true })
+      .select("id", { count: "exact", head: true }).eq("is_demo", isDemoAccount(me.email))
       .or(`teacher_email.eq.${me.email},sub_teacher_email.eq.${me.email}`);
     isHomeroomTeacher = (count ?? 0) > 0;
   }

@@ -77,7 +77,7 @@ export default async function WeeklyReportStatsPage() {
 
   const [{ count: activeStudentCount }, { data: weekReportsData }, { data: termsData }, { data: classesData }] =
     await Promise.all([
-      supabase.from("wr_students").select("id", { count: "exact", head: true }).eq("status", "active"),
+      supabase.from("wr_students").select("id", { count: "exact", head: true }).eq("is_demo", false).eq("status", "active"),
       // 한 주치라도 137명 × 과목 수면 1,000줄을 훌쩍 넘습니다.
       //
       // Supabase는 한 번에 돌려주는 줄 수에 상한이 있어서(기본 1,000), `select("*")`로
@@ -90,7 +90,7 @@ export default async function WeeklyReportStatsPage() {
         ? fetchAllReports(supabase, term.id, start, end)
         : Promise.resolve({ data: [] as WeekReportLite[] }),
       supabase.from("terms").select("*").order("year", { ascending: false }).order("start_date", { ascending: false }),
-      supabase.from("wr_classes").select("*").order("grade", { ascending: true }).order("class_name", { ascending: true }),
+      supabase.from("wr_classes").select("*").eq("is_demo", false).order("grade", { ascending: true }).order("class_name", { ascending: true }),
     ]);
 
   const weekReports = (weekReportsData as WeekReportLite[] | null) ?? [];

@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { isDemoAccount } from "@/lib/sharedAccounts";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { getCurrentTerm } from "@/lib/currentTerm";
@@ -42,7 +43,7 @@ export default async function HomeroomPage() {
   const t = makeT(lang);
 
   const [{ data: classesData }, term] = await Promise.all([
-    supabase.from("wr_classes").select("*").or(`teacher_email.eq.${email},sub_teacher_email.eq.${email}`),
+    supabase.from("wr_classes").select("*").eq("is_demo", isDemoAccount(email)).or(`teacher_email.eq.${email},sub_teacher_email.eq.${email}`),
     getCurrentTerm(),
   ]);
   const classes = (classesData as WrClass[] | null) ?? [];

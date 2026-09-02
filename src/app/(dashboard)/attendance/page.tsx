@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { isDemoAccount } from "@/lib/sharedAccounts";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isTeacherOnly } from "@/lib/roles";
@@ -36,9 +37,9 @@ export default async function AttendancePage({
   const classesQuery = teacherOnly
     ? supabase
         .from("wr_classes")
-        .select("*")
+        .select("*").eq("is_demo", isDemoAccount(me.email))
         .or(`teacher_email.eq.${me.email},sub_teacher_email.eq.${me.email}`)
-    : supabase.from("wr_classes").select("*");
+    : supabase.from("wr_classes").select("*").eq("is_demo", isDemoAccount(me.email));
 
   const [{ data: classesData }, { data: usersData }] = await Promise.all([
     classesQuery.order("grade", { ascending: true }),

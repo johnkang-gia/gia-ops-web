@@ -42,7 +42,7 @@ export default async function OpsBoardAdminPage() {
 
   const supabase = await createClient();
   const [classesRes, periodsRes, entriesRes, linksRes] = await Promise.all([
-    supabase.from("wr_classes").select("*").order("grade").order("class_name"),
+    supabase.from("wr_classes").select("*").eq("is_demo", false).order("grade").order("class_name"),
     supabase.from("wr_periods").select("*").order("start_time"),
     supabase.from("wr_timetable").select("*"),
     supabase.from("ops_board_links").select("*").order("created_at", { ascending: false }),

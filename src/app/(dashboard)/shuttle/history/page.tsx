@@ -84,7 +84,7 @@ export default async function ShuttleHistoryPage({
   // 반·학년은 명부에서. 동명이인을 가르는 데도 씁니다.
   const studentIds = [...new Set(assignList.map((a) => a.student_id).filter((v): v is string => !!v))];
   const { data: students } = studentIds.length
-    ? await supabase.from("wr_students").select("id, name, grade, class_name").in("id", studentIds)
+    ? await supabase.from("wr_students").select("id, name, grade, class_name").eq("is_demo", false).in("id", studentIds)
     : { data: [] };
   const studentById = new Map(
     ((students ?? []) as { id: string; name: string; grade: string | null; class_name: string | null }[]).map((s) => [

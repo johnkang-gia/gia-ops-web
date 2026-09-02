@@ -40,7 +40,7 @@ export default async function StudentsSearchPage() {
     .from("wr_students")
     .select(
       "id, student_no, name, name_en, grade, class_name, class_id, birth_date, phone, parent_phone, parent_email, gender, allergies, address, note, custom_fields, status, shuttle_mode, photo_path, created_at"
-    )
+    ).eq("is_demo", false)
     .order("name", { ascending: true });
 
   // 셔틀 타는 아이 표시(요청 ⑨: "학생명부에도 셔틀여부로 체크되도록").

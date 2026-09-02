@@ -31,7 +31,7 @@ export async function POST(req: Request) {
   const supabase = await createClient();
 
   const [stuRes, itemsRes, ovRes] = await Promise.all([
-    supabase.from("wr_students").select("id, name, name_en, grade, class_name, parent_phone").eq("id", studentId).maybeSingle(),
+    supabase.from("wr_students").select("id, name, name_en, grade, class_name, parent_phone").eq("is_demo", false).eq("id", studentId).maybeSingle(),
     supabase.from("fee_items").select("*").eq("active", true),
     supabase.from("student_fee_items").select("*").eq("student_id", studentId),
   ]);

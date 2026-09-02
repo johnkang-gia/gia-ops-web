@@ -11,7 +11,7 @@ export default async function StaffManualPage() {
   // 함께 내려줍니다(오른쪽 절반의 학생 검색용 - StudentQuickLookup).
   const [{ data }, { data: studentsData }, me] = await Promise.all([
     supabase.from("manual_sections").select("*").eq("target_doc", "실무자용").order("category", { ascending: true }),
-    supabase.from("wr_students").select("*").eq("status", "active").order("name", { ascending: true }),
+    supabase.from("wr_students").select("*").eq("is_demo", false).eq("status", "active").order("name", { ascending: true }),
     getCurrentAppUser(),
   ]);
 

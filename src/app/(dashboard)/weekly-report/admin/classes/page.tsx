@@ -32,7 +32,7 @@ export default async function ClassManagePage({
   const view = await loadTermSettingView(supabase, sp.term);
 
   const [{ data: classesData }, { data: teamData }] = await Promise.all([
-    supabase.from("wr_classes").select("*").order("grade", { ascending: true }).order("class_name", { ascending: true }),
+    supabase.from("wr_classes").select("*").eq("is_demo", false).order("grade", { ascending: true }).order("class_name", { ascending: true }),
     supabase.from("app_users").select("email, name").eq("status", "approved").order("email", { ascending: true }),
   ]);
 

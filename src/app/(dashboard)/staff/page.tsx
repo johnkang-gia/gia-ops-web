@@ -43,7 +43,7 @@ export default async function StaffSearchPage() {
   // 찾아야 합니다 - 반은 그 선생님을 부르는 또 하나의 이름이라 함께 보여야 합니다.
   const { data: classRows } = await supabase
     .from("wr_classes")
-    .select("grade, class_name, homeroom_teacher_email")
+    .select("grade, class_name, homeroom_teacher_email").eq("is_demo", false)
     .not("homeroom_teacher_email", "is", null);
   const homeroomByEmail = new Map<string, string[]>();
   for (const c of (classRows as { grade: string | null; class_name: string | null; homeroom_teacher_email: string | null }[] | null) ?? []) {

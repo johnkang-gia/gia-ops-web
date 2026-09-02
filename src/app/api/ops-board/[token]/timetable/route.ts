@@ -28,7 +28,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   // 반 정보(부서·학년·반이름)로 교시 목록을 찾습니다. 교시는 부서마다 시간이 다릅니다.
   const { data: cls } = await supabase
     .from("wr_classes")
-    .select("id, grade, class_name, department")
+    .select("id, grade, class_name, department").eq("is_demo", false)
     .eq("id", classId)
     .maybeSingle();
   if (!cls) return NextResponse.json({ error: "반을 찾을 수 없습니다." }, { status: 404 });

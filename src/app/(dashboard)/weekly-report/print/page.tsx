@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { isDemoAccount } from "@/lib/sharedAccounts";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isStaffOrAboveUser } from "@/lib/roles";
@@ -30,7 +31,7 @@ export default async function PrintPage() {
   const [{ data }, { data: terms }] = await Promise.all([
     supabase
       .from("wr_students")
-      .select("*")
+      .select("*").eq("is_demo", isDemoAccount(me.email))
       .eq("status", "active")
       .order("grade", { ascending: true })
       .order("class_name", { ascending: true })

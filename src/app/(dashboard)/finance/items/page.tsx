@@ -21,7 +21,7 @@ export default async function FeeItemsPage() {
   const [itemsRes, catRes, clsRes] = await Promise.all([
     supabase.from("fee_items").select("*").order("category").order("sort_order").order("name"),
     supabase.from("fee_categories").select("*").order("sort_order").order("name"),
-    supabase.from("wr_classes").select("grade, class_name").order("grade").order("class_name"),
+    supabase.from("wr_classes").select("grade, class_name").eq("is_demo", false).order("grade").order("class_name"),
   ]);
   // 분류 표가 아직 없어도(마이그레이션 전) 화면은 열려야 합니다. 그때는 항목에 적힌 글자로만
   // 분류가 만들어집니다 - 예전과 같은 동작입니다.

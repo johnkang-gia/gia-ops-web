@@ -756,9 +756,9 @@ export async function ingestPickup(
 
 /** 학생의 반 담임 이메일을 찾습니다. 반이 없거나 담임이 아직 가입 전이면 null입니다. */
 async function findHomeroomEmail(supabase: SupabaseClient, studentId: string): Promise<string | null> {
-  const { data: student } = await supabase.from("wr_students").select("class_id").eq("id", studentId).maybeSingle();
+  const { data: student } = await supabase.from("wr_students").select("class_id").eq("is_demo", false).eq("id", studentId).maybeSingle();
   if (!student?.class_id) return null;
-  const { data: cls } = await supabase.from("wr_classes").select("teacher_email").eq("id", student.class_id).maybeSingle();
+  const { data: cls } = await supabase.from("wr_classes").select("teacher_email").eq("is_demo", false).eq("id", student.class_id).maybeSingle();
   return (cls?.teacher_email as string | null) ?? null;
 }
 

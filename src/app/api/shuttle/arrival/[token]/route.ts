@@ -107,7 +107,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
   // is_giamicro_user()`가 박혀 있어서, 로그인 없이 도는 이 화면(서비스 키)에서는 한 줄도
   // 안 나옵니다. 오류도 안 납니다 - 그냥 빈 결과라, 학년이 조용히 안 붙었습니다.
   const { data: stuRows, error: stuErr } = studentIds.length
-    ? await supabase.from("wr_students").select("id, name, grade, class_name").in("id", studentIds)
+    ? await supabase.from("wr_students").select("id, name, grade, class_name").eq("is_demo", false).in("id", studentIds)
     : { data: [] as { id: string; name: string; grade: string | null; class_name: string | null }[], error: null };
   if (stuErr) console.error("[arrival] 학생 학년·반 조회 실패 — 동명이인 구분이 안 붙습니다:", stuErr.message);
   const stuById = new Map(((stuRows as { id: string; name: string; grade: string | null; class_name: string | null }[] | null) ?? []).map((r) => [r.id, r]));

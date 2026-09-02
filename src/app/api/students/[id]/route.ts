@@ -30,7 +30,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     }
   }
 
-  const { data: studentData } = await supabase.from("wr_students").select("*").eq("id", id).maybeSingle();
+  const { data: studentData } = await supabase.from("wr_students").select("*").eq("is_demo", false).eq("id", id).maybeSingle();
   const student = studentData as WrStudent | null;
   if (!student) return NextResponse.json({ error: "학생을 찾을 수 없습니다." }, { status: 404 });
 
@@ -43,7 +43,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     // /students/[id] 페이지와 동일하게, 구조적 연결(incident_students)만 보면 "관련 학생" 자유
     // 텍스트 칸에만 이름이 적힌 사건이 빠지므로 텍스트도 함께 검색해 합칩니다.
     supabase.from("incidents").select("*").ilike("students", `%${searchName}%`).order("date", { ascending: false }),
-    student.class_id ? supabase.from("wr_classes").select("*").eq("id", student.class_id).maybeSingle() : Promise.resolve({ data: null }),
+    student.class_id ? supabase.from("wr_classes").select("*").eq("is_demo", false).eq("id", student.class_id).maybeSingle() : Promise.resolve({ data: null }),
   ]);
 
   const enrollments = (enrollmentsRes.data as WrEnrollment[] | null) ?? [];

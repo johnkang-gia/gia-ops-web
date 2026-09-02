@@ -35,7 +35,7 @@ export default async function SubjectManagePage({
     supabase.from("wr_subjects").select("*").order("name", { ascending: true }),
     supabase.from("app_users").select("email, name").eq("status", "approved").order("email", { ascending: true }),
     supabase.from("wr_classes").select("*").order("grade", { ascending: true }),
-    supabase.from("wr_students").select("*").eq("status", "active").order("grade", { ascending: true }).order("name", { ascending: true }),
+    supabase.from("wr_students").select("*").eq("is_demo", false).eq("status", "active").order("grade", { ascending: true }).order("name", { ascending: true }),
   ]);
 
   return (

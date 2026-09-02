@@ -50,7 +50,7 @@ export async function POST(req: Request) {
     if (!finalStudentId) return NextResponse.json({ error: "학생을 먼저 선택해주세요." }, { status: 400 });
 
     let matchedName: string | null = null;
-    const { data: student } = await supabase.from("wr_students").select("name").eq("id", finalStudentId).maybeSingle();
+    const { data: student } = await supabase.from("wr_students").select("name").eq("is_demo", false).eq("id", finalStudentId).maybeSingle();
     if (student) matchedName = student.name as string;
 
     const { error } = await supabase

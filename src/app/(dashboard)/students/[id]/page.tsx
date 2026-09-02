@@ -32,7 +32,7 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
     redirect("/home");
   }
 
-  const { data: studentData } = await supabase.from("wr_students").select("*").eq("id", id).maybeSingle();
+  const { data: studentData } = await supabase.from("wr_students").select("*").eq("is_demo", false).eq("id", id).maybeSingle();
   const student = studentData as WrStudent | null;
   if (!student) notFound();
 
@@ -91,7 +91,7 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
       .limit(20),
     supabase.from("task_comments").select("*").ilike("content", `%${searchName}%`).order("created_at", { ascending: false }).limit(20),
     supabase.from("messages").select("*").ilike("content", `%${searchName}%`).order("created_at", { ascending: false }).limit(20),
-    student.class_id ? supabase.from("wr_classes").select("*").eq("id", student.class_id).maybeSingle() : Promise.resolve({ data: null }),
+    student.class_id ? supabase.from("wr_classes").select("*").eq("is_demo", false).eq("id", student.class_id).maybeSingle() : Promise.resolve({ data: null }),
     supabase.from("wr_student_field_defs").select("*").order("sort_order", { ascending: true }),
   ]);
   const fieldDefs = (fieldDefsRes.data as WrStudentFieldDef[] | null) ?? [];

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isDemoAccount } from "@/lib/sharedAccounts";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isTeacherOnly, isStaffOrAboveUser } from "@/lib/roles";
@@ -33,7 +34,7 @@ export async function GET(request: NextRequest) {
   let allowedStudentIds: Set<string> | null = null;
   if (isTeacherOnly(me)) {
     const [{ data: ownClasses }, { data: ownSubjects }] = await Promise.all([
-      supabase.from("wr_classes").select("id").or(`teacher_email.eq.${me.email},sub_teacher_email.eq.${me.email}`),
+      supabase.from("wr_classes").select("id").eq("is_demo", isDemoAccount(me.email)).or(`teacher_email.eq.${me.email},sub_teacher_email.eq.${me.email}`),
       supabase.from("wr_subjects").select("id, student_ids").eq("teacher_email", me.email),
     ]);
     const classIds = ((ownClasses as WrClass[] | null) ?? []).map((c) => c.id);

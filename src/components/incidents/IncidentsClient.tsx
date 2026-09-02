@@ -175,7 +175,7 @@ export default function IncidentsClient({
     const supabase = createClient();
     supabase
       .from("wr_students")
-      .select("*")
+      .select("*").eq("is_demo", false)
       .eq("status", "active")
       .order("name", { ascending: true })
       .then(({ data }) => setAllStudents((data as WrStudent[] | null) ?? []));

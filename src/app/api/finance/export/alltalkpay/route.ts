@@ -67,7 +67,7 @@ export async function POST(req: Request) {
   // 명부가 채워졌을 수 있는데, 굳은 값만 보고 "연락처 없음"으로 빼면 그 아이만 청구가 안 갑니다.
   const needPhone = invoices.filter((v) => !v.guardian_phone && v.student_id).map((v) => v.student_id as string);
   if (needPhone.length > 0) {
-    const { data, error } = await supabase.from("wr_students").select("id, parent_phone").in("id", needPhone);
+    const { data, error } = await supabase.from("wr_students").select("id, parent_phone").eq("is_demo", false).in("id", needPhone);
     if (error) console.error("[올톡페이] 명부 연락처를 읽지 못했습니다:", error.message);
     const byId = new Map((((data as { id: string; parent_phone: string | null }[] | null) ?? [])).map((s) => [s.id, s.parent_phone]));
     for (const v of invoices) if (!v.guardian_phone && v.student_id) v.guardian_phone = byId.get(v.student_id) ?? null;

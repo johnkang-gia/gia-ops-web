@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { isDemoAccount } from "@/lib/sharedAccounts";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isDeveloperEmail } from "@/lib/roles";
@@ -25,7 +26,7 @@ export default async function WeeklyReportLandingPage() {
   // 담임 리포트로, 없으면(과목 선생님) 내 시간표 개요로 보냅니다.
   const { data: classes } = await supabase
     .from("wr_classes")
-    .select("id")
+    .select("id").eq("is_demo", isDemoAccount(email))
     .or(`teacher_email.eq.${email},sub_teacher_email.eq.${email}`);
 
   if ((classes?.length ?? 0) > 0) redirect("/weekly-report/homeroom");

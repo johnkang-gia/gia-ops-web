@@ -152,6 +152,8 @@ export default function StudentManageClient({
         parent_email: parentEmail.trim() || null,
         address: address.trim() || null,
         allergies: allergies.trim() || null,
+        // 이 화면에서 만드는 학생은 언제나 실제 학생입니다. 기본값에 기대지 않고 못박습니다.
+        is_demo: false,
       })
       .select()
       .single();
@@ -173,7 +175,9 @@ export default function StudentManageClient({
       .filter(Boolean)
       .map((line) => {
         const [n, ne, g, c, p] = line.split(",").map((v) => v?.trim() ?? "");
-        return { name: n, name_en: ne || null, grade: g || null, class_name: c || null, parent_phone: p || null };
+        // 여기서 만드는 학생은 언제나 실제 학생입니다. 기본값에 기대지 않고 못박습니다 -
+        // 데모 학생과 섞이면 실제 명단이 흐려집니다.
+        return { name: n, name_en: ne || null, grade: g || null, class_name: c || null, parent_phone: p || null, is_demo: false };
       })
       .filter((r) => r.name);
     if (rows.length === 0) return;

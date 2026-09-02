@@ -39,7 +39,7 @@ export default async function TimetablePage() {
     supabase.from("wr_periods").select("id, department, period_no, label, start_time, end_time").order("start_time"),
     supabase.from("wr_timetable").select("class_id, weekday, period_id, subject_name, teacher_name, room"),
     supabase.from("wr_classes").select("id, grade, class_name, department"),
-    supabase.from("wr_students").select("class_id, status"),
+    supabase.from("wr_students").select("class_id, status").eq("is_demo", false),
   ]);
 
   // 과목 색 덮어쓰기(요청 ③). 비어 있는 것이 정상입니다 - 아무것도 없으면 과목 이름을

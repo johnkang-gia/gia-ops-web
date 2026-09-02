@@ -51,7 +51,7 @@ export default async function SchoolDashboardPage() {
       supabase.from("wr_classes").select("*").order("grade", { ascending: true }).order("class_name", { ascending: true }),
       supabase.from("wr_subjects").select("*").order("name", { ascending: true }),
       supabase.from("app_users").select("*").eq("status", "approved").order("name", { ascending: true }),
-      supabase.from("wr_students").select("*").eq("status", "active").order("grade", { ascending: true }).order("name", { ascending: true }),
+      supabase.from("wr_students").select("*").eq("is_demo", false).eq("status", "active").order("grade", { ascending: true }).order("name", { ascending: true }),
     ]);
 
   const classes = (classesData as WrClass[] | null) ?? [];

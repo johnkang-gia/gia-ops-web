@@ -44,7 +44,7 @@ export default async function MyClassPage() {
   // 공통: 교시 + 시간표 + 반 목록(라벨/부서 해석용)
   const [{ data: periodsRaw }, { data: classesRaw }] = await Promise.all([
     supabase.from("wr_periods").select("id, department, period_no, label, start_time, end_time").order("start_time"),
-    supabase.from("wr_classes").select("id, grade, class_name, department"),
+    supabase.from("wr_classes").select("id, grade, class_name, department").eq("is_demo", isDemoAccount(me.email)),
   ]);
   const periods: TtPeriod[] = (periodsRaw ?? []).map((p) => ({
     id: p.id as string,

@@ -1,4 +1,4 @@
-import { ensureKoreanFont } from "@/lib/pdfFont";
+import { ensureKoreanFont, pdfDisposition } from "@/lib/pdfFont";
 import { todayKst } from "@/lib/kst";
 import { Document, Page, Text, View, StyleSheet, renderToBuffer } from "@react-pdf/renderer";
 import { createClient } from "@/lib/supabase/server";
@@ -299,7 +299,7 @@ async function handle(request: Request) {
   return new Response(new Uint8Array(buffer), {
     headers: {
       "content-type": "application/pdf",
-      "content-disposition": `inline; filename="운행일지_${routeData.route_no}호_${date}.pdf"`,
+      "content-disposition": pdfDisposition(`운행일지_${routeData.route_no}호_${date}`),
     },
   });
 }

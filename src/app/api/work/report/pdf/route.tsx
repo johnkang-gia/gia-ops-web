@@ -1,4 +1,4 @@
-import { ensureKoreanFont } from "@/lib/pdfFont";
+import { ensureKoreanFont, pdfDisposition } from "@/lib/pdfFont";
 import { Document, Page, Text, View, StyleSheet, renderToBuffer } from "@react-pdf/renderer";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
@@ -130,6 +130,20 @@ function ReportDocument({
 }
 
 export async function GET(request: Request) {
+  try {
+    return await handle(request);
+  } catch (e) {
+    // 실패하면 빈 500이 돌아가 화면에 아무것도 안 뜹니다. 이유를 글로 돌려줍니다.
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[업무 보고 PDF] 만들지 못했습니다:", e);
+    return new Response(`업무 보고 PDF를 만들지 못했습니다.\n\n${msg}`, {
+      status: 500,
+      headers: { "Content-Type": "text/plain; charset=utf-8" },
+    });
+  }
+}
+
+async function handle(request: Request) {
   ensureKoreanFont();
 
   const me = await getCurrentAppUser();
@@ -185,7 +199,7 @@ export async function GET(request: Request) {
   return new Response(new Uint8Array(buffer), {
     headers: {
       "content-type": "application/pdf",
-      "content-disposition": `inline; filename="업무보고서_${range.start}_${periodType}.pdf"`,
+      "content-disposition": pdfDisposition(`업무보고서_${range.start}_${periodType}`),
     },
   });
 }

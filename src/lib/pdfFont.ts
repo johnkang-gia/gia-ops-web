@@ -41,3 +41,19 @@ export function ensureKoreanFont(): void {
   Font.registerHyphenationCallback((word) => [word]);
   registered = true;
 }
+
+/**
+ * 파일 이름을 담은 `content-disposition` 헤더.
+ *
+ * **HTTP 헤더에는 한글을 그대로 넣을 수 없습니다.** 넣으면 응답을 만드는 순간
+ * `Cannot convert argument to a ByteString` 으로 터지고, 화면에는 아무것도 안 뜹니다 -
+ * 운행일지 PDF가 이것 때문에 통째로 안 나오고 있었습니다.
+ *
+ * 그래서 두 벌을 함께 보냅니다.
+ *   · `filename=` — 영문·숫자만 남긴 이름(오래된 브라우저용)
+ *   · `filename*=UTF-8''…` — 퍼센트로 감싼 한글 이름(요즘 브라우저가 이것을 씁니다)
+ */
+export function pdfDisposition(name: string, mode: "inline" | "attachment" = "inline"): string {
+  const safe = name.replace(/[^\w.\-]+/g, "_").replace(/^_+|_+$/g, "") || "document";
+  return `${mode}; filename="${safe}.pdf"; filename*=UTF-8''${encodeURIComponent(`${name}.pdf`)}`;
+}

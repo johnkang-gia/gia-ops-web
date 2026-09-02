@@ -1,4 +1,4 @@
-import { ensureKoreanFont } from "@/lib/pdfFont";
+import { ensureKoreanFont, pdfDisposition } from "@/lib/pdfFont";
 import { todayKst } from "@/lib/kst";
 import { Document, Page, Text, View, StyleSheet, renderToBuffer } from "@react-pdf/renderer";
 import { createClient } from "@/lib/supabase/server";
@@ -89,6 +89,20 @@ function ManualDocument({
 }
 
 export async function GET(request: Request) {
+  try {
+    return await handle(request);
+  } catch (e) {
+    // 실패하면 빈 500이 돌아가 화면에 아무것도 안 뜹니다. 이유를 글로 돌려줍니다.
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[매뉴얼 PDF] 만들지 못했습니다:", e);
+    return new Response(`매뉴얼 PDF를 만들지 못했습니다.\n\n${msg}`, {
+      status: 500,
+      headers: { "Content-Type": "text/plain; charset=utf-8" },
+    });
+  }
+}
+
+async function handle(request: Request) {
   ensureKoreanFont();
 
   const supabase = await createClient();
@@ -115,7 +129,7 @@ export async function GET(request: Request) {
   return new Response(new Uint8Array(buffer), {
     headers: {
       "content-type": "application/pdf",
-      "content-disposition": `inline; filename="${title}.pdf"`,
+      "content-disposition": pdfDisposition(`${title}`),
     },
   });
 }

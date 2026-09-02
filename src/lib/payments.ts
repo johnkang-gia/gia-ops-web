@@ -52,13 +52,47 @@ export type MatchCandidate = { invoice: Invoice; why: string };
  *
  * 하나로 좁혀지지 않으면 **아무것도 고르지 않습니다.** 후보를 함께 돌려주어 사람이 고르게 합니다.
  */
+/**
+ * 입금자 이름에 붙은 메모를 떼어냅니다.
+ *
+ * 올톡페이 청구 목록의 고객명 칸에는 이런 것들이 실제로 들어 있습니다.
+ *   `강하라/치과진료비12,900원포함`  `조장훈(13,000잔돈차감)`  `김리안(2차주문)`  `송우진,윤진`
+ * 금액을 조정한 사연을 이름 칸에 적어 두신 것인데, 그대로 대조하면 어느 이름과도 안 맞습니다.
+ * 괄호·빗금·쉼표 뒤를 떼고 앞의 이름만 남깁니다(형제는 앞의 아이로 붙고, 나머지는 사람이 봅니다).
+ */
+export function cleanPayerName(v: string): string {
+  return String(v ?? "")
+    .replace(/[（(［[].*$/g, "")
+    .split(/[/,·]/)[0]
+    .replace(/\d.*$/g, "")
+    .trim();
+}
+
 export function matchPayment(
-  p: { amount: number; payerName: string; memo: string },
+  p: { amount: number; payerName: string; memo: string; phone?: string },
   invoices: Invoice[],
   payments: PaymentRow[],
 ): { picked: Invoice | null; reason: string; candidates: MatchCandidate[] } {
   const open = invoices.filter((v) => v.status === "발행" && balanceOf(v, payments).balance > 0);
   const text = `${p.memo} ${p.payerName}`;
+
+  // 0) 청구할 때 쓴 **연락처**가 가장 강한 단서입니다. 이름 칸에는 사연이 붙지만
+  //    (`강하라/치과진료비12,900원포함`) 번호는 그대로입니다.
+  const phone = (p.phone ?? "").replace(/[^\d]/g, "");
+  if (phone.length >= 10) {
+    const byPhone = open.filter((v) => (v.guardian_phone ?? "").replace(/[^\d]/g, "") === phone);
+    if (byPhone.length === 1) return { picked: byPhone[0], reason: "청구 연락처가 같음", candidates: [] };
+    // 형제라 여러 건이면 금액으로 한 번 더 좁힙니다.
+    const narrowed = byPhone.filter((v) => balanceOf(v, payments).balance === Math.round(p.amount));
+    if (narrowed.length === 1) return { picked: narrowed[0], reason: "연락처 + 금액 일치", candidates: [] };
+    if (byPhone.length > 1) {
+      return {
+        picked: null,
+        reason: `같은 연락처의 형제 ${byPhone.length}건 — 사람이 골라야 합니다`,
+        candidates: byPhone.slice(0, 6).map((v) => ({ invoice: v, why: "연락처 일치" })),
+      };
+    }
+  }
 
   // 1) 인보이스 번호가 적혀 있으면 그게 답입니다.
   const byNo = open.find((v) => text.includes(v.invoice_no));
@@ -69,7 +103,7 @@ export function matchPayment(
   if (exact.length === 1) return { picked: exact[0], reason: "잔액과 금액 일치", candidates: [] };
 
   // 3) 이름이 같은 것.
-  const key = norm(p.payerName);
+  const key = norm(cleanPayerName(p.payerName));
   const byName = key.length >= 2
     ? open.filter((v) => norm(v.student_name_ko) === key || norm(v.student_name) === key)
     : [];

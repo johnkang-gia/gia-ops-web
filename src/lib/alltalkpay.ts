@@ -151,10 +151,10 @@ export function buildBillPlan(invoices: BillInvoice[], opts: { mergeSiblings: bo
  */
 export const DEFAULT_HEADERS = {
   name: "고객명",
-  phone: "휴대폰번호",
+  phone: "청구핸드폰",
   amount: "청구금액",
-  memo: "청구내용",
-  due: "납부기한",
+  memo: "청구사유",
+  due: "만료일자",
   ref: "관리번호",
 } as const;
 

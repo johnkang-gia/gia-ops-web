@@ -71,23 +71,44 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
         notify("첫 시트에 읽을 줄이 없습니다.", "error");
         return;
       }
-      // 칸 이름은 은행·서비스마다 다릅니다. 뜻이 같은 이름을 여럿 받아 그중 있는 것을 씁니다.
+      // 칸 이름은 은행·서비스마다 다릅니다. **적어준 순서대로** 찾습니다 - 순서가 없으면
+      // 올톡페이 파일에서 `등록일자`가 `수납일자`보다 먼저 걸려 돈 들어온 날이 아니라
+      // 청구서 만든 날이 입금일로 들어갑니다.
       const pick = (r: Record<string, unknown>, names: string[]) => {
-        for (const k of Object.keys(r)) {
-          const kk = k.replace(/\s+/g, "");
-          if (names.some((n) => kk.includes(n))) return r[k];
+        const keys = Object.keys(r);
+        for (const n of names) {
+          const k = keys.find((k) => k.replace(/\s+/g, "").includes(n));
+          if (k !== undefined && String(r[k] ?? "").trim() !== "" && String(r[k]).trim() !== "-") return r[k];
         }
         return "";
       };
       const list: Staged[] = [];
+      let notPaid = 0;
       rows.forEach((r, i) => {
-        const paidAt = toIsoDate(pick(r, ["날짜", "일자", "거래일", "입금일", "date"]));
-        const amount = toAmount(pick(r, ["금액", "입금액", "결제금액", "amount"]));
-        const payerName = String(pick(r, ["입금자", "성명", "이름", "보내는", "name"]) ?? "").trim();
-        const memo = String(pick(r, ["내용", "적요", "메모", "비고", "memo"]) ?? "").trim();
+        // 올톡페이 파일에는 아직 안 낸 것(발송완료)과 중간에 멈춘 것(결제중단)이 함께 있습니다.
+        // 그것까지 넣으면 **안 받은 돈을 받은 것으로** 기록하게 됩니다.
+        const status = String(pick(r, ["상태", "결제상태"]) ?? "").trim();
+        if (status && !/완료|성공|승인/.test(status)) {
+          notPaid += 1;
+          return;
+        }
+        if (status && /발송|전송/.test(status)) {
+          notPaid += 1;
+          return;
+        }
+        const paidAt = toIsoDate(pick(r, ["수납일자", "결제일", "입금일", "거래일", "승인일", "날짜", "일자", "date"]));
+        const amount = toAmount(pick(r, ["청구금액", "결제금액", "입금액", "금액", "amount"]));
+        const payerName = String(pick(r, ["고객명", "입금자", "성명", "이름", "보내는", "name"]) ?? "").trim();
+        const memo = String(pick(r, ["청구사유", "내용", "적요", "메모", "비고", "memo"]) ?? "").trim();
+        const phone = String(pick(r, ["청구핸드폰", "핸드폰", "휴대폰", "연락처", "phone"]) ?? "").trim();
+        const approval = String(pick(r, ["승인번호", "거래번호", "승인"]) ?? "").trim();
         if (!amount) return; // 금액이 없는 줄은 합계행·머리글입니다.
-        const sourceKey = `${file.name}|${i}|${paidAt}|${amount}|${payerName}`;
-        const m = matchPayment({ amount, payerName, memo }, issued, payments);
+        // 같은 파일을 다시 받아 올려도 겹치지 않도록, 있으면 **승인번호**를 열쇠로 씁니다.
+        // 파일이름+줄번호로만 만들면 내일 받은 파일은 줄 위치가 밀려 전부 새 입금이 됩니다.
+        const sourceKey = approval && approval !== "-"
+          ? `승인|${approval}|${amount}`
+          : `${file.name}|${i}|${paidAt}|${amount}|${payerName}`;
+        const m = matchPayment({ amount, payerName, memo, phone }, issued, payments);
         list.push({
           rowNo: i + 2,
           paidAt: paidAt || today,
@@ -106,9 +127,15 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
         });
       });
       if (list.length === 0) {
-        notify("금액이 있는 줄을 찾지 못했습니다. 첫 시트에 금액 칸이 있는지 확인해주세요.", "error");
+        notify(
+          notPaid > 0
+            ? `결제된 줄이 없습니다. ${notPaid}줄은 아직 안 낸 것(발송완료·결제중단)이라 넣지 않았습니다.`
+            : "금액이 있는 줄을 찾지 못했습니다. 첫 시트에 금액 칸이 있는지 확인해주세요.",
+          "error",
+        );
         return;
       }
+      if (notPaid > 0) notify(`${list.length}줄을 읽었습니다. 아직 안 낸 ${notPaid}줄은 넣지 않았습니다.`, "success");
       setStaged(list);
     } catch (e) {
       notify("파일을 읽지 못했습니다: " + (e instanceof Error ? e.message : String(e)), "error");
@@ -264,7 +291,10 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
           {fileName && <span className="text-[11px] text-slate-400">{fileName}</span>}
         </div>
         <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
-          첫 시트를 읽습니다. <b>날짜 · 금액 · 입금자 · 적요</b> 뜻의 칸을 이름이 조금 달라도 찾아냅니다. 같은 파일을 두 번
+          첫 시트를 읽습니다. 올톡페이 <b>청구서관리목록</b>을 그대로 올리시면 됩니다 — <b>고객명 · 청구핸드폰 ·
+          청구사유 · 청구금액 · 상태 · 수납일자 · 승인번호</b>를 알아봅니다. <b>상태가 결제완료인 줄만</b> 넣습니다(발송완료·결제중단은
+          아직 안 낸 돈입니다). 이름 칸에 붙은 메모(<code>조장훈(13,000잔돈차감)</code>)는 떼고 대조하며, 청구 연락처가 있으면
+          그것을 먼저 씁니다. 같은 파일을 두 번
           올려도 같은 줄은 한 번만 들어갑니다.
         </p>
       </div>

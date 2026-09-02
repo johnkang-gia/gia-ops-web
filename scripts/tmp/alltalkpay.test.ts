@@ -40,9 +40,25 @@ const p4 = buildBillPlan([inv({ invoice_no: "A", exported_at: "2026-09-01T00:00:
 eq(p4.rows[0].resent, true, "이미 보낸 건은 표시");
 
 const aoa = toAoa(p1.rows, { ...DEFAULT_HEADERS });
-eq(aoa[0], ["고객명", "휴대폰번호", "청구금액", "청구내용", "납부기한", "관리번호"], "머리글");
+eq(aoa[0], ["고객명", "청구핸드폰", "청구금액", "청구사유", "만료일자", "관리번호"], "머리글 — 올톡페이 화면 표기와 같게");
 eq(typeof aoa[1][1], "string", "번호는 글자 (앞의 0이 날아가지 않게)");
 eq(typeof aoa[1][2], "number", "금액은 숫자");
 
-console.log(`\n${pass}개 통과${fail ? `, ${fail}개 실패` : ""}`);
-process.exit(fail ? 1 : 0);
+
+// 올톡페이 청구서관리목록에서 실제로 나온 이름 칸들
+import { cleanPayerName } from "../../src/lib/payments";
+let np = 0, nf = 0;
+const eq2 = (a: string, b: string, m: string) => {
+  if (a === b) np++; else { nf++; console.log("✗", m, "받음:", a, "기대:", b); }
+};
+eq2(cleanPayerName("강하라/치과진료비12,900원포함"), "강하라", "빗금 메모");
+eq2(cleanPayerName("조장훈(13,000잔돈차감)"), "조장훈", "괄호 메모");
+eq2(cleanPayerName("조하윤(역사교재비1만원포함)"), "조하윤", "괄호 메모2");
+eq2(cleanPayerName("김재이(Ms.Aimie)"), "김재이", "괄호 영문");
+eq2(cleanPayerName("송우진,윤진"), "송우진", "형제는 앞 아이");
+eq2(cleanPayerName("심규민2세트(A,B)"), "심규민", "숫자 뒤 절단");
+eq2(cleanPayerName("황시원2세트"), "황시원", "숫자 뒤 절단2");
+eq2(cleanPayerName("권수호"), "권수호", "그냥 이름");
+console.log(`이름 정리 ${np}개 통과${nf ? `, ${nf}개 실패` : ""}`);
+console.log(`\n전체 ${pass + np}개 통과${fail + nf ? `, ${fail + nf}개 실패` : ""}`);
+process.exit(fail + nf ? 1 : 0);

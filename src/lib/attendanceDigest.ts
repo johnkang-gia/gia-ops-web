@@ -1,7 +1,7 @@
 // 출결알림(구글챗 미러링)과 부서 메모에서 "누가 결석/픽업/지각/조퇴인지"를 뽑아내는 규칙입니다.
 // AI를 쓰지 않고 학생 명부 대조 + 키워드 규칙으로만 처리합니다(추가 비용 0, 즉시 반영).
 
-import { splitClauses, nameSurfaces } from "@/lib/attendanceIntent";
+import { splitClauses, splitSentences, nameSurfaces } from "@/lib/attendanceIntent";
 export { nameSurfaces };
 
 export type AttendanceCategory = "픽업" | "결석" | "지각" | "조퇴";
@@ -80,6 +80,13 @@ export function normalizeRulePattern(s: string): string {
   return s.toLowerCase().replace(/\s+/g, "").trim();
 }
 
+/** "셔틀 안 타요", "태우지 말아주세요" - 셔틀이라는 말이 있어도 타는 게 아닙니다. */
+const NOT_RIDING = /((셔틀|스쿨\s*버스|버스|차)\s*(을|를|는|도)?\s*(안|못)\s*(타|탑|탈))|태우지\s*(마|말)|타지\s*(않|말|마)/;
+
+/** "셔틀타요", "기존처럼 스쿨버스", "평소대로" - 평소대로 차를 탄다는 신호. */
+const RIDING_AS_USUAL =
+  /((셔틀|스쿨\s*버스)\s*(을|를|는|도)?\s*(타|탑니|탈|태워|태우))|기존처럼|평소대로|정상\s*(등원|등교|하원)|as\s*usual|(take|takes|taking)\s*the\s*(school\s*)?bus/i;
+
 export function categorize(text: string, rules?: LearningRule[]): AttendanceCategory | null {
   const lower = text.toLowerCase();
   // 사람이 가르친 분류가 기본 키워드보다 우선입니다 - 기본 규칙이 틀렸을 때 고치려고 가르친
@@ -94,6 +101,12 @@ export function categorize(text: string, rules?: LearningRule[]): AttendanceCate
   for (const c of ATTENDANCE_CATEGORIES) {
     if (c.keywords.some((k) => lower.includes(k.toLowerCase()))) return c.key;
   }
+  // "셔틀 안 탑니다" · "차 안 타요" · "태우지 마세요".
+  //
+  // 이 말은 **픽업**입니다 - 셔틀을 안 타면 누군가 데리러 옵니다. 그런데 여기에 걸리는 낱말이
+  // 하나도 없어서, 이런 글은 통째로 무시되고 그 아이는 출결내역에 아예 뜨지 않았습니다.
+  // 키워드보다 뒤에 두는 이유: "결석이라 셔틀 안 타요"처럼 결석이 함께 적힌 글은 결석입니다.
+  if (NOT_RIDING.test(text)) return "픽업";
   return null;
 }
 
@@ -112,12 +125,7 @@ export function categorize(text: string, rules?: LearningRule[]): AttendanceCate
 //
 // 그래서 **이름이 있는 절(節)만** 보고 그 아이의 상태를 정합니다.
 
-/** "셔틀 안 타요", "태우지 말아주세요" - 셔틀이라는 말이 있어도 타는 게 아닙니다. */
-const NOT_RIDING = /((셔틀|스쿨\s*버스|버스|차)\s*(을|를|는|도)?\s*(안|못)\s*(타|탑|탈))|태우지\s*(마|말)|타지\s*(않|말|마)/;
 
-/** "셔틀타요", "기존처럼 스쿨버스", "평소대로" - 평소대로 차를 탄다는 신호. */
-const RIDING_AS_USUAL =
-  /((셔틀|스쿨\s*버스)\s*(을|를|는|도)?\s*(타|탑니|탈|태워|태우))|기존처럼|평소대로|정상\s*(등원|등교|하원)|as\s*usual|(take|takes|taking)\s*the\s*(school\s*)?bus/i;
 
 /**
  * 이 학생이 **이 글에서** 어떤 상태인지.
@@ -142,11 +150,29 @@ export function categoryForStudent(
   surfaces: readonly string[],
   whole: AttendanceCategory,
   rules?: LearningRule[],
+  /** 같은 글에 함께 나오는 **다른 아이들**의 표기. 한 문장에 여럿이면 절로 나눠 읽습니다. */
+  otherSurfaces?: readonly string[],
 ): AttendanceCategory | null {
   if (surfaces.length === 0) return whole;
   const flat = (v: string) => v.toLowerCase().replace(/\s+/g, "");
-  const own = splitClauses(text).filter((c) => surfaces.some((n) => flat(c).includes(flat(n))));
-  // 이름이 어느 절에도 없으면(별칭 규칙으로 잡힌 경우 등) 예전처럼 글 전체를 따릅니다.
+  const hasName = (piece: string, names: readonly string[]) => names.some((n) => flat(piece).includes(flat(n)));
+
+  /**
+   * 이 아이가 나오는 **문장**을 먼저 봅니다.
+   *
+   * 절로만 자르면 이름과 서술이 갈라집니다 - `오늘 이예나, 셔틀 안탑니다` 는 쉼표에서 잘려
+   * 이름 쪽 조각에 아무 단서가 없고, 그러면 그 아이는 아무 분류도 못 받습니다.
+   * 다만 한 문장에 아이가 여럿이면(`권수호는 픽업, 라원이는 셔틀`) 다시 절로 나눠 각자 읽습니다.
+   */
+  const own: string[] = [];
+  for (const s of splitSentences(text).filter((s) => hasName(s, surfaces))) {
+    const shared = (otherSurfaces ?? []).some((n) => flat(s).includes(flat(n)));
+    if (shared) own.push(...splitClauses(s).filter((c) => hasName(c, surfaces)));
+    else own.push(s);
+  }
+  // 문장에서 못 찾으면 절 단위로 한 번 더 봅니다.
+  if (own.length === 0) own.push(...splitClauses(text).filter((c) => hasName(c, surfaces)));
+  // 이름이 어디에도 없으면(별칭 규칙으로 잡힌 경우 등) 예전처럼 글 전체를 따릅니다.
   if (own.length === 0) return whole;
 
   for (const c of own) {

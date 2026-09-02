@@ -38,6 +38,23 @@ const PICKUP = /(픽업|픽엄|데리러|직접\s*데려|pick\s*-?\s*up)/i;
  * "여명인 괜찮은데 이제는 아파서 쉽니다"가 통째로 한 덩이가 됩니다. 뒤집는 어미와 쉼표도
  * 경계로 봅니다.
  */
+/**
+ * 글을 **문장 단위**로 자릅니다.
+ *
+ * 절 단위로만 읽으면 이름과 서술이 갈라집니다 - `오늘 이예나, 셔틀 안탑니다` 는 쉼표에서
+ * 잘려 이름 쪽 조각에 아무 단서가 없고, 그러면 그 아이는 아무 분류도 못 받습니다.
+ * 문장으로 먼저 읽고, 한 문장에 아이가 여럿일 때만 절로 더 잘게 나눕니다.
+ */
+export function splitSentences(text: string): string[] {
+  return (text ?? "")
+    .replace(/([.!?。\n])/g, "$1\x01")
+    // 한국어는 마침표를 잘 안 찍습니다. 종결어미 뒤에서도 끊습니다.
+    .replace(/(습니다|합니다|입니다|해요|어요|아요|네요|세요|please)(?=[\s]|$)/g, "$1\x01")
+    .split("\x01")
+    .map((s) => s.trim())
+    .filter((s) => /[가-힣A-Za-z]/.test(s));
+}
+
 export function splitClauses(text: string): string[] {
   return (text ?? "")
     .replace(/([.!?。])/g, "$1")

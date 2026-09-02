@@ -422,7 +422,8 @@ export default function AttendanceDigestPanel({
       }
       for (const s of students) {
         // 한 글 안에서도 아이마다 이야기가 다릅니다. 이름이 있는 절만 보고 정합니다.
-        const mine = categoryForStudent(m.content, surfacesFor(s.name, roster), category, rules);
+        const others = students.filter((o) => o.name !== s.name).flatMap((o) => surfacesFor(o.name, roster));
+        const mine = categoryForStudent(m.content, surfacesFor(s.name, roster), category, rules, others);
         if (!mine) continue;
         out.push({
           key: `chat-${m.id}-${s.studentKey}`,

@@ -149,7 +149,10 @@ export async function scanIntoEntries(
       // "권수호, 황준호 픽업입니다, 라원 라윤이는 셔틀타요" - 뒤의 둘은 평소대로 셔틀입니다.
       // 여기서 걸러내지 않으면 셔틀을 타는 아이가 자동으로 픽업 줄로 등록되고, 그 줄이
       // 대시보드·체크표에 그대로 퍼집니다.
-      const status = categoryForStudent(m.text, surfacesFor(st.name, roster), category, rules);
+      // 같은 글에 나오는 다른 아이들의 표기도 넘깁니다. 한 문장에 여럿이면 절로 나눠 읽어야
+      // 합니다("권수호는 픽업, 라원이는 셔틀").
+      const others = matched.filter((o) => o.name !== st.name).flatMap((o) => surfacesFor(o.name, roster));
+      const status = categoryForStudent(m.text, surfacesFor(st.name, roster), category, rules, others);
       if (!status) {
         skipped += 1;
         continue;

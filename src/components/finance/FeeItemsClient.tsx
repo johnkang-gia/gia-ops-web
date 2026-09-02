@@ -20,8 +20,9 @@ type Props = {
   initialItems: FeeItem[];
   initialCategories: FeeCategory[];
   terms: Term[];
-  grades: string[];
-  classes: string[];
+  /** 부서별 학년·반. 초등과 중고등은 학년 표기도 반 이름도 다릅니다. */
+  gradesByDept: Record<string, string[]>;
+  classesByDept: Record<string, string[]>;
   currentUserEmail: string;
   loadError: string | null;
 };
@@ -39,7 +40,7 @@ const EMPTY = {
   note: "",
 };
 
-export default function FeeItemsClient({ initialItems, initialCategories, terms, grades, classes, currentUserEmail, loadError }: Props) {
+export default function FeeItemsClient({ initialItems, initialCategories, terms, gradesByDept, classesByDept, currentUserEmail, loadError }: Props) {
   const notify = useToast();
   const [items, setItems] = useState(initialItems);
   const [form, setForm] = useState({ ...EMPTY });
@@ -75,6 +76,16 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
    */
   const [sortBy, setSortBy] = useState<"대상" | "이름" | "분류" | "단가">("분류");
   const [asc, setAsc] = useState(true);
+
+  /**
+   * 지금 부서의 학년·반.
+   *
+   * 예전에는 한 벌을 초등·중고등에 똑같이 썼습니다. 그래서 중고등부 항목을 만들 때도 초등
+   * 학년(2~5)과 초등 반(G2A…)이 떴습니다 - 고를 수 있는 것이 남의 부서 것뿐이면 기본 대상을
+   * 제대로 못 정하고, 결국 아이마다 손으로 체크하게 됩니다.
+   */
+  const grades = gradesByDept[deptTab] ?? [];
+  const classes = classesByDept[deptTab] ?? [];
 
   const deptOfItem = (i: FeeItem): ItemDept => (i.department === "중고등부" ? "중고등부" : i.department === "초등부" ? "초등부" : "공통");
   /** 지금 부서에서 다루는 항목. 공통은 어느 부서에서 보든 함께 나옵니다. */

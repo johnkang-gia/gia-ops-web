@@ -318,7 +318,8 @@ export default function ShuttleChecklistSidebar({
       for (const s of students) {
         // 한 글에 아이가 여럿이면 아이마다 따로 읽습니다.
         // "권수호, 황준호 픽업입니다, 라원 라윤이는 셔틀타요" - 앞의 둘만 픽업입니다.
-        const mine = categoryForStudent(m.content, surfacesFor(s.name, roster), category, rules);
+        const others = students.filter((o) => o.name !== s.name).flatMap((o) => surfacesFor(o.name, roster));
+        const mine = categoryForStudent(m.content, surfacesFor(s.name, roster), category, rules, others);
         if (mine !== "픽업" && mine !== "결석") continue;
         out.push({
           key: `sc-${m.id}-${s.studentKey}`,

@@ -31,7 +31,7 @@ export async function POST(req: Request) {
   const supabase = await createClient();
 
   const [stuRes, itemsRes, ovRes] = await Promise.all([
-    supabase.from("wr_students").select("id, name, name_en, grade, class_name").eq("id", studentId).maybeSingle(),
+    supabase.from("wr_students").select("id, name, name_en, grade, class_name, parent_phone").eq("id", studentId).maybeSingle(),
     supabase.from("fee_items").select("*").eq("active", true),
     supabase.from("student_fee_items").select("*").eq("student_id", studentId),
   ]);
@@ -39,7 +39,7 @@ export async function POST(req: Request) {
   if (itemsRes.error) return NextResponse.json({ error: itemsRes.error.message }, { status: 500 });
   if (ovRes.error) return NextResponse.json({ error: ovRes.error.message }, { status: 500 });
 
-  const student = stuRes.data as { id: string; name: string; name_en: string | null; grade: string | null; class_name: string | null } | null;
+  const student = stuRes.data as { id: string; name: string; name_en: string | null; grade: string | null; class_name: string | null; parent_phone: string | null } | null;
   if (!student) return NextResponse.json({ error: "학생을 찾지 못했습니다." }, { status: 404 });
 
   const lines = resolveStudentItems(
@@ -71,6 +71,8 @@ export async function POST(req: Request) {
       issue_date: issue,
       due_date: due,
       total_amount: total,
+      // 그때의 보호자 연락처를 같이 굳힙니다. 명부가 나중에 바뀌어도 어디로 청구했는지가 남습니다.
+      guardian_phone: student.parent_phone,
       issued_by: me.name || me.email,
     })
     .select()

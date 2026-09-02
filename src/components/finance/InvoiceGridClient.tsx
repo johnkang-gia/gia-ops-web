@@ -1,9 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
 import { resolveStudentItems, sumLines, won, type StudentLike } from "@/lib/feeItems";
+import { departmentOf, gradeSortKey, type Department } from "@/lib/department";
+import { prettyPhone } from "@/lib/alltalkpay";
+import AlltalkpayExport from "./AlltalkpayExport";
 import FinanceTabs from "./FinanceTabs";
 import type { FeeItem, Invoice, StudentFeeItem } from "@/lib/types";
 
@@ -19,7 +22,26 @@ import type { FeeItem, Invoice, StudentFeeItem } from "@/lib/types";
 //   · 맨 오른쪽에 아이별 합계와 발행 상태. 발행 안 된 줄이 한눈에 보입니다.
 //   · 고른 줄만 한 번에 발행합니다.
 
-export type Student = { id: string; name: string; nameEn: string | null; grade: string | null; className: string | null };
+/**
+ * 표의 한 줄.
+ *
+ * 이름·학년만 있으면 표는 그려지지만, 청구는 못 합니다. 청구서는 **보호자 연락처**로
+ * 나가고, 악기는 명부의 악기 칸과 어긋나면 안 됩니다. 그래서 명부에서 그 칸들을 같이
+ * 들고 옵니다 - 재무 화면에서 명부를 다시 열어 확인하게 두면 결국 확인 안 합니다.
+ */
+export type Student = {
+  id: string;
+  name: string;
+  nameEn: string | null;
+  grade: string | null;
+  className: string | null;
+  department: string | null;
+  studentNo: string | null;
+  parentPhone: string | null;
+  parentEmail: string | null;
+  /** 명부에 적힌 악기. 인보이스의 악기 항목과 어긋나면 화면에서 알려줍니다. */
+  instrument: string | null;
+};
 
 type Props = {
   students: Student[];
@@ -32,6 +54,9 @@ type Props = {
 };
 
 type View = { kind: "반"; value: string } | { kind: "학년"; value: string } | { kind: "전체" };
+
+/** 위쪽 큰 갈래. 초등과 중고등은 반 이름도 학년 표기도 달라서, 한 표에 섞으면 열이 뒤엉킵니다. */
+type DeptTab = Department | "기타";
 
 export default function InvoiceGridClient({
   students,
@@ -50,7 +75,12 @@ export default function InvoiceGridClient({
   const [newOpen, setNewOpen] = useState(false);
   const [newItem, setNewItem] = useState({ category: "", name: "", name_ko: "", unit_price: 0, applyToView: true });
   const [invoices, setInvoices] = useState(recentInvoices);
+  const [dept, setDept] = useState<DeptTab>("초등부");
   const [view, setView] = useState<View>({ kind: "전체" });
+  /** 올톡페이 발송 파일을 만들 청구서. 값이 있으면 창이 열립니다. */
+  const [exportIds, setExportIds] = useState<string[] | null>(null);
+  /** 방금 발행한 것. 발행 직후 바로 청구로 이어가라고 띄웁니다. */
+  const [justIssued, setJustIssued] = useState<Invoice[]>([]);
   const [q, setQ] = useState("");
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
@@ -84,13 +114,37 @@ export default function InvoiceGridClient({
     [itemList],
   );
 
+  /**
+   * 부서로 먼저 가릅니다.
+   *
+   * 초등과 중고등은 반 이름 체계도, 사는 교재도 다릅니다. 한 표에 섞으면 열이 서로의 몫까지
+   * 늘어나 가로로 한없이 길어지고, "2학년"이 초등 2학년인지 중2인지도 헷갈립니다.
+   */
+  const deptOf = (s: Student): DeptTab => departmentOf({ department: s.department, grade: s.grade }) ?? "기타";
+  const deptCounts = useMemo(() => {
+    const m = new Map<DeptTab, number>();
+    for (const s of students) m.set(deptOf(s), (m.get(deptOf(s)) ?? 0) + 1);
+    return m;
+  }, [students]);
+  /** 아무도 없는 갈래는 탭으로 만들지 않습니다. 다만 '기타'는 사람이 있으면 반드시 보여줍니다 -
+      부서가 안 적힌 아이가 조용히 사라지면 그 아이만 청구가 안 됩니다. */
+  const deptTabs = useMemo(
+    () => (["초등부", "중고등부", "유치부", "기타"] as DeptTab[]).filter((d) => (deptCounts.get(d) ?? 0) > 0),
+    [deptCounts],
+  );
+  useEffect(() => {
+    if (deptTabs.length > 0 && !deptTabs.includes(dept)) setDept(deptTabs[0]);
+  }, [deptTabs, dept]);
+
+  const inDept = useMemo(() => students.filter((s) => deptOf(s) === dept), [students, dept]);
+
   const grades = useMemo(
-    () => [...new Set(students.map((s) => (s.grade ?? "").trim()).filter(Boolean))].sort((a, b) => Number(a) - Number(b)),
-    [students],
+    () => [...new Set(inDept.map((s) => (s.grade ?? "").trim()).filter(Boolean))].sort((a, b) => gradeSortKey(a) - gradeSortKey(b)),
+    [inDept],
   );
   const classes = useMemo(
-    () => [...new Set(students.map((s) => (s.className ?? "").trim()).filter(Boolean))].sort(),
-    [students],
+    () => [...new Set(inDept.map((s) => (s.className ?? "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ko")),
+    [inDept],
   );
 
   const invoiceByStudent = useMemo(() => {
@@ -102,7 +156,7 @@ export default function InvoiceGridClient({
   /** 지금 보고 있는 명단. */
   const rows = useMemo(() => {
     const k = q.trim().toLowerCase().replace(/\s+/g, "");
-    let list = students;
+    let list = inDept;
     if (view.kind === "반") list = list.filter((s) => (s.className ?? "") === view.value);
     if (view.kind === "학년") list = list.filter((s) => (s.grade ?? "") === view.value);
     if (k) {
@@ -112,7 +166,7 @@ export default function InvoiceGridClient({
     }
     if (onlyUnissued) list = list.filter((s) => !invoiceByStudent.has(s.id));
     return list;
-  }, [students, view, q, onlyUnissued, invoiceByStudent]);
+  }, [inDept, view, q, onlyUnissued, invoiceByStudent]);
 
   /** 이 명단의 아이마다 사는 것. 표 전체가 이 하나에서 나옵니다. */
   const linesByStudent = useMemo(() => {
@@ -131,6 +185,12 @@ export default function InvoiceGridClient({
 
   const cats = useMemo(() => [...new Set(usedItems.map((i) => i.category))], [usedItems]);
   const allCats = useMemo(() => [...new Set(activeItems.map((i) => i.category))], [activeItems]);
+
+  /** 청구할 것이 있는데 연락처가 없는 아이. 없는 아이 전부를 세면 대부분이라 아무도 안 봅니다. */
+  const noPhone = useMemo(
+    () => rows.filter((s) => !s.parentPhone?.trim() && sumLines(linesByStudent.get(s.id) ?? []) > 0),
+    [rows, linesByStudent],
+  );
 
   const totalOf = (sid: string) => sumLines(linesByStudent.get(sid) ?? []);
   const grandTotal = rows.reduce((n, s) => n + totalOf(s.id), 0);
@@ -187,6 +247,27 @@ export default function InvoiceGridClient({
   function toggleCell(s: Student, item: FeeItem) {
     const on = !!lineFor(s.id, item.id);
     void upsert(s.id, item, on ? "exclude" : "include", lineFor(s.id, item.id)?.qty ?? 1);
+  }
+
+  /**
+   * 명부의 악기 칸과 항목 이름이 같은 악기를 가리키는지.
+   *
+   * 명부에는 `첼로`, 항목에는 `Cello Rental` 처럼 적혀 있어서 글자가 똑같지는 않습니다.
+   * 한쪽이 다른 쪽에 들어 있으면 같은 것으로 봅니다 - 틀려도 표시 하나가 빠질 뿐이고,
+   * 맞으면 첼로 아이에게 바이올린이 붙은 것을 사람이 알아챌 수 있습니다.
+   */
+  function matchesInstrument(item: FeeItem, instrument: string) {
+    const flat = (v: string) => v.toLowerCase().replace(/\s+/g, "");
+    const ins = flat(instrument);
+    if (ins.length < 2) return false;
+    return [item.name, item.name_ko ?? ""].some((n) => flat(n).includes(ins) || (flat(n).length >= 2 && ins.includes(flat(n))));
+  }
+
+  /** 내보낸 표시를 화면에도 바로 반영합니다. 새로고침해야 보이면 두 번 보내게 됩니다. */
+  function markExported(ids: string[]) {
+    const at = new Date().toISOString();
+    setInvoices((p) => p.map((v) => (ids.includes(v.id) ? { ...v, exported_at: at } : v)));
+    setJustIssued((p) => p.map((v) => (ids.includes(v.id) ? { ...v, exported_at: at } : v)));
   }
 
   /** 열 하나를 이 명단 전원에게 넣거나 뺍니다. 반 단위로 교재를 붙일 때 이게 없으면 스무 번 눌러야 합니다. */
@@ -349,7 +430,12 @@ export default function InvoiceGridClient({
         // 조용히 넘기면 그 아이만 인보이스 없이 남습니다.
         else failed.push(`${s.name}(${body.error ?? res.statusText})`);
       }
-      if (made.length > 0) setInvoices((p) => [...made, ...p]);
+      if (made.length > 0) {
+        setInvoices((p) => [...made, ...p]);
+        // 발행은 종이를 만든 것일 뿐, 아직 청구가 나간 것이 아닙니다. 여기서 끊기면
+        // 발행만 해놓고 올톡페이에 안 올리는 일이 생깁니다.
+        setJustIssued(made);
+      }
       if (failed.length > 0) notify(`${made.length}건 발행 · ${failed.length}건 실패: ${failed.join(", ")}`, "error");
       else notify(`${made.length}건 발행했습니다.`, "success");
       setChecked(new Set());
@@ -429,7 +515,57 @@ export default function InvoiceGridClient({
         </p>
       )}
 
-      {/* ── 보기 ─────────────────────────────────────────────────── */}
+      {/* ── 발행 직후 ─────────────────────────────────────────────
+          발행은 종이를 만든 것일 뿐입니다. 여기서 끊기면 발행만 해놓고 청구를 안 보냅니다. */}
+      {justIssued.length > 0 && (
+        <div className="mb-2 flex flex-wrap items-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2">
+          <span className="text-[12px] font-bold text-emerald-900">
+            방금 {justIssued.length}건 발행했습니다.
+          </span>
+          <span className="text-[11px] text-emerald-800">
+            {justIssued.every((v) => v.exported_at) ? "발송 파일까지 받으셨습니다." : "아직 청구는 나가지 않았습니다 — 올톡페이로 보내야 합니다."}
+          </span>
+          <button
+            onClick={() => setExportIds(justIssued.map((v) => v.id))}
+            className="ml-auto rounded-lg bg-emerald-600 px-3 py-1.5 text-[12px] font-bold text-white"
+          >
+            📤 올톡페이로 청구하기
+          </button>
+          <button onClick={() => setJustIssued([])} className="text-[11px] font-bold text-emerald-700 underline">
+            닫기
+          </button>
+        </div>
+      )}
+
+      {/* ── 부서 ──────────────────────────────────────────────────
+          초등과 중고등을 한 표에 섞으면 열이 서로의 몫까지 늘어나 가로로 한없이 길어지고,
+          "2학년"이 초등 2학년인지 중2인지도 헷갈립니다. 그래서 먼저 갈라놓습니다. */}
+      <div className="mb-2 flex flex-wrap items-center gap-1 border-b border-slate-200">
+        {deptTabs.map((d) => (
+          <button
+            key={d}
+            onClick={() => {
+              setDept(d);
+              // 부서를 바꾸면 반·학년은 다시 골라야 합니다. 초등 G2A는 중고등에 없습니다.
+              setView({ kind: "전체" });
+              setChecked(new Set());
+            }}
+            className={
+              "-mb-px rounded-t-lg px-3 py-1.5 text-[13px] font-bold transition-colors " +
+              (dept === d
+                ? "border-b-2 border-teal-600 text-teal-700"
+                : "border-b-2 border-transparent text-slate-400 hover:bg-slate-50 hover:text-slate-700")
+            }
+          >
+            {d === "기타" ? "부서 미상" : d}
+            <span className="ml-1 text-[11px] font-semibold opacity-60">{deptCounts.get(d) ?? 0}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* ── 보기 ─────────────────────────────────────────────────
+          반이 먼저입니다. 교재는 반 단위로 붙고, 재무 담당자가 실제로 여는 것도 반입니다.
+          학년은 악기처럼 반을 넘어 흩어지는 것을 볼 때 씁니다. */}
       <div className="mb-2 flex flex-wrap items-center gap-1.5">
         <span className="text-[11px] font-bold text-slate-400">반</span>
         {classes.map((c) => (
@@ -485,10 +621,41 @@ export default function InvoiceGridClient({
             );
           })}
         </span>
-        <button onClick={exportCsv} className="ml-auto rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">
+        <button
+          onClick={() => {
+            // 고른 줄이 있으면 그것만, 없으면 지금 보이는 명단에서 **아직 안 보낸** 발행 건만.
+            // 전부를 기본으로 잡으면 이미 보낸 청구서까지 다시 올리게 됩니다.
+            const picked = rows.filter((s) => checked.has(s.id));
+            const src = picked.length > 0 ? picked : rows;
+            const ids = src
+              .map((s) => invoiceByStudent.get(s.id))
+              .filter((v): v is Invoice => !!v && (picked.length > 0 || !v.exported_at))
+              .map((v) => v.id);
+            if (ids.length === 0) {
+              notify(picked.length > 0 ? "고른 학생 중 발행된 청구서가 없습니다." : "보낼 청구서가 없습니다. 먼저 발행해주세요.", "error");
+              return;
+            }
+            setExportIds(ids);
+          }}
+          className="ml-auto rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-800 hover:bg-emerald-100"
+          title="발행된 청구서를 올톡페이 대량발송 엑셀로 만듭니다"
+        >
+          📤 올톡페이 청구
+        </button>
+        <button onClick={exportCsv} className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">
           ⬇ CSV (구글시트용)
         </button>
       </div>
+
+      {/* 청구서는 명부의 보호자 연락처로 나갑니다. 발행은 되는데 발송에서 조용히 빠지는 것이라
+          표 위에서 미리 알려줍니다. */}
+      {noPhone.length > 0 && (
+        <p className="mb-2 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-[11px] text-orange-800">
+          이 명단에서 <b>보호자 연락처가 없는 학생 {noPhone.length}명</b>입니다 — 발행은 되지만 올톡페이 발송에서 빠집니다.{" "}
+          {noPhone.slice(0, 8).map((s) => s.name).join(", ")}
+          {noPhone.length > 8 ? ` 외 ${noPhone.length - 8}명` : ""}
+        </p>
+      )}
 
       {/* ── 표에서 바로 항목 만들기 ────────────────────────────── */}
       <div className="mb-2 rounded-xl border border-slate-200 bg-white">
@@ -747,6 +914,7 @@ export default function InvoiceGridClient({
                   </td>
                   <td className="border-b border-slate-100 px-2 py-1">
                     {inv ? (
+                      <span className="flex items-center gap-1">
                       <a
                         href={`/finance/invoices/${inv.id}/print`}
                         target="_blank"
@@ -755,6 +923,18 @@ export default function InvoiceGridClient({
                       >
                         {inv.invoice_no}
                       </a>
+                      {/* 발행과 발송은 다릅니다. 종이를 만든 것과 학부모에게 청구가 간 것을
+                          같은 표시로 두면, 발행만 해놓고 안 보낸 것을 아무도 모릅니다. */}
+                      {inv.exported_at ? (
+                        <span className="rounded bg-emerald-100 px-1 text-[10px] font-bold text-emerald-800" title="올톡페이 발송 파일로 내보냈습니다">
+                          보냄
+                        </span>
+                      ) : (
+                        <span className="rounded bg-amber-100 px-1 text-[10px] font-bold text-amber-800" title="아직 올톡페이로 청구하지 않았습니다">
+                          미발송
+                        </span>
+                      )}
+                      </span>
                     ) : total > 0 ? (
                       <span className="text-[11px] font-semibold text-amber-600">미발행</span>
                     ) : (
@@ -878,6 +1058,10 @@ export default function InvoiceGridClient({
         </div>
       )}
 
+      {exportIds && (
+        <AlltalkpayExport invoiceIds={exportIds} onClose={() => setExportIds(null)} onMarked={markExported} />
+      )}
+
       {/* ── 한 학생 자세히 ─────────────────────────────────────── */}
       {detail && (() => {
         const dLines = resolveStudentItems(activeItems, detail as StudentLike, overrides);
@@ -904,9 +1088,29 @@ export default function InvoiceGridClient({
                     {dInv.invoice_no} 보기
                   </a>
                 )}
+                <a
+                  href={`/students/${detail.id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[11px] font-semibold text-slate-500 underline"
+                >
+                  명부 열기 ↗
+                </a>
                 <button onClick={() => setDetail(null)} className="ml-auto text-sm font-bold text-slate-400 hover:text-slate-700">
                   ✕
                 </button>
+              </div>
+
+              {/* 명부에서 그대로 가져온 값입니다. 청구서는 이 연락처로 나갑니다 - 비어 있으면
+                  발행은 되는데 발송에서 조용히 빠지므로, 고르기 전에 먼저 보입니다. */}
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-slate-100 bg-slate-50 px-3 py-1.5 text-[11px]">
+                {detail.studentNo && <span className="text-slate-500">학번 {detail.studentNo}</span>}
+                <span className={detail.parentPhone ? "text-slate-600" : "font-bold text-orange-700"}>
+                  보호자 {detail.parentPhone ? prettyPhone(detail.parentPhone.replace(/[^\d]/g, "")) : "연락처 없음 — 청구서가 못 나갑니다"}
+                </span>
+                {detail.instrument && (
+                  <span className="rounded bg-violet-100 px-1.5 py-0.5 font-semibold text-violet-800">명부 악기 · {detail.instrument}</span>
+                )}
               </div>
 
               <div className="min-h-0 flex-1 overflow-y-auto p-3">
@@ -945,6 +1149,11 @@ export default function InvoiceGridClient({
                                 </span>
                                 {item.name_ko && <span className="ml-1.5 text-[11px] text-slate-400">{item.name_ko}</span>}
                                 {l?.fromDefault && <span className="ml-1.5 text-[10px] text-teal-700">기본</span>}
+                                {/* 명부에 적힌 악기와 같은 이름이면 표시해 줍니다. 악기는 아이마다 달라서
+                                    이 대조가 없으면 첼로 아이에게 바이올린 대여료가 붙어도 모릅니다. */}
+                                {detail.instrument && matchesInstrument(item, detail.instrument) && (
+                                  <span className="ml-1.5 rounded bg-violet-100 px-1 text-[10px] font-semibold text-violet-800">명부와 같음</span>
+                                )}
                                 {ov && (
                                   <span className="ml-1.5 text-[10px] font-semibold text-amber-700">
                                     {ov.mode === "exclude" ? "직접 뺌" : "직접 넣음"}

@@ -2,9 +2,11 @@ import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
-import { isStaffOrAboveUser } from "@/lib/roles";
+import { hasFinanceAccess, isStaffOrAboveUser } from "@/lib/roles";
 import DismissalPlanEditor from "@/components/students/DismissalPlanEditor";
 import type { DismissalPlan } from "@/lib/dismissalPlan";
+import { won } from "@/lib/feeItems";
+import type { Invoice } from "@/lib/types";
 import type { Incident, Task, TaskComment, ChatMessage, WrClass, WrEnrollment, WrReport, WrStudent, WrStudentFieldDef } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -35,6 +37,24 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
   if (!student) notFound();
 
   const searchName = coreName(student.name);
+
+  // 인보이스는 **재무 열쇠를 가진 사람에게만** 보입니다. 담임 선생님이 학생 프로필을 여는 것과
+  // 아이 집의 납부 상태를 보는 것은 다른 일입니다.
+  const canSeeFinance = hasFinanceAccess(me);
+  const invRes = canSeeFinance
+    ? await supabase.from("invoices").select("*").eq("student_id", id).order("issue_date", { ascending: false })
+    : null;
+  if (invRes?.error) console.error("[학생 프로필] 인보이스를 읽지 못했습니다:", invRes.error.message);
+  const invoices = (invRes?.data as Invoice[] | null) ?? [];
+  const payRes =
+    canSeeFinance && invoices.length > 0
+      ? await supabase.from("payments").select("invoice_id, amount").in("invoice_id", invoices.map((v) => v.id))
+      : null;
+  if (payRes?.error) console.error("[학생 프로필] 수납을 읽지 못했습니다:", payRes.error.message);
+  const paidByInvoice = new Map<string, number>();
+  for (const p of (payRes?.data as { invoice_id: string | null; amount: number }[] | null) ?? []) {
+    if (p.invoice_id) paidByInvoice.set(p.invoice_id, (paidByInvoice.get(p.invoice_id) ?? 0) + Number(p.amount));
+  }
 
   const [
     enrollmentsRes,
@@ -218,6 +238,54 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
         initialPlans={dismissalPlans}
         userEmail={me.email}
       />
+
+      {/* 재무 - 학부모가 "그 청구서 냈는데요" 하고 전화하면 여기서 바로 답이 나와야 합니다.
+          재무 화면으로 건너가 이름을 다시 찾게 두면 통화 중에 못 합니다. */}
+      {canSeeFinance && (
+        <div className="mb-5 g-panel-solid p-4 shadow-sm">
+          <div className="mb-2 flex flex-wrap items-baseline gap-2">
+            <h2 className="text-sm font-bold text-slate-700">💳 학비외 청구</h2>
+            <a href="/finance/invoices" className="text-[11px] font-semibold text-teal-700 underline">
+              인보이스 명단 →
+            </a>
+          </div>
+          {invoices.length === 0 ? (
+            <p className="text-xs text-slate-400">발행된 청구서가 없습니다.</p>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              {invoices.map((v) => {
+                const paid = paidByInvoice.get(v.id) ?? 0;
+                const balance = Number(v.total_amount) - paid;
+                return (
+                  <div key={v.id} className="flex flex-wrap items-center gap-2 rounded-lg bg-slate-50 px-2.5 py-2 text-xs">
+                    <a href={`/finance/invoices/${v.id}/print`} target="_blank" rel="noopener noreferrer" className="font-bold text-emerald-700 underline">
+                      {v.invoice_no}
+                    </a>
+                    <span className="text-slate-400">{v.issue_date}</span>
+                    <span className="font-bold tabular-nums text-slate-700">{won(Number(v.total_amount))}</span>
+                    {v.status === "취소" ? (
+                      <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">취소</span>
+                    ) : balance <= 0 ? (
+                      <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800">완납</span>
+                    ) : paid > 0 ? (
+                      <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">
+                        일부 납부 · 잔액 {won(balance)}
+                      </span>
+                    ) : (
+                      <span className="rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-bold text-rose-800">미납</span>
+                    )}
+                    {v.exported_at ? (
+                      <span className="text-[10px] text-slate-400">올톡페이 발송함</span>
+                    ) : (
+                      <span className="text-[10px] font-semibold text-amber-600">아직 발송 안 함</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* 셔틀 - 학부모 전화를 받으면 가장 먼저 확인하는 것 중 하나인데, 여기 없어서 셔틀
           메뉴까지 옮겨 다녀야 했습니다. 요일별로 다른 차를 타는 아이가 12명 있어서

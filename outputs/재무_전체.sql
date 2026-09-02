@@ -1,10 +1,11 @@
 -- ═══════════════════════════════════════════════════════════════════════════
 -- 재무 전체 — Supabase SQL Editor 붙여넣기용 (한 번에 실행)
 --
--- 재무 기능에 필요한 마이그레이션 세 개를 순서대로 이어 붙였습니다.
+-- 재무 기능에 필요한 마이그레이션을 순서대로 이어 붙였습니다.
 --   1) 20260901160000_fee_items_invoices  학비외 항목 · 인보이스
 --   2) 20260901180000_payments            수납 · 단가 이력 · 취소 사유
 --   3) 20260901200000_fee_categories      항목 분류 등록
+--   4) 20260902120000_invoice_alltalkpay  올톡페이 청구 연결(보호자 연락처·발송 표시)
 --
 -- **이미 일부를 실행하셨어도 그대로 다시 돌리면 됩니다.** 전부 if not exists / or replace 라
 -- 있는 것은 건너뛰고 없는 것만 만듭니다.
@@ -370,11 +371,39 @@ drop policy if exists fee_categories_finance_only on public.fee_categories;
 create policy fee_categories_finance_only on public.fee_categories
   for all using (public.has_finance_access()) with check (public.has_finance_access());
 
+-- ███████████████████████████████████████████████████████████████████████████
+-- 20260902120000_invoice_alltalkpay.sql — 올톡페이 청구 연결
+-- ███████████████████████████████████████████████████████████████████████████
+
+-- 인보이스 → 올톡페이 청구 연결에 필요한 칸
+--
+-- 올톡페이는 **엑셀 대량 업로드**로 청구서를 보냅니다(공개 API가 없습니다). 그래서 우리가
+-- 할 수 있는 것은 "보낼 파일을 정확히 만들어 주는 것"과 "이미 보낸 것을 두 번 안 보내게
+-- 막는 것" 두 가지입니다.
+--
+-- 두 번 보내는 것이 실제 위험입니다. 엑셀은 올려도 아무 표시가 남지 않아서, 다음 사람이
+-- 같은 명단을 다시 올리면 학부모에게 청구서가 두 번 갑니다.
+
+-- 발행 시점의 보호자 연락처를 굳혀 둡니다. 명부의 번호가 나중에 바뀌어도, 그때 어느 번호로
+-- 청구했는지가 남아야 대사(맞춰보기)가 됩니다.
+alter table public.invoices add column if not exists guardian_phone text;
+
+-- 올톡페이용 파일로 내보낸 시각과 묶음 이름. 값이 있으면 화면에서 '보냄'으로 표시하고
+-- 다시 내보낼 때 경고합니다.
+alter table public.invoices add column if not exists exported_at timestamptz;
+alter table public.invoices add column if not exists export_batch text;
+
+comment on column public.invoices.exported_at is
+  '올톡페이 대량발송 엑셀로 내보낸 시각. 같은 청구서를 두 번 올려 학부모에게 두 번 가는 것을 막습니다.';
+
+create index if not exists invoices_exported_at_idx on public.invoices (exported_at);
+
 insert into supabase_migrations.schema_migrations (version, name)
 values
   ('20260901160000', 'fee_items_invoices'),
   ('20260901180000', 'payments'),
-  ('20260901200000', 'fee_categories')
+  ('20260901200000', 'fee_categories'),
+  ('20260902120000', 'invoice_alltalkpay')
 on conflict (version) do nothing;
 
 commit;
@@ -385,4 +414,7 @@ union all select '학생별 가감(student_fee_items)', to_regclass('public.stud
 union all select '인보이스(invoices)', to_regclass('public.invoices') is not null
 union all select '인보이스 내역(invoice_lines)', to_regclass('public.invoice_lines') is not null
 union all select '수납(payments)', to_regclass('public.payments') is not null
-union all select '항목 분류(fee_categories)', to_regclass('public.fee_categories') is not null;
+union all select '항목 분류(fee_categories)', to_regclass('public.fee_categories') is not null
+union all select '올톡페이 발송 표시', exists (
+  select 1 from information_schema.columns
+  where table_schema='public' and table_name='invoices' and column_name='exported_at');

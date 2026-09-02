@@ -9,7 +9,9 @@ import {
   PHOTO_H,
   PHOTO_W,
   adjustFromFace,
+  adjustFromHead,
   cropBoxOf,
+  detectHeadFromPixels,
   matchStudent,
   nameFromFile,
   type Adjust,
@@ -37,6 +39,8 @@ type Item = {
   candidates: PhotoStudent[];
   reason: string;
   adjust: Adjust;
+  /** 자를 자리를 어떻게 잡았는지. 기본으로 잡힌 것은 사람이 봐야 합니다. */
+  how: "얼굴" | "배경" | "기본";
   saved: boolean;
   error: string | null;
 };
@@ -48,20 +52,57 @@ type Props = {
   currentUserEmail: string;
 };
 
-/** 브라우저가 얼굴을 찾아줄 수 있으면 씁니다. 없으면 기본 자리에서 시작합니다. */
-async function detectFace(img: HTMLImageElement): Promise<Adjust | null> {
+/**
+ * 자를 자리를 스스로 잡습니다.
+ *
+ * 두 가지를 차례로 시도합니다.
+ *   1) 브라우저의 얼굴 찾기. 있으면 가장 정확합니다.
+ *   2) **배경 빼기.** 졸업앨범 사진은 배경이 한 가지 색이라, 위에서 내려오다가 배경이 아닌
+ *      점이 처음 나오는 줄이 정수리입니다. 모델 없이도 꽤 맞습니다.
+ * 둘 다 안 되면 기본 자리에서 시작하고 사람이 밉니다.
+ */
+async function autoAdjust(img: HTMLImageElement): Promise<{ adjust: Adjust; how: "얼굴" | "배경" | "기본" }> {
   type FD = { detect(i: HTMLImageElement): Promise<{ boundingBox: DOMRectReadOnly }[]> };
   const Ctor = (window as unknown as { FaceDetector?: new (o?: unknown) => FD }).FaceDetector;
-  if (!Ctor) return null;
-  try {
-    const faces = await new Ctor({ fastMode: true, maxDetectedFaces: 1 }).detect(img);
-    const b = faces[0]?.boundingBox;
-    if (!b) return null;
-    return adjustFromFace(img.naturalWidth, img.naturalHeight, { x: b.x, y: b.y, width: b.width, height: b.height });
-  } catch {
-    // 얼굴 찾기는 있으면 좋은 것일 뿐입니다. 실패해도 화면은 그대로 돌아가야 합니다.
-    return null;
+  if (Ctor) {
+    try {
+      const faces = await new Ctor({ fastMode: false, maxDetectedFaces: 1 }).detect(img);
+      const b = faces[0]?.boundingBox;
+      if (b && b.width > 0) {
+        return {
+          adjust: adjustFromFace(img.naturalWidth, img.naturalHeight, { x: b.x, y: b.y, width: b.width, height: b.height }),
+          how: "얼굴",
+        };
+      }
+    } catch {
+      // 얼굴 찾기는 있으면 좋은 것일 뿐입니다. 실패해도 다음 방법으로 갑니다.
+    }
   }
+
+  try {
+    // 픽셀을 다 볼 필요는 없습니다. 가로 240px로 줄여서 봐도 정수리 줄은 그대로 나옵니다.
+    const sw = 240;
+    const sh = Math.max(1, Math.round((img.naturalHeight / img.naturalWidth) * sw));
+    const cv = document.createElement("canvas");
+    cv.width = sw;
+    cv.height = sh;
+    const ctx = cv.getContext("2d", { willReadFrequently: true });
+    if (ctx) {
+      ctx.drawImage(img, 0, 0, sw, sh);
+      const box = detectHeadFromPixels(ctx.getImageData(0, 0, sw, sh).data, sw, sh);
+      if (box && box.confident) {
+        const k = img.naturalWidth / sw;
+        return {
+          adjust: adjustFromHead(img.naturalWidth, img.naturalHeight, box.top * k, box.bottom * k, box.centerX * k),
+          how: "배경",
+        };
+      }
+    }
+  } catch {
+    // 그림이 다른 곳에서 온 것이면 픽셀을 못 읽을 수 있습니다(보안 제한). 기본값으로 갑니다.
+  }
+
+  return { adjust: DEFAULT_ADJUST, how: "기본" };
 }
 
 function loadImage(file: File): Promise<HTMLImageElement> {
@@ -134,7 +175,7 @@ export default function StudentPhotosClient({ roster, hasPhoto, currentUserEmail
       try {
         const img = await loadImage(f);
         const m = matchStudent(f.name, roster);
-        const auto = await detectFace(img);
+        const auto = await autoAdjust(img);
         next.push({
           key: `${f.name}-${f.size}-${i}`,
           fileName: f.name,
@@ -142,7 +183,8 @@ export default function StudentPhotosClient({ roster, hasPhoto, currentUserEmail
           studentId: m.student?.id ?? null,
           candidates: m.candidates,
           reason: m.reason,
-          adjust: auto ?? DEFAULT_ADJUST,
+          adjust: auto.adjust,
+          how: auto.how,
           saved: false,
           error: null,
         });
@@ -155,6 +197,7 @@ export default function StudentPhotosClient({ roster, hasPhoto, currentUserEmail
           candidates: [],
           reason: "그림을 열지 못했습니다",
           adjust: DEFAULT_ADJUST,
+          how: "기본",
           saved: false,
           error: "그림을 열지 못했습니다",
         });
@@ -171,6 +214,39 @@ export default function StudentPhotosClient({ roster, hasPhoto, currentUserEmail
 
   function setAdjust(key: string, a: Adjust) {
     setItems((p) => p.map((it) => (it.key === key ? { ...it, adjust: a } : it)));
+  }
+
+  /** 전체를 조금씩 함께 움직입니다. 한 판을 뽑았을 때 줄이 맞아야 하기 때문입니다. */
+  function nudgeAll(d: { zoom?: number; cy?: number }) {
+    setItems((p) =>
+      p.map((it) =>
+        it.saved
+          ? it
+          : {
+              ...it,
+              adjust: {
+                ...it.adjust,
+                zoom: Math.min(1, Math.max(0.05, it.adjust.zoom + (d.zoom ?? 0))),
+                cy: Math.min(1, Math.max(0, it.adjust.cy + (d.cy ?? 0))),
+              },
+            },
+      ),
+    );
+  }
+
+  /** 얼굴·배경을 다시 찾습니다. 손으로 밀어놓은 것을 되돌리고 싶을 때. */
+  async function redetectAll() {
+    setReading({ done: 0, total: items.length, label: "자리를 다시 잡는 중" });
+    const next = [...items];
+    for (let i = 0; i < next.length; i++) {
+      if (next[i].saved || next[i].error) continue;
+      const auto = await autoAdjust(next[i].img);
+      next[i] = { ...next[i], adjust: auto.adjust, how: auto.how };
+      setReading({ done: i + 1, total: next.length, label: "자리를 다시 잡는 중" });
+      if (i % 5 === 4) await new Promise((r) => setTimeout(r, 0));
+    }
+    setItems(next);
+    setReading(null);
   }
 
   /** 앨범 사진은 대개 같은 구도라, 한 장을 맞추면 나머지도 대개 맞습니다. */
@@ -225,10 +301,22 @@ export default function StudentPhotosClient({ roster, hasPhoto, currentUserEmail
       <div className="mb-1 flex flex-wrap items-baseline gap-2">
         <h1 className="text-lg font-bold">📸 학생 사진 등록</h1>
         <span className="text-xs text-slate-400">여권 규격(35×45mm)으로 잘라서 저장합니다</span>
-        <a href="/students" className="ml-auto text-[12px] font-semibold text-teal-700 underline">
-          학생 조회로 →
-        </a>
+        <span className="ml-auto flex items-center gap-2">
+          {/* 명부가 비어 있으면 사진마다 "명부에서 못 찾았습니다"가 뜹니다. 원인은 사진이
+              아니라 명부인데, 그렇게는 안 보입니다. 그래서 여기에 수를 적어둡니다. */}
+          <span className={"text-[12px] font-bold " + (roster.length === 0 ? "text-rose-700" : "text-slate-400")}>
+            명부 {roster.length}명
+          </span>
+          <a href="/students" className="text-[12px] font-semibold text-teal-700 underline">
+            학생 조회로 →
+          </a>
+        </span>
       </div>
+      {roster.length === 0 && (
+        <p className="mb-3 rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-[12px] text-rose-900">
+          명부를 한 명도 읽지 못했습니다. 사진을 올려도 학생이 붙지 않습니다 — 먼저 학생 조회에서 명부가 보이는지 확인해주세요.
+        </p>
+      )}
       <p className="mb-4 text-xs leading-relaxed text-slate-500">
         졸업앨범 폴더를 통째로 끌어다 놓으세요. <b>파일명으로 아이를 찾아</b> 붙이고 규격에 맞게 잘라 미리 보여드립니다.
         자른 자리가 어색하면 사진을 <b>끌어서 옮기고 휠로 크기</b>를 맞추면 됩니다. 한 장을 맞춘 뒤 <b>전체에 같은 값 적용</b>을
@@ -332,6 +420,31 @@ export default function StudentPhotosClient({ roster, hasPhoto, currentUserEmail
             {unmatched > 0 && <span className="text-[11px] font-bold text-amber-700">못 붙임 {unmatched}</span>}
             {dup > 0 && <span className="text-[11px] font-bold text-rose-700">같은 아이에 두 장 {dup}건</span>}
             {overwrite > 0 && <span className="text-[11px] text-slate-500">덮어쓰기 {overwrite}장</span>}
+            {/* 한 판을 뽑았을 때 눈에 띄는 것은 개별 사진이 아니라 **줄이 맞는가**입니다.
+                전체를 조금씩 함께 움직일 수 있어야 그게 맞습니다. */}
+            <span className="flex items-center gap-1 text-[11px] text-slate-500">
+              전체
+              <button onClick={() => nudgeAll({ zoom: -0.04 })} className="rounded border border-slate-300 px-1.5 font-bold">
+                축소
+              </button>
+              <button onClick={() => nudgeAll({ zoom: 0.04 })} className="rounded border border-slate-300 px-1.5 font-bold">
+                확대
+              </button>
+              <button onClick={() => nudgeAll({ cy: -0.02 })} className="rounded border border-slate-300 px-1.5 font-bold">
+                ↑
+              </button>
+              <button onClick={() => nudgeAll({ cy: 0.02 })} className="rounded border border-slate-300 px-1.5 font-bold">
+                ↓
+              </button>
+            </span>
+            <button
+              onClick={() => void redetectAll()}
+              disabled={busy}
+              className="rounded-lg border border-slate-300 px-2.5 py-1 text-[11px] font-semibold text-slate-600"
+              title="얼굴·배경을 다시 찾아 규격대로 자리를 잡습니다"
+            >
+              자동으로 다시 잡기
+            </button>
             <button
               onClick={() => setItems([])}
               disabled={busy}
@@ -373,6 +486,12 @@ export default function StudentPhotosClient({ roster, hasPhoto, currentUserEmail
                   <p className="mt-1 truncate text-[10px] text-slate-400" title={it.fileName}>
                     {it.fileName}
                   </p>
+                  {/* 파일명에서 무엇을 이름으로 읽었는지. 안 붙었을 때 원인이 바로 보입니다. */}
+                  {!s && (
+                    <p className="truncate text-[10px] text-slate-500">
+                      읽은 이름: <b>{nameFromFile(it.fileName) || "(없음)"}</b>
+                    </p>
+                  )}
 
                   {s ? (
                     <p className="text-[12px] font-bold text-slate-800">
@@ -403,6 +522,27 @@ export default function StudentPhotosClient({ roster, hasPhoto, currentUserEmail
                   )}
 
                   <div className="mt-1 flex flex-wrap items-center gap-1">
+                    {/* 자리를 어떻게 잡았는지. `기본` 은 못 찾아서 그냥 가운데로 둔 것이라
+                        사람이 봐야 합니다. */}
+                    <span
+                      className={
+                        "rounded px-1 text-[10px] font-bold " +
+                        (it.how === "얼굴"
+                          ? "bg-violet-100 text-violet-800"
+                          : it.how === "배경"
+                            ? "bg-sky-100 text-sky-800"
+                            : "bg-slate-200 text-slate-600")
+                      }
+                      title={
+                        it.how === "얼굴"
+                          ? "얼굴을 찾아 규격대로 잡았습니다"
+                          : it.how === "배경"
+                            ? "배경을 빼서 정수리를 찾아 규격대로 잡았습니다"
+                            : "얼굴도 배경도 못 찾아 가운데로 두었습니다 — 손으로 맞춰주세요"
+                      }
+                    >
+                      {it.how}
+                    </span>
                     {it.saved && <span className="rounded bg-emerald-100 px-1 text-[10px] font-bold text-emerald-800">저장됨</span>}
                     {isDup && <span className="rounded bg-rose-100 px-1 text-[10px] font-bold text-rose-800">두 장 붙음</span>}
                     {it.studentId && withPhoto.has(it.studentId) && !it.saved && (

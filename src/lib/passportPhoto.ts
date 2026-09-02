@@ -51,6 +51,42 @@ export function cropBoxOf(imgW: number, imgH: number, a: Adjust): CropBox {
   return { x, y, w, h };
 }
 
+/**
+ * 여권 규격의 자리 잡기.
+ *
+ * 규격이 정하는 것은 두 가지입니다 - **머리가 사진에서 얼마나 크게 나오는가**, 그리고
+ * **머리 위 여백이 얼마인가**. 이 둘을 고정하면 아이마다 찍힌 거리가 달라도 결과는 같은
+ * 크기·같은 구도로 나옵니다. 그것이 학생증 한 판을 뽑았을 때 눈에 띄는 차이입니다.
+ */
+export const HEAD_RATIO = 0.7; // 머리(정수리~턱)가 사진 높이에서 차지하는 비율
+export const TOP_MARGIN = 0.1; // 사진 위쪽 여백
+
+/**
+ * 머리 위치를 알면 규격대로 자리를 잡습니다.
+ *
+ * @param headTop 정수리의 y(픽셀)
+ * @param headBottom 턱의 y(픽셀)
+ * @param centerX 얼굴 가운데의 x(픽셀)
+ */
+export function adjustFromHead(
+  imgW: number,
+  imgH: number,
+  headTop: number,
+  headBottom: number,
+  centerX: number,
+): Adjust {
+  const headH = Math.max(headBottom - headTop, 1);
+  const cropH = headH / HEAD_RATIO;
+  const cropW = cropH * PHOTO_RATIO;
+  const base = Math.min(imgW, imgH * PHOTO_RATIO);
+  const zoom = Math.min(Math.max(cropW / base, 0.05), 1);
+  // 실제로 잘리는 높이는 zoom 이 1로 잘릴 수 있으니 다시 계산해서 중심을 맞춥니다.
+  const realW = base * zoom;
+  const realH = realW / PHOTO_RATIO;
+  const cy = (headTop - TOP_MARGIN * realH + realH / 2) / imgH;
+  return { zoom, cx: centerX / imgW, cy: Math.min(Math.max(cy, 0), 1) };
+}
+
 /** 얼굴 자리를 알면 여권 규격에 맞는 조정값으로 바꿉니다.
  *
  * 규격은 머리 꼭대기 위로 조금 띄우고 턱 아래로 어깨가 조금 나오게 잡습니다. 얼굴 높이가
@@ -60,13 +96,91 @@ export function adjustFromFace(
   imgH: number,
   face: { x: number; y: number; width: number; height: number },
 ): Adjust {
-  const targetH = face.height / 0.7;
-  const targetW = targetH * PHOTO_RATIO;
-  const base = Math.min(imgW, imgH * PHOTO_RATIO);
-  const zoom = Math.min(Math.max(targetW / base, 0.2), 1);
-  // 얼굴 중심보다 살짝 아래를 사진의 가운데로 둡니다(위에 머리 여백, 아래에 어깨).
-  const cy = (face.y + face.height * 0.62) / imgH;
-  return { zoom, cx: (face.x + face.width / 2) / imgW, cy: Math.min(Math.max(cy, 0.2), 0.8) };
+  // 얼굴 찾기가 돌려주는 상자는 대개 **이마부터 턱까지**라 머리카락 위쪽이 빠져 있습니다.
+  // 그 위로 얼굴 높이의 30%쯤을 더해야 정수리가 됩니다.
+  const headTop = face.y - face.height * 0.3;
+  const headBottom = face.y + face.height * 1.02;
+  return adjustFromHead(imgW, imgH, headTop, headBottom, face.x + face.width / 2);
+}
+
+// ── 배경을 빼서 머리를 찾기 ────────────────────────────────────────────
+//
+// 졸업앨범 사진은 **배경이 한 가지 색**입니다. 그래서 얼굴 찾기 모델이 없어도 머리 위치를
+//꽤 정확히 알 수 있습니다 - 위에서 내려오다가 배경이 아닌 점이 처음 나오는 줄이 정수리입니다.
+//
+// 얼굴 찾기가 되는 브라우저면 그것을 먼저 쓰고, 안 되면 이 방법을 씁니다. 둘 다 안 되면
+// 기본 자리에서 시작하고 사람이 밉니다.
+
+export type HeadBox = { top: number; bottom: number; centerX: number; confident: boolean };
+
+/**
+ * 픽셀에서 머리 상자를 찾습니다. (캔버스에서 꺼낸 RGBA 배열)
+ *
+ * 턱의 위치는 따로 찾지 않고 **머리 너비로 추정**합니다. 사람 머리는 세로가 가로의 1.3배쯤
+ * 이고, 턱 아래는 목·어깨라 배경만으로는 경계가 잡히지 않습니다.
+ */
+export function detectHeadFromPixels(data: Uint8ClampedArray, w: number, h: number): HeadBox | null {
+  const at = (x: number, y: number) => (y * w + x) * 4;
+  // 배경색은 위쪽 두 모서리에서 봅니다. 사람은 가운데 있고 위 모서리는 거의 늘 배경입니다.
+  const samples: [number, number, number][] = [];
+  const step = Math.max(1, Math.floor(w / 40));
+  for (let x = 0; x < w; x += step) {
+    for (let y = 0; y < Math.max(2, Math.floor(h * 0.03)); y++) {
+      const i = at(x, y);
+      samples.push([data[i], data[i + 1], data[i + 2]]);
+    }
+  }
+  if (samples.length === 0) return null;
+  const bg = [0, 1, 2].map((k) => samples.reduce((n, s) => n + s[k], 0) / samples.length) as [number, number, number];
+  // 배경이 얼마나 고른지. 고르지 않으면(야외 사진 등) 이 방법을 믿으면 안 됩니다.
+  const spread =
+    Math.sqrt(
+      samples.reduce((n, s) => n + (s[0] - bg[0]) ** 2 + (s[1] - bg[1]) ** 2 + (s[2] - bg[2]) ** 2, 0) / samples.length,
+    ) || 0;
+  const thr = Math.max(38, spread * 2.5);
+
+  const isSubject = (x: number, y: number) => {
+    const i = at(x, y);
+    const d = Math.abs(data[i] - bg[0]) + Math.abs(data[i + 1] - bg[1]) + Math.abs(data[i + 2] - bg[2]);
+    return d > thr;
+  };
+
+  // 정수리: 위에서 내려오며 배경이 아닌 점이 **연속 여러 줄** 나오는 곳. 한 줄만 보면
+  // 먼지나 얼룩에 걸립니다.
+  const minCount = Math.max(3, Math.floor(w * 0.02));
+  let top = -1;
+  let run = 0;
+  for (let y = 0; y < h; y++) {
+    let c = 0;
+    for (let x = 0; x < w; x++) if (isSubject(x, y)) c++;
+    if (c >= minCount) {
+      if (run === 0) top = y;
+      run++;
+      if (run >= Math.max(3, Math.floor(h * 0.01))) break;
+    } else {
+      run = 0;
+      top = -1;
+    }
+  }
+  if (top < 0 || top > h * 0.8) return null;
+
+  // 머리 너비: 정수리 아래 얼마간에서 가장 넓은 가로 폭. 그보다 더 내려가면 어깨가 섞입니다.
+  const band = Math.max(2, Math.floor(h * 0.12));
+  let minX = w;
+  let maxX = 0;
+  for (let y = top; y < Math.min(h, top + band); y++) {
+    for (let x = 0; x < w; x++) {
+      if (isSubject(x, y)) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+      }
+    }
+  }
+  if (maxX <= minX) return null;
+  const headW = maxX - minX;
+  // 너비가 사진 폭의 대부분이면 배경 판정이 실패한 것입니다(배경이 얼룩덜룩한 사진).
+  const confident = headW < w * 0.9 && headW > w * 0.05;
+  return { top, bottom: top + headW * 1.32, centerX: (minX + maxX) / 2, confident };
 }
 
 // ── 파일명으로 학생 찾기 ─────────────────────────────────────────────
@@ -76,7 +190,17 @@ export function adjustFromFace(
 
 export type PhotoStudent = { id: string; name: string; nameEn: string | null; gradeLabel: string };
 
-const flat = (v: string) => v.toLowerCase().replace(/\s+/g, "");
+/**
+ * 대조용으로 다듬습니다.
+ *
+ * 명부의 이름에 영문 표기가 괄호로 붙어 있는 줄이 있습니다(`강여명(Ryeomyeong Kang)`).
+ * 그대로 대조하면 `강여명.jpg` 가 어디에도 안 걸립니다.
+ */
+const flat = (v: string) =>
+  v
+    .replace(/[（(［[][^)）\]］]*[)）\]］]/g, "")
+    .toLowerCase()
+    .replace(/[^0-9a-z가-힣]/g, "");
 
 /** 확장자·번호·학년 표기 따위를 떼고 이름만 남깁니다. */
 export function nameFromFile(fileName: string): string {

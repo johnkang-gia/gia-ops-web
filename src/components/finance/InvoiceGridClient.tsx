@@ -60,6 +60,13 @@ export default function InvoiceGridClient({
   const [review, setReview] = useState<Student[] | null>(null);
   /** 발주 목록 창. 합계 줄의 개수가 그대로 발주 수량입니다. */
   const [orderOpen, setOrderOpen] = useState(false);
+  /**
+   * 한 아이만 여는 창.
+   *
+   * 표는 여럿을 훑을 때 좋고, 한 아이를 **꼼꼼히** 볼 때는 좁습니다. 악기처럼 아이마다 다른
+   * 것을 고를 때는 분류별로 펼쳐놓고 보는 편이 낫습니다. 표에서 이름을 누르면 열립니다.
+   */
+  const [detail, setDetail] = useState<Student | null>(null);
   const [dueDate, setDueDate] = useState(() => {
     const d = new Date(`${today}T12:00:00+09:00`);
     d.setDate(d.getDate() + 11);
@@ -169,6 +176,12 @@ export default function InvoiceGridClient({
       return;
     }
     setOverrides((p) => p.map((o) => (o.id === local.id ? (data as StudentFeeItem) : o)));
+  }
+
+  /** 수량만 바꿉니다. 금액은 단가 × 수량으로만 나옵니다 - 손으로 쓰는 자리가 없습니다. */
+  function setQty(s: Student, item: FeeItem, qty: number) {
+    if (qty < 1) return;
+    void upsert(s.id, item, "include", qty);
   }
 
   function toggleCell(s: Student, item: FeeItem) {
@@ -677,7 +690,16 @@ export default function InvoiceGridClient({
                     />
                   </td>
                   <td className={"sticky left-8 z-10 border-b border-r border-slate-200 px-2 py-1 " + (on ? "bg-teal-50" : "bg-white")}>
-                    <span className="font-semibold text-slate-800">{s.name}</span>
+                    {/* 이름을 누르면 그 아이만 크게 봅니다. 표는 훑기에 좋고, 한 아이를
+                        꼼꼼히 고를 때는 좁습니다. */}
+                    <button
+                      type="button"
+                      onClick={() => setDetail(s)}
+                      className="text-left font-semibold text-slate-800 underline decoration-slate-300 decoration-dotted underline-offset-2 hover:decoration-slate-600"
+                      title="눌러서 이 학생의 항목을 자세히 고릅니다"
+                    >
+                      {s.name}
+                    </button>
                     <span className="ml-1 text-[10px] text-slate-400">
                       {[s.grade ? `${s.grade}` : null, s.className].filter(Boolean).join(" ")}
                     </span>
@@ -855,6 +877,125 @@ export default function InvoiceGridClient({
           </div>
         </div>
       )}
+
+      {/* ── 한 학생 자세히 ─────────────────────────────────────── */}
+      {detail && (() => {
+        const dLines = resolveStudentItems(activeItems, detail as StudentLike, overrides);
+        const dTotal = sumLines(dLines);
+        const dInv = invoiceByStudent.get(detail.id);
+        const byCat = new Map<string, FeeItem[]>();
+        for (const i of activeItems) byCat.set(i.category, [...(byCat.get(i.category) ?? []), i]);
+        return (
+          <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 p-4" onClick={() => setDetail(null)}>
+            <div className="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+              <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 p-3">
+                <span className="text-base font-black text-slate-800">{detail.name}</span>
+                {detail.nameEn && <span className="text-[12px] text-slate-400">{detail.nameEn}</span>}
+                <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-600">
+                  {[detail.grade ? `${detail.grade}학년` : null, detail.className].filter(Boolean).join(" ")}
+                </span>
+                {dInv && (
+                  <a
+                    href={`/finance/invoices/${dInv.id}/print`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[11px] font-bold text-emerald-700 underline"
+                  >
+                    {dInv.invoice_no} 보기
+                  </a>
+                )}
+                <button onClick={() => setDetail(null)} className="ml-auto text-sm font-bold text-slate-400 hover:text-slate-700">
+                  ✕
+                </button>
+              </div>
+
+              <div className="min-h-0 flex-1 overflow-y-auto p-3">
+                {activeItems.length === 0 ? (
+                  <p className="py-10 text-center text-[12px] text-slate-400">등록된 항목이 없습니다.</p>
+                ) : (
+                  [...byCat.entries()].map(([cat, list]) => (
+                    <div key={cat} className="mb-3">
+                      <p className="mb-1 text-[11px] font-bold text-slate-500">{cat}</p>
+                      <div className="flex flex-col gap-1">
+                        {list.map((item) => {
+                          const l = dLines.find((x) => x.item.id === item.id);
+                          const ov = overrides.find((o) => o.student_id === detail.id && o.item_id === item.id) ?? null;
+                          return (
+                            <div
+                              key={item.id}
+                              className={
+                                "flex items-center gap-2 rounded-lg border px-2 py-2 " +
+                                (l ? "border-teal-300 bg-teal-50/60" : "border-slate-100")
+                              }
+                            >
+                              <button
+                                type="button"
+                                onClick={() => toggleCell(detail, item)}
+                                className={
+                                  "flex h-5 w-5 shrink-0 items-center justify-center rounded border text-[11px] font-bold " +
+                                  (l ? "border-teal-600 bg-teal-600 text-white" : "border-slate-300 text-transparent")
+                                }
+                                aria-label={l ? "빼기" : "넣기"}
+                              >
+                                ✓
+                              </button>
+                              <span className="min-w-0 flex-1">
+                                <span className={"text-sm " + (l ? "font-semibold text-slate-800" : "text-slate-500")}>
+                                  {item.name}
+                                </span>
+                                {item.name_ko && <span className="ml-1.5 text-[11px] text-slate-400">{item.name_ko}</span>}
+                                {l?.fromDefault && <span className="ml-1.5 text-[10px] text-teal-700">기본</span>}
+                                {ov && (
+                                  <span className="ml-1.5 text-[10px] font-semibold text-amber-700">
+                                    {ov.mode === "exclude" ? "직접 뺌" : "직접 넣음"}
+                                  </span>
+                                )}
+                              </span>
+                              {l ? (
+                                <span className="flex shrink-0 items-center gap-1">
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    value={l.qty}
+                                    onChange={(e) => void setQty(detail, item, Number(e.target.value) || 1)}
+                                    className="w-12 rounded border border-slate-200 px-1 py-0.5 text-center text-[12px]"
+                                    title="수량"
+                                  />
+                                  <span className="w-24 text-right text-[13px] font-bold tabular-nums text-slate-700">{won(l.amount)}</span>
+                                </span>
+                              ) : (
+                                <span className="w-24 shrink-0 text-right text-[12px] tabular-nums text-slate-300">
+                                  {won(Number(item.unit_price))}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 bg-slate-50 p-3">
+                <span className="text-[12px] font-semibold text-slate-500">{dLines.length}개 항목</span>
+                <span className="text-lg font-black tabular-nums text-slate-800">{won(dTotal)}</span>
+                <button
+                  onClick={() => {
+                    setChecked(new Set([detail.id]));
+                    setDetail(null);
+                    setReview([detail]);
+                  }}
+                  disabled={dLines.length === 0}
+                  className="ml-auto rounded-lg bg-slate-800 px-4 py-2 text-sm font-bold text-white disabled:opacity-40"
+                >
+                  🧾 이 학생만 발행
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── 발주 목록 ───────────────────────────────────────────── */}
       {orderOpen && (

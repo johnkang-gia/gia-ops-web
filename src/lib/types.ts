@@ -1290,3 +1290,14 @@ export type InvoiceLine = {
   unit_price: number;
   amount: number;
 };
+
+/** 학비외 항목의 분류. 항목보다 먼저 만들 수 있어야 "악기" 아래를 채우는 순서가 됩니다. */
+export type FeeCategory = {
+  id: string;
+  name: string;
+  sort_order: number;
+  active: boolean;
+  note: string | null;
+  created_by: string | null;
+  created_at: string;
+};

@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
 import { won } from "@/lib/feeItems";
 import FinanceTabs from "./FinanceTabs";
-import { FEE_ITEM_CATEGORY_SUGGESTIONS, type FeeItem } from "@/lib/types";
+import { FEE_ITEM_CATEGORY_SUGGESTIONS, type FeeCategory, type FeeItem } from "@/lib/types";
 
 // 학비외 항목 등록 (교재·악기·악기수리·교복).
 //
@@ -17,6 +17,7 @@ import { FEE_ITEM_CATEGORY_SUGGESTIONS, type FeeItem } from "@/lib/types";
 
 type Props = {
   initialItems: FeeItem[];
+  initialCategories: FeeCategory[];
   grades: string[];
   classes: string[];
   currentUserEmail: string;
@@ -33,7 +34,7 @@ const EMPTY = {
   note: "",
 };
 
-export default function FeeItemsClient({ initialItems, grades, classes, currentUserEmail, loadError }: Props) {
+export default function FeeItemsClient({ initialItems, initialCategories, grades, classes, currentUserEmail, loadError }: Props) {
   const notify = useToast();
   const [items, setItems] = useState(initialItems);
   const [form, setForm] = useState({ ...EMPTY });
@@ -48,16 +49,68 @@ export default function FeeItemsClient({ initialItems, grades, classes, currentU
   );
   const activeCount = items.filter((i) => i.active).length;
 
-  /** 지금 실제로 쓰고 있는 분류. 탭은 이걸로 만듭니다 - 안 쓰는 분류 탭은 자리만 차지합니다. */
+  const [cats, setCats] = useState(initialCategories);
+  const [newCat, setNewCat] = useState("");
+  const [catOpen, setCatOpen] = useState(false);
+
+  /**
+   * 고를 수 있는 분류.
+   *
+   * **등록된 분류가 먼저**입니다. 그 뒤에 항목에만 쓰이고 아직 등록 안 된 것(예전 자료),
+   * 마지막으로 처음 쓸 때를 위한 예시가 붙습니다.
+   */
   const usedCategories = useMemo(
     () => [...new Set(items.map((i) => i.category).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ko")),
     [items],
   );
-  /** 고를 때 보여줄 목록. 쓰던 분류가 먼저, 그 뒤에 예시. */
-  const categoryOptions = useMemo(
-    () => [...new Set([...usedCategories, ...FEE_ITEM_CATEGORY_SUGGESTIONS])],
-    [usedCategories],
+  const registered = useMemo(
+    () => cats.filter((c) => c.active).sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name, "ko")).map((c) => c.name),
+    [cats],
   );
+  const categoryOptions = useMemo(
+    () => [...new Set([...registered, ...usedCategories, ...FEE_ITEM_CATEGORY_SUGGESTIONS])],
+    [registered, usedCategories],
+  );
+  /** 탭은 등록된 분류 + 실제로 쓰이는 분류. 둘 중 하나라도 있으면 보여줍니다. */
+  const tabCategories = useMemo(() => [...new Set([...registered, ...usedCategories])], [registered, usedCategories]);
+
+  async function addCategory() {
+    const name = newCat.trim();
+    if (!name) return;
+    if (registered.includes(name)) {
+      notify("이미 있는 분류입니다.", "error");
+      return;
+    }
+    const { data, error } = await createClient()
+      .from("fee_categories")
+      .insert({ name, sort_order: cats.length, created_by: currentUserEmail })
+      .select()
+      .single();
+    if (error || !data) {
+      notify("분류를 만들지 못했습니다: " + (error?.message ?? ""), "error");
+      return;
+    }
+    setCats((p) => [...p, data as FeeCategory]);
+    // 만들자마자 그 분류로 항목을 만들게 됩니다. 폼에 미리 넣어둡니다.
+    setForm((f) => ({ ...f, category: name }));
+    setNewCat("");
+    notify(`분류 "${name}"을 만들었습니다.`, "success");
+  }
+
+  async function toggleCategory(c: FeeCategory) {
+    const next = !c.active;
+    // 쓰는 항목이 있으면 끄지 못하게 막습니다. 끄면 그 항목들이 어느 분류에도 안 속하게 됩니다.
+    if (!next && items.some((i) => i.active && i.category === c.name)) {
+      notify(`"${c.name}"을 쓰는 항목이 아직 있습니다. 항목을 먼저 옮기거나 꺼주세요.`, "error");
+      return;
+    }
+    setCats((p) => p.map((x) => (x.id === c.id ? { ...x, active: next } : x)));
+    const { error } = await createClient().from("fee_categories").update({ active: next }).eq("id", c.id);
+    if (error) {
+      notify("바꾸지 못했습니다: " + error.message, "error");
+      setCats((p) => p.map((x) => (x.id === c.id ? { ...x, active: c.active } : x)));
+    }
+  }
 
   function reset() {
     setForm({ ...EMPTY });
@@ -133,7 +186,7 @@ export default function FeeItemsClient({ initialItems, grades, classes, currentU
       <FinanceTabs />
       <div className="mb-1 flex flex-wrap items-baseline gap-2">
         <h1 className="text-lg font-bold">📚 학비외 항목</h1>
-        <span className="text-xs text-slate-400">교재 · 악기 · 악기수리 · 교복</span>
+        <span className="text-xs text-slate-400">분류는 직접 등록해서 씁니다</span>
         <span className="ml-auto rounded-full bg-teal-50 px-2 py-0.5 text-[11px] font-bold text-teal-700">
           쓰는 중 {activeCount}개
         </span>
@@ -149,6 +202,87 @@ export default function FeeItemsClient({ initialItems, grades, classes, currentU
         </p>
       )}
 
+      {/* ── 분류 관리 ─────────────────────────────────────────────
+          분류를 **먼저 만들 수 있어야** "악기"를 세워두고 그 아래 첼로·바이올린을 채우는
+          순서가 됩니다. 예전에는 항목에 적힌 글자에서 거꾸로 모았기 때문에, 항목이 하나도
+          없는 분류는 존재할 수가 없었습니다. */}
+      <div className="mb-3 rounded-xl border border-slate-200 bg-white">
+        <button
+          type="button"
+          onClick={() => setCatOpen((v) => !v)}
+          className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] font-bold text-slate-700"
+        >
+          <span className="text-teal-600">{catOpen ? "▾" : "▸"}</span>
+          분류 관리
+          <span className="font-medium text-slate-400">
+            {registered.length > 0 ? registered.join(" · ") : "아직 등록된 분류가 없습니다"}
+          </span>
+        </button>
+        {catOpen && (
+          <div className="border-t border-slate-100 p-3">
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <input
+                value={newCat}
+                onChange={(e) => setNewCat(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && void addCategory()}
+                placeholder="새 분류 이름 (예: 악기 · 체육복 · 현장학습)"
+                className="w-64 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+              />
+              <button onClick={() => void addCategory()} className="rounded-lg bg-teal-600 px-3 py-1.5 text-sm font-semibold text-white">
+                + 분류 만들기
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {cats
+                .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name, "ko"))
+                .map((c) => {
+                  const used = items.filter((i) => i.category === c.name).length;
+                  return (
+                    <span
+                      key={c.id}
+                      className={
+                        "flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] " +
+                        (c.active ? "border-teal-300 bg-teal-50 text-teal-800" : "border-slate-200 text-slate-400")
+                      }
+                    >
+                      <b>{c.name}</b>
+                      <span className="opacity-60">{used}개</span>
+                      <button
+                        onClick={() => void toggleCategory(c)}
+                        className="ml-0.5 font-bold opacity-60 hover:opacity-100"
+                        title={c.active ? "끄기" : "켜기"}
+                      >
+                        {c.active ? "×" : "＋"}
+                      </button>
+                    </span>
+                  );
+                })}
+              {/* 아직 등록 안 됐는데 항목에는 쓰이는 분류. 예전 자료입니다. */}
+              {usedCategories
+                .filter((u) => !cats.some((c) => c.name === u))
+                .map((u) => (
+                  <span key={u} className="flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-800">
+                    <b>{u}</b>
+                    <span className="opacity-70">등록 안 됨</span>
+                    <button
+                      onClick={() => {
+                        setNewCat(u);
+                        void addCategory();
+                      }}
+                      className="font-bold underline"
+                    >
+                      등록
+                    </button>
+                  </span>
+                ))}
+              {cats.length === 0 && usedCategories.length === 0 && (
+                <span className="text-[11px] text-slate-400">위에서 분류를 하나 만들어보세요.</span>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* ── 등록·수정 ─────────────────────────────────────────────── */}
       <div className="mb-5 rounded-xl border border-slate-200 bg-white p-3">
         <p className="mb-2 text-[12px] font-bold text-slate-700">{editingId ? "항목 고치기" : "새 항목"}</p>
@@ -162,7 +296,7 @@ export default function FeeItemsClient({ initialItems, grades, classes, currentU
               list="fee-category-list"
               value={form.category}
               onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
-              placeholder="교재 · 악기 · 자유롭게"
+              placeholder={registered[0] ? `${registered[0]} · 골라도 되고 새로 적어도 됩니다` : "분류를 적어주세요"}
               className="ml-1 w-32 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
             />
             <datalist id="fee-category-list">
@@ -278,7 +412,7 @@ export default function FeeItemsClient({ initialItems, grades, classes, currentU
 
       {/* ── 목록 ──────────────────────────────────────────────────── */}
       <div className="mb-2 flex flex-wrap items-center gap-1.5">
-        {["전체", ...usedCategories].map((c) => (
+        {["전체", ...tabCategories].map((c) => (
           <button
             key={c}
             type="button"

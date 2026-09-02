@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess } from "@/lib/roles";
 import FeeItemsClient from "@/components/finance/FeeItemsClient";
-import type { FeeItem } from "@/lib/types";
+import type { FeeCategory, FeeItem } from "@/lib/types";
 
 // 학비외 항목 등록(재무 전용).
 //
@@ -18,10 +18,14 @@ export default async function FeeItemsPage() {
   if (!hasFinanceAccess(me)) redirect("/home");
 
   const supabase = await createClient();
-  const [itemsRes, clsRes] = await Promise.all([
+  const [itemsRes, catRes, clsRes] = await Promise.all([
     supabase.from("fee_items").select("*").order("category").order("sort_order").order("name"),
+    supabase.from("fee_categories").select("*").order("sort_order").order("name"),
     supabase.from("wr_classes").select("grade, class_name").order("grade").order("class_name"),
   ]);
+  // 분류 표가 아직 없어도(마이그레이션 전) 화면은 열려야 합니다. 그때는 항목에 적힌 글자로만
+  // 분류가 만들어집니다 - 예전과 같은 동작입니다.
+  if (catRes.error) console.error("[학비외 항목] 분류를 읽지 못했습니다:", catRes.error.message);
 
   // 학년·반 목록은 반 표에서 그대로 가져옵니다. 손으로 적어두면 반이 바뀔 때마다 어긋납니다.
   const rows = (clsRes.data as { grade: string | null; class_name: string | null }[] | null) ?? [];
@@ -33,6 +37,7 @@ export default async function FeeItemsPage() {
   return (
     <FeeItemsClient
       initialItems={(itemsRes.data as FeeItem[] | null) ?? []}
+      initialCategories={(catRes.data as FeeCategory[] | null) ?? []}
       grades={grades}
       classes={classes}
       currentUserEmail={me.email}

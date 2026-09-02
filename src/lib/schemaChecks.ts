@@ -230,6 +230,13 @@ export const SCHEMA_CHECKS: SchemaCheck[] = [
     impact: "책의 '가야 할 자리'를 기록할 수 없어 도서정리 계획이 동작하지 않습니다.",
   },
   {
+    feature: "항목 분류",
+    table: "fee_categories",
+    columns: ["name", "sort_order", "active"],
+    migration: "20260901200000_fee_categories.sql",
+    impact: "분류를 미리 등록할 수 없어, 항목이 없는 분류를 세워둘 수 없습니다.",
+  },
+  {
     feature: "수납(입금)",
     table: "payments",
     columns: ["invoice_id", "paid_at", "amount", "payer_name", "source_key"],

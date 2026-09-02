@@ -4,6 +4,7 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess } from "@/lib/roles";
 import { gradeLabel, resolveStudentItems } from "@/lib/feeItems";
 import { todayKst } from "@/lib/kst";
+import { resolveRecipient, type GuardianRole } from "@/lib/alltalkpay";
 import type { FeeItem, StudentFeeItem } from "@/lib/types";
 
 // 인보이스 발행.
@@ -26,13 +27,17 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   const studentId = body?.studentId as string | undefined;
   const dueDate = (body?.dueDate as string | undefined) ?? null;
+  // 청구 대상을 화면에서 미리 고를 수 있습니다. 안 고르면 어머니 → 아버지 → 보호자 순입니다.
+  const askedRole = body?.guardianRole;
+  const guardianRole: GuardianRole | null =
+    askedRole === "mother" || askedRole === "father" || askedRole === "guardian" ? askedRole : null;
   const feeTermId = (body?.feeTermId as string | undefined) ?? null;
   if (!studentId) return NextResponse.json({ error: "studentId가 필요합니다." }, { status: 400 });
 
   const supabase = await createClient();
 
   const [stuRes, itemsRes, ovRes] = await Promise.all([
-    supabase.from("wr_students").select("id, name, name_en, grade, class_name, department, parent_phone").eq("is_demo", false).eq("id", studentId).maybeSingle(),
+    supabase.from("wr_students").select("id, name, name_en, grade, class_name, department, mother_phone, father_phone, parent_phone").eq("is_demo", false).eq("id", studentId).maybeSingle(),
     // 그 학기 항목만 계산합니다. 학기를 안 걸면 지난 학기 교재까지 청구서에 붙습니다.
     (feeTermId
       ? supabase.from("fee_items").select("*").eq("active", true).eq("fee_term_id", feeTermId)
@@ -43,7 +48,10 @@ export async function POST(req: Request) {
   if (itemsRes.error) return NextResponse.json({ error: itemsRes.error.message }, { status: 500 });
   if (ovRes.error) return NextResponse.json({ error: ovRes.error.message }, { status: 500 });
 
-  const student = stuRes.data as { id: string; name: string; name_en: string | null; grade: string | null; class_name: string | null; department: string | null; parent_phone: string | null } | null;
+  const student = stuRes.data as {
+    id: string; name: string; name_en: string | null; grade: string | null; class_name: string | null;
+    department: string | null; mother_phone: string | null; father_phone: string | null; parent_phone: string | null;
+  } | null;
   if (!student) return NextResponse.json({ error: "학생을 찾지 못했습니다." }, { status: 404 });
 
   const lines = resolveStudentItems(
@@ -58,6 +66,11 @@ export async function POST(req: Request) {
   const total = lines.reduce((n, l) => n + l.amount, 0);
   const issue = todayKst();
   const due = dueDate && /^\d{4}-\d{2}-\d{2}$/.test(dueDate) ? dueDate : issue;
+
+  const recipient = resolveRecipient(
+    { mother_phone: student.mother_phone, father_phone: student.father_phone, parent_phone: student.parent_phone },
+    guardianRole
+  );
 
   // 번호는 DB가 정합니다. 사람이 손으로 붙이면 반드시 겹칩니다.
   const { data: noRow, error: noErr } = await supabase.rpc("next_invoice_no");
@@ -75,8 +88,10 @@ export async function POST(req: Request) {
       issue_date: issue,
       due_date: due,
       total_amount: total,
-      // 그때의 보호자 연락처를 같이 굳힙니다. 명부가 나중에 바뀌어도 어디로 청구했는지가 남습니다.
-      guardian_phone: student.parent_phone,
+      // 그때의 연락처와 **대상**을 함께 굳힙니다. 명부가 나중에 바뀌어도 어디로, 누구 앞으로
+      // 청구했는지가 남습니다. 번호만 남기면 나중에 그게 어머니 것이었는지 알 수 없습니다.
+      guardian_phone: recipient?.phone ?? null,
+      guardian_role: recipient?.role ?? null,
       fee_term_id: feeTermId,
       issued_by: me.name || me.email,
     })

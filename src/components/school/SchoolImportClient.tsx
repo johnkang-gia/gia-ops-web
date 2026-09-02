@@ -307,13 +307,22 @@ type StudentRow = {
   name_en: string | null;
   grade: string | null;
   class_name: string | null;
+  mother_phone: string | null;
+  father_phone: string | null;
   parent_phone: string | null;
   ok: boolean;
   error?: string;
 };
 
+/**
+ * 한 줄을 학생 하나로 읽습니다.
+ *
+ * 다섯 번째 칸은 **어머니** 번호로 봅니다. 예전 양식(이름·영어이름·학년·반·보호자연락처)을
+ * 그대로 붙여넣는 분이 있는데, 그 번호는 거의 어머니 것이라 그렇게 두는 편이 붙여넣은 사람의
+ * 뜻에 가깝습니다. 여섯·일곱 번째 칸(아버지·보호자)은 비워도 됩니다.
+ */
 function parseStudentRow(cells: string[]): StudentRow {
-  const [nameRaw, nameEnRaw, gradeRaw, classRaw, phoneRaw] = cells;
+  const [nameRaw, nameEnRaw, gradeRaw, classRaw, motherRaw, fatherRaw, guardianRaw] = cells;
   const name = (nameRaw ?? "").trim();
   const errors: string[] = [];
   if (!name) errors.push("이름 없음");
@@ -322,7 +331,9 @@ function parseStudentRow(cells: string[]): StudentRow {
     name_en: (nameEnRaw ?? "").trim() || null,
     grade: (gradeRaw ?? "").trim() || null,
     class_name: (classRaw ?? "").trim() || null,
-    parent_phone: (phoneRaw ?? "").trim() || null,
+    mother_phone: (motherRaw ?? "").trim() || null,
+    father_phone: (fatherRaw ?? "").trim() || null,
+    parent_phone: (guardianRaw ?? "").trim() || null,
     ok: errors.length === 0,
     error: errors.join(", "),
   };
@@ -358,6 +369,8 @@ function StudentImportSection() {
         grade: r.grade,
         class_name: r.class_name,
         class_id: match?.id ?? null,
+        mother_phone: r.mother_phone,
+        father_phone: r.father_phone,
         parent_phone: r.parent_phone,
         status: "active" as const,
       };
@@ -371,15 +384,16 @@ function StudentImportSection() {
     <div className="g-panel-solid p-4 shadow-sm">
       <h2 className="mb-1 text-sm font-bold text-slate-800">🎓 학생 명부</h2>
       <p className="mb-2 text-[11px] text-slate-500">
-        열 순서: <code className="rounded bg-slate-100 px-1">이름, 영어이름, 학년, 반, 보호자 연락처</code>
-        (영어이름·보호자 연락처는 비워도 됩니다). 학년+반이 위 반 구성과 일치하면 자동으로 그 반에
+        열 순서: <code className="rounded bg-slate-100 px-1">이름, 영어이름, 학년, 반, 어머니, 아버지, 보호자</code>
+        (이름 말고는 다 비워도 됩니다. 다섯 번째 칸은 <b>어머니</b> 번호로 들어가고, 마지막
+        &lsquo;보호자&rsquo;는 부모가 아닌 분을 위한 자리입니다). 학년+반이 위 반 구성과 일치하면 자동으로 그 반에
         연결됩니다. 새 학생으로 추가되는 방식이라 이미 등록된 학생을 다시 올리면 중복 등록되니
         주의해주세요.
       </p>
       <pre className="mb-2 overflow-x-auto rounded-lg bg-slate-50 p-2 text-[11px] text-slate-500">
-{`이름,영어이름,학년,반,보호자 연락처
-권태이,Tay Kwon,1,A,010-1234-5678
-김사랑,Benecia Kim,1,A,`}
+{`이름,영어이름,학년,반,어머니,아버지,보호자
+권태이,Tay Kwon,1,A,010-1234-5678,010-2222-3333,
+김사랑,Benecia Kim,1,A,,,010-9999-0000`}
       </pre>
       <textarea value={text} onChange={(e) => setText(e.target.value)} className={inputCls} placeholder="여기에 구글시트 표를 붙여넣으세요 (또는 아래에서 CSV 파일 선택)" />
       <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -413,7 +427,9 @@ function StudentImportSection() {
                 <th className="px-2 py-1">영어이름</th>
                 <th className="px-2 py-1">학년</th>
                 <th className="px-2 py-1">반</th>
-                <th className="px-2 py-1">보호자 연락처</th>
+                <th className="px-2 py-1">어머니(M)</th>
+                <th className="px-2 py-1">아버지(F)</th>
+                <th className="px-2 py-1">보호자</th>
                 <th className="px-2 py-1">상태</th>
               </tr>
             </thead>
@@ -424,6 +440,8 @@ function StudentImportSection() {
                   <td className="px-2 py-1">{r.name_en || "-"}</td>
                   <td className="px-2 py-1">{r.grade || "-"}</td>
                   <td className="px-2 py-1">{r.class_name || "-"}</td>
+                  <td className="px-2 py-1">{r.mother_phone || "-"}</td>
+                  <td className="px-2 py-1">{r.father_phone || "-"}</td>
                   <td className="px-2 py-1">{r.parent_phone || "-"}</td>
                   <td className="px-2 py-1">
                     {r.ok ? <span className="text-emerald-600">✓ 정상</span> : <span className="text-red-500">{r.error}</span>}

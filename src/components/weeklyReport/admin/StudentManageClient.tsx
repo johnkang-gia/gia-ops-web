@@ -15,6 +15,8 @@ type SortKey =
   | "name_en"
   | "gender"
   | "birth_date"
+  | "mother_phone"
+  | "father_phone"
   | "parent_phone"
   | "parent_email"
   | "address"
@@ -42,6 +44,10 @@ function sortValue(s: WrStudent, key: SortKey): string {
       return s.gender ?? "";
     case "birth_date":
       return s.birth_date ?? "";
+    case "mother_phone":
+      return s.mother_phone ?? "";
+    case "father_phone":
+      return s.father_phone ?? "";
     case "parent_phone":
       return s.parent_phone ?? "";
     case "parent_email":
@@ -85,6 +91,8 @@ export default function StudentManageClient({
   const [className, setClassName] = useState("");
   const [gender, setGender] = useState("");
   const [birthDate, setBirthDate] = useState("");
+  const [motherPhone, setMotherPhone] = useState("");
+  const [fatherPhone, setFatherPhone] = useState("");
   const [parentPhone, setParentPhone] = useState("");
   const [parentEmail, setParentEmail] = useState("");
   const [address, setAddress] = useState("");
@@ -128,6 +136,8 @@ export default function StudentManageClient({
     setClassName("");
     setGender("");
     setBirthDate("");
+    setMotherPhone("");
+    setFatherPhone("");
     setParentPhone("");
     setParentEmail("");
     setAddress("");
@@ -148,6 +158,8 @@ export default function StudentManageClient({
         class_name: className.trim() || null,
         gender: gender || null,
         birth_date: birthDate || null,
+        mother_phone: motherPhone.trim() || null,
+        father_phone: fatherPhone.trim() || null,
         parent_phone: parentPhone.trim() || null,
         parent_email: parentEmail.trim() || null,
         address: address.trim() || null,
@@ -166,16 +178,27 @@ export default function StudentManageClient({
   }
 
   async function bulkAdd() {
-    // 한 줄에 "이름,영어이름,학년,반,보호자연락처" 형식 - 대량 등록은 자주 쓰는 5개 항목만
-    // 받고, 나머지(보호자이메일/주소/생일/성별/알러지/커스텀칼럼)는 등록 후 표에서 바로
-    // 채워 넣을 수 있습니다.
+    // 한 줄에 "이름,영어이름,학년,반,어머니,아버지,보호자" 형식.
+    //
+    // 뒤의 세 칸은 비워도 됩니다. 예전 형식(다섯 칸)으로 붙여넣으면 다섯 번째 값이 **어머니**
+    // 번호로 들어갑니다 - 청구서가 어머니 앞으로 가는 집이 가장 많아서, 그렇게 두는 편이
+    // 붙여넣은 사람의 뜻에 가깝습니다.
     const rows = bulkText
       .split("\n")
       .map((line) => line.trim())
       .filter(Boolean)
       .map((line) => {
-        const [n, ne, g, c, p] = line.split(",").map((v) => v?.trim() ?? "");
-        return { name: n, name_en: ne || null, grade: g || null, class_name: c || null, parent_phone: p || null, is_demo: false };
+        const [n, ne, g, c, m, f, p] = line.split(",").map((v) => v?.trim() ?? "");
+        return {
+          name: n,
+          name_en: ne || null,
+          grade: g || null,
+          class_name: c || null,
+          mother_phone: m || null,
+          father_phone: f || null,
+          parent_phone: p || null,
+          is_demo: false,
+        };
       })
       .filter((r) => r.name);
     if (rows.length === 0) return;
@@ -458,7 +481,17 @@ export default function StudentManageClient({
             <input type="date" value={birthDate} onChange={(e) => setBirthDate(e.target.value)} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
           </div>
           <div>
-            <label className="mb-1 block text-[11px] text-slate-400">보호자 연락처</label>
+            <label className="mb-1 block text-[11px] text-slate-400">어머니 연락처 (M)</label>
+            <input value={motherPhone} onChange={(e) => setMotherPhone(e.target.value)} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] text-slate-400">아버지 연락처 (F)</label>
+            <input value={fatherPhone} onChange={(e) => setFatherPhone(e.target.value)} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] text-slate-400" title="부모가 아닌 분(조부모·친척 등)">
+              보호자 연락처
+            </label>
             <input value={parentPhone} onChange={(e) => setParentPhone(e.target.value)} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
           </div>
           <div>
@@ -492,7 +525,7 @@ export default function StudentManageClient({
       {showBulk && (
         <div className="mb-3 shrink-0 g-panel-solid p-3">
           <p className="mb-1.5 text-[11px] text-slate-400">
-            한 줄에 하나씩, &quot;이름,영어이름,학년,반,보호자연락처&quot; 형식으로 붙여넣으세요. 영어이름은 비워둬도 됩니다.
+            한 줄에 하나씩, &quot;이름,영어이름,학년,반,어머니,아버지,보호자&quot; 형식으로 붙여넣으세요. 이름 말고는 다 비워둬도 되고, 예전처럼 다섯 칸만 붙여넣으면 다섯 번째가 어머니 번호로 들어갑니다.
             그 외 항목은 등록 후 표에서 바로 입력할 수 있습니다.
           </p>
           <textarea
@@ -581,7 +614,14 @@ export default function StudentManageClient({
               <SortTh label="영어 이름" sortKeyFor="name_en" />
               <SortTh label="성별" sortKeyFor="gender" />
               <SortTh label="생일" sortKeyFor="birth_date" />
-              <SortTh label="보호자 연락처" sortKeyFor="parent_phone" />
+              {/*
+                연락처를 세 칸으로 나눕니다. 집마다 청구서를 받는 분이 달라서 한 칸으로는
+                누구 번호인지 알 수 없었습니다. 청구는 어머니 → 아버지 → 보호자 순으로
+                있는 번호를 씁니다.
+              */}
+              <SortTh label="어머니(M)" sortKeyFor="mother_phone" />
+              <SortTh label="아버지(F)" sortKeyFor="father_phone" />
+              <SortTh label="보호자" sortKeyFor="parent_phone" />
               <SortTh label="보호자 이메일" sortKeyFor="parent_email" />
               <SortTh label="주소" sortKeyFor="address" />
               <th className="whitespace-nowrap px-3 py-2">🚌 차량탑승</th>
@@ -630,6 +670,12 @@ export default function StudentManageClient({
                     onBlur={(e) => e.target.value !== (s.birth_date ?? "") && updateField(s.id, "birth_date", e.target.value)}
                     className="w-32 rounded-lg border border-transparent px-1.5 py-1 text-sm hover:border-slate-200 focus:border-slate-300"
                   />
+                </td>
+                <td className="px-3 py-1.5 text-slate-400">
+                  <EditableCell value={s.mother_phone ?? ""} onSave={(v) => updateField(s.id, "mother_phone", v)} width="w-32" />
+                </td>
+                <td className="px-3 py-1.5 text-slate-400">
+                  <EditableCell value={s.father_phone ?? ""} onSave={(v) => updateField(s.id, "father_phone", v)} width="w-32" />
                 </td>
                 <td className="px-3 py-1.5 text-slate-400">
                   <EditableCell value={s.parent_phone ?? ""} onSave={(v) => updateField(s.id, "parent_phone", v)} width="w-32" />

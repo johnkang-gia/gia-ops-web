@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess } from "@/lib/roles";
-import { buildBillPlan, type BillInvoice } from "@/lib/alltalkpay";
+import { buildBillPlan, type BillInvoice, type GuardianRole } from "@/lib/alltalkpay";
 import { todayKst } from "@/lib/kst";
 
 // 올톡페이 대량발송 파일에 넣을 내용을 서버에서 만듭니다.
@@ -24,6 +24,15 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   const ids = Array.isArray(body?.invoiceIds) ? (body.invoiceIds as string[]).filter((v) => typeof v === "string") : [];
   const mergeSiblings = !!body?.mergeSiblings;
+  // 화면에서 청구서마다 대상을 바꾼 것(어머니 ↔ 아버지 ↔ 보호자). 서버에서 한 번 더 걸러
+  // 받습니다 - 화면이 보낸 값을 그대로 믿고 돌리면 엉뚱한 값이 들어와도 알 수 없습니다.
+  const roleOverrides: Record<string, GuardianRole> = {};
+  const rawOverrides = body?.roleOverrides;
+  if (rawOverrides && typeof rawOverrides === "object") {
+    for (const [id, role] of Object.entries(rawOverrides as Record<string, unknown>)) {
+      if (role === "mother" || role === "father" || role === "guardian") roleOverrides[id] = role;
+    }
+  }
   const mark = !!body?.mark;
   if (ids.length === 0) return NextResponse.json({ error: "내보낼 청구서를 골라주세요." }, { status: 400 });
 
@@ -56,22 +65,47 @@ export async function POST(req: Request) {
   type Row = {
     id: string; invoice_no: string; student_id: string | null; student_name: string;
     student_name_ko: string | null; grade_label: string | null; total_amount: number;
-    due_date: string; guardian_phone: string | null; exported_at: string | null;
+    due_date: string; guardian_phone: string | null; guardian_role: string | null;
+    exported_at: string | null;
   };
-  const invoices = ((invRes.data as Row[] | null) ?? []).map<BillInvoice>((v) => ({
+  const rows = (invRes.data as Row[] | null) ?? [];
+
+  // 지금 명부의 세 칸을 함께 읽어옵니다.
+  //
+  // 발행할 때 굳혀 둔 번호만 보고 만들지 않는 이유: 발행 뒤에 명부를 채우거나 고치는 일이
+  // 흔합니다. 굳은 값만 보면 그 사이에 번호를 넣어 준 아이가 계속 빠지고, 화면에서 어머니 ↔
+  // 아버지를 바꾸는 것도 불가능합니다. 굳은 값은 명부에 아무것도 없을 때의 마지막 보루로
+  // 남겨 둡니다.
+  const studentIds = [...new Set(rows.map((v) => v.student_id).filter(Boolean) as string[])];
+  const phonesById = new Map<string, { mother_phone: string | null; father_phone: string | null; parent_phone: string | null }>();
+  if (studentIds.length > 0) {
+    const { data, error } = await supabase
+      .from("wr_students")
+      .select("id, mother_phone, father_phone, parent_phone")
+      .eq("is_demo", false)
+      .in("id", studentIds);
+    if (error) {
+      // 명부를 못 읽으면 굳은 번호로만 만들게 됩니다. 조용히 넘기면 왜 몇 명이 빠졌는지
+      // 아무도 모르므로 기록은 남깁니다.
+      console.error("[올톡페이] 명부 연락처를 읽지 못했습니다:", error.message);
+    }
+    for (const s of (data as { id: string; mother_phone: string | null; father_phone: string | null; parent_phone: string | null }[] | null) ?? []) {
+      phonesById.set(s.id, { mother_phone: s.mother_phone, father_phone: s.father_phone, parent_phone: s.parent_phone });
+    }
+  }
+
+  const invoices = rows.map<BillInvoice>((v) => ({
     ...v,
+    guardian_role:
+      v.guardian_role === "mother" || v.guardian_role === "father" ||
+      v.guardian_role === "guardian" || v.guardian_role === "manual"
+        ? v.guardian_role
+        : null,
+    phones:
+      (v.student_id ? phonesById.get(v.student_id) : undefined) ??
+      { mother_phone: null, father_phone: null, parent_phone: null },
     itemNames: namesByInvoice.get(v.id) ?? [],
   }));
 
-  // 발행 당시 연락처가 비어 있던 청구서는 지금 명부에서 한 번 더 찾아봅니다. 그 사이에
-  // 명부가 채워졌을 수 있는데, 굳은 값만 보고 "연락처 없음"으로 빼면 그 아이만 청구가 안 갑니다.
-  const needPhone = invoices.filter((v) => !v.guardian_phone && v.student_id).map((v) => v.student_id as string);
-  if (needPhone.length > 0) {
-    const { data, error } = await supabase.from("wr_students").select("id, parent_phone").eq("is_demo", false).in("id", needPhone);
-    if (error) console.error("[올톡페이] 명부 연락처를 읽지 못했습니다:", error.message);
-    const byId = new Map((((data as { id: string; parent_phone: string | null }[] | null) ?? [])).map((s) => [s.id, s.parent_phone]));
-    for (const v of invoices) if (!v.guardian_phone && v.student_id) v.guardian_phone = byId.get(v.student_id) ?? null;
-  }
-
-  return NextResponse.json({ ok: true, plan: buildBillPlan(invoices, { mergeSiblings }) });
+  return NextResponse.json({ ok: true, plan: buildBillPlan(invoices, { mergeSiblings, roleOverrides }) });
 }

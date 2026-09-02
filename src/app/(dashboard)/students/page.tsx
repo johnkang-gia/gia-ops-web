@@ -39,7 +39,7 @@ export default async function StudentsSearchPage() {
   const { data } = await supabase
     .from("wr_students")
     .select(
-      "id, student_no, name, name_en, grade, class_name, class_id, birth_date, phone, parent_phone, parent_email, gender, allergies, address, note, custom_fields, status, shuttle_mode, photo_path, created_at"
+      "id, student_no, name, name_en, grade, class_name, class_id, birth_date, phone, mother_phone, father_phone, parent_phone, parent_email, gender, allergies, address, note, custom_fields, status, shuttle_mode, photo_path, created_at"
     ).eq("is_demo", false)
     .order("name", { ascending: true });
 

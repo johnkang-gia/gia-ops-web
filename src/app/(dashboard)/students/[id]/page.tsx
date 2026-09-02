@@ -357,6 +357,8 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
             <div className="flex justify-between"><dt className="text-slate-400">성별</dt><dd>{student.gender || "-"}</dd></div>
             <div className="flex justify-between"><dt className="text-slate-400">생년월일</dt><dd>{fmtDate(student.birth_date)}</dd></div>
             <div className="flex justify-between"><dt className="text-slate-400">학생 연락처</dt><dd>{student.phone || "-"}</dd></div>
+            <div className="flex justify-between"><dt className="text-slate-400">어머니 연락처</dt><dd>{student.mother_phone || "-"}</dd></div>
+            <div className="flex justify-between"><dt className="text-slate-400">아버지 연락처</dt><dd>{student.father_phone || "-"}</dd></div>
             <div className="flex justify-between"><dt className="text-slate-400">보호자 연락처</dt><dd>{student.parent_phone || "-"}</dd></div>
             <div className="flex justify-between"><dt className="text-slate-400">보호자 이메일</dt><dd>{student.parent_email || "-"}</dd></div>
             <div className="flex justify-between"><dt className="text-slate-400">주소</dt><dd className="max-w-[60%] text-right">{student.address || "-"}</dd></div>

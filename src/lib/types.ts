@@ -581,6 +581,11 @@ export type WrStudent = {
   class_id: string | null;
   birth_date: string | null;
   phone: string | null;
+  /** 어머니 연락처(M). 청구서는 이 번호를 우선으로 보냅니다. */
+  mother_phone: string | null;
+  /** 아버지 연락처(F). */
+  father_phone: string | null;
+  /** 보호자 연락처 - 부모가 아닌 분(조부모·친척 등)을 위한 자리. */
   parent_phone: string | null;
   parent_email: string | null;
   gender: "남" | "여" | null;

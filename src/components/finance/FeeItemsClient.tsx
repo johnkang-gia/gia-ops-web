@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
 import { won } from "@/lib/feeItems";
+import FinanceTabs from "./FinanceTabs";
 import { FEE_ITEM_CATEGORY_SUGGESTIONS, type FeeItem } from "@/lib/types";
 
 // 학비외 항목 등록 (교재·악기·악기수리·교복).
@@ -129,6 +130,7 @@ export default function FeeItemsClient({ initialItems, grades, classes, currentU
 
   return (
     <div className="mx-auto max-w-5xl p-4 sm:p-6">
+      <FinanceTabs />
       <div className="mb-1 flex flex-wrap items-baseline gap-2">
         <h1 className="text-lg font-bold">📚 학비외 항목</h1>
         <span className="text-xs text-slate-400">교재 · 악기 · 악기수리 · 교복</span>

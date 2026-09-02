@@ -11,6 +11,7 @@ import { Input, Select } from "@/components/ui/input";
 import StatCard from "@/components/viz/StatCard";
 import BarRow from "@/components/viz/BarRow";
 import Donut from "@/components/viz/Donut";
+import FinanceTabs from "./FinanceTabs";
 
 // 납부 항목 · 할인 (재무 전용)
 //
@@ -215,6 +216,7 @@ export default function FeePlansClient({
 
   return (
     <div className="mx-auto w-full max-w-[1500px] p-4">
+      <FinanceTabs />
       <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
         <h1 className="text-lg font-extrabold text-[var(--g-ink)]">💰 납부 항목 · 할인</h1>
         <Badge tone="accent">재무 권한 전용</Badge>

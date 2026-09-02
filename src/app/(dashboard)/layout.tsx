@@ -418,9 +418,10 @@ export default async function DashboardLayout({
         label: "재무",
         icon: "💰",
         accent: "teal",
-        href: "/finance/invoices",
+        href: "/finance",
         items: [
-          { href: "/finance/invoices", label: "인보이스", icon: "🧾" },
+          { href: "/finance", label: "개요", icon: "📊" },
+          { href: "/finance/invoices", label: "인보이스 명단", icon: "🧾" },
           { href: "/finance/items", label: "학비외 항목", icon: "📚" },
           { href: "/finance/plans", label: "납부 항목 · 할인", icon: "💵" },
         ],

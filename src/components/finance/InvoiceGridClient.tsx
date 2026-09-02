@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
 import { resolveStudentItems, sumLines, won, type StudentLike } from "@/lib/feeItems";
+import FinanceTabs from "./FinanceTabs";
 import type { FeeItem, Invoice, StudentFeeItem } from "@/lib/types";
 
 // 인보이스 명단 표 — 학생이 행, 항목이 열인 스프레드시트.
@@ -43,6 +44,11 @@ export default function InvoiceGridClient({
 }: Props) {
   const notify = useToast();
   const [overrides, setOverrides] = useState(initialOverrides);
+  // 항목도 상태로 들고 있습니다. 여기서 바로 만들면 **그 자리에서 열이 생겨야** 합니다 -
+  // 화면을 새로 고쳐야 보이면 결국 항목 화면으로 건너가서 만들게 됩니다.
+  const [itemList, setItemList] = useState(items);
+  const [newOpen, setNewOpen] = useState(false);
+  const [newItem, setNewItem] = useState({ category: "", name: "", name_ko: "", unit_price: 0, applyToView: true });
   const [invoices, setInvoices] = useState(recentInvoices);
   const [view, setView] = useState<View>({ kind: "전체" });
   const [q, setQ] = useState("");
@@ -58,13 +64,13 @@ export default function InvoiceGridClient({
 
   const activeItems = useMemo(
     () =>
-      items
+      itemList
         .filter((i) => i.active)
         .sort(
           (a, b) =>
             a.category.localeCompare(b.category, "ko") || a.sort_order - b.sort_order || a.name.localeCompare(b.name),
         ),
-    [items],
+    [itemList],
   );
 
   const grades = useMemo(
@@ -198,6 +204,64 @@ export default function InvoiceGridClient({
     }
   }
 
+  /**
+   * 표에서 바로 항목을 만듭니다.
+   *
+   * 만들면서 **지금 보고 있는 명단에 곧바로 붙일 수 있게** 했습니다(기본 켜짐). 반을 보다가
+   * "이 반 교재 하나 더 있었지" 하는 순간에, 항목 화면으로 건너갔다 돌아오면 보던 자리를
+   * 다시 찾아야 하고 그 사이에 무엇을 하려 했는지 잊습니다.
+   */
+  async function createItem() {
+    const name = newItem.name.trim();
+    const category = newItem.category.trim();
+    if (!name || !category) {
+      notify("분류와 이름을 적어주세요.", "error");
+      return;
+    }
+    setBusy(true);
+    try {
+      const supabase = createClient();
+      // 지금 보기가 반/학년이면 그 값을 기본 대상으로 넣어둡니다 - 다음에 전학 온 아이에게도
+      // 자동으로 붙습니다. '표에만 붙이기'와 달리 이건 규칙으로 남습니다.
+      const defaults =
+        newItem.applyToView && view.kind === "반"
+          ? { default_classes: [view.value], default_grades: [] as string[] }
+          : newItem.applyToView && view.kind === "학년"
+            ? { default_grades: [view.value], default_classes: [] as string[] }
+            : { default_grades: [] as string[], default_classes: [] as string[] };
+
+      const { data, error } = await supabase
+        .from("fee_items")
+        .insert({
+          category,
+          name,
+          name_ko: newItem.name_ko.trim() || null,
+          unit_price: Number(newItem.unit_price) || 0,
+          ...defaults,
+          created_by: currentUserEmail,
+        })
+        .select()
+        .single();
+      if (error || !data) {
+        notify("항목을 만들지 못했습니다: " + (error?.message ?? ""), "error");
+        return;
+      }
+      const made = data as FeeItem;
+      setItemList((p) => [made, ...p]);
+      // 새 분류라면 그 열이 바로 보이도록 펼쳐둡니다.
+      setOpenCats((p) => new Set([...p, made.category]));
+      notify(
+        newItem.applyToView && view.kind !== "전체"
+          ? `"${made.name}"을 만들고 ${view.value}${view.kind === "학년" ? "학년" : ""}에 붙였습니다.`
+          : `"${made.name}"을 만들었습니다. 표에서 눌러 넣어주세요.`,
+        "success",
+      );
+      setNewItem({ category, name: "", name_ko: "", unit_price: 0, applyToView: newItem.applyToView });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   /** 고른 줄을 한 번에 발행합니다. */
   async function issueChecked() {
     const targets = rows.filter((s) => checked.has(s.id) && totalOf(s.id) > 0);
@@ -273,6 +337,7 @@ export default function InvoiceGridClient({
 
   return (
     <div className="mx-auto max-w-none p-3 sm:p-4">
+      <FinanceTabs />
       <div className="mb-1 flex flex-wrap items-baseline gap-2">
         <h1 className="text-lg font-bold">🧾 인보이스 명단</h1>
         <span className="text-xs text-slate-400">학비외 · 학생 × 항목</span>
@@ -359,6 +424,89 @@ export default function InvoiceGridClient({
         <button onClick={exportCsv} className="ml-auto rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">
           ⬇ CSV (구글시트용)
         </button>
+      </div>
+
+      {/* ── 표에서 바로 항목 만들기 ────────────────────────────── */}
+      <div className="mb-2 rounded-xl border border-slate-200 bg-white">
+        <button
+          type="button"
+          onClick={() => setNewOpen((v) => !v)}
+          className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] font-bold text-slate-700"
+        >
+          <span className="text-teal-600">{newOpen ? "▾" : "＋"}</span>
+          여기서 바로 항목 만들기
+          <span className="font-medium text-slate-400">— 항목 화면으로 건너가지 않아도 됩니다</span>
+        </button>
+        {newOpen && (
+          <div className="flex flex-wrap items-end gap-2 border-t border-slate-100 p-3">
+            <label className="text-[11px] text-slate-500">
+              분류
+              <input
+                list="grid-category-list"
+                value={newItem.category}
+                onChange={(e) => setNewItem((f) => ({ ...f, category: e.target.value }))}
+                placeholder="교재 · 악기 · 자유롭게"
+                className="ml-1 w-32 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+              />
+              <datalist id="grid-category-list">
+                {allCats.map((c) => (
+                  <option key={c} value={c} />
+                ))}
+              </datalist>
+            </label>
+            <label className="text-[11px] text-slate-500">
+              인보이스 이름 (영문)
+              <input
+                value={newItem.name}
+                onChange={(e) => setNewItem((f) => ({ ...f, name: e.target.value }))}
+                placeholder="Reveal Math 5"
+                className="ml-1 w-52 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+              />
+            </label>
+            <label className="text-[11px] text-slate-500">
+              한글 이름
+              <input
+                value={newItem.name_ko}
+                onChange={(e) => setNewItem((f) => ({ ...f, name_ko: e.target.value }))}
+                placeholder="5학년 수학"
+                className="ml-1 w-32 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+              />
+            </label>
+            <label className="text-[11px] text-slate-500">
+              단가
+              <input
+                type="number"
+                value={newItem.unit_price}
+                onChange={(e) => setNewItem((f) => ({ ...f, unit_price: Number(e.target.value) || 0 }))}
+                className="ml-1 w-28 rounded-lg border border-slate-300 px-2 py-1.5 text-right text-sm"
+              />
+            </label>
+            {view.kind !== "전체" && (
+              <label className="flex items-center gap-1 text-[11px] text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={newItem.applyToView}
+                  onChange={(e) => setNewItem((f) => ({ ...f, applyToView: e.target.checked }))}
+                />
+                <b>{view.value}{view.kind === "학년" ? "학년" : ""}</b> 기본으로 붙이기
+              </label>
+            )}
+            <button
+              onClick={() => void createItem()}
+              disabled={busy}
+              className="rounded-lg bg-teal-600 px-4 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
+            >
+              + 만들기
+            </button>
+            <span className="w-full text-[11px] text-slate-400">
+              단가·기본 대상을 더 손보려면{" "}
+              <a href="/finance/items" className="font-semibold text-teal-700 underline">
+                학비외 항목
+              </a>{" "}
+              탭에서 고칠 수 있습니다.
+            </span>
+          </div>
+        )}
       </div>
 
       {/* ── 요약 ─────────────────────────────────────────────────── */}

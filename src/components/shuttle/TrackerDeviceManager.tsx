@@ -249,13 +249,44 @@ export default function TrackerDeviceManager({
   }
 
   // 학습 좌표가 있고, 기존 좌표와 눈에 띄게 차이 나는 정류장만 보여줍니다(그대로인 곳은 볼 필요 없음).
+  /**
+   * 학습된 좌표를 **호차 → 정류장 순서**로 세웁니다.
+   *
+   * 예전에는 관측 횟수가 많은 순이었습니다. 그러면 한 호차의 정류장들이 목록 여기저기에
+   * 흩어져서, 27호를 확인하려면 전체를 훑어야 했습니다. 확인은 노선 단위로 합니다 - 1번부터
+   * 순서대로 봐야 "어느 자리가 빠졌는지"가 보입니다.
+   */
   const learnedStops = useMemo(
     () =>
       stopList
         .filter((s) => s.gps_lat != null && s.gps_lng != null && trackedRouteIds.has(s.route_id))
-        .sort((a, b) => (b.gps_sample_count ?? 0) - (a.gps_sample_count ?? 0)),
-    [stopList, trackedRouteIds]
+        .sort((a, b) => {
+          const ra = routeById.get(a.route_id)?.route_no ?? "";
+          const rb = routeById.get(b.route_id)?.route_no ?? "";
+          return routeNoSortKey(ra) - routeNoSortKey(rb) || ra.localeCompare(rb, "ko") || (a.seq ?? 0) - (b.seq ?? 0);
+        }),
+    [stopList, trackedRouteIds, routeById]
   );
+
+  /**
+   * 그 좌표가 **이미 반영되었는가**.
+   *
+   * 학습된 좌표와 지금 쓰는 좌표가 사실상 같으면(10m 안쪽) 반영이 끝난 것입니다. 이 표시가
+   * 없으면 무엇을 눌렀고 무엇이 남았는지 알 수 없어서, 같은 줄을 몇 번씩 다시 누르게 됩니다.
+   */
+  function applied(s: (typeof stopList)[number]): boolean {
+    if (s.lat == null || s.lng == null || s.gps_lat == null || s.gps_lng == null) return false;
+    return distanceMeters(s.lat, s.lng, s.gps_lat, s.gps_lng) <= 10;
+  }
+
+  /** 호차별로 묶어 접습니다. 노선 하나를 끝까지 보고 다음으로 넘어가는 것이 실제 순서입니다. */
+  const learnedByRoute = useMemo(() => {
+    const m = new Map<string, typeof learnedStops>();
+    for (const s of learnedStops) m.set(s.route_id, [...(m.get(s.route_id) ?? []), s]);
+    return [...m.entries()];
+  }, [learnedStops]);
+
+  const [openLearned, setOpenLearned] = useState<Set<string>>(new Set());
 
   return (
     <div className="g-panel-solid p-4">
@@ -569,61 +600,133 @@ export default function TrackerDeviceManager({
         <p className="mb-5 py-3 text-center text-xs text-slate-400">아직 학습된 좌표가 없습니다. 운행 기록이 쌓이면 표시됩니다.</p>
       ) : (
         <div className="mb-5 flex flex-col gap-1.5">
-          {learnedStops.map((s) => {
-            const route = routeById.get(s.route_id);
-            const shift =
-              s.lat != null && s.lng != null && s.gps_lat != null && s.gps_lng != null
-                ? Math.round(distanceMeters(s.lat, s.lng, s.gps_lat, s.gps_lng))
-                : null;
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-slate-500">
+              {learnedByRoute.length}개 호차 · {learnedStops.length}곳 · 반영됨{" "}
+              <b className="text-emerald-700">{learnedStops.filter(applied).length}</b>
+            </span>
+            <button
+              type="button"
+              onClick={() =>
+                setOpenLearned((p) => (p.size > 0 ? new Set() : new Set(learnedByRoute.map(([id]) => id))))
+              }
+              className="ml-auto rounded border border-slate-300 px-1.5 py-0.5 text-[11px] font-semibold text-slate-600"
+            >
+              {openLearned.size > 0 ? "모두 접기" : "모두 펼치기"}
+            </button>
+          </div>
+
+          {learnedByRoute.map(([routeId, list]) => {
+            const route = routeById.get(routeId);
+            const open = openLearned.has(routeId);
+            const done = list.filter(applied).length;
             return (
-              <div key={s.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 p-2 text-[11px]">
-                <span className="font-bold text-slate-700">
-                  {route?.route_no ?? "?"}호 · {s.seq}번
-                </span>
-                <span className="max-w-[220px] truncate text-slate-500">{s.address ?? "(주소 없음)"}</span>
-                {/* 며칠 중 며칠 섰는지가 정류장 판별의 핵심 근거입니다(신호대기는 드문드문).
-                    비율이 높을수록 "매일 서는 자리" = 정류장일 가능성이 큽니다. */}
-                {s.gps_day_count != null ? (
+              <div key={routeId} className="rounded-lg border border-slate-200">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setOpenLearned((p) => {
+                      const n = new Set(p);
+                      if (n.has(routeId)) n.delete(routeId);
+                      else n.add(routeId);
+                      return n;
+                    })
+                  }
+                  className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-[11px]"
+                >
+                  <span className="text-slate-400">{open ? "▾" : "▸"}</span>
+                  <span className="font-bold text-slate-700">{route?.route_no ?? "?"}호</span>
+                  {/* 이 호차에서 몇 곳이 이미 반영됐는지. 노선 하나를 끝냈는지가 한눈에 보여야
+                      다음 호차로 넘어갈 수 있습니다. */}
                   <span
                     className={
                       "rounded px-1.5 py-0.5 font-bold " +
-                      ((s.gps_confidence ?? 0) >= 0.8
-                        ? "bg-emerald-100 text-emerald-700"
-                        : (s.gps_confidence ?? 0) >= 0.5
-                          ? "bg-amber-100 text-amber-700"
-                          : "bg-slate-100 text-slate-500")
+                      (done === list.length ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600")
                     }
-                    title={`최근 운행일 중 ${s.gps_day_count}일 이 자리에서 정차했습니다(관측 ${s.gps_sample_count}회). 비율이 높을수록 정류장일 가능성이 큽니다 - 신호대기는 어떤 날은 서고 어떤 날은 그냥 지나가서 비율이 낮습니다.`}
                   >
-                    {s.gps_day_count}일 관측 · {Math.round((s.gps_confidence ?? 0) * 100)}%
+                    {done === list.length ? "반영 완료" : `${done}/${list.length} 반영`}
                   </span>
-                ) : (
-                  <span className="text-slate-400">관측 {s.gps_sample_count}회</span>
-                )}
-                {s.gps_dwell_seconds != null && (
-                  <span className="text-slate-400" title="평균 체류시간 - 승하차는 20~60초로 일정한 편입니다">
-                    평균 {s.gps_dwell_seconds}초
-                  </span>
-                )}
-                {shift != null && (
-                  <span className={shift > 100 ? "font-bold text-orange-600" : "text-slate-400"}>기존 좌표와 {shift}m 차이</span>
-                )}
-                <a
-                  href={`https://map.kakao.com/link/map/${encodeURIComponent(s.address ?? "정차지점")},${s.gps_lat},${s.gps_lng}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="rounded border border-slate-300 px-1.5 py-0.5 text-slate-500"
-                >
-                  지도
-                </a>
-                <button
-                  type="button"
-                  onClick={() => applyGps(s)}
-                  disabled={busy}
-                  className="ml-auto rounded-lg bg-blue-600 px-2 py-1 font-semibold text-white disabled:opacity-50"
-                >
-                  반영
+                  <span className="text-slate-400">{list.length}곳</span>
                 </button>
+
+                {open && (
+                  <div className="flex flex-col gap-1 border-t border-slate-100 p-2 pt-1.5">
+                    {list.map((s) => {
+                      const shift =
+                        s.lat != null && s.lng != null && s.gps_lat != null && s.gps_lng != null
+                          ? Math.round(distanceMeters(s.lat, s.lng, s.gps_lat, s.gps_lng))
+                          : null;
+                      const done = applied(s);
+                      return (
+                        <div
+                          key={s.id}
+                          className={
+                            "flex flex-wrap items-center gap-2 rounded-lg border p-2 text-[11px] " +
+                            (done ? "border-emerald-200 bg-emerald-50/50" : "border-slate-200")
+                          }
+                        >
+                          {/* 이 자리가 이미 반영됐는지. 없으면 무엇을 눌렀고 무엇이 남았는지
+                              알 수 없어 같은 줄을 몇 번씩 다시 누르게 됩니다. */}
+                          <span
+                            className={"font-bold " + (done ? "text-emerald-700" : "text-slate-400")}
+                            title={done ? "정류장 좌표가 이 값으로 반영되어 있습니다" : "아직 반영하지 않았습니다"}
+                          >
+                            {done ? "✓" : "○"}
+                          </span>
+                          <span className="font-bold text-slate-700">{s.seq}번</span>
+                          <span className="max-w-[220px] truncate text-slate-500">{s.address ?? "(주소 없음)"}</span>
+                          {/* 며칠 중 며칠 섰는지가 정류장 판별의 핵심 근거입니다(신호대기는 드문드문).
+                              비율이 높을수록 "매일 서는 자리" = 정류장일 가능성이 큽니다. */}
+                          {s.gps_day_count != null ? (
+                            <span
+                              className={
+                                "rounded px-1.5 py-0.5 font-bold " +
+                                ((s.gps_confidence ?? 0) >= 0.8
+                                  ? "bg-emerald-100 text-emerald-700"
+                                  : (s.gps_confidence ?? 0) >= 0.5
+                                    ? "bg-amber-100 text-amber-700"
+                                    : "bg-slate-100 text-slate-500")
+                              }
+                              title={`최근 운행일 중 ${s.gps_day_count}일 이 자리에서 정차했습니다(관측 ${s.gps_sample_count}회). 비율이 높을수록 정류장일 가능성이 큽니다 - 신호대기는 어떤 날은 서고 어떤 날은 그냥 지나가서 비율이 낮습니다.`}
+                            >
+                              {s.gps_day_count}일 관측 · {Math.round((s.gps_confidence ?? 0) * 100)}%
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">관측 {s.gps_sample_count}회</span>
+                          )}
+                          {s.gps_dwell_seconds != null && (
+                            <span className="text-slate-400" title="평균 체류시간 - 승하차는 20~60초로 일정한 편입니다">
+                              평균 {s.gps_dwell_seconds}초
+                            </span>
+                          )}
+                          {shift != null && (
+                            <span className={shift > 100 ? "font-bold text-orange-600" : "text-slate-400"}>기존 좌표와 {shift}m 차이</span>
+                          )}
+                          <a
+                            href={`https://map.kakao.com/link/map/${encodeURIComponent(s.address ?? "정차지점")},${s.gps_lat},${s.gps_lng}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="rounded border border-slate-300 px-1.5 py-0.5 text-slate-500"
+                          >
+                            지도
+                          </a>
+                          <button
+                            type="button"
+                            onClick={() => applyGps(s)}
+                            disabled={busy}
+                            className={
+                              "ml-auto rounded-lg px-2 py-1 font-semibold text-white disabled:opacity-50 " +
+                              (done ? "bg-slate-400" : "bg-blue-600")
+                            }
+                            title={done ? "이미 반영되어 있습니다. 다시 눌러도 같은 값이 들어갑니다." : "정류장 좌표를 이 값으로 바꿉니다"}
+                          >
+                            {done ? "반영됨" : "반영"}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             );
           })}

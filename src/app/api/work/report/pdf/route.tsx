@@ -1,25 +1,11 @@
-import path from "node:path";
-import { Document, Page, Text, View, StyleSheet, Font, renderToBuffer } from "@react-pdf/renderer";
+import { ensureKoreanFont } from "@/lib/pdfFont";
+import { Document, Page, Text, View, StyleSheet, renderToBuffer } from "@react-pdf/renderer";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import type { AppUser, Task, TaskStatus } from "@/lib/types";
 import { STATUS_LABEL } from "@/components/work/statusConfig";
 import { type ReportPeriodType, getReportRange, parseDateStr, PERIOD_TYPE_LABEL } from "@/lib/reportPeriod";
 
-const FONT_DIR = path.join(process.cwd(), "src/assets/fonts");
-let fontRegistered = false;
-function ensureFontRegistered() {
-  if (fontRegistered) return;
-  Font.register({
-    family: "Pretendard",
-    fonts: [
-      { src: path.join(FONT_DIR, "Pretendard-Regular.ttf"), fontWeight: 400 },
-      { src: path.join(FONT_DIR, "Pretendard-Bold.ttf"), fontWeight: 700 },
-    ],
-  });
-  Font.registerHyphenationCallback((word) => [word]);
-  fontRegistered = true;
-}
 
 const styles = StyleSheet.create({
   page: { padding: 40, fontFamily: "Pretendard", fontSize: 9.5, lineHeight: 1.5, color: "#1a1a1a" },
@@ -144,7 +130,7 @@ function ReportDocument({
 }
 
 export async function GET(request: Request) {
-  ensureFontRegistered();
+  ensureKoreanFont();
 
   const me = await getCurrentAppUser();
   if (!me) return new Response("로그인이 필요합니다.", { status: 401 });

@@ -1,7 +1,7 @@
-import path from "node:path";
+import { ensureKoreanFont } from "@/lib/pdfFont";
 import { isDemoAccount } from "@/lib/sharedAccounts";
 import { todayKst } from "@/lib/kst";
-import { Document, Page, Text, View, StyleSheet, Font, renderToBuffer } from "@react-pdf/renderer";
+import { Document, Page, Text, View, StyleSheet, renderToBuffer } from "@react-pdf/renderer";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isTeacherOnly } from "@/lib/roles";
@@ -9,20 +9,6 @@ import type { WrClass, WrReport, WrStudent, WrSubject } from "@/lib/types";
 import { BADGE_MAP, EVAL_LABELS, EVAL_CATEGORIES, LEGACY_EVAL_LABELS } from "@/lib/weeklyReport/badges";
 import type { EvalCategory, LegacyEvalCategory } from "@/lib/types";
 
-const FONT_DIR = path.join(process.cwd(), "src/assets/fonts");
-let fontRegistered = false;
-function ensureFontRegistered() {
-  if (fontRegistered) return;
-  Font.register({
-    family: "Pretendard",
-    fonts: [
-      { src: path.join(FONT_DIR, "Pretendard-Regular.ttf"), fontWeight: 400 },
-      { src: path.join(FONT_DIR, "Pretendard-Bold.ttf"), fontWeight: 700 },
-    ],
-  });
-  Font.registerHyphenationCallback((word) => [word]);
-  fontRegistered = true;
-}
 
 const styles = StyleSheet.create({
   page: { padding: 44, fontFamily: "Pretendard", fontSize: 10, lineHeight: 1.55, color: "#1a1a1a" },
@@ -111,7 +97,7 @@ function ReportDocument({
 }
 
 export async function GET(request: Request) {
-  ensureFontRegistered();
+  ensureKoreanFont();
 
   const supabase = await createClient();
   const me = await getCurrentAppUser();

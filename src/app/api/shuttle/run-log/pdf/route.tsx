@@ -1,24 +1,10 @@
-import path from "node:path";
+import { ensureKoreanFont } from "@/lib/pdfFont";
 import { todayKst } from "@/lib/kst";
-import { Document, Page, Text, View, StyleSheet, Font, renderToBuffer } from "@react-pdf/renderer";
+import { Document, Page, Text, View, StyleSheet, renderToBuffer } from "@react-pdf/renderer";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isAdminUser } from "@/lib/roles";
 
-const FONT_DIR = path.join(process.cwd(), "src/assets/fonts");
-let fontRegistered = false;
-function ensureFontRegistered() {
-  if (fontRegistered) return;
-  Font.register({
-    family: "Pretendard",
-    fonts: [
-      { src: path.join(FONT_DIR, "Pretendard-Regular.ttf"), fontWeight: 400 },
-      { src: path.join(FONT_DIR, "Pretendard-Bold.ttf"), fontWeight: 700 },
-    ],
-  });
-  Font.registerHyphenationCallback((word) => [word]);
-  fontRegistered = true;
-}
 
 const WEEKDAY_KO = ["일", "월", "화", "수", "목", "금", "토"];
 const SAFETY_PENALTY_PER_EVENT = 5;
@@ -196,7 +182,22 @@ function RunLogDocument({
 }
 
 export async function GET(request: Request) {
-  ensureFontRegistered();
+  try {
+    return await handle(request);
+  } catch (e) {
+    // 예전에는 여기서 터지면 **빈 500**이 돌아와, 화면에는 아무것도 안 뜨고 이유도 알 수
+    // 없었습니다(담당자: "오늘 운행일지 아예 페이지 안나와").
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[운행일지] 만들지 못했습니다:", e);
+    return new Response(`운행일지를 만들지 못했습니다.\n\n${msg}`, {
+      status: 500,
+      headers: { "Content-Type": "text/plain; charset=utf-8" },
+    });
+  }
+}
+
+async function handle(request: Request) {
+  ensureKoreanFont();
 
   const me = await getCurrentAppUser();
   if (!me || !isAdminUser(me)) return new Response("권한이 없습니다.", { status: 403 });

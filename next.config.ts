@@ -11,6 +11,14 @@ const nextConfig: NextConfig = {
     // 진단 화면이 "파일은 몇 개인데 DB에는 몇 개 들어갔나"를 대조하려면 마이그레이션
     // 파일 목록이 배포본에 있어야 합니다. 코드에서 import하지 않는 파일이라 명시합니다.
     "/dev/diagnostics": ["./supabase/migrations/**"],
+    // PDF를 만드는 라우트는 한글 글꼴 파일을 **런타임에 경로로** 읽습니다. 코드에서 import
+    // 하지 않는 파일이라, 이 설정이 없으면 배포본에서 글꼴이 통째로 빠집니다 - 로컬에서는
+    // 되는데 실제 배포에서만 500이 납니다(운행일지 PDF가 그렇게 안 나오고 있었습니다).
+    "/api/shuttle/run-log/pdf": ["./src/assets/fonts/**"],
+    "/api/weekly-report/pdf": ["./src/assets/fonts/**"],
+    "/api/manuals/pdf": ["./src/assets/fonts/**"],
+    "/api/work/report/pdf": ["./src/assets/fonts/**"],
+    "/api/meetings/report/pdf": ["./src/assets/fonts/**"],
   },
   experimental: {
     // 사이드바 메뉴는 버튼+router.push()로 이동합니다(상태표시줄에 링크 주소가 뜨는 걸

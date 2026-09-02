@@ -1,27 +1,12 @@
-import path from "node:path";
+import { ensureKoreanFont } from "@/lib/pdfFont";
 import { todayKst } from "@/lib/kst";
-import { Document, Page, Text, View, StyleSheet, Font, renderToBuffer } from "@react-pdf/renderer";
+import { Document, Page, Text, View, StyleSheet, renderToBuffer } from "@react-pdf/renderer";
 import { createClient } from "@/lib/supabase/server";
 import type { ManualSection } from "@/lib/types";
 import { htmlToPlainText } from "@/lib/manualHtml";
 
 // 구글 문서를 대체하는 자체 PDF 매뉴얼 생성. 한글 표시를 위해 Pretendard 폰트를
 // 프로젝트에 내장해서 등록합니다(원격 폰트 서버에 의존하지 않아 배포 환경에 관계없이 안정적으로 동작).
-const FONT_DIR = path.join(process.cwd(), "src/assets/fonts");
-let fontRegistered = false;
-function ensureFontRegistered() {
-  if (fontRegistered) return;
-  Font.register({
-    family: "Pretendard",
-    fonts: [
-      { src: path.join(FONT_DIR, "Pretendard-Regular.ttf"), fontWeight: 400 },
-      { src: path.join(FONT_DIR, "Pretendard-Bold.ttf"), fontWeight: 700 },
-    ],
-  });
-  // 문장 중간에 한글이 잘리며 하이픈 처리가 되는 것을 방지(react-pdf 기본 줄바꿈 규칙 완화)
-  Font.registerHyphenationCallback((word) => [word]);
-  fontRegistered = true;
-}
 
 const styles = StyleSheet.create({
   page: { padding: 48, fontFamily: "Pretendard", fontSize: 10.5, lineHeight: 1.6, color: "#1a1a1a" },
@@ -104,7 +89,7 @@ function ManualDocument({
 }
 
 export async function GET(request: Request) {
-  ensureFontRegistered();
+  ensureKoreanFont();
 
   const supabase = await createClient();
   const {

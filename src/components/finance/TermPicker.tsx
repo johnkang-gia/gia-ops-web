@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import type { FeeTerm } from "@/lib/types";
+import type { Term } from "@/lib/types";
 
 // 학기 고르개.
 //
@@ -12,7 +12,7 @@ import type { FeeTerm } from "@/lib/types";
 export const FEE_TERM_KEY = "gia.finance.term";
 
 /** 처음 열었을 때 볼 학기. 기억해둔 것이 아직 있으면 그것, 없으면 현재 학기. */
-export function initialTermId(terms: FeeTerm[]): string {
+export function initialTermId(terms: Term[]): string {
   if (terms.length === 0) return "";
   let saved: string | null = null;
   try {
@@ -21,7 +21,7 @@ export function initialTermId(terms: FeeTerm[]): string {
     saved = null;
   }
   if (saved && terms.some((t) => t.id === saved)) return saved;
-  return (terms.find((t) => t.is_current) ?? terms[0]).id;
+  return (terms.find((t) => t.status === "진행중") ?? terms[0]).id;
 }
 
 export default function FeeTermPicker({
@@ -29,7 +29,7 @@ export default function FeeTermPicker({
   value,
   onChange,
 }: {
-  terms: FeeTerm[];
+  terms: Term[];
   value: string;
   onChange: (id: string) => void;
 }) {
@@ -60,14 +60,14 @@ export default function FeeTermPicker({
       >
         {terms.map((t) => (
           <option key={t.id} value={t.id}>
-            {t.name}
-            {t.is_current ? " (지금)" : ""}
+            {t.year} {t.term_type}
+            {t.status === "진행중" ? " (지금)" : ""}
           </option>
         ))}
       </select>
       {/* 지난 학기를 보고 있으면 눈에 띄어야 합니다. 모르고 지난 학기에 항목을 등록하면
           이번 학기 표에는 나타나지 않고, 왜 없는지 찾기 어렵습니다. */}
-      {picked && !picked.is_current && (
+      {picked && picked.status !== "진행중" && (
         <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">지난 학기를 보는 중</span>
       )}
     </span>

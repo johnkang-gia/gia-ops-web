@@ -230,11 +230,11 @@ export const SCHEMA_CHECKS: SchemaCheck[] = [
     impact: "책의 '가야 할 자리'를 기록할 수 없어 도서정리 계획이 동작하지 않습니다.",
   },
   {
-    feature: "재무 학기",
-    table: "fee_terms",
-    columns: ["name", "is_current"],
-    migration: "20260902260000_fee_terms.sql",
-    impact: "항목과 청구서가 학기로 묶이지 않아, 지난 학기 교재가 새 학기 표에 계속 남습니다.",
+    feature: "학기 뿌리",
+    table: "terms",
+    columns: ["shuttle_label"],
+    migration: "20260902280000_school_term_spine.sql",
+    impact: "학기가 셔틀·재무와 이어지지 않아, 학기를 바꿔도 지난 학기 자료가 그대로 보입니다.",
   },
   {
     feature: "학비외 항목 부서",

@@ -4,7 +4,7 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess } from "@/lib/roles";
 import { todayKst } from "@/lib/kst";
 import InvoiceGridClient, { type Student } from "@/components/finance/InvoiceGridClient";
-import type { FeeItem, FeeTerm, Invoice, StudentFeeItem } from "@/lib/types";
+import type { FeeItem, Term, Invoice, StudentFeeItem } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +29,7 @@ export default async function InvoicesPage() {
     supabase.from("fee_items").select("*").order("category").order("sort_order").order("name"),
     supabase.from("student_fee_items").select("*"),
     supabase.from("invoices").select("*").order("issue_date", { ascending: false }).order("created_at", { ascending: false }).limit(1000),
-    supabase.from("fee_terms").select("*").order("is_current", { ascending: false }).order("created_at", { ascending: false }),
+    supabase.from("terms").select("*").order("status").order("start_date", { ascending: false, nullsFirst: false }).order("created_at", { ascending: false }),
   ]);
   if (termRes.error) console.error("[인보이스] 학기를 읽지 못했습니다:", termRes.error.message);
 
@@ -59,7 +59,7 @@ export default async function InvoicesPage() {
       items={(itemsRes.data as FeeItem[] | null) ?? []}
       initialOverrides={(ovRes.data as StudentFeeItem[] | null) ?? []}
       recentInvoices={(invRes.data as Invoice[] | null) ?? []}
-      terms={(termRes.data as FeeTerm[] | null) ?? []}
+      terms={(termRes.data as Term[] | null) ?? []}
       currentUserEmail={me.email}
       loadError={loadError}
       today={todayKst()}

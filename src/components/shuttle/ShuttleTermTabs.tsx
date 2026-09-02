@@ -8,11 +8,14 @@ import { SHUTTLE_TERMS, CURRENT_SHUTTLE_TERM, type ShuttleTerm } from "@/lib/shu
 //
 // 지난 학기 노선은 지우지 않고 여기서 꺼내 봅니다. 기본은 현재 학기라, 평소에는 여름캠프
 // 차량이 섞여 보이지 않습니다.
-export default function ShuttleTermTabs({ term }: { term: ShuttleTerm }) {
+export default function ShuttleTermTabs({ term, labels }: { term: ShuttleTerm; labels?: string[] }) {
+  // 학기 목록은 **학기 표에서** 받습니다. 예전에는 코드에 박아두어서, 새 학기를 만들어도
+  // 탭에 나타나지 않았습니다. 못 받았을 때만 예전 상수로 돌아갑니다.
+  const list = labels && labels.length > 0 ? labels : (SHUTTLE_TERMS as readonly string[]);
   const pathname = usePathname();
   const params = useSearchParams();
 
-  function hrefFor(t: ShuttleTerm) {
+  function hrefFor(t: string) {
     const next = new URLSearchParams(params.toString());
     if (t === CURRENT_SHUTTLE_TERM) next.delete("term");
     else next.set("term", t);
@@ -23,7 +26,7 @@ export default function ShuttleTermTabs({ term }: { term: ShuttleTerm }) {
   return (
     <div className="flex items-center gap-1">
       <span className="inline-flex rounded-lg bg-slate-100 p-0.5">
-        {SHUTTLE_TERMS.map((t) => (
+        {list.map((t) => (
           <Link
             key={t}
             href={hrefFor(t)}

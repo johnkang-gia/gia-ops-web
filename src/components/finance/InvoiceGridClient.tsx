@@ -9,10 +9,10 @@ import { prettyPhone } from "@/lib/alltalkpay";
 import AlltalkpayExport from "./AlltalkpayExport";
 import ReconcileModal from "./ReconcileModal";
 import InvoicePreviewModal from "./InvoicePreviewModal";
-import FeeTermPicker, { initialTermId } from "./FeeTermPicker";
+import TermPicker, { initialTermId } from "./TermPicker";
 import { gradeLabel } from "@/lib/feeItems";
 import FinanceTabs from "./FinanceTabs";
-import type { FeeItem, FeeTerm, Invoice, StudentFeeItem } from "@/lib/types";
+import type { FeeItem, Term, Invoice, StudentFeeItem } from "@/lib/types";
 
 // 인보이스 명단 표 — 학생이 행, 항목이 열인 스프레드시트.
 //
@@ -52,7 +52,7 @@ type Props = {
   items: FeeItem[];
   initialOverrides: StudentFeeItem[];
   recentInvoices: Invoice[];
-  terms: FeeTerm[];
+  terms: Term[];
   currentUserEmail: string;
   loadError: string | null;
   today: string;
@@ -135,7 +135,7 @@ export default function InvoiceGridClient({
           (i) =>
             i.active &&
             // 학기가 없던 시절 항목(비어 있음)은 현재 학기에서 함께 보여줍니다.
-            ((i.fee_term_id ?? "") === termId || (!i.fee_term_id && terms.find((x) => x.id === termId)?.is_current)) &&
+            ((i.term_id ?? "") === termId || (!i.term_id && terms.find((x) => x.id === termId)?.status === "진행중")) &&
             (!i.department || i.department === dept),
         )
         .sort(
@@ -183,7 +183,7 @@ export default function InvoiceGridClient({
     for (const v of invoices) {
       if (!v.student_id || v.status !== "발행" || m.has(v.student_id)) continue;
       // 지난 학기 청구서가 이번 학기 표에서 '발행됨'으로 보이면 안 됩니다.
-      const sameTerm = (v.fee_term_id ?? "") === termId || (!v.fee_term_id && terms.find((x) => x.id === termId)?.is_current);
+      const sameTerm = (v.term_id ?? "") === termId || (!v.term_id && terms.find((x) => x.id === termId)?.status === "진행중");
       if (sameTerm) m.set(v.student_id, v);
     }
     return m;
@@ -428,7 +428,7 @@ export default function InvoiceGridClient({
           // 지금 보고 있는 부서의 항목으로 만듭니다. 초등 표에서 만든 교재가 중고등 표에
           // 나타나면, 만든 사람도 나중에 왜 거기 있는지 모릅니다.
           department: dept === "초등부" || dept === "중고등부" ? dept : null,
-          fee_term_id: termId || null,
+          term_id: termId || null,
           ...defaults,
           created_by: currentUserEmail,
         })
@@ -610,7 +610,7 @@ export default function InvoiceGridClient({
       )}
 
       <div className="mb-2 flex flex-wrap items-center gap-2">
-        <FeeTermPicker terms={terms} value={termId} onChange={setTermId} />
+        <TermPicker terms={terms} value={termId} onChange={setTermId} />
         <span className="text-[11px] text-slate-400">학기를 바꾸면 그 학기의 항목과 청구서만 보입니다</span>
       </div>
 

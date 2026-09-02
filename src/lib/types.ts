@@ -64,6 +64,8 @@ export type EventRecord = {
 
 export type Term = {
   id: string;
+  /** 이 학기의 셔틀 자료를 가리키는 이름(shuttle_routes.term 에 들어가는 글자). */
+  shuttle_label?: string | null;
   case_id: string;
   term_type: string;
   year: string;
@@ -1235,21 +1237,7 @@ export type ShuttleSafetyEvent = {
  */
 export const FEE_ITEM_CATEGORY_SUGGESTIONS = ["교재", "악기", "악기수리", "교복", "체육복", "현장학습", "기타"] as const;
 
-/** 학비외 항목·인보이스를 묶는 학기. 학기가 바뀌면 새 줄을 만듭니다. */
-export type FeeTerm = {
-  id: string;
-  name: string;
-  starts_on: string | null;
-  ends_on: string | null;
-  is_current: boolean;
-  note: string | null;
-  created_by: string | null;
-  created_at: string;
-};
-
 export type FeeItem = {
-  /** 어느 학기 항목인가. 비어 있으면 어느 학기에서도 안 보입니다. */
-  fee_term_id?: string | null;
   /** 이 항목을 쓰는 부서. 비어 있으면 초등·중고등 양쪽 모두(교복처럼 학교 전체가 사는 것). */
   department?: "초등부" | "중고등부" | null;
   id: string;
@@ -1300,7 +1288,7 @@ export type Invoice = {
   issued_by: string | null;
   created_at: string;
   /** 어느 학기 청구서인가. */
-  fee_term_id?: string | null;
+  term_id?: string | null;
   /** 왜 취소했는지. 지우지 않고 남기므로 이유가 있어야 나중에 읽힙니다. */
   cancel_reason?: string | null;
   cancelled_at?: string | null;

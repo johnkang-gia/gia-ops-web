@@ -36,6 +36,19 @@ export default async function ShuttlePage({ searchParams }: { searchParams: Prom
   const { term: termParam } = await searchParams;
   const term = parseShuttleTerm(termParam);
 
+  // 학기 탭에 보일 이름들. 학기 표에 적힌 셔틀 이름과, 노선에 실제로 쓰인 이름을 합칩니다 -
+  // 둘 중 하나만 보면 새로 만든 학기가 안 보이거나, 예전 자료가 사라집니다.
+  const [{ data: termRows }, { data: usedRows }] = await Promise.all([
+    supabase.from("terms").select("shuttle_label").not("shuttle_label", "is", null),
+    supabase.from("shuttle_routes").select("term"),
+  ]);
+  const termLabels = [
+    ...new Set([
+      ...((termRows as { shuttle_label: string | null }[] | null) ?? []).map((r) => r.shuttle_label ?? ""),
+      ...((usedRows as { term: string | null }[] | null) ?? []).map((r) => r.term ?? ""),
+    ]),
+  ].filter(Boolean);
+
   // 학기로 가릅니다.
   //
   // 담당자: "배차표도 여름캠프 차량이 그대로 있어."
@@ -66,7 +79,7 @@ export default async function ShuttlePage({ searchParams }: { searchParams: Prom
         <div className="mb-1 flex items-center justify-between gap-2">
           <h1 className="text-lg font-bold">🚌 셔틀 관리</h1>
           <div className="flex items-center gap-2">
-            <ShuttleTermTabs term={term} />
+            <ShuttleTermTabs term={term} labels={termLabels} />
             <GuideButton title="셔틀 관리 사용 가이드" sections={GUIDE_SECTIONS} />
           </div>
         </div>

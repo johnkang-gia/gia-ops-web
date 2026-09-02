@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess } from "@/lib/roles";
 import FeeItemsClient from "@/components/finance/FeeItemsClient";
-import type { FeeCategory, FeeItem, FeeTerm } from "@/lib/types";
+import type { FeeCategory, FeeItem, Term } from "@/lib/types";
 
 // 학비외 항목 등록(재무 전용).
 //
@@ -21,7 +21,7 @@ export default async function FeeItemsPage() {
   const [itemsRes, catRes, termRes, clsRes] = await Promise.all([
     supabase.from("fee_items").select("*").order("category").order("sort_order").order("name"),
     supabase.from("fee_categories").select("*").order("sort_order").order("name"),
-    supabase.from("fee_terms").select("*").order("is_current", { ascending: false }).order("created_at", { ascending: false }),
+    supabase.from("terms").select("*").order("status").order("start_date", { ascending: false, nullsFirst: false }).order("created_at", { ascending: false }),
     supabase.from("wr_classes").select("grade, class_name").eq("is_demo", false).order("grade").order("class_name"),
   ]);
   // 분류 표가 아직 없어도(마이그레이션 전) 화면은 열려야 합니다. 그때는 항목에 적힌 글자로만
@@ -42,7 +42,7 @@ export default async function FeeItemsPage() {
     <FeeItemsClient
       initialItems={(itemsRes.data as FeeItem[] | null) ?? []}
       initialCategories={(catRes.data as FeeCategory[] | null) ?? []}
-      terms={(termRes.data as FeeTerm[] | null) ?? []}
+      terms={(termRes.data as Term[] | null) ?? []}
       grades={grades}
       classes={classes}
       currentUserEmail={me.email}

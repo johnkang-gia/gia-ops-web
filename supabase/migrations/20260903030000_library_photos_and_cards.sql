@@ -76,3 +76,56 @@ create policy student_photos_read_library on storage.objects
 --   -- delete from lib_loans l
 --   --  using wr_students s
 --   --  where s.student_no = l.student_no and s.is_demo = true;
+-- ===== 도서카드 발급 기록 =====
+--
+-- 요청: "한번 인쇄한 아이들은 체크해주고, 잃어버렸을때 다시 뽑을 때 그것도 기록해주고".
+--
+-- 종이 카드는 잃어버립니다. 그래서 "누가 받았나"만으로는 부족하고 "몇 번째 카드인가"까지
+-- 남아야 합니다. 한 학생에 여러 줄이 쌓이는 기록표로 만든 이유입니다 - 마지막 줄이 지금 그
+-- 아이가 들고 있는 카드이고, 줄 수가 곧 재발급 횟수입니다.
+--
+-- 카드를 '취소'하거나 '무효화'하지는 않습니다. 바코드에 담기는 값은 학생 고유번호 하나뿐이라,
+-- 잃어버린 카드를 주워도 그 아이 이름으로 빌리는 것 말고는 할 수 있는 일이 없습니다. 대출
+-- 창구에 사람이 서 있는 구조라 그 위험은 충분히 낮습니다. 나중에 출입문 자동 개폐처럼 사람이
+-- 없는 곳에 쓰게 되면 그때 무효화 개념을 더하면 됩니다.
+
+create table if not exists lib_card_issues (
+  id uuid primary key default gen_random_uuid(),
+  -- 학생 고유번호로 잡습니다. 학생 행이 지워져도 기록은 남아야 하므로 외래키를 걸지 않습니다.
+  student_no text not null,
+  -- 그때의 이름·반을 함께 적어둡니다. 나중에 반이 바뀌어도 "언제 어느 반일 때 뽑았는지"가
+  -- 남습니다.
+  student_name text,
+  student_class text,
+  issued_at timestamptz not null default now(),
+  issued_by text,
+  -- 최초 발급인지 다시 뽑은 것인지. 다시 뽑은 이유(분실·훼손 등)는 note에 적습니다.
+  reason text not null default '최초' check (reason in ('최초', '재발급')),
+  note text
+);
+
+create index if not exists lib_card_issues_student_idx
+  on lib_card_issues(student_no, issued_at desc);
+
+alter table lib_card_issues enable row level security;
+
+drop policy if exists lib_all_card_issues on lib_card_issues;
+create policy lib_all_card_issues on lib_card_issues
+  for all using (is_lib_user()) with check (is_lib_user());
+
+-- ── 학생별 발급 현황 요약 ───────────────────────────────────────────────────
+-- 카드 인쇄 화면이 "이 아이는 뽑았나, 몇 번 뽑았나, 마지막이 언제인가"를 한 번에 물어보도록
+-- 만든 뷰입니다. 화면에서 매번 세는 것보다 가볍고, 학생 수가 늘어도 그대로 씁니다.
+drop view if exists lib_card_status;
+create view lib_card_status as
+select
+  student_no,
+  count(*)                                  as issue_count,
+  max(issued_at)                            as last_issued_at,
+  (count(*) filter (where reason = '재발급')) as reissue_count
+from lib_card_issues
+where is_lib_user()
+group by student_no;
+
+revoke all on lib_card_status from anon;
+grant select on lib_card_status to authenticated;

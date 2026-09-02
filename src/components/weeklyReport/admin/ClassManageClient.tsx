@@ -31,7 +31,7 @@ export default function ClassManageClient({ initialClasses, team }: { initialCla
         class_name: className.trim(),
         teacher_email: teacherEmail || null,
         sub_teacher_email: subTeacherEmail || null,
-        // 이 화면에서 만드는 반은 언제나 실제 반입니다. 기본값에 기대지 않고 못박습니다.
+        // 이 화면에서 만드는 반은 언제나 실제 반입니다.
         is_demo: false,
       })
       .select()

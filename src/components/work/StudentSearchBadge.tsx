@@ -13,7 +13,15 @@ import { createClient } from "@/lib/supabase/client";
 // 명부는 한 번만 읽고 브라우저 안에서 걸러냅니다(137명). 글자를 칠 때마다 서버에 묻는 것은
 // 이 규모에서는 느리기만 하고 얻는 것이 없습니다.
 
-type Row = { id: string; name: string; nameEn: string | null; grade: string | null; className: string | null; room: string | null };
+type Row = {
+  id: string;
+  name: string;
+  nameEn: string | null;
+  grade: string | null;
+  className: string | null;
+  room: string | null;
+  photoPath: string | null;
+};
 
 const norm = (s: string) => s.toLowerCase().replace(/\s+/g, "");
 
@@ -31,7 +39,7 @@ export default function StudentSearchBadge() {
       // 반의 위치("A동 2F")는 반 표(wr_classes.room)에 있습니다. 학생 표에는 없어서 따로
       // 읽어 이어 붙입니다 - 아이를 찾아가야 하는 사람에게는 반 이름보다 이게 필요합니다.
       const [stuRes, clsRes] = await Promise.all([
-        supabase.from("wr_students_basic").select("id, name, name_en, grade, class_name, class_id").eq("status", "active").order("name"),
+        supabase.from("wr_students_basic").select("id, name, name_en, grade, class_name, class_id, photo_path").eq("status", "active").order("name"),
         supabase.from("wr_classes").select("id, grade, class_name, room").eq("is_demo", false),
       ]);
       if (stuRes.error) {
@@ -56,10 +64,19 @@ export default function StudentSearchBadge() {
             (s.class_id ? roomById.get(s.class_id as string) : null) ??
             roomByGradeClass.get(`${s.grade ?? ""}|${s.class_name ?? ""}`) ??
             null,
+          photoPath: (s.photo_path as string | null) ?? null,
         })),
       );
     })();
   }, [open, rows]);
+
+  /**
+   * 사진 주소.
+   *
+   * 비공개 버킷이라 볼 때마다 짧게 사는 주소를 받아야 합니다. **지금 보이는 것만** 받고,
+   * 한 번 받은 것은 기억합니다 - 137명 것을 미리 다 받으면 창이 그만큼 늦게 열립니다.
+   */
+  const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({});
 
   // 열면 바로 칠 수 있어야 합니다. 창을 연 뒤 칸을 한 번 더 누르게 하면 두 동작이 됩니다.
   useEffect(() => {
@@ -73,7 +90,7 @@ export default function StudentSearchBadge() {
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
-  const hits = useMemo(() => {
+  const hits = useMemo<Row[]>(() => {
     const k = norm(q);
     if (!rows) return [];
     if (!k) return rows.slice(0, 30);
@@ -87,6 +104,29 @@ export default function StudentSearchBadge() {
       )
       .slice(0, 40);
   }, [rows, q]);
+
+  useEffect(() => {
+    const need = hits.map((s) => s.photoPath).filter((p): p is string => !!p && !photoUrls[p]);
+    if (need.length === 0) return;
+    let alive = true;
+    void (async () => {
+      const { data, error } = await createClient().storage.from("student-photos").createSignedUrls(need, 60 * 60);
+      if (error) {
+        // 사진은 있으면 좋은 것입니다. 못 받아도 검색은 그대로 됩니다.
+        console.error("[학생 검색] 사진 주소를 못 받았습니다:", error.message);
+        return;
+      }
+      if (!alive) return;
+      setPhotoUrls((prev) => {
+        const next = { ...prev };
+        for (const r of data ?? []) if (r.path && r.signedUrl) next[r.path] = r.signedUrl;
+        return next;
+      });
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [hits, photoUrls]);
 
   return (
     <>
@@ -126,6 +166,15 @@ export default function StudentSearchBadge() {
                     onClick={() => setOpen(false)}
                     className="flex items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-50"
                   >
+                    {/* 얼굴이 이름보다 빠릅니다. 전화를 받거나 아이를 인계할 때 특히 그렇습니다. */}
+                    <span className="h-[34px] w-[27px] shrink-0 overflow-hidden rounded border border-slate-200 bg-slate-50">
+                      {s.photoPath && photoUrls[s.photoPath] ? (
+                        // eslint-disable-next-line @next/next/no-img-element -- 서명 주소라 next/image 대상이 아닙니다.
+                        <img src={photoUrls[s.photoPath]} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        <span className="flex h-full w-full items-center justify-center text-[9px] text-slate-300">—</span>
+                      )}
+                    </span>
                     <span className="min-w-0">
                       <span className="text-sm font-bold text-slate-800">{s.name}</span>
                       {s.nameEn && <span className="ml-1.5 text-[11px] text-slate-400">{s.nameEn}</span>}

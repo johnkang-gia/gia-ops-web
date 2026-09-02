@@ -1,4 +1,4 @@
-import { nameFromFile, matchStudent, cropBoxOf, adjustFromFace, adjustFromHead, detectHeadFromPixels, HEAD_RATIO, TOP_MARGIN, DEFAULT_ADJUST, PHOTO_RATIO, type PhotoStudent } from "../../src/lib/passportPhoto";
+import { adjustFromEyes, HEAD_PER_EYE_GAP, EYE_LINE, nameFromFile, matchStudent, cropBoxOf, adjustFromFace, adjustFromHead, detectHeadFromPixels, HEAD_RATIO, TOP_MARGIN, DEFAULT_ADJUST, PHOTO_RATIO, type PhotoStudent } from "../../src/lib/passportPhoto";
 let pass = 0, fail = 0;
 const eq = (a: unknown, b: unknown, m: string) => {
   if (JSON.stringify(a) === JSON.stringify(b)) pass++;
@@ -47,11 +47,36 @@ const b1 = cropBoxOf(3000, 2000, DEFAULT_ADJUST);
 near(b1.w / b1.h, PHOTO_RATIO, "가로가 긴 사진도 규격 비율");
 const b2 = cropBoxOf(1000, 4000, DEFAULT_ADJUST);
 near(b2.w / b2.h, PHOTO_RATIO, "세로가 아주 긴 사진도 규격 비율");
-eq(b2.x >= 0 && b2.y >= 0 && b2.x + b2.w <= 1000 && b2.y + b2.h <= 4000, true, "그림 밖으로 안 나감");
-
+// 원본에 머리 위 여백이 거의 없는 사진이 있어서, 조금 밖으로 나가는 것은 허용합니다
+// (그 자리는 흰색으로 채웁니다). 억지로 안쪽에 붙이면 정수리가 잘립니다.
 const b3 = cropBoxOf(1000, 1000, { zoom: 1, cx: 0, cy: 0 });
-eq(b3.x, 0, "왼쪽 끝으로 밀어도 0에서 멈춤");
-eq(b3.y, 0, "위쪽 끝으로 밀어도 0에서 멈춤");
+eq(b3.x >= -b3.w * 0.2 - 0.01 && b3.y >= -b3.h * 0.2 - 0.01, true, "밖으로 나가도 20%까지만");
+const b4 = cropBoxOf(1000, 1000, { zoom: 1, cx: 9, cy: 9 });
+eq(b4.x <= 1000 - b4.w * 0.8 + 0.01, true, "반대쪽도 20%까지만");
+
+// ── 눈으로 잡을 때 머리가 잘리지 않아야 합니다 ────────────────────────
+// 눈 사이 거리로 머리 높이를 가늠하는데, 그 값을 작게 잡으면 과하게 확대되어 정수리가
+// 밖으로 나갑니다. 실제로 그 일이 있었습니다.
+function crownInside(imgW: number, imgH: number, gap: number, eyeY: number) {
+  const left = { x: imgW / 2 - gap / 2, y: eyeY };
+  const right = { x: imgW / 2 + gap / 2, y: eyeY };
+  const a = adjustFromEyes(imgW, imgH, left, right);
+  const box = cropBoxOf(imgW, imgH, a);
+  // 눈은 머리 높이의 45%쯤 아래에 있습니다. 거기서 거꾸로 정수리를 구합니다.
+  const headH = gap * HEAD_PER_EYE_GAP;
+  const crown = eyeY - headH * 0.45;
+  const chin = eyeY + headH * 0.55;
+  return { topGap: (crown - box.y) / box.h, chinAt: (chin - box.y) / box.h, eyeAt: (eyeY - box.y) / box.h };
+}
+{
+  const r = crownInside(1200, 1600, 90, 620);
+  eq(r.topGap > 0.03, true, `정수리 위에 여백이 남음 (${r.topGap.toFixed(3)})`);
+  eq(r.chinAt < 0.95, true, `턱이 사진 안에 있음 (${r.chinAt.toFixed(3)})`);
+  near(r.eyeAt, EYE_LINE, "눈이 규격 높이에 옴", 0.03);
+  // 얼굴이 크게 찍힌 사진도 마찬가지여야 합니다.
+  const r2 = crownInside(1200, 1600, 180, 700);
+  eq(r2.topGap > 0.03, true, `크게 찍힌 사진도 정수리 여백 (${r2.topGap.toFixed(3)})`);
+}
 
 // 얼굴을 찾았을 때 — 얼굴 높이가 사진 높이의 70% 근처가 되어야 합니다.
 const a = adjustFromFace(1000, 1500, { x: 400, y: 300, width: 200, height: 260 });

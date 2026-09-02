@@ -43,7 +43,7 @@ export const DEFAULT_ADJUST: Adjust = { zoom: 1, cx: 0.5, cy: 0.42, rot: 0 };
 
 /** 조정값을 실제로 자를 사각형으로 바꿉니다. 그림 밖으로 나가지 않게 안쪽으로 밀어 넣습니다. */
 export function cropBoxOf(imgW: number, imgH: number, a: Adjust): CropBox {
-  const z = Math.min(Math.max(a.zoom, 0.2), 1);
+  const z = Math.min(Math.max(a.zoom, 0.05), 1);
   // 규격 비율에 맞는 가장 큰 사각형에서 시작해, zoom 만큼 줄입니다.
   let w = Math.min(imgW, imgH * PHOTO_RATIO) * z;
   let h = w / PHOTO_RATIO;
@@ -53,8 +53,11 @@ export function cropBoxOf(imgW: number, imgH: number, a: Adjust): CropBox {
   }
   let x = a.cx * imgW - w / 2;
   let y = a.cy * imgH - h / 2;
-  x = Math.min(Math.max(x, 0), imgW - w);
-  y = Math.min(Math.max(y, 0), imgH - h);
+  // 그림 밖으로 조금 나가는 것을 허용합니다. 원본에 머리 위 여백이 거의 없는 사진이 있는데,
+  // 억지로 안쪽에 붙이면 **정수리가 잘립니다.** 흰 여백이 조금 생기는 편이 낫습니다.
+  const slack = 0.2;
+  x = Math.min(Math.max(x, -w * slack), imgW - w * (1 - slack));
+  y = Math.min(Math.max(y, -h * slack), imgH - h * (1 - slack));
   return { x, y, w, h };
 }
 
@@ -65,8 +68,16 @@ export function cropBoxOf(imgW: number, imgH: number, a: Adjust): CropBox {
  * **머리 위 여백이 얼마인가**. 이 둘을 고정하면 아이마다 찍힌 거리가 달라도 결과는 같은
  * 크기·같은 구도로 나옵니다. 그것이 학생증 한 판을 뽑았을 때 눈에 띄는 차이입니다.
  */
-export const HEAD_RATIO = 0.7; // 머리(정수리~턱)가 사진 높이에서 차지하는 비율
-export const TOP_MARGIN = 0.1; // 사진 위쪽 여백
+/**
+ * 머리(정수리~턱)가 사진 높이에서 차지하는 비율.
+ *
+ * 여권 규격은 45mm 사진에서 얼굴 길이를 32~36mm로 정합니다(71~80%). 그런데 **위쪽을 택하면
+ * 머리가 잘립니다** - 자동으로 잡은 머리 크기가 조금만 작게 나와도 정수리가 밖으로 나갑니다.
+ * 규격 안에서 가장 여유 있는 쪽을 씁니다. 조금 넉넉한 사진은 학생증에서 티가 안 나지만,
+ * 정수리가 잘린 사진은 한눈에 보입니다.
+ */
+export const HEAD_RATIO = 0.66;
+export const TOP_MARGIN = 0.1; // 사진 위쪽 여백(규격은 3~5mm, 45mm 기준 7~11%)
 
 /**
  * 눈높이가 사진 위에서 얼마쯤에 오는가.
@@ -75,16 +86,18 @@ export const TOP_MARGIN = 0.1; // 사진 위쪽 여백
  * 정하고 있습니다(위에서 보면 40~50%). 정수리는 머리 모양과 머리카락에 따라 들쭉날쭉하지만
  * 눈은 그렇지 않아서, 눈을 기준으로 잡으면 아이들 사진이 실제로 똑같아집니다.
  */
-export const EYE_LINE = 0.44;
+export const EYE_LINE = 0.4;
 
 /**
  * 두 눈 사이 거리로 머리 높이를 가늠하는 비율.
  *
- * 사람 머리 높이는 두 눈 사이 거리의 약 3배입니다. 아이도 어른도 이 비율은 크게 다르지
- * 않습니다(얼굴이 작은 아이는 눈 사이도 좁습니다). 그래서 눈 사이 거리만 알면 머리가
- * 사진에서 얼마나 크게 나와야 하는지 정할 수 있습니다.
+ * 머리 높이(정수리~턱)는 두 눈동자 사이 거리의 약 3.6배입니다. 어른은 눈 사이 62mm에 머리
+ * 230mm, 아이는 55mm에 200mm쯤이라 비율은 거의 같습니다.
+ *
+ * 이 값을 작게 잡으면 머리를 작게 본 것이 되어 **그만큼 과하게 확대되고, 정수리가 잘립니다.**
+ * 처음에 3배로 두었다가 실제로 잘리는 사진이 나왔습니다.
  */
-export const HEAD_PER_EYE_GAP = 2.95;
+export const HEAD_PER_EYE_GAP = 3.6;
 
 /**
  * 머리 위치를 알면 규격대로 자리를 잡습니다.
@@ -125,13 +138,18 @@ export function adjustFromEyes(
   imgH: number,
   left: { x: number; y: number },
   right: { x: number; y: number },
+  /** 얼굴 상자(이마~턱)를 함께 주면 더 안전하게 잡습니다. */
+  faceBox?: { height: number },
 ): Adjust {
   const dx = right.x - left.x;
   const dy = right.y - left.y;
   const gap = Math.hypot(dx, dy);
   if (!(gap > 1)) return DEFAULT_ADJUST;
 
-  const headH = gap * HEAD_PER_EYE_GAP;
+  // 머리 높이를 **두 가지로 재고 큰 쪽**을 씁니다. 눈 사이 거리는 고개를 옆으로 돌리면
+  // 짧게 잡히고, 그러면 머리를 작게 본 것이 되어 과하게 확대됩니다. 얼굴 상자는 그때도
+  // 줄지 않습니다. 크게 잡아 틀리면 여백이 조금 넓을 뿐이고, 작게 잡아 틀리면 잘립니다.
+  const headH = Math.max(gap * HEAD_PER_EYE_GAP, (faceBox?.height ?? 0) * 1.45);
   const cropH = headH / HEAD_RATIO;
   const cropW = cropH * PHOTO_RATIO;
   const base = Math.min(imgW, imgH * PHOTO_RATIO);

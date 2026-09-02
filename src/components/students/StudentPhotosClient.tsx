@@ -69,7 +69,10 @@ type Props = {
 async function autoAdjust(img: HTMLImageElement): Promise<{ adjust: Adjust; how: Item["how"] }> {
   const face = await findFace(img);
   if (face?.leftEye && face.rightEye) {
-    return { adjust: adjustFromEyes(img.naturalWidth, img.naturalHeight, face.leftEye, face.rightEye), how: "눈" };
+    return {
+      adjust: adjustFromEyes(img.naturalWidth, img.naturalHeight, face.leftEye, face.rightEye, face.box),
+      how: "눈",
+    };
   }
   if (face) {
     return { adjust: adjustFromFace(img.naturalWidth, img.naturalHeight, face.box), how: "얼굴" };

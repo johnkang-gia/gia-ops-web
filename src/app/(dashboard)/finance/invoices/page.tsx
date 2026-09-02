@@ -21,7 +21,7 @@ export default async function InvoicesPage() {
       .from("wr_students")
       // 명부의 칸을 그대로 가져옵니다. 보호자 연락처가 없으면 청구서가 못 나가고, 악기 칸이
       // 없으면 인보이스의 악기가 명부와 어긋나도 아무도 모릅니다.
-      .select("id, name, name_en, grade, class_name, department, student_no, parent_phone, parent_email, instrument")
+      .select("id, name, name_en, grade, class_name, department, student_no, mother_phone, father_phone, parent_phone, parent_email, instrument")
       .eq("status", "active")
       .eq("is_demo", false)
       .order("grade")
@@ -35,7 +35,8 @@ export default async function InvoicesPage() {
 
   type Row = {
     id: string; name: string; name_en: string | null; grade: string | null; class_name: string | null;
-    department: string | null; student_no: string | null; parent_phone: string | null;
+    department: string | null; student_no: string | null;
+    mother_phone: string | null; father_phone: string | null; parent_phone: string | null;
     parent_email: string | null; instrument: string | null;
   };
   const students: Student[] = ((stuRes.data as Row[] | null) ?? []).map((s) => ({
@@ -46,6 +47,8 @@ export default async function InvoicesPage() {
     className: s.class_name,
     department: s.department,
     studentNo: s.student_no,
+    motherPhone: s.mother_phone,
+    fatherPhone: s.father_phone,
     parentPhone: s.parent_phone,
     parentEmail: s.parent_email,
     instrument: s.instrument,

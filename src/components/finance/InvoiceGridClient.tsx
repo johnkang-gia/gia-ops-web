@@ -41,6 +41,9 @@ export type Student = {
   className: string | null;
   department: string | null;
   studentNo: string | null;
+  /** 청구서는 **어머니 → 아버지 → 보호자** 순으로 있는 번호로 나갑니다. */
+  motherPhone: string | null;
+  fatherPhone: string | null;
   parentPhone: string | null;
   parentEmail: string | null;
   /** 명부에 적힌 악기. 인보이스의 악기 항목과 어긋나면 화면에서 알려줍니다. */
@@ -96,6 +99,8 @@ export default function InvoiceGridClient({
   const [cancelling, setCancelling] = useState<{ invoice: Invoice; studentName: string } | null>(null);
   /** 미리보기 창. 새 탭으로 열면 확인할 때마다 탭을 열고 닫아야 합니다. */
   const [preview, setPreview] = useState<{ id: string; label: string } | null>(null);
+  /** 이 화면에서 고친 연락처. 새로고침 없이 바로 반영합니다. */
+  const [studentPhones, setStudentPhones] = useState<Record<string, Partial<Pick<Student, "motherPhone" | "fatherPhone" | "parentPhone">>>>({});
   const [cancelReason, setCancelReason] = useState("");
   /** 방금 발행한 것. 발행 직후 바로 청구로 이어가라고 띄웁니다. */
   const [justIssued, setJustIssued] = useState<Invoice[]>([]);
@@ -231,7 +236,7 @@ export default function InvoiceGridClient({
       students.map((s) => ({
         id: s.id,
         name: s.name,
-        parentPhone: s.parentPhone,
+        parentPhone: s.motherPhone ?? s.fatherPhone ?? s.parentPhone,
         gradeLabel: gradeLabel({ grade: s.grade, className: s.className }),
         ours: sumLines(resolveStudentItems(activeItems, s as StudentLike, overrides)),
       })),
@@ -240,7 +245,12 @@ export default function InvoiceGridClient({
 
   /** 청구할 것이 있는데 연락처가 없는 아이. 없는 아이 전부를 세면 대부분이라 아무도 안 봅니다. */
   const noPhone = useMemo(
-    () => rows.filter((s) => !s.parentPhone?.trim() && sumLines(linesByStudent.get(s.id) ?? []) > 0),
+    () =>
+      rows.filter(
+        (s) =>
+          !(s.motherPhone?.trim() || s.fatherPhone?.trim() || s.parentPhone?.trim()) &&
+          sumLines(linesByStudent.get(s.id) ?? []) > 0,
+      ),
     [rows, linesByStudent],
   );
 
@@ -351,6 +361,25 @@ export default function InvoiceGridClient({
     } finally {
       setBusy(false);
     }
+  }
+
+  /**
+   * 보호자 연락처를 그 자리에서 고칩니다.
+   *
+   * 명부 화면으로 건너갔다 오면 하던 일을 놓칩니다. 실패하면 조용히 넘기지 않습니다 -
+   * 저장된 줄 알고 발행하면 그 아이만 청구가 안 나갑니다.
+   */
+  async function savePhone(s: Student, key: "motherPhone" | "fatherPhone" | "parentPhone", raw: string) {
+    const col = key === "motherPhone" ? "mother_phone" : key === "fatherPhone" ? "father_phone" : "parent_phone";
+    const value = raw.trim() || null;
+    if ((s[key] ?? null) === value) return;
+    const { error } = await createClient().from("wr_students").update({ [col]: value }).eq("id", s.id);
+    if (error) {
+      notify(`연락처를 저장하지 못했습니다: ${error.message}`, "error");
+      return;
+    }
+    setStudentPhones((p) => ({ ...p, [s.id]: { ...(p[s.id] ?? {}), [key]: value } }));
+    notify("연락처를 저장했습니다.", "success");
   }
 
   /** 내보낸 표시를 화면에도 바로 반영합니다. 새로고침해야 보이면 두 번 보내게 됩니다. */
@@ -1289,9 +1318,36 @@ export default function InvoiceGridClient({
                   발행은 되는데 발송에서 조용히 빠지므로, 고르기 전에 먼저 보입니다. */}
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-slate-100 bg-slate-50 px-3 py-1.5 text-[11px]">
                 {detail.studentNo && <span className="text-slate-500">학번 {detail.studentNo}</span>}
-                <span className={detail.parentPhone ? "text-slate-600" : "font-bold text-orange-700"}>
-                  보호자 {detail.parentPhone ? prettyPhone(detail.parentPhone.replace(/[^\d]/g, "")) : "연락처 없음 — 청구서가 못 나갑니다"}
-                </span>
+                {/* 청구서는 **어머니 → 아버지 → 보호자** 순으로 있는 번호로 나갑니다.
+                    여기서 바로 고칠 수 있어야 합니다 - 발행하려다 번호가 없는 것을 알게 되는데,
+                    그때 명부 화면으로 건너갔다 오면 하던 일을 놓칩니다. */}
+                {(
+                  [
+                    ["motherPhone", "어머니"],
+                    ["fatherPhone", "아버지"],
+                    ["parentPhone", "보호자"],
+                  ] as ["motherPhone" | "fatherPhone" | "parentPhone", string][]
+                ).map(([key, label]) => {
+                  const raw = (detail[key] as string | null) ?? "";
+                  const first = key === "motherPhone" ? true : key === "fatherPhone" ? !detail.motherPhone : !detail.motherPhone && !detail.fatherPhone;
+                  return (
+                    <span key={key} className="flex items-center gap-1">
+                      <span className={"text-[10px] font-bold " + (raw && first ? "text-teal-700" : "text-slate-400")}>
+                        {label}
+                        {raw && first && " ●"}
+                      </span>
+                      <input
+                        defaultValue={raw}
+                        onBlur={(e) => void savePhone(detail, key, e.target.value)}
+                        placeholder="010-"
+                        className="w-28 rounded border border-slate-200 px-1 py-0.5 text-[11px] tabular-nums"
+                      />
+                    </span>
+                  );
+                })}
+                {!detail.motherPhone && !detail.fatherPhone && !detail.parentPhone && (
+                  <span className="font-bold text-orange-700">연락처가 없어 청구서가 못 나갑니다</span>
+                )}
                 {detail.instrument && (
                   <span className="rounded bg-violet-100 px-1.5 py-0.5 font-semibold text-violet-800">명부 악기 · {detail.instrument}</span>
                 )}

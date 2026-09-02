@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { cropBoxOf, PHOTO_H, PHOTO_W, type Adjust } from "@/lib/passportPhoto";
+import { cropBoxOf, drawCrop, EYE_LINE, PHOTO_H, PHOTO_W, type Adjust } from "@/lib/passportPhoto";
 
 // 한 장을 여권 규격에 맞춰 보여주고, 손으로 밀어 맞추게 합니다.
 //
@@ -30,9 +30,11 @@ export default function PhotoCropper({ img, adjust, onChange, width = 140, guide
     if (!cv) return;
     const ctx = cv.getContext("2d");
     if (!ctx) return;
-    const b = cropBoxOf(img.naturalWidth, img.naturalHeight, adjust);
-    ctx.clearRect(0, 0, cv.width, cv.height);
-    ctx.drawImage(img, b.x, b.y, b.w, b.h, 0, 0, cv.width, cv.height);
+    // 저장할 때와 **같은 함수**로 그립니다. 따로 만들면 화면에서 본 것과 저장된 것이
+    // 조금씩 달라지고, 그 차이는 늘 인쇄한 뒤에 발견됩니다.
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, cv.width, cv.height);
+    drawCrop(ctx, img, adjust, cv.width, cv.height);
   }, [img, adjust, width, h]);
 
   return (
@@ -65,8 +67,10 @@ export default function PhotoCropper({ img, adjust, onChange, width = 140, guide
       {guides && (
         // 여권 규격 기준선. 머리 꼭대기가 위 선 근처, 턱이 아래 선 근처에 오면 맞습니다.
         <div className="pointer-events-none absolute inset-0">
+          {/* 위: 정수리 선 · 아래: 턱 선 · 초록: 눈높이. 눈이 초록 선에 오면 맞습니다. */}
           <div className="absolute left-0 right-0 border-t border-dashed border-white/70" style={{ top: "10%" }} />
-          <div className="absolute left-0 right-0 border-t border-dashed border-white/70" style={{ top: "78%" }} />
+          <div className="absolute left-0 right-0 border-t border-dashed border-white/70" style={{ top: "80%" }} />
+          <div className="absolute left-0 right-0 border-t border-emerald-400/80" style={{ top: `${EYE_LINE * 100}%` }} />
           <div className="absolute bottom-0 top-0 border-l border-dashed border-white/40" style={{ left: "50%" }} />
         </div>
       )}

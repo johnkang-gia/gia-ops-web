@@ -39,6 +39,8 @@ export default async function StudentPhotosPage() {
     name: s.name,
     nameEn: s.name_en,
     gradeLabel: [s.grade ? `${s.grade}학년` : null, s.class_name].filter(Boolean).join(" "),
+    className: s.class_name,
+    grade: s.grade,
   }));
 
   return (

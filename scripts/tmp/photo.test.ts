@@ -17,14 +17,28 @@ eq(nameFromFile("고서윤-copy.jpg"), "고서윤", "copy 꼬리표");
 eq(nameFromFile("고서윤2.jpg"), "고서윤", "뒤에 붙은 숫자");
 
 const roster: PhotoStudent[] = [
-  { id: "a", name: "고서윤", nameEn: "Jenny Go", gradeLabel: "2학년 G2C" },
-  { id: "b", name: "김재이", nameEn: "Jay Kim", gradeLabel: "2학년 G2A" },
-  { id: "c", name: "김재이", nameEn: "Jay Kim", gradeLabel: "2학년 G2C" },
+  { id: "a", name: "고서윤", nameEn: "Jenny Go", gradeLabel: "2학년 G2C", className: "G2C", grade: "2" },
+  { id: "b", name: "김재이", nameEn: "Jay Kim", gradeLabel: "2학년 G2A", className: "G2A", grade: "2" },
+  { id: "c", name: "김재이", nameEn: "Jay Kim", gradeLabel: "2학년 G2C", className: "G2C", grade: "2" },
+  { id: "d", name: "김재이", nameEn: "Jay Kim", gradeLabel: "3학년 G3JA", className: "G3JA", grade: "3" },
+  { id: "e", name: "강여명(Ryeomyeong Kang)", nameEn: "Ryeomyeong Kang", gradeLabel: "6학년", className: null, grade: "6" },
 ];
 eq(matchStudent("고서윤.jpg", roster).student?.id, "a", "한글 이름으로 찾기");
 eq(matchStudent("Jenny Go.jpg", roster).student?.id, "a", "영문 이름으로 찾기");
 eq(matchStudent("김재이.jpg", roster).student, null, "동명이인은 사람이 골라야");
-eq(matchStudent("김재이.jpg", roster).candidates.length, 2, "동명이인 후보 2명");
+eq(matchStudent("김재이.jpg", roster).candidates.length, 3, "동명이인 후보 3명");
+
+// 맥에서 끌어온 파일명은 한글이 자모로 나뉘어 옵니다. 이게 안 되면 **전부** 안 붙습니다.
+eq(matchStudent("고서윤.jpg".normalize("NFD"), roster).student?.id, "a", "맥 파일명(NFD)도 붙음");
+eq(matchStudent("김재이(G3J).jpg".normalize("NFD"), roster).student?.id, "d", "맥 파일명 + 반 표기");
+
+// 동명이인은 파일명 괄호 안의 반 표기로 가릅니다.
+eq(matchStudent("김재이(G3J).jpg", roster).student?.id, "d", "반 표기 줄임말로 가름 (G3J → G3JA)");
+eq(matchStudent("김재이(G2A).jpg", roster).student?.id, "b", "반 표기 전체로 가름");
+eq(matchStudent("김재이(G5).jpg", roster).candidates.length, 3, "없는 반을 적으면 후보를 그대로 보여줌");
+
+// 명부 이름에 영문이 괄호로 붙어 있어도 붙습니다.
+eq(matchStudent("강여명.jpg", roster).student?.id, "e", "명부 이름의 괄호 표기 무시");
 eq(matchStudent("홍길동.jpg", roster).student, null, "명부에 없는 이름");
 eq(matchStudent("2학년 고서윤 졸업사진.jpg", roster).student?.id, "a", "파일명 안에 이름");
 

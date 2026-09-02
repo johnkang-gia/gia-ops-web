@@ -1,17 +1,19 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
 import { uploadStudentPhoto } from "@/lib/storage";
 import {
   DEFAULT_ADJUST,
+  hintsFromFile,
   PHOTO_H,
   PHOTO_W,
+  adjustFromEyes,
   adjustFromFace,
   adjustFromHead,
-  cropBoxOf,
   detectHeadFromPixels,
+  drawCrop,
   matchStudent,
   nameFromFile,
   type Adjust,
@@ -19,6 +21,7 @@ import {
 } from "@/lib/passportPhoto";
 import PhotoCropper from "./PhotoCropper";
 import { filesFromDataTransfer, pickImages } from "@/lib/dropFiles";
+import { findFace, loadFaceDetector } from "@/lib/faceDetect";
 
 // 학생 사진 일괄 등록.
 //
@@ -40,7 +43,7 @@ type Item = {
   reason: string;
   adjust: Adjust;
   /** 자를 자리를 어떻게 잡았는지. 기본으로 잡힌 것은 사람이 봐야 합니다. */
-  how: "얼굴" | "배경" | "기본";
+  how: "눈" | "얼굴" | "배경" | "기본";
   saved: boolean;
   error: string | null;
 };
@@ -55,28 +58,21 @@ type Props = {
 /**
  * 자를 자리를 스스로 잡습니다.
  *
- * 두 가지를 차례로 시도합니다.
- *   1) 브라우저의 얼굴 찾기. 있으면 가장 정확합니다.
- *   2) **배경 빼기.** 졸업앨범 사진은 배경이 한 가지 색이라, 위에서 내려오다가 배경이 아닌
- *      점이 처음 나오는 줄이 정수리입니다. 모델 없이도 꽤 맞습니다.
- * 둘 다 안 되면 기본 자리에서 시작하고 사람이 밉니다.
+ * 세 가지를 차례로 시도합니다. 앞의 것일수록 정확하고, 앞의 것이 되면 뒤는 안 봅니다.
+ *   1) **두 눈** — 학생증 사진은 사실 눈높이로 맞춥니다. 눈 사이 거리로 크기를, 눈높이로
+ *      위아래를, 두 눈을 잇는 선으로 기울기를 한 번에 정합니다. 아이들 사진이 실제로
+ *      똑같아지는 것은 이 방법뿐입니다.
+ *   2) **얼굴 상자** — 눈을 못 잡았을 때. 상자 위로 얼굴 높이의 30%를 더해 정수리를 잡습니다.
+ *   3) **배경 빼기** — 얼굴 찾기가 아예 안 될 때. 배경이 한 가지 색이면 정수리 줄이 보입니다.
+ * 다 안 되면 가운데로 두고 사람이 맞춥니다.
  */
-async function autoAdjust(img: HTMLImageElement): Promise<{ adjust: Adjust; how: "얼굴" | "배경" | "기본" }> {
-  type FD = { detect(i: HTMLImageElement): Promise<{ boundingBox: DOMRectReadOnly }[]> };
-  const Ctor = (window as unknown as { FaceDetector?: new (o?: unknown) => FD }).FaceDetector;
-  if (Ctor) {
-    try {
-      const faces = await new Ctor({ fastMode: false, maxDetectedFaces: 1 }).detect(img);
-      const b = faces[0]?.boundingBox;
-      if (b && b.width > 0) {
-        return {
-          adjust: adjustFromFace(img.naturalWidth, img.naturalHeight, { x: b.x, y: b.y, width: b.width, height: b.height }),
-          how: "얼굴",
-        };
-      }
-    } catch {
-      // 얼굴 찾기는 있으면 좋은 것일 뿐입니다. 실패해도 다음 방법으로 갑니다.
-    }
+async function autoAdjust(img: HTMLImageElement): Promise<{ adjust: Adjust; how: Item["how"] }> {
+  const face = await findFace(img);
+  if (face?.leftEye && face.rightEye) {
+    return { adjust: adjustFromEyes(img.naturalWidth, img.naturalHeight, face.leftEye, face.rightEye), how: "눈" };
+  }
+  if (face) {
+    return { adjust: adjustFromFace(img.naturalWidth, img.naturalHeight, face.box), how: "얼굴" };
   }
 
   try {
@@ -99,7 +95,7 @@ async function autoAdjust(img: HTMLImageElement): Promise<{ adjust: Adjust; how:
       }
     }
   } catch {
-    // 그림이 다른 곳에서 온 것이면 픽셀을 못 읽을 수 있습니다(보안 제한). 기본값으로 갑니다.
+    // 그림을 다른 곳에서 가져온 것이면 픽셀을 못 읽을 수 있습니다. 기본값으로 갑니다.
   }
 
   return { adjust: DEFAULT_ADJUST, how: "기본" };
@@ -120,12 +116,13 @@ async function toJpeg(img: HTMLImageElement, a: Adjust): Promise<Blob> {
   cv.height = PHOTO_H;
   const ctx = cv.getContext("2d");
   if (!ctx) throw new Error("캔버스를 못 만들었습니다");
-  // 줄일 때 계단이 지지 않게.
-  ctx.imageSmoothingQuality = "high";
-  const b = cropBoxOf(img.naturalWidth, img.naturalHeight, a);
-  ctx.drawImage(img, b.x, b.y, b.w, b.h, 0, 0, PHOTO_W, PHOTO_H);
+  // 기울여 자를 때 모서리에 빈 곳이 생길 수 있습니다. 검게 두면 인쇄에서 티가 나므로
+  // 흰색으로 깔아둡니다.
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, PHOTO_W, PHOTO_H);
+  drawCrop(ctx, img, a, PHOTO_W, PHOTO_H);
   return await new Promise<Blob>((resolve, reject) =>
-    cv.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("사진을 만들지 못했습니다"))), "image/jpeg", 0.9),
+    cv.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("사진을 만들지 못했습니다"))), "image/jpeg", 0.92),
   );
 }
 
@@ -146,6 +143,12 @@ export default function StudentPhotosClient({ roster, hasPhoto, currentUserEmail
   const inputRef = useRef<HTMLInputElement | null>(null);
   const dirRef = useRef<HTMLInputElement | null>(null);
   const withPhoto = useMemo(() => new Set(hasPhoto), [hasPhoto]);
+
+  // 얼굴 찾기 모델을 화면을 열 때 미리 받아둡니다. 사진을 놓은 뒤에 받기 시작하면 첫 장이
+  // 눈에 띄게 느립니다.
+  useEffect(() => {
+    void loadFaceDetector();
+  }, []);
 
   const byId = useMemo(() => new Map(roster.map((s) => [s.id, s])), [roster]);
   const taken = useMemo(() => {
@@ -290,6 +293,8 @@ export default function StudentPhotosClient({ roster, hasPhoto, currentUserEmail
     else notify(`${ok}장 저장했습니다.`, "success");
   }
 
+  const byEyes = items.filter((it) => it.how === "눈").length;
+  const needEye = items.filter((it) => it.how === "기본" && !it.error).length;
   const matched = items.filter((it) => it.studentId).length;
   const unmatched = items.length - matched;
   const overwrite = items.filter((it) => it.studentId && withPhoto.has(it.studentId) && !it.saved).length;
@@ -319,6 +324,7 @@ export default function StudentPhotosClient({ roster, hasPhoto, currentUserEmail
       )}
       <p className="mb-4 text-xs leading-relaxed text-slate-500">
         졸업앨범 폴더를 통째로 끌어다 놓으세요. <b>파일명으로 아이를 찾아</b> 붙이고 규격에 맞게 잘라 미리 보여드립니다.
+        <b>두 눈을 찾아</b> 크기·높이·기울기를 규격대로 맞추므로, 아이마다 찍힌 거리가 달라도 결과는 같은 구도로 나옵니다.
         자른 자리가 어색하면 사진을 <b>끌어서 옮기고 휠로 크기</b>를 맞추면 됩니다. 한 장을 맞춘 뒤 <b>전체에 같은 값 적용</b>을
         누르면 나머지에도 같은 자리가 적용됩니다. <b>원본은 저장하지 않습니다</b> — 자른 것만 올라갑니다.
       </p>
@@ -420,6 +426,9 @@ export default function StudentPhotosClient({ roster, hasPhoto, currentUserEmail
             {unmatched > 0 && <span className="text-[11px] font-bold text-amber-700">못 붙임 {unmatched}</span>}
             {dup > 0 && <span className="text-[11px] font-bold text-rose-700">같은 아이에 두 장 {dup}건</span>}
             {overwrite > 0 && <span className="text-[11px] text-slate-500">덮어쓰기 {overwrite}장</span>}
+            {/* 눈으로 잡힌 것이 많을수록 한 판이 고르게 나옵니다. */}
+            <span className="text-[11px] text-emerald-700">눈으로 맞춤 {byEyes}</span>
+            {needEye > 0 && <span className="text-[11px] font-bold text-slate-600">손볼 것 {needEye}</span>}
             {/* 한 판을 뽑았을 때 눈에 띄는 것은 개별 사진이 아니라 **줄이 맞는가**입니다.
                 전체를 조금씩 함께 움직일 수 있어야 그게 맞습니다. */}
             <span className="flex items-center gap-1 text-[11px] text-slate-500">
@@ -490,6 +499,9 @@ export default function StudentPhotosClient({ roster, hasPhoto, currentUserEmail
                   {!s && (
                     <p className="truncate text-[10px] text-slate-500">
                       읽은 이름: <b>{nameFromFile(it.fileName) || "(없음)"}</b>
+                      {hintsFromFile(it.fileName).length > 0 && (
+                        <span className="ml-1 text-slate-400">· 반 표기 {hintsFromFile(it.fileName).join(",")}</span>
+                      )}
                     </p>
                   )}
 
@@ -527,18 +539,22 @@ export default function StudentPhotosClient({ roster, hasPhoto, currentUserEmail
                     <span
                       className={
                         "rounded px-1 text-[10px] font-bold " +
-                        (it.how === "얼굴"
-                          ? "bg-violet-100 text-violet-800"
-                          : it.how === "배경"
-                            ? "bg-sky-100 text-sky-800"
-                            : "bg-slate-200 text-slate-600")
+                        (it.how === "눈"
+                          ? "bg-emerald-100 text-emerald-800"
+                          : it.how === "얼굴"
+                            ? "bg-violet-100 text-violet-800"
+                            : it.how === "배경"
+                              ? "bg-sky-100 text-sky-800"
+                              : "bg-slate-200 text-slate-600")
                       }
                       title={
-                        it.how === "얼굴"
-                          ? "얼굴을 찾아 규격대로 잡았습니다"
-                          : it.how === "배경"
-                            ? "배경을 빼서 정수리를 찾아 규격대로 잡았습니다"
-                            : "얼굴도 배경도 못 찾아 가운데로 두었습니다 — 손으로 맞춰주세요"
+                        it.how === "눈"
+                          ? "두 눈을 찾아 크기·높이·기울기를 규격대로 맞췄습니다"
+                          : it.how === "얼굴"
+                            ? "얼굴을 찾아 규격대로 잡았습니다(눈은 못 잡음)"
+                            : it.how === "배경"
+                              ? "배경을 빼서 정수리를 찾아 잡았습니다"
+                              : "얼굴도 배경도 못 찾아 가운데로 두었습니다 — 손으로 맞춰주세요"
                       }
                     >
                       {it.how}
@@ -549,6 +565,21 @@ export default function StudentPhotosClient({ roster, hasPhoto, currentUserEmail
                       <span className="rounded bg-slate-100 px-1 text-[10px] font-semibold text-slate-600">덮어씀</span>
                     )}
                     {it.error && <span className="text-[10px] font-bold text-rose-700">{it.error}</span>}
+                    {/* 고개를 기울이고 찍은 아이. 한 판을 늘어놓으면 그 몇 장만 눈에 띕니다. */}
+                    <button
+                      onClick={() => setAdjust(it.key, { ...it.adjust, rot: (it.adjust.rot ?? 0) - 0.02 })}
+                      className="rounded border border-slate-200 px-1 text-[10px] font-bold text-slate-500"
+                      title="왼쪽으로 조금 돌리기"
+                    >
+                      ⟲
+                    </button>
+                    <button
+                      onClick={() => setAdjust(it.key, { ...it.adjust, rot: (it.adjust.rot ?? 0) + 0.02 })}
+                      className="rounded border border-slate-200 px-1 text-[10px] font-bold text-slate-500"
+                      title="오른쪽으로 조금 돌리기"
+                    >
+                      ⟳
+                    </button>
                     <button
                       onClick={() => applyToAll(it.adjust)}
                       className="ml-auto text-[10px] font-semibold text-teal-700 underline"

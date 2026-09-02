@@ -24,6 +24,13 @@ export type Adjust = {
   cx: number;
   /** 세로 중심. 0.5가 한가운데. */
   cy: number;
+  /**
+   * 기울기(라디안). 두 눈을 잇는 선이 수평이 되도록 돌립니다.
+   *
+   * 고개를 살짝 기울이고 찍은 아이가 꼭 몇 명 있습니다. 학생증을 한 판 뽑아 늘어놓으면
+   * 그 몇 장만 눈에 띕니다.
+   */
+  rot?: number;
 };
 
 /**
@@ -32,7 +39,7 @@ export type Adjust = {
  * 앨범 사진은 대개 얼굴이 **가운데 위쪽**에 옵니다. 정확히 맞히려는 것이 아니라, 사람이
  * 조금만 밀면 되는 자리에서 시작하려는 것입니다. 얼굴 위치를 찾아낼 수 있으면 그것을 씁니다.
  */
-export const DEFAULT_ADJUST: Adjust = { zoom: 1, cx: 0.5, cy: 0.42 };
+export const DEFAULT_ADJUST: Adjust = { zoom: 1, cx: 0.5, cy: 0.42, rot: 0 };
 
 /** 조정값을 실제로 자를 사각형으로 바꿉니다. 그림 밖으로 나가지 않게 안쪽으로 밀어 넣습니다. */
 export function cropBoxOf(imgW: number, imgH: number, a: Adjust): CropBox {
@@ -62,6 +69,24 @@ export const HEAD_RATIO = 0.7; // 머리(정수리~턱)가 사진 높이에서 �
 export const TOP_MARGIN = 0.1; // 사진 위쪽 여백
 
 /**
+ * 눈높이가 사진 위에서 얼마쯤에 오는가.
+ *
+ * 신분증 사진은 사실 **눈높이로 맞춥니다.** 여권 규격도 눈이 아래에서 50~60% 사이에 오도록
+ * 정하고 있습니다(위에서 보면 40~50%). 정수리는 머리 모양과 머리카락에 따라 들쭉날쭉하지만
+ * 눈은 그렇지 않아서, 눈을 기준으로 잡으면 아이들 사진이 실제로 똑같아집니다.
+ */
+export const EYE_LINE = 0.44;
+
+/**
+ * 두 눈 사이 거리로 머리 높이를 가늠하는 비율.
+ *
+ * 사람 머리 높이는 두 눈 사이 거리의 약 3배입니다. 아이도 어른도 이 비율은 크게 다르지
+ * 않습니다(얼굴이 작은 아이는 눈 사이도 좁습니다). 그래서 눈 사이 거리만 알면 머리가
+ * 사진에서 얼마나 크게 나와야 하는지 정할 수 있습니다.
+ */
+export const HEAD_PER_EYE_GAP = 2.95;
+
+/**
  * 머리 위치를 알면 규격대로 자리를 잡습니다.
  *
  * @param headTop 정수리의 y(픽셀)
@@ -85,6 +110,74 @@ export function adjustFromHead(
   const realH = realW / PHOTO_RATIO;
   const cy = (headTop - TOP_MARGIN * realH + realH / 2) / imgH;
   return { zoom, cx: centerX / imgW, cy: Math.min(Math.max(cy, 0), 1) };
+}
+
+/**
+ * **두 눈으로** 자리를 잡습니다. 가장 정확하고, 아이들 사진이 실제로 똑같아집니다.
+ *
+ * 세 가지를 한 번에 정합니다.
+ *   · 크기 — 눈 사이 거리로 머리 높이를 가늠해, 머리가 사진의 70%가 되게.
+ *   · 높이 — 눈높이가 위에서 44%에 오도록.
+ *   · 기울기 — 두 눈을 잇는 선이 수평이 되도록 돌립니다.
+ */
+export function adjustFromEyes(
+  imgW: number,
+  imgH: number,
+  left: { x: number; y: number },
+  right: { x: number; y: number },
+): Adjust {
+  const dx = right.x - left.x;
+  const dy = right.y - left.y;
+  const gap = Math.hypot(dx, dy);
+  if (!(gap > 1)) return DEFAULT_ADJUST;
+
+  const headH = gap * HEAD_PER_EYE_GAP;
+  const cropH = headH / HEAD_RATIO;
+  const cropW = cropH * PHOTO_RATIO;
+  const base = Math.min(imgW, imgH * PHOTO_RATIO);
+  const zoom = Math.min(Math.max(cropW / base, 0.05), 1);
+
+  // 실제로 잘리는 크기로 다시 계산합니다(zoom 이 1에서 막혔을 수 있습니다).
+  const realH = (base * zoom) / PHOTO_RATIO;
+  const eyeX = (left.x + right.x) / 2;
+  const eyeY = (left.y + right.y) / 2;
+  // 눈이 위에서 EYE_LINE 에 오려면, 자르는 네모의 한가운데는 눈보다 조금 아래여야 합니다.
+  const cy = (eyeY + (0.5 - EYE_LINE) * realH) / imgH;
+
+  return {
+    zoom,
+    cx: Math.min(Math.max(eyeX / imgW, 0), 1),
+    cy: Math.min(Math.max(cy, 0), 1),
+    rot: Math.atan2(dy, dx),
+  };
+}
+
+/**
+ * 자르기를 그립니다. 미리보기와 저장이 **같은 함수**를 씁니다.
+ *
+ * 둘을 따로 만들면 화면에서 본 것과 저장된 것이 조금씩 달라집니다. 그 차이는 늘 나중에,
+ * 인쇄한 뒤에 발견됩니다.
+ */
+export function drawCrop(
+  ctx: CanvasRenderingContext2D,
+  img: CanvasImageSource & { naturalWidth?: number; naturalHeight?: number; width?: number; height?: number },
+  a: Adjust,
+  outW: number,
+  outH: number,
+) {
+  const iw = img.naturalWidth || (img.width as number) || 1;
+  const ih = img.naturalHeight || (img.height as number) || 1;
+  const box = cropBoxOf(iw, ih, a);
+  const scale = outW / box.w;
+  ctx.save();
+  ctx.clearRect(0, 0, outW, outH);
+  ctx.imageSmoothingQuality = "high";
+  ctx.translate(outW / 2, outH / 2);
+  if (a.rot) ctx.rotate(-a.rot);
+  ctx.scale(scale, scale);
+  // 자르는 네모의 한가운데가 화면 한가운데에 오도록.
+  ctx.drawImage(img, -(box.x + box.w / 2), -(box.y + box.h / 2));
+  ctx.restore();
 }
 
 /** 얼굴 자리를 알면 여권 규격에 맞는 조정값으로 바꿉니다.
@@ -188,23 +281,43 @@ export function detectHeadFromPixels(data: Uint8ClampedArray, w: number, h: numb
 // 파일명이 곧 이름입니다. 다만 실제 폴더에는 `고서윤 (2).jpg`, `2학년 고서윤.JPG`,
 // `Jenny Go.jpeg` 처럼 앞뒤에 뭐가 붙습니다. 붙은 것을 떼고 남은 글자로 찾습니다.
 
-export type PhotoStudent = { id: string; name: string; nameEn: string | null; gradeLabel: string };
+export type PhotoStudent = {
+  id: string;
+  name: string;
+  nameEn: string | null;
+  gradeLabel: string;
+  /** 동명이인을 가르는 데 씁니다. 파일명의 `김재이(G3J)` 같은 표기와 맞춰봅니다. */
+  className: string | null;
+  grade: string | null;
+};
 
 /**
  * 대조용으로 다듬습니다.
  *
- * 명부의 이름에 영문 표기가 괄호로 붙어 있는 줄이 있습니다(`강여명(Ryeomyeong Kang)`).
- * 그대로 대조하면 `강여명.jpg` 가 어디에도 안 걸립니다.
+ * **맥에서 끌어온 파일명은 한글이 자모로 나뉘어(NFD) 옵니다.** `고서윤` 이 글자로는 같아
+ * 보여도 명부의 `고서윤`(NFC)과 다른 문자열이라 어디에도 안 걸립니다. 눈으로는 절대 못 찾는
+ * 종류의 어긋남이라, 양쪽을 반드시 같은 방식으로 합쳐놓고 비교합니다.
+ *
+ * 명부 이름에 영문 표기가 괄호로 붙은 줄도 있습니다(`강여명(Ryeomyeong Kang)`). 괄호 안은 뗍니다.
  */
 const flat = (v: string) =>
-  v
+  (v ?? "")
+    .normalize("NFC")
     .replace(/[（(［[][^)）\]］]*[)）\]］]/g, "")
     .toLowerCase()
     .replace(/[^0-9a-z가-힣]/g, "");
 
+/** 파일명 괄호 안에 적어둔 것(반 표기 등)을 꺼냅니다. */
+export function hintsFromFile(fileName: string): string[] {
+  const base = fileName.normalize("NFC").replace(/\.[a-z0-9]+$/i, "");
+  return [...base.matchAll(/[（(［[]([^)）\]］]+)[)）\]］]/g)].map((m) => m[1].trim()).filter((v) => v.length > 0);
+}
+
 /** 확장자·번호·학년 표기 따위를 떼고 이름만 남깁니다. */
 export function nameFromFile(fileName: string): string {
+  // 맥에서 온 파일명은 한글이 자모로 나뉘어 있습니다. 먼저 합쳐야 아래 규칙들이 먹습니다.
   return fileName
+    .normalize("NFC")
     .replace(/\.[a-z0-9]+$/i, "")
     .replace(/[（(［[][^)）\]］]*[)）\]］]/g, " ")
     .replace(/\d+\s*(학년|반|호)/g, " ")
@@ -217,20 +330,51 @@ export function nameFromFile(fileName: string): string {
 
 export type PhotoMatch = { student: PhotoStudent | null; candidates: PhotoStudent[]; reason: string };
 
+/**
+ * 힌트(파일명 괄호 안)가 이 학생을 가리키는가.
+ *
+ * `김재이(G3J)` 처럼 반을 줄여 적으신 경우가 있어서, 반 이름이 힌트로 **시작하기만 해도**
+ * 같은 것으로 봅니다(G3J → G3JA). 학년만 적었을 수도 있어 학년도 함께 봅니다.
+ */
+function hintMatches(hint: string, s: PhotoStudent): boolean {
+  const h = flat(hint);
+  if (!h) return false;
+  const cls = flat(s.className ?? "");
+  const grade = flat(s.grade ?? "");
+  if (cls && (cls.startsWith(h) || h.startsWith(cls))) return true;
+  if (grade && (h === grade || h === `${grade}학년`)) return true;
+  return false;
+}
+
 export function matchStudent(fileName: string, roster: PhotoStudent[]): PhotoMatch {
   const key = flat(nameFromFile(fileName));
+  const hints = hintsFromFile(fileName);
   if (!key) return { student: null, candidates: [], reason: "파일명에서 이름을 못 읽었습니다" };
 
+  /** 후보가 여럿이면 괄호 안 표기로 좁힙니다. 그래도 하나가 안 되면 사람이 고릅니다. */
+  const narrow = (list: PhotoStudent[], why: string): PhotoMatch | null => {
+    if (list.length === 1) return { student: list[0], candidates: [], reason: why };
+    if (list.length > 1 && hints.length > 0) {
+      const byHint = list.filter((s) => hints.some((h) => hintMatches(h, s)));
+      if (byHint.length === 1) return { student: byHint[0], candidates: [], reason: `${why} + 반 표기` };
+      if (byHint.length > 1) return { student: null, candidates: byHint, reason: "반 표기로도 여럿 — 골라주세요" };
+    }
+    if (list.length > 1) return { student: null, candidates: list, reason: `같은 이름 ${list.length}명 — 골라주세요` };
+    return null;
+  };
+
   const exact = roster.filter((s) => flat(s.name) === key || flat(s.nameEn ?? "") === key);
-  if (exact.length === 1) return { student: exact[0], candidates: [], reason: "이름이 같음" };
-  if (exact.length > 1) {
-    return { student: null, candidates: exact, reason: `같은 이름 ${exact.length}명 — 골라주세요` };
-  }
+  const byExact = narrow(exact, "이름이 같음");
+  if (byExact) return byExact;
 
   // 파일명 안에 이름이 들어 있는 경우(`2학년 고서윤 졸업`).
-  const inside = roster.filter((s) => key.includes(flat(s.name)) || (s.nameEn && key.includes(flat(s.nameEn))));
-  if (inside.length === 1) return { student: inside[0], candidates: [], reason: "파일명 안에 이름이 있음" };
-  if (inside.length > 1) return { student: null, candidates: inside, reason: `여러 명이 걸립니다 — 골라주세요` };
+  const inside = roster.filter((s) => {
+    const n = flat(s.name);
+    const e = flat(s.nameEn ?? "");
+    return (n.length >= 2 && key.includes(n)) || (e.length >= 3 && key.includes(e));
+  });
+  const byInside = narrow(inside, "파일명 안에 이름이 있음");
+  if (byInside) return byInside;
 
   return { student: null, candidates: [], reason: "명부에서 못 찾았습니다" };
 }

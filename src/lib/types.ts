@@ -567,6 +567,10 @@ export type WrClass = {
 
 export type WrStudent = {
   id: string;
+  /** 여권 규격으로 자른 학생 사진의 저장 경로(student-photos 버킷). 원본은 두지 않습니다. */
+  photo_path?: string | null;
+  photo_updated_at?: string | null;
+  photo_updated_by?: string | null;
   student_no: string; // 영구 고유번호(예: GIA-2026-0001) - 동명이인이어도 절대 겹치지 않습니다.
   name: string;
   name_en: string | null;

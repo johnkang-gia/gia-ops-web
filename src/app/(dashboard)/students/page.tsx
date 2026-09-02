@@ -39,7 +39,7 @@ export default async function StudentsSearchPage() {
   const { data } = await supabase
     .from("wr_students")
     .select(
-      "id, student_no, name, name_en, grade, class_name, class_id, birth_date, phone, parent_phone, parent_email, gender, allergies, address, note, custom_fields, status, shuttle_mode, created_at"
+      "id, student_no, name, name_en, grade, class_name, class_id, birth_date, phone, parent_phone, parent_email, gender, allergies, address, note, custom_fields, status, shuttle_mode, photo_path, created_at"
     )
     .order("name", { ascending: true });
 
@@ -67,12 +67,29 @@ export default async function StudentsSearchPage() {
     shuttleByStudent[a.student_id] = prev ? (prev.includes(tag) ? prev : `${prev} · ${tag}`) : tag;
   }
 
+  // 사진은 비공개 버킷이라 서명 주소가 필요합니다. **한 번에 묶어서** 받습니다 - 한 명씩
+  // 받으면 137번을 부르게 되고, 목록이 그만큼 늦게 뜹니다.
+  const photoPaths = ((data as WrStudent[] | null) ?? []).map((s) => s.photo_path).filter((v): v is string => !!v);
+  const photoUrlByPath: Record<string, string> = {};
+  if (photoPaths.length > 0) {
+    const { data: signed, error: signErr } = await supabase.storage
+      .from("student-photos")
+      .createSignedUrls(photoPaths, 60 * 60);
+    if (signErr) console.error("[학생 조회] 사진 주소를 못 만들었습니다:", signErr.message);
+    for (const r of signed ?? []) if (r.path && r.signedUrl) photoUrlByPath[r.path] = r.signedUrl;
+  }
+
   return (
     <div className="mx-auto flex h-full w-full max-w-none flex-col overflow-hidden">
       <div className="shrink-0">
         <div className="mb-1 flex items-center justify-between gap-2">
           <h1 className="text-lg font-bold">🎓 학생 조회</h1>
-          <GuideButton title="학생 정보 조회 사용 가이드" sections={GUIDE_SECTIONS} />
+          <span className="ml-auto flex items-center gap-2">
+            <a href="/students/photos" className="rounded-lg border border-slate-300 px-2.5 py-1 text-[12px] font-bold text-slate-700 hover:bg-slate-50">
+              📸 사진 등록
+            </a>
+            <GuideButton title="학생 정보 조회 사용 가이드" sections={GUIDE_SECTIONS} />
+          </span>
         </div>
         <p className="mb-3 text-xs text-slate-500">
           재학·졸업·퇴학 탭으로 나눠 봅니다. 같은 학생은 항상 같은 학번(고유번호)으로 관리되며, 카드를 누르면 통합
@@ -80,7 +97,11 @@ export default async function StudentsSearchPage() {
         </p>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto pb-4">
-        <StudentSearchClient students={(data as WrStudent[] | null) ?? []} shuttleByStudent={shuttleByStudent} />
+        <StudentSearchClient
+          students={(data as WrStudent[] | null) ?? []}
+          shuttleByStudent={shuttleByStudent}
+          photoUrlByPath={photoUrlByPath}
+        />
       </div>
     </div>
   );

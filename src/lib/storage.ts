@@ -80,6 +80,30 @@ export async function uploadAvatar(file: File, userId: string): Promise<string> 
   return `${data.publicUrl}?v=${Date.now()}`;
 }
 
+// 학생 사진 - 아이 얼굴이라 비공개 버킷입니다. 파일명을 학생 고유번호로 고정하고 덮어써서,
+// 사진을 바꿀 때마다 예전 파일이 버킷에 쌓이는 것을 막습니다.
+const STUDENT_PHOTOS_BUCKET = "student-photos";
+
+export async function uploadStudentPhoto(blob: Blob, studentId: string): Promise<string> {
+  const supabase = createClient();
+  const path = `${studentId}.jpg`;
+  const { error } = await supabase.storage.from(STUDENT_PHOTOS_BUCKET).upload(path, blob, {
+    cacheControl: "3600",
+    upsert: true,
+    contentType: "image/jpeg",
+  });
+  if (error) throw new Error(error.message);
+  return path;
+}
+
+export async function getStudentPhotoUrl(path: string): Promise<string | null> {
+  return getFileSignedUrl(STUDENT_PHOTOS_BUCKET, path);
+}
+
+export async function deleteStudentPhoto(path: string): Promise<void> {
+  return deleteFile(STUDENT_PHOTOS_BUCKET, path);
+}
+
 export async function uploadChatFile(file: File, folder: string): Promise<string> {
   return uploadFile(CHAT_FILES_BUCKET, file, folder);
 }

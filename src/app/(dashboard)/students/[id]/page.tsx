@@ -38,6 +38,15 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
 
   const searchName = coreName(student.name);
 
+  // 사진은 비공개 버킷이라 볼 때마다 짧게 사는 주소를 받습니다. 아이 얼굴이라 공개 URL을
+  // 만들지 않습니다.
+  let photoUrl: string | null = null;
+  if (student.photo_path) {
+    const { data, error } = await supabase.storage.from("student-photos").createSignedUrl(student.photo_path, 60 * 60);
+    if (error) console.error("[학생 프로필] 사진 주소를 못 만들었습니다:", error.message);
+    photoUrl = data?.signedUrl ?? null;
+  }
+
   // 인보이스는 **재무 열쇠를 가진 사람에게만** 보입니다. 담임 선생님이 학생 프로필을 여는 것과
   // 아이 집의 납부 상태를 보는 것은 다른 일입니다.
   const canSeeFinance = hasFinanceAccess(me);
@@ -187,7 +196,26 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
       </Link>
 
       <div className="mb-3 flex items-start justify-between gap-3 g-panel-solid p-5 shadow-sm">
-        <div>
+        {/* 사진 - 전화를 받거나 아이를 인계할 때 이름보다 얼굴이 빠릅니다. 여권 규격이라
+            학생증·도서관 카드에 그대로 씁니다. */}
+        <a
+          href="/students/photos"
+          className="group relative block h-[93px] w-[72px] shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-50"
+          title={photoUrl ? "사진 바꾸기" : "사진 등록하기"}
+        >
+          {photoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element -- 서명 주소라 next/image 최적화 대상이 아닙니다.
+            <img src={photoUrl} alt={`${student.name} 사진`} className="h-full w-full object-cover" />
+          ) : (
+            <span className="flex h-full w-full items-center justify-center text-[10px] font-semibold text-slate-300">
+              사진 없음
+            </span>
+          )}
+          <span className="absolute inset-x-0 bottom-0 hidden bg-black/50 py-0.5 text-center text-[9px] font-bold text-white group-hover:block">
+            {photoUrl ? "바꾸기" : "등록"}
+          </span>
+        </a>
+        <div className="min-w-0 flex-1">
           <div className="mb-1 flex items-center gap-2">
             <h1 className="text-xl font-bold text-slate-800">{student.name}</h1>
             <span className="rounded-full bg-gia-gold-soft/40 px-2 py-0.5 text-[11px] font-semibold text-gia-navy">

@@ -230,6 +230,13 @@ export const SCHEMA_CHECKS: SchemaCheck[] = [
     impact: "책의 '가야 할 자리'를 기록할 수 없어 도서정리 계획이 동작하지 않습니다.",
   },
   {
+    feature: "학생 사진",
+    table: "wr_students",
+    columns: ["photo_path", "photo_updated_at"],
+    migration: "20260902160000_student_photos.sql",
+    impact: "사진을 저장할 자리가 없어 등록 화면이 저장에서 실패합니다.",
+  },
+  {
     feature: "올톡페이 청구 연결",
     table: "invoices",
     columns: ["guardian_phone", "exported_at", "export_batch"],

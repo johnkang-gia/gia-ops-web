@@ -42,10 +42,13 @@ function deptOf(s: WrStudent): Dept {
 export default function StudentSearchClient({
   students,
   shuttleByStudent = {},
+  photoUrlByPath = {},
 }: {
   students: WrStudent[];
   /** 학생 id → 실제 배정된 노선("하원 9호"). 명부의 shuttle_mode가 아니라 실제 배정입니다. */
   shuttleByStudent?: Record<string, string>;
+  /** 사진 경로 → 짧게 사는 서명 주소. 비공개 버킷이라 서버에서 묶어 받아옵니다. */
+  photoUrlByPath?: Record<string, string>;
 }) {
   const router = useRouter();
   const [tab, setTab] = useState<Bucket>("active");
@@ -199,7 +202,16 @@ export default function StudentSearchClient({
               href={`/students/${s.id}`}
               className="flex items-center justify-between gap-2 g-panel-solid px-3 py-2.5 shadow-sm transition hover:-translate-y-0.5 hover:border-purple-300 hover:shadow-md"
             >
-              <div className="min-w-0">
+              {/* 얼굴이 이름보다 빠릅니다. 전화를 받거나 아이를 인계할 때 특히 그렇습니다. */}
+              <span className="h-[42px] w-[33px] shrink-0 overflow-hidden rounded border border-slate-200 bg-slate-50">
+                {s.photo_path && photoUrlByPath[s.photo_path] ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- 서명 주소라 next/image 대상이 아닙니다.
+                  <img src={photoUrlByPath[s.photo_path]} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  <span className="flex h-full w-full items-center justify-center text-[9px] text-slate-300">—</span>
+                )}
+              </span>
+              <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
                   <span className="truncate text-sm font-bold text-slate-800">{s.name}</span>
                   {s.name_en && <span className="truncate text-[11px] text-slate-400">{s.name_en}</span>}

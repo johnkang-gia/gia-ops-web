@@ -1285,6 +1285,10 @@ export type Invoice = {
   note: string | null;
   issued_by: string | null;
   created_at: string;
+  /** 왜 취소했는지. 지우지 않고 남기므로 이유가 있어야 나중에 읽힙니다. */
+  cancel_reason?: string | null;
+  cancelled_at?: string | null;
+  cancelled_by?: string | null;
   /** 발행 시점의 보호자 연락처. 명부가 나중에 바뀌어도 그때 어디로 청구했는지가 남습니다. */
   guardian_phone: string | null;
   /** 올톡페이 발송 엑셀로 내보낸 시각. 두 번 보내는 것을 막는 표시입니다. */

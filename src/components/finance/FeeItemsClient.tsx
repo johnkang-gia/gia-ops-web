@@ -54,6 +54,16 @@ export default function FeeItemsClient({ initialItems, initialCategories, grades
    */
   const [deptTab, setDeptTab] = useState<ItemDept>("초등부");
 
+  /**
+   * 정렬.
+   *
+   * 항목이 스무 개를 넘으면 눈으로 훑는 것이 안 됩니다. 무엇을 확인하려느냐에 따라 보고 싶은
+   * 순서가 다릅니다 - 반별로 붙일 때는 **대상**, 이름이 헷갈릴 때는 **이름**, 교재끼리 견줄
+   * 때는 **분류**입니다.
+   */
+  const [sortBy, setSortBy] = useState<"대상" | "이름" | "분류" | "단가">("분류");
+  const [asc, setAsc] = useState(true);
+
   const deptOfItem = (i: FeeItem): ItemDept => (i.department === "중고등부" ? "중고등부" : i.department === "초등부" ? "초등부" : "공통");
   const deptCounts = useMemo(() => {
     const m = new Map<ItemDept, number>();
@@ -66,10 +76,32 @@ export default function FeeItemsClient({ initialItems, initialCategories, grades
     [items, deptTab],
   );
 
-  const shown = useMemo(
-    () => inDept.filter((i) => (showOff || i.active) && (tab === "전체" || i.category === tab)),
-    [inDept, showOff, tab],
-  );
+  /**
+   * 대상을 정렬하기 위한 값.
+   *
+   * 학년이 먼저, 그 다음 반. 대상이 없는 항목(개별로만 붙이는 것)은 **맨 뒤**로 보냅니다 -
+   * 그것들은 목록 중간에 끼어 있으면 학년 흐름을 끊습니다.
+   */
+  function targetKey(i: FeeItem): string {
+    const g = (i.default_grades ?? []).map((v) => String(v).replace(/[^0-9]/g, "")).filter(Boolean).sort();
+    const c = [...(i.default_classes ?? [])].sort();
+    if (g.length === 0 && c.length === 0) return "zzz";
+    const gnum = g.length > 0 ? String(Number(g[0])).padStart(2, "0") : "99";
+    return `${gnum}|${c[0] ?? ""}`;
+  }
+
+  const shown = useMemo(() => {
+    const list = inDept.filter((i) => (showOff || i.active) && (tab === "전체" || i.category === tab));
+    const dir = asc ? 1 : -1;
+    const byName = (a: FeeItem, b: FeeItem) => a.name.localeCompare(b.name, "ko");
+    return [...list].sort((a, b) => {
+      if (sortBy === "이름") return dir * byName(a, b);
+      if (sortBy === "단가") return dir * (Number(a.unit_price) - Number(b.unit_price)) || byName(a, b);
+      if (sortBy === "대상") return dir * targetKey(a).localeCompare(targetKey(b)) || byName(a, b);
+      // 분류: 분류 이름 → 손으로 정한 순서 → 이름.
+      return dir * a.category.localeCompare(b.category, "ko") || a.sort_order - b.sort_order || byName(a, b);
+    });
+  }, [inDept, showOff, tab, sortBy, asc]);
   const activeCount = inDept.filter((i) => i.active).length;
 
   const [cats, setCats] = useState(initialCategories);
@@ -202,6 +234,27 @@ export default function FeeItemsClient({ initialItems, initialCategories, grades
       notify("바꾸지 못했습니다: " + error.message, "error");
       setItems((prev) => prev.map((x) => (x.id === i.id ? { ...x, active: i.active } : x)));
     }
+  }
+
+  function sortHead(key: typeof sortBy, label?: string) {
+    const on = sortBy === key;
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          if (on) setAsc((v) => !v);
+          else {
+            setSortBy(key);
+            setAsc(true);
+          }
+        }}
+        className={"inline-flex items-center gap-0.5 " + (on ? "font-bold text-teal-700" : "hover:text-slate-700")}
+        title="눌러서 정렬 · 한 번 더 누르면 반대 방향"
+      >
+        {label ?? key}
+        <span className={on ? "" : "opacity-25"}>{on && !asc ? "▾" : "▴"}</span>
+      </button>
+    );
   }
 
   const chip = (on: boolean) =>
@@ -502,10 +555,11 @@ export default function FeeItemsClient({ initialItems, initialCategories, grades
         <table className="w-full text-left text-sm">
           <thead className="bg-slate-50 text-[11px] font-semibold text-slate-500">
             <tr>
-              <th className="w-20 px-3 py-2">분류</th>
-              <th className="px-3 py-2">이름</th>
-              <th className="w-28 px-3 py-2 text-right">단가</th>
-              <th className="w-56 px-3 py-2">기본 대상</th>
+              {/* 머리줄을 눌러 정렬합니다. 한 번 더 누르면 반대 방향입니다. */}
+              <th className="w-20 px-3 py-2">{sortHead("분류")}</th>
+              <th className="px-3 py-2">{sortHead("이름")}</th>
+              <th className="w-28 px-3 py-2 text-right">{sortHead("단가")}</th>
+              <th className="w-56 px-3 py-2">{sortHead("대상", "기본 대상")}</th>
               <th className="w-24 px-3 py-2"></th>
             </tr>
           </thead>

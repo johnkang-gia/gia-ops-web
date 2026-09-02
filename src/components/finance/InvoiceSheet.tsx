@@ -44,7 +44,11 @@ export default function InvoiceSheet({ invoice, lines }: { invoice: Invoice; lin
         <span className="text-sm font-bold text-slate-700">{invoice.invoice_no}</span>
         <span className="text-xs text-slate-500">{invoice.student_name}</span>
         {invoice.status === "취소" && (
-          <span className="rounded bg-red-100 px-2 py-0.5 text-[11px] font-bold text-red-700">취소된 인보이스</span>
+          <span className="rounded bg-red-100 px-2 py-0.5 text-[11px] font-bold text-red-700">
+            취소된 인보이스
+            {invoice.cancel_reason && <span className="ml-1 font-medium">· {invoice.cancel_reason}</span>}
+            {invoice.cancelled_by && <span className="ml-1 font-medium opacity-70">({invoice.cancelled_by})</span>}
+          </span>
         )}
         <button
           onClick={() => window.print()}

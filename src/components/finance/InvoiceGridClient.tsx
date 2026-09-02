@@ -83,6 +83,9 @@ export default function InvoiceGridClient({
   const [exportIds, setExportIds] = useState<string[] | null>(null);
   /** 올톡페이 청구서와 맞춰보기. 저장은 하지 않고 보기만 합니다. */
   const [reconcileOpen, setReconcileOpen] = useState(false);
+  /** 취소하려는 청구서. 이유를 적게 하려고 창을 한 번 거칩니다. */
+  const [cancelling, setCancelling] = useState<{ invoice: Invoice; studentName: string } | null>(null);
+  const [cancelReason, setCancelReason] = useState("");
   /** 방금 발행한 것. 발행 직후 바로 청구로 이어가라고 띄웁니다. */
   const [justIssued, setJustIssued] = useState<Invoice[]>([]);
   const [q, setQ] = useState("");
@@ -288,6 +291,44 @@ export default function InvoiceGridClient({
     const ins = flat(instrument);
     if (ins.length < 2) return false;
     return [item.name, item.name_ko ?? ""].some((n) => flat(n).includes(ins) || (flat(n).length >= 2 && ins.includes(flat(n))));
+  }
+
+  /**
+   * 발행 되돌리기.
+   *
+   * 지우지 않고 상태만 `취소` 로 바꿉니다. 지워버리면 나중에 "그 청구서 어디 갔냐"는 물음에
+   * 답할 방법이 없고 번호도 비어 버립니다. 취소하면 그 아이는 다시 `미발행` 이 되어, 항목을
+   * 고친 뒤 새로 발행할 수 있습니다(새 번호가 붙습니다).
+   */
+  async function cancelInvoice(force = false) {
+    if (!cancelling) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/finance/invoices/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ invoiceId: cancelling.invoice.id, reason: cancelReason, force }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        // 받은 돈이 붙어 있으면 한 번 더 묻습니다. 그냥 막아버리면 손쓸 방법이 없습니다.
+        if (json?.needsForce && window.confirm(`${json.error}\n\n그래도 취소하시겠습니까? 그 입금은 어디에도 안 붙은 채로 남습니다.`)) {
+          setBusy(false);
+          void cancelInvoice(true);
+          return;
+        }
+        notify(json?.error ?? "취소하지 못했습니다.", "error");
+        return;
+      }
+      const done = json.invoice as Invoice;
+      setInvoices((p) => p.map((v) => (v.id === done.id ? done : v)));
+      setJustIssued((p) => p.filter((v) => v.id !== done.id));
+      notify(`${done.invoice_no} 을(를) 취소했습니다. 항목을 고친 뒤 다시 발행할 수 있습니다.`, "success");
+      setCancelling(null);
+      setCancelReason("");
+    } finally {
+      setBusy(false);
+    }
   }
 
   /** 내보낸 표시를 화면에도 바로 반영합니다. 새로고침해야 보이면 두 번 보내게 됩니다. */
@@ -971,6 +1012,17 @@ export default function InvoiceGridClient({
                           미발송
                         </span>
                       )}
+                      {/* 발행하고 나서 고칠 일이 생깁니다. 지우지 않고 취소로 남깁니다. */}
+                      <button
+                        onClick={() => {
+                          setCancelling({ invoice: inv, studentName: s.name });
+                          setCancelReason("");
+                        }}
+                        className="text-[11px] font-bold text-slate-300 hover:text-rose-600"
+                        title="발행 취소 (지우지 않고 취소로 남깁니다)"
+                      >
+                        ↩
+                      </button>
                       </span>
                     ) : total > 0 ? (
                       <span className="text-[11px] font-semibold text-amber-600">미발행</span>
@@ -1095,6 +1147,44 @@ export default function InvoiceGridClient({
         </div>
       )}
 
+      {cancelling && (
+        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 p-4" onClick={() => setCancelling(null)}>
+          <div className="w-full max-w-md rounded-xl bg-white p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <p className="mb-1 text-base font-black text-slate-800">발행 취소</p>
+            <p className="mb-3 text-[12px] leading-relaxed text-slate-600">
+              <b>{cancelling.studentName}</b> · {cancelling.invoice.invoice_no} · {won(Number(cancelling.invoice.total_amount))}
+              <br />
+              지우지 않고 <b>취소로 남깁니다.</b> 나중에 무엇이 왜 취소됐는지 읽을 수 있어야 합니다. 취소하면 이 학생은 다시
+              <b> 미발행</b>이 되어, 항목을 고친 뒤 새로 발행할 수 있습니다(새 번호가 붙습니다).
+            </p>
+            {cancelling.invoice.exported_at && (
+              <p className="mb-2 rounded-lg border border-orange-300 bg-orange-50 px-3 py-2 text-[11px] text-orange-900">
+                이 청구서는 <b>이미 올톡페이로 내보냈습니다.</b> 학부모에게 청구서가 가 있을 수 있으니, 올톡페이 화면에서도
+                그 청구를 취소해주세요 — 여기서 취소해도 올톡페이 쪽은 그대로입니다.
+              </p>
+            )}
+            <input
+              value={cancelReason}
+              onChange={(e) => setCancelReason(e.target.value)}
+              placeholder="취소 사유 (예: 교재 수량 잘못 넣음)"
+              className="mb-3 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+            />
+            <div className="flex items-center gap-2">
+              <button onClick={() => setCancelling(null)} className="rounded-lg border border-slate-300 px-3 py-1.5 text-[12px] font-bold text-slate-600">
+                그만두기
+              </button>
+              <button
+                onClick={() => void cancelInvoice()}
+                disabled={busy}
+                className="ml-auto rounded-lg bg-rose-600 px-4 py-1.5 text-sm font-bold text-white disabled:opacity-40"
+              >
+                {busy ? "취소하는 중…" : "발행 취소"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {reconcileOpen && (
         <ReconcileModal
           students={reconcileStudents}
@@ -1141,6 +1231,19 @@ export default function InvoiceGridClient({
                   >
                     {dInv.invoice_no} 보기
                   </a>
+                )}
+                {dInv && (
+                  <button
+                    onClick={() => {
+                      setCancelling({ invoice: dInv, studentName: detail.name });
+                      setCancelReason("");
+                      setDetail(null);
+                    }}
+                    className="text-[11px] font-semibold text-rose-600 underline"
+                    title="발행 취소 (지우지 않고 취소로 남깁니다)"
+                  >
+                    발행 취소
+                  </button>
                 )}
                 <a
                   href={`/students/${detail.id}`}

@@ -1224,8 +1224,12 @@ export type ShuttleSafetyEvent = {
 // 단가는 fee_items 한 곳에만 있고, 아이별로는 **기본 세트와 다른 것만** 남깁니다.
 // 발행한 인보이스는 그 순간의 이름·금액을 베껴 굳혀서, 나중에 값이 올라도 흔들리지 않습니다.
 
-export const FEE_ITEM_CATEGORIES = ["교재", "악기", "악기수리", "교복", "기타"] as const;
-export type FeeItemCategory = (typeof FEE_ITEM_CATEGORIES)[number];
+/**
+ * 처음 쓸 때 고르기 쉬우라고 두는 **보기 예시**입니다. 분류는 자유롭게 적을 수 있습니다 -
+ * 학교에서 받는 것이 이 다섯 가지로 끝나지 않고, 목록을 고정해두면 새 항목이 생길 때마다
+ * 개발자를 찾아야 합니다.
+ */
+export const FEE_ITEM_CATEGORY_SUGGESTIONS = ["교재", "악기", "악기수리", "교복", "체육복", "현장학습", "기타"] as const;
 
 export type FeeItem = {
   id: string;

@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
 import { won } from "@/lib/feeItems";
-import { FEE_ITEM_CATEGORIES, type FeeItem } from "@/lib/types";
+import { FEE_ITEM_CATEGORY_SUGGESTIONS, type FeeItem } from "@/lib/types";
 
 // 학비외 항목 등록 (교재·악기·악기수리·교복).
 //
@@ -47,6 +47,17 @@ export default function FeeItemsClient({ initialItems, grades, classes, currentU
   );
   const activeCount = items.filter((i) => i.active).length;
 
+  /** 지금 실제로 쓰고 있는 분류. 탭은 이걸로 만듭니다 - 안 쓰는 분류 탭은 자리만 차지합니다. */
+  const usedCategories = useMemo(
+    () => [...new Set(items.map((i) => i.category).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ko")),
+    [items],
+  );
+  /** 고를 때 보여줄 목록. 쓰던 분류가 먼저, 그 뒤에 예시. */
+  const categoryOptions = useMemo(
+    () => [...new Set([...usedCategories, ...FEE_ITEM_CATEGORY_SUGGESTIONS])],
+    [usedCategories],
+  );
+
   function reset() {
     setForm({ ...EMPTY });
     setEditingId(null);
@@ -58,10 +69,14 @@ export default function FeeItemsClient({ initialItems, grades, classes, currentU
       notify("인보이스에 찍힐 이름을 적어주세요.", "error");
       return;
     }
+    if (!form.category.trim()) {
+      notify("분류를 적어주세요. 표에서 이 이름으로 묶입니다.", "error");
+      return;
+    }
     setBusy(true);
     const supabase = createClient();
     const row = {
-      category: form.category,
+      category: form.category.trim(),
       name,
       name_ko: form.name_ko.trim() || null,
       unit_price: Number(form.unit_price) || 0,
@@ -136,19 +151,23 @@ export default function FeeItemsClient({ initialItems, grades, classes, currentU
       <div className="mb-5 rounded-xl border border-slate-200 bg-white p-3">
         <p className="mb-2 text-[12px] font-bold text-slate-700">{editingId ? "항목 고치기" : "새 항목"}</p>
         <div className="flex flex-wrap items-end gap-2">
+          {/* 분류는 **자유롭게 적습니다.** 목록을 고정해두면 새로 받는 것이 생길 때마다
+              개발자를 찾아야 합니다. 이미 쓴 분류와 몇 가지 예시를 아래에 붙여, 고르는 것도
+              적는 것도 되게 했습니다. */}
           <label className="text-[11px] text-slate-500">
             분류
-            <select
+            <input
+              list="fee-category-list"
               value={form.category}
               onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
-              className="ml-1 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
-            >
-              {FEE_ITEM_CATEGORIES.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
+              placeholder="교재 · 악기 · 자유롭게"
+              className="ml-1 w-32 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+            />
+            <datalist id="fee-category-list">
+              {categoryOptions.map((c) => (
+                <option key={c} value={c} />
               ))}
-            </select>
+            </datalist>
           </label>
           <label className="text-[11px] text-slate-500">
             인보이스 이름 (영문)
@@ -257,7 +276,7 @@ export default function FeeItemsClient({ initialItems, grades, classes, currentU
 
       {/* ── 목록 ──────────────────────────────────────────────────── */}
       <div className="mb-2 flex flex-wrap items-center gap-1.5">
-        {["전체", ...FEE_ITEM_CATEGORIES].map((c) => (
+        {["전체", ...usedCategories].map((c) => (
           <button
             key={c}
             type="button"

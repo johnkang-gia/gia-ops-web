@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess } from "@/lib/roles";
 import { todayKst } from "@/lib/kst";
-import InvoiceBuilderClient, { type Student } from "@/components/finance/InvoiceBuilderClient";
+import InvoiceGridClient, { type Student } from "@/components/finance/InvoiceGridClient";
 import type { FeeItem, Invoice, StudentFeeItem } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -30,7 +30,7 @@ export default async function InvoicesPage() {
   const loadError = stuRes.error?.message ?? itemsRes.error?.message ?? ovRes.error?.message ?? invRes.error?.message ?? null;
 
   return (
-    <InvoiceBuilderClient
+    <InvoiceGridClient
       students={students}
       items={(itemsRes.data as FeeItem[] | null) ?? []}
       initialOverrides={(ovRes.data as StudentFeeItem[] | null) ?? []}

@@ -101,7 +101,10 @@ export async function PATCH(request: Request) {
     name === undefined &&
     department === undefined &&
     hireDate === undefined &&
-    leaveDate === undefined
+    leaveDate === undefined &&
+    // 재무 열쇠만 바꾸는 경우가 빠져 있었습니다. 열쇠만 주면 "변경할 값이 없습니다"로
+    // 막혔고, 화면에는 저장이 안 된 이유가 그것이라고 나오지 않았습니다.
+    financeAccess === undefined
   ) {
     return NextResponse.json({ error: "변경할 값이 없습니다." }, { status: 400 });
   }
@@ -154,6 +157,9 @@ export async function PATCH(request: Request) {
   // 생겼을 때 아무 설명도 못 합니다. 기록이 실패해도 권한 변경 자체는 되돌리지 않습니다
   // (되돌리면 화면에는 실패로 보이는데 DB는 이미 바뀐 상태가 되어 더 헷갈립니다).
   if (financeAccess !== undefined) {
+    // 사유는 **묻지 않습니다.** 재무 담당자라서 주는 것이라 매번 같은 말을 적게 되고, 같은
+    // 말을 적는 칸은 곧 아무 뜻도 없어집니다. 기록에 필요한 것은 "누가 언제 누구에게"이고
+    // 그건 이미 다 남습니다. 따로 적어준 것이 있으면 그것만 함께 넣습니다.
     await supabase
       .from("finance_access_log")
       .insert({

@@ -7,6 +7,7 @@ import type { AppUser } from "@/lib/types";
 import { isDeveloperEmail } from "@/lib/roles";
 import Pagination from "@/components/Pagination";
 import GuideButton from "@/components/common/GuideButton";
+import { useRouter } from "next/navigation";
 
 const GUIDE_SECTIONS = [
   {
@@ -54,6 +55,7 @@ export default function AdminUsersClient({
 }) {
   const [users, setUsers] = useState<AppUser[]>(initialUsers);
   const [busyEmail, setBusyEmail] = useState<string | null>(null);
+  const router = useRouter();
   const [error, setError] = useState<string | null>(null);
 
   // 요청("개발자는 사용자관리에서 사용자의 이름,부서들을 바꿀 수 있도록") - 개발자 계정에게만
@@ -156,19 +158,25 @@ export default function AdminUsersClient({
     }
   }
 
-  // 재무 열쇠 주기·뺏기. 이유를 함께 남깁니다(나중에 "왜 줬더라"를 못 대면 기록이 반쪽입니다).
+  /**
+   * 재무 열쇠 주기·뺏기.
+   *
+   * **사유는 묻지 않습니다.** 재무 담당자라서 주는 것이라 매번 같은 말을 적게 되고, 같은
+   * 말만 적히는 칸은 곧 아무 뜻도 없어집니다. 기록에 필요한 "누가 언제 누구에게"는 이미
+   * 전부 남습니다.
+   *
+   * 회수는 한 번 묻습니다 - 열쇠를 뺏으면 그 사람 화면에서 재무 메뉴가 통째로 사라집니다.
+   */
   async function updateFinanceAccess(email: string, next: boolean) {
-    const reason = window.prompt(
-      next ? `${email} 에게 재무 권한을 줍니다. 이유를 적어주세요(기록에 남습니다).` : `${email} 의 재무 권한을 회수합니다. 이유를 적어주세요.`,
-      ""
-    );
-    if (reason === null) return; // 취소
+    if (!next && !confirm(`${email} 의 재무 권한을 회수합니다.\n\n그 사람 화면에서 재무 메뉴가 통째로 사라집니다. 계속할까요?`)) {
+      return;
+    }
     setBusyEmail(email);
     setError(null);
     const res = await fetch("/api/admin/users", {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email, financeAccess: next, financeReason: reason }),
+      body: JSON.stringify({ email, financeAccess: next }),
     });
     const data = await res.json();
     setBusyEmail(null);
@@ -177,6 +185,9 @@ export default function AdminUsersClient({
       return;
     }
     setUsers((prev) => prev.map((u) => (u.email === email ? { ...u, finance_access: next } : u)));
+    // 사이드바 메뉴는 서버에서 그려집니다. 내 열쇠를 바꾼 경우 새로 그려야 재무 메뉴가
+    // 나타나거나 사라집니다 - 안 그러면 "줬는데 왜 안 보이지"가 됩니다.
+    router.refresh();
   }
 
   const pending = users.filter((u) => u.status === "pending");

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { routeNoSortKey } from "@/lib/routeSort";
 import QRCode from "qrcode";
 import { useToast } from "@/components/common/ToastProvider";
 import { driverSetupPath, setupMessage, smsHref } from "@/lib/driverSetup";
@@ -56,6 +57,30 @@ export default function TrackerDeviceManager({
 
   const trackedRouteIds = useMemo(() => new Set(devices.map((d) => d.route_id)), [devices]);
   const unmatched = useMemo(() => obs.filter((o) => !o.matched_stop_id), [obs]);
+
+  /**
+   * 어느 정류장인지 모르는 정차 지점을 **호차별로** 묶습니다.
+   *
+   * 한 줄씩 늘어놓으면 서른 줄이 넘고, 27호를 정리하려면 다른 호차 줄을 계속 지나쳐야
+   * 합니다. 정리는 보통 한 호차씩 합니다 - 그 호차의 노선을 알아야 어느 정류장인지
+   * 판단할 수 있기 때문입니다.
+   */
+  const unmatchedByRoute = useMemo(() => {
+    const m = new Map<string, typeof unmatched>();
+    for (const o of unmatched) m.set(o.route_id, [...(m.get(o.route_id) ?? []), o]);
+    for (const [, list] of m) {
+      list.sort((a, b) => (a.service_date < b.service_date ? 1 : a.service_date > b.service_date ? -1 : a.arrived_at.localeCompare(b.arrived_at)));
+    }
+    return [...m.entries()].sort((a, b) => {
+      // 호수는 글자 순서로 정렬하면 10호가 2호 앞에 옵니다. 숫자로 봅니다.
+      const ra = routeById.get(a[0])?.route_no ?? "";
+      const rb = routeById.get(b[0])?.route_no ?? "";
+      return routeNoSortKey(ra) - routeNoSortKey(rb) || ra.localeCompare(rb, "ko");
+    });
+  }, [unmatched, routeById]);
+
+  /** 펼쳐둔 호차. 기본은 전부 접힘 - 열어야 볼 만큼 긴 목록입니다. */
+  const [openRoutes, setOpenRoutes] = useState<Set<string>>(new Set());
 
   // 노선을 기준으로 목록을 만듭니다(기기 기준이 아니라). 기기가 아직 없는 노선도 줄이 생겨야
   // "무엇이 남았는지"가 눈에 보입니다.
@@ -608,40 +633,86 @@ export default function TrackerDeviceManager({
       {unmatched.length > 0 && (
         <>
           <h3 className="mb-1 text-xs font-bold text-slate-700">❓ 어느 정류장인지 모르는 정차 지점</h3>
+          <div className="mb-1 flex items-center gap-2">
+            <span className="text-[11px] text-slate-500">
+              {unmatchedByRoute.length}개 호차 · {unmatched.length}곳
+            </span>
+            <button
+              type="button"
+              onClick={() =>
+                setOpenRoutes((p) => (p.size > 0 ? new Set() : new Set(unmatchedByRoute.map(([id]) => id))))
+              }
+              className="ml-auto rounded border border-slate-300 px-1.5 py-0.5 text-[11px] font-semibold text-slate-600"
+            >
+              {openRoutes.size > 0 ? "모두 접기" : "모두 펼치기"}
+            </button>
+          </div>
           <p className="mb-2 text-[11px] leading-relaxed text-slate-500">
             차가 멈춰 있었지만 기존 정류장과 연결되지 않은 자리입니다. 등록되지 않은 정류장이거나, 기존 좌표가 많이 틀린
             경우입니다. 어느 정류장인지 골라주시면 다음부터 그 정류장의 학습에 함께 반영됩니다.
           </p>
           <div className="flex flex-col gap-1.5">
-            {unmatched.slice(0, 30).map((o) => {
-              const route = routeById.get(o.route_id);
+            {unmatchedByRoute.map(([routeId, list]) => {
+              const route = routeById.get(routeId);
+              const open = openRoutes.has(routeId);
               return (
-                <div key={o.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-[11px]">
-                  <span className="font-bold text-slate-700">{route?.route_no ?? "?"}호</span>
-                  <span className="text-slate-500">
-                    {o.service_date} · {new Date(o.arrived_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })} ·{" "}
-                    {o.order_index ?? "?"}번째 정차 · {Math.round(o.dwell_seconds)}초
-                  </span>
-                  <a
-                    href={`https://map.kakao.com/link/map/정차지점,${o.lat},${o.lng}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-500"
+                <div key={routeId} className="rounded-lg border border-amber-200 bg-amber-50">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setOpenRoutes((p) => {
+                        const n = new Set(p);
+                        if (n.has(routeId)) n.delete(routeId);
+                        else n.add(routeId);
+                        return n;
+                      })
+                    }
+                    className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-[11px]"
                   >
-                    지도
-                  </a>
-                  <select
-                    defaultValue=""
-                    onChange={(e) => assignObservation(o.id, e.target.value)}
-                    className="ml-auto rounded-lg border border-slate-300 px-1.5 py-1 text-[11px]"
-                  >
-                    <option value="">정류장 지정...</option>
-                    {(stopsByRoute.get(o.route_id) ?? []).map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.seq}번 {s.address ?? ""}
-                      </option>
-                    ))}
-                  </select>
+                    <span className="text-amber-700">{open ? "▾" : "▸"}</span>
+                    <span className="font-bold text-slate-700">{route?.route_no ?? "?"}호</span>
+                    <span className="rounded bg-white px-1.5 py-0.5 font-bold text-amber-800">{list.length}곳</span>
+                    <span className="text-slate-500">
+                      {list[0]?.service_date}
+                      {list.length > 1 && list[list.length - 1]?.service_date !== list[0]?.service_date
+                        ? ` ~ ${list[list.length - 1]?.service_date}`
+                        : ""}
+                    </span>
+                  </button>
+
+                  {open && (
+                    <div className="flex flex-col gap-1 border-t border-amber-200 p-2 pt-1.5">
+                      {list.map((o) => (
+                        <div key={o.id} className="flex flex-wrap items-center gap-2 rounded-lg bg-white px-2 py-1.5 text-[11px]">
+                          <span className="text-slate-500">
+                            {o.service_date} ·{" "}
+                            {new Date(o.arrived_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })} ·{" "}
+                            {o.order_index ?? "?"}번째 정차 · {Math.round(o.dwell_seconds)}초
+                          </span>
+                          <a
+                            href={`https://map.kakao.com/link/map/정차지점,${o.lat},${o.lng}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="rounded border border-slate-300 px-1.5 py-0.5 text-slate-500"
+                          >
+                            지도
+                          </a>
+                          <select
+                            defaultValue=""
+                            onChange={(e) => assignObservation(o.id, e.target.value)}
+                            className="ml-auto rounded-lg border border-slate-300 px-1.5 py-1 text-[11px]"
+                          >
+                            <option value="">정류장 지정...</option>
+                            {(stopsByRoute.get(o.route_id) ?? []).map((s) => (
+                              <option key={s.id} value={s.id}>
+                                {s.seq}번 {s.address ?? ""}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               );
             })}

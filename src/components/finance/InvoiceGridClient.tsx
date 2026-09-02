@@ -7,6 +7,8 @@ import { resolveStudentItems, sumLines, won, type StudentLike } from "@/lib/feeI
 import { departmentOf, gradeSortKey, type Department } from "@/lib/department";
 import { prettyPhone } from "@/lib/alltalkpay";
 import AlltalkpayExport from "./AlltalkpayExport";
+import ReconcileModal from "./ReconcileModal";
+import { gradeLabel } from "@/lib/feeItems";
 import FinanceTabs from "./FinanceTabs";
 import type { FeeItem, Invoice, StudentFeeItem } from "@/lib/types";
 
@@ -79,6 +81,8 @@ export default function InvoiceGridClient({
   const [view, setView] = useState<View>({ kind: "전체" });
   /** 올톡페이 발송 파일을 만들 청구서. 값이 있으면 창이 열립니다. */
   const [exportIds, setExportIds] = useState<string[] | null>(null);
+  /** 올톡페이 청구서와 맞춰보기. 저장은 하지 않고 보기만 합니다. */
+  const [reconcileOpen, setReconcileOpen] = useState(false);
   /** 방금 발행한 것. 발행 직후 바로 청구로 이어가라고 띄웁니다. */
   const [justIssued, setJustIssued] = useState<Invoice[]>([]);
   const [q, setQ] = useState("");
@@ -185,6 +189,22 @@ export default function InvoiceGridClient({
 
   const cats = useMemo(() => [...new Set(usedItems.map((i) => i.category))], [usedItems]);
   const allCats = useMemo(() => [...new Set(activeItems.map((i) => i.category))], [activeItems]);
+
+  /**
+   * 대조에 넘길 명단. **부서 탭이나 검색과 무관하게 명부 전체**입니다 - 올톡페이 파일에는
+   * 전교생이 들어 있어서, 지금 보이는 것만 넘기면 나머지가 전부 "명부에 없음"으로 나옵니다.
+   */
+  const reconcileStudents = useMemo(
+    () =>
+      students.map((s) => ({
+        id: s.id,
+        name: s.name,
+        parentPhone: s.parentPhone,
+        gradeLabel: gradeLabel({ grade: s.grade, className: s.className }),
+        ours: sumLines(resolveStudentItems(activeItems, s as StudentLike, overrides)),
+      })),
+    [students, activeItems, overrides],
+  );
 
   /** 청구할 것이 있는데 연락처가 없는 아이. 없는 아이 전부를 세면 대부분이라 아무도 안 봅니다. */
   const noPhone = useMemo(
@@ -642,6 +662,13 @@ export default function InvoiceGridClient({
         >
           📤 올톡페이 청구
         </button>
+        <button
+          onClick={() => setReconcileOpen(true)}
+          className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50"
+          title="올톡페이에서 받은 청구서관리목록과 지금 등록한 항목 금액을 맞춰봅니다 (저장하지 않습니다)"
+        >
+          🔍 청구서와 대조
+        </button>
         <button onClick={exportCsv} className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">
           ⬇ CSV (구글시트용)
         </button>
@@ -1056,6 +1083,23 @@ export default function InvoiceGridClient({
             </div>
           </div>
         </div>
+      )}
+
+      {reconcileOpen && (
+        <ReconcileModal
+          students={reconcileStudents}
+          onClose={() => setReconcileOpen(false)}
+          onOpenStudent={(id) => {
+            const s = students.find((x) => x.id === id);
+            if (!s) return;
+            // 그 아이가 다른 부서·다른 반에 있어도 창은 열려야 합니다. 대조 결과에서 이름을
+            // 눌렀는데 아무 일도 안 일어나면 고치러 갈 방법이 없습니다.
+            setDept(deptOf(s));
+            setView({ kind: "전체" });
+            setReconcileOpen(false);
+            setDetail(s);
+          }}
+        />
       )}
 
       {exportIds && (

@@ -26,13 +26,17 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   const studentId = body?.studentId as string | undefined;
   const dueDate = (body?.dueDate as string | undefined) ?? null;
+  const feeTermId = (body?.feeTermId as string | undefined) ?? null;
   if (!studentId) return NextResponse.json({ error: "studentId가 필요합니다." }, { status: 400 });
 
   const supabase = await createClient();
 
   const [stuRes, itemsRes, ovRes] = await Promise.all([
     supabase.from("wr_students").select("id, name, name_en, grade, class_name, department, parent_phone").eq("is_demo", false).eq("id", studentId).maybeSingle(),
-    supabase.from("fee_items").select("*").eq("active", true),
+    // 그 학기 항목만 계산합니다. 학기를 안 걸면 지난 학기 교재까지 청구서에 붙습니다.
+    (feeTermId
+      ? supabase.from("fee_items").select("*").eq("active", true).eq("fee_term_id", feeTermId)
+      : supabase.from("fee_items").select("*").eq("active", true)),
     supabase.from("student_fee_items").select("*").eq("student_id", studentId),
   ]);
   if (stuRes.error) return NextResponse.json({ error: stuRes.error.message }, { status: 500 });
@@ -73,6 +77,7 @@ export async function POST(req: Request) {
       total_amount: total,
       // 그때의 보호자 연락처를 같이 굳힙니다. 명부가 나중에 바뀌어도 어디로 청구했는지가 남습니다.
       guardian_phone: student.parent_phone,
+      fee_term_id: feeTermId,
       issued_by: me.name || me.email,
     })
     .select()

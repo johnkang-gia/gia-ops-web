@@ -9,9 +9,10 @@ import { prettyPhone } from "@/lib/alltalkpay";
 import AlltalkpayExport from "./AlltalkpayExport";
 import ReconcileModal from "./ReconcileModal";
 import InvoicePreviewModal from "./InvoicePreviewModal";
+import FeeTermPicker, { initialTermId } from "./FeeTermPicker";
 import { gradeLabel } from "@/lib/feeItems";
 import FinanceTabs from "./FinanceTabs";
-import type { FeeItem, Invoice, StudentFeeItem } from "@/lib/types";
+import type { FeeItem, FeeTerm, Invoice, StudentFeeItem } from "@/lib/types";
 
 // 인보이스 명단 표 — 학생이 행, 항목이 열인 스프레드시트.
 //
@@ -51,6 +52,7 @@ type Props = {
   items: FeeItem[];
   initialOverrides: StudentFeeItem[];
   recentInvoices: Invoice[];
+  terms: FeeTerm[];
   currentUserEmail: string;
   loadError: string | null;
   today: string;
@@ -66,6 +68,7 @@ export default function InvoiceGridClient({
   items,
   initialOverrides,
   recentInvoices,
+  terms,
   currentUserEmail,
   loadError,
   today,
@@ -79,6 +82,11 @@ export default function InvoiceGridClient({
   const [newItem, setNewItem] = useState({ category: "", name: "", name_ko: "", unit_price: 0, applyToView: true });
   const [invoices, setInvoices] = useState(recentInvoices);
   const [dept, setDept] = useState<DeptTab>("초등부");
+  /** 보고 있는 학기. 항목 화면과 같은 학기를 봅니다(브라우저에 기억해둡니다). */
+  const [termId, setTermId] = useState("");
+  useEffect(() => {
+    setTermId(initialTermId(terms));
+  }, [terms]);
   const [view, setView] = useState<View>({ kind: "전체" });
   /** 올톡페이 발송 파일을 만들 청구서. 값이 있으면 창이 열립니다. */
   const [exportIds, setExportIds] = useState<string[] | null>(null);
@@ -123,12 +131,18 @@ export default function InvoiceGridClient({
   const activeItems = useMemo(
     () =>
       itemList
-        .filter((i) => i.active && (!i.department || i.department === dept))
+        .filter(
+          (i) =>
+            i.active &&
+            // 학기가 없던 시절 항목(비어 있음)은 현재 학기에서 함께 보여줍니다.
+            ((i.fee_term_id ?? "") === termId || (!i.fee_term_id && terms.find((x) => x.id === termId)?.is_current)) &&
+            (!i.department || i.department === dept),
+        )
         .sort(
           (a, b) =>
             a.category.localeCompare(b.category, "ko") || a.sort_order - b.sort_order || a.name.localeCompare(b.name),
         ),
-    [itemList, dept],
+    [itemList, dept, termId, terms],
   );
 
   /**
@@ -166,9 +180,14 @@ export default function InvoiceGridClient({
 
   const invoiceByStudent = useMemo(() => {
     const m = new Map<string, Invoice>();
-    for (const v of invoices) if (v.student_id && v.status === "발행" && !m.has(v.student_id)) m.set(v.student_id, v);
+    for (const v of invoices) {
+      if (!v.student_id || v.status !== "발행" || m.has(v.student_id)) continue;
+      // 지난 학기 청구서가 이번 학기 표에서 '발행됨'으로 보이면 안 됩니다.
+      const sameTerm = (v.fee_term_id ?? "") === termId || (!v.fee_term_id && terms.find((x) => x.id === termId)?.is_current);
+      if (sameTerm) m.set(v.student_id, v);
+    }
     return m;
-  }, [invoices]);
+  }, [invoices, termId, terms]);
 
   /** 지금 보고 있는 명단. */
   const rows = useMemo(() => {
@@ -409,6 +428,7 @@ export default function InvoiceGridClient({
           // 지금 보고 있는 부서의 항목으로 만듭니다. 초등 표에서 만든 교재가 중고등 표에
           // 나타나면, 만든 사람도 나중에 왜 거기 있는지 모릅니다.
           department: dept === "초등부" || dept === "중고등부" ? dept : null,
+          fee_term_id: termId || null,
           ...defaults,
           created_by: currentUserEmail,
         })
@@ -496,7 +516,7 @@ export default function InvoiceGridClient({
         const res = await fetch("/api/finance/invoices", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ studentId: s.id, dueDate }),
+          body: JSON.stringify({ studentId: s.id, dueDate, feeTermId: termId || null }),
         });
         const body = await res.json().catch(() => ({}));
         if (res.ok) made.push(body.invoice as Invoice);
@@ -588,6 +608,11 @@ export default function InvoiceGridClient({
           에서 먼저 교재·교복 등을 만들어주세요.
         </p>
       )}
+
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <FeeTermPicker terms={terms} value={termId} onChange={setTermId} />
+        <span className="text-[11px] text-slate-400">학기를 바꾸면 그 학기의 항목과 청구서만 보입니다</span>
+      </div>
 
       {/* ── 발행 직후 ─────────────────────────────────────────────
           발행은 종이를 만든 것일 뿐입니다. 여기서 끊기면 발행만 해놓고 청구를 안 보냅니다. */}

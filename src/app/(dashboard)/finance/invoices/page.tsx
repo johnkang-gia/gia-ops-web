@@ -4,7 +4,7 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess } from "@/lib/roles";
 import { todayKst } from "@/lib/kst";
 import InvoiceGridClient, { type Student } from "@/components/finance/InvoiceGridClient";
-import type { FeeItem, Invoice, StudentFeeItem } from "@/lib/types";
+import type { FeeItem, FeeTerm, Invoice, StudentFeeItem } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +16,7 @@ export default async function InvoicesPage() {
   const supabase = await createClient();
   // 명부는 **원본 표**에서 읽습니다. 공용 뷰(wr_students_basic)에도 학생이 있지만, 이 화면은
   // 돈에 관한 화면이라 재무 권한으로만 열리고 필요한 칸이 전부 원본에 있습니다.
-  const [stuRes, itemsRes, ovRes, invRes] = await Promise.all([
+  const [stuRes, itemsRes, ovRes, invRes, termRes] = await Promise.all([
     supabase
       .from("wr_students")
       // 명부의 칸을 그대로 가져옵니다. 보호자 연락처가 없으면 청구서가 못 나가고, 악기 칸이
@@ -28,8 +28,10 @@ export default async function InvoicesPage() {
       .order("name"),
     supabase.from("fee_items").select("*").order("category").order("sort_order").order("name"),
     supabase.from("student_fee_items").select("*"),
-    supabase.from("invoices").select("*").order("issue_date", { ascending: false }).order("created_at", { ascending: false }).limit(300),
+    supabase.from("invoices").select("*").order("issue_date", { ascending: false }).order("created_at", { ascending: false }).limit(1000),
+    supabase.from("fee_terms").select("*").order("is_current", { ascending: false }).order("created_at", { ascending: false }),
   ]);
+  if (termRes.error) console.error("[인보이스] 학기를 읽지 못했습니다:", termRes.error.message);
 
   type Row = {
     id: string; name: string; name_en: string | null; grade: string | null; class_name: string | null;
@@ -57,6 +59,7 @@ export default async function InvoicesPage() {
       items={(itemsRes.data as FeeItem[] | null) ?? []}
       initialOverrides={(ovRes.data as StudentFeeItem[] | null) ?? []}
       recentInvoices={(invRes.data as Invoice[] | null) ?? []}
+      terms={(termRes.data as FeeTerm[] | null) ?? []}
       currentUserEmail={me.email}
       loadError={loadError}
       today={todayKst()}

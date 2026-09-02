@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
 import { won } from "@/lib/feeItems";
 import FinanceTabs from "./FinanceTabs";
-import { FEE_ITEM_CATEGORY_SUGGESTIONS, type FeeCategory, type FeeItem } from "@/lib/types";
+import FeeTermPicker, { initialTermId } from "./FeeTermPicker";
+import { FEE_ITEM_CATEGORY_SUGGESTIONS, type FeeCategory, type FeeItem, type FeeTerm } from "@/lib/types";
 
 // 학비외 항목 등록 (교재·악기·악기수리·교복).
 //
@@ -18,6 +19,7 @@ import { FEE_ITEM_CATEGORY_SUGGESTIONS, type FeeCategory, type FeeItem } from "@
 type Props = {
   initialItems: FeeItem[];
   initialCategories: FeeCategory[];
+  terms: FeeTerm[];
   grades: string[];
   classes: string[];
   currentUserEmail: string;
@@ -37,7 +39,7 @@ const EMPTY = {
   note: "",
 };
 
-export default function FeeItemsClient({ initialItems, initialCategories, grades, classes, currentUserEmail, loadError }: Props) {
+export default function FeeItemsClient({ initialItems, initialCategories, terms, grades, classes, currentUserEmail, loadError }: Props) {
   const notify = useToast();
   const [items, setItems] = useState(initialItems);
   const [form, setForm] = useState({ ...EMPTY });
@@ -53,6 +55,18 @@ export default function FeeItemsClient({ initialItems, initialCategories, grades
    * 사는 것입니다.
    */
   const [deptTab, setDeptTab] = useState<ItemDept>("초등부");
+  /**
+   * 보고 있는 학기.
+   *
+   * 다음 학기에는 교재가 또 달라집니다. 학기를 나누지 않으면 지난 학기 교재가 새 학기 표에
+   * 계속 열로 서 있고, 그것을 하나씩 끄는 일이 매 학기 반복됩니다.
+   */
+  const [termId, setTermId] = useState("");
+  useEffect(() => {
+    setTermId(initialTermId(terms));
+  }, [terms]);
+  const [newTerm, setNewTerm] = useState("");
+  const [copyFrom, setCopyFrom] = useState(true);
 
   /**
    * 정렬.
@@ -65,15 +79,20 @@ export default function FeeItemsClient({ initialItems, initialCategories, grades
   const [asc, setAsc] = useState(true);
 
   const deptOfItem = (i: FeeItem): ItemDept => (i.department === "중고등부" ? "중고등부" : i.department === "초등부" ? "초등부" : "공통");
+  /** 지금 부서에서 다루는 항목. 공통은 어느 부서에서 보든 함께 나옵니다. */
+  /** 이 학기 항목만. 학기가 없던 시절 항목(비어 있음)은 현재 학기에서 함께 보여줍니다. */
+  const inTerm = useMemo(
+    () => items.filter((i) => (i.fee_term_id ?? "") === termId || (!i.fee_term_id && terms.find((x) => x.id === termId)?.is_current)),
+    [items, termId, terms],
+  );
   const deptCounts = useMemo(() => {
     const m = new Map<ItemDept, number>();
-    for (const i of items) if (i.active) m.set(deptOfItem(i), (m.get(deptOfItem(i)) ?? 0) + 1);
+    for (const i of inTerm) if (i.active) m.set(deptOfItem(i), (m.get(deptOfItem(i)) ?? 0) + 1);
     return m;
-  }, [items]);
-  /** 지금 부서에서 다루는 항목. 공통은 어느 부서에서 보든 함께 나옵니다. */
+  }, [inTerm]);
   const inDept = useMemo(
-    () => items.filter((i) => (deptTab === "공통" ? deptOfItem(i) === "공통" : deptOfItem(i) === deptTab || deptOfItem(i) === "공통")),
-    [items, deptTab],
+    () => inTerm.filter((i) => (deptTab === "공통" ? deptOfItem(i) === "공통" : deptOfItem(i) === deptTab || deptOfItem(i) === "공통")),
+    [inTerm, deptTab],
   );
 
   /**
@@ -167,6 +186,54 @@ export default function FeeItemsClient({ initialItems, initialCategories, grades
     }
   }
 
+  /**
+   * 새 학기 만들기.
+   *
+   * 학기가 바뀔 때 항목을 처음부터 다시 적게 두면 결국 안 하고 지난 학기 것을 그대로 씁니다.
+   * **지금 보는 학기의 항목을 복사**해서 시작할 수 있게 합니다 - 값만 고치면 되니까요.
+   */
+  async function addTerm() {
+    const name = newTerm.trim();
+    if (!name) return;
+    setBusy(true);
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase.from("fee_terms").insert({ name, created_by: currentUserEmail }).select().single();
+      if (error || !data) {
+        notify("학기를 만들지 못했습니다: " + (error?.message ?? ""), "error");
+        return;
+      }
+      const made = data as FeeTerm;
+      if (copyFrom && inTerm.length > 0) {
+        const rows = inTerm
+          .filter((i) => i.active)
+          .map((i) => ({
+            fee_term_id: made.id,
+            department: i.department ?? null,
+            category: i.category,
+            name: i.name,
+            name_ko: i.name_ko,
+            unit_price: i.unit_price,
+            default_grades: i.default_grades,
+            default_classes: i.default_classes,
+            sort_order: i.sort_order,
+            note: i.note,
+            created_by: currentUserEmail,
+          }));
+        const { data: copied, error: cErr } = await supabase.from("fee_items").insert(rows).select();
+        if (cErr) notify(`학기는 만들었는데 항목을 복사하지 못했습니다: ${cErr.message}`, "error");
+        else setItems((p) => [...((copied as FeeItem[] | null) ?? []), ...p]);
+      }
+      // 새로 만든 학기로 바로 넘어갑니다. 만들어놓고 안 넘어가면 지난 학기에 계속 등록합니다.
+      terms.unshift(made);
+      setTermId(made.id);
+      setNewTerm("");
+      notify(`"${name}" 학기를 만들었습니다.`, "success");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function reset() {
     // 지금 보고 있는 부서로 시작합니다. 매번 고르게 두면 결국 잘못된 부서에 등록합니다.
     setForm({ ...EMPTY, department: deptTab });
@@ -188,6 +255,8 @@ export default function FeeItemsClient({ initialItems, initialCategories, grades
     const row = {
       // `공통` 은 비워둡니다 - 비어 있으면 양쪽 모두에 쓰는 항목이라는 뜻입니다.
       department: form.department === "공통" ? null : form.department,
+      // 보고 있는 학기의 항목으로 만듭니다. 학기를 안 붙이면 어느 학기에서도 안 보입니다.
+      fee_term_id: termId || null,
       category: form.category.trim(),
       name,
       name_ko: form.name_ko.trim() || null,
@@ -267,10 +336,34 @@ export default function FeeItemsClient({ initialItems, initialCategories, grades
       <div className="mb-1 flex flex-wrap items-baseline gap-2">
         <h1 className="text-lg font-bold">📚 학비외 항목</h1>
         <span className="text-xs text-slate-400">부서별로 따로 등록합니다 · 분류도 직접 등록해서 씁니다</span>
-        <span className="ml-auto rounded-full bg-teal-50 px-2 py-0.5 text-[11px] font-bold text-teal-700">
-          {deptTab} 쓰는 중 {activeCount}개
+        <span className="ml-auto flex items-center gap-2">
+          <FeeTermPicker terms={terms} value={termId} onChange={setTermId} />
+          <span className="rounded-full bg-teal-50 px-2 py-0.5 text-[11px] font-bold text-teal-700">
+            {deptTab} 쓰는 중 {activeCount}개
+          </span>
         </span>
       </div>
+
+      {/* 학기 만들기. 학기가 바뀔 때 항목을 처음부터 다시 적게 두면 결국 안 하고 지난 학기
+          것을 그대로 씁니다. 복사해서 값만 고치는 편이 실제로 됩니다. */}
+      <details className="mb-3 rounded-xl border border-slate-200 bg-white">
+        <summary className="cursor-pointer px-3 py-2 text-[12px] font-bold text-slate-700">＋ 새 학기 만들기</summary>
+        <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 p-3">
+          <input
+            value={newTerm}
+            onChange={(e) => setNewTerm(e.target.value)}
+            placeholder="예: 2026 겨울학기"
+            className="w-52 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+          />
+          <label className="flex items-center gap-1 text-[11px] text-slate-600">
+            <input type="checkbox" checked={copyFrom} onChange={(e) => setCopyFrom(e.target.checked)} />
+            지금 보는 학기의 항목을 복사해서 시작
+          </label>
+          <button onClick={() => void addTerm()} disabled={busy || !newTerm.trim()} className="rounded-lg bg-teal-600 px-3 py-1.5 text-sm font-bold text-white disabled:opacity-40">
+            만들기
+          </button>
+        </div>
+      </details>
       <p className="mb-4 text-xs leading-relaxed text-slate-500">
         단가는 <b>여기 한 곳에만</b> 있습니다. 아이마다 금액을 고칠 수 없게 해서 오타가 생길 자리를 없앴습니다.
         기본 학년·반을 정해두면 그 아이들에게 자동으로 들어가고, 예외만 학생 화면에서 빼면 됩니다.

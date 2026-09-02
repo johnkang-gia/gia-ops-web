@@ -16,6 +16,7 @@ import {
   type PhotoStudent,
 } from "@/lib/passportPhoto";
 import PhotoCropper from "./PhotoCropper";
+import { filesFromDataTransfer, pickImages } from "@/lib/dropFiles";
 
 // 학생 사진 일괄 등록.
 //
@@ -91,9 +92,18 @@ export default function StudentPhotosClient({ roster, hasPhoto, currentUserEmail
   const notify = useToast();
   const [items, setItems] = useState<Item[]>([]);
   const [busy, setBusy] = useState(false);
-  const [reading, setReading] = useState(0);
+  /**
+   * 읽는 중 표시.
+   *
+   * 137장을 읽는 데 시간이 걸립니다. 그동안 화면에 아무 변화가 없으면 **되고 있는지 아닌지
+   * 알 수가 없어서** 다시 끌어다 놓게 되고, 그러면 같은 사진이 두 벌 생깁니다.
+   */
+  const [reading, setReading] = useState<{ done: number; total: number; label: string } | null>(null);
+  /** 그림이 아니어서 빠진 파일. 조용히 빼면 "몇 장이 없네"가 됩니다. */
+  const [skipped, setSkipped] = useState<{ name: string; reason: string }[]>([]);
   const [done, setDone] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const dirRef = useRef<HTMLInputElement | null>(null);
   const withPhoto = useMemo(() => new Set(hasPhoto), [hasPhoto]);
 
   const byId = useMemo(() => new Map(roster.map((s) => [s.id, s])), [roster]);
@@ -104,20 +114,29 @@ export default function StudentPhotosClient({ roster, hasPhoto, currentUserEmail
   }, [items]);
 
   async function addFiles(files: File[]) {
-    const pics = files.filter((f) => /^image\//.test(f.type) || /\.(jpe?g|png|webp|heic)$/i.test(f.name));
-    if (pics.length === 0) {
-      notify("그림 파일이 없습니다.", "error");
+    const { images, skipped: skip } = pickImages(files);
+    setSkipped(skip);
+    if (images.length === 0) {
+      setReading(null);
+      notify(
+        files.length === 0
+          ? "놓으신 것에서 파일을 찾지 못했습니다. 폴더째 끌어다 놓거나 '폴더 고르기'를 눌러주세요."
+          : `그림 파일이 없습니다. ${files.length}개를 봤는데 전부 그림이 아니었습니다.`,
+        "error",
+      );
       return;
     }
-    setReading(pics.length);
+
+    setReading({ done: 0, total: images.length, label: "사진을 읽는 중" });
     const next: Item[] = [];
-    for (const f of pics) {
+    for (let i = 0; i < images.length; i++) {
+      const f = images[i];
       try {
         const img = await loadImage(f);
         const m = matchStudent(f.name, roster);
         const auto = await detectFace(img);
         next.push({
-          key: `${f.name}-${f.size}-${next.length}`,
+          key: `${f.name}-${f.size}-${i}`,
           fileName: f.name,
           img,
           studentId: m.student?.id ?? null,
@@ -129,7 +148,7 @@ export default function StudentPhotosClient({ roster, hasPhoto, currentUserEmail
         });
       } catch {
         next.push({
-          key: `${f.name}-${f.size}-err`,
+          key: `${f.name}-${f.size}-${i}`,
           fileName: f.name,
           img: new Image(),
           studentId: null,
@@ -140,10 +159,14 @@ export default function StudentPhotosClient({ roster, hasPhoto, currentUserEmail
           error: "그림을 열지 못했습니다",
         });
       }
-      setReading((n) => n - 1);
+      setReading({ done: i + 1, total: images.length, label: "사진을 읽는 중" });
+      // 화면이 멈춘 것처럼 보이지 않게 한 장마다 그릴 틈을 줍니다.
+      if (i % 5 === 4) await new Promise((r) => setTimeout(r, 0));
     }
     setItems((p) => [...p, ...next]);
-    setReading(0);
+    setReading(null);
+    const got = next.filter((it) => it.studentId).length;
+    notify(`${next.length}장을 읽었습니다. ${got}장은 학생이 붙었습니다.`, "success");
   }
 
   function setAdjust(key: string, a: Adjust) {
@@ -216,10 +239,12 @@ export default function StudentPhotosClient({ roster, hasPhoto, currentUserEmail
         onDragOver={(e) => e.preventDefault()}
         onDrop={(e) => {
           e.preventDefault();
-          void addFiles([...e.dataTransfer.files]);
+          // 끌어다 놓자마자 표시를 켭니다. 폴더를 훑는 데도 시간이 걸리는데, 그동안
+          // 화면이 그대로면 놓인 건지 아닌지 알 수가 없습니다.
+          setReading({ done: 0, total: 0, label: "폴더를 여는 중" });
+          void filesFromDataTransfer(e.dataTransfer).then(addFiles);
         }}
-        onClick={() => inputRef.current?.click()}
-        className="mb-3 flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 px-4 py-8 text-center hover:border-teal-400"
+        className="mb-3 flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 px-4 py-8 text-center"
       >
         <input
           ref={inputRef}
@@ -232,11 +257,72 @@ export default function StudentPhotosClient({ roster, hasPhoto, currentUserEmail
             e.target.value = "";
           }}
         />
-        <span className="text-[13px] font-bold text-slate-600">
-          {reading > 0 ? `읽는 중… ${reading}장 남음` : "폴더나 사진을 여기에 끌어다 놓으세요"}
-        </span>
-        <span className="mt-1 text-[11px] text-slate-400">눌러서 고를 수도 있습니다 · JPG · PNG · WEBP</span>
+        {/* 폴더 고르기 - 끌어다 놓기가 안 되는 환경이 있습니다. */}
+        <input
+          ref={dirRef}
+          type="file"
+          multiple
+          className="hidden"
+          // @ts-expect-error 폴더 고르기는 표준에 없지만 크롬·엣지·사파리가 모두 지원합니다.
+          webkitdirectory=""
+          directory=""
+          onChange={(e) => {
+            void addFiles([...(e.target.files ?? [])]);
+            e.target.value = "";
+          }}
+        />
+
+        {reading ? (
+          <>
+            <span className="text-[13px] font-bold text-teal-700">
+              {reading.label}… {reading.total > 0 ? `${reading.done} / ${reading.total}장` : ""}
+            </span>
+            <span className="mt-2 block h-1.5 w-64 overflow-hidden rounded-full bg-slate-200">
+              <span
+                className="block h-full bg-teal-500 transition-all"
+                style={{ width: reading.total > 0 ? `${Math.round((reading.done / reading.total) * 100)}%` : "20%" }}
+              />
+            </span>
+            <span className="mt-1 text-[11px] text-slate-400">사진이 많으면 한동안 걸립니다. 창을 닫지 마세요.</span>
+          </>
+        ) : (
+          <>
+            <span className="text-[13px] font-bold text-slate-600">폴더나 사진을 여기에 끌어다 놓으세요</span>
+            <span className="mt-1 text-[11px] text-slate-400">JPG · PNG · WEBP · 폴더 안의 폴더까지 찾아봅니다</span>
+            <span className="mt-2 flex gap-2">
+              <button
+                type="button"
+                onClick={() => dirRef.current?.click()}
+                className="rounded-lg bg-teal-600 px-3 py-1.5 text-[12px] font-bold text-white"
+              >
+                📁 폴더 고르기
+              </button>
+              <button
+                type="button"
+                onClick={() => inputRef.current?.click()}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-[12px] font-bold text-slate-600"
+              >
+                사진 고르기
+              </button>
+            </span>
+          </>
+        )}
       </div>
+
+      {/* 그림이 아니어서 빠진 파일. 조용히 빼면 "몇 장이 없네"가 되고, 왜 없는지는 알 수 없습니다. */}
+      {skipped.length > 0 && (
+        <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+          <p className="mb-1 text-[11px] font-bold text-amber-900">넣지 않은 파일 {skipped.length}개</p>
+          <ul className="flex flex-wrap gap-1.5">
+            {skipped.slice(0, 12).map((s) => (
+              <li key={s.name} className="rounded border border-amber-200 bg-white px-1.5 py-0.5 text-[10px] text-amber-900">
+                {s.name} <span className="opacity-60">{s.reason}</span>
+              </li>
+            ))}
+            {skipped.length > 12 && <li className="text-[10px] text-amber-700">외 {skipped.length - 12}개</li>}
+          </ul>
+        </div>
+      )}
 
       {items.length > 0 && (
         <>

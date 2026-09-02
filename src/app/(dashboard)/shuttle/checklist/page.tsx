@@ -295,9 +295,11 @@ export default async function ShuttleChecklistPage({
           channelLabel: null,
           senderName: who || null,
           receivedAt: (boarding.checked_at as string | null) ?? "",
+          // 사람 이름 뒤에는 **님**을 붙입니다. 받침에 따라 `이/가`를 고르는 것도 번거롭지만,
+          // 그보다 이 문장은 동료를 가리키는 말이라 높임이 맞습니다("이재훈가" → "이재훈님이").
           rawText: who.includes("AI") || who.includes("자동")
             ? `${who}이(가) 오늘 ${boarding.status}으로 표시했습니다.`
-            : `${who || "담당자"}가 체크표에서 ${boarding.status}으로 표시했습니다.`,
+            : `${who ? `${who}님이` : "담당자가"} 체크표에서 ${boarding.status}으로 표시했습니다.`,
           aiNote: null,
           matchedName: a.student_name_raw,
           sourceUrl: null,

@@ -230,6 +230,13 @@ export const SCHEMA_CHECKS: SchemaCheck[] = [
     impact: "책의 '가야 할 자리'를 기록할 수 없어 도서정리 계획이 동작하지 않습니다.",
   },
   {
+    feature: "학비외 항목 부서",
+    table: "fee_items",
+    columns: ["department"],
+    migration: "20260902240000_grade6_secondary_and_fee_department.sql",
+    impact: "초등·중고등 항목이 한 목록에 섞이고, 중고등 교재가 초등 아이에게 붙을 수 있습니다.",
+  },
+  {
     feature: "학생 사진",
     table: "wr_students",
     columns: ["photo_path", "photo_updated_at"],

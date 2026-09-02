@@ -1236,6 +1236,8 @@ export type ShuttleSafetyEvent = {
 export const FEE_ITEM_CATEGORY_SUGGESTIONS = ["교재", "악기", "악기수리", "교복", "체육복", "현장학습", "기타"] as const;
 
 export type FeeItem = {
+  /** 이 항목을 쓰는 부서. 비어 있으면 초등·중고등 양쪽 모두(교복처럼 학교 전체가 사는 것). */
+  department?: "초등부" | "중고등부" | null;
   id: string;
   category: string;
   /** 인보이스에 그대로 찍히는 이름(영문 양식이라 이쪽이 본문). */

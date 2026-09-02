@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
-import { resolveStudentItems, sumLines, won, type StudentLike } from "@/lib/feeItems";
+import { inDepartment, resolveStudentItems, sumLines, won, type StudentLike } from "@/lib/feeItems";
 import { departmentOf, gradeSortKey, type Department } from "@/lib/department";
 import { prettyPhone } from "@/lib/alltalkpay";
 import AlltalkpayExport from "./AlltalkpayExport";
@@ -107,15 +107,22 @@ export default function InvoiceGridClient({
     return d.toISOString().slice(0, 10);
   });
 
+  /**
+   * 지금 보는 부서에서 쓰는 항목만.
+   *
+   * 초등과 중고등은 사는 교재가 아예 다릅니다. 한 표에 다 세우면 열이 두 배로 늘어나고,
+   * 중고등 교재가 초등 아이 줄에 붙을 수 있는 자리가 생깁니다. 부서가 비어 있는 항목
+   * (교복처럼 학교 전체가 사는 것)은 어느 쪽에서든 보입니다.
+   */
   const activeItems = useMemo(
     () =>
       itemList
-        .filter((i) => i.active)
+        .filter((i) => i.active && (!i.department || i.department === dept))
         .sort(
           (a, b) =>
             a.category.localeCompare(b.category, "ko") || a.sort_order - b.sort_order || a.name.localeCompare(b.name),
         ),
-    [itemList],
+    [itemList, dept],
   );
 
   /**
@@ -355,6 +362,9 @@ export default function InvoiceGridClient({
           name,
           name_ko: newItem.name_ko.trim() || null,
           unit_price: Number(newItem.unit_price) || 0,
+          // 지금 보고 있는 부서의 항목으로 만듭니다. 초등 표에서 만든 교재가 중고등 표에
+          // 나타나면, 만든 사람도 나중에 왜 거기 있는지 모릅니다.
+          department: dept === "초등부" || dept === "중고등부" ? dept : null,
           ...defaults,
           created_by: currentUserEmail,
         })

@@ -36,7 +36,8 @@ function deptOf(s: WrStudent): Dept {
   const d = (s.department as string | null) ?? "";
   if (d.includes("중") || d.includes("고")) return "중고등부";
   if (d.includes("초")) return "초등부";
-  return gradeNum(s.grade) >= 7 ? "중고등부" : "초등부";
+  // 6학년부터 중고등부입니다(학교 운영 기준).
+  return gradeNum(s.grade) >= 6 ? "중고등부" : "초등부";
 }
 
 export default function StudentSearchClient({

@@ -31,7 +31,7 @@ export async function POST(req: Request) {
   const supabase = await createClient();
 
   const [stuRes, itemsRes, ovRes] = await Promise.all([
-    supabase.from("wr_students").select("id, name, name_en, grade, class_name, parent_phone").eq("is_demo", false).eq("id", studentId).maybeSingle(),
+    supabase.from("wr_students").select("id, name, name_en, grade, class_name, department, parent_phone").eq("is_demo", false).eq("id", studentId).maybeSingle(),
     supabase.from("fee_items").select("*").eq("active", true),
     supabase.from("student_fee_items").select("*").eq("student_id", studentId),
   ]);
@@ -39,12 +39,12 @@ export async function POST(req: Request) {
   if (itemsRes.error) return NextResponse.json({ error: itemsRes.error.message }, { status: 500 });
   if (ovRes.error) return NextResponse.json({ error: ovRes.error.message }, { status: 500 });
 
-  const student = stuRes.data as { id: string; name: string; name_en: string | null; grade: string | null; class_name: string | null; parent_phone: string | null } | null;
+  const student = stuRes.data as { id: string; name: string; name_en: string | null; grade: string | null; class_name: string | null; department: string | null; parent_phone: string | null } | null;
   if (!student) return NextResponse.json({ error: "학생을 찾지 못했습니다." }, { status: 404 });
 
   const lines = resolveStudentItems(
     (itemsRes.data as FeeItem[] | null) ?? [],
-    { id: student.id, grade: student.grade, className: student.class_name },
+    { id: student.id, grade: student.grade, className: student.class_name, department: student.department },
     (ovRes.data as StudentFeeItem[] | null) ?? [],
   );
   if (lines.length === 0) {

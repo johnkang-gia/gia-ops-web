@@ -1,3 +1,4 @@
+import { departmentOf } from "@/lib/department";
 import type { FeeItem, StudentFeeItem } from "@/lib/types";
 
 // "이 아이는 무엇을 사는가"를 정하는 규칙 한 곳.
@@ -12,7 +13,19 @@ import type { FeeItem, StudentFeeItem } from "@/lib/types";
 // 2번이 1번을 이기는 이유: 기본 세트는 짐작이고, 아이별 기록은 사람이 확인해서 적은 것입니다.
 // 사람이 확인한 것을 짐작이 뒤집으면 아무도 그 화면을 안 믿게 됩니다.
 
-export type StudentLike = { id: string; grade: string | null; className: string | null };
+export type StudentLike = { id: string; grade: string | null; className: string | null; department?: string | null };
+
+/**
+ * 이 항목이 이 아이의 부서에 쓰이는가.
+ *
+ * 초등과 중고등은 사는 교재가 아예 다릅니다. 항목의 부서가 비어 있으면 양쪽 모두에 쓰는
+ * 것입니다(교복처럼 학교 전체가 사는 것). 이 판단이 없으면 중고등 교재가 초등 아이 줄에
+ * 붙을 수 있는 자리가 생깁니다.
+ */
+export function inDepartment(item: FeeItem, s: StudentLike): boolean {
+  if (!item.department) return true;
+  return departmentOf({ department: s.department ?? null, grade: s.grade }) === item.department;
+}
 
 /** 학년 표기가 "5", "5학년", "G5" 등으로 섞여 들어와도 같게 봅니다. */
 function normGrade(v: string | null | undefined): string {
@@ -25,6 +38,7 @@ function normClass(v: string | null | undefined): string {
 
 /** 이 항목이 이 아이에게 **기본으로** 붙는가(아이별 결정을 보기 전). */
 export function isDefaultFor(item: FeeItem, s: StudentLike): boolean {
+  if (!inDepartment(item, s)) return false;
   const g = normGrade(s.grade);
   const c = normClass(s.className);
   const byGrade = (item.default_grades ?? []).some((x) => normGrade(x) === g && g !== "");
@@ -54,6 +68,9 @@ export function resolveStudentItems(
   const out: ResolvedLine[] = [];
   for (const item of items) {
     if (!item.active) continue;
+    // 부서가 다른 항목은 아이별로 넣어둔 것이 있어도 붙이지 않습니다. 중고등 교재를 초등
+    // 아이에게 실수로 체크해둔 것이 그대로 청구되면 안 됩니다.
+    if (!inDepartment(item, s)) continue;
     const o = byItem.get(item.id);
     const included = o ? o.mode === "include" : isDefaultFor(item, s);
     if (!included) continue;

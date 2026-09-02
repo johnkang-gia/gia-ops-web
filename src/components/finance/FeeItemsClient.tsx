@@ -24,7 +24,10 @@ type Props = {
   loadError: string | null;
 };
 
+type ItemDept = "초등부" | "중고등부" | "공통";
+
 const EMPTY = {
+  department: "초등부" as ItemDept,
   category: "교재" as string,
   name: "",
   name_ko: "",
@@ -42,12 +45,32 @@ export default function FeeItemsClient({ initialItems, initialCategories, grades
   const [busy, setBusy] = useState(false);
   const [showOff, setShowOff] = useState(false);
   const [tab, setTab] = useState<string>("전체");
+  /**
+   * 부서 탭.
+   *
+   * 초등과 중고등은 사는 교재가 아예 다릅니다. 한 목록에 섞어두면 등록할 때마다 남의 부서
+   * 항목을 지나쳐 읽어야 하고, 실수로 그 위에 덮어쓰게 됩니다. `공통` 은 교복처럼 학교 전체가
+   * 사는 것입니다.
+   */
+  const [deptTab, setDeptTab] = useState<ItemDept>("초등부");
+
+  const deptOfItem = (i: FeeItem): ItemDept => (i.department === "중고등부" ? "중고등부" : i.department === "초등부" ? "초등부" : "공통");
+  const deptCounts = useMemo(() => {
+    const m = new Map<ItemDept, number>();
+    for (const i of items) if (i.active) m.set(deptOfItem(i), (m.get(deptOfItem(i)) ?? 0) + 1);
+    return m;
+  }, [items]);
+  /** 지금 부서에서 다루는 항목. 공통은 어느 부서에서 보든 함께 나옵니다. */
+  const inDept = useMemo(
+    () => items.filter((i) => (deptTab === "공통" ? deptOfItem(i) === "공통" : deptOfItem(i) === deptTab || deptOfItem(i) === "공통")),
+    [items, deptTab],
+  );
 
   const shown = useMemo(
-    () => items.filter((i) => (showOff || i.active) && (tab === "전체" || i.category === tab)),
-    [items, showOff, tab],
+    () => inDept.filter((i) => (showOff || i.active) && (tab === "전체" || i.category === tab)),
+    [inDept, showOff, tab],
   );
-  const activeCount = items.filter((i) => i.active).length;
+  const activeCount = inDept.filter((i) => i.active).length;
 
   const [cats, setCats] = useState(initialCategories);
   const [newCat, setNewCat] = useState("");
@@ -60,8 +83,8 @@ export default function FeeItemsClient({ initialItems, initialCategories, grades
    * 마지막으로 처음 쓸 때를 위한 예시가 붙습니다.
    */
   const usedCategories = useMemo(
-    () => [...new Set(items.map((i) => i.category).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ko")),
-    [items],
+    () => [...new Set(inDept.map((i) => i.category).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ko")),
+    [inDept],
   );
   const registered = useMemo(
     () => cats.filter((c) => c.active).sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name, "ko")).map((c) => c.name),
@@ -113,7 +136,8 @@ export default function FeeItemsClient({ initialItems, initialCategories, grades
   }
 
   function reset() {
-    setForm({ ...EMPTY });
+    // 지금 보고 있는 부서로 시작합니다. 매번 고르게 두면 결국 잘못된 부서에 등록합니다.
+    setForm({ ...EMPTY, department: deptTab });
     setEditingId(null);
   }
 
@@ -130,6 +154,8 @@ export default function FeeItemsClient({ initialItems, initialCategories, grades
     setBusy(true);
     const supabase = createClient();
     const row = {
+      // `공통` 은 비워둡니다 - 비어 있으면 양쪽 모두에 쓰는 항목이라는 뜻입니다.
+      department: form.department === "공통" ? null : form.department,
       category: form.category.trim(),
       name,
       name_ko: form.name_ko.trim() || null,
@@ -156,6 +182,7 @@ export default function FeeItemsClient({ initialItems, initialCategories, grades
   function edit(i: FeeItem) {
     setEditingId(i.id);
     setForm({
+      department: deptOfItem(i),
       category: i.category,
       name: i.name,
       name_ko: i.name_ko ?? "",
@@ -186,9 +213,9 @@ export default function FeeItemsClient({ initialItems, initialCategories, grades
       <FinanceTabs />
       <div className="mb-1 flex flex-wrap items-baseline gap-2">
         <h1 className="text-lg font-bold">📚 학비외 항목</h1>
-        <span className="text-xs text-slate-400">분류는 직접 등록해서 씁니다</span>
+        <span className="text-xs text-slate-400">부서별로 따로 등록합니다 · 분류도 직접 등록해서 씁니다</span>
         <span className="ml-auto rounded-full bg-teal-50 px-2 py-0.5 text-[11px] font-bold text-teal-700">
-          쓰는 중 {activeCount}개
+          {deptTab} 쓰는 중 {activeCount}개
         </span>
       </div>
       <p className="mb-4 text-xs leading-relaxed text-slate-500">
@@ -201,6 +228,33 @@ export default function FeeItemsClient({ initialItems, initialCategories, grades
           항목을 읽지 못했습니다: {loadError}
         </p>
       )}
+
+      {/* ── 부서 ──────────────────────────────────────────────────
+          초등과 중고등은 사는 교재가 아예 다릅니다. 섞어두면 등록할 때마다 남의 부서 항목을
+          지나쳐 읽어야 하고, 실수로 그 위에 덮어쓰게 됩니다. */}
+      <div className="mb-3 flex flex-wrap items-center gap-1 border-b border-slate-200">
+        {(["초등부", "중고등부", "공통"] as ItemDept[]).map((d) => (
+          <button
+            key={d}
+            onClick={() => {
+              setDeptTab(d);
+              setTab("전체");
+              setForm((f) => ({ ...f, department: d }));
+            }}
+            className={
+              "-mb-px rounded-t-lg px-3 py-1.5 text-[13px] font-bold transition-colors " +
+              (deptTab === d
+                ? "border-b-2 border-teal-600 text-teal-700"
+                : "border-b-2 border-transparent text-slate-400 hover:bg-slate-50 hover:text-slate-700")
+            }
+            title={d === "공통" ? "교복처럼 학교 전체가 사는 것" : `${d} 항목`}
+          >
+            {d}
+            <span className="ml-1 text-[11px] font-semibold opacity-60">{deptCounts.get(d) ?? 0}</span>
+          </button>
+        ))}
+        <span className="ml-2 text-[11px] text-slate-400">공통 항목은 초등·중고등 어느 쪽에서도 함께 보입니다</span>
+      </div>
 
       {/* ── 분류 관리 ─────────────────────────────────────────────
           분류를 **먼저 만들 수 있어야** "악기"를 세워두고 그 아래 첼로·바이올린을 채우는
@@ -290,6 +344,19 @@ export default function FeeItemsClient({ initialItems, initialCategories, grades
           {/* 분류는 **자유롭게 적습니다.** 목록을 고정해두면 새로 받는 것이 생길 때마다
               개발자를 찾아야 합니다. 이미 쓴 분류와 몇 가지 예시를 아래에 붙여, 고르는 것도
               적는 것도 되게 했습니다. */}
+          {/* 부서를 폼 맨 앞에 둡니다. 고르고 나서야 나머지가 무엇을 위한 것인지 정해집니다. */}
+          <label className="text-[11px] text-slate-500">
+            부서
+            <select
+              value={form.department}
+              onChange={(e) => setForm((f) => ({ ...f, department: e.target.value as ItemDept }))}
+              className="ml-1 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+            >
+              <option value="초등부">초등부</option>
+              <option value="중고등부">중고등부</option>
+              <option value="공통">공통 (양쪽 다)</option>
+            </select>
+          </label>
           <label className="text-[11px] text-slate-500">
             분류
             <input

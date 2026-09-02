@@ -230,6 +230,20 @@ export const SCHEMA_CHECKS: SchemaCheck[] = [
     impact: "책의 '가야 할 자리'를 기록할 수 없어 도서정리 계획이 동작하지 않습니다.",
   },
   {
+    feature: "수납(입금)",
+    table: "payments",
+    columns: ["invoice_id", "paid_at", "amount", "payer_name", "source_key"],
+    migration: "20260901180000_payments.sql",
+    impact: "들어온 돈을 인보이스에 붙일 수 없어 '누가 안 냈나'에 답할 수 없습니다.",
+  },
+  {
+    feature: "항목 단가 이력",
+    table: "fee_item_price_log",
+    columns: ["item_id", "before_price", "after_price", "changed_at"],
+    migration: "20260901180000_payments.sql",
+    impact: "값이 오르면 덮어써져서 '작년엔 얼마였나'에 답할 수 없습니다.",
+  },
+  {
     feature: "학비외 항목",
     table: "fee_items",
     columns: ["category", "name", "unit_price", "default_grades", "default_classes", "active"],

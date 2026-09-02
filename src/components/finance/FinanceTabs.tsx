@@ -10,6 +10,7 @@ import { usePathname, useRouter } from "next/navigation";
 const TABS = [
   { key: "overview", label: "📊 개요", href: "/finance" },
   { key: "invoices", label: "🧾 인보이스 명단", href: "/finance/invoices" },
+  { key: "payments", label: "💳 수납", href: "/finance/payments" },
   { key: "items", label: "📚 학비외 항목", href: "/finance/items" },
   { key: "plans", label: "💵 납부 항목 · 할인", href: "/finance/plans" },
 ];
@@ -19,6 +20,7 @@ export default function FinanceTabs() {
   const router = useRouter();
   const active =
     pathname.startsWith("/finance/invoices") ? "invoices"
+    : pathname.startsWith("/finance/payments") ? "payments"
     : pathname.startsWith("/finance/items") ? "items"
     : pathname.startsWith("/finance/plans") ? "plans"
     : "overview";

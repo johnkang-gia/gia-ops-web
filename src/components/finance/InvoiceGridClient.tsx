@@ -56,6 +56,10 @@ export default function InvoiceGridClient({
   const [busy, setBusy] = useState(false);
   const [openCats, setOpenCats] = useState<Set<string>>(new Set());
   const [onlyUnissued, setOnlyUnissued] = useState(false);
+  /** 발행 전 검토 창. 누르자마자 나가면 잘못 나간 것을 되돌릴 수 없습니다. */
+  const [review, setReview] = useState<Student[] | null>(null);
+  /** 발주 목록 창. 합계 줄의 개수가 그대로 발주 수량입니다. */
+  const [orderOpen, setOrderOpen] = useState(false);
   const [dueDate, setDueDate] = useState(() => {
     const d = new Date(`${today}T12:00:00+09:00`);
     d.setDate(d.getDate() + 11);
@@ -262,14 +266,60 @@ export default function InvoiceGridClient({
     }
   }
 
-  /** 고른 줄을 한 번에 발행합니다. */
-  async function issueChecked() {
+  /**
+   * 발행 전 검토.
+   *
+   * 회계 프로그램들은 예외 없이 여기에 한 단계를 둡니다. 보내는 순간 되돌릴 수 없고, 학부모가
+   * 받은 뒤에 고치면 신뢰가 깎이기 때문입니다. **평소와 다른 금액을 짚어주는 것**이 핵심입니다.
+   */
+  function openReview() {
     const targets = rows.filter((s) => checked.has(s.id) && totalOf(s.id) > 0);
     if (targets.length === 0) {
       notify("발행할 학생을 골라주세요(금액이 0원인 학생은 제외됩니다).", "error");
       return;
     }
-    if (!confirm(`${targets.length}명에게 인보이스를 발행합니다.\n납부 기한 ${dueDate}\n\n계속할까요?`)) return;
+    setReview(targets);
+  }
+
+  /**
+   * 같은 반에서 가장 흔한 금액. 이것과 다른 아이를 "평소와 다르다"고 짚습니다.
+   *
+   * 평균이 아니라 **최빈값**을 씁니다. 한 명이 악기를 사면 평균이 통째로 끌려가서, 정작
+   * 멀쩡한 아이들이 전부 '다름'으로 표시됩니다.
+   */
+  const typicalByClass = useMemo(() => {
+    const buckets = new Map<string, Map<number, number>>();
+    for (const s of students) {
+      const key = s.className || (s.grade ? `${s.grade}학년` : "");
+      const amt = sumLines(resolveStudentItems(activeItems, s as StudentLike, overrides));
+      if (amt <= 0) continue;
+      const b = buckets.get(key) ?? new Map<number, number>();
+      b.set(amt, (b.get(amt) ?? 0) + 1);
+      buckets.set(key, b);
+    }
+    const out = new Map<string, number>();
+    for (const [key, b] of buckets) {
+      let best = 0;
+      let bestN = 0;
+      for (const [amt, n] of b) if (n > bestN) ((best = amt), (bestN = n));
+      // 두 명 이상이 같은 금액일 때만 "평소"라고 부를 수 있습니다.
+      if (bestN >= 2) out.set(key, best);
+    }
+    return out;
+  }, [students, activeItems, overrides]);
+
+  function unusual(s: Student): number | null {
+    const key = s.className || (s.grade ? `${s.grade}학년` : "");
+    const typical = typicalByClass.get(key);
+    if (typical == null) return null;
+    const amt = totalOf(s.id);
+    return amt === typical ? null : typical;
+  }
+
+  /** 고른 줄을 한 번에 발행합니다. */
+  async function issueChecked() {
+    const targets = review ?? rows.filter((s) => checked.has(s.id) && totalOf(s.id) > 0);
+    if (targets.length === 0) return;
     setBusy(true);
     const made: Invoice[] = [];
     const failed: string[] = [];
@@ -290,6 +340,7 @@ export default function InvoiceGridClient({
       if (failed.length > 0) notify(`${made.length}건 발행 · ${failed.length}건 실패: ${failed.join(", ")}`, "error");
       else notify(`${made.length}건 발행했습니다.`, "success");
       setChecked(new Set());
+      setReview(null);
     } finally {
       setBusy(false);
     }
@@ -525,7 +576,14 @@ export default function InvoiceGridClient({
           <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="ml-1 rounded-lg border border-slate-300 px-2 py-1 text-sm" />
         </label>
         <button
-          onClick={() => void issueChecked()}
+          onClick={() => setOrderOpen(true)}
+          className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+          title="합계 줄의 개수를 발주용 목록으로 뽑습니다"
+        >
+          📦 발주 목록
+        </button>
+        <button
+          onClick={openReview}
           disabled={busy || checked.size === 0}
           className="rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-40"
         >
@@ -724,6 +782,145 @@ export default function InvoiceGridClient({
           </tfoot>
         </table>
       </div>
+
+      {/* ── 발행 전 검토 ────────────────────────────────────────── */}
+      {review && (
+        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 p-4" onClick={() => !busy && setReview(null)}>
+          <div className="flex max-h-[80vh] w-full max-w-2xl flex-col rounded-xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="border-b border-slate-100 p-3">
+              <p className="text-sm font-bold text-slate-800">발행 전 확인</p>
+              <p className="mt-0.5 text-[12px] text-slate-500">
+                {review.length}명 · 합계{" "}
+                <b className="text-slate-800">{won(review.reduce((n, s) => n + totalOf(s.id), 0))}</b> · 납부 기한 {dueDate}
+              </p>
+              {(() => {
+                const odd = review.filter((s) => unusual(s) != null);
+                return odd.length > 0 ? (
+                  <p className="mt-2 rounded-lg bg-amber-50 px-2 py-1.5 text-[12px] leading-relaxed text-amber-800">
+                    ⚠️ <b>{odd.length}명</b>의 금액이 같은 반 아이들과 다릅니다. 아래에서 확인해주세요 — 맞는 경우도
+                    많지만(악기·수리), 빠뜨린 것도 이 자리에서 드러납니다.
+                  </p>
+                ) : null;
+              })()}
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-2">
+              <table className="w-full text-left text-[12px]">
+                <thead className="text-[11px] text-slate-400">
+                  <tr>
+                    <th className="px-2 py-1">학생</th>
+                    <th className="px-2 py-1">항목</th>
+                    <th className="px-2 py-1 text-right">금액</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {review.map((s) => {
+                    const typical = unusual(s);
+                    const ls = linesByStudent.get(s.id) ?? [];
+                    return (
+                      <tr key={s.id} className={"border-t border-slate-100 " + (typical != null ? "bg-amber-50/60" : "")}>
+                        <td className="px-2 py-1.5 align-top">
+                          <span className="font-semibold text-slate-800">{s.name}</span>
+                          <span className="ml-1 text-[10px] text-slate-400">{s.className}</span>
+                          {invoiceByStudent.has(s.id) && (
+                            <span className="ml-1 text-[10px] font-bold text-amber-700">이미 발행됨 — 한 장 더 나갑니다</span>
+                          )}
+                        </td>
+                        <td className="px-2 py-1.5 text-[11px] leading-relaxed text-slate-500">
+                          {ls.map((l) => `${l.item.name}${l.qty > 1 ? `×${l.qty}` : ""}`).join(" · ")}
+                        </td>
+                        <td className="px-2 py-1.5 text-right align-top">
+                          <span className="block font-bold tabular-nums text-slate-800">{won(totalOf(s.id))}</span>
+                          {typical != null && (
+                            <span className="block text-[10px] font-semibold text-amber-700">평소 {won(typical)}</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex items-center gap-2 border-t border-slate-100 p-3">
+              <button onClick={() => setReview(null)} disabled={busy} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600">
+                돌아가기
+              </button>
+              <button
+                onClick={() => void issueChecked()}
+                disabled={busy}
+                className="ml-auto rounded-lg bg-slate-800 px-4 py-2 text-sm font-bold text-white disabled:opacity-40"
+              >
+                {busy ? "발행 중…" : `${review.length}명 발행`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 발주 목록 ───────────────────────────────────────────── */}
+      {orderOpen && (
+        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 p-4" onClick={() => setOrderOpen(false)}>
+          <div className="flex max-h-[80vh] w-full max-w-lg flex-col rounded-xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="border-b border-slate-100 p-3">
+              <p className="text-sm font-bold text-slate-800">📦 발주 목록</p>
+              <p className="mt-0.5 text-[12px] text-slate-500">
+                {view.kind === "전체" ? "전체" : `${view.value}${view.kind === "학년" ? "학년" : ""}`} {rows.length}명 기준 ·
+                이미 세어둔 숫자를 꺼낸 것뿐입니다
+              </p>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-2">
+              <table className="w-full text-left text-[12px]">
+                <thead className="text-[11px] text-slate-400">
+                  <tr>
+                    <th className="px-2 py-1">분류</th>
+                    <th className="px-2 py-1">항목</th>
+                    <th className="px-2 py-1 text-right">수량</th>
+                    <th className="px-2 py-1 text-right">금액</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {usedItems
+                    .filter((i) => (colSummary.get(i.id)?.qty ?? 0) > 0)
+                    .map((i) => {
+                      const c = colSummary.get(i.id)!;
+                      return (
+                        <tr key={i.id} className="border-t border-slate-100">
+                          <td className="px-2 py-1.5 text-[11px] text-slate-500">{i.category}</td>
+                          <td className="px-2 py-1.5 font-semibold text-slate-800">{i.name}</td>
+                          <td className="px-2 py-1.5 text-right font-black tabular-nums text-slate-800">{c.qty}</td>
+                          <td className="px-2 py-1.5 text-right tabular-nums text-slate-500">{won(c.amount)}</td>
+                        </tr>
+                      );
+                    })}
+                  {usedItems.filter((i) => (colSummary.get(i.id)?.qty ?? 0) > 0).length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="px-2 py-10 text-center text-slate-400">
+                        아직 아무도 고른 항목이 없습니다.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex items-center gap-2 border-t border-slate-100 p-3">
+              <button
+                onClick={() => {
+                  const lines = usedItems
+                    .filter((i) => (colSummary.get(i.id)?.qty ?? 0) > 0)
+                    .map((i) => `${i.name} — ${colSummary.get(i.id)!.qty}`)
+                    .join("\n");
+                  void navigator.clipboard.writeText(lines).then(() => notify("발주 목록을 복사했습니다.", "success"));
+                }}
+                className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600"
+              >
+                목록 복사
+              </button>
+              <button onClick={() => setOrderOpen(false)} className="ml-auto rounded-lg bg-slate-800 px-4 py-2 text-sm font-bold text-white">
+                닫기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
         ✓ 는 그 아이가 그 항목을 산다는 뜻입니다. <span className="text-amber-600">●</span> 는 기본 세트가 아니라 사람이 따로

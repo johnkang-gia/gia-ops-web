@@ -114,6 +114,10 @@ export default function ChecklistPrintSheet({
     [routes, byRoute]
   );
 
+  // 종이는 화면 바깥(body 바로 아래)에 그립니다. 붙기 전에는 높이를 잴 수 없습니다.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   // 실제 높이를 재서 한 장에 맞춥니다.
   //
   // 화면 밖에 인쇄와 똑같은 폭으로 그려두었으므로, 여기서 잰 높이가 곧 종이에서의 높이입니다.
@@ -151,7 +155,10 @@ export default function ChecklistPrintSheet({
       ro.disconnect();
       window.removeEventListener("beforeprint", onBefore);
     };
-  }, [sortedRoutes, byRoute]);
+    // `mounted` 가 빠져 있으면 **측정이 영영 안 돕니다.** 포털로 옮긴 뒤로 첫 렌더에는
+    // 종이가 아직 없어서 여기서 그냥 돌아갔고, 붙은 뒤에는 이 효과가 다시 돌 이유가 없어
+    // 축소가 1.0인 채로 남았습니다 - 그래서 한 장에 안 맞았습니다.
+  }, [sortedRoutes, byRoute, mounted]);
 
   // 인쇄용 종이를 **body 바로 아래로** 옮깁니다.
   //
@@ -160,8 +167,6 @@ export default function ChecklistPrintSheet({
   // 늘어났습니다 - 담당자가 본 빈 2·3장이 그것입니다.
   //
   // body 바로 아래로 빼면, 인쇄할 때 나머지를 통째로 없앨 수 있습니다(자리까지).
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
 
   const sheet = (
     <>
@@ -187,7 +192,13 @@ export default function ChecklistPrintSheet({
           /* 종이 말고는 **자리까지** 없앱니다. 안 보이게만 하면 그 빈 자리가 그대로 장수가
              됩니다(visibility:hidden 은 자리를 남깁니다). */
           body > *:not(.gia-print-wrap) { display: none !important; }
-          .gia-print-wrap { position: static !important; left: auto !important; top: auto !important; }
+          /* 겉상자도 **한 장 높이로 못박습니다.** 재기가 조금 틀려도 종이가 두 장이 되지
+             않게 하는 마지막 빗장입니다. */
+          .gia-print-wrap {
+            position: static !important; left: auto !important; top: auto !important;
+            display: block !important; height: ${PAGE_H}px !important; max-height: ${PAGE_H}px !important;
+            overflow: hidden !important; page-break-after: avoid !important; break-after: avoid !important;
+          }
           .gia-print-sheet, .gia-print-sheet table, .gia-print-sheet tr {
             break-inside: avoid; page-break-inside: avoid;
           }

@@ -8,6 +8,7 @@ import { departmentOf, gradeSortKey, type Department } from "@/lib/department";
 import { prettyPhone } from "@/lib/alltalkpay";
 import AlltalkpayExport from "./AlltalkpayExport";
 import ReconcileModal from "./ReconcileModal";
+import InvoicePreviewModal from "./InvoicePreviewModal";
 import { gradeLabel } from "@/lib/feeItems";
 import FinanceTabs from "./FinanceTabs";
 import type { FeeItem, Invoice, StudentFeeItem } from "@/lib/types";
@@ -85,6 +86,8 @@ export default function InvoiceGridClient({
   const [reconcileOpen, setReconcileOpen] = useState(false);
   /** 취소하려는 청구서. 이유를 적게 하려고 창을 한 번 거칩니다. */
   const [cancelling, setCancelling] = useState<{ invoice: Invoice; studentName: string } | null>(null);
+  /** 미리보기 창. 새 탭으로 열면 확인할 때마다 탭을 열고 닫아야 합니다. */
+  const [preview, setPreview] = useState<{ id: string; label: string } | null>(null);
   const [cancelReason, setCancelReason] = useState("");
   /** 방금 발행한 것. 발행 직후 바로 청구로 이어가라고 띄웁니다. */
   const [justIssued, setJustIssued] = useState<Invoice[]>([]);
@@ -993,14 +996,13 @@ export default function InvoiceGridClient({
                   <td className="border-b border-slate-100 px-2 py-1">
                     {inv ? (
                       <span className="flex items-center gap-1">
-                      <a
-                        href={`/finance/invoices/${inv.id}/print`}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                      <button
+                        onClick={() => setPreview({ id: inv.id, label: `${s.name} · ${inv.invoice_no}` })}
                         className="text-[11px] font-bold text-emerald-700 underline"
+                        title="여기서 바로 보기"
                       >
                         {inv.invoice_no}
-                      </a>
+                      </button>
                       {/* 발행과 발송은 다릅니다. 종이를 만든 것과 학부모에게 청구가 간 것을
                           같은 표시로 두면, 발행만 해놓고 안 보낸 것을 아무도 모릅니다. */}
                       {inv.exported_at ? (
@@ -1147,6 +1149,8 @@ export default function InvoiceGridClient({
         </div>
       )}
 
+      {preview && <InvoicePreviewModal invoiceId={preview.id} label={preview.label} onClose={() => setPreview(null)} />}
+
       {cancelling && (
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 p-4" onClick={() => setCancelling(null)}>
           <div className="w-full max-w-md rounded-xl bg-white p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
@@ -1223,14 +1227,12 @@ export default function InvoiceGridClient({
                   {[detail.grade ? `${detail.grade}학년` : null, detail.className].filter(Boolean).join(" ")}
                 </span>
                 {dInv && (
-                  <a
-                    href={`/finance/invoices/${dInv.id}/print`}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <button
+                    onClick={() => setPreview({ id: dInv.id, label: `${detail.name} · ${dInv.invoice_no}` })}
                     className="text-[11px] font-bold text-emerald-700 underline"
                   >
                     {dInv.invoice_no} 보기
-                  </a>
+                  </button>
                 )}
                 {dInv && (
                   <button

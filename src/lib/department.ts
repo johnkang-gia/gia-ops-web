@@ -39,12 +39,22 @@ export function guessDepartmentFromGrade(grade: string | null | undefined): Depa
   return null;
 }
 
-// 실제로 쓰는 판정 함수 - department 칸이 우선이고, 없을 때만 학년으로 추측합니다.
+/**
+ * 실제로 쓰는 판정 함수. **모든 화면이 이 하나만 씁니다.**
+ *
+ * 학년으로 판정할 수 있으면 **학년이 먼저**입니다. 부서 칸은 예전 명부에서 들어온 값이라,
+ * 학교가 기준을 바꾸면(6학년을 중고등부로) 그 값들이 어긋난 채로 남습니다. 그러면 화면마다
+ * 다른 답이 나오고, 어디가 맞는지 아무도 모르게 됩니다.
+ *
+ * 부서 칸은 **학년으로 판정이 안 될 때만** 씁니다 - 학년 표기가 비었거나 읽을 수 없는 줄.
+ */
 export function departmentOf(row: { department?: string | null; grade?: string | null }): Department | null {
+  const byGrade = guessDepartmentFromGrade(row.grade);
+  if (byGrade) return byGrade;
   if (row.department && (ALL_DEPARTMENTS as readonly string[]).includes(row.department)) {
     return row.department as Department;
   }
-  return guessDepartmentFromGrade(row.grade);
+  return null;
 }
 
 // 학년 표기를 정렬 가능한 숫자로 바꿉니다(대시보드에서 학년별로 묶어 보여줄 때 씀).

@@ -7,8 +7,15 @@ import type { Invoice, InvoiceLine } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
-export default async function InvoicePrintPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function InvoicePrintPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ embed?: string }>;
+}) {
   const { id } = await params;
+  const { embed } = await searchParams;
   const me = await getCurrentAppUser();
   if (!me) redirect("/login");
   if (!hasFinanceAccess(me)) redirect("/home");
@@ -22,5 +29,5 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
   const invoice = invRes.data as Invoice | null;
   if (!invoice) notFound();
 
-  return <InvoiceSheet invoice={invoice} lines={(lineRes.data as InvoiceLine[] | null) ?? []} />;
+  return <InvoiceSheet invoice={invoice} lines={(lineRes.data as InvoiceLine[] | null) ?? []} embed={embed === "1"} />;
 }

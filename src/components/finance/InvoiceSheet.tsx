@@ -16,7 +16,50 @@ const PRINT_CSS = `
   @media print {
     .no-print { display: none !important; }
     html, body { background: #fff !important; }
-    .inv-wrap { box-shadow: none !important; border: 0 !important; margin: 0 !important; padding: 0 !important; width: auto !important; }
+
+    /*
+      색을 그대로 인쇄합니다.
+
+      브라우저는 잉크를 아끼려고 **배경색을 기본으로 지웁니다.** 그래서 남색 머리띠가
+      하얗게 나오고, 그 위의 흰 글자는 아예 사라집니다. 학부모에게 가는 종이라 화면에서
+      본 그대로 나와야 합니다.
+    */
+    .inv, .inv * {
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+
+    /*
+      여러 장으로 넘어갈 때.
+
+      항목이 많으면 두 장이 됩니다. 그때 줄이 반으로 잘리거나, 표 머리줄이 첫 장에만 있고
+      둘째 장은 무슨 칸인지 모르게 나오면 안 됩니다.
+    */
+    .inv table { break-inside: auto; page-break-inside: auto; }
+    .inv tr { break-inside: avoid; page-break-inside: avoid; }
+    .inv thead { display: table-header-group; }
+    .inv tfoot { display: table-footer-group; }
+    /* 결제 안내·꼬리말은 통째로 한 장에 오게 합니다. 반으로 갈리면 읽기 나쁩니다. */
+    .inv-keep { break-inside: avoid; page-break-inside: avoid; }
+
+    /*
+      바깥 틀을 풀어줍니다.
+
+      이 화면은 사이드바가 있는 큰 틀 안에 들어 있어서, 그대로 두면 한 화면 높이에서 잘려
+      **둘째 장이 통째로 사라집니다.** 높이 제한과 스크롤을 전부 풀어야 넘어갑니다.
+    */
+    .inv-wrap {
+      box-shadow: none !important;
+      border: 0 !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      width: auto !important;
+      max-width: none !important;
+      min-height: 0 !important;
+      height: auto !important;
+      overflow: visible !important;
+    }
+    .inv-page { min-height: 0 !important; height: auto !important; overflow: visible !important; }
   }
   .inv { color: #111827; font-family: Arial, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; }
   .inv table { border-collapse: collapse; width: 100%; }
@@ -30,17 +73,26 @@ function dot(d: string): string {
   return (d ?? "").replaceAll("-", ".");
 }
 
-export default function InvoiceSheet({ invoice, lines }: { invoice: Invoice; lines: InvoiceLine[] }) {
+export default function InvoiceSheet({
+  invoice,
+  lines,
+  embed = false,
+}: {
+  invoice: Invoice;
+  lines: InvoiceLine[];
+  /** 미리보기 창 안에 들어간 경우. 바깥 창에 이미 인쇄 단추가 있어 머리줄을 숨깁니다. */
+  embed?: boolean;
+}) {
   // 합계는 굳어진 줄에서 다시 더해 보여줍니다. 머리줄의 total_amount와 어긋나면 그 사실이
   // 화면에 보여야 합니다 - 조용히 한쪽만 믿으면 어긋난 채로 나갑니다.
   const sum = lines.reduce((n, l) => n + Number(l.amount), 0);
   const mismatch = Math.round(sum) !== Math.round(Number(invoice.total_amount));
 
   return (
-    <div className="min-h-screen bg-slate-100 p-4 print:bg-white print:p-0">
+    <div className={"inv-page p-4 print:min-h-0 print:bg-white print:p-0 " + (embed ? "bg-white p-2" : "min-h-screen bg-slate-100")}>
       <style>{PRINT_CSS}</style>
 
-      <div className="no-print mx-auto mb-3 flex max-w-[210mm] flex-wrap items-center gap-2">
+      <div className={"no-print mx-auto mb-3 flex max-w-[210mm] flex-wrap items-center gap-2 " + (embed ? "hidden" : "")}>
         <span className="text-sm font-bold text-slate-700">{invoice.invoice_no}</span>
         <span className="text-xs text-slate-500">{invoice.student_name}</span>
         {invoice.status === "취소" && (
@@ -194,7 +246,7 @@ export default function InvoiceSheet({ invoice, lines }: { invoice: Invoice; lin
             </tbody>
           </table>
 
-          <div style={{ marginTop: 26, borderTop: "1px solid #d1d5db", paddingTop: 8, textAlign: "center", fontSize: 9, fontStyle: "italic", color: "#6b7280" }}>
+          <div className="inv-keep" style={{ marginTop: 26, borderTop: "1px solid #d1d5db", paddingTop: 8, textAlign: "center", fontSize: 9, fontStyle: "italic", color: "#6b7280" }}>
             GIA Micro Lab · Gangnam-gu, Seoul · Thank you for your prompt payment.
             <span style={{ marginLeft: 8, fontStyle: "normal" }}>No. {invoice.invoice_no}</span>
           </div>

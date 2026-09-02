@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { departmentOf, gradeSortKey } from "@/lib/department";
 import type { WrStudent } from "@/lib/types";
 
 // 통합 학생 조회(요청 ⑤): 재학/졸업/퇴학 탭으로 나누고, 상단에 검색과 학년별 분포를 두어
@@ -24,21 +25,10 @@ const TAB_COLOR: Record<Bucket, string> = { active: "#7c3aed", graduated: "#0ea5
 // 부서 탭(담당자: "이제 중고등부 명단도 넣어줬으니까 초등부·중고등부 탭을 나누고").
 type Dept = "초등부" | "중고등부";
 
-// 학년 숫자만 뽑습니다("2", "2학년", "8th Grade" → 2, 8). 못 읽으면 999(맨 뒤).
-function gradeNum(grade: string | null | undefined): number {
-  const m = String(grade ?? "").match(/\d{1,2}/);
-  return m ? Number(m[0]) : 999;
-}
-
-// 명부의 department 칸을 먼저 믿고, 비어 있으면 학년 숫자로 정합니다.
-// (예전 줄들은 department가 비어 있을 수 있어서, 그 아이들이 어느 탭에도 안 뜨면 안 됩니다.)
-function deptOf(s: WrStudent): Dept {
-  const d = (s.department as string | null) ?? "";
-  if (d.includes("중") || d.includes("고")) return "중고등부";
-  if (d.includes("초")) return "초등부";
-  // 6학년부터 중고등부입니다(학교 운영 기준).
-  return gradeNum(s.grade) >= 6 ? "중고등부" : "초등부";
-}
+// 학년·부서 판정은 **여기서 다시 만들지 않습니다.** 화면마다 따로 만들면 학교가 기준을
+// 바꿀 때(6학년을 중고등부로) 한 곳만 고치고 나머지를 잊습니다. 실제로 그렇게 어긋났습니다.
+const gradeNum = (grade: string | null | undefined) => gradeSortKey(grade);
+const deptOf = (s: WrStudent): Dept => (departmentOf({ department: s.department as string | null, grade: s.grade }) === "중고등부" ? "중고등부" : "초등부");
 
 export default function StudentSearchClient({
   students,

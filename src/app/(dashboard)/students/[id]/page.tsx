@@ -96,6 +96,27 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
   ]);
   const fieldDefs = (fieldDefsRes.data as WrStudentFieldDef[] | null) ?? [];
 
+  // ── 형제자매 ──────────────────────────────────────────────────────────────
+  //
+  // 형제자매는 실무에서 계속 걸립니다. 한 아이 차에 다른 아이를 태워달라는 연락, 형제 방에서
+  // 한 아이만 결석인 글, 같은 번호로 두 장 나가는 청구서. 프로필에서 바로 보여야 전화를
+  // 받은 사람이 되묻지 않습니다.
+  //
+  // `sibling_group_id` 는 나중에 붙인 칸이라 아직 없는 DB 도 있습니다. 없다고 프로필 전체가
+  // 안 뜨면 안 되므로, 없으면 조용히 형제자매만 안 보입니다.
+  const sibRes = await supabase
+    .from("wr_students")
+    .select("id, name, grade, class_name")
+    .eq("is_demo", false)
+    .eq("sibling_group_id", (student as { sibling_group_id?: string | null }).sibling_group_id ?? "00000000-0000-0000-0000-000000000000")
+    .neq("id", student.id);
+  const siblings = (student as { sibling_group_id?: string | null }).sibling_group_id
+    ? ((sibRes.data ?? []) as { id: string; name: string; grade: string | null; class_name: string | null }[])
+    : [];
+  if (sibRes.error && !/sibling_group_id/.test(sibRes.error.message)) {
+    console.error("[학생] 형제자매를 읽지 못했습니다:", sibRes.error.message);
+  }
+
   // 요일별 하원수단(학원 버스·보호자 픽업·도보 등). 셔틀과 별개의 표입니다 - 셔틀을 안 타는
   // 날은 셔틀 배정 자체가 없어서 적을 자리가 없었습니다.
   const { data: dpData } = await supabase
@@ -255,6 +276,27 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
           관찰기록 {reports.length}건
         </span>
       </div>
+
+      {siblings.length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-1.5 rounded-xl border border-violet-200 bg-violet-50/70 px-3 py-2">
+          <span className="text-[12px] font-black text-violet-900">👨‍👩‍👧‍👦 형제자매</span>
+          {siblings.map((sb) => (
+            <a
+              key={sb.id}
+              href={`/students/${sb.id}`}
+              className="rounded-full bg-white px-2.5 py-1 text-[12px] font-bold text-violet-800 ring-1 ring-violet-200 hover:bg-violet-100"
+            >
+              {sb.name}
+              <span className="ml-1 text-[10px] font-semibold text-violet-500">
+                {[sb.grade ? `${sb.grade}학년` : null, sb.class_name].filter(Boolean).join(" ")}
+              </span>
+            </a>
+          ))}
+          <span className="text-[11px] text-violet-700">
+            보호자 연락처가 같습니다 — 한 아이 연락이 다른 아이 이야기일 수 있습니다.
+          </span>
+        </div>
+      )}
 
       {/* 하원수단 - 요일마다 다른 차를 타는 아이가 있습니다(백서아: 월 셔틀, 화·목 메타프랩,
           수·금 블루웨일). 셔틀 배정은 셔틀을 타는 날만 적을 수 있어서, 안 타는 날 이 아이가

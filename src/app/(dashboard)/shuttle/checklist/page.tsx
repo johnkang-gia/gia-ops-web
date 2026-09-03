@@ -142,12 +142,25 @@ export default async function ShuttleChecklistPage({
     if (x.length < 2 || y.length < 2) return false;
     return x === y || x.includes(y) || y.includes(x);
   };
-  const { data: preqRows } = await supabase
-    .from("pickup_requests")
-    .select("*")
-    .eq("is_demo", false)
-    .neq("status", "무시")
-    .eq("service_date", today);
+  // ── 여기서부터는 서로 기다릴 이유가 없습니다 ──────────────────────────────
+  //
+  // 예전에는 여덟 개를 **한 줄씩 차례로** 기다렸습니다. 하나가 100ms 면 여덟 개는 800ms 이고,
+  // 화면이 뜨기 전에 그만큼 사람이 기다립니다. 하원 체크표는 하루에 가장 많이 여는 화면이라
+  // 이 기다림이 그대로 쌓입니다(실측 1,973ms — 다른 화면의 두 배였습니다).
+  //
+  // 서로의 결과를 쓰지 않는 조회이므로 한꺼번에 보냅니다. 가장 느린 하나만큼만 걸립니다.
+  const [preqRes, baseRes, noteRes, planRes, mirrorRes, rosterRes, logRes, rideRes] = await Promise.all([
+    supabase.from("pickup_requests").select("*").eq("is_demo", false).neq("status", "무시").eq("service_date", today),
+    supabase.from("pickup_requests").select("source_url").not("source_url", "is", null).order("received_at", { ascending: false }).limit(1).maybeSingle(),
+    supabase.from("shuttle_persistent_notes").select("id, term, student_name, student_id, route_no, content, effect_kind, effect_days, effect_from, effect_to, active").eq("term", term).eq("active", true).order("created_at", { ascending: false }),
+    supabase.from("student_dismissal_plans").select("student_id, kind, label, depart_time").eq("weekday", todayWeekday).neq("kind", "셔틀"),
+    supabase.from("google_chat_mirror_messages").select("*").order("created_at_google", { ascending: false }).limit(200),
+    supabase.from("wr_students_basic").select("id, name, grade, name_en, birth_date, class_name").eq("status", "active"),
+    supabase.from("shuttle_checklist_log").select("id, service_date, assignment_id, student_name, action, before_value, after_value, actor_email, actor_name, created_at").eq("service_date", today).order("created_at", { ascending: false }).limit(100),
+    supabase.from("shuttle_ride_alongs").select("id, student_id, student_surface, host_student_id, host_surface, route_id, status, note, raw_text").eq("service_date", today).neq("status", "취소"),
+  ]);
+
+  const { data: preqRows } = preqRes;
   // 이름만 뽑지 않고 **어느 연락에서 왔는지**를 함께 들고 갑니다.
   //
   // 담당자: "픽업 처리된 애들 어떤 토들이나 구글챗으로 분류되었는지 (...) 자동으로
@@ -190,25 +203,14 @@ export default async function ShuttleChecklistPage({
   // 토들 주소는 "학교 주소 + /messaging/ + 방 id" 형태입니다. 주소 칸이 비어 있는 줄이
   // 많아서(수집기가 못 읽은 경우), 주소가 있는 가장 최근 기록 하나에서 학교 주소만 뽑아
   // 나머지에 그대로 씁니다 - 학부모 문의사항 화면과 같은 방식입니다.
-  const { data: baseRow } = await supabase
-    .from("pickup_requests")
-    .select("source_url")
-    .not("source_url", "is", null)
-    .order("received_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const { data: baseRow } = baseRes;
   const toddleBase =
     ((baseRow?.source_url as string | null) ?? "").match(/^(https:\/\/[^/]+\/platform\/[^/]+)/)?.[1] ?? null;
 
   // 지속 특이사항(요청: 왼쪽 창구에 적으면 오른쪽에 요약으로 계속 뜨고, 차량 셔틀도 자동
   // 수정되며, 삭제하면 원래대로 복귀). 효과는 클라이언트에서 items에 덧씌우므로, 여기서는
   // 활성 행만 읽어 넘깁니다.
-  const { data: noteRows } = await supabase
-    .from("shuttle_persistent_notes")
-    .select("id, term, student_name, student_id, route_no, content, effect_kind, effect_days, effect_from, effect_to, active")
-    .eq("term", term)
-    .eq("active", true)
-    .order("created_at", { ascending: false });
+  const { data: noteRows } = noteRes;
   const persistentNotes: PersistentNote[] = (noteRows ?? []).map((n) => ({
     id: n.id as string,
     studentName: (n.student_name as string) ?? "",
@@ -229,11 +231,7 @@ export default async function ShuttleChecklistPage({
   //
   // 셔틀 배정을 지우지 않는 이유: 요일마다 다르기 때문입니다. 월요일에는 같은 아이가 같은
   // 차를 탑니다. 배정은 그대로 두고 **그날 하루만** 안 타는 것으로 표시합니다.
-  const { data: planRows, error: planErr } = await supabase
-    .from("student_dismissal_plans")
-    .select("student_id, kind, label, depart_time")
-    .eq("weekday", todayWeekday)
-    .neq("kind", "셔틀");
+  const { data: planRows, error: planErr } = planRes;
   if (planErr && planErr.code !== "PGRST205") {
     // 표가 아직 없는 경우(마이그레이션 전)는 정상입니다. 그 밖의 실패는 소리를 냅니다 -
     // 조용히 넘기면 "적어뒀는데 반영이 안 된다"가 됩니다.
@@ -365,12 +363,8 @@ export default async function ShuttleChecklistPage({
   // 픽업·결석 학생을 보여줍니다(요청: "업무메뉴에있는 결석과 픽업아이들이 목록으로 떴으면
   // 좋겠어... 업무쪽으로 가지 않아도 알수 있도록"). 셔틀은 초등부 한정 기능이라 부서는
   // 항상 초등부로 고정합니다.
-  const mirrorRes = await supabase
-    .from("google_chat_mirror_messages")
-    .select("*")
-    .order("created_at_google", { ascending: false })
-    .limit(200);
-  const { data: rosterData } = await supabase.from("wr_students_basic").select("id, name, grade, name_en, birth_date, class_name").eq("status", "active");
+
+  const { data: rosterData } = rosterRes;
   const roster = ((rosterData as { id: string; name: string; grade: string | null; name_en: string | null; birth_date: string | null; class_name: string | null }[] | null) ?? []).map((s) => ({
     // 동승 확인창에서 아이를 고를 때 id 가 필요합니다.
     id: s.id,
@@ -384,12 +378,7 @@ export default async function ShuttleChecklistPage({
 
   // ── 오늘 이 표에서 있었던 일 ────────────────────────────────────────────
   // 표가 바뀌어 있을 때 "누가 언제 무엇을" 물어볼 곳입니다.
-  const { data: logRows, error: logErr } = await supabase
-    .from("shuttle_checklist_log")
-    .select("id, service_date, assignment_id, student_name, action, before_value, after_value, actor_email, actor_name, created_at")
-    .eq("service_date", today)
-    .order("created_at", { ascending: false })
-    .limit(100);
+  const { data: logRows, error: logErr } = logRes;
   if (logErr && logErr.code !== "PGRST205") {
     console.error("[checklist] 활동 기록 조회 실패:", logErr.message);
   }
@@ -398,11 +387,7 @@ export default async function ShuttleChecklistPage({
   // ── 오늘만 같이 타는 아이 ─────────────────────────────────────────────────
   // "서이 셔틀에 하임이두 같이 보내주세요" 에서 자동으로 읽어 넣은 줄입니다. 정식 배정이
   // 아니라 오늘 하루짜리라, 명단 표가 아니라 그 위에 따로 세웁니다.
-  const rideRes = await supabase
-    .from("shuttle_ride_alongs")
-    .select("id, student_id, student_surface, host_student_id, host_surface, route_id, status, note, raw_text")
-    .eq("service_date", today)
-    .neq("status", "취소");
+
   if (rideRes.error) {
     console.error("[checklist] 오늘 동승을 읽지 못했습니다:", rideRes.error.message);
   }

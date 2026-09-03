@@ -1,16 +1,17 @@
 {
   "name": "gia-ops-web",
-  "version": "0.404.1",
+  "version": "0.405.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "check:changelog": "node scripts/check-changelog.mjs",
-    "build": "node scripts/check-changelog.mjs && node scripts/check-demo-isolation.mjs && node scripts/check-department.mjs && node scripts/check-tabbar.mjs && node scripts/check-truncate.mjs && next build",
+    "build": "node scripts/check-changelog.mjs && node scripts/check-demo-isolation.mjs && node scripts/check-department.mjs && node scripts/check-tabbar.mjs && node scripts/check-truncate.mjs && node scripts/check-studentname.mjs && next build",
     "start": "next start",
     "check:demo": "node scripts/check-demo-isolation.mjs",
     "check:dept": "node scripts/check-department.mjs",
     "check:tabbar": "node scripts/check-tabbar.mjs",
-    "check:truncate": "node scripts/check-truncate.mjs"
+    "check:truncate": "node scripts/check-truncate.mjs",
+    "check:studentname": "node scripts/check-studentname.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

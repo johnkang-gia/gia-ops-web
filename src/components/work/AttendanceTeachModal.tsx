@@ -160,7 +160,13 @@ export default function AttendanceTeachModal({
                   className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm transition hover:bg-blue-50 disabled:opacity-40"
                 >
                   <b className="text-slate-700">{s.name}</b>
-                  {s.grade && <span className="text-[11px] text-slate-400">{s.grade}학년</span>}
+                  {/* 학년만으로는 동명이인을 못 가립니다 - 김재이가 셋인데 둘이 2학년입니다.
+                      사람이 실제로 부르는 단위는 반이므로 반을 함께 적습니다. */}
+                  {(s.grade || s.className) && (
+                    <span className="text-[11px] text-slate-400">
+                      {[s.grade ? `${s.grade}학년` : null, s.className].filter(Boolean).join(" ")}
+                    </span>
+                  )}
                   {s.nameEn && <span className="text-[11px] text-slate-400">{s.nameEn}</span>}
                 </button>
               ))

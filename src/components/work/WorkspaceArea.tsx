@@ -37,7 +37,10 @@ const DEFAULT_LAYOUT = { leftWidth: 26, rightWidth: 27, leftOpen: true, rightOpe
 type Layout = typeof DEFAULT_LAYOUT;
 
 // 한 칸이 이보다 좁아지면 안에 든 표·채팅이 읽을 수 없게 되므로 드래그를 여기서 멈춥니다.
-const MIN_SIDE = 16;
+//
+// 넓은 모니터에서는 %가 곧 큰 픽셀입니다 - 26%가 2,300px 이 되어 인박스 하나가 화면 4분의
+// 1을 차지했습니다. 그래서 아래 한계를 12%까지 내렸습니다.
+const MIN_SIDE = 12;
 const MAX_SIDE = 42;
 
 function loadSavedLayout(): Layout {
@@ -55,6 +58,35 @@ function loadSavedLayout(): Layout {
   } catch {
     return DEFAULT_LAYOUT;
   }
+}
+
+/**
+ * 칸 사이의 폭 조절 손잡이.
+ *
+ * 예전에는 4px 짜리 선에 5% 검정 배경이라 **있는 줄도 몰랐습니다.** 넓은 모니터에서는
+ * 더더욱 안 보입니다. 폭을 줄이려 해도 잡을 곳을 못 찾으니 못 줄입니다.
+ *
+ * 그래서 잡는 자리를 넓히고(10px), 가운데에 손잡이 점을 찍고, 마우스를 올리면 파랗게
+ * 굵어집니다. **두 번 누르면 원래 폭으로 돌아갑니다** - 너무 좁게 만들어 놓고 되돌리지
+ * 못하는 일이 없도록.
+ */
+function ResizeHandle({ onStart, onReset }: { onStart: (e: React.MouseEvent) => void; onReset: () => void }) {
+  return (
+    <div
+      onMouseDown={onStart}
+      onDoubleClick={onReset}
+      role="separator"
+      aria-orientation="vertical"
+      title="끌어서 칸 넓이를 바꿉니다 · 두 번 누르면 원래대로"
+      className="group flex w-2.5 shrink-0 cursor-col-resize items-center justify-center bg-slate-200/80 transition-colors hover:bg-blue-400 active:bg-blue-500"
+    >
+      <span className="flex flex-col gap-[3px]">
+        {[0, 1, 2].map((i) => (
+          <span key={i} className="block h-[3px] w-[3px] rounded-full bg-slate-400 group-hover:bg-white" />
+        ))}
+      </span>
+    </div>
+  );
 }
 
 // 세 칸이 모두 똑같이 생긴 머리글을 씁니다 - 어디를 보고 있는지가 같은 자리에서 같은 크기로
@@ -368,9 +400,9 @@ export default function WorkspaceArea({
           >
             {inbox}
           </Zone>
-          <div
-            onMouseDown={startResize("left")}
-            className="w-1 shrink-0 cursor-col-resize bg-black/5 transition hover:bg-blue-400"
+          <ResizeHandle
+            onStart={startResize("left")}
+            onReset={() => setLayout((p) => ({ ...p, leftWidth: DEFAULT_LAYOUT.leftWidth }))}
           />
         </>
       ) : (
@@ -387,9 +419,9 @@ export default function WorkspaceArea({
           충분합니다. 세로 스택(compact)이라 좁아도 카드가 잘리지 않고, 안 볼 때는 접습니다. */}
       {layout.rightOpen ? (
         <>
-          <div
-            onMouseDown={startResize("right")}
-            className="w-1 shrink-0 cursor-col-resize bg-black/5 transition hover:bg-blue-400"
+          <ResizeHandle
+            onStart={startResize("right")}
+            onReset={() => setLayout((p) => ({ ...p, rightWidth: DEFAULT_LAYOUT.rightWidth }))}
           />
           <Zone
             icon="🔀"

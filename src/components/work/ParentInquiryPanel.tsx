@@ -166,6 +166,17 @@ export function isDone(r: { answered_at: string | null; answered_via?: string | 
 const ROW_HEIGHT = 22;
 const VISIBLE_ROWS = 3;
 
+/**
+ * 한 줄 미리보기용으로 글을 줄입니다.
+ *
+ * 줄바꿈을 공백으로 바꾸고 200자에서 끊습니다. 어차피 한 줄만 보이는 자리인데 원문을 통째로
+ * 넘기면, 브라우저는 그 긴 한 줄을 담을 폭을 먼저 확보하려 듭니다.
+ */
+function preview(text: string): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length > 200 ? flat.slice(0, 200) + "…" : flat;
+}
+
 export default function ParentInquiryPanel({
   currentUserEmail,
   /**
@@ -497,7 +508,9 @@ export default function ParentInquiryPanel({
               : "처리 완료로 표시(기록에는 남습니다)"
         }
       />
-      <button type="button" onClick={() => setDetail(r)} className="flex min-w-0 flex-1 items-center gap-1.5 truncate text-left">
+      {/* truncate 를 **flex 상자에는 걸지 않습니다.** flex 상자에 걸면 자르는 대신
+          `white-space: nowrap` 만 안쪽으로 퍼져서, 긴 글 한 건이 줄 전체의 최소 너비가 됩니다. */}
+      <button type="button" onClick={() => setDetail(r)} className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden text-left">
       {r.urgency === "높음" && !isDone(r) && <span className="shrink-0 text-red-500">●</span>}
       <span className={"shrink-0 font-semibold text-slate-700 " + (full ? "text-sm" : "")}>{studentOf(r)}</span>
       {/* 요청: "답글달렸다는 표시로 이름 뒤에 초록색 체크표시" */}
@@ -523,7 +536,16 @@ export default function ParentInquiryPanel({
           {r.inquiry_type}
         </span>
       )}
-      <span className="min-w-0 flex-1 truncate text-slate-500">{r.summary ?? r.raw_text ?? ""}</span>
+      {/* 한 줄 미리보기.
+          `truncate`(nowrap) 를 쓰면 **자르기 전에 먼저 한 줄로 늘어납니다.** 1,500자짜리
+          문의가 하나 들어오자 그 한 줄의 최소 너비가 9,000px 이 되어, 인박스는 물론 화면
+          전체가 그만큼 옆으로 늘어났습니다(출결내역 탭으로 옮기면 되돌아왔습니다 - 긴 글이
+          그 탭에만 있었기 때문입니다).
+          `line-clamp-1` 은 줄바꿈을 허용한 채 첫 줄만 보여주므로, 아무리 긴 글이 와도
+          최소 너비가 낱말 하나를 넘지 않습니다. 글자 수도 함께 잘라 둡니다. */}
+      <span className="min-w-0 flex-1 overflow-hidden text-slate-500 [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:1]">
+        {preview(r.summary ?? r.raw_text ?? "")}
+      </span>
       {/* 같은 일이 토들·구글챗 양쪽으로 들어온 경우. 한 줄로 묶었다는 것을 보여줍니다 -
           "구글챗에도 올렸는데 왜 여기 없지?" 하고 찾게 되는 것을 막습니다. */}
       {r.merged_sources && r.merged_sources.length > 0 && (

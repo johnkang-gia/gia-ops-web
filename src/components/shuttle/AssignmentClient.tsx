@@ -96,7 +96,7 @@ function StudentCell({
       <button
         type="button"
         onClick={() => setEditing(true)}
-        className="flex w-36 shrink-0 items-center gap-1 truncate text-left"
+        className="flex w-36 shrink-0 items-center gap-1 overflow-hidden text-left"
         title={
           (raw !== d.name ? `명단 표기: ${raw}` : d.name) +
           (where ? ` · ${where}` : "") +
@@ -125,7 +125,7 @@ function UnlinkedCell({
       <button
         type="button"
         onClick={onEdit}
-        className="flex w-36 shrink-0 items-center gap-1 truncate text-left"
+        className="flex w-36 shrink-0 items-center gap-1 overflow-hidden text-left"
         title={chip.help + " · 학생 명부와 연결되지 않았습니다 · 눌러서 학생을 지정할 수 있습니다"}
       >
         {/* 연결된 줄의 ✓ 자리를 비워둡니다. 자리가 어긋나면 두 줄을 나란히 놓고 비교할 때

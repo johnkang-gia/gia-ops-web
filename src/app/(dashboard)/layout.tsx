@@ -493,7 +493,7 @@ export default async function DashboardLayout({
                 )}
               </div>
               <div className="min-w-0">
-                <div className="flex items-center gap-1 truncate text-xs font-semibold text-[var(--shell-text)]">
+                <div className="flex min-w-0 items-center gap-1 text-xs font-semibold text-[var(--shell-text)]">
                   <span className="truncate">{displayName}</span>
                   {badgeLabel && <span className="shrink-0 text-[var(--shell-text-muted)]">({badgeLabel})</span>}
                 </div>

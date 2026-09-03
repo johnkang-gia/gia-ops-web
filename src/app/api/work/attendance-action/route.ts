@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { logApiError } from "@/lib/logging";
+import { normalizeName } from "@/lib/studentName";
 
 export const dynamic = "force-dynamic";
 
@@ -22,9 +23,13 @@ export const dynamic = "force-dynamic";
 // 분명히 알려줍니다(조용히 성공한 척하지 않습니다).
 
 // 배정표 이름은 "김연우A"처럼 뒤에 표기가 붙거나 괄호 영문·학년이 섞일 수 있어서, 비교할
-// 때만 괄호 뒤와 공백을 떼고 맞춰봅니다(픽업 체크 화면과 같은 규칙).
-function normalizeName(name: string): string {
-  return name.split("(")[0].replace(/\s+/g, "").trim();
+// 때만 괄호 뒤와 공백을 떼고 맞춰봅니다.
+//
+// 다듬는 규칙은 `src/lib/studentName.ts` 것을 씁니다. 여기서 또 만들면 앱 안에 서로 다른
+// 답이 생깁니다 - 실제로 그렇게 흩어져 있던 탓에 같은 오류가 자리를 바꿔가며 났습니다.
+// 괄호 **뒤를 버리는 것**만 여기 사정이라 앞에서 한 번 자릅니다.
+function compareKey(name: string): string {
+  return normalizeName((name ?? "").split("(")[0]);
 }
 
 // 'YYYY-MM-DD' → 요일 번호(일=0). 배정표의 weekdays와 맞춰보기 위해 씁니다.
@@ -59,7 +64,7 @@ export async function POST(req: Request) {
     // '예정'은 되돌리기(취소)입니다 - 잘못 눌렀을 때 체크표에서 지우는 것과 같은 효과.
     const serviceDate = /^\d{4}-\d{2}-\d{2}$/.test(body?.serviceDate ?? "") ? body!.serviceDate! : kstToday();
     const weekday = weekdayOf(serviceDate);
-    const key = normalizeName(rawName);
+    const key = compareKey(rawName);
 
     // 그 날 실제로 차를 타기로 되어 있는 배정만 봅니다(요일제 학생이 있어서, 요일을 무시하면
     // 안 타는 날에 결석 표시가 붙습니다).
@@ -72,7 +77,7 @@ export async function POST(req: Request) {
       (a.weekdays ?? []).includes(weekday)
     );
 
-    const matches = todays.filter((a) => normalizeName(a.student_name_raw ?? "") === key);
+    const matches = todays.filter((a) => compareKey(a.student_name_raw ?? "") === key);
 
     if (matches.length === 0) {
       // 셔틀을 안 타는 학생이거나(도보·자차 하원), 배정표 이름이 명부와 다르게 적힌 경우입니다.

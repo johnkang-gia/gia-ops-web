@@ -10,7 +10,7 @@ import {
   pickSiblingFromText,
   type RosterEntry,
 } from "@/lib/pickupParse";
-import { extractTargetRange } from "@/lib/attendanceDigest";
+import { extractTargetDate, extractTargetRange } from "@/lib/attendanceDigest";
 import { extractRecurringWeekdays, hasRecurringPhrase, weekdayLabel } from "@/lib/parentRecurrence";
 import { nameSurfaces, readSiblings } from "@/lib/attendanceIntent";
 import { genCaseId } from "@/lib/caseId";
@@ -316,8 +316,15 @@ function detectPeriod(
   base: Date
 ): { kind: "pickup" | "absent"; from: string; to: string; why: string } | null {
   if (!text) return null;
-  // "까지"가 없으면 기간으로 보지 않습니다. 원칙은 "그날 하루"입니다(담당자).
-  if (!/(까지|until|through)/i.test(text)) return null;
+
+  // 원칙은 "그날 하루"입니다. 그래서 "까지" 같은 말이 있어야 기간으로 봤습니다.
+  //
+  // 그런데 **날짜를 직접 두 개 적은 글**에는 그 말이 없습니다.
+  //   "이연우 9/21-23 일결석입니다"
+  // 이 글에는 '까지'가 없어서 기간으로 안 잡혔고, 그래서 9월 21~23일 결석이
+  // **글이 온 날 결석**으로 등록됐습니다. 가장 분명하게 적어준 형태를 못 읽은 것입니다.
+  const hasExplicitRange = /\d{1,2}\s*[./월]\s*\d{1,2}\s*일?\s*(?:[~\-–—]|부터)\s*\d/.test(text);
+  if (!hasExplicitRange && !/(까지|until|through)/i.test(text)) return null;
 
   const range = extractTargetRange(text, base);
   if (!range || range.from === range.to) return null;
@@ -500,6 +507,22 @@ export async function ingestPickup(
   let serviceDate = dates[0]?.date ?? todayKst;
   if (dates.length === 0 && ai.date_hint === "tomorrow") {
     serviceDate = kstParts(new Date(receivedAt.getTime() + 24 * 60 * 60 * 1000)).iso;
+  }
+
+  // ── 픽업이 아닌 연락에도 날짜가 적혀 있습니다 ─────────────────────────────
+  //
+  // 날짜 계산을 **픽업에만** 하고 있었습니다. 결석 통보는 어느 날 이야기든 상관없이
+  // `service_date` 가 받은 날로 굳었고, 하원 체크표는 그 날짜만 보고 오늘 결석으로 그었습니다.
+  //
+  //   "이연우 9/21-23 일결석입니다"  →  9월 21일이 아니라 **오늘** 결석
+  //
+  // 앞날 이야기를 오늘로 당겨 놓으면, 오늘 오는 아이가 명단에서 빠집니다. 결석은 픽업보다
+  // 더 센 표시라 되돌리기도 어렵습니다.
+  if (kind !== "픽업") {
+    const r = extractTargetRange(text, receivedAt);
+    const one = r?.from ?? extractTargetDate(text, receivedAt);
+    // 지난 날짜는 쓰지 않습니다 - 이미 끝난 일이고, 잘못 읽었을 가능성이 큽니다.
+    if (one && one >= todayKst) serviceDate = one;
   }
 
   // ── 이미 다른 경로로 들어온 건인지 ────────────────────────────────────────

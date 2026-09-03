@@ -220,9 +220,21 @@ export function toKoreanDisplayName(
   roster: RosterEntry[]
 ): string | null {
   const has = (v: string | null | undefined) => !!v && v.trim().length > 0;
-  // 이미 한글이 섞여 있으면 손대지 않습니다.
+  // 이미 한글이면 이름은 그대로 두되, **동명이인이면 반을 붙입니다.**
+  //
+  // 김재이가 셋(G2C·G2A·G3JA)입니다. 문의 목록에 그냥 "김재이" 로만 뜨면 어느 아이 이야기인지
+  // 알 수 없고, 그 상태로 셔틀·출결에 반영하면 엉뚱한 아이가 처리됩니다. 이름만 보고
+  // 되묻는 일이 실제로 계속 있었습니다.
   const hasHangul = (v: string) => /[가-힣]/.test(v);
-  if (has(current) && hasHangul(current as string)) return current as string;
+  if (has(current) && hasHangul(current as string)) {
+    const raw = (current as string).trim();
+    // 이미 "(G2C)" 처럼 반이 붙어 있으면 그대로 둡니다.
+    if (/[(（]/.test(raw)) return raw;
+    // 채널 이름에 학년 힌트가 있으면 그것으로 좁힙니다("G2_…" 방).
+    const grade = parseChannelLabel(channelLabel)?.grades[0] ?? null;
+    const m = matchStudent(raw, roster, grade);
+    return m ? studentLabel(m, roster) : raw;
+  }
 
   // 채널 이름에서 사람들을 뽑아 각각 대조합니다. 채널이 가장 규칙적이라 먼저 씁니다.
   const parsed = parseChannelLabel(channelLabel);

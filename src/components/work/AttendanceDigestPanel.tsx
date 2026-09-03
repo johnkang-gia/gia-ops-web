@@ -495,6 +495,20 @@ export default function AttendanceDigestPanel({
         >
           가르친 규칙
         </button>
+        {/* 이 위젯만 다시 읽습니다.
+            가르친 뒤 화면이 안 바뀌면 사람은 "안 배웠나" 하고 또 가르칩니다. 페이지 전체를
+            새로고침하면 하던 체크가 날아가므로, 이 칸만 다시 읽습니다. */}
+        <button
+          type="button"
+          onClick={() => {
+            void loadRules();
+            void loadRegs();
+          }}
+          className="rounded px-1 text-[10px] font-medium text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+          title="가르친 규칙을 다시 읽어 이 칸만 새로 그립니다(페이지는 그대로)"
+        >
+          ↻ 새로고침
+        </button>
         <div className="ml-auto flex items-center gap-1">
           {ATTENDANCE_CATEGORIES.map((c) => {
             const n = grouped.get(c.key)?.length ?? 0;
@@ -716,7 +730,13 @@ export default function AttendanceDigestPanel({
           rules={rules}
           currentUserEmail={currentUserEmail}
           onClose={() => setTeach(null)}
-          onSaved={loadRules}
+          // 규칙만 다시 읽으면 화면이 그대로입니다. 이미 '확인 필요'로 **등록해 둔 줄**이
+          // 남아 있어서, 새 규칙으로 다시 읽어도 그 줄이 그대로 보입니다.
+          // 규칙과 등록 상태를 함께 다시 읽어야 가르친 대로 바뀝니다.
+          onSaved={async () => {
+            await loadRules();
+            await loadRegs();
+          }}
         />
       )}
     </div>

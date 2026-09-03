@@ -50,7 +50,8 @@ create table if not exists public.shuttle_ride_alongs (
   confirmed_at timestamptz,
   note text,
 
-  term_id uuid references public.terms(id) on delete set null,
+  -- 학기. terms 표가 아직 없는 DB 도 있어서 참조는 아래에서 따로 붙입니다.
+  term_id uuid,
   is_demo boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -64,29 +65,78 @@ create unique index if not exists shuttle_ride_alongs_uniq
 create index if not exists shuttle_ride_alongs_date_idx
   on public.shuttle_ride_alongs (service_date, status);
 
-drop trigger if exists shuttle_ride_alongs_set_updated_at on public.shuttle_ride_alongs;
-create trigger shuttle_ride_alongs_set_updated_at
-  before update on public.shuttle_ride_alongs
-  for each row execute function public.set_updated_at();
+-- updated_at 자동 갱신도 같은 이유로 함수가 있을 때만 겁니다.
+do $$
+begin
+  if exists (
+    select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public' and p.proname = 'set_updated_at'
+  ) then
+    drop trigger if exists shuttle_ride_alongs_set_updated_at on public.shuttle_ride_alongs;
+    create trigger shuttle_ride_alongs_set_updated_at
+      before update on public.shuttle_ride_alongs
+      for each row execute function public.set_updated_at();
+  end if;
+end $$;
 
 -- 학기 도장. 다른 표와 같은 방식으로 지금 학기가 자동으로 찍힙니다.
-drop trigger if exists shuttle_ride_alongs_stamp_term on public.shuttle_ride_alongs;
-create trigger shuttle_ride_alongs_stamp_term
-  before insert on public.shuttle_ride_alongs
-  for each row execute function public.stamp_current_term();
+--
+-- 다만 `stamp_current_term()` 은 학기 통합 SQL 에서 만들어지는 함수입니다. 그것을 아직 안
+-- 돌린 DB 에서는 이 줄 하나 때문에 **표 자체가 안 만들어집니다.** 도장은 있으면 좋은 것이지
+-- 없으면 안 되는 것이 아니므로, 함수가 있을 때만 겁니다. 나중에 학기 SQL 을 돌리고 이 파일을
+-- 다시 실행하면 그때 걸립니다.
+do $$
+begin
+  if exists (
+    select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public' and p.proname = 'stamp_current_term'
+  ) then
+    drop trigger if exists shuttle_ride_alongs_stamp_term on public.shuttle_ride_alongs;
+    create trigger shuttle_ride_alongs_stamp_term
+      before insert on public.shuttle_ride_alongs
+      for each row execute function public.stamp_current_term();
+  else
+    raise notice '학기 도장 트리거는 건너뜁니다 - stamp_current_term() 이 아직 없습니다(학기 통합 SQL 미실행).';
+  end if;
+end $$;
+
+-- terms 표가 있으면 그때 외래키를 붙입니다. 없다고 표 만들기가 멈추면 안 됩니다.
+do $$
+begin
+  if to_regclass('public.terms') is not null
+     and not exists (select 1 from pg_constraint where conname = 'shuttle_ride_alongs_term_fk') then
+    alter table public.shuttle_ride_alongs
+      add constraint shuttle_ride_alongs_term_fk
+      foreign key (term_id) references public.terms(id) on delete set null;
+  end if;
+end $$;
 
 alter table public.shuttle_ride_alongs enable row level security;
 
 -- 기사님·동승선생님 화면은 토큰 링크(서비스 키)로 읽으므로 여기 정책과 무관합니다.
 -- 교직원은 읽고 쓸 수 있어야 합니다 - 연락은 담임에게도 오고, 행정실만 고칠 수 있으면
 -- 그 사이에 차가 떠납니다.
-drop policy if exists "staff_read_ride_alongs" on public.shuttle_ride_alongs;
-create policy "staff_read_ride_alongs" on public.shuttle_ride_alongs
-  for select using (public.is_giamicro_user());
-
-drop policy if exists "staff_write_ride_alongs" on public.shuttle_ride_alongs;
-create policy "staff_write_ride_alongs" on public.shuttle_ride_alongs
-  for all using (public.is_giamicro_user()) with check (public.is_giamicro_user());
+-- 권한 함수(is_giamicro_user)가 있으면 그것으로, 없으면 로그인한 사용자 기준으로 겁니다.
+-- **정책 없이 RLS 만 켜두면 아무도 못 읽습니다** - 화면이 그냥 비어 보이고 오류도 안 납니다.
+do $$
+begin
+  drop policy if exists "staff_read_ride_alongs" on public.shuttle_ride_alongs;
+  drop policy if exists "staff_write_ride_alongs" on public.shuttle_ride_alongs;
+  if exists (
+    select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public' and p.proname = 'is_giamicro_user'
+  ) then
+    create policy "staff_read_ride_alongs" on public.shuttle_ride_alongs
+      for select using (public.is_giamicro_user());
+    create policy "staff_write_ride_alongs" on public.shuttle_ride_alongs
+      for all using (public.is_giamicro_user()) with check (public.is_giamicro_user());
+  else
+    create policy "staff_read_ride_alongs" on public.shuttle_ride_alongs
+      for select using (auth.role() = 'authenticated');
+    create policy "staff_write_ride_alongs" on public.shuttle_ride_alongs
+      for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+  end if;
+end $$;
 
 comment on table public.shuttle_ride_alongs is
   '오늘 하루만 다른 아이 차에 같이 타는 아이. 정식 배정(shuttle_assignments)은 건드리지 않습니다 - 날짜가 지나면 저절로 사라져야 하기 때문입니다.';

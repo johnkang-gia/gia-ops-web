@@ -9,6 +9,7 @@ import { logChecklist, type ChecklistLogRow, type LogActor } from "@/lib/checkli
 import { useToast } from "@/components/common/ToastProvider";
 import ShuttleChecklistTable, { effectiveRouteId } from "./ShuttleChecklistTable";
 import ChecklistPrintSheet from "./ChecklistPrintSheet";
+import RideAlongPanel, { type RideAlongRow } from "./RideAlongPanel";
 import ShuttleChecklistSidebar, { type ChangedRouteEntry } from "./ShuttleChecklistSidebar";
 import type { GoogleChatMirrorMessage } from "@/lib/types";
 import type { RosterStudent } from "@/lib/attendanceDigest";
@@ -129,6 +130,7 @@ export default function ShuttleChecklistClient({
   toddleBase = null,
   actor,
   initialLog = [],
+  rideAlongs = [],
 }: {
   routes: ChecklistRoute[];
   items: ChecklistItem[];
@@ -142,6 +144,13 @@ export default function ShuttleChecklistClient({
   actor: LogActor;
   /** 오늘 이 화면에서 있었던 일. 사이드바의 '오늘 한 일'이 씁니다. */
   initialLog?: ChecklistLogRow[];
+  /**
+   * 오늘만 다른 아이 차에 같이 타는 아이.
+   *
+   * 정식 배정이 아니라 그날 하루짜리라 명단 표에 섞지 않고 위에 따로 세웁니다 - 기사님과
+   * 동승선생님이 "평소 명단에 없는 아이가 오늘 탄다"는 것을 알아야 합니다.
+   */
+  rideAlongs?: RideAlongRow[];
 }) {
   const notify = useToast();
   const router = useRouter();
@@ -1042,6 +1051,7 @@ export default function ShuttleChecklistClient({
         </div>
         {/* 화면용 표(드래그·버튼·색상)는 인쇄에서 감추고, 아래 인쇄 전용 표만 나갑니다
             (요청: 보내주신 하원차량 체크 PDF와 같은 서식으로 인쇄되도록). */}
+        <RideAlongPanel rows={rideAlongs} routes={routes.map((r) => ({ id: r.id, routeNo: r.route_no }))} />
         <div className="print:hidden">
           <ShuttleChecklistTable
             routes={routes}

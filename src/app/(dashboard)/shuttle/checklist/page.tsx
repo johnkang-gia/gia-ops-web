@@ -6,6 +6,8 @@ import type { ChecklistLogRow } from "@/lib/checklistLog";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import Link from "next/link";
+import type { RideAlongRow } from "@/components/shuttle/RideAlongPanel";
+import { findBySurface } from "@/lib/rideAlong";
 import ShuttleChecklistClient, { type ChecklistRoute, type ChecklistItem, type PersistentNote, type AutoSource } from "@/components/shuttle/ShuttleChecklistClient";
 import type { GoogleChatMirrorMessage } from "@/lib/types";
 import { categorize } from "@/lib/attendanceDigest";
@@ -368,8 +370,10 @@ export default async function ShuttleChecklistPage({
     .select("*")
     .order("created_at_google", { ascending: false })
     .limit(200);
-  const { data: rosterData } = await supabase.from("wr_students_basic").select("name, grade, name_en, birth_date, class_name").eq("status", "active");
-  const roster = ((rosterData as { name: string; grade: string | null; name_en: string | null; birth_date: string | null; class_name: string | null }[] | null) ?? []).map((s) => ({
+  const { data: rosterData } = await supabase.from("wr_students_basic").select("id, name, grade, name_en, birth_date, class_name").eq("status", "active");
+  const roster = ((rosterData as { id: string; name: string; grade: string | null; name_en: string | null; birth_date: string | null; class_name: string | null }[] | null) ?? []).map((s) => ({
+    // 동승 확인창에서 아이를 고를 때 id 가 필요합니다.
+    id: s.id,
     name: s.name,
     grade: s.grade,
     nameEn: s.name_en,
@@ -389,6 +393,57 @@ export default async function ShuttleChecklistPage({
   if (logErr && logErr.code !== "PGRST205") {
     console.error("[checklist] 활동 기록 조회 실패:", logErr.message);
   }
+
+
+  // ── 오늘만 같이 타는 아이 ─────────────────────────────────────────────────
+  // "서이 셔틀에 하임이두 같이 보내주세요" 에서 자동으로 읽어 넣은 줄입니다. 정식 배정이
+  // 아니라 오늘 하루짜리라, 명단 표가 아니라 그 위에 따로 세웁니다.
+  const rideRes = await supabase
+    .from("shuttle_ride_alongs")
+    .select("id, student_id, student_surface, host_student_id, host_surface, route_id, status, note, raw_text")
+    .eq("service_date", today)
+    .neq("status", "취소");
+  if (rideRes.error) {
+    console.error("[checklist] 오늘 동승을 읽지 못했습니다:", rideRes.error.message);
+  }
+  const rideRows = (rideRes.data ?? []) as {
+    id: string; student_id: string | null; student_surface: string | null;
+    host_student_id: string | null; host_surface: string | null; route_id: string | null;
+    status: "확인대기" | "확정" | "취소"; note: string | null; raw_text: string | null;
+  }[];
+
+  const rideNameIds = [...new Set(rideRows.flatMap((r) => [r.student_id, r.host_student_id].filter(Boolean) as string[]))];
+  const { data: rideNames } = rideNameIds.length
+    ? await supabase.from("wr_students_basic").select("id, name").in("id", rideNameIds)
+    : { data: [] as { id: string; name: string }[] };
+  const nameById = new Map(((rideNames ?? []) as { id: string; name: string }[]).map((s) => [s.id, s.name]));
+  const routeNoById = new Map(routes.map((r) => [r.id, r.route_no]));
+
+  const rideAlongs: RideAlongRow[] = rideRows.map((r) => ({
+    id: r.id,
+    studentId: r.student_id,
+    studentName: r.student_id ? (nameById.get(r.student_id) ?? null) : null,
+    studentSurface: r.student_surface,
+    hostName: r.host_student_id ? (nameById.get(r.host_student_id) ?? null) : null,
+    hostSurface: r.host_surface,
+    routeId: r.route_id,
+    routeNo: r.route_id ? (routeNoById.get(r.route_id) ?? null) : null,
+    status: r.status,
+    note: r.note,
+    rawText: r.raw_text,
+    // 확인대기면 그 표기에 걸리는 아이들을 고를 수 있게 함께 넘깁니다. 사람이 명부를 따로
+    // 뒤지게 하면 결국 안 하고 넘어갑니다.
+    candidates:
+      r.status === "확인대기" && r.student_surface
+        ? findBySurface(
+            r.student_surface,
+            roster.map((s) => ({ id: s.id ?? "", name: s.name, grade: s.grade, className: s.className }))
+          )
+            .filter((c) => c.id)
+            .slice(0, 6)
+            .map((c) => ({ id: c.id, name: c.name, label: `${c.name}${c.className ? ` (${c.className})` : ""}` }))
+        : [],
+  }));
 
   return (
     <div className="mx-auto max-w-6xl p-4 sm:p-6 print:max-w-none print:p-0">
@@ -434,6 +489,7 @@ export default async function ShuttleChecklistPage({
         toddleBase={toddleBase}
         actor={{ email: me.email, name: me.name }}
         initialLog={(logRows as ChecklistLogRow[] | null) ?? []}
+        rideAlongs={rideAlongs}
       />
     </div>
   );

@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { callClaudeJson, CLAUDE_MODEL_FAST } from "@/lib/ai/claude";
+import { readRideAlong } from "@/lib/rideAlong";
 import { kstParts } from "@/lib/shuttleTracking";
 import { hasConflictingIntent, similarity } from "@/lib/textSimilarity";
 import {
@@ -678,6 +679,20 @@ export async function ingestPickup(
 
   const requestId = data?.id as string | undefined;
 
+  // ── 같이 태워달라는 요청 ──────────────────────────────────────────────────
+  //
+  // "서이 셔틀에 하임이두 같이 보내주세요" 는 픽업도 결석도 아니어서 지금까지 '문의' 로만
+  // 쌓였습니다. 사람이 읽고 기억해야 했고, 잊으면 아이가 차를 못 탑니다.
+  //
+  // 태울 아이가 평소 셔틀을 안 타는 경우가 많아서 정식 배정에는 손댈 수 없습니다.
+  // 그날 하루짜리 줄(shuttle_ride_alongs)로 남깁니다 - 날짜가 지나면 저절로 사라집니다.
+  await registerRideAlong(supabase, {
+    text,
+    roster,
+    serviceDate: todayKst,
+    requestId: requestId ?? null,
+  });
+
   // ── 하루짜리인가, 기간인가 ────────────────────────────────────────────────
   //
   // 담당자: "우선 원칙은 그날만 일시적인 픽업인 거야. 근데 '~까지 픽업', 또는 '언제까지
@@ -816,4 +831,76 @@ export async function loadRoster(supabase: SupabaseClient): Promise<RosterEntry[
     .eq("is_demo", false)
     .in("status", ["active", "보류"]);
   return (data ?? []) as RosterEntry[];
+}
+
+/**
+ * "누구 셔틀에 누구도 같이" 를 읽어 그날 하루짜리 동승으로 남깁니다.
+ *
+ * **양쪽 다 한 명으로 좁혀질 때만 확정입니다.** 하나라도 여럿이면(하임이 → 임하임·정하임)
+ * 확인대기로 두고 사람이 고르게 합니다. 엉뚱한 아이를 차에 태우는 것은 되돌릴 수 없습니다.
+ */
+async function registerRideAlong(
+  supabase: SupabaseClient,
+  args: { text: string; roster: RosterEntry[]; serviceDate: string; requestId: string | null }
+): Promise<void> {
+  const read = readRideAlong(
+    args.text,
+    args.roster.map((r) => ({ id: r.id, name: r.name, grade: r.grade, className: r.class_name ?? null }))
+  );
+  if (!read) return;
+
+  const host = read.hostCandidates.length === 1 ? read.hostCandidates[0] : null;
+  const rider = read.riderCandidates.length === 1 ? read.riderCandidates[0] : null;
+
+  // 태우는 아이가 오늘 어느 차를 타는지. 배정 → 정류장 → 노선 순으로 따라갑니다.
+  let routeId: string | null = null;
+  if (host) {
+    const { data: asg } = await supabase
+      .from("shuttle_assignments")
+      .select("stop_id, override_route_id")
+      .eq("student_id", host.id)
+      .limit(1)
+      .maybeSingle();
+    routeId = (asg?.override_route_id as string | null) ?? null;
+    if (!routeId && asg?.stop_id) {
+      const { data: stop } = await supabase
+        .from("shuttle_stops")
+        .select("route_id")
+        .eq("id", asg.stop_id as string)
+        .maybeSingle();
+      routeId = (stop?.route_id as string | null) ?? null;
+    }
+  }
+
+  // 노선까지 정해져야 명단에 얹을 수 있습니다. 하나라도 비면 사람이 봐야 합니다.
+  const settled = !!host && !!rider && !!routeId;
+  const { error } = await supabase.from("shuttle_ride_alongs").insert({
+    service_date: args.serviceDate,
+    student_id: rider?.id ?? null,
+    student_surface: read.riderSurface,
+    host_student_id: host?.id ?? null,
+    host_surface: read.hostSurface,
+    route_id: routeId,
+    status: settled ? "확정" : "확인대기",
+    request_id: args.requestId,
+    raw_text: args.text.slice(0, 500),
+    created_by: "AI(수집기)",
+    note: [
+      read.why,
+      read.riderCandidates.length > 1
+        ? `"${read.riderSurface}" 에 해당하는 학생이 ${read.riderCandidates.length}명입니다: ${read.riderCandidates
+            .map((c) => `${c.name}(${c.className ?? c.grade ?? "?"})`)
+            .join(" · ")}`
+        : null,
+      read.hostCandidates.length !== 1 ? `"${read.hostSurface}" 를 한 명으로 좁히지 못했습니다.` : null,
+      host && !routeId ? `${host.name} 의 셔틀 배정을 찾지 못해 어느 차인지 정하지 못했습니다.` : null,
+    ]
+      .filter(Boolean)
+      .join(" / ")
+      .slice(0, 400),
+    confirmed_by: settled ? "AI(수집기)" : null,
+    confirmed_at: settled ? new Date().toISOString() : null,
+  });
+  // 조용히 넘기지 않습니다. 이것을 놓치면 아이가 차를 못 탑니다.
+  if (error) console.error("[동승] 등록하지 못했습니다:", error.message, args.text.slice(0, 60));
 }

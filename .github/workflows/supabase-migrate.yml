@@ -98,25 +98,33 @@ jobs:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
           set -e
-          supabase migration list --db-url "$SUPABASE_DB_URL" > /tmp/list.txt 2>&1 || true
-          # 표는 "로컬 | 원격 | 시각" 세 칸입니다. 로컬 칸이 비고 원격 칸에만 숫자가 있는 줄을 찾습니다.
-          orphans=$(sed 's/│/|/g' /tmp/list.txt | awk -F'|' 'NF>=3 {
-            gsub(/[[:space:]]/,"",$1); gsub(/[[:space:]]/,"",$2);
-            if ($1=="" && $2 ~ /^[0-9]{14}$/) print $2
-          }')
-          if [ -z "$orphans" ]; then
-            echo "어긋난 기록 없음."
+          # 기록표를 **직접 읽습니다.**
+          #
+          # 처음에는 `supabase migration list` 의 표를 잘라 썼는데, 그 표는 사람이 보라고
+          # 그린 것이라 화면인지 파일인지에 따라 모양이 바뀝니다(작업기계에서는 선 문자가
+          # 아예 안 나왔고, 그래서 찾은 것이 하나도 없었습니다).
+          # 기록은 그냥 표 하나이므로 그 표를 읽으면 됩니다.
+          psql "$SUPABASE_DB_URL" -Atc \
+            "select version from supabase_migrations.schema_migrations order by version" \
+            > /tmp/remote.txt
+          ls supabase/migrations/*.sql | xargs -n1 basename | cut -d_ -f1 | sort > /tmp/local.txt
+          # 원격에는 있는데 로컬에 파일이 없는 버전.
+          comm -23 <(sort /tmp/remote.txt) /tmp/local.txt > /tmp/orphans.txt
+          if [ ! -s /tmp/orphans.txt ]; then
+            echo "어긋난 기록 없음 (원격 $(wc -l < /tmp/remote.txt)개 · 로컬 $(wc -l < /tmp/local.txt)개)"
           else
             {
               echo "## 기록표 자동 정리"
-              echo "로컬에 파일이 없는데 원격 기록에만 남아 있던 버전을 지웠습니다(DB 는 그대로):"
+              echo "로컬에 파일이 없는데 원격 기록에만 남아 있던 버전입니다. 기록만 지웠고 DB 는 그대로입니다."
+              echo '```'
+              cat /tmp/orphans.txt
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
-            for v in $orphans; do
-              echo "  · $v" | tee -a "$GITHUB_STEP_SUMMARY"
+            while read -r v; do
+              [ -z "$v" ] && continue
+              echo "정리: $v"
               supabase migration repair --status reverted "$v" --db-url "$SUPABASE_DB_URL"
-            done
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            done < /tmp/orphans.txt
           fi
 
       # ── 베이스라인 ──────────────────────────────────────────────────────────

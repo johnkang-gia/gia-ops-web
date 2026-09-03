@@ -700,8 +700,9 @@ export default function InvoiceGridClient({
         </a>
       </div>
       <p className="mb-3 text-xs leading-relaxed text-slate-500">
-        칸을 눌러 넣고 뺍니다. 항목에 정해둔 <b>기본 학년·반</b>은 이미 체크된 채로 나옵니다. 합계는 표가 계산합니다 —
-        사람이 더할 자리가 없습니다.
+        표는 <b>보는 곳</b>입니다. 넣고 빼는 것은 <b>이름을 눌러 나오는 창</b>에서만 합니다 — 칸이 촘촘해서
+        훑다가 옆 칸을 눌러도 알아채지 못했습니다. 항목에 정해둔 <b>기본 학년·반</b>은 이미 체크된 채로 나오고,
+        합계는 표가 계산합니다 — 사람이 더할 자리가 없습니다.
       </p>
 
       {loadError && (
@@ -1132,13 +1133,18 @@ export default function InvoiceGridClient({
                           "border-b border-r border-slate-100 p-0 text-center " + (l ? "bg-teal-50/70" : "")
                         }
                       >
+                        {/* 표에서는 **바꾸지 않습니다.**
+                            칸이 작고 촘촘해서 훑다가 옆 칸을 눌러도 알아채지 못했습니다. 항목이
+                            빠지거나 붙은 것을 나중에 청구서에서 발견하게 되는 자리였습니다.
+                            누르면 그 학생 창이 열리고, 고치는 것은 거기서만 합니다 - 창에는
+                            이름·금액·수량이 함께 있어 무엇을 바꾸는지 보입니다. */}
                         <button
-                          onClick={() => toggleCell(s, i)}
+                          onClick={() => setDetail(s)}
                           className="flex h-8 w-full items-center justify-center gap-1"
                           title={
-                            l
+                            (l
                               ? `${i.name} · ${won(l.amount)}${ov ? (ov.mode === "include" ? " · 직접 넣음" : "") : " · 기본"}`
-                              : `${i.name} 넣기`
+                              : `${i.name} · 없음`) + " — 눌러서 이 학생 창에서 고칩니다"
                           }
                         >
                           {l ? (

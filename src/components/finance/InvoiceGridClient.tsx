@@ -775,7 +775,7 @@ export default function InvoiceGridClient({
       {/* ── 분류 ─────────────────────────────────────────────────
           교재를 붙이는 일과 교복을 붙이는 일은 다른 날 하는 다른 일입니다. 한 화면에 함께
           세워두면 어디까지 봤는지 놓치고 옆 칸을 누릅니다. 청구도 따로 나갑니다. */}
-      {catTabs.length > 1 && (
+      {catTabs.length > 0 && (
         <div className="mb-2 flex flex-wrap items-center gap-1.5">
           <span className="text-[11px] font-bold text-slate-400">분류</span>
           {["전체", ...catTabs].map((c) => {

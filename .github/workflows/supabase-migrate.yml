@@ -161,7 +161,15 @@ jobs:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
           set +e
-          supabase db push --db-url "$SUPABASE_DB_URL" 2>&1 | tee /tmp/push.log
+          # --include-all: 원격 기록의 마지막 시각보다 **앞선** 파일도 함께 실행합니다.
+          #
+          # 손으로 SQL 을 돌려온 기간이 길어서, 기록에 없는 파일이 시간 순서상 뒤죽박죽으로
+          # 흩어져 있습니다. 이 깃발이 없으면 CLI 가 "끼워 넣을 수 없다"며 통째로 멈춥니다.
+          #
+          # 다시 돌아도 안전한 파일만 남겨두었기에 켭니다 - 표는 `if not exists`, 넣기는
+          # `on conflict` 나 `where not exists` 로 되어 있습니다. **지우고 다시 넣던 1회성
+          # 자료 SQL 세 개는 `supabase/one-off/` 로 빼두었습니다.**
+          supabase db push --include-all --db-url "$SUPABASE_DB_URL" 2>&1 | tee /tmp/push.log
           code=${PIPESTATUS[0]}
           {
             echo "## 마이그레이션 적용 결과"

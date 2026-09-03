@@ -1294,6 +1294,13 @@ export type Invoice = {
   created_at: string;
   /** 어느 학기 청구서인가. */
   term_id?: string | null;
+  /**
+   * 이 청구서가 담은 항목 분류(교재 · 교복 …). 비어 있으면 분류를 가리지 않은 통합 청구서.
+   *
+   * 교재비와 교복은 나가는 시기가 다릅니다. 한 장으로 묶으면 교복 치수가 안 끝난 아이 때문에
+   * 교재비 청구까지 멈춥니다.
+   */
+  category?: string | null;
   /** 왜 취소했는지. 지우지 않고 남기므로 이유가 있어야 나중에 읽힙니다. */
   cancel_reason?: string | null;
   cancelled_at?: string | null;

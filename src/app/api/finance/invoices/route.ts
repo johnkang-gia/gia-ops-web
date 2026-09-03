@@ -39,6 +39,14 @@ export async function POST(req: Request) {
   const guardianRole: GuardianRole | null =
     askedRole === "mother" || askedRole === "father" || askedRole === "guardian" ? askedRole : null;
   const feeTermId = (body?.feeTermId as string | undefined) ?? null;
+  /**
+   * 이 인보이스에 담을 분류.
+   *
+   * 비우면 그 학생의 항목을 분류 가리지 않고 전부 담습니다(통합 한 장). 하나를 적으면 그
+   * 분류만 담습니다 - 교재비와 교복은 나가는 시기가 달라서 한 장으로 묶으면 늦은 쪽 때문에
+   * 이른 쪽까지 못 나갑니다.
+   */
+  const category = typeof body?.category === "string" && body.category.trim() ? body.category.trim() : null;
   if (!studentId) return NextResponse.json({ error: "studentId가 필요합니다." }, { status: 400 });
 
   const supabase = await createClient();
@@ -65,13 +73,19 @@ export async function POST(req: Request) {
   const student = stuRes.data[0] ?? null;
   if (!student) return NextResponse.json({ error: "학생을 찾지 못했습니다." }, { status: 404 });
 
-  const lines = resolveStudentItems(
+  const all = resolveStudentItems(
     (itemsRes.data as FeeItem[] | null) ?? [],
     { id: student.id, grade: student.grade, className: student.class_name, department: student.department },
     (ovRes.data as StudentFeeItem[] | null) ?? [],
   );
+  // 분류를 고르는 것도 서버가 합니다. 화면이 고른 줄만 받아서 넣으면, 화면이 틀렸을 때
+  // 틀린 내역이 그대로 나갑니다.
+  const lines = category ? all.filter((l) => l.item.category === category) : all;
   if (lines.length === 0) {
-    return NextResponse.json({ error: "이 학생에게 붙은 항목이 없습니다." }, { status: 400 });
+    return NextResponse.json(
+      { error: category ? `이 학생에게 붙은 ${category} 항목이 없습니다.` : "이 학생에게 붙은 항목이 없습니다." },
+      { status: 400 },
+    );
   }
 
   const total = lines.reduce((n, l) => n + l.amount, 0);
@@ -104,6 +118,7 @@ export async function POST(req: Request) {
       guardian_phone: recipient?.phone ?? null,
       guardian_role: recipient?.role ?? null,
       fee_term_id: feeTermId,
+      category,
       issued_by: me.name || me.email,
     })
     .select()

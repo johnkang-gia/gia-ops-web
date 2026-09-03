@@ -65,6 +65,9 @@ type View = { kind: "반"; value: string } | { kind: "학년"; value: string } |
 /** 위쪽 큰 갈래. 초등과 중고등은 반 이름도 학년 표기도 달라서, 한 표에 섞으면 열이 뒤엉킵니다. */
 type DeptTab = Department | "기타";
 
+/** 청구서를 한 장으로 묶을지, 분류마다 나눌지. */
+type IssueMode = "통합" | "분류별";
+
 export default function InvoiceGridClient({
   students,
   items,
@@ -84,6 +87,8 @@ export default function InvoiceGridClient({
   const [newItem, setNewItem] = useState({ category: "", name: "", name_ko: "", unit_price: 0, applyToView: true });
   const [invoices, setInvoices] = useState(recentInvoices);
   const [dept, setDept] = useState<DeptTab>("초등부");
+  /** 보고 있는 분류. "전체" 면 분류를 가리지 않습니다. */
+  const [cat, setCat] = useState<string>("전체");
   /** 보고 있는 학기. 항목 화면과 같은 학기를 봅니다(브라우저에 기억해둡니다). */
   const [termId, setTermId] = useState("");
   useEffect(() => {
@@ -110,6 +115,13 @@ export default function InvoiceGridClient({
   const [onlyUnissued, setOnlyUnissued] = useState(false);
   /** 발행 전 검토 창. 누르자마자 나가면 잘못 나간 것을 되돌릴 수 없습니다. */
   const [review, setReview] = useState<Student[] | null>(null);
+  /**
+   * 한 장으로 묶을지, 분류마다 나눌지.
+   *
+   * 통합은 종이가 한 장이라 학부모가 한 번만 결제합니다. 분류별은 교재비를 먼저 보내고
+   * 교복은 치수를 잰 뒤에 보낼 수 있습니다. 어느 쪽이 맞는지는 그때그때 다릅니다.
+   */
+  const [issueMode, setIssueMode] = useState<IssueMode>("통합");
   /** 발주 목록 창. 합계 줄의 개수가 그대로 발주 수량입니다. */
   const [orderOpen, setOrderOpen] = useState(false);
   /**
@@ -150,6 +162,29 @@ export default function InvoiceGridClient({
   );
 
   /**
+   * 분류 탭으로 한 번 더 좁힙니다.
+   *
+   * 교재를 붙이는 일과 교복을 붙이는 일은 **다른 날 하는 다른 일**입니다. 교재를 훑는 중에
+   * 교복 열이 함께 서 있으면 어디까지 봤는지 놓치고, 실수로 옆 칸을 누릅니다. 청구도 따로
+   * 나갑니다 - 교재는 학기 전에, 교복은 치수를 잰 뒤에.
+   *
+   * '전체' 는 지금까지처럼 다 보여줍니다. 여기서만 통합 한 장으로 발행할 수 있습니다.
+   */
+  const catTabs = useMemo(
+    () => [...new Set(activeItems.map((i) => i.category))].sort((a, b) => a.localeCompare(b, "ko")),
+    [activeItems],
+  );
+  useEffect(() => {
+    if (cat !== "전체" && !catTabs.includes(cat)) setCat("전체");
+  }, [catTabs, cat]);
+
+  /** 지금 화면이 다루는 항목. 표의 열, 학생 창의 목록, 합계, 발행이 모두 이것을 씁니다. */
+  const scopedItems = useMemo(
+    () => (cat === "전체" ? activeItems : activeItems.filter((i) => i.category === cat)),
+    [activeItems, cat],
+  );
+
+  /**
    * 부서로 먼저 가릅니다.
    *
    * 초등과 중고등은 반 이름 체계도, 사는 교재도 다릅니다. 한 표에 섞으면 열이 서로의 몫까지
@@ -182,16 +217,37 @@ export default function InvoiceGridClient({
     [inDept],
   );
 
-  const invoiceByStudent = useMemo(() => {
-    const m = new Map<string, Invoice>();
+  /**
+   * 학생 한 명의 이번 학기 청구서들.
+   *
+   * 분류별로 따로 발행할 수 있게 되면서 **한 학생에 여러 장**이 생깁니다. 한 장만 들고 있으면
+   * 교복은 나갔는데 교재는 안 나간 아이가 '발행됨' 으로 보입니다.
+   */
+  const invoicesByStudent = useMemo(() => {
+    const m = new Map<string, Invoice[]>();
     for (const v of invoices) {
-      if (!v.student_id || v.status !== "발행" || m.has(v.student_id)) continue;
+      if (!v.student_id || v.status !== "발행") continue;
       // 지난 학기 청구서가 이번 학기 표에서 '발행됨'으로 보이면 안 됩니다.
       const sameTerm = (v.term_id ?? "") === termId || (!v.term_id && terms.find((x) => x.id === termId)?.status === "진행중");
-      if (sameTerm) m.set(v.student_id, v);
+      if (sameTerm) m.set(v.student_id, [...(m.get(v.student_id) ?? []), v]);
     }
     return m;
   }, [invoices, termId, terms]);
+
+  /**
+   * 지금 보고 있는 분류의 청구서. 이것이 '발행됨/미발행' 의 기준입니다.
+   *
+   * 통합('전체') 에서는 분류 없이 나간 통합 청구서를, 분류 탭에서는 그 분류 청구서를 찾습니다.
+   * 통합 청구서에는 그 분류도 이미 들어 있으므로 그것도 나간 것으로 봅니다.
+   */
+  const invoiceByStudent = useMemo(() => {
+    const m = new Map<string, Invoice>();
+    for (const [sid, list] of invoicesByStudent) {
+      const hit = cat === "전체" ? list.find((v) => !v.category) : list.find((v) => v.category === cat || !v.category);
+      if (hit) m.set(sid, hit);
+    }
+    return m;
+  }, [invoicesByStudent, cat]);
 
   /** 지금 보고 있는 명단. */
   const rows = useMemo(() => {
@@ -211,20 +267,20 @@ export default function InvoiceGridClient({
   /** 이 명단의 아이마다 사는 것. 표 전체가 이 하나에서 나옵니다. */
   const linesByStudent = useMemo(() => {
     const m = new Map<string, ReturnType<typeof resolveStudentItems>>();
-    for (const s of rows) m.set(s.id, resolveStudentItems(activeItems, s as StudentLike, overrides));
+    for (const s of rows) m.set(s.id, resolveStudentItems(scopedItems, s as StudentLike, overrides));
     return m;
-  }, [rows, activeItems, overrides]);
+  }, [rows, scopedItems, overrides]);
 
   /** 지금 보이는 명단에서 실제로 쓰이는 항목만 열로 세웁니다. 안 쓰는 열은 자리만 차지합니다. */
   const usedItems = useMemo(() => {
     const used = new Set<string>();
     for (const ls of linesByStudent.values()) for (const l of ls) used.add(l.item.id);
     // 접어둔 분류가 아니면, 쓰이지 않아도 그 분류 항목을 함께 보여줍니다(넣으려면 열이 있어야 합니다).
-    return activeItems.filter((i) => used.has(i.id) || openCats.has(i.category));
-  }, [activeItems, linesByStudent, openCats]);
+    return scopedItems.filter((i) => used.has(i.id) || openCats.has(i.category));
+  }, [scopedItems, linesByStudent, openCats]);
 
   const cats = useMemo(() => [...new Set(usedItems.map((i) => i.category))], [usedItems]);
-  const allCats = useMemo(() => [...new Set(activeItems.map((i) => i.category))], [activeItems]);
+  const allCats = useMemo(() => [...new Set(scopedItems.map((i) => i.category))], [scopedItems]);
 
   /**
    * 대조에 넘길 명단. **부서 탭이나 검색과 무관하게 명부 전체**입니다 - 올톡페이 파일에는
@@ -532,25 +588,52 @@ export default function InvoiceGridClient({
     return amt === typical ? null : typical;
   }
 
+  /**
+   * 발행할 청구서 목록을 미리 세웁니다. 한 학생이 여러 장이 될 수 있습니다.
+   *
+   * · 분류 탭을 고른 상태 → 그 분류만, 학생당 한 장.
+   * · '전체' + 통합       → 분류를 가리지 않고 학생당 한 장(지금까지의 방식).
+   * · '전체' + 분류별     → 그 학생에게 붙은 분류마다 한 장씩.
+   */
+  function planFor(targets: Student[], mode: IssueMode) {
+    const jobs: { student: Student; category: string | null }[] = [];
+    for (const s of targets) {
+      if (cat !== "전체") {
+        jobs.push({ student: s, category: cat });
+        continue;
+      }
+      if (mode === "통합") {
+        jobs.push({ student: s, category: null });
+        continue;
+      }
+      const ls = linesByStudent.get(s.id) ?? resolveStudentItems(scopedItems, s as StudentLike, overrides);
+      for (const c of [...new Set(ls.map((l) => l.item.category))].sort((a, b) => a.localeCompare(b, "ko"))) {
+        jobs.push({ student: s, category: c });
+      }
+    }
+    return jobs;
+  }
+
   /** 고른 줄을 한 번에 발행합니다. */
-  async function issueChecked() {
+  async function issueChecked(mode: IssueMode = issueMode) {
     const targets = review ?? rows.filter((s) => checked.has(s.id) && totalOf(s.id) > 0);
     if (targets.length === 0) return;
+    const jobs = planFor(targets, mode);
     setBusy(true);
     const made: Invoice[] = [];
     const failed: string[] = [];
     try {
-      for (const s of targets) {
+      for (const { student: s, category } of jobs) {
         const res = await fetch("/api/finance/invoices", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ studentId: s.id, dueDate, feeTermId: termId || null }),
+          body: JSON.stringify({ studentId: s.id, dueDate, feeTermId: termId || null, category }),
         });
         const body = await res.json().catch(() => ({}));
         if (res.ok) made.push(body.invoice as Invoice);
         // 한 명이 실패해도 나머지는 계속합니다. 다만 **누가 실패했는지 반드시 말합니다** -
         // 조용히 넘기면 그 아이만 인보이스 없이 남습니다.
-        else failed.push(`${s.name}(${body.error ?? res.statusText})`);
+        else failed.push(`${s.name}${category ? `·${category}` : ""}(${body.error ?? res.statusText})`);
       }
       if (made.length > 0) {
         setInvoices((p) => [...made, ...p]);
@@ -688,6 +771,40 @@ export default function InvoiceGridClient({
           </button>
         ))}
       </div>
+
+      {/* ── 분류 ─────────────────────────────────────────────────
+          교재를 붙이는 일과 교복을 붙이는 일은 다른 날 하는 다른 일입니다. 한 화면에 함께
+          세워두면 어디까지 봤는지 놓치고 옆 칸을 누릅니다. 청구도 따로 나갑니다. */}
+      {catTabs.length > 1 && (
+        <div className="mb-2 flex flex-wrap items-center gap-1.5">
+          <span className="text-[11px] font-bold text-slate-400">분류</span>
+          {["전체", ...catTabs].map((c) => {
+            const on = cat === c;
+            const n = c === "전체" ? activeItems.length : activeItems.filter((i) => i.category === c).length;
+            return (
+              <button
+                key={c}
+                onClick={() => {
+                  setCat(c);
+                  // 분류를 바꾸면 고른 학생도 비웁니다. 교재를 고른 채 교복 탭에서 발행하면
+                  // 엉뚱한 청구가 나갑니다.
+                  setChecked(new Set());
+                }}
+                className={
+                  "rounded-full px-2.5 py-1 text-[12px] font-bold transition-colors " +
+                  (on ? "bg-teal-600 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-700")
+                }
+              >
+                {c}
+                <span className="ml-1 text-[10px] font-semibold opacity-70">{n}</span>
+              </button>
+            );
+          })}
+          <span className="text-[11px] text-slate-400">
+            {cat === "전체" ? "분류를 가리지 않고 봅니다" : `${cat} 항목만 보고, ${cat}만 청구합니다`}
+          </span>
+        </div>
+      )}
 
       {/* ── 보기 ─────────────────────────────────────────────────
           반이 먼저입니다. 교재는 반 단위로 붙고, 재무 담당자가 실제로 여는 것도 반입니다.
@@ -900,7 +1017,7 @@ export default function InvoiceGridClient({
           disabled={busy || checked.size === 0}
           className="rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-40"
         >
-          {busy ? "…" : `🧾 고른 ${checked.size}명 발행`}
+          {busy ? "…" : `🧾 고른 ${checked.size}명 ${cat === "전체" ? "발행" : `${cat} 발행`}`}
         </button>
       </div>
 
@@ -1049,12 +1166,22 @@ export default function InvoiceGridClient({
                     {inv ? (
                       <span className="flex items-center gap-1">
                       <button
-                        onClick={() => setPreview({ id: inv.id, label: `${s.name} · ${inv.invoice_no}` })}
+                        onClick={() => setPreview({ id: inv.id, label: `${s.name} · ${inv.invoice_no}${inv.category ? ` · ${inv.category}` : ""}` })}
                         className="text-[11px] font-bold text-emerald-700 underline"
                         title="여기서 바로 보기"
                       >
                         {inv.invoice_no}
                       </button>
+                      {/* 통합인지 어느 분류인지 보여야 합니다. 번호만 보고는 이 청구서에
+                          교복이 들어 있는지 알 수 없습니다. */}
+                      <span className="rounded bg-slate-100 px-1 text-[10px] font-bold text-slate-600">
+                        {inv.category ?? "통합"}
+                      </span>
+                      {(invoicesByStudent.get(s.id)?.length ?? 0) > 1 && (
+                        <span className="text-[10px] font-semibold text-slate-400" title="이 학생의 이번 학기 청구서 수">
+                          외 {(invoicesByStudent.get(s.id)?.length ?? 1) - 1}장
+                        </span>
+                      )}
                       {/* 발행과 발송은 다릅니다. 종이를 만든 것과 학부모에게 청구가 간 것을
                           같은 표시로 두면, 발행만 해놓고 안 보낸 것을 아무도 모릅니다. */}
                       {inv.exported_at ? (
@@ -1147,6 +1274,38 @@ export default function InvoiceGridClient({
                   </p>
                 ) : null;
               })()}
+
+              {/* 한 장으로 묶을지, 분류마다 나눌지.
+                  통합은 학부모가 한 번만 결제합니다. 분류별은 교재비를 먼저 보내고 교복은
+                  치수를 잰 뒤에 보낼 수 있습니다 - 한 장으로 묶으면 늦은 쪽 때문에 이른 쪽까지
+                  못 나갑니다. 분류 탭을 고른 상태라면 고를 것이 없습니다(그 분류만 나갑니다). */}
+              {cat === "전체" && catTabs.length > 1 && (
+                <div className="mt-2 flex flex-wrap items-center gap-1.5 rounded-lg bg-slate-50 px-2 py-1.5">
+                  <span className="text-[11px] font-bold text-slate-500">어떻게 발행할까요</span>
+                  {(["통합", "분류별"] as IssueMode[]).map((m) => (
+                    <button
+                      key={m}
+                      onClick={() => setIssueMode(m)}
+                      className={
+                        "rounded-full px-2.5 py-1 text-[12px] font-bold transition-colors " +
+                        (issueMode === m ? "bg-slate-800 text-white" : "bg-white text-slate-500 ring-1 ring-slate-200 hover:text-slate-800")
+                      }
+                    >
+                      {m === "통합" ? "한 장에 전부" : "분류마다 따로"}
+                    </button>
+                  ))}
+                  <span className="text-[11px] text-slate-500">
+                    {issueMode === "통합"
+                      ? `학생당 한 장 · 모두 ${planFor(review, "통합").length}장`
+                      : `분류마다 한 장씩 · 모두 ${planFor(review, "분류별").length}장`}
+                  </span>
+                </div>
+              )}
+              {cat !== "전체" && (
+                <p className="mt-2 rounded-lg bg-teal-50 px-2 py-1.5 text-[12px] font-semibold text-teal-800">
+                  <b>{cat}</b> 항목만 담은 청구서가 나갑니다. 다른 분류는 이 청구서에 들어가지 않습니다.
+                </p>
+              )}
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-2">
               <table className="w-full text-left text-[12px]">
@@ -1194,7 +1353,9 @@ export default function InvoiceGridClient({
                 disabled={busy}
                 className="ml-auto rounded-lg bg-slate-800 px-4 py-2 text-sm font-bold text-white disabled:opacity-40"
               >
-                {busy ? "발행 중…" : `${review.length}명 발행`}
+                {busy
+                  ? "발행 중…"
+                  : `${review.length}명 · ${planFor(review, issueMode).length}장 발행${cat === "전체" ? "" : ` (${cat})`}`}
               </button>
             </div>
           </div>
@@ -1264,11 +1425,13 @@ export default function InvoiceGridClient({
 
       {/* ── 한 학생 자세히 ─────────────────────────────────────── */}
       {detail && (() => {
-        const dLines = resolveStudentItems(activeItems, detail as StudentLike, overrides);
+        // 표와 같은 분류만 보여줍니다. 교재를 붙이려고 연 창에 교복이 함께 있으면
+        // 실수로 눌러도 알아채기 어렵습니다.
+        const dLines = resolveStudentItems(scopedItems, detail as StudentLike, overrides);
         const dTotal = sumLines(dLines);
         const dInv = invoiceByStudent.get(detail.id);
         const byCat = new Map<string, FeeItem[]>();
-        for (const i of activeItems) byCat.set(i.category, [...(byCat.get(i.category) ?? []), i]);
+        for (const i of scopedItems) byCat.set(i.category, [...(byCat.get(i.category) ?? []), i]);
         return (
           <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 p-4" onClick={() => setDetail(null)}>
             <div className="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
@@ -1280,10 +1443,10 @@ export default function InvoiceGridClient({
                 </span>
                 {dInv && (
                   <button
-                    onClick={() => setPreview({ id: dInv.id, label: `${detail.name} · ${dInv.invoice_no}` })}
+                    onClick={() => setPreview({ id: dInv.id, label: `${detail.name} · ${dInv.invoice_no}${dInv.category ? ` · ${dInv.category}` : ""}` })}
                     className="text-[11px] font-bold text-emerald-700 underline"
                   >
-                    {dInv.invoice_no} 보기
+                    {dInv.invoice_no}{dInv.category ? ` · ${dInv.category}` : " · 통합"} 보기
                   </button>
                 )}
                 {dInv && (
@@ -1352,8 +1515,10 @@ export default function InvoiceGridClient({
               </div>
 
               <div className="min-h-0 flex-1 overflow-y-auto p-3">
-                {activeItems.length === 0 ? (
-                  <p className="py-10 text-center text-[12px] text-slate-400">등록된 항목이 없습니다.</p>
+                {scopedItems.length === 0 ? (
+                  <p className="py-10 text-center text-[12px] text-slate-400">
+                    {cat === "전체" ? "등록된 항목이 없습니다." : `${cat} 항목이 없습니다.`}
+                  </p>
                 ) : (
                   [...byCat.entries()].map(([cat, list]) => (
                     <div key={cat} className="mb-3">
@@ -1436,7 +1601,7 @@ export default function InvoiceGridClient({
                   disabled={dLines.length === 0}
                   className="ml-auto rounded-lg bg-slate-800 px-4 py-2 text-sm font-bold text-white disabled:opacity-40"
                 >
-                  🧾 이 학생만 발행
+                  🧾 이 학생만 {cat === "전체" ? "발행" : `${cat} 발행`}
                 </button>
               </div>
             </div>

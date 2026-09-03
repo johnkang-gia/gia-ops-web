@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess } from "@/lib/roles";
 import { gradeLabel, resolveStudentItems } from "@/lib/feeItems";
+import { selectTolerant } from "@/lib/selectTolerant";
 import { todayKst } from "@/lib/kst";
 import { resolveRecipient, type GuardianRole } from "@/lib/alltalkpay";
 import type { FeeItem, StudentFeeItem } from "@/lib/types";
@@ -18,6 +19,12 @@ import type { FeeItem, StudentFeeItem } from "@/lib/types";
 // 달라지는 것입니다.
 
 export const dynamic = "force-dynamic";
+
+type StudentRow = {
+  id: string; name: string; name_en: string | null; grade: string | null; class_name: string | null;
+  department: string | null;
+  mother_phone?: string | null; father_phone?: string | null; parent_phone?: string | null;
+};
 
 export async function POST(req: Request) {
   const me = await getCurrentAppUser();
@@ -37,21 +44,25 @@ export async function POST(req: Request) {
   const supabase = await createClient();
 
   const [stuRes, itemsRes, ovRes] = await Promise.all([
-    supabase.from("wr_students").select("id, name, name_en, grade, class_name, department, mother_phone, father_phone, parent_phone").eq("is_demo", false).eq("id", studentId).maybeSingle(),
+    // 보호자 연락처 칸이 아직 없는 DB에서도 발행 자체는 되어야 합니다(연락처만 비게 됩니다).
+    selectTolerant<StudentRow>(
+      (columns) =>
+        supabase.from("wr_students").select(columns).eq("is_demo", false).eq("id", studentId) as unknown as
+          PromiseLike<{ data: StudentRow[] | null; error: { message: string } | null }>,
+      ["id", "name", "name_en", "grade", "class_name", "department"],
+      ["mother_phone", "father_phone", "parent_phone"],
+    ),
     // 그 학기 항목만 계산합니다. 학기를 안 걸면 지난 학기 교재까지 청구서에 붙습니다.
     (feeTermId
       ? supabase.from("fee_items").select("*").eq("active", true).eq("fee_term_id", feeTermId)
       : supabase.from("fee_items").select("*").eq("active", true)),
     supabase.from("student_fee_items").select("*").eq("student_id", studentId),
   ]);
-  if (stuRes.error) return NextResponse.json({ error: stuRes.error.message }, { status: 500 });
+  if (stuRes.error) return NextResponse.json({ error: stuRes.error }, { status: 500 });
   if (itemsRes.error) return NextResponse.json({ error: itemsRes.error.message }, { status: 500 });
   if (ovRes.error) return NextResponse.json({ error: ovRes.error.message }, { status: 500 });
 
-  const student = stuRes.data as {
-    id: string; name: string; name_en: string | null; grade: string | null; class_name: string | null;
-    department: string | null; mother_phone: string | null; father_phone: string | null; parent_phone: string | null;
-  } | null;
+  const student = stuRes.data[0] ?? null;
   if (!student) return NextResponse.json({ error: "학생을 찾지 못했습니다." }, { status: 404 });
 
   const lines = resolveStudentItems(
@@ -68,7 +79,7 @@ export async function POST(req: Request) {
   const due = dueDate && /^\d{4}-\d{2}-\d{2}$/.test(dueDate) ? dueDate : issue;
 
   const recipient = resolveRecipient(
-    { mother_phone: student.mother_phone, father_phone: student.father_phone, parent_phone: student.parent_phone },
+    { mother_phone: student.mother_phone ?? null, father_phone: student.father_phone ?? null, parent_phone: student.parent_phone ?? null },
     guardianRole
   );
 

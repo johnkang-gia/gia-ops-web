@@ -1,14 +1,15 @@
 {
   "name": "gia-ops-web",
-  "version": "0.395.0",
+  "version": "0.396.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "check:changelog": "node scripts/check-changelog.mjs",
-    "build": "node scripts/check-changelog.mjs && node scripts/check-demo-isolation.mjs && node scripts/check-department.mjs && next build",
+    "build": "node scripts/check-changelog.mjs && node scripts/check-demo-isolation.mjs && node scripts/check-department.mjs && node scripts/check-tabbar.mjs && next build",
     "start": "next start",
     "check:demo": "node scripts/check-demo-isolation.mjs",
-    "check:dept": "node scripts/check-department.mjs"
+    "check:dept": "node scripts/check-department.mjs",
+    "check:tabbar": "node scripts/check-tabbar.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

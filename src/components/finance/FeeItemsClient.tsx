@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
 import { won } from "@/lib/feeItems";
-import FinanceTabs from "./FinanceTabs";
 import TermPicker, { initialTermId } from "./TermPicker";
 import { FEE_ITEM_CATEGORY_SUGGESTIONS, type FeeCategory, type FeeItem, type Term } from "@/lib/types";
 
@@ -293,7 +292,6 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
 
   return (
     <div className="mx-auto max-w-5xl p-4 sm:p-6">
-      <FinanceTabs />
       <div className="mb-1 flex flex-wrap items-baseline gap-2">
         <h1 className="text-lg font-bold">📚 학비외 항목</h1>
         <span className="text-xs text-slate-400">부서별로 따로 등록합니다 · 분류도 직접 등록해서 씁니다</span>

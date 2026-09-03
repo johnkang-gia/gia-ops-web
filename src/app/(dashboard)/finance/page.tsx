@@ -5,7 +5,6 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess } from "@/lib/roles";
 import { todayKst } from "@/lib/kst";
 import { resolveStudentItems, sumLines, won } from "@/lib/feeItems";
-import FinanceTabs from "@/components/finance/FinanceTabs";
 import type { FeeItem, Invoice, StudentFeeItem } from "@/lib/types";
 
 // 재무 개요.
@@ -74,7 +73,6 @@ export default async function FinanceOverviewPage() {
 
   return (
     <div className="mx-auto max-w-6xl p-4 sm:p-6">
-      <FinanceTabs />
 
       <div className="mb-1 flex flex-wrap items-baseline gap-2">
         <h1 className="text-lg font-bold">📊 재무 개요</h1>

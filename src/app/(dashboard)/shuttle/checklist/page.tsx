@@ -10,7 +10,6 @@ import ShuttleChecklistClient, { type ChecklistRoute, type ChecklistItem, type P
 import type { GoogleChatMirrorMessage } from "@/lib/types";
 import { categorize } from "@/lib/attendanceDigest";
 import GuideButton from "@/components/common/GuideButton";
-import ChecklistSubTabs from "@/components/shuttle/ChecklistSubTabs";
 
 const GUIDE_SECTIONS = [
   {
@@ -393,7 +392,6 @@ export default async function ShuttleChecklistPage({
 
   return (
     <div className="mx-auto max-w-6xl p-4 sm:p-6 print:max-w-none print:p-0">
-      <ChecklistSubTabs />
       <div className="mb-1 flex flex-wrap items-center justify-between gap-2 print:hidden">
         <h1 className="text-lg font-bold">📋 하원 체크표</h1>
         {/* 업무보드에서 한 번에 왔으면 한 번에 돌아갈 수 있어야 합니다.

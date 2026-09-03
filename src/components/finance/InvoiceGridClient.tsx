@@ -11,7 +11,6 @@ import ReconcileModal from "./ReconcileModal";
 import InvoicePreviewModal from "./InvoicePreviewModal";
 import TermPicker, { initialTermId } from "./TermPicker";
 import { gradeLabel } from "@/lib/feeItems";
-import FinanceTabs from "./FinanceTabs";
 import type { FeeItem, Term, Invoice, StudentFeeItem } from "@/lib/types";
 
 // 인보이스 명단 표 — 학생이 행, 항목이 열인 스프레드시트.
@@ -610,7 +609,6 @@ export default function InvoiceGridClient({
 
   return (
     <div className="mx-auto max-w-none p-3 sm:p-4">
-      <FinanceTabs />
       <div className="mb-1 flex flex-wrap items-baseline gap-2">
         <h1 className="text-lg font-bold">🧾 인보이스 명단</h1>
         <span className="text-xs text-slate-400">학비외 · 학생 × 항목</span>

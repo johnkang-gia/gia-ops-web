@@ -25,7 +25,7 @@ export type TabDef = {
   children?: { label: string; labelEn?: string; href: string; match?: string[] }[];
 };
 
-type AccentKey = "blue" | "purple" | "navy" | "amber" | "teal" | "red";
+type AccentKey = "blue" | "purple" | "navy" | "amber" | "teal" | "red" | "emerald";
 
 // Tailwind는 문자열을 이어붙여 만든 클래스명을 빌드 시점에 알아보지 못하므로(그러면 그 색이
 // 통째로 빠집니다) 조합을 하드코딩해 둡니다.
@@ -36,7 +36,17 @@ const ACCENT: Record<AccentKey, { title: string; on: string; subOn: string }> = 
   amber: { title: "text-amber-700", on: "border-amber-600 text-amber-700", subOn: "bg-amber-50 text-amber-700" },
   teal: { title: "text-teal-700", on: "border-teal-600 text-teal-700", subOn: "bg-teal-50 text-teal-700" },
   red: { title: "text-red-700", on: "border-red-600 text-red-700", subOn: "bg-red-50 text-red-700" },
+  emerald: { title: "text-emerald-700", on: "border-emerald-600 text-emerald-700", subOn: "bg-emerald-50 text-emerald-700" },
 };
+
+// 상단 탭줄의 **고정 높이**. 픽셀을 박아 두는 이유가 있습니다.
+//
+// 예전에는 하위 줄(children)이 있는 탭에서만 그 줄이 생겨서, 탭을 옮길 때마다 본문이
+// 28px 씩 위아래로 튀었습니다. 탭 개수가 많은 대분류는 좁은 화면에서 두 줄로 접히면서
+// 또 한 번 튀었습니다. 화면마다 시작점이 다르면 사람은 매번 눈으로 다시 찾아야 합니다.
+//
+// 그래서 하위 줄은 **있든 없든 자리를 늘 차지하고**, 탭줄은 접히지 않고 옆으로 흐릅니다.
+const SUB_ROW_H = "h-[30px]";
 
 // ── 개발자 ──────────────────────────────────────────────────────────────────
 //
@@ -69,7 +79,18 @@ const WORK_TABS: TabDef[] = [
   { key: "board", label: "업무 보드", icon: "🗂️", href: "/work", match: ["/work"] },
   // 학부모 연락은 대개 **나중에** 필요해집니다 - 상담 전에, 같은 일이 또 생겼을 때.
   // 지금 화면들은 최근 것만 보여줘서, 쌓이기만 하고 못 찾았습니다.
-  { key: "inqsearch", label: "연락 검색", icon: "🔍", href: "/work/inquiry-search", match: ["/work/inquiry-search"] },
+  {
+    key: "inqsearch",
+    label: "연락 · 출결",
+    icon: "🔍",
+    href: "/work/inquiry-search",
+    match: ["/work/inquiry-search", "/inquiries", "/attendance"],
+    children: [
+      { label: "연락 검색", href: "/work/inquiry-search", match: ["/work/inquiry-search"] },
+      { label: "학부모 문의", href: "/inquiries" },
+      { label: "출결 내역", href: "/attendance" },
+    ],
+  },
   { key: "report", label: "보고서", icon: "📈", href: "/work/report", match: ["/work/report"] },
   { key: "history", label: "지난 업무", icon: "🗃️", href: "/work/history", match: ["/work/history"] },
   { key: "trash", label: "휴지통", icon: "🗑️", href: "/work/trash", match: ["/work/trash"] },
@@ -80,17 +101,18 @@ const WORK_TABS: TabDef[] = [
 // 합치면서 사라진 화면은 없습니다. 성격이 같은 것끼리 묶고, 묶인 화면들은 그 탭이 활성일 때
 // 바로 아래 작은 줄(children)로 펼쳐 한 번에 갈 수 있게 했습니다.
 const SCHOOL_TABS: TabDef[] = [
-  { key: "overview", label: "개요", icon: "📊", href: "/school/overview", match: ["/school/overview"] },
+  { key: "overview", label: "개요", icon: "📊", href: "/school/overview", match: ["/school/overview", "/school"] },
   {
     key: "students",
     label: "학생",
     icon: "🎓",
     href: "/students",
-    match: ["/students", "/weekly-report/admin/students", "/school/data-check"],
+    match: ["/students", "/weekly-report/admin/students", "/school/data-check", "/school/import"],
     children: [
       { label: "학생 조회", href: "/students", match: ["/students"] },
       { label: "명부 관리", href: "/weekly-report/admin/students" },
       { label: "명부 점검", href: "/school/data-check" },
+      { label: "명부 가져오기", href: "/school/import" },
     ],
   },
   { key: "staff", label: "교직원", icon: "🧑‍💼", href: "/staff", match: ["/staff"] },
@@ -124,7 +146,17 @@ const SCHOOL_TABS: TabDef[] = [
 // ── 셔틀 ────────────────────────────────────────────────────────────────────
 const SHUTTLE_TABS: TabDef[] = [
   { key: "overview", label: "개요", icon: "📊", href: "/shuttle/overview", match: ["/shuttle/overview"] },
-  { key: "checklist", label: "하원 체크표", icon: "📋", href: "/shuttle/checklist", match: ["/shuttle/checklist"] },
+  {
+    key: "checklist",
+    label: "하원 체크표",
+    icon: "📋",
+    href: "/shuttle/checklist",
+    match: ["/shuttle/checklist"],
+    children: [
+      { label: "하원 체크표", href: "/shuttle/checklist", match: ["/shuttle/checklist"] },
+      { label: "하원 셔틀명단", href: "/shuttle/checklist/roster" },
+    ],
+  },
   // 지금까지는 **오늘만** 볼 수 있었습니다. "이 아이 이번 달에 몇 번 빠졌지?"를 물으면
   // 아무도 답을 못 했습니다. 기록은 다 쌓여 있는데 꺼내 볼 방법이 없었을 뿐입니다.
   { key: "history", label: "결석·픽업 이력", icon: "📆", href: "/shuttle/history", match: ["/shuttle/history"] },
@@ -229,6 +261,20 @@ const DOCS_TABS: TabDef[] = [
   },
 ];
 
+// ── 재무 ────────────────────────────────────────────────────────────────────
+// 재무 화면들은 자기 본문 안에서 따로 탭줄을 그리고 있었습니다. 그래서 재무로 들어오면
+// 상단 탭줄이 사라지고 조금 아래에 다른 모양의 줄이 나타났습니다 - 같은 앱인데 화면이
+// 바뀐 것처럼 보이는 자리였습니다. 다른 대분류와 같은 줄에 얹습니다.
+//
+// 순서는 자주 여는 것부터입니다. 재무 일은 대개 "지금 어디까지 됐나"에서 시작합니다.
+const FINANCE_TABS: TabDef[] = [
+  { key: "overview", label: "개요", icon: "📊", href: "/finance", match: ["/finance"] },
+  { key: "invoices", label: "인보이스 명단", icon: "🧾", href: "/finance/invoices", match: ["/finance/invoices"] },
+  { key: "payments", label: "수납", icon: "💳", href: "/finance/payments", match: ["/finance/payments"] },
+  { key: "items", label: "학비외 항목", icon: "📚", href: "/finance/items", match: ["/finance/items"] },
+  { key: "plans", label: "납부 항목 · 할인", icon: "💵", href: "/finance/plans", match: ["/finance/plans"] },
+];
+
 type Section = { title: string; titleEn?: string; icon: string; accent: AccentKey; tabs: TabDef[] };
 
 // pathname이 어느 대분류에 속하는지 고릅니다. 교사 계정은 아예 다른 탭 세트를 씁니다.
@@ -262,6 +308,7 @@ function sectionFor(pathname: string, opts: { isTeacher: boolean; isHomeroom: bo
     { title: "학교", icon: "🏛️", accent: "purple", tabs: SCHOOL_TABS },
     { title: "셔틀", icon: "🚌", accent: "navy", tabs: SHUTTLE_TABS },
     { title: "문서 · 기록", icon: "📚", accent: "amber", tabs: DOCS_TABS },
+    { title: "재무", icon: "💰", accent: "emerald", tabs: FINANCE_TABS },
   ];
   // 가장 구체적으로(경로가 길게) 맞는 대분류를 고릅니다. 예: /weekly-report/admin/students는
   // 학교에만 있고, /shuttle/checklist는 셔틀에만 있습니다.
@@ -328,8 +375,8 @@ export default function SectionTabs({ isTeacher, isHomeroom }: { isTeacher: bool
           담당자: "메뉴바 (...) 구분이 없어져서 가시성이 너무 떨어져."
           유리 배경 위에 글자만 떠 있으면 탭인지 문장인지 구분이 안 됩니다. 아래에 실선을
           한 줄 깔아 두면, 켜진 탭이 그 선 위에 올라앉은 모양이 되어 한눈에 읽힙니다. */}
-      <div className="flex flex-wrap items-center gap-x-1 gap-y-1 border-b-2 border-[var(--shell-border)]">
-        <span className={"mr-2 text-base font-extrabold " + accent.title}>
+      <div className="flex items-center gap-x-1 overflow-x-auto border-b-2 border-[var(--shell-border)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <span className={"mr-2 shrink-0 whitespace-nowrap text-base font-extrabold " + accent.title}>
           {section.icon} {section.titleEn ? t(section.title, section.titleEn) : section.title}
         </span>
         {section.tabs.map((tab) => {
@@ -341,7 +388,7 @@ export default function SectionTabs({ isTeacher, isHomeroom }: { isTeacher: bool
               onClick={() => router.push(tab.href)}
               onMouseEnter={() => router.prefetch(tab.href)}
               className={
-                "relative -mb-px rounded-t-lg px-3 py-2 text-sm font-semibold transition-colors " +
+                "relative -mb-px shrink-0 whitespace-nowrap rounded-t-lg px-3 py-2 text-sm font-semibold transition-colors " +
                 // 꺼진 탭도 읽혀야 합니다 - slate-500은 유리 바탕에서 흐릿하게 묻힙니다.
                 // 마우스를 올렸을 때의 바탕도 반투명 흰색이어야 유리 위에서 보입니다.
                 (on
@@ -356,10 +403,12 @@ export default function SectionTabs({ isTeacher, isHomeroom }: { isTeacher: bool
         })}
       </div>
 
-      {/* 대분류를 줄이면서 흡수한 화면들. 탭을 5개로 줄이되 어떤 화면도 사라지지 않게 합니다. */}
-      {subs.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1 pt-1.5">
-          {subs.map((c) => {
+      {/* 대분류를 줄이면서 흡수한 화면들. 탭을 5개로 줄이되 어떤 화면도 사라지지 않게 합니다.
+          하위 줄이 없는 탭에서도 **이 자리는 비워 둡니다.** 있을 때만 그리면 탭을 옮길 때마다
+          본문 전체가 그 높이만큼 위아래로 튑니다. */}
+      <div className={"flex items-center gap-1 overflow-x-auto pt-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden " + SUB_ROW_H}>
+        {subs.length > 0 &&
+          subs.map((c) => {
             const on = c.href === activeSub;
             return (
               <button
@@ -368,7 +417,7 @@ export default function SectionTabs({ isTeacher, isHomeroom }: { isTeacher: bool
                 onClick={() => router.push(c.href)}
                 onMouseEnter={() => router.prefetch(c.href)}
                 className={
-                  "rounded-full px-2.5 py-1 text-xs font-semibold transition-colors " +
+                  "shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold transition-colors " +
                   (on ? accent.subOn : "text-slate-500 hover:bg-white/70 hover:text-slate-800")
                 }
               >
@@ -376,8 +425,7 @@ export default function SectionTabs({ isTeacher, isHomeroom }: { isTeacher: bool
               </button>
             );
           })}
-        </div>
-      )}
+      </div>
     </div>
   );
 }

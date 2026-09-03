@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import ChecklistSubTabs from "./ChecklistSubTabs";
 import { useConfirm } from "@/components/common/ConfirmProvider";
 
 // 하원 셔틀명단 설정(요청: 하원체크표 탭 분리). 노선(호차)별로 누가 무슨 요일에 타는지 한
@@ -83,7 +82,6 @@ export default function DismissalRosterClient({ initialRoutes }: { initialRoutes
 
   return (
     <div className="mx-auto max-w-6xl p-4 sm:p-6">
-      <ChecklistSubTabs />
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <h1 className="text-lg font-bold">🚌 하원 셔틀명단 (정규학기)</h1>
         <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-bold text-blue-700">

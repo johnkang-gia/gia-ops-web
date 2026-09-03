@@ -4,6 +4,7 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess } from "@/lib/roles";
 import { buildBillPlan, type BillInvoice, type GuardianRole } from "@/lib/alltalkpay";
 import { todayKst } from "@/lib/kst";
+import { selectTolerant } from "@/lib/selectTolerant";
 
 // 올톡페이 대량발송 파일에 넣을 내용을 서버에서 만듭니다.
 //
@@ -79,18 +80,25 @@ export async function POST(req: Request) {
   const studentIds = [...new Set(rows.map((v) => v.student_id).filter(Boolean) as string[])];
   const phonesById = new Map<string, { mother_phone: string | null; father_phone: string | null; parent_phone: string | null }>();
   if (studentIds.length > 0) {
-    const { data, error } = await supabase
-      .from("wr_students")
-      .select("id, mother_phone, father_phone, parent_phone")
-      .eq("is_demo", false)
-      .in("id", studentIds);
+    const { data, error, missing } = await selectTolerant<{
+      id: string; mother_phone?: string | null; father_phone?: string | null; parent_phone?: string | null;
+    }>(
+      (columns) =>
+        supabase.from("wr_students").select(columns).eq("is_demo", false).in("id", studentIds) as unknown as
+          PromiseLike<{ data: { id: string }[] | null; error: { message: string } | null }>,
+      ["id"],
+      ["mother_phone", "father_phone", "parent_phone"],
+    );
+    if (missing.length > 0) {
+      console.error("[올톡페이] 명부에 없는 연락처 칸:", missing.join(", "));
+    }
     if (error) {
       // 명부를 못 읽으면 굳은 번호로만 만들게 됩니다. 조용히 넘기면 왜 몇 명이 빠졌는지
       // 아무도 모르므로 기록은 남깁니다.
-      console.error("[올톡페이] 명부 연락처를 읽지 못했습니다:", error.message);
+      console.error("[올톡페이] 명부 연락처를 읽지 못했습니다:", error);
     }
-    for (const s of (data as { id: string; mother_phone: string | null; father_phone: string | null; parent_phone: string | null }[] | null) ?? []) {
-      phonesById.set(s.id, { mother_phone: s.mother_phone, father_phone: s.father_phone, parent_phone: s.parent_phone });
+    for (const s of data) {
+      phonesById.set(s.id, { mother_phone: s.mother_phone ?? null, father_phone: s.father_phone ?? null, parent_phone: s.parent_phone ?? null });
     }
   }
 

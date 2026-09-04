@@ -149,7 +149,7 @@ export default async function ShuttleChecklistPage({
   // 이 기다림이 그대로 쌓입니다(실측 1,973ms — 다른 화면의 두 배였습니다).
   //
   // 서로의 결과를 쓰지 않는 조회이므로 한꺼번에 보냅니다. 가장 느린 하나만큼만 걸립니다.
-  const [preqRes, baseRes, noteRes, planRes, mirrorRes, rosterRes, logRes, rideRes] = await Promise.all([
+  const [preqRes, baseRes, noteRes, planRes, mirrorRes, rosterRes, logRes, rideRes, absentRes] = await Promise.all([
     supabase.from("pickup_requests").select("*").eq("is_demo", false).neq("status", "무시").eq("service_date", today),
     supabase.from("pickup_requests").select("source_url").not("source_url", "is", null).order("received_at", { ascending: false }).limit(1).maybeSingle(),
     supabase.from("shuttle_persistent_notes").select("id, term, student_name, student_id, route_no, content, effect_kind, effect_days, effect_from, effect_to, active").eq("term", term).eq("active", true).order("created_at", { ascending: false }),
@@ -158,6 +158,22 @@ export default async function ShuttleChecklistPage({
     supabase.from("wr_students_basic").select("id, name, grade, name_en, birth_date, class_name").eq("status", "active"),
     supabase.from("shuttle_checklist_log").select("id, service_date, assignment_id, student_name, action, before_value, after_value, actor_email, actor_name, created_at").eq("service_date", today).order("created_at", { ascending: false }).limit(100),
     supabase.from("shuttle_ride_alongs").select("id, student_id, student_surface, host_student_id, host_surface, route_id, status, note, raw_text").eq("service_date", today).neq("status", "취소"),
+    // 오늘 결석으로 **등록된** 출결.
+    //
+    // 픽업은 여기(pickup_requests)로 들어오는데 결석은 저기(attendance_entries)로 들어갑니다.
+    // 두 통로가 갈린 것은 자연스러운데, 이 화면이 앞의 것만 읽고 있었습니다. 그래서 구글챗으로
+    // 온 결석은 **체크표에 아예 닿지 않았고**, 토들로 온 것도 본문이 결석으로 읽히지 않으면
+    // 놓쳤습니다. 출석부에는 결석인 아이가 하원 명단에는 타는 것으로 남습니다.
+    //
+    // '등록'만 봅니다. '확인필요'는 아직 사람이 판단하지 않은 것이라, 그걸로 차에서 빼면
+    // 자동이 사람보다 앞서 나가는 셈입니다.
+    supabase
+      .from("attendance_entries")
+      .select("id, student_id, student_name, status, date_from, date_to, source, raw_text, note, registered_by, registered_at")
+      .eq("status", "결석")
+      .eq("state", "등록")
+      .lte("date_from", today)
+      .gte("date_to", today),
   ]);
 
   const { data: preqRows } = preqRes;
@@ -199,6 +215,46 @@ export default async function ShuttleChecklistPage({
       sourceChatId: (r.source_chat_id as string | null) ?? null,
     });
   }
+
+  // 오늘 결석으로 등록된 아이. 학생 연결(student_id)이 있으면 그것으로, 없으면 이름으로 붙입니다.
+  //
+  // 이름 대조를 뒤에 두는 이유는, 같은 이름이 둘일 때 엉뚱한 아이를 차에서 빼는 일이 이름
+  // 쪽에서만 생기기 때문입니다. 학생 연결이 있으면 그게 언제나 맞습니다.
+  if (absentRes.error) {
+    console.error("[checklist] 오늘 결석 조회 실패 — 결석이 체크표에 안 붙습니다:", absentRes.error.message);
+  }
+  type AbsentRow = {
+    id: string;
+    student_id: string | null;
+    student_name: string;
+    source: string | null;
+    raw_text: string | null;
+    note: string | null;
+    registered_by: string | null;
+    registered_at: string | null;
+  };
+  const absentRows = (absentRes.data as AbsentRow[] | null) ?? [];
+  const absentById = new Map<string, AbsentRow>();
+  const absentByName = new Map<string, AbsentRow>();
+  for (const r of absentRows) {
+    if (r.student_id) absentById.set(r.student_id, r);
+    if (r.student_name) absentByName.set(norm(r.student_name), r);
+  }
+  const absentSourceOf = (r: AbsentRow): AutoSource => ({
+    requestId: r.id,
+    kind: "결석",
+    source: r.source === "googlechat" ? "구글챗" : r.source === "toddle" ? "토들" : "출석부",
+    channelLabel: null,
+    senderName: r.registered_by,
+    receivedAt: r.registered_at ?? "",
+    rawText:
+      (r.raw_text ?? r.note ?? "").trim() ||
+      `${r.student_name} 학생이 오늘 결석으로 등록되어 있습니다.`,
+    aiNote: "출석부에 오늘 결석으로 등록된 아이입니다.",
+    matchedName: r.student_name,
+    sourceUrl: null,
+    sourceChatId: null,
+  });
 
   // 토들 주소는 "학교 주소 + /messaging/ + 방 id" 형태입니다. 주소 칸이 비어 있는 줄이
   // 많아서(수집기가 못 읽은 경우), 주소가 있는 가장 최근 기록 하나에서 학교 주소만 뽑아
@@ -316,6 +372,15 @@ export default async function ShuttleChecklistPage({
         } else if (b) {
           status = "결석";
           autoSource = autoSourceByName.get(norm(b)) ?? null;
+        } else {
+          // 출석부에 등록된 결석. 픽업 인박스에 줄이 없어도 여기서 붙습니다 -
+          // 구글챗으로 온 결석은 픽업 인박스를 거치지 않습니다.
+          const ab =
+            (a.student_id ? absentById.get(a.student_id) : undefined) ?? absentByName.get(norm(a.student_name_raw));
+          if (ab) {
+            status = "결석";
+            autoSource = absentSourceOf(ab);
+          }
         }
       }
 

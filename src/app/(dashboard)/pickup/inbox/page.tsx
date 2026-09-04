@@ -6,6 +6,14 @@ import { kstParts } from "@/lib/shuttleTracking";
 import GuideButton from "@/components/common/GuideButton";
 import PickupInboxClient, { type PickupRow, type StudentOption } from "@/components/pickup/PickupInboxClient";
 import { type ScheduleRow } from "@/components/pickup/UpcomingPickups";
+import TodayPickupList from "@/components/pickup/TodayPickupList";
+import {
+  buildTodayPickupList,
+  type PickupClass,
+  type PickupRosterStudent,
+  type PickupSourceRow,
+  type TodayRideAssignment,
+} from "@/lib/todayPickup";
 
 export const dynamic = "force-dynamic";
 
@@ -53,7 +61,7 @@ export default async function PickupInboxPage() {
   const supabase = await createClient();
   const today = kstParts(new Date()).iso;
 
-  const [rowsRes, studentsRes, heartbeatRes, schedulesRes] = await Promise.all([
+  const [rowsRes, studentsRes, heartbeatRes, schedulesRes, classesRes, assignRes] = await Promise.all([
     supabase
       .from("pickup_requests")
       .select("*")
@@ -62,7 +70,7 @@ export default async function PickupInboxPage() {
       .limit(200),
     supabase
       .from("wr_students")
-      .select("id, name, grade, class_name, name_en, student_no, birth_date")
+      .select("id, name, grade, class_name, class_id, name_en, student_no, birth_date")
       .eq("is_demo", false)
       .eq("status", "active")
       .order("name"),
@@ -75,7 +83,55 @@ export default async function PickupInboxPage() {
       .in("status", ["예정", "적용됨", "실패"])
       .order("service_date", { ascending: true })
       .limit(200),
+    // 반의 교실 위치. 보호자를 어디로 안내할지에 씁니다.
+    supabase.from("wr_classes").select("id, grade, class_name, room, teacher_name").eq("is_demo", false),
+    // 오늘 요일에 셔틀을 타는가를 가리기 위한 배정. 요일까지 봐야 합니다 - 화·목만 타는
+    // 아이는 월요일에는 안 타는 아이와 같습니다.
+    supabase.from("shuttle_assignments_basic").select("student_id, student_name_raw, weekdays"),
   ]);
+  if (classesRes.error) console.error("[픽업 인박스] 반 조회 실패:", classesRes.error.message);
+  if (assignRes.error) console.error("[픽업 인박스] 셔틀 배정 조회 실패:", assignRes.error.message);
+
+  // 오늘 픽업만 추립니다. '무시'(픽업 아님)는 뺍니다.
+  const todayPickupRows: PickupSourceRow[] = ((rowsRes.data as Record<string, unknown>[] | null) ?? [])
+    .filter((r) => r.service_date === today && r.status !== "무시" && r.is_demo !== true)
+    .filter((r) => r.kind === "픽업" || r.ai_is_pickup === true || r.status === "확정")
+    .map((r) => ({
+      id: r.id as string,
+      studentId: (r.student_id as string | null) ?? null,
+      name: (((r.matched_name as string | null) ?? (r.ai_student_name as string | null)) ?? "").trim(),
+      pickupTime: (r.ai_pickup_time as string | null) ?? null,
+      source: (r.source as string | null) ?? null,
+      channelLabel: (r.channel_label as string | null) ?? null,
+      senderName: (r.sender_name as string | null) ?? null,
+      note: (r.ai_note as string | null) ?? null,
+      status: (r.status as string) ?? "확인대기",
+    }))
+    .filter((r) => r.name.length > 0);
+
+  const todayPickups = buildTodayPickupList(
+    todayPickupRows,
+    ((studentsRes.data as Record<string, unknown>[] | null) ?? []).map<PickupRosterStudent>((s) => ({
+      id: s.id as string,
+      name: (s.name as string) ?? "",
+      grade: (s.grade as string | null) ?? null,
+      className: (s.class_name as string | null) ?? null,
+      classId: (s.class_id as string | null) ?? null,
+    })),
+    ((classesRes.data as Record<string, unknown>[] | null) ?? []).map<PickupClass>((c) => ({
+      id: c.id as string,
+      grade: (c.grade as string | null) ?? null,
+      className: (c.class_name as string | null) ?? null,
+      room: (c.room as string | null) ?? null,
+      teacherName: (c.teacher_name as string | null) ?? null,
+    })),
+    ((assignRes.data as Record<string, unknown>[] | null) ?? []).map<TodayRideAssignment>((a) => ({
+      studentId: (a.student_id as string | null) ?? null,
+      studentName: (a.student_name_raw as string) ?? "",
+      weekdays: (a.weekdays as number[] | null) ?? [],
+    })),
+    new Date(`${today}T12:00:00+09:00`).getDay(),
+  );
 
   return (
     // 담당자: "픽업 인박스가 화면을 너무 좁게 써." max-w-3xl(768px)은 폰을 기준으로 잡은
@@ -90,6 +146,14 @@ export default async function PickupInboxPage() {
         토들·전화·선생님 연락으로 들어온 픽업이 모두 여기 모입니다. <b>[확인이 필요한 픽업]</b>만 봐주시면 되고, 나머지는
         자동으로 하원 체크표에 반영됩니다.
       </p>
+
+      {/* 오늘 픽업 리스트.
+          픽업으로 분류만 되고 끝나서, 셔틀을 안 타는 아이는 보호자가 현관에 온 뒤에야
+          어느 교실인지 찾기 시작했습니다. 몇 시에 어디로를 미리 한 화면에 둡니다. */}
+      <TodayPickupList
+        items={todayPickups}
+        dateLabel={`${today} (${["일", "월", "화", "수", "목", "금", "토"][new Date(`${today}T12:00:00+09:00`).getDay()]})`}
+      />
 
       <PickupInboxClient
         initialRows={(rowsRes.data as PickupRow[] | null) ?? []}

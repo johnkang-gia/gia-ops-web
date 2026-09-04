@@ -5,11 +5,13 @@ import { createClient } from "@/lib/supabase/client";
 import type { TeamMember, WrClass } from "@/lib/types";
 import Pagination from "@/components/Pagination";
 import { useConfirm } from "@/components/common/ConfirmProvider";
+import { useToast } from "@/components/common/ToastProvider";
 
 const PAGE_SIZE = 15;
 
 export default function ClassManageClient({ initialClasses, team }: { initialClasses: WrClass[]; team: TeamMember[] }) {
   const confirmAction = useConfirm();
+  const notify = useToast();
   const [classes, setClasses] = useState<WrClass[]>(initialClasses);
   const [grade, setGrade] = useState("");
   const [className, setClassName] = useState("");
@@ -48,12 +50,14 @@ export default function ClassManageClient({ initialClasses, team }: { initialCla
 
   async function updateAssignment(
     id: string,
-    field: "teacher_email" | "sub_teacher_email" | "teacher_name" | "sub_teacher_name",
+    field: "teacher_email" | "sub_teacher_email" | "teacher_name" | "sub_teacher_name" | "room",
     value: string
   ) {
     setClasses((prev) => prev.map((c) => (c.id === id ? { ...c, [field]: value || null } : c)));
     const supabase = createClient();
-    await supabase.from("wr_classes").update({ [field]: value || null }).eq("id", id);
+    const { error } = await supabase.from("wr_classes").update({ [field]: value || null }).eq("id", id);
+    // 조용히 넘기면 화면에는 적힌 것처럼 보이는데 다음에 열면 비어 있습니다.
+    if (error) notify("저장하지 못했습니다: " + error.message, "error");
   }
 
   async function removeClass(id: string) {
@@ -151,6 +155,9 @@ export default function ClassManageClient({ initialClasses, team }: { initialCla
               <th className="px-3 py-2">학년/반</th>
               <th className="px-3 py-2">담임</th>
               <th className="px-3 py-2">부담임</th>
+              {/* 하원 픽업 때 보호자를 어디로 안내할지. 반 이름만으로는 새로 온 직원이
+                  답할 수 없습니다. */}
+              <th className="px-3 py-2">교실</th>
               <th className="px-3 py-2" />
             </tr>
           </thead>
@@ -211,6 +218,16 @@ export default function ClassManageClient({ initialClasses, team }: { initialCla
                     />
                   )}
                 </td>
+                <td className="px-3 py-2">
+                  <input
+                    key={c.id + (c.room ?? "")}
+                    defaultValue={c.room ?? ""}
+                    onBlur={(e) => updateAssignment(c.id, "room", e.target.value)}
+                    placeholder="3층 302호"
+                    title="하원 픽업 때 보호자를 어디로 안내할지에 씁니다. 픽업 인박스의 [오늘 픽업 리스트]에 이 값이 나옵니다."
+                    className="w-28 rounded-lg border border-slate-200 px-2 py-1 text-xs"
+                  />
+                </td>
                 <td className="px-3 py-2 text-right">
                   <button onClick={() => removeClass(c.id)} className="text-xs text-red-400 hover:text-red-600">
                     삭제
@@ -221,7 +238,7 @@ export default function ClassManageClient({ initialClasses, team }: { initialCla
             })}
             {classes.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-3 py-6 text-center text-slate-400">
+                <td colSpan={5} className="px-3 py-6 text-center text-slate-400">
                   등록된 반이 없습니다.
                 </td>
               </tr>

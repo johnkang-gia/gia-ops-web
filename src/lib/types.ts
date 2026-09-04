@@ -564,6 +564,13 @@ export type WrClass = {
   // 이름을 우선 표시하고 없으면 이 이름을 대신 보여줍니다.
   teacher_name: string | null;
   sub_teacher_name: string | null;
+  /**
+   * 교실 위치(예: 3층 302호).
+   *
+   * 셔틀을 안 타는 아이를 보호자가 데리러 올 때 어디로 안내할지에 씁니다. 반 이름만으로는
+   * 새로 온 직원이 답할 수 없습니다.
+   */
+  room: string | null;
   created_at: string;
 };
 

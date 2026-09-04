@@ -28,6 +28,13 @@ export type ScanSource = {
   sentAt: Date;
   /** 토들 문의가 AI로 이미 학생을 특정해 둔 경우(가장 정확). */
   studentId?: string | null;
+  /**
+   * 구글챗이 알려준 멘션 구간.
+   *
+   * 이게 있으면 «어디까지가 선생님 성함인가»를 글자로 맞힐 필요가 없습니다. 토들에는
+   * 없으므로 undefined 이고, 그때는 예전처럼 글자 규칙으로 되짚습니다.
+   */
+  mentionSpans?: { start: number; length: number }[] | null;
 };
 
 export type ScanResult = { created: number; skipped: number; needsReview: number; failed?: string | null };
@@ -87,7 +94,7 @@ export async function scanIntoEntries(
     // 여기서 **명부의 id를 반드시 같이 들고 나옵니다.** 이름만 들고 가면 저장할 때 다시 찾아야
     // 하는데, 그때 못 찾으면 학생 없는 줄이 만들어집니다. student_id는 NOT NULL로 잠겨 있어
     // (20260827090000_lock_student_fk.sql) 그런 줄은 애초에 저장되지 않아야 합니다.
-    let matched = matchRosterStudents(m.text, roster, rules, staffNames)
+    let matched = matchRosterStudents(m.text, roster, rules, staffNames, m.mentionSpans)
       .map((s) => {
         const full = roster.find((r) => r.name === s.name);
         return { id: full?.id ?? null, name: s.name, display: s.displayName, grade: s.grade, className: full?.className ?? null };

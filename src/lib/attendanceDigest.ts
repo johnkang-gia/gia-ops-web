@@ -1052,7 +1052,38 @@ export function buildStaffNames(rows: { name?: string | null; email?: string | n
   return [...out];
 }
 
-export function blankMentions(text: string, staffNames?: string[]): string {
+/**
+ * 구글챗이 알려준 멘션 구간.
+ *
+ * 이게 있으면 추측이 필요 없습니다. 없으면(옛 줄·토들) 아래 글자 규칙으로 되짚습니다.
+ */
+export type MentionSpan = { start: number; length: number };
+
+export function blankMentions(text: string, staffNames?: string[], spans?: MentionSpan[] | null): string {
+  // ── 좌표가 있으면 그대로 지웁니다 ─────────────────────────────────────────
+  //
+  // 구글챗은 «본문 몇 번째 글자부터 몇 글자가 멘션인지»를 함께 줍니다. 우리는 그걸 버리고
+  // `@` 뒤 글자를 보며 어디까지가 성함인지 맞혀왔습니다. 그 추측이 틀리는 방향은 둘입니다.
+  //
+  //   · 명단에 없는 새 선생님 → 성함 일부가 본문에 남아 학생 이름처럼 읽힙니다.
+  //   · 멘션 뒤에 바로 학생 이름 → 지우는 범위가 학생 이름을 먹습니다.
+  //       "@John Kang Vivian, Sophia pick up today"
+  //
+  // 좌표가 있으면 둘 다 생기지 않습니다. 길이를 유지하며 공백으로 바꿔야 뒤 단계의 위치
+  // 계산(생일·반 힌트)이 어긋나지 않습니다.
+  if (spans && spans.length > 0) {
+    // 구글이 세는 단위는 **UTF-16 코드 유닛**입니다. `[...text]` 처럼 코드포인트로 쪼개면
+    // 이모지가 섞인 글에서 한 칸씩 밀립니다. 밀린 채로 지우면 학생 이름 첫 글자가 잘려
+    // 아무도 못 찾는 이름이 됩니다.
+    let out = text;
+    for (const s of spans) {
+      const from = Math.max(0, Math.min(out.length, s.start));
+      const to = Math.max(from, Math.min(out.length, s.start + s.length));
+      out = out.slice(0, from) + " ".repeat(to - from) + out.slice(to);
+    }
+    return out;
+  }
+
   // 넘겨받은 목록이 없어도 임시 목록은 늘 켜 둡니다 - 세 낱말 성함 세 분이 여기 걸립니다.
   const known = new Set([...SEED_STAFF_NAMES, ...(staffNames ?? [])].map(normStaff).filter((s) => s.length >= 3));
 
@@ -1089,7 +1120,9 @@ export function matchRosterStudents(
   text: string,
   roster: RosterStudent[],
   rules?: LearningRule[],
-  staffNames?: string[]
+  staffNames?: string[],
+  /** 구글챗이 알려준 멘션 구간. 있으면 글자 추측 대신 이걸 씁니다. */
+  mentionSpans?: MentionSpan[] | null
 ): MatchedStudent[] {
   // ── 0단계: 사람이 가르친 별칭을 가장 먼저 봅니다 ───────────────────────────
   //
@@ -1115,7 +1148,7 @@ export function matchRosterStudents(
   //
   // "@ 뒤는 선생님"이라는 규칙이 학교에서 지켜지고 있으므로, 지우고 시작하는 것이 맞습니다.
   // 길이를 유지하며 공백으로 바꿔야 뒤 단계의 위치 계산(생일·반 힌트)이 어긋나지 않습니다.
-  let scratch = blankMentions(text, staffNames);
+  let scratch = blankMentions(text, staffNames, mentionSpans);
   const aliasRules = (rules ?? []).filter((r) => r.kind === "alias" && r.student_name);
   // 긴 표기부터 봅니다("Maya Kim"이 "Maya"보다 먼저 잡히도록).
   for (const r of [...aliasRules].sort((a, b) => b.pattern.length - a.pattern.length)) {

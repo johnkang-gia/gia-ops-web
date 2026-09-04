@@ -1044,6 +1044,13 @@ export type GoogleChatMirrorMessage = {
   created_at_google: string;
   received_at: string;
   task_id: string | null;
+  /**
+   * 구글챗이 알려준 멘션 구간(본문 몇 번째 글자부터 몇 글자).
+   *
+   * 이게 있으면 «어디까지가 선생님 성함인가»를 글자로 추측하지 않아도 됩니다.
+   * 이 칸이 생기기 전에 들어온 줄은 null 입니다.
+   */
+  mentions: { start: number; length: number; name?: string | null }[] | null;
 };
 
 // 학생 출석부(요청: "학생출석부를 교사가 실시간 체크할 수 있게... 결석학생 보호자에게 연락할

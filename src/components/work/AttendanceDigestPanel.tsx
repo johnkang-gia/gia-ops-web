@@ -452,7 +452,7 @@ export default function AttendanceDigestPanel({
       const range = extractTargetRange(m.content, sentAt);
       const targetDate = range?.from ?? extractTargetDate(m.content, sentAt) ?? todayKey(sentAt);
       const targetDateTo = range?.to ?? targetDate;
-      const students = matchRosterStudents(m.content, roster, rules, staffNames);
+      const students = matchRosterStudents(m.content, roster, rules, staffNames, m.mentions);
       if (students.length === 0) {
         // 명부에서 이름을 못 찾아도 버리지 않고 보여줍니다(전학생·오탈자 등으로 대조가 실패해도
         // 놓치지 않도록). 그냥 원문을 잘라 보여주면 아무 단어나 이름처럼 뜨는 문제가 있어서

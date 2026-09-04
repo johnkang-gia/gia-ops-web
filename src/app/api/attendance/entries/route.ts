@@ -50,7 +50,7 @@ export async function GET(req: NextRequest) {
     db.from("app_users").select("name, email").limit(500),
     db
       .from("google_chat_mirror_messages")
-      .select("id, content, created_at_google")
+      .select("id, content, created_at_google, mentions")
       .eq("source_key", "attendance")
       .gte("created_at_google", since)
       .order("created_at_google", { ascending: false })
@@ -79,6 +79,8 @@ export async function GET(req: NextRequest) {
       messageId: String(m.id),
       text: (m.content as string | null) ?? "",
       sentAt: new Date(m.created_at_google as string),
+      // 구글챗이 준 멘션 좌표. 있으면 선생님 성함을 정확히 도려냅니다.
+      mentionSpans: (m.mentions as { start: number; length: number }[] | null) ?? null,
     })),
     ...(reqs ?? [])
       .filter((r) => !r.is_demo)

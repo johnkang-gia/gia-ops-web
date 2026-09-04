@@ -78,7 +78,36 @@ type ChatMessageResource = {
   createTime?: string;
   space?: { name?: string };
   sender?: { displayName?: string; email?: string };
+  /**
+   * 구글챗이 알려주는 «본문 어디가 무엇인지».
+   *
+   * 여기 USER_MENTION 이 들어 있고, 그 안에 시작 위치와 길이가 있습니다. 이걸 안 쓰면
+   * 우리가 `@` 뒤 글자를 보고 어디까지가 성함인지 **추측**해야 합니다.
+   */
+  annotations?: {
+    type?: string;
+    startIndex?: number;
+    length?: number;
+    userMention?: { user?: { name?: string; displayName?: string } };
+  }[];
 };
+
+/** 본문에서 멘션이 차지하는 구간. 저장해두면 나중에 추측할 일이 없습니다. */
+export type MentionSpan = { start: number; length: number; name: string | null; userId: string | null };
+
+export function mentionSpansOf(m: ChatMessageResource): MentionSpan[] {
+  return (m.annotations ?? [])
+    .filter((a) => a.type === "USER_MENTION" && typeof a.startIndex === "number" && typeof a.length === "number")
+    .map((a) => ({
+      start: a.startIndex as number,
+      length: a.length as number,
+      name: a.userMention?.user?.displayName ?? null,
+      userId: a.userMention?.user?.name ?? null,
+    }))
+    // 겹치거나 뒤죽박죽인 구간이 오면 뒤에서 자르기가 어긋납니다. 앞에서 정리해 둡니다.
+    .filter((s) => s.start >= 0 && s.length > 0)
+    .sort((a, b) => a.start - b.start);
+}
 
 // 두 방 각각에서 "마지막으로 저장한 메시지 시각 이후"의 새 메시지만 가져와 upsert합니다.
 // 커서는 별도 테이블 없이 google_chat_mirror_messages의 최신 created_at_google을 그대로
@@ -133,6 +162,8 @@ export async function pollNewMessages(supabase: SupabaseClient, sourceKey: Googl
       sender_email: m.sender?.email ?? null,
       content: m.text as string,
       created_at_google: m.createTime ?? new Date().toISOString(),
+      // 멘션 구간을 그대로 남깁니다. 없으면 null - 뒤에서 «좌표를 못 받은 줄»로 알아봅니다.
+      mentions: mentionSpansOf(m).length > 0 ? mentionSpansOf(m) : null,
     }));
   if (rows.length === 0) return 0;
 

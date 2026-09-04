@@ -297,7 +297,7 @@ export default function ShuttleChecklistSidebar({
       if (category !== "픽업" && category !== "결석") continue;
       const targetDate = extractTargetDate(m.content, sentAt) ?? todayKey(sentAt);
       if (targetDate !== today) continue;
-      const students = matchRosterStudents(m.content, roster, rules, staffNames);
+      const students = matchRosterStudents(m.content, roster, rules, staffNames, m.mentions);
       if (students.length === 0) {
         const guess = guessKoreanName(m.content, category) ?? stripLeadingMention(m.content).slice(0, 12);
         out.push({

@@ -585,6 +585,80 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
               </button>
             </span>
           </label>
+          {/* 대상은 **분류 바로 옆 칸**입니다.
+              따로 상자를 두고 "이 항목은 누구를 위한 것인가" 라고 물으면 등록할 때마다 그 설명을
+              다시 읽게 됩니다. 분류와 나란히 두면 고르는 순서 그대로 채워집니다. */}
+          <label className="text-[11px] text-slate-500">
+            학년
+            <select
+              value={gradeChoice}
+              onChange={(e) => pickGrade(e.target.value)}
+              className="ml-1 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+            >
+              <option value="">개별 지정</option>
+              <option value="전체">전체 — {deptTab === "공통" ? "학교 전체" : deptTab} 전원</option>
+              {grades.map((g) => (
+                <option key={g} value={g}>
+                  {g}학년
+                </option>
+              ))}
+              {/* 수강 그룹.
+                  학년·반과 다른 점: **명단이 바뀌면 대상도 저절로 따라옵니다.** 방과후를
+                  그만둔 아이는 그룹에서 빼기만 하면 교재도 함께 빠집니다. */}
+              {groups.length > 0 && (
+                <optgroup label="수강 그룹">
+                  {groups.map((g) => (
+                    <option key={g.id} value={`g:${g.id}`}>
+                      {g.name} ({g.kind})
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+            </select>
+          </label>
+
+          {/* 반은 **학년을 고른 뒤에만** 나옵니다. 그리고 그 학년의 반만 나옵니다. */}
+          {form.target_scope === "학년" || form.target_scope === "반" ? (
+            <label className="text-[11px] text-slate-500">
+              반
+              <select
+                value={form.default_classes[0] ?? ""}
+                onChange={(e) =>
+                  setForm((f) => ({
+                    ...f,
+                    default_classes: e.target.value ? [e.target.value] : [],
+                    target_scope: e.target.value ? "반" : "학년",
+                  }))
+                }
+                className="ml-1 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+              >
+                <option value="">전체</option>
+                {gradeClasses.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+
+          {/* 대상 안에서도 **고른 아이만** 사는 항목(3학년 중국어).
+              범위(학년·반)와는 다른 축이라 체크 하나로 둡니다 - 끄면 대상 전원에게 자동으로
+              붙고, 켜면 인보이스 표에서 살 아이를 골라야 합니다. 이 둘을 한 칸에 섞으면
+              전원에게 붙인 뒤 빼는 것을 잊어 **돈이 잘못 청구됩니다.** */}
+          {form.target_scope !== "개별" && (
+            <label
+              className="flex items-center gap-1 pb-1.5 text-[11px] text-slate-500"
+              title="선택 과목 교재처럼 대상 안에서도 하는 아이만 사는 것. 표에는 열이 서고, 살 아이를 체크합니다"
+            >
+              <input
+                type="checkbox"
+                checked={!form.auto_apply}
+                onChange={(e) => setForm((f) => ({ ...f, auto_apply: !e.target.checked }))}
+              />
+              고른 아이만
+            </label>
+          )}
           <label className="text-[11px] text-slate-500">
             인보이스 이름 (영문)
             <input
@@ -614,147 +688,31 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
           </label>
         </div>
 
-        {/* ── 대상 ────────────────────────────────────────────────
-            **이 항목이 누구를 위한 것인가.**
-
-            지금까지는 이것을 한글 이름에 적었습니다 — `4학년 중국어`. 그러면 셋이 어긋납니다.
-              · 인보이스에 `4학년 중국어` 가 그대로 찍힙니다(학부모에게는 필요 없는 말입니다)
-              · 학년이 바뀌면 이름을 고쳐야 하는데, 고치면 지난 청구서와 이름이 달라집니다
-              · 글자로만 있으니 **기계는 못 읽습니다** — 인보이스 표에서 걸러낼 수가 없습니다
-
-            여기에 고르면 표의 열 머리에 뱃지로 뜨고, 상관없는 명단에서는 열을 아예 세우지
-            않습니다. 이름에는 `중국어` 만 적으면 됩니다. */}
-        <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50/60 p-2.5">
-          <p className="mb-1.5 text-[12px] font-bold text-slate-700">
-            대상 — 이 항목은 누구를 위한 것인가
-            <span className="ml-1.5 rounded bg-white px-1.5 py-0.5 text-[11px] font-bold text-teal-700">
-              {targetLabel({ default_grades: form.default_grades, default_classes: form.default_classes, target_scope: form.target_scope })}
-            </span>
-          </p>
-          <p className="mb-2 text-[11px] leading-relaxed text-slate-500">
-            이름에 &lsquo;4학년&rsquo;을 적지 마세요 — 인보이스에 그대로 찍히고, 표에서 걸러낼 수도 없습니다.
-          </p>
-
-          {/* 대상에 든다고 다 사는 것은 아닙니다.
-              3학년 중국어는 3학년 것이 맞지만 3학년 중에도 하는 아이와 안 하는 아이가 있습니다.
-              이 둘을 한 칸에 섞으면, 전원에게 붙인 뒤 빼는 것을 잊어 **돈이 잘못 청구됩니다.** */}
-          <div className="mb-2 flex flex-wrap gap-1.5">
-            {[
-              {
-                on: true,
-                label: "대상 전원에게",
-                hint: "공통 교과서처럼 그 학년·반이면 전부 사는 것",
-              },
-              {
-                on: false,
-                label: "고른 아이에게만",
-                hint: "선택 과목 교재처럼 대상 안에서도 하는 아이만 사는 것 — 표에는 열이 서고, 살 아이를 체크합니다",
-              },
-            ].map((o) => (
-              <button
-                key={String(o.on)}
-                type="button"
-                title={o.hint}
-                onClick={() => setForm((f) => ({ ...f, auto_apply: o.on }))}
-                className={
-                  "rounded-lg border px-2.5 py-1 text-[12px] font-bold transition " +
-                  (form.auto_apply === o.on
-                    ? "border-teal-500 bg-teal-600 text-white"
-                    : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50")
-                }
-              >
-                {o.label}
-              </button>
-            ))}
-            <span className="self-center text-[11px] text-slate-400">
-              {form.auto_apply
-                ? "고른 학년·반의 아이 전원에게 자동으로 붙습니다."
-                : "자동으로 붙지 않습니다. 인보이스 표에서 살 아이만 체크하세요."}
-            </span>
-          </div>
-          {/* 학년을 먼저, 그 다음 반.
-              체크를 여러 개 두면 "4학년과 G2A" 같은 조합이 만들어지는데, 그런 항목은 읽는
-              쪽에서 뜻을 정할 수가 없습니다. 한 번에 하나씩 좁혀 들어가면 만들 수 있는 것이
-              곧 뜻이 분명한 것들뿐입니다. */}
-          <div className="flex flex-wrap items-end gap-2">
-            <label className="text-[11px] text-slate-500">
-              학년
-              <select
-                value={gradeChoice}
-                onChange={(e) => pickGrade(e.target.value)}
-                className="ml-1 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
-              >
-                <option value="">개별 지정 (고르지 않음)</option>
-                <option value="전체">전체 — {deptTab === "공통" ? "학교 전체" : deptTab} 전원</option>
-                {grades.map((g) => (
-                  <option key={g} value={g}>
-                    {g}학년
-                  </option>
-                ))}
-                {/* 수강 그룹.
-                    학년·반과 다른 점: **명단이 바뀌면 대상도 저절로 따라옵니다.** 방과후를
-                    그만둔 아이는 그룹에서 빼기만 하면 교재도 함께 빠집니다. */}
-                {groups.length > 0 && (
-                  <optgroup label="수강 그룹">
-                    {groups.map((g) => (
-                      <option key={g.id} value={`g:${g.id}`}>
-                        {g.name} ({g.kind})
-                      </option>
-                    ))}
-                  </optgroup>
-                )}
-              </select>
-            </label>
-
-            {/* 반은 **학년을 고른 뒤에만** 나옵니다. 그리고 그 학년의 반만 나옵니다. */}
-            {form.target_scope === "학년" || form.target_scope === "반" ? (
-              <label className="text-[11px] text-slate-500">
-                반
-                <select
-                  value={form.default_classes[0] ?? ""}
-                  onChange={(e) =>
-                    setForm((f) => ({
-                      ...f,
-                      default_classes: e.target.value ? [e.target.value] : [],
-                      target_scope: e.target.value ? "반" : "학년",
-                    }))
-                  }
-                  className="ml-1 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
-                >
-                  <option value="">전체 — {gradeChoice}학년 전원</option>
-                  {gradeClasses.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-                {gradeClasses.length === 0 && <span className="ml-1 text-[11px] text-slate-400">이 학년에는 반이 없습니다</span>}
-              </label>
-            ) : null}
-
-            <span className="pb-1.5 text-[11px] text-slate-500">
-              {form.target_scope === "개별"
-                ? "아무에게도 자동으로 안 붙습니다. 인보이스 표에서 한 명씩 넣습니다."
-                : form.target_scope === "부서전체"
-                  ? "학년이 늘어도 저절로 따라옵니다."
-                  : form.target_scope === "그룹"
-                    ? "이 그룹의 명단이 바뀌면 대상도 저절로 따라옵니다."
-                    : form.target_scope === "반"
-                      ? `${gradeChoice}학년 ${form.default_classes[0]} 에서만 쓰는 항목입니다.`
-                      : `${gradeChoice}학년 것입니다.`}
-            </span>
-          </div>
-
-          {/* 옛 자료 중에는 학년을 여러 개 체크해 둔 것이 있습니다.
-              그것을 말없이 첫 번째 하나로 줄이면, 고치기만 눌렀다 저장해도 나머지 학년에서
-              그 교재가 사라집니다. 그런 줄은 미리 알려줍니다. */}
-          {form.default_grades.length > 1 && (
-            <p className="mt-1.5 text-[11px] text-amber-700">
-              이 항목에는 학년이 <b>{form.default_grades.join("·")}</b> 로 여러 개 적혀 있습니다. 위에서 학년을 고르면{" "}
-              <b>고른 하나만 남습니다.</b> 여러 학년에 그대로 두려면 학년을 건드리지 말고 저장하세요.
-            </p>
+        {/* 지금 고른 대상이 무슨 뜻인지 한 줄로. 고르고 나서 확인하는 자리입니다. */}
+        <p className="mt-1.5 text-[11px] text-slate-500">
+          {form.target_scope === "개별"
+            ? "아무에게도 자동으로 안 붙습니다. 인보이스 표에서 한 명씩 넣습니다."
+            : form.target_scope === "부서전체"
+              ? "학년이 늘어도 저절로 따라옵니다."
+              : form.target_scope === "그룹"
+                ? "이 그룹의 명단이 바뀌면 대상도 저절로 따라옵니다."
+                : form.target_scope === "반"
+                  ? `${gradeChoice}학년 ${form.default_classes[0] ?? ""} 에서만 쓰는 항목입니다.`
+                  : `${gradeChoice}학년 것입니다.`}
+          {form.target_scope !== "개별" && !form.auto_apply && (
+            <span className="ml-1 font-semibold text-amber-700">자동으로 붙지 않습니다 — 인보이스 표에서 살 아이만 체크하세요.</span>
           )}
-        </div>
+        </p>
+
+        {/* 옛 자료 중에는 학년을 여러 개 체크해 둔 것이 있습니다.
+            그것을 말없이 첫 번째 하나로 줄이면, 고치기만 눌렀다 저장해도 나머지 학년에서
+            그 교재가 사라집니다. 그런 줄은 미리 알려줍니다. */}
+        {form.default_grades.length > 1 && (
+          <p className="mt-1 text-[11px] text-amber-700">
+            이 항목에는 학년이 <b>{form.default_grades.join("·")}</b> 로 여러 개 적혀 있습니다. 학년을 고르면{" "}
+            <b>고른 하나만 남습니다.</b> 여러 학년에 그대로 두려면 학년을 건드리지 말고 저장하세요.
+          </p>
+        )}
 
         <div className="mt-3 flex items-center gap-2">
           <input

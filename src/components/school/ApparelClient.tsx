@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
 import { todayKst } from "@/lib/kst";
-import type { ApparelOrder, ApparelOrderItem, ApparelOrderPiece, StudentApparelSize, StudentGroup, Term } from "@/lib/types";
+import type { ApparelExchange, ApparelOrder, ApparelOrderItem, ApparelOrderPiece, ApparelStock, StudentApparelSize, StudentGroup, Term } from "@/lib/types";
 
 /**
  * 의류 — 교복과 행사 티셔츠.
@@ -43,10 +43,240 @@ function daysSince(d: string): number {
   return Math.round((Date.now() - new Date(`${d}T12:00:00+09:00`).getTime()) / 86400000);
 }
 
+/**
+ * 재고와 교환.
+ *
+ * **부족분이 곧 재발주 수량입니다.** 필요한 벌수에서 재고를 빼면 그 숫자가 나옵니다.
+ * 지금까지는 이것을 종이나 머릿속으로 셌고, 그래서 교환이 오갈수록 어긋났습니다.
+ *
+ * 150을 받아 입어봤더니 작아서 160으로 바꿔달라고 하면, 150 한 벌이 **재고로 돌아옵니다.**
+ * 돌아온 150은 다른 아이에게 줄 수 있습니다 — 아이들끼리 교환이 되는 것이 원장 덕분입니다.
+ */
+function StockView({
+  order,
+  orders,
+  onPickOrder,
+  pieces,
+  items,
+  stockOf,
+  tally,
+  exchanges,
+  byStudent,
+  busy,
+  onReceive,
+  onCompleteExchange,
+  onCancelExchange,
+}: {
+  order: ApparelOrder | null;
+  orders: ApparelOrder[];
+  onPickOrder: (id: string) => void;
+  pieces: ApparelOrderPiece[];
+  items: ApparelOrderItem[];
+  stockOf: Map<string, ApparelStock>;
+  tally: Map<string, Map<string, number>>;
+  exchanges: ApparelExchange[];
+  byStudent: Map<string, ApparelStudent>;
+  busy: boolean;
+  onReceive: (pieceId: string, size: string, qty: number) => void;
+  onCompleteExchange: (ex: ApparelExchange) => void;
+  onCancelExchange: (ex: ApparelExchange) => void;
+}) {
+  const [draft, setDraft] = useState<{ piece: string; size: string; qty: string }>({ piece: "", size: "", qty: "" });
+  const open = exchanges.filter((e) => e.status === "신청");
+
+  if (!order) {
+    return (
+      <div className="rounded-xl border border-dashed border-slate-200 p-8 text-center text-sm text-slate-400">
+        제작 건을 먼저 만들어주세요.
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="mb-3 flex flex-wrap items-center gap-1.5">
+        {orders.map((o) => (
+          <button
+            key={o.id}
+            onClick={() => onPickOrder(o.id)}
+            className={
+              "rounded-lg border px-2.5 py-1.5 text-[12px] font-semibold transition " +
+              (order.id === o.id ? "border-slate-800 bg-slate-800 text-white" : "border-slate-200 text-slate-600 hover:bg-slate-50")
+            }
+          >
+            {o.name}
+          </button>
+        ))}
+      </div>
+
+      {/* 교환 신청. 재고보다 먼저 보여줍니다 - 기다리는 아이가 있는 일이라 급합니다. */}
+      {open.length > 0 && (
+        <div className="mb-3 rounded-xl border-2 border-amber-300 bg-amber-50 p-2.5">
+          <p className="mb-1.5 text-[12px] font-black text-amber-900">🔁 교환 신청 {open.length}건</p>
+          {open.map((e) => {
+            const have = stockOf.get(`${e.piece_id}|${e.to_size}`)?.남음 ?? 0;
+            const piece = pieces.find((p) => p.id === e.piece_id);
+            return (
+              <div key={e.id} className="mb-1 flex flex-wrap items-center gap-1.5 rounded-lg bg-white/80 px-2 py-1.5 text-[12px]">
+                <b className="text-slate-800">{byStudent.get(e.student_id)?.name ?? "학생"}</b>
+                <span className="text-slate-500">
+                  {piece?.name} · {e.from_size} → <b className="text-slate-800">{e.to_size}</b>
+                </span>
+                {e.reason && <span className="text-[11px] text-slate-400">· {e.reason}</span>}
+                {/* 바꿔줄 옷이 있는지. 없으면 눌러도 재고가 음수가 되므로 미리 말해줍니다. */}
+                <span
+                  className={
+                    "rounded px-1.5 text-[11px] font-bold " + (have > 0 ? "bg-teal-100 text-teal-800" : "bg-rose-100 text-rose-700")
+                  }
+                >
+                  {e.to_size} 재고 {have}벌
+                </span>
+                <span className="ml-auto flex gap-1">
+                  <button
+                    onClick={() => onCompleteExchange(e)}
+                    disabled={busy}
+                    className="rounded-lg bg-teal-600 px-2.5 py-1 text-[11px] font-bold text-white disabled:opacity-40"
+                    title={have > 0 ? "바꿔줍니다. 원래 사이즈는 재고로 돌아옵니다" : "재고가 없습니다. 그래도 바꾸면 부족분이 재발주 목록에 뜹니다"}
+                  >
+                    바꿔주기
+                  </button>
+                  <button onClick={() => onCancelExchange(e)} className="text-[11px] font-semibold text-slate-400 hover:text-rose-600">
+                    취소
+                  </button>
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* 입고 기입. 발주해서 받은 옷을 적으면 그때부터 재고가 셉니다. */}
+      <div className="mb-3 flex flex-wrap items-end gap-1.5 rounded-xl border border-slate-200 bg-slate-50/60 p-2.5">
+        <span className="pb-1.5 text-[11px] font-bold text-slate-600">입고 적기</span>
+        <select
+          value={draft.piece}
+          onChange={(e) => setDraft((d) => ({ ...d, piece: e.target.value }))}
+          className="rounded-lg border border-slate-300 px-2 py-1 text-[12px]"
+        >
+          <option value="">품목</option>
+          {pieces.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+        <input
+          value={draft.size}
+          onChange={(e) => setDraft((d) => ({ ...d, size: e.target.value }))}
+          placeholder="사이즈"
+          className="w-24 rounded-lg border border-slate-300 px-2 py-1 text-[12px]"
+        />
+        <input
+          type="number"
+          value={draft.qty}
+          onChange={(e) => setDraft((d) => ({ ...d, qty: e.target.value }))}
+          placeholder="수량"
+          className="w-20 rounded-lg border border-slate-300 px-2 py-1 text-right text-[12px]"
+        />
+        <button
+          onClick={() => {
+            onReceive(draft.piece, draft.size, Number(draft.qty) || 0);
+            setDraft((d) => ({ ...d, size: "", qty: "" }));
+          }}
+          disabled={busy || !draft.piece || !draft.size.trim() || Number(draft.qty) <= 0}
+          className="rounded-lg bg-slate-800 px-3 py-1 text-[12px] font-bold text-white disabled:opacity-40"
+        >
+          + 입고
+        </button>
+        <span className="pb-1 text-[11px] text-slate-400">발주해서 받은 수량을 적습니다. 이 숫자가 있어야 부족분을 셀 수 있습니다.</span>
+      </div>
+
+      {/* 품목·사이즈별 재고. 필요·재고·부족 세 숫자면 재발주가 정해집니다. */}
+      {pieces.map((p) => {
+        const need = tally.get(p.id) ?? new Map<string, number>();
+        // 필요한 사이즈 + 재고가 있는 사이즈. 둘 다 봐야 남는 것도 보입니다.
+        const allSizes = [...new Set([...need.keys(), ...[...stockOf.values()].filter((s) => s.piece_id === p.id).map((s) => s.size)])].sort(
+          (a, b) => a.localeCompare(b, "ko", { numeric: true }),
+        );
+        if (allSizes.length === 0) return null;
+        const shortTotal = allSizes.reduce((n, s) => n + Math.max(0, (need.get(s) ?? 0) - (stockOf.get(`${p.id}|${s}`)?.입고 ?? 0)), 0);
+        return (
+          <div key={p.id} className="mb-3 overflow-hidden rounded-xl border border-slate-200 bg-white">
+            <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-3 py-2">
+              <b className="text-[13px] text-slate-800">{p.name}</b>
+              {shortTotal > 0 ? (
+                <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-bold text-rose-700">재발주 {shortTotal}벌</span>
+              ) : (
+                <span className="rounded-full bg-teal-50 px-2 py-0.5 text-[11px] font-semibold text-teal-700">모자란 사이즈 없음</span>
+              )}
+            </div>
+            <table className="w-full text-left text-sm">
+              <thead className="bg-slate-50 text-[11px] font-semibold text-slate-500">
+                <tr>
+                  <th className="px-3 py-1.5">사이즈</th>
+                  <th className="w-20 px-2 py-1.5 text-right" title="이 사이즈로 정해진 아이 수">
+                    필요
+                  </th>
+                  <th className="w-20 px-2 py-1.5 text-right" title="발주해서 받은 수량">
+                    입고
+                  </th>
+                  <th className="w-20 px-2 py-1.5 text-right" title="아이에게 나간 수량">
+                    배부
+                  </th>
+                  <th className="w-20 px-2 py-1.5 text-right" title="교환으로 돌아온 수량">
+                    반납
+                  </th>
+                  <th className="w-20 px-2 py-1.5 text-right">남음</th>
+                  <th className="w-24 px-3 py-1.5 text-right">재발주</th>
+                </tr>
+              </thead>
+              <tbody>
+                {allSizes.map((s) => {
+                  const b = stockOf.get(`${p.id}|${s}`);
+                  const needN = need.get(s) ?? 0;
+                  const short = Math.max(0, needN - (b?.입고 ?? 0));
+                  return (
+                    <tr key={s} className="border-t border-slate-100">
+                      <td className="px-3 py-1.5 text-[13px] font-semibold text-slate-700">{s}</td>
+                      <td className="px-2 py-1.5 text-right text-[12px] tabular-nums text-slate-700">{needN || ""}</td>
+                      <td className="px-2 py-1.5 text-right text-[12px] tabular-nums text-slate-500">{b?.입고 || ""}</td>
+                      <td className="px-2 py-1.5 text-right text-[12px] tabular-nums text-slate-500">{b?.배부 || ""}</td>
+                      <td className="px-2 py-1.5 text-right text-[12px] tabular-nums text-teal-600">{b?.반납 || ""}</td>
+                      <td
+                        className={
+                          "px-2 py-1.5 text-right text-[12px] font-bold tabular-nums " +
+                          ((b?.남음 ?? 0) < 0 ? "text-rose-600" : (b?.남음 ?? 0) > 0 ? "text-teal-700" : "text-slate-400")
+                        }
+                      >
+                        {b?.남음 ?? 0}
+                      </td>
+                      <td className={"px-3 py-1.5 text-right text-[12px] font-bold tabular-nums " + (short > 0 ? "text-rose-700" : "text-slate-300")}>
+                        {short || "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        );
+      })}
+
+      <p className="text-[11px] leading-relaxed text-slate-400">
+        <b>남음</b>은 입고 + 반납 − 배부입니다. <b>재발주</b>는 필요한 벌수에서 이미 발주해 받은 것을 뺀 수입니다 — 교환으로 돌아온 옷은
+        남음에 들어가니, 재발주를 넣기 전에 남음부터 쓰면 됩니다. 남음이 음수면 이미 있는 것보다 많이 나눠준 것입니다.
+      </p>
+      {items.length === 0 && <p className="mt-2 text-[11px] text-slate-400">아직 이 건에 아이가 없습니다.</p>}
+    </div>
+  );
+}
+
 export default function ApparelClient({
   initialOrders,
   initialPieces,
   initialItems,
+  initialStock,
+  initialExchanges,
   initialSizes,
   students,
   terms,
@@ -58,6 +288,8 @@ export default function ApparelClient({
   initialOrders: ApparelOrder[];
   initialPieces: ApparelOrderPiece[];
   initialItems: ApparelOrderItem[];
+  initialStock: ApparelStock[];
+  initialExchanges: ApparelExchange[];
   initialSizes: StudentApparelSize[];
   students: ApparelStudent[];
   terms: Term[];
@@ -70,26 +302,61 @@ export default function ApparelClient({
   const [orders, setOrders] = useState(initialOrders);
   const [pieces, setPieces] = useState(initialPieces);
   const [items, setItems] = useState(initialItems);
+  const [stock, setStock] = useState(initialStock);
+  const [exchanges, setExchanges] = useState(initialExchanges);
   const [sizes, setSizes] = useState(initialSizes);
   const [selected, setSelected] = useState<string | null>(initialOrders[0]?.id ?? null);
-  const [view, setView] = useState<"제작" | "사이즈">("제작");
+  const [view, setView] = useState<"제작" | "재고" | "사이즈">("제작");
   const [busy, setBusy] = useState(false);
   const [newOpen, setNewOpen] = useState(false);
   const [form, setForm] = useState({ name: "", category: "행사", due_date: "" });
   /** 새 제작 건의 구성 품목. 처음엔 하나로 시작하고, 세트면 줄을 늘립니다. */
   const [draftPieces, setDraftPieces] = useState([{ name: "", size_kind: "상의", size_hints: "S,M,L,XL", unit_price: 0 }]);
   const [sizeKind, setSizeKind] = useState("상의");
+  /** 교환 신청 창을 연 줄. 어느 아이의 어느 품목인지가 여기 담깁니다. */
+  const [exchangeFor, setExchangeFor] = useState<ApparelOrderItem | null>(null);
+  const [exDraft, setExDraft] = useState({ to: "", reason: "" });
   const [onlyMissing, setOnlyMissing] = useState(false);
 
   const order = orders.find((o) => o.id === selected) ?? null;
   const byStudent = useMemo(() => new Map(students.map((s) => [s.id, s])), [students]);
 
-  /** 학생 → 종류 → 사이즈. 제작 건에서 기본값을 끌어오는 자리입니다. */
+  const currentTermId = terms.find((t) => t.status === "진행중")?.id ?? null;
+
+  /**
+   * 학생 → 종류 → 사이즈. 제작 건에서 기본값을 끌어오는 자리입니다.
+   *
+   * **이번 학기 값이 먼저입니다.** 없으면 가장 최근에 잰 값을 쓰되, 화면에서 `지난 학기 값`
+   * 으로 띄웁니다 - 아이는 자라므로 2학년 때 값을 3학년에 그대로 쓰면 안 맞는 옷이 오고,
+   * 그 옷은 다시 만들어야 합니다.
+   */
   const sizeMap = useMemo(() => {
     const m = new Map<string, StudentApparelSize>();
-    for (const s of sizes) m.set(`${s.student_id}|${s.kind}`, s);
+    for (const s of sizes) {
+      const key = `${s.student_id}|${s.kind}`;
+      const cur = m.get(key);
+      if (!cur) {
+        m.set(key, s);
+        continue;
+      }
+      const sIsNow = (s.term_id ?? null) === currentTermId;
+      const curIsNow = (cur.term_id ?? null) === currentTermId;
+      // 이번 학기 것이 이깁니다. 둘 다 아니면 최근에 잰 것.
+      if (sIsNow && !curIsNow) m.set(key, s);
+      else if (sIsNow === curIsNow && s.measured_at > cur.measured_at) m.set(key, s);
+    }
     return m;
-  }, [sizes]);
+  }, [sizes, currentTermId]);
+
+  /** 이번 학기에 잰 값인가. 아니면 화면이 확인을 받습니다. */
+  const isThisTerm = (s: StudentApparelSize | undefined) => !!s && (s.term_id ?? null) === currentTermId;
+
+  /** 품목·사이즈별 남은 재고. 뷰가 더해준 값만 씁니다 - 화면마다 다시 더하면 숫자가 갈립니다. */
+  const stockOf = useMemo(() => {
+    const m = new Map<string, ApparelStock>();
+    for (const s of stock) m.set(`${s.piece_id}|${s.size}`, s);
+    return m;
+  }, [stock]);
 
   const orderPieces = useMemo(
     () => pieces.filter((p) => p.order_id === order?.id).sort((a, b) => a.sort_order - b.sort_order),
@@ -238,35 +505,146 @@ export default function ApparelClient({
       setItems((p) => p.map((x) => (x.id === item.id ? item : x)));
       return;
     }
+    // 사이즈가 바뀌면 재고도 움직입니다(트리거). 화면 숫자를 다시 받아옵니다.
+    void reloadStock();
     // DB 트리거가 학생 사이즈에도 남깁니다. 화면도 맞춰둬야 다음 제작 건에서 바로 보입니다.
     const piece = orderPieces.find((p) => p.id === item.piece_id);
     if (piece?.size_kind && size) {
       const key = `${item.student_id}|${piece.size_kind}`;
       setSizes((p) => [
         ...p.filter((s) => `${s.student_id}|${s.kind}` !== key),
-        { id: key, student_id: item.student_id, kind: piece.size_kind!, size, measured_at: todayKst(), note: null, updated_by: currentUserEmail },
+        { id: key, student_id: item.student_id, kind: piece.size_kind!, size, measured_at: todayKst(), term_id: currentTermId, note: null, updated_by: currentUserEmail },
       ]);
     }
+  }
+
+  /** 재고를 다시 읽습니다. 원장이 바뀔 때마다 뷰에서 새로 받아옵니다. */
+  async function reloadStock() {
+    const ids = orderPieces.map((p) => p.id);
+    if (ids.length === 0) return;
+    const { data, error } = await createClient().from("apparel_stock_balance").select("*").in("piece_id", ids);
+    if (error) {
+      notify("재고를 다시 읽지 못했습니다: " + error.message, "error");
+      return;
+    }
+    // 다른 제작 건의 재고는 그대로 두고 이 건 것만 갈아끼웁니다.
+    setStock((p) => [...p.filter((s) => !ids.includes(s.piece_id)), ...((data as ApparelStock[] | null) ?? [])]);
+  }
+
+  /** 발주해서 받은 옷을 재고에 넣습니다. 이 숫자가 있어야 부족분을 셀 수 있습니다. */
+  async function receive(pieceId: string, size: string, qty: number, note?: string) {
+    const s = size.trim();
+    if (!s || qty <= 0) return;
+    setBusy(true);
+    const { error } = await createClient()
+      .from("apparel_stock_moves")
+      .insert({ piece_id: pieceId, size: s, kind: "입고", qty, created_by: currentUserEmail, note: note ?? null });
+    setBusy(false);
+    if (error) {
+      notify("입고를 적지 못했습니다: " + error.message, "error");
+      return;
+    }
+    await reloadStock();
+    notify(`${s} ${qty}벌을 입고로 적었습니다.`, "success");
+  }
+
+  /**
+   * 사이즈 교환 신청.
+   *
+   * 신청을 따로 남기는 이유: 바꿔달라는 말이 온 시점과 실제로 바꿔준 시점이 다릅니다.
+   * 그 사이에 재고가 없으면 기다려야 하는데, 신청이 안 남아 있으면 **그 아이는 잊힙니다.**
+   */
+  async function requestExchange(item: ApparelOrderItem, toSize: string, reason: string) {
+    const to = toSize.trim();
+    if (!to || !item.size) return;
+    const { data, error } = await createClient()
+      .from("apparel_exchanges")
+      .insert({
+        order_item_id: item.id,
+        piece_id: item.piece_id,
+        student_id: item.student_id,
+        from_size: item.size.trim(),
+        to_size: to,
+        qty: item.qty,
+        reason: reason.trim() || null,
+        requested_by: currentUserEmail,
+      })
+      .select()
+      .single();
+    if (error || !data) {
+      notify("교환 신청을 적지 못했습니다: " + (error?.message ?? ""), "error");
+      return;
+    }
+    setExchanges((p) => [data as ApparelExchange, ...p]);
+    notify(`${byStudent.get(item.student_id)?.name ?? "학생"} · ${item.size} → ${to} 교환을 접수했습니다.`, "success");
+  }
+
+  /**
+   * 교환을 처리합니다.
+   *
+   * 제작 명단의 사이즈를 바꾸면 **재고는 트리거가 알아서 움직입니다** - 원래 사이즈가 반납으로
+   * 돌아오고 새 사이즈가 배부로 나갑니다. 화면에서 손으로 빼고 더하지 않는 이유가 그것입니다.
+   * 손으로 하면 반드시 빠뜨리고, 빠뜨린 것은 재고가 안 맞는다는 사실로만 나중에 드러납니다.
+   */
+  async function completeExchange(ex: ApparelExchange) {
+    const item = items.find((i) => i.id === ex.order_item_id);
+    if (!item) return;
+    setBusy(true);
+    const supabase = createClient();
+    const { error } = await supabase
+      .from("apparel_order_items")
+      .update({ size: ex.to_size, updated_by: currentUserEmail })
+      .eq("id", item.id);
+    if (error) {
+      setBusy(false);
+      notify("사이즈를 바꾸지 못했습니다: " + error.message, "error");
+      return;
+    }
+    await supabase
+      .from("apparel_exchanges")
+      .update({ status: "완료", done_by: currentUserEmail, done_at: new Date().toISOString() })
+      .eq("id", ex.id);
+    setBusy(false);
+    setItems((p) => p.map((x) => (x.id === item.id ? { ...x, size: ex.to_size } : x)));
+    setExchanges((p) => p.map((x) => (x.id === ex.id ? { ...x, status: "완료" } : x)));
+    await reloadStock();
+    notify(`${ex.from_size} 한 벌이 재고로 돌아왔고 ${ex.to_size} 한 벌이 나갔습니다.`, "success");
+  }
+
+  async function cancelExchange(ex: ApparelExchange) {
+    const { error } = await createClient().from("apparel_exchanges").update({ status: "취소" }).eq("id", ex.id);
+    if (error) {
+      notify("취소하지 못했습니다: " + error.message, "error");
+      return;
+    }
+    setExchanges((p) => p.map((x) => (x.id === ex.id ? { ...x, status: "취소" } : x)));
   }
 
   async function saveDirectSize(studentId: string, kind: string, raw: string) {
     const clean = raw.trim();
     const supabase = createClient();
     if (!clean) {
-      await supabase.from("student_apparel_sizes").delete().eq("student_id", studentId).eq("kind", kind);
-      setSizes((p) => p.filter((s) => !(s.student_id === studentId && s.kind === kind)));
+      // 이번 학기 값만 지웁니다. 지난 학기 기록은 남습니다 - '작년엔 뭘 입었지' 에 답할 수 있어야 합니다.
+      let q = supabase.from("student_apparel_sizes").delete().eq("student_id", studentId).eq("kind", kind);
+      q = currentTermId ? q.eq("term_id", currentTermId) : q.is("term_id", null);
+      await q;
+      setSizes((p) => p.filter((s) => !(s.student_id === studentId && s.kind === kind && (s.term_id ?? null) === currentTermId)));
       return;
     }
     const { error } = await supabase
       .from("student_apparel_sizes")
-      .upsert({ student_id: studentId, kind, size: clean, measured_at: todayKst(), updated_by: currentUserEmail }, { onConflict: "student_id,kind" });
+      // 학기까지 열쇠입니다. 아이는 자라므로 2학년 값이 3학년 값을 덮어쓰면 안 됩니다.
+      .upsert(
+        { student_id: studentId, kind, size: clean, measured_at: todayKst(), term_id: currentTermId, updated_by: currentUserEmail },
+        { onConflict: "student_id,kind,term_id" },
+      );
     if (error) {
       notify("저장하지 못했습니다: " + error.message, "error");
       return;
     }
     setSizes((p) => [
       ...p.filter((s) => !(s.student_id === studentId && s.kind === kind)),
-      { id: `${studentId}|${kind}`, student_id: studentId, kind, size: clean, measured_at: todayKst(), note: null, updated_by: currentUserEmail },
+      { id: `${studentId}|${kind}`, student_id: studentId, kind, size: clean, measured_at: todayKst(), term_id: currentTermId, note: null, updated_by: currentUserEmail },
     ]);
   }
 
@@ -281,12 +659,12 @@ export default function ApparelClient({
     () =>
       students
         .map((s) => ({ s, size: sizeMap.get(`${s.id}|${sizeKind}`) }))
-        .filter((r) => !onlyMissing || !r.size || daysSince(r.size.measured_at) > STALE_DAYS),
+        .filter((r) => !onlyMissing || !r.size || !isThisTerm(r.size) || daysSince(r.size.measured_at) > STALE_DAYS),
     [students, sizeMap, sizeKind, onlyMissing],
   );
   const staleCount = students.filter((s) => {
     const v = sizeMap.get(`${s.id}|${sizeKind}`);
-    return !v || daysSince(v.measured_at) > STALE_DAYS;
+    return !v || !isThisTerm(v) || daysSince(v.measured_at) > STALE_DAYS;
   }).length;
 
   return (
@@ -295,7 +673,7 @@ export default function ApparelClient({
         <h1 className="text-lg font-bold">👕 의류</h1>
         <span className="text-xs text-slate-400">교복 · 행사 티셔츠 · 체육복</span>
         <span className="ml-auto flex items-center gap-1.5">
-          {(["제작", "사이즈"] as const).map((v) => (
+          {(["제작", "재고", "사이즈"] as const).map((v) => (
             <button
               key={v}
               onClick={() => setView(v)}
@@ -304,7 +682,7 @@ export default function ApparelClient({
                 (view === v ? "bg-gia-navy text-white" : "border border-slate-200 text-slate-500 hover:bg-slate-50")
               }
             >
-              {v === "제작" ? "제작 건" : "사이즈 대장"}
+              {v === "제작" ? "제작 건" : v === "재고" ? "재고 · 교환" : "사이즈 대장"}
             </button>
           ))}
         </span>
@@ -315,7 +693,23 @@ export default function ApparelClient({
         뿐 제한이 아닙니다). 청구는 여기서 하지 않습니다 — 인보이스에서 합니다.
       </p>
 
-      {view === "사이즈" ? (
+      {view === "재고" ? (
+        <StockView
+          order={order}
+          orders={orders}
+          onPickOrder={setSelected}
+          pieces={orderPieces}
+          items={orderItems}
+          stockOf={stockOf}
+          tally={tally}
+          exchanges={exchanges.filter((e) => orderPieces.some((p) => p.id === e.piece_id))}
+          byStudent={byStudent}
+          busy={busy}
+          onReceive={receive}
+          onCompleteExchange={completeExchange}
+          onCancelExchange={cancelExchange}
+        />
+      ) : view === "사이즈" ? (
         <div>
           <div className="mb-2 flex flex-wrap items-center gap-1.5">
             {allKinds.map((k) => (
@@ -336,8 +730,9 @@ export default function ApparelClient({
             </label>
           </div>
           <p className="mb-2 text-[11px] text-slate-400">
-            비어 있거나 잰 지 {STALE_DAYS}일이 넘은 것은 주황색입니다. 아이는 1년이면 한 치수는 자랍니다 — 오래된 값으로 만들면 안 맞는
-            옷이 오고, 그 옷은 다시 만들어야 합니다.
+            비어 있거나, <b>지난 학기에 잰 것</b>이거나, 잰 지 {STALE_DAYS}일이 넘은 것은 주황색입니다. 아이는 1년이면 한 치수는
+            자랍니다 — 2학년 때 값을 3학년에 그대로 쓰면 안 맞는 옷이 오고, 그 옷은 다시 만들어야 합니다. 여기서 적는 값은
+            <b>이번 학기 값</b>으로 저장되고, 지난 학기 기록은 그대로 남습니다.
           </p>
           <datalist id="size-hints">
             {kindHints.map((h) => (
@@ -356,7 +751,10 @@ export default function ApparelClient({
               </thead>
               <tbody>
                 {sizeRows.map(({ s, size }) => {
-                  const stale = !size || daysSince(size.measured_at) > STALE_DAYS;
+                  // 이번 학기에 잰 값이 아니면 그것만으로 이미 '다시 물어볼 것' 입니다.
+                  // 아이는 자라므로 2학년 값을 3학년에 그대로 쓰면 안 맞는 옷이 옵니다.
+                  const oldTerm = !!size && !isThisTerm(size);
+                  const stale = !size || oldTerm || daysSince(size.measured_at) > STALE_DAYS;
                   return (
                     <tr key={s.id} className="border-t border-slate-100">
                       <td className="px-3 py-1.5 text-[13px] font-semibold text-slate-700">{s.name}</td>
@@ -374,6 +772,7 @@ export default function ApparelClient({
                       </td>
                       <td className={"px-3 py-1.5 text-[11px] " + (stale ? "font-semibold text-amber-700" : "text-slate-400")}>
                         {size ? `${size.measured_at} (${daysSince(size.measured_at)}일 전)` : "아직 없음"}
+                        {oldTerm && <span className="ml-1 rounded bg-amber-100 px-1 text-[10px] font-bold">지난 학기 값</span>}
                       </td>
                     </tr>
                   );
@@ -514,18 +913,33 @@ export default function ApparelClient({
                             if (!it) return <td key={p.id} className="px-2 py-1" />;
                             return (
                               <td key={p.id} className="px-2 py-1">
-                                <input
-                                  list={`hints-${p.id}`}
-                                  defaultValue={it.size ?? ""}
-                                  onBlur={(e) => {
-                                    if (e.target.value.trim() !== (it.size ?? "")) void setSize(it, e.target.value);
-                                  }}
-                                  placeholder="—"
-                                  className={
-                                    "w-24 rounded border px-1.5 py-0.5 text-[12px] " +
-                                    (it.size?.trim() ? "border-slate-200" : "border-amber-300 bg-amber-50")
-                                  }
-                                />
+                                <span className="flex items-center gap-1">
+                                  <input
+                                    list={`hints-${p.id}`}
+                                    defaultValue={it.size ?? ""}
+                                    onBlur={(e) => {
+                                      if (e.target.value.trim() !== (it.size ?? "")) void setSize(it, e.target.value);
+                                    }}
+                                    placeholder="—"
+                                    className={
+                                      "w-20 rounded border px-1.5 py-0.5 text-[12px] " +
+                                      (it.size?.trim() ? "border-slate-200" : "border-amber-300 bg-amber-50")
+                                    }
+                                  />
+                                  {/* 교환 신청.
+                                      여기서 사이즈를 그냥 고쳐도 재고는 맞습니다(트리거). 다만
+                                      **바꿔달라고 한 시점과 바꿔준 시점이 다를 때** 신청으로 남겨야
+                                      기다리는 아이가 잊히지 않습니다. */}
+                                  {it.size?.trim() && (
+                                    <button
+                                      onClick={() => setExchangeFor(it)}
+                                      className="shrink-0 text-[11px] text-slate-300 hover:text-teal-600"
+                                      title="사이즈 교환 신청 (안 맞아서 바꿔달라고 할 때)"
+                                    >
+                                      🔁
+                                    </button>
+                                  )}
+                                </span>
                               </td>
                             );
                           })}
@@ -551,6 +965,70 @@ export default function ApparelClient({
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* 사이즈 교환 신청.
+          여기서 사이즈를 그냥 고쳐도 재고는 맞습니다(트리거가 반납·배부를 남깁니다). 다만
+          **바꿔달라고 한 시점과 바꿔준 시점이 다를 때** 신청으로 남겨야, 재고가 없어 기다리는
+          아이가 잊히지 않습니다. */}
+      {exchangeFor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => setExchangeFor(null)}>
+          <div className="w-full max-w-sm rounded-2xl bg-white p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <p className="text-[15px] font-bold text-slate-800">사이즈 교환</p>
+            <p className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-sm">
+              <b className="text-slate-800">{byStudent.get(exchangeFor.student_id)?.name ?? "학생"}</b>
+              <span className="ml-1.5 text-[12px] text-slate-500">
+                {orderPieces.find((p) => p.id === exchangeFor.piece_id)?.name} · 지금 {exchangeFor.size}
+              </span>
+            </p>
+            <label className="mt-3 block text-[11px] text-slate-500">
+              바꿀 사이즈
+              <input
+                autoFocus
+                list={`hints-${exchangeFor.piece_id}`}
+                value={exDraft.to}
+                onChange={(e) => setExDraft((d) => ({ ...d, to: e.target.value }))}
+                placeholder="자유 입력"
+                className="mt-0.5 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+              />
+            </label>
+            {exDraft.to.trim() && (
+              <p className="mt-1 text-[11px] text-slate-500">
+                {exDraft.to.trim()} 재고{" "}
+                <b className={(stockOf.get(`${exchangeFor.piece_id}|${exDraft.to.trim()}`)?.남음 ?? 0) > 0 ? "text-teal-700" : "text-rose-600"}>
+                  {stockOf.get(`${exchangeFor.piece_id}|${exDraft.to.trim()}`)?.남음 ?? 0}벌
+                </b>
+                {(stockOf.get(`${exchangeFor.piece_id}|${exDraft.to.trim()}`)?.남음 ?? 0) <= 0 && " — 재발주 목록에 뜹니다"}
+              </p>
+            )}
+            <input
+              value={exDraft.reason}
+              onChange={(e) => setExDraft((d) => ({ ...d, reason: e.target.value }))}
+              placeholder="사유(선택) — 작아서 · 커서"
+              className="mt-2 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+            />
+            <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
+              접수하면 재고·교환 화면에 뜹니다. 거기서 «바꿔주기»를 누르면 <b>{exchangeFor.size} 한 벌이 재고로 돌아오고</b> 새 사이즈가
+              나갑니다 — 돌아온 옷은 다른 아이에게 줄 수 있습니다.
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button onClick={() => setExchangeFor(null)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-semibold text-slate-600">
+                그만두기
+              </button>
+              <button
+                onClick={() => {
+                  void requestExchange(exchangeFor, exDraft.to, exDraft.reason);
+                  setExchangeFor(null);
+                  setExDraft({ to: "", reason: "" });
+                }}
+                disabled={!exDraft.to.trim() || exDraft.to.trim() === exchangeFor.size}
+                className="rounded-lg bg-teal-600 px-4 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
+              >
+                접수
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

@@ -637,8 +637,42 @@ export type StudentApparelSize = {
   size: string;
   /** 언제 잰 것인가. 아이는 자라므로 오래된 값은 화면이 다시 묻자고 띄웁니다. */
   measured_at: string;
+  /**
+   * 어느 학기의 사이즈인가.
+   *
+   * 아이는 자랍니다 — 2학년 때 입던 옷과 3학년 때 입는 옷이 다릅니다. 학기 안에서는 거의
+   * 고정이고, 학기가 바뀌면 새로 잽니다. 새 학기 값이 없으면 화면이 지난 학기 값을
+   * **확인용으로만** 보여줍니다 — 그대로 쓰면 안 맞는 옷이 옵니다.
+   */
+  term_id?: string | null;
   note: string | null;
   updated_by: string | null;
+};
+
+/** 품목·사이즈별 재고. 남음이 음수면 그만큼 더 발주해야 합니다. */
+export type ApparelStock = {
+  piece_id: string;
+  size: string;
+  입고: number;
+  배부: number;
+  반납: number;
+  분실: number;
+  조정: number;
+  남음: number;
+};
+
+/** 사이즈 교환 신청. 바꿔달라는 말이 온 시점과 바꿔준 시점이 달라서 따로 남깁니다. */
+export type ApparelExchange = {
+  id: string;
+  order_item_id: string;
+  piece_id: string;
+  student_id: string;
+  from_size: string;
+  to_size: string;
+  qty: number;
+  status: "신청" | "완료" | "취소";
+  reason: string | null;
+  created_at: string;
 };
 
 /** 한 번의 제작 건. 세트면 구성 품목이 여럿, 낱개면 하나입니다. */

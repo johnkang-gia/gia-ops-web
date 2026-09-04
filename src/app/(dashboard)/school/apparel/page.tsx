@@ -4,7 +4,7 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { isStaffOrAboveUser } from "@/lib/roles";
 import { isDemoAccount } from "@/lib/sharedAccounts";
 import { gradeSortKey } from "@/lib/department";
-import type { ApparelOrder, ApparelOrderItem, ApparelOrderPiece, StudentApparelSize, StudentGroup, Term } from "@/lib/types";
+import type { ApparelExchange, ApparelOrder, ApparelOrderItem, ApparelOrderPiece, ApparelStock, StudentApparelSize, StudentGroup, Term } from "@/lib/types";
 import ApparelClient, { type ApparelStudent } from "@/components/school/ApparelClient";
 
 export const dynamic = "force-dynamic";
@@ -45,15 +45,22 @@ export default async function ApparelPage() {
   const orders = (orderRes.data as ApparelOrder[] | null) ?? [];
   // 첫 화면에 필요한 만큼만. 제작 건마다 명단을 다 읽으면 학기가 쌓일수록 무거워집니다.
   const ids = orders.slice(0, 12).map((o) => o.id);
-  const [pieceRes, itemRes] =
+  const [pieceRes, itemRes, exRes] =
     ids.length > 0
       ? await Promise.all([
           supabase.from("apparel_order_pieces").select("*").in("order_id", ids).order("sort_order"),
           supabase.from("apparel_order_items").select("*").in("order_id", ids),
+          supabase.from("apparel_exchanges").select("*").order("created_at", { ascending: false }).limit(300),
         ])
-      : [{ data: [], error: null }, { data: [], error: null }];
+      : [{ data: [], error: null }, { data: [], error: null }, { data: [], error: null }];
   if (pieceRes.error) console.error("[의류] 구성 품목을 읽지 못했습니다:", pieceRes.error.message);
   if (itemRes.error) console.error("[의류] 제작 명단을 읽지 못했습니다:", itemRes.error.message);
+  if (exRes.error) console.error("[의류] 교환 신청을 읽지 못했습니다:", exRes.error.message);
+
+  // 재고는 원장을 더한 것(뷰)만 읽습니다. 더하는 규칙이 화면마다 다르면 숫자가 갈립니다.
+  const pieceIds = ((pieceRes.data as { id: string }[] | null) ?? []).map((p) => p.id);
+  const stockRes = pieceIds.length > 0 ? await supabase.from("apparel_stock_balance").select("*").in("piece_id", pieceIds) : { data: [], error: null };
+  if (stockRes.error) console.error("[의류] 재고를 읽지 못했습니다:", stockRes.error.message);
 
   const students = ((stuRes.data as { id: string; name: string; name_en: string | null; grade: string | null; class_name: string | null; department: string | null }[] | null) ?? [])
     .map<ApparelStudent>((s) => ({ id: s.id, name: s.name, grade: s.grade, className: s.class_name, department: s.department }))
@@ -69,6 +76,8 @@ export default async function ApparelPage() {
       initialOrders={orders}
       initialPieces={(pieceRes.data as ApparelOrderPiece[] | null) ?? []}
       initialItems={(itemRes.data as ApparelOrderItem[] | null) ?? []}
+      initialStock={(stockRes.data as ApparelStock[] | null) ?? []}
+      initialExchanges={(exRes.data as ApparelExchange[] | null) ?? []}
       initialSizes={(sizeRes.data as StudentApparelSize[] | null) ?? []}
       students={students}
       terms={(termRes.data as Term[] | null) ?? []}

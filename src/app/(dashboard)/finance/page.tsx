@@ -33,7 +33,8 @@ export default async function FinanceOverviewPage() {
   const students = ((stuRes.data as { id: string; name: string; grade: string | null; class_name: string | null }[] | null) ?? []).map(
     (s) => ({ id: s.id, name: s.name, grade: s.grade, className: s.class_name }),
   );
-  const items = ((itemsRes.data as FeeItem[] | null) ?? []).filter((i) => i.active);
+  // active 로 거르지 않습니다. 항목은 끄는 것이 아니라 지웁니다(2026-09).
+  const items = (itemsRes.data as FeeItem[] | null) ?? [];
   const overrides = (ovRes.data as StudentFeeItem[] | null) ?? [];
   const invoices = (invRes.data as Invoice[] | null) ?? [];
 

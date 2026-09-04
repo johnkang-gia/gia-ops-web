@@ -22,6 +22,13 @@ type Props = {
   /** 부서별 학년·반. 초등과 중고등은 학년 표기도 반 이름도 다릅니다. */
   gradesByDept: Record<string, string[]>;
   classesByDept: Record<string, string[]>;
+  /**
+   * 항목별로 손으로 넣거나 뺀 아이가 몇 명인가.
+   *
+   * 지울 때 보여줍니다. 이 숫자가 크면 그동안 사람이 하나씩 조정해 둔 것이 함께 사라진다는
+   * 뜻이라, 지우기 전에 알아야 합니다.
+   */
+  usageByItem: Record<string, number>;
   currentUserEmail: string;
   loadError: string | null;
 };
@@ -39,13 +46,20 @@ const EMPTY = {
   note: "",
 };
 
-export default function FeeItemsClient({ initialItems, initialCategories, terms, gradesByDept, classesByDept, currentUserEmail, loadError }: Props) {
+export default function FeeItemsClient({ initialItems, initialCategories, terms, gradesByDept, classesByDept, usageByItem, currentUserEmail, loadError }: Props) {
   const notify = useToast();
   const [items, setItems] = useState(initialItems);
   const [form, setForm] = useState({ ...EMPTY });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [showOff, setShowOff] = useState(false);
+  /**
+   * 지울까요 하고 한 번 묻는 창.
+   *
+   * 항목을 지우면 그 항목을 손으로 넣거나 뺐던 아이별 조정도 함께 사라집니다. 되돌릴 수
+   * 없으므로 무엇이 함께 없어지는지 보여주고 묻습니다 - `정말 지울까요?` 만 띄우면 사람은
+   * 읽지 않고 누릅니다.
+   */
+  const [confirming, setConfirming] = useState<FeeItem | null>(null);
   const [tab, setTab] = useState<string>("전체");
   /**
    * 부서 탭.
@@ -95,7 +109,7 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
   );
   const deptCounts = useMemo(() => {
     const m = new Map<ItemDept, number>();
-    for (const i of inTerm) if (i.active) m.set(deptOfItem(i), (m.get(deptOfItem(i)) ?? 0) + 1);
+    for (const i of inTerm) m.set(deptOfItem(i), (m.get(deptOfItem(i)) ?? 0) + 1);
     return m;
   }, [inTerm]);
   const inDept = useMemo(
@@ -118,7 +132,8 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
   }
 
   const shown = useMemo(() => {
-    const list = inDept.filter((i) => (showOff || i.active) && (tab === "전체" || i.category === tab));
+    // 항목은 끄지 않고 지웁니다. 여기 있는 것이 전부이고, 안 보이는 줄은 없습니다.
+    const list = inDept.filter((i) => tab === "전체" || i.category === tab);
     const dir = asc ? 1 : -1;
     const byName = (a: FeeItem, b: FeeItem) => a.name.localeCompare(b.name, "ko");
     return [...list].sort((a, b) => {
@@ -128,8 +143,8 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
       // 분류: 분류 이름 → 손으로 정한 순서 → 이름.
       return dir * a.category.localeCompare(b.category, "ko") || a.sort_order - b.sort_order || byName(a, b);
     });
-  }, [inDept, showOff, tab, sortBy, asc]);
-  const activeCount = inDept.filter((i) => i.active).length;
+  }, [inDept, tab, sortBy, asc]);
+  const activeCount = inDept.length;
 
   const [cats, setCats] = useState(initialCategories);
   const [newCat, setNewCat] = useState("");
@@ -179,19 +194,26 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
     notify(`분류 "${name}"을 만들었습니다.`, "success");
   }
 
-  async function toggleCategory(c: FeeCategory) {
-    const next = !c.active;
-    // 쓰는 항목이 있으면 끄지 못하게 막습니다. 끄면 그 항목들이 어느 분류에도 안 속하게 됩니다.
-    if (!next && items.some((i) => i.active && i.category === c.name)) {
-      notify(`"${c.name}"을 쓰는 항목이 아직 있습니다. 항목을 먼저 옮기거나 꺼주세요.`, "error");
+  /**
+   * 분류를 지웁니다. 항목과 같은 이유로 끄기가 아니라 삭제입니다.
+   *
+   * 쓰는 항목이 있으면 막습니다 - 분류가 없어지면 그 항목들이 어느 묶음에도 안 속하게 되고,
+   * 탭에서 사라져 찾을 수 없게 됩니다.
+   */
+  async function removeCategory(c: FeeCategory) {
+    const using = items.filter((i) => i.category === c.name).length;
+    if (using > 0) {
+      notify(`"${c.name}"을 쓰는 항목이 ${using}개 있습니다. 항목을 먼저 옮기거나 지워주세요.`, "error");
       return;
     }
-    setCats((p) => p.map((x) => (x.id === c.id ? { ...x, active: next } : x)));
-    const { error } = await createClient().from("fee_categories").update({ active: next }).eq("id", c.id);
+    const { error } = await createClient().from("fee_categories").delete().eq("id", c.id);
     if (error) {
-      notify("바꾸지 못했습니다: " + error.message, "error");
-      setCats((p) => p.map((x) => (x.id === c.id ? { ...x, active: c.active } : x)));
+      notify("지우지 못했습니다: " + error.message, "error");
+      return;
     }
+    setCats((p) => p.filter((x) => x.id !== c.id));
+    if (tab === c.name) setTab("전체");
+    notify(`분류 "${c.name}"을 지웠습니다.`, "success");
   }
 
   function reset() {
@@ -255,14 +277,29 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  async function toggleActive(i: FeeItem) {
-    const next = !i.active;
-    setItems((prev) => prev.map((x) => (x.id === i.id ? { ...x, active: next } : x)));
-    const { error } = await createClient().from("fee_items").update({ active: next }).eq("id", i.id);
+  /**
+   * 항목을 지웁니다.
+   *
+   * **이미 발행한 인보이스는 그대로입니다.** 인보이스는 이 항목을 가리키는 것이 아니라,
+   * 발행하는 순간의 이름과 금액을 자기 줄에 베껴 두기 때문입니다. 그래서 지난 청구서가
+   * 왜 그 금액이었는지는 항목을 지운 뒤에도 설명됩니다.
+   *
+   * 함께 사라지는 것은 **아이별 가감**(이 아이는 산다/안 산다)입니다. 항목이 없어지면
+   * 그 결정도 뜻이 없어지므로 같이 지웁니다. 단가 이력은 남습니다.
+   */
+  async function remove(i: FeeItem) {
+    setBusy(true);
+    const { error } = await createClient().from("fee_items").delete().eq("id", i.id);
+    setBusy(false);
     if (error) {
-      notify("바꾸지 못했습니다: " + error.message, "error");
-      setItems((prev) => prev.map((x) => (x.id === i.id ? { ...x, active: i.active } : x)));
+      // 조용히 넘기면 화면에서는 지워진 것처럼 보이는데 다음에 열면 그대로 있습니다.
+      notify("지우지 못했습니다: " + error.message, "error");
+      return;
     }
+    setItems((prev) => prev.filter((x) => x.id !== i.id));
+    setConfirming(null);
+    if (editingId === i.id) reset();
+    notify(`"${i.name}"을(를) 지웠습니다.`, "success");
   }
 
   function sortHead(key: typeof sortBy, label?: string) {
@@ -384,19 +421,16 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
                   return (
                     <span
                       key={c.id}
-                      className={
-                        "flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] " +
-                        (c.active ? "border-teal-300 bg-teal-50 text-teal-800" : "border-slate-200 text-slate-400")
-                      }
+                      className="flex items-center gap-1 rounded-lg border border-teal-300 bg-teal-50 px-2 py-1 text-[11px] text-teal-800"
                     >
                       <b>{c.name}</b>
                       <span className="opacity-60">{used}개</span>
                       <button
-                        onClick={() => void toggleCategory(c)}
-                        className="ml-0.5 font-bold opacity-60 hover:opacity-100"
-                        title={c.active ? "끄기" : "켜기"}
+                        onClick={() => void removeCategory(c)}
+                        className="ml-0.5 font-bold opacity-50 hover:text-red-600 hover:opacity-100"
+                        title={used > 0 ? `쓰는 항목이 ${used}개 있어 지울 수 없습니다` : "지우기"}
                       >
-                        {c.active ? "×" : "＋"}
+                        ×
                       </button>
                     </span>
                   );
@@ -582,10 +616,9 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
             {c}
           </button>
         ))}
-        <label className="ml-auto flex items-center gap-1 text-[11px] text-slate-500">
-          <input type="checkbox" checked={showOff} onChange={(e) => setShowOff(e.target.checked)} />
-          꺼둔 것도 보기
-        </label>
+        {/* 예전에는 `꺼둔 것도 보기` 가 여기 있었습니다. 이제 안 보이는 항목은 없습니다 -
+            쓰지 않는 항목은 지우고, 지운 것은 돌아오지 않습니다. */}
+        <span className="ml-auto text-[11px] text-slate-400">{shown.length}개</span>
       </div>
 
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
@@ -602,7 +635,7 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
           </thead>
           <tbody>
             {shown.map((i) => (
-              <tr key={i.id} className={"border-t border-slate-100 " + (i.active ? "" : "opacity-45")}>
+              <tr key={i.id} className="border-t border-slate-100">
                 <td className="px-3 py-2 text-[11px] font-semibold text-slate-500">{i.category}</td>
                 <td className="px-3 py-2">
                   <span className="font-semibold text-slate-800">{i.name}</span>
@@ -632,11 +665,11 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
                     고치기
                   </button>
                   <button
-                    onClick={() => void toggleActive(i)}
-                    className={"text-[11px] font-semibold " + (i.active ? "text-red-500" : "text-emerald-600")}
-                    title={i.active ? "끄면 목록에서 빠지지만 지난 인보이스는 그대로입니다" : "다시 씁니다"}
+                    onClick={() => setConfirming(i)}
+                    className="text-[11px] font-semibold text-red-500 hover:text-red-700"
+                    title="지웁니다. 이미 발행한 인보이스는 그대로입니다"
                   >
-                    {i.active ? "끄기" : "켜기"}
+                    삭제
                   </button>
                 </td>
               </tr>
@@ -651,6 +684,52 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
           </tbody>
         </table>
       </div>
+
+      {/* ── 지울까요 ───────────────────────────────────────────────
+          무엇이 함께 없어지고 무엇이 남는지 **먼저 보여주고** 묻습니다. `정말 지울까요?` 만
+          띄우면 사람은 읽지 않고 누르고, 그러면 물어본 뜻이 없습니다. */}
+      {confirming && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => setConfirming(null)}>
+          <div className="w-full max-w-md rounded-2xl bg-white p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <p className="text-[15px] font-bold text-slate-800">항목을 지웁니다</p>
+            <p className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-sm">
+              <b className="text-slate-800">{confirming.name}</b>
+              {confirming.name_ko && <span className="ml-1.5 text-[12px] text-slate-500">{confirming.name_ko}</span>}
+              <span className="ml-2 font-bold tabular-nums text-slate-600">{won(Number(confirming.unit_price))}</span>
+            </p>
+
+            <ul className="mt-3 space-y-1 text-[12px] leading-relaxed text-slate-600">
+              <li>
+                ✓ <b>이미 발행한 인보이스는 그대로입니다.</b> 청구서는 이 항목을 가리키는 것이 아니라, 보낼 때의 이름과 금액을
+                자기 줄에 베껴 두기 때문입니다.
+              </li>
+              <li>✓ 단가 이력(언제 얼마에서 얼마로 올랐는지)도 남습니다.</li>
+              <li className={usageByItem[confirming.id] ? "text-amber-800" : ""}>
+                {usageByItem[confirming.id] ? "⚠" : "·"} 손으로 넣거나 뺀 아이 <b>{usageByItem[confirming.id] ?? 0}명</b>의 조정이 함께
+                사라집니다.
+              </li>
+              <li>· 앞으로 만드는 인보이스에는 이 항목이 나오지 않습니다.</li>
+            </ul>
+            <p className="mt-2 text-[12px] font-semibold text-red-600">되돌릴 수 없습니다.</p>
+
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => setConfirming(null)}
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-semibold text-slate-600"
+              >
+                그만두기
+              </button>
+              <button
+                onClick={() => void remove(confirming)}
+                disabled={busy}
+                className="rounded-lg bg-red-600 px-4 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
+              >
+                지우기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

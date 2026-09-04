@@ -1256,6 +1256,13 @@ export type FeeItem = {
   default_grades: string[];
   default_classes: string[];
   term_id: string | null;
+  /**
+   * 더 이상 쓰지 않습니다(2026-09). 항목은 끄는 것이 아니라 지웁니다.
+   *
+   * 끄기는 목록에서만 사라지고 줄은 남아서, 잘못 만든 항목이 보이지도 지워지지도 않는 채로
+   * 쌓였습니다. 지워도 되는 이유는 인보이스가 이 항목을 가리키지 않고 발행 시점의 이름·금액을
+   * `invoice_lines` 에 베껴 두기 때문입니다. 칸은 예전 자료를 위해 남겨둡니다.
+   */
   active: boolean;
   sort_order: number;
   note: string | null;

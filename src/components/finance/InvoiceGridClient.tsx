@@ -149,7 +149,7 @@ export default function InvoiceGridClient({
       itemList
         .filter(
           (i) =>
-            i.active &&
+            // active 로 거르지 않습니다. 항목은 끄는 것이 아니라 지웁니다(2026-09).
             // 학기가 없던 시절 항목(비어 있음)은 현재 학기에서 함께 보여줍니다.
             ((i.term_id ?? "") === termId || (!i.term_id && terms.find((x) => x.id === termId)?.status === "진행중")) &&
             (!i.department || i.department === dept),

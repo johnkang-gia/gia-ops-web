@@ -19,7 +19,7 @@ export default async function FeeItemsPage() {
   if (!hasFinanceAccess(me)) redirect("/home");
 
   const supabase = await createClient();
-  const [itemsRes, catRes, termRes, clsRes, stuRes] = await Promise.all([
+  const [itemsRes, catRes, termRes, clsRes, stuRes, useRes] = await Promise.all([
     supabase.from("fee_items").select("*").order("category").order("sort_order").order("name"),
     supabase.from("fee_categories").select("*").order("sort_order").order("name"),
     supabase.from("terms").select("*").order("status").order("start_date", { ascending: false, nullsFirst: false }).order("created_at", { ascending: false }),
@@ -31,6 +31,9 @@ export default async function FeeItemsPage() {
       .select("grade, class_name, department")
       .eq("is_demo", false)
       .in("status", ["active", "재학"]),
+    // 항목을 지울 때 "이 조정이 몇 명분 함께 사라지는지" 를 보여주기 위한 것입니다.
+    // 숫자를 안 보여주면, 그동안 사람이 하나씩 맞춰둔 것이 소리 없이 없어집니다.
+    supabase.from("student_fee_items").select("item_id"),
   ]);
   // 분류 표가 아직 없어도(마이그레이션 전) 화면은 열려야 합니다. 그때는 항목에 적힌 글자로만
   // 분류가 만들어집니다 - 예전과 같은 동작입니다.
@@ -75,6 +78,12 @@ export default async function FeeItemsPage() {
   const allGrades = [...new Set(Object.values(gradesByDept).flat())].sort((a, b) => gradeSortKey(a) - gradeSortKey(b));
   const allClasses = [...new Set(Object.values(classesByDept).flat())].sort((a, b) => a.localeCompare(b, "ko"));
 
+  if (useRes.error) console.error("[학비외 항목] 아이별 가감을 읽지 못했습니다:", useRes.error.message);
+  const usageByItem: Record<string, number> = {};
+  for (const r of ((useRes.data as { item_id: string }[] | null) ?? [])) {
+    usageByItem[r.item_id] = (usageByItem[r.item_id] ?? 0) + 1;
+  }
+
   return (
     <FeeItemsClient
       initialItems={(itemsRes.data as FeeItem[] | null) ?? []}
@@ -82,6 +91,7 @@ export default async function FeeItemsPage() {
       terms={(termRes.data as Term[] | null) ?? []}
       gradesByDept={{ ...gradesByDept, 공통: allGrades }}
       classesByDept={{ ...classesByDept, 공통: allClasses }}
+      usageByItem={usageByItem}
       currentUserEmail={me.email}
       loadError={itemsRes.error?.message ?? null}
     />

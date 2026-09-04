@@ -117,7 +117,9 @@ export async function POST(req: Request) {
   }
 
   if (b.copyFeeItems && prev) {
-    const { data: items, error } = await supabase.from("fee_items").select("*").eq("term_id", prev.id).eq("active", true);
+    // active 로 거르지 않습니다. 항목은 끄는 것이 아니라 지웁니다(2026-09) - 남아 있는 줄은
+    // 전부 쓰는 것입니다. 거르면 옛 자료에서 넘어온 줄이 조용히 안 넘어옵니다.
+    const { data: items, error } = await supabase.from("fee_items").select("*").eq("term_id", prev.id);
     if (error) warnings.push(`학비외 항목을 읽지 못했습니다: ${error.message}`);
     else {
       const rows = (items ?? []).map((i) => {

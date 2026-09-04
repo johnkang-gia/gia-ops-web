@@ -61,9 +61,10 @@ export async function POST(req: Request) {
       ["mother_phone", "father_phone", "parent_phone"],
     ),
     // 그 학기 항목만 계산합니다. 학기를 안 걸면 지난 학기 교재까지 청구서에 붙습니다.
+    // active 로는 거르지 않습니다 - 항목은 끄는 것이 아니라 지웁니다(2026-09).
     (feeTermId
-      ? supabase.from("fee_items").select("*").eq("active", true).eq("fee_term_id", feeTermId)
-      : supabase.from("fee_items").select("*").eq("active", true)),
+      ? supabase.from("fee_items").select("*").eq("fee_term_id", feeTermId)
+      : supabase.from("fee_items").select("*")),
     supabase.from("student_fee_items").select("*").eq("student_id", studentId),
   ]);
   if (stuRes.error) return NextResponse.json({ error: stuRes.error }, { status: 500 });

@@ -251,6 +251,22 @@ function AttendanceMemoPanel({ department, currentUserEmail }: { department: str
 // (요청: "부서메모에 출결사항을 메모하고 반영하니까 사실상 메모기능으로 쓸 수가 없어서"). 그래서
 // 부서 메모 자동 반영은 걷어내고, 대신 이 패널 오른쪽에 출결 전용 메모칸(AttendanceMemoPanel)을
 // 따로 뒀습니다 - 여기는 절대 자동으로 파싱되지 않는 순수 메모장입니다.
+type ToddleRow = {
+  id: string;
+  kind: string | null;
+  service_date: string | null;
+  raw_text: string | null;
+  summary: string | null;
+  matched_name: string | null;
+  ai_student_name: string | null;
+  student_id: string | null;
+  source: string | null;
+  channel_label: string | null;
+  received_at: string | null;
+  status: string | null;
+  is_demo?: boolean;
+};
+
 export default function AttendanceDigestPanel({
   messages,
   department,
@@ -357,6 +373,42 @@ export default function AttendanceDigestPanel({
     void notifyOpsBoardRefresh();
   }
 
+  // ── 토들도 함께 읽습니다 ──────────────────────────────────────────────────
+  //
+  // 이 목록은 구글챗(미러링)만 훑고 있었습니다. 토들로 들어온 픽업·결석은 픽업 인박스에만
+  // 쌓이고 **출결내역에는 아예 뜨지 않았습니다.** 그래서 「학부모 문의사항에는 픽업이라고
+  // 떠 있는데 출결에는 없다」가 됩니다. 두 통로가 있는데 한쪽만 보는 화면을 출결의 전체
+  // 목록이라고 부를 수는 없습니다.
+  //
+  // 겹치는 건은 dedupeEntries 가 걸러냅니다(같은 날 · 같은 분류 · 같은 학생이면 한 건).
+  // 구글챗 것을 먼저 넣어서, 겹치면 원문이 더 온전한 쪽이 남습니다.
+  const [toddle, setToddle] = useState<ToddleRow[]>([]);
+  const loadToddle = useCallback(async () => {
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from("pickup_requests")
+      .select("id, kind, service_date, raw_text, summary, matched_name, ai_student_name, student_id, source, channel_label, received_at, status, is_demo")
+      .gte("service_date", todayKey(new Date()))
+      .neq("status", "무시")
+      .order("received_at", { ascending: false })
+      .limit(200);
+    // 조용히 넘기면 "토들 것도 본다"고 해놓고 아무것도 안 보이게 됩니다.
+    if (error) console.error("[출결내역] 토들 연락을 읽지 못했습니다:", error.message);
+    setToddle(((data as ToddleRow[] | null) ?? []).filter((r) => !r.is_demo));
+  }, []);
+
+  useEffect(() => {
+    void loadToddle();
+    const supabase = createClient();
+    const ch = supabase
+      .channel("attendance-digest-toddle")
+      .on("postgres_changes", { event: "*", schema: "public", table: "pickup_requests" }, () => void loadToddle())
+      .subscribe();
+    return () => {
+      supabase.removeChannel(ch);
+    };
+  }, [loadToddle]);
+
   const loadRules = useCallback(async () => {
     const supabase = createClient();
     const { data } = await supabase.from("attendance_learning_rules").select("kind, pattern, student_name, category");
@@ -447,12 +499,48 @@ export default function AttendanceDigestPanel({
       }
     }
 
+    // ── 토들 ──────────────────────────────────────────────────────────────
+    //
+    // 픽업 인박스에 쌓인 연락을 같은 목록에 얹습니다. 구글챗 뒤에 넣는 이유는, 아래
+    // dedupeEntries 가 **먼저 온 것을 남기기** 때문입니다 - 같은 일이 두 통로로 들어왔다면
+    // 원문이 온전한 구글챗 쪽을 보여주는 편이 낫습니다.
+    for (const r of toddle) {
+      const text = ((r.raw_text ?? r.summary) ?? "").toString();
+      const name = ((r.matched_name ?? r.ai_student_name) ?? "").trim();
+      if (!name) continue;
+      // 분류: 수집기가 이미 픽업으로 갈라둔 것은 그대로 믿고, 나머지는 본문으로 읽습니다.
+      // 픽업 인박스가 '문의'로 담아둔 글에도 픽업·결석 이야기가 섞여 있습니다.
+      const category = r.kind === "픽업" ? "픽업" : categorize(text, rules);
+      if (!category) continue;
+      const day = r.service_date ?? todayKey(r.received_at ? new Date(r.received_at) : now);
+      // 명부에 있는 이름인지 확인합니다. 못 찾으면 🔎 로 표시해 사람이 골라줄 수 있게 합니다.
+      const hit = roster.find(
+        (s) => s.name === name || (s.nameEn ?? "").toLowerCase() === name.toLowerCase(),
+      );
+      out.push({
+        key: `toddle-${r.id}`,
+        category,
+        studentName: hit?.name ?? name,
+        studentKey: hit?.name ?? name,
+        ambiguous: false,
+        unmatched: !hit,
+        rawText: text || `${name} ${category} (토들)`,
+        time: r.received_at,
+        sourceLabel: r.source ?? "토들",
+        targetDate: day,
+        targetDateTo: day,
+        // 등록 상태(초록 체크)를 짝지으려면 서버 스캔과 **같은 열쇠**를 써야 합니다.
+        // 서버는 토들 건의 source_message_id 에 pickup_requests.id 를 그대로 넣습니다.
+        messageId: String(r.id),
+      });
+    }
+
     // 같은 메시지가 겹쳐 올라온 경우 학생이 두 번 뜨지 않도록 정리합니다. 지난 날짜는 이미
     // 끝난 일이라 화면에서 뺍니다.
     // 기간의 마지막 날이 오늘 이후면 아직 살아 있는 건입니다("월요일부터 수요일까지"를
     // 화요일에 봐도 남아 있어야 합니다).
     return dedupeEntries(out).filter((e) => (e.targetDateTo ?? e.targetDate) >= today);
-  }, [messages, roster, rules, staffNames]);
+  }, [messages, roster, rules, staffNames, toddle]);
 
   const today = todayKey();
   // 오늘 것만 위쪽 픽업/결석/지각 칸에 넣고, 앞으로 예정된 건은 아래 "예정" 칸으로 따로 뺍니다.

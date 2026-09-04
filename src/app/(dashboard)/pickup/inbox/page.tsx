@@ -61,7 +61,7 @@ export default async function PickupInboxPage() {
   const supabase = await createClient();
   const today = kstParts(new Date()).iso;
 
-  const [rowsRes, studentsRes, heartbeatRes, schedulesRes, classesRes, assignRes] = await Promise.all([
+  const [rowsRes, studentsRes, heartbeatRes, schedulesRes, classesRes, assignRes, pickedRes] = await Promise.all([
     supabase
       .from("pickup_requests")
       .select("*")
@@ -87,10 +87,24 @@ export default async function PickupInboxPage() {
     supabase.from("wr_classes").select("id, grade, class_name, room, teacher_name").eq("is_demo", false),
     // 오늘 요일에 셔틀을 타는가를 가리기 위한 배정. 요일까지 봐야 합니다 - 화·목만 타는
     // 아이는 월요일에는 안 타는 아이와 같습니다.
-    supabase.from("shuttle_assignments_basic").select("student_id, student_name_raw, weekdays"),
+    supabase.from("shuttle_assignments_basic").select("id, student_id, student_name_raw, weekdays"),
+    // 오늘 실제로 픽업으로 걸린 배정. "확정인데 체크표에 없다"를 짚어내는 데 씁니다 -
+    // 이 대조가 없으면 자동이 어디서 멈췄는지 사람이 알 방법이 없습니다.
+    supabase.from("shuttle_boardings").select("assignment_id, status").eq("service_date", today).eq("status", "픽업"),
   ]);
   if (classesRes.error) console.error("[픽업 인박스] 반 조회 실패:", classesRes.error.message);
   if (assignRes.error) console.error("[픽업 인박스] 셔틀 배정 조회 실패:", assignRes.error.message);
+
+  // 오늘 픽업으로 실제로 걸린 학생. assignment → student 로 되짚습니다.
+  const pickedAssignments = new Set(
+    ((pickedRes.data as { assignment_id: string }[] | null) ?? []).map((r) => r.assignment_id),
+  );
+  const pickedStudentIds = new Set(
+    ((assignRes.data as Record<string, unknown>[] | null) ?? [])
+      .filter((a) => pickedAssignments.has(a.id as string))
+      .map((a) => (a.student_id as string | null) ?? "")
+      .filter(Boolean),
+  );
 
   // 오늘 픽업만 추립니다. '무시'(픽업 아님)는 뺍니다.
   const todayPickupRows: PickupSourceRow[] = ((rowsRes.data as Record<string, unknown>[] | null) ?? [])
@@ -106,6 +120,10 @@ export default async function PickupInboxPage() {
       senderName: (r.sender_name as string | null) ?? null,
       note: (r.ai_note as string | null) ?? null,
       status: (r.status as string) ?? "확인대기",
+      rawText: ((r.raw_text as string | null) ?? (r.summary as string | null)) ?? null,
+      receivedAt: (r.received_at as string | null) ?? null,
+      sourceUrl: (r.source_url as string | null) ?? null,
+      applied: !!r.student_id && pickedStudentIds.has(r.student_id as string),
     }))
     .filter((r) => r.name.length > 0);
 

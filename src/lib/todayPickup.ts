@@ -28,6 +28,14 @@ export type PickupSourceRow = {
   senderName: string | null;
   note: string | null;
   status: string;
+  /** 원문. 돋보기(🔎)로 "왜 이 아이가 여기 있는지"를 볼 때 씁니다. */
+  rawText?: string | null;
+  /** 어느 채팅방에서 왔는지(토들 채널 이름). */
+  receivedAt?: string | null;
+  /** 토들 원문으로 바로 가는 주소. */
+  sourceUrl?: string | null;
+  /** 하원 체크표에 실제로 픽업으로 걸렸는가. */
+  applied?: boolean;
 };
 
 export type PickupRosterStudent = {
@@ -71,6 +79,20 @@ export type TodayPickupItem = {
   note: string | null;
   /** 명부에서 찾지 못한 아이. 반도 교실도 모르니 사람이 봐야 합니다. */
   unmatched: boolean;
+  /**
+   * 아직 사람이 확인하지 않은 연락(확인대기).
+   *
+   * AI가 확신하지 못하면 자동으로 걸지 않고 인박스에 세워둡니다. 그런데 그 사실이 어디에도
+   * 안 보여서, 「학부모 문의사항에는 픽업이라고 떠 있는데 체크표에는 안 걸려 있다」가
+   * 됩니다. 왜 안 걸렸는지 보이지 않으면 사람은 앱을 못 믿게 됩니다.
+   */
+  pending: boolean;
+  /** 하원 체크표에 실제로 픽업으로 걸렸는가. */
+  applied: boolean;
+  /** 돋보기(🔎)로 펼쳐 볼 근거. */
+  rawText: string | null;
+  receivedAt: string | null;
+  sourceUrl: string | null;
 };
 
 export const normPickupName = (s: string): string => (s ?? "").replace(/\s+/g, "").trim();
@@ -158,6 +180,12 @@ export function buildTodayPickupList(
       senderName: r.senderName,
       note: r.note,
       unmatched: !stu,
+      // '확정'이 아니면 자동이 걸지 않고 사람 확인을 기다리는 중입니다.
+      pending: r.status !== "확정",
+      applied: r.applied === true,
+      rawText: r.rawText ?? null,
+      receivedAt: r.receivedAt ?? null,
+      sourceUrl: r.sourceUrl ?? null,
     });
   }
 

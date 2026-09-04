@@ -778,7 +778,14 @@ export async function ingestPickup(
     if (!schedErr) scheduled = rows.length;
   }
 
-  if (autoConfirm && matched) await applyPickup(supabase, matched.id, serviceDate);
+  // **누가 걸었는지를 남깁니다.**
+  //
+  // 여기서 세 번째 인자를 안 넘기고 있었습니다. 그러면 `checked_by` 가 비어서, 체크표의
+  // 근거 창이 "담당자가 체크표에서 픽업으로 표시했습니다"라고 말합니다 - 기계가 한 일이
+  // 사람이 한 일로 보입니다. 그래서 "이거 누가 눌렀지?"를 확인할 방법이 없었습니다.
+  if (autoConfirm && matched) {
+    await applyPickup(supabase, matched.id, serviceDate, `AI(${input.source})`);
+  }
 
   return {
     id: requestId,

@@ -16,6 +16,8 @@ import { placeLabel, type TodayPickupItem } from "@/lib/todayPickup";
  */
 export default function TodayPickupList({ items, dateLabel }: { items: TodayPickupItem[]; dateLabel: string }) {
   const [q, setQ] = useState("");
+  /** 돋보기로 펼친 줄. 출처(원문·채널·받은 시각)를 보여줍니다. */
+  const [openId, setOpenId] = useState<string | null>(null);
 
   const { walk, ride } = useMemo(() => {
     const key = q.replace(/\s+/g, "").trim();
@@ -69,11 +71,66 @@ export default function TodayPickupList({ items, dateLabel }: { items: TodayPick
         </span>
       )}
 
+      {/* **자동이 어디까지 갔는지**를 줄마다 보여줍니다.
+          「문의사항에는 픽업이라고 떠 있는데 체크표에는 안 걸려 있다」가 되풀이된 이유는,
+          AI가 확신하지 못해 멈춰 세워둔 것이 화면 어디에도 안 보였기 때문입니다. */}
+      {i.pending ? (
+        <span
+          className="rounded-md bg-rose-100 px-1.5 py-0.5 text-[10px] font-bold text-rose-700"
+          title="AI가 확신하지 못해 자동으로 걸지 않았습니다. 아래 [확인이 필요한 픽업]에서 눌러주셔야 하원 체크표에 반영됩니다."
+        >
+          아직 자동 처리 안 됨
+        </span>
+      ) : i.ridesShuttle && !i.applied ? (
+        <span
+          className="rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800"
+          title="확정된 픽업인데 하원 체크표에 아직 픽업으로 안 걸려 있습니다. 체크표에서 직접 눌러주세요."
+        >
+          체크표 미반영
+        </span>
+      ) : null}
+
       <span className="ml-auto flex items-center gap-1.5 text-[11px] text-slate-400">
         {i.source && <span>{i.source}</span>}
         {i.senderName && <span>· {i.senderName}</span>}
+        <button
+          type="button"
+          onClick={() => setOpenId((v) => (v === i.requestId ? null : i.requestId))}
+          title="어디서 온 연락인지 보기"
+          className="rounded px-1 text-[12px] leading-none text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+        >
+          🔎
+        </button>
       </span>
       {i.note && <span className="w-full pl-[62px] text-[11px] text-slate-500">{i.note}</span>}
+
+      {openId === i.requestId && (
+        <div className="w-full rounded-lg border border-slate-200 bg-slate-50 p-2 pl-2.5 text-[11px] leading-relaxed text-slate-600">
+          <p className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 font-semibold text-slate-500">
+            <span>출처 {i.source ?? "알 수 없음"}</span>
+            {i.channelLabel && <span>· {i.channelLabel}</span>}
+            {i.receivedAt && <span>· {new Date(i.receivedAt).toLocaleString("ko-KR", { hour12: false })}</span>}
+            <span>· {i.pending ? "확인대기" : "확정"}</span>
+          </p>
+          {i.rawText ? (
+            <p className="whitespace-pre-wrap break-words rounded bg-white px-2 py-1.5 text-slate-700">{i.rawText}</p>
+          ) : (
+            <p className="text-slate-400">
+              원문이 남아 있지 않습니다 — 픽업이 아니라고 판단된 연락은 본문을 저장하지 않습니다.
+            </p>
+          )}
+          {i.sourceUrl && (
+            <a
+              href={i.sourceUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-1 inline-block font-semibold text-teal-700 underline"
+            >
+              토들에서 원문 열기 →
+            </a>
+          )}
+        </div>
+      )}
     </li>
   );
 

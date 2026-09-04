@@ -1,5 +1,7 @@
 "use client";
 
+import { realPeople } from "@/lib/taskAck";
+
 import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { genCaseId } from "@/lib/caseId";
@@ -136,7 +138,10 @@ export default function QuickTaskWidget({
     // 업무 흐름판(진행대기/진행중/완료)이 모두 "내가 태그되었는가" 하나만 기준으로 삼기 때문에,
     // 내가 등록한 업무가 내 목록에서 빠지지 않으려면 등록 시점에 자기 자신도 태그되어야 합니다
     // ([공유] 모드로 다른 사람만 골라 등록한 경우가 여기 해당됩니다).
-    const baseAssignees = mode === "나" ? [currentUserEmail] : mode === "전체" ? team.map((t) => t.email) : selected;
+    // [전체]는 **사람이 쓰는 계정만** 담습니다. 도서관 노트북과 오리엔테이션 교육용
+    // 계정까지 담당자로 들어가면, 아무도 못 누르는 확인이 영영 남습니다.
+    const baseAssignees =
+      mode === "나" ? [currentUserEmail] : mode === "전체" ? realPeople(team).map((t) => t.email) : selected;
     const assigneeEmails = baseAssignees.includes(currentUserEmail) ? baseAssignees : [...baseAssignees, currentUserEmail];
     const dueAt = explicitDueAt ?? parsed.dueAt;
 
@@ -297,7 +302,8 @@ export default function QuickTaskWidget({
       {mode === "공유" && showPicker && (
         <div className="flex flex-wrap gap-1 rounded-lg bg-black/[0.03] p-1.5">
           {team.length === 0 && <span className="px-1 text-[11px] opacity-40">태그할 팀원이 없습니다.</span>}
-          {team.map((m) => {
+          {/* 담당자 후보에서도 공용 계정을 뺍니다. 고를 수 있으면 결국 골라집니다. */}
+          {realPeople(team).map((m) => {
             const active = selected.includes(m.email);
             return (
               <button

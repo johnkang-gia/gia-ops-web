@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { timeAgo } from "@/lib/kst";
 import { createClient } from "@/lib/supabase/client";
 import type { Task, TaskAttachment, TaskComment, TaskRecurrence, TaskStatus, TeamMember } from "@/lib/types";
+import { ackRequiredEmails, realPeople } from "@/lib/taskAck";
 import { nameFor } from "@/lib/teamName";
 import { addTimedEventToNativeCalendar } from "@/lib/nativeCalendar";
 import { recurrenceLabel, renewRecurringTask } from "@/lib/recurrence";
@@ -335,10 +336,11 @@ export default function TaskDetailPanel({
   }
 
   const myAck = task.acknowledged_by?.some((a) => a.email === currentUserEmail);
-  // 등록자 본인은 확인 대상에서 제외합니다(요청: "업무등록한 사람은 확인목록에서 제외시켜주고") -
-  // TaskCard.tsx와 같은 기준입니다.
-  const ackRequiredEmails = task.assignee_emails.filter((e) => e !== task.owner_email);
-  const iAmAssignee = ackRequiredEmails.includes(currentUserEmail);
+  // 등록자 본인과 공용 계정(도서관·오리엔테이션)은 확인 대상이 아닙니다.
+  // 기준은 taskAck.ts 한 곳에만 둡니다 - 예전에는 TaskCard 와 여기가 각자 같은 계산을
+  // 들고 있어서, 한쪽만 고치면 카드와 상세가 다른 숫자를 보여줄 수 있었습니다.
+  const ackEmails = ackRequiredEmails(task);
+  const iAmAssignee = ackEmails.includes(currentUserEmail);
   const canDelete = task.owner_email === currentUserEmail || isAdmin;
 
   return (
@@ -542,7 +544,8 @@ export default function TaskDetailPanel({
         <div className="mb-3">
           <div className="mb-1 text-xs font-semibold text-slate-400">담당자 태그</div>
           <div className="flex flex-wrap gap-1.5">
-            {team.map((member) => {
+            {/* 공용 계정은 담당자로 붙일 수 없습니다 - 누를 사람이 없습니다. */}
+            {realPeople(team).map((member) => {
               const active = task.assignee_emails.includes(member.email);
               const isOnline = online.includes(member.email);
               return (
@@ -564,11 +567,11 @@ export default function TaskDetailPanel({
           </div>
         </div>
 
-        {ackRequiredEmails.length > 0 && (
+        {ackEmails.length > 0 && (
           <div className="mb-3 rounded-lg border border-blue-200 bg-blue-50 p-2.5">
             <div className="mb-1.5 flex items-center justify-between">
               <span className="text-xs font-semibold text-blue-600">
-                ✅ 업무 확인 ({task.acknowledged_by?.filter((a) => ackRequiredEmails.includes(a.email)).length ?? 0}/{ackRequiredEmails.length})
+                ✅ 업무 확인 ({task.acknowledged_by?.filter((a) => ackEmails.includes(a.email)).length ?? 0}/{ackEmails.length})
               </span>
               {iAmAssignee && (
                 <label className="flex items-center gap-1 text-[11px] font-medium text-blue-600">
@@ -578,7 +581,7 @@ export default function TaskDetailPanel({
               )}
             </div>
             <div className="flex flex-col gap-1">
-              {ackRequiredEmails.map((email) => {
+              {ackEmails.map((email) => {
                 const ack = task.acknowledged_by?.find((a) => a.email === email);
                 return (
                   <div key={email} className="flex items-center justify-between text-[11px]">

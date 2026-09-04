@@ -2,6 +2,7 @@
 
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { ackRequiredEmails } from "@/lib/taskAck";
 import type { Task, TaskStatus, TeamMember } from "@/lib/types";
 import { nameFor } from "@/lib/teamName";
 import { deadlineLabel } from "@/lib/deadlineLabel";
@@ -50,10 +51,11 @@ export default function TaskCard({
   // 부서원 전원(등록자 포함)을 담당자로 넣기 때문에 예전에는 등록자 본인도 "확인 안 함"으로
   // 남아있었습니다. 담당자 요약 표시(@아무개 외 N명)는 실제 배정 인원 그대로 보여주고,
   // 확인 체크박스/현황만 이 필터링된 목록 기준으로 계산합니다.
-  const ackRequiredEmails = task.assignee_emails.filter((e) => e !== task.owner_email);
-  const totalAckRequired = ackRequiredEmails.length;
-  const ackListRequired = ackList.filter((a) => ackRequiredEmails.includes(a.email));
-  const iAmAssignee = ackRequiredEmails.includes(currentUserEmail);
+  // 공용 계정(도서관·오리엔테이션)도 뺍니다 - 누를 사람이 없어서 «3/5»에 영영 멈춥니다.
+  const ackEmails = ackRequiredEmails(task);
+  const totalAckRequired = ackEmails.length;
+  const ackListRequired = ackList.filter((a) => ackEmails.includes(a.email));
+  const iAmAssignee = ackEmails.includes(currentUserEmail);
   const myAck = ackList.some((a) => a.email === currentUserEmail);
   const needsMyAck = iAmAssignee && task.status !== "완료" && !myAck;
   // 마감이 지났는데 아직 완료가 아니면 "지연", 24시간 안에 마감이면 "임박" - 팀이 업무가
@@ -62,7 +64,7 @@ export default function TaskCard({
   const overdue = dueTime !== null && task.status !== "완료" && dueTime < Date.now();
   const dueSoon = !overdue && dueTime !== null && task.status !== "완료" && dueTime - Date.now() < 24 * 60 * 60 * 1000;
   const deadline = deadlineLabel(task.due_at);
-  const unacknowledged = ackRequiredEmails.filter((e) => !ackList.some((a) => a.email === e));
+  const unacknowledged = ackEmails.filter((e) => !ackList.some((a) => a.email === e));
   const borderColor = overdue ? "#ef4444" : dueSoon ? "#f59e0b" : color;
   const urgencyRing = overdue ? "ring-2 ring-red-400" : dueSoon ? "ring-1 ring-amber-300" : needsMyAck ? "ring-1 ring-amber-400" : "";
 

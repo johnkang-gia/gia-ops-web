@@ -1,5 +1,6 @@
 "use client";
 
+import { isRealPerson } from "@/lib/taskAck";
 import Link from "next/link";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -77,12 +78,16 @@ export function NotificationProvider({
           (t.owner_email === userEmail || t.assignee_emails?.includes(userEmail!) || t.origin_mode === "전체") &&
           t.status !== "완료"
       );
-      const needsAck = mine.filter(
-        (t) =>
-          t.owner_email !== userEmail &&
-          (t.assignee_emails?.includes(userEmail!) || t.origin_mode === "전체") &&
-          !(t.acknowledged_by ?? []).some((a) => a.email === userEmail)
-      );
+      // 공용 계정(도서관 노트북·오리엔테이션)으로 보고 있으면 확인할 것이 없습니다.
+      // 자리에 딸린 계정이지 업무를 받는 사람이 아닙니다.
+      const needsAck = isRealPerson(userEmail)
+        ? mine.filter(
+            (t) =>
+              t.owner_email !== userEmail &&
+              (t.assignee_emails?.includes(userEmail!) || t.origin_mode === "전체") &&
+              !(t.acknowledged_by ?? []).some((a) => a.email === userEmail)
+          )
+        : [];
 
       if (!cancelled)
         setCounts({

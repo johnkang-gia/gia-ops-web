@@ -1,5 +1,7 @@
 "use client";
 
+import { ackRequiredEmails, realPeople } from "@/lib/taskAck";
+
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { RealtimeChannel } from "@supabase/supabase-js";
@@ -466,10 +468,11 @@ export default function ChatPanel({
     };
   }, [searchQuery, searchOpen, department]);
 
-  const filteredUsers = team.filter((m) => m.name && m.name.includes(mentionFilter)).slice(0, 8);
+  // @호출 후보에서 공용 계정(도서관·오리엔테이션)을 뺍니다 - 부를 사람이 없는 계정입니다.
+  const filteredUsers = realPeople(team).filter((m) => m.name && m.name.includes(mentionFilter)).slice(0, 8);
   const showAllMentionOption = ALL_MENTION.includes(mentionFilter);
   const filteredDepartments = departments.filter((d) => d.name !== department && d.name.includes(hashFilter));
-  const deptMembers = team.filter((t) => t.email !== userEmail);
+  const deptMembers = realPeople(team).filter((t) => t.email !== userEmail);
   const pinnedMessages = messages
     .filter((m) => m.pinned_at)
     .sort((a, b) => new Date(b.pinned_at as string).getTime() - new Date(a.pinned_at as string).getTime());
@@ -841,13 +844,13 @@ export default function ChatPanel({
       const res = await fetch("/api/ai/analyze-task", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ content: m.content, teamNames: team.filter((t) => t.name).map((t) => t.name) }),
+        body: JSON.stringify({ content: m.content, teamNames: realPeople(team).filter((t) => t.name).map((t) => t.name) }),
       });
       const data = await res.json();
       if (!res.ok || !data.result) throw new Error(data.error || "AI 분석 실패");
       title = String(data.result.title || m.content).slice(0, 80);
       const namesSet = new Set<string>(data.result.assigneeNames || []);
-      assigneeEmails = team.filter((t) => t.name && namesSet.has(t.name)).map((t) => t.email);
+      assigneeEmails = realPeople(team).filter((t) => t.name && namesSet.has(t.name)).map((t) => t.email);
       if (assigneeEmails.length === 0) assigneeEmails = extractMentionedEmails(m.content, team);
       dueAt = data.result.dueDate ? new Date(`${data.result.dueDate}T23:59:59`).toISOString() : null;
       priority = data.result.priority === "긴급" ? "긴급" : "보통";
@@ -1050,7 +1053,7 @@ export default function ChatPanel({
                       {isMine && !isSystemConfirmation && unread > 0 && <span className="text-[10px] font-semibold text-amber-500">{unread}</span>}
                       {linkedTask && (
                         <span className="flex items-center gap-1 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">
-                          💼 업무 ({linkedTask.acknowledged_by?.length ?? 0}/{linkedTask.assignee_emails.length})
+                          💼 업무 ({linkedTask.acknowledged_by?.filter((a) => ackRequiredEmails(linkedTask).includes(a.email)).length ?? 0}/{ackRequiredEmails(linkedTask).length})
                         </span>
                       )}
                       {m.pinned_at && (

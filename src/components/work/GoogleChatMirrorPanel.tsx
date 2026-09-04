@@ -1,5 +1,7 @@
 "use client";
 
+import { realPeople } from "@/lib/taskAck";
+
 import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { genCaseId } from "@/lib/caseId";
@@ -90,13 +92,13 @@ export default function GoogleChatMirrorPanel({
       const res = await fetch("/api/ai/analyze-task", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ content: m.content, teamNames: team.filter((t) => t.name).map((t) => t.name) }),
+        body: JSON.stringify({ content: m.content, teamNames: realPeople(team).filter((t) => t.name).map((t) => t.name) }),
       });
       const data = await res.json();
       if (!res.ok || !data.result) throw new Error(data.error || "AI 분석 실패");
       taskTitle = String(data.result.title || m.content).slice(0, 80);
       const namesSet = new Set<string>(data.result.assigneeNames || []);
-      assigneeEmails = team.filter((t) => t.name && namesSet.has(t.name)).map((t) => t.email);
+      assigneeEmails = realPeople(team).filter((t) => t.name && namesSet.has(t.name)).map((t) => t.email);
       if (assigneeEmails.length === 0) assigneeEmails = extractMentionedEmails(m.content, team);
       dueAt = data.result.dueDate ? new Date(`${data.result.dueDate}T23:59:59`).toISOString() : null;
       priority = data.result.priority === "긴급" ? "긴급" : "보통";

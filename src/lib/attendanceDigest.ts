@@ -250,6 +250,93 @@ export function extractTargetDate(text: string, baseDate: Date): string | null {
     }
   }
 
+  // 4) 영어.
+  //
+  // **국제학교입니다.** 이름 대조도 분류도 이미 영어를 읽는데 날짜만 한글 전용이었습니다.
+  // 그래서 `KimIje and Ryemyeong will be absent next Monday` 가 결석으로는 잡히는데
+  // 날짜를 못 찾아 **글이 온 날 하루짜리**가 됐습니다. 다음 주 월요일에 올 아이가 오늘
+  // 결석으로 뜨고, 정작 그 월요일에는 아무 데도 안 남습니다.
+  return englishDate(text, baseDate);
+}
+
+// ── 영어 날짜 ────────────────────────────────────────────────────────────────
+
+const EN_MONTHS = [
+  "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec",
+];
+/** 0=Sunday. 줄임말(mon·tues·thur·weds)까지 받습니다 - 실제로 그렇게들 씁니다. */
+const EN_WEEKDAYS: [RegExp, number][] = [
+  [/\bsun(?:day)?\b/i, 0],
+  [/\bmon(?:day)?\b/i, 1],
+  [/\btue(?:s|sday)?\b/i, 2],
+  [/\bwed(?:s|nesday)?\b/i, 3],
+  [/\bthu(?:r|rs|rsday)?\b/i, 4],
+  [/\bfri(?:day)?\b/i, 5],
+  [/\bsat(?:urday)?\b/i, 6],
+];
+
+/**
+ * 영어 문장에서 날짜 하나.
+ *
+ * 애매한 것은 **일부러 읽지 않습니다.** 못 읽으면 '확인필요' 로 남아 사람이 보지만,
+ * 잘못 읽으면 엉뚱한 날에 결석이 박히고 아무도 모릅니다.
+ */
+export function englishDate(text: string, baseDate: Date): string | null {
+  const t = text.toLowerCase();
+  const base = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate());
+
+  if (/\bday after tomorrow\b/.test(t)) return toDateKey(addDays(base, 2));
+  if (/\btomorrow\b/.test(t)) return toDateKey(addDays(base, 1));
+  if (/\btoday\b|\bthis morning\b|\bthis afternoon\b/.test(t)) return toDateKey(base);
+
+  // "Sept 21", "September 21st", "21 Sept" — 연도는 안 적습니다.
+  const mon = EN_MONTHS.map((m, i) => ({ i, re: new RegExp(`\\b${m}[a-z]*\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b`, "i") }));
+  for (const { i, re } of mon) {
+    const m = t.match(re);
+    if (m) {
+      const day = Number(m[1]);
+      if (day >= 1 && day <= 31) {
+        // 적힌 달이 많이 지났으면 내년으로 봅니다(학기 중 앞날 통보).
+        const y = base.getMonth() > i + 6 ? base.getFullYear() + 1 : base.getFullYear();
+        return toDateKey(new Date(y, i, day));
+      }
+    }
+  }
+  for (const { i, re } of EN_MONTHS.map((m, i) => ({ i, re: new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+${m}[a-z]*\\b`, "i") }))) {
+    const m = t.match(re);
+    if (m) {
+      const day = Number(m[1]);
+      if (day >= 1 && day <= 31) {
+        const y = base.getMonth() > i + 6 ? base.getFullYear() + 1 : base.getFullYear();
+        return toDateKey(new Date(y, i, day));
+      }
+    }
+  }
+
+  // 요일. `next` 가 붙으면 **다음 주**의 그 요일입니다.
+  //
+  // 오늘이 금요일인데 "next Monday" 를 그냥 '다음에 오는 월요일' 로 읽으면 사흘 뒤가 되어
+  // 우연히 맞습니다. 그런데 오늘이 화요일이면 엿새 뒤 월요일이 나오는데, 사람이 말한 것은
+  // 그 다음 주 월요일입니다. 그래서 `next` 는 다음 주 월요일을 먼저 찾고 거기서 셉니다.
+  for (const [re, idx] of EN_WEEKDAYS) {
+    if (!re.test(t)) continue;
+    const isNext = new RegExp(`\\bnext\\s+(?:week\\s+)?${re.source.replace(/\\b/g, "")}`, "i").test(t);
+    if (isNext) {
+      // 이번 주 월요일 → 다음 주 월요일.
+      const toMonday = (8 - base.getDay()) % 7 || 7;
+      const nextMonday = addDays(base, toMonday);
+      return toDateKey(addDays(nextMonday, (idx + 6) % 7));
+    }
+    // `this Friday` 와 그냥 `Friday` 는 다음에 오는 그 요일(오늘이면 오늘).
+    return toDateKey(addDays(base, (idx - base.getDay() + 7) % 7));
+  }
+
+  // "next week" 만 적힌 경우 - 다음 주 월요일.
+  if (/\bnext week\b/.test(t)) {
+    const toMonday = (8 - base.getDay()) % 7 || 7;
+    return toDateKey(addDays(base, toMonday));
+  }
+
   return null;
 }
 
@@ -353,6 +440,60 @@ export function extractTargetRange(text: string, baseDate: Date): TargetRange | 
       const fromMatch = text.match(/(오늘|내일|모레|\d{1,2}\s*[./월]\s*\d{1,2}\s*일?)\s*부터/);
       const start = fromMatch ? extractTargetDate(fromMatch[1], base) ?? toDateKey(base) : toDateKey(base);
       return clamp(fromKey(start), fromKey(end));
+    }
+  }
+
+  // ③-2 영어 기간.
+  //
+  //   "from Monday to Wednesday" · "until Friday" · "through Sept 23" · "for 3 days"
+  //
+  // 한글의 '까지' 와 같은 자리입니다. 국제학교라 이쪽으로 오는 연락이 적지 않은데, 못 읽으면
+  // 기간이 통째로 사라지고 글이 온 날 하루만 남습니다.
+  {
+    const t = text.toLowerCase();
+
+    const forDays = t.match(/\bfor\s+(\d{1,2})\s+(?:school\s+)?days?\b/);
+    if (forDays) {
+      const n = Number(forDays[1]);
+      if (n >= 1 && n <= 30) return clamp(base, addDays(base, n - 1));
+    }
+
+    // "from X to/until/through Y" — 앞뒤를 따로 읽습니다.
+    const fromTo = t.match(/\bfrom\s+(.{1,40}?)\s+(?:to|until|till|thru|through)\s+(.{1,40}?)(?:[.,!?]|$)/);
+    if (fromTo) {
+      const a = englishDate(fromTo[1], base) ?? extractTargetDate(fromTo[1], base);
+      const b = englishDate(fromTo[2], base) ?? extractTargetDate(fromTo[2], base);
+      if (a && b) return clamp(fromKey(a), fromKey(b));
+    }
+
+    // "until/till/through Y" — 시작은 적힌 날.
+    const until = t.match(/\b(?:until|till|thru|through)\s+(.{1,40}?)(?:[.,!?]|$)/);
+    if (until) {
+      const end = englishDate(until[1], base) ?? extractTargetDate(until[1], base);
+      if (end) return clamp(base, fromKey(end));
+    }
+
+    // "Sept 21-23" — 뒤쪽 달이 생략되면 앞의 달을 씁니다(한글 쪽과 같은 규칙).
+    const enSpan = t.match(
+      /\b([a-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?\s*[~\-–—]\s*(?:([a-z]{3,9})\.?\s+)?(\d{1,2})(?:st|nd|rd|th)?\b/,
+    );
+    if (enSpan) {
+      const mi = EN_MONTHS.findIndex((m) => enSpan[1].startsWith(m));
+      const mi2 = enSpan[3] ? EN_MONTHS.findIndex((m) => enSpan[3].startsWith(m)) : mi;
+      const d1 = Number(enSpan[2]);
+      const d2 = Number(enSpan[4]);
+      if (mi >= 0 && mi2 >= 0 && d1 >= 1 && d1 <= 31 && d2 >= 1 && d2 <= 31) {
+        const y = base.getMonth() > mi + 6 ? base.getFullYear() + 1 : base.getFullYear();
+        return clamp(new Date(y, mi, d1), new Date(mi2 < mi ? y + 1 : y, mi2, d2));
+      }
+    }
+
+    // "all of next week" / "next week" 통째 - 다음 주 월~금.
+    if (/\b(?:all\s+(?:of\s+)?)?next week\b/.test(t)) {
+      const toMonday = (8 - base.getDay()) % 7 || 7;
+      const mon = addDays(base, toMonday);
+      // '다음 주 월요일' 처럼 요일이 함께 적혀 있으면 그 하루입니다 - 아래 ④에서 잡습니다.
+      if (!EN_WEEKDAYS.some(([re]) => re.test(t))) return clamp(mon, addDays(mon, 4));
     }
   }
 

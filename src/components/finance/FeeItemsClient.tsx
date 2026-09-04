@@ -43,6 +43,8 @@ const EMPTY = {
   unit_price: 0,
   default_grades: [] as string[],
   default_classes: [] as string[],
+  // 기본은 '대상 전원'. 지금까지 만든 항목이 전부 그랬고, 대부분의 교재가 그렇습니다.
+  auto_apply: true,
   note: "",
 };
 
@@ -264,6 +266,7 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
       unit_price: Number(form.unit_price) || 0,
       default_grades: form.default_grades,
       default_classes: form.default_classes,
+      auto_apply: form.auto_apply,
       note: form.note.trim() || null,
       created_by: currentUserEmail,
     };
@@ -291,6 +294,7 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
       unit_price: Number(i.unit_price),
       default_grades: i.default_grades ?? [],
       default_classes: i.default_classes ?? [],
+      auto_apply: i.auto_apply !== false,
       note: i.note ?? "",
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -578,9 +582,46 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
             </span>
           </p>
           <p className="mb-2 text-[11px] leading-relaxed text-slate-500">
-            여기서 고른 학년·반의 아이들에게 <b>자동으로 붙습니다.</b> 이름에 &lsquo;4학년&rsquo;을 적지 마세요 — 인보이스에
-            그대로 찍히고, 표에서 걸러낼 수도 없습니다.
+            이름에 &lsquo;4학년&rsquo;을 적지 마세요 — 인보이스에 그대로 찍히고, 표에서 걸러낼 수도 없습니다.
           </p>
+
+          {/* 대상에 든다고 다 사는 것은 아닙니다.
+              3학년 중국어는 3학년 것이 맞지만 3학년 중에도 하는 아이와 안 하는 아이가 있습니다.
+              이 둘을 한 칸에 섞으면, 전원에게 붙인 뒤 빼는 것을 잊어 **돈이 잘못 청구됩니다.** */}
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            {[
+              {
+                on: true,
+                label: "대상 전원에게",
+                hint: "공통 교과서처럼 그 학년·반이면 전부 사는 것",
+              },
+              {
+                on: false,
+                label: "고른 아이에게만",
+                hint: "선택 과목 교재처럼 대상 안에서도 하는 아이만 사는 것 — 표에는 열이 서고, 살 아이를 체크합니다",
+              },
+            ].map((o) => (
+              <button
+                key={String(o.on)}
+                type="button"
+                title={o.hint}
+                onClick={() => setForm((f) => ({ ...f, auto_apply: o.on }))}
+                className={
+                  "rounded-lg border px-2.5 py-1 text-[12px] font-bold transition " +
+                  (form.auto_apply === o.on
+                    ? "border-teal-500 bg-teal-600 text-white"
+                    : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50")
+                }
+              >
+                {o.label}
+              </button>
+            ))}
+            <span className="self-center text-[11px] text-slate-400">
+              {form.auto_apply
+                ? "고른 학년·반의 아이 전원에게 자동으로 붙습니다."
+                : "자동으로 붙지 않습니다. 인보이스 표에서 살 아이만 체크하세요."}
+            </span>
+          </div>
           <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
           <div>
             <p className="mb-1 text-[11px] font-semibold text-slate-500">학년</p>
@@ -764,6 +805,16 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
                     {(i.default_grades ?? []).length === 0 && (i.default_classes ?? []).length === 0 && (
                       <span className="text-[11px] text-slate-400" title="아무에게도 자동으로 붙지 않습니다. 학생 화면에서 한 명씩 넣습니다">
                         개별 지정
+                      </span>
+                    )}
+                    {/* 대상은 있는데 자동으로는 안 붙는 항목. 이 표시가 없으면 '왜 아무에게도
+                        안 붙었지' 를 항목 설정에서 다시 찾아봐야 합니다. */}
+                    {i.auto_apply === false && ((i.default_grades ?? []).length > 0 || (i.default_classes ?? []).length > 0) && (
+                      <span
+                        className="rounded bg-amber-50 px-1.5 text-[11px] font-semibold text-amber-700"
+                        title="대상 안에서 고른 아이에게만 붙습니다. 인보이스 표에서 체크하세요"
+                      >
+                        고른 아이만
                       </span>
                     )}
                   </span>

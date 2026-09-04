@@ -36,14 +36,39 @@ function normClass(v: string | null | undefined): string {
   return (v ?? "").toString().trim().toUpperCase();
 }
 
-/** 이 항목이 이 아이에게 **기본으로** 붙는가(아이별 결정을 보기 전). */
-export function isDefaultFor(item: FeeItem, s: StudentLike): boolean {
+/**
+ * 이 항목의 **대상**에 이 아이가 드는가. 자동으로 붙는지와는 다릅니다.
+ *
+ * 대상은 "누구를 위한 항목인가" 만 뜻합니다 — 3학년 중국어책은 3학년 것이지만, 3학년
+ * 전원이 사는 것은 아닙니다.
+ */
+export function inTarget(item: FeeItem, s: StudentLike): boolean {
   if (!inDepartment(item, s)) return false;
   const g = normGrade(s.grade);
   const c = normClass(s.className);
   const byGrade = (item.default_grades ?? []).some((x) => normGrade(x) === g && g !== "");
   const byClass = (item.default_classes ?? []).some((x) => normClass(x) === c && c !== "");
   return byGrade || byClass;
+}
+
+/**
+ * 이 항목이 이 아이에게 **자동으로** 붙는가(아이별 결정을 보기 전).
+ *
+ * 대상에 들더라도 `auto_apply` 가 꺼져 있으면 자동으로 붙지 않습니다.
+ *
+ *   auto_apply = true   3학년 공통 교과서 — 3학년이면 전원
+ *   auto_apply = false  3학년 중국어      — 3학년 중에 **고른 아이만**
+ *
+ * 이 둘을 한 칸에 섞어두면 둘 중 하나를 하게 됩니다. 전원에게 붙인 뒤 안 하는 아이를 하나씩
+ * 빼거나(빼는 것을 잊으면 **돈이 잘못 청구됩니다**), 대상을 비우고 하나씩 넣거나(그러면 이
+ * 항목이 3학년 것이라는 사실이 어디에도 안 남아 표에서 걸러낼 수가 없습니다).
+ *
+ * 칸이 없던 시절 자료(auto_apply 가 undefined)는 **true 로 봅니다.** 지금 붙어 있는 것이
+ * 그대로 유지되어야 합니다 - 여기서 false 로 읽으면 이미 청구한 항목이 한꺼번에 사라집니다.
+ */
+export function isDefaultFor(item: FeeItem, s: StudentLike): boolean {
+  if (item.auto_apply === false) return false;
+  return inTarget(item, s);
 }
 
 /**
@@ -81,7 +106,11 @@ export function targetLabel(item: Pick<FeeItem, "default_grades" | "default_clas
 export function appliesToAny(item: FeeItem, list: StudentLike[]): boolean {
   const hasTarget = (item.default_grades ?? []).length > 0 || (item.default_classes ?? []).length > 0;
   if (!hasTarget) return true;
-  return list.some((s) => isDefaultFor(item, s));
+  // **자동으로 붙는지가 아니라 대상에 드는지**를 봅니다.
+  //
+  // 3학년 중국어는 자동으로 안 붙지만 3학년 표에는 열이 서야 합니다 - 거기서 하는 아이를
+  // 골라야 하니까요. isDefaultFor 로 보면 그 열이 아예 안 서서 고를 방법이 없어집니다.
+  return list.some((s) => inTarget(item, s));
 }
 
 export type ResolvedLine = {

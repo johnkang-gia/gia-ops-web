@@ -1111,11 +1111,19 @@ export default function InvoiceGridClient({
                   <span
                     className={
                       "block truncate text-[9px] font-bold " +
-                      (targetLabel(i) === "개별 지정" ? "text-slate-300" : "text-teal-600")
+                      (targetLabel(i) === "개별 지정" ? "text-slate-300" : i.auto_apply === false ? "text-amber-600" : "text-teal-600")
                     }
-                    title={`대상: ${targetLabel(i)}`}
+                    title={
+                      i.auto_apply === false
+                        ? `대상: ${targetLabel(i)} — 자동으로 안 붙습니다. 살 아이만 체크하세요`
+                        : `대상: ${targetLabel(i)} — 전원에게 자동으로 붙습니다`
+                    }
                   >
+                    {/* 자동으로 안 붙는 항목은 별표를 답니다.
+                        열은 서 있는데 아무 칸도 안 차 있으면 "왜 비어 있지" 가 되는데,
+                        비어 있는 것이 맞다는 표시가 필요합니다. */}
                     {targetLabel(i)}
+                    {i.auto_apply === false && " ✱"}
                   </span>
                   <span className="block text-[10px] tabular-nums text-slate-400">{won(Number(i.unit_price))}</span>
                   {/* 열 하나를 명단 전원에게. 반 단위로 교재를 붙이는 일이 가장 잦습니다. */}

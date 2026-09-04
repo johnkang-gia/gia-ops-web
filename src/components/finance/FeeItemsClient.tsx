@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
-import { won } from "@/lib/feeItems";
+import { targetLabel, won } from "@/lib/feeItems";
 import TermPicker, { initialTermId } from "./TermPicker";
 import { FEE_ITEM_CATEGORY_SUGGESTIONS, type FeeCategory, type FeeItem, type Term } from "@/lib/types";
 
@@ -149,6 +149,8 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
   const [cats, setCats] = useState(initialCategories);
   const [newCat, setNewCat] = useState("");
   const [catOpen, setCatOpen] = useState(false);
+  /** 새 분류 만드는 창. 폼 안에서 바로 만들 수 있어야 흐름이 안 끊깁니다. */
+  const [catModal, setCatModal] = useState(false);
 
   /**
    * 고를 수 있는 분류.
@@ -164,10 +166,26 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
     () => cats.filter((c) => c.active).sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name, "ko")).map((c) => c.name),
     [cats],
   );
+  /**
+   * 고를 수 있는 분류. **등록된 것과 실제로 쓰이는 것뿐**입니다.
+   *
+   * 예전에는 예시(교재·교복…)를 함께 넣어뒀는데, 고르는 목록에 예시가 섞이면 등록하지 않은
+   * 분류로 항목이 만들어집니다. 그러면 분류 관리 화면에는 없는데 표에는 탭이 뜨는 상태가
+   * 됩니다. 예시는 새 분류 만드는 창에서만 보여줍니다.
+   */
   const categoryOptions = useMemo(
-    () => [...new Set([...registered, ...usedCategories, ...FEE_ITEM_CATEGORY_SUGGESTIONS])],
+    () => [...new Set([...registered, ...usedCategories])],
     [registered, usedCategories],
   );
+
+  // 고를 수 있는 것이 없거나 지금 고른 것이 목록에 없으면 첫 번째로 맞춰둡니다.
+  // 안 그러면 select 는 첫 항목을 보여주는데 form.category 는 다른 값이라, 화면에 보이는
+  // 것과 저장되는 것이 달라집니다.
+  useEffect(() => {
+    if (categoryOptions.length > 0 && !categoryOptions.includes(form.category)) {
+      setForm((f) => ({ ...f, category: categoryOptions[0] }));
+    }
+  }, [categoryOptions, form.category]);
   /** 탭은 등록된 분류 + 실제로 쓰이는 분류. 둘 중 하나라도 있으면 보여줍니다. */
   const tabCategories = useMemo(() => [...new Set([...registered, ...usedCategories])], [registered, usedCategories]);
 
@@ -191,6 +209,7 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
     // 만들자마자 그 분류로 항목을 만들게 됩니다. 폼에 미리 넣어둡니다.
     setForm((f) => ({ ...f, category: name }));
     setNewCat("");
+    setCatModal(false);
     notify(`분류 "${name}"을 만들었습니다.`, "success");
   }
 
@@ -481,20 +500,36 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
               <option value="공통">공통 (양쪽 다)</option>
             </select>
           </label>
+          {/* 분류는 **고르기만** 합니다.
+              직접 적게 두면 `교재` 와 `교재비` 와 `교재 ` 가 서로 다른 분류가 되고, 표에서
+              탭이 셋으로 갈라집니다. 실제로 그렇게 갈라진 것이 이미 있었습니다. */}
           <label className="text-[11px] text-slate-500">
             분류
-            <input
-              list="fee-category-list"
-              value={form.category}
-              onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
-              placeholder={registered[0] ? `${registered[0]} · 골라도 되고 새로 적어도 됩니다` : "분류를 적어주세요"}
-              className="ml-1 w-32 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
-            />
-            <datalist id="fee-category-list">
-              {categoryOptions.map((c) => (
-                <option key={c} value={c} />
-              ))}
-            </datalist>
+            <span className="ml-1 inline-flex items-center gap-1">
+              <select
+                value={form.category}
+                onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
+                className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+              >
+                {categoryOptions.length === 0 && <option value="">— 분류를 먼저 만들어주세요 —</option>}
+                {categoryOptions.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => {
+                  setNewCat("");
+                  setCatModal(true);
+                }}
+                className="rounded-lg border border-teal-300 bg-teal-50 px-2 py-1.5 text-[12px] font-bold text-teal-700 hover:bg-teal-100"
+                title="새 분류 만들기"
+              >
+                + 분류
+              </button>
+            </span>
           </label>
           <label className="text-[11px] text-slate-500">
             인보이스 이름 (영문)
@@ -525,9 +560,30 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
           </label>
         </div>
 
-        <div className="mt-3 flex flex-wrap items-start gap-x-4 gap-y-2">
+        {/* ── 대상 ────────────────────────────────────────────────
+            **이 항목이 누구를 위한 것인가.**
+
+            지금까지는 이것을 한글 이름에 적었습니다 — `4학년 중국어`. 그러면 셋이 어긋납니다.
+              · 인보이스에 `4학년 중국어` 가 그대로 찍힙니다(학부모에게는 필요 없는 말입니다)
+              · 학년이 바뀌면 이름을 고쳐야 하는데, 고치면 지난 청구서와 이름이 달라집니다
+              · 글자로만 있으니 **기계는 못 읽습니다** — 인보이스 표에서 걸러낼 수가 없습니다
+
+            여기에 고르면 표의 열 머리에 뱃지로 뜨고, 상관없는 명단에서는 열을 아예 세우지
+            않습니다. 이름에는 `중국어` 만 적으면 됩니다. */}
+        <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50/60 p-2.5">
+          <p className="mb-1.5 text-[12px] font-bold text-slate-700">
+            대상 — 이 항목은 누구를 위한 것인가
+            <span className="ml-1.5 rounded bg-white px-1.5 py-0.5 text-[11px] font-bold text-teal-700">
+              {targetLabel({ default_grades: form.default_grades, default_classes: form.default_classes })}
+            </span>
+          </p>
+          <p className="mb-2 text-[11px] leading-relaxed text-slate-500">
+            여기서 고른 학년·반의 아이들에게 <b>자동으로 붙습니다.</b> 이름에 &lsquo;4학년&rsquo;을 적지 마세요 — 인보이스에
+            그대로 찍히고, 표에서 걸러낼 수도 없습니다.
+          </p>
+          <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
           <div>
-            <p className="mb-1 text-[11px] font-semibold text-slate-500">기본 학년 (이 학년 전원에게 자동)</p>
+            <p className="mb-1 text-[11px] font-semibold text-slate-500">학년</p>
             <div className="flex flex-wrap gap-1">
               {grades.map((g) => {
                 const on = form.default_grades.includes(g);
@@ -550,7 +606,7 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
             </div>
           </div>
           <div>
-            <p className="mb-1 text-[11px] font-semibold text-slate-500">기본 반</p>
+            <p className="mb-1 text-[11px] font-semibold text-slate-500">반 (학년보다 좁게 정할 때)</p>
             <div className="flex flex-wrap gap-1">
               {classes.map((c) => {
                 const on = form.default_classes.includes(c);
@@ -571,6 +627,7 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
                 );
               })}
             </div>
+          </div>
           </div>
         </div>
 
@@ -596,10 +653,59 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
         </div>
         {form.default_grades.length === 0 && form.default_classes.length === 0 && (
           <p className="mt-2 text-[11px] text-amber-700">
-            기본 학년·반을 고르지 않으면 <b>아무에게도 자동으로 붙지 않습니다.</b> 학생 화면에서 한 명씩 넣어야 합니다.
+            대상을 고르지 않으면 <b>아무에게도 자동으로 붙지 않습니다.</b> 학생 화면에서 한 명씩 넣어야 하고, 인보이스 표에서는
+            &lsquo;개별 지정&rsquo;으로 뜹니다.
           </p>
         )}
       </div>
+
+      {/* ── 새 분류 만들기 ─────────────────────────────────────────
+          폼 안에서 바로 만들 수 있어야 흐름이 안 끊깁니다. 분류 관리 칸까지 올라갔다 오면
+          적던 항목 이름을 잊습니다. */}
+      {catModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => setCatModal(false)}>
+          <div className="w-full max-w-sm rounded-2xl bg-white p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <p className="text-[15px] font-bold text-slate-800">새 분류 만들기</p>
+            <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+              분류는 인보이스 표의 탭이 되고, 청구서를 나눠 발행하는 단위이기도 합니다. 교재와 교복을 다른 날 보낸다면 분류를
+              나누는 것이 맞습니다.
+            </p>
+            <input
+              autoFocus
+              value={newCat}
+              onChange={(e) => setNewCat(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && void addCategory()}
+              placeholder="예: 악기 · 체육복 · 현장학습"
+              className="mt-3 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+            />
+            {/* 예시는 여기서만 보여줍니다. 고르는 목록에 섞으면 등록 안 된 분류가 생깁니다. */}
+            <div className="mt-2 flex flex-wrap gap-1">
+              {FEE_ITEM_CATEGORY_SUGGESTIONS.filter((s) => !registered.includes(s)).map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setNewCat(s)}
+                  className="rounded-full border border-slate-200 px-2 py-0.5 text-[11px] text-slate-500 hover:bg-slate-50"
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button onClick={() => setCatModal(false)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-semibold text-slate-600">
+                그만두기
+              </button>
+              <button
+                onClick={() => void addCategory()}
+                disabled={!newCat.trim()}
+                className="rounded-lg bg-teal-600 px-4 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
+              >
+                만들기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── 목록 ──────────────────────────────────────────────────── */}
       <div className="mb-2 flex flex-wrap items-center gap-1.5">
@@ -656,7 +762,9 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
                       </span>
                     ))}
                     {(i.default_grades ?? []).length === 0 && (i.default_classes ?? []).length === 0 && (
-                      <span className="text-[11px] text-slate-400">개별 지정</span>
+                      <span className="text-[11px] text-slate-400" title="아무에게도 자동으로 붙지 않습니다. 학생 화면에서 한 명씩 넣습니다">
+                        개별 지정
+                      </span>
                     )}
                   </span>
                 </td>

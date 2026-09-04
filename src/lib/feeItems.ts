@@ -46,6 +46,44 @@ export function isDefaultFor(item: FeeItem, s: StudentLike): boolean {
   return byGrade || byClass;
 }
 
+/**
+ * 이 항목이 **누구를 위한 것인가**를 한 줄로.
+ *
+ * 지금까지는 이것을 이름에 적었습니다 — `4학년 중국어`. 그러면 세 가지가 어긋납니다.
+ *   · 인보이스에 `4학년 중국어` 가 그대로 찍힙니다(학부모에게는 필요 없는 말입니다)
+ *   · 학년이 바뀌면 이름을 고쳐야 하는데, 고치면 지난 청구서와 이름이 달라집니다
+ *   · 글자로만 적혀 있어서 **기계는 못 읽습니다** — 표에서 걸러낼 수가 없습니다
+ *
+ * 대상은 이름이 아니라 칸(default_grades·default_classes)에 둡니다. 그러면 화면이 뱃지로
+ * 보여줄 수 있고, 상관없는 명단에서는 열을 아예 세우지 않을 수 있습니다.
+ */
+export function targetLabel(item: Pick<FeeItem, "default_grades" | "default_classes">): string {
+  const g = (item.default_grades ?? []).map(normGrade).filter(Boolean);
+  const c = (item.default_classes ?? []).filter(Boolean);
+  if (g.length === 0 && c.length === 0) return "개별 지정";
+  const parts: string[] = [];
+  // 학년은 숫자 순으로. 이름 순으로 두면 10학년이 2학년 앞에 옵니다.
+  if (g.length > 0) parts.push(`${[...g].sort((a, b) => Number(a) - Number(b)).join("·")}학년`);
+  if (c.length > 0) parts.push([...c].sort((a, b) => a.localeCompare(b, "ko")).join("·"));
+  return parts.join(" ");
+}
+
+/**
+ * 이 항목이 **지금 보고 있는 명단**과 상관이 있는가.
+ *
+ * 인보이스 표는 항목 하나가 열 하나입니다. 항목이 늘수록 표가 가로로 한없이 길어지는데,
+ * 그중 대부분은 지금 명단과 아무 상관이 없습니다 — G2A 를 보는 중에 `4학년 중국어` 열이
+ * 서 있을 이유가 없습니다.
+ *
+ * 대상이 비어 있는 항목(개별 지정)은 **언제나 상관있는 것으로 봅니다.** 어느 아이에게나
+ * 손으로 붙일 수 있는 것이라, 여기서 걸러내면 붙일 방법이 없어집니다.
+ */
+export function appliesToAny(item: FeeItem, list: StudentLike[]): boolean {
+  const hasTarget = (item.default_grades ?? []).length > 0 || (item.default_classes ?? []).length > 0;
+  if (!hasTarget) return true;
+  return list.some((s) => isDefaultFor(item, s));
+}
+
 export type ResolvedLine = {
   item: FeeItem;
   qty: number;

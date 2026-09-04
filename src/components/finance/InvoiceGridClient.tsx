@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
-import { inDepartment, resolveStudentItems, sumLines, won, type StudentLike } from "@/lib/feeItems";
+import { appliesToAny, inDepartment, resolveStudentItems, sumLines, targetLabel, won, type StudentLike } from "@/lib/feeItems";
 import { departmentOf, gradeSortKey, type Department } from "@/lib/department";
 import { prettyPhone } from "@/lib/alltalkpay";
 import AlltalkpayExport from "./AlltalkpayExport";
@@ -112,6 +112,13 @@ export default function InvoiceGridClient({
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [openCats, setOpenCats] = useState<Set<string>>(new Set());
+  /**
+   * 대상이 안 맞는 항목까지 볼지.
+   *
+   * 평소에는 끕니다 - 지금 명단과 상관없는 열이 표를 가로로 늘리기만 합니다. 다만 예외로
+   * 붙여야 할 때가 있어서(4학년 교재를 3학년 한 명에게) 켤 수 있게 둡니다.
+   */
+  const [showOffTarget, setShowOffTarget] = useState(false);
   const [onlyUnissued, setOnlyUnissued] = useState(false);
   /** 발행 전 검토 창. 누르자마자 나가면 잘못 나간 것을 되돌릴 수 없습니다. */
   const [review, setReview] = useState<Student[] | null>(null);
@@ -271,13 +278,36 @@ export default function InvoiceGridClient({
     return m;
   }, [rows, scopedItems, overrides]);
 
-  /** 지금 보이는 명단에서 실제로 쓰이는 항목만 열로 세웁니다. 안 쓰는 열은 자리만 차지합니다. */
+  /**
+   * 지금 보이는 명단에서 실제로 쓰이는 항목만 열로 세웁니다.
+   *
+   * 여기에 한 겹을 더 뒀습니다 — **이 명단과 상관없는 항목은 펼쳐도 세우지 않습니다.**
+   *
+   * 항목은 학기마다 늡니다. 분류를 펼쳐 아이에게 붙이려 할 때 그 분류의 항목이 전부 열로
+   * 서는데, G2A 를 보는 중에 `4학년 중국어` 열이 서 있을 이유가 없습니다. 그렇게 늘어난
+   * 열은 가로 스크롤이 되고, 가로로 긴 표에서는 옆 칸을 잘못 누릅니다.
+   *
+   * 대상이 비어 있는 항목(개별 지정)은 그대로 둡니다 - 어느 아이에게나 손으로 붙이는
+   * 것이라 걸러내면 붙일 방법이 없어집니다.
+   */
   const usedItems = useMemo(() => {
     const used = new Set<string>();
     for (const ls of linesByStudent.values()) for (const l of ls) used.add(l.item.id);
-    // 접어둔 분류가 아니면, 쓰이지 않아도 그 분류 항목을 함께 보여줍니다(넣으려면 열이 있어야 합니다).
-    return scopedItems.filter((i) => used.has(i.id) || openCats.has(i.category));
-  }, [scopedItems, linesByStudent, openCats]);
+    const list = rows as StudentLike[];
+    return scopedItems.filter((i) => {
+      // 이미 누군가 사고 있으면 무조건 세웁니다. 안 그러면 붙여둔 것이 화면에서 사라집니다.
+      if (used.has(i.id)) return true;
+      if (!openCats.has(i.category)) return false;
+      return showOffTarget || appliesToAny(i, list);
+    });
+  }, [scopedItems, linesByStudent, openCats, rows, showOffTarget]);
+
+  /** 대상이 안 맞아 숨긴 항목 수. 숨겼다는 사실을 말해주지 않으면 "왜 없지" 가 됩니다. */
+  const hiddenByTarget = useMemo(() => {
+    if (showOffTarget) return 0;
+    const list = rows as StudentLike[];
+    return scopedItems.filter((i) => openCats.has(i.category) && !appliesToAny(i, list)).length;
+  }, [scopedItems, openCats, rows, showOffTarget]);
 
   const cats = useMemo(() => [...new Set(usedItems.map((i) => i.category))], [usedItems]);
   const allCats = useMemo(() => [...new Set(scopedItems.map((i) => i.category))], [scopedItems]);
@@ -1022,6 +1052,25 @@ export default function InvoiceGridClient({
         </button>
       </div>
 
+      {/* 대상이 안 맞아 감춘 열이 있으면 말해줍니다.
+          말없이 감추면 "만든 항목이 표에 없다" 가 되고, 사람은 항목을 또 만듭니다. */}
+      {hiddenByTarget > 0 && (
+        <p className="mb-2 text-[11px] text-slate-500">
+          이 명단과 대상이 다른 항목 <b>{hiddenByTarget}개</b>는 열로 세우지 않았습니다.{" "}
+          <button onClick={() => setShowOffTarget(true)} className="font-semibold text-teal-700 underline">
+            그래도 보기
+          </button>
+        </p>
+      )}
+      {showOffTarget && (
+        <p className="mb-2 text-[11px] text-amber-700">
+          대상이 다른 항목까지 보고 있습니다 — 표가 가로로 길어집니다.{" "}
+          <button onClick={() => setShowOffTarget(false)} className="font-semibold underline">
+            다시 감추기
+          </button>
+        </p>
+      )}
+
       {/* ── 표 ───────────────────────────────────────────────────── */}
       <div className="overflow-auto rounded-xl border border-slate-200 bg-white" style={{ maxHeight: "72vh" }}>
         <table className="min-w-full border-collapse text-left text-[12px]">
@@ -1056,6 +1105,17 @@ export default function InvoiceGridClient({
                 <th key={i.id} className="min-w-[86px] border-b border-r border-slate-100 bg-white px-1 py-1.5 align-bottom">
                   <span className="block truncate text-[11px] font-semibold text-slate-700" title={`${i.name}${i.name_ko ? ` · ${i.name_ko}` : ""}`}>
                     {i.name_ko || i.name}
+                  </span>
+                  {/* 대상을 이름 아래 뱃지로. 이것이 있으면 이름에 `4학년` 을 적을 이유가
+                      없어집니다 - 인보이스에 찍히는 이름이 깨끗해집니다. */}
+                  <span
+                    className={
+                      "block truncate text-[9px] font-bold " +
+                      (targetLabel(i) === "개별 지정" ? "text-slate-300" : "text-teal-600")
+                    }
+                    title={`대상: ${targetLabel(i)}`}
+                  >
+                    {targetLabel(i)}
                   </span>
                   <span className="block text-[10px] tabular-nums text-slate-400">{won(Number(i.unit_price))}</span>
                   {/* 열 하나를 명단 전원에게. 반 단위로 교재를 붙이는 일이 가장 잦습니다. */}

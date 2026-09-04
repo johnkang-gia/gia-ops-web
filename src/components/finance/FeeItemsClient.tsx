@@ -22,6 +22,8 @@ type Props = {
   /** 부서별 학년·반. 초등과 중고등은 학년 표기도 반 이름도 다릅니다. */
   gradesByDept: Record<string, string[]>;
   classesByDept: Record<string, string[]>;
+  /** 부서 → 학년 → 그 학년의 반. 학년을 고른 뒤 반을 고르는 데 씁니다. */
+  classesByGrade: Record<string, Record<string, string[]>>;
   /**
    * 항목별로 손으로 넣거나 뺀 아이가 몇 명인가.
    *
@@ -43,12 +45,15 @@ const EMPTY = {
   unit_price: 0,
   default_grades: [] as string[],
   default_classes: [] as string[],
+  // 새 항목은 대상을 안 고른 상태로 시작합니다. 미리 학년을 찍어두면 그대로 저장되어,
+  // 고를 생각도 못 한 학년에 교재가 붙습니다.
+  target_scope: "개별" as "개별" | "부서전체" | "학년" | "반",
   // 기본은 '대상 전원'. 지금까지 만든 항목이 전부 그랬고, 대부분의 교재가 그렇습니다.
   auto_apply: true,
   note: "",
 };
 
-export default function FeeItemsClient({ initialItems, initialCategories, terms, gradesByDept, classesByDept, usageByItem, currentUserEmail, loadError }: Props) {
+export default function FeeItemsClient({ initialItems, initialCategories, terms, gradesByDept, classesByDept, classesByGrade, usageByItem, currentUserEmail, loadError }: Props) {
   const notify = useToast();
   const [items, setItems] = useState(initialItems);
   const [form, setForm] = useState({ ...EMPTY });
@@ -100,7 +105,33 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
    * 제대로 못 정하고, 결국 아이마다 손으로 체크하게 됩니다.
    */
   const grades = gradesByDept[deptTab] ?? [];
-  const classes = classesByDept[deptTab] ?? [];
+
+  /**
+   * 지금 폼에서 고른 학년.
+   *
+   * `""` 은 개별 지정, `"전체"` 는 부서 전원, 나머지는 그 학년입니다. 학년 칸(배열)에서
+   * 되읽지 않고 target_scope 를 함께 봐야 하는 이유: 배열이 비어 있다는 것만으로는 개별인지
+   * 전체인지 가릴 수 없습니다. 애초에 target_scope 를 만든 까닭입니다.
+   */
+  const gradeChoice = form.target_scope === "부서전체" ? "전체" : form.target_scope === "개별" ? "" : form.default_grades[0] ?? "";
+
+  /** 고른 학년의 반만. 학년과 상관없는 반을 고르면 그 항목은 아무에게도 안 붙습니다. */
+  const gradeClasses = (classesByGrade[deptTab] ?? {})[gradeChoice] ?? [];
+
+  function pickGrade(v: string) {
+    if (v === "") {
+      setForm((f) => ({ ...f, target_scope: "개별", default_grades: [], default_classes: [] }));
+      return;
+    }
+    if (v === "전체") {
+      // 학년을 하나씩 채워두지 않습니다 - 그 목록은 채우던 날의 사진이라, 다음 학기에 학년이
+      // 하나 늘면 그 학년만 조용히 빠집니다.
+      setForm((f) => ({ ...f, target_scope: "부서전체", default_grades: [], default_classes: [] }));
+      return;
+    }
+    // 학년을 바꾸면 반은 비웁니다. 4학년으로 바꿨는데 G2A 가 남아 있으면 아무에게도 안 붙습니다.
+    setForm((f) => ({ ...f, target_scope: "학년", default_grades: [v], default_classes: [] }));
+  }
 
   const deptOfItem = (i: FeeItem): ItemDept => (i.department === "중고등부" ? "중고등부" : i.department === "초등부" ? "초등부" : "공통");
   /** 지금 부서에서 다루는 항목. 공통은 어느 부서에서 보든 함께 나옵니다. */
@@ -266,6 +297,7 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
       unit_price: Number(form.unit_price) || 0,
       default_grades: form.default_grades,
       default_classes: form.default_classes,
+      target_scope: form.target_scope,
       auto_apply: form.auto_apply,
       note: form.note.trim() || null,
       created_by: currentUserEmail,
@@ -294,6 +326,10 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
       unit_price: Number(i.unit_price),
       default_grades: i.default_grades ?? [],
       default_classes: i.default_classes ?? [],
+      // 칸이 없던 시절 자료는 학년·반 칸을 보고 되짚습니다(마이그레이션과 같은 규칙).
+      target_scope:
+        i.target_scope ??
+        ((i.default_classes ?? []).length > 0 ? "반" : (i.default_grades ?? []).length > 0 ? "학년" : "개별"),
       auto_apply: i.auto_apply !== false,
       note: i.note ?? "",
     });
@@ -346,9 +382,6 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
     );
   }
 
-  const chip = (on: boolean) =>
-    "rounded-lg border px-2 py-1 text-[11px] font-semibold transition " +
-    (on ? "border-teal-500 bg-teal-50 text-teal-700" : "border-slate-200 text-slate-500 hover:bg-slate-50");
 
   return (
     <div className="mx-auto max-w-5xl p-4 sm:p-6">
@@ -578,7 +611,7 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
           <p className="mb-1.5 text-[12px] font-bold text-slate-700">
             대상 — 이 항목은 누구를 위한 것인가
             <span className="ml-1.5 rounded bg-white px-1.5 py-0.5 text-[11px] font-bold text-teal-700">
-              {targetLabel({ default_grades: form.default_grades, default_classes: form.default_classes })}
+              {targetLabel({ default_grades: form.default_grades, default_classes: form.default_classes, target_scope: form.target_scope })}
             </span>
           </p>
           <p className="mb-2 text-[11px] leading-relaxed text-slate-500">
@@ -622,54 +655,74 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
                 : "자동으로 붙지 않습니다. 인보이스 표에서 살 아이만 체크하세요."}
             </span>
           </div>
-          <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
-          <div>
-            <p className="mb-1 text-[11px] font-semibold text-slate-500">학년</p>
-            <div className="flex flex-wrap gap-1">
-              {grades.map((g) => {
-                const on = form.default_grades.includes(g);
-                return (
-                  <button
-                    key={g}
-                    type="button"
-                    className={chip(on)}
-                    onClick={() =>
-                      setForm((f) => ({
-                        ...f,
-                        default_grades: on ? f.default_grades.filter((x) => x !== g) : [...f.default_grades, g],
-                      }))
-                    }
-                  >
+          {/* 학년을 먼저, 그 다음 반.
+              체크를 여러 개 두면 "4학년과 G2A" 같은 조합이 만들어지는데, 그런 항목은 읽는
+              쪽에서 뜻을 정할 수가 없습니다. 한 번에 하나씩 좁혀 들어가면 만들 수 있는 것이
+              곧 뜻이 분명한 것들뿐입니다. */}
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="text-[11px] text-slate-500">
+              학년
+              <select
+                value={gradeChoice}
+                onChange={(e) => pickGrade(e.target.value)}
+                className="ml-1 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+              >
+                <option value="">개별 지정 (고르지 않음)</option>
+                <option value="전체">전체 — {deptTab === "공통" ? "학교 전체" : deptTab} 전원</option>
+                {grades.map((g) => (
+                  <option key={g} value={g}>
                     {g}학년
-                  </button>
-                );
-              })}
-            </div>
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {/* 반은 **학년을 고른 뒤에만** 나옵니다. 그리고 그 학년의 반만 나옵니다. */}
+            {gradeChoice !== "" && gradeChoice !== "전체" && (
+              <label className="text-[11px] text-slate-500">
+                반
+                <select
+                  value={form.default_classes[0] ?? ""}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      default_classes: e.target.value ? [e.target.value] : [],
+                      target_scope: e.target.value ? "반" : "학년",
+                    }))
+                  }
+                  className="ml-1 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+                >
+                  <option value="">전체 — {gradeChoice}학년 전원</option>
+                  {gradeClasses.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+                {gradeClasses.length === 0 && <span className="ml-1 text-[11px] text-slate-400">이 학년에는 반이 없습니다</span>}
+              </label>
+            )}
+
+            <span className="pb-1.5 text-[11px] text-slate-500">
+              {form.target_scope === "개별"
+                ? "아무에게도 자동으로 안 붙습니다. 인보이스 표에서 한 명씩 넣습니다."
+                : form.target_scope === "부서전체"
+                  ? "학년이 늘어도 저절로 따라옵니다."
+                  : form.target_scope === "반"
+                    ? `${gradeChoice}학년 ${form.default_classes[0]} 에서만 쓰는 항목입니다.`
+                    : `${gradeChoice}학년 것입니다.`}
+            </span>
           </div>
-          <div>
-            <p className="mb-1 text-[11px] font-semibold text-slate-500">반 (학년보다 좁게 정할 때)</p>
-            <div className="flex flex-wrap gap-1">
-              {classes.map((c) => {
-                const on = form.default_classes.includes(c);
-                return (
-                  <button
-                    key={c}
-                    type="button"
-                    className={chip(on)}
-                    onClick={() =>
-                      setForm((f) => ({
-                        ...f,
-                        default_classes: on ? f.default_classes.filter((x) => x !== c) : [...f.default_classes, c],
-                      }))
-                    }
-                  >
-                    {c}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-          </div>
+
+          {/* 옛 자료 중에는 학년을 여러 개 체크해 둔 것이 있습니다.
+              그것을 말없이 첫 번째 하나로 줄이면, 고치기만 눌렀다 저장해도 나머지 학년에서
+              그 교재가 사라집니다. 그런 줄은 미리 알려줍니다. */}
+          {form.default_grades.length > 1 && (
+            <p className="mt-1.5 text-[11px] text-amber-700">
+              이 항목에는 학년이 <b>{form.default_grades.join("·")}</b> 로 여러 개 적혀 있습니다. 위에서 학년을 고르면{" "}
+              <b>고른 하나만 남습니다.</b> 여러 학년에 그대로 두려면 학년을 건드리지 말고 저장하세요.
+            </p>
+          )}
         </div>
 
         <div className="mt-3 flex items-center gap-2">
@@ -791,25 +844,34 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
                 </td>
                 <td className="px-3 py-2 text-right font-bold tabular-nums text-slate-700">{won(Number(i.unit_price))}</td>
                 <td className="px-3 py-2">
-                  <span className="flex flex-wrap gap-1">
-                    {(i.default_grades ?? []).map((g) => (
-                      <span key={g} className="rounded bg-teal-50 px-1.5 text-[11px] font-semibold text-teal-700">
-                        {g}학년
-                      </span>
-                    ))}
-                    {(i.default_classes ?? []).map((c) => (
-                      <span key={c} className="rounded bg-sky-50 px-1.5 text-[11px] font-semibold text-sky-700">
-                        {c}
-                      </span>
-                    ))}
-                    {(i.default_grades ?? []).length === 0 && (i.default_classes ?? []).length === 0 && (
-                      <span className="text-[11px] text-slate-400" title="아무에게도 자동으로 붙지 않습니다. 학생 화면에서 한 명씩 넣습니다">
-                        개별 지정
-                      </span>
-                    )}
+                  <span className="flex flex-wrap items-center gap-1">
+                    {/* 대상은 targetLabel 한 곳에서 만듭니다.
+                        화면마다 학년·반 칸을 각자 읽어 글자를 만들면, '전체' 처럼 칸이 비어
+                        있는 경우를 한 곳만 고치고 나머지를 잊습니다. */}
+                    <span
+                      className={
+                        "rounded px-1.5 text-[11px] font-semibold " +
+                        (i.target_scope === "부서전체"
+                          ? "bg-indigo-50 text-indigo-700"
+                          : targetLabel(i) === "개별 지정"
+                            ? "text-slate-400"
+                            : (i.default_classes ?? []).length > 0
+                              ? "bg-sky-50 text-sky-700"
+                              : "bg-teal-50 text-teal-700")
+                      }
+                      title={
+                        i.target_scope === "부서전체"
+                          ? "이 부서 전원. 학년이 늘어도 저절로 따라옵니다"
+                          : targetLabel(i) === "개별 지정"
+                            ? "아무에게도 자동으로 붙지 않습니다. 인보이스 표에서 한 명씩 넣습니다"
+                            : `대상: ${targetLabel(i)}`
+                      }
+                    >
+                      {targetLabel(i)}
+                    </span>
                     {/* 대상은 있는데 자동으로는 안 붙는 항목. 이 표시가 없으면 '왜 아무에게도
                         안 붙었지' 를 항목 설정에서 다시 찾아봐야 합니다. */}
-                    {i.auto_apply === false && ((i.default_grades ?? []).length > 0 || (i.default_classes ?? []).length > 0) && (
+                    {i.auto_apply === false && targetLabel(i) !== "개별 지정" && (
                       <span
                         className="rounded bg-amber-50 px-1.5 text-[11px] font-semibold text-amber-700"
                         title="대상 안에서 고른 아이에게만 붙습니다. 인보이스 표에서 체크하세요"

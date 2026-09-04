@@ -60,6 +60,14 @@ export default async function FeeItemsPage() {
 
   const gradesByDept: Record<string, string[]> = {};
   const classesByDept: Record<string, string[]> = {};
+  /**
+   * 학년 안의 반.
+   *
+   * 대상을 고를 때 학년을 먼저 고르고 그 다음 반을 고릅니다. 학년과 상관없이 반을 다 늘어놓으면
+   * 4학년 교재를 만들면서 G2A 를 고를 수 있게 되고, 그렇게 고른 항목은 아무에게도 안 붙습니다
+   * (그 학년의 그 반이 아니므로). 화면에서 아예 고를 수 없게 막는 편이 낫습니다.
+   */
+  const classesByGrade: Record<string, Record<string, string[]>> = {};
   for (const r of rows) {
     const dept = departmentOf({ department: r.department, grade: r.grade });
     if (dept !== "초등부" && dept !== "중고등부") continue;
@@ -67,6 +75,7 @@ export default async function FeeItemsPage() {
     const c = (r.class_name ?? "").trim();
     if (g) (gradesByDept[dept] ??= []).push(g);
     if (c) (classesByDept[dept] ??= []).push(c);
+    if (g && c) ((classesByGrade[dept] ??= {})[g] ??= []).push(c);
   }
   for (const d of Object.keys(gradesByDept)) {
     gradesByDept[d] = [...new Set(gradesByDept[d])].sort((a, b) => gradeSortKey(a) - gradeSortKey(b));
@@ -74,9 +83,20 @@ export default async function FeeItemsPage() {
   for (const d of Object.keys(classesByDept)) {
     classesByDept[d] = [...new Set(classesByDept[d])].sort((a, b) => a.localeCompare(b, "ko"));
   }
+  for (const d of Object.keys(classesByGrade)) {
+    for (const g of Object.keys(classesByGrade[d])) {
+      classesByGrade[d][g] = [...new Set(classesByGrade[d][g])].sort((a, b) => a.localeCompare(b, "ko"));
+    }
+  }
   // `공통` 탭(학교 전체가 사는 것)에서는 양쪽을 다 보여줍니다.
   const allGrades = [...new Set(Object.values(gradesByDept).flat())].sort((a, b) => gradeSortKey(a) - gradeSortKey(b));
   const allClasses = [...new Set(Object.values(classesByDept).flat())].sort((a, b) => a.localeCompare(b, "ko"));
+  const allByGrade: Record<string, string[]> = {};
+  for (const d of Object.keys(classesByGrade)) {
+    for (const g of Object.keys(classesByGrade[d])) {
+      allByGrade[g] = [...new Set([...(allByGrade[g] ?? []), ...classesByGrade[d][g]])].sort((a, b) => a.localeCompare(b, "ko"));
+    }
+  }
 
   if (useRes.error) console.error("[학비외 항목] 아이별 가감을 읽지 못했습니다:", useRes.error.message);
   const usageByItem: Record<string, number> = {};
@@ -91,6 +111,7 @@ export default async function FeeItemsPage() {
       terms={(termRes.data as Term[] | null) ?? []}
       gradesByDept={{ ...gradesByDept, 공통: allGrades }}
       classesByDept={{ ...classesByDept, 공통: allClasses }}
+      classesByGrade={{ ...classesByGrade, 공통: allByGrade }}
       usageByItem={usageByItem}
       currentUserEmail={me.email}
       loadError={itemsRes.error?.message ?? null}

@@ -44,10 +44,25 @@ function normClass(v: string | null | undefined): string {
  */
 export function inTarget(item: FeeItem, s: StudentLike): boolean {
   if (!inDepartment(item, s)) return false;
+
+  // 부서 전원(교복). 학년이 늘어도 저절로 따라옵니다 - 학년을 하나씩 체크해 두면 그 목록은
+  // 체크하던 날의 사진이라, 다음 학기에 새 학년이 조용히 빠집니다.
+  if (item.target_scope === "부서전체") return true;
+  if (item.target_scope === "개별") return false;
+
   const g = normGrade(s.grade);
   const c = normClass(s.className);
   const byGrade = (item.default_grades ?? []).some((x) => normGrade(x) === g && g !== "");
   const byClass = (item.default_classes ?? []).some((x) => normClass(x) === c && c !== "");
+
+  // 반까지 정한 항목은 **둘 다** 맞아야 합니다.
+  //
+  // 예전에는 둘 중 하나만 맞아도 붙었습니다. 그래서 `4학년 G4R` 로 적어둔 교재가 5학년
+  // G4R(같은 반 이름을 다른 학년이 쓰는 경우)에도 붙을 수 있었습니다. "그 학년의 그 반"
+  // 이라고 적은 것이니 그대로 읽습니다.
+  if (item.target_scope === "반") return byGrade && byClass;
+
+  // 옛 자료(칸이 없던 시절)는 예전대로 - 둘 중 하나만 맞아도 붙습니다.
   return byGrade || byClass;
 }
 
@@ -82,7 +97,9 @@ export function isDefaultFor(item: FeeItem, s: StudentLike): boolean {
  * 대상은 이름이 아니라 칸(default_grades·default_classes)에 둡니다. 그러면 화면이 뱃지로
  * 보여줄 수 있고, 상관없는 명단에서는 열을 아예 세우지 않을 수 있습니다.
  */
-export function targetLabel(item: Pick<FeeItem, "default_grades" | "default_classes">): string {
+export function targetLabel(item: Pick<FeeItem, "default_grades" | "default_classes"> & { target_scope?: string | null }): string {
+  if (item.target_scope === "부서전체") return "전체";
+  if (item.target_scope === "개별") return "개별 지정";
   const g = (item.default_grades ?? []).map(normGrade).filter(Boolean);
   const c = (item.default_classes ?? []).filter(Boolean);
   if (g.length === 0 && c.length === 0) return "개별 지정";
@@ -104,7 +121,8 @@ export function targetLabel(item: Pick<FeeItem, "default_grades" | "default_clas
  * 손으로 붙일 수 있는 것이라, 여기서 걸러내면 붙일 방법이 없어집니다.
  */
 export function appliesToAny(item: FeeItem, list: StudentLike[]): boolean {
-  const hasTarget = (item.default_grades ?? []).length > 0 || (item.default_classes ?? []).length > 0;
+  if (item.target_scope === "개별") return true;
+  const hasTarget = item.target_scope === "부서전체" || (item.default_grades ?? []).length > 0 || (item.default_classes ?? []).length > 0;
   if (!hasTarget) return true;
   // **자동으로 붙는지가 아니라 대상에 드는지**를 봅니다.
   //

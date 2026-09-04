@@ -266,7 +266,12 @@ export default function AttendanceDigestPanel({
 }) {
   // 사람이 가르친 규칙(별칭·분류·제외). 규칙이 바뀌면 화면이 바로 따라오도록 실시간 구독합니다.
   const [rules, setRules] = useState<LearningRule[]>([]);
-  const [teach, setTeach] = useState<{ rawText: string; guessedName: string } | null>(null);
+  // 🔎·⚠️ 를 눌렀을 때 뜨는 창. **어느 건인지**를 함께 들고 갑니다 - 그게 있어야
+  // "이 건만 이 아이로"가 됩니다. 예전에는 원문과 이름만 넘겨서 가르치기(= 앞으로 전부)
+  // 밖에 할 수 없었습니다.
+  const [teach, setTeach] = useState<
+    { rawText: string; guessedName: string; entry: { messageId: string; status: string; dateFrom: string; dateTo: string } | null } | null
+  >(null);
   // 가르친 규칙을 다시 꺼내 보는 창. 넣기만 되고 꺼내 볼 수 없으면 잘못 가르친 것을 고칠 방법이 없습니다.
   const [showRules, setShowRules] = useState(false);
 
@@ -558,7 +563,20 @@ export default function AttendanceDigestPanel({
                           {e.unmatched || e.ambiguous ? (
                             <button
                               type="button"
-                              onClick={() => setTeach({ rawText: e.rawText, guessedName: e.studentName })}
+                              onClick={() =>
+                                setTeach({
+                                  rawText: e.rawText,
+                                  guessedName: e.studentName,
+                                  entry: e.messageId
+                                    ? {
+                                        messageId: e.messageId,
+                                        status: e.category,
+                                        dateFrom: e.targetDate,
+                                        dateTo: e.targetDateTo ?? e.targetDate,
+                                      }
+                                    : null,
+                                })
+                              }
                               className={
                                 "truncate text-left text-[11px] font-semibold underline decoration-dotted underline-offset-2 " +
                                 (e.unmatched ? "text-slate-400 hover:text-blue-600" : "text-amber-600 hover:text-amber-700")
@@ -621,7 +639,20 @@ export default function AttendanceDigestPanel({
                           {e.unmatched || e.ambiguous ? (
                             <button
                               type="button"
-                              onClick={() => setTeach({ rawText: e.rawText, guessedName: e.studentName })}
+                              onClick={() =>
+                                setTeach({
+                                  rawText: e.rawText,
+                                  guessedName: e.studentName,
+                                  entry: e.messageId
+                                    ? {
+                                        messageId: e.messageId,
+                                        status: e.category,
+                                        dateFrom: e.targetDate,
+                                        dateTo: e.targetDateTo ?? e.targetDate,
+                                      }
+                                    : null,
+                                })
+                              }
                               className={
                                 "truncate text-left text-[11px] font-semibold underline decoration-dotted underline-offset-2 " +
                                 (e.unmatched ? "text-slate-400 hover:text-blue-600" : "text-amber-600 hover:text-amber-700")
@@ -726,6 +757,7 @@ export default function AttendanceDigestPanel({
         <AttendanceTeachModal
           rawText={teach.rawText}
           guessedName={teach.guessedName}
+          entry={teach.entry}
           roster={roster}
           rules={rules}
           currentUserEmail={currentUserEmail}

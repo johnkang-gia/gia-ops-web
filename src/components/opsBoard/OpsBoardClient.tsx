@@ -629,7 +629,9 @@ export default function OpsBoardClient({ token }: { token: string }) {
                                 minWidth: 0,
                               }}
                             >
-                              {place.special ? "교실 밖" : c.room || "교실"}
+                              {/* 특수교실은 «교실 밖»이 아니라 부르는 이름 그대로 보여줍니다.
+                                  셋뿐이고 이미 이름이 있는데 감춰두면 사람이 한 번 더 물어봅니다. */}
+                              {place.special ? place.room : c.room || "교실"}
                             </span>
                             {inBreak && shown && (
                               <span style={{ fontSize: sc.s(11, 9), fontWeight: 800, color: "#64748b", whiteSpace: "nowrap" }}>

@@ -218,16 +218,9 @@ export default function ClassManageClient({ initialClasses, team }: { initialCla
                     />
                   )}
                 </td>
-                <td className="px-3 py-2">
-                  <input
-                    key={c.id + (c.room ?? "")}
-                    defaultValue={c.room ?? ""}
-                    onBlur={(e) => updateAssignment(c.id, "room", e.target.value)}
-                    placeholder="3층 302호"
-                    title="하원 픽업 때 보호자를 어디로 안내할지에 씁니다. 픽업 인박스의 [오늘 픽업 리스트]에 이 값이 나옵니다."
-                    className="w-28 rounded-lg border border-slate-200 px-2 py-1 text-xs"
-                  />
-                </td>
+                {/* 교실은 손으로 적지 않습니다. 학교 명부·시간표에 이미 각 반 위치가
+                    적혀 있어서, 사람이 또 채우게 하면 두 곳이 어긋납니다. */}
+                <td className="px-3 py-2 text-[11px] text-slate-400">{c.room ?? "—"}</td>
                 <td className="px-3 py-2 text-right">
                   <button onClick={() => removeClass(c.id)} className="text-xs text-red-400 hover:text-red-600">
                     삭제

@@ -139,6 +139,17 @@ export async function PATCH(req: NextRequest) {
     note?: string;
     // 아직 등록 대상으로 잡히지 않은 항목(⬜)을 내릴 때 씁니다. id 대신 이 셋을 보냅니다.
     dismissKey?: { messageId: string; studentName: string; status: string; date?: string };
+    // **오늘만 이 아이로.** 규칙을 만들지 않고 이 한 건만 사람이 정합니다.
+    assign?: {
+      messageId: string;
+      /** 화면에 잘못 떠 있던 이름. 이 줄은 내려서 두 번 집계되지 않게 합니다. */
+      fromName: string;
+      status: string;
+      dateFrom?: string;
+      dateTo?: string;
+      studentId: string;
+      studentName: string;
+    };
   };
 
   const db = serviceClient();
@@ -183,6 +194,64 @@ export async function PATCH(req: NextRequest) {
     );
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json({ ok: true, dismissed: true });
+  }
+
+  // ── 오늘만 이 아이로 ──────────────────────────────────────────────────────
+  //
+  // "Vivian, Sophia pick up today" 처럼 이름 하나가 여러 아이를 가리킬 수 있습니다. 학교에
+  // Sophia 가 둘이면 자동은 누구인지 정할 수 없습니다.
+  //
+  // 지금까지는 여기서 «가르치기»밖에 없었습니다. 그런데 가르치기는 **앞으로 모든 Sophia 를
+  // 그 아이로** 만드는 일입니다. 오늘의 Sophia 가 소피아 민이라고 해서 다음 주 Sophia 도
+  // 그 아이인 것은 아닙니다. 한 번 가르치면 그 뒤로는 틀려도 아무도 모르게 지나갑니다.
+  //
+  // 그래서 이 한 건만 정하는 길을 둡니다. 규칙은 만들지 않습니다.
+  if (!body.id && body.assign) {
+    const a = body.assign;
+    const day = /^\d{4}-\d{2}-\d{2}$/.test(a.dateFrom ?? "") ? a.dateFrom! : todayKey(new Date());
+    const dayTo = /^\d{4}-\d{2}-\d{2}$/.test(a.dateTo ?? "") ? a.dateTo! : day;
+
+    // ① 잘못 읽힌 이름으로 잡혀 있던 줄을 내립니다. 안 내리면 같은 연락이 두 아이로
+    //    집계되어, 오지도 않은 아이가 결석 명단에 남습니다.
+    if (a.fromName && a.fromName !== a.studentName) {
+      const { error: offErr } = await db.from("attendance_entries").upsert(
+        {
+          source: "googlechat",
+          source_message_id: a.messageId,
+          student_name: a.fromName,
+          status: a.status,
+          date_from: day,
+          date_to: dayTo,
+          state: "무시",
+          touched_by_human: true,
+          note: `사람이 ${a.studentName} 으로 지정해 이 줄은 내림`,
+        },
+        { onConflict: "source,source_message_id,student_name,status" }
+      );
+      if (offErr) return NextResponse.json({ error: offErr.message }, { status: 500 });
+    }
+
+    // ② 고른 아이로 등록합니다.
+    const { error } = await db.from("attendance_entries").upsert(
+      {
+        source: "googlechat",
+        source_message_id: a.messageId,
+        student_id: a.studentId,
+        student_name: a.studentName,
+        status: a.status,
+        date_from: day,
+        date_to: dayTo,
+        state: "등록",
+        touched_by_human: true,
+        registered_at: new Date().toISOString(),
+        registered_by: auth.user.email ?? null,
+        reason: null,
+        note: "이 건만 사람이 지정(규칙 없음)",
+      },
+      { onConflict: "source,source_message_id,student_name,status" }
+    );
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true, assigned: true });
   }
 
   if (!body.id) return NextResponse.json({ error: "id가 필요합니다." }, { status: 400 });

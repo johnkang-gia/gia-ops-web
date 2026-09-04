@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { ShuttleRoute, ShuttlePilotRoute } from "@/lib/types";
 import ShuttleLiveClient, { type LiveRosterItem } from "@/components/shuttle/ShuttleLiveClient";
 import GuideButton from "@/components/common/GuideButton";
+import { todayKst } from "@/lib/kst";
 
 const GUIDE_SECTIONS = [
   {
@@ -82,6 +83,23 @@ export default async function ShuttleLivePage() {
     }
   }
 
+  /**
+   * 오늘 **탑승으로 눌러둔** 배정.
+   *
+   * 아래에서 요일로만 걸렀더니, 평소 목요일에 안 타는 아이를 담당자가 "오늘만 태워달라"는
+   * 연락을 받고 체크표에서 탑승으로 바꿔도 이 화면에는 나타나지 않았습니다. 기사님과
+   * 동승선생님이 보는 명단이 이 화면이라, 여기 없으면 그 아이는 태울 사람이 없습니다.
+   */
+  const ridingTodayIds = new Set<string>();
+  {
+    const { data: b } = await supabase
+      .from("shuttle_boardings")
+      .select("assignment_id")
+      .eq("service_date", todayKst())
+      .eq("status", "탑승");
+    for (const r of (b as { assignment_id: string }[] | null) ?? []) ridingTodayIds.add(r.assignment_id);
+  }
+
   // 오늘 요일(1=월...5=금)에 배정된 학생만 골라 평평한 목록으로 넘깁니다(체크인 화면과 같은
   // 필터 기준). routeId는 "영구로 옮긴 노선(shuttle_assignments.override_route_id)이 있으면
   // 그 노선, 없으면 평소 정류장 노선"입니다 - 어느 노선 카드에 보일지는 여기에 클라이언트에서
@@ -92,7 +110,8 @@ export default async function ShuttleLivePage() {
   const stopById = new Map(stopsData.map((s) => [s.id, s]));
   const allRoster: LiveRosterItem[] = [];
   for (const a of assignmentsData) {
-    if (!a.weekdays.includes(todayWeekday)) continue;
+    // 요일 배정이 아니어도, 담당자가 오늘 탑승으로 눌러뒀으면 명단에 넣습니다.
+    if (!a.weekdays.includes(todayWeekday) && !ridingTodayIds.has(a.id)) continue;
     const stop = stopById.get(a.stop_id);
     if (!stop) continue;
     const permanentRouteId = a.override_route_id && routeIds.includes(a.override_route_id) ? a.override_route_id : stop.route_id;

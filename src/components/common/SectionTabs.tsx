@@ -107,10 +107,21 @@ const SCHOOL_TABS: TabDef[] = [
     label: "학생",
     icon: "🎓",
     href: "/students",
-    match: ["/students", "/weekly-report/admin/students", "/school/data-check", "/school/import", "/school/groups", "/school/apparel"],
+    match: [
+      "/students",
+      "/weekly-report/admin/students",
+      "/weekly-report/admin/class-roster",
+      "/school/data-check",
+      "/school/import",
+      "/school/groups",
+      "/school/apparel",
+    ],
     children: [
       { label: "학생 조회", href: "/students", match: ["/students"] },
       { label: "명부 관리", href: "/weekly-report/admin/students" },
+      // 아이를 반에 넣는 일은 학생 자료를 고치는 일입니다. 반을 만들고 담임을 붙이는
+      // 일(반 · 시간표)은 학기와 교사에 붙습니다 - 성격이 달라 탭도 갈랐습니다.
+      { label: "반 배정", href: "/weekly-report/admin/class-roster", match: ["/weekly-report/admin/class-roster"] },
       // 반이 아닌 명단(방과후·악기반). 학년·반은 어느 교실에 앉는가이고, 이것은 무엇을 하는가입니다.
       { label: "수강 그룹", href: "/school/groups", match: ["/school/groups"] },
       // 교복·행사 티셔츠. 사이즈는 학생에 저장되어 행사마다 다시 조사하지 않습니다.
@@ -141,7 +152,7 @@ const SCHOOL_TABS: TabDef[] = [
     href: "/weekly-report/admin/classes",
     match: ["/weekly-report/admin/classes", "/weekly-report/admin/subjects", "/school/timetable"],
     children: [
-      { label: "반 관리", href: "/weekly-report/admin/classes" },
+      { label: "반/담임", href: "/weekly-report/admin/classes" },
       { label: "과목", href: "/weekly-report/admin/subjects" },
       { label: "수업 시간표", href: "/school/timetable" },
     ],

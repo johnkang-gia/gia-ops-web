@@ -804,6 +804,23 @@ async function findHomeroomEmail(supabase: SupabaseClient, studentId: string): P
  * 실제 하원 체크표에 픽업으로 표시합니다. 셔틀 배정이 있는 학생만 해당하며(차량을 안 타는
  * 학생은 애초에 하원 차량 명단에 없습니다), 그날 배정된 모든 좌석에 픽업을 겁니다.
  */
+/**
+ * 오늘 이 줄을 **사람이** 정했는가.
+ *
+ * 자동이 사람 판단을 뒤집는 일이 이 저장소에서 되풀이됐습니다. 출결 인박스에서도, 하원
+ * 체크표에서도 같은 모양이었습니다 - 사람이 고쳐놓으면 다음 자동 실행이 되돌려 놓고,
+ * **화면에는 아무 일도 없었던 것처럼 보입니다.**
+ *
+ * 판단은 `checked_by` 한 칸으로 합니다. 자동이 쓴 줄에는 `AI`·`자동`·`cron` 이 들어가고,
+ * 사람이 누른 줄에는 그 사람의 이름이나 메일이 들어갑니다. 비어 있으면 누가 썼는지 모르는
+ * 옛 줄이라 자동이 고쳐도 되는 것으로 봅니다.
+ */
+export function isHumanSet(checkedBy: string | null | undefined): boolean {
+  const v = (checkedBy ?? "").trim();
+  if (!v) return false;
+  return !/^(ai|자동|cron|시스템|system)/i.test(v) && !v.includes("AI(");
+}
+
 export async function applyPickup(
   supabase: SupabaseClient,
   studentId: string,
@@ -826,10 +843,19 @@ export async function applyPickup(
   for (const assignmentId of ids) {
     const { data: existing } = await supabase
       .from("shuttle_boardings")
-      .select("id")
+      .select("id, checked_by")
       .eq("service_date", serviceDate)
       .eq("assignment_id", assignmentId)
       .maybeSingle();
+
+    // **사람이 오늘 정해둔 줄은 덮지 않습니다.**
+    //
+    // 백서아가 오늘만 셔틀을 타겠다고 해서 담당자가 탑승으로 바꿔뒀는데, 뒤이어 자동이
+    // 픽업으로 되돌려 놓았습니다. 화면에는 아무 일도 없었던 것처럼 보이고, 그 아이는
+    // 명단에서 빠진 채 차가 떠납니다.
+    if (existing && isHumanSet(existing.checked_by as string | null)) {
+      continue;
+    }
 
     const stamp = updatedBy ? { checked_by: updatedBy } : {};
     const { error } = existing

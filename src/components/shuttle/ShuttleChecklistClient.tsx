@@ -348,11 +348,23 @@ export default function ShuttleChecklistClient({
           }
         }
       }
+      // **담당자가 탑승으로 눌러둔 아이는 오늘 탑니다.**
+      //
+      // 바로 위 줄들은 `status` 만 지키고 `riding` 은 지키지 않았습니다. 그래서 담당자가
+      // 탑승으로 바꿔놓아도 특이사항(개별하원·요일제외·기간결석·픽업)이 매번 다시 계산되어
+      // "안 탐"으로 되돌려 놓았습니다. 표에는 흐린 회색 이름으로 남으니 눌러둔 사람도
+      // 되돌아간 줄 모르고, 그 아이는 명단에서 빠진 채 차가 떠납니다.
+      //
+      // 특이사항은 **아직 아무도 안 본 아이**를 미리 빼두라는 표시이지, 사람이 오늘 사정을
+      // 듣고 내린 판단을 뒤집으라는 뜻이 아닙니다.
+      const humanRiding = it.status === "탑승";
       return {
         ...it,
-        ridingToday: riding,
+        ridingToday: humanRiding ? true : riding,
         // 사람이 표에서 이미 바꿔둔 줄은 그대로 둡니다 - 사람이 마지막에 본 것이 맞습니다.
         status: it.status === "예정" && forcedStatus ? forcedStatus : it.status,
+        // 개별하원 표시는 사실 그대로 둡니다. 오늘만 타는 것이지 평소 개별하원인 것은
+        // 맞아서, 지워버리면 담당자가 왜 이 아이가 특별한지 알 수 없게 됩니다.
         individualPickup: individual,
         groupColor: colorByKey.get(key) ?? null,
       };

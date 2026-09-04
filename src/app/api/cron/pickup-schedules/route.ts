@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { applyPickup } from "@/lib/pickupIngest";
+import { applyPickup, isHumanSet } from "@/lib/pickupIngest";
 import { kstParts } from "@/lib/shuttleTracking";
 import { genCaseId } from "@/lib/caseId";
 import { touchHeartbeat } from "@/lib/heartbeat";
@@ -180,6 +180,16 @@ export async function GET(req: Request) {
     // 결석: 그날 그 아이의 배정을 결석으로 표시합니다.
     const { data: asg } = await supabase.from("shuttle_assignments").select("id").eq("student_id", n.student_id);
     for (const a of (asg as { id: string }[] | null) ?? []) {
+      // 사람이 오늘 이 줄을 이미 정했으면 넘어갑니다. 기간 결석이 걸려 있어도 "오늘은 탑니다"는
+      // 담당자가 학부모에게 직접 듣고 누른 것이라, 이 크론이 아는 것보다 새롭습니다.
+      const { data: cur } = await supabase
+        .from("shuttle_boardings")
+        .select("checked_by")
+        .eq("service_date", today)
+        .eq("assignment_id", a.id)
+        .maybeSingle();
+      if (cur && isHumanSet(cur.checked_by as string | null)) continue;
+
       // checked_by에 적습니다. updated_by는 이 표에 없는 칸이라, 여기 적혀 있는 동안
       // 이 저장이 매번 실패했습니다 - 기간 결석이 하나도 안 걸리고 있었습니다.
       const { error: upErr } = await supabase

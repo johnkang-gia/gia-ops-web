@@ -102,17 +102,11 @@ export default async function StudentAttendancePage({ params }: { params: Promis
         <Stat label="출석률" value={s.rate === null ? "—" : `${s.rate}%`} tone="text-emerald-700" />
       </div>
 
-      {/* 이 숫자를 얼마나 믿어도 되는지 먼저 말합니다.
-          기록이 절반뿐인데 출석률만 크게 띄우면, 그 숫자가 그대로 서류에 옮겨 적힙니다. */}
+      {/* 이 숫자가 어떻게 나온 것인지 한 줄로 밝힙니다.
+          기준을 안 적으면, 지각을 결석처럼 세는 학교의 숫자와 견줄 때 말이 어긋납니다. */}
       <p className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] leading-relaxed text-slate-600">
-        수업일 <b>{s.schoolDays}일</b> 중 기록이 있는 날은 <b>{s.recorded}일</b>입니다
-        {s.missing > 0 && (
-          <>
-            . 나머지 <b className="text-amber-700">{s.missing}일</b>은 아직 안 찍은 날이라 <b>결석이 아니라 자료 없음</b>이고,
-            출석률 계산에서 빠져 있습니다
-          </>
-        )}
-        . 출석률은 기록이 있는 날만 분모로 씁니다.
+        수업일 <b>{s.schoolDays}일</b> 중 학교에 온 날 <b>{s.attended}일</b>. 표시 없는 날은 출석으로 봅니다
+        {s.unmarked > 0 && <> (표시 없는 날 {s.unmarked}일)</>}. <b>지각·조퇴는 학교에 온 날이라 출석률을 깎지 않습니다.</b>
         {s.unconfirmed > 0 && (
           <>
             {" "}
@@ -185,7 +179,7 @@ export default async function StudentAttendancePage({ params }: { params: Promis
             {exceptions.length === 0 && (
               <tr>
                 <td className="px-3 py-8 text-center text-sm text-slate-400">
-                  {s.recorded === 0 ? "아직 이 학생의 출결 기록이 없습니다." : "빠진 날이 없습니다."}
+                  빠진 날이 없습니다. 개근입니다.
                 </td>
               </tr>
             )}

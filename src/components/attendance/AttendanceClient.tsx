@@ -9,7 +9,7 @@ import { useToast } from "@/components/common/ToastProvider";
 import GuideButton from "@/components/common/GuideButton";
 import type { AttendanceRecord, AttendanceStatus, WrClass, WrStudent } from "@/lib/types";
 import type { ReasonType } from "@/lib/attendanceRegister";
-import AttendanceSummaryPanel, { type SummaryRow } from "./AttendanceSummaryPanel";
+import TodayNotices, { type PendingEntry } from "./TodayNotices";
 import { useLang, useT } from "@/components/common/LanguageProvider";
 import { classLabel } from "@/lib/i18nLabels";
 import type { Lang, T } from "@/lib/lang";
@@ -36,13 +36,14 @@ function guideSections(t: T) {
   ];
 }
 
-const STATUS_LIST: AttendanceStatus[] = ["출석", "지각", "결석", "조퇴", "기타"];
-const STATUS_META: Record<AttendanceStatus, { emoji: string; active: string; en: string }> = {
-  출석: { emoji: "✅", active: "border-emerald-500 bg-emerald-500 text-white", en: "Present" },
-  지각: { emoji: "⏰", active: "border-amber-500 bg-amber-500 text-white", en: "Late" },
-  결석: { emoji: "🚫", active: "border-red-500 bg-red-500 text-white", en: "Absent" },
-  조퇴: { emoji: "🚪", active: "border-orange-500 bg-orange-500 text-white", en: "Early Leave" },
-  기타: { emoji: "❔", active: "border-slate-500 bg-slate-500 text-white", en: "Other" },
+// 결석이 가장 중요합니다. 목록에서도 그 순서로 세웁니다.
+const STATUS_LIST: AttendanceStatus[] = ["결석", "조퇴", "지각", "기타", "출석"];
+const STATUS_META: Record<AttendanceStatus, { emoji: string; active: string; badge: string; en: string }> = {
+  출석: { emoji: "✅", active: "border-emerald-500 bg-emerald-500 text-white", badge: "border-emerald-200 bg-emerald-50", en: "Present" },
+  지각: { emoji: "⏰", active: "border-amber-500 bg-amber-500 text-white", badge: "border-amber-300 bg-amber-100", en: "Late" },
+  결석: { emoji: "🚫", active: "border-red-500 bg-red-500 text-white", badge: "border-red-300 bg-red-100", en: "Absent" },
+  조퇴: { emoji: "🚪", active: "border-orange-500 bg-orange-500 text-white", badge: "border-orange-300 bg-orange-100", en: "Early Leave" },
+  기타: { emoji: "❔", active: "border-slate-500 bg-slate-500 text-white", badge: "border-slate-300 bg-slate-100", en: "Other" },
 };
 const NEEDS_CONTACT: AttendanceStatus[] = ["결석", "조퇴"];
 
@@ -77,6 +78,7 @@ function StudentRow({
   onSetReason,
   onContact,
   busy,
+  highlight,
 }: {
   student: WrStudent;
   record: AttendanceRecord | undefined;
@@ -87,52 +89,85 @@ function StudentRow({
   onSetReason: (record: AttendanceRecord, reason: ReasonType) => void;
   onContact: (student: WrStudent, record: AttendanceRecord, contacted: boolean, note: string) => void;
   busy: boolean;
+  /** 특이사항 칸에서 이름을 눌러 찾아온 아이. 테두리로 표시합니다. */
+  highlight: boolean;
 }) {
   const t = useT();
   const { lang } = useLang();
   const [noteDraft, setNoteDraft] = useState(record?.contact_note ?? "");
+  // 상태 고르는 줄은 눌렀을 때만 펼칩니다. 기본이 출석이라 대부분은 누를 일이 없습니다.
+  const [open, setOpen] = useState(false);
+  const cur = record?.status;
   const needsContact = record && NEEDS_CONTACT.includes(record.status);
 
-  // 5열 그리드 안에 들어가는 카드라 가로 폭이 좁아질 수 있어서(요청: "출석부 공간 넓으니까
-  // 페이지 다섯열로 나눠서"), 이름/상태버튼을 좌우로 나란히 두지 않고 위아래로 쌓아 좁은
-  // 칸에서도 버튼이 잘리지 않게 했습니다.
+  /**
+   * 상태는 **이름 옆 작은 뱃지**로만 보여줍니다.
+   *
+   * 예전에는 아이마다 출석·지각·결석·조퇴·기타 다섯 버튼이 글자까지 붙어 늘어서 있었습니다.
+   * 137명이면 685개 버튼이라 한 화면에 한 반도 안 들어갔습니다. **기본이 출석**이므로 대부분의
+   * 아이는 아무것도 누를 일이 없는데, 누를 일 없는 버튼이 화면의 대부분을 차지했습니다.
+   *
+   * 그래서 평소에는 아이콘 한 칸만 두고, 눌렀을 때만 고르는 줄이 펼쳐집니다.
+   * 무엇인지는 마우스를 대면 뜹니다.
+   */
   return (
-    <div className="flex h-full flex-col gap-1.5 rounded-lg border border-slate-100 bg-white px-3 py-2.5 shadow-sm">
-      <div className="min-w-0">
-        <div className="truncate text-sm font-semibold text-slate-700">
-          {lang === "en" && student.name_en ? student.name_en : student.name}
-        </div>
-        {student.name_en && (
-          <div className="truncate text-[11px] text-slate-400">{lang === "en" ? student.name : student.name_en}</div>
+    <div className={"rounded-lg border bg-white px-2 py-1.5 shadow-sm " + (highlight ? "border-teal-400 ring-2 ring-teal-200" : "border-slate-100")}>
+      <div className="flex items-center gap-1.5">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => setOpen((v) => !v)}
+          title={cur ? `${t(cur, STATUS_META[cur].en)} — 눌러서 바꾸기` : t("출석 (표시 없음) — 눌러서 바꾸기", "Present (unmarked) — tap to change")}
+          className={
+            "shrink-0 rounded-md border px-1 py-0.5 text-[13px] leading-none transition disabled:opacity-50 " +
+            (cur ? STATUS_META[cur].badge : "border-slate-200 text-slate-300 hover:bg-slate-50")
+          }
+        >
+          {cur ? STATUS_META[cur].emoji : "·"}
+        </button>
+        <span className="min-w-0 flex-1 text-[13px] font-semibold text-slate-700" title={student.name_en ?? undefined}>
+          <span className="block truncate">{lang === "en" && student.name_en ? student.name_en : student.name}</span>
+        </span>
+        {/* 결석 사유와 확인 필요는 글자 없이 점 하나로. 이름 줄이 길어지면 5열이 깨집니다. */}
+        {record?.status === "결석" && !record.reason_type && (
+          <span className="shrink-0 text-[10px] text-slate-300" title="결석 사유를 아직 안 골랐습니다">
+            사유?
+          </span>
+        )}
+        {record?.confirmed_by_human === false && (
+          <span
+            className="shrink-0 rounded-full bg-amber-400 px-1 text-[9px] font-bold text-white"
+            title={`${record.source ?? "연락"}에서 저절로 들어왔습니다 — 확인해주세요`}
+          >
+            확인
+          </span>
         )}
       </div>
-      <div className="flex flex-wrap gap-1">
-        {STATUS_LIST.map((s) => {
-          const active = record?.status === s;
-          return (
-            <button
-              key={s}
-              type="button"
-              disabled={busy}
-              onClick={() => onSetStatus(student, s)}
-              title={t(s, STATUS_META[s].en)}
-              className={
-                "rounded-full border px-2 py-1 text-xs font-semibold transition disabled:opacity-50 " +
-                (active ? STATUS_META[s].active : "border-slate-200 text-slate-500 hover:bg-slate-50")
-              }
-            >
-              {STATUS_META[s].emoji} {t(s, STATUS_META[s].en)}
-            </button>
-          );
-        })}
-      </div>
 
-      {/* 연락에서 저절로 들어온 줄.
-          담임이 찍은 것과 토들에서 자동으로 온 것은 믿는 정도가 다른데, 표시가 없으면 화면에서
-          똑같아 보입니다. 노란 줄로 띄우고, 상태 버튼을 한 번 누르면 사람이 확인한 것이 됩니다. */}
-      {record && record.confirmed_by_human === false && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] leading-relaxed text-amber-800">
-          <b>{record.source ?? "자동"}</b> 연락에서 저절로 들어왔습니다 — 맞으면 위 버튼을 한 번 눌러 확인해주세요.
+      {/* 눌렀을 때만 펼칩니다. */}
+      {open && (
+        <div className="mt-1.5 flex flex-wrap gap-1">
+          {STATUS_LIST.map((s) => {
+            const active = record?.status === s;
+            return (
+              <button
+                key={s}
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  onSetStatus(student, s);
+                  setOpen(false);
+                }}
+                title={t(s, STATUS_META[s].en)}
+                className={
+                  "rounded-full border px-2 py-0.5 text-[11px] font-semibold transition disabled:opacity-50 " +
+                  (active ? STATUS_META[s].active : "border-slate-200 text-slate-500 hover:bg-slate-50")
+                }
+              >
+                {STATUS_META[s].emoji} {t(s, STATUS_META[s].en)}
+              </button>
+            );
+          })}
         </div>
       )}
 
@@ -235,13 +270,10 @@ export default function AttendanceClient({
   myName,
   isTeacher,
   staffNames,
-  summaryRows,
-  termLabel,
-  schoolDayCount,
-  coverageStart,
   isSchoolDay,
   closedLabel,
   autoAdded,
+  pendingEntries,
 }: {
   date: string;
   classes: WrClass[];
@@ -251,16 +283,13 @@ export default function AttendanceClient({
   myName: string | null;
   isTeacher: boolean;
   staffNames: Record<string, string>;
-  /** 학기 전체 집계. 오늘을 찍는 사람과 학기를 보는 사람이 같아서 한 화면에 둡니다. */
-  summaryRows: SummaryRow[];
-  termLabel: string;
-  schoolDayCount: number;
-  coverageStart: string | null;
   /** 오늘이 수업일인가. 쉬는 날이면 체크할 것이 없습니다. */
   isSchoolDay: boolean;
   closedLabel: string | null;
   /** 연락에서 저절로 채워진 줄 수. 0이면 아무것도 안 뜹니다. */
   autoAdded: number;
+  /** 결석으로 읽었지만 누구인지 못 가린 연락. 특이사항 칸에 뜹니다. */
+  pendingEntries: PendingEntry[];
 }) {
   const router = useRouter();
   const notify = useToast();
@@ -268,13 +297,8 @@ export default function AttendanceClient({
   const { lang } = useLang();
   const [records, setRecords] = useRealtimeTable<AttendanceRecord>("attendance_records", initialRecords);
   const [busyId, setBusyId] = useState<string | null>(null);
-  /**
-   * 오늘 찍기 / 쌓인 현황.
-   *
-   * 한 화면에 둡니다 - 나누면 오늘만 찍고 현황은 아무도 안 봅니다. 기본은 '오늘' 입니다.
-   * 매일 여는 이유가 오늘을 찍기 위해서지, 학기 통계를 보기 위해서가 아닙니다.
-   */
-  const [view, setView] = useState<"오늘" | "현황">("오늘");
+  /** 특이사항 칸에서 이름을 눌러 찾아온 아이. 아래 명단에서 테두리로 표시합니다. */
+  const [found, setFound] = useState<string | null>(null);
 
   // useRealtimeTable은 테이블 전체를 구독하므로(과거 다른 날짜 이벤트까지 함께 들어올 수 있음),
   // 화면에 보여줄 때는 항상 지금 조회 중인 날짜 것만 걸러서 씁니다.
@@ -401,76 +425,42 @@ export default function AttendanceClient({
   }
 
   const isToday = date === new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" });
+  // 9월 4일(금) — 요일까지 있어야 "오늘이 무슨 요일이었지" 를 다시 세지 않습니다.
+  const dateLabel = new Date(`${date}T00:00:00`).toLocaleDateString(lang === "en" ? "en-US" : "ko-KR", {
+    month: "long",
+    day: "numeric",
+    weekday: "short",
+  });
   const totalStudents = students.length;
   const absentCount = Array.from(recordsByStudent.values()).filter((r) => r.date === date && r.status === "결석").length;
   const uncontactedAbsent = Array.from(recordsByStudent.values()).filter(
     (r) => r.date === date && NEEDS_CONTACT.includes(r.status) && !r.contacted_guardian
   ).length;
-  // 오늘 아직 확인 안 된 자동 줄. 담임이 한 번 눌러줘야 집계를 믿을 수 있습니다.
-  const unconfirmedToday = Array.from(recordsByStudent.values()).filter((r) => r.confirmed_by_human === false).length;
-  const missingReason = Array.from(recordsByStudent.values()).filter((r) => r.status === "결석" && !r.reason_type).length;
-  const summaryMissing = summaryRows.reduce((n, r) => n + r.summary.missing, 0);
-  const summaryUnconfirmed = summaryRows.reduce((n, r) => n + r.summary.unconfirmed, 0);
 
   return (
     <div>
-      <div className="mb-1 flex items-center justify-between gap-2">
-        <h1 className="text-lg font-bold">🗒️ {t("출석부", "Attendance")}</h1>
+      {/* 날짜와 요일을 제목에 넣습니다.
+          출석부는 매일 여는 화면이라 "지금 보고 있는 것이 오늘인가" 가 늘 물음입니다. 위쪽
+          날짜 칸만으로는 지난 날짜를 보고 있다는 것을 놓치기 쉽습니다. */}
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h1 className="text-lg font-bold">
+          🗒️ {t("출석부", "Attendance")}
+          <span className="ml-2 text-[15px] font-semibold text-slate-500">{dateLabel}</span>
+          {!isToday && <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-bold text-amber-800">지난 날짜</span>}
+        </h1>
         <div className="flex items-center gap-2">
           <Link
-            href={`/attendance/register?date=${date}`}
+            href={`/attendance/status?date=${date}`}
             className="rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-            title="종이 출석부 모양으로 학생 × 날짜 격자표를 봅니다"
+            title="날짜별·학년별·반별 출석률을 표와 그래프로 봅니다"
           >
-            📋 {t("반별 출석부", "Class register")}
+            📊 {t("출석현황", "Status")}
           </Link>
           <GuideButton title={t("출석부 사용 가이드", "Attendance guide")} sections={guideSections(t)} />
         </div>
       </div>
 
-      {/* 오늘 / 현황.
-          같은 화면에 두되 한 번에 하나만 보여줍니다 - 둘을 위아래로 쌓으면 오늘 찍을 칸이
-          화면 아래로 밀려나고, 매일 스크롤하게 됩니다. */}
-      <div className="mb-3 flex items-center gap-1.5">
-        {(["오늘", "현황"] as const).map((v) => (
-          <button
-            key={v}
-            type="button"
-            onClick={() => setView(v)}
-            className={
-              "rounded-lg px-3 py-1.5 text-[13px] font-bold transition " +
-              (view === v ? "bg-gia-navy text-white" : "border border-slate-200 text-slate-500 hover:bg-slate-50")
-            }
-          >
-            {v === "오늘" ? t("오늘 찍기", "Today") : t("현황 (전체·학년·반)", "Summary")}
-          </button>
-        ))}
-        {view === "오늘" && unconfirmedToday > 0 && (
-          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800">
-            연락에서 들어온 것 {unconfirmedToday}건 확인 필요
-          </span>
-        )}
-        {view === "오늘" && missingReason > 0 && (
-          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
-            사유 안 고른 결석 {missingReason}건
-          </span>
-        )}
-      </div>
-
-      {view === "현황" && (
-        <AttendanceSummaryPanel
-          rows={summaryRows}
-          termLabel={termLabel}
-          schoolDays={schoolDayCount}
-          coverageStart={coverageStart}
-          missingTotal={summaryMissing}
-          unconfirmedTotal={summaryUnconfirmed}
-        />
-      )}
-
-      {/* 오늘 찍는 자리는 감추기만 합니다(지우지 않습니다).
-          현황을 보고 돌아왔을 때 스크롤 위치와 열어둔 연락 메모가 그대로 남아야 합니다. */}
-      <div className={view === "오늘" ? "" : "hidden"}>
+      <div>
       <p className="mb-4 text-xs text-slate-500">
         {isTeacher
           ? t(
@@ -519,6 +509,21 @@ export default function AttendanceClient({
           )}
         </div>
       </div>
+
+      {/* 오늘 특이사항.
+          명단 137칸을 눈으로 훑어 결석을 찾는 것은 사람이 할 일이 아닙니다. 다른 일이 일어난
+          아이만 위로 끌어올립니다. */}
+      {isSchoolDay && (
+        <TodayNotices
+          students={students}
+          records={recordsByStudent}
+          pending={pendingEntries}
+          onJump={(id) => {
+            setFound(id);
+            document.getElementById(`stu-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+          }}
+        />
+      )}
 
       {/* 쉬는 날.
           달력에서 뺀 날인데 출석부가 평소처럼 뜨면, 방학에 전교생 미체크가 쌓입니다. */}
@@ -584,7 +589,7 @@ export default function AttendanceClient({
                   const rec = recordsByStudent.get(s.id);
                   const wide = !!rec && NEEDS_CONTACT.includes(rec.status);
                   return (
-                    <div key={s.id} className={wide ? "sm:col-span-2 lg:col-span-3 xl:col-span-5" : ""}>
+                    <div key={s.id} id={`stu-${s.id}`} className={wide ? "sm:col-span-2 lg:col-span-3 xl:col-span-5" : ""}>
                       <StudentRow
                         student={s}
                         record={rec}
@@ -595,6 +600,7 @@ export default function AttendanceClient({
                         onSetReason={setReason}
                         onContact={contact}
                         busy={busyId === s.id}
+                        highlight={found === s.id}
                       />
                     </div>
                   );

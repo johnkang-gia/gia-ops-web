@@ -84,15 +84,11 @@ const WORK_TABS: TabDef[] = [
     label: "연락 · 출결",
     icon: "🔍",
     href: "/work/inquiry-search",
-    match: ["/work/inquiry-search", "/inquiries", "/attendance"],
+    // 출석부는 학교 메뉴로 옮겼습니다. 여기 남는 것은 학부모 연락을 다루는 화면뿐입니다.
+    match: ["/work/inquiry-search", "/inquiries"],
     children: [
       { label: "연락 검색", href: "/work/inquiry-search", match: ["/work/inquiry-search"] },
       { label: "학부모 문의", href: "/inquiries" },
-      // 출석부는 셋으로 나뉩니다 - 매일 찍는 자리, 한 달을 훑는 자리, 분모를 정하는 자리.
-      // 한 화면에 다 넣으면 매일 쓰는 자리가 나머지에 묻힙니다.
-      { label: "출석부", href: "/attendance", match: ["/attendance"] },
-      { label: "반별 출석부", href: "/attendance/register", match: ["/attendance/register"] },
-      { label: "수업일 달력", href: "/attendance/calendar", match: ["/attendance/calendar"] },
     ],
   },
   { key: "report", label: "보고서", icon: "📈", href: "/work/report", match: ["/work/report"] },
@@ -117,6 +113,20 @@ const SCHOOL_TABS: TabDef[] = [
       { label: "명부 관리", href: "/weekly-report/admin/students" },
       { label: "명부 점검", href: "/school/data-check" },
       { label: "명부 가져오기", href: "/school/import" },
+    ],
+  },
+  // 출석부는 학교 자료입니다. 업무 메뉴(연락·출결)에 있던 것을 옮겼습니다 - 거기서는
+  // 학부모 연락을 처리하는 도구로 보였는데, 실제로는 학적에 가까운 기록입니다.
+  {
+    key: "attendance",
+    label: "출석부",
+    icon: "🗒️",
+    href: "/attendance",
+    match: ["/attendance"],
+    children: [
+      { label: "출석부", href: "/attendance", match: ["/attendance"] },
+      { label: "출석현황", href: "/attendance/status", match: ["/attendance/status"] },
+      { label: "수업일 달력", href: "/attendance/calendar", match: ["/attendance/calendar"] },
     ],
   },
   { key: "staff", label: "교직원", icon: "🧑‍💼", href: "/staff", match: ["/staff"] },

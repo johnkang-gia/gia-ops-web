@@ -988,10 +988,15 @@ export default function InvoiceGridClient({
             </label>
             <label className="text-[11px] text-slate-500">
               단가
+              {/* 0 을 글자로 두지 않습니다.
+                  숫자 칸에 `0` 이 적혀 있으면 지우고 쓰거나 뒤에 붙여 `045000` 이 됩니다.
+                  값이 0이면 빈 칸으로 보이고, 자리표시만 `0` 으로 둡니다. */}
               <input
                 type="number"
-                value={newItem.unit_price}
+                value={newItem.unit_price === 0 ? "" : newItem.unit_price}
                 onChange={(e) => setNewItem((f) => ({ ...f, unit_price: Number(e.target.value) || 0 }))}
+                onFocus={(e) => e.target.select()}
+                placeholder="0"
                 className="ml-1 w-28 rounded-lg border border-slate-300 px-2 py-1.5 text-right text-sm"
               />
             </label>

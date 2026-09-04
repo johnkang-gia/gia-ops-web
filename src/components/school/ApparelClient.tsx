@@ -1097,10 +1097,13 @@ export default function ApparelClient({
                     placeholder="자주 쓰는 사이즈 (보기용)"
                     className="min-w-0 flex-1 rounded border border-slate-300 px-1.5 py-1 text-[12px]"
                   />
+                  {/* 0 이 적혀 있으면 지우고 쓰거나 뒤에 붙어 `045000` 이 됩니다. */}
                   <input
                     type="number"
-                    value={p.unit_price}
+                    value={p.unit_price === 0 ? "" : p.unit_price}
                     onChange={(e) => setDraftPieces((d) => d.map((x, i) => (i === n ? { ...x, unit_price: Number(e.target.value) || 0 } : x)))}
+                    onFocus={(e) => e.target.select()}
+                    placeholder="단가"
                     className="w-20 rounded border border-slate-300 px-1.5 py-1 text-right text-[12px]"
                     title="단가(참고용). 청구는 인보이스에서 합니다"
                   />

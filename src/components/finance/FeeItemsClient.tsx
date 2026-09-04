@@ -537,35 +537,38 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
       {/* ── 등록·수정 ─────────────────────────────────────────────── */}
       <div className="mb-5 rounded-xl border border-slate-200 bg-white p-3">
         <p className="mb-2 text-[12px] font-bold text-slate-700">{editingId ? "항목 고치기" : "새 항목"}</p>
-        <div className="flex flex-wrap items-end gap-2">
-          {/* 분류는 **자유롭게 적습니다.** 목록을 고정해두면 새로 받는 것이 생길 때마다
-              개발자를 찾아야 합니다. 이미 쓴 분류와 몇 가지 예시를 아래에 붙여, 고르는 것도
-              적는 것도 되게 했습니다. */}
-          {/* 부서를 폼 맨 앞에 둡니다. 고르고 나서야 나머지가 무엇을 위한 것인지 정해집니다. */}
+        {/* 한 줄에 다 늘어놓으면 화면 너비에 따라 아무 데서나 줄이 바뀌어, 열 때마다 배치가
+            달라집니다. 줄을 뜻으로 묶습니다.
+              ① 누가 사는가  — 부서 · 분류 · 학년 · 반
+              ② 무엇인가     — 인보이스 이름 · 한글 이름
+              ③ 얼마인가     — 단가. 눈으로 확인하는 값이라 떼어 놓습니다 */}
+        <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
+          {/* 부서를 맨 앞에 둡니다. 고르고 나서야 나머지가 무엇을 위한 것인지 정해집니다. */}
           <label className="text-[11px] text-slate-500">
-            부서
+            <span className="mb-0.5 block font-semibold">부서</span>
             <select
               value={form.department}
               onChange={(e) => setForm((f) => ({ ...f, department: e.target.value as ItemDept }))}
-              className="ml-1 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+              className="w-32 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
             >
               <option value="초등부">초등부</option>
               <option value="중고등부">중고등부</option>
               <option value="공통">공통 (양쪽 다)</option>
             </select>
           </label>
+
           {/* 분류는 **고르기만** 합니다.
               직접 적게 두면 `교재` 와 `교재비` 와 `교재 ` 가 서로 다른 분류가 되고, 표에서
               탭이 셋으로 갈라집니다. 실제로 그렇게 갈라진 것이 이미 있었습니다. */}
           <label className="text-[11px] text-slate-500">
-            분류
-            <span className="ml-1 inline-flex items-center gap-1">
+            <span className="mb-0.5 block font-semibold">분류</span>
+            <span className="flex items-center gap-1">
               <select
                 value={form.category}
                 onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
-                className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+                className="w-28 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
               >
-                {categoryOptions.length === 0 && <option value="">— 분류를 먼저 만들어주세요 —</option>}
+                {categoryOptions.length === 0 && <option value="">— 먼저 만들어주세요 —</option>}
                 {categoryOptions.map((c) => (
                   <option key={c} value={c}>
                     {c}
@@ -578,22 +581,22 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
                   setNewCat("");
                   setCatModal(true);
                 }}
-                className="rounded-lg border border-teal-300 bg-teal-50 px-2 py-1.5 text-[12px] font-bold text-teal-700 hover:bg-teal-100"
+                className="shrink-0 rounded-lg border border-teal-300 bg-teal-50 px-2 py-1.5 text-[12px] font-bold text-teal-700 hover:bg-teal-100"
                 title="새 분류 만들기"
               >
-                + 분류
+                +
               </button>
             </span>
           </label>
-          {/* 대상은 **분류 바로 옆 칸**입니다.
-              따로 상자를 두고 "이 항목은 누구를 위한 것인가" 라고 물으면 등록할 때마다 그 설명을
-              다시 읽게 됩니다. 분류와 나란히 두면 고르는 순서 그대로 채워집니다. */}
+
+          {/* 대상은 분류 바로 옆입니다. 따로 상자를 두고 "누구를 위한 것인가" 라고 물으면
+              등록할 때마다 그 설명을 다시 읽게 됩니다. */}
           <label className="text-[11px] text-slate-500">
-            학년
+            <span className="mb-0.5 block font-semibold">학년</span>
             <select
               value={gradeChoice}
               onChange={(e) => pickGrade(e.target.value)}
-              className="ml-1 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+              className="w-44 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
             >
               <option value="">개별 지정</option>
               <option value="전체">전체 — {deptTab === "공통" ? "학교 전체" : deptTab} 전원</option>
@@ -620,7 +623,7 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
           {/* 반은 **학년을 고른 뒤에만** 나옵니다. 그리고 그 학년의 반만 나옵니다. */}
           {form.target_scope === "학년" || form.target_scope === "반" ? (
             <label className="text-[11px] text-slate-500">
-              반
+              <span className="mb-0.5 block font-semibold">반</span>
               <select
                 value={form.default_classes[0] ?? ""}
                 onChange={(e) =>
@@ -630,7 +633,7 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
                     target_scope: e.target.value ? "반" : "학년",
                   }))
                 }
-                className="ml-1 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+                className="w-24 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
               >
                 <option value="">전체</option>
                 {gradeClasses.map((c) => (
@@ -659,33 +662,6 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
               고른 아이만
             </label>
           )}
-          <label className="text-[11px] text-slate-500">
-            인보이스 이름 (영문)
-            <input
-              value={form.name}
-              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-              placeholder="Reveal Math 5"
-              className="ml-1 w-56 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
-            />
-          </label>
-          <label className="text-[11px] text-slate-500">
-            한글 이름 (화면용)
-            <input
-              value={form.name_ko}
-              onChange={(e) => setForm((f) => ({ ...f, name_ko: e.target.value }))}
-              placeholder="5학년 수학"
-              className="ml-1 w-40 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
-            />
-          </label>
-          <label className="text-[11px] text-slate-500">
-            단가
-            <input
-              type="number"
-              value={form.unit_price}
-              onChange={(e) => setForm((f) => ({ ...f, unit_price: Number(e.target.value) || 0 }))}
-              className="ml-1 w-28 rounded-lg border border-slate-300 px-2 py-1.5 text-right text-sm"
-            />
-          </label>
         </div>
 
         {/* 지금 고른 대상이 무슨 뜻인지 한 줄로. 고르고 나서 확인하는 자리입니다. */}
@@ -713,6 +689,48 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
             <b>고른 하나만 남습니다.</b> 여러 학년에 그대로 두려면 학년을 건드리지 말고 저장하세요.
           </p>
         )}
+
+        {/* ② 무엇인가 · ③ 얼마인가.
+            단가는 다른 칸과 떼어 놓습니다 - 눈으로 한 번 더 확인하는 값이라, 이름 옆에 붙어
+            있으면 지나쳐 읽습니다. */}
+        <div className="mt-3 flex flex-wrap items-end gap-x-3 gap-y-2 border-t border-slate-100 pt-3">
+          <label className="text-[11px] text-slate-500">
+            <span className="mb-0.5 block font-semibold">인보이스 이름 (영문)</span>
+            <input
+              value={form.name}
+              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+              placeholder="Reveal Math 5"
+              className="w-60 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+            />
+          </label>
+          <label className="text-[11px] text-slate-500">
+            <span className="mb-0.5 block font-semibold">한글 이름 (화면용)</span>
+            <input
+              value={form.name_ko}
+              onChange={(e) => setForm((f) => ({ ...f, name_ko: e.target.value }))}
+              placeholder="수학 교재"
+              className="w-44 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+            />
+          </label>
+
+          <label className="ml-auto text-[11px] text-slate-500">
+            <span className="mb-0.5 block font-semibold">단가</span>
+            <span className="flex items-center gap-1">
+              {/* 0 을 글자로 두지 않습니다.
+                  숫자 칸에 `0` 이 적혀 있으면 지우고 쓰거나 뒤에 붙여 `045000` 이 됩니다.
+                  값이 0이면 빈 칸으로 보이고, 자리표시만 `0` 으로 둡니다. */}
+              <input
+                type="number"
+                value={form.unit_price === 0 ? "" : form.unit_price}
+                onChange={(e) => setForm((f) => ({ ...f, unit_price: Number(e.target.value) || 0 }))}
+                onFocus={(e) => e.target.select()}
+                placeholder="0"
+                className="w-32 rounded-lg border border-slate-300 px-2 py-1.5 text-right text-sm"
+              />
+              <span className="text-[12px] text-slate-400">원</span>
+            </span>
+          </label>
+        </div>
 
         <div className="mt-3 flex items-center gap-2">
           <input

@@ -956,6 +956,20 @@ export type AttendanceRecord = {
   contacted_by: string | null;
   contacted_by_name: string | null;
   contacted_at: string | null;
+  /**
+   * 결석 사유. 질병·인정·기타·무단.
+   *
+   * 상급학교 서류와 체류 증빙에서 묻는 것은 "며칠 결석" 이 아니라 대개 **무단결석 몇 회**
+   * 입니다. 사유가 없으면 아파서 쉰 아이와 연락 없이 안 온 아이가 같은 줄로 남습니다.
+   */
+  reason_type?: "질병" | "인정" | "기타" | "무단" | null;
+  /** 담임·행정은 사람이 찍은 것, 토들·구글챗은 연락에서 저절로 들어온 것입니다. */
+  source?: string | null;
+  /** false면 자동으로 들어왔고 아직 사람이 확인하지 않았습니다. 화면에서 노란 줄로 뜹니다. */
+  confirmed_by_human?: boolean | null;
+  /** 어느 연락에서 왔는가. 틀렸을 때 원문을 다시 읽어야 고칠 수 있습니다. */
+  entry_id?: string | null;
+  term_id?: string | null;
   created_at: string;
   updated_at: string;
 };

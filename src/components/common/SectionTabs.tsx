@@ -88,7 +88,11 @@ const WORK_TABS: TabDef[] = [
     children: [
       { label: "연락 검색", href: "/work/inquiry-search", match: ["/work/inquiry-search"] },
       { label: "학부모 문의", href: "/inquiries" },
-      { label: "출결 내역", href: "/attendance" },
+      // 출석부는 셋으로 나뉩니다 - 매일 찍는 자리, 한 달을 훑는 자리, 분모를 정하는 자리.
+      // 한 화면에 다 넣으면 매일 쓰는 자리가 나머지에 묻힙니다.
+      { label: "출석부", href: "/attendance", match: ["/attendance"] },
+      { label: "반별 출석부", href: "/attendance/register", match: ["/attendance/register"] },
+      { label: "수업일 달력", href: "/attendance/calendar", match: ["/attendance/calendar"] },
     ],
   },
   { key: "report", label: "보고서", icon: "📈", href: "/work/report", match: ["/work/report"] },

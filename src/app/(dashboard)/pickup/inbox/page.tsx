@@ -171,6 +171,7 @@ export default async function PickupInboxPage() {
       <TodayPickupList
         items={todayPickups}
         dateLabel={`${today} (${["일", "월", "화", "수", "목", "금", "토"][new Date(`${today}T12:00:00+09:00`).getDay()]})`}
+        serviceDate={today}
       />
 
       <PickupInboxClient

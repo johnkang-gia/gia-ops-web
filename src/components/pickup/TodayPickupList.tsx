@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { placeLabel, type TodayPickupItem } from "@/lib/todayPickup";
+import { ALERT_LEAD_MINUTES, minutesUntil, pickupDueAt } from "@/lib/pickupTask";
 
 /**
  * 오늘 픽업 리스트.
@@ -14,10 +15,69 @@ import { placeLabel, type TodayPickupItem } from "@/lib/todayPickup";
  *
  * 그래서 두 번째 묶음을 위에 크게 둡니다. 손이 가는 쪽이 위입니다.
  */
-export default function TodayPickupList({ items, dateLabel }: { items: TodayPickupItem[]; dateLabel: string }) {
+export default function TodayPickupList({
+  items,
+  dateLabel,
+  serviceDate,
+}: {
+  items: TodayPickupItem[];
+  dateLabel: string;
+  /** 'YYYY-MM-DD'. 픽업 시각을 실제 시점으로 바꿀 때 씁니다. */
+  serviceDate: string;
+}) {
   const [q, setQ] = useState("");
   /** 돋보기로 펼친 줄. 출처(원문·채널·받은 시각)를 보여줍니다. */
   const [openId, setOpenId] = useState<string | null>(null);
+  /** 1분마다 다시 그려 «곧 픽업»을 갱신합니다. */
+  const [now, setNow] = useState<Date | null>(null);
+  /** 이미 알린 건. 같은 건을 1분마다 다시 울리면 사람이 알림을 꺼버립니다. */
+  const alerted = useRef<Set<string>>(new Set());
+
+  // 서버와 시각이 다르면 첫 렌더가 어긋나므로, 시계는 브라우저에서만 돕니다.
+  useEffect(() => {
+    setNow(new Date());
+    const t = setInterval(() => setNow(new Date()), 30_000);
+    return () => clearInterval(t);
+  }, []);
+
+  /**
+   * 오늘 확정된 픽업을 업무보드에 올립니다.
+   *
+   * 픽업은 시각이 되면 행정직원이 교실로 가야 하는 일입니다. 인박스와 체크표는 «지금
+   * 상태»를 보여주는 화면이지 «누가 언제 무엇을 해야 하는가»를 관리하는 자리가 아닙니다.
+   */
+  useEffect(() => {
+    void fetch("/api/pickup/ensure-tasks", { method: "POST" }).catch(() => {
+      /* 업무가 안 생겨도 이 목록 자체는 보여야 합니다. */
+    });
+  }, [serviceDate]);
+
+  /** 시각이 5분 안으로 다가온 픽업. */
+  const soon = useMemo(() => {
+    if (!now) return [] as TodayPickupItem[];
+    return items
+      .map((i) => ({ i, m: minutesUntil(pickupDueAt(serviceDate, i.pickupTime), now) }))
+      .filter((x) => x.m !== null && x.m <= ALERT_LEAD_MINUTES && x.m >= -10)
+      .sort((a, b) => (a.m ?? 0) - (b.m ?? 0))
+      .map((x) => x.i);
+  }, [items, now, serviceDate]);
+
+  // 브라우저 알림. 허락하지 않았으면 화면 배너만 뜹니다 - 배너가 본체이고 알림은 덤입니다.
+  useEffect(() => {
+    if (!now || soon.length === 0) return;
+    for (const i of soon) {
+      if (alerted.current.has(i.requestId)) continue;
+      alerted.current.add(i.requestId);
+      if (typeof Notification === "undefined") continue;
+      const fire = () =>
+        new Notification(`${i.pickupTime ?? ""} 픽업 — ${i.name}`, {
+          body: `${placeLabel(i)}${i.ridesShuttle ? "" : " · 교실로 데리러 가주세요"}`,
+          tag: `pickup-${i.requestId}`,
+        });
+      if (Notification.permission === "granted") fire();
+      else if (Notification.permission === "default") void Notification.requestPermission().then((p) => p === "granted" && fire());
+    }
+  }, [soon, now]);
 
   const { walk, ride } = useMemo(() => {
     const key = q.replace(/\s+/g, "").trim();
@@ -147,6 +207,29 @@ export default function TodayPickupList({ items, dateLabel }: { items: TodayPick
         />
       </div>
 
+      {/* 곧 나가야 하는 픽업.
+          목록 안에서 시각을 눈으로 훑어 찾는 일은 바쁜 시간대에 반드시 새어 나갑니다.
+          5분 전이 되면 맨 위로 끌어올려 한 줄로 보여줍니다. */}
+      {soon.length > 0 && now && (
+        <div className="mb-3 animate-pulse rounded-xl border-2 border-rose-400 bg-rose-50 px-3 py-2">
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] font-bold text-rose-900">
+            <span>⏰ 곧 픽업</span>
+            {soon.map((i) => {
+              const m = minutesUntil(pickupDueAt(serviceDate, i.pickupTime), now) ?? 0;
+              return (
+                <span key={i.requestId} className="rounded-lg bg-white px-2 py-0.5 shadow-sm">
+                  {i.pickupTime} {i.name}
+                  <span className="ml-1 text-[11px] font-semibold text-rose-600">
+                    {m > 0 ? `${m}분 뒤` : m === 0 ? "지금" : `${-m}분 지남`}
+                  </span>
+                  <span className="ml-1 text-[11px] font-normal text-slate-500">{placeLabel(i)}</span>
+                </span>
+              );
+            })}
+          </p>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         {/* 셔틀을 안 타는 아이 — 교실로 데리러 옵니다. 이쪽이 안내가 필요한 쪽이라 왼쪽입니다. */}
         <div className="rounded-xl border-2 border-violet-200 bg-violet-50/40">
@@ -192,8 +275,10 @@ export default function TodayPickupList({ items, dateLabel }: { items: TodayPick
       </div>
 
       <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
-        오늘 셔틀 배정의 <b>요일까지</b> 보고 갈랐습니다 — 화·목만 타는 아이는 월요일에는 안 타는 쪽으로 셉니다. 교실은 반에
-        적어둔 위치입니다(<b>반 · 시간표 → 반/담임</b>에서 적습니다).
+        오늘 셔틀 배정의 <b>요일까지</b> 보고 갈랐습니다 — 화·목만 타는 아이는 월요일에는 안 타는 쪽으로 셉니다.
+        <br />
+        확정된 픽업은 <b>업무보드에도 자동으로 올라갑니다</b>(마감시각 = 픽업 시각). 시각 <b>{ALERT_LEAD_MINUTES}분 전</b>에
+        이 화면 위쪽으로 올라오고, 브라우저 알림을 허락하셨다면 알림도 한 번 뜹니다.
       </p>
     </section>
   );

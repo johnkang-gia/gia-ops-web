@@ -657,7 +657,15 @@ function pickHomonym(
   candidates: RosterStudent[],
   text: string,
   nameStart: number,
-  nameEnd: number
+  nameEnd: number,
+  /**
+   * 멘션된 담임의 반.
+   *
+   * 글쓴이가 «이건 이 반 아이 이야기»라고 이미 알려준 것입니다. 본문에서 힌트를 찾는
+   * 것보다 뒤에 두는 이유는, 글에 대놓고 «김재이(G3JA)»라고 적혀 있으면 그게 더
+   * 구체적이기 때문입니다. 멘션은 그런 표시가 없을 때 쓰는 다음 근거입니다.
+   */
+  mentionClassNames?: string[],
 ): { picked: RosterStudent; ambiguous: boolean; by: "birth" | "grade" | null } {
   const birthHint = findBirthHint(text, nameEnd);
   if (birthHint) {
@@ -675,6 +683,12 @@ function pickHomonym(
   const gradeHint = normalizeGrade(findGradeHint(text, nameStart, nameEnd));
   if (gradeHint) {
     const hit = candidates.filter((c) => normalizeGrade(c.grade) === gradeHint);
+    if (hit.length === 1) return { picked: hit[0], ambiguous: false, by: "grade" };
+  }
+  // 멘션된 담임의 반. 본문에 아무 표시가 없을 때의 마지막 근거입니다.
+  if (mentionClassNames && mentionClassNames.length > 0) {
+    const want = new Set(mentionClassNames.map((c) => norm(c)));
+    const hit = candidates.filter((c) => want.has(norm(c.className)));
     if (hit.length === 1) return { picked: hit[0], ambiguous: false, by: "grade" };
   }
   // 확정하지 못하면 임의로 한 명을 고르지 않고 "확인 필요"로 표시합니다 - 조용히 틀리는 것이
@@ -1122,7 +1136,14 @@ export function matchRosterStudents(
   rules?: LearningRule[],
   staffNames?: string[],
   /** 구글챗이 알려준 멘션 구간. 있으면 글자 추측 대신 이걸 씁니다. */
-  mentionSpans?: MentionSpan[] | null
+  mentionSpans?: MentionSpan[] | null,
+  /**
+   * 멘션된 담임의 반.
+   *
+   * 행정실을 뺀 나머지 멘션은 «그 아이를 아는 사람»입니다. 담임이 정해지면 반이
+   * 정해지고, 동명이인이 그 자리에서 갈립니다.
+   */
+  mentionClassNames?: string[] | null
 ): MatchedStudent[] {
   // ── 0단계: 사람이 가르친 별칭을 가장 먼저 봅니다 ───────────────────────────
   //
@@ -1176,13 +1197,18 @@ export function matchRosterStudents(
     }
   }
 
-  const base = matchRosterStudentsCore(scratch, roster);
+  const base = matchRosterStudentsCore(scratch, roster, mentionClassNames ?? undefined);
   // 별칭으로 이미 찾은 학생은 중복해서 넣지 않습니다.
   const seen = new Set(learned.map((m) => m.name));
   return [...learned, ...base.filter((m) => !seen.has(m.name))];
 }
 
-function matchRosterStudentsCore(text: string, roster: RosterStudent[]): MatchedStudent[] {
+function matchRosterStudentsCore(
+  text: string,
+  roster: RosterStudent[],
+  /** 멘션된 담임의 반. 동명이인을 가를 때 마지막 근거로 씁니다. */
+  mentionClassNames?: string[],
+): MatchedStudent[] {
   // 같은 이름을 가진 학생들을 묶어둡니다(동명이인 판정용).
   const byName = new Map<string, RosterStudent[]>();
   for (const s of roster) {
@@ -1207,7 +1233,7 @@ function matchRosterStudentsCore(text: string, roster: RosterStudent[]): Matched
     // 힌트는 원문(text)에서 찾아야 합니다 - remaining은 앞서 매칭된 구간이 공백으로 지워져
     // 있어서 힌트까지 사라졌을 수 있습니다.
     const { picked, ambiguous, by } = hasHomonym
-      ? pickHomonym(candidates, text, idx, idx + name.length)
+      ? pickHomonym(candidates, text, idx, idx + name.length, mentionClassNames ?? undefined)
       : { picked: candidates[0], ambiguous: false, by: null as "birth" | "grade" | null };
 
     found.push({
@@ -1265,7 +1291,7 @@ function matchRosterStudentsCore(text: string, roster: RosterStudent[]): Matched
 
           const hasHomonym = pool.length > 1;
           const { picked, ambiguous, by } = hasHomonym
-            ? pickHomonym(pool, remaining, span.start, span.end)
+            ? pickHomonym(pool, remaining, span.start, span.end, mentionClassNames ?? undefined)
             : { picked: pool[0], ambiguous: false, by: null as "birth" | "grade" | null };
 
           found.push({
@@ -1403,6 +1429,12 @@ function matchRosterStudentsCore(text: string, roster: RosterStudent[]): Matched
       if (list.length > 1 && gradeHint) {
         const narrowed = list.filter((s) => normalizeGrade(s.grade) === gradeHint);
         if (narrowed.length >= 1) list = narrowed;
+      }
+      // 마지막으로 멘션된 담임의 반. "Sophia" 가 둘일 때 그 담임 반의 Sophia 로 갈립니다.
+      if (list.length > 1 && mentionClassNames && mentionClassNames.length > 0) {
+        const want = new Set(mentionClassNames.map((c) => norm(c)));
+        const narrowed = list.filter((s) => want.has(norm(s.className)));
+        if (narrowed.length === 1) list = narrowed;
       }
       const picked = list[0];
       if (alreadyFound.has(picked.name)) continue;

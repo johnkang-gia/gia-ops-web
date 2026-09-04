@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { scanIntoEntries, type ScanSource } from "@/lib/attendanceEntries";
 import { buildStaffNames, todayKey, type LearningRule, type RosterStudent } from "@/lib/attendanceDigest";
+import { classHintFromMentions, type TeacherClass } from "@/lib/mentionHints";
 
 // 업무보드 인박스가 쓰는 출결 등록 창구입니다.
 //
@@ -43,9 +44,12 @@ export async function GET(req: NextRequest) {
   const now = new Date();
   const since = new Date(now.getTime() - SCAN_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
-  const [{ data: students }, { data: rules }, { data: staffRows }, { data: mirror }, { data: reqs }] = await Promise.all([
+  const [{ data: students }, { data: rules }, { data: classRows }, { data: staffRows }, { data: mirror }, { data: reqs }] = await Promise.all([
     db.from("wr_students").select("id, name, name_en, grade, class_name, birth_date").eq("status", "active").eq("is_demo", false),
     db.from("attendance_learning_rules").select("kind, pattern, student_name, category"),
+    // 담임 ↔ 반. 멘션에서 행정실을 빼고 남은 사람이 담임이면 «이건 그 반 아이 이야기»가
+    // 됩니다. 동명이인을 가르는 마지막 근거로 씁니다.
+    db.from("wr_classes").select("class_name, teacher_name, teacher_email").eq("is_demo", false),
     // 멘션을 지울 때 쓸 교직원 성함(세 낱말짜리 성함 대응).
     db.from("app_users").select("name, email").limit(500),
     db
@@ -73,6 +77,28 @@ export async function GET(req: NextRequest) {
     className: (s.class_name as string | null) ?? null,
   })) as (RosterStudent & { id: string; className: string | null })[];
 
+  const staffNames = buildStaffNames((staffRows as { name: string | null; email: string | null }[] | null) ?? []);
+
+  // 담임 한 사람이 여러 반을 맡을 수 있어 이름별로 모읍니다. 계정 이름(app_users.name)과
+  // 반 표에 적힌 이름(teacher_name)을 함께 넣습니다 - 아직 가입 전인 선생님은 뒤엣것만
+  // 있습니다.
+  const byEmail = new Map(
+    ((staffRows as { name: string | null; email: string | null }[] | null) ?? [])
+      .filter((r) => r.email)
+      .map((r) => [r.email as string, r.name ?? ""]),
+  );
+  const teacherMap = new Map<string, TeacherClass>();
+  for (const c of ((classRows as { class_name: string | null; teacher_name: string | null; teacher_email: string | null }[] | null) ?? [])) {
+    if (!c.class_name) continue;
+    const names = [c.teacher_name ?? "", c.teacher_email ? (byEmail.get(c.teacher_email) ?? "") : ""].filter(Boolean);
+    if (names.length === 0) continue;
+    const key = names.join("|");
+    const cur = teacherMap.get(key) ?? { names, classNames: [] };
+    cur.classNames.push(c.class_name);
+    teacherMap.set(key, cur);
+  }
+  const teachers = [...teacherMap.values()];
+
   const messages: ScanSource[] = [
     ...(mirror ?? []).map((m) => ({
       source: "googlechat" as const,
@@ -81,6 +107,11 @@ export async function GET(req: NextRequest) {
       sentAt: new Date(m.created_at_google as string),
       // 구글챗이 준 멘션 좌표. 있으면 선생님 성함을 정확히 도려냅니다.
       mentionSpans: (m.mentions as { start: number; length: number }[] | null) ?? null,
+      // 멘션에서 행정실을 뺀 나머지가 담임이면 그 반으로 후보를 좁힙니다.
+      mentionClassNames: classHintFromMentions(
+        ((m.mentions as { name?: string | null }[] | null) ?? []).map((x) => x.name),
+        teachers,
+      ),
     })),
     ...(reqs ?? [])
       .filter((r) => !r.is_demo)
@@ -93,7 +124,6 @@ export async function GET(req: NextRequest) {
       })),
   ];
 
-  const staffNames = buildStaffNames((staffRows as { name: string | null; email: string | null }[] | null) ?? []);
 
   const scan = await scanIntoEntries(db, messages, roster, (rules ?? []) as LearningRule[], staffNames);
 
@@ -122,7 +152,7 @@ export async function GET(req: NextRequest) {
     .map((r) => `${r.source_message_id}|${r.student_name}|${r.status}`);
 
   return NextResponse.json(
-    { ok: true, scan, today, entries: entries ?? [], dismissed, staffNames },
+    { ok: true, scan, today, entries: entries ?? [], dismissed, staffNames, teachers },
     { headers: { "Cache-Control": "no-store, no-cache, must-revalidate" } },
   );
 }

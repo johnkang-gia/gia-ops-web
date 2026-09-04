@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { classHintFromMentions, type TeacherClass } from "@/lib/mentionHints";
 import type { DepartmentMemo, GoogleChatMirrorMessage } from "@/lib/types";
 import {
   categorize,
@@ -143,6 +144,8 @@ export default function ShuttleChecklistSidebar({
   const [removing, setRemoving] = useState<string | null>(null);
   // 멘션에서 지울 교직원 성함. 못 읽으면 빈 배열이고, 그때는 예전처럼 두 낱말까지만 지웁니다.
   const [staffNames, setStaffNames] = useState<string[]>([]);
+  // 담임 ↔ 반. 멘션에서 행정실을 빼고 남은 사람이 담임이면 그 반으로 후보를 좁힙니다.
+  const [teachers, setTeachers] = useState<TeacherClass[]>([]);
   const [removeError, setRemoveError] = useState<string | null>(null);
 
   const loadDismissed = useCallback(async () => {
@@ -173,8 +176,27 @@ export default function ShuttleChecklistSidebar({
     void loadRules();
     void loadDismissed();
     void (async () => {
-      const { data } = await createClient().from("app_users").select("name, email").limit(500);
-      setStaffNames(buildStaffNames((data as { name: string | null; email: string | null }[] | null) ?? []));
+      const supabase = createClient();
+      const [{ data }, { data: classRows }] = await Promise.all([
+        supabase.from("app_users").select("name, email").limit(500),
+        // 담임 ↔ 반. 멘션에서 행정실을 빼고 남은 사람이 담임이면 그 반으로 동명이인을
+        // 가릅니다. 이 값을 안 채우면 힌트가 늘 비어서, 있으나 마나가 됩니다.
+        supabase.from("wr_classes").select("class_name, teacher_name, teacher_email").eq("is_demo", false),
+      ]);
+      const staff = (data as { name: string | null; email: string | null }[] | null) ?? [];
+      setStaffNames(buildStaffNames(staff));
+      const byEmail = new Map(staff.filter((r) => r.email).map((r) => [r.email as string, r.name ?? ""]));
+      const map = new Map<string, TeacherClass>();
+      for (const c of ((classRows as { class_name: string | null; teacher_name: string | null; teacher_email: string | null }[] | null) ?? [])) {
+        if (!c.class_name) continue;
+        const names = [c.teacher_name ?? "", c.teacher_email ? (byEmail.get(c.teacher_email) ?? "") : ""].filter(Boolean);
+        if (names.length === 0) continue;
+        const key = names.join("|");
+        const cur = map.get(key) ?? { names, classNames: [] };
+        cur.classNames.push(c.class_name);
+        map.set(key, cur);
+      }
+      setTeachers([...map.values()]);
     })();
     void (async () => {
       const { data } = await createClient().auth.getUser();
@@ -297,7 +319,7 @@ export default function ShuttleChecklistSidebar({
       if (category !== "픽업" && category !== "결석") continue;
       const targetDate = extractTargetDate(m.content, sentAt) ?? todayKey(sentAt);
       if (targetDate !== today) continue;
-      const students = matchRosterStudents(m.content, roster, rules, staffNames, m.mentions);
+      const students = matchRosterStudents(m.content, roster, rules, staffNames, m.mentions, classHintFromMentions((m.mentions ?? []).map((x) => x.name), teachers));
       if (students.length === 0) {
         const guess = guessKoreanName(m.content, category) ?? stripLeadingMention(m.content).slice(0, 12);
         out.push({
@@ -346,7 +368,7 @@ export default function ShuttleChecklistSidebar({
       pickup: deduped.filter((e) => e.category === "픽업"),
       absent: deduped.filter((e) => e.category === "결석"),
     };
-  }, [messages, roster, rules, dismissed, staffNames]);
+  }, [messages, roster, rules, dismissed, staffNames, teachers]);
 
   // 잘못 잡힌 픽업·결석 하나를 내립니다. 목록에서만 지우면 체크표에는 사선이 남으니,
   // 셔틀 표시까지 함께 되돌립니다.

@@ -35,6 +35,13 @@ export type ScanSource = {
    * 없으므로 undefined 이고, 그때는 예전처럼 글자 규칙으로 되짚습니다.
    */
   mentionSpans?: { start: number; length: number }[] | null;
+  /**
+   * 멘션된 담임의 반.
+   *
+   * 행정실을 뺀 나머지 멘션이 담임이면 «이건 그 반 아이 이야기»가 됩니다.
+   * 동명이인을 가르는 마지막 근거입니다.
+   */
+  mentionClassNames?: string[] | null;
 };
 
 export type ScanResult = { created: number; skipped: number; needsReview: number; failed?: string | null };
@@ -94,7 +101,7 @@ export async function scanIntoEntries(
     // 여기서 **명부의 id를 반드시 같이 들고 나옵니다.** 이름만 들고 가면 저장할 때 다시 찾아야
     // 하는데, 그때 못 찾으면 학생 없는 줄이 만들어집니다. student_id는 NOT NULL로 잠겨 있어
     // (20260827090000_lock_student_fk.sql) 그런 줄은 애초에 저장되지 않아야 합니다.
-    let matched = matchRosterStudents(m.text, roster, rules, staffNames, m.mentionSpans)
+    let matched = matchRosterStudents(m.text, roster, rules, staffNames, m.mentionSpans, m.mentionClassNames)
       .map((s) => {
         const full = roster.find((r) => r.name === s.name);
         return { id: full?.id ?? null, name: s.name, display: s.displayName, grade: s.grade, className: full?.className ?? null };

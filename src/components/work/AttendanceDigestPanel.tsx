@@ -7,6 +7,7 @@ import type { DepartmentMemo, GoogleChatMirrorMessage } from "@/lib/types";
 import AttendanceTeachModal from "./AttendanceTeachModal";
 import AttendanceRulesModal from "./AttendanceRulesModal";
 import { notifyOpsBoardRefresh } from "@/lib/opsRefresh";
+import { classHintFromMentions, type TeacherClass } from "@/lib/mentionHints";
 import {
   ATTENDANCE_CATEGORIES,
   categorize,
@@ -302,6 +303,8 @@ export default function AttendanceDigestPanel({
   // 멘션(@…)을 지울 때 쓰는 교직원 성함. 서버가 계정 명단에서 실어 보냅니다.
   // 담당자: "@Carina Ann John까지가 이름인데 carina ann까지만 읽어서 john이 요한이로 매칭돼."
   const [staffNames, setStaffNames] = useState<string[]>([]);
+  // 담임 ↔ 반. 멘션에서 행정실을 빼고 남은 사람이 담임이면 그 반으로 후보를 좁힙니다.
+  const [teachers, setTeachers] = useState<TeacherClass[]>([]);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   // 저장이 실패하면 그 사실을 보여줍니다(예전엔 눌러도 아무 일이 없어 보였습니다).
   const [error, setError] = useState<string | null>(null);
@@ -312,7 +315,7 @@ export default function AttendanceDigestPanel({
   const loadRegs = useCallback(async () => {
     try {
       const res = await fetch("/api/attendance/entries", { cache: "no-store" });
-      const json = (await res.json()) as { entries?: RegRow[]; dismissed?: string[]; staffNames?: string[] };
+      const json = (await res.json()) as { entries?: RegRow[]; dismissed?: string[]; staffNames?: string[]; teachers?: TeacherClass[] };
       const m = new Map<string, RegRow>();
       for (const e of json.entries ?? []) {
         if (e.source_message_id) m.set(`${e.source_message_id}|${e.student_name}|${e.status}`, e);
@@ -320,6 +323,7 @@ export default function AttendanceDigestPanel({
       setRegs(m);
       setDismissed(new Set(json.dismissed ?? []));
       setStaffNames(json.staffNames ?? []);
+      setTeachers(json.teachers ?? []);
     } catch {
       /* 못 불러와도 목록 자체는 보여야 합니다 - 배지만 안 뜰 뿐입니다. */
     }
@@ -452,7 +456,7 @@ export default function AttendanceDigestPanel({
       const range = extractTargetRange(m.content, sentAt);
       const targetDate = range?.from ?? extractTargetDate(m.content, sentAt) ?? todayKey(sentAt);
       const targetDateTo = range?.to ?? targetDate;
-      const students = matchRosterStudents(m.content, roster, rules, staffNames, m.mentions);
+      const students = matchRosterStudents(m.content, roster, rules, staffNames, m.mentions, classHintFromMentions((m.mentions ?? []).map((x) => x.name), teachers));
       if (students.length === 0) {
         // 명부에서 이름을 못 찾아도 버리지 않고 보여줍니다(전학생·오탈자 등으로 대조가 실패해도
         // 놓치지 않도록). 그냥 원문을 잘라 보여주면 아무 단어나 이름처럼 뜨는 문제가 있어서
@@ -540,7 +544,7 @@ export default function AttendanceDigestPanel({
     // 기간의 마지막 날이 오늘 이후면 아직 살아 있는 건입니다("월요일부터 수요일까지"를
     // 화요일에 봐도 남아 있어야 합니다).
     return dedupeEntries(out).filter((e) => (e.targetDateTo ?? e.targetDate) >= today);
-  }, [messages, roster, rules, staffNames, toddle]);
+  }, [messages, roster, rules, staffNames, toddle, teachers]);
 
   const today = todayKey();
   // 오늘 것만 위쪽 픽업/결석/지각 칸에 넣고, 앞으로 예정된 건은 아래 "예정" 칸으로 따로 뺍니다.

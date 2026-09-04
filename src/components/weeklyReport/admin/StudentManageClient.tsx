@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { ShuttleRoute, ShuttleStop, WrStudent, WrStudentFieldDef } from "@/lib/types";
 import { useConfirm } from "@/components/common/ConfirmProvider";
+import { useToast } from "@/components/common/ToastProvider";
 import ShuttleRecommendModal from "@/components/shuttle/ShuttleRecommendModal";
 
 const SHUTTLE_MODES = ["없음", "등원", "하원", "등하원"] as const;
@@ -69,16 +70,25 @@ export default function StudentManageClient({
   initialStudents,
   initialFieldDefs,
   currentUserEmail,
+  canEdit,
   shuttleRoutes = [],
   shuttleStops = [],
 }: {
   initialStudents: WrStudent[];
   initialFieldDefs: WrStudentFieldDef[];
   currentUserEmail: string;
+  /**
+   * 고칠 수 있는가. 행정직원 이상만 참입니다.
+   *
+   * 명부는 **교직원 모두가 봅니다** - 담임은 자기 반 아이의 학년·생일·알레르기·셔틀을 늘
+   * 봐야 합니다. 다만 고치는 것은 행정실이 합니다.
+   */
+  canEdit: boolean;
   shuttleRoutes?: ShuttleRoute[];
   shuttleStops?: ShuttleStop[];
 }) {
   const confirmAction = useConfirm();
+  const notify = useToast();
   const [students, setStudents] = useState<WrStudent[]>(initialStudents);
   const [fieldDefs, setFieldDefs] = useState<WrStudentFieldDef[]>(initialFieldDefs);
   const [recommendFor, setRecommendFor] = useState<WrStudent | null>(null);
@@ -214,21 +224,39 @@ export default function StudentManageClient({
   }
 
   async function updateField<K extends keyof WrStudent>(id: string, field: K, rawValue: string) {
+    // 고칠 수 없는 사람은 여기서 멈춥니다. 화면에서도 못 누르게 막지만, 이 한 줄이 마지막
+    // 문지기입니다 - DB 의 RLS 도 막지만 그때는 조용히 실패해서 사람이 모릅니다.
+    if (!canEdit) {
+      notify("명부를 고치는 것은 행정직원 이상만 할 수 있습니다.", "error");
+      return;
+    }
+    const before = students.find((s) => s.id === id);
     const value = (rawValue.trim() || null) as WrStudent[K];
     setStudents((prev) => prev.map((s) => (s.id === id ? { ...s, [field]: value } : s)));
-    const supabase = createClient();
-    await supabase.from("wr_students").update({ [field]: value }).eq("id", id);
+    const { error } = await createClient().from("wr_students").update({ [field]: value }).eq("id", id);
+    if (error) {
+      // 조용히 넘기면 화면에는 바뀐 것처럼 보이는데 다음에 열면 그대로입니다.
+      notify("저장하지 못했습니다: " + error.message, "error");
+      if (before) setStudents((prev) => prev.map((s) => (s.id === id ? before : s)));
+    }
   }
 
   async function updateCustomField(id: string, fieldKey: string, rawValue: string) {
+    if (!canEdit) {
+      notify("명부를 고치는 것은 행정직원 이상만 할 수 있습니다.", "error");
+      return;
+    }
     const student = students.find((s) => s.id === id);
     if (!student) return;
     const nextCustom = { ...(student.custom_fields ?? {}) };
     if (rawValue.trim()) nextCustom[fieldKey] = rawValue.trim();
     else delete nextCustom[fieldKey];
     setStudents((prev) => prev.map((s) => (s.id === id ? { ...s, custom_fields: nextCustom } : s)));
-    const supabase = createClient();
-    await supabase.from("wr_students").update({ custom_fields: nextCustom }).eq("id", id);
+    const { error } = await createClient().from("wr_students").update({ custom_fields: nextCustom }).eq("id", id);
+    if (error) {
+      notify("저장하지 못했습니다: " + error.message, "error");
+      setStudents((prev) => prev.map((s) => (s.id === id ? student : s)));
+    }
   }
 
   // 학적 상태를 바꿉니다(요청 ⑥: 재학/졸업/퇴학/보류로 관리). status 값을 그대로 저장합니다.
@@ -619,10 +647,18 @@ export default function StudentManageClient({
                 누구 번호인지 알 수 없었습니다. 청구는 어머니 → 아버지 → 보호자 순으로
                 있는 번호를 씁니다.
               */}
-              <SortTh label="어머니(M)" sortKeyFor="mother_phone" />
-              <SortTh label="아버지(F)" sortKeyFor="father_phone" />
-              <SortTh label="보호자" sortKeyFor="parent_phone" />
-              <SortTh label="보호자 이메일" sortKeyFor="parent_email" />
+              {/* 보호자 연락처는 **행정실만** 봅니다.
+                  교사에게는 공용 뷰로 자료가 오는데 그 뷰에 이 칸이 아예 없습니다 - 화면에서
+                  가리는 것이 아니라 처음부터 오지 않습니다. 열까지 없애야 빈 칸 넷이 표를
+                  가로로 늘리지 않습니다. */}
+              {canEdit && (
+                <>
+                  <SortTh label="어머니(M)" sortKeyFor="mother_phone" />
+                  <SortTh label="아버지(F)" sortKeyFor="father_phone" />
+                  <SortTh label="보호자" sortKeyFor="parent_phone" />
+                  <SortTh label="보호자 이메일" sortKeyFor="parent_email" />
+                </>
+              )}
               <SortTh label="주소" sortKeyFor="address" />
               <th className="whitespace-nowrap px-3 py-2">🚌 차량탑승</th>
               <SortTh label="알러지" sortKeyFor="allergies" />
@@ -671,18 +707,22 @@ export default function StudentManageClient({
                     className="w-32 rounded-lg border border-transparent px-1.5 py-1 text-sm hover:border-slate-200 focus:border-slate-300"
                   />
                 </td>
-                <td className="px-3 py-1.5 text-slate-400">
-                  <EditableCell value={s.mother_phone ?? ""} onSave={(v) => updateField(s.id, "mother_phone", v)} width="w-32" />
-                </td>
-                <td className="px-3 py-1.5 text-slate-400">
-                  <EditableCell value={s.father_phone ?? ""} onSave={(v) => updateField(s.id, "father_phone", v)} width="w-32" />
-                </td>
-                <td className="px-3 py-1.5 text-slate-400">
-                  <EditableCell value={s.parent_phone ?? ""} onSave={(v) => updateField(s.id, "parent_phone", v)} width="w-32" />
-                </td>
-                <td className="px-3 py-1.5 text-slate-400">
-                  <EditableCell value={s.parent_email ?? ""} onSave={(v) => updateField(s.id, "parent_email", v)} width="w-40" />
-                </td>
+                {canEdit && (
+                  <>
+                    <td className="px-3 py-1.5 text-slate-400">
+                      <EditableCell value={s.mother_phone ?? ""} onSave={(v) => updateField(s.id, "mother_phone", v)} width="w-32" />
+                    </td>
+                    <td className="px-3 py-1.5 text-slate-400">
+                      <EditableCell value={s.father_phone ?? ""} onSave={(v) => updateField(s.id, "father_phone", v)} width="w-32" />
+                    </td>
+                    <td className="px-3 py-1.5 text-slate-400">
+                      <EditableCell value={s.parent_phone ?? ""} onSave={(v) => updateField(s.id, "parent_phone", v)} width="w-32" />
+                    </td>
+                    <td className="px-3 py-1.5 text-slate-400">
+                      <EditableCell value={s.parent_email ?? ""} onSave={(v) => updateField(s.id, "parent_email", v)} width="w-40" />
+                    </td>
+                  </>
+                )}
                 <td className="px-3 py-1.5 text-slate-400">
                   <EditableCell value={s.address ?? ""} onSave={(v) => updateField(s.id, "address", v)} width="w-40" />
                 </td>

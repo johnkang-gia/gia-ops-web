@@ -1,9 +1,10 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
-import { isAdminUser } from "@/lib/roles";
+import { isAdminUser, isStaffOrAboveUser } from "@/lib/roles";
 import type { TeamMember, WrClass } from "@/lib/types";
 import ClassManageClient from "@/components/weeklyReport/admin/ClassManageClient";
+import ClassRosterBoard, { type BoardStudent } from "@/components/weeklyReport/admin/ClassRosterBoard";
 import GuideButton from "@/components/common/GuideButton";
 import TermSettingTabs from "@/components/school/TermSettingTabs";
 import { TermSnapshotClasses } from "@/components/school/TermSnapshotView";
@@ -31,10 +32,21 @@ export default async function ClassManagePage({
   const sp = await searchParams;
   const view = await loadTermSettingView(supabase, sp.term);
 
-  const [{ data: classesData }, { data: teamData }] = await Promise.all([
+  const [{ data: classesData }, { data: teamData }, stuRes] = await Promise.all([
     supabase.from("wr_classes").select("*").eq("is_demo", false).order("grade", { ascending: true }).order("class_name", { ascending: true }),
     supabase.from("app_users").select("email, name").eq("status", "approved").order("email", { ascending: true }),
+    // 반 배정판에 세울 이름표. 반이 없는 아이도 함께 읽어야 '미배정' 칸이 채워집니다.
+    supabase
+      .from("wr_students_basic")
+      .select("id, name, name_en, grade, class_name, class_id, gender")
+      .eq("status", "active")
+      .order("name"),
   ]);
+  if (stuRes.error) console.error("[반 배정판] 명단을 읽지 못했습니다:", stuRes.error.message);
+
+  const boardStudents = ((stuRes.data as { id: string; name: string; name_en: string | null; grade: string | null; class_name: string | null; class_id: string | null; gender: "남" | "여" | null }[] | null) ?? []).map<BoardStudent>(
+    (s) => ({ id: s.id, name: s.name, nameEn: s.name_en, grade: s.grade, className: s.class_name, classId: s.class_id, gender: s.gender }),
+  );
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -49,7 +61,18 @@ export default async function ClassManagePage({
       <TermSettingTabs terms={view.terms} currentTermId={view.currentTermId} selectedTermId={view.selectedTermId} />
 
       {view.isCurrent ? (
-        <ClassManageClient initialClasses={(classesData as WrClass[] | null) ?? []} team={(teamData as TeamMember[] | null) ?? []} />
+        <>
+          <ClassManageClient initialClasses={(classesData as WrClass[] | null) ?? []} team={(teamData as TeamMember[] | null) ?? []} />
+          {/* 반 배정판.
+              반을 고치려면 지금까지 명부 표에서 아이를 하나씩 찾아 반 칸을 고쳐야 했습니다.
+              한 반을 통째로 다시 짤 때는 그 방식이 맞지 않습니다 - 누가 어느 반에 몇 명
+              있는지가 안 보이니 옮기면서도 균형을 알 수 없습니다. */}
+          <ClassRosterBoard
+            classes={(classesData as WrClass[] | null) ?? []}
+            initialStudents={boardStudents}
+            canEdit={isStaffOrAboveUser(me)}
+          />
+        </>
       ) : (
         <TermSnapshotClasses snapshot={view.snapshot} termLabel={view.selectedLabel} />
       )}

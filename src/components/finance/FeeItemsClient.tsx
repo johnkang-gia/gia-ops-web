@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
 import { targetLabel, won } from "@/lib/feeItems";
 import TermPicker, { initialTermId } from "./TermPicker";
-import { FEE_ITEM_CATEGORY_SUGGESTIONS, type FeeCategory, type FeeItem, type Term } from "@/lib/types";
+import { FEE_ITEM_CATEGORY_SUGGESTIONS, type FeeCategory, type FeeItem, type StudentGroup, type Term } from "@/lib/types";
 
 // 학비외 항목 등록 (교재·악기·악기수리·교복).
 //
@@ -24,6 +24,8 @@ type Props = {
   classesByDept: Record<string, string[]>;
   /** 부서 → 학년 → 그 학년의 반. 학년을 고른 뒤 반을 고르는 데 씁니다. */
   classesByGrade: Record<string, Record<string, string[]>>;
+  /** 수강 그룹(방과후·악기반). 항목 대상으로 고를 수 있습니다. */
+  groups: StudentGroup[];
   /**
    * 항목별로 손으로 넣거나 뺀 아이가 몇 명인가.
    *
@@ -47,13 +49,14 @@ const EMPTY = {
   default_classes: [] as string[],
   // 새 항목은 대상을 안 고른 상태로 시작합니다. 미리 학년을 찍어두면 그대로 저장되어,
   // 고를 생각도 못 한 학년에 교재가 붙습니다.
-  target_scope: "개별" as "개별" | "부서전체" | "학년" | "반",
+  target_scope: "개별" as "개별" | "부서전체" | "학년" | "반" | "그룹",
+  target_group_id: null as string | null,
   // 기본은 '대상 전원'. 지금까지 만든 항목이 전부 그랬고, 대부분의 교재가 그렇습니다.
   auto_apply: true,
   note: "",
 };
 
-export default function FeeItemsClient({ initialItems, initialCategories, terms, gradesByDept, classesByDept, classesByGrade, usageByItem, currentUserEmail, loadError }: Props) {
+export default function FeeItemsClient({ initialItems, initialCategories, terms, gradesByDept, classesByDept, classesByGrade, groups, usageByItem, currentUserEmail, loadError }: Props) {
   const notify = useToast();
   const [items, setItems] = useState(initialItems);
   const [form, setForm] = useState({ ...EMPTY });
@@ -113,7 +116,14 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
    * 되읽지 않고 target_scope 를 함께 봐야 하는 이유: 배열이 비어 있다는 것만으로는 개별인지
    * 전체인지 가릴 수 없습니다. 애초에 target_scope 를 만든 까닭입니다.
    */
-  const gradeChoice = form.target_scope === "부서전체" ? "전체" : form.target_scope === "개별" ? "" : form.default_grades[0] ?? "";
+  const gradeChoice =
+    form.target_scope === "부서전체"
+      ? "전체"
+      : form.target_scope === "그룹"
+        ? `g:${form.target_group_id ?? ""}`
+        : form.target_scope === "개별"
+          ? ""
+          : form.default_grades[0] ?? "";
 
   /** 고른 학년의 반만. 학년과 상관없는 반을 고르면 그 항목은 아무에게도 안 붙습니다. */
   const gradeClasses = (classesByGrade[deptTab] ?? {})[gradeChoice] ?? [];
@@ -121,6 +131,11 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
   function pickGrade(v: string) {
     if (v === "") {
       setForm((f) => ({ ...f, target_scope: "개별", default_grades: [], default_classes: [] }));
+      return;
+    }
+    // 수강 그룹. 학년·반과 달리 **명단이 바뀌면 대상도 저절로 따라옵니다.**
+    if (v.startsWith("g:")) {
+      setForm((f) => ({ ...f, target_scope: "그룹", target_group_id: v.slice(2), default_grades: [], default_classes: [] }));
       return;
     }
     if (v === "전체") {
@@ -298,6 +313,7 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
       default_grades: form.default_grades,
       default_classes: form.default_classes,
       target_scope: form.target_scope,
+      target_group_id: form.target_scope === "그룹" ? form.target_group_id : null,
       auto_apply: form.auto_apply,
       note: form.note.trim() || null,
       created_by: currentUserEmail,
@@ -330,6 +346,7 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
       target_scope:
         i.target_scope ??
         ((i.default_classes ?? []).length > 0 ? "반" : (i.default_grades ?? []).length > 0 ? "학년" : "개별"),
+      target_group_id: i.target_group_id ?? null,
       auto_apply: i.auto_apply !== false,
       note: i.note ?? "",
     });
@@ -674,11 +691,23 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
                     {g}학년
                   </option>
                 ))}
+                {/* 수강 그룹.
+                    학년·반과 다른 점: **명단이 바뀌면 대상도 저절로 따라옵니다.** 방과후를
+                    그만둔 아이는 그룹에서 빼기만 하면 교재도 함께 빠집니다. */}
+                {groups.length > 0 && (
+                  <optgroup label="수강 그룹">
+                    {groups.map((g) => (
+                      <option key={g.id} value={`g:${g.id}`}>
+                        {g.name} ({g.kind})
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
             </label>
 
             {/* 반은 **학년을 고른 뒤에만** 나옵니다. 그리고 그 학년의 반만 나옵니다. */}
-            {gradeChoice !== "" && gradeChoice !== "전체" && (
+            {form.target_scope === "학년" || form.target_scope === "반" ? (
               <label className="text-[11px] text-slate-500">
                 반
                 <select
@@ -701,16 +730,18 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
                 </select>
                 {gradeClasses.length === 0 && <span className="ml-1 text-[11px] text-slate-400">이 학년에는 반이 없습니다</span>}
               </label>
-            )}
+            ) : null}
 
             <span className="pb-1.5 text-[11px] text-slate-500">
               {form.target_scope === "개별"
                 ? "아무에게도 자동으로 안 붙습니다. 인보이스 표에서 한 명씩 넣습니다."
                 : form.target_scope === "부서전체"
                   ? "학년이 늘어도 저절로 따라옵니다."
-                  : form.target_scope === "반"
-                    ? `${gradeChoice}학년 ${form.default_classes[0]} 에서만 쓰는 항목입니다.`
-                    : `${gradeChoice}학년 것입니다.`}
+                  : form.target_scope === "그룹"
+                    ? "이 그룹의 명단이 바뀌면 대상도 저절로 따라옵니다."
+                    : form.target_scope === "반"
+                      ? `${gradeChoice}학년 ${form.default_classes[0]} 에서만 쓰는 항목입니다.`
+                      : `${gradeChoice}학년 것입니다.`}
             </span>
           </div>
 

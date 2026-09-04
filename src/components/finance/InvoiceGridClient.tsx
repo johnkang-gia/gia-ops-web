@@ -33,6 +33,8 @@ import type { FeeItem, Term, Invoice, StudentFeeItem } from "@/lib/types";
  * 들고 옵니다 - 재무 화면에서 명부를 다시 열어 확인하게 두면 결국 확인 안 합니다.
  */
 export type Student = {
+  /** 속한 수강 그룹(방과후·악기반). 그룹 대상 항목이 붙는 근거입니다. */
+  groupIds?: string[];
   id: string;
   name: string;
   nameEn: string | null;

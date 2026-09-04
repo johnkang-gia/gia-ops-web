@@ -107,10 +107,14 @@ const SCHOOL_TABS: TabDef[] = [
     label: "학생",
     icon: "🎓",
     href: "/students",
-    match: ["/students", "/weekly-report/admin/students", "/school/data-check", "/school/import"],
+    match: ["/students", "/weekly-report/admin/students", "/school/data-check", "/school/import", "/school/groups", "/school/apparel"],
     children: [
       { label: "학생 조회", href: "/students", match: ["/students"] },
       { label: "명부 관리", href: "/weekly-report/admin/students" },
+      // 반이 아닌 명단(방과후·악기반). 학년·반은 어느 교실에 앉는가이고, 이것은 무엇을 하는가입니다.
+      { label: "수강 그룹", href: "/school/groups", match: ["/school/groups"] },
+      // 교복·행사 티셔츠. 사이즈는 학생에 저장되어 행사마다 다시 조사하지 않습니다.
+      { label: "의류", href: "/school/apparel", match: ["/school/apparel"] },
       { label: "명부 점검", href: "/school/data-check" },
       { label: "명부 가져오기", href: "/school/import" },
     ],

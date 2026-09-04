@@ -616,6 +616,74 @@ export type WrStudent = {
   created_at: string;
 };
 
+/** 반이 아닌 명단(방과후·악기반). 학비외 항목의 대상으로 쓰고, 학생 기록에도 남습니다. */
+export type StudentGroup = {
+  id: string;
+  name: string;
+  /** 방과후 · 악기 · 동아리 · 특강 · 기타 */
+  kind: string;
+  term_id: string | null;
+  department: string | null;
+  note: string | null;
+  created_at: string;
+};
+
+/** 아이의 옷 사이즈. 행사마다 다시 조사하지 않기 위해 학생에 붙여 둡니다. */
+export type StudentApparelSize = {
+  id: string;
+  student_id: string;
+  /** 상의 · 하의 · 외투 · 체육복 상의 · 신발 … 목록을 못박지 않습니다. */
+  kind: string;
+  size: string;
+  /** 언제 잰 것인가. 아이는 자라므로 오래된 값은 화면이 다시 묻자고 띄웁니다. */
+  measured_at: string;
+  note: string | null;
+  updated_by: string | null;
+};
+
+/** 한 번의 제작 건. 세트면 구성 품목이 여럿, 낱개면 하나입니다. */
+export type ApparelOrder = {
+  id: string;
+  name: string;
+  category: string;
+  term_id: string | null;
+  due_date: string | null;
+  status: "준비" | "진행" | "발주" | "완료";
+  note: string | null;
+  created_at: string;
+};
+
+/**
+ * 세트 구성 품목.
+ *
+ * 교복은 상의·하의·넥타이가 함께 가는데 **사이즈는 품목마다 따로**입니다(상의 M, 하의 L).
+ * 세트를 한 줄로 두면 사이즈를 하나밖에 못 적고, 품목마다 제작 건을 나누면 같은 명단을
+ * 세 번 짜야 합니다.
+ */
+export type ApparelOrderPiece = {
+  id: string;
+  order_id: string;
+  name: string;
+  /** 이 종류로 학생에 저장된 사이즈를 끌어옵니다. 비면 이번 건에서만 쓰고 남기지 않습니다. */
+  size_kind: string | null;
+  /** **거들어주는 보기일 뿐 제한이 아닙니다.** 여기 없는 사이즈도 그대로 적을 수 있습니다. */
+  size_hints: string[];
+  unit_price: number;
+  sort_order: number;
+};
+
+export type ApparelOrderItem = {
+  id: string;
+  order_id: string;
+  piece_id: string;
+  student_id: string;
+  /** 자유 입력. 만드는 곳마다 사이즈 체계가 달라 목록으로 가두지 않습니다. */
+  size: string | null;
+  qty: number;
+  status: "대기" | "확정" | "제외";
+  note: string | null;
+};
+
 export const WR_INSTRUMENTS = ["첼로", "우쿨렐레", "클라리넷", "바이올린", "플룻"] as const;
 export type WrInstrument = (typeof WR_INSTRUMENTS)[number];
 
@@ -1285,7 +1353,11 @@ export type FeeItem = {
    * 이 칸이 없으면 "학년도 반도 비었다" 가 개별인지 전체인지 가릴 수 없습니다.
    * 비어 있으면(옛 자료) 학년·반 칸을 보고 판단합니다.
    */
-  target_scope?: "개별" | "부서전체" | "학년" | "반" | null;
+  target_scope?: "개별" | "부서전체" | "학년" | "반" | "그룹" | null;
+  /** target_scope='그룹' 일 때 이 그룹의 학생에게 붙습니다(방과후·악기반). */
+  target_group_id?: string | null;
+  /** 화면에 그룹 이름을 보여주기 위해 조회에서 붙여 넣는 값. 표에는 없습니다. */
+  target_group_name?: string | null;
   /**
    * 대상 전원에게 자동으로 붙일지.
    *

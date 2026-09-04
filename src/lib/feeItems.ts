@@ -13,7 +13,19 @@ import type { FeeItem, StudentFeeItem } from "@/lib/types";
 // 2번이 1번을 이기는 이유: 기본 세트는 짐작이고, 아이별 기록은 사람이 확인해서 적은 것입니다.
 // 사람이 확인한 것을 짐작이 뒤집으면 아무도 그 화면을 안 믿게 됩니다.
 
-export type StudentLike = { id: string; grade: string | null; className: string | null; department?: string | null };
+export type StudentLike = {
+  id: string;
+  grade: string | null;
+  className: string | null;
+  department?: string | null;
+  /**
+   * 이 아이가 속한 수강 그룹(방과후·악기반).
+   *
+   * 학년·반은 **어느 교실에 앉는가**이고, 그룹은 **무엇을 하는가**입니다. 방과후 교재는
+   * 뒤엣것으로 붙습니다. 안 넘기면 그룹 대상 항목이 아무에게도 안 붙습니다.
+   */
+  groupIds?: string[];
+};
 
 /**
  * 이 항목이 이 아이의 부서에 쓰이는가.
@@ -49,6 +61,11 @@ export function inTarget(item: FeeItem, s: StudentLike): boolean {
   // 체크하던 날의 사진이라, 다음 학기에 새 학년이 조용히 빠집니다.
   if (item.target_scope === "부서전체") return true;
   if (item.target_scope === "개별") return false;
+
+  // 수강 그룹. 명단이 바뀌면 대상도 저절로 따라옵니다 - 항목마다 체크를 다시 하지 않습니다.
+  if (item.target_scope === "그룹") {
+    return !!item.target_group_id && (s.groupIds ?? []).includes(item.target_group_id);
+  }
 
   const g = normGrade(s.grade);
   const c = normClass(s.className);
@@ -97,9 +114,14 @@ export function isDefaultFor(item: FeeItem, s: StudentLike): boolean {
  * 대상은 이름이 아니라 칸(default_grades·default_classes)에 둡니다. 그러면 화면이 뱃지로
  * 보여줄 수 있고, 상관없는 명단에서는 열을 아예 세우지 않을 수 있습니다.
  */
-export function targetLabel(item: Pick<FeeItem, "default_grades" | "default_classes"> & { target_scope?: string | null }): string {
+export function targetLabel(
+  item: Pick<FeeItem, "default_grades" | "default_classes"> & { target_scope?: string | null; target_group_name?: string | null },
+): string {
   if (item.target_scope === "부서전체") return "전체";
   if (item.target_scope === "개별") return "개별 지정";
+  // 그룹은 이름을 그대로 보여줍니다. `그룹` 이라고만 적으면 어느 그룹인지 몰라 결국 항목
+  // 설정으로 되돌아가야 합니다.
+  if (item.target_scope === "그룹") return item.target_group_name ?? "수강 그룹";
   const g = (item.default_grades ?? []).map(normGrade).filter(Boolean);
   const c = (item.default_classes ?? []).filter(Boolean);
   if (g.length === 0 && c.length === 0) return "개별 지정";
@@ -122,7 +144,11 @@ export function targetLabel(item: Pick<FeeItem, "default_grades" | "default_clas
  */
 export function appliesToAny(item: FeeItem, list: StudentLike[]): boolean {
   if (item.target_scope === "개별") return true;
-  const hasTarget = item.target_scope === "부서전체" || (item.default_grades ?? []).length > 0 || (item.default_classes ?? []).length > 0;
+  const hasTarget =
+    item.target_scope === "부서전체" ||
+    item.target_scope === "그룹" ||
+    (item.default_grades ?? []).length > 0 ||
+    (item.default_classes ?? []).length > 0;
   if (!hasTarget) return true;
   // **자동으로 붙는지가 아니라 대상에 드는지**를 봅니다.
   //

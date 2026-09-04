@@ -49,6 +49,15 @@ export type Inquiry = {
   reply_status?: string | null;
 };
 
+/** 앱이 이 문의를 읽고 한 일 한 가지. */
+type AutoResult = {
+  kind: "출결" | "동승";
+  /** '등록' 이면 실제로 반영됐고, '확인필요' 면 읽었지만 사람이 봐야 합니다. */
+  state: "등록" | "확인필요" | "무시";
+  label: string;
+  detail: string;
+};
+
 const TYPE_STYLE: Record<string, string> = {
   출결: "bg-amber-50 text-amber-700",
   "수업·학습": "bg-blue-50 text-blue-700",
@@ -99,6 +108,19 @@ function dayLabel(iso: string): string {
   const d = new Date(`${key}T12:00:00+09:00`);
   const wd = ["일", "월", "화", "수", "목", "금", "토"][d.getDay()];
   return `${Number(key.slice(5, 7))}월 ${Number(key.slice(8, 10))}일 (${wd})`;
+}
+
+/**
+ * 뱃지 안에 들어갈 짧은 날짜. `9/7(월)`.
+ *
+ * `dayLabel` 은 `9월 7일 (월)` 처럼 길어서, 한 줄에 나란히 서는 뱃지에는 안 맞습니다.
+ * 줄이 길어지면 그 줄에서 정작 중요한 글 미리보기가 밀려납니다.
+ */
+function shortDay(key: string): string {
+  const todayKeyStr = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
+  if (key === todayKeyStr) return "오늘";
+  const d = new Date(`${key}T12:00:00+09:00`);
+  return `${d.getMonth() + 1}/${d.getDate()}(${["일", "월", "화", "수", "목", "금", "토"][d.getDay()]})`;
 }
 
 function DayDivider({ iso, count }: { iso: string; count: number }) {
@@ -210,6 +232,19 @@ export default function ParentInquiryPanel({
   // 대조후에 한글이름으로 올려줘". 한 번만 읽어 재사용합니다.
   const [roster, setRoster] = useState<RosterEntry[]>([]);
 
+  /**
+   * 앱이 이 문의로 **무엇을 했는가.**
+   *
+   * 초록 ✓ 는 "토들에 답글이 달렸다" 는 뜻뿐입니다. 그런데 이 앱은 같은 글을 읽어 출결을
+   * 등록하거나 동승을 잡아두기도 하는데, 그 결과가 화면 어디에도 안 나왔습니다. 그래서
+   * 담당자는 **처리가 됐는지 안 됐는지 알 수 없어** 같은 것을 또 등록하거나, 등록된 줄 알고
+   * 넘어갔다가 아무 데도 안 남아 있는 일이 생깁니다.
+   *
+   * 답글(사람이 한 일)과 자동 처리(앱이 한 일)는 **다른 표시**여야 합니다. 둘 다 초록 체크로
+   * 두면 어느 쪽이 된 것인지 여전히 모릅니다.
+   */
+  const [auto, setAuto] = useState<Map<string, AutoResult[]>>(new Map());
+
   // 토들 원문 주소.
   //
   // 담당자: "학부모 문의사항에서 눌러서 토들에서 보기 버튼 만들어줘."
@@ -269,7 +304,65 @@ export default function ParentInquiryPanel({
       .limit(200);
     // 데모 계정 연습용 문의(is_demo)는 실제 행정실 문의 목록에 섞이지 않게 걸러냅니다.
     // 마이그레이션 전(칸이 아직 없음)이라도 undefined는 통과하므로 화면이 깨지지 않습니다.
-    setRows(((data as (Inquiry & { is_demo?: boolean })[] | null) ?? []).filter((r) => !r.is_demo));
+    const list = ((data as (Inquiry & { is_demo?: boolean })[] | null) ?? []).filter((r) => !r.is_demo);
+    setRows(list);
+    void loadAuto(list.map((r) => r.id));
+  }, []);
+
+  /**
+   * 앱이 이 문의들로 무엇을 했는지 읽어옵니다.
+   *
+   * 출결은 `attendance_entries` 에, 동승은 `shuttle_ride_alongs` 에 남습니다. 문의와 잇는
+   * 열쇠가 서로 다릅니다 - 출결은 `source_message_id`(문의 id 를 글자로), 동승은
+   * `request_id`(외래키). 처음 만든 시점이 달라서 그렇습니다.
+   */
+  const loadAuto = useCallback(async (ids: string[]) => {
+    if (ids.length === 0) return;
+    const supabase = createClient();
+    const [entRes, rideRes] = await Promise.all([
+      supabase
+        .from("attendance_entries")
+        .select("source_message_id, status, state, date_from, date_to, reason")
+        .eq("source", "toddle")
+        .in("source_message_id", ids),
+      supabase.from("shuttle_ride_alongs").select("request_id, status, student_name, student_surface, route_no").in("request_id", ids),
+    ]);
+    // 표가 아직 없어도(마이그레이션 전) 목록은 떠야 합니다. 뱃지만 안 붙습니다.
+    if (entRes.error) console.error("[학부모 문의] 자동 출결 처리를 읽지 못했습니다:", entRes.error.message);
+    if (rideRes.error) console.error("[학부모 문의] 자동 동승 처리를 읽지 못했습니다:", rideRes.error.message);
+
+    const m = new Map<string, AutoResult[]>();
+    const push = (k: string, v: AutoResult) => m.set(k, [...(m.get(k) ?? []), v]);
+
+    for (const e of (entRes.data as { source_message_id: string; status: string; state: string; date_from: string; date_to: string; reason: string | null }[] | null) ?? []) {
+      const span = e.date_from === e.date_to ? shortDay(e.date_from) : `${shortDay(e.date_from)}~${shortDay(e.date_to)}`;
+      push(e.source_message_id, {
+        kind: "출결",
+        state: e.state as AutoResult["state"],
+        label: e.state === "등록" ? `${e.status} ${span}` : e.state === "확인필요" ? `${e.status}? 확인 필요` : `출결 아님`,
+        detail:
+          e.state === "등록"
+            ? `앱이 읽고 ${span} ${e.status}으로 등록했습니다. 출석부와 하원 체크표에 반영돼 있습니다.`
+            : e.state === "확인필요"
+              ? `${e.status}으로 읽었지만 ${e.reason ?? "확실하지 않아"} 등록하지 않았습니다. 출결 내역에서 확인해주세요.`
+              : "출결이 아니라고 판단해 내렸습니다.",
+      });
+    }
+    for (const r of (rideRes.data as { request_id: string; status: string; student_name: string | null; student_surface: string | null; route_no: string | null }[] | null) ?? []) {
+      const who = r.student_name ?? r.student_surface ?? "학생";
+      push(r.request_id, {
+        kind: "동승",
+        state: r.status === "확정" ? "등록" : r.status === "취소" ? "무시" : "확인필요",
+        label: r.status === "확정" ? `동승 ${r.route_no ? `${r.route_no}호` : ""}`.trim() : r.status === "취소" ? "동승 취소" : "동승? 확인 필요",
+        detail:
+          r.status === "확정"
+            ? `${who}를 오늘 ${r.route_no ? `${r.route_no}호에 ` : ""}같이 타도록 올렸습니다.`
+            : r.status === "취소"
+              ? "사람이 아니라고 판단해 내렸습니다."
+              : `${who} 가 누구인지 못 가려서 아직 올리지 않았습니다. 하원 체크표에서 골라주세요.`,
+      });
+    }
+    setAuto(m);
   }, []);
 
   useEffect(() => {
@@ -513,7 +606,7 @@ export default function ParentInquiryPanel({
       <button type="button" onClick={() => setDetail(r)} className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden text-left">
       {r.urgency === "높음" && !isDone(r) && <span className="shrink-0 text-red-500">●</span>}
       <span className={"shrink-0 font-semibold text-slate-700 " + (full ? "text-sm" : "")}>{studentOf(r)}</span>
-      {/* 요청: "답글달렸다는 표시로 이름 뒤에 초록색 체크표시" */}
+      {/* 초록 ✓ 는 **사람이 토들에 답글을 단 것**입니다. */}
       {r.answered_via === "답글" && (
         <span
           className="shrink-0 font-bold text-emerald-500"
@@ -522,6 +615,26 @@ export default function ParentInquiryPanel({
           ✓
         </span>
       )}
+
+      {/* 앱이 한 일. 답글(사람)과는 **다른 모양**이어야 합니다.
+          둘 다 초록 체크로 두면 어느 쪽이 된 것인지 여전히 모릅니다. 여기는 톱니바퀴를 달고
+          무엇을 했는지 글자로 적습니다 - '처리됨' 만으로는 무엇이 처리됐는지 모릅니다. */}
+      {(auto.get(r.id) ?? []).map((a, n) => (
+        <span
+          key={n}
+          title={a.detail}
+          className={
+            "shrink-0 rounded px-1 text-[10px] font-bold " +
+            (a.state === "등록"
+              ? "bg-teal-100 text-teal-800"
+              : a.state === "확인필요"
+                ? "bg-rose-100 text-rose-700"
+                : "bg-slate-100 text-slate-400")
+          }
+        >
+          ⚙ {a.label}
+        </span>
+      ))}
       {/* 직원이 답은 했지만 아직 끝나지 않은 건(요청: 해결됐는지 안됐는지 표시). */}
       {!isDone(r) && r.reply_status === "pending" && (
         <span

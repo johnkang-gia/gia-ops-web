@@ -244,6 +244,31 @@ export default function InvoiceGridClient({
   }, [invoices, termId, terms]);
 
   /**
+   * 같은 학생·같은 분류로 두 장 이상 나간 청구서.
+   *
+   * 학생을 합치거나 발행을 두 번 눌렀을 때 생깁니다. 그대로 두면 청구액이 두 배로 잡혀
+   * 미수금이 부풀고, 학부모에게 두 장이 나갑니다. 표에서는 «외 1장»이라는 작은 글씨로만
+   * 보여서 눈에 띄지 않았습니다.
+   */
+  const dupInvoices = useMemo(() => {
+    const out: { studentName: string; category: string; list: Invoice[] }[] = [];
+    for (const [, list] of invoicesByStudent) {
+      const byCat = new Map<string, Invoice[]>();
+      for (const v of list) {
+        const k = v.category ?? "통합";
+        (byCat.get(k) ?? byCat.set(k, []).get(k)!).push(v);
+      }
+      for (const [k, g] of byCat) {
+        if (g.length < 2) continue;
+        // 금액이 큰 것이 앞에 옵니다 - 대개 잘못 나간 쪽이 큽니다(항목이 겹쳐 담겨서).
+        const sorted = [...g].sort((a, b) => Number(b.total_amount) - Number(a.total_amount));
+        out.push({ studentName: sorted[0].student_name_ko || sorted[0].student_name, category: k, list: sorted });
+      }
+    }
+    return out.sort((a, b) => a.studentName.localeCompare(b.studentName, "ko"));
+  }, [invoicesByStudent]);
+
+  /**
    * 지금 보고 있는 분류의 청구서. 이것이 '발행됨/미발행' 의 기준입니다.
    *
    * 통합('전체') 에서는 분류 없이 나간 통합 청구서를, 분류 탭에서는 그 분류 청구서를 찾습니다.
@@ -1096,6 +1121,54 @@ export default function InvoiceGridClient({
         </p>
       )}
 
+      {/* ── 중복 청구서 ─────────────────────────────────────────────
+          한 아이에게 같은 분류로 두 장이 나가면 청구액이 두 배로 잡힙니다. 미수금이 부풀고
+          학부모에게는 두 장이 갑니다. 표 안의 «외 1장»은 너무 작아서 아무도 못 봤습니다. */}
+      {dupInvoices.length > 0 && (
+        <div className="mb-3 rounded-xl border-2 border-rose-300 bg-rose-50 p-3">
+          <p className="mb-1.5 text-[13px] font-bold text-rose-900">
+            ⚠️ 같은 학생에게 두 장 이상 나간 청구서 {dupInvoices.length}건
+          </p>
+          <p className="mb-2 text-[11px] leading-relaxed text-rose-800">
+            그대로 두면 <b>청구액이 두 배로 잡힙니다.</b> 남길 한 장을 빼고 나머지를 취소해 주세요 — 지우지 않고 취소로
+            남으므로 나중에 무엇을 왜 내렸는지 볼 수 있습니다.
+          </p>
+          <ul className="flex flex-col gap-1.5">
+            {dupInvoices.map((d) => (
+              <li key={`${d.studentName}-${d.category}`} className="rounded-lg bg-white p-2">
+                <p className="mb-1 text-[12px] font-bold text-slate-800">
+                  {d.studentName} <span className="font-normal text-slate-500">· {d.category}</span>
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {d.list.map((v, idx) => (
+                    <span key={v.id} className="flex items-center gap-1 rounded-lg border border-slate-200 px-1.5 py-0.5 text-[11px]">
+                      <b className="tabular-nums text-slate-700">{won(Number(v.total_amount))}</b>
+                      <span className="text-slate-400">{v.invoice_no}</span>
+                      {idx === 0 && (
+                        <span className="rounded bg-rose-100 px-1 text-[10px] font-bold text-rose-700" title="금액이 가장 큰 청구서">
+                          최고액
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCancelling({ invoice: v, studentName: d.studentName });
+                          setCancelReason("중복 발행");
+                        }}
+                        className="rounded bg-rose-600 px-1.5 py-0.5 text-[10px] font-bold text-white hover:bg-rose-700"
+                        title="이 청구서를 취소합니다"
+                      >
+                        취소
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {/* ── 표 ───────────────────────────────────────────────────── */}
       <div className="overflow-auto rounded-xl border border-slate-200 bg-white" style={{ maxHeight: "72vh" }}>
         <table className="min-w-full border-collapse text-left text-[12px]">
@@ -1125,6 +1198,12 @@ export default function InvoiceGridClient({
               </th>
               <th className="sticky left-8 z-30 min-w-[150px] border-b border-r border-slate-200 bg-white px-2 py-1.5 font-semibold text-slate-600">
                 학생
+              </th>
+              {/* 인보이스를 **이름 바로 옆**에 둡니다.
+                  맨 뒤에 있으면 항목이 늘수록 오른쪽으로 밀려, 누가 발행됐는지 보려고
+                  매번 표를 끝까지 밀어야 했습니다. 발행 여부는 항목보다 먼저 보는 것입니다. */}
+              <th className="sticky left-[198px] z-30 min-w-[150px] border-b border-r-2 border-slate-300 bg-white px-2 py-1.5 font-semibold text-slate-600">
+                인보이스
               </th>
               {usedItems.map((i) => (
                 <th key={i.id} className="min-w-[86px] border-b border-r border-slate-100 bg-white px-1 py-1.5 align-bottom">
@@ -1175,7 +1254,6 @@ export default function InvoiceGridClient({
               <th className="min-w-[92px] border-b border-l border-slate-200 bg-white px-2 py-1.5 text-right font-semibold text-slate-600">
                 합계
               </th>
-              <th className="min-w-[96px] border-b border-slate-200 bg-white px-2 py-1.5 font-semibold text-slate-600">인보이스</th>
             </tr>
           </thead>
 
@@ -1216,52 +1294,7 @@ export default function InvoiceGridClient({
                     </span>
                   </td>
 
-                  {usedItems.map((i) => {
-                    const l = lineFor(s.id, i.id);
-                    const ov = overrides.find((o) => o.student_id === s.id && o.item_id === i.id) ?? null;
-                    return (
-                      <td
-                        key={i.id}
-                        className={
-                          "border-b border-r border-slate-100 p-0 text-center " + (l ? "bg-teal-50/70" : "")
-                        }
-                      >
-                        {/* 표에서는 **바꾸지 않습니다.**
-                            칸이 작고 촘촘해서 훑다가 옆 칸을 눌러도 알아채지 못했습니다. 항목이
-                            빠지거나 붙은 것을 나중에 청구서에서 발견하게 되는 자리였습니다.
-                            누르면 그 학생 창이 열리고, 고치는 것은 거기서만 합니다 - 창에는
-                            이름·금액·수량이 함께 있어 무엇을 바꾸는지 보입니다. */}
-                        <button
-                          onClick={() => setDetail(s)}
-                          className="flex h-8 w-full items-center justify-center gap-1"
-                          title={
-                            (l
-                              ? `${i.name} · ${won(l.amount)}${ov ? (ov.mode === "include" ? " · 직접 넣음" : "") : " · 기본"}`
-                              : `${i.name} · 없음`) + " — 눌러서 이 학생 창에서 고칩니다"
-                          }
-                        >
-                          {l ? (
-                            <>
-                              <span className="text-[13px] font-black text-teal-700">✓</span>
-                              {l.qty > 1 && <span className="text-[10px] font-bold text-teal-700">×{l.qty}</span>}
-                              {/* 사람이 따로 넣은 것은 점 하나로 구분합니다. 기본 세트와 섞이면
-                                  "왜 이게 여기 있지"를 매번 묻게 됩니다. */}
-                              {ov?.mode === "include" && <span className="text-[8px] text-amber-600">●</span>}
-                            </>
-                          ) : (
-                            <span className="text-[11px] text-slate-200">·</span>
-                          )}
-                        </button>
-                      </td>
-                    );
-                  })}
-
-                  <td className="border-b border-l border-slate-200 px-2 py-1 text-right">
-                    <span className={"font-bold tabular-nums " + (total > 0 ? "text-slate-800" : "text-slate-300")}>
-                      {total > 0 ? won(total) : "—"}
-                    </span>
-                  </td>
-                  <td className="border-b border-slate-100 px-2 py-1">
+                  <td className={"sticky left-[198px] z-10 border-b border-r-2 border-slate-300 px-2 py-1 " + (on ? "bg-teal-50" : "bg-white")}>
                     {inv ? (
                       <span className="flex items-center gap-1">
                       <button
@@ -1309,6 +1342,52 @@ export default function InvoiceGridClient({
                     ) : (
                       <span className="text-[11px] text-slate-300">—</span>
                     )}
+                  </td>
+
+                  {usedItems.map((i) => {
+                    const l = lineFor(s.id, i.id);
+                    const ov = overrides.find((o) => o.student_id === s.id && o.item_id === i.id) ?? null;
+                    return (
+                      <td
+                        key={i.id}
+                        className={
+                          "border-b border-r border-slate-100 p-0 text-center " + (l ? "bg-teal-50/70" : "")
+                        }
+                      >
+                        {/* 표에서는 **바꾸지 않습니다.**
+                            칸이 작고 촘촘해서 훑다가 옆 칸을 눌러도 알아채지 못했습니다. 항목이
+                            빠지거나 붙은 것을 나중에 청구서에서 발견하게 되는 자리였습니다.
+                            누르면 그 학생 창이 열리고, 고치는 것은 거기서만 합니다 - 창에는
+                            이름·금액·수량이 함께 있어 무엇을 바꾸는지 보입니다. */}
+                        <button
+                          onClick={() => setDetail(s)}
+                          className="flex h-8 w-full items-center justify-center gap-1"
+                          title={
+                            (l
+                              ? `${i.name} · ${won(l.amount)}${ov ? (ov.mode === "include" ? " · 직접 넣음" : "") : " · 기본"}`
+                              : `${i.name} · 없음`) + " — 눌러서 이 학생 창에서 고칩니다"
+                          }
+                        >
+                          {l ? (
+                            <>
+                              <span className="text-[13px] font-black text-teal-700">✓</span>
+                              {l.qty > 1 && <span className="text-[10px] font-bold text-teal-700">×{l.qty}</span>}
+                              {/* 사람이 따로 넣은 것은 점 하나로 구분합니다. 기본 세트와 섞이면
+                                  "왜 이게 여기 있지"를 매번 묻게 됩니다. */}
+                              {ov?.mode === "include" && <span className="text-[8px] text-amber-600">●</span>}
+                            </>
+                          ) : (
+                            <span className="text-[11px] text-slate-200">·</span>
+                          )}
+                        </button>
+                      </td>
+                    );
+                  })}
+
+                  <td className="border-b border-l border-slate-200 px-2 py-1 text-right">
+                    <span className={"font-bold tabular-nums " + (total > 0 ? "text-slate-800" : "text-slate-300")}>
+                      {total > 0 ? won(total) : "—"}
+                    </span>
                   </td>
                 </tr>
               );

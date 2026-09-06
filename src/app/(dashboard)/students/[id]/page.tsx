@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess, isStaffOrAboveUser } from "@/lib/roles";
 import DismissalPlanEditor from "@/components/students/DismissalPlanEditor";
+import StudentFeeHistory from "@/components/finance/StudentFeeHistory";
 import type { DismissalPlan } from "@/lib/dismissalPlan";
 import { won } from "@/lib/feeItems";
 import type { Invoice } from "@/lib/types";
@@ -356,6 +357,9 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
           )}
         </div>
       )}
+
+      {/* 납부 내역 - 학기별로 «뭘로 얼마 냈나». 재무 권한이 없으면 스스로 그리지 않습니다. */}
+      {hasFinanceAccess(me) && <StudentFeeHistory studentId={student.id} />}
 
       {/* 셔틀 - 학부모 전화를 받으면 가장 먼저 확인하는 것 중 하나인데, 여기 없어서 셔틀
           메뉴까지 옮겨 다녀야 했습니다. 요일별로 다른 차를 타는 아이가 12명 있어서

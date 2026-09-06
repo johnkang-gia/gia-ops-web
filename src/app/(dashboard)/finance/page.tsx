@@ -5,6 +5,8 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess } from "@/lib/roles";
 import { todayKst } from "@/lib/kst";
 import { resolveStudentItems, sumLines, won } from "@/lib/feeItems";
+import CollectionStatus from "@/components/finance/CollectionStatus";
+import type { PaymentRow } from "@/lib/payments";
 import type { FeeItem, Invoice, StudentFeeItem } from "@/lib/types";
 
 // 재무 개요.
@@ -21,11 +23,14 @@ export default async function FinanceOverviewPage() {
   if (!hasFinanceAccess(me)) redirect("/home");
 
   const supabase = await createClient();
-  const [stuRes, itemsRes, ovRes, invRes] = await Promise.all([
+  const [stuRes, itemsRes, ovRes, invRes, payRes] = await Promise.all([
     supabase.from("wr_students").select("id, name, grade, class_name").eq("status", "active").eq("is_demo", false),
     supabase.from("fee_items").select("*"),
     supabase.from("student_fee_items").select("*"),
     supabase.from("invoices").select("*").order("created_at", { ascending: false }).limit(500),
+    // 납부 현황과 상습 미납을 내려면 «들어온 돈»도 함께 봐야 합니다. 청구만 보면
+    // «얼마를 받아야 하나»까지만 알 수 있습니다.
+    supabase.from("payments").select("*").order("paid_at", { ascending: false }).limit(2000),
   ]);
 
   const loadError = stuRes.error?.message ?? itemsRes.error?.message ?? ovRes.error?.message ?? invRes.error?.message ?? null;
@@ -37,6 +42,7 @@ export default async function FinanceOverviewPage() {
   const items = (itemsRes.data as FeeItem[] | null) ?? [];
   const overrides = (ovRes.data as StudentFeeItem[] | null) ?? [];
   const invoices = (invRes.data as Invoice[] | null) ?? [];
+  const payments = (payRes.data as PaymentRow[] | null) ?? [];
 
   // 아이마다 얼마인지. 화면·발행과 **같은 함수**를 씁니다 - 개요만 따로 계산하면 숫자가
   // 어긋나고, 어긋난 개요는 아무도 안 믿습니다.
@@ -86,6 +92,8 @@ export default async function FinanceOverviewPage() {
           자료를 읽지 못했습니다: {loadError}
         </p>
       )}
+
+      <CollectionStatus invoices={invoices} payments={payments} today={today} />
 
       <div className="mb-4 flex flex-wrap gap-2">
         <Card label="받아야 할 금액" value={won(expected)} sub={`${withItems.length}명에게 항목이 붙어 있습니다`} />

@@ -6,6 +6,25 @@ import type { Invoice } from "@/lib/types";
 // 내면 합쳐져 옵니다. 그래서 자동으로 붙일 수 있는 것만 붙이고, 애매한 것은 **애매하다고
 // 말합니다.** 어림짐작으로 붙이면 틀린 곳을 아무도 못 찾습니다.
 
+/**
+ * 납부 수단(고정값).
+ *
+ * 자유 글자로 두면 «현금», «현금납부», «cash» 가 섞이고, 그러면 월말에 세는 일이 다시
+ * 사람 손으로 돌아갑니다.
+ */
+export const PAYMENT_METHOD_KINDS = ["올톡페이", "방문카드", "계좌이체", "현금", "기타"] as const;
+export type PaymentMethodKind = (typeof PAYMENT_METHOD_KINDS)[number];
+
+/**
+ * 현금영수증을 물어야 하는 수단.
+ *
+ * 카드는 그 자체로 증빙이 남고 올톡페이는 결제사가 처리합니다. 현금과 계좌이체만
+ * 우리가 따로 발행해야 합니다.
+ */
+export function needsCashReceipt(kind: string | null | undefined): boolean {
+  return kind === "현금" || kind === "계좌이체";
+}
+
 export type PaymentRow = {
   id: string;
   invoice_id: string | null;
@@ -13,6 +32,8 @@ export type PaymentRow = {
   paid_at: string;
   amount: number;
   method: string | null;
+  /** 고정값 수단. 옛 줄은 비어 있을 수 있습니다. */
+  method_kind?: string | null;
   payer_name: string | null;
   memo: string | null;
   source: string;

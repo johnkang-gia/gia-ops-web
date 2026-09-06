@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
 import { won } from "@/lib/feeItems";
 import { balanceOf, matchPayment, toAmount, toIsoDate, type ImportedPayment, type PaymentRow } from "@/lib/payments";
+import { PAYMENT_METHOD_KINDS, needsCashReceipt, type PaymentMethodKind } from "@/lib/payments";
 import type { Invoice } from "@/lib/types";
 
 // 수납 — 들어온 돈을 인보이스에 붙입니다.
@@ -41,7 +42,21 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
   const fileRef = useRef<HTMLInputElement>(null);
 
   // 수기 입력
-  const [manual, setManual] = useState({ invoiceId: "", paidAt: today, amount: 0, payerName: "", memo: "" });
+  const [manual, setManual] = useState({
+    invoiceId: "",
+    paidAt: today,
+    amount: 0,
+    payerName: "",
+    memo: "",
+    // 수납은 네 갈래로 들어옵니다. 예전에는 전부 «수기» 한 덩어리라 월말에 카드·현금을
+    // 나눠 셀 수 없었고, 현금영수증을 발행해야 하는 건이 어느 것인지도 몰랐습니다.
+    methodKind: "계좌이체" as PaymentMethodKind,
+    // 현금·계좌이체는 현금영수증 요청이 따라옵니다. 그 자리에서 함께 적어두지 않으면
+    // 나중에 «해주셨어요?»에 답할 방법이 없습니다.
+    receipt: false,
+    receiptPurpose: "소득공제" as "소득공제" | "지출증빙",
+    receiptId: "",
+  });
 
   const issued = useMemo(() => invoices.filter((v) => v.status === "발행"), [invoices]);
   const withBalance = useMemo(
@@ -201,6 +216,10 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
     }
   }
 
+  // 현금·계좌이체만 우리가 현금영수증을 발행합니다. 카드는 그 자체로 증빙이 남고,
+  // 올톡페이는 결제사가 처리합니다.
+  const needsReceipt = needsCashReceipt(manual.methodKind);
+
   async function addManual() {
     if (!manual.amount || !manual.invoiceId) {
       notify("인보이스와 금액을 골라주세요.", "error");
@@ -216,7 +235,8 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
           student_id: inv?.student_id ?? null,
           paid_at: manual.paidAt,
           amount: manual.amount,
-          method: "수기",
+          method: manual.methodKind,
+          method_kind: manual.methodKind,
           payer_name: manual.payerName || null,
           memo: manual.memo || null,
           source: "수기",
@@ -230,7 +250,34 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
         return;
       }
       setPayments((p) => [data as PaymentRow, ...p]);
-      setManual({ invoiceId: "", paidAt: today, amount: 0, payerName: "", memo: "" });
+
+      // 현금영수증 신청을 함께 남깁니다. 실패해도 입금은 이미 들어갔으므로 되돌리지 않고
+      // 소리만 냅니다 - 돈이 들어온 사실이 영수증 때문에 사라지면 안 됩니다.
+      if (manual.receipt && manual.receiptId.trim()) {
+        const { error: rErr } = await createClient().from("cash_receipts").insert({
+          payment_id: (data as PaymentRow).id,
+          invoice_id: manual.invoiceId,
+          student_id: inv?.student_id ?? null,
+          purpose: manual.receiptPurpose,
+          identifier: manual.receiptId.replace(/[^0-9]/g, ""),
+          amount: manual.amount,
+          status: "신청",
+          requested_by: currentUserName || currentUserEmail,
+        });
+        if (rErr) notify("입금은 넣었는데 현금영수증 신청은 못 적었습니다: " + rErr.message, "error");
+      }
+
+      setManual({
+        invoiceId: "",
+        paidAt: today,
+        amount: 0,
+        payerName: "",
+        memo: "",
+        methodKind: "계좌이체",
+        receipt: false,
+        receiptPurpose: "소득공제",
+        receiptId: "",
+      });
       notify("입금을 넣었습니다.", "success");
     } finally {
       setBusy(false);
@@ -537,9 +584,62 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
             입금자
             <input value={manual.payerName} onChange={(e) => setManual((m) => ({ ...m, payerName: e.target.value }))} className="ml-1 w-32 rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
           </label>
+          {/* 납부 수단. 고정값이라 월말에 «카드로 얼마, 현금으로 얼마»를 셀 수 있습니다. */}
+          <label className="text-[11px] text-slate-500">
+            수단
+            <select
+              value={manual.methodKind}
+              onChange={(e) => setManual((m) => ({ ...m, methodKind: e.target.value as PaymentMethodKind }))}
+              className="ml-1 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+            >
+              {PAYMENT_METHOD_KINDS.map((k) => (
+                <option key={k} value={k}>
+                  {k}
+                </option>
+              ))}
+            </select>
+          </label>
           <button onClick={() => void addManual()} disabled={busy} className="rounded-lg bg-teal-600 px-4 py-1.5 text-sm font-semibold text-white disabled:opacity-40">
             + 넣기
           </button>
+
+          {/* 현금영수증.
+              발행 자체는 홈택스에서 합니다(국세청 연동은 사업자 인증서와 별도 신청이
+              필요합니다). 여기서는 «누가 무엇으로 신청했는가»를 남기고 홈택스로 건너갑니다.
+              기억에만 있으면 확인할 수 없고, 확인할 수 없으면 두 번 발행하거나 아예 못 합니다. */}
+          {needsReceipt && (
+            <div className="mt-2 flex w-full flex-wrap items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-2.5 py-2">
+              <label className="flex items-center gap-1.5 text-[12px] font-semibold text-amber-900">
+                <input
+                  type="checkbox"
+                  checked={manual.receipt}
+                  onChange={(e) => setManual((m) => ({ ...m, receipt: e.target.checked }))}
+                />
+                🧾 현금영수증 신청
+              </label>
+              {manual.receipt && (
+                <>
+                  <select
+                    value={manual.receiptPurpose}
+                    onChange={(e) => setManual((m) => ({ ...m, receiptPurpose: e.target.value as "소득공제" | "지출증빙" }))}
+                    className="rounded-lg border border-amber-300 px-2 py-1 text-[12px]"
+                  >
+                    <option value="소득공제">소득공제(개인)</option>
+                    <option value="지출증빙">지출증빙(사업자)</option>
+                  </select>
+                  <input
+                    value={manual.receiptId}
+                    onChange={(e) => setManual((m) => ({ ...m, receiptId: e.target.value }))}
+                    placeholder={manual.receiptPurpose === "소득공제" ? "휴대폰번호" : "사업자등록번호"}
+                    className="w-40 rounded-lg border border-amber-300 px-2 py-1 text-[12px]"
+                  />
+                  <span className="text-[11px] text-amber-800">
+                    적어두면 [현금영수증] 탭에 «발행 대기»로 남습니다.
+                  </span>
+                </>
+              )}
+            </div>
+          )}
         </div>
       </details>
     </div>

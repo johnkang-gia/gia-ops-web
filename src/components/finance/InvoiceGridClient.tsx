@@ -661,6 +661,24 @@ export default function InvoiceGridClient({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ studentId: s.id, dueDate, feeTermId: termId || null, category }),
         });
+        // ── 돌아온 것이 우리 답이 맞는가 ─────────────────────────────────────
+        //
+        // 발행이 «HTML 조각»과 함께 실패한 일이 있었습니다. 그건 우리 서버가 낸 오류가
+        // 아니라 **다른 사이트의 웹페이지가 돌아온 것**입니다 - 주소가 엉뚱한 곳으로
+        // 가거나(사내망 차단·프록시·잘못된 도메인), 로그인이 풀려 로그인 화면 HTML이
+        // 대신 온 경우입니다.
+        //
+        // 예전에는 그 HTML을 파싱하려다 실패하고 상태 문구만 남겨서, 무엇이 잘못됐는지
+        // 알 방법이 없었습니다. 무엇이 돌아왔는지를 보고 사람이 판단할 수 있게 합니다.
+        const ctype = res.headers.get("content-type") ?? "";
+        if (!ctype.includes("application/json")) {
+          const head = (await res.text().catch(() => "")).slice(0, 120).replace(/\s+/g, " ").trim();
+          failed.push(
+            `${s.name}${category ? `·${category}` : ""}(서버가 JSON 대신 ${ctype || "알 수 없는 형식"}을 돌려줬습니다 · ${res.status} · ${head})`,
+          );
+          continue;
+        }
+
         const body = await res.json().catch(() => ({}));
         if (res.ok) made.push(body.invoice as Invoice);
         // 한 명이 실패해도 나머지는 계속합니다. 다만 **누가 실패했는지 반드시 말합니다** -

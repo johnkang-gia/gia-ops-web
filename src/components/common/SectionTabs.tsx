@@ -300,6 +300,9 @@ const FINANCE_TABS: TabDef[] = [
   { key: "overview", label: "개요", icon: "📊", href: "/finance", match: ["/finance"] },
   { key: "invoices", label: "인보이스 명단", icon: "🧾", href: "/finance/invoices", match: ["/finance/invoices"] },
   { key: "payments", label: "수납", icon: "💳", href: "/finance/payments", match: ["/finance/payments"] },
+  // 현금·계좌이체 건의 현금영수증 신청·발행 여부. 수납 바로 옆에 둡니다 - 수납을 넣는
+  // 자리에서 신청이 생기고, 그 결과를 보는 자리가 여기입니다.
+  { key: "receipts", label: "현금영수증", icon: "🧾", href: "/finance/receipts", match: ["/finance/receipts"] },
   { key: "items", label: "학비외 항목", icon: "📚", href: "/finance/items", match: ["/finance/items"] },
   { key: "plans", label: "납부 항목 · 할인", icon: "💵", href: "/finance/plans", match: ["/finance/plans"] },
 ];

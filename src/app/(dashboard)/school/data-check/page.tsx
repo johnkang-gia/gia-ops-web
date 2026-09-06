@@ -2,9 +2,10 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
-import { isStaffOrAboveUser } from "@/lib/roles";
+import { isAdminUser, isStaffOrAboveUser } from "@/lib/roles";
 import GuideButton from "@/components/common/GuideButton";
 import DataCheckIssues, { type ImportIssue } from "@/components/school/DataCheckIssues";
+import DuplicateStudents, { type DupStudent } from "@/components/school/DuplicateStudents";
 
 export const dynamic = "force-dynamic";
 
@@ -67,6 +68,23 @@ export default async function DataCheckPage() {
     { label: "과목", value: subjectsRes.count, expected: 16, href: "/weekly-report/admin/subjects" },
   ];
 
+  // 이름이 겹치는 재학생. 명부 반영이 짝을 못 찾아 새로 만든 줄이 여기 걸립니다.
+  const { data: dupRows, error: dupErr } = await supabase
+    .from("wr_students")
+    .select("id, name, name_en, grade, class_name, birth_date, created_at")
+    .eq("is_demo", false)
+    .eq("status", "active")
+    .order("created_at");
+  if (dupErr) console.error("[명부 점검] 중복 조회 실패:", dupErr.message);
+
+  const byName = new Map<string, DupStudent[]>();
+  for (const s of ((dupRows as DupStudent[] | null) ?? [])) {
+    const k = (s.name ?? "").trim();
+    if (!k) continue;
+    (byName.get(k) ?? byName.set(k, []).get(k)!).push(s);
+  }
+  const dupGroups = [...byName.values()].filter((g) => g.length > 1);
+
   return (
     <div className="mx-auto max-w-4xl p-4 sm:p-6">
       <div className="mb-1 flex items-center justify-between gap-2">
@@ -77,6 +95,8 @@ export default async function DataCheckPage() {
         학교 명부를 앱에 넣은 결과를 확인하는 곳입니다. 아래 숫자가 기대한 값과 맞는지 보고, 사람이 판단해야 하는 건이 남아
         있으면 처리해주세요.
       </p>
+
+      <DuplicateStudents groups={dupGroups} canMerge={isAdminUser(me)} />
 
       {/* 지금 들어 있는 데이터 */}
       <div className="mb-6 g-panel-solid p-4 shadow-sm">

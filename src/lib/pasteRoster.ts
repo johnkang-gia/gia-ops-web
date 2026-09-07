@@ -170,8 +170,29 @@ export function parseRosterPaste(
   if (lines.length === 0)
     return { mapping: [], guess: [], header: null, headerUsed: false, headerDetected: false, table: [], rows: [], unknownHeaders: [] };
 
-  const sep = lines[0].includes("\t") ? "\t" : ",";
-  const table = lines.map((l) => l.split(sep).map((c) => c.trim().replace(/^"(.*)"$/, "$1")));
+  // 칸을 나누는 글자는 **줄마다 따로** 봅니다.
+  //
+  // 예전에는 첫 줄만 보고 정했습니다. 머리줄은 손으로 적어서 탭이 없고 학생 줄은 시트에서
+  // 복사해 탭이 있는 경우 - 실제로 가장 흔한 경우 - 온 줄을 쉼표로 나누려다 머리줄이 한 칸이
+  // 되었고, 「어머니 연락처」처럼 사이에 띄어쓰기가 든 항목이 통째로 안 읽혔습니다.
+  const table = lines.map((l) =>
+    (l.includes("\t") ? l.split("\t") : l.includes(",") ? l.split(",") : [l]).map((c) =>
+      c.trim().replace(/^"(.*)"$/, "$1"),
+    ),
+  );
+
+  // 머리줄만 한 칸으로 남았다면 띄어쓰기로 나눠봅니다. 탭 없이 손으로 적은 머리줄입니다.
+  // **학생 줄과 칸 수가 맞을 때만** 씁니다 - 「어머니 연락처」를 두 칸으로 쪼개면 더 나빠집니다.
+  if (forcedHeader !== false && table.length >= 2 && table[0].length === 1 && table[1].length >= 2) {
+    const want = table[1].length;
+    for (const re of [/\s{2,}/, /\s+/]) {
+      const tried = table[0][0].split(re).filter((c) => c !== "");
+      if (tried.length === want) {
+        table[0] = tried;
+        break;
+      }
+    }
+  }
 
   // 첫 줄이 머리줄인가. 알아본 칸이 **두 개 이상**이면 머리줄로 봅니다.
   // 예전에는 여기에 「이름 칸을 알아봤을 것」이 더 붙어 있었습니다. 그래서 시트의 이름

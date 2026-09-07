@@ -25,7 +25,8 @@ export default function VersionBroadcastButton({ userName }: { userName: string 
     setBusy(true);
     const { error } = await createClient().from("version_broadcasts").insert({
       version: APP_VERSION,
-      // 왜 눌러야 하는지가 있으면 눌립니다. 없어도 보내지되, 있으면 띠에 함께 뜹니다.
+      // 이유는 없어도 됩니다. 대개는 그냥 「새로고침해달라」이고, 이유를 적게 강제하면
+      // 그 한 걸음 때문에 아예 안 보내게 됩니다. 적었으면 띠에 함께 뜹니다.
       note: note.trim() || null,
       created_by: userName,
     });
@@ -60,16 +61,22 @@ export default function VersionBroadcastButton({ userName }: { userName: string 
               뜨지 않습니다.
             </p>
             <label className="mt-3 block">
-              <span className="text-[11px] font-semibold text-slate-500">왜 눌러야 하는지 (선택)</span>
+              <span className="text-[11px] font-semibold text-slate-500">한 줄 이유 (선택)</span>
               <input
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
-                placeholder="예: 출석부 계산 기준이 바뀌었습니다"
+                onKeyDown={(e) => {
+                  // 대개는 이유 없이 그냥 보냅니다. 엔터로 끝나게 둡니다 - 버튼까지 손이
+                  // 가야 하면 그 한 걸음 때문에 안 보내게 됩니다.
+                  if (e.key === "Enter" && !busy) void send();
+                }}
+                placeholder="비워두면 새로고침 안내만 보냅니다"
                 maxLength={60}
+                autoFocus
                 className="mt-0.5 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-[13px]"
               />
               <span className="mt-0.5 block text-[11px] text-slate-400">
-                이유가 있으면 눌립니다. 「그냥 눌러라」는 안 눌립니다.
+                적으면 띠에 함께 뜹니다. 예: 출석부 계산 기준이 바뀌었습니다
               </span>
             </label>
             <div className="mt-4 flex items-center gap-2">
@@ -79,7 +86,7 @@ export default function VersionBroadcastButton({ userName }: { userName: string 
                 onClick={() => void send()}
                 className="rounded-lg bg-amber-500 px-3 py-1.5 text-[12px] font-bold text-amber-950 disabled:opacity-40"
               >
-                {busy ? "보내는 중…" : "보내기"}
+                {busy ? "보내는 중…" : note.trim() ? "이유와 함께 보내기" : "새로고침 안내만 보내기"}
               </button>
               <button
                 type="button"

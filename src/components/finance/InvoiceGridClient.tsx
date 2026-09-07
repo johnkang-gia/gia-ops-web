@@ -26,6 +26,17 @@ import type { FeeItem, Term, Invoice, StudentFeeItem } from "@/lib/types";
 //   · 고른 줄만 한 번에 발행합니다.
 
 /**
+ * 왼쪽에 고정되는 세 칸(체크·학생·인보이스)의 너비.
+ *
+ * 고정 위치(left)를 숫자로 적어두고 너비는 내용에 맡기면, 둘이 어긋난 만큼 다음 칸이
+ * 덮입니다. 실제로 학생 칸이 이 값보다 좁게 그려져서 인보이스 칸이 오른쪽으로 끌려나갔고,
+ * 그만큼 첫 항목(교복) 앞부분이 가려졌습니다. 그래서 **너비와 left 를 같은 수에서** 냅니다.
+ */
+const W_CHECK = 32;
+const W_NAME = 166;
+const LEFT_INVOICE = W_CHECK + W_NAME;
+
+/**
  * 표의 한 줄.
  *
  * 이름·학년만 있으면 표는 그려지지만, 청구는 못 합니다. 청구서는 **보호자 연락처**로
@@ -1175,7 +1186,9 @@ export default function InvoiceGridClient({
           <thead className="sticky top-0 z-20">
             {/* 분류 줄 — 열이 많아지면 무엇끼리 묶인 것인지 보여야 합니다. */}
             <tr>
-              <th className="sticky left-0 z-30 border-b border-r border-slate-200 bg-slate-100 px-2 py-1" colSpan={2} />
+              {/* 왼쪽 고정 칸이 셋(체크·학생·인보이스)입니다. 둘로 세면 분류 이름이 한 칸씩
+                  왼쪽으로 밀려, 「교복」 위에 앞 분류 이름이 앉습니다. */}
+              <th className="sticky left-0 z-30 border-b border-r border-slate-200 bg-slate-100 px-2 py-1" colSpan={3} />
               {cats.map((c) => (
                 <th
                   key={c}
@@ -1185,10 +1198,13 @@ export default function InvoiceGridClient({
                   {c}
                 </th>
               ))}
-              <th className="border-b border-slate-200 bg-slate-100 px-2 py-1" colSpan={2} />
+              <th className="border-b border-slate-200 bg-slate-100 px-2 py-1" />
             </tr>
             <tr>
-              <th className="sticky left-0 z-30 w-8 border-b border-slate-200 bg-white px-2 py-1.5">
+              <th
+                className="sticky left-0 z-30 border-b border-slate-200 bg-white px-2 py-1.5"
+                style={{ width: W_CHECK, minWidth: W_CHECK, maxWidth: W_CHECK }}
+              >
                 <input
                   type="checkbox"
                   checked={rows.length > 0 && rows.every((s) => checked.has(s.id))}
@@ -1196,13 +1212,19 @@ export default function InvoiceGridClient({
                   title="전부 고르기"
                 />
               </th>
-              <th className="sticky left-8 z-30 min-w-[150px] border-b border-r border-slate-200 bg-white px-2 py-1.5 font-semibold text-slate-600">
+              <th
+                className="sticky z-30 overflow-hidden border-b border-r border-slate-200 bg-white px-2 py-1.5 font-semibold text-slate-600"
+                style={{ left: W_CHECK, width: W_NAME, minWidth: W_NAME, maxWidth: W_NAME }}
+              >
                 학생
               </th>
               {/* 인보이스를 **이름 바로 옆**에 둡니다.
                   맨 뒤에 있으면 항목이 늘수록 오른쪽으로 밀려, 누가 발행됐는지 보려고
                   매번 표를 끝까지 밀어야 했습니다. 발행 여부는 항목보다 먼저 보는 것입니다. */}
-              <th className="sticky left-[198px] z-30 min-w-[150px] border-b border-r-2 border-slate-300 bg-white px-2 py-1.5 font-semibold text-slate-600">
+              <th
+                className="sticky z-30 min-w-[150px] whitespace-nowrap border-b border-r-2 border-slate-300 bg-white px-2 py-1.5 font-semibold text-slate-600"
+                style={{ left: LEFT_INVOICE }}
+              >
                 인보이스
               </th>
               {usedItems.map((i) => (
@@ -1264,7 +1286,10 @@ export default function InvoiceGridClient({
               const on = checked.has(s.id);
               return (
                 <tr key={s.id} className={on ? "bg-teal-50/40" : "hover:bg-slate-50/60"}>
-                  <td className={"sticky left-0 z-10 border-b border-slate-100 px-2 py-1 " + (on ? "bg-teal-50" : "bg-white")}>
+                  <td
+                    className={"sticky left-0 z-10 border-b border-slate-100 px-2 py-1 " + (on ? "bg-teal-50" : "bg-white")}
+                    style={{ width: W_CHECK, minWidth: W_CHECK, maxWidth: W_CHECK }}
+                  >
                     <input
                       type="checkbox"
                       checked={on}
@@ -1278,7 +1303,13 @@ export default function InvoiceGridClient({
                       }
                     />
                   </td>
-                  <td className={"sticky left-8 z-10 border-b border-r border-slate-200 px-2 py-1 " + (on ? "bg-teal-50" : "bg-white")}>
+                  <td
+                    className={
+                      "sticky z-10 overflow-hidden whitespace-nowrap border-b border-r border-slate-200 px-2 py-1 " +
+                      (on ? "bg-teal-50" : "bg-white")
+                    }
+                    style={{ left: W_CHECK, width: W_NAME, minWidth: W_NAME, maxWidth: W_NAME }}
+                  >
                     {/* 이름을 누르면 그 아이만 크게 봅니다. 표는 훑기에 좋고, 한 아이를
                         꼼꼼히 고를 때는 좁습니다. */}
                     <button
@@ -1294,7 +1325,13 @@ export default function InvoiceGridClient({
                     </span>
                   </td>
 
-                  <td className={"sticky left-[198px] z-10 border-b border-r-2 border-slate-300 px-2 py-1 " + (on ? "bg-teal-50" : "bg-white")}>
+                  <td
+                    className={
+                      "sticky z-10 whitespace-nowrap border-b border-r-2 border-slate-300 px-2 py-1 " +
+                      (on ? "bg-teal-50" : "bg-white")
+                    }
+                    style={{ left: LEFT_INVOICE }}
+                  >
                     {inv ? (
                       <span className="flex items-center gap-1">
                       <button
@@ -1404,8 +1441,11 @@ export default function InvoiceGridClient({
           {/* 합계 줄 — 열을 보면 그 항목이 몇 명·얼마인지 압니다. 발주할 때 이 숫자를 씁니다. */}
           <tfoot className="sticky bottom-0 z-20">
             <tr>
-              <td className="sticky left-0 z-30 border-t-2 border-slate-300 bg-slate-100 px-2 py-1.5" colSpan={2}>
+              {/* 왼쪽 고정 칸 셋을 함께 덮습니다. 둘로 세면 아래 숫자들이 한 칸씩 밀려,
+                  마지막 항목 열 밑에 총합이 앉습니다. */}
+              <td className="sticky left-0 z-30 border-t-2 border-slate-300 bg-slate-100 px-2 py-1.5" colSpan={3}>
                 <span className="text-[11px] font-bold text-slate-600">합계 · {rows.length}명</span>
+                <span className="ml-2 text-[11px] text-slate-500">미발행 {unissued}</span>
               </td>
               {usedItems.map((i) => {
                 const c = colSummary.get(i.id);
@@ -1424,9 +1464,6 @@ export default function InvoiceGridClient({
               })}
               <td className="border-t-2 border-l border-slate-300 bg-slate-100 px-2 py-1.5 text-right">
                 <span className="text-[13px] font-black tabular-nums text-slate-800">{won(grandTotal)}</span>
-              </td>
-              <td className="border-t-2 border-slate-300 bg-slate-100 px-2 py-1.5">
-                <span className="text-[11px] text-slate-500">미발행 {unissued}</span>
               </td>
             </tr>
           </tfoot>

@@ -191,7 +191,7 @@ export default function InquiryBoard({
                     {isNew && (
                       <span
                         style={{
-                          fontSize: s(13, 10),
+                          fontSize: s(14, 11),
                           fontWeight: 800,
                           color: "#0f172a",
                           background: "#38bdf8",
@@ -205,7 +205,7 @@ export default function InquiryBoard({
                     )}
                     <b
                       style={{
-                        fontSize: dense ? s(19, 13) : s(23, 15),
+                        fontSize: dense ? s(23, 15) : s(25, 16),
                         color: "#fff",
                         whiteSpace: "nowrap",
                         overflow: "hidden",
@@ -239,13 +239,13 @@ export default function InquiryBoard({
                     {q.urgent && (
                       <span style={{ fontSize: s(14, 10), fontWeight: 800, color: "#fca5a5", whiteSpace: "nowrap" }}>급함</span>
                     )}
-                    <span style={{ fontSize: s(14, 10), color: "#64748b", marginLeft: "auto", whiteSpace: "nowrap" }}>
+                    <span style={{ fontSize: s(15, 11), color: "#64748b", marginLeft: "auto", whiteSpace: "nowrap" }}>
                       {timeLabel(q.at)}
                     </span>
                   </div>
                   <div
                     style={{
-                      fontSize: dense ? s(14, 11) : s(17, 12),
+                      fontSize: dense ? s(17, 12) : s(18, 13),
                       color: "#cbd5e1",
                       marginTop: s(3, 2),
                       lineHeight: 1.35,

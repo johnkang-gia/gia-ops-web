@@ -734,7 +734,7 @@ export default function OpsBoardClient({ token }: { token: string }) {
 
           {/* ── 아래: 학부모 문의 ─────────────────────────────────────────── */}
           <div style={{ display: "flex", alignItems: "baseline", gap: sc.s(8, 5), marginBottom: sc.s(7, 4), flexShrink: 0 }}>
-            <span style={{ fontSize: sc.s(16, 12), fontWeight: 800, color: "#e2e8f0" }}>
+            <span style={{ fontSize: sc.s(19, 13), fontWeight: 800, color: "#e2e8f0" }}>
               학부모 문의 {data.inquiries?.length ?? 0}건
             </span>
             <span style={{ fontSize: sc.s(13, 10), color: "#64748b", marginLeft: "auto", textAlign: "right" }}>
@@ -1104,7 +1104,7 @@ function PendingInbox({ sc, items }: { sc: BoardScale; items: { name: string; da
       }}
     >
       <div style={{ display: "flex", alignItems: "baseline", gap: sc.s(8, 5), marginBottom: sc.s(6, 4) }}>
-        <span style={{ fontSize: sc.s(15, 11), fontWeight: 800, color: "#fbbf24" }}>⚠ 확인 필요 {items.length}건</span>
+        <span style={{ fontSize: sc.s(17, 12), fontWeight: 800, color: "#fbbf24" }}>⚠ 확인 필요 {items.length}건</span>
         <span style={{ fontSize: sc.s(12, 10), color: "#a16207" }}>
           {todayItems.length > 0 ? `오늘 ${todayItems.length}건` : "오늘 것은 없음"}
         </span>
@@ -1122,12 +1122,12 @@ function PendingInbox({ sc, items }: { sc: BoardScale; items: { name: string; da
               background: it.today ? "#422006" : "#1c1508",
               borderRadius: 6,
               padding: `${sc.s(3, 2)}px ${sc.s(8, 5)}px`,
-              fontSize: sc.s(14, 11),
+              fontSize: sc.s(16, 12),
               whiteSpace: "nowrap",
             }}
           >
             <b style={{ color: it.today ? "#fde68a" : "#a8a29e" }}>{shortName(it.name)}</b>
-            <span style={{ fontSize: sc.s(12, 9), color: "#a16207" }}>
+            <span style={{ fontSize: sc.s(14, 10), color: "#a16207" }}>
               {/* 오늘 것은 시각만, 앞날 것은 날짜(월-일)만. 오늘 화면에서 «내일 건»이
                   오늘 것처럼 읽히면 사람이 헛걸음합니다. */}
               {it.today ? (it.time ?? "시각 미정") : it.date ? it.date.slice(5).replace("-", "/") : "날짜 미정"}
@@ -1182,8 +1182,8 @@ function TodayChanges({ sc, data }: { sc: BoardScale; data: BoardData }) {
           }}
         >
           <div style={{ display: "flex", alignItems: "baseline", gap: sc.s(7, 4), marginBottom: sc.s(5, 3) }}>
-            <span style={{ fontSize: sc.s(14, 11), fontWeight: 800, color: "#c4b5fd" }}>📌 예정 {upcoming.length}건</span>
-            <span style={{ fontSize: sc.s(11, 9), color: "#7c6ba8" }}>미리 알려온 건 · 그날이 되면 아래로 내려옵니다</span>
+            <span style={{ fontSize: sc.s(17, 12), fontWeight: 800, color: "#c4b5fd" }}>📌 예정 {upcoming.length}건</span>
+            <span style={{ fontSize: sc.s(13, 10), color: "#7c6ba8" }}>미리 알려온 건 · 그날이 되면 아래로 내려옵니다</span>
           </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: sc.s(5, 3) }}>
             {upcoming.slice(0, 8).map((u, i) => (
@@ -1197,17 +1197,17 @@ function TodayChanges({ sc, data }: { sc: BoardScale; data: BoardData }) {
                   background: "#2a1f4d",
                   borderRadius: 6,
                   padding: `${sc.s(3, 2)}px ${sc.s(8, 5)}px`,
-                  fontSize: sc.s(14, 11),
+                  fontSize: sc.s(17, 12),
                   whiteSpace: "nowrap",
                 }}
               >
                 <b style={{ color: "#ddd6fe" }}>{shortName(u.name)}</b>
                 <span style={{ color: "#a78bfa", fontWeight: 700 }}>{u.status}</span>
-                <span style={{ fontSize: sc.s(12, 9), color: "#8b7bb8" }}>{dayRange(u.from, u.to)}</span>
+                <span style={{ fontSize: sc.s(15, 11), color: "#8b7bb8" }}>{dayRange(u.from, u.to)}</span>
               </span>
             ))}
             {upcoming.length > 8 && (
-              <span style={{ fontSize: sc.s(12, 10), color: "#7c6ba8", alignSelf: "center" }}>외 {upcoming.length - 8}건</span>
+              <span style={{ fontSize: sc.s(14, 11), color: "#7c6ba8", alignSelf: "center" }}>외 {upcoming.length - 8}건</span>
             )}
           </div>
         </div>
@@ -1216,22 +1216,22 @@ function TodayChanges({ sc, data }: { sc: BoardScale; data: BoardData }) {
       {/* 픽업 - 시각이 먼저, 이름이 뒤. */}
       <div style={{ display: "flex", alignItems: "baseline", gap: sc.s(7, 4), marginBottom: sc.s(6, 4) }}>
         <span style={{ width: sc.s(9, 7), height: sc.s(9, 7), borderRadius: 3, background: "#0ea5e9" }} />
-        <span style={{ fontSize: sc.s(15, 11), fontWeight: 800, color: "#38bdf8" }}>하원 픽업 {pickups.length}</span>
+        <span style={{ fontSize: sc.s(18, 13), fontWeight: 800, color: "#38bdf8" }}>하원 픽업 {pickups.length}</span>
       </div>
 
       {pickups.length === 0 ? (
-        <p style={{ margin: 0, fontSize: sc.s(13, 10), color: "#475569" }}>오늘은 전원 차량 하원</p>
+        <p style={{ margin: 0, fontSize: sc.s(16, 12), color: "#475569" }}>오늘은 전원 차량 하원</p>
       ) : (
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: `repeat(auto-fill, minmax(${sc.s(150, 104)}px, 1fr))`,
+            gridTemplateColumns: `repeat(auto-fill, minmax(${sc.s(180, 122)}px, 1fr))`,
             gap: sc.s(6, 4),
-            maxHeight: sc.s(150, 104),
+            maxHeight: sc.s(196, 132),
             overflow: "hidden",
           }}
         >
-          {pickups.slice(0, 12).map((p, i) => (
+          {pickups.slice(0, 10).map((p, i) => (
             <div
               key={i}
               title={p.name}
@@ -1248,7 +1248,7 @@ function TodayChanges({ sc, data }: { sc: BoardScale; data: BoardData }) {
             >
               <b
                 style={{
-                  fontSize: p.time ? sc.s(26, 17) : sc.s(14, 11),
+                  fontSize: p.time ? sc.s(31, 20) : sc.s(17, 12),
                   fontWeight: 900,
                   color: p.time ? "#7dd3fc" : "#64748b",
                   whiteSpace: "nowrap",
@@ -1259,7 +1259,7 @@ function TodayChanges({ sc, data }: { sc: BoardScale; data: BoardData }) {
               </b>
               <span
                 style={{
-                  fontSize: sc.s(17, 12),
+                  fontSize: sc.s(21, 14),
                   fontWeight: 700,
                   color: "#fff",
                   whiteSpace: "nowrap",
@@ -1271,6 +1271,11 @@ function TodayChanges({ sc, data }: { sc: BoardScale; data: BoardData }) {
               </span>
             </div>
           ))}
+          {pickups.length > 10 && (
+            <div style={{ display: "flex", alignItems: "center", fontSize: sc.s(15, 11), color: "#64748b" }}>
+              외 {pickups.length - 10}명
+            </div>
+          )}
         </div>
       )}
 
@@ -1278,7 +1283,7 @@ function TodayChanges({ sc, data }: { sc: BoardScale; data: BoardData }) {
       {(absent.length > 0 || late.length > 0) && (
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: sc.s(5, 3), marginTop: sc.s(8, 5) }}>
           {absent.length > 0 && (
-            <span style={{ fontSize: sc.s(12, 10), fontWeight: 800, color: "#f87171" }}>결석 {absent.length}</span>
+            <span style={{ fontSize: sc.s(15, 11), fontWeight: 800, color: "#f87171" }}>결석 {absent.length}</span>
           )}
           {absent.map((a, i) => (
             <span
@@ -1289,7 +1294,7 @@ function TodayChanges({ sc, data }: { sc: BoardScale; data: BoardData }) {
                 border: "1px solid #7f1d1d",
                 borderRadius: 999,
                 padding: `${sc.s(2, 1)}px ${sc.s(8, 5)}px`,
-                fontSize: sc.s(13, 10),
+                fontSize: sc.s(16, 12),
                 color: "#fecaca",
                 whiteSpace: "nowrap",
               }}
@@ -1298,7 +1303,7 @@ function TodayChanges({ sc, data }: { sc: BoardScale; data: BoardData }) {
             </span>
           ))}
           {late.length > 0 && (
-            <span style={{ fontSize: sc.s(12, 10), fontWeight: 800, color: "#fbbf24", marginLeft: sc.s(6, 4) }}>
+            <span style={{ fontSize: sc.s(15, 11), fontWeight: 800, color: "#fbbf24", marginLeft: sc.s(6, 4) }}>
               지각·조퇴 {late.length}
             </span>
           )}
@@ -1311,7 +1316,7 @@ function TodayChanges({ sc, data }: { sc: BoardScale; data: BoardData }) {
                 border: "1px solid #92400e",
                 borderRadius: 999,
                 padding: `${sc.s(2, 1)}px ${sc.s(8, 5)}px`,
-                fontSize: sc.s(13, 10),
+                fontSize: sc.s(16, 12),
                 color: "#fde68a",
                 whiteSpace: "nowrap",
               }}

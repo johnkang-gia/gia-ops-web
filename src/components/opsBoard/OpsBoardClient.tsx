@@ -77,6 +77,8 @@ type BoardData = {
   /** 오늘 픽업. 시각이 적혀 있으면 함께 옵니다(없으면 null). */
   pickups: { name: string; time: string | null }[];
   inquiries: { id: string; student: string; type: string | null; summary: string; urgent: boolean; at: string; replied?: boolean }[];
+  /** 아직 사람이 한 번 봐야 하는 픽업 요청(확인대기). 비어 있는 것이 정상입니다. */
+  pendingInbox?: { name: string; date: string | null; time: string | null; today: boolean }[];
   collector: { lastSeen: string | null; status: string | null; stale: boolean } | null;
   taskSummary: {
     statusCounts: Record<string, number>;
@@ -704,6 +706,9 @@ export default function OpsBoardClient({ token }: { token: string }) {
         </Panel>
         )}
 
+        {/* ② 아직 손 안 댄 인박스. 시간표 아래 한 줄만 씁니다 -
+            평소에는 «비었습니다» 한 줄로 접혀 자리를 거의 안 먹고, 밀린 날에만 커집니다. */}
+        <PendingInbox sc={sc} items={data.pendingInbox ?? []} />
         </div>
 
         {/* ── 오른쪽: 오늘 변동사항 + 학부모 문의 ───────────────────────────────
@@ -1045,6 +1050,91 @@ function NightInfoPanel({ sc, data }: { sc: BoardScale; data: BoardData }) {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// 아직 손 안 댄 인박스.
+//
+// 픽업 요청은 «확인대기»로 들어와서, 사람이 인박스에서 눌러야 하원 체크표로 넘어갑니다.
+// 안 누르면 아무 일도 일어나지 않습니다 - 오류도 안 뜨고 화면도 평소와 같고, 그대로 하원
+// 시각이 옵니다. 그래서 «없음»을 조용히 넘기지 않고 **비었다는 사실도 화면에 적습니다**.
+// 비었을 때 아무것도 안 그리면, 위젯이 고장 나서 안 뜨는 것과 구별되지 않습니다.
+function PendingInbox({ sc, items }: { sc: BoardScale; items: { name: string; date: string | null; time: string | null; today: boolean }[] }) {
+  const todayItems = items.filter((i) => i.today);
+  const later = items.filter((i) => !i.today);
+
+  if (items.length === 0) {
+    return (
+      <div
+        style={{
+          background: "#0f1f1a",
+          border: "1px solid #14532d",
+          borderRadius: sc.s(12, 7),
+          padding: `${sc.s(7, 5)}px ${sc.s(12, 7)}px`,
+          fontSize: sc.s(14, 11),
+          color: "#4ade80",
+          fontWeight: 700,
+          flexShrink: 0,
+        }}
+      >
+        ✓ 인박스 비었습니다 — 확인할 픽업 요청 없음
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        background: "#2a1a0c",
+        border: `1px solid ${todayItems.length > 0 ? "#b45309" : "#78350f"}`,
+        borderRadius: sc.s(12, 7),
+        padding: sc.s(10, 6),
+        flexShrink: 0,
+        maxHeight: sc.s(112, 82),
+        overflow: "hidden",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "baseline", gap: sc.s(8, 5), marginBottom: sc.s(6, 4) }}>
+        <span style={{ fontSize: sc.s(15, 11), fontWeight: 800, color: "#fbbf24" }}>⚠ 확인 필요 {items.length}건</span>
+        <span style={{ fontSize: sc.s(12, 10), color: "#a16207" }}>
+          {todayItems.length > 0 ? `오늘 ${todayItems.length}건` : "오늘 것은 없음"}
+        </span>
+        <span style={{ fontSize: sc.s(12, 10), color: "#a16207", marginLeft: "auto" }}>[픽업 인박스]에서 확인해주세요</span>
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: sc.s(5, 3) }}>
+        {items.slice(0, 10).map((it, i) => (
+          <span
+            key={i}
+            title={[it.name, it.date ?? "날짜 미정", it.time].filter(Boolean).join(" · ")}
+            style={{
+              display: "inline-flex",
+              alignItems: "baseline",
+              gap: sc.s(5, 3),
+              background: it.today ? "#422006" : "#1c1508",
+              borderRadius: 6,
+              padding: `${sc.s(3, 2)}px ${sc.s(8, 5)}px`,
+              fontSize: sc.s(14, 11),
+              whiteSpace: "nowrap",
+            }}
+          >
+            <b style={{ color: it.today ? "#fde68a" : "#a8a29e" }}>{shortName(it.name)}</b>
+            <span style={{ fontSize: sc.s(12, 9), color: "#a16207" }}>
+              {/* 오늘 것은 시각만, 앞날 것은 날짜(월-일)만. 오늘 화면에서 «내일 건»이
+                  오늘 것처럼 읽히면 사람이 헛걸음합니다. */}
+              {it.today ? (it.time ?? "시각 미정") : it.date ? it.date.slice(5).replace("-", "/") : "날짜 미정"}
+            </span>
+          </span>
+        ))}
+        {items.length > 10 && (
+          <span style={{ fontSize: sc.s(12, 10), color: "#a16207", alignSelf: "center" }}>외 {items.length - 10}건</span>
+        )}
+      </div>
+      {later.length > 0 && todayItems.length === 0 && (
+        <p style={{ margin: `${sc.s(5, 3)}px 0 0`, fontSize: sc.s(11, 9), color: "#78716c" }}>
+          모두 앞날 요청입니다 — 오늘 안에 처리하지 않아도 되지만, 미뤄두면 그날 아침에 몰립니다.
+        </p>
+      )}
     </div>
   );
 }

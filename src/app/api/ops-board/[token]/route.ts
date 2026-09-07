@@ -391,6 +391,49 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     // 둡니다. 급한 것은 화면에서 빨간 테두리로 이미 구분되므로, 위에 올릴 필요까지는 없습니다.
     .sort((a, b) => b.at.localeCompare(a.at));
 
+  // ── 아직 손 안 댄 인박스 ───────────────────────────────────────────────────
+  //
+  // 픽업 요청은 «확인대기»로 들어와서, 사람이 인박스에서 한 번 눌러야 하원 체크표로
+  // 넘어갑니다. 안 누르면 **아무 일도 일어나지 않습니다** - 오류도 안 뜨고, 화면은 평소와
+  // 똑같이 보이고, 그대로 하원 시각이 옵니다. 이 저장소에서 반복해 나온 «조용한 실패»의
+  // 전형이라, 사무실에 늘 켜둔 화면에 숫자로 세워둡니다.
+  //
+  // 부서로 거르지 않습니다. 확인대기로 남는 건은 대개 **학생이 아직 안 붙은** 건이고,
+  // 학생이 없으면 부서도 알 수 없습니다. 거르면 정작 봐야 할 것이 사라집니다.
+  //
+  // 날짜가 지난 확인대기는 뺍니다. 그날은 이미 끝나서 지금 할 수 있는 일이 없는데, 쌓이면
+  // 숫자가 늘 크게 남아 아무도 안 보게 됩니다. 날짜가 아예 없는 건은 «언제인지도 모르는»
+  // 것이라 오히려 남깁니다.
+  const { data: pendingRows } = await supabase
+    .from("pickup_requests")
+    .select("id, service_date, pickup_time, status, kind, is_demo, matched_name, ai_student_name, channel_label")
+    .eq("status", "확인대기")
+    .or(`service_date.gte.${todayK},service_date.is.null`)
+    .limit(60);
+
+  const pendingInbox = (pendingRows ?? [])
+    .filter((r) => !r.is_demo && r.kind === "픽업")
+    .map((r) => ({
+      name:
+        toKoreanDisplayName(
+          (r.matched_name as string | null) ?? (r.ai_student_name as string | null),
+          r.channel_label as string | null,
+          nameRoster
+        ) ??
+        (r.channel_label as string | null) ??
+        "이름 미확인",
+      date: (r.service_date as string | null) ?? null,
+      time: (r.pickup_time as string | null) ?? null,
+      today: r.service_date === todayK,
+    }))
+    // 오늘 것이 먼저, 그중에서도 이른 시각부터. 날짜 미정은 맨 뒤.
+    .sort(
+      (a, b) =>
+        Number(b.today) - Number(a.today) ||
+        (a.date ?? "9999-99-99").localeCompare(b.date ?? "9999-99-99") ||
+        (a.time ?? "99:99").localeCompare(b.time ?? "99:99")
+    );
+
   // 수집기가 살아 있는지.
   //
   // 요청: "토들을 이제 긁어오기때문에 실시간으로 토들긁어오는거 반영해줘"
@@ -513,6 +556,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     absences,
     pickups,
     inquiries,
+    pendingInbox,
     collector,
     taskSummary: { statusCounts, todayTasks: todayTasks.slice(0, 20), todayTotal: todayTasks.length },
       shuttle: {

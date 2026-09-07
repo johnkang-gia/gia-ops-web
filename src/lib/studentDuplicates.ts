@@ -77,3 +77,59 @@ export function findDuplicateGroups(people: DupPerson[]): DupGroup[] {
     }))
     .sort((a, b) => b.people.length - a.people.length || a.people[0].name.localeCompare(b.people[0].name, "ko"));
 }
+
+// ── 합치면 칸이 어떻게 되는가 ────────────────────────────────────────────
+//
+// merge_students 의 규칙은 하나입니다. **남기는 줄의 빈 칸만 지우는 줄의 값으로 채웁니다.**
+// 양쪽에 값이 있으면 남기는 쪽을 그대로 둡니다 — 둘 다 사람이 넣은 값이라 기계가 고르면
+// 안 되기 때문입니다.
+//
+// 그런데 그 규칙이 화면에 안 보이면, 「합치면 저쪽 번호가 들어오겠지」라고 생각하고 눌렀다가
+// 실제로는 저쪽 번호가 **버려집니다.** 중고등부처럼 보호자 번호 때문에 줄이 나뉜 경우엔
+// 정확히 그 값이 사라집니다.
+//
+// 그래서 누르기 전에 보여줍니다. 이 함수는 화면에 띄우는 칸만 봅니다 — 그 밖의 칸도 같은
+// 규칙으로 처리된다는 것은 화면 문구가 말합니다.
+
+/** 사람이 읽는 칸 이름과 값을 꺼내는 법. 여기 없는 칸은 미리보기에 안 나옵니다. */
+const PREVIEW_FIELDS: { label: string; get: (p: DupPerson) => string | null | undefined }[] = [
+  { label: "생년월일", get: (p) => p.birth_date },
+  { label: "영문 이름", get: (p) => p.name_en },
+  { label: "학년", get: (p) => p.grade },
+  { label: "반", get: (p) => p.class_name },
+  { label: "어머니 연락처", get: (p) => p.mother_phone },
+  { label: "아버지 연락처", get: (p) => p.father_phone },
+  { label: "보호자 연락처", get: (p) => p.parent_phone },
+];
+
+const blank = (v: string | null | undefined) => !v || v.trim() === "";
+
+export type MergePreview = {
+  /** 남길 줄이 비어 있어 지울 줄에서 **채워질** 칸. */
+  filled: { label: string; value: string }[];
+  /**
+   * 양쪽에 값이 있고 **서로 달라서 지울 줄 값이 버려지는** 칸.
+   *
+   * 이것이 이 미리보기의 존재 이유입니다. 조용히 버려지면 나중에 「번호가 왜 옛날 것이지」가
+   * 되고, 그때는 버려진 값이 어디에도 없습니다.
+   */
+  dropped: { label: string; keep: string; drop: string }[];
+};
+
+export function mergePreview(keep: DupPerson, drops: DupPerson[]): MergePreview {
+  const filled: MergePreview["filled"] = [];
+  const dropped: MergePreview["dropped"] = [];
+
+  for (const f of PREVIEW_FIELDS) {
+    const keepV = f.get(keep);
+    // 지울 줄이 여럿이면 **먼저 값이 있는 줄**이 채웁니다(merge_students 가 한 줄씩 도는 순서).
+    const source = drops.find((d) => !blank(f.get(d)));
+    if (!source) continue;
+    const dropV = (f.get(source) ?? "").trim();
+
+    if (blank(keepV)) filled.push({ label: f.label, value: dropV });
+    else if ((keepV ?? "").trim() !== dropV) dropped.push({ label: f.label, keep: (keepV ?? "").trim(), drop: dropV });
+  }
+
+  return { filled, dropped };
+}

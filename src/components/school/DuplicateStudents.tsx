@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
 import { useConfirm } from "@/components/common/ConfirmProvider";
-import type { DupGroup, DupPerson } from "@/lib/studentDuplicates";
+import { mergePreview, type DupGroup, type DupPerson } from "@/lib/studentDuplicates";
 
 /**
  * 이름이 같은 학생 줄.
@@ -84,14 +84,27 @@ export default function DuplicateStudents({
     const keepN = totalOf(keep.id);
     const dropN = others.reduce((n, o) => n + totalOf(o.id), 0);
 
+    // 무엇이 채워지고 무엇이 버려지는지. **누르기 전에** 보여줍니다 - 「합치면 저쪽 번호가
+    // 들어오겠지」라고 생각하고 눌렀는데 실제로는 버려지는 것이 이 화면의 가장 큰 위험입니다.
+    const pv = mergePreview(keep, others);
+
     const ok = await confirmAction(
       `${keep.name} ${others.length + 1}줄을 한 줄로 합칩니다.\n\n` +
         `남길 줄: ${keep.grade ?? "?"}학년 ${keep.class_name ?? ""} · ${keep.birth_date ?? "생일 없음"} · 기록 ${keepN}건\n` +
         `합칠 줄: ${others.map((o) => `${o.grade ?? "?"}학년 ${o.class_name ?? ""} · 기록 ${totalOf(o.id)}건`).join(" / ")}\n\n` +
         `· 기록 ${dropN}건이 남길 줄로 옮겨집니다\n` +
-        `· 남길 줄에 비어 있는 칸(생일·영문이름·연락처 등)은 지울 줄의 값으로 채워집니다\n` +
+        (pv.filled.length > 0
+          ? `\n[채워집니다 — 남길 줄이 비어 있던 칸]\n` + pv.filled.map((f) => `  ${f.label}: ${f.value}`).join("\n") + `\n`
+          : "") +
+        (pv.dropped.length > 0
+          ? `\n⚠ [버려집니다 — 양쪽에 값이 있어 남길 줄이 이깁니다]\n` +
+            pv.dropped.map((d) => `  ${d.label}: ${d.keep} 유지 / ${d.drop} 버림`).join("\n") +
+            `\n  → 버릴 값을 살리려면 반대쪽 줄을 남기고 합치세요.\n`
+          : "") +
+        (pv.filled.length === 0 && pv.dropped.length === 0 ? `\n· 두 줄의 칸 내용이 같아 바뀌는 칸이 없습니다\n` : "") +
+        `\n· 화면에 안 보이는 칸도 같은 규칙입니다 — 빈 칸만 채워지고, 양쪽에 있으면 남길 줄이 이깁니다\n` +
         `· 같은 날 출결처럼 겹치는 줄은 빈 칸끼리 합친 뒤 하나로 정리됩니다\n\n` +
-        `**다른 아이라면 두 아이의 출결과 관찰기록이 섞입니다. 되돌릴 수 없습니다.**`,
+        `다른 아이라면 두 아이의 출결과 관찰기록이 섞입니다. 되돌릴 수 없습니다.`,
       { danger: true },
     );
     if (!ok) return;
@@ -122,6 +135,12 @@ export default function DuplicateStudents({
         아이였습니다). 이름이 같다고 같은 아이는 아닙니다. <b>반·생년월일·보호자 번호·붙어 있는 기록</b>을 보고
         판단해 주세요.
         {canMerge ? " 합치면 되돌릴 수 없습니다." : " 합치는 것은 관리자만 할 수 있습니다."}
+      </p>
+      {/* 이 규칙을 모르고 누르면 살리려던 값이 조용히 사라집니다. 목록 위에 못박아 둡니다. */}
+      <p className="mb-2 rounded-lg bg-white/70 px-2 py-1.5 text-[11px] leading-relaxed text-amber-900">
+        <b>합치기 규칙:</b> 남기는 줄의 <b>빈 칸만</b> 지우는 줄의 값으로 채워집니다. 양쪽에 값이 있으면{" "}
+        <b>남기는 줄이 이기고 다른 쪽은 버려집니다.</b> 살리고 싶은 연락처가 있는 줄을 남기세요 — 누르기 전에 무엇이
+        채워지고 무엇이 버려지는지 확인창에 나옵니다.
       </p>
 
       <div className="flex flex-col gap-2">
@@ -155,7 +174,14 @@ export default function DuplicateStudents({
                   const entries = Object.entries(c)
                     .filter(([, n]) => n > 0)
                     .sort((a, b) => b[1] - a[1]);
-                  const phone = s.mother_phone || s.father_phone || s.parent_phone || null;
+                  // 번호를 하나로 합쳐 보여주면 안 됩니다. 중고등부는 **보호자 번호 때문에
+                  // 줄이 나뉜** 경우가 많아서, 어느 칸에 무엇이 들어 있는지가 곧 판단 근거이고
+                  // 합칠 때 무엇이 버려지는지를 정하는 값이기도 합니다.
+                  const phones = [
+                    { label: "모", v: s.mother_phone },
+                    { label: "부", v: s.father_phone },
+                    { label: "보호자", v: s.parent_phone },
+                  ].filter((x) => x.v && x.v.trim());
                   return (
                     <li key={s.id} className="rounded-lg border border-slate-100 bg-slate-50/60 px-2 py-1.5">
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px]">
@@ -173,7 +199,15 @@ export default function DuplicateStudents({
                         <span className="text-slate-500">{s.birth_date ?? "생일 없음"}</span>
                         {s.name_en && <span className="text-slate-400">{s.name_en}</span>}
                         {/* 같은 번호면 같은 집입니다. 형제일 수도, 같은 아이일 수도 있습니다. */}
-                        <span className="text-slate-400">{phone ?? "연락처 없음"}</span>
+                        {phones.length === 0 ? (
+                          <span className="text-slate-300">연락처 없음</span>
+                        ) : (
+                          phones.map((x) => (
+                            <span key={x.label} className="text-slate-500">
+                              <span className="text-[10px] font-bold text-slate-400">{x.label}</span> {x.v}
+                            </span>
+                          ))
+                        )}
                         <span className="text-[10px] text-slate-300">등록 {s.created_at.slice(0, 10)}</span>
 
                         {canMerge && (

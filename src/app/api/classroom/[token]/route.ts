@@ -159,7 +159,24 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
     ackCallId?: string;
     attendance?: { studentId: string; status: string }[];
     note?: { kind: string; studentName?: string | null; studentId?: string | null; body: string; urgency?: string };
+    doneNoteId?: string;
   };
+
+  // 교실에서 [처리됨]을 누름.
+  //
+  // 끝났다고 말할 수 있는 사람은 **부탁한 쪽**입니다. 행정실이 답을 보냈어도 교실에서
+  // 실제로 해결됐는지는 교실이 압니다. 그래서 완료를 양쪽 모두 찍을 수 있게 두되,
+  // 누가 찍었는지는 남깁니다 - 나중에 «누가 끝났다고 했나»를 되짚을 수 있어야 합니다.
+  if (body.doneNoteId) {
+    const { error } = await db
+      .from("classroom_notes")
+      .update({ done_at: new Date().toISOString(), done_by: "교실" })
+      .eq("id", body.doneNoteId)
+      .eq("class_id", link.class_id)
+      .is("done_at", null);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
 
   if (body.note) {
     const text = (body.note.body ?? "").trim();

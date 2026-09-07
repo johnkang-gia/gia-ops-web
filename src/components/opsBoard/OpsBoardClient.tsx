@@ -78,6 +78,8 @@ type BoardData = {
   pickups: { name: string; time: string | null; grade?: string | null; className?: string | null; classId?: string | null }[];
   /** 아직 시작하지 않은 등록 건. 시작일이 오면 저절로 오늘 명단으로 넘어갑니다. */
   upcoming?: { name: string; status: string; from: string; to: string; note: string | null }[];
+  /** 오늘 요일에 셔틀이 아닌 방법으로 가는 아이들(학원차·보호자·도보). 매주 반복됩니다. */
+  dismissalToday?: { name: string; className: string; kind: string; label: string | null; time: string | null; note: string | null }[];
   /** 교실 태블릿에서 온 특이사항·문의. 읽으면 그 시각이 교실 화면에 그대로 뜹니다. */
   classroomNotes?: {
     id: string;
@@ -1412,6 +1414,7 @@ function TodayChanges({ sc, data }: { sc: BoardScale; data: BoardData }) {
   const late = data.absences.filter((a) => a.status !== "결석");
   const pickups = data.pickups;
   const upcoming = data.upcoming ?? [];
+  const dismissal = data.dismissalToday ?? [];
 
   return (
     <div style={{ flexShrink: 0, minHeight: 0 }}>
@@ -1527,6 +1530,48 @@ function TodayChanges({ sc, data }: { sc: BoardScale; data: BoardData }) {
               외 {pickups.length - 10}명
             </div>
           )}
+        </div>
+      )}
+
+      {/* 오늘 학원차·보호자 하원.
+          매주 같은 요일에 학원 차를 타는 아이가 있습니다. 셔틀을 안 타니 하원 체크표에 줄이
+          없고, 학사일정도 아니라 달력에도 안 뜹니다. **반복되는 일이라 오히려 잊힙니다** -
+          «오늘도 있다»고 말해주는 자리가 없으면 어느 주에 그냥 지나갑니다. */}
+      {dismissal.length > 0 && (
+        <div style={{ marginTop: sc.s(9, 6) }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: sc.s(7, 4), marginBottom: sc.s(5, 3) }}>
+            <span style={{ width: sc.s(9, 7), height: sc.s(9, 7), borderRadius: 3, background: "#a3e635" }} />
+            <span style={{ fontSize: sc.s(16, 12), fontWeight: 800, color: "#bef264" }}>학원차·보호자 하원 {dismissal.length}</span>
+            <span style={{ fontSize: sc.s(12, 10), color: "#65a30d" }}>매주 이 요일</span>
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: sc.s(5, 3) }}>
+            {dismissal.slice(0, 10).map((d, i) => (
+              <span
+                key={i}
+                title={[d.name, d.className, d.kind, d.label, d.note].filter(Boolean).join(" · ")}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "baseline",
+                  gap: sc.s(6, 4),
+                  background: "#1a2410",
+                  border: "1px solid #3f6212",
+                  borderRadius: sc.s(8, 5),
+                  padding: `${sc.s(4, 2)}px ${sc.s(9, 6)}px`,
+                  fontSize: sc.s(17, 12),
+                  whiteSpace: "nowrap",
+                }}
+              >
+                <b style={{ fontSize: sc.s(20, 14), color: "#d9f99d", fontVariantNumeric: "tabular-nums" }}>
+                  {d.time ?? "시각 미정"}
+                </b>
+                <b style={{ color: "#fff" }}>{shortName(d.name)}</b>
+                <span style={{ fontSize: sc.s(15, 11), color: "#a3e635" }}>{d.label || d.kind}</span>
+              </span>
+            ))}
+            {dismissal.length > 10 && (
+              <span style={{ fontSize: sc.s(15, 11), color: "#65a30d", alignSelf: "center" }}>외 {dismissal.length - 10}명</span>
+            )}
+          </div>
         </div>
       )}
 

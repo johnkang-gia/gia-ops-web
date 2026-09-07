@@ -10,6 +10,7 @@ import TermSettingTabs from "@/components/school/TermSettingTabs";
 import { TermSnapshotClasses } from "@/components/school/TermSnapshotView";
 import { loadTermSettingView } from "@/lib/termSettingView";
 import ClassroomTabletManager from "@/components/classroom/ClassroomTabletManager";
+import ClassroomHistory from "@/components/classroom/ClassroomHistory";
 
 const GUIDE_SECTIONS = [
   {
@@ -69,6 +70,9 @@ export default async function ClassManagePage({
           {/* 교실 태블릿 링크는 반 목록 바로 아래에 둡니다. 반이 늘거나 이름이 바뀌면 링크도
               같이 손봐야 하는데, 다른 화면에 있으면 반만 고치고 링크는 그대로 남습니다. */}
           <ClassroomTabletManager classes={(classesData as WrClass[] | null) ?? []} />
+          {/* 처리된 것도 남깁니다. 대시보드에서 내려간 것이 사라지면 나중에 되짚을 자리가
+              없어집니다. */}
+          <ClassroomHistory />
         </>
       ) : (
         <TermSnapshotClasses snapshot={view.snapshot} termLabel={view.selectedLabel} />

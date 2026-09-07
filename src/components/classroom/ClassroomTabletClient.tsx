@@ -200,6 +200,26 @@ export default function ClassroomTabletClient({ token }: { token: string }) {
     void load();
   }
 
+  async function markDone(id: string) {
+    setBusy(true);
+    // 화면에서 먼저 반영합니다 - 태블릿에서 한 박자 늦으면 두 번 누릅니다.
+    setData((prev) =>
+      prev ? { ...prev, notes: prev.notes.map((n) => (n.id === id ? { ...n, doneAt: new Date().toISOString() } : n)) } : prev
+    );
+    const res = await fetch(`/api/classroom/${token}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ doneNoteId: id }),
+    }).catch(() => null);
+    setBusy(false);
+    if (!res || !res.ok) {
+      setErr(t("처리하지 못했습니다.", "Could not mark as done."));
+      void load();
+      return;
+    }
+    void load();
+  }
+
   async function mark(studentId: string, status: string | null) {
     // 화면을 먼저 바꿉니다 - 태블릿에서 한 박자 늦게 반응하면 두 번 누릅니다.
     setData((prev) =>
@@ -392,13 +412,22 @@ export default function ClassroomTabletClient({ token }: { token: string }) {
                         </p>
                         {n.reply && <p style={{ margin: "4px 0 0", fontSize: 16, color: "#7dd3fc" }}>↩ {n.reply}</p>}
                       </div>
-                      <span style={n.readAt || n.doneAt ? S.stateRead : S.stateSent}>
-                        {n.doneAt
-                          ? t("처리됨", "Done")
-                          : n.readAt
-                          ? t(`읽음 ${hhmm(n.readAt)}`, `Read ${hhmm(n.readAt)}`)
-                          : t("보냄", "Sent")}
-                      </span>
+                      <div style={{ display: "flex", flexShrink: 0, alignItems: "center", gap: 6 }}>
+                        <span style={n.readAt || n.doneAt ? S.stateRead : S.stateSent}>
+                          {n.doneAt
+                            ? t("처리됨", "Done")
+                            : n.readAt
+                            ? t(`읽음 ${hhmm(n.readAt)}`, `Read ${hhmm(n.readAt)}`)
+                            : t("보냄", "Sent")}
+                        </span>
+                        {/* 끝났다고 말할 수 있는 사람은 **부탁한 쪽**입니다. 행정실이 답을
+                            보냈어도 실제로 해결됐는지는 교실이 압니다. */}
+                        {!n.doneAt && (
+                          <button type="button" disabled={busy} onClick={() => markDone(n.id)} style={S.doneBtn}>
+                            {t("처리됨", "Done")}
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ))
                 )}
@@ -488,4 +517,5 @@ const S: Record<string, React.CSSProperties> = {
   noteRow: { display: "flex", alignItems: "flex-start", gap: 10, background: "#111c33", borderRadius: 12, padding: "10px 14px" },
   stateSent: { flexShrink: 0, borderRadius: 999, background: "#334155", color: "#cbd5e1", fontSize: 14, fontWeight: 700, padding: "4px 12px" },
   stateRead: { flexShrink: 0, borderRadius: 999, background: "#14532d", color: "#86efac", fontSize: 14, fontWeight: 800, padding: "4px 12px" },
+  doneBtn: { borderRadius: 999, border: "1px solid #166534", background: "transparent", color: "#4ade80", fontSize: 14, fontWeight: 800, padding: "5px 13px", cursor: "pointer" },
 };

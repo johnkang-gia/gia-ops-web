@@ -482,6 +482,40 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
         (a.time ?? "99:99").localeCompare(b.time ?? "99:99")
     );
 
+  // ── 오늘 학원차·보호자 하원 ──────────────────────────────────────────────
+  //
+  // 매주 같은 요일에 학원 차를 타는 아이가 있습니다(월·금 14:40 와이키키짐). 셔틀을 안 타니
+  // 하원 체크표에 줄이 없고, 학사일정도 아니라 달력에도 안 뜹니다. **반복되는 일이라
+  // 오히려 잊힙니다** - 매주 있는 일은 «오늘도 있다»고 말해주는 자리가 없으면 어느 주에
+  // 그냥 지나갑니다.
+  //
+  // 자료는 이미 있습니다(학생 → 하원수단, 요일별). 여기서는 오늘 요일의 «셔틀이 아닌 것»만
+  // 꺼내 시각 순으로 세웁니다. 새 표를 만들지 않습니다 - 같은 사실을 두 곳에 적으면 언젠가
+  // 어긋나고, 어긋난 쪽이 어느 쪽인지 아무도 모릅니다.
+  const { data: planRows } =
+    weekday >= 1 && weekday <= 5
+      ? await supabase
+          .from("student_dismissal_plans")
+          .select("student_id, kind, label, depart_time, note")
+          .eq("weekday", weekday)
+          .neq("kind", "셔틀")
+      : { data: [] as { student_id: string; kind: string; label: string | null; depart_time: string | null; note: string | null }[] };
+
+  const dismissalToday = (planRows ?? [])
+    .filter((p) => deptStudentIds.has(p.student_id as string))
+    .map((p) => {
+      const st = studentById.get(p.student_id as string) as { name?: string; grade?: string; class_name?: string } | undefined;
+      return {
+        name: st?.name ?? "?",
+        className: [st?.grade ? `${st.grade}학년` : null, st?.class_name].filter(Boolean).join(" "),
+        kind: p.kind as string,
+        label: (p.label as string | null) ?? null,
+        time: (p.depart_time as string | null) ?? null,
+        note: (p.note as string | null) ?? null,
+      };
+    })
+    .sort((a, b) => (a.time ?? "99:99").localeCompare(b.time ?? "99:99") || a.name.localeCompare(b.name, "ko"));
+
   // ── 교실에서 온 것 ────────────────────────────────────────────────────────
   //
   // 선생님이 태블릿에서 보낸 특이사항·문의입니다. 아직 안 읽었거나 오늘 읽은 것을 올립니다 -
@@ -635,6 +669,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     absences,
     pickups,
     upcoming,
+    dismissalToday,
     classroomNotes,
     inquiries,
     pendingInbox,

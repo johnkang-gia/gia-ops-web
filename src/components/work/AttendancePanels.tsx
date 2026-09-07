@@ -6,6 +6,7 @@ import type { GoogleChatMirrorMessage, Task, TeamMember } from "@/lib/types";
 import type { RosterStudent } from "@/lib/attendanceDigest";
 import GoogleChatMirrorPanel from "./GoogleChatMirrorPanel";
 import AttendanceDigestPanel from "./AttendanceDigestPanel";
+import TodayDismissalReminder from "./TodayDismissalReminder";
 import ParentInquiryPanel from "./ParentInquiryPanel";
 import OfficeRequestsPanel from "./OfficeRequestsPanel";
 
@@ -184,7 +185,16 @@ export default function AttendancePanels({
         </div>
         {tab === "inquiry" && <ParentInquiryPanel currentUserEmail={userEmail} full />}
         {tab === "digest" && (
-          <AttendanceDigestPanel messages={messages} department={department} roster={roster} currentUserEmail={userEmail} />
+          <div className="flex h-full flex-col overflow-hidden">
+            {/* 매주 같은 요일에 학원 차를 타는 아이. 반복되는 일이라 오히려 잊힙니다 -
+                한 번뿐인 일은 메모라도 남기는데, 매주 있는 일은 아무도 적지 않습니다. */}
+            <div className="shrink-0">
+              <TodayDismissalReminder />
+            </div>
+            <div className="min-h-0 flex-1 overflow-hidden">
+              <AttendanceDigestPanel messages={messages} department={department} roster={roster} currentUserEmail={userEmail} />
+            </div>
+          </div>
         )}
         {tab === "chat" && (
           <GoogleChatMirrorPanel

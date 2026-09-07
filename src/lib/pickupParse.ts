@@ -178,6 +178,25 @@ export function studentLabel(s: RosterEntry, roster: RosterEntry[]): string {
 }
 
 /**
+ * 어느 아이인지 **못 정한 이름**에 그렇다고 적습니다.
+ *
+ * 김재이가 셋인 학교입니다. 학부모 연락에 「김재이」라고만 적혀 오면 기계는 누구인지 정할
+ * 수 없고, 지금까지는 **그냥 「김재이」라고 띄웠습니다.** 그러면 보는 사람은 이미 정해진
+ * 이름이라고 믿고 엉뚱한 아이를 찾습니다. 못 정했으면 못 정했다고 해야 합니다.
+ *
+ * 학생이 연결된 건은 이 함수를 거치지 않습니다 - 그건 이미 정해진 이름입니다.
+ */
+export function markIfAmbiguous(label: string | null, roster: RosterEntry[]): string | null {
+  if (!label) return label;
+  // 이미 「이름(반)」 꼴이면 정해진 것입니다.
+  if (label.includes("(")) return label;
+  const same = roster.filter((o) => o.name === label);
+  if (same.length < 2) return label;
+  const where = same.map((o) => (o.class_name ?? "").trim() || `${o.grade ?? "?"}학년`).filter(Boolean);
+  return `${label}(${where.join("·")} 중 누구?)`;
+}
+
+/**
  * 본문에서 형제 중 누구를 가리키는지 고릅니다. 한 명만 언급되면 그 사람, 둘 다 또는 아무도
  * 언급되지 않으면 null(사람이 확인).
  */

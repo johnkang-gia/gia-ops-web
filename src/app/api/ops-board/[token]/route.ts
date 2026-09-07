@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { APP_VERSION } from "@/lib/version";
 import { buildStaffNames, categorize, extractTargetDate, matchRosterStudents, todayKey, type RosterStudent } from "@/lib/attendanceDigest";
 import { loadActiveEntries, loadUpcomingEntries } from "@/lib/attendanceEntries";
-import { toKoreanDisplayName, type RosterEntry } from "@/lib/pickupParse";
+import { markIfAmbiguous, toKoreanDisplayName, type RosterEntry } from "@/lib/pickupParse";
 import { loadTodayPickups } from "@/lib/pickups";
 import { displayInquiryType } from "@/lib/inquiryType";
 import { createClient } from "@supabase/supabase-js";
@@ -329,14 +329,17 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   // "Diane & Sunwoo Lim"으로 뜨는 것을 "임다이앤 & 임선우"로 바꿔줍니다.
   const { data: allRoster } = await supabase
     .from("wr_students")
-    .select("id, name, name_en, grade")
+    .select("id, name, name_en, grade, class_name")
     .eq("status", "active")
     .eq("is_demo", false);
+  // **반 이름을 함께 넘깁니다.** 이게 빠져 있어서 동명이인 표시가 「김재이(3학년)」로도 못
+  // 붙었습니다 - 김재이가 셋인데 셋 다 다른 반이라, 학년만으로는 여전히 누구인지 모릅니다.
   const nameRoster: RosterEntry[] = (allRoster ?? []).map((s) => ({
     id: s.id as string,
     name: (s.name as string) ?? "",
     name_en: (s.name_en as string | null) ?? null,
     grade: (s.grade as string | null) ?? null,
+    class_name: (s.class_name as string | null) ?? null,
   }));
 
   const { data: inquiryRows } = await supabase
@@ -358,14 +361,25 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     .filter((r) => !r.is_demo) // 데모 연습용 문의 제외.
     .map((r) => ({
       id: r.id as string,
-      student:
-        toKoreanDisplayName(
+      // 학생이 연결돼 있으면 **그 아이가 답입니다.** 이름으로 다시 짐작하지 않습니다 -
+      // 사람이 인박스에서 고른 것을 기계가 뒤집으면 안 됩니다.
+      student: (() => {
+        const sid = r.student_id as string | null;
+        const linked = sid ? (studentById.get(sid) as { name?: string; class_name?: string | null } | undefined) : undefined;
+        if (linked?.name) {
+          const same = nameRoster.filter((o) => o.name === linked.name);
+          const cls = (linked.class_name ?? "").trim();
+          return same.length > 1 && cls ? `${linked.name}(${cls})` : linked.name;
+        }
+        // 연결이 없으면 이름으로 찾되, 동명이인이면 **못 정했다고 적습니다.**
+        // 그냥 「김재이」로 띄우면 보는 사람이 정해진 이름이라고 믿고 엉뚱한 아이를 찾습니다.
+        const guessed = toKoreanDisplayName(
           (r.matched_name as string | null) ?? (r.ai_student_name as string | null),
           r.channel_label as string | null,
-          nameRoster
-        ) ??
-        (r.channel_label as string | null) ??
-        "미확인",
+          nameRoster,
+        );
+        return markIfAmbiguous(guessed, nameRoster) ?? (r.channel_label as string | null) ?? "미확인";
+      })(),
       // 분류가 비어 있으면 화면에 이름만 뜹니다 - 멀리서 보는 사람에게 «뭔가 왔다» 말고는
       // 아무것도 아닙니다. 저장된 값이 있으면 그대로 쓰고, 없을 때만 글에서 짐작합니다.
       type: displayInquiryType(r.inquiry_type as string | null, (r.summary as string | null) ?? (r.raw_text as string | null)).label,

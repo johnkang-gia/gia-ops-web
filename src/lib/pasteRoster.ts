@@ -48,31 +48,51 @@ export const FIELD_LABEL: Record<RosterField, string> = {
  * 고쳐야 하고, 그건 이 기능을 만든 이유와 반대입니다.
  */
 const ALIASES: Record<RosterField, string[]> = {
-  name: ["이름", "성명", "학생명", "학생이름", "한글이름", "name", "studentname", "koreanname"],
-  name_en: ["영문", "영문이름", "영문명", "영어이름", "englishname", "nameen", "english"],
+  name: ["이름", "성명", "성함", "학생", "학생명", "학생이름", "학생성명", "한글이름", "국문이름", "name", "studentname", "koreanname"],
+  name_en: ["영문", "영문이름", "영문명", "영문성명", "영어이름", "englishname", "nameen", "english"],
   grade: ["학년", "grade", "gr"],
-  class_name: ["반", "학급", "class", "classname", "homeroom"],
-  birth_date: ["생년월일", "생일", "출생", "birth", "birthday", "birthdate", "dob"],
+  class_name: ["반", "학급", "반이름", "학급명", "class", "classname", "homeroom"],
+  birth_date: ["생년월일", "생일", "출생", "출생일", "birth", "birthday", "birthdate", "dob"],
   student_no: ["학번", "학생번호", "번호", "studentno", "studentid", "id"],
-  mother_phone: ["모", "어머니", "모연락처", "어머니연락처", "모전화", "mother", "mom", "motherphone"],
-  father_phone: ["부", "아버지", "부연락처", "아버지연락처", "부전화", "father", "dad", "fatherphone"],
-  parent_phone: ["보호자", "보호자연락처", "학부모", "학부모연락처", "연락처", "전화", "phone", "parent", "guardian"],
+  mother_phone: ["모", "어머니", "모연락처", "어머니연락처", "모전화", "모휴대폰", "mother", "mom", "motherphone"],
+  father_phone: ["부", "아버지", "부연락처", "아버지연락처", "부전화", "부휴대폰", "father", "dad", "fatherphone"],
+  parent_phone: ["보호자", "보호자연락처", "학부모", "학부모연락처", "부모", "부모님", "연락처", "전화", "전화번호", "휴대폰", "핸드폰", "phone", "parent", "guardian"],
 };
 
-const norm = (s: string) => s.normalize("NFC").toLowerCase().replace(/[\s()\-_./]/g, "");
+const norm = (s: string) =>
+  s
+    .normalize("NFC")
+    .replace(/^["']+|["']+$/g, "")
+    .toLowerCase()
+    .replace(/[\s()[\]{}<>*·,\-_./\\]/g, "");
+
+/**
+ * 머리줄 글자 하나하나를 「긴 것부터」 봅니다.
+ *
+ * 예전에는 칸(field) 차례대로 돌면서 먼저 걸리는 것을 골랐습니다. 그래서 `name` 이
+ * `name_en` 보다 앞에 있다는 이유만으로 「Student English Name」이 **이름** 칸이 되었고,
+ * 「부모님 연락처」는 mother_phone 의 「모」 한 글자에 걸려 **어머니 연락처**가 되었습니다.
+ * 어느 쪽도 화면에는 오류로 보이지 않고, 엉뚱한 칸에 값이 들어갑니다.
+ *
+ * 이제는 짧은 말이 긴 말을 이기지 못하도록 **글자 수 내림차순**으로 봅니다.
+ */
+const ALIAS_INDEX: { field: RosterField; a: string }[] = (Object.entries(ALIASES) as [RosterField, string[]][])
+  .flatMap(([field, list]) => list.map((a) => ({ field, a: norm(a) })))
+  .filter((x) => x.a !== "")
+  .sort((x, y) => y.a.length - x.a.length);
 
 /** 이 글자가 어느 칸을 가리키는가. 못 고르면 null. */
 export function fieldOf(header: string): RosterField | null {
   const h = norm(header);
   if (!h) return null;
-  // 정확히 같은 것을 먼저 봅니다. 「연락처」가 「어머니 연락처」보다 먼저 걸리면 안 됩니다.
-  for (const [f, list] of Object.entries(ALIASES) as [RosterField, string[]][]) {
-    if (list.some((a) => norm(a) === h)) return f;
-  }
-  for (const [f, list] of Object.entries(ALIASES) as [RosterField, string[]][]) {
-    if (list.some((a) => h.includes(norm(a)))) return f;
-  }
-  return null;
+  // ① 똑같은 말이 있으면 그것. 「연락처」가 「어머니 연락처」보다 먼저 걸리면 안 됩니다.
+  const exact = ALIAS_INDEX.find((x) => x.a === h);
+  if (exact) return exact.field;
+  // ② 안에 들어 있는 말 중 가장 긴 것. 짧은 말은 여기서 보지 않습니다 - 「모」「부」 같은
+  //    한 글자는 남의 머리줄 안에 우연히 들어 있고, 「id」는 사람 이름 David 안에 들어 있습니다.
+  //    한글은 두 글자면 뜻이 서고, 알파벳은 세 글자는 되어야 합니다.
+  const part = ALIAS_INDEX.find((x) => (/[가-힣]/.test(x.a) ? x.a.length >= 2 : x.a.length >= 3) && h.includes(x.a));
+  return part ? part.field : null;
 }
 
 /**
@@ -116,8 +136,16 @@ export type ParsedRow = {
 export type ParseResult = {
   /** 머리줄에서 알아본 칸(열 번호 → 칸). */
   mapping: (RosterField | null)[];
+  /** 앱이 스스로 알아본 칸. 사람이 고친 것과 구별하려고 따로 둡니다. */
+  guess: (RosterField | null)[];
   /** 머리줄로 쓴 줄. 없으면 null(=첫 줄부터 자료). */
   header: string[] | null;
+  /** 첫 줄을 머리줄로 보고 있는가. */
+  headerUsed: boolean;
+  /** 앱이 스스로 「이건 머리줄이다」라고 본 것인가(사람이 정한 것과 구별). */
+  headerDetected: boolean;
+  /** 나눠 놓은 칸 전체. 화면에서 「이 칸의 예시 값」을 보여주는 데 씁니다. */
+  table: string[][];
   rows: ParsedRow[];
   /** 알아보지 못한 머리줄 글자. 감추지 않고 화면에 적습니다. */
   unknownHeaders: string[];
@@ -128,23 +156,41 @@ export type ParseResult = {
  *
  * 구글시트에서 복사하면 **칸은 탭, 줄은 줄바꿈**으로 옵니다. 그래서 탭을 먼저 봅니다.
  * 탭이 하나도 없으면 쉼표로 나눠봅니다(CSV 를 붙여넣는 사람이 있습니다).
+ *
+ * `forced` 는 사람이 화면에서 직접 고른 칸, `forcedHeader` 는 사람이 직접 정한
+ * 「첫 줄이 머리줄인지」입니다. **사람이 정한 것이 언제나 이깁니다** - 앱이 머리줄을
+ * 반만 알아봤을 때 사람이 나머지를 고칠 수 없으면, 그 뒤 자료도 전부 어긋난 채 들어갑니다.
  */
-export function parseRosterPaste(text: string, forced?: (RosterField | null)[]): ParseResult {
+export function parseRosterPaste(
+  text: string,
+  forced?: (RosterField | null)[],
+  forcedHeader?: boolean,
+): ParseResult {
   const lines = (text ?? "").replace(/\r/g, "").split("\n").filter((l) => l.trim() !== "");
-  if (lines.length === 0) return { mapping: [], header: null, rows: [], unknownHeaders: [] };
+  if (lines.length === 0)
+    return { mapping: [], guess: [], header: null, headerUsed: false, headerDetected: false, table: [], rows: [], unknownHeaders: [] };
 
   const sep = lines[0].includes("\t") ? "\t" : ",";
-  const table = lines.map((l) => l.split(sep).map((c) => c.trim()));
+  const table = lines.map((l) => l.split(sep).map((c) => c.trim().replace(/^"(.*)"$/, "$1")));
 
-  // 첫 줄이 머리줄인가. **이름 칸을 알아볼 수 있으면** 머리줄로 봅니다 - 사람 이름이
-  // 우연히 「이름」인 경우는 없습니다.
+  // 첫 줄이 머리줄인가. 알아본 칸이 **두 개 이상**이면 머리줄로 봅니다.
+  // 예전에는 여기에 「이름 칸을 알아봤을 것」이 더 붙어 있었습니다. 그래서 시트의 이름
+  // 머리글이 우리가 모르는 말이면 머리줄 전체를 자료로 읽어버렸고, 첫 학생이 사라진 채
+  // 나머지 줄도 엉뚱한 칸으로 들어갔습니다. 사람 이름·전화번호·날짜는 어느 것도 머리글
+  // 이름과 겹치지 않으므로, 두 칸이 걸리면 머리줄로 보아도 안전합니다.
   const firstMapping = table[0].map((c) => fieldOf(c));
-  const looksHeader = firstMapping.filter(Boolean).length >= 2 && firstMapping.includes("name");
+  const known = firstMapping.filter(Boolean).length;
+  // 한 칸만 걸렸을 때는 「자료다운 값」이 섞여 있는지로 가릅니다. 머리줄에는 전화번호도
+  // 생년월일도 없습니다. 시트 머리글 대부분이 우리가 모르는 말이어도 머리줄은 머리줄입니다.
+  const looksLikeData = table[0].some((c) => normPhone(c) !== null || normBirth(c) !== null);
+  const headerDetected = known >= 2 || (known >= 1 && table[0].length >= 2 && !looksLikeData);
+  const looksHeader = forcedHeader ?? headerDetected;
 
-  const mapping = forced ?? (looksHeader ? firstMapping : []);
+  const guess = looksHeader ? firstMapping : table[0].map(() => null);
+  const mapping = forced ?? guess;
   const header = looksHeader ? table[0] : null;
   const body = looksHeader ? table.slice(1) : table;
-  const unknownHeaders = looksHeader ? table[0].filter((c, i) => c && !firstMapping[i]) : [];
+  const unknownHeaders = looksHeader ? table[0].filter((c, i) => c && !mapping[i]) : [];
 
   const rows: ParsedRow[] = body.map((cells, i) => {
     const values: Partial<Record<RosterField, string>> = {};
@@ -165,9 +211,14 @@ export function parseRosterPaste(text: string, forced?: (RosterField | null)[]):
     });
 
     // 이름이 없으면 넣을 수 없습니다. 이름 없는 학생 줄은 어디에도 못 씁니다.
-    const problem = !values.name ? "이름 칸이 비어 있습니다" : null;
+    // 「이름 칸 자체를 안 정한 것」과 「그 줄만 비어 있는 것」은 사람이 할 일이 달라서 나눕니다.
+    const problem = !mapping.includes("name")
+      ? "이름 칸을 정하지 않았습니다"
+      : !values.name
+        ? "이름 칸이 비어 있습니다"
+        : null;
     return { rowNo: i + 1 + (looksHeader ? 1 : 0), values, problem };
   });
 
-  return { mapping, header, rows, unknownHeaders };
+  return { mapping, guess, header, headerUsed: looksHeader, headerDetected, table, rows, unknownHeaders };
 }

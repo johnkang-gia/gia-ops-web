@@ -39,9 +39,17 @@ export default function PasteRosterClient() {
   const [plans, setPlans] = useState<Plan[] | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const parsed = useMemo(() => parseRosterPaste(text, manual ?? undefined), [text, manual]);
+  const [headerOverride, setHeaderOverride] = useState<boolean | null>(null);
+
+  const parsed = useMemo(
+    () => parseRosterPaste(text, manual ?? undefined, headerOverride ?? undefined),
+    [text, manual, headerOverride],
+  );
   const usable = parsed.rows.filter((r) => !r.problem);
-  const needsMapping = text.trim() !== "" && parsed.mapping.filter(Boolean).length === 0;
+  const hasName = parsed.mapping.includes("name");
+  /** 이 칸에 실제로 무엇이 들어 있는지 - 머리글만 보고 고르면 틀린 칸을 고릅니다. */
+  const sampleRow = parsed.table[parsed.headerUsed ? 1 : 0] ?? [];
+  const colCount = Math.max(parsed.table[0]?.length ?? 0, parsed.mapping.length);
 
   async function preview() {
     if (usable.length === 0) return notify("읽을 수 있는 줄이 없습니다.", "error");
@@ -99,62 +107,115 @@ export default function PasteRosterClient() {
           setText(e.target.value);
           setPlans(null);
           setManual(null);
+          setHeaderOverride(null);
         }}
         rows={8}
         placeholder={"구글시트에서 머리줄까지 함께 복사해서 여기에 붙여넣으세요.\n\n이름\t영문이름\t학년\t반\t생년월일\t어머니 연락처\n김민준\tMinjun Kim\t4\t4-1\t2015.3.4\t010-1111-2222"}
         className="w-full rounded-xl border border-slate-300 p-3 font-mono text-[12px]"
       />
 
-      {/* 무엇을 읽었는지 바로 보여줍니다. 짐작만 하고 넣으면 어느 칸이 어디로 갔는지 모릅니다. */}
+      {/*
+        칸 짝짓기는 «언제나» 보이고 «언제나» 고칠 수 있습니다.
+        예전에는 머리줄을 하나도 못 알아봤을 때만 고르는 칸이 나왔습니다. 그래서 반만 알아본
+        경우 - 시트 머리글이 우리가 모르는 말인 칸 - 는 손댈 방법이 없었고, 그 칸의 값이
+        통째로 버려지거나 옆 칸으로 들어갔습니다. 화면에는 오류가 아니라 「읽은 칸: 이름, 학년」
+        으로만 보였습니다.
+      */}
       {text.trim() !== "" && (
         <div className="mt-2 rounded-xl border border-slate-200 bg-white p-3 text-[12px]">
-          {needsMapping ? (
-            <>
-              <p className="mb-2 font-bold text-amber-800">
-                머리줄을 못 찾았습니다. 어느 칸이 무엇인지 정해주세요 — 짐작해서 넣지 않습니다.
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {(parsed.rows[0]?.rowNo ? text.split("\n")[0].split(text.includes("\t") ? "\t" : ",") : []).map((sample, i) => (
-                  <label key={i} className="flex flex-col gap-0.5">
-                    <span className="text-[10px] text-slate-400">{i + 1}번째 칸 · 예: {sample.trim() || "(빈칸)"}</span>
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <b className="text-slate-700">칸 짝짓기</b>
+            <label className="flex items-center gap-1 text-[11px] text-slate-600">
+              <input
+                type="checkbox"
+                checked={parsed.headerUsed}
+                onChange={(e) => {
+                  setHeaderOverride(e.target.checked);
+                  setManual(null);
+                  setPlans(null);
+                }}
+              />
+              첫 줄은 머리줄(이름·학년 …)입니다
+            </label>
+            {!parsed.headerDetected && parsed.headerUsed && (
+              <span className="text-[11px] text-amber-700">머리줄로 쓰라고 직접 정한 상태입니다.</span>
+            )}
+            {parsed.headerDetected && !parsed.headerUsed && (
+              <span className="text-[11px] text-amber-700">머리줄처럼 보이지만 자료로 읽는 중입니다.</span>
+            )}
+            {manual && (
+              <button
+                onClick={() => setManual(null)}
+                className="rounded border border-slate-300 px-1.5 py-0.5 text-[11px] text-slate-600"
+              >
+                앱이 읽은 대로 되돌리기
+              </button>
+            )}
+          </div>
+
+          <div className="overflow-x-auto">
+            <div className="flex gap-2">
+              {Array.from({ length: colCount }).map((_, i) => {
+                const head = parsed.headerUsed ? parsed.table[0]?.[i] ?? "" : "";
+                const picked = parsed.mapping[i] ?? null;
+                const changed = manual != null && picked !== (parsed.guess[i] ?? null);
+                return (
+                  <label key={i} className="flex w-[132px] shrink-0 flex-col gap-0.5">
+                    <span className="truncate text-[11px] font-semibold text-slate-700" title={head}>
+                      {head || `${i + 1}번째 칸`}
+                    </span>
                     <select
-                      value={manual?.[i] ?? ""}
+                      value={picked ?? ""}
                       onChange={(e) => {
-                        const next = [...(manual ?? [])];
+                        const next = [...parsed.mapping];
+                        while (next.length < colCount) next.push(null);
                         next[i] = (e.target.value || null) as RosterField | null;
                         setManual(next);
+                        setPlans(null);
                       }}
-                      className="rounded-lg border border-slate-300 px-2 py-1 text-[12px]"
+                      className={
+                        "rounded-lg border px-2 py-1 text-[12px] " +
+                        (picked
+                          ? changed
+                            ? "border-amber-400 bg-amber-50 text-amber-900"
+                            : "border-teal-300 bg-teal-50 text-teal-900"
+                          : "border-slate-300 text-slate-400")
+                      }
                     >
                       <option value="">— 안 씀</option>
                       {FIELDS.map((f) => (
                         <option key={f} value={f}>{FIELD_LABEL[f]}</option>
                       ))}
                     </select>
+                    {/* 머리글은 비슷비슷합니다. 실제 값이 보여야 어느 칸인지 압니다. */}
+                    <span className="truncate text-[10px] text-slate-400" title={sampleRow[i] ?? ""}>
+                      예: {(sampleRow[i] ?? "").trim() || "(빈칸)"}
+                    </span>
                   </label>
-                ))}
-              </div>
-            </>
-          ) : (
-            <>
-              <p className="font-semibold text-slate-700">
-                읽은 칸:{" "}
-                {parsed.mapping.map((f, i) => (f ? <span key={i} className="mr-1.5 rounded bg-teal-50 px-1.5 py-0.5 text-teal-800">{FIELD_LABEL[f]}</span> : null))}
-              </p>
-              {parsed.unknownHeaders.length > 0 && (
-                // 모르는 칸을 감추면 「내가 넣은 값이 어디 갔지」가 됩니다.
-                <p className="mt-1 text-[11px] text-slate-400">
-                  못 알아본 칸(넣지 않음): {parsed.unknownHeaders.join(", ")}
-                </p>
-              )}
-              <p className="mt-1 text-[11px] text-slate-500">
-                읽은 줄 <b>{usable.length}줄</b>
-                {parsed.rows.length - usable.length > 0 && (
-                  <span className="ml-1 text-rose-600">· 못 읽은 줄 {parsed.rows.length - usable.length}줄(이름 없음)</span>
-                )}
-              </p>
-            </>
+                );
+              })}
+            </div>
+          </div>
+
+          {!hasName && (
+            <p className="mt-2 rounded bg-rose-50 px-2 py-1 text-[11px] font-bold text-rose-700">
+              이름 칸이 정해지지 않았습니다. 이름 없이는 어느 학생인지 알 수 없어 한 줄도 넣지 않습니다.
+            </p>
           )}
+          {hasName && parsed.unknownHeaders.length > 0 && (
+            // 모르는 칸을 감추면 「내가 넣은 값이 어디 갔지」가 됩니다.
+            <p className="mt-2 text-[11px] text-slate-400">
+              못 알아본 머리글(위에서 직접 고를 수 있습니다): {parsed.unknownHeaders.join(", ")}
+            </p>
+          )}
+          <p className="mt-1 text-[11px] text-slate-500">
+            읽은 줄 <b>{usable.length}줄</b>
+            {parsed.rows.length - usable.length > 0 && (
+              <span className="ml-1 text-rose-600">
+                · 못 읽은 줄 {parsed.rows.length - usable.length}줄({parsed.rows.find((r) => r.problem)?.problem})
+              </span>
+            )}
+          </p>
           <button
             onClick={() => void preview()}
             disabled={busy || usable.length === 0}

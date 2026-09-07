@@ -28,6 +28,7 @@ import { makeT } from "@/lib/lang";
 import { positionLabel } from "@/lib/i18nLabels";
 import { isDemoAccount } from "@/lib/sharedAccounts";
 import ConnectionBanner from "@/components/common/ConnectionBanner";
+import VersionUpdateBanner from "@/components/common/VersionUpdateBanner";
 import CommandPalette from "@/components/common/CommandPalette";
 import type { AiFeatureFlag } from "@/lib/types";
 
@@ -451,6 +452,9 @@ export default async function DashboardLayout({
     <NotificationProvider userEmail={isTeacher ? null : me.email}>
     <div data-theme={theme} className="shell-page-bg relative flex h-screen flex-1">
       <ConnectionBanner />
+      {/* 탭을 켜둔 채로 며칠 일하는 분들이 있어, 배포해도 그 화면에는 어제 코드가 계속
+          돕니다. 화면에 표시가 없으면 본인은 최신인 줄 압니다. */}
+      <VersionUpdateBanner />
       <CommandPalette categories={categories} homeHref={homeHref} />
       {/* 인쇄할 때는 사이드바를 감춥니다 - 체크표 인쇄본이 종이 폭을 온전히 쓰도록. */}
       <aside className="shell-blur hidden w-56 shrink-0 border-r border-[var(--shell-border)] bg-[var(--shell-bg)] p-4 sm:flex sm:flex-col print:!hidden">

@@ -7,22 +7,68 @@ import { useConfirm } from "@/components/common/ConfirmProvider";
 import type { DupGroup, DupPerson } from "@/lib/studentDuplicates";
 
 /**
- * 이름이 겹치는 재학생.
+ * 이름이 같은 학생 줄.
  *
- * 명부를 반영할 때 «이름 + 생년월일»로 짝을 찾습니다. 앱에 이미 있던 줄의 생년월일이
- * 명부와 다르면 짝을 못 찾고 **새 학생으로 만듭니다.** 그렇게 조하윤이 두 줄이 됐습니다.
+ * **묶는 근거는 이름 하나뿐입니다.** 생년월일이나 영문 이름이 같다는 이유로 올리던 것은
+ * 뺐습니다 — 그렇게 걸린 짝은 대부분 다른 아이였고, 틀린 짝이 섞이면 사람이 목록 자체를
+ * 신뢰하지 않게 됩니다. 합치는 일은 되돌릴 수 없으니 목록은 좁은 편이 낫습니다.
  *
- * 이름이 겹친다고 전부 중복은 아닙니다 — 김재이가 셋, 이준서가 둘입니다. 그래서 여기서는
- * 보여주기만 하고 **사람이 고른 것만** 합칩니다. 합치는 일은 되돌릴 수 없습니다.
+ * ── 화면이 답해야 하는 물음 ────────────────────────────────────────────
  *
- * 합치기는 DB 함수(merge_students)가 합니다. 화면에서 표를 하나씩 옮기지 않는 이유는,
- * 학생을 가리키는 표가 지금 25곳이고 앞으로도 늘기 때문입니다. 목록을 화면에 적어두면
- * 새 표가 생길 때마다 여기를 고쳐야 하고, 잊으면 그 표만 옛 학생을 가리킨 채 남습니다.
+ * 이름이 같다는 것만으로는 아무것도 정할 수 없습니다. 김재이가 셋, 이준서가 둘인 학교입니다.
+ * 사람이 정해야 하는 것은 **다른 아이인가, 같은 아이인데 줄이 두 번 만들어진 것인가**이고,
+ * 그 판단에 필요한 것을 화면이 전부 내놓아야 합니다.
+ *
+ *   · 반·학년   — 다르면 동명이인일 가능성이 큽니다
+ *   · 생년월일  — 판정에는 안 쓰지만, 사람이 보기에는 가장 큰 단서입니다
+ *   · 보호자 번호 — 같으면 같은 집(같은 아이이거나 형제)
+ *   · **붙어 있는 기록** — 한쪽이 텅 비었으면 새로 생긴 빈 줄입니다
+ *
+ * 마지막 것이 핵심입니다. 「출결 42 · 청구서 3」과 「기록 없음」이 나란히 있으면 무엇을
+ * 남길지가 바로 보입니다.
  */
 
 export type DupStudent = DupPerson;
 
-export default function DuplicateStudents({ groups, canMerge }: { groups: DupGroup[]; canMerge: boolean }) {
+/** 학생 id → { 표 이름: 건수 }. 표 목록은 DB가 외래키에서 스스로 찾아 셉니다. */
+export type RecordCounts = Record<string, Record<string, number>>;
+
+/**
+ * 표 이름을 사람이 읽는 말로.
+ *
+ * 목록에 없는 표는 **감추지 않고 표 이름 그대로 보여줍니다.** 감추면 「기록 없음」이라고
+ * 잘못 말하게 되고, 그 말을 믿고 지우면 기록이 사라집니다.
+ */
+const TABLE_LABEL: Record<string, string> = {
+  attendance_records: "출결",
+  attendance_entries: "출결 등록",
+  wr_reports: "관찰기록",
+  wr_report_entries: "관찰기록",
+  shuttle_assignments: "셔틀 배정",
+  shuttle_boardings: "셔틀 탑승",
+  invoices: "청구서",
+  payments: "수납",
+  cash_receipts: "현금영수증",
+  student_fee_items: "학비외 항목",
+  student_fee_enrollments: "학비 신청",
+  student_fee_discounts: "학비 할인",
+  student_dismissal_plans: "하원수단",
+  student_group_members: "수강 그룹",
+  pickup_requests: "학부모 연락",
+  student_notes: "특이사항",
+  wr_student_term_classes: "학기별 반",
+  student_uniform_sizes: "교복 사이즈",
+};
+
+export default function DuplicateStudents({
+  groups,
+  counts,
+  canMerge,
+}: {
+  groups: DupGroup[];
+  counts: RecordCounts;
+  canMerge: boolean;
+}) {
   const notify = useToast();
   const confirmAction = useConfirm();
   const [rows, setRows] = useState(groups);
@@ -31,15 +77,21 @@ export default function DuplicateStudents({ groups, canMerge }: { groups: DupGro
   const total = useMemo(() => rows.reduce((n, g) => n + g.people.length, 0), [rows]);
   if (rows.length === 0) return null;
 
+  const totalOf = (id: string) => Object.values(counts[id] ?? {}).reduce((n, v) => n + v, 0);
+
   async function merge(group: DupGroup, keep: DupStudent) {
     const others = group.people.filter((s) => s.id !== keep.id);
+    const keepN = totalOf(keep.id);
+    const dropN = others.reduce((n, o) => n + totalOf(o.id), 0);
+
     const ok = await confirmAction(
-      `${keep.name} ${others.length + 1}줄을 한 줄로 합칩니다.\n` +
-        `남길 줄: ${keep.birth_date ?? "생일 없음"} · ${keep.grade ?? "?"}학년 ${keep.class_name ?? ""}\n\n` +
-        `· 출결·셔틀·인보이스 같은 기록은 남길 줄로 옮겨집니다\n` +
+      `${keep.name} ${others.length + 1}줄을 한 줄로 합칩니다.\n\n` +
+        `남길 줄: ${keep.grade ?? "?"}학년 ${keep.class_name ?? ""} · ${keep.birth_date ?? "생일 없음"} · 기록 ${keepN}건\n` +
+        `합칠 줄: ${others.map((o) => `${o.grade ?? "?"}학년 ${o.class_name ?? ""} · 기록 ${totalOf(o.id)}건`).join(" / ")}\n\n` +
+        `· 기록 ${dropN}건이 남길 줄로 옮겨집니다\n` +
         `· 남길 줄에 비어 있는 칸(생일·영문이름·연락처 등)은 지울 줄의 값으로 채워집니다\n` +
         `· 같은 날 출결처럼 겹치는 줄은 빈 칸끼리 합친 뒤 하나로 정리됩니다\n\n` +
-        `되돌릴 수 없습니다.`,
+        `**다른 아이라면 두 아이의 출결과 관찰기록이 섞입니다. 되돌릴 수 없습니다.**`,
       { danger: true },
     );
     if (!ok) return;
@@ -63,65 +115,109 @@ export default function DuplicateStudents({ groups, canMerge }: { groups: DupGro
   return (
     <section className="mb-4 rounded-2xl border-2 border-amber-300 bg-amber-50 p-3">
       <h2 className="mb-1 text-[15px] font-bold text-amber-900">
-        👥 같은 아이일 수 있는 줄 {rows.length}건 ({total}줄)
+        👥 이름이 같은 학생 {rows.length}건 ({total}줄)
       </h2>
       <p className="mb-2 text-[11px] leading-relaxed text-amber-800">
-        이름이 같은 경우뿐 아니라 <b>한쪽 이름이 다른 쪽에 들어 있거나</b>(제이콥 · 제이콥 딜런 마), 생년월일이나 영문
-        이름이 같은 줄도 함께 올립니다. <b>재학과 보류를 함께 봅니다</b> — 명부를 반영할 때 새 줄이 생기고 옛 줄이
-        보류로 넘어가서, 중복은 대개 이 두 상태에 하나씩 걸쳐 있습니다. 같은 아이가 두 줄로 들어간 것일 수도, 정말
-        동명이인일 수도 있습니다 —<b> 아래 근거와 생년월일·반을 보고</b> 판단해 주세요.
+        <b>이름이 같은 경우만</b> 올립니다 — 생년월일이나 영문 이름이 같다는 이유로는 올리지 않습니다(대부분 다른
+        아이였습니다). 이름이 같다고 같은 아이는 아닙니다. <b>반·생년월일·보호자 번호·붙어 있는 기록</b>을 보고
+        판단해 주세요.
         {canMerge ? " 합치면 되돌릴 수 없습니다." : " 합치는 것은 관리자만 할 수 있습니다."}
       </p>
 
       <div className="flex flex-col gap-2">
-        {rows.map((g) => (
-          <div key={g.key} className="rounded-xl border border-amber-200 bg-white p-2">
-            <p className="mb-1 flex flex-wrap items-baseline gap-2 text-[13px] font-bold text-slate-800">
-              {g.people.map((s) => s.name).join(" · ")}
-              {/* 왜 같은 아이로 의심하는지. 근거가 «이름 같음»뿐이면 동명이인일 가능성이
-                  높고, 생년월일까지 같으면 거의 같은 아이입니다. */}
-              {g.reasons.map((r) => (
-                <span key={r} className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
-                  {r}
-                </span>
-              ))}
-            </p>
-            <ul className="flex flex-col gap-1">
-              {g.people.map((s) => (
-                <li key={s.id} className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px]">
-                  <b className="w-28 shrink-0 text-slate-800">{s.name}</b>
-                  {/* 상태가 다른 두 줄이 가장 흔한 중복입니다. 어느 쪽이 「지금 쓰는 줄」인지
-                      보여야 어느 쪽으로 합칠지 정할 수 있습니다 — 대개 재학 쪽으로 합칩니다. */}
-                  <span
-                    className={
-                      "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold " +
-                      (s.status === "보류" ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800")
-                    }
-                  >
-                    {s.status === "보류" ? "보류" : "재학"}
+        {rows.map((g) => {
+          const empties = g.people.filter((s) => totalOf(s.id) === 0).length;
+          const filled = g.people.length - empties;
+          return (
+            <div key={g.key} className="rounded-xl border border-amber-200 bg-white p-2">
+              <p className="mb-1.5 flex flex-wrap items-baseline gap-2 text-[13px] font-bold text-slate-800">
+                {g.people[0].name}
+                <span className="text-[11px] font-semibold text-slate-400">{g.people.length}줄</span>
+                {/* 한눈에 무엇을 해야 하는지. 이 한 줄이 대부분의 판단을 끝냅니다. */}
+                {empties > 0 && filled === 1 ? (
+                  <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
+                    한쪽이 빈 줄 — 같은 아이일 가능성이 큽니다
                   </span>
-                  <span className="w-20 shrink-0 text-slate-500">{s.birth_date ?? "생일 없음"}</span>
-                  <span className="text-slate-700">
-                    {s.grade ? `${s.grade}학년` : "학년 없음"} {s.class_name ?? "반 없음"}
+                ) : empties === 0 ? (
+                  <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-800">
+                    양쪽 다 기록 있음 — 동명이인인지 먼저 확인
                   </span>
-                  {s.name_en && <span className="text-slate-400">{s.name_en}</span>}
-                  <span className="text-[10px] text-slate-300">등록 {s.created_at.slice(0, 10)}</span>
-                  {canMerge && (
-                    <button
-                      type="button"
-                      disabled={busy === s.id}
-                      onClick={() => void merge(g, s)}
-                      className="ml-auto rounded-lg border border-amber-400 px-2 py-0.5 text-[11px] font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-40"
-                      title="이 줄을 남기고 나머지를 여기에 합칩니다"
-                    >
-                      {busy === s.id ? "합치는 중…" : "이 줄로 합치기"}
-                    </button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
+                ) : (
+                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+                    기록이 나뉘어 있음
+                  </span>
+                )}
+              </p>
+
+              <ul className="flex flex-col gap-1">
+                {g.people.map((s) => {
+                  const c = counts[s.id] ?? {};
+                  const entries = Object.entries(c)
+                    .filter(([, n]) => n > 0)
+                    .sort((a, b) => b[1] - a[1]);
+                  const phone = s.mother_phone || s.father_phone || s.parent_phone || null;
+                  return (
+                    <li key={s.id} className="rounded-lg border border-slate-100 bg-slate-50/60 px-2 py-1.5">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px]">
+                        <span
+                          className={
+                            "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold " +
+                            (s.status === "보류" ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800")
+                          }
+                        >
+                          {s.status === "보류" ? "보류" : "재학"}
+                        </span>
+                        <b className="text-slate-800">
+                          {s.grade ? `${s.grade}학년` : "학년 없음"} {s.class_name ?? "반 없음"}
+                        </b>
+                        <span className="text-slate-500">{s.birth_date ?? "생일 없음"}</span>
+                        {s.name_en && <span className="text-slate-400">{s.name_en}</span>}
+                        {/* 같은 번호면 같은 집입니다. 형제일 수도, 같은 아이일 수도 있습니다. */}
+                        <span className="text-slate-400">{phone ?? "연락처 없음"}</span>
+                        <span className="text-[10px] text-slate-300">등록 {s.created_at.slice(0, 10)}</span>
+
+                        {canMerge && (
+                          <button
+                            type="button"
+                            disabled={busy === s.id}
+                            onClick={() => void merge(g, s)}
+                            className="ml-auto rounded-lg border border-amber-400 px-2 py-0.5 text-[11px] font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-40"
+                            title="이 줄을 남기고 나머지를 여기에 합칩니다"
+                          >
+                            {busy === s.id ? "합치는 중…" : "이 줄로 합치기"}
+                          </button>
+                        )}
+                      </div>
+
+                      {/* 붙어 있는 기록. **없으면 「없음」이라고 말합니다** - 비워두면
+                          아직 안 세어본 것인지 정말 없는 것인지 구별이 안 됩니다. */}
+                      <div className="mt-1 flex flex-wrap items-center gap-1">
+                        {entries.length === 0 ? (
+                          <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-bold text-slate-500">
+                            붙어 있는 기록 없음
+                          </span>
+                        ) : (
+                          <>
+                            <span className="text-[10px] font-semibold text-slate-400">기록 {totalOf(s.id)}건 —</span>
+                            {entries.map(([t, n]) => (
+                              <span
+                                key={t}
+                                className="rounded bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 ring-1 ring-slate-200"
+                                title={t}
+                              >
+                                {TABLE_LABEL[t] ?? t} {n}
+                              </span>
+                            ))}
+                          </>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          );
+        })}
       </div>
     </section>
   );

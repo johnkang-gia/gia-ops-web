@@ -7,10 +7,21 @@ import GuideButton from "@/components/common/GuideButton";
 import DataCheckIssues, { type ImportIssue } from "@/components/school/DataCheckIssues";
 import DuplicateStudents from "@/components/school/DuplicateStudents";
 import { findDuplicateGroups, type DupPerson } from "@/lib/studentDuplicates";
+import { selectTolerant } from "@/lib/selectTolerant";
 
 export const dynamic = "force-dynamic";
 
 const GUIDE_SECTIONS = [
+  {
+    title: "👥 이름이 같은 학생 — 무엇을 보고 정하나요?",
+    lines: [
+      "이름이 같은 줄만 올립니다. 생년월일이나 영문 이름이 같다는 이유로는 올리지 않습니다 - 그렇게 걸린 짝은 대부분 다른 아이였고, 틀린 짝이 섞이면 목록 자체를 믿지 않게 됩니다.",
+      "이름이 같다고 같은 아이는 아닙니다. 김재이가 셋, 이준서가 둘입니다. 그래서 합치기 전에 사람이 정해야 합니다 - 다른 아이인가, 같은 아이인데 줄이 두 번 만들어진 것인가.",
+      "가장 큰 단서는 «붙어 있는 기록»입니다. 한쪽이 「기록 없음」이면 같은 아이의 빈 줄일 가능성이 큽니다. 양쪽에 기록이 나뉘어 있으면 그동안 두 줄로 쌓인 것이라 합쳐야 합니다. 양쪽 다 기록이 충실한데 반이 다르면 동명이인일 가능성이 큽니다.",
+      "반·생년월일·보호자 번호도 함께 봅니다. 보호자 번호가 같으면 같은 집입니다 - 같은 아이이거나 형제입니다.",
+      "합치면 기록이 남길 줄로 옮겨지고 되돌릴 수 없습니다. 다른 아이를 합치면 두 아이의 출결과 관찰기록이 섞입니다.",
+    ],
+  },
   {
     title: "🩺 명부 점검이란?",
     lines: [
@@ -77,17 +88,40 @@ export default async function DataCheckPage() {
   //
   // 퇴원·전출은 뺍니다. 졸업생 이름이 재학생과 같은 경우가 있어서, 넣으면 합칠 이유가
   // 없는 짝이 목록을 채웁니다.
-  const { data: dupRows, error: dupErr } = await supabase
-    .from("wr_students")
-    .select("id, name, name_en, grade, class_name, birth_date, status, created_at")
-    .eq("is_demo", false)
-    .in("status", ["active", "보류"])
-    .order("created_at");
-  if (dupErr) console.error("[명부 점검] 중복 조회 실패:", dupErr.message);
+  //
+  // 보호자 연락처는 나중에 붙인 칸이라 없는 DB가 있습니다. 그 한 칸 때문에 중복 목록 전체가
+  // 안 뜨면 안 되므로 없는 칸만 빼고 읽습니다.
+  const dupRes = await selectTolerant<DupPerson>(
+    (columns) =>
+      supabase
+        .from("wr_students")
+        .select(columns)
+        .eq("is_demo", false)
+        .in("status", ["active", "보류"])
+        .order("created_at") as unknown as PromiseLike<{ data: DupPerson[] | null; error: { message: string } | null }>,
+    ["id", "name", "name_en", "grade", "class_name", "birth_date", "status", "created_at"],
+    ["mother_phone", "father_phone", "parent_phone"],
+  );
+  if (dupRes.error) console.error("[명부 점검] 중복 조회 실패:", dupRes.error);
 
-  // 이름이 정확히 같을 때만 찾던 것을 넓혔습니다. 「제이콥」과 「제이콥 딜런 마」는
-  // 같은 아이인데 한쪽에만 성과 미들네임이 들어간 것이라, 글자가 완전히 같지 않습니다.
-  const dupGroups = findDuplicateGroups(((dupRows as DupPerson[] | null) ?? []));
+  const dupGroups = findDuplicateGroups(dupRes.data);
+
+  //
+  // 각 줄에 무엇이 붙어 있는지. **이것이 판단의 핵심 단서입니다** — 한쪽이 텅 비었으면
+  // 같은 아이의 빈 줄이고, 양쪽에 기록이 나뉘어 있으면 합쳐야 하고, 양쪽 다 충실한데 반이
+  // 다르면 동명이인일 가능성이 큽니다.
+  //
+  // 세는 표 목록은 DB 함수가 외래키에서 스스로 찾습니다. 여기 적어두면 새 표가 생길 때마다
+  // 고쳐야 하고, 잊으면 「기록 없음」이라고 잘못 말하게 됩니다.
+  const dupIds = dupGroups.flatMap((g) => g.people.map((p) => p.id));
+  const counts: Record<string, Record<string, number>> = {};
+  if (dupIds.length > 0) {
+    const { data: cntRows, error: cntErr } = await supabase.rpc("student_record_counts", { ids: dupIds });
+    if (cntErr) console.error("[명부 점검] 기록 수를 세지 못했습니다:", cntErr.message);
+    for (const r of ((cntRows as { student_id: string; table_name: string; n: number }[] | null) ?? [])) {
+      (counts[r.student_id] ??= {})[r.table_name] = Number(r.n);
+    }
+  }
 
   return (
     <div className="mx-auto max-w-4xl p-4 sm:p-6">
@@ -100,7 +134,7 @@ export default async function DataCheckPage() {
         있으면 처리해주세요.
       </p>
 
-      <DuplicateStudents groups={dupGroups} canMerge={isAdminUser(me)} />
+      <DuplicateStudents groups={dupGroups} counts={counts} canMerge={isAdminUser(me)} />
 
       {/* 지금 들어 있는 데이터 */}
       <div className="mb-6 g-panel-solid p-4 shadow-sm">

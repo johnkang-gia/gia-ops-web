@@ -29,7 +29,9 @@ as $$
 declare
   fk record;
   ctids tid[];
-  c tid;
+  -- 한 글자 이름을 쓰지 않습니다. plpgsql 변수와 SQL 별칭이 같은 글자면
+  -- «column reference "c" is ambiguous» 로 함수가 실행 시점에 멈춥니다.
+  row_ctid tid;
   moved int := 0;
   dropped int := 0;
   snap_dropped int := 0;
@@ -69,11 +71,11 @@ begin
     keep_n int;
     drop_n int;
   begin
-    select coalesce((select sum(jsonb_array_length(coalesce(c->'students', '[]'::jsonb)))
-                       from jsonb_array_elements(s.classes) c), 0)
+    select coalesce((select sum(jsonb_array_length(coalesce(cls->'students', '[]'::jsonb)))
+                       from jsonb_array_elements(s.classes) cls), 0)
       into keep_n from public.wr_term_class_snapshots s where s.term_id = keep_id;
-    select coalesce((select sum(jsonb_array_length(coalesce(c->'students', '[]'::jsonb)))
-                       from jsonb_array_elements(s.classes) c), 0)
+    select coalesce((select sum(jsonb_array_length(coalesce(cls->'students', '[]'::jsonb)))
+                       from jsonb_array_elements(s.classes) cls), 0)
       into drop_n from public.wr_term_class_snapshots s where s.term_id = drop_id;
 
     if keep_n is not null and drop_n is not null and drop_n > keep_n then
@@ -115,17 +117,17 @@ begin
                    fk.table_schema, fk.table_name, fk.column_name)
       into ctids using drop_id;
 
-    foreach c in array coalesce(ctids, '{}'::tid[])
+    foreach row_ctid in array coalesce(ctids, '{}'::tid[])
     loop
       begin
         execute format('update %I.%I set %I = $1 where ctid = $2',
                        fk.table_schema, fk.table_name, fk.column_name)
-          using keep_id, c;
+          using keep_id, row_ctid;
         moved := moved + 1;
       exception when unique_violation then
         -- 남기는 학기에 이미 같은 줄이 있습니다(같은 학기·같은 학생의 반 배정 등).
         -- 같은 사실이 두 벌인 것이므로 남기는 쪽을 정본으로 두고 이쪽을 정리합니다.
-        execute format('delete from %I.%I where ctid = $1', fk.table_schema, fk.table_name) using c;
+        execute format('delete from %I.%I where ctid = $1', fk.table_schema, fk.table_name) using row_ctid;
         dropped := dropped + 1;
         if fk.table_name = 'wr_term_class_snapshots' then snap_dropped := snap_dropped + 1; end if;
         raise notice '[학기병합] %.% : 이미 같은 줄이 있어 1건 정리(남기는 학기 값을 씁니다)',

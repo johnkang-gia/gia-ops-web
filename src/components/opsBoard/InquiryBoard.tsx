@@ -44,6 +44,7 @@ export default function InquiryBoard({
   s,
   onOpen,
   onDismiss,
+  dense = false,
 }: {
   items: BoardInquiry[];
   s: (px: number, min: number) => number;
@@ -51,9 +52,20 @@ export default function InquiryBoard({
   onOpen: (q: BoardInquiry) => void;
   /** 길게 누름 - 목록에서 없애기(처리 완료). */
   onDismiss: (q: BoardInquiry) => void;
+  /**
+   * 촘촘하게 - 「마야-출석」한 덩어리로 묶어 한 줄에 두 건씩.
+   *
+   * 이름과 분류를 따로 두면 눈이 둘을 이어 붙여야 하는데, 이 화면은 멀리서 스쳐 보는
+   * 화면이라 그 한 번이 곧 못 읽는 것이 됩니다. 붙여 쓰면 폭도 절반이 되어 두 배가 들어갑니다.
+   */
+  dense?: boolean;
 }) {
   // 한 장에 몇 건이 들어가는지. 칸 높이를 실제로 재서 정합니다.
-  const [perPage, setPerPage] = useState(6);
+  //
+  // 넉넉한 수에서 시작해 넘치면 줄이는 한 방향으로만 갑니다. 늘렸다 줄였다 하면 값이
+  // 두 수 사이를 오가며 화면이 떨립니다. 촘촘 모드는 두 칸씩이라 위에서부터 더 크게 잡습니다.
+  const maxPerPage = dense ? 16 : 10;
+  const [perPage, setPerPage] = useState(maxPerPage);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
 
@@ -75,10 +87,16 @@ export default function InquiryBoard({
   useEffect(() => {
     const wrap = wrapRef.current;
     if (!wrap || typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(() => setPerPage(8));
+    const ro = new ResizeObserver(() => setPerPage(maxPerPage));
     ro.observe(wrap);
     return () => ro.disconnect();
-  }, []);
+  }, [maxPerPage]);
+
+  // 건수가 달라지면 다시 위에서부터 맞춥니다. 줄이기만 하는 구조라, 한 번 좁게 잡히면
+  // 나중에 짧은 문의만 남아도 그대로 좁게 남습니다.
+  useEffect(() => {
+    setPerPage(maxPerPage);
+  }, [items.length, maxPerPage]);
 
   const pages = useMemo(() => {
     const out: BoardInquiry[][] = [];
@@ -138,7 +156,14 @@ export default function InquiryBoard({
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, touchAction: "manipulation" }}>
       <div ref={wrapRef} style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
-        <div ref={listRef} style={{ display: "flex", flexDirection: "column", gap: s(7, 4) }}>
+        <div
+          ref={listRef}
+          style={
+            dense
+              ? { display: "grid", gridTemplateColumns: "1fr 1fr", gap: s(6, 4), alignContent: "start" }
+              : { display: "flex", flexDirection: "column", gap: s(7, 4) }
+          }
+        >
           {shown.map((q) => {
             const isNew = now - new Date(q.at).getTime() < NEW_MS;
             return (
@@ -180,21 +205,23 @@ export default function InquiryBoard({
                     )}
                     <b
                       style={{
-                        fontSize: s(23, 15),
+                        fontSize: dense ? s(19, 13) : s(23, 15),
                         color: "#fff",
                         whiteSpace: "nowrap",
                         overflow: "hidden",
                         textOverflow: "ellipsis",
                       }}
                     >
-                      {q.student}
+                      {/* 촘촘 모드에서는 「마야-출석」한 덩어리. 분류를 따로 배지로 띄우면
+                          폭을 잡아먹어 한 줄에 두 건이 안 들어갑니다. */}
+                      {dense && q.type ? `${q.student}-${q.type}` : q.student}
                     </b>
                     {q.replied && (
                       <span style={{ fontSize: s(18, 13), color: "#22c55e", fontWeight: 800 }} title="이미 답글이 달렸습니다">
                         ✓
                       </span>
                     )}
-                    {q.type && (
+                    {!dense && q.type && (
                       <span
                         style={{
                           fontSize: s(14, 10),
@@ -218,12 +245,12 @@ export default function InquiryBoard({
                   </div>
                   <div
                     style={{
-                      fontSize: s(17, 12),
+                      fontSize: dense ? s(14, 11) : s(17, 12),
                       color: "#cbd5e1",
                       marginTop: s(3, 2),
                       lineHeight: 1.35,
                       display: "-webkit-box",
-                      WebkitLineClamp: 2,
+                      WebkitLineClamp: dense ? 1 : 2,
                       WebkitBoxOrient: "vertical" as const,
                       overflow: "hidden",
                       overflowWrap: "anywhere",

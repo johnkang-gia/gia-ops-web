@@ -255,9 +255,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   // 보면 영영 안 뜹니다. 그 학생만 확정된 오늘 픽업에서 가져옵니다(원문 재해석 없이,
   // status='확정' + service_date=오늘 + student_id 연결된 것만).
   const pickupNamesFromReq = new Set<string>();
+  // 몇 시에 데리러 오는가. 대시보드에서 픽업은 «누가»보다 «언제»가 먼저 필요한 정보입니다 —
+  // 행정실은 그 시각에 맞춰 아이를 교실에서 데려와야 하므로, 이름만 있으면 쓸 수가 없습니다.
+  // 학부모가 시각을 안 적은 건도 있어서 없으면 null로 둡니다(«미정»으로 표시).
+  const pickupTimeByName = new Map<string, string>();
   const { data: reqRows } = await supabase
     .from("pickup_requests")
-    .select("id, student_id, service_date, kind, status, is_demo")
+    .select("id, student_id, service_date, kind, status, is_demo, pickup_time")
     .eq("kind", "픽업")
     .eq("status", "확정")
     .eq("service_date", todayK)
@@ -266,8 +270,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   for (const r of reqRows ?? []) {
     if (r.is_demo) continue;
     const sid = r.student_id as string | null;
-    if (!sid || !deptStudentIds.has(sid)) continue;
+    if (!sid) continue;
     const s = studentById.get(sid) as { name?: string } | undefined;
+    // 시각은 부서와 무관하게 모아둡니다 - 아래 체크표에서 온 픽업에도 붙여야 하는데,
+    // 그 목록은 부서로 이미 걸러진 뒤라 여기서 또 거르면 시각만 사라집니다.
+    const t = (r.pickup_time as string | null) ?? null;
+    if (s?.name && t) pickupTimeByName.set(s.name, t);
+    if (!deptStudentIds.has(sid)) continue;
     if (s?.name) pickupNamesFromReq.add(s.name);
   }
 
@@ -312,7 +321,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   );
   for (const n of decidedNames) if (!boardingPickups.includes(n)) pickupNamesFromReq.delete(n);
 
-  const pickups = [...new Set([...boardingPickups, ...pickupNamesFromReq])].sort((a, b) => a.localeCompare(b, "ko"));
+  // 이름만이 아니라 시각과 함께 넘깁니다. 시각이 있는 아이가 먼저, 그중에서도 이른 시각부터 -
+  // 대시보드는 «다음에 무엇을 해야 하나» 순서로 읽히는 게 맞습니다. 시각을 모르는 아이는
+  // 뒤로 보내되 빼지는 않습니다(연락은 왔고 시각만 안 적힌 경우입니다).
+  const pickups = [...new Set([...boardingPickups, ...pickupNamesFromReq])]
+    .map((name) => ({ name, time: pickupTimeByName.get(name) ?? null }))
+    .sort((a, b) => (a.time ?? "99:99").localeCompare(b.time ?? "99:99") || a.name.localeCompare(b.name, "ko"));
 
   // ── 학부모 문의사항 ────────────────────────────────────────────────────────
   // 요청: "운영 대시보드에 이 학부모 문의사항도 띄워줘"

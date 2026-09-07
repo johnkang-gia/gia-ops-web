@@ -74,7 +74,8 @@ type BoardData = {
   studentCount: number;
   nightInfo?: { events: { date: string; name: string }[]; reportsThisWeek: number };
   absences: { name: string; grade: string | null; className: string | null; status: string; note: string | null; contacted: boolean }[];
-  pickups: string[];
+  /** 오늘 픽업. 시각이 적혀 있으면 함께 옵니다(없으면 null). */
+  pickups: { name: string; time: string | null }[];
   inquiries: { id: string; student: string; type: string | null; summary: string; urgent: boolean; at: string; replied?: boolean }[];
   collector: { lastSeen: string | null; status: string | null; stale: boolean } | null;
   taskSummary: {
@@ -703,76 +704,92 @@ export default function OpsBoardClient({ token }: { token: string }) {
         </Panel>
         )}
 
-        {/* ② 오늘 출결 - 결석·지각·픽업을 한 칸에서 분류해 봅니다(요청).
-            예전에는 [하원 픽업]과 [오늘 출결]이 아래쪽에 따로 있어서, 같은 학생이 두 칸에
-            나뉘어 뜨고 눈이 두 번 왔다 갔다 해야 했습니다. 셋 다 "오늘 이 아이가 평소와 다르다"는
-            같은 종류의 정보라 한 칸에 모으고, 분류는 색 있는 머리표로 나눴습니다. */}
-        <AttendancePanel sc={sc} data={data} />
         </div>
 
-        {/* ── 오른쪽: 학부모 문의 (화면 세로 절반 전체) ─────────────────────────
-            요청: "학부모문의칸을 아예 화면 반으로 쓸 수 있도록". 아직 답하지 않은 것만
-            올립니다 - 처리된 것까지 섞이면 훑어보는 의미가 없습니다. */}
+        {/* ── 오른쪽: 오늘 변동사항 + 학부모 문의 ───────────────────────────────
+            한 칸 안에서 구분선으로만 위아래를 가릅니다. 상자를 두 개로 나누면 테두리·여백이
+            두 겹이 되어, 멀리서 보는 화면에서 정작 글자에 쓸 자리가 줄어듭니다.
+
+            위 = 오늘 이 아이가 평소와 다른 것. 픽업은 **몇 시인지가 먼저**입니다 - 행정실이
+            그 시각에 맞춰 교실에서 아이를 데려와야 하므로, 이름만으로는 움직일 수 없습니다.
+            결석·지각은 그 시각에 할 일이 없으므로 작은 배지로만 둡니다.
+            아래 = 아직 답하지 않은 학부모 문의. */}
         <Panel
           sc={sc}
-          title={`학부모 문의 ${data.inquiries?.length ?? 0}건`}
-          right={
-            /* 수집기가 멈추면 문의가 안 들어옵니다. 그런데 화면은 "문의 없음"으로 똑같이
-               보여서, 조용히 아무것도 안 하면서 정상인 척하게 됩니다. 그래서 여기 적습니다. */
-            data.collector?.stale
-              ? "⚠ 토들 수집기 멈춤"
-              : urgentInquiries > 0
-              ? `급한 것 ${urgentInquiries}건`
-              : data.collector?.lastSeen
-              ? `수집 ${new Date(data.collector.lastSeen).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}`
-              : null
-          }
+          title="오늘 변동사항"
+          right={`재적 ${data.studentCount}명`}
         >
-          {data.collector?.stale ? (
-            <div
-              style={{
-                background: "#3f1d1d",
-                border: "1px solid #b91c1c",
-                borderRadius: sc.s(8, 6),
-                padding: sc.s(9, 6),
-                fontSize: sc.s(14, 11),
-                color: "#fca5a5",
-                lineHeight: 1.5,
-              }}
-            >
-              <b>토들 수집기가 멈춰 있습니다.</b>
-              <br />
-              {data.collector.status === "login_required"
-                ? "사무실 PC 크롬에서 토들에 다시 로그인해주세요."
-                : data.collector.lastSeen
-                ? `마지막 신호 ${new Date(data.collector.lastSeen).toLocaleString("ko-KR")} · 지금은 토들 문의가 자동으로 들어오지 않습니다.`
-                : "아직 한 번도 연결된 적이 없습니다."}
-            </div>
-          ) : !data.inquiries || data.inquiries.length === 0 ? (
-            <Empty sc={sc} text="답할 문의 없음" tone="good" />
-          ) : (
-            /* 요청: "글자를 좀더 크게 (...) 이름을 좀더 크게 그리고 그아래에 문의내용 간단히
-               요약해서 (...) 스크롤이 내려간다면 계속 몇초에 한번씩 다음페이지 보여줬다가
-               돌아왔다가" - 스크롤을 내릴 사람이 없으니 장을 넘기는 쪽으로 했습니다. */
-            <InquiryBoard
-              items={data.inquiries}
-              s={sc.s}
-              onOpen={(q) => setInquiryView({ student: q.student, channel: q.channel ?? null, raw: q.raw ?? null, at: q.at })}
-              onDismiss={async (q) => {
-                // 낙관적으로 화면에서 먼저 빼고, 서버에 처리 완료로 표시합니다.
-                setData((prev) => (prev ? { ...prev, inquiries: prev.inquiries.filter((x) => x.id !== q.id) } : prev));
-                try {
-                  await fetch(`/api/ops-board/${token}/inquiry`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ id: q.id }),
-                  });
-                } catch {
-                  load(); // 실패하면 되돌립니다(다음 갱신에서 다시 나타납니다).
-                }
-              }}
-            />
-          )}
+          {/* ── 위: 오늘 변동사항 ─────────────────────────────────────────── */}
+          <TodayChanges sc={sc} data={data} />
+
+          {/* 구분선 하나. 칸을 나누지 않고 선만 긋습니다. */}
+          <div style={{ height: 1, background: "#1e2a44", flexShrink: 0, margin: `${sc.s(10, 6)}px 0` }} />
+
+          {/* ── 아래: 학부모 문의 ─────────────────────────────────────────── */}
+          <div style={{ display: "flex", alignItems: "baseline", gap: sc.s(8, 5), marginBottom: sc.s(7, 4), flexShrink: 0 }}>
+            <span style={{ fontSize: sc.s(16, 12), fontWeight: 800, color: "#e2e8f0" }}>
+              학부모 문의 {data.inquiries?.length ?? 0}건
+            </span>
+            <span style={{ fontSize: sc.s(13, 10), color: "#64748b", marginLeft: "auto", textAlign: "right" }}>
+              {/* 수집기가 멈추면 문의가 안 들어옵니다. 그런데 화면은 "문의 없음"으로 똑같이
+                  보여서, 조용히 아무것도 안 하면서 정상인 척하게 됩니다. 그래서 여기 적습니다. */}
+              {data.collector?.stale
+                ? "⚠ 토들 수집기 멈춤"
+                : urgentInquiries > 0
+                ? `급한 것 ${urgentInquiries}건`
+                : data.collector?.lastSeen
+                ? `수집 ${new Date(data.collector.lastSeen).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}`
+                : ""}
+            </span>
+          </div>
+
+          <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+            {data.collector?.stale ? (
+              <div
+                style={{
+                  background: "#3f1d1d",
+                  border: "1px solid #b91c1c",
+                  borderRadius: sc.s(8, 6),
+                  padding: sc.s(9, 6),
+                  fontSize: sc.s(14, 11),
+                  color: "#fca5a5",
+                  lineHeight: 1.5,
+                }}
+              >
+                <b>토들 수집기가 멈춰 있습니다.</b>
+                <br />
+                {data.collector.status === "login_required"
+                  ? "사무실 PC 크롬에서 토들에 다시 로그인해주세요."
+                  : data.collector.lastSeen
+                  ? `마지막 신호 ${new Date(data.collector.lastSeen).toLocaleString("ko-KR")} · 지금은 토들 문의가 자동으로 들어오지 않습니다.`
+                  : "아직 한 번도 연결된 적이 없습니다."}
+              </div>
+            ) : !data.inquiries || data.inquiries.length === 0 ? (
+              <Empty sc={sc} text="답할 문의 없음" tone="good" />
+            ) : (
+              /* 한 줄에 두 건씩. 「마야-출석」처럼 누구의 무슨 이야기인지가 한 덩어리로 읽히면
+                 이름과 분류를 따로 눈으로 잇지 않아도 되고, 그만큼 한 화면에 두 배가 들어갑니다. */
+              <InquiryBoard
+                items={data.inquiries}
+                s={sc.s}
+                dense
+                onOpen={(q) => setInquiryView({ student: q.student, channel: q.channel ?? null, raw: q.raw ?? null, at: q.at })}
+                onDismiss={async (q) => {
+                  // 낙관적으로 화면에서 먼저 빼고, 서버에 처리 완료로 표시합니다.
+                  setData((prev) => (prev ? { ...prev, inquiries: prev.inquiries.filter((x) => x.id !== q.id) } : prev));
+                  try {
+                    await fetch(`/api/ops-board/${token}/inquiry`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ id: q.id }),
+                    });
+                  } catch {
+                    load(); // 실패하면 되돌립니다(다음 갱신에서 다시 나타납니다).
+                  }
+                }}
+              />
+            )}
+          </div>
         </Panel>
       </div>
 
@@ -1032,91 +1049,132 @@ function NightInfoPanel({ sc, data }: { sc: BoardScale; data: BoardData }) {
   );
 }
 
-// 오늘 출결 한 칸 - 결석 · 지각/조퇴 · 하원 픽업을 머리표로 나눠 담습니다.
+// 오늘 변동사항 - 픽업(시각이 주인공) + 결석·지각(작은 배지).
 //
-// 요청: "결석, 지각, 픽업을 한 탭에서 분류해서 보이게". 예전에는 [오늘 하원 픽업]과
-// [오늘 출결]이 화면 아래에 따로 놓여 있어서, 같은 아이가 두 칸에 나뉘어 뜨고 눈이 두 번
-// 오갔습니다. 셋 다 "오늘 이 아이가 평소와 다르다"는 같은 종류의 소식이라 한 칸에 모읍니다.
+// 예전에는 결석·지각·픽업을 같은 크기로 셋에 나눠 담았습니다. 그런데 이 셋은 화면 앞에 선
+// 사람이 해야 할 일이 다릅니다. 픽업은 **정해진 시각에 교실에서 아이를 데려와야** 하므로
+// 시각이 없으면 움직일 수 없고, 결석·지각은 이미 지난 일이라 "그런 아이가 있다"만 알면
+// 됩니다. 그래서 픽업만 크게 시각 순으로 세우고, 나머지는 배지로 줄였습니다.
 //
-// 공용 모니터는 아무도 스크롤하지 않으므로, 탭으로 감춰두지 않고 세 갈래를 한눈에 폅니다.
-// 어느 갈래가 비었는지도 정보이기 때문입니다(픽업 0명 = 오늘은 전원 차량 하원).
-function AttendancePanel({ sc, data }: { sc: BoardScale; data: BoardData }) {
+// 시각이 안 적힌 픽업은 빼지 않고 "시각 미정"으로 남깁니다 - 연락은 왔는데 시각만 모르는
+// 것이고, 그건 오히려 물어봐야 할 건입니다.
+function TodayChanges({ sc, data }: { sc: BoardScale; data: BoardData }) {
   const absent = data.absences.filter((a) => a.status === "결석");
   const late = data.absences.filter((a) => a.status !== "결석");
-  const groups = [
-    // '연락전' 꼬리표는 뺐습니다(요청) - 이 화면은 지나가며 훑어보는 현황판이고, 연락 여부는
-    // 업무 보드에서 처리하는 일이라 여기 붙어 있어도 손이 가지 않았습니다.
-    { key: "결석", color: "#dc2626", names: absent.map((a) => ({ name: a.name, note: a.note, tag: null as string | null })) },
-    {
-      key: "지각·조퇴",
-      color: "#d97706",
-      names: late.map((a) => ({ name: a.name, note: a.note, tag: a.status === "조퇴" ? "조퇴" : null })),
-    },
-    { key: "하원 픽업", color: "#0ea5e9", names: data.pickups.map((n) => ({ name: n, note: null, tag: null })) },
-  ];
-  const total = groups.reduce((s, g) => s + g.names.length, 0);
+  const pickups = data.pickups;
 
   return (
-    // 높이를 못 박습니다 - 이 칸의 인원은 날마다 달라지는데, 비율로 나눠 가지면 그 변화가
-    // 그대로 옆(시간표) 칸 높이를 흔듭니다. 이름 배지 두세 줄이 들어갈 높이면 충분하고,
-    // 넘치면 이 칸 안에서만 스크롤됩니다(시간표는 건드리지 않습니다).
-    <Panel sc={sc} fixedHeight={sc.s(150, 108)} title="오늘 출결 · 픽업" right={`재적 ${data.studentCount}명`}>
-      {total === 0 ? (
-        <Empty sc={sc} text="전원 출석 · 픽업 없음" tone="good" />
+    <div style={{ flexShrink: 0, minHeight: 0 }}>
+      {/* 픽업 - 시각이 먼저, 이름이 뒤. */}
+      <div style={{ display: "flex", alignItems: "baseline", gap: sc.s(7, 4), marginBottom: sc.s(6, 4) }}>
+        <span style={{ width: sc.s(9, 7), height: sc.s(9, 7), borderRadius: 3, background: "#0ea5e9" }} />
+        <span style={{ fontSize: sc.s(15, 11), fontWeight: 800, color: "#38bdf8" }}>하원 픽업 {pickups.length}</span>
+      </div>
+
+      {pickups.length === 0 ? (
+        <p style={{ margin: 0, fontSize: sc.s(13, 10), color: "#475569" }}>오늘은 전원 차량 하원</p>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: sc.s(10, 6), height: "100%", minHeight: 0 }}>
-          {groups.map((g) => (
-            <div key={g.key} style={{ display: "flex", flexDirection: "column", minHeight: 0, minWidth: 0 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: sc.s(5, 3), marginBottom: sc.s(6, 4), flexShrink: 0 }}>
-                <span style={{ width: sc.s(9, 7), height: sc.s(9, 7), borderRadius: 3, background: g.color }} />
-                <span style={{ fontSize: sc.s(14, 11), fontWeight: 800, color: g.color }}>
-                  {g.key} {g.names.length}
-                </span>
-              </div>
-              <div
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: `repeat(auto-fill, minmax(${sc.s(150, 104)}px, 1fr))`,
+            gap: sc.s(6, 4),
+            maxHeight: sc.s(150, 104),
+            overflow: "hidden",
+          }}
+        >
+          {pickups.slice(0, 12).map((p, i) => (
+            <div
+              key={i}
+              title={p.name}
+              style={{
+                display: "flex",
+                alignItems: "baseline",
+                gap: sc.s(7, 4),
+                background: "#0c2233",
+                borderLeft: `${sc.s(5, 3)}px solid #0ea5e9`,
+                borderRadius: sc.s(8, 5),
+                padding: `${sc.s(6, 4)}px ${sc.s(9, 6)}px`,
+                minWidth: 0,
+              }}
+            >
+              <b
                 style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: sc.s(5, 3),
-                  overflowY: "auto",
-                  minHeight: 0,
-                  alignContent: "flex-start",
+                  fontSize: p.time ? sc.s(26, 17) : sc.s(14, 11),
+                  fontWeight: 900,
+                  color: p.time ? "#7dd3fc" : "#64748b",
+                  whiteSpace: "nowrap",
+                  fontVariantNumeric: "tabular-nums",
                 }}
               >
-                {g.names.length === 0 ? (
-                  <span style={{ fontSize: sc.s(12, 10), color: "#475569" }}>없음</span>
-                ) : (
-                  g.names.slice(0, 18).map((n, i) => (
-                    <span
-                      key={i}
-                      // 짧게 줄인 이름만 보여주고, 전체 이름과 메모는 마우스를 올리면 뜹니다.
-                      title={[n.name, n.note].filter(Boolean).join(" · ")}
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: sc.s(4, 3),
-                        background: "#1e293b",
-                        borderLeft: `4px solid ${g.color}`,
-                        borderRadius: 6,
-                        padding: `${sc.s(4, 3)}px ${sc.s(8, 5)}px`,
-                        fontSize: sc.s(15, 12),
-                      }}
-                    >
-                      <b style={{ color: "#fff" }}>{shortName(n.name)}</b>
-                      {n.tag && (
-                        <span style={{ fontSize: sc.s(10, 9), color: n.tag === "조퇴" ? STATUS_COLOR["조퇴"] : "#f59e0b", fontWeight: 700 }}>
-                          {n.tag}
-                        </span>
-                      )}
-                    </span>
-                  ))
-                )}
-              </div>
+                {p.time ?? "시각 미정"}
+              </b>
+              <span
+                style={{
+                  fontSize: sc.s(17, 12),
+                  fontWeight: 700,
+                  color: "#fff",
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
+                {shortName(p.name)}
+              </span>
             </div>
           ))}
         </div>
       )}
-    </Panel>
+
+      {/* 결석·지각 - 배지로만. 여기 있는 아이 때문에 지금 할 일은 없습니다. */}
+      {(absent.length > 0 || late.length > 0) && (
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: sc.s(5, 3), marginTop: sc.s(8, 5) }}>
+          {absent.length > 0 && (
+            <span style={{ fontSize: sc.s(12, 10), fontWeight: 800, color: "#f87171" }}>결석 {absent.length}</span>
+          )}
+          {absent.map((a, i) => (
+            <span
+              key={`a${i}`}
+              title={[a.name, a.note].filter(Boolean).join(" · ")}
+              style={{
+                background: "#2a1414",
+                border: "1px solid #7f1d1d",
+                borderRadius: 999,
+                padding: `${sc.s(2, 1)}px ${sc.s(8, 5)}px`,
+                fontSize: sc.s(13, 10),
+                color: "#fecaca",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {shortName(a.name)}
+            </span>
+          ))}
+          {late.length > 0 && (
+            <span style={{ fontSize: sc.s(12, 10), fontWeight: 800, color: "#fbbf24", marginLeft: sc.s(6, 4) }}>
+              지각·조퇴 {late.length}
+            </span>
+          )}
+          {late.map((a, i) => (
+            <span
+              key={`l${i}`}
+              title={[a.name, a.status, a.note].filter(Boolean).join(" · ")}
+              style={{
+                background: "#2a2110",
+                border: "1px solid #92400e",
+                borderRadius: 999,
+                padding: `${sc.s(2, 1)}px ${sc.s(8, 5)}px`,
+                fontSize: sc.s(13, 10),
+                color: "#fde68a",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {shortName(a.name)}
+              {a.status === "조퇴" ? " 조퇴" : ""}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

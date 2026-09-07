@@ -482,6 +482,37 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
         (a.time ?? "99:99").localeCompare(b.time ?? "99:99")
     );
 
+  // ── 교실에서 온 것 ────────────────────────────────────────────────────────
+  //
+  // 선생님이 태블릿에서 보낸 특이사항·문의입니다. 아직 안 읽었거나 오늘 읽은 것을 올립니다 -
+  // 처리한 것은 내려갑니다.
+  //
+  // **반 이름을 크게 보냅니다.** 행정실이 먼저 아는 것은 «무슨 일»이 아니라 «어느 교실»입니다.
+  // 그리로 가야 하니까요. 반 이름은 이미 영문 코드(G2C·G3JU)라 한국인·외국인 직원 모두
+  // 같은 글자를 읽습니다.
+  const { data: noteRows } = await supabase
+    .from("classroom_notes")
+    .select("id, class_id, kind, student_name, body, urgency, created_at, read_at, reply, done_at")
+    .is("done_at", null)
+    .gte("created_at", `${todayK}T00:00:00+09:00`)
+    .order("created_at", { ascending: false })
+    .limit(20);
+
+  const classLabelById = new Map(
+    (classes ?? []).map((c) => [c.id as string, `${c.grade ?? ""} ${c.class_name ?? ""}`.trim()])
+  );
+  const classroomNotes = (noteRows ?? []).map((n) => ({
+    id: n.id as string,
+    className: classLabelById.get(n.class_id as string) ?? "반 미확인",
+    kind: n.kind as string,
+    studentName: (n.student_name as string | null) ?? null,
+    body: n.body as string,
+    urgent: n.urgency === "급함",
+    at: n.created_at as string,
+    readAt: (n.read_at as string | null) ?? null,
+    reply: (n.reply as string | null) ?? null,
+  }));
+
   // 수집기가 살아 있는지.
   //
   // 요청: "토들을 이제 긁어오기때문에 실시간으로 토들긁어오는거 반영해줘"
@@ -604,6 +635,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     absences,
     pickups,
     upcoming,
+    classroomNotes,
     inquiries,
     pendingInbox,
     collector,

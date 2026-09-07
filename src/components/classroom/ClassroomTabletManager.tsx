@@ -26,11 +26,24 @@ type Link = {
   dismissal_auto: boolean;
 };
 
-const CODE_CHARS = "23456789abcdefghjkmnpqrstuvwxyz";
-function randomCode(len = 4) {
-  let out = "";
-  for (let i = 0; i < len; i++) out += CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)];
-  return out;
+/**
+ * 주소는 반 이름 그대로. `…/c/g2c`
+ *
+ * 임의의 네 글자(k3xm)는 사람이 «몇 반 주소였더라»를 알 수 없습니다. 태블릿을 옮기거나
+ * 다시 설정할 때마다 목록을 열어 대조해야 하는데, 그 한 번이 곧 안 하게 되는 이유가 됩니다.
+ */
+function codeFor(c: WrClass, taken: Set<string>): string {
+  const base =
+    (c.class_name ?? "").toLowerCase().replace(/[^a-z0-9가-힣]/g, "") ||
+    `g${(c.grade ?? "x").toLowerCase().replace(/[^a-z0-9]/g, "")}`;
+  // 반 이름이 겹치는 두 반이 같은 주소를 쓰면 호출이 엉뚱한 교실에 뜹니다. 뒤에 숫자를 붙입니다.
+  let candidate = base;
+  let n = 1;
+  while (taken.has(candidate)) {
+    n += 1;
+    candidate = `${base}${n}`;
+  }
+  return candidate;
 }
 
 /** 자주 쓰는 호출 사유. 손으로 적는 것보다 빠르고, 무엇보다 표기가 흔들리지 않습니다. */
@@ -62,15 +75,17 @@ export default function ClassroomTabletManager({ classes }: { classes: WrClass[]
   async function createLink(c: WrClass) {
     setBusy(c.id);
     const supabase = createClient();
-    // 짧은 코드가 우연히 겹칠 수 있어 몇 번 다시 시도합니다.
+    // 반 이름이 이미 쓰이고 있으면 뒤에 숫자를 붙여 다시 시도합니다.
     let made: Link | null = null;
     let lastError: { code?: string; message: string } | null = null;
+    const taken = new Set(links.map((l) => l.short_code ?? "").filter(Boolean));
     for (let i = 0; i < 5 && !made; i++) {
       const res = await supabase
         .from("classroom_links")
-        .insert({ class_id: c.id, label: `${c.grade}학년 ${c.class_name}`, short_code: randomCode() })
+        .insert({ class_id: c.id, label: `${c.grade}학년 ${c.class_name}`, short_code: codeFor(c, taken) })
         .select()
         .single();
+      if (res.error?.code === "23505") taken.add(codeFor(c, taken)); // 방금 쓴 후보를 빼고 다시
       made = res.data as Link | null;
       lastError = res.error;
       if (!lastError) break;

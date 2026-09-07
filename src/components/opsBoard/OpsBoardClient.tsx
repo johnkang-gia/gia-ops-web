@@ -78,6 +78,18 @@ type BoardData = {
   pickups: { name: string; time: string | null; grade?: string | null; className?: string | null; classId?: string | null }[];
   /** 아직 시작하지 않은 등록 건. 시작일이 오면 저절로 오늘 명단으로 넘어갑니다. */
   upcoming?: { name: string; status: string; from: string; to: string; note: string | null }[];
+  /** 교실 태블릿에서 온 특이사항·문의. 읽으면 그 시각이 교실 화면에 그대로 뜹니다. */
+  classroomNotes?: {
+    id: string;
+    className: string;
+    kind: string;
+    studentName: string | null;
+    body: string;
+    urgent: boolean;
+    at: string;
+    readAt: string | null;
+    reply: string | null;
+  }[];
   inquiries: { id: string; student: string; type: string | null; typeGuessed?: boolean; summary: string; urgent: boolean; at: string; replied?: boolean }[];
   /** 아직 사람이 한 번 봐야 하는 픽업 요청(확인대기). 비어 있는 것이 정상입니다. */
   pendingInbox?: { name: string; date: string | null; time: string | null; today: boolean }[];
@@ -483,6 +495,34 @@ export default function OpsBoardClient({ token }: { token: string }) {
 
       {/* 픽업 알람 - 두 칸 위. 시각이 5분 앞으로 다가온 것만 뜨고, 없으면 자리를 안 먹습니다. */}
       <PickupAlarm sc={sc} data={data} nowMin={nowMinutes} />
+
+      {/* 교실에서 온 것. 안 읽은 것이 있을 때만 뜹니다. */}
+      <ClassroomNotes
+        sc={sc}
+        items={data.classroomNotes ?? []}
+        onAct={async (id, patch) => {
+          // 화면에서 먼저 반영합니다 - 벽에 걸린 화면에서 한 박자 늦으면 두 번 누릅니다.
+          setData((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  classroomNotes: (prev.classroomNotes ?? [])
+                    .map((n) => (n.id === id ? { ...n, readAt: new Date().toISOString(), reply: patch.reply ?? n.reply } : n))
+                    .filter((n) => !(n.id === id && patch.done)),
+                }
+              : prev
+          );
+          try {
+            await fetch(`/api/ops-board/${token}/classroom`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ id, ...patch }),
+            });
+          } catch {
+            load(); // 실패하면 되돌립니다(다음 갱신에서 다시 나타납니다).
+          }
+        }}
+      />
 
       {/* ── 화면을 세로로 반 가르기 ───────────────────────────────────────────
           요청: "학부모문의칸을 아예 화면 반으로 쓸 수 있도록", "오늘업무를 지우고, 결석·지각·
@@ -1063,6 +1103,131 @@ function NightInfoPanel({ sc, data }: { sc: BoardScale; data: BoardData }) {
       </div>
     </div>
   );
+}
+
+// 교실에서 온 것 - 특이사항·문의.
+//
+// 행정실이 실제로 보고 있는 화면이 이것이라 여기 띄웁니다. 다른 화면에 로그인해야 처리할 수
+// 있다면 그 한 단계 때문에 «나중에»가 되고, 선생님 화면에는 영영 «보냄»으로 남습니다.
+//
+// **반 이름이 가장 큽니다.** 행정실이 먼저 아는 것은 «무슨 일»이 아니라 «어느 교실»입니다 -
+// 그리로 가야 하니까요. 반 이름은 이미 영문 코드(G2C·G3JU)라 한국인·외국인 직원이 같은
+// 글자를 읽습니다.
+//
+// 누르면 그 순간 교실 화면에 «읽음 15:32»가 뜹니다. 보냈다와 받았다를 잇는 유일한 자리입니다.
+const QUICK_REPLY = ["확인했습니다", "곧 가겠습니다", "학부모에 연락합니다", "잠시만 기다려주세요"];
+
+function ClassroomNotes({
+  sc,
+  items,
+  onAct,
+}: {
+  sc: BoardScale;
+  items: NonNullable<BoardData["classroomNotes"]>;
+  onAct: (id: string, patch: { reply?: string; done?: boolean }) => void;
+}) {
+  const [open, setOpen] = useState<string | null>(null);
+  if (items.length === 0) return null;
+  const unread = items.filter((n) => !n.readAt);
+
+  return (
+    <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", gap: sc.s(6, 4) }}>
+      {items.slice(0, 4).map((n) => {
+        const isOpen = open === n.id;
+        return (
+          <div
+            key={n.id}
+            style={{
+              background: n.readAt ? "#132033" : n.urgent ? "#3b1414" : "#13253a",
+              border: `2px solid ${n.readAt ? "#1e293b" : n.urgent ? "#ef4444" : "#0ea5e9"}`,
+              borderRadius: sc.s(12, 7),
+              padding: `${sc.s(9, 6)}px ${sc.s(14, 9)}px`,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: `${sc.s(5, 3)}px ${sc.s(14, 9)}px` }}>
+              {/* 어느 교실인가 - 가장 크게. */}
+              <span
+                style={{
+                  fontSize: sc.s(30, 20),
+                  fontWeight: 900,
+                  color: n.readAt ? "#94a3b8" : "#fff",
+                  background: n.readAt ? "transparent" : n.urgent ? "#7f1d1d" : "#0c4a6e",
+                  borderRadius: sc.s(8, 5),
+                  padding: n.readAt ? 0 : `${sc.s(2, 1)}px ${sc.s(10, 6)}px`,
+                  letterSpacing: 0.5,
+                }}
+              >
+                {n.className}
+              </span>
+              <span style={{ fontSize: sc.s(16, 12), fontWeight: 800, color: n.urgent ? "#fca5a5" : "#7dd3fc" }}>
+                {n.urgent ? "🔴 급함" : n.kind === "문의" ? "❓ 문의" : "🩹 특이사항"}
+              </span>
+              {n.studentName && <b style={{ fontSize: sc.s(22, 15), color: "#fff" }}>{n.studentName}</b>}
+              <span style={{ fontSize: sc.s(20, 14), color: "#e2e8f0" }}>{n.body}</span>
+              <span style={{ fontSize: sc.s(14, 11), color: "#64748b", marginLeft: "auto" }}>
+                {new Date(n.at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}
+                {n.readAt ? " · 읽음" : ""}
+              </span>
+            </div>
+
+            {n.reply && <p style={{ margin: `${sc.s(4, 2)}px 0 0`, fontSize: sc.s(16, 12), color: "#7dd3fc" }}>↩ {n.reply}</p>}
+
+            <div style={{ display: "flex", flexWrap: "wrap", gap: sc.s(6, 4), marginTop: sc.s(7, 5) }}>
+              {!n.readAt && (
+                <button type="button" onClick={() => onAct(n.id, {})} style={btn(sc, "#0284c7")}>
+                  읽음
+                </button>
+              )}
+              <button type="button" onClick={() => setOpen(isOpen ? null : n.id)} style={btn(sc, "#334155")}>
+                답 보내기
+              </button>
+              <button type="button" onClick={() => onAct(n.id, { done: true })} style={btn(sc, "#166534")}>
+                처리 완료
+              </button>
+            </div>
+
+            {isOpen && (
+              /* 벽에 걸린 화면에서 길게 치기 어려워 버튼으로 답합니다. 짧아도 «받았다»가
+                 교실에 전해지는 것이 요점입니다. */
+              <div style={{ display: "flex", flexWrap: "wrap", gap: sc.s(6, 4), marginTop: sc.s(6, 4) }}>
+                {QUICK_REPLY.map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => {
+                      onAct(n.id, { reply: r });
+                      setOpen(null);
+                    }}
+                    style={btn(sc, "#1e3a5f")}
+                  >
+                    {r}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+      {items.length > 4 && (
+        <p style={{ margin: 0, fontSize: sc.s(14, 11), color: "#64748b" }}>
+          외 {items.length - 4}건 (안 읽은 것 {unread.length}건)
+        </p>
+      )}
+    </div>
+  );
+}
+
+function btn(sc: BoardScale, bg: string): React.CSSProperties {
+  return {
+    borderRadius: 999,
+    border: "none",
+    background: bg,
+    color: "#fff",
+    fontSize: sc.s(16, 12),
+    fontWeight: 800,
+    padding: `${sc.s(8, 5)}px ${sc.s(18, 11)}px`,
+    cursor: "pointer",
+  };
 }
 
 // 픽업 알람.

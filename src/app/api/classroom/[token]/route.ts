@@ -95,6 +95,16 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
       (p) => nowMinutes >= toMin((p.start_time as string).slice(0, 5)) && nowMinutes < toMin((p.end_time as string).slice(0, 5))
     ) ?? null;
 
+  // 이 교실이 오늘 보낸 것들. **상태를 함께 봅니다** - 보냈다는 것만 알면 «왜 답이 없지»가
+  // 반복됩니다. 행정실이 읽으면 읽은 시각이 여기 그대로 실려옵니다.
+  const { data: notes } = await db
+    .from("classroom_notes")
+    .select("id, kind, student_name, body, urgency, created_at, read_at, reply, replied_at, done_at")
+    .eq("class_id", cls.id)
+    .gte("created_at", `${today}T00:00:00+09:00`)
+    .order("created_at", { ascending: false })
+    .limit(20);
+
   return NextResponse.json({
     appVersion: APP_VERSION,
     today,
@@ -117,6 +127,18 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
       name: s.name as string,
       status: markByStudent[s.id as string] ?? null,
     })),
+    notes: (notes ?? []).map((n) => ({
+      id: n.id as string,
+      kind: n.kind as string,
+      studentName: (n.student_name as string | null) ?? null,
+      body: n.body as string,
+      urgency: n.urgency as string,
+      at: n.created_at as string,
+      readAt: (n.read_at as string | null) ?? null,
+      reply: (n.reply as string | null) ?? null,
+      repliedAt: (n.replied_at as string | null) ?? null,
+      doneAt: (n.done_at as string | null) ?? null,
+    })),
   });
 }
 
@@ -136,7 +158,23 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
   const body = (await req.json().catch(() => ({}))) as {
     ackCallId?: string;
     attendance?: { studentId: string; status: string }[];
+    note?: { kind: string; studentName?: string | null; studentId?: string | null; body: string; urgency?: string };
   };
+
+  if (body.note) {
+    const text = (body.note.body ?? "").trim();
+    if (!text) return NextResponse.json({ error: "내용을 적어주세요." }, { status: 400 });
+    const { error } = await db.from("classroom_notes").insert({
+      class_id: link.class_id,
+      kind: body.note.kind === "문의" ? "문의" : "특이사항",
+      student_name: body.note.studentName ?? null,
+      student_id: body.note.studentId ?? null,
+      body: text,
+      urgency: body.note.urgency === "급함" ? "급함" : "보통",
+    });
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
 
   if (body.ackCallId) {
     // 남의 반 호출을 확인해버리지 않도록 반까지 함께 봅니다.

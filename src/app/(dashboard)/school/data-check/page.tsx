@@ -70,11 +70,18 @@ export default async function DataCheckPage() {
   ];
 
   // 같은 아이일 수 있는 줄. 명부 반영이 짝을 못 찾아 새로 만든 줄이 여기 걸립니다.
+  //
+  // **재학생끼리만 찾으면 정작 진짜 중복이 하나도 안 걸립니다.** 중복은 대개 상태가 다른
+  // 두 줄로 나타납니다 — 명부를 반영할 때 새 줄이 생기고, 옛 줄은 「명부에 없음」이라
+  // 보류로 넘어갑니다. 중고등부 제이콥이 정확히 그 모양이라 목록에 아예 안 떴습니다.
+  //
+  // 퇴원·전출은 뺍니다. 졸업생 이름이 재학생과 같은 경우가 있어서, 넣으면 합칠 이유가
+  // 없는 짝이 목록을 채웁니다.
   const { data: dupRows, error: dupErr } = await supabase
     .from("wr_students")
-    .select("id, name, name_en, grade, class_name, birth_date, created_at")
+    .select("id, name, name_en, grade, class_name, birth_date, status, created_at")
     .eq("is_demo", false)
-    .eq("status", "active")
+    .in("status", ["active", "보류"])
     .order("created_at");
   if (dupErr) console.error("[명부 점검] 중복 조회 실패:", dupErr.message);
 

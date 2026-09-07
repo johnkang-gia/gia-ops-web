@@ -1,0 +1,163 @@
+import { NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
+import { getCurrentAppUser } from "@/lib/currentUser";
+import { hasFinanceAccess } from "@/lib/roles";
+import { gradeLabel } from "@/lib/feeItems";
+import { selectTolerant } from "@/lib/selectTolerant";
+import { todayKst } from "@/lib/kst";
+import { resolveRecipient, type GuardianRole } from "@/lib/alltalkpay";
+import { tuitionLine, type TuitionLine } from "@/lib/tuition";
+import type { FeePlan, FeePaymentOption, FeeDiscount } from "@/lib/types";
+
+// 학비 청구서 발행.
+//
+// 학비외 항목(/api/finance/invoices)과 **표가 다릅니다.** 저쪽은 fee_items 를 학생에게
+// 붙이는 방식이고, 이쪽은 「학부모가 서명해서 고른 납부 옵션」(student_fee_enrollments)이
+// 근거입니다. 그래서 계산도 다릅니다 - 기준금액 × 회차수 × (1 − 옵션할인) − 추가할인.
+//
+// **금액은 서버가 다시 계산합니다.** 화면이 보낸 총액을 그대로 믿으면, 화면이 틀렸을 때
+// 틀린 금액이 그대로 학부모에게 갑니다. 화면과 서버가 같은 함수(tuitionLine)를 쓰되
+// 최종 값은 여기서 냅니다.
+//
+// 그리고 **그때의 이름과 금액을 베껴 굳힙니다.** 요금표를 참조만 하면, 나중에 학비가
+// 오를 때 이미 보낸 청구서 금액까지 같이 바뀝니다.
+
+export const dynamic = "force-dynamic";
+
+type StudentRow = {
+  id: string; name: string; name_en: string | null; grade: string | null; class_name: string | null;
+  department: string | null;
+  mother_phone?: string | null; father_phone?: string | null; parent_phone?: string | null;
+};
+
+export async function POST(req: Request) {
+  const me = await getCurrentAppUser();
+  if (!me) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!hasFinanceAccess(me)) return NextResponse.json({ error: "재무 권한이 필요합니다." }, { status: 403 });
+
+  const body = await req.json().catch(() => ({}));
+  const studentId = body?.studentId as string | undefined;
+  const dueDate = (body?.dueDate as string | undefined) ?? null;
+  const termId = (body?.termId as string | undefined) ?? null;
+  const askedRole = body?.guardianRole;
+  const guardianRole: GuardianRole | null =
+    askedRole === "mother" || askedRole === "father" || askedRole === "guardian" ? askedRole : null;
+  if (!studentId) return NextResponse.json({ error: "studentId가 필요합니다." }, { status: 400 });
+
+  const supabase = await createClient();
+
+  const [stuRes, planRes, optRes, enrollRes, sdRes, discRes] = await Promise.all([
+    selectTolerant<StudentRow>(
+      (columns) =>
+        supabase.from("wr_students").select(columns).eq("is_demo", false).eq("id", studentId) as unknown as
+          PromiseLike<{ data: StudentRow[] | null; error: { message: string } | null }>,
+      ["id", "name", "name_en", "grade", "class_name", "department"],
+      ["mother_phone", "father_phone", "parent_phone"],
+    ),
+    supabase.from("fee_plans").select("*").eq("category", "학비"),
+    supabase.from("fee_payment_options").select("*"),
+    // 학기를 안 건 옛 줄도 함께 봅니다. 학기가 생기기 전에 넣어둔 신청이 있고, 그걸 빼면
+    // 그 학생만 조용히 청구에서 빠집니다.
+    supabase.from("student_fee_enrollments").select("*").eq("student_id", studentId).eq("active", true),
+    supabase.from("student_fee_discounts").select("*").eq("student_id", studentId).eq("active", true),
+    supabase.from("fee_discounts").select("*"),
+  ]);
+  if (stuRes.error) return NextResponse.json({ error: stuRes.error }, { status: 500 });
+  const err = planRes.error ?? optRes.error ?? enrollRes.error ?? sdRes.error ?? discRes.error;
+  if (err) return NextResponse.json({ error: err.message }, { status: 500 });
+
+  const student = stuRes.data[0] ?? null;
+  if (!student) return NextResponse.json({ error: "학생을 찾지 못했습니다." }, { status: 404 });
+
+  const plans = (planRes.data as FeePlan[] | null) ?? [];
+  const options = (optRes.data as FeePaymentOption[] | null) ?? [];
+  const discounts = (discRes.data as FeeDiscount[] | null) ?? [];
+
+  const sameTerm = <T extends { term_id?: string | null }>(r: T) => !r.term_id || !termId || r.term_id === termId;
+
+  const enrollments = ((enrollRes.data as { plan_id: string; option_id: string | null; term_id: string | null }[] | null) ?? [])
+    .filter(sameTerm);
+  const studentDiscounts = ((sdRes.data as { discount_id: string; term_id: string | null }[] | null) ?? []).filter(sameTerm);
+
+  // 이 학생에게 걸린 할인. **끈 할인도 그대로 씁니다** - 이미 붙어 있던 건을 빼면 학부모가
+  // 들은 금액과 청구서가 달라집니다. 새로 붙이는 것만 화면에서 막습니다.
+  const applied = studentDiscounts
+    .map((sd) => discounts.find((d) => d.id === sd.discount_id))
+    .filter((d): d is FeeDiscount => !!d);
+
+  const lines: TuitionLine[] = [];
+  for (const e of enrollments) {
+    const plan = plans.find((p) => p.id === e.plan_id);
+    if (!plan) continue;
+    const option = options.find((o) => o.id === e.option_id) ?? null;
+    // 항목에 딱 걸린 할인 + 학비 전체에 걸린 할인. 다른 항목 전용 할인은 여기 안 붙습니다.
+    const forPlan = applied.filter((d) => !d.plan_id || d.plan_id === plan.id);
+    const line = tuitionLine(plan, option, forPlan);
+    if (line) lines.push(line);
+  }
+
+  if (lines.length === 0) {
+    return NextResponse.json(
+      { error: "이 학생이 고른 납부 옵션이 없습니다. 학비 청구 화면에서 먼저 골라주세요." },
+      { status: 400 },
+    );
+  }
+
+  const total = lines.reduce((n, l) => n + l.amount, 0);
+  const issue = todayKst();
+  const due = dueDate && /^\d{4}-\d{2}-\d{2}$/.test(dueDate) ? dueDate : issue;
+
+  const recipient = resolveRecipient(
+    { mother_phone: student.mother_phone ?? null, father_phone: student.father_phone ?? null, parent_phone: student.parent_phone ?? null },
+    guardianRole,
+  );
+
+  // 번호는 DB가 정합니다. 사람이 손으로 붙이면 반드시 겹칩니다.
+  const { data: noRow, error: noErr } = await supabase.rpc("next_invoice_no");
+  if (noErr) return NextResponse.json({ error: `번호를 만들지 못했습니다: ${noErr.message}` }, { status: 500 });
+
+  const { data: inv, error: invErr } = await supabase
+    .from("invoices")
+    .insert({
+      invoice_no: noRow as unknown as string,
+      student_id: student.id,
+      student_name: student.name_en?.trim() || student.name,
+      student_name_ko: student.name,
+      grade_label: gradeLabel({ grade: student.grade, className: student.class_name }),
+      issue_date: issue,
+      due_date: due,
+      total_amount: total,
+      guardian_phone: recipient?.phone ?? null,
+      guardian_role: recipient?.role ?? null,
+      // 학비 청구서는 학비외와 **한 장에 섞지 않습니다.** 금액 자릿수가 다르고 납기도
+      // 다릅니다. 분류로 갈라두면 명단에서도 따로 셉니다.
+      category: "학비",
+      // 학기 칸은 학비외 청구서와 **같은 칸**을 씁니다. 두 종류가 다른 칸에 학기를 넣으면
+      // 학기별 집계가 한쪽만 세게 됩니다.
+      fee_term_id: termId,
+      issued_by: me.name || me.email,
+    })
+    .select()
+    .single();
+  if (invErr || !inv) return NextResponse.json({ error: invErr?.message ?? "발행 실패" }, { status: 500 });
+
+  // 할인을 **별도 줄로** 남깁니다. 깎인 금액만 적으면 학부모가 「원래 얼마였는데 얼마
+  // 깎였는지」를 알 수 없고, 그 문의가 그대로 행정실로 옵니다.
+  const rows: { invoice_id: string; seq: number; name: string; qty: number; unit_price: number; amount: number }[] = [];
+  let seq = 0;
+  for (const l of lines) {
+    rows.push({ invoice_id: inv.id, seq: ++seq, name: l.label, qty: 1, unit_price: l.subtotal, amount: l.subtotal });
+    for (const d of l.discounts) {
+      rows.push({ invoice_id: inv.id, seq: ++seq, name: `　└ ${d.name}`, qty: 1, unit_price: -d.amount, amount: -d.amount });
+    }
+  }
+
+  const { error: lineErr } = await supabase.from("invoice_lines").insert(rows);
+  // 줄을 못 넣었으면 총액만 있고 내역이 없는 종이가 나갑니다. 머리줄을 지우고 실패로 답합니다.
+  if (lineErr) {
+    await supabase.from("invoices").delete().eq("id", inv.id);
+    return NextResponse.json({ error: `내역을 저장하지 못했습니다: ${lineErr.message}` }, { status: 500 });
+  }
+
+  return NextResponse.json({ ok: true, invoice: inv });
+}

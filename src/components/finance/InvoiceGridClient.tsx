@@ -1429,7 +1429,21 @@ export default function InvoiceGridClient({
                       </button>
                       </span>
                     ) : total > 0 ? (
-                      <span className="text-[11px] font-semibold text-amber-600">미발행</span>
+                      // 한 명만 발행하는 일이 잦습니다(뒤늦게 등록한 아이, 항목을 고친 아이).
+                      // 그때마다 체크 → 위로 올라가 [발행]을 누르는 것은 두 걸음이 더 듭니다.
+                      // **검토 창은 그대로 거칩니다** - 발행은 되돌릴 수 없고, 그 창이
+                      // 「이 아이만 금액이 다르다」를 짚어주는 자리입니다.
+                      <span className="flex items-center gap-1">
+                        <span className="text-[11px] font-semibold text-amber-600">미발행</span>
+                        <button
+                          onClick={() => setReview([s])}
+                          disabled={busy}
+                          className="rounded bg-amber-100 px-1 text-[11px] font-bold text-amber-800 hover:bg-amber-200 disabled:opacity-40"
+                          title={`${s.name} 한 명만 지금 발행합니다 (${won(total)})`}
+                        >
+                          발행 →
+                        </button>
+                      </span>
                     ) : (
                       <span className="text-[11px] text-slate-300">—</span>
                     )}

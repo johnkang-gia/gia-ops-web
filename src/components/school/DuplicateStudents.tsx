@@ -67,8 +67,9 @@ export default function DuplicateStudents({ groups, canMerge }: { groups: DupGro
       </h2>
       <p className="mb-2 text-[11px] leading-relaxed text-amber-800">
         이름이 같은 경우뿐 아니라 <b>한쪽 이름이 다른 쪽에 들어 있거나</b>(제이콥 · 제이콥 딜런 마), 생년월일이나 영문
-        이름이 같은 줄도 함께 올립니다. 같은 아이가 두 줄로 들어간 것일 수도, 정말 동명이인일 수도 있습니다 —
-        <b> 아래 근거와 생년월일·반을 보고</b> 판단해 주세요.
+        이름이 같은 줄도 함께 올립니다. <b>재학과 보류를 함께 봅니다</b> — 명부를 반영할 때 새 줄이 생기고 옛 줄이
+        보류로 넘어가서, 중복은 대개 이 두 상태에 하나씩 걸쳐 있습니다. 같은 아이가 두 줄로 들어간 것일 수도, 정말
+        동명이인일 수도 있습니다 —<b> 아래 근거와 생년월일·반을 보고</b> 판단해 주세요.
         {canMerge ? " 합치면 되돌릴 수 없습니다." : " 합치는 것은 관리자만 할 수 있습니다."}
       </p>
 
@@ -89,6 +90,16 @@ export default function DuplicateStudents({ groups, canMerge }: { groups: DupGro
               {g.people.map((s) => (
                 <li key={s.id} className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px]">
                   <b className="w-28 shrink-0 text-slate-800">{s.name}</b>
+                  {/* 상태가 다른 두 줄이 가장 흔한 중복입니다. 어느 쪽이 「지금 쓰는 줄」인지
+                      보여야 어느 쪽으로 합칠지 정할 수 있습니다 — 대개 재학 쪽으로 합칩니다. */}
+                  <span
+                    className={
+                      "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold " +
+                      (s.status === "보류" ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800")
+                    }
+                  >
+                    {s.status === "보류" ? "보류" : "재학"}
+                  </span>
                   <span className="w-20 shrink-0 text-slate-500">{s.birth_date ?? "생일 없음"}</span>
                   <span className="text-slate-700">
                     {s.grade ? `${s.grade}학년` : "학년 없음"} {s.class_name ?? "반 없음"}

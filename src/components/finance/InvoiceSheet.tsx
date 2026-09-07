@@ -124,8 +124,10 @@ export default function InvoiceSheet({
               <tr>
                 <td style={{ background: "#1e2a44", color: "#fff", padding: "14px 18px", width: "62%" }}>
                   <div style={{ fontSize: 19, fontWeight: 800, letterSpacing: -0.2 }}>GIA Micro Lab</div>
+                  {/* 교재 말고도 나갑니다 - 교복·악기·방과후·학비. 제목에 한 품목을 박아두면
+                      다른 품목 청구서가 나갈 때마다 제목이 거짓말이 됩니다. */}
                   <div style={{ fontSize: 10, fontWeight: 700, color: "#d6b370", marginTop: 3 }}>
-                    Textbook Payment Invoice
+                    Payment Invoice
                   </div>
                 </td>
                 <td style={{ background: "#1e2a44", color: "#fff", padding: "14px 18px", textAlign: "right", fontSize: 9.5, lineHeight: 1.5 }}>
@@ -176,7 +178,7 @@ export default function InvoiceSheet({
             <thead>
               <tr style={{ background: "#1e2a44", color: "#fff" }}>
                 <th style={{ width: 46, padding: "7px 10px", textAlign: "left", fontSize: 9, letterSpacing: 0.5 }}>NO.</th>
-                <th style={{ padding: "7px 10px", textAlign: "left", fontSize: 9, letterSpacing: 0.5 }}>TEXTBOOK / MATERIAL</th>
+                <th style={{ padding: "7px 10px", textAlign: "left", fontSize: 9, letterSpacing: 0.5 }}>DESCRIPTION</th>
                 <th style={{ width: 60, padding: "7px 10px", textAlign: "left", fontSize: 9, letterSpacing: 0.5 }}>QTY</th>
                 <th style={{ width: 110, padding: "7px 10px", textAlign: "left", fontSize: 9, letterSpacing: 0.5 }}>AMOUNT</th>
               </tr>

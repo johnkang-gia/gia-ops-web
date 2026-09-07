@@ -17,6 +17,14 @@ export type DupPerson = {
   grade: string | null;
   class_name: string | null;
   birth_date: string | null;
+  /**
+   * 재학 / 보류 / 퇴원.
+   *
+   * **중복은 상태가 다른 두 줄로 나타나는 경우가 가장 많습니다.** 명부를 반영할 때 새 줄이
+   * 생기고, 옛 줄은 「명부에 없음」이라 보류로 넘어갑니다. 그래서 재학생끼리만 찾으면 정작
+   * 진짜 중복은 하나도 안 걸립니다 — 중고등부 제이콥이 그랬습니다.
+   */
+  status?: string | null;
   created_at: string;
 };
 

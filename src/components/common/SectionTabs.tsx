@@ -302,6 +302,9 @@ const DOCS_TABS: TabDef[] = [
 // 순서는 자주 여는 것부터입니다. 재무 일은 대개 "지금 어디까지 됐나"에서 시작합니다.
 const FINANCE_TABS: TabDef[] = [
   { key: "overview", label: "개요", icon: "📊", href: "/finance", match: ["/finance"] },
+  // 학비(정규·방과후)와 학비외(교재·교복)는 근거가 다릅니다 - 학비는 학부모가 서명해서 고른
+  // 납부 옵션이고, 학비외는 «이 아이가 이 책을 산다»는 체크입니다. 한 표에 섞으면 둘 다 안 됩니다.
+  { key: "tuition", label: "학비 청구", icon: "💰", href: "/finance/tuition", match: ["/finance/tuition"] },
   { key: "invoices", label: "인보이스 명단", icon: "🧾", href: "/finance/invoices", match: ["/finance/invoices"] },
   { key: "payments", label: "수납", icon: "💳", href: "/finance/payments", match: ["/finance/payments"] },
   // 현금·계좌이체 건의 현금영수증 신청·발행 여부. 수납 바로 옆에 둡니다 - 수납을 넣는

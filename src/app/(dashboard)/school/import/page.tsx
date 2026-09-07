@@ -1,4 +1,6 @@
 import { redirect } from "next/navigation";
+import { ROSTER_TABS } from "@/components/school/rosterTabs";
+import PageTabs from "@/components/common/PageTabs";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isAdminUser } from "@/lib/roles";
 import SchoolImportClient from "@/components/school/SchoolImportClient";
@@ -39,6 +41,7 @@ export default async function SchoolImportPage() {
 
   return (
     <div className="mx-auto max-w-5xl">
+      <PageTabs tabs={ROSTER_TABS} isAdmin />
       <div className="mb-1 flex items-center justify-between gap-2">
         <h1 className="text-lg font-bold">📥 구글시트로 학교정보 가져오기</h1>
         <GuideButton title="구글시트로 학교정보 가져오기 사용 가이드" sections={GUIDE_SECTIONS} />

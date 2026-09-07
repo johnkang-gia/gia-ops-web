@@ -1,4 +1,6 @@
 import { redirect } from "next/navigation";
+import { ROSTER_TABS } from "@/components/school/rosterTabs";
+import PageTabs from "@/components/common/PageTabs";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
@@ -136,6 +138,7 @@ export default async function DataCheckPage() {
 
   return (
     <div className="mx-auto max-w-4xl p-4 sm:p-6">
+      <PageTabs tabs={ROSTER_TABS} isAdmin={isAdminUser(me)} />
       <div className="mb-1 flex items-center justify-between gap-2">
         <h1 className="text-lg font-bold">🩺 명부 점검</h1>
         <GuideButton title="명부 점검 사용 가이드" sections={GUIDE_SECTIONS} />

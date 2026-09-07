@@ -81,9 +81,9 @@ export default function RosterSyncClient() {
   const pending = inbox.filter((r) => r.kind !== "확인 필요");
 
   return (
-    <div className="mt-6 rounded-xl border-2 border-slate-200 bg-white p-3">
+    <div className="rounded-xl border-2 border-slate-200 bg-white p-3">
       <div className="mb-1 flex flex-wrap items-center gap-2">
-        <h2 className="text-[13px] font-bold text-slate-800">🔗 구글시트에서 자동으로 받기</h2>
+        <h2 className="text-[13px] font-bold text-slate-800">연결</h2>
         <button
           onClick={() => void act({ action: "create" }, "연결을 만들었습니다.")}
           disabled={busy}

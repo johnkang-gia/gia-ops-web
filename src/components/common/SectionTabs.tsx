@@ -113,13 +113,21 @@ const SCHOOL_TABS: TabDef[] = [
       "/weekly-report/admin/class-roster",
       "/school/data-check",
       "/school/import",
-      "/school/paste",
+      "/school/sheet",
       "/school/groups",
       "/school/apparel",
     ],
     children: [
       { label: "학생 조회", href: "/students", match: ["/students"] },
-      { label: "명부 관리", href: "/weekly-report/admin/students" },
+      // 「명부 관리」 하나로 모았습니다. 명부를 보는 일, 구글시트에서 받아오는 일, 겹친 줄을
+      // 정리하는 일, 처음 한 번 통째로 넣는 일은 전부 같은 명부를 두고 하는 일인데 여기에
+      // 네 줄로 늘어서 있었습니다. 서로 무슨 관계인지 알 수 없고, 「학생」 아래가 여덟 줄이라
+      // 정작 자주 쓰는 것이 묻혔습니다. 흡수한 화면들은 그 안에서 갈립니다(ROSTER_TABS).
+      {
+        label: "명부 관리",
+        href: "/weekly-report/admin/students",
+        match: ["/weekly-report/admin/students", "/school/sheet", "/school/data-check", "/school/import"],
+      },
       // 아이를 반에 넣는 일은 학생 자료를 고치는 일입니다. 반을 만들고 담임을 붙이는
       // 일(반 · 시간표)은 학기와 교사에 붙습니다 - 성격이 달라 탭도 갈랐습니다.
       { label: "반 배정", href: "/weekly-report/admin/class-roster", match: ["/weekly-report/admin/class-roster"] },
@@ -127,11 +135,6 @@ const SCHOOL_TABS: TabDef[] = [
       { label: "수강 그룹", href: "/school/groups", match: ["/school/groups"] },
       // 교복·행사 티셔츠. 사이즈는 학생에 저장되어 행사마다 다시 조사하지 않습니다.
       { label: "의류", href: "/school/apparel", match: ["/school/apparel"] },
-      // 구글시트에서 복사한 줄을 그대로 붙여넣습니다. 명부가 시트에서만 갱신되고 있어서,
-      // 한 명씩 손으로 옮기면 옮기는 일 자체가 미뤄지고 두 명부가 어긋납니다.
-      { label: "명부 붙여넣기", href: "/school/paste" },
-      { label: "명부 점검", href: "/school/data-check" },
-      { label: "명부 가져오기", href: "/school/import" },
     ],
   },
   // 출석부는 학교 자료입니다. 업무 메뉴(연락·출결)에 있던 것을 옮겼습니다 - 거기서는
@@ -190,12 +193,6 @@ const SHUTTLE_TABS: TabDef[] = [
       { label: "하원 셔틀명단", href: "/shuttle/checklist/roster" },
     ],
   },
-  // 지금까지는 **오늘만** 볼 수 있었습니다. "이 아이 이번 달에 몇 번 빠졌지?"를 물으면
-  // 아무도 답을 못 했습니다. 기록은 다 쌓여 있는데 꺼내 볼 방법이 없었을 뿐입니다.
-  { key: "history", label: "결석·픽업 이력", icon: "📆", href: "/shuttle/history", match: ["/shuttle/history"] },
-  // 차를 늘릴지 줄일지, 어느 노선을 합칠지는 지금까지 기억과 인상으로 정했습니다.
-  // "그 차는 늘 비어 보이던데"는 맞을 때도 있고 아닐 때도 있습니다.
-  { key: "capacity", label: "탑승률", icon: "🪑", href: "/shuttle/capacity", match: ["/shuttle/capacity"] },
   { key: "pickup", label: "픽업 인박스", icon: "📥", href: "/pickup/inbox", match: ["/pickup/inbox"] },
   {
     key: "routes",
@@ -226,7 +223,24 @@ const SHUTTLE_TABS: TabDef[] = [
       { label: "GPS 현황", href: "/shuttle/gps" },
     ],
   },
-  { key: "records", label: "기록 · 분석", icon: "⏱️", href: "/shuttle/stop-times", match: ["/shuttle/stop-times"] },
+  // 「결석·픽업 이력」·「탑승률」·「정류장 시간」을 한 자리로 모았습니다. 셋 다 «지나간 운행을
+  // 돌아보는» 일인데 탭 세 자리를 차지해, 매일 쓰는 체크표·인박스가 뒤로 밀려 있었습니다.
+  {
+    key: "records",
+    label: "기록 · 분석",
+    icon: "⏱️",
+    href: "/shuttle/history",
+    match: ["/shuttle/history", "/shuttle/capacity", "/shuttle/stop-times"],
+    children: [
+      // 지금까지는 **오늘만** 볼 수 있었습니다. "이 아이 이번 달에 몇 번 빠졌지?"를 물으면
+      // 아무도 답을 못 했습니다. 기록은 다 쌓여 있는데 꺼내 볼 방법이 없었을 뿐입니다.
+      { label: "결석 · 픽업 이력", href: "/shuttle/history", match: ["/shuttle/history"] },
+      // 차를 늘릴지 줄일지, 어느 노선을 합칠지는 지금까지 기억과 인상으로 정했습니다.
+      // "그 차는 늘 비어 보이던데"는 맞을 때도 있고 아닐 때도 있습니다.
+      { label: "탑승률", href: "/shuttle/capacity", match: ["/shuttle/capacity"] },
+      { label: "정류장 시간", href: "/shuttle/stop-times", match: ["/shuttle/stop-times"] },
+    ],
+  },
 ];
 
 // ── 문서 · 기록 ─────────────────────────────────────────────────────────────
@@ -308,12 +322,32 @@ const FINANCE_TABS: TabDef[] = [
   // 납부 옵션이고, 학비외는 «이 아이가 이 책을 산다»는 체크입니다. 한 표에 섞으면 둘 다 안 됩니다.
   { key: "tuition", label: "학비 청구", icon: "💰", href: "/finance/tuition", match: ["/finance/tuition"] },
   { key: "invoices", label: "인보이스 명단", icon: "🧾", href: "/finance/invoices", match: ["/finance/invoices"] },
-  { key: "payments", label: "수납", icon: "💳", href: "/finance/payments", match: ["/finance/payments"] },
-  // 현금·계좌이체 건의 현금영수증 신청·발행 여부. 수납 바로 옆에 둡니다 - 수납을 넣는
-  // 자리에서 신청이 생기고, 그 결과를 보는 자리가 여기입니다.
-  { key: "receipts", label: "현금영수증", icon: "🧾", href: "/finance/receipts", match: ["/finance/receipts"] },
-  { key: "items", label: "학비외 항목", icon: "📚", href: "/finance/items", match: ["/finance/items"] },
-  { key: "plans", label: "납부 항목 · 할인", icon: "💵", href: "/finance/plans", match: ["/finance/plans"] },
+  // 현금영수증은 수납 안으로 들여놨습니다. 수납을 넣는 자리에서 신청이 생기고 그 결과를
+  // 보는 자리가 현금영수증이라, 둘은 한 가지 일의 앞뒤입니다.
+  {
+    key: "payments",
+    label: "수납",
+    icon: "💳",
+    href: "/finance/payments",
+    match: ["/finance/payments", "/finance/receipts"],
+    children: [
+      { label: "수납", href: "/finance/payments", match: ["/finance/payments"] },
+      { label: "현금영수증", href: "/finance/receipts", match: ["/finance/receipts"] },
+    ],
+  },
+  // 「무엇을 얼마에 걷는가」를 정하는 두 화면입니다. 청구하는 화면과 달리 자주 열지 않고,
+  // 학기 초에 한 번 정해두는 자리라 함께 둡니다.
+  {
+    key: "catalog",
+    label: "항목 · 할인",
+    icon: "📚",
+    href: "/finance/plans",
+    match: ["/finance/plans", "/finance/items"],
+    children: [
+      { label: "납부 항목 · 할인", href: "/finance/plans", match: ["/finance/plans"] },
+      { label: "학비외 항목", href: "/finance/items", match: ["/finance/items"] },
+    ],
+  },
 ];
 
 type Section = { title: string; titleEn?: string; icon: string; accent: AccentKey; tabs: TabDef[] };

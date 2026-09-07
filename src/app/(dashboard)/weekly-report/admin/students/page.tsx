@@ -1,4 +1,7 @@
 import { redirect } from "next/navigation";
+import { isAdminUser } from "@/lib/roles";
+import { ROSTER_TABS } from "@/components/school/rosterTabs";
+import PageTabs from "@/components/common/PageTabs";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isStaffOrAboveUser } from "@/lib/roles";
@@ -58,6 +61,7 @@ export default async function StudentManagePage() {
     // 같은 구조로 맞췄습니다) - 이제 표 영역만 화면 높이에 맞춰 자체적으로 스크롤됩니다.
     <div className="mx-auto flex h-full w-full max-w-none flex-col overflow-hidden">
       <div className="shrink-0">
+        <PageTabs tabs={ROSTER_TABS} isAdmin={isAdminUser(me)} />
         <div className="mb-1 flex items-center justify-between gap-2">
           <h1 className="text-lg font-bold">학생 명부 관리</h1>
           <GuideButton title="학생 명부 관리 사용 가이드" sections={GUIDE_SECTIONS} />

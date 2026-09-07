@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useConfirm } from "@/components/common/ConfirmProvider";
+import { useToast } from "@/components/common/ToastProvider";
 
 // 하원 셔틀명단 설정(요청: 하원체크표 탭 분리). 노선(호차)별로 누가 무슨 요일에 타는지 한
 // 화면에서 보고 바로 고칩니다. 요일 버튼(월~금)을 눌러 켜고 끄면 즉시 저장되고, 체크표·안내
@@ -11,8 +12,18 @@ export type RosterAssignment = {
   id: string;
   stop_id: string;
   student_name_raw: string;
+  /** 명부의 학생. 이름만 적힌 옛 줄은 비어 있을 수 있습니다. */
+  student_id?: string | null;
   weekdays: number[];
   note: string | null;
+};
+
+/** 명부에서 고를 학생. 이름만 손으로 치면 오타 한 글자로 다른 아이가 됩니다. */
+export type RosterStudent = {
+  id: string;
+  name: string;
+  grade: string | null;
+  class_name: string | null;
 };
 export type RosterRoute = {
   id: string;
@@ -29,12 +40,36 @@ function natCompare(a: string, b: string) {
   return a.localeCompare(b, "ko", { numeric: true });
 }
 
-export default function DismissalRosterClient({ initialRoutes }: { initialRoutes: RosterRoute[] }) {
+export default function DismissalRosterClient({
+  initialRoutes,
+  students,
+}: {
+  initialRoutes: RosterRoute[];
+  students: RosterStudent[];
+}) {
   const confirmAction = useConfirm();
+  const notify = useToast();
   const [routes, setRoutes] = useState<RosterRoute[]>(initialRoutes);
   const [query, setQuery] = useState("");
   const [addingFor, setAddingFor] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  // 이미 어느 노선에든 배정된 학생. 두 번 넣으면 체크표에 같은 아이가 두 줄로 뜹니다.
+  const assignedIds = useMemo(() => {
+    const s = new Set<string>();
+    for (const r of routes) for (const a of r.assignments) if (a.student_id) s.add(a.student_id);
+    return s;
+  }, [routes]);
+
+  /** 이름을 치면 명부에서 찾습니다. 이름·학년·반 어느 쪽으로도 걸립니다. */
+  const candidates = useMemo(() => {
+    const needle = newName.trim().toLowerCase();
+    if (!needle) return [];
+    return students
+      .filter((s) => `${s.name} ${s.grade ?? ""} ${s.class_name ?? ""}`.toLowerCase().includes(needle))
+      .slice(0, 8);
+  }, [newName, students]);
 
   const sorted = useMemo(() => [...routes].sort((a, b) => natCompare(a.route_no, b.route_no)), [routes]);
   const q = query.trim();
@@ -64,20 +99,45 @@ export default function DismissalRosterClient({ initialRoutes }: { initialRoutes
     await supabase.from("shuttle_assignments").delete().eq("id", asg.id);
   }
 
-  async function addStudent(route: RosterRoute) {
-    const name = newName.trim();
-    if (!name || !route.firstStopId) return;
-    const supabase = createClient();
-    const { data } = await supabase
-      .from("shuttle_assignments")
-      .insert({ stop_id: route.firstStopId, student_name_raw: name, weekdays: [1, 2, 3, 4, 5] })
-      .select("id, stop_id, student_name_raw, weekdays, note")
-      .single();
-    if (data) {
-      setRoutes((prev) => prev.map((r) => (r.id === route.id ? { ...r, assignments: [...r.assignments, data as RosterAssignment] } : r)));
-      setNewName("");
-      setAddingFor(null);
+  /**
+   * 명부에서 고른 학생을 이 노선에 넣습니다.
+   *
+   * 앞 판은 이름을 손으로 치게 하고, 그 노선에 정류장이 하나도 없으면 **아무 말 없이
+   * 아무 일도 안 했습니다.** 눌러도 반응이 없으니 「추가가 안 된다」가 됩니다.
+   * 이제 왜 안 되는지 말합니다.
+   *
+   * 그리고 명부의 학생 번호를 함께 남깁니다 - 이름만 적힌 줄은 오타 한 글자로 다른 아이가
+   * 되고, 대시보드·체크표가 그 아이를 못 찾습니다.
+   */
+  async function addStudent(route: RosterRoute, s: RosterStudent) {
+    if (!route.firstStopId) {
+      notify(`${route.route_no}호에 정류장이 없어 학생을 넣을 수 없습니다. [노선 관리]에서 정류장을 먼저 만들어주세요.`, "error");
+      return;
     }
+    if (assignedIds.has(s.id)) {
+      notify(`${s.name} 학생은 이미 다른 노선에 있습니다. 옮기려면 그쪽에서 먼저 빼주세요.`, "error");
+      return;
+    }
+    setBusy(true);
+    const { data, error } = await createClient()
+      .from("shuttle_assignments")
+      // 기본은 월~금 전부입니다. 넣자마자 요일 버튼이 보이므로, 안 타는 요일만 눌러서 끕니다 -
+      // 아무 요일도 없이 넣으면 「넣었는데 어디에도 안 뜬다」가 됩니다.
+      .insert({ stop_id: route.firstStopId, student_id: s.id, student_name_raw: s.name, weekdays: [1, 2, 3, 4, 5] })
+      .select("id, stop_id, student_id, student_name_raw, weekdays, note")
+      .single();
+    setBusy(false);
+    if (error || !data) {
+      // 조용히 넘기면 화면에는 아무 일도 없었던 것처럼 보입니다.
+      notify("넣지 못했습니다: " + (error?.message ?? "알 수 없는 이유"), "error");
+      return;
+    }
+    setRoutes((prev) =>
+      prev.map((r) => (r.id === route.id ? { ...r, assignments: [...r.assignments, data as RosterAssignment] } : r)),
+    );
+    setNewName("");
+    setAddingFor(null);
+    notify(`${s.name} 학생을 ${route.route_no}호에 넣었습니다. 안 타는 요일은 눌러서 끄세요.`, "success");
   }
 
   return (
@@ -156,17 +216,57 @@ export default function DismissalRosterClient({ initialRoutes }: { initialRoutes
               {r.assignments.length === 0 && <p className="py-2 text-center text-[11px] text-slate-300">배정된 학생 없음</p>}
             </div>
             {addingFor === r.id ? (
-              <div className="mt-2 flex gap-1.5">
-                <input
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && addStudent(r)}
-                  autoFocus
-                  placeholder="학생 이름"
-                  className="min-w-0 flex-1 rounded-lg border border-slate-300 px-2 py-1 text-xs"
-                />
-                <button onClick={() => addStudent(r)} className="rounded-lg bg-blue-600 px-2.5 py-1 text-xs font-bold text-white">추가</button>
-                <button onClick={() => { setAddingFor(null); setNewName(""); }} className="rounded-lg bg-slate-100 px-2 py-1 text-xs text-slate-500">취소</button>
+              // 이름을 손으로 치지 않고 **명부에서 고릅니다.** 오타 한 글자면 다른 아이가 되고,
+              // 그 줄은 대시보드·체크표에서 학생을 못 찾습니다.
+              <div className="mt-2">
+                <div className="flex gap-1.5">
+                  <input
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && candidates.length === 1) void addStudent(r, candidates[0]);
+                      if (e.key === "Escape") { setAddingFor(null); setNewName(""); }
+                    }}
+                    autoFocus
+                    placeholder="명부에서 찾기 (이름·학년·반)"
+                    className="min-w-0 flex-1 rounded-lg border border-slate-300 px-2 py-1 text-xs"
+                  />
+                  <button onClick={() => { setAddingFor(null); setNewName(""); }} className="rounded-lg bg-slate-100 px-2 py-1 text-xs text-slate-500">취소</button>
+                </div>
+
+                {/* 없으면 「없다」고 말합니다. 빈 목록만 두면 다 쳤는데 아무 일도 안 일어난 것처럼 보입니다. */}
+                <div className="mt-1 flex flex-col gap-0.5">
+                  {newName.trim() === "" ? (
+                    <p className="px-1 py-1 text-[11px] text-slate-400">이름을 치면 명부에서 찾습니다.</p>
+                  ) : candidates.length === 0 ? (
+                    <p className="px-1 py-1 text-[11px] text-rose-500">명부에 「{newName.trim()}」이(가) 없습니다.</p>
+                  ) : (
+                    candidates.map((s) => {
+                      const already = assignedIds.has(s.id);
+                      return (
+                        <button
+                          key={s.id}
+                          type="button"
+                          disabled={busy || already}
+                          onClick={() => void addStudent(r, s)}
+                          className={
+                            "flex items-center gap-1.5 rounded-lg px-2 py-1 text-left text-[12px] " +
+                            (already ? "bg-slate-50 text-slate-300" : "bg-blue-50 text-blue-900 hover:bg-blue-100")
+                          }
+                        >
+                          <b>{s.name}</b>
+                          <span className="text-[10px] text-slate-400">
+                            {[s.grade, s.class_name].filter(Boolean).join(" ")}
+                          </span>
+                          {already && <span className="ml-auto text-[10px] font-bold">이미 배정됨</span>}
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+                <p className="mt-1 px-1 text-[10px] text-slate-400">
+                  넣으면 월~금 전부 켜집니다. 안 타는 요일은 아래 요일 버튼으로 끄세요.
+                </p>
               </div>
             ) : (
               <button

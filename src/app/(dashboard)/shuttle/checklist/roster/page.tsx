@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
-import DismissalRosterClient, { type RosterRoute, type RosterAssignment } from "@/components/shuttle/DismissalRosterClient";
+import DismissalRosterClient, { type RosterRoute, type RosterAssignment, type RosterStudent } from "@/components/shuttle/DismissalRosterClient";
 
 export const dynamic = "force-dynamic";
 
@@ -32,7 +32,7 @@ export default async function DismissalRosterPage() {
     if (stopIds.length) {
       const { data: a } = await supabase
         .from("shuttle_assignments")
-        .select("id, stop_id, student_name_raw, weekdays, note")
+        .select("id, stop_id, student_id, student_name_raw, weekdays, note")
         .in("stop_id", stopIds)
         .order("student_name_raw");
       assigns = (a ?? []) as RosterAssignment[];
@@ -61,5 +61,20 @@ export default async function DismissalRosterPage() {
     // 명단이 없는 노선도 학생을 추가할 수 있게 전부 보여주되, 배정 있는 노선을 앞에.
     .sort((a, b) => Number(b.assignments.length > 0) - Number(a.assignments.length > 0));
 
-  return <DismissalRosterClient initialRoutes={rosterRoutes} />;
+  // 명부. 이름을 손으로 치지 않고 여기서 고르게 합니다 - 오타 한 글자면 다른 아이가 되고,
+  // 그 줄은 대시보드·체크표에서 학생을 못 찾습니다.
+  const { data: studentRows } = await supabase
+    .from("wr_students")
+    .select("id, name, grade, class_name")
+    .eq("status", "active")
+    .eq("is_demo", false)
+    .order("grade")
+    .order("name");
+
+  return (
+    <DismissalRosterClient
+      initialRoutes={rosterRoutes}
+      students={((studentRows as RosterStudent[] | null) ?? [])}
+    />
+  );
 }

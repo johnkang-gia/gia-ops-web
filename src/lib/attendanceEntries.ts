@@ -219,7 +219,9 @@ export async function scanIntoEntries(
 export async function loadActiveEntries(supabase: SupabaseClient, dateKey: string) {
   const { data } = await supabase
     .from("attendance_entries")
-    .select("student_id, student_name, grade, class_name, status, note, date_from, date_to")
+    // raw_text 까지 가져옵니다. 픽업은 «몇 시»가 이름보다 먼저 필요한 정보인데, 이 표에는
+    // 시각 칸이 없어서 원문에서 읽어내야 합니다("2시 40분에 데리러 갈게요").
+    .select("student_id, student_name, grade, class_name, status, note, raw_text, date_from, date_to")
     .eq("state", "등록")
     .lte("date_from", dateKey)
     .gte("date_to", dateKey);

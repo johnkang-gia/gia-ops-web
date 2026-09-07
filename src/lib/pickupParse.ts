@@ -190,6 +190,48 @@ export function pickSiblingFromText(text: string, names: string[]): string | nul
   return mentioned.length === 1 ? mentioned[0] : null;
 }
 
+/**
+ * 문장에서 몇 시인지 뽑아냅니다.
+ *
+ * 학부모 연락은 「2시 40분에 데리러 갈게요」, 「14:40 픽업이요」, 「오후 3시」처럼 옵니다.
+ * 대시보드에서 픽업은 «누가»보다 **«언제»가 먼저** 필요한 정보입니다 — 행정실은 그 시각에
+ * 맞춰 교실에서 아이를 데려와야 하니까요. 시각이 없으면 이름만 떠 있고 아무 행동도 못 합니다.
+ *
+ * 못 읽으면 null 입니다. **억지로 추측하지 않습니다** — 틀린 시각은 없는 것보다 나쁩니다.
+ * 화면은 null 을 「미정」으로 적습니다.
+ */
+export function extractTimeFromText(text: string | null | undefined): string | null {
+  const s = (text ?? "").trim();
+  if (!s) return null;
+
+  const clamp = (h: number, m: number, pm: boolean): string | null => {
+    let hh = h;
+    // 「오후 3시」는 15시. 이미 13 이상이면 그대로 둡니다(「오후 14시」라고 쓰는 사람도 있습니다).
+    if (pm && hh < 12) hh += 12;
+    if (hh < 0 || hh > 23 || m < 0 || m > 59) return null;
+    return `${String(hh).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  };
+
+  // ① 「2시 40분」 / 「오후 2시」 / 「2시반」
+  const ko = s.match(/(오전|오후|am|AM|pm|PM)?\s*(\d{1,2})\s*시\s*(반|(\d{1,2})\s*분?)?/);
+  if (ko) {
+    const pm = /오후|pm|PM/.test(ko[1] ?? "");
+    const min = ko[3] === "반" ? 30 : Number(ko[4] ?? 0);
+    const out = clamp(Number(ko[2]), min, pm);
+    if (out) return out;
+  }
+
+  // ② 「14:40」 / 「2:40」 / 「오후 2:40」
+  const colon = s.match(/(오전|오후|am|AM|pm|PM)?\s*(\d{1,2}):(\d{2})/);
+  if (colon) {
+    const pm = /오후|pm|PM/.test(colon[1] ?? "");
+    const out = clamp(Number(colon[2]), Number(colon[3]), pm);
+    if (out) return out;
+  }
+
+  return null;
+}
+
 // 'HH:MM' 형태인지 확인합니다. AI가 엉뚱한 값을 돌려줘도 그대로 저장하지 않도록 거릅니다.
 export function normalizeTime(raw: unknown): string | null {
   if (typeof raw !== "string") return null;

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { APP_VERSION } from "@/lib/version";
 import { buildStaffNames, categorize, extractTargetDate, matchRosterStudents, todayKey, type RosterStudent } from "@/lib/attendanceDigest";
 import { loadActiveEntries, loadUpcomingEntries } from "@/lib/attendanceEntries";
-import { toKoreanDisplayName, type RosterEntry } from "@/lib/pickupParse";
+import { extractTimeFromText, toKoreanDisplayName, type RosterEntry } from "@/lib/pickupParse";
 import { displayInquiryType } from "@/lib/inquiryType";
 import { createClient } from "@supabase/supabase-js";
 import { kstParts } from "@/lib/shuttleTracking";
@@ -213,11 +213,33 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   // 개념이 없어서 업무보드에서 아무리 지워도 다음 새로고침에 되살아났습니다
   // (담당자: "기존게 계속 남아있어"). 지울 자리가 없었던 게 원인이라, 등록 여부를 담는 표를
   // 따로 두고 대시보드는 그 표만 보게 했습니다. 지우면 지워진 채로 남습니다.
+  //
+  // 출결내역에서 **픽업으로 등록한 건**이 여기로 옵니다.
+  //
+  // 앞 판은 이 자리에서 픽업을 그냥 건너뛰었습니다("픽업은 아래 별도 칸에서 다룹니다").
+  // 그런데 아래 픽업 칸은 하원 체크표(shuttle_boardings)와 확정된 학부모 연락
+  // (pickup_requests)만 봅니다 — 이 표는 **아무도 안 봤습니다.** 그래서 구글챗 출결내역에서
+  // 사람이 [등록]을 눌러도 중앙 대시보드에는 끝내 안 떴습니다.
+  //
+  // 결석은 이 표를 통해 뜨는데 픽업만 안 뜨니, 「같은 자리에서 등록했는데 왜 하나만 뜨지」가
+  // 됩니다. 이제 픽업도 아래 픽업 칸으로 넘깁니다.
+  const pickupNamesFromEntries = new Set<string>();
+  const pickupTimeFromEntries = new Map<string, string>();
+
   for (const e of await loadActiveEntries(supabase, todayK)) {
-    if (e.status === "픽업") continue; // 픽업은 아래 별도 칸에서 다룹니다.
     const sid = e.student_id as string | null;
     // 이 대시보드가 맡은 부서 학생이 아니면 올리지 않습니다.
     if (sid ? !deptStudentIds.has(sid) : !deptStudents.some((s) => s.name === e.student_name)) continue;
+
+    if (e.status === "픽업") {
+      const nm = e.student_name as string;
+      pickupNamesFromEntries.add(nm);
+      // 시각은 원문에서 읽습니다. 못 읽으면 넣지 않습니다 - 틀린 시각은 없는 것보다 나쁩니다.
+      const t = extractTimeFromText((e.raw_text as string | null) ?? (e.note as string | null));
+      if (t) pickupTimeFromEntries.set(nm, t);
+      continue;
+    }
+
     const key = `${e.student_name}-${e.status}`;
     if (absenceByKey.has(key)) continue; // 선생님이 직접 입력한 값을 덮어쓰지 않습니다.
     absenceByKey.set(key, {
@@ -280,6 +302,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     if (!deptStudentIds.has(sid)) continue;
     if (s?.name) pickupNamesFromReq.add(s.name);
   }
+
+  // 출결내역에서 등록한 픽업을 같은 목록에 합칩니다. 아래 「체크표가 이미 정한 학생은
+  // 덮지 않는다」 규칙을 그대로 받게 하려면 여기서 합쳐야 합니다 - 규칙을 두 벌로 만들면
+  // 한쪽만 고치고 다른 쪽을 잊습니다.
+  for (const n of pickupNamesFromEntries) pickupNamesFromReq.add(n);
+  for (const [n, t] of pickupTimeFromEntries) if (!pickupTimeByName.has(n)) pickupTimeByName.set(n, t);
 
   const absences = [...absenceByKey.values()].sort(
     (a, b) => a.status.localeCompare(b.status, "ko") || a.name.localeCompare(b.name, "ko")

@@ -263,6 +263,7 @@ type ToddleRow = {
   student_id: string | null;
   source: string | null;
   channel_label: string | null;
+  source_url: string | null;
   received_at: string | null;
   status: string | null;
   is_demo?: boolean;
@@ -391,7 +392,7 @@ export default function AttendanceDigestPanel({
     const supabase = createClient();
     const { data, error } = await supabase
       .from("pickup_requests")
-      .select("id, kind, service_date, raw_text, summary, matched_name, ai_student_name, student_id, source, channel_label, received_at, status, is_demo")
+      .select("id, kind, service_date, raw_text, summary, matched_name, ai_student_name, student_id, source, channel_label, source_url, received_at, status, is_demo")
       .gte("service_date", todayKey(new Date()))
       .neq("status", "무시")
       .order("received_at", { ascending: false })
@@ -475,6 +476,7 @@ export default function AttendanceDigestPanel({
           rawText: m.content,
           time: m.created_at_google,
           sourceLabel: "구글챗",
+          senderName: m.sender_display_name ?? m.sender_email ?? null,
           targetDate,
           targetDateTo,
           messageId: String(m.id),
@@ -496,6 +498,7 @@ export default function AttendanceDigestPanel({
           rawText: m.content,
           time: m.created_at_google,
           sourceLabel: "구글챗",
+          senderName: m.sender_display_name ?? m.sender_email ?? null,
           targetDate,
           targetDateTo,
           messageId: String(m.id),
@@ -531,6 +534,9 @@ export default function AttendanceDigestPanel({
         rawText: text || `${name} ${category} (토들)`,
         time: r.received_at,
         sourceLabel: r.source ?? "토들",
+        // 어느 대화방에서 왔는지. 동명이인을 가리는 결정적 단서라 반드시 들고 갑니다.
+        channelLabel: r.channel_label ?? null,
+        sourceUrl: r.source_url ?? null,
         targetDate: day,
         targetDateTo: day,
         // 등록 상태(초록 체크)를 짝지으려면 서버 스캔과 **같은 열쇠**를 써야 합니다.
@@ -816,6 +822,47 @@ export default function AttendanceDigestPanel({
                   {detail.time ? ` · ${timeStr(detail.time)}` : ""}
                 </span>
               </div>
+
+              {/* 어디서 온 글인가.
+                  이름이 겹치거나 애매할 때 «이 아이가 맞나»를 가리는 근거는 결국 «누가 어디서
+                  보냈나»입니다. 이연우가 둘이어도 이연우 어머니 채널에서 온 글이면 그 아이입니다.
+                  원문만 있으면 이 판단을 할 수 없어 토들을 따로 열어 찾아야 했습니다. */}
+              <div className="mb-2 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[11px] leading-relaxed">
+                <p className="mb-1 font-semibold text-slate-500">출처</p>
+                <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5">
+                  <dt className="text-slate-400">채널</dt>
+                  <dd className="font-medium text-slate-700">
+                    {detail.channelLabel ?? (detail.sourceLabel === "구글챗" ? "구글챗 (출결 스페이스)" : "—")}
+                  </dd>
+                  {detail.senderName && (
+                    <>
+                      <dt className="text-slate-400">보낸 사람</dt>
+                      <dd className="font-medium text-slate-700">{detail.senderName}</dd>
+                    </>
+                  )}
+                  <dt className="text-slate-400">받은 시각</dt>
+                  <dd className="text-slate-700">
+                    {detail.time ? new Date(detail.time).toLocaleString("ko-KR") : "알 수 없음"}
+                  </dd>
+                  <dt className="text-slate-400">경로</dt>
+                  <dd className="text-slate-700">{detail.sourceLabel}</dd>
+                </dl>
+                {detail.sourceUrl ? (
+                  <a
+                    href={detail.sourceUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-1.5 inline-block rounded-md border border-sky-200 bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-700 hover:bg-sky-100"
+                  >
+                    ↗ 토들에서 원문 열기
+                  </a>
+                ) : (
+                  /* 링크가 없다는 것도 사실입니다. 조용히 버튼만 안 보이면 «원래 없는 건지
+                     안 눌리는 건지»를 알 수 없습니다. */
+                  <p className="mt-1.5 text-[10px] text-slate-400">원문 링크가 저장되지 않은 건입니다.</p>
+                )}
+              </div>
+
               <p className="whitespace-pre-wrap break-words rounded-lg bg-slate-50 p-3 text-[12px] leading-relaxed text-slate-700">
                 {detail.rawText}
               </p>

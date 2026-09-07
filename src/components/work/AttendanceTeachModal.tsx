@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
@@ -53,6 +53,39 @@ export default function AttendanceTeachModal({
    * 찾아가야 하는데, 그때는 이미 며칠치가 그 규칙으로 처리된 뒤입니다.
    */
   const [alsoTeach, setAlsoTeach] = useState(false);
+
+  /**
+   * 이 연락으로 이미 등록된 학생들.
+   *
+   * 한 통에 아이가 둘 이상인 연락이 실제로 옵니다 — «Ije and Ryemyeong will be absent
+   * next Monday». 그런데 고르면 창이 닫혀서, 둘째 아이는 등록할 방법이 없었습니다.
+   * 이제 고르고 나서도 창이 열려 있고, 지금까지 등록한 아이를 위에 보여줍니다.
+   *
+   * 창을 다시 열었을 때도 같은 목록이 나와야 합니다 — 안 그러면 «아까 등록했나?»를
+   * 확인할 방법이 없어 두 번 누르게 됩니다. 그래서 화면 상태가 아니라 표에서 읽어옵니다.
+   */
+  const [assigned, setAssigned] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!entry) return;
+    let alive = true;
+    void (async () => {
+      const supabase = createClient();
+      const { data } = await supabase
+        .from("attendance_entries")
+        .select("student_name, state")
+        .eq("source_message_id", entry.messageId)
+        .eq("status", entry.status);
+      if (!alive) return;
+      const names = ((data as { student_name: string; state: string }[] | null) ?? [])
+        .filter((r) => r.state === "등록")
+        .map((r) => r.student_name);
+      setAssigned([...new Set(names)]);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [entry]);
 
   // 이름 후보 - 검색어가 있으면 좁히고, 없으면 앞부분만 보여줍니다.
   const candidates = useMemo(() => {
@@ -132,13 +165,19 @@ export default function AttendanceTeachModal({
 
     if (alsoTeach) {
       await save("alias", student, { silent: true });
+      // 한 표기는 한 아이에게만 배울 수 있습니다. 켜둔 채로 둘째를 고르면 방금 배운 것을
+      // 조용히 덮어써서, 첫째 아이가 규칙에서 사라집니다. 그래서 한 번 쓰면 꺼둡니다.
+      setAlsoTeach(false);
       notify(`이 건은 ${student.name}. "${pattern.trim()}" 표기도 앞으로 그 아이로 배웠습니다.`, "success");
     } else {
-      notify(`이 건만 ${student.name} 으로 지정했습니다. 규칙은 만들지 않았습니다.`, "success");
+      notify(`${student.name} 등록. 같은 연락에 다른 아이가 더 있으면 이어서 고르세요.`, "success");
     }
+    setAssigned((prev) => (prev.includes(student.name) ? prev : [...prev, student.name]));
+    setQuery("");
     setBusy(false);
+    // 창은 닫지 않습니다. 한 연락에 아이가 둘 이상인 경우가 실제로 있어서, 닫아버리면
+    // 둘째를 등록할 길이 없습니다. 목록만 새로 고칩니다.
     onSaved();
-    onClose();
   }
 
   async function save(kind: "alias" | "ignore", student?: RosterStudent, opts?: { silent?: boolean }) {
@@ -204,9 +243,22 @@ export default function AttendanceTeachModal({
           <h2 className="text-sm font-bold text-slate-800">🙋 이 건은 누구인가요?</h2>
           <p className="mt-0.5 text-[11px] leading-relaxed text-slate-500">
             {entry
-              ? "학생을 고르면 이 한 건만 그 아이로 정합니다. 같은 이름이 다음에 또 오면 다시 물어봅니다."
+              ? "학생을 고르면 이 한 건만 그 아이로 정합니다. 한 연락에 아이가 여럿이면 이어서 더 고르세요."
               : "이 표기를 어느 학생으로 볼지 규칙으로 저장합니다."}
           </p>
+
+          {/* 지금까지 이 연락으로 등록한 아이들. 창을 다시 열어도 남아 있어야
+              «아까 등록했나?»를 다시 확인하지 않습니다. */}
+          {assigned.length > 0 && (
+            <div className="mt-2 flex flex-wrap items-center gap-1">
+              <span className="text-[11px] font-semibold text-emerald-700">등록됨</span>
+              {assigned.map((n) => (
+                <span key={n} className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800">
+                  ✓ {n}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
@@ -301,9 +353,21 @@ export default function AttendanceTeachModal({
           </div>
         </div>
 
-        <div className="flex shrink-0 justify-end border-t border-black/5 px-4 py-2.5">
-          <button type="button" onClick={onClose} className="rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-500 hover:bg-slate-100">
-            닫기
+        <div className="flex shrink-0 items-center gap-2 border-t border-black/5 px-4 py-2.5">
+          {assigned.length > 0 && (
+            <span className="text-[11px] text-slate-500">
+              {assigned.length}명 등록했습니다. 더 있으면 이어서 고르세요.
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={onClose}
+            className={
+              "ml-auto rounded-lg px-3 py-1.5 text-xs font-semibold " +
+              (assigned.length > 0 ? "bg-slate-800 text-white hover:bg-slate-700" : "text-slate-500 hover:bg-slate-100")
+            }
+          >
+            {assigned.length > 0 ? "완료" : "닫기"}
           </button>
         </div>
       </div>

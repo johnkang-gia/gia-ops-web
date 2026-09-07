@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useToast } from "@/components/common/ToastProvider";
-import { FIELD_LABEL, parseRosterPaste, type RosterField } from "@/lib/pasteRoster";
+import { FIELD_LABEL, fieldOf, parseRosterPaste, type RosterField } from "@/lib/pasteRoster";
 
 /**
  * 구글시트에서 복사한 줄을 붙여넣어 명부에 넣습니다.
@@ -34,22 +34,46 @@ const KIND_STYLE: Record<Plan["kind"], string> = {
 
 export default function PasteRosterClient() {
   const notify = useToast();
+  // 머리줄과 자료를 **따로** 받습니다.
+  //
+  // 한 상자에 같이 붙여넣던 때는 「첫 줄이 머리줄인가」를 앱이 알아맞혀야 했고, 틀리면
+  // 머리줄이 학생 한 명으로 들어가거나 첫 학생이 머리줄로 버려졌습니다. 어느 쪽도 화면에는
+  // 오류로 보이지 않았습니다. 사람이 어디에 무엇을 넣는지 정해주면 알아맞힐 일이 없습니다.
+  const [headText, setHeadText] = useState("");
   const [text, setText] = useState("");
   const [manual, setManual] = useState<(RosterField | null)[] | null>(null);
   const [plans, setPlans] = useState<Plan[] | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const [headerOverride, setHeaderOverride] = useState<boolean | null>(null);
+  // 머리줄 상자에 여러 줄이 들어와도 첫 줄만 씁니다(시트에서 끌어 복사하면 딸려옵니다).
+  const headLine = headText.replace(/\r/g, "").split("\n").find((l) => l.trim() !== "") ?? "";
+  const hasHead = headLine.trim() !== "";
+  const joined = hasHead ? `${headLine}\n${text}` : text;
 
   const parsed = useMemo(
-    () => parseRosterPaste(text, manual ?? undefined, headerOverride ?? undefined),
-    [text, manual, headerOverride],
+    () => parseRosterPaste(joined, manual ?? undefined, hasHead),
+    [joined, manual, hasHead],
   );
-  const usable = parsed.rows.filter((r) => !r.problem);
+  // 머리줄을 따로 받으므로 줄 번호도 「학생 줄 상자의 몇 번째」로 셉니다. 화면에서 「3번째 줄」
+  // 이라고 짚었는데 상자에서는 2번째면 사람이 엉뚱한 줄을 고칩니다.
+  const rows = parsed.rows.map((r) => ({ ...r, rowNo: r.rowNo - (hasHead ? 1 : 0) }));
+
+  // 학생 줄 상자의 첫 줄이 머리줄처럼 보이는가. 상자를 나눠도 습관대로 통째로 붙여넣는
+  // 일이 생깁니다. 그러면 머리줄이 학생 한 명으로 들어가는데, 화면에는 「새로 등록 1명」
+  // 으로만 보입니다.
+  const bodyHeadLike = (() => {
+    const l = text.replace(/\r/g, "").split("\n").find((x) => x.trim() !== "") ?? "";
+    if (!l) return false;
+    const sep = l.includes("\t") ? "\t" : ",";
+    return l.split(sep).filter((c) => fieldOf(c)).length >= 2;
+  })();
+  const usable = rows.filter((r) => !r.problem);
   const hasName = parsed.mapping.includes("name");
   /** 이 칸에 실제로 무엇이 들어 있는지 - 머리글만 보고 고르면 틀린 칸을 고릅니다. */
-  const sampleRow = parsed.table[parsed.headerUsed ? 1 : 0] ?? [];
-  const colCount = Math.max(parsed.table[0]?.length ?? 0, parsed.mapping.length);
+  const sampleRow = parsed.table[hasHead ? 1 : 0] ?? [];
+  const headColCount = hasHead ? parsed.table[0]?.length ?? 0 : 0;
+  const bodyColCount = parsed.table[hasHead ? 1 : 0]?.length ?? 0;
+  const colCount = Math.max(headColCount, bodyColCount, parsed.mapping.length);
 
   async function preview() {
     if (usable.length === 0) return notify("읽을 수 있는 줄이 없습니다.", "error");
@@ -101,18 +125,60 @@ export default function PasteRosterClient() {
 
   return (
     <div>
+      <label className="mb-0.5 block text-[12px] font-bold text-slate-700">
+        ① 머리줄 <span className="font-normal text-slate-400">(시트의 제목 줄 한 줄만)</span>
+      </label>
+      <textarea
+        value={headText}
+        onChange={(e) => {
+          setHeadText(e.target.value);
+          setPlans(null);
+          setManual(null);
+        }}
+        rows={2}
+        placeholder={"이름\t영문이름\t학년\t반\t생년월일\t어머니 연락처"}
+        className="w-full rounded-xl border border-slate-300 p-3 font-mono text-[12px]"
+      />
+      {!hasHead && (
+        <p className="mt-0.5 text-[11px] text-slate-500">
+          머리줄이 없으면 아래에서 <b>칸을 직접 골라</b> 넣을 수 있습니다. 짐작해서 넣지 않습니다.
+        </p>
+      )}
+
+      <label className="mb-0.5 mt-3 block text-[12px] font-bold text-slate-700">
+        ② 학생 줄 <span className="font-normal text-slate-400">(제목 줄 빼고, 몇 줄이든)</span>
+      </label>
       <textarea
         value={text}
         onChange={(e) => {
           setText(e.target.value);
           setPlans(null);
-          setManual(null);
-          setHeaderOverride(null);
         }}
         rows={8}
-        placeholder={"구글시트에서 머리줄까지 함께 복사해서 여기에 붙여넣으세요.\n\n이름\t영문이름\t학년\t반\t생년월일\t어머니 연락처\n김민준\tMinjun Kim\t4\t4-1\t2015.3.4\t010-1111-2222"}
+        placeholder={"김민준\tMinjun Kim\t4\t4-1\t2015.3.4\t010-1111-2222\n이서연\tSeoyeon Lee\t4\t4-2\t2015.7.19\t010-3333-4444"}
         className="w-full rounded-xl border border-slate-300 p-3 font-mono text-[12px]"
       />
+      {bodyHeadLike && (
+        <div className="mt-1 flex flex-wrap items-center gap-2 rounded-lg bg-amber-50 px-2 py-1.5 text-[11px] text-amber-900">
+          <b>학생 줄 첫 줄이 머리줄처럼 보입니다.</b>
+          {hasHead ? "이대로 두면 머리줄이 학생 한 명으로 등록됩니다." : "위 머리줄 상자로 옮기면 칸을 알아서 읽습니다."}
+          <button
+            onClick={() => {
+              const ls = text.replace(/\r/g, "").split("\n");
+              const at = ls.findIndex((x) => x.trim() !== "");
+              if (at < 0) return;
+              const [first] = ls.splice(at, 1);
+              if (!hasHead) setHeadText(first);
+              setText(ls.join("\n"));
+              setManual(null);
+              setPlans(null);
+            }}
+            className="rounded border border-amber-400 bg-white px-1.5 py-0.5 font-bold"
+          >
+            {hasHead ? "그 줄 빼기" : "머리줄 상자로 옮기기"}
+          </button>
+        </div>
+      )}
 
       {/*
         칸 짝짓기는 «언제나» 보이고 «언제나» 고칠 수 있습니다.
@@ -124,24 +190,15 @@ export default function PasteRosterClient() {
       {text.trim() !== "" && (
         <div className="mt-2 rounded-xl border border-slate-200 bg-white p-3 text-[12px]">
           <div className="mb-2 flex flex-wrap items-center gap-2">
-            <b className="text-slate-700">칸 짝짓기</b>
-            <label className="flex items-center gap-1 text-[11px] text-slate-600">
-              <input
-                type="checkbox"
-                checked={parsed.headerUsed}
-                onChange={(e) => {
-                  setHeaderOverride(e.target.checked);
-                  setManual(null);
-                  setPlans(null);
-                }}
-              />
-              첫 줄은 머리줄(이름·학년 …)입니다
-            </label>
-            {!parsed.headerDetected && parsed.headerUsed && (
-              <span className="text-[11px] text-amber-700">머리줄로 쓰라고 직접 정한 상태입니다.</span>
-            )}
-            {parsed.headerDetected && !parsed.headerUsed && (
-              <span className="text-[11px] text-amber-700">머리줄처럼 보이지만 자료로 읽는 중입니다.</span>
+            <b className="text-slate-700">③ 칸 짝짓기</b>
+            <span className="text-[11px] text-slate-500">
+              {hasHead ? "머리줄을 읽은 결과입니다. 틀린 곳은 바꾸세요." : "머리줄이 없으니 직접 고르세요."}
+            </span>
+            {hasHead && headColCount !== bodyColCount && (
+              // 칸 수가 다르면 값이 한 칸씩 밀려 들어갑니다. 조용히 넘기면 안 됩니다.
+              <span className="rounded bg-rose-50 px-1.5 py-0.5 text-[11px] font-bold text-rose-700">
+                머리줄 {headColCount}칸 · 학생 줄 {bodyColCount}칸 — 칸 수가 다릅니다
+              </span>
             )}
             {manual && (
               <button
@@ -156,7 +213,7 @@ export default function PasteRosterClient() {
           <div className="overflow-x-auto">
             <div className="flex gap-2">
               {Array.from({ length: colCount }).map((_, i) => {
-                const head = parsed.headerUsed ? parsed.table[0]?.[i] ?? "" : "";
+                const head = hasHead ? parsed.table[0]?.[i] ?? "" : "";
                 const picked = parsed.mapping[i] ?? null;
                 const changed = manual != null && picked !== (parsed.guess[i] ?? null);
                 return (
@@ -210,9 +267,9 @@ export default function PasteRosterClient() {
           )}
           <p className="mt-1 text-[11px] text-slate-500">
             읽은 줄 <b>{usable.length}줄</b>
-            {parsed.rows.length - usable.length > 0 && (
+            {rows.length - usable.length > 0 && (
               <span className="ml-1 text-rose-600">
-                · 못 읽은 줄 {parsed.rows.length - usable.length}줄({parsed.rows.find((r) => r.problem)?.problem})
+                · 못 읽은 줄 {rows.length - usable.length}줄({rows.find((r) => r.problem)?.problem})
               </span>
             )}
           </p>

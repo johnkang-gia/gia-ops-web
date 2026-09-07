@@ -7,7 +7,7 @@ import type { Invoice } from "@/lib/types";
  * 납부 현황과 상습 미납.
  *
  * 「지금 얼마 밀렸나」와 「자주 밀리나」는 다른 물음입니다. 앞엣것만 보면 이번 달 사정이
- * 있었던 집과 매번 늦는 집이 같아 보입니다. 뒤엣것을 알아야 안내 방식을 바꿀 수 있습니다.
+ * 있었던 학생과 매번 늦는 학생이 같아 보입니다. 뒤엣것을 알아야 안내 방식을 바꿀 수 있습니다.
  *
  * 세는 것은 **마감이 지난 뒤에도 잔액이 남았던 청구서 수**입니다. 지금 다 냈더라도 늦게
  * 낸 사실은 남습니다 - 그게 «자주 밀린다»의 뜻입니다.
@@ -97,17 +97,17 @@ export default function CollectionStatus({
         </div>
       )}
 
-      {/* 상습 미납. 한 번 밀린 집과 매번 밀리는 집을 갈라서 보여줍니다. */}
+      {/* 상습 미납. 한 번 밀린 학생과 매번 밀리는 학생을 갈라서 보여줍니다. */}
       <div className="rounded-xl border border-slate-200 bg-white p-2.5">
         <p className="mb-1.5 flex items-baseline gap-2">
-          <b className="text-[13px] text-slate-800">늦게 내는 집</b>
+          <b className="text-[13px] text-slate-800">늦게 내는 학생</b>
           <span className="text-[11px] text-slate-400">
-            마감을 넘긴 적이 있는 {late.length}명 · 그중 두 번 이상 {repeat.length}명
+            마감을 넘긴 적이 있는 학생 {late.length}명 · 그중 두 번 이상 {repeat.length}명
           </span>
         </p>
 
         {late.length === 0 ? (
-          <p className="py-3 text-center text-[12px] text-slate-400">마감을 넘긴 집이 없습니다.</p>
+          <p className="py-3 text-center text-[12px] text-slate-400">마감을 넘긴 학생이 없습니다.</p>
         ) : (
           <ul className="flex flex-col">
             {late.slice(0, 15).map((s) => (
@@ -135,7 +135,7 @@ export default function CollectionStatus({
 
         <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
           왼쪽 숫자는 <b>마감 지난 청구서 중 늦은 건 수</b>입니다. 지금 다 냈어도 늦게 낸 사실은 남습니다 — 한 번 크게
-          밀린 집보다 매번 조금씩 늦는 집이 위로 옵니다.
+          밀린 학생보다 매번 조금씩 늦는 학생이 위로 옵니다.
         </p>
       </div>
     </section>

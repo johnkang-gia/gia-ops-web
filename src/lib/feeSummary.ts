@@ -22,7 +22,7 @@ export type TermFeeSummary = {
   billed: number;
   paid: number;
   balance: number;
-  /** 이 학기에 쓰인 납부 수단들. 여러 갈래로 나눠 내는 집이 실제로 있습니다. */
+  /** 이 학기에 쓰인 납부 수단들. 여러 갈래로 나눠 내는 학생이 실제로 있습니다. */
   methods: { kind: string; amount: number; count: number }[];
   /** 현금·계좌이체인데 현금영수증이 아직 없는 금액. 0이면 걸린 것이 없습니다. */
   receiptPending: number;
@@ -53,7 +53,7 @@ export function summarizeByTerm(
   today: string,
 ): TermFeeSummary[] {
   // 취소된 청구서는 «청구한 적 없는 것»입니다. 합계에 넣으면 미수금이 부풀어, 실제로는
-  // 다 낸 집이 밀린 집처럼 보입니다.
+  // 다 낸 학생이 밀린 학생처럼 보입니다.
   const live = invoices.filter((v) => v.status !== "취소");
 
   const byTerm = new Map<string, { inv: Invoice[]; pay: PaymentRow[] }>();
@@ -126,8 +126,8 @@ export function summarizeByTerm(
 /**
  * 상습 미납 판정.
  *
- * «지금 얼마 밀렸나»와 «자주 밀리나»는 다른 물음입니다. 이번 달에 크게 밀린 집은 사정이
- * 있었을 수 있지만, 매번 조금씩 늦는 집은 안내 방식을 바꿔야 합니다. 앞엣것만 보면
+ * «지금 얼마 밀렸나»와 «자주 밀리나»는 다른 물음입니다. 이번 달에 크게 밀린 학생은 사정이
+ * 있었을 수 있지만, 매번 조금씩 늦는 학생은 안내 방식을 바꿔야 합니다. 앞엣것만 보면
  * 뒤엣것이 안 보입니다.
  *
  * 세는 것은 **마감이 지난 뒤에도 잔액이 남았던 청구서 수**입니다. 지금 다 냈더라도
@@ -202,6 +202,6 @@ export function latePayers(
       avgDaysLate: _lateDays.length > 0 ? Math.round(_lateDays.reduce((a, b) => a + b, 0) / _lateDays.length) : null,
     }))
     .filter((s) => s.lateCount > 0)
-    // 자주 밀린 순 → 많이 남은 순. 한 번 크게 밀린 집보다 매번 밀리는 집이 먼저입니다.
+    // 자주 밀린 순 → 많이 남은 순. 한 번 크게 밀린 학생보다 매번 밀리는 학생이 먼저입니다.
     .sort((a, b) => b.lateCount - a.lateCount || b.outstanding - a.outstanding);
 }

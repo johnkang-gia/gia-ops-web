@@ -86,7 +86,7 @@ export default async function StudentFeeHistory({ studentId }: { studentId: stri
               )}
             </p>
 
-            {/* 무엇으로 냈는가. 한 학기를 여러 갈래로 나눠 내는 집이 실제로 있습니다. */}
+            {/* 무엇으로 냈는가. 한 학기를 여러 갈래로 나눠 내는 학생이 실제로 있습니다. */}
             {t.methods.length > 0 && (
               <p className="mb-1.5 flex flex-wrap items-center gap-1">
                 {t.methods.map((m) => (

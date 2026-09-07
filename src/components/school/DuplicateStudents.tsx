@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
 import { useConfirm } from "@/components/common/ConfirmProvider";
+import type { DupGroup, DupPerson } from "@/lib/studentDuplicates";
 
 /**
  * 이름이 겹치는 재학생.
@@ -19,27 +20,19 @@ import { useConfirm } from "@/components/common/ConfirmProvider";
  * 새 표가 생길 때마다 여기를 고쳐야 하고, 잊으면 그 표만 옛 학생을 가리킨 채 남습니다.
  */
 
-export type DupStudent = {
-  id: string;
-  name: string;
-  name_en: string | null;
-  grade: string | null;
-  class_name: string | null;
-  birth_date: string | null;
-  created_at: string;
-};
+export type DupStudent = DupPerson;
 
-export default function DuplicateStudents({ groups, canMerge }: { groups: DupStudent[][]; canMerge: boolean }) {
+export default function DuplicateStudents({ groups, canMerge }: { groups: DupGroup[]; canMerge: boolean }) {
   const notify = useToast();
   const confirmAction = useConfirm();
   const [rows, setRows] = useState(groups);
   const [busy, setBusy] = useState<string | null>(null);
 
-  const total = useMemo(() => rows.reduce((n, g) => n + g.length, 0), [rows]);
+  const total = useMemo(() => rows.reduce((n, g) => n + g.people.length, 0), [rows]);
   if (rows.length === 0) return null;
 
-  async function merge(group: DupStudent[], keep: DupStudent) {
-    const others = group.filter((s) => s.id !== keep.id);
+  async function merge(group: DupGroup, keep: DupStudent) {
+    const others = group.people.filter((s) => s.id !== keep.id);
     const ok = await confirmAction(
       `${keep.name} ${others.length + 1}줄을 한 줄로 합칩니다.\n` +
         `남길 줄: ${keep.birth_date ?? "생일 없음"} · ${keep.grade ?? "?"}학년 ${keep.class_name ?? ""}\n\n` +
@@ -60,27 +53,39 @@ export default function DuplicateStudents({ groups, canMerge }: { groups: DupStu
       }
     }
     setBusy(null);
-    setRows((p) => p.filter((g) => g[0]?.name !== group[0]?.name));
+    setRows((p) => p.filter((g) => g.key !== group.key));
     notify(`${keep.name} 을(를) 한 줄로 합쳤습니다.`, "success");
   }
 
   return (
     <section className="mb-4 rounded-2xl border-2 border-amber-300 bg-amber-50 p-3">
       <h2 className="mb-1 text-[15px] font-bold text-amber-900">
-        👥 이름이 겹치는 학생 {rows.length}건 ({total}줄)
+        👥 같은 아이일 수 있는 줄 {rows.length}건 ({total}줄)
       </h2>
       <p className="mb-2 text-[11px] leading-relaxed text-amber-800">
-        같은 아이가 두 줄로 들어간 것일 수도, 정말 동명이인일 수도 있습니다. <b>생년월일과 반을 보고</b> 판단해 주세요.
+        이름이 같은 경우뿐 아니라 <b>한쪽 이름이 다른 쪽에 들어 있거나</b>(제이콥 · 제이콥 딜런 마), 생년월일이나 영문
+        이름이 같은 줄도 함께 올립니다. 같은 아이가 두 줄로 들어간 것일 수도, 정말 동명이인일 수도 있습니다 —
+        <b> 아래 근거와 생년월일·반을 보고</b> 판단해 주세요.
         {canMerge ? " 합치면 되돌릴 수 없습니다." : " 합치는 것은 관리자만 할 수 있습니다."}
       </p>
 
       <div className="flex flex-col gap-2">
         {rows.map((g) => (
-          <div key={g[0].id} className="rounded-xl border border-amber-200 bg-white p-2">
-            <p className="mb-1 text-[13px] font-bold text-slate-800">{g[0].name}</p>
+          <div key={g.key} className="rounded-xl border border-amber-200 bg-white p-2">
+            <p className="mb-1 flex flex-wrap items-baseline gap-2 text-[13px] font-bold text-slate-800">
+              {g.people.map((s) => s.name).join(" · ")}
+              {/* 왜 같은 아이로 의심하는지. 근거가 «이름 같음»뿐이면 동명이인일 가능성이
+                  높고, 생년월일까지 같으면 거의 같은 아이입니다. */}
+              {g.reasons.map((r) => (
+                <span key={r} className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
+                  {r}
+                </span>
+              ))}
+            </p>
             <ul className="flex flex-col gap-1">
-              {g.map((s) => (
+              {g.people.map((s) => (
                 <li key={s.id} className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px]">
+                  <b className="w-28 shrink-0 text-slate-800">{s.name}</b>
                   <span className="w-20 shrink-0 text-slate-500">{s.birth_date ?? "생일 없음"}</span>
                   <span className="text-slate-700">
                     {s.grade ? `${s.grade}학년` : "학년 없음"} {s.class_name ?? "반 없음"}

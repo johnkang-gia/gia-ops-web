@@ -91,6 +91,10 @@ const WORK_TABS: TabDef[] = [
       { label: "학부모 문의", href: "/inquiries" },
     ],
   },
+  // 하원수단을 여기 둡니다. 학부모 연락이 «임선우·임다현 월·금 2시 40분 학원 셔틀»처럼
+  // 여러 아이·여러 요일로 한 번에 오는데, 아이 프로필을 하나씩 열어 넣게 하면 그 번거로움이
+  // 곧 «나중에 하자»가 되고, 나중에 한 것은 대개 안 한 것이 됩니다.
+  { key: "dismissal", label: "하원수단", icon: "🎒", href: "/work/dismissal", match: ["/work/dismissal"] },
   { key: "report", label: "보고서", icon: "📈", href: "/work/report", match: ["/work/report"] },
   { key: "history", label: "지난 업무", icon: "🗃️", href: "/work/history", match: ["/work/history"] },
   { key: "trash", label: "휴지통", icon: "🗑️", href: "/work/trash", match: ["/work/trash"] },

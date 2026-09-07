@@ -5,7 +5,8 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { isAdminUser, isStaffOrAboveUser } from "@/lib/roles";
 import GuideButton from "@/components/common/GuideButton";
 import DataCheckIssues, { type ImportIssue } from "@/components/school/DataCheckIssues";
-import DuplicateStudents, { type DupStudent } from "@/components/school/DuplicateStudents";
+import DuplicateStudents from "@/components/school/DuplicateStudents";
+import { findDuplicateGroups, type DupPerson } from "@/lib/studentDuplicates";
 
 export const dynamic = "force-dynamic";
 
@@ -68,7 +69,7 @@ export default async function DataCheckPage() {
     { label: "과목", value: subjectsRes.count, expected: 16, href: "/weekly-report/admin/subjects" },
   ];
 
-  // 이름이 겹치는 재학생. 명부 반영이 짝을 못 찾아 새로 만든 줄이 여기 걸립니다.
+  // 같은 아이일 수 있는 줄. 명부 반영이 짝을 못 찾아 새로 만든 줄이 여기 걸립니다.
   const { data: dupRows, error: dupErr } = await supabase
     .from("wr_students")
     .select("id, name, name_en, grade, class_name, birth_date, created_at")
@@ -77,13 +78,9 @@ export default async function DataCheckPage() {
     .order("created_at");
   if (dupErr) console.error("[명부 점검] 중복 조회 실패:", dupErr.message);
 
-  const byName = new Map<string, DupStudent[]>();
-  for (const s of ((dupRows as DupStudent[] | null) ?? [])) {
-    const k = (s.name ?? "").trim();
-    if (!k) continue;
-    (byName.get(k) ?? byName.set(k, []).get(k)!).push(s);
-  }
-  const dupGroups = [...byName.values()].filter((g) => g.length > 1);
+  // 이름이 정확히 같을 때만 찾던 것을 넓혔습니다. 「제이콥」과 「제이콥 딜런 마」는
+  // 같은 아이인데 한쪽에만 성과 미들네임이 들어간 것이라, 글자가 완전히 같지 않습니다.
+  const dupGroups = findDuplicateGroups(((dupRows as DupPerson[] | null) ?? []));
 
   return (
     <div className="mx-auto max-w-4xl p-4 sm:p-6">

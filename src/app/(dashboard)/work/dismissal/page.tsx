@@ -3,9 +3,32 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isStaffOrAboveUser } from "@/lib/roles";
 import GuideButton from "@/components/common/GuideButton";
-import DismissalBulkClient, { type PlanRow, type StudentLite } from "@/components/work/DismissalBulkClient";
+import DismissalBulkClient, { type InquiryLite, type PlanRow, type RideLite, type StudentLite } from "@/components/work/DismissalBulkClient";
 
 export const dynamic = "force-dynamic";
+
+// DB에서 받은 그대로의 모양. 화면이 쓰는 모양으로는 아래에서 한 번에 옮깁니다 -
+// 두 모양을 섞어 쓰면 «이 값이 어느 쪽 이름이더라»가 됩니다.
+type RawInquiry = {
+  id: string;
+  kind: string | null;
+  matched_name: string | null;
+  ai_student_name: string | null;
+  channel_label: string | null;
+  summary: string | null;
+  raw_text: string | null;
+  received_at: string;
+  source_url: string | null;
+  is_demo: boolean | null;
+};
+
+// 조인해서 받은 셔틀 배정 한 줄. 정류장 → 노선까지 따라갑니다.
+type RawRide = {
+  student_id: string | null;
+  student_name_raw: string;
+  weekdays: number[] | null;
+  shuttle_stops: { name: string | null; shuttle_routes: { name: string | null } | null } | null;
+};
 
 const GUIDE_SECTIONS = [
   {
@@ -34,7 +57,11 @@ export default async function DismissalBulkPage() {
   // 고칠 수 있으면 결국 아무도 안 고쳐서 낡은 값이 남습니다.
   if (!isStaffOrAboveUser(me)) redirect("/");
 
-  const [{ data: students }, { data: plans }] = await Promise.all([
+  // 학부모 연락과 셔틀 배정을 **읽기만** 해서 함께 보여줍니다. 넣을 때 «누구였더라»를 보려고
+  // 업무보드나 셔틀로 돌아가야 했는데, 그 왕복이 곧 «나중에 하자»가 됩니다.
+  // 새 자료를 만들지 않습니다 - 저 두 곳이 원본이고 여기는 창문일 뿐입니다.
+  const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+  const [{ data: students }, { data: plans }, { data: inquiries }, { data: rides }] = await Promise.all([
     supabase
       .from("wr_students")
       .select("id, name, grade, class_name")
@@ -44,6 +71,18 @@ export default async function DismissalBulkPage() {
       .order("class_name")
       .order("name"),
     supabase.from("student_dismissal_plans").select("id, student_id, weekday, kind, label, depart_time, note"),
+    // 최근 2주 학부모 연락. 원문(raw_text)까지 가져와야 «몇 시 무슨 차»가 읽힙니다 -
+    // 요약만으로는 시각이 잘려 있는 경우가 있습니다.
+    supabase
+      .from("pickup_requests")
+      .select("id, kind, matched_name, ai_student_name, channel_label, summary, raw_text, received_at, source_url, is_demo")
+      .gte("received_at", since)
+      .order("received_at", { ascending: false })
+      .limit(80),
+    // 셔틀 배정(요일·호차). 셔틀을 타는 날을 «외부버스»로 덮어쓰는 실수를 막습니다.
+    supabase
+      .from("shuttle_assignments")
+      .select("student_id, student_name_raw, weekdays, stop_id, shuttle_stops(name, shuttle_routes(name))"),
   ]);
 
   return (
@@ -61,6 +100,32 @@ export default async function DismissalBulkPage() {
       <DismissalBulkClient
         students={((students as StudentLite[] | null) ?? [])}
         initialPlans={((plans as PlanRow[] | null) ?? [])}
+        inquiries={
+          ((inquiries as RawInquiry[] | null) ?? [])
+            .filter((r) => !r.is_demo)
+            .map(
+              (r): InquiryLite => ({
+                id: r.id,
+                kind: r.kind ?? "문의",
+                name: r.matched_name ?? r.ai_student_name ?? r.channel_label ?? "미확인",
+                summary: r.summary,
+                raw: r.raw_text,
+                at: r.received_at,
+                url: r.source_url,
+              })
+            )
+        }
+        rides={
+          ((rides as unknown as RawRide[] | null) ?? []).map(
+            (a): RideLite => ({
+              studentId: a.student_id,
+              nameRaw: a.student_name_raw,
+              weekdays: a.weekdays ?? [],
+              route: a.shuttle_stops?.shuttle_routes?.name ?? null,
+              stop: a.shuttle_stops?.name ?? null,
+            })
+          )
+        }
       />
     </div>
   );

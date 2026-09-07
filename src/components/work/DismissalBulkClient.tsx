@@ -20,6 +20,26 @@ import { useToast } from "@/components/common/ToastProvider";
  */
 
 export type StudentLite = { id: string; name: string; grade: string | null; class_name: string | null };
+/** 학부모 연락 한 건 — **읽기만** 합니다. 원본은 픽업 인박스에 있습니다. */
+export type InquiryLite = {
+  id: string;
+  kind: string;
+  name: string;
+  summary: string | null;
+  raw: string | null;
+  at: string;
+  url: string | null;
+};
+
+/** 셔틀 배정 한 줄 — 역시 읽기만. 원본은 셔틀 탭에 있습니다. */
+export type RideLite = {
+  studentId: string | null;
+  nameRaw: string;
+  weekdays: number[];
+  route: string | null;
+  stop: string | null;
+};
+
 export type PlanRow = {
   id: string;
   student_id: string;
@@ -51,9 +71,15 @@ const KIND_TONE: Record<string, string> = {
 export default function DismissalBulkClient({
   students,
   initialPlans,
+  inquiries,
+  rides,
 }: {
   students: StudentLite[];
   initialPlans: PlanRow[];
+  /** 최근 학부모 연락. 넣을 때 «누구였더라»를 여기서 바로 봅니다. */
+  inquiries: InquiryLite[];
+  /** 셔틀 배정. 셔틀을 타는 날을 학원차로 덮어쓰는 실수를 막습니다. */
+  rides: RideLite[];
 }) {
   const notify = useToast();
   const [plans, setPlans] = useState<PlanRow[]>(initialPlans);
@@ -66,6 +92,7 @@ export default function DismissalBulkClient({
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [onlySet, setOnlySet] = useState(false);
+  const [openRaw, setOpenRaw] = useState<string | null>(null);
 
   const planKey = (studentId: string, weekday: number) => `${studentId}|${weekday}`;
   const planMap = useMemo(() => new Map(plans.map((p) => [planKey(p.student_id, p.weekday), p])), [plans]);
@@ -82,6 +109,30 @@ export default function DismissalBulkClient({
   function toggleStudent(id: string) {
     setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
   }
+
+  /**
+   * 연락에 적힌 이름으로 아이를 찾아 고릅니다.
+   *
+   * 못 찾으면 **검색칸에 그 이름을 넣어둡니다.** 조용히 아무 일도 안 하면 «눌렀는데 안 되네»가
+   * 되는데, 이름이 명부와 다르게 적힌 경우가 실제로 많아서 사람이 직접 골라야 합니다.
+   */
+  function pickByName(raw: string) {
+    const q = raw.trim();
+    const hit = students.find((s) => s.name === q) ?? students.find((s) => s.name.includes(q) || q.includes(s.name));
+    if (hit) {
+      setPicked((p) => (p.includes(hit.id) ? p : [...p, hit.id]));
+      setQuery("");
+      return;
+    }
+    setQuery(q);
+    notify(`명부에서 「${q}」를 찾지 못했습니다. 아래 목록에서 직접 골라주세요.`, "error");
+  }
+
+  // 고른 아이들의 셔틀 배정. 셔틀을 타는 요일에 학원차를 넣으려 하면 눈에 띄어야 합니다.
+  const pickedRides = useMemo(
+    () => rides.filter((r) => r.studentId && picked.includes(r.studentId)),
+    [rides, picked]
+  );
 
   async function save() {
     if (picked.length === 0 || days.length === 0) {
@@ -226,6 +277,95 @@ export default function DismissalBulkClient({
           형제자매처럼 같은 차를 타는 아이는 함께 고르면 한 번에 들어갑니다. 이미 넣어둔 요일이 있으면{" "}
           <b>덮어씁니다</b> — 한 아이의 한 요일에는 하원수단이 하나뿐입니다.
         </p>
+
+        {/* 고른 아이가 셔틀을 타는 요일. 여기 있는 요일에 학원차를 넣으면 그날 셔틀 자리가
+            비는데, 셔틀 배정은 그대로 남아 체크표에 계속 뜹니다 - 두 화면이 다른 말을 합니다.
+            셔틀 쪽을 여기서 고치지는 않습니다(원본은 셔틀 탭). 보여주기만 합니다. */}
+        {pickedRides.length > 0 && (
+          <div className="mt-2 rounded-xl border border-sky-200 bg-sky-50/60 px-2.5 py-2">
+            <p className="mb-1 text-[11px] font-bold text-sky-800">🚌 고른 아이의 셔틀 배정 (보기 전용)</p>
+            <ul className="flex flex-col gap-0.5">
+              {pickedRides.map((r, i) => (
+                <li key={i} className="text-[11px] text-sky-900">
+                  <b>{r.nameRaw}</b>
+                  <span className="ml-1.5">{r.route ?? "노선 미상"}</span>
+                  <span className="ml-1.5 text-sky-700">{r.stop ?? "정류장 미상"}</span>
+                  <span className="ml-1.5 font-semibold">
+                    {r.weekdays.length === 5
+                      ? "매일"
+                      : r.weekdays
+                          .slice()
+                          .sort()
+                          .map((w) => WEEKDAYS.find((x) => x.n === w)?.ko ?? w)
+                          .join("·")}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-1 text-[10px] text-sky-700/80">
+              이 요일에 학원차를 넣으면 셔틀 배정은 그대로 남습니다. 정말 안 타는 날이면 [셔틀 → 탑승 배정]에서도
+              빼주세요.
+            </p>
+          </div>
+        )}
+      </section>
+
+      {/* ── 최근 학부모 연락 (보기 전용) ──────────────────────────────────────
+          넣을 때 «누구였더라»를 보려고 업무보드로 돌아가야 했습니다. 그 왕복이 곧
+          «나중에 하자»가 되고, 나중에 한 것은 대개 안 한 것이 됩니다.
+          자료를 옮겨 담지 않습니다 - 원본은 픽업 인박스이고 여기는 창문입니다. */}
+      <section className="rounded-2xl border border-slate-200 bg-white p-3">
+        <div className="mb-2 flex flex-wrap items-baseline gap-2">
+          <h2 className="text-sm font-bold text-slate-800">📮 최근 학부모 연락</h2>
+          <span className="text-[11px] text-slate-400">최근 2주 · 보기 전용 · 이름을 누르면 위에서 그 아이가 골라집니다</span>
+        </div>
+        {inquiries.length === 0 ? (
+          <p className="py-4 text-center text-xs text-slate-400">최근 2주 연락이 없습니다.</p>
+        ) : (
+          <div className="max-h-64 overflow-y-auto">
+            <ul className="flex flex-col gap-1">
+              {inquiries.map((q) => (
+                <li key={q.id} className="rounded-lg border border-slate-100 px-2 py-1.5 text-[11px]">
+                  <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                    <button
+                      type="button"
+                      onClick={() => pickByName(q.name)}
+                      className="rounded bg-slate-800 px-1.5 py-0.5 text-[11px] font-bold text-white hover:bg-slate-700"
+                      title="이 아이를 위에서 고릅니다"
+                    >
+                      {q.name}
+                    </button>
+                    <span className="rounded bg-slate-100 px-1 text-[10px] font-semibold text-slate-500">{q.kind}</span>
+                    <span className="text-slate-700">{q.summary || q.raw?.slice(0, 60) || "—"}</span>
+                    <span className="ml-auto whitespace-nowrap text-[10px] text-slate-400">
+                      {new Date(q.at).toLocaleString("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                    {/* 요약에는 시각이 잘려 있는 경우가 있어 원문을 열 수 있게 둡니다. */}
+                    {q.raw && (
+                      <button
+                        type="button"
+                        onClick={() => setOpenRaw(openRaw === q.id ? null : q.id)}
+                        className="text-[10px] font-semibold text-slate-500 underline decoration-dotted"
+                      >
+                        {openRaw === q.id ? "원문 접기" : "원문"}
+                      </button>
+                    )}
+                    {q.url && (
+                      <a href={q.url} target="_blank" rel="noreferrer" className="text-[10px] font-semibold text-sky-700 underline">
+                        ↗ 토들
+                      </a>
+                    )}
+                  </div>
+                  {openRaw === q.id && q.raw && (
+                    <p className="mt-1 whitespace-pre-wrap break-words rounded bg-slate-50 p-2 text-[11px] leading-relaxed text-slate-600">
+                      {q.raw}
+                    </p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </section>
 
       {/* ── 명단 ───────────────────────────────────────────────────────────── */}

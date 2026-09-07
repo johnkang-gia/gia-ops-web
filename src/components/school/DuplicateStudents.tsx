@@ -36,7 +36,10 @@ export default function DuplicateStudents({ groups, canMerge }: { groups: DupGro
     const ok = await confirmAction(
       `${keep.name} ${others.length + 1}줄을 한 줄로 합칩니다.\n` +
         `남길 줄: ${keep.birth_date ?? "생일 없음"} · ${keep.grade ?? "?"}학년 ${keep.class_name ?? ""}\n\n` +
-        `출결·셔틀·인보이스 같은 기록은 남길 줄로 옮겨집니다. 되돌릴 수 없습니다.`,
+        `· 출결·셔틀·인보이스 같은 기록은 남길 줄로 옮겨집니다\n` +
+        `· 남길 줄에 비어 있는 칸(생일·영문이름·연락처 등)은 지울 줄의 값으로 채워집니다\n` +
+        `· 같은 날 출결처럼 겹치는 줄은 빈 칸끼리 합친 뒤 하나로 정리됩니다\n\n` +
+        `되돌릴 수 없습니다.`,
       { danger: true },
     );
     if (!ok) return;

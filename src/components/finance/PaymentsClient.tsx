@@ -253,13 +253,18 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
 
       // 현금영수증 신청을 함께 남깁니다. 실패해도 입금은 이미 들어갔으므로 되돌리지 않고
       // 소리만 냅니다 - 돈이 들어온 사실이 영수증 때문에 사라지면 안 됩니다.
-      if (manual.receipt && manual.receiptId.trim()) {
+      //
+      // **번호가 없어도 접수합니다.** 예전에는 번호를 안 적으면 아무것도 남기지 않았는데,
+      // 요청은 「해주세요」만 먼저 오고 번호는 나중에 오는 경우가 많습니다. 그 건이 통째로
+      // 사라지면 어디에도 안 남고, 안 남은 것은 잊힙니다. 번호 없는 건은 [현금영수증]
+      // 화면 맨 위에 「번호 없음」으로 섭니다.
+      if (manual.receipt) {
         const { error: rErr } = await createClient().from("cash_receipts").insert({
           payment_id: (data as PaymentRow).id,
           invoice_id: manual.invoiceId,
           student_id: inv?.student_id ?? null,
           purpose: manual.receiptPurpose,
-          identifier: manual.receiptId.replace(/[^0-9]/g, ""),
+          identifier: manual.receiptId.replace(/[^0-9]/g, "") || null,
           amount: manual.amount,
           status: "신청",
           requested_by: currentUserName || currentUserEmail,
@@ -604,9 +609,9 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
           </button>
 
           {/* 현금영수증.
-              발행 자체는 홈택스에서 합니다(국세청 연동은 사업자 인증서와 별도 신청이
-              필요합니다). 여기서는 «누가 무엇으로 신청했는가»를 남기고 홈택스로 건너갑니다.
-              기억에만 있으면 확인할 수 없고, 확인할 수 없으면 두 번 발행하거나 아예 못 합니다. */}
+              발행 자체는 **결제 단말기**에서 합니다. 여기서는 «누가 무엇으로 신청했는가»만
+              남깁니다 - 기억에만 있으면 확인할 수 없고, 확인할 수 없으면 두 번 발행하거나
+              아예 못 합니다. 남긴 건은 [현금영수증] 화면에서 종이로 뽑아 단말기로 갑니다. */}
           {needsReceipt && (
             <div className="mt-2 flex w-full flex-wrap items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-2.5 py-2">
               <label className="flex items-center gap-1.5 text-[12px] font-semibold text-amber-900">
@@ -630,11 +635,14 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
                   <input
                     value={manual.receiptId}
                     onChange={(e) => setManual((m) => ({ ...m, receiptId: e.target.value }))}
-                    placeholder={manual.receiptPurpose === "소득공제" ? "휴대폰번호" : "사업자등록번호"}
-                    className="w-40 rounded-lg border border-amber-300 px-2 py-1 text-[12px]"
+                    placeholder={(manual.receiptPurpose === "소득공제" ? "휴대폰번호" : "사업자등록번호") + " (나중에 받아도 됩니다)"}
+                    inputMode="numeric"
+                    className="w-52 rounded-lg border border-amber-300 px-2 py-1 text-[12px]"
                   />
                   <span className="text-[11px] text-amber-800">
-                    적어두면 [현금영수증] 탭에 «발행 대기»로 남습니다.
+                    {manual.receiptId.trim()
+                      ? "[현금영수증] 화면에 «발행 대기»로 남습니다."
+                      : "번호를 아직 못 받았어도 그대로 넣으세요 — «번호 없음»으로 맨 위에 섭니다."}
                   </span>
                 </>
               )}

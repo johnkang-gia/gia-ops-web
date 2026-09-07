@@ -158,19 +158,19 @@ export default async function ShuttleChecklistPage({
     supabase.from("wr_students_basic").select("id, name, grade, name_en, birth_date, class_name").eq("status", "active"),
     supabase.from("shuttle_checklist_log").select("id, service_date, assignment_id, student_name, action, before_value, after_value, actor_email, actor_name, created_at").eq("service_date", today).order("created_at", { ascending: false }).limit(100),
     supabase.from("shuttle_ride_alongs").select("id, student_id, student_surface, host_student_id, host_surface, route_id, status, note, raw_text").eq("service_date", today).neq("status", "취소"),
-    // 오늘 결석으로 **등록된** 출결.
+    // 오늘 **등록된** 출결 — 결석과 픽업 둘 다.
     //
-    // 픽업은 여기(pickup_requests)로 들어오는데 결석은 저기(attendance_entries)로 들어갑니다.
-    // 두 통로가 갈린 것은 자연스러운데, 이 화면이 앞의 것만 읽고 있었습니다. 그래서 구글챗으로
-    // 온 결석은 **체크표에 아예 닿지 않았고**, 토들로 온 것도 본문이 결석으로 읽히지 않으면
-    // 놓쳤습니다. 출석부에는 결석인 아이가 하원 명단에는 타는 것으로 남습니다.
+    // 앞 판은 결석만 읽었습니다. 「픽업은 pickup_requests 로, 결석은 attendance_entries 로
+    // 들어온다」는 전제였는데, **그 전제가 틀렸습니다.** 구글챗 출결내역에서 픽업으로
+    // 등록하면 이 표로 들어옵니다. 그래서 그렇게 등록한 픽업은 체크표에 닿지 않았고,
+    // 부모님이 데리러 오는 아이가 하원 명단에는 차 타는 것으로 남았습니다.
     //
     // '등록'만 봅니다. '확인필요'는 아직 사람이 판단하지 않은 것이라, 그걸로 차에서 빼면
     // 자동이 사람보다 앞서 나가는 셈입니다.
     supabase
       .from("attendance_entries")
       .select("id, student_id, student_name, status, date_from, date_to, source, raw_text, note, registered_by, registered_at")
-      .eq("status", "결석")
+      .in("status", ["결석", "픽업"])
       .eq("state", "등록")
       .lte("date_from", today)
       .gte("date_to", today),
@@ -227,13 +227,37 @@ export default async function ShuttleChecklistPage({
     id: string;
     student_id: string | null;
     student_name: string;
+    status?: string | null;
     source: string | null;
     raw_text: string | null;
     note: string | null;
     registered_by: string | null;
     registered_at: string | null;
   };
-  const absentRows = (absentRes.data as AbsentRow[] | null) ?? [];
+  const allEntryRows = (absentRes.data as AbsentRow[] | null) ?? [];
+  // 픽업으로 등록된 건은 픽업 명단으로 보냅니다. 아래 결석 대조에 섞이면 부모님이 데리러
+  // 오는 아이가 결석으로 표시됩니다 - 둘은 학교에 왔느냐 안 왔느냐가 정반대입니다.
+  const absentRows = allEntryRows.filter((r) => (r.status ?? "결석") === "결석");
+  for (const r of allEntryRows) {
+    if ((r.status ?? "") !== "픽업") continue;
+    if (r.student_name) pickupNames.push(r.student_name);
+    const key = norm(r.student_name);
+    if (!autoSourceByName.has(key)) {
+      autoSourceByName.set(key, {
+        requestId: r.id,
+        kind: "픽업",
+        source: r.source === "googlechat" ? "구글챗" : r.source === "toddle" ? "토들" : "출석부",
+        channelLabel: null,
+        senderName: r.registered_by,
+        receivedAt: r.registered_at ?? "",
+        rawText: (r.raw_text ?? r.note ?? "").trim() || `${r.student_name} 학생이 오늘 픽업으로 등록되어 있습니다.`,
+        aiNote: "출결내역에서 오늘 픽업으로 등록된 아이입니다.",
+        matchedName: r.student_name,
+        sourceUrl: null,
+        sourceChatId: null,
+      });
+    }
+  }
   const absentById = new Map<string, AbsentRow>();
   const absentByName = new Map<string, AbsentRow>();
   for (const r of absentRows) {

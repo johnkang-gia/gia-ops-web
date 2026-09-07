@@ -128,12 +128,13 @@ export default function DuplicateStudents({
   return (
     <section className="mb-4 rounded-2xl border-2 border-amber-300 bg-amber-50 p-3">
       <h2 className="mb-1 text-[15px] font-bold text-amber-900">
-        👥 이름이 같은 학생 {rows.length}건 ({total}줄)
+        👥 같은 아이일 수 있는 줄 {rows.length}건 ({total}줄)
       </h2>
       <p className="mb-2 text-[11px] leading-relaxed text-amber-800">
-        <b>이름이 같은 경우만</b> 올립니다 — 생년월일이나 영문 이름이 같다는 이유로는 올리지 않습니다(대부분 다른
-        아이였습니다). 이름이 같다고 같은 아이는 아닙니다. <b>반·생년월일·보호자 번호·붙어 있는 기록</b>을 보고
-        판단해 주세요.
+        근거는 <b>이름 둘</b>뿐입니다 — 이름이 같거나(진한 테두리), 한쪽 이름이 다른 쪽의 <b>앞부분</b>이거나(점선
+        테두리 · 「제이콥」과 「제이콥 딜런 마」). 생년월일이나 영문 이름이 같다는 이유로는 올리지 않습니다(대부분
+        다른 아이였습니다). 「김민준」과 「김민준서」처럼 <b>띄어쓰기 없이 붙은 이름</b>도 올리지 않습니다.
+        이름이 같다고 같은 아이는 아닙니다 — <b>반·생년월일·보호자 번호·붙어 있는 기록</b>을 보고 판단해 주세요.
         {canMerge ? " 합치면 되돌릴 수 없습니다." : " 합치는 것은 관리자만 할 수 있습니다."}
       </p>
       {/* 이 규칙을 모르고 누르면 살리려던 값이 조용히 사라집니다. 목록 위에 못박아 둡니다. */}
@@ -147,11 +148,23 @@ export default function DuplicateStudents({
         {rows.map((g) => {
           const empties = g.people.filter((s) => totalOf(s.id) === 0).length;
           const filled = g.people.length - empties;
+          // 이름이 정확히 같지 않고 «한쪽에 들어 있는» 묶음은 확신이 약합니다. 테두리로
+          // 구분해서, 강한 근거와 같은 무게로 읽히지 않게 합니다.
+          const weak = !g.reasons.includes("이름 같음");
           return (
-            <div key={g.key} className="rounded-xl border border-amber-200 bg-white p-2">
+            <div
+              key={g.key}
+              className={"rounded-xl border bg-white p-2 " + (weak ? "border-dashed border-slate-300" : "border-amber-200")}
+            >
               <p className="mb-1.5 flex flex-wrap items-baseline gap-2 text-[13px] font-bold text-slate-800">
-                {g.people[0].name}
+                {/* 이름이 서로 달라서 묶인 경우엔 두 이름을 다 보여줘야 왜 묶였는지 압니다. */}
+                {weak ? g.people.map((s) => s.name).join(" · ") : g.people[0].name}
                 <span className="text-[11px] font-semibold text-slate-400">{g.people.length}줄</span>
+                {weak && (
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600">
+                    이름이 한쪽에 들어 있음 — 부르는 이름 / 성·미들네임까지
+                  </span>
+                )}
                 {/* 한눈에 무엇을 해야 하는지. 이 한 줄이 대부분의 판단을 끝냅니다. */}
                 {empties > 0 && filled === 1 ? (
                   <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">

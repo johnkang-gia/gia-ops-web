@@ -39,8 +39,13 @@ export type DupPerson = {
   created_at: string;
 };
 
-/** 왜 같은 아이로 의심하는가. 이제 하나뿐입니다. */
-export type DupReason = "이름 같음";
+/**
+ * 왜 같은 아이로 의심하는가.
+ *
+ * 둘뿐이고, **확신의 세기가 다릅니다.** 화면에서도 나눠서 보여줍니다 - 섞으면 약한 근거가
+ * 강한 근거의 신뢰를 깎습니다.
+ */
+export type DupReason = "이름 같음" | "이름이 한쪽에 들어 있음";
 
 export type DupGroup = { key: string; reasons: DupReason[]; people: DupPerson[] };
 
@@ -52,30 +57,112 @@ export function normName(s: string | null | undefined): string {
     .replace(/[\s·.,'-]/g, "");
 }
 
+/** 이름을 낱말로 쪼갭니다. 「제이콥 딜런 마」 → ["제이콥", "딜런", "마"] */
+function words(s: string | null | undefined): string[] {
+  return (s ?? "")
+    .normalize("NFC")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
 /**
- * 이름이 같은 줄끼리 묶습니다.
+ * 한쪽 이름이 다른 쪽의 **앞부분(낱말 단위)**인가. 「제이콥」 ⊂ 「제이콥 딜런 마」
+ *
+ * ── 왜 낱말 단위인가 ──
+ *
+ * 그냥 「글자가 들어 있다」로 보면 「김민준」이 「김민준서」에 들어갑니다. 그 둘은 다른
+ * 아이인데 목록에 올라오고, 그런 짝이 몇 개만 섞여도 사람이 목록 전체를 믿지 않게 됩니다.
+ *
+ * 실제로 나뉘는 경우는 **부르는 이름만 적힌 줄과 성·미들네임까지 적힌 줄**입니다
+ * (「제이콥」/「제이콥 딜런 마」, 「Jacob」/「Jacob Dylan Ma」). 긴 쪽에는 반드시 띄어쓰기가
+ * 있고, 짧은 쪽은 그 앞 낱말과 정확히 같습니다. 그 모양만 봅니다.
+ *
+ * 「김민준서」는 한 낱말이라 걸리지 않습니다.
+ */
+export function isNamePrefix(a: string, b: string): boolean {
+  const wa = words(a);
+  const wb = words(b);
+  if (wa.length === 0 || wb.length === 0) return false;
+
+  const [shortW, longW] = wa.length <= wb.length ? [wa, wb] : [wb, wa];
+  // 긴 쪽이 여러 낱말이어야 합니다. 한 낱말끼리는 「같은 이름」이거나 남남입니다.
+  if (longW.length < 2 || shortW.length >= longW.length) return false;
+
+  const shortKey = normName(shortW.join(""));
+  // 두 글자짜리 조각으로 잇지 않습니다 - 「이준」이 「이준 서」와 「이준 우」 둘 다에 걸립니다.
+  if (shortKey.length < 3) return false;
+
+  return shortKey === normName(longW.slice(0, shortW.length).join(""));
+}
+
+/**
+ * 같은 아이일 수 있는 줄끼리 묶습니다.
+ *
+ * 근거는 둘입니다.
+ *   ① **이름 같음** — 확신이 강한 쪽. 대부분 여기서 끝납니다.
+ *   ② **이름이 한쪽에 들어 있음** — 「제이콥」과 「제이콥 딜런 마」. 부르는 이름만 적힌
+ *      줄과 성·미들네임까지 적힌 줄이 따로 만들어진 경우입니다.
+ *
+ * 두 근거를 한 목록에 섞지 않고 `reasons` 로 구분해 내보냅니다 - 화면이 나눠서 보여줘야
+ * 약한 근거가 강한 근거의 신뢰를 깎지 않습니다.
  *
  * 동명이인이 실제로 있습니다(김재이 셋, 이준서 둘). 그래서 여기서는 **묶어서 보여주기만**
- * 하고, 같은 아이인지는 화면에서 사람이 정합니다 - 붙어 있는 기록·반·생년월일을 보고
- * 판단할 수 있게 화면이 그 값들을 함께 보여줍니다.
+ * 하고, 같은 아이인지는 화면에서 사람이 정합니다.
  */
 export function findDuplicateGroups(people: DupPerson[]): DupGroup[] {
-  const byName = new Map<string, DupPerson[]>();
-  for (const p of people) {
-    const key = normName(p.name);
-    if (!key) continue;
-    (byName.get(key) ?? byName.set(key, []).get(key)!).push(p);
+  const n = people.length;
+  const parent = Array.from({ length: n }, (_, i) => i);
+  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  const union = (i: number, j: number) => {
+    const a = find(i);
+    const b = find(j);
+    if (a !== b) parent[b] = a;
+  };
+  const reasonsByRoot = new Map<number, Set<DupReason>>();
+  const addReason = (i: number, r: DupReason) => {
+    const root = find(i);
+    (reasonsByRoot.get(root) ?? reasonsByRoot.set(root, new Set()).get(root)!).add(r);
+  };
+
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      const a = people[i];
+      const b = people[j];
+      let reason: DupReason | null = null;
+
+      if (normName(a.name) && normName(a.name) === normName(b.name)) reason = "이름 같음";
+      else if (isNamePrefix(a.name, b.name) || isNamePrefix(a.name_en ?? "", b.name_en ?? "")) {
+        reason = "이름이 한쪽에 들어 있음";
+      }
+
+      if (!reason) continue;
+      union(i, j);
+      addReason(i, reason);
+    }
   }
 
-  return [...byName.values()]
-    .filter((g) => g.length > 1)
-    .map((g) => ({
+  const byRoot = new Map<number, DupPerson[]>();
+  for (let i = 0; i < n; i++) {
+    const r = find(i);
+    (byRoot.get(r) ?? byRoot.set(r, []).get(r)!).push(people[i]);
+  }
+
+  return [...byRoot.entries()]
+    .filter(([, g]) => g.length > 1)
+    .map(([root, g]) => ({
       key: g[0].id,
-      reasons: ["이름 같음"] as DupReason[],
+      reasons: [...(reasonsByRoot.get(root) ?? new Set<DupReason>())],
       // 먼저 만들어진 줄이 위. 대개 그쪽에 기록이 더 붙어 있습니다.
       people: g.slice().sort((a, b) => a.created_at.localeCompare(b.created_at)),
     }))
-    .sort((a, b) => b.people.length - a.people.length || a.people[0].name.localeCompare(b.people[0].name, "ko"));
+    .sort(
+      (a, b) =>
+        // 확신이 강한 묶음(이름 같음)이 위. 아래로 갈수록 「확인이 더 필요한」 것이 옵니다.
+        Number(b.reasons.includes("이름 같음")) - Number(a.reasons.includes("이름 같음")) ||
+        b.people.length - a.people.length ||
+        a.people[0].name.localeCompare(b.people[0].name, "ko"),
+    );
 }
 
 // ── 합치면 칸이 어떻게 되는가 ────────────────────────────────────────────

@@ -75,7 +75,15 @@ type BoardData = {
   nightInfo?: { events: { date: string; name: string }[]; reportsThisWeek: number };
   absences: { name: string; grade: string | null; className: string | null; status: string; note: string | null; contacted: boolean }[];
   /** 오늘 픽업. 시각·반이 함께 옵니다 - 그 시각에 교실로 데리러 가야 해서 반이 필요합니다. */
-  pickups: { name: string; time: string | null; grade?: string | null; className?: string | null; classId?: string | null }[];
+  pickups: {
+    name: string;
+    time: string | null;
+    grade?: string | null;
+    className?: string | null;
+    classId?: string | null;
+    /** 어느 길로 들어온 픽업인가. 「이 아이가 왜 떴지」를 화면에서 바로 답합니다. */
+    source?: "체크표" | "출결내역" | "학부모연락";
+  }[];
   /** 아직 시작하지 않은 등록 건. 시작일이 오면 저절로 오늘 명단으로 넘어갑니다. */
   upcoming?: { name: string; status: string; from: string; to: string; note: string | null }[];
   /** 오늘 요일에 셔틀이 아닌 방법으로 가는 아이들(학원차·보호자·도보). 매주 반복됩니다. */

@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { APP_VERSION } from "@/lib/version";
 import { buildStaffNames, categorize, extractTargetDate, matchRosterStudents, todayKey, type RosterStudent } from "@/lib/attendanceDigest";
 import { loadActiveEntries, loadUpcomingEntries } from "@/lib/attendanceEntries";
-import { extractTimeFromText, toKoreanDisplayName, type RosterEntry } from "@/lib/pickupParse";
+import { toKoreanDisplayName, type RosterEntry } from "@/lib/pickupParse";
+import { loadTodayPickups } from "@/lib/pickups";
 import { displayInquiryType } from "@/lib/inquiryType";
 import { createClient } from "@supabase/supabase-js";
 import { kstParts } from "@/lib/shuttleTracking";
@@ -214,31 +215,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   // (담당자: "기존게 계속 남아있어"). 지울 자리가 없었던 게 원인이라, 등록 여부를 담는 표를
   // 따로 두고 대시보드는 그 표만 보게 했습니다. 지우면 지워진 채로 남습니다.
   //
-  // 출결내역에서 **픽업으로 등록한 건**이 여기로 옵니다.
-  //
-  // 앞 판은 이 자리에서 픽업을 그냥 건너뛰었습니다("픽업은 아래 별도 칸에서 다룹니다").
-  // 그런데 아래 픽업 칸은 하원 체크표(shuttle_boardings)와 확정된 학부모 연락
-  // (pickup_requests)만 봅니다 — 이 표는 **아무도 안 봤습니다.** 그래서 구글챗 출결내역에서
-  // 사람이 [등록]을 눌러도 중앙 대시보드에는 끝내 안 떴습니다.
-  //
-  // 결석은 이 표를 통해 뜨는데 픽업만 안 뜨니, 「같은 자리에서 등록했는데 왜 하나만 뜨지」가
-  // 됩니다. 이제 픽업도 아래 픽업 칸으로 넘깁니다.
-  const pickupNamesFromEntries = new Set<string>();
-  const pickupTimeFromEntries = new Map<string, string>();
-
+  // 픽업은 여기서 다루지 않습니다 - 갈래가 셋이라 `loadTodayPickups` 한 곳에서 정합니다.
   for (const e of await loadActiveEntries(supabase, todayK)) {
+    if (e.status === "픽업") continue;
     const sid = e.student_id as string | null;
     // 이 대시보드가 맡은 부서 학생이 아니면 올리지 않습니다.
     if (sid ? !deptStudentIds.has(sid) : !deptStudents.some((s) => s.name === e.student_name)) continue;
-
-    if (e.status === "픽업") {
-      const nm = e.student_name as string;
-      pickupNamesFromEntries.add(nm);
-      // 시각은 원문에서 읽습니다. 못 읽으면 넣지 않습니다 - 틀린 시각은 없는 것보다 나쁩니다.
-      const t = extractTimeFromText((e.raw_text as string | null) ?? (e.note as string | null));
-      if (t) pickupTimeFromEntries.set(nm, t);
-      continue;
-    }
 
     const key = `${e.student_name}-${e.status}`;
     if (absenceByKey.has(key)) continue; // 선생님이 직접 입력한 값을 덮어쓰지 않습니다.
@@ -255,59 +237,19 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   // 구글챗 메시지를 여기서 직접 파싱하던 자리였습니다. 위 (2-a)로 옮겼습니다 - 원본을 매번
   // 다시 읽는 방식으로는 "처리했음"을 남길 데가 없어, 업무보드에서 지운 것이 계속 되살아났습니다.
 
-  // (3) 학부모 문의(pickup_requests)에서 온 픽업.
+  // ── 오늘 픽업 ──────────────────────────────────────────────────────────────
   //
-  // 담당자: "업무 대시보드 하원픽업에 4명이나 떴어. 이예온 심규민 어디에도 없는데 계속 떠 있어."
+  // 픽업은 **들어오는 길이 셋인데 도착하는 표도 셋**입니다(학부모 연락 · 출결내역 등록 ·
+  // 체크표 클릭). 이 자리에서 그중 둘만 읽고 있어서, 출결내역에서 등록한 픽업이 끝내
+  // 안 떴습니다. 화면마다 다른 조합을 읽으면 답도 화면마다 달라집니다.
   //
-  // 원인은 이 자리가 **원문을 매번 다시 읽어 스스로 판단하고 있었다**는 것입니다. 14일치
-  // 학부모 연락을 긁어와 categorize()로 픽업인지 다시 정하고, extractTargetDate()로 날짜도
-  // 다시 계산했습니다. 그래서
-  //   · 하원 체크표에서 지워도 → 원문은 그대로니 다음 조회에서 되살아납니다.
-  //   · AI 분류를 고쳐도 → 여기서는 다시 자기 방식으로 판단합니다.
-  //   · 며칠 전 "금요일에 데리러 갈게요"가 → 오늘도 금요일이면 다시 오늘 것이 됩니다.
-  //
-  // 바로 위(232줄)에 결석 칸을 고치며 적어둔 것과 **똑같은 실수**입니다:
-  // "원본을 매번 다시 읽는 방식으로는 '처리했음'을 남길 데가 없어, 지운 것이 계속 되살아났습니다."
-  // 결석만 고치고 픽업은 그대로 뒀습니다.
-  //
-  // 이제 원문을 다시 읽지 않습니다. **하원 체크표(shuttle_boardings)가 유일한 기준**입니다.
-  // 학부모 연락은 이미 크론과 인박스를 거쳐 체크표에 픽업으로 찍히므로, 체크표만 보면 됩니다.
-  // 사람이 체크표에서 되돌리면 대시보드에서도 사라집니다 - 되살아날 곳이 없습니다.
-  //
-  // 딱 하나 예외를 둡니다: **차량을 안 타는 학생**은 체크표에 줄 자체가 없어서 체크표만
-  // 보면 영영 안 뜹니다. 그 학생만 확정된 오늘 픽업에서 가져옵니다(원문 재해석 없이,
-  // status='확정' + service_date=오늘 + student_id 연결된 것만).
-  const pickupNamesFromReq = new Set<string>();
-  // 몇 시에 데리러 오는가. 대시보드에서 픽업은 «누가»보다 «언제»가 먼저 필요한 정보입니다 —
-  // 행정실은 그 시각에 맞춰 아이를 교실에서 데려와야 하므로, 이름만 있으면 쓸 수가 없습니다.
-  // 학부모가 시각을 안 적은 건도 있어서 없으면 null로 둡니다(«미정»으로 표시).
-  const pickupTimeByName = new Map<string, string>();
-  const { data: reqRows } = await supabase
-    .from("pickup_requests")
-    .select("id, student_id, service_date, kind, status, is_demo, pickup_time")
-    .eq("kind", "픽업")
-    .eq("status", "확정")
-    .eq("service_date", todayK)
-    .limit(200);
-
-  for (const r of reqRows ?? []) {
-    if (r.is_demo) continue;
-    const sid = r.student_id as string | null;
-    if (!sid) continue;
-    const s = studentById.get(sid) as { name?: string } | undefined;
-    // 시각은 부서와 무관하게 모아둡니다 - 아래 체크표에서 온 픽업에도 붙여야 하는데,
-    // 그 목록은 부서로 이미 걸러진 뒤라 여기서 또 거르면 시각만 사라집니다.
-    const t = (r.pickup_time as string | null) ?? null;
-    if (s?.name && t) pickupTimeByName.set(s.name, t);
-    if (!deptStudentIds.has(sid)) continue;
-    if (s?.name) pickupNamesFromReq.add(s.name);
-  }
-
-  // 출결내역에서 등록한 픽업을 같은 목록에 합칩니다. 아래 「체크표가 이미 정한 학생은
-  // 덮지 않는다」 규칙을 그대로 받게 하려면 여기서 합쳐야 합니다 - 규칙을 두 벌로 만들면
-  // 한쪽만 고치고 다른 쪽을 잊습니다.
-  for (const n of pickupNamesFromEntries) pickupNamesFromReq.add(n);
-  for (const [n, t] of pickupTimeFromEntries) if (!pickupTimeByName.has(n)) pickupTimeByName.set(n, t);
+  // 이제 `loadTodayPickups` 한 곳에서만 정합니다. 「사람이 체크표에서 정한 것이 이긴다」는
+  // 규칙도 거기 한 벌만 있습니다 - 두 벌로 만들면 한쪽만 고치고 다른 쪽을 잊습니다.
+  const allPickups = await loadTodayPickups(
+    supabase,
+    todayK,
+    (sid) => ((studentById.get(sid) as { name?: string } | undefined)?.name ?? null),
+  );
 
   const absences = [...absenceByKey.values()].sort(
     (a, b) => a.status.localeCompare(b.status, "ko") || a.name.localeCompare(b.name, "ko")
@@ -332,47 +274,6 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
       note: (e.note as string | null) ?? null,
     }));
 
-  // 하원 픽업(부모님이 직접 데려가심)은 하원 체크표에서 찍힌 값입니다.
-  const { data: boardings } = await supabase
-    .from("shuttle_boardings")
-    .select("assignment_id, status")
-    .eq("service_date", today)
-    .in("status", ["픽업", "결석"]);
-  const pickupAssignmentIds = (boardings ?? []).filter((b) => b.status === "픽업").map((b) => b.assignment_id);
-  const { data: pickupAssignments } = pickupAssignmentIds.length
-    ? await supabase.from("shuttle_assignments").select("id, student_id, student_name_raw").in("id", pickupAssignmentIds)
-    : { data: [] as { id: string; student_id: string | null; student_name_raw: string }[] };
-  // 요청: "꼭 이름만 뜨지않고 성까지 뜨도록" - 탑승표에 적힌 이름(성이 빠졌을 수 있음) 대신,
-  // 학생 번호로 명부의 전체 이름(성+이름)을 씁니다. 같은 이름 아이를 성으로 구분합니다.
-  const boardingPickups = (pickupAssignments ?? []).map((a) => {
-    const full = a.student_id ? (studentById.get(a.student_id) as { name?: string } | undefined)?.name : null;
-    return full || a.student_name_raw;
-  });
-  // 차량을 타는 학생은 **체크표의 판단만** 따릅니다.
-  //
-  // 오늘 체크표에 줄이 있는 학생(탄다·픽업·결석 무엇이든 찍힌 학생)은 사람이 이미 보고
-  // 정한 상태입니다. 그 위에 학부모 연락을 덧씌우면, 되돌린 것이 다시 살아납니다.
-  const { data: todayBoardRows } = await supabase
-    .from("shuttle_boardings")
-    .select("assignment_id")
-    .eq("service_date", today);
-  const { data: boardedAsg } = (todayBoardRows ?? []).length
-    ? await supabase
-        .from("shuttle_assignments")
-        .select("student_id")
-        .in("id", (todayBoardRows ?? []).map((b) => b.assignment_id))
-    : { data: [] as { student_id: string | null }[] };
-  const decidedNames = new Set(
-    (boardedAsg ?? [])
-      .map((a) => (a.student_id ? (studentById.get(a.student_id) as { name?: string } | undefined)?.name : null))
-      .filter((n): n is string => !!n)
-  );
-  for (const n of decidedNames) if (!boardingPickups.includes(n)) pickupNamesFromReq.delete(n);
-
-  // 이름만이 아니라 시각과 함께 넘깁니다. 시각이 있는 아이가 먼저, 그중에서도 이른 시각부터 -
-  // 대시보드는 «다음에 무엇을 해야 하나» 순서로 읽히는 게 맞습니다. 시각을 모르는 아이는
-  // 뒤로 보내되 빼지는 않습니다(연락은 왔고 시각만 안 적힌 경우입니다).
-  //
   // 반까지 함께 보냅니다. 시각이 됐을 때 행정실이 실제로 하는 일은 «교실에 가서 데려오기»라,
   // 이름만으로는 움직일 수 없습니다 - 어느 반이 지금 어느 교실에서 무슨 수업 중인지까지
   // 알아야 합니다. 반 id 가 있으면 화면이 시간표에서 그 반의 지금 수업을 바로 찾습니다.
@@ -387,18 +288,21 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   );
   const classIdByGradeName = new Map(deptClasses.map((c) => [`${c.grade ?? ""}|${c.class_name ?? ""}`, c.id as string]));
 
-  const pickups = [...new Set([...boardingPickups, ...pickupNamesFromReq])]
-    .map((name) => {
-      const c = classByName.get(name);
+  // 이 대시보드가 맡은 부서 학생만. 순서(시각 이른 순)는 loadTodayPickups 가 이미 정했습니다.
+  const pickups = allPickups
+    .filter((p) => (p.studentId ? deptStudentIds.has(p.studentId) : classByName.has(p.name)))
+    .map((p) => {
+      const c = classByName.get(p.name);
       return {
-        name,
-        time: pickupTimeByName.get(name) ?? null,
+        name: p.name,
+        time: p.time,
         grade: c?.grade ?? null,
         className: c?.className ?? null,
         classId: c ? classIdByGradeName.get(`${c.grade ?? ""}|${c.className ?? ""}`) ?? null : null,
+        // 왜 이 아이가 떴는지. 「어디에도 없는데 계속 떠 있어」를 화면에서 바로 답합니다.
+        source: p.source,
       };
-    })
-    .sort((a, b) => (a.time ?? "99:99").localeCompare(b.time ?? "99:99") || a.name.localeCompare(b.name, "ko"));
+    });
 
   // ── 학부모 문의사항 ────────────────────────────────────────────────────────
   // 요청: "운영 대시보드에 이 학부모 문의사항도 띄워줘"

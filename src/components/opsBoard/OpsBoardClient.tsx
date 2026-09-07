@@ -74,11 +74,11 @@ type BoardData = {
   studentCount: number;
   nightInfo?: { events: { date: string; name: string }[]; reportsThisWeek: number };
   absences: { name: string; grade: string | null; className: string | null; status: string; note: string | null; contacted: boolean }[];
-  /** 오늘 픽업. 시각이 적혀 있으면 함께 옵니다(없으면 null). */
-  pickups: { name: string; time: string | null }[];
+  /** 오늘 픽업. 시각·반이 함께 옵니다 - 그 시각에 교실로 데리러 가야 해서 반이 필요합니다. */
+  pickups: { name: string; time: string | null; grade?: string | null; className?: string | null; classId?: string | null }[];
   /** 아직 시작하지 않은 등록 건. 시작일이 오면 저절로 오늘 명단으로 넘어갑니다. */
   upcoming?: { name: string; status: string; from: string; to: string; note: string | null }[];
-  inquiries: { id: string; student: string; type: string | null; summary: string; urgent: boolean; at: string; replied?: boolean }[];
+  inquiries: { id: string; student: string; type: string | null; typeGuessed?: boolean; summary: string; urgent: boolean; at: string; replied?: boolean }[];
   /** 아직 사람이 한 번 봐야 하는 픽업 요청(확인대기). 비어 있는 것이 정상입니다. */
   pendingInbox?: { name: string; date: string | null; time: string | null; today: boolean }[];
   collector: { lastSeen: string | null; status: string | null; stale: boolean } | null;
@@ -121,6 +121,12 @@ export default function OpsBoardClient({ token }: { token: string }) {
   const sc = useBoardDensity(`opsBoardDensity:${token}`);
   // 요청: "대시보드 분말고 초까지 나오도록" - 1초마다 도는 시계(서버 갱신 주기와 무관).
   const clock = useKstClock();
+  // 알람은 분 단위로 판단합니다. 서버 갱신(15초)을 기다리면 «5분 전»이 4분 전이 되기도 합니다.
+  const nowMinutes = (() => {
+    const m = (clock ?? "").match(/^(\d{2}):(\d{2})/);
+    if (!m) return -1; // 시계가 아직 안 돌았으면 아무것도 알리지 않습니다
+    return Number(m[1]) * 60 + Number(m[2]);
+  })();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   // 부서는 화면에서 바로 바꿀 수 있습니다(요청: "화면에서 유치부,초등부,중고등부 선택할 수
   // 있게"). null이면 링크에 설정된 기본 부서를 씁니다.
@@ -474,6 +480,9 @@ export default function OpsBoardClient({ token }: { token: string }) {
           <DensityPicker sc={sc} />
         </div>
       </div>
+
+      {/* 픽업 알람 - 두 칸 위. 시각이 5분 앞으로 다가온 것만 뜨고, 없으면 자리를 안 먹습니다. */}
+      <PickupAlarm sc={sc} data={data} nowMin={nowMinutes} />
 
       {/* ── 화면을 세로로 반 가르기 ───────────────────────────────────────────
           요청: "학부모문의칸을 아예 화면 반으로 쓸 수 있도록", "오늘업무를 지우고, 결석·지각·
@@ -1052,6 +1061,83 @@ function NightInfoPanel({ sc, data }: { sc: BoardScale; data: BoardData }) {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// 픽업 알람.
+//
+// 시각이 적힌 픽업은 그 시각에 **행정실이 교실로 데리러 갑니다.** 그런데 목록에 적혀 있는
+// 것만으로는 아무도 시계를 보지 않습니다 - 15:40 이 지나서야 «아 맞다»가 됩니다.
+// 5분 전에 화면 맨 위를 크게 차지하게 해서, 지나가다 보이면 바로 움직일 수 있게 합니다.
+//
+// 이름만으로는 못 움직입니다. 어느 반이 지금 어느 교실에서 무슨 수업 중인지가 있어야
+// 곧장 그리로 갑니다. 그래서 시간표에서 그 반의 지금 수업을 찾아 함께 적습니다.
+//
+// 시각이 지나도 10분은 남깁니다 - 5분 전에 자리를 비웠던 사람도 봐야 하고, 지난 일이라고
+// 사라지면 «놓쳤다»는 사실 자체가 화면에서 없어집니다.
+const ALERT_LEAD_MIN = 5;
+const ALERT_KEEP_MIN = 10;
+
+function PickupAlarm({ sc, data, nowMin }: { sc: BoardScale; data: BoardData; nowMin: number }) {
+  const due = data.pickups
+    .map((p) => {
+      const m = (p.time ?? "").match(/^(\d{1,2}):(\d{2})/);
+      if (!m) return null; // 시각을 모르면 알릴 때도 모릅니다
+      const at = Number(m[1]) * 60 + Number(m[2]);
+      const left = at - nowMin;
+      if (left > ALERT_LEAD_MIN || left < -ALERT_KEEP_MIN) return null;
+      const cls = data.grades.flatMap((g) => g.classes).find((c) => c.id === p.classId);
+      return { ...p, at, left, lesson: cls?.current ?? null, room: cls?.room ?? null };
+    })
+    .filter((x): x is NonNullable<typeof x> => !!x)
+    .sort((a, b) => a.at - b.at);
+
+  if (due.length === 0) return null;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: sc.s(6, 4), flexShrink: 0 }}>
+      {due.map((p, i) => {
+        const late = p.left < 0;
+        return (
+          <div
+            key={i}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: `${sc.s(6, 4)}px ${sc.s(16, 10)}px`,
+              background: late ? "#7f1d1d" : "#0c4a6e",
+              border: `2px solid ${late ? "#ef4444" : "#38bdf8"}`,
+              borderRadius: sc.s(14, 8),
+              padding: `${sc.s(10, 6)}px ${sc.s(16, 10)}px`,
+              animation: "opsPickupPulse 1.6s ease-in-out infinite",
+            }}
+          >
+            <span style={{ fontSize: sc.s(28, 18), fontWeight: 900, color: late ? "#fecaca" : "#7dd3fc" }}>
+              {late ? "🔔 지금" : `🔔 ${p.left}분 뒤`}
+            </span>
+            <span
+              style={{ fontSize: sc.s(34, 22), fontWeight: 900, color: "#fff", fontVariantNumeric: "tabular-nums" }}
+            >
+              {p.time}
+            </span>
+            <span style={{ fontSize: sc.s(30, 20), fontWeight: 900, color: "#fff" }}>{p.name}</span>
+            <span style={{ fontSize: sc.s(20, 14), fontWeight: 700, color: late ? "#fca5a5" : "#bae6fd" }}>
+              {[p.grade ? `${p.grade}학년` : null, p.className].filter(Boolean).join(" ") || "반 미확인"}
+            </span>
+            {/* 지금 어디 있나. 수업이 없으면 교실 위치라도 적습니다 - 빈손으로 보내지 않습니다. */}
+            <span style={{ fontSize: sc.s(20, 14), color: "#e0f2fe", marginLeft: "auto" }}>
+              {p.lesson
+                ? `지금 ${p.lesson.subjectName}${p.lesson.room ? ` · ${p.lesson.room}` : p.room ? ` · ${p.room}` : ""}`
+                : p.room
+                ? `교실 ${p.room}`
+                : "지금 수업 없음"}
+            </span>
+          </div>
+        );
+      })}
+      <style>{"@keyframes opsPickupPulse{0%,100%{opacity:1}50%{opacity:.72}}"}</style>
     </div>
   );
 }

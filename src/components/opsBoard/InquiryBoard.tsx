@@ -24,6 +24,8 @@ export type BoardInquiry = {
   /** 짧게 누르면 작은 창에 보여줄 원문. */
   raw?: string | null;
   channel?: string | null;
+  /** 분류를 AI가 적어둔 것이 아니라 글에서 짐작한 것인지. 화면에서 흐리게 표시합니다. */
+  typeGuessed?: boolean;
 };
 
 const PAGE_MS = 8000;
@@ -203,6 +205,10 @@ export default function InquiryBoard({
                         NEW
                       </span>
                     )}
+                    {/* 촘촘 모드에서는 「마야-출석」한 덩어리. 분류를 따로 배지로 띄우면
+                        폭을 잡아먹어 한 줄에 두 건이 안 들어갑니다.
+                        짐작한 분류는 조금 흐리게 둡니다 - 확실한 것과 같은 색이면
+                        틀린 분류를 사실처럼 읽게 됩니다. */}
                     <b
                       style={{
                         fontSize: dense ? s(23, 15) : s(25, 16),
@@ -210,11 +216,13 @@ export default function InquiryBoard({
                         whiteSpace: "nowrap",
                         overflow: "hidden",
                         textOverflow: "ellipsis",
+                        minWidth: 0,
                       }}
                     >
-                      {/* 촘촘 모드에서는 「마야-출석」한 덩어리. 분류를 따로 배지로 띄우면
-                          폭을 잡아먹어 한 줄에 두 건이 안 들어갑니다. */}
-                      {dense && q.type ? `${q.student}-${q.type}` : q.student}
+                      {q.student}
+                      {dense && q.type && (
+                        <span style={{ color: q.typeGuessed ? "#7d8ba1" : "#c7d2e5" }}>-{q.type}</span>
+                      )}
                     </b>
                     {q.replied && (
                       <span style={{ fontSize: s(18, 13), color: "#22c55e", fontWeight: 800 }} title="이미 답글이 달렸습니다">

@@ -3,6 +3,7 @@ import { APP_VERSION } from "@/lib/version";
 import { buildStaffNames, categorize, extractTargetDate, matchRosterStudents, todayKey, type RosterStudent } from "@/lib/attendanceDigest";
 import { loadActiveEntries, loadUpcomingEntries } from "@/lib/attendanceEntries";
 import { toKoreanDisplayName, type RosterEntry } from "@/lib/pickupParse";
+import { displayInquiryType } from "@/lib/inquiryType";
 import { createClient } from "@supabase/supabase-js";
 import { kstParts } from "@/lib/shuttleTracking";
 import { departmentOf, gradeSortKey, isVisibleDepartment, VISIBLE_DEPARTMENTS, type VisibleDepartment } from "@/lib/department";
@@ -343,8 +344,32 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   // 이름만이 아니라 시각과 함께 넘깁니다. 시각이 있는 아이가 먼저, 그중에서도 이른 시각부터 -
   // 대시보드는 «다음에 무엇을 해야 하나» 순서로 읽히는 게 맞습니다. 시각을 모르는 아이는
   // 뒤로 보내되 빼지는 않습니다(연락은 왔고 시각만 안 적힌 경우입니다).
+  //
+  // 반까지 함께 보냅니다. 시각이 됐을 때 행정실이 실제로 하는 일은 «교실에 가서 데려오기»라,
+  // 이름만으로는 움직일 수 없습니다 - 어느 반이 지금 어느 교실에서 무슨 수업 중인지까지
+  // 알아야 합니다. 반 id 가 있으면 화면이 시간표에서 그 반의 지금 수업을 바로 찾습니다.
+  const classByName = new Map(
+    deptStudents.map((s) => [
+      (s.name as string) ?? "",
+      {
+        grade: (s.grade as string | null) ?? null,
+        className: (s.class_name as string | null) ?? null,
+      },
+    ])
+  );
+  const classIdByGradeName = new Map(deptClasses.map((c) => [`${c.grade ?? ""}|${c.class_name ?? ""}`, c.id as string]));
+
   const pickups = [...new Set([...boardingPickups, ...pickupNamesFromReq])]
-    .map((name) => ({ name, time: pickupTimeByName.get(name) ?? null }))
+    .map((name) => {
+      const c = classByName.get(name);
+      return {
+        name,
+        time: pickupTimeByName.get(name) ?? null,
+        grade: c?.grade ?? null,
+        className: c?.className ?? null,
+        classId: c ? classIdByGradeName.get(`${c.grade ?? ""}|${c.className ?? ""}`) ?? null : null,
+      };
+    })
     .sort((a, b) => (a.time ?? "99:99").localeCompare(b.time ?? "99:99") || a.name.localeCompare(b.name, "ko"));
 
   // ── 학부모 문의사항 ────────────────────────────────────────────────────────
@@ -394,7 +419,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
         ) ??
         (r.channel_label as string | null) ??
         "미확인",
-      type: (r.inquiry_type as string | null) ?? null,
+      // 분류가 비어 있으면 화면에 이름만 뜹니다 - 멀리서 보는 사람에게 «뭔가 왔다» 말고는
+      // 아무것도 아닙니다. 저장된 값이 있으면 그대로 쓰고, 없을 때만 글에서 짐작합니다.
+      type: displayInquiryType(r.inquiry_type as string | null, (r.summary as string | null) ?? (r.raw_text as string | null)).label,
+      // 짐작한 것인지. 화면에서 확실한 분류와 구별해 보여줍니다.
+      typeGuessed: displayInquiryType(r.inquiry_type as string | null, (r.summary as string | null) ?? (r.raw_text as string | null)).guessed,
       summary: (r.summary as string | null) ?? "",
       urgent: r.urgency === "높음",
       at: r.received_at as string,

@@ -225,3 +225,28 @@ export async function loadActiveEntries(supabase: SupabaseClient, dateKey: strin
     .gte("date_to", dateKey);
   return data ?? [];
 }
+
+/**
+ * 아직 시작하지 않은 등록 건 - «예정된 변동사항».
+ *
+ * 「이연우 9/21~23 결석」처럼 미리 알려온 것은 등록만 해두고 그날이 와야 화면에 뜹니다.
+ * 그때까지는 아무 데도 안 보여서, 정작 그날 아침에 «몰랐다»가 됩니다. 행정실이 며칠 전부터
+ * 눈에 담아둘 수 있도록 따로 꺼냅니다.
+ *
+ * 시작일이 **내일 이후**인 것만입니다 - 오늘 시작한 건은 이미 오늘 명단에 있고, 두 곳에
+ * 같은 아이가 뜨면 어느 쪽이 진짜인지 사람이 판단해야 합니다.
+ * 끝난 건은 date_from 조건만으로 저절로 빠집니다(시작이 미래인데 끝이 과거일 수 없습니다).
+ */
+export async function loadUpcomingEntries(supabase: SupabaseClient, dateKey: string, days = 21) {
+  const until = new Date(dateKey + "T00:00:00Z");
+  until.setUTCDate(until.getUTCDate() + days);
+  const { data } = await supabase
+    .from("attendance_entries")
+    .select("student_id, student_name, grade, class_name, status, note, date_from, date_to")
+    .eq("state", "등록")
+    .gt("date_from", dateKey)
+    .lte("date_from", until.toISOString().slice(0, 10))
+    .order("date_from", { ascending: true })
+    .limit(60);
+  return data ?? [];
+}

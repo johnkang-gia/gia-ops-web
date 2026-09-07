@@ -76,6 +76,8 @@ type BoardData = {
   absences: { name: string; grade: string | null; className: string | null; status: string; note: string | null; contacted: boolean }[];
   /** 오늘 픽업. 시각이 적혀 있으면 함께 옵니다(없으면 null). */
   pickups: { name: string; time: string | null }[];
+  /** 아직 시작하지 않은 등록 건. 시작일이 오면 저절로 오늘 명단으로 넘어갑니다. */
+  upcoming?: { name: string; status: string; from: string; to: string; note: string | null }[];
   inquiries: { id: string; student: string; type: string | null; summary: string; urgent: boolean; at: string; replied?: boolean }[];
   /** 아직 사람이 한 번 봐야 하는 픽업 요청(확인대기). 비어 있는 것이 정상입니다. */
   pendingInbox?: { name: string; date: string | null; time: string | null; today: boolean }[];
@@ -1054,6 +1056,12 @@ function NightInfoPanel({ sc, data }: { sc: BoardScale; data: BoardData }) {
   );
 }
 
+// 「9/21~23」처럼 짧게. 하루짜리면 한 번만 적습니다 - 「9/21~9/21」은 읽는 데 방해만 됩니다.
+function dayRange(from: string, to: string): string {
+  const short = (d: string) => d.slice(5).replace("-", "/");
+  return from === to ? short(from) : `${short(from)}~${short(to)}`;
+}
+
 // 아직 손 안 댄 인박스.
 //
 // 픽업 요청은 «확인대기»로 들어와서, 사람이 인박스에서 눌러야 하원 체크표로 넘어갑니다.
@@ -1152,9 +1160,59 @@ function TodayChanges({ sc, data }: { sc: BoardScale; data: BoardData }) {
   const absent = data.absences.filter((a) => a.status === "결석");
   const late = data.absences.filter((a) => a.status !== "결석");
   const pickups = data.pickups;
+  const upcoming = data.upcoming ?? [];
 
   return (
     <div style={{ flexShrink: 0, minHeight: 0 }}>
+      {/* 예정된 변동사항 - 맨 위.
+          「이연우 9/21~23 결석」처럼 미리 알려온 건은 등록만 되어 있고 그날이 와야 화면에
+          떴습니다. 그때까지는 아무 데도 안 보여서 정작 그날 아침에 «몰랐다»가 됩니다.
+          위에 세워두면 며칠 전부터 모두가 눈에 담습니다.
+
+          지우는 일은 사람이 하지 않습니다 - 시작일이 되면 아래 오늘 명단으로 넘어가고
+          여기서는 저절로 빠집니다. 사람이 지워야 하는 목록은 언젠가 안 지워집니다. */}
+      {upcoming.length > 0 && (
+        <div
+          style={{
+            background: "#1a1330",
+            border: "1px solid #4c1d95",
+            borderRadius: sc.s(10, 6),
+            padding: sc.s(8, 5),
+            marginBottom: sc.s(9, 6),
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "baseline", gap: sc.s(7, 4), marginBottom: sc.s(5, 3) }}>
+            <span style={{ fontSize: sc.s(14, 11), fontWeight: 800, color: "#c4b5fd" }}>📌 예정 {upcoming.length}건</span>
+            <span style={{ fontSize: sc.s(11, 9), color: "#7c6ba8" }}>미리 알려온 건 · 그날이 되면 아래로 내려옵니다</span>
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: sc.s(5, 3) }}>
+            {upcoming.slice(0, 8).map((u, i) => (
+              <span
+                key={i}
+                title={[u.name, u.status, `${u.from}~${u.to}`, u.note].filter(Boolean).join(" · ")}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "baseline",
+                  gap: sc.s(5, 3),
+                  background: "#2a1f4d",
+                  borderRadius: 6,
+                  padding: `${sc.s(3, 2)}px ${sc.s(8, 5)}px`,
+                  fontSize: sc.s(14, 11),
+                  whiteSpace: "nowrap",
+                }}
+              >
+                <b style={{ color: "#ddd6fe" }}>{shortName(u.name)}</b>
+                <span style={{ color: "#a78bfa", fontWeight: 700 }}>{u.status}</span>
+                <span style={{ fontSize: sc.s(12, 9), color: "#8b7bb8" }}>{dayRange(u.from, u.to)}</span>
+              </span>
+            ))}
+            {upcoming.length > 8 && (
+              <span style={{ fontSize: sc.s(12, 10), color: "#7c6ba8", alignSelf: "center" }}>외 {upcoming.length - 8}건</span>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* 픽업 - 시각이 먼저, 이름이 뒤. */}
       <div style={{ display: "flex", alignItems: "baseline", gap: sc.s(7, 4), marginBottom: sc.s(6, 4) }}>
         <span style={{ width: sc.s(9, 7), height: sc.s(9, 7), borderRadius: 3, background: "#0ea5e9" }} />

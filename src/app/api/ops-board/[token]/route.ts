@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { APP_VERSION } from "@/lib/version";
 import { buildStaffNames, categorize, extractTargetDate, matchRosterStudents, todayKey, type RosterStudent } from "@/lib/attendanceDigest";
-import { loadActiveEntries } from "@/lib/attendanceEntries";
+import { loadActiveEntries, loadUpcomingEntries } from "@/lib/attendanceEntries";
 import { toKoreanDisplayName, type RosterEntry } from "@/lib/pickupParse";
 import { createClient } from "@supabase/supabase-js";
 import { kstParts } from "@/lib/shuttleTracking";
@@ -284,6 +284,25 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     (a, b) => a.status.localeCompare(b.status, "ko") || a.name.localeCompare(b.name, "ko")
   );
 
+  // ── 예정된 변동사항 ────────────────────────────────────────────────────────
+  //
+  // 「이연우 9/21~23 결석」처럼 미리 알려온 것은 등록만 되어 있고, 그날이 와야 화면에 뜹니다.
+  // 그때까지는 아무 데도 안 보여서 정작 그날 아침에 «몰랐다»가 됩니다. 며칠 전부터 눈에
+  // 담아둘 수 있도록 오늘 명단 위에 세웁니다. 시작일이 지나면 저절로 오늘 명단으로 넘어가고
+  // 여기서는 빠집니다 - 지우는 일을 사람이 하지 않습니다.
+  const upcoming = (await loadUpcomingEntries(supabase, todayK))
+    .filter((e) => {
+      const sid = e.student_id as string | null;
+      return sid ? deptStudentIds.has(sid) : deptStudents.some((s) => s.name === e.student_name);
+    })
+    .map((e) => ({
+      name: e.student_name as string,
+      status: e.status as string,
+      from: e.date_from as string,
+      to: e.date_to as string,
+      note: (e.note as string | null) ?? null,
+    }));
+
   // 하원 픽업(부모님이 직접 데려가심)은 하원 체크표에서 찍힌 값입니다.
   const { data: boardings } = await supabase
     .from("shuttle_boardings")
@@ -555,6 +574,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     nightInfo,
     absences,
     pickups,
+    upcoming,
     inquiries,
     pendingInbox,
     collector,

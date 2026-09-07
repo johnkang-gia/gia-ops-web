@@ -97,6 +97,13 @@ export async function updateSession(request: NextRequest) {
     // 값만 보여주고 위치 기록은 전혀 보여주지 않습니다.
     path.startsWith("/s/") ||
     path.startsWith("/api/shuttle/setup") ||
+    // 교실 태블릿(/c/{코드}). 반마다 다른 기기·다른 와이파이라 로그인 관리가 곧 부담이 되고,
+    // 로그인이 풀린 태블릿은 조용히 아무 일도 안 합니다 - 호출을 보내도 아무도 못 봅니다.
+    // 이 화면은 그 반 학생 **이름만** 봅니다(보호자 연락처·생년월일은 서버에서 아예 안 보냅니다).
+    path.startsWith("/c/") ||
+    // /api/classroom/call(행정실이 호출을 보내는 자리)도 이 접두사에 걸리지만, 그 라우트는
+    // 안에서 다시 로그인을 검사해 로그인하지 않으면 401을 돌려줍니다.
+    path.startsWith("/api/classroom/") ||
     // 기사님 휴대폰(Traccar Client)이 위치를 보내오는 라우트입니다. 세션 쿠키가 없는
     // 서버-서버(앱→서버) 호출이라, 여기서 /login으로 리다이렉트해버리면 앱이 "Upload response
     // 307"로 실패하고 위치가 한 번도 저장되지 않습니다(실제 발견: 27호차 테스트 로그의 307).

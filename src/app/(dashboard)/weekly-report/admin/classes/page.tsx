@@ -9,6 +9,7 @@ import Link from "next/link";
 import TermSettingTabs from "@/components/school/TermSettingTabs";
 import { TermSnapshotClasses } from "@/components/school/TermSnapshotView";
 import { loadTermSettingView } from "@/lib/termSettingView";
+import ClassroomTabletManager from "@/components/classroom/ClassroomTabletManager";
 
 const GUIDE_SECTIONS = [
   {
@@ -63,7 +64,12 @@ export default async function ClassManagePage({
       <TermSettingTabs terms={view.terms} currentTermId={view.currentTermId} selectedTermId={view.selectedTermId} />
 
       {view.isCurrent ? (
-        <ClassManageClient initialClasses={(classesData as WrClass[] | null) ?? []} team={(teamData as TeamMember[] | null) ?? []} />
+        <>
+          <ClassManageClient initialClasses={(classesData as WrClass[] | null) ?? []} team={(teamData as TeamMember[] | null) ?? []} />
+          {/* 교실 태블릿 링크는 반 목록 바로 아래에 둡니다. 반이 늘거나 이름이 바뀌면 링크도
+              같이 손봐야 하는데, 다른 화면에 있으면 반만 고치고 링크는 그대로 남습니다. */}
+          <ClassroomTabletManager classes={(classesData as WrClass[] | null) ?? []} />
+        </>
       ) : (
         <TermSnapshotClasses snapshot={view.snapshot} termLabel={view.selectedLabel} />
       )}

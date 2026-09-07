@@ -4,6 +4,7 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { isStaffOrAboveUser } from "@/lib/roles";
 import GuideButton from "@/components/common/GuideButton";
 import PasteRosterClient from "@/components/school/PasteRosterClient";
+import RosterSyncClient from "@/components/school/RosterSyncClient";
 
 export const dynamic = "force-dynamic";
 
@@ -57,6 +58,7 @@ export default async function PasteRosterPage() {
       </p>
 
       <PasteRosterClient />
+      <RosterSyncClient />
     </div>
   );
 }

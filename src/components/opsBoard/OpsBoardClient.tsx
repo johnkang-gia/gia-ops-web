@@ -83,6 +83,8 @@ type BoardData = {
     classId?: string | null;
     /** 어느 길로 들어온 픽업인가. 「이 아이가 왜 떴지」를 화면에서 바로 답합니다. */
     source?: "체크표" | "출결내역" | "학부모연락";
+    /** 명부와 못 이은 건. 조용히 빼지 않고 올리되 확인이 필요하다고 적습니다. */
+    unmatched?: boolean;
   }[];
   /** 아직 시작하지 않은 등록 건. 시작일이 오면 저절로 오늘 명단으로 넘어갑니다. */
   upcoming?: { name: string; status: string; from: string; to: string; note: string | null }[];
@@ -1531,6 +1533,21 @@ function TodayChanges({ sc, data }: { sc: BoardScale; data: BoardData }) {
               >
                 {shortName(p.name)}
               </span>
+              {/* 명부와 못 이은 건. 조용히 빼면 아무도 데리러 가지 않으므로 올리되,
+                  「확인해야 하는 줄」이라고 눈에 띄게 적습니다. */}
+              {p.unmatched && (
+                <span
+                  style={{
+                    fontSize: sc.s(12, 9),
+                    fontWeight: 800,
+                    color: "#fca5a5",
+                    whiteSpace: "nowrap",
+                  }}
+                  title="학부모 연락은 왔는데 명부의 어느 학생인지 아직 잇지 못했습니다. 픽업 인박스에서 학생을 골라주세요."
+                >
+                  학생 미연결
+                </span>
+              )}
             </div>
           ))}
           {pickups.length > 10 && (

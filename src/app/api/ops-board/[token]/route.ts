@@ -143,6 +143,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     .eq("is_demo", false);
   const deptStudents = (students ?? []).filter((s) => departmentOf(s) === department);
   const studentById = new Map((students ?? []).map((s) => [s.id, s]));
+  // 부서를 가리지 않은 전체 명부 이름. 「이 이름이 다른 부서 아이인가, 아예 못 찾는 이름인가」를
+  // 가르는 데 씁니다 - 둘을 같이 다루면 다른 부서 아이가 이 화면에 겹쳐 뜹니다.
+  const allStudentNames = new Set((students ?? []).map((s) => (s.name as string) ?? "").filter(Boolean));
   const deptStudentIds = new Set(deptStudents.map((s) => s.id));
 
   const { data: attendance } = await supabase
@@ -288,9 +291,19 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   );
   const classIdByGradeName = new Map(deptClasses.map((c) => [`${c.grade ?? ""}|${c.class_name ?? ""}`, c.id as string]));
 
-  // 이 대시보드가 맡은 부서 학생만. 순서(시각 이른 순)는 loadTodayPickups 가 이미 정했습니다.
+  // 이 대시보드가 맡은 부서 학생 + **어느 부서인지 모르는 건**.
+  //
+  // 앞 판은 명부에서 못 찾은 픽업을 조용히 뺐습니다. 그런데 학부모 연락은 이름이 영문이거나
+  // 형제방이라 학생을 못 잇는 경우가 실제로 있고(신민하), 그 아이는 픽업 목록 어디에도
+  // 안 떴습니다. **연락은 왔는데 화면에 없는 것**이 가장 나쁜 실패입니다 - 아무도 데리러
+  // 가지 않습니다. 부서를 몰라도 올리고, 「학생 미연결」이라고 적어 사람이 잇게 합니다.
   const pickups = allPickups
-    .filter((p) => (p.studentId ? deptStudentIds.has(p.studentId) : classByName.has(p.name)))
+    .filter((p) => {
+      if (p.studentId) return deptStudentIds.has(p.studentId);
+      // 이름이 다른 부서 명부에 있으면 그 부서 것입니다 - 여기서는 뺍니다.
+      if (allStudentNames.has(p.name)) return classByName.has(p.name);
+      return true; // 어느 명부에도 없는 이름 → 확인이 필요하니 올립니다.
+    })
     .map((p) => {
       const c = classByName.get(p.name);
       return {
@@ -301,6 +314,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
         classId: c ? classIdByGradeName.get(`${c.grade ?? ""}|${c.className ?? ""}`) ?? null : null,
         // 왜 이 아이가 떴는지. 「어디에도 없는데 계속 떠 있어」를 화면에서 바로 답합니다.
         source: p.source,
+        // 명부와 못 이은 건. 화면이 「학생 미연결」로 적어 사람이 확인하게 합니다.
+        unmatched: !p.studentId && !classByName.has(p.name),
       };
     });
 

@@ -104,7 +104,18 @@ export default async function DataCheckPage() {
   );
   if (dupRes.error) console.error("[명부 점검] 중복 조회 실패:", dupRes.error);
 
-  const dupGroups = findDuplicateGroups(dupRes.data);
+  // 「확인했고 다른 아이다」로 내린 묶음은 목록에서 뺍니다. 정말 다른 아이인 묶음이 늘
+  // 남아 있으면, 새로 올라온 진짜 중복이 그 사이에 묻혀서 눈에 안 띕니다.
+  const { data: dismissedRows } = await supabase.from("student_dup_dismissals").select("group_key");
+  const dismissed = new Set(((dismissedRows as { group_key: string }[] | null) ?? []).map((r) => r.group_key));
+
+  // 묶음 열쇠는 **학생 번호를 정렬해 이어 붙인 것**입니다. 줄이 하나라도 늘면 열쇠가 달라져
+  // 다시 올라옵니다 - 새 줄은 다시 봐야 하니까요.
+  const groupKeyOf = (ids: string[]) => ids.slice().sort().join("|");
+
+  const dupGroups = findDuplicateGroups(dupRes.data).filter(
+    (g) => !dismissed.has(groupKeyOf(g.people.map((p) => p.id))),
+  );
 
   //
   // 각 줄에 무엇이 붙어 있는지. **이것이 판단의 핵심 단서입니다** — 한쪽이 텅 비었으면

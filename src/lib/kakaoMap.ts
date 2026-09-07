@@ -26,18 +26,33 @@ export function loadKakaoMaps(): Promise<KakaoNamespace> {
       resolve(window.kakao);
       return;
     }
+    // 무엇을 해야 하는지까지 적습니다.
+    //
+    // 앞 판은 「도메인 등록을 확인해주세요」로 끝났습니다. 그 말을 본 사람은 **어느 도메인을
+    // 어디에 넣어야 하는지** 모릅니다. 카카오는 JS 키에 등록된 도메인에서만 SDK를 내주는데,
+    // 새 주소로 배포하거나 미리보기 주소로 열면 그 주소가 등록돼 있지 않아 막힙니다.
+    //
+    // 지금 열려 있는 주소를 그대로 찍어주면, 그 값을 복사해 넣기만 하면 됩니다.
+    const domainHint =
+      `카카오맵을 불러오지 못했습니다.\n` +
+      `지금 주소: ${typeof window !== "undefined" ? window.location.origin : "(알 수 없음)"}\n` +
+      `카카오 개발자센터 → 내 애플리케이션 → 플랫폼 → Web 에 이 주소를 그대로 등록해주세요` +
+      ` (https://developers.kakao.com/console/app).`;
+
     const existing = document.getElementById("kakao-maps-sdk");
     if (existing) {
       existing.addEventListener("load", () => window.kakao!.maps.load(() => resolve(window.kakao)));
-      existing.addEventListener("error", () => reject(new Error("카카오맵 SDK 로드 실패")));
+      existing.addEventListener("error", () => reject(new Error(domainHint)));
       return;
     }
     const script = document.createElement("script");
     script.id = "kakao-maps-sdk";
-    script.src = `//dapi.kakao.com/v2/maps/sdk.js?appkey=${appKey}&autoload=false&libraries=services`;
+    // 프로토콜을 못박습니다. `//` 로 두면 앱이 http 로 열린 자리에서 http 로 내려받으려다
+    // 막히는데, 그때 나는 오류가 도메인 문제와 똑같이 보여서 원인을 찾는 데 시간이 듭니다.
+    script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${appKey}&autoload=false&libraries=services`;
     script.async = true;
     script.onload = () => window.kakao!.maps.load(() => resolve(window.kakao));
-    script.onerror = () => reject(new Error("카카오맵 SDK 로드 실패 - 도메인 등록을 확인해주세요."));
+    script.onerror = () => reject(new Error(domainHint));
     document.head.appendChild(script);
   });
 

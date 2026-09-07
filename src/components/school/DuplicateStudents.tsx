@@ -79,6 +79,45 @@ export default function DuplicateStudents({
 
   const totalOf = (id: string) => Object.values(counts[id] ?? {}).reduce((n, v) => n + v, 0);
 
+  /**
+   * 「확인했고 다른 아이다」로 목록에서 내립니다.
+   *
+   * 지우는 것이 아닙니다 — 학생 줄은 그대로 있고, **판단을 기록**해서 목록에만 안 뜨게 합니다.
+   * 김재이가 셋, 이준서가 둘인 학교라 정말 다른 아이인 묶음이 늘 남는데, 그것들이 쌓여 있으면
+   * 새로 올라온 진짜 중복이 그 사이에 묻힙니다.
+   *
+   * 줄이 하나라도 늘면 열쇠가 달라져 **다시 올라옵니다.** 새 줄은 다시 봐야 하니까요.
+   */
+  async function dismiss(group: DupGroup) {
+    const reason = window.prompt(
+      `${group.people.map((s) => s.name).join(" · ")} — 다른 아이로 확인하셨나요?\n\n` +
+        `학생 줄은 그대로 있고 이 목록에서만 내려갑니다.\n` +
+        `줄이 하나라도 더 생기면 다시 올라옵니다.\n\n` +
+        `왜 다른 아이인지 한 줄 적어주세요 (예: 반·생년월일이 다름, 형제 아님)`,
+      "",
+    );
+    if (reason === null) return; // 취소
+    if (!reason.trim()) {
+      // 이유 없이 내리면 몇 달 뒤 「왜 안 뜨지」에 답할 수 없습니다.
+      notify("왜 다른 아이인지 적어주세요. 나중에 이 칸만 남습니다.", "error");
+      return;
+    }
+    setBusy(group.key);
+    const { error } = await createClient().from("student_dup_dismissals").insert({
+      group_key: group.people.map((s) => s.id).slice().sort().join("|"),
+      label: group.people.map((s) => `${s.name}(${s.grade ?? "?"}학년 ${s.class_name ?? ""})`).join(" · "),
+      reason: reason.trim(),
+    });
+    setBusy(null);
+    if (error) {
+      // 조용히 닫으면 내려간 줄 알았는데 다음에 또 뜹니다.
+      notify("내리지 못했습니다: " + error.message, "error");
+      return;
+    }
+    setRows((p) => p.filter((g) => g.key !== group.key));
+    notify("다른 아이로 확인하고 목록에서 내렸습니다.", "success");
+  }
+
   async function merge(group: DupGroup, keep: DupStudent) {
     const others = group.people.filter((s) => s.id !== keep.id);
     const keepN = totalOf(keep.id);
@@ -165,6 +204,17 @@ export default function DuplicateStudents({
                     이름이 한쪽에 들어 있음 — 부르는 이름 / 성·미들네임까지
                   </span>
                 )}
+                {/* 정말 다른 아이인 묶음을 내릴 자리. 없으면 그 묶음이 영원히 남아, 새로
+                    올라온 진짜 중복이 그 사이에 묻힙니다. */}
+                <button
+                  type="button"
+                  disabled={busy === g.key}
+                  onClick={() => void dismiss(g)}
+                  className="ml-auto rounded-lg border border-slate-200 px-2 py-0.5 text-[11px] font-semibold text-slate-500 hover:bg-slate-50 disabled:opacity-40"
+                  title="학생 줄은 그대로 두고 이 목록에서만 내립니다. 줄이 더 생기면 다시 올라옵니다."
+                >
+                  {busy === g.key ? "내리는 중…" : "다른 아이입니다"}
+                </button>
                 {/* 한눈에 무엇을 해야 하는지. 이 한 줄이 대부분의 판단을 끝냅니다. */}
                 {empties > 0 && filled === 1 ? (
                   <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">

@@ -88,7 +88,11 @@ export default function ClassManageClient({ initialClasses, team }: { initialCla
   const totalPages = Math.max(1, Math.ceil(displayList.length / PAGE_SIZE));
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
+    // 높이를 화면에 못박지 않습니다. `h-full` + `overflow-hidden` 이었는데, 이 화면은 높이가
+    // 정해진 상자 안이 아니라 **그냥 흐르는 페이지**입니다. 그러면 h-full 이 잡을 높이가 없어
+    // 상자가 쪼그라들고, overflow-hidden 이 넘친 부분을 잘라내 **반 목록이 스크롤되지
+    // 않았습니다.** 아래에 교실 태블릿 링크와 기록도 이어지므로 페이지 스크롤이 맞습니다.
+    <div className="flex flex-col">
       <form onSubmit={addClass} className="mb-4 flex shrink-0 flex-wrap items-end gap-2 g-panel-solid p-3">
         <div>
           <label className="mb-1 block text-[11px] text-slate-400">학년</label>
@@ -148,7 +152,7 @@ export default function ClassManageClient({ initialClasses, team }: { initialCla
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto g-panel-solid">
+      <div className="g-panel-solid">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-400">
             <tr>

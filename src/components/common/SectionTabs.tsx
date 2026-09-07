@@ -77,20 +77,16 @@ const DEV_TABS: TabDef[] = [
 // ── 업무 ────────────────────────────────────────────────────────────────────
 const WORK_TABS: TabDef[] = [
   { key: "board", label: "업무 보드", icon: "🗂️", href: "/work", match: ["/work"] },
-  // 학부모 연락은 대개 **나중에** 필요해집니다 - 상담 전에, 같은 일이 또 생겼을 때.
-  // 지금 화면들은 최근 것만 보여줘서, 쌓이기만 하고 못 찾았습니다.
-  {
-    key: "inqsearch",
-    label: "연락 · 출결",
-    icon: "🔍",
-    href: "/work/inquiry-search",
-    // 출석부는 학교 메뉴로 옮겼습니다. 여기 남는 것은 학부모 연락을 다루는 화면뿐입니다.
-    match: ["/work/inquiry-search", "/inquiries"],
-    children: [
-      { label: "연락 검색", href: "/work/inquiry-search", match: ["/work/inquiry-search"] },
-      { label: "학부모 문의", href: "/inquiries" },
-    ],
-  },
+  // 「연락 · 출결」 탭을 뺐습니다.
+  //
+  //   · 연락 검색 — 업무 보드에서 이미 찾을 수 있습니다. 같은 일을 두 자리에 두면 어느
+  //     쪽이 최신인지 묻게 되고, 결국 둘 다 안 봅니다.
+  //   · 학부모 문의 — [문의사항]은 이 앱을 쓰는 **직원**의 문의를 받는 창구입니다.
+  //     학부모 연락과 이름이 겹쳐 여기 걸려 있었는데, 다른 일이라 업무 탭에 있을 자리가
+  //     아닙니다.
+  //
+  // 화면(/work/inquiry-search, /inquiries)은 지우지 않았습니다 - 주소로 들어가면 그대로
+  // 열립니다. 메뉴에서만 내립니다.
   // 하원수단을 여기 둡니다. 학부모 연락이 «임선우·임다현 월·금 2시 40분 학원 셔틀»처럼
   // 여러 아이·여러 요일로 한 번에 오는데, 아이 프로필을 하나씩 열어 넣게 하면 그 번거로움이
   // 곧 «나중에 하자»가 되고, 나중에 한 것은 대개 안 한 것이 됩니다.
@@ -207,7 +203,9 @@ const SHUTTLE_TABS: TabDef[] = [
       { label: "배차표", href: "/shuttle", match: ["/shuttle"] },
       { label: "노선 관리", href: "/shuttle/routes" },
       { label: "탑승 배정", href: "/shuttle/students" },
-      { label: "지역별", href: "/shuttle/regions" },
+      // 「지역별」을 뺐습니다 - 구/동 지도와 지역별 명단은 [개요]에 그대로 들어가 있습니다.
+      // 같은 것을 두 자리에 두면 어느 쪽을 봐야 하는지 묻게 됩니다.
+      // 주소(/shuttle/regions)는 살려둡니다 - 즐겨찾기 해둔 사람이 있습니다.
       { label: "실시간", href: "/shuttle/live" },
     ],
   },

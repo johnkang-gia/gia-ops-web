@@ -150,9 +150,20 @@ export async function loadTodayPickups(
       time: extractTimeFromText((e.raw_text as string | null) ?? (e.note as string | null)),
     }));
 
-  const requests = (((reqRes.data as { student_id: string | null; pickup_time: string | null }[] | null) ?? [])
+  // 학생 연결이 없거나 명부에서 못 찾은 건도 **버리지 않습니다.**
+  //
+  // 앞 판은 student_id 가 없으면 조용히 뺐습니다. 그런데 학부모 연락은 이름이 영문이거나
+  // 형제방이라 학생을 못 잇는 경우가 실제로 있고, 그 아이는 픽업 목록 어디에도 안 떴습니다.
+  // 「연락은 왔는데 화면에 없다」가 가장 나쁜 실패입니다 - 아무도 그 아이를 데리러 가지
+  // 않습니다. 이름이라도 있으면 올리고, 화면이 「학생 미연결」로 표시합니다.
+  const requests = (((reqRes.data as
+    | { student_id: string | null; pickup_time: string | null; matched_name: string | null; ai_student_name: string | null }[]
+    | null) ?? [])
     .map((r) => {
-      const nm = r.student_id ? nameOfStudent(r.student_id) : null;
+      const nm =
+        (r.student_id ? nameOfStudent(r.student_id) : null) ||
+        (r.matched_name ?? "").trim() ||
+        (r.ai_student_name ?? "").trim();
       return nm ? { name: nm, studentId: r.student_id, time: r.pickup_time } : null;
     })
     .filter((v): v is { name: string; studentId: string | null; time: string | null } => !!v));

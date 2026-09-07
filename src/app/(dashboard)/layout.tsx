@@ -29,6 +29,7 @@ import { positionLabel } from "@/lib/i18nLabels";
 import { isDemoAccount } from "@/lib/sharedAccounts";
 import ConnectionBanner from "@/components/common/ConnectionBanner";
 import VersionUpdateBanner from "@/components/common/VersionUpdateBanner";
+import VersionBroadcastButton from "@/components/common/VersionBroadcastButton";
 import CommandPalette from "@/components/common/CommandPalette";
 import type { AiFeatureFlag } from "@/lib/types";
 
@@ -554,12 +555,17 @@ export default async function DashboardLayout({
         </div>
         {/* 요청("현재 버전을 문의사항 아래에 표시해주고 어떤 버전에서 무엇이 개선되었는지
             버전로그 볼 수 있도록") - 누르면 /changelog로 이동합니다. */}
-        <Link
-          href="/changelog"
-          className="mb-1 flex items-center gap-1.5 px-3 py-1.5 text-[10px] text-[var(--shell-text-muted)] hover:text-[var(--shell-text)]"
-        >
-          🏷️ v{APP_VERSION}
-        </Link>
+        <div className="mb-1 flex items-center gap-1 px-3 py-1.5">
+          <Link
+            href="/changelog"
+            className="flex items-center gap-1.5 text-[10px] text-[var(--shell-text-muted)] hover:text-[var(--shell-text)]"
+          >
+            🏷️ v{APP_VERSION}
+          </Link>
+          {/* 새로고침 안내는 배포마다가 아니라 **개발자가 알릴 때만** 뜹니다. 그 판단을
+              기계가 하면 안내가 잦아지고, 잦은 안내는 읽히지 않습니다. */}
+          {isDeveloper && <VersionBroadcastButton userName={me.name ?? me.email} />}
+        </div>
         <div className="border-t border-[var(--shell-border)] pt-3">
           {/* 요청("개발자 계정의 경우 로그아웃 바로위에 드롭다운메뉴로 권한을 변경할 수 있게") -
               실제 개발자 계정에게만 보이고, 다른 직위는 이 드롭다운 자체를 볼 수 없습니다. */}

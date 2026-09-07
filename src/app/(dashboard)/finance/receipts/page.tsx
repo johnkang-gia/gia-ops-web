@@ -58,6 +58,17 @@ export default async function CashReceiptsPage() {
   const rows = (data as CashReceiptRow[] | null) ?? [];
   const students = (studentRows as StudentLite[] | null) ?? [];
 
+  // 어느 청구서 건인지. 「이 사람 얼마짜리였지」를 확인하러 인보이스 명단으로 건너가야
+  // 하면 그 왕복이 곧 안 하게 되는 이유가 됩니다.
+  const invoiceIds = [...new Set(rows.map((r) => r.invoice_id).filter((v): v is string => !!v))];
+  const { data: invRows } = invoiceIds.length
+    ? await supabase.from("invoices").select("id, invoice_no, category").in("id", invoiceIds)
+    : { data: [] };
+  const invoiceLabel: Record<string, string> = {};
+  for (const v of ((invRows as { id: string; invoice_no: string; category: string | null }[] | null) ?? [])) {
+    invoiceLabel[v.id] = v.invoice_no + (v.category ? ` · ${v.category}` : "");
+  }
+
   return (
     <div className="mx-auto w-full max-w-5xl p-4 sm:p-6">
       <div className="mb-1 flex items-center justify-between gap-2">
@@ -67,7 +78,12 @@ export default async function CashReceiptsPage() {
       <p className="mb-4 text-xs leading-relaxed text-slate-500">
         현금영수증을 요청하신 분을 모아두고, 번호를 미리 받아두고, 종이로 뽑아 단말기에서 끊은 뒤 체크하는 곳입니다.
       </p>
-      <CashReceiptsClient initialRows={rows} students={students} currentUserName={me.name ?? me.email} />
+      <CashReceiptsClient
+        initialRows={rows}
+        students={students}
+        invoiceLabel={invoiceLabel}
+        currentUserName={me.name ?? me.email}
+      />
     </div>
   );
 }

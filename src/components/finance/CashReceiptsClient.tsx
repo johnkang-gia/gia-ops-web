@@ -59,10 +59,13 @@ const btn =
 export default function CashReceiptsClient({
   initialRows,
   students,
+  invoiceLabel,
   currentUserName,
 }: {
   initialRows: CashReceiptRow[];
   students: StudentLite[];
+  /** 청구서 id → 「INV-0031 · 교복」. 어느 청구서 건인지 보여야 금액을 확인할 수 있습니다. */
+  invoiceLabel: Record<string, string>;
   currentUserName: string;
 }) {
   const notify = useToast();
@@ -265,6 +268,7 @@ export default function CashReceiptsClient({
                 key={r.id}
                 r={r}
                 name={nameOf(r)}
+                invoice={r.invoice_id ? invoiceLabel[r.invoice_id] : undefined}
                 picked={picked.has(r.id)}
                 busy={busy}
                 onPick={(on) =>
@@ -354,6 +358,7 @@ function Stat({
 function Row({
   r,
   name,
+  invoice,
   picked,
   busy,
   onPick,
@@ -364,6 +369,7 @@ function Row({
 }: {
   r: CashReceiptRow;
   name: string;
+  invoice?: string;
   picked: boolean;
   busy: boolean;
   onPick: (on: boolean) => void;
@@ -396,6 +402,21 @@ function Row({
           {r.purpose}
         </span>
         <b className="text-[13px] text-slate-800">{name}</b>
+        {/* 어느 청구서 건인가. 「이 사람 얼마짜리였지」를 확인하러 인보이스 명단으로 건너가야
+            하면 그 왕복이 곧 안 하게 되는 이유가 됩니다. */}
+        {invoice ? (
+          <a
+            href="/finance/invoices"
+            className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600 underline decoration-dotted"
+            title="인보이스 명단에서 이 청구서를 봅니다"
+          >
+            {invoice}
+          </a>
+        ) : (
+          <span className="text-[10px] text-slate-300" title="청구서 없이 접수된 건입니다">
+            청구서 없음
+          </span>
+        )}
         <span className="tabular-nums text-[13px] font-semibold text-slate-700">
           {Number(r.amount).toLocaleString()}원
         </span>

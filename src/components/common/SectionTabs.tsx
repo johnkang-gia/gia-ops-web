@@ -113,6 +113,7 @@ const SCHOOL_TABS: TabDef[] = [
       "/weekly-report/admin/class-roster",
       "/school/data-check",
       "/school/import",
+      "/school/paste",
       "/school/groups",
       "/school/apparel",
     ],
@@ -126,6 +127,9 @@ const SCHOOL_TABS: TabDef[] = [
       { label: "수강 그룹", href: "/school/groups", match: ["/school/groups"] },
       // 교복·행사 티셔츠. 사이즈는 학생에 저장되어 행사마다 다시 조사하지 않습니다.
       { label: "의류", href: "/school/apparel", match: ["/school/apparel"] },
+      // 구글시트에서 복사한 줄을 그대로 붙여넣습니다. 명부가 시트에서만 갱신되고 있어서,
+      // 한 명씩 손으로 옮기면 옮기는 일 자체가 미뤄지고 두 명부가 어긋납니다.
+      { label: "명부 붙여넣기", href: "/school/paste" },
       { label: "명부 점검", href: "/school/data-check" },
       { label: "명부 가져오기", href: "/school/import" },
     ],

@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { extractTimeFromText } from "@/lib/pickupParse";
+import { assumeAfternoon, extractTimeFromText } from "@/lib/pickupParse";
 import { loadActiveEntries } from "@/lib/attendanceEntries";
 
 /**
@@ -164,7 +164,9 @@ export async function loadTodayPickups(
         (r.student_id ? nameOfStudent(r.student_id) : null) ||
         (r.matched_name ?? "").trim() ||
         (r.ai_student_name ?? "").trim();
-      return nm ? { name: nm, studentId: r.student_id, time: r.pickup_time } : null;
+      // 인박스에 03:40 으로 저장된 옛 줄도 오후로 읽습니다. 저장을 고치지 않고 읽을 때
+      // 바로잡는 이유는, 이미 쌓인 줄이 있고 그것들도 오늘 화면에 떠야 하기 때문입니다.
+      return nm ? { name: nm, studentId: r.student_id, time: assumeAfternoon(r.pickup_time) } : null;
     })
     .filter((v): v is { name: string; studentId: string | null; time: string | null } => !!v));
 

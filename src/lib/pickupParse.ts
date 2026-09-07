@@ -191,6 +191,33 @@ export function pickSiblingFromText(text: string, names: string[]): string | nul
 }
 
 /**
+ * 픽업 시각은 **오후로 읽습니다.**
+ *
+ * 학부모가 「3:40에 데리러 갈게요」라고 적으면 그건 새벽 3시 40분이 아니라 **15시 40분**
+ * 입니다. 학교 픽업은 하원 시간대에만 있습니다 - 새벽에 아이를 데리러 오는 일은 없습니다.
+ * 앞 판은 적힌 대로 03:40으로 읽었고, 그러면 알람이 새벽에 울릴 시각으로 잡혀 **오후에는
+ * 아무 일도 일어나지 않았습니다.**
+ *
+ * ── 어디까지 오후로 미는가 ────────────────────────────────────────────
+ *
+ *   · 1~7시  → 13~19시로. 픽업이 실제로 일어나는 시간대입니다.
+ *   · 8~11시 → 그대로 둡니다. 20~23시 픽업은 없으니 미룰 곳이 없고, 조퇴 픽업이 오전에
+ *              있을 수 있습니다.
+ *   · 12시 이상 → 이미 24시간 표기이거나 정오입니다. 건드리지 않습니다.
+ *
+ * 「오전」이라고 **적어준 경우에는 그 말을 따릅니다.** 사람이 명시한 것을 기계가 뒤집으면
+ * 안 됩니다.
+ */
+export function assumeAfternoon(hhmm: string | null): string | null {
+  if (!hhmm) return null;
+  const m = hhmm.match(/^(\d{2}):(\d{2})$/);
+  if (!m) return hhmm;
+  const h = Number(m[1]);
+  if (h >= 1 && h <= 7) return `${String(h + 12).padStart(2, "0")}:${m[2]}`;
+  return hhmm;
+}
+
+/**
  * 문장에서 몇 시인지 뽑아냅니다.
  *
  * 학부모 연락은 「2시 40분에 데리러 갈게요」, 「14:40 픽업이요」, 「오후 3시」처럼 옵니다.
@@ -212,13 +239,16 @@ export function extractTimeFromText(text: string | null | undefined): string | n
     return `${String(hh).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
   };
 
+  // 「오전」이라고 적어준 경우에는 그 말을 따릅니다. 사람이 명시한 것을 기계가 뒤집으면 안 됩니다.
+  const said = (mark: string | undefined) => /오전|am|AM/.test(mark ?? "");
+
   // ① 「2시 40분」 / 「오후 2시」 / 「2시반」
   const ko = s.match(/(오전|오후|am|AM|pm|PM)?\s*(\d{1,2})\s*시\s*(반|(\d{1,2})\s*분?)?/);
   if (ko) {
     const pm = /오후|pm|PM/.test(ko[1] ?? "");
     const min = ko[3] === "반" ? 30 : Number(ko[4] ?? 0);
     const out = clamp(Number(ko[2]), min, pm);
-    if (out) return out;
+    if (out) return said(ko[1]) ? out : assumeAfternoon(out);
   }
 
   // ② 「14:40」 / 「2:40」 / 「오후 2:40」
@@ -226,7 +256,7 @@ export function extractTimeFromText(text: string | null | undefined): string | n
   if (colon) {
     const pm = /오후|pm|PM/.test(colon[1] ?? "");
     const out = clamp(Number(colon[2]), Number(colon[3]), pm);
-    if (out) return out;
+    if (out) return said(colon[1]) ? out : assumeAfternoon(out);
   }
 
   return null;

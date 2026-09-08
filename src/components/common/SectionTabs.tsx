@@ -92,8 +92,19 @@ const WORK_TABS: TabDef[] = [
   // 곧 «나중에 하자»가 되고, 나중에 한 것은 대개 안 한 것이 됩니다.
   { key: "dismissal", label: "하원수단", icon: "🎒", href: "/work/dismissal", match: ["/work/dismissal"] },
   { key: "report", label: "보고서", icon: "📈", href: "/work/report", match: ["/work/report"] },
-  { key: "history", label: "지난 업무", icon: "🗃️", href: "/work/history", match: ["/work/history"] },
-  { key: "trash", label: "휴지통", icon: "🗑️", href: "/work/trash", match: ["/work/trash"] },
+  // 끝난 것을 보는 두 자리입니다. 매일 쓰는 탭들과 같은 줄에 나란히 있으면, 정작 오늘 할 일이
+  // 뒤로 밀립니다.
+  {
+    key: "archive",
+    label: "보관함",
+    icon: "🗃️",
+    href: "/work/history",
+    match: ["/work/history", "/work/trash"],
+    children: [
+      { label: "지난 업무", href: "/work/history", match: ["/work/history"] },
+      { label: "휴지통", href: "/work/trash", match: ["/work/trash"] },
+    ],
+  },
 ];
 
 // ── 학교 ────────────────────────────────────────────────────────────────────
@@ -247,32 +258,37 @@ const SHUTTLE_TABS: TabDef[] = [
 // 학교와 같은 방식으로 17줄이던 사이드바를 7개 대분류로 줄이고, 흡수한 화면은 children으로
 // 펼칩니다(요청: "통합, 최적화, 줄여줘" + "상단탭이랑 서브메뉴랑 일치해야해").
 const DOCS_TABS: TabDef[] = [
+  // 「AI 매뉴얼 작성」을 제안 · 채택에서 여기로 옮겼습니다. 만드는 자리와 읽는 자리가
+  // 갈려 있으면, 매뉴얼을 고칠 때마다 어디로 가야 하는지 매번 생각해야 합니다.
   {
     key: "manual",
-    label: "실무자 매뉴얼",
+    label: "매뉴얼",
     icon: "📚",
     href: "/staff-manual",
-    match: ["/staff-manual", "/manuals"],
+    match: ["/staff-manual", "/manuals", "/ai-manual"],
     children: [
       { label: "실무자 매뉴얼", href: "/staff-manual", match: ["/staff-manual"] },
       { label: "매뉴얼 (실무자용)", href: "/manuals?doc=실무자용" },
       { label: "운영계획안 (학부모용)", href: "/manuals?doc=학부모용" },
+      { label: "AI 매뉴얼 작성", href: "/ai-manual", match: ["/ai-manual"] },
     ],
   },
+  // 기록 드라이브를 문서함 안으로 넣었습니다. 둘 다 «파일을 두는 곳»인데 탭이 갈려 있어서,
+  // 어느 쪽에 넣었는지 기억해야 찾을 수 있었습니다.
   {
     key: "docs",
     label: "문서함",
     icon: "🗄️",
     href: "/school/documents",
-    match: ["/school/documents", "/documents"],
+    match: ["/school/documents", "/documents", "/records/drive"],
     children: [
       { label: "문서함 홈", href: "/school/documents", match: ["/school/documents"] },
       { label: "서류함", href: "/documents", match: ["/documents"] },
       { label: "AI 서류 작성", href: "/documents/new" },
       { label: "보고서 모음", href: "/school/documents/reports" },
+      { label: "기록 드라이브", href: "/records/drive", match: ["/records/drive"] },
     ],
   },
-  { key: "drive", label: "기록 드라이브", icon: "🗃️", href: "/records/drive", match: ["/records/drive"] },
   {
     key: "incidents",
     label: "사건",
@@ -284,28 +300,28 @@ const DOCS_TABS: TabDef[] = [
       { label: "사건기록", href: "/records", match: ["/records"] },
     ],
   },
+  // 회의와 행사를 한 자리로. 둘 다 «날을 잡아 열고, 끝나면 기록이 남는» 일입니다.
   {
     key: "meetings",
-    label: "회의",
+    label: "회의 · 행사",
     icon: "💬",
     href: "/meetings",
-    match: ["/meetings"],
+    match: ["/meetings", "/events"],
     children: [
       { label: "회의기록", href: "/meetings", match: ["/meetings"] },
       { label: "회의 보고서", href: "/meetings/report" },
+      { label: "행사", href: "/events", match: ["/events"] },
     ],
   },
-  { key: "events", label: "행사", icon: "🎉", href: "/events", match: ["/events"] },
   {
     key: "proposals",
     label: "제안 · 채택",
     icon: "📝",
     href: "/proposals",
-    match: ["/proposals", "/adopted", "/ai-manual"],
+    match: ["/proposals", "/adopted"],
     children: [
       { label: "제안함", href: "/proposals" },
       { label: "채택예정", href: "/adopted" },
-      { label: "AI 매뉴얼 작성", href: "/ai-manual" },
     ],
   },
 ];

@@ -1,7 +1,7 @@
 "use client";
 
 import { todayKst } from "@/lib/kst";
-import { buildHomonymSet, normName as normStudentName, whereLabel } from "@/lib/studentLabel";
+import { buildWhereMaps, normName as normStudentName } from "@/lib/studentLabel";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -702,18 +702,11 @@ export default function ShuttleChecklistClient({
   // 동명이인은 그 위에 더 진하게 표시합니다 - 반드시 확인해야 하는 줄이라서.
   // 판단은 @/lib/studentLabel 한 곳에서만 합니다 - 화면마다 따로 두면 같은 아이가 화면마다
   // 다르게 불립니다.
-  const homonyms = useMemo(() => buildHomonymSet(roster), [roster]);
-  const whereByName = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const s of roster) {
-      const k = normStudentName(s.name);
-      const w = whereLabel({ name: s.name, grade: s.grade, className: s.className });
-      if (w) m.set(k, w);
-    }
-    return m;
-  }, [roster]);
-  /** 같은 이름이 여럿인 아이. 표에서 더 진하게 그립니다. */
-  const homonymNames = useMemo(() => homonyms, [homonyms]);
+  // 학년·반을 찾는 표는 @/lib/studentLabel 한 곳에서 만듭니다. 화면마다 손으로 만들면
+  // 이름을 열쇠로 쓰게 되고, 그러면 김재이 셋에 값 하나만 담겨 마지막 한 명의 반이 셋
+  // 모두에게 붙습니다 - 16-1 김재이(G2A)도 20호 김재이(G2C)도 (G3JA)로 나왔습니다.
+  const whereMaps = useMemo(() => buildWhereMaps(roster), [roster]);
+  const homonyms = whereMaps.homonyms;
 
   // 영어 이름으로도 찾기 (담당자: "아이들 영어이름으로도 검색할 수 있게 해줘").
   //
@@ -1096,8 +1089,7 @@ export default function ShuttleChecklistClient({
             onSetStatus={setStatus}
             onRequestMove={requestMove}
             onRequestEditNote={openNoteEditor}
-            whereByName={whereByName}
-            homonymNames={homonymNames}
+            whereMaps={whereMaps}
             onShowSource={setSourceOf}
             touchedIds={touchedIds}
           />
@@ -1105,8 +1097,7 @@ export default function ShuttleChecklistClient({
         <ChecklistPrintSheet
           routes={routes}
           items={displayItems}
-          whereByName={whereByName}
-          homonymNames={homonymNames}
+          whereMaps={whereMaps}
           // 담당자: "몇 년 몇 월 몇 일 몇 요일인지" - 종이는 며칠 뒤에도 굴러다닙니다.
           // 연도까지 없으면 언제 것인지 알 수 없습니다.
           dateLabel={new Date().toLocaleDateString("ko-KR", {

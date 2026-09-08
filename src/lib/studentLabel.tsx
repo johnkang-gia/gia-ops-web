@@ -49,6 +49,58 @@ export function whereLabel(s: NamedStudent | null | undefined): string {
   return [grade, cls].filter(Boolean).join(" ").trim();
 }
 
+export type IdentifiedStudent = NamedStudent & { id?: string | null };
+
+/**
+ * 화면에서 «이 줄은 몇 학년 몇 반인가»를 찾는 표 — **한 곳에서만 만듭니다.**
+ *
+ * ── 무엇이 문제였나 ──────────────────────────────────────────────────
+ *
+ * 화면마다 `Map<이름, 학년·반>` 을 손으로 만들었습니다. 김재이가 셋인 학교에서 이름 하나에
+ * 값 하나만 담기니 **마지막에 넣은 한 명의 반이 셋 모두에게** 붙었습니다.
+ *
+ *     16-1 김재이(G2A) → 화면에는 (G3JA)
+ *     20호 김재이(G2C) → 화면에는 (G3JA)
+ *
+ * 구분하려고 붙인 표시가 오히려 셋을 하나로 만들었고, 오류가 아니라 «적혀 있는 값»이라
+ * 보는 사람은 그대로 믿습니다.
+ *
+ * ── 그래서 ───────────────────────────────────────────────────────────
+ *
+ * **번호가 먼저입니다.** 번호는 겹치지 않습니다. 이름으로 찾는 길은 한 명뿐인 이름에만
+ * 남깁니다 - 배정 줄에 번호가 안 붙은 옛 자료가 있어 아주 없앨 수는 없지만, 겹치는 이름에
+ * 쓰면 다시 엉뚱한 반이 붙습니다.
+ */
+export type WhereMaps = {
+  byId: Map<string, string>;
+  /** 한 명뿐인 이름만 들어 있습니다. */
+  byName: Map<string, string>;
+  homonyms: Set<string>;
+};
+
+export function buildWhereMaps(roster: readonly IdentifiedStudent[]): WhereMaps {
+  const homonyms = buildHomonymSet(roster);
+  const byId = new Map<string, string>();
+  const byName = new Map<string, string>();
+  for (const s of roster) {
+    const w = whereLabel(s);
+    if (!w) continue;
+    if (s.id) byId.set(s.id, w);
+    const k = normName(s.name);
+    if (!homonyms.has(k)) byName.set(k, w);
+  }
+  return { byId, byName, homonyms };
+}
+
+/**
+ * 이 줄의 학년·반. **못 찾으면 null 입니다** - 엉뚱한 반을 적는 것보다 빈 것이 낫습니다.
+ * 겹치는 이름인데 번호가 없는 줄이 여기 걸리고, 화면은 그걸 「?」로 알립니다.
+ */
+export function whereOf(maps: WhereMaps | null | undefined, studentId: string | null | undefined, name: string): string | null {
+  if (!maps) return null;
+  return (studentId ? maps.byId.get(studentId) : null) ?? maps.byName.get(normName(name)) ?? null;
+}
+
 /**
  * 이름 + (동명이인일 때만) 학년·반.
  *

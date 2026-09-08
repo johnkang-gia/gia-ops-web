@@ -636,6 +636,13 @@ export function rangeCovers(range: { from: string; to: string }, dateKey: string
 // 있게 해줘." 학년("2학년")만으로는 같은 학년 동명이인이 갈라지지 않고, 생일("190828")은
 // 사람이 보고 바로 누군지 알기 어렵습니다. 반 이름은 담임 선생님도 기사님도 아는 말입니다.
 export type RosterStudent = {
+  /**
+   * 학생 번호. **동명이인을 가르는 유일하게 확실한 열쇠**입니다.
+   *
+   * 이름을 열쇠로 쓰면 김재이 셋이 한 칸을 나눠 쓰게 되어, 마지막 한 명의 반이 셋 모두에게
+   * 붙습니다. 이름만 있는 자리(문장에서 뽑아낸 이름)도 있어서 없을 수 있습니다.
+   */
+  id?: string | null;
   name: string;
   grade: string | null;
   nameEn?: string | null;

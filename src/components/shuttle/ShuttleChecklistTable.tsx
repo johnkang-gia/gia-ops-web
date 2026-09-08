@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { normName } from "@/lib/studentLabel";
+import { normName, whereOf, type WhereMaps } from "@/lib/studentLabel";
 import type { ChecklistItem, ChecklistRoute } from "./ShuttleChecklistClient";
 
 function natCompare(a: string, b: string) {
@@ -33,8 +33,7 @@ export default function ShuttleChecklistTable({
   onRequestEditNote,
   onShowSource,
   touchedIds,
-  whereByName,
-  homonymNames,
+  whereMaps,
 }: {
   routes: ChecklistRoute[];
   items: ChecklistItem[];
@@ -44,9 +43,9 @@ export default function ShuttleChecklistTable({
    * **겹치는 이름만** 들어 있습니다. 한 명뿐인 이름에까지 학년·반을 붙이면 표가 글자로
    * 가득 차고, 정작 구분이 필요한 이름이 묻힙니다.
    */
-  whereByName?: Map<string, string>;
+  /** 학년·반을 찾는 표. @/lib/studentLabel 의 buildWhereMaps() 가 만듭니다. */
+  whereMaps?: WhereMaps;
   /** 같은 이름이 여럿인 아이. 이 줄은 더 진하게 그려 반드시 확인하게 합니다. */
-  homonymNames?: Set<string>;
   busyId: string | null;
   searchTerm: string;
   /**
@@ -413,23 +412,35 @@ export default function ShuttleChecklistTable({
                                   아이 얼굴은 알아도 어느 반인지는 모르고, 표시가 없으면
                                   「이 이름은 하나뿐이구나」로 읽힙니다. 같은 이름이 여럿인
                                   아이는 더 진하게 그려 반드시 확인하게 합니다. */}
-                              {whereByName?.get(normName(item.studentName)) && (
-                                <span
-                                  className={
-                                    "ml-0.5 align-baseline text-[8px] font-semibold " +
-                                    (homonymNames?.has(normName(item.studentName))
-                                      ? "rounded bg-amber-100 px-0.5 text-amber-700"
-                                      : "text-slate-400")
-                                  }
-                                  title={
-                                    homonymNames?.has(normName(item.studentName))
-                                      ? "같은 이름이 여러 명입니다 - 학년·반을 꼭 확인하세요"
-                                      : "학년·반"
-                                  }
-                                >
-                                  {whereByName.get(normName(item.studentName))}
-                                </span>
-                              )}
+                              {(() => {
+                                // **번호가 먼저입니다.** 이름으로 찾으면 김재이 셋이 한 칸을
+                                // 나눠 쓰게 되어 마지막 한 명의 반이 셋 모두에게 붙습니다.
+                                const where = whereOf(whereMaps, item.studentId, item.studentName);
+                                const dup = whereMaps?.homonyms.has(normName(item.studentName));
+                                if (!where) {
+                                  // 겹치는 이름인데 번호가 안 붙어 있으면 **모른다고 합니다.**
+                                  // 엉뚱한 반을 적는 것보다 빈 것이 낫습니다.
+                                  return dup ? (
+                                    <span
+                                      className="ml-0.5 rounded bg-amber-100 px-0.5 align-baseline text-[8px] font-semibold text-amber-700"
+                                      title="같은 이름이 여러 명인데 이 줄에는 학생 연결이 없습니다 - 누구인지 확인해주세요"
+                                    >
+                                      ?
+                                    </span>
+                                  ) : null;
+                                }
+                                return (
+                                  <span
+                                    className={
+                                      "ml-0.5 align-baseline text-[8px] font-semibold " +
+                                      (dup ? "rounded bg-amber-100 px-0.5 text-amber-700" : "text-slate-400")
+                                    }
+                                    title={dup ? "같은 이름이 여러 명입니다 - 학년·반을 꼭 확인하세요" : "학년·반"}
+                                  >
+                                    {where}
+                                  </span>
+                                );
+                              })()}
                               {item.individualPickup && (
                                 <span className="ml-1 rounded-full bg-orange-100 px-1 text-[8px] font-bold text-orange-700 print:hidden">개별하원</span>
                               )}

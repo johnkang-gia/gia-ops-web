@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { normName } from "@/lib/studentLabel";
+import { normName, whereOf, type WhereMaps } from "@/lib/studentLabel";
 import { createPortal, flushSync } from "react-dom";
 import type { ChecklistItem, ChecklistRoute } from "./ShuttleChecklistClient";
 import { effectiveRouteId } from "./ShuttleChecklistTable";
@@ -60,16 +60,15 @@ export default function ChecklistPrintSheet({
   routes,
   items,
   dateLabel,
-  whereByName,
-  homonymNames,
+  whereMaps,
 }: {
   routes: ChecklistRoute[];
   items: ChecklistItem[];
   dateLabel: string;
   /** 동명이인 이름 → "3학년 Brown A". 겹치는 이름만 들어 있습니다. */
-  whereByName?: Map<string, string>;
+  /** 학년·반을 찾는 표. @/lib/studentLabel 의 buildWhereMaps() 가 만듭니다. */
+  whereMaps?: WhereMaps;
   /** 같은 이름이 여럿인 아이. 종이에서는 헷갈리는 게 더 위험해 진하게 적습니다. */
-  homonymNames?: Set<string>;
 }) {
   const todayW = new Date().getDay();
   const sheetRef = useRef<HTMLDivElement | null>(null);
@@ -320,18 +319,22 @@ export default function ChecklistPrintSheet({
                             {/* 학년·반은 모든 아이에게. 종이를 든 분은 눌러서 확인할 수도
                                 없어서, 없으면 물어볼 곳이 없습니다. 같은 이름이 여럿인 아이는
                                 밑줄로 더 눈에 띄게 합니다. */}
-                            {whereByName?.get(normName(it.studentName)) && (
-                              <span
-                                className={
-                                  "ml-0.5 text-[7px] font-semibold " +
-                                  (homonymNames?.has(normName(it.studentName))
-                                    ? "text-slate-800 underline decoration-dotted"
-                                    : "text-slate-500")
-                                }
-                              >
-                                {whereByName.get(normName(it.studentName))}
-                              </span>
-                            )}
+                            {(() => {
+                              // 번호가 먼저. 이름으로 찾으면 김재이 셋이 같은 반으로 인쇄됩니다.
+                              const where = whereOf(whereMaps, it.studentId, it.studentName);
+                              if (!where) return null;
+                              const dup = whereMaps?.homonyms.has(normName(it.studentName));
+                              return (
+                                <span
+                                  className={
+                                    "ml-0.5 text-[7px] font-semibold " +
+                                    (dup ? "text-slate-800 underline decoration-dotted" : "text-slate-500")
+                                  }
+                                >
+                                  {where}
+                                </span>
+                              );
+                            })()}
                           </span>
                         ))}
                       </td>

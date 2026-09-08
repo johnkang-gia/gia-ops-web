@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useConfirm } from "@/components/common/ConfirmProvider";
 import { useToast } from "@/components/common/ToastProvider";
+import { buildWhereMaps, normName, whereOf } from "@/lib/studentLabel";
 
 // 하원 셔틀명단 설정(요청: 하원체크표 탭 분리). 노선(호차)별로 누가 무슨 요일에 타는지 한
 // 화면에서 보고 바로 고칩니다. 요일 버튼(월~금)을 눌러 켜고 끄면 즉시 저장되고, 체크표·안내
@@ -54,6 +55,10 @@ export default function DismissalRosterClient({
   const [addingFor, setAddingFor] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
   const [busy, setBusy] = useState(false);
+
+  // 학년·반을 찾는 표. 만드는 일은 @/lib/studentLabel 한 곳에서 합니다 - 화면마다 손으로
+  // 만들면 이름을 열쇠로 쓰게 되고, 그러면 김재이 셋이 같은 반으로 보입니다.
+  const whereMaps = useMemo(() => buildWhereMaps(students), [students]);
 
   // 이미 어느 노선에든 배정된 학생. 두 번 넣으면 체크표에 같은 아이가 두 줄로 뜹니다.
   const assignedIds = useMemo(() => {
@@ -176,6 +181,40 @@ export default function DismissalRosterClient({
                     <div className="flex items-center gap-1.5">
                       <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-slate-700">
                         {a.student_name_raw}
+                        {/* 학년·반은 **학생 번호로** 찾습니다. 이름으로 찾으면 김재이 셋이
+                            한 칸을 나눠 쓰게 되어 마지막 한 명의 반이 셋 모두에게 붙습니다.
+                            번호가 없는 옛 줄은 아무것도 안 붙이고 「연결없음」으로 알립니다 -
+                            엉뚱한 반을 적는 것보다 빈 것이 낫습니다. */}
+                        {(() => {
+                          const where = whereOf(whereMaps, a.student_id, a.student_name_raw);
+                          if (where) {
+                            return (
+                              <span
+                                className={
+                                  "ml-1 align-baseline text-[9px] font-semibold " +
+                                  (whereMaps.homonyms.has(normName(a.student_name_raw))
+                                    ? "rounded bg-amber-100 px-1 text-amber-700"
+                                    : "text-slate-400")
+                                }
+                                title={
+                                  whereMaps.homonyms.has(normName(a.student_name_raw))
+                                    ? "같은 이름이 여러 명입니다 - 학년·반을 꼭 확인하세요"
+                                    : "학년·반"
+                                }
+                              >
+                                {where}
+                              </span>
+                            );
+                          }
+                          return (
+                            <span
+                              className="ml-1 align-baseline text-[9px] font-semibold text-orange-600"
+                              title="명부와 이어져 있지 않아 학년·반을 알 수 없습니다 - 같은 이름이 여럿이면 누구인지 확인해주세요"
+                            >
+                              연결없음
+                            </span>
+                          );
+                        })()}
                         {partTime && (
                           <span className="ml-1 rounded bg-amber-100 px-1 py-0.5 text-[9px] font-bold text-amber-700">
                             {a.weekdays.map((d) => WD_LABEL[d]).join("")}만

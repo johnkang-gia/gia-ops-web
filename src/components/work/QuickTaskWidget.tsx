@@ -8,7 +8,7 @@ import { genCaseId } from "@/lib/caseId";
 import { parseTaskFromMessage } from "@/lib/parseTaskFromMessage";
 import { deadlineLabel } from "@/lib/deadlineLabel";
 import { nameFor } from "@/lib/teamName";
-import type { Task, TaskModeColor, TaskRecurrence, TeamMember } from "@/lib/types";
+import type { Task, TaskModeColor, TaskRecurrence, TeamMember, WorkTag } from "@/lib/types";
 import { useToast } from "@/components/common/ToastProvider";
 
 type Mode = "나" | "전체" | "공유";
@@ -58,7 +58,10 @@ export default function QuickTaskWidget({
   isAdmin,
   onModeColorChange,
   prefillDay = null,
+  prefillRange = null,
   onPrefillUsed,
+  tags,
+  onTagsChanged,
 }: {
   department: string;
   team: TeamMember[];
@@ -74,7 +77,18 @@ export default function QuickTaskWidget({
    * 그러면 등록은 계속 위쪽 입력칸에서만 하고, 달력은 장식이 됩니다.
    */
   prefillDay?: string | null;
+  /**
+   * 달력에서 **끌어서** 고른 기간. 시작일과 끝날이 함께 옵니다.
+   *
+   * 며칠에 걸친 일을 하루짜리로만 등록하게 하면, 달력에는 끝나는 날에 점 하나만 찍히고
+   * 「그 주가 통째로 잡혀 있다」는 사실이 어디에도 안 남습니다.
+   */
+  prefillRange?: { from: string; to: string } | null;
   onPrefillUsed?: () => void;
+  /** 색 이름표. 달력에서 색만 보고 무슨 일인지 알아보라고 답니다. */
+  tags: WorkTag[];
+  /** 태그를 새로 만들었을 때. 위에서 목록을 다시 읽습니다. */
+  onTagsChanged?: () => void;
 }) {
   const notify = useToast();
   const [mode, setMode] = useState<Mode>("나");
@@ -88,16 +102,31 @@ export default function QuickTaskWidget({
   const [quickBadge, setQuickBadge] = useState<"오늘" | "내일" | "이번주" | null>(null);
   const [dateStr, setDateStr] = useState("");
   const [timeStr, setTimeStr] = useState("");
+  /** 여러 날짜리의 시작일. 비어 있으면 하루짜리입니다. */
+  const [startOn, setStartOn] = useState("");
+  const [tagId, setTagId] = useState<string | null>(null);
+  const [addingTag, setAddingTag] = useState(false);
 
   // 달력에서 날짜를 누르면 그 날로 채우고 입력칸에 커서를 둡니다.
   const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (!prefillDay) return;
     setDateStr(prefillDay);
+    setStartOn("");
     setQuickBadge(null);
     inputRef.current?.focus();
     onPrefillUsed?.();
   }, [prefillDay, onPrefillUsed]);
+
+  // 끌어서 고른 기간. 끝날이 마감이고 시작일이 따로 남습니다.
+  useEffect(() => {
+    if (!prefillRange) return;
+    setStartOn(prefillRange.from);
+    setDateStr(prefillRange.to);
+    setQuickBadge(null);
+    inputRef.current?.focus();
+    onPrefillUsed?.();
+  }, [prefillRange, onPrefillUsed]);
 
   // 반복 업무 - 완료될 때마다 다음 회차를 자동 생성합니다(요청). 매주/매월은 요일/날짜를
   // 추가로 지정하고, 기본값은 오늘 기준(요일/일)로 잡아둡니다.
@@ -185,6 +214,10 @@ export default function QuickTaskWidget({
         owner_email: currentUserEmail,
         assignee_emails: assigneeEmails,
         due_at: dueAt,
+        // 시작일은 마감보다 뒤일 수 없습니다. 뒤면 달력에서 그 일정이 아예 안 보이는데
+        // 오류도 안 나고 그냥 사라집니다.
+        start_on: startOn && (!dueAt || startOn <= dueAt.slice(0, 10)) ? startOn : null,
+        tag_id: tagId,
         position: Date.now(),
         origin_mode: mode,
         recurrence,
@@ -204,6 +237,7 @@ export default function QuickTaskWidget({
     setQuickBadge(null);
     setDateStr("");
     setTimeStr("");
+    setStartOn("");
     setRecurrenceFreq(null);
     setRecurrenceOpen(false);
     if (mode === "공유") {
@@ -374,17 +408,75 @@ export default function QuickTaskWidget({
           }}
           className="rounded-lg border border-black/10 bg-white/70 px-1.5 py-0.5 text-[10px] outline-none focus:border-blue-300"
         />
-        {(dateStr || timeStr) && (
+        {/* 끌어서 고른 기간. **보여주고 지울 수 있어야** 합니다 - 잘못 끌었을 때 되돌릴
+            자리가 없으면 등록 자체를 포기하게 됩니다. */}
+        {startOn && (
+          <span className="flex items-center gap-1 rounded-lg bg-teal-50 px-1.5 py-0.5 text-[10px] font-bold text-teal-700">
+            {startOn.slice(5)} ~ {(dateStr || "").slice(5)} 기간
+            <button type="button" onClick={() => setStartOn("")} className="text-teal-500 hover:text-red-500" title="하루짜리로">
+              ✕
+            </button>
+          </span>
+        )}
+        {(dateStr || timeStr || startOn) && (
           <button
             type="button"
             onClick={() => {
               setDateStr("");
               setTimeStr("");
+              setStartOn("");
               setQuickBadge(null);
             }}
             className="text-[10px] text-slate-400 hover:text-red-500"
           >
             지우기
+          </button>
+        )}
+      </div>
+
+      {/* ── 색 이름표 ────────────────────────────────────────────────
+          칸에 뜨는 것이 전부 회색 상자면 무슨 일인지 열어봐야 압니다. 색을 입히면 훑는
+          것만으로 행사인지 정산인지 갈립니다. 하나만 고릅니다 - 여러 개를 붙이면 달력
+          막대를 무슨 색으로 칠할지 다시 정해야 하고, 그 규칙을 아무도 기억 못 합니다. */}
+      <div className="flex flex-wrap items-center gap-1">
+        <span className="text-[10px] text-slate-400">태그</span>
+        {tags.map((t) => {
+          const on = tagId === t.id;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setTagId(on ? null : t.id)}
+              style={on ? { backgroundColor: t.color, color: "#fff" } : { color: t.color, borderColor: t.color + "66" }}
+              className={"rounded-full px-2 py-0.5 text-[10px] font-bold transition " + (on ? "" : "border bg-white hover:bg-slate-50")}
+            >
+              {t.name}
+            </button>
+          );
+        })}
+        {addingTag ? (
+          <NewTagForm
+            onDone={async (name, color) => {
+              setAddingTag(false);
+              if (!name.trim()) return;
+              const { data, error } = await createClient()
+                .from("work_tags")
+                .insert({ name: name.trim(), color, created_by: currentUserEmail })
+                .select()
+                .single();
+              // 조용히 넘기면 「눌렀는데 아무 일도 없다」가 됩니다.
+              if (error || !data) return notify("태그를 만들지 못했습니다: " + (error?.message ?? "알 수 없는 이유"), "error");
+              setTagId((data as WorkTag).id);
+              onTagsChanged?.();
+            }}
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => setAddingTag(true)}
+            className="rounded-full border border-dashed border-slate-300 px-2 py-0.5 text-[10px] text-slate-400 hover:border-slate-400"
+          >
+            ＋ 태그
           </button>
         )}
       </div>
@@ -413,5 +505,39 @@ export default function QuickTaskWidget({
         </button>
       </form>
     </div>
+  );
+}
+
+/**
+ * 새 태그 만들기 - 이름 하나와 색 하나.
+ *
+ * 관리 화면을 따로 두지 않은 이유: 태그는 **필요해지는 순간에** 만들게 해야 만들어집니다.
+ * 「설정에 가서 미리 만들어두세요」로 두면 아무도 안 만들고, 다들 회색 상자로 남깁니다.
+ */
+function NewTagForm({ onDone }: { onDone: (name: string, color: string) => void }) {
+  const [name, setName] = useState("");
+  const [color, setColor] = useState("#0ea5e9");
+  return (
+    <span className="flex items-center gap-1 rounded-full border border-slate-300 bg-white px-1.5 py-0.5">
+      <input
+        type="color"
+        value={color}
+        onChange={(e) => setColor(e.target.value)}
+        title="색 고르기"
+        className="h-4 w-4 cursor-pointer border-0 bg-transparent p-0"
+      />
+      <input
+        autoFocus
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.nativeEvent.isComposing) onDone(name, color);
+          if (e.key === "Escape") onDone("", color);
+        }}
+        onBlur={() => onDone(name, color)}
+        placeholder="태그 이름"
+        className="w-16 text-[10px] outline-none"
+      />
+    </span>
   );
 }

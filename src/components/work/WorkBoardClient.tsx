@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import ActivityLogTicker from "./ActivityLogTicker";
 import Link from "next/link";
 import CronStatusBadge from "./CronStatusBadge";
@@ -10,7 +10,7 @@ import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import { useRealtimeTable } from "@/lib/useRealtimeTable";
 import { useOnlineUsers } from "@/lib/useOnlineUsers";
-import type { Task, TaskStatus, Department, TeamMember, TaskModeColor, GoogleChatMirrorMessage, WorkNotice } from "@/lib/types";
+import type { Task, TaskStatus, Department, TeamMember, TaskModeColor, GoogleChatMirrorMessage, WorkNotice, WorkTag } from "@/lib/types";
 import { nameFor } from "@/lib/teamName";
 import { renewRecurringTask } from "@/lib/recurrence";
 import { useRefreshTaskCounts } from "@/components/NotificationBell";
@@ -71,6 +71,23 @@ export default function WorkBoardClient({
   // useRealtimeTable을 부르고 배열을 그대로 WorkspaceArea에 내려줍니다. 패널마다 따로 구독하면
   // 같은 채널 이름이 중복돼 페이지가 열리지 않는 문제가 있었던 전례가 있습니다.
   const [mirrorMessages] = useRealtimeTable<GoogleChatMirrorMessage>("google_chat_mirror_messages", initialMirrorMessages);
+
+  /**
+   * 색 이름표.
+   *
+   * **한 곳에서 읽어 두 자리에 내려줍니다.** 달력과 상세 창이 따로 읽으면 방금 만든 태그가
+   * 한쪽에만 보이고, 사람은 「안 만들어졌나」 하고 또 만듭니다.
+   */
+  const [tags, setTags] = useState<WorkTag[]>([]);
+  const loadTags = useCallback(async () => {
+    const { data, error } = await createClient().from("work_tags").select("*").order("sort_order").order("name");
+    // 태그를 못 읽어도 업무는 돌아갑니다. 색만 안 붙습니다.
+    if (error) return console.error("[업무보드] 태그를 읽지 못했습니다:", error.message);
+    setTags((data as WorkTag[] | null) ?? []);
+  }, []);
+  useEffect(() => {
+    void loadTags();
+  }, [loadTags]);
   const online = useOnlineUsers(userEmail);
 
   const [activeDeptId, setActiveDeptId] = useState<string | null>(deptList[0]?.id ?? null);
@@ -363,6 +380,8 @@ export default function WorkBoardClient({
 
       <div className="flex-1 overflow-hidden">
         <WorkspaceArea
+          tags={tags}
+          onTagsChanged={() => void loadTags()}
           activeDepartment={activeDepartment}
           tasks={scopedTasks}
           team={team}
@@ -383,6 +402,7 @@ export default function WorkBoardClient({
 
       {selectedTask && (
         <TaskDetailPanel
+          tags={tags}
           task={selectedTask}
           allTasks={tasks}
           team={team}

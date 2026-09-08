@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Department, GoogleChatMirrorMessage, Task, TaskModeColor, TaskStatus, TeamMember } from "@/lib/types";
+import type { Department, GoogleChatMirrorMessage, Task, TaskModeColor, TaskStatus, TeamMember, WorkTag } from "@/lib/types";
 import WorkCalendar from "./WorkCalendar";
 import NoteBoard from "./NoteBoard";
 import GoogleChatRooms from "./GoogleChatRooms";
@@ -11,6 +11,7 @@ import QuickTaskWidget from "./QuickTaskWidget";
 import AttendancePanels from "./AttendancePanels";
 import IntegrationStatus from "./IntegrationStatus";
 import { isMyTask } from "@/lib/myTask";
+import { addDays } from "@/lib/taskSpan";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
 import type { RosterStudent } from "@/lib/attendanceDigest";
@@ -190,6 +191,8 @@ export default function WorkspaceArea({
   onTaskCreated,
   mirrorMessages,
   roster,
+  tags,
+  onTagsChanged,
 }: {
   activeDepartment: Department;
   tasks: Task[];
@@ -211,6 +214,12 @@ export default function WorkspaceArea({
   // 걸러서 보여줍니다.
   mirrorMessages: GoogleChatMirrorMessage[];
   roster: RosterStudent[];
+  /**
+   * 색 이름표. **위에서 한 번 읽어 내려줍니다** - 달력과 상세 창이 따로 읽으면 방금 만든
+   * 태그가 한쪽에만 보이고, 사람은 「안 만들어졌나」 하고 또 만듭니다.
+   */
+  tags: WorkTag[];
+  onTagsChanged?: () => void;
 }) {
   // 서버 렌더링(첫 화면)과 클라이언트 첫 렌더가 반드시 같아야 하므로(hydration 불일치 방지),
   // 초기값은 항상 기본값으로 두고 마운트된 다음에만 저장된 값을 반영합니다.
@@ -233,6 +242,23 @@ export default function WorkspaceArea({
   const [mobileTab, setMobileTab] = useState<"inbox" | "board" | "talk">("talk");
   /** 달력에서 누른 날짜. 그 날 마감으로 새 업무를 만드는 창을 엽니다. */
   const [newTaskDay, setNewTaskDay] = useState<string | null>(null);
+  /** 달력에서 끌어서 고른 기간. */
+  const [newTaskRange, setNewTaskRange] = useState<{ from: string; to: string } | null>(null);
+
+  /**
+   * 제목을 그 자리에서 고칩니다.
+   *
+   * 상세 창을 열어야만 고칠 수 있으면 오타 한 글자를 고치려고 창을 열고 닫습니다. 대개
+   * 안 고치고 넘어가고, 그 오타가 몇 달 남습니다.
+   */
+  async function renameTask(task: Task, title: string) {
+    const { error } = await createClient().from("tasks").update({ title }).eq("id", task.id);
+    if (error) {
+      notify(`제목을 바꾸지 못했습니다: ${error.message}`, "error");
+      return;
+    }
+    onTaskCreated?.({ ...task, title });
+  }
 
   /**
    * 달력에서 끌어다 놓아 마감일만 바꿉니다.
@@ -243,15 +269,19 @@ export default function WorkspaceArea({
   async function moveDue(task: Task, dayKey: string) {
     // 마감은 그 날 저녁 6시로 둡니다. 날짜만 바꾸는 것이라 시각은 하루의 끝 무렵이 자연스럽고,
     // 자정으로 두면 「그날까지」인지 「그 전날까지」인지 사람마다 다르게 읽습니다.
-    const { error } = await createClient()
-      .from("tasks")
-      .update({ due_at: `${dayKey}T18:00:00+09:00` })
-      .eq("id", task.id);
+    // 기간짜리는 **기간째** 옮깁니다. 끝날만 옮기면 「3일짜리 일」이 소리 없이 늘거나
+    // 줄어드는데, 화면에는 그냥 옮겨진 것처럼 보입니다.
+    const endKey = task.due_at ? new Date(task.due_at).toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" }) : null;
+    const length = task.start_on && endKey ? Math.round((Date.parse(`${endKey}T00:00:00Z`) - Date.parse(`${task.start_on}T00:00:00Z`)) / 86400000) : 0;
+    const nextStart = length > 0 ? addDays(dayKey, -length) : task.start_on;
+
+    const patch = { due_at: `${dayKey}T18:00:00+09:00`, start_on: nextStart };
+    const { error } = await createClient().from("tasks").update(patch).eq("id", task.id);
     if (error) {
       notify(`마감일을 바꾸지 못했습니다: ${error.message}`, "error");
       return;
     }
-    onTaskCreated?.({ ...task, due_at: `${dayKey}T18:00:00+09:00` });
+    onTaskCreated?.({ ...task, ...patch });
   }
 
   useEffect(() => {
@@ -408,15 +438,24 @@ export default function WorkspaceArea({
           isAdmin={isAdmin}
           onModeColorChange={onModeColorChange}
           prefillDay={newTaskDay}
-          onPrefillUsed={() => setNewTaskDay(null)}
+          prefillRange={newTaskRange}
+          onPrefillUsed={() => {
+            setNewTaskDay(null);
+            setNewTaskRange(null);
+          }}
+          tags={tags}
+          onTagsChanged={onTagsChanged}
         />
       </div>
       <div className="min-h-0 flex-1 overflow-hidden pt-1">
         <WorkCalendar
           tasks={tasks}
+          tags={tags}
           onPickDate={setNewTaskDay}
+          onPickRange={(from, to) => setNewTaskRange({ from, to })}
           onOpenTask={(t) => onOpenTask(t.id)}
           onMoveDue={(t, dayKey) => void moveDue(t, dayKey)}
+          onRename={(t, title) => void renameTask(t, title)}
         />
       </div>
     </div>

@@ -326,6 +326,15 @@ export type Task = {
   assignee_emails: string[];
   position: number;
   due_at: string | null;
+  /**
+   * 여러 날에 걸친 일정의 **시작일**(YYYY-MM-DD). 비어 있으면 하루짜리입니다.
+   *
+   * 끝날은 `due_at` 을 그대로 씁니다 - 새 칸으로 옮기면 지금 쌓인 업무(마감만 있는 줄)가
+   * 전부 달력에서 사라집니다.
+   */
+  start_on: string | null;
+  /** 색 태그. 달력에서 색만 보고 무슨 일인지 알아보라고 둡니다. */
+  tag_id: string | null;
   acknowledged_by: TaskAck[];
   updated_by: string | null;
   completed_at: string | null;
@@ -382,6 +391,22 @@ export type DepartmentMemo = {
   attendance_memo: string;
   attendance_memo_updated_by: string | null;
   attendance_memo_updated_at: string | null;
+};
+
+/**
+ * 업무의 색 이름표.
+ *
+ * 부서 색·모드 색과 따로 두는 이유: 저 둘은 **누구의 일인가**를 나타내고, 이건 **무슨
+ * 일인가**를 나타냅니다. 같은 부서 안에서도 행사·정산·점검은 서로 다른 일입니다.
+ */
+export type WorkTag = {
+  id: string;
+  name: string;
+  /** #RRGGBB. 화면에 그대로 씁니다. */
+  color: string;
+  sort_order: number;
+  created_by: string | null;
+  created_at: string;
 };
 
 export type TaskModeColor = {

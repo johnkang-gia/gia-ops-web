@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { timeAgo } from "@/lib/kst";
 import { createClient } from "@/lib/supabase/client";
-import type { Task, TaskAttachment, TaskComment, TaskRecurrence, TaskStatus, TeamMember } from "@/lib/types";
+import type { Task, TaskAttachment, TaskComment, TaskRecurrence, TaskStatus, TeamMember, WorkTag } from "@/lib/types";
 import { ackRequiredEmails, realPeople } from "@/lib/taskAck";
 import { nameFor } from "@/lib/teamName";
 import { addTimedEventToNativeCalendar } from "@/lib/nativeCalendar";
@@ -32,8 +32,11 @@ export default function TaskDetailPanel({
   onClose,
   onUpdated,
   onDeleted,
+  tags = [],
 }: {
   task: Task;
+  /** 색 이름표. 달력에서 색만 보고 무슨 일인지 알아보라고 답니다. */
+  tags?: WorkTag[];
   // 선행 업무(요청: "업무 선후관계 표시") 선택창의 후보 목록 + 이미 선택된 선행 업무의
   // 완료 여부를 보여주는 데 씁니다. 지금 업무보드에 떠 있는(=아직 보관되지 않은) 업무만
   // 후보로 제공합니다.
@@ -353,15 +356,55 @@ export default function TaskDetailPanel({
         className="flex h-full w-full max-w-md flex-col bg-white p-4 shadow-xl sm:h-[85vh] sm:rounded-xl"
       >
         <div className="mb-3 flex items-start justify-between gap-2">
-          <input
-            value={task.title}
-            onChange={(e) => onUpdated({ ...task, title: e.target.value })}
-            onBlur={(e) => patch({ title: e.target.value })}
-            className="min-w-0 flex-1 rounded-lg border border-transparent px-1 py-0.5 text-base font-bold hover:border-slate-200 focus:border-slate-300"
-          />
+          {/* **고칠 수 있게 생겨야 고칩니다.** 예전에는 테두리가 투명해서 그냥 글씨로
+              보였고, 그래서 아무도 여기서 제목을 안 고쳤습니다. 밑줄과 ✎ 를 답니다. */}
+          <label className="flex min-w-0 flex-1 items-center gap-1 border-b border-dashed border-slate-300 focus-within:border-solid focus-within:border-blue-400">
+            <input
+              value={task.title}
+              onChange={(e) => onUpdated({ ...task, title: e.target.value })}
+              onBlur={(e) => patch({ title: e.target.value })}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.nativeEvent.isComposing) (e.target as HTMLInputElement).blur();
+              }}
+              title="눌러서 제목을 고칩니다"
+              className="min-w-0 flex-1 bg-transparent px-1 py-0.5 text-base font-bold outline-none"
+            />
+            <span className="shrink-0 text-[11px] text-slate-300">✎</span>
+          </label>
           <button onClick={onClose} className="shrink-0 rounded-lg px-2 py-1 text-sm text-slate-400 hover:bg-slate-100">
             ✕
           </button>
+        </div>
+
+        {/* ── 색 이름표 + 기간 ────────────────────────────────────
+            달력에서 색만 보고 무슨 일인지 알아보라고 답니다. 기간은 여기서도 고칠 수
+            있어야 합니다 - 끌어서 만든 뒤 하루가 어긋난 것을 고치려고 다시 끌게 하면
+            대개 그냥 둡니다. */}
+        <div className="mb-2 flex flex-wrap items-center gap-1">
+          {tags.map((t) => {
+            const on = task.tag_id === t.id;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => patch({ tag_id: on ? null : t.id })}
+                style={on ? { backgroundColor: t.color, color: "#fff" } : { color: t.color, borderColor: t.color + "66" }}
+                className={"rounded-full px-2 py-0.5 text-[10px] font-bold transition " + (on ? "" : "border bg-white hover:bg-slate-50")}
+              >
+                {t.name}
+              </button>
+            );
+          })}
+          <label className="ml-auto flex items-center gap-1 text-[10px] text-slate-400">
+            시작일
+            <input
+              type="date"
+              value={task.start_on ?? ""}
+              onChange={(e) => patch({ start_on: e.target.value || null })}
+              title="여러 날에 걸친 일이면 시작일을 넣습니다. 비우면 하루짜리입니다."
+              className="rounded border border-slate-300 px-1 py-0.5 text-[10px]"
+            />
+          </label>
         </div>
 
         <div className="mb-3 flex flex-wrap items-center gap-2">

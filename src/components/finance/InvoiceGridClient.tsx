@@ -5,7 +5,7 @@ import PayModal from "./PayModal";
 import { settle, type SettleInvoice } from "@/lib/settlement";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
-import { appliesToAny, inDepartment, resolveStudentItems, sumLines, targetLabel, won, type StudentLike } from "@/lib/feeItems";
+import { appliesToAny, inDepartment, inTerm, resolveStudentItems, sumLines, targetLabel, won, type StudentLike } from "@/lib/feeItems";
 import { departmentOf, gradeSortKey, type Department } from "@/lib/department";
 import { prettyPhone } from "@/lib/alltalkpay";
 import { todayKst } from "@/lib/kst";
@@ -216,8 +216,9 @@ export default function InvoiceGridClient({
         .filter(
           (i) =>
             // active 로 거르지 않습니다. 항목은 끄는 것이 아니라 지웁니다(2026-09).
-            // 학기가 없던 시절 항목(비어 있음)은 현재 학기에서 함께 보여줍니다.
-            ((i.term_id ?? "") === termId || (!i.term_id && terms.find((x) => x.id === termId)?.status === "진행중")) &&
+            // 학기 판단은 발행 쪽과 **같은 함수**를 씁니다. 따로 적으면 표에 보이는 항목이
+            // 청구서에는 안 실립니다.
+            inTerm(i, termId, terms.find((x) => x.id === termId)?.status === "진행중") &&
             (!i.department || i.department === dept),
         )
         .sort(

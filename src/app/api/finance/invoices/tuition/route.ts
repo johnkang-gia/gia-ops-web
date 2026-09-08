@@ -142,7 +142,7 @@ export async function POST(req: Request) {
       category: "학비",
       // 학기 칸은 학비외 청구서와 **같은 칸**을 씁니다. 두 종류가 다른 칸에 학기를 넣으면
       // 학기별 집계가 한쪽만 세게 됩니다.
-      fee_term_id: termId,
+      term_id: termId,
       issued_by: me.name || me.email,
     })
     .select()

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess } from "@/lib/roles";
-import { gradeLabel, resolveStudentItems } from "@/lib/feeItems";
+import { gradeLabel, inTerm, resolveStudentItems } from "@/lib/feeItems";
 import { selectTolerant } from "@/lib/selectTolerant";
 import { todayKst } from "@/lib/kst";
 import { planCarryForward, lockCarried } from "@/lib/carryForward";
@@ -39,7 +39,10 @@ export async function POST(req: Request) {
   const askedRole = body?.guardianRole;
   const guardianRole: GuardianRole | null =
     askedRole === "mother" || askedRole === "father" || askedRole === "guardian" ? askedRole : null;
-  const feeTermId = (body?.feeTermId as string | undefined) ?? null;
+  // 학기 칸 이름은 `term_id` 입니다. 예전에는 재무 전용 학기표(`fee_terms`)와 `fee_term_id`
+  // 칸이 따로 있었는데, 학기가 두 곳에 있으면 반드시 어긋나서 `terms` 하나로 합쳤습니다.
+  // 화면이 보내는 이름(feeTermId)은 그대로 받습니다 - 이름만 바꾸자고 화면까지 흔들 이유가 없습니다.
+  const termId = (body?.feeTermId as string | undefined) ?? null;
   /**
    * 이 인보이스에 담을 분류.
    *
@@ -61,11 +64,11 @@ export async function POST(req: Request) {
       ["id", "name", "name_en", "grade", "class_name", "department"],
       ["mother_phone", "father_phone", "parent_phone"],
     ),
-    // 그 학기 항목만 계산합니다. 학기를 안 걸면 지난 학기 교재까지 청구서에 붙습니다.
+    // 항목은 전부 읽고 학기는 아래에서 거릅니다. DB에서 `term_id = ?` 로 자르면 학기 칸이
+    // 비어 있는 예전 항목이 통째로 빠지는데, 화면에는 그것들이 보입니다 - 표에서 체크한
+    // 항목이 청구서에 안 실리는 것이 가장 나쁩니다.
     // active 로는 거르지 않습니다 - 항목은 끄는 것이 아니라 지웁니다(2026-09).
-    (feeTermId
-      ? supabase.from("fee_items").select("*").eq("fee_term_id", feeTermId)
-      : supabase.from("fee_items").select("*")),
+    supabase.from("fee_items").select("*"),
     supabase.from("student_fee_items").select("*").eq("student_id", studentId),
   ]);
   if (stuRes.error) return NextResponse.json({ error: stuRes.error }, { status: 500 });
@@ -75,8 +78,17 @@ export async function POST(req: Request) {
   const student = stuRes.data[0] ?? null;
   if (!student) return NextResponse.json({ error: "학생을 찾지 못했습니다." }, { status: 404 });
 
+  // 고른 학기가 «진행중»인지. 학기 칸이 빈 예전 항목은 진행중 학기에서만 함께 청구됩니다.
+  let termIsCurrent = false;
+  if (termId) {
+    const { data: term, error: termErr } = await supabase.from("terms").select("status").eq("id", termId).maybeSingle();
+    if (termErr) return NextResponse.json({ error: `학기를 읽지 못했습니다: ${termErr.message}` }, { status: 500 });
+    if (!term) return NextResponse.json({ error: "고른 학기를 찾지 못했습니다." }, { status: 400 });
+    termIsCurrent = term.status === "진행중";
+  }
+
   const all = resolveStudentItems(
-    (itemsRes.data as FeeItem[] | null) ?? [],
+    ((itemsRes.data as FeeItem[] | null) ?? []).filter((i) => inTerm(i, termId ?? "", termIsCurrent)),
     { id: student.id, grade: student.grade, className: student.class_name, department: student.department },
     (ovRes.data as StudentFeeItem[] | null) ?? [],
   );
@@ -125,7 +137,7 @@ export async function POST(req: Request) {
       // 청구했는지가 남습니다. 번호만 남기면 나중에 그게 어머니 것이었는지 알 수 없습니다.
       guardian_phone: recipient?.phone ?? null,
       guardian_role: recipient?.role ?? null,
-      fee_term_id: feeTermId,
+      term_id: termId,
       category,
       issued_by: me.name || me.email,
     })

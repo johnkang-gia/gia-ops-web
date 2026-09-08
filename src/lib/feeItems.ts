@@ -28,6 +28,20 @@ export type StudentLike = {
 };
 
 /**
+ * 이 항목이 그 학기의 것인가.
+ *
+ * 학기 칸이 **비어 있는** 항목은 학기가 생기기 전에 만든 것입니다. 그걸 어느 학기에도 안
+ * 넣으면 예전 항목이 통째로 사라지므로, **진행중 학기에서만** 함께 보입니다.
+ *
+ * 이 판단을 화면과 발행이 따로 하면 담당자가 표에서 본 항목이 청구서에는 안 실립니다.
+ * 그래서 여기 한 줄로 모읍니다 - 실제로 그렇게 어긋난 적이 있습니다(2026-09).
+ */
+export function inTerm(item: { term_id?: string | null }, termId: string, termIsCurrent: boolean): boolean {
+  if (!termId) return true;
+  return (item.term_id ?? "") === termId || (!item.term_id && termIsCurrent);
+}
+
+/**
  * 이 항목이 이 아이의 부서에 쓰이는가.
  *
  * 초등과 중고등은 사는 교재가 아예 다릅니다. 항목의 부서가 비어 있으면 양쪽 모두에 쓰는

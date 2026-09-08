@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { FIELD_LABEL, parseRosterPaste } from "@/lib/pasteRoster";
 import { planRoster, type StudentLite } from "@/lib/rosterPlan";
+import { TEST_MARK } from "@/lib/rosterSync";
 
 /**
  * 구글시트 스크립트가 명부를 보내는 창구입니다.
@@ -32,8 +33,26 @@ export async function POST(req: Request) {
     .select("id, enabled")
     .eq("token", token)
     .maybeSingle();
-  if (!link) return NextResponse.json({ error: "모르는 토큰입니다." }, { status: 403 });
-  if (!link.enabled) return NextResponse.json({ error: "꺼져 있는 연결입니다." }, { status: 403 });
+
+  // 두드린 사실을 **토큰이 맞기 전에** 남깁니다.
+  //
+  // 토큰이 틀리면 403으로 끝나고 아무 흔적이 없었습니다. 그러면 화면에는 「아직 없음」인데,
+  // 그게 «오지 않았다»인지 «왔는데 토큰이 다르다»인지 구별할 수 없었습니다. 둘은 고치는
+  // 곳이 다릅니다 - 앞은 ENDPOINT, 뒤는 TOKEN 입니다.
+  //
+  // 토큰은 앞 6글자만 적습니다. 진단하자고 열쇠를 통째로 적어두면 문을 열어두는 셈입니다.
+  const { error: attemptErr } = await supabase.from("roster_sync_attempts").insert({
+    token_prefix: token.slice(0, 6),
+    link_id: link?.id ?? null,
+    result: !link ? "토큰 모름" : !link.enabled ? "꺼진 연결" : body?.test === true ? "연결 시험" : "받음",
+    note: !link ? "이 토큰을 가진 연결이 없습니다. 스크립트의 TOKEN 을 확인하세요." : null,
+  });
+  // 이 기록이 안 남으면 화면의 「두드린 기록 없음」이 거짓말이 됩니다 - 오지 않은 것과
+  // 적지 못한 것이 같아 보이면, 진단하려고 만든 표가 오히려 사람을 속입니다.
+  const attemptNote = attemptErr ? ` (진단 기록 실패: ${attemptErr.message})` : "";
+
+  if (!link) return NextResponse.json({ error: `모르는 토큰입니다.${attemptNote}` }, { status: 403 });
+  if (!link.enabled) return NextResponse.json({ error: `꺼져 있는 연결입니다.${attemptNote}` }, { status: 403 });
 
   // 연결 시험 - 주소·토큰·기록까지 한 번에 확인합니다. 아무것도 넣지 않습니다.
   //
@@ -42,11 +61,11 @@ export async function POST(req: Request) {
   if (body?.test === true) {
     const err = await note(supabase, link.id, 0, 0, null, {
       detail: "연결 시험 — 길과 토큰은 정상입니다(아무것도 넣지 않았습니다)",
-      header: "(연결 시험)",
-      columns: "(연결 시험)",
+      header: TEST_MARK,
+      columns: TEST_MARK,
     });
     if (err) return NextResponse.json({ ok: false, error: `수신 기록을 남기지 못했습니다: ${err}` }, { status: 500 });
-    return NextResponse.json({ ok: true, test: true });
+    return NextResponse.json({ ok: true, test: true, warn: attemptNote || undefined });
   }
 
   const header = (body?.header as unknown[] | undefined)?.map((c) => String(c ?? "")) ?? [];

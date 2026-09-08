@@ -26,14 +26,25 @@ export async function GET() {
   if (!isStaffOrAboveUser(me)) return NextResponse.json({ error: "권한이 필요합니다." }, { status: 403 });
 
   const supabase = await createClient();
-  const [links, inbox] = await Promise.all([
+  const [links, inbox, attempts] = await Promise.all([
     supabase.from("roster_sync_links").select("*").order("created_at"),
     supabase.from("roster_sync_inbox").select("*").eq("status", "대기").order("created_at"),
+    // 이 주소를 누가 두드렸는지. 토큰이 틀린 요청은 403으로 끝나 연결 줄에 아무 흔적을
+    // 남기지 못하는데, 그것과 「아예 오지 않음」이 화면에서는 똑같이 보입니다.
+    supabase.from("roster_sync_attempts").select("at, token_prefix, result, note").order("at", { ascending: false }).limit(12),
   ]);
   if (links.error) return NextResponse.json({ error: links.error.message }, { status: 500 });
   if (inbox.error) return NextResponse.json({ error: inbox.error.message }, { status: 500 });
 
-  return NextResponse.json({ ok: true, links: links.data ?? [], inbox: inbox.data ?? [] });
+  return NextResponse.json({
+    ok: true,
+    links: links.data ?? [],
+    inbox: inbox.data ?? [],
+    attempts: attempts.data ?? [],
+    // 두드린 기록을 못 읽었으면 그렇다고 말합니다. 빈 목록으로 보이면 「아무도 안 왔다」로
+    // 읽히고, 사람은 엉뚱한 곳(ENDPOINT)을 고치기 시작합니다.
+    attemptsError: attempts.error ? attempts.error.message : null,
+  });
 }
 
 export async function POST(req: Request) {

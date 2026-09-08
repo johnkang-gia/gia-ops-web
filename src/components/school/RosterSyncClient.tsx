@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useToast } from "@/components/common/ToastProvider";
+import { isTestReceipt } from "@/lib/rosterSync";
 
 /**
  * 구글시트 → 명부 자동 수신.
@@ -38,6 +39,16 @@ type Inbox = {
   created_at: string;
 };
 
+/** 이 주소를 두드린 기록. 토큰이 맞기 전에 남기므로 «틀린 토큰»도 여기에는 보입니다. */
+type Attempt = { at: string; token_prefix: string | null; result: string; note: string | null };
+
+const ATTEMPT_STYLE: Record<string, string> = {
+  받음: "bg-emerald-100 text-emerald-800",
+  "연결 시험": "bg-teal-100 text-teal-800",
+  "토큰 모름": "bg-rose-100 text-rose-700",
+  "꺼진 연결": "bg-amber-100 text-amber-800",
+};
+
 const KIND_STYLE: Record<Inbox["kind"], string> = {
   "새로 등록": "bg-emerald-100 text-emerald-800",
   바뀜: "bg-amber-100 text-amber-800",
@@ -48,6 +59,8 @@ export default function RosterSyncClient() {
   const notify = useToast();
   const [links, setLinks] = useState<Link[]>([]);
   const [inbox, setInbox] = useState<Inbox[]>([]);
+  const [attempts, setAttempts] = useState<Attempt[]>([]);
+  const [attemptsError, setAttemptsError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [openLink, setOpenLink] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -60,6 +73,8 @@ export default function RosterSyncClient() {
     setLoadError(null);
     setLinks(body.links ?? []);
     setInbox(body.inbox ?? []);
+    setAttempts(body.attempts ?? []);
+    setAttemptsError(body.attemptsError ?? null);
   }, []);
 
   useEffect(() => {
@@ -187,38 +202,83 @@ export default function RosterSyncClient() {
 
           {/* 「받았는데 대기함이 비었다」의 답. 다 같아서 0인 것과 못 읽어서 0인 것은
               완전히 다른 일인데, 숫자 0만 보고는 구별할 수 없습니다. */}
-          {l.last_push_at && (
-            <div className="mt-1 rounded-lg bg-slate-50 px-2 py-1.5 text-[11px] leading-relaxed text-slate-600">
-              {l.last_detail && (
-                <p>
-                  <b className="text-slate-700">읽은 결과</b> {l.last_detail}
-                </p>
-              )}
-              {l.last_columns && (
-                <p>
-                  <b className="text-slate-700">알아본 칸</b> {l.last_columns}
-                  {!l.last_columns.includes("이름") && (
-                    <span className="ml-1 font-bold text-rose-700">— 이름 칸을 못 찾아 한 줄도 못 들어옵니다</span>
-                  )}
-                </p>
-              )}
-              {l.last_header && (
-                <p className="truncate text-slate-400" title={l.last_header}>
-                  <b>받은 머리줄</b> {l.last_header}
-                </p>
-              )}
-              {(l.last_queued ?? 0) === 0 && l.last_detail?.includes("그대로") && (
-                <p className="mt-0.5 text-slate-500">
-                  대기함이 비어 있는 것은 <b>고칠 것이 없다</b>는 뜻일 수 있습니다. 위 「그대로」 수가 받은 줄 수와 같으면
-                  시트와 명부가 이미 같은 상태입니다.
-                </p>
-              )}
-            </div>
-          )}
+          {l.last_push_at &&
+            // 시험 기록은 «읽은 결과»가 아닙니다. 시험은 아무것도 넣지 않으므로 머리줄도
+            // 알아본 칸도 없는데, 그 자리에 표시 글자가 들어가 있어 「이름 칸을 못 찾았다」는
+            // 헛경고가 떴습니다. 사람이 스크립트를 고치러 가게 만드는 거짓말이었습니다.
+            (isTestReceipt(l.last_columns) ? (
+              <div className="mt-1 rounded-lg bg-teal-50 px-2 py-1.5 text-[11px] leading-relaxed text-teal-900">
+                <b>연결 시험 통과</b> — 주소·토큰·기록 모두 정상입니다. <b>남은 것은 스크립트뿐입니다.</b> 아래 「두드린
+                기록」에서 시험 말고 다른 줄이 안 보이면 스크립트가 이 주소로 오지 않은 것이니 <b>ENDPOINT</b>를,
+                「토큰 모름」이 보이면 <b>TOKEN</b>을 지금 화면의 것과 맞춰보세요.
+              </div>
+            ) : (
+              <div className="mt-1 rounded-lg bg-slate-50 px-2 py-1.5 text-[11px] leading-relaxed text-slate-600">
+                {l.last_detail && (
+                  <p>
+                    <b className="text-slate-700">읽은 결과</b> {l.last_detail}
+                  </p>
+                )}
+                {l.last_columns && (
+                  <p>
+                    <b className="text-slate-700">알아본 칸</b> {l.last_columns}
+                    {!l.last_columns.includes("이름") && (
+                      <span className="ml-1 font-bold text-rose-700">— 이름 칸을 못 찾아 한 줄도 못 들어옵니다</span>
+                    )}
+                  </p>
+                )}
+                {l.last_header && (
+                  <p className="truncate text-slate-400" title={l.last_header}>
+                    <b>받은 머리줄</b> {l.last_header}
+                  </p>
+                )}
+                {(l.last_queued ?? 0) === 0 && l.last_detail?.includes("그대로") && (
+                  <p className="mt-0.5 text-slate-500">
+                    대기함이 비어 있는 것은 <b>고칠 것이 없다</b>는 뜻일 수 있습니다. 위 「그대로」 수가 받은 줄 수와 같으면
+                    시트와 명부가 이미 같은 상태입니다.
+                  </p>
+                )}
+              </div>
+            ))}
 
           {openLink === l.id && <ScriptBox token={l.token} />}
         </div>
       ))}
+
+      {/* ── 누가 이 주소를 두드렸는가 ──────────────────────────────────────────
+          토큰이 틀린 요청은 403으로 끝나 연결 줄에 아무 흔적을 남기지 못합니다. 그러면
+          「오지 않았다」와 「왔는데 토큰이 다르다」가 화면에서 똑같이 보이는데, 고칠 곳은
+          각각 ENDPOINT 와 TOKEN 으로 서로 다릅니다. */}
+      {links.length > 0 && (
+        <div className="mt-3 border-t border-slate-200 pt-2">
+          <b className="text-[12px] text-slate-800">두드린 기록</b>
+          <span className="ml-1 text-[11px] text-slate-400">토큰이 맞기 전에 남기므로, 틀린 토큰으로 온 것도 보입니다.</span>
+          {attemptsError && (
+            <p className="mt-1 rounded bg-rose-50 px-2 py-1 text-[11px] font-bold text-rose-700">
+              두드린 기록을 읽지 못했습니다: {attemptsError} — 아래가 비어 있어도 「아무도 안 왔다」는 뜻이 아닙니다.
+            </p>
+          )}
+          {!attemptsError && attempts.length === 0 ? (
+            <p className="mt-1 rounded bg-amber-50 px-2 py-1 text-[11px] leading-relaxed text-amber-900">
+              아무도 이 주소를 두드린 적이 없습니다. 스크립트가 <b>다른 주소</b>로 보내고 있거나 <b>아직 실행되지 않았습니다</b> —
+              스크립트의 <b>ENDPOINT</b> 줄을 [스크립트 보기]의 것과 맞춰보세요.
+            </p>
+          ) : (
+            <ul className="mt-1 flex flex-col gap-0.5">
+              {attempts.map((a, i) => (
+                <li key={i} className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-600">
+                  <span className={"rounded px-1.5 py-0.5 text-[10px] font-bold " + (ATTEMPT_STYLE[a.result] ?? "bg-slate-100 text-slate-600")}>
+                    {a.result}
+                  </span>
+                  <span className="tabular-nums text-slate-500">{new Date(a.at).toLocaleString("ko-KR")}</span>
+                  {a.token_prefix && <code className="rounded bg-slate-100 px-1 text-[10px] text-slate-500">{a.token_prefix}…</code>}
+                  {a.note && <span className="text-rose-600">{a.note}</span>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       <div className="mt-3 border-t border-slate-200 pt-2">
         <div className="mb-1 flex flex-wrap items-center gap-2">
@@ -429,10 +489,13 @@ function SetupSteps() {
         지우고 [+ 새 프로젝트]로 새로 만듭니다 — 앱이 아니라 구글 쪽 로그인 상태 문제라, 스크립트를 고칠 것은 없습니다.
       </p>
       <p className="mt-1 rounded bg-amber-50 px-2 py-1 text-[11px] leading-relaxed text-amber-900">
-        <b>스크립트는 성공인데 「마지막 수신 아직 없음」이면</b> 셋 중 하나입니다. ① 스크립트의{" "}
-        <b>ENDPOINT 주소</b>가 이 앱이 아닌 다른 주소(미리보기 주소 등) ② 스크립트의 <b>TOKEN</b>이 이 연결의 것이 아님
-        ③ 스크립트를 저장만 하고 <b>실행하지 않음</b>. 위 [연결 시험]이 통하면 주소·토큰·기록은 멀쩡하니 스크립트의
-        ENDPOINT·TOKEN 두 줄을 지금 화면의 것과 맞춰보세요.
+        <b>스크립트는 성공인데 「마지막 수신 아직 없음」이면</b> 아래 <b>두드린 기록</b>을 보세요. 어디를 고쳐야 하는지가
+        거기서 갈립니다.
+        <br />· 시험 말고 <b>아무 줄도 없음</b> → 스크립트가 이 주소로 오지 않았습니다. <b>ENDPOINT</b>가 다른 주소(미리보기
+        주소 등)이거나 아직 실행되지 않았습니다.
+        <br />· <b>「토큰 모름」</b>이 찍혀 있음 → 주소는 맞았고 <b>TOKEN</b>만 다릅니다. 옆의 앞 여섯 글자를 [스크립트 보기]의
+        TOKEN 과 비교하세요.
+        <br />· <b>「받음」</b>이 찍혀 있음 → 다 맞았습니다. 그 위 「읽은 결과」에 왜 0줄인지 적혀 있습니다.
       </p>
       <p className="mt-1 rounded bg-amber-50 px-2 py-1 text-[11px] leading-relaxed text-amber-900">
         토큰을 재발급하면 <b>스크립트의 TOKEN 도 바꿔야</b> 합니다. 안 바꾸면 시트는 계속 보내는데 앱이 받지 않고, 그 사실은

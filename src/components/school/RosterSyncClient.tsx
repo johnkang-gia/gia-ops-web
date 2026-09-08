@@ -24,6 +24,9 @@ type Link = {
   last_row_count: number | null;
   last_queued: number | null;
   last_error: string | null;
+  last_detail?: string | null;
+  last_header?: string | null;
+  last_columns?: string | null;
 };
 
 type Inbox = {
@@ -158,6 +161,37 @@ export default function RosterSyncClient() {
           {l.last_error && (
             // 스크립트가 조용히 실패하면 아무도 모르는 채로 명부가 몇 주씩 뒤처집니다.
             <p className="mt-1 rounded bg-rose-50 px-2 py-1 text-[11px] font-bold text-rose-700">마지막 수신 오류: {l.last_error}</p>
+          )}
+
+          {/* 「받았는데 대기함이 비었다」의 답. 다 같아서 0인 것과 못 읽어서 0인 것은
+              완전히 다른 일인데, 숫자 0만 보고는 구별할 수 없습니다. */}
+          {l.last_push_at && (
+            <div className="mt-1 rounded-lg bg-slate-50 px-2 py-1.5 text-[11px] leading-relaxed text-slate-600">
+              {l.last_detail && (
+                <p>
+                  <b className="text-slate-700">읽은 결과</b> {l.last_detail}
+                </p>
+              )}
+              {l.last_columns && (
+                <p>
+                  <b className="text-slate-700">알아본 칸</b> {l.last_columns}
+                  {!l.last_columns.includes("이름") && (
+                    <span className="ml-1 font-bold text-rose-700">— 이름 칸을 못 찾아 한 줄도 못 들어옵니다</span>
+                  )}
+                </p>
+              )}
+              {l.last_header && (
+                <p className="truncate text-slate-400" title={l.last_header}>
+                  <b>받은 머리줄</b> {l.last_header}
+                </p>
+              )}
+              {(l.last_queued ?? 0) === 0 && l.last_detail?.includes("그대로") && (
+                <p className="mt-0.5 text-slate-500">
+                  대기함이 비어 있는 것은 <b>고칠 것이 없다</b>는 뜻일 수 있습니다. 위 「그대로」 수가 받은 줄 수와 같으면
+                  시트와 명부가 이미 같은 상태입니다.
+                </p>
+              )}
+            </div>
           )}
 
           {openLink === l.id && <ScriptBox token={l.token} />}

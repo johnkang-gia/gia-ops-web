@@ -77,15 +77,37 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "이미 다음 청구서로 이월된 건입니다. 이월된 청구서에서 받으세요." }, { status: 400 });
   }
 
-  // 금액을 안 적으면 남은 만큼. 부분 납부는 적어서 보냅니다.
+  // 항목을 골라 받는 경우. 「7만원 남았습니다」가 아니라 「교복값이 남았습니다」라고 말할
+  // 수 있어야 합니다 - 금액만 말하면 학부모가 무슨 돈인지 되묻고, 그 통화가 일이 됩니다.
+  const lineIds = Array.isArray(body?.lineIds) ? (body.lineIds as string[]).filter((x) => typeof x === "string") : [];
+  let lineTotal = 0;
+  if (lineIds.length > 0) {
+    const { data: lines, error: lineErr } = await supabase
+      .from("invoice_lines")
+      .select("id, amount, paid_payment_id")
+      .eq("invoice_id", inv.id)
+      .in("id", lineIds);
+    if (lineErr) return NextResponse.json({ error: lineErr.message }, { status: 500 });
+    const rows = lines ?? [];
+    if (rows.length !== lineIds.length) {
+      return NextResponse.json({ error: "고른 항목 중 이 청구서에 없는 것이 있습니다." }, { status: 400 });
+    }
+    const already = rows.filter((r) => r.paid_payment_id);
+    if (already.length > 0) {
+      return NextResponse.json({ error: `이미 받은 항목이 섞여 있습니다(${already.length}건).` }, { status: 400 });
+    }
+    lineTotal = rows.reduce((n, r) => n + Math.round(Number(r.amount)), 0);
+  }
+
+  // 금액을 안 적으면 남은 만큼. 항목을 골랐으면 그 합계가 곧 금액입니다.
   const asked = Number(body?.amount);
-  const amount = Number.isFinite(asked) && asked > 0 ? Math.round(asked) : s.balance;
+  const amount = lineIds.length > 0 ? lineTotal : Number.isFinite(asked) && asked > 0 ? Math.round(asked) : s.balance;
   if (amount <= 0) return NextResponse.json({ error: "이미 완납된 청구서입니다." }, { status: 400 });
   if (amount > s.balance) {
     return NextResponse.json({ error: `남은 금액(${s.balance.toLocaleString()}원)보다 많습니다.` }, { status: 400 });
   }
 
-  const { error } = await supabase.from("payments").insert({
+  const { data: made, error } = await supabase.from("payments").insert({
     invoice_id: inv.id,
     student_id: inv.student_id,
     paid_at: paidAt,
@@ -98,8 +120,24 @@ export async function POST(req: Request) {
     source: "완납체크",
     matched_by: me.email,
     created_by: me.email,
-  });
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  }).select("id").single();
+  if (error || !made) return NextResponse.json({ error: error?.message ?? "저장 실패" }, { status: 500 });
+
+  // 어느 항목을 덮었는지 표시합니다. 실패를 삼키지 않습니다 - 돈은 들어갔는데 항목이
+  // 안 붙으면 「무엇이 남았나」가 영영 틀립니다.
+  if (lineIds.length > 0) {
+    const { error: markErr } = await supabase
+      .from("invoice_lines")
+      .update({ paid_payment_id: made.id })
+      .in("id", lineIds)
+      .is("paid_payment_id", null);
+    if (markErr) {
+      return NextResponse.json(
+        { error: `입금은 넣었지만 어느 항목인지 표시하지 못했습니다(${markErr.message}). 항목별 남은 금액이 틀릴 수 있습니다.` },
+        { status: 500 },
+      );
+    }
+  }
 
   return NextResponse.json({ ok: true, amount, balance: s.balance - amount });
 }

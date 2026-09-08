@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { parseRosterPaste } from "@/lib/pasteRoster";
+import { FIELD_LABEL, parseRosterPaste } from "@/lib/pasteRoster";
 import { planRoster, type StudentLite } from "@/lib/rosterPlan";
 
 /**
@@ -47,11 +47,15 @@ export async function POST(req: Request) {
   const text = [header, ...raw].map((r) => r.map((c) => String(c ?? "")).join("\t")).join("\n");
   const parsed = parseRosterPaste(text, undefined, true);
   const rows = parsed.rows.filter((r) => !r.problem);
+
+  // 무엇을 받았고 무엇으로 읽었는지. 이게 없으면 「왜 0줄인가」에 답할 수 없습니다.
+  const headerText = header.join(" | ");
+  const columnsText = parsed.mapping.map((f) => (f ? FIELD_LABEL[f] : "—")).join(" | ");
   if (rows.length === 0) {
     const why = parsed.mapping.includes("name")
       ? "이름이 든 줄이 없습니다."
       : `머리줄에서 이름 칸을 못 찾았습니다(받은 머리글: ${header.join(", ")}).`;
-    await note(supabase, link.id, raw.length, 0, why);
+    await note(supabase, link.id, raw.length, 0, why, { header: headerText, columns: columnsText });
     return NextResponse.json({ ok: false, error: why }, { status: 400 });
   }
 
@@ -60,7 +64,7 @@ export async function POST(req: Request) {
     .select("id, name, birth_date, name_en, grade, class_name, student_no, status, mother_phone, father_phone, parent_phone")
     .eq("is_demo", false);
   if (stuErr) {
-    await note(supabase, link.id, raw.length, 0, stuErr.message);
+    await note(supabase, link.id, raw.length, 0, stuErr.message, { header: headerText, columns: columnsText });
     return NextResponse.json({ error: stuErr.message }, { status: 500 });
   }
 
@@ -87,8 +91,20 @@ export async function POST(req: Request) {
     else if (!error.message.includes("duplicate key")) problems.push(error.message);
   }
 
-  await note(supabase, link.id, raw.length, queued, problems[0] ?? null);
-  return NextResponse.json({ ok: true, received: raw.length, queued, pending: queue.length - queued });
+  // 갈래별로 몇 줄이었는지 그대로 적습니다. 「다 같아서 0」과 「못 읽어서 0」은 완전히
+  // 다른 일인데, 숫자 0만 보고는 구별할 수 없습니다.
+  const count = (k: string) => plans.filter((p) => p.kind === k).length;
+  const detail =
+    `읽은 줄 ${rows.length} · 새로 등록 ${count("새로 등록")} · 바뀜 ${count("바뀜")} · ` +
+    `그대로 ${count("그대로")} · 확인 필요 ${count("확인 필요")}` +
+    (queue.length > 0 && queued === 0 ? " · 이미 대기 중이라 다시 넣지 않음" : "");
+
+  await note(supabase, link.id, raw.length, queued, problems[0] ?? null, {
+    detail,
+    header: headerText,
+    columns: columnsText,
+  });
+  return NextResponse.json({ ok: true, received: raw.length, queued, pending: queue.length - queued, detail });
 }
 
 function fingerprint(name: string, values: Record<string, unknown>): string {
@@ -105,11 +121,20 @@ async function note(
   received: number,
   queued: number,
   error: string | null,
+  extra?: { detail?: string; header?: string; columns?: string },
 ) {
   // 마지막 수신 결과를 남깁니다. 스크립트가 조용히 실패하면 아무도 모르는 채로 명부가
   // 몇 주씩 뒤처집니다 - 화면에서 「마지막 수신 언제, 결과 무엇」을 볼 수 있어야 합니다.
   await supabase
     .from("roster_sync_links")
-    .update({ last_push_at: new Date().toISOString(), last_row_count: received, last_queued: queued, last_error: error })
+    .update({
+      last_push_at: new Date().toISOString(),
+      last_row_count: received,
+      last_queued: queued,
+      last_error: error,
+      last_detail: extra?.detail ?? null,
+      last_header: extra?.header ?? null,
+      last_columns: extra?.columns ?? null,
+    })
     .eq("id", linkId);
 }

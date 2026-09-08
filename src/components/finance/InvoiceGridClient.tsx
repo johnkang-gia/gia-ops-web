@@ -836,7 +836,10 @@ export default function InvoiceGridClient({
     (on ? "bg-slate-800 text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50");
 
   return (
-    <div className="mx-auto max-w-none p-3 sm:p-4">
+    // w-full + min-w-0: 이게 없으면 표가 넓어질 때 **페이지 자체가 옆으로 늘어납니다.**
+    // 그러면 상단 탭줄과 제목까지 함께 밀려나가고, 가로 스크롤바가 화면 맨 아래에 생겨
+    // 표를 보려면 페이지를 통째로 밀어야 합니다. 늘어나야 하는 것은 표 안쪽뿐입니다.
+    <div className="mx-auto w-full min-w-0 max-w-full p-3 sm:p-4">
       <div className="mb-1 flex flex-wrap items-baseline gap-2">
         <h1 className="text-lg font-bold">🧾 인보이스 명단</h1>
         <span className="text-xs text-slate-400">학비외 · 학생 × 항목</span>
@@ -1240,7 +1243,10 @@ export default function InvoiceGridClient({
       )}
 
       {/* ── 표 ───────────────────────────────────────────────────── */}
-      <div className="overflow-auto rounded-xl border border-slate-200 bg-white" style={{ maxHeight: "72vh" }}>
+      <div
+        className="w-full min-w-0 max-w-full overflow-auto rounded-xl border border-slate-200 bg-white"
+        style={{ maxHeight: "72vh" }}
+      >
         <table className="min-w-full border-collapse text-left text-[12px]">
           <thead className="sticky top-0 z-20">
             {/* 분류 줄 — 열이 많아지면 무엇끼리 묶인 것인지 보여야 합니다. */}

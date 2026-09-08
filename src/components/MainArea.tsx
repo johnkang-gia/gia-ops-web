@@ -38,6 +38,10 @@ const BOUNDED_LIST_PATHS = [
   "/weekly-report/admin/students",
   "/weekly-report/admin/classes",
   "/weekly-report/admin/subjects",
+  // 인보이스 명단은 항목이 늘수록 표가 옆으로 길어집니다. 화면 안에 가둬야 표 «안쪽»이
+  // 스크롤되고, 안 그러면 페이지가 통째로 늘어나 상단 탭줄과 제목까지 밀려 나갑니다.
+  "/finance/invoices",
+  "/finance/tuition",
 ];
 
 export default function MainArea({ children }: { children: React.ReactNode }) {

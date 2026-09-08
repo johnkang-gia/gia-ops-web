@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { FIELD_LABEL, parseRosterPaste } from "@/lib/pasteRoster";
+import { FIELD_LABEL, parseRosterGrid } from "@/lib/pasteRoster";
 import { planRoster, type StudentLite } from "@/lib/rosterPlan";
 import { TEST_MARK } from "@/lib/rosterSync";
 
@@ -75,10 +75,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "머리줄이나 학생 줄이 비어 있습니다." }, { status: 400 });
   }
 
-  // 붙여넣기 화면과 **같은 읽기**를 씁니다. 시트에서 들어온 줄만 다르게 읽으면 두 길이
-  // 다른 결과를 냅니다.
-  const text = [header, ...raw].map((r) => r.map((c) => String(c ?? "")).join("\t")).join("\n");
-  const parsed = parseRosterPaste(text, undefined, true);
+  // **격자 그대로** 읽습니다. 예전에는 탭·줄바꿈으로 이어붙인 글자로 만들었다가 다시
+  // 쪼갰는데, 그 왕복에서 자료가 망가졌습니다 - 실제 명부의 머리줄에는 `After↵School`,
+  // 자료 칸에는 `G2J↵(13)` 처럼 **칸 안에 줄바꿈**이 들어 있어서 한 줄이 두 줄로 쪼개졌고,
+  // 영문 이름 자리에 악기 이름이 들어갔습니다.
+  const parsed = parseRosterGrid([header, ...raw.map((r) => r.map((c) => String(c ?? "")))], undefined, true);
   const rows = parsed.rows.filter((r) => !r.problem);
 
   // 무엇을 받았고 무엇으로 읽었는지. 이게 없으면 「왜 0줄인가」에 답할 수 없습니다.
@@ -135,6 +136,8 @@ export async function POST(req: Request) {
   const count = (k: string) => plans.filter((p) => p.kind === k).length;
   const detail =
     (parsed.skippedRows > 0 ? `머리줄 위 ${parsed.skippedRows}줄은 건너뜀 · ` : "") +
+    // 어디서 왜 멈췄는지. 조용히 빼면 「왜 스물여섯 명이 없지」가 됩니다.
+    (parsed.cutFromRowNo ? `${parsed.cutFromRowNo}행 「${parsed.cutLabel}」 아래는 안 읽음 · ` : "") +
     `읽은 줄 ${rows.length} · 새로 등록 ${count("새로 등록")} · 바뀜 ${count("바뀜")} · ` +
     `그대로 ${count("그대로")} · 확인 필요 ${count("확인 필요")}` +
     (queue.length > 0 && queued === 0 ? " · 이미 대기 중이라 다시 넣지 않음" : "");

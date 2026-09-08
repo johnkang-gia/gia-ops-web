@@ -118,8 +118,9 @@ export default function PickupAlarmBar() {
               }
               title={`${a.name} · ${a.time} · ${a.where}${a.via ? ` · ${a.via}` : ""}`}
             >
-              {a.time} {a.name}
+              {a.time} <span className="whitespace-nowrap">{a.name}</span>
               <span className="ml-1 font-medium text-slate-500">{a.where}</span>
+              {a.via && <span className="ml-1 text-[10px] font-semibold text-violet-700">🚐 {a.via}</span>}
               <span className="ml-1">{a.left < 0 ? `${-a.left}분 지남` : `${a.left}분 뒤`}</span>
             </span>
           ))}
@@ -154,13 +155,17 @@ function AlarmToast({
         </div>
         <ul className="flex flex-col gap-1">
           {items.map((a) => (
-            <li key={a.key} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-              <b className="text-[15px] font-black tabular-nums text-amber-900">{a.time}</b>
-              <b className="text-[17px] font-black text-slate-900">{a.name}</b>
-              <span className="text-[12px] font-semibold text-slate-500">{a.className ?? "반 미확인"}</span>
-              {/* 어디로 가야 하는가. 이름만 알면 못 움직입니다. */}
-              <span className="text-[13px] font-bold text-amber-800">📍 {a.where}</span>
-              {a.via && <span className="text-[11px] font-semibold text-violet-700">{a.via}</span>}
+            <li key={a.key}>
+              <div className="flex flex-wrap items-baseline gap-x-2">
+                <b className="shrink-0 text-[15px] font-black tabular-nums text-amber-900">{a.time}</b>
+                {/* **이름은 절대 줄이지 않습니다.** 가려지면 누구를 데려오는지 모릅니다. */}
+                <b className="shrink-0 whitespace-nowrap text-[17px] font-black text-slate-900">{a.name}</b>
+                <span className="text-[12px] font-semibold text-slate-500">{a.className ?? "반 미확인"}</span>
+                {/* 어디로 가야 하는가. 이름만 알면 못 움직입니다. */}
+                <span className="text-[13px] font-bold text-amber-800">📍 {a.where}</span>
+              </div>
+              {/* 무슨 차인지. 시각은 이미 위에 있으니 아래에 아주 작게만 둡니다. */}
+              {a.via && <div className="pl-1 text-[10px] font-semibold text-violet-700">🚐 {a.via}</div>}
             </li>
           ))}
         </ul>

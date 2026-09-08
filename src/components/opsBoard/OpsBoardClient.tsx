@@ -1349,7 +1349,10 @@ function PickupToast({
                   {p.time ?? "시각 미정"}
                 </b>
                 {/* 이름 - 이 쪽지에서 가장 큰 글자. */}
-                <b style={{ fontSize: 30, fontWeight: 900, color: "#111827", lineHeight: 1.1 }}>{p.name}</b>
+                {/* **이름은 절대 줄이지 않습니다.** 가려지면 누구를 데려오는지 모릅니다. */}
+                <b style={{ fontSize: 30, fontWeight: 900, color: "#111827", lineHeight: 1.1, whiteSpace: "nowrap", flexShrink: 0 }}>
+                  {p.name}
+                </b>
                 <span style={{ fontSize: 16, fontWeight: 700, color: "#78350f" }}>
                   {[p.grade ? `${p.grade}학년` : null, p.className].filter(Boolean).join(" ") || "반 미확인"}
                 </span>
@@ -1657,15 +1660,18 @@ function TodayChanges({ sc, data }: { sc: BoardScale; data: BoardData }) {
               title={p.name}
               style={{
                 display: "flex",
-                alignItems: "baseline",
-                gap: sc.s(7, 4),
+                // 세로로 두 줄. 윗줄은 시각과 이름, 아랫줄은 무슨 차인지입니다.
+                // 한 줄에 다 넣었더니 차 이름이 자리를 먹어 **이름이 잘렸습니다.** 이름이
+                // 가려지면 이 목록은 있으나 마나입니다 - 누구를 데려오는지 모르니까요.
+                flexDirection: "column",
+                gap: sc.s(2, 1),
                 background: "#0c2233",
                 borderLeft: `${sc.s(5, 3)}px solid #0ea5e9`,
                 borderRadius: sc.s(8, 5),
                 padding: `${sc.s(6, 4)}px ${sc.s(9, 6)}px`,
-                minWidth: 0,
               }}
             >
+            <div style={{ display: "flex", alignItems: "baseline", gap: sc.s(7, 4) }}>
               <b
                 style={{
                   fontSize: p.time ? sc.s(31, 20) : sc.s(17, 12),
@@ -1677,14 +1683,16 @@ function TodayChanges({ sc, data }: { sc: BoardScale; data: BoardData }) {
               >
                 {p.time ?? "시각 미정"}
               </b>
+              {/* **이름은 절대 줄이지 않습니다.** 줄바꿈도 말줄임도 없습니다 - 이름이
+                  가려지면 누구를 데려오는지 모르고, 그러면 이 목록이 있을 이유가 없습니다.
+                  칸이 모자라면 카드가 넓어지고, 목록이 아래로 흐릅니다. */}
               <span
                 style={{
                   fontSize: sc.s(21, 14),
                   fontWeight: 700,
                   color: "#fff",
                   whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
+                  flexShrink: 0,
                 }}
               >
                 {shortName(p.name)}
@@ -1704,21 +1712,20 @@ function TodayChanges({ sc, data }: { sc: BoardScale; data: BoardData }) {
                   학생 미연결
                 </span>
               )}
-              {/* 평소 하원수단. 아래 「학원차·보호자 하원」에 같은 아이가 또 뜨면 몇 명을
-                  데려와야 하는지 셀 수 없어, 그 줄을 여기로 합쳤습니다. */}
+            </div>
+              {/* 무슨 차인지. 학교 앞에서 타는 것이라 «시각과 차 이름»만 알면 되고, 시각은
+                  이미 윗줄에 큽니다. 그래서 아래에 아주 작게 한 줄로만 둡니다. */}
               {p.plan && (
                 <span
                   style={{
-                    fontSize: sc.s(13, 10),
+                    fontSize: sc.s(12, 9),
                     fontWeight: 700,
                     color: "#a78bfa",
                     whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
                   }}
                   title={`평소 하원수단: ${p.plan}`}
                 >
-                  {p.plan}
+                  🚐 {p.plan}
                 </span>
               )}
             </div>

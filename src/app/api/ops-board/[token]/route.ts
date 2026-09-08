@@ -479,9 +479,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     if (!pk.studentId) continue;
     const plan = planByStudent.get(pk.studentId);
     if (!plan) continue;
-    pk.plan = [plan.kind as string, (plan.label as string | null) ?? null, (plan.depart_time as string | null) ?? null]
-      .filter(Boolean)
-      .join(" · ");
+    // **무슨 차인지만** 적습니다. 학교 앞에서 타는 것이라 «어디로 가는 차인가»만 알면 되고,
+    // 시각은 이미 왼쪽에 크게 있습니다. 길게 적으면 그만큼 이름이 밀립니다.
+    pk.plan = ((plan.label as string | null) ?? "").trim() || (plan.kind as string);
     // **시각을 물려받습니다.** 학부모 연락에 시각이 없어도 평소 하원수단에 「14:40」이
     // 적혀 있으면 그 시각이 곧 이 아이의 픽업 시각입니다. 시각이 없으면 화면에 「시각 미정」
     // 으로만 뜨고 5분 전 알람도 울릴 수 없습니다 - 알릴 때를 모르니까요.

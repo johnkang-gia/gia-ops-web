@@ -99,7 +99,8 @@ export async function GET() {
       time,
       className: (st?.class_name as string | null) ?? null,
       where: place((st?.grade as string | null) ?? null, (st?.class_name as string | null) ?? null),
-      via: plan ? [plan.kind as string, (plan.label as string | null) ?? null].filter(Boolean).join(" · ") : null,
+      // 무슨 차인지만. 학교 앞에서 타는 것이라 시각과 차 이름이면 충분합니다.
+      via: plan ? ((plan.label as string | null) ?? "").trim() || (plan.kind as string) : null,
     });
   }
 
@@ -118,7 +119,7 @@ export async function GET() {
       time,
       className: (st.class_name as string | null) ?? null,
       where: place((st.grade as string | null) ?? null, (st.class_name as string | null) ?? null),
-      via: [plan.kind as string, (plan.label as string | null) ?? null].filter(Boolean).join(" · "),
+      via: ((plan.label as string | null) ?? "").trim() || (plan.kind as string),
     });
   }
 

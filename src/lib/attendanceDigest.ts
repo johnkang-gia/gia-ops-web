@@ -239,13 +239,21 @@ export function extractTargetDate(text: string, baseDate: Date): string | null {
   if (/오늘/.test(text)) return toDateKey(baseDate);
 
   // 3) 요일: 문장이 적힌 날 기준으로 "다음에 오는 그 요일"로 봅니다(같은 요일이면 그날 당일).
+  //
+  // 「다음 주 월요일」은 다릅니다. 화요일에 적었다면 '다음에 오는 월요일'이 곧 다음 주
+  // 월요일이지만, 월요일에 적었다면 오늘이 되어버립니다. 그래서 다음 주라고 적혀 있으면
+  // **다음 주 월요일을 기준으로** 셉니다.
   const wd = text.match(/([월화수목금토일])\s*요일/);
   if (wd) {
     const target = WEEKDAYS.indexOf(wd[1]);
     if (target >= 0) {
       const d = new Date(baseDate);
-      const diff = (target - d.getDay() + 7) % 7;
-      d.setDate(d.getDate() + diff);
+      if (/다음\s*주|담주|차주/.test(text)) {
+        const toNextMonday = (8 - d.getDay()) % 7 || 7;
+        d.setDate(d.getDate() + toNextMonday + ((target - 1 + 7) % 7));
+      } else {
+        d.setDate(d.getDate() + ((target - d.getDay() + 7) % 7));
+      }
       return toDateKey(d);
     }
   }
@@ -370,12 +378,58 @@ function addDays(d: Date, n: number): Date {
 }
 
 /**
+ * 「…부터」로 적어준 **시작점**.
+ *
+ * 「내일부터 3일간」·「다음주 월요일부터」·「9/16부터」. 이걸 안 보고 길이만 세면 기간이
+ * 통째로 하루씩·일주일씩 밀립니다. 밀린 채로도 화면은 멀쩡해 보입니다.
+ */
+function startAnchor(text: string, base: Date): Date | null {
+  const m = text.match(
+    /(다음\s*주\s*[월화수목금토일]\s*요일|담주\s*[월화수목금토일]\s*요일|이번\s*주\s*[월화수목금토일]\s*요일|[월화수목금토일]\s*요일|글피|모레|내일|오늘|\d{1,2}\s*[./월]\s*\d{1,2}\s*일?)\s*부터/
+  );
+  if (!m) return null;
+  const key = extractTargetDate(m[1], base);
+  return key ? fromKey(key) : null;
+}
+
+/**
+ * 「3일간」·「일주일 동안」처럼 **길이**로 적은 기간이 며칠인가.
+ *
+ * 「일주일」을 못 읽어서 「모레부터 일주일간」이 하루짜리가 되고 있었습니다.
+ */
+function spanDays(text: string): number | null {
+  const n = text.match(/(\d{1,2})\s*일\s*(?:간|동안)/);
+  if (n) {
+    const v = Number(n[1]);
+    if (v >= 1 && v <= 30) return v;
+  }
+  // 「간·동안」을 반드시 붙여 봅니다. 이걸 빼면 「3일 주말에 여행」의 '일 주'가 일주일로
+  // 읽힙니다 - 기간을 안 적은 글이 일주일 결석이 되는 쪽이 훨씬 나쁩니다.
+  const w = text.match(/(?:^|[^\d])(\d{1,2}|한|두|세|일|이|삼)\s*주(?:일)?\s*(?:간|동안)/);
+  if (w) {
+    const map: Record<string, number> = { 한: 1, 일: 1, 두: 2, 이: 2, 세: 3, 삼: 3 };
+    const v = map[w[1]] ?? Number(w[1]);
+    if (v >= 1 && v <= 4) return v * 7;
+  }
+  return null;
+}
+
+/**
  * 문장에서 "언제부터 언제까지"를 뽑습니다. 날짜 언급이 전혀 없으면 null.
  *
  * baseDate는 그 문장이 적힌 날입니다(구글챗 메시지 시각 / 문의 받은 시각).
  */
 export function extractTargetRange(text: string, baseDate: Date): TargetRange | null {
   const base = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate());
+
+  // 「…부터」로 적어준 시작점과 「N일간」으로 적어준 길이. 둘 다 있으면 그것으로 끝납니다.
+  //
+  // **이 둘을 가장 먼저 봅니다.** 「9/16부터 3일간」을 아래 ⓪(날짜 기간)이 먼저 집으면
+  // 「9/16 ~ 3일」로 읽혀 9월 3일부터로 뒤집힙니다. 사람이 시작과 길이를 다 적어준 경우가
+  // 가장 명확한 경우인데 그것을 가장 못 읽고 있었습니다.
+  const anchor = startAnchor(text, base);
+  const days = spanDays(text);
+  if (days && anchor) return clamp(anchor, addDays(anchor, days - 1));
 
   // ⓪ "9/16~23", "9/16~9/23", "9.16 - 9.23", "9월16일~23일" 처럼 **날짜를 직접 적은 기간**.
   //
@@ -408,17 +462,27 @@ export function extractTargetRange(text: string, baseDate: Date): TargetRange | 
     }
   }
 
-  // ① "N일간 / N일 동안" - 적힌 날부터 셉니다.
-  const span = text.match(/(\d{1,2})\s*일\s*(?:간|동안)/);
-  if (span) {
-    const n = Number(span[1]);
-    if (n >= 1 && n <= 30) return clamp(base, addDays(base, n - 1));
-  }
+  // ① "N일간 / N일 동안 / 일주일간" - **시작점을 먼저 봅니다.**
+  //
+  // 「내일부터 3일간」을 예전에는 「3일간」만 읽고 **오늘부터** 셌습니다. 하루씩 밀린 채로
+  // 등록되는데 화면에는 정상으로 보입니다 - 마지막 날 아이가 안 오고, 그날은 아무 기록도
+  // 없습니다. 「…부터」로 적어준 시작점이 있으면 그것이 언제나 먼저입니다.
+  if (days) return clamp(base, addDays(base, days - 1));
 
-  // ② "이번주 내내 / 이번주 끝까지" - 이번 주 금요일까지.
-  if (/이번\s*주\s*(?:내내|끝까지|말까지)/.test(text)) {
+  // ② "이번주 내내" · "다음주 내내" - 그 주 월~금.
+  const weekWide = text.match(/(이번|금|다음|담|차)\s*주\s*(?:내내|전체|끝까지|말까지)/);
+  if (weekWide) {
+    // 이번 주는 「오늘부터 금요일까지」, 다음 주는 「월요일부터 금요일까지」입니다. 이번 주는
+    // 이미 지난 날을 결석으로 만들 수 없고, 다음 주는 아직 한 날도 지나지 않았습니다.
+    if (/다음|담|차/.test(weekWide[1])) {
+      const monday = addDays(base, (8 - base.getDay()) % 7 || 7);
+      return clamp(monday, addDays(monday, 4));
+    }
     return clamp(base, addDays(base, (5 - base.getDay() + 7) % 7));
   }
+
+  // ③ "내일부터" 처럼 시작만 적고 끝을 안 적은 경우는 여기서 잡지 않습니다 - 끝을 모르면
+  //    기간이 아니라 하루입니다. 아래 '까지' 갈래가 끝날을 찾습니다.
 
   // ③ "~까지" 가 붙은 끝날. 이게 이 함수의 핵심입니다.
   //
@@ -436,10 +500,16 @@ export function extractTargetRange(text: string, baseDate: Date): TargetRange | 
     // 짧은 꼬리부터 길게 늘려가며 처음 걸리는 것이 곧 가장 오른쪽 표현입니다.
     const end = lastDateIn(endText, base) ?? lastDateIn(head, base);
     if (end) {
-      // 시작날: "오늘부터"/"내일부터"처럼 따로 적혀 있으면 그걸, 없으면 적힌 날.
-      const fromMatch = text.match(/(오늘|내일|모레|\d{1,2}\s*[./월]\s*\d{1,2}\s*일?)\s*부터/);
-      const start = fromMatch ? extractTargetDate(fromMatch[1], base) ?? toDateKey(base) : toDateKey(base);
-      return clamp(fromKey(start), fromKey(end));
+      // 시작날: "오늘부터"/"내일부터"/"다음주 월요일부터"처럼 따로 적혀 있으면 그걸,
+      // 없으면 적힌 날. 요일까지 읽어야 「다음주 월요일부터 수요일까지」가 맞습니다.
+      const start = anchor ?? base;
+      let endD = fromKey(end);
+      // 끝날이 시작보다 앞이면 «다음 주의 그 요일»입니다. 「다음주 월요일부터 수요일까지」에서
+      // 끝은 '수요일'만 적혀 있어 이번 주 수요일로 읽히는데, 사람은 당연히 같은 주로 읽습니다.
+      // 뒤집힌 채로 두면 clamp가 앞뒤를 바꿔버려 지난 날짜에 결석이 박힙니다.
+      let guard = 0;
+      while (endD < start && guard++ < 4) endD = addDays(endD, 7);
+      return clamp(start, endD);
     }
   }
 

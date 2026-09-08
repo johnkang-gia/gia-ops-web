@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import type { DepartmentMemo, GoogleChatMirrorMessage } from "@/lib/types";
 import AttendanceTeachModal from "./AttendanceTeachModal";
 import AttendanceRulesModal from "./AttendanceRulesModal";
+import { DismissalQuickModal, ManualAttendanceModal, RangeEditModal } from "./QuickEntryModals";
 import { notifyOpsBoardRefresh } from "@/lib/opsRefresh";
 import { classHintFromMentions, type TeacherClass } from "@/lib/mentionHints";
 import {
@@ -51,6 +52,12 @@ function rangeChip(from: string, to: string): string | null {
   return `~${Number(m)}/${Number(d)}`;
 }
 
+/** 하루짜리일 때 칩에 적는 짧은 날짜. 날짜가 안 보이면 고칠 생각도 안 납니다. */
+function shortDay(key: string): string {
+  const [, m, d] = key.split("-");
+  return `${Number(m)}/${Number(d)}`;
+}
+
 // 한 줄의 등록 상태를 보여주고, 눌러서 바로 등록·해제합니다.
 //
 //   ✅ 초록 체크 : 이미 등록됨(대시보드에 떠 있음). 누르면 내립니다.
@@ -63,11 +70,13 @@ function RegBadge({
   regs,
   busyKey,
   onSet,
+  onEditRange,
 }: {
   entry: AttendanceEntry;
   regs: Map<string, RegRow>;
   busyKey: string | null;
   onSet: (e: AttendanceEntry, next: "등록" | "무시") => void;
+  onEditRange: (row: RegRow, name: string) => void;
 }) {
   const key = `${entry.messageId}|${entry.studentName}|${entry.category}`;
   const row = regs.get(key);
@@ -100,11 +109,19 @@ function RegBadge({
 
   return (
     <span className="flex shrink-0 items-center gap-0.5">
-      {span && (
-        <span className="rounded bg-slate-100 px-1 text-[9px] font-semibold text-slate-500" title={`${row.date_from} ~ ${row.date_to}`}>
-          {span}
-        </span>
-      )}
+      {/* 날짜를 **눌러서 고칩니다.**
+          기간을 적는 방법은 사람마다 달라서 자동이 하루씩 밀리거나 통째로 놓치는 일이
+          남습니다. 자동을 100%로 만들려고 붙들기보다, 무엇으로 읽었는지 보여주고 그 자리에서
+          고치게 하는 편이 확실합니다. 하루짜리도 눌러서 며칠로 늘릴 수 있어야 하므로
+          기간이 아닐 때도 날짜를 띄웁니다. */}
+      <button
+        type="button"
+        onClick={() => onEditRange(row, entry.studentName)}
+        className="rounded bg-slate-100 px-1 text-[9px] font-semibold text-slate-500 transition hover:bg-amber-100 hover:text-amber-800"
+        title={`${row.date_from} ~ ${row.date_to} — 눌러서 기간을 고칩니다`}
+      >
+        {span ?? shortDay(row.date_from)}
+      </button>
       <button
         type="button"
         disabled={busy}
@@ -292,6 +309,14 @@ export default function AttendanceDigestPanel({
   >(null);
   // 가르친 규칙을 다시 꺼내 보는 창. 넣기만 되고 꺼내 볼 수 없으면 잘못 가르친 것을 고칠 방법이 없습니다.
   const [showRules, setShowRules] = useState(false);
+  // 자동이 읽은 기간을 그 자리에서 고치는 창.
+  const [rangeEdit, setRangeEdit] = useState<{ row: RegRow; name: string } | null>(null);
+  // 저장이 됐다는 것도 말해줍니다. 아무 말이 없으면 사람은 안 됐다고 생각하고 또 누릅니다.
+  const [notice, setNotice] = useState<string | null>(null);
+  // 자동이 아예 못 읽은 연락을 손으로 넣는 창.
+  const [manual, setManual] = useState<{ name?: string; messageId?: string | null; raw?: string | null } | null>(null);
+  // 「내일은 학원차 타요」를 탭을 옮기지 않고 여기서 넣는 창.
+  const [dismissal, setDismissal] = useState<{ name?: string } | null>(null);
 
   // 등록 상태(attendance_entries). 담당자 요청: "출결의 경우 등록이 되었는지 여부를 알 수 있고
   // 업무보드에서 등록이 가능하도록 만들어줘 (지금 매번 확인을 하고 지워야 해서 왔다갔다 엄청
@@ -598,6 +623,24 @@ export default function AttendanceDigestPanel({
         >
           가르친 규칙
         </button>
+        {/* 자동이 못 읽은 것을 그 자리에서 넣습니다. 다른 화면으로 옮겨가게 하면 「나중에」가
+            되고, 나중에 한 것은 대개 안 한 것이 됩니다. */}
+        <button
+          type="button"
+          onClick={() => setManual({})}
+          className="rounded bg-emerald-50 px-1.5 text-[10px] font-bold text-emerald-700 transition hover:bg-emerald-100"
+          title="연락을 못 읽었거나 전화로만 온 건을 직접 등록합니다"
+        >
+          ＋직접 등록
+        </button>
+        <button
+          type="button"
+          onClick={() => setDismissal({})}
+          className="rounded bg-violet-50 px-1.5 text-[10px] font-bold text-violet-700 transition hover:bg-violet-100"
+          title="하원수단을 이 자리에서 넣습니다"
+        >
+          🎒 하원수단
+        </button>
         {/* 이 위젯만 다시 읽습니다.
             가르친 뒤 화면이 안 바뀌면 사람은 "안 배웠나" 하고 또 가르칩니다. 페이지 전체를
             새로고침하면 하던 체크가 날아가므로, 이 칸만 다시 읽습니다. */}
@@ -629,6 +672,14 @@ export default function AttendanceDigestPanel({
         <p className="mb-1 rounded bg-red-50 px-2 py-1 text-[10px] leading-snug text-red-600">
           저장 실패: {error}
         </p>
+      )}
+      {notice && (
+        <button
+          onClick={() => setNotice(null)}
+          className="mb-1 w-full rounded bg-emerald-50 px-2 py-1 text-left text-[10px] leading-snug text-emerald-700"
+        >
+          {notice} <span className="text-emerald-400">(눌러서 닫기)</span>
+        </button>
       )}
 
       {entries.length === 0 && upcoming.length === 0 ? (
@@ -691,7 +742,7 @@ export default function AttendanceDigestPanel({
                           ) : (
                             <span className="truncate text-[11px] font-semibold text-slate-700">{e.studentName}</span>
                           )}
-                          <RegBadge entry={e} regs={regs} busyKey={busyKey} onSet={setState} />
+                          <RegBadge entry={e} regs={regs} busyKey={busyKey} onSet={setState} onEditRange={(row, nm) => setRangeEdit({ row, name: nm })} />
                           <span className="shrink-0 text-[9px] text-slate-400">
                             {e.time ? timeStr(e.time) : e.sourceLabel}
                           </span>
@@ -768,7 +819,7 @@ export default function AttendanceDigestPanel({
                             <span className="truncate text-[11px] font-semibold text-slate-700">{e.studentName}</span>
                           )}
                         </span>
-                        <RegBadge entry={e} regs={regs} busyKey={busyKey} onSet={setState} />
+                        <RegBadge entry={e} regs={regs} busyKey={busyKey} onSet={setState} onEditRange={(row, nm) => setRangeEdit({ row, name: nm })} />
                         <span className="shrink-0 rounded-full bg-slate-100 px-1.5 text-[9px] font-semibold text-slate-500">
                           {dateChipLabel(e.targetDate)}
                         </span>
@@ -892,6 +943,39 @@ export default function AttendanceDigestPanel({
 
       {/* 🔎·⚠️를 누르면 뜨는 가르치기 창. 한 번 알려준 것은 규칙으로 저장되어 다음부터 자동 적용됩니다. */}
       {showRules && <AttendanceRulesModal onClose={() => setShowRules(false)} />}
+      {rangeEdit && (
+        <RangeEditModal
+          entryId={rangeEdit.row.id}
+          name={rangeEdit.name}
+          status={rangeEdit.row.status}
+          from0={rangeEdit.row.date_from}
+          to0={rangeEdit.row.date_to}
+          onClose={() => setRangeEdit(null)}
+          onSaved={async () => {
+            await loadRegs();
+            void notifyOpsBoardRefresh();
+          }}
+        />
+      )}
+      {manual && (
+        <ManualAttendanceModal
+          initialName={manual.name}
+          messageId={manual.messageId}
+          rawText={manual.raw}
+          onClose={() => setManual(null)}
+          onSaved={async () => {
+            await loadRegs();
+            void notifyOpsBoardRefresh();
+          }}
+        />
+      )}
+      {dismissal && (
+        <DismissalQuickModal
+          initialName={dismissal.name}
+          onClose={() => setDismissal(null)}
+          onSaved={(msg) => setNotice(msg)}
+        />
+      )}
       {teach && (
         <AttendanceTeachModal
           rawText={teach.rawText}

@@ -171,6 +171,17 @@ export async function PATCH(req: NextRequest) {
     note?: string;
     // 아직 등록 대상으로 잡히지 않은 항목(⬜)을 내릴 때 씁니다. id 대신 이 셋을 보냅니다.
     dismissKey?: { messageId: string; studentName: string; status: string; date?: string };
+    // 사람이 처음부터 손으로 넣는 한 건.
+    manual?: {
+      studentId: string;
+      studentName: string;
+      status: string;
+      dateFrom?: string;
+      dateTo?: string;
+      note?: string | null;
+      messageId?: string | null;
+      rawText?: string | null;
+    };
     // **오늘만 이 아이로.** 규칙을 만들지 않고 이 한 건만 사람이 정합니다.
     assign?: {
       messageId: string;
@@ -226,6 +237,48 @@ export async function PATCH(req: NextRequest) {
     );
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json({ ok: true, dismissed: true });
+  }
+
+  // ── 손으로 직접 등록 ──────────────────────────────────────────────────────
+  //
+  // 기간을 적는 방법은 사람마다 다릅니다. 자동이 아예 못 읽는 글도 있고, 연락 없이 전화로만
+  // 알려오는 경우도 있습니다. 그때 다른 화면으로 옮겨가게 하면 «나중에»가 되고, 나중에 한
+  // 것은 대개 안 한 것이 됩니다. 그래서 업무보드에서 그 자리에 넣습니다.
+  //
+  // 사람이 넣은 것은 언제나 '등록'이고 touched_by_human 이 켜집니다 - 자동 스캔이 다시
+  // 이 줄을 건드려 사람이 정한 것을 덮으면 안 됩니다.
+  if (!body.id && body.manual) {
+    const m = body.manual;
+    const ok = (s?: string) => /^\d{4}-\d{2}-\d{2}$/.test(s ?? "");
+    if (!m.studentId || !m.studentName || !m.status) {
+      return NextResponse.json({ error: "학생과 종류가 필요합니다." }, { status: 400 });
+    }
+    const from = ok(m.dateFrom) ? m.dateFrom! : todayKey(new Date());
+    const to = ok(m.dateTo) && m.dateTo! >= from ? m.dateTo! : from;
+
+    const { error } = await db.from("attendance_entries").upsert(
+      {
+        source: "manual",
+        // 원본 메시지가 있으면 그 id를, 없으면 이 등록만의 열쇠를 만듭니다. 같은 아이·같은
+        // 종류를 다시 넣으면 덮어쓰도록 날짜를 열쇠에 넣습니다.
+        source_message_id: m.messageId || `manual:${m.studentId}:${m.status}:${from}`,
+        student_id: m.studentId,
+        student_name: m.studentName,
+        status: m.status,
+        date_from: from,
+        date_to: to,
+        state: "등록",
+        touched_by_human: true,
+        registered_at: new Date().toISOString(),
+        registered_by: auth.user.email ?? null,
+        reason: null,
+        note: m.note ?? "사람이 직접 등록",
+        raw_text: (m.rawText ?? "").slice(0, 500) || null,
+      },
+      { onConflict: "source,source_message_id,student_name,status" }
+    );
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true, manual: true });
   }
 
   // ── 오늘만 이 아이로 ──────────────────────────────────────────────────────

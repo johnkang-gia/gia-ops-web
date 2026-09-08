@@ -17,6 +17,11 @@ import { createPortal } from "react-dom";
  * 자리는 반 시간표에서 「지금 교시에 그 반이 어느 교실에서 무슨 수업 중인가」로 찾습니다.
  *
  * 한 아이당 한 번만 뜹니다. 계속 뜨는 알림은 사람이 화면을 덮어버리거나 아예 안 봅니다.
+ *
+ * 팝업은 화면을 덮지 않고 **위쪽에 노란 쪽지**로 뜹니다. 하원 시각은 몰려 있어서, 20초 안에
+ * 다른 아이가 또 걸리는 일이 흔합니다. 그때 팝업을 새로 띄우면 앞의 아이가 지워지고 화면이
+ * 깜빡입니다. 그래서 **같은 쪽지에 줄만 늘어납니다** - 아이마다 자기 20초를 따로 세고, 다 센
+ * 줄부터 하나씩 빠집니다.
  */
 
 const LEAD_MIN = 5; // 몇 분 전에 알릴 것인가
@@ -30,7 +35,8 @@ export default function PickupAlarmBar() {
   const [alarms, setAlarms] = useState<Alarm[]>([]);
   const [nowMin, setNowMin] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [popup, setPopup] = useState<(Alarm & { left: number }) | null>(null);
+  // 지금 쪽지에 올라가 있는 아이들. 아이마다 사라질 시각(until)을 따로 답니다.
+  const [stack, setStack] = useState<(Alarm & { left: number; until: number })[]>([]);
   const shown = useRef<Set<string>>(new Set());
 
   const load = useCallback(async () => {
@@ -73,14 +79,20 @@ export default function PickupAlarmBar() {
           .filter((x): x is Alarm & { left: number } => !!x);
 
   useEffect(() => {
-    // 아직 시각이 안 지난 건만 팝업으로. 화면을 켜자마자 지난 알림이 쏟아지면 안 됩니다.
-    const fresh = due.find((a) => a.left >= 0 && !shown.current.has(a.key));
-    if (!fresh) return;
-    shown.current.add(fresh.key);
-    setPopup(fresh);
-    const t = setTimeout(() => setPopup(null), POPUP_SEC * 1000);
-    return () => clearTimeout(t);
+    // 아직 시각이 안 지난 건만 쪽지로. 화면을 켜자마자 지난 알림이 쏟아지면 안 됩니다.
+    const fresh = due.filter((a) => a.left >= 0 && !shown.current.has(a.key));
+    if (fresh.length === 0) return;
+    for (const f of fresh) shown.current.add(f.key);
+    const until = Date.now() + POPUP_SEC * 1000;
+    setStack((prev) => [...prev, ...fresh.map((f) => ({ ...f, until }))]);
   }, [due]);
+
+  // 다 센 줄부터 하나씩 뺍니다. 한 번에 통째로 지우면 방금 올라온 아이까지 같이 사라집니다.
+  useEffect(() => {
+    if (stack.length === 0) return;
+    const t = setInterval(() => setStack((prev) => prev.filter((x) => x.until > Date.now())), 500);
+    return () => clearInterval(t);
+  }, [stack.length]);
 
   if (error) {
     return (
@@ -89,11 +101,11 @@ export default function PickupAlarmBar() {
       </div>
     );
   }
-  if (due.length === 0 && !popup) return null;
+  if (due.length === 0 && stack.length === 0) return null;
 
   return (
     <>
-      {popup && <Popup a={popup} onClose={() => setPopup(null)} />}
+      {stack.length > 0 && <AlarmToast items={stack} onClose={() => setStack([])} />}
       {due.length > 0 && (
         <div className="mb-1 flex flex-wrap items-center gap-1.5">
           <span className="text-[11px] font-extrabold text-sky-700">🔔 곧 하원</span>
@@ -117,32 +129,41 @@ export default function PickupAlarmBar() {
   );
 }
 
-function Popup({ a, onClose }: { a: Alarm & { left: number }; onClose: () => void }) {
-  const [left, setLeft] = useState(POPUP_SEC);
+function AlarmToast({
+  items,
+  onClose,
+}: {
+  items: (Alarm & { left: number; until: number })[];
+  onClose: () => void;
+}) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
-  useEffect(() => {
-    const t = setInterval(() => setLeft((n) => Math.max(0, n - 1)), 1000);
-    return () => clearInterval(t);
-  }, []);
   if (!mounted) return null;
 
   return createPortal(
-    <div
-      onClick={onClose}
-      className="fixed inset-0 z-[120] flex cursor-pointer items-center justify-center bg-slate-950/80 p-6"
-    >
-      <div className="max-w-lg rounded-3xl border-4 border-sky-400 bg-sky-900 px-10 py-8 text-center shadow-2xl">
-        <div className="text-lg font-extrabold tracking-wide text-sky-300">
-          🔔 {a.left > 0 ? `${a.left}분 뒤 하원` : "지금 하원"} · {a.time}
+    // 화면 위쪽 가운데. 화면을 덮지 않으므로 뒤에서 하던 일을 계속할 수 있습니다.
+    <div className="pointer-events-none fixed inset-x-0 top-3 z-[120] flex justify-center px-3">
+      <div
+        onClick={onClose}
+        className="pointer-events-auto w-full max-w-md cursor-pointer rounded-2xl border-2 border-amber-400 bg-amber-50 px-4 py-3 shadow-xl"
+        title="누르면 닫힙니다"
+      >
+        <div className="mb-1 flex items-center gap-2 text-[12px] font-extrabold text-amber-800">
+          🔔 곧 하원 {items.length > 1 && <span className="rounded bg-amber-200 px-1.5">{items.length}명</span>}
+          <span className="ml-auto text-[10px] font-medium text-amber-600">누르면 닫힘</span>
         </div>
-        {/* 이름 - 이 화면에서 가장 큰 글자. */}
-        <div className="my-3 text-6xl font-black leading-none text-white">{a.name}</div>
-        <div className="text-xl font-bold text-sky-200">{a.className ?? "반 미확인"}</div>
-        {/* 어디로 가야 하는가. 이름만 알면 못 움직입니다. */}
-        <div className="mt-3 text-2xl font-black text-amber-300">📍 {a.where}</div>
-        {a.via && <div className="mt-1 text-sm font-bold text-violet-300">{a.via}</div>}
-        <div className="mt-5 text-xs text-sky-300">{left}초 뒤 닫힘 · 아무 곳이나 누르면 바로 닫힙니다</div>
+        <ul className="flex flex-col gap-1">
+          {items.map((a) => (
+            <li key={a.key} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+              <b className="text-[15px] font-black tabular-nums text-amber-900">{a.time}</b>
+              <b className="text-[17px] font-black text-slate-900">{a.name}</b>
+              <span className="text-[12px] font-semibold text-slate-500">{a.className ?? "반 미확인"}</span>
+              {/* 어디로 가야 하는가. 이름만 알면 못 움직입니다. */}
+              <span className="text-[13px] font-bold text-amber-800">📍 {a.where}</span>
+              {a.via && <span className="text-[11px] font-semibold text-violet-700">{a.via}</span>}
+            </li>
+          ))}
+        </ul>
       </div>
     </div>,
     document.body

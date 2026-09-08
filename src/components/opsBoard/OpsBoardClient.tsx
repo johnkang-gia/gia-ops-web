@@ -1285,76 +1285,82 @@ const ALERT_KEEP_MIN = 10;
 const POPUP_SEC = 20;
 
 /**
- * 화면을 덮는 팝업. 「지금 이 아이를 데리러 가라」 한 문장만 큽니다.
+ * 화면 위쪽에 뜨는 노란 쪽지.
  *
- * 대형 모니터는 **멀리서 봅니다.** 그래서 이름과 위치만 아주 크게 두고, 나머지는 넣지
- * 않았습니다 - 여러 줄이 있으면 멀리서 아무것도 안 읽힙니다.
+ * 예전에는 화면을 통째로 덮는 큰 팝업이었습니다. 하원 시각은 몰려 있어서 20초 안에 다른
+ * 아이가 또 걸리는데, 그때마다 새 팝업이 뜨면 앞의 아이가 지워지고 화면이 깜빡였습니다.
+ * 그리고 팝업이 떠 있는 동안에는 시간표도 오늘 변동사항도 못 봅니다.
  *
- * 남은 시간을 초로 세어 보여줍니다. 갑자기 사라지면 「방금 뭐였지」가 되는데, 세고 있으면
- * 사라질 것을 알고 봅니다. 아무 데나 누르면 바로 닫힙니다 - 다 본 사람을 20초 기다리게
- * 할 이유가 없습니다.
+ * 그래서 **덮지 않고 위쪽에 얹습니다.** 아이가 늘면 쪽지에 줄만 늘어나고, 아이마다 자기
+ * 20초를 따로 세다가 다 센 줄부터 하나씩 빠집니다.
  */
-function PickupPopup({
-  p,
+function PickupToast({
+  items,
   onClose,
 }: {
-  p: { name: string; time: string | null; grade?: string | null; className?: string | null; left: number;
-       lesson: { subjectName: string; room?: string | null } | null; room: string | null };
+  items: {
+    name: string;
+    time: string | null;
+    grade?: string | null;
+    className?: string | null;
+    left: number;
+    lesson: { subjectName: string; room?: string | null } | null;
+    room: string | null;
+    until: number;
+  }[];
   onClose: () => void;
 }) {
-  const [left, setLeft] = useState(POPUP_SEC);
-  useEffect(() => {
-    const t = setInterval(() => setLeft((n) => Math.max(0, n - 1)), 1000);
-    return () => clearInterval(t);
-  }, []);
-
-  const where = p.lesson
-    ? `${p.lesson.subjectName}${p.lesson.room ? ` · ${p.lesson.room}` : p.room ? ` · ${p.room}` : ""}`
-    : p.room
-      ? `교실 ${p.room}`
-      : "지금 수업 없음";
-
   return (
     <div
-      onClick={onClose}
       style={{
         position: "fixed",
-        inset: 0,
+        top: 16,
+        left: "50%",
+        transform: "translateX(-50%)",
         zIndex: 9999,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: "rgba(2,6,23,0.86)",
-        cursor: "pointer",
+        maxWidth: "min(92vw, 760px)",
       }}
     >
       <div
+        onClick={onClose}
         style={{
-          textAlign: "center",
-          padding: "4vh 6vw",
-          borderRadius: 28,
-          border: "4px solid #38bdf8",
-          background: "#0c4a6e",
-          boxShadow: "0 0 80px rgba(56,189,248,0.45)",
-          animation: "opsPickupPulse 1.6s ease-in-out infinite",
-          maxWidth: "90vw",
+          borderRadius: 18,
+          border: "3px solid #f59e0b",
+          background: "#fef3c7",
+          boxShadow: "0 12px 40px rgba(0,0,0,0.45)",
+          padding: "12px 18px",
+          cursor: "pointer",
         }}
+        title="누르면 닫힙니다"
       >
-        <div style={{ fontSize: "3.2vh", fontWeight: 900, color: "#7dd3fc", letterSpacing: 2 }}>
-          🔔 {p.left > 0 ? `${p.left}분 뒤 픽업` : "지금 픽업"}
-          {p.time ? ` · ${p.time}` : ""}
+        <div style={{ fontSize: 16, fontWeight: 900, color: "#92400e", marginBottom: 6 }}>
+          🔔 곧 하원{items.length > 1 ? ` · ${items.length}명` : ""}
         </div>
-        {/* 이름 - 이 화면에서 가장 큰 글자. 멀리서 이것부터 읽힙니다. */}
-        <div style={{ fontSize: "12vh", fontWeight: 900, color: "#fff", lineHeight: 1.05, margin: "1.5vh 0" }}>
-          {p.name}
-        </div>
-        <div style={{ fontSize: "4.5vh", fontWeight: 800, color: "#bae6fd" }}>
-          {[p.grade ? `${p.grade}학년` : null, p.className].filter(Boolean).join(" ") || "반 미확인"}
-        </div>
-        {/* 어디로 가야 하는가. 이름만 알면 못 움직입니다. */}
-        <div style={{ fontSize: "5vh", fontWeight: 900, color: "#fde68a", marginTop: "1.5vh" }}>📍 {where}</div>
-        <div style={{ fontSize: "2.4vh", color: "#7dd3fc", marginTop: "2.5vh" }}>
-          {left}초 뒤 닫힘 · 아무 곳이나 누르면 바로 닫힙니다
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {items.map((p, i) => {
+            const where = p.lesson
+              ? `${p.lesson.subjectName}${p.lesson.room ? ` · ${p.lesson.room}` : p.room ? ` · ${p.room}` : ""}`
+              : p.room
+                ? `교실 ${p.room}`
+                : "지금 수업 없음";
+            return (
+              <div key={i} style={{ display: "flex", alignItems: "baseline", flexWrap: "wrap", gap: "2px 10px" }}>
+                <b style={{ fontSize: 24, fontWeight: 900, color: "#b45309", fontVariantNumeric: "tabular-nums" }}>
+                  {p.time ?? "시각 미정"}
+                </b>
+                {/* 이름 - 이 쪽지에서 가장 큰 글자. */}
+                <b style={{ fontSize: 30, fontWeight: 900, color: "#111827", lineHeight: 1.1 }}>{p.name}</b>
+                <span style={{ fontSize: 16, fontWeight: 700, color: "#78350f" }}>
+                  {[p.grade ? `${p.grade}학년` : null, p.className].filter(Boolean).join(" ") || "반 미확인"}
+                </span>
+                {/* 어디로 가야 하는가. 이름만 알면 못 움직입니다. */}
+                <span style={{ fontSize: 18, fontWeight: 900, color: "#a16207" }}>📍 {where}</span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: "#92400e" }}>
+                  {p.left > 0 ? `${p.left}분 뒤` : "지금"}
+                </span>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>
@@ -1399,25 +1405,31 @@ function PickupAlarm({ sc, data, nowMin }: { sc: BoardScale; data: BoardData; no
   //
   // 한 아이당 하루 한 번. 새로고침해도 다시 뜨지 않게 브라우저에 남깁니다(대시보드는
   // 스스로 새로고침합니다).
-  const [popup, setPopup] = useState<(typeof due)[number] | null>(null);
+  const [stack, setStack] = useState<((typeof due)[number] & { until: number })[]>([]);
   const shown = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     // 아직 시각이 안 지난 건만 팝업으로 띄웁니다. 이미 지난 것은 띠로 충분합니다 -
     // 화면을 켜자마자 지난 알림이 팝업으로 쏟아지면 안 됩니다.
-    const fresh = due.find((p) => p.left >= 0 && !shown.current.has(`${p.name}|${p.time}`));
-    if (!fresh) return;
-    shown.current.add(`${fresh.name}|${fresh.time}`);
-    setPopup(fresh);
-    const t = setTimeout(() => setPopup(null), POPUP_SEC * 1000);
-    return () => clearTimeout(t);
+    const fresh = due.filter((p) => p.left >= 0 && !shown.current.has(`${p.name}|${p.time}`));
+    if (fresh.length === 0) return;
+    for (const f of fresh) shown.current.add(`${f.name}|${f.time}`);
+    const until = Date.now() + POPUP_SEC * 1000;
+    setStack((prev) => [...prev, ...fresh.map((f) => ({ ...f, until }))]);
   }, [due]);
 
-  if (due.length === 0 && !popup) return null;
+  // 다 센 줄부터 하나씩 뺍니다. 통째로 지우면 방금 올라온 아이까지 같이 사라집니다.
+  useEffect(() => {
+    if (stack.length === 0) return;
+    const t = setInterval(() => setStack((prev) => prev.filter((x) => x.until > Date.now())), 500);
+    return () => clearInterval(t);
+  }, [stack.length]);
+
+  if (due.length === 0 && stack.length === 0) return null;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: sc.s(6, 4), flexShrink: 0 }}>
-      {popup && <PickupPopup p={popup} onClose={() => setPopup(null)} /> }
+      {stack.length > 0 && <PickupToast items={stack} onClose={() => setStack([])} />}
       {due.map((p, i) => {
         const late = p.left < 0;
         return (

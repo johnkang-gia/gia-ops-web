@@ -30,6 +30,17 @@ import type { GoogleChatMirrorSourceKey } from "@/lib/types";
 export const GOOGLE_CHAT_SCOPES = [
   "https://www.googleapis.com/auth/chat.spaces.readonly",
   "https://www.googleapis.com/auth/chat.messages.readonly",
+  /**
+   * 보내기 권한.
+   *
+   * 직원들은 구글챗을 띄워놓고 일합니다. 우리 화면에서 **읽기만** 되면 답할 때마다 구글챗을
+   * 열어야 하고, 그러면 창이 하나도 안 줄어 이 화면을 띄울 자리가 여전히 없습니다.
+   * 읽고 답하는 것까지 되어야 창 하나를 실제로 닫을 수 있습니다.
+   *
+   * 이 권한을 더한 뒤에는 **한 번 재인증**해야 합니다 - 예전 토큰에는 이 권한이 없습니다.
+   * 화면이 그 사실을 알려줍니다(조용히 실패하면 「답장 버튼이 안 먹는다」로만 보입니다).
+   */
+  "https://www.googleapis.com/auth/chat.messages.create",
 ];
 
 export function buildOAuthClient(): OAuth2Client | null {
@@ -114,6 +125,43 @@ export function mentionSpansOf(m: ChatMessageResource): MentionSpan[] {
 // 씁니다(행이 없으면 5분 전부터 조회 - 최초 폴링 시 과거 메시지가 한꺼번에 쏟아지지 않도록).
 // google_message_id에 unique 제약이 있어 같은 메시지가 겹쳐 조회돼도 upsert(ignoreDuplicates)로
 // 한 번만 저장됩니다.
+/**
+ * 구글챗 방에 답장을 보냅니다.
+ *
+ * `threadKey` 를 주면 그 갈래에 달립니다 - 학부모 문의처럼 오간 맥락이 있는 것은 새 줄로
+ * 시작하면 받는 사람이 무슨 이야기인지 못 찾습니다.
+ */
+export async function postMessage(
+  supabase: SupabaseClient,
+  spaceId: string,
+  text: string,
+  threadName?: string | null,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const token = await getAccessToken(supabase);
+  if (!token) return { ok: false, error: "구글챗 계정 인증이 아직 안 되어 있습니다." };
+
+  // 갈래에 달 때는 「그 갈래가 없으면 새로 만들라」고 알려줘야 합니다. 안 그러면 갈래가
+  // 사라진 경우에 통째로 실패합니다.
+  const qs = threadName ? "?messageReplyOption=REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD" : "";
+  const res = await fetch(`${CHAT_API_BASE}/${spaceId}/messages${qs}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(threadName ? { text, thread: { name: threadName } } : { text }),
+  });
+  if (res.ok) return { ok: true };
+
+  const body = await res.text().catch(() => "");
+  // 권한이 모자란 경우를 **따로 알려줍니다.** 「403」만 띄우면 사람은 무엇을 해야 할지
+  // 모르고, 이 경우 해야 할 일은 딱 하나 - 재인증입니다.
+  if (res.status === 403 || /insufficient|scope/i.test(body)) {
+    return {
+      ok: false,
+      error: "보내기 권한이 없습니다. 연동 상태 화면에서 구글챗을 한 번 다시 연결해주세요(권한이 하나 늘었습니다).",
+    };
+  }
+  return { ok: false, error: `${res.status} ${body.slice(0, 200)}` };
+}
+
 export async function pollNewMessages(supabase: SupabaseClient, sourceKey: GoogleChatSourceKey): Promise<number> {
   const token = await getAccessToken(supabase);
   const spaceId = spaceEnvFor(sourceKey);

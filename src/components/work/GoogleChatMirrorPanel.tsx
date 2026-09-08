@@ -9,6 +9,7 @@ import type { GoogleChatMirrorMessage, GoogleChatMirrorSourceKey, Task, TeamMemb
 import { extractMentionedEmails } from "@/lib/teamName";
 import { parseTaskFromMessage } from "@/lib/parseTaskFromMessage";
 import { friendlyError } from "@/lib/errorMessage";
+import { useToast } from "@/components/common/ToastProvider";
 
 function timeStr(iso: string) {
   return new Date(iso).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
@@ -59,6 +60,37 @@ export default function GoogleChatMirrorPanel({
   department: string;
   onTaskCreated?: (task: Task) => void;
 }) {
+  /**
+   * 여기서 바로 답장합니다.
+   *
+   * 읽기만 되면 답할 때마다 구글챗을 열어야 하고, 그러면 띄워놓는 창이 하나도 안 줄어
+   * 이 화면을 놓을 자리가 여전히 없습니다. 창 하나를 실제로 닫으려면 답장까지 돼야 합니다.
+   */
+  const notify = useToast();
+  const [reply, setReply] = useState("");
+  const [sending, setSending] = useState(false);
+  // 어느 방으로 보낼 것인가. 마지막으로 들어온 메시지의 방입니다 - 이 패널은 방 하나를
+  // 비추는 자리라 그것이 곧 이 방입니다.
+  const spaceId = messages.find((m) => m.google_space_id)?.google_space_id ?? null;
+
+  async function send() {
+    const text = reply.trim();
+    if (!text || !spaceId) return;
+    setSending(true);
+    const res = await fetch("/api/google-chat/reply", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ spaceId, text }),
+    });
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    setSending(false);
+    // 조용히 실패하면 「보냈는데 상대가 못 받았다」가 됩니다. 보낸 줄 알고 기다리는 것이
+    // 가장 나쁩니다.
+    if (!res.ok) return notify(body.error ?? "보내지 못했습니다.", "error");
+    setReply("");
+    notify("보냈습니다.", "success");
+  }
+
   const items = useMemo(
     () =>
       messages
@@ -204,6 +236,28 @@ export default function GoogleChatMirrorPanel({
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* 답장 — 방을 알 수 있을 때만 띄웁니다. 메시지가 하나도 없으면 어느 방인지 모릅니다. */}
+      {spaceId && (
+        <div className="mt-1 flex shrink-0 items-center gap-1 border-t border-black/5 pt-1">
+          <input
+            value={reply}
+            onChange={(e) => setReply(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.nativeEvent.isComposing) void send();
+            }}
+            placeholder="구글챗으로 답장 (엔터)"
+            className="min-w-0 flex-1 rounded border border-slate-300 px-1.5 py-1 text-[11px]"
+          />
+          <button
+            onClick={() => void send()}
+            disabled={sending || !reply.trim()}
+            className="shrink-0 rounded bg-slate-800 px-2 py-1 text-[11px] font-bold text-white disabled:opacity-30"
+          >
+            {sending ? "…" : "보내기"}
+          </button>
         </div>
       )}
     </div>

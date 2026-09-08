@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { normName, whereOf, type WhereMaps } from "@/lib/studentLabel";
+import { nameWithoutMark, needsCheck, normName, whereOf, type WhereMaps } from "@/lib/studentLabel";
 import type { ChecklistItem, ChecklistRoute } from "./ShuttleChecklistClient";
 
 function natCompare(a: string, b: string) {
@@ -405,7 +405,9 @@ export default function ShuttleChecklistTable({
                             )}
                             <span>
                               {isMovedToday && "↔ "}
-                              {item.studentName}
+                              {/* 괄호로 적힌 반은 뗍니다 - 학년·반이 바로 옆에 붙으므로
+                                  그대로 두면 「김재이(G2A) 2 G2A」처럼 두 번 나옵니다. */}
+                              {nameWithoutMark(item.studentName)}
                               {/* 동명이인일 때만 학년·반(담당자 요청: "김재이" 같은 경우).
                                   인쇄본에도 남깁니다 - 종이에서 헷갈리는 게 더 위험합니다. */}
                               {/* 학년·반은 **모든 아이**에게 붙입니다. 동승 선생님·기사님은
@@ -416,7 +418,7 @@ export default function ShuttleChecklistTable({
                                 // **번호가 먼저입니다.** 이름으로 찾으면 김재이 셋이 한 칸을
                                 // 나눠 쓰게 되어 마지막 한 명의 반이 셋 모두에게 붙습니다.
                                 const where = whereOf(whereMaps, item.studentId, item.studentName);
-                                const dup = whereMaps?.homonyms.has(normName(item.studentName));
+                                const dup = needsCheck(whereMaps, item.studentName);
                                 if (!where) {
                                   // 겹치는 이름인데 번호가 안 붙어 있으면 **모른다고 합니다.**
                                   // 엉뚱한 반을 적는 것보다 빈 것이 낫습니다.

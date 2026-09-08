@@ -75,30 +75,89 @@ export type WhereMaps = {
   byId: Map<string, string>;
   /** 한 명뿐인 이름만 들어 있습니다. */
   byName: Map<string, string>;
+  /** 「이름|반」 → 학년·반. 배정 줄 이름에 「김재이(G2A)」처럼 반이 적혀 온 경우에 씁니다. */
+  byNameClass: Map<string, string>;
   homonyms: Set<string>;
 };
+
+/** 반 이름 비교용. 「G2 A」·「g2a」·「G-2A」를 같게 봅니다 - 사람은 띄어쓰기를 안 지킵니다. */
+function normClass(s: string | null | undefined): string {
+  return String(s ?? "").toLowerCase().replace(/[^a-z0-9가-힣]/g, "");
+}
+
+/** 「김재이(G2A)」 → 이름 「김재이」와 괄호 안 「G2A」. 괄호가 없으면 안쪽은 빈 값입니다. */
+export function splitNameMark(raw: string): { name: string; mark: string } {
+  const m = String(raw ?? "").match(/^([^（(]*)[（(]([^）)]*)[）)]/);
+  if (!m) return { name: String(raw ?? "").trim(), mark: "" };
+  return { name: m[1].trim(), mark: m[2].trim() };
+}
 
 export function buildWhereMaps(roster: readonly IdentifiedStudent[]): WhereMaps {
   const homonyms = buildHomonymSet(roster);
   const byId = new Map<string, string>();
   const byName = new Map<string, string>();
+  const byNameClass = new Map<string, string>();
   for (const s of roster) {
     const w = whereLabel(s);
     if (!w) continue;
     if (s.id) byId.set(s.id, w);
     const k = normName(s.name);
     if (!homonyms.has(k)) byName.set(k, w);
+    const cls = normClass(s.class_name ?? s.className);
+    if (cls) byNameClass.set(`${k}|${cls}`, w);
   }
-  return { byId, byName, homonyms };
+  return { byId, byName, byNameClass, homonyms };
 }
 
 /**
- * 이 줄의 학년·반. **못 찾으면 null 입니다** - 엉뚱한 반을 적는 것보다 빈 것이 낫습니다.
- * 겹치는 이름인데 번호가 없는 줄이 여기 걸리고, 화면은 그걸 「?」로 알립니다.
+ * 이 줄의 학년·반. 찾는 순서가 곧 믿는 순서입니다.
+ *
+ *   ① 학생 번호 - 겹치지 않으니 언제나 맞습니다
+ *   ② 이름에 적혀 온 반 - 「김재이(G2A)」처럼 배정 줄에 손으로 적어둔 경우가 있습니다
+ *   ③ 이름 - **한 명뿐인 이름에만** 씁니다
+ *
+ * **못 찾으면 null 입니다** - 엉뚱한 반을 적는 것보다 빈 것이 낫습니다. 겹치는 이름인데
+ * 번호도 반 표기도 없는 줄이 여기 걸리고, 화면은 그걸 「?」로 알립니다.
  */
 export function whereOf(maps: WhereMaps | null | undefined, studentId: string | null | undefined, name: string): string | null {
   if (!maps) return null;
-  return (studentId ? maps.byId.get(studentId) : null) ?? maps.byName.get(normName(name)) ?? null;
+  if (studentId) {
+    const byId = maps.byId.get(studentId);
+    if (byId) return byId;
+  }
+  // 배정 줄 이름은 「김재이(G2A)」처럼 괄호가 붙어 오기도 합니다. 괄호를 그대로 두고 찾으면
+  // 명부의 「김재이」와 한 글자도 안 맞아 아무것도 안 뜹니다.
+  const { name: bare, mark } = splitNameMark(name);
+  const k = normName(bare);
+  if (mark) {
+    const hit = maps.byNameClass.get(`${k}|${normClass(mark)}`);
+    if (hit) return hit;
+  }
+  return maps.byName.get(k) ?? null;
+}
+
+/**
+ * 이 줄은 **사람이 한 번 더 봐야 하는가.**
+ *
+ * 같은 이름이 여럿인 아이의 줄입니다. 화면은 이 줄을 진하게 그려 「학년·반을 꼭 확인」하게
+ * 합니다. 괄호를 떼고 보는 이유: 배정 줄에 「김재이(G2A)」로 적혀 있어도 그 이름은 여전히
+ * 겹치는 이름입니다.
+ *
+ * 이름을 맞대는 판단 자체는 `buildHomonymSet` 이 이미 해뒀고, 여기서는 그 결과를 볼 뿐입니다.
+ */
+export function needsCheck(maps: WhereMaps | null | undefined, rawName: string): boolean {
+  if (!maps) return false;
+  return maps.homonyms.has(normName(splitNameMark(rawName).name));
+}
+
+/**
+ * 화면에 쓸 이름. 괄호로 적힌 반은 뗍니다 - 학년·반은 옆에 따로 붙으므로 그대로 두면
+ * 「김재이(G2A) 2 G2A」처럼 두 번 나옵니다.
+ */
+export function nameWithoutMark(raw: string): string {
+  const { name, mark } = splitNameMark(raw);
+  // 괄호 안이 반이 아닌 다른 말(별명 등)이면 그대로 둡니다 - 함부로 지우면 정보가 사라집니다.
+  return mark && /^[A-Za-z0-9\s가-힣-]{1,8}$/.test(mark) && name ? name : String(raw ?? "");
 }
 
 /**

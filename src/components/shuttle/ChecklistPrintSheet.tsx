@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { normName, whereOf, type WhereMaps } from "@/lib/studentLabel";
+import { nameWithoutMark, needsCheck, whereOf, type WhereMaps } from "@/lib/studentLabel";
 import { createPortal, flushSync } from "react-dom";
 import type { ChecklistItem, ChecklistRoute } from "./ShuttleChecklistClient";
 import { effectiveRouteId } from "./ShuttleChecklistTable";
@@ -315,7 +315,7 @@ export default function ChecklistPrintSheet({
                             요일은 알려주는 것이 없고 줄만 길어집니다. */}
                         {roster.map((it) => (
                           <span key={it.assignmentId} className="kid">
-                            {it.studentName}
+                            {nameWithoutMark(it.studentName)}
                             {/* 학년·반은 모든 아이에게. 종이를 든 분은 눌러서 확인할 수도
                                 없어서, 없으면 물어볼 곳이 없습니다. 같은 이름이 여럿인 아이는
                                 밑줄로 더 눈에 띄게 합니다. */}
@@ -323,7 +323,7 @@ export default function ChecklistPrintSheet({
                               // 번호가 먼저. 이름으로 찾으면 김재이 셋이 같은 반으로 인쇄됩니다.
                               const where = whereOf(whereMaps, it.studentId, it.studentName);
                               if (!where) return null;
-                              const dup = whereMaps?.homonyms.has(normName(it.studentName));
+                              const dup = needsCheck(whereMaps, it.studentName);
                               return (
                                 <span
                                   className={

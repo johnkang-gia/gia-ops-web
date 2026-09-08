@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useConfirm } from "@/components/common/ConfirmProvider";
 import { useToast } from "@/components/common/ToastProvider";
-import { buildWhereMaps, normName, whereOf } from "@/lib/studentLabel";
+import { buildWhereMaps, nameWithoutMark, needsCheck, normName, whereOf } from "@/lib/studentLabel";
 
 // 하원 셔틀명단 설정(요청: 하원체크표 탭 분리). 노선(호차)별로 누가 무슨 요일에 타는지 한
 // 화면에서 보고 바로 고칩니다. 요일 버튼(월~금)을 눌러 켜고 끄면 즉시 저장되고, 체크표·안내
@@ -56,6 +56,9 @@ export default function DismissalRosterClient({
   const [newName, setNewName] = useState("");
   const [busy, setBusy] = useState(false);
 
+  /** 지금 어느 줄에서 학생을 고르는 중인가. */
+  const [linkingId, setLinkingId] = useState<string | null>(null);
+
   // 학년·반을 찾는 표. 만드는 일은 @/lib/studentLabel 한 곳에서 합니다 - 화면마다 손으로
   // 만들면 이름을 열쇠로 쓰게 되고, 그러면 김재이 셋이 같은 반으로 보입니다.
   const whereMaps = useMemo(() => buildWhereMaps(students), [students]);
@@ -95,6 +98,47 @@ export default function DismissalRosterClient({
     );
     const supabase = createClient();
     await supabase.from("shuttle_assignments").update({ weekdays: next }).eq("id", asg.id);
+  }
+
+  /**
+   * 고르기 목록에서 **같은 이름을 맨 위로** 올립니다.
+   *
+   * 명단에 「김재이」라고 적혀 있으면 고를 것은 김재이 셋 중 하나입니다. 137명을 훑게 하면
+   * 아무도 안 고칩니다.
+   */
+  function sameNameFirst(raw: string): RosterStudent[] {
+    const k = normName(nameWithoutMark(raw));
+    const same = students.filter((s) => normName(s.name) === k);
+    const rest = students.filter((s) => normName(s.name) !== k);
+    return [...same, ...rest];
+  }
+
+  /** 배정 줄을 명부의 아이에게 잇습니다. 이어야 학년·반이 뜨고, 출결·픽업도 따라옵니다. */
+  async function linkStudent(routeId: string, asg: RosterAssignment, studentId: string | null) {
+    setLinkingId(null);
+    if (!studentId) return;
+    const s = students.find((x) => x.id === studentId);
+    if (!s) return;
+    setRoutes((prev) =>
+      prev.map((r) =>
+        r.id === routeId
+          ? { ...r, assignments: r.assignments.map((a) => (a.id === asg.id ? { ...a, student_id: studentId, student_name_raw: s.name } : a)) }
+          : r,
+      ),
+    );
+    const { error } = await createClient()
+      .from("shuttle_assignments")
+      .update({ student_id: studentId, student_name_raw: s.name })
+      .eq("id", asg.id);
+    // 조용히 넘기면 화면에는 이어진 것처럼 보이는데 실제로는 안 이어져 있습니다.
+    if (error) {
+      notify("연결하지 못했습니다: " + error.message, "error");
+      setRoutes((prev) =>
+        prev.map((r) => (r.id === routeId ? { ...r, assignments: r.assignments.map((a) => (a.id === asg.id ? asg : a)) } : r)),
+      );
+      return;
+    }
+    notify(`${s.name} ${[s.grade, s.class_name].filter(Boolean).join(" ")} 으로 연결했습니다.`, "success");
   }
 
   async function removeStudent(routeId: string, asg: RosterAssignment) {
@@ -180,7 +224,7 @@ export default function DismissalRosterClient({
                   <div key={a.id} className={"rounded-lg px-2 py-1.5 " + (partTime ? "bg-amber-50/70" : "bg-slate-50")}>
                     <div className="flex items-center gap-1.5">
                       <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-slate-700">
-                        {a.student_name_raw}
+                        {nameWithoutMark(a.student_name_raw)}
                         {/* 학년·반은 **학생 번호로** 찾습니다. 이름으로 찾으면 김재이 셋이
                             한 칸을 나눠 쓰게 되어 마지막 한 명의 반이 셋 모두에게 붙습니다.
                             번호가 없는 옛 줄은 아무것도 안 붙이고 「연결없음」으로 알립니다 -
@@ -192,12 +236,12 @@ export default function DismissalRosterClient({
                               <span
                                 className={
                                   "ml-1 align-baseline text-[9px] font-semibold " +
-                                  (whereMaps.homonyms.has(normName(a.student_name_raw))
+                                  (needsCheck(whereMaps, a.student_name_raw)
                                     ? "rounded bg-amber-100 px-1 text-amber-700"
                                     : "text-slate-400")
                                 }
                                 title={
-                                  whereMaps.homonyms.has(normName(a.student_name_raw))
+                                  needsCheck(whereMaps, a.student_name_raw)
                                     ? "같은 이름이 여러 명입니다 - 학년·반을 꼭 확인하세요"
                                     : "학년·반"
                                 }
@@ -206,13 +250,33 @@ export default function DismissalRosterClient({
                               </span>
                             );
                           }
-                          return (
-                            <span
-                              className="ml-1 align-baseline text-[9px] font-semibold text-orange-600"
-                              title="명부와 이어져 있지 않아 학년·반을 알 수 없습니다 - 같은 이름이 여럿이면 누구인지 확인해주세요"
+                          // 못 찾았으면 **고칠 수 있게 합니다.** 「연결없음」이라고 적어만
+                          // 두면 아무도 안 고치고, 그 줄은 내일도 누군지 모르는 채 남습니다.
+                          // 누르면 그 자리에서 명부의 아이를 고릅니다.
+                          return linkingId === a.id ? (
+                            <select
+                              autoFocus
+                              defaultValue=""
+                              onBlur={() => setLinkingId(null)}
+                              onChange={(e) => void linkStudent(r.id, a, e.target.value || null)}
+                              className="ml-1 w-40 rounded border border-blue-300 bg-white px-1 py-0.5 text-[10px] font-normal outline-none"
                             >
-                              연결없음
-                            </span>
+                              <option value="">명부에서 고르기…</option>
+                              {sameNameFirst(a.student_name_raw).map((s) => (
+                                <option key={s.id} value={s.id}>
+                                  {s.name} {[s.grade, s.class_name].filter(Boolean).join(" ")}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setLinkingId(a.id)}
+                              className="ml-1 rounded bg-orange-100 px-1 align-baseline text-[9px] font-semibold text-orange-700 hover:bg-orange-200"
+                              title="명부와 이어져 있지 않아 학년·반을 알 수 없습니다 - 눌러서 어느 아이인지 골라주세요"
+                            >
+                              연결없음 ✎
+                            </button>
                           );
                         })()}
                         {partTime && (

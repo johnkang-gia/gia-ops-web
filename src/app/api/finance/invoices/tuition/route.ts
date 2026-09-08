@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { planCarryForward, lockCarried } from "@/lib/carryForward";
+
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess } from "@/lib/roles";
@@ -112,6 +114,11 @@ export async function POST(req: Request) {
     guardianRole,
   );
 
+  // 지난 학비 미납을 이 청구서에 얹습니다(학비 갈래만). 교복·교재 미납은 섞지 않습니다 -
+  // 학부모가 무슨 돈인지 모르고, 이 달 학비가 얼마 걷혔는지도 셀 수 없게 됩니다.
+  const carry = await planCarryForward(supabase, { studentId: student.id, stream: "학비", today: todayKst() });
+  if (carry.error) return NextResponse.json({ error: `지난 미납을 읽지 못했습니다: ${carry.error}` }, { status: 500 });
+
   // 번호는 DB가 정합니다. 사람이 손으로 붙이면 반드시 겹칩니다.
   const { data: noRow, error: noErr } = await supabase.rpc("next_invoice_no");
   if (noErr) return NextResponse.json({ error: `번호를 만들지 못했습니다: ${noErr.message}` }, { status: 500 });
@@ -120,13 +127,14 @@ export async function POST(req: Request) {
     .from("invoices")
     .insert({
       invoice_no: noRow as unknown as string,
+      stream: "학비",
       student_id: student.id,
       student_name: student.name_en?.trim() || student.name,
       student_name_ko: student.name,
       grade_label: gradeLabel({ grade: student.grade, className: student.class_name }),
       issue_date: issue,
       due_date: due,
-      total_amount: total,
+      total_amount: total + carry.total,
       guardian_phone: recipient?.phone ?? null,
       guardian_role: recipient?.role ?? null,
       // 학비 청구서는 학비외와 **한 장에 섞지 않습니다.** 금액 자릿수가 다르고 납기도
@@ -152,6 +160,9 @@ export async function POST(req: Request) {
     }
   }
 
+  // 이월 줄은 맨 아래. 이번에 새로 청구하는 것이 먼저 읽혀야 합니다.
+  for (const c of carry.lines) rows.push({ invoice_id: inv.id, seq: ++seq, ...c });
+
   const { error: lineErr } = await supabase.from("invoice_lines").insert(rows);
   // 줄을 못 넣었으면 총액만 있고 내역이 없는 종이가 나갑니다. 머리줄을 지우고 실패로 답합니다.
   if (lineErr) {
@@ -159,5 +170,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: `내역을 저장하지 못했습니다: ${lineErr.message}` }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true, invoice: inv });
+  const lockErr = await lockCarried(supabase, carry.lockIds, inv.id as string);
+  if (lockErr) {
+    return NextResponse.json(
+      { error: `청구서는 만들었지만 지난 미납을 잠그지 못했습니다(${lockErr}). 같은 돈이 두 번 청구될 수 있으니 확인해주세요.` },
+      { status: 500 },
+    );
+  }
+
+  return NextResponse.json({ ok: true, invoice: inv, carried: carry.total });
 }

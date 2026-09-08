@@ -4,8 +4,8 @@ import { useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
 import { won } from "@/lib/feeItems";
-import { balanceOf, matchPayment, toAmount, toIsoDate, type ImportedPayment, type PaymentRow } from "@/lib/payments";
-import { PAYMENT_METHOD_KINDS, needsCashReceipt, type PaymentMethodKind } from "@/lib/payments";
+import { balanceOf, matchPayment, toAmount, toIsoDate, PAYMENT_METHOD_KINDS, needsCashReceipt, type ImportedPayment, type PaymentRow, type PaymentMethodKind } from "@/lib/payments";
+import { agingBucket, AGING_BUCKETS, type AgingBucket } from "@/lib/settlement";
 import type { Invoice } from "@/lib/types";
 
 // 수납 — 들어온 돈을 인보이스에 붙입니다.
@@ -32,6 +32,114 @@ type Staged = ImportedPayment & {
   skip: boolean;
 };
 
+
+/** 마감일에서 오늘까지 며칠 지났는가. 마감 전이면 0. */
+function daysPast(due: string, today: string): number {
+  const d = Math.round((new Date(`${today}T00:00:00Z`).getTime() - new Date(`${due}T00:00:00Z`).getTime()) / 86_400_000);
+  return Math.max(0, d);
+}
+
+const BUCKET_TONE: Record<AgingBucket, string> = {
+  "기한 전": "bg-slate-100 text-slate-500",
+  "1~30일": "bg-amber-100 text-amber-800",
+  "31~60일": "bg-orange-100 text-orange-800",
+  "61일+": "bg-rose-100 text-rose-800",
+};
+
+/**
+ * 결제완료 체크 창.
+ *
+ * **수단을 반드시 고르게 합니다.** 자유 글자로 두면 「현금」·「현금납부」·「cash」가 섞이고,
+ * 그러면 월말에 세는 일이 다시 사람 손으로 돌아갑니다. 금액은 기본이 남은 전액이고, 부분
+ * 납부는 고쳐서 넣습니다 - 실제로 반만 내고 나머지는 다음 달에 내는 집이 있습니다.
+ */
+function PayModal({
+  target,
+  today,
+  onClose,
+  onDone,
+}: {
+  target: { id: string; label: string; balance: number };
+  today: string;
+  onClose: () => void;
+  onDone: (msg: string) => void;
+}) {
+  const [method, setMethod] = useState<PaymentMethodKind | "">("");
+  const [amount, setAmount] = useState(target.balance);
+  const [paidAt, setPaidAt] = useState(today);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function save() {
+    if (!method) return setErr("납부 수단을 골라주세요.");
+    setBusy(true);
+    const res = await fetch("/api/finance/invoices/pay", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ invoiceId: target.id, method, amount, paidAt }),
+    });
+    const body = await res.json().catch(() => ({}));
+    setBusy(false);
+    if (!res.ok) return setErr((body as { error?: string }).error ?? "저장하지 못했습니다.");
+    onDone(`${target.label} · ${won(amount)} ${method}으로 받았습니다.`);
+    onClose();
+  }
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="w-full max-w-sm rounded-2xl bg-white p-4" onClick={(e) => e.stopPropagation()}>
+        <h3 className="mb-1 text-sm font-bold text-slate-800">결제완료</h3>
+        <p className="mb-3 text-[12px] text-slate-500">{target.label}</p>
+
+        <p className="mb-1 text-[11px] font-semibold text-slate-500">납부 수단</p>
+        <div className="mb-3 flex flex-wrap gap-1">
+          {PAYMENT_METHOD_KINDS.map((k) => (
+            <button
+              key={k}
+              onClick={() => setMethod(k)}
+              className={
+                "rounded-lg px-2.5 py-1 text-[12px] font-semibold " +
+                (method === k ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-600")
+              }
+            >
+              {k}
+            </button>
+          ))}
+        </div>
+        {needsCashReceipt(method) && (
+          <p className="mb-2 rounded bg-amber-50 px-2 py-1 text-[11px] text-amber-900">
+            현금·계좌이체는 <b>현금영수증</b>을 따로 발행해야 합니다. 재무 → 수납 → 현금영수증에서 신청을 받으세요.
+          </p>
+        )}
+
+        <div className="mb-3 flex items-center gap-2">
+          <label className="text-[11px] font-semibold text-slate-500">금액</label>
+          <input
+            type="number"
+            value={amount}
+            onChange={(e) => setAmount(Number(e.target.value))}
+            className="w-32 rounded-lg border border-slate-300 px-2 py-1 text-right text-[12px] tabular-nums"
+          />
+          <span className="text-[11px] text-slate-400">남은 {won(target.balance)}</span>
+        </div>
+        <div className="mb-3 flex items-center gap-2">
+          <label className="text-[11px] font-semibold text-slate-500">받은 날</label>
+          <input type="date" value={paidAt} onChange={(e) => setPaidAt(e.target.value)} className="rounded-lg border border-slate-300 px-2 py-1 text-[12px]" />
+        </div>
+
+        {err && <p className="mb-2 rounded bg-rose-50 px-2 py-1 text-[11px] font-bold text-rose-700">{err}</p>}
+        <button
+          onClick={() => void save()}
+          disabled={busy}
+          className="w-full rounded-lg bg-emerald-600 py-2 text-[13px] font-bold text-white disabled:opacity-40"
+        >
+          {busy ? "저장 중…" : "받았습니다"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function PaymentsClient({ invoices, payments: initial, currentUserEmail, currentUserName, loadError, today }: Props) {
   const notify = useToast();
   const [payments, setPayments] = useState(initial);
@@ -39,6 +147,9 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
   const [fileName, setFileName] = useState("");
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<"미납" | "전체" | "입금">("미납");
+  // 결제완료 체크 창. 청구서를 보는 그 자리에서 받은 돈을 넣습니다 - 화면을 옮기게 하면
+  // 「나중에」가 되고, 나중에 한 것은 대개 안 한 것이 됩니다.
+  const [payFor, setPayFor] = useState<{ id: string; label: string; balance: number } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // 수기 입력
@@ -458,6 +569,8 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
                 <th className="px-3 py-2 text-right">청구</th>
                 <th className="px-3 py-2 text-right">입금</th>
                 <th className="px-3 py-2 text-right">잔액</th>
+                <th className="px-3 py-2">밀린 기간</th>
+                <th className="px-3 py-2"> </th>
               </tr>
             </thead>
             <tbody>
@@ -480,12 +593,44 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
                     <td className={"px-3 py-1.5 text-right font-bold tabular-nums " + (x.balance > 0 ? "text-amber-700" : "text-slate-300")}>
                       {x.balance > 0 ? won(x.balance) : "완납"}
                     </td>
+                    {/* 얼마보다 먼저 보는 것이 «얼마나 오래»입니다. 어제 밀린 10만원과 두 달
+                        밀린 10만원은 같은 돈이 아닙니다 - 뒤엣것을 먼저 연락해야 합니다. */}
+                    <td className="px-3 py-1.5">
+                      {x.balance > 0 ? (
+                        <span
+                          className={
+                            "rounded px-1.5 py-0.5 text-[10px] font-bold " +
+                            (BUCKET_TONE[agingBucket(daysPast(x.v.due_date, today))] ?? "bg-slate-100 text-slate-500")
+                          }
+                        >
+                          {agingBucket(daysPast(x.v.due_date, today))}
+                        </span>
+                      ) : (
+                        <span className="text-slate-300">—</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-1.5 text-right">
+                      {x.balance > 0 && (
+                        <button
+                          onClick={() =>
+                            setPayFor({
+                              id: x.v.id,
+                              label: `${x.v.invoice_no} ${x.v.student_name_ko ?? x.v.student_name}`,
+                              balance: x.balance,
+                            })
+                          }
+                          className="rounded-lg bg-emerald-600 px-2 py-1 text-[11px] font-bold text-white"
+                        >
+                          결제완료
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
               {(tab === "미납" ? unpaid : withBalance).length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-3 py-10 text-center text-slate-400">
+                  <td colSpan={8} className="px-3 py-10 text-center text-slate-400">
                     {tab === "미납" ? "미납이 없습니다." : "발행한 인보이스가 없습니다."}
                   </td>
                 </tr>
@@ -650,6 +795,19 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
           )}
         </div>
       </details>
+    {payFor && (
+        <PayModal
+          target={payFor}
+          today={today}
+          onClose={() => setPayFor(null)}
+          onDone={async (msg) => {
+            notify(msg, "success");
+            const supabase = createClient();
+            const { data } = await supabase.from("payments").select("*").order("paid_at", { ascending: false });
+            if (data) setPayments(data as PaymentRow[]);
+          }}
+        />
+      )}
     </div>
   );
 }

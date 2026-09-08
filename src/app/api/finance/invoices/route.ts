@@ -5,6 +5,7 @@ import { hasFinanceAccess } from "@/lib/roles";
 import { gradeLabel, resolveStudentItems } from "@/lib/feeItems";
 import { selectTolerant } from "@/lib/selectTolerant";
 import { todayKst } from "@/lib/kst";
+import { planCarryForward, lockCarried } from "@/lib/carryForward";
 import { resolveRecipient, type GuardianRole } from "@/lib/alltalkpay";
 import type { FeeItem, StudentFeeItem } from "@/lib/types";
 
@@ -98,6 +99,11 @@ export async function POST(req: Request) {
     guardianRole
   );
 
+  // 지난 미납을 이 청구서에 얹습니다(학비외 갈래만). 학부모는 한 장만 보면 되고, 원 청구서는
+  // 아래에서 「이월됨」으로 잠급니다 - 안 잠그면 같은 돈이 두 곳에 미납으로 남습니다.
+  const carry = await planCarryForward(supabase, { studentId: student.id, stream: "학비외", today: todayKst() });
+  if (carry.error) return NextResponse.json({ error: `지난 미납을 읽지 못했습니다: ${carry.error}` }, { status: 500 });
+
   // 번호는 DB가 정합니다. 사람이 손으로 붙이면 반드시 겹칩니다.
   const { data: noRow, error: noErr } = await supabase.rpc("next_invoice_no");
   if (noErr) return NextResponse.json({ error: `번호를 만들지 못했습니다: ${noErr.message}` }, { status: 500 });
@@ -106,6 +112,7 @@ export async function POST(req: Request) {
     .from("invoices")
     .insert({
       invoice_no: noRow as unknown as string,
+      stream: "학비외",
       student_id: student.id,
       // 인보이스 양식이 영문이라 영문 이름을 본문으로 씁니다. 없으면 한글 이름을 그대로.
       student_name: student.name_en?.trim() || student.name,
@@ -113,7 +120,7 @@ export async function POST(req: Request) {
       grade_label: gradeLabel({ grade: student.grade, className: student.class_name }),
       issue_date: issue,
       due_date: due,
-      total_amount: total,
+      total_amount: total + carry.total,
       // 그때의 연락처와 **대상**을 함께 굳힙니다. 명부가 나중에 바뀌어도 어디로, 누구 앞으로
       // 청구했는지가 남습니다. 번호만 남기면 나중에 그게 어머니 것이었는지 알 수 없습니다.
       guardian_phone: recipient?.phone ?? null,
@@ -126,8 +133,8 @@ export async function POST(req: Request) {
     .single();
   if (invErr || !inv) return NextResponse.json({ error: invErr?.message ?? "발행 실패" }, { status: 500 });
 
-  const { error: lineErr } = await supabase.from("invoice_lines").insert(
-    lines.map((l, i) => ({
+  const { error: lineErr } = await supabase.from("invoice_lines").insert([
+    ...lines.map((l, i) => ({
       invoice_id: inv.id,
       seq: i + 1,
       name: l.item.name,
@@ -135,12 +142,24 @@ export async function POST(req: Request) {
       unit_price: Number(l.item.unit_price),
       amount: l.amount,
     })),
-  );
+    // 이월 줄은 **맨 아래**에 둡니다. 이번에 새로 청구하는 것이 먼저 읽혀야 합니다.
+    ...carry.lines.map((c, i) => ({ invoice_id: inv.id, seq: lines.length + i + 1, ...c })),
+  ]);
   // 줄을 못 넣었으면 빈 인보이스가 남습니다. 조용히 두면 총액만 있고 내역이 없는 종이가
   // 나가므로, 머리줄을 지우고 실패로 답합니다.
   if (lineErr) {
     await supabase.from("invoices").delete().eq("id", inv.id);
     return NextResponse.json({ error: `내역을 저장하지 못했습니다: ${lineErr.message}` }, { status: 500 });
+  }
+
+  // 원 청구서 잠금. 실패를 삼키지 않습니다 - 여기서 조용히 넘어가면 같은 돈이 두 곳에
+  // 미납으로 남고, 다음 달에 또 이월되어 금액이 눈덩이처럼 불어납니다.
+  const lockErr = await lockCarried(supabase, carry.lockIds, inv.id as string);
+  if (lockErr) {
+    return NextResponse.json(
+      { error: `청구서는 만들었지만 지난 미납을 잠그지 못했습니다(${lockErr}). 같은 돈이 두 번 청구될 수 있으니 확인해주세요.` },
+      { status: 500 },
+    );
   }
 
   return NextResponse.json({ ok: true, invoice: inv });

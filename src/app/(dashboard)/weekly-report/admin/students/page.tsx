@@ -8,6 +8,7 @@ import { isStaffOrAboveUser } from "@/lib/roles";
 import type { ShuttleRoute, ShuttleStop, WrStudent, WrStudentFieldDef } from "@/lib/types";
 import StudentManageClient from "@/components/weeklyReport/admin/StudentManageClient";
 import GuideButton from "@/components/common/GuideButton";
+import { getCurrentTerm } from "@/lib/currentTerm";
 
 const GUIDE_SECTIONS = [
   {
@@ -80,6 +81,7 @@ export default async function StudentManagePage() {
           canEdit={canEdit}
           shuttleRoutes={(routesData as ShuttleRoute[] | null) ?? []}
           shuttleStops={(stopsData as ShuttleStop[] | null) ?? []}
+          currentTermId={(await getCurrentTerm())?.id ?? null}
         />
       </div>
     </div>

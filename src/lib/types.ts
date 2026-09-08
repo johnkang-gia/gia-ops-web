@@ -617,6 +617,8 @@ export type WrStudent = {
   afterschool: boolean;
   // 배우는 악기(하나만) - 없으면 null.
   instrument: WrInstrument | null;
+  // 첫 등교일. 구글시트 명부의 Starting Day. 학기 중간에 온 아이의 학비를 일할로 볼 때 씁니다.
+  enrolled_on: string | null;
   // 형제자매 묶음 - 같은 집 아이들에게 같은 값을 넣어두면 부서를 넘나들어도 한 가족으로
   // 이어집니다(유치부 동생 ↔ 초등부 형). 셔틀·보호자 연락·출결 이름 대조에 씁니다.
   family_id: string | null;

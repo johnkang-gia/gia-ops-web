@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import type { ShuttleRoute, ShuttleStop, WrStudent, WrStudentFieldDef } from "@/lib/types";
+import { WR_INSTRUMENTS, type ShuttleRoute, type ShuttleStop, type WrStudent, type WrStudentFieldDef } from "@/lib/types";
 import { useConfirm } from "@/components/common/ConfirmProvider";
 import { useToast } from "@/components/common/ToastProvider";
 import ShuttleRecommendModal from "@/components/shuttle/ShuttleRecommendModal";
@@ -22,6 +22,8 @@ type SortKey =
   | "parent_email"
   | "address"
   | "allergies"
+  | "instrument"
+  | "enrolled_on"
   | { custom: string };
 
 function sortKeyEq(a: SortKey | null, b: SortKey) {
@@ -57,6 +59,10 @@ function sortValue(s: WrStudent, key: SortKey): string {
       return s.address ?? "";
     case "allergies":
       return s.allergies ?? "";
+    case "instrument":
+      return s.instrument ?? "";
+    case "enrolled_on":
+      return s.enrolled_on ?? "";
   }
 }
 
@@ -73,10 +79,13 @@ export default function StudentManageClient({
   canEdit,
   shuttleRoutes = [],
   shuttleStops = [],
+  currentTermId = null,
 }: {
   initialStudents: WrStudent[];
   initialFieldDefs: WrStudentFieldDef[];
   currentUserEmail: string;
+  /** 지금 학기. 유니폼 사이즈는 학기별로 남깁니다 - 아이는 자랍니다. */
+  currentTermId?: string | null;
   /**
    * 고칠 수 있는가. 행정직원 이상만 참입니다.
    *
@@ -107,6 +116,11 @@ export default function StudentManageClient({
   const [parentEmail, setParentEmail] = useState("");
   const [address, setAddress] = useState("");
   const [allergies, setAllergies] = useState("");
+  // 시트 명부에는 있는데 이 화면에는 담을 칸이 없던 셋. 없으면 학생을 손으로 추가할 때마다
+  // 「이 아이 악기가 뭐였지」를 다시 물어봐야 하고, 그 물음이 결국 엑셀로 돌아가게 만듭니다.
+  const [instrument, setInstrument] = useState("");
+  const [enrolledOn, setEnrolledOn] = useState("");
+  const [uniformSize, setUniformSize] = useState("");
   const [bulkText, setBulkText] = useState("");
   const [saving, setSaving] = useState(false);
   const [showBulk, setShowBulk] = useState(false);
@@ -152,6 +166,9 @@ export default function StudentManageClient({
     setParentEmail("");
     setAddress("");
     setAllergies("");
+    setInstrument("");
+    setEnrolledOn("");
+    setUniformSize("");
   }
 
   async function addStudent(e: React.FormEvent) {
@@ -159,7 +176,7 @@ export default function StudentManageClient({
     if (!name.trim()) return;
     setSaving(true);
     const supabase = createClient();
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("wr_students")
       .insert({
         name: name.trim(),
@@ -174,17 +191,39 @@ export default function StudentManageClient({
         parent_email: parentEmail.trim() || null,
         address: address.trim() || null,
         allergies: allergies.trim() || null,
+        instrument: instrument || null,
+        enrolled_on: enrolledOn || null,
         // 이 화면에서 만드는 학생은 언제나 실제 학생입니다. 기본값에 기대지 않고 못박습니다.
         is_demo: false,
       })
       .select()
       .single();
-    setSaving(false);
-    if (data) {
-      setStudents((prev) => [...prev, data as WrStudent]);
-      resetForm();
-      setShowAddForm(false);
+    if (error || !data) {
+      // 저장이 안 됐는데 창이 닫히면 사람은 등록된 줄 압니다. 그리고 며칠 뒤 「그 아이가
+      // 명부에 없다」로 발견됩니다.
+      setSaving(false);
+      notify(`학생을 저장하지 못했습니다: ${error?.message ?? "알 수 없는 이유"}`, "error");
+      return;
     }
+
+    // 유니폼 사이즈는 **의류 대장**에 넣습니다. 학생 칸에 하나만 두면 아이가 자랐을 때
+    // 지난 사이즈가 사라지고, 의류 화면·제작 건과도 이어지지 않습니다.
+    if (uniformSize.trim()) {
+      const { error: sizeErr } = await supabase.from("student_apparel_sizes").insert({
+        student_id: (data as WrStudent).id,
+        kind: "유니폼",
+        size: uniformSize.trim(),
+        term_id: currentTermId,
+        updated_by: currentUserEmail,
+      });
+      if (sizeErr) notify(`학생은 등록했지만 유니폼 사이즈를 저장하지 못했습니다: ${sizeErr.message}`, "error");
+    }
+
+    setSaving(false);
+    setStudents((prev) => [...prev, data as WrStudent]);
+    resetForm();
+    setShowAddForm(false);
+    notify(`${(data as WrStudent).name} 등록했습니다.`, "success");
   }
 
   async function bulkAdd() {
@@ -526,6 +565,36 @@ export default function StudentManageClient({
             <label className="mb-1 block text-[11px] text-slate-400">보호자 이메일</label>
             <input type="email" value={parentEmail} onChange={(e) => setParentEmail(e.target.value)} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
           </div>
+          <div>
+            <label className="mb-1 block text-[11px] text-slate-400">입학일 (첫 등교일)</label>
+            <input type="date" value={enrolledOn} onChange={(e) => setEnrolledOn(e.target.value)} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
+          </div>
+          <div>
+            {/* 목록에서 고릅니다. 악기는 학교가 가르치는 것만 있고, 자유 글자로 두면
+                「바이올린」·「violin」·「바이올린(개인)」이 섞여 반을 셀 수 없게 됩니다. */}
+            <label className="mb-1 block text-[11px] text-slate-400">악기</label>
+            <select value={instrument} onChange={(e) => setInstrument(e.target.value)} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm">
+              <option value="">-</option>
+              {WR_INSTRUMENTS.map((i) => (
+                <option key={i} value={i}>
+                  {i}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            {/* 사이즈는 **적힌 그대로** 받습니다. 목록에서 고르게 하면 그 목록에 없는 값이
+                필요한 순간 사람은 화면 밖(엑셀·쪽지)으로 나갑니다. */}
+            <label className="mb-1 block text-[11px] text-slate-400" title="의류 대장에 이번 학기 사이즈로 남습니다">
+              유니폼 사이즈
+            </label>
+            <input
+              value={uniformSize}
+              onChange={(e) => setUniformSize(e.target.value)}
+              placeholder="16호"
+              className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+            />
+          </div>
           <div className="col-span-2">
             <label className="mb-1 block text-[11px] text-slate-400">주소</label>
             <input value={address} onChange={(e) => setAddress(e.target.value)} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
@@ -661,6 +730,8 @@ export default function StudentManageClient({
               )}
               <SortTh label="주소" sortKeyFor="address" />
               <th className="whitespace-nowrap px-3 py-2">🚌 차량탑승</th>
+              <SortTh label="악기" sortKeyFor="instrument" />
+              <SortTh label="입학일" sortKeyFor="enrolled_on" />
               <SortTh label="알러지" sortKeyFor="allergies" />
               {fieldDefs.map((f) => (
                 <SortTh key={f.id} label={f.label} sortKeyFor={{ custom: f.field_key }} />
@@ -750,6 +821,26 @@ export default function StudentManageClient({
                       </button>
                     )}
                   </div>
+                </td>
+                <td className="px-3 py-1.5 text-slate-500">
+                  {/* 악기는 **고르게** 합니다. 자유 글자로 두면 「바이올린」·「violin」이 섞여
+                      악기반 인원을 셀 수 없고, DB 의 허용 목록에도 걸려 저장이 실패합니다. */}
+                  <select
+                    value={s.instrument ?? ""}
+                    onChange={(e) => void updateField(s.id, "instrument", e.target.value)}
+                    disabled={!canEdit}
+                    className="rounded border border-transparent bg-transparent px-1 py-0.5 text-[12px] hover:border-slate-300 disabled:cursor-default"
+                  >
+                    <option value="">-</option>
+                    {WR_INSTRUMENTS.map((i) => (
+                      <option key={i} value={i}>
+                        {i}
+                      </option>
+                    ))}
+                  </select>
+                </td>
+                <td className="px-3 py-1.5 text-slate-400">
+                  <EditableCell value={s.enrolled_on ?? ""} onSave={(v) => updateField(s.id, "enrolled_on", v)} width="w-24" />
                 </td>
                 <td className="px-3 py-1.5 text-slate-400">
                   <EditableCell value={s.allergies ?? ""} onSave={(v) => updateField(s.id, "allergies", v)} width="w-28" />

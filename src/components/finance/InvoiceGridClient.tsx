@@ -840,10 +840,10 @@ export default function InvoiceGridClient({
     // w-full + min-w-0: 이게 없으면 표가 넓어질 때 **페이지 자체가 옆으로 늘어납니다.**
     // 그러면 상단 탭줄과 제목까지 함께 밀려나가고, 가로 스크롤바가 화면 맨 아래에 생겨
     // 표를 보려면 페이지를 통째로 밀어야 합니다. 늘어나야 하는 것은 표 안쪽뿐입니다.
-    // h-full + flex 세로: 화면에 가둔 상태(MainArea가 overflow-hidden)에서는 이 구조가
-    // 없으면 표가 화면 밖으로 잘리고 **아무 데도 스크롤이 안 생깁니다.** 머리말은 고정되고
-    // 표만 남은 높이를 차지하며 자기 안에서 스크롤해야 합니다.
-    <div className="mx-auto flex h-full w-full min-w-0 max-w-full flex-col overflow-hidden p-3 sm:p-4">
+    // **세로는 가두지 않습니다.** 한때 화면 높이에 통째로 가뒀는데, 그러면 표 안쪽에서
+    // 세로로도 스크롤해야 합니다. 학생이 백 명 넘는 명단은 위에서 아래로 쭉 훑어 내리는
+    // 것이라 페이지째 내려가는 편이 자연스럽습니다. 가둘 것은 **가로뿐**입니다.
+    <div className="mx-auto w-full min-w-0 max-w-full p-3 sm:p-4">
       <div className="mb-1 flex flex-wrap items-baseline gap-2">
         <h1 className="text-lg font-bold">🧾 인보이스 명단</h1>
         <span className="text-xs text-slate-400">학비외 · 학생 × 항목</span>
@@ -1247,7 +1247,14 @@ export default function InvoiceGridClient({
       )}
 
       {/* ── 표 ───────────────────────────────────────────────────── */}
-      <div className="min-h-0 w-full min-w-0 max-w-full flex-1 overflow-auto rounded-xl border border-slate-200 bg-white">
+      {/* **가로만** 스크롤합니다. 세로는 페이지째 내려갑니다.
+
+          가로 스크롤 상자를 만들면 안쪽의 sticky 는 창이 아니라 이 상자를 기준으로 붙습니다.
+          그래서 머리줄은 아래로 내려갈 때 따라오지 못하고, 대신 **왼쪽 학생 이름 칸**(sticky
+          left-0)이 옆으로 밀 때 그대로 남습니다. 옆으로 스무 칸을 밀어도 누구 줄인지 보이는
+          것이, 세로로 내릴 때 항목 이름이 보이는 것보다 중요합니다 - 금액을 잘못 넣는 사고는
+          «어느 학생인지» 놓칠 때 납니다. */}
+      <div className="w-full min-w-0 max-w-full overflow-x-auto rounded-xl border border-slate-200 bg-white">
         <table className="min-w-full border-collapse text-left text-[12px]">
           <thead className="sticky top-0 z-20">
             {/* 분류 줄 — 열이 많아지면 무엇끼리 묶인 것인지 보여야 합니다. */}

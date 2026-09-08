@@ -38,11 +38,17 @@ const BOUNDED_LIST_PATHS = [
   "/weekly-report/admin/students",
   "/weekly-report/admin/classes",
   "/weekly-report/admin/subjects",
-  // 인보이스 명단은 항목이 늘수록 표가 옆으로 길어집니다. 화면 안에 가둬야 표 «안쪽»이
-  // 스크롤되고, 안 그러면 페이지가 통째로 늘어나 상단 탭줄과 제목까지 밀려 나갑니다.
-  "/finance/invoices",
-  "/finance/tuition",
 ];
+
+// 인보이스 명단·학비 청구는 **가로만** 가둡니다.
+//
+// 처음에는 화면 높이에 통째로 가뒀습니다. 그러면 표 안쪽에서 세로로도 스크롤해야 하는데,
+// 학생이 백 명 넘는 표에서는 그게 더 불편합니다 - 명단은 위에서 아래로 쭉 훑어 내리는
+// 것이라 페이지째 내려가는 편이 자연스럽습니다.
+//
+// 옆으로 길어지는 것만 막으면 됩니다. 안 막으면 항목이 늘 때 페이지가 통째로 늘어나
+// 상단 탭줄과 제목까지 밀려 나갑니다.
+const WIDE_TABLE_PATHS = ["/finance/invoices", "/finance/tuition"];
 
 export default function MainArea({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -73,6 +79,12 @@ export default function MainArea({ children }: { children: React.ReactNode }) {
         {children}
       </main>
     );
+  }
+
+  // 넓은 표: 세로는 페이지째 내려가고, 가로만 표 안에서 스크롤합니다.
+  // `min-w-0` 이 있어야 안쪽 표가 넓어질 때 이 칸이 함께 늘어나지 않습니다.
+  if (WIDE_TABLE_PATHS.some((p) => pathname === p)) {
+    return <main className="shell-content shell-content-bg min-w-0 flex-1 overflow-x-hidden p-4 sm:p-6">{children}</main>;
   }
 
   // 좌우 여백(sm:p-6)은 상단탭바의 sm:px-6과 같은 값입니다. 예전에는 여기만 sm:p-8이라

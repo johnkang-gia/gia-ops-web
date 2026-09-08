@@ -41,7 +41,8 @@ export default function PageTabs({ tabs, isAdmin = false }: { tabs: PageTab[]; i
   }
 
   return (
-    <div className="mb-3 flex flex-wrap items-center gap-1 print:!hidden">
+    // h-10 고정: 화면을 옮길 때마다 이 줄이 위아래로 튀면 사람은 매번 눈으로 다시 찾습니다.
+    <div className="mb-2 flex h-10 shrink-0 items-center gap-1 overflow-x-auto print:!hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {shown.map((t) => {
         const on = t.href === active;
         return (
@@ -51,7 +52,7 @@ export default function PageTabs({ tabs, isAdmin = false }: { tabs: PageTab[]; i
             onClick={() => router.push(t.href)}
             onMouseEnter={() => router.prefetch(t.href)}
             className={
-              "rounded-lg px-2.5 py-1 text-[12px] font-semibold transition-colors " +
+              "shrink-0 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-[12px] font-semibold transition-colors " +
               (on ? "bg-purple-600 text-white" : "bg-white/70 text-slate-600 ring-1 ring-slate-200 hover:text-slate-900")
             }
           >

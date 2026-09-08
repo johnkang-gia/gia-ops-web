@@ -35,6 +35,20 @@ export async function POST(req: Request) {
   if (!link) return NextResponse.json({ error: "모르는 토큰입니다." }, { status: 403 });
   if (!link.enabled) return NextResponse.json({ error: "꺼져 있는 연결입니다." }, { status: 403 });
 
+  // 연결 시험 - 주소·토큰·기록까지 한 번에 확인합니다. 아무것도 넣지 않습니다.
+  //
+  // 「스크립트는 성공인데 앱은 아직 없음」일 때, 무엇이 끊겼는지 가릴 방법이 없었습니다.
+  // 이 버튼이 통하면 주소와 토큰과 기록은 멀쩡하다는 뜻이고, 남은 건 스크립트뿐입니다.
+  if (body?.test === true) {
+    const err = await note(supabase, link.id, 0, 0, null, {
+      detail: "연결 시험 — 길과 토큰은 정상입니다(아무것도 넣지 않았습니다)",
+      header: "(연결 시험)",
+      columns: "(연결 시험)",
+    });
+    if (err) return NextResponse.json({ ok: false, error: `수신 기록을 남기지 못했습니다: ${err}` }, { status: 500 });
+    return NextResponse.json({ ok: true, test: true });
+  }
+
   const header = (body?.header as unknown[] | undefined)?.map((c) => String(c ?? "")) ?? [];
   const raw = (body?.rows as unknown[][] | undefined) ?? [];
   if (header.length === 0 || raw.length === 0) {
@@ -99,11 +113,20 @@ export async function POST(req: Request) {
     `그대로 ${count("그대로")} · 확인 필요 ${count("확인 필요")}` +
     (queue.length > 0 && queued === 0 ? " · 이미 대기 중이라 다시 넣지 않음" : "");
 
-  await note(supabase, link.id, raw.length, queued, problems[0] ?? null, {
+  // 「마지막 수신」을 못 적으면 화면에는 영영 「아직 없음」으로 남습니다. 그러면 스크립트는
+  // 성공이라고 하는데 앱은 아무것도 못 받은 것처럼 보이고, 어디를 봐야 할지 알 수 없습니다.
+  // 그래서 이건 조용히 넘기지 않고 **실패로 돌려줍니다** - 구글이 실행 실패를 메일로 알립니다.
+  const noteErr = await note(supabase, link.id, raw.length, queued, problems[0] ?? null, {
     detail,
     header: headerText,
     columns: columnsText,
   });
+  if (noteErr) {
+    return NextResponse.json(
+      { ok: false, error: `줄은 받았지만 수신 기록을 남기지 못했습니다: ${noteErr}`, received: raw.length, queued },
+      { status: 500 },
+    );
+  }
   return NextResponse.json({ ok: true, received: raw.length, queued, pending: queue.length - queued, detail });
 }
 
@@ -122,10 +145,10 @@ async function note(
   queued: number,
   error: string | null,
   extra?: { detail?: string; header?: string; columns?: string },
-) {
+): Promise<string | null> {
   // 마지막 수신 결과를 남깁니다. 스크립트가 조용히 실패하면 아무도 모르는 채로 명부가
   // 몇 주씩 뒤처집니다 - 화면에서 「마지막 수신 언제, 결과 무엇」을 볼 수 있어야 합니다.
-  await supabase
+  const { error: writeErr } = await supabase
     .from("roster_sync_links")
     .update({
       last_push_at: new Date().toISOString(),
@@ -137,4 +160,5 @@ async function note(
       last_columns: extra?.columns ?? null,
     })
     .eq("id", linkId);
+  return writeErr ? writeErr.message : null;
 }

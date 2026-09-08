@@ -47,7 +47,10 @@ const BOUNDED_LIST_PATHS = [
 export default function MainArea({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isWork = pathname?.startsWith("/work");
-  const isWeekly = pathname?.startsWith("/weekly-report");
+  // 주간 관찰기록은 교사용 화면이라 배경색이 따로 있습니다(bg-wr-bg). 그런데 명부 관리·
+  // 반 배정은 «학교» 메뉴에 걸린 행정 화면인데 주소만 /weekly-report 아래에 있어서, 들어가면
+  // 배경이 갑자기 초록으로 바뀌었습니다. 주소가 아니라 **어느 메뉴의 화면인가**로 갈라야 합니다.
+  const isWeekly = pathname?.startsWith("/weekly-report") && !pathname?.startsWith("/weekly-report/admin");
   const isStaffManual = pathname?.startsWith("/staff-manual");
   const isBoundedList = BOUNDED_LIST_PATHS.some((p) => pathname === p);
 

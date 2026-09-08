@@ -7,6 +7,7 @@ import { won } from "@/lib/feeItems";
 import { balanceOf, matchPayment, toAmount, toIsoDate, PAYMENT_METHOD_KINDS, needsCashReceipt, type ImportedPayment, type PaymentRow, type PaymentMethodKind } from "@/lib/payments";
 import { agingBucket, type AgingBucket } from "@/lib/settlement";
 import PayModal from "./PayModal";
+import InlineTabs from "@/components/common/InlineTabs";
 import type { Invoice } from "@/lib/types";
 
 // 수납 — 들어온 돈을 인보이스에 붙입니다.
@@ -450,20 +451,15 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
       )}
 
       {/* ── 목록 ────────────────────────────────────────────────── */}
-      <div className="mb-2 flex flex-wrap items-center gap-1.5">
-        {(["미납", "전체", "입금"] as const).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={
-              "rounded-lg px-2.5 py-1 text-xs font-semibold " +
-              (tab === t ? "bg-slate-800 text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50")
-            }
-          >
-            {t === "미납" ? `미납 ${unpaid.length}` : t === "전체" ? `발행 ${issued.length}` : `입금 ${payments.length}`}
-          </button>
-        ))}
-      </div>
+      <InlineTabs
+        tabs={[
+          { key: "미납", label: "미납", badge: unpaid.length, tone: unpaid.length > 0 ? "warn" : "default" },
+          { key: "전체", label: "발행", badge: issued.length },
+          { key: "입금", label: "입금", badge: payments.length },
+        ]}
+        active={tab}
+        onPick={(k) => setTab(k as "미납" | "전체" | "입금")}
+      />
 
       {tab !== "입금" ? (
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">

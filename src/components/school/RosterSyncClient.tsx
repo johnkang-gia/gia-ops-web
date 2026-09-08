@@ -136,7 +136,29 @@ export default function RosterSyncClient() {
                 <span className="text-slate-400">아직 없음</span>
               )}
             </span>
-            <button onClick={() => setOpenLink(openLink === l.id ? null : l.id)} className="ml-auto rounded border border-slate-300 px-1.5 py-0.5 text-[11px]">
+            {/* 「스크립트는 성공인데 앱은 아직 없음」일 때 무엇이 끊겼는지 가릅니다.
+                이 버튼이 통하면 주소·토큰·기록은 멀쩡하고 남은 건 스크립트뿐입니다. */}
+            <button
+              onClick={async () => {
+                setBusy(true);
+                const res = await fetch("/api/school/roster-sync", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ token: l.token, test: true }),
+                });
+                const b = await res.json().catch(() => ({}));
+                setBusy(false);
+                if (!res.ok) notify((b as { error?: string }).error ?? "시험에 실패했습니다.", "error");
+                else notify("연결은 정상입니다. 마지막 수신에 방금 시각이 찍혔습니다.", "success");
+                await load();
+              }}
+              disabled={busy}
+              className="ml-auto rounded border border-teal-300 bg-teal-50 px-1.5 py-0.5 text-[11px] font-bold text-teal-700"
+              title="주소·토큰·기록이 살아 있는지 한 번에 확인합니다(아무것도 넣지 않습니다)"
+            >
+              연결 시험
+            </button>
+            <button onClick={() => setOpenLink(openLink === l.id ? null : l.id)} className="rounded border border-slate-300 px-1.5 py-0.5 text-[11px]">
               {openLink === l.id ? "스크립트 접기" : "스크립트 보기"}
             </button>
             <button
@@ -405,6 +427,12 @@ function SetupSteps() {
         <b>⑥에서 「오류 401: invalid_client」가 뜨면</b> 브라우저에 구글 계정이 여러 개 로그인되어 있어서입니다. 시크릿 창을
         열어 <b>시트 주인 계정 하나만</b> 로그인한 뒤 script.google.com 부터 다시 하면 넘어갑니다. 그래도 같으면 프로젝트를
         지우고 [+ 새 프로젝트]로 새로 만듭니다 — 앱이 아니라 구글 쪽 로그인 상태 문제라, 스크립트를 고칠 것은 없습니다.
+      </p>
+      <p className="mt-1 rounded bg-amber-50 px-2 py-1 text-[11px] leading-relaxed text-amber-900">
+        <b>스크립트는 성공인데 「마지막 수신 아직 없음」이면</b> 셋 중 하나입니다. ① 스크립트의{" "}
+        <b>ENDPOINT 주소</b>가 이 앱이 아닌 다른 주소(미리보기 주소 등) ② 스크립트의 <b>TOKEN</b>이 이 연결의 것이 아님
+        ③ 스크립트를 저장만 하고 <b>실행하지 않음</b>. 위 [연결 시험]이 통하면 주소·토큰·기록은 멀쩡하니 스크립트의
+        ENDPOINT·TOKEN 두 줄을 지금 화면의 것과 맞춰보세요.
       </p>
       <p className="mt-1 rounded bg-amber-50 px-2 py-1 text-[11px] leading-relaxed text-amber-900">
         토큰을 재발급하면 <b>스크립트의 TOKEN 도 바꿔야</b> 합니다. 안 바꾸면 시트는 계속 보내는데 앱이 받지 않고, 그 사실은

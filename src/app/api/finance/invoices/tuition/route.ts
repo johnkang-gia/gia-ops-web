@@ -41,6 +41,13 @@ export async function POST(req: Request) {
   const studentId = body?.studentId as string | undefined;
   const dueDate = (body?.dueDate as string | undefined) ?? null;
   const termId = (body?.termId as string | undefined) ?? null;
+  /**
+   * 어느 항목만 담을 것인가. 안 주면 그 학생의 학비 전부입니다.
+   *
+   * 정규과정과 방과후는 납기도 다르고 그만두는 시점도 다릅니다. 한 장에 섞으면 그 장이
+   * 반만 결제된 상태가 되어, 「방과후만 이번 달 얼마 걷혔나」를 셀 수가 없습니다.
+   */
+  const planIds = Array.isArray(body?.planIds) ? (body.planIds as string[]).filter((v) => typeof v === "string") : null;
   const askedRole = body?.guardianRole;
   const guardianRole: GuardianRole | null =
     askedRole === "mother" || askedRole === "father" || askedRole === "guardian" ? askedRole : null;
@@ -78,7 +85,8 @@ export async function POST(req: Request) {
   const sameTerm = <T extends { term_id?: string | null }>(r: T) => !r.term_id || !termId || r.term_id === termId;
 
   const enrollments = ((enrollRes.data as { plan_id: string; option_id: string | null; term_id: string | null }[] | null) ?? [])
-    .filter(sameTerm);
+    .filter(sameTerm)
+    .filter((e) => !planIds || planIds.length === 0 || planIds.includes(e.plan_id));
   const studentDiscounts = ((sdRes.data as { discount_id: string; term_id: string | null }[] | null) ?? []).filter(sameTerm);
 
   // 이 학생에게 걸린 할인. **끈 할인도 그대로 씁니다** - 이미 붙어 있던 건을 빼면 학부모가
@@ -99,11 +107,24 @@ export async function POST(req: Request) {
   }
 
   if (lines.length === 0) {
+    // 「고른 것이 없다」와 「고른 것은 있는데 이번에 담을 항목이 아니다」는 다른 말입니다.
+    // 같은 문구로 답하면 담당자가 옵션을 다시 넣으려고 헤맵니다.
+    const hasAny = enrollments.length > 0 || (enrollRes.data as unknown[] | null)?.length;
     return NextResponse.json(
-      { error: "이 학생이 고른 납부 옵션이 없습니다. 학비 청구 화면에서 먼저 골라주세요." },
+      {
+        error:
+          planIds && planIds.length > 0 && hasAny
+            ? "이 학생에게는 고른 항목의 납부 옵션이 없습니다(다른 항목만 신청되어 있습니다)."
+            : "이 학생이 고른 납부 옵션이 없습니다. 학비 청구 화면에서 먼저 골라주세요.",
+      },
       { status: 400 },
     );
   }
+
+  // 이 청구서가 무엇을 담았는지를 **사람이 읽는 이름으로** 굳혀 적습니다. 항목 id 로만
+  // 가리키면 나중에 요금표에서 항목 이름이 바뀌거나 항목을 껐을 때, 지난 청구서가 무슨
+  // 청구서였는지 설명할 수 없게 됩니다.
+  const planScope = planIds && planIds.length > 0 ? lines.map((l) => l.label.split(" · ")[0]).join(" · ") : null;
 
   const total = lines.reduce((n, l) => n + l.amount, 0);
   const issue = todayKst();
@@ -116,7 +137,14 @@ export async function POST(req: Request) {
 
   // 지난 학비 미납을 이 청구서에 얹습니다(학비 갈래만). 교복·교재 미납은 섞지 않습니다 -
   // 학부모가 무슨 돈인지 모르고, 이 달 학비가 얼마 걷혔는지도 셀 수 없게 됩니다.
-  const carry = await planCarryForward(supabase, { studentId: student.id, stream: "학비", today: todayKst() });
+  //
+  // **항목을 골라 발행할 때는 이월을 얹지 않습니다.** 방과후 청구서에 지난 정규과정
+  // 미납이 붙으면 학부모는 무슨 돈인지 모르고, 우리도 「방과후가 얼마 걷혔나」를 셀 수
+  // 없게 됩니다. 이월은 학비 전부를 담은 청구서가 짊어집니다.
+  const carry =
+    planIds && planIds.length > 0
+      ? { total: 0, lines: [] as { seq: number; name: string; qty: number; unit_price: number; amount: number }[], lockIds: [] as string[], error: null as string | null }
+      : await planCarryForward(supabase, { studentId: student.id, stream: "학비", today: todayKst() });
   if (carry.error) return NextResponse.json({ error: `지난 미납을 읽지 못했습니다: ${carry.error}` }, { status: 500 });
 
   // 번호는 DB가 정합니다. 사람이 손으로 붙이면 반드시 겹칩니다.
@@ -143,6 +171,7 @@ export async function POST(req: Request) {
       // 학기 칸은 학비외 청구서와 **같은 칸**을 씁니다. 두 종류가 다른 칸에 학기를 넣으면
       // 학기별 집계가 한쪽만 세게 됩니다.
       term_id: termId,
+      plan_scope: planScope,
       issued_by: me.name || me.email,
     })
     .select()

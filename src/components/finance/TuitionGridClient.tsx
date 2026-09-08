@@ -143,16 +143,58 @@ export default function TuitionGridClient({
 
   // 학기 판정은 인보이스 명단과 **같은 식**을 씁니다. 두 화면이 다른 기준으로 「발행됨」을
   // 정하면, 한쪽에서 발행된 아이가 다른 쪽에서는 미발행으로 떠서 두 번 나갑니다.
-  const invoiceOf = useMemo(() => {
-    const m = new Map<string, Invoice>();
+  //
+  // **한 학생에게 청구서가 여럿일 수 있습니다.** 정규과정과 방과후를 따로 발행하면 두 장이
+  // 됩니다. 앞 판은 첫 장만 기억해서, 정규과정만 발행한 아이가 「발행됨」으로 바뀌고
+  // 방과후는 영영 안 나갔습니다 - 오류가 아니라 «다 된 것처럼» 보이는 자리였습니다.
+  const invoicesOf = useMemo(() => {
+    const m = new Map<string, Invoice[]>();
     for (const v of invoices) {
       if (!v.student_id || v.status !== "발행" || v.category !== "학비") continue;
       const sameT = (v.term_id ?? "") === termId || (!v.term_id && terms.find((x) => x.id === termId)?.status === "진행중");
       if (!sameT) continue;
-      if (!m.has(v.student_id)) m.set(v.student_id, v);
+      const list = m.get(v.student_id);
+      if (list) list.push(v);
+      else m.set(v.student_id, [v]);
     }
     return m;
   }, [invoices, termId, terms]);
+
+  /**
+   * 이 학생의 이 항목이 이미 청구서에 담겼는가.
+   *
+   * `plan_scope` 가 비어 있는 청구서는 학비 **전부**를 담은 것입니다(항목별 발행이
+   * 생기기 전에 나간 것 포함). 그런 장이 하나라도 있으면 모든 항목이 담긴 것으로 봅니다.
+   */
+  const billed = useMemo(() => {
+    const m = new Map<string, { all: boolean; names: Set<string> }>();
+    for (const [sid, list] of invoicesOf) {
+      const names = new Set<string>();
+      let all = false;
+      for (const v of list) {
+        const scope = (v as Invoice & { plan_scope?: string | null }).plan_scope ?? null;
+        if (!scope) all = true;
+        else for (const n of scope.split(" · ")) names.add(n.trim());
+      }
+      m.set(sid, { all, names });
+    }
+    return m;
+  }, [invoicesOf]);
+
+  /** 아직 청구서에 안 담긴 항목이 남아 있는가. */
+  const hasUnbilled = (sid: string) => {
+    const b = billed.get(sid);
+    if (!b) return totalOf(sid) > 0;
+    if (b.all) return false;
+    return usedPlans.some((p) => lineFor(sid, p) && !b.names.has(p.name));
+  };
+
+  /** 대표로 보여줄 청구서 한 장(가장 최근). */
+  const invoiceOf = useMemo(() => {
+    const m = new Map<string, Invoice>();
+    for (const [sid, list] of invoicesOf) m.set(sid, list[0]);
+    return m;
+  }, [invoicesOf]);
 
   const deptOf = (s: TuitionStudent): DeptTab => {
     const d = departmentOf({ department: s.department, grade: s.grade });
@@ -163,7 +205,8 @@ export default function TuitionGridClient({
     let list = students.filter((s) => deptOf(s) === dept);
     const needle = q.trim().toLowerCase();
     if (needle) list = list.filter((s) => `${s.name} ${s.nameEn ?? ""} ${s.className ?? ""}`.toLowerCase().includes(needle));
-    if (onlyUnissued) list = list.filter((s) => !invoiceOf.has(s.id));
+    // 「미발행만」은 **남은 항목이 있는가**로 봅니다. 한 장 나갔다고 다 된 것이 아닙니다.
+    if (onlyUnissued) list = list.filter((s) => hasUnbilled(s.id));
     return list.sort(
       (a, b) =>
         gradeSortKey(a.grade) - gradeSortKey(b.grade) ||
@@ -171,7 +214,7 @@ export default function TuitionGridClient({
         a.name.localeCompare(b.name, "ko"),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [students, dept, q, onlyUnissued, invoiceOf]);
+  }, [students, dept, q, onlyUnissued, billed]);
 
   /** 옵션을 고릅니다. 같은 학생·같은 항목은 **덮어씁니다** - 바꿀 때마다 줄이 쌓이면 청구서에 같은 항목이 두 번 찍힙니다. */
   async function pickOption(student: TuitionStudent, plan: FeePlan, optionId: string) {
@@ -218,13 +261,23 @@ export default function TuitionGridClient({
     notify(`${targets.length}명에게 넣었습니다.`, "success");
   }
 
-  async function issueChecked() {
-    const targets = rows.filter((s) => checked.has(s.id) && totalOf(s.id) > 0);
+  /**
+   * 어느 항목을 담아 발행할 것인가. 빈 집합이면 그 학생의 학비 **전부**입니다.
+   *
+   * 정규과정과 방과후는 납기도 다르고 그만두는 시점도 다릅니다. 한 장에 섞으면 그 장이
+   * 반만 결제된 상태가 되어, 「방과후만 이번 달 얼마 걷혔나」를 셀 수가 없습니다.
+   */
+  async function issueChecked(planIds: string[]) {
+    const scoped = planIds.length > 0;
+    const targets = rows.filter(
+      (s) => checked.has(s.id) && (scoped ? planIds.some((pid) => lineFor(s.id, usedPlans.find((p) => p.id === pid)!)) : totalOf(s.id) > 0),
+    );
     if (targets.length === 0) {
       notify("발행할 학생을 골라주세요(납부 옵션을 고르지 않은 학생은 제외됩니다).", "error");
       return;
     }
-    if (!confirm(`${targets.length}명에게 학비 청구서를 발행합니다. 되돌리려면 취소해야 합니다.`)) return;
+    const scopeLabel = scoped ? usedPlans.filter((p) => planIds.includes(p.id)).map((p) => p.name).join(" · ") : "학비 전체";
+    if (!confirm(`${targets.length}명에게 「${scopeLabel}」 청구서를 발행합니다. 되돌리려면 취소해야 합니다.`)) return;
 
     setBusy(true);
     const made: Invoice[] = [];
@@ -234,7 +287,7 @@ export default function TuitionGridClient({
         const res = await fetch("/api/finance/invoices/tuition", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ studentId: s.id, dueDate, termId: termId || null }),
+          body: JSON.stringify({ studentId: s.id, dueDate, termId: termId || null, planIds: scoped ? planIds : null }),
         });
         const ctype = res.headers.get("content-type") ?? "";
         if (!ctype.includes("application/json")) {
@@ -257,7 +310,7 @@ export default function TuitionGridClient({
   }
 
   const grandTotal = rows.reduce((n, s) => n + totalOf(s.id), 0);
-  const unissued = rows.filter((s) => totalOf(s.id) > 0 && !invoiceOf.has(s.id)).length;
+  const unissued = rows.filter((s) => totalOf(s.id) > 0 && hasUnbilled(s.id)).length;
 
   if (usedPlans.length === 0) {
     return (
@@ -320,13 +373,28 @@ export default function TuitionGridClient({
             />
           </label>
           <button
-            onClick={() => void issueChecked()}
+            onClick={() => void issueChecked([])}
             disabled={busy || checked.size === 0}
             className={btn + " bg-emerald-600 px-3 py-1.5 text-white hover:bg-emerald-700"}
-            title="고른 학생에게 학비 청구서를 발행합니다"
+            title="고른 학생에게 학비 전부를 한 장으로 발행합니다(지난 미납도 함께 얹힙니다)"
           >
-            🧾 고른 {checked.size}명 발행
+            🧾 고른 {checked.size}명 · 전체 발행
           </button>
+          {/* 항목별 발행. 정규과정과 방과후는 납기도 그만두는 시점도 달라, 한 장에 섞으면
+              그 장이 반만 결제된 상태가 됩니다. 항목이 하나뿐이면 「전체」와 같으므로
+              굳이 두 번 보여주지 않습니다. */}
+          {usedPlans.length > 1 &&
+            usedPlans.map((p) => (
+              <button
+                key={p.id}
+                onClick={() => void issueChecked([p.id])}
+                disabled={busy || checked.size === 0}
+                className={btn + " border border-emerald-300 bg-white px-2.5 py-1.5 text-emerald-700 hover:bg-emerald-50"}
+                title={`${p.name}만 담은 청구서를 따로 발행합니다 — 지난 미납은 얹지 않습니다`}
+              >
+                🧾 {p.name}만
+              </button>
+            ))}
         </span>
       </div>
 
@@ -483,19 +551,36 @@ export default function TuitionGridClient({
 
                   <td className="border-b border-l border-slate-200 px-2 py-1">
                     {inv ? (
-                      <button
-                        onClick={() => setPreview({ id: inv.id, label: `${s.name} · ${inv.invoice_no}` })}
-                        className="text-[11px] font-bold text-emerald-700 underline"
-                      >
-                        {inv.invoice_no}
-                      </button>
+                      <span className="flex flex-wrap items-center gap-1">
+                        {(invoicesOf.get(s.id) ?? []).map((v) => {
+                          const scope = (v as Invoice & { plan_scope?: string | null }).plan_scope ?? null;
+                          return (
+                            <button
+                              key={v.id}
+                              onClick={() => setPreview({ id: v.id, label: `${s.name} · ${v.invoice_no}` })}
+                              className="text-[11px] font-bold text-emerald-700 underline"
+                              title={scope ? `${scope} 청구서` : "학비 전부를 담은 청구서"}
+                            >
+                              {v.invoice_no}
+                              {scope && <span className="ml-0.5 font-normal text-emerald-600">({scope})</span>}
+                            </button>
+                          );
+                        })}
+                        {/* 한 장 나갔다고 다 된 것이 아닙니다. 남은 항목이 있으면 말해줍니다 -
+                            아무 표시가 없으면 담당자는 끝난 줄로 읽습니다. */}
+                        {hasUnbilled(s.id) && (
+                          <span className="rounded bg-amber-100 px-1 text-[10px] font-bold text-amber-800" title="아직 청구서에 안 담긴 항목이 있습니다">
+                            남음
+                          </span>
+                        )}
+                      </span>
                     ) : total > 0 ? (
                       <span className="flex items-center gap-1">
                         <span className="text-[11px] font-semibold text-amber-600">미발행</span>
                         <button
                           onClick={() => {
                             setChecked(new Set([s.id]));
-                            setTimeout(() => void issueChecked(), 0);
+                            setTimeout(() => void issueChecked([]), 0);
                           }}
                           disabled={busy}
                           className="rounded bg-amber-100 px-1 text-[11px] font-bold text-amber-800 hover:bg-amber-200 disabled:opacity-40"

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import QRCode from "qrcode";
 import { createClient } from "@/lib/supabase/client";
+import { shareUrl } from "@/lib/appUrl";
 
 // 업무보드 머리줄의 "도착체크 QR" 배지.
 //
@@ -46,7 +47,7 @@ export default function ArrivalQrBadge() {
       setError("정규학기 도착체크 링크가 아직 없습니다. 관리 → 링크·기기에서 하나 만들어주세요.");
       return;
     }
-    const link = `${window.location.origin}/shuttle-arrival/${data.token}`;
+    const link = shareUrl(`/shuttle-arrival/${data.token}`);
     setUrl(link);
     setDataUrl(await QRCode.toDataURL(link, { width: 320, margin: 1 }));
   }

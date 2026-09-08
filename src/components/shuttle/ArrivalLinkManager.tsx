@@ -5,6 +5,7 @@ import QRCode from "qrcode";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
 import type { ShuttleArrivalLink } from "@/lib/types";
+import { shareUrl } from "@/lib/appUrl";
 
 // 교직원용 도착·출발 체크 단독 링크 관리 - 관리자 전용(요청: "교직원이 모바일로 도착한 차량
 // 누를 수 있는 단독 링크"). GPS 위치 전송이나 학생별 개별 탑승 체크 없이, 차량이 왔다/떠났다만
@@ -86,7 +87,7 @@ export default function ArrivalLinkManager({ initialLinks }: { initialLinks: Shu
   }
 
   function arrivalLinkUrl(token: string) {
-    return `${window.location.origin}/shuttle-arrival/${token}`;
+    return shareUrl(`/shuttle-arrival/${token}`);
   }
 
   function copyLink(token: string) {

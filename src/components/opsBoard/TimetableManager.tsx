@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
 import type { WrClass, WrPeriod, WrTimetableEntry, OpsBoardLink } from "@/lib/types";
 import { departmentOf, gradeSortKey, VISIBLE_DEPARTMENTS } from "@/lib/department";
+import { shareUrl } from "@/lib/appUrl";
 
 // 요청: "지금 시간에 각반이 무슨 수업시간인지" - 대시보드가 이 정보를 보여주려면 교시(몇 시부터
 // 몇 시까지가 몇 교시인지)와 시간표(어느 반이 무슨 요일 몇 교시에 무슨 수업인지)가 있어야 하는데
@@ -214,7 +215,7 @@ export default function TimetableManager({
   }
 
   function copyShortUrl(code: string) {
-    const url = `${window.location.origin}/d/${code}`;
+    const url = shareUrl(`/d/${code}`);
     navigator.clipboard.writeText(url).then(
       () => notify("짧은 주소를 복사했습니다.", "success"),
       () => notify("복사하지 못했습니다.", "error")
@@ -229,7 +230,7 @@ export default function TimetableManager({
   }
 
   function copyUrl(token: string) {
-    const url = `${window.location.origin}/ops-board/${token}`;
+    const url = shareUrl(`/ops-board/${token}`);
     navigator.clipboard.writeText(url).then(
       () => notify("주소를 복사했습니다.", "success"),
       () => notify("복사하지 못했습니다.", "error")

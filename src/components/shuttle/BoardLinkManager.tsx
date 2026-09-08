@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
 import { parseYoutubeMultilineInput, youtubeValueToEditableText } from "@/lib/youtube";
 import type { ShuttleBoardLink } from "@/lib/types";
+import { shareUrl } from "@/lib/appUrl";
 
 // 짧은 주소용 코드에 헷갈리는 글자(0/O, 1/I/l)를 빼서 공용컴퓨터에서 눈으로 보고 타이핑해도
 // 실수하지 않게 합니다(요청: "주소가 너무 복잡해서 바로 주소를 공용컴퓨터 주소창에 치는게
@@ -132,7 +133,7 @@ export default function BoardLinkManager({ initialLinks }: { initialLinks: Shutt
   }
 
   function boardLinkUrl(token: string) {
-    return `${window.location.origin}/shuttle-board/${token}`;
+    return shareUrl(`/shuttle-board/${token}`);
   }
 
   function copyLink(token: string) {
@@ -152,7 +153,7 @@ export default function BoardLinkManager({ initialLinks }: { initialLinks: Shutt
   // 요청: "주소가 너무 복잡해서... 짧은 주소로 만들어줘" - /b/[code]로 접속하면 이 안내보드로
   // 자동 연결됩니다(로그인 불필요, 기존 토큰 링크와 동일하게 동작).
   function shortLinkUrl(code: string) {
-    return `${window.location.origin}/b/${code}`;
+    return shareUrl(`/b/${code}`);
   }
 
   function copyShortLink(code: string) {

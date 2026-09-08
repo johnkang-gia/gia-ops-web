@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useToast } from "@/components/common/ToastProvider";
 import { isTestReceipt } from "@/lib/rosterSync";
+import { APP_ORIGIN, onOtherOrigin } from "@/lib/appUrl";
 
 /**
  * 구글시트 → 명부 자동 수신.
@@ -342,7 +343,10 @@ export default function RosterSyncClient() {
 
 function ScriptBox({ token }: { token: string }) {
   const notify = useToast();
-  const origin = typeof window === "undefined" ? "" : window.location.origin;
+  // 지금 브라우저 주소가 아니라 **정식 주소**를 박습니다. 미리보기 주소로 만들어진 스크립트는
+  // Vercel 배포 보호에 걸려 로그인 화면(HTTP 200)을 받고, 스크립트는 그걸 성공으로 읽습니다.
+  const origin = APP_ORIGIN;
+  const elsewhere = onOtherOrigin();
   const code = `// GIA 명부 보내기 — 담당자 개인 소유의 «별도 스크립트»로 두세요.
 // script.google.com > 새 프로젝트 > 아래를 붙여넣고 SHEET_ID / SHEET_NAME 만 고칩니다.
 // 저장 후 [명부보내기]를 한 번 실행해 권한을 허용하고,
@@ -383,6 +387,12 @@ function 명부보내기() {
 
   return (
     <div className="mt-2">
+      {elsewhere && (
+        <p className="mb-1 rounded bg-amber-50 px-2 py-1 text-[11px] leading-relaxed text-amber-900">
+          지금 <b>미리보기 주소</b>로 보고 계십니다. 아래 스크립트에는 정식 주소({APP_ORIGIN})를 넣었으니 그대로 쓰시면
+          됩니다 — 미리보기 주소는 배포마다 바뀌고, 로그인 화면을 돌려주면서 스크립트에는 성공으로 보입니다.
+        </p>
+      )}
       <div className="mb-1 flex items-center gap-2">
         <button
           onClick={() => {

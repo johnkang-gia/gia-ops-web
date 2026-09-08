@@ -37,6 +37,8 @@ export default function LoginForm() {
     await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
+        // origin-ok: 로그인은 «지금 보고 있는 주소»로 돌아와야 합니다. 미리보기에서
+        // 로그인했는데 정식 주소로 튕기면 방금 하던 화면을 잃습니다.
         redirectTo: `${window.location.origin}/auth/callback`,
         // hd 파라미터는 구글 계정 선택 화면에서 해당 도메인 계정을 우선 보여주는 힌트일 뿐,
         // 실제 접근 제한은 middleware.ts + Supabase RLS에서 이메일 도메인으로 다시 검사합니다.

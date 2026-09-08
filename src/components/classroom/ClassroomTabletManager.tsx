@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
 import type { WrClass } from "@/lib/types";
+import { APP_ORIGIN } from "@/lib/appUrl";
 
 /**
  * 교실 태블릿 — 반별 전용 링크와 호출.
@@ -54,12 +55,9 @@ export default function ClassroomTabletManager({ classes }: { classes: WrClass[]
   const [links, setLinks] = useState<Link[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
-  const [origin, setOrigin] = useState("");
   const [callFor, setCallFor] = useState<WrClass | null>(null);
   const [reason, setReason] = useState("");
   const [studentName, setStudentName] = useState("");
-
-  useEffect(() => setOrigin(window.location.origin), []);
 
   useEffect(() => {
     void (async () => {
@@ -164,7 +162,7 @@ export default function ClassroomTabletManager({ classes }: { classes: WrClass[]
             const l = byClass.get(c.id);
             const seen = l?.last_seen_at ? new Date(l.last_seen_at).getTime() : 0;
             const alive = !!l?.enabled && Date.now() - seen < 2 * 60 * 1000;
-            const url = l ? `${origin}/c/${l.short_code || l.token}` : "";
+            const url = l ? `${APP_ORIGIN}/c/${l.short_code || l.token}` : "";
             return (
               <div key={c.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 px-2.5 py-2 text-xs">
                 <b className="w-28 shrink-0 text-slate-800">

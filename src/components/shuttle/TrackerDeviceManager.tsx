@@ -7,6 +7,7 @@ import { useToast } from "@/components/common/ToastProvider";
 import { driverSetupPath, setupMessage, smsHref } from "@/lib/driverSetup";
 import { formatTrackWindows } from "@/lib/shuttleTracking";
 import type { ShuttleRoute, ShuttleTrackerDevice, ShuttleStop, ShuttleStopObservation } from "@/lib/types";
+import { shareUrl } from "@/lib/appUrl";
 
 // 요청: "기사님들은 네비를 핸드폰으로 하시는 경우도 많아서... 백그라운드에서 돌아갈 수 있도록",
 // "각 정류장도 우리는 지금 정확한 정보를 가지고 있지 않아서, gps를 통해서... 정확도를 높여서"
@@ -102,12 +103,12 @@ export default function TrackerDeviceManager({
   }, [rows]);
 
   function serverUrl() {
-    return typeof window === "undefined" ? "" : `${window.location.origin}/api/shuttle/track`;
+    return shareUrl("/api/shuttle/track");
   }
 
   function setupUrl(device: ShuttleTrackerDevice) {
     if (typeof window === "undefined" || !device.setup_code) return "";
-    return `${window.location.origin}${driverSetupPath(device.setup_code)}`;
+    return shareUrl(driverSetupPath(device.setup_code));
   }
 
   function routeLabelOf(device: ShuttleTrackerDevice) {

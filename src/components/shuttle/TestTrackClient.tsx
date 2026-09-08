@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { loadKakaoMaps } from "@/lib/kakaoMap";
+import { shareUrl } from "@/lib/appUrl";
 
 // GPS 테스트 지도. 요청: "지도 크게 (...) 노선이 보이도록 (...) GIA에서부터 출발하면서 지나는
 // 경로 선으로 트래킹 (...) 차량을 가운데 두지말고 지도를 확대하고 노선이 보이도록".
@@ -66,8 +67,7 @@ export default function TestTrackClient() {
   const fittedRef = useRef(false);
   const [mapError, setMapError] = useState<string | null>(null);
 
-  const setupUrl =
-    typeof window !== "undefined" && data?.setupCode ? `${window.location.origin}/s/${data.setupCode}` : null;
+  const setupUrl = data?.setupCode ? shareUrl(`/s/${data.setupCode}`) : null;
 
   useEffect(() => {
     let cancelled = false;

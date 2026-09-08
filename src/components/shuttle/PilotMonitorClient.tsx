@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { loadKakaoMaps } from "@/lib/kakaoMap";
 import { useToast } from "@/components/common/ToastProvider";
 import type { ShuttlePilotPing, ShuttlePilotRoute, ShuttleRoute, ShuttleRunEvent, ShuttleSafetyEvent } from "@/lib/types";
+import { shareUrl } from "@/lib/appUrl";
 
 // 안전운행지수(3단계-a) - 급가속·급감속 1건당 5점씩 깎습니다(정교한 보험사식 가중치가 아니라,
 // "오늘 얼마나 급격한 순간이 많았는지"를 한눈에 보는 용도의 단순 지표입니다).
@@ -161,7 +162,7 @@ export default function PilotMonitorClient({
   }
 
   function pilotLinkUrl(token: string) {
-    return `${window.location.origin}/shuttle-pilot/${token}`;
+    return shareUrl(`/shuttle-pilot/${token}`);
   }
 
   function copyLink(token: string) {

@@ -61,6 +61,13 @@ export type ChecklistItem = {
   // 오늘 요일에 이 차를 타는 학생인지. false면 회색으로 흐리게 보이고, 눌러서 오늘 탑승으로
   // 바꿀 수 있습니다(요청: "안타는 아이도 옅은 회색으로 (...) 눌러서 탑승으로").
   ridingToday?: boolean;
+  /**
+   * 평소에 오늘 타는 아이인가 — **사람이 누른 것을 빼고 본 사실**입니다.
+   *
+   * `ridingToday` 는 [탑승]을 누르면 true 로 바뀝니다. 표가 그 값으로 버튼을 고르니 한 번
+   * 누르면 [탑승] 버튼이 사라져 되돌릴 수가 없었습니다. 스위치는 이 값으로 그립니다.
+   */
+  baseRiding?: boolean;
   // 이 학생이 이 차를 타는 요일들(1=월~5=금). 인쇄본에서 PDF처럼 "(월수금)이름"으로 씁니다.
   weekdays?: number[];
   // 지속 특이사항 효과로 이 학생을 요일별 셔틀에서 묶어 볼 때 쓰는 표시용 값들(클라이언트에서
@@ -361,6 +368,15 @@ export default function ShuttleChecklistClient({
       return {
         ...it,
         ridingToday: humanRiding ? true : riding,
+        // **평소에 오늘 타는 아이인가** - 사람이 누른 것을 빼고 본 사실입니다.
+        //
+        // 위의 `ridingToday` 는 사람이 [탑승]을 누르면 true 로 바뀝니다. 표가 그 값만 보고
+        // 버튼을 고르니, 한 번 누른 뒤에는 [탑승] 버튼 자체가 사라져 **되돌릴 수가
+        // 없었습니다.** 눌러놓고 아니었네 하고 다시 누르려 해도 누를 자리가 없습니다.
+        //
+        // 그래서 「평소 안 타는 아이」라는 사실은 따로 남깁니다. 표는 이 값으로 [탑승]
+        // 스위치를 그리고, 그래서 몇 번이든 켰다 껐다 할 수 있습니다.
+        baseRiding: riding,
         // 사람이 표에서 이미 바꿔둔 줄은 그대로 둡니다 - 사람이 마지막에 본 것이 맞습니다.
         status: it.status === "예정" && forcedStatus ? forcedStatus : it.status,
         // 개별하원 표시는 사실 그대로 둡니다. 오늘만 타는 것이지 평소 개별하원인 것은
@@ -676,9 +692,14 @@ export default function ShuttleChecklistClient({
   // 이름을 치면 그 학생 뱃지를 바로 찾을 수 있게(요청: "검색할수 있게 해줘서 이름을 치면 그
   // 학생 이름뱃지 바로 찾을 수 있게... 색이 변해서 어디있는지 바로 알 수 있게끔") - 실제
   // 하이라이트·스크롤은 ShuttleChecklistTable이 이 검색어를 받아 처리합니다.
-  // 동명이인만 이름 옆에 학년·반을 붙입니다(담당자 요청).
+  // **모든 아이 이름 옆에 학년·반을 붙입니다.**
   //
-  // 한 명뿐인 이름에까지 붙이면 표가 글자로 가득 차고, 정작 구분이 필요한 이름이 묻힙니다.
+  // 예전에는 동명이인에게만 붙였습니다. 글자가 늘어나는 것을 걱정했는데, 실제로는 반대
+  // 문제가 컸습니다 - 동승 선생님과 기사님은 아이 얼굴은 알아도 어느 반인지는 모르고,
+  // 명단에서 「김재이」를 보면 **동명이인인 줄도 모른 채** 눈앞의 아이라고 믿습니다.
+  // 붙어 있는 표시가 없으면 「이 이름은 하나뿐이구나」로 읽힙니다.
+  //
+  // 동명이인은 그 위에 더 진하게 표시합니다 - 반드시 확인해야 하는 줄이라서.
   // 판단은 @/lib/studentLabel 한 곳에서만 합니다 - 화면마다 따로 두면 같은 아이가 화면마다
   // 다르게 불립니다.
   const homonyms = useMemo(() => buildHomonymSet(roster), [roster]);
@@ -686,12 +707,13 @@ export default function ShuttleChecklistClient({
     const m = new Map<string, string>();
     for (const s of roster) {
       const k = normStudentName(s.name);
-      if (!homonyms.has(k)) continue;
       const w = whereLabel({ name: s.name, grade: s.grade, className: s.className });
       if (w) m.set(k, w);
     }
     return m;
-  }, [roster, homonyms]);
+  }, [roster]);
+  /** 같은 이름이 여럿인 아이. 표에서 더 진하게 그립니다. */
+  const homonymNames = useMemo(() => homonyms, [homonyms]);
 
   // 영어 이름으로도 찾기 (담당자: "아이들 영어이름으로도 검색할 수 있게 해줘").
   //
@@ -1075,6 +1097,7 @@ export default function ShuttleChecklistClient({
             onRequestMove={requestMove}
             onRequestEditNote={openNoteEditor}
             whereByName={whereByName}
+            homonymNames={homonymNames}
             onShowSource={setSourceOf}
             touchedIds={touchedIds}
           />
@@ -1083,6 +1106,7 @@ export default function ShuttleChecklistClient({
           routes={routes}
           items={displayItems}
           whereByName={whereByName}
+          homonymNames={homonymNames}
           // 담당자: "몇 년 몇 월 몇 일 몇 요일인지" - 종이는 며칠 뒤에도 굴러다닙니다.
           // 연도까지 없으면 언제 것인지 알 수 없습니다.
           dateLabel={new Date().toLocaleDateString("ko-KR", {

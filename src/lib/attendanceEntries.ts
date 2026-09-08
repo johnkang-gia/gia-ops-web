@@ -1,10 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { extractTimeFromText } from "./pickupParse";
 import {
   categorize,
   extractTargetRange,
   looksLikePronounReply,
   matchRosterStudents,
   categoryForStudent,
+  ownPieces,
   surfacesFor,
   todayKey,
   type LearningRule,
@@ -183,7 +185,12 @@ export async function scanIntoEntries(
       // 같은 글에 나오는 다른 아이들의 표기도 넘깁니다. 한 문장에 여럿이면 절로 나눠 읽어야
       // 합니다("권수호는 픽업, 라원이는 셔틀").
       const others = matched.filter((o) => o.name !== st.name).flatMap((o) => surfacesFor(o.name, roster));
-      const status = categoryForStudent(m.text, surfacesFor(st.name, roster), category, rules, others);
+      const mine = surfacesFor(st.name, roster);
+      const status = categoryForStudent(m.text, mine, category, rules, others);
+      // 이 아이를 가리키는 조각에서만 시각을 읽습니다. 글 전체에서 읽으면 한 글에 아이가
+      // 둘일 때 둘 다 같은 시각이 붙습니다 - 아무도 안 오는 시각에 아이가 문 앞에 섭니다.
+      const pieces = ownPieces(m.text, mine, others);
+      const pickupTime = pieces.map((c) => extractTimeFromText(c)).find(Boolean) ?? null;
       if (!status) {
         skipped += 1;
         continue;
@@ -212,6 +219,8 @@ export async function scanIntoEntries(
         state,
         reason: reason ?? (spanTooLong ? `기간이 ${MAX_SPAN_DAYS}일보다 길게 읽혔습니다 - 하루로 줄였으니 맞는지 확인해주세요` : null),
         raw_text: m.text.slice(0, 500),
+        // 픽업만 시각을 답니다. 결석·지각에 시각을 붙이면 화면이 「몇 시에 온다」로 읽습니다.
+        pickup_time: status === "픽업" ? pickupTime : null,
         registered_at: state === "등록" ? new Date().toISOString() : null,
         registered_by: state === "등록" ? "자동" : null,
       });
@@ -266,9 +275,10 @@ export async function scanIntoEntries(
 export async function loadActiveEntries(supabase: SupabaseClient, dateKey: string) {
   const { data } = await supabase
     .from("attendance_entries")
-    // raw_text 까지 가져옵니다. 픽업은 «몇 시»가 이름보다 먼저 필요한 정보인데, 이 표에는
-    // 시각 칸이 없어서 원문에서 읽어내야 합니다("2시 40분에 데리러 갈게요").
-    .select("student_id, student_name, grade, class_name, status, note, raw_text, date_from, date_to")
+    // 픽업은 «몇 시»가 이름보다 먼저 필요한 정보입니다. pickup_time 은 저장할 때 그 아이를
+    // 가리키는 조각에서 한 번 읽어둔 값이고, 그 칸이 생기기 전 줄을 위해 raw_text 도 함께
+    // 가져옵니다(읽는 쪽이 없으면 원문에서 뽑습니다).
+    .select("student_id, student_name, grade, class_name, status, note, raw_text, pickup_time, date_from, date_to")
     .eq("state", "등록")
     .lte("date_from", dateKey)
     .gte("date_to", dateKey);

@@ -87,6 +87,37 @@ export type RosterEntry = {
 };
 
 /**
+ * 명부를 읽을 때 **반드시 가져와야 하는 칸**들. 조회에 그대로 붙여 씁니다.
+ *
+ * ```ts
+ * const { data } = await supabase.from("wr_students").select(ROSTER_SELECT).eq("is_demo", false);
+ * setRoster(toRosterEntries(data));
+ * ```
+ */
+export const ROSTER_SELECT = "id, name, name_en, grade, birth_date, class_name";
+
+/**
+ * 조회 결과를 명부 줄로 바꿉니다. **이 함수만 씁니다.**
+ *
+ * 손으로 `map` 을 쓰면 칸 하나가 빠집니다 - 실제로 네 번 났습니다. 조회에는 `birth_date`
+ * 가 들어 있는데 바로 아래 `map` 에서 그 줄이 없어서, 생일로 가르는 규칙이 아무리 멀쩡해도
+ * 화면에는 그냥 「김재이」로 떴습니다. 빠뜨려도 오류가 아니라 «그냥 이름»으로 보입니다.
+ */
+export function toRosterEntries(rows: unknown): RosterEntry[] {
+  const list = Array.isArray(rows) ? (rows as Record<string, unknown>[]) : [];
+  return list
+    .filter((r) => r && typeof r === "object")
+    .map((r) => ({
+      id: String(r.id ?? ""),
+      name: String(r.name ?? ""),
+      name_en: (r.name_en as string | null) ?? null,
+      grade: (r.grade as string | null) ?? null,
+      birth_date: (r.birth_date as string | null) ?? null,
+      class_name: (r.class_name as string | null) ?? null,
+    }));
+}
+
+/**
  * 글에서 **반 이름**을 찾습니다. 명부의 반 이름을 그대로 대조합니다.
  *
  * 규칙(`G\d[A-Z]`)으로 뽑지 않는 이유: 반 이름은 학교가 정하는 것이고 학기마다 바뀝니다.

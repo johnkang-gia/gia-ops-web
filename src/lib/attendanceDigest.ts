@@ -145,6 +145,31 @@ export function surfacesFor(name: string, roster: { name: string; nameEn?: strin
   return nameSurfaces(name, roster.find((r) => r.name === name)?.nameEn ?? null);
 }
 
+/**
+ * 이 아이를 가리키는 **조각**만 골라냅니다.
+ *
+ * 한 글에 아이가 여럿인 경우가 흔합니다.
+ *
+ *     "Rogan will be picked up at 2:30! ... 김도은 오늘 픽업으로 셔틀 없습니다."
+ *
+ * 글 전체에서 시각을 읽으면 김도은에게도 2:30 이 붙습니다. **없는 것보다 나쁩니다** -
+ * 아무도 안 오는 시각에 아이를 문 앞에 세워두게 됩니다.
+ */
+export function ownPieces(text: string, surfaces: readonly string[], otherSurfaces?: readonly string[]): string[] {
+  const flat = (v: string) => v.toLowerCase().replace(/\s+/g, "");
+  const hasName = (piece: string, names: readonly string[]) => names.some((n) => flat(piece).includes(flat(n)));
+  if (surfaces.length === 0) return [];
+  const own: string[] = [];
+  for (const s of splitSentences(text).filter((s) => hasName(s, surfaces))) {
+    const shared = (otherSurfaces ?? []).some((n) => flat(s).includes(flat(n)));
+    if (shared) own.push(...splitClauses(s).filter((c) => hasName(c, surfaces)));
+    else own.push(s);
+  }
+  // 문장에서 못 찾으면 절 단위로 한 번 더 봅니다.
+  if (own.length === 0) own.push(...splitClauses(text).filter((c) => hasName(c, surfaces)));
+  return own;
+}
+
 export function categoryForStudent(
   text: string,
   surfaces: readonly string[],
@@ -164,14 +189,7 @@ export function categoryForStudent(
    * 이름 쪽 조각에 아무 단서가 없고, 그러면 그 아이는 아무 분류도 못 받습니다.
    * 다만 한 문장에 아이가 여럿이면(`권수호는 픽업, 라원이는 셔틀`) 다시 절로 나눠 각자 읽습니다.
    */
-  const own: string[] = [];
-  for (const s of splitSentences(text).filter((s) => hasName(s, surfaces))) {
-    const shared = (otherSurfaces ?? []).some((n) => flat(s).includes(flat(n)));
-    if (shared) own.push(...splitClauses(s).filter((c) => hasName(c, surfaces)));
-    else own.push(s);
-  }
-  // 문장에서 못 찾으면 절 단위로 한 번 더 봅니다.
-  if (own.length === 0) own.push(...splitClauses(text).filter((c) => hasName(c, surfaces)));
+  const own = ownPieces(text, surfaces, otherSurfaces);
   // 이름이 어디에도 없으면(별칭 규칙으로 잡힌 경우 등) 예전처럼 글 전체를 따릅니다.
   if (own.length === 0) return whole;
 

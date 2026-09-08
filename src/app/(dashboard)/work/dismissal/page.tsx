@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isStaffOrAboveUser } from "@/lib/roles";
 import GuideButton from "@/components/common/GuideButton";
+import { markIfAmbiguous, toKoreanDisplayName, toRosterEntries, ROSTER_SELECT } from "@/lib/pickupParse";
 import DismissalBulkClient, { type InquiryLite, type PlanRow, type RideLite, type StudentLite } from "@/components/work/DismissalBulkClient";
 
 export const dynamic = "force-dynamic";
@@ -64,7 +65,7 @@ export default async function DismissalBulkPage() {
   const [{ data: students }, { data: plans }, { data: inquiries }, { data: rides }] = await Promise.all([
     supabase
       .from("wr_students")
-      .select("id, name, grade, class_name")
+      .select(ROSTER_SELECT)
       .eq("status", "active")
       .eq("is_demo", false)
       .order("grade")
@@ -84,6 +85,9 @@ export default async function DismissalBulkPage() {
       .from("shuttle_assignments")
       .select("student_id, student_name_raw, weekdays, stop_id, shuttle_stops(name, shuttle_routes(name))"),
   ]);
+
+  // 동명이인을 가르는 재료(생일·반)까지 들어 있는 명부. 한 곳에서 만듭니다.
+  const nameRoster = toRosterEntries(students);
 
   return (
     <div className="mx-auto max-w-5xl p-4 sm:p-6">
@@ -107,7 +111,20 @@ export default async function DismissalBulkPage() {
               (r): InquiryLite => ({
                 id: r.id,
                 kind: r.kind ?? "문의",
-                name: r.matched_name ?? r.ai_student_name ?? r.channel_label ?? "미확인",
+                // 이름만 띄우면 보는 사람은 **이미 정해진 이름이라고 믿습니다.** 김재이가
+                // 셋이라, 그 상태로 하원수단을 고치면 엉뚱한 아이 것이 바뀝니다.
+                name:
+                  markIfAmbiguous(
+                    toKoreanDisplayName(
+                      r.matched_name ?? r.ai_student_name,
+                      r.channel_label,
+                      nameRoster,
+                      `${r.summary ?? ""} ${r.raw_text ?? ""}`,
+                    ),
+                    nameRoster,
+                  ) ??
+                  r.channel_label ??
+                  "미확인",
                 summary: r.summary,
                 raw: r.raw_text,
                 at: r.received_at,

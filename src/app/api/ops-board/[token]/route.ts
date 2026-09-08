@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { APP_VERSION } from "@/lib/version";
 import { buildStaffNames, categorize, extractTargetDate, matchRosterStudents, todayKey, type RosterStudent } from "@/lib/attendanceDigest";
 import { loadActiveEntries, loadUpcomingEntries } from "@/lib/attendanceEntries";
-import { markIfAmbiguous, toKoreanDisplayName, type RosterEntry } from "@/lib/pickupParse";
+import { markIfAmbiguous, toKoreanDisplayName, toRosterEntries, ROSTER_SELECT, type RosterEntry } from "@/lib/pickupParse";
 import { loadTodayPickups } from "@/lib/pickups";
 import { displayInquiryType } from "@/lib/inquiryType";
 import { createClient } from "@supabase/supabase-js";
@@ -335,18 +335,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     .from("wr_students")
     // 생일까지 읽습니다 - 「김재이 (190510)」처럼 생일로 알려주시는 경우가 있고,
     // 같은 학년 동명이인은 그것 말고는 갈릴 방법이 없습니다.
-    .select("id, name, name_en, grade, class_name, birth_date")
+    .select(ROSTER_SELECT)
     .in("status", ["active", "보류"])
     .eq("is_demo", false);
-  // **반 이름을 함께 넘깁니다.** 이게 빠져 있어서 동명이인 표시가 「김재이(3학년)」로도 못
-  // 붙었습니다 - 김재이가 셋인데 셋 다 다른 반이라, 학년만으로는 여전히 누구인지 모릅니다.
-  const nameRoster: RosterEntry[] = (allRoster ?? []).map((s) => ({
-    id: s.id as string,
-    name: (s.name as string) ?? "",
-    name_en: (s.name_en as string | null) ?? null,
-    grade: (s.grade as string | null) ?? null,
-    class_name: (s.class_name as string | null) ?? null,
-  }));
+  // **손으로 옮기지 않습니다.** 예전에는 여기서 map 을 직접 썼고, 조회에는 있던 birth_date 가
+  // 그 map 에서 빠져 있었습니다. 생일로 가르는 규칙은 멀쩡했는데 재료가 없어서, 김재이 셋이
+  // 화면에는 그냥 「김재이」로 떴습니다. 빠뜨려도 오류가 아니라 «그냥 이름»으로 보입니다.
+  const nameRoster: RosterEntry[] = toRosterEntries(allRoster);
 
   const { data: inquiryRows } = await supabase
     .from("pickup_requests")
@@ -383,6 +378,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
           (r.matched_name as string | null) ?? (r.ai_student_name as string | null),
           r.channel_label as string | null,
           nameRoster,
+          // 원문도 함께 봅니다. 「G2C 김재이」처럼 본문에 적어 오시는 경우가 가장 많습니다.
+          `${(r.summary as string | null) ?? ""} ${(r.raw_text as string | null) ?? ""}`,
         );
         return markIfAmbiguous(guessed, nameRoster) ?? (r.channel_label as string | null) ?? "미확인";
       })(),

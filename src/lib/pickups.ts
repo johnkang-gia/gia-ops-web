@@ -146,8 +146,12 @@ export async function loadTodayPickups(
     .map((e) => ({
       name: e.student_name as string,
       studentId: (e.student_id as string | null) ?? null,
-      // 이 표에는 시각 칸이 없어서 원문에서 읽습니다. 못 읽으면 null - 억지로 추측하지 않습니다.
-      time: extractTimeFromText((e.raw_text as string | null) ?? (e.note as string | null)),
+      // **저장해둔 시각이 먼저입니다.** 그건 그 아이를 가리키는 조각에서 읽은 값이라,
+      // 한 글에 아이가 둘일 때 옆 아이의 시각이 옮겨붙지 않습니다. 그 칸이 생기기 전에
+      // 쌓인 줄만 예전처럼 원문에서 뽑습니다 - 못 읽으면 null, 억지로 추측하지 않습니다.
+      time:
+        assumeAfternoon(((e.pickup_time as string | null) ?? "").slice(0, 5) || null) ??
+        extractTimeFromText((e.raw_text as string | null) ?? (e.note as string | null)),
     }));
 
   // 학생 연결이 없거나 명부에서 못 찾은 건도 **버리지 않습니다.**

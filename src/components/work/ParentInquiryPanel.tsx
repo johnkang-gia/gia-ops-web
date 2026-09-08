@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import { notifyOpsBoardRefresh, OPS_REFRESH_CHANNEL, OPS_REFRESH_EVENT } from "@/lib/opsRefresh";
 import { useToast } from "@/components/common/ToastProvider";
-import { markIfAmbiguous, toKoreanDisplayName, type RosterEntry } from "@/lib/pickupParse";
+import { markIfAmbiguous, toKoreanDisplayName, toRosterEntries, ROSTER_SELECT, type RosterEntry } from "@/lib/pickupParse";
 
 // 학부모 문의사항 — 예전 실시간 로그가 있던 자리입니다.
 //
@@ -375,17 +375,13 @@ export default function ParentInquiryPanel({
         // 적을 수도 없습니다. 김재이가 셋인데 셋 다 그냥 「김재이」로 뜬 원인이 이 한 줄이었습니다.
         // 상태도 수신 쪽(loadRoster)과 같게 맞춥니다 - 보류 학생이 화면에서만 빠지면
         // 같은 이름이 화면과 처리에서 다르게 갈립니다.
-        .select("id, name, name_en, grade, birth_date, class_name")
+        .select(ROSTER_SELECT)
         .in("status", ["active", "보류"])
         .eq("is_demo", false);
-      setRoster(
-        ((data as { id: string; name: string; name_en: string | null; grade: string | null }[] | null) ?? []).map((s) => ({
-          id: s.id,
-          name: s.name ?? "",
-          name_en: s.name_en ?? null,
-          grade: s.grade ?? null,
-        }))
-      );
+      // **손으로 옮기지 않습니다.** 조회에는 birth_date·class_name 이 있는데 바로 아래
+      // map 에서 그 두 줄이 빠져 있었습니다. 가르는 규칙은 멀쩡했고 재료만 없었는데,
+      // 화면에는 오류가 아니라 그냥 「김재이」로 보였습니다 - 같은 실수가 네 번째였습니다.
+      setRoster(toRosterEntries(data));
     })();
     load();
     const supabase = createClient();

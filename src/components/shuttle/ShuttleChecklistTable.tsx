@@ -34,6 +34,7 @@ export default function ShuttleChecklistTable({
   onShowSource,
   touchedIds,
   whereByName,
+  homonymNames,
 }: {
   routes: ChecklistRoute[];
   items: ChecklistItem[];
@@ -44,6 +45,8 @@ export default function ShuttleChecklistTable({
    * 가득 차고, 정작 구분이 필요한 이름이 묻힙니다.
    */
   whereByName?: Map<string, string>;
+  /** 같은 이름이 여럿인 아이. 이 줄은 더 진하게 그려 반드시 확인하게 합니다. */
+  homonymNames?: Set<string>;
   busyId: string | null;
   searchTerm: string;
   /**
@@ -236,6 +239,10 @@ export default function ShuttleChecklistTable({
                         const isSwitchedOff = boardedElsewhere.has(item.assignmentId) && !isPickup && !isAbsent;
                         // 오늘 안 타는 학생(요청: 옅은 회색). 단, 눌러서 탑승으로 바꾼 경우는 정상 표시.
                         const isNonRiding = (item.ridingToday === false && !isBoarded) || isSwitchedOff;
+                        // 평소에 오늘 타는 아이인가. 사람이 누른 것을 빼고 본 사실이라, 버튼을
+                        // 그리는 기준은 이쪽입니다. 예전 줄에는 이 값이 없을 수 있어 그때는
+                        // 지금 값으로 대신합니다.
+                        const baseRiding = item.baseRiding ?? item.ridingToday;
                         // **오늘만 옮긴 아이만 표시합니다.**
                         //
                         // 예전에는 "계속 유지"로 옮긴 아이에게도 보라색 ⇄ 딱지를 붙였습니다.
@@ -402,10 +409,23 @@ export default function ShuttleChecklistTable({
                               {item.studentName}
                               {/* 동명이인일 때만 학년·반(담당자 요청: "김재이" 같은 경우).
                                   인쇄본에도 남깁니다 - 종이에서 헷갈리는 게 더 위험합니다. */}
+                              {/* 학년·반은 **모든 아이**에게 붙입니다. 동승 선생님·기사님은
+                                  아이 얼굴은 알아도 어느 반인지는 모르고, 표시가 없으면
+                                  「이 이름은 하나뿐이구나」로 읽힙니다. 같은 이름이 여럿인
+                                  아이는 더 진하게 그려 반드시 확인하게 합니다. */}
                               {whereByName?.get(normName(item.studentName)) && (
                                 <span
-                                  className="ml-0.5 align-baseline text-[8px] font-semibold text-slate-400"
-                                  title={`같은 이름이 여러 명이라 학년·반을 함께 적습니다`}
+                                  className={
+                                    "ml-0.5 align-baseline text-[8px] font-semibold " +
+                                    (homonymNames?.has(normName(item.studentName))
+                                      ? "rounded bg-amber-100 px-0.5 text-amber-700"
+                                      : "text-slate-400")
+                                  }
+                                  title={
+                                    homonymNames?.has(normName(item.studentName))
+                                      ? "같은 이름이 여러 명입니다 - 학년·반을 꼭 확인하세요"
+                                      : "학년·반"
+                                  }
                                 >
                                   {whereByName.get(normName(item.studentName))}
                                 </span>
@@ -432,19 +452,22 @@ export default function ShuttleChecklistTable({
                               </span>
                             )}
                             <span className="flex gap-1 print:hidden">
-                              {item.ridingToday === false ? (
-                                // 오늘 안 타는 학생 - 눌러서 오늘 탑승으로(요청). 다시 누르면 취소.
+                              {/* 평소 오늘 안 타는 아이 - **켰다 껐다 하는 스위치**입니다.
+                                  예전에는 「지금 타는가」로 버튼을 골라서, 한 번 누르면
+                                  버튼 자체가 사라져 되돌릴 수가 없었습니다. 지금은 평소
+                                  사실(baseRiding)로 그리므로 몇 번이든 바꿉니다. */}
+                              {baseRiding === false ? (
                                 <button
                                   type="button"
                                   onClick={() => onSetStatus(item, "탑승")}
                                   disabled={busyId === item.assignmentId}
-                                  title={isBoarded ? "오늘 탑승 취소" : "오늘 갑자기 탑승"}
+                                  title={isBoarded ? "오늘 탑승 취소 (다시 안 탐으로)" : "오늘 갑자기 탑승"}
                                   className={
                                     "rounded px-1.5 text-[10px] font-bold disabled:opacity-40 " +
                                     (isBoarded ? "bg-emerald-500 text-white" : "bg-slate-100 text-slate-400 hover:bg-emerald-100")
                                   }
                                 >
-                                  🚌 탑승
+                                  {isBoarded ? "🚌 탑승 ✓" : "🚌 탑승"}
                                 </button>
                               ) : (
                                 <>

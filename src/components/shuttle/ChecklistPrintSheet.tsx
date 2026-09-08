@@ -61,12 +61,15 @@ export default function ChecklistPrintSheet({
   items,
   dateLabel,
   whereByName,
+  homonymNames,
 }: {
   routes: ChecklistRoute[];
   items: ChecklistItem[];
   dateLabel: string;
   /** 동명이인 이름 → "3학년 Brown A". 겹치는 이름만 들어 있습니다. */
   whereByName?: Map<string, string>;
+  /** 같은 이름이 여럿인 아이. 종이에서는 헷갈리는 게 더 위험해 진하게 적습니다. */
+  homonymNames?: Set<string>;
 }) {
   const todayW = new Date().getDay();
   const sheetRef = useRef<HTMLDivElement | null>(null);
@@ -314,10 +317,18 @@ export default function ChecklistPrintSheet({
                         {roster.map((it) => (
                           <span key={it.assignmentId} className="kid">
                             {it.studentName}
-                            {/* 동명이인은 종이에서 헷갈리는 게 더 위험합니다 - 화면은 눌러
-                                확인할 수 있지만 종이는 그럴 수 없습니다. */}
+                            {/* 학년·반은 모든 아이에게. 종이를 든 분은 눌러서 확인할 수도
+                                없어서, 없으면 물어볼 곳이 없습니다. 같은 이름이 여럿인 아이는
+                                밑줄로 더 눈에 띄게 합니다. */}
                             {whereByName?.get(normName(it.studentName)) && (
-                              <span className="ml-0.5 text-[7px] font-semibold text-slate-500">
+                              <span
+                                className={
+                                  "ml-0.5 text-[7px] font-semibold " +
+                                  (homonymNames?.has(normName(it.studentName))
+                                    ? "text-slate-800 underline decoration-dotted"
+                                    : "text-slate-500")
+                                }
+                              >
                                 {whereByName.get(normName(it.studentName))}
                               </span>
                             )}

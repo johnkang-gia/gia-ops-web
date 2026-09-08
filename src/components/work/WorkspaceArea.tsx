@@ -5,6 +5,7 @@ import type { Department, GoogleChatMirrorMessage, Task, TaskModeColor, TaskStat
 import WorkCalendar from "./WorkCalendar";
 import NoteBoard from "./NoteBoard";
 import GoogleChatRooms from "./GoogleChatRooms";
+import PickupAlarmBar from "./PickupAlarmBar";
 import TaskBoard from "./TaskBoard";
 import QuickTaskWidget from "./QuickTaskWidget";
 import AttendancePanels from "./AttendancePanels";
@@ -522,8 +523,13 @@ export default function WorkspaceArea({
   );
 
   return (
-    // 왼쪽(인박스)은 화면 끝까지 내려오고, 쪽지는 등록·달력부터 흐름판까지의 아래에만 깔립니다.
-    <div ref={containerRef} className="flex h-full overflow-hidden">
+    // 맨 위 한 줄은 **곧 하원할 아이**입니다. 픽업 연락은 아침에 오고 아이는 오후에 나가서,
+    // 그 사이 몇 시간 동안 목록 어딘가에 조용히 적혀 있을 뿐입니다. 그 시각이 되어도 아무
+    // 일도 일어나지 않고, 잊으면 아무 오류 없이 아이가 교실에 남습니다.
+    <div className="flex h-full flex-col overflow-hidden">
+      <PickupAlarmBar />
+      {/* 왼쪽(인박스)은 화면 끝까지 내려오고, 쪽지는 등록·달력부터 흐름판까지의 아래에만 깔립니다. */}
+      <div ref={containerRef} className="flex min-h-0 flex-1 overflow-hidden">
       {/* ① 들어오는 것 - 학부모 문의·출결·선생님 요청을 한 곳에서 받습니다. 머리글 오른쪽에
           토들·구글챗 연결상태 불이 들어옵니다(요청: "인박스탭제목 오른쪽 빈공간에 토들: 초록불
           구글챗: 초록불 형식으로"). */}
@@ -583,6 +589,7 @@ export default function WorkspaceArea({
         {noteStrip}
       </div>
 
+      </div>
     </div>
   );
 }

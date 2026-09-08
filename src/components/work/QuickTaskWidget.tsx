@@ -2,7 +2,7 @@
 
 import { realPeople } from "@/lib/taskAck";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { genCaseId } from "@/lib/caseId";
 import { parseTaskFromMessage } from "@/lib/parseTaskFromMessage";
@@ -57,6 +57,8 @@ export default function QuickTaskWidget({
   modeColorMap,
   isAdmin,
   onModeColorChange,
+  prefillDay = null,
+  onPrefillUsed,
 }: {
   department: string;
   team: TeamMember[];
@@ -65,6 +67,14 @@ export default function QuickTaskWidget({
   modeColorMap: Map<string, string>;
   isAdmin: boolean;
   onModeColorChange: (mode: TaskModeColor["mode"], color: string) => void;
+  /**
+   * 달력에서 누른 날짜(YYYY-MM-DD). 그 날 마감으로 미리 채웁니다.
+   *
+   * 날짜를 눌렀는데 아무 일도 안 일어나면 사람은 달력이 «보기만 하는 것»이라고 배웁니다.
+   * 그러면 등록은 계속 위쪽 입력칸에서만 하고, 달력은 장식이 됩니다.
+   */
+  prefillDay?: string | null;
+  onPrefillUsed?: () => void;
 }) {
   const notify = useToast();
   const [mode, setMode] = useState<Mode>("나");
@@ -78,6 +88,16 @@ export default function QuickTaskWidget({
   const [quickBadge, setQuickBadge] = useState<"오늘" | "내일" | "이번주" | null>(null);
   const [dateStr, setDateStr] = useState("");
   const [timeStr, setTimeStr] = useState("");
+
+  // 달력에서 날짜를 누르면 그 날로 채우고 입력칸에 커서를 둡니다.
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!prefillDay) return;
+    setDateStr(prefillDay);
+    setQuickBadge(null);
+    inputRef.current?.focus();
+    onPrefillUsed?.();
+  }, [prefillDay, onPrefillUsed]);
 
   // 반복 업무 - 완료될 때마다 다음 회차를 자동 생성합니다(요청). 매주/매월은 요일/날짜를
   // 추가로 지정하고, 기본값은 오늘 기준(요일/일)로 잡아둡니다.
@@ -371,6 +391,7 @@ export default function QuickTaskWidget({
 
       <form onSubmit={submit} className="flex items-center gap-2">
         <input
+          ref={inputRef}
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder="업무 입력 후 Enter (예: 내일까지 출석부 제출)"

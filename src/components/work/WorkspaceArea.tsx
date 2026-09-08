@@ -2,13 +2,15 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Department, GoogleChatMirrorMessage, Task, TaskModeColor, TaskStatus, TeamMember } from "@/lib/types";
-import ChatPanel from "./ChatPanel";
+import WorkCalendar from "./WorkCalendar";
+import NoteBoard from "./NoteBoard";
 import TaskBoard from "./TaskBoard";
 import QuickTaskWidget from "./QuickTaskWidget";
 import AttendancePanels from "./AttendancePanels";
-import PinnedMemo from "./PinnedMemo";
 import IntegrationStatus from "./IntegrationStatus";
 import { isMyTask } from "@/lib/myTask";
+import { createClient } from "@/lib/supabase/client";
+import { useToast } from "@/components/common/ToastProvider";
 import type { RosterStudent } from "@/lib/attendanceDigest";
 
 // 업무 보드 = 3존 관제탑(요청: "행정직원들이 이 페이지만 띄워놓고도 업무가 가능하도록").
@@ -199,11 +201,35 @@ export default function WorkspaceArea({
 
   // 마우스 드래그로 폭을 나누는 3단 레이아웃은 손가락 터치 화면에서 쓸 수 없어서, 작은
   // 화면에서는 탭으로 한 칸씩 전체 폭으로 보여줍니다. CSS(hidden/sm:flex)로만 나누면 두
-  // 레이아웃이 동시에 마운트되어 ChatPanel이 같은 실시간 채널을 두 번 구독하면서 업무탭이
-  // 아예 열리지 않는 문제가 있었으므로, 실제 폭을 보고 둘 중 하나만 마운트합니다.
+  // 레이아웃이 동시에 마운트되어 같은 실시간 채널을 두 번 구독하는 문제가 있었으므로,
+  // 실제 폭을 보고 둘 중 하나만 마운트합니다.
   const [isMobileView, setIsMobileView] = useState(false);
-  // 모바일 기본 탭도 가장 많이 쓰는 등록·채팅입니다.
+  // 모바일 기본 탭도 가장 많이 쓰는 등록·달력입니다.
+  const notify = useToast();
+  const [noteOpen, setNoteOpen] = useState(true);
   const [mobileTab, setMobileTab] = useState<"inbox" | "board" | "talk">("talk");
+  /** 달력에서 누른 날짜. 그 날 마감으로 새 업무를 만드는 창을 엽니다. */
+  const [newTaskDay, setNewTaskDay] = useState<string | null>(null);
+
+  /**
+   * 달력에서 끌어다 놓아 마감일만 바꿉니다.
+   *
+   * 낙관적으로 화면부터 옮기지 않습니다 - 실패했는데 화면만 옮겨져 있으면, 사람은 옮긴 줄
+   * 알고 그 날짜를 믿습니다. 저장이 끝나고 부모가 목록을 다시 받아 그릴 때 옮겨집니다.
+   */
+  async function moveDue(task: Task, dayKey: string) {
+    // 마감은 그 날 저녁 6시로 둡니다. 날짜만 바꾸는 것이라 시각은 하루의 끝 무렵이 자연스럽고,
+    // 자정으로 두면 「그날까지」인지 「그 전날까지」인지 사람마다 다르게 읽습니다.
+    const { error } = await createClient()
+      .from("tasks")
+      .update({ due_at: `${dayKey}T18:00:00+09:00` })
+      .eq("id", task.id);
+    if (error) {
+      notify(`마감일을 바꾸지 못했습니다: ${error.message}`, "error");
+      return;
+    }
+    onTaskCreated?.({ ...task, due_at: `${dayKey}T18:00:00+09:00` });
+  }
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 767px)");
@@ -287,12 +313,18 @@ export default function WorkspaceArea({
     />
   );
 
-  const talk = (
+  /**
+   * 가운데 — 등록 + 달력.
+   *
+   * 여기 있던 채팅창을 뺐습니다. 사무실에 다 같이 앉아 있으니 말로 해버려서 거의 안 쓰였고,
+   * 안 쓰는 것이 화면에서 가장 넓은 자리를 차지하고 있었습니다.
+   *
+   * 대신 **언제 무엇이 몰려 있는가**를 봅니다. 흐름판(오른쪽)은 «무엇이 어디까지 됐나»를
+   * 보는 자리라 둘은 겹치지 않습니다 - 흐름판만 보면 다음 주 수요일에 마감이 다섯 개 겹친
+   * 것을 그날 아침에야 압니다.
+   */
+  const center = (
     <div className="flex h-full flex-col overflow-hidden">
-      {/* 부서 공유 메모를 채팅 맨 위에 고정합니다 - 매일 봐야 하는 메모라 접힌 상태에서도 첫 줄이
-          보입니다. 예전에는 흐름판 위에도 같은 메모가 한 번 더 그려지고 있었는데(ActivityLog),
-          같은 내용이 화면에 두 번 나올 이유가 없어 이쪽만 남겼습니다. */}
-      <PinnedMemo department={activeDepartment.name} currentUserEmail={currentUserEmail} />
       <div className="shrink-0 border-b border-black/5 pb-1">
         <QuickTaskWidget
           department={activeDepartment.name}
@@ -302,16 +334,16 @@ export default function WorkspaceArea({
           modeColorMap={modeColorMap}
           isAdmin={isAdmin}
           onModeColorChange={onModeColorChange}
+          prefillDay={newTaskDay}
+          onPrefillUsed={() => setNewTaskDay(null)}
         />
       </div>
-      <div className="min-h-0 flex-1 overflow-hidden">
-        <ChatPanel
-          department={activeDepartment.name}
-          departments={departments}
-          team={team}
-          userEmail={currentUserEmail}
+      <div className="min-h-0 flex-1 overflow-hidden pt-1">
+        <WorkCalendar
           tasks={tasks}
-          onTaskCreated={onTaskCreated}
+          onPickDate={setNewTaskDay}
+          onOpenTask={(t) => onOpenTask(t.id)}
+          onMoveDue={(t, dayKey) => void moveDue(t, dayKey)}
         />
       </div>
     </div>
@@ -349,7 +381,7 @@ export default function WorkspaceArea({
           {(
             [
               { key: "inbox", label: "📥 인박스" },
-              { key: "talk", label: "💬 등록·채팅" },
+              { key: "talk", label: "🗓️ 등록·달력" },
               { key: "board", label: "🔀 흐름판" },
             ] as const
           ).map((t) => (
@@ -378,14 +410,20 @@ export default function WorkspaceArea({
               <div className="min-h-0 flex-1 overflow-hidden">{board}</div>
             </div>
           )}
-          {mobileTab === "talk" && talk}
+          {mobileTab === "talk" && center}
         </div>
       </div>
     );
   }
 
   return (
-    <div ref={containerRef} className="flex h-full overflow-hidden">
+    // 세로로 둘: 위는 세 칸(인박스·달력·흐름판), 아래는 **공용 쪽지**입니다.
+    //
+    // 쪽지를 한 칸 안에 넣지 않은 이유: 세 칸은 각자 하는 일이 다른데 쪽지는 **셋 모두에게**
+    // 걸립니다. 어느 한 칸에 넣으면 그 칸을 접은 사람에게는 안 보이고, 그러면 「다같이 보는
+    // 쪽지」가 아니게 됩니다.
+    <div className="flex h-full flex-col overflow-hidden">
+      <div ref={containerRef} className="flex min-h-0 flex-1 overflow-hidden">
       {/* ① 들어오는 것 - 학부모 문의·출결·선생님 요청을 한 곳에서 받습니다. 머리글 오른쪽에
           토들·구글챗 연결상태 불이 들어옵니다(요청: "인박스탭제목 오른쪽 빈공간에 토들: 초록불
           구글챗: 초록불 형식으로"). */}
@@ -409,10 +447,9 @@ export default function WorkspaceArea({
         <CollapsedRail icon="📥" title="인박스" side="left" onOpen={() => setLayout((p) => ({ ...p, leftOpen: true }))} />
       )}
 
-      {/* ② 일하는 곳 - 등록창+채팅창. 가장 많이 쓰는 도구라 남는 폭을 전부 씁니다(요청).
-          양옆을 접으면 화면 전체가 등록·채팅이 됩니다. */}
-      <Zone icon="💬" title="등록 · 채팅" className="flex-1">
-        {talk}
+      {/* ② 일하는 곳 - 등록창 + 달력. 남는 폭을 전부 씁니다. */}
+      <Zone icon="🗓️" title="등록 · 달력" className="flex-1">
+        {center}
       </Zone>
 
       {/* ③ 현황판 - 흐름판은 드래그로 진행상황을 옮기고 훑어보는 용도라 오른쪽 좁은 칸이면
@@ -435,6 +472,39 @@ export default function WorkspaceArea({
         </>
       ) : (
         <CollapsedRail icon="🔀" title="흐름판" side="right" onOpen={() => setLayout((p) => ({ ...p, rightOpen: true }))} />
+      )}
+      </div>
+
+      {/* ④ 공용 쪽지 - 말로 하고 지나가는 것을 남기는 자리. 채팅창이 있던 몫입니다.
+          접을 수 있게 두되 기본은 펼침입니다 - 접힌 채로 두면 붙일 생각이 안 납니다. */}
+      {noteOpen ? (
+        <div className="h-[132px] shrink-0 border-t border-black/10 bg-white/60 px-2.5 py-1.5">
+          <div className="mb-1 flex items-center gap-1.5">
+            <span className="text-[11px] font-bold text-slate-600">📝 쪽지</span>
+            <span className="text-[10px] text-slate-400">다같이 봅니다 · 지난 것은 저절로 떨어집니다</span>
+            <button
+              onClick={() => setNoteOpen(false)}
+              className="ml-auto rounded px-1.5 text-[11px] text-slate-400 hover:bg-slate-100"
+              title="접기"
+            >
+              ▾
+            </button>
+          </div>
+          <div className="h-[96px]">
+            <NoteBoard
+              department={activeDepartment.name}
+              currentUserEmail={currentUserEmail}
+              currentUserName={team.find((m) => m.email === currentUserEmail)?.name ?? null}
+            />
+          </div>
+        </div>
+      ) : (
+        <button
+          onClick={() => setNoteOpen(true)}
+          className="flex h-7 shrink-0 items-center gap-1.5 border-t border-black/10 bg-white/60 px-2.5 text-[11px] font-bold text-slate-500 hover:bg-slate-50"
+        >
+          📝 쪽지 <span className="font-normal text-slate-400">펼치기</span>
+        </button>
       )}
     </div>
   );

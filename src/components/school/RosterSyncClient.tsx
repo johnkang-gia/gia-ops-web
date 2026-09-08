@@ -367,9 +367,18 @@ function SetupSteps() {
           </li>
         ))}
       </ol>
-      <p className="mt-2 rounded bg-amber-50 px-2 py-1 text-[11px] text-amber-900">
+      <p className="mt-2 rounded bg-amber-50 px-2 py-1 text-[11px] leading-relaxed text-amber-900">
+        <b>⑥에서 「오류 401: invalid_client」가 뜨면</b> 브라우저에 구글 계정이 여러 개 로그인되어 있어서입니다. 시크릿 창을
+        열어 <b>시트 주인 계정 하나만</b> 로그인한 뒤 script.google.com 부터 다시 하면 넘어갑니다. 그래도 같으면 프로젝트를
+        지우고 [+ 새 프로젝트]로 새로 만듭니다 — 앱이 아니라 구글 쪽 로그인 상태 문제라, 스크립트를 고칠 것은 없습니다.
+      </p>
+      <p className="mt-1 rounded bg-amber-50 px-2 py-1 text-[11px] leading-relaxed text-amber-900">
         토큰을 재발급하면 <b>스크립트의 TOKEN 도 바꿔야</b> 합니다. 안 바꾸면 시트는 계속 보내는데 앱이 받지 않고, 그 사실은
         위 연결 줄의 「마지막 수신 오류」에만 뜹니다.
+      </p>
+      <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+        시트에서 이름 옆에 붙인 <b>(NEW)·(신입)</b> 같은 표시는 <b>떼고 등록합니다.</b> 표시가 붙은 채로 들어가면 그 표시를
+        지운 주에 같은 아이가 한 명 더 생기고, 출결·관찰기록이 두 줄로 갈립니다.
       </p>
     </div>
   );

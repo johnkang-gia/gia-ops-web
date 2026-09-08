@@ -125,6 +125,26 @@ export function normBirth(raw: string): string | null {
   return `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 }
 
+/**
+ * 이름 옆에 붙은 **표시**를 떼어냅니다.
+ *
+ * 시트에서는 새로 온 아이를 「김민준(NEW)」처럼 적어 표시합니다. 사람에게는 눈에 띄는
+ * 표시지만, 그대로 등록하면 **이름이 「김민준(NEW)」인 학생**이 생깁니다. 그러면 다음 주에
+ * 표시를 지웠을 때 같은 아이가 두 명이 되고, 출결·관찰기록이 두 줄로 갈립니다.
+ *
+ * **아는 표시만** 뗍니다. 괄호를 통째로 지우면 시트에 적어둔 다른 정보까지 사라집니다.
+ */
+const NAME_TAGS = /[（(\[]\s*(new|신규|신입|전학|추가|재원|신입생)\s*[）)\]]/gi;
+
+export function cleanStudentName(raw: string): string {
+  return (raw ?? "")
+    .replace(NAME_TAGS, " ")
+    // 표시가 괄호 없이 붙는 경우도 있습니다: 「김민준 NEW」.
+    .replace(/\s+(new|신규|신입생)\s*$/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export type ParsedRow = {
   /** 몇 번째 줄이었는가. 화면에서 「3번째 줄」이라고 짚어주려면 필요합니다. */
   rowNo: number;
@@ -226,6 +246,13 @@ export function parseRosterPaste(
       if (f === "mother_phone" || f === "father_phone" || f === "parent_phone") {
         const p = normPhone(cell);
         if (p) values[f] = p;
+        return;
+      }
+      if (f === "name" || f === "name_en") {
+        // 「(NEW)」 같은 표시를 뗀 뒤에 넣습니다. 표시가 붙은 채로 들어가면 표시를 지운 주에
+        // 같은 아이가 한 명 더 생깁니다.
+        const cleaned = cleanStudentName(cell);
+        if (cleaned) values[f] = cleaned;
         return;
       }
       values[f] = cell;

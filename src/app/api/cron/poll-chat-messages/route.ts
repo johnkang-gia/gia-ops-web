@@ -1,14 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { logApiError } from "@/lib/logging";
-import { pollNewMessages, type GoogleChatSourceKey } from "@/lib/googleChat";
+import { pollAllSpaces } from "@/lib/googleChat";
 import { isChatPollPeakHour } from "@/lib/shuttleTracking";
 
-// 선생님요청 방은 아직 만들어지지 않았습니다(구글챗_미러링_설정가이드 STEP 5) - 목록에
-// 없는 소스를 계속 폴링하면 헛수고일 뿐 아니라, GOOGLE_CHAT_SPACE_TEACHER_REQUESTS가
-// 비어있거나 잘못 설정된 경우 메시지가 엉뚱한 source_key로 잘못 태그될 위험도 있어서
-// 방이 실제로 만들어지고 환경변수가 채워질 때까지 빼둡니다.
-const SOURCE_KEYS: GoogleChatSourceKey[] = ["attendance"];
+// 볼 방은 **표(google_chat_spaces)가 정합니다.** 예전에는 여기 코드에 방 이름이 박혀
+// 있어서, 방을 하나 더 보려면 배포를 해야 했습니다. 방은 학기 중에도 생깁니다.
 
 // 외부 무료 스케줄러(cron-job.org 등, 가이드 참고)가 1분마다 이 라우트를 호출합니다. Vercel
 // 무료(Hobby) 플랜은 Pub/Sub 같은 진짜 실시간 push를 못 받고, 외부 스케줄러도 1분보다 잦은
@@ -54,13 +51,16 @@ export async function GET(req: NextRequest) {
 
   do {
     rounds += 1;
-    for (const sourceKey of SOURCE_KEYS) {
-      try {
-        totalNew += await pollNewMessages(supabase, sourceKey);
-      } catch (err) {
-        lastError = err instanceof Error ? err.message : String(err);
-        await logApiError(supabase, `cron:poll-chat-messages:${sourceKey}`, err);
+    try {
+      const { total, errors } = await pollAllSpaces(supabase);
+      totalNew += total;
+      if (errors.length > 0) {
+        lastError = errors.join(" · ");
+        await logApiError(supabase, "cron:poll-chat-messages", new Error(lastError));
       }
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+      await logApiError(supabase, "cron:poll-chat-messages", err);
     }
     const elapsed = Date.now() - startedAt;
     if (elapsed >= budgetMs) break;

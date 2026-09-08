@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { departmentOf } from "@/lib/department";
+import { whereNow, type PeriodRow, type TimetableRow } from "@/lib/whereNow";
 
 // 업무보드 머리줄의 "학생 검색" 팝업.
 //
@@ -19,6 +21,7 @@ type Row = {
   nameEn: string | null;
   grade: string | null;
   className: string | null;
+  classId: string | null;
   room: string | null;
   photoPath: string | null;
 };
@@ -29,6 +32,9 @@ export default function StudentSearchBadge() {
   const [open, setOpen] = useState(false);
   const [rows, setRows] = useState<Row[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [periods, setPeriods] = useState<PeriodRow[]>([]);
+  const [timetable, setTimetable] = useState<TimetableRow[]>([]);
+  const [timetableError, setTimetableError] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -38,9 +44,13 @@ export default function StudentSearchBadge() {
       const supabase = createClient();
       // 반의 위치("A동 2F")는 반 표(wr_classes.room)에 있습니다. 학생 표에는 없어서 따로
       // 읽어 이어 붙입니다 - 아이를 찾아가야 하는 사람에게는 반 이름보다 이게 필요합니다.
-      const [stuRes, clsRes] = await Promise.all([
+      const [stuRes, clsRes, perRes, ttRes] = await Promise.all([
         supabase.from("wr_students_basic").select("id, name, name_en, grade, class_name, class_id, photo_path").eq("status", "active").order("name"),
         supabase.from("wr_classes").select("id, grade, class_name, room").eq("is_demo", false),
+        // 지금이 몇 교시인지, 그 교시에 이 반이 무슨 수업인지. 이 둘이 있어야 «지금 위치»를
+        // 답할 수 있습니다 - 반 이름만 보고 교실에 갔는데 체육이면 아이는 체육관에 있습니다.
+        supabase.from("wr_periods").select("id, department, period_no, label, start_time, end_time"),
+        supabase.from("wr_timetable").select("class_id, weekday, period_id, subject_name, room"),
       ]);
       if (stuRes.error) {
         setError(`명부를 읽지 못했습니다: ${stuRes.error.message}`);
@@ -49,6 +59,14 @@ export default function StudentSearchBadge() {
       // 반 표를 못 읽어도 검색은 됩니다. 위치만 비게 두고 넘어갑니다 - 위치 하나 때문에
       // 학생 검색 자체가 막히면 손해가 더 큽니다.
       if (clsRes.error) console.error("[학생 검색] 반 위치를 읽지 못했습니다:", clsRes.error.message);
+      // 시간표를 못 읽으면 «지금 위치»만 못 나옵니다. 그 사실은 화면에 적어둡니다 - 빈칸으로
+      // 두면 「지금은 수업이 없구나」로 잘못 읽힙니다.
+      if (perRes.error || ttRes.error) {
+        setTimetableError("시간표를 읽지 못해 지금 위치를 알 수 없습니다.");
+        console.error("[학생 검색] 시간표:", perRes.error?.message ?? ttRes.error?.message);
+      }
+      setPeriods((perRes.data as PeriodRow[] | null) ?? []);
+      setTimetable((ttRes.data as TimetableRow[] | null) ?? []);
       const classes = clsRes.data ?? [];
       const roomById = new Map(classes.map((c) => [c.id as string, (c.room as string | null) ?? null]));
       // class_id가 비어 있는 학생도 있어서 학년+반 이름으로도 찾습니다.
@@ -60,6 +78,7 @@ export default function StudentSearchBadge() {
           nameEn: (s.name_en as string | null) ?? null,
           grade: (s.grade as string | null) ?? null,
           className: (s.class_name as string | null) ?? null,
+          classId: (s.class_id as string | null) ?? null,
           room:
             (s.class_id ? roomById.get(s.class_id as string) : null) ??
             roomByGradeClass.get(`${s.grade ?? ""}|${s.class_name ?? ""}`) ??
@@ -150,6 +169,10 @@ export default function StudentSearchBadge() {
                 placeholder="이름 · 영문이름 · 반 · 위치"
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-sky-400"
               />
+              <p className="mt-1 text-[10px] text-slate-400">
+                🏫 반위치 · 📍 지금 위치(시간표 기준)
+                {timetableError && <span className="ml-1 font-semibold text-orange-600">{timetableError}</span>}
+              </p>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-2">
               {error ? (
@@ -183,10 +206,41 @@ export default function StudentSearchBadge() {
                       <span className="text-[11px] text-slate-500">
                         {[s.grade ? `${s.grade}학년` : null, s.className].filter(Boolean).join(" ") || "반 없음"}
                       </span>
-                      {/* 교실 위치. 아이를 찾아가야 하는 사람에게는 반 이름보다 이게 필요합니다. */}
+                      {/* 반위치 - 그 반의 제 교실. 아이를 찾아가야 하는 사람에게는 반 이름보다 이게 필요합니다. */}
                       {s.room && (
-                        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-600">📍 {s.room}</span>
+                        <span
+                          title="반위치 (이 반의 교실)"
+                          className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-600"
+                        >
+                          🏫 {s.room}
+                        </span>
                       )}
+                      {/* 현재위치 - 지금 시간표를 보고 답합니다. 반 교실과 같으면 굳이 두 번
+                          띄우지 않습니다(같은 말이 두 개 붙으면 오히려 안 읽힙니다). */}
+                      {(() => {
+                        const now = whereNow({
+                          classId: s.classId,
+                          department: departmentOf({ department: null, grade: s.grade }),
+                          classRoom: s.room,
+                          periods,
+                          timetable,
+                        });
+                        if (!now.known) {
+                          return (
+                            <span title={now.why} className="rounded bg-slate-50 px-1.5 py-0.5 text-[11px] text-slate-400">
+                              📍 —
+                            </span>
+                          );
+                        }
+                        return (
+                          <span
+                            title={`${now.periodLabel} ${now.subject}${now.fromTimetableRoom ? "" : " (과목으로 짐작)"}`}
+                            className="rounded bg-emerald-50 px-1.5 py-0.5 text-[11px] font-bold text-emerald-700"
+                          >
+                            📍 {now.place}
+                          </span>
+                        );
+                      })()}
                     </span>
                   </Link>
                 ))

@@ -187,6 +187,20 @@ departmentOf({ department: s.department, grade: s.grade }); // → "초등부" |
 
 ---
 
+## 2-6. 구글챗 @멘션 (글자로 부르면 알림이 안 갑니다)
+
+구글챗에서 멘션은 글자가 아니라 **사람 번호**입니다. 본문에 `<users/1234>` 라고 적어야
+상대에게 알림이 갑니다. 「@김선생님」이라고 글자만 적어 보내면 상대 화면에는 그냥 글자로
+뜨고, **보낸 쪽은 불렀다고 생각하고 받는 쪽은 알림을 못 받습니다.**
+
+바꾸는 일은 `src/lib/chatMention.ts` 의 `toChatText()` 하나만 합니다. 방 사람 목록은
+`google_chat_members` 에 있고(`syncSpaceMembers`), 방을 켤 때 함께 받아둡니다.
+
+**못 바꾼 이름은 보내기 전에 알려줍니다** - `unmatchedMentions()` 가 돌려주는 목록을
+화면이 띄우고 사람이 한 번 더 확인합니다. 그냥 보내면 부른 줄 알고 기다리게 됩니다.
+
+---
+
 ## 3. 버전과 배포
 
 - 버전은 `package.json` 한 곳에만 적습니다. 화면 표시는 `src/lib/version.ts` 가

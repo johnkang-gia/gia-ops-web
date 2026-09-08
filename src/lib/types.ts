@@ -1033,7 +1033,9 @@ export type FormSubmission = {
 // 실시간 미러링해서 업무탭에서 보고, 필요하면 바로 업무로 등록할 수 있게 합니다(요청: "구글챗과
 // 이 앱을 왔다갔다 하지않고 이앱에서 모든 업무작업이 이루어지도록"). 실제 수신은 Google
 // Workspace Events API(Pub/Sub) → /api/google-chat/webhook 라우트가 담당합니다.
-export type GoogleChatMirrorSourceKey = "attendance" | "teacher_requests";
+// "room" 은 **환경변수에 없던 방**에서 온 메시지입니다. 어느 방인지는 google_space_id 로
+// 갈립니다 - 방이 학기 중에도 생기니 이름을 미리 정해둘 수 없습니다.
+export type GoogleChatMirrorSourceKey = "attendance" | "teacher_requests" | "room";
 
 export type GoogleChatMirrorMessage = {
   id: string;
@@ -1053,6 +1055,13 @@ export type GoogleChatMirrorMessage = {
    * 이 칸이 생기기 전에 들어온 줄은 null 입니다.
    */
   mentions: { start: number; length: number; name?: string | null }[] | null;
+  /**
+   * 사진·파일을 우리 저장소로 옮긴 목록.
+   *
+   * `path` 가 비어 있으면 **못 가져온 것**입니다(구글 주소는 로그인해야 열려서 그대로는
+   * 못 씁니다). 빈칸으로 두면 사진이 없었던 것인지 못 가져온 것인지 아무도 모릅니다.
+   */
+  attachments?: { name: string; contentType: string | null; path: string | null; why?: string }[] | null;
 };
 
 // 학생 출석부(요청: "학생출석부를 교사가 실시간 체크할 수 있게... 결석학생 보호자에게 연락할

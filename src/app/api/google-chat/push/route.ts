@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { logApiError } from "@/lib/logging";
-import { pollNewMessages, type GoogleChatSourceKey } from "@/lib/googleChat";
+import { pollAllSpaces } from "@/lib/googleChat";
 
 // 구글챗에 새 메시지가 올라오는 **그 순간** Pub/Sub가 이 주소를 부릅니다.
 //
@@ -13,8 +13,6 @@ import { pollNewMessages, type GoogleChatSourceKey } from "@/lib/googleChat";
 // 구글챗을 한 번 더 읽게 만드는 것"이고, 그마저 아래 연타 방지에 걸립니다. 가짜 메시지가
 // 인박스에 들어올 길은 없습니다.
 export const maxDuration = 30;
-
-const SOURCE_KEYS: GoogleChatSourceKey[] = ["attendance"];
 
 // 연타 방지.
 //
@@ -43,16 +41,16 @@ export async function POST(req: NextRequest) {
   }
   lastPollAt = Date.now();
 
+  // 여기서 500을 돌려주면 Pub/Sub가 같은 알림을 계속 재시도합니다. 구글챗 토큰이 만료된
+  // 상황이라면 재시도해도 똑같이 실패하므로, 실패를 기록만 하고 200으로 받아넘깁니다.
+  // 놓친 메시지는 안전망으로 남겨둔 1분 폴링이 곧 가져옵니다.
   let newMessages = 0;
-  for (const key of SOURCE_KEYS) {
-    try {
-      newMessages += await pollNewMessages(supabase, key);
-    } catch (err) {
-      await logApiError(supabase, `google-chat:push:${key}`, err);
-      // 여기서 500을 돌려주면 Pub/Sub가 같은 알림을 계속 재시도합니다. 구글챗 토큰이 만료된
-      // 상황이라면 재시도해도 똑같이 실패하므로, 실패를 기록만 하고 200으로 받아넘깁니다.
-      // 놓친 메시지는 안전망으로 남겨둔 1분 폴링이 곧 가져옵니다.
-    }
+  try {
+    const { total, errors } = await pollAllSpaces(supabase);
+    newMessages = total;
+    if (errors.length > 0) await logApiError(supabase, "google-chat:push", new Error(errors.join(" · ")));
+  } catch (err) {
+    await logApiError(supabase, "google-chat:push", err);
   }
 
   return NextResponse.json({ ok: true, newMessages });

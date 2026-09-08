@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isStaffOrAboveUser } from "@/lib/roles";
 import { postMessage } from "@/lib/googleChat";
+import { toChatText, unmatchedMentions, type ChatMember } from "@/lib/chatMention";
 
 /**
  * 업무화면에서 구글챗 방에 **답장**합니다.
@@ -35,11 +36,23 @@ export async function POST(req: Request) {
   if (!url || !key) return NextResponse.json({ error: "서버 설정 오류입니다." }, { status: 500 });
   const supabase = createClient(url, key, { auth: { persistSession: false } });
 
+  // @이름 → 사람 번호.
+  //
+  // 구글챗에서 멘션은 글자가 아니라 번호입니다. 글자로 보내면 **보낸 쪽은 불렀다고 생각하고
+  // 받는 쪽은 알림을 못 받습니다.** 못 바꾼 이름은 함께 돌려줘서 화면이 알려주게 합니다.
+  const { data: members } = await supabase
+    .from("google_chat_members")
+    .select("google_user_id, display_name")
+    .eq("google_space_id", spaceId);
+  const list = (members as ChatMember[] | null) ?? [];
+  const body2 = toChatText(text, list);
+  const unmatched = unmatchedMentions(text, list);
+
   // 누가 답했는지 본문에 남깁니다. 보내는 계정은 하나뿐이라, 이게 없으면 받는 쪽에서
   // 「행정실」이 아니라 «그 한 사람»이 늘 답하는 것처럼 보입니다.
   const who = me.name || me.email.split("@")[0];
-  const sent = await postMessage(supabase, spaceId, `[${who}] ${text}`, threadName);
+  const sent = await postMessage(supabase, spaceId, `[${who}] ${body2}`, threadName);
   if (!sent.ok) return NextResponse.json({ error: sent.error }, { status: 502 });
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, unmatched });
 }

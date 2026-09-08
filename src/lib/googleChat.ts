@@ -41,6 +41,14 @@ export const GOOGLE_CHAT_SCOPES = [
    * 화면이 그 사실을 알려줍니다(조용히 실패하면 「답장 버튼이 안 먹는다」로만 보입니다).
    */
   "https://www.googleapis.com/auth/chat.messages.create",
+  /**
+   * 방에 누가 있는지 보는 권한.
+   *
+   * 구글챗에서 @멘션은 **글자가 아니라 사람 번호**입니다 - 본문에 `<users/1234>` 라고 써야
+   * 상대에게 알림이 갑니다. 「@김선생님」이라고 글자만 적으면 보낸 쪽은 불렀다고 생각하고
+   * 받는 쪽은 알림을 못 받습니다. 번호를 알려면 방 멤버 목록이 필요합니다.
+   */
+  "https://www.googleapis.com/auth/chat.memberships.readonly",
 ];
 
 export function buildOAuthClient(): OAuth2Client | null {
@@ -79,10 +87,6 @@ const CHAT_API_BASE = "https://chat.googleapis.com/v1";
 
 export type GoogleChatSourceKey = GoogleChatMirrorSourceKey;
 
-function spaceEnvFor(sourceKey: GoogleChatSourceKey): string | undefined {
-  return sourceKey === "attendance" ? process.env.GOOGLE_CHAT_SPACE_ATTENDANCE : process.env.GOOGLE_CHAT_SPACE_TEACHER_REQUESTS;
-}
-
 type ChatMessageResource = {
   name: string;
   text?: string;
@@ -101,7 +105,92 @@ type ChatMessageResource = {
     length?: number;
     userMention?: { user?: { name?: string; displayName?: string } };
   }[];
+  /**
+   * 사진·파일.
+   *
+   * 구글이 주는 주소는 **로그인해야 열립니다.** 그대로 저장해두면 우리 화면에서는 깨진
+   * 그림으로만 보입니다. 그래서 받아서 우리 저장소로 옮깁니다.
+   */
+  attachment?: {
+    name?: string;
+    contentName?: string;
+    contentType?: string;
+    attachmentDataRef?: { resourceName?: string };
+    driveDataRef?: { driveFileId?: string };
+  }[];
 };
+
+/** 우리 저장소로 옮긴 첨부 한 개. `path` 가 비면 **못 가져온 것**입니다. */
+export type SavedAttachment = {
+  name: string;
+  contentType: string | null;
+  /** chat-attachments 버킷 경로. 못 가져왔으면 null 이고 why 에 이유가 있습니다. */
+  path: string | null;
+  why?: string;
+};
+
+const ATTACHMENT_BUCKET = "chat-attachments";
+
+/** 파일 이름에서 경로를 깨뜨리는 글자를 걷어냅니다. 한글 이름은 그대로 둡니다. */
+function safeName(name: string): string {
+  return name.replace(/[/\\?%*:|"<>\s]+/g, "_").slice(0, 80) || "file";
+}
+
+/**
+ * 첨부를 구글에서 받아 우리 저장소에 넣습니다.
+ *
+ * 실패해도 **메시지 저장은 계속합니다** - 사진 하나 때문에 그 메시지가 통째로 사라지면
+ * 「다친 아이 이야기가 아예 안 왔다」가 됩니다. 대신 왜 못 가져왔는지를 함께 남겨서
+ * 화면이 「사진을 못 가져왔습니다」라고 말할 수 있게 합니다.
+ */
+async function saveAttachments(
+  supabase: SupabaseClient,
+  token: string,
+  messageName: string,
+  list: ChatMessageResource["attachment"],
+): Promise<SavedAttachment[]> {
+  const out: SavedAttachment[] = [];
+  for (const a of list ?? []) {
+    const label = a.contentName || "첨부";
+    const resource = a.attachmentDataRef?.resourceName;
+    if (!resource) {
+      // 구글 드라이브에 올린 파일은 주소가 아니라 드라이브 파일입니다. 드라이브 권한이
+      // 따로 있어야 해서 지금은 가져오지 않습니다 - 링크로 올라오는 경우라 본문에 주소가
+      // 함께 옵니다.
+      out.push({ name: label, contentType: a.contentType ?? null, path: null, why: "구글 드라이브 파일이라 가져오지 않습니다" });
+      continue;
+    }
+    try {
+      const res = await fetch(`${CHAT_API_BASE}/media/${encodeURIComponent(resource)}?alt=media`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        out.push({ name: label, contentType: a.contentType ?? null, path: null, why: `구글에서 받지 못했습니다(${res.status})` });
+        continue;
+      }
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      // 경로에 메시지 번호를 씁니다 - 같은 이름의 사진이 여러 번 올라와도 안 덮어씁니다.
+      const path = `${messageName.replace(/[^A-Za-z0-9]/g, "_")}/${out.length}_${safeName(label)}`;
+      const up = await supabase.storage.from(ATTACHMENT_BUCKET).upload(path, bytes, {
+        contentType: a.contentType || "application/octet-stream",
+        upsert: true,
+      });
+      if (up.error) {
+        out.push({ name: label, contentType: a.contentType ?? null, path: null, why: `저장하지 못했습니다: ${up.error.message}` });
+        continue;
+      }
+      out.push({ name: label, contentType: a.contentType ?? null, path });
+    } catch (err) {
+      out.push({
+        name: label,
+        contentType: a.contentType ?? null,
+        path: null,
+        why: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+  return out;
+}
 
 /** 본문에서 멘션이 차지하는 구간. 저장해두면 나중에 추측할 일이 없습니다. */
 export type MentionSpan = { start: number; length: number; name: string | null; userId: string | null };
@@ -162,16 +251,195 @@ export async function postMessage(
   return { ok: false, error: `${res.status} ${body.slice(0, 200)}` };
 }
 
-export async function pollNewMessages(supabase: SupabaseClient, sourceKey: GoogleChatSourceKey): Promise<number> {
+/** 미러링할 방 한 줄. */
+export type ChatSpaceRow = {
+  google_space_id: string;
+  display_name: string | null;
+  source_key: GoogleChatSourceKey | null;
+  enabled: boolean;
+  sort_order: number;
+};
+
+/**
+ * 환경변수에 적혀 있던 두 방을 표에 옮겨 심습니다.
+ *
+ * 방 목록이 환경변수에 있으면 방 하나 더 보려고 배포를 해야 합니다. 표로 옮기되, 예전 두 방은
+ * 화면 여러 곳이 `source_key` 로 걸러 읽고 있어서 그 이름을 그대로 붙여둡니다.
+ */
+export async function seedSpacesFromEnv(supabase: SupabaseClient): Promise<void> {
+  const seeds: { id: string | undefined; key: GoogleChatSourceKey; label: string; order: number }[] = [
+    { id: process.env.GOOGLE_CHAT_SPACE_ATTENDANCE, key: "attendance", label: "출결알림", order: 1 },
+    { id: process.env.GOOGLE_CHAT_SPACE_TEACHER_REQUESTS, key: "teacher_requests", label: "선생님요청", order: 2 },
+  ];
+  for (const s of seeds) {
+    if (!s.id) continue;
+    // 이미 있으면 건드리지 않습니다 - 사람이 화면에서 끈 방을 배포할 때마다 다시 켜면
+    // 「껐는데 또 켜져 있다」가 됩니다.
+    const { data } = await supabase.from("google_chat_spaces").select("google_space_id").eq("google_space_id", s.id).maybeSingle();
+    if (data) continue;
+    await supabase.from("google_chat_spaces").insert({
+      google_space_id: s.id,
+      display_name: s.label,
+      source_key: s.key,
+      // 선생님요청 방은 아직 안 만들어졌을 수 있습니다. 없는 방을 켜두면 폴링이 매번
+      // 404 로 실패하고, 그 실패가 연결상태를 빨간불로 만듭니다.
+      enabled: s.key === "attendance",
+      sort_order: s.order,
+    });
+  }
+}
+
+/** 지금 켜져 있는 방들. */
+export async function enabledSpaces(supabase: SupabaseClient): Promise<ChatSpaceRow[]> {
+  const { data } = await supabase
+    .from("google_chat_spaces")
+    .select("google_space_id, display_name, source_key, enabled, sort_order")
+    .eq("enabled", true)
+    .order("sort_order");
+  return (data as ChatSpaceRow[] | null) ?? [];
+}
+
+type GoogleSpace = { name?: string; displayName?: string; spaceType?: string; singleUserBotDm?: boolean };
+
+/**
+ * 계정이 들어가 있는 방을 구글에서 받아 표에 넣습니다.
+ *
+ * **켜기는 사람이 합니다.** 새로 찾은 방은 꺼진 채로 들어옵니다 - 계정이 들어가 있는 방이
+ * 수십 개일 수 있고, 전부 미러링하면 인박스가 남의 대화로 덮입니다.
+ */
+export async function syncSpaceList(
+  supabase: SupabaseClient,
+): Promise<{ ok: true; found: number; added: number } | { ok: false; error: string }> {
   const token = await getAccessToken(supabase);
-  const spaceId = spaceEnvFor(sourceKey);
+  if (!token) return { ok: false, error: "구글챗 계정 인증이 아직 안 되어 있습니다." };
+
+  const spaces: GoogleSpace[] = [];
+  let pageToken = "";
+  // 방이 많은 계정도 있습니다. 페이지를 끝까지 따라갑니다 - 첫 장만 읽으면 찾는 방이 없는데
+  // 화면에는 「그런 방이 없습니다」로 보입니다.
+  for (let page = 0; page < 10; page++) {
+    const url = `${CHAT_API_BASE}/spaces?pageSize=100${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ""}`;
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      if (res.status === 403 || /insufficient|scope/i.test(body)) {
+        return { ok: false, error: "방 목록을 볼 권한이 없습니다. 연동 상태 화면에서 구글챗을 다시 연결해주세요." };
+      }
+      return { ok: false, error: `방 목록을 받지 못했습니다(${res.status}).` };
+    }
+    const body = (await res.json()) as { spaces?: GoogleSpace[]; nextPageToken?: string };
+    spaces.push(...(body.spaces ?? []));
+    pageToken = body.nextPageToken ?? "";
+    if (!pageToken) break;
+  }
+
+  // 1:1 대화(DM)는 빼둡니다 - 업무 화면에 개인 대화가 섞이면 곤란합니다.
+  const rooms = spaces.filter((s) => s.name && s.spaceType !== "DIRECT_MESSAGE" && !s.singleUserBotDm);
+
+  const { data: known } = await supabase.from("google_chat_spaces").select("google_space_id");
+  const knownIds = new Set(((known as { google_space_id: string }[] | null) ?? []).map((r) => r.google_space_id));
+
+  let added = 0;
+  for (const s of rooms) {
+    const id = s.name as string;
+    if (knownIds.has(id)) {
+      // 이름만 갱신합니다(방 이름은 바뀝니다). 켜짐 여부는 사람이 정한 것이라 건드리지 않습니다.
+      await supabase.from("google_chat_spaces").update({ display_name: s.displayName ?? null, updated_at: new Date().toISOString() }).eq("google_space_id", id);
+      continue;
+    }
+    const { error } = await supabase.from("google_chat_spaces").insert({
+      google_space_id: id,
+      display_name: s.displayName ?? null,
+      enabled: false,
+    });
+    if (!error) added += 1;
+  }
+  return { ok: true, found: rooms.length, added };
+}
+
+type GoogleMembership = { member?: { name?: string; displayName?: string; type?: string } };
+
+/**
+ * 방에 누가 있는지 받아둡니다. @멘션에 쓸 사람 번호입니다.
+ *
+ * 이걸 안 해두면 답장에 「@김선생님」이라고 **글자만** 나가고, 받는 분께는 알림이 안 갑니다.
+ * 부른 줄 알고 기다리는 것이 가장 나쁩니다.
+ */
+export async function syncSpaceMembers(
+  supabase: SupabaseClient,
+  spaceId: string,
+): Promise<{ ok: true; count: number } | { ok: false; error: string }> {
+  const token = await getAccessToken(supabase);
+  if (!token) return { ok: false, error: "구글챗 계정 인증이 아직 안 되어 있습니다." };
+
+  const rows: { google_space_id: string; google_user_id: string; display_name: string | null; updated_at: string }[] = [];
+  let pageToken = "";
+  for (let page = 0; page < 10; page++) {
+    const url = `${CHAT_API_BASE}/${spaceId}/members?pageSize=100${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ""}`;
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      if (res.status === 403 || /insufficient|scope/i.test(body)) {
+        return { ok: false, error: "방 사람 목록을 볼 권한이 없습니다. 연동 상태 화면에서 구글챗을 다시 연결해주세요." };
+      }
+      return { ok: false, error: `사람 목록을 받지 못했습니다(${res.status}).` };
+    }
+    const body = (await res.json()) as { memberships?: GoogleMembership[]; nextPageToken?: string };
+    for (const m of body.memberships ?? []) {
+      const id = m.member?.name;
+      // 봇은 부를 일이 없습니다.
+      if (!id || m.member?.type === "BOT") continue;
+      rows.push({ google_space_id: spaceId, google_user_id: id, display_name: m.member?.displayName ?? null, updated_at: new Date().toISOString() });
+    }
+    pageToken = body.nextPageToken ?? "";
+    if (!pageToken) break;
+  }
+  if (rows.length > 0) {
+    const { error } = await supabase.from("google_chat_members").upsert(rows, { onConflict: "google_space_id,google_user_id" });
+    if (error) return { ok: false, error: `사람 목록을 저장하지 못했습니다: ${error.message}` };
+  }
+  return { ok: true, count: rows.length };
+}
+
+/** 켜져 있는 방을 모두 한 바퀴 돕니다. 한 방이 실패해도 나머지는 계속 읽습니다. */
+export async function pollAllSpaces(supabase: SupabaseClient): Promise<{ total: number; errors: string[] }> {
+  await seedSpacesFromEnv(supabase);
+  const spaces = await enabledSpaces(supabase);
+  let total = 0;
+  const errors: string[] = [];
+  for (const space of spaces) {
+    try {
+      total += await pollSpace(supabase, space);
+      await supabase
+        .from("google_chat_spaces")
+        .update({ last_polled_at: new Date().toISOString(), last_error: null })
+        .eq("google_space_id", space.google_space_id);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      errors.push(`${space.display_name ?? space.google_space_id}: ${msg}`);
+      // 어느 방이 왜 안 되는지 표에 남깁니다. 화면이 그 방 옆에 그대로 띄웁니다 - 전체가
+      // 「연결 안 됨」으로만 보이면 어느 방을 손봐야 하는지 알 수 없습니다.
+      await supabase
+        .from("google_chat_spaces")
+        .update({ last_polled_at: new Date().toISOString(), last_error: msg.slice(0, 300) })
+        .eq("google_space_id", space.google_space_id);
+    }
+  }
+  return { total, errors };
+}
+
+export async function pollSpace(supabase: SupabaseClient, space: ChatSpaceRow): Promise<number> {
+  const token = await getAccessToken(supabase);
+  const spaceId = space.google_space_id;
   if (!token) throw new Error("구글챗 계정 인증이 아직 완료되지 않았습니다(/api/google-chat/oauth/start에서 먼저 로그인해주세요).");
   if (!spaceId) throw new Error("구글챗 미러링 환경변수가 설정되지 않았습니다(스페이스 ID 누락).");
 
+  // 커서는 **그 방의** 마지막 메시지 시각입니다. 예전에는 source_key 로 찾았는데, 방이
+  // 여럿이 되면 한 방의 최신 시각이 다른 방의 과거 메시지를 건너뛰게 만듭니다.
   const { data: latest } = await supabase
     .from("google_chat_mirror_messages")
     .select("created_at_google")
-    .eq("source_key", sourceKey)
+    .eq("google_space_id", spaceId)
     .order("created_at_google", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -191,34 +459,45 @@ export async function pollNewMessages(supabase: SupabaseClient, sourceKey: Googl
     if (res.ok) break;
     const retriable = res.status === 429 || res.status >= 500;
     lastText = await res.text().catch(() => "");
-    if (!retriable) throw new Error(`메시지 조회 실패(${sourceKey}): ${res.status} ${lastText}`);
+    if (!retriable) throw new Error(`메시지 조회 실패: ${res.status} ${lastText}`);
     if (attempt < 3) await new Promise((r) => setTimeout(r, 500 * Math.pow(2, attempt))); // 0.5s, 1s, 2s
   }
-  if (!res || !res.ok) throw new Error(`메시지 조회 실패(${sourceKey}, 재시도 후에도 실패): ${res?.status ?? "?"} ${lastText}`);
+  if (!res || !res.ok) throw new Error(`메시지 조회 실패(재시도 후에도 실패): ${res?.status ?? "?"} ${lastText}`);
 
   const body = (await res.json()) as { messages?: ChatMessageResource[] };
   const messages = body.messages ?? [];
   if (messages.length === 0) return 0;
 
-  const rows = messages
-    .filter((m) => typeof m.text === "string" && m.name)
-    .map((m) => ({
+  const sourceKey = space.source_key ?? "room";
+
+  const rows: Record<string, unknown>[] = [];
+  for (const m of messages) {
+    // 예전에는 본문이 없으면 통째로 버렸습니다. **사진만 올라온 메시지가 그렇습니다** -
+    // 다친 아이 사진이 바로 그렇게 올라오는데, 화면에는 그 메시지가 «없는 것»으로 보였습니다.
+    if (!m.name) continue;
+    const hasAttachment = (m.attachment ?? []).length > 0;
+    if (typeof m.text !== "string" && !hasAttachment) continue;
+
+    const saved = hasAttachment ? await saveAttachments(supabase, token, m.name, m.attachment) : [];
+    rows.push({
       source_key: sourceKey,
       google_message_id: m.name,
       google_space_id: m.space?.name ?? spaceId,
       sender_display_name: m.sender?.displayName ?? null,
       sender_email: m.sender?.email ?? null,
-      content: m.text as string,
+      content: m.text ?? "",
       created_at_google: m.createTime ?? new Date().toISOString(),
       // 멘션 구간을 그대로 남깁니다. 없으면 null - 뒤에서 «좌표를 못 받은 줄»로 알아봅니다.
       mentions: mentionSpansOf(m).length > 0 ? mentionSpansOf(m) : null,
-    }));
+      attachments: saved.length > 0 ? saved : null,
+    });
+  }
   if (rows.length === 0) return 0;
 
   const { error } = await supabase
     .from("google_chat_mirror_messages")
     .upsert(rows, { onConflict: "google_message_id", ignoreDuplicates: true });
-  if (error) throw new Error(`메시지 저장 실패(${sourceKey}): ${error.message}`);
+  if (error) throw new Error(`메시지 저장 실패: ${error.message}`);
 
   return rows.length;
 }

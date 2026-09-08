@@ -35,6 +35,17 @@ export function kstWeekday(): number {
   return new Date(`${todayKst()}T12:00:00+09:00`).getDay();
 }
 
+/**
+ * 지금 시각(한국) HH:MM:SS.
+ *
+ * 시간표의 `start_time`·`end_time` 은 시간대가 없는 시각(time)이고, 그건 **한국 시각**을
+ * 뜻합니다. 브라우저가 다른 시간대에 있으면 `getHours()` 로 비교하는 순간 엉뚱한 교시가
+ * 나옵니다 - 아무 오류 없이 「지금 체육」이라고만 보입니다.
+ */
+export function kstTime(at: Date | number = Date.now()): string {
+  return new Date(at).toLocaleTimeString("en-GB", { timeZone: "Asia/Seoul", hour12: false });
+}
+
 // "3분 전" 같은 상대 시각. 네 파일에 똑같은 코드가 복사돼 있던 것을 하나로 모았습니다.
 //
 // 글자 하나만 달라져도 화면마다 다른 말이 나옵니다. 같은 뜻이면 같은 곳에서 나와야 합니다.

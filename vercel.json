@@ -33,6 +33,10 @@
       "schedule": "30 14 * * *"
     },
     {
+      "path": "/api/cron/purge-chat-attachments",
+      "schedule": "35 14 * * *"
+    },
+    {
       "path": "/api/cron/pickup-schedules",
       "schedule": "0 22 * * *"
     },

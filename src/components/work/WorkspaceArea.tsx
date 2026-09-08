@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Department, GoogleChatMirrorMessage, Task, TaskModeColor, TaskStatus, TeamMember } from "@/lib/types";
 import WorkCalendar from "./WorkCalendar";
 import NoteBoard from "./NoteBoard";
+import GoogleChatRooms from "./GoogleChatRooms";
 import TaskBoard from "./TaskBoard";
 import QuickTaskWidget from "./QuickTaskWidget";
 import AttendancePanels from "./AttendancePanels";
@@ -34,8 +35,8 @@ import type { RosterStudent } from "@/lib/attendanceDigest";
 // 양옆 칸은 접을 수 있습니다. 접으면 세로 막대만 남고 가운데가 그만큼 넓어집니다. 흐름판이
 // 옆 칸이 되면서 3열 대신 위에서 아래로(예정→진행중→완료) 쌓이는 세로 배치를 씁니다 - 좁은
 // 폭에 3열을 욱여넣으면 카드 제목이 다 잘립니다. 폭과 접힘 상태는 이 브라우저에 기억해둡니다.
-const LAYOUT_STORAGE_KEY = "gia-ops-work-layout-v3";
-const DEFAULT_LAYOUT = { leftWidth: 26, rightWidth: 27, leftOpen: true, rightOpen: true };
+const LAYOUT_STORAGE_KEY = "gia-ops-work-layout-v4";
+const DEFAULT_LAYOUT = { leftWidth: 26, rightWidth: 27, leftOpen: true, rightOpen: true, inboxTopHeight: 55 };
 type Layout = typeof DEFAULT_LAYOUT;
 
 // 한 칸이 이보다 좁아지면 안에 든 표·채팅이 읽을 수 없게 되므로 드래그를 여기서 멈춥니다.
@@ -56,6 +57,7 @@ function loadSavedLayout(): Layout {
       rightWidth: typeof p.rightWidth === "number" ? p.rightWidth : DEFAULT_LAYOUT.rightWidth,
       leftOpen: typeof p.leftOpen === "boolean" ? p.leftOpen : DEFAULT_LAYOUT.leftOpen,
       rightOpen: typeof p.rightOpen === "boolean" ? p.rightOpen : DEFAULT_LAYOUT.rightOpen,
+      inboxTopHeight: typeof p.inboxTopHeight === "number" ? p.inboxTopHeight : DEFAULT_LAYOUT.inboxTopHeight,
     };
   } catch {
     return DEFAULT_LAYOUT;
@@ -83,6 +85,26 @@ function ResizeHandle({ onStart, onReset }: { onStart: (e: React.MouseEvent) => 
       className="group flex w-2.5 shrink-0 cursor-col-resize items-center justify-center bg-slate-200/80 transition-colors hover:bg-blue-400 active:bg-blue-500"
     >
       <span className="flex flex-col gap-[3px]">
+        {[0, 1, 2].map((i) => (
+          <span key={i} className="block h-[3px] w-[3px] rounded-full bg-slate-400 group-hover:bg-white" />
+        ))}
+      </span>
+    </div>
+  );
+}
+
+/** 위아래로 나눈 칸의 높이 손잡이. 가로 손잡이(ResizeHandle)와 같은 규칙입니다. */
+function HeightHandle({ onStart, onReset }: { onStart: (e: React.MouseEvent) => void; onReset: () => void }) {
+  return (
+    <div
+      onMouseDown={onStart}
+      onDoubleClick={onReset}
+      role="separator"
+      aria-orientation="horizontal"
+      title="끌어서 위아래 높이를 바꿉니다 · 두 번 누르면 원래대로"
+      className="group flex h-2.5 shrink-0 cursor-row-resize items-center justify-center bg-slate-200/80 transition-colors hover:bg-blue-400 active:bg-blue-500"
+    >
+      <span className="flex gap-[3px]">
         {[0, 1, 2].map((i) => (
           <span key={i} className="block h-[3px] w-[3px] rounded-full bg-slate-400 group-hover:bg-white" />
         ))}
@@ -285,15 +307,65 @@ export default function WorkspaceArea({
     [layout.leftWidth, layout.rightWidth]
   );
 
+  /**
+   * 왼쪽 칸 — 위는 «들어오는 것», 아래는 «구글챗».
+   *
+   * 아래를 구글챗으로 둔 이유: 직원들은 구글챗을 띄워놓고 일합니다. 읽기만 되면 답할 때마다
+   * 구글챗을 열어야 해서 창이 하나도 안 줄고, 그러면 이 화면을 놓을 자리가 여전히 없습니다.
+   * 읽고 답하는 것까지 한 칸 안에서 돼야 창 하나를 실제로 닫습니다.
+   *
+   * 위아래 비율은 이 브라우저에 기억해둡니다 - 사람마다 문의를 더 보는 날과 채팅을 더 보는
+   * 날이 다릅니다.
+   */
+  // 인박스 안 위아래 나누기. 가로 손잡이와 같은 방식이되 기준이 컨테이너의 높이입니다.
+  const inboxRef = useRef<HTMLDivElement>(null);
+  const startVerticalResize = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      const box = inboxRef.current?.getBoundingClientRect();
+      if (!box) return;
+      const startY = e.clientY;
+      const startValue = layout.inboxTopHeight;
+      document.body.style.cursor = "row-resize";
+      document.body.style.userSelect = "none";
+      function onMove(ev: MouseEvent) {
+        const delta = ((ev.clientY - startY) / box!.height) * 100;
+        // 한쪽이 너무 얇아지면 안에 든 글을 읽을 수 없습니다.
+        const next = Math.min(85, Math.max(15, startValue + delta));
+        setLayout((p) => ({ ...p, inboxTopHeight: next }));
+      }
+      function onUp() {
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+      }
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    },
+    [layout.inboxTopHeight],
+  );
+
   const inbox = (
-    <AttendancePanels
-      messages={mirrorMessages}
-      team={team}
-      userEmail={currentUserEmail}
-      department={activeDepartment.name}
-      roster={roster}
-      onTaskCreated={onTaskCreated}
-    />
+    <div ref={inboxRef} className="flex h-full flex-col overflow-hidden">
+      <div className="min-h-0 overflow-hidden" style={{ height: `${layout.inboxTopHeight}%` }}>
+        <AttendancePanels
+          messages={mirrorMessages}
+          team={team}
+          userEmail={currentUserEmail}
+          department={activeDepartment.name}
+          roster={roster}
+          onTaskCreated={onTaskCreated}
+        />
+      </div>
+      <HeightHandle
+        onStart={startVerticalResize}
+        onReset={() => setLayout((p) => ({ ...p, inboxTopHeight: DEFAULT_LAYOUT.inboxTopHeight }))}
+      />
+      <div className="min-h-0 flex-1 overflow-hidden">
+        <GoogleChatRooms messages={mirrorMessages} currentUserName={team.find((m) => m.email === currentUserEmail)?.name ?? null} />
+      </div>
+    </div>
   );
 
   // compact: 흐름판이 오른쪽 좁은 칸에 들어가므로 3열 대신 세로로 쌓습니다.
@@ -416,14 +488,42 @@ export default function WorkspaceArea({
     );
   }
 
+  /**
+   * 공용 쪽지 - 말로 하고 지나가는 것을 남기는 자리. 채팅창이 있던 몫입니다.
+   *
+   * **인박스 아래로는 내려가지 않습니다.** 왼쪽 칸은 위아래로 이미 나뉘어 있어서(들어오는
+   * 것 · 구글챗) 거기까지 쪽지가 깔리면 세 겹이 됩니다. 등록·달력 아래에서 흐름판까지만
+   * 깔면 쪽지는 여전히 «지나가다 보이는 자리»에 있고, 왼쪽은 세로로 길게 쓸 수 있습니다.
+   */
+  const noteStrip = noteOpen ? (
+    <div className="h-[132px] shrink-0 border-t border-black/10 bg-white/60 px-2.5 py-1.5">
+      <div className="mb-1 flex items-center gap-1.5">
+        <span className="text-[11px] font-bold text-slate-600">📝 쪽지</span>
+        <span className="text-[10px] text-slate-400">다같이 봅니다 · 지난 것은 저절로 떨어집니다</span>
+        <button onClick={() => setNoteOpen(false)} className="ml-auto rounded px-1.5 text-[11px] text-slate-400 hover:bg-slate-100" title="접기">
+          ▾
+        </button>
+      </div>
+      <div className="h-[96px]">
+        <NoteBoard
+          department={activeDepartment.name}
+          currentUserEmail={currentUserEmail}
+          currentUserName={team.find((m) => m.email === currentUserEmail)?.name ?? null}
+        />
+      </div>
+    </div>
+  ) : (
+    <button
+      onClick={() => setNoteOpen(true)}
+      className="flex h-7 shrink-0 items-center gap-1.5 border-t border-black/10 bg-white/60 px-2.5 text-[11px] font-bold text-slate-500 hover:bg-slate-50"
+    >
+      📝 쪽지 <span className="font-normal text-slate-400">펼치기</span>
+    </button>
+  );
+
   return (
-    // 세로로 둘: 위는 세 칸(인박스·달력·흐름판), 아래는 **공용 쪽지**입니다.
-    //
-    // 쪽지를 한 칸 안에 넣지 않은 이유: 세 칸은 각자 하는 일이 다른데 쪽지는 **셋 모두에게**
-    // 걸립니다. 어느 한 칸에 넣으면 그 칸을 접은 사람에게는 안 보이고, 그러면 「다같이 보는
-    // 쪽지」가 아니게 됩니다.
-    <div className="flex h-full flex-col overflow-hidden">
-      <div ref={containerRef} className="flex min-h-0 flex-1 overflow-hidden">
+    // 왼쪽(인박스)은 화면 끝까지 내려오고, 쪽지는 등록·달력부터 흐름판까지의 아래에만 깔립니다.
+    <div ref={containerRef} className="flex h-full overflow-hidden">
       {/* ① 들어오는 것 - 학부모 문의·출결·선생님 요청을 한 곳에서 받습니다. 머리글 오른쪽에
           토들·구글챗 연결상태 불이 들어옵니다(요청: "인박스탭제목 오른쪽 빈공간에 토들: 초록불
           구글챗: 초록불 형식으로"). */}
@@ -447,65 +547,42 @@ export default function WorkspaceArea({
         <CollapsedRail icon="📥" title="인박스" side="left" onOpen={() => setLayout((p) => ({ ...p, leftOpen: true }))} />
       )}
 
-      {/* ② 일하는 곳 - 등록창 + 달력. 남는 폭을 전부 씁니다. */}
-      <Zone icon="🗓️" title="등록 · 달력" className="flex-1">
-        {center}
-      </Zone>
-
-      {/* ③ 현황판 - 흐름판은 드래그로 진행상황을 옮기고 훑어보는 용도라 오른쪽 좁은 칸이면
-          충분합니다. 세로 스택(compact)이라 좁아도 카드가 잘리지 않고, 안 볼 때는 접습니다. */}
-      {layout.rightOpen ? (
-        <>
-          <ResizeHandle
-            onStart={startResize("right")}
-            onReset={() => setLayout((p) => ({ ...p, rightWidth: DEFAULT_LAYOUT.rightWidth }))}
-          />
-          <Zone
-            icon="🔀"
-            title="흐름판"
-            right={boardControls}
-            onCollapse={() => setLayout((p) => ({ ...p, rightOpen: false }))}
-            style={{ width: `${layout.rightWidth}%` }}
-          >
-            {board}
+      {/* ②③ 등록·달력 + 흐름판, 그리고 그 아래 폭만큼 깔리는 쪽지. */}
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <div className="flex min-h-0 flex-1 overflow-hidden">
+          {/* ② 일하는 곳 - 등록창 + 달력. 남는 폭을 전부 씁니다. */}
+          <Zone icon="🗓️" title="등록 · 달력" className="flex-1">
+            {center}
           </Zone>
-        </>
-      ) : (
-        <CollapsedRail icon="🔀" title="흐름판" side="right" onOpen={() => setLayout((p) => ({ ...p, rightOpen: true }))} />
-      )}
+
+          {/* ③ 현황판 - 흐름판은 드래그로 진행상황을 옮기고 훑어보는 용도라 오른쪽 좁은 칸이면
+              충분합니다. 세로 스택(compact)이라 좁아도 카드가 잘리지 않고, 안 볼 때는 접습니다. */}
+          {layout.rightOpen ? (
+            <>
+              <ResizeHandle
+                onStart={startResize("right")}
+                onReset={() => setLayout((p) => ({ ...p, rightWidth: DEFAULT_LAYOUT.rightWidth }))}
+              />
+              <Zone
+                icon="🔀"
+                title="흐름판"
+                right={boardControls}
+                onCollapse={() => setLayout((p) => ({ ...p, rightOpen: false }))}
+                style={{ width: `${layout.rightWidth}%` }}
+              >
+                {board}
+              </Zone>
+            </>
+          ) : (
+            <CollapsedRail icon="🔀" title="흐름판" side="right" onOpen={() => setLayout((p) => ({ ...p, rightOpen: true }))} />
+          )}
+        </div>
+
+        {/* ④ 공용 쪽지 - 등록·달력 아래에서 흐름판까지. 접을 수 있게 두되 기본은 펼침입니다 -
+            접힌 채로 두면 붙일 생각이 안 납니다. */}
+        {noteStrip}
       </div>
 
-      {/* ④ 공용 쪽지 - 말로 하고 지나가는 것을 남기는 자리. 채팅창이 있던 몫입니다.
-          접을 수 있게 두되 기본은 펼침입니다 - 접힌 채로 두면 붙일 생각이 안 납니다. */}
-      {noteOpen ? (
-        <div className="h-[132px] shrink-0 border-t border-black/10 bg-white/60 px-2.5 py-1.5">
-          <div className="mb-1 flex items-center gap-1.5">
-            <span className="text-[11px] font-bold text-slate-600">📝 쪽지</span>
-            <span className="text-[10px] text-slate-400">다같이 봅니다 · 지난 것은 저절로 떨어집니다</span>
-            <button
-              onClick={() => setNoteOpen(false)}
-              className="ml-auto rounded px-1.5 text-[11px] text-slate-400 hover:bg-slate-100"
-              title="접기"
-            >
-              ▾
-            </button>
-          </div>
-          <div className="h-[96px]">
-            <NoteBoard
-              department={activeDepartment.name}
-              currentUserEmail={currentUserEmail}
-              currentUserName={team.find((m) => m.email === currentUserEmail)?.name ?? null}
-            />
-          </div>
-        </div>
-      ) : (
-        <button
-          onClick={() => setNoteOpen(true)}
-          className="flex h-7 shrink-0 items-center gap-1.5 border-t border-black/10 bg-white/60 px-2.5 text-[11px] font-bold text-slate-500 hover:bg-slate-50"
-        >
-          📝 쪽지 <span className="font-normal text-slate-400">펼치기</span>
-        </button>
-      )}
     </div>
   );
 }

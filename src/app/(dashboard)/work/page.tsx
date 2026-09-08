@@ -35,7 +35,10 @@ export default async function WorkPage() {
       .from("google_chat_mirror_messages")
       .select("*")
       .order("created_at_google", { ascending: false })
-      .limit(200),
+      // 방이 여럿이 되면서 200건은 **한 방이 다른 방을 밀어냅니다** - 바쁜 방 하나가 200건을
+      // 다 차지하면 조용한 방은 화면에 한 줄도 안 뜨는데, 화면에는 「아직 메시지가 없습니다」로
+      // 보입니다.
+      .limit(400),
   ]);
 
   // 출결내역 위젯이 "정서안만 픽업" 같은 문장에서 이름을 추측하지 않고 실제 명부와 대조하도록

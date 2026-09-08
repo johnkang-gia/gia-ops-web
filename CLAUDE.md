@@ -161,6 +161,32 @@ departmentOf({ department: s.department, grade: s.grade }); // → "초등부" |
 
 ---
 
+## 2-5. 짝지어 저장하는 칸 (반 이름 ↔ 반 연결)
+
+학생의 반이 두 칸에 나뉘어 있습니다.
+
+- `wr_students.class_name` — 반 **이름**(글자). 화면 대부분이 이걸 읽어 목록을 그립니다
+- `wr_students.class_id` — 반 **연결**. 반 배정·시간표·교실 태블릿·담임 판정이 이걸 읽습니다
+
+**한쪽만 채우면 화면에는 반 이름이 잘 보이는데 배정은 안 됩니다.** 오류가 아니라 «되어
+보이는 것»이라 아무도 못 찾고, 반 배정 화면에 가서야 「이 아이가 미배정에 있네」를
+발견합니다. 실제로 학생 추가와 구글시트 반영 두 곳이 그랬습니다.
+
+반을 정하는 일은 `src/lib/classAssign.ts` 의 `assignClass()` 하나만 합니다.
+
+```ts
+.insert({ name, ...assignClass(className, classes, grade) })
+```
+
+이름이 명부의 반과 안 맞으면 **연결을 비워 둡니다.** 없는 반을 만들어내지 않습니다 -
+오타로 생긴 반이 명부에 늘면 아무도 못 지웁니다. 대신 화면이 「그런 반이 없습니다」를
+사람에게 알려줍니다.
+
+`npm run build` 가 `scripts/check-paired-columns.mjs` 를 돌려 한쪽만 쓰는 자리를 찾습니다.
+남아 있는 학생은 `select * from students_without_class;` 로 언제든 확인합니다.
+
+---
+
 ## 3. 버전과 배포
 
 - 버전은 `package.json` 한 곳에만 적습니다. 화면 표시는 `src/lib/version.ts` 가

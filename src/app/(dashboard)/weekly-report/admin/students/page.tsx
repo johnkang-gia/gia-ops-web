@@ -43,7 +43,7 @@ export default async function StudentManagePage() {
    * 공용 뷰에는 **보호자 연락처가 아예 없습니다.** 화면에서만 가리면 주소창을 직접 치거나
    * API 를 부르는 것으로 뚫립니다 - 뷰에 없어야 못 봅니다.
    */
-  const [{ data: studentsData }, { data: fieldDefsData }, { data: routesData }, { data: stopsData }] = await Promise.all([
+  const [{ data: studentsData }, { data: fieldDefsData }, { data: routesData }, { data: stopsData }, { data: classesData }] = await Promise.all([
     supabase
       .from(canEdit ? "wr_students" : "wr_students_basic")
       .select("*")
@@ -54,6 +54,9 @@ export default async function StudentManagePage() {
     supabase.from("wr_student_field_defs").select("*").order("sort_order", { ascending: true }),
     supabase.from("shuttle_routes").select("*").eq("active", true),
     supabase.from("shuttle_stops").select("*"),
+    // 반 목록. 학생의 반 **이름**을 반 **연결**로 바꾸는 데 씁니다 - 이름만 저장하면
+    // 반 배정 화면에서는 그 아이가 「미배정」에 남습니다.
+    supabase.from("wr_classes").select("id, grade, class_name").eq("is_demo", false),
   ]);
 
   return (
@@ -82,6 +85,7 @@ export default async function StudentManagePage() {
           shuttleRoutes={(routesData as ShuttleRoute[] | null) ?? []}
           shuttleStops={(stopsData as ShuttleStop[] | null) ?? []}
           currentTermId={(await getCurrentTerm())?.id ?? null}
+          classes={(classesData as { id: string; grade: string | null; class_name: string | null }[] | null) ?? []}
         />
       </div>
     </div>

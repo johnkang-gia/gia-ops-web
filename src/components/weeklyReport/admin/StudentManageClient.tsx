@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { WR_INSTRUMENTS, type ShuttleRoute, type ShuttleStop, type WrStudent, type WrStudentFieldDef } from "@/lib/types";
+import { assignClass, type ClassRow } from "@/lib/classAssign";
 import { useConfirm } from "@/components/common/ConfirmProvider";
 import { useToast } from "@/components/common/ToastProvider";
 import ShuttleRecommendModal from "@/components/shuttle/ShuttleRecommendModal";
@@ -80,12 +81,20 @@ export default function StudentManageClient({
   shuttleRoutes = [],
   shuttleStops = [],
   currentTermId = null,
+  classes = [],
 }: {
   initialStudents: WrStudent[];
   initialFieldDefs: WrStudentFieldDef[];
   currentUserEmail: string;
   /** 지금 학기. 유니폼 사이즈는 학기별로 남깁니다 - 아이는 자랍니다. */
   currentTermId?: string | null;
+  /**
+   * 지금 있는 반. **반 이름을 연결(class_id)까지 붙이는 데** 씁니다.
+   *
+   * 이게 없던 때는 반을 적어도 이름만 저장되고 연결은 비어 있었습니다. 화면에는 반 이름이
+   * 잘 보이니 다 된 줄 알았는데, 반 배정 화면에서는 그 아이가 「미배정」이었습니다.
+   */
+  classes?: ClassRow[];
   /**
    * 고칠 수 있는가. 행정직원 이상만 참입니다.
    *
@@ -182,7 +191,8 @@ export default function StudentManageClient({
         name: name.trim(),
         name_en: nameEn.trim() || null,
         grade: grade.trim() || null,
-        class_name: className.trim() || null,
+        // 반은 **이름과 연결을 함께** 넣습니다. 한 곳(assignClass)에서만 정합니다.
+        ...assignClass(className, classes, grade),
         gender: gender || null,
         birth_date: birthDate || null,
         mother_phone: motherPhone.trim() || null,
@@ -259,6 +269,31 @@ export default function StudentManageClient({
       setStudents((prev) => [...prev, ...(data as WrStudent[])]);
       setBulkText("");
       setShowBulk(false);
+    }
+  }
+
+  /**
+   * 반 칸을 고치면 **연결까지** 함께 바꿉니다.
+   *
+   * 이름만 바꾸면 그 아이는 화면상 새 반인데 실제로는 옛 반에 매달린 채로 남습니다.
+   * 없는 반을 적으면 연결을 비우고 그 사실을 알려줍니다 - 조용히 두면 「적었는데 왜 안
+   * 되지」가 됩니다.
+   */
+  async function updateClass(id: string, rawValue: string) {
+    if (!canEdit) {
+      notify("명부를 고치는 것은 행정직원 이상만 할 수 있습니다.", "error");
+      return;
+    }
+    const before = students.find((s) => s.id === id);
+    const cls = assignClass(rawValue, classes, before?.grade ?? null);
+    const { error } = await createClient().from("wr_students").update(cls).eq("id", id);
+    if (error) {
+      notify("저장하지 못했습니다: " + error.message, "error");
+      return;
+    }
+    setStudents((prev) => prev.map((s) => (s.id === id ? { ...s, ...cls } as WrStudent : s)));
+    if (rawValue.trim() && !cls.class_id) {
+      notify(`「${rawValue.trim()}」이라는 반이 명부에 없어 배정은 비워뒀습니다. 반/담임 배정에서 반을 먼저 만들어주세요.`, "error");
     }
   }
 
@@ -751,7 +786,7 @@ export default function StudentManageClient({
                   <EditableCell value={s.grade ?? ""} onSave={(v) => updateField(s.id, "grade", v)} width="w-12" />
                 </td>
                 <td className="px-3 py-1.5 text-slate-500">
-                  <EditableCell value={s.class_name ?? ""} onSave={(v) => updateField(s.id, "class_name", v)} width="w-16" />
+                  <EditableCell value={s.class_name ?? ""} onSave={(v) => updateClass(s.id, v)} width="w-16" />
                 </td>
                 <td className="px-3 py-1.5 font-medium">
                   <EditableCell value={s.name} onSave={(v) => v.trim() && updateField(s.id, "name", v)} width="w-24" />

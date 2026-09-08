@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { RosterField } from "./pasteRoster";
+import { assignClass, loadClasses } from "./classAssign";
 
 /**
  * 붙여넣은/시트에서 받은 줄이 명부에 **무엇을 바꾸는지** 계산합니다.
@@ -128,14 +129,21 @@ export async function applyRosterPlans(
   let inserted = 0;
   let updated = 0;
 
+  // 반 이름을 **연결까지** 붙이려면 지금 있는 반 목록이 필요합니다. 한 번만 읽습니다.
+  //
+  // 예전에는 이름만 넣었습니다. 그래서 시트에 반이 적혀 있어도 반 배정 화면에서는 그 아이가
+  // 「미배정」에 있었고, 화면에는 반 이름이 잘 보이니 아무도 이상하다고 느끼지 못했습니다.
+  const classes = await loadClasses(supabase);
+
   for (const p of plans) {
     const v = valueOf(p);
+    const cls = assignClass(v.class_name, classes, v.grade);
     if (p.kind === "새로 등록") {
       const { error } = await supabase.from("wr_students").insert({
         name: p.name,
         name_en: v.name_en ?? null,
-        grade: v.grade ?? null,
-        class_name: v.class_name ?? null,
+        grade: v.grade ?? cls.grade ?? null,
+        ...cls,
         birth_date: v.birth_date ?? null,
         student_no: v.student_no ?? null,
         mother_phone: v.mother_phone ?? null,
@@ -148,8 +156,11 @@ export async function applyRosterPlans(
       if (error) failed.push(`${p.name}(${error.message})`);
       else inserted++;
     } else if (p.kind === "바뀜" && p.studentId) {
-      const patch: Record<string, string> = { status: "active" };
+      const patch: Record<string, string | null> = { status: "active" };
       for (const k of WRITE_COLS) if (v[k]) patch[k] = v[k]!;
+      // 반이 바뀌었으면 **연결도 함께** 바꿉니다. 이름만 바꾸면 그 아이는 화면상 새 반인데
+      // 실제로는 옛 반에 매달린 채로 남습니다.
+      if (v.class_name) Object.assign(patch, cls);
       const { error } = await supabase.from("wr_students").update(patch).eq("id", p.studentId);
       if (error) failed.push(`${p.name}(${error.message})`);
       else updated++;

@@ -334,10 +334,28 @@ const DOCS_TABS: TabDef[] = [
 // 순서는 자주 여는 것부터입니다. 재무 일은 대개 "지금 어디까지 됐나"에서 시작합니다.
 const FINANCE_TABS: TabDef[] = [
   { key: "overview", label: "개요", icon: "📊", href: "/finance", match: ["/finance"] },
-  // 학비(정규·방과후)와 학비외(교재·교복)는 근거가 다릅니다 - 학비는 학부모가 서명해서 고른
-  // 납부 옵션이고, 학비외는 «이 아이가 이 책을 산다»는 체크입니다. 한 표에 섞으면 둘 다 안 됩니다.
-  { key: "tuition", label: "학비 청구", icon: "💰", href: "/finance/tuition", match: ["/finance/tuition"] },
-  { key: "invoices", label: "인보이스 명단", icon: "🧾", href: "/finance/invoices", match: ["/finance/invoices"] },
+  // 청구 — 학비와 학비외를 **한 자리에** 둡니다.
+  //
+  // 둘은 대분류로 나란히 서 있었습니다. 그런데 하는 일은 하나입니다 - 이번 달에 이 아이에게
+  // 얼마를 청구하는가. 대분류가 둘이면 「학비 넣고, 다시 위로 올라가서, 학비외 넣고」가 되고,
+  // 그 사이에 한쪽을 빠뜨립니다.
+  //
+  // 표는 여전히 둘입니다. 학비는 학부모가 서명해서 고른 **납부 옵션**이고, 학비외는 «이 아이가
+  // 이 책을 산다»는 **체크**라 근거가 다릅니다. 한 표에 섞으면 둘 다 안 됩니다.
+  //
+  // 하위 이름은 DB 의 `invoices.stream` 값(학비·학비외)과 **같은 말**을 씁니다. 화면에서 부르는
+  // 이름과 저장된 값이 다르면, 집계가 안 맞을 때 어느 쪽 이야기인지부터 헷갈립니다.
+  {
+    key: "billing",
+    label: "청구",
+    icon: "🧾",
+    href: "/finance/tuition",
+    match: ["/finance/tuition", "/finance/invoices"],
+    children: [
+      { label: "학비", href: "/finance/tuition", match: ["/finance/tuition"] },
+      { label: "학비외", href: "/finance/invoices", match: ["/finance/invoices"] },
+    ],
+  },
   // 현금영수증은 수납 안으로 들여놨습니다. 수납을 넣는 자리에서 신청이 생기고 그 결과를
   // 보는 자리가 현금영수증이라, 둘은 한 가지 일의 앞뒤입니다.
   {

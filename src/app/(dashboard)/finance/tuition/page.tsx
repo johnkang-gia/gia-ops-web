@@ -15,9 +15,9 @@ export const dynamic = "force-dynamic";
 
 const GUIDE_SECTIONS = [
   {
-    title: "💰 학비 청구란?",
+    title: "💰 청구 · 학비란?",
     lines: [
-      "정규과정과 방과후 등록금을 청구하는 곳입니다. 교재·교복 같은 학비외 항목은 [인보이스 명단]에서 따로 다룹니다.",
+      "정규과정과 방과후 등록금을 청구하는 곳입니다. 교재·교복 같은 학비외 항목은 [청구 → 학비외]에서 따로 다룹니다.",
       "칸에 넣는 것은 금액이 아니라 «학부모가 고른 납부 옵션»입니다. 안내문에 √ 표시하고 서명해서 낸 그 항목이고, 그게 곧 계약입니다.",
       "금액은 기준금액 × 회차수 × (1 − 옵션 할인)으로 그때그때 계산합니다. 요금이 오르면 [납부 항목 · 할인]에서 기준금액 하나만 고치면 전부 따라옵니다.",
     ],
@@ -36,7 +36,7 @@ const GUIDE_SECTIONS = [
     lines: [
       "학생을 체크하고 [고른 N명 발행]을 누릅니다. 한 명만 급하면 그 줄의 [발행 →]를 눌러도 됩니다.",
       "청구서에는 할인이 별도 줄로 찍힙니다. 깎인 금액만 적으면 학부모가 «원래 얼마였는데 얼마 깎였는지»를 알 수 없고, 그 문의가 행정실로 옵니다.",
-      "발행은 종이를 만든 것이고, 청구가 나간 것은 아닙니다. 올톡페이 발송은 [인보이스 명단]에서 합니다.",
+      "발행은 종이를 만든 것이고, 청구가 나간 것은 아닙니다. 올톡페이 발송은 [청구 → 학비외]에서 합니다.",
     ],
   },
 ];
@@ -95,12 +95,12 @@ export default async function TuitionPage() {
   return (
     <div className="mx-auto w-full max-w-[1500px] p-4 sm:p-6">
       <div className="mb-1 flex items-center justify-between gap-2">
-        <h1 className="text-lg font-bold">💰 학비 청구</h1>
+        <h1 className="text-lg font-bold">💰 청구 · 학비</h1>
         <GuideButton title="학비 청구 사용 가이드" sections={GUIDE_SECTIONS} />
       </div>
       <p className="mb-3 text-xs leading-relaxed text-slate-500">
         정규과정·방과후 등록금입니다. 학부모가 고른 납부 옵션을 넣으면 금액이 계산되고, 할인을 붙인 뒤 청구서를
-        발행합니다. 교재·교복 같은 <b>학비외 항목은 [인보이스 명단]</b>에서 따로 다룹니다.
+        발행합니다. 교재·교복 같은 <b>학비외 항목은 [청구 → 학비외]</b>에서 따로 다룹니다.
       </p>
 
       <TuitionGridClient

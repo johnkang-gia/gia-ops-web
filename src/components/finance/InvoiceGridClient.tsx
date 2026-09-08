@@ -845,8 +845,8 @@ export default function InvoiceGridClient({
     // 것이라 페이지째 내려가는 편이 자연스럽습니다. 가둘 것은 **가로뿐**입니다.
     <div className="mx-auto w-full min-w-0 max-w-full p-3 sm:p-4">
       <div className="mb-1 flex flex-wrap items-baseline gap-2">
-        <h1 className="text-lg font-bold">🧾 인보이스 명단</h1>
-        <span className="text-xs text-slate-400">학비외 · 학생 × 항목</span>
+        <h1 className="text-lg font-bold">🧾 청구 · 학비외</h1>
+        <span className="text-xs text-slate-400">교재 · 교복 등 · 학생 × 항목</span>
         <a href="/finance/items" className="text-xs font-semibold text-teal-700 underline">
           항목 관리 →
         </a>

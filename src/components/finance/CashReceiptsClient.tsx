@@ -408,7 +408,7 @@ function Row({
           <a
             href="/finance/invoices"
             className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600 underline decoration-dotted"
-            title="인보이스 명단에서 이 청구서를 봅니다"
+            title="학비외 청구에서 이 청구서를 봅니다"
           >
             {invoice}
           </a>

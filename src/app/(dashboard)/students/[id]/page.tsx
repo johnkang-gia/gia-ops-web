@@ -317,7 +317,7 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
           <div className="mb-2 flex flex-wrap items-baseline gap-2">
             <h2 className="text-sm font-bold text-slate-700">💳 학비외 청구</h2>
             <a href="/finance/invoices" className="text-[11px] font-semibold text-teal-700 underline">
-              인보이스 명단 →
+              학비외 청구 →
             </a>
           </div>
           {invoices.length === 0 ? (

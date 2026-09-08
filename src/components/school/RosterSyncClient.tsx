@@ -260,8 +260,9 @@ export default function RosterSyncClient() {
           )}
           {!attemptsError && attempts.length === 0 ? (
             <p className="mt-1 rounded bg-amber-50 px-2 py-1 text-[11px] leading-relaxed text-amber-900">
-              아무도 이 주소를 두드린 적이 없습니다. 스크립트가 <b>다른 주소</b>로 보내고 있거나 <b>아직 실행되지 않았습니다</b> —
-              스크립트의 <b>ENDPOINT</b> 줄을 [스크립트 보기]의 것과 맞춰보세요.
+              아무도 이 주소를 두드린 적이 없습니다. <b>2026-09-08까지는 이것이 정상이었습니다</b> — 로그인 없는 요청이
+              로그인 화면으로 넘어가 창구까지 오지 못했고, 스크립트에는 그것이 <b>성공(200)</b>으로 보였습니다. 지금은
+              열렸습니다. [스크립트 보기] → [스크립트 복사]로 <b>스크립트를 다시 붙여넣고</b> 한 번 실행해보세요.
             </p>
           ) : (
             <ul className="mt-1 flex flex-col gap-0.5">
@@ -363,11 +364,21 @@ function 명부보내기() {
     contentType: 'application/json',
     payload: JSON.stringify({ token: TOKEN, header: v[0], rows: v.slice(1) }),
     muteHttpExceptions: true,
+    // 리다이렉트를 따라가지 않습니다. 따라가면 로그인 화면이 HTTP 200 으로 돌아와서
+    // «성공»으로 보이는데, 명부는 한 줄도 안 들어옵니다.
+    followRedirects: false,
   });
+  const code = res.getResponseCode();
   const out = res.getContentText();
-  Logger.log(out);
+  Logger.log(code + ' ' + out);
+
   // 실패를 삼키지 않습니다. 조용히 실패하면 명부가 몇 주씩 뒤처집니다.
-  if (res.getResponseCode() >= 300) throw new Error(out);
+  if (code === 301 || code === 302 || code === 307 || code === 308) {
+    throw new Error('주소가 로그인 화면으로 넘깁니다. ENDPOINT 를 앱 화면의 것과 맞춰주세요: ' + ENDPOINT);
+  }
+  if (code >= 300) throw new Error(code + ' ' + out);
+  // 답이 JSON 이 아니면 우리 창구가 아니라 다른 화면에 닿은 것입니다.
+  if (out.indexOf('{') !== 0) throw new Error('창구가 아닌 화면이 답했습니다. ENDPOINT 를 확인하세요: ' + out.slice(0, 120));
 }`;
 
   return (

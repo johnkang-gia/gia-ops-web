@@ -114,7 +114,22 @@ export async function updateSession(request: NextRequest) {
     // 토들 수집기(크롬 확장) 파일 - 사무실 PC가 여기서 최신 파일을 내려받아 스스로 갱신합니다.
     // 로그인 없이 열려야 합니다(확장은 브라우저 세션이 없는 상태로 받습니다). 확장 코드에는
     // 비밀값이 없습니다 - 수집 키는 담당자가 그 PC에서 직접 넣고 그 PC에만 저장됩니다.
-    path.startsWith("/collector");
+    path.startsWith("/collector") ||
+    // 구글시트가 명부를 보내오는 창구입니다. 세션 쿠키가 없는 서버-서버 호출이라, 여기서
+    // /login 으로 돌려보내면 앱스크립트가 **성공했다고 착각합니다** - UrlFetchApp 은 기본으로
+    // 리다이렉트를 따라가고, 로그인 화면은 HTTP 200 으로 돌아오기 때문입니다. 스크립트는
+    // 완료라고 하고 앱은 한 줄도 못 받는 상태가 됩니다(크론 307, Traccar 307 에 이어 세 번째).
+    // 인증은 이 라우트가 토큰으로 직접 확인합니다. `/manage`(사람이 로그인해서 쓰는 쪽)는
+    // 여기 걸리지 않도록 **정확히 이 주소만** 엽니다.
+    path === "/api/school/roster-sync" ||
+    // 구글챗 Pub/Sub 푸시(새 메시지 초인종). 구글 서버가 부르므로 세션 쿠키가 없습니다.
+    // 막혀 있으면 벨이 울려도 우리에게 닿지 않아 «실시간»이 조용히 폴링 주기로 되돌아갑니다.
+    // 인증은 라우트가 GOOGLE_CHAT_PUSH_SECRET 으로 직접 확인합니다.
+    path === "/api/google-chat/push" ||
+    // 토들 수집기(사무실 PC 크롬 확장)가 픽업 연락과 «살아 있음» 신호를 보내는 곳입니다.
+    // 확장은 학교 구글 계정 세션이 없습니다. 인증은 PICKUP_INGEST_SECRET 으로 직접 확인합니다.
+    path === "/api/pickup/ingest" ||
+    path === "/api/pickup/heartbeat";
 
   if (!user && !isAuthRoute) {
     const url = request.nextUrl.clone();

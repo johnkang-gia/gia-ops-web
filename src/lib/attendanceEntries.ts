@@ -44,7 +44,7 @@ export type ScanSource = {
   mentionClassNames?: string[] | null;
 };
 
-export type ScanResult = { created: number; skipped: number; needsReview: number; failed?: string | null };
+export type ScanResult = { created: number; skipped: number; needsReview: number; fixed?: number; failed?: string | null };
 
 type RosterFull = RosterStudent & { id?: string | null; className?: string | null };
 
@@ -67,16 +67,33 @@ export async function scanIntoEntries(
 
   // 이미 만들어 둔 것들을 한 번에 읽어옵니다(메시지마다 조회하면 왕복이 수백 번이 됩니다).
   const ids = messages.map((m) => m.messageId);
-  const existing = new Set<string>();
+  type Prev = { id: string; from: string; to: string; touched: boolean };
+  const existing = new Map<string, Prev>();
   for (let i = 0; i < ids.length; i += 200) {
     const { data } = await supabase
       .from("attendance_entries")
-      .select("source, source_message_id, student_name, status")
+      // 기간과 「사람이 손댔는가」를 함께 읽습니다. 읽는 규칙이 나아졌을 때 **이미 만들어 둔
+      // 줄도 고쳐야** 하는데, 사람이 정한 줄은 절대 건드리면 안 되기 때문입니다.
+      .select("id, source, source_message_id, student_name, status, date_from, date_to, touched_by_human")
       .in("source_message_id", ids.slice(i, i + 200));
     for (const r of data ?? []) {
-      existing.add(`${r.source}|${r.source_message_id}|${r.student_name}|${r.status}`);
+      existing.set(`${r.source}|${r.source_message_id}|${r.student_name}|${r.status}`, {
+        id: r.id as string,
+        from: r.date_from as string,
+        to: r.date_to as string,
+        touched: r.touched_by_human === true,
+      });
     }
   }
+
+  /**
+   * 이미 있는 줄인데 **읽은 기간이 달라진 것**.
+   *
+   * 「내일부터 3일간」을 하루씩 밀려 읽던 때 만들어진 줄들이 그대로 남아 있습니다. 스캔은
+   * 「없는 것만」 만들기 때문에, 읽는 규칙을 고쳐도 옛 줄은 틀린 채로 계속 대시보드에 뜹니다.
+   * 사람이 손댄 줄(touched_by_human)은 건드리지 않습니다 - 자동이 사람 판단을 덮지 않습니다.
+   */
+  const fixes: { id: string; from: string; to: string }[] = [];
 
   const rows: Record<string, unknown>[] = [];
   let skipped = 0;
@@ -172,11 +189,15 @@ export async function scanIntoEntries(
         continue;
       }
       const key = `${m.source}|${m.messageId}|${st.display}|${status}`;
-      if (existing.has(key)) {
+      const prev = existing.get(key);
+      if (prev) {
+        // 사람이 손대지 않았는데 기간이 달라졌으면 고칩니다. 그대로 두면 「내일부터 3일간」이
+        // 하루 밀린 채로 계속 오늘 결석 명단에 남습니다.
+        if (!prev.touched && (prev.from !== from || prev.to !== to)) fixes.push({ id: prev.id, from, to });
         skipped += 1;
         continue;
       }
-      existing.add(key);
+      existing.set(key, { id: "", from, to, touched: false });
       if (state === "확인필요") needsReview += 1;
       rows.push({
         source: m.source,
@@ -212,7 +233,33 @@ export async function scanIntoEntries(
     else if (!failed) failed = error.message;
   }
 
-  return { created, skipped, needsReview, failed };
+  // ── 옛 줄의 기간 바로잡기 ──────────────────────────────────────────────────
+  //
+  // 고친 김에, 그 줄이 만들어 둔 **출석부 자동 줄도 정리합니다.** 기간이 9/7~9/9 로 잘못
+  // 읽혀 있으면 그 사흘치 결석이 이미 출석부에 들어가 있고, 기간만 고치면 아이는 오늘도
+  // 결석으로 남습니다. 사람이 확인한 줄(confirmed_by_human)은 손대지 않습니다.
+  let fixed = 0;
+  for (const f of fixes) {
+    const { error } = await supabase
+      .from("attendance_entries")
+      .update({ date_from: f.from, date_to: f.to })
+      .eq("id", f.id)
+      .eq("touched_by_human", false);
+    if (error) {
+      if (!failed) failed = error.message;
+      continue;
+    }
+    fixed += 1;
+    const { error: delErr } = await supabase
+      .from("attendance_records")
+      .delete()
+      .eq("entry_id", f.id)
+      .eq("confirmed_by_human", false)
+      .or(`date.lt.${f.from},date.gt.${f.to}`);
+    if (delErr && !failed) failed = delErr.message;
+  }
+
+  return { created, skipped, needsReview, fixed, failed };
 }
 
 /** 오늘 대시보드에 올릴 출결(등록된 것만, 기간이 오늘을 품는 것만). */

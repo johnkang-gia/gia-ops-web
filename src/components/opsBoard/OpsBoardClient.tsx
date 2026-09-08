@@ -85,6 +85,8 @@ type BoardData = {
     source?: "체크표" | "출결내역" | "학부모연락";
     /** 명부와 못 이은 건. 조용히 빼지 않고 올리되 확인이 필요하다고 적습니다. */
     unmatched?: boolean;
+    /** 평소 하원수단(학원차·보호자하원). 아래 목록에 또 뜨지 않도록 여기로 합쳤습니다. */
+    plan?: string | null;
   }[];
   /** 아직 시작하지 않은 등록 건. 시작일이 오면 저절로 오늘 명단으로 넘어갑니다. */
   upcoming?: { name: string; status: string; from: string; to: string; note: string | null }[];
@@ -1756,6 +1758,23 @@ function TodayChanges({ sc, data }: { sc: BoardScale; data: BoardData }) {
                   title="학부모 연락은 왔는데 명부의 어느 학생인지 아직 잇지 못했습니다. 픽업 인박스에서 학생을 골라주세요."
                 >
                   학생 미연결
+                </span>
+              )}
+              {/* 평소 하원수단. 아래 「학원차·보호자 하원」에 같은 아이가 또 뜨면 몇 명을
+                  데려와야 하는지 셀 수 없어, 그 줄을 여기로 합쳤습니다. */}
+              {p.plan && (
+                <span
+                  style={{
+                    fontSize: sc.s(13, 10),
+                    fontWeight: 700,
+                    color: "#a78bfa",
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  }}
+                  title={`평소 하원수단: ${p.plan}`}
+                >
+                  {p.plan}
                 </span>
               )}
             </div>

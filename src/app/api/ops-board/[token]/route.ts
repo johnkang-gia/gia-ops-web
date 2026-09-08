@@ -309,6 +309,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
       return {
         name: p.name,
         time: p.time,
+        // 하원수단(학원차·보호자하원)과 **같은 아이인지** 가리는 열쇠입니다.
+        studentId: p.studentId ?? null,
+        // 평소 하원수단이 있는 아이면 그것도 함께 적습니다(아래에서 채웁니다).
+        plan: null as string | null,
         grade: c?.grade ?? null,
         className: c?.className ?? null,
         classId: c ? classIdByGradeName.get(`${c.grade ?? ""}|${c.className ?? ""}`) ?? null : null,
@@ -462,8 +466,34 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
           .neq("kind", "셔틀")
       : { data: [] as { student_id: string; kind: string; label: string | null; depart_time: string | null; note: string | null }[] };
 
+  // 같은 아이가 「하원 픽업」과 「학원차·보호자 하원」 두 곳에 따로 뜨고 있었습니다.
+  //
+  //   · 하원 픽업        - 오늘 학부모가 보낸 연락(오늘 이 아이를 데리러 온다)
+  //   · 학원차·보호자하원 - 매주 그 요일마다 그렇게 하기로 되어 있는 것
+  //
+  // 둘은 같은 사실의 두 얼굴입니다. 두 줄로 두면 데려올 아이가 몇인지 셀 수 없고, 한 아이를
+  // 두 번 부르게 됩니다. **오늘 온 연락이 이깁니다** - 평소 규칙보다 오늘 적어준 것이
+  // 구체적입니다. 대신 평소 수단(어디 차·몇 시)을 픽업 줄에 붙여 정보는 잃지 않습니다.
+  const planByStudent = new Map((planRows ?? []).map((p) => [p.student_id as string, p]));
+  for (const pk of pickups) {
+    if (!pk.studentId) continue;
+    const plan = planByStudent.get(pk.studentId);
+    if (!plan) continue;
+    pk.plan = [plan.kind as string, (plan.label as string | null) ?? null, (plan.depart_time as string | null) ?? null]
+      .filter(Boolean)
+      .join(" · ");
+  }
+  const pickedUpIds = new Set(pickups.map((p) => p.studentId).filter(Boolean) as string[]);
+  const pickedUpNames = new Set(pickups.map((p) => p.name));
+
   const dismissalToday = (planRows ?? [])
     .filter((p) => deptStudentIds.has(p.student_id as string))
+    // 오늘 픽업 연락이 온 아이는 위 「하원 픽업」에 이미 있습니다. 여기서는 뺍니다.
+    .filter((p) => {
+      if (pickedUpIds.has(p.student_id as string)) return false;
+      const st = studentById.get(p.student_id as string) as { name?: string } | undefined;
+      return !(st?.name && pickedUpNames.has(st.name));
+    })
     .map((p) => {
       const st = studentById.get(p.student_id as string) as { name?: string; grade?: string; class_name?: string } | undefined;
       return {

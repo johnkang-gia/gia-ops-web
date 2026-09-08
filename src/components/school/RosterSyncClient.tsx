@@ -29,6 +29,8 @@ type Link = {
   last_detail?: string | null;
   last_header?: string | null;
   last_columns?: string | null;
+  sheet_id?: string | null;
+  sheet_name?: string | null;
 };
 
 type Inbox = {
@@ -129,7 +131,8 @@ export default function RosterSyncClient() {
           <p className="mb-1 font-bold text-slate-800">아직 연결이 없습니다. 순서는 이렇습니다.</p>
           <p>
             <b>1.</b> 위 [연결 만들기] → <b>2.</b> 생긴 줄에서 [스크립트 보기] → <b>3.</b> [스크립트 복사] →{" "}
-            <b>4.</b> script.google.com 에 붙여넣고 시트 ID·시트 이름만 고치기 → <b>5.</b> 10분마다 돌게 트리거 걸기.
+            <b>4.</b> 시트 칸에 시트 주소·이름 넣기 → <b>5.</b> script.google.com 에 붙여넣기 →{" "}
+            <b>6.</b> 10분마다 돌게 트리거 걸기.
           </p>
           <p className="mt-1 text-slate-400">자세한 순서는 [스크립트 보기]를 누르면 코드 아래에 그대로 나옵니다.</p>
         </div>
@@ -242,7 +245,13 @@ export default function RosterSyncClient() {
               </div>
             ))}
 
-          {openLink === l.id && <ScriptBox token={l.token} />}
+          <SheetFields
+            link={l}
+            busy={busy}
+            onSave={(sheetId, sheetName) => void act({ action: "sheet", id: l.id, sheetId, sheetName }, "시트를 기억했습니다.")}
+          />
+
+          {openLink === l.id && <ScriptBox token={l.token} sheetId={l.sheet_id ?? ""} sheetName={l.sheet_name ?? ""} />}
         </div>
       ))}
 
@@ -341,7 +350,60 @@ export default function RosterSyncClient() {
   );
 }
 
-function ScriptBox({ token }: { token: string }) {
+/**
+ * 시트 ID·시트 이름을 **앱이 기억합니다.**
+ *
+ * 스크립트를 다시 복사할 일이 생각보다 잦습니다 - 토큰을 재발급했을 때, 주소가 바뀌었을 때,
+ * 스크립트가 고쳐졌을 때. 그때마다 시트 주소를 열어 긴 글자를 다시 찾아 옮겨 적어야 했고,
+ * 한 글자만 틀려도 「그런 이름의 시트가 없습니다」로 끝났습니다. 옮겨 적는 일이 없어지면
+ * 옮겨 적다 틀리는 일도 없어집니다.
+ *
+ * 주소를 통째로 붙여넣어도 받습니다. 사람에게는 그게 더 자연스럽고, `/d/` 와 `/edit` 사이를
+ * 눈으로 잘라내는 일이야말로 기계가 할 일입니다.
+ */
+function SheetFields({
+  link,
+  busy,
+  onSave,
+}: {
+  link: Link;
+  busy: boolean;
+  onSave: (sheetId: string, sheetName: string) => void;
+}) {
+  const [id, setId] = useState(link.sheet_id ?? "");
+  const [name, setName] = useState(link.sheet_name ?? "");
+  const dirty = id !== (link.sheet_id ?? "") || name !== (link.sheet_name ?? "");
+
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px]">
+      <span className="font-semibold text-slate-500">시트</span>
+      <input
+        value={id}
+        onChange={(e) => setId(e.target.value)}
+        placeholder="시트 주소를 그대로 붙여넣어도 됩니다"
+        className="min-w-0 flex-1 rounded border border-slate-300 px-1.5 py-0.5 text-[11px]"
+      />
+      <input
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="시트 이름(아래쪽 탭)"
+        className="w-40 rounded border border-slate-300 px-1.5 py-0.5 text-[11px]"
+      />
+      <button
+        onClick={() => onSave(id, name)}
+        disabled={busy || !dirty}
+        className="rounded bg-slate-800 px-2 py-0.5 text-[11px] font-bold text-white disabled:opacity-30"
+      >
+        {dirty ? "기억하기" : "기억됨"}
+      </button>
+      {!link.sheet_id && (
+        <span className="text-slate-400">한 번만 넣어두면 스크립트에 저절로 채워집니다.</span>
+      )}
+    </div>
+  );
+}
+
+function ScriptBox({ token, sheetId, sheetName }: { token: string; sheetId: string; sheetName: string }) {
   const notify = useToast();
   // 지금 브라우저 주소가 아니라 **정식 주소**를 박습니다. 미리보기 주소로 만들어진 스크립트는
   // Vercel 배포 보호에 걸려 로그인 화면(HTTP 200)을 받고, 스크립트는 그걸 성공으로 읽습니다.
@@ -352,8 +414,8 @@ function ScriptBox({ token }: { token: string }) {
 // 저장 후 [명부보내기]를 한 번 실행해 권한을 허용하고,
 // 왼쪽 ⏰ 트리거 > 트리거 추가 > 시간 기반 > 분 단위 타이머 > 10분마다 로 걸어둡니다.
 
-const SHEET_ID   = '시트주소의 /d/ 와 /edit 사이 글자';
-const SHEET_NAME = '시트1';
+const SHEET_ID   = '${sheetId || "시트주소의 /d/ 와 /edit 사이 글자"}';
+const SHEET_NAME = '${sheetName || "시트1"}';
 const ENDPOINT   = '${origin}/api/school/roster-sync';
 const TOKEN      = '${token}';
 
@@ -445,13 +507,15 @@ function SetupSteps() {
       d: <>가운데 칸의 <code className="rounded bg-slate-100 px-1">function myFunction() {}</code> 를 모두 지우고 붙여넣습니다.</>,
     },
     {
-      t: "④ 맨 위 두 줄만 고칩니다",
+      t: "④ 시트 ID·이름은 이미 채워져 있습니다",
       d: (
         <>
-          <b>SHEET_ID</b> — 시트 주소에서 <code className="rounded bg-slate-100 px-1">/d/</code> 와{" "}
-          <code className="rounded bg-slate-100 px-1">/edit</code> 사이의 긴 글자.
+          위 연결 줄의 <b>시트</b> 칸에 한 번 넣어두면 스크립트에 저절로 들어갑니다. 아직 안 넣었다면 지금 넣고
+          [스크립트 복사]를 다시 누르세요 — 옮겨 적다 한 글자만 틀려도 「그런 이름의 시트가 없습니다」로 끝납니다.
           <br />
-          <b>SHEET_NAME</b> — 시트 «아래쪽 탭»에 적힌 이름(예: 시트1). 나머지는 건드리지 않습니다.
+          <b>SHEET_ID</b> 는 시트 주소의 <code className="rounded bg-slate-100 px-1">/d/</code> 와{" "}
+          <code className="rounded bg-slate-100 px-1">/edit</code> 사이 글자, <b>SHEET_NAME</b> 은 시트 «아래쪽 탭»에
+          적힌 이름입니다.
         </>
       ),
     },

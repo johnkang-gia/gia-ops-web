@@ -78,6 +78,20 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, link: data });
   }
 
+  // 시트 ID·이름을 기억해 둡니다. 스크립트를 다시 복사할 때마다 옮겨 적지 않게 하려는
+  // 것입니다 - 옮겨 적는 일이 없으면 옮겨 적다 틀리는 일도 없습니다.
+  if (action === "sheet") {
+    const raw = String(body?.sheetId ?? "").trim();
+    // 주소를 통째로 붙여넣는 것이 사람에게는 더 자연스럽습니다. 그러면 그것도 받습니다.
+    const sheetId = raw.match(/\/d\/([a-zA-Z0-9_-]{20,})/)?.[1] ?? raw;
+    const { error } = await supabase
+      .from("roster_sync_links")
+      .update({ sheet_id: sheetId || null, sheet_name: String(body?.sheetName ?? "").trim() || null })
+      .eq("id", String(body?.id ?? ""));
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true, sheetId });
+  }
+
   if (action === "toggle") {
     const { error } = await supabase
       .from("roster_sync_links")

@@ -82,12 +82,18 @@ export async function POST(req: Request) {
   const rows = parsed.rows.filter((r) => !r.problem);
 
   // 무엇을 받았고 무엇으로 읽었는지. 이게 없으면 「왜 0줄인가」에 답할 수 없습니다.
-  const headerText = header.join(" | ");
+  //
+  // 머리줄은 **찾은 줄**을 적습니다. 첫 줄을 적으면, 시트 맨 위에 제목이 있는 경우 화면에
+  // 그 제목이 「받은 머리줄」로 뜨고 사람은 앱이 잘못 읽었다고 생각합니다.
+  const headerText =
+    (parsed.headerRowNo && parsed.headerRowNo > 1 ? `${parsed.headerRowNo}번째 줄: ` : "") +
+    (parsed.header ?? header).join(" | ");
   const columnsText = parsed.mapping.map((f) => (f ? FIELD_LABEL[f] : "—")).join(" | ");
   if (rows.length === 0) {
     const why = parsed.mapping.includes("name")
       ? "이름이 든 줄이 없습니다."
-      : `머리줄에서 이름 칸을 못 찾았습니다(받은 머리글: ${header.join(", ")}).`;
+      : `머리줄에서 이름 칸을 못 찾았습니다. 위에서 ${Math.min(15, raw.length + 1)}줄을 훑어봤지만 ` +
+        `아는 칸이 두 개 이상인 줄이 없었습니다(첫 줄: ${header.filter(Boolean).join(", ") || "(전부 비어 있음)"}).`;
     await note(supabase, link.id, raw.length, 0, why, { header: headerText, columns: columnsText });
     return NextResponse.json({ ok: false, error: why }, { status: 400 });
   }
@@ -128,6 +134,7 @@ export async function POST(req: Request) {
   // 다른 일인데, 숫자 0만 보고는 구별할 수 없습니다.
   const count = (k: string) => plans.filter((p) => p.kind === k).length;
   const detail =
+    (parsed.skippedRows > 0 ? `머리줄 위 ${parsed.skippedRows}줄은 건너뜀 · ` : "") +
     `읽은 줄 ${rows.length} · 새로 등록 ${count("새로 등록")} · 바뀜 ${count("바뀜")} · ` +
     `그대로 ${count("그대로")} · 확인 필요 ${count("확인 필요")}` +
     (queue.length > 0 && queued === 0 ? " · 이미 대기 중이라 다시 넣지 않음" : "");

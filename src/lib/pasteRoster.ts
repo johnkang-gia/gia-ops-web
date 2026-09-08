@@ -169,7 +169,36 @@ export type ParseResult = {
   rows: ParsedRow[];
   /** 알아보지 못한 머리줄 글자. 감추지 않고 화면에 적습니다. */
   unknownHeaders: string[];
+  /** 머리줄이 원래 자료의 몇 번째 줄이었는가(1부터). 못 찾았으면 null. */
+  headerRowNo: number | null;
+  /** 머리줄 위에서 버린 줄 수. 「왜 3줄이 없어졌지」에 답하려면 필요합니다. */
+  skippedRows: number;
 };
+
+/**
+ * 머리줄이 **몇 번째 줄인지** 찾습니다.
+ *
+ * 첫 줄이 머리줄이라고 가정하면 안 됩니다. 학교 시트의 맨 위에는 제목이나 메모, 빈 줄이
+ * 흔히 들어 있습니다 - 실제로 받은 시트의 첫 줄은 칸이 스무 개인데 그중 하나에만 `ASD` 가
+ * 적혀 있었고, 진짜 머리줄은 그 아래에 있었습니다. 그걸 머리줄로 읽으면 이름 칸을 못 찾고
+ * 한 줄도 들어오지 못합니다.
+ *
+ * 그래서 위에서부터 몇 줄을 훑어 **아는 칸이 가장 많은 줄**을 머리줄로 봅니다. 같은 점수면
+ * 위에 있는 줄이 이깁니다 - 아래로 갈수록 학생 줄에 우연히 걸릴 위험이 커집니다.
+ *
+ * 전화번호나 생년월일이 든 줄은 아무리 점수가 높아도 머리줄이 아닙니다. 머리줄에는 그런
+ * 값이 없습니다.
+ */
+export function findHeaderRow(table: string[][], lookahead = 15): number | null {
+  let best: { at: number; score: number } | null = null;
+  for (let i = 0; i < Math.min(table.length, lookahead); i++) {
+    const row = table[i];
+    if (row.some((c) => normPhone(c) !== null || normBirth(c) !== null)) continue;
+    const score = row.filter((c) => c && fieldOf(c)).length;
+    if (score >= 2 && (best === null || score > best.score)) best = { at: i, score };
+  }
+  return best?.at ?? null;
+}
 
 /**
  * 붙여넣은 글을 읽습니다.
@@ -186,20 +215,39 @@ export function parseRosterPaste(
   forced?: (RosterField | null)[],
   forcedHeader?: boolean,
 ): ParseResult {
-  const lines = (text ?? "").replace(/\r/g, "").split("\n").filter((l) => l.trim() !== "");
-  if (lines.length === 0)
-    return { mapping: [], guess: [], header: null, headerUsed: false, headerDetected: false, table: [], rows: [], unknownHeaders: [] };
-
   // 칸을 나누는 글자는 **줄마다 따로** 봅니다.
   //
   // 예전에는 첫 줄만 보고 정했습니다. 머리줄은 손으로 적어서 탭이 없고 학생 줄은 시트에서
   // 복사해 탭이 있는 경우 - 실제로 가장 흔한 경우 - 온 줄을 쉼표로 나누려다 머리줄이 한 칸이
   // 되었고, 「어머니 연락처」처럼 사이에 띄어쓰기가 든 항목이 통째로 안 읽혔습니다.
-  const table = lines.map((l) =>
-    (l.includes("\t") ? l.split("\t") : l.includes(",") ? l.split(",") : [l]).map((c) =>
-      c.trim().replace(/^"(.*)"$/, "$1"),
-    ),
-  );
+  //
+  // **빈 줄도 세면서 지웁니다.** 빈 줄을 그냥 버리면 그 뒤 줄 번호가 시트와 어긋나고,
+  // 「4번째 줄이 이상합니다」라고 알려줘도 사람은 시트에서 그 줄을 못 찾습니다.
+  const numbered = (text ?? "")
+    .replace(/\r/g, "")
+    .split("\n")
+    .map((l, i) => ({
+      no: i + 1,
+      cells: (l.includes("\t") ? l.split("\t") : l.includes(",") ? l.split(",") : [l]).map((c) =>
+        c.trim().replace(/^"(.*)"$/, "$1"),
+      ),
+    }))
+    .filter((r) => r.cells.some((c) => c !== ""));
+
+  if (numbered.length === 0)
+    return {
+      mapping: [], guess: [], header: null, headerUsed: false, headerDetected: false,
+      table: [], rows: [], unknownHeaders: [], headerRowNo: null, skippedRows: 0,
+    };
+
+  // 머리줄이 첫 줄이 아닐 수 있습니다. 시트 맨 위의 제목·메모를 버리고 시작합니다.
+  // 사람이 「머리줄 없음」이라고 정했으면 찾지 않습니다 - 사람이 정한 것이 이깁니다.
+  const at = forcedHeader === false ? 0 : (findHeaderRow(numbered.map((r) => r.cells)) ?? 0);
+  const kept = numbered.slice(at);
+  const table = kept.map((r) => r.cells);
+  // 시트 기준 줄 번호. 빈 줄까지 세어야 사람이 시트에서 그 줄을 찾아갈 수 있습니다.
+  const rowNos = kept.map((r) => r.no);
+  const skippedRows = at === 0 ? 0 : rowNos[0] - 1;
 
   // 머리줄만 한 칸으로 남았다면 띄어쓰기로 나눠봅니다. 탭 없이 손으로 적은 머리줄입니다.
   // **학생 줄과 칸 수가 맞을 때만** 씁니다 - 「어머니 연락처」를 두 칸으로 쪼개면 더 나빠집니다.
@@ -265,8 +313,14 @@ export function parseRosterPaste(
       : !values.name
         ? "이름 칸이 비어 있습니다"
         : null;
-    return { rowNo: i + 1 + (looksHeader ? 1 : 0), values, problem };
+    // 시트에 실제로 적힌 줄 번호. 「4번째 줄이 이상합니다」가 시트의 4번째 줄이어야
+    // 사람이 찾아갈 수 있습니다.
+    return { rowNo: rowNos[i + (looksHeader ? 1 : 0)] ?? i + 1, values, problem };
   });
 
-  return { mapping, guess, header, headerUsed: looksHeader, headerDetected, table, rows, unknownHeaders };
+  return {
+    mapping, guess, header, headerUsed: looksHeader, headerDetected, table, rows, unknownHeaders,
+    headerRowNo: looksHeader ? rowNos[0] : null,
+    skippedRows,
+  };
 }

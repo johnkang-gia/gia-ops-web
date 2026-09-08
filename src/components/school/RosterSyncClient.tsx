@@ -104,7 +104,16 @@ export default function RosterSyncClient() {
       )}
 
       {links.length === 0 && !loadError && (
-        <p className="mb-2 text-[11px] text-slate-400">아직 연결이 없습니다. [연결 만들기]를 누르면 토큰과 스크립트가 나옵니다.</p>
+        // 「연결 만들기」를 누른 다음 무엇을 해야 하는지 여기서 말해줍니다. 버튼만 있고
+        // 다음 걸음이 안 보이면, 누르고 나서 화면 앞에서 멈춥니다.
+        <div className="mb-2 rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-[11px] leading-relaxed text-slate-600">
+          <p className="mb-1 font-bold text-slate-800">아직 연결이 없습니다. 순서는 이렇습니다.</p>
+          <p>
+            <b>1.</b> 위 [연결 만들기] → <b>2.</b> 생긴 줄에서 [스크립트 보기] → <b>3.</b> [스크립트 복사] →{" "}
+            <b>4.</b> script.google.com 에 붙여넣고 시트 ID·시트 이름만 고치기 → <b>5.</b> 10분마다 돌게 트리거 걸기.
+          </p>
+          <p className="mt-1 text-slate-400">자세한 순서는 [스크립트 보기]를 누르면 코드 아래에 그대로 나옵니다.</p>
+        </div>
       )}
 
       {links.map((l) => (
@@ -264,6 +273,104 @@ function 명부보내기() {
         </span>
       </div>
       <pre className="max-h-56 overflow-auto rounded-lg bg-slate-900 p-2 text-[10px] leading-relaxed text-slate-100">{code}</pre>
+      <SetupSteps />
+    </div>
+  );
+}
+
+/**
+ * 설치 순서를 화면에 그대로 적어둡니다.
+ *
+ * 가이드(물음표) 안에만 적어두면 결국 아무도 안 봅니다. 이 일은 **한 번만 하는 설정**이라
+ * 아무도 외우고 있지 않고, 다음에 하는 사람은 처음 하는 사람입니다. 구글 화면의 버튼 이름을
+ * 그대로 적어 두어야 눈으로 따라갈 수 있습니다.
+ */
+function SetupSteps() {
+  const steps: { t: string; d: React.ReactNode }[] = [
+    {
+      t: "① 스크립트를 복사합니다",
+      d: <>바로 위의 [스크립트 복사]를 누릅니다. 토큰이 이미 들어 있어 따로 적을 것이 없습니다.</>,
+    },
+    {
+      t: "② script.google.com 에서 새 프로젝트를 만듭니다",
+      d: (
+        <>
+          <a href="https://script.google.com/home/projects/create" target="_blank" rel="noreferrer" className="font-bold text-teal-700 underline">
+            script.google.com
+          </a>{" "}
+          에 <b>담당자 본인 계정</b>으로 들어가 [+ 새 프로젝트]. <b>시트 안에서 만들지 마세요</b> — 시트를 편집할 수 있는
+          직원이면 코드도 토큰도 꺼내 볼 수 있습니다.
+        </>
+      ),
+    },
+    {
+      t: "③ 원래 있던 코드를 지우고 붙여넣습니다",
+      d: <>가운데 칸의 <code className="rounded bg-slate-100 px-1">function myFunction() {}</code> 를 모두 지우고 붙여넣습니다.</>,
+    },
+    {
+      t: "④ 맨 위 두 줄만 고칩니다",
+      d: (
+        <>
+          <b>SHEET_ID</b> — 시트 주소에서 <code className="rounded bg-slate-100 px-1">/d/</code> 와{" "}
+          <code className="rounded bg-slate-100 px-1">/edit</code> 사이의 긴 글자.
+          <br />
+          <b>SHEET_NAME</b> — 시트 «아래쪽 탭»에 적힌 이름(예: 시트1). 나머지는 건드리지 않습니다.
+        </>
+      ),
+    },
+    {
+      t: "⑤ 저장하고 한 번 실행합니다",
+      d: (
+        <>
+          💾 저장 → 위쪽 함수 목록에서 <b>명부보내기</b>를 고르고 [실행].
+        </>
+      ),
+    },
+    {
+      t: "⑥ 권한을 허용합니다 (처음 한 번)",
+      d: (
+        <>
+          [권한 검토] → 계정 선택 → 「이 앱은 확인되지 않았습니다」가 뜨면 <b>고급</b> → <b>(프로젝트 이름)(으)로 이동</b> →
+          [허용]. 담당자 본인 계정의 시트를 읽는 것이라 이 절차가 한 번 필요합니다.
+        </>
+      ),
+    },
+    {
+      t: "⑦ 10분마다 저절로 돌게 걸어둡니다",
+      d: (
+        <>
+          왼쪽 ⏰(트리거) → [트리거 추가] → 실행할 함수 <b>명부보내기</b>, 이벤트 소스 <b>시간 기반</b>, <b>분 단위 타이머</b>,{" "}
+          <b>10분마다</b> → 저장.
+        </>
+      ),
+    },
+    {
+      t: "⑧ 이 화면에서 확인합니다",
+      d: (
+        <>
+          위 연결 줄의 <b>마지막 수신</b>에 시각과 줄 수가 뜨면 된 것입니다. 오류가 나면 그 자리에 빨갛게 적힙니다.
+          들어온 줄은 아래 <b>반영 대기</b>에 쌓이고, [이대로 넣기]를 눌러야 명부가 바뀝니다.
+        </>
+      ),
+    },
+  ];
+
+  return (
+    <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-2.5">
+      <p className="mb-1.5 text-[12px] font-bold text-slate-800">📖 처음 한 번만 하는 설정</p>
+      <ol className="flex flex-col gap-1.5">
+        {steps.map((s) => (
+          <li key={s.t} className="text-[11px] leading-relaxed text-slate-600">
+            <b className="text-slate-800">{s.t}</b>
+            <br />
+            {s.d}
+          </li>
+        ))}
+      </ol>
+      <p className="mt-2 rounded bg-amber-50 px-2 py-1 text-[11px] text-amber-900">
+        토큰을 재발급하면 <b>스크립트의 TOKEN 도 바꿔야</b> 합니다. 안 바꾸면 시트는 계속 보내는데 앱이 받지 않고, 그 사실은
+        위 연결 줄의 「마지막 수신 오류」에만 뜹니다.
+      </p>
     </div>
   );
 }

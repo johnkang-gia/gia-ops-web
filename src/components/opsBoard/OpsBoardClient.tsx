@@ -202,16 +202,6 @@ export default function OpsBoardClient({ token }: { token: string }) {
   // 안 보이면 "왜 낮인데 하원 화면이지?" 하고 헷갈리므로, 시간 밖일 때는 화면이 그렇다고
   // 말합니다.
   const [forcedShuttle, setForcedShuttle] = useState(false);
-  /**
-   * 픽업 알림음.
-   *
-   * 브라우저는 사람이 화면을 한 번 건드리기 전에는 소리를 못 냅니다. 이 화면은 벽에 걸어두고
-   * 아무도 안 만지는 화면이라, 그냥 두면 **소리가 영영 안 납니다.** 그래서 알림이 처음
-   * 필요해진 순간에 [소리 켜기] 버튼을 띄우고, 한 번 누르면 그 뒤로 계속 울립니다.
-   * 아침에 화면을 켜며 한 번만 누르면 됩니다.
-   */
-  const [soundOn, setSoundOn] = useState(false);
-  const [needSound, setNeedSound] = useState(false);
   const shuttleMode = !!data && ((data.shuttle.mode && endedOn !== data.today) || forcedShuttle);
   // 지금이 실제 하원 시간대인지(자동 전환 조건). 수동으로 켠 경우 이 값이 false입니다.
   const inShuttleWindow = !!data?.shuttle.mode;
@@ -527,42 +517,7 @@ export default function OpsBoardClient({ token }: { token: string }) {
       </div>
 
       {/* 픽업 알람 - 두 칸 위. 시각이 5분 앞으로 다가온 것만 뜨고, 없으면 자리를 안 먹습니다. */}
-      <PickupAlarm
-        sc={sc}
-        data={data}
-        nowMin={nowMinutes}
-        soundOn={soundOn}
-        onNeedSound={() => setNeedSound(true)}
-      />
-
-      {/* 브라우저는 사람이 화면을 한 번 건드리기 전에는 소리를 못 냅니다. 그 사실을 감추면
-          「소리가 왜 안 나지」가 되므로, 필요해진 순간부터 버튼으로 드러냅니다. */}
-      {needSound && !soundOn && (
-        <button
-          onClick={() => {
-            setSoundOn(true);
-            setNeedSound(false);
-            pickupChime(); // 눌린 그 순간 한 번 울려 «켜졌다»를 귀로 확인시킵니다.
-          }}
-          style={{
-            position: "fixed",
-            right: 16,
-            bottom: 16,
-            zIndex: 9998,
-            borderRadius: 999,
-            border: "2px solid #38bdf8",
-            background: "#0c4a6e",
-            color: "#e0f2fe",
-            padding: "10px 18px",
-            fontSize: 15,
-            fontWeight: 800,
-            cursor: "pointer",
-          }}
-          title="브라우저가 자동 재생을 막고 있습니다. 한 번 눌러두면 오늘 하루 소리가 납니다."
-        >
-          🔇 소리 꺼져 있음 — 눌러서 켜기
-        </button>
-      )}
+      <PickupAlarm sc={sc} data={data} nowMin={nowMinutes} />
 
       {/* 교실에서 온 것. 안 읽은 것이 있을 때만 뜹니다. */}
       <ClassroomNotes
@@ -1317,8 +1272,8 @@ const ALERT_KEEP_MIN = 10;
  *
  * **20초로 정했습니다.** 두 가지를 저울질한 값입니다.
  *
- *   · 10초 — 자리를 잠깐 비웠다 돌아오면 놓칩니다. 소리는 들었는데 화면에는 아무것도 없어서
- *     「방금 뭐였지」가 됩니다.
+ *   · 10초 — 자리를 잠깐 비웠다 돌아오면 놓칩니다. 소리 없이 팝업만 뜨므로 눈으로
+ *     지나치면 그대로 끝입니다.
  *   · 30초 이상 — 그동안 시간표와 오늘 변동사항을 못 봅니다. 이 화면은 하루 종일 켜져
  *     있으므로, 가리는 시간이 길면 팝업 자체가 방해물이 됩니다.
  *
@@ -1328,41 +1283,6 @@ const ALERT_KEEP_MIN = 10;
  * 이 설계의 요점입니다 - 팝업은 「지금 봐라」이고, 띠는 「아직 안 끝났다」입니다.
  */
 const POPUP_SEC = 20;
-
-/**
- * 짧은 알림음. 두 음이 올라가는 0.35초짜리입니다.
- *
- * 길거나 반복되는 소리는 사람이 **끄고 싶어집니다.** 끄면 그 뒤로는 아무 소리도 안 나므로,
- * 한 번만 짧게 울리는 편이 오래 갑니다.
- *
- * 브라우저는 사람이 한 번 화면을 건드리기 전에는 소리를 못 냅니다(자동재생 차단). 그래서
- * 화면 구석에 [🔊 소리 켜기]를 두고, 누르기 전에는 소리 없이 팝업만 뜹니다 - 소리가 안 나는
- * 것이 조용한 실패가 되지 않게 버튼이 남아 있는 동안은 그 사실이 화면에 보입니다.
- */
-function pickupChime() {
-  try {
-    const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!Ctx) return;
-    const ctx = new Ctx();
-    const play = (freq: number, at: number, dur: number) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = "sine";
-      osc.frequency.value = freq;
-      gain.gain.setValueAtTime(0.0001, ctx.currentTime + at);
-      gain.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + at + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + at + dur);
-      osc.connect(gain).connect(ctx.destination);
-      osc.start(ctx.currentTime + at);
-      osc.stop(ctx.currentTime + at + dur + 0.02);
-    };
-    play(880, 0, 0.15);
-    play(1320, 0.16, 0.18);
-    setTimeout(() => void ctx.close().catch(() => {}), 800);
-  } catch {
-    // 소리를 못 내도 팝업은 뜹니다. 여기서 막으면 알림 자체가 사라집니다.
-  }
-}
 
 /**
  * 화면을 덮는 팝업. 「지금 이 아이를 데리러 가라」 한 문장만 큽니다.
@@ -1441,19 +1361,7 @@ function PickupPopup({
   );
 }
 
-function PickupAlarm({
-  sc,
-  data,
-  nowMin,
-  soundOn,
-  onNeedSound,
-}: {
-  sc: BoardScale;
-  data: BoardData;
-  nowMin: number;
-  soundOn: boolean;
-  onNeedSound: () => void;
-}) {
+function PickupAlarm({ sc, data, nowMin }: { sc: BoardScale; data: BoardData; nowMin: number }) {
   // 「시각이 정해진 하원」은 학부모 연락뿐이 아닙니다. 매주 같은 요일 14:40 에 학원차가
   // 오는 아이도 그 시각에 내려보내야 합니다. 알릴 때를 아는 것은 **시각이 적혀 있는가**
   // 하나뿐이라, 두 갈래를 여기서 한 줄로 세웁니다.
@@ -1501,11 +1409,9 @@ function PickupAlarm({
     if (!fresh) return;
     shown.current.add(`${fresh.name}|${fresh.time}`);
     setPopup(fresh);
-    if (soundOn) pickupChime();
-    else onNeedSound();
     const t = setTimeout(() => setPopup(null), POPUP_SEC * 1000);
     return () => clearTimeout(t);
-  }, [due, soundOn, onNeedSound]);
+  }, [due]);
 
   if (due.length === 0 && !popup) return null;
 

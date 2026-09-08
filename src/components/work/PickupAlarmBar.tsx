@@ -6,9 +6,12 @@ import { createPortal } from "react-dom";
 /**
  * 업무보드의 하원 알람.
  *
- * 5분 전에 **짧은 소리 한 번 + 팝업**으로 알립니다. 사무실 대형 모니터에만 알람이 있었는데,
- * 그 화면은 아무도 안 보고 있을 때가 있고 그때 놓치면 아이가 문 앞에서 기다립니다. 사람이
- * 실제로 앉아서 보는 화면은 업무보드입니다.
+ * 5분 전에 **팝업만** 띄웁니다. 사무실 대형 모니터에만 알람이 있었는데, 그 화면은 아무도
+ * 안 보고 있을 때가 있고 그때 놓치면 아이가 문 앞에서 기다립니다. 사람이 실제로 앉아서
+ * 보는 화면은 업무보드입니다.
+ *
+ * **소리는 넣지 않습니다.** 사무실에서 갑자기 나는 소리는 놀라게 하고, 놀라게 하는 알림은
+ * 결국 꺼집니다. 꺼진 알림은 없는 것과 같습니다.
  *
  * 팝업에 넣는 것은 셋뿐입니다 - **이름 · 시각 · 지금 있는 자리**. 이름만 알면 못 움직입니다.
  * 자리는 반 시간표에서 「지금 교시에 그 반이 어느 교실에서 무슨 수업 중인가」로 찾습니다.
@@ -23,39 +26,10 @@ const POLL_MS = 30_000;
 
 type Alarm = { key: string; name: string; time: string; className: string | null; where: string; via: string | null };
 
-/** 짧은 두 음. 길거나 반복되는 소리는 사람이 «끄고 싶어집니다». */
-function chime() {
-  try {
-    const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!Ctx) return;
-    const ctx = new Ctx();
-    const play = (freq: number, at: number, dur: number) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = "sine";
-      osc.frequency.value = freq;
-      gain.gain.setValueAtTime(0.0001, ctx.currentTime + at);
-      gain.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + at + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + at + dur);
-      osc.connect(gain).connect(ctx.destination);
-      osc.start(ctx.currentTime + at);
-      osc.stop(ctx.currentTime + at + dur + 0.02);
-    };
-    play(880, 0, 0.15);
-    play(1320, 0.16, 0.18);
-    setTimeout(() => void ctx.close().catch(() => {}), 800);
-  } catch {
-    // 소리를 못 내도 팝업은 뜹니다. 여기서 막으면 알림 자체가 사라집니다.
-  }
-}
-
 export default function PickupAlarmBar() {
   const [alarms, setAlarms] = useState<Alarm[]>([]);
   const [nowMin, setNowMin] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // 브라우저는 사람이 한 번 화면을 건드리기 전에는 소리를 못 냅니다(자동재생 차단).
-  // 소리가 안 나는 것이 조용한 실패가 되지 않게, 켜기 전에는 버튼이 남아 그 사실이 보입니다.
-  const [soundOn, setSoundOn] = useState(false);
   const [popup, setPopup] = useState<(Alarm & { left: number }) | null>(null);
   const shown = useRef<Set<string>>(new Set());
 
@@ -104,10 +78,9 @@ export default function PickupAlarmBar() {
     if (!fresh) return;
     shown.current.add(fresh.key);
     setPopup(fresh);
-    if (soundOn) chime();
     const t = setTimeout(() => setPopup(null), POPUP_SEC * 1000);
     return () => clearTimeout(t);
-  }, [due, soundOn]);
+  }, [due]);
 
   if (error) {
     return (
@@ -138,18 +111,6 @@ export default function PickupAlarmBar() {
               <span className="ml-1">{a.left < 0 ? `${-a.left}분 지남` : `${a.left}분 뒤`}</span>
             </span>
           ))}
-          {!soundOn && (
-            <button
-              onClick={() => {
-                setSoundOn(true);
-                chime(); // 눌린 그 순간 한 번 울려 「켜졌다」를 귀로 확인시킵니다.
-              }}
-              className="rounded-lg border border-sky-300 px-1.5 py-0.5 text-[10px] font-bold text-sky-700"
-              title="브라우저는 한 번 눌러주기 전에는 소리를 못 냅니다"
-            >
-              🔇 소리 켜기
-            </button>
-          )}
         </div>
       )}
     </>

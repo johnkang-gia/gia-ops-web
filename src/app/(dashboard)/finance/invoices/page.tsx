@@ -4,7 +4,7 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess } from "@/lib/roles";
 import { todayKst } from "@/lib/kst";
 import { selectTolerant } from "@/lib/selectTolerant";
-import InvoiceGridClient, { type Student, type ReceiptLite } from "@/components/finance/InvoiceGridClient";
+import InvoiceGridClient, { type Student, type ReceiptLite, type PayLite } from "@/components/finance/InvoiceGridClient";
 import type { FeeItem, Term, Invoice, StudentFeeItem } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +24,7 @@ export default async function InvoicesPage() {
   const supabase = await createClient();
   // 명부는 **원본 표**에서 읽습니다. 공용 뷰(wr_students_basic)에도 학생이 있지만, 이 화면은
   // 돈에 관한 화면이라 재무 권한으로만 열리고 필요한 칸이 전부 원본에 있습니다.
-  const [stuRes, itemsRes, ovRes, invRes, termRes, gmRes, gRes, crRes] = await Promise.all([
+  const [stuRes, itemsRes, ovRes, invRes, termRes, gmRes, gRes, crRes, payRes] = await Promise.all([
     // 명부의 칸을 그대로 가져옵니다. 보호자 연락처가 없으면 청구서가 못 나가고, 악기 칸이
     // 없으면 인보이스의 악기가 명부와 어긋나도 아무도 모릅니다.
     //
@@ -53,6 +53,9 @@ export default async function InvoicesPage() {
     // 청구서에 붙은 현금영수증. 청구서를 보내드리면 그 답장에 「해주세요」가 함께 오므로,
     // 받는 자리가 청구서 칸 안에 있어야 그 순간에 적힙니다.
     supabase.from("cash_receipts").select("id, invoice_id, student_id, purpose, identifier, amount, status").limit(2000),
+    // 「보냈다」 옆에 「받았다」가 같이 보여야 합니다. 두 화면에 갈려 있으면 목록만 보고는
+    // 누가 냈는지 알 수 없고, 결국 수납 화면을 따로 열게 됩니다.
+    supabase.from("payments").select("invoice_id, amount, paid_at, method_kind").limit(5000),
   ]);
   if (termRes.error) console.error("[인보이스] 학기를 읽지 못했습니다:", termRes.error.message);
 
@@ -101,6 +104,7 @@ export default async function InvoicesPage() {
       initialOverrides={(ovRes.data as StudentFeeItem[] | null) ?? []}
       recentInvoices={(invRes.data as Invoice[] | null) ?? []}
       initialReceipts={(crRes.data as ReceiptLite[] | null) ?? []}
+      payments={(payRes.data as PayLite[] | null) ?? []}
       terms={(termRes.data as Term[] | null) ?? []}
       currentUserEmail={me.email}
       loadError={loadError}

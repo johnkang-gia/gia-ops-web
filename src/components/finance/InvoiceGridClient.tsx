@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import PayModal from "./PayModal";
+import { settle, type SettleInvoice } from "@/lib/settlement";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
 import { appliesToAny, inDepartment, resolveStudentItems, sumLines, targetLabel, won, type StudentLike } from "@/lib/feeItems";
@@ -81,6 +83,9 @@ export type Student = {
  * 그래서 청구서 칸 안에 붙입니다. 표를 훑다가 누가 아직 안 물어봤는지, 번호를 아직 못
  * 받았는지, 이미 끊었는지가 한 줄에서 보입니다.
  */
+/** 입금 한 줄(요약). 잔액을 내는 데 필요한 것만 들고 옵니다. */
+export type PayLite = { invoice_id: string | null; amount: number | string; paid_at?: string; method_kind?: string | null };
+
 export type ReceiptLite = {
   id: string;
   invoice_id: string | null;
@@ -97,6 +102,7 @@ type Props = {
   initialOverrides: StudentFeeItem[];
   recentInvoices: Invoice[];
   initialReceipts: ReceiptLite[];
+  payments: PayLite[];
   terms: Term[];
   currentUserEmail: string;
   loadError: string | null;
@@ -117,6 +123,7 @@ export default function InvoiceGridClient({
   initialOverrides,
   recentInvoices,
   initialReceipts,
+  payments: initialPayments,
   terms,
   currentUserEmail,
   loadError,
@@ -126,6 +133,10 @@ export default function InvoiceGridClient({
   const [overrides, setOverrides] = useState(initialOverrides);
   /** 청구서에 붙은 현금영수증. 청구서 칸 안에서 바로 접수·발행 표시를 합니다. */
   const [receipts, setReceipts] = useState(initialReceipts);
+  /** 이 청구서들에 들어온 돈. 「보냈다」 옆에 「받았다」가 같이 보여야 합니다. */
+  const [payments, setPayments] = useState(initialPayments);
+  /** 결제완료를 체크할 청구서. 값이 있으면 창이 열립니다. */
+  const [payFor, setPayFor] = useState<{ id: string; label: string; balance: number } | null>(null);
   /** 현금영수증을 넣거나 고칠 청구서. 값이 있으면 창이 열립니다. */
   const [receiptFor, setReceiptFor] = useState<{ invoice: Invoice; studentName: string } | null>(null);
   // 항목도 상태로 들고 있습니다. 여기서 바로 만들면 **그 자리에서 열이 생겨야** 합니다 -
@@ -1410,6 +1421,40 @@ export default function InvoiceGridClient({
                           미발송
                         </span>
                       )}
+                      {/* 받았는가. 보낸 것만 보이고 받은 것이 안 보이면, 목록만 보고는
+                          누가 냈는지 알 수 없어 결국 수납 화면을 따로 열게 됩니다. */}
+                      {(() => {
+                        const st = settle(inv as unknown as SettleInvoice, payments, today);
+                        if (st.state === "완납") {
+                          return (
+                            <span className="rounded bg-emerald-600 px-1 text-[10px] font-bold text-white" title={`${won(st.paid)} 받음`}>
+                              완납
+                            </span>
+                          );
+                        }
+                        if (st.state === "이월됨") {
+                          return (
+                            <span className="rounded bg-slate-200 px-1 text-[10px] font-bold text-slate-600" title="미납이 다음 청구서로 넘어갔습니다">
+                              이월됨
+                            </span>
+                          );
+                        }
+                        if (st.state === "취소") return null;
+                        return (
+                          <button
+                            onClick={() =>
+                              setPayFor({ id: inv.id, label: `${s.name} · ${inv.invoice_no}`, balance: st.balance })
+                            }
+                            className={
+                              "rounded px-1 text-[10px] font-bold text-white " +
+                              (st.state === "연체" ? "bg-rose-600" : st.state === "부분납부" ? "bg-amber-600" : "bg-slate-500")
+                            }
+                            title={`남은 ${won(st.balance)} — 눌러서 결제완료`}
+                          >
+                            {st.state === "부분납부" ? `일부 · 남은 ${won(st.balance)}` : st.state === "연체" ? "연체" : "미납"}
+                          </button>
+                        );
+                      })()}
                       {/* 현금영수증. 청구서를 보내드리면 그 답장에 「해주세요, 번호는 …」이
                           함께 옵니다. 받는 자리가 다른 화면에 있으면 그 순간에 못 적습니다. */}
                       <ReceiptChip
@@ -1722,6 +1767,19 @@ export default function InvoiceGridClient({
               return n;
             })
           }
+        />
+      )}
+      {payFor && (
+        <PayModal
+          target={payFor}
+          today={today}
+          onClose={() => setPayFor(null)}
+          onDone={async (msg) => {
+            notify(msg, "success");
+            const supabase = createClient();
+            const { data } = await supabase.from("payments").select("invoice_id, amount, paid_at, method_kind");
+            if (data) setPayments(data as PayLite[]);
+          }}
         />
       )}
 

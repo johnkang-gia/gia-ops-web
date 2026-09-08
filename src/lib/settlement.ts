@@ -140,3 +140,110 @@ export function carryForwardLineName(inv: SettleInvoice): string {
   const [, m, d] = inv.issue_date.split("-");
   return `이전 미납 (${Number(m)}/${Number(d)} 청구 ${inv.invoice_no})`;
 }
+
+// ── 월별·수단별 집계 ─────────────────────────────────────────────────────────
+
+/**
+ * 「이 달에 어떤 수단으로 얼마가 들어왔나」.
+ *
+ * 수단을 세는 이유는 둘입니다. **현금·계좌이체는 현금영수증을 우리가 발행해야 하고**,
+ * 카드는 수수료가 붙습니다. 합계만 알면 둘 다 못 챙깁니다.
+ *
+ * 수단이 비어 있는 옛 줄은 「기타」로 셉니다 - 빼버리면 합계가 안 맞고, 안 맞는 표는
+ * 아무도 안 믿습니다.
+ */
+export type MethodTotals = { month: string; byMethod: Record<string, number>; total: number; count: number };
+
+export function monthlyByMethod(
+  payments: { paid_at: string; amount: number | string; method_kind?: string | null; method?: string | null }[],
+  months = 6,
+): MethodTotals[] {
+  const map = new Map<string, MethodTotals>();
+  for (const p of payments) {
+    const month = (p.paid_at ?? "").slice(0, 7);
+    if (!/^\d{4}-\d{2}$/.test(month)) continue;
+    const kind = (p.method_kind ?? "").trim() || "기타";
+    const row = map.get(month) ?? { month, byMethod: {}, total: 0, count: 0 };
+    row.byMethod[kind] = (row.byMethod[kind] ?? 0) + num(p.amount);
+    row.total += num(p.amount);
+    row.count += 1;
+    map.set(month, row);
+  }
+  return [...map.values()].sort((a, b) => b.month.localeCompare(a.month)).slice(0, months);
+}
+
+// ── 학생별 원장 ─────────────────────────────────────────────────────────────
+
+/**
+ * 한 학생의 청구와 입금을 **시간순 한 줄기**로 세웁니다.
+ *
+ * 학부모가 「우리가 뭘 얼마 냈죠」라고 물으면 지금은 인보이스를 하나씩 열어 더해야 합니다.
+ * 회계 프로그램들이 이 화면을 「거래명세서(Statement)」라고 부르는 이유는, 이 한 장이면
+ * 더 물을 것이 없기 때문입니다.
+ *
+ * **잔액은 누적으로 굴립니다.** 각 줄 오른쪽의 잔액이 그 시점까지의 미수금입니다.
+ */
+export type LedgerRow = {
+  date: string;
+  kind: "청구" | "입금" | "취소";
+  label: string;
+  /** 청구는 +, 입금은 -. 취소는 0(기록만 남깁니다). */
+  delta: number;
+  running: number;
+  invoiceId?: string;
+  invoiceNo?: string;
+  method?: string | null;
+};
+
+export function studentLedger(
+  invoices: SettleInvoice[],
+  payments: (SettlePayment & { paid_at?: string; method_kind?: string | null })[],
+  studentId: string,
+): { rows: LedgerRow[]; outstanding: number } {
+  const mine = invoices.filter((v) => v.student_id === studentId);
+  const ids = new Set(mine.map((v) => v.id));
+
+  type Ev = { date: string; kind: LedgerRow["kind"]; label: string; delta: number; invoiceId?: string; invoiceNo?: string; method?: string | null };
+  const events: Ev[] = [];
+
+  for (const v of mine) {
+    if (v.status === "취소") {
+      // 취소한 청구서도 남깁니다. 없애면 「그때 그 청구서는 어디 갔나」에 답할 수 없습니다.
+      events.push({ date: v.issue_date, kind: "취소", label: `${v.invoice_no} 청구 취소`, delta: 0, invoiceId: v.id, invoiceNo: v.invoice_no });
+      continue;
+    }
+    // 이월된 청구서는 금액을 세지 않습니다 - 그 돈은 새 청구서에 이미 들어가 있습니다.
+    const carried = !!v.carried_to_invoice_id;
+    events.push({
+      date: v.issue_date,
+      kind: "청구",
+      label: `${v.invoice_no}${carried ? " (이월됨)" : ""}`,
+      delta: carried ? 0 : num(v.total_amount),
+      invoiceId: v.id,
+      invoiceNo: v.invoice_no,
+    });
+  }
+
+  for (const p of payments) {
+    if (!p.invoice_id || !ids.has(p.invoice_id)) continue;
+    const inv = mine.find((v) => v.id === p.invoice_id);
+    events.push({
+      date: p.paid_at ?? inv?.issue_date ?? "",
+      kind: "입금",
+      label: `${inv?.invoice_no ?? ""} 입금`,
+      delta: -num(p.amount),
+      invoiceId: p.invoice_id,
+      invoiceNo: inv?.invoice_no,
+      method: p.method_kind ?? null,
+    });
+  }
+
+  events.sort((a, b) => a.date.localeCompare(b.date) || (a.kind === "청구" ? -1 : 1));
+
+  let running = 0;
+  const rows: LedgerRow[] = events.map((e) => {
+    running += e.delta;
+    return { ...e, running };
+  });
+  return { rows, outstanding: running };
+}

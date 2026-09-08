@@ -6,6 +6,7 @@ import { hasFinanceAccess } from "@/lib/roles";
 import { todayKst } from "@/lib/kst";
 import { resolveStudentItems, sumLines, won } from "@/lib/feeItems";
 import CollectionStatus from "@/components/finance/CollectionStatus";
+import MethodSummary from "@/components/finance/MethodSummary";
 import type { PaymentRow } from "@/lib/payments";
 import type { FeeItem, Invoice, StudentFeeItem } from "@/lib/types";
 
@@ -94,6 +95,7 @@ export default async function FinanceOverviewPage() {
       )}
 
       <CollectionStatus invoices={invoices} payments={payments} today={today} />
+      <MethodSummary payments={payments} />
 
       <div className="mb-4 flex flex-wrap gap-2">
         <Card label="받아야 할 금액" value={won(expected)} sub={`${withItems.length}명에게 항목이 붙어 있습니다`} />

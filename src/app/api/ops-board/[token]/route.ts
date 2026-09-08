@@ -482,6 +482,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     pk.plan = [plan.kind as string, (plan.label as string | null) ?? null, (plan.depart_time as string | null) ?? null]
       .filter(Boolean)
       .join(" · ");
+    // **시각을 물려받습니다.** 학부모 연락에 시각이 없어도 평소 하원수단에 「14:40」이
+    // 적혀 있으면 그 시각이 곧 이 아이의 픽업 시각입니다. 시각이 없으면 화면에 「시각 미정」
+    // 으로만 뜨고 5분 전 알람도 울릴 수 없습니다 - 알릴 때를 모르니까요.
+    if (!pk.time) pk.time = ((plan.depart_time as string | null) ?? "").slice(0, 5) || null;
   }
   const pickedUpIds = new Set(pickups.map((p) => p.studentId).filter(Boolean) as string[]);
   const pickedUpNames = new Set(pickups.map((p) => p.name));
@@ -499,6 +503,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
       return {
         name: st?.name ?? "?",
         className: [st?.grade ? `${st.grade}학년` : null, st?.class_name].filter(Boolean).join(" "),
+        // 알람 팝업이 「지금 어느 교실에 있는지」를 찾는 열쇠입니다. 이름만으로는 데리러
+        // 갈 수 없습니다.
+        classId: classIdByGradeName.get(`${st?.grade ?? ""}|${st?.class_name ?? ""}`) ?? null,
         kind: p.kind as string,
         label: (p.label as string | null) ?? null,
         time: (p.depart_time as string | null) ?? null,

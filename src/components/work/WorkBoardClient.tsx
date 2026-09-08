@@ -20,6 +20,7 @@ import WorkspaceArea from "./WorkspaceArea";
 import TaskDetailPanel from "./TaskDetailPanel";
 import WorkGuideModal from "./WorkGuideModal";
 import NoticeBanner from "./NoticeBanner";
+import PickupAlarmBar from "./PickupAlarmBar";
 import type { RosterStudent } from "@/lib/attendanceDigest";
 
 type StatusToast = { id: string; taskId: string; text: string };
@@ -345,6 +346,10 @@ export default function WorkBoardClient({
 
       {/* 요청: "전체공지가 있을경우 바로 상단으로 옮겨지고" - 부서 탭 바로 아래, 업무 화면
           맨 위에 배너로 띄웁니다. 최신 공지 하나만 뜨고, 사람마다 따로 접을 수 있습니다. */}
+      {/* 5분 전 하원 알람. 사무실 대형 모니터에만 있었는데, 그 화면은 아무도 안 볼 때가
+          있고 그때 놓치면 아이가 문 앞에서 기다립니다. 사람이 앉아서 보는 화면은 여기입니다. */}
+      <PickupAlarmBar />
+
       <NoticeBanner
         initialNotices={initialNotices}
         collapsedIds={collapsedNoticeIds}

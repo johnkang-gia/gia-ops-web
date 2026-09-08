@@ -91,7 +91,16 @@ type BoardData = {
   /** 아직 시작하지 않은 등록 건. 시작일이 오면 저절로 오늘 명단으로 넘어갑니다. */
   upcoming?: { name: string; status: string; from: string; to: string; note: string | null }[];
   /** 오늘 요일에 셔틀이 아닌 방법으로 가는 아이들(학원차·보호자·도보). 매주 반복됩니다. */
-  dismissalToday?: { name: string; className: string; kind: string; label: string | null; time: string | null; note: string | null }[];
+  dismissalToday?: {
+    name: string;
+    className: string;
+    /** 지금 그 반이 어느 교실에서 무슨 수업 중인지 찾는 열쇠. */
+    classId?: string | null;
+    kind: string;
+    label: string | null;
+    time: string | null;
+    note: string | null;
+  }[];
   /** 교실 태블릿에서 온 특이사항·문의. 읽으면 그 시각이 교실 화면에 그대로 뜹니다. */
   classroomNotes?: {
     id: string;
@@ -1445,7 +1454,24 @@ function PickupAlarm({
   soundOn: boolean;
   onNeedSound: () => void;
 }) {
-  const due = data.pickups
+  // 「시각이 정해진 하원」은 학부모 연락뿐이 아닙니다. 매주 같은 요일 14:40 에 학원차가
+  // 오는 아이도 그 시각에 내려보내야 합니다. 알릴 때를 아는 것은 **시각이 적혀 있는가**
+  // 하나뿐이라, 두 갈래를 여기서 한 줄로 세웁니다.
+  const timed = [
+    ...data.pickups,
+    ...(data.dismissalToday ?? []).map((d) => ({
+      name: d.name,
+      time: d.time,
+      grade: null as string | null,
+      className: d.className,
+      classId: d.classId ?? null,
+      source: undefined,
+      unmatched: false,
+      plan: [d.kind, d.label].filter(Boolean).join(" · "),
+    })),
+  ];
+
+  const due = timed
     .map((p) => {
       const m = (p.time ?? "").match(/^(\d{1,2}):(\d{2})/);
       if (!m) return null; // 시각을 모르면 알릴 때도 모릅니다

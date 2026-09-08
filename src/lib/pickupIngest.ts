@@ -438,7 +438,7 @@ export async function ingestPickup(
           text,
           channel.names
             .map((n) => {
-              const hit = matchStudent(n, roster, channel.grades[0] ?? null);
+              const hit = matchStudent(n, roster, channel.grades[0] ?? null, `${input.channelLabel ?? ""} ${text}`);
               return hit ? { key: hit.name, surfaces: nameSurfaces(hit.name, hit.name_en) } : null;
             })
             .filter((x): x is { key: string; surfaces: string[] } => !!x)
@@ -460,7 +460,8 @@ export async function ingestPickup(
     candidateName = siblingRead.pick?.key ?? null;
   }
 
-  const matched = candidateName ? matchStudent(candidateName, roster, grade) : null;
+  // 문장 전체를 함께 넘깁니다 - 「g2c 김재이」·「김재이 (190510)」의 힌트가 거기 있습니다.
+  const matched = candidateName ? matchStudent(candidateName, roster, grade, `${input.channelLabel ?? ""} ${text}`) : null;
   // 담임을 함께 적어둡니다 - 문의를 담임별로 묶어 보거나, 업무로 넘길 때 담당자를 미리
   // 채우는 데 씁니다.
   const homeroomEmail = matched ? await findHomeroomEmail(supabase, matched.id) : null;

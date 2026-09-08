@@ -87,11 +87,59 @@ export type RosterEntry = {
 };
 
 /**
+ * 글에서 **반 이름**을 찾습니다. 명부의 반 이름을 그대로 대조합니다.
+ *
+ * 규칙(`G\d[A-Z]`)으로 뽑지 않는 이유: 반 이름은 학교가 정하는 것이고 학기마다 바뀝니다.
+ * 규칙을 만들면 `G3JA` 는 잡고 `해바라기반` 은 놓칩니다. 명부에 있는 이름을 찾는 편이
+ * 언제나 맞습니다.
+ *
+ * 「g2c 김재이」처럼 **문장 아무 데나** 적혀 옵니다 - 이름 바로 뒤 괄호만 보면 놓칩니다.
+ */
+function classHintIn(text: string, roster: RosterEntry[]): string | null {
+  const flat = String(text ?? "").toLowerCase().replace(/[^a-z0-9가-힣]/g, "");
+  if (!flat) return null;
+  const names = [...new Set(roster.map((s) => (s.class_name ?? "").trim()).filter(Boolean))]
+    // 긴 것부터 봅니다. `G3JA` 가 있는 글에서 `G3J` 가 먼저 걸리면 안 됩니다.
+    .sort((a, b) => b.length - a.length);
+  for (const c of names) {
+    const k = c.toLowerCase().replace(/[^a-z0-9가-힣]/g, "");
+    if (k.length >= 2 && flat.includes(k)) return c;
+  }
+  return null;
+}
+
+/**
+ * 글에서 **생일 숫자**를 찾습니다. 괄호 안이 아니어도 읽습니다.
+ *
+ * 괄호 안만 보던 때는 `(190510)` 은 읽고 `190510 김재이` 는 못 읽었습니다. 여섯 자리 숫자가
+ * 홀로 떨어져 있으면 생일로 봅니다 - 전화번호는 열 자리가 넘고, 날짜는 점이나 하이픈이
+ * 들어갑니다. 틀린 숫자를 잡아도 **동명이인을 좁히는 데만** 쓰므로, 아무도 안 맞으면 그냥
+ * 안 좁혀질 뿐입니다.
+ */
+function birthHintIn(text: string): string | null {
+  const inParen = birthDigitsIn(text);
+  if (inParen) return inParen;
+  const m = String(text ?? "").match(/(?<![0-9])(\d{6}|\d{8})(?![0-9])/);
+  return m ? m[1] : null;
+}
+
+/**
  * 이름 후보 하나를 명부와 대조합니다. 완전히 같은 이름만 인정합니다 - 픽업은 아이를 누구에게
  * 보내느냐의 문제라, 애매하면 자동으로 정하지 않고 사람에게 넘기는 편이 안전합니다.
- * 후보가 둘 이상이면(동명이인) null을 돌려 확인 대기로 보냅니다.
+ * 후보가 둘 이상이면(동명이인) 힌트로 좁히고, 그래도 못 좁히면 null 을 돌려 확인 대기로 보냅니다.
  */
-export function matchStudent(candidate: string, roster: RosterEntry[], grade?: string | null): RosterEntry | null {
+export function matchStudent(
+  candidate: string,
+  roster: RosterEntry[],
+  grade?: string | null,
+  /**
+   * 이름이 나온 **문장 전체**. 반 이름과 생일이 여기 적혀 옵니다.
+   *
+   * 예전에는 이름 글자만 넘겼습니다. 그래서 「g2c 김재이」·「김재이 (190510)」처럼 사람이
+   * 친절하게 적어준 힌트를 하나도 못 읽었고, 김재이 셋은 늘 확인 대기로 갔습니다.
+   */
+  context?: string | null,
+): RosterEntry | null {
   const target = normalizeName(candidate);
   if (!target) return null;
 
@@ -114,11 +162,25 @@ export function matchStudent(candidate: string, roster: RosterEntry[], grade?: s
   //
   // 김재이 세 명이 영문명을 모두 'Jay Kim'으로 쓰고, 그중 둘은 같은 2학년이라 학년으로도
   // 안 갈라집니다. 그래서 이름 뒤 괄호에 생일을 적어 오시는데 그걸 읽지 않고 있었습니다.
+  //
+  // 힌트는 이름 글자뿐 아니라 **문장 전체**에서 찾습니다. 「g2c 김재이」처럼 이름 앞에
+  // 적어 오시는 경우가 더 많습니다.
+  const whole = `${candidate} ${context ?? ""}`;
   if (hits.length > 1) {
-    const birthHint = birthDigitsIn(candidate);
+    const birthHint = birthHintIn(whole);
     if (birthHint) {
       const byBirth = hits.filter((s) => birthMatches(s.birth_date, birthHint));
       if (byBirth.length === 1) return byBirth[0];
+    }
+  }
+
+  // 반 이름으로 좁힙니다. 같은 학년 동명이인은 학년으로 아무리 봐도 안 갈라지는데,
+  // 반은 갈라집니다 - 김재이 셋 중 둘이 2학년(G2C·G2A)입니다.
+  if (hits.length > 1) {
+    const cls = classHintIn(whole, hits);
+    if (cls) {
+      const byClass = hits.filter((s) => (s.class_name ?? "").trim() === cls);
+      if (byClass.length === 1) return byClass[0];
     }
   }
 
@@ -308,7 +370,9 @@ export function normalizeTime(raw: unknown): string | null {
 export function toKoreanDisplayName(
   current: string | null | undefined,
   channelLabel: string | null | undefined,
-  roster: RosterEntry[]
+  roster: RosterEntry[],
+  /** 원문. 반 이름·생일 힌트가 여기 적혀 옵니다. 없으면 채널 이름만으로 봅니다. */
+  context?: string | null,
 ): string | null {
   const has = (v: string | null | undefined) => !!v && v.trim().length > 0;
   // 이미 한글이면 이름은 그대로 두되, **동명이인이면 반을 붙입니다.**
@@ -323,7 +387,7 @@ export function toKoreanDisplayName(
     if (/[(（]/.test(raw)) return raw;
     // 채널 이름에 학년 힌트가 있으면 그것으로 좁힙니다("G2_…" 방).
     const grade = parseChannelLabel(channelLabel)?.grades[0] ?? null;
-    const m = matchStudent(raw, roster, grade);
+    const m = matchStudent(raw, roster, grade, `${channelLabel ?? ""} ${context ?? ""}`);
     return m ? studentLabel(m, roster) : raw;
   }
 
@@ -332,7 +396,7 @@ export function toKoreanDisplayName(
   if (parsed) {
     const kos = parsed.names.map((n) => {
       const grade = parsed.grades[0] ?? null;
-      const m = matchStudent(n, roster, grade);
+      const m = matchStudent(n, roster, grade, `${channelLabel ?? ""} ${context ?? ""}`);
       // 동명이인이면 반을 붙여 누구인지 알아볼 수 있게 합니다(담당자 요청).
       return m ? studentLabel(m, roster) : null;
     });
@@ -342,7 +406,7 @@ export function toKoreanDisplayName(
 
   // 채널이 없거나 일부만 맞으면, 지금 값 자체를 한 명으로 보고 대조해봅니다("Soo J").
   if (has(current)) {
-    const m = matchStudent(current as string, roster);
+    const m = matchStudent(current as string, roster, null, `${channelLabel ?? ""} ${context ?? ""}`);
     if (m?.name) return studentLabel(m, roster);
 
     // 마지막 수단: 이름이 잘려 온 경우("Soo J" → "Soo Jin Kim"). 영문명이 이 값으로

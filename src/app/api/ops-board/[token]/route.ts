@@ -333,8 +333,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   // "Diane & Sunwoo Lim"으로 뜨는 것을 "임다이앤 & 임선우"로 바꿔줍니다.
   const { data: allRoster } = await supabase
     .from("wr_students")
-    .select("id, name, name_en, grade, class_name")
-    .eq("status", "active")
+    // 생일까지 읽습니다 - 「김재이 (190510)」처럼 생일로 알려주시는 경우가 있고,
+    // 같은 학년 동명이인은 그것 말고는 갈릴 방법이 없습니다.
+    .select("id, name, name_en, grade, class_name, birth_date")
+    .in("status", ["active", "보류"])
     .eq("is_demo", false);
   // **반 이름을 함께 넘깁니다.** 이게 빠져 있어서 동명이인 표시가 「김재이(3학년)」로도 못
   // 붙었습니다 - 김재이가 셋인데 셋 다 다른 반이라, 학년만으로는 여전히 누구인지 모릅니다.

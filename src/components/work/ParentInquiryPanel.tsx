@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import { notifyOpsBoardRefresh, OPS_REFRESH_CHANNEL, OPS_REFRESH_EVENT } from "@/lib/opsRefresh";
 import { useToast } from "@/components/common/ToastProvider";
-import { toKoreanDisplayName, type RosterEntry } from "@/lib/pickupParse";
+import { markIfAmbiguous, toKoreanDisplayName, type RosterEntry } from "@/lib/pickupParse";
 
 // 학부모 문의사항 — 예전 실시간 로그가 있던 자리입니다.
 //
@@ -371,8 +371,12 @@ export default function ParentInquiryPanel({
       const supabase = createClient();
       const { data } = await supabase
         .from("wr_students")
-        .select("id, name, name_en, grade")
-        .eq("status", "active")
+        // **반과 생일까지 읽습니다.** 이 둘이 없으면 동명이인을 가를 수도, 화면에 「김재이(G2C)」로
+        // 적을 수도 없습니다. 김재이가 셋인데 셋 다 그냥 「김재이」로 뜬 원인이 이 한 줄이었습니다.
+        // 상태도 수신 쪽(loadRoster)과 같게 맞춥니다 - 보류 학생이 화면에서만 빠지면
+        // 같은 이름이 화면과 처리에서 다르게 갈립니다.
+        .select("id, name, name_en, grade, birth_date, class_name")
+        .in("status", ["active", "보류"])
         .eq("is_demo", false);
       setRoster(
         ((data as { id: string; name: string; name_en: string | null; grade: string | null }[] | null) ?? []).map((s) => ({
@@ -526,7 +530,10 @@ export default function ParentInquiryPanel({
   const [acted, setActed] = useState<Record<string, string>>({});
 
   async function attendanceAction(r: Inquiry, action: "결석" | "픽업" | "탑승") {
-    const studentName = toKoreanDisplayName(r.matched_name ?? r.ai_student_name, r.channel_label, roster) ?? r.matched_name ?? r.ai_student_name;
+    const studentName =
+      toKoreanDisplayName(r.matched_name ?? r.ai_student_name, r.channel_label, roster, `${r.summary ?? ""} ${r.raw_text ?? ""}`) ??
+      r.matched_name ??
+      r.ai_student_name;
     if (!studentName) {
       notify("학생 이름을 확정하지 못했습니다. 문의를 열어 이름을 확인해주세요.", "error");
       return;
@@ -570,11 +577,18 @@ export default function ParentInquiryPanel({
 
   function studentOf(r: Inquiry) {
     // 명부와 대조해 한글 이름으로 바꿉니다. 명부가 아직 안 왔거나 못 찾으면 원래 값을 씁니다.
-    return (
-      toKoreanDisplayName(r.matched_name ?? r.ai_student_name, r.channel_label, roster) ??
-      r.channel_label ??
-      "미확인"
+    //
+    // **원문을 함께 넘깁니다.** 반 이름과 생일은 본문에 적혀 옵니다("g2c 김재이", "(190510)").
+    // 이름 글자만 넘기던 때는 그 힌트를 하나도 못 읽었습니다.
+    const label = toKoreanDisplayName(
+      r.matched_name ?? r.ai_student_name,
+      r.channel_label,
+      roster,
+      `${r.summary ?? ""} ${r.raw_text ?? ""}`,
     );
+    // 그래도 못 정했으면 **정하지 못했다고 적습니다.** 김재이가 셋인데 그냥 「김재이」로 뜨면
+    // 보는 사람은 이미 정해진 이름이라 믿고 엉뚱한 아이를 찾습니다.
+    return markIfAmbiguous(label, roster) ?? r.channel_label ?? "미확인";
   }
 
   const Row = ({ r, full }: { r: Inquiry; full?: boolean }) => (

@@ -141,6 +141,26 @@ departmentOf({ department: s.department, grade: s.grade }); // → "초등부" |
 
 ---
 
+## 2-4. 동명이인 (김재이가 셋입니다)
+
+이름만 띄우면 보는 사람은 **이미 정해진 이름이라고 믿습니다.** 그 상태로 셔틀·출결에
+반영하면 엉뚱한 아이가 처리되고, 그건 되돌릴 수 없습니다.
+
+가르는 규칙은 `src/lib/pickupParse.ts` 한 곳입니다 — 생일 → 반 → 학년 순으로 좁히고,
+못 좁히면 `markIfAmbiguous` 로 「김재이(G2C·G2A·G3JA 중 누구?)」라고 적습니다.
+
+**힌트는 문장 전체에서 찾습니다.** 「g2c 김재이」처럼 이름 앞에 적어 오시는 경우가 더
+많습니다. `matchStudent` 를 부를 때 원문을 함께 넘기세요.
+
+이 문제를 세 번 고쳤는데 세 번 다 다시 났습니다. 규칙은 매번 멀쩡했고, **화면이
+`class_name` · `birth_date` 를 안 읽어온 것**이 매번의 원인이었습니다. 없는 값으로는
+아무것도 가를 수 없는데 화면에는 오류가 아니라 그냥 「김재이」로 보입니다.
+
+`npm run build` 가 `scripts/check-roster-columns.mjs` 를 돌려, 가르는 코드를 쓰는 파일이
+그 두 칸을 읽는지 봅니다. 따로 확인하려면 `npm run check:roster`.
+
+---
+
 ## 3. 버전과 배포
 
 - 버전은 `package.json` 한 곳에만 적습니다. 화면 표시는 `src/lib/version.ts` 가

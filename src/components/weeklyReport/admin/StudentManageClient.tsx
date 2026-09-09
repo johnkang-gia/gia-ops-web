@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { WR_INSTRUMENTS, type ShuttleRoute, type ShuttleStop, type WrStudent, type WrStudentFieldDef } from "@/lib/types";
-import { assignClass, type ClassRow } from "@/lib/classAssign";
+import { assignClass, findClass, type ClassRow } from "@/lib/classAssign";
 import { useConfirm } from "@/components/common/ConfirmProvider";
 import { useToast } from "@/components/common/ToastProvider";
 import ShuttleRecommendModal from "@/components/shuttle/ShuttleRecommendModal";
@@ -72,6 +72,9 @@ function sortValue(s: WrStudent, key: SortKey): string {
 function randomFieldKey() {
   return "custom_" + Math.random().toString(36).slice(2, 10);
 }
+
+/** 칸 모양은 한 벌만 둡니다. 자리마다 다른 것은 **길이**뿐입니다. */
+const FIELD = "w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm";
 
 export default function StudentManageClient({
   initialStudents,
@@ -180,6 +183,14 @@ export default function StudentManageClient({
     setUniformSize("");
   }
 
+  /**
+   * 지금 적은 반이 명부의 어느 반인가. **적는 동안** 알려줍니다.
+   *
+   * 저장한 뒤에 알려주면 이미 잘못 들어간 뒤이고, 그때는 명부를 다시 열어 고쳐야 합니다.
+   * 반 이름만 남고 배정이 비어 있는 줄은 화면에 멀쩡해 보여서 아무도 안 찾습니다.
+   */
+  const matchedClass = useMemo(() => findClass(className, classes, grade), [className, classes, grade]);
+
   async function addStudent(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
@@ -231,6 +242,14 @@ export default function StudentManageClient({
 
     setSaving(false);
     setStudents((prev) => [...prev, data as WrStudent]);
+    // 반 이름은 들어갔는데 배정이 비었으면 **그렇다고 말합니다.** 화면에는 반이 잘 보이니,
+    // 안 알리면 반 배정 화면에 가서야 「이 아이가 미배정에 있네」를 발견합니다.
+    if (className.trim() && !matchedClass) {
+      notify(
+        `${name.trim()} 학생을 등록했지만, 「${className.trim()}」이라는 반이 명부에 없어 반 배정은 비워뒀습니다. 반/담임 배정에서 반을 먼저 만들어주세요.`,
+        "error",
+      );
+    }
     resetForm();
     setShowAddForm(false);
     notify(`${(data as WrStudent).name} 등록했습니다.`, "success");
@@ -553,103 +572,153 @@ export default function StudentManageClient({
       )}
 
       {showAddForm && (
-        <form onSubmit={addStudent} className="mb-3 grid shrink-0 grid-cols-2 gap-2 g-panel-solid p-3 sm:grid-cols-4">
+        /* ── 칸 길이는 **들어가는 값의 길이**에 맞춥니다 ──────────────────────────
+           네 칸짜리 격자에 전부 같은 너비로 늘려 놓으니, 학년 한 글자를 적는 칸이 주소
+           칸과 같은 길이가 됐습니다. 긴 칸은 「여기 뭔가 더 적어야 하나」로 읽히고,
+           눈은 매번 칸 끝까지 갔다가 돌아옵니다. 묶음(기본·연락처·그 외)으로 줄을
+           나누고, 칸마다 제 길이를 줍니다. */
+        <form onSubmit={addStudent} className="mb-3 shrink-0 space-y-2.5 g-panel-solid p-3">
           <div>
-            <label className="mb-1 block text-[11px] text-slate-400">이름 Name</label>
-            <input value={name} onChange={(e) => setName(e.target.value)} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
+            <p className="mb-1 text-[10px] font-bold tracking-wide text-slate-400">기본</p>
+            <div className="flex flex-wrap items-end gap-2">
+              <div className="w-28">
+                <label className="mb-1 block text-[11px] text-slate-400">이름 Name</label>
+                <input value={name} onChange={(e) => setName(e.target.value)} className={FIELD} />
+              </div>
+              <div className="w-40">
+                <label className="mb-1 block text-[11px] text-slate-400">영어 이름 Name (EN)</label>
+                <input value={nameEn} onChange={(e) => setNameEn(e.target.value)} className={FIELD} />
+              </div>
+              <div className="w-16">
+                <label className="mb-1 block text-[11px] text-slate-400">학년</label>
+                <input value={grade} onChange={(e) => setGrade(e.target.value)} className={FIELD} />
+              </div>
+              <div className="w-32">
+                <label className="mb-1 block text-[11px] text-slate-400">
+                  반
+                  {/* **명부에 있는 반 중에서 고릅니다.** 자유입력이면 「G2 C」·「g2c」·「2반」이
+                      섞여 들어오고, 명부와 안 맞는 것은 반 이름만 남고 배정은 비어 있게
+                      됩니다. 화면에는 반이 잘 보이니 아무도 못 찾습니다. */}
+                  {matchedClass ? (
+                    <span className="ml-1 font-semibold text-emerald-600">✓</span>
+                  ) : className.trim() ? (
+                    <span className="ml-1 font-semibold text-orange-600">없는 반</span>
+                  ) : null}
+                </label>
+                <input
+                  list="wr-class-options"
+                  value={className}
+                  onChange={(e) => setClassName(e.target.value)}
+                  placeholder={classes.length > 0 ? "고르세요" : "반부터 만들어야"}
+                  className={
+                    "w-full rounded-lg border px-2 py-1.5 text-sm " +
+                    (className.trim() && !matchedClass ? "border-orange-400 bg-orange-50" : "border-slate-300")
+                  }
+                />
+                {/* 고르는 목록이되 손으로 칠 수도 있게 둡니다 - 새 반이 생긴 날 명부에 아직
+                    안 들어와 있으면, 못 고르게 막는 것이 더 큰 일이 됩니다. */}
+                <datalist id="wr-class-options">
+                  {classes
+                    .filter((c) => !grade.trim() || String(c.grade ?? "").replace(/\D/g, "") === grade.trim().replace(/\D/g, ""))
+                    .map((c) => (
+                      <option key={c.id} value={c.class_name ?? ""}>
+                        {c.grade ? `${c.grade}학년` : ""}
+                      </option>
+                    ))}
+                </datalist>
+              </div>
+              <div className="w-16">
+                <label className="mb-1 block text-[11px] text-slate-400">성별</label>
+                <select value={gender} onChange={(e) => setGender(e.target.value)} className={FIELD}>
+                  <option value="">-</option>
+                  <option value="남">남</option>
+                  <option value="여">여</option>
+                </select>
+              </div>
+              <div className="w-36">
+                <label className="mb-1 block text-[11px] text-slate-400">생일</label>
+                <input type="date" value={birthDate} onChange={(e) => setBirthDate(e.target.value)} className={FIELD} />
+              </div>
+            </div>
           </div>
+
           <div>
-            <label className="mb-1 block text-[11px] text-slate-400">영어 이름 Name (EN)</label>
-            <input value={nameEn} onChange={(e) => setNameEn(e.target.value)} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
+            <p className="mb-1 text-[10px] font-bold tracking-wide text-slate-400">연락처</p>
+            <div className="flex flex-wrap items-end gap-2">
+              <div className="w-36">
+                <label className="mb-1 block text-[11px] text-slate-400">어머니 (M)</label>
+                <input value={motherPhone} onChange={(e) => setMotherPhone(e.target.value)} placeholder="010-" className={FIELD} />
+              </div>
+              <div className="w-36">
+                <label className="mb-1 block text-[11px] text-slate-400">아버지 (F)</label>
+                <input value={fatherPhone} onChange={(e) => setFatherPhone(e.target.value)} placeholder="010-" className={FIELD} />
+              </div>
+              <div className="w-36">
+                <label className="mb-1 block text-[11px] text-slate-400" title="부모가 아닌 분(조부모·친척 등)">
+                  보호자
+                </label>
+                <input value={parentPhone} onChange={(e) => setParentPhone(e.target.value)} placeholder="010-" className={FIELD} />
+              </div>
+              <div className="w-56">
+                <label className="mb-1 block text-[11px] text-slate-400">보호자 이메일</label>
+                <input type="email" value={parentEmail} onChange={(e) => setParentEmail(e.target.value)} className={FIELD} />
+              </div>
+            </div>
           </div>
+
           <div>
-            <label className="mb-1 block text-[11px] text-slate-400">학년</label>
-            <input value={grade} onChange={(e) => setGrade(e.target.value)} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
+            <p className="mb-1 text-[10px] font-bold tracking-wide text-slate-400">그 외</p>
+            <div className="flex flex-wrap items-end gap-2">
+              <div className="w-36">
+                <label className="mb-1 block text-[11px] text-slate-400">입학일 (첫 등교일)</label>
+                <input type="date" value={enrolledOn} onChange={(e) => setEnrolledOn(e.target.value)} className={FIELD} />
+              </div>
+              <div className="w-28">
+                {/* 목록에서 고릅니다. 악기는 학교가 가르치는 것만 있고, 자유 글자로 두면
+                    「바이올린」·「violin」·「바이올린(개인)」이 섞여 반을 셀 수 없게 됩니다. */}
+                <label className="mb-1 block text-[11px] text-slate-400">악기</label>
+                <select value={instrument} onChange={(e) => setInstrument(e.target.value)} className={FIELD}>
+                  <option value="">-</option>
+                  {WR_INSTRUMENTS.map((i) => (
+                    <option key={i} value={i}>
+                      {i}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="w-20">
+                {/* 사이즈는 **적힌 그대로** 받습니다. 목록에서 고르게 하면 그 목록에 없는 값이
+                    필요한 순간 사람은 화면 밖(엑셀·쪽지)으로 나갑니다. */}
+                <label className="mb-1 block text-[11px] text-slate-400" title="의류 대장에 이번 학기 사이즈로 남습니다">
+                  유니폼
+                </label>
+                <input value={uniformSize} onChange={(e) => setUniformSize(e.target.value)} placeholder="16호" className={FIELD} />
+              </div>
+              <div className="w-48">
+                <label className="mb-1 block text-[11px] text-slate-400">알러지</label>
+                <input value={allergies} onChange={(e) => setAllergies(e.target.value)} placeholder="없음 / 땅콩, 우유" className={FIELD} />
+              </div>
+              {/* 주소만 남은 자리를 다 씁니다 - 도로명 주소는 실제로 길고, 짧게 자르면
+                  적는 사람이 자기가 뭘 적었는지 못 봅니다. */}
+              <div className="min-w-64 flex-1">
+                <label className="mb-1 block text-[11px] text-slate-400">주소</label>
+                <input value={address} onChange={(e) => setAddress(e.target.value)} className={FIELD} />
+              </div>
+            </div>
           </div>
-          <div>
-            <label className="mb-1 block text-[11px] text-slate-400">반</label>
-            <input value={className} onChange={(e) => setClassName(e.target.value)} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
-          </div>
-          <div>
-            <label className="mb-1 block text-[11px] text-slate-400">성별</label>
-            <select value={gender} onChange={(e) => setGender(e.target.value)} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm">
-              <option value="">-</option>
-              <option value="남">남</option>
-              <option value="여">여</option>
-            </select>
-          </div>
-          <div>
-            <label className="mb-1 block text-[11px] text-slate-400">생일</label>
-            <input type="date" value={birthDate} onChange={(e) => setBirthDate(e.target.value)} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
-          </div>
-          <div>
-            <label className="mb-1 block text-[11px] text-slate-400">어머니 연락처 (M)</label>
-            <input value={motherPhone} onChange={(e) => setMotherPhone(e.target.value)} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
-          </div>
-          <div>
-            <label className="mb-1 block text-[11px] text-slate-400">아버지 연락처 (F)</label>
-            <input value={fatherPhone} onChange={(e) => setFatherPhone(e.target.value)} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
-          </div>
-          <div>
-            <label className="mb-1 block text-[11px] text-slate-400" title="부모가 아닌 분(조부모·친척 등)">
-              보호자 연락처
-            </label>
-            <input value={parentPhone} onChange={(e) => setParentPhone(e.target.value)} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
-          </div>
-          <div>
-            <label className="mb-1 block text-[11px] text-slate-400">보호자 이메일</label>
-            <input type="email" value={parentEmail} onChange={(e) => setParentEmail(e.target.value)} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
-          </div>
-          <div>
-            <label className="mb-1 block text-[11px] text-slate-400">입학일 (첫 등교일)</label>
-            <input type="date" value={enrolledOn} onChange={(e) => setEnrolledOn(e.target.value)} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
-          </div>
-          <div>
-            {/* 목록에서 고릅니다. 악기는 학교가 가르치는 것만 있고, 자유 글자로 두면
-                「바이올린」·「violin」·「바이올린(개인)」이 섞여 반을 셀 수 없게 됩니다. */}
-            <label className="mb-1 block text-[11px] text-slate-400">악기</label>
-            <select value={instrument} onChange={(e) => setInstrument(e.target.value)} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm">
-              <option value="">-</option>
-              {WR_INSTRUMENTS.map((i) => (
-                <option key={i} value={i}>
-                  {i}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            {/* 사이즈는 **적힌 그대로** 받습니다. 목록에서 고르게 하면 그 목록에 없는 값이
-                필요한 순간 사람은 화면 밖(엑셀·쪽지)으로 나갑니다. */}
-            <label className="mb-1 block text-[11px] text-slate-400" title="의류 대장에 이번 학기 사이즈로 남습니다">
-              유니폼 사이즈
-            </label>
-            <input
-              value={uniformSize}
-              onChange={(e) => setUniformSize(e.target.value)}
-              placeholder="16호"
-              className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
-            />
-          </div>
-          <div className="col-span-2">
-            <label className="mb-1 block text-[11px] text-slate-400">주소</label>
-            <input value={address} onChange={(e) => setAddress(e.target.value)} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
-          </div>
-          <div className="col-span-2">
-            <label className="mb-1 block text-[11px] text-slate-400">알러지</label>
-            <input
-              value={allergies}
-              onChange={(e) => setAllergies(e.target.value)}
-              placeholder="예: 없음 / 땅콩, 우유"
-              className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
-            />
-          </div>
-          <div className="col-span-2 flex items-end gap-2 sm:col-span-4">
+
+          <div className="flex items-center gap-2 border-t border-slate-200 pt-2.5">
             <button disabled={saving} className="rounded-lg bg-wr-primary px-4 py-1.5 text-sm font-semibold text-white hover:bg-wr-primary-2 disabled:opacity-50">
               등록
             </button>
             <button type="button" onClick={() => setShowAddForm(false)} className="rounded-lg border border-slate-300 px-4 py-1.5 text-sm text-slate-500 hover:bg-slate-50">
               취소
             </button>
+            {className.trim() && !matchedClass && (
+              <span className="text-[11px] font-semibold text-orange-600">
+                「{className.trim()}」이라는 반이 명부에 없습니다. 이대로 등록하면 반 배정은 비어 있게 됩니다.
+              </span>
+            )}
           </div>
         </form>
       )}

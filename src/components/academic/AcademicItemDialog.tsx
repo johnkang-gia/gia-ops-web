@@ -30,6 +30,7 @@ export default function AcademicItemDialog({
   currentTerm,
   templateCount,
   templates = [],
+  initialDate,
   onClose,
   onSaved,
 }: {
@@ -37,6 +38,8 @@ export default function AcademicItemDialog({
   templateCount: number;
   /** 이미 있는 학사일정 규칙. 「다른 일정 기준」으로 고를 후보이자, 그 날짜를 푸는 근거입니다. */
   templates?: ChecklistTemplate[];
+  /** 달력에서 누른 날짜. 채워 두면 사람이 날짜를 다시 고르지 않습니다. */
+  initialDate?: string;
   onClose: () => void;
   onSaved: (msg: string) => void;
 }) {
@@ -46,7 +49,7 @@ export default function AcademicItemDialog({
   const [department, setDepartment] = useState("");
 
   // 날짜 방식
-  const [startDate, setStartDate] = useState("");
+  const [startDate, setStartDate] = useState(initialDate ?? "");
   const [useRange, setUseRange] = useState(false);
   const [endDate, setEndDate] = useState("");
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Department, GoogleChatMirrorMessage, Task, TaskModeColor, TaskStatus, TeamMember, WorkTag } from "@/lib/types";
+import type { DayReminder, Department, GoogleChatMirrorMessage, Task, TaskModeColor, TaskStatus, TeamMember, WorkTag } from "@/lib/types";
 import WorkCalendar from "./WorkCalendar";
 import NoteBoard from "./NoteBoard";
 import GoogleChatRooms from "./GoogleChatRooms";
@@ -10,8 +10,12 @@ import TaskBoard from "./TaskBoard";
 import QuickTaskWidget from "./QuickTaskWidget";
 import AttendancePanels from "./AttendancePanels";
 import IntegrationStatus from "./IntegrationStatus";
+import DayEntryDialog, { DayReminderDialog, type DayEntryKind } from "./DayEntryDialog";
+import AcademicItemDialog from "@/components/academic/AcademicItemDialog";
+import type { ChecklistTemplate, Term } from "@/lib/types";
 import { isMyTask } from "@/lib/myTask";
 import { addDays } from "@/lib/taskSpan";
+import { todayKst } from "@/lib/kst";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
 import type { RosterStudent } from "@/lib/attendanceDigest";
@@ -245,6 +249,105 @@ export default function WorkspaceArea({
   /** 달력에서 끌어서 고른 기간. */
   const [newTaskRange, setNewTaskRange] = useState<{ from: string; to: string } | null>(null);
 
+  // ── 날짜를 누르면 갈래부터 고릅니다 ───────────────────────────────────
+  //
+  // 예전에는 누르는 즉시 업무 등록이었습니다. 그러다 보니 그날만 챙길 일(약·병원)도,
+  // 해마다 오는 행사(졸업식·PBL)도 전부 업무 한 줄이 됐습니다. 앞엣것은 흐름판을 하루살이
+  // 쪽지로 덮고, 뒤엣것은 그해가 지나면 흔적도 없이 사라집니다.
+  /** 갈래를 고르는 중인 날짜. */
+  const [dayPick, setDayPick] = useState<string | null>(null);
+  /** 🔔 알림을 적는 중인 날짜. */
+  const [reminderDay, setReminderDay] = useState<string | null>(null);
+  /** 🎓 학사로 등록하는 중인 날짜. */
+  const [academicDay, setAcademicDay] = useState<string | null>(null);
+  const [academicTerm, setAcademicTerm] = useState<Term | null>(null);
+  const [academicTemplates, setAcademicTemplates] = useState<ChecklistTemplate[]>([]);
+
+  /** 그날의 알림들. */
+  const [reminders, setReminders] = useState<DayReminder[]>([]);
+
+  const loadReminders = useCallback(async () => {
+    // 이번 달 앞뒤로 넉넉히. 달력이 지난달·다음달 칸을 함께 그리기 때문입니다.
+    const from = addDays(todayKst(), -45);
+    const to = addDays(todayKst(), 120);
+    const { data, error } = await createClient()
+      .from("day_reminders")
+      .select("*")
+      .eq("department", activeDepartment.name)
+      .gte("day", from)
+      .lte("day", to)
+      .order("day");
+    if (error) {
+      // 조용히 비워두지 않습니다. 빈 달력은 「챙길 게 없다」로 읽히는데, 사실은
+      // 「못 읽어왔다」입니다. 둘은 완전히 다른 이야기입니다.
+      notify(`알림을 읽지 못했습니다: ${error.message}`, "error");
+      return;
+    }
+    setReminders((data as DayReminder[] | null) ?? []);
+  }, [activeDepartment.name, notify]);
+
+  useEffect(() => {
+    void loadReminders();
+    const supabase = createClient();
+    const ch = supabase
+      .channel("day-reminders")
+      .on("postgres_changes", { event: "*", schema: "public", table: "day_reminders" }, () => void loadReminders())
+      .subscribe();
+    return () => {
+      supabase.removeChannel(ch);
+    };
+  }, [loadReminders]);
+
+  async function toggleReminder(r: DayReminder) {
+    const next = !r.done;
+    // 화면부터 바꿉니다 - 누르고 아무 일도 안 일어나면 사람은 두 번 세 번 누릅니다.
+    setReminders((prev) => prev.map((x) => (x.id === r.id ? { ...x, done: next } : x)));
+    const { error } = await createClient()
+      .from("day_reminders")
+      .update({ done: next, done_by: next ? currentUserEmail : null, done_at: next ? new Date().toISOString() : null })
+      .eq("id", r.id);
+    if (error) {
+      setReminders((prev) => prev.map((x) => (x.id === r.id ? { ...x, done: r.done } : x)));
+      notify(`표시하지 못했습니다: ${error.message}`, "error");
+    }
+  }
+
+  async function deleteReminder(r: DayReminder) {
+    if (!confirm(`「${r.title}」 알림을 지울까요?`)) return;
+    const { error } = await createClient().from("day_reminders").delete().eq("id", r.id);
+    if (error) {
+      notify(`지우지 못했습니다: ${error.message}`, "error");
+      return;
+    }
+    setReminders((prev) => prev.filter((x) => x.id !== r.id));
+  }
+
+  /** 학사 팝업이 쓸 자료. 누르는 사람만 쓰므로 그때 읽습니다. */
+  async function openAcademic(day: string) {
+    setAcademicDay(day);
+    if (academicTerm) return;
+    const supabase = createClient();
+    const [{ data: terms, error: tErr }, { data: tpl }] = await Promise.all([
+      supabase.from("terms").select("*").eq("is_current", true).limit(1),
+      supabase.from("academic_checklist_templates").select("*").order("sort_order", { ascending: true }),
+    ]);
+    if (tErr) {
+      notify(`학기 정보를 읽지 못했습니다: ${tErr.message}`, "error");
+      return;
+    }
+    setAcademicTerm(((terms as Term[] | null) ?? [])[0] ?? null);
+    setAcademicTemplates((tpl as ChecklistTemplate[] | null) ?? []);
+  }
+
+  function pickKind(kind: DayEntryKind) {
+    const day = dayPick;
+    setDayPick(null);
+    if (!day) return;
+    if (kind === "알림") setReminderDay(day);
+    else if (kind === "업무") setNewTaskDay(day);
+    else void openAcademic(day);
+  }
+
   /**
    * 제목을 그 자리에서 고칩니다.
    *
@@ -451,7 +554,10 @@ export default function WorkspaceArea({
         <WorkCalendar
           tasks={tasks}
           tags={tags}
-          onPickDate={setNewTaskDay}
+          reminders={reminders}
+          onToggleReminder={(r) => void toggleReminder(r)}
+          onDeleteReminder={(r) => void deleteReminder(r)}
+          onPickDate={setDayPick}
           onPickRange={(from, to) => setNewTaskRange({ from, to })}
           onOpenTask={(t) => onOpenTask(t.id)}
           onMoveDue={(t, dayKey) => void moveDue(t, dayKey)}
@@ -629,6 +735,34 @@ export default function WorkspaceArea({
       </div>
 
       </div>
+
+      {/* ── 날짜를 누르면 뜨는 것들 ────────────────────────────────────
+          갈래 → 그 갈래의 등록 창. 업무는 창을 따로 띄우지 않고 위쪽 등록 칸에 날짜를
+          채워 넣습니다 - 이미 잘 쓰던 자리라 새 창을 하나 더 만들 이유가 없습니다. */}
+      {dayPick && <DayEntryDialog day={dayPick} onPick={pickKind} onClose={() => setDayPick(null)} />}
+      {reminderDay && (
+        <DayReminderDialog
+          day={reminderDay}
+          department={activeDepartment.name}
+          authorEmail={currentUserEmail}
+          authorName={team.find((m) => m.email === currentUserEmail)?.name ?? null}
+          onClose={() => setReminderDay(null)}
+          onSaved={() => void loadReminders()}
+        />
+      )}
+      {academicDay && (
+        <AcademicItemDialog
+          currentTerm={academicTerm}
+          templateCount={academicTemplates.length}
+          templates={academicTemplates}
+          initialDate={academicDay}
+          onClose={() => setAcademicDay(null)}
+          onSaved={(msg) => {
+            notify(msg, "success");
+            setAcademicTerm(null);
+          }}
+        />
+      )}
     </div>
   );
 }

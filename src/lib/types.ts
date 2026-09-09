@@ -84,6 +84,29 @@ export type Term = {
 // 위한 두 테이블입니다. 템플릿(academic_checklist_templates)은 관리자가 미리 정의해두는
 // "규칙"이고(예: "학생명단 확정, 학기 시작 14일 전"), 항목(academic_checklist_items)은 실제
 // 학기에 맞춰 계산된 날짜가 붙은 "발생 건"입니다(예: 2026년 여름학기의 그 규칙 → 2026-06-10).
+/**
+ * 🔔 그날 챙길 한 가지.
+ *
+ * 업무(tasks)와 가른 이유: 맡을 사람도 진행 상태도 없고 **그날에만** 뜻이 있습니다.
+ * 업무로 만들면 흐름판이 하루살이 쪽지로 덮여 며칠씩 굴러가는 일이 묻힙니다.
+ */
+export type DayReminder = {
+  id: string;
+  day: string;
+  title: string;
+  note: string | null;
+  department: string;
+  /** 몇 시. 비어 있으면 「오늘 중」입니다. */
+  at_time: string | null;
+  done: boolean;
+  done_by: string | null;
+  done_at: string | null;
+  author_email: string;
+  author_name: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type ChecklistAnchor = "term_start" | "term_end";
 
 // 되풀이 방식의 뜻과 날짜 계산은 `@/lib/academicRepeat` 한 곳에만 있습니다.

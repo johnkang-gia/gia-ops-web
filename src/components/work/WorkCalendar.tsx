@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { Task, WorkTag } from "@/lib/types";
+import type { DayReminder, Task, WorkTag } from "@/lib/types";
 import { todayKst } from "@/lib/kst";
 import { addDays, isSpan, layoutWeek, orderRange, type SpanTask } from "@/lib/taskSpan";
 
@@ -84,6 +84,9 @@ const MAX_LANES = 3;
 export default function WorkCalendar({
   tasks,
   tags,
+  reminders = [],
+  onToggleReminder,
+  onDeleteReminder,
   onPickDate,
   onPickRange,
   onOpenTask,
@@ -93,6 +96,13 @@ export default function WorkCalendar({
   tasks: Task[];
   /** 색 태그 목록. 막대·점의 색이 여기서 나옵니다. */
   tags: WorkTag[];
+  /**
+   * 🔔 그날 챙길 것들. 업무와 **섞지 않고** 따로 그립니다 - 업무는 며칠씩 굴러가고
+   * 알림은 그날로 끝이라, 한 줄에 섞이면 어느 쪽이 아직 남은 일인지 알 수 없습니다.
+   */
+  reminders?: DayReminder[];
+  onToggleReminder?: (r: DayReminder) => void;
+  onDeleteReminder?: (r: DayReminder) => void;
   /** 빈 날짜를 눌렀을 때. 그 날 마감으로 새 업무를 만듭니다. */
   onPickDate: (dayKey: string) => void;
   /** 여러 날을 끌어서 골랐을 때. 그 기간짜리 일정을 만듭니다. */
@@ -115,6 +125,27 @@ export default function WorkCalendar({
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
 
   const cells = useMemo(() => monthGrid(cursor.y, cursor.m0), [cursor]);
+
+  /** 날짜 → 그날 알림. 칸을 그릴 때마다 전체를 훑지 않도록 한 번만 묶습니다. */
+  const remindersByDay = useMemo(() => {
+    const m = new Map<string, DayReminder[]>();
+    for (const r of reminders) {
+      const list = m.get(r.day) ?? [];
+      list.push(r);
+      m.set(r.day, list);
+    }
+    // 시각이 적힌 것이 먼저. 「3시 병원」은 시각이 곧 순서이고, 「오늘 중」은 언제든 됩니다.
+    for (const list of m.values()) {
+      list.sort((a, b) => (a.at_time ?? "99").localeCompare(b.at_time ?? "99"));
+    }
+    return m;
+  }, [reminders]);
+
+  /** 오늘 챙길 것. 달력 위에 따로 모읍니다 - 오늘 칸 안에 작게 넣으면 안 보고 지나갑니다. */
+  const todayReminders = useMemo(
+    () => (remindersByDay.get(today) ?? []).filter((r) => !r.done),
+    [remindersByDay, today],
+  );
   const colorOf = useMemo(() => new Map(tags.map((t) => [t.id, t.color])), [tags]);
 
   /** 달력에 그릴 재료. 끝날은 마감일의 한국 날짜입니다. */
@@ -209,8 +240,38 @@ export default function WorkCalendar({
         </div>
       </div>
       <p className="mb-1 shrink-0 text-[10px] text-slate-400">
-        날짜를 누르면 그 날 · <b>끌면 그 기간</b>으로 등록됩니다 · 제목을 두 번 누르면 그 자리에서 고칩니다
+        날짜를 누르면 <b>알림 · 업무 · 학사</b> 중에서 고릅니다 · <b>끌면 그 기간</b>짜리 업무 · 제목을 두 번 누르면 고칩니다
       </p>
+
+      {/* ── 오늘 챙길 것 ─────────────────────────────────────────────
+          오늘 칸 안에 작게 넣으면 안 보고 지나갑니다. 알림은 그날 지나면 못 되돌리는
+          것들이라(약·병원·데리러 가기) 달력 위에 따로 모아 둡니다. */}
+      {todayReminders.length > 0 && (
+        <div className="mb-1 flex shrink-0 flex-wrap items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1">
+          <span className="shrink-0 text-[10px] font-bold text-amber-700">🔔 오늘 챙길 것</span>
+          {todayReminders.map((r) => (
+            <span key={r.id} className="flex items-center gap-0.5 rounded-full bg-white px-1.5 py-0.5 text-[10px] text-amber-900">
+              {r.at_time && <b className="tabular-nums">{r.at_time.slice(0, 5)}</b>}
+              <button
+                type="button"
+                onClick={() => onToggleReminder?.(r)}
+                title={r.note ? `${r.note}\n누르면 챙긴 것으로 표시합니다` : "누르면 챙긴 것으로 표시합니다"}
+                className="font-semibold hover:line-through"
+              >
+                {r.title}
+              </button>
+              <button
+                type="button"
+                onClick={() => onDeleteReminder?.(r)}
+                title="이 알림을 지웁니다"
+                className="text-amber-400 hover:text-rose-500"
+              >
+                ✕
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
 
       <div className="grid shrink-0 grid-cols-7 gap-px text-center text-[10px] font-semibold text-slate-400">
         {WEEKDAYS.map((w, i) => (
@@ -276,6 +337,36 @@ export default function WorkCalendar({
                     </div>
                     {/* 막대가 앉을 만큼 자리를 비워둡니다 - 안 그러면 막대가 하루짜리 위에 겹칩니다. */}
                     <div style={{ height: laneCount * LANE_H }} className="shrink-0" />
+                    {/* 🔔 그날 알림. **업무보다 위에** 둡니다 - 그날에만 뜻이 있으니 그날
+                        가장 먼저 눈에 들어와야 합니다. 챙긴 것은 지우지 않고 흐리게 둡니다. */}
+                    {(remindersByDay.get(c.key) ?? []).slice(0, 2).map((r) => (
+                      <button
+                        key={r.id}
+                        type="button"
+                        data-task
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onToggleReminder?.(r);
+                        }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        title={
+                          `${r.at_time ? `${r.at_time.slice(0, 5)} ` : ""}${r.title}` +
+                          (r.note ? `\n${r.note}` : "") +
+                          `\n${r.done ? "챙김 — 누르면 되돌립니다" : "누르면 챙긴 것으로 표시합니다"}`
+                        }
+                        className={
+                          "mt-0.5 flex w-full items-center gap-0.5 overflow-hidden rounded px-1 py-0.5 text-left text-[9px] font-semibold transition " +
+                          (r.done ? "bg-slate-100 text-slate-400 line-through" : "bg-amber-100 text-amber-900 hover:bg-amber-200")
+                        }
+                      >
+                        <span className="shrink-0">{r.done ? "✔" : "🔔"}</span>
+                        {r.at_time && <span className="shrink-0 tabular-nums">{r.at_time.slice(0, 5)}</span>}
+                        <span className="truncate">{r.title}</span>
+                      </button>
+                    ))}
+                    {(remindersByDay.get(c.key)?.length ?? 0) > 2 && (
+                      <span className="text-[9px] text-amber-600">🔔 +{(remindersByDay.get(c.key)?.length ?? 0) - 2}</span>
+                    )}
                     <div className="min-h-0 flex-1 overflow-hidden">
                       {list.slice(0, 2).map((t) => {
                         const color = t.tag_id ? colorOf.get(t.tag_id) : null;

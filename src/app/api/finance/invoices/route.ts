@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { applyPrepaid } from "@/lib/prepaidApply";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess } from "@/lib/roles";
@@ -174,5 +175,7 @@ export async function POST(req: Request) {
     );
   }
 
-  return NextResponse.json({ ok: true, invoice: inv });
+  // 먼저 받아둔 돈이 있으면 저절로 붙입니다. 안 붙이면 이미 낸 분에게 독촉이 나갑니다.
+  const pre = await applyPrepaid(supabase, inv, me.email);
+  return NextResponse.json({ ok: true, invoice: inv, prepaidApplied: pre.applied, warning: pre.error });
 }

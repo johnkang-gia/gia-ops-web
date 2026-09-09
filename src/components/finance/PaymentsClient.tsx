@@ -53,6 +53,13 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
   const [payments, setPayments] = useState(initial);
   const [staged, setStaged] = useState<Staged[] | null>(null);
   const [fileName, setFileName] = useState("");
+  /**
+   * 이 파일의 결제수단.
+   *
+   * 올톡페이 파일과 통장 내역 파일을 같은 자리에서 받습니다. 수단을 하나로 박아두면
+   * 계좌이체가 올톡페이로 기록되어, 수단별 집계와 현금영수증 대상 판단이 함께 틀어집니다.
+   */
+  const [importMethod, setImportMethod] = useState<PaymentMethodKind>("올톡페이");
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<"미납" | "전체" | "입금">("미납");
   // 결제완료 체크 창. 청구서를 보는 그 자리에서 받은 돈을 넣습니다 - 화면을 옮기게 하면
@@ -88,7 +95,16 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
   const unpaid = withBalance.filter((x) => x.balance > 0);
   const totalBilled = issued.reduce((n, v) => n + Number(v.total_amount), 0);
   const totalPaid = payments.reduce((n, p) => n + Number(p.amount), 0);
+  /**
+   * 어느 청구서에도 안 붙은 입금 = **선입금**입니다.
+   *
+   * 예전에는 이걸 「못 붙인 입금」이라고만 부르고 그대로 뒀습니다. 그런데 이 중 상당수는
+   * 잘못 들어온 돈이 아니라 **청구서보다 먼저 낸 돈**입니다. 학생만 이어두면, 나중에 그
+   * 아이의 청구서가 만들어질 때 저절로 충당됩니다.
+   */
   const unmatched = payments.filter((p) => !p.invoice_id);
+  const prepaidWithStudent = unmatched.filter((p) => p.student_id);
+  const prepaidTotal = unmatched.reduce((n, p) => n + Number(p.amount), 0);
 
   /** 엑셀·CSV를 읽어 화면에 세워둡니다. **바로 저장하지 않습니다** - 사람이 한 번 보고 넣습니다. */
   async function readFile(file: File) {
@@ -115,8 +131,16 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
         }
         return "";
       };
+      // 통장 내역 파일인가. 「적요·거래일·입금액」은 은행 파일에만 있는 칸입니다.
+      // 종류를 알아야 결제수단을 맞게 적습니다 - 계좌이체를 올톡페이로 적으면 수단별
+      // 집계와 현금영수증 대상 판단이 함께 틀어집니다.
+      const headKeys = Object.keys(rows[0] ?? {}).join(" ").replace(/\s+/g, "");
+      const looksBank = /적요|거래일|입금액|출금/.test(headKeys) && !/올톡|청구사유/.test(headKeys);
+      setImportMethod(looksBank ? "계좌이체" : "올톡페이");
+
       const list: Staged[] = [];
       let notPaid = 0;
+      let outgoing = 0;
       rows.forEach((r, i) => {
         // 올톡페이 파일에는 아직 안 낸 것(발송완료)과 중간에 멈춘 것(결제중단)이 함께 있습니다.
         // 그것까지 넣으면 **안 받은 돈을 받은 것으로** 기록하게 됩니다.
@@ -129,8 +153,16 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
           notPaid += 1;
           return;
         }
+        // 통장 내역에는 **나간 돈**도 함께 있습니다. 그걸 넣으면 안 받은 돈을 받은 것으로
+        // 기록하게 됩니다. 출금 칸에 값이 있으면 건너뜁니다.
+        const paidOut = toAmount(pick(r, ["출금", "지급", "출금액", "withdraw"]));
+        if (paidOut > 0) {
+          outgoing += 1;
+          return;
+        }
         const paidAt = toIsoDate(pick(r, ["수납일자", "결제일", "입금일", "거래일", "승인일", "날짜", "일자", "date"]));
-        const amount = toAmount(pick(r, ["청구금액", "결제금액", "입금액", "금액", "amount"]));
+        // 입금액을 먼저 봅니다. 통장 파일에서 「금액」이 잔액을 가리키는 경우가 있습니다.
+        const amount = toAmount(pick(r, ["입금액", "입금", "청구금액", "결제금액", "금액", "amount"]));
         const payerName = String(pick(r, ["고객명", "입금자", "성명", "이름", "보내는", "name"]) ?? "").trim();
         const memo = String(pick(r, ["청구사유", "내용", "적요", "메모", "비고", "memo"]) ?? "").trim();
         const phone = String(pick(r, ["청구핸드폰", "핸드폰", "휴대폰", "연락처", "phone"]) ?? "").trim();
@@ -168,7 +200,10 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
         );
         return;
       }
-      if (notPaid > 0) notify(`${list.length}줄을 읽었습니다. 아직 안 낸 ${notPaid}줄은 넣지 않았습니다.`, "success");
+      // 걸러낸 줄은 **몇 줄을 왜 뺐는지** 말합니다. 조용히 빼면 「내가 올린 것보다 적게
+      // 들어왔다」를 나중에 발견하고, 그때는 이유를 알 수 없습니다.
+      const skipped = [notPaid > 0 ? `아직 안 낸 ${notPaid}줄` : "", outgoing > 0 ? `나간 돈 ${outgoing}줄` : ""].filter(Boolean);
+      if (skipped.length > 0) notify(`${list.length}줄을 읽었습니다. ${skipped.join(" · ")}은 넣지 않았습니다.`, "success");
       setStaged(list);
     } catch (e) {
       notify("파일을 읽지 못했습니다: " + (e instanceof Error ? e.message : String(e)), "error");
@@ -192,7 +227,7 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
             student_id: s.invoiceId ? (issued.find((v) => v.id === s.invoiceId)?.student_id ?? null) : null,
             paid_at: s.paidAt,
             amount: s.amount,
-            method: "올톡페이",
+            method: importMethod,
             payer_name: s.payerName || null,
             memo: s.memo || null,
             source: "엑셀",
@@ -333,7 +368,15 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
           { label: "청구 합계", v: won(totalBilled), sub: `${issued.length}건 발행` },
           { label: "받은 금액", v: won(totalPaid), sub: `${payments.length}건 입금` },
           { label: "미납", v: won(totalBilled - totalPaid), sub: `${unpaid.length}명`, warn: unpaid.length > 0 },
-          { label: "못 붙인 입금", v: `${unmatched.length}건`, sub: unmatched.length > 0 ? "사람이 골라야 합니다" : "없습니다", warn: unmatched.length > 0 },
+          {
+            label: "선입금 (청구서 없이 받은 돈)",
+            v: won(prepaidTotal),
+            sub:
+              unmatched.length === 0
+                ? "없습니다"
+                : `${unmatched.length}건 · 학생 연결 ${prepaidWithStudent.length}건`,
+            warn: unmatched.length > 0,
+          },
         ].map((c) => (
           <div key={c.label} className="min-w-[150px] flex-1 rounded-xl border border-slate-200 bg-white p-3">
             <p className="text-[11px] font-semibold text-slate-500">{c.label}</p>
@@ -345,7 +388,9 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
 
       {/* ── 엑셀 올리기 ─────────────────────────────────────────── */}
       <div className="mb-4 rounded-xl border border-slate-200 bg-white p-3">
-        <p className="mb-2 text-[12px] font-bold text-slate-700">올톡페이 입금 내역 올리기</p>
+        <p className="mb-2 text-[12px] font-bold text-slate-700">
+          입금 내역 올리기 <span className="font-normal text-slate-400">— 올톡페이 · 통장 거래내역</span>
+        </p>
         <div className="flex flex-wrap items-center gap-2">
           <input
             ref={fileRef}
@@ -358,6 +403,22 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
             className="text-sm"
           />
           {fileName && <span className="text-[11px] text-slate-400">{fileName}</span>}
+          {/* 파일 종류를 보고 미리 골라두되, 사람이 바꿀 수 있어야 합니다 - 칸 이름만으로
+              늘 맞힐 수는 없고, 틀린 수단은 수단별 집계와 현금영수증 판단을 함께 틀어놓습니다. */}
+          <label className="ml-auto flex items-center gap-1 text-[11px] font-semibold text-slate-600">
+            받은 방법
+            <select
+              value={importMethod}
+              onChange={(e) => setImportMethod(e.target.value as PaymentMethodKind)}
+              className="rounded-lg border border-slate-300 px-2 py-1 text-[11px]"
+            >
+              {PAYMENT_METHOD_KINDS.map((k) => (
+                <option key={k} value={k}>
+                  {k}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
         <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
           첫 시트를 읽습니다. 올톡페이 <b>청구서관리목록</b>을 그대로 올리시면 됩니다 — <b>고객명 · 청구핸드폰 ·
@@ -365,6 +426,10 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
           아직 안 낸 돈입니다). 이름 칸에 붙은 메모(<code>조장훈(13,000잔돈차감)</code>)는 떼고 대조하며, 청구 연락처가 있으면
           그것을 먼저 씁니다. 같은 파일을 두 번
           올려도 같은 줄은 한 번만 들어갑니다.
+          <br />
+          <b>통장 거래내역</b>도 그대로 올리시면 됩니다 — <b>거래일 · 입금액 · 입금자 · 적요</b>를 알아보고, <b>나간
+          돈(출금)</b> 줄은 넣지 않습니다. 청구서를 못 찾은 줄은 지우지 않고 <b>선입금</b>으로 남겨두었다가, 나중에 그
+          학생의 청구서가 만들어지면 저절로 충당됩니다.
         </p>
       </div>
 

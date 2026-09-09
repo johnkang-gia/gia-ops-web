@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { planCarryForward, lockCarried } from "@/lib/carryForward";
+import { applyPrepaid } from "@/lib/prepaidApply";
 
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
@@ -48,6 +49,13 @@ export async function POST(req: Request) {
    * 반만 결제된 상태가 되어, 「방과후만 이번 달 얼마 걷혔나」를 셀 수가 없습니다.
    */
   const planIds = Array.isArray(body?.planIds) ? (body.planIds as string[]).filter((v) => typeof v === "string") : null;
+  /**
+   * 이미 받은 돈. 주면 청구서를 **받은 날짜로** 만들고 「안 보냄」 표시를 단 뒤 입금까지
+   * 함께 기록합니다 - 청구서가 있어야만 결제를 체크할 수 있으니, 이미 낸 분을 넣으려면
+   * 이 한 걸음이 필요합니다.
+   */
+  const alreadyPaid = body?.alreadyPaid as { paidAt?: string; amount?: number; method?: string; memo?: string } | undefined;
+  const paidAt = typeof alreadyPaid?.paidAt === "string" && /^\d{4}-\d{2}-\d{2}$/.test(alreadyPaid.paidAt) ? alreadyPaid.paidAt : null;
   const askedRole = body?.guardianRole;
   const guardianRole: GuardianRole | null =
     askedRole === "mother" || askedRole === "father" || askedRole === "guardian" ? askedRole : null;
@@ -127,7 +135,9 @@ export async function POST(req: Request) {
   const planScope = planIds && planIds.length > 0 ? lines.map((l) => l.label.split(" · ")[0]).join(" · ") : null;
 
   const total = lines.reduce((n, l) => n + l.amount, 0);
-  const issue = todayKst();
+  // 이미 받은 건은 **받은 날**이 발행일입니다. 오늘로 적으면 지난달 수납이 이번 달로
+  // 세어져, 월별 수납 집계가 통째로 어긋납니다.
+  const issue = paidAt ?? todayKst();
   const due = dueDate && /^\d{4}-\d{2}-\d{2}$/.test(dueDate) ? dueDate : issue;
 
   const recipient = resolveRecipient(
@@ -172,6 +182,9 @@ export async function POST(req: Request) {
       // 학기별 집계가 한쪽만 세게 됩니다.
       term_id: termId,
       plan_scope: planScope,
+      // 소급해 만든 청구서는 학부모에게 보내지 않습니다 - 보내면 «이미 낸 돈을 또 내라»가
+      // 됩니다. 화면이 보낼 것과 안 보낼 것을 이 값으로 가릅니다.
+      issued_offline: !!paidAt,
       issued_by: me.name || me.email,
     })
     .select()
@@ -207,5 +220,49 @@ export async function POST(req: Request) {
     );
   }
 
-  return NextResponse.json({ ok: true, invoice: inv, carried: carry.total });
+  // ── 이미 받은 돈 기록 ────────────────────────────────────────────────
+  //
+  // 금액을 안 주면 **청구액 전부**를 받은 것으로 봅니다. 대개 그렇고, 다르면 화면에서
+  // 금액을 적어 보냅니다.
+  let paidRecorded = 0;
+  if (paidAt) {
+    const amount = Number(alreadyPaid?.amount) > 0 ? Number(alreadyPaid?.amount) : total + carry.total;
+    const { error: payErr } = await supabase.from("payments").insert({
+      invoice_id: inv.id,
+      student_id: student.id,
+      paid_at: paidAt,
+      amount,
+      method: (alreadyPaid?.method ?? "").trim() || "계좌이체",
+      payer_name: student.name,
+      memo: (alreadyPaid?.memo ?? "").trim() || "이미 받은 건을 소급 등록",
+      source: "수기",
+      matched_by: "이미받음",
+      created_by: me.email,
+    });
+    // 청구서는 만들어졌는데 입금이 안 붙으면 **미납으로 남습니다.** 이미 낸 분에게 독촉이
+    // 나가는 자리라, 조용히 넘기지 않고 그대로 알립니다.
+    if (payErr) {
+      return NextResponse.json(
+        { error: `청구서(${inv.invoice_no})는 만들었지만 입금을 기록하지 못했습니다: ${payErr.message}. 수납 화면에서 직접 넣어주세요.` },
+        { status: 500 },
+      );
+    }
+    paidRecorded = amount;
+  }
+
+  // ── 남은 선입금 충당 ────────────────────────────────────────────────
+  //
+  // 먼저 받아둔 돈이 있는데 이 청구서가 「미납」으로 뜨면 이미 낸 분에게 독촉이 나갑니다.
+  const pre = paidAt ? { applied: 0, error: null } : await applyPrepaid(supabase, inv, me.email);
+
+  return NextResponse.json({
+    ok: true,
+    invoice: inv,
+    carried: carry.total,
+    paid: paidRecorded,
+    prepaidApplied: pre.applied,
+    // 붙이다 실패해도 청구서는 그대로 둡니다. 지우면 방금 만든 종이가 사라지고, 그냥
+    // 넘어가면 이미 받은 돈이 미납으로 남습니다. 사실만 올려 사람이 보게 합니다.
+    warning: pre.error,
+  });
 }

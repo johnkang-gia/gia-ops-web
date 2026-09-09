@@ -9,6 +9,8 @@ import { tuitionLine, tuitionTotal, discountUsable, type TuitionLine } from "@/l
 import TermPicker, { initialTermId } from "./TermPicker";
 import InvoicePreviewModal from "./InvoicePreviewModal";
 import type { FeePlan, FeePaymentOption, FeeDiscount, Term, Invoice } from "@/lib/types";
+import { PAYMENT_METHOD_KINDS } from "@/lib/payments";
+import { todayKst } from "@/lib/kst";
 
 /**
  * 학비 청구 명단 — 학생이 행, 납부 항목이 열.
@@ -267,6 +269,35 @@ export default function TuitionGridClient({
    * 정규과정과 방과후는 납기도 다르고 그만두는 시점도 다릅니다. 한 장에 섞으면 그 장이
    * 반만 결제된 상태가 되어, 「방과후만 이번 달 얼마 걷혔나」를 셀 수가 없습니다.
    */
+  /**
+   * 「이미 받았습니다」로 넣는 창.
+   *
+   * 청구서가 있어야만 결제를 체크할 수 있어서, 이미 낸 분을 넣을 자리가 없었습니다. 여기서
+   * 넣으면 **받은 날짜로** 청구서를 만들고(안 보냄 표시) 입금까지 한 번에 기록합니다.
+   */
+  const [alreadyFor, setAlreadyFor] = useState<TuitionStudent | null>(null);
+
+  async function recordAlreadyPaid(s: TuitionStudent, paidAt: string, amount: number, method: string, memo: string, planIds: string[]) {
+    setBusy(true);
+    const res = await fetch("/api/finance/invoices/tuition", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        studentId: s.id,
+        dueDate: paidAt,
+        termId: termId || null,
+        planIds: planIds.length > 0 ? planIds : null,
+        alreadyPaid: { paidAt, amount, method, memo },
+      }),
+    });
+    const body = await res.json().catch(() => ({}));
+    setBusy(false);
+    if (!res.ok) return notify(`${s.name}: ${body.error ?? res.statusText}`, "error");
+    setInvoices((p) => [body.invoice as Invoice, ...p]);
+    setAlreadyFor(null);
+    notify(`${s.name} — 이미 받은 것으로 넣었습니다(${won(body.paid ?? amount)}).`, "success");
+  }
+
   async function issueChecked(planIds: string[]) {
     const scoped = planIds.length > 0;
     const targets = rows.filter(
@@ -577,6 +608,16 @@ export default function TuitionGridClient({
                     ) : total > 0 ? (
                       <span className="flex items-center gap-1">
                         <span className="text-[11px] font-semibold text-amber-600">미발행</span>
+                        {/* 이미 받은 건. 청구서를 받은 날짜로 만들고 입금까지 함께 넣습니다 -
+                            지금 밀려 있는 「이미 낸 분들」을 여기서 하나씩 정리합니다. */}
+                        <button
+                          onClick={() => setAlreadyFor(s)}
+                          disabled={busy}
+                          className="rounded bg-sky-100 px-1 text-[11px] font-bold text-sky-800 hover:bg-sky-200 disabled:opacity-40"
+                          title={`${s.name} — 이미 받은 돈으로 넣습니다 (청구서를 받은 날짜로 만들고 안 보냄 표시)`}
+                        >
+                          💰 이미 받음
+                        </button>
                         <button
                           onClick={() => {
                             setChecked(new Set([s.id]));
@@ -646,6 +687,17 @@ export default function TuitionGridClient({
       )}
 
       {preview && <InvoicePreviewModal invoiceId={preview.id} label={preview.label} onClose={() => setPreview(null)} />}
+
+      {alreadyFor && (
+        <AlreadyPaidModal
+          student={alreadyFor}
+          total={totalOf(alreadyFor.id)}
+          plans={usedPlans.filter((p) => lineFor(alreadyFor.id, p))}
+          busy={busy}
+          onClose={() => setAlreadyFor(null)}
+          onSave={(paidAt, amount, method, memo, planIds) => void recordAlreadyPaid(alreadyFor, paidAt, amount, method, memo, planIds)}
+        />
+      )}
 
       <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
         할인은 [납부 항목 · 할인]에서 만든 것만 붙일 수 있습니다. 비율 할인은 <b>옵션 할인을 뺀 금액</b>에 걸립니다 —
@@ -795,6 +847,135 @@ function DiscountModal({
         <button onClick={onClose} className="mt-3 w-full rounded-lg border border-slate-200 py-1.5 text-[12px] font-semibold text-slate-600">
           닫기
         </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 「이미 받았습니다」 창.
+ *
+ * ── 왜 이런 모양인가 ─────────────────────────────────────────────────
+ *
+ * 회계 프로그램에서 이 자리는 「Receive Payment」이고, 결제사(Stripe)에서는
+ * 「Pay out of band — 우리 시스템 밖에서 이미 받은 돈」입니다. 공통점은 **받은 날짜**를
+ * 반드시 묻는다는 것입니다. 오늘 날짜로 적으면 지난달 수납이 이번 달로 세어져, 월별
+ * 수납 집계가 통째로 어긋납니다.
+ *
+ * 금액은 청구액을 미리 채워둡니다 - 대개 그대로이고, 다르면 고치면 됩니다.
+ */
+function AlreadyPaidModal({
+  student,
+  total,
+  plans,
+  busy,
+  onClose,
+  onSave,
+}: {
+  student: TuitionStudent;
+  total: number;
+  plans: FeePlan[];
+  busy: boolean;
+  onClose: () => void;
+  onSave: (paidAt: string, amount: number, method: string, memo: string, planIds: string[]) => void;
+}) {
+  const [paidAt, setPaidAt] = useState(todayKst());
+  const [amount, setAmount] = useState(String(total));
+  const [method, setMethod] = useState("계좌이체");
+  const [memo, setMemo] = useState("");
+  const [picked, setPicked] = useState<string[]>([]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} className="w-full max-w-sm rounded-xl bg-white p-4 shadow-xl">
+        <h3 className="mb-1 text-sm font-bold text-slate-800">💰 이미 받은 건 등록 — {student.name}</h3>
+        <p className="mb-3 text-[11px] leading-relaxed text-slate-500">
+          청구서를 <b>받은 날짜로</b> 만들고 <b>안 보냄</b> 표시를 답니다. 학부모에게 다시 나가지 않습니다 — 이미 낸 돈을
+          또 내라는 말이 되니까요.
+        </p>
+
+        <label className="mb-2 block text-[11px] font-semibold text-slate-600">
+          받은 날
+          <input
+            type="date"
+            value={paidAt}
+            onChange={(e) => setPaidAt(e.target.value)}
+            className="mt-0.5 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs"
+          />
+        </label>
+        <label className="mb-2 block text-[11px] font-semibold text-slate-600">
+          금액
+          <input
+            type="number"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            className="mt-0.5 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-right text-xs tabular-nums"
+          />
+          <span className="mt-0.5 block text-[10px] font-normal text-slate-400">청구액 {won(total)}</span>
+        </label>
+        <label className="mb-2 block text-[11px] font-semibold text-slate-600">
+          받은 방법
+          <select
+            value={method}
+            onChange={(e) => setMethod(e.target.value)}
+            className="mt-0.5 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs"
+          >
+            {PAYMENT_METHOD_KINDS.map((k) => (
+              <option key={k} value={k}>
+                {k}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {/* 항목이 둘 이상이면 무엇에 대한 돈인지 고릅니다. 안 고르면 학비 전부입니다. */}
+        {plans.length > 1 && (
+          <div className="mb-2">
+            <span className="text-[11px] font-semibold text-slate-600">무엇에 대한 돈인가요?</span>
+            <div className="mt-0.5 flex flex-wrap gap-1">
+              {plans.map((p) => {
+                const on = picked.includes(p.id);
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setPicked((v) => (on ? v.filter((x) => x !== p.id) : [...v, p.id]))}
+                    className={
+                      "rounded-full px-2 py-0.5 text-[11px] font-bold " +
+                      (on ? "bg-sky-600 text-white" : "border border-slate-300 bg-white text-slate-600")
+                    }
+                  >
+                    {p.name}
+                  </button>
+                );
+              })}
+            </div>
+            <span className="mt-0.5 block text-[10px] text-slate-400">안 고르면 학비 전부입니다.</span>
+          </div>
+        )}
+
+        <label className="mb-3 block text-[11px] font-semibold text-slate-600">
+          메모
+          <input
+            value={memo}
+            onChange={(e) => setMemo(e.target.value)}
+            placeholder="예: 8월에 계좌로 먼저 받음"
+            className="mt-0.5 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs"
+          />
+        </label>
+
+        <div className="flex justify-end gap-2">
+          <button onClick={onClose} className="rounded-lg px-3 py-1.5 text-xs text-slate-500 hover:bg-slate-100">
+            취소
+          </button>
+          <button
+            onClick={() => onSave(paidAt, Number(amount) || 0, method, memo, picked)}
+            disabled={busy || !paidAt || Number(amount) <= 0}
+            className="rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-sky-700 disabled:opacity-40"
+          >
+            {busy ? "넣는 중…" : "이미 받은 것으로 넣기"}
+          </button>
+        </div>
       </div>
     </div>
   );

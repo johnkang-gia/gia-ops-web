@@ -198,6 +198,7 @@ export default function ToddleChannelsClient({
           {shown.map((r) => {
             const sug = suggestions.get(r.label);
             const sel = chosen(r);
+            const ruledOut = (sug?.picks ?? []).flatMap((p) => p.ruledOut);
             const saved = r.studentIds.length > 0;
             return (
               <div
@@ -231,6 +232,37 @@ export default function ToddleChannelsClient({
                     못 읽음: {sug.picks.filter((p) => !p.student).map((p) => `「${p.raw}」${p.why === "여럿" ? ` (${p.candidates.length}명 중)` : ""}`).join(" · ")}
                   </p>
                 )}
+
+                {/* **성이 달라 뺀 아이를 적습니다.**
+                    「Egeon」은 정이건도 고이건도 될 수 있는데 방 성이 Jeong 이면 고이건은
+                    아닙니다. 그냥 빼면 「왜 이 아이가 안 걸리지」로 남습니다. */}
+                {ruledOut.length > 0 && (
+                  <p className="mt-0.5 text-[10px] text-slate-500">
+                    성이 달라 뺌{sug?.surname ? ` (이 방은 ${sug.surname})` : ""}: {ruledOut.map((s) => s.name).join(" · ")}
+                  </p>
+                )}
+
+                {/* 후보가 여럿이면 **그 자리에서 고르게** 합니다. 목록에서 137명을 찾는 것보다
+                    두세 명 중 고르는 편이 빠르고, 빠르면 실제로 합니다. */}
+                {sug?.picks
+                  .filter((p) => !p.student && p.candidates.length > 0)
+                  .map((p) => (
+                    <div key={p.raw} className="mt-1 flex flex-wrap items-center gap-1">
+                      <span className="text-[10px] font-bold text-slate-600">「{p.raw}」 →</span>
+                      {p.candidates.map((c) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          disabled={!canEdit}
+                          onClick={() => setPicked((prev) => ({ ...prev, [r.label]: [...new Set([...sel, c.id])] }))}
+                          className="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 hover:border-emerald-400 hover:text-emerald-700 disabled:opacity-40"
+                        >
+                          {c.name}
+                          {c.class_name ? `(${c.class_name})` : ""}
+                        </button>
+                      ))}
+                    </div>
+                  ))}
 
                 <div className="mt-1.5 flex flex-wrap items-center gap-1">
                   {sel.map((sid) => {

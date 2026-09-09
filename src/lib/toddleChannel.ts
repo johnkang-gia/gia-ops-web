@@ -1,6 +1,7 @@
 import { parseChannelLabel, type RosterEntry } from "@/lib/pickupParse";
 import { resolveStudent, matchKey, stripParticle, type MatchResult } from "@/lib/studentMatch";
 import { nameSurfaces } from "@/lib/attendanceIntent";
+import { givenFits, splitPerson, surnameFits } from "@/lib/familyName";
 
 /**
  * **토들 채팅방을 학생에게 잇습니다** — 그리고 방 주인이 아닌 아이가 언급된 경우를 가려냅니다.
@@ -47,12 +48,30 @@ export function buildChannelIndex(links: ChannelLink[] | null | undefined): Map<
   return m;
 }
 
+export type ChannelPick = {
+  raw: string;
+  /** 방 이름의 마지막 낱말 = 그 집 성. 형제방이면 모두에게 같은 성이 붙습니다. */
+  surname: string | null;
+  student: RosterEntry | null;
+  why: MatchResult["why"];
+  candidates: RosterEntry[];
+  /**
+   * **이름은 맞는데 성이 달라 뺀 아이.**
+   *
+   * 「Egeon」은 정이건도 고이건도 될 수 있습니다. 방 성이 Jeong 이면 고이건은 아닙니다.
+   * 그냥 빼면 「왜 이 아이가 안 걸리지」로 남으므로, 뺐다는 사실을 화면에 적습니다.
+   */
+  ruledOut: RosterEntry[];
+};
+
 export type ChannelSuggestion = {
   label: string;
   grades: string[];
   isSibling: boolean;
+  /** 방 이름에서 읽은 그 집 성. 못 읽으면 null. */
+  surname: string | null;
   /** 방 이름에 적힌 순서대로. 못 이은 이름은 `student: null` 로 남겨 사람이 봅니다. */
-  picks: { raw: string; student: RosterEntry | null; why: MatchResult["why"]; candidates: RosterEntry[] }[];
+  picks: ChannelPick[];
   /** 사람 손 없이 그대로 확정해도 되는가 — **이름이 하나도 안 빠졌을 때만**. */
   complete: boolean;
 };
@@ -71,14 +90,54 @@ export function suggestForChannel(
 ): ChannelSuggestion | null {
   const parsed = parseChannelLabel(label);
   if (!parsed) return null;
-  const picks = parsed.names.map((raw, i) => {
-    const r = resolveStudent(raw, roster, { grade: parsed.grades[i] ?? parsed.grades[0] ?? null, aliases });
-    return { raw, student: r.student, why: r.why, candidates: r.candidates };
+
+  // 그 집 성. 방 이름의 **마지막 사람**에게만 성이 붙어 오는 경우가 많아
+  // (「E.L, Egeon & Elizabeth Jeong」), 뒤에서부터 찾아 앞사람들에게도 씁니다.
+  const familySurname =
+    parsed.names
+      .map((n) => splitPerson(n).surname)
+      .filter((x): x is string => !!x)
+      .pop() ?? null;
+
+  const picks: ChannelPick[] = parsed.names.map((raw, i) => {
+    const grade = parsed.grades[i] ?? parsed.grades[0] ?? null;
+    const { given, surname } = splitPerson(raw);
+    const family = surname ?? familySurname;
+
+    // 사람이 가르친 별칭이 가장 먼저입니다. 성으로 가르는 규칙보다 셉니다 -
+    // 「E.L = 정이엘」처럼 규칙으로는 절대 못 푸는 것을 사람이 알려준 것이니까요.
+    const taught = aliases?.get(matchKey(raw)) ?? aliases?.get(matchKey(given));
+    if (taught) return { raw, surname: family, student: taught, why: null, candidates: [], ruledOut: [] };
+
+    // 이름이 맞는 아이를 모으고, **성으로 거릅니다.**
+    const byGiven = roster.filter((s) => givenFits(given, s));
+    const fits = byGiven.filter((s) => surnameFits(family, s));
+    const ruledOut = byGiven.filter((s) => !surnameFits(family, s));
+
+    if (fits.length === 1) return { raw, surname: family, student: fits[0], why: null, candidates: [], ruledOut };
+    if (fits.length > 1) {
+      // 학년이 적혀 있으면 한 번 더 좁힙니다. 형제방은 학년이 사람마다 다릅니다.
+      const g = String(grade ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+      const byGrade = g ? fits.filter((s) => String(s.grade ?? "").toLowerCase().replace(/[^a-z0-9]/g, "") === g) : [];
+      if (byGrade.length === 1) return { raw, surname: family, student: byGrade[0], why: null, candidates: [], ruledOut };
+      return { raw, surname: family, student: null, why: "여럿", candidates: fits, ruledOut };
+    }
+
+    // 이름으로 아무도 못 찾은 경우. 지금까지 쓰던 대조를 마지막으로 한 번 더 해봅니다
+    // (한글로 적힌 방, 애칭이 괄호로 붙은 방 등).
+    const r = resolveStudent(raw, roster, { grade, aliases });
+    // **성이 어긋나면 그 답도 버립니다.** 여기서 봐주면 위에서 거른 뜻이 없어집니다.
+    if (r.student && !surnameFits(family, r.student)) {
+      return { raw, surname: family, student: null, why: "여럿", candidates: [], ruledOut: [...ruledOut, r.student] };
+    }
+    return { raw, surname: family, student: r.student, why: r.why, candidates: r.candidates, ruledOut };
   });
+
   return {
     label,
     grades: parsed.grades,
     isSibling: parsed.isSibling,
+    surname: familySurname,
     picks,
     // 한 명이라도 못 이었으면 통째로 사람에게 넘깁니다. 「둘 중 하나만 이어진 방」은
     // 화면에서 이어진 것처럼 보여서, 빠진 아이를 아무도 다시 안 봅니다.

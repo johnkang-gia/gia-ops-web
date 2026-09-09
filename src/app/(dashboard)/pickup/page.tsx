@@ -225,7 +225,7 @@ export default async function PickupPage() {
           "Mark pickups you were told about directly by a parent. Changes apply instantly to the shuttle boards. Pickups posted in Google Chat are still picked up automatically, so you can use either way."
         )}
       </p>
-      <PickupCheckClient groups={groups} today={today} />
+      <PickupCheckClient groups={groups} today={today} actor={{ email: me.email, name: me.name ?? null }} />
     </div>
   );
 }

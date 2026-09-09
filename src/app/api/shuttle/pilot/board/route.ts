@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logChecklist } from "@/lib/checklistLog";
 import { todayKst } from "@/lib/kst";
 import { createClient } from "@supabase/supabase-js";
 
@@ -56,10 +57,32 @@ export async function POST(req: Request) {
       ? { status: value, checked_by: checkedBy, checked_at: new Date().toISOString() }
       : { alighted_at: value ? new Date().toISOString() : null };
 
+  // boarding-ok: 기사님·동승선생님이 차에서 순서대로 누르는 자리입니다. 「하차」는 상태가
+  // 아니라 시각 한 칸만 바꾸므로 setBoardingStatus 의 모양과 맞지 않습니다.
   const { error: upsertError } = await supabase
     .from("shuttle_boardings")
     .upsert({ service_date: today, assignment_id: assignmentId, ...patch }, { onConflict: "service_date,assignment_id" });
   if (upsertError) return NextResponse.json({ error: upsertError.message }, { status: 500 });
+
+  // **명단에서 아이를 빼는 것만** 기록에 남깁니다.
+  //
+  // 탑승·하차는 한 운행에 백 번 넘게 눌리고, 그건 「누가 바꿨지?」를 물을 일이 아닙니다.
+  // 결석·픽업은 다릅니다 - 그 아이가 차에서 빠지는 판단이라, 나중에 물어볼 곳이 있어야 합니다.
+  if (field === "status" && (value === "결석" || value === "픽업")) {
+    const { data: who } = await supabase
+      .from("shuttle_assignments")
+      .select("student_name_raw")
+      .eq("id", assignmentId)
+      .maybeSingle();
+    await logChecklist(supabase, {
+      serviceDate: today,
+      assignmentId,
+      studentName: (who?.student_name_raw as string | null) ?? "이름 미확인",
+      action: "상태변경",
+      after: value as string,
+      actor: { email: "", name: "차량 체크인" },
+    });
+  }
 
   return NextResponse.json({ ok: true });
 }

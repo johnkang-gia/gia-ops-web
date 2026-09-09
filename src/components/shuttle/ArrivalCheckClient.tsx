@@ -103,13 +103,14 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
   const [plateQuery, setPlateQuery] = useState("");
   const [pickupBusy, setPickupBusy] = useState(false);
 
-  async function markStudentPickup(assignmentId: string) {
+  async function markStudentPickup(assignmentId: string, studentName: string) {
     setPickupBusy(true);
     try {
       const res = await fetch(`/api/shuttle/arrival/${token}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "student_pickup", assignmentId, on: true }),
+        // 이름을 함께 보냅니다. 활동 기록에 배정 번호만 남으면 나중에 누구였는지 못 읽습니다.
+        body: JSON.stringify({ action: "student_pickup", assignmentId, studentName, on: true }),
       });
       if (!res.ok) {
         const b = await res.json().catch(() => ({}));
@@ -567,7 +568,7 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
               <button
                 type="button"
                 disabled={pickupBusy}
-                onClick={() => void markStudentPickup(pickupAsk.assignmentId)}
+                onClick={() => void markStudentPickup(pickupAsk.assignmentId, pickupAsk.studentName)}
                 className="flex-1 rounded-xl bg-pink-600 py-3 text-base font-bold text-white active:scale-95 disabled:opacity-50"
               >
                 {pickupBusy ? "…" : "🚗 개별하원으로"}

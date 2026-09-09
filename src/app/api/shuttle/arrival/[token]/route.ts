@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { setBoardingStatus } from "@/lib/boardingWrite";
 import { createClient } from "@supabase/supabase-js";
 import { kstParts } from "@/lib/shuttleTracking";
 import { isUndecidedChoice } from "@/lib/shuttleChoice";
@@ -234,18 +235,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
     const on = body?.on !== false; // 기본은 픽업으로 켜기. 잘못 눌렀으면 on:false로 되돌립니다.
     if (!assignmentId) return NextResponse.json({ error: "assignmentId가 필요합니다." }, { status: 400 });
 
-    const { error } = await supabase.from("shuttle_boardings").upsert(
-      {
-        service_date: today,
-        assignment_id: assignmentId,
-        status: on ? "픽업" : "예정",
-        // 누가 왜 바꿨는지. 이 화면은 로그인이 없어 사람 이름을 알 수 없으므로 자리를 적습니다.
-        checked_by: on ? "하원지도(현장 픽업)" : "하원지도(픽업 취소)",
-        checked_at: new Date().toISOString(),
-      },
-      { onConflict: "service_date,assignment_id" },
-    );
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    // 누가 바꿨는지. 이 화면은 로그인이 없어 사람 이름을 알 수 없으므로 **자리**를 적습니다.
+    // 자리라도 적어야 「현장에서 누른 것」과 「사무실에서 누른 것」이 구별됩니다.
+    const { error } = await setBoardingStatus(supabase, {
+      serviceDate: today,
+      assignmentId,
+      studentName: (body?.studentName as string | undefined) ?? "이름 미확인",
+      status: on ? "픽업" : "예정",
+      actor: { email: "", name: on ? "하원지도(현장 픽업)" : "하원지도(픽업 취소)" },
+    });
+    if (error) return NextResponse.json({ error }, { status: 500 });
     return NextResponse.json({ ok: true });
   }
 

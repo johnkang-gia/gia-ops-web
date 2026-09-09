@@ -133,6 +133,10 @@ export default async function ShuttleChecklistPage({
     console.error("[checklist] 오늘 탑승 기록 조회 실패 — 눌러둔 픽업·결석이 화면에 안 뜹니다:", boardingsRes.error.message);
   }
   const boardingByAssignment = new Map((boardingsRes.data ?? []).map((b) => [b.assignment_id, b]));
+  // 기록에 이름을 적기 위한 대조표. 배정 번호만 남으면 나중에 누구였는지 못 읽습니다.
+  const assignmentNameById = new Map(
+    (assignmentsData ?? []).map((a) => [a.id as string, (a.student_name_raw as string) ?? "이름 미확인"]),
+  );
 
   // 요청: "이제 토들도 가져오니까 하원체크표에 오늘픽업 결석에 여기도 반영" - 토들·전화·구글챗으로
   // 들어온 오늘 픽업/결석(pickup_requests)을 명단에 자동으로 얹습니다. 사람이 직접 누른 값이
@@ -474,6 +478,41 @@ export default async function ShuttleChecklistPage({
     console.error("[checklist] 활동 기록 조회 실패:", logErr.message);
   }
 
+  /**
+   * 기록 줄이 없는 변경도 「누가 언제」를 보여줍니다.
+   *
+   * 활동 기록을 만들기 전에 바뀐 줄, 그리고 아침 크론·AI 가 찍은 줄에는 기록이 없습니다.
+   * 그런데 그 줄들에도 **`checked_by`·`checked_at` 은 적혀 있습니다** - 누가 언제인지를
+   * 이미 알고 있는데 화면이 「아무도 안 함」으로 보여주고 있었습니다.
+   *
+   * 없는 사실을 지어내지 않습니다. 바뀌기 전 값은 모르므로 비워 둡니다.
+   */
+  const loggedAssignments = new Set(
+    ((logRows as ChecklistLogRow[] | null) ?? []).map((r) => r.assignment_id).filter((x): x is string => !!x),
+  );
+  const derivedLog: ChecklistLogRow[] = [];
+  for (const [assignmentId, b] of boardingByAssignment) {
+    const who = (b.checked_by as string | null) ?? "";
+    const at = (b.checked_at as string | null) ?? "";
+    if (!who || !at || loggedAssignments.has(assignmentId)) continue;
+    if ((b.status as string) === "예정") continue; // 되돌린 줄은 「한 일」이 아닙니다
+    derivedLog.push({
+      id: `boarding-${assignmentId}`,
+      service_date: today,
+      assignment_id: assignmentId,
+      student_name: assignmentNameById.get(assignmentId) ?? "이름 미확인",
+      action: "상태변경",
+      before_value: null,
+      after_value: b.status as string,
+      actor_email: who,
+      actor_name: who,
+      created_at: at,
+    });
+  }
+  const activityLog = [...((logRows as ChecklistLogRow[] | null) ?? []), ...derivedLog].sort((a, b) =>
+    b.created_at.localeCompare(a.created_at),
+  );
+
 
   // ── 오늘만 같이 타는 아이 ─────────────────────────────────────────────────
   // "서이 셔틀에 하임이두 같이 보내주세요" 에서 자동으로 읽어 넣은 줄입니다. 정식 배정이
@@ -564,7 +603,7 @@ export default async function ShuttleChecklistPage({
         persistentNotes={persistentNotes}
         toddleBase={toddleBase}
         actor={{ email: me.email, name: me.name }}
-        initialLog={(logRows as ChecklistLogRow[] | null) ?? []}
+        initialLog={activityLog}
         rideAlongs={rideAlongs}
       />
     </div>

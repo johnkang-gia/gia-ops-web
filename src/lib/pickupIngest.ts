@@ -14,6 +14,7 @@ import { extractTargetDate, extractTargetRange } from "@/lib/attendanceDigest";
 import { extractRecurringWeekdays, hasRecurringPhrase, weekdayLabel } from "@/lib/parentRecurrence";
 import { nameSurfaces, readSiblings } from "@/lib/attendanceIntent";
 import { genCaseId } from "@/lib/caseId";
+import { logChecklist } from "@/lib/checklistLog";
 
 // 어느 경로로 들어온 연락이든 이 함수 하나를 거쳐 픽업으로 바뀝니다.
 // 토들 수집기, 전화 통화 텍스트, 교사 전달, 직접 입력이 모두 같은 판단을 받도록 하기 위해서입니다.
@@ -839,19 +840,21 @@ export async function applyPickup(
    */
   updatedBy?: string,
 ): Promise<number> {
+  // 이름을 함께 읽습니다. 활동 기록에 배정 번호만 남으면 나중에 누구였는지 못 읽습니다.
   const { data: assignments } = await supabase
     .from("shuttle_assignments")
-    .select("id")
+    .select("id, student_name_raw")
     .eq("student_id", studentId);
 
-  const ids = (assignments ?? []).map((a) => a.id as string);
+  const rows = (assignments ?? []) as { id: string; student_name_raw: string | null }[];
+  const ids = rows.map((a) => a.id);
   if (ids.length === 0) return 0;
 
   // 그날 탑승 기록이 이미 있으면 상태만 바꾸고, 없으면 새로 만듭니다.
   for (const assignmentId of ids) {
     const { data: existing } = await supabase
       .from("shuttle_boardings")
-      .select("id, checked_by")
+      .select("id, checked_by, status")
       .eq("service_date", serviceDate)
       .eq("assignment_id", assignmentId)
       .maybeSingle();
@@ -866,6 +869,9 @@ export async function applyPickup(
     }
 
     const stamp = updatedBy ? { checked_by: updatedBy } : {};
+    // boarding-ok: setBoardingStatus 를 못 쓰는 자리입니다. 위의 「사람이 정해둔 줄은 덮지
+    // 않는다」 검사를 지나야 하고, 이미 있는 줄은 id 기준으로 갱신합니다. 대신 **기록은
+    // 아래에서 똑같이 남깁니다** - 자동이 찍은 줄도 「누가 왜」를 물을 수 있어야 합니다.
     const { error } = existing
       ? await supabase.from("shuttle_boardings").update({ status: "픽업", ...stamp }).eq("id", existing.id)
       : await supabase
@@ -876,6 +882,15 @@ export async function applyPickup(
       console.error(`[applyPickup] ${studentId} ${serviceDate} 픽업 표시 실패:`, error.message);
       throw new Error(error.message);
     }
+    await logChecklist(supabase, {
+      serviceDate,
+      assignmentId,
+      studentName: rows.find((r) => r.id === assignmentId)?.student_name_raw ?? "이름 미확인",
+      action: "상태변경",
+      before: (existing?.status as string | null) ?? null,
+      after: "픽업",
+      actor: { email: "", name: updatedBy || "자동" },
+    });
   }
   return ids.length;
 }

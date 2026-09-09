@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { setBoardingStatus } from "@/lib/boardingWrite";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { logApiError } from "@/lib/logging";
@@ -94,18 +95,19 @@ export async function POST(req: Request) {
 
     // 같은 이름이 여러 배정에 걸린 경우(형제 채널·요일 분할 탑승)에는 전부 같은 상태로
     // 처리합니다 - 한 명이 두 노선에 걸쳐 있을 때 한쪽만 결석으로 두면 반대쪽 차가 기다립니다.
-    const rows = matches.map((a) => ({
-      service_date: serviceDate,
-      assignment_id: a.id,
-      status: action,
-      checked_by: me.email,
-      checked_at: new Date().toISOString(),
-    }));
-
-    const { error: bErr } = await supabase
-      .from("shuttle_boardings")
-      .upsert(rows, { onConflict: "service_date,assignment_id" });
-    if (bErr) throw bErr;
+    // 상태 바꾸기와 「누가 바꿨는지」 기록을 한 부름으로 묶습니다. 예전에는 여기서 표만
+    // 고쳐서, 하원 체크표의 활동 기록에는 아무 줄도 안 남았습니다 - 표시는 바뀌어 있는데
+    // 「누가 했지?」를 물을 곳이 없었습니다.
+    for (const a of matches) {
+      const { error: bErr } = await setBoardingStatus(supabase, {
+        serviceDate,
+        assignmentId: a.id,
+        studentName: a.student_name_raw,
+        status: action as "결석" | "픽업",
+        actor: { email: me.email, name: me.name ?? null },
+      });
+      if (bErr) throw new Error(bErr);
+    }
 
     // 이 문의는 처리된 것으로 표시합니다 - 셔틀에 반영해 놓고 인박스에는 그대로 남아 있으면,
     // 다음 사람이 또 처리하거나 "아직 안 했나?" 하고 다시 확인하게 됩니다.

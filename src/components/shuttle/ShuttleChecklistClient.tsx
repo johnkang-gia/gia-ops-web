@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { logChecklist, type ChecklistLogRow, type LogActor } from "@/lib/checklistLog";
+import { setBoardingStatus } from "@/lib/boardingWrite";
 import { useToast } from "@/components/common/ToastProvider";
 import ShuttleChecklistTable, { effectiveRouteId } from "./ShuttleChecklistTable";
 import ChecklistPrintSheet from "./ChecklistPrintSheet";
@@ -170,13 +171,41 @@ export default function ShuttleChecklistClient({
    * 화면에 바로 보여야 하는 이유: 옆자리에서 같은 표를 보고 있는 사람이 "내가 방금 누른 게
    * 반영됐나"를 확인할 곳이 여기뿐입니다. 새로고침해야 보이면 아무도 안 봅니다.
    */
-  async function record(entry: {
+  type LocalEntry = {
     assignmentId: string | null;
     studentName: string;
     action: "상태변경" | "노선이동" | "메모";
     before?: string | null;
     after?: string | null;
-  }) {
+  };
+
+  /**
+   * 화면 목록에만 즉시 얹습니다(표에는 이미 다른 곳에서 남겼을 때).
+   *
+   * 상태변경은 `setBoardingStatus` 가 표에 남기므로 여기서 또 넣으면 같은 일이 두 줄이 됩니다.
+   */
+  function showLocally(entry: LocalEntry) {
+    const serviceDate = todayStr();
+    setActivityLog((prev) =>
+      [
+        {
+          id: `local-${Date.now()}`,
+          service_date: serviceDate,
+          assignment_id: entry.assignmentId,
+          student_name: entry.studentName,
+          action: entry.action,
+          before_value: entry.before ?? null,
+          after_value: entry.after ?? null,
+          actor_email: actor.email,
+          actor_name: actor.name,
+          created_at: new Date().toISOString(),
+        } satisfies ChecklistLogRow,
+        ...prev,
+      ].slice(0, 100),
+    );
+  }
+
+  async function record(entry: LocalEntry) {
     const serviceDate = todayStr();
     setActivityLog((prev) =>
       [
@@ -508,28 +537,26 @@ export default function ShuttleChecklistClient({
     const finalStatus = item.status === nextStatus ? "예정" : nextStatus;
     setBusyId(item.assignmentId);
     setItems((prev) => prev.map((it) => (it.assignmentId === item.assignmentId ? { ...it, status: finalStatus } : it)));
-    const supabase = createClient();
-    const { error } = await supabase
-      .from("shuttle_boardings")
-      .upsert(
-        {
-          service_date: todayStr(),
-          assignment_id: item.assignmentId,
-          status: finalStatus,
-          // **누가** 눌렀는지를 줄 자체에 남깁니다. 예전에는 "체크표"만 남아서, 근거 창이
-          // "체크표가 체크표에서 픽업으로 표시했습니다"라고 말하고 있었습니다.
-          checked_by: actor.name || actor.email,
-          checked_at: new Date().toISOString(),
-        },
-        { onConflict: "service_date,assignment_id" }
-      );
+    // 상태 바꾸기와 기록 남기기는 한 부름으로 묶여 있습니다(setBoardingStatus). 따로 두면
+    // 새 화면을 만들 때마다 한쪽을 잊고, 잊었다는 사실은 「누가 했지?」를 물을 때에야 드러납니다.
+    const { error } = await setBoardingStatus(createClient(), {
+      serviceDate: todayStr(),
+      term,
+      assignmentId: item.assignmentId,
+      studentName: item.studentName,
+      status: finalStatus,
+      before: item.status,
+      actor,
+    });
     setBusyId(null);
     if (error) {
-      notify("저장하지 못했습니다: " + error.message, "error");
+      notify("저장하지 못했습니다: " + error, "error");
       setItems((prev) => prev.map((it) => (it.assignmentId === item.assignmentId ? { ...it, status: item.status } : it)));
       return;
     }
-    void record({
+    // 화면 목록에도 즉시 얹습니다. 옆자리에서 같은 표를 보는 사람이 「내가 방금 누른 게
+    // 반영됐나」를 확인할 곳이 여기뿐입니다.
+    showLocally({
       assignmentId: item.assignmentId,
       studentName: item.studentName,
       action: "상태변경",

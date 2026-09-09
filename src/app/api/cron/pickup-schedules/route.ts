@@ -5,6 +5,7 @@ import { kstParts } from "@/lib/shuttleTracking";
 import { genCaseId } from "@/lib/caseId";
 import { touchHeartbeat } from "@/lib/heartbeat";
 import { loadDismissalForDay } from "@/lib/dismissalToday";
+import { logChecklist } from "@/lib/checklistLog";
 
 // 오늘 예정된 픽업을 실제로 걸어줍니다.
 //
@@ -183,8 +184,12 @@ export async function GET(req: Request) {
       continue;
     }
     // 결석: 그날 그 아이의 배정을 결석으로 표시합니다.
-    const { data: asg } = await supabase.from("shuttle_assignments").select("id").eq("student_id", n.student_id);
-    for (const a of (asg as { id: string }[] | null) ?? []) {
+    // 이름을 함께 읽습니다. 활동 기록에 배정 번호만 남으면 나중에 누구였는지 못 읽습니다.
+    const { data: asg } = await supabase
+      .from("shuttle_assignments")
+      .select("id, student_name_raw")
+      .eq("student_id", n.student_id);
+    for (const a of (asg as { id: string; student_name_raw: string | null }[] | null) ?? []) {
       // 사람이 오늘 이 줄을 이미 정했으면 넘어갑니다. 기간 결석이 걸려 있어도 "오늘은 탑니다"는
       // 담당자가 학부모에게 직접 듣고 누른 것이라, 이 크론이 아는 것보다 새롭습니다.
       const { data: cur } = await supabase
@@ -197,6 +202,9 @@ export async function GET(req: Request) {
 
       // checked_by에 적습니다. updated_by는 이 표에 없는 칸이라, 여기 적혀 있는 동안
       // 이 저장이 매번 실패했습니다 - 기간 결석이 하나도 안 걸리고 있었습니다.
+      // boarding-ok: setBoardingStatus 를 못 쓰는 자리입니다. 바로 위의 「사람이 오늘 정해둔
+      // 줄은 덮지 않는다」 검사를 지나야 하기 때문입니다. 대신 기록은 아래에서 똑같이
+      // 남깁니다 - 자동이 찍은 줄도 「누가 왜」를 물을 수 있어야 합니다.
       const { error: upErr } = await supabase
         .from("shuttle_boardings")
         .upsert(
@@ -204,6 +212,15 @@ export async function GET(req: Request) {
           { onConflict: "service_date,assignment_id" }
         );
       if (upErr) console.error("[cron:pickup-schedules] 기간 결석 표시 실패:", upErr.message);
+      else
+        await logChecklist(supabase, {
+          serviceDate: today,
+          assignmentId: a.id,
+          studentName: a.student_name_raw ?? "이름 미확인",
+          action: "상태변경",
+          after: "결석",
+          actor: { email: "", name: "AI(기간 특이사항)" },
+        });
     }
     if ((asg ?? []).length > 0) periodApplied += 1;
   }

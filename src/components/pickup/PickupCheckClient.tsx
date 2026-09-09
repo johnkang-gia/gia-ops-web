@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
+import { setBoardingStatus } from "@/lib/boardingWrite";
 import { useLang, useT } from "@/components/common/LanguageProvider";
 
 // 요청: "교사가 전화나, 다른 메세지로 픽업을 받은 경우, 체크를 할 수 있도록... 담임교사는 자기
@@ -36,7 +37,16 @@ export type PickupItem = {
 
 export type PickupClassGroup = { classId: string; label: string; items: PickupItem[] };
 
-export default function PickupCheckClient({ groups: initialGroups, today }: { groups: PickupClassGroup[]; today: string }) {
+export default function PickupCheckClient({
+  groups: initialGroups,
+  today,
+  actor,
+}: {
+  groups: PickupClassGroup[];
+  today: string;
+  /** 지금 이 화면을 보고 있는 선생님. 활동 기록에 이름으로 남습니다. */
+  actor: { email: string; name: string | null };
+}) {
   const notify = useToast();
   const t = useT();
   const { lang } = useLang();
@@ -87,22 +97,24 @@ export default function PickupCheckClient({ groups: initialGroups, today }: { gr
     setBusyId(item.studentId);
     applyStatus(item.studentId, finalStatus);
 
-    const supabase = createClient();
-    const { error } = await supabase.from("shuttle_boardings").upsert(
-      {
-        service_date: today,
-        assignment_id: item.assignmentId,
-        status: finalStatus,
-        checked_by: "담임",
-        checked_at: new Date().toISOString(),
-      },
-      { onConflict: "service_date,assignment_id" }
-    );
+    // 상태 바꾸기와 「누가 바꿨는지」 기록을 한 부름으로 묶습니다.
+    //
+    // 예전에는 여기서 표만 고치고 `checked_by` 에 «담임»이라고만 적었습니다. 그래서 하원
+    // 체크표에서 「이 아이 누가 픽업으로 바꿨지?」를 물으면 «담임님이 체크표에서 픽업으로
+    // 표시했습니다»만 나왔고, 활동 기록에는 아무 줄도 없었습니다 - 물어볼 사람이 없습니다.
+    const { error } = await setBoardingStatus(createClient(), {
+      serviceDate: today,
+      assignmentId: item.assignmentId,
+      studentName: item.name,
+      status: finalStatus,
+      before: previous,
+      actor,
+    });
     setBusyId(null);
 
     if (error) {
       applyStatus(item.studentId, previous);
-      notify(t("저장하지 못했습니다: ", "Could not save: ") + error.message, "error");
+      notify(t("저장하지 못했습니다: ", "Could not save: ") + error, "error");
     }
   }
 

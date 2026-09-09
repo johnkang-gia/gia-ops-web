@@ -169,6 +169,7 @@ export const BACKUP_SKIP: Record<string, string> = {
 
   // ── 다시 만들 수 있는 것 ───────────────────────────────────────────
   applied_migrations: "마이그레이션 실행 이력. supabase/migrations 가 원본입니다.",
+  board_revisions: "「바뀌었다」를 알리는 번호. 내용이 없고, 되돌린 뒤 첫 요청에 저절로 다시 셉니다.",
   shuttle_route_paths: "길찾기 결과 캐시. 지우면 다시 계산됩니다.",
   apparel_stock_balance: "재고 원장에서 계산되는 뷰 성격의 값입니다.",
   finance_key_holders: "app_users 를 걸러 만든 뷰입니다. 원본은 app_users 에 담습니다.",

@@ -92,6 +92,8 @@ export default function OpsBoardClient({ token }: { token: string }) {
     return Number(m[1]) * 60 + Number(m[2]);
   })();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  /** 서버에서 받은 마지막 번호. 다음에 물어볼 때 이걸 보내 「바뀌었는지」만 확인합니다. */
+  const revRef = useRef<number | null>(null);
   // 부서는 화면에서 바로 바꿀 수 있습니다(요청: "화면에서 유치부,초등부,중고등부 선택할 수
   // 있게"). null이면 링크에 설정된 기본 부서를 씁니다.
   const [department, setDepartment] = useState<string | null>(null);
@@ -171,7 +173,12 @@ export default function OpsBoardClient({ token }: { token: string }) {
 
   const load = useCallback(async () => {
     try {
-      const qs = department ? `?department=${encodeURIComponent(department)}` : "";
+      // 들고 있는 번호를 함께 보냅니다. 서버는 번호가 같으면 「안 바뀌었습니다」 한 줄만
+      // 돌려주고, 계산도 자료 읽기도 하지 않습니다.
+      const parts: string[] = [];
+      if (department) parts.push(`department=${encodeURIComponent(department)}`);
+      if (revRef.current !== null) parts.push(`since=${revRef.current}`);
+      const qs = parts.length > 0 ? `?${parts.join("&")}` : "";
       // cache: "no-store"가 없으면 브라우저·CDN이 같은 주소의 지난 응답을 그대로 다시 내줍니다.
       // 이 화면은 주소가 늘 똑같아서(토큰 하나) 캐시가 붙기 딱 좋은 조건이었고, 그래서 업무
       // 보드에서 학부모 문의를 처리 완료로 체크해도 대시보드에는 계속 남아 있었습니다
@@ -183,11 +190,25 @@ export default function OpsBoardClient({ token }: { token: string }) {
         return;
       }
       setErrorMsg(null);
-      setData((await res.json()) as BoardData);
+      const body = (await res.json()) as (BoardData & { revision?: number }) | { unchanged: true; revision: number };
+      if ("unchanged" in body && body.unchanged) {
+        // 안 바뀌었으면 화면은 그대로 둡니다. **여기서 setData 를 부르면** 같은 값으로
+        // 다시 그려져서 아낀 뜻이 없어지고, 스크롤·펼침 상태도 튑니다.
+        revRef.current = body.revision;
+        return;
+      }
+      if (typeof body.revision === "number") revRef.current = body.revision;
+      setData(body as BoardData);
     } catch {
       setErrorMsg("연결에 실패했습니다. 잠시 후 다시 시도합니다.");
     }
   }, [token, department]);
+
+  // 부서를 바꾸면 보던 자료가 달라집니다. 번호를 비워 **한 번은 전부 받아옵니다** -
+  // 안 그러면 초등부 번호를 들고 중고등부를 물어봐서 「안 바뀌었다」는 답이 돌아옵니다.
+  useEffect(() => {
+    revRef.current = null;
+  }, [department]);
 
   useEffect(() => {
     load();

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { checkRevision, parseSince } from "@/lib/boardRevision";
 import { cached } from "@/lib/ttlCache";
 import { APP_VERSION } from "@/lib/version";
 import { buildStaffNames, categorize, extractTargetDate, matchRosterStudents, todayKey, type RosterStudent } from "@/lib/attendanceDigest";
@@ -44,12 +45,32 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   // 화면에서 부서를 바꾸면 ?department=초등부 로 다시 부릅니다. 유치부는 별도 프로그램으로
   // 분리하기로 해서 이 대시보드에서는 고를 수 없습니다(요청: "유치부는 우선 분리해서 표면적으로는
   // 안보이게") - 링크 기본값이 유치부로 남아 있어도 초등부로 대신 엽니다.
+  // ── 바뀌었는지부터 물어봅니다 ─────────────────────────────────────────────
+  //
+  // 이 화면은 30초마다 스스로 다시 물어보는데, 그 30초 동안 **대부분 아무것도 안 바뀝니다.**
+  // 그런데도 명부·반·교시·시간표·출결·픽업·체크표·쪽지·문의·업무를 매번 통째로 다시
+  // 읽고 계산했습니다.
+  //
+  // 이제 화면이 자기가 들고 있는 번호를 함께 보냅니다. 번호가 같으면 여기서 **한 줄만
+  // 읽고 바로 돌아갑니다** - 아래 계산은 시작조차 하지 않습니다.
+  //
+  // 번호를 올리는 일은 자료를 바꾸는 쪽이 합니다. 코드가 아니라 표에 걸린 트리거가 하므로
+  // 빠뜨릴 수가 없습니다(20260916000000_board_revisions.sql).
   const requested = new URL(req.url).searchParams.get("department");
   const department: VisibleDepartment = isVisibleDepartment(requested)
     ? requested
     : isVisibleDepartment(link.default_department)
       ? (link.default_department as VisibleDepartment)
       : VISIBLE_DEPARTMENTS[0];
+
+  const rev = await checkRevision(supabase, "ops", parseSince(req.url), department);
+  if (!rev.stale) {
+    // **여기서 끝냅니다.** 화면은 들고 있던 것을 그대로 쓰면 됩니다.
+    return NextResponse.json(
+      { unchanged: true, revision: rev.revision },
+      { headers: { "Cache-Control": "no-store, no-cache, must-revalidate" } },
+    );
+  }
 
   const now = new Date();
   const { iso: today, weekday, hour } = kstParts(now);
@@ -694,6 +715,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     // 예전 코드를 계속 씁니다 - 누군가 가서 F5를 눌러야 바뀝니다. 화면 쪽에서 이 값을 자기
     // 버전과 견주어 보고, 다르면 스스로 새로고침합니다.
     appVersion: APP_VERSION,
+    // 화면이 다음에 물어볼 때 이 번호를 그대로 보냅니다.
+    revision: rev.revision,
     label: link.label,
     department,
     today,

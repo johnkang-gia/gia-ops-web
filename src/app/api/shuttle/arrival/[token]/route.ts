@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { checkRevision, parseSince } from "@/lib/boardRevision";
 import { cached } from "@/lib/ttlCache";
 import { setBoardingStatus } from "@/lib/boardingWrite";
 import { createClient } from "@supabase/supabase-js";
@@ -31,7 +32,7 @@ async function loadLink(supabase: NonNullable<Awaited<ReturnType<typeof getSupab
   return { link };
 }
 
-export async function GET(_req: Request, { params }: { params: Promise<{ token: string }> }) {
+export async function GET(req: Request, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   const supabase = await getSupabase();
   if (!supabase) return NextResponse.json({ error: "서버 설정 오류입니다." }, { status: 500 });
@@ -47,6 +48,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
   //
   // 실시간으로 보여야 하는 것과 아닌 것을 갈라두면, 3초 주기를 그대로 두고도 실어 나르는
   // 양은 크게 줍니다. 주기를 늘려 «느려 보이게» 만드는 것보다 이쪽이 낫습니다.
+  // 3초마다 물어보는 화면입니다. 그 3초 동안 대부분 아무것도 안 바뀝니다 - 번호가 같으면
+  // 여기서 끝냅니다(자세한 사정은 boardRevision.ts).
+  const rev = await checkRevision(supabase, "shuttle", parseSince(req.url), link.term);
+  if (!rev.stale) return NextResponse.json({ unchanged: true, revision: rev.revision });
+
   const { data: routes } = await cached(`arr:routes:${link.term}`, async () =>
     supabase
       .from("shuttle_routes")
@@ -255,7 +261,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
   const routeNoById = new Map((routes ?? []).map((r) => [r.id, r.route_no as string]));
   const choices = pendingChoice.map((p) => ({ ...p, routeNo: routeNoById.get(p.routeId) ?? "?" }));
 
-  return NextResponse.json({ label: link.label, term: link.term, routes: payload, pendingChoice: choices });
+  return NextResponse.json({ label: link.label, term: link.term, routes: payload, pendingChoice: choices, revision: rev.revision });
 }
 
 export async function POST(req: Request, { params }: { params: Promise<{ token: string }> }) {

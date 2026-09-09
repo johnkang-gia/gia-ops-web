@@ -63,6 +63,8 @@ const HURRY_AFTER_SEC = 20;
 export default function ShuttleBoardClient({ token }: { token: string }) {
   const [data, setData] = useState<BoardData | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  /** 서버에서 받은 마지막 번호. 다음에 물어볼 때 보내 「바뀌었는지」만 확인합니다. */
+  const revRef = useRef<number | null>(null);
   // 인트로(전체화면 버스 애니메이션)를 거쳐 위젯으로 "공개된" 노선입니다. 여기 없는, 방금 도착한
   // 노선은 인트로가 끝나기 전까지 오른쪽 패널에 나타나지 않습니다.
   const [revealedIds, setRevealedIds] = useState<Set<string>>(new Set());
@@ -280,14 +282,23 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
     let cancelled = false;
     async function poll() {
       try {
-        const res = await fetch(`/api/shuttle/board/${token}`);
+        const since = revRef.current !== null ? `?since=${revRef.current}` : "";
+        const res = await fetch(`/api/shuttle/board/${token}${since}`);
         if (!res.ok) {
           if (!cancelled) setErrorMsg("유효하지 않거나 종료된 링크입니다.");
           return;
         }
-        const json = (await res.json()) as BoardData;
+        const body = (await res.json()) as (BoardData & { revision?: number }) | { unchanged: true; revision: number };
         if (cancelled) return;
         setErrorMsg(null);
+        if ("unchanged" in body && body.unchanged) {
+          // 안 바뀌었으면 그대로 둡니다. 여기서 다시 그리면 도착·출발 애니메이션이
+          // 3초마다 처음부터 다시 시작합니다.
+          revRef.current = body.revision;
+          return;
+        }
+        if (typeof body.revision === "number") revRef.current = body.revision;
+        const json = body as BoardData;
 
         const nowArrived = new Set(
           json.routes.filter((r) => r.events.some((e) => e.event === "현장도착") && !r.events.some((e) => e.event === "출발")).map((r) => r.routeId)

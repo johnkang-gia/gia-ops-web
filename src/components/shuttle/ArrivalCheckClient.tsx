@@ -104,6 +104,8 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
   const [plateQuery, setPlateQuery] = useState("");
   /** 번호판 비추기 창이 열려 있는가. */
   const [scanning, setScanning] = useState(false);
+  /** 서버에서 받은 마지막 번호. 다음에 물어볼 때 보내 「바뀌었는지」만 확인합니다. */
+  const revRef = useRef<number | null>(null);
   const [pickupBusy, setPickupBusy] = useState(false);
 
   async function markStudentPickup(assignmentId: string, studentName: string) {
@@ -159,15 +161,24 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
     let cancelled = false;
     async function poll() {
       try {
-        const res = await fetch(`/api/shuttle/arrival/${token}`);
+        // 들고 있는 번호를 함께 보냅니다. 안 바뀌었으면 서버가 계산도 안 하고 한 줄만
+        // 돌려줍니다 - 3초마다 두드리는 화면이라 이 차이가 큽니다.
+        const since = revRef.current !== null ? `?since=${revRef.current}` : "";
+        const res = await fetch(`/api/shuttle/arrival/${token}${since}`);
         if (!res.ok) {
           if (!cancelled) setErrorMsg("유효하지 않거나 종료된 링크입니다.");
           return;
         }
-        const json = (await res.json()) as ArrivalData;
+        const json = (await res.json()) as (ArrivalData & { revision?: number }) | { unchanged: true; revision: number };
         if (cancelled) return;
         setErrorMsg(null);
-        setData(json);
+        if ("unchanged" in json && json.unchanged) {
+          // 안 바뀌었으면 화면은 그대로. 다시 그리면 누르던 중에 손이 튑니다.
+          revRef.current = json.revision;
+          return;
+        }
+        if (typeof json.revision === "number") revRef.current = json.revision;
+        setData(json as ArrivalData);
       } catch {
         if (!cancelled) setErrorMsg("연결에 실패했습니다. 잠시 후 다시 시도합니다.");
       }

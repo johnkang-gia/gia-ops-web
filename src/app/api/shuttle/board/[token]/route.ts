@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { checkRevision, parseSince } from "@/lib/boardRevision";
 import { cached } from "@/lib/ttlCache";
 import { todayKst } from "@/lib/kst";
 import { ridesToday } from "@/lib/ridesToday";
@@ -15,7 +16,7 @@ export const dynamic = "force-dynamic";
 // 만들어줘" - 두 term이 안내보드에서 서로 섞이지 않도록). 예전에는 "파일럿(GPS) 링크가 켜진
 // 노선만" 보여줬지만, 여름캠프처럼 GPS 없이 도착체크만 쓰는 노선도 보여야 하므로 term 일치
 // 여부로 기준을 바꿨습니다.
-export async function GET(_req: Request, { params }: { params: Promise<{ token: string }> }) {
+export async function GET(req: Request, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -31,6 +32,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
     .maybeSingle();
   if (linkError) return NextResponse.json({ error: linkError.message }, { status: 500 });
   if (!link || !link.enabled) return NextResponse.json({ error: "유효하지 않거나 종료된 링크입니다." }, { status: 403 });
+
+  // 로비 화면도 3초마다 물어봅니다. 번호가 같으면 여기서 끝냅니다.
+  const rev = await checkRevision(supabase, "shuttle", parseSince(req.url), `board:${link.term}`);
+  if (!rev.stale) return NextResponse.json({ unchanged: true, revision: rev.revision });
 
   const { data: routes } = await cached(`brd:routes:${link.term}`, async () =>
     supabase
@@ -119,5 +124,5 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
     roster: rosterByRoute[r.id] ?? [],
   }));
 
-  return NextResponse.json({ label: link.label, youtubeVideoId: link.youtube_video_id, routes: payload });
+  return NextResponse.json({ label: link.label, youtubeVideoId: link.youtube_video_id, routes: payload, revision: rev.revision });
 }

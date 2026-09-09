@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { cached } from "@/lib/ttlCache";
 import { APP_VERSION } from "@/lib/version";
 import { buildStaffNames, categorize, extractTargetDate, matchRosterStudents, todayKey, type RosterStudent } from "@/lib/attendanceDigest";
 import { loadActiveEntries, loadUpcomingEntries } from "@/lib/attendanceEntries";
@@ -57,16 +58,21 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
 
   // ── ① 시간표 ────────────────────────────────────────────────────────────────
   const [{ data: periods }, { data: classes }] = await Promise.all([
-    supabase.from("wr_periods").select("id, period_no, label, start_time, end_time").eq("department", department).order("start_time"),
+    // 교시·반·명부는 **30초마다 바뀔 것이 아닙니다.** 잠깐 들고 있습니다(ttlCache).
+    cached(`periods:${department}`, async () =>
+      supabase.from("wr_periods").select("id, period_no, label, start_time, end_time").eq("department", department).order("start_time"),
+    ),
     // is_demo=false - 신입교사 오리엔테이션용 가짜 반/학생은 사무실 대시보드에 절대 나오면
     // 안 됩니다. 이 API는 service role 키로 조회해서 DB 보안규칙을 통과해버리므로(로그인 없는
     // 토큰 링크라 그래야 합니다), 여기서는 조건을 직접 붙여 걸러냅니다.
-    supabase
-      .from("wr_classes")
-      .select("id, grade, class_name, department, teacher_name, teacher_email, room")
-      .eq("is_demo", false)
-      .order("grade")
-      .order("class_name"),
+    cached("classes", async () =>
+      supabase
+        .from("wr_classes")
+        .select("id, grade, class_name, department, teacher_name, teacher_email, room")
+        .eq("is_demo", false)
+        .order("grade")
+        .order("class_name"),
+    ),
   ]);
 
   const deptClasses = (classes ?? [])
@@ -138,16 +144,24 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   }
 
   // ── ② 출결 + 픽업 ──────────────────────────────────────────────────────────
-  const { data: students } = await supabase
-    .from("wr_students")
-    .select("id, name, name_en, grade, class_name, department, birth_date")
-    .eq("status", "active")
-    .eq("is_demo", false);
-  const deptStudents = (students ?? []).filter((s) => departmentOf(s) === department);
-  const studentById = new Map((students ?? []).map((s) => [s.id, s]));
+  // ── 명부는 **한 번만** 읽습니다 ───────────────────────────────────────
+  //
+  // 예전에는 여기서 한 번(재학생), 아래 문의 이름을 한글로 바꾸는 데서 또 한 번(재학+보류)
+  // 읽었습니다. 같은 137명을 30초마다 두 벌씩 실어 날랐습니다. 넓은 쪽으로 한 번 읽고
+  // 좁은 쪽은 걸러 씁니다.
+  const { data: everyone } = await cached("students:all", async () =>
+    supabase
+      .from("wr_students")
+      .select("id, name, name_en, grade, class_name, department, birth_date, status")
+      .in("status", ["active", "보류"])
+      .eq("is_demo", false),
+  );
+  const students = (everyone ?? []).filter((s) => s.status === "active");
+  const deptStudents = students.filter((s) => departmentOf(s) === department);
+  const studentById = new Map(students.map((s) => [s.id, s]));
   // 부서를 가리지 않은 전체 명부 이름. 「이 이름이 다른 부서 아이인가, 아예 못 찾는 이름인가」를
   // 가르는 데 씁니다 - 둘을 같이 다루면 다른 부서 아이가 이 화면에 겹쳐 뜹니다.
-  const allStudentNames = new Set((students ?? []).map((s) => (s.name as string) ?? "").filter(Boolean));
+  const allStudentNames = new Set(students.map((s) => (s.name as string) ?? "").filter(Boolean));
   const deptStudentIds = new Set(deptStudents.map((s) => s.id));
 
   const { data: attendance } = await supabase
@@ -189,17 +203,16 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   // 담당자: "@Carina Ann John까지가 이름인데 carina ann까지만 읽어서 john이 요한이로 매칭돼."
   // 낱말 수로는 "@Janelle Story Maya"(마야는 학생)와 구별할 수 없습니다. 실제 성함인지가
   // 유일한 근거라, 계정 명단을 그대로 씁니다 - 선생님이 오시면 저절로 반영됩니다.
-  const { data: staffRows } = await supabase.from("app_users").select("name, email").limit(500);
-  const staffNames = buildStaffNames((staffRows as { name: string | null; email: string | null }[] | null) ?? []);
 
-  const scanFrom = new Date(nowKst.getTime() - 14 * 24 * 60 * 60 * 1000);
-  const { data: mirror } = await supabase
-    .from("google_chat_mirror_messages")
-    .select("id, content, created_at_google, source_key")
-    .eq("source_key", "attendance")
-    .gte("created_at_google", scanFrom.toISOString())
-    .order("created_at_google", { ascending: false })
-    .limit(300);
+  // ── 여기서 구글챗 원문을 읽던 자리 ──────────────────────────────────────
+  //
+  // 14일치 메시지 300건의 **본문을 통째로** 읽고 있었습니다. 그런데 파싱은 이미 위
+  // (2-a)로 옮겨져서, **읽어놓고 아무 데도 안 쓰고 버렸습니다.** 교직원 명단(app_users)도
+  // 그 파싱에만 쓰이던 것이라 같이 죽어 있었습니다.
+  //
+  // 이 화면은 30초마다 스스로 다시 물어봅니다. 하루 1,500번 넘게 쓰지도 않을 메시지
+  // 본문을 실어 나른 셈이고, 그게 Supabase 무료 한도(월 5GB)를 거의 통째로 먹었습니다.
+  // 안 쓰는 조회는 느려지는 것으로도 안 보이고 오류로도 안 보입니다 - 청구서에만 보입니다.
 
   // 영문명까지 넘겨야 "Diane Lim 결석"처럼 영어로 온 출결도 대조됩니다(업무 화면 출결내역은
   // 이미 이렇게 합니다). 이게 빠져서 대시보드에만 안 떴습니다.
@@ -333,17 +346,14 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   // 없어집니다.
   // 문의 이름을 한글로 바꾸기 위한 전체 명부(부서 무관). 학부모 채널 이름이 영어라
   // "Diane & Sunwoo Lim"으로 뜨는 것을 "임다이앤 & 임선우"로 바꿔줍니다.
-  const { data: allRoster } = await supabase
-    .from("wr_students")
-    // 생일까지 읽습니다 - 「김재이 (190510)」처럼 생일로 알려주시는 경우가 있고,
-    // 같은 학년 동명이인은 그것 말고는 갈릴 방법이 없습니다.
-    .select(ROSTER_SELECT)
-    .in("status", ["active", "보류"])
-    .eq("is_demo", false);
+  // 위에서 이미 읽은 명부(재학+보류)를 그대로 씁니다 - 같은 137명을 두 번 실어 나르던
+  // 자리였습니다. 생일까지 함께 읽어둡니다: 「김재이 (190510)」처럼 생일로 알려주시는
+  // 경우가 있고, 같은 학년 동명이인은 그것 말고는 갈릴 방법이 없습니다.
+  //
   // **손으로 옮기지 않습니다.** 예전에는 여기서 map 을 직접 썼고, 조회에는 있던 birth_date 가
   // 그 map 에서 빠져 있었습니다. 생일로 가르는 규칙은 멀쩡했는데 재료가 없어서, 김재이 셋이
   // 화면에는 그냥 「김재이」로 떴습니다. 빠뜨려도 오류가 아니라 «그냥 이름»으로 보입니다.
-  const nameRoster: RosterEntry[] = toRosterEntries(allRoster);
+  const nameRoster: RosterEntry[] = toRosterEntries(everyone);
 
   const { data: inquiryRows } = await supabase
     .from("pickup_requests")

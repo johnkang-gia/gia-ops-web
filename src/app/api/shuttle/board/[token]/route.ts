@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { cached } from "@/lib/ttlCache";
 import { todayKst } from "@/lib/kst";
 import { ridesToday } from "@/lib/ridesToday";
 import { isUndecidedChoice } from "@/lib/shuttleChoice";
@@ -31,13 +32,15 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
   if (linkError) return NextResponse.json({ error: linkError.message }, { status: 500 });
   if (!link || !link.enabled) return NextResponse.json({ error: "유효하지 않거나 종료된 링크입니다." }, { status: 403 });
 
-  const { data: routes } = await supabase
-    .from("shuttle_routes")
-    .select("id, route_no, name")
-    .eq("active", true)
-    .eq("direction", "하원")
-    .eq("term", link.term)
-    .order("sort_order");
+  const { data: routes } = await cached(`brd:routes:${link.term}`, async () =>
+    supabase
+      .from("shuttle_routes")
+      .select("id, route_no, name")
+      .eq("active", true)
+      .eq("direction", "하원")
+      .eq("term", link.term)
+      .order("sort_order"),
+  );
   const routeIds = (routes ?? []).map((r) => r.id);
   if (routeIds.length === 0) {
     return NextResponse.json({ label: link.label, youtubeVideoId: link.youtube_video_id, routes: [] });
@@ -50,17 +53,23 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
   // 동시에 시작합니다(요청: "실시간 반영 속도 더 개선") - 안내보드는 3초마다 폴링해서, 왕복을
   // 하나 줄이면 화면이 그만큼 더 빠르게 갱신됩니다.
   const [{ data: stops }, eventsRes] = await Promise.all([
-    supabase.from("shuttle_stops").select("id, route_id, seq").in("route_id", routeIds),
+    // 정류장·배정은 학기 중 거의 안 바뀝니다. 안내보드는 3초마다 물어보는 화면이라,
+    // 매번 다시 읽으면 안 바뀌는 것을 하루 수천 번 실어 나릅니다.
+    cached(`brd:stops:${routeIds.join(",")}`, async () =>
+      supabase.from("shuttle_stops").select("id, route_id, seq").in("route_id", routeIds),
+    ),
     supabase.from("shuttle_run_events").select("route_id, event, created_at").in("route_id", routeIds).eq("service_date", today).order("created_at", { ascending: true }),
   ]);
   const stopIds = (stops ?? []).map((s) => s.id);
   const stopById = new Map((stops ?? []).map((s) => [s.id, s]));
 
   const { data: assignments } = stopIds.length
-    ? await supabase
-        .from("shuttle_assignments")
-        .select("id, stop_id, student_name_raw, weekdays, override_route_id, choice_group")
-        .in("stop_id", stopIds)
+    ? await cached(`brd:assign:${stopIds.join(",")}`, async () =>
+        supabase
+          .from("shuttle_assignments")
+          .select("id, stop_id, student_name_raw, weekdays, override_route_id, choice_group")
+          .in("stop_id", stopIds),
+      )
     : { data: [] as { id: string; stop_id: string; student_name_raw: string; weekdays: number[]; override_route_id: string | null; choice_group: string | null }[] };
   // 체크표를 **먼저** 읽습니다. 요일로 먼저 거르면 오늘만 태우는 아이는 읽히지도 않습니다
   // - 자세한 사정은 ridesToday.ts 에 적어 두었습니다.

@@ -1,4 +1,5 @@
 import { pickByStudent, weekStartOf } from "./dismissalWeek";
+import { logApiError } from "./logging";
 
 /**
  * **오늘(또는 그날) 이 아이는 무엇을 타고 가는가** — 읽는 자리 전부가 여기를 지납니다.
@@ -18,6 +19,26 @@ import { pickByStudent, weekStartOf } from "./dismissalWeek";
 
 /** 읽어오는 칸. 자리마다 다르게 적으면 어느 화면에만 note 가 빠지는 식이 됩니다. */
 export const DISMISSAL_SELECT = "student_id, weekday, kind, label, depart_time, note, week_start";
+/** `week_start` 가 아직 없는 데이터베이스에서 쓰는 목록. 이때는 모든 줄이 「매주」입니다. */
+export const DISMISSAL_SELECT_LEGACY = "student_id, weekday, kind, label, depart_time, note";
+
+/**
+ * **칸이 아직 없는 상태인가.**
+ *
+ * 코드는 배포됐는데 마이그레이션이 아직 안 돌면 이 오류가 납니다. 그 사이에도 아이들은
+ * 집에 가야 하므로, 화면을 멈추는 대신 **있는 칸만으로 읽어 「매주」로 씁니다.**
+ *
+ * 다만 조용히 넘어가지는 않습니다 - 「이번주만」으로 넣어둔 하원수단이 안 보이는 상태이고,
+ * 그건 사람이 알아야 고칩니다.
+ */
+export function isMissingWeekStart(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  return error.code === "42703" || (error.message ?? "").includes("week_start");
+}
+
+/** 사람에게 보여줄 안내. 무엇이 안 보이는지와 무엇을 해야 하는지를 함께 적습니다. */
+export const WEEK_START_NOTICE =
+  "「이번주만·다음주만」 하원수단은 아직 안 보입니다. 지금은 매주 하원수단만 읽고 있습니다 — 관리자에게 스키마 반영을 알려주세요(20260914000000_dismissal_week.sql).";
 
 export type DismissalRow = {
   student_id: string;
@@ -59,24 +80,61 @@ export async function loadDismissalForDay(
     /** 이 아이들만. 담임 화면처럼 자기 반만 보는 자리에서 씁니다. */
     studentIds?: string[];
   },
-): Promise<{ rows: DismissalRow[]; byStudent: Map<string, DismissalRow>; error: string | null }> {
-  const empty = { rows: [] as DismissalRow[], byStudent: new Map<string, DismissalRow>(), error: null };
+): Promise<{
+  rows: DismissalRow[];
+  byStudent: Map<string, DismissalRow>;
+  error: string | null;
+  /** 읽기는 읽었는데 반쪽인 경우의 안내. 오류가 아니라 「지금 이만큼만 보입니다」입니다. */
+  notice: string | null;
+}> {
+  const empty = { rows: [] as DismissalRow[], byStudent: new Map<string, DismissalRow>(), error: null, notice: null };
   if (opts.weekday < 1 || opts.weekday > 5) return empty;
   if (opts.studentIds && opts.studentIds.length === 0) return empty;
 
   const ws = weekStartOf(opts.dayIso);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 서버·브라우저 클라이언트를 다 받습니다
-  let q: any = (supabase as Queryable).from("student_dismissal_plans").select(DISMISSAL_SELECT);
-  q = q.eq("weekday", opts.weekday).or(`week_start.is.null,week_start.eq.${ws}`);
-  if (opts.excludeShuttle) q = q.neq("kind", "셔틀");
-  if (opts.studentIds) q = q.in("student_id", opts.studentIds);
+  const build = (legacy: boolean): any => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let q: any = (supabase as Queryable)
+      .from("student_dismissal_plans")
+      .select(legacy ? DISMISSAL_SELECT_LEGACY : DISMISSAL_SELECT);
+    q = q.eq("weekday", opts.weekday);
+    if (!legacy) q = q.or(`week_start.is.null,week_start.eq.${ws}`);
+    if (opts.excludeShuttle) q = q.neq("kind", "셔틀");
+    if (opts.studentIds) q = q.in("student_id", opts.studentIds);
+    return q;
+  };
 
-  const { data, error } = (await q) as { data: DismissalRow[] | null; error: { message: string; code?: string } | null };
+  let { data, error } = (await build(false)) as {
+    data: DismissalRow[] | null;
+    error: { message: string; code?: string } | null;
+  };
+  let notice: string | null = null;
+
+  // **칸이 아직 없으면 있는 칸만으로 다시 읽습니다.**
+  //
+  // 코드는 배포됐는데 마이그레이션이 아직 안 돈 사이입니다. 그 사이에도 아이들은 집에
+  // 가야 하고, 여기서 멈추면 오늘 학원차 타는 아이가 아무 화면에도 안 뜹니다.
+  if (isMissingWeekStart(error)) {
+    const retry = (await build(true)) as { data: DismissalRow[] | null; error: { message: string } | null };
+    data = (retry.data ?? []).map((r) => ({ ...r, week_start: null }));
+    error = retry.error;
+    notice = WEEK_START_NOTICE;
+    // **오류 목록에도 남깁니다.**
+    //
+    // 예전에는 이런 실패를 `console.error` 로만 적었습니다. 그건 Vercel 로그로만 가고,
+    // 앱 안의 「오류 목록」(error_logs)에는 안 들어옵니다 - 그래서 화면에는 빨간 줄이
+    // 떴는데 오류 목록은 비어 있는, 사람이 헷갈리는 상태가 됐습니다.
+    // logApiError 는 실패해도 조용히 넘어가므로 여기서 불러도 안전합니다.
+    await logApiError(supabase, "dismissal:read", new Error(`week_start 칸이 아직 없습니다. ${WEEK_START_NOTICE}`));
+  }
+
   if (error) {
     // 표가 아직 없는 것(마이그레이션 전)은 조용히 넘어갑니다 - 그건 「자료가 없다」가 맞습니다.
     if (error.code === "PGRST205" || error.code === "42P01") return empty;
+    await logApiError(supabase, "dismissal:read", new Error(error.message));
     return { ...empty, error: error.message };
   }
   const rows = data ?? [];
-  return { rows, byStudent: pickByStudent(rows, ws), error: null };
+  return { rows, byStudent: pickByStudent(rows, ws), error: null, notice };
 }

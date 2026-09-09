@@ -1,6 +1,7 @@
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { isMissingWeekStart } from "@/lib/dismissalToday";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess, isStaffOrAboveUser } from "@/lib/roles";
 import DismissalPlanEditor from "@/components/students/DismissalPlanEditor";
@@ -120,12 +121,20 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
 
   // 요일별 하원수단(학원 버스·보호자 픽업·도보 등). 셔틀과 별개의 표입니다 - 셔틀을 안 타는
   // 날은 셔틀 배정 자체가 없어서 적을 자리가 없었습니다.
-  const { data: dpData } = await supabase
-    .from("student_dismissal_plans")
-    .select("id, student_id, weekday, kind, label, depart_time, note, week_start, updated_by, updated_at")
-    .eq("student_id", id)
-    .order("weekday");
-  const dismissalPlans = (dpData as DismissalPlan[] | null) ?? [];
+  //
+  // week_start 가 아직 없으면(마이그레이션 전) **있는 칸만으로 다시 읽습니다.** 없는 칸 하나
+  // 때문에 학생 프로필 전체가 안 뜨면, 하원수단이 아니라 그 아이의 모든 정보가 사라집니다.
+  const DP_COLS = "id, student_id, weekday, kind, label, depart_time, note, updated_by, updated_at";
+  const readPlans = async (withWeek: boolean) =>
+    supabase
+      .from("student_dismissal_plans")
+      .select(withWeek ? `${DP_COLS}, week_start` : DP_COLS)
+      .eq("student_id", id)
+      .order("weekday");
+  let dpRes = await readPlans(true);
+  if (isMissingWeekStart(dpRes.error)) dpRes = await readPlans(false);
+  if (dpRes.error) console.error("[학생] 하원수단을 읽지 못했습니다:", dpRes.error.message);
+  const dismissalPlans = ((dpRes.data ?? []) as unknown as DismissalPlan[]) ?? [];
 
   // 이 아이가 어느 셔틀을 타는지.
   //

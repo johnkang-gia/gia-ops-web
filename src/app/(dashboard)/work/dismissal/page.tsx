@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { isMissingWeekStart } from "@/lib/dismissalToday";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isStaffOrAboveUser } from "@/lib/roles";
 import GuideButton from "@/components/common/GuideButton";
@@ -62,7 +63,7 @@ export default async function DismissalBulkPage() {
   // 업무보드나 셔틀로 돌아가야 했는데, 그 왕복이 곧 «나중에 하자»가 됩니다.
   // 새 자료를 만들지 않습니다 - 저 두 곳이 원본이고 여기는 창문일 뿐입니다.
   const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
-  const [{ data: students }, { data: plans }, { data: inquiries }, { data: rides }] = await Promise.all([
+  const [{ data: students }, plansRes, { data: inquiries }, { data: rides }] = await Promise.all([
     supabase
       .from("wr_students")
       .select(ROSTER_SELECT)
@@ -85,6 +86,18 @@ export default async function DismissalBulkPage() {
       .from("shuttle_assignments")
       .select("student_id, student_name_raw, weekdays, stop_id, shuttle_stops(name, shuttle_routes(name))"),
   ]);
+
+  // week_start 가 아직 없으면(마이그레이션 전) **있는 칸만으로 다시 읽습니다.** 없는 칸 하나
+  // 때문에 이 화면이 통째로 비면, 하원수단을 고칠 자리 자체가 사라집니다.
+  let plans = plansRes.data as { id: string; student_id: string; weekday: number }[] | null;
+  if (isMissingWeekStart(plansRes.error)) {
+    const retry = await supabase
+      .from("student_dismissal_plans")
+      .select("id, student_id, weekday, kind, label, depart_time, note");
+    plans = retry.data as typeof plans;
+  } else if (plansRes.error) {
+    console.error("[하원수단] 목록을 읽지 못했습니다:", plansRes.error.message);
+  }
 
   // 동명이인을 가르는 재료(생일·반)까지 들어 있는 명부. 한 곳에서 만듭니다.
   const nameRoster = toRosterEntries(students);

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { todayKst, kstWeekday } from "@/lib/kst";
-import { loadDismissalForDay, DISMISSAL_SELECT, type DismissalRow } from "@/lib/dismissalToday";
+import { loadDismissalForDay, DISMISSAL_SELECT, isMissingWeekStart, type DismissalRow } from "@/lib/dismissalToday";
 import { addDays, nextWeekStart, weekStartOf } from "@/lib/dismissalWeek";
 
 /**
@@ -54,6 +54,7 @@ export default function TodayDismissalReminder({
   const [rows, setRows] = useState<Row[] | null>(null);
   const [ahead, setAhead] = useState<Ahead[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -63,7 +64,7 @@ export default function TodayDismissalReminder({
 
       // 「이번 주만」이 있으면 그것이 답이고 없으면 「매주」가 답입니다 - 판단은
       // loadDismissalForDay 한 곳에서 합니다.
-      const { byStudent, error: loadErr } = await loadDismissalForDay(supabase, {
+      const { byStudent, error: loadErr, notice: loadNotice } = await loadDismissalForDay(supabase, {
         dayIso: today,
         weekday,
         excludeShuttle: true,
@@ -73,6 +74,9 @@ export default function TodayDismissalReminder({
         setRows([]);
         return;
       }
+      // 읽기는 읽었는데 반쪽인 경우. 오류가 아니라 「지금 이만큼만 보입니다」입니다 -
+      // 빨간 줄로 띄우면 사람이 오늘 하원이 잘못된 줄 압니다.
+      if (loadNotice) setNotice(loadNotice);
 
       // 앞으로 예약된 것(이번 주 남은 날 + 다음 주). 「다음 주 화요일만 할머니가 데리러
       // 갑니다」를 넣어두면 지금까지는 그날 아침까지 아무 데도 안 보였습니다.
@@ -81,7 +85,8 @@ export default function TodayDismissalReminder({
         .select(DISMISSAL_SELECT)
         .in("week_start", [weekStartOf(today), nextWeekStart(today)])
         .neq("kind", "셔틀");
-      if (aheadErr && aheadErr.code !== "PGRST205" && aheadErr.code !== "42703") setError(aheadErr.message);
+      // 칸이 아직 없으면(마이그레이션 전) 예약이라는 개념 자체가 없습니다. 빈 목록이 맞습니다.
+      if (aheadErr && aheadErr.code !== "PGRST205" && !isMissingWeekStart(aheadErr)) setError(aheadErr.message);
 
       const todayIds = [...byStudent.keys()];
       const aheadPlans = ((aheadRows as DismissalRow[] | null) ?? [])
@@ -139,7 +144,7 @@ export default function TodayDismissalReminder({
   if (rows === null) return null;
   // 위젯 자리에서는 없으면 감춥니다(목록이 주인공입니다). 배너 자리는 비어 있어도 남깁니다 -
   // 「오늘은 없다」와 「못 읽었다」가 같아 보이면 안 됩니다.
-  if (variant === "위젯" && rows.length === 0 && !error) return null;
+  if (variant === "위젯" && rows.length === 0 && !error && !notice) return null;
 
   return (
     <div className="mb-2 rounded-xl border border-lime-200 bg-lime-50/60 px-2.5 py-2">
@@ -156,6 +161,11 @@ export default function TodayDismissalReminder({
         <p className="mb-1 rounded-lg bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-700">
           ⚠️ 하원수단을 읽지 못했습니다: {error}
         </p>
+      )}
+
+      {/* 반쪽만 읽은 상태. 오류가 아니라 「지금 이만큼만 보입니다」라고 적습니다. */}
+      {notice && (
+        <p className="mb-1 rounded-lg bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-800">⚠️ {notice}</p>
       )}
 
       {rows.length === 0 && !error ? (

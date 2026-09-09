@@ -344,6 +344,46 @@ function detectPeriod(
   };
 }
 
+/**
+ * **연락 한 건을 AI에게 읽히는 일**은 여기 한 곳에서만 합니다.
+ *
+ * 처음 들어올 때(`ingestPickup`)와, AI가 못 읽어서 나중에 다시 읽을 때(`/api/pickup/reread`)가
+ * **같은 판단**을 받아야 합니다. 두 곳에 각각 쓰면 다시 읽은 결과가 처음과 달라지고, 그러면
+ * 어느 쪽이 맞는지 아무도 모릅니다.
+ *
+ * 실패해도 예외를 던지지 않습니다 - 부르는 쪽이 연락을 버리지 않고 사람에게 넘길 수 있도록
+ * 「못 읽었다」를 값으로 돌려줍니다.
+ */
+export async function judgePickupText(
+  text: string,
+  ctx: { channelHint: string; todayKst: string; todayWeekday: number },
+): Promise<{ ai: AiOut; failed: boolean; reason: string | null }> {
+  try {
+    // AI가 "이번주 목요일"을 실제 날짜로 옮기려면 오늘이 며칠 무슨 요일인지 알아야 합니다.
+    const wd = ["일", "월", "화", "수", "목", "금", "토"][ctx.todayWeekday] ?? "?";
+    const todayHint = `\n\n[오늘] ${ctx.todayKst} (${wd}요일). 이번 주 월요일은 ${mondayOfWeek(ctx.todayKst, ctx.todayWeekday)}입니다.`;
+    const raw = await callClaudeJson(SYSTEM, `연락 내용:\n"""\n${text}\n"""${ctx.channelHint}${todayHint}`, {
+      model: CLAUDE_MODEL_FAST,
+      maxTokens: 500,
+      route: "pickup-ingest",
+    });
+    return { ai: (raw ?? {}) as AiOut, failed: false, reason: null };
+  } catch (err) {
+    // AI 호출이 실패해도 연락 자체를 버리면 안 됩니다. 문의로 남겨 사람이 보게 합니다.
+    //
+    // **왜 실패했는지도 남깁니다.** 예전에는 「AI 판단에 실패해 사람 확인이 필요합니다」만
+    // 적혀서, 잠깐 끊긴 것인지 결제가 막힌 것인지 구별할 수 없었습니다. 결제가 막힌 것이면
+    // 그 사이에 들어온 연락이 전부 같은 이유로 안 읽혔다는 뜻이라, 채우고 나서 다시 읽혀야
+    // 합니다 - 그 판단을 사람이 하려면 이유가 있어야 합니다.
+    const reason = err instanceof Error ? err.message.slice(0, 120) : "알 수 없는 오류";
+    return {
+      ai: { kind: "문의", confidence: 0, note: `AI 판단에 실패해 사람 확인이 필요합니다 (${reason})` },
+      failed: true,
+      reason,
+    };
+  }
+}
+
 export async function ingestPickup(
   supabase: SupabaseClient,
   input: IngestInput,
@@ -371,21 +411,8 @@ export async function ingestPickup(
     ? `\n\n[채널 정보] 이 연락은 "${channel.names.join(", ")}" 학생(${channel.grades.join(", ")}) 가정의 대화방에서 왔습니다.`
     : "";
 
-  let ai: AiOut = {};
-  try {
-    // AI가 "이번주 목요일"을 실제 날짜로 옮기려면 오늘이 며칠 무슨 요일인지 알아야 합니다.
-    const wd = ["일", "월", "화", "수", "목", "금", "토"][todayWeekday] ?? "?";
-    const todayHint = `\n\n[오늘] ${todayKst} (${wd}요일). 이번 주 월요일은 ${mondayOfWeek(todayKst, todayWeekday)}입니다.`;
-    const raw = await callClaudeJson(SYSTEM, `연락 내용:\n"""\n${text}\n"""${channelHint}${todayHint}`, {
-      model: CLAUDE_MODEL_FAST,
-      maxTokens: 500,
-      route: "pickup-ingest",
-    });
-    ai = (raw ?? {}) as AiOut;
-  } catch {
-    // AI 호출이 실패해도 연락 자체를 버리면 안 됩니다. 문의로 남겨 사람이 보게 합니다.
-    ai = { kind: "문의", confidence: 0, note: "AI 판단에 실패해 사람 확인이 필요합니다." };
-  }
+  const judged = await judgePickupText(text, { channelHint, todayKst, todayWeekday });
+  const ai: AiOut = judged.ai;
 
   const kind = (pick(ai.kind, ["픽업", "문의", "기타"]) ?? "문의") as "픽업" | "문의" | "기타";
   let confidence = typeof ai.confidence === "number" ? Math.max(0, Math.min(1, ai.confidence)) : 0;

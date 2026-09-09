@@ -8,7 +8,7 @@ import { displayInquiryType } from "@/lib/inquiryType";
 import { createClient } from "@supabase/supabase-js";
 import { kstParts } from "@/lib/shuttleTracking";
 import { departmentOf, gradeSortKey, isVisibleDepartment, VISIBLE_DEPARTMENTS, type VisibleDepartment } from "@/lib/department";
-import { loadDismissalForDay, DISMISSAL_SELECT, type DismissalRow } from "@/lib/dismissalToday";
+import { loadDismissalForDay, DISMISSAL_SELECT, isMissingWeekStart, type DismissalRow } from "@/lib/dismissalToday";
 import { addDays, nextWeekStart, weekStartOf } from "@/lib/dismissalWeek";
 
 export const dynamic = "force-dynamic";
@@ -521,11 +521,16 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   // 오늘이면 위의 픽업·학원차 목록으로 가고, 앞날이면 여기로 옵니다 - 결석 「예정」과 같은
   // 자리에 서서 며칠 전부터 모두가 눈에 담습니다. 지우는 일은 사람이 하지 않습니다.
   // 그날이 되면 저절로 오늘 목록으로 넘어갑니다.
-  const { data: aheadRows } = await supabase
+  // 칸이 아직 없으면(마이그레이션 전) 예약이라는 개념 자체가 없습니다. 빈 목록이 맞습니다 -
+  // 여기서 오류를 내면 대시보드 전체가 멈춥니다.
+  const { data: aheadRows, error: aheadErr } = await supabase
     .from("student_dismissal_plans")
     .select(DISMISSAL_SELECT)
     .in("week_start", [weekStartOf(todayK), nextWeekStart(todayK)])
     .neq("kind", "셔틀");
+  if (aheadErr && !isMissingWeekStart(aheadErr)) {
+    console.error("[ops-board] 예약된 하원수단 조회 실패:", aheadErr.message);
+  }
   const dismissalAhead = ((aheadRows as DismissalRow[] | null) ?? [])
     .map((p) => ({ ...p, date: addDays(p.week_start as string, p.weekday - 1) }))
     // 오늘·지난 날은 뺍니다. 오늘 것은 이미 위에 있고, 지난 것은 지금 할 수 있는 일이 없습니다.

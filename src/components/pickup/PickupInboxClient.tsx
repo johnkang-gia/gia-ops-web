@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { todayKst } from "@/lib/kst";
 import { useToast } from "@/components/common/ToastProvider";
 import UpcomingPickups, { type ScheduleRow } from "@/components/pickup/UpcomingPickups";
@@ -70,6 +71,7 @@ export default function PickupInboxClient({
   schedules: ScheduleRow[];
 }) {
   const notify = useToast();
+  const router = useRouter();
   const [rows, setRows] = useState(initialRows);
   const [busy, setBusy] = useState(false);
   const [manual, setManual] = useState("");
@@ -77,6 +79,45 @@ export default function PickupInboxClient({
   const [showDone, setShowDone] = useState(false);
 
   const pending = useMemo(() => rows.filter((r) => r.status === "확인대기"), [rows]);
+  /** AI가 못 읽어서 요약·시각이 비어 있는 줄. 원문은 남아 있어 다시 읽을 수 있습니다. */
+  const unread = useMemo(() => rows.filter((r) => (r.ai_note ?? "").startsWith("AI 판단에 실패")), [rows]);
+
+  /**
+   * 못 읽은 연락을 처음과 **같은 판단**에 다시 태웁니다.
+   *
+   * **셔틀에는 자동으로 반영하지 않습니다.** 며칠 전 「오늘 3시 픽업」을 오늘 자동으로 걸면
+   * 엉뚱한 날 아이가 명단에서 빠집니다. 채워 넣기만 하고, 거는 것은 여기서 사람이 합니다.
+   */
+  async function rereadFailed() {
+    setBusy(true);
+    try {
+      const res = await fetch("/api/pickup/reread", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ days: 14 }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        reread?: number;
+        stillFailed?: number;
+        failures?: string[];
+        error?: string;
+      };
+      if (!res.ok) return notify(body.error ?? "다시 읽지 못했습니다.", "error");
+      // 또 실패했으면 원인이 아직 안 고쳐진 것입니다. 「0건」만 뜨면 왜 안 됐는지 모릅니다.
+      if (body.stillFailed) {
+        notify(
+          `${body.reread ?? 0}건을 다시 읽었고, ${body.stillFailed}건은 또 실패했습니다` +
+            (body.failures?.length ? `: ${body.failures.join(" / ")}` : "."),
+          "error",
+        );
+      } else {
+        notify(`${body.reread ?? 0}건을 다시 읽었습니다. 맞는지 보고 등록해주세요.`, "success");
+      }
+      router.refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
   const confirmed = useMemo(
     () => rows.filter((r) => r.status === "확정").sort((a, b) => (a.ai_pickup_time ?? "99").localeCompare(b.ai_pickup_time ?? "99")),
     [rows]
@@ -315,6 +356,20 @@ export default function PickupInboxClient({
             <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-700">{pending.length}건</span>
           ) : (
             <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700">없음</span>
+          )}
+          {/* AI가 못 읽은 건이 있으면 그것부터 알려줍니다.
+              결제가 막히거나 연결이 끊기면 그 사이 연락이 **전부** 안 읽힌 채로 쌓입니다.
+              요약도 없이 원문만 있는 줄이라 사람이 하나씩 열어봐야 하는데, 바쁜 하원 시간에
+              그걸 다 읽는 사람은 없습니다. 안 읽은 것은 없는 것과 같습니다. */}
+          {unread.length > 0 && (
+            <button
+              onClick={rereadFailed}
+              disabled={busy}
+              title="AI가 못 읽어서 요약·시각이 비어 있는 연락을 다시 읽습니다. 셔틀에는 자동으로 반영하지 않고, 채워 넣기만 합니다."
+              className="rounded-full bg-rose-600 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-rose-700 disabled:opacity-40"
+            >
+              🔄 AI가 못 읽은 {unread.length}건 다시 읽기
+            </button>
           )}
           <button
             onClick={rematchAll}

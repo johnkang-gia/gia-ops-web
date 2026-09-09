@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { boardDayKst } from "@/lib/boardDay";
 import DismissalOpsClient from "./DismissalOpsClient";
 import { VISIBLE_DEPARTMENTS } from "@/lib/department";
 import { useKstClock } from "@/lib/useKstClock";
@@ -190,6 +191,26 @@ export default function OpsBoardClient({ token }: { token: string }) {
 
   useEffect(() => {
     load();
+  }, [load]);
+
+  // ── 하루가 바뀌면 곧바로 다시 읽습니다 ──────────────────────────────────
+  //
+  // 이 화면은 사무실 큰 모니터에 **하루 종일 켜져 있습니다.** 날짜가 바뀌어도 아무도
+  // 새로고침하지 않으니, 어제 픽업이 오늘 화면에 그대로 남아 있었습니다. 오류가 아니라
+  // 「어제 자료」라서 보는 사람은 오늘 것인 줄 압니다.
+  //
+  // 기준을 자정이 아니라 **아침 8시**로 둡니다. 새벽에 화면을 보는 사람은 아직 「어제」를
+  // 마무리하는 중이고, 하루가 실제로 바뀌는 것은 아이들이 오는 때입니다.
+  useEffect(() => {
+    let last = boardDayKst();
+    const t = setInterval(() => {
+      const now = boardDayKst();
+      if (now !== last) {
+        last = now;
+        void load();
+      }
+    }, 60_000);
+    return () => clearInterval(t);
   }, [load]);
   // 서버 호출 절감(Vercel 무료 한도): 화면이 안 보이면 멈추고, 하원 시간대(평일 14~19시)가
   // 아니면 느리게 돕니다. 대형 모니터에 하루 종일 띄워둬도 호출량이 크게 줄어듭니다.

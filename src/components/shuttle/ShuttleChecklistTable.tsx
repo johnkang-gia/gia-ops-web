@@ -449,16 +449,23 @@ export default function ShuttleChecklistTable({
                               {/* 오늘 요일의 하원수단이 셔틀이 아닌 아이. **인쇄본에도 남깁니다** -
                                   종이를 들고 있는 동승 선생님이 "이 아이는 어디로 가는가"를
                                   물어볼 곳이 종이뿐입니다. */}
-                              {item.dismissalPlan && (
-                                <span
-                                  className="ml-1 rounded-full bg-violet-100 px-1 text-[8px] font-bold text-violet-700"
-                                  title={`오늘 하원수단: ${item.dismissalPlan.kind}${item.dismissalPlan.label ? " " + item.dismissalPlan.label : ""}${item.dismissalPlan.departTime ? " " + item.dismissalPlan.departTime : ""} — 학생 프로필에서 고칩니다`}
-                                >
-                                  {item.dismissalPlan.departTime ? item.dismissalPlan.departTime + " " : ""}
-                                  {item.dismissalPlan.label ?? item.dismissalPlan.kind}
-                                </span>
-                              )}
                             </span>
+                            {/* ── 하원수단은 **이름 아래 줄**에 적습니다 ────────────────
+                                예전에는 이름 옆에 붙였습니다. 한우영·백서아처럼 학원 이름이
+                                긴 아이가 있으면 그 칸 하나 때문에 표가 옆으로 늘어나고,
+                                **가로로 늘어난 표는 다른 호차 칸까지 밀어** 페이지 전체가
+                                어긋납니다. 세로로는 얼마든지 늘어나도 괜찮습니다.
+                                글자를 줄이지 않고 자리를 옮긴 이유입니다 - 줄이면 「메타프랩」과
+                                「메타프랩(수)」를 구별 못 합니다. */}
+                            {item.dismissalPlan && (
+                              <span
+                                className="max-w-[9rem] truncate rounded bg-violet-100 px-1 text-[8px] font-bold leading-tight text-violet-700"
+                                title={`오늘 하원수단: ${item.dismissalPlan.kind}${item.dismissalPlan.label ? " " + item.dismissalPlan.label : ""}${item.dismissalPlan.departTime ? " " + item.dismissalPlan.departTime : ""} — 학생 프로필에서 고칩니다`}
+                              >
+                                {item.dismissalPlan.departTime ? item.dismissalPlan.departTime + " " : ""}
+                                {item.dismissalPlan.label ?? item.dismissalPlan.kind}
+                              </span>
+                            )}
                             {enName && (
                               <span className="max-w-[9rem] truncate text-[9px] font-medium leading-none text-yellow-800/70 print:hidden">
                                 {enName}

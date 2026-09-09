@@ -123,25 +123,24 @@ export async function scanIntoEntries(
     let matched = matchRosterStudents(m.text, roster, rules, staffNames, m.mentionSpans, m.mentionClassNames)
       .map((s) => {
         const full = roster.find((r) => r.name === s.name);
-        return { id: full?.id ?? null, name: s.name, display: s.displayName, grade: s.grade, className: full?.className ?? null };
+        return {
+          id: full?.id ?? null,
+          name: s.name,
+          display: s.displayName,
+          grade: s.grade,
+          className: full?.className ?? null,
+          // **누구인지 못 정했는가.** 아래에서 이 값만 보고 확인 여부를 정합니다.
+          ambiguous: s.ambiguous === true,
+        };
       })
-      .filter((s): s is { id: string; name: string; display: string; grade: string | null; className: string | null } => !!s.id);
+      .filter(
+        (s): s is { id: string; name: string; display: string; grade: string | null; className: string | null; ambiguous: boolean } => !!s.id,
+      );
 
     if (matched.length === 0 && m.studentId) {
       const s = roster.find((r) => r.id === m.studentId);
-      if (s?.id) matched = [{ id: s.id, name: s.name, display: s.name, grade: s.grade, className: s.className ?? null }];
+      if (s?.id) matched = [{ id: s.id, name: s.name, display: s.name, grade: s.grade, className: s.className ?? null, ambiguous: false }];
     }
-
-    // 애매한 이유를 남깁니다. 화면의 물음표를 눌렀을 때 "왜 확인이 필요한지"가 보여야
-    // 사람이 1초 만에 판단할 수 있습니다.
-    const reason =
-      matched.length === 0
-        ? "명부에서 학생을 찾지 못했습니다"
-        : matched.length > 1
-          ? `이름이 ${matched.length}명과 겹칩니다`
-          : !range
-            ? "날짜가 적혀 있지 않습니다"
-            : null;
 
     // 학생을 못 찾으면 누구 것인지 모르니 줄을 만들 수도 없습니다. 인박스에는 원본이 그대로
     // 남아 있으므로, 사람이 보고 직접 등록하면 됩니다.
@@ -166,8 +165,6 @@ export async function scanIntoEntries(
     // 이제는 자른 쪽이 `clamped` 로 알려주고, 여기서는 그 사실만 사람에게 넘깁니다.
     const spanTooLong = range?.clamped === true;
 
-    const state: EntryState = reason || spanTooLong ? "확인필요" : "등록";
-
     for (const st of matched) {
       // 한 글에 아이가 여럿이면 아이마다 따로 읽습니다.
       // "권수호, 황준호 픽업입니다, 라원 라윤이는 셔틀타요" - 뒤의 둘은 평소대로 셔틀입니다.
@@ -186,6 +183,26 @@ export async function scanIntoEntries(
         skipped += 1;
         continue;
       }
+
+      // ── 확인이 필요한지는 **아이마다** 정합니다 ─────────────────────────
+      //
+      // 예전에는 「글에 아이가 둘 이상이면」 둘 다 확인 필요로 두었습니다. 그런데 글에
+      // 아이가 여럿인 것과 **이 아이가 누구인지 모르는 것**은 전혀 다릅니다.
+      // 「문준연, 권수호 픽업입니다」는 둘 다 확실한데도 둘 다 물음표가 됐습니다 -
+      // 확인할 것이 없는 물음표가 쌓이면 사람은 물음표 자체를 안 보게 됩니다.
+      //
+      // 진짜 애매함은 `ambiguous` 하나입니다(김재이 셋 중 누구인지 못 정한 경우).
+      //
+      // 날짜가 안 적힌 것도 픽업에서는 이유가 아닙니다. **픽업의 원칙은 그날 하루**라,
+      // 날짜를 안 적으신 것은 «오늘»이라는 뜻입니다. 결석·지각은 며칠인지가 판단의
+      // 재료라 그대로 확인을 받습니다.
+      const reason = st.ambiguous
+        ? "같은 이름이 여럿이라 누구인지 못 정했습니다"
+        : !range && status !== "픽업"
+          ? "날짜가 적혀 있지 않습니다"
+          : null;
+      const state: EntryState = reason || spanTooLong ? "확인필요" : "등록";
+
       const key = `${m.source}|${m.messageId}|${st.display}|${status}`;
       const prev = existing.get(key);
       if (prev) {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { todayKst } from "@/lib/kst";
 import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import type { DepartmentMemo, GoogleChatMirrorMessage } from "@/lib/types";
@@ -62,8 +63,16 @@ function rangeChip(from: string, to: string): string | null {
   return `~${Number(m)}/${Number(d)}`;
 }
 
-/** 하루짜리일 때 칩에 적는 짧은 날짜. 날짜가 안 보이면 고칠 생각도 안 납니다. */
+/**
+ * 하루짜리일 때 칩에 적는 짧은 날짜. 날짜가 안 보이면 고칠 생각도 안 납니다.
+ *
+ * **오늘이면 「오늘」이라고 적습니다.** 이 화면에서 가장 자주 보는 것이 오늘 것인데,
+ * 「9/10」이라고만 적혀 있으면 볼 때마다 오늘 날짜를 머릿속에서 견줘야 합니다.
+ * 어제·내일은 그대로 날짜로 둡니다 - 「어제」·「내일」까지 말로 바꾸면 며칠인지가
+ * 사라져서, 기간을 고칠 때 쓸 재료가 없어집니다.
+ */
 function shortDay(key: string): string {
+  if (key === todayKst()) return "오늘";
   const [, m, d] = key.split("-");
   return `${Number(m)}/${Number(d)}`;
 }

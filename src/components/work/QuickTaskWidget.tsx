@@ -1,6 +1,7 @@
 "use client";
 
 import { realPeople } from "@/lib/taskAck";
+import { fetchCurrentTerm } from "@/lib/termQuery";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
@@ -120,18 +121,22 @@ export default function QuickTaskWidget({
     if (academicTerm || academicLoading) return;
     setAcademicLoading(true);
     const supabase = createClient();
-    const [{ data: terms, error: tErr }, { data: tpl }] = await Promise.all([
-      supabase.from("terms").select("*").eq("is_current", true).limit(1),
+    const [{ term, error: tErr }, { data: tpl }] = await Promise.all([
+      // `is_current` 는 요금 학기표(fee_terms)의 칸입니다. 학사 학기표는 `status` 로
+      // 「진행중」을 나타냅니다 - 없는 칸을 물어봐서 팝업이 열리자마자 오류가 났습니다.
+      fetchCurrentTerm<Term>(supabase),
       supabase.from("academic_checklist_templates").select("*").order("sort_order", { ascending: true }),
     ]);
     setAcademicLoading(false);
     if (tErr) {
       // 조용히 넘어가지 않습니다. 학기를 못 읽으면 「학기시작 2주 전」이 계산되지 않는데,
       // 팝업만 열리면 사람은 화면이 고장 난 줄 압니다.
-      notify(`학기 정보를 읽지 못했습니다: ${tErr.message}`, "error");
+      notify(`학기 정보를 읽지 못했습니다: ${tErr}`, "error");
       return;
     }
-    setAcademicTerm(((terms as Term[] | null) ?? [])[0] ?? null);
+    // 학기가 아직 없는 것은 오류가 아닙니다 - 팝업은 열리고, 「학기시작 2주 전」 같은
+    // 상대 날짜만 못 씁니다. 그 사실은 팝업 안에서 알려줍니다.
+    setAcademicTerm(term ?? null);
     setAcademicTemplates((tpl as ChecklistTemplate[] | null) ?? []);
   }
   const [submitting, setSubmitting] = useState(false);

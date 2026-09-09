@@ -188,10 +188,35 @@ export default function GoogleChatRooms({ messages, currentUserName }: { message
     [messages, active],
   );
 
-  // 새 메시지가 오면 맨 아래로. 다만 위를 읽고 있을 때는 끌어내리지 않습니다.
+  /**
+   * 열자마자 **맨 아래**를 보여줍니다. 새 메시지는 아래에 쌓이니까요.
+   *
+   * 예전에는 「아래를 보고 있을 때만」 끌어내렸는데, 화면을 처음 그릴 때는 스크롤이 맨 위
+   * (scrollTop 0)라 «아래를 보고 있지 않은» 것으로 판정됐습니다. 그래서 페이지를 열 때마다,
+   * 새로고침할 때마다, 방을 바꿀 때마다 **가장 오래된 글**부터 보여주고 사람이 매번 손으로
+   * 끝까지 내려야 했습니다.
+   *
+   * 처음 그릴 때와 방을 바꿀 때는 조건 없이 내리고, 그 뒤 새 글이 왔을 때만 「위를 읽는
+   * 중이면 그대로 둔다」를 적용합니다 - 읽던 자리를 뺏기는 것도 그만큼 나쁩니다.
+   */
+  const settledRoomRef = useRef<string | null>(null);
   useEffect(() => {
     const el = listRef.current;
     if (!el) return;
+    const firstPaintForRoom = settledRoomRef.current !== active;
+
+    if (firstPaintForRoom) {
+      // 두 번 내립니다. 첫 번째는 지금 있는 높이 기준이고, 그림이 다 그려진 뒤 높이가
+      // 늘어나면 첫 번째만으로는 중간에 멈춥니다.
+      el.scrollTop = el.scrollHeight;
+      const id = requestAnimationFrame(() => {
+        const cur = listRef.current;
+        if (cur) cur.scrollTop = cur.scrollHeight;
+      });
+      if (items.length > 0) settledRoomRef.current = active;
+      return () => cancelAnimationFrame(id);
+    }
+
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
     if (nearBottom) el.scrollTop = el.scrollHeight;
   }, [items.length, active]);

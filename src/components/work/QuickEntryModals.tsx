@@ -250,20 +250,32 @@ export function ManualAttendanceModal({
   initialName,
   messageId,
   rawText,
+  initialStatus,
+  initialFrom,
+  initialTo,
+  fromName,
   onClose,
   onSaved,
 }: {
   initialName?: string;
   messageId?: string | null;
   rawText?: string | null;
+  /** 인박스에서 열 때 **자동이 읽은 값**을 그대로 채워둡니다(틀린 데만 고치도록). */
+  initialStatus?: string;
+  initialFrom?: string;
+  initialTo?: string;
+  /** 자동이 추정해 화면에 떠 있던 이름. 다른 아이로 정하면 그 줄을 내립니다. */
+  fromName?: string | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const today = todayKst();
   const [student, setStudent] = useState<StudentPick | null>(null);
-  const [status, setStatus] = useState<string>("결석");
-  const [from, setFrom] = useState(today);
-  const [to, setTo] = useState(today);
+  const [status, setStatus] = useState<string>(
+    initialStatus && (STATUSES as readonly string[]).includes(initialStatus) ? initialStatus : "결석",
+  );
+  const [from, setFrom] = useState(initialFrom || today);
+  const [to, setTo] = useState(initialTo || initialFrom || today);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -285,6 +297,7 @@ export function ManualAttendanceModal({
           note: note.trim() || null,
           messageId: messageId ?? null,
           rawText: rawText ?? null,
+          fromName: fromName ?? null,
         },
       }),
     });
@@ -299,6 +312,18 @@ export function ManualAttendanceModal({
 
   return (
     <Shell title="출결 직접 등록" onClose={onClose}>
+      {/* ── 근거가 되는 원문 ──────────────────────────────────────────────
+          손으로 넣은 기록은 나중에 «왜 이 날짜인가»를 물어보는 순간이 옵니다. 그때 근거가
+          없으면 넣은 사람도 기억하지 못하고, 결국 아무도 못 고칩니다. 인박스에서 열었으면
+          그 연락이 곧 근거이므로 **함께 저장하고 여기 그대로 보여줍니다.** */}
+      {rawText && (
+        <div className="mb-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
+          <p className="mb-0.5 text-[10px] font-bold text-slate-400">이 연락을 근거로 저장합니다</p>
+          <p className="max-h-20 overflow-y-auto whitespace-pre-wrap break-words text-[11px] leading-relaxed text-slate-600">
+            {rawText}
+          </p>
+        </div>
+      )}
       <div className="mb-2">
         <p className="mb-1 text-[11px] font-semibold text-slate-500">학생</p>
         <StudentPicker value={student} onPick={setStudent} initialQuery={initialName} />

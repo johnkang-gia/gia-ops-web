@@ -181,6 +181,12 @@ export async function PATCH(req: NextRequest) {
       note?: string | null;
       messageId?: string | null;
       rawText?: string | null;
+      /**
+       * 화면에 잘못 떠 있던 이름. 인박스에서 「📅 기간」으로 넣을 때, 자동이 추정한 이름
+       * (「Zoe」·원문 앞부분)으로 잡혀 있던 줄을 함께 내립니다. 안 내리면 같은 연락이
+       * 두 줄로 남아 한 아이가 두 번 세어집니다.
+       */
+      fromName?: string | null;
     };
     // **오늘만 이 아이로.** 규칙을 만들지 않고 이 한 건만 사람이 정합니다.
     assign?: {
@@ -255,6 +261,26 @@ export async function PATCH(req: NextRequest) {
     }
     const from = ok(m.dateFrom) ? m.dateFrom! : todayKey(new Date());
     const to = ok(m.dateTo) && m.dateTo! >= from ? m.dateTo! : from;
+
+    // 자동이 추정한 이름으로 남아 있던 줄을 먼저 내립니다. 사람이 「이 연락은 한우영
+    // 이야기」라고 정해준 순간, 「Zoe」로 잡혀 있던 줄은 같은 연락의 중복입니다.
+    if (m.messageId && m.fromName && m.fromName !== m.studentName) {
+      const { error: offErr } = await db.from("attendance_entries").upsert(
+        {
+          source: "googlechat",
+          source_message_id: m.messageId,
+          student_name: m.fromName,
+          status: m.status,
+          date_from: from,
+          date_to: to,
+          state: "무시",
+          touched_by_human: true,
+          note: `사람이 ${m.studentName} 으로 직접 등록해 이 줄은 내림`,
+        },
+        { onConflict: "source,source_message_id,student_name,status" },
+      );
+      if (offErr) return NextResponse.json({ error: offErr.message }, { status: 500 });
+    }
 
     const { error } = await db.from("attendance_entries").upsert(
       {

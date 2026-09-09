@@ -71,12 +71,15 @@ function RegBadge({
   busyKey,
   onSet,
   onEditRange,
+  onFill,
 }: {
   entry: AttendanceEntry;
   regs: Map<string, RegRow>;
   busyKey: string | null;
   onSet: (e: AttendanceEntry, next: "등록" | "무시") => void;
   onEditRange: (row: RegRow, name: string) => void;
+  /** 등록 줄이 아직 없는 항목을 **사람이 기간까지 정해** 넣는 자리. */
+  onFill: (e: AttendanceEntry) => void;
 }) {
   const key = `${entry.messageId}|${entry.studentName}|${entry.category}`;
   const row = regs.get(key);
@@ -85,6 +88,19 @@ function RegBadge({
   if (!row) {
     return (
       <span className="flex shrink-0 items-center gap-0.5">
+        {/* 📅 **기간을 손으로 넣는 자리.**
+            자동이 학생을 못 찾았거나 기간을 못 읽은 줄에는 지금까지 ✕(내리기)밖에 없었습니다.
+            「16일부터 28일까지 결석입니다」처럼 사람은 분명히 적어 보냈는데 화면에서는
+            아무것도 할 수 없어, 결국 다른 화면에 다시 적거나 종이에 적게 됩니다.
+            누르면 **이 메시지를 근거로 달고** 학생·종류·기간을 정해 등록합니다. */}
+        <button
+          type="button"
+          onClick={() => onFill(entry)}
+          className="rounded bg-slate-100 px-1 text-[9px] font-semibold text-slate-500 transition hover:bg-emerald-100 hover:text-emerald-800"
+          title="기간을 직접 넣어 등록합니다 - 이 메시지가 근거로 남습니다"
+        >
+          📅 기간
+        </button>
         {/* 빈 네모(⬜)를 없앴습니다.
             담당자: "출결내역 이름 옆에 아직도 네모칸 있어, 이거 거슬려."
             맞는 말입니다. ⬜는 "아직 등록 대상이 아니다"라는 **없음**을 그린 것인데,
@@ -314,7 +330,35 @@ export default function AttendanceDigestPanel({
   // 저장이 됐다는 것도 말해줍니다. 아무 말이 없으면 사람은 안 됐다고 생각하고 또 누릅니다.
   const [notice, setNotice] = useState<string | null>(null);
   // 자동이 아예 못 읽은 연락을 손으로 넣는 창.
-  const [manual, setManual] = useState<{ name?: string; messageId?: string | null; raw?: string | null } | null>(null);
+  const [manual, setManual] = useState<{
+    name?: string;
+    messageId?: string | null;
+    raw?: string | null;
+    status?: string;
+    from?: string;
+    to?: string;
+    fromName?: string | null;
+  } | null>(null);
+
+  /**
+   * 자동이 등록 줄로 만들지 못한 항목을 **읽은 것 그대로 채워** 등록 창을 엽니다.
+   *
+   * 빈 창을 띄우면 사람이 이름·종류·날짜를 처음부터 다시 칩니다. 원문은 바로 옆에 있는데
+   * 손으로 옮겨 적게 하는 셈이라, 옮겨 적다 틀리거나 아예 «나중에»가 됩니다.
+   * 읽은 값을 미리 넣어두고 **틀린 데만 고치게** 합니다. 원문(rawText)과 메시지 번호를
+   * 함께 보내 이 등록의 근거로 남깁니다.
+   */
+  function openFill(e: AttendanceEntry) {
+    setManual({
+      name: e.unmatched ? "" : e.studentName,
+      messageId: e.messageId ?? null,
+      raw: e.rawText,
+      status: e.category,
+      from: e.targetDate,
+      to: e.targetDateTo ?? e.targetDate,
+      fromName: e.studentName,
+    });
+  }
   // 「내일은 학원차 타요」를 탭을 옮기지 않고 여기서 넣는 창.
   const [dismissal, setDismissal] = useState<{ name?: string } | null>(null);
 
@@ -742,7 +786,7 @@ export default function AttendanceDigestPanel({
                           ) : (
                             <span className="truncate text-[11px] font-semibold text-slate-700">{e.studentName}</span>
                           )}
-                          <RegBadge entry={e} regs={regs} busyKey={busyKey} onSet={setState} onEditRange={(row, nm) => setRangeEdit({ row, name: nm })} />
+                          <RegBadge entry={e} regs={regs} busyKey={busyKey} onSet={setState} onEditRange={(row, nm) => setRangeEdit({ row, name: nm })} onFill={openFill} />
                           <span className="shrink-0 text-[9px] text-slate-400">
                             {e.time ? timeStr(e.time) : e.sourceLabel}
                           </span>
@@ -819,7 +863,7 @@ export default function AttendanceDigestPanel({
                             <span className="truncate text-[11px] font-semibold text-slate-700">{e.studentName}</span>
                           )}
                         </span>
-                        <RegBadge entry={e} regs={regs} busyKey={busyKey} onSet={setState} onEditRange={(row, nm) => setRangeEdit({ row, name: nm })} />
+                        <RegBadge entry={e} regs={regs} busyKey={busyKey} onSet={setState} onEditRange={(row, nm) => setRangeEdit({ row, name: nm })} onFill={openFill} />
                         <span className="shrink-0 rounded-full bg-slate-100 px-1.5 text-[9px] font-semibold text-slate-500">
                           {dateChipLabel(e.targetDate)}
                         </span>
@@ -962,6 +1006,10 @@ export default function AttendanceDigestPanel({
           initialName={manual.name}
           messageId={manual.messageId}
           rawText={manual.raw}
+          initialStatus={manual.status}
+          initialFrom={manual.from}
+          initialTo={manual.to}
+          fromName={manual.fromName}
           onClose={() => setManual(null)}
           onSaved={async () => {
             await loadRegs();

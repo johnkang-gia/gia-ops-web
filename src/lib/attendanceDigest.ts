@@ -377,7 +377,18 @@ export function englishDate(text: string, baseDate: Date): string | null {
 //
 // 여기서는 "언제부터 언제까지"를 뽑습니다. 끝날만 적힌 경우(대부분)가 흔해서, 시작은 문장에
 // 따로 없으면 **적힌 날**로 봅니다.
-export type TargetRange = { from: string; to: string };
+export type TargetRange = {
+  from: string;
+  to: string;
+  /**
+   * 상한(MAX_RANGE_DAYS)에 걸려 **뒤쪽이 잘렸다**는 표시.
+   *
+   * 자르는 것 자체는 필요합니다 - 날짜를 잘못 읽으면 몇 달짜리 결석이 만들어지니까요.
+   * 그런데 잘린 결과도 「그럴듯한 기간」으로 보여서, 지금까지는 누구도 잘린 줄 몰랐습니다.
+   * 잘렸으면 사람이 한 번 보게 만듭니다.
+   */
+  clamped?: boolean;
+};
 
 // 주말은 등교일이 아니라 기간에서 잘라냅니다. "금요일까지"를 목요일에 적었는데 토·일까지
 // 결석으로 남으면, 월요일 대시보드에 지난 주말이 유령처럼 떠 있게 됩니다.
@@ -402,8 +413,13 @@ function addDays(d: Date, n: number): Date {
  * 통째로 하루씩·일주일씩 밀립니다. 밀린 채로도 화면은 멀쩡해 보입니다.
  */
 function startAnchor(text: string, base: Date): Date | null {
+  // 마지막 갈래 「\d{1,2}일」은 **달을 안 적은 시작점**입니다. 「16일부터 28일까지」처럼
+  // 같은 달 안의 이야기는 달을 생략해서 적는 쪽이 오히려 흔한데, 이걸 못 읽으면 시작점이
+  // 없는 것으로 보고 **글이 온 날**부터 세어버립니다. 「16일부터 28일까지 결석」이
+  // 「오늘부터 28일까지」가 되고, 상한(21일)에 걸려 엉뚱한 날까지 결석으로 박힙니다.
+  // 화면에는 기간이 멀쩡히 적혀 있어서 아무도 틀린 줄 모릅니다.
   const m = text.match(
-    /(다음\s*주\s*[월화수목금토일]\s*요일|담주\s*[월화수목금토일]\s*요일|이번\s*주\s*[월화수목금토일]\s*요일|[월화수목금토일]\s*요일|글피|모레|내일|오늘|\d{1,2}\s*[./월]\s*\d{1,2}\s*일?)\s*부터/
+    /(다음\s*주\s*[월화수목금토일]\s*요일|담주\s*[월화수목금토일]\s*요일|이번\s*주\s*[월화수목금토일]\s*요일|[월화수목금토일]\s*요일|글피|모레|내일|오늘|\d{1,2}\s*[./월]\s*\d{1,2}\s*일?|\d{1,2}\s*일)\s*부터/
   );
   if (!m) return null;
   const key = extractTargetDate(m[1], base);
@@ -593,6 +609,13 @@ export function extractTargetRange(text: string, baseDate: Date): TargetRange | 
 // 문장에서 **가장 오른쪽** 날짜 표현을 찾습니다(위 주석 참고).
 function lastDateIn(text: string, base: Date): string | null {
   for (let i = text.length - 1; i >= 0; i--) {
+    // **숫자 한가운데를 자르지 않습니다.**
+    //
+    // 짧은 꼬리부터 늘려가므로 「28일」에서는 「8일」이 **먼저** 걸립니다. 그러면 28일이
+    // 8일이 되고, 8일은 이미 지났으니 다음 달 8일로 밀립니다. 「16일부터 28일까지」가
+    // 「9/16 ~ 10/8」이 되고 상한(21일)에 잘려 10/7까지 결석으로 박혔습니다.
+    // 잘린 숫자는 여전히 날짜처럼 읽히기 때문에 어디에도 오류가 남지 않습니다.
+    if (i > 0 && /\d/.test(text[i - 1]) && /\d/.test(text[i])) continue;
     const hit = extractTargetDate(text.slice(i), base);
     if (hit) return hit;
   }
@@ -614,9 +637,14 @@ function clamp(fromD: Date, toD: Date): TargetRange | null {
   let a = fromD;
   let b = toD;
   if (b < a) [a, b] = [b, a];
-  if ((b.getTime() - a.getTime()) / 86_400_000 > MAX_RANGE_DAYS) b = addDays(a, MAX_RANGE_DAYS);
+  let clamped = false;
+  if ((b.getTime() - a.getTime()) / 86_400_000 > MAX_RANGE_DAYS) {
+    b = addDays(a, MAX_RANGE_DAYS);
+    clamped = true;
+  }
   const trimmed = trimToSchoolDays(a, b);
   if (!trimmed) return null; // 주말만 걸린 기간 - 등교일이 없습니다.
+  if (clamped) return { from: toDateKey(trimmed.from), to: toDateKey(trimmed.to), clamped: true };
   return { from: toDateKey(trimmed.from), to: toDateKey(trimmed.to) };
 }
 

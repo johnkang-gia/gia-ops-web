@@ -10,6 +10,8 @@ import { deadlineLabel } from "@/lib/deadlineLabel";
 import { nameFor } from "@/lib/teamName";
 import type { Task, TaskModeColor, TaskRecurrence, TeamMember, WorkTag } from "@/lib/types";
 import { useToast } from "@/components/common/ToastProvider";
+import AcademicItemDialog from "@/components/academic/AcademicItemDialog";
+import type { ChecklistTemplate, Term } from "@/lib/types";
 
 type Mode = "나" | "전체" | "공유";
 
@@ -96,6 +98,42 @@ export default function QuickTaskWidget({
   const [selected, setSelected] = useState<string[]>([]);
   const [text, setText] = useState("");
   const [urgent, setUrgent] = useState(false);
+
+  // ── 학사 등록 ───────────────────────────────────────────────────────────
+  //
+  // 되풀이되는 학교 일(학기시작 2주 전 안내문, 매달 안전점검)은 **업무가 아니라 일정**이라
+  // 여기서 등록하면 학사일정에 들어가야 합니다. 지금까지는 업무보드에서 학사일정 화면으로
+  // 넘어가야 했고, 넘어가야 하는 일은 대개 안 하게 됩니다 - 그래서 매번 손으로 업무를
+  // 만들고, 손으로 만드는 일은 바쁜 주에 빠집니다.
+  //
+  // 규칙·날짜 계산은 학사일정 화면과 **같은 팝업**을 그대로 씁니다. 여기에 비슷한 창을 하나
+  // 더 만들면 두 창이 서로 다른 답을 내기 시작합니다.
+  const [showAcademic, setShowAcademic] = useState(false);
+  const [academicTerm, setAcademicTerm] = useState<Term | null>(null);
+  const [academicTemplates, setAcademicTemplates] = useState<ChecklistTemplate[]>([]);
+  const [academicLoading, setAcademicLoading] = useState(false);
+
+  async function openAcademic() {
+    setShowAcademic(true);
+    // 팝업이 쓸 것: 진행중 학기(날짜 계산의 바탕)와 이미 있는 규칙(기준으로 고를 후보).
+    // 업무보드를 열 때마다 미리 읽지 않습니다 - 누르는 사람만 쓰는 자료입니다.
+    if (academicTerm || academicLoading) return;
+    setAcademicLoading(true);
+    const supabase = createClient();
+    const [{ data: terms, error: tErr }, { data: tpl }] = await Promise.all([
+      supabase.from("terms").select("*").eq("is_current", true).limit(1),
+      supabase.from("academic_checklist_templates").select("*").order("sort_order", { ascending: true }),
+    ]);
+    setAcademicLoading(false);
+    if (tErr) {
+      // 조용히 넘어가지 않습니다. 학기를 못 읽으면 「학기시작 2주 전」이 계산되지 않는데,
+      // 팝업만 열리면 사람은 화면이 고장 난 줄 압니다.
+      notify(`학기 정보를 읽지 못했습니다: ${tErr.message}`, "error");
+      return;
+    }
+    setAcademicTerm(((terms as Term[] | null) ?? [])[0] ?? null);
+    setAcademicTemplates((tpl as ChecklistTemplate[] | null) ?? []);
+  }
   const [submitting, setSubmitting] = useState(false);
 
   // 오늘/내일/이번주 뱃지 + 정확한 날짜/시간 입력 (요청 #6)
@@ -284,12 +322,22 @@ export default function QuickTaskWidget({
             </button>
           );
         })}
+        {/* 학사는 **반복 왼쪽**입니다. 되풀이되는 일을 등록하려던 사람이 🔁 반복을 누르기
+            전에 「이건 학사일정이구나」를 먼저 보게 하려는 자리입니다. */}
+        <button
+          type="button"
+          onClick={() => void openAcademic()}
+          title="되풀이되는 학교 일정으로 등록합니다 (학기시작 2주 전 · 매년 · 매달 · 매주). 학사일정에 바로 반영됩니다."
+          className="ml-auto flex items-center gap-1 rounded-full bg-black/5 px-2 py-1 text-[11px] font-bold text-slate-400 transition hover:bg-blue-100 hover:text-blue-700"
+        >
+          🎓 학사
+        </button>
         <button
           type="button"
           onClick={() => setRecurrenceOpen((v) => !v)}
           title="반복 업무로 등록 (완료될 때마다 다음 회차가 자동으로 생깁니다)"
           className={
-            "ml-auto flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-bold transition " +
+            "flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-bold transition " +
             (recurrenceFreq ? "bg-indigo-500 text-white" : "bg-black/5 text-slate-400 hover:bg-black/10")
           }
         >
@@ -504,6 +552,22 @@ export default function QuickTaskWidget({
           등록
         </button>
       </form>
+
+      {/* 학사일정 화면과 **같은 팝업**입니다. 여기서 등록한 것은 곧바로 학사일정에 들어가고,
+          때가 되면 크론이 업무보드로 올려줍니다. */}
+      {showAcademic && (
+        <AcademicItemDialog
+          currentTerm={academicTerm}
+          templateCount={academicTemplates.length}
+          templates={academicTemplates}
+          onClose={() => setShowAcademic(false)}
+          onSaved={(msg) => {
+            notify(msg, "success");
+            // 방금 만든 것이 다음에 열 때 「기준으로 고를 후보」에 나오도록 다시 읽습니다.
+            setAcademicTerm(null);
+          }}
+        />
+      )}
     </div>
   );
 }

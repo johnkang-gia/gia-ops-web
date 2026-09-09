@@ -156,24 +156,15 @@ export async function scanIntoEntries(
 
     // 기간이 터무니없이 길면 자동으로 밀지 않습니다.
     //
-    // 담당자: "출결과 픽업이 하루마다 갱신되지 않고 축적되는 것 같아."
-    //
     // 대시보드는 "기간이 오늘을 품는 것"을 올립니다. 그래서 한 글에서 뽑은 기간이 잘못
     // 길어지면(예: "9월까지"를 통째로 읽으면 한 달 내내) 그 아이가 **매일** 목록에 남습니다.
     // 지운 적도 없는데 계속 쌓이는 것처럼 보이는 자리입니다.
     //
-    // 사람이 진짜 한 달을 쉰다고 알려온 것일 수도 있으니 버리지는 않고, 하루로 줄인 뒤
-    // '확인필요'로 돌려 사람이 보고 기간을 직접 늘리게 합니다. 자동 판단이 길게 미는 것보다
-    // 사람이 짧게 시작하는 편이 되돌리기 쉽습니다.
-    const MAX_SPAN_DAYS = 21;
-    let spanTooLong = false;
-    if (to > from) {
-      const days = Math.round((new Date(`${to}T00:00:00Z`).getTime() - new Date(`${from}T00:00:00Z`).getTime()) / 86400000);
-      if (days > MAX_SPAN_DAYS) {
-        to = from;
-        spanTooLong = true;
-      }
-    }
+    // 자르는 일은 `extractTargetRange` 안(clamp)에서 이미 합니다. 여기서 또 세면 **한 번도
+    // 안 걸립니다** - 잘려서 들어온 값은 언제나 상한 이하이기 때문입니다. 그래서 예전의
+    // 이중 검사는 죽은 코드였고, 잘린 기간은 아무 표시 없이 그럴듯한 모습으로 등록됐습니다.
+    // 이제는 자른 쪽이 `clamped` 로 알려주고, 여기서는 그 사실만 사람에게 넘깁니다.
+    const spanTooLong = range?.clamped === true;
 
     const state: EntryState = reason || spanTooLong ? "확인필요" : "등록";
 
@@ -217,7 +208,11 @@ export async function scanIntoEntries(
         date_from: from,
         date_to: to,
         state,
-        reason: reason ?? (spanTooLong ? `기간이 ${MAX_SPAN_DAYS}일보다 길게 읽혔습니다 - 하루로 줄였으니 맞는지 확인해주세요` : null),
+        reason:
+          reason ??
+          (spanTooLong
+            ? `기간이 너무 길게 읽혀 ${to} 까지로 잘랐습니다 - 원문을 보고 맞는지 확인해주세요`
+            : null),
         raw_text: m.text.slice(0, 500),
         // 픽업만 시각을 답니다. 결석·지각에 시각을 붙이면 화면이 「몇 시에 온다」로 읽습니다.
         pickup_time: status === "픽업" ? pickupTime : null,

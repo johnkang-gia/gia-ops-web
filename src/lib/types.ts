@@ -86,6 +86,10 @@ export type Term = {
 // 학기에 맞춰 계산된 날짜가 붙은 "발생 건"입니다(예: 2026년 여름학기의 그 규칙 → 2026-06-10).
 export type ChecklistAnchor = "term_start" | "term_end";
 
+// 되풀이 방식의 뜻과 날짜 계산은 `@/lib/academicRepeat` 한 곳에만 있습니다.
+import type { RepeatKind } from "./academicRepeat";
+export type { RepeatKind };
+
 export type ChecklistTemplate = {
   id: string;
   title: string;
@@ -110,6 +114,17 @@ export type ChecklistTemplate = {
   task_lead_days: number;
   /** 매 학기 되풀이되는 일인가(학기준비 분석용). */
   recurring: boolean;
+  // ── 되풀이 방식과 「다른 일정 기준」 ──
+  /** term(학기 기준·지금까지의 동작) · year(매년) · month(매달) · week(매주). */
+  repeat_kind: RepeatKind;
+  /** 매년: 몇 월. */
+  repeat_month: number | null;
+  /** 매년·매달: 며칠. 그 달에 없는 날이면 마지막 날로 당깁니다. */
+  repeat_day: number | null;
+  /** 매주: 요일(0=일 … 6=토). */
+  repeat_dow: number | null;
+  /** 기준이 되는 다른 규칙. 있으면 anchor 대신 그 일정 날짜에서 offset_days 만큼 앞. */
+  anchor_template_id: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -132,6 +147,8 @@ export type ChecklistItem = {
   /** 업무보드에 올라간 업무. 채워져 있으면 다시 올리지 않습니다. */
   task_id: string | null;
   task_created_at: string | null;
+  /** 되풀이 회차 열쇠(대개 그 회차의 날짜). 한 학기에 여러 번 나오는 일정을 가릅니다. */
+  occurrence_key: string | null;
   created_at: string;
   updated_at: string;
 };

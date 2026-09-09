@@ -333,6 +333,7 @@ export default function AcademicCalendarClient({
         <AcademicItemDialog
           currentTerm={currentTerm}
           templateCount={templates.length}
+          templates={templates}
           onClose={() => setShowQuickAdd(false)}
           onSaved={(msg) => {
             setNotice(msg);

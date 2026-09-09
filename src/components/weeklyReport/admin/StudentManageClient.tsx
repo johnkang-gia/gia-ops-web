@@ -191,6 +191,46 @@ export default function StudentManageClient({
    */
   const matchedClass = useMemo(() => findClass(className, classes, grade), [className, classes, grade]);
 
+  /**
+   * 학생 추가 폼의 학년·반 선택지. **학생 명부가 아니라 반 명부(`wr_classes`)에서** 뽑습니다.
+   *
+   * 학생 쪽에서 뽑으면 예전에 잘못 들어간 「2학년」·「G2」·「2」가 그대로 선택지가 되고,
+   * 그걸 고른 다음 학생이 또 같은 표기로 저장되어 잘못된 표기가 스스로 번식합니다.
+   * 반 명부는 사람이 만든 한 벌뿐이라, 여기서 고르면 표기가 갈릴 수 없습니다.
+   */
+  const formGrades = useMemo(
+    () =>
+      [...new Set(classes.map((c) => String(c.grade ?? "").trim()).filter(Boolean))].sort((a, b) =>
+        a.localeCompare(b, "ko", { numeric: true }),
+      ),
+    [classes],
+  );
+
+  /** 학년을 고르면 그 학년의 반만 남습니다. 안 골랐으면 전부 보여줍니다 - 학년 없는 반도 있습니다. */
+  const formClasses = useMemo(
+    () =>
+      classes
+        .filter((c) => !grade.trim() || String(c.grade ?? "").trim() === grade.trim())
+        .filter((c) => !!c.class_name)
+        .sort((a, b) => String(a.class_name).localeCompare(String(b.class_name), "ko", { numeric: true })),
+    [classes, grade],
+  );
+
+  /**
+   * 학년을 바꾸면 **그 학년에 없는 반은 비웁니다.**
+   *
+   * 안 비우면 선택 칸에는 아까 고른 반 이름이 남아 있는데 목록에는 없는 상태가 됩니다.
+   * 사람 눈에는 골라진 것으로 보이고, 저장하면 학년과 반이 어긋난 학생이 생깁니다.
+   */
+  function pickGrade(next: string) {
+    setGrade(next);
+    if (!className.trim()) return;
+    const stillThere = classes.some(
+      (c) => c.class_name === className && (!next.trim() || String(c.grade ?? "").trim() === next.trim()),
+    );
+    if (!stillThere) setClassName("");
+  }
+
   async function addStudent(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
@@ -589,43 +629,36 @@ export default function StudentManageClient({
                 <label className="mb-1 block text-[11px] text-slate-400">영어 이름 Name (EN)</label>
                 <input value={nameEn} onChange={(e) => setNameEn(e.target.value)} className={FIELD} />
               </div>
-              <div className="w-16">
+              <div className="w-24">
                 <label className="mb-1 block text-[11px] text-slate-400">학년</label>
-                <input value={grade} onChange={(e) => setGrade(e.target.value)} className={FIELD} />
+                <select value={grade} onChange={(e) => pickGrade(e.target.value)} className={FIELD}>
+                  <option value="">-</option>
+                  {formGrades.map((g) => (
+                    <option key={g} value={g}>
+                      {g}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div className="w-32">
-                <label className="mb-1 block text-[11px] text-slate-400">
-                  반
-                  {/* **명부에 있는 반 중에서 고릅니다.** 자유입력이면 「G2 C」·「g2c」·「2반」이
-                      섞여 들어오고, 명부와 안 맞는 것은 반 이름만 남고 배정은 비어 있게
-                      됩니다. 화면에는 반이 잘 보이니 아무도 못 찾습니다. */}
-                  {matchedClass ? (
-                    <span className="ml-1 font-semibold text-emerald-600">✓</span>
-                  ) : className.trim() ? (
-                    <span className="ml-1 font-semibold text-orange-600">없는 반</span>
-                  ) : null}
-                </label>
-                <input
-                  list="wr-class-options"
+                {/* **반은 명부에 있는 것 중에서만 고릅니다.** 자유입력이던 때는 「G2 C」·「g2c」·
+                    「2반」이 섞여 들어왔고, 명부와 안 맞는 이름은 반 이름만 저장되고 반 배정은
+                    빈 채로 남았습니다. 화면에는 반이 잘 보이니 오류로 보이지 않고, 반 배정
+                    화면에 가서야 미배정으로 발견됩니다. 고를 수 없으면 그런 값이 안 생깁니다. */}
+                <label className="mb-1 block text-[11px] text-slate-400">반</label>
+                <select
                   value={className}
                   onChange={(e) => setClassName(e.target.value)}
-                  placeholder={classes.length > 0 ? "고르세요" : "반부터 만들어야"}
-                  className={
-                    "w-full rounded-lg border px-2 py-1.5 text-sm " +
-                    (className.trim() && !matchedClass ? "border-orange-400 bg-orange-50" : "border-slate-300")
-                  }
-                />
-                {/* 고르는 목록이되 손으로 칠 수도 있게 둡니다 - 새 반이 생긴 날 명부에 아직
-                    안 들어와 있으면, 못 고르게 막는 것이 더 큰 일이 됩니다. */}
-                <datalist id="wr-class-options">
-                  {classes
-                    .filter((c) => !grade.trim() || String(c.grade ?? "").replace(/\D/g, "") === grade.trim().replace(/\D/g, ""))
-                    .map((c) => (
-                      <option key={c.id} value={c.class_name ?? ""}>
-                        {c.grade ? `${c.grade}학년` : ""}
-                      </option>
-                    ))}
-                </datalist>
+                  disabled={formClasses.length === 0}
+                  className={FIELD}
+                >
+                  <option value="">-</option>
+                  {formClasses.map((c) => (
+                    <option key={c.id} value={c.class_name ?? ""}>
+                      {c.class_name}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div className="w-16">
                 <label className="mb-1 block text-[11px] text-slate-400">성별</label>
@@ -714,9 +747,11 @@ export default function StudentManageClient({
             <button type="button" onClick={() => setShowAddForm(false)} className="rounded-lg border border-slate-300 px-4 py-1.5 text-sm text-slate-500 hover:bg-slate-50">
               취소
             </button>
-            {className.trim() && !matchedClass && (
+            {/* 고를 반이 하나도 없으면 **왜 못 고르는지** 말해줍니다. 비활성 칸만 남겨두면
+                사람은 화면이 고장 난 줄 압니다. */}
+            {formClasses.length === 0 && (
               <span className="text-[11px] font-semibold text-orange-600">
-                「{className.trim()}」이라는 반이 명부에 없습니다. 이대로 등록하면 반 배정은 비어 있게 됩니다.
+                {grade.trim() ? `${grade.trim()}에 등록된 반이 없습니다.` : "명부에 반이 없습니다."} 반/담임 배정에서 반을 먼저 만들어주세요.
               </span>
             )}
           </div>

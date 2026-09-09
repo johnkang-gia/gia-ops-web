@@ -28,6 +28,8 @@ export type BoardingRosterItem = {
   stopTime: string | null;
   status: BoardingStatusValue;
   alighted: boolean;
+  /** 평소 오늘 요일에는 안 타는데, 하원 체크표에서 오늘만 태우기로 한 아이. */
+  addedToday?: boolean;
 };
 
 const STATUS_BUTTONS: { value: BoardingStatusValue; label: string; color: string }[] = [
@@ -418,7 +420,18 @@ export default function PilotCheckinClient({
               }}
             >
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <span style={{ fontSize: 15, fontWeight: 700, color: "#0f172a" }}>{r.studentName}</span>
+                {/* 평소 안 타던 아이는 눈에 띄게 적습니다. 기사님·동승 선생님은 늘 같은
+                    얼굴을 세는데, 그냥 섞어 두면 «원래 있던 아이»로 넘어갑니다. 그리고
+                    이 아이의 「탑승」 표시는 아직 «탔다»가 아니라 «태워야 한다»입니다. */}
+                <span style={{ fontSize: 15, fontWeight: 700, color: "#0f172a" }}>
+                  {r.addedToday ? "✚ " : ""}
+                  {r.studentName}
+                </span>
+                {r.addedToday && (
+                  <span style={{ fontSize: 10, fontWeight: 700, color: "#b45309", background: "#fef3c7", borderRadius: 4, padding: "1px 4px" }}>
+                    오늘만
+                  </span>
+                )}
                 <span style={{ fontSize: 11, color: "#94a3b8" }}>{r.stopTime ?? ""}</span>
               </div>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>

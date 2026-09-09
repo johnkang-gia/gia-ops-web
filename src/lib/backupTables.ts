@@ -78,6 +78,10 @@ export const BACKUP_GROUPS: { group: string; tables: string[] }[] = [
       "student_dismissal_plans",
       "pickup_requests",
       "pickup_schedules",
+      // 토들 방 ↔ 학생. 학기 초에 사람이 한 번 확인한 판단이라, 잃으면 137개를 다시
+      // 확인해야 합니다. 다시 만들 수 있는 자료가 아니라 사람 손이 들어간 자료입니다.
+      "toddle_channels",
+      "toddle_channel_students",
     ],
   },
   {

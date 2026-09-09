@@ -11,6 +11,8 @@ import {
 } from "@/lib/pickupParse";
 import { resolveStudent } from "@/lib/studentMatch";
 import { loadAliasIndex } from "@/lib/aliasIndex";
+import { loadChannelLink, touchChannel } from "@/lib/channelLink";
+import { othersMentioned, otherChildNote } from "@/lib/toddleChannel";
 import { extractTargetDate, extractTargetRange } from "@/lib/attendanceDigest";
 import { extractRecurringWeekdays, hasRecurringPhrase, weekdayLabel } from "@/lib/parentRecurrence";
 import { nameSurfaces, readSiblings } from "@/lib/attendanceIntent";
@@ -409,6 +411,10 @@ export async function ingestPickup(
   const receivedAt = input.receivedAt ? new Date(input.receivedAt) : new Date();
   const { iso: todayKst, weekday: todayWeekday } = kstParts(receivedAt);
 
+  // 이 방에서 글이 들어왔다는 사실을 남깁니다. 토들에서 방 목록을 받아올 길이 없으니,
+  // **글이 들어온 방이 우리가 아는 전부**입니다. 남기지 않으면 연결 화면에 안 뜹니다.
+  await touchChannel(supabase, input.channelLabel, receivedAt.toISOString());
+
   // ── 「감사합니다」로 끝나는 글은 AI를 부르지 않습니다 ──────────────────
   //
   // 토들로 들어오는 글의 상당수가 인사말입니다. 그걸 하나하나 AI에게 물으면 돈이 나가고,
@@ -510,20 +516,41 @@ export async function ingestPickup(
   // 별칭은 한 번만 읽습니다. 형제 판단에서도 쓰므로 그보다 먼저 읽어둡니다.
   const aliasIndex = await loadAliasIndex(supabase, roster);
 
+  // ── 사람이 이어 둔 채널이 이름 해석보다 먼저입니다 ────────────────────────
+  //
+  // 토들 방 이름은 학교가 정한 규칙이지만, 글자로 푸는 일은 매번 같은 곳에서 틀립니다
+  // (성이 잘려 오거나 애칭이 괄호로 붙거나). 학기 초에 [학교 → 학생 → 토들 채널]에서
+  // 한 번 이어두면 **다시 풀 일이 없습니다.** 사람이 확인한 연결이라 언제나 더 믿을
+  // 만하고, 형제방은 아이가 둘 이상 걸려 있어 「누구 방인지」가 확실해집니다.
+  const linked = await loadChannelLink(supabase, input.channelLabel, roster);
+  if (linked && linked.students.length > 0) {
+    grade = linked.students[0].grade ?? grade;
+    // 형제방이면 아직 누구인지는 본문이 정합니다 - 아래 readSiblings 가 이어서 봅니다.
+    if (linked.students.length === 1) candidateName = linked.students[0].name;
+  }
+
+  //
+  // 형제가 누구인지는 **이어 둔 연결이 있으면 그것**입니다. 없을 때만 방 이름을 풉니다.
+  const siblings =
+    linked && linked.students.length > 1
+      ? linked.students
+      : channel && channel.isSibling
+        ? channel.names
+            .map(
+              (n) =>
+                resolveStudent(n, roster, {
+                  grade: channel.grades[0] ?? null,
+                  context: `${input.channelLabel ?? ""} ${text}`,
+                  aliases: aliasIndex,
+                }).student,
+            )
+            .filter((x): x is RosterEntry => !!x)
+        : [];
   const siblingRead =
-    channel && channel.isSibling
+    siblings.length > 1
       ? readSiblings(
           text,
-          channel.names
-            .map((n) => {
-              const hit = resolveStudent(n, roster, {
-                grade: channel.grades[0] ?? null,
-                context: `${input.channelLabel ?? ""} ${text}`,
-                aliases: aliasIndex,
-              }).student;
-              return hit ? { key: hit.name, surfaces: nameSurfaces(hit.name, hit.name_en) } : null;
-            })
-            .filter((x): x is { key: string; surfaces: string[] } => !!x)
+          siblings.map((hit) => ({ key: hit.name, surfaces: nameSurfaces(hit.name, hit.name_en) })),
         )
       : null;
   if (siblingRead?.pick) candidateName = siblingRead.pick.key;
@@ -804,6 +831,50 @@ export async function ingestPickup(
     .single();
 
   if (error) throw error;
+
+  // ── 방 주인이 아닌 아이가 함께 적힌 경우 ──────────────────────────────────
+  //
+  //   서우 어머님 방: "오늘 하라도 픽업할게요"
+  //
+  // 서우만 처리하면 하라가 셔틀 명단에 남아 차에 태워집니다. 그렇다고 둘 다 자동으로
+  // 처리하면 **남의 집 아이의 하원을 다른 학부모가 정한 것**이 됩니다. 학부모에게는
+  // 그럴 권한이 없습니다.
+  //
+  // 그래서 줄은 **만들되 확인 대기**로 둡니다. 안 만들면 「하라 어머님도 따로 연락하셨겠지」
+  // 하고 아무도 확인하지 않습니다. 만들어 두면 인박스에 뜨고, 학교가 한 번 봅니다.
+  if (isPickup && matched) {
+    const others = othersMentioned(text, roster, [matched.id]);
+    for (const o of others) {
+      const note = otherChildNote([matched.name], o.student.name);
+      const { error: otherErr } = await supabase.from("pickup_requests").insert({
+        service_date: todayKst,
+        kind,
+        source: input.source,
+        // 같은 글에서 나온 줄이라 출처 식별자가 겹칩니다. 뒤에 학생 번호를 붙여 가릅니다 -
+        // 안 그러면 중복 방지에 걸려 둘째 아이 줄이 조용히 안 만들어집니다.
+        source_ref: input.sourceRef ? `${input.sourceRef}#${o.student.id}` : null,
+        channel_label: input.channelLabel ?? null,
+        sender_name: input.senderName ?? null,
+        received_at: receivedAt.toISOString(),
+        raw_text: text,
+        ai_is_pickup: true,
+        ai_student_name: o.surface,
+        ai_pickup_time: normalizeTime(ai.pickup_time),
+        // **자동 확정되지 않도록 낮춥니다.** 숫자를 낮추는 것만으로는 왜 낮췄는지 모르니
+        // 근거에 한 줄을 함께 남깁니다.
+        ai_confidence: 0,
+        ai_note: note,
+        summary: `${o.student.name} 픽업(함께 언급) — 확인 필요`,
+        urgency: pick(ai.urgency, URGENCIES),
+        student_id: o.student.id,
+        matched_name: o.student.name,
+        homeroom_email: await findHomeroomEmail(supabase, o.student.id),
+        status: "확인대기",
+      });
+      // 못 만들었으면 소리를 냅니다. 이 줄이 없으면 그 아이는 아무 데도 안 뜹니다.
+      if (otherErr) console.error(`[pickup] ${o.student.name} 함께 언급 줄을 만들지 못했습니다:`, otherErr.message);
+    }
+  }
 
   const requestId = data?.id as string | undefined;
 

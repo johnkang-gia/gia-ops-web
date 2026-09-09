@@ -26,7 +26,7 @@ type ArrivalRoute = {
   driverName: string | null;
   driverPhone: string | null;
   vehicleNo: string | null;
-  roster: { assignmentId: string; studentName: string; status: string }[];
+  roster: { assignmentId: string; studentName: string; status: string; addedToday?: boolean }[];
   events: { event: string; created_at: string; createdBy: string | null }[];
   // 기사님 휴대폰이 마지막으로 위치를 보내온 시각(GPS 살아있는지 확인용). 미설정이면 null.
   gpsLastSeen?: string | null;
@@ -385,7 +385,13 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
             // 하원 체크표에서 픽업(부모님이 직접 데려가심)·결석으로 체크한 학생은 이 차를 안
             // 타므로 "미도착 명단"에서 뺍니다(요청: "결석이나, 픽업을 체크하면 실시간으로 교직원
             // 차량 도착 출발체크에 반영이 되고" - 안내보드와 같은 필터링 방식).
-            const waiting = r.roster.filter((s) => s.status !== "탑승" && s.status !== "픽업" && s.status !== "결석");
+            //
+            // 「탑승」을 무조건 지우지 않습니다. 하원 체크표에서 **오늘만 태우기로** 한 아이의
+            // 탑승은 「이미 탔다」가 아니라 「앞으로 태워야 한다」입니다(addedToday). 그 아이를
+            // 지우면 태워야 할 아이가 명단에서 사라집니다 — 오류가 아니라 그냥 없습니다.
+            const waiting = r.roster.filter(
+              (s) => s.status !== "픽업" && s.status !== "결석" && !(s.status === "탑승" && !s.addedToday),
+            );
             const pickedUpCount = r.roster.filter((s) => s.status === "픽업").length;
             const absentCount = r.roster.filter((s) => s.status === "결석").length;
             return (
@@ -487,9 +493,15 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
                         key={s.assignmentId}
                         type="button"
                         onClick={() => setPickupAsk({ assignmentId: s.assignmentId, studentName: s.studentName, routeNo: r.routeNo })}
-                        className="min-h-[22px] rounded border border-red-300 bg-red-50 px-1 py-0.5 text-[10px] font-bold leading-tight text-red-600 active:scale-95"
+                        title={s.addedToday ? "하원 체크표에서 오늘만 태우기로 한 아이입니다" : undefined}
+                        className={
+                          "min-h-[22px] rounded border px-1 py-0.5 text-[10px] font-bold leading-tight active:scale-95 " +
+                          // 오늘만 타는 아이는 눈에 띄게. 평소 명단에 없던 아이라 그냥 섞어 두면
+                          // 기사님도 선생님도 «원래 있던 아이»로 넘깁니다.
+                          (s.addedToday ? "border-amber-400 bg-amber-100 text-amber-800" : "border-red-300 bg-red-50 text-red-600")
+                        }
                       >
-                        {s.studentName}
+                        {s.addedToday ? `✚ ${s.studentName}` : s.studentName}
                       </button>
                     ))}
                     {(pickedUpCount > 0 || absentCount > 0) && (

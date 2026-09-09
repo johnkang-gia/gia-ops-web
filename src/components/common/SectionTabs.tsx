@@ -127,6 +127,7 @@ const SCHOOL_TABS: TabDef[] = [
       "/school/sheet",
       "/school/groups",
       "/school/apparel",
+      "/school/toddle",
     ],
     children: [
       { label: "학생 조회", href: "/students", match: ["/students"] },
@@ -146,6 +147,9 @@ const SCHOOL_TABS: TabDef[] = [
       { label: "수강 그룹", href: "/school/groups", match: ["/school/groups"] },
       // 교복·행사 티셔츠. 사이즈는 학생에 저장되어 행사마다 다시 조사하지 않습니다.
       { label: "의류", href: "/school/apparel", match: ["/school/apparel"] },
+      // 토들 방 이름 ↔ 학생. 학기에 한 번 하는 일이라 명부 옆에 둡니다 - 학기 초에
+      // 명부를 정리할 때 함께 끝내야 잊지 않습니다.
+      { label: "토들 채널", href: "/school/toddle", match: ["/school/toddle"] },
     ],
   },
   // 출석부는 학교 자료입니다. 업무 메뉴(연락·출결)에 있던 것을 옮겼습니다 - 거기서는

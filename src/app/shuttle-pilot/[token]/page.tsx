@@ -97,6 +97,8 @@ export default async function ShuttlePilotPage({ params }: { params: Promise<{ t
           stopTime: stop?.stop_time ?? null,
           status: (b?.status as BoardingRosterItem["status"]) ?? "예정",
           alighted: !!b?.alighted_at,
+          // 평소 요일에 없는 아이 = 체크표에서 오늘만 태우기로 한 아이.
+          addedToday: !(a.weekdays ?? []).includes(todayWeekday),
         };
       })
       .sort((x, y) => x.stopSeq - y.stopSeq || x.studentName.localeCompare(y.studentName, "ko"));

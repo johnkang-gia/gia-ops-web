@@ -150,7 +150,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
 
   // assignmentId를 함께 보냅니다. 현장에서 아이 이름을 눌러 픽업으로 바꾸려면, 어느 배정
   // 줄인지 알아야 합니다. 이름만으로는 동명이인을 가릴 수 없습니다.
-  const rosterByRoute: Record<string, { assignmentId: string; studentName: string; status: string }[]> = {};
+  const rosterByRoute: Record<string, { assignmentId: string; studentName: string; status: string; addedToday: boolean }[]> = {};
   for (const a of relevant) {
     const stop = stopById.get(a.stop_id);
     if (!stop) continue;
@@ -171,7 +171,23 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
     }
     const permanentRouteId = a.override_route_id && routeIdSet.has(a.override_route_id) ? a.override_route_id : stop.route_id;
     const targetRouteId = boarding?.override_route_id && routeIdSet.has(boarding.override_route_id) ? boarding.override_route_id : permanentRouteId;
-    (rosterByRoute[targetRouteId] ??= []).push({ assignmentId: a.id, studentName: displayName(a), status: boarding?.status ?? "예정" });
+    // ── 「탑승」이라는 같은 말이 두 가지를 뜻합니다 ──────────────────────
+    //
+    // 하원 체크표의 [🚌 탑승]은 **「오늘 갑자기 탑승」** — 앞으로 태워야 한다는 계획입니다.
+    // 차 안에서 기사님·동승 선생님이 누르는 [탑승]은 **「이미 탔다」** — 지난 일입니다.
+    // 두 곳이 같은 칸에 같은 글자를 씁니다.
+    //
+    // 이 화면의 빨간 이름표는 「아직 안 탄 아이」 목록이라 탑승을 지웁니다. 그래서 체크표에서
+    // 오늘만 태우기로 한 아이가 **표시되자마자 사라졌습니다** — 태워야 하는 아이인데 명단에
+    // 없으니, 아무도 그 아이를 기다리지 않습니다.
+    //
+    // 평소 요일에 안 타는 아이면 그 「탑승」은 계획입니다. 그 사실을 함께 보냅니다.
+    (rosterByRoute[targetRouteId] ??= []).push({
+      assignmentId: a.id,
+      studentName: displayName(a),
+      status: boarding?.status ?? "예정",
+      addedToday: !(a.weekdays as number[] | null ?? []).includes(todayWeekday),
+    });
   }
 
   const eventsByRoute: Record<string, { event: string; created_at: string; createdBy: string | null }[]> = {};

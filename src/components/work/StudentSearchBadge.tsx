@@ -226,15 +226,25 @@ export default function StudentSearchBadge() {
                           timetable,
                         });
                         if (!now.known) {
+                          // **왜 모르는지를 화면에 적습니다.** 예전에는 「📍 —」만 떠서,
+                          // 주말이라 안 뜨는 것과 교실이 안 적혀서 안 뜨는 것이 똑같아
+                          // 보였습니다 - 앞은 정상이고 뒤는 고쳐야 하는 것인데도요.
                           return (
                             <span title={now.why} className="rounded bg-slate-50 px-1.5 py-0.5 text-[11px] text-slate-400">
-                              📍 —
+                              📍 {now.short}
                             </span>
                           );
                         }
                         return (
                           <span
-                            title={`${now.periodLabel} ${now.subject}${now.fromTimetableRoom ? "" : " (과목으로 짐작)"}`}
+                            title={
+                              `${now.periodLabel} ${now.subject}` +
+                              (now.fromTimetableRoom
+                                ? ""
+                                : now.homeroomSubject
+                                  ? " (제 교실에서 하는 과목)"
+                                  : " (과목으로 짐작)")
+                            }
                             className="rounded bg-emerald-50 px-1.5 py-0.5 text-[11px] font-bold text-emerald-700"
                           >
                             📍 {now.place}

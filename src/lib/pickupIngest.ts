@@ -15,6 +15,7 @@ import { extractRecurringWeekdays, hasRecurringPhrase, weekdayLabel } from "@/li
 import { nameSurfaces, readSiblings } from "@/lib/attendanceIntent";
 import { genCaseId } from "@/lib/caseId";
 import { logChecklist } from "@/lib/checklistLog";
+import { isPleasantry, pleasantryNote } from "@/lib/shortTalk";
 
 // 어느 경로로 들어온 연락이든 이 함수 하나를 거쳐 픽업으로 바뀝니다.
 // 토들 수집기, 전화 통화 텍스트, 교사 전달, 직접 입력이 모두 같은 판단을 받도록 하기 위해서입니다.
@@ -33,7 +34,7 @@ export type IngestInput = {
 };
 
 export type IngestResult = {
-  skipped?: "duplicate" | "empty";
+  skipped?: "duplicate" | "empty" | "인사말";
   id?: string;
   kind?: "픽업" | "문의" | "기타";
   isPickup: boolean;
@@ -405,6 +406,39 @@ export async function ingestPickup(
 
   const receivedAt = input.receivedAt ? new Date(input.receivedAt) : new Date();
   const { iso: todayKst, weekday: todayWeekday } = kstParts(receivedAt);
+
+  // ── 「감사합니다」로 끝나는 글은 AI를 부르지 않습니다 ──────────────────
+  //
+  // 토들로 들어오는 글의 상당수가 인사말입니다. 그걸 하나하나 AI에게 물으면 돈이 나가고,
+  // 인박스에는 볼 것이 아닌 줄이 쌓입니다. 볼 것이 아닌 줄이 섞이면 사람은 목록 전체를
+  // 안 보게 됩니다.
+  //
+  // **지우지는 않습니다.** 무엇을 왜 넘겼는지 남겨야, 잘못 넘긴 것을 나중에 찾을 수
+  // 있습니다(`isPleasantry` 가 헛걸렸는지 확인할 방법이 이것뿐입니다).
+  if (isPleasantry(text)) {
+    await supabase.from("pickup_requests").insert({
+      service_date: todayKst,
+      kind: "기타",
+      source: input.source,
+      source_ref: input.sourceRef ?? null,
+      source_chat_id: input.chatId ?? null,
+      source_url: input.sourceUrl ?? null,
+      channel_label: input.channelLabel ?? null,
+      sender_name: input.senderName ?? null,
+      received_at: receivedAt.toISOString(),
+      // 본문은 남기지 않습니다(학부모 대화를 쌓아두지 않겠다는 원칙 그대로).
+      // 다만 넘긴 근거에는 앞 40자가 들어갑니다 - 그게 없으면 검증이 불가능합니다.
+      raw_text: null,
+      summary: text.slice(0, 60),
+      ai_note: pleasantryNote(text),
+      ai_is_pickup: false,
+      ai_confidence: 0,
+      status: "무시",
+      resolved_at: new Date().toISOString(),
+      resolved_by: "규칙(인사말)",
+    });
+    return { kind: "기타", isPickup: false, status: "무시", skipped: "인사말" };
+  }
 
   const channel = parseChannelLabel(input.channelLabel);
   const channelHint = channel

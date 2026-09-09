@@ -64,6 +64,22 @@ export function placeOfSubject(subject: string | null | undefined): string | nul
   return null;
 }
 
+/**
+ * **제 교실에서 하는 과목.**
+ *
+ * Novel Studies 와 WSC 는 특별실로 옮기지 않고 **각 반 교실에서** 합니다. 시간표 칸에
+ * 장소를 적지 않는 것이 당연하고, 그래서 여태 「장소가 적혀 있지 않습니다」로 빠졌습니다.
+ *
+ * 「적혀 있지 않다」와 「제 교실이다」는 다른 말입니다. 앞의 것은 사람이 시간표를 고쳐야
+ * 하는 상태이고, 뒤의 것은 고칠 게 없는 정상입니다. 둘이 같아 보이면 아무도 안 고칩니다.
+ */
+const HOMEROOM_SUBJECTS = /novel\s*stud|wsc\b|world\s*scholar/i;
+
+/** 이 과목은 제 교실에서 하는가. */
+export function isHomeroomSubject(subject: string | null | undefined): boolean {
+  return HOMEROOM_SUBJECTS.test(String(subject ?? ""));
+}
+
 /** 'HH:MM:SS' 를 그대로 비교합니다 - 같은 자릿수 문자열이라 숫자로 바꿀 필요가 없습니다. */
 function within(now: string, start: string, end: string): boolean {
   const cut = (t: string) => t.slice(0, 8).padEnd(8, "0");
@@ -71,8 +87,28 @@ function within(now: string, start: string, end: string): boolean {
 }
 
 export type NowPlace =
-  | { known: true; place: string; subject: string; periodLabel: string; fromTimetableRoom: boolean }
-  | { known: false; why: string };
+  | {
+      known: true;
+      place: string;
+      subject: string;
+      periodLabel: string;
+      fromTimetableRoom: boolean;
+      /** 제 교실에서 하는 과목이라 반 교실로 답한 경우. 짐작이 아니라 아는 것입니다. */
+      homeroomSubject?: boolean;
+    }
+  | {
+      known: false;
+      why: string;
+      /**
+       * 화면에 **그대로 적을** 짧은 말.
+       *
+       * 예전에는 이유를 마우스 올려야 보이는 곳(title)에만 뒀고, 화면에는 「📍 —」만
+       * 떴습니다. 그래서 「주말이라 안 뜨는 것」과 「교실이 안 적혀서 안 뜨는 것」이
+       * 똑같아 보였습니다 - 앞의 것은 정상이고 뒤의 것은 고쳐야 하는 것인데, 구별이
+       * 안 되니 아무도 고치지 않았습니다.
+       */
+      short: string;
+    };
 
 /**
  * 지금 이 반이 있는 곳.
@@ -90,32 +126,48 @@ export function whereNow(args: {
   now?: Date;
 }): NowPlace {
   const { classId, department, classRoom, periods, timetable } = args;
-  if (!classId) return { known: false, why: "반 배정이 없어 시간표를 볼 수 없습니다" };
+  if (!classId) return { known: false, why: "반 배정이 없어 시간표를 볼 수 없습니다", short: "반 없음" };
 
   const at = args.now ?? new Date();
   const weekday = args.now ? kstWeekdayOf(args.now) : kstWeekday();
-  if (weekday === 0 || weekday === 6) return { known: false, why: "주말입니다" };
+  if (weekday === 0 || weekday === 6) return { known: false, why: "주말입니다", short: "주말" };
 
   const nowTime = kstTime(at);
   const mine = periods.filter((p) => p.department === department);
   const pool = mine.length > 0 ? mine : periods;
   const period = pool.find((p) => within(nowTime, p.start_time, p.end_time));
-  if (!period) return { known: false, why: "지금은 수업 시간이 아닙니다" };
+  if (!period) return { known: false, why: "지금은 수업 시간이 아닙니다", short: "수업시간 아님" };
 
   const cell = timetable.find((t) => t.class_id === classId && t.weekday === weekday && t.period_id === period.id);
   const periodLabel = period.label || `${period.period_no}교시`;
-  if (!cell) return { known: false, why: `${periodLabel} 시간표가 없습니다` };
+  if (!cell) return { known: false, why: `${periodLabel} 시간표가 없습니다`, short: `${periodLabel} 시간표 없음` };
 
   const room = (cell.room ?? "").trim();
   if (room) return { known: true, place: room, subject: cell.subject_name, periodLabel, fromTimetableRoom: true };
 
+  const home = (classRoom ?? "").trim();
+
+  // **제 교실에서 하는 과목이 먼저입니다.**
+  //
+  // Novel Studies·WSC 는 특별실로 옮기지 않습니다. 과목 이름으로 장소를 짐작하는 규칙보다
+  // 앞에 둡니다 - 나중에 누가 「studies」 같은 넓은 규칙을 넣으면 이 아이들이 엉뚱한 방으로
+  // 끌려가는데, 그건 화면에 오류가 아니라 «그럴듯한 장소»로 보입니다.
+  if (isHomeroomSubject(cell.subject_name) && home) {
+    return { known: true, place: home, subject: cell.subject_name, periodLabel, fromTimetableRoom: false, homeroomSubject: true };
+  }
+
   const guessed = placeOfSubject(cell.subject_name);
   if (guessed) return { known: true, place: guessed, subject: cell.subject_name, periodLabel, fromTimetableRoom: false };
 
-  const home = (classRoom ?? "").trim();
   if (home) return { known: true, place: home, subject: cell.subject_name, periodLabel, fromTimetableRoom: false };
 
-  return { known: false, why: `${periodLabel} ${cell.subject_name} - 장소가 적혀 있지 않습니다` };
+  // 여기까지 왔으면 **반 교실이 명부에 안 적혀 있는 것**입니다. 사람이 고칠 수 있는 일이라
+  // 그렇게 말해줍니다 - 「장소가 없다」로 뭉뚱그리면 무엇을 고쳐야 하는지 알 수 없습니다.
+  return {
+    known: false,
+    why: `${periodLabel} ${cell.subject_name} - 시간표에도 반 명부에도 교실이 적혀 있지 않습니다`,
+    short: "교실 미지정",
+  };
 }
 
 /** 주어진 시각의 한국 요일. 0=일 … 6=토. */

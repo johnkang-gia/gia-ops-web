@@ -127,6 +127,21 @@ export const BACKUP_GROUPS: { group: string; tables: string[] }[] = [
     tables: ["apparel_orders", "apparel_order_items", "apparel_order_pieces", "apparel_stock_moves", "apparel_exchanges"],
   },
   {
+    group: "학교 연결·양식",
+    // **사람이 손으로 만든 것**만 여기 둡니다. 「화면에서 다시 만들면 된다」는 말은 맞지만,
+    // 교실 태블릿 열두 대와 안내보드·도착체크 링크를 다시 등록하고 각 기기에 새 주소를
+    // 다시 붙이는 일은 하루가 걸립니다. 다시 만들 수 있는 것과 다시 만들기 쉬운 것은
+    // 다릅니다.
+    tables: ["classroom_links", "shuttle_arrival_links", "shuttle_board_links", "roster_sync_links", "form_import_templates"],
+  },
+  {
+    group: "회계 이력",
+    // 지금 값은 fee_items·fee_discounts 에 있지만, **언제 얼마에서 얼마로 바뀌었는지**는
+    // 여기에만 있습니다. 되돌릴 수 없는 기록이라 담습니다 - 회계는 「지금 얼마인가」보다
+    // 「그때 얼마였나」를 더 자주 묻습니다.
+    tables: ["fee_item_price_log", "fee_discount_log", "finance_access_log"],
+  },
+  {
     group: "설정·계정",
     // 계정은 이름·역할만 들어 있고 비밀번호는 Supabase Auth 쪽이라 여기 없습니다.
     tables: ["app_users", "departments", "task_mode_colors", "policy_categories", "gia_systems", "ops_board_links"],
@@ -146,6 +161,7 @@ export const BACKUP_SKIP: Record<string, string> = {
   google_chat_oauth_tokens: "접속 비밀값. 내려받는 파일에 들어가면 그 파일이 곧 열쇠가 됩니다.",
   backups: "백업 안에 백업을 담으면 파일이 회차마다 배로 불어납니다.",
   data_export_log: "내려받기 기록. 백업 자체가 아니라 백업을 누가 가져갔나의 기록입니다.",
+  data_restore_log: "되돌리기 기록. 되돌린 백업으로 이 기록까지 덮으면 되돌린 사실이 사라집니다.",
 
   // ── 다시 만들 수 있는 것 ───────────────────────────────────────────
   applied_migrations: "마이그레이션 실행 이력. supabase/migrations 가 원본입니다.",
@@ -156,11 +172,9 @@ export const BACKUP_SKIP: Record<string, string> = {
   wr_import_issues: "명부 반영 때 그때그때 다시 만들어지는 점검 결과입니다.",
   roster_sync_inbox: "구글시트에서 들어온 임시 대기줄. 반영되면 명부가 원본입니다.",
   roster_sync_attempts: "명부 반영 시도 기록. 실패를 되짚는 용도라 잃어도 됩니다.",
-  roster_sync_links: "명부 연결 임시값.",
   manual_drafts: "AI 초안. 채택되면 manual_sections 로 들어갑니다.",
   manual_review_flags: "매뉴얼 점검 표시. 다시 계산됩니다.",
   manual_section_history: "매뉴얼 판 이력. 본문은 manual_sections 에 있습니다.",
-  form_import_templates: "양식 틀. 화면에서 다시 만듭니다.",
   form_submissions: "양식 제출 임시 보관.",
   student_dup_dismissals: "중복 정리 작업용 임시 표.",
 
@@ -182,14 +196,8 @@ export const BACKUP_SKIP: Record<string, string> = {
   integration_heartbeats: "연동 살아있음 신호.",
   version_broadcasts: "새로고침 안내 신호.",
   work_notice_collapses: "공지를 접은 사람 표시.",
-  finance_access_log: "회계 화면 열람 기록.",
-  fee_discount_log: "할인 변경 기록. 지금 값은 fee_discounts 에 있습니다.",
-  fee_item_price_log: "요금 변경 기록. 지금 값은 fee_items 에 있습니다.",
   classroom_calls: "교실 태블릿 호출. 그때만 뜻이 있습니다.",
   classroom_notes: "교실 태블릿 쪽지. 그날치입니다.",
-  classroom_links: "교실 태블릿 링크. 화면에서 다시 만듭니다.",
-  shuttle_arrival_links: "도착체크 링크. 화면에서 다시 만듭니다.",
-  shuttle_board_links: "안내보드 링크. 화면에서 다시 만듭니다.",
   messages: "옛 쪽지. 쓰이지 않습니다.",
   education_news: "교육 뉴스 모음. 다시 받아옵니다.",
   student_apparel_sizes_history: "쓰지 않습니다.",

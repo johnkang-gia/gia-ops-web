@@ -7,6 +7,7 @@ import type { BackupSummary } from "@/lib/types";
 import { useConfirm } from "@/components/common/ConfirmProvider";
 import { useToast } from "@/components/common/ToastProvider";
 import GuideButton from "@/components/common/GuideButton";
+import RestorePanel from "./RestorePanel";
 
 const TABLE_LABELS: Record<string, string> = {
   incidents: "사건기록",
@@ -45,8 +46,9 @@ const GUIDE_SECTIONS = [
     title: "⚠️ 복원할 때 주의할 점",
     lines: [
       "복원은 그 시점 이후에 쌓인 내용을 덮어씁니다. 되돌리기 전에 \"무엇을 잃게 되는지\"를 먼저 확인해주세요.",
-      "학생 명부·셔틀 배정은 이 백업에 들어 있지 않습니다. 그쪽은 [학교 > 명부 점검]과 마이그레이션으로 관리됩니다.",
-      "확실하지 않으면 복원 전에 지금 상태를 한 번 더 저장해두세요. 되돌린 것을 다시 되돌릴 수 있습니다.",
+      "파일을 올리면 무엇이 몇 줄 바뀌는지 먼저 보여줍니다. 그 숫자를 보고 판단해주세요.",
+      "되돌리기 직전에 지금 상태가 저장소에 한 벌 저장됩니다. 되돌린 것도 다시 되돌릴 수 있습니다.",
+      "\"파일과 똑같이 맞추기\"는 파일에 없는 줄을 지웁니다. 백업 이후에 만든 자료가 사라지므로, 그때 상태로 완전히 되돌려야 할 때만 켜세요.",
     ],
   },
 ];
@@ -218,6 +220,10 @@ export default function AdminBackupsClient({
           </div>
         )}
       </div>
+
+      {/* 내려받은 파일로 되돌리기. 내려받기 바로 아래에 둡니다 - 받는 것과 되돌리는 것은
+          같은 이야기의 앞뒤라, 떨어져 있으면 되돌리는 길이 있다는 걸 모르게 됩니다. */}
+      <RestorePanel />
 
       <div className="mb-6 flex items-center gap-2 g-panel-solid p-3 shadow-sm">
         <input

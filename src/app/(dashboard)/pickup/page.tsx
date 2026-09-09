@@ -8,6 +8,7 @@ import { getLang } from "@/lib/langServer";
 import { makeT, type T } from "@/lib/lang";
 import { classLabel } from "@/lib/i18nLabels";
 import { isDemoAccount } from "@/lib/sharedAccounts";
+import { ridesToday } from "@/lib/ridesToday";
 import { kstWeekdayNum, planLabel, type DismissalKind } from "@/lib/dismissalPlan";
 import { loadDismissalForDay } from "@/lib/dismissalToday";
 
@@ -144,7 +145,6 @@ export default async function PickupPage() {
         .select("id, stop_id, student_name_raw, weekdays, override_route_id")
         .in("stop_id", stopIds)
     : { data: [] as { id: string; stop_id: string; student_name_raw: string; weekdays: number[]; override_route_id: string | null }[] };
-  const todayAssignments = (assignmentsData ?? []).filter((a) => (a.weekdays as number[]).includes(todayWeekday));
 
   // 오늘의 하원수단(학생 기준). 셔틀을 안 타는 날 이 아이가 무엇을 타는지 여기에만 있습니다.
   //
@@ -163,14 +163,17 @@ export default async function PickupPage() {
     ])
   );
 
-  const { data: boardingsData } = todayAssignments.length
+  const { data: boardingsData } = (assignmentsData ?? []).length
     ? await supabase
         .from("shuttle_boardings")
         .select("assignment_id, status, override_route_id")
         .eq("service_date", today)
-        .in("assignment_id", todayAssignments.map((a) => a.id))
+        .in("assignment_id", (assignmentsData ?? []).map((a) => a.id))
     : { data: [] as { assignment_id: string; status: string; override_route_id: string | null }[] };
   const boardingByAssignment = new Map((boardingsData ?? []).map((b) => [b.assignment_id, b]));
+  // 체크표를 읽은 **뒤에** 오늘 명단을 정합니다. 담임 선생님이 보는 화면이라, 오늘만 타기로
+  // 한 아이가 여기 없으면 그 반에서는 아무도 모릅니다.
+  const todayAssignments = ridesToday(assignmentsData ?? [], boardingsData ?? [], todayWeekday);
 
   // 배정표 이름은 "김연우A"처럼 뒤에 표기가 붙거나 괄호 영문이 섞일 수 있어서, 비교할 때만
   // 괄호·공백을 떼고 맞춰봅니다.

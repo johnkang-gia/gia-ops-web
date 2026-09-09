@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { ridingIds } from "@/lib/ridesToday";
 import { todayKst } from "@/lib/kst";
 import { createClient } from "@/lib/supabase/server";
 import { CURRENT_SHUTTLE_TERM } from "@/lib/shuttleTerm";
@@ -102,6 +103,9 @@ export default async function ShuttleOverviewPage() {
     ? await supabase.from("shuttle_boardings").select("assignment_id, status").eq("service_date", today).in("assignment_id", assignIds)
     : { data: [] as { assignment_id: string; status: string }[] };
   const boardStatus = new Map((boardings ?? []).map((b) => [b.assignment_id, b.status]));
+  // 오늘만 타기로 체크표에서 바꾼 아이도 오늘 인원에 셉니다. 안 세면 정원·좌석 계산이
+  // 실제보다 적게 나오는데, 그건 차가 꽉 찬 다음에야 드러납니다.
+  const ridingToday = ridingIds(boardings ?? []);
 
   // 집계
   const perRouteToday = new Map<string, number>();
@@ -109,7 +113,7 @@ export default async function ShuttleOverviewPage() {
   const stopOut = new Map<string, number>(); // 정류장별 오늘 픽업+결석 수
   let expected = 0, pickup = 0, absent = 0, boarded = 0;
   for (const a of assigns) {
-    const riding = (a.weekdays ?? []).includes(todayWeekday);
+    const riding = (a.weekdays ?? []).includes(todayWeekday) || ridingToday.has(a.id);
     if (!riding) continue;
     const rid = routeByStop.get(a.stop_id);
     if (rid) perRouteToday.set(rid, (perRouteToday.get(rid) ?? 0) + 1);

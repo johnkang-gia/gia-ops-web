@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { todayKst } from "@/lib/kst";
+import { ridesToday } from "@/lib/ridesToday";
 import { isUndecidedChoice } from "@/lib/shuttleChoice";
 import { createClient } from "@supabase/supabase-js";
 
@@ -61,16 +62,17 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
         .select("id, stop_id, student_name_raw, weekdays, override_route_id, choice_group")
         .in("stop_id", stopIds)
     : { data: [] as { id: string; stop_id: string; student_name_raw: string; weekdays: number[]; override_route_id: string | null; choice_group: string | null }[] };
-  const relevant = (assignments ?? []).filter((a) => (a.weekdays as number[]).includes(todayWeekday));
-  const assignmentIds = relevant.map((a) => a.id);
-
-  const boardingsRes = assignmentIds.length
+  // 체크표를 **먼저** 읽습니다. 요일로 먼저 거르면 오늘만 태우는 아이는 읽히지도 않습니다
+  // - 자세한 사정은 ridesToday.ts 에 적어 두었습니다.
+  const allIds = (assignments ?? []).map((a) => a.id);
+  const boardingsRes = allIds.length
     ? await supabase
         .from("shuttle_boardings")
         .select("assignment_id, status, override_route_id")
         .eq("service_date", today)
-        .in("assignment_id", assignmentIds)
+        .in("assignment_id", allIds)
     : { data: [] as { assignment_id: string; status: string; override_route_id: string | null }[] };
+  const relevant = ridesToday(assignments ?? [], boardingsRes.data ?? [], todayWeekday);
 
   const eventsByRoute: Record<string, { event: string; created_at: string }[]> = {};
   for (const e of eventsRes.data ?? []) {

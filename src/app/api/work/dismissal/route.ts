@@ -89,6 +89,8 @@ export async function POST(req: Request) {
     const appliesToday =
       todayWd >= 1 &&
       todayWd <= 5 &&
+      // rides-ok: 이 weekdays 는 셔틀 배정이 아니라 **하원수단을 넣은 요일**입니다.
+      // 체크표와는 다른 것을 셉니다.
       weekdays.includes(todayWd) &&
       kind !== "셔틀" &&
       // 「다음 주만」으로 넣은 것은 오늘 걸면 안 됩니다.

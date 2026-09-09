@@ -1,5 +1,6 @@
 import { ensureKoreanFont, pdfDisposition } from "@/lib/pdfFont";
 import { todayKst } from "@/lib/kst";
+import { ridesToday } from "@/lib/ridesToday";
 import { Document, Page, Text, View, StyleSheet, renderToBuffer } from "@react-pdf/renderer";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
@@ -234,7 +235,19 @@ async function handle(request: Request) {
       .from("shuttle_assignments")
       .select("id, stop_id, student_name_raw, weekdays")
       .in("stop_id", stopIds);
-    const relevant = (assignments ?? []).filter((a) => (a.weekdays as number[]).includes(weekday));
+    // 그날 체크표에서 「탑승」으로 바꾼 아이도 실제로 탔으므로 일지에 남아야 합니다.
+    const { data: dayBoardings } = (assignments ?? []).length
+      ? await supabase
+          .from("shuttle_boardings")
+          .select("assignment_id, status")
+          .eq("service_date", date)
+          .in("assignment_id", (assignments ?? []).map((a) => a.id as string))
+      : { data: [] as { assignment_id: string; status: string | null }[] };
+    const relevant = ridesToday(
+      (assignments ?? []) as { id: string; stop_id: string; student_name_raw: string; weekdays: number[] }[],
+      (dayBoardings ?? []) as { assignment_id: string; status: string | null }[],
+      weekday,
+    );
 
     const { data: boardings } = relevant.length
       ? await supabase

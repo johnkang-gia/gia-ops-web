@@ -180,6 +180,8 @@ export default function StudentPhotosClient({ roster, hasPhoto, currentUserEmail
       const f = images[i];
       try {
         const img = await loadImage(f);
+        // match-ok: 사진 파일 이름에서 아이를 찾는 일입니다. 별칭은 학부모 글에 적히는
+        // 표기라 파일 이름과는 성격이 다르고, 여기서 헛걸리면 남의 아이 사진이 붙습니다.
         const m = matchStudent(f.name, roster);
         const auto = await autoAdjust(img);
         next.push({

@@ -353,7 +353,11 @@ export default async function ShuttleChecklistPage({
       // 한 화면에서만 숨기면 다른 화면에서 타는 것으로 보여, 지금 중복 배정과 같은
       // 위험이 됩니다.
       if (isUndecidedChoice(a, boarding)) return null;
-      const ridingToday = a.weekdays.includes(todayWeekday);
+      // rides-ok: 여기는 체크표 자신입니다. 이 값은 「평소 오늘 타는 날인가」라는 사실이고,
+      // 안 타는 아이를 **옅은 회색으로 남겨 두는 근거**입니다. 탑승으로 바꾼 것까지 여기서
+      // 참으로 만들면 되돌릴 자리가 사라집니다 - 표가 자기 줄을 지우는 셈입니다.
+      // 바꾼 결과는 아래 status 와 클라이언트의 baseRiding 이 함께 그립니다.
+      const ridingToday = a.weekdays.includes(todayWeekday) || boarding?.status === "탑승";
       let status: ChecklistItem["status"] = (boarding?.status as ChecklistItem["status"]) ?? "예정";
       // 오늘 타는 학생 & 아직 사람이 안 누른 경우에만 토들 픽업/결석을 자동 반영.
       //

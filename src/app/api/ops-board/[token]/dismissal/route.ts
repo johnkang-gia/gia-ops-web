@@ -1,3 +1,4 @@
+import { ridesToday } from "@/lib/ridesToday";
 import { NextResponse } from "next/server";
 import { isUndecidedChoice } from "@/lib/shuttleChoice";
 import { createClient } from "@supabase/supabase-js";
@@ -132,17 +133,19 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
   const { data: assignments } = stopIds.length
     ? await supabase.from("shuttle_assignments").select("id, stop_id, student_name_raw, weekdays, override_route_id, choice_group").in("stop_id", stopIds)
     : { data: [] as { id: string; stop_id: string; student_name_raw: string; weekdays: number[]; override_route_id: string | null; choice_group: string | null }[] };
-  const relevant = (assignments ?? []).filter((a) => (a.weekdays as number[]).includes(weekday));
-  const assignmentIds = relevant.map((a) => a.id);
+  // 체크표를 먼저 읽고 명단을 정합니다(ridesToday.ts). 순서가 거꾸로면 오늘만 타는 아이가
+  // 이 화면에도 안 나타납니다.
+  const allIds = (assignments ?? []).map((a) => a.id);
 
-  const { data: boardings } = assignmentIds.length
+  const { data: boardings } = allIds.length
     ? await supabase
         .from("shuttle_boardings")
         .select("assignment_id, status, override_route_id")
         .eq("service_date", today)
-        .in("assignment_id", assignmentIds)
+        .in("assignment_id", allIds)
     : { data: [] as { assignment_id: string; status: string; override_route_id: string | null }[] };
   const boardingByAssignment = new Map((boardings ?? []).map((b) => [b.assignment_id, b]));
+  const relevant = ridesToday(assignments ?? [], boardings ?? [], weekday);
   const stopRouteById = new Map((stops ?? []).map((s) => [s.id, s.route_id]));
   const routeIdSet = new Set(routeIds);
 

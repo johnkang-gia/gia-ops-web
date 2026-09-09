@@ -4,12 +4,13 @@ import { readRideAlong } from "@/lib/rideAlong";
 import { kstParts } from "@/lib/shuttleTracking";
 import { hasConflictingIntent, similarity } from "@/lib/textSimilarity";
 import {
-  matchStudent,
   normalizeTime,
   parseChannelLabel,
   pickSiblingFromText,
   type RosterEntry,
 } from "@/lib/pickupParse";
+import { resolveStudent } from "@/lib/studentMatch";
+import { loadAliasIndex } from "@/lib/aliasIndex";
 import { extractTargetDate, extractTargetRange } from "@/lib/attendanceDigest";
 import { extractRecurringWeekdays, hasRecurringPhrase, weekdayLabel } from "@/lib/parentRecurrence";
 import { nameSurfaces, readSiblings } from "@/lib/attendanceIntent";
@@ -506,13 +507,20 @@ export async function ingestPickup(
   // 그래서 규칙으로 한 번 더 봅니다(@/lib/attendanceIntent). 이름이 있는 **절만** 읽어
   // 아이마다 상태를 따로 정하고, 결석·픽업이라고 적힌 아이가 정확히 한 명이면 그 아이를
   // 씁니다. **이 결과가 AI 답보다 우선입니다** - 규칙은 같은 문장에 늘 같은 답을 냅니다.
+  // 별칭은 한 번만 읽습니다. 형제 판단에서도 쓰므로 그보다 먼저 읽어둡니다.
+  const aliasIndex = await loadAliasIndex(supabase, roster);
+
   const siblingRead =
     channel && channel.isSibling
       ? readSiblings(
           text,
           channel.names
             .map((n) => {
-              const hit = matchStudent(n, roster, channel.grades[0] ?? null, `${input.channelLabel ?? ""} ${text}`);
+              const hit = resolveStudent(n, roster, {
+                grade: channel.grades[0] ?? null,
+                context: `${input.channelLabel ?? ""} ${text}`,
+                aliases: aliasIndex,
+              }).student;
               return hit ? { key: hit.name, surfaces: nameSurfaces(hit.name, hit.name_en) } : null;
             })
             .filter((x): x is { key: string; surfaces: string[] } => !!x)
@@ -534,8 +542,26 @@ export async function ingestPickup(
     candidateName = siblingRead.pick?.key ?? null;
   }
 
-  // 문장 전체를 함께 넘깁니다 - 「g2c 김재이」·「김재이 (190510)」의 힌트가 거기 있습니다.
-  const matched = candidateName ? matchStudent(candidateName, roster, grade, `${input.channelLabel ?? ""} ${text}`) : null;
+  // ── 이름을 명부에 잇습니다 ────────────────────────────────────────────────
+  //
+  // 판단은 `@/lib/studentMatch` 한 곳에서 합니다. 여기서 직접 대조하지 않는 이유는
+  // **사람이 가르친 별칭**과 **성을 뺀 이름**을 픽업도 함께 읽어야 하기 때문입니다.
+  //
+  // 지금까지는 출결만 그 둘을 읽었습니다. 그래서 「마야」를 아무리 가르쳐도 픽업에서는
+  // 매번 처음 보는 이름이었고, 「예온이 오늘 픽업할게요」의 예온이는 명부의 이예온과
+  // 한 글자도 안 맞는 것으로 취급됐습니다. 동명이인이 아닌데도 확인 대기가 쌓인 까닭이
+  // 대부분 이 둘입니다.
+  const resolved = resolveStudent(candidateName, roster, {
+    // 문장 전체를 함께 넘깁니다 - 「g2c 김재이」·「김재이 (190510)」의 힌트가 거기 있습니다.
+    context: `${input.channelLabel ?? ""} ${text}`,
+    grade,
+    aliases: aliasIndex,
+  });
+  const matched = resolved.student;
+  // 못 이었으면 **왜** 못 이었는지 남깁니다. 이유 없는 「확인 필요」는 고칠 자리를
+  // 알려주지 않습니다 - 이름을 못 뽑은 것과 명부에 없는 것과 둘 중 누구인지 모르는 것은
+  // 사람이 해야 할 일이 전혀 다릅니다.
+  const matchNote = resolved.why ? resolved.note : null;
   // 담임을 함께 적어둡니다 - 문의를 담임별로 묶어 보거나, 업무로 넘길 때 담당자를 미리
   // 채우는 데 씁니다.
   const homeroomEmail = matched ? await findHomeroomEmail(supabase, matched.id) : null;
@@ -752,6 +778,7 @@ export async function ingestPickup(
         // 규칙이 자동 확정을 막았으면 그 이유를 함께 적습니다. 이유 없는 「확인 필요」는
         // 아무도 안 봅니다 - 무엇을 확인해야 하는지 모르니까요.
         objectHint,
+        matchNote,
         recurDays.length > 0 ? `반복 감지: 매주 ${weekdayLabel(recurDays)}요일 (지속 특이사항으로 등록)` : null,
         looksRecurringButUnclear ? "반복되는 약속으로 보이는데 요일을 읽지 못했습니다. 사람이 확인해주세요." : null,
         // 형제방에서 한 아이만 쉬는 경우. AI 요약이 엉뚱한 아이를 가리킬 수 있으므로,

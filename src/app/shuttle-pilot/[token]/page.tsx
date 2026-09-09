@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { todayKst } from "@/lib/kst";
+import { ridesToday } from "@/lib/ridesToday";
 import PilotCheckinClient, { type BoardingRosterItem } from "@/components/shuttle/PilotCheckinClient";
 
 export const dynamic = "force-dynamic";
@@ -69,16 +70,19 @@ export default async function ShuttlePilotPage({ params }: { params: Promise<{ t
     const { data: assignments } = await supabase
       .from("shuttle_assignments")
       .select("id, stop_id, student_name_raw, weekdays")
-      .in("stop_id", stopIds);
-    const relevant = (assignments ?? []).filter((a) => (a.weekdays as number[]).includes(todayWeekday));
-
-    const { data: boardings } = relevant.length
+      .in("stop_id", stopIds)
+      .returns<{ id: string; stop_id: string; student_name_raw: string; weekdays: number[] }[]>();
+    // 체크표를 **먼저** 읽고 그 다음에 명단을 정합니다. 순서를 거꾸로 하면, 직원이 오늘만
+    // 태우기로 체크표에서 바꾼 아이가 기사님 화면에 아예 없습니다 - 태울 사람이 없습니다.
+    const allIds = (assignments ?? []).map((a) => a.id as string);
+    const { data: boardings } = allIds.length
       ? await supabase
           .from("shuttle_boardings")
           .select("assignment_id, status, alighted_at")
           .eq("service_date", todayIso)
-          .in("assignment_id", relevant.map((a) => a.id))
+          .in("assignment_id", allIds)
       : { data: [] };
+    const relevant = ridesToday(assignments ?? [], (boardings ?? []) as { assignment_id: string; status: string | null }[], todayWeekday);
     const boardingByAssignment = new Map((boardings ?? []).map((b) => [b.assignment_id, b]));
     const stopById = new Map((stops ?? []).map((s) => [s.id, s]));
 

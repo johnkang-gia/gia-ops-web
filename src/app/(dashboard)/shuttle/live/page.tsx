@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { ShuttleRoute, ShuttlePilotRoute } from "@/lib/types";
 import ShuttleLiveClient, { type LiveRosterItem } from "@/components/shuttle/ShuttleLiveClient";
 import GuideButton from "@/components/common/GuideButton";
+import { ridingIds } from "@/lib/ridesToday";
 import { todayKst } from "@/lib/kst";
 
 const GUIDE_SECTIONS = [
@@ -90,15 +91,11 @@ export default async function ShuttleLivePage() {
    * 연락을 받고 체크표에서 탑승으로 바꿔도 이 화면에는 나타나지 않았습니다. 기사님과
    * 동승선생님이 보는 명단이 이 화면이라, 여기 없으면 그 아이는 태울 사람이 없습니다.
    */
-  const ridingTodayIds = new Set<string>();
-  {
-    const { data: b } = await supabase
-      .from("shuttle_boardings")
-      .select("assignment_id")
-      .eq("service_date", todayKst())
-      .eq("status", "탑승");
-    for (const r of (b as { assignment_id: string }[] | null) ?? []) ridingTodayIds.add(r.assignment_id);
-  }
+  const { data: todayBoardings } = await supabase
+    .from("shuttle_boardings")
+    .select("assignment_id, status")
+    .eq("service_date", todayKst());
+  const ridingTodayIds = ridingIds((todayBoardings as { assignment_id: string; status: string | null }[] | null) ?? []);
 
   // 오늘 요일(1=월...5=금)에 배정된 학생만 골라 평평한 목록으로 넘깁니다(체크인 화면과 같은
   // 필터 기준). routeId는 "영구로 옮긴 노선(shuttle_assignments.override_route_id)이 있으면

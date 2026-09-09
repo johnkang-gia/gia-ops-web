@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { assumeAfternoon, extractTimeFromText } from "@/lib/pickupParse";
 import { loadActiveEntries } from "@/lib/attendanceEntries";
+import { isHumanSet } from "@/lib/pickupIngest";
 
 /**
  * 오늘 픽업인 아이 — **여기 한 곳에서만 정합니다.**
@@ -107,7 +108,8 @@ export async function loadTodayPickups(
   nameOfStudent: (studentId: string) => string | null,
 ): Promise<TodayPickup[]> {
   const [boardRes, entryRows, reqRes] = await Promise.all([
-    supabase.from("shuttle_boardings").select("assignment_id, status").eq("service_date", dateKey),
+    // `checked_by` 를 함께 읽습니다. **누가 정했는지가 판단의 재료**입니다 - 아래를 보세요.
+    supabase.from("shuttle_boardings").select("assignment_id, status, checked_by").eq("service_date", dateKey),
     loadActiveEntries(supabase, dateKey),
     supabase
       .from("pickup_requests")
@@ -119,7 +121,7 @@ export async function loadTodayPickups(
       .limit(300),
   ]);
 
-  const boardings = (boardRes.data as { assignment_id: string; status: string }[] | null) ?? [];
+  const boardings = (boardRes.data as { assignment_id: string; status: string; checked_by: string | null }[] | null) ?? [];
   const asgIds = boardings.map((b) => b.assignment_id);
   const { data: asgRows } = asgIds.length
     ? await supabase.from("shuttle_assignments").select("id, student_id, student_name_raw").in("id", asgIds)
@@ -137,7 +139,16 @@ export async function loadTodayPickups(
   for (const b of boardings) {
     const nm = nameOfAsg(b.assignment_id);
     if (!nm) continue;
-    decidedNames.add(nm);
+    // **사람이 정한 줄만 「정해진 것」입니다.**
+    //
+    // 예전에는 줄이 있기만 하면 전부 정해진 것으로 봤습니다. 그런데 체크표에는 사람이 안
+    // 누른 줄도 생깁니다 - 아침 크론이 걸어둔 것, 기사님 체크인이 찍은 것, 자동이 만든 것.
+    // 그런 줄 하나 때문에 출결내역에서 사람이 등록한 픽업이 **통째로 가려졌습니다.**
+    // 권수호가 그랬습니다: 출결내역에서 픽업으로 등록했는데 중앙 대시보드에 안 떴습니다.
+    //
+    // 여기 적힌 규칙은 원래 「사람이 체크표에서 정한 것이 이긴다」였는데, 코드가 그보다
+    // 넓게 막고 있었습니다.
+    if (isHumanSet(b.checked_by)) decidedNames.add(nm);
     if (b.status === "픽업") boardingPickups.push({ name: nm, studentId: asgById.get(b.assignment_id)?.student_id ?? null });
   }
 

@@ -1,12 +1,14 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { todayKst } from "@/lib/kst";
 import { useToast } from "@/components/common/ToastProvider";
 import UpcomingPickups, { type ScheduleRow } from "@/components/pickup/UpcomingPickups";
 import StudentPicker from "@/components/pickup/StudentPicker";
-import { matchStudent, parseChannelLabel, type RosterEntry } from "@/lib/pickupParse";
+import { createClient } from "@/lib/supabase/client";
+import { parseChannelLabel, type RosterEntry } from "@/lib/pickupParse";
+import { buildAliasIndex, resolveStudent, type AliasRule } from "@/lib/studentMatch";
 import { nameSurfaces, readSiblings } from "@/lib/attendanceIntent";
 import { extractTargetRange, todayKey } from "@/lib/attendanceDigest";
 import { extractRecurringWeekdays, hasRecurringPhrase, weekdayLabel } from "@/lib/parentRecurrence";
@@ -171,6 +173,25 @@ export default function PickupInboxClient({
     [students]
   );
 
+  // 사람이 가르쳐 둔 별칭(🔎). 서버가 받을 때 쓰는 것과 **같은 표**입니다 - 다시 훑기가
+  // 서버보다 덜 알아보면, 사람은 「가르쳤는데 왜 안 붙지」를 겪습니다.
+  const [aliasRules, setAliasRules] = useState<AliasRule[]>([]);
+  useEffect(() => {
+    void (async () => {
+      const { data, error } = await createClient()
+        .from("attendance_learning_rules")
+        .select("pattern, student_id")
+        .eq("kind", "alias");
+      if (error) {
+        // 없으면 덜 붙을 뿐이라 화면을 막지는 않습니다. 다만 조용히 넘기지 않습니다.
+        console.error("[인박스] 가르쳐 둔 별칭을 읽지 못했습니다:", error.message);
+        return;
+      }
+      setAliasRules((data as AliasRule[] | null) ?? []);
+    })();
+  }, []);
+  const aliases = useMemo(() => buildAliasIndex(aliasRules, rosterForMatch), [aliasRules, rosterForMatch]);
+
   async function rematchAll() {
     setBusy(true);
     let fixed = 0;
@@ -178,7 +199,7 @@ export default function PickupInboxClient({
       if (r.student_id) continue;
       const candidate = (r.ai_student_name ?? r.channel_label ?? "").trim();
       if (!candidate) continue;
-      const hit = matchStudent(candidate, rosterForMatch);
+      const hit = resolveStudent(candidate, rosterForMatch, { context: r.raw_text ?? "", aliases }).student;
       if (!hit) continue;
       await call({ action: "confirm", id: r.id, studentId: hit.id });
       fixed += 1;
@@ -204,7 +225,7 @@ export default function PickupInboxClient({
       if (!text || !ch || !ch.isSibling) return null;
       const sibs = ch.names
         .map((n) => {
-          const hit = matchStudent(n, rosterForMatch, ch.grades[0] ?? null);
+          const hit = resolveStudent(n, rosterForMatch, { grade: ch.grades[0] ?? null, context: text, aliases }).student;
           return hit ? { key: hit.name, surfaces: nameSurfaces(hit.name, hit.name_en) } : null;
         })
         .filter((x): x is { key: string; surfaces: string[] } => !!x);

@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { judgePickupText, loadRoster } from "@/lib/pickupIngest";
-import { matchStudent, normalizeTime, parseChannelLabel } from "@/lib/pickupParse";
+import { normalizeTime, parseChannelLabel } from "@/lib/pickupParse";
+import { resolveStudent } from "@/lib/studentMatch";
+import { loadAliasIndex } from "@/lib/aliasIndex";
 import { kstParts } from "@/lib/shuttleTracking";
 import { logApiError } from "@/lib/logging";
 
@@ -57,6 +59,8 @@ export async function POST(req: Request) {
   if (!rows || rows.length === 0) return NextResponse.json({ ok: true, found: 0, reread: 0, stillFailed: 0 });
 
   const roster = await loadRoster(supabase);
+  // 별칭은 한 번만 읽습니다. 줄마다 읽으면 40번 왕복합니다.
+  const aliasIndex = await loadAliasIndex(supabase, roster);
   let reread = 0;
   let stillFailed = 0;
   const failures: string[] = [];
@@ -98,7 +102,10 @@ export async function POST(req: Request) {
       (typeof ai.student_name === "string" ? ai.student_name : null);
     // 동명이인을 가르는 재료(반·생일)는 원문에 있습니다. 이름 글자만 넘기면 김재이 셋을
     // 가릴 수 없습니다 - 문장 전체를 함께 넘깁니다.
-    const matched = candidate ? matchStudent(candidate, roster, channel?.grades[0] ?? null, text) : null;
+    // 가르쳐 둔 별칭과 성 뺀 이름까지 함께 봅니다(studentMatch). 다시 읽는 목적이 바로
+    // 「그때는 못 붙었던 것을 지금 붙이는 것」이라, 여기서 좁게 보면 다시 읽는 뜻이 없습니다.
+    const resolved = resolveStudent(candidate, roster, { grade: channel?.grades[0] ?? null, context: text, aliases: aliasIndex });
+    const matched = resolved.student;
 
     const { error: upErr } = await supabase
       .from("pickup_requests")
@@ -113,6 +120,7 @@ export async function POST(req: Request) {
         ai_note: [
           `다시 읽음 (${me.name ?? me.email})`,
           typeof ai.note === "string" ? ai.note : null,
+          resolved.why ? resolved.note : null,
           "셔틀에는 아직 반영되지 않았습니다 - 맞으면 눌러서 등록해주세요.",
         ]
           .filter(Boolean)

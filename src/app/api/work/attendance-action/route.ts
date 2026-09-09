@@ -1,3 +1,4 @@
+import { ridesToday } from "@/lib/ridesToday";
 import { NextResponse } from "next/server";
 import { setBoardingStatus } from "@/lib/boardingWrite";
 import { createClient } from "@/lib/supabase/server";
@@ -74,8 +75,16 @@ export async function POST(req: Request) {
       .select("id, student_name_raw, weekdays");
     if (aErr) throw aErr;
 
-    const todays = ((assignments as { id: string; student_name_raw: string; weekdays: number[] }[] | null) ?? []).filter((a) =>
-      (a.weekdays ?? []).includes(weekday)
+    // 오늘만 타기로 체크표에서 바꾼 아이도 대상입니다. 요일만 보면, 그 아이를 결석·픽업으로
+    // 바꾸려 할 때 「셔틀을 안 타는 학생」이라는 엉뚱한 답이 돌아옵니다.
+    const { data: dayBoardings } = await supabase
+      .from("shuttle_boardings")
+      .select("assignment_id, status")
+      .eq("service_date", serviceDate);
+    const todays = ridesToday(
+      (assignments as { id: string; student_name_raw: string; weekdays: number[] }[] | null) ?? [],
+      (dayBoardings as { assignment_id: string; status: string | null }[] | null) ?? [],
+      weekday,
     );
 
     const matches = todays.filter((a) => compareKey(a.student_name_raw ?? "") === key);

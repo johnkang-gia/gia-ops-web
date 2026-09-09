@@ -4,7 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
 import StudentPicker from "@/components/pickup/StudentPicker";
-import { matchStudent, type RosterEntry } from "@/lib/pickupParse";
+import { type RosterEntry } from "@/lib/pickupParse";
+import { buildAliasIndex, resolveStudent, type AliasRule } from "@/lib/studentMatch";
 
 // 앞으로 예정된 픽업.
 //
@@ -113,6 +114,23 @@ export default function UpcomingPickups({ initialRows }: { initialRows: Schedule
     [students]
   );
 
+  // 가르쳐 둔 별칭(🔎). 서버가 쓰는 것과 같은 표입니다.
+  const [aliasRules, setAliasRules] = useState<AliasRule[]>([]);
+  useEffect(() => {
+    void (async () => {
+      const { data, error } = await createClient()
+        .from("attendance_learning_rules")
+        .select("pattern, student_id")
+        .eq("kind", "alias");
+      if (error) {
+        console.error("[예정픽업] 가르쳐 둔 별칭을 읽지 못했습니다:", error.message);
+        return;
+      }
+      setAliasRules((data as AliasRule[] | null) ?? []);
+    })();
+  }, []);
+  const aliases = useMemo(() => buildAliasIndex(aliasRules, rosterForMatch), [aliasRules, rosterForMatch]);
+
   async function rematchAll() {
     const targets = rows.filter((r) => !r.student_id && r.status !== "적용됨" && (r.student_name ?? "").trim());
     if (targets.length === 0) {
@@ -124,7 +142,9 @@ export default function UpcomingPickups({ initialRows }: { initialRows: Schedule
     let fixed = 0;
     const failed: string[] = [];
     for (const r of targets) {
-      const hit = matchStudent((r.student_name ?? "").trim(), rosterForMatch);
+      // 가르쳐 둔 별칭·성 뺀 이름까지 봅니다. 이 단추의 뜻이 「지금 규칙으로 다시」인데
+      // 서버보다 좁게 보면 다시 눌러도 그대로입니다.
+      const hit = resolveStudent((r.student_name ?? "").trim(), rosterForMatch, { aliases }).student;
       if (!hit) {
         failed.push(r.student_name ?? "");
         continue;

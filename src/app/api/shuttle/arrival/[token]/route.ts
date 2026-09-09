@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { setBoardingStatus } from "@/lib/boardingWrite";
 import { createClient } from "@supabase/supabase-js";
+import { ridesToday } from "@/lib/ridesToday";
 import { kstParts } from "@/lib/shuttleTracking";
 import { isUndecidedChoice } from "@/lib/shuttleChoice";
 
@@ -77,8 +78,6 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
         .select("id, stop_id, student_id, student_name_raw, weekdays, override_route_id, choice_group, choice_label")
         .in("stop_id", stopIds)
     : { data: [] as { id: string; stop_id: string; student_id: string | null; student_name_raw: string; weekdays: number[]; override_route_id: string | null; choice_group: string | null; choice_label: string | null }[] };
-  const relevant = (assignments ?? []).filter((a) => (a.weekdays as number[]).includes(todayWeekday));
-  const assignmentIds = relevant.map((a) => a.id);
 
   // 하원 체크표에서 오늘 하루만 다른 노선으로 옮긴 학생은 그 노선 명단에 나타납니다(요청:
   // "표안에서 아이들의 이름을 자유롭게 끌어서 이동할 수 있게"). 계속 유지되도록 영구로 옮긴
@@ -86,14 +85,33 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
   // status도 함께 가져와서 픽업·결석 학생은 명단에서 뺍니다(요청: "결석이나 픽업을 체크하면
   // 실시간으로 교직원 차량 도착 출발체크에 반영이 되고" - 안내보드(shuttle-board)와 같은
   // 방식으로 shuttle_boardings.status를 조회합니다).
-  const { data: boardings } = assignmentIds.length
+  //
+  // ── 요일보다 **오늘 사람이 정한 것**이 먼저입니다 ─────────────────────
+  //
+  // 예전에는 요일로 먼저 걸러낸 다음 그 아이들의 체크표만 읽었습니다. 그러면 순서가
+  // 거꾸로입니다 - 하원 체크표는 **오늘 안 타는 아이도 옅은 회색으로 띄워 두고 눌러서
+  // 「탑승」으로 바꿀 수 있게** 만들어져 있는데, 그렇게 바꾼 아이는 요일이 안 맞으니
+  // 여기서 이미 걸러진 뒤라 체크표를 읽어보지도 않았습니다.
+  //
+  // 그래서 직원이 체크표에서 탑승으로 바꾼 아이가 **차량 도착·출발 체크 화면에는 아예
+  // 없었습니다.** 오류가 아니라 그냥 명단에 없는 것이라, 기사님도 선생님도 그 아이를
+  // 태워야 하는지 알 방법이 없습니다.
+  //
+  // 오늘 전체 배정의 체크표를 **먼저** 읽고, 그 다음에 명단을 정합니다.
+  const allIds = (assignments ?? []).map((a) => a.id);
+  const { data: boardings } = allIds.length
     ? await supabase
         .from("shuttle_boardings")
         .select("assignment_id, status, override_route_id")
         .eq("service_date", today)
-        .in("assignment_id", assignmentIds)
+        .in("assignment_id", allIds)
     : { data: [] as { assignment_id: string; status: string; override_route_id: string | null }[] };
   const boardingByAssignment = new Map((boardings ?? []).map((b) => [b.assignment_id, b]));
+
+  // 오늘 타는 아이 = 원래 요일이 맞는 아이 **또는** 오늘 「탑승」으로 바뀐 아이.
+  // 반대로 요일이 맞아도 픽업·결석으로 바뀐 아이는 아래에서 명단에서 빠집니다 - 그건
+  // 이미 되던 일이라 여기서 또 거르지 않습니다.
+  const relevant = ridesToday(assignments ?? [], boardings ?? [], todayWeekday);
   const routeIdSet = new Set(routeIds);
 
   // 행선지를 그날 정하는 학생. 정하기 전에는 어느 노선 명단에도 넣지 않고, 따로 모아

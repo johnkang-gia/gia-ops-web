@@ -51,13 +51,70 @@ const GUIDE_SECTIONS = [
   },
 ];
 
-export default function AdminBackupsClient({ initialBackups }: { initialBackups: BackupSummary[] }) {
+/** 최근 자동저장·내려받기 기록. 백업이 정말 돌고 있는지 사람이 눈으로 확인하는 자리입니다. */
+export type ExportLogRow = {
+  id: string;
+  actor_email: string;
+  kind: string;
+  table_count: number | null;
+  row_count: number | null;
+  failed_tables: string[] | null;
+  storage_path: string | null;
+  bytes: number | null;
+  created_at: string;
+};
+
+export default function AdminBackupsClient({
+  initialBackups,
+  exportLog = [],
+}: {
+  initialBackups: BackupSummary[];
+  exportLog?: ExportLogRow[];
+}) {
   const confirmAction = useConfirm();
   const notify = useToast();
   const [backups, setBackups] = useState<BackupSummary[]>(initialBackups);
   const [label, setLabel] = useState("");
   const [creating, setCreating] = useState(false);
   const [restoringId, setRestoringId] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState(false);
+
+  /**
+   * **전체 데이터를 파일 하나로 내려받습니다.**
+   *
+   * 지금까지의 백업은 전부 데이터베이스 안이나 Supabase 대시보드 안에 있었습니다. 그러면
+   * 데이터베이스가 통째로 잘못되거나 계정을 잃었을 때 백업도 같이 사라집니다.
+   * 한 벌은 반드시 학교 손에 있어야 합니다.
+   */
+  async function downloadAll() {
+    setDownloading(true);
+    try {
+      const res = await fetch("/api/admin/export", { cache: "no-store" });
+      if (!res.ok) {
+        const b = await res.json().catch(() => ({}));
+        notify((b as { error?: string }).error || "내려받지 못했습니다.", "error");
+        return;
+      }
+      // 표가 빠진 채로 만들어진 백업을 온전한 것으로 믿게 두지 않습니다.
+      const failed = res.headers.get("X-Backup-Failed");
+      const rows = res.headers.get("X-Backup-Rows");
+      const blob = await res.blob();
+      const name = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "")?.[1] ?? "gia-data.json";
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = name;
+      a.click();
+      URL.revokeObjectURL(url);
+      if (failed && failed !== "none") {
+        notify(`받긴 했지만 못 읽은 표가 있습니다: ${failed}. 이 파일은 온전하지 않습니다.`, "error");
+      } else {
+        notify(`${Number(rows ?? 0).toLocaleString("ko-KR")}줄을 받았습니다. 학교 밖(구글 드라이브 등)에도 한 벌 두세요.`, "success");
+      }
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   async function createBackup() {
     setCreating(true);
@@ -111,6 +168,55 @@ export default function AdminBackupsClient({ initialBackups }: { initialBackups:
           사건·회의·행사·제안함·채택예정·매뉴얼·업무·서류함의 현재 상태를 스냅샷으로 저장하고,
           필요하면 그 시점으로 되돌립니다. 관리자만 볼 수 있습니다.
         </p>
+      </div>
+
+      {/* ── 전체 데이터 ────────────────────────────────────────────────
+          아래 「지금 백업 만들기」는 사건·회의·업무 등 일부 표만 담고, 그것도 **같은
+          데이터베이스 안**에 둡니다. DB가 통째로 잘못되면 함께 사라지므로 그것만으로는
+          백업이 아닙니다. 그래서 밖으로 나가는 길을 위에 따로 둡니다. */}
+      <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <b className="text-sm text-emerald-900">📦 전체 데이터 내려받기</b>
+          <button
+            onClick={() => void downloadAll()}
+            disabled={downloading}
+            className="ml-auto shrink-0 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50"
+          >
+            {downloading ? "모으는 중…" : "⬇ 지금 받기"}
+          </button>
+        </div>
+        <p className="mt-1.5 text-[12px] leading-relaxed text-emerald-800">
+          학생 명부·출결·회계·셔틀·업무까지 <b>전부</b> 파일 하나로 받습니다. 매일 밤 자동으로도 한 벌이
+          저장소(데이터베이스 밖)에 저장되지만, <b>학교 손에 있는 한 벌</b>은 따로 있어야 합니다 —
+          받은 파일은 구글 드라이브처럼 다른 곳에 옮겨두세요.
+        </p>
+        <p className="mt-1 text-[11px] text-emerald-700">
+          개인정보와 연락처가 통째로 담긴 파일입니다. 누가 언제 받았는지 기록에 남습니다.
+        </p>
+
+        {exportLog.length > 0 && (
+          <div className="mt-2 border-t border-emerald-200 pt-2">
+            <p className="mb-1 text-[11px] font-bold text-emerald-800">최근 기록</p>
+            <div className="flex flex-col gap-0.5">
+              {exportLog.map((r) => (
+                <div key={r.id} className="flex flex-wrap items-center gap-1.5 text-[11px] text-emerald-900">
+                  <span className="tabular-nums text-emerald-700">{new Date(r.created_at).toLocaleString("ko-KR")}</span>
+                  <span className="rounded-full bg-white px-1.5 font-bold">{r.kind}</span>
+                  <span className="text-emerald-700">{r.actor_email}</span>
+                  {r.row_count != null && <span>{r.row_count.toLocaleString("ko-KR")}줄</span>}
+                  {r.bytes != null && <span>· {(r.bytes / 1024 / 1024).toFixed(1)}MB</span>}
+                  {/* 빠진 표가 있으면 **빨갛게** 적습니다. 백업의 최악은 안 되는 것이 아니라
+                      되는 줄 알았는데 그 표만 없는 것입니다. */}
+                  {r.failed_tables && r.failed_tables.length > 0 && (
+                    <span className="rounded-full bg-rose-100 px-1.5 font-bold text-rose-700">
+                      못 읽음: {r.failed_tables.join(", ")}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="mb-6 flex items-center gap-2 g-panel-solid p-3 shadow-sm">

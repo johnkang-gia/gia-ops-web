@@ -161,8 +161,18 @@ export async function POST(req: Request) {
   // 줄을 못 넣었으면 빈 인보이스가 남습니다. 조용히 두면 총액만 있고 내역이 없는 종이가
   // 나가므로, 머리줄을 지우고 실패로 답합니다.
   if (lineErr) {
-    await supabase.from("invoices").delete().eq("id", inv.id);
-    return NextResponse.json({ error: `내역을 저장하지 못했습니다: ${lineErr.message}` }, { status: 500 });
+    // 되돌리기도 실패할 수 있습니다. 그러면 **총액만 있고 내역이 없는 청구서**가 남는데,
+    // 화면에는 정상으로 보여서 그대로 학부모에게 나갑니다. 되돌리기 실패는 원래 오류보다
+    // 더 나쁜 상태이므로 반드시 사람에게 알립니다.
+    const { error: rollbackErr } = await supabase.from("invoices").delete().eq("id", inv.id);
+    return NextResponse.json(
+      {
+        error: rollbackErr
+          ? `내역을 저장하지 못했고(${lineErr.message}) 빈 청구서도 지우지 못했습니다(${rollbackErr.message}). 청구서 ${inv.invoice_no ?? inv.id} 를 직접 확인해주세요.`
+          : `내역을 저장하지 못했습니다: ${lineErr.message}`,
+      },
+      { status: 500 },
+    );
   }
 
   // 원 청구서 잠금. 실패를 삼키지 않습니다 - 여기서 조용히 넘어가면 같은 돈이 두 곳에

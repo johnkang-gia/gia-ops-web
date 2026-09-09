@@ -1,11 +1,11 @@
 {
   "name": "gia-ops-web",
-  "version": "0.496.0",
+  "version": "0.497.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "check:changelog": "node scripts/check-changelog.mjs",
-    "build": "node scripts/check-changelog.mjs && node scripts/check-demo-isolation.mjs && node scripts/check-department.mjs && node scripts/check-tabbar.mjs && node scripts/check-truncate.mjs && node scripts/check-studentname.mjs && node scripts/check-open-api.mjs && node scripts/check-share-origin.mjs && node scripts/check-roster-columns.mjs && node scripts/check-paired-columns.mjs && node scripts/check-backup.mjs && next build",
+    "build": "node scripts/check-changelog.mjs && node scripts/check-demo-isolation.mjs && node scripts/check-department.mjs && node scripts/check-tabbar.mjs && node scripts/check-truncate.mjs && node scripts/check-studentname.mjs && node scripts/check-open-api.mjs && node scripts/check-share-origin.mjs && node scripts/check-roster-columns.mjs && node scripts/check-paired-columns.mjs && node scripts/check-backup.mjs && node scripts/check-backup-tables.mjs && next build",
     "start": "next start",
     "check:demo": "node scripts/check-demo-isolation.mjs",
     "check:dept": "node scripts/check-department.mjs",
@@ -16,7 +16,8 @@
     "check:origin": "node scripts/check-share-origin.mjs",
     "backup": "node scripts/backup.mjs",
     "check:roster": "node scripts/check-roster-columns.mjs",
-    "check:paired": "node scripts/check-paired-columns.mjs"
+    "check:paired": "node scripts/check-paired-columns.mjs",
+    "check:backuptables": "node scripts/check-backup-tables.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

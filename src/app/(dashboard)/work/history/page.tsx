@@ -27,7 +27,15 @@ export default async function WorkHistoryPage() {
 
   const supabase = await createClient();
   const [tasksRes, termsRes, teamRes, deptRes] = await Promise.all([
-    supabase.from("tasks").select("*").not("archived_at", "is", null).order("completed_at", { ascending: false }),
+    // 지난 업무는 **끝없이 쌓입니다.** 상한이 없으면 학교가 오래 굴러갈수록 이 화면 하나가
+    // 매번 표 전체를 끌어옵니다 - 몇 해 뒤에 느려지고, 그때는 어제까지 멀쩡했으니 원인을
+    // 찾기가 훨씬 어렵습니다. 최근 것부터 500건만 봅니다(더 옛것은 검색으로 찾습니다).
+    supabase
+      .from("tasks")
+      .select("*")
+      .not("archived_at", "is", null)
+      .order("completed_at", { ascending: false })
+      .limit(500),
     supabase.from("terms").select("*"),
     supabase.from("app_users").select("email, name").eq("status", "approved").order("email", { ascending: true }),
     supabase.from("departments").select("*").order("sort_order", { ascending: true }),

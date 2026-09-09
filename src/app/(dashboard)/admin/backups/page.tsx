@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isAdminUser } from "@/lib/roles";
 import type { BackupSummary } from "@/lib/types";
-import AdminBackupsClient from "@/components/admin/AdminBackupsClient";
+import AdminBackupsClient, { type ExportLogRow } from "@/components/admin/AdminBackupsClient";
 
 export const dynamic = "force-dynamic";
 
@@ -22,10 +22,17 @@ export default async function AdminBackupsPage() {
   const supabase = await createClient();
   // snapshot(실제 백업 내용)은 목록에서는 안 내려받습니다 - 백업이 쌓일수록 목록 조회 자체가
   // 무거워지는 걸 막기 위해서입니다(복원은 id만으로 서버(RPC)가 처리합니다).
-  const { data } = await supabase
-    .from("backups")
-    .select("id, label, created_by, created_at, tables")
-    .order("created_at", { ascending: false });
+  // 백업 목록과 «백업이 정말 돌고 있는지»를 함께 읽습니다. 자동 백업의 최악은 몇 달째
+  // 도는 줄 알았는데 첫날부터 실패하고 있던 것이라, 최근 기록을 화면에 띄웁니다.
+  const [{ data }, { data: log }] = await Promise.all([
+    supabase.from("backups").select("id, label, created_by, created_at, tables").order("created_at", { ascending: false }),
+    supabase.from("data_export_log").select("*").order("created_at", { ascending: false }).limit(8),
+  ]);
 
-  return <AdminBackupsClient initialBackups={(data as BackupSummary[] | null) ?? []} />;
+  return (
+    <AdminBackupsClient
+      initialBackups={(data as BackupSummary[] | null) ?? []}
+      exportLog={(log as ExportLogRow[] | null) ?? []}
+    />
+  );
 }

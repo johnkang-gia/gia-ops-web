@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
+import DismissalModal from "./DismissalModal";
 import { createClient } from "@/lib/supabase/client";
 import { todayKst, kstWeekday } from "@/lib/kst";
 import { loadDismissalForDay, DISMISSAL_SELECT, isMissingWeekStart, type DismissalRow } from "@/lib/dismissalToday";
@@ -55,6 +55,9 @@ export default function TodayDismissalReminder({
   const [ahead, setAhead] = useState<Ahead[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+  /** 팝업에서 고친 뒤 목록을 다시 읽기 위한 값. 안 바꾸면 닫아도 옛 목록이 남습니다. */
+  const [tick, setTick] = useState(0);
 
   useEffect(() => {
     void (async () => {
@@ -139,7 +142,7 @@ export default function TodayDismissalReminder({
           .sort((a, b) => a.date.localeCompare(b.date) || (a.time ?? "99:99").localeCompare(b.time ?? "99:99")),
       );
     })();
-  }, []);
+  }, [tick]);
 
   if (rows === null) return null;
   // 위젯 자리에서는 없으면 감춥니다(목록이 주인공입니다). 배너 자리는 비어 있어도 남깁니다 -
@@ -151,9 +154,18 @@ export default function TodayDismissalReminder({
       <p className="mb-1.5 flex flex-wrap items-baseline gap-x-2 text-[11px]">
         <b className="text-lime-800">🎒 오늘 하원체크 {rows.length}명</b>
         <span className="text-lime-700/70">셔틀이 아닌 방법으로 가는 아이 · 체크표에는 줄이 없습니다</span>
-        <Link href="/work/dismissal" className="ml-auto font-semibold text-lime-800 underline decoration-dotted">
-          하원수단 넣기·고치기
-        </Link>
+        {/* 페이지를 옮기지 않고 그 자리에서 엽니다.
+            업무보드는 하루 종일 켜놓고 보는 화면인데, 여기서 나갔다 돌아오면 보고 있던 자리를
+            잃습니다. **나갔다 와야 하는 일은 대개 나중으로 미뤄지고**, 미룬 하원 변경은 그날
+            아무 데도 안 뜹니다. */}
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          title="하원수단을 넣거나 고칩니다. 오늘 것은 셔틀 체크표에 바로 반영됩니다."
+          className="ml-auto rounded-full bg-lime-600 px-2.5 py-1 text-[11px] font-bold text-white transition hover:bg-lime-700"
+        >
+          🎒 하원수단 넣기·고치기
+        </button>
       </p>
 
       {/* 못 읽은 것을 조용히 「없음」으로 보여주지 않습니다. */}
@@ -206,6 +218,16 @@ export default function TodayDismissalReminder({
             ))}
           </div>
         </div>
+      )}
+
+      {open && (
+        <DismissalModal
+          onClose={() => {
+            setOpen(false);
+            // 닫으면 다시 읽습니다. 방금 넣은 것이 위 줄에 안 뜨면 사람은 저장이 안 된 줄 압니다.
+            setTick((t) => t + 1);
+          }}
+        />
       )}
     </div>
   );

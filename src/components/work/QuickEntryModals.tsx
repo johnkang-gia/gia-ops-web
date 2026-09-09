@@ -111,8 +111,13 @@ function RangePicker({
 
 export type StudentPick = { id: string; name: string; grade: string | null; class_name: string | null };
 
-/** 명부에서 아이 고르기. 이름만으로는 김재이가 셋이라 반을 함께 보여줍니다. */
-function StudentPicker({
+/**
+ * 명부에서 아이 고르기. 이름만으로는 김재이가 셋이라 반을 함께 보여줍니다.
+ *
+ * 하원수단 팝업도 이걸 그대로 씁니다 - 고르는 방식이 화면마다 다르면 같은 아이를
+ * 다르게 찾게 되고, 그러면 어느 화면에서 잘못 골랐는지 알 수 없습니다.
+ */
+export function StudentPicker({
   value,
   onPick,
   initialQuery,
@@ -374,8 +379,8 @@ export function ManualAttendanceModal({
 
 // ── ③ 하원수단 ──────────────────────────────────────────────────────────────
 
-const KINDS = ["셔틀", "외부버스", "보호자픽업", "도보", "기타"] as const;
-const WEEK = [
+export const KINDS = ["셔틀", "외부버스", "보호자픽업", "도보", "기타"] as const;
+export const WEEK = [
   { n: 1, ko: "월" },
   { n: 2, ko: "화" },
   { n: 3, ko: "수" },

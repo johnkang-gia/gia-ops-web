@@ -148,6 +148,13 @@ export type ChecklistTemplate = {
   repeat_dow: number | null;
   /** 기준이 되는 다른 규칙. 있으면 anchor 대신 그 일정 날짜에서 offset_days 만큼 앞. */
   anchor_template_id: string | null;
+  /**
+   * 이 규칙이 적용되는 학기 종류(「1학기」·「여름캠프1」 등).
+   *
+   * **비어 있으면 모든 학기입니다.** 예전에 만든 규칙이 갑자기 안 도는 일이 없어야 합니다 -
+   * 안 도는 것은 오류로 안 보이고, 그 학기가 다 지난 뒤에야 발견됩니다.
+   */
+  term_types: string[] | null;
   created_at: string;
   updated_at: string;
 };

@@ -1,5 +1,6 @@
 import type { ChecklistAnchor, ChecklistTemplate, Term } from "./types";
 import { anchorDate, repeatDates, type AnchorNode } from "./academicRepeat";
+import { appliesToTerm } from "./termTypes";
 
 export function toDateStr(d: Date): string {
   const y = d.getFullYear();
@@ -44,7 +45,9 @@ export async function ensureChecklistItemsForTerm(
   term: Term,
   templates: ChecklistTemplate[]
 ): Promise<void> {
-  const activeTemplates = templates.filter((t) => t.active);
+  // 켜져 있고 **이 학기 종류에 해당하는** 규칙만. 섞여 있으면 여름캠프에 「교과서 준비」가
+  // 올라오고, 지워야 하는 업무가 몇 개 섞이면 사람은 목록 전체를 안 믿게 됩니다.
+  const activeTemplates = templates.filter((t) => t.active && appliesToTerm(t.term_types, term.term_type));
   if (activeTemplates.length === 0) return;
 
   const { data: existing } = await supabase

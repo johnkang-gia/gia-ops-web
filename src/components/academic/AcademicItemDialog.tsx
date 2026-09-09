@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import type { ChecklistAnchor, ChecklistTemplate, Term } from "@/lib/types";
 import { addDays, meetingDates, ANCHOR_LABEL } from "@/lib/academicChecklist";
 import { anchorDate, repeatDates, REPEAT_LABEL, DOW_LABEL, type AnchorNode, type RepeatKind } from "@/lib/academicRepeat";
+import { TERM_GROUPS, TERM_TYPES, describeTermScope } from "@/lib/termTypes";
 
 // 학사일정 항목 추가 팝업 (요청 ④⑤⑥)
 //
@@ -71,6 +72,26 @@ export default function AcademicItemDialog({
   const [cycleDow, setCycleDow] = useState(1);
   const [offsetUnit, setOffsetUnit] = useState<"week" | "day">("week");
   const [offsetValue, setOffsetValue] = useState(2);
+  /**
+   * 기준일 **전**인가 **후**인가.
+   *
+   * 학교 일은 앞뒤가 다 있습니다 - 「학기 시작 2주 전 안내문」도 있고 「학기 시작 1주 후
+   * 적응 점검」, 「캠프 종료 3일 후 정산」도 있습니다. 뒤엣것을 못 적으면 사람은 그것만
+   * 따로 기억하게 되고, 따로 기억하는 것은 빠집니다.
+   *
+   * 저장은 `offset_days` 하나로 합니다 - 양수가 「전」, 음수가 「후」입니다. 칸을 둘로
+   * 나누면 둘이 어긋난 값이 생깁니다.
+   */
+  const [offsetSide, setOffsetSide] = useState<"전" | "후">("전");
+
+  /**
+   * 이 규칙이 **어느 학기에** 적용되나.
+   *
+   * 비어 있으면 모든 학기입니다(지금까지의 동작). 정규학기와 캠프는 하는 일이 전혀 달라서
+   * - 정규학기는 반배정·시간표·교과서, 캠프는 모집 공고·신청서 마감 - 섞어두면 여름캠프가
+   * 시작될 때 「교과서 준비」가 업무보드에 올라옵니다.
+   */
+  const [termScope, setTermScope] = useState<string[]>([]);
   const [durationDays, setDurationDays] = useState(0);
 
   // 회의(요청 ⑤)
@@ -89,7 +110,8 @@ export default function AcademicItemDialog({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
-  const offsetDays = offsetUnit === "week" ? offsetValue * 7 : offsetValue;
+  // 양수가 「전」, 음수가 「후」. 계산(shiftBack)이 그렇게 읽습니다.
+  const offsetDays = (offsetUnit === "week" ? offsetValue * 7 : offsetValue) * (offsetSide === "전" ? 1 : -1);
 
   /** 이번 학기 안에서 이 주기가 걸리는 날들. 저장 전에 **몇 건이 생기는지** 보여줍니다. */
   const cycleDates = useMemo(() => {
@@ -207,6 +229,8 @@ export default function AcademicItemDialog({
           anchor: ruleAnchor,
           offset_days: ruleOffset,
           anchor_template_id: mode === "anchor" && anchorTemplateId ? anchorTemplateId : null,
+          // 비어 있으면 모든 학기. null 로 넣어 예전 규칙과 같은 뜻이 되게 합니다.
+          term_types: termScope.length > 0 ? termScope : null,
           repeat_kind: mode === "cycle" ? cycleKind : "term",
           repeat_month: mode === "cycle" && cycleKind === "year" ? cycleMonth : null,
           repeat_day: mode === "cycle" && (cycleKind === "year" || cycleKind === "month") ? cycleDay : null,
@@ -295,6 +319,73 @@ export default function AcademicItemDialog({
             placeholder="설명(선택)"
             className="flex-1 rounded-lg border border-slate-300 px-2 py-1.5 text-xs"
           />
+        </div>
+
+        {/* ── 어느 학기에 ─────────────────────────────────────
+            정규학기와 캠프는 하는 일이 전혀 다릅니다. 섞어두면 여름캠프가 시작될 때
+            「교과서 준비」가 업무보드에 올라오고, 지워야 하는 업무가 몇 개 섞이면 사람은
+            목록 전체를 안 믿게 됩니다. */}
+        <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 p-2.5">
+          <p className="mb-1.5 text-[11px] font-bold text-slate-600">
+            어느 학기에 적용하나요?
+            <span className="ml-1 font-medium text-slate-500">
+              — 지금: <b className="text-slate-700">{describeTermScope(termScope)}</b>
+            </span>
+          </p>
+          <div className="mb-1.5 flex flex-wrap gap-1">
+            <button
+              type="button"
+              onClick={() => setTermScope([])}
+              className={
+                "rounded-full border px-2.5 py-0.5 text-[11px] font-semibold transition " +
+                (termScope.length === 0 ? "border-slate-700 bg-slate-700 text-white" : "border-slate-300 text-slate-600 hover:bg-white")
+              }
+            >
+              모든 학기
+            </button>
+            {TERM_GROUPS.map((g) => {
+              const on = g.types.length === termScope.length && g.types.every((t) => termScope.includes(t));
+              return (
+                <button
+                  key={g.label}
+                  type="button"
+                  onClick={() => setTermScope(g.types)}
+                  title={g.hint}
+                  className={
+                    "rounded-full border px-2.5 py-0.5 text-[11px] font-semibold transition " +
+                    (on ? "border-slate-700 bg-slate-700 text-white" : "border-slate-300 text-slate-600 hover:bg-white")
+                  }
+                >
+                  {g.label}
+                </button>
+              );
+            })}
+          </div>
+          {/* 묶음으로 안 되는 경우를 위해 하나씩도 고를 수 있게 둡니다 - 「1학기에만」처럼
+              한 학기짜리 일도 있습니다. */}
+          <div className="flex flex-wrap gap-1">
+            {TERM_TYPES.map((t) => {
+              const on = termScope.includes(t);
+              return (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setTermScope((prev) => (on ? prev.filter((x) => x !== t) : [...prev, t]))}
+                  className={
+                    "rounded-md border px-1.5 py-0.5 text-[10px] transition " +
+                    (on ? "border-blue-400 bg-blue-100 font-bold text-blue-800" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-100")
+                  }
+                >
+                  {t}
+                </button>
+              );
+            })}
+          </div>
+          {termScope.length === 0 && (
+            <p className="mt-1 text-[11px] text-slate-500">
+              아무것도 안 고르면 <b>모든 학기</b>에 적용됩니다. 정규학기에만 하는 일이라면 위에서 골라주세요.
+            </p>
+          )}
         </div>
 
         {/* 언제 ─────────────────────────────────────────────── */}
@@ -397,9 +488,19 @@ export default function AcademicItemDialog({
                 <option value="week">주</option>
                 <option value="day">일</option>
               </select>
-              <span className="text-slate-500">전까지</span>
+              {/* 앞뒤를 고릅니다. 예전에는 「전」만 되어서 「학기 시작 1주 후 적응 점검」,
+                  「캠프 종료 3일 후 정산」 같은 일은 규칙으로 적을 수가 없었습니다.
+                  못 적으면 사람이 따로 기억하게 되고, 따로 기억하는 것은 빠집니다. */}
+              <select
+                value={offsetSide}
+                onChange={(e) => setOffsetSide(e.target.value as "전" | "후")}
+                className="rounded-lg border border-slate-300 px-2 py-1 text-xs font-semibold"
+              >
+                <option value="전">전</option>
+                <option value="후">후</option>
+              </select>
               <span className="mx-1 h-4 w-px bg-blue-200" />
-              <span className="text-slate-500">기간</span>
+              <span className="text-slate-500">에 · 기간</span>
               <input
                 type="number"
                 min={0}

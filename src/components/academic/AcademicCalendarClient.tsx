@@ -6,6 +6,8 @@ import { getHolidayPreset } from "@hyunbinseo/holidays-kr";
 import { createClient } from "@/lib/supabase/client";
 import type { ChecklistAnchor, ChecklistItem, ChecklistMeeting, ChecklistTemplate, Term } from "@/lib/types";
 import { ANCHOR_LABEL, toDateStr, addDays } from "@/lib/academicChecklist";
+import { describeRepeat } from "@/lib/academicRepeat";
+import { describeTermScope } from "@/lib/termTypes";
 import { friendlyError } from "@/lib/errorMessage";
 import GuideButton from "@/components/common/GuideButton";
 import { useConfirm } from "@/components/common/ConfirmProvider";
@@ -364,8 +366,24 @@ export default function AcademicCalendarClient({
                 </label>
                 <span className={"flex-1 font-semibold " + (t.active ? "text-slate-700" : "text-slate-300 line-through")}>{t.title}</span>
                 {t.department && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-500">{t.department}</span>}
+                {/* 규칙을 **말로** 적습니다. 「term_start 14」처럼 값만 늘어놓으면 목록을
+                    훑어서는 무슨 규칙인지 알 수 없고, 잘못 만든 규칙도 눈에 안 띕니다. */}
                 <span className="text-[11px] text-slate-400">
-                  {ANCHOR_LABEL[t.anchor]} {t.offset_days}일 전
+                  {(t.repeat_kind ?? "term") === "term"
+                    ? `${ANCHOR_LABEL[t.anchor]} ${Math.abs(t.offset_days)}일 ${t.offset_days < 0 ? "후" : "전"}`
+                    : describeRepeat(
+                        { kind: t.repeat_kind, month: t.repeat_month, day: t.repeat_day, dow: t.repeat_dow },
+                        t.offset_days,
+                      )}
+                </span>
+                <span
+                  className={
+                    "rounded-full px-2 py-0.5 text-[10px] " +
+                    (t.term_types && t.term_types.length > 0 ? "bg-blue-50 font-semibold text-blue-700" : "bg-slate-100 text-slate-400")
+                  }
+                  title="이 규칙이 적용되는 학기"
+                >
+                  {describeTermScope(t.term_types)}
                 </span>
                 <button onClick={() => startEditTemplate(t)} className="text-blue-600 hover:underline">
                   수정
@@ -407,10 +425,15 @@ export default function AcademicCalendarClient({
               </select>
             </div>
             <div className="flex w-24 flex-col gap-1">
-              <label className="text-[10px] font-semibold text-slate-500">며칠 전</label>
+              {/* 음수를 받습니다 - 음수가 「후」입니다. 예전에는 0 이상만 받아서
+                  「학기 시작 1주 후」 같은 일은 규칙으로 적을 수가 없었습니다. */}
+              <label className="text-[10px] font-semibold text-slate-500" title="양수는 기준일 전, 음수는 기준일 후입니다">
+                며칠 전 (음수=후)
+              </label>
               <input
                 type="number"
-                min={0}
+                min={-365}
+                max={365}
                 value={templateForm.offset_days}
                 onChange={(e) => setTemplateForm((f) => ({ ...f, offset_days: Number(e.target.value) || 0 }))}
                 className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs"

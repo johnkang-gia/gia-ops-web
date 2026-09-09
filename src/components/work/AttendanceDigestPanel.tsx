@@ -28,6 +28,16 @@ import {
   type RosterStudent,
 } from "@/lib/attendanceDigest";
 
+/**
+ * 이름을 견줄 때 쓰는 열쇠.
+ *
+ * 화면은 동명이인을 가르려고 「권수호(G2C)」처럼 반을 붙여 보여주는데, 표에는 「권수호」로
+ * 저장됩니다. 글자를 그대로 견주면 둘이 다른 사람이 되어, 등록해놓고도 뱃지가 안 붙습니다.
+ */
+function nameKey(n: string): string {
+  return String(n ?? "").replace(/\(.*$/, "").replace(/\s+/g, "").trim();
+}
+
 function timeStr(iso: string) {
   return new Date(iso).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
 }
@@ -82,7 +92,9 @@ function RegBadge({
   onFill: (e: AttendanceEntry) => void;
 }) {
   const key = `${entry.messageId}|${entry.studentName}|${entry.category}`;
-  const row = regs.get(key);
+  // 화면은 「권수호(G2C)」로 보여주고 표에는 「권수호」로 저장됩니다. 글자를 그대로 견주면
+  // 등록해놓고도 뱃지가 ⬜로 남아, 사람 눈에는 「등록이 안 된 것」과 똑같이 보입니다.
+  const row = regs.get(key) ?? regs.get(`${entry.messageId}|${nameKey(entry.studentName)}|${entry.category}`);
   const busy = busyKey === key;
 
   if (!row) {
@@ -388,7 +400,16 @@ export default function AttendanceDigestPanel({
       const json = (await res.json()) as { entries?: RegRow[]; dismissed?: string[]; staffNames?: string[]; teachers?: TeacherClass[] };
       const m = new Map<string, RegRow>();
       for (const e of json.entries ?? []) {
-        if (e.source_message_id) m.set(`${e.source_message_id}|${e.student_name}|${e.status}`, e);
+        if (!e.source_message_id) continue;
+        m.set(`${e.source_message_id}|${e.student_name}|${e.status}`, e);
+        // **이름을 글자 그대로 열쇠로 쓰면 안 맞습니다.**
+        //
+        // 화면은 「권수호(G2C)」처럼 반을 붙여 보여주고, 표에는 「권수호」로 저장됩니다.
+        // 그러면 등록은 됐는데 **뱃지가 안 붙습니다** - 사람 눈에는 「등록이 안 된 것」과
+        // 똑같아서, 눌렀는데 아무 일도 없는 것처럼 보입니다.
+        // 괄호와 공백을 뗀 열쇠를 하나 더 둡니다.
+        const bare = nameKey(e.student_name);
+        if (bare !== e.student_name) m.set(`${e.source_message_id}|${bare}|${e.status}`, e);
       }
       setRegs(m);
       setDismissed(new Set(json.dismissed ?? []));
@@ -407,10 +428,51 @@ export default function AttendanceDigestPanel({
   // 아니라 "아니라고 판단했음"이 기록으로 남아야 합니다.
   async function setState(entry: AttendanceEntry, next: "등록" | "무시") {
     const key = `${entry.messageId}|${entry.studentName}|${entry.category}`;
-    const row = regs.get(key);
-    // 등록 대상으로 잡히지 않은 항목(⬜)은 고칠 줄이 없습니다. 내리는 것만은 되어야 하므로
-    // 키를 보내 줄을 만들면서 곧바로 '무시'로 둡니다.
-    if (!row && next !== "무시") return;
+    // 글자 그대로 못 찾으면 괄호를 뗀 이름으로 한 번 더 봅니다.
+    const row = regs.get(key) ?? regs.get(`${entry.messageId}|${nameKey(entry.studentName)}|${entry.category}`);
+
+    // ── 줄이 없는데 [등록]을 누른 경우 ──────────────────────────────────
+    //
+    // 예전에는 여기서 **아무 말 없이 돌아갔습니다**(`if (!row) return`). 학생도 특정됐고
+    // 픽업도 분명한데 눌러도 아무 일이 없으니, 사람은 자기가 잘못 눌렀다고 생각하고 다시
+    // 누릅니다. 그러다 포기하고 셔틀 화면으로 넘어갑니다.
+    //
+    // 줄이 없는 이유는 자동이 «등록 대상»으로 안 잡았기 때문입니다. 그건 「등록하면 안 된다」가
+    // 아니라 「자동이 확신하지 못했다」는 뜻이므로, 사람이 누르면 **그 자리에서 만들어 등록**
+    // 합니다. 사람 판단이 자동보다 앞섭니다.
+    let manual: {
+      studentId: string;
+      studentName: string;
+      status: string;
+      dateFrom?: string;
+      dateTo?: string;
+      messageId?: string | null;
+      rawText?: string | null;
+    } | null = null;
+    if (!row && next === "등록") {
+      // 이름만으로 학생을 찾습니다. **동명이인이면 만들지 않습니다** - 엉뚱한 아이를 결석으로
+      // 만들면 오는 아이가 셔틀을 못 탑니다.
+      const bare = entry.studentName.replace(/\(.*$/, "").trim();
+      const hits = roster.filter((s) => s.id && s.name === bare);
+      if (hits.length !== 1 || !hits[0].id) {
+        setError(
+          hits.length > 1
+            ? `「${bare}」는 명부에 여러 명입니다. 어느 아이인지 골라주세요(줄을 눌러 근거 창에서 고를 수 있습니다).`
+            : `「${bare}」를 명부에서 찾지 못해 등록할 수 없습니다. 이름이 명부와 다르게 적혔는지 확인해주세요.`,
+        );
+        return;
+      }
+      manual = {
+        studentId: hits[0].id,
+        studentName: hits[0].name,
+        status: entry.category,
+        dateFrom: entry.targetDate,
+        dateTo: entry.targetDateTo ?? entry.targetDate,
+        messageId: entry.messageId ?? null,
+        rawText: entry.rawText.slice(0, 500),
+      };
+    }
+
     setBusyKey(key);
     const res = await fetch("/api/attendance/entries", {
       method: "PATCH",
@@ -418,14 +480,16 @@ export default function AttendanceDigestPanel({
       body: JSON.stringify(
         row
           ? { id: row.id, state: next }
-          : {
-              dismissKey: {
-                messageId: entry.messageId ?? "",
-                studentName: entry.studentName,
-                status: entry.category,
-                date: entry.targetDate,
-              },
-            }
+          : manual
+            ? { manual }
+            : {
+                dismissKey: {
+                  messageId: entry.messageId ?? "",
+                  studentName: entry.studentName,
+                  status: entry.category,
+                  date: entry.targetDate,
+                },
+              }
       ),
     });
     setBusyKey(null);

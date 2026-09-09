@@ -120,3 +120,37 @@ export function dayRange(from: string, to: string): string {
   const short = (d: string) => d.slice(5).replace("-", "/");
   return from === to ? short(from) : `${short(from)}~${short(to)}`;
 }
+
+/**
+ * **같은 아이의 같은 상태는 한 줄로 묶습니다.**
+ *
+ * 한우영 결석이 두 줄로 올라와 있었습니다(9/16~23, 9/16~28). 화면에는 「예정 3건」으로만
+ * 떠서, 보는 사람은 **아이가 셋인 줄** 압니다. 결석 아이 수를 세는 것이 이 칸의 첫 쓸모인데
+ * 건수와 사람 수가 다르면 숫자를 못 믿게 됩니다.
+ *
+ * 겹치는 기간은 합치지 않고 **그대로 나란히 적습니다.** 「9/16~23 · 9/16~28」이 보여야
+ * 사람이 「둘 중 하나는 잘못 들어왔구나」를 알아챕니다. 자동으로 넓은 쪽만 남기면 잘못
+ * 들어온 줄이 조용히 사라지고, 그러면 왜 그렇게 됐는지 영영 못 찾습니다.
+ */
+export function mergeByStudent<T extends { name: string; status: string; from: string; to: string; note: string | null }>(
+  rows: T[],
+): { name: string; status: string; spans: { from: string; to: string }[]; note: string | null; conflicting: boolean }[] {
+  const m = new Map<string, { name: string; status: string; spans: { from: string; to: string }[]; note: string | null }>();
+  for (const r of rows) {
+    const key = `${r.name}::${r.status}`;
+    const cur = m.get(key);
+    if (cur) {
+      // 같은 기간이 두 번 온 것은 진짜 중복이라 한 번만 적습니다.
+      if (!cur.spans.some((s) => s.from === r.from && s.to === r.to)) cur.spans.push({ from: r.from, to: r.to });
+      if (!cur.note && r.note) cur.note = r.note;
+    } else {
+      m.set(key, { name: r.name, status: r.status, spans: [{ from: r.from, to: r.to }], note: r.note });
+    }
+  }
+  return [...m.values()].map((v) => ({
+    ...v,
+    spans: v.spans.sort((a, b) => a.from.localeCompare(b.from) || a.to.localeCompare(b.to)),
+    // 기간이 둘 이상이면 어느 쪽이 맞는지 사람이 봐야 합니다.
+    conflicting: v.spans.length > 1,
+  }));
+}

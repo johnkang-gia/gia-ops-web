@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { BoardScale } from "@/lib/useBoardDensity";
 import { lessonPlace } from "@/lib/lessonLocation";
-import { BoardData, STATUS_COLOR, WEEKDAY_KO, btn, dayRange, shortName } from "./boardShared";
+import { BoardData, STATUS_COLOR, WEEKDAY_KO, btn, dayRange, mergeByStudent, shortName } from "./boardShared";
 
 /**
  * 대시보드의 **칸들** — 밤 정보, 교실 쪽지, 확인대기 인박스, 오늘 변동사항, 그리고 이 칸들을
@@ -332,7 +332,9 @@ export function TodayChanges({ sc, data }: { sc: BoardScale; data: BoardData }) 
   const absent = data.absences.filter((a) => a.status === "결석");
   const late = data.absences.filter((a) => a.status !== "결석");
   const pickups = data.pickups;
-  const upcoming = data.upcoming ?? [];
+  // **같은 아이의 같은 상태는 한 줄로.** 한우영 결석이 두 줄로 올라와 「예정 3건」이 떴고,
+  // 보는 사람은 아이가 셋인 줄 알았습니다. 이 칸의 첫 쓸모는 «몇 명인가»입니다.
+  const upcoming = mergeByStudent(data.upcoming ?? []);
   const dismissal = data.dismissalToday ?? [];
   // 앞으로 예약된 하원. 결석 「예정」과 **같은 자리**에 세웁니다 - 사람이 앞날을 확인하는
   // 자리는 하나여야 합니다. 두 곳이면 한 곳만 보고 다른 곳을 놓칩니다.
@@ -395,12 +397,23 @@ export function TodayChanges({ sc, data }: { sc: BoardScale; data: BoardData }) 
             {upcoming.slice(0, 8).map((u, i) => (
               <span
                 key={i}
-                title={[u.name, u.status, `${u.from}~${u.to}`, u.note].filter(Boolean).join(" · ")}
+                title={[
+                  u.name,
+                  u.status,
+                  u.spans.map((s) => `${s.from}~${s.to}`).join(" / "),
+                  u.conflicting ? "기간이 둘로 등록돼 있습니다 - 어느 쪽이 맞는지 확인해주세요" : null,
+                  u.note,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
                 style={{
                   display: "inline-flex",
                   alignItems: "baseline",
                   gap: sc.s(5, 3),
                   background: "#2a1f4d",
+                  // 기간이 둘이면 테두리로 표시합니다. 조용히 하나만 보여주면 잘못 들어온
+                  // 줄이 사라지고, 왜 그렇게 됐는지 영영 못 찾습니다.
+                  border: u.conflicting ? "1px solid #f59e0b" : "1px solid transparent",
                   borderRadius: 6,
                   padding: `${sc.s(3, 2)}px ${sc.s(8, 5)}px`,
                   fontSize: sc.s(17, 12),
@@ -409,7 +422,12 @@ export function TodayChanges({ sc, data }: { sc: BoardScale; data: BoardData }) 
               >
                 <b style={{ color: "#ddd6fe" }}>{shortName(u.name)}</b>
                 <span style={{ color: "#a78bfa", fontWeight: 700 }}>{u.status}</span>
-                <span style={{ fontSize: sc.s(15, 11), color: "#8b7bb8" }}>{dayRange(u.from, u.to)}</span>
+                {/* 기간을 **모두** 나란히 적습니다. 그래야 「둘 중 하나는 잘못 들어왔구나」를
+                    사람이 알아챕니다. */}
+                <span style={{ fontSize: sc.s(15, 11), color: u.conflicting ? "#fbbf24" : "#8b7bb8" }}>
+                  {u.spans.map((s) => dayRange(s.from, s.to)).join(" · ")}
+                  {u.conflicting ? " ⚠" : ""}
+                </span>
               </span>
             ))}
             {aheadCount > aheadShown && (

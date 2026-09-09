@@ -182,4 +182,23 @@ jobs:
             tail -n 60 /tmp/push.log
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+          # ── 실패를 **앱 안에서도** 보이게 ──────────────────────────────────
+          #
+          # 이 워크플로가 일곱 판 연속으로 실패하는 동안 아무도 몰랐습니다. 빨간 X 는
+          # GitHub Actions 탭에만 있고, 학교 사람들은 그 탭을 보지 않습니다. 그러는 사이
+          # 코드는 새 칸을 쓰는데 칸이 없는 상태로 배포가 계속됐고, 화면에는
+          # 「column ... does not exist」 가 떴습니다.
+          #
+          # 앱의 「오류 목록」은 사람이 실제로 보는 자리입니다. 거기에 한 줄 남깁니다.
+          # 이 기록이 실패해도 원래 결과(exit code)는 그대로 둡니다.
+          if [ "$code" -ne 0 ]; then
+            # 로그를 psql 변수로 넘깁니다(`:'log'`). 셸에서 따옴표로 이어 붙이면 로그 안의
+            # 작은따옴표·달러기호에 문장이 깨집니다 - 특히 "$$" 는 셸이 프로세스 번호로
+            # 바꿔버립니다.
+            psql "$SUPABASE_DB_URL" \
+              -v log="$(tail -n 40 /tmp/push.log)" \
+              -c "insert into public.error_logs (route, message, stack) values ('migration:push', '스키마 반영이 실패했습니다. 새 칸을 쓰는 화면이 오류를 냅니다. GitHub Actions > Supabase 마이그레이션 에서 원인을 확인해주세요.', :'log')" \
+              || echo "오류 목록에 남기지 못했습니다(원인 파악에는 영향 없음)."
+          fi
           exit "$code"

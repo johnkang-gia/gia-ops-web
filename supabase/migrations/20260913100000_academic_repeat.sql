@@ -79,8 +79,17 @@ begin
       and rel.relname = 'academic_checklist_items'
       and con.contype = 'u'
       and array_length(con.conkey, 1) = 2
+      -- **`::text` 캐스팅이 없으면 여기서 통째로 멈춥니다.**
+      --
+      -- `attname` 은 `name` 타입이라 `array_agg` 결과가 `name[]` 이고, 오른쪽
+      -- `array['template_id','term_id']` 는 `text[]` 입니다. 포스트그레스에는 그 둘을 견주는
+      -- 연산자가 없어서 `operator does not exist: name[] = text[]` 로 실패합니다.
+      --
+      -- 이 한 줄 때문에 마이그레이션이 **일곱 판(#134~#140) 연속으로 실패**했고, 그 뒤에 줄
+      -- 서 있던 재무 자물쇠·백업·학사일정·하원수단이 하나도 반영되지 않았습니다. 앞의 파일이
+      -- 막히면 뒤는 시도조차 안 되기 때문입니다.
       and (
-        select array_agg(att.attname order by att.attname)
+        select array_agg(att.attname::text order by att.attname::text)
         from unnest(con.conkey) k
         join pg_attribute att on att.attrelid = con.conrelid and att.attnum = k
       ) = array['template_id', 'term_id']

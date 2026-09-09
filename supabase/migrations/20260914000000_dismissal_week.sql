@@ -34,8 +34,35 @@ comment on column public.student_dismissal_plans.week_start is
 -- 두 줄이 공존하되 **각 갈래 안에서는 하나뿐**이어야 합니다. 널을 섞은 유니크 제약은
 -- 널끼리 서로 다른 값으로 취급되어(매주 줄이 몇 개든 들어갑니다) 쓸 수 없으므로,
 -- 조건부 인덱스 둘로 나눕니다.
-alter table public.student_dismissal_plans
-  drop constraint if exists student_dismissal_plans_student_id_weekday_key;
+-- 이름이 아니라 **모양**으로 찾아 지웁니다.
+--
+-- `unique (student_id, weekday)` 는 이름을 안 적고 만들었으므로 포스트그레스가 이름을
+-- 지어줬습니다. 그 이름을 찍어서 지우면, 이름이 다를 때 **조용히 아무 일도 안 일어납니다.**
+-- 그러면 옛 제약이 그대로 남아서 「매주 셔틀」인 아이에게 「이번주만 보호자픽업」을 넣는
+-- 순간 23505 로 막힙니다 - 화면에는 저장된 것처럼 보이는 채로요.
+do $$
+declare
+  c record;
+begin
+  for c in
+    select con.conname
+    from pg_constraint con
+    join pg_class rel on rel.oid = con.conrelid
+    join pg_namespace ns on ns.oid = rel.relnamespace
+    where ns.nspname = 'public'
+      and rel.relname = 'student_dismissal_plans'
+      and con.contype = 'u'
+      and array_length(con.conkey, 1) = 2
+      -- attname 은 name 타입입니다. text 로 맞추지 않으면 견줄 연산자가 없어 실패합니다.
+      and (
+        select array_agg(att.attname::text order by att.attname::text)
+        from unnest(con.conkey) k
+        join pg_attribute att on att.attrelid = con.conrelid and att.attnum = k
+      ) = array['student_id', 'weekday']
+  loop
+    execute format('alter table public.student_dismissal_plans drop constraint %I', c.conname);
+  end loop;
+end $$;
 
 create unique index if not exists student_dismissal_plans_weekly_uq
   on public.student_dismissal_plans (student_id, weekday)

@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import EvidenceModal from "./EvidenceModal";
 import { useRealtimeTable } from "@/lib/useRealtimeTable";
 import { useToast } from "@/components/common/ToastProvider";
 import GuideButton from "@/components/common/GuideButton";
@@ -77,6 +78,7 @@ function StudentRow({
   onSetStatus,
   onSetReason,
   onContact,
+  onShowEvidence,
   busy,
   highlight,
 }: {
@@ -88,6 +90,8 @@ function StudentRow({
   onSetStatus: (student: WrStudent, status: AttendanceStatus) => void;
   onSetReason: (record: AttendanceRecord, reason: ReasonType) => void;
   onContact: (student: WrStudent, record: AttendanceRecord, contacted: boolean, note: string) => void;
+  /** 「근거」를 눌렀을 때. 그 연락의 원문을 띄웁니다. */
+  onShowEvidence: (record: AttendanceRecord, name: string) => void;
   busy: boolean;
   /** 특이사항 칸에서 이름을 눌러 찾아온 아이. 테두리로 표시합니다. */
   highlight: boolean;
@@ -95,7 +99,16 @@ function StudentRow({
   const t = useT();
   const { lang } = useLang();
   const [noteDraft, setNoteDraft] = useState(record?.contact_note ?? "");
-  // 상태 고르는 줄은 눌렀을 때만 펼칩니다. 기본이 출석이라 대부분은 누를 일이 없습니다.
+  /**
+   * 상태 고르는 줄은 **아이콘 위에 떠서** 나옵니다.
+   *
+   * 예전에는 누르면 줄 아래로 펼쳐졌습니다. 그러면 그 아이 아래 있던 아이들이 전부 밀려
+   * 내려가서, 방금 보고 있던 자리를 놓칩니다. 137명을 훑는 화면에서 한 명 고칠 때마다
+   * 화면이 흔들리면 어디까지 봤는지 매번 다시 찾게 됩니다.
+   *
+   * 그래서 **자리를 차지하지 않는 겹쳐진 칸**으로 띄웁니다. 마우스를 대면 열리고, 태블릿
+   * 에서는 눌러도 열립니다 - 손가락으로는 마우스를 «올릴» 수 없습니다.
+   */
   const [open, setOpen] = useState(false);
   const cur = record?.status;
   const needsContact = record && NEEDS_CONTACT.includes(record.status);
@@ -113,63 +126,104 @@ function StudentRow({
   return (
     <div className={"rounded-lg border bg-white px-2 py-1.5 shadow-sm " + (highlight ? "border-teal-400 ring-2 ring-teal-200" : "border-slate-100")}>
       <div className="flex items-center gap-1.5">
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => setOpen((v) => !v)}
-          title={cur ? `${t(cur, STATUS_META[cur].en)} — 눌러서 바꾸기` : t("출석 (표시 없음) — 눌러서 바꾸기", "Present (unmarked) — tap to change")}
-          className={
-            "shrink-0 rounded-md border px-1 py-0.5 text-[13px] leading-none transition disabled:opacity-50 " +
-            (cur ? STATUS_META[cur].badge : "border-slate-200 text-slate-300 hover:bg-slate-50")
-          }
+        {/* 아이콘 하나 + 그 위에 겹쳐 뜨는 고르기 칸.
+            relative 를 여기 두어야 떠오르는 칸이 이 아이콘을 기준으로 자리를 잡습니다. */}
+        <div
+          className="relative shrink-0"
+          onMouseEnter={() => setOpen(true)}
+          onMouseLeave={() => setOpen(false)}
         >
-          {cur ? STATUS_META[cur].emoji : "·"}
-        </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => setOpen((v) => !v)}
+            title={
+              cur
+                ? `${t(cur, STATUS_META[cur].en)} — 마우스를 대면 바꿀 수 있습니다`
+                : t("출석 (표시 없음) — 마우스를 대면 바꿀 수 있습니다", "Present (unmarked) — hover to change")
+            }
+            className={
+              "rounded-md border px-1 py-0.5 text-[13px] leading-none transition disabled:opacity-50 " +
+              (cur ? STATUS_META[cur].badge : "border-slate-200 text-slate-300 hover:bg-slate-50")
+            }
+          >
+            {cur ? STATUS_META[cur].emoji : "·"}
+          </button>
+
+          {open && (
+            <div
+              /* 아래로 밀지 않고 **겹쳐서** 띄웁니다. 아이콘과 칸 사이에 틈이 있으면 마우스가
+                 그 틈을 지나는 순간 닫혀버려서, 고르려다 매번 놓칩니다 - 틈을 두지 않습니다. */
+              className="absolute left-0 top-full z-30 flex w-max gap-1 rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg"
+            >
+              {STATUS_LIST.map((s) => {
+                const active = record?.status === s;
+                return (
+                  <button
+                    key={s}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      onSetStatus(student, s);
+                      setOpen(false);
+                    }}
+                    title={t(s, STATUS_META[s].en)}
+                    className={
+                      "whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-semibold transition disabled:opacity-50 " +
+                      (active ? STATUS_META[s].active : "border-slate-200 text-slate-500 hover:bg-slate-50")
+                    }
+                  >
+                    {STATUS_META[s].emoji} {t(s, STATUS_META[s].en)}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
         <span className="min-w-0 flex-1 text-[13px] font-semibold text-slate-700" title={student.name_en ?? undefined}>
           <span className="block truncate">{lang === "en" && student.name_en ? student.name_en : student.name}</span>
         </span>
+
         {/* 결석 사유와 확인 필요는 글자 없이 점 하나로. 이름 줄이 길어지면 5열이 깨집니다. */}
         {record?.status === "결석" && !record.reason_type && (
           <span className="shrink-0 text-[10px] text-slate-300" title="결석 사유를 아직 안 골랐습니다">
             사유?
           </span>
         )}
+        {/* 📄 근거.
+            연락에서 저절로 들어온 줄에는 **무엇을 보고 그렇게 판단했는지**가 있어야 합니다.
+            지금까지는 그 사실만 있고 원문이 없어서, 확인하려면 업무보드나 구글챗을 따로
+            열어야 했습니다. 그러면 사람은 확인하지 않고 넘기고, 확인하지 않은 「확인」은
+            아무 뜻이 없습니다 - 잘못 읽은 결석이 그대로 서류에 남습니다. */}
+        {record?.entry_id ? (
+          <button
+            type="button"
+            onClick={() => onShowEvidence(record, student.name)}
+            title={`${record.source ?? "연락"} 원문을 봅니다`}
+            className="shrink-0 rounded-full border border-slate-200 px-1.5 text-[9px] font-bold text-slate-500 transition hover:border-slate-400 hover:bg-slate-50"
+          >
+            📄 근거
+          </button>
+        ) : record?.confirmed_by_human === false ? (
+          /* 자동으로 들어왔는데 근거가 안 붙어 있는 줄. **그렇다고 말합니다.** 아무것도
+             안 띄우면 「근거가 없는 자동 기록」과 「근거 단추가 없는 화면」이 똑같이 보입니다. */
+          <span
+            className="shrink-0 rounded-full border border-dashed border-slate-200 px-1.5 text-[9px] font-bold text-slate-300"
+            title="자동으로 들어왔는데 근거가 된 연락이 연결되어 있지 않습니다. 업무보드 인박스에서 확인해주세요."
+          >
+            근거 없음
+          </span>
+        ) : null}
         {record?.confirmed_by_human === false && (
           <span
             className="shrink-0 rounded-full bg-amber-400 px-1 text-[9px] font-bold text-white"
-            title={`${record.source ?? "연락"}에서 저절로 들어왔습니다 — 확인해주세요`}
+            title={`${record.source ?? "연락"}에서 저절로 들어왔습니다 — 「📄 근거」로 원문을 보고 확인해주세요`}
           >
             확인
           </span>
         )}
       </div>
-
-      {/* 눌렀을 때만 펼칩니다. */}
-      {open && (
-        <div className="mt-1.5 flex flex-wrap gap-1">
-          {STATUS_LIST.map((s) => {
-            const active = record?.status === s;
-            return (
-              <button
-                key={s}
-                type="button"
-                disabled={busy}
-                onClick={() => {
-                  onSetStatus(student, s);
-                  setOpen(false);
-                }}
-                title={t(s, STATUS_META[s].en)}
-                className={
-                  "rounded-full border px-2 py-0.5 text-[11px] font-semibold transition disabled:opacity-50 " +
-                  (active ? STATUS_META[s].active : "border-slate-200 text-slate-500 hover:bg-slate-50")
-                }
-              >
-                {STATUS_META[s].emoji} {t(s, STATUS_META[s].en)}
-              </button>
-            );
-          })}
-        </div>
-      )}
 
       {/* 결석일 때만 사유를 묻습니다. 지각·조퇴까지 물으면 매일 누를 것이 늘어나고,
           늘어난 만큼 아무도 안 누르게 됩니다. */}
@@ -296,6 +350,8 @@ export default function AttendanceClient({
   const t = useT();
   const { lang } = useLang();
   const [records, setRecords] = useRealtimeTable<AttendanceRecord>("attendance_records", initialRecords);
+  /** 📄 근거를 보는 중인 줄. */
+  const [evidence, setEvidence] = useState<{ entryId: string; name: string } | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   /** 특이사항 칸에서 이름을 눌러 찾아온 아이. 아래 명단에서 테두리로 표시합니다. */
   const [found, setFound] = useState<string | null>(null);
@@ -599,6 +655,7 @@ export default function AttendanceClient({
                         onSetStatus={setStatus}
                         onSetReason={setReason}
                         onContact={contact}
+                        onShowEvidence={(rec2, name) => setEvidence({ entryId: rec2.entry_id!, name })}
                         busy={busyId === s.id}
                         highlight={found === s.id}
                       />
@@ -611,6 +668,12 @@ export default function AttendanceClient({
         })}
       </div>
       </div>
+
+      {/* 📄 근거 원문. 화면을 옮기지 않고 그 자리에서 봅니다 - 옮겨가야 하는 확인은
+          대개 하지 않게 됩니다. */}
+      {evidence && (
+        <EvidenceModal entryId={evidence.entryId} studentName={evidence.name} onClose={() => setEvidence(null)} />
+      )}
     </div>
   );
 }

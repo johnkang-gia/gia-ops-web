@@ -295,7 +295,7 @@ export async function syncEntriesIntoRegister(
   const [entryRes, recRes] = await Promise.all([
     supabase
       .from("attendance_entries")
-      .select("id, student_id, status, note, date_from, date_to")
+      .select("id, student_id, status, note, date_from, date_to, source")
       .eq("state", "등록")
       // 결석만 가져옵니다. 지각·조퇴·픽업은 아예 읽지 않습니다.
       .eq("status", "결석")
@@ -326,7 +326,10 @@ export async function syncEntriesIntoRegister(
       // 사유는 연락 글에서 가릴 수 없습니다. 비워두고 사람이 고르게 합니다 - 여기서
       // '질병' 을 찍어두면 아무도 다시 안 봅니다.
       reason_type: null,
-      source: "토들",
+      // **어디서 온 연락인지 그대로 적습니다.** 예전에는 무엇이 들어오든 「토들」로
+      // 박아두었습니다. 출석부에는 「토들에서 들어왔습니다」라고 뜨는데 실제 근거는
+      // 구글챗 메시지라, 확인하러 간 사람이 토들을 아무리 뒤져도 찾지 못했습니다.
+      source: e.source === "googlechat" ? "구글챗" : e.source === "manual" ? "직접 등록" : "토들",
       confirmed_by_human: false,
       entry_id: e.id,
       note: (e.note as string | null) ?? null,

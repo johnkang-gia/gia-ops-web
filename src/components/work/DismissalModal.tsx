@@ -64,6 +64,8 @@ export default function DismissalModal({ onClose }: { onClose: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /** 지금 펼쳐둔 아이. 한 번에 하나만 폅니다 - 여럿을 펴두면 접은 뜻이 없어집니다. */
+  const [openStudent, setOpenStudent] = useState<string | null>(null);
 
   // ── 넣기 폼 ────────────────────────────────────────────────────────
   const [student, setStudent] = useState<StudentPick | null>(null);
@@ -227,8 +229,26 @@ export default function DismissalModal({ onClose }: { onClose: () => void }) {
     .filter((p) => p.date > today)
     .sort((a, b) => a.date.localeCompare(b.date) || (a.depart_time ?? "99:99").localeCompare(b.depart_time ?? "99:99"));
 
-  /** 평소(매주) 규칙. 요일별로 묶어 보여줍니다. */
-  const weekly = all.filter((p) => !p.week_start).sort((a, b) => a.weekday - b.weekday || a.name.localeCompare(b.name, "ko"));
+  /**
+   * 평소(매주) 규칙을 **아이별로** 묶습니다.
+   *
+   * 한 아이가 요일마다 다른 차를 타는 경우가 많아서(월 셔틀 · 화목 메타프랩 · 수금 블루웨일),
+   * 줄 단위로 쭉 세우면 같은 이름이 다섯 번 나옵니다. 그러면 목록이 길어지기만 하고 「이 아이가
+   * 어떻게 다니는가」는 오히려 안 보입니다 - 요일이 흩어져 있어 머릿속에서 다시 모아야 합니다.
+   *
+   * 이름 한 줄로 접어두고, 펴면 그 아이의 요일이 한자리에 모입니다.
+   */
+  const weeklyByStudent = (() => {
+    const m = new Map<string, { name: string; className: string; rows: Plan[] }>();
+    for (const p of all.filter((p) => !p.week_start)) {
+      const cur = m.get(p.student_id);
+      if (cur) cur.rows.push(p);
+      else m.set(p.student_id, { name: p.name, className: p.className, rows: [p] });
+    }
+    return [...m.entries()]
+      .map(([id, v]) => ({ id, ...v, rows: v.rows.sort((a, b) => a.weekday - b.weekday) }))
+      .sort((a, b) => a.name.localeCompare(b.name, "ko"));
+  })();
 
   return createPortal(
     <div className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-black/40 p-4" onClick={onClose}>
@@ -393,14 +413,45 @@ export default function DismissalModal({ onClose }: { onClose: () => void }) {
 
         {/* ── 평소(매주) ─────────────────────────────────────────────── */}
         <section>
-          <p className="mb-1 text-[11px] font-bold text-slate-600">🔁 매주 {weekly.length}건</p>
-          {weekly.length === 0 ? (
+          <p className="mb-1 text-[11px] font-bold text-slate-600">
+            🔁 매주 {weeklyByStudent.length}명
+            <span className="ml-1.5 font-normal text-slate-400">이름을 누르면 그 아이의 요일이 펼쳐집니다</span>
+          </p>
+          {weeklyByStudent.length === 0 ? (
             <p className="text-[11px] text-slate-400">매주 반복으로 적어둔 것이 없습니다.</p>
           ) : (
-            <div className="flex max-h-48 flex-col gap-1 overflow-y-auto">
-              {weekly.map((p) => (
-                <PlanRow key={`${p.student_id}-${p.weekday}-w`} p={p} today={today} busy={busy} onRemove={remove} />
-              ))}
+            <div className="flex max-h-64 flex-col gap-1 overflow-y-auto">
+              {weeklyByStudent.map((s) => {
+                const isOpen = openStudent === s.id;
+                return (
+                  <div key={s.id} className="rounded-lg border border-slate-200">
+                    <button
+                      type="button"
+                      onClick={() => setOpenStudent(isOpen ? null : s.id)}
+                      className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-[11px] hover:bg-slate-50"
+                    >
+                      <span className={"shrink-0 text-slate-400 transition " + (isOpen ? "rotate-90" : "")}>▶</span>
+                      <b className="shrink-0 text-slate-800">{s.name}</b>
+                      <span className="shrink-0 text-slate-400">{s.className}</span>
+                      {/* 접힌 채로도 **어느 요일에 뭘 타는지**는 보입니다. 이름만 있으면
+                          아이마다 열어봐야 하고, 그러면 접은 뜻이 없습니다. */}
+                      <span className="min-w-0 truncate text-slate-500">
+                        {s.rows.map((r) => `${WEEK.find((w) => w.n === r.weekday)?.ko} ${r.label || r.kind}`).join(" · ")}
+                      </span>
+                      <span className="ml-auto shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-500">
+                        {s.rows.length}일
+                      </span>
+                    </button>
+                    {isOpen && (
+                      <div className="flex flex-col gap-1 border-t border-slate-100 p-1.5">
+                        {s.rows.map((p) => (
+                          <PlanRow key={`${p.student_id}-${p.weekday}-w`} p={p} today={today} busy={busy} onRemove={remove} />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </section>

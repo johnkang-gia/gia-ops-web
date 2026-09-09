@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import PlateScanner from "@/components/shuttle/PlateScanner";
 import AddToHomeScreenBanner from "./AddToHomeScreenBanner";
 import { pollDelay } from "@/lib/useSmartPoll";
 
@@ -101,6 +102,8 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
    * 있어서, 지금은 눈으로 표 전체를 훑어야 했습니다.
    */
   const [plateQuery, setPlateQuery] = useState("");
+  /** 번호판 비추기 창이 열려 있는가. */
+  const [scanning, setScanning] = useState(false);
   const [pickupBusy, setPickupBusy] = useState(false);
 
   async function markStudentPickup(assignmentId: string, studentName: string) {
@@ -349,7 +352,26 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
             ✕
           </button>
         )}
+        {/* 손으로 치는 대신 비추면 되게. 하원 시간에는 아이를 보면서 하는 일이라, 화면을
+            보고 찾는 일은 자꾸 미뤄지고 나중에 몰아서 누르게 됩니다. 그러면 도착 시각이
+            실제와 달라지고 안내보드는 아직 안 온 차를 온 것으로 띄웁니다. */}
+        <button
+          type="button"
+          onClick={() => setScanning(true)}
+          title="번호판을 비추면 그 호차를 도착으로 찍습니다"
+          className="shrink-0 rounded-lg bg-slate-900 px-3 py-2 text-sm font-bold text-white active:scale-95"
+        >
+          📷
+        </button>
       </div>
+
+      {scanning && (
+        <PlateScanner
+          routes={routes.map((r) => ({ routeId: r.routeId, routeNo: r.routeNo, vehicleNo: r.vehicleNo ?? null }))}
+          onArrive={(routeId) => act(routeId, "arrive")}
+          onClose={() => setScanning(false)}
+        />
+      )}
 
       {routes.length === 0 ? (
         <p className="py-10 text-center text-sm text-slate-400">오늘 탈 학생이 있는 노선이 없습니다.</p>

@@ -334,6 +334,13 @@ export function TodayChanges({ sc, data }: { sc: BoardScale; data: BoardData }) 
   const pickups = data.pickups;
   const upcoming = data.upcoming ?? [];
   const dismissal = data.dismissalToday ?? [];
+  // 앞으로 예약된 하원. 결석 「예정」과 **같은 자리**에 세웁니다 - 사람이 앞날을 확인하는
+  // 자리는 하나여야 합니다. 두 곳이면 한 곳만 보고 다른 곳을 놓칩니다.
+  const dismissalAhead = data.dismissalAhead ?? [];
+  const aheadCount = upcoming.length + dismissalAhead.length;
+  // 화면에 실제로 세운 개수. 「외 N건」을 어림으로 적으면 숫자가 맞지 않고, 맞지 않는
+  // 숫자는 목록 전체를 못 믿게 만듭니다.
+  const aheadShown = Math.min(dismissalAhead.length, 8) + Math.min(upcoming.length, 8);
 
   return (
     <div style={{ flexShrink: 0, minHeight: 0 }}>
@@ -344,7 +351,7 @@ export function TodayChanges({ sc, data }: { sc: BoardScale; data: BoardData }) 
 
           지우는 일은 사람이 하지 않습니다 - 시작일이 되면 아래 오늘 명단으로 넘어가고
           여기서는 저절로 빠집니다. 사람이 지워야 하는 목록은 언젠가 안 지워집니다. */}
-      {upcoming.length > 0 && (
+      {aheadCount > 0 && (
         <div
           style={{
             background: "#1a1330",
@@ -355,10 +362,36 @@ export function TodayChanges({ sc, data }: { sc: BoardScale; data: BoardData }) 
           }}
         >
           <div style={{ display: "flex", alignItems: "baseline", gap: sc.s(7, 4), marginBottom: sc.s(5, 3) }}>
-            <span style={{ fontSize: sc.s(17, 12), fontWeight: 800, color: "#c4b5fd" }}>📌 예정 {upcoming.length}건</span>
+            <span style={{ fontSize: sc.s(17, 12), fontWeight: 800, color: "#c4b5fd" }}>📌 예정 {aheadCount}건</span>
             <span style={{ fontSize: sc.s(13, 10), color: "#7c6ba8" }}>미리 알려온 건 · 그날이 되면 아래로 내려옵니다</span>
           </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: sc.s(5, 3) }}>
+            {/* 예약된 하원 - 「다음 주 화요일만 할머니가 데리러 갑니다」. 넣어두면 그날
+                아침까지 아무 데도 안 보이던 것을 며칠 전부터 세워둡니다. */}
+            {dismissalAhead.slice(0, 8).map((d, i) => (
+              <span
+                key={`d${i}`}
+                title={[d.name, d.className, d.kind, d.label, d.date].filter(Boolean).join(" · ")}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "baseline",
+                  gap: sc.s(5, 3),
+                  background: "#2a1f4d",
+                  border: "1px solid #6d28d9",
+                  borderRadius: 6,
+                  padding: `${sc.s(3, 2)}px ${sc.s(8, 5)}px`,
+                  fontSize: sc.s(17, 12),
+                  whiteSpace: "nowrap",
+                }}
+              >
+                <b style={{ color: "#ddd6fe" }}>{shortName(d.name)}</b>
+                <span style={{ color: "#a78bfa", fontWeight: 700 }}>{d.label || d.kind}</span>
+                <span style={{ fontSize: sc.s(15, 11), color: "#8b7bb8", fontVariantNumeric: "tabular-nums" }}>
+                  {dayRange(d.date, d.date)}
+                  {d.time ? ` ${d.time}` : ""}
+                </span>
+              </span>
+            ))}
             {upcoming.slice(0, 8).map((u, i) => (
               <span
                 key={i}
@@ -379,8 +412,8 @@ export function TodayChanges({ sc, data }: { sc: BoardScale; data: BoardData }) 
                 <span style={{ fontSize: sc.s(15, 11), color: "#8b7bb8" }}>{dayRange(u.from, u.to)}</span>
               </span>
             ))}
-            {upcoming.length > 8 && (
-              <span style={{ fontSize: sc.s(14, 11), color: "#7c6ba8", alignSelf: "center" }}>외 {upcoming.length - 8}건</span>
+            {aheadCount > aheadShown && (
+              <span style={{ fontSize: sc.s(14, 11), color: "#7c6ba8", alignSelf: "center" }}>외 {aheadCount - aheadShown}건</span>
             )}
           </div>
         </div>

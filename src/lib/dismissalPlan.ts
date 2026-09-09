@@ -21,6 +21,12 @@ export type DismissalPlan = {
   /** 'HH:MM' 문자열. 학부모가 "1:55"라고만 알려주는 일이 많아 시각 타입을 안 씁니다. */
   depart_time: string | null;
   note: string | null;
+  /**
+   * 이 줄이 적용되는 주의 월요일. **비어 있으면 매주**입니다.
+   * 규칙은 `src/lib/dismissalWeek.ts` 한 곳에 있습니다 - 화면마다 다시 판단하면
+   * 어느 화면은 이번 주 할머니를, 어느 화면은 매주 셔틀을 보여주게 됩니다.
+   */
+  week_start?: string | null;
   updated_by?: string | null;
   updated_at?: string;
 };

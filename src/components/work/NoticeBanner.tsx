@@ -30,6 +30,7 @@ export default function NoticeBanner({
   team,
   userEmail,
   canManage,
+  compact = false,
 }: {
   initialNotices: WorkNotice[];
   collapsedIds: string[];
@@ -37,6 +38,15 @@ export default function NoticeBanner({
   team: TeamMember[];
   userEmail: string;
   canManage: boolean;
+  /**
+   * 헤더 안에 아이콘 하나로만 앉습니다.
+   *
+   * 업무보드 맨 위 자리는 「오늘 하원체크」가 씁니다 - 아이를 몇 시에 어디로 내보내야
+   * 하는가는 그날 안에 끝나는 일이고, 놓치면 되돌릴 수 없습니다. 공지는 나중에 읽어도
+   * 됩니다. 다만 **없애지는 않습니다** - 없애면 올린 사람은 알렸다고 생각하고 받는
+   * 사람은 못 봅니다. 안 읽은 공지가 있으면 아이콘에 빨간 점이 붙습니다.
+   */
+  compact?: boolean;
 }) {
   const notify = useToast();
   const [notices, setNotices] = useState(initialNotices);
@@ -149,7 +159,40 @@ export default function NoticeBanner({
     <>
       {/* 공지 줄 - 공지가 없어도 관리자·행정직원에게는 올리기/히스토리 버튼이 보여야 하므로
           한 줄은 항상 그려둡니다(일반 사용자는 공지가 없으면 아무것도 안 보입니다). */}
-      {(current || canManage) && (
+      {compact && (current || canManage) && (
+        <div className="flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            onClick={() => {
+              setShowHistory(true);
+              // 열어서 읽었으면 빨간 점을 내립니다. 안 내리면 점이 영영 남고, 영영 남는
+              // 표시는 아무도 안 보게 됩니다.
+              if (current && !isCollapsed) void toggleCollapse();
+            }}
+            title={current ? `공지: ${current.title}` : "올라온 공지가 없습니다"}
+            className="relative flex h-6 items-center gap-1 rounded-full bg-black/5 px-2 text-[11px] font-semibold text-slate-600 transition hover:bg-black/10"
+          >
+            📢
+            {/* 안 읽은(안 접은) 공지가 있으면 빨간 점. 접으면 「봤다」는 뜻이라 점이 사라집니다. */}
+            {current && !isCollapsed && (
+              <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-rose-500 ring-2 ring-white" />
+            )}
+            {current && <span className="max-w-32 truncate">{current.title}</span>}
+          </button>
+          {canManage && (
+            <button
+              type="button"
+              onClick={() => setShowForm(true)}
+              title="공지 올리기"
+              className="flex h-6 items-center rounded-full bg-black/5 px-2 text-[11px] font-semibold text-slate-600 transition hover:bg-black/10"
+            >
+              ✏️
+            </button>
+          )}
+        </div>
+      )}
+
+      {!compact && (current || canManage) && (
         <div className="glass-panel flex shrink-0 items-start gap-2 border-b border-black/5 px-3 py-1.5">
           {current ? (
             <button

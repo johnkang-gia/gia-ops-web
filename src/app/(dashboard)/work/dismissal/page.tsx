@@ -71,7 +71,7 @@ export default async function DismissalBulkPage() {
       .order("grade")
       .order("class_name")
       .order("name"),
-    supabase.from("student_dismissal_plans").select("id, student_id, weekday, kind, label, depart_time, note"),
+    supabase.from("student_dismissal_plans").select("id, student_id, weekday, kind, label, depart_time, note, week_start"),
     // 최근 2주 학부모 연락. 원문(raw_text)까지 가져와야 «몇 시 무슨 차»가 읽힙니다 -
     // 요약만으로는 시각이 잘려 있는 경우가 있습니다.
     supabase

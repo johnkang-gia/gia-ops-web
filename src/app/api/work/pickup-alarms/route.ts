@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { loadTodayPickups } from "@/lib/pickups";
 import { kstParts } from "@/lib/shuttleTracking";
+import { loadDismissalForDay } from "@/lib/dismissalToday";
 
 /**
  * 오늘 「시각이 정해진 하원」과 그 아이가 지금 있는 자리.
@@ -38,15 +39,15 @@ export async function GET() {
   const pickups = await loadTodayPickups(supabase, today, (id: string) => (byId.get(id)?.name as string) ?? null);
 
   // 오늘 요일의 하원수단(셔틀 제외). 시각이 적혀 있는 것만 알람 대상입니다.
-  const { data: plans } =
-    weekday >= 1 && weekday <= 5
-      ? await supabase
-          .from("student_dismissal_plans")
-          .select("student_id, kind, label, depart_time")
-          .eq("weekday", weekday)
-          .neq("kind", "셔틀")
-      : { data: [] as { student_id: string; kind: string; label: string | null; depart_time: string | null }[] };
-  const planByStudent = new Map((plans ?? []).map((p) => [p.student_id as string, p]));
+  // 「이번 주만」이 있으면 그것이 답입니다 - 판단은 loadDismissalForDay 한 곳에서 합니다.
+  const { byStudent: planByStudent, error: planErr } = await loadDismissalForDay(supabase, {
+    dayIso: today,
+    weekday,
+    excludeShuttle: true,
+  });
+  // 못 읽었으면 조용히 빈 목록으로 두지 않습니다 - 알람이 없는 것인지 못 읽은 것인지
+  // 화면이 말할 수 있어야 합니다.
+  if (planErr) return NextResponse.json({ error: `하원수단을 읽지 못했습니다: ${planErr}` }, { status: 500 });
 
   // ── 지금 어느 교실에서 무슨 수업 중인가 ────────────────────────────────────
   const [{ data: periods }, { data: classes }] = await Promise.all([
@@ -88,7 +89,7 @@ export async function GET() {
     const plan = st ? planByStudent.get(st.id as string) : undefined;
     // 학부모 연락에 시각이 없으면 평소 하원수단의 출발 시각을 씁니다. 시각을 모르면
     // 알릴 때도 모릅니다 - 그런 건은 알람 목록에서 빠지고 화면 목록에만 남습니다.
-    const time = p.time ?? (((plan?.depart_time as string | null) ?? "").slice(0, 5) || null);
+    const time = p.time ?? ((plan?.depart_time ?? "").slice(0, 5) || null);
     if (!time) continue;
     const key = `${p.name}|${time}`;
     if (seen.has(key)) continue;
@@ -100,13 +101,13 @@ export async function GET() {
       className: (st?.class_name as string | null) ?? null,
       where: place((st?.grade as string | null) ?? null, (st?.class_name as string | null) ?? null),
       // 무슨 차인지만. 학교 앞에서 타는 것이라 시각과 차 이름이면 충분합니다.
-      via: plan ? ((plan.label as string | null) ?? "").trim() || (plan.kind as string) : null,
+      via: plan ? (plan.label ?? "").trim() || plan.kind : null,
     });
   }
 
   // 픽업 연락이 없어도 시각이 적힌 하원수단은 알립니다(매주 오는 학원차).
   for (const [sid, plan] of planByStudent) {
-    const time = ((plan.depart_time as string | null) ?? "").slice(0, 5);
+    const time = (plan.depart_time ?? "").slice(0, 5);
     if (!time) continue;
     const st = byId.get(sid);
     if (!st) continue;
@@ -119,7 +120,7 @@ export async function GET() {
       time,
       className: (st.class_name as string | null) ?? null,
       where: place((st.grade as string | null) ?? null, (st.class_name as string | null) ?? null),
-      via: ((plan.label as string | null) ?? "").trim() || (plan.kind as string),
+      via: (plan.label ?? "").trim() || plan.kind,
     });
   }
 

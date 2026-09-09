@@ -52,6 +52,11 @@ export type BoardData = {
     time: string | null;
     note: string | null;
   }[];
+  /**
+   * 앞으로 예약된 하원수단(이번 주 남은 날 + 다음 주). 그날이 되면 위 dismissalToday 로
+   * 넘어갑니다 - 사람이 옮기거나 지우지 않습니다.
+   */
+  dismissalAhead?: { name: string; className: string; date: string; kind: string; label: string | null; time: string | null }[];
   /** 교실 태블릿에서 온 특이사항·문의. 읽으면 그 시각이 교실 화면에 그대로 뜹니다. */
   classroomNotes?: {
     id: string;

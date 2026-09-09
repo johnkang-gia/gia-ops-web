@@ -331,9 +331,11 @@ export const SCHEMA_CHECKS: SchemaCheck[] = [
   {
     feature: "하원수단(요일별)",
     table: "student_dismissal_plans",
-    columns: ["student_id", "weekday", "kind", "depart_time"],
-    migration: "20260831220000_dismissal_plans.sql",
-    impact: "요일마다 다른 차를 타는 아이의 하원 방법을 적을 수 없습니다.",
+    // week_start 가 없으면 「이번 주만」이 저장되지 않고 **매주로 들어갑니다** - 그러면
+    // 그 주만 할머니가 데리러 오기로 한 것이 영원히 남습니다. 없어서 안 되는 칸입니다.
+    columns: ["student_id", "weekday", "kind", "depart_time", "week_start"],
+    migration: "20260914000000_dismissal_week.sql",
+    impact: "요일마다 다른 차를 타는 아이의 하원 방법을 적을 수 없고, 「이번 주만」이 매주로 저장됩니다.",
   },
   {
     feature: "재무 열쇠",

@@ -8,6 +8,8 @@ import { displayInquiryType } from "@/lib/inquiryType";
 import { createClient } from "@supabase/supabase-js";
 import { kstParts } from "@/lib/shuttleTracking";
 import { departmentOf, gradeSortKey, isVisibleDepartment, VISIBLE_DEPARTMENTS, type VisibleDepartment } from "@/lib/department";
+import { loadDismissalForDay, DISMISSAL_SELECT, type DismissalRow } from "@/lib/dismissalToday";
+import { addDays, nextWeekStart, weekStartOf } from "@/lib/dismissalWeek";
 
 export const dynamic = "force-dynamic";
 
@@ -456,14 +458,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   // 자료는 이미 있습니다(학생 → 하원수단, 요일별). 여기서는 오늘 요일의 «셔틀이 아닌 것»만
   // 꺼내 시각 순으로 세웁니다. 새 표를 만들지 않습니다 - 같은 사실을 두 곳에 적으면 언젠가
   // 어긋나고, 어긋난 쪽이 어느 쪽인지 아무도 모릅니다.
-  const { data: planRows } =
-    weekday >= 1 && weekday <= 5
-      ? await supabase
-          .from("student_dismissal_plans")
-          .select("student_id, kind, label, depart_time, note")
-          .eq("weekday", weekday)
-          .neq("kind", "셔틀")
-      : { data: [] as { student_id: string; kind: string; label: string | null; depart_time: string | null; note: string | null }[] };
+  const { rows: planRows, byStudent: planPicked } = await loadDismissalForDay(supabase, {
+    dayIso: todayK,
+    weekday,
+    excludeShuttle: true,
+  });
 
   // 같은 아이가 「하원 픽업」과 「학원차·보호자 하원」 두 곳에 따로 뜨고 있었습니다.
   //
@@ -473,7 +472,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   // 둘은 같은 사실의 두 얼굴입니다. 두 줄로 두면 데려올 아이가 몇인지 셀 수 없고, 한 아이를
   // 두 번 부르게 됩니다. **오늘 온 연락이 이깁니다** - 평소 규칙보다 오늘 적어준 것이
   // 구체적입니다. 대신 평소 수단(어디 차·몇 시)을 픽업 줄에 붙여 정보는 잃지 않습니다.
-  const planByStudent = new Map((planRows ?? []).map((p) => [p.student_id as string, p]));
+  const planByStudent = planPicked;
   for (const pk of pickups) {
     if (!pk.studentId) continue;
     const plan = planByStudent.get(pk.studentId);
@@ -489,7 +488,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   const pickedUpIds = new Set(pickups.map((p) => p.studentId).filter(Boolean) as string[]);
   const pickedUpNames = new Set(pickups.map((p) => p.name));
 
-  const dismissalToday = (planRows ?? [])
+  const dismissalToday = [...planByStudent.values()]
     .filter((p) => deptStudentIds.has(p.student_id as string))
     // 오늘 픽업 연락이 온 아이는 위 「하원 픽업」에 이미 있습니다. 여기서는 뺍니다.
     .filter((p) => {
@@ -512,6 +511,37 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
       };
     })
     .sort((a, b) => (a.time ?? "99:99").localeCompare(b.time ?? "99:99") || a.name.localeCompare(b.name, "ko"));
+
+  // ── 앞으로 예약된 하원수단 ────────────────────────────────────────────────
+  //
+  // 「다음 주 화요일만 할머니가 데리러 갑니다」를 넣어두면, 지금까지는 그 화요일 아침까지
+  // **아무 데도 안 보였습니다.** 넣은 사람만 알고 있는 상태라, 그 사람이 그날 쉬면 아무도
+  // 모릅니다.
+  //
+  // 오늘이면 위의 픽업·학원차 목록으로 가고, 앞날이면 여기로 옵니다 - 결석 「예정」과 같은
+  // 자리에 서서 며칠 전부터 모두가 눈에 담습니다. 지우는 일은 사람이 하지 않습니다.
+  // 그날이 되면 저절로 오늘 목록으로 넘어갑니다.
+  const { data: aheadRows } = await supabase
+    .from("student_dismissal_plans")
+    .select(DISMISSAL_SELECT)
+    .in("week_start", [weekStartOf(todayK), nextWeekStart(todayK)])
+    .neq("kind", "셔틀");
+  const dismissalAhead = ((aheadRows as DismissalRow[] | null) ?? [])
+    .map((p) => ({ ...p, date: addDays(p.week_start as string, p.weekday - 1) }))
+    // 오늘·지난 날은 뺍니다. 오늘 것은 이미 위에 있고, 지난 것은 지금 할 수 있는 일이 없습니다.
+    .filter((p) => p.date > todayK && deptStudentIds.has(p.student_id))
+    .map((p) => {
+      const st = studentById.get(p.student_id) as { name?: string; grade?: string; class_name?: string } | undefined;
+      return {
+        name: st?.name ?? "?",
+        className: [st?.grade ? `${st.grade}학년` : null, st?.class_name].filter(Boolean).join(" "),
+        date: p.date,
+        kind: p.kind,
+        label: p.label,
+        time: p.depart_time,
+      };
+    })
+    .sort((a, b) => a.date.localeCompare(b.date) || (a.time ?? "99:99").localeCompare(b.time ?? "99:99"));
 
   // ── 교실에서 온 것 ────────────────────────────────────────────────────────
   //
@@ -667,6 +697,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     pickups,
     upcoming,
     dismissalToday,
+    dismissalAhead,
     classroomNotes,
     inquiries,
     pendingInbox,

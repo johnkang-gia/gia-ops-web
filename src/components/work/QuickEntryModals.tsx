@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import { todayKst } from "@/lib/kst";
+import { DISMISSAL_REPEATS, REPEAT_HINT, weekStartFor, type DismissalRepeat } from "@/lib/dismissalWeek";
 
 /**
  * 업무보드에서 연락 하나를 **그 자리에서** 처리하는 팝업들.
@@ -396,6 +397,9 @@ export function DismissalQuickModal({
   const [kind, setKind] = useState<string>("보호자픽업");
   const [labelText, setLabelText] = useState("");
   const [time, setTime] = useState("");
+  // **기본은 이번주.** 여기로 들어오는 연락은 거의 다 그 주 한 번짜리입니다("오늘은 할머니가
+  // 데리러 가요"). 매주가 기본이면 그 한 번짜리가 영원히 남고, 다음 주에 지우기를 잊습니다.
+  const [repeat, setRepeat] = useState<DismissalRepeat>("이번주");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -404,21 +408,33 @@ export function DismissalQuickModal({
     if (days.length === 0) return setErr("요일을 하나 이상 골라주세요.");
     setBusy(true);
     const supabase = createClient();
+    const weekStart = weekStartFor(repeat, todayKst());
     // 표를 새로 만들지 않습니다 - 하원수단 화면과 **같은 표**를 씁니다. 같은 사실을 두 곳에
     // 적으면 언젠가 어긋나고, 어긋난 쪽이 어느 쪽인지 아무도 모릅니다.
-    const { error } = await supabase.from("student_dismissal_plans").upsert(
-      days.map((w) => ({
-        student_id: student.id,
-        weekday: w,
-        kind,
-        label: labelText.trim() || null,
-        depart_time: time.trim() || null,
-      })),
-      { onConflict: "student_id,weekday" }
-    );
+    //
+    // 저장은 함수 하나(set_dismissal_plan)로 합니다. 「매주」와 「그 주만」이 각각 하나씩
+    // 있어야 해서 조건부 인덱스를 쓰는데, upsert 로는 어느 쪽인지 가리킬 수 없습니다.
+    for (const w of days) {
+      const { error } = await supabase.rpc("set_dismissal_plan", {
+        p_student: student.id,
+        p_weekday: w,
+        p_kind: kind,
+        p_label: labelText.trim() || null,
+        p_time: time.trim() || null,
+        p_note: null,
+        p_week_start: weekStart,
+      });
+      // 한 요일이 실패하면 거기서 멈춥니다. 나머지를 마저 넣고 「저장했습니다」를 띄우면
+      // 빠진 요일이 있는 줄 모른 채 창을 닫습니다.
+      if (error) {
+        setBusy(false);
+        return setErr(`${WEEK.find((x) => x.n === w)?.ko}요일을 저장하지 못했습니다: ${error.message}`);
+      }
+    }
     setBusy(false);
-    if (error) return setErr("저장하지 못했습니다: " + error.message);
-    onSaved(`${student.name} · ${days.map((d) => WEEK.find((w) => w.n === d)?.ko).join("·")} ${kind}으로 저장했습니다.`);
+    onSaved(
+      `${student.name} · ${days.map((d) => WEEK.find((w) => w.n === d)?.ko).join("·")} ${kind} · ${repeat === "매주" ? "매주" : `${repeat}만`}으로 저장했습니다.`,
+    );
     onClose();
   }
 
@@ -445,6 +461,28 @@ export function DismissalQuickModal({
             </button>
           ))}
         </div>
+      </div>
+
+      {/* 언제까지. 「이번주」가 먼저 눌려 있습니다 - 여기로 들어오는 연락은 거의 다 그 주
+          한 번짜리이고, 매주로 잘못 넣으면 다음 주에도 할머니를 기다립니다. */}
+      <div className="mb-2">
+        <p className="mb-1 text-[11px] font-semibold text-slate-500">언제까지</p>
+        <div className="flex gap-1">
+          {DISMISSAL_REPEATS.map((r) => (
+            <button
+              key={r}
+              onClick={() => setRepeat(r)}
+              title={REPEAT_HINT[r]}
+              className={
+                "flex-1 rounded-lg px-2 py-1.5 text-[12px] font-bold " +
+                (repeat === r ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-500")
+              }
+            >
+              {r === "매주" ? "매주" : `${r}만`}
+            </button>
+          ))}
+        </div>
+        <p className="mt-0.5 text-[11px] text-slate-400">{REPEAT_HINT[repeat]}</p>
       </div>
 
       <div className="mb-2">
@@ -488,7 +526,10 @@ export function DismissalQuickModal({
       >
         {busy ? "저장 중…" : "저장"}
       </button>
-      <p className="mt-1 text-[11px] text-slate-400">한 아이의 한 요일에는 하원수단이 하나뿐이라, 이미 있으면 덮어씁니다.</p>
+      <p className="mt-1 text-[11px] text-slate-400">
+        한 아이의 한 요일에는 하원수단이 하나뿐이라, 같은 갈래에 이미 있으면 덮어씁니다. 「이번주만」은 평소
+        하원수단을 지우지 않고 그 주에만 앞섭니다.
+      </p>
     </Shell>
   );
 }

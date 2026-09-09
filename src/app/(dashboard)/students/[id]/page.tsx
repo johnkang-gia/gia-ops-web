@@ -122,7 +122,7 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
   // 날은 셔틀 배정 자체가 없어서 적을 자리가 없었습니다.
   const { data: dpData } = await supabase
     .from("student_dismissal_plans")
-    .select("id, student_id, weekday, kind, label, depart_time, note, updated_by, updated_at")
+    .select("id, student_id, weekday, kind, label, depart_time, note, week_start, updated_by, updated_at")
     .eq("student_id", id)
     .order("weekday");
   const dismissalPlans = (dpData as DismissalPlan[] | null) ?? [];

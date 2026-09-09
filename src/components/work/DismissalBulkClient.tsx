@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
+import { DISMISSAL_REPEATS, REPEAT_HINT, describeWeek, weekStartFor, type DismissalRepeat } from "@/lib/dismissalWeek";
+import { todayKst } from "@/lib/kst";
 
 /**
  * 하원수단 한 화면에서 몰아 넣기.
@@ -48,6 +50,8 @@ export type PlanRow = {
   label: string | null;
   depart_time: string | null;
   note: string | null;
+  /** 적용되는 주의 월요일. 비어 있으면 매주 — 규칙은 `src/lib/dismissalWeek.ts` 한 곳입니다. */
+  week_start?: string | null;
 };
 
 const WEEKDAYS = [
@@ -93,9 +97,23 @@ export default function DismissalBulkClient({
   const [busy, setBusy] = useState(false);
   const [onlySet, setOnlySet] = useState(false);
   const [openRaw, setOpenRaw] = useState<string | null>(null);
+  // 이 화면은 「매주 이렇게 갑니다」를 몰아 넣는 자리라 매주가 기본입니다. 그 주 한 번짜리는
+  // 업무보드의 빠른등록으로 들어옵니다.
+  const [repeat, setRepeat] = useState<DismissalRepeat>("매주");
+
+  const today = todayKst();
+  const weekStart = weekStartFor(repeat, today);
 
   const planKey = (studentId: string, weekday: number) => `${studentId}|${weekday}`;
-  const planMap = useMemo(() => new Map(plans.map((p) => [planKey(p.student_id, p.weekday), p])), [plans]);
+  // **보고 있는 갈래의 줄만** 표에 세웁니다. 매주와 이번주만을 한 칸에 섞으면 지우기를
+  // 눌렀을 때 어느 쪽이 지워지는지 아무도 모릅니다.
+  const planMap = useMemo(
+    () =>
+      new Map(
+        plans.filter((p) => (p.week_start ?? null) === weekStart).map((p) => [planKey(p.student_id, p.weekday), p]),
+      ),
+    [plans, weekStart],
+  );
 
   const list = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -141,32 +159,54 @@ export default function DismissalBulkClient({
     }
     setBusy(true);
     const supabase = createClient();
-    const rows = picked.flatMap((sid) =>
-      days.map((w) => ({
-        student_id: sid,
-        weekday: w,
-        kind,
-        label: label.trim() || null,
-        depart_time: time.trim() || null,
-        note: note.trim() || null,
-      }))
-    );
-    // 한 아이의 한 요일에는 하나뿐이라, 이미 있으면 덮어씁니다.
-    const { data, error } = await supabase
-      .from("student_dismissal_plans")
-      .upsert(rows, { onConflict: "student_id,weekday" })
-      .select();
-    setBusy(false);
-    if (error) {
-      notify("저장하지 못했습니다: " + error.message, "error");
-      return;
+    // 저장은 함수 한 곳(set_dismissal_plan)에서 합니다 - 「매주」와 「그 주만」이 각각
+    // 하나씩 있어야 해서 조건부 인덱스를 쓰는데, upsert 로는 어느 쪽인지 가리킬 수 없습니다.
+    const saved: PlanRow[] = [];
+    for (const sid of picked) {
+      for (const w of days) {
+        const { data, error } = await supabase.rpc("set_dismissal_plan", {
+          p_student: sid,
+          p_weekday: w,
+          p_kind: kind,
+          p_label: label.trim() || null,
+          p_time: time.trim() || null,
+          p_note: note.trim() || null,
+          p_week_start: weekStart,
+        });
+        if (error) {
+          setBusy(false);
+          // 몇 건이 들어갔는지 함께 말합니다. 「저장 실패」만 뜨면 다시 눌러야 하는지
+          // 아닌지 알 수 없고, 대개 사람은 아무것도 안 들어갔다고 생각합니다.
+          setPlans((prev) => [
+            ...prev.filter((p) => !saved.some((s) => s.student_id === p.student_id && s.weekday === p.weekday && (p.week_start ?? null) === weekStart)),
+            ...saved,
+          ]);
+          notify(`${saved.length}건까지 저장하고 멈췄습니다: ${error.message}`, "error");
+          return;
+        }
+        saved.push({
+          id: (data as string | null) ?? `${sid}|${w}|${weekStart ?? ""}`,
+          student_id: sid,
+          weekday: w,
+          kind,
+          label: label.trim() || null,
+          depart_time: time.trim() || null,
+          note: note.trim() || null,
+          week_start: weekStart,
+        });
+      }
     }
-    const saved = (data as PlanRow[] | null) ?? [];
+    setBusy(false);
     setPlans((prev) => {
-      const next = prev.filter((p) => !saved.some((s) => s.student_id === p.student_id && s.weekday === p.weekday));
+      const next = prev.filter(
+        (p) => !saved.some((s) => s.student_id === p.student_id && s.weekday === p.weekday && (p.week_start ?? null) === weekStart),
+      );
       return [...next, ...saved];
     });
-    notify(`${picked.length}명 × ${days.length}요일 = ${rows.length}건 저장했습니다.`, "success");
+    notify(
+      `${picked.length}명 × ${days.length}요일 = ${saved.length}건을 ${repeat === "매주" ? "매주" : `${repeat}만`}으로 저장했습니다.`,
+      "success",
+    );
     setPicked([]);
     setDays([]);
   }
@@ -175,12 +215,16 @@ export default function DismissalBulkClient({
     const p = planMap.get(planKey(studentId, weekday));
     if (!p) return;
     const supabase = createClient();
-    const { error } = await supabase.from("student_dismissal_plans").delete().eq("id", p.id);
+    const { error } = await supabase.rpc("clear_dismissal_plan", {
+      p_student: studentId,
+      p_weekday: weekday,
+      p_week_start: weekStart,
+    });
     if (error) {
       notify("지우지 못했습니다: " + error.message, "error");
       return;
     }
-    setPlans((prev) => prev.filter((x) => x.id !== p.id));
+    setPlans((prev) => prev.filter((x) => !(x.student_id === studentId && x.weekday === weekday && (x.week_start ?? null) === weekStart)));
   }
 
   return (
@@ -188,6 +232,29 @@ export default function DismissalBulkClient({
       {/* ── 넣기 ───────────────────────────────────────────────────────────── */}
       <section className="rounded-2xl border border-slate-200 bg-white p-3">
         <h2 className="mb-2 text-sm font-bold text-slate-800">한 번에 넣기</h2>
+
+        {/* 언제까지 — 표에 무엇이 보이는지도 여기서 갈립니다. 겹쳐 있는 것을 한 칸에 섞으면
+            지우기를 눌렀을 때 어느 쪽이 지워지는지 아무도 모릅니다. */}
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <span className="text-[11px] font-semibold text-slate-500">언제까지</span>
+          {DISMISSAL_REPEATS.map((r) => (
+            <button
+              key={r}
+              type="button"
+              onClick={() => setRepeat(r)}
+              title={REPEAT_HINT[r]}
+              className={
+                "rounded-full px-2.5 py-1 text-[11px] font-bold " +
+                (repeat === r ? "bg-slate-800 text-white" : "border border-slate-200 text-slate-500 hover:bg-slate-50")
+              }
+            >
+              {r === "매주" ? "매주" : `${r}만`}
+            </button>
+          ))}
+          <span className="text-[11px] text-slate-400">
+            {REPEAT_HINT[repeat]} · 아래 표는 <b>{describeWeek(weekStart, today)}</b>에 적힌 것만 보여줍니다
+          </span>
+        </div>
 
         <div className="mb-2 flex flex-wrap items-center gap-2">
           <span className="text-[11px] font-semibold text-slate-500">요일</span>
@@ -274,8 +341,8 @@ export default function DismissalBulkClient({
           </button>
         </div>
         <p className="mt-1.5 text-[11px] leading-relaxed text-slate-400">
-          형제자매처럼 같은 차를 타는 아이는 함께 고르면 한 번에 들어갑니다. 이미 넣어둔 요일이 있으면{" "}
-          <b>덮어씁니다</b> — 한 아이의 한 요일에는 하원수단이 하나뿐입니다.
+          형제자매처럼 같은 차를 타는 아이는 함께 고르면 한 번에 들어갑니다. 같은 갈래에 이미 넣어둔 요일이 있으면{" "}
+          <b>덮어씁니다</b>. 「이번주만」은 매주 하원수단을 지우지 않고 그 주에만 앞섭니다.
         </p>
 
         {/* 고른 아이가 셔틀을 타는 요일. 여기 있는 요일에 학원차를 넣으면 그날 셔틀 자리가

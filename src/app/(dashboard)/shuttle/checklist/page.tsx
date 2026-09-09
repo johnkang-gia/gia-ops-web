@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { todayKst, kstWeekday } from "@/lib/kst";
 import { isUndecidedChoice } from "@/lib/shuttleChoice";
 import { WEEKDAY_NAMES } from "@/lib/dismissalPlan";
+import { loadDismissalForDay, type DismissalRow } from "@/lib/dismissalToday";
 import type { ChecklistLogRow } from "@/lib/checklistLog";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
@@ -153,7 +154,10 @@ export default async function ShuttleChecklistPage({
     supabase.from("pickup_requests").select("*").eq("is_demo", false).neq("status", "무시").eq("service_date", today),
     supabase.from("pickup_requests").select("source_url").not("source_url", "is", null).order("received_at", { ascending: false }).limit(1).maybeSingle(),
     supabase.from("shuttle_persistent_notes").select("id, term, student_name, student_id, route_no, content, effect_kind, effect_days, effect_from, effect_to, active").eq("term", term).eq("active", true).order("created_at", { ascending: false }),
-    supabase.from("student_dismissal_plans").select("student_id, kind, label, depart_time").eq("weekday", todayWeekday).neq("kind", "셔틀"),
+    // 「이번 주만」이 있으면 그것이 답이고 없으면 「매주」가 답입니다 - 판단은
+    // loadDismissalForDay 한 곳에서 합니다. 화면마다 다시 판단하면 어느 화면은
+    // 할머니를, 어느 화면은 셔틀을 보여주게 됩니다.
+    loadDismissalForDay(supabase, { dayIso: today, weekday: todayWeekday, excludeShuttle: true }),
     supabase.from("google_chat_mirror_messages").select("*").order("created_at_google", { ascending: false }).limit(200),
     supabase.from("wr_students_basic").select("id, name, grade, name_en, birth_date, class_name").eq("status", "active"),
     supabase.from("shuttle_checklist_log").select("id, service_date, assignment_id, student_name, action, before_value, after_value, actor_email, actor_name, created_at").eq("service_date", today).order("created_at", { ascending: false }).limit(100),
@@ -311,17 +315,15 @@ export default async function ShuttleChecklistPage({
   //
   // 셔틀 배정을 지우지 않는 이유: 요일마다 다르기 때문입니다. 월요일에는 같은 아이가 같은
   // 차를 탑니다. 배정은 그대로 두고 **그날 하루만** 안 타는 것으로 표시합니다.
-  const { data: planRows, error: planErr } = planRes;
-  if (planErr && planErr.code !== "PGRST205") {
-    // 표가 아직 없는 경우(마이그레이션 전)는 정상입니다. 그 밖의 실패는 소리를 냅니다 -
-    // 조용히 넘기면 "적어뒀는데 반영이 안 된다"가 됩니다.
-    console.error("[checklist] 하원수단 조회 실패:", planErr.message);
+  const { byStudent: planByStudentId, error: planErr } = planRes;
+  if (planErr) {
+    // 표가 아직 없는 경우(마이그레이션 전)는 loadDismissalForDay 가 걸러줍니다. 여기까지
+    // 온 실패는 소리를 냅니다 - 조용히 넘기면 "적어뒀는데 반영이 안 된다"가 됩니다.
+    console.error("[checklist] 하원수단 조회 실패:", planErr);
   }
-  type DismissalRow = { student_id: string; kind: string; label: string | null; depart_time: string | null };
-  const plans = (planRows as DismissalRow[] | null) ?? [];
-  const planByStudentId = new Map(plans.map((p) => [p.student_id, p]));
+  const plans = [...planByStudentId.values()];
   // 배정에 학생 연결이 안 된 줄이 아직 많아서, 이름으로도 한 번 더 찾습니다.
-  const planByName = new Map<string, DismissalRow>();
+  const planByName = new Map<string, (typeof plans)[number]>();
   if (plans.length > 0) {
     const { data: planStudents } = await supabase
       .from("wr_students_basic")

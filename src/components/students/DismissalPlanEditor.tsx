@@ -11,12 +11,18 @@ import {
   type DismissalKind,
   type DismissalPlan,
 } from "@/lib/dismissalPlan";
+import { DISMISSAL_REPEATS, REPEAT_HINT, describeWeek, weekStartFor, type DismissalRepeat } from "@/lib/dismissalWeek";
+import { todayKst } from "@/lib/kst";
 
 // 하원수단 편집 — 요일 다섯 줄.
 //
 // **왜 다섯 줄을 한 화면에 펼쳐 두는가:** 백서아처럼 요일마다 다른 아이는 한 요일만 봐서는
 // 맞는지 알 수 없습니다. 다섯 줄이 같이 보여야 "화·목은 메타프랩, 수·금은 블루웨일"이라는
 // 모양이 눈에 들어오고, 빠뜨린 요일도 바로 보입니다.
+//
+// **어느 주를 보고 있는지 늘 적습니다.** 「매주」와 「이번주만」은 겹쳐 있을 수 있어서,
+// 지금 고치는 것이 어느 쪽인지 화면이 말하지 않으면 매주짜리를 지웠다고 생각하고 창을
+// 닫게 됩니다. 그러면 다음 주에 다시 나타나고, 그건 오류로 안 보입니다.
 
 type Row = {
   kind: DismissalKind | "";
@@ -42,22 +48,34 @@ export default function DismissalPlanEditor({
   readOnly?: boolean;
 }) {
   const notify = useToast();
-  const [rows, setRows] = useState<Record<number, Row>>(() => {
+  const today = todayKst();
+  const [plans, setPlans] = useState<DismissalPlan[]>(initialPlans);
+  // 프로필의 기본은 **매주**입니다. 여기는 「이 아이는 평소에 어떻게 가는가」를 적는 자리이고,
+  // 그 주 한 번짜리는 업무보드의 빠른등록으로 들어옵니다.
+  const [repeat, setRepeat] = useState<DismissalRepeat>("매주");
+  const weekStart = weekStartFor(repeat, today);
+
+  const rowsFor = (all: DismissalPlan[], ws: string | null): Record<number, Row> => {
     const out: Record<number, Row> = { 1: { ...EMPTY }, 2: { ...EMPTY }, 3: { ...EMPTY }, 4: { ...EMPTY }, 5: { ...EMPTY } };
-    for (const p of initialPlans) {
+    for (const p of all) {
       if (p.weekday < 1 || p.weekday > 5) continue;
-      out[p.weekday] = {
-        kind: p.kind,
-        label: p.label ?? "",
-        depart_time: p.depart_time ?? "",
-        note: p.note ?? "",
-      };
+      // **그 갈래에 실제로 있는 줄만** 채웁니다. 매주짜리를 「이번주만」 칸에 미리 채워두면,
+      // 저장을 누른 순간 매주짜리가 이번 주짜리로 복사되어 다음 주에 사라집니다.
+      if ((p.week_start ?? null) !== ws) continue;
+      out[p.weekday] = { kind: p.kind, label: p.label ?? "", depart_time: p.depart_time ?? "", note: p.note ?? "" };
     }
     return out;
-  });
+  };
+
+  const [rows, setRows] = useState<Record<number, Row>>(() => rowsFor(initialPlans, null));
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  function pickRepeat(next: DismissalRepeat) {
+    setRepeat(next);
+    setRows(rowsFor(plans, weekStartFor(next, today)));
+  }
 
   function update(day: number, patch: Partial<Row>) {
     setRows((prev) => ({ ...prev, [day]: { ...prev[day], ...patch } }));
@@ -78,67 +96,94 @@ export default function DismissalPlanEditor({
     setError(null);
     const supabase = createClient();
 
-    const toUpsert = [];
-    const toDelete: number[] = [];
+    // 요일 하나씩 저장합니다. 저장도 지우기도 함수 한 곳(set/clear_dismissal_plan)에서
+    // 합니다 - 「매주」와 「그 주만」이 각각 하나씩 있어야 해서 조건부 인덱스를 쓰는데,
+    // upsert 로는 어느 쪽인지 가리킬 수 없습니다.
+    const saved: DismissalPlan[] = [];
     for (let d = 1; d <= 5; d++) {
       const r = rows[d];
       if (!r.kind) {
-        toDelete.push(d);
+        // 비운 요일은 지웁니다. 남겨두면 "예전에는 학원 버스였다"가 지금 값처럼 보입니다.
+        const { error: delErr } = await supabase.rpc("clear_dismissal_plan", {
+          p_student: studentId,
+          p_weekday: d,
+          p_week_start: weekStart,
+        });
+        if (delErr) {
+          setBusy(false);
+          setError(`${WEEKDAY_NAMES[d]}요일을 지우지 못했습니다: ${delErr.message}`);
+          return;
+        }
         continue;
       }
-      toUpsert.push({
+      const { error: upErr } = await supabase.rpc("set_dismissal_plan", {
+        p_student: studentId,
+        p_weekday: d,
+        p_kind: r.kind,
+        p_label: r.label.trim() || null,
+        p_time: r.depart_time.trim() || null,
+        p_note: r.note.trim() || null,
+        p_week_start: weekStart,
+        p_by: userEmail,
+      });
+      if (upErr) {
+        setBusy(false);
+        // 실패한 이유를 그 자리에 적습니다. "저장 실패" 넉 자만 뜨면 무엇을 해야 할지
+        // 알 수 없고, 그대로 창을 닫으면 적은 것이 사라집니다.
+        setError(
+          upErr.code === "42883" || upErr.code === "PGRST202"
+            ? "하원수단 저장 함수가 아직 없습니다. 관리자에게 알려주세요 — 20260914000000_dismissal_week.sql"
+            : `${WEEKDAY_NAMES[d]}요일을 저장하지 못했습니다: ${upErr.message}`,
+        );
+        return;
+      }
+      saved.push({
         student_id: studentId,
         weekday: d,
         kind: r.kind,
         label: r.label.trim() || null,
         depart_time: r.depart_time.trim() || null,
         note: r.note.trim() || null,
-        updated_by: userEmail,
+        week_start: weekStart,
       });
     }
 
-    // 비운 요일은 지웁니다. 남겨두면 "예전에는 학원 버스였다"가 지금 값처럼 보입니다.
-    if (toDelete.length > 0) {
-      const { error: delErr } = await supabase
-        .from("student_dismissal_plans")
-        .delete()
-        .eq("student_id", studentId)
-        .in("weekday", toDelete);
-      if (delErr) {
-        setBusy(false);
-        setError(delErr.message);
-        return;
-      }
-    }
-
-    if (toUpsert.length > 0) {
-      const { error: upErr } = await supabase
-        .from("student_dismissal_plans")
-        .upsert(toUpsert, { onConflict: "student_id,weekday" });
-      if (upErr) {
-        setBusy(false);
-        // 실패한 이유를 그 자리에 적습니다. "저장 실패" 넉 자만 뜨면 무엇을 해야 할지
-        // 알 수 없고, 그대로 창을 닫으면 적은 것이 사라집니다.
-        setError(
-          upErr.code === "42P01"
-            ? "하원수단 표가 아직 만들어지지 않았습니다. 관리자에게 알려주세요 — 20260831220000_dismissal_plans.sql"
-            : upErr.message
-        );
-        return;
-      }
-    }
-
+    // 화면이 들고 있던 목록도 같이 맞춥니다. 안 맞추면 「매주 ↔ 이번주만」을 오갈 때
+    // 방금 저장한 것이 안 보이고, 사람은 저장이 안 된 줄 압니다.
+    setPlans((prev) => [...prev.filter((p) => (p.week_start ?? null) !== weekStart), ...saved]);
     setBusy(false);
     setEditing(false);
-    notify(`${studentName} 하원수단을 저장했습니다.`, "success");
+    notify(`${studentName} 하원수단(${repeat === "매주" ? "매주" : `${repeat}만`})을 저장했습니다.`, "success");
   }
 
   const filled = Object.entries(rows).filter(([, r]) => r.kind);
+  /** 지금 보고 있지 않은 갈래에 무엇이 있는지. 겹쳐 있는 것을 모르면 엉뚱한 쪽을 고칩니다. */
+  const otherLayers = [...new Set(plans.map((p) => p.week_start ?? null))]
+    .filter((ws) => ws !== weekStart)
+    .map((ws) => describeWeek(ws, today));
 
   return (
     <div className="mb-5 g-panel-solid p-4 shadow-sm">
       <div className="mb-2 flex items-center justify-between gap-2">
         <h2 className="text-sm font-bold text-slate-700">🏠 하원수단 (요일별)</h2>
+        {/* 지금 보고 있는 갈래. 「매주」와 「이번주만」이 겹쳐 있을 수 있어서, 어느 쪽을
+            고치는지 화면이 말하지 않으면 엉뚱한 쪽을 지우고 창을 닫게 됩니다. */}
+        <div className="ml-auto flex gap-1">
+          {DISMISSAL_REPEATS.map((r) => (
+            <button
+              key={r}
+              type="button"
+              onClick={() => pickRepeat(r)}
+              title={REPEAT_HINT[r]}
+              className={
+                "rounded-lg px-2 py-1 text-[11px] font-bold " +
+                (repeat === r ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200")
+              }
+            >
+              {r === "매주" ? "매주" : `${r}만`}
+            </button>
+          ))}
+        </div>
         {!readOnly && (
           <button
             type="button"
@@ -150,12 +195,21 @@ export default function DismissalPlanEditor({
         )}
       </div>
 
+      {/* 다른 갈래에 적힌 것이 있으면 알려줍니다. 「매주」만 보고 있는데 이번 주 목요일이
+          할머니로 덮여 있으면, 그 사실을 여기서 말하지 않으면 아무도 모릅니다. */}
+      {otherLayers.length > 0 && (
+        <p className="mb-1.5 rounded-lg bg-amber-50 px-2 py-1 text-[11px] text-amber-800">
+          다른 주에도 적힌 것이 있습니다: <b>{otherLayers.join(" · ")}</b> — 위 단추로 옮겨서 보세요.
+        </p>
+      )}
+
       {!editing && (
         <>
           {filled.length === 0 ? (
             <p className="text-xs text-slate-400">
-              아직 적힌 하원수단이 없습니다. 셔틀만 타는 아이는 비워두셔도 됩니다 — 요일마다 다른
-              차를 타거나 학원 버스를 타는 아이만 적어주세요.
+              {repeat === "매주"
+                ? "아직 적힌 하원수단이 없습니다. 셔틀만 타는 아이는 비워두셔도 됩니다 — 요일마다 다른 차를 타거나 학원 버스를 타는 아이만 적어주세요."
+                : `${repeat}에 따로 정해진 것이 없습니다. 비어 있으면 「매주」에 적힌 대로 갑니다.`}
             </p>
           ) : (
             <div className="flex flex-wrap gap-1.5">
@@ -258,6 +312,7 @@ export default function DismissalPlanEditor({
               취소
             </button>
             <span className="text-[11px] text-slate-400">
+              지금 고치는 것은 <b>{repeat === "매주" ? "매주" : `${repeat}만`}</b>입니다 — {REPEAT_HINT[repeat]}.{" "}
               셔틀 호차는 여기가 아니라 <b>셔틀 &gt; 탑승배정</b>이 정답입니다. 여기에는 &quot;셔틀&quot;이라고만
               적어두세요 — 같은 값을 두 곳에서 고치면 어느 쪽이 맞는지 알 수 없게 됩니다.
             </span>

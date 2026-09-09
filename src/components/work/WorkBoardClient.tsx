@@ -20,6 +20,7 @@ import WorkspaceArea from "./WorkspaceArea";
 import TaskDetailPanel from "./TaskDetailPanel";
 import WorkGuideModal from "./WorkGuideModal";
 import NoticeBanner from "./NoticeBanner";
+import TodayDismissalReminder from "./TodayDismissalReminder";
 import PickupAlarmBar from "./PickupAlarmBar";
 import type { RosterStudent } from "@/lib/attendanceDigest";
 
@@ -351,6 +352,19 @@ export default function WorkBoardClient({
         </Link>
         <ArrivalQrBadge />
         <StudentSearchBadge />
+        {/* 공지는 헤더의 아이콘으로 들어왔습니다. 맨 위 자리는 「오늘 하원체크」가 씁니다 -
+            아이를 몇 시에 어디로 내보내는가는 그날 안에 끝나는 일이고 놓치면 되돌릴 수
+            없는데, 공지는 나중에 읽어도 됩니다. 없애지는 않았습니다: 안 읽은 공지가 있으면
+            아이콘에 빨간 점이 붙고, 눌러서 히스토리로 봅니다. */}
+        <NoticeBanner
+          compact
+          initialNotices={initialNotices}
+          collapsedIds={collapsedNoticeIds}
+          activeDepartmentName={activeDepartment.name}
+          team={team}
+          userEmail={userEmail}
+          canManage={canManageNotices}
+        />
         <button
           type="button"
           onClick={() => setGuideOpen(true)}
@@ -361,20 +375,17 @@ export default function WorkBoardClient({
         </button>
       </div>
 
-      {/* 요청: "전체공지가 있을경우 바로 상단으로 옮겨지고" - 부서 탭 바로 아래, 업무 화면
-          맨 위에 배너로 띄웁니다. 최신 공지 하나만 뜨고, 사람마다 따로 접을 수 있습니다. */}
       {/* 5분 전 하원 알람. 사무실 대형 모니터에만 있었는데, 그 화면은 아무도 안 볼 때가
           있고 그때 놓치면 아이가 문 앞에서 기다립니다. 사람이 앉아서 보는 화면은 여기입니다. */}
       <PickupAlarmBar />
 
-      <NoticeBanner
-        initialNotices={initialNotices}
-        collapsedIds={collapsedNoticeIds}
-        activeDepartmentName={activeDepartment.name}
-        team={team}
-        userEmail={userEmail}
-        canManage={canManageNotices}
-      />
+      {/* 오늘 하원체크 - 예전에 공지가 있던 자리.
+          매주 같은 요일에 학원 차를 타는 아이는 셔틀을 안 타니 체크표에 줄이 없고, 학사일정도
+          아니라 달력에도 안 뜹니다. **반복되는 일이라 오히려 잊힙니다.** 그날 안에 끝나는
+          일이고 놓치면 되돌릴 수 없으므로, 맨 위 자리를 여기에 줍니다. */}
+      <div className="shrink-0 px-3 pt-1.5">
+        <TodayDismissalReminder variant="배너" />
+      </div>
 
       {guideOpen && <WorkGuideModal onClose={() => setGuideOpen(false)} />}
 

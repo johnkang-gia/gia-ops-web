@@ -9,6 +9,7 @@ import { makeT, type T } from "@/lib/lang";
 import { classLabel } from "@/lib/i18nLabels";
 import { isDemoAccount } from "@/lib/sharedAccounts";
 import { kstWeekdayNum, planLabel, type DismissalKind } from "@/lib/dismissalPlan";
+import { loadDismissalForDay } from "@/lib/dismissalToday";
 
 // 사용 가이드도 화면 언어를 따라갑니다. 안내문은 문장이 길어서 한글·영어를 함께 적으면
 // 모달이 두 배로 길어지고, 정작 자기 언어 문장을 찾느라 눈이 왔다 갔다 하게 됩니다.
@@ -146,17 +147,18 @@ export default async function PickupPage() {
   const todayAssignments = (assignmentsData ?? []).filter((a) => (a.weekdays as number[]).includes(todayWeekday));
 
   // 오늘의 하원수단(학생 기준). 셔틀을 안 타는 날 이 아이가 무엇을 타는지 여기에만 있습니다.
+  //
+  // 「이번 주만」이 있으면 그것이 답입니다 - 판단은 loadDismissalForDay 한 곳에서 합니다.
   const todayPlanWeekday = kstWeekdayNum();
-  const { data: planData } = todayPlanWeekday
-    ? await supabase
-        .from("student_dismissal_plans")
-        .select("student_id, weekday, kind, label, depart_time")
-        .eq("weekday", todayPlanWeekday)
-        .in("student_id", myStudents.map((s) => s.id))
-    : { data: [] as { student_id: string; weekday: number; kind: string; label: string | null; depart_time: string | null }[] };
+  const { byStudent: planRowByStudent, error: planErr } = await loadDismissalForDay(supabase, {
+    dayIso: today,
+    weekday: todayPlanWeekday,
+    studentIds: myStudents.map((s) => s.id),
+  });
+  if (planErr) console.error("[담임 픽업체크] 하원수단 조회 실패:", planErr);
   const planByStudent = new Map(
-    ((planData ?? []) as { student_id: string; kind: string; label: string | null; depart_time: string | null }[]).map((p) => [
-      p.student_id,
+    [...planRowByStudent].map(([sid, p]) => [
+      sid,
       planLabel({ kind: p.kind as DismissalKind, label: p.label, depart_time: p.depart_time }),
     ])
   );

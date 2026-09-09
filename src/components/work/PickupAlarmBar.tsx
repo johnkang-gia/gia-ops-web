@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 /**
  * **5분 전 알림** — 곧 데리러 오는 아이를 화면 맨 위에 띄웁니다.
@@ -29,6 +30,8 @@ type Alarm = { key: string; name: string; time: string; className: string | null
 const SOON_MIN = 30;
 const NOW_MIN = 5;
 const POLL_MS = 60_000;
+/** 팝업이 스스로 서 있는 시간(초). 사람이 닫지 않아도 화면을 계속 덮고 있지 않습니다. */
+const POPUP_SEC = 20;
 
 export default function PickupAlarmBar() {
   const [alarms, setAlarms] = useState<Alarm[]>([]);
@@ -87,14 +90,73 @@ export default function PickupAlarmBar() {
     }
   }, [soon]);
 
+  // ── 5분 전 팝업 ──────────────────────────────────────────────────────
+  //
+  // 띠는 「아직 안 끝났다」를 계속 보여주고, 팝업은 「지금 봐라」를 한 번만 말합니다. 둘을
+  // 같은 것으로 만들면 - 계속 뜨는 팝업 - 사람이 화면을 덮어버리거나 아예 안 봅니다.
+  //
+  // 사무실 대형 모니터에는 이미 있었는데, 그 화면은 아무도 안 볼 때가 있습니다. 사람이 앉아서
+  // 보는 화면은 여기입니다. 한 아이당 한 번만 뜹니다(popped).
+  const [popup, setPopup] = useState<typeof soon>([]);
+  const poppedRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    // 아직 시각이 안 지난 건만 팝업으로 띄웁니다. 화면을 켜자마자 지난 알림이 쏟아지면
+    // 사람은 그 자리에서 팝업을 끄는 법부터 배웁니다.
+    const fresh = soon.filter((a) => a.left >= 0 && a.left <= NOW_MIN && !poppedRef.current.has(a.key));
+    if (fresh.length === 0) return;
+    for (const f of fresh) poppedRef.current.add(f.key);
+    setPopup((prev) => [...prev, ...fresh]);
+    const t = setTimeout(() => setPopup((prev) => prev.filter((p) => !fresh.some((f) => f.key === p.key))), POPUP_SEC * 1000);
+    return () => clearTimeout(t);
+  }, [soon]);
+
+  const alarmPopup =
+    popup.length === 0 || typeof document === "undefined"
+      ? null
+      : createPortal(
+          <div className="fixed inset-x-0 top-3 z-[70] flex justify-center px-3">
+            <div className="w-full max-w-lg rounded-2xl border-2 border-red-400 bg-white p-3 shadow-2xl">
+              <div className="mb-1.5 flex items-baseline gap-2">
+                <b className="text-sm font-extrabold text-red-600">🔔 곧 하원합니다</b>
+                <button
+                  type="button"
+                  onClick={() => setPopup([])}
+                  className="ml-auto rounded-lg bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-600 hover:bg-slate-200"
+                >
+                  확인
+                </button>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                {popup.map((a) => (
+                  <div key={a.key} className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
+                    <b className="text-xl font-black tabular-nums text-red-600">{a.time}</b>
+                    {/* **이름은 줄이지 않습니다.** 가려지면 누구를 데려오는지 모릅니다. */}
+                    <b className="whitespace-nowrap text-lg font-black text-slate-900">{a.name}</b>
+                    <span className="text-xs font-bold text-slate-500">{a.className ?? "반 미확인"}</span>
+                    {/* 어디로 가야 하는가. 이름만 알면 못 움직입니다. */}
+                    <span className="text-xs font-bold text-amber-700">📍 {a.where}</span>
+                    {a.via && <span className="text-xs text-slate-500">{a.via}</span>}
+                    <span className="ml-auto text-[11px] font-bold text-red-500">{a.left <= 0 ? "지금" : `${a.left}분 뒤`}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>,
+          document.body,
+        );
+
   if (error) {
     return (
       <div className="shrink-0 border-b border-orange-200 bg-orange-50 px-2.5 py-1 text-[11px] text-orange-800">⏰ {error}</div>
     );
   }
-  if (soon.length === 0) return null;
+  // 팝업만 남고 띠가 빌 수 있습니다(방금 확인해서 내린 경우). 팝업은 그대로 띄웁니다.
+  if (soon.length === 0) return alarmPopup;
 
   return (
+    <>
+      {alarmPopup}
     <div className="flex shrink-0 items-center gap-1.5 overflow-x-auto border-b border-black/5 bg-amber-50/70 px-2.5 py-1">
       <span className="shrink-0 text-[11px] font-extrabold text-amber-700">⏰ 곧 하원</span>
       {soon.map((a) => {
@@ -137,5 +199,6 @@ export default function PickupAlarmBar() {
         </button>
       )}
     </div>
+    </>
   );
 }

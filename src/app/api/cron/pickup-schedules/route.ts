@@ -4,6 +4,7 @@ import { applyPickup, isHumanSet } from "@/lib/pickupIngest";
 import { kstParts } from "@/lib/shuttleTracking";
 import { genCaseId } from "@/lib/caseId";
 import { touchHeartbeat } from "@/lib/heartbeat";
+import { loadDismissalForDay } from "@/lib/dismissalToday";
 
 // 오늘 예정된 픽업을 실제로 걸어줍니다.
 //
@@ -40,20 +41,24 @@ export async function GET(req: Request) {
   // 체크표는 이 표를 직접 읽어 화면에서 이미 반영하지만, 안내보드·도착체크·사무실
   // 대시보드는 shuttle_boardings만 봅니다. 화면마다 답이 다르면 결국 아무도 안 믿습니다.
   let dismissalApplied = 0;
-  const { data: planRows, error: planErr } = await supabase
-    .from("student_dismissal_plans")
-    .select("student_id, kind, label, depart_time")
-    .eq("weekday", weekday)
-    .neq("kind", "셔틀");
-  if (planErr && planErr.code !== "PGRST205") {
-    console.error("[cron:pickup-schedules] 하원수단 조회 실패:", planErr.message);
-  }
-  for (const p of planRows ?? []) {
-    const sid = p.student_id as string | null;
-    if (!sid) continue;
-    const label = [p.depart_time as string | null, p.label as string | null].filter(Boolean).join(" ");
-    const seats = await applyPickup(supabase, sid, today, `하원수단(${(p.kind as string) + (label ? " " + label : "")})`);
+  // 「그 주만」이 있으면 그것이 답이고 없으면 「매주」가 답입니다 - 판단은
+  // loadDismissalForDay 한 곳에서 합니다.
+  const { byStudent: planByStudent, error: planErr } = await loadDismissalForDay(supabase, {
+    dayIso: today,
+    weekday,
+    excludeShuttle: true,
+  });
+  if (planErr) console.error("[cron:pickup-schedules] 하원수단 조회 실패:", planErr);
+  for (const [sid, p] of planByStudent) {
+    const label = [p.depart_time, p.label].filter(Boolean).join(" ");
+    const seats = await applyPickup(supabase, sid, today, `하원수단(${p.kind + (label ? " " + label : "")})`);
     if (seats > 0) dismissalApplied += 1;
+  }
+
+  // 지나간 「그 주만」 줄 치우기. 사람이 지워야 하는 목록은 언젠가 안 지워집니다.
+  const { error: purgeErr } = await supabase.rpc("purge_expired_dismissal_plans");
+  if (purgeErr && purgeErr.code !== "42883" && purgeErr.code !== "PGRST202") {
+    console.error("[cron:pickup-schedules] 지난 하원수단 정리 실패:", purgeErr.message);
   }
 
   const { data: rows, error } = await supabase

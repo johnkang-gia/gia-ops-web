@@ -313,7 +313,11 @@ export async function loadUpcomingEntries(supabase: SupabaseClient, dateKey: str
   until.setUTCDate(until.getUTCDate() + days);
   const { data } = await supabase
     .from("attendance_entries")
-    .select("student_id, student_name, grade, class_name, status, note, date_from, date_to")
+    // **`id` 를 함께 들고 나옵니다.** 이게 없으면 화면에 뜬 줄을 가리킬 방법이 없어서,
+    // 잘못 들어간 예정을 사람이 **지울 수가 없습니다.** 실제로 그런 줄이 있었습니다 -
+    // 한우영 9/16~23 이 대시보드에 계속 떠 있는데, 출결내역에서는 원본 메시지가 이미
+    // 지나가 버려 그 줄에 닿을 수 없었습니다. 화면에 보이는 것은 언제나 손댈 수 있어야 합니다.
+    .select("id, student_id, student_name, grade, class_name, status, note, date_from, date_to, source, source_message_id")
     .eq("state", "등록")
     .gt("date_from", dateKey)
     .lte("date_from", until.toISOString().slice(0, 10))

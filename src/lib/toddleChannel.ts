@@ -1,7 +1,7 @@
 import { parseChannelLabel, type RosterEntry } from "@/lib/pickupParse";
 import { resolveStudent, matchKey, stripParticle, type MatchResult } from "@/lib/studentMatch";
 import { nameSurfaces } from "@/lib/attendanceIntent";
-import { givenFits, splitPerson, surnameFits } from "@/lib/familyName";
+import { birthFits, givenFits, splitPerson, surnameFits } from "@/lib/familyName";
 
 /**
  * **토들 채팅방을 학생에게 잇습니다** — 그리고 방 주인이 아닌 아이가 언급된 경우를 가려냅니다.
@@ -101,7 +101,7 @@ export function suggestForChannel(
 
   const picks: ChannelPick[] = parsed.names.map((raw, i) => {
     const grade = parsed.grades[i] ?? parsed.grades[0] ?? null;
-    const { given, surname } = splitPerson(raw);
+    const { given, surname, birth } = splitPerson(raw);
     const family = surname ?? familySurname;
 
     // 사람이 가르친 별칭이 가장 먼저입니다. 성으로 가르는 규칙보다 셉니다 -
@@ -109,10 +109,13 @@ export function suggestForChannel(
     const taught = aliases?.get(matchKey(raw)) ?? aliases?.get(matchKey(given));
     if (taught) return { raw, surname: family, student: taught, why: null, candidates: [], ruledOut: [] };
 
-    // 이름이 맞는 아이를 모으고, **성으로 거릅니다.**
+    // 이름이 맞는 아이를 모으고, **성과 생일로 거릅니다.**
+    //
+    // 생일은 김재이 셋을 가르는 유일한 재료입니다 - 셋 다 영문명이 「Jay Kim」이라
+    // 이름으로도 성으로도 안 갈라집니다. 그래서 방 이름에 괄호로 적어 오십니다.
     const byGiven = roster.filter((s) => givenFits(given, s));
-    const fits = byGiven.filter((s) => surnameFits(family, s));
-    const ruledOut = byGiven.filter((s) => !surnameFits(family, s));
+    const fits = byGiven.filter((s) => surnameFits(family, s) && birthFits(birth, s));
+    const ruledOut = byGiven.filter((s) => !(surnameFits(family, s) && birthFits(birth, s)));
 
     if (fits.length === 1) return { raw, surname: family, student: fits[0], why: null, candidates: [], ruledOut };
     if (fits.length > 1) {
@@ -124,8 +127,9 @@ export function suggestForChannel(
     }
 
     // 이름으로 아무도 못 찾은 경우. 지금까지 쓰던 대조를 마지막으로 한 번 더 해봅니다
-    // (한글로 적힌 방, 애칭이 괄호로 붙은 방 등).
-    const r = resolveStudent(raw, roster, { grade, aliases });
+    // (한글로 적힌 방, 애칭이 괄호로 붙은 방 등). 방 이름 전체를 힌트로 함께 넘깁니다 -
+    // 괄호 안 생일·반 이름이 거기 있습니다.
+    const r = resolveStudent(raw, roster, { grade, aliases, context: label });
     // **성이 어긋나면 그 답도 버립니다.** 여기서 봐주면 위에서 거른 뜻이 없어집니다.
     if (r.student && !surnameFits(family, r.student)) {
       return { raw, surname: family, student: null, why: "여럿", candidates: [], ruledOut: [...ruledOut, r.student] };

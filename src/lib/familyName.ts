@@ -104,14 +104,44 @@ export function givensOf(s: RosterEntry): Set<string> {
 /**
  * 방 이름에 적힌 한 사람을 성과 이름으로 가릅니다.
  *
- * 「Sophia M」 → { given: "Sophia", surname: "M" }
- * 「E.L」      → { given: "E.L",    surname: null }  (형제방이면 위에서 성을 붙여줍니다)
+ * 「Sophia M」        → { given: "Sophia", surname: "M" }
+ * 「E.L」             → { given: "E.L",    surname: null }  (형제방이면 위에서 성을 붙여줍니다)
+ * 「Jay Kim(190828)」 → { given: "Jay",    surname: "Kim", birth: "190828" }
+ *
+ * ── 괄호는 성이 아닙니다 ─────────────────────────────────────────────
+ *
+ * 김재이 셋이 영문명을 모두 「Jay Kim」으로 씁니다. 그래서 방 이름에 생일을 괄호로 적어
+ * 오십니다 - 그게 셋을 가르는 **유일한 재료**입니다.
+ *
+ * 그런데 낱말로만 자르면 마지막 낱말이 「Kim(190828)」이 되어 성이 「kim190828」이 됩니다.
+ * 명부의 「Kim」과 한 글자도 안 맞으니 **아무도 안 걸리고**, 화면에는 「이름을 다 못
+ * 읽었습니다」로만 보입니다. 가르려고 적어주신 것이 오히려 못 읽게 만든 셈입니다.
+ *
+ * 그래서 괄호는 **떼어내서 힌트로 따로 들고** 갑니다.
  */
-export function splitPerson(raw: string): { given: string; surname: string | null } {
-  const tokens = String(raw ?? "").trim().split(/\s+/).filter(Boolean);
-  if (tokens.length === 0) return { given: "", surname: null };
-  if (tokens.length === 1) return { given: tokens[0], surname: null };
-  return { given: tokens.slice(0, -1).join(" "), surname: tokens[tokens.length - 1] };
+export function splitPerson(raw: string): { given: string; surname: string | null; birth: string | null } {
+  const text = String(raw ?? "").trim();
+  // 괄호 안의 여섯·여덟 자리 숫자 = 생일. 괄호 안이 애칭이면(「(Peyton)」) 생일이 아닙니다.
+  const birth = text.match(/\((\d{6}|\d{8})\)/)?.[1] ?? null;
+  const bare = text.replace(/\([^)]*\)/g, " ").replace(/\s+/g, " ").trim();
+  const tokens = bare.split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return { given: "", surname: null, birth };
+  if (tokens.length === 1) return { given: tokens[0], surname: null, birth };
+  return { given: tokens.slice(0, -1).join(" "), surname: tokens[tokens.length - 1], birth };
+}
+
+/**
+ * 생일 숫자가 이 아이의 것인가.
+ *
+ * 여섯 자리는 「190828」(연-월-일 뒤 두 자리부터), 여덟 자리는 「20190828」입니다.
+ * 명부의 `birth_date` 는 「2019-08-28」 꼴이라 숫자만 남겨 뒤에서부터 견줍니다.
+ */
+export function birthFits(birth: string | null | undefined, s: RosterEntry): boolean {
+  const key = String(birth ?? "").replace(/\D/g, "");
+  if (!key) return true; // 안 적혀 있으면 가리지 않습니다
+  const mine = String(s.birth_date ?? "").replace(/\D/g, "");
+  if (!mine) return false; // 생일로 가르자고 했는데 명부에 없으면 이 아이는 답이 아닙니다
+  return mine.endsWith(key.length >= 8 ? key.slice(-8) : key.slice(-6));
 }
 
 /**

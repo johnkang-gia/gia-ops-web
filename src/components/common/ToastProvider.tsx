@@ -40,6 +40,27 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, ttl);
+
+    // ── 떴다 사라진 오류를 **기록에 남깁니다** ────────────────────────────
+    //
+    // 지금까지 화면 오류는 5초 뒤 사라지는 것이 전부였습니다. 담당자가 「방금 뭔가
+    // 오류가 났는데」라고 해도 아무 데도 안 남아 있어서 무엇이었는지 물어볼 곳이
+    // 없었습니다. 서버 오류는 오류 목록에 쌓이는데, **사람이 실제로 보는 오류는
+    // 대부분 화면 쪽**이라 정작 중요한 것이 안 쌓이고 있었습니다.
+    //
+    // 기록하다 실패해도 조용히 넘어갑니다 - 오류를 남기려다 오류를 하나 더 만드는 것은
+    // 뒤바뀐 일이고, 알림은 이미 사람 눈앞에 떠 있습니다.
+    if (type === "error") {
+      void fetch("/api/errors/client", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        keepalive: true, // 화면을 옮겨도 보내지던 것은 마저 보냅니다
+        body: JSON.stringify({
+          message,
+          where: typeof window === "undefined" ? "" : window.location.pathname,
+        }),
+      }).catch(() => {});
+    }
   }, []);
 
   function dismiss(id: number) {

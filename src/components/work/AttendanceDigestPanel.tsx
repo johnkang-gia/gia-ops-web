@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import UpcomingEntriesModal from "@/components/work/UpcomingEntriesModal";
 import { todayKst } from "@/lib/kst";
 import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
@@ -346,6 +347,8 @@ export default function AttendanceDigestPanel({
   >(null);
   // 가르친 규칙을 다시 꺼내 보는 창. 넣기만 되고 꺼내 볼 수 없으면 잘못 가르친 것을 고칠 방법이 없습니다.
   const [showRules, setShowRules] = useState(false);
+  /** 「예정 정리」 팝업. 대시보드에 떠 있는 줄을 여기서 내립니다. */
+  const [showUpcoming, setShowUpcoming] = useState(false);
   // 자동이 읽은 기간을 그 자리에서 고치는 창.
   const [rangeEdit, setRangeEdit] = useState<{ row: RegRow; name: string } | null>(null);
   // 저장이 됐다는 것도 말해줍니다. 아무 말이 없으면 사람은 안 됐다고 생각하고 또 누릅니다.
@@ -740,6 +743,17 @@ export default function AttendanceDigestPanel({
         >
           가르친 규칙
         </button>
+        {/* 대시보드에 떠 있는데 여기서는 닿을 수 없던 줄을 손대는 자리.
+            출결내역은 지금 인박스에 남아 있는 메시지와 짝지어진 줄만 보여줍니다. 원본
+            메시지가 지나가 버린 줄은 **화면에는 보이는데 사람이 지울 수 없었습니다.** */}
+        <button
+          type="button"
+          onClick={() => setShowUpcoming(true)}
+          className="rounded px-1 text-[10px] font-medium text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+          title="대시보드 「예정」에 떠 있는 줄을 보고 내립니다"
+        >
+          예정 정리
+        </button>
         {/* 자동이 못 읽은 것을 그 자리에서 넣습니다. 다른 화면으로 옮겨가게 하면 「나중에」가
             되고, 나중에 한 것은 대개 안 한 것이 됩니다. */}
         <button
@@ -1059,6 +1073,7 @@ export default function AttendanceDigestPanel({
         )}
 
       {/* 🔎·⚠️를 누르면 뜨는 가르치기 창. 한 번 알려준 것은 규칙으로 저장되어 다음부터 자동 적용됩니다. */}
+      {showUpcoming && <UpcomingEntriesModal onClose={() => setShowUpcoming(false)} />}
       {showRules && <AttendanceRulesModal onClose={() => setShowRules(false)} />}
       {rangeEdit && (
         <RangeEditModal

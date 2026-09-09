@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import { notifyOpsBoardRefresh, OPS_REFRESH_CHANNEL, OPS_REFRESH_EVENT } from "@/lib/opsRefresh";
 import { useToast } from "@/components/common/ToastProvider";
+import { useConfirm } from "@/components/common/ConfirmProvider";
 import { markIfAmbiguous, toKoreanDisplayName, toRosterEntries, ROSTER_SELECT, type RosterEntry } from "@/lib/pickupParse";
 
 // 학부모 문의사항 — 예전 실시간 로그가 있던 자리입니다.
@@ -215,6 +216,7 @@ export default function ParentInquiryPanel({
   full?: boolean;
 }) {
   const notify = useToast();
+  const confirmAction = useConfirm();
   const [rows, setRows] = useState<Inquiry[]>([]);
   const [expanded, setExpanded] = useState(false);
   const [detail, setDetail] = useState<Inquiry | null>(null);
@@ -524,6 +526,46 @@ export default function ParentInquiryPanel({
   // 돌아오는 왕복을 없앱니다. 여기서 누르면 하원 체크표가 쓰는 표(shuttle_boardings)에 같은
   // 모양으로 기록되므로, 체크표·안내보드·도착체크·운영 대시보드에 그대로 반영됩니다.
   const [acted, setActed] = useState<Record<string, string>>({});
+  /** 이 자리에서 「픽업 아님」으로 되돌린 건. 눌렀다는 사실이 바로 보여야 또 안 누릅니다. */
+  const [undone, setUndone] = useState<Record<string, boolean>>({});
+
+  /**
+   * **앱이 잘못 읽은 것을 되돌립니다.**
+   *
+   * 하원 체크표에 있던 것과 **같은 창구**를 씁니다(`/api/pickup/not-pickup`). 두 화면이
+   * 각자 되돌리면 한쪽은 연락을 내리고 다른 쪽은 표시만 지우는 식으로 갈라지고, 그러면
+   * 「되돌렸는데 왜 또 뜨지」가 생깁니다.
+   */
+  async function notPickup(r: Inquiry) {
+    const ok = await confirmAction(
+      `이 연락을 픽업이 아닌 것으로 되돌립니다.\n\n` +
+        `· 등록된 출결·픽업 표시를 내립니다(하원 체크표·대시보드에서 사라집니다)\n` +
+        `· 연락은 문의함에 남습니다 - 답할 것이 있으면 놓치지 않도록\n` +
+        `· 이 발신자의 다음 픽업 판단은 사람이 한 번 더 보게 됩니다`,
+      { confirmLabel: "픽업 아님으로 되돌리기", danger: true },
+    );
+    if (!ok) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/pickup/not-pickup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requestId: r.id }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        notify(json.error ?? "되돌리지 못했습니다.", "error");
+        return;
+      }
+      setUndone((p) => ({ ...p, [r.id]: true }));
+      notify("픽업이 아니라고 알려줬습니다. 등록된 표시를 내렸습니다.", "success");
+      load();
+      // 벽면 모니터에서도 바로 사라지게 신호를 보냅니다 - 한 곳만 고치면 다른 곳이 어긋납니다.
+      void notifyOpsBoardRefresh();
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function attendanceAction(r: Inquiry, action: "결석" | "픽업" | "탑승") {
     const studentName =
@@ -645,6 +687,33 @@ export default function ParentInquiryPanel({
           ⚙ {a.label}
         </span>
       ))}
+
+      {/* **앱이 잘못 읽은 것을 여기서 되돌립니다.**
+          ─────────────────────────────────────────────────────────────────
+          「오피스에서 첼로를 픽업하려고 합니다」처럼 **가지러 가는 대상이 물건**인 글이
+          픽업으로 등록됐습니다. 되돌릴 자리가 하원 체크표에만 있어서, 이 목록에서 잘못을
+          발견한 사람은 다른 화면으로 옮겨가야 했습니다 - 옮겨가야 하는 일은 대개 안 합니다.
+
+          오늘 표시만 지우는 것이 아닙니다. 연락 자체를 「픽업 아님」으로 돌리고, 그 정정을
+          발신자별로 남겨 다음 판단의 신뢰도를 낮춥니다. 표시만 지우면 원래 연락이 그대로
+          남아 내일 또 올라오고, 사람은 같은 것을 매일 지우게 됩니다. */}
+      {!undone[r.id] && (auto.get(r.id) ?? []).some((a) => a.state === "등록") && (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={(e) => {
+            e.stopPropagation();
+            void notPickup(r);
+          }}
+          title="앱이 잘못 읽었습니다. 이 연락을 픽업이 아닌 것으로 되돌리고, 등록된 출결도 함께 내립니다."
+          className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600 transition hover:bg-rose-100 hover:text-rose-700 disabled:opacity-40"
+        >
+          ↩ 아님
+        </button>
+      )}
+      {undone[r.id] && (
+        <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-500">↩ 되돌림</span>
+      )}
       {/* 직원이 답은 했지만 아직 끝나지 않은 건(요청: 해결됐는지 안됐는지 표시). */}
       {!isDone(r) && r.reply_status === "pending" && (
         <span

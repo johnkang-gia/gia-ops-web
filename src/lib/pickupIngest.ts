@@ -16,6 +16,7 @@ import { nameSurfaces, readSiblings } from "@/lib/attendanceIntent";
 import { genCaseId } from "@/lib/caseId";
 import { logChecklist } from "@/lib/checklistLog";
 import { isPleasantry, pleasantryNote } from "@/lib/shortTalk";
+import { objectPickupNote } from "@/lib/objectPickup";
 
 // 어느 경로로 들어온 연락이든 이 함수 하나를 거쳐 픽업으로 바뀝니다.
 // 토들 수집기, 전화 통화 텍스트, 교사 전달, 직접 입력이 모두 같은 판단을 받도록 하기 위해서입니다.
@@ -472,6 +473,17 @@ export async function ingestPickup(
     }
   }
 
+  // **가지러 오는 것이 물건이거나, 아이가 오히려 등원 중이면 혼자 정하지 않습니다.**
+  //
+  // "예온이 자가 등원을 하면서 오피스에서 첼로를 픽업하려고 합니다" 가 하원 픽업으로 자동
+  // 확정됐습니다. 「픽업」이라는 낱말과 시각이 함께 있어서입니다. 그 아이는 오후에 셔틀
+  // 명단에서 빠졌습니다.
+  //
+  // 픽업이 아니라고 **단정하지는 않습니다.** 단정은 AI가 하고, 여기서는 자동 확정만
+  // 막습니다 - 사람이 한 번 더 보는 비용은 작고, 아이가 잘못 빠지는 비용은 되돌릴 수 없습니다.
+  const objectHint = kind === "픽업" ? objectPickupNote(text) : null;
+  if (objectHint) confidence = Math.min(confidence, AUTO_CONFIRM_MIN - 0.01);
+
   // ── 학생 연결 ─────────────────────────────────────────────────────────────
   // 채널 이름을 먼저 믿습니다. 학교가 정한 규칙이라 자유 문장보다 훨씬 정확합니다.
   let candidateName: string | null = null;
@@ -737,6 +749,9 @@ export async function ingestPickup(
       // 그 자리에서 알 수 있어야 합니다.
       ai_note: [
         typeof ai.note === "string" ? ai.note : null,
+        // 규칙이 자동 확정을 막았으면 그 이유를 함께 적습니다. 이유 없는 「확인 필요」는
+        // 아무도 안 봅니다 - 무엇을 확인해야 하는지 모르니까요.
+        objectHint,
         recurDays.length > 0 ? `반복 감지: 매주 ${weekdayLabel(recurDays)}요일 (지속 특이사항으로 등록)` : null,
         looksRecurringButUnclear ? "반복되는 약속으로 보이는데 요일을 읽지 못했습니다. 사람이 확인해주세요." : null,
         // 형제방에서 한 아이만 쉬는 경우. AI 요약이 엉뚱한 아이를 가리킬 수 있으므로,

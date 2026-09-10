@@ -29,9 +29,9 @@ import type { PendingSignup } from "@/app/api/admin/pending-signups/route";
 /** 다시 물어보는 간격. 승인이 몇 분 늦는 것은 견딜 만하고, 짧으면 조회만 늘어납니다. */
 const REFRESH_MS = 3 * 60_000;
 
-export default function NewSignupAlert({ initial }: { initial: { count: number; items: PendingSignup[] } }) {
+export default function NewSignupAlert({ initial }: { initial: { items: PendingSignup[]; failed: boolean } }) {
   const [items, setItems] = useState<PendingSignup[]>(initial.items);
-  const [failed, setFailed] = useState(false);
+  const [failed, setFailed] = useState(initial.failed);
   /** 방금 새로 들어온 사람. 오른쪽 아래에 한 번 띄웁니다. */
   const [popped, setPopped] = useState<PendingSignup[]>([]);
   const known = useRef(new Set(initial.items.map((x) => x.email)));

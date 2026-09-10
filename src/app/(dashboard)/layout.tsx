@@ -339,13 +339,17 @@ export default async function DashboardLayout({
   // 승인을 기다리는 가입 신청. **개발자 계정일 때만** 읽습니다 - 승인할 수 없는 사람에게
   // 띄우면 지워지지 않는 표시가 되고, 지워지지 않는 표시는 곧 안 읽히는 표시가 됩니다.
   let pendingSignups: PendingSignup[] = [];
+  // 읽지 못했으면 **0건으로 두지 않습니다.** 「기다리는 사람이 없다」와 「못 읽었다」는
+  // 화면에서 똑같이 «표시 없음»으로 보이는데, 뒤쪽은 사람이 기다려도 모른다는 뜻입니다.
+  let signupsFailed = false;
   if (isDeveloperEmail(me.email)) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("app_users")
-      .select("email, name, department, position, created_at")
+      .select("email, name, department, position, requested_at")
       .eq("status", "pending")
-      .order("created_at", { ascending: false })
+      .order("requested_at", { ascending: false })
       .limit(20);
+    if (error) signupsFailed = true;
     pendingSignups = (data as PendingSignup[] | null) ?? [];
   }
 
@@ -533,7 +537,7 @@ export default async function DashboardLayout({
           </Suspense>
           {/* 누가 가입하면 여기 뜹니다. 슬랙 알림과 둘 중 하나만 봐도 되도록. */}
           {isDeveloper && !isPreviewing && (
-            <NewSignupAlert initial={{ count: pendingSignups.length, items: pendingSignups }} />
+            <NewSignupAlert initial={{ items: pendingSignups, failed: signupsFailed }} />
           )}
         </div>
 

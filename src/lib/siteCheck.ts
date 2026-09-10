@@ -128,10 +128,7 @@ export const SCREENS: string[] = [
  *
  * 저장·발송하는 창구는 **넣지 않습니다.** 점검이 실제 자료를 만들면 그건 점검이 아닙니다.
  */
-export const READONLY_APIS: string[] = [
-  "/api/admin/pending-signups",
-  "/api/finance/export/alltalkpay?dryRun=1",
-];
+export const READONLY_APIS: string[] = ["/api/admin/pending-signups"];
 
 export type Verdict = "정상" | "느림" | "오류" | "안 열림" | "없는 화면" | "로그인으로 튕김" | "권한 막힘";
 

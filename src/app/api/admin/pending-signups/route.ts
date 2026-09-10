@@ -27,7 +27,8 @@ export type PendingSignup = {
   name: string | null;
   department: string | null;
   position: string | null;
-  created_at: string | null;
+  /** 신청한 때. `created_at` 이 아닙니다 - 이 표는 신청 시각을 requested_at 에 담습니다. */
+  requested_at: string | null;
 };
 
 export async function GET() {
@@ -40,9 +41,9 @@ export async function GET() {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("app_users")
-    .select("email, name, department, position, created_at")
+    .select("email, name, department, position, requested_at")
     .eq("status", "pending")
-    .order("created_at", { ascending: false })
+    .order("requested_at", { ascending: false })
     .limit(20);
 
   // 읽지 못했으면 **0건이라고 답하지 않습니다.** 「기다리는 사람이 없다」와 「못 읽었다」는

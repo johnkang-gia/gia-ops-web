@@ -649,9 +649,9 @@ export default function PickupInboxClient({
                   type="button"
                   disabled={busy}
                   onClick={() => {
-                    const who = r.matched_name ?? r.ai_student_name ?? "이 학생";
-                    const many = all.length > 1 ? ` 이 아이의 연락 ${all.length}건을 모두 내립니다.` : "";
-                    if (!window.confirm(`${who} 픽업을 내릴까요?${many} 체크표·출결·업무에서도 함께 내려갑니다.`)) return;
+                    // **되묻지 않습니다.** 자료가 여러 표에 걸쳐 있는 것은 시스템 사정이지
+                    // 누르는 사람의 사정이 아닙니다. 무엇이 함께 내려갔는지는 누른 뒤에
+                    // 알림 한 줄로 알려줍니다(`undoNote`) - 묻는 것보다 알려주는 편이 낫습니다.
                     // 묶어서 보여준 것은 묶어서 내립니다. 한 줄만 내리면 화면에서는 사라졌는데
                     // 남은 줄이 그대로 살아 있어, 새로고침하면 다시 나타납니다.
                     void (async () => {

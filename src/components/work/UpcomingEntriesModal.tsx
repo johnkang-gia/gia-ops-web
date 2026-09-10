@@ -85,7 +85,7 @@ export default function UpcomingEntriesModal({ onClose }: { onClose: () => void 
   }, [load]);
 
   async function drop(r: Row) {
-    if (!confirm(`${r.student_name} ${r.status} (${dayShort(r.date_from)}~${dayShort(r.date_to)}) 를 내립니다.\n대시보드에서 사라지고 기록은 남습니다.`)) return;
+    // 되묻지 않습니다. 기록은 그대로 남고 대시보드에서만 내려가므로 되돌릴 수 있습니다.
     setBusy(r.id);
     // **PATCH 입니다.** POST 는 「새로 넣기」 창구라 id 로 고치는 요청을 안 받습니다 -
     // 여기서 POST 로 보내는 바람에 [내리기]가 늘 실패했습니다.

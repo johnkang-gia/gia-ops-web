@@ -281,7 +281,7 @@ export default function TuitionGridClient({
   async function fillColumn(plan: FeePlan, optionId: string) {
     const targets = checked.size > 0 ? rows.filter((s) => checked.has(s.id)) : rows;
     if (targets.length === 0) return;
-    if (!confirm(`${targets.length}명에게 「${plan.name} · ${options.find((o) => o.id === optionId)?.name ?? ""}」을(를) 넣습니다.`)) return;
+    // 되묻지 않습니다. 요금제를 붙이는 것은 되돌릴 수 있는 편집입니다.
     setBusy(true);
     for (const s of targets) await pickOption(s, plan, optionId);
     setBusy(false);

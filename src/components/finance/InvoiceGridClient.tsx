@@ -540,7 +540,7 @@ export default function InvoiceGridClient({
   /** 열 하나를 이 명단 전원에게 넣거나 뺍니다. 반 단위로 교재를 붙일 때 이게 없으면 스무 번 눌러야 합니다. */
   async function fillColumn(item: FeeItem, on: boolean) {
     if (rows.length === 0) return;
-    if (!confirm(`지금 보이는 ${rows.length}명에게 "${item.name}"을 ${on ? "넣습니다" : "뺍니다"}.\n\n계속할까요?`)) return;
+    // 되묻지 않습니다. 항목을 넣고 빼는 것은 표를 고치는 일이고 다시 누르면 되돌아갑니다.
     setBusy(true);
     try {
       const payload = rows.map((s) => ({

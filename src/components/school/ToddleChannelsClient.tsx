@@ -173,7 +173,7 @@ export default function ToddleChannelsClient({
       notify("한꺼번에 이을 수 있는 방이 없습니다. 남은 방은 이름을 다 못 읽어 하나씩 봐야 합니다.", "error");
       return;
     }
-    if (!confirm(`${targets.length}개 방을 이름 그대로 연결합니다. 계속할까요?`)) return;
+    // 되묻지 않습니다. 이름이 하나도 안 빠진 방만 대상이고, 연결은 다시 풀 수 있습니다.
     for (const r of targets) await save(r, "link");
     notify(`${targets.length}개 방을 연결했습니다.`, "success");
   }

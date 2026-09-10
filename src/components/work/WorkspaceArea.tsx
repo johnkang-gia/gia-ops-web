@@ -317,7 +317,7 @@ export default function WorkspaceArea({
   }
 
   async function deleteReminder(r: DayReminder) {
-    if (!confirm(`「${r.title}」 알림을 지울까요?`)) return;
+    // 되묻지 않습니다. 알림 한 줄을 지우는 것은 되돌릴 만큼 큰 일이 아닙니다.
     const { error } = await createClient().from("day_reminders").delete().eq("id", r.id);
     if (error) {
       notify(`지우지 못했습니다: ${error.message}`, "error");

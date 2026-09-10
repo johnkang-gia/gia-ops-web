@@ -144,7 +144,7 @@ export default function NoticeBanner({
   }
 
   async function archiveNotice(id: string) {
-    if (!window.confirm("이 공지를 내릴까요? 히스토리에서도 숨겨집니다.")) return;
+    // 되묻지 않습니다. 공지를 내리는 것은 지우는 것이 아니라 감추는 것입니다.
     const supabase = createClient();
     const archivedAt = new Date().toISOString();
     setNotices((prev) => prev.map((n) => (n.id === id ? { ...n, archived_at: archivedAt } : n)));

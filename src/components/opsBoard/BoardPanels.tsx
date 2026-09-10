@@ -498,6 +498,23 @@ export function TodayChanges({ sc, data }: { sc: BoardScale; data: BoardData }) 
               >
                 {shortName(p.name)}
               </span>
+              {/* **겹치는 이름에는 반을 붙입니다.** 김재이가 셋이라, 이름만 띄우면 보는
+                  사람은 이미 정해진 아이라고 믿고 엉뚱한 교실로 갑니다. 겹치지 않는
+                  이름에는 아무것도 안 붙습니다 - 137명 전부에 반을 붙이면 정작 구분이
+                  필요한 이름이 묻힙니다(CLAUDE.md 2-4-2). */}
+              {p.homonym && (
+                <span
+                  style={{
+                    fontSize: sc.s(15, 11),
+                    fontWeight: 800,
+                    color: p.className ? "#fbbf24" : "#f87171",
+                    whiteSpace: "nowrap",
+                    flexShrink: 0,
+                  }}
+                >
+                  {p.className ?? "누구?"}
+                </span>
+              )}
               {/* 명부와 못 이은 건. 조용히 빼면 아무도 데리러 가지 않으므로 올리되,
                   「확인해야 하는 줄」이라고 눈에 띄게 적습니다. */}
               {p.unmatched && (

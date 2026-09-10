@@ -17,6 +17,8 @@ function isApplePlatform() {
 }
 
 function stamp(d: Date) {
+  // kst-ok: 캘린더 파일은 **보는 사람 기기의 시간**으로 적습니다. 이 함수는 브라우저에서만
+  // 불리고, 한국 밖에서 열어도 그 사람의 시간으로 보이는 것이 맞습니다.
   return `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}T${pad2(d.getHours())}${pad2(d.getMinutes())}00`;
 }
 

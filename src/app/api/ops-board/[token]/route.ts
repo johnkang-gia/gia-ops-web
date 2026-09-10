@@ -316,15 +316,23 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   // 반까지 함께 보냅니다. 시각이 됐을 때 행정실이 실제로 하는 일은 «교실에 가서 데려오기»라,
   // 이름만으로는 움직일 수 없습니다 - 어느 반이 지금 어느 교실에서 무슨 수업 중인지까지
   // 알아야 합니다. 반 id 가 있으면 화면이 시간표에서 그 반의 지금 수업을 바로 찾습니다.
-  const classByName = new Map(
-    deptStudents.map((s) => [
-      (s.name as string) ?? "",
-      {
-        grade: (s.grade as string | null) ?? null,
-        className: (s.class_name as string | null) ?? null,
-      },
-    ])
-  );
+  //
+  // **번호로 찾습니다.** 이름을 열쇠로 한 지도는 김재이 셋이 한 칸을 나눠 쓰게 만들어,
+  // 마지막에 넣은 한 명의 반이 셋 모두에게 붙습니다(CLAUDE.md 2-4). 번호가 없는 옛 줄만
+  // 이름으로 찾고, 그때도 **그 이름이 한 명뿐일 때만** 답합니다 - 겹치는 이름인데 번호가
+  // 없으면 반을 비워 두는 편이 엉뚱한 반을 적는 것보다 낫습니다.
+  type Where = { grade: string | null; className: string | null };
+  const whereById = new Map<string, Where>();
+  const whereByName = new Map<string, Where | null>();
+  for (const s of deptStudents) {
+    const w: Where = { grade: (s.grade as string | null) ?? null, className: (s.class_name as string | null) ?? null };
+    whereById.set(s.id as string, w);
+    const nm = (s.name as string) ?? "";
+    whereByName.set(nm, whereByName.has(nm) ? null : w);
+  }
+  /** 이 이름이 부서 명부에 둘 이상 있는가. 겹치면 화면이 반을 반드시 붙입니다. */
+  const homonymNames = new Set([...whereByName.entries()].filter(([, w]) => w === null).map(([n]) => n));
+  const classByName = new Map([...whereByName.entries()].filter(([, w]) => !!w) as [string, Where][]);
   const classIdByGradeName = new Map(deptClasses.map((c) => [`${c.grade ?? ""}|${c.class_name ?? ""}`, c.id as string]));
 
   // 이 대시보드가 맡은 부서 학생 + **어느 부서인지 모르는 건**.
@@ -341,10 +349,20 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
       return true; // 어느 명부에도 없는 이름 → 확인이 필요하니 올립니다.
     })
     .map((p) => {
-      const c = classByName.get(p.name);
+      // 번호가 있으면 번호로, 없으면 한 명뿐인 이름일 때만.
+      const c = (p.studentId ? whereById.get(p.studentId) : null) ?? classByName.get(p.name) ?? null;
       return {
         name: p.name,
         time: p.time,
+        /**
+         * 겹치는 이름인가. 화면이 이 값을 보고 이름 옆에 반을 붙입니다.
+         *
+         * 대시보드는 로그인 영역 밖(토큰 링크)이라 앱의 동명이인 표시(`<Who>`)를 쓸 수
+         * 없습니다. 그래서 「겹치는 이름인가」를 서버가 판단해 함께 보냅니다 - 화면이
+         * 명부를 따로 읽어 스스로 판단하게 두면, 그 준비를 빠뜨린 화면에서만 표시가
+         * 사라집니다(CLAUDE.md 2-4-2).
+         */
+        homonym: homonymNames.has(p.name),
         // 하원수단(학원차·보호자하원)과 **같은 아이인지** 가리는 열쇠입니다.
         studentId: p.studentId ?? null,
         // 평소 하원수단이 있는 아이면 그것도 함께 적습니다(아래에서 채웁니다).

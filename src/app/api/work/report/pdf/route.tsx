@@ -37,7 +37,9 @@ function fmtDateTime(iso: string | null) {
   if (!iso) return "-";
   const d = new Date(iso);
   const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  // 인쇄본의 시각은 **한국 시각**입니다. 서버는 UTC로 돌아서, 그대로 찍으면 아홉 시간
+  // 어긋난 시각이 종이에 남습니다.
+  return d.toLocaleString("sv-SE", { timeZone: "Asia/Seoul" }).slice(0, 16);
 }
 
 function ReportDocument({

@@ -1,6 +1,7 @@
 // 출결알림(구글챗 미러링)과 부서 메모에서 "누가 결석/픽업/지각/조퇴인지"를 뽑아내는 규칙입니다.
 // AI를 쓰지 않고 학생 명부 대조 + 키워드 규칙으로만 처리합니다(추가 비용 0, 즉시 반영).
 
+import { kstDate } from "@/lib/kst";
 import { splitClauses, splitSentences, nameSurfaces } from "@/lib/attendanceIntent";
 export { nameSurfaces };
 
@@ -209,8 +210,23 @@ export function categoryForStudent(
 // 오늘 결석으로 잘못 집계됩니다.
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 
+/**
+ * 날짜 열쇠는 **한국 날짜**입니다.
+ *
+ * 예전에는 `d.getFullYear()/getMonth()/getDate()` 로 만들었습니다. 그건 **그 코드가 도는
+ * 기계의 시간대**입니다 - 브라우저(한국)에서는 맞고 서버(UTC)에서는 틀립니다. 한국 시각
+ * 오전 9시 이전에는 UTC로 아직 어제라, 서버가 만든 열쇠는 하루 전이 됩니다.
+ *
+ * 실제로 그렇게 났습니다. 아침 8시 48분에 운영 대시보드를 열면 제목은 9월 11일인데(그건
+ * `kstParts` 로 만듭니다) 픽업 목록은 **9월 10일 것**이 떠 있었습니다. 어제 픽업이던
+ * 아이 여덟 명이 오늘 픽업으로 보였고, 인박스와 숫자가 달랐습니다.
+ *
+ * 같은 종류의 실수를 이미 세 번 고쳤고(출결 등록 · GPS 출발 판정 · 도착체크) 그때마다
+ * 그 파일만 고쳐서 다시 났습니다. `src/lib/kst.ts` 가 그래서 생겼습니다 - 여기서도 그걸
+ * 씁니다.
+ */
 function toDateKey(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return kstDate(d);
 }
 
 export function todayKey(base: Date = new Date()): string {

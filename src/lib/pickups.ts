@@ -49,8 +49,13 @@ export type TodayPickup = {
 export type PickupInputs = {
   /** 체크표에서 픽업으로 찍힌 학생. */
   boardingPickups: { name: string; studentId: string | null }[];
-  /** 오늘 체크표에 줄이 하나라도 찍힌 학생 이름 — 탄다·픽업·결석 무엇이든. */
-  decidedNames: Set<string>;
+  /**
+   * 오늘 체크표에 **사람이** 줄을 찍은 학생의 열쇠 — 탄다·픽업·결석 무엇이든.
+   *
+   * 이름이 아니라 열쇠(학생 번호 우선)입니다. 이름으로 두면 김재이 한 명을 사람이 정했을
+   * 때 나머지 김재이의 학부모 연락까지 함께 가려집니다.
+   */
+  decidedKeys: Set<string>;
   /** 출결내역에서 픽업으로 등록된 건. */
   entries: { name: string; studentId: string | null; time: string | null }[];
   /** 확정된 학부모 연락. */
@@ -61,31 +66,50 @@ export type PickupInputs = {
  * 세 갈래를 한 목록으로. **순수 함수라 시험할 수 있습니다** — 화면과 서버가 같은 답을
  * 내는지는 눈으로 보는 대신 검사로 확인합니다.
  */
+/**
+ * **한 아이를 가리키는 열쇠.**
+ *
+ * 예전에는 이름이 열쇠였습니다. 그래서 김재이가 둘 픽업이면(G2A 한 명, G3JA 한 명) 목록에
+ * 한 줄만 남고, 나중에 들어온 쪽의 학생 번호가 그 줄에 붙었습니다. 화면에는 오류가 아니라
+ * **「김재이 한 명이 픽업」**으로 보이므로, 나머지 한 아이는 아무도 데리러 가지 않습니다.
+ *
+ * 학생 번호가 있으면 번호가 열쇠입니다 - 번호는 겹치지 않습니다. 번호가 없는 옛 줄만
+ * 이름으로 묶습니다(CLAUDE.md 2-4-1).
+ */
+function keyOf(v: { name: string; studentId: string | null }): string {
+  return v.studentId ? `id:${v.studentId}` : `name:${v.name}`;
+}
+
 export function mergePickups(input: PickupInputs): TodayPickup[] {
   const out = new Map<string, TodayPickup>();
 
   // 시각은 어느 갈래에서 왔든 모읍니다. 체크표 클릭에는 시각이 없어서, 같은 아이의 학부모
   // 연락에 적힌 시각을 붙여줘야 「몇 시에 데려와야 하는지」가 화면에 남습니다.
+  // 시각은 **같은 아이**의 것만 옮겨 붙입니다. 이름으로 붙이면 김재이 둘의 시각이 서로
+  // 옮겨 갑니다 - 15:00에 오는 아이를 16:10으로 알고 기다리게 됩니다.
   const timeOf = new Map<string, string>();
   for (const r of [...input.requests, ...input.entries]) {
-    if (r.time && !timeOf.has(r.name)) timeOf.set(r.name, r.time);
+    const k = keyOf(r);
+    if (r.time && !timeOf.has(k)) timeOf.set(k, r.time);
   }
 
   // ① 체크표 — 가장 세다.
   for (const b of input.boardingPickups) {
-    out.set(b.name, { name: b.name, studentId: b.studentId, time: timeOf.get(b.name) ?? null, source: "체크표" });
+    const k = keyOf(b);
+    out.set(k, { name: b.name, studentId: b.studentId, time: timeOf.get(k) ?? null, source: "체크표" });
   }
 
   // ②③ 체크표에 줄이 없는 아이만. 줄이 있는데 픽업이 아니라면 사람이 「픽업 아님」으로
   //     정한 것이고, 그 판단을 자동이 뒤집으면 안 됩니다.
   for (const r of [...input.entries, ...input.requests]) {
-    if (out.has(r.name)) continue;
-    if (input.decidedNames.has(r.name)) continue;
-    out.set(r.name, {
+    const k = keyOf(r);
+    if (out.has(k)) continue;
+    if (input.decidedKeys.has(k)) continue;
+    out.set(k, {
       name: r.name,
       studentId: r.studentId,
-      time: timeOf.get(r.name) ?? null,
-      source: input.entries.some((e) => e.name === r.name) ? "출결내역" : "학부모연락",
+      time: timeOf.get(k) ?? null,
+      source: input.entries.some((e) => keyOf(e) === k) ? "출결내역" : "학부모연락",
     });
   }
 
@@ -135,10 +159,11 @@ export async function loadTodayPickups(
   };
 
   const boardingPickups: { name: string; studentId: string | null }[] = [];
-  const decidedNames = new Set<string>();
+  const decidedKeys = new Set<string>();
   for (const b of boardings) {
     const nm = nameOfAsg(b.assignment_id);
     if (!nm) continue;
+    const sid = asgById.get(b.assignment_id)?.student_id ?? null;
     // **사람이 정한 줄만 「정해진 것」입니다.**
     //
     // 예전에는 줄이 있기만 하면 전부 정해진 것으로 봤습니다. 그런데 체크표에는 사람이 안
@@ -148,8 +173,8 @@ export async function loadTodayPickups(
     //
     // 여기 적힌 규칙은 원래 「사람이 체크표에서 정한 것이 이긴다」였는데, 코드가 그보다
     // 넓게 막고 있었습니다.
-    if (isHumanSet(b.checked_by)) decidedNames.add(nm);
-    if (b.status === "픽업") boardingPickups.push({ name: nm, studentId: asgById.get(b.assignment_id)?.student_id ?? null });
+    if (isHumanSet(b.checked_by)) decidedKeys.add(keyOf({ name: nm, studentId: sid }));
+    if (b.status === "픽업") boardingPickups.push({ name: nm, studentId: sid });
   }
 
   const entries = entryRows
@@ -185,5 +210,5 @@ export async function loadTodayPickups(
     })
     .filter((v): v is { name: string; studentId: string | null; time: string | null } => !!v));
 
-  return mergePickups({ boardingPickups, decidedNames, entries, requests });
+  return mergePickups({ boardingPickups, decidedKeys, entries, requests });
 }

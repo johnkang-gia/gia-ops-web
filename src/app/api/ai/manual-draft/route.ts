@@ -1,3 +1,4 @@
+import { todayKst } from "@/lib/kst";
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { callClaudeJson } from "@/lib/ai/claude";
@@ -132,7 +133,7 @@ export async function POST(request: Request) {
           case_id: genCaseId("PRP"),
           source: "manual",
           source_id: draft.case_id,
-          date: new Date().toISOString().slice(0, 10),
+          date: todayKst(),
           target_doc: targetDoc,
           category: result.category || "미분류",
           domain: result.domain || null,

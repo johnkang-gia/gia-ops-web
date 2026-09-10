@@ -28,6 +28,14 @@ const COLOR: Record<Verdict, string> = {
   "로그인으로 튕김": "text-orange-800 bg-orange-50 border-orange-300",
   "권한 막힘": "text-orange-800 bg-orange-50 border-orange-300",
 };
+/** 가운뎃값. 평균은 느린 화면 하나에 통째로 끌려가서 「보통 얼마나 걸리나」를 못 보여줍니다. */
+function median(xs: number[]): number {
+  if (xs.length === 0) return 0;
+  const a = [...xs].sort((p, q) => p - q);
+  const m = Math.floor(a.length / 2);
+  return a.length % 2 ? a[m] : Math.round((a[m - 1] + a[m]) / 2);
+}
+
 /** 위험한 순서. 사람이 위에서부터 읽고 손대면 됩니다. */
 const ORDER: Verdict[] = ["오류", "안 열림", "없는 화면", "로그인으로 튕김", "권한 막힘", "느림", "정상"];
 
@@ -162,6 +170,39 @@ export default function SiteCheckPanel() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* ── 화면별 속도 ────────────────────────────────────────────────────
+          점검하면서 이미 시간을 재두었습니다. 표로만 두면 「어디가 느린가」를 눈으로 훑어야
+          하는데, 막대로 그리면 한눈에 보입니다 - 조회를 더 하지 않고 그리는 그림입니다. */}
+      {results.length > 0 && (
+        <div className="mt-3 rounded-lg border border-slate-200 p-3">
+          <p className="mb-2 flex flex-wrap items-baseline gap-x-2 text-[11px]">
+            <b className="text-slate-700">⏱ 느린 화면</b>
+            <span className="text-slate-400">
+              가장 느린 12개 · 가운뎃값 {(median(results.map((r) => r.ms)) / 1000).toFixed(1)}초 · 4초를 넘으면 빨강
+            </span>
+          </p>
+          <div className="flex flex-col gap-1">
+            {[...results]
+              .sort((a, b) => b.ms - a.ms)
+              .slice(0, 12)
+              .map((r) => (
+                <div key={r.path} className="flex items-center gap-2">
+                  <span className="w-52 shrink-0 truncate text-[11px] text-slate-600">{r.path}</span>
+                  <div className="h-3 flex-1 overflow-hidden rounded-full bg-slate-100">
+                    <div
+                      className={"h-full rounded-full " + (r.ms > 4000 ? "bg-red-500" : r.ms > 2000 ? "bg-amber-400" : "bg-emerald-400")}
+                      style={{ width: `${Math.max(2, Math.min(100, (r.ms / Math.max(...results.map((x) => x.ms))) * 100))}%` }}
+                    />
+                  </div>
+                  <span className="w-12 shrink-0 text-right text-[11px] tabular-nums text-slate-500">
+                    {(r.ms / 1000).toFixed(1)}초
+                  </span>
+                </div>
+              ))}
+          </div>
         </div>
       )}
 

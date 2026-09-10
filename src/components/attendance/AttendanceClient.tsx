@@ -114,7 +114,7 @@ function StudentRow({
   const needsContact = record && NEEDS_CONTACT.includes(record.status);
 
   /**
-   * 상태는 **이름 옆 작은 뱃지**로만 보여줍니다.
+   * 상태는 **이름 오른쪽 작은 아이콘**으로만 보여줍니다.
    *
    * 예전에는 아이마다 출석·지각·결석·조퇴·기타 다섯 버튼이 글자까지 붙어 늘어서 있었습니다.
    * 137명이면 685개 버튼이라 한 화면에 한 반도 안 들어갔습니다. **기본이 출석**이므로 대부분의
@@ -122,10 +122,23 @@ function StudentRow({
    *
    * 그래서 평소에는 아이콘 한 칸만 두고, 눌렀을 때만 고르는 줄이 펼쳐집니다.
    * 무엇인지는 마우스를 대면 뜹니다.
+   *
+   * ── 표시가 없으면 「출석」입니다 ─────────────────────────────────────
+   *
+   * 아무 표시도 없는 아이는 **출석**입니다. 예전에는 그 자리에 가운뎃점(·)을 찍었는데,
+   * 「아직 안 봤다」와 「출석이다」가 화면에서 똑같이 보였습니다. 그래서 출석 표시를 그대로
+   * 그리되 **연한 색**으로 둡니다 - 사람이 손으로 찍은 출석과 구별은 되면서, 그 아이가
+   * 출석이라는 사실은 분명합니다.
+   *
+   * 날마다 137줄을 미리 만들어 두지는 않습니다. 만들면 화면은 같은데 자료만 스무 배로
+   * 늘고, 「사람이 정한 것」과 「기계가 미리 찍은 것」을 다시 가릴 수 없게 됩니다.
    */
   return (
     <div className={"rounded-lg border bg-white px-2 py-1.5 shadow-sm " + (highlight ? "border-teal-400 ring-2 ring-teal-200" : "border-slate-100")}>
       <div className="flex items-center gap-1.5">
+        <span className="min-w-0 flex-1 text-[13px] font-semibold text-slate-700" title={student.name_en ?? undefined}>
+          <span className="block truncate">{lang === "en" && student.name_en ? student.name_en : student.name}</span>
+        </span>
         {/* 아이콘 하나 + 그 위에 겹쳐 뜨는 고르기 칸.
             relative 를 여기 두어야 떠오르는 칸이 이 아이콘을 기준으로 자리를 잡습니다. */}
         <div
@@ -140,21 +153,23 @@ function StudentRow({
             title={
               cur
                 ? `${t(cur, STATUS_META[cur].en)} — 마우스를 대면 바꿀 수 있습니다`
-                : t("출석 (표시 없음) — 마우스를 대면 바꿀 수 있습니다", "Present (unmarked) — hover to change")
+                : t("출석 — 마우스를 대면 바꿀 수 있습니다", "Present — hover to change")
             }
             className={
               "rounded-md border px-1 py-0.5 text-[13px] leading-none transition disabled:opacity-50 " +
-              (cur ? STATUS_META[cur].badge : "border-slate-200 text-slate-300 hover:bg-slate-50")
+              (cur ? STATUS_META[cur].badge : "border-slate-200 opacity-40 hover:bg-slate-50 hover:opacity-100")
             }
           >
-            {cur ? STATUS_META[cur].emoji : "·"}
+            {/* 표시가 없으면 출석입니다. 같은 아이콘을 연하게 그려, 「아직 안 봤다」로 읽히지
+                않게 합니다. */}
+            {cur ? STATUS_META[cur].emoji : STATUS_META["출석"].emoji}
           </button>
 
           {open && (
             <div
               /* 아래로 밀지 않고 **겹쳐서** 띄웁니다. 아이콘과 칸 사이에 틈이 있으면 마우스가
                  그 틈을 지나는 순간 닫혀버려서, 고르려다 매번 놓칩니다 - 틈을 두지 않습니다. */
-              className="absolute left-0 top-full z-30 flex w-max gap-1 rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg"
+              className="absolute right-0 top-full z-30 flex w-max gap-1 rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg"
             >
               {STATUS_LIST.map((s) => {
                 const active = record?.status === s;
@@ -181,9 +196,6 @@ function StudentRow({
           )}
         </div>
 
-        <span className="min-w-0 flex-1 text-[13px] font-semibold text-slate-700" title={student.name_en ?? undefined}>
-          <span className="block truncate">{lang === "en" && student.name_en ? student.name_en : student.name}</span>
-        </span>
 
         {/* 결석 사유와 확인 필요는 글자 없이 점 하나로. 이름 줄이 길어지면 5열이 깨집니다. */}
         {record?.status === "결석" && !record.reason_type && (

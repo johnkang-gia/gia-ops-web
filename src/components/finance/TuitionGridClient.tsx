@@ -323,17 +323,30 @@ export default function TuitionGridClient({
     notify(`${s.name} — 이미 받은 것으로 넣었습니다(${won(body.paid ?? amount)}).`, "success");
   }
 
-  async function issueChecked(planIds: string[]) {
+  /**
+   * 청구서를 발행합니다.
+   *
+   * `only` 를 주면 **그 학생만** 발행합니다. 학생 줄의 [발행 →] 단추가 이 길로 옵니다.
+   *
+   * 앞 판은 그 단추가 체크 상태를 먼저 바꾸고(`setChecked`) 곧바로 이 함수를 불렀습니다.
+   * 그런데 화면 상태는 바로 바뀌지 않아서, 이 함수가 볼 때는 **아직 아무도 안 골라진**
+   * 상태였습니다 - 그래서 「발행할 학생을 골라주세요」가 떴습니다. 이미 학생을 짚어 누른
+   * 단추인데 다시 고르라고 하니 사람은 무엇을 더 해야 하는지 알 수 없습니다.
+   */
+  async function issueChecked(planIds: string[], only?: string[]) {
     const scoped = planIds.length > 0;
+    const pick = only ? new Set(only) : checked;
     const targets = rows.filter(
-      (s) => checked.has(s.id) && (scoped ? planIds.some((pid) => lineFor(s.id, usedPlans.find((p) => p.id === pid)!)) : totalOf(s.id) > 0),
+      (s) => pick.has(s.id) && (scoped ? planIds.some((pid) => lineFor(s.id, usedPlans.find((p) => p.id === pid)!)) : totalOf(s.id) > 0),
     );
     if (targets.length === 0) {
       notify("발행할 학생을 골라주세요(납부 옵션을 고르지 않은 학생은 제외됩니다).", "error");
       return;
     }
     const scopeLabel = scoped ? usedPlans.filter((p) => planIds.includes(p.id)).map((p) => p.name).join(" · ") : "학비 전체";
-    if (!confirm(`${targets.length}명에게 「${scopeLabel}」 청구서를 발행합니다. 되돌리려면 취소해야 합니다.`)) return;
+    // 학생 줄에서 한 명을 짚어 누른 것은 이미 「이 학생」이라고 말한 것입니다. 되물으면
+    // 같은 대답을 두 번 하게 됩니다. 여러 명을 한꺼번에 보낼 때만 한 번 묻습니다.
+    if (!only && !confirm(`${targets.length}명에게 「${scopeLabel}」 청구서를 발행합니다. 되돌리려면 취소해야 합니다.`)) return;
 
     setBusy(true);
     const made: Invoice[] = [];
@@ -684,8 +697,9 @@ export default function TuitionGridClient({
                         </button>
                         <button
                           onClick={() => {
-                            setChecked(new Set([s.id]));
-                            setTimeout(() => void issueChecked([]), 0);
+                            // 이 학생만 바로 발행합니다. 체크 상태를 거치지 않습니다 -
+                            // 화면 상태는 바로 바뀌지 않아서 「골라주세요」가 떴습니다.
+                            void issueChecked([], [s.id]);
                           }}
                           disabled={busy}
                           className="rounded bg-amber-100 px-1 text-[11px] font-bold text-amber-800 hover:bg-amber-200 disabled:opacity-40"

@@ -34,7 +34,11 @@ export const maxDuration = 60;
 // 카카오 로컬 API 초당 제한에 걸리지 않도록 사이를 띄웁니다.
 const GAP_MS = 120;
 // 60초 안에 끝내야 하므로 한 번에 이만큼만 처리하고, 남은 것은 다음 실행에서 이어 합니다.
-const BATCH = 250;
+//
+// 한 곳에 카카오 응답(약 0.2초)과 사이 간격(0.12초)이 들고, 주소로 못 찾으면 장소검색까지
+// 한 번 더 갑니다. 100곳이면 최악의 경우 40초 남짓이라 60초 제한 안에 들어옵니다. 남은 것은
+// 다음 날 밤에 이어 하고, 화면에는 몇 곳이 남았는지가 같이 나옵니다.
+const BATCH = 100;
 
 type Found = { lat: number; lng: number; gu: string | null; dong: string | null; via: string };
 

@@ -15,6 +15,8 @@ import SectionTabs from "@/components/common/SectionTabs";
 import DateTimeCard from "@/components/home/DateTimeCard";
 import GlobalSearchBar from "@/components/GlobalSearchBar";
 import PausedFeaturesBanner from "@/components/dev/PausedFeaturesBanner";
+import NewSignupAlert from "@/components/dev/NewSignupAlert";
+import type { PendingSignup } from "@/app/api/admin/pending-signups/route";
 import NotificationBell, { NotificationProvider, TaskCountBadge } from "@/components/NotificationBell";
 import { APP_VERSION } from "@/lib/version";
 import { ToastProvider } from "@/components/common/ToastProvider";
@@ -260,7 +262,7 @@ function buildWeeklyReportCategory(isAdmin: boolean): NavCategory {
 // "학교 문서함" 안에 흩어져 있어서 "설정을 바꾸려면 어디로 가야 하지?"가 매번 헷갈렸습니다.
 // 매일 쓰는 화면이 아니라 가끔 손보는 것들이므로 목록 맨 아래에 둡니다.
 // 문의및건의사항은 모든 직원이 쓰는 기능이라 여기가 아니라 사이드바 맨 아래 작은 링크로 둡니다.
-function buildAdminCategory(): NavCategory {
+function buildAdminCategory(pendingSignups: number): NavCategory {
   return {
     key: "admin",
     label: "관리",
@@ -272,7 +274,9 @@ function buildAdminCategory(): NavCategory {
       // 다른 국제학교/공립학교와 비교해 GIA가 어떤 시스템을 갖췄고 뭘 더 갖춰야 하는지 보는 화면.
       { href: "/admin/gia-systems", label: "GIA시스템", icon: "🧩" },
       { href: "/admin/education-news", label: "교육뉴스", icon: "📰" },
-      { href: "/admin/users", label: "사용자 관리", icon: "🔐", dividerBefore: "계정" },
+      // 가입 신청이 밀려 있으면 메뉴에서 바로 보입니다. 승인이 늦으면 그 사람은 「승인 대기」
+      // 화면에 갇혀 아무것도 못 합니다.
+      { href: "/admin/users", label: "사용자 관리", icon: "🔐", badge: pendingSignups, dividerBefore: "계정" },
       // 도서관 노트북·신입교사 오리엔테이션용 공용 계정(아이디+비밀번호 로그인) 관리 화면입니다
       // (요청: "도서관이랑, 오리엔테이션용 가계정을 만들어서 관리하게 해줘").
       { href: "/admin/shared-accounts", label: "공용 계정 관리", icon: "🔑" },
@@ -331,6 +335,19 @@ export default async function DashboardLayout({
   // 안에서 오류를 삼키고 빈 값을 돌려줍니다.
   const termScope = await getTermScope().catch(() => ({ term: null, terms: [], isPast: false }));
   const isDemoAccountUser = isDemoAccount(me.email);
+
+  // 승인을 기다리는 가입 신청. **개발자 계정일 때만** 읽습니다 - 승인할 수 없는 사람에게
+  // 띄우면 지워지지 않는 표시가 되고, 지워지지 않는 표시는 곧 안 읽히는 표시가 됩니다.
+  let pendingSignups: PendingSignup[] = [];
+  if (isDeveloperEmail(me.email)) {
+    const { data } = await supabase
+      .from("app_users")
+      .select("email, name, department, position, created_at")
+      .eq("status", "pending")
+      .order("created_at", { ascending: false })
+      .limit(20);
+    pendingSignups = (data as PendingSignup[] | null) ?? [];
+  }
 
   const displayName = me.name || me.email;
   // 요청("테마구현 : 라이트(지금), 다크, 리퀴드글라스, GIA")에 따라 계정에 저장된 테마를
@@ -416,7 +433,7 @@ export default async function DashboardLayout({
       // { href: "/attendance", label: "출석부", labelEn: "Attendance", icon: "🗒️" },
     ];
     if (isStaffOrAbove) categories.push(buildWeeklyReportCategory(isAdmin));
-    if (isAdmin) categories.push(buildAdminCategory());
+    if (isAdmin) categories.push(buildAdminCategory(pendingSignups.length));
     // 💰 재무. **직위가 아니라 열쇠로** 나옵니다 - 관리자여도 열쇠가 없으면 이 메뉴는
     // 존재하지 않습니다(담당자: "재무관리자만 이 돈에 관한 메뉴를 볼 수 있도록").
     if (hasFinanceAccess(me)) {
@@ -514,6 +531,10 @@ export default async function DashboardLayout({
           <Suspense fallback={null}>
             <DisabledFeaturesSection />
           </Suspense>
+          {/* 누가 가입하면 여기 뜹니다. 슬랙 알림과 둘 중 하나만 봐도 되도록. */}
+          {isDeveloper && !isPreviewing && (
+            <NewSignupAlert initial={{ count: pendingSignups.length, items: pendingSignups }} />
+          )}
         </div>
 
         {/* 검색+달력을 한 상자로 합쳤습니다(요청: "프로필 아래 검색과 달력위젯을 합쳐줘 검색아래에

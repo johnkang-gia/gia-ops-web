@@ -606,11 +606,29 @@ export default function PickupInboxClient({
               <span
                 key={r.id}
                 title={`${r.source} · ${r.resolved_by === "AI" ? "자동" : r.resolved_by ?? ""}`}
-                className="inline-flex items-center gap-1.5 rounded-lg border-l-4 border-sky-500 bg-slate-50 px-2.5 py-1.5 text-sm font-bold text-slate-800"
+                className="inline-flex items-center gap-1.5 rounded-lg border-l-4 border-sky-500 bg-slate-50 py-1.5 pl-2.5 pr-1.5 text-sm font-bold text-slate-800"
               >
                 <RowStudentName maps={whereMaps} studentId={r.student_id} name={r.matched_name ?? r.ai_student_name} />
                 {r.ai_pickup_time && <span className="text-[11px] font-semibold text-sky-600">{r.ai_pickup_time}</span>}
                 {r.resolved_by === "AI" && <span className="text-[10px] font-semibold text-emerald-600">자동</span>}
+                {/* ── 확정된 것도 내릴 수 있어야 합니다 ────────────────────────
+                    이 목록은 지금까지 **보기만** 하는 자리였습니다. 그런데 자동으로 확정된
+                    건이 틀리는 일이 실제로 있고(강하라), 틀린 줄 하나 때문에 인박스 위쪽
+                    「확인 대기」로 되돌아가 찾을 수가 없었습니다 - 확정된 건은 거기 없습니다.
+                    내리면 체크표·출결·업무의 자국도 함께 내려갑니다(undoPickupTraces). */}
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    if (!window.confirm(`${r.matched_name ?? r.ai_student_name ?? "이 학생"} 픽업을 내릴까요? 체크표·출결·업무에서도 함께 내려갑니다.`)) return;
+                    void ignore(r);
+                  }}
+                  className="rounded px-1 text-[12px] font-bold text-slate-300 hover:bg-red-50 hover:text-red-500 disabled:opacity-40"
+                  aria-label="픽업 내리기"
+                  title="픽업이 아니었습니다 — 체크표·출결·업무에서 함께 내립니다"
+                >
+                  ✕
+                </button>
               </span>
             ))}
           </div>

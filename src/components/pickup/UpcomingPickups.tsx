@@ -241,6 +241,49 @@ export default function UpcomingPickups({ initialRows }: { initialRows: Schedule
     notify(`${s.name} 학생으로 연결했습니다.`, "success");
   }
 
+  // ── 같은 연락에 아이가 둘 이상일 때 ─────────────────────────────────────
+  //
+  // 「내일 재이랑 서우 같이 데리러 갈게요」처럼 한 통에 두 아이가 오는 경우가 있습니다.
+  // 예약은 **아이 하나에 한 줄**입니다(그래야 그날 아침에 체크표의 그 아이 줄에 정확히
+  // 걸립니다). 그래서 둘째 아이는 **새 줄**로 만듭니다 - 한 줄에 이름 둘을 적으면 체크표가
+  // 그 이름으로 아무도 못 찾습니다.
+  //
+  // 날짜·시각·원문·담임은 첫 줄에서 그대로 가져옵니다. 사람이 다시 입력할 이유가 없고,
+  // 다시 입력하게 하면 시각이 어긋난 채로 저장됩니다.
+  async function addStudent(row: ScheduleRow, studentId: string) {
+    const s = students.find((x) => x.id === studentId);
+    if (!s) return;
+    // 같은 날 같은 아이가 이미 있으면 만들지 않습니다. 두 줄이면 그날 아침에 두 번 걸리고,
+    // 담임께 알림도 두 번 갑니다.
+    if (rows.some((r) => r.service_date === row.service_date && r.student_id === s.id && r.status !== "취소")) {
+      notify(`${s.name} 학생은 그날 예약이 이미 있습니다.`, "error");
+      return;
+    }
+    setBusy(true);
+    const { error } = await createClient()
+      .from("pickup_schedules")
+      .insert({
+        request_id: row.request_id ?? null,
+        student_id: s.id,
+        student_name: s.name,
+        service_date: row.service_date,
+        pickup_time: row.pickup_time,
+        status: "예정",
+        // 사람이 직접 짚어 넣은 줄입니다. 다시 확인할 것이 없습니다.
+        needs_confirm: false,
+        source_note: `${row.student_name ?? "같은 연락"} 예약에 사람이 함께 추가했습니다`,
+        homeroom_email: null,
+      });
+    setBusy(false);
+    if (error) {
+      // 조용히 넘기면 「추가했다」고 생각하고 그날 아무도 안 데리러 갑니다.
+      notify("추가하지 못했습니다: " + error.message, "error");
+      return;
+    }
+    await load();
+    notify(`${dateLabel(row.service_date)}에 ${s.name} 학생을 함께 예약했습니다.`, "success");
+  }
+
   async function confirm(row: ScheduleRow) {
     setBusy(true);
     const supabase = createClient();
@@ -342,6 +385,17 @@ export default function UpcomingPickups({ initialRows }: { initialRows: Schedule
                       맞음
                     </button>
                   )}
+                  {/* 한 통에 아이가 둘 이상인 경우. 이 줄과 같은 날·같은 시각으로 한 줄 더
+                      만듭니다 - 한 줄에 이름 둘을 적으면 체크표가 아무도 못 찾습니다. */}
+                  <StudentPicker
+                    students={students}
+                    disabled={busy}
+                    label="＋"
+                    title={`${dateLabel(r.service_date)}에 같이 가는 학생 추가`}
+                    buttonClassName="rounded px-1 text-[13px] font-bold leading-none text-slate-400 hover:bg-emerald-50 hover:text-emerald-600 disabled:opacity-50"
+                    onPick={(s) => addStudent(r, s.id)}
+                  />
+
                   <button
                     type="button"
                     disabled={busy}

@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { useToast } from "@/components/common/ToastProvider";
 import { suggestForChannel } from "@/lib/toddleChannel";
 import type { RosterEntry } from "@/lib/pickupParse";
@@ -19,7 +20,15 @@ import type { RosterEntry } from "@/lib/pickupParse";
  * 쓸어 담으면 확인하는 뜻이 없어집니다.
  */
 
-export type StudentOption = { id: string; name: string; nameEn: string | null; grade: string | null; className: string | null };
+export type StudentOption = {
+  id: string;
+  name: string;
+  nameEn: string | null;
+  grade: string | null;
+  className: string | null;
+  /** 동명이인을 가르는 유일한 재료. 김재이 셋이 영문명을 모두 「Jay Kim」으로 씁니다. */
+  birthDate: string | null;
+};
 export type ChannelRow = {
   /** 아직 표에 없는 방(글만 들어온 방)은 null. */
   id: string | null;
@@ -45,7 +54,12 @@ export default function ToddleChannelsClient({
   loadError: string | null;
 }) {
   const notify = useToast();
+  const router = useRouter();
+  const [reloading, startReload] = useTransition();
   const [rows, setRows] = useState(initial);
+  // 서버가 다시 그려 준 목록을 화면에 반영합니다. **이게 없으면 「다시 조회」가 아무 일도
+  // 안 합니다** - 첫 화면 값이 그대로 남아 있고, 누른 사람은 새 방이 정말 없다고 믿습니다.
+  useEffect(() => setRows(initial), [initial]);
   const [filter, setFilter] = useState<Filter>("안됨");
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
@@ -53,7 +67,7 @@ export default function ToddleChannelsClient({
   const [picked, setPicked] = useState<Record<string, string[]>>({});
 
   const roster = useMemo<RosterEntry[]>(
-    () => students.map((s) => ({ id: s.id, name: s.name, name_en: s.nameEn, grade: s.grade, class_name: s.className, birth_date: null })),
+    () => students.map((s) => ({ id: s.id, name: s.name, name_en: s.nameEn, grade: s.grade, class_name: s.className, birth_date: s.birthDate })),
     [students],
   );
   const byId = useMemo(() => new Map(students.map((s) => [s.id, s])), [students]);
@@ -177,6 +191,22 @@ export default function ToddleChannelsClient({
           placeholder="방 이름 찾기"
           className="ml-auto w-40 rounded-lg border border-slate-300 px-2 py-1 text-[11px]"
         />
+        {/* ── 다시 조회 ──────────────────────────────────────────────────
+            방 목록은 화면을 열 때 한 번만 읽습니다. 그런데 새 학부모 방은 **글이 들어와야**
+            목록에 나타나므로, 연결하려고 이 화면을 열어두고 기다리는 동안에는 아무리
+            기다려도 안 생깁니다. 지금까지는 주소창을 새로 고쳐야 했습니다.
+
+            `router.refresh()` 는 이 화면만 서버에서 다시 그립니다 - 고르던 학생이나
+            검색어는 그대로 남습니다. 통째로 새로 고치면 하던 일이 날아갑니다. */}
+        <button
+          type="button"
+          onClick={() => startReload(() => router.refresh())}
+          disabled={reloading}
+          className="rounded-lg border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-600 disabled:opacity-50"
+          title="새로 들어온 방과 연결 상태를 다시 읽어옵니다"
+        >
+          {reloading ? "읽는 중…" : "🔁 다시 조회"}
+        </button>
         {canEdit && (
           <button
             type="button"

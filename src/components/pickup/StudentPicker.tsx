@@ -28,11 +28,17 @@ export default function StudentPicker({
   disabled,
   label = "학생 연결",
   autoFocusQuery = "",
+  title,
+  buttonClassName,
 }: {
   students: PickStudent[];
   onPick: (s: PickStudent) => void;
   disabled?: boolean;
   label?: string;
+  /** 마우스를 올렸을 때 뜨는 말. 「＋」처럼 글자만으로는 뜻이 안 통하는 단추에 씁니다. */
+  title?: string;
+  /** 단추 모양을 바꿉니다. 기본은 「학생 연결」용 노란 테두리입니다. */
+  buttonClassName?: string;
   /** 열자마자 이 말로 검색해둡니다(AI가 읽은 이름을 넣으면 대개 바로 좁혀집니다). */
   autoFocusQuery?: string;
 }) {
@@ -88,7 +94,12 @@ export default function StudentPicker({
         type="button"
         disabled={disabled}
         onClick={() => setOpen(true)}
-        className="rounded-lg border border-amber-300 px-2 py-1 text-[11px] font-semibold text-amber-700 disabled:opacity-50"
+        title={title}
+        aria-label={title ?? label}
+        className={
+          buttonClassName ??
+          "rounded-lg border border-amber-300 px-2 py-1 text-[11px] font-semibold text-amber-700 disabled:opacity-50"
+        }
       >
         {label}
       </button>

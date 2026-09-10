@@ -50,6 +50,10 @@ export default async function ToddleChannelsPage() {
     nameEn: s.name_en,
     grade: s.grade,
     className: s.class_name ?? null,
+    // **생일을 빠뜨리면 안 됩니다.** 방 이름의 「Jay Kim(190828)」에서 괄호를 읽어도,
+    // 명부 쪽에 생일이 없으면 김재이 셋 중 아무도 고를 수 없습니다(`birthFits`).
+    // 조회에는 있었는데 여기서 옮길 때 빠져 있었고, 그래서 재이 방은 늘 제안이 비었습니다.
+    birthDate: s.birth_date ?? null,
   }));
 
   const linkByChannel = new Map<string, string[]>();

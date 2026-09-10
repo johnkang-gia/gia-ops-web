@@ -30,7 +30,23 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 const NEEDS = ["class_name", "birth_date"];
-const USERS = /matchStudent|studentLabel|markIfAmbiguous|toKoreanDisplayName/;
+/** 옮기는 자리에서 찾을 칸. 밑줄 표기와 낙타 표기를 같은 것으로 봅니다. */
+const PAIRS = [
+  ["class_name", /\b(class_name|className)\s*:/],
+  ["birth_date", /\b(birth_date|birthDate)\s*:/],
+];
+/**
+ * 이 파일이 «명부 줄을 다루는 파일»인가.
+ *
+ * 처음에는 가르는 함수 넷만 봤습니다. 그런데 토들 채널 화면은 그 넷을 하나도 안 쓰고
+ * `suggestForChannel` 로 방 이름을 풉니다 - **파일 자체가 검사 대상이 아니었고**, 생일을
+ * 빠뜨린 채 몇 판을 돌았습니다. 명부 줄을 만들거나 넘기는 함수도 함께 봅니다.
+ *
+ * `resolveStudent` 는 낱말 경계로 찾습니다. 안 그러면 이름과 상관없는 `resolveStudentItems`
+ * (요금 계산)까지 걸려 헛경고가 납니다.
+ */
+const USERS =
+  /matchStudent|studentLabel|markIfAmbiguous|toKoreanDisplayName|toRosterEntries|ROSTER_SELECT|suggestForChannel|\bresolveStudent\b/;
 
 function walk(dir) {
   const out = [];
@@ -62,11 +78,16 @@ for (const file of walk("src")) {
 
   // 읽어온 줄을 **손으로 옮기는 자리**. `name_en:` 이 들어간 객체는 명부 줄입니다.
   // 여기서 두 칸이 빠지면 조회가 아무리 멀쩡해도 가를 재료가 사라집니다.
-  for (const m of src.matchAll(/\{([\s\S]{0,500}?)\bname_en\s*:([\s\S]{0,500}?)\}/g)) {
+  //
+  // **칸 이름이 두 벌입니다.** 화면으로 넘기는 객체는 `nameEn` · `className` · `birthDate`
+  // 처럼 낙타 표기를 쓰기도 합니다. 처음에는 밑줄 표기만 봤는데, 토들 채널 화면이 낙타
+  // 표기로 옮기면서 생일을 빠뜨렸고 검사기는 그대로 통과시켰습니다 - 그 화면의 재이 방은
+  // 제안이 늘 비어 있었습니다. 헛통과하는 검사기는 없는 것보다 나쁩니다.
+  for (const m of src.matchAll(/\{([\s\S]{0,500}?)\bname_?[eE]n\s*:([\s\S]{0,500}?)\}/g)) {
     const body = `${m[1]} name_en:${m[2]}`;
     // 타입 선언(`name_en: string | null`)은 값을 옮기는 자리가 아닙니다.
-    if (/name_en\s*:\s*(string|number|boolean)\b/.test(body)) continue;
-    const missing = NEEDS.filter((c) => !new RegExp(`\\b${c}\\s*:`).test(body));
+    if (/name_?[eE]n\s*:\s*(string|number|boolean)\b/.test(body)) continue;
+    const missing = PAIRS.filter(([, re]) => !re.test(body)).map(([label]) => label);
     if (missing.length === 0) continue;
     const line = src.slice(0, m.index).split("\n").length;
     bad.push({ file, line, what: "명부 줄을 손으로 옮기는 자리", missing });

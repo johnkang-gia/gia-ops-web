@@ -35,10 +35,10 @@ export const maxDuration = 60;
 const GAP_MS = 120;
 // 60초 안에 끝내야 하므로 한 번에 이만큼만 처리하고, 남은 것은 다음 실행에서 이어 합니다.
 //
-// 한 곳에 카카오 응답(약 0.2초)과 사이 간격(0.12초)이 들고, 주소로 못 찾으면 장소검색까지
-// 한 번 더 갑니다. 100곳이면 최악의 경우 40초 남짓이라 60초 제한 안에 들어옵니다. 남은 것은
-// 다음 날 밤에 이어 하고, 화면에는 몇 곳이 남았는지가 같이 나옵니다.
-const BATCH = 100;
+// 한 곳에 후보 문장이 최대 넷이고 문장마다 주소검색·장소검색을 갑니다. 60곳이면 대부분
+// 30초 안에 끝나고, 최악의 경우에도 60초 제한 안에 들어옵니다. 남은 것은 다음 날 밤에 이어
+// 하고, 응답에 몇 곳이 남았는지가 같이 나옵니다.
+const BATCH = 60;
 
 type Found = { lat: number; lng: number; gu: string | null; dong: string | null; via: string };
 
@@ -63,6 +63,48 @@ async function kakao(path: string, query: string, key: string): Promise<Found | 
     dong: region?.region_3depth_name ?? parts[2] ?? null,
     via: path,
   };
+}
+
+/**
+ * 주소 칸에 **주소가 아닌 것이 섞여 들어옵니다.**
+ *
+ * 실제로 이런 값들이 있습니다 - 「메이플자이 205동 이우빈」(아이 이름), 「5월부터 용산구 …」
+ * (언제부터인지), 「강남구 논현동 68-4 동승 선생님: 사바 010-…」(연락처). 사람이 읽으면
+ * 어디인지 알 수 있지만 주소검색은 통째로 실패합니다.
+ *
+ * 그래서 **덧붙은 것만 정해진 규칙으로 떼어내고** 다시 찾습니다. 아무 낱말이나 잘라가며
+ * 찾지는 않습니다 - 그러면 「서초구 서초대로」 같은 반쪽 주소로 엉뚱한 좌표가 잡히는데,
+ * 화면에는 오류가 아니라 「좌표가 있는 정류장」으로 보입니다.
+ */
+export function addressCandidates(raw: string): string[] {
+  const out: string[] = [];
+  const push = (v: string) => {
+    const t = v.replace(/\s+/g, " ").trim();
+    if (t.length >= 4 && !out.includes(t)) out.push(t);
+  };
+
+  push(raw);
+
+  // 「5월부터」처럼 언제부터인지 적어둔 앞머리, 연락처, 동승 선생님 안내를 떼어냅니다.
+  const cleaned = raw
+    .replace(/^\s*\d+월\s*부터\s*/, "")
+    .replace(/동승\s*선생님\s*:.*$/, "")
+    .replace(/01[016-9][-\s]?\d{3,4}[-\s]?\d{4}/g, "")
+    .replace(/\(.*?\)/g, "");
+  push(cleaned);
+
+  // 맨 뒤에 붙은 아이 이름(한글 2~4자, 숫자·동·호·층·로·길이 아닌 것)을 뗍니다.
+  const words = cleaned.trim().split(/\s+/);
+  const last = words[words.length - 1] ?? "";
+  if (words.length >= 2 && /^[가-힣]{2,4}[A-Z]?$/.test(last) && !/[동호층로길가리]$/.test(last)) {
+    push(words.slice(0, -1).join(" "));
+  }
+
+  // 「원페를라 202동」처럼 동 번호까지 적힌 경우, 단지 이름만으로 한 번 더 찾습니다.
+  const withoutDong = cleaned.replace(/\s*\S*\d+\s*동(\s*\d+\s*호)?\s*$/, "").trim();
+  push(withoutDong);
+
+  return out;
 }
 
 export async function GET(req: NextRequest) {
@@ -90,6 +132,8 @@ export async function GET(req: NextRequest) {
 
   let filled = 0;
   const notFound: string[] = [];
+  /** 덧붙은 것을 떼고 찾은 곳. 원문과 실제 조회한 문장을 함께 남겨 사람이 되짚을 수 있게 합니다. */
+  const guessed: string[] = [];
   const errors: string[] = [];
 
   for (const stop of targets) {
@@ -99,14 +143,24 @@ export async function GET(req: NextRequest) {
       continue;
     }
     try {
-      let found = await kakao("address", address, kakaoKey);
-      if (!found) {
+      let found: Found | null = null;
+      let usedQuery = address;
+      for (const query of addressCandidates(address)) {
+        found = await kakao("address", query, kakaoKey);
+        if (!found) {
+          await new Promise((r) => setTimeout(r, GAP_MS));
+          found = await kakao("keyword", query, kakaoKey);
+        }
+        if (found) {
+          usedQuery = query;
+          break;
+        }
         await new Promise((r) => setTimeout(r, GAP_MS));
-        found = await kakao("keyword", address, kakaoKey);
       }
       if (!found) {
         notFound.push(address);
       } else {
+        if (usedQuery !== address) guessed.push(`${address} → ${usedQuery}`);
         const { error: updateError } = await supabase
           .from("shuttle_stops")
           .update({ lat: found.lat, lng: found.lng, gu: found.gu, dong: found.dong, geocoded_at: new Date().toISOString() })
@@ -131,8 +185,10 @@ export async function GET(req: NextRequest) {
     ok: errors.length === 0,
     이번에처리: targets.length,
     좌표채움: filled,
+    덧붙은것을떼고찾음: guessed.length,
     주소를못찾음: notFound.length,
     남은정류장: remaining ?? null,
+    guessed: guessed.slice(0, 50),
     notFound: notFound.slice(0, 50),
     errors,
   });

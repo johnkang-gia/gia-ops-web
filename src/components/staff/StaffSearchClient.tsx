@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type { AppUser } from "@/lib/types";
 import Pagination from "@/components/Pagination";
+import { inDepartment } from "@/lib/department";
 
 const PAGE_SIZE = 15;
 
@@ -30,7 +31,9 @@ export default function StaffSearchClient({ staff, homeroomMap = {} }: { staff: 
       if (!includeRetired && s.leave_date) return false;
       // 부서·직위가 비어 있는 계정은 "미지정"으로 골라야만 나옵니다 - 부서를 골랐는데
       // 소속 없는 사람까지 섞이면 그 부서 명단으로 쓸 수가 없습니다.
-      if (dept && (dept === "미지정" ? !!s.department : s.department !== dept)) return false;
+      // 「전체」 소속(최고관리자)은 어느 부서로 걸러도 함께 나옵니다 - 판정은 inDepartment
+      // 한 곳에서만 합니다. 화면마다 다시 쓰면 빠뜨린 화면에서만 그 사람이 사라집니다.
+      if (dept && (dept === "미지정" ? !!s.department : !inDepartment(s.department, dept))) return false;
       if (position && (position === "미지정" ? !!s.position : s.position !== position)) return false;
       if (!q) return true;
       return (s.name ?? "").toLowerCase().includes(q) || s.email.toLowerCase().includes(q);
@@ -43,7 +46,7 @@ export default function StaffSearchClient({ staff, homeroomMap = {} }: { staff: 
       if (!includeRetired && s.leave_date) return false;
       const d = kind === "dept" ? value : dept;
       const p = kind === "position" ? value : position;
-      if (d && (d === "미지정" ? !!s.department : s.department !== d)) return false;
+      if (d && (d === "미지정" ? !!s.department : !inDepartment(s.department, d))) return false;
       if (p && (p === "미지정" ? !!s.position : s.position !== p)) return false;
       return true;
     }).length;

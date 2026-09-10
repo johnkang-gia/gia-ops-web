@@ -19,7 +19,9 @@ export const dynamic = "force-dynamic";
 // [반/담임 배정 관리]에서 바로잡으면 됩니다.
 
 const POSITIONS = ["교사", "행정직원", "관리자"];
-const DEPARTMENTS = ["유치부", "초등부", "중고등부"];
+import { STAFF_DEPARTMENTS } from "@/lib/department";
+
+const DEPARTMENTS: readonly string[] = STAFF_DEPARTMENTS;
 
 export async function POST(req: Request) {
   const supabase = await createClient();

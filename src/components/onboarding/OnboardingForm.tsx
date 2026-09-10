@@ -5,7 +5,10 @@ import { useRouter } from "next/navigation";
 import { useLang, useT } from "@/components/common/LanguageProvider";
 import { departmentLabel, positionLabel } from "@/lib/i18nLabels";
 
-const DEPARTMENTS = ["유치부", "초등부", "중고등부"] as const;
+import { STAFF_DEPARTMENTS } from "@/lib/department";
+
+// 최고관리자는 초등·중고등을 모두 맡아 한 곳을 고를 수 없습니다. 「전체」가 그 자리입니다.
+const DEPARTMENTS = STAFF_DEPARTMENTS;
 // "개발자" 직위는 시스템이 johnkang@giamicro.com 계정 전용으로 예약해두고 있어서, 다른
 // 사람들에게는 선택지로 아예 보여주지 않습니다.
 const POSITIONS = ["교사", "행정직원", "관리자"] as const;

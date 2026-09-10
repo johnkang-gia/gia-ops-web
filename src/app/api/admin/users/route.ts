@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { isDeveloperEmail, canManageFinanceAccess } from "@/lib/roles";
 import { getCurrentAppUser } from "@/lib/currentUser";
+import { scopeForPosition } from "@/lib/department";
 import type { AppUser } from "@/lib/types";
 
 export async function GET() {
@@ -133,6 +134,11 @@ export async function PATCH(request: Request) {
   }
   if (position !== undefined) {
     update.position = position || null;
+    // **최고관리자는 부서가 나뉘지 않습니다.** 초등·중고등을 모두 맡는데 한 곳을 고르면
+    // 나머지 부서 화면에서 안 보이고, 비워두면 부서로 거르는 화면 전부에서 사라집니다.
+    // 직위를 올리는 그 자리에서 소속도 함께 맞춥니다 - 따로 고치게 두면 대개 안 고칩니다.
+    const scoped = scopeForPosition(position, undefined);
+    if (scoped) update.department = scoped;
   }
   if (name !== undefined) {
     update.name = name.trim();

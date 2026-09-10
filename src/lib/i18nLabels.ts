@@ -21,6 +21,8 @@ const POSITION_EN: Record<string, string> = {
 };
 
 const DEPARTMENT_EN: Record<string, string> = {
+  // 최고관리자처럼 부서가 나뉘지 않는 사람의 소속입니다.
+  전체: "All Divisions",
   유치부: "Kindergarten",
   초등부: "Elementary",
   중고등부: "Secondary",

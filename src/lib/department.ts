@@ -24,6 +24,45 @@ export function isVisibleDepartment(value: string | null | undefined): value is 
   return !!value && (VISIBLE_DEPARTMENTS as readonly string[]).includes(value);
 }
 
+/**
+ * **직원의 소속** — 학생의 부서와 다릅니다.
+ *
+ * 학생은 초등부/중고등부 둘 중 하나에 앉습니다. 그런데 최고관리자는 초등·중고등을 모두
+ * 맡기 때문에 한 곳을 고를 수가 없습니다. 소속을 비워두면 부서로 거르는 화면에서 그 사람이
+ * **아예 안 보입니다** - 교직원 목록에도, 부서 업무에도 안 뜹니다. 오류가 아니라 빈 자리라
+ * 아무도 이상하게 여기지 않습니다.
+ *
+ * 그래서 「전체」를 소속의 한 갈래로 둡니다. 값이 있으니 화면이 안 깨지고, 부서로 거를 때는
+ * 모든 부서에 함께 나옵니다.
+ */
+export const ALL_SCOPE = "전체";
+
+/** 가입할 때 고를 수 있는 소속. 학생 부서(ALL_DEPARTMENTS)와 **일부러 따로** 둡니다. */
+export const STAFF_DEPARTMENTS = [ALL_SCOPE, "유치부", "초등부", "중고등부"] as const;
+export type StaffDepartment = (typeof STAFF_DEPARTMENTS)[number];
+
+/**
+ * 이 사람이 그 부서에 속하는가.
+ *
+ * 「전체」 소속은 **모든 부서에 속합니다.** 부서로 거르는 자리는 전부 이 함수를 씁니다 -
+ * 화면마다 `dept === user.department` 를 다시 쓰면, 「전체」를 빠뜨린 화면에서만 그 사람이
+ * 사라집니다. 그리고 그건 오류로 안 보입니다.
+ */
+export function inDepartment(userDepartment: string | null | undefined, dept: string | null | undefined): boolean {
+  const u = (userDepartment ?? "").trim();
+  if (!u) return false;
+  if (u === ALL_SCOPE) return true;
+  const d = (dept ?? "").trim();
+  return !d || d === ALL_SCOPE || u === d;
+}
+
+/** 최고관리자는 부서가 나뉘지 않습니다. 직위를 올릴 때 소속을 함께 「전체」로 맞춥니다. */
+export function scopeForPosition(position: string | null | undefined, current: string | null | undefined): string | null {
+  if (position === "최고관리자" || position === "개발자") return ALL_SCOPE;
+  return current ?? null;
+}
+
+
 // 학년 표기만 있는 예전 데이터를 위한 추측 규칙(DB에 department가 채워지면 쓰이지 않습니다).
 export function guessDepartmentFromGrade(grade: string | null | undefined): Department | null {
   if (!grade) return null;

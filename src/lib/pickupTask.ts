@@ -1,6 +1,19 @@
 import { genCaseId } from "./caseId";
 
 /**
+ * 이 업무가 픽업에서 자동으로 생긴 것인지를 나타내는 `tasks.origin` 값.
+ *
+ * 제목의 「[픽업]」 글자로 가리지 않습니다. 제목은 사람이 고칠 수 있고, 고치는 순간 그
+ * 줄은 픽업이 아닌 것이 됩니다 - 오류가 아니라 색이 바뀌고 단추가 사라집니다.
+ */
+export const PICKUP_ORIGIN = "픽업";
+
+/** 픽업에서 자동으로 생긴 업무인가. 판단은 이 함수 한 곳에서만 합니다. */
+export function isPickupTask(task: { origin?: string | null } | null | undefined): boolean {
+  return (task?.origin ?? null) === PICKUP_ORIGIN;
+}
+
+/**
  * 픽업 한 건을 업무보드에 남기는 규칙.
  *
  * 픽업은 «알고만 있으면 되는 일»이 아닙니다. 시각이 되면 행정직원이 교실로 가서 아이를
@@ -46,6 +59,10 @@ export function buildPickupTask(input: PickupTaskInput) {
   const place = input.place ? ` · ${input.place}` : "";
   return {
     case_id: genCaseId("TSK"),
+    // **어디서 왔는지를 칸으로 남깁니다.** 제목의 「[픽업]」 글자로 가리면, 사람이 제목을
+    // 고치는 순간 그 줄은 픽업이 아닌 것이 됩니다 - 오류가 아니라 색이 바뀌고 단추가
+    // 사라집니다. 이 저장소에서 글자를 열쇠로 쓴 사고가 여러 번 났습니다.
+    origin: PICKUP_ORIGIN,
     title: `[픽업] ${time}${input.studentName}${place}`.slice(0, 80),
     status: "예정" as const,
     // 시각이 정해진 일이라 늦으면 그대로 사고입니다. 보통으로 두면 목록에서 묻힙니다.

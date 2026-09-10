@@ -382,6 +382,13 @@ export type Task = {
   start_on: string | null;
   /** 색 태그. 달력에서 색만 보고 무슨 일인지 알아보라고 둡니다. */
   tag_id: string | null;
+  /**
+   * 이 업무를 만든 곳. `'픽업'` 이면 확정된 픽업에서 자동으로 생긴 줄입니다.
+   *
+   * 제목의 「[픽업]」 글자로 가리지 않는 이유: 제목은 사람이 고칠 수 있고, 고치는 순간
+   * 그 줄은 픽업이 아닌 것이 됩니다 - 오류가 아니라 색이 바뀌고 단추가 사라집니다.
+   */
+  origin: string | null;
   acknowledged_by: TaskAck[];
   updated_by: string | null;
   completed_at: string | null;

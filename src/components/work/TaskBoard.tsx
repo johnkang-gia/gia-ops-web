@@ -30,6 +30,7 @@ function DroppableColumn({
   onOpenTask,
   onToggleAck,
   onChangeStatus,
+  onPickupDone,
 }: {
   status: TaskStatus;
   tasks: Task[];
@@ -41,6 +42,7 @@ function DroppableColumn({
   onOpenTask: (id: string) => void;
   onToggleAck: (taskId: string, checked: boolean) => void;
   onChangeStatus: (taskId: string, status: TaskStatus) => void;
+  onPickupDone: (taskId: string) => void | Promise<void>;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: status });
 
@@ -67,6 +69,7 @@ function DroppableColumn({
               onOpen={() => onOpenTask(task.id)}
               onToggleAcknowledge={(checked) => onToggleAck(task.id, checked)}
               onChangeStatus={(status) => onChangeStatus(task.id, status)}
+              onPickupDone={() => onPickupDone(task.id)}
             />
           ))}
           {tasks.length === 0 && <p className="px-1 text-[11px] text-slate-300">여기로 카드를 끌어다 놓을 수 있어요</p>}
@@ -93,6 +96,7 @@ export default function TaskBoard({
   onOpenTask,
   onChangeStatus,
   onToggleAck,
+  onPickupDone,
   mineOnly,
   compact = false,
 }: {
@@ -105,6 +109,8 @@ export default function TaskBoard({
   onOpenTask: (id: string) => void;
   onChangeStatus: (taskId: string, status: TaskStatus) => void;
   onToggleAck: (taskId: string, checked: boolean) => void;
+  /** 픽업 업무를 끝내고 업무보드에서 내립니다(업무 기록에도 안 남습니다). */
+  onPickupDone: (taskId: string) => void | Promise<void>;
   // 내 업무만 ↔ 전체 토글. 3존 개편에서 이 조작부를 존 머리글(WorkspaceArea)로 올렸습니다 -
   // 스크롤되는 본문 안에 있으면 아래로 내렸을 때 사라져서, 지금 무엇을 보고 있는지 알 수 없었고
   // 다른 두 칸의 머리글과 줄도 맞지 않았습니다.
@@ -176,6 +182,7 @@ export default function TaskBoard({
                 onOpenTask={onOpenTask}
                 onToggleAck={onToggleAck}
                 onChangeStatus={onChangeStatus}
+                onPickupDone={onPickupDone}
               />
             ))}
           </div>
@@ -201,6 +208,7 @@ export default function TaskBoard({
                 onOpenTask={onOpenTask}
                 onToggleAck={onToggleAck}
                 onChangeStatus={onChangeStatus}
+                onPickupDone={onPickupDone}
               />
             </div>
           )}

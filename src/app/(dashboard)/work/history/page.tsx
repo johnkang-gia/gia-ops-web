@@ -34,6 +34,10 @@ export default async function WorkHistoryPage() {
       .from("tasks")
       .select("*")
       .not("archived_at", "is", null)
+      // 휴지통에 들어간 업무는 여기서도 뺍니다. RLS 가 걸러줄 것으로 믿고 조건을 안 걸면,
+      // 정책이 한 번 바뀌는 순간 지운 업무가 지난 업무에 조용히 다시 나타납니다 - 오류가
+      // 아니라 «있는 기록»으로 보여서 아무도 이상하게 여기지 않습니다.
+      .is("deleted_at", null)
       .order("completed_at", { ascending: false })
       .limit(500),
     supabase.from("terms").select("*"),

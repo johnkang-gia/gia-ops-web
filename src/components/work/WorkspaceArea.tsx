@@ -193,6 +193,7 @@ export default function WorkspaceArea({
   onOpenTask,
   onChangeStatus,
   onToggleAck,
+  onPickupDone,
   onTaskCreated,
   mirrorMessages,
   roster,
@@ -211,6 +212,8 @@ export default function WorkspaceArea({
   onOpenTask: (id: string) => void;
   onChangeStatus: (taskId: string, status: TaskStatus) => void;
   onToggleAck: (taskId: string, checked: boolean) => void;
+  /** 픽업 업무를 끝내고 업무보드에서 내립니다(업무 기록에도 안 남습니다). */
+  onPickupDone: (taskId: string) => void | Promise<void>;
   onTaskCreated?: (task: Task) => void;
   // 구글챗 두 방(출결알림/선생님요청)을 실시간 미러링한 결과입니다. useRealtimeTable을 여기서
   // 두 번(패널마다 한 번씩) 부르면 같은 테이블 이름으로 채널이 중복 구독되어 페이지가 아예
@@ -519,6 +522,7 @@ export default function WorkspaceArea({
       onOpenTask={onOpenTask}
       onChangeStatus={onChangeStatus}
       onToggleAck={onToggleAck}
+      onPickupDone={onPickupDone}
       mineOnly={mineOnly}
       compact={!isMobileView}
     />

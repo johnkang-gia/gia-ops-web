@@ -223,6 +223,42 @@ export default function WorkBoardClient({
     }
   }
 
+  /**
+   * 픽업 업무를 끝냅니다 — 완료로 바꾸는 것이 아니라 **업무보드에서 내립니다.**
+   *
+   * ── 왜 기록에 안 남기나 ──────────────────────────────────────────────
+   *
+   * 픽업은 하루 수십 건이고, 확정된 순간 이미 픽업 인박스(`pickup_requests`)와 하원
+   * 체크표에 남습니다. 업무 기록에까지 한 벌 더 쌓이면 「지난 업무」 화면이 픽업으로
+   * 뒤덮여, 그날 사람이 계획해서 한 일이 그 사이에 묻힙니다.
+   *
+   * ── 지우되 되돌릴 수 있게 ────────────────────────────────────────────
+   *
+   * 실제로 지우지 않고 `deleted_at` 만 찍습니다(휴지통 7일). 잘못 눌렀을 때 되돌릴 자리가
+   * 있어야 합니다 - 픽업 완료는 아이를 데리고 나오는 길에 한 손으로 누르는 단추라, 옆
+   * 카드를 누르는 일이 생깁니다.
+   */
+  async function pickupDone(taskId: string) {
+    const task = tasks.find((t) => t.id === taskId);
+    if (!task) return;
+    const now = new Date().toISOString();
+
+    // 화면부터 내리지 않습니다. 실패했는데 카드만 사라지면 사람은 처리된 줄 알고 넘어가고,
+    // 그 아이는 교실에 그대로 있습니다.
+    const supabase = createClient();
+    const { error } = await supabase
+      .from("tasks")
+      .update({ status: "완료", completed_at: now, deleted_at: now, updated_by: userEmail })
+      .eq("id", taskId);
+    if (error) {
+      notify("픽업 완료를 기록하지 못했습니다: " + error.message, "error");
+      return;
+    }
+    setTasks((prev) => prev.filter((t) => t.id !== taskId));
+    refreshTaskCounts();
+    notify(`${task.title} — 픽업 완료`, "success");
+  }
+
   async function toggleAck(taskId: string, checked: boolean) {
     const task = tasks.find((t) => t.id === taskId);
     if (!task) return;
@@ -405,6 +441,7 @@ export default function WorkBoardClient({
           onOpenTask={setSelectedId}
           onChangeStatus={changeStatus}
           onToggleAck={toggleAck}
+          onPickupDone={pickupDone}
           onTaskCreated={addTaskRow}
           mirrorMessages={mirrorMessages}
           roster={roster}

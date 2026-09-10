@@ -289,6 +289,38 @@ export default function TrackerDeviceManager({
 
   const [openLearned, setOpenLearned] = useState<Set<string>>(new Set());
 
+  /**
+   * **학습이 어디까지 왔는지**를 숫자로 먼저 보여줍니다.
+   *
+   * 이 화면은 오랫동안 「학습된 좌표」만 목록으로 띄웠습니다. 그래서 정류장 656곳 중 2곳만
+   * 학습된 상태로 몇 주가 흘렀는데도, 화면에는 그 2곳의 「10일 관측 · 83%」만 보였습니다 -
+   * 나머지 654곳은 목록에 없으니 빠졌다는 사실 자체가 드러나지 않았습니다.
+   *
+   * 진행 중인 일에서 **분모를 감추면 멈춘 것과 되고 있는 것이 똑같아 보입니다.**
+   */
+  const learnSummary = useMemo(() => {
+    const total = stopList.length;
+    const learned = stopList.filter((s) => s.gps_lat != null).length;
+    const noCoords = stopList.filter((s) => s.gps_lat == null && s.lat == null).length;
+    return { total, learned, noCoords, waiting: total - learned - noCoords };
+  }, [stopList]);
+
+  /**
+   * 관측은 쌓였는데 정류장으로 인정되지 못한 이유를 모읍니다.
+   *
+   * 이유가 화면에 없으면 「관측이 안 되는 것」과 「관측은 되는데 문턱을 못 넘는 것」이 구별되지
+   * 않습니다. 앞은 기기 문제이고 뒤는 정류장 좌표나 문턱 문제라, 손댈 곳이 아예 다릅니다.
+   */
+  const rejectReasons = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const o of obs) {
+      const reason = o.reject_reason?.trim();
+      if (!reason) continue;
+      m.set(reason, (m.get(reason) ?? 0) + 1);
+    }
+    return [...m.entries()].sort((a, b) => b[1] - a[1]);
+  }, [obs]);
+
   return (
     <div className="g-panel-solid p-4">
       {qrFor && (
@@ -597,6 +629,52 @@ export default function TrackerDeviceManager({
         실제 주행에서 차가 멈춰 있던 자리를 모아 평균 낸 좌표입니다. 관측 횟수가 쌓일수록 정확해집니다. 확인 후 &quot;반영&quot;을
         누르면 정류장의 실제 좌표가 이 값으로 바뀝니다.
       </p>
+      {/* 분모를 먼저 보여줍니다 - 학습된 곳만 띄우면 멈춰 있어도 멈춘 줄을 모릅니다. */}
+      <div className="mb-2 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+        {[
+          { label: "정류장", value: learnSummary.total, tone: "text-slate-800", hint: "이 화면이 보고 있는 정류장 수" },
+          { label: "좌표 학습됨", value: learnSummary.learned, tone: "text-emerald-700", hint: "실제 주행에서 정류장으로 인정된 곳" },
+          {
+            label: "좌표 없음",
+            value: learnSummary.noCoords,
+            tone: learnSummary.noCoords > 0 ? "text-red-600" : "text-slate-800",
+            hint: "주소만 있고 위경도가 비어 있는 정류장입니다. 기준점이 없어 GPS 학습이 아예 불가능합니다.",
+          },
+          {
+            label: "학습 대기",
+            value: learnSummary.waiting,
+            tone: "text-slate-500",
+            hint: "좌표는 있는데 아직 정류장으로 인정될 만큼 관측이 쌓이지 않은 곳",
+          },
+        ].map((c) => (
+          <div key={c.label} className="rounded-lg border border-slate-200 px-2.5 py-1.5" title={c.hint}>
+            <div className="text-[10px] text-slate-500">{c.label}</div>
+            <div className={"text-lg font-extrabold " + c.tone}>{c.value}</div>
+          </div>
+        ))}
+      </div>
+
+      {learnSummary.noCoords > 0 && (
+        <p className="mb-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] leading-relaxed text-red-700">
+          <b>정류장 {learnSummary.noCoords}곳에 좌표가 없습니다.</b> 좌표가 없으면 차가 그 앞에 아무리 서도 어느 정류장인지 잴
+          기준점이 없어 학습이 시작되지 않습니다. 매일 밤 자동으로 주소에서 좌표를 채우고 있고, 주소로도 못 찾는 곳은 노선 관리에서
+          주소를 고쳐주셔야 합니다.
+        </p>
+      )}
+
+      {rejectReasons.length > 0 && (
+        <div className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+          <div className="mb-1 text-[11px] font-bold text-amber-800">정차는 관측됐는데 정류장으로 인정되지 않은 이유</div>
+          <ul className="flex flex-col gap-0.5">
+            {rejectReasons.slice(0, 6).map(([reason, count]) => (
+              <li key={reason} className="text-[11px] text-amber-900">
+                · {reason} <span className="text-amber-600">({count}건)</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {learnedStops.length === 0 ? (
         <p className="mb-5 py-3 text-center text-xs text-slate-400">아직 학습된 좌표가 없습니다. 운행 기록이 쌓이면 표시됩니다.</p>
       ) : (

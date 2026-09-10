@@ -58,6 +58,12 @@ export const INTEGRATIONS: IntegrationSpec[] = [
   { key: "toddle-collector", label: "토들 수집기", what: "학부모 문의를 가져옵니다. 브라우저가 켜져 있어야 합니다.", everyMinutes: 1 },
   { key: "cron:pickup-schedules", label: "픽업 예약 반영", what: "예약된 픽업을 그날 체크표에 겁니다.", everyMinutes: 5 },
   { key: "cron:shuttle-learn-stops", label: "정류장 좌표 학습", what: "실제 주행 GPS로 정류장 위치를 다듬습니다.", everyMinutes: 60 * 24 },
+  {
+    key: "cron:geocode-stops",
+    label: "정류장 좌표 채우기",
+    what: "주소만 있고 좌표가 없는 정류장을 채웁니다. 좌표가 없으면 GPS 학습이 아예 안 됩니다.",
+    everyMinutes: 60 * 24,
+  },
   { key: "cron:purge-shuttle-locations", label: "GPS 기록 정리", what: "오래된 위치 기록을 지웁니다. 용량 관리의 핵심입니다.", everyMinutes: 60 * 24 },
   { key: "cron:purge-trash", label: "휴지통 비우기", what: "30일 지난 삭제 항목을 정리합니다.", everyMinutes: 60 * 24 },
   { key: "cron:archive-tasks", label: "완료업무 보관", what: "끝난 업무를 보관함으로 옮깁니다.", everyMinutes: 60 * 24 },

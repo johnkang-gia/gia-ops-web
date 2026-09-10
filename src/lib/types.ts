@@ -1270,6 +1270,10 @@ export type ShuttleStopObservation = {
   matched_stop_id: string | null;
   distance_m: number | null;
   created_at: string;
+  /** 'stop'=정류장으로 인정 · 'transit'=제외. 아직 판단 전이면 null. */
+  verdict?: string | null;
+  /** 인정되지 않은 이유(사람이 읽는 문장). 인정된 관측은 null 입니다. */
+  reject_reason?: string | null;
 };
 
 // weekdays: 1=월 ... 5=금. 요일별로 내리는 곳이 다른 학생은 같은 학생이 여러 행을 갖습니다.

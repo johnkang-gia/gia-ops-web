@@ -25,6 +25,10 @@
       "schedule": "30 15 * * 1"
     },
     {
+      "path": "/api/cron/geocode-stops",
+      "schedule": "0 14 * * *"
+    },
+    {
       "path": "/api/cron/shuttle-learn-stops",
       "schedule": "40 14 * * *"
     },

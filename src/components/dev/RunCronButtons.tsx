@@ -19,6 +19,7 @@ const JOBS: Job[] = [
   { key: "shuttle-auto", label: "셔틀 도착·출발 감지" },
   { key: "pickup-schedules", label: "오늘 픽업 예약 적용" },
   { key: "shuttle-learn-stops", label: "정류장 좌표 학습" },
+  { key: "geocode-stops", label: "정류장 좌표 채우기" },
 ];
 
 export default function RunCronButtons() {

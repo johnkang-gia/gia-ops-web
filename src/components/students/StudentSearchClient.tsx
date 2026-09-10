@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { departmentOf, gradeSortKey } from "@/lib/department";
+import { departmentTabs, tabIncludes, departmentOf, gradeSortKey } from "@/lib/department";
 import type { WrStudent } from "@/lib/types";
 
 // 통합 학생 조회(요청 ⑤): 재학/졸업/퇴학 탭으로 나누고, 상단에 검색과 학년별 분포를 두어
@@ -23,7 +23,7 @@ const TAB_LABEL: Record<Bucket, string> = { active: "재학", graduated: "졸업
 const TAB_COLOR: Record<Bucket, string> = { active: "#7c3aed", graduated: "#0ea5e9", withdrawn: "#64748b" };
 
 // 부서 탭(담당자: "이제 중고등부 명단도 넣어줬으니까 초등부·중고등부 탭을 나누고").
-type Dept = "초등부" | "중고등부";
+type Dept = string;
 
 // 학년·부서 판정은 **여기서 다시 만들지 않습니다.** 화면마다 따로 만들면 학교가 기준을
 // 바꿀 때(6학년을 중고등부로) 한 곳만 고치고 나머지를 잊습니다. 실제로 그렇게 어긋났습니다.
@@ -34,8 +34,14 @@ export default function StudentSearchClient({
   students,
   shuttleByStudent = {},
   photoUrlByPath = {},
+  myDepartment,
 }: {
   students: WrStudent[];
+  /**
+   * 보는 사람의 소속. **화면이 정하지 않고 받아옵니다** - 화면마다 부서 목록을 손으로 적으면
+   * 초등부 담당자에게도 중고등부 탭이 뜨고, 최고관리자는 둘을 한 번에 볼 길이 없습니다.
+   */
+  myDepartment?: string | null;
   /** 학생 id → 실제 배정된 노선("하원 9호"). 명부의 shuttle_mode가 아니라 실제 배정입니다. */
   shuttleByStudent?: Record<string, string>;
   /** 사진 경로 → 짧게 사는 서명 주소. 비공개 버킷이라 서버에서 묶어 받아옵니다. */
@@ -43,7 +49,9 @@ export default function StudentSearchClient({
 }) {
   const router = useRouter();
   const [tab, setTab] = useState<Bucket>("active");
-  const [dept, setDept] = useState<Dept>("초등부");
+  // 볼 수 있는 부서. 「전체」 소속이면 [전체·초등부·중고등부], 그 밖에는 자기 부서 하나뿐입니다.
+  const deptTabs = useMemo(() => departmentTabs(myDepartment), [myDepartment]);
+  const [dept, setDept] = useState<Dept>(() => departmentTabs(myDepartment)[0] ?? "초등부");
   // "전체"면 null. 담당자: "전체명단 해서 이렇게 뜨고, 전체탭 옆에 2학년 3학년 순으로."
   const [gradeTab, setGradeTab] = useState<number | null>(null);
   const [query, setQuery] = useState("");
@@ -64,12 +72,15 @@ export default function StudentSearchClient({
   }, [students]);
 
   // 부서까지 좁힌 목록 - 학년 탭과 인원수의 기준이 됩니다.
-  const deptList = useMemo(() => byBucket[tab].filter((s) => deptOf(s) === dept), [byBucket, tab, dept]);
+  const deptList = useMemo(() => byBucket[tab].filter((s) => tabIncludes(dept, deptOf(s))), [byBucket, tab, dept]);
   const deptCount = useMemo(() => {
-    const c: Record<Dept, number> = { 초등부: 0, 중고등부: 0 };
-    for (const s of byBucket[tab]) c[deptOf(s)] += 1;
+    const c: Record<string, number> = {};
+    for (const d of deptTabs) c[d] = 0;
+    for (const s of byBucket[tab]) {
+      for (const d of deptTabs) if (tabIncludes(d, deptOf(s))) c[d] += 1;
+    }
     return c;
-  }, [byBucket, tab]);
+  }, [byBucket, tab, deptTabs]);
 
   // 이 부서에 실제로 있는 학년만 탭으로 만듭니다(없는 학년 탭이 뜨면 눌러도 빈 화면입니다).
   const gradeTabs = useMemo(() => {
@@ -116,9 +127,12 @@ export default function StudentSearchClient({
           ))}
         </div>
 
-        {/* 부서 탭. 초등 101명 + 중고등 36명이 한 덩어리로 쏟아지면 찾기가 어렵습니다. */}
+        {/* 부서 탭. 초등 101명 + 중고등 36명이 한 덩어리로 쏟아지면 찾기가 어렵습니다.
+            **볼 수 있는 부서만 뜹니다.** 「전체」 소속이면 전체 탭이 맨 앞에 있어 둘을 한
+            번에 볼 수 있고, 초등부 담당자에게는 초등부 하나만 뜹니다. */}
+        {deptTabs.length > 1 && (
         <div className="flex gap-1 rounded-xl bg-slate-100 p-1">
-          {(["초등부", "중고등부"] as Dept[]).map((d) => (
+          {deptTabs.map((d) => (
             <button
               key={d}
               type="button"
@@ -131,10 +145,11 @@ export default function StudentSearchClient({
                 (dept === d ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700")
               }
             >
-              {d} <span className="tabular-nums">{deptCount[d]}</span>
+              {d} <span className="tabular-nums">{deptCount[d] ?? 0}</span>
             </button>
           ))}
         </div>
+        )}
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}

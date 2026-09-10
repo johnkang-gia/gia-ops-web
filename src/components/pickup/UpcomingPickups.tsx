@@ -6,6 +6,7 @@ import { useToast } from "@/components/common/ToastProvider";
 import StudentPicker from "@/components/pickup/StudentPicker";
 import { type RosterEntry } from "@/lib/pickupParse";
 import { buildAliasIndex, resolveStudent, type AliasRule } from "@/lib/studentMatch";
+import { Who } from "@/components/common/HomonymProvider";
 
 // 앞으로 예정된 픽업.
 //
@@ -341,7 +342,7 @@ export default function UpcomingPickups({ initialRows }: { initialRows: Schedule
                   }
                   title={r.source_note ?? undefined}
                 >
-                  <span className="font-semibold">{r.student_name ?? "학생 미확인"}</span>
+                  <span className="font-semibold"><Who id={r.student_id} name={r.student_name ?? "학생 미확인"} /></span>
                   {/* 명부에 붙지 않은 줄은 눈에 띄게 표시합니다 - 이 상태로 당일이 되면 체크표에
                       아무것도 걸리지 않고 조용히 지나갑니다. */}
                   {!r.student_id && <span className="text-[10px] text-amber-600">미연결</span>}
@@ -413,7 +414,7 @@ export default function UpcomingPickups({ initialRows }: { initialRows: Schedule
             {list.filter((r) => openText === r.id).map((r) => (
               <div key={`t-${r.id}`} className="mt-1.5 g-panel-solid p-2">
                 <div className="mb-1 flex flex-wrap items-center gap-1.5 text-[10px] text-slate-400">
-                  <span className="font-semibold text-slate-600">{r.student_name ?? "학생 미확인"}</span>
+                  <span className="font-semibold text-slate-600"><Who id={r.student_id} name={r.student_name ?? "학생 미확인"} /></span>
                   {r.pickup_requests?.channel_label && <span>{r.pickup_requests.channel_label}</span>}
                   {r.pickup_requests?.received_at && (
                     <span>{new Date(r.pickup_requests.received_at).toLocaleString("ko-KR")}</span>

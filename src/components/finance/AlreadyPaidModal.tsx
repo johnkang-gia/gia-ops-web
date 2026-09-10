@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { mismatch, paidMemo, remaining, resolveAmount, sumPicked, won, type PayableLine } from "@/lib/alreadyPaid";
 import { todayKst } from "@/lib/kst";
+import { Who } from "@/components/common/HomonymProvider";
 
 /**
  * **이미 받은 돈을 적는 팝업** — 학비·학비외가 함께 씁니다.
@@ -74,7 +75,7 @@ export default function AlreadyPaidModal({
       <div className="mt-8 w-full max-w-lg rounded-2xl bg-white p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="mb-2 flex items-baseline gap-2">
           <b className="text-sm">💰 {title}</b>
-          <span className="text-xs text-slate-500">{studentName}</span>
+          <span className="text-xs text-slate-500"><Who name={studentName} /></span>
           <button type="button" onClick={onClose} className="ml-auto rounded-lg bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">
             닫기
           </button>

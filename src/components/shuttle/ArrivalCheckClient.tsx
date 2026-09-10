@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import PlateScanner from "@/components/shuttle/PlateScanner";
 import AddToHomeScreenBanner from "./AddToHomeScreenBanner";
 import { pollDelay } from "@/lib/useSmartPoll";
+import { Who } from "@/components/common/HomonymProvider";
 
 // 요청: "차량 도착출발과 안내보드간에 연동이 너무 느리고" - 폴링 주기를 5초에서 3초로 줄여
 // 다른 교직원 화면·안내보드에 상태가 더 빨리 반영되도록 했습니다.
@@ -603,7 +604,7 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
       {pickupAsk && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3" onClick={() => setPickupAsk(null)}>
           <div className="w-full max-w-sm rounded-2xl bg-white p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <p className="mb-1 text-lg font-black text-slate-800">{pickupAsk.studentName}</p>
+            <p className="mb-1 text-lg font-black text-slate-800"><Who name={pickupAsk.studentName} /></p>
             <p className="mb-4 text-[13px] leading-relaxed text-slate-500">
               {pickupAsk.routeNo}호를 타지 않고 <b className="text-slate-700">보호자가 데려가는 것</b>으로 표시합니다.
               <br />

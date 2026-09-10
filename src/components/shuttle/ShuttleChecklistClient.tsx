@@ -14,6 +14,7 @@ import RideAlongPanel, { type RideAlongRow } from "./RideAlongPanel";
 import ShuttleChecklistSidebar, { type ChangedRouteEntry } from "./ShuttleChecklistSidebar";
 import type { GoogleChatMirrorMessage } from "@/lib/types";
 import type { RosterStudent } from "@/lib/attendanceDigest";
+import { Who } from "@/components/common/HomonymProvider";
 
 // 실시간 반영을 postgres_changes로 하더라도, 네트워크가 잠깐 끊기는 등의 이유로 이벤트를
 // 놓칠 수 있어(요청: "하원체크표에 표시하면 실시간으로 반영되도록") 안전망으로 느슨한 폴링을
@@ -1200,7 +1201,7 @@ export default function ShuttleChecklistClient({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-2 flex flex-wrap items-center gap-1.5">
-              <span className="text-sm font-bold text-slate-800">{sourceOf.studentName}</span>
+              <span className="text-sm font-bold text-slate-800"><Who id={sourceOf.studentId} name={sourceOf.studentName} /></span>
               <span
                 className={
                   "rounded-full px-1.5 py-0.5 text-[10px] font-bold " +
@@ -1363,7 +1364,7 @@ export default function ShuttleChecklistClient({
       {noteEditor && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 print:hidden">
           <div className="w-full max-w-sm rounded-xl bg-white p-4 shadow-xl">
-            <p className="mb-2 text-sm font-bold text-slate-800">{noteEditor.studentName} 학생 특이사항</p>
+            <p className="mb-2 text-sm font-bold text-slate-800"><Who name={noteEditor.studentName} /> 학생 특이사항</p>
             <textarea
               value={noteEditor.note}
               onChange={(e) => setNoteEditor((prev) => (prev ? { ...prev, note: e.target.value } : prev))}

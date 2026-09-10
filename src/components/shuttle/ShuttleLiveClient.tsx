@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { loadKakaoMaps } from "@/lib/kakaoMap";
 import { useToast } from "@/components/common/ToastProvider";
 import type { ShuttlePilotPing, ShuttlePilotRoute, ShuttleRoute, ShuttleRunEvent } from "@/lib/types";
+import { Who } from "@/components/common/HomonymProvider";
 
 // 예전에는 7초마다 세 테이블(위치·운행이벤트·탑승현황)을 통째로 다시 불러왔는데, 이 세
 // 테이블이 모두 Supabase Realtime 발행 목록에 있어서(shuttle_pilot_pings·shuttle_run_events는
@@ -403,7 +404,7 @@ function LiveRouteCard({
               status === "탑승" ? "#16a34a" : status === "픽업" ? "#db2777" : status === "결석" ? "#dc2626" : status === "미탑승" ? "#d97706" : "#94a3b8";
             return (
               <div key={r.assignmentId} className="flex items-center justify-between py-0.5 text-xs">
-                <span className="text-slate-700">{r.studentName}</span>
+                <span className="text-slate-700"><Who name={r.studentName} /></span>
                 <span className="flex items-center gap-1.5">
                   {b?.alighted_at && <span className="text-[10px] text-blue-500">하차</span>}
                   <span className="font-semibold" style={{ color }}>

@@ -63,6 +63,37 @@ export function scopeForPosition(position: string | null | undefined, current: s
 }
 
 
+/**
+ * **이 사람이 볼 수 있는 부서** — 화면마다 다시 정하지 않습니다.
+ *
+ * ── 왜 필요한가 ──────────────────────────────────────────────────────
+ *
+ * 지금까지 부서 탭은 화면이 스스로 만들었습니다(`["초등부", "중고등부"]`). 그래서 초등부
+ * 담당 직원에게도 중고등부 탭이 보였고, 최고관리자에게는 **둘을 한 번에 보는 길이
+ * 없었습니다** - 초등부를 보다가 중고등부로 옮겨 다시 세어야 했습니다.
+ *
+ * 「전체」 소속은 모든 부서를 봅니다(`inDepartment` 와 같은 기준입니다). 그 밖의 사람은
+ * 자기 부서만 봅니다 - 남의 부서 자료를 보여줄 이유가 없고, 보이면 실수로 손대게 됩니다.
+ *
+ * 지금 학교에는 초등부만 운영되지만 중고등부가 곧 들어옵니다. 그때 이 함수는 안 고칩니다 -
+ * `VISIBLE_DEPARTMENTS` 에 이름 하나만 넣으면 탭이 저절로 늘어납니다.
+ */
+export function departmentTabs(userDepartment: string | null | undefined): string[] {
+  const u = (userDepartment ?? "").trim();
+  const visible = [...VISIBLE_DEPARTMENTS] as string[];
+  // 「전체」 소속: 전체 탭이 맨 앞이고, 부서별로도 따로 볼 수 있습니다.
+  if (u === ALL_SCOPE) return visible.length > 1 ? [ALL_SCOPE, ...visible] : [ALL_SCOPE, ...visible];
+  // 자기 부서가 지금 운영 중인 부서면 그것만. 아니면(유치부 등) 아무것도 안 보여줍니다 -
+  // 빈 화면이 남의 부서 자료보다 낫습니다.
+  return visible.includes(u) ? [u] : [];
+}
+
+/** 지금 고른 탭이 이 학생을 포함하는가. 「전체」 탭은 보이는 부서 전부입니다. */
+export function tabIncludes(tab: string, studentDept: string | null | undefined): boolean {
+  if (tab === ALL_SCOPE) return true;
+  return (studentDept ?? "") === tab;
+}
+
 // 학년 표기만 있는 예전 데이터를 위한 추측 규칙(DB에 department가 채워지면 쓰이지 않습니다).
 export function guessDepartmentFromGrade(grade: string | null | undefined): Department | null {
   if (!grade) return null;

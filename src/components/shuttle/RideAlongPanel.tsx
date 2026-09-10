@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useToast } from "@/components/common/ToastProvider";
+import { Who } from "@/components/common/HomonymProvider";
 
 /**
  * 오늘만 같이 타는 아이.
@@ -94,7 +95,7 @@ export default function RideAlongPanel({
       {confirmed.map((r) => (
         <div key={r.id} className="mb-1 flex flex-wrap items-center gap-1.5 rounded-lg bg-white/80 px-2 py-1.5 text-[12px]">
           <span className="rounded bg-amber-200 px-1.5 py-0.5 text-[10px] font-black text-amber-900">오늘만</span>
-          <b className="text-slate-800">{r.studentName ?? r.studentSurface}</b>
+          <b className="text-slate-800"><Who id={r.studentId} name={r.studentName ?? r.studentSurface} /></b>
           <span className="text-slate-500">
             → {r.routeNo ? `${r.routeNo}호` : "차량 미정"}
             {r.hostName ? ` (${r.hostName} 차)` : ""}

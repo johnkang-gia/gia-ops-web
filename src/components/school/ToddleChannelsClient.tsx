@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/common/ToastProvider";
 import { suggestForChannel } from "@/lib/toddleChannel";
+import { buildAliasIndex, type AliasRule } from "@/lib/studentMatch";
+import { createClient } from "@/lib/supabase/client";
 import type { RosterEntry } from "@/lib/pickupParse";
 
 /**
@@ -72,12 +74,35 @@ export default function ToddleChannelsClient({
   );
   const byId = useMemo(() => new Map(students.map((s) => [s.id, s])), [students]);
 
+  // ── 사람이 가르친 별칭 ────────────────────────────────────────────────
+  //
+  // 이 화면은 지금까지 별칭을 **안 읽었습니다.** 출결에서 「E.L = 정이엘」을 아무리
+  // 가르쳐도 방 이름을 풀 때는 매번 처음 보는 글자였고, 그 방은 늘 「확인 필요」로
+  // 남았습니다. 가르쳐도 안 되는 기능은 곧 아무도 안 씁니다.
+  //
+  // 표는 출결·픽업과 **같은 것**입니다(`attendance_learning_rules`). 한 번 가르치면
+  // 모든 자리에 붙어야 사람이 「가르쳤다」고 믿을 수 있습니다.
+  const [aliasRules, setAliasRules] = useState<AliasRule[]>([]);
+  useEffect(() => {
+    void (async () => {
+      const { data, error } = await createClient()
+        .from("attendance_learning_rules")
+        .select("pattern, student_id")
+        .eq("kind", "alias");
+      // 못 읽어도 화면을 막지 않습니다. 다만 조용히 넘기지도 않습니다 - 왜 제안이 덜
+      // 붙는지 물을 때 답할 자리는 있어야 합니다.
+      if (error) return console.error("[토들채널] 가르쳐 둔 별칭을 읽지 못했습니다:", error.message);
+      setAliasRules((data as AliasRule[] | null) ?? []);
+    })();
+  }, []);
+  const aliases = useMemo(() => buildAliasIndex(aliasRules, roster), [aliasRules, roster]);
+
   /** 방 이름에서 뽑은 제안. 저장된 연결이 있으면 그것이 답입니다 - 제안이 덮지 않습니다. */
   const suggestions = useMemo(() => {
     const m = new Map<string, ReturnType<typeof suggestForChannel>>();
-    for (const r of rows) m.set(r.label, suggestForChannel(r.label, roster));
+    for (const r of rows) m.set(r.label, suggestForChannel(r.label, roster, aliases));
     return m;
-  }, [rows, roster]);
+  }, [rows, roster, aliases]);
 
   const chosen = (r: ChannelRow): string[] => {
     if (picked[r.label]) return picked[r.label];

@@ -9,6 +9,7 @@ import CollectionStatus from "@/components/finance/CollectionStatus";
 import MethodSummary from "@/components/finance/MethodSummary";
 import type { PaymentRow } from "@/lib/payments";
 import type { FeeItem, Invoice, StudentFeeItem } from "@/lib/types";
+import { Who } from "@/components/common/HomonymProvider";
 
 // 재무 개요.
 //
@@ -166,7 +167,7 @@ export default async function FinanceOverviewPage() {
                 className="flex items-baseline gap-2 border-b border-slate-50 px-3 py-1.5 hover:bg-slate-50"
               >
                 <span className="text-[11px] font-bold text-slate-600">{v.invoice_no}</span>
-                <span className="min-w-0 flex-1 truncate text-[12px] text-slate-700">{v.student_name_ko ?? v.student_name}</span>
+                <span className="min-w-0 flex-1 truncate text-[12px] text-slate-700"><Who id={v.student_id} name={v.student_name_ko ?? v.student_name} /></span>
                 <span className="shrink-0 text-[11px] font-bold tabular-nums text-slate-600">{won(Number(v.total_amount))}</span>
               </Link>
             ))}

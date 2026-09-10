@@ -101,6 +101,7 @@ export default async function StudentsSearchPage() {
           students={(data as WrStudent[] | null) ?? []}
           shuttleByStudent={shuttleByStudent}
           photoUrlByPath={photoUrlByPath}
+          myDepartment={me?.department ?? null}
         />
       </div>
     </div>

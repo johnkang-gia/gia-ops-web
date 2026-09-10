@@ -9,6 +9,7 @@ import { agingBucket, type AgingBucket } from "@/lib/settlement";
 import PayModal from "./PayModal";
 import InlineTabs from "@/components/common/InlineTabs";
 import type { Invoice } from "@/lib/types";
+import { Who } from "@/components/common/HomonymProvider";
 
 // 수납 — 들어온 돈을 인보이스에 붙입니다.
 //
@@ -641,7 +642,7 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
                       {inv ? (
                         <span>
                           <b className="text-slate-700">{inv.invoice_no}</b>{" "}
-                          <span className="text-slate-500">{inv.student_name_ko ?? inv.student_name}</span>
+                          <span className="text-slate-500"><Who id={inv.student_id} name={inv.student_name_ko ?? inv.student_name} /></span>
                           {p.matched_by && <span className="ml-1 text-[10px] text-slate-400">· {p.matched_by}</span>}
                         </span>
                       ) : (

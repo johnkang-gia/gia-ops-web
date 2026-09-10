@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useToast } from "@/components/common/ToastProvider";
 import type { Invoice } from "@/lib/types";
+import { Who } from "@/components/common/HomonymProvider";
 
 /**
  * **발행 취소 창** — 학비·학비외가 같은 창을 씁니다.
@@ -93,7 +94,7 @@ export default function CancelInvoiceModal({
       <div className="w-full max-w-md rounded-xl bg-white p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <p className="mb-1 text-base font-black text-slate-800">발행 취소</p>
         <p className="mb-3 text-[12px] leading-relaxed text-slate-600">
-          <b>{studentName}</b> · {invoice.invoice_no} · {total.toLocaleString("ko-KR")}원
+          <b><Who name={studentName} /></b> · {invoice.invoice_no} · {total.toLocaleString("ko-KR")}원
           <br />
           지우지 않고 <b>취소로 남깁니다.</b> 나중에 무엇이 왜 취소됐는지 읽을 수 있어야 합니다. 취소하면 이 학생은 다시
           <b> 미발행</b>이 되어, 항목을 고친 뒤 새로 발행할 수 있습니다(새 번호가 붙습니다).

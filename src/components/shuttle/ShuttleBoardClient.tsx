@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { youtubeEmbedSrc } from "@/lib/youtube";
 import { pollDelay } from "@/lib/useSmartPoll";
+import { Who } from "@/components/common/HomonymProvider";
 
 // 요청: "차량 도착출발과 안내보드간에 연동이 너무 느리고" - 폴링 주기를 6초에서 3초로 줄여
 // 도착·출발 체크가 안내보드에 더 빨리 반영되도록 했습니다.
@@ -708,7 +709,7 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
                     style={{ display: "flex", flexWrap: "wrap", gap: 8, fontSize: 18, fontWeight: 700, color: "#ffffff" }}
                   >
                     {waiting.map((r, i) => (
-                      <span key={i}>{r.studentName}</span>
+                      <span key={i}><Who name={r.studentName} /></span>
                     ))}
                   </p>
                 )}

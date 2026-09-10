@@ -22,6 +22,7 @@ import {
 import AttendanceTeachModal from "@/components/work/AttendanceTeachModal";
 import AttendanceRulesModal from "@/components/work/AttendanceRulesModal";
 import { describeLog, shortAgo, type ChecklistLogRow } from "@/lib/checklistLog";
+import { Who } from "@/components/common/HomonymProvider";
 
 const POLL_MS = 15000;
 
@@ -712,7 +713,7 @@ export default function ShuttleChecklistSidebar({
           <div className="flex flex-col gap-1">
             {changedToday.map((c) => (
               <div key={c.key} className="flex items-center justify-between gap-1 rounded-lg bg-slate-50 px-1.5 py-1 text-[10px]">
-                <span className="min-w-0 truncate font-semibold text-slate-700">{c.studentName}</span>
+                <span className="min-w-0 truncate font-semibold text-slate-700"><Who name={c.studentName} /></span>
                 <span className="flex shrink-0 items-center gap-1">
                   <span className="text-slate-400">
                     {c.fromRouteNo}호→{c.toRouteNo}호
@@ -735,7 +736,7 @@ export default function ShuttleChecklistSidebar({
           <div className="flex flex-col gap-1">
             {specialNotes.map((n) => (
               <p key={n.key} className="rounded-lg bg-orange-50 px-1.5 py-1 text-[10px] leading-relaxed text-orange-800">
-                <span className="font-bold">{n.studentName}</span>: {n.note}
+                <span className="font-bold"><Who name={n.studentName} /></span>: {n.note}
               </p>
             ))}
           </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import type { AttendanceRecord, WrStudent } from "@/lib/types";
+import { Who } from "@/components/common/HomonymProvider";
 
 /**
  * 오늘의 특이사항.
@@ -90,7 +91,7 @@ export default function TodayNotices({
               <span className="text-[11px] text-amber-800">결석인 것 같은데 누구인지 못 가렸습니다 — 직접 눌러주세요</span>
               {pending.map((p) => (
                 <p key={p.id} className="text-[11px] leading-relaxed text-amber-900">
-                  <b>{p.studentName}</b>
+                  <b><Who name={p.studentName} /></b>
                   {p.reason && <span className="ml-1 text-amber-700">· {p.reason}</span>}
                   {p.rawText && (
                     <span className="ml-1 text-amber-600/80">

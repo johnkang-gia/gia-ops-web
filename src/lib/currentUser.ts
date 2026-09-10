@@ -13,6 +13,8 @@ export type CurrentAppUser = {
   // 개발자가 권한 미리보기 중이면 실제 저장된 값 대신 미리보기 직위로 바뀌어 들어옵니다 -
   // position을 보는 모든 화면/로직이 자동으로 미리보기 직위 기준으로 동작하게 하기 위함입니다.
   position: string | null;
+  /** 소속. 「전체」면 모든 부서를 봅니다(`departmentTabs`). */
+  department: string | null;
   avatar_url: string | null;
   theme: ShellTheme;
   // 실제 저장된 직위입니다(미리보기와 무관) - 미리보기 배지·해제 버튼 등 "진짜 내 직위"를
@@ -62,7 +64,7 @@ export const getCurrentAppUser = cache(async (): Promise<CurrentAppUser> => {
   //   · 이름·직위 = 없으면 아무것도 못 하는 값. 실패하면 소리를 냅니다.
   //   · 재무 열쇠 = 없으면 돈 화면만 안 열리는 값. 칸이 없으면 조용히 false.
   const [idRes, finRes] = await Promise.all([
-    supabase.from("app_users").select("name, position, avatar_url, theme").eq("email", email).maybeSingle(),
+    supabase.from("app_users").select("name, position, avatar_url, theme, department").eq("email", email).maybeSingle(),
     supabase.from("app_users").select("finance_access").eq("email", email).maybeSingle(),
   ]);
 
@@ -100,6 +102,9 @@ export const getCurrentAppUser = cache(async (): Promise<CurrentAppUser> => {
     email,
     name: appUser?.name ?? null,
     position,
+    // 소속. 부서로 거르는 화면이 이 값을 씁니다 - 화면마다 다시 조회하면 어떤 화면은
+    // 빠뜨리고, 빠뜨린 화면에서만 남의 부서가 보입니다.
+    department: (appUser as { department?: string | null } | null)?.department ?? null,
     avatar_url: appUser?.avatar_url ?? null,
     theme: (appUser?.theme as ShellTheme | undefined) ?? "light",
     realPosition,

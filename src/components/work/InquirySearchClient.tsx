@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { timeAgo } from "@/lib/kst";
+import { Who } from "@/components/common/HomonymProvider";
 
 // 학부모 연락 검색 화면.
 //
@@ -210,7 +211,7 @@ export default function InquirySearchClient({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setOpen(null)}>
           <div className="max-h-[80vh] w-full max-w-lg overflow-auto rounded-2xl bg-white p-4" onClick={(e) => e.stopPropagation()}>
             <div className="mb-2 flex flex-wrap items-baseline gap-2">
-              <b className="text-base text-slate-800">{open.matched_name ?? open.ai_student_name ?? "이름 없음"}</b>
+              <b className="text-base text-slate-800"><Who name={open.matched_name ?? open.ai_student_name ?? "이름 없음"} /></b>
               <span className="text-xs text-slate-400">
                 {open.kind} · {open.source} · {open.received_at.slice(0, 16).replace("T", " ")}
               </span>

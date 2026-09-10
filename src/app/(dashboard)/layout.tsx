@@ -20,6 +20,8 @@ import type { PendingSignup } from "@/app/api/admin/pending-signups/route";
 import NotificationBell, { NotificationProvider, TaskCountBadge } from "@/components/NotificationBell";
 import { APP_VERSION } from "@/lib/version";
 import { ToastProvider } from "@/components/common/ToastProvider";
+import { HomonymProvider } from "@/components/common/HomonymProvider";
+import { loadHomonyms } from "@/lib/homonyms";
 import { ConfirmProvider } from "@/components/common/ConfirmProvider";
 import { LanguageProvider } from "@/components/common/LanguageProvider";
 import LanguageToggle from "@/components/common/LanguageToggle";
@@ -311,15 +313,18 @@ export default async function DashboardLayout({
   // 이 두 조회 중 하나가 네트워크 순간 장애 등으로 실패해도 로그인 여부(me) 확인과 화면 전체가
   // 함께 죽어서는 안 됩니다. Promise.all 대신 allSettled로 서로 독립시키고, 배지 조회가 실패하면
   // 0으로 조용히 대체합니다(사용자에게는 배지가 잠깐 안 보이는 정도의 영향만).
-  const [meResult, pendingProposalsResult, pendingAdoptedResult] = await Promise.allSettled([
+  const [meResult, pendingProposalsResult, pendingAdoptedResult, homonymResult] = await Promise.allSettled([
     getCurrentAppUser(),
     supabase.from("proposals").select("id", { count: "exact", head: true }).eq("status", "검토대기"),
     supabase.from("adopted").select("id", { count: "exact", head: true }).eq("publish", false),
+    // 겹치는 이름 목록. 실패해도 화면을 막지 않습니다(뱃지만 안 붙습니다).
+    loadHomonyms(),
   ]);
   if (meResult.status === "rejected") throw meResult.reason;
   const me = meResult.value;
   const pendingProposals = pendingProposalsResult.status === "fulfilled" ? (pendingProposalsResult.value.count ?? 0) : 0;
   const pendingAdopted = pendingAdoptedResult.status === "fulfilled" ? (pendingAdoptedResult.value.count ?? 0) : 0;
+  const homonyms = homonymResult.status === "fulfilled" ? homonymResult.value : { byId: {}, names: [] };
 
   // middleware.ts가 1차로 막지만, 서버 컴포넌트 단에서도 한 번 더 확인합니다(방어적 이중 확인).
   if (!me) {
@@ -475,6 +480,9 @@ export default async function DashboardLayout({
     <ToastProvider>
     <ConfirmProvider>
     <NotificationProvider userEmail={isTeacher ? null : me.email}>
+    {/* 겹치는 이름 목록을 로그인 영역 전체에 한 번 깝니다. 화면은 준비 없이
+        <Who id name /> 만 쓰면 됩니다 - 준비할 것이 없으면 빠뜨릴 것도 없습니다. */}
+    <HomonymProvider value={homonyms}>
     <div data-theme={theme} className="shell-page-bg relative flex h-screen flex-1">
       <ConnectionBanner />
       {/* 탭을 켜둔 채로 며칠 일하는 분들이 있어, 배포해도 그 화면에는 어제 코드가 계속
@@ -656,6 +664,7 @@ export default async function DashboardLayout({
         <MainArea>{children}</MainArea>
       </div>
     </div>
+    </HomonymProvider>
     </NotificationProvider>
     </ConfirmProvider>
     </ToastProvider>

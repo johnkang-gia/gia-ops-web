@@ -29,6 +29,7 @@ import {
   type LearningRule,
   type RosterStudent,
 } from "@/lib/attendanceDigest";
+import { Who } from "@/components/common/HomonymProvider";
 
 /**
  * 이름을 견줄 때 쓰는 열쇠.
@@ -871,7 +872,7 @@ export default function AttendanceDigestPanel({
                               {e.studentName}
                             </button>
                           ) : (
-                            <span className="truncate text-[11px] font-semibold text-slate-700">{e.studentName}</span>
+                            <span className="truncate text-[11px] font-semibold text-slate-700"><Who name={e.studentName} /></span>
                           )}
                           <RegBadge entry={e} regs={regs} busyKey={busyKey} onSet={setState} onEditRange={(row, nm) => setRangeEdit({ row, name: nm })} onFill={openFill} />
                           <span className="shrink-0 text-[9px] text-slate-400">
@@ -947,7 +948,7 @@ export default function AttendanceDigestPanel({
                               {e.studentName}
                             </button>
                           ) : (
-                            <span className="truncate text-[11px] font-semibold text-slate-700">{e.studentName}</span>
+                            <span className="truncate text-[11px] font-semibold text-slate-700"><Who name={e.studentName} /></span>
                           )}
                         </span>
                         <RegBadge entry={e} regs={regs} busyKey={busyKey} onSet={setState} onEditRange={(row, nm) => setRangeEdit({ row, name: nm })} onFill={openFill} />
@@ -990,7 +991,7 @@ export default function AttendanceDigestPanel({
               onClick={(ev) => ev.stopPropagation()}
             >
               <div className="mb-2 flex items-center gap-2">
-                <span className="text-sm font-bold text-slate-800">{detail.studentName}</span>
+                <span className="text-sm font-bold text-slate-800"><Who name={detail.studentName} /></span>
                 <span
                   className={
                     "rounded-full px-1.5 py-0.5 text-[10px] font-semibold " +

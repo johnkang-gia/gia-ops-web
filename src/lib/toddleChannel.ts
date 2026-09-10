@@ -86,7 +86,8 @@ export type ChannelSuggestion = {
 export function suggestForChannel(
   label: string,
   roster: RosterEntry[],
-  aliases?: Map<string, RosterEntry>,
+  /** 사람이 가르친 별칭. **선택이 아닙니다** - 안 넘기면 「E.L = 정이엘」 같은 것을 영영 못 풉니다. */
+  aliases: Map<string, RosterEntry>,
 ): ChannelSuggestion | null {
   const parsed = parseChannelLabel(label);
   if (!parsed) return null;
@@ -106,7 +107,7 @@ export function suggestForChannel(
 
     // 사람이 가르친 별칭이 가장 먼저입니다. 성으로 가르는 규칙보다 셉니다 -
     // 「E.L = 정이엘」처럼 규칙으로는 절대 못 푸는 것을 사람이 알려준 것이니까요.
-    const taught = aliases?.get(matchKey(raw)) ?? aliases?.get(matchKey(given));
+    const taught = aliases.get(matchKey(raw)) ?? aliases.get(matchKey(given));
     if (taught) return { raw, surname: family, student: taught, why: null, candidates: [], ruledOut: [] };
 
     // 이름이 맞는 아이를 모으고, **성과 생일로 거릅니다.**

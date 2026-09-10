@@ -141,14 +141,28 @@ function label(s: RosterEntry): string {
  * 2. 그대로 같은 이름 (지금까지 하던 것. 동명이인은 생일·반·학년으로 좁힙니다)
  * 3. 성 빼고 부르는 이름 - **한 명으로 좁혀질 때만.**
  */
+/**
+ * **가르친 별칭이 없는 자리**에 씁니다. 이름이 붙어 있어서 «빠뜨린 것»과 «없는 것»이
+ * 화면에서도 코드에서도 구별됩니다.
+ *
+ * 예전에는 `aliases` 가 선택 인자여서, 안 넘기면 규칙이 조용히 안 붙었습니다. 사람은
+ * 「마야 = 김마야」를 한 번 가르쳤다고 생각하는데 어떤 화면에서는 안 붙었고, 그건 오류가
+ * 아니라 «못 찾은 이름»으로 보였습니다. 이제 넘기지 않으면 **빌드가 안 됩니다.**
+ */
+export const NO_ALIASES: Map<string, RosterEntry> = new Map();
+
 export function resolveStudent(
   candidate: string | null | undefined,
   roster: RosterEntry[],
-  opts?: {
+  opts: {
     grade?: string | null;
     /** 이름이 나온 문장 전체. 반·생일 힌트가 여기 있습니다. */
     context?: string | null;
-    aliases?: Map<string, RosterEntry>;
+    /**
+     * 사람이 가르친 별칭. **반드시 넘깁니다** - 규칙은 이름에 붙어 다녀야 하고, 화면이
+     * 「이번엔 안 넘겨도 되겠지」를 정할 자리가 아닙니다. 정말 없으면 `NO_ALIASES`.
+     */
+    aliases: Map<string, RosterEntry>;
   },
 ): MatchResult {
   const raw = String(candidate ?? "").trim();

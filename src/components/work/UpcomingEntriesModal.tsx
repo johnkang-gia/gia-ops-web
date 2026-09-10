@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
 import { todayKst } from "@/lib/kst";
+import { Who } from "@/components/common/HomonymProvider";
 
 /**
  * **앞으로 예정된 출결을 한자리에서 보고 내립니다.**
@@ -131,7 +132,7 @@ export default function UpcomingEntriesModal({ onClose }: { onClose: () => void 
                   <span className={"rounded px-1.5 py-0.5 text-[10px] font-bold " + (TONE[r.status] ?? "bg-slate-100 text-slate-600")}>
                     {r.status}
                   </span>
-                  <b className="text-[12px]">{r.student_name}</b>
+                  <b className="text-[12px]"><Who name={r.student_name} /></b>
                   {r.class_name && <span className="text-[10px] text-slate-400">{r.class_name}</span>}
                   <span className="tabular-nums text-[11px] font-semibold text-slate-600">
                     {dayShort(r.date_from)}

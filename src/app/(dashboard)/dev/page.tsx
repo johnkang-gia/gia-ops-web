@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isDeveloperEmail } from "@/lib/roles";
 import GuideButton from "@/components/common/GuideButton";
+import SiteCheckPanel from "@/components/dev/SiteCheckPanel";
 
 const GUIDE_SECTIONS = [
   {
@@ -163,6 +164,12 @@ export default async function DevDashboardPage() {
         </a>
         에서 확인하세요.
       </p>
+
+      {/* 메뉴가 90개를 넘어 사람이 매일 돌면서 눌러보는 것은 이미 불가능합니다. 한 번 눌러
+          전 화면을 열어보고 안 열리는 곳을 모아 보여줍니다. */}
+      <div className="mb-6">
+        <SiteCheckPanel />
+      </div>
 
       <div className="mb-2 text-xs font-semibold text-slate-400">데이터 현황</div>
       <div className="mb-6 grid grid-cols-2 gap-2 sm:grid-cols-4">

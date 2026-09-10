@@ -1,11 +1,11 @@
 {
   "name": "gia-ops-web",
-  "version": "0.523.0",
+  "version": "0.524.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "check:changelog": "node scripts/check-changelog.mjs",
-    "build": "node scripts/check-changelog.mjs && node scripts/check-demo-isolation.mjs && node scripts/check-department.mjs && node scripts/check-tabbar.mjs && node scripts/check-truncate.mjs && node scripts/check-studentname.mjs && node scripts/check-open-api.mjs && node scripts/check-share-origin.mjs && node scripts/check-roster-columns.mjs && node scripts/check-paired-columns.mjs && node scripts/check-backup.mjs && node scripts/check-backup-tables.mjs && node scripts/check-rls.mjs && node scripts/check-boarding-log.mjs && node scripts/check-sql-catalog.mjs && node scripts/check-rides-today.mjs && node scripts/check-student-match.mjs && node scripts/check-unused-query.mjs && next build",
+    "build": "node scripts/check-changelog.mjs && node scripts/check-demo-isolation.mjs && node scripts/check-department.mjs && node scripts/check-tabbar.mjs && node scripts/check-truncate.mjs && node scripts/check-studentname.mjs && node scripts/check-open-api.mjs && node scripts/check-share-origin.mjs && node scripts/check-roster-columns.mjs && node scripts/check-paired-columns.mjs && node scripts/check-backup.mjs && node scripts/check-backup-tables.mjs && node scripts/check-rls.mjs && node scripts/check-boarding-log.mjs && node scripts/check-sql-catalog.mjs && node scripts/check-rides-today.mjs && node scripts/check-student-match.mjs && node scripts/check-unused-query.mjs && node scripts/check-site-check.mjs && next build",
     "start": "next start",
     "check:demo": "node scripts/check-demo-isolation.mjs",
     "check:dept": "node scripts/check-department.mjs",
@@ -23,7 +23,8 @@
     "check:sql": "node scripts/check-sql-catalog.mjs",
     "check:rides": "node scripts/check-rides-today.mjs",
     "check:match": "node scripts/check-student-match.mjs",
-    "check:query": "node scripts/check-unused-query.mjs"
+    "check:query": "node scripts/check-unused-query.mjs",
+    "check:sitecheck": "node scripts/check-site-check.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

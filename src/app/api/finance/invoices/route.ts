@@ -52,6 +52,16 @@ export async function POST(req: Request) {
    * 이른 쪽까지 못 나갑니다.
    */
   const category = typeof body?.category === "string" && body.category.trim() ? body.category.trim() : null;
+
+  // ── 이미 받은 돈 ──────────────────────────────────────────────────────
+  //
+  // 학비에만 있던 자리를 학비외에도 둡니다. 교복·교재처럼 올톡페이로 항목마다 따로
+  // 결제되는 것들이라, 오히려 여기가 더 자주 쓰입니다.
+  const alreadyPaid = (body?.alreadyPaid ?? null) as
+    | { paidAt?: string; amount?: number; method?: string; memo?: string }
+    | null;
+  const paidAt =
+    alreadyPaid?.paidAt && /^\d{4}-\d{2}-\d{2}$/.test(alreadyPaid.paidAt) ? alreadyPaid.paidAt : null;
   if (!studentId) return NextResponse.json({ error: "studentId가 필요합니다." }, { status: 400 });
 
   const supabase = await createClient();
@@ -140,6 +150,9 @@ export async function POST(req: Request) {
       guardian_role: recipient?.role ?? null,
       term_id: termId,
       category,
+      // 소급해 만든 청구서는 학부모에게 보내지 않습니다 - 보내면 «이미 낸 돈을 또 내라»가
+      // 됩니다. 화면이 보낼 것과 안 보낼 것을 이 값으로 가릅니다(학비와 같은 규칙).
+      issued_offline: !!paidAt,
       issued_by: me.name || me.email,
     })
     .select()
@@ -185,7 +198,40 @@ export async function POST(req: Request) {
     );
   }
 
+  // ── 이미 받은 돈 기록 ────────────────────────────────────────────────
+  //
+  // 금액을 안 주면 **청구액 전부**를 받은 것으로 봅니다. 다르면 화면에서 금액을 적어
+  // 보냅니다 - 「교복만 결제됨」이나 「미납금 일부만」이 그 경우입니다.
+  let paidRecorded = 0;
+  if (paidAt) {
+    const asked = Number(alreadyPaid?.amount);
+    const amount = Number.isFinite(asked) && asked > 0 ? Math.round(asked) : total + carry.total;
+    const { error: payErr } = await supabase.from("payments").insert({
+      invoice_id: inv.id,
+      student_id: student.id,
+      paid_at: paidAt,
+      amount,
+      method: (alreadyPaid?.method ?? "").trim() || "계좌이체",
+      payer_name: student.name,
+      memo: (alreadyPaid?.memo ?? "").trim() || "이미 받은 건을 소급 등록",
+      source: "수기",
+      matched_by: "이미받음",
+      created_by: me.email,
+    });
+    // 청구서는 만들어졌는데 입금이 안 붙으면 **미납으로 남습니다.** 이미 낸 분에게 독촉이
+    // 나가는 자리라, 조용히 넘기지 않고 그대로 알립니다.
+    if (payErr) {
+      return NextResponse.json(
+        {
+          error: `청구서(${inv.invoice_no})는 만들었지만 입금을 기록하지 못했습니다: ${payErr.message}. 수납 화면에서 직접 넣어주세요.`,
+        },
+        { status: 500 },
+      );
+    }
+    paidRecorded = amount;
+  }
+
   // 먼저 받아둔 돈이 있으면 저절로 붙입니다. 안 붙이면 이미 낸 분에게 독촉이 나갑니다.
   const pre = await applyPrepaid(supabase, inv, me.email);
-  return NextResponse.json({ ok: true, invoice: inv, prepaidApplied: pre.applied, warning: pre.error });
+  return NextResponse.json({ ok: true, invoice: inv, paid: paidRecorded, prepaidApplied: pre.applied, warning: pre.error });
 }

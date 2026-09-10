@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import AlreadyPaidModal from "@/components/finance/AlreadyPaidModal";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
 import { won } from "@/lib/feeItems";
@@ -96,9 +97,25 @@ export default function TuitionGridClient({
     setTermId(initialTermId(terms));
   }, [terms]);
 
-  const usedPlans = useMemo(
+  const allPlans = useMemo(
     () => plans.filter((p) => p.active).sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name, "ko")),
     [plans],
+  );
+
+  /**
+   * **보고 있는 항목** — 정규과정만, 방과후만, 또는 전부.
+   *
+   * 발행은 예전부터 항목별로 됐지만, 화면은 늘 전부를 함께 보여줬습니다. 그래서
+   * 「방과후만 이번 달 얼마 걷혔나」를 보려면 열을 눈으로 골라내야 했고, 열이 여럿이면
+   * 표가 옆으로 길어져 이름과 금액이 멀어집니다.
+   *
+   * 여기서 고른 것이 **표의 열·합계·발행 대상 전부**를 정합니다. 보는 것과 발행하는 것이
+   * 다르면, 화면에 안 보이는 항목이 청구서에 실려 나갑니다.
+   */
+  const [planTab, setPlanTab] = useState<string>("전체");
+  const usedPlans = useMemo(
+    () => (planTab === "전체" ? allPlans : allPlans.filter((p) => p.name === planTab)),
+    [allPlans, planTab],
   );
   const optionsOf = useMemo(() => {
     const m = new Map<string, FeePaymentOption[]>();
@@ -429,6 +446,35 @@ export default function TuitionGridClient({
         </span>
       </div>
 
+      {/* ── 보기: 정규과정 / 방과후 ─────────────────────────────────────────
+          발행은 예전부터 항목별로 됐지만 화면은 늘 전부를 함께 보여줬습니다. 그래서
+          「방과후만 얼마 걷혔나」를 보려면 열을 눈으로 골라내야 했고, 열이 여럿이면
+          표가 옆으로 길어져 이름과 금액이 멀어집니다. */}
+      {allPlans.length > 1 && (
+        <div className="mb-2 flex flex-wrap items-center gap-1">
+          <span className="text-[11px] font-bold text-slate-500">보기</span>
+          {["전체", ...allPlans.map((p) => p.name)].map((name) => (
+            <button
+              key={name}
+              type="button"
+              onClick={() => setPlanTab(name)}
+              className={
+                "rounded-full px-2.5 py-1 text-[11px] font-bold transition " +
+                (planTab === name ? "bg-sky-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200")
+              }
+            >
+              {name}
+            </button>
+          ))}
+          {planTab !== "전체" && (
+            // 무엇이 가려졌는지 적습니다. 골라놓고 잊으면 「왜 금액이 적지」가 됩니다.
+            <span className="text-[10px] text-sky-700">
+              지금 「{planTab}」만 봅니다 — 합계·발행도 이 항목만입니다.
+            </span>
+          )}
+        </div>
+      )}
+
       <p className="mb-2 text-[11px] leading-relaxed text-slate-500">
         칸에 <b>학부모가 고른 납부 옵션</b>을 넣습니다. 금액은 <b>기준금액 × 회차수 × (1 − 옵션 할인)</b>으로 그때그때
         계산합니다 — 요금이 오르면 [납부 항목 · 할인]에서 기준금액 하나만 고치면 전부 따라옵니다.
@@ -690,12 +736,17 @@ export default function TuitionGridClient({
 
       {alreadyFor && (
         <AlreadyPaidModal
-          student={alreadyFor}
-          total={totalOf(alreadyFor.id)}
-          plans={usedPlans.filter((p) => lineFor(alreadyFor.id, p))}
+          title="이미 받은 학비 등록"
+          studentName={alreadyFor.name}
+          // 항목마다 **금액을 함께** 넘깁니다. 이름만 주면 「교복은 냈고 교재는 안 냈다」를
+          // 골라도 얼마인지 몰라서, 결국 사람이 다시 계산해 적게 됩니다.
+          lines={usedPlans
+            .map((p) => ({ plan: p, line: lineFor(alreadyFor.id, p) }))
+            .filter((x) => !!x.line)
+            .map((x) => ({ id: x.plan.id, label: x.plan.name, amount: Number(x.line?.subtotal ?? 0) }))}
           busy={busy}
           onClose={() => setAlreadyFor(null)}
-          onSave={(paidAt, amount, method, memo, planIds) => void recordAlreadyPaid(alreadyFor, paidAt, amount, method, memo, planIds)}
+          onSubmit={(r) => void recordAlreadyPaid(alreadyFor, r.paidAt, r.amount, r.method, r.memo, r.pickedIds)}
         />
       )}
 
@@ -852,131 +903,3 @@ function DiscountModal({
   );
 }
 
-/**
- * 「이미 받았습니다」 창.
- *
- * ── 왜 이런 모양인가 ─────────────────────────────────────────────────
- *
- * 회계 프로그램에서 이 자리는 「Receive Payment」이고, 결제사(Stripe)에서는
- * 「Pay out of band — 우리 시스템 밖에서 이미 받은 돈」입니다. 공통점은 **받은 날짜**를
- * 반드시 묻는다는 것입니다. 오늘 날짜로 적으면 지난달 수납이 이번 달로 세어져, 월별
- * 수납 집계가 통째로 어긋납니다.
- *
- * 금액은 청구액을 미리 채워둡니다 - 대개 그대로이고, 다르면 고치면 됩니다.
- */
-function AlreadyPaidModal({
-  student,
-  total,
-  plans,
-  busy,
-  onClose,
-  onSave,
-}: {
-  student: TuitionStudent;
-  total: number;
-  plans: FeePlan[];
-  busy: boolean;
-  onClose: () => void;
-  onSave: (paidAt: string, amount: number, method: string, memo: string, planIds: string[]) => void;
-}) {
-  const [paidAt, setPaidAt] = useState(todayKst());
-  const [amount, setAmount] = useState(String(total));
-  const [method, setMethod] = useState("계좌이체");
-  const [memo, setMemo] = useState("");
-  const [picked, setPicked] = useState<string[]>([]);
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div onClick={(e) => e.stopPropagation()} className="w-full max-w-sm rounded-xl bg-white p-4 shadow-xl">
-        <h3 className="mb-1 text-sm font-bold text-slate-800">💰 이미 받은 건 등록 — {student.name}</h3>
-        <p className="mb-3 text-[11px] leading-relaxed text-slate-500">
-          청구서를 <b>받은 날짜로</b> 만들고 <b>안 보냄</b> 표시를 답니다. 학부모에게 다시 나가지 않습니다 — 이미 낸 돈을
-          또 내라는 말이 되니까요.
-        </p>
-
-        <label className="mb-2 block text-[11px] font-semibold text-slate-600">
-          받은 날
-          <input
-            type="date"
-            value={paidAt}
-            onChange={(e) => setPaidAt(e.target.value)}
-            className="mt-0.5 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs"
-          />
-        </label>
-        <label className="mb-2 block text-[11px] font-semibold text-slate-600">
-          금액
-          <input
-            type="number"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            className="mt-0.5 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-right text-xs tabular-nums"
-          />
-          <span className="mt-0.5 block text-[10px] font-normal text-slate-400">청구액 {won(total)}</span>
-        </label>
-        <label className="mb-2 block text-[11px] font-semibold text-slate-600">
-          받은 방법
-          <select
-            value={method}
-            onChange={(e) => setMethod(e.target.value)}
-            className="mt-0.5 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs"
-          >
-            {PAYMENT_METHOD_KINDS.map((k) => (
-              <option key={k} value={k}>
-                {k}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        {/* 항목이 둘 이상이면 무엇에 대한 돈인지 고릅니다. 안 고르면 학비 전부입니다. */}
-        {plans.length > 1 && (
-          <div className="mb-2">
-            <span className="text-[11px] font-semibold text-slate-600">무엇에 대한 돈인가요?</span>
-            <div className="mt-0.5 flex flex-wrap gap-1">
-              {plans.map((p) => {
-                const on = picked.includes(p.id);
-                return (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => setPicked((v) => (on ? v.filter((x) => x !== p.id) : [...v, p.id]))}
-                    className={
-                      "rounded-full px-2 py-0.5 text-[11px] font-bold " +
-                      (on ? "bg-sky-600 text-white" : "border border-slate-300 bg-white text-slate-600")
-                    }
-                  >
-                    {p.name}
-                  </button>
-                );
-              })}
-            </div>
-            <span className="mt-0.5 block text-[10px] text-slate-400">안 고르면 학비 전부입니다.</span>
-          </div>
-        )}
-
-        <label className="mb-3 block text-[11px] font-semibold text-slate-600">
-          메모
-          <input
-            value={memo}
-            onChange={(e) => setMemo(e.target.value)}
-            placeholder="예: 8월에 계좌로 먼저 받음"
-            className="mt-0.5 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs"
-          />
-        </label>
-
-        <div className="flex justify-end gap-2">
-          <button onClick={onClose} className="rounded-lg px-3 py-1.5 text-xs text-slate-500 hover:bg-slate-100">
-            취소
-          </button>
-          <button
-            onClick={() => onSave(paidAt, Number(amount) || 0, method, memo, picked)}
-            disabled={busy || !paidAt || Number(amount) <= 0}
-            className="rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-sky-700 disabled:opacity-40"
-          >
-            {busy ? "넣는 중…" : "이미 받은 것으로 넣기"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}

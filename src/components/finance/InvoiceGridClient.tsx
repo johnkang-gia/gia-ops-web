@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import AlreadyPaidModal from "@/components/finance/AlreadyPaidModal";
 // 돈을 정하는 판단은 화면에서 떼어 `@/lib/invoiceGrid` 에 두고 시험합니다. 섞여 있으면
 // 화면을 손보다 판단을 건드려도 티가 안 나고, 조금 다른 청구서는 그대로 나갑니다.
 import { matchesInstrument, planInvoices, typicalByGroup, unusualAmount } from "@/lib/invoiceGrid";
@@ -183,6 +184,9 @@ export default function InvoiceGridClient({
    */
   const [showOffTarget, setShowOffTarget] = useState(false);
   const [onlyUnissued, setOnlyUnissued] = useState(false);
+  /** 「이미 받음」 창을 연 학생. 청구서를 소급해 만들고 입금까지 함께 넣습니다. */
+  const [alreadyFor, setAlreadyFor] = useState<Student | null>(null);
+
   /** 발행 전 검토 창. 누르자마자 나가면 잘못 나간 것을 되돌릴 수 없습니다. */
   const [review, setReview] = useState<Student[] | null>(null);
   /**
@@ -810,6 +814,47 @@ export default function InvoiceGridClient({
   const tabCls = (on: boolean) =>
     "shrink-0 rounded-lg px-2.5 py-1 text-xs font-semibold " +
     (on ? "bg-slate-800 text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50");
+
+  /**
+   * **이미 받은 학비외 청구.**
+   *
+   * 청구서는 만들되 학부모에게는 안 나갑니다(`issued_offline`). 이미 낸 분께 또 내라고
+   * 하는 셈이 되니까요. 대신 무엇을 받았는지는 입금 메모에 이름으로 남습니다 - 나중에
+   * 「교재는 아직 안 냈다」를 셀 수 있어야 합니다.
+   */
+  async function recordAlreadyPaid(
+    s: Student,
+    r: { paidAt: string; amount: number; method: string; memo: string; pickedIds: string[] },
+  ) {
+    setBusy(true);
+    try {
+      const res = await fetch("/api/finance/invoices", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          studentId: s.id,
+          // 청구서 날짜를 **받은 날**로 맞춥니다. 오늘로 두면 지난달에 받은 돈이 이번 달
+          // 장부에 잡혀서, 월별로 세는 숫자가 어긋납니다.
+          dueDate: r.paidAt,
+          feeTermId: termId || null,
+          category: cat === "전체" ? null : cat,
+          alreadyPaid: { paidAt: r.paidAt, amount: r.amount, method: r.method, memo: r.memo },
+        }),
+      });
+      const b = (await res.json().catch(() => ({}))) as { error?: string; paid?: number; invoice?: Invoice };
+      if (!res.ok) {
+        notify(b.error ?? "이미 받은 건을 넣지 못했습니다.", "error");
+        return;
+      }
+      // 새로고침 없이 화면에 바로 얹습니다. 다시 불러오게 하면 이 표는 통째로 다시
+      // 그려져서, 여러 명을 연달아 넣을 때 스크롤과 체크가 매번 튑니다.
+      if (b.invoice) setInvoices((p) => [b.invoice as Invoice, ...p]);
+      setAlreadyFor(null);
+      notify(`${s.name} — 이미 받은 것으로 넣었습니다 (${won(b.paid ?? r.amount)}).`, "success");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     // w-full + min-w-0: 이게 없으면 표가 넓어질 때 **페이지 자체가 옆으로 늘어납니다.**
@@ -1477,6 +1522,17 @@ export default function InvoiceGridClient({
                         >
                           발행 →
                         </button>
+                        {/* 이미 받은 건. 교복·교재는 올톡페이로 항목마다 따로 결제되어서,
+                            「교복은 냈고 교재는 안 냈다」가 흔합니다. 학비에만 있던 자리를
+                            여기에도 둡니다 - 오히려 여기가 더 자주 쓰입니다. */}
+                        <button
+                          onClick={() => setAlreadyFor(s)}
+                          disabled={busy}
+                          className="rounded bg-emerald-100 px-1 text-[11px] font-bold text-emerald-800 hover:bg-emerald-200 disabled:opacity-40"
+                          title={`${s.name} — 이미 받은 돈으로 넣습니다 (청구서는 만들되 안 보냄)`}
+                        >
+                          💰
+                        </button>
                       </span>
                     ) : (
                       <span className="text-[11px] text-slate-300">—</span>
@@ -1573,6 +1629,23 @@ export default function InvoiceGridClient({
       </div>
 
       {/* ── 발행 전 검토 ────────────────────────────────────────── */}
+      {alreadyFor && (
+        <AlreadyPaidModal
+          title="이미 받은 학비외 청구 등록"
+          studentName={alreadyFor.name}
+          // 항목마다 금액을 함께 넘깁니다. 올톡페이는 항목별로 결제 문자가 나가서,
+          // 「교복만 결제됨」을 그 자리에서 체크할 수 있어야 합니다.
+          lines={(linesByStudent.get(alreadyFor.id) ?? []).map((l) => ({
+            id: l.item.id,
+            label: l.item.name_ko?.trim() || l.item.name,
+            amount: Number(l.amount ?? 0),
+          }))}
+          busy={busy}
+          onClose={() => setAlreadyFor(null)}
+          onSubmit={(r) => void recordAlreadyPaid(alreadyFor, r)}
+        />
+      )}
+
       {review && (
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 p-4" onClick={() => !busy && setReview(null)}>
           <div className="flex max-h-[80vh] w-full max-w-2xl flex-col rounded-xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>

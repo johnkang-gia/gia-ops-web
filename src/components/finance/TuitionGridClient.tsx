@@ -9,6 +9,7 @@ import { departmentOf, gradeSortKey, type Department } from "@/lib/department";
 import { tuitionLine, tuitionTotal, discountUsable, type TuitionLine } from "@/lib/tuition";
 import TermPicker, { initialTermId } from "./TermPicker";
 import InvoicePreviewModal from "./InvoicePreviewModal";
+import CancelInvoiceModal from "./CancelInvoiceModal";
 import type { FeePlan, FeePaymentOption, FeeDiscount, Term, Invoice } from "@/lib/types";
 import { PAYMENT_METHOD_KINDS } from "@/lib/payments";
 import { todayKst } from "@/lib/kst";
@@ -91,6 +92,13 @@ export default function TuitionGridClient({
   const [dueDate, setDueDate] = useState(today);
   const [discountFor, setDiscountFor] = useState<TuitionStudent | null>(null);
   const [preview, setPreview] = useState<{ id: string; label: string } | null>(null);
+  /**
+   * 발행 취소하려는 청구서.
+   *
+   * 학비는 취소할 자리가 없었습니다. 잘못 발행한 장을 지울 방법이 없으니 그 학생은 다시
+   * 발행할 수도 없었고(이미 발행됨으로 보임), 화면에는 「끝난 것」으로만 보였습니다.
+   */
+  const [cancelling, setCancelling] = useState<{ invoice: Invoice; studentName: string } | null>(null);
   const [onlyUnissued, setOnlyUnissued] = useState(false);
 
   useEffect(() => {
@@ -632,15 +640,25 @@ export default function TuitionGridClient({
                         {(invoicesOf.get(s.id) ?? []).map((v) => {
                           const scope = (v as Invoice & { plan_scope?: string | null }).plan_scope ?? null;
                           return (
-                            <button
-                              key={v.id}
-                              onClick={() => setPreview({ id: v.id, label: `${s.name} · ${v.invoice_no}` })}
-                              className="text-[11px] font-bold text-emerald-700 underline"
-                              title={scope ? `${scope} 청구서` : "학비 전부를 담은 청구서"}
-                            >
-                              {v.invoice_no}
-                              {scope && <span className="ml-0.5 font-normal text-emerald-600">({scope})</span>}
-                            </button>
+                            <span key={v.id} className="inline-flex items-center gap-0.5">
+                              <button
+                                onClick={() => setPreview({ id: v.id, label: `${s.name} · ${v.invoice_no}` })}
+                                className="text-[11px] font-bold text-emerald-700 underline"
+                                title={scope ? `${scope} 청구서` : "학비 전부를 담은 청구서"}
+                              >
+                                {v.invoice_no}
+                                {scope && <span className="ml-0.5 font-normal text-emerald-600">({scope})</span>}
+                              </button>
+                              {/* 잘못 발행한 장을 되돌릴 자리. 지우지 않고 취소로 남기므로
+                                  나중에 무엇이 왜 취소됐는지 읽을 수 있습니다. */}
+                              <button
+                                onClick={() => setCancelling({ invoice: v, studentName: s.name })}
+                                className="text-[11px] font-bold text-slate-300 hover:text-rose-600"
+                                title="발행 취소 (지우지 않고 취소로 남깁니다)"
+                              >
+                                ↩
+                              </button>
+                            </span>
                           );
                         })}
                         {/* 한 장 나갔다고 다 된 것이 아닙니다. 남은 항목이 있으면 말해줍니다 -
@@ -733,6 +751,16 @@ export default function TuitionGridClient({
       )}
 
       {preview && <InvoicePreviewModal invoiceId={preview.id} label={preview.label} onClose={() => setPreview(null)} />}
+
+      {/* 학비외 청구 화면과 **같은 창**입니다. 화면마다 따로 만들면 한쪽에만 경고가 붙습니다. */}
+      {cancelling && (
+        <CancelInvoiceModal
+          invoice={cancelling.invoice}
+          studentName={cancelling.studentName}
+          onDone={(done) => setInvoices((p) => p.map((v) => (v.id === done.id ? done : v)))}
+          onClose={() => setCancelling(null)}
+        />
+      )}
 
       {alreadyFor && (
         <AlreadyPaidModal

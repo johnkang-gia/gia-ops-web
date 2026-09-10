@@ -1568,6 +1568,11 @@ export type Invoice = {
   /** 올톡페이 발송 엑셀로 내보낸 시각. 두 번 보내는 것을 막는 표시입니다. */
   exported_at: string | null;
   export_batch: string | null;
+  /**
+   * 「이미 받음」으로 소급해 만든 청구서인가. 참이면 **학부모에게 보내지 않습니다** -
+   * 보내면 이미 낸 분께 또 내라고 하는 셈이 됩니다.
+   */
+  issued_offline?: boolean | null;
 };
 
 export type InvoiceLine = {

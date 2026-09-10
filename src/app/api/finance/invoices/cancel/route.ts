@@ -10,6 +10,9 @@ import { hasFinanceAccess } from "@/lib/roles";
 //
 // 취소한 뒤에는 항목을 고쳐 **다시 발행**할 수 있습니다. 새 번호가 붙습니다 - 같은 번호를
 // 다시 쓰면 학부모가 받은 두 장이 같은 번호가 됩니다.
+//
+// 붙어 있던 입금은 지우지 않고 **선입금으로 떼어냅니다.** 「이미 받음」으로 만든 청구서를
+// 취소하는 일이 흔한데, 그 돈은 실제로 받은 돈이라 함께 지우면 장부에서 사라집니다.
 
 export const dynamic = "force-dynamic";
 
@@ -31,20 +34,51 @@ export async function POST(req: Request) {
   if (!inv) return NextResponse.json({ error: "청구서를 찾지 못했습니다." }, { status: 404 });
   if (inv.status === "취소") return NextResponse.json({ error: "이미 취소된 청구서입니다." }, { status: 400 });
 
-  // 이미 받은 돈이 붙어 있으면 그냥 취소하면 안 됩니다. 그 입금이 어디에도 안 붙은 채로
-  // 남아, 나중에 장부가 안 맞습니다. 수납을 먼저 정리하도록 알려줍니다.
+  // ── 붙어 있는 입금 ─────────────────────────────────────────────────────────
+  //
+  // 그 돈은 **실제로 받은 돈**입니다. 청구서를 취소한다고 없던 일이 되지 않습니다. 그렇다고
+  // 취소된 청구서에 붙여 두면 장부가 안 맞습니다 - 「취소된 청구서에 낸 돈」은 어느 칸에도
+  // 안 세어집니다.
+  //
+  // 그래서 지우지도, 붙여 두지도 않고 **선입금으로 떼어냅니다**(`invoice_id = null`). 그
+  // 학생의 다음 청구서를 만들 때 `applyPrepaid` 가 저절로 충당합니다.
   const { data: pays, error: payErr } = await supabase.from("payments").select("id, amount").eq("invoice_id", id);
-  if (payErr) console.error("[인보이스 취소] 수납을 읽지 못했습니다:", payErr.message);
+  // 읽지 못했으면 취소를 **하지 않습니다.** 붙은 돈이 있는지 모르는 채로 취소하면, 그 돈이
+  // 취소된 청구서에 매달린 채 남습니다 - 화면에는 아무 표시도 안 납니다.
+  if (payErr) {
+    return NextResponse.json(
+      { error: `이 청구서에 붙은 입금을 읽지 못해 취소하지 않았습니다: ${payErr.message}` },
+      { status: 500 },
+    );
+  }
   const paid = (pays ?? []).reduce((n, p) => n + Number(p.amount), 0);
   if (paid > 0 && !force) {
     return NextResponse.json(
       {
-        error: `이 청구서에는 이미 받은 돈 ${paid.toLocaleString("ko-KR")}원이 붙어 있습니다. 수납 탭에서 그 입금을 먼저 옮기거나 지운 뒤에 취소해주세요.`,
+        error: `이 청구서에는 이미 받은 돈 ${paid.toLocaleString("ko-KR")}원이 붙어 있습니다. 취소하면 그 돈은 선입금으로 남아 다음 청구서에 저절로 충당됩니다.`,
         paid,
         needsForce: true,
       },
       { status: 409 },
     );
+  }
+
+  // **떼어내기가 먼저입니다.** 취소부터 하고 떼어내다 실패하면, 취소된 청구서에 돈이 매달린
+  // 채로 남습니다. 순서를 이렇게 두면 최악이라도 「멀쩡한 청구서에 돈이 선입금으로 떠 있는」
+  // 상태가 되는데, 그건 화면에서 눈에 띄고 되돌릴 수 있습니다.
+  let detached = 0;
+  if (paid > 0) {
+    const { error: cutErr } = await supabase
+      .from("payments")
+      .update({ invoice_id: null, matched_by: "청구 취소로 떼어냄" })
+      .eq("invoice_id", id);
+    if (cutErr) {
+      return NextResponse.json(
+        { error: `받은 돈을 선입금으로 떼어내지 못해 취소하지 않았습니다: ${cutErr.message}` },
+        { status: 500 },
+      );
+    }
+    detached = paid;
   }
 
   const { data, error } = await supabase
@@ -61,5 +95,5 @@ export async function POST(req: Request) {
     .single();
   if (error || !data) return NextResponse.json({ error: error?.message ?? "취소하지 못했습니다." }, { status: 500 });
 
-  return NextResponse.json({ ok: true, invoice: data });
+  return NextResponse.json({ ok: true, invoice: data, detached });
 }

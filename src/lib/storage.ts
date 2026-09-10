@@ -14,6 +14,9 @@ const CHAT_FILES_BUCKET = "chat-files";
 // 업무카드별 첨부파일 - 채팅 첨부와 동일한 신뢰 모델(giamicro.com 로그인 사용자면 누구나
 // 업로드·조회·삭제 가능)이라 별도 버킷으로 분리했습니다(용도 구분용).
 const TASK_FILES_BUCKET = "task-files";
+// 휴가계획서·진단서 등 학생 서류 - **공개 버킷을 쓰지 않습니다.** 진단서에는 아이의 병명이
+// 적혀 있고, 공개 주소가 붙으면 그 주소를 아는 누구나 열 수 있습니다.
+const STUDENT_DOCS_BUCKET = "student-docs";
 
 async function uploadFile(bucket: string, file: File, folder: string): Promise<string> {
   const supabase = createClient();
@@ -128,4 +131,24 @@ export async function getTaskFileSignedUrl(path: string): Promise<string | null>
 
 export async function deleteTaskFile(path: string): Promise<void> {
   return deleteFile(TASK_FILES_BUCKET, path);
+}
+
+/**
+ * 학생 서류(휴가계획서·병결기록·진단서)를 올립니다.
+ *
+ * 학생 번호로 폴더를 나눕니다 - 이름으로 나누면 김재이 셋의 서류가 한 폴더에 섞입니다.
+ * 파일 이름은 시각·난수로 새로 짓고, 원본 이름은 표에 따로 적습니다(경로만 보면 무슨
+ * 파일인지 알 수 없어야 저장소가 새어도 내용을 짐작할 수 없습니다).
+ */
+export async function uploadStudentDoc(file: File, studentId: string): Promise<string> {
+  return uploadFile(STUDENT_DOCS_BUCKET, file, studentId);
+}
+
+/** 서류를 여는 주소. 1시간짜리 임시 주소라 링크를 복사해 나눠줘도 곧 막힙니다. */
+export async function getStudentDocUrl(path: string): Promise<string | null> {
+  return getFileSignedUrl(STUDENT_DOCS_BUCKET, path);
+}
+
+export async function deleteStudentDoc(path: string): Promise<void> {
+  return deleteFile(STUDENT_DOCS_BUCKET, path);
 }

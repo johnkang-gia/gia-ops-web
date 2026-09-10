@@ -36,6 +36,10 @@ export const BACKUP_GROUPS: { group: string; tables: string[] }[] = [
       "student_groups",
       "student_group_members",
       "student_apparel_sizes",
+      // 휴가계획서·진단서. **파일은 저장소에 있고 여기 담기는 것은 목록입니다** - 파일까지
+      // 담으면 백업 파일이 통째로 무거워집니다. 목록이 없으면 저장소에 파일만 남아 누구
+      // 것인지 알 수 없게 되므로, 목록은 반드시 담습니다.
+      "student_absence_docs",
       "terms",
       "school_days",
     ],

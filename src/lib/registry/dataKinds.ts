@@ -75,6 +75,7 @@ export const DATA_KINDS: DataKindDef[] = [
       "student_fee_items",
       "toddle_channel_students",
       "student_dup_dismissals",
+      "student_absence_docs",
     ],
     // 학생은 이름으로 겹칩니다(김재이가 셋). 학생 번호가 유일한 열쇠입니다.
     dedupe: { by: ["id"] },

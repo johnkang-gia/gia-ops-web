@@ -5,6 +5,7 @@ import { isMissingWeekStart } from "@/lib/dismissalToday";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess, isStaffOrAboveUser } from "@/lib/roles";
 import DismissalPlanEditor from "@/components/students/DismissalPlanEditor";
+import AbsenceDocsPanel from "@/components/students/AbsenceDocsPanel";
 import StudentFeeHistory from "@/components/finance/StudentFeeHistory";
 import type { DismissalPlan } from "@/lib/dismissalPlan";
 import { won } from "@/lib/feeItems";
@@ -318,6 +319,14 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
         initialPlans={dismissalPlans}
         userEmail={me.email}
       />
+
+      {/* 휴가계획서·병결기록 — 아이가 길게 빠질 때 받는 서류입니다.
+          출결에는 「결석」이라고만 남고 근거가 어디에도 안 붙어 있었습니다. 나중에 「이 결석은
+          승인된 것인가」를 물으면 서류를 받은 사람만 답할 수 있었고, 그 사람이 자리에 없으면
+          아무도 모릅니다. 아이 기록 옆에 두어야 그 아이를 볼 때 함께 보입니다. */}
+      <div className="mb-5">
+        <AbsenceDocsPanel studentId={student.id} studentName={student.name} me={me.email} />
+      </div>
 
       {/* 재무 - 학부모가 "그 청구서 냈는데요" 하고 전화하면 여기서 바로 답이 나와야 합니다.
           재무 화면으로 건너가 이름을 다시 찾게 두면 통화 중에 못 합니다. */}

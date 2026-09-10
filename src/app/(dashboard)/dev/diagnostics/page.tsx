@@ -120,22 +120,37 @@ export default async function DevDiagnosticsPage() {
     }),
   );
 
-  // ── ③ 셔틀 오늘 ──────────────────────────────────────────────────────────
-  const { data: routes } = await supabase
-    .from("shuttle_routes")
-    .select("id, route_no, vehicle_no, driver_name, term")
-    .eq("active", true)
-    .eq("direction", "하원");
+  // ── ③~⑧ 서로 기다릴 이유가 없는 조회는 한꺼번에 ──────────────────────────
+  //
+  // 아래 열 개는 서로의 답을 쓰지 않습니다. 차례로 부르면 왕복 열 번이 그대로 쌓여, 이 화면이
+  // 6초 걸리던 나머지 절반이 여기였습니다. 정류장만 노선 목록이 있어야 해서 뒤에 따로 부릅니다.
+  const dayStart = new Date(`${today}T00:00:00+09:00`).toISOString();
+  const [
+    { data: routes },
+    { data: events },
+    { data: devices },
+    { data: choiceRows },
+    { data: appliedRows, error: appliedError },
+    { data: beats },
+    { count: todayReq },
+    { count: todayPickup },
+    { count: openInquiry },
+    integrity,
+  ] = await Promise.all([
+    supabase.from("shuttle_routes").select("id, route_no, vehicle_no, driver_name, term").eq("active", true).eq("direction", "하원"),
+    supabase.from("shuttle_run_events").select("route_id, event, created_by, created_at").eq("service_date", today),
+    supabase.from("shuttle_tracker_devices").select("route_id, last_seen_at, enabled"),
+    supabase.from("shuttle_assignments").select("id, student_name_raw, choice_group, choice_label, stop_id").not("choice_group", "is", null),
+    supabase.from("applied_migrations").select("version, name"),
+    supabase.from("integration_heartbeats").select("key, last_seen_at, status, detail").order("key"),
+    supabase.from("pickup_requests").select("id", { count: "exact", head: true }).gte("received_at", dayStart),
+    supabase.from("pickup_requests").select("id", { count: "exact", head: true }).eq("kind", "픽업").eq("service_date", today),
+    supabase.from("pickup_requests").select("id", { count: "exact", head: true }).eq("kind", "문의").is("answered_at", null),
+    // 화면에서는 멀쩡해 보이는데 실제로는 틀린 것들. 사고가 나기 전에는 아무도 모릅니다.
+    runIntegrityChecks(supabase),
+  ]);
   const routeById = new Map((routes ?? []).map((r) => [r.id as string, r]));
-
-  const { data: events } = await supabase
-    .from("shuttle_run_events")
-    .select("route_id, event, created_by, created_at")
-    .eq("service_date", today);
-
-  const { data: devices } = await supabase
-    .from("shuttle_tracker_devices")
-    .select("route_id, last_seen_at, enabled");
+  const integrityBad = integrity.filter((i) => i.count > 0);
 
   // GPS가 켜진 노선별 상태. 27호만 보지 않고 켜진 것 전부 봅니다 - 앞으로 늘어날 것이고,
   // "27호만 되고 나머지는?"을 다시 묻게 되기 때문입니다.
@@ -165,10 +180,6 @@ export default async function DevDiagnosticsPage() {
   const noAddress = (stops ?? []).filter((s) => !s.address || !s.address.trim());
 
   // ── ④ 행선지 선택 학생 ───────────────────────────────────────────────────
-  const { data: choiceRows } = await supabase
-    .from("shuttle_assignments")
-    .select("id, student_name_raw, choice_group, choice_label, stop_id")
-    .not("choice_group", "is", null);
   const stopById = new Map((stops ?? []).map((s) => [s.id as string, s]));
   const choiceByName = new Map<string, { label: string | null; hasAddress: boolean }[]>();
   for (const a of choiceRows ?? []) {
@@ -195,9 +206,6 @@ export default async function DevDiagnosticsPage() {
   } catch {
     // 배포본에 파일이 안 실려 있으면 이 칸만 비워둡니다. 다른 점검은 그대로 돌아갑니다.
   }
-  const { data: appliedRows, error: appliedError } = await supabase
-    .from("applied_migrations")
-    .select("version, name");
   const applied = new Set(((appliedRows ?? []) as { version: string }[]).map((r) => r.version));
   // 파일 이름은 `20260828120000_설명`, DB에는 앞의 숫자(version)만 들어갑니다.
   const notApplied = migFiles.filter((f) => !applied.has(f.split("_")[0]));
@@ -216,36 +224,6 @@ export default async function DevDiagnosticsPage() {
       neededSql[b.migration] = null; // 배포본에 파일이 안 실렸으면 버튼을 감춥니다.
     }
   }
-
-  // ── ⑦ 데이터 무결성 ──────────────────────────────────────────────────────
-  //
-  // 화면에서는 멀쩡해 보이는데 실제로는 틀린 것들을 미리 셉니다. 이번 주에 겪은 문제가
-  // 전부 이 종류였습니다 - 사고가 나거나 누가 이상하다고 말하기 전까지 아무도 몰랐습니다.
-  const integrity = await runIntegrityChecks(supabase);
-  const integrityBad = integrity.filter((i) => i.count > 0);
-
-  // ── ⑤ 크론 심박 ──────────────────────────────────────────────────────────
-  const { data: beats } = await supabase
-    .from("integration_heartbeats")
-    .select("key, last_seen_at, status, detail")
-    .order("key");
-
-  // ── ⑥ 오늘 인박스 ────────────────────────────────────────────────────────
-  const dayStart = new Date(`${today}T00:00:00+09:00`).toISOString();
-  const { count: todayReq } = await supabase
-    .from("pickup_requests")
-    .select("id", { count: "exact", head: true })
-    .gte("received_at", dayStart);
-  const { count: todayPickup } = await supabase
-    .from("pickup_requests")
-    .select("id", { count: "exact", head: true })
-    .eq("kind", "픽업")
-    .eq("service_date", today);
-  const { count: openInquiry } = await supabase
-    .from("pickup_requests")
-    .select("id", { count: "exact", head: true })
-    .eq("kind", "문의")
-    .is("answered_at", null);
 
   return (
     // 담당자: "개발자 진단탭 아직도 화면 너무 좁게 써, 넓게 쓰고 화면 양쪽으로 나눠서

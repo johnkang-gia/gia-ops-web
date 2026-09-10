@@ -50,7 +50,10 @@ export default async function IntegrationsPage() {
 
   const [pings24, pingsMonth, lastPing, events24, chat24, inquiries24] = await Promise.all([
     supabase.from("shuttle_pilot_pings").select("id", { count: "exact", head: true }).gte("recorded_at", dayAgo),
-    supabase.from("shuttle_pilot_pings").select("id", { count: "exact", head: true }).gte("recorded_at", monthAgo),
+    // **어림수로 셉니다.** 30일치 위치는 수십만 줄이고, 정확히 세려면 표를 통째로 훑습니다 -
+    // 그 한 줄 때문에 이 화면이 9초 넘게 걸렸습니다. 이 숫자는 「저장량이 얼마나 되나」를
+    // 보려는 것이라 어림수로 충분합니다.
+    supabase.from("shuttle_pilot_pings").select("id", { count: "estimated", head: true }).gte("recorded_at", monthAgo),
     supabase.from("shuttle_pilot_pings").select("recorded_at").order("recorded_at", { ascending: false }).limit(1).maybeSingle(),
     supabase.from("shuttle_run_events").select("id", { count: "exact", head: true }).gte("created_at", dayAgo),
     supabase.from("google_chat_mirror_messages").select("id", { count: "exact", head: true }).gte("received_at", dayAgo),
@@ -79,7 +82,7 @@ export default async function IntegrationsPage() {
     { label: "문의·픽업 수집", value: `24시간 ${(inquiries24.count ?? 0).toLocaleString()}건`, sub: "", warn: false },
     {
       label: "GPS 저장량(30일)",
-      value: `${monthCount.toLocaleString()}건 · 약 ${monthMb}MB`,
+      value: `약 ${monthCount.toLocaleString()}건 · 약 ${monthMb}MB`,
       sub: monthMb > 500 ? "⚠️ Traccar 간격을 확인하세요" : "",
       warn: monthMb > 500,
     },

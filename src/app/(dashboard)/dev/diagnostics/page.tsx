@@ -89,20 +89,23 @@ export default async function DevDiagnosticsPage() {
   //
   // information_schema를 뒤지지 않고 **앱과 똑같이 그 칸을 읽어봅니다.** 칸이 있어도
   // 권한(RLS)이 막으면 기능은 똑같이 안 되기 때문입니다.
-  const schemaResults: { feature: string; ok: boolean; migration: string; impact: string; note: string | null }[] = [];
-  for (const check of SCHEMA_CHECKS) {
-    let note: string | null = null;
-    let ok = true;
-    for (const col of check.columns) {
-      const { error } = await supabase.from(check.table).select(col).limit(1);
-      if (error) {
-        ok = false;
-        note = error.message;
-        break;
-      }
-    }
-    schemaResults.push({ feature: check.feature, ok, migration: check.migration, impact: check.impact, note });
-  }
+  //
+  // **한 번에 나란히 묻습니다.** 예전에는 칸 하나씩 차례로 물었는데, 검사 43개에 칸이 144개라
+  // 왕복만 144번이었습니다 - 이 화면이 6초 걸린 이유가 그것이고, 검사가 늘수록 그만큼 더
+  // 느려집니다. 한 검사의 칸들은 `select("a, b, c")` 로 한 번에 물으면 됩니다. 어느 칸이
+  // 없는지는 오류 메시지가 알려줍니다.
+  const schemaResults = await Promise.all(
+    SCHEMA_CHECKS.map(async (check) => {
+      const { error } = await supabase.from(check.table).select(check.columns.join(", ")).limit(1);
+      return {
+        feature: check.feature,
+        ok: !error,
+        migration: check.migration,
+        impact: check.impact,
+        note: error?.message ?? null,
+      };
+    }),
+  );
   const schemaBad = schemaResults.filter((r) => !r.ok);
 
   // 이번 주에 새로 만든 칸들은 SCHEMA_CHECKS에 아직 없을 수 있어 따로 확인합니다.
@@ -110,11 +113,12 @@ export default async function DevDiagnosticsPage() {
     { label: "행선지 선택 묶음", table: "shuttle_assignments", column: "choice_group", migration: "20260828120000" },
     { label: "행선지 버튼 이름", table: "shuttle_assignments", column: "choice_label", migration: "20260828140000" },
   ];
-  const extraResults: { label: string; ok: boolean; migration: string }[] = [];
-  for (const e of extraCols) {
-    const { error } = await supabase.from(e.table).select(e.column).limit(1);
-    extraResults.push({ label: e.label, ok: !error, migration: e.migration });
-  }
+  const extraResults = await Promise.all(
+    extraCols.map(async (e) => {
+      const { error } = await supabase.from(e.table).select(e.column).limit(1);
+      return { label: e.label, ok: !error, migration: e.migration };
+    }),
+  );
 
   // ── ③ 셔틀 오늘 ──────────────────────────────────────────────────────────
   const { data: routes } = await supabase

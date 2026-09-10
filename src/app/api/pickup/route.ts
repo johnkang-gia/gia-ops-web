@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { undoPickupTraces, undoSummary } from "@/lib/pickupUndo";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isStaffOrAboveUser } from "@/lib/roles";
@@ -80,7 +81,14 @@ export async function POST(req: Request) {
       .eq("id", id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     await bumpPickupFeedback(supabase, id, false);
-    return NextResponse.json({ ok: true });
+
+    // **인박스에서 내렸으면 체크표·출결·업무에서도 내려갑니다.**
+    //
+    // 앞 판은 여기서 인박스 목록만 고쳤습니다. 그런데 확정할 때 체크표에도 픽업 줄이
+    // 찍히고, 중앙 대시보드는 체크표를 가장 세게 읽습니다 - 지운 아이가 대시보드에
+    // 계속 떴습니다. 한 곳만 고치면 다른 곳이 어긋납니다.
+    const undo = await undoPickupTraces(supabase, id, { email: me.email, name: me.name ?? null });
+    return NextResponse.json({ ok: true, undo, undoNote: undoSummary(undo) });
   }
 
   // ── 손으로 붙여넣어 접수 ──────────────────────────────────────────────────

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { logApiError } from "@/lib/logging";
+import { undoPickupTraces, undoSummary } from "@/lib/pickupUndo";
 
 // "이 연락은 픽업이 아닙니다" — 사람이 AI 판단을 바로잡는 창구.
 //
@@ -67,14 +68,11 @@ export async function POST(req: Request) {
         .upsert({ sender_key: senderKey, not_pickup_count: next, updated_at: new Date().toISOString() }, { onConflict: "sender_key" });
     }
 
-    // ③ 이 연락에서 만들어진 출결 등록도 함께 내립니다.
-    //    남겨두면 대시보드에는 계속 뜹니다 - 한 곳만 고치면 다른 곳이 어긋납니다.
-    await supabase
-      .from("attendance_entries")
-      .update({ state: "무시", touched_by_human: true, note: "사람이 '픽업 아님'으로 정정" })
-      .eq("source_message_id", requestId);
+    // ③ 이 연락이 남긴 자국을 전부 되돌립니다 — 체크표 · 출결 등록 · 픽업 업무.
+    //    남겨두면 대시보드에는 계속 뜹니다. 한 곳만 고치면 다른 곳이 어긋납니다.
+    const undo = await undoPickupTraces(supabase, requestId, { email: me.email, name: me.name ?? null });
 
-    return NextResponse.json({ ok: true, senderKey: senderKey || null });
+    return NextResponse.json({ ok: true, senderKey: senderKey || null, undo, undoNote: undoSummary(undo) });
   } catch (err) {
     await logApiError(supabase, "pickup:not-pickup", err);
     return NextResponse.json({ error: "처리하지 못했습니다." }, { status: 500 });

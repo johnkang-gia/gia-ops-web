@@ -318,6 +318,12 @@ export default function PickupInboxClient({
     const json = await call({ action: "ignore", id: row.id });
     if (!json) return;
     setRows((prev) => prev.map((r) => (r.id === row.id ? { ...r, status: "무시" } : r)));
+    // 체크표·출결·업무에서도 함께 내려갑니다. **무엇이 내려갔는지 말해줍니다** - 안 말하면
+    // 담당자는 다른 화면을 다시 열어 확인해야 하고, 대개 확인 안 하고 넘어갑니다.
+    const note = (json as { undoNote?: string }).undoNote;
+    const problems = ((json as { undo?: { problems?: string[] } }).undo?.problems ?? []).filter(Boolean);
+    if (problems.length > 0) notify(problems.join(" / "), "error");
+    else if (note) notify(note, "success");
   }
 
   async function submitManual() {

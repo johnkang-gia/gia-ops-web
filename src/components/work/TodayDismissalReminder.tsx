@@ -29,6 +29,8 @@ import { addDays, nextWeekStart, weekStartOf } from "@/lib/dismissalWeek";
  */
 
 type Row = { name: string; className: string; kind: string; label: string | null; time: string | null; note: string | null };
+/** 오늘 학부모가 연락해 온 픽업. 미리 등록해 둔 하원수단과 갈래가 다릅니다. */
+type Pickup = { name: string; time: string | null; source: string };
 type Ahead = { name: string; date: string; kind: string; label: string | null; time: string | null };
 
 const KIND_TONE: Record<string, string> = {
@@ -52,6 +54,13 @@ export default function TodayDismissalReminder({
   variant?: "배너" | "위젯";
 }) {
   const [rows, setRows] = useState<Row[] | null>(null);
+  /**
+   * 오늘 픽업. 하원수단과 **다른 갈래**라 따로 읽습니다 - 하원수단은 미리 등록해 둔 것이고,
+   * 픽업은 오늘 학부모가 연락해 온 것입니다. 담당자에게는 둘 다 「오늘 이 아이를 어떻게
+   * 내보내나」인데, 앞 판은 앞쪽만 보여줘서 오늘 온 픽업이 이 자리에 안 떴습니다.
+   */
+  const [pickups, setPickups] = useState<Pickup[]>([]);
+  const [pickupError, setPickupError] = useState<string | null>(null);
   const [ahead, setAhead] = useState<Ahead[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -141,19 +150,35 @@ export default function TodayDismissalReminder({
           .filter((x): x is Ahead => !!x)
           .sort((a, b) => a.date.localeCompare(b.date) || (a.time ?? "99:99").localeCompare(b.time ?? "99:99")),
       );
+
+      // 오늘 픽업. 판단은 서버의 `loadTodayPickups` 한 곳에서만 합니다 - 여기서 세 표를
+      // 다시 합치면 화면마다 다른 답이 나옵니다.
+      try {
+        const res = await fetch("/api/dismissal/today", { cache: "no-store" });
+        if (!res.ok) {
+          const j = await res.json().catch(() => ({}));
+          setPickupError(j?.error ?? `오늘 픽업을 읽지 못했습니다(${res.status})`);
+        } else {
+          const j = (await res.json()) as { pickups: Pickup[] };
+          setPickups(j.pickups ?? []);
+          setPickupError(null);
+        }
+      } catch (err) {
+        setPickupError(String(err));
+      }
     })();
   }, [tick]);
 
   if (rows === null) return null;
   // 위젯 자리에서는 없으면 감춥니다(목록이 주인공입니다). 배너 자리는 비어 있어도 남깁니다 -
   // 「오늘은 없다」와 「못 읽었다」가 같아 보이면 안 됩니다.
-  if (variant === "위젯" && rows.length === 0 && !error && !notice) return null;
+  if (variant === "위젯" && rows.length === 0 && pickups.length === 0 && !error && !notice && !pickupError) return null;
 
   return (
     <div className="mb-2 rounded-xl border border-lime-200 bg-lime-50/60 px-2.5 py-2">
       <p className="mb-1.5 flex flex-wrap items-baseline gap-x-2 text-[11px]">
-        <b className="text-lime-800">🎒 오늘 하원체크 {rows.length}명</b>
-        <span className="text-lime-700/70">셔틀이 아닌 방법으로 가는 아이 · 체크표에는 줄이 없습니다</span>
+        <b className="text-lime-800">🎒 오늘 하원체크 {rows.length + pickups.length}명</b>
+        <span className="text-lime-700/70">셔틀이 아닌 방법으로 가는 아이 — 미리 등록한 하원수단 + 오늘 온 픽업</span>
         {/* 페이지를 옮기지 않고 그 자리에서 엽니다.
             업무보드는 하루 종일 켜놓고 보는 화면인데, 여기서 나갔다 돌아오면 보고 있던 자리를
             잃습니다. **나갔다 와야 하는 일은 대개 나중으로 미뤄지고**, 미룬 하원 변경은 그날
@@ -180,7 +205,29 @@ export default function TodayDismissalReminder({
         <p className="mb-1 rounded-lg bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-800">⚠️ {notice}</p>
       )}
 
-      {rows.length === 0 && !error ? (
+      {/* 오늘 온 픽업. 하원수단과 색을 갈라 어느 갈래인지 한눈에 보이게 합니다. */}
+      {pickupError && (
+        <p className="mb-1 rounded-lg bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-700">
+          ⚠️ 오늘 픽업을 읽지 못했습니다: {pickupError}
+        </p>
+      )}
+      {pickups.length > 0 && (
+        <div className="mb-1 flex flex-wrap items-center gap-1">
+          <span className="text-[10px] font-bold text-sky-700">🚗 오늘 픽업 {pickups.length}</span>
+          {pickups.map((p, i) => (
+            <span
+              key={i}
+              title={`${p.name} · ${p.time ?? "시각 미정"} · ${p.source}에서 들어옴`}
+              className="rounded-full border border-sky-300 bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-800"
+            >
+              {p.name}
+              {p.time && <span className="ml-1 font-normal text-sky-600">{p.time}</span>}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {rows.length === 0 && pickups.length === 0 && !error ? (
         <p className="text-[11px] text-lime-700/80">오늘은 전원 셔틀·평소대로 하원합니다.</p>
       ) : (
         <div className="flex flex-wrap gap-1">

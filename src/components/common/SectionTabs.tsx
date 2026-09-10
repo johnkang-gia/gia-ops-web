@@ -29,14 +29,22 @@ type AccentKey = "blue" | "purple" | "navy" | "amber" | "teal" | "red" | "emeral
 
 // Tailwind는 문자열을 이어붙여 만든 클래스명을 빌드 시점에 알아보지 못하므로(그러면 그 색이
 // 통째로 빠집니다) 조합을 하드코딩해 둡니다.
+// ── 고른 하위 탭이 배경과 구분되어야 합니다 ────────────────────────────────
+//
+// 예전에는 `bg-*-50` 이었습니다. 탭줄 자체가 연한 회색 배경 위에 있어서, 50 단계는
+// **골라 놓아도 안 골라진 것과 거의 같아 보였습니다** - 재무의 학비/학비외가 특히 그랬습니다.
+// 어느 쪽을 보고 있는지 모르면 사람은 매번 두 탭을 번갈아 눌러 확인하게 됩니다.
+//
+// 100 단계 배경 + 800 단계 글자 + 같은 색 테두리로 올렸습니다. 「고름」은 눈으로 한 번에
+// 읽혀야 하고, 그건 취향이 아니라 화면이 해야 할 일입니다.
 const ACCENT: Record<AccentKey, { title: string; on: string; subOn: string }> = {
-  blue: { title: "text-blue-700", on: "border-blue-600 text-blue-700", subOn: "bg-blue-50 text-blue-700" },
-  purple: { title: "text-purple-700", on: "border-purple-600 text-purple-700", subOn: "bg-purple-50 text-purple-700" },
-  navy: { title: "text-gia-navy", on: "border-gia-navy text-gia-navy", subOn: "bg-slate-100 text-gia-navy" },
-  amber: { title: "text-amber-700", on: "border-amber-600 text-amber-700", subOn: "bg-amber-50 text-amber-700" },
-  teal: { title: "text-teal-700", on: "border-teal-600 text-teal-700", subOn: "bg-teal-50 text-teal-700" },
-  red: { title: "text-red-700", on: "border-red-600 text-red-700", subOn: "bg-red-50 text-red-700" },
-  emerald: { title: "text-emerald-700", on: "border-emerald-600 text-emerald-700", subOn: "bg-emerald-50 text-emerald-700" },
+  blue: { title: "text-blue-700", on: "border-blue-600 text-blue-700", subOn: "bg-blue-100 text-blue-800 ring-1 ring-blue-300" },
+  purple: { title: "text-purple-700", on: "border-purple-600 text-purple-700", subOn: "bg-purple-100 text-purple-800 ring-1 ring-purple-300" },
+  navy: { title: "text-gia-navy", on: "border-gia-navy text-gia-navy", subOn: "bg-slate-200 text-gia-navy ring-1 ring-slate-400" },
+  amber: { title: "text-amber-700", on: "border-amber-600 text-amber-700", subOn: "bg-amber-100 text-amber-800 ring-1 ring-amber-300" },
+  teal: { title: "text-teal-700", on: "border-teal-600 text-teal-700", subOn: "bg-teal-100 text-teal-800 ring-1 ring-teal-300" },
+  red: { title: "text-red-700", on: "border-red-600 text-red-700", subOn: "bg-red-100 text-red-800 ring-1 ring-red-300" },
+  emerald: { title: "text-emerald-700", on: "border-emerald-600 text-emerald-700", subOn: "bg-emerald-100 text-emerald-800 ring-1 ring-emerald-400" },
 };
 
 // 상단 탭줄의 **고정 높이**. 픽셀을 박아 두는 이유가 있습니다.
@@ -530,7 +538,8 @@ export default function SectionTabs({ isTeacher, isHomeroom }: { isTeacher: bool
                 onClick={() => router.push(c.href)}
                 onMouseEnter={() => router.prefetch(c.href)}
                 className={
-                  "shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold transition-colors " +
+                  "shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-xs transition-colors " +
+                  (on ? "font-bold " : "font-semibold ") +
                   (on ? accent.subOn : "text-slate-500 hover:bg-white/70 hover:text-slate-800")
                 }
               >

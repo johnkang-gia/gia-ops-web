@@ -125,6 +125,9 @@ export async function GET(req: NextRequest) {
     .from("shuttle_stops")
     .select("id, seq, address, gate, lat, lng")
     .is("lat", null)
+    // **아직 안 해본 곳부터** 뽑습니다. 순서를 안 정하면 주소로 못 찾는 곳이 매번 먼저 뽑혀
+    // 같은 실패를 되풀이하고, 뒤에 있는 곳은 영영 차례가 오지 않습니다.
+    .order("geocode_tried_at", { ascending: true, nullsFirst: true })
     .limit(BATCH);
   if (error) return NextResponse.json({ error: `정류장 조회 실패: ${error.message}` }, { status: 500 });
 
@@ -140,6 +143,7 @@ export async function GET(req: NextRequest) {
     const address = (stop.address ?? "").trim();
     if (!address) {
       notFound.push(`${stop.id} (주소 자체가 없습니다)`);
+      await supabase.from("shuttle_stops").update({ geocode_tried_at: new Date().toISOString() }).eq("id", stop.id);
       continue;
     }
     try {
@@ -157,6 +161,9 @@ export async function GET(req: NextRequest) {
         }
         await new Promise((r) => setTimeout(r, GAP_MS));
       }
+      // 성공이든 실패든 **해봤다는 사실**을 남깁니다. 이게 없으면 다음 실행에서 같은 곳이
+      // 다시 뽑힙니다.
+      await supabase.from("shuttle_stops").update({ geocode_tried_at: new Date().toISOString() }).eq("id", stop.id);
       if (!found) {
         notFound.push(address);
       } else {
@@ -180,6 +187,13 @@ export async function GET(req: NextRequest) {
   await touchHeartbeat(supabase, "cron:geocode-stops");
 
   const { count: remaining } = await supabase.from("shuttle_stops").select("id", { count: "exact", head: true }).is("lat", null);
+  // 아직 한 번도 안 해본 곳. 이 숫자가 0이면 남은 것은 전부 「주소로 못 찾는 곳」이고,
+  // 그때부터는 사람이 주소를 고쳐야 합니다.
+  const { count: untried } = await supabase
+    .from("shuttle_stops")
+    .select("id", { count: "exact", head: true })
+    .is("lat", null)
+    .is("geocode_tried_at", null);
 
   return NextResponse.json({
     ok: errors.length === 0,
@@ -188,6 +202,7 @@ export async function GET(req: NextRequest) {
     덧붙은것을떼고찾음: guessed.length,
     주소를못찾음: notFound.length,
     남은정류장: remaining ?? null,
+    아직안해본곳: untried ?? null,
     guessed: guessed.slice(0, 50),
     notFound: notFound.slice(0, 50),
     errors,

@@ -121,10 +121,32 @@ export default function PickupInboxClient({
       setBusy(false);
     }
   }
-  const confirmed = useMemo(
-    () => rows.filter((r) => r.status === "확정").sort((a, b) => (a.ai_pickup_time ?? "99").localeCompare(b.ai_pickup_time ?? "99")),
-    [rows]
-  );
+  // ── 오늘 픽업: 한 아이는 한 칸 ────────────────────────────────────────────
+  //
+  // 같은 아이의 연락이 여러 번 오면(어머님이 한 번, 아버님이 한 번, 또 정정 한 번) 확정 줄도
+  // 여러 개가 됩니다. 그대로 그리면 「오늘 픽업 12명」인데 실제로는 8명이고, **차에 몇
+  // 자리가 비는지 세는 숫자가 틀립니다.**
+  //
+  // **묶는 열쇠는 학생 번호입니다.** 이름으로 묶으면 김재이·심재이·유재이가 한 칸이 되어,
+  // 셋 중 둘이 화면에서 사라집니다 - 지우려고 만든 기능이 아이를 지우게 됩니다. 번호가
+  // 아직 없는 줄(학생을 못 이은 연락)은 저마다 따로 둡니다. 누구인지 모르는 것끼리 묶을
+  // 수는 없습니다.
+  const confirmed = useMemo(() => {
+    const groups = new Map<string, PickupRow[]>();
+    for (const r of rows) {
+      if (r.status !== "확정") continue;
+      const key = r.student_id ?? `미연결:${r.id}`;
+      (groups.get(key) ?? groups.set(key, []).get(key)!).push(r);
+    }
+    return [...groups.values()]
+      .map((list) => {
+        // 시각은 적힌 것 중 가장 이른 것을 대표로 하고, 서로 다르면 함께 보여줍니다.
+        // 하나만 보여주면 「4시라고 했는데 3시에 오셨다」가 됩니다.
+        const times = [...new Set(list.map((r) => r.ai_pickup_time).filter((t): t is string => !!t))].sort();
+        return { head: list[0], all: list, times };
+      })
+      .sort((a, b) => (a.times[0] ?? "99").localeCompare(b.times[0] ?? "99"));
+  }, [rows]);
   const ignored = useMemo(() => rows.filter((r) => r.status === "무시" && r.raw_text), [rows]);
 
   async function call(body: Record<string, unknown>) {
@@ -602,15 +624,22 @@ export default function PickupInboxClient({
           <p className="py-3 text-center text-xs text-slate-400">아직 없습니다.</p>
         ) : (
           <div className="flex flex-wrap gap-1.5">
-            {confirmed.map((r) => (
+            {confirmed.map(({ head: r, all, times }) => (
               <span
                 key={r.id}
-                title={`${r.source} · ${r.resolved_by === "AI" ? "자동" : r.resolved_by ?? ""}`}
+                title={`${all.map((x) => `${x.source} · ${x.resolved_by === "AI" ? "자동" : x.resolved_by ?? ""}`).join("\n")}`}
                 className="inline-flex items-center gap-1.5 rounded-lg border-l-4 border-sky-500 bg-slate-50 py-1.5 pl-2.5 pr-1.5 text-sm font-bold text-slate-800"
               >
                 <RowStudentName maps={whereMaps} studentId={r.student_id} name={r.matched_name ?? r.ai_student_name} />
-                {r.ai_pickup_time && <span className="text-[11px] font-semibold text-sky-600">{r.ai_pickup_time}</span>}
-                {r.resolved_by === "AI" && <span className="text-[10px] font-semibold text-emerald-600">자동</span>}
+                {times.length > 0 && <span className="text-[11px] font-semibold text-sky-600">{times.join("·")}</span>}
+                {/* 연락이 여러 번 온 아이. 몇 번인지 적어두면 「왜 하나로 보이지」를 묻지
+                    않아도 되고, 시각이 서로 다르면 위에 둘 다 떠 있습니다. */}
+                {all.length > 1 && (
+                  <span className="rounded-full bg-slate-200 px-1.5 text-[10px] font-bold text-slate-600" title={`연락 ${all.length}건이 같은 아이입니다`}>
+                    연락 {all.length}
+                  </span>
+                )}
+                {all.every((x) => x.resolved_by === "AI") && <span className="text-[10px] font-semibold text-emerald-600">자동</span>}
                 {/* ── 확정된 것도 내릴 수 있어야 합니다 ────────────────────────
                     이 목록은 지금까지 **보기만** 하는 자리였습니다. 그런데 자동으로 확정된
                     건이 틀리는 일이 실제로 있고(강하라), 틀린 줄 하나 때문에 인박스 위쪽
@@ -620,8 +649,14 @@ export default function PickupInboxClient({
                   type="button"
                   disabled={busy}
                   onClick={() => {
-                    if (!window.confirm(`${r.matched_name ?? r.ai_student_name ?? "이 학생"} 픽업을 내릴까요? 체크표·출결·업무에서도 함께 내려갑니다.`)) return;
-                    void ignore(r);
+                    const who = r.matched_name ?? r.ai_student_name ?? "이 학생";
+                    const many = all.length > 1 ? ` 이 아이의 연락 ${all.length}건을 모두 내립니다.` : "";
+                    if (!window.confirm(`${who} 픽업을 내릴까요?${many} 체크표·출결·업무에서도 함께 내려갑니다.`)) return;
+                    // 묶어서 보여준 것은 묶어서 내립니다. 한 줄만 내리면 화면에서는 사라졌는데
+                    // 남은 줄이 그대로 살아 있어, 새로고침하면 다시 나타납니다.
+                    void (async () => {
+                      for (const x of all) await ignore(x);
+                    })();
                   }}
                   className="rounded px-1 text-[12px] font-bold text-slate-300 hover:bg-red-50 hover:text-red-500 disabled:opacity-40"
                   aria-label="픽업 내리기"

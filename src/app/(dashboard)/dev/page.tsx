@@ -5,6 +5,7 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { isDeveloperEmail } from "@/lib/roles";
 import GuideButton from "@/components/common/GuideButton";
 import SiteCheckPanel from "@/components/dev/SiteCheckPanel";
+import { DATA_KINDS, openGaps } from "@/lib/registry/dataKinds";
 
 const GUIDE_SECTIONS = [
   {
@@ -169,6 +170,62 @@ export default async function DevDashboardPage() {
           전 화면을 열어보고 안 열리는 곳을 모아 보여줍니다. */}
       <div className="mb-6">
         <SiteCheckPanel />
+
+        {/* ── 자료 등기소 ──────────────────────────────────────────────────
+            자료 종류마다 「모이는 한 곳 · 중복 열쇠 · 넣기와 내리기」를 적어 둔 표입니다
+            (src/lib/registry/dataKinds.ts). **짝이 없는 자리를 숨기지 않고 그대로
+            띄웁니다** - 코드 주석에만 적어두면 아무도 안 열어보고, 그 사이에 한 곳에서
+            지운 자료가 다른 화면에 계속 남습니다. */}
+        <section className="rounded-xl border border-slate-200 bg-white p-4">
+          <div className="mb-1 flex flex-wrap items-baseline gap-2">
+            <h2 className="text-sm font-black text-slate-800">🗂 자료 등기소</h2>
+            <span className="text-[11px] text-slate-400">
+              종류 {DATA_KINDS.length} · 표를 새로 만들면 빌드가 등록을 요구합니다
+            </span>
+          </div>
+          <div className="overflow-hidden rounded-lg border border-slate-200">
+            <table className="w-full text-[12px]">
+              <thead className="bg-slate-100 text-[11px] text-slate-500">
+                <tr>
+                  <th className="px-2 py-1.5 text-left font-bold">종류</th>
+                  <th className="px-2 py-1.5 text-left font-bold">모이는 한 곳</th>
+                  <th className="w-12 px-2 py-1.5 font-bold">딸린 표</th>
+                  <th className="px-2 py-1.5 text-left font-bold">중복 열쇠</th>
+                  <th className="w-14 px-2 py-1.5 font-bold">내리기</th>
+                </tr>
+              </thead>
+              <tbody>
+                {DATA_KINDS.map((k) => (
+                  <tr key={k.key} className="border-t border-slate-100">
+                    <td className="px-2 py-1.5 font-bold text-slate-700">{k.key}</td>
+                    <td className="px-2 py-1.5 font-mono text-[11px] text-slate-500">{k.canonical}</td>
+                    <td className="px-2 py-1.5 text-center tabular-nums text-slate-500">{k.satellites.length}</td>
+                    <td className="px-2 py-1.5 text-[11px] text-slate-500">
+                      {"by" in k.dedupe ? k.dedupe.by.join(" + ") : <span className="text-amber-700">막지 않음</span>}
+                    </td>
+                    <td className="px-2 py-1.5 text-center">
+                      {k.undo ? (
+                        <span className="text-emerald-600">있음</span>
+                      ) : (
+                        <span className="font-bold text-red-600">없음</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {openGaps().length > 0 && (
+            <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2">
+              <p className="text-[12px] font-bold text-amber-800">아직 짝이 안 맞는 자리 {openGaps().length}</p>
+              {openGaps().map((g) => (
+                <p key={g.key} className="mt-0.5 text-[11px] leading-relaxed text-amber-900">
+                  <b>{g.key}</b> — {g.gap}
+                </p>
+              ))}
+            </div>
+          )}
+        </section>
       </div>
 
       <div className="mb-2 text-xs font-semibold text-slate-400">데이터 현황</div>

@@ -20,10 +20,15 @@ import type { Invoice } from "@/lib/types";
  *
  * ── 이미 받은 돈이 붙어 있을 때 ──────────────────────────────────────
  *
- * 「이미 받음」으로 만든 청구서에는 입금이 함께 붙어 있습니다. 그 돈은 **실제로 받은 돈**이라
- * 청구서를 취소한다고 없던 일이 되지 않습니다. 그래서 지우지 않고 **선입금으로 떼어냅니다** -
- * 다음 청구서를 만들면 저절로 충당됩니다. 창구가 그 사실을 세어 돌려주면 여기서 그대로
- * 알립니다.
+ * 취소는 **발행을 없던 일로 만드는 것**입니다 - 금액이 틀렸거나 항목을 빠뜨렸을 때 눌러서
+ * 발행 전으로 돌린 뒤 다시 발행합니다.
+ *
+ * 그래서 「이미 받음」이 함께 넣은 입금은 **함께 사라집니다.** 그 줄은 발행이 만든 것이지
+ * 사람이 수납 화면에서 따로 넣은 것이 아닙니다. 남겨두면 선입금이 하나 떠서, 고쳐 다시
+ * 발행할 때 금액이 저절로 깎입니다 - 담당자가 기대하는 것과 다릅니다.
+ *
+ * 수납 화면에서 따로 붙인 입금은 다릅니다. 그건 발행이 만든 것이 아니므로 지우지 않고
+ * 선입금으로 떼어내며, 그럴 때만 한 번 더 묻습니다.
  */
 export default function CancelInvoiceModal({
   invoice,
@@ -65,11 +70,14 @@ export default function CancelInvoiceModal({
       }
       const done = json.invoice as Invoice;
       const moved = Number(json?.detached ?? 0);
+      const gone = Number(json?.removed ?? 0);
       onDone(done);
       notify(
         moved > 0
-          ? `${done.invoice_no} 을(를) 취소했습니다. 받은 돈 ${moved.toLocaleString("ko-KR")}원은 선입금으로 남아 다음 청구서에 충당됩니다.`
-          : `${done.invoice_no} 을(를) 취소했습니다. 항목을 고친 뒤 다시 발행할 수 있습니다.`,
+          ? `${done.invoice_no} 을(를) 취소했습니다. 수납에서 붙였던 ${moved.toLocaleString("ko-KR")}원은 선입금으로 남습니다.`
+          : gone > 0
+            ? `${done.invoice_no} 을(를) 취소하고, 함께 넣었던 ${gone.toLocaleString("ko-KR")}원 입금도 내렸습니다. 발행 전으로 돌아갔습니다.`
+            : `${done.invoice_no} 을(를) 취소했습니다. 항목을 고친 뒤 다시 발행할 수 있습니다.`,
         "success",
       );
       onClose();
@@ -102,8 +110,8 @@ export default function CancelInvoiceModal({
 
         {invoice.issued_offline && (
           <p className="mb-2 rounded-lg border border-sky-300 bg-sky-50 px-3 py-2 text-[11px] text-sky-900">
-            <b>이미 받음</b>으로 만든 청구서입니다. 취소해도 받은 돈은 지우지 않고 <b>선입금으로 남깁니다</b> — 다음
-            청구서를 만들 때 저절로 충당됩니다.
+            <b>이미 받음</b>으로 만든 청구서입니다. 취소하면 그때 함께 넣은 입금도 <b>같이 내려갑니다</b> — 발행 전
+            상태로 돌아가므로, 금액을 고쳐 다시 「이미 받음」으로 넣으면 됩니다.
           </p>
         )}
 

@@ -7,6 +7,7 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { categorize } from "@/lib/attendanceDigest";
 import type { ShuttleRoute, ShuttleStop, ShuttleAssignment } from "@/lib/types";
 import ShuttleOverviewClient, { type RouteStat, type OverviewKpi } from "@/components/shuttle/ShuttleOverviewClient";
+import { normName, splitNameMark } from "@/lib/studentLabel";
 
 export const dynamic = "force-dynamic";
 
@@ -37,16 +38,23 @@ export default async function ShuttleOverviewPage() {
 
   const today = todayKst();
   const todayWeekday = new Date().getDay();
-  const norm = (s: string) => (s ?? "").replace(/\s+/g, "").trim();
+  // ── 이름 맞대기 ───────────────────────────────────────────────────────
+  //
+  // 예전에는 한쪽이 다른 쪽을 **품고만 있어도**(`includes`) 같은 사람으로 봤습니다. 그래서
+  // 픽업 목록에 「재이」가 있으면 김재이·심재이·유재이의 배정 줄이 **셋 다** 픽업으로
+  // 칠해졌습니다. 화면에는 오류가 아니라 그냥 픽업으로 보입니다.
+  //
+  // 이제 괄호로 적혀 온 반만 떼고(「김재이(G2A)」) **정확히 같을 때만** 같은 사람입니다.
+  // 아래에서 학생 번호로 먼저 맞대므로, 이 길은 번호가 없는 옛 줄에만 씁니다.
   const nameMatch = (a: string, b: string) => {
-    const x = norm(a), y = norm(b);
-    if (x.length < 2 || y.length < 2) return false;
-    return x === y || x.includes(y) || y.includes(x);
+    const x = normName(splitNameMark(a ?? "").name);
+    const y = normName(splitNameMark(b ?? "").name);
+    return x.length >= 2 && x === y;
   };
 
   // 정류장 → 배정 → 오늘 탑승자(요일 포함)
   let stops: { id: string; route_id: string; seq: number; gu: string | null; dong: string | null }[] = [];
-  let assigns: { id: string; stop_id: string; student_name_raw: string; weekdays: number[] }[] = [];
+  let assigns: { id: string; stop_id: string; student_name_raw: string; weekdays: number[]; student_id: string | null }[] = [];
   if (routeIds.length) {
     const { data: s } = await supabase.from("shuttle_stops").select("id, route_id, seq, gu, dong").in("route_id", routeIds);
     stops = s ?? [];
@@ -54,7 +62,7 @@ export default async function ShuttleOverviewPage() {
     if (stopIds.length) {
       const { data: a } = await supabase
         .from("shuttle_assignments_basic")
-        .select("id, stop_id, student_name_raw, weekdays")
+        .select("id, stop_id, student_name_raw, weekdays, student_id")
         .in("stop_id", stopIds);
       assigns = a ?? [];
     }
@@ -88,13 +96,20 @@ export default async function ShuttleOverviewPage() {
     .eq("service_date", today);
   const pickupNames: string[] = [];
   const absentNames: string[] = [];
+  // **학생 번호가 먼저입니다.** 번호는 겹치지 않습니다 - 이름은 셋이 나눠 씁니다.
+  const pickupIds = new Set<string>();
+  const absentIds = new Set<string>();
   for (const r of preq ?? []) {
     const nm = ((r.matched_name as string | null) ?? (r.ai_student_name as string | null) ?? "").trim();
-    if (!nm) continue;
+    const sid = (r.student_id as string | null) ?? null;
+    if (!nm && !sid) continue;
     const text = ((r.raw_text as string | null) ?? (r.summary as string | null) ?? "").toString();
     const cat = categorize(text);
-    if (r.kind === "픽업" || cat === "픽업") pickupNames.push(nm);
-    else if (cat === "결석") absentNames.push(nm);
+    const isPick = r.kind === "픽업" || cat === "픽업";
+    if (!isPick && cat !== "결석") continue;
+    // 번호가 있으면 번호만 씁니다. 이름은 번호가 없는 줄(아직 학생을 안 이은 연락)에만.
+    if (sid) (isPick ? pickupIds : absentIds).add(sid);
+    else if (nm) (isPick ? pickupNames : absentNames).push(nm);
   }
 
   // 오늘 탑승 기록
@@ -119,8 +134,14 @@ export default async function ShuttleOverviewPage() {
     if (rid) perRouteToday.set(rid, (perRouteToday.get(rid) ?? 0) + 1);
     stopRiders.set(a.stop_id, (stopRiders.get(a.stop_id) ?? 0) + 1);
     const st = boardStatus.get(a.id);
-    const isPickup = st === "픽업" || pickupNames.some((n) => nameMatch(n, a.student_name_raw));
-    const isAbsent = st === "결석" || absentNames.some((n) => nameMatch(n, a.student_name_raw));
+    const isPickup =
+      st === "픽업" ||
+      (a.student_id ? pickupIds.has(a.student_id) : false) ||
+      pickupNames.some((n) => nameMatch(n, a.student_name_raw));
+    const isAbsent =
+      st === "결석" ||
+      (a.student_id ? absentIds.has(a.student_id) : false) ||
+      absentNames.some((n) => nameMatch(n, a.student_name_raw));
     if (isPickup || isAbsent) stopOut.set(a.stop_id, (stopOut.get(a.stop_id) ?? 0) + 1);
     if (st === "탑승") boarded += 1;
     if (isPickup) pickup += 1;

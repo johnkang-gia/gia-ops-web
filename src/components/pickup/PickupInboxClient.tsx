@@ -9,6 +9,7 @@ import StudentPicker from "@/components/pickup/StudentPicker";
 import { createClient } from "@/lib/supabase/client";
 import { parseChannelLabel, type RosterEntry } from "@/lib/pickupParse";
 import { buildAliasIndex, resolveStudent, type AliasRule } from "@/lib/studentMatch";
+import { buildWhereMaps, RowStudentName } from "@/lib/studentLabel";
 import { nameSurfaces, readSiblings } from "@/lib/attendanceIntent";
 import { extractTargetRange, todayKey } from "@/lib/attendanceDigest";
 import { extractRecurringWeekdays, hasRecurringPhrase, weekdayLabel } from "@/lib/parentRecurrence";
@@ -190,6 +191,8 @@ export default function PickupInboxClient({
       setAliasRules((data as AliasRule[] | null) ?? []);
     })();
   }, []);
+  // 이름 옆에 반을 붙이는 표. 김재이가 셋이라 이름만으로는 어느 아이인지 알 수 없습니다.
+  const whereMaps = useMemo(() => buildWhereMaps(rosterForMatch), [rosterForMatch]);
   const aliases = useMemo(() => buildAliasIndex(aliasRules, rosterForMatch), [aliasRules, rosterForMatch]);
 
   async function rematchAll() {
@@ -292,18 +295,37 @@ export default function PickupInboxClient({
     if (!row.matched_name) return;
     setBusy(true);
     let ok = 0;
+    let refused: string | null = null;
     for (const d of dates) {
       const res = await fetch("/api/work/attendance-action", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ studentName: row.matched_name, action: "결석", serviceDate: d, inquiryId: row.id }),
+        // **학생 번호를 함께 보냅니다.** 이름만 보내면 창구가 이름으로 배정을 찾는데,
+        // 김재이가 셋이라 셋의 배정이 모두 걸려 한 번의 결석이 세 아이를 결석으로 만듭니다.
+        body: JSON.stringify({
+          studentId: row.student_id,
+          studentName: row.matched_name,
+          action: "결석",
+          serviceDate: d,
+          inquiryId: row.id,
+        }),
       });
-      if (res.ok) ok += 1;
+      const json = (await res.json().catch(() => null)) as { ok?: boolean; message?: string } | null;
+      if (res.ok && json?.ok !== false) ok += 1;
+      // 창구가 「누구인지 모르겠다」로 되돌려 보낸 경우. 조용히 0건으로 두면 처리된 줄 압니다.
+      else if (json?.message) refused = json.message;
     }
-    // 결석으로 처리했으면 이 건은 픽업 목록에서 내려갑니다 - 두 번 보이면 또 누르게 됩니다.
-    await call({ action: "ignore", id: row.id });
+    // 한 건도 못 했으면 인박스에서 내리지 않습니다 - 내리면 아무도 다시 안 봅니다.
+    if (ok > 0) await call({ action: "ignore", id: row.id });
     setBusy(false);
-    notify(ok === dates.length ? `${row.matched_name} 결석 ${ok}일 처리했습니다.` : `${ok}/${dates.length}일만 처리됐습니다. 그날 셔틀 배정이 없는 날은 건너뜁니다.`, ok === dates.length ? "success" : "error");
+    if (refused && ok === 0) notify(refused, "error");
+    else
+      notify(
+        ok === dates.length
+          ? `${row.matched_name} 결석 ${ok}일 처리했습니다.`
+          : `${ok}/${dates.length}일만 처리됐습니다. 그날 셔틀 배정이 없는 날은 건너뜁니다.`,
+        ok === dates.length ? "success" : "error",
+      );
     void refresh();
   }
 
@@ -527,7 +549,8 @@ export default function PickupInboxClient({
                       disabled={busy}
                       className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-50"
                     >
-                      {r.matched_name} 픽업 확정
+                      <RowStudentName maps={whereMaps} studentId={r.student_id} name={r.matched_name} markClassName="!bg-white/25 !text-white" />{" "}
+                      픽업 확정
                     </button>
                   )}
                   <button
@@ -585,7 +608,7 @@ export default function PickupInboxClient({
                 title={`${r.source} · ${r.resolved_by === "AI" ? "자동" : r.resolved_by ?? ""}`}
                 className="inline-flex items-center gap-1.5 rounded-lg border-l-4 border-sky-500 bg-slate-50 px-2.5 py-1.5 text-sm font-bold text-slate-800"
               >
-                {r.matched_name ?? r.ai_student_name}
+                <RowStudentName maps={whereMaps} studentId={r.student_id} name={r.matched_name ?? r.ai_student_name} />
                 {r.ai_pickup_time && <span className="text-[11px] font-semibold text-sky-600">{r.ai_pickup_time}</span>}
                 {r.resolved_by === "AI" && <span className="text-[10px] font-semibold text-emerald-600">자동</span>}
               </span>

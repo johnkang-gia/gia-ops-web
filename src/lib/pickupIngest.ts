@@ -12,7 +12,7 @@ import {
 import { resolveStudent } from "@/lib/studentMatch";
 import { loadAliasIndex } from "@/lib/aliasIndex";
 import { loadChannelLink, touchChannel } from "@/lib/channelLink";
-import { othersMentioned, otherChildNote } from "@/lib/toddleChannel";
+import { othersMentioned, otherChildNote, ambiguousNote } from "@/lib/toddleChannel";
 import { extractTargetDate, extractTargetRange } from "@/lib/attendanceDigest";
 import { extractRecurringWeekdays, hasRecurringPhrase, weekdayLabel } from "@/lib/parentRecurrence";
 import { nameSurfaces, readSiblings } from "@/lib/attendanceIntent";
@@ -793,6 +793,27 @@ export async function ingestPickup(
   const autoConfirm =
     isPickup && confidence >= AUTO_CONFIRM_MIN && !!matched && !looksRecurringButUnclear && !siblingConflict;
 
+  // 근거 한 줄. **미리 만들어 둡니다** - 아래에서 「가릴 수 없는 이름」을 뒤에 이어
+  // 붙일 때 이미 적힌 내용을 지우지 않으려면 값을 손에 들고 있어야 합니다.
+  const aiNote =
+    [
+      typeof ai.note === "string" ? ai.note : null,
+      // 규칙이 자동 확정을 막았으면 그 이유를 함께 적습니다. 이유 없는 「확인 필요」는
+      // 아무도 안 봅니다 - 무엇을 확인해야 하는지 모르니까요.
+      objectHint,
+      matchNote,
+      recurDays.length > 0 ? `반복 감지: 매주 ${weekdayLabel(recurDays)}요일 (지속 특이사항으로 등록)` : null,
+      looksRecurringButUnclear ? "반복되는 약속으로 보이는데 요일을 읽지 못했습니다. 사람이 확인해주세요." : null,
+      // 형제방에서 한 아이만 쉬는 경우. AI 요약이 엉뚱한 아이를 가리킬 수 있으므로,
+      // 규칙이 읽어낸 결과를 함께 적어 사람이 대조할 수 있게 합니다.
+      siblingRead && siblingRead.attending.length > 0
+        ? `형제 구분: ${siblingRead.attending.join("·")} 정상등원${siblingRead.pick ? ` / ${siblingRead.pick.key} ${siblingRead.pick.intent}` : ""}`
+        : null,
+    ]
+      .filter(Boolean)
+      .join(" / ")
+      .slice(0, 300) || null;
+
   const { data, error } = await supabase
     .from("pickup_requests")
     .insert({
@@ -810,25 +831,7 @@ export async function ingestPickup(
       ai_student_name: candidateName,
       ai_pickup_time: isPickup ? normalizeTime(ai.pickup_time) : null,
       ai_confidence: confidence,
-      // 반복으로 읽었으면 그 사실을 근거에 남깁니다. 인박스에서 "왜 확정이 안 됐지"를
-      // 그 자리에서 알 수 있어야 합니다.
-      ai_note: [
-        typeof ai.note === "string" ? ai.note : null,
-        // 규칙이 자동 확정을 막았으면 그 이유를 함께 적습니다. 이유 없는 「확인 필요」는
-        // 아무도 안 봅니다 - 무엇을 확인해야 하는지 모르니까요.
-        objectHint,
-        matchNote,
-        recurDays.length > 0 ? `반복 감지: 매주 ${weekdayLabel(recurDays)}요일 (지속 특이사항으로 등록)` : null,
-        looksRecurringButUnclear ? "반복되는 약속으로 보이는데 요일을 읽지 못했습니다. 사람이 확인해주세요." : null,
-        // 형제방에서 한 아이만 쉬는 경우. AI 요약이 엉뚱한 아이를 가리킬 수 있으므로,
-        // 규칙이 읽어낸 결과를 함께 적어 사람이 대조할 수 있게 합니다.
-        siblingRead && siblingRead.attending.length > 0
-          ? `형제 구분: ${siblingRead.attending.join("·")} 정상등원${siblingRead.pick ? ` / ${siblingRead.pick.key} ${siblingRead.pick.intent}` : ""}`
-          : null,
-      ]
-        .filter(Boolean)
-        .join(" / ")
-        .slice(0, 300) || null,
+      ai_note: aiNote,
       inquiry_type: isPickup ? null : pick(ai.inquiry_type, INQUIRY_TYPES),
       summary: typeof ai.summary === "string" ? ai.summary.slice(0, 200) : null,
       urgency: pick(ai.urgency, URGENCIES),
@@ -856,7 +859,23 @@ export async function ingestPickup(
   // 하고 아무도 확인하지 않습니다. 만들어 두면 인박스에 뜨고, 학교가 한 번 봅니다.
   if (isPickup && matched) {
     const others = othersMentioned(text, roster, [matched.id]);
-    for (const o of others) {
+
+    // ── 누구인지 가릴 수 없는 표기 ────────────────────────────────────────
+    //
+    // 「재이」는 김재이·심재이·유재이 셋 모두의 표기입니다. 예전에는 걸리는 대로 줄을
+    // 만들어서 **한 번의 연락이 세 아이를 픽업으로** 만들었습니다. 이제 줄을 만들지 않고,
+    // 원래 줄의 근거에 한 줄 적어 사람이 보게 합니다 - 조용히 버리면 정말 다른 집 아이를
+    // 말씀하신 경우에 그 아이가 아무 데도 안 뜹니다.
+    const note = ambiguousNote(others.ambiguous);
+    if (note) {
+      const { error: noteErr } = await supabase
+        .from("pickup_requests")
+        .update({ ai_note: [aiNote, note].filter(Boolean).join(" / ").slice(0, 300) })
+        .eq("id", data?.id as string);
+      if (noteErr) console.error("[pickup] 가릴 수 없는 이름을 적지 못했습니다:", noteErr.message);
+    }
+
+    for (const o of others.found) {
       const note = otherChildNote([matched.name], o.student.name);
       const { error: otherErr } = await supabase.from("pickup_requests").insert({
         service_date: todayKst,

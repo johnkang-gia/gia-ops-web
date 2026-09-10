@@ -160,14 +160,42 @@ export function suggestForChannel(
  * 그래서 이름 뒤에 조사나 공백·문장부호가 오는 자리만 인정하고, 그마저도 자동 확정은
  * 하지 않습니다 - 이 결과는 언제나 사람이 한 번 봅니다.
  */
-export function othersMentioned(
-  text: string,
-  roster: RosterEntry[],
-  ownerIds: string[],
-): { student: RosterEntry; surface: string }[] {
+export type OthersRead = {
+  /** 그 표기가 **한 아이만** 가리킬 때. 이 아이들만 줄을 만듭니다. */
+  found: { student: RosterEntry; surface: string }[];
+  /**
+   * 여러 아이가 나눠 쓰는 표기라 누구인지 가릴 수 없는 것. **줄을 만들지 않습니다.**
+   * 만들면 한 번의 연락이 세 아이의 하원을 바꿉니다.
+   */
+  ambiguous: { surface: string; students: RosterEntry[] }[];
+};
+
+/**
+ * 표기 하나가 명부에서 **몇 명을 가리키는가**를 미리 세어 둡니다.
+ *
+ * `nameSurfaces` 는 「김재이」에서 성을 뗀 「재이」와 영문 이름 「Jay」를 함께 만듭니다.
+ * 그런데 이 학교에는 김재이·심재이·유재이가 있고 셋 다 영문명이 「Jay ○」입니다. 그래서
+ * **「재이」도 「Jay」도 세 아이 모두의 표기**입니다 - 그 글자만으로는 누구인지 알 수 없습니다.
+ */
+function surfaceOwners(roster: RosterEntry[]): Map<string, RosterEntry[]> {
+  const m = new Map<string, RosterEntry[]>();
+  for (const s of roster) {
+    for (const surface of nameSurfaces(s.name, s.name_en)) {
+      const k = surface.toLowerCase();
+      const list = m.get(k);
+      if (list) list.push(s);
+      else m.set(k, [s]);
+    }
+  }
+  return m;
+}
+
+export function othersMentioned(text: string, roster: RosterEntry[], ownerIds: string[]): OthersRead {
   const own = new Set(ownerIds);
+  const owners = surfaceOwners(roster);
   const flat = String(text ?? "").normalize("NFC");
-  const out: { student: RosterEntry; surface: string }[] = [];
+  const found: OthersRead["found"] = [];
+  const ambiguous = new Map<string, RosterEntry[]>();
   const seen = new Set<string>();
 
   for (const s of roster) {
@@ -191,12 +219,43 @@ export function othersMentioned(
       }
       if (!hit) continue;
       if (seen.has(s.id)) continue;
+
+      // ── 그 표기가 이 아이만 가리키는가 ────────────────────────────────
+      //
+      // 여기가 김재이·심재이·유재이 셋이 한꺼번에 픽업으로 들어간 자리입니다. 예전에는
+      // 표기가 걸리기만 하면 그 아이의 줄을 만들었습니다. 「재이」는 세 아이 모두의
+      // 표기이므로 **한 번의 연락이 세 줄**을 만들었고, 셋 다 픽업으로 떴습니다.
+      //
+      // 그 글자가 누구인지 모르면 아무도 고르지 않습니다. 아이 하나를 잘못 태우는 것도,
+      // 남의 집 아이 셋의 하원을 건드리는 것도 되돌릴 수 없습니다.
+      const sharers = owners.get(surface.toLowerCase()) ?? [s];
+      if (sharers.length > 1) {
+        // **방 주인이 후보에 들어 있으면 아무 말도 하지 않습니다.** 김재이 어머님 방의
+        // 「재이」는 그 집 재이입니다. 그걸 「누구인지 모르겠다」로 띄우면 매번 뜨고,
+        // 매번 뜨는 경고는 곧 아무도 안 읽습니다.
+        if (!sharers.some((x) => own.has(x.id))) ambiguous.set(surface, sharers);
+        continue;
+      }
+
       seen.add(s.id);
-      out.push({ student: s, surface });
+      found.push({ student: s, surface });
       break;
     }
   }
-  return out;
+  return { found, ambiguous: [...ambiguous.entries()].map(([surface, students]) => ({ surface, students })) };
+}
+
+/** 못 가른 표기를 사람에게 그대로 알립니다. 조용히 넘기면 그 아이는 아무 데도 안 뜹니다. */
+export function ambiguousNote(a: OthersRead["ambiguous"]): string | null {
+  if (a.length === 0) return null;
+  return a
+    .map(
+      ({ surface, students }) =>
+        `「${surface}」라고만 적혀 있어 ${students
+          .map((s) => `${s.name}(${(s.class_name ?? "").trim() || `${s.grade ?? "?"}학년`})`)
+          .join("·")} 중 누구인지 가릴 수 없습니다. 학교가 확인해주세요.`,
+    )
+    .join(" ");
 }
 
 /**

@@ -161,6 +161,62 @@ export function nameWithoutMark(raw: string): string {
 }
 
 /**
+ * **번호로 찾아 붙이는 이름표** — 인박스·출결내역처럼 «줄»을 그리는 화면이 씁니다.
+ *
+ * ── 왜 따로 두나 ─────────────────────────────────────────────────────
+ *
+ * 아래 `StudentName` 은 명부 줄(이름·학년·반이 한 덩이)을 받습니다. 그런데 픽업 인박스나
+ * 출결내역이 들고 있는 것은 **저장된 줄**이라 학년·반이 없고 `student_id` 와 이름뿐입니다.
+ * 그래서 지금까지 이름만 그렸고, 김재이가 셋인데 화면에는 그냥 「김재이」였습니다.
+ *
+ * 기계가 셋 중 하나를 골랐다는 사실 자체는 맞을 수도 틀릴 수도 있는데, **화면이 어느 쪽을
+ * 골랐는지 안 보여주면 사람은 틀린 것을 볼 수가 없습니다.** 그래서 겹치는 이름이면 반을
+ * 함께 적습니다.
+ *
+ * 찾는 순서는 `whereOf` 그대로 - 번호가 먼저입니다. 이름으로 찾는 길은 한 명뿐인 이름에만
+ * 남아 있어서, 겹치는 이름에 엉뚱한 반이 붙는 일은 없습니다. 번호가 없으면 「?」입니다 -
+ * 아무거나 적는 것보다 모른다고 적는 편이 낫습니다.
+ */
+export function RowStudentName({
+  maps,
+  studentId,
+  name,
+  className = "",
+  markClassName = "",
+}: {
+  maps: WhereMaps | null | undefined;
+  studentId: string | null | undefined;
+  name: string | null | undefined;
+  className?: string;
+  markClassName?: string;
+}): ReactNode {
+  const raw = String(name ?? "").trim();
+  if (!raw) return null;
+  const shown = nameWithoutMark(raw);
+  if (!needsCheck(maps, raw)) return <span className={className}>{shown}</span>;
+  const where = whereOf(maps, studentId, raw);
+  return (
+    <span className={"inline-flex items-baseline gap-1 " + className}>
+      <span>{shown}</span>
+      <span
+        className={
+          "shrink-0 rounded px-1 text-[9px] font-bold " +
+          (where ? "bg-slate-100 text-slate-500 " : "bg-red-100 text-red-600 ") +
+          markClassName
+        }
+        title={
+          where
+            ? `같은 이름이 여러 명이라 ${where}을 함께 적습니다`
+            : "같은 이름이 여러 명인데 누구인지 정해지지 않았습니다. 학생을 연결해주세요."
+        }
+      >
+        {where ?? "누구?"}
+      </span>
+    </span>
+  );
+}
+
+/**
  * 이름 + (동명이인일 때만) 학년·반.
  *
  * `homonyms`를 넘기지 않으면 **항상** 붙입니다 - 이미 "이 이름은 겹친다"를 아는 자리에서

@@ -52,6 +52,8 @@ export async function POST(req: Request) {
 
     const body = (await req.json().catch(() => null)) as {
       studentName?: string;
+      /** 학생 번호. **이게 있으면 이것만 씁니다** - 이름은 겹치고 번호는 안 겹칩니다. */
+      studentId?: string;
       action?: string;
       serviceDate?: string;
       inquiryId?: string;
@@ -72,8 +74,39 @@ export async function POST(req: Request) {
     // 안 타는 날에 결석 표시가 붙습니다).
     const { data: assignments, error: aErr } = await supabase
       .from("shuttle_assignments_basic")
-      .select("id, student_name_raw, weekdays");
+      .select("id, student_name_raw, weekdays, student_id");
     if (aErr) throw aErr;
+
+    // ── 이름이 겹치면 이름으로 처리하지 않습니다 ──────────────────────────
+    //
+    // 여기가 김재이·심재이·유재이가 한꺼번에 처리되던 자리 중 하나입니다. 아래에서 배정을
+    // **이름으로** 골라 걸리는 것을 전부 같은 상태로 바꿉니다. 한 아이가 두 노선에 걸쳐
+    // 있을 때는 그게 맞지만, **같은 이름의 다른 아이 셋**과 구별할 방법이 없었습니다.
+    // 결석 한 번이 세 아이를 결석으로 만들고, 그건 화면에 오류로 안 보입니다.
+    //
+    // 번호가 오면 번호만 씁니다. 번호가 없는데 이름이 겹치면 **하지 않고 되돌려 보냅니다** -
+    // 셋 중 누구인지 모르는 채로 손대는 것보다 사람에게 묻는 편이 낫습니다.
+    const studentId = (body?.studentId ?? "").trim() || null;
+    if (!studentId) {
+      const { data: same } = await supabase
+        .from("wr_students")
+        .select("id, name, grade, class_name")
+        .eq("is_demo", false)
+        .eq("name", rawName);
+      const rows = (same as { id: string; grade: string | null; class_name: string | null }[] | null) ?? [];
+      if (rows.length > 1) {
+        return NextResponse.json(
+          {
+            ok: false,
+            reason: "homonym",
+            message: `${rawName} 학생이 ${rows.length}명입니다(${rows
+              .map((r) => (r.class_name ?? "").trim() || `${r.grade ?? "?"}학년`)
+              .join("·")}). 누구인지 정해야 처리할 수 있습니다 - 인박스에서 학생을 연결해주세요.`,
+          },
+          { status: 200 },
+        );
+      }
+    }
 
     // 오늘만 타기로 체크표에서 바꾼 아이도 대상입니다. 요일만 보면, 그 아이를 결석·픽업으로
     // 바꾸려 할 때 「셔틀을 안 타는 학생」이라는 엉뚱한 답이 돌아옵니다.
@@ -82,12 +115,15 @@ export async function POST(req: Request) {
       .select("assignment_id, status")
       .eq("service_date", serviceDate);
     const todays = ridesToday(
-      (assignments as { id: string; student_name_raw: string; weekdays: number[] }[] | null) ?? [],
+      (assignments as { id: string; student_name_raw: string; weekdays: number[]; student_id: string | null }[] | null) ?? [],
       (dayBoardings as { assignment_id: string; status: string | null }[] | null) ?? [],
       weekday,
     );
 
-    const matches = todays.filter((a) => compareKey(a.student_name_raw ?? "") === key);
+    // 번호가 있으면 번호로 고릅니다. 옛 배정 줄에는 번호가 안 붙어 있어서, 번호로 하나도
+    // 못 찾으면 이름으로 한 번 더 봅니다 - 다만 위에서 이미 겹치는 이름은 걸러냈습니다.
+    const byId = studentId ? todays.filter((a) => a.student_id === studentId) : [];
+    const matches = byId.length > 0 ? byId : todays.filter((a) => compareKey(a.student_name_raw ?? "") === key);
 
     if (matches.length === 0) {
       // 셔틀을 안 타는 학생이거나(도보·자차 하원), 배정표 이름이 명부와 다르게 적힌 경우입니다.

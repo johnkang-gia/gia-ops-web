@@ -8,6 +8,7 @@ import { driverSetupPath, setupMessage, smsHref } from "@/lib/driverSetup";
 import { formatTrackWindows } from "@/lib/shuttleTracking";
 import type { ShuttleRoute, ShuttleTrackerDevice, ShuttleStop, ShuttleStopObservation } from "@/lib/types";
 import { shareUrl } from "@/lib/appUrl";
+import { groupIntoPlaces } from "@/lib/shuttleStopLearn";
 
 // 요청: "기사님들은 네비를 핸드폰으로 하시는 경우도 많아서... 백그라운드에서 돌아갈 수 있도록",
 // "각 정류장도 우리는 지금 정확한 정보를 가지고 있지 않아서, gps를 통해서... 정확도를 높여서"
@@ -311,6 +312,34 @@ export default function TrackerDeviceManager({
    * 이유가 화면에 없으면 「관측이 안 되는 것」과 「관측은 되는데 문턱을 못 넘는 것」이 구별되지
    * 않습니다. 앞은 기기 문제이고 뒤는 정류장 좌표나 문턱 문제라, 손댈 곳이 아예 다릅니다.
    */
+  /**
+   * **거의 매일 서는데 등록된 정류장이 아닌 자리.**
+   *
+   * 실측에서 27호는 13일 중 12일을 같은 자리에 섰는데, 그 자리가 가장 가까운 정류장에서
+   * 708m라 학습에서 통째로 버려졌습니다. 이런 자리는 셋 중 하나입니다 - 등록되지 않은
+   * 정류장이거나, 등록된 좌표가 크게 틀렸거나, 차고지·주차 자리입니다. **어느 쪽이든 사람이
+   * 봐야 하고, 지금은 어느 화면에도 안 나옵니다.**
+   *
+   * 자동으로 갖다 붙이지 않는 이유는 그대로입니다 - 700m 떨어진 자리를 정류장 좌표로 쓰면
+   * 화면에는 오류가 아니라 「학습된 좌표」로 보입니다.
+   */
+  const frequentUnknown = useMemo(() => {
+    const byRoute = new Map<string, typeof obs>();
+    for (const o of obs) {
+      if (o.matched_stop_id) continue;
+      byRoute.set(o.route_id, [...(byRoute.get(o.route_id) ?? []), o]);
+    }
+    const out: { routeId: string; lat: number; lng: number; dayCount: number; runDays: number; dwellAvg: number }[] = [];
+    for (const [routeId, rows] of byRoute) {
+      const runDays = new Set(rows.map((r) => r.service_date)).size;
+      for (const p of groupIntoPlaces(rows.map((r) => ({ id: r.id, lat: r.lat, lng: r.lng, service_date: r.service_date, dwell_seconds: r.dwell_seconds })))) {
+        if (p.dayCount < 3) continue;
+        out.push({ routeId, lat: p.lat, lng: p.lng, dayCount: p.dayCount, runDays, dwellAvg: p.dwellAvg });
+      }
+    }
+    return out.sort((a, b) => b.dayCount - a.dayCount).slice(0, 12);
+  }, [obs]);
+
   const rejectReasons = useMemo(() => {
     const m = new Map<string, number>();
     for (const o of obs) {
@@ -660,6 +689,35 @@ export default function TrackerDeviceManager({
           기준점이 없어 학습이 시작되지 않습니다. 매일 밤 자동으로 주소에서 좌표를 채우고 있고, 주소로도 못 찾는 곳은 노선 관리에서
           주소를 고쳐주셔야 합니다.
         </p>
+      )}
+
+      {frequentUnknown.length > 0 && (
+        <div className="mb-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2">
+          <div className="mb-1 text-[11px] font-bold text-blue-900">거의 매일 서는데 등록된 정류장이 아닌 자리</div>
+          <p className="mb-1.5 text-[11px] leading-relaxed text-blue-800">
+            차가 여러 날 같은 곳에 섰지만 등록된 정류장에서 멀어 학습에 쓰이지 못한 자리입니다. 등록되지 않은 정류장이거나,
+            등록된 좌표가 크게 틀렸거나, 차고지일 수 있습니다. 지도를 열어 확인한 뒤 노선 관리에서 정류장 주소를 고쳐주세요.
+          </p>
+          <div className="flex flex-col gap-0.5">
+            {frequentUnknown.map((f) => (
+              <div key={`${f.routeId}-${f.lat}-${f.lng}`} className="flex flex-wrap items-center gap-2 text-[11px]">
+                <span className="font-bold text-blue-900">{routeById.get(f.routeId)?.route_no ?? "?"}호</span>
+                <span className="rounded bg-blue-100 px-1.5 py-0.5 font-bold text-blue-800">
+                  {f.runDays}일 중 {f.dayCount}일
+                </span>
+                <span className="text-blue-700">평균 {f.dwellAvg}초</span>
+                <a
+                  href={`https://map.kakao.com/link/map/정차지점,${f.lat},${f.lng}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded border border-blue-300 px-1.5 py-0.5 font-semibold text-blue-700"
+                >
+                  지도에서 보기
+                </a>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
       {rejectReasons.length > 0 && (

@@ -150,6 +150,13 @@ export const BACKUP_GROUPS: { group: string; tables: string[] }[] = [
     tables: ["fee_item_price_log", "fee_discount_log", "finance_access_log"],
   },
   {
+    group: "오류 판단",
+    // 오류 **줄**은 다시 쌓이지만(BACKUP_SKIP), 「이건 고쳤다」는 판단은 사람이 한 번씩
+    // 내린 것이고 다시 만들 길이 없습니다. 이것이 사라지면 이미 고친 오류가 전부 미해결로
+    // 되살아나, 화면이 다시 못 믿을 목록이 됩니다.
+    tables: ["error_resolutions"],
+  },
+  {
     group: "설정·계정",
     // 계정은 이름·역할만 들어 있고 비밀번호는 Supabase Auth 쪽이라 여기 없습니다.
     tables: ["app_users", "departments", "task_mode_colors", "policy_categories", "gia_systems", "ops_board_links"],

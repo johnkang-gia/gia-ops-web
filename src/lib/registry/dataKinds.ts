@@ -184,6 +184,7 @@ export const UNFILED: Record<string, string> = {
   // 열쇠·표시 — 자료가 아닙니다.
   "classroom_links": "로그인 없이 여는 화면의 열쇠입니다.",
   "version_broadcasts": "새로고침 안내를 띄운 기록입니다.",
+  "error_resolutions": "오류를 고쳤다고 표시한 자리. 학교 자료가 아니라 우리 판단입니다.",
 };
 
 export function kindOfTable(table: string): DataKindDef | null {

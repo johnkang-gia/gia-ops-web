@@ -87,6 +87,38 @@ export default function DismissalModal({ onClose }: { onClose: () => void }) {
   const [note, setNote] = useState("");
 
   /**
+   * **오늘 이미 픽업으로 잡힌 아이.**
+   *
+   * 하원수단(미리 등록)과 픽업(오늘 연락)은 다른 표에 있어서, 같은 아이가 양쪽에 들어가도
+   * 아무 데서도 안 걸렸습니다. 그래서 「오늘 하원체크」가 백서아·황이안을 두 번 세어
+   * 일곱 명을 아홉 명으로 보여줬고, 더 나쁘게는 **학원차와 부모님이 같은 아이를 각각
+   * 기다리게** 됩니다.
+   *
+   * 판단은 이름이 아니라 **학생 번호**로 합니다 - 김재이가 셋이라 이름으로는 못 가립니다.
+   * 막지는 않습니다. 오늘만 부모님이 오시고 학원차는 다음 주부터인 경우가 실제로 있어서,
+   * 사람이 알고 누르면 되는 일입니다. **모르고 누르는 것만 막습니다.**
+   */
+  const [pickupToday, setPickupToday] = useState<Map<string, string>>(new Map());
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await fetch("/api/dismissal/today", { cache: "no-store" });
+        if (!res.ok) return;
+        const j = (await res.json()) as { pickups: { studentId: string | null; name: string; source: string }[] };
+        setPickupToday(
+          new Map((j.pickups ?? []).filter((p) => p.studentId).map((p) => [p.studentId as string, p.source])),
+        );
+      } catch {
+        // 못 읽어도 등록은 막지 않습니다. 안내가 없는 것이지 등록이 잘못된 것은 아닙니다.
+      }
+    })();
+  }, []);
+
+  /** 지금 고른 아이 중 오늘 이미 픽업인 아이. 오늘이 아닌 요일만 고른 경우는 뺍니다. */
+  const pickupClash = days.includes(todayWd) ? students.filter((st) => pickupToday.has(st.id)) : [];
+
+  /**
    * 이번 주와 다음 주에 걸리는 줄을 전부 읽습니다(매주짜리 포함).
    *
    * 지나간 주의 줄은 읽지 않습니다 - 지금 할 수 있는 일이 없는데 목록만 길어지면, 정작
@@ -328,6 +360,19 @@ export default function DismissalModal({ onClose }: { onClose: () => void }) {
                   모두 지우기
                 </button>
               </div>
+            )}
+            {/* **오늘 이미 픽업인 아이를 그 자리에서 알립니다.**
+                하원수단과 픽업은 다른 표라 아무 데서도 안 걸렸고, 그래서 학원차와 부모님이
+                같은 아이를 각각 기다리는 상황이 생깁니다. 막지는 않습니다 - 오늘만 부모님이
+                오시는 경우가 실제로 있어서, 사람이 알고 누르면 되는 일입니다. */}
+            {pickupClash.length > 0 && (
+              <p className="mb-1.5 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-900">
+                ⚠️ {pickupClash.map((st) => st.name).join(" · ")} — 오늘 이미 <b>픽업</b>으로 잡혀 있습니다
+                {pickupClash.length === 1 && pickupToday.get(pickupClash[0].id)
+                  ? `(${pickupToday.get(pickupClash[0].id)}에서 들어옴)`
+                  : ""}
+                . 그래도 넣으면 오늘 하원체크에 <b>둘 다</b> 뜹니다 — 어느 쪽인지 확인해주세요.
+              </p>
             )}
             {/* 고르면 칩으로 담기고 검색칸은 비워집니다 - 다음 아이를 바로 칠 수 있게. */}
             <StudentPicker

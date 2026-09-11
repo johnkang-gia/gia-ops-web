@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { todayKst, kstWeekday } from "@/lib/kst";
 import { loadDismissalForDay, DISMISSAL_SELECT, isMissingWeekStart, type DismissalRow } from "@/lib/dismissalToday";
 import { addDays, nextWeekStart, weekStartOf } from "@/lib/dismissalWeek";
+import { mergeDismissalBoard, type BoardRow, type PlanEntry } from "@/lib/dismissalBoard";
 
 /**
  * **오늘 하원체크** — 업무보드 맨 위.
@@ -28,9 +29,9 @@ import { addDays, nextWeekStart, weekStartOf } from "@/lib/dismissalWeek";
  * 같은 사실을 두 곳에 적으면 언젠가 어긋나고, 어긋난 쪽이 어느 쪽인지 아무도 모릅니다.
  */
 
-type Row = { name: string; className: string; kind: string; label: string | null; time: string | null; note: string | null };
+type Row = PlanEntry;
 /** 오늘 학부모가 연락해 온 픽업. 미리 등록해 둔 하원수단과 갈래가 다릅니다. */
-type Pickup = { name: string; time: string | null; source: string };
+type Pickup = { name: string; studentId: string | null; time: string | null; source: string };
 type Ahead = { name: string; date: string; kind: string; label: string | null; time: string | null };
 
 const KIND_TONE: Record<string, string> = {
@@ -128,6 +129,9 @@ export default function TodayDismissalReminder({
             // 졸업·전학 등으로 명부에 없는 아이. 이름을 모르면 데리러 갈 수 없으므로 뺍니다.
             if (!st || !p) return null;
             return {
+              // **학생 번호를 함께 들고 갑니다.** 이것이 없으면 오늘 픽업과 겹치는 아이를
+              // 이름으로 맞춰야 하는데, 김재이가 셋이라 이름으로는 맞출 수 없습니다.
+              studentId: sid,
               name: st.name,
               className: [st.grade ? `${st.grade}학년` : null, st.class_name].filter(Boolean).join(" "),
               kind: p.kind,
@@ -169,15 +173,23 @@ export default function TodayDismissalReminder({
     })();
   }, [tick]);
 
+  /**
+   * **한 아이는 한 줄.** 예전에는 하원수단과 픽업을 따로 세어 더했습니다 - 백서아·황이안은
+   * 양쪽에 다 있어서 7명이 9명으로 떴습니다. 숫자는 「오늘 몇 명을 챙겨야 하나」를 보라고
+   * 있는 것이라, 그 숫자가 틀리면 목록 전체를 못 믿게 됩니다.
+   */
+  const board: BoardRow[] = mergeDismissalBoard(rows ?? [], pickups);
+  const conflicts = board.filter((b) => b.conflict);
+
   if (rows === null) return null;
   // 위젯 자리에서는 없으면 감춥니다(목록이 주인공입니다). 배너 자리는 비어 있어도 남깁니다 -
   // 「오늘은 없다」와 「못 읽었다」가 같아 보이면 안 됩니다.
-  if (variant === "위젯" && rows.length === 0 && pickups.length === 0 && !error && !notice && !pickupError) return null;
+  if (variant === "위젯" && board.length === 0 && !error && !notice && !pickupError) return null;
 
   return (
     <div className="mb-2 rounded-xl border border-lime-200 bg-lime-50/60 px-2.5 py-2">
       <p className="mb-1.5 flex flex-wrap items-baseline gap-x-2 text-[11px]">
-        <b className="text-lime-800">🎒 오늘 하원체크 {rows.length + pickups.length}명</b>
+        <b className="text-lime-800">🎒 오늘 하원체크 {board.length}명</b>
         <span className="text-lime-700/70">셔틀이 아닌 방법으로 가는 아이 — 미리 등록한 하원수단 + 오늘 온 픽업</span>
         {/* 페이지를 옮기지 않고 그 자리에서 엽니다.
             업무보드는 하루 종일 켜놓고 보는 화면인데, 여기서 나갔다 돌아오면 보고 있던 자리를
@@ -211,35 +223,51 @@ export default function TodayDismissalReminder({
           ⚠️ 오늘 픽업을 읽지 못했습니다: {pickupError}
         </p>
       )}
-      {pickups.length > 0 && (
-        <div className="mb-1 flex flex-wrap items-center gap-1">
-          <span className="text-[10px] font-bold text-sky-700">🚗 오늘 픽업 {pickups.length}</span>
-          {pickups.map((p, i) => (
-            <span
-              key={i}
-              title={`${p.name} · ${p.time ?? "시각 미정"} · ${p.source}에서 들어옴`}
-              className="rounded-full border border-sky-300 bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-800"
-            >
-              {p.name}
-              {p.time && <span className="ml-1 font-normal text-sky-600">{p.time}</span>}
-            </span>
-          ))}
-        </div>
+      {/* 하원수단과 오늘 픽업이 **둘 다** 있는 아이. 자료가 틀린 것이 아니라 실제로 부딪히는
+          상황입니다 - 금요일엔 학원차를 타기로 되어 있는데 오늘은 부모님이 오십니다. 한쪽을
+          감추면 행정실은 나머지 한쪽만 보고 움직이고, 학원차는 안 오는 아이를 기다립니다. */}
+      {conflicts.length > 0 && (
+        <p className="mb-1 rounded-lg bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-800">
+          ⚠️ {conflicts.map((c) => c.name).join(" · ")} — 오늘 픽업인데 하원수단도 등록되어 있습니다. 어느 쪽인지 확인해주세요.
+        </p>
       )}
 
-      {rows.length === 0 && pickups.length === 0 && !error ? (
+      {board.length === 0 && !error ? (
         <p className="text-[11px] text-lime-700/80">오늘은 전원 셔틀·평소대로 하원합니다.</p>
       ) : (
         <div className="flex flex-wrap gap-1">
-          {rows.map((r, i) => (
+          {board.map((r) => (
             <span
-              key={i}
-              title={[r.name, r.className, r.kind, r.label, r.note].filter(Boolean).join(" · ")}
-              className={"inline-flex items-baseline gap-1.5 rounded-lg border px-2 py-1 text-[11px] " + (KIND_TONE[r.kind] ?? KIND_TONE.기타)}
+              key={r.key}
+              title={[
+                r.name,
+                r.className,
+                r.pickup ? `🚗 오늘 픽업(${r.pickup.source})` : null,
+                r.plan ? `🎒 ${[r.plan.kind, r.plan.label].filter(Boolean).join(" ")}` : null,
+                r.conflict ? "둘 다 등록되어 있습니다 - 어느 쪽인지 확인해주세요" : null,
+                r.plan?.note,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+              className={
+                "inline-flex items-baseline gap-1.5 rounded-lg border px-2 py-1 text-[11px] " +
+                (r.conflict
+                  ? "border-amber-400 bg-amber-50 text-amber-900"
+                  : r.pickup
+                    ? "border-sky-300 bg-sky-50 text-sky-800"
+                    : (KIND_TONE[r.plan?.kind ?? "기타"] ?? KIND_TONE.기타))
+              }
             >
               <b className="tabular-nums">{r.time ?? "시각 미정"}</b>
               <b>{r.name}</b>
-              <span className="opacity-70">{r.label || r.kind}</span>
+              {/* 갈래를 글자가 아니라 표로 답니다 - 「픽업」과 「보호자픽업」은 글자가 비슷해
+                  훑을 때 안 갈립니다. 둘 다면 둘 다 답니다. */}
+              {r.pickup && <span title={`오늘 픽업 · ${r.pickup.source}`}>🚗</span>}
+              {r.plan && (
+                <span className="opacity-70">
+                  🎒 {r.plan.label || r.plan.kind}
+                </span>
+              )}
             </span>
           ))}
         </div>

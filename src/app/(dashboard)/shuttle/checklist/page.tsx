@@ -195,6 +195,8 @@ export default async function ShuttleChecklistPage({
   const pickupNames: string[] = [];
   const absentNames: string[] = [];
   const autoSourceByName = new Map<string, AutoSource>();
+  /** 같은 연락을 학생 번호로도 찾습니다. 번호가 먼저이고 이름은 옛 줄을 위한 길입니다. */
+  const autoSourceById = new Map<string, AutoSource>();
   for (const r of preqRows ?? []) {
     const name = ((r.matched_name as string | null) ?? (r.ai_student_name as string | null) ?? "").trim();
     if (!name) continue;
@@ -209,7 +211,7 @@ export default async function ShuttleChecklistPage({
     const prev = autoSourceByName.get(norm(name));
     const at = (r.received_at as string | null) ?? "";
     if (prev && prev.receivedAt >= at) continue;
-    autoSourceByName.set(norm(name), {
+    const src: AutoSource = {
       requestId: r.id as string,
       kind: isPickup ? "픽업" : "결석",
       source: (r.source as string | null) ?? "토들",
@@ -221,7 +223,11 @@ export default async function ShuttleChecklistPage({
       matchedName: (r.matched_name as string | null) ?? null,
       sourceUrl: (r.source_url as string | null) ?? null,
       sourceChatId: (r.source_chat_id as string | null) ?? null,
-    });
+    };
+    autoSourceByName.set(norm(name), src);
+    // **번호로도 찾을 수 있게 둡니다.** 이름으로만 두면 김재이 셋이 한 칸을 나눠 쓰고,
+    // 마지막에 넣은 한 명의 연락이 셋 모두의 근거로 붙습니다(CLAUDE.md 2-4).
+    if (r.student_id) autoSourceById.set(r.student_id as string, src);
   }
 
   // 오늘 결석으로 등록된 아이. 학생 연결(student_id)이 있으면 그것으로, 없으면 이름으로 붙입니다.
@@ -377,23 +383,50 @@ export default async function ShuttleChecklistPage({
       // 표에 사선이 그어져 있는데 이유를 모르면, 결국 사람이 전화로 확인하게 됩니다.
       if (boarding && (boarding.status === "픽업" || boarding.status === "결석")) {
         const who = (boarding.checked_by as string | null) ?? "";
-        autoSource = {
-          requestId: "",
-          kind: boarding.status as "픽업" | "결석",
-          source: who || "사람",
-          channelLabel: null,
-          senderName: who || null,
-          receivedAt: (boarding.checked_at as string | null) ?? "",
-          // 사람 이름 뒤에는 **님**을 붙입니다. 받침에 따라 `이/가`를 고르는 것도 번거롭지만,
-          // 그보다 이 문장은 동료를 가리키는 말이라 높임이 맞습니다("이재훈가" → "이재훈님이").
-          rawText: who.includes("AI") || who.includes("자동")
-            ? `${who}이(가) 오늘 ${boarding.status}으로 표시했습니다.`
-            : `${who ? `${who}님이` : "담당자가"} 체크표에서 ${boarding.status}으로 표시했습니다.`,
-          aiNote: null,
-          matchedName: a.student_name_raw,
-          sourceUrl: null,
-          sourceChatId: null,
-        };
+
+        // ── **먼저 진짜 근거를 찾습니다.** ──────────────────────────────────
+        //
+        // 예전에는 여기서 곧장 「AI(토들)이(가) 오늘 픽업으로 표시했습니다」 한 줄을 넣고
+        // 끝냈습니다. 그러면 그 아래의 「인박스에서 원문을 붙이는 블록」은 `!boarding` 조건에
+        // 걸려 **아예 안 돌았습니다.**
+        //
+        // 처음 만들 때는 그래도 됐습니다 - 체크표에 줄이 없는 동안에만 인박스를 봤으니까요.
+        // 그런데 지금은 아침 크론과 AI 가 **미리 체크표에 줄을 찍습니다.** 그래서 거의 모든
+        // 픽업이 줄을 갖게 됐고, 진짜 연락 원문이 항상 그 한 줄에 가려졌습니다.
+        //
+        // 확인해야 하는 것은 「누가 찍었나」가 아니라 **「AI가 무엇을 읽고 그렇게 판단했나」**
+        // 입니다. 원문이 없으면 맞게 읽었는지 가릴 수가 없습니다.
+        const linked =
+          (a.student_id ? autoSourceById.get(a.student_id) : undefined) ??
+          autoSourceByName.get(norm(a.student_name_raw)) ??
+          null;
+
+        autoSource = linked
+          ? {
+              ...linked,
+              // 원문은 연락에서, 「누가 찍었나」는 체크표에서. 둘 다 있어야 합니다.
+              senderName: linked.senderName ?? (who || null),
+              aiNote: [linked.aiNote, who ? `체크표에는 ${who} 이름으로 찍혀 있습니다.` : null]
+                .filter(Boolean)
+                .join(" / "),
+            }
+          : {
+              requestId: "",
+              kind: boarding.status as "픽업" | "결석",
+              source: who || "사람",
+              channelLabel: null,
+              senderName: who || null,
+              receivedAt: (boarding.checked_at as string | null) ?? "",
+              // 사람 이름 뒤에는 **님**을 붙입니다. 받침에 따라 `이/가`를 고르는 것도 번거롭지만,
+              // 그보다 이 문장은 동료를 가리키는 말이라 높임이 맞습니다("이재훈가" → "이재훈님이").
+              rawText: who.includes("AI") || who.includes("자동")
+                ? `${who}이(가) 오늘 ${boarding.status}으로 표시했습니다. (읽은 연락을 찾지 못했습니다 - 인박스에서 정리됐을 수 있습니다)`
+                : `${who ? `${who}님이` : "담당자가"} 체크표에서 ${boarding.status}으로 표시했습니다.`,
+              aiNote: null,
+              matchedName: a.student_name_raw,
+              sourceUrl: null,
+              sourceChatId: null,
+            };
       }
 
       if (ridingToday && !boarding) {

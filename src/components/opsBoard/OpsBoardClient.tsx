@@ -486,7 +486,9 @@ export default function OpsBoardClient({ token }: { token: string }) {
         </div>
       </div>
 
-      {/* 픽업 알람 - 두 칸 위. 시각이 5분 앞으로 다가온 것만 뜨고, 없으면 자리를 안 먹습니다. */}
+      {/* 픽업 알람. **화면 위에 겹쳐 뜹니다** - 흐름 안에 두면 알림이 뜰 때마다 시간표가
+          통째로 밀려 내려가고, 사라질 때 또 한 번 튑니다. 벽에 걸어두고 보는 화면에서
+          레이아웃이 움직이는 것은 알림보다 큰 방해입니다. */}
       <PickupAlarm sc={sc} data={data} nowMin={nowMinutes} />
 
       {/* 교실에서 온 것. 안 읽은 것이 있을 때만 뜹니다. */}

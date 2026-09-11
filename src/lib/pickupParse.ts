@@ -322,11 +322,17 @@ export function pickSiblingFromText(text: string, names: string[]): string | nul
  */
 export function assumeAfternoon(hhmm: string | null): string | null {
   if (!hhmm) return null;
-  const m = hhmm.match(/^(\d{2}):(\d{2})$/);
+  // **한 자리 시각도 받습니다.** 예전에는 `\d{2}` 만 봐서 「3:35」이 그대로 남았습니다 -
+  // 하원수단은 사람이 손으로 치는 칸이라 「3:35」·「1:55」처럼 앞자리를 안 채워 넣습니다.
+  // 그래서 백서아의 블루웨일버스가 화면에 **새벽 3시 35분**으로 떠 있었습니다.
+  const m = hhmm.trim().match(/^(\d{1,2}):(\d{2})$/);
   if (!m) return hhmm;
   const h = Number(m[1]);
-  if (h >= 1 && h <= 7) return `${String(h + 12).padStart(2, "0")}:${m[2]}`;
-  return hhmm;
+  if (h > 23) return hhmm;
+  // 학교 일은 낮에만 일어납니다. 1~7시는 언제나 오후입니다.
+  const hh = h >= 1 && h <= 7 ? h + 12 : h;
+  // 자리를 채워 돌려줍니다 - 「9:00」과 「09:00」이 섞이면 시각 순 정렬이 어긋납니다.
+  return `${String(hh).padStart(2, "0")}:${m[2]}`;
 }
 
 /**

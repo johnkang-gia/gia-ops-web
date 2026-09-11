@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { assumeAfternoon } from "@/lib/pickupParse";
 import { useToast } from "@/components/common/ToastProvider";
 import { todayKst, kstWeekday } from "@/lib/kst";
 import { StudentPicker, KINDS, WEEK, type StudentPick } from "@/components/work/QuickEntryModals";
@@ -156,7 +157,8 @@ export default function DismissalModal({ onClose }: { onClose: () => void }) {
       setPlans([]);
       return;
     }
-    const rows = (res.data as DismissalRow[] | null) ?? [];
+    // 읽을 때 시각을 바로잡습니다 - 「3:35」는 오후 3시 35분입니다(loadDismissalForDay 와 같은 규칙).
+    const rows = ((res.data as DismissalRow[] | null) ?? []).map((r) => ({ ...r, depart_time: assumeAfternoon(r.depart_time) }));
     const ids = [...new Set(rows.map((r) => r.student_id))];
     if (ids.length === 0) {
       setPlans([]);

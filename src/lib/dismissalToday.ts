@@ -1,4 +1,5 @@
 import { pickByStudent, weekStartOf } from "./dismissalWeek";
+import { assumeAfternoon } from "./pickupParse";
 import { logApiError } from "./logging";
 
 /**
@@ -135,6 +136,15 @@ export async function loadDismissalForDay(
     await logApiError(supabase, "dismissal:read", new Error(error.message));
     return { ...empty, error: error.message };
   }
-  const rows = data ?? [];
+  // **시각을 읽을 때 바로잡습니다.**
+  //
+  // 하원수단의 출발 시각은 사람이 손으로 치는 칸이라 「3:35」·「1:55」처럼 앞자리를 안
+  // 채웁니다. 학교 일은 낮에만 일어나므로 그건 오후입니다 - 그대로 두면 백서아의
+  // 블루웨일버스가 화면에 **새벽 3시 35분**으로 뜨고, 시각 순 정렬에서도 맨 앞으로 올라와
+  // 「가장 먼저 나가는 아이」로 보입니다.
+  //
+  // 저장을 고치지 않고 읽을 때 바로잡는 이유는 **이미 쌓인 줄이 있고 그것들도 오늘 화면에
+  // 떠야 하기 때문**입니다. 넣을 때도 함께 맞추지만, 읽는 쪽이 마지막 그물입니다.
+  const rows = (data ?? []).map((r) => ({ ...r, depart_time: assumeAfternoon(r.depart_time) }));
   return { rows, byStudent: pickByStudent(rows, ws), error: null, notice };
 }

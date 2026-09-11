@@ -4,6 +4,7 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { applyPickup } from "@/lib/pickupIngest";
 import { logApiError } from "@/lib/logging";
 import { todayKst, kstWeekday } from "@/lib/kst";
+import { assumeAfternoon } from "@/lib/pickupParse";
 import { weekStartOf } from "@/lib/dismissalWeek";
 
 /**
@@ -67,7 +68,9 @@ export async function POST(req: Request) {
         p_weekday: w,
         p_kind: kind,
         p_label: (body?.label ?? "").trim() || null,
-        p_time: (body?.time ?? "").trim() || null,
+        // 넣을 때도 바로잡습니다. 사람이 「3:35」로 치면 오후 3시 35분입니다 - 읽는 쪽에서도
+        // 같은 규칙으로 한 번 더 걸러내지만, 저장된 값 자체가 맞는 편이 낫습니다.
+        p_time: assumeAfternoon((body?.time ?? "").trim() || null),
         p_note: (body?.note ?? "").trim() || null,
         p_week_start: weekStart,
         p_by: me.name ?? me.email,

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import KioskBar from "@/components/classroom/KioskBar";
 
 /**
  * 교실 태블릿.
@@ -255,6 +256,10 @@ export default function ClassroomTabletClient({ token }: { token: string }) {
 
   return (
     <main style={S.page}>
+      {/* 태블릿을 전체화면으로 잠그는 손잡이. 크롬 주소창·탭 줄이 10인치 화면에서 두 줄을
+          먹어서 호출 글자가 작아지고, 아이가 주소창을 눌러 다른 데로 갑니다. */}
+      <KioskBar />
+
       {/* ── 호출 ─────────────────────────────────────────────────────────── */}
       {call && (
         <div style={{ ...S.callBox, background: call.kind === "픽업" ? "#7f1d1d" : "#0c4a6e" }}>

@@ -69,16 +69,9 @@ export function PickupToast({
   onClose: () => void;
 }) {
   return (
-    <div
-      style={{
-        position: "fixed",
-        top: 16,
-        left: "50%",
-        transform: "translateX(-50%)",
-        zIndex: 9999,
-        maxWidth: "min(92vw, 760px)",
-      }}
-    >
+    // 자리는 바깥(PickupAlarm)이 잡습니다 - 예전에는 여기서도 따로 화면에 못박아서, 띠와
+    // 팝업이 같은 자리에 겹쳐 떴습니다.
+    <div style={{ maxWidth: "min(92vw, 760px)", pointerEvents: "auto" }}>
       <div
         onClick={onClose}
         style={{
@@ -189,7 +182,31 @@ export function PickupAlarm({ sc, data, nowMin }: { sc: BoardScale; data: BoardD
   if (due.length === 0 && stack.length === 0) return null;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: sc.s(6, 4), flexShrink: 0 }}>
+    /**
+     * **덮습니다. 밀지 않습니다.**
+     *
+     * 예전에는 이 줄이 흐름 안에 있어서, 알림이 뜨는 순간 시간표와 아래 칸이 통째로 밀려
+     * 내려갔습니다. 벽에 걸어두고 하루 종일 보는 화면에서 **레이아웃이 움직이는 것**은
+     * 알림보다 더 큰 방해입니다 - 보던 자리를 잃고, 알림이 사라지면 또 한 번 튑니다.
+     *
+     * 그래서 화면 위쪽 가운데에 겹쳐 띄웁니다. 시계가 있는 자리라 눈이 먼저 가고, 뒤의
+     * 화면은 한 픽셀도 안 움직입니다. 폭도 시계 정도로 잡아 화면을 통째로 가리지 않습니다.
+     */
+    <div
+      style={{
+        position: "fixed",
+        top: sc.s(14, 8),
+        left: "50%",
+        transform: "translateX(-50%)",
+        zIndex: 9000,
+        display: "flex",
+        flexDirection: "column",
+        gap: sc.s(6, 4),
+        width: "max-content",
+        maxWidth: "min(92vw, 900px)",
+        pointerEvents: "none",
+      }}
+    >
       {stack.length > 0 && <PickupToast items={stack} onClose={() => setStack([])} />}
       {due.map((p, i) => {
         const late = p.left < 0;
@@ -206,6 +223,9 @@ export function PickupAlarm({ sc, data, nowMin }: { sc: BoardScale; data: BoardD
               borderRadius: sc.s(14, 8),
               padding: `${sc.s(10, 6)}px ${sc.s(16, 10)}px`,
               animation: "opsPickupPulse 1.6s ease-in-out infinite",
+              // 겹쳐 뜨므로 그림자가 있어야 뒤 화면과 갈립니다. 평평하면 시간표의 일부로
+              // 읽힙니다.
+              boxShadow: "0 10px 34px rgba(0,0,0,0.5)",
             }}
           >
             <span style={{ fontSize: sc.s(28, 18), fontWeight: 900, color: late ? "#fecaca" : "#7dd3fc" }}>

@@ -389,6 +389,13 @@ export type Task = {
    * 그 줄은 픽업이 아닌 것이 됩니다 - 오류가 아니라 색이 바뀌고 단추가 사라집니다.
    */
   origin: string | null;
+  /**
+   * 이 업무를 만들어 낸 **바깥 자료의 번호**(픽업이면 `pickup_requests.id`).
+   *
+   * 같은 것으로 두 번 만들지 않기 위한 값이고, 판단은 데이터베이스의 유일 색인이 합니다 -
+   * 「읽어서 없으면 만든다」는 두 사람이 동시에 열면 둘 다 만듭니다.
+   */
+  origin_ref: string | null;
   acknowledged_by: TaskAck[];
   updated_by: string | null;
   completed_at: string | null;

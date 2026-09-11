@@ -14,7 +14,16 @@ export const dynamic = "force-dynamic";
  * 인박스에서 손으로 확정한 건은 그 길을 안 지납니다. 그래서 픽업 인박스를 열 때 한 번
  * 훑어 빠진 것을 채웁니다.
  *
- * 두 번 만들지 않는 장치는 `pickup_requests.task_id` 하나입니다 - 채워져 있으면 건너뜁니다.
+ * ── 두 번 만들지 않기 ──────────────────────────────────────────────────────
+ *
+ * 예전에는 `pickup_requests.task_id` 하나만 봤습니다. 그건 **읽을 때** 보는 값이라, 두
+ * 사람이 거의 같은 순간에 인박스를 열면 둘 다 「아직 없다」를 읽고 둘 다 만듭니다. 실제로
+ * 9월 11일에 「지수 14:20 픽업」이 4밀리초 차이로 두 줄 생겼습니다 - 화면에는 오류가 아니라
+ * 「픽업이 두 건」으로 보이고, 사람은 아이를 두 번 데리러 갑니다.
+ *
+ * 이제 판단을 데이터베이스가 합니다. 업무 줄에 `origin_ref` 로 연락의 번호를 적고 그 값에
+ * 유일 색인을 걸어, 동시에 둘이 넣으면 **한 줄만 들어갑니다.** 실패한 쪽은 이미 있는 줄을
+ * 찾아 이어 붙입니다 - 실패했다고 연결까지 빠뜨리면 다음번에 또 만들려 듭니다.
  */
 export async function POST() {
   const me = await getCurrentAppUser();
@@ -82,10 +91,28 @@ export async function POST() {
       sourceUrl: (r.source_url as string | null) ?? null,
     });
 
-    const { data: task, error: taskErr } = await supabase.from("tasks").insert(payload).select("id").single();
-    // 한 건이 실패해도 나머지는 계속 만듭니다. 다만 조용히 넘기지 않고 소리는 냅니다 -
-    // 픽업 업무가 통째로 안 생기는 것이 가장 나쁩니다.
+    const { data: task, error: taskErr } = await supabase
+      .from("tasks")
+      .insert({ ...payload, origin_ref: r.id as string })
+      .select("id")
+      .single();
+
     if (taskErr || !task) {
+      // 23505 = 유일 색인에 걸림. **남이 먼저 만들었다는 뜻이고, 그건 정상입니다.**
+      // 그 줄을 찾아 연락에 이어 붙입니다 - 여기서 그냥 넘어가면 연결이 빈 채로 남아
+      // 다음번에 또 만들려 듭니다.
+      if (taskErr?.code === "23505") {
+        const { data: mine } = await supabase
+          .from("tasks")
+          .select("id")
+          .eq("origin_ref", r.id as string)
+          .is("deleted_at", null)
+          .maybeSingle();
+        if (mine?.id) await supabase.from("pickup_requests").update({ task_id: mine.id }).eq("id", r.id);
+        continue;
+      }
+      // 한 건이 실패해도 나머지는 계속 만듭니다. 다만 조용히 넘기지 않고 소리는 냅니다 -
+      // 픽업 업무가 통째로 안 생기는 것이 가장 나쁩니다.
       console.error("[픽업→업무] 만들지 못했습니다:", taskErr?.message);
       continue;
     }

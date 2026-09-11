@@ -164,6 +164,22 @@ export default function ShuttleChecklistClient({
   const notify = useToast();
   const router = useRouter();
   const [items, setItems] = useState(initialItems);
+
+  /**
+   * **서버가 다시 읽어 온 명단으로 갈아끼웁니다.**
+   *
+   * 이 화면은 명단을 한 번 받아 `items` 에 담고 그 뒤로는 자기가 고쳐 씁니다. 그래서 셔틀
+   * 명단 탭에서 아이를 **넣거나 뺀 것**이 여기 안 왔습니다 - 뺀 아이가 계속 명단에 남아
+   * 있었고, 새로 넣은 아이는 아예 안 보였습니다. 오류가 아니라 「그냥 다른 명단」으로
+   * 보이기 때문에, 차가 떠난 뒤에야 압니다.
+   *
+   * 서버가 다시 그릴 때만 바뀌는 값이라(`initialItems` 는 서버에서 오는 배열) 사람이 화면에서
+   * 누른 것을 덮어쓰지 않습니다. 서버는 오늘 탑승 상태(shuttle_boardings)도 함께 읽어 오므로,
+   * 갈아끼운 뒤의 값이 곧 지금 참입니다.
+   */
+  useEffect(() => {
+    setItems(initialItems);
+  }, [initialItems]);
   const [activityLog, setActivityLog] = useState<ChecklistLogRow[]>(initialLog);
 
   /**
@@ -462,7 +478,6 @@ export default function ShuttleChecklistClient({
     const supabase = createClient();
     const ids = assignmentIdsRef.current;
     const idSet = new Set(ids);
-    const idFilter = `id=in.(${ids.join(",")})`;
     const today = todayStr();
 
     async function fullReload() {
@@ -517,11 +532,35 @@ export default function ShuttleChecklistClient({
           );
         }
       )
-      .on("postgres_changes", { event: "*", schema: "public", table: "shuttle_assignments", filter: idFilter }, (payload) => {
-        const row = payload.new as { id?: string; override_route_id?: string | null; note?: string | null } | undefined;
-        if (!row?.id) return;
+      // ── 셔틀 명단이 바뀌었을 때 ─────────────────────────────────────────
+      //
+      // 예전에는 **화면에 이미 있는 배정만**(`id=in.(…)`) 구독했습니다. 그래서
+      //
+      //   · 명단에 새로 넣은 아이 → 필터에 안 걸려서 **안 뜸**
+      //   · 명단에서 뺀 아이     → 지운 줄은 `new` 가 비어 있어 무시 → **계속 남아 있음**
+      //   · 요일을 바꾼 아이     → 이 자리가 `weekdays` 를 안 읽어서 **오늘 타는지가 안 바뀜**
+      //
+      // 세 가지 다 화면에는 오류가 아니라 「그냥 다른 명단」으로 보입니다. 그래서 걸러내지
+      // 않고 전부 받습니다 - 명단을 고치는 일은 하루에 몇 번뿐이라 그래도 가볍습니다.
+      .on("postgres_changes", { event: "*", schema: "public", table: "shuttle_assignments" }, (payload) => {
+        const next = payload.new as { id?: string; override_route_id?: string | null; note?: string | null; weekdays?: number[] } | undefined;
+        const prevRow = payload.old as { id?: string; weekdays?: number[] } | undefined;
+        const id = next?.id ?? prevRow?.id;
+
+        // 넣기·빼기는 **누가 타는가**가 달라진 것이라 화면에서 기워 맞출 수 없습니다.
+        // 요일도 마찬가지입니다 - 오늘 타는지는 정류장·노선까지 함께 봐야 정해집니다.
+        const rosterChanged =
+          payload.eventType === "INSERT" ||
+          payload.eventType === "DELETE" ||
+          JSON.stringify(next?.weekdays ?? null) !== JSON.stringify(prevRow?.weekdays ?? null);
+        if (rosterChanged) {
+          router.refresh();
+          return;
+        }
+
+        if (!id || !idSet.has(id)) return;
         setItems((prev) =>
-          prev.map((it) => (it.assignmentId === row.id ? { ...it, permanentRouteId: row.override_route_id ?? null, note: row.note ?? null } : it))
+          prev.map((it) => (it.assignmentId === id ? { ...it, permanentRouteId: next?.override_route_id ?? null, note: next?.note ?? null } : it))
         );
       })
       // 옆자리에서 누른 것도 '오늘 한 일'에 바로 뜨게 합니다. 같은 표를 둘이 보고 있을 때

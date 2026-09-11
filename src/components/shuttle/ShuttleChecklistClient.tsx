@@ -1121,7 +1121,12 @@ export default function ShuttleChecklistClient({
             합쳐서 92px이 정확히 두 번째 장의 정체였습니다. */}
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2 g-panel-solid px-3 py-2 text-xs font-semibold text-slate-600 print:hidden">
           <span>
-            📅 {new Date().toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric", weekday: "short" })} · 🧒 탑승예정{" "}
+            {/* **시간대를 못박습니다.** 이 줄은 서버에서 한 번, 브라우저에서 한 번 그려집니다.
+                시간대를 안 적으면 서버는 UTC로, 브라우저는 한국 시간으로 그려서 한국 시각
+                오전 9시 이전에는 **두 글자가 달라집니다.** 그러면 React 가 짝을 못 맞추고
+                (hydration) 그 화면 조각이 통째로 안 뜹니다 - 오류가 아니라 빈 화면입니다.
+                날짜 자체도 하루 전으로 나옵니다(CLAUDE.md §4). */}
+            📅 {new Date().toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul", year: "numeric", month: "long", day: "numeric", weekday: "short" })} · 🧒 탑승예정{" "}
             <span className="text-sm font-bold text-slate-800">{expectedCount}</span>명
           </span>
           <div className="flex items-center gap-1.5 print:hidden">
@@ -1154,19 +1159,8 @@ export default function ShuttleChecklistClient({
                 ✕ 해제
               </button>
             )}
-            {/* **명단을 고치러 가는 길을 여기 둡니다.**
-                아이를 노선에 넣고 빼는 일은 셔틀 명단에서 합니다. 그런데 그게 필요하다는 것을
-                아는 자리는 **이 화면**입니다 - 체크표를 보다가 「이 아이가 왜 여기 없지」를
-                알게 되니까요. 길이 멀면 그 자리에서 안 고치고 나중으로 미루게 되고, 미룬
-                명단은 다음 날에도 그대로입니다.
-                명단에서 고치면 이 화면은 그 자리에서 다시 읽어 옵니다(명단 실시간 구독). */}
-            <a
-              href="/shuttle/checklist/roster"
-              title="아이를 노선에 넣거나 빼고, 요일을 고칩니다. 고치면 이 화면에 바로 반영됩니다."
-              className="rounded-lg border border-teal-300 bg-teal-50 px-2.5 py-1 text-xs font-semibold text-teal-700 hover:bg-teal-100"
-            >
-              🚌 명단 고치기
-            </a>
+            {/* 명단을 고치는 길은 **여기 두지 않습니다.** 하위 탭에 이미 [하원 셔틀명단]이
+                있고, 이 줄에 하나를 더 얹으면 같은 곳으로 가는 길이 둘이 됩니다. */}
             <button
               type="button"
               onClick={() => window.print()}

@@ -21,7 +21,7 @@ import {
 } from "@/lib/attendanceDigest";
 import AttendanceTeachModal from "@/components/work/AttendanceTeachModal";
 import AttendanceRulesModal from "@/components/work/AttendanceRulesModal";
-import { describeLog, reasonOf, shortAgo, type ChecklistLogRow } from "@/lib/checklistLog";
+import { clockOf, describeLog, reasonOf, shortAgo, type ChecklistLogRow } from "@/lib/checklistLog";
 import { Who } from "@/components/common/HomonymProvider";
 
 const POLL_MS = 15000;
@@ -97,6 +97,18 @@ export default function ShuttleChecklistSidebar({
   // 수영학원", "4호 김재이 개별하원"). 효과를 고르면 셔틀이 자동으로 바뀝니다.
   // 기본은 펼침입니다. 접어두면 아무도 안 봅니다.
   const [logOpen, setLogOpen] = useState(true);
+
+  /**
+   * **붙은 뒤에만 「3분 전」을 씁니다.**
+   *
+   * 「지금」을 기준으로 세는 글자는 서버에서 그린 것과 브라우저에서 그린 것이 몇 초 차이로
+   * 달라집니다. 그러면 React 가 짝을 못 맞추고 이 화면이 통째로 안 뜹니다 - 오류가 아니라
+   * 빈 화면이라, 보는 사람은 무엇이 잘못됐는지 알 수 없습니다.
+   *
+   * 처음 한 번은 시각 그대로 그리고(서버와 같은 값), 붙은 뒤에 바꿔 그립니다.
+   */
+  const [agoReady, setAgoReady] = useState(false);
+  useEffect(() => setAgoReady(true), []);
 
   const WD = [
     { d: 1, label: "월" },
@@ -506,7 +518,9 @@ export default function ShuttleChecklistSidebar({
                     className="flex flex-col gap-0.5 rounded px-1 py-0.5 text-left text-[10px] leading-snug text-slate-600 hover:bg-slate-50"
                   >
                     <span className="flex items-baseline gap-1">
-                      <span className="shrink-0 tabular-nums text-[9px] text-slate-400">{shortAgo(r.created_at)}</span>
+                      <span className="shrink-0 tabular-nums text-[9px] text-slate-400">
+                        {agoReady ? shortAgo(r.created_at) : clockOf(r.created_at)}
+                      </span>
                       <span className="min-w-0 flex-1">{describeLog(r)}</span>
                     </span>
                     {why && (

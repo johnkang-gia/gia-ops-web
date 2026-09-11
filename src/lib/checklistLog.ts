@@ -117,7 +117,19 @@ export async function logChecklist(
   console.error("[checklistLog] 활동 기록 실패:", error.message, entry);
 }
 
-/** "3분 전"처럼 짧게. 오늘 안의 일이라 날짜는 안 씁니다. */
+/**
+ * **「지금」을 기준으로 세는 값은 서버에서 그리면 안 됩니다.**
+ *
+ * 이 글자는 서버에서 한 번, 브라우저에서 한 번 그려집니다. 그 사이에 몇 초가 지나면
+ * 「방금」과 「1분 전」처럼 **두 글자가 달라지고**, React 가 짝을 못 맞춰(hydration)
+ * 그 화면 조각이 통째로 안 뜹니다 - 오류 화면이 아니라 **빈 화면**입니다.
+ *
+ * 실제로 하원 체크표가 그렇게 안 떴습니다. 활동 기록이 기본으로 펼쳐져 있어서 이 글자가
+ * 서버에서도 그려졌습니다.
+ *
+ * 그래서 짝을 맞출 때까지는 **시각 그대로** 적고, 붙은 뒤에 「3분 전」으로 바꿉니다
+ * (`useAgoReady`). 시각은 서버와 브라우저가 같은 값을 냅니다.
+ */
 export function shortAgo(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();
   const m = Math.floor(ms / 60000);
@@ -141,4 +153,9 @@ export function describeLog(r: ChecklistLogRow): string {
     return `${who} · ${r.student_name} ${r.before_value ?? "?"} → ${r.after_value ?? "?"}`;
   }
   return `${who} · ${r.student_name} 메모 ${r.after_value ? "수정" : "삭제"}`;
+}
+
+/** 짝 맞추기 전에 쓰는 **고정된** 글자. 서버와 브라우저가 같은 값을 냅니다. */
+export function clockOf(iso: string): string {
+  return new Date(iso).toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit" });
 }

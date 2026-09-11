@@ -245,6 +245,16 @@ export default function DismissalRosterClient({
           className="ml-auto w-48 rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm"
         />
       </div>
+      {/* **학생을 넣는 자리가 여기라는 것을 먼저 말합니다.**
+          노선 카드마다 아래쪽에 [+ 학생 추가]가 있는데, 카드가 마흔여덟 개라 처음 오는
+          사람은 그 단추를 못 찾습니다. 화면 맨 위에서 한 줄로 알려주면 찾을 일이 없습니다. */}
+      <p className="mb-2 rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-xs leading-relaxed text-teal-900">
+        <b>학생을 넣으려면</b> 넣을 호차 카드 아래의 <b className="rounded bg-white px-1 py-0.5">+ 학생 추가</b>를 누르고 이름을 치세요.
+        여기서 넣고 뺀 것은 <b>하원 체크표·안내보드·도착체크에 바로</b> 반영됩니다.
+        <br />
+        <b>이미 다른 호차에 있는 아이도 넣을 수 있습니다</b> — 요일마다 다른 차를 타는 아이가 있어서,
+        그쪽에 잡힌 요일만 빼고 켭니다(월·화·수가 20호면 목·금만 켜집니다).
+      </p>
       <p className="mb-4 text-xs text-slate-500">
         요일 버튼을 누르면 그 요일 탑승 여부가 바로 저장됩니다. 파란색 = 타는 요일. 이준서·이준우(중등) 형제는 4-2호(학원)·9호(집·기업은행)
         양쪽에 있고, 당일 하원 때 물어본 뒤 체크표에서 [오늘만] 노선 이동으로 확정하면 됩니다.

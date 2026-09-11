@@ -147,6 +147,17 @@ export default function QuickTaskWidget({
   const [timeStr, setTimeStr] = useState("");
   /** 여러 날짜리의 시작일. 비어 있으면 하루짜리입니다. */
   const [startOn, setStartOn] = useState("");
+  /**
+   * **기간으로 적을 것인가.**
+   *
+   * 여러 날에 걸친 일을 넣는 길이 「달력에서 가로로 끌기」 하나뿐이었습니다. 그걸 모르면
+   * 사람은 하루씩 세 번 누르게 되고, 실제로 「오케스트라 오디션」이 9/28·9/29·9/30 세 줄로
+   * 들어와 있었습니다 - 사흘짜리 한 가지 일인데 달력에는 점 세 개로 흩어졌습니다.
+   *
+   * 등록 칸에서도 켤 수 있게 둡니다. 켜면 시작일 칸이 나오고, 끄면 시작일을 비워 하루짜리로
+   * 돌아갑니다 - 켜 두고 안 채운 값이 남아 있으면 다음 등록까지 따라갑니다.
+   */
+  const [useRange, setUseRange] = useState(false);
   const [tagId, setTagId] = useState<string | null>(null);
   const [addingTag, setAddingTag] = useState(false);
 
@@ -166,6 +177,7 @@ export default function QuickTaskWidget({
     if (!prefillRange) return;
     setStartOn(prefillRange.from);
     setDateStr(prefillRange.to);
+    setUseRange(true);
     setQuickBadge(null);
     inputRef.current?.focus();
     onPrefillUsed?.();
@@ -281,6 +293,7 @@ export default function QuickTaskWidget({
     setDateStr("");
     setTimeStr("");
     setStartOn("");
+    setUseRange(false);
     setRecurrenceFreq(null);
     setRecurrenceOpen(false);
     if (mode === "공유") {
@@ -443,6 +456,39 @@ export default function QuickTaskWidget({
             {key}
           </button>
         ))}
+        {/* 기간으로 적기. 켜면 시작일 칸이 앞에 붙습니다. */}
+        <label
+          className={
+            "flex cursor-pointer items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold transition " +
+            (useRange ? "bg-teal-600 text-white" : "bg-black/5 text-slate-500 hover:bg-black/10")
+          }
+          title="여러 날에 걸친 일이면 켜세요. 달력에 그만큼 긴 막대로 그려집니다."
+        >
+          <input
+            type="checkbox"
+            checked={useRange}
+            onChange={(e) => {
+              setUseRange(e.target.checked);
+              // 끌 때는 시작일을 비웁니다. 안 비우면 다음 등록에 그 날짜가 따라갑니다.
+              if (!e.target.checked) setStartOn("");
+            }}
+            className="h-3 w-3 accent-teal-600"
+          />
+          기간
+        </label>
+        {useRange && (
+          <>
+            <input
+              type="date"
+              value={startOn}
+              max={dateStr || undefined}
+              onChange={(e) => setStartOn(e.target.value)}
+              title="시작일"
+              className="rounded-lg border border-teal-300 bg-white/70 px-1.5 py-0.5 text-[10px] outline-none focus:border-teal-500"
+            />
+            <span className="text-[10px] text-slate-400">~</span>
+          </>
+        )}
         <input
           type="date"
           value={dateStr}
@@ -450,6 +496,7 @@ export default function QuickTaskWidget({
             setDateStr(e.target.value);
             setQuickBadge(null);
           }}
+          title={useRange ? "끝나는 날" : "마감일"}
           className="rounded-lg border border-black/10 bg-white/70 px-1.5 py-0.5 text-[10px] outline-none focus:border-blue-300"
         />
         <input
@@ -463,12 +510,16 @@ export default function QuickTaskWidget({
         />
         {/* 끌어서 고른 기간. **보여주고 지울 수 있어야** 합니다 - 잘못 끌었을 때 되돌릴
             자리가 없으면 등록 자체를 포기하게 됩니다. */}
-        {startOn && (
-          <span className="flex items-center gap-1 rounded-lg bg-teal-50 px-1.5 py-0.5 text-[10px] font-bold text-teal-700">
-            {startOn.slice(5)} ~ {(dateStr || "").slice(5)} 기간
-            <button type="button" onClick={() => setStartOn("")} className="text-teal-500 hover:text-red-500" title="하루짜리로">
-              ✕
-            </button>
+        {/* 시작일이 마감보다 뒤면 **저장할 때 조용히 버려집니다**(하루짜리가 됩니다).
+            그 사실을 적어두지 않으면 사람은 기간으로 넣은 줄 알고 넘어갑니다. */}
+        {useRange && startOn && dateStr && startOn > dateStr && (
+          <span className="rounded-lg bg-red-50 px-1.5 py-0.5 text-[10px] font-bold text-red-600">
+            시작일이 끝날보다 뒤입니다 — 이대로 저장하면 하루짜리가 됩니다
+          </span>
+        )}
+        {useRange && startOn && dateStr && startOn <= dateStr && (
+          <span className="rounded-lg bg-teal-50 px-1.5 py-0.5 text-[10px] font-bold text-teal-700">
+            {Math.round((Date.parse(`${dateStr}T00:00:00Z`) - Date.parse(`${startOn}T00:00:00Z`)) / 86400000) + 1}일짜리
           </span>
         )}
         {(dateStr || timeStr || startOn) && (
@@ -478,6 +529,7 @@ export default function QuickTaskWidget({
               setDateStr("");
               setTimeStr("");
               setStartOn("");
+              setUseRange(false);
               setQuickBadge(null);
             }}
             className="text-[10px] text-slate-400 hover:text-red-500"

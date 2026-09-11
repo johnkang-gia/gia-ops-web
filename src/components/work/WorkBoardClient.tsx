@@ -1,5 +1,6 @@
 "use client";
 
+import { ALL_SCOPE } from "@/lib/department";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import ActivityLogTicker from "./ActivityLogTicker";
 import Link from "next/link";
@@ -30,6 +31,7 @@ export default function WorkBoardClient({
   initialTasks,
   team,
   userEmail,
+  myDepartment,
   departments,
   isAdmin,
   initialModeColors,
@@ -45,6 +47,8 @@ export default function WorkBoardClient({
   initialTasks: Task[];
   team: TeamMember[];
   userEmail: string;
+  /** 이 사람의 소속. 첫 화면을 자기 부서로 엽니다. */
+  myDepartment: string | null;
   departments: Department[];
   isAdmin: boolean;
   initialModeColors: TaskModeColor[];
@@ -91,7 +95,17 @@ export default function WorkBoardClient({
   }, [loadTags]);
   const online = useOnlineUsers(userEmail);
 
-  const [activeDeptId, setActiveDeptId] = useState<string | null>(deptList[0]?.id ?? null);
+  /**
+   * **자기 부서가 첫 화면입니다.**
+   *
+   * 예전에는 부서 목록의 맨 앞을 골랐습니다. 그 자리가 「전체」라서 누가 열든 전체 탭이 떴고,
+   * 전체 탭에는 업무가 **하나도 안 보였습니다**(아래 참고). 초등부 직원은 매번 초등부를 한 번
+   * 더 눌러야 자기 일이 나타났습니다 - 매일 하는 화면에서 한 번 더 누르는 것은 그 자체로
+   * 비용이고, 안 누르면 「오늘 할 일이 없네」로 읽힙니다.
+   */
+  const [activeDeptId, setActiveDeptId] = useState<string | null>(
+    deptList.find((d) => d.name === myDepartment)?.id ?? deptList.find((d) => d.name !== ALL_SCOPE)?.id ?? deptList[0]?.id ?? null,
+  );
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [toasts, setToasts] = useState<StatusToast[]>([]);
   const [guideOpen, setGuideOpen] = useState(false);
@@ -139,6 +153,8 @@ export default function WorkBoardClient({
   }, [userEmail, team]);
 
   const activeDepartment = deptList.find((d) => d.id === activeDeptId) ?? deptList[0] ?? null;
+  /** 「전체」 탭인가. 이 탭은 거르는 탭이 아니라 **모아 보는** 탭입니다. */
+  const showingAll = activeDepartment?.name === ALL_SCOPE;
 
   const deptColorMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -166,8 +182,16 @@ export default function WorkBoardClient({
   // 필터 없이 그대로 반영되므로, 화면(칸반)에 계속 떠 있던 세션이라면 여기서 한 번 더 걸러야
   // 자정 직후 보드에서 즉시 사라집니다.
   const scopedTasks = useMemo(
-    () => (activeDepartment ? tasks.filter((t) => t.department === activeDepartment.name && !t.archived_at) : []),
-    [tasks, activeDepartment]
+    // **「전체」는 거르지 않습니다.** 예전에는 `t.department === "전체"` 로 걸러서, 그런 업무가
+    // 하나도 없으니 전체 탭이 언제나 비어 있었습니다. 화면에는 오류가 아니라 「할 일 없음」으로
+    // 보이므로, 그 탭을 연 사람은 오늘 업무가 없다고 믿게 됩니다.
+    () =>
+      !activeDepartment
+        ? []
+        : showingAll
+          ? tasks.filter((t) => !t.archived_at)
+          : tasks.filter((t) => t.department === activeDepartment.name && !t.archived_at),
+    [tasks, activeDepartment, showingAll]
   );
 
   const selectedTask = tasks.find((t) => t.id === selectedId) ?? null;

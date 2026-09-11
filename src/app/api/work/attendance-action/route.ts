@@ -1,6 +1,6 @@
 import { ridesToday } from "@/lib/ridesToday";
 import { NextResponse } from "next/server";
-import { setBoardingStatus } from "@/lib/boardingWrite";
+import { applyAttendance, type AttendanceAction } from "@/lib/attendanceApply";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { logApiError } from "@/lib/logging";
@@ -57,12 +57,16 @@ export async function POST(req: Request) {
       action?: string;
       serviceDate?: string;
       inquiryId?: string;
+      /** 어디서 온 연락인가. 출석부의 「출처」 칸에 그대로 뜹니다. */
+      source?: "토들" | "구글챗" | "직접 등록";
     } | null;
 
     const rawName = (body?.studentName ?? "").trim();
     const action = body?.action ?? "";
     if (!rawName) return NextResponse.json({ error: "학생 이름이 없습니다." }, { status: 400 });
-    if (!["결석", "픽업", "탑승", "예정"].includes(action)) {
+    // 지각·조퇴가 빠져 있었습니다. 학부모 연락은 픽업만 오는 것이 아닌데 고를 수 있는 것이
+    // 넷뿐이라, 지각 연락을 받으면 인박스에서 할 수 있는 일이 없었습니다.
+    if (!["결석", "지각", "조퇴", "픽업", "탑승", "예정"].includes(action)) {
       return NextResponse.json({ error: "처리할 수 없는 상태입니다." }, { status: 400 });
     }
     // '예정'은 되돌리기(취소)입니다 - 잘못 눌렀을 때 체크표에서 지우는 것과 같은 효과.
@@ -125,9 +129,14 @@ export async function POST(req: Request) {
     const byId = studentId ? todays.filter((a) => a.student_id === studentId) : [];
     const matches = byId.length > 0 ? byId : todays.filter((a) => compareKey(a.student_name_raw ?? "") === key);
 
-    if (matches.length === 0) {
-      // 셔틀을 안 타는 학생이거나(도보·자차 하원), 배정표 이름이 명부와 다르게 적힌 경우입니다.
-      // 어느 쪽인지는 사람이 봐야 알 수 있으므로 그대로 알려줍니다.
+    // ── 셔틀 배정이 없어도 멈추지 않습니다 ───────────────────────────────
+    //
+    // 예전에는 여기서 거절했습니다. 그래서 셔틀을 안 타는 아이의 결석은 **아무 데도 안
+    // 남았습니다** - 연락은 왔는데 출석부는 비어 있고, 화면에는 「처리 못 함」으로만
+    // 보입니다. 결석은 셔틀 이야기가 아니라 학교 이야기입니다.
+    //
+    // 픽업·탑승은 셔틀에서만 뜻이 있으므로, 그때만 배정이 없다고 알려줍니다.
+    if (matches.length === 0 && (action === "픽업" || action === "탑승")) {
       return NextResponse.json(
         {
           ok: false,
@@ -143,16 +152,18 @@ export async function POST(req: Request) {
     // 상태 바꾸기와 「누가 바꿨는지」 기록을 한 부름으로 묶습니다. 예전에는 여기서 표만
     // 고쳐서, 하원 체크표의 활동 기록에는 아무 줄도 안 남았습니다 - 표시는 바뀌어 있는데
     // 「누가 했지?」를 물을 곳이 없었습니다.
-    for (const a of matches) {
-      const { error: bErr } = await setBoardingStatus(supabase, {
-        serviceDate,
-        assignmentId: a.id,
-        studentName: a.student_name_raw,
-        status: action as "결석" | "픽업",
-        actor: { email: me.email, name: me.name ?? null },
-      });
-      if (bErr) throw new Error(bErr);
-    }
+    //
+    // **셔틀과 출석부를 한 짝으로 처리합니다**(`applyAttendance`). 두 곳을 따로 고치면
+    // 한쪽만 되고 다른 쪽은 안 된 상태가 생기는데, 그건 화면에 오류로 안 보입니다.
+    const applied = await applyAttendance(supabase, {
+      studentId: studentId ?? matches.find((m) => m.student_id)?.student_id ?? null,
+      studentName: matches[0]?.student_name_raw ?? rawName,
+      serviceDate,
+      action: action as AttendanceAction,
+      assignments: matches.map((a) => ({ id: a.id, student_name_raw: a.student_name_raw })),
+      actor: { email: me.email, name: me.name ?? null },
+      source: body?.source ?? "토들",
+    });
 
     // 이 문의는 처리된 것으로 표시합니다 - 셔틀에 반영해 놓고 인박스에는 그대로 남아 있으면,
     // 다음 사람이 또 처리하거나 "아직 안 했나?" 하고 다시 확인하게 됩니다.
@@ -164,11 +175,14 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({
-      ok: true,
-      matched: matches.length,
-      studentName: matches[0].student_name_raw,
+      ok: applied.errors.length === 0,
+      matched: applied.boardings,
+      register: applied.register,
+      studentName: matches[0]?.student_name_raw ?? rawName,
       serviceDate,
       status: action,
+      // 무엇이 되고 무엇이 안 됐는지 한 줄로. 조용히 성공한 척하지 않습니다.
+      message: applied.errors.length > 0 ? `${applied.note} (${applied.errors.join(" / ")})` : applied.note,
     });
   } catch (err) {
     await logApiError(supabase, "work:attendance-action", err);

@@ -1,5 +1,6 @@
 "use client";
 
+import { ALL_SCOPE } from "@/lib/department";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchCurrentTerm } from "@/lib/termQuery";
 import type { DayReminder, Department, GoogleChatMirrorMessage, Task, TaskModeColor, TaskStatus, TeamMember, WorkTag } from "@/lib/types";
@@ -274,13 +275,10 @@ export default function WorkspaceArea({
     // 이번 달 앞뒤로 넉넉히. 달력이 지난달·다음달 칸을 함께 그리기 때문입니다.
     const from = addDays(todayKst(), -45);
     const to = addDays(todayKst(), 120);
-    const { data, error } = await createClient()
-      .from("day_reminders")
-      .select("*")
-      .eq("department", activeDepartment.name)
-      .gte("day", from)
-      .lte("day", to)
-      .order("day");
+    // 「전체」 탭은 거르지 않습니다 - 모아 보라고 있는 탭인데 거르면 언제나 빕니다.
+    let q = createClient().from("day_reminders").select("*").gte("day", from).lte("day", to).order("day");
+    if (activeDepartment.name !== ALL_SCOPE) q = q.eq("department", activeDepartment.name);
+    const { data, error } = await q;
     if (error) {
       // 조용히 비워두지 않습니다. 빈 달력은 「챙길 게 없다」로 읽히는데, 사실은
       // 「못 읽어왔다」입니다. 둘은 완전히 다른 이야기입니다.

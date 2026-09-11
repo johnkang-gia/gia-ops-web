@@ -312,12 +312,22 @@ export default function PickupInboxClient({
     return { dates, label };
   }, []);
 
-  // 결석 처리. 하원 체크표와 같은 칸(shuttle_boardings)을 쓰는 기존 API를 그대로 부릅니다.
-  async function markAbsent(row: PickupRow, dates: string[]) {
+  /**
+   * 결석·지각·조퇴 처리.
+   *
+   * 예전에는 결석만, 그것도 **AI가 결석으로 읽은 줄에서만** 누를 수 있었습니다. 토들에서
+   * 오는 연락은 픽업만이 아닌데 이 화면의 선택지는 「픽업 확정」과 「픽업 아님」뿐이라,
+   * 지각 연락을 받으면 여기서 할 수 있는 일이 없었습니다.
+   *
+   * 창구가 셔틀 체크표와 출석부를 **한 짝으로** 처리합니다 - 셔틀을 안 타는 아이도 출석부에
+   * 남습니다(임주한이 「셔틀 배정이 없습니다」로 거절당하던 자리).
+   */
+  async function markAttendance(row: PickupRow, dates: string[], action: "결석" | "지각" | "조퇴" | "예정") {
     if (!row.matched_name) return;
     setBusy(true);
     let ok = 0;
     let refused: string | null = null;
+    let lastNote: string | null = null;
     for (const d of dates) {
       const res = await fetch("/api/work/attendance-action", {
         method: "POST",
@@ -327,25 +337,31 @@ export default function PickupInboxClient({
         body: JSON.stringify({
           studentId: row.student_id,
           studentName: row.matched_name,
-          action: "결석",
+          action,
           serviceDate: d,
           inquiryId: row.id,
+          source: row.source === "googlechat" ? "구글챗" : "토들",
         }),
       });
       const json = (await res.json().catch(() => null)) as { ok?: boolean; message?: string } | null;
       if (res.ok && json?.ok !== false) ok += 1;
+      // 창구가 한 줄로 무엇이 됐는지 알려줍니다. 마지막 답을 그대로 사람에게 보여줍니다.
+      else if (json?.message) lastNote = json.message;
       // 창구가 「누구인지 모르겠다」로 되돌려 보낸 경우. 조용히 0건으로 두면 처리된 줄 압니다.
       else if (json?.message) refused = json.message;
     }
     // 한 건도 못 했으면 인박스에서 내리지 않습니다 - 내리면 아무도 다시 안 봅니다.
-    if (ok > 0) await call({ action: "ignore", id: row.id });
+    // 되돌리기(예정)는 이미 내려가 있는 줄에서 누르므로 또 내리지 않습니다.
+    if (ok > 0 && action !== "예정") await call({ action: "ignore", id: row.id });
     setBusy(false);
-    if (refused && ok === 0) notify(refused, "error");
+    if (ok === 0) notify(refused ?? lastNote ?? "처리하지 못했습니다.", "error");
     else
       notify(
         ok === dates.length
-          ? `${row.matched_name} 결석 ${ok}일 처리했습니다.`
-          : `${ok}/${dates.length}일만 처리됐습니다. 그날 셔틀 배정이 없는 날은 건너뜁니다.`,
+          ? action === "예정"
+            ? `${row.matched_name} 출결 처리를 되돌렸습니다.`
+            : `${row.matched_name} ${action} ${ok}일 처리했습니다(출석부에도 남습니다).`
+          : `${ok}/${dates.length}일만 처리됐습니다. ${lastNote ?? ""}`,
         ok === dates.length ? "success" : "error",
       );
     void refresh();
@@ -544,7 +560,7 @@ export default function PickupInboxClient({
                         </span>
                       ))}
                       <button
-                        onClick={() => markAbsent(r, absenceOf(r)!.dates)}
+                        onClick={() => markAttendance(r, absenceOf(r)!.dates, "결석")}
                         disabled={busy || !r.matched_name}
                         title={r.matched_name ? undefined : "먼저 학생을 연결해주세요."}
                         className="ml-auto rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-40"
@@ -566,14 +582,36 @@ export default function PickupInboxClient({
                     onPick={(s) => confirm(r, s.id)}
                   />
                   {r.student_id && (
-                    <button
-                      onClick={() => confirm(r)}
-                      disabled={busy}
-                      className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-50"
-                    >
-                      <RowStudentName maps={whereMaps} studentId={r.student_id} name={r.matched_name} markClassName="!bg-white/25 !text-white" />{" "}
-                      픽업 확정
-                    </button>
+                    <>
+                      <button
+                        onClick={() => confirm(r)}
+                        disabled={busy}
+                        className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-50"
+                      >
+                        <RowStudentName maps={whereMaps} studentId={r.student_id} name={r.matched_name} markClassName="!bg-white/25 !text-white" />{" "}
+                        픽업 확정
+                      </button>
+                      {/* **픽업만 고를 수 있으면 안 됩니다.** 토들에서 오는 연락은 결석·지각일
+                          수도 있는데, 이 화면에는 픽업이냐 아니냐밖에 없었습니다. AI가 결석으로
+                          읽어준 줄에는 위에 기간까지 붙은 단추가 따로 뜨고, 여기 둘은 **못 읽었을
+                          때도** 사람이 직접 고를 수 있게 둡니다. */}
+                      <button
+                        onClick={() => markAttendance(r, [r.service_date || todayKey(new Date())], "결석")}
+                        disabled={busy}
+                        className="rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-50"
+                        title="그날 결석으로 처리합니다. 셔틀 체크표와 출석부에 함께 남습니다."
+                      >
+                        결석
+                      </button>
+                      <button
+                        onClick={() => markAttendance(r, [r.service_date || todayKey(new Date())], "지각")}
+                        disabled={busy}
+                        className="rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-50"
+                        title="그날 지각으로 출석부에 남깁니다. 하원 셔틀은 그대로 탑니다."
+                      >
+                        지각
+                      </button>
+                    </>
                   )}
                   <button
                     onClick={() => ignore(r)}
@@ -594,16 +632,33 @@ export default function PickupInboxClient({
       {ignored.length > 0 && (
         <section className="g-panel-solid p-4 shadow-sm">
           <button onClick={() => setShowDone((v) => !v)} className="text-xs font-bold text-slate-500">
-            {showDone ? "▾" : "▸"} 픽업이 아니라고 본 건 {ignored.length}개
+            {showDone ? "▾" : "▸"} 픽업이 아니라고 본 건 · 출결로 처리한 건 {ignored.length}개
           </button>
           {showDone && (
             <div className="mt-2 flex flex-col gap-1.5">
               {ignored.map((r) => (
-                <div key={r.id} className="rounded-lg bg-slate-50 p-2 text-[11px] text-slate-500">
-                  <span className="font-semibold">{r.channel_label ?? r.source}</span> · {r.raw_text}
-                  <button onClick={() => confirm(r)} className="ml-2 font-bold text-blue-600">
+                <div key={r.id} className="flex flex-wrap items-center gap-2 rounded-lg bg-slate-50 p-2 text-[11px] text-slate-500">
+                  <span>
+                    <span className="font-semibold">{r.channel_label ?? r.source}</span> · {r.raw_text}
+                  </span>
+                  <button onClick={() => confirm(r)} className="font-bold text-blue-600">
                     사실은 픽업
                   </button>
+                  {/* **잘못 누른 것을 되돌리는 자리.**
+                      결석·지각으로 처리한 건은 여기로 내려옵니다. 그런데 되돌릴 길이 없으면
+                      사람은 셔틀 체크표와 출석부를 각각 찾아가 지워야 하고, 한쪽만 지우면
+                      다른 화면에 그대로 살아 있습니다. 자동으로 넣은 줄만 지웁니다 - 담임이
+                      직접 찍은 줄은 건드리지 않습니다. */}
+                  {r.student_id && (
+                    <button
+                      onClick={() => markAttendance(r, [r.service_date || todayKey(new Date())], "예정")}
+                      disabled={busy}
+                      className="font-bold text-rose-600 disabled:opacity-40"
+                      title="이 건으로 넣은 셔틀 체크와 출석부 기록을 지웁니다. 담임이 직접 찍은 기록은 그대로 둡니다."
+                    >
+                      출결 되돌리기
+                    </button>
+                  )}
                 </div>
               ))}
             </div>

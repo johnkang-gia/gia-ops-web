@@ -86,6 +86,7 @@ export default async function WorkPage() {
         initialTasks={(tasksRes.data as Task[] | null) ?? []}
         team={team}
         userEmail={me.email}
+        myDepartment={me.department ?? null}
         departments={(deptRes.data as Department[] | null) ?? []}
         isAdmin={isAdmin}
         initialModeColors={(modeColorRes.data as TaskModeColor[] | null) ?? []}

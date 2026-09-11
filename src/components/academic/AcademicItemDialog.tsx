@@ -91,7 +91,17 @@ export default function AcademicItemDialog({
    * - 정규학기는 반배정·시간표·교과서, 캠프는 모집 공고·신청서 마감 - 섞어두면 여름캠프가
    * 시작될 때 「교과서 준비」가 업무보드에 올라옵니다.
    */
-  const [termScope, setTermScope] = useState<string[]>([]);
+  /**
+   * 기본값은 **지금 학기의 종류**입니다.
+   *
+   * 예전 기본값은 빈 배열, 곧 「모든 학기」였습니다. 아무것도 안 고르고 저장하면 정규학기용
+   * 일이 여름캠프에도 올라옵니다 - 캠프가 시작될 때 「교과서 준비」가 업무보드에 떠 있고,
+   * 지워야 하는 줄이 몇 개 섞이면 사람은 목록 전체를 안 믿게 됩니다.
+   *
+   * 지금 학기를 기본으로 두면, **아무것도 안 고른 사람이 얻는 결과가 가장 좁습니다.** 넓히는
+   * 것은 눌러서 하면 되고, 넓게 시작하면 넓어진 줄 모른 채 지나갑니다.
+   */
+  const [termScope, setTermScope] = useState<string[]>(currentTerm?.term_type ? [currentTerm.term_type] : []);
   const [durationDays, setDurationDays] = useState(0);
 
   // 회의(요청 ⑤)
@@ -252,6 +262,15 @@ export default function AcademicItemDialog({
         );
       } else {
         // 이번 학기만 → 항목 한 줄.
+        //
+        // **학기를 비워 두지 않습니다.** 예전에는 진행중 학기가 없으면 `term_id`가 null로
+        // 들어갔습니다. 그 줄은 어느 학기에도 안 붙어서, 학기가 바뀌면 어느 화면에서도
+        // 안 보입니다 - 지워진 것도 아니고 남은 것도 아닌 상태가 됩니다.
+        if (!currentTerm?.id) {
+          setErr("진행중 학기가 없어 등록할 수 없습니다. 학기 관리에서 이번 학기를 먼저 「진행중」으로 두세요.");
+          setBusy(false);
+          return;
+        }
         const { data, error } = await supabase
           .from("academic_checklist_items")
           .insert({
@@ -260,7 +279,7 @@ export default function AcademicItemDialog({
             department: department.trim() || null,
             due_date: preview!.start,
             end_date: preview!.end,
-            term_id: currentTerm?.id ?? null,
+            term_id: currentTerm.id,
           })
           .select("id")
           .single();
@@ -270,7 +289,7 @@ export default function AcademicItemDialog({
           const { error: mErr } = await supabase.from("academic_checklist_meetings").insert(
             meetPreview.map((m) => ({
               item_id: data.id,
-              term_id: currentTerm?.id ?? null,
+              term_id: currentTerm.id,
               seq: m.seq,
               meet_date: m.date,
               title: `${title.trim()} ${m.seq}차 회의`,
@@ -299,6 +318,34 @@ export default function AcademicItemDialog({
           <button onClick={onClose} className="rounded px-2 text-slate-400 hover:text-slate-700">✕</button>
         </div>
 
+        {/* ── 이번만인가, 매 학기인가 ─────────────────────────────
+            **이 갈래가 먼저입니다.** 아래 칸들의 뜻이 여기서 갈립니다 - 이번만이면 날짜 하나를
+            적는 일이고, 매 학기면 「학기 시작 2주 전」 같은 **규칙**을 적는 일입니다.
+            예전에는 이 체크가 맨 아래 업무보드 설정 옆에 끼어 있어서, 다 적고 나서야 눈에
+            띄었습니다. 그때는 이미 날짜로 생각을 마친 뒤라 아무도 안 켰습니다. */}
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-teal-200 bg-teal-50 p-2.5">
+          {([false, true] as const).map((on) => (
+            <button
+              key={String(on)}
+              type="button"
+              disabled={mode === "anchor" && !on}
+              onClick={() => setRecurring(on)}
+              title={mode === "anchor" && !on ? "학기 기준은 규칙이라 항상 되풀이됩니다." : undefined}
+              className={
+                "rounded-lg px-3 py-1.5 text-xs font-bold transition disabled:opacity-40 " +
+                (isRecurring === on ? "bg-teal-600 text-white" : "bg-white text-slate-600 hover:bg-teal-100")
+              }
+            >
+              {on ? "🔁 매 학기 되풀이" : "📌 이번 학기에만"}
+            </button>
+          ))}
+          <span className="text-[11px] text-teal-800">
+            {isRecurring
+              ? "규칙으로 저장되어 학기가 바뀔 때마다 그 학기 날짜로 다시 생깁니다. 어느 학기에 적용할지 아래에서 골라주세요."
+              : `지금 학기에만 한 줄 생깁니다${currentTerm?.term_type ? ` (${currentTerm.term_type})` : ""}.`}
+          </span>
+        </div>
+
         <input
           autoFocus
           value={title}
@@ -325,6 +372,14 @@ export default function AcademicItemDialog({
             정규학기와 캠프는 하는 일이 전혀 다릅니다. 섞어두면 여름캠프가 시작될 때
             「교과서 준비」가 업무보드에 올라오고, 지워야 하는 업무가 몇 개 섞이면 사람은
             목록 전체를 안 믿게 됩니다. */}
+        {!isRecurring && (
+          <p className="mb-3 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 text-[11px] text-slate-600">
+            <b className="text-slate-800">이번 학기에만</b> 등록됩니다
+            {currentTerm?.term_type ? ` — ${currentTerm.year ?? ""} ${currentTerm.term_type}`.trim() : ""}.
+            해마다 되풀이되는 일이라면 위의 <b>🔁 매 학기 되풀이</b>를 켜주세요.
+          </p>
+        )}
+        {isRecurring && (
         <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 p-2.5">
           <p className="mb-1.5 text-[11px] font-bold text-slate-600">
             어느 학기에 적용하나요?
@@ -387,6 +442,7 @@ export default function AcademicItemDialog({
             </p>
           )}
         </div>
+        )}
 
         {/* 언제 ─────────────────────────────────────────────── */}
         <div className="mb-2 flex gap-1.5">
@@ -634,12 +690,21 @@ export default function AcademicItemDialog({
               <span className="text-slate-600">일 간격으로</span>
             </div>
             <p className="mt-1.5 text-[11px] leading-relaxed text-amber-800">
-              마지막 회의를 <b>마감일</b>에 두고 간격만큼 거슬러 잡습니다. 첫 모임에서 한 주 동안 누가 무엇을
-              맡을지 나누고, 다음 모임에서 처리한 일과 결정한 일을 함께 봅니다.
+              마감일 <b>앞에</b> 간격만큼 거슬러 잡습니다 — 2번 · 7일이면 <b>전전주 · 전주</b>입니다. 첫 모임에서
+              한 주 동안 누가 무엇을 맡을지 나누고, 다음 모임에서 처리한 일과 결정한 일을 함께 봅니다.
+              마감 당일에는 잡지 않습니다 - 그날 모여서는 준비할 시간이 없습니다.
             </p>
             {meetPreview.length > 0 && (
               <p className="mt-1 text-[11px] font-semibold text-amber-900">
-                {meetPreview.map((m) => `${m.seq}차 ${m.date}`).join(" · ")}
+                {meetPreview
+                  .map((m) => {
+                    // 「11-06」만 적으면 마감에서 얼마나 앞인지 세어봐야 합니다. 주 수를 함께 적습니다.
+                    const due = preview?.end ?? preview?.start;
+                    const days = due ? Math.round((Date.parse(`${due}T12:00:00Z`) - Date.parse(`${m.date}T12:00:00Z`)) / 86400000) : 0;
+                    const ago = days % 7 === 0 ? `${days / 7}주 전` : `${days}일 전`;
+                    return `${m.seq}차 ${m.date.slice(5)} (${ago})`;
+                  })
+                  .join(" · ")}
               </p>
             )}
           </div>
@@ -662,18 +727,6 @@ export default function AcademicItemDialog({
             />
             일 전에
           </span>
-          <label
-            className={"flex items-center gap-1.5 font-semibold " + (mode === "anchor" ? "text-slate-400" : "text-slate-700")}
-            title={mode === "anchor" ? "학기 기준은 규칙이라 항상 되풀이됩니다." : undefined}
-          >
-            <input
-              type="checkbox"
-              checked={isRecurring}
-              disabled={mode === "anchor"}
-              onChange={(e) => setRecurring(e.target.checked)}
-            />
-            🔁 매 학기 되풀이
-          </label>
         </div>
 
         {preview && (

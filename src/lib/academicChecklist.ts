@@ -149,9 +149,16 @@ export function addDays(date: string, days: number): string {
 export function meetingDates(dueDate: string, count: number, intervalDays: number): { seq: number; date: string }[] {
   const n = Math.max(1, Math.min(12, count || 1));
   const gap = Math.max(1, intervalDays || 7);
+  // **마지막 회의도 마감일 앞에 둡니다.**
+  //
+  // 예전에는 마지막 회의가 마감일 **당일**이었습니다(`-(n-1-i)*gap`). 그러면 2회짜리가
+  // 「1주 전 · 당일」이 되는데, 당일 회의는 이미 끝난 일을 앞에 두고 하는 자리라 준비에
+  // 쓸 수 없습니다. 실제로 필요한 것은 마감 전에 두 번 모이는 것입니다.
+  //
+  // 이제 2회 · 7일 간격이면 **전전주 · 전주**가 됩니다.
   return Array.from({ length: n }, (_, i) => ({
     seq: i + 1,
-    date: addDays(dueDate, -(n - 1 - i) * gap),
+    date: addDays(dueDate, -(n - i) * gap),
   }));
 }
 

@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useConfirm } from "@/components/common/ConfirmProvider";
 import { useToast } from "@/components/common/ToastProvider";
 import { buildWhereMaps, nameWithoutMark, needsCheck, normName, whereOf } from "@/lib/studentLabel";
+import { DAY_LABEL, describeTaken, freeDays, takenDays, type RosterSlot } from "@/lib/rosterDays";
 
 // 하원 셔틀명단 설정(요청: 하원체크표 탭 분리). 노선(호차)별로 누가 무슨 요일에 타는지 한
 // 화면에서 보고 바로 고칩니다. 요일 버튼(월~금)을 눌러 켜고 끄면 즉시 저장되고, 체크표·안내
@@ -63,12 +64,29 @@ export default function DismissalRosterClient({
   // 만들면 이름을 열쇠로 쓰게 되고, 그러면 김재이 셋이 같은 반으로 보입니다.
   const whereMaps = useMemo(() => buildWhereMaps(students), [students]);
 
-  // 이미 어느 노선에든 배정된 학생. 두 번 넣으면 체크표에 같은 아이가 두 줄로 뜹니다.
-  const assignedIds = useMemo(() => {
-    const s = new Set<string>();
-    for (const r of routes) for (const a of r.assignments) if (a.student_id) s.add(a.student_id);
-    return s;
-  }, [routes]);
+  /**
+   * 지금 누가 어느 요일에 어느 노선을 타는가.
+   *
+   * 예전에는 **「이미 어느 노선엔가 있으면 못 넣는다」**로 막았습니다. 그런데 황이안은
+   * 월·화·수는 지금 타는 차, 목요일에는 다른 곳으로 가는 차를 탑니다. 목요일 노선이 새로
+   * 생겨 넣으려는데 「이미 배정됨」으로 거절당했습니다.
+   *
+   * 막아야 하는 것은 「한 아이가 두 줄」이 아니라 **「같은 요일에 두 차」**입니다. 그건 있을
+   * 수 없는 일이고, 그대로 두면 그 요일에 두 기사님이 같은 아이를 기다립니다. 요일이 안
+   * 겹치면 줄이 둘이어도 괜찮습니다 - 체크표는 그날 타는 아이만 그립니다.
+   */
+  const slots = useMemo<RosterSlot[]>(
+    () =>
+      routes.flatMap((r) =>
+        r.assignments.map((a) => ({
+          routeNo: r.route_no,
+          assignmentId: a.id,
+          studentId: a.student_id ?? null,
+          weekdays: a.weekdays ?? [],
+        })),
+      ),
+    [routes],
+  );
 
   /** 이름을 치면 명부에서 찾습니다. 이름·학년·반 어느 쪽으로도 걸립니다. */
   const candidates = useMemo(() => {
@@ -88,6 +106,17 @@ export default function DismissalRosterClient({
 
   async function toggleDay(routeId: string, asg: RosterAssignment, day: number) {
     const has = asg.weekdays.includes(day);
+    // **켜는 쪽만 막습니다.** 끄는 것은 언제나 됩니다 - 잘못 켠 것을 못 끄면 더 답답합니다.
+    if (!has && asg.student_id) {
+      const other = takenDays(slots, asg.student_id, asg.id).get(day);
+      if (other) {
+        notify(
+          `${asg.student_name_raw} 학생은 ${DAY_LABEL[day]}요일에 이미 ${other}호를 탑니다. 그쪽에서 먼저 끄고 켜주세요.`,
+          "error",
+        );
+        return;
+      }
+    }
     const next = has ? asg.weekdays.filter((d) => d !== day) : [...asg.weekdays, day].sort();
     setRoutes((prev) =>
       prev.map((r) =>
@@ -163,16 +192,24 @@ export default function DismissalRosterClient({
       notify(`${route.route_no}호에 정류장이 없어 학생을 넣을 수 없습니다. [노선 관리]에서 정류장을 먼저 만들어주세요.`, "error");
       return;
     }
-    if (assignedIds.has(s.id)) {
-      notify(`${s.name} 학생은 이미 다른 노선에 있습니다. 옮기려면 그쪽에서 먼저 빼주세요.`, "error");
+    // **이미 잡힌 요일만 빼고 넣습니다.**
+    //
+    // 다른 노선에 있다는 이유만으로 막지 않습니다 - 요일마다 다른 차를 타는 아이가 있습니다.
+    // 다만 이미 잡힌 요일은 켜지 않습니다. 그 요일에 두 차가 같은 아이를 기다리게 됩니다.
+    const taken = takenDays(slots, s.id);
+    const free = freeDays(slots, s.id);
+    if (free.length === 0) {
+      notify(
+        `${s.name} 학생은 월~금이 이미 다 차 있습니다 — ${describeTaken(taken)}. 옮기려면 그쪽에서 요일을 먼저 꺼주세요.`,
+        "error",
+      );
       return;
     }
     setBusy(true);
     const { data, error } = await createClient()
       .from("shuttle_assignments")
-      // 기본은 월~금 전부입니다. 넣자마자 요일 버튼이 보이므로, 안 타는 요일만 눌러서 끕니다 -
-      // 아무 요일도 없이 넣으면 「넣었는데 어디에도 안 뜬다」가 됩니다.
-      .insert({ stop_id: route.firstStopId, student_id: s.id, student_name_raw: s.name, weekdays: [1, 2, 3, 4, 5] })
+      // 남은 요일만 켭니다. 아무 요일도 없이 넣으면 「넣었는데 어디에도 안 뜬다」가 됩니다.
+      .insert({ stop_id: route.firstStopId, student_id: s.id, student_name_raw: s.name, weekdays: free })
       .select("id, stop_id, student_id, student_name_raw, weekdays, note")
       .single();
     setBusy(false);
@@ -186,7 +223,12 @@ export default function DismissalRosterClient({
     );
     setNewName("");
     setAddingFor(null);
-    notify(`${s.name} 학생을 ${route.route_no}호에 넣었습니다. 안 타는 요일은 눌러서 끄세요.`, "success");
+    notify(
+      taken.size > 0
+        ? `${s.name} 학생을 ${route.route_no}호에 ${free.map((d) => DAY_LABEL[d]).join("·")}요일로 넣었습니다. ${describeTaken(taken)}는 이미 잡혀 있어 켜지 않았습니다.`
+        : `${s.name} 학생을 ${route.route_no}호에 넣었습니다. 안 타는 요일은 눌러서 끄세요.`,
+      "success",
+    );
   }
 
   return (
@@ -345,30 +387,46 @@ export default function DismissalRosterClient({
                     <p className="px-1 py-1 text-[11px] text-rose-500">명부에 「{newName.trim()}」이(가) 없습니다.</p>
                   ) : (
                     candidates.map((s) => {
-                      const already = assignedIds.has(s.id);
+                      // 「이미 배정됨」으로 막지 않습니다. 요일마다 다른 차를 타는 아이가
+                      // 있어서, 다른 노선에 있다는 것만으로는 못 넣을 이유가 안 됩니다.
+                      // 대신 **남은 요일이 몇인지** 그 자리에서 보여줍니다.
+                      const taken = takenDays(slots, s.id);
+                      const free = freeDays(slots, s.id);
+                      const full = free.length === 0;
                       return (
                         <button
                           key={s.id}
                           type="button"
-                          disabled={busy || already}
+                          disabled={busy || full}
                           onClick={() => void addStudent(r, s)}
+                          title={
+                            taken.size > 0
+                              ? `이미 잡힌 요일: ${describeTaken(taken)}${full ? "" : ` · 넣을 요일: ${free.map((d) => DAY_LABEL[d]).join("·")}`}`
+                              : "월~금 전부 넣습니다"
+                          }
                           className={
                             "flex items-center gap-1.5 rounded-lg px-2 py-1 text-left text-[12px] " +
-                            (already ? "bg-slate-50 text-slate-300" : "bg-blue-50 text-blue-900 hover:bg-blue-100")
+                            (full ? "bg-slate-50 text-slate-300" : "bg-blue-50 text-blue-900 hover:bg-blue-100")
                           }
                         >
                           <b>{s.name}</b>
                           <span className="text-[10px] text-slate-400">
                             {[s.grade, s.class_name].filter(Boolean).join(" ")}
                           </span>
-                          {already && <span className="ml-auto text-[10px] font-bold">이미 배정됨</span>}
+                          {full ? (
+                            <span className="ml-auto shrink-0 text-[10px] font-bold">월~금 모두 배정됨</span>
+                          ) : taken.size > 0 ? (
+                            <span className="ml-auto shrink-0 text-[10px] font-bold text-teal-700">
+                              {free.map((d) => DAY_LABEL[d]).join("·")}요일로 넣기
+                            </span>
+                          ) : null}
                         </button>
                       );
                     })
                   )}
                 </div>
                 <p className="mt-1 px-1 text-[10px] text-slate-400">
-                  넣으면 월~금 전부 켜집니다. 안 타는 요일은 아래 요일 버튼으로 끄세요.
+                  <b>이미 다른 노선에 있어도 넣을 수 있습니다</b> — 그쪽에 잡힌 요일만 빼고 켭니다. 안 타는 요일은 아래 요일 버튼으로 끄세요.
                 </p>
               </div>
             ) : (

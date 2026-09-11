@@ -59,6 +59,12 @@ export async function POST(req: Request) {
       inquiryId?: string;
       /** 어디서 온 연락인가. 출석부의 「출처」 칸에 그대로 뜹니다. */
       source?: "토들" | "구글챗" | "직접 등록";
+      /**
+       * 근거가 된 글. 화면이 이미 들고 있으면 그대로 넘깁니다 - 서버가 다시 읽으면
+       * 그 사이에 연락이 정리됐을 때 근거가 비어버립니다.
+       */
+      reasonText?: string;
+      reasonFrom?: string;
     } | null;
 
     const rawName = (body?.studentName ?? "").trim();
@@ -155,6 +161,26 @@ export async function POST(req: Request) {
     //
     // **셔틀과 출석부를 한 짝으로 처리합니다**(`applyAttendance`). 두 곳을 따로 고치면
     // 한쪽만 되고 다른 쪽은 안 된 상태가 생기는데, 그건 화면에 오류로 안 보입니다.
+    // ── 왜 바꿨는가를 함께 굳힙니다 ──────────────────────────────────────
+    //
+    // 「토들」만 남으면 며칠 뒤 체크표에서 「왜 결석이지?」를 물었을 때 답할 것이 창구
+    // 이름뿐입니다. 화면이 원문을 들고 있으면 그것을 쓰고, 없으면 연락 줄에서 한 번 읽어
+    // 옵니다 - 두 번째 길이 없으면 구글챗 알림처럼 원문을 안 들고 오는 화면에서 근거가
+    // 통째로 빕니다.
+    let reasonText = (body?.reasonText ?? "").trim();
+    let reasonFrom = (body?.reasonFrom ?? "").trim() || null;
+    let reasonUrl: string | null = null;
+    if (!reasonText && body?.inquiryId) {
+      const { data: src } = await supabase
+        .from("pickup_requests")
+        .select("raw_text, channel_label, sender_name, source_url")
+        .eq("id", body.inquiryId)
+        .maybeSingle();
+      reasonText = ((src?.raw_text as string | null) ?? "").trim();
+      reasonFrom = reasonFrom ?? ((src?.channel_label as string | null) ?? (src?.sender_name as string | null) ?? null);
+      reasonUrl = (src?.source_url as string | null) ?? null;
+    }
+
     const applied = await applyAttendance(supabase, {
       studentId: studentId ?? matches.find((m) => m.student_id)?.student_id ?? null,
       studentName: matches[0]?.student_name_raw ?? rawName,
@@ -163,6 +189,11 @@ export async function POST(req: Request) {
       assignments: matches.map((a) => ({ id: a.id, student_name_raw: a.student_name_raw })),
       actor: { email: me.email, name: me.name ?? null },
       source: body?.source ?? "토들",
+      // 근거가 없으면 **없다고 둡니다.** 「담당자가 눌렀습니다」 같은 빈 문장을 채워 넣으면
+      // 근거가 있는 줄과 구별이 사라집니다.
+      reason: reasonText
+        ? { text: reasonText, source: body?.source ?? "토들", from: reasonFrom, url: reasonUrl }
+        : null,
     });
 
     // 이 문의는 처리된 것으로 표시합니다 - 셔틀에 반영해 놓고 인박스에는 그대로 남아 있으면,

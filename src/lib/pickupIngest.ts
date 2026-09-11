@@ -17,7 +17,7 @@ import { extractTargetDate, extractTargetRange } from "@/lib/attendanceDigest";
 import { extractRecurringWeekdays, hasRecurringPhrase, weekdayLabel } from "@/lib/parentRecurrence";
 import { nameSurfaces, readSiblings } from "@/lib/attendanceIntent";
 import { genCaseId } from "@/lib/caseId";
-import { logChecklist } from "@/lib/checklistLog";
+import { logChecklist, type ChecklistReason } from "@/lib/checklistLog";
 import { isPleasantry, pleasantryNote } from "@/lib/shortTalk";
 import { objectPickupNote } from "@/lib/objectPickup";
 
@@ -990,8 +990,17 @@ export async function ingestPickup(
   // 여기서 세 번째 인자를 안 넘기고 있었습니다. 그러면 `checked_by` 가 비어서, 체크표의
   // 근거 창이 "담당자가 체크표에서 픽업으로 표시했습니다"라고 말합니다 - 기계가 한 일이
   // 사람이 한 일로 보입니다. 그래서 "이거 누가 눌렀지?"를 확인할 방법이 없었습니다.
+  //
+  // **근거는 여기서 함께 굳힙니다.** 「AI(토들)」이라고만 남기면, 나중에 「왜 픽업이 됐지?」를
+  // 물었을 때 답할 것이 창구 이름뿐입니다. 판단의 재료였던 글 자체를 함께 남겨야, 잘못
+  // 읽은 것인지 실제로 그렇게 연락이 온 것인지를 그 자리에서 가릴 수 있습니다.
   if (autoConfirm && matched) {
-    await applyPickup(supabase, matched.id, serviceDate, `AI(${input.source})`);
+    await applyPickup(supabase, matched.id, serviceDate, `AI(${input.source})`, {
+      text,
+      source: input.source,
+      from: input.channelLabel ?? input.senderName ?? null,
+      url: input.sourceUrl ?? null,
+    });
   }
 
   return {
@@ -1044,6 +1053,11 @@ export async function applyPickup(
    * 비워두면 화면에 "담당자가 눌렀다"로 나와서, 기계가 한 일이 사람이 한 일로 보입니다.
    */
   updatedBy?: string,
+  /**
+   * **왜 걸었는가.** 「토들」이라고만 남기면 나중에 이유를 알 수 없습니다 - 토들은 창구
+   * 이름이지 사람이 아니라, 되물을 곳이 없습니다. 근거가 된 연락 원문을 함께 굳힙니다.
+   */
+  reason?: ChecklistReason | null,
 ): Promise<number> {
   // 이름을 함께 읽습니다. 활동 기록에 배정 번호만 남으면 나중에 누구였는지 못 읽습니다.
   const { data: assignments } = await supabase
@@ -1095,6 +1109,7 @@ export async function applyPickup(
       before: (existing?.status as string | null) ?? null,
       after: "픽업",
       actor: { email: "", name: updatedBy || "자동" },
+      reason: reason ?? null,
     });
   }
   return ids.length;

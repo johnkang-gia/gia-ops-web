@@ -341,6 +341,10 @@ export default function PickupInboxClient({
           serviceDate: d,
           inquiryId: row.id,
           source: row.source === "googlechat" ? "구글챗" : "토들",
+          // 화면이 이미 들고 있는 원문을 그대로 넘깁니다. 이 글이 곧 「왜 결석인가」이고,
+          // 이 줄이 나중에 정리되면 그때는 서버도 못 찾습니다.
+          reasonText: row.raw_text ?? "",
+          reasonFrom: row.channel_label ?? row.sender_name ?? "",
         }),
       });
       const json = (await res.json().catch(() => null)) as { ok?: boolean; message?: string } | null;

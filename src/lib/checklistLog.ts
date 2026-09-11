@@ -8,6 +8,28 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type ChecklistAction = "상태변경" | "노선이동" | "메모";
 
+/**
+ * **왜 바꿨는가.**
+ *
+ * 「누가」는 이미 남고 있었습니다 - 그런데 자동이 한 일에는 「토들」이라고만 적혔습니다.
+ * 토들은 사람이 아니라 창구 이름이라 물어볼 곳이 없고, 확인하려면 인박스로 넘어가 그 아이의
+ * 연락을 다시 찾아야 했습니다. 그 연락이 나중에 정리되면 근거는 아예 사라집니다.
+ *
+ * 그래서 근거를 **판단이 일어난 그 순간에** 함께 굳힙니다. 담는 것은 요약이 아니라 **원문**
+ * 입니다 - 요약은 이미 한 번 해석된 것이라, 해석이 틀렸을 때 그 사실을 요약 안에서는
+ * 알아볼 수 없습니다.
+ */
+export type ChecklistReason = {
+  /** 받은 글 그대로. */
+  text: string;
+  /** 어디서 왔나 — '토들' · '구글챗' · '출석부' · '하원수단' · '예약'. */
+  source: string;
+  /** 누구의 연락인가 — 방 이름·보낸 사람. 되물을 곳입니다. */
+  from?: string | null;
+  /** 원본으로 돌아가는 길. 없으면 비웁니다. */
+  url?: string | null;
+};
+
 export type ChecklistLogRow = {
   id: string;
   service_date: string;
@@ -19,7 +41,32 @@ export type ChecklistLogRow = {
   actor_email: string;
   actor_name: string | null;
   created_at: string;
+  reason_text?: string | null;
+  reason_source?: string | null;
+  reason_from?: string | null;
+  reason_url?: string | null;
 };
+
+/** 기록 한 줄에서 근거를 꺼냅니다. 없으면 null - 사람이 직접 누른 줄에는 근거가 없습니다. */
+export function reasonOf(r: ChecklistLogRow): ChecklistReason | null {
+  const text = (r.reason_text ?? "").trim();
+  if (!text) return null;
+  return { text, source: r.reason_source ?? "출처 미상", from: r.reason_from ?? null, url: r.reason_url ?? null };
+}
+
+/** 표에 넣을 모양으로. 빈 글은 칸을 비워둡니다 - 빈 따옴표가 남으면 근거가 있는 줄로 보입니다. */
+export function reasonColumns(reason?: ChecklistReason | null) {
+  const text = (reason?.text ?? "").trim();
+  if (!text) return {};
+  return {
+    // 원문이 아주 길 때가 있습니다(사진 설명이 붙은 토들 글). 기록은 되짚어 보기 위한
+    // 것이라, 앞부분만으로도 무슨 이야기인지 알 수 있습니다.
+    reason_text: text.slice(0, 1000),
+    reason_source: reason?.source ?? null,
+    reason_from: reason?.from ?? null,
+    reason_url: reason?.url ?? null,
+  };
+}
 
 export type LogActor = { email: string; name: string | null };
 
@@ -41,9 +88,12 @@ export async function logChecklist(
     before?: string | null;
     after?: string | null;
     actor: LogActor;
+    /** 왜 바꿨는가. 사람이 직접 누른 경우에는 없습니다. */
+    reason?: ChecklistReason | null;
   },
 ): Promise<void> {
   const { error } = await supabase.from("shuttle_checklist_log").insert({
+    ...reasonColumns(entry.reason),
     service_date: entry.serviceDate,
     term: entry.term ?? null,
     assignment_id: entry.assignmentId,
@@ -54,10 +104,17 @@ export async function logChecklist(
     actor_email: entry.actor.email,
     actor_name: entry.actor.name,
   });
-  // 42P01/PGRST205 = 표가 아직 없음(마이그레이션 전). 그 밖의 실패는 소리를 냅니다.
-  if (error && error.code !== "42P01" && error.code !== "PGRST205") {
-    console.error("[checklistLog] 활동 기록 실패:", error.message, entry);
+  if (!error) return;
+  // 42P01/PGRST205 = 표가 아직 없음(마이그레이션 전).
+  if (error.code === "42P01" || error.code === "PGRST205") return;
+  // PGRST204 = 근거 칸이 아직 없음. **근거를 못 담는다고 기록까지 버리지는 않습니다** -
+  // 누가 바꿨는지라도 남는 편이 낫습니다. 대신 조용히 넘기지 않고 소리를 냅니다.
+  if (error.code === "PGRST204" && entry.reason) {
+    console.error("[checklistLog] 근거 칸이 아직 없습니다(마이그레이션 필요). 근거 없이 남깁니다:", error.message);
+    await logChecklist(supabase, { ...entry, reason: null });
+    return;
   }
+  console.error("[checklistLog] 활동 기록 실패:", error.message, entry);
 }
 
 /** "3분 전"처럼 짧게. 오늘 안의 일이라 날짜는 안 씁니다. */

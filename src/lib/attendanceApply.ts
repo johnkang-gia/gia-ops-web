@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { setBoardingStatus } from "@/lib/boardingWrite";
+import type { ChecklistReason } from "@/lib/checklistLog";
 
 /**
  * **출결 한 건을 적용하고, 되돌립니다.**
@@ -65,6 +66,14 @@ export async function applyAttendance(
     actor: { email: string; name: string | null };
     /** 어디서 온 연락인가. 출석부의 「출처」 칸에 그대로 뜹니다. */
     source: "토들" | "구글챗" | "직접 등록";
+    /**
+     * **왜 이렇게 바꿨는가** — 근거가 된 연락 원문.
+     *
+     * 「토들」은 창구 이름이지 사람이 아닙니다. 이것이 없으면 며칠 뒤 체크표에서 「왜
+     * 결석이지?」를 물었을 때 답할 것이 창구 이름뿐이고, 그 연락은 인박스에서 이미
+     * 정리됐을 수 있습니다. 그래서 판단이 일어난 자리에서 함께 굳힙니다.
+     */
+    reason?: ChecklistReason | null;
   },
 ): Promise<ApplyResult> {
   const errors: string[] = [];
@@ -81,6 +90,7 @@ export async function applyAttendance(
         studentName: a.student_name_raw,
         status: boardingStatus,
         actor,
+        reason: input.reason ?? null,
       });
       if (error) errors.push(`셔틀 체크표: ${error}`);
       else boardings += 1;

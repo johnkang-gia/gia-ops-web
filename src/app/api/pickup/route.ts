@@ -42,7 +42,7 @@ export async function POST(req: Request) {
 
     const { data: row } = await supabase
       .from("pickup_requests")
-      .select("id, service_date, student_id")
+      .select("id, service_date, student_id, raw_text, source, channel_label, sender_name, source_url")
       .eq("id", id)
       .maybeSingle();
     if (!row) return NextResponse.json({ error: "요청을 찾을 수 없습니다." }, { status: 404 });
@@ -67,7 +67,15 @@ export async function POST(req: Request) {
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
     await bumpPickupFeedback(supabase, id, true);
-    const applied = await applyPickup(supabase, finalStudentId, row.service_date as string);
+    // 사람이 인박스에서 확정한 것이라 「누가」는 분명합니다. 그래도 **근거 원문**을 함께
+    // 남깁니다 - 며칠 뒤 기록을 보는 사람에게는 「누가 눌렀다」만으로 왜 픽업인지 알 수
+    // 없고, 그 연락은 인박스에서 이미 정리됐을 수 있습니다.
+    const applied = await applyPickup(supabase, finalStudentId, row.service_date as string, me.name || me.email, {
+      text: ((row.raw_text as string | null) ?? "").trim() || "인박스에서 사람이 직접 픽업으로 확정했습니다.",
+      source: (row.source as string | null) ?? "토들",
+      from: (row.channel_label as string | null) ?? (row.sender_name as string | null) ?? null,
+      url: (row.source_url as string | null) ?? null,
+    });
     return NextResponse.json({ ok: true, applied });
   }
 

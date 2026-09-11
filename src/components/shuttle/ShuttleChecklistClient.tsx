@@ -5,7 +5,7 @@ import { buildWhereMaps, normName as normStudentName } from "@/lib/studentLabel"
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { logChecklist, type ChecklistLogRow, type LogActor } from "@/lib/checklistLog";
+import { logChecklist, reasonOf, type ChecklistLogRow, type LogActor } from "@/lib/checklistLog";
 import { setBoardingStatus } from "@/lib/boardingWrite";
 import { useToast } from "@/components/common/ToastProvider";
 import ShuttleChecklistTable, { effectiveRouteId } from "./ShuttleChecklistTable";
@@ -255,23 +255,43 @@ export default function ShuttleChecklistClient({
       <div className="mt-3 rounded-lg border border-slate-200 bg-white p-2">
         <p className="mb-1 text-[11px] font-bold text-slate-700">🕘 오늘 이 학생에게 있었던 일</p>
         <ul className="flex flex-col gap-0.5">
-          {rows.map((r) => (
-            <li key={r.id} className="flex items-baseline gap-1.5 text-[11px] leading-snug text-slate-600">
-              <span className="shrink-0 tabular-nums text-[10px] text-slate-400">
-                {new Date(r.created_at).toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit" })}
-              </span>
-              <span className="shrink-0 rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{r.action}</span>
-              <span className="min-w-0">
-                <b className="text-slate-800">{r.actor_name || r.actor_email}</b>
-                {" · "}
-                {r.action === "메모"
-                  ? r.after_value
-                    ? `메모를 "${r.after_value}"로`
-                    : "메모를 지움"
-                  : `${r.before_value ?? "?"} → ${r.after_value ?? "?"}`}
-              </span>
-            </li>
-          ))}
+          {rows.map((r) => {
+            // 근거 원문은 **접지 않고** 그대로 펼쳐 둡니다. 접힌 것은 아무도 안 펼쳐 봅니다.
+            const why = reasonOf(r);
+            return (
+              <li key={r.id} className="text-[11px] leading-snug text-slate-600">
+                <div className="flex items-baseline gap-1.5">
+                  <span className="shrink-0 tabular-nums text-[10px] text-slate-400">
+                    {new Date(r.created_at).toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                  <span className="shrink-0 rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{r.action}</span>
+                  <span className="min-w-0">
+                    <b className="text-slate-800">{r.actor_name || r.actor_email}</b>
+                    {" · "}
+                    {r.action === "메모"
+                      ? r.after_value
+                        ? `메모를 "${r.after_value}"로`
+                        : "메모를 지움"
+                      : `${r.before_value ?? "?"} → ${r.after_value ?? "?"}`}
+                  </span>
+                </div>
+                {why && (
+                  <div className="mt-0.5 ml-[3.1rem] rounded border-l-2 border-slate-300 bg-slate-50 py-1 pl-2 pr-1">
+                    <p className="text-[9px] font-bold text-slate-400">
+                      왜 · {why.source}
+                      {why.from ? ` · ${why.from}` : ""}
+                    </p>
+                    <p className="whitespace-pre-wrap text-[10px] leading-relaxed text-slate-700">{why.text}</p>
+                    {why.url && (
+                      <a href={why.url} target="_blank" rel="noreferrer" className="text-[9px] font-bold text-sky-600 underline">
+                        원문 열기
+                      </a>
+                    )}
+                  </div>
+                )}
+              </li>
+            );
+          })}
         </ul>
       </div>
     );

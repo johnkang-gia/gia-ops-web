@@ -52,7 +52,13 @@ export async function GET(req: Request) {
   if (planErr) console.error("[cron:pickup-schedules] 하원수단 조회 실패:", planErr);
   for (const [sid, p] of planByStudent) {
     const label = [p.depart_time, p.label].filter(Boolean).join(" ");
-    const seats = await applyPickup(supabase, sid, today, `하원수단(${p.kind + (label ? " " + label : "")})`);
+    // 근거는 「어느 연락」이 아니라 **학생 프로필에 적힌 하원수단**입니다. 그 사실을 그대로
+    // 적어야 기록을 읽는 사람이 인박스를 뒤지지 않습니다 - 여기엔 찾을 연락이 없습니다.
+    const seats = await applyPickup(supabase, sid, today, `하원수단(${p.kind + (label ? " " + label : "")})`, {
+      text: `${["일", "월", "화", "수", "목", "금", "토"][weekday] ?? "?"}요일 하원수단이 「${p.kind}${label ? ` ${label}` : ""}」로 등록되어 있어 셔틀에서 뺐습니다.`,
+      source: "하원수단",
+      from: "학생 프로필 🏠 하원수단",
+    });
     if (seats > 0) dismissalApplied += 1;
   }
 
@@ -73,6 +79,32 @@ export async function GET(req: Request) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   if (!rows || rows.length === 0) return NextResponse.json({ ok: true, applied: 0, dismissalApplied });
 
+  // 예약이 생긴 **근거가 된 연락 원문**을 한 번에 읽어둡니다.
+  //
+  // 예약 줄에는 「왜」가 없습니다. 며칠 전 학부모가 보낸 글에서 만들어진 것이라, 기록에
+  // 「AI(토들)」만 남으면 오늘 그 표시를 보는 사람은 무슨 사정인지 알 길이 없습니다.
+  // 예약마다 따로 읽으면 조회가 줄 수만큼 늘어나므로 한 번에 모아 읽습니다.
+  const reqIds = [...new Set(rows.map((r) => r.request_id as string | null).filter((x): x is string => !!x))];
+  const originByRequest = new Map<string, { text: string; source: string; from: string | null; url: string | null }>();
+  if (reqIds.length > 0) {
+    const { data: origins, error: originErr } = await supabase
+      .from("pickup_requests")
+      .select("id, raw_text, source, channel_label, sender_name, source_url")
+      .in("id", reqIds);
+    // 근거를 못 읽었다고 픽업을 안 거는 것은 더 나쁩니다. 다만 조용히 넘기지는 않습니다.
+    if (originErr) console.error("[cron:pickup-schedules] 예약 근거 원문 조회 실패:", originErr.message);
+    for (const o of (origins as { id: string; raw_text: string | null; source: string | null; channel_label: string | null; sender_name: string | null; source_url: string | null }[] | null) ?? []) {
+      const text = (o.raw_text ?? "").trim();
+      if (!text) continue;
+      originByRequest.set(o.id, {
+        text,
+        source: o.source ?? "토들",
+        from: o.channel_label ?? o.sender_name ?? null,
+        url: o.source_url ?? null,
+      });
+    }
+  }
+
   let applied = 0;
   let failed = 0;
   let notified = 0;
@@ -91,7 +123,16 @@ export async function GET(req: Request) {
       continue;
     }
 
-    const seats = await applyPickup(supabase, studentId, today);
+    const origin = originByRequest.get((row.request_id as string | null) ?? "");
+    const seats = await applyPickup(supabase, studentId, today, undefined, {
+      // 원문이 있으면 원문이 먼저입니다. 없으면 예약을 만들 때 적어둔 이유라도 남깁니다 -
+      // 「근거 없음」과 「근거를 못 찾음」은 다른 이야기이고, 둘 다 빈칸으로 두면 구별이
+      // 사라집니다.
+      text: origin?.text ?? `${(row.source_note as string | null) ?? "며칠 전 연락으로 잡힌 예약입니다."}`,
+      source: origin?.source ?? "예약",
+      from: origin?.from ?? "픽업 예약",
+      url: origin?.url ?? null,
+    });
 
     // 차량을 타지 않는 학생이면 좌석이 없습니다. 이건 오류가 아니라 원래 걸 것이 없는 경우라
     // '적용됨'으로 두되 기록은 남깁니다.
@@ -159,7 +200,7 @@ export async function GET(req: Request) {
   // 끝날이 비어 있으면 아예 걸러내서, 반복 픽업이 **한 번도 적용되지 않았습니다.**
   const { data: notes } = await supabase
     .from("shuttle_persistent_notes")
-    .select("id, student_id, student_name, effect_kind, effect_from, effect_to, effect_days")
+    .select("id, student_id, student_name, content, effect_kind, effect_from, effect_to, effect_days")
     .eq("active", true)
     .in("effect_kind", ["pickup", "absent"])
     .lte("effect_from", today)
@@ -172,6 +213,7 @@ export async function GET(req: Request) {
     id: string;
     student_id: string | null;
     student_name: string;
+    content: string | null;
     effect_kind: string;
     effect_days: number[] | null;
   }[] | null) ?? []) {
@@ -179,8 +221,15 @@ export async function GET(req: Request) {
     // 요일이 정해진 것("매주 금요일")은 그 요일에만 적용합니다. 비어 있으면 기간 내내입니다.
     const days = n.effect_days ?? [];
     if (days.length > 0 && !days.includes(todayWd)) continue;
+    // 근거는 특이사항에 적힌 **본문 그대로**입니다. 「기간 특이사항」이라고만 남기면 무슨
+    // 사정인지 알 수 없고, 그 특이사항이 나중에 지워지면 이유는 아예 사라집니다.
+    const noteReason = {
+      text: (n.content ?? "").trim() || `${n.student_name} 학생에게 기간 특이사항이 걸려 있습니다.`,
+      source: "기간 특이사항",
+      from: "하원체크표 지속 특이사항",
+    };
     if (n.effect_kind === "pickup") {
-      periodApplied += (await applyPickup(supabase, n.student_id, today)) > 0 ? 1 : 0;
+      periodApplied += (await applyPickup(supabase, n.student_id, today, undefined, noteReason)) > 0 ? 1 : 0;
       continue;
     }
     // 결석: 그날 그 아이의 배정을 결석으로 표시합니다.
@@ -220,6 +269,7 @@ export async function GET(req: Request) {
           action: "상태변경",
           after: "결석",
           actor: { email: "", name: "AI(기간 특이사항)" },
+          reason: noteReason,
         });
     }
     if ((asg ?? []).length > 0) periodApplied += 1;

@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { logChecklist, type LogActor } from "./checklistLog";
+import { logChecklist, type ChecklistReason, type LogActor } from "./checklistLog";
 
 /**
  * **탑승 상태를 바꾸는 일은 여기 한 곳에서만 합니다.**
@@ -56,6 +56,12 @@ export async function setBoardingStatus(
     /** 바뀌기 전 상태. 모르면 비워둡니다 - 기록에 「? → 픽업」으로 남습니다. */
     before?: BoardingStatus | string | null;
     actor: BoardingActor;
+    /**
+     * **왜 바꿨는가.** 자동으로 바꾸는 자리는 반드시 채웁니다 - 「토들」은 창구 이름이지
+     * 사람이 아니라, 이것이 없으면 나중에 물어볼 곳이 없습니다. 사람이 직접 누른 자리는
+     * 비워둡니다(누가 눌렀는지가 곧 근거입니다).
+     */
+    reason?: ChecklistReason | null;
   },
 ): Promise<{ error: string | null }> {
   const { error } = await supabase.from("shuttle_boardings").upsert(
@@ -82,6 +88,7 @@ export async function setBoardingStatus(
     before: args.before ?? null,
     after: args.status,
     actor: args.actor,
+    reason: args.reason ?? null,
   });
   return { error: null };
 }

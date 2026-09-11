@@ -99,7 +99,11 @@ export async function POST(req: Request) {
     let applied = 0;
     if (appliesToday) {
       const label = [(body?.time ?? "").trim(), (body?.label ?? "").trim()].filter(Boolean).join(" ");
-      applied = await applyPickup(supabase, studentId, today, `하원수단(${kind}${label ? ` ${label}` : ""})`);
+      applied = await applyPickup(supabase, studentId, today, `하원수단(${kind}${label ? ` ${label}` : ""})`, {
+        text: `하원수단을 「${kind}${label ? ` ${label}` : ""}」로 등록해 오늘 셔틀에서 뺐습니다.`,
+        source: "하원수단",
+        from: me.name || me.email,
+      });
     }
 
     return NextResponse.json({

@@ -21,7 +21,7 @@ import {
 } from "@/lib/attendanceDigest";
 import AttendanceTeachModal from "@/components/work/AttendanceTeachModal";
 import AttendanceRulesModal from "@/components/work/AttendanceRulesModal";
-import { describeLog, shortAgo, type ChecklistLogRow } from "@/lib/checklistLog";
+import { describeLog, reasonOf, shortAgo, type ChecklistLogRow } from "@/lib/checklistLog";
 import { Who } from "@/components/common/HomonymProvider";
 
 const POLL_MS = 15000;
@@ -400,7 +400,13 @@ export default function ShuttleChecklistSidebar({
       await fetch("/api/work/attendance-action", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ studentName: coreName, action: "예정" }),
+        // 되돌린 것도 왜 되돌렸는지 남습니다 - 「지워졌다」만 보이면 다음 사람이 다시 겁니다.
+        body: JSON.stringify({
+          studentName: coreName,
+          action: "예정",
+          reasonText: `출결 알림에서 내렸습니다: ${e.rawText}`,
+          reasonFrom: e.channelLabel ?? e.senderName ?? "",
+        }),
       }).catch(() => null);
 
       setDismissed((prev) => new Set(prev).add(key));
@@ -486,18 +492,33 @@ export default function ShuttleChecklistSidebar({
                 오늘은 아직 아무도 손대지 않았습니다. 픽업·결석을 누르거나 차를 바꾸면 여기에 남습니다.
               </p>
             ) : (
-              activityLog.slice(0, 40).map((r) => (
-                <button
-                  key={r.id}
-                  type="button"
-                  onClick={() => onSelectStudentName?.(r.student_name)}
-                  title={`${new Date(r.created_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })} · ${r.actor_email}`}
-                  className="flex items-baseline gap-1 rounded px-1 py-0.5 text-left text-[10px] leading-snug text-slate-600 hover:bg-slate-50"
-                >
-                  <span className="shrink-0 tabular-nums text-[9px] text-slate-400">{shortAgo(r.created_at)}</span>
-                  <span className="min-w-0 flex-1">{describeLog(r)}</span>
-                </button>
-              ))
+              activityLog.slice(0, 40).map((r) => {
+                // **왜 바꿨는가를 한 줄 아래 붙입니다.** 「토들 · 홍길동 픽업」만 보이면
+                // 토들은 창구 이름이라 되물을 곳이 없습니다. 근거가 결과 옆에 없으면 사람은
+                // 결과를 못 믿고, 확인하려고 매번 인박스로 넘어갑니다.
+                const why = reasonOf(r);
+                return (
+                  <button
+                    key={r.id}
+                    type="button"
+                    onClick={() => onSelectStudentName?.(r.student_name)}
+                    title={`${new Date(r.created_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })} · ${r.actor_email}${why ? `\n\n[${why.source}${why.from ? ` · ${why.from}` : ""}]\n${why.text}` : ""}`}
+                    className="flex flex-col gap-0.5 rounded px-1 py-0.5 text-left text-[10px] leading-snug text-slate-600 hover:bg-slate-50"
+                  >
+                    <span className="flex items-baseline gap-1">
+                      <span className="shrink-0 tabular-nums text-[9px] text-slate-400">{shortAgo(r.created_at)}</span>
+                      <span className="min-w-0 flex-1">{describeLog(r)}</span>
+                    </span>
+                    {why && (
+                      <span className="ml-[1.9rem] block border-l-2 border-slate-200 pl-1.5 text-[9px] leading-snug text-slate-500">
+                        <b className="text-slate-400">{why.source}</b>
+                        {why.from ? <span className="text-slate-400"> · {why.from}</span> : null}
+                        <span className="ml-1 line-clamp-2">{why.text}</span>
+                      </span>
+                    )}
+                  </button>
+                );
+              })
             )}
           </div>
         )}

@@ -164,7 +164,7 @@ export default async function ShuttleChecklistPage({
     loadDismissalForDay(supabase, { dayIso: today, weekday: todayWeekday, excludeShuttle: true }),
     supabase.from("google_chat_mirror_messages").select("*").order("created_at_google", { ascending: false }).limit(200),
     supabase.from("wr_students_basic").select("id, name, grade, name_en, birth_date, class_name").eq("status", "active"),
-    supabase.from("shuttle_checklist_log").select("id, service_date, assignment_id, student_name, action, before_value, after_value, actor_email, actor_name, created_at").eq("service_date", today).order("created_at", { ascending: false }).limit(100),
+    supabase.from("shuttle_checklist_log").select("*").eq("service_date", today).order("created_at", { ascending: false }).limit(100),
     supabase.from("shuttle_ride_alongs").select("id, student_id, student_surface, host_student_id, host_surface, route_id, status, note, raw_text").eq("service_date", today).neq("status", "취소"),
     // 오늘 **등록된** 출결 — 결석과 픽업 둘 다.
     //

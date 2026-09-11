@@ -332,7 +332,7 @@ async function findDuplicate(
 function detectPeriod(
   text: string,
   base: Date
-): { kind: "pickup" | "absent"; from: string; to: string; why: string } | null {
+): { kind: "pickup" | "absent"; from: string; to: string; why: string; assumedStart: boolean } | null {
   if (!text) return null;
 
   // 원칙은 "그날 하루"입니다. 그래서 "까지" 같은 말이 있어야 기간으로 봤습니다.
@@ -358,7 +358,22 @@ function detectPeriod(
     from: range.from,
     to: range.to,
     why: text.slice(0, 60),
+    // **시작일을 글에서 읽었는가, 우리가 채웠는가.**
+    //
+    // 「결석은 23일까지가 맞습니다」 같은 정정 글에는 시작이 없습니다. 그러면 날짜 읽기가
+    // 시작을 **글이 온 날**로 채웁니다 - 새 통보라면 그게 맞지만, 이미 알고 있는 기간을
+    // 고쳐 주는 글이라면 기간이 통째로 앞당겨집니다.
+    //
+    // 실제로 났습니다: 한우영의 결석은 9/16~9/23 인데, 9/09 에 온 정정 글이 9/09~9/23 짜리
+    // 특이사항을 **하나 더** 만들었습니다. 그래서 9월 11일 금요일에 결석으로 떴습니다.
+    // 화면에는 오류가 아니라 「오늘 결석인 아이」로 보입니다.
+    assumedStart: !hasExplicitRange && !startAnchorFound(text),
   };
+}
+
+/** 글에 「…부터」처럼 시작을 적어줬는가. 없으면 시작은 우리가 채운 값입니다. */
+function startAnchorFound(text: string): boolean {
+  return /(부터|from|starting)/i.test(text);
 }
 
 /**
@@ -939,7 +954,46 @@ export async function ingestPickup(
   let persistentNoteId: string | null = null;
 
   if (period && requestId && matched) {
-    const { data: noteRow } = await supabase
+    // ── **정정 글은 새 줄을 만들지 않습니다.** ────────────────────────────
+    //
+    // 「결석은 23일까지가 맞습니다」처럼 이미 알려준 기간을 고쳐 주는 글이 옵니다. 그걸
+    // 새 기간으로 넣으면 같은 학생에게 **겹치는 기간이 둘** 생기고, 둘 중 넓은 쪽이
+    // 화면을 이깁니다.
+    //
+    // 실제로 났습니다: 한우영의 결석은 9/16~9/23 인데, 정정 글이 9/09~9/23 짜리를 하나 더
+    // 만들어 9월 11일 금요일에 결석으로 떴습니다. 사람이 그날 아침 손으로 「탑승」으로
+    // 되돌려야 했습니다.
+    //
+    // 그래서 같은 학생·같은 갈래로 **겹치는 줄이 이미 있으면 그 줄을 고칩니다.**
+    const { data: existingNote } = await supabase
+      .from("shuttle_persistent_notes")
+      .select("id, effect_from, effect_to, content")
+      .eq("student_id", matched.id)
+      .eq("effect_kind", period.kind)
+      .eq("active", true)
+      // 겹치거나 맞닿는 줄. 끝이 새 시작보다 앞이거나 시작이 새 끝보다 뒤면 남남입니다.
+      .lte("effect_from", period.to)
+      .or(`effect_to.is.null,effect_to.gte.${period.from}`)
+      .limit(1)
+      .maybeSingle();
+
+    if (existingNote) {
+      // **시작일은 글에서 읽었을 때만 고칩니다.** 정정 글에는 시작이 없어서 우리가 「오늘」로
+      // 채운 값인데, 그 값으로 이미 맞게 적힌 시작을 덮으면 기간이 앞당겨집니다.
+      const nextFrom = period.assumedStart ? ((existingNote.effect_from as string | null) ?? period.from) : period.from;
+      const { error: upErr } = await supabase
+        .from("shuttle_persistent_notes")
+        .update({
+          effect_from: nextFrom,
+          effect_to: period.to,
+          content: `${period.kind === "pickup" ? "픽업" : "결석"} · ${nextFrom} ~ ${period.to} (${period.why})`,
+        })
+        .eq("id", existingNote.id as string);
+      // 조용히 넘기지 않습니다 - 고쳐지지 않았는데 「반영됨」으로 보이면 아무도 안 찾아봅니다.
+      if (upErr) console.error("[pickup] 기간 특이사항을 고치지 못했습니다:", upErr.message);
+      persistentNoteId = existingNote.id as string;
+    } else {
+      const { data: noteRow } = await supabase
       .from("shuttle_persistent_notes")
       .insert({
         term: "정규학기",
@@ -955,6 +1009,7 @@ export async function ingestPickup(
       .select("id")
       .single();
     persistentNoteId = (noteRow?.id as string | undefined) ?? null;
+    }
   }
 
   // ── 앞으로의 날짜를 예약해둡니다 ──────────────────────────────────────────

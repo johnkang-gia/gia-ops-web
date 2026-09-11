@@ -59,12 +59,18 @@ export function isSpan(t: SpanTask): boolean {
  * 줄(lane)은 **먼저 시작한 것이 위**입니다. 같은 날 시작이면 긴 것이 위 - 짧은 것이 위에
  * 앉으면 긴 막대가 여러 줄로 흩어져 보입니다.
  */
-export function layoutWeek<T extends SpanTask>(tasks: T[], weekStart: string): SpanBar<T>[] {
+export function layoutWeek<T extends SpanTask>(tasks: T[], weekStart: string, every = false): SpanBar<T>[] {
   const weekEnd = addDays(weekStart, 6);
 
   const inWeek = tasks
-    .filter((t) => isSpan(t))
-    .map((t) => ({ t, from: t.startOn as string, to: t.endOn as string }))
+    // `every: true` 면 하루짜리도 한 칸짜리 막대로 그립니다.
+    //
+    // 예전에는 여러 날짜리만 막대였고 하루짜리는 칸 안에 점+글자로 따로 그렸습니다. 그래서
+    // 같은 달력 안에 **두 가지 모양**이 섞였고, 어느 것이 이어지는 일인지 훑어서는 알 수
+    // 없었습니다. 전부 같은 막대로 그리면 길이가 곧 기간이 됩니다 - 구글·애플 달력이 그렇게
+    // 그리는 이유입니다.
+    .filter((t) => (every ? !!t.endOn : isSpan(t)))
+    .map((t) => ({ t, from: (t.startOn && t.startOn <= (t.endOn as string) ? t.startOn : t.endOn) as string, to: t.endOn as string }))
     // 주와 한 칸이라도 겹치는 것만.
     .filter((x) => x.from <= weekEnd && x.to >= weekStart)
     .sort((a, b) => a.from.localeCompare(b.from) || daysBetween(b.from, b.to) - daysBetween(a.from, a.to) || a.t.id.localeCompare(b.t.id));

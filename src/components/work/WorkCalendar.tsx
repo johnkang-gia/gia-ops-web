@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import type { DayReminder, Task, WorkTag } from "@/lib/types";
 import { todayKst } from "@/lib/kst";
-import { addDays, isSpan, layoutWeek, orderRange, type SpanTask } from "@/lib/taskSpan";
+import { addDays, layoutWeek, orderRange, type SpanTask } from "@/lib/taskSpan";
 
 /**
  * 업무 달력 — 업무보드 한가운데.
@@ -78,8 +78,11 @@ const STATUS_DOT: Record<string, string> = {
 
 /** 막대 한 줄의 높이(px). 칸 안에 몇 줄까지 들어가는지를 이 값으로 셉니다. */
 const LANE_H = 15;
-/** 막대에 내주는 자리. 이보다 많으면 「+n」으로 접습니다 - 칸이 막대로만 가득 차면 날짜가 안 보입니다. */
-const MAX_LANES = 3;
+/**
+ * 막대에 내주는 줄 수. 이보다 많으면 「+n」으로 접습니다 - 칸이 막대로만 가득 차면 날짜가
+ * 안 보입니다. 하루짜리까지 막대로 올라왔으므로 한 줄 늘렸습니다.
+ */
+const MAX_LANES = 4;
 
 export default function WorkCalendar({
   tasks,
@@ -158,22 +161,14 @@ export default function WorkCalendar({
     return m;
   }, [tasks]);
 
-  /** 여러 날짜리(막대로 그릴 것)와 하루짜리(칸 안에 적을 것)를 갈라둡니다. */
-  const { spans, singles } = useMemo(() => {
-    const spans: (SpanTask & { task: Task })[] = [];
-    const singles = new Map<string, Task[]>();
-    for (const s of spanOf.values()) {
-      if (!s.endOn) continue;
-      if (isSpan(s)) {
-        spans.push(s);
-        continue;
-      }
-      const list = singles.get(s.endOn);
-      if (list) list.push(s.task);
-      else singles.set(s.endOn, [s.task]);
-    }
-    return { spans, singles };
-  }, [spanOf]);
+  /**
+   * 달력에 그릴 것 — **하루짜리도 막대입니다.**
+   *
+   * 예전에는 여러 날짜리만 막대였고 하루짜리는 칸 안에 점+글자로 따로 그렸습니다. 한 달력
+   * 안에 모양이 두 가지라, 훑어서는 어느 것이 이어지는 일인지 알 수 없었습니다. 전부 같은
+   * 막대로 그리면 **길이가 곧 기간**입니다 - 구글·애플 달력이 그렇게 그리는 이유입니다.
+   */
+  const bars = useMemo(() => [...spanOf.values()].filter((s) => !!s.endOn), [spanOf]);
 
   // 마감이 없는 업무. 달력에는 설 자리가 없지만 **없는 셈 치면 안 됩니다** - 마감을 안 정한
   // 것이지 안 하는 것이 아닙니다. 끌어다 날짜에 놓으면 그날로 정해집니다.
@@ -240,7 +235,8 @@ export default function WorkCalendar({
         </div>
       </div>
       <p className="mb-1 shrink-0 text-[10px] text-slate-400">
-        날짜를 누르면 <b>알림 · 업무 · 학사</b> 중에서 고릅니다 · <b>끌면 그 기간</b>짜리 업무 · 제목을 두 번 누르면 고칩니다
+        날짜를 누르면 <b>알림 · 업무 · 학사</b> 중에서 고릅니다 · <b>가로로 끌면 그 기간</b>짜리 업무(막대가 그만큼 길어집니다) ·
+        막대를 <b>끌어서</b> 다른 날로 옮기고, 제목을 <b>두 번 눌러</b> 고칩니다
       </p>
 
       {/* ── 오늘 챙길 것 ─────────────────────────────────────────────
@@ -283,14 +279,13 @@ export default function WorkCalendar({
 
       <div className="grid min-h-0 flex-1 grid-rows-[repeat(auto-fit,minmax(0,1fr))] gap-px overflow-hidden rounded-lg bg-slate-200">
         {weeks.map((week) => {
-          const bars = layoutWeek(spans, week.start);
-          const shown = bars.filter((b) => b.lane < MAX_LANES);
-          const hiddenCount = bars.length - shown.length;
-          const laneCount = Math.min(MAX_LANES, bars.reduce((n, b) => Math.max(n, b.lane + 1), 0));
+          const laid = layoutWeek(bars, week.start, true);
+          const shown = laid.filter((b) => b.lane < MAX_LANES);
+          const hiddenCount = laid.length - shown.length;
+          const laneCount = Math.min(MAX_LANES, laid.reduce((n, b) => Math.max(n, b.lane + 1), 0));
           return (
             <div key={week.start} className="relative grid min-h-0 grid-cols-7 gap-px">
               {week.cells.map((c) => {
-                const list = singles.get(c.key) ?? [];
                 const isToday = c.key === today;
                 return (
                   <div
@@ -333,7 +328,7 @@ export default function WorkCalendar({
                       >
                         {c.day}
                       </span>
-                      {list.length > 2 && <span className="text-[9px] text-slate-400">+{list.length - 2}</span>}
+
                     </div>
                     {/* 막대가 앉을 만큼 자리를 비워둡니다 - 안 그러면 막대가 하루짜리 위에 겹칩니다. */}
                     <div style={{ height: laneCount * LANE_H }} className="shrink-0" />
@@ -367,61 +362,16 @@ export default function WorkCalendar({
                     {(remindersByDay.get(c.key)?.length ?? 0) > 2 && (
                       <span className="text-[9px] text-amber-600">🔔 +{(remindersByDay.get(c.key)?.length ?? 0) - 2}</span>
                     )}
-                    <div className="min-h-0 flex-1 overflow-hidden">
-                      {list.slice(0, 2).map((t) => {
-                        const color = t.tag_id ? colorOf.get(t.tag_id) : null;
-                        return (
-                          <div
-                            key={t.id}
-                            data-task
-                            draggable={editing?.id !== t.id}
-                            onDragStart={() => setDragId(t.id)}
-                            onDragEnd={() => setDragId(null)}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (editing?.id !== t.id) onOpenTask(t);
-                            }}
-                            onDoubleClick={(e) => {
-                              e.stopPropagation();
-                              setEditing({ id: t.id, text: t.title });
-                            }}
-                            title={`${t.title} — 두 번 누르면 제목을 고칩니다`}
-                            className="mt-0.5 flex w-full items-center gap-1 rounded px-1 py-0.5 text-left hover:brightness-95"
-                            style={{ backgroundColor: color ? `${color}22` : undefined }}
-                          >
-                            <span
-                              className={"h-1.5 w-1.5 shrink-0 rounded-full " + (color ? "" : (STATUS_DOT[t.status] ?? "bg-slate-400"))}
-                              style={color ? { backgroundColor: color } : undefined}
-                            />
-                            {editing?.id === t.id ? (
-                              <TitleEditor
-                                value={editing.text}
-                                onChange={(v) => setEditing({ id: t.id, text: v })}
-                                onDone={(v) => {
-                                  setEditing(null);
-                                  if (v.trim() && v !== t.title) onRename(t, v.trim());
-                                }}
-                              />
-                            ) : (
-                              <span
-                                className={
-                                  "min-w-0 flex-1 truncate text-[10px] " +
-                                  (t.status === "완료" ? "text-slate-400 line-through" : "text-slate-700")
-                                }
-                              >
-                                {t.title}
-                              </span>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
+                    {/* 업무는 칸 안이 아니라 **칸 위에 겹친 막대**로 그립니다(아래). 하루짜리도
+                        같은 막대라, 길이만 보면 며칠짜리인지 바로 읽힙니다. */}
+                    <div className="min-h-0 flex-1" />
                   </div>
                 );
               })}
 
-              {/* ── 여러 날짜리 막대 ────────────────────────────────────
-                  칸 위에 겹쳐 그립니다. 칸 안에 넣으면 날마다 잘려서, 이어진 하나로 안 보입니다. */}
+              {/* ── 일정 막대 ──────────────────────────────────────────
+                  하루짜리도 여러 날짜리도 **같은 막대**입니다. 칸 위에 겹쳐 그립니다 - 칸
+                  안에 넣으면 날마다 잘려서, 이어진 하나로 안 보입니다. */}
               {shown.map((b) => {
                 const t = (b.task as SpanTask & { task: Task }).task;
                 const color = (t.tag_id ? colorOf.get(t.tag_id) : null) ?? "#64748b";
@@ -429,6 +379,11 @@ export default function WorkCalendar({
                   <div
                     key={`${t.id}-${week.start}`}
                     data-task
+                    // 막대도 끌어서 다른 날로 옮깁니다. 예전에는 칸 안의 하루짜리만 끌 수
+                    // 있어서, 여러 날짜리는 상세 창을 열어 날짜를 고쳐야 했습니다.
+                    draggable={editing?.id !== t.id}
+                    onDragStart={() => setDragId(t.id)}
+                    onDragEnd={() => setDragId(null)}
                     onClick={(e) => {
                       e.stopPropagation();
                       if (editing?.id !== t.id) onOpenTask(t);
@@ -438,7 +393,10 @@ export default function WorkCalendar({
                       setEditing({ id: t.id, text: t.title });
                     }}
                     onMouseDown={(e) => e.stopPropagation()}
-                    title={`${t.title} · ${t.start_on} ~ ${dayKeyOf(t.due_at)} — 두 번 누르면 제목을 고칩니다`}
+                    title={
+                      `${t.title} · ${b.span > 1 || t.start_on ? `${t.start_on ?? dayKeyOf(t.due_at)} ~ ${dayKeyOf(t.due_at)}` : dayKeyOf(t.due_at)}` +
+                      "\n끌어서 다른 날로 옮길 수 있습니다 · 두 번 누르면 제목을 고칩니다"
+                    }
                     className={
                       "absolute z-10 flex cursor-pointer items-center overflow-hidden px-1.5 text-[10px] font-semibold text-white " +
                       (b.continuesLeft ? "" : "rounded-l ") +
@@ -456,6 +414,8 @@ export default function WorkCalendar({
                   >
                     {/* 이어져 온 막대에는 화살표를 답니다 - 없으면 그 주에서 시작한 일로 읽힙니다. */}
                     {b.continuesLeft && <span className="mr-0.5 shrink-0 opacity-70">‹</span>}
+                    {/* 긴급은 색만으로는 안 갈립니다 - 태그 색이 이미 다른 뜻을 쓰고 있어서, 글자 앞에 표를 답니다. */}
+                    {t.priority === "긴급" && <span className="mr-0.5 shrink-0">❗</span>}
                     {editing?.id === t.id ? (
                       <TitleEditor
                         dark

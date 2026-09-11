@@ -68,7 +68,17 @@ export default function DismissalModal({ onClose }: { onClose: () => void }) {
   const [openStudent, setOpenStudent] = useState<string | null>(null);
 
   // ── 넣기 폼 ────────────────────────────────────────────────────────
-  const [student, setStudent] = useState<StudentPick | null>(null);
+  /**
+   * **여러 명을 한 번에 넣습니다.**
+   *
+   * 하원수단은 형제나 같은 학원 차를 타는 아이들처럼 **여럿이 똑같은 경우**가 흔합니다.
+   * 한 명씩만 고를 수 있으면 같은 요일·같은 차를 네 번 다시 적게 되고, 그러다 한 명을
+   * 빠뜨리면 그 아이는 그날 셔틀 명단에 그대로 남습니다 - 화면에는 오류가 아니라
+   * «셔틀 타는 아이»로 보입니다.
+   *
+   * 고른 아이들은 칩으로 남습니다. 담긴 것이 눈에 보여야 빠진 것도 보입니다.
+   */
+  const [students, setStudents] = useState<StudentPick[]>([]);
   const [days, setDays] = useState<number[]>(todayWd >= 1 && todayWd <= 5 ? [todayWd] : []);
   const [repeat, setRepeat] = useState<DismissalRepeat>("이번주");
   const [kind, setKind] = useState<string>("보호자픽업");
@@ -138,42 +148,56 @@ export default function DismissalModal({ onClose }: { onClose: () => void }) {
   }, [load]);
 
   async function save() {
-    if (!student) return notify("학생을 골라주세요.", "error");
+    if (students.length === 0) return notify("학생을 골라주세요.", "error");
     if (days.length === 0) return notify("요일을 하나 이상 골라주세요.", "error");
     setBusy(true);
     try {
-      const res = await fetch("/api/work/dismissal", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          studentId: student.id,
-          weekdays: days,
-          kind,
-          label,
-          time,
-          note,
-          weekStart: weekStartFor(repeat, today),
-        }),
-      });
-      const body = (await res.json().catch(() => ({}))) as {
-        error?: string;
-        appliesToday?: boolean;
-        appliedSeats?: number;
-      };
-      if (!res.ok) return notify(body.error ?? "저장하지 못했습니다.", "error");
+      let ok = 0;
+      let todaySeats = 0;
+      // **한 명이 실패해도 나머지는 넣습니다.** 중간에 멈추면 절반만 들어간 채로 끝나는데,
+      // 그건 화면에 오류가 아니라 «몇 명은 됐고 몇 명은 안 된» 상태로 보입니다.
+      const failed: string[] = [];
+      for (const st of students) {
+        const res = await fetch("/api/work/dismissal", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            studentId: st.id,
+            weekdays: days,
+            kind,
+            label,
+            time,
+            note,
+            weekStart: weekStartFor(repeat, today),
+          }),
+        });
+        const body = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          appliesToday?: boolean;
+          appliedSeats?: number;
+        };
+        if (!res.ok) {
+          failed.push(`${st.name}(${body.error ?? "저장 실패"})`);
+          continue;
+        }
+        ok += 1;
+        if (body.appliesToday && body.appliedSeats) todaySeats += body.appliedSeats;
+      }
 
       // **무슨 일이 일어났는지 그대로 말합니다.** 「저장됨」만 뜨면 셔틀에 걸렸는지 아닌지를
       // 사람이 다시 확인하러 가야 합니다.
-      notify(
-        `${student.name} · ${days.map((d) => WEEK.find((w) => w.n === d)?.ko).join("·")} ${kind}` +
-          (body.appliesToday
-            ? body.appliedSeats
-              ? " — 오늘 것이라 셔틀 체크표에서 뺐습니다."
-              : " — 오늘 것이지만 셔틀 배정이 없는 아이라 뺄 자리가 없습니다."
-            : " — 오늘이 아니라 그날이 되면 반영됩니다."),
-        "success",
-      );
-      setStudent(null);
+      const dayLabels = days.map((d) => WEEK.find((w) => w.n === d)?.ko).join("·");
+      if (ok > 0) {
+        notify(
+          `${ok}명 · ${dayLabels} ${kind}` +
+            (todaySeats > 0 ? ` — 오늘 것이라 셔틀 체크표에서 ${todaySeats}자리 뺐습니다.` : " — 그날이 되면 반영됩니다.") +
+            (failed.length > 0 ? ` (${failed.length}명 실패: ${failed.join(", ")})` : ""),
+          failed.length > 0 ? "error" : "success",
+        );
+      } else {
+        notify(`저장하지 못했습니다: ${failed.join(", ")}`, "error");
+      }
+      if (ok > 0) setStudents([]);
       setLabel("");
       setTime("");
       setNote("");
@@ -281,7 +305,44 @@ export default function DismissalModal({ onClose }: { onClose: () => void }) {
           <p className="mb-1.5 text-[11px] font-bold text-slate-700">넣기</p>
 
           <div className="mb-2">
-            <StudentPicker value={student} onPick={setStudent} />
+            {/* 담긴 아이들. **보이게 두는 것이 요점입니다** - 안 보이면 누가 담겼는지 몰라
+                같은 아이를 또 고르거나, 고른 줄 알았던 아이가 빠집니다. */}
+            {students.length > 0 && (
+              <div className="mb-1.5 flex flex-wrap items-center gap-1">
+                {students.map((st) => (
+                  <span key={st.id} className="flex items-center gap-1 rounded-lg bg-teal-100 px-2 py-0.5 text-[11px] font-bold text-teal-900">
+                    {st.name}
+                    <span className="font-normal text-teal-600">{st.class_name ?? st.grade ?? ""}</span>
+                    <button
+                      type="button"
+                      onClick={() => setStudents((prev) => prev.filter((x) => x.id !== st.id))}
+                      className="text-teal-500 hover:text-red-500"
+                      title="빼기"
+                    >
+                      ✕
+                    </button>
+                  </span>
+                ))}
+                <span className="text-[11px] font-semibold text-slate-500">{students.length}명</span>
+                <button type="button" onClick={() => setStudents([])} className="text-[11px] text-slate-400 hover:text-red-500">
+                  모두 지우기
+                </button>
+              </div>
+            )}
+            {/* 고르면 칩으로 담기고 검색칸은 비워집니다 - 다음 아이를 바로 칠 수 있게. */}
+            <StudentPicker
+              // 한 명 담을 때마다 검색칸을 새로 띄웁니다. 안 그러면 친 이름과 결과가 그대로
+              // 남아, 다음 아이를 치려면 지우고 시작해야 합니다.
+              key={students.length}
+              value={null}
+              onPick={(st) => {
+                if (!st) return;
+                setStudents((prev) => (prev.some((x) => x.id === st.id) ? prev : [...prev, st]));
+              }}
+            />
+            <p className="mt-1 text-[10px] text-slate-400">
+              같은 요일·같은 차를 타는 아이는 <b>여러 명을 한 번에</b> 담아 넣을 수 있습니다.
+            </p>
           </div>
 
           <div className="mb-2 flex flex-wrap items-center gap-1">

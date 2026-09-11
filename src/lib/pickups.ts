@@ -36,6 +36,39 @@ import { isHumanSet } from "@/lib/pickupIngest";
 
 export type PickupSource = "체크표" | "출결내역" | "학부모연락";
 
+/**
+ * **이 픽업이 어디서 비롯됐는가.**
+ *
+ * ── 왜 필요한가 ────────────────────────────────────────────────────────
+ *
+ * 「오늘 하원체크」가 백서아·황이안을 두 번 셌습니다. 그런데 자료를 열어보니 두 번 등록된
+ * 것이 아니었습니다 - 그 아이들의 체크표 픽업 줄은 `checked_by` 가
+ * **「하원수단(외부버스 3:35 블루웨일버스)」** 였습니다. 아침 크론이 학생 프로필의
+ * 하원수단을 읽어 그날 픽업으로 걸어준 줄입니다.
+ *
+ * 즉 **하원수단 → 오늘 픽업**은 이미 한 방향으로 흐르고 있었고, 화면이 그 흐름의 **출발점과
+ * 도착점을 나란히 보여준 것**이 중복의 정체였습니다.
+ *
+ * 그래서 자료를 또 복사하지 않습니다. 복사하면 규칙을 고쳤을 때 이미 복사된 날이 안 따라오고,
+ * 복사본을 지워도 규칙이 다시 만들어냅니다 - 같은 사실을 두 곳에 적으면 반드시 어긋납니다.
+ * 대신 **어디서 왔는지를 함께 들고 다닙니다.**
+ */
+export type PickupVia = "하원수단" | "연락" | "사람";
+
+/**
+ * `checked_by` 한 줄로 갈립니다. 판정은 **여기 한 곳**에서만 합니다 - 화면마다 다시 쓰면
+ * 화면마다 다른 답이 나옵니다.
+ *
+ * 「하원수단(…)」은 크론(`cron/pickup-schedules`)과 하원수단 저장(`/api/work/dismissal`)이
+ * 적는 값이고, 그 글자가 곧 「이건 미리 등록해 둔 규칙에서 나왔다」는 뜻입니다.
+ */
+export function viaOf(checkedBy: string | null | undefined): PickupVia {
+  const v = (checkedBy ?? "").trim();
+  if (v.startsWith("하원수단")) return "하원수단";
+  if (!v || /^(ai|자동|cron|시스템|system)/i.test(v) || v.includes("AI(")) return "연락";
+  return "사람";
+}
+
 export type TodayPickup = {
   /** 명부의 전체 이름. 성이 빠진 탑승표 이름 대신 명부 이름을 씁니다. */
   name: string;
@@ -44,11 +77,13 @@ export type TodayPickup = {
   time: string | null;
   /** 어디서 온 픽업인가. 화면에서 「왜 이 아이가 떴지」를 답하는 값입니다. */
   source: PickupSource;
+  /** 미리 등록해 둔 하원수단에서 나온 것인가, 오늘 온 연락인가, 사람이 누른 것인가. */
+  via: PickupVia;
 };
 
 export type PickupInputs = {
-  /** 체크표에서 픽업으로 찍힌 학생. */
-  boardingPickups: { name: string; studentId: string | null }[];
+  /** 체크표에서 픽업으로 찍힌 학생. `via` 는 그 줄의 `checked_by` 에서 가립니다. */
+  boardingPickups: { name: string; studentId: string | null; via: PickupVia }[];
   /**
    * 오늘 체크표에 **사람이** 줄을 찍은 학생의 열쇠 — 탄다·픽업·결석 무엇이든.
    *
@@ -96,7 +131,7 @@ export function mergePickups(input: PickupInputs): TodayPickup[] {
   // ① 체크표 — 가장 세다.
   for (const b of input.boardingPickups) {
     const k = keyOf(b);
-    out.set(k, { name: b.name, studentId: b.studentId, time: timeOf.get(k) ?? null, source: "체크표" });
+    out.set(k, { name: b.name, studentId: b.studentId, time: timeOf.get(k) ?? null, source: "체크표", via: b.via });
   }
 
   // ②③ 체크표에 줄이 없는 아이만. 줄이 있는데 픽업이 아니라면 사람이 「픽업 아님」으로
@@ -110,6 +145,8 @@ export function mergePickups(input: PickupInputs): TodayPickup[] {
       studentId: r.studentId,
       time: timeOf.get(k) ?? null,
       source: input.entries.some((e) => keyOf(e) === k) ? "출결내역" : "학부모연락",
+      // 출결내역·학부모연락은 그날 들어온 이야기입니다 - 미리 등록해 둔 규칙이 아닙니다.
+      via: "연락",
     });
   }
 
@@ -158,7 +195,7 @@ export async function loadTodayPickups(
     return (a.student_id ? nameOfStudent(a.student_id) : null) || a.student_name_raw || null;
   };
 
-  const boardingPickups: { name: string; studentId: string | null }[] = [];
+  const boardingPickups: { name: string; studentId: string | null; via: PickupVia }[] = [];
   const decidedKeys = new Set<string>();
   for (const b of boardings) {
     const nm = nameOfAsg(b.assignment_id);
@@ -174,7 +211,7 @@ export async function loadTodayPickups(
     // 여기 적힌 규칙은 원래 「사람이 체크표에서 정한 것이 이긴다」였는데, 코드가 그보다
     // 넓게 막고 있었습니다.
     if (isHumanSet(b.checked_by)) decidedKeys.add(keyOf({ name: nm, studentId: sid }));
-    if (b.status === "픽업") boardingPickups.push({ name: nm, studentId: sid });
+    if (b.status === "픽업") boardingPickups.push({ name: nm, studentId: sid, via: viaOf(b.checked_by) });
   }
 
   const entries = entryRows

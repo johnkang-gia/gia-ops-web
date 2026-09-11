@@ -94,6 +94,10 @@ export default function DismissalModal({ onClose }: { onClose: () => void }) {
    * 일곱 명을 아홉 명으로 보여줬고, 더 나쁘게는 **학원차와 부모님이 같은 아이를 각각
    * 기다리게** 됩니다.
    *
+   * **하원수단에서 나온 픽업은 세지 않습니다.** 아침 크론이 학생 프로필의 하원수단을 읽어
+   * 그날 픽업으로 걸어준 줄이라(`checked_by` 가 「하원수단(…)」), 지금 넣으려는 것과 같은
+   * 갈래입니다 - 그걸 「이미 픽업」으로 알리면 자기가 등록한 것을 자기가 경고받습니다.
+   *
    * 판단은 이름이 아니라 **학생 번호**로 합니다 - 김재이가 셋이라 이름으로는 못 가립니다.
    * 막지는 않습니다. 오늘만 부모님이 오시고 학원차는 다음 주부터인 경우가 실제로 있어서,
    * 사람이 알고 누르면 되는 일입니다. **모르고 누르는 것만 막습니다.**
@@ -105,9 +109,16 @@ export default function DismissalModal({ onClose }: { onClose: () => void }) {
       try {
         const res = await fetch("/api/dismissal/today", { cache: "no-store" });
         if (!res.ok) return;
-        const j = (await res.json()) as { pickups: { studentId: string | null; name: string; source: string }[] };
+        const j = (await res.json()) as { pickups: { studentId: string | null; name: string; source: string; via: string }[] };
         setPickupToday(
-          new Map((j.pickups ?? []).filter((p) => p.studentId).map((p) => [p.studentId as string, p.source])),
+          new Map(
+            (j.pickups ?? [])
+              // **하원수단에서 나온 픽업은 세지 않습니다.** 그건 지금 넣으려는 것과 같은
+              // 갈래이고, 아침 크론이 규칙을 읽어 걸어둔 결과입니다 - 그걸 「이미 픽업」으로
+              // 알리면 자기가 등록한 것을 자기가 경고받습니다.
+              .filter((p) => p.studentId && p.via !== "하원수단")
+              .map((p) => [p.studentId as string, p.source]),
+          ),
         );
       } catch {
         // 못 읽어도 등록은 막지 않습니다. 안내가 없는 것이지 등록이 잘못된 것은 아닙니다.
@@ -371,7 +382,7 @@ export default function DismissalModal({ onClose }: { onClose: () => void }) {
                 {pickupClash.length === 1 && pickupToday.get(pickupClash[0].id)
                   ? `(${pickupToday.get(pickupClash[0].id)}에서 들어옴)`
                   : ""}
-                . 그래도 넣으면 오늘 하원체크에 <b>둘 다</b> 뜹니다 — 어느 쪽인지 확인해주세요.
+                . 오늘 하원체크에는 <b>오늘 온 연락이 먼저</b> 뜹니다 — 어느 쪽이 맞는지 확인해주세요.
               </p>
             )}
             {/* 고르면 칩으로 담기고 검색칸은 비워집니다 - 다음 아이를 바로 칠 수 있게. */}

@@ -6,7 +6,8 @@ import { createClient } from "@/lib/supabase/client";
 import { todayKst, kstWeekday } from "@/lib/kst";
 import { loadDismissalForDay, DISMISSAL_SELECT, isMissingWeekStart, type DismissalRow } from "@/lib/dismissalToday";
 import { addDays, nextWeekStart, weekStartOf } from "@/lib/dismissalWeek";
-import { mergeDismissalBoard, type BoardRow, type PlanEntry } from "@/lib/dismissalBoard";
+import { buildDismissalBoard, type PlanEntry } from "@/lib/dismissalBoard";
+import type { PickupVia } from "@/lib/pickups";
 
 /**
  * **오늘 하원체크** — 업무보드 맨 위.
@@ -31,7 +32,7 @@ import { mergeDismissalBoard, type BoardRow, type PlanEntry } from "@/lib/dismis
 
 type Row = PlanEntry;
 /** 오늘 학부모가 연락해 온 픽업. 미리 등록해 둔 하원수단과 갈래가 다릅니다. */
-type Pickup = { name: string; studentId: string | null; time: string | null; source: string };
+type Pickup = { name: string; studentId: string | null; time: string | null; source: string; via: PickupVia };
 type Ahead = { name: string; date: string; kind: string; label: string | null; time: string | null };
 
 const KIND_TONE: Record<string, string> = {
@@ -174,23 +175,24 @@ export default function TodayDismissalReminder({
   }, [tick]);
 
   /**
-   * **한 아이는 한 줄.** 예전에는 하원수단과 픽업을 따로 세어 더했습니다 - 백서아·황이안은
-   * 양쪽에 다 있어서 7명이 9명으로 떴습니다. 숫자는 「오늘 몇 명을 챙겨야 하나」를 보라고
-   * 있는 것이라, 그 숫자가 틀리면 목록 전체를 못 믿게 됩니다.
+   * **한 아이는 한 줄.**
+   *
+   * 하원수단은 아침 크론이 그날 픽업으로 이미 걸어줍니다(`checked_by` 가 「하원수단(…)」).
+   * 그래서 오늘 목록은 **픽업 한 갈래만** 읽으면 됩니다 - 예전에는 규칙과 그 결과를 나란히
+   * 세어 더해서, 백서아·황이안이 두 번 세어졌습니다(7명이 9명으로).
    */
-  const board: BoardRow[] = mergeDismissalBoard(rows ?? [], pickups);
-  const conflicts = board.filter((b) => b.conflict);
+  const board = buildDismissalBoard(rows ?? [], pickups);
 
   if (rows === null) return null;
   // 위젯 자리에서는 없으면 감춥니다(목록이 주인공입니다). 배너 자리는 비어 있어도 남깁니다 -
   // 「오늘은 없다」와 「못 읽었다」가 같아 보이면 안 됩니다.
-  if (variant === "위젯" && board.length === 0 && !error && !notice && !pickupError) return null;
+  if (variant === "위젯" && board.today.length === 0 && board.notApplied.length === 0 && !error && !notice && !pickupError) return null;
 
   return (
     <div className="mb-2 rounded-xl border border-lime-200 bg-lime-50/60 px-2.5 py-2">
       <p className="mb-1.5 flex flex-wrap items-baseline gap-x-2 text-[11px]">
-        <b className="text-lime-800">🎒 오늘 하원체크 {board.length}명</b>
-        <span className="text-lime-700/70">셔틀이 아닌 방법으로 가는 아이 — 미리 등록한 하원수단 + 오늘 온 픽업</span>
+        <b className="text-lime-800">🎒 오늘 하원체크 {board.today.length}명</b>
+        <span className="text-lime-700/70">셔틀이 아닌 방법으로 가는 아이 — 🎒 하원수단 · 🚗 오늘 온 연락 · ✋ 사람이 표시</span>
         {/* 페이지를 옮기지 않고 그 자리에서 엽니다.
             업무보드는 하루 종일 켜놓고 보는 화면인데, 여기서 나갔다 돌아오면 보고 있던 자리를
             잃습니다. **나갔다 와야 하는 일은 대개 나중으로 미뤄지고**, 미룬 하원 변경은 그날
@@ -223,53 +225,68 @@ export default function TodayDismissalReminder({
           ⚠️ 오늘 픽업을 읽지 못했습니다: {pickupError}
         </p>
       )}
-      {/* 하원수단과 오늘 픽업이 **둘 다** 있는 아이. 자료가 틀린 것이 아니라 실제로 부딪히는
-          상황입니다 - 금요일엔 학원차를 타기로 되어 있는데 오늘은 부모님이 오십니다. 한쪽을
-          감추면 행정실은 나머지 한쪽만 보고 움직이고, 학원차는 안 오는 아이를 기다립니다. */}
-      {conflicts.length > 0 && (
-        <p className="mb-1 rounded-lg bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-800">
-          ⚠️ {conflicts.map((c) => c.name).join(" · ")} — 오늘 픽업인데 하원수단도 등록되어 있습니다. 어느 쪽인지 확인해주세요.
-        </p>
-      )}
-
-      {board.length === 0 && !error ? (
+      {board.today.length === 0 && board.notApplied.length === 0 && !error ? (
         <p className="text-[11px] text-lime-700/80">오늘은 전원 셔틀·평소대로 하원합니다.</p>
       ) : (
         <div className="flex flex-wrap gap-1">
-          {board.map((r) => (
+          {board.today.map((r) => (
             <span
               key={r.key}
               title={[
                 r.name,
                 r.className,
-                r.pickup ? `🚗 오늘 픽업(${r.pickup.source})` : null,
-                r.plan ? `🎒 ${[r.plan.kind, r.plan.label].filter(Boolean).join(" ")}` : null,
-                r.conflict ? "둘 다 등록되어 있습니다 - 어느 쪽인지 확인해주세요" : null,
+                r.via === "하원수단"
+                  ? `🎒 미리 등록해 둔 하원수단 — ${[r.plan?.kind, r.plan?.label].filter(Boolean).join(" ")}`
+                  : r.via === "사람"
+                    ? `✋ 사람이 체크표에서 픽업으로 표시 (${r.source})`
+                    : `🚗 오늘 들어온 연락 (${r.source})`,
                 r.plan?.note,
               ]
                 .filter(Boolean)
                 .join(" · ")}
               className={
                 "inline-flex items-baseline gap-1.5 rounded-lg border px-2 py-1 text-[11px] " +
-                (r.conflict
-                  ? "border-amber-400 bg-amber-50 text-amber-900"
-                  : r.pickup
-                    ? "border-sky-300 bg-sky-50 text-sky-800"
-                    : (KIND_TONE[r.plan?.kind ?? "기타"] ?? KIND_TONE.기타))
+                (r.via === "하원수단"
+                  ? (KIND_TONE[r.plan?.kind ?? "기타"] ?? KIND_TONE.기타)
+                  : "border-sky-300 bg-sky-50 text-sky-800")
               }
             >
               <b className="tabular-nums">{r.time ?? "시각 미정"}</b>
               <b>{r.name}</b>
               {/* 갈래를 글자가 아니라 표로 답니다 - 「픽업」과 「보호자픽업」은 글자가 비슷해
-                  훑을 때 안 갈립니다. 둘 다면 둘 다 답니다. */}
-              {r.pickup && <span title={`오늘 픽업 · ${r.pickup.source}`}>🚗</span>}
-              {r.plan && (
-                <span className="opacity-70">
-                  🎒 {r.plan.label || r.plan.kind}
-                </span>
+                  훑을 때 안 갈립니다. 한 줄에 하나만 답니다 - 한 아이는 한 가지로 나갑니다. */}
+              {r.via === "하원수단" ? (
+                <span className="opacity-70">🎒 {r.plan?.label || r.plan?.kind || "하원수단"}</span>
+              ) : (
+                <span className="opacity-80">{r.via === "사람" ? "✋" : "🚗"} 픽업</span>
               )}
             </span>
           ))}
+        </div>
+      )}
+
+      {/* **하원수단은 있는데 오늘 픽업으로 안 걸린 아이.**
+          셔틀 배정이 없어 걸 자리가 없었거나, 아침 크론이 아직 안 돈 경우입니다. 조용히
+          빠지면 아무도 그 아이를 안 데리러 갑니다 - 빠졌다는 사실 자체가 보여야 합니다. */}
+      {board.notApplied.length > 0 && (
+        <div className="mt-1.5 border-t border-lime-200 pt-1.5">
+          <p className="mb-1 text-[11px] font-bold text-amber-800">
+            🎒 하원수단만 등록됨 {board.notApplied.length}명
+            <span className="ml-1 font-normal text-amber-700/80">— 셔틀 체크표에는 아직 안 걸렸습니다(셔틀을 안 타는 아이일 수 있습니다)</span>
+          </p>
+          <div className="flex flex-wrap gap-1">
+            {board.notApplied.map((p) => (
+              <span
+                key={p.studentId}
+                title={[p.name, p.className, p.kind, p.label, p.note].filter(Boolean).join(" · ")}
+                className={"inline-flex items-baseline gap-1.5 rounded-lg border px-2 py-1 text-[11px] " + (KIND_TONE[p.kind] ?? KIND_TONE.기타)}
+              >
+                <b className="tabular-nums">{p.time ?? "시각 미정"}</b>
+                <b>{p.name}</b>
+                <span className="opacity-70">🎒 {p.label || p.kind}</span>
+              </span>
+            ))}
+          </div>
         </div>
       )}
 

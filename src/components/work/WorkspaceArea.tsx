@@ -14,7 +14,7 @@ import AttendancePanels from "./AttendancePanels";
 import IntegrationStatus from "./IntegrationStatus";
 import DayEntryDialog, { DayReminderDialog, type DayEntryKind } from "./DayEntryDialog";
 import AcademicItemDialog from "@/components/academic/AcademicItemDialog";
-import type { ChecklistTemplate, Term } from "@/lib/types";
+import type { ChecklistItem, ChecklistTemplate, Term } from "@/lib/types";
 import { isMyTask } from "@/lib/myTask";
 import { addDays } from "@/lib/taskSpan";
 import { todayKst } from "@/lib/kst";
@@ -270,6 +270,38 @@ export default function WorkspaceArea({
 
   /** 그날의 알림들. */
   const [reminders, setReminders] = useState<DayReminder[]>([]);
+
+  /**
+   * 🎓 달력에 겹쳐 볼 학사일정.
+   *
+   * 지금까지 업무 달력과 학사일정은 **다른 화면**에 있었습니다. 그래서 「PBL 주간이 그
+   * 주였구나」를 업무 마감을 잡고 나서야 알았습니다. 언제 몰려 있나를 보는 자리에 학교
+   * 일정이 빠져 있으면, 그 달력은 절반만 보여주는 것입니다.
+   */
+  const [academicItems, setAcademicItems] = useState<ChecklistItem[]>([]);
+
+  const loadAcademicItems = useCallback(async () => {
+    // 알림과 같은 창(앞 45일 ~ 뒤 120일). 달력이 앞뒤 달 칸을 함께 그리기 때문입니다.
+    const from = addDays(todayKst(), -45);
+    const to = addDays(todayKst(), 120);
+    const { data, error } = await createClient()
+      .from("academic_checklist_items")
+      .select("*")
+      // 기간짜리는 끝날이 창 안에 걸릴 수도 있어 둘 다 봅니다. 시작만 보면 「9/1~9/30 PBL」이
+      // 10월 달력에서 사라집니다.
+      .or(`and(due_date.gte.${from},due_date.lte.${to}),and(end_date.gte.${from},end_date.lte.${to})`)
+      .order("due_date");
+    if (error) {
+      // 빈 달력은 「학사일정이 없다」로 읽히는데 사실은 「못 읽어왔다」입니다. 둘은 다릅니다.
+      notify(`학사일정을 읽지 못했습니다: ${error.message}`, "error");
+      return;
+    }
+    setAcademicItems((data as ChecklistItem[] | null) ?? []);
+  }, [notify]);
+
+  useEffect(() => {
+    void loadAcademicItems();
+  }, [loadAcademicItems]);
 
   const loadReminders = useCallback(async () => {
     // 이번 달 앞뒤로 넉넉히. 달력이 지난달·다음달 칸을 함께 그리기 때문입니다.
@@ -569,6 +601,10 @@ export default function WorkspaceArea({
           onDeleteReminder={(r) => void deleteReminder(r)}
           onPickDate={setDayPick}
           onPickRange={(from, to) => setNewTaskRange({ from, to })}
+          academicItems={academicItems}
+          // 학사일정 막대를 누르면 그날의 학사 팝업이 열립니다. 따로 만들지 않고 이미 있는
+          // 창을 그대로 씁니다 - 같은 일을 두 가지 창으로 만들면 둘이 어긋납니다.
+          onOpenAcademic={(it) => void openAcademic(it.due_date)}
           onOpenTask={(t) => onOpenTask(t.id)}
           onMoveDue={(t, dayKey) => void moveDue(t, dayKey)}
           onRename={(t, title) => void renameTask(t, title)}
@@ -770,6 +806,8 @@ export default function WorkspaceArea({
           onSaved={(msg) => {
             notify(msg, "success");
             setAcademicTerm(null);
+            // 달력에 바로 뜨게 합니다. 저장했는데 달력이 그대로면 사람은 저장이 안 된 줄 압니다.
+            void loadAcademicItems();
           }}
         />
       )}

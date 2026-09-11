@@ -1,9 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { DayReminder, Task, WorkTag } from "@/lib/types";
+import type { ChecklistItem, DayReminder, Task, WorkTag } from "@/lib/types";
 import { todayKst } from "@/lib/kst";
 import { addDays, layoutWeek, orderRange, type SpanTask } from "@/lib/taskSpan";
+import { ghostOccurrences } from "@/lib/taskRepeat";
+import { recurrenceLabel } from "@/lib/recurrence";
 
 /**
  * 업무 달력 — 업무보드 한가운데.
@@ -148,6 +150,8 @@ export default function WorkCalendar({
   tasks,
   tags,
   reminders = [],
+  academicItems = [],
+  onOpenAcademic,
   onToggleReminder,
   onDeleteReminder,
   onPickDate,
@@ -164,6 +168,18 @@ export default function WorkCalendar({
    * 알림은 그날로 끝이라, 한 줄에 섞이면 어느 쪽이 아직 남은 일인지 알 수 없습니다.
    */
   reminders?: DayReminder[];
+  /**
+   * 🎓 **학사일정.** 업무와 같은 달력에 겹쳐 봅니다.
+   *
+   * 지금까지 둘은 다른 화면에 있었습니다. 그래서 「PBL 주간이 그 주였구나」를 업무 마감을
+   * 잡고 나서야 알았습니다. 언제 몰려 있나를 보는 자리에 **학교 일정이 빠져 있으면** 그
+   * 달력은 절반만 보여주는 것입니다.
+   *
+   * 업무와 **섞지는 않습니다** - 학사일정은 우리가 완료를 누르는 일이 아니라 학교가 그날
+   * 무엇을 하는지입니다. 따로 그리고, 끌 수 있게 둡니다.
+   */
+  academicItems?: ChecklistItem[];
+  onOpenAcademic?: (item: ChecklistItem) => void;
   onToggleReminder?: (r: DayReminder) => void;
   onDeleteReminder?: (r: DayReminder) => void;
   /** 빈 날짜를 눌렀을 때. 그 날 마감으로 새 업무를 만듭니다. */
@@ -237,6 +253,30 @@ export default function WorkCalendar({
   /** 펼쳐 놓은 픽업 목록의 날짜. 한 번에 하루만 봅니다 - 여럿 열리면 달력이 안 보입니다. */
   const [pickupDay, setPickupDay] = useState<string | null>(null);
 
+  /**
+   * 🎓 학사일정을 겹쳐 볼 것인가. **기본은 켬**입니다.
+   *
+   * 끌 수 있게 두는 이유는 업무만 보고 싶은 날이 있어서이고, 기본을 켬으로 두는 이유는
+   * 꺼져 있으면 아무도 안 켜기 때문입니다 - 있는 줄 모르는 기능은 없는 기능입니다.
+   */
+  const [showAcademic, setShowAcademic] = useState(true);
+
+  /** 학사일정 막대. 업무와 **같은 줄 셈법**을 쓰되, 업무 아래 줄부터 앉힙니다. */
+  const academicBars = useMemo<(SpanTask & { item: ChecklistItem })[]>(
+    () =>
+      showAcademic
+        ? academicItems.map((it) => ({
+            id: `acad-${it.id}`,
+            title: it.title,
+            // 기간의 시작은 due_date, 끝은 end_date(없으면 하루짜리).
+            startOn: it.due_date,
+            endOn: it.end_date ?? it.due_date,
+            item: it,
+          }))
+        : [],
+    [academicItems, showAcademic],
+  );
+
   /** 달력에 그릴 재료. 끝날은 마감일의 한국 날짜입니다. */
   const spanOf = useMemo(() => {
     const m = new Map<string, SpanTask & { task: Task }>();
@@ -257,6 +297,30 @@ export default function WorkCalendar({
    * 막대로 그리면 **길이가 곧 기간**입니다 - 구글·애플 달력이 그렇게 그리는 이유입니다.
    */
   const bars = useMemo(() => mergeSeries([...spanOf.values()].filter((s) => !!s.endOn)), [spanOf]);
+
+  /**
+   * 🔁 **앞으로 돌아올 되풀이 업무.**
+   *
+   * 되풀이 규칙은 이미 있었는데 **완료를 누른 뒤에야** 다음 회차가 만들어졌습니다. 그래서
+   * 달력에는 언제나 이번 한 번만 떠 있었고, 「다음 주에 뭐가 잡혀 있지」에 답을 못 했습니다.
+   * 사람이 「금요일마다 그거 있지」를 기억해야 했고, 기억해야 하는 것은 언젠가 빠집니다.
+   *
+   * 줄을 미리 만들지는 않습니다 - 1년치면 52줄이 흐름판에 쌓이고, 제목 하나 고치려면 52줄을
+   * 고쳐야 합니다. 달력만 규칙을 펼쳐 **자리를 보여줍니다.**
+   */
+  const ghostsByDay = useMemo(() => {
+    const from = cells[0]?.key;
+    const to = cells[cells.length - 1]?.key;
+    const m = new Map<string, Task[]>();
+    if (!from || !to) return m;
+    // 지나간 날에는 안 그립니다. 오지 않은 예정을 과거에 그리면 「안 한 일」로 보입니다.
+    for (const g of ghostOccurrences(tasks, from > today ? from : today, to, dayKeyOf)) {
+      const list = m.get(g.dayKey) ?? [];
+      list.push(g.task);
+      m.set(g.dayKey, list);
+    }
+    return m;
+  }, [tasks, cells, today]);
 
   // 마감이 없는 업무. 달력에는 설 자리가 없지만 **없는 셈 치면 안 됩니다** - 마감을 안 정한
   // 것이지 안 하는 것이 아닙니다. 끌어다 날짜에 놓으면 그날로 정해집니다.
@@ -312,6 +376,26 @@ export default function WorkCalendar({
         >
           오늘
         </button>
+        {/* 🎓 학사일정 겹쳐 보기. **기본은 켬** - 꺼져 있으면 아무도 안 켭니다. */}
+        {academicItems.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowAcademic((v) => !v)}
+            title={
+              showAcademic
+                ? "학사일정을 달력에서 감춥니다(업무만 봅니다)"
+                : `학사일정 ${academicItems.length}건을 달력에 겹쳐 봅니다`
+            }
+            className={
+              "rounded border px-1.5 py-0.5 text-[11px] font-bold transition " +
+              (showAcademic
+                ? "border-indigo-400 bg-indigo-50 text-indigo-700"
+                : "border-slate-300 text-slate-400 hover:bg-slate-50")
+            }
+          >
+            🎓 학사일정 {showAcademic ? "" : "보기"}
+          </button>
+        )}
         {/* 색이 무엇을 뜻하는지 달력 안에 둡니다 - 범례가 다른 화면에 있으면 아무도 안 봅니다. */}
         <div className="ml-auto flex min-w-0 items-center gap-1 overflow-x-auto">
           {tags.slice(0, 6).map((t) => (
@@ -324,7 +408,8 @@ export default function WorkCalendar({
       </div>
       <p className="mb-1 shrink-0 text-[10px] text-slate-400">
         날짜를 누르면 <b>알림 · 업무 · 학사</b> 중에서 고릅니다 · <b>가로로 끌면 그 기간</b>짜리 업무(막대가 그만큼 길어집니다) ·
-        막대를 <b>끌어서</b> 다른 날로 옮기고, 제목을 <b>두 번 눌러</b> 고칩니다 · 🚗 픽업은 숫자로 접어 두었습니다(누르면 목록)
+        막대를 <b>끌어서</b> 다른 날로 옮기고, 제목을 <b>두 번 눌러</b> 고칩니다 · 🚗 픽업은 숫자로 접어 두었습니다(누르면 목록) ·
+        <b>점선</b>은 아직 안 만들어진 것입니다(🔁 되풀이 예정 · 🎓 학사일정)
       </p>
 
       {/* ── 오늘 챙길 것 ─────────────────────────────────────────────
@@ -371,10 +456,21 @@ export default function WorkCalendar({
         {weeks.map((week) => {
           const laid = layoutWeek(bars, week.start, true);
           const shown = laid;
-          const laneCount = laid.reduce((n, b) => Math.max(n, b.lane + 1), 0);
+          const taskLanes = laid.reduce((n, b) => Math.max(n, b.lane + 1), 0);
+          // 학사일정은 업무 **아래 줄부터** 앉힙니다. 같은 줄 셈법을 공유하면 서로 겹쳐
+          // 그려지는데, 겹친 막대는 오류가 아니라 「그런 일정」으로 보입니다.
+          const acadLaid = layoutWeek(academicBars, week.start, true);
+          const acadLanes = acadLaid.reduce((n, b) => Math.max(n, b.lane + 1), 0);
+          const laneCount = taskLanes + acadLanes;
           // 그 주에서 가장 많은 🔔 알림. 알림은 칸 안에 쌓이므로 자리를 함께 세야
           // 막대와 겹치지 않습니다.
-          const maxNotes = week.cells.reduce((n, c) => Math.max(n, Math.min(2, remindersByDay.get(c.key)?.length ?? 0)), 0);
+          // 🔁 되풀이 예정도 칸 안에 쌓이므로 함께 셉니다. 안 세면 주 높이가 모자라 마지막
+          // 예정이 잘리는데, 잘린 티가 안 나서 그날은 그냥 일이 없는 날로 보입니다.
+          const maxNotes = week.cells.reduce(
+            (n, c) =>
+              Math.max(n, Math.min(2, remindersByDay.get(c.key)?.length ?? 0) + Math.min(3, ghostsByDay.get(c.key)?.length ?? 0)),
+            0,
+          );
           const weekH = Math.max(WEEK_MIN_H, BAR_TOP + laneCount * LANE_H + maxNotes * 14 + 8);
           return (
             <div key={week.start} className="relative grid grid-cols-7 gap-px" style={{ minHeight: weekH }}>
@@ -476,6 +572,33 @@ export default function WorkCalendar({
                     {(remindersByDay.get(c.key)?.length ?? 0) > 2 && (
                       <span className="text-[9px] text-amber-600">🔔 +{(remindersByDay.get(c.key)?.length ?? 0) - 2}</span>
                     )}
+                    {/* 🔁 **아직 안 만들어진 되풀이 회차.** 점선으로 그려 진짜 줄과 구별합니다 -
+                        같아 보이면 사람은 그것도 옮기고 지울 수 있다고 믿습니다. 눌러도 열리는
+                        것은 **원본 업무**입니다. */}
+                    {(ghostsByDay.get(c.key) ?? []).slice(0, 3).map((t) => {
+                      const color = (t.tag_id ? colorOf.get(t.tag_id) : null) ?? "#64748b";
+                      return (
+                        <button
+                          key={`ghost-${t.id}-${c.key}`}
+                          type="button"
+                          data-task
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onOpenTask(t);
+                          }}
+                          title={`${t.title}\n${t.recurrence ? recurrenceLabel(t.recurrence) : ""} — 아직 만들어지지 않은 회차입니다.\n이번 회차를 완료하면 이 날짜로 줄이 생깁니다.`}
+                          className="mt-0.5 flex w-full items-center gap-0.5 overflow-hidden rounded border border-dashed bg-white/70 px-1 py-0.5 text-left text-[9px] font-semibold hover:bg-slate-50"
+                          style={{ borderColor: color, color }}
+                        >
+                          <span className="shrink-0">🔁</span>
+                          <span className="truncate opacity-80">{t.title}</span>
+                        </button>
+                      );
+                    })}
+                    {(ghostsByDay.get(c.key)?.length ?? 0) > 3 && (
+                      <span className="text-[9px] text-slate-400">🔁 +{(ghostsByDay.get(c.key)?.length ?? 0) - 3}</span>
+                    )}
                     {pickupDay === c.key && (
                       <div style={{ top: BAR_TOP - 2 }}
                         className="absolute inset-x-0.5 z-30 max-h-40 overflow-auto rounded-lg border border-amber-300 bg-white p-1 shadow-lg">
@@ -507,6 +630,47 @@ export default function WorkCalendar({
                         같은 막대라, 길이만 보면 며칠짜리인지 바로 읽힙니다. */}
                     <div className="min-h-0 flex-1" />
                   </div>
+                );
+              })}
+
+              {/* ── 🎓 학사일정 막대 ─────────────────────────────────
+                  업무와 **다른 모양**입니다 - 테두리만 있는 연보라. 우리가 완료를 누르는
+                  일이 아니라 학교가 그날 무엇을 하는지라, 같은 모양으로 그리면 「안 끝낸
+                  업무」로 읽힙니다. */}
+              {acadLaid.map((b) => {
+                const it = (b.task as SpanTask & { item: ChecklistItem }).item;
+                return (
+                  <button
+                    key={`acad-${it.id}-${week.start}`}
+                    type="button"
+                    data-task
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpenAcademic?.(it);
+                    }}
+                    title={
+                      `🎓 ${it.title}` +
+                      (it.end_date && it.end_date !== it.due_date ? ` · ${it.due_date} ~ ${it.end_date}` : ` · ${it.due_date}`) +
+                      (it.department ? `\n${it.department}` : "") +
+                      (it.done ? "\n끝난 일정입니다" : "")
+                    }
+                    className={
+                      "absolute z-10 flex cursor-pointer items-center overflow-hidden rounded border border-dashed px-1.5 text-[10px] font-bold " +
+                      (it.done ? "border-slate-300 bg-slate-50 text-slate-400" : "border-indigo-400 bg-indigo-50 text-indigo-700")
+                    }
+                    style={{
+                      left: `calc(${(b.col / 7) * 100}% + 1px)`,
+                      width: `calc(${(b.span / 7) * 100}% - 2px)`,
+                      top: BAR_TOP + (taskLanes + b.lane) * LANE_H,
+                      height: LANE_H - 2,
+                    }}
+                  >
+                    {b.continuesLeft && <span className="mr-0.5 shrink-0 opacity-70">‹</span>}
+                    <span className="mr-0.5 shrink-0">🎓</span>
+                    <span className="truncate">{it.title}</span>
+                    {b.continuesRight && <span className="ml-auto shrink-0 opacity-70">›</span>}
+                  </button>
                 );
               })}
 

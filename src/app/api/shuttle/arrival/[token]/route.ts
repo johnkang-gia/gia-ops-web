@@ -6,6 +6,7 @@ import { createClient } from "@supabase/supabase-js";
 import { ridesToday } from "@/lib/ridesToday";
 import { kstParts } from "@/lib/shuttleTracking";
 import { isUndecidedChoice } from "@/lib/shuttleChoice";
+import { effectiveRouteId, routeChoiceOf } from "@/lib/shuttleRoute";
 
 export const dynamic = "force-dynamic";
 
@@ -183,7 +184,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
         assignmentId: a.id,
         studentName: displayName(a),
         group: a.choice_group as string,
-        routeId: (a.override_route_id && routeIdSet.has(a.override_route_id) ? a.override_route_id : stop.route_id) as string,
+        routeId: effectiveRouteId(
+          routeChoiceOf({ stopRouteId: stop.route_id as string, assignmentOverride: a.override_route_id }, (id) => routeIdSet.has(id)),
+        ),
         // 어디서 내리는지 함께 보냅니다. 호차 번호만 보고 누르면, 형제가 서로 다른 곳에
         // 내리게 잘못 눌러도 아무도 모릅니다.
         stopAddress: ((stop as { address?: string | null }).address ?? null),
@@ -192,8 +195,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
       });
       continue;
     }
-    const permanentRouteId = a.override_route_id && routeIdSet.has(a.override_route_id) ? a.override_route_id : stop.route_id;
-    const targetRouteId = boarding?.override_route_id && routeIdSet.has(boarding.override_route_id) ? boarding.override_route_id : permanentRouteId;
+    // 어느 차를 타는가는 @/lib/shuttleRoute 한 곳에서만 판정합니다(CLAUDE.md 2-11).
+    const targetRouteId = effectiveRouteId(
+      routeChoiceOf(
+        { stopRouteId: stop.route_id, assignmentOverride: a.override_route_id, boardingOverride: boarding?.override_route_id },
+        (id) => routeIdSet.has(id),
+      ),
+    );
     // ── 「탑승」이라는 같은 말이 두 가지를 뜻합니다 ──────────────────────
     //
     // 하원 체크표의 [🚌 탑승]은 **「오늘 갑자기 탑승」** — 앞으로 태워야 한다는 계획입니다.

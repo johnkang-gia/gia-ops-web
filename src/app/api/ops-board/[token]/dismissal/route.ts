@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { isUndecidedChoice } from "@/lib/shuttleChoice";
 import { createClient } from "@supabase/supabase-js";
 import { kstParts } from "@/lib/shuttleTracking";
+import { effectiveRouteId, routeChoiceOf } from "@/lib/shuttleRoute";
 
 export const dynamic = "force-dynamic";
 
@@ -157,8 +158,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
     const b = boardingByAssignment.get(a.id);
     // 행선지를 그날 정하는 학생은, 정하기 전까지 어느 명단에도 넣지 않습니다.
     if (isUndecidedChoice(a, b)) continue;
-    const permanent = a.override_route_id && routeIdSet.has(a.override_route_id) ? a.override_route_id : baseRouteId;
-    const target = b?.override_route_id && routeIdSet.has(b.override_route_id) ? b.override_route_id : permanent;
+    // 어느 차를 타는가는 @/lib/shuttleRoute 한 곳에서만 판정합니다(CLAUDE.md 2-11).
+    const target = effectiveRouteId(
+      routeChoiceOf(
+        { stopRouteId: baseRouteId, assignmentOverride: a.override_route_id, boardingOverride: b?.override_route_id },
+        (id) => routeIdSet.has(id),
+      ),
+    );
     const list = ridersByRoute.get(target) ?? [];
     list.push({ name: a.student_name_raw, status: b?.status ?? "예정" });
     ridersByRoute.set(target, list);

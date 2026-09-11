@@ -2,17 +2,17 @@
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { nameWithoutMark, needsCheck, normName, whereOf, type WhereMaps } from "@/lib/studentLabel";
+import { effectiveRouteId, isMovedPermanently, isMovedToday } from "@/lib/shuttleRoute";
 import type { ChecklistItem, ChecklistRoute } from "./ShuttleChecklistClient";
 
 function natCompare(a: string, b: string) {
   return a.localeCompare(b, "ko", { numeric: true });
 }
 
-// 학생 하나의 "오늘 실제로 뜨는 노선"입니다. 오늘 하루만 옮긴 게 있으면 그게 우선이고,
-// 없으면 영구로 옮긴 노선, 그것도 없으면 평소 정류장 기준 원래 노선입니다.
-export function effectiveRouteId(item: ChecklistItem): string {
-  return item.overrideRouteId ?? item.permanentRouteId ?? item.homeRouteId;
-}
+// 「오늘 어느 차를 타는가」 판정은 @/lib/shuttleRoute 한 곳에서만 합니다. 예전에는 이 파일이
+// 자기 몫으로 한 번 더 적어 뒀고, 셔틀명단은 그 규칙을 아예 몰라서 같은 아이를 다른 호차에
+// 그렸습니다(CLAUDE.md 2-11). 다른 화면이 이미 이 이름으로 들여오고 있어 그대로 넘깁니다.
+export { effectiveRouteId };
 
 // PDF(하원차량 체크표)와 같은 형태의 노선별 학생 명단 표입니다(순수 표시 담당 - 상태와
 // 실시간 동기화는 부모인 ShuttleChecklistClient가 갖고 있습니다). 이름을 드래그해서 다른
@@ -252,9 +252,9 @@ export default function ShuttleChecklistTable({
                         //
                         // 계속 옮긴 아이는 다른 아이들과 똑같이 보입니다. 표시가 필요한 것은
                         // "오늘 평소와 다른" 경우뿐입니다.
-                        const isMovedToday = !!item.overrideRouteId && item.overrideRouteId !== (item.permanentRouteId ?? item.homeRouteId);
-                        const isMovedPermanently = !!item.permanentRouteId && item.permanentRouteId !== item.homeRouteId;
-                        const isMoved = isMovedToday;
+                        const movedToday = isMovedToday(item);
+                        const movedPermanently = isMovedPermanently(item);
+                        const isMoved = movedToday;
                         const hasNote = !!item.note && item.note.trim().length > 0;
                         const isHighlighted = matchedIds.has(item.assignmentId);
                         // 영어 이름으로 찾았을 때 **찾은 결과가 맞는지 확인할 수 있어야** 합니다.
@@ -291,9 +291,9 @@ export default function ShuttleChecklistTable({
                           ? "다른 차에서 탑승 체크됨(스위치 전환)"
                           : canReset
                           ? `더블클릭하면 '${item.status}' 표시를 지우고 원래대로 돌립니다`
-                          : isMovedToday
+                          : movedToday
                           ? `오늘만 이동됨 (평소 노선: ${homeRoute?.route_no ?? "?"}호) - 드래그해서 되돌릴 수 있어요`
-                          : isMovedPermanently
+                          : movedPermanently
                             // 화면에는 표시하지 않지만(이 아이에겐 이게 평소입니다), 마우스를
                             // 올리면 원래 배정이 어디였는지는 알 수 있어야 합니다.
                             ? `${homeRoute?.route_no ?? "?"}호에서 옮겨져 계속 이 차를 탑니다 - 드래그해서 되돌릴 수 있어요`
@@ -335,7 +335,7 @@ export default function ShuttleChecklistTable({
                                         ? "border-2"
                                         : isNonRiding
                                           ? "border-slate-100 bg-white text-slate-200 opacity-40 grayscale"
-                                          : isMovedToday
+                                          : movedToday
                                             ? "border-amber-400 bg-amber-50 text-amber-700"
                                             : "border-slate-300 bg-white text-slate-700")
                             }
@@ -404,7 +404,7 @@ export default function ShuttleChecklistTable({
                               />
                             )}
                             <span>
-                              {isMovedToday && "↔ "}
+                              {movedToday && "↔ "}
                               {/* 괄호로 적힌 반은 뗍니다 - 학년·반이 바로 옆에 붙으므로
                                   그대로 두면 「김재이(G2A) 2 G2A」처럼 두 번 나옵니다. */}
                               {nameWithoutMark(item.studentName)}

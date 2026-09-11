@@ -3,6 +3,7 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { redirect } from "next/navigation";
 import { todayKst, kstDateOffset } from "@/lib/kst";
 import ShuttleCapacityClient, { type CapacityRow } from "@/components/shuttle/ShuttleCapacityClient";
+import { effectiveRouteId, routeChoiceOf } from "@/lib/shuttleRoute";
 
 // 정원 대비 탑승률.
 //
@@ -63,10 +64,24 @@ export default async function ShuttleCapacityPage({
 
   const stopIds = [...stopRoute.keys()];
   const { data: assigns } = stopIds.length
-    ? await supabase.from("shuttle_assignments").select("id, stop_id, choice_group").in("stop_id", stopIds)
+    ? await supabase.from("shuttle_assignments").select("id, stop_id, choice_group, override_route_id").in("stop_id", stopIds)
     : { data: [] };
-  const assignList = (assigns ?? []) as { id: string; stop_id: string; choice_group: string | null }[];
-  const assignRoute = new Map(assignList.map((a) => [a.id, stopRoute.get(a.stop_id) ?? ""]));
+  const assignList = (assigns ?? []) as { id: string; stop_id: string; choice_group: string | null; override_route_id: string | null }[];
+  // **계속 옮긴 아이는 옮겨간 차의 인원입니다.**
+  //
+  // 이 화면은 그동안 정류장이 속한 노선만 보고 셌습니다. 그래서 옮겨진 아이는 지금 타지도
+  // 않는 차의 계획 인원에 남아 있었고, 실제로 타는 차는 그만큼 적게 세어졌습니다 - 정원을
+  // 보고 판단하는 화면이 실제보다 여유 있어 보였습니다.
+  const assignRoute = new Map(
+    assignList.map((a) => [
+      a.id,
+      stopRoute.has(a.stop_id)
+        ? effectiveRouteId(
+            routeChoiceOf({ stopRouteId: stopRoute.get(a.stop_id)!, assignmentOverride: a.override_route_id }, (id) => routeIds.includes(id)),
+          )
+        : "",
+    ]),
+  );
 
   // 노선별 배정 인원(계획).
   const plannedByRoute = new Map<string, number>();

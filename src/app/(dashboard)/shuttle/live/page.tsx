@@ -7,6 +7,7 @@ import ShuttleLiveClient, { type LiveRosterItem } from "@/components/shuttle/Shu
 import GuideButton from "@/components/common/GuideButton";
 import { ridingIds } from "@/lib/ridesToday";
 import { todayKst } from "@/lib/kst";
+import { effectiveRouteId, routeChoiceOf } from "@/lib/shuttleRoute";
 
 const GUIDE_SECTIONS = [
   {
@@ -111,7 +112,10 @@ export default async function ShuttleLivePage() {
     if (!a.weekdays.includes(todayWeekday) && !ridingTodayIds.has(a.id)) continue;
     const stop = stopById.get(a.stop_id);
     if (!stop) continue;
-    const permanentRouteId = a.override_route_id && routeIds.includes(a.override_route_id) ? a.override_route_id : stop.route_id;
+    // 어느 차를 타는가는 @/lib/shuttleRoute 한 곳에서만 판정합니다(CLAUDE.md 2-11).
+    const permanentRouteId = effectiveRouteId(
+      routeChoiceOf({ stopRouteId: stop.route_id, assignmentOverride: a.override_route_id }, (id) => routeIds.includes(id)),
+    );
     allRoster.push({ assignmentId: a.id, studentName: a.student_name_raw, stopSeq: stop.seq, stopTime: stop.stop_time, routeId: permanentRouteId });
   }
 

@@ -13,6 +13,7 @@ import { Who } from "@/components/common/HomonymProvider";
 // 구독해 훨씬 빠르게(초 단위가 아니라 사실상 즉시) 반영하도록 바꿨습니다(요청: "실시간 반영
 // 속도 더 개선"). 재연결 등으로 이벤트를 놓쳤을 때를 대비한 안전망 폴링만 느슨하게 남겨둡니다.
 const FALLBACK_POLL_MS = 25000;
+import { effectiveRouteId, routeChoiceOf } from "@/lib/shuttleRoute";
 
 export type LiveRosterItem = { assignmentId: string; studentName: string; stopSeq: number; stopTime: string | null; routeId: string };
 type BoardingRow = { assignment_id: string; status: string; alighted_at: string | null; override_route_id: string | null };
@@ -59,8 +60,17 @@ export default function ShuttleLiveClient({
   const rosterByRoute = useMemo(() => {
     const map: Record<string, LiveRosterItem[]> = {};
     for (const item of allRoster) {
-      const override = boardingByAssignment[item.assignmentId]?.override_route_id;
-      const targetRouteId = override && routeIdSet.has(override) ? override : item.routeId;
+      // 판정은 @/lib/shuttleRoute 한 곳에서만(CLAUDE.md 2-11). item.routeId 에는 계속 이동이
+      // 이미 반영돼 있으므로, 여기서는 오늘 하루치만 더 얹습니다.
+      const targetRouteId = effectiveRouteId(
+        routeChoiceOf(
+          {
+            stopRouteId: item.routeId,
+            boardingOverride: boardingByAssignment[item.assignmentId]?.override_route_id,
+          },
+          (id) => routeIdSet.has(id),
+        ),
+      );
       (map[targetRouteId] ??= []).push(item);
     }
     for (const key of Object.keys(map)) {

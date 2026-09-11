@@ -1,11 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useConfirm } from "@/components/common/ConfirmProvider";
 import { useToast } from "@/components/common/ToastProvider";
 import { buildWhereMaps, nameWithoutMark, needsCheck, normName, whereOf } from "@/lib/studentLabel";
 import { DAY_LABEL, describeTaken, freeDays, takenDays, type RosterSlot } from "@/lib/rosterDays";
+import { isMovedPermanently } from "@/lib/shuttleRoute";
 
 // 하원 셔틀명단 설정(요청: 하원체크표 탭 분리). 노선(호차)별로 누가 무슨 요일에 타는지 한
 // 화면에서 보고 바로 고칩니다. 요일 버튼(월~금)을 눌러 켜고 끄면 즉시 저장되고, 체크표·안내
@@ -18,6 +20,13 @@ export type RosterAssignment = {
   student_id?: string | null;
   weekdays: number[];
   note: string | null;
+  /**
+   * **계속 이동**(`shuttle_assignments.override_route_id`). 체크표에서 「계속」으로 옮기면
+   * 여기 남습니다. 이 칸을 안 읽으면 명단과 체크표가 서로 다른 호차를 말합니다.
+   */
+  override_route_id?: string | null;
+  /** 정류장이 속한 원래 노선. 옮겨진 아이에게 「원래 N호」를 적어주기 위해 필요합니다. */
+  homeRouteId?: string | null;
 };
 
 /** 명부에서 고를 학생. 이름만 손으로 치면 오타 한 글자로 다른 아이가 됩니다. */
@@ -51,11 +60,49 @@ export default function DismissalRosterClient({
 }) {
   const confirmAction = useConfirm();
   const notify = useToast();
+  const router = useRouter();
   const [routes, setRoutes] = useState<RosterRoute[]>(initialRoutes);
   const [query, setQuery] = useState("");
   const [addingFor, setAddingFor] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
   const [busy, setBusy] = useState(false);
+
+  // 서버가 새 명단을 내려주면 화면을 그것으로 맞춥니다. 이게 없으면 새로고침해도 처음 받은
+  // 명단이 화면에 그대로 남습니다 - 고쳤는데 안 바뀌는 것처럼 보입니다.
+  useEffect(() => setRoutes(initialRoutes), [initialRoutes]);
+
+  /**
+   * **체크표에서 고친 것이 이 화면에도 바로 와야 합니다.**
+   *
+   * 지금까지 구독은 체크표 쪽에만 있었습니다. 그래서 체크표에서 노선을 옮기면 체크표는
+   * 바뀌는데 열어 둔 명단은 옛 자리를 계속 보여줬습니다. 두 사람이 각자 자기 화면을 믿고
+   * 일하면, 어느 쪽이 맞는지는 아이가 차에 탄 뒤에야 드러납니다.
+   *
+   * **걸러내지 않고 전부 받습니다.** 예전에 체크표에서 `id=in.(지금 화면에 있는 것)` 으로
+   * 걸렀다가 새로 들어온 줄과 지워진 줄을 통째로 놓쳤습니다 - 화면에 없는 것은 필터에도
+   * 안 걸리니까요.
+   */
+  useEffect(() => {
+    const supabase = createClient();
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    // 한 번 고치면 여러 줄이 잇따라 오므로 조금 모았다 한 번만 다시 읽습니다.
+    const refresh = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => router.refresh(), 300);
+    };
+    const ch = supabase
+      .channel("roster-sync")
+      .on("postgres_changes", { event: "*", schema: "public", table: "shuttle_assignments" }, refresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "shuttle_stops" }, refresh)
+      .subscribe();
+    return () => {
+      if (timer) clearTimeout(timer);
+      void supabase.removeChannel(ch);
+    };
+  }, [router]);
+
+  /** 노선 번호를 찾는 표. 「원래 28호」를 적으려면 번호가 필요합니다. */
+  const routeNoById = useMemo(() => new Map(routes.map((r) => [r.id, r.route_no])), [routes]);
 
   /** 지금 어느 줄에서 학생을 고르는 중인가. */
   const [linkingId, setLinkingId] = useState<string | null>(null);
@@ -170,6 +217,24 @@ export default function DismissalRosterClient({
     notify(`${s.name} ${[s.grade, s.class_name].filter(Boolean).join(" ")} 으로 연결했습니다.`, "success");
   }
 
+  /**
+   * 계속 이동을 풀어 **원래 호차로 돌려보냅니다.**
+   *
+   * 이동이 걸려 있다는 것을 화면에 적기만 하면 아무도 안 풉니다 - 어디 가서 푸는지 모르니까요.
+   * 보이는 그 자리에 단추를 둡니다.
+   */
+  async function unmove(asg: RosterAssignment) {
+    const homeNo = asg.homeRouteId ? routeNoById.get(asg.homeRouteId) : null;
+    if (!(await confirmAction(`${nameWithoutMark(asg.student_name_raw)} 학생을 원래 ${homeNo ?? "?"}호로 되돌릴까요?`))) return;
+    const { error } = await createClient().from("shuttle_assignments").update({ override_route_id: null }).eq("id", asg.id);
+    if (error) {
+      notify("되돌리지 못했습니다: " + error.message, "error");
+      return;
+    }
+    notify(`${nameWithoutMark(asg.student_name_raw)} 학생을 ${homeNo ?? "원래"}호로 되돌렸습니다.`, "success");
+    router.refresh();
+  }
+
   async function removeStudent(routeId: string, asg: RosterAssignment) {
     if (!(await confirmAction(`${asg.student_name_raw} 학생을 이 노선 명단에서 뺄까요?`, { danger: true }))) return;
     setRoutes((prev) => prev.map((r) => (r.id === routeId ? { ...r, assignments: r.assignments.filter((a) => a.id !== asg.id) } : r)));
@@ -209,8 +274,10 @@ export default function DismissalRosterClient({
     const { data, error } = await createClient()
       .from("shuttle_assignments")
       // 남은 요일만 켭니다. 아무 요일도 없이 넣으면 「넣었는데 어디에도 안 뜬다」가 됩니다.
-      .insert({ stop_id: route.firstStopId, student_id: s.id, student_name_raw: s.name, weekdays: free })
-      .select("id, stop_id, student_id, student_name_raw, weekdays, note")
+      // **이동은 비워서 넣습니다.** 값이 기본값에 기대면 언젠가 기본값이 바뀌고, 그때
+      // 새로 넣은 아이가 엉뚱한 호차에 나타납니다. 여기서 넣는 아이는 이 노선을 탑니다.
+      .insert({ stop_id: route.firstStopId, student_id: s.id, student_name_raw: s.name, weekdays: free, override_route_id: null })
+      .select("id, stop_id, student_id, student_name_raw, weekdays, note, override_route_id")
       .single();
     setBusy(false);
     if (error || !data) {
@@ -272,8 +339,21 @@ export default function DismissalRosterClient({
             <div className="flex flex-col gap-1.5">
               {r.assignments.map((a) => {
                 const partTime = a.weekdays.length < 5;
+                // 이 카드는 **실제로 타는 노선**입니다. 원래 자리가 다르면 그 사실을 적습니다 -
+                // 적지 않으면 명단에서 아무리 봐도 왜 여기 있는지 알 수가 없습니다. 옮겨졌는지는
+                // @/lib/shuttleRoute 가 판정합니다(CLAUDE.md 2-11).
+                const moved =
+                  !!a.homeRouteId &&
+                  isMovedPermanently({ homeRouteId: a.homeRouteId, permanentRouteId: a.override_route_id ?? null });
+                const movedFrom = moved ? routeNoById.get(a.homeRouteId!) ?? "?" : null;
                 return (
-                  <div key={a.id} className={"rounded-lg px-2 py-1.5 " + (partTime ? "bg-amber-50/70" : "bg-slate-50")}>
+                  <div
+                    key={a.id}
+                    className={
+                      "rounded-lg px-2 py-1.5 " +
+                      (movedFrom ? "bg-violet-50 ring-1 ring-violet-200" : partTime ? "bg-amber-50/70" : "bg-slate-50")
+                    }
+                  >
                     <div className="flex items-center gap-1.5">
                       <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-slate-700">
                         {nameWithoutMark(a.student_name_raw)}
@@ -364,6 +444,21 @@ export default function DismissalRosterClient({
                         ✕
                       </button>
                     </div>
+                    {movedFrom && (
+                      <p className="mt-1 flex items-center gap-1 text-[10px] text-violet-700">
+                        <span>
+                          원래 <b>{movedFrom}호</b>인데 체크표에서 <b>계속 옮김</b>으로 여기에 있습니다.
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => void unmove(a)}
+                          className="rounded bg-violet-100 px-1.5 py-0.5 font-bold text-violet-700 hover:bg-violet-200"
+                          title={`${movedFrom}호로 되돌립니다`}
+                        >
+                          ↩ {movedFrom}호로 되돌리기
+                        </button>
+                      </p>
+                    )}
                     {a.note && <p className="mt-0.5 text-[10px] text-slate-400">💡 {a.note}</p>}
                   </div>
                 );

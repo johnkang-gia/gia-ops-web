@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { effectiveRouteId, routeChoiceOf } from "@/lib/shuttleRoute";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { todayKst } from "@/lib/kst";
 
@@ -71,15 +72,21 @@ export async function POST(req: Request) {
           .eq("student_id", hostId)
           .limit(1)
           .maybeSingle();
-        route = (asg?.override_route_id as string | null) ?? null;
-        if (!route && asg?.stop_id) {
+        // 태워 주는 아이가 **실제로 타는** 차입니다. 계속 옮겨진 아이면 옮겨간 차여야
+        // 합니다 - 원래 차에 얹으면 동승 아이만 다른 차에서 기다리게 됩니다.
+        // 판정은 @/lib/shuttleRoute 한 곳에서만(CLAUDE.md 2-11).
+        let homeRouteId: string | null = null;
+        if (asg?.stop_id) {
           const { data: stop } = await supabase
             .from("shuttle_stops")
             .select("route_id")
             .eq("id", asg.stop_id as string)
             .maybeSingle();
-          route = (stop?.route_id as string | null) ?? null;
+          homeRouteId = (stop?.route_id as string | null) ?? null;
         }
+        route = homeRouteId
+          ? effectiveRouteId(routeChoiceOf({ stopRouteId: homeRouteId, assignmentOverride: asg?.override_route_id as string | null }))
+          : ((asg?.override_route_id as string | null) ?? null);
       }
     }
     if (!route) {

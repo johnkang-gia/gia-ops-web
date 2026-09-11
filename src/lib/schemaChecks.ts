@@ -316,6 +316,7 @@ export const SCHEMA_CHECKS: SchemaCheck[] = [
   {
     feature: "오늘 탑승 기록",
     table: "shuttle_boardings",
+    // shuttle-route-ok: 칸이 있는지만 확인하는 목록입니다 - 판정은 하지 않습니다.
     columns: ["service_date", "assignment_id", "status", "checked_by", "checked_at", "override_route_id"],
     migration: "(기본 스키마)",
     impact:

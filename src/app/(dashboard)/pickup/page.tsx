@@ -11,6 +11,7 @@ import { isDemoAccount } from "@/lib/sharedAccounts";
 import { ridesToday } from "@/lib/ridesToday";
 import { kstWeekdayNum, planLabel, type DismissalKind } from "@/lib/dismissalPlan";
 import { loadDismissalForDay } from "@/lib/dismissalToday";
+import { effectiveRouteId, routeChoiceOf } from "@/lib/shuttleRoute";
 
 // 사용 가이드도 화면 언어를 따라갑니다. 안내문은 문장이 길어서 한글·영어를 함께 적으면
 // 모달이 두 배로 길어지고, 정작 자기 언어 문장을 찾느라 눈이 왔다 갔다 하게 됩니다.
@@ -195,7 +196,16 @@ export default async function PickupPage() {
         const a = assignmentByName.get(normalize(s.name));
         const b = a ? boardingByAssignment.get(a.id) : undefined;
         const baseRouteId = a ? stopRouteById.get(a.stop_id) ?? null : null;
-        const routeId = (b?.override_route_id ?? a?.override_route_id ?? baseRouteId) ?? null;
+        // 어느 차를 타는가는 @/lib/shuttleRoute 한 곳에서만 판정합니다(CLAUDE.md 2-11).
+        const routeId = baseRouteId
+          ? effectiveRouteId(
+              routeChoiceOf({
+                stopRouteId: baseRouteId,
+                assignmentOverride: a?.override_route_id,
+                boardingOverride: b?.override_route_id,
+              }),
+            )
+          : null;
         const route = routeId ? routeById.get(routeId) : null;
         return {
           studentId: s.id,

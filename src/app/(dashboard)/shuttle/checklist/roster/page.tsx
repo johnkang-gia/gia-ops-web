@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import DismissalRosterClient, { type RosterRoute, type RosterAssignment, type RosterStudent } from "@/components/shuttle/DismissalRosterClient";
+import { effectiveRouteId, routeChoiceOf } from "@/lib/shuttleRoute";
 
 export const dynamic = "force-dynamic";
 
@@ -30,9 +31,15 @@ export default async function DismissalRosterPage() {
     for (const st of stops) stopRoute.set(st.id, st.route_id);
     const stopIds = stops.map((x) => x.id);
     if (stopIds.length) {
+      // **계속 이동(`override_route_id`)을 반드시 함께 읽습니다.**
+      //
+      // 이 칸을 안 읽던 동안, 명단은 「정류장이 속한 노선」만 보고 아이를 그렸습니다. 체크표는
+      // 이동을 보고 그렸습니다. 그래서 이예온을 명단에서 28호에 넣어도 체크표에는 다른 호차에
+      // 떴고, 명단 쪽에서는 **왜 그런지 알 방법조차 없었습니다** - 이동이 걸려 있다는 사실이
+      // 화면 어디에도 안 나왔으니까요.
       const { data: a } = await supabase
         .from("shuttle_assignments")
-        .select("id, stop_id, student_id, student_name_raw, weekdays, note")
+        .select("id, stop_id, student_id, student_name_raw, weekdays, note, override_route_id")
         .in("stop_id", stopIds)
         .order("student_name_raw");
       assigns = (a ?? []) as RosterAssignment[];
@@ -42,11 +49,17 @@ export default async function DismissalRosterPage() {
   const firstStop = new Map<string, string>();
   for (const st of stops) if (!firstStop.has(st.route_id)) firstStop.set(st.route_id, st.id);
 
+  // 어느 카드에 그릴지는 **실제로 타는 노선**으로 정합니다. 판정은 `effectiveRouteId` 한
+  // 곳에서만 합니다(CLAUDE.md 2-11) - 여기서 다시 쓰면 체크표와 또 갈라집니다.
+  const knownRoute = (id: string) => routeIds.includes(id);
   const byRoute = new Map<string, RosterAssignment[]>();
   for (const a of assigns) {
-    const rid = stopRoute.get(a.stop_id);
-    if (!rid) continue;
-    (byRoute.get(rid) ?? byRoute.set(rid, []).get(rid)!).push(a);
+    const home = stopRoute.get(a.stop_id);
+    if (!home) continue;
+    const rid = effectiveRouteId(
+      routeChoiceOf({ stopRouteId: home, assignmentOverride: a.override_route_id }, knownRoute),
+    );
+    (byRoute.get(rid) ?? byRoute.set(rid, []).get(rid)!).push({ ...a, homeRouteId: home });
   }
 
   const rosterRoutes: RosterRoute[] = routes

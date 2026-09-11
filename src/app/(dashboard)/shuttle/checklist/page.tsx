@@ -13,6 +13,7 @@ import ShuttleChecklistClient, { type ChecklistRoute, type ChecklistItem, type P
 import type { GoogleChatMirrorMessage } from "@/lib/types";
 import { categorize } from "@/lib/attendanceDigest";
 import GuideButton from "@/components/common/GuideButton";
+import { effectiveRouteId, routeChoiceOf } from "@/lib/shuttleRoute";
 
 const GUIDE_SECTIONS = [
   {
@@ -476,9 +477,12 @@ export default async function ShuttleChecklistPage({
         studentId: a.student_id,
         studentName: a.student_name_raw,
         stopSeq: stop.seq,
-        homeRouteId: stop.route_id,
-        permanentRouteId: a.override_route_id && routeIdSet.has(a.override_route_id) ? a.override_route_id : null,
-        overrideRouteId: boarding?.override_route_id ?? null,
+        // 판정 재료를 만드는 일도 @/lib/shuttleRoute 한 곳에서 합니다 - 괄호 위치가 한 번만
+        // 어긋나도 이 화면만 다른 호차를 말하게 됩니다(CLAUDE.md 2-11).
+        ...routeChoiceOf(
+          { stopRouteId: stop.route_id, assignmentOverride: a.override_route_id, boardingOverride: boarding?.override_route_id },
+          (id) => routeIdSet.has(id),
+        ),
         status,
         note: a.note ?? null,
         ridingToday,

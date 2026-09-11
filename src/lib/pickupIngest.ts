@@ -18,6 +18,7 @@ import { extractRecurringWeekdays, hasRecurringPhrase, weekdayLabel } from "@/li
 import { nameSurfaces, readSiblings } from "@/lib/attendanceIntent";
 import { genCaseId } from "@/lib/caseId";
 import { logChecklist, type ChecklistReason } from "@/lib/checklistLog";
+import { effectiveRouteId, routeChoiceOf } from "@/lib/shuttleRoute";
 import { isPleasantry, pleasantryNote } from "@/lib/shortTalk";
 import { objectPickupNote } from "@/lib/objectPickup";
 
@@ -1208,15 +1209,20 @@ async function registerRideAlong(
       .eq("student_id", host.id)
       .limit(1)
       .maybeSingle();
-    routeId = (asg?.override_route_id as string | null) ?? null;
-    if (!routeId && asg?.stop_id) {
+    // 계속 옮겨진 아이면 **옮겨간 차**입니다. 판정은 @/lib/shuttleRoute 한 곳에서만
+    // 합니다(CLAUDE.md 2-11) - 여기서 원래 차를 집으면 동승 아이만 엉뚱한 데서 기다립니다.
+    let homeRouteId: string | null = null;
+    if (asg?.stop_id) {
       const { data: stop } = await supabase
         .from("shuttle_stops")
         .select("route_id")
         .eq("id", asg.stop_id as string)
         .maybeSingle();
-      routeId = (stop?.route_id as string | null) ?? null;
+      homeRouteId = (stop?.route_id as string | null) ?? null;
     }
+    routeId = homeRouteId
+      ? effectiveRouteId(routeChoiceOf({ stopRouteId: homeRouteId, assignmentOverride: asg?.override_route_id as string | null }))
+      : ((asg?.override_route_id as string | null) ?? null);
   }
 
   // 노선까지 정해져야 명단에 얹을 수 있습니다. 하나라도 비면 사람이 봐야 합니다.

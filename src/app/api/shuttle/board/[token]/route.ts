@@ -4,6 +4,7 @@ import { cached } from "@/lib/ttlCache";
 import { todayKst } from "@/lib/kst";
 import { ridesToday } from "@/lib/ridesToday";
 import { isUndecidedChoice } from "@/lib/shuttleChoice";
+import { effectiveRouteId, routeChoiceOf } from "@/lib/shuttleRoute";
 import { createClient } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
@@ -107,8 +108,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     const boarding = boardingByAssignment.get(a.id);
     // 행선지를 그날 정하는 학생은, 정하기 전까지 어느 명단에도 넣지 않습니다.
     if (isUndecidedChoice(a, boarding)) continue;
-    const permanentRouteId = a.override_route_id && routeIdSet.has(a.override_route_id) ? a.override_route_id : stop.route_id;
-    const targetRouteId = boarding?.override_route_id && routeIdSet.has(boarding.override_route_id) ? boarding.override_route_id : permanentRouteId;
+    // 어느 차를 타는가는 @/lib/shuttleRoute 한 곳에서만 판정합니다(CLAUDE.md 2-11).
+    const targetRouteId = effectiveRouteId(
+      routeChoiceOf(
+        { stopRouteId: stop.route_id, assignmentOverride: a.override_route_id, boardingOverride: boarding?.override_route_id },
+        (id) => routeIdSet.has(id),
+      ),
+    );
     const list = rosterByRoute[targetRouteId] ?? (rosterByRoute[targetRouteId] = []);
     list.push({ studentName: a.student_name_raw, status: boarding?.status ?? "예정" });
   }

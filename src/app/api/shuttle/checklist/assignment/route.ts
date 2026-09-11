@@ -25,6 +25,9 @@ export async function POST(req: Request) {
   const assignmentId = body?.assignmentId;
   if (!assignmentId) return NextResponse.json({ error: "assignmentId가 필요합니다." }, { status: 400 });
 
+  // shuttle-route-ok: 여기는 「계속 이동」 칸을 **저장만** 합니다. 어느 차를 타는가는 읽는
+  // 쪽에서 @/lib/shuttleRoute 로 판정합니다 - 이 자리에서 또 판정하면 저장과 표시가 서로
+  // 다른 규칙을 갖게 됩니다.
   const patch: Record<string, unknown> = {};
   if (Object.prototype.hasOwnProperty.call(body ?? {}, "permanentRouteId")) patch.override_route_id = body?.permanentRouteId ?? null;
   if (Object.prototype.hasOwnProperty.call(body ?? {}, "note")) patch.note = (body?.note ?? "").toString().slice(0, 500) || null;

@@ -513,6 +513,9 @@ export default function WorkspaceArea({
     <TaskBoard
       tasks={tasks}
       team={team}
+      // 색 이름표를 흐름판에도 내려줍니다. 달력 막대만 태그 색을 쓰고 카드는 안 써서,
+      // 태그를 붙여도 카드는 그대로였습니다(아래 TaskCard 주석).
+      tagMap={new Map(tags.map((t) => [t.id, { name: t.name, color: t.color }]))}
       deptColorMap={deptColorMap}
       modeColorMap={modeColorMap}
       isAdmin={isAdmin}

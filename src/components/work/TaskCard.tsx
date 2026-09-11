@@ -14,6 +14,7 @@ import { STATUS_ORDER, STATUS_LABEL } from "./statusConfig";
 export default function TaskCard({
   task,
   team,
+  tag,
   deptColor,
   modeColorMap,
   isAdmin,
@@ -25,6 +26,8 @@ export default function TaskCard({
 }: {
   task: Task;
   team: TeamMember[];
+  /** 사람이 붙인 색 이름표. 있으면 **이것이 카드 색입니다.** */
+  tag?: { name: string; color: string } | null;
   deptColor?: string | null;
   modeColorMap?: Map<string, string>;
   isAdmin: boolean;
@@ -65,9 +68,18 @@ export default function TaskCard({
     opacity: isDragging ? 0.5 : 1,
   };
 
-  // 카드 강조색은 "누구를 위한 업무인가"(나/전체/공유, 관리자가 설정)를 우선 기준으로 삼고,
-  // 아직 색이 지정 안 됐거나 예전 데이터라면 부서색 → 기본 파란색 순으로 대신합니다.
-  const color = modeColorMap?.get(task.origin_mode) || deptColor || "#3b82f6";
+  /**
+   * 카드 강조색.
+   *
+   * **사람이 붙인 색 이름표가 가장 셉니다.** 예전에는 태그를 아예 안 봤습니다 - 모드 색
+   * → 부서 색 → 기본 파랑 순이었고, 그래서 업무마다 태그를 붙여 색을 갈라놔도 흐름판
+   * 카드는 **하나도 안 바뀌었습니다.** 저장은 됐는데 화면이 안 쓰니, 보는 사람에게는
+   * 「색이 도로 돌아간」 것으로 보입니다.
+   *
+   * 태그는 사람이 그 업무를 보고 일부러 고른 것이고, 모드·부서 색은 앱이 정해준 기본값
+   * 입니다. 고른 것이 기본값을 이겨야 고른 보람이 있습니다.
+   */
+  const color = tag?.color || modeColorMap?.get(task.origin_mode) || deptColor || "#3b82f6";
   const ackList = task.acknowledged_by ?? [];
   const totalAssignees = task.assignee_emails.length;
   // 업무를 등록한 사람(owner_email) 본인은 "확인"할 필요가 없는 당사자라, 확인 대상
@@ -179,6 +191,17 @@ export default function TaskCard({
           </span>
         )}
         {isPickup && <span className="shrink-0 text-[11px]">🚸</span>}
+        {/* 색만으로는 무슨 갈래인지 외워야 합니다. 이름표를 글자로도 답니다 - 색이 안 보이는
+            자리(인쇄·색각 이상)에서도 갈래가 남습니다. */}
+        {tag && (
+          <span
+            className="shrink-0 rounded px-1 py-0.5 text-[9px] font-bold"
+            style={{ backgroundColor: `${tag.color}22`, color: tag.color }}
+            title={`색 이름표: ${tag.name}`}
+          >
+            {tag.name}
+          </span>
+        )}
         <span
           {...listeners}
           onClick={() => (canPickupDone ? setPickupOpen((v) => !v) : onOpen())}

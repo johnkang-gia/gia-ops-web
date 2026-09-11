@@ -23,6 +23,7 @@ function DroppableColumn({
   status,
   tasks,
   team,
+  tagMap,
   deptColorMap,
   modeColorMap,
   isAdmin,
@@ -35,6 +36,7 @@ function DroppableColumn({
   status: TaskStatus;
   tasks: Task[];
   team: TeamMember[];
+  tagMap: Map<string, { name: string; color: string }>;
   deptColorMap: Map<string, string>;
   modeColorMap: Map<string, string>;
   isAdmin: boolean;
@@ -62,6 +64,7 @@ function DroppableColumn({
               key={task.id}
               task={task}
               team={team}
+              tag={task.tag_id ? tagMap.get(task.tag_id) ?? null : null}
               deptColor={task.department ? deptColorMap.get(task.department) : null}
               modeColorMap={modeColorMap}
               isAdmin={isAdmin}
@@ -89,6 +92,7 @@ const HOLD_STATUS: TaskStatus = "보류";
 export default function TaskBoard({
   tasks,
   team,
+  tagMap,
   deptColorMap,
   modeColorMap,
   isAdmin,
@@ -102,6 +106,7 @@ export default function TaskBoard({
 }: {
   tasks: Task[];
   team: TeamMember[];
+  tagMap: Map<string, { name: string; color: string }>;
   deptColorMap: Map<string, string>;
   modeColorMap: Map<string, string>;
   isAdmin: boolean;
@@ -175,6 +180,7 @@ export default function TaskBoard({
                 status={status}
                 tasks={myTasks.filter((t) => t.status === status)}
                 team={team}
+                tagMap={tagMap}
                 deptColorMap={deptColorMap}
                 modeColorMap={modeColorMap}
                 isAdmin={isAdmin}
@@ -201,6 +207,7 @@ export default function TaskBoard({
                 status={HOLD_STATUS}
                 tasks={holdTasks}
                 team={team}
+                tagMap={tagMap}
                 deptColorMap={deptColorMap}
                 modeColorMap={modeColorMap}
                 isAdmin={isAdmin}
@@ -215,7 +222,12 @@ export default function TaskBoard({
         </div>
         <DragOverlay>
           {activeTask ? (
-            <div className="glass w-64 rounded-lg border-l-4 p-3 shadow-lg" style={{ borderLeftColor: activeTask.department ? deptColorMap.get(activeTask.department) ?? "#3b82f6" : "#3b82f6" }}>
+            <div className="glass w-64 rounded-lg border-l-4 p-3 shadow-lg" style={{
+                borderLeftColor:
+                  (activeTask.tag_id ? tagMap.get(activeTask.tag_id)?.color : null) ??
+                  (activeTask.department ? deptColorMap.get(activeTask.department) : null) ??
+                  "#3b82f6",
+              }}>
               <div className="text-sm font-semibold text-slate-800">{activeTask.title}</div>
               {activeTask.description && <div className="mt-1 text-xs text-slate-500">{activeTask.description}</div>}
             </div>

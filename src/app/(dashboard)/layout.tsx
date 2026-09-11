@@ -490,7 +490,14 @@ export default async function DashboardLayout({
       <VersionUpdateBanner />
       <CommandPalette categories={categories} homeHref={homeHref} />
       {/* 인쇄할 때는 사이드바를 감춥니다 - 체크표 인쇄본이 종이 폭을 온전히 쓰도록. */}
-      <aside className="shell-blur hidden w-56 shrink-0 border-r border-[var(--shell-border)] bg-[var(--shell-bg)] p-4 sm:flex sm:flex-col print:!hidden">
+      {/* **사이드바는 자기 안에서 굴립니다.**
+          예전에는 높이를 안 정해 둬서, 메뉴가 화면보다 길어지면 사이드바가 그만큼 늘어나고
+          **바깥 상자 전체가 함께 늘어났습니다.** 그러면 창 밖으로 넘친 만큼 페이지 전체가
+          위아래로 굴러가는데, 본문 칸은 화면 높이에 고정(h-screen)되어 있어서 같이 안
+          움직입니다. 결과는 **상단탭과 그 아래 하위탭이 위로 밀려 잘리는 것**이었습니다 -
+          1280×772 화면에서 바깥 상자가 889px 이었습니다.
+          화면에는 오류가 아니라 「탭이 잘린 화면」으로 보여서, 원인을 짐작하기 어렵습니다. */}
+      <aside className="shell-blur hidden h-screen w-56 shrink-0 overflow-y-auto border-r border-[var(--shell-border)] bg-[var(--shell-bg)] p-4 sm:flex sm:flex-col print:!hidden">
         <div className="mb-3 px-2">
           {/* 로고 아래 학기 표시를 가운데 정렬합니다(요청: "로고아래 학기표시 가운데정렬"). */}
           <div className="flex flex-col items-center text-center">

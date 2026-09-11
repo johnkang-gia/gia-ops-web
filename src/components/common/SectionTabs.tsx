@@ -491,7 +491,10 @@ export default function SectionTabs({ isTeacher, isHomeroom }: { isTeacher: bool
     // 전 화면 공통 고정 자리. 본문(<MainArea>)의 좌우 여백과 같은 px를 써서 탭과 페이지 내용의
     // 왼쪽 선이 항상 맞습니다. pb로 페이지 본문과의 간격도 확보합니다(요청: "업무탭부분 너무
     // 페이지랑 가까워 조금 여유는 줘").
-    <div className="shrink-0 px-4 pt-3 sm:px-6 print:!hidden">
+    // 아래 여백(pb)이 **주석에만 있고 실제로는 없었습니다.** 그래서 하위 탭 알약의 아래
+    // 모서리가 본문이 시작하는 선과 정확히 같은 자리에 놓여, 알약이 바닥에 잘린 것처럼
+    // 보였습니다(알약 아래끝 81px = 본문 시작 81px).
+    <div className="shrink-0 px-4 pb-1.5 pt-3 sm:px-6 print:!hidden">
       {/* 탭이 앉는 "선반"을 만듭니다.
           담당자: "메뉴바 (...) 구분이 없어져서 가시성이 너무 떨어져."
           유리 배경 위에 글자만 떠 있으면 탭인지 문장인지 구분이 안 됩니다. 아래에 실선을

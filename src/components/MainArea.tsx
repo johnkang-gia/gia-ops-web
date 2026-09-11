@@ -12,9 +12,16 @@ import { usePathname } from "next/navigation";
 // 클래스는 globals.css에서 다크 테마일 때 이 화면들 안의 text-slate-*/bg-white 같은 라이트
 // 전용 클래스를 가독성 있게 다시 칠하는 스코프로 씁니다.
 // 목록(게시판형) 화면들 - 스크롤로 계속 늘어지는 대신 화면 높이에 맞춰 고정하고, 목록 안에서는
-// Pagination 컴포넌트로 "1 2 3" 페이지를 넘겨보게 했습니다. 각 페이지의 클라이언트 컴포넌트가
-// 스스로 h-full/overflow-hidden 구조를 갖추고 있다는 전제이므로, 여기서는 <main> 높이만
-// 뷰포트에 맞게 잡아줍니다.
+// Pagination 컴포넌트로 "1 2 3" 페이지를 넘겨보게 했습니다.
+//
+// **여기 적는 순간 그 화면은 「스스로 굴릴 책임」을 집니다.** 이 목록에 이름이 오르면 <main>이
+// overflow-hidden 이 되므로, 화면 안쪽에 스크롤 칸이 없으면 **접힌 부분에 아예 손이 닿지
+// 않습니다** - 스크롤 막대조차 안 생겨서, 보는 사람은 그 아래에 내용이 더 있다는 것도 모릅니다.
+// 반/담임 화면이 그랬습니다(학기 고르개 아래 내용이 통째로 잘려 있었습니다).
+//
+// 그래서 `npm run build` 가 `scripts/check-bounded-scroll.mjs` 로 이 목록의 화면들이 실제로
+// 자기 스크롤을 갖췄는지 봅니다. 게시판형이 아닌 긴 설정 화면은 **이 목록에 넣지 않는 것**이
+// 맞습니다 - 가두는 것이 목적이 아니라 목록을 페이지로 넘겨 보는 것이 목적입니다.
 const BOUNDED_LIST_PATHS = [
   "/records",
   "/meetings",
@@ -36,7 +43,6 @@ const BOUNDED_LIST_PATHS = [
   "/shuttle/students",
   "/terms",
   "/weekly-report/admin/students",
-  "/weekly-report/admin/classes",
   "/weekly-report/admin/subjects",
 ];
 

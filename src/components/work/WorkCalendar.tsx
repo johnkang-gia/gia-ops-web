@@ -84,6 +84,54 @@ const LANE_H = 15;
  */
 const MAX_LANES = 4;
 
+/**
+ * **날마다 따로 등록된 같은 일을 한 막대로 잇습니다.**
+ *
+ * 「오케스트라 오디션」이 9/28·9/29·9/30 세 줄로 들어와 있었습니다. 사람은 사흘짜리 한 가지
+ * 일로 생각하는데 달력에는 점 세 개로 흩어져, 그게 이어진 일이라는 것이 안 보입니다. 기간으로
+ * 등록할 수도 있지만 **이미 쌓인 줄이 그렇게 되어 있고**, 앞으로도 사람은 하루씩 누를 것입니다.
+ *
+ * 그래서 그리는 쪽에서 잇습니다 - 제목과 담당 부서가 같고, **하루짜리**이고, 날짜가 **하루도
+ * 안 비고 이어지는** 줄만. 셋 중 하나라도 어긋나면 잇지 않습니다. 우연히 같은 이름인 다른
+ * 일을 한 덩어리로 묶으면, 그건 화면에 오류가 아니라 «그런 일정»으로 보입니다.
+ *
+ * 자료는 그대로 둡니다. 세 줄은 세 줄로 남고 각각 진행 상태를 갖습니다 - 합쳐 버리면 「이틀째는
+ * 끝났고 사흘째가 남았다」를 적을 데가 없어집니다.
+ */
+function mergeSeries<T extends SpanTask & { task: Task }>(items: T[]): (T & { seriesCount?: number })[] {
+  const singles: T[] = [];
+  const rest: T[] = [];
+  for (const s of items) (s.startOn && s.startOn !== s.endOn ? rest : singles).push(s);
+
+  const byKey = new Map<string, T[]>();
+  for (const s of singles) {
+    const key = `${s.task.title}\u0000${s.task.department ?? ""}`;
+    byKey.set(key, [...(byKey.get(key) ?? []), s]);
+  }
+
+  const out: (T & { seriesCount?: number })[] = [...rest];
+  for (const group of byKey.values()) {
+    group.sort((a, b) => (a.endOn as string).localeCompare(b.endOn as string));
+    let run: T[] = [];
+    const flush = () => {
+      if (run.length === 0) return;
+      const head = run[0];
+      out.push(
+        run.length === 1
+          ? head
+          : { ...head, startOn: head.endOn as string, endOn: run[run.length - 1].endOn, seriesCount: run.length },
+      );
+      run = [];
+    };
+    for (const s of group) {
+      if (run.length > 0 && addDays(run[run.length - 1].endOn as string, 1) !== s.endOn) flush();
+      run.push(s);
+    }
+    flush();
+  }
+  return out;
+}
+
 export default function WorkCalendar({
   tasks,
   tags,
@@ -151,10 +199,38 @@ export default function WorkCalendar({
   );
   const colorOf = useMemo(() => new Map(tags.map((t) => [t.id, t.color])), [tags]);
 
+  /**
+   * 🚗 **픽업 업무는 막대로 그리지 않습니다.**
+   *
+   * 픽업은 학부모 연락이 확정될 때마다 한 줄씩 생기고, 그런 날이 매일입니다. 하루에 여덟
+   * 줄이 막대로 깔리면 달력은 픽업으로만 가득 차고 정작 챙겨야 할 일이 「+n」 뒤로 숨습니다.
+   *
+   * 그렇다고 **지우지는 않습니다** - 「그날 픽업이 몇이었나」는 나중에 물어보게 되는 기록
+   * 입니다. 칸 모서리에 🚗 와 숫자만 남기고, 누르면 그날 목록이 펼쳐집니다.
+   */
+  const pickupsByDay = useMemo(() => {
+    const m = new Map<string, Task[]>();
+    for (const t of tasks) {
+      if (t.origin !== "픽업") continue;
+      const key = dayKeyOf(t.due_at);
+      if (!key) continue;
+      const list = m.get(key) ?? [];
+      list.push(t);
+      m.set(key, list);
+    }
+    for (const list of m.values()) list.sort((a, b) => a.title.localeCompare(b.title, "ko"));
+    return m;
+  }, [tasks]);
+
+  /** 펼쳐 놓은 픽업 목록의 날짜. 한 번에 하루만 봅니다 - 여럿 열리면 달력이 안 보입니다. */
+  const [pickupDay, setPickupDay] = useState<string | null>(null);
+
   /** 달력에 그릴 재료. 끝날은 마감일의 한국 날짜입니다. */
   const spanOf = useMemo(() => {
     const m = new Map<string, SpanTask & { task: Task }>();
     for (const t of tasks) {
+      // 픽업은 위에서 따로 셉니다.
+      if (t.origin === "픽업") continue;
       const endOn = dayKeyOf(t.due_at);
       m.set(t.id, { id: t.id, title: t.title, startOn: t.start_on ?? null, endOn, task: t });
     }
@@ -168,11 +244,11 @@ export default function WorkCalendar({
    * 안에 모양이 두 가지라, 훑어서는 어느 것이 이어지는 일인지 알 수 없었습니다. 전부 같은
    * 막대로 그리면 **길이가 곧 기간**입니다 - 구글·애플 달력이 그렇게 그리는 이유입니다.
    */
-  const bars = useMemo(() => [...spanOf.values()].filter((s) => !!s.endOn), [spanOf]);
+  const bars = useMemo(() => mergeSeries([...spanOf.values()].filter((s) => !!s.endOn)), [spanOf]);
 
   // 마감이 없는 업무. 달력에는 설 자리가 없지만 **없는 셈 치면 안 됩니다** - 마감을 안 정한
   // 것이지 안 하는 것이 아닙니다. 끌어다 날짜에 놓으면 그날로 정해집니다.
-  const undated = useMemo(() => tasks.filter((t) => !t.due_at && t.status !== "완료"), [tasks]);
+  const undated = useMemo(() => tasks.filter((t) => !t.due_at && t.status !== "완료" && t.origin !== "픽업"), [tasks]);
 
   const move = (delta: number) =>
     setCursor((c) => {
@@ -236,7 +312,7 @@ export default function WorkCalendar({
       </div>
       <p className="mb-1 shrink-0 text-[10px] text-slate-400">
         날짜를 누르면 <b>알림 · 업무 · 학사</b> 중에서 고릅니다 · <b>가로로 끌면 그 기간</b>짜리 업무(막대가 그만큼 길어집니다) ·
-        막대를 <b>끌어서</b> 다른 날로 옮기고, 제목을 <b>두 번 눌러</b> 고칩니다
+        막대를 <b>끌어서</b> 다른 날로 옮기고, 제목을 <b>두 번 눌러</b> 고칩니다 · 🚗 픽업은 숫자로 접어 두었습니다(누르면 목록)
       </p>
 
       {/* ── 오늘 챙길 것 ─────────────────────────────────────────────
@@ -307,7 +383,7 @@ export default function WorkCalendar({
                       if (t && dayKeyOf(t.due_at) !== c.key) onMoveDue(t, c.key);
                     }}
                     className={
-                      "flex min-h-0 cursor-pointer select-none flex-col overflow-hidden p-1 transition-colors " +
+                      "relative flex min-h-0 cursor-pointer select-none flex-col p-1 transition-colors " +
                       (inPicking(c.key)
                         ? "bg-teal-100"
                         : c.inMonth
@@ -328,6 +404,27 @@ export default function WorkCalendar({
                       >
                         {c.day}
                       </span>
+                      {/* 🚗 그날 픽업. 막대로 깔면 달력이 픽업으로만 가득 차서, 숫자 하나로
+                          접어 둡니다. **지우지는 않습니다** - 「그날 픽업이 몇이었나」는
+                          나중에 물어보게 되는 기록입니다. 누르면 목록이 펼쳐집니다. */}
+                      {(pickupsByDay.get(c.key)?.length ?? 0) > 0 && (
+                        <button
+                          type="button"
+                          data-task
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPickupDay((d) => (d === c.key ? null : c.key));
+                          }}
+                          title={`픽업 ${pickupsByDay.get(c.key)!.length}건 — 누르면 목록`}
+                          className={
+                            "ml-auto flex shrink-0 items-center gap-0.5 rounded-full px-1 text-[9px] font-bold transition " +
+                            (pickupDay === c.key ? "bg-amber-400 text-white" : "bg-amber-100 text-amber-800 hover:bg-amber-200")
+                          }
+                        >
+                          🚗 {pickupsByDay.get(c.key)!.length}
+                        </button>
+                      )}
 
                     </div>
                     {/* 막대가 앉을 만큼 자리를 비워둡니다 - 안 그러면 막대가 하루짜리 위에 겹칩니다. */}
@@ -362,6 +459,32 @@ export default function WorkCalendar({
                     {(remindersByDay.get(c.key)?.length ?? 0) > 2 && (
                       <span className="text-[9px] text-amber-600">🔔 +{(remindersByDay.get(c.key)?.length ?? 0) - 2}</span>
                     )}
+                    {pickupDay === c.key && (
+                      <div className="absolute inset-x-0.5 top-5 z-20 max-h-40 overflow-auto rounded-lg border border-amber-300 bg-white p-1 shadow-lg">
+                        <p className="mb-0.5 px-0.5 text-[9px] font-bold text-amber-700">
+                          🚗 {c.key.slice(5)} 픽업 {pickupsByDay.get(c.key)!.length}건
+                        </p>
+                        {pickupsByDay.get(c.key)!.map((t) => (
+                          <button
+                            key={t.id}
+                            type="button"
+                            data-task
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setPickupDay(null);
+                              onOpenTask(t);
+                            }}
+                            className="flex w-full items-center gap-1 rounded px-1 py-0.5 text-left text-[10px] hover:bg-amber-50"
+                          >
+                            <span className={"h-1.5 w-1.5 shrink-0 rounded-full " + (STATUS_DOT[t.status] ?? "bg-slate-400")} />
+                            <span className={"min-w-0 flex-1 truncate " + (t.status === "완료" ? "text-slate-400 line-through" : "text-slate-700")}>
+                              {t.title}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     {/* 업무는 칸 안이 아니라 **칸 위에 겹친 막대**로 그립니다(아래). 하루짜리도
                         같은 막대라, 길이만 보면 며칠짜리인지 바로 읽힙니다. */}
                     <div className="min-h-0 flex-1" />
@@ -373,7 +496,9 @@ export default function WorkCalendar({
                   하루짜리도 여러 날짜리도 **같은 막대**입니다. 칸 위에 겹쳐 그립니다 - 칸
                   안에 넣으면 날마다 잘려서, 이어진 하나로 안 보입니다. */}
               {shown.map((b) => {
-                const t = (b.task as SpanTask & { task: Task }).task;
+                const holder = b.task as SpanTask & { task: Task; seriesCount?: number };
+                const t = holder.task;
+                const seriesCount = holder.seriesCount;
                 const color = (t.tag_id ? colorOf.get(t.tag_id) : null) ?? "#64748b";
                 return (
                   <div
@@ -395,6 +520,7 @@ export default function WorkCalendar({
                     onMouseDown={(e) => e.stopPropagation()}
                     title={
                       `${t.title} · ${b.span > 1 || t.start_on ? `${t.start_on ?? dayKeyOf(t.due_at)} ~ ${dayKeyOf(t.due_at)}` : dayKeyOf(t.due_at)}` +
+                      (seriesCount ? `\n날마다 따로 등록된 ${seriesCount}건을 이어 그렸습니다 - 자료는 ${seriesCount}줄 그대로입니다` : "") +
                       "\n끌어서 다른 날로 옮길 수 있습니다 · 두 번 누르면 제목을 고칩니다"
                     }
                     className={
@@ -429,6 +555,9 @@ export default function WorkCalendar({
                     ) : (
                       <span className={"min-w-0 flex-1 truncate " + (t.status === "완료" ? "line-through" : "")}>{t.title}</span>
                     )}
+                    {/* 날마다 따로 등록된 것을 이어 그린 막대. 몇 줄이 묶인 것인지 적지 않으면
+                        사람은 기간짜리 하나로 믿고, 하루치만 끝내도 다 됐다고 생각합니다. */}
+                    {seriesCount && <span className="ml-0.5 shrink-0 rounded bg-white/25 px-1 text-[9px]">{seriesCount}일</span>}
                     {b.continuesRight && <span className="ml-0.5 shrink-0 opacity-70">›</span>}
                   </div>
                 );

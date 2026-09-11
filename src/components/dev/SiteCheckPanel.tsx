@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { BATCH, SCREENS, allTargets, type CheckResult, type Verdict } from "@/lib/siteCheck";
+import { useDevReport } from "@/components/dev/DevReportProvider";
 
 /**
  * **사이트 점검** — 눌러 한 바퀴 돌고 결과를 보여줍니다.
@@ -65,6 +66,7 @@ export default function SiteCheckPanel({ gaps, version }: { gaps: { key: string;
   const [finishedAt, setFinishedAt] = useState<string | null>(null);
   const [onlyBad, setOnlyBad] = useState(true);
   const [copied, setCopied] = useState(false);
+  const report = useDevReport();
 
   async function run() {
     const targets = allTargets();
@@ -114,7 +116,7 @@ export default function SiteCheckPanel({ gaps, version }: { gaps: { key: string;
    * 받는 쪽이 다시 물어야 하고, 그 왕복 때문에 대부분은 아예 전달되지 않습니다. 화면이
    * 이미 갖고 있는 숫자를 그대로 담아 한 번에 옮깁니다.
    */
-  function report(): string {
+  function buildOwn(): string {
     const lines: string[] = [];
     lines.push(`# 운영앱 점검 결과 (v${version} · ${new Date().toLocaleString("ko-KR")})`);
     lines.push("");
@@ -158,8 +160,15 @@ export default function SiteCheckPanel({ gaps, version }: { gaps: { key: string;
     return lines.join("\n");
   }
 
+  // 이 패널 몫을 쪽지 저장소에 올려둡니다. 복사 단추는 **저장소 전체**를 냅니다 -
+  // 자료 등기소 같은 다른 패널이 찾은 것도 같은 쪽지에 담기게 하려고요.
+  useEffect(() => {
+    report.put("site", 10, buildOwn());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [results, missed, finishedAt, gaps, version]);
+
   async function copyReport() {
-    const text = report();
+    const text = report.build();
     try {
       await navigator.clipboard.writeText(text);
     } catch {
@@ -185,7 +194,7 @@ export default function SiteCheckPanel({ gaps, version }: { gaps: { key: string;
           className="ml-auto rounded-lg border border-slate-300 px-3 py-1.5 text-[12px] font-bold text-slate-600"
           title="점검 결과와 자료 등기소의 남은 자리를 한 덩어리로 복사합니다. 개발자에게 그대로 붙여넣으시면 됩니다."
         >
-          {copied ? "복사했습니다" : "개발자에게 보낼 쪽지 복사"}
+          {copied ? "복사했습니다" : `개발자에게 보낼 쪽지 복사${report.count > 1 ? ` (${report.count}칸)` : ""}`}
         </button>
         <button
           onClick={() => void run()}

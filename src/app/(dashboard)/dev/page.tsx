@@ -5,7 +5,9 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { isDeveloperEmail } from "@/lib/roles";
 import GuideButton from "@/components/common/GuideButton";
 import SiteCheckPanel from "@/components/dev/SiteCheckPanel";
-import { DATA_KINDS, openGaps } from "@/lib/registry/dataKinds";
+import { openGaps } from "@/lib/registry/dataKinds";
+import DataRegistryPanel from "@/components/dev/DataRegistryPanel";
+import { DevReportProvider } from "@/components/dev/DevReportProvider";
 import { APP_VERSION } from "@/lib/version";
 
 const GUIDE_SECTIONS = [
@@ -169,74 +171,14 @@ export default async function DevDashboardPage() {
 
       {/* 메뉴가 90개를 넘어 사람이 매일 돌면서 눌러보는 것은 이미 불가능합니다. 한 번 눌러
           전 화면을 열어보고 안 열리는 곳을 모아 보여줍니다. */}
-      <div className="mb-6">
-        <SiteCheckPanel gaps={openGaps()} version={APP_VERSION} />
-
-        {/* ── 자료 등기소 ──────────────────────────────────────────────────
-            자료 종류마다 「모이는 한 곳 · 중복 열쇠 · 넣기와 내리기」를 적어 둔 표입니다
-            (src/lib/registry/dataKinds.ts). **짝이 없는 자리를 숨기지 않고 그대로
-            띄웁니다** - 코드 주석에만 적어두면 아무도 안 열어보고, 그 사이에 한 곳에서
-            지운 자료가 다른 화면에 계속 남습니다. */}
-        <section className="rounded-xl border border-slate-200 bg-white p-4">
-          <div className="mb-1 flex flex-wrap items-baseline gap-2">
-            <h2 className="text-sm font-black text-slate-800">🗂 자료 등기소</h2>
-            {/* 예전 문구는 「종류 6 · 표를 새로 만들면 빌드가 등록을 요구합니다」였습니다.
-                숫자와 「요구합니다」가 붙어 있어, 등록된 갈래 수가 **해야 할 일 6건**으로
-                읽혔습니다. 세어 보여주는 숫자와 남은 일은 다른 것입니다. */}
-            <span className="text-[11px] text-slate-400">
-              {DATA_KINDS.length}갈래가 등록되어 있습니다 · 할 일이 아니라 지금 상태입니다
-            </span>
-          </div>
-          <div className="overflow-hidden rounded-lg border border-slate-200">
-            <table className="w-full text-[12px]">
-              <thead className="bg-slate-100 text-[11px] text-slate-500">
-                <tr>
-                  <th className="px-2 py-1.5 text-left font-bold">종류</th>
-                  <th className="px-2 py-1.5 text-left font-bold">모이는 한 곳</th>
-                  <th className="w-12 px-2 py-1.5 font-bold">딸린 표</th>
-                  <th className="px-2 py-1.5 text-left font-bold">중복 열쇠</th>
-                  <th className="w-14 px-2 py-1.5 font-bold">내리기</th>
-                </tr>
-              </thead>
-              <tbody>
-                {DATA_KINDS.map((k) => (
-                  <tr key={k.key} className="border-t border-slate-100">
-                    <td className="px-2 py-1.5 font-bold text-slate-700">{k.key}</td>
-                    <td className="px-2 py-1.5 font-mono text-[11px] text-slate-500">{k.canonical}</td>
-                    <td className="px-2 py-1.5 text-center tabular-nums text-slate-500">{k.satellites.length}</td>
-                    <td className="px-2 py-1.5 text-[11px] text-slate-500">
-                      {"by" in k.dedupe ? k.dedupe.by.join(" + ") : <span className="text-amber-700">막지 않음</span>}
-                    </td>
-                    <td className="px-2 py-1.5 text-center">
-                      {k.undo ? (
-                        <span className="text-emerald-600">있음</span>
-                      ) : (
-                        <span className="font-bold text-red-600">없음</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {openGaps().length > 0 && (
-            <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2">
-              <p className="text-[12px] font-bold text-amber-800">아직 짝이 안 맞는 자리 {openGaps().length}</p>
-              {/* 여기는 자료가 아니라 **코드의 상태**입니다. 화면에서 누를 것이 없다는 사실을
-                  적어두지 않으면, 보는 사람은 고칠 단추를 찾다가 못 찾고 넘깁니다. */}
-              <p className="mt-0.5 mb-1 text-[11px] text-amber-700">
-                화면에서 고칠 수 있는 것이 아닙니다 — 코드를 손봐야 합니다. 위 [개발자에게 보낼 쪽지 복사]에 이 목록이 함께
-                담깁니다.
-              </p>
-              {openGaps().map((g) => (
-                <p key={g.key} className="mt-0.5 text-[11px] leading-relaxed text-amber-900">
-                  <b>{g.key}</b> — {g.gap}
-                </p>
-              ))}
-            </div>
-          )}
-        </section>
-      </div>
+      {/* 개발자 화면의 점검 패널들은 **한 쪽지**를 같이 씁니다(DevReportProvider).
+          찾은 것을 각자 따로 보여주면, 사람이 손으로 옮겨 적어야 하고 그러면 대개 안 옮겨집니다. */}
+      <DevReportProvider>
+        <div className="mb-6 flex flex-col gap-4">
+          <SiteCheckPanel gaps={openGaps()} version={APP_VERSION} />
+          <DataRegistryPanel gaps={openGaps()} />
+        </div>
+      </DevReportProvider>
 
       <div className="mb-2 text-xs font-semibold text-slate-400">데이터 현황</div>
       <div className="mb-6 grid grid-cols-2 gap-2 sm:grid-cols-4">

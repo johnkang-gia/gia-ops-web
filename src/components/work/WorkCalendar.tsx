@@ -79,10 +79,22 @@ const STATUS_DOT: Record<string, string> = {
 /** 막대 한 줄의 높이(px). 칸 안에 몇 줄까지 들어가는지를 이 값으로 셉니다. */
 const LANE_H = 15;
 /**
- * 막대에 내주는 줄 수. 이보다 많으면 「+n」으로 접습니다 - 칸이 막대로만 가득 차면 날짜가
- * 안 보입니다. 하루짜리까지 막대로 올라왔으므로 한 줄 늘렸습니다.
+ * 막대가 시작하는 높이(px).
+ *
+ * 오늘 날짜에는 지름 16px 동그라미가 쳐지고, 칸 위쪽 여백이 4px입니다. 그래서 날짜 줄은
+ * 20px까지 차지하는데 막대를 18px에서 시작시켜 **동그라미와 겹쳤습니다.** 겹치면 오늘
+ * 날짜가 막대에 먹혀 안 보이는데, 달력에서 오늘이 어디인지는 가장 먼저 보여야 하는 것입니다.
  */
-const MAX_LANES = 4;
+const BAR_TOP = 24;
+/**
+ * 한 주 칸의 **가장 낮은 높이**(px).
+ *
+ * 예전에는 줄 수를 넷으로 자르고 나머지를 「+n」으로 접었습니다. 접힌 것은 아무도 안
+ * 펼쳐봅니다 - 달력을 보는 이유가 「그 주에 무엇이 몰려 있나」인데, 몰릴수록 더 많이
+ * 숨는 셈이었습니다. 이제 자르지 않고 **칸이 늘어납니다.** 대신 달력 자리가 넘치면 위젯
+ * 안에서 세로로 굴립니다.
+ */
+const WEEK_MIN_H = 76;
 
 /**
  * **날마다 따로 등록된 같은 일을 한 막대로 잇습니다.**
@@ -353,14 +365,19 @@ export default function WorkCalendar({
         ))}
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-rows-[repeat(auto-fit,minmax(0,1fr))] gap-px overflow-hidden rounded-lg bg-slate-200">
+      {/* 업무가 많아지면 칸이 늘어나고, 달력이 위젯보다 길어지면 **여기서** 굴립니다.
+          예전에는 높이를 위젯에 맞춰 눌러 담고 넘치는 것을 「+n」으로 접었습니다. */}
+      <div className="grid min-h-0 flex-1 auto-rows-min gap-px overflow-y-auto rounded-lg bg-slate-200">
         {weeks.map((week) => {
           const laid = layoutWeek(bars, week.start, true);
-          const shown = laid.filter((b) => b.lane < MAX_LANES);
-          const hiddenCount = laid.length - shown.length;
-          const laneCount = Math.min(MAX_LANES, laid.reduce((n, b) => Math.max(n, b.lane + 1), 0));
+          const shown = laid;
+          const laneCount = laid.reduce((n, b) => Math.max(n, b.lane + 1), 0);
+          // 그 주에서 가장 많은 🔔 알림. 알림은 칸 안에 쌓이므로 자리를 함께 세야
+          // 막대와 겹치지 않습니다.
+          const maxNotes = week.cells.reduce((n, c) => Math.max(n, Math.min(2, remindersByDay.get(c.key)?.length ?? 0)), 0);
+          const weekH = Math.max(WEEK_MIN_H, BAR_TOP + laneCount * LANE_H + maxNotes * 14 + 8);
           return (
-            <div key={week.start} className="relative grid min-h-0 grid-cols-7 gap-px">
+            <div key={week.start} className="relative grid grid-cols-7 gap-px" style={{ minHeight: weekH }}>
               {week.cells.map((c) => {
                 const isToday = c.key === today;
                 return (
@@ -428,7 +445,7 @@ export default function WorkCalendar({
 
                     </div>
                     {/* 막대가 앉을 만큼 자리를 비워둡니다 - 안 그러면 막대가 하루짜리 위에 겹칩니다. */}
-                    <div style={{ height: laneCount * LANE_H }} className="shrink-0" />
+                    <div style={{ height: BAR_TOP - 20 + laneCount * LANE_H }} className="shrink-0" />
                     {/* 🔔 그날 알림. **업무보다 위에** 둡니다 - 그날에만 뜻이 있으니 그날
                         가장 먼저 눈에 들어와야 합니다. 챙긴 것은 지우지 않고 흐리게 둡니다. */}
                     {(remindersByDay.get(c.key) ?? []).slice(0, 2).map((r) => (
@@ -460,7 +477,8 @@ export default function WorkCalendar({
                       <span className="text-[9px] text-amber-600">🔔 +{(remindersByDay.get(c.key)?.length ?? 0) - 2}</span>
                     )}
                     {pickupDay === c.key && (
-                      <div className="absolute inset-x-0.5 top-5 z-20 max-h-40 overflow-auto rounded-lg border border-amber-300 bg-white p-1 shadow-lg">
+                      <div style={{ top: BAR_TOP - 2 }}
+                        className="absolute inset-x-0.5 z-30 max-h-40 overflow-auto rounded-lg border border-amber-300 bg-white p-1 shadow-lg">
                         <p className="mb-0.5 px-0.5 text-[9px] font-bold text-amber-700">
                           🚗 {c.key.slice(5)} 픽업 {pickupsByDay.get(c.key)!.length}건
                         </p>
@@ -533,7 +551,7 @@ export default function WorkCalendar({
                       left: `calc(${(b.col / 7) * 100}% + 1px)`,
                       width: `calc(${(b.span / 7) * 100}% - 2px)`,
                       // 날짜 숫자 아래(18px)부터 줄마다 한 칸씩.
-                      top: 18 + b.lane * LANE_H,
+                      top: BAR_TOP + b.lane * LANE_H,
                       height: LANE_H - 2,
                       opacity: t.status === "완료" ? 0.45 : 1,
                     }}
@@ -562,11 +580,6 @@ export default function WorkCalendar({
                   </div>
                 );
               })}
-              {hiddenCount > 0 && (
-                <span className="pointer-events-none absolute right-1 z-10 text-[9px] font-bold text-slate-400" style={{ top: 18 + MAX_LANES * LANE_H }}>
-                  +{hiddenCount}
-                </span>
-              )}
             </div>
           );
         })}

@@ -45,6 +45,42 @@ export function lastFour(raw: string | null | undefined): string | null {
   return tail.length >= 4 ? tail.slice(-4) : null;
 }
 
+/**
+ * 사람이 손으로 친 차번호를 **저장할 모양으로** 다듬습니다.
+ *
+ * 지입차량이라 차가 자주 바뀌고, 바뀐 차번호는 하원 체크표를 보는 그 자리에서 고치게
+ * 됩니다. 그래서 「12가3456」·「12 가 3456」·「12-가-3456」이 뒤섞여 들어옵니다.
+ *
+ * 저장은 **한 가지 모양으로만** 합니다. 모양이 섞이면 카메라 대조(`plateKey`)는 견뎌도,
+ * 사람이 두 화면을 나란히 놓고 볼 때 같은 차인지 아닌지를 눈으로 판단하게 됩니다.
+ *
+ * 빈 글자는 null 로 돌려줍니다 - 빈 문자열을 저장하면 「차번호 없음」과 「빈 칸을 저장함」이
+ * 구별되지 않습니다.
+ */
+export function normalizePlate(raw: string | null | undefined): string | null {
+  const flat = plateKey(raw);
+  if (!flat) return null;
+  // 앞자리(숫자) · 한글 · 뒤 네 자리 → 「12가3456」. 못 갈라지면 걷어낸 그대로 둡니다 -
+  // 모양이 특이한 번호판(영업용·임시)을 우리가 거절할 이유는 없습니다.
+  const m = flat.match(/^(\d{2,3})([가-힣]+)(\d{4})$/);
+  return m ? `${m[1]}${m[2]}${m[3]}` : flat;
+}
+
+/**
+ * 저장하기 전에 사람에게 되물을 것. 문제가 없으면 null.
+ *
+ * **막지는 않고 묻습니다.** 번호판 서식은 예외가 많아서(임시번호·영업용·구형) 규칙으로
+ * 거절하면 실제로 있는 차를 못 넣게 됩니다. 대신 뒤 네 자리가 없으면 그 사실을 말해줍니다 -
+ * 사람이 차를 부를 때 쓰는 것이 뒤 네 자리라, 그게 없으면 적어도 쓸모가 없습니다.
+ */
+export function plateProblem(raw: string | null | undefined): string | null {
+  const v = normalizePlate(raw);
+  if (!v) return null; // 비우는 것은 지우는 뜻입니다. 문제가 아닙니다.
+  if (!lastFour(v)) return "뒤 네 자리 숫자가 없습니다. 차를 부를 때 쓰는 번호입니다.";
+  if (v.length > 20) return "너무 깁니다. 차번호만 적어주세요.";
+  return null;
+}
+
 /** 카메라가 읽어온 글자에서 나올 수 있는 **네 자리 후보**를 모두 뽑습니다. */
 export function fourDigitRuns(text: string): string[] {
   const flat = plateKey(text);

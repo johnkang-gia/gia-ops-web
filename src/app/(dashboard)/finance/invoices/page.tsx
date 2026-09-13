@@ -14,6 +14,8 @@ type Row = {
   department: string | null; student_no: string | null;
   mother_phone?: string | null; father_phone?: string | null; parent_phone?: string | null;
   parent_email?: string | null; instrument?: string | null;
+  /** 결제번호. 청구서가 실제로 나갈 번호를 아이마다 정해 둔 값입니다. */
+  billing_phone_role?: string | null; billing_phone?: string | null;
 };
 
 export default async function InvoicesPage() {
@@ -41,7 +43,7 @@ export default async function InvoicesPage() {
           .order("grade")
           .order("name") as unknown as PromiseLike<{ data: Row[] | null; error: { message: string } | null }>,
       ["id", "name", "name_en", "grade", "class_name", "department", "student_no"],
-      ["mother_phone", "father_phone", "parent_phone", "parent_email", "instrument"],
+      ["mother_phone", "father_phone", "parent_phone", "parent_email", "instrument", "billing_phone_role", "billing_phone"],
     ),
     supabase.from("fee_items").select("*").order("category").order("sort_order").order("name"),
     supabase.from("student_fee_items").select("*"),
@@ -84,6 +86,10 @@ export default async function InvoicesPage() {
     fatherPhone: s.father_phone ?? null,
     parentPhone: s.parent_phone ?? null,
     parentEmail: s.parent_email ?? null,
+    // 결제번호. 아직 안 정한 아이는 null 이고, 화면이 「아직 안 정함」이라고 적습니다 -
+    // 안 정한 것과 어머니로 정한 것이 똑같아 보이면 아무도 정하지 않습니다.
+    billingRole: s.billing_phone_role ?? null,
+    billingPhone: s.billing_phone ?? null,
     instrument: s.instrument ?? null,
     // 수강 그룹(방과후·악기반). 이걸 안 넘기면 그룹 대상 항목이 아무에게도 안 붙습니다.
     groupIds: groupOf[s.id] ?? [],

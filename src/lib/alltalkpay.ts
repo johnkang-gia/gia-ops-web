@@ -16,16 +16,18 @@
 //      정할 일이라 옵션으로 두되, 같은 번호가 몇 쌍인지는 항상 세어 보여줍니다.
 
 /** 청구서를 누구 앞으로 보낼지. */
-export type GuardianRole = "mother" | "father" | "guardian";
+export type GuardianRole = "direct" | "mother" | "father" | "guardian";
 
 export const ROLE_LABEL: Record<GuardianRole, string> = {
+  direct: "결제번호",
   mother: "어머니",
   father: "아버지",
   guardian: "보호자",
 };
 
-/** 짧은 표시(M / F / 보호자) - 좁은 표에서 씁니다. */
+/** 짧은 표시(결제 / M / F / 보호자) - 좁은 표에서 씁니다. */
 export const ROLE_SHORT: Record<GuardianRole, string> = {
+  direct: "결제",
   mother: "M",
   father: "F",
   guardian: "보호자",
@@ -34,13 +36,25 @@ export const ROLE_SHORT: Record<GuardianRole, string> = {
 /**
  * 고를 때의 기본 순서.
  *
- * 어머니를 먼저 보는 이유는 실제로 그 집이 가장 많기 때문입니다. 어머니 칸이 비어 있으면
- * 아버지, 그것도 없으면 보호자(부모가 아닌 분) 순으로 내려갑니다. 명부의 어머니 칸을 아직
- * 안 채운 학교에서도 지금과 똑같이 동작하고, 채우는 대로 자동으로 어머니 번호로 넘어갑니다.
+ * **결제번호가 맨 앞입니다.** 명부 세 칸 중 아무도 아닌 번호를 학교가 일부러 등록해 뒀다면,
+ * 그건 「이 집은 이 번호로 받습니다」라는 뜻입니다. 그것보다 앞설 근거는 없습니다.
+ *
+ * 그다음은 어머니입니다 - 실제로 그 집이 가장 많습니다. 어머니 칸이 비어 있으면 아버지,
+ * 그것도 없으면 보호자(부모가 아닌 분) 순으로 내려갑니다. 명부를 채우는 대로 자동으로
+ * 어머니 번호로 넘어갑니다.
  */
-export const ROLE_ORDER: GuardianRole[] = ["mother", "father", "guardian"];
+export const ROLE_ORDER: GuardianRole[] = ["direct", "mother", "father", "guardian"];
 
 export type GuardianPhones = {
+  /**
+   * **결제번호.** 명부 세 칸 중 아무도 아닌 번호를 따로 등록한 것
+   * (`wr_students.billing_phone`). 없으면 null.
+   *
+   * 셋 중 하나를 고른 경우에는 여기가 **비어 있고**, 고른 대상(`billing_phone_role`)만
+   * 남습니다. 번호를 베껴 두면 그분이 번호를 바꿨을 때 명부는 새 번호·결제번호는 옛 번호가
+   * 되는데, 둘 다 그럴듯해 보여서 어느 쪽이 맞는지 알 수 없습니다.
+   */
+  billing_phone: string | null;
   mother_phone: string | null;
   father_phone: string | null;
   /** 부모가 아닌 분(조부모·친척 등). 예전부터 쓰던 칸이라 이름은 parent_phone 그대로입니다. */
@@ -114,8 +128,9 @@ export function prettyPhone(d: string): string {
   return d;
 }
 
-/** 명부의 세 칸 중 그 역할의 번호(정리된 형태). 없으면 null. */
+/** 그 역할의 번호(정리된 형태). 없으면 null. */
 export function phoneOf(phones: GuardianPhones, role: GuardianRole): string | null {
+  if (role === "direct") return normalizePhone(phones.billing_phone);
   if (role === "mother") return normalizePhone(phones.mother_phone);
   if (role === "father") return normalizePhone(phones.father_phone);
   return normalizePhone(phones.parent_phone);
@@ -124,6 +139,62 @@ export function phoneOf(phones: GuardianPhones, role: GuardianRole): string | nu
 /** 지금 명부에서 쓸 수 있는 대상들. 화면의 선택지를 만들 때 씁니다. */
 export function availableRoles(phones: GuardianPhones): GuardianRole[] {
   return ROLE_ORDER.filter((r) => phoneOf(phones, r) !== null);
+}
+
+// ── 학생별 결제번호 ─────────────────────────────────────────────────────────
+//
+// 예전에는 **청구서를 발행할 때마다** 대상을 골랐습니다. 그래서 같은 아이의 청구서가
+// 이번 달은 어머니에게, 다음 달은 아버지에게 갔습니다. 어느 쪽도 틀린 번호가 아니라서
+// 화면에는 오류로 보이지 않고, 학부모가 「저는 못 받았는데요」라고 말해야 드러납니다.
+//
+// 이제 **아이마다 한 번 정해 둡니다.** 고른 것이 어머니라면 번호는 그때그때 명부에서
+// 읽습니다 - 베껴 두면 어머니가 번호를 바꿨을 때 두 값이 갈립니다.
+
+/** 명부 한 줄에서 결제번호를 정하는 데 필요한 칸들. */
+export type StudentBilling = {
+  /** 'mother' · 'father' · 'guardian' · 'direct'. 비어 있으면 아직 안 정한 것입니다. */
+  billing_phone_role: string | null;
+  billing_phone: string | null;
+  mother_phone: string | null;
+  father_phone: string | null;
+  parent_phone: string | null;
+};
+
+/** 명부 줄 → 번호 네 칸. 화면마다 손으로 옮겨 담으면 한 칸씩 빠뜨립니다. */
+export function phonesOf(s: StudentBilling): GuardianPhones {
+  return {
+    billing_phone: s.billing_phone ?? null,
+    mother_phone: s.mother_phone ?? null,
+    father_phone: s.father_phone ?? null,
+    parent_phone: s.parent_phone ?? null,
+  };
+}
+
+/** 학교가 이 아이에 대해 **고른 것**. 안 골랐으면 null. */
+export function chosenRoleOf(s: StudentBilling): GuardianRole | null {
+  const v = s.billing_phone_role;
+  return v === "direct" || v === "mother" || v === "father" || v === "guardian" ? v : null;
+}
+
+/**
+ * **이 아이의 청구서가 나갈 번호.** 판정은 여기 한 곳에서만 합니다.
+ *
+ * 고른 것이 있으면 그것을 먼저 보되, 그 칸이 비어 있으면 그대로 따르지 않습니다 -
+ * 아버지로 골라두었는데 아버지 번호를 지운 경우, 말을 그대로 따르면 그 아이만 청구서가
+ * 안 나갑니다(`resolveRecipient`).
+ *
+ * 쓸 번호가 하나도 없으면 null 입니다. 화면은 그 사실을 **청구를 돌리기 전에** 말해야
+ * 합니다 - 돌리고 나서 알면 이미 늦습니다.
+ */
+export function billingPhoneOf(s: StudentBilling): { role: GuardianRole; phone: string } | null {
+  return resolveRecipient(phonesOf(s), chosenRoleOf(s));
+}
+
+/** 「결제번호 · 010-1234-5678」처럼 화면에 한 줄로. 없으면 null. */
+export function describeBilling(s: StudentBilling): string | null {
+  const picked = billingPhoneOf(s);
+  if (!picked) return null;
+  return `${ROLE_LABEL[picked.role]} · ${prettyPhone(picked.phone)}`;
 }
 
 /**

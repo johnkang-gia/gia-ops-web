@@ -13,6 +13,7 @@ import ShuttleChecklistClient, { type ChecklistRoute, type ChecklistItem, type P
 import type { GoogleChatMirrorMessage } from "@/lib/types";
 import { categorize } from "@/lib/attendanceDigest";
 import GuideButton from "@/components/common/GuideButton";
+import { isStaffOrAboveUser } from "@/lib/roles";
 import { effectiveRouteId, routeChoiceOf } from "@/lib/shuttleRoute";
 
 const GUIDE_SECTIONS = [
@@ -644,6 +645,9 @@ export default async function ShuttleChecklistPage({
         persistentNotes={persistentNotes}
         toddleBase={toddleBase}
         actor={{ email: me.email, name: me.name }}
+        // 차번호는 노선 마스터 자료입니다. 판정은 @/lib/roles 한 곳에서 하고, 화면은
+        // 결과만 받습니다 - 화면이 직위 글자를 다시 비교하면 기준이 둘로 갈립니다.
+        canEditVehicle={isStaffOrAboveUser(me)}
         initialLog={activityLog}
         rideAlongs={rideAlongs}
       />

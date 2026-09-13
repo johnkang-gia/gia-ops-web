@@ -34,6 +34,7 @@ export default function ShuttleChecklistTable({
   onShowSource,
   touchedIds,
   whereMaps,
+  onSaveVehicleNo,
 }: {
   routes: ChecklistRoute[];
   items: ChecklistItem[];
@@ -67,8 +68,18 @@ export default function ShuttleChecklistTable({
    * 물어볼 곳이 필요합니다 - 없으면 결국 전화로 확인하게 됩니다.
    */
   touchedIds?: Set<string>;
+  /**
+   * 차번호를 저장합니다. **없으면 고칠 수 있는 사람이 아니라는 뜻**이고, 단추도 안 나옵니다.
+   *
+   * 저장은 부모가 합니다 - 표는 보여주는 일만 하고, 어디에 어떻게 저장하는지는 모릅니다.
+   */
+  onSaveVehicleNo?: (routeId: string, vehicleNo: string) => Promise<boolean>;
 }) {
   const [dragOverRoute, setDragOverRoute] = useState<string | null>(null);
+  /** 지금 어느 호차의 차번호를 고치는 중인가. */
+  const [editingVehicle, setEditingVehicle] = useState<string | null>(null);
+  const [vehicleDraft, setVehicleDraft] = useState("");
+  const [savingVehicle, setSavingVehicle] = useState(false);
   const draggingIdRef = useRef<string | null>(null);
   const badgeRefs = useRef(new Map<string, HTMLDivElement>());
 
@@ -181,7 +192,56 @@ export default function ShuttleChecklistTable({
                     들어갈 자리를 뺏습니다. */}
                 <td className="px-3 py-2.5 font-bold text-slate-700">
                   <div>{route.route_no}호</div>
-                  {route.vehicle_no ? (
+                  {editingVehicle === route.id && onSaveVehicleNo ? (
+                    // 고치는 동안에도 **원래 번호를 보여줍니다.** 지우고 새로 치는 자리라,
+                    // 원래 값이 사라지면 「내가 뭘 바꾸는 중이었지」가 됩니다.
+                    <div className="mt-1 print:hidden">
+                      <input
+                        autoFocus
+                        value={vehicleDraft}
+                        disabled={savingVehicle}
+                        onChange={(e) => setVehicleDraft(e.target.value)}
+                        onKeyDown={async (e) => {
+                          if (e.key === "Escape") setEditingVehicle(null);
+                          if (e.key !== "Enter") return;
+                          setSavingVehicle(true);
+                          const ok = await onSaveVehicleNo(route.id, vehicleDraft);
+                          setSavingVehicle(false);
+                          if (ok) setEditingVehicle(null);
+                        }}
+                        placeholder="12가3456"
+                        className="w-24 rounded border border-blue-300 px-1.5 py-1 text-center font-mono text-[12px] font-bold outline-none disabled:bg-slate-100"
+                      />
+                      <div className="mt-0.5 flex gap-1 text-[9px] font-medium">
+                        <button
+                          type="button"
+                          disabled={savingVehicle}
+                          onClick={async () => {
+                            setSavingVehicle(true);
+                            const ok = await onSaveVehicleNo(route.id, vehicleDraft);
+                            setSavingVehicle(false);
+                            if (ok) setEditingVehicle(null);
+                          }}
+                          className="rounded bg-blue-600 px-1.5 py-0.5 text-white disabled:bg-slate-300"
+                        >
+                          {savingVehicle ? "저장 중" : "저장"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditingVehicle(null)}
+                          className="rounded bg-slate-100 px-1.5 py-0.5 text-slate-500"
+                        >
+                          취소
+                        </button>
+                      </div>
+                      {/* 어디까지 퍼지는지 말해줍니다. 여기서 고치면 인쇄본·안내보드·도착체크가
+                          전부 따라가는데, 그 사실을 모르면 「이 화면에서만 바꾸는 것」으로
+                          여기고 노선 관리에 가서 또 고칩니다. */}
+                      <p className="mt-0.5 w-28 text-[8px] leading-tight text-slate-400">
+                        저장하면 인쇄본·안내보드·도착체크에 모두 반영됩니다. 비우면 지웁니다.
+                      </p>
+                    </div>
+                  ) : route.vehicle_no ? (
                     // 뒤 네 자리를 크고 진하게.
                     //
                     // 담당자: "호차보다도 차량번호로 호차를 구별하는 경우가 많아서."
@@ -195,19 +255,46 @@ export default function ShuttleChecklistTable({
                         <div className="mt-0.5 leading-tight">
                           {head && <div className="font-mono text-[9px] font-medium text-slate-400">{head}</div>}
                           {tail && <div className="font-mono text-[13px] font-bold tracking-wide text-slate-600">{tail}</div>}
+                          {/* 차가 바뀐 것을 아는 순간은 이 표를 보고 있을 때입니다. 그 자리에
+                              단추를 둡니다 - 다른 화면으로 보내면 대개 안 고쳐집니다. */}
+                          {onSaveVehicleNo && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingVehicle(route.id);
+                                setVehicleDraft(route.vehicle_no ?? "");
+                              }}
+                              className="mt-0.5 rounded px-1 text-[9px] font-medium text-slate-300 hover:bg-slate-100 hover:text-blue-600 print:hidden"
+                              title="차가 바뀌었으면 여기서 고칩니다"
+                            >
+                              ✎ 차 바뀜
+                            </button>
+                          )}
                         </div>
                       );
                     })()
+                  ) : onSaveVehicleNo ? (
+                    // 비어 있으면 비었다고 말하고, **그 자리에서** 채우게 합니다.
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingVehicle(route.id);
+                        setVehicleDraft("");
+                      }}
+                      className="mt-0.5 block rounded px-1 text-[10px] font-medium text-slate-300 hover:bg-slate-100 hover:text-blue-600 print:hidden"
+                      title="눌러서 차번호를 적습니다"
+                    >
+                      차번호 없음 ✎
+                    </button>
                   ) : (
-                    // 비어 있으면 비었다고 말해줍니다 - 아무것도 없으면 "안 적었나 없나"를
-                    // 매번 다시 확인하게 됩니다. 눌러서 바로 채울 수 있게 노선 관리로 보냅니다.
-                    <a
-                      href="/shuttle/routes"
-                      className="mt-0.5 block text-[10px] font-medium text-slate-300 hover:text-blue-500 print:hidden"
-                      title="노선 관리에서 차량번호를 채울 수 있습니다"
+                    // 고칠 수 없는 사람에게는 **어디로 가야 하는지**를 알려줍니다. 아무것도
+                    // 없으면 "안 적었나 없나"를 매번 다시 확인하게 됩니다.
+                    <span
+                      className="mt-0.5 block text-[10px] font-medium text-slate-300 print:hidden"
+                      title="차번호는 행정직원·관리자가 고칩니다"
                     >
                       차번호 없음
-                    </a>
+                    </span>
                   )}
                 </td>
                 <td className="px-3 py-2.5 text-xs text-slate-600">{route.name ?? ""}</td>

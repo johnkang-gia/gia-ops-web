@@ -69,10 +69,19 @@ export type Student = {
   className: string | null;
   department: string | null;
   studentNo: string | null;
-  /** 청구서는 **어머니 → 아버지 → 보호자** 순으로 있는 번호로 나갑니다. */
+  /** 명부의 세 칸. 결제번호를 안 정했으면 어머니 → 아버지 → 보호자 순으로 씁니다. */
   motherPhone: string | null;
   fatherPhone: string | null;
   parentPhone: string | null;
+  /**
+   * **결제번호** — 이 아이의 청구서가 실제로 나갈 번호.
+   *
+   * `billingRole` 이 어머니·아버지·보호자면 번호는 그때그때 명부에서 읽습니다. `direct` 면
+   * 명부 셋 중 아무도 아닌 번호를 따로 등록한 것이고, 그 번호가 `billingPhone` 입니다.
+   * 비어 있으면 아직 안 정한 것입니다.
+   */
+  billingRole: string | null;
+  billingPhone: string | null;
   parentEmail: string | null;
   /** 명부에 적힌 악기. 인보이스의 악기 항목과 어긋나면 화면에서 알려줍니다. */
   instrument: string | null;
@@ -169,7 +178,9 @@ export default function InvoiceGridClient({
   /** 미리보기 창. 새 탭으로 열면 확인할 때마다 탭을 열고 닫아야 합니다. */
   const [preview, setPreview] = useState<{ id: string; label: string } | null>(null);
   /** 이 화면에서 고친 연락처. 새로고침 없이 바로 반영합니다. */
-  const [studentPhones, setStudentPhones] = useState<Record<string, Partial<Pick<Student, "motherPhone" | "fatherPhone" | "parentPhone">>>>({});
+  const [studentPhones, setStudentPhones] = useState<
+    Record<string, Partial<Pick<Student, "motherPhone" | "fatherPhone" | "parentPhone" | "billingRole" | "billingPhone">>>
+  >({});
   /** 방금 발행한 것. 발행 직후 바로 청구로 이어가라고 띄웁니다. */
   const [justIssued, setJustIssued] = useState<Invoice[]>([]);
   const [q, setQ] = useState("");
@@ -528,6 +539,30 @@ export default function InvoiceGridClient({
     }
     setStudentPhones((p) => ({ ...p, [s.id]: { ...(p[s.id] ?? {}), [key]: value } }));
     notify("연락처를 저장했습니다.", "success");
+  }
+
+  /**
+   * **결제번호를 정합니다.** 셋 중 하나를 고르거나, 셋 중 아무도 아닌 번호를 새로 등록합니다.
+   *
+   * 고른 것이 어머니면 **번호는 베끼지 않습니다** - 명부의 어머니 칸을 그때그때 읽습니다.
+   * 베껴 두면 어머니가 번호를 바꿨을 때 명부는 새 번호·결제번호는 옛 번호가 되는데, 둘 다
+   * 그럴듯해 보여서 어느 쪽이 맞는지 알 수 없습니다.
+   */
+  async function saveBilling(s: Student, role: string | null, direct?: string) {
+    const phone = role === "direct" ? (direct ?? "").trim() : null;
+    if (role === "direct" && !phone) {
+      notify("새로 등록할 번호를 적어주세요.", "error");
+      return;
+    }
+    const patch = { billing_phone_role: role, billing_phone: phone };
+    const { error } = await createClient().from("wr_students").update(patch).eq("id", s.id);
+    // 조용히 넘기면 정해진 줄 알고 청구를 돌립니다. 그러면 그 집만 엉뚱한 분께 갑니다.
+    if (error) {
+      notify(`결제번호를 저장하지 못했습니다: ${error.message}`, "error");
+      return;
+    }
+    setStudentPhones((p) => ({ ...p, [s.id]: { ...(p[s.id] ?? {}), billingRole: role, billingPhone: phone } }));
+    notify(role ? "결제번호를 정했습니다." : "결제번호를 지웠습니다. 어머니 → 아버지 → 보호자 순으로 나갑니다.", "success");
   }
 
   /** 내보낸 표시를 화면에도 바로 반영합니다. 새로고침해야 보이면 두 번 보내게 됩니다. */
@@ -1864,11 +1899,83 @@ export default function InvoiceGridClient({
                     </span>
                   );
                 })}
-                {!detail.motherPhone && !detail.fatherPhone && !detail.parentPhone && (
+                {!detail.motherPhone && !detail.fatherPhone && !detail.parentPhone && !detail.billingPhone && (
                   <span className="font-bold text-orange-700">연락처가 없어 청구서가 못 나갑니다</span>
                 )}
                 {detail.instrument && (
                   <span className="rounded bg-violet-100 px-1.5 py-0.5 font-semibold text-violet-800">명부 악기 · {detail.instrument}</span>
+                )}
+              </div>
+
+              {/* ── 결제번호 ─────────────────────────────────────────────────────
+                  예전에는 청구서를 **발행할 때마다** 셋 중 하나를 골랐습니다. 그래서 같은
+                  아이의 청구서가 이번 달은 어머니에게, 다음 달은 아버지에게 갔습니다. 어느
+                  쪽도 틀린 번호가 아니라서 화면에는 오류로 안 보이고, 학부모가 「저는 못
+                  받았는데요」라고 말해야 드러납니다.
+
+                  그래서 **아이마다 한 번 정해 둡니다.** 결제만 담당하는 분이 따로 계신 집도
+                  있어서, 셋 중에 없으면 새로 등록할 수 있게 둡니다. */}
+              <div className="flex flex-wrap items-center gap-1.5 border-b border-teal-100 bg-teal-50/60 px-3 py-1.5 text-[11px]">
+                <span className="font-bold text-teal-800">💳 결제번호</span>
+                {(
+                  [
+                    ["mother", "어머니", detail.motherPhone],
+                    ["father", "아버지", detail.fatherPhone],
+                    ["guardian", "보호자", detail.parentPhone],
+                  ] as [string, string, string | null][]
+                ).map(([role, label, phone]) => (
+                  <button
+                    key={role}
+                    type="button"
+                    // 번호가 없는 대상은 고를 수 없습니다. 고르게 두면 그 아이만 청구서가
+                    // 조용히 안 나갑니다.
+                    disabled={!phone?.trim()}
+                    onClick={() => void saveBilling(detail, role)}
+                    title={phone?.trim() ? phone : "이 칸에 번호가 없습니다"}
+                    className={
+                      "rounded px-1.5 py-0.5 font-semibold transition " +
+                      (detail.billingRole === role
+                        ? "bg-teal-600 text-white"
+                        : phone?.trim()
+                        ? "bg-white text-teal-700 ring-1 ring-teal-200 hover:bg-teal-100"
+                        : "bg-slate-100 text-slate-300")
+                    }
+                  >
+                    {label}
+                  </button>
+                ))}
+                <span className="text-slate-300">|</span>
+                {/* 명부 셋 중 아무도 아닌 번호. 여기가 원본이므로 번호 자체를 저장합니다. */}
+                <input
+                  defaultValue={detail.billingRole === "direct" ? detail.billingPhone ?? "" : ""}
+                  key={detail.id + (detail.billingRole ?? "")}
+                  onBlur={(e) => {
+                    const v = e.target.value.trim();
+                    if (!v) return;
+                    if (detail.billingRole === "direct" && v === (detail.billingPhone ?? "")) return;
+                    void saveBilling(detail, "direct", v);
+                  }}
+                  placeholder="새 번호 직접 등록"
+                  className={
+                    "w-32 rounded border px-1 py-0.5 text-[11px] tabular-nums " +
+                    (detail.billingRole === "direct" ? "border-teal-500 bg-white font-bold" : "border-slate-200")
+                  }
+                />
+                {detail.billingRole ? (
+                  <button
+                    type="button"
+                    onClick={() => void saveBilling(detail, null)}
+                    className="rounded px-1 text-[10px] text-slate-400 hover:text-rose-600"
+                    title="정한 것을 지우면 어머니 → 아버지 → 보호자 순으로 나갑니다"
+                  >
+                    ✕ 지정 해제
+                  </button>
+                ) : (
+                  // **안 정했다는 사실이 보여야** 정합니다. 지금까지는 안 정한 것과 어머니로
+                  // 정한 것이 화면에서 똑같아 보였습니다.
+                  <span className="text-[10px] font-medium text-orange-600">
+                    아직 안 정함 — 어머니 → 아버지 → 보호자 순으로 나갑니다
+                  </span>
                 )}
               </div>
 

@@ -8,7 +8,7 @@ import { hasFinanceAccess } from "@/lib/roles";
 import { gradeLabel } from "@/lib/feeItems";
 import { selectTolerant } from "@/lib/selectTolerant";
 import { todayKst } from "@/lib/kst";
-import { resolveRecipient, type GuardianRole } from "@/lib/alltalkpay";
+import { resolveRecipient, type GuardianRole, phonesOf, chosenRoleOf, type StudentBilling } from "@/lib/alltalkpay";
 import { tuitionLine, type TuitionLine } from "@/lib/tuition";
 import type { FeePlan, FeePaymentOption, FeeDiscount } from "@/lib/types";
 
@@ -31,7 +31,25 @@ type StudentRow = {
   id: string; name: string; name_en: string | null; grade: string | null; class_name: string | null;
   department: string | null;
   mother_phone?: string | null; father_phone?: string | null; parent_phone?: string | null;
+  /** 학생별 결제번호. 이 아이의 청구서가 나갈 번호를 정해 둔 값입니다. */
+  billing_phone_role?: string | null; billing_phone?: string | null;
 };
+
+/**
+ * 명부 줄에서 **결제번호 판정에 쓰는 칸만** 꺼냅니다.
+ *
+ * 칸이 아직 없는 DB(마이그레이션 전)에서도 발행 자체는 되어야 하므로 undefined 를 null 로
+ * 눕힙니다 - 여기서 막으면 청구가 통째로 멈춥니다.
+ */
+function billingOf(s: StudentRow): StudentBilling {
+  return {
+    billing_phone_role: s.billing_phone_role ?? null,
+    billing_phone: s.billing_phone ?? null,
+    mother_phone: s.mother_phone ?? null,
+    father_phone: s.father_phone ?? null,
+    parent_phone: s.parent_phone ?? null,
+  };
+}
 
 export async function POST(req: Request) {
   const me = await getCurrentAppUser();
@@ -69,7 +87,7 @@ export async function POST(req: Request) {
         supabase.from("wr_students").select(columns).eq("is_demo", false).eq("id", studentId) as unknown as
           PromiseLike<{ data: StudentRow[] | null; error: { message: string } | null }>,
       ["id", "name", "name_en", "grade", "class_name", "department"],
-      ["mother_phone", "father_phone", "parent_phone"],
+      ["mother_phone", "father_phone", "parent_phone", "billing_phone_role", "billing_phone"],
     ),
     supabase.from("fee_plans").select("*").eq("category", "학비"),
     supabase.from("fee_payment_options").select("*"),
@@ -141,8 +159,10 @@ export async function POST(req: Request) {
   const due = dueDate && /^\d{4}-\d{2}-\d{2}$/.test(dueDate) ? dueDate : issue;
 
   const recipient = resolveRecipient(
-    { mother_phone: student.mother_phone ?? null, father_phone: student.father_phone ?? null, parent_phone: student.parent_phone ?? null },
-    guardianRole,
+    // 판정은 @/lib/alltalkpay 한 곳에서. 학생별 결제번호가 기본이고, 이번 건만 다르게
+    // 고른 것이 있으면 그것이 이깁니다.
+    phonesOf(billingOf(student)),
+    guardianRole ?? chosenRoleOf(billingOf(student)),
   );
 
   // 지난 학비 미납을 이 청구서에 얹습니다(학비 갈래만). 교복·교재 미납은 섞지 않습니다 -

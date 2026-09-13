@@ -1,4 +1,5 @@
 import { redirect, notFound } from "next/navigation";
+import { describeBilling } from "@/lib/alltalkpay";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { isMissingWeekStart } from "@/lib/dismissalToday";
@@ -425,6 +426,25 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
             <div className="flex justify-between"><dt className="text-slate-400">아버지 연락처</dt><dd>{student.father_phone || "-"}</dd></div>
             <div className="flex justify-between"><dt className="text-slate-400">보호자 연락처</dt><dd>{student.parent_phone || "-"}</dd></div>
             <div className="flex justify-between"><dt className="text-slate-400">보호자 이메일</dt><dd>{student.parent_email || "-"}</dd></div>
+            {/* **청구서가 실제로 나가는 번호.** 위 세 칸 중 어느 것인지, 혹은 따로 등록한
+                번호인지가 여기 한 줄로 보입니다. 세 칸만 보면 어느 쪽으로 나가는지 알 수
+                없고, 학부모가 「못 받았다」고 할 때 확인할 자리가 없습니다.
+                정하는 것은 재무 → 청구 화면에서 합니다. */}
+            <div className="flex justify-between">
+              <dt className="text-slate-400">결제번호</dt>
+              <dd>
+                {describeBilling({
+                  billing_phone_role: student.billing_phone_role ?? null,
+                  billing_phone: student.billing_phone ?? null,
+                  mother_phone: student.mother_phone ?? null,
+                  father_phone: student.father_phone ?? null,
+                  parent_phone: student.parent_phone ?? null,
+                }) ?? <span className="text-orange-600">청구서가 나갈 번호가 없습니다</span>}
+                {!student.billing_phone_role && (
+                  <span className="ml-1 text-[10px] text-slate-400">(아직 안 정함)</span>
+                )}
+              </dd>
+            </div>
             <div className="flex justify-between"><dt className="text-slate-400">주소</dt><dd className="max-w-[60%] text-right">{student.address || "-"}</dd></div>
             <div className="flex justify-between"><dt className="text-slate-400">알러지</dt><dd className="max-w-[60%] text-right">{student.allergies || "-"}</dd></div>
             {student.note && <div className="flex justify-between"><dt className="text-slate-400">메모</dt><dd className="max-w-[60%] text-right">{student.note}</dd></div>}

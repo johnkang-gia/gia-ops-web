@@ -680,6 +680,15 @@ export type WrStudent = {
   father_phone: string | null;
   /** 보호자 연락처 - 부모가 아닌 분(조부모·친척 등)을 위한 자리. */
   parent_phone: string | null;
+  /**
+   * **결제번호** — 이 아이의 청구서가 실제로 나갈 번호.
+   *
+   * 'mother' · 'father' · 'guardian' 이면 위 세 칸을 **그때그때 읽습니다**(번호를 베껴 두면
+   * 그분이 번호를 바꿨을 때 두 값이 갈립니다). 'direct' 면 셋 중 아무도 아닌 번호를 따로
+   * 등록한 것이고, 그 번호가 billing_phone 입니다. 비어 있으면 아직 안 정한 것입니다.
+   */
+  billing_phone_role?: string | null;
+  billing_phone?: string | null;
   parent_email: string | null;
   gender: "남" | "여" | null;
   allergies: string | null;

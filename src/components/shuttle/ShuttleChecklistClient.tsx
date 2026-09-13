@@ -140,6 +140,7 @@ export default function ShuttleChecklistClient({
   actor,
   initialLog = [],
   rideAlongs = [],
+  canEditVehicle = false,
 }: {
   routes: ChecklistRoute[];
   items: ChecklistItem[];
@@ -160,6 +161,13 @@ export default function ShuttleChecklistClient({
    * 동승선생님이 "평소 명단에 없는 아이가 오늘 탄다"는 것을 알아야 합니다.
    */
   rideAlongs?: RideAlongRow[];
+  /**
+   * 차번호를 고칠 수 있는 사람인가. 판정은 서버(@/lib/roles)에서 끝내고 결과만 받습니다.
+   *
+   * **이 값은 화면을 정리하는 용도이지 자물쇠가 아닙니다**(CLAUDE.md 2-8). 실제로 막는 것은
+   * `/api/shuttle/route-vehicle` 이 다시 확인합니다.
+   */
+  canEditVehicle?: boolean;
 }) {
   const notify = useToast();
   const router = useRouter();
@@ -180,6 +188,58 @@ export default function ShuttleChecklistClient({
   useEffect(() => {
     setItems(initialItems);
   }, [initialItems]);
+
+  /**
+   * **차번호를 이 자리에서 고칩니다.**
+   *
+   * 지입차량이라 차가 자주 바뀌는데, 바뀐 것을 아는 순간은 체크표를 보고 있을 때입니다.
+   * 노선 관리로 옮겨가야 고칠 수 있으면 대개 안 고쳐지고, 그동안 안내보드·도착체크·인쇄본에
+   * 옛 번호가 그대로 뜹니다 - 오류가 아니라 **그냥 다른 차 번호**로 보입니다.
+   *
+   * 고치고 나면 `router.refresh()` 로 서버가 다시 읽습니다. 화면에만 반영하면 인쇄본과
+   * 사이드바가 옛 값을 그대로 갖고 있게 됩니다.
+   */
+  async function saveVehicleNo(routeId: string, vehicleNo: string) {
+    const res = await fetch("/api/shuttle/route-vehicle", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ routeId, vehicleNo }),
+    });
+    const json = (await res.json().catch(() => null)) as { error?: string; vehicleNo?: string | null } | null;
+    // 조용히 넘기면 화면에는 바뀐 것처럼 보이는데 실제로는 옛 번호가 남습니다.
+    if (!res.ok) {
+      notify(json?.error ?? "차번호를 바꾸지 못했습니다.", "error");
+      return false;
+    }
+    notify(json?.vehicleNo ? `차번호를 ${json.vehicleNo} 로 바꿨습니다.` : "차번호를 지웠습니다.", "success");
+    router.refresh();
+    return true;
+  }
+
+  /**
+   * 노선이 바뀌면 **열려 있는 화면들도 함께** 바뀝니다.
+   *
+   * 차번호·기사님은 한 사람이 고치고 여러 사람이 봅니다. 고친 사람 화면만 바뀌면, 옆자리에서
+   * 열어둔 체크표는 옛 번호를 계속 보여주고 그대로 인쇄됩니다.
+   *
+   * 걸러내지 않고 전부 받습니다 - 화면에 아직 없는 노선이 새로 생기는 것은 필터에 안 걸립니다.
+   */
+  useEffect(() => {
+    const supabase = createClient();
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const refresh = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => router.refresh(), 300);
+    };
+    const ch = supabase
+      .channel("checklist-routes")
+      .on("postgres_changes", { event: "*", schema: "public", table: "shuttle_routes" }, refresh)
+      .subscribe();
+    return () => {
+      if (timer) clearTimeout(timer);
+      void supabase.removeChannel(ch);
+    };
+  }, [router]);
   const [activityLog, setActivityLog] = useState<ChecklistLogRow[]>(initialLog);
 
   /**
@@ -1186,6 +1246,7 @@ export default function ShuttleChecklistClient({
             whereMaps={whereMaps}
             onShowSource={setSourceOf}
             touchedIds={touchedIds}
+            onSaveVehicleNo={canEditVehicle ? saveVehicleNo : undefined}
           />
         </div>
         <ChecklistPrintSheet

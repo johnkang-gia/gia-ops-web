@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess } from "@/lib/roles";
-import { buildBillPlan, type BillInvoice, type GuardianRole } from "@/lib/alltalkpay";
+import { buildBillPlan, type BillInvoice, type GuardianRole, phonesOf, chosenRoleOf, type GuardianPhones } from "@/lib/alltalkpay";
 import { todayKst } from "@/lib/kst";
 import { selectTolerant } from "@/lib/selectTolerant";
 
@@ -78,16 +78,20 @@ export async function POST(req: Request) {
   // 아버지를 바꾸는 것도 불가능합니다. 굳은 값은 명부에 아무것도 없을 때의 마지막 보루로
   // 남겨 둡니다.
   const studentIds = [...new Set(rows.map((v) => v.student_id).filter(Boolean) as string[])];
-  const phonesById = new Map<string, { mother_phone: string | null; father_phone: string | null; parent_phone: string | null }>();
+  // 명부에서 읽어오는 것은 번호 네 칸과 **학교가 고른 대상**입니다. 대상을 함께 들고 와야
+  // 「이 아이는 아버지로 정해 뒀다」가 내보내기에도 반영됩니다.
+  const phonesById = new Map<string, GuardianPhones>();
+  const chosenById = new Map<string, GuardianRole>();
   if (studentIds.length > 0) {
     const { data, error, missing } = await selectTolerant<{
       id: string; mother_phone?: string | null; father_phone?: string | null; parent_phone?: string | null;
+      billing_phone_role?: string | null; billing_phone?: string | null;
     }>(
       (columns) =>
         supabase.from("wr_students").select(columns).eq("is_demo", false).in("id", studentIds) as unknown as
           PromiseLike<{ data: { id: string }[] | null; error: { message: string } | null }>,
       ["id"],
-      ["mother_phone", "father_phone", "parent_phone"],
+      ["mother_phone", "father_phone", "parent_phone", "billing_phone_role", "billing_phone"],
     );
     if (missing.length > 0) {
       console.error("[올톡페이] 명부에 없는 연락처 칸:", missing.join(", "));
@@ -98,20 +102,31 @@ export async function POST(req: Request) {
       console.error("[올톡페이] 명부 연락처를 읽지 못했습니다:", error);
     }
     for (const s of data) {
-      phonesById.set(s.id, { mother_phone: s.mother_phone ?? null, father_phone: s.father_phone ?? null, parent_phone: s.parent_phone ?? null });
+      const b = {
+        billing_phone_role: s.billing_phone_role ?? null,
+        billing_phone: s.billing_phone ?? null,
+        mother_phone: s.mother_phone ?? null,
+        father_phone: s.father_phone ?? null,
+        parent_phone: s.parent_phone ?? null,
+      };
+      phonesById.set(s.id, phonesOf(b));
+      const chosen = chosenRoleOf(b);
+      if (chosen) chosenById.set(s.id, chosen);
     }
   }
 
   const invoices = rows.map<BillInvoice>((v) => ({
     ...v,
+    // 발행할 때 고른 것이 먼저이고, 없으면 **그 아이의 결제번호**를 씁니다. 예전에 발행한
+    // 청구서에는 고른 값이 없는데, 그렇다고 어머니로 되돌려 보내면 그 집은 못 받습니다.
     guardian_role:
-      v.guardian_role === "mother" || v.guardian_role === "father" ||
+      v.guardian_role === "direct" || v.guardian_role === "mother" || v.guardian_role === "father" ||
       v.guardian_role === "guardian" || v.guardian_role === "manual"
         ? v.guardian_role
-        : null,
+        : (v.student_id ? chosenById.get(v.student_id) : undefined) ?? null,
     phones:
       (v.student_id ? phonesById.get(v.student_id) : undefined) ??
-      { mother_phone: null, father_phone: null, parent_phone: null },
+      { billing_phone: null, mother_phone: null, father_phone: null, parent_phone: null },
     itemNames: namesByInvoice.get(v.id) ?? [],
   }));
 

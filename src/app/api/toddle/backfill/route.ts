@@ -2,7 +2,15 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isStaffOrAboveUser } from "@/lib/roles";
-import { planBackfill, type BackfillChannel, type BackfillRow } from "@/lib/pickupOwner";
+import {
+  planBackfill,
+  pickSiblingFromText,
+  type BackfillChannel,
+  type BackfillRow,
+  type OwnerCandidate,
+  type SiblingReader,
+} from "@/lib/pickupOwner";
+import { nameSurfaces, readSiblings } from "@/lib/attendanceIntent";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +38,9 @@ async function loadPlan(supabase: Awaited<ReturnType<typeof createClient>>) {
   const [rowsRes, chRes] = await Promise.all([
     supabase
       .from("pickup_requests")
-      .select("id, channel_label, student_id, matched_name, ai_student_name")
+      // **본문을 함께 읽습니다.** 형제방은 방이 하나뿐이라 본문 말고는 누구인지 가릴
+      // 재료가 없습니다.
+      .select("id, channel_label, student_id, matched_name, ai_student_name, raw_text, summary")
       .is("student_id", null)
       .eq("is_demo", false),
     // **사람이 확인한 방만** 씁니다. 화면이 제안만 해둔 줄을 쓰면, 기계가 제안한 것이
@@ -50,10 +60,42 @@ async function loadPlan(supabase: Awaited<ReturnType<typeof createClient>>) {
   const { data: stu, error: sErr } = await supabase
     // demo-ok: 확인된 방이 가리키는 학생 번호로 찍어 읽습니다. 명부를 훑지 않습니다.
     .from("wr_students")
-    .select("id, name")
+    // **영문명까지 읽습니다.** 「Sunwoo」로만 적어 오는 연락이 있어서, 한글 이름만으로는
+    // 형제방에서 누구인지 못 가릅니다.
+    .select("id, name, name_en")
     .in("id", ids.length > 0 ? ids : ["00000000-0000-0000-0000-000000000000"]);
   if (sErr) return { error: sErr.message } as const;
-  const byId = new Map(((stu ?? []) as { id: string; name: string }[]).map((s) => [s.id, s]));
+  type Stu = { id: string; name: string; name_en: string | null };
+  const byId = new Map(((stu ?? []) as Stu[]).map((s) => [s.id, s]));
+  const surfacesById = new Map(((stu ?? []) as Stu[]).map((s) => [s.id, nameSurfaces(s.name, s.name_en)]));
+
+  /**
+   * 형제방 한 줄을 본문으로 가릅니다. 두 단계입니다.
+   *
+   * ① **의도로 가릅니다.** 「선우는 등원하고 다현이는 결석」처럼 둘 다 이름이 나오는 글은
+   *    이름만으로는 못 가르지만, 결석·픽업 의도가 한 명에게만 있으면 그 아이입니다.
+   * ② **이름 나타남으로 가릅니다.** 한 형제의 표기만 본문에 있으면 그 아이입니다.
+   *
+   * 둘 다 실패하면 **고르지 않습니다.** 형제 중 하나를 기계가 찍으면 오는 아이가 셔틀에서
+   * 빠지거나 안 오는 아이가 남습니다 - 하원 시간의 착오는 되돌릴 수 없습니다.
+   */
+  const readSibling: SiblingReader = (text, candidates) => {
+    const withSurfaces = candidates.map((c) => ({ ...c, surfaces: surfacesById.get(c.id) ?? [c.name] }));
+
+    const byIntent = readSiblings(
+      text,
+      withSurfaces.map((c) => ({ key: c.id, surfaces: [...c.surfaces] })),
+    );
+    // 형제가 서로 다른 상태면(한 명 등원·한 명 결석) 기계가 제일 자주 뒤집는 자리입니다.
+    // 그럴 때는 고르지 않습니다.
+    if (byIntent.pick && !byIntent.conflict) {
+      const hit = withSurfaces.find((c) => c.id === byIntent.pick!.key);
+      if (hit) {
+        return { student: { id: hit.id, name: hit.name }, why: `형제방인데 본문이 ${hit.name} 만 ${byIntent.pick.intent}으로 말합니다.` };
+      }
+    }
+    return pickSiblingFromText(text, withSurfaces);
+  };
 
   const channels: BackfillChannel[] = chRows.map((c) => ({
     label: c.label,
@@ -61,10 +103,11 @@ async function loadPlan(supabase: Awaited<ReturnType<typeof createClient>>) {
     students: [...(c.toddle_channel_students ?? [])]
       .sort((a, b) => a.seq - b.seq)
       .map((l) => byId.get(l.student_id))
-      .filter((x): x is { id: string; name: string } => !!x),
+      .filter((x): x is Stu => !!x)
+      .map((x) => ({ id: x.id, name: x.name }) satisfies OwnerCandidate),
   }));
 
-  return { plan: planBackfill((rowsRes.data ?? []) as BackfillRow[], channels) } as const;
+  return { plan: planBackfill((rowsRes.data ?? []) as BackfillRow[], channels, readSibling) } as const;
 }
 
 export async function GET() {

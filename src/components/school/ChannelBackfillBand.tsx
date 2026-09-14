@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import { useToast } from "@/components/common/ToastProvider";
 
 type Summary = { fill: number; ask: number; skip: number };
-type FillRow = { id: string; studentId: string; studentName: string; channel: string };
-type AskRow = { id: string; channel: string; candidates: { id: string; name: string }[] };
+type FillRow = { id: string; studentId: string; studentName: string; channel: string; why: string };
+type AskRow = { id: string; channel: string; candidates: { id: string; name: string }[]; text: string | null };
 
 /**
  * **이어 둔 방으로 지난 연락의 학생을 되짚어 채웁니다.**
@@ -87,8 +87,8 @@ export default function ChannelBackfillBand() {
       <div className="flex flex-wrap items-center gap-2 px-3 py-2.5">
         <span className="text-[12px] font-bold text-indigo-900">🔗 이어 둔 방으로 지난 연락 채우기</span>
         <span className="text-[11px] text-indigo-800">
-          학생이 안 정해진 연락 중 <b>{summary.fill}줄</b>은 이 방의 아이가 한 명뿐이라 바로 채울 수 있습니다.
-          {summary.ask > 0 && <> 형제방 <b>{summary.ask}줄</b>은 사람이 골라야 합니다.</>}
+          학생이 안 정해진 연락 중 <b>{summary.fill}줄</b>은 방 연결과 본문으로 누구인지 정해집니다.
+          {summary.ask > 0 && <> 형제방인데 <b>본문으로도 못 가른 {summary.ask}줄</b>은 사람이 골라야 합니다.</>}
         </span>
         <div className="ml-auto flex items-center gap-1.5">
           <button
@@ -112,24 +112,33 @@ export default function ChannelBackfillBand() {
       {open && (
         <div className="border-t border-indigo-200 px-3 py-2">
           <p className="mb-1.5 text-[10px] leading-relaxed text-indigo-800">
-            사람이 확인한 방만 씁니다. <b>형제방은 손대지 않습니다</b> — 둘 중 하나를 기계가 찍으면 오는 아이가 셔틀에서
-            빠집니다. 방을 못 찾은 {summary.skip}줄도 그대로 둡니다.
+            사람이 확인한 방만 씁니다. 토들은 한 집에 방이 하나라 <b>형제방은 본문을 읽어</b> 가릅니다 — 한 아이만
+            나오거나 한 아이만 결석·픽업으로 적혀 있으면 그 아이입니다. <b>둘 다 나오거나 아무도 안 나오면 고르지
+            않습니다</b> — 기계가 찍으면 오는 아이가 셔틀에서 빠집니다. 방을 못 찾은 {summary.skip}줄도 그대로 둡니다.
           </p>
           <div className="max-h-48 overflow-y-auto rounded-lg border border-indigo-100 bg-white">
             {sample.map((f) => (
-              <div key={f.id} className="flex items-center gap-2 border-b border-slate-50 px-2.5 py-1 text-[11px] last:border-b-0">
-                <span className="w-48 shrink-0 truncate text-slate-500">{f.channel}</span>
-                <span className="text-slate-400">→</span>
-                <span className="font-semibold text-slate-800">{f.studentName}</span>
+              <div key={f.id} className="border-b border-slate-50 px-2.5 py-1 text-[11px] last:border-b-0">
+                <div className="flex items-center gap-2">
+                  <span className="w-48 shrink-0 truncate text-slate-500">{f.channel}</span>
+                  <span className="text-slate-400">→</span>
+                  <span className="font-semibold text-slate-800">{f.studentName}</span>
+                </div>
+                {/* **왜 그 아이인지 적습니다.** 형제방은 본문을 읽어 가르므로, 근거 없이
+                    이름만 뜨면 사람이 맞는지 판단할 수가 없습니다. */}
+                <p className="ml-[13.5rem] text-[10px] text-slate-400">{f.why}</p>
               </div>
             ))}
             {askSample.map((a) => (
-              <div key={a.id} className="flex items-center gap-2 border-b border-slate-50 px-2.5 py-1 text-[11px] last:border-b-0">
-                <span className="w-48 shrink-0 truncate text-slate-500">{a.channel}</span>
-                <span className="text-slate-400">→</span>
-                <span className="rounded bg-amber-100 px-1 font-bold text-amber-800">
-                  {a.candidates.map((c) => c.name).join(" · ")} 중 누구?
-                </span>
+              <div key={a.id} className="border-b border-slate-50 px-2.5 py-1 text-[11px] last:border-b-0">
+                <div className="flex items-center gap-2">
+                  <span className="w-48 shrink-0 truncate text-slate-500">{a.channel}</span>
+                  <span className="text-slate-400">→</span>
+                  <span className="rounded bg-amber-100 px-1 font-bold text-amber-800">
+                    {a.candidates.map((c) => c.name).join(" · ")} 중 누구?
+                  </span>
+                </div>
+                {a.text && <p className="ml-[13.5rem] truncate text-[10px] text-slate-400">{a.text}</p>}
               </div>
             ))}
           </div>

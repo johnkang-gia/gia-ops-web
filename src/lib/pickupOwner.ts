@@ -120,7 +120,56 @@ export type BackfillRow = {
   student_id: string | null;
   matched_name: string | null;
   ai_student_name: string | null;
+  /** 형제방을 가르는 유일한 재료. 방이 하나뿐이라 본문 말고는 가릴 것이 없습니다. */
+  raw_text: string | null;
+  summary?: string | null;
 };
+
+/**
+ * **형제방은 본문으로 가릅니다.**
+ *
+ * 토들은 한 집에 방이 하나입니다. 형제가 둘이어도 방은 하나라, 방을 학생별로 나눌 방법이
+ * 없습니다. 그러니 「이 연락은 형·동생 중 누구 이야기인가」는 **본문을 읽어서** 정하는 수밖에
+ * 없습니다.
+ *
+ * 규칙은 하나입니다 — **본문에 표기가 나오는 형제가 정확히 한 명일 때만 고릅니다.**
+ *
+ *   「선우 오늘 결석합니다」        → 선우 (다현은 안 나옴)
+ *   「선우랑 다현이 둘 다 픽업」    → 못 고름 (둘 다 나옴)
+ *   「오늘 아이 결석합니다」        → 못 고름 (아무도 안 나옴)
+ *
+ * 둘 다 나오거나 아무도 안 나오면 **고르지 않고 사람에게 남깁니다.** 둘 중 하나를 기계가
+ * 찍으면 오는 아이가 셔틀에서 빠지거나 안 오는 아이가 남습니다.
+ *
+ * 표기(`surfaces`)는 부르는 쪽이 만들어 넘깁니다 - 「선우」·「임선우」·영문명까지 한 아이의
+ * 표기를 모으는 일은 `nameSurfaces` 가 이미 하고 있고, 여기서 다시 만들면 두 곳이 어긋납니다.
+ */
+export type SiblingWithSurfaces = OwnerCandidate & { surfaces: readonly string[] };
+
+export function pickSiblingFromText(
+  text: string,
+  siblings: readonly SiblingWithSurfaces[],
+): { student: OwnerCandidate; why: string } | null {
+  const body = (text ?? "").toLowerCase();
+  if (!body.trim()) return null;
+
+  const hit = siblings.filter((s) => s.surfaces.some((w) => w && body.includes(w.toLowerCase())));
+  if (hit.length === 1) {
+    return { student: { id: hit[0].id, name: hit[0].name }, why: `형제방인데 본문에 ${hit[0].name} 만 나옵니다.` };
+  }
+  return null;
+}
+
+/**
+ * 형제방 한 줄을 읽어 누구인지 고릅니다. 없으면 사람에게 남깁니다.
+ *
+ * 부르는 쪽이 넘깁니다 - 본문을 읽는 규칙(의도 읽기·표기 만들기)은 무거운 쪽에 있고,
+ * 계획을 세우는 이 파일은 순수하게 두어야 시험할 수 있습니다.
+ */
+export type SiblingReader = (
+  text: string,
+  candidates: readonly OwnerCandidate[],
+) => { student: OwnerCandidate; why: string } | null;
 
 /** 사람이 확인한 방 하나. 확인 안 된 방은 넘기지 않습니다. */
 export type BackfillChannel = {
@@ -129,10 +178,10 @@ export type BackfillChannel = {
 };
 
 export type BackfillPlan = {
-  /** 바로 채울 수 있는 줄. 방에 아이가 한 명뿐입니다. */
-  fill: { id: string; studentId: string; studentName: string; channel: string }[];
-  /** 형제방이라 사람이 골라야 하는 줄. */
-  ask: { id: string; channel: string; candidates: OwnerCandidate[] }[];
+  /** 바로 채울 수 있는 줄. 방에 아이가 한 명이거나, 형제방이지만 본문이 갈라 준 경우입니다. */
+  fill: { id: string; studentId: string; studentName: string; channel: string; why: string }[];
+  /** 형제방인데 **본문으로도 못 가른** 줄. 이때만 사람이 봅니다. */
+  ask: { id: string; channel: string; candidates: OwnerCandidate[]; text: string | null }[];
   /** 방을 못 찾았거나 아직 확인 안 된 방. */
   skip: { id: string; channel: string | null; why: string }[];
 };
@@ -148,7 +197,18 @@ export function labelKey(label: string | null | undefined): string {
  * 계획만 세우고 아무것도 고치지 않습니다. 화면이 먼저 보여주고 사람이 누른 뒤에 나갑니다 -
  * 211줄을 한 번에 말없이 고치면, 틀렸을 때 무엇이 바뀌었는지 되짚을 수가 없습니다.
  */
-export function planBackfill(rows: BackfillRow[], channels: BackfillChannel[]): BackfillPlan {
+export function planBackfill(
+  rows: BackfillRow[],
+  channels: BackfillChannel[],
+  /**
+   * 형제방을 본문으로 가르는 사람. 안 넘기면 형제방은 전부 사람에게 남습니다.
+   *
+   * **토들은 한 집에 방이 하나입니다.** 형제가 둘이어도 방을 나눌 수 없으니, 본문 말고는
+   * 가릴 것이 없습니다. 그래서 「형제방이면 무조건 사람이 고른다」로 두면 70줄이 그대로
+   * 쌓입니다 - 옮겨가야 하는 일은 대개 안 합니다.
+   */
+  readSibling?: SiblingReader,
+): BackfillPlan {
   const byLabel = new Map<string, BackfillChannel>();
   for (const c of channels) {
     const k = labelKey(c.label);
@@ -171,9 +231,28 @@ export function planBackfill(rows: BackfillRow[], channels: BackfillChannel[]): 
       continue;
     }
     if (ch.students.length === 1) {
-      plan.fill.push({ id: r.id, studentId: ch.students[0].id, studentName: ch.students[0].name, channel: ch.label });
+      plan.fill.push({
+        id: r.id,
+        studentId: ch.students[0].id,
+        studentName: ch.students[0].name,
+        channel: ch.label,
+        why: "이 방의 아이는 한 명입니다.",
+      });
     } else if (ch.students.length > 1) {
-      plan.ask.push({ id: r.id, channel: ch.label, candidates: ch.students });
+      // 형제방. 방으로는 못 가르니 **본문을 읽습니다.**
+      const text = (r.raw_text ?? r.summary ?? "").trim();
+      const read = text && readSibling ? readSibling(text, ch.students) : null;
+      if (read) {
+        plan.fill.push({
+          id: r.id,
+          studentId: read.student.id,
+          studentName: read.student.name,
+          channel: ch.label,
+          why: read.why,
+        });
+      } else {
+        plan.ask.push({ id: r.id, channel: ch.label, candidates: ch.students, text: text || null });
+      }
     } else {
       plan.skip.push({ id: r.id, channel: ch.label, why: "이 방에 이어진 학생이 없습니다." });
     }

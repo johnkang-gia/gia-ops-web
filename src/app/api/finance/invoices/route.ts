@@ -147,9 +147,13 @@ export async function POST(req: Request) {
   // 한 건만 다른 분께 보내야 하는 경우가 있습니다. 판정은 @/lib/alltalkpay 한 곳에서 합니다.
   const recipient = resolveRecipient(phonesOf(billingOf(student)), guardianRole ?? chosenRoleOf(billingOf(student)));
 
-  // 지난 미납을 이 청구서에 얹습니다(학비외 갈래만). 학부모는 한 장만 보면 되고, 원 청구서는
-  // 아래에서 「이월됨」으로 잠급니다 - 안 잠그면 같은 돈이 두 곳에 미납으로 남습니다.
-  const carry = await planCarryForward(supabase, { studentId: student.id, stream: "학비외", today: todayKst() });
+  // **미납은 저절로 얹히지 않습니다.** 발행할 때마다 자동으로 합치던 것을 껐습니다 - 실측에서
+  // 합쳐 커진 청구서가 안 걷혔습니다(200만 초과 7건 3,190만원, 수납 0원). 합치는 것은 사람이
+  // 미납금 화면에서 고릅니다(`/finance/unpaid`). 화면이 일부러 보낼 때만 얹습니다.
+  const wantCarry = (body as { carryForward?: unknown } | null)?.carryForward === true;
+  const carry = wantCarry
+    ? await planCarryForward(supabase, { studentId: student.id, stream: "학비외", today: todayKst() })
+    : { total: 0, lines: [] as { seq: number; name: string; qty: number; unit_price: number; amount: number }[], lockIds: [] as string[], error: null as string | null };
   if (carry.error) return NextResponse.json({ error: `지난 미납을 읽지 못했습니다: ${carry.error}` }, { status: 500 });
 
   // 번호는 DB가 정합니다. 사람이 손으로 붙이면 반드시 겹칩니다.

@@ -179,8 +179,21 @@ export async function POST(req: Request) {
   // **항목을 골라 발행할 때는 이월을 얹지 않습니다.** 방과후 청구서에 지난 정규과정
   // 미납이 붙으면 학부모는 무슨 돈인지 모르고, 우리도 「방과후가 얼마 걷혔나」를 셀 수
   // 없게 됩니다. 이월은 학비 전부를 담은 청구서가 짊어집니다.
+  // ── **미납은 저절로 얹히지 않습니다.** ──────────────────────────────────────
+  //
+  // 앞 판은 발행할 때마다 지난 미납을 자동으로 합쳤습니다. 학부모가 한 장만 보면 되니 좋아
+  // 보였고, 그 코드의 주석은 「금액이 눈덩이처럼 불어납니다」라고 적혀 있었습니다 - 버그가
+  // 아니라 **설계대로 동작한 결과**였습니다.
+  //
+  // 8~9월 실측에서 200만원을 넘긴 청구서는 **한 건도 안 걷혔습니다**(7건 3,190만원). 1,081만원
+  // 짜리 한 장은 아무도 못 내고, 「미납인보이스 정산」이라고만 적혀 있어 무슨 돈인지도
+  // 모릅니다.
+  //
+  // 이제 합치는 것은 **사람이 미납금 화면에서 고릅니다**(`/finance/unpaid`). 여기서는
+  // 화면이 일부러 `carryForward: true` 를 보낼 때만 얹습니다.
+  const wantCarry = (body as { carryForward?: unknown } | null)?.carryForward === true;
   const carry =
-    planIds && planIds.length > 0
+    !wantCarry || (planIds && planIds.length > 0)
       ? { total: 0, lines: [] as { seq: number; name: string; qty: number; unit_price: number; amount: number }[], lockIds: [] as string[], error: null as string | null }
       : await planCarryForward(supabase, { studentId: student.id, stream: "학비", today: todayKst() });
   if (carry.error) return NextResponse.json({ error: `지난 미납을 읽지 못했습니다: ${carry.error}` }, { status: 500 });

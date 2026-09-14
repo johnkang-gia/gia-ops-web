@@ -372,10 +372,14 @@ const FINANCE_TABS: TabDef[] = [
     label: "청구",
     icon: "🧾",
     href: "/finance/tuition",
-    match: ["/finance/tuition", "/finance/invoices"],
+    match: ["/finance/tuition", "/finance/invoices", "/finance/unpaid"],
     children: [
       { label: "학비", href: "/finance/tuition", match: ["/finance/tuition"] },
       { label: "학비외", href: "/finance/invoices", match: ["/finance/invoices"] },
+      // **미납금은 따로 관리합니다.** 예전에는 새 청구서를 발행할 때 저절로 얹혔는데,
+      // 그렇게 커진 청구서는 실측에서 한 건도 안 걷혔습니다. 이제 여기서 따로 보낼지
+      // 합칠지를 사람이 고릅니다.
+      { label: "미납금", href: "/finance/unpaid", match: ["/finance/unpaid"] },
     ],
   },
   // 현금영수증은 수납 안으로 들여놨습니다. 수납을 넣는 자리에서 신청이 생기고 그 결과를

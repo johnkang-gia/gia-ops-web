@@ -59,6 +59,7 @@ export const SCREENS: string[] = [
   "/finance/payments",
   "/finance/plans",
   "/finance/monthly",
+  "/finance/unpaid",
   "/finance/prepaid",
   "/finance/receipts",
   "/finance/tuition",

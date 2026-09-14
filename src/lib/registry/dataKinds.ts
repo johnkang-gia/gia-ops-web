@@ -130,6 +130,8 @@ export const DATA_KINDS: DataKindDef[] = [
       "apparel_orders",
       "apparel_order_items",
       "apparel_order_pieces",
+      // 마감한 달. 닫힌 달의 청구서·입금은 고칠 수 없습니다(트리거).
+      "finance_month_closes",
     ],
     dedupe: { by: ["student_id", "term_id", "kind"] },
     apply: "src/app/api/finance/invoices",

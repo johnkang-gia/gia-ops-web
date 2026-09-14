@@ -52,6 +52,8 @@ export const BACKUP_GROUPS: { group: string; tables: string[] }[] = [
     group: "회계",
     tables: [
       "invoices",
+      // 마감한 달. 잃으면 닫아둔 달이 전부 열리고, 지난 보고서가 다시 움직일 수 있게 됩니다.
+      "finance_month_closes",
       "invoice_lines",
       "payments",
       "cash_receipts",
@@ -172,6 +174,7 @@ export const BACKUP_TABLES: string[] = BACKUP_GROUPS.flatMap((g) => g.tables);
  * 나중에 「이 표는 왜 백업에 없지?」를 물었을 때 답이 여기 있어야 합니다.
  */
 export const BACKUP_SKIP: Record<string, string> = {
+  finance_item_monthly: "뷰입니다. 청구서·내역·입금에서 그때그때 세는 값이라 담아도 다시 쓸 것이 없습니다.",
   // ── 담으면 안 되는 것 ──────────────────────────────────────────────
   google_chat_oauth_tokens: "접속 비밀값. 내려받는 파일에 들어가면 그 파일이 곧 열쇠가 됩니다.",
   backups: "백업 안에 백업을 담으면 파일이 회차마다 배로 불어납니다.",

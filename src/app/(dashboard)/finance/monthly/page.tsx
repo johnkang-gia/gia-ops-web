@@ -4,6 +4,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess } from "@/lib/roles";
+import MonthCloseBar, { type MonthClose } from "@/components/finance/MonthCloseBar";
 import { buildPeriodGrid, monthLabel, nextMonthEstimate, type PeriodInvoice, type PeriodPayment, type TermSpan } from "@/lib/financePeriod";
 
 export const dynamic = "force-dynamic";
@@ -32,7 +33,7 @@ export default async function FinanceMonthlyPage() {
   if (!hasFinanceAccess(me)) redirect("/home");
 
   const supabase = await createClient();
-  const [invRes, payRes, termRes] = await Promise.all([
+  const [invRes, payRes, termRes, closeRes, itemRes] = await Promise.all([
     // 집계에 필요한 칸만 읽습니다. `select("*")` 로 끌어오면 줄마다 안 쓰는 칸까지 따라옵니다.
     supabase
       .from("invoices")
@@ -41,6 +42,11 @@ export default async function FinanceMonthlyPage() {
       .limit(20000),
     supabase.from("payments").select("invoice_id, amount, paid_at, method_kind").limit(20000),
     supabase.from("terms").select("id, year, term_type, start_date, end_date").order("start_date", { ascending: false }),
+    // 닫힌 달. **화면이 「고칠 수 있는 달인가」를 스스로 판단하지 않습니다** - 막는 것은
+    // 데이터베이스가 하고, 화면은 그 사실을 보여주기만 합니다.
+    supabase.from("finance_month_closes").select("*"),
+    // 항목별 청구·수납. 화면이 줄을 끌어와 더하지 않고 데이터베이스가 냅니다.
+    supabase.from("finance_item_monthly").select("*"),
   ]);
 
   const terms: TermSpan[] = ((termRes.data as { id: string; year: number | null; term_type: string | null; start_date: string | null; end_date: string | null }[] | null) ?? [])
@@ -52,7 +58,19 @@ export default async function FinanceMonthlyPage() {
     terms,
   );
   const estimate = nextMonthEstimate(blocks);
-  const loadError = invRes.error?.message ?? payRes.error?.message ?? termRes.error?.message ?? null;
+  const closes = new Map(((closeRes.data as MonthClose[] | null) ?? []).map((c) => [c.month, c]));
+
+  /** 청구월 → 항목별 줄. 「그 달에 무엇으로 얼마를 걷었나」가 다음 달 산출의 재료입니다. */
+  type ItemRow = { month: string; stream: string | null; item_name: string; line_count: number; billed: number; received: number };
+  const itemsByMonth = new Map<string, ItemRow[]>();
+  for (const r of ((itemRes.data as ItemRow[] | null) ?? [])) {
+    const list = itemsByMonth.get(r.month) ?? [];
+    list.push(r);
+    itemsByMonth.set(r.month, list);
+  }
+  for (const list of itemsByMonth.values()) list.sort((a, b) => Number(b.billed) - Number(a.billed));
+
+  const loadError = invRes.error?.message ?? payRes.error?.message ?? termRes.error?.message ?? closeRes.error?.message ?? null;
 
   return (
     <div className="mx-auto flex h-full max-w-5xl flex-col p-4 sm:p-6">
@@ -128,6 +146,9 @@ export default async function FinanceMonthlyPage() {
                                 취소 {m.cancelledCount}
                               </span>
                             )}
+                            <span className="ml-1 inline-flex align-middle">
+                              <MonthCloseBar month={m.month} state={closes.get(m.month) ?? null} />
+                            </span>
                           </td>
                           <td className="px-2 py-1.5 tabular-nums text-slate-600">{m.byStream["학비"] ? won(m.byStream["학비"]) : "-"}</td>
                           <td className="px-2 py-1.5 tabular-nums text-slate-600">{m.byStream["학비외"] ? won(m.byStream["학비외"]) : "-"}</td>
@@ -139,6 +160,44 @@ export default async function FinanceMonthlyPage() {
                           <td className="px-2 py-1.5 tabular-nums text-slate-500">{rate === null ? "-" : `${rate}%`}</td>
                           {/* 청구월 수납과 **다른 숫자**입니다. 같은 칸에 두면 둘을 같은 것으로 읽습니다. */}
                           <td className="px-3 py-1.5 tabular-nums text-slate-400">{m.receivedInMonth ? won(m.receivedInMonth) : "-"}</td>
+                        </tr>
+                      );
+                    })}
+                    {/* ── 항목별 ────────────────────────────────────────────
+                        올톡페이는 청구사유가 자유 글자라 항목별로 셀 수 없었습니다
+                        (실측에서 「악기비」·「악기(바이올린)」·「악기비 (바이올린)」이 따로
+                        세어졌습니다). 우리는 내역으로 이미 쪼개 갖고 있으니 세기만 하면
+                        됩니다 - 다음 달에 무엇을 얼마나 청구할지가 여기서 나옵니다. */}
+                    {b.months.map((m) => {
+                      const items = itemsByMonth.get(m.month) ?? [];
+                      if (items.length === 0) return null;
+                      return (
+                        <tr key={`${m.month}-items`} className="border-b border-slate-100 bg-slate-50/60 last:border-b-0">
+                          <td colSpan={8} className="px-3 py-1.5">
+                            <details>
+                              <summary className="cursor-pointer text-left text-[10px] font-semibold text-slate-500">
+                                {monthLabel(m.month)} 항목별 {items.length}가지 ▾
+                              </summary>
+                              <div className="mt-1 flex flex-col gap-0.5">
+                                {items.map((it) => {
+                                  const billed = Number(it.billed);
+                                  const got = Number(it.received);
+                                  const rate = billed > 0 ? Math.round((got / billed) * 100) : null;
+                                  return (
+                                    <div key={`${it.item_name}-${it.stream}`} className="flex items-center gap-2 text-[11px]">
+                                      <span className="min-w-0 flex-1 truncate text-left text-slate-600">{it.item_name}</span>
+                                      <span className="text-[9px] text-slate-300">{it.line_count}명</span>
+                                      <span className="w-24 text-right tabular-nums text-slate-700">{won(billed)}</span>
+                                      <span className="w-24 text-right tabular-nums text-emerald-700">{won(got)}</span>
+                                      {/* 항목별 수납은 **비율로 나눈 값**입니다. 어느 항목을
+                                          먼저 받았는지는 대개 알 수 없습니다. */}
+                                      <span className="w-10 text-right tabular-nums text-slate-400">{rate === null ? "-" : `${rate}%`}</span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </details>
+                          </td>
                         </tr>
                       );
                     })}

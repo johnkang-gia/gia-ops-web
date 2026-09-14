@@ -1,0 +1,141 @@
+import { NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
+import { getCurrentAppUser } from "@/lib/currentUser";
+import { isStaffOrAboveUser } from "@/lib/roles";
+import { planBackfill, type BackfillChannel, type BackfillRow } from "@/lib/pickupOwner";
+
+export const dynamic = "force-dynamic";
+
+/**
+ * **지난 연락에 학생 번호를 되짚어 채웁니다.**
+ *
+ * ── 왜 필요한가 ─────────────────────────────────────────────────────────────
+ *
+ * 받는 쪽이 방 연결을 읽어놓고 이름으로 되돌아가는 바람에, 사람이 확인해 둔 방에서 온
+ * 연락인데도 학생 번호가 비어 있는 줄이 쌓였습니다. 그 줄은 출결에도, 두 창구 대조에도
+ * 못 들어갑니다.
+ *
+ * 받는 쪽은 고쳤지만(`decideOwner`), **이미 들어와 있는 줄은 저절로 안 고쳐집니다.**
+ *
+ * ── 미리 보여주고 나서 고칩니다 ─────────────────────────────────────────────
+ *
+ * `GET` 은 계획만 돌려줍니다 - 몇 줄이 채워지고 몇 줄은 사람이 골라야 하는지. 숫자 없이
+ * 「채우기」 단추만 있으면 아무도 못 누릅니다. 눌러도 되는지 판단할 재료가 없으니까요.
+ *
+ * `POST` 는 **채울 수 있는 줄만** 고칩니다. 형제방처럼 사람이 골라야 하는 줄은 손대지
+ * 않습니다 - 둘 중 하나를 기계가 찍으면 오는 아이가 셔틀에서 빠집니다.
+ */
+
+async function loadPlan(supabase: Awaited<ReturnType<typeof createClient>>) {
+  const [rowsRes, chRes] = await Promise.all([
+    supabase
+      .from("pickup_requests")
+      .select("id, channel_label, student_id, matched_name, ai_student_name")
+      .is("student_id", null)
+      .eq("is_demo", false),
+    // **사람이 확인한 방만** 씁니다. 화면이 제안만 해둔 줄을 쓰면, 기계가 제안한 것이
+    // 사람이 확인한 것처럼 굳어집니다.
+    supabase
+      .from("toddle_channels")
+      .select("label, confirmed_at, toddle_channel_students(student_id, seq)")
+      .not("confirmed_at", "is", null),
+  ]);
+  if (rowsRes.error) return { error: rowsRes.error.message } as const;
+  if (chRes.error) return { error: chRes.error.message } as const;
+
+  type ChRow = { label: string; toddle_channel_students: { student_id: string; seq: number }[] };
+  const chRows = (chRes.data ?? []) as unknown as ChRow[];
+  const ids = [...new Set(chRows.flatMap((c) => (c.toddle_channel_students ?? []).map((l) => l.student_id)))];
+
+  const { data: stu, error: sErr } = await supabase
+    // demo-ok: 확인된 방이 가리키는 학생 번호로 찍어 읽습니다. 명부를 훑지 않습니다.
+    .from("wr_students")
+    .select("id, name")
+    .in("id", ids.length > 0 ? ids : ["00000000-0000-0000-0000-000000000000"]);
+  if (sErr) return { error: sErr.message } as const;
+  const byId = new Map(((stu ?? []) as { id: string; name: string }[]).map((s) => [s.id, s]));
+
+  const channels: BackfillChannel[] = chRows.map((c) => ({
+    label: c.label,
+    // 졸업·전학으로 명부에서 빠진 아이는 뺍니다. 없는 아이를 가리키는 연결은 붙는 순간 틀립니다.
+    students: [...(c.toddle_channel_students ?? [])]
+      .sort((a, b) => a.seq - b.seq)
+      .map((l) => byId.get(l.student_id))
+      .filter((x): x is { id: string; name: string } => !!x),
+  }));
+
+  return { plan: planBackfill((rowsRes.data ?? []) as BackfillRow[], channels) } as const;
+}
+
+export async function GET() {
+  const me = await getCurrentAppUser();
+  if (!me) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
+  if (!isStaffOrAboveUser(me)) return NextResponse.json({ error: "행정 권한이 필요합니다." }, { status: 403 });
+
+  const supabase = await createClient();
+  const r = await loadPlan(supabase);
+  if ("error" in r) return NextResponse.json({ error: r.error }, { status: 500 });
+
+  const { fill, ask, skip } = r.plan;
+  return NextResponse.json({
+    ok: true,
+    summary: { fill: fill.length, ask: ask.length, skip: skip.length },
+    // 미리 보기용 몇 줄. 전부 내려보내면 화면이 무거워지고, 사람이 확인하는 데는 몇 줄이면 됩니다.
+    sample: fill.slice(0, 20),
+    askSample: ask.slice(0, 20),
+  });
+}
+
+export async function POST() {
+  const me = await getCurrentAppUser();
+  if (!me) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
+  if (!isStaffOrAboveUser(me)) return NextResponse.json({ error: "행정 권한이 필요합니다." }, { status: 403 });
+
+  const supabase = await createClient();
+  const r = await loadPlan(supabase);
+  if ("error" in r) return NextResponse.json({ error: r.error }, { status: 500 });
+
+  const { fill } = r.plan;
+  if (fill.length === 0) {
+    return NextResponse.json({ ok: true, filled: 0, note: "채울 수 있는 줄이 없습니다." });
+  }
+
+  // 같은 학생끼리 묶어 한 번에 고칩니다. 한 줄씩 보내면 134번의 왕복이 되고, 중간에
+  // 끊기면 어디까지 갔는지 모릅니다.
+  const byStudent = new Map<string, string[]>();
+  for (const f of fill) byStudent.set(f.studentId, [...(byStudent.get(f.studentId) ?? []), f.id]);
+
+  let filled = 0;
+  const failures: { studentId: string; error: string }[] = [];
+  for (const [studentId, rowIds] of byStudent) {
+    const name = fill.find((f) => f.studentId === studentId)?.studentName ?? null;
+    const { data, error } = await supabase
+      .from("pickup_requests")
+      .update({
+        student_id: studentId,
+        matched_name: name,
+        // 되짚어 채웠다는 **사실을 남깁니다.** 나중에 이 줄이 왜 이 아이로 되어 있는지
+        // 물어볼 곳이 있어야 합니다.
+        ai_note: `사람이 확인한 토들 방 연결로 되짚어 채웠습니다 (${me.email})`,
+      })
+      .in("id", rowIds)
+      // 그 사이에 누가 손으로 정했을 수 있습니다. **비어 있는 줄만** 고칩니다.
+      .is("student_id", null)
+      .select("id");
+    if (error) {
+      failures.push({ studentId, error: error.message });
+      continue;
+    }
+    filled += (data ?? []).length;
+  }
+
+  return NextResponse.json({
+    ok: true,
+    tried: fill.length,
+    filled,
+    // 조용히 넘기면 「다 됐다」로 보입니다. 안 된 것이 있으면 그대로 돌려줍니다.
+    failed: failures.length,
+    failures: failures.slice(0, 10),
+    stillAsk: r.plan.ask.length,
+  });
+}

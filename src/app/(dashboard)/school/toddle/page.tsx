@@ -4,6 +4,7 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { isAdminUser } from "@/lib/roles";
 import { ROSTER_SELECT, toRosterEntries } from "@/lib/pickupParse";
 import ToddleChannelsClient, { type ChannelRow, type StudentOption } from "@/components/school/ToddleChannelsClient";
+import ChannelBackfillBand from "@/components/school/ChannelBackfillBand";
 
 export const dynamic = "force-dynamic";
 
@@ -88,6 +89,9 @@ export default async function ToddleChannelsPage() {
 
   return (
     <div className="mx-auto max-w-6xl p-3 sm:p-5">
+      {/* 방을 잇는 화면 위에 둡니다. 방을 이어 두고도 지난 연락에는 학생이 안 붙어
+          있다는 사실을, 방을 만지러 온 사람이 바로 보게 됩니다. */}
+      {canEdit && <ChannelBackfillBand />}
       <ToddleChannelsClient rows={rows} students={studentOptions} canEdit={canEdit} loadError={loadError} />
     </div>
   );

@@ -12,6 +12,7 @@ import {
 import { resolveStudent } from "@/lib/studentMatch";
 import { loadAliasIndex } from "@/lib/aliasIndex";
 import { loadChannelLink, touchChannel } from "@/lib/channelLink";
+import { decideOwner } from "@/lib/pickupOwner";
 import { othersMentioned, otherChildNote, ambiguousNote } from "@/lib/toddleChannel";
 import { extractTargetDate, extractTargetRange } from "@/lib/attendanceDigest";
 import { extractRecurringWeekdays, hasRecurringPhrase, weekdayLabel } from "@/lib/parentRecurrence";
@@ -554,6 +555,11 @@ export async function ingestPickup(
   if (linked && linked.students.length > 0) {
     grade = linked.students[0].grade ?? grade;
     // 형제방이면 아직 누구인지는 본문이 정합니다 - 아래 readSiblings 가 이어서 봅니다.
+    //
+    // **여기서 이름을 꺼내는 것은 AI 근거 문구·요약에 쓰기 위해서일 뿐입니다.** 누구인지
+    // 정하는 일은 아래 `decideOwner` 가 **학생 번호로** 합니다. 예전에는 이 이름을 다시
+    // `resolveStudent` 로 명부에서 찾게 해서, 동명이인이면 「못 좁혔다」로 null 이 되어
+    // 번호가 비었습니다(실측 134건).
     if (linked.students.length === 1) candidateName = linked.students[0].name;
   }
 
@@ -612,11 +618,22 @@ export async function ingestPickup(
     grade,
     aliases: aliasIndex,
   });
-  const matched = resolved.student;
+  // ── 누구 이야기인가는 **한 곳에서** 정합니다 ──────────────────────────────
+  //
+  // 순서: 형제 구분 > 방 연결 > 본문 이름. 방이 본문을 이기는 것이 요점입니다 - 서우
+  // 어머님 방에 「하라도 픽업할게요」가 오면 본문은 하라를 가리키지만 그 연락의 주인은
+  // 서우이고, 하라는 아래 `othersMentioned` 가 확인 필요로 따로 세웁니다.
+  const owner = decideOwner({
+    linkedStudents: linked?.students.map((s) => ({ id: s.id, name: s.name })) ?? null,
+    siblingPick: siblingRead?.pick ? (siblings.find((s) => s.name === siblingRead.pick!.key) ?? null) : null,
+    fromText: resolved.student,
+    textWhy: resolved.why ? resolved.note : null,
+  });
+  const matched = owner.student ? (roster.find((s) => s.id === owner.student!.id) ?? null) : null;
   // 못 이었으면 **왜** 못 이었는지 남깁니다. 이유 없는 「확인 필요」는 고칠 자리를
   // 알려주지 않습니다 - 이름을 못 뽑은 것과 명부에 없는 것과 둘 중 누구인지 모르는 것은
   // 사람이 해야 할 일이 전혀 다릅니다.
-  const matchNote = resolved.why ? resolved.note : null;
+  const matchNote = matched ? (owner.source === "본문 이름" ? null : owner.why) : owner.why;
   // 담임을 함께 적어둡니다 - 문의를 담임별로 묶어 보거나, 업무로 넘길 때 담당자를 미리
   // 채우는 데 씁니다.
   const homeroomEmail = matched ? await findHomeroomEmail(supabase, matched.id) : null;

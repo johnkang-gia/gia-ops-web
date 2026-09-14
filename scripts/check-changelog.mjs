@@ -60,6 +60,40 @@ const RULES = [
 ];
 
 // 코드 블록(```) 안은 검사하지 않습니다 - 오류 메시지나 로그 원문이 들어가기 때문입니다.
+/**
+ * **제목 모양 검사.**
+ *
+ * 버전 기록 화면(`/changelog`)은 `## v0.577.0 - 2026-09-14` 라는 모양만 읽습니다. 날짜가
+ * 빠지면 그 항목을 **조용히 건너뜁니다** - 오류가 아니라 「그 버전은 기록이 없나 보다」로
+ * 보입니다. 실제로 v0.492.0 부터 84개가 그렇게 화면에서 사라졌고, 화면이 v0.491.0 에
+ * 멈춰 있는 것을 사람이 눈으로 발견하기까지 며칠이 걸렸습니다.
+ *
+ * 규칙을 글로만 두면 다음에도 빠집니다. 빠뜨리면 빌드가 멈추게 합니다.
+ */
+const HEADER_OK = /^## v\d+\.\d+\.\d+ - \d{4}-\d{2}-\d{2}( \([^)]+\))?\s*$/;
+const badHeaders = [];
+{
+  let fence = false;
+  lines.forEach((line, i) => {
+    if (/^\s*```/.test(line)) {
+      fence = !fence;
+      return;
+    }
+    if (fence) return;
+    if (/^## v/.test(line) && !HEADER_OK.test(line)) badHeaders.push({ line: i + 1, text: line.trim() });
+  });
+}
+if (badHeaders.length > 0) {
+  console.error(`\n✗ CHANGELOG.md 제목에 날짜가 없습니다 — ${badHeaders.length}곳\n`);
+  console.error("  버전 기록 화면은 날짜가 있는 제목만 읽습니다. 없으면 그 항목이 화면에서");
+  console.error("  조용히 사라집니다(오류로 보이지 않습니다).\n");
+  console.error("  이렇게 적습니다:  ## v0.577.0 - 2026-09-14\n");
+  for (const b of badHeaders.slice(0, 10)) console.error(`      CHANGELOG.md:${b.line}  ${b.text}`);
+  if (badHeaders.length > 10) console.error(`      … 외 ${badHeaders.length - 10}곳`);
+  console.error("");
+  process.exit(1);
+}
+
 const hits = [];
 let inFence = false;
 lines.forEach((line, i) => {
@@ -74,7 +108,7 @@ lines.forEach((line, i) => {
 });
 
 if (hits.length === 0) {
-  console.log("✓ CHANGELOG.md 작성 규칙 통과");
+  console.log("✓ CHANGELOG.md 작성 규칙 통과 (제목 날짜 포함)");
   process.exit(0);
 }
 

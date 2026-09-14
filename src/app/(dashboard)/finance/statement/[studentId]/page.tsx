@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import FinanceLive from "@/components/finance/FinanceLive";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
@@ -48,6 +49,9 @@ export default async function StatementPage({ params }: { params: Promise<{ stud
 
   return (
     <div className="mx-auto w-full max-w-3xl p-4 sm:p-6">
+      {/* 학부모 문의를 받으며 보는 화면입니다. 통화하는 동안 옆에서 입금이 붙으면 그
+          숫자가 바로 바뀌어야 합니다 - 「방금 들어왔는데요」에 옛 잔액으로 답하면 안 됩니다. */}
+      <FinanceLive />
       <div className="mb-3 flex flex-wrap items-center gap-2 print:hidden">
         <Link href="/finance/payments" className="text-[12px] font-semibold text-teal-700 underline">
           ← 수납으로

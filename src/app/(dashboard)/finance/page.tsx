@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import FinanceLive from "@/components/finance/FinanceLive";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
@@ -82,6 +83,9 @@ export default async function FinanceOverviewPage() {
 
   return (
     <div className="mx-auto max-w-6xl p-4 sm:p-6">
+      {/* 돈에 닿는 자료가 바뀌면 이 화면도 함께 다시 그립니다. 고친 사람 화면만 바뀌면
+          옆자리는 옛 금액을 그대로 보여주고, 그건 오류가 아니라 다른 숫자로 보입니다. */}
+      <FinanceLive />
 
       <div className="mb-1 flex flex-wrap items-baseline gap-2">
         <h1 className="text-lg font-bold">📊 재무 개요</h1>

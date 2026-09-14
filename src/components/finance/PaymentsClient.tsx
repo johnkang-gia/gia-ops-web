@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import { useFinanceLive } from "@/lib/useFinanceLive";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
 import { won } from "@/lib/feeItems";
@@ -59,6 +60,9 @@ const BUCKET_TONE: Record<AgingBucket, string> = {
 };
 
 export default function PaymentsClient({ invoices, payments: initial, currentUserEmail, currentUserName, loadError, today }: Props) {
+  // 돈에 닿는 자료가 바뀌면 이 화면이 함께 다시 그려집니다. 한 사람이 고치고
+  // 여러 사람이 보는 화면이라, 고친 사람만 새 금액을 보면 안 됩니다.
+  useFinanceLive();
   const notify = useToast();
   const [payments, setPayments] = useState(initial);
   const [staged, setStaged] = useState<Staged[] | null>(null);

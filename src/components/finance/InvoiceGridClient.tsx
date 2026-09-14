@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useFinanceLive } from "@/lib/useFinanceLive";
 import AlreadyPaidModal from "@/components/finance/AlreadyPaidModal";
 // 돈을 정하는 판단은 화면에서 떼어 `@/lib/invoiceGrid` 에 두고 시험합니다. 섞여 있으면
 // 화면을 손보다 판단을 건드려도 티가 안 나고, 조금 다른 청구서는 그대로 나갑니다.
@@ -144,6 +145,9 @@ export default function InvoiceGridClient({
   loadError,
   today,
 }: Props) {
+  // 돈에 닿는 자료가 바뀌면 이 화면이 함께 다시 그려집니다. 한 사람이 고치고
+  // 여러 사람이 보는 화면이라, 고친 사람만 새 금액을 보면 안 됩니다.
+  useFinanceLive(["wr_students"]);
   const notify = useToast();
   const [overrides, setOverrides] = useState(initialOverrides);
   /** 청구서에 붙은 현금영수증. 청구서 칸 안에서 바로 접수·발행 표시를 합니다. */

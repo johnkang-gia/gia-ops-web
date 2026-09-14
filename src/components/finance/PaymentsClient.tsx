@@ -8,6 +8,7 @@ import { won } from "@/lib/feeItems";
 import { balanceOf, matchPayment, toAmount, toIsoDate, PAYMENT_METHOD_KINDS, needsCashReceipt, type ImportedPayment, type PaymentRow, type PaymentMethodKind } from "@/lib/payments";
 import { agingBucket, type AgingBucket } from "@/lib/settlement";
 import PayModal from "./PayModal";
+import RefundModal, { type RefundTarget } from "./RefundModal";
 import InlineTabs from "@/components/common/InlineTabs";
 import type { Invoice } from "@/lib/types";
 import { Who } from "@/components/common/HomonymProvider";
@@ -80,6 +81,8 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
   // 결제완료 체크 창. 청구서를 보는 그 자리에서 받은 돈을 넣습니다 - 화면을 옮기게 하면
   // 「나중에」가 되고, 나중에 한 것은 대개 안 한 것이 됩니다.
   const [payFor, setPayFor] = useState<{ id: string; label: string; balance: number } | null>(null);
+  // 환불 창. 입금 줄에서 바로 엽니다 - 돌려줄 일은 그 입금을 보고 있을 때 생깁니다.
+  const [refundFor, setRefundFor] = useState<RefundTarget | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // 수기 입력
@@ -108,6 +111,16 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
     [issued, payments],
   );
   const unpaid = withBalance.filter((x) => x.balance > 0);
+
+  /**
+   * 그 청구서로 **지금 들고 있는 돈**. 이미 돌려준 것을 뺀 값입니다.
+   *
+   * 환불 줄이 음수로 같은 표에 있으므로 그냥 더하면 됩니다 - 그래서 이 값이 곧
+   * 「더 돌려줄 수 있는 상한」입니다. 따로 세면 두 번 돌려주는 날이 옵니다.
+   */
+  function heldOf(invoiceId: string): number {
+    return payments.filter((x) => x.invoice_id === invoiceId).reduce((n, x) => n + Number(x.amount), 0);
+  }
   const totalBilled = issued.reduce((n, v) => n + Number(v.total_amount), 0);
   const totalPaid = payments.reduce((n, p) => n + Number(p.amount), 0);
   /**
@@ -712,6 +725,7 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
                 <th className="px-3 py-2">입금자</th>
                 <th className="px-3 py-2">적요</th>
                 <th className="px-3 py-2">붙은 인보이스</th>
+                <th className="px-3 py-2" />
               </tr>
             </thead>
             <tbody>
@@ -745,12 +759,39 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
                         </select>
                       )}
                     </td>
+                    <td className="px-3 py-1.5 text-right">
+                      {/* **환불은 입금 줄에서 시작합니다.** 돌려줄 일은 그 입금을 보고 있을 때
+                          생기고, 화면을 옮기게 하면 「나중에」가 되어 안 적힙니다.
+                          이미 환불인 줄에는 안 붙입니다 - 환불의 환불은 뜻이 없습니다. */}
+                      {inv && Number(p.amount) > 0 && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setRefundFor({
+                              invoiceId: inv.id,
+                              invoiceNo: inv.invoice_no,
+                              studentName: inv.student_name_ko ?? inv.student_name,
+                              held: heldOf(inv.id),
+                              suggest: Math.min(Number(p.amount), heldOf(inv.id)),
+                              method: p.method_kind ?? null,
+                            })
+                          }
+                          className="rounded border border-rose-200 px-1.5 py-0.5 text-[10px] font-semibold text-rose-600 hover:bg-rose-50"
+                          title="돌려드린 돈을 적습니다. 원래 입금 줄은 지우지 않습니다"
+                        >
+                          ↩️ 환불
+                        </button>
+                      )}
+                      {Number(p.amount) < 0 && (
+                        <span className="rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-bold text-rose-700">환불</span>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
               {payments.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-3 py-10 text-center text-slate-400">
+                  <td colSpan={6} className="px-3 py-10 text-center text-slate-400">
                     아직 들어온 입금이 없습니다.
                   </td>
                 </tr>
@@ -859,6 +900,7 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
           )}
         </div>
       </details>
+    {refundFor && <RefundModal target={refundFor} onClose={() => setRefundFor(null)} />}
     {payFor && (
         <PayModal
           target={payFor}

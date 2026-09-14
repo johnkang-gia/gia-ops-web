@@ -558,14 +558,29 @@ export default function InvoiceGridClient({
       notify("새로 등록할 번호를 적어주세요.", "error");
       return;
     }
-    const patch = { billing_phone_role: role, billing_phone: phone };
-    const { error } = await createClient().from("wr_students").update(patch).eq("id", s.id);
+    // **서버를 거칩니다.** 브라우저에서 바로 `wr_students` 를 고치면 그 표의 자물쇠가
+    // 명부 관리 권한을 요구해서, 재무 담당자에게는 **한 줄도 안 맞고 오류도 안 납니다.**
+    // 그래서 화면만 바뀌었다가 창을 다시 열면 사라졌습니다(/api/finance/billing-phone).
+    const res = await fetch("/api/finance/billing-phone", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ studentId: s.id, role, phone }),
+    });
+    const json = (await res.json().catch(() => null)) as
+      | { error?: string; student?: { billing_phone_role: string | null; billing_phone: string | null } }
+      | null;
     // 조용히 넘기면 정해진 줄 알고 청구를 돌립니다. 그러면 그 집만 엉뚱한 분께 갑니다.
-    if (error) {
-      notify(`결제번호를 저장하지 못했습니다: ${error.message}`, "error");
+    if (!res.ok) {
+      notify(`결제번호를 저장하지 못했습니다: ${json?.error ?? "알 수 없는 이유"}`, "error");
       return;
     }
-    setStudentPhones((p) => ({ ...p, [s.id]: { ...(p[s.id] ?? {}), billingRole: role, billingPhone: phone } }));
+    // 화면은 **저장된 값**을 그대로 받아 그립니다. 보낸 값을 그리면 서버가 다듬은 것과
+    // 어긋나고, 그 차이는 다음에 열어볼 때야 드러납니다.
+    const saved = json?.student ?? { billing_phone_role: role, billing_phone: phone };
+    setStudentPhones((p) => ({
+      ...p,
+      [s.id]: { ...(p[s.id] ?? {}), billingRole: saved.billing_phone_role, billingPhone: saved.billing_phone },
+    }));
     notify(role ? "결제번호를 정했습니다." : "결제번호를 지웠습니다. 어머니 → 아버지 → 보호자 순으로 나갑니다.", "success");
   }
 
@@ -1950,9 +1965,19 @@ export default function InvoiceGridClient({
                 ))}
                 <span className="text-slate-300">|</span>
                 {/* 명부 셋 중 아무도 아닌 번호. 여기가 원본이므로 번호 자체를 저장합니다. */}
+                {/* **등록 단추를 따로 둡니다.** 예전에는 칸을 벗어날 때만(onBlur) 저장해서,
+                    번호를 치고 엔터를 누르거나 창을 닫으면 그대로 사라졌습니다 - 사람은 적었다고
+                    생각하는데 아무 일도 안 일어났습니다. 엔터와 단추 둘 다로 저장합니다. */}
                 <input
                   defaultValue={detail.billingRole === "direct" ? detail.billingPhone ?? "" : ""}
-                  key={detail.id + (detail.billingRole ?? "")}
+                  key={detail.id + (detail.billingRole ?? "") + (detail.billingPhone ?? "")}
+                  id={`billing-direct-${detail.id}`}
+                  onKeyDown={(e) => {
+                    if (e.key !== "Enter") return;
+                    e.preventDefault();
+                    const v = (e.target as HTMLInputElement).value.trim();
+                    if (v) void saveBilling(detail, "direct", v);
+                  }}
                   onBlur={(e) => {
                     const v = e.target.value.trim();
                     if (!v) return;
@@ -1965,6 +1990,21 @@ export default function InvoiceGridClient({
                     (detail.billingRole === "direct" ? "border-teal-500 bg-white font-bold" : "border-slate-200")
                   }
                 />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const el = document.getElementById(`billing-direct-${detail.id}`) as HTMLInputElement | null;
+                    const v = (el?.value ?? "").trim();
+                    if (!v) {
+                      notify("새로 등록할 번호를 적어주세요.", "error");
+                      return;
+                    }
+                    void saveBilling(detail, "direct", v);
+                  }}
+                  className="rounded bg-teal-600 px-1.5 py-0.5 text-[11px] font-bold text-white hover:bg-teal-700"
+                >
+                  등록
+                </button>
                 {detail.billingRole ? (
                   <button
                     type="button"

@@ -9,6 +9,7 @@ import { won } from "@/lib/feeItems";
 import { studentLedger, settle, isOutstanding, agingBucket, type SettleInvoice } from "@/lib/settlement";
 import type { PaymentRow } from "@/lib/payments";
 import PrintButton from "@/components/finance/PrintButton";
+import StatementRefunds from "@/components/finance/StatementRefunds";
 
 /**
  * 학생별 원장(거래명세서) 한 장.
@@ -133,6 +134,20 @@ export default async function StatementPage({ params }: { params: Promise<{ stud
               )}
             </tbody>
           </table>
+
+          {/* 환불은 **인쇄본에 안 넣습니다.** 학부모에게 드리는 종이에 담당자용 단추가
+              보이면 안 됩니다. 화면에서만 쓰는 자리입니다. */}
+          <StatementRefunds
+            rows={invoices
+              .filter((v) => v.status !== "취소")
+              .map((v) => ({
+                invoiceId: v.id,
+                invoiceNo: v.invoice_no,
+                studentName: (v.student_name_ko as string | null) ?? v.student_name,
+                held: payments.filter((p) => p.invoice_id === v.id).reduce((n, p) => n + Number(p.amount), 0),
+              }))
+              .filter((r) => r.held > 0)}
+          />
 
           <p className="mt-4 text-[10px] leading-relaxed text-slate-400">
             «이월됨»으로 적힌 청구서는 그 금액이 다음 청구서에 이미 들어가 있어 여기서 다시 세지 않습니다.

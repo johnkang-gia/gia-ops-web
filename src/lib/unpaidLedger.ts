@@ -32,8 +32,19 @@
  * 이 파일은 **판단만** 합니다. 합치고 잠그는 일은 `carryForward.ts` 가 그대로 합니다.
  */
 
-/** 이 금액을 넘으면 발행 전에 사람에게 묻습니다. 30~100만 구간에서 수납률이 뚝 떨어집니다. */
-export const BIG_INVOICE_WON = 1_000_000;
+/**
+ * 이 금액을 넘으면 합치기 전에 사람에게 묻습니다.
+ *
+ * 처음에는 100만원으로 두었는데, **실제 인보이스가 거의 다 그 선을 넘습니다** - 한 학기
+ * 교재비와 교복만 합쳐도 30만원대이고 학비가 얹히면 수백만원입니다. 그래서 경고가 거의
+ * 모든 줄에 떴고, **늘 뜨는 경고는 아무도 안 읽습니다**(CLAUDE.md §1 — 자꾸 헛걸리는
+ * 검사기는 없는 것과 같습니다).
+ *
+ * 실측에서 수납률이 실제로 무너지는 자리는 **200만원 위**입니다(200만 초과 7건 3,190만원,
+ * 수납 0원). 그 아래 두 단계를 두어, 300만원에서 한 번 말리고 200만원 위에서는 강하게
+ * 말립니다.
+ */
+export const BIG_INVOICE_WON = 3_000_000;
 
 export type UnpaidInvoice = {
   id: string;
@@ -189,7 +200,7 @@ export function mergeWarning(rows: readonly UnpaidRow[]): string | null {
     return `합계 ${total.toLocaleString("ko-KR")}원입니다. 8~9월 실측에서 200만원을 넘긴 청구서는 **한 건도 안 걷혔습니다** — 따로 보내는 편이 낫습니다.`;
   }
   if (total > BIG_INVOICE_WON) {
-    return `합계 ${total.toLocaleString("ko-KR")}원입니다. 100만원을 넘으면 수납률이 절반 아래로 떨어집니다 — 따로 보내는 것을 먼저 생각해보세요.`;
+    return `합계 ${total.toLocaleString("ko-KR")}원입니다. 이만큼 커지면 학부모가 한 번에 내기 어렵습니다 — 따로 보내는 것을 먼저 생각해보세요.`;
   }
   return null;
 }

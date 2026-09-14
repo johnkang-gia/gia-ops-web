@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { checkRevision, parseSince } from "@/lib/boardRevision";
-import { cached } from "@/lib/ttlCache";
 import { setBoardingStatus } from "@/lib/boardingWrite";
 import { createClient } from "@supabase/supabase-js";
 import { ridesToday } from "@/lib/ridesToday";
@@ -54,15 +53,26 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   const rev = await checkRevision(supabase, "shuttle", parseSince(req.url), link.term);
   if (!rev.stale) return NextResponse.json({ unchanged: true, revision: rev.revision });
 
-  const { data: routes } = await cached(`arr:routes:${link.term}`, async () =>
-    supabase
+// ── 하원 명단은 **잠깐도 들고 있지 않습니다** ──────────────────────────────
+//
+// 예전에는 노선·정류장·배정·명부를 `cached()` 로 2분 들고 있었습니다. 그런데 이 화면에는
+// 이미 **번호 문지기**(`checkRevision`)가 있습니다 - 아무것도 안 바뀌었으면 바로 위에서
+// `unchanged` 로 끝나 조회가 한 번도 안 일어납니다.
+//
+// 그래서 여기까지 내려왔다는 것은 **무언가 바뀌었다는 뜻**인데, 하필 그때 캐시가 옛 답을
+// 돌려줬습니다. 「번호는 바뀌었다는데 명단은 그대로」가 됐고, 체크표에서 뺀 아이가 차량
+// 도착·출발 체크에는 최대 2분 더 남아 있었습니다. 차번호를 고쳐도 마찬가지였습니다.
+//
+// 하원 시간의 2분은 「안 태워야 하는 아이를 태우는 2분」입니다. 아끼는 일은 번호 문지기가
+// 이미 하고 있으므로, 여기서는 언제나 지금 자료를 읽습니다.
+
+  const { data: routes } = await (supabase
       .from("shuttle_routes")
       .select("id, route_no, name, driver_name, driver_phone, vehicle_no")
       .eq("active", true)
       .eq("direction", "하원")
       .eq("term", link.term)
-      .order("sort_order"),
-  );
+      .order("sort_order"));
   const routeIds = (routes ?? []).map((r) => r.id);
   if (routeIds.length === 0) {
     return NextResponse.json({ label: link.label, term: link.term, routes: [] });
@@ -79,9 +89,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   // 묶었습니다(요청: "실시간 반영 속도 더 개선") - 이 화면은 3초마다 폴링하는 화면이라, 매
   // 요청의 왕복 횟수를 하나 줄이면 그만큼 화면 반영이 빨라집니다.
   const [{ data: stops }, { data: events }] = await Promise.all([
-    cached(`arr:stops:${routeIds.join(",")}`, async () =>
-      supabase.from("shuttle_stops").select("id, route_id, address").in("route_id", routeIds),
-    ),
+    (supabase.from("shuttle_stops").select("id, route_id, address").in("route_id", routeIds)),
     supabase
       .from("shuttle_run_events")
       .select("route_id, event, created_at, created_by")
@@ -93,12 +101,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   const stopById = new Map((stops ?? []).map((s) => [s.id, s]));
 
   const { data: assignments } = stopIds.length
-    ? await cached(`arr:assign:${stopIds.join(",")}`, async () =>
-        supabase
+    ? await (supabase
           .from("shuttle_assignments")
           .select("id, stop_id, student_id, student_name_raw, weekdays, override_route_id, choice_group, choice_label")
-          .in("stop_id", stopIds),
-      )
+          .in("stop_id", stopIds))
     : { data: [] as { id: string; stop_id: string; student_id: string | null; student_name_raw: string; weekdays: number[]; override_route_id: string | null; choice_group: string | null; choice_label: string | null }[] };
 
   // 하원 체크표에서 오늘 하루만 다른 노선으로 옮긴 학생은 그 노선 명단에 나타납니다(요청:
@@ -148,9 +154,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   // is_giamicro_user()`가 박혀 있어서, 로그인 없이 도는 이 화면(서비스 키)에서는 한 줄도
   // 안 나옵니다. 오류도 안 납니다 - 그냥 빈 결과라, 학년이 조용히 안 붙었습니다.
   const { data: stuRows, error: stuErr } = studentIds.length
-    ? await cached(`arr:stu:${studentIds.length}`, async () =>
-        supabase.from("wr_students").select("id, name, grade, class_name").eq("is_demo", false).in("id", studentIds),
-      )
+    ? await (supabase.from("wr_students").select("id, name, grade, class_name").eq("is_demo", false).in("id", studentIds))
     : { data: [] as { id: string; name: string; grade: string | null; class_name: string | null }[], error: null };
   if (stuErr) console.error("[arrival] 학생 학년·반 조회 실패 — 동명이인 구분이 안 붙습니다:", stuErr.message);
   const stuById = new Map(((stuRows as { id: string; name: string; grade: string | null; class_name: string | null }[] | null) ?? []).map((r) => [r.id, r]));
@@ -229,13 +233,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   // 요청: "모바일로 제대로 (GPS가) 돌아가는지 체크할 수 있도록" - 노선별로 기사님 휴대폰이
   // 마지막으로 위치를 보내온 시각을 함께 내려, 화면에서 "GPS 살아있음/끊김"을 눈으로 확인할 수
   // 있게 합니다. 기기가 아직 없거나(설정 전) 꺼둔 노선은 null입니다.
-  // 기기 목록은 안 바뀌지만 **마지막 신호 시각은 계속 바뀝니다.** 짧게만 들고 있습니다 -
-  // 길게 잡으면 화면의 GPS 표시가 실제보다 오래된 것을 가리킵니다.
-  const { data: devices } = await cached(
-    `arr:dev:${routeIds.join(",")}`,
-    async () => supabase.from("shuttle_tracker_devices").select("route_id, last_seen_at, enabled").in("route_id", routeIds),
-    20_000,
-  );
+  // **마지막 신호 시각은 계속 바뀝니다.** 들고 있으면 화면의 GPS 표시가 실제보다 오래된
+  // 것을 가리킵니다 - 「신호 살아 있음」이 사실은 20초 전 이야기인 것이 가장 나쁩니다.
+  const { data: devices } = await supabase
+    .from("shuttle_tracker_devices")
+    .select("route_id, last_seen_at, enabled")
+    .in("route_id", routeIds);
   const gpsByRoute = new Map<string, string | null>();
   for (const d of devices ?? []) {
     if (d.enabled === false) continue;

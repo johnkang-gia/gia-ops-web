@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { subscribeShuttleLive } from "@/lib/shuttleLive";
 import { useConfirm } from "@/components/common/ConfirmProvider";
 import { useToast } from "@/components/common/ToastProvider";
 import { buildWhereMaps, nameWithoutMark, needsCheck, normName, whereOf } from "@/lib/studentLabel";
@@ -82,24 +83,12 @@ export default function DismissalRosterClient({
    * 걸렀다가 새로 들어온 줄과 지워진 줄을 통째로 놓쳤습니다 - 화면에 없는 것은 필터에도
    * 안 걸리니까요.
    */
-  useEffect(() => {
-    const supabase = createClient();
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    // 한 번 고치면 여러 줄이 잇따라 오므로 조금 모았다 한 번만 다시 읽습니다.
-    const refresh = () => {
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(() => router.refresh(), 300);
-    };
-    const ch = supabase
-      .channel("roster-sync")
-      .on("postgres_changes", { event: "*", schema: "public", table: "shuttle_assignments" }, refresh)
-      .on("postgres_changes", { event: "*", schema: "public", table: "shuttle_stops" }, refresh)
-      .subscribe();
-    return () => {
-      if (timer) clearTimeout(timer);
-      void supabase.removeChannel(ch);
-    };
-  }, [router]);
+  //
+  // **무엇을 듣는지는 `shuttleLive.ts` 한 곳에서 정합니다.** 예전에는 이 화면이 배정과
+  // 정류장만 듣고 있어서, 옆 탭(체크표)에서 결석·픽업을 눌러도 명단은 몰랐고 차번호를
+  // 고쳐도 옛 번호를 보여줬습니다. 화면마다 목록을 따로 적으면 빠뜨린 화면은 오류를 내지
+  // 않고 그냥 옛 명단을 냅니다.
+  useEffect(() => subscribeShuttleLive(createClient(), () => router.refresh(), "roster-sync"), [router]);
 
   /** 노선 번호를 찾는 표. 「원래 28호」를 적으려면 번호가 필요합니다. */
   const routeNoById = useMemo(() => new Map(routes.map((r) => [r.id, r.route_no])), [routes]);

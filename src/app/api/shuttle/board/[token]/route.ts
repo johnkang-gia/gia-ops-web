@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { checkRevision, parseSince } from "@/lib/boardRevision";
-import { cached } from "@/lib/ttlCache";
 import { todayKst } from "@/lib/kst";
 import { ridesToday } from "@/lib/ridesToday";
 import { isUndecidedChoice } from "@/lib/shuttleChoice";
@@ -38,15 +37,26 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   const rev = await checkRevision(supabase, "shuttle", parseSince(req.url), `board:${link.term}`);
   if (!rev.stale) return NextResponse.json({ unchanged: true, revision: rev.revision });
 
-  const { data: routes } = await cached(`brd:routes:${link.term}`, async () =>
-    supabase
+// ── 하원 명단은 **잠깐도 들고 있지 않습니다** ──────────────────────────────
+//
+// 예전에는 노선·정류장·배정·명부를 `cached()` 로 2분 들고 있었습니다. 그런데 이 화면에는
+// 이미 **번호 문지기**(`checkRevision`)가 있습니다 - 아무것도 안 바뀌었으면 바로 위에서
+// `unchanged` 로 끝나 조회가 한 번도 안 일어납니다.
+//
+// 그래서 여기까지 내려왔다는 것은 **무언가 바뀌었다는 뜻**인데, 하필 그때 캐시가 옛 답을
+// 돌려줬습니다. 「번호는 바뀌었다는데 명단은 그대로」가 됐고, 체크표에서 뺀 아이가 차량
+// 도착·출발 체크에는 최대 2분 더 남아 있었습니다. 차번호를 고쳐도 마찬가지였습니다.
+//
+// 하원 시간의 2분은 「안 태워야 하는 아이를 태우는 2분」입니다. 아끼는 일은 번호 문지기가
+// 이미 하고 있으므로, 여기서는 언제나 지금 자료를 읽습니다.
+
+  const { data: routes } = await (supabase
       .from("shuttle_routes")
       .select("id, route_no, name")
       .eq("active", true)
       .eq("direction", "하원")
       .eq("term", link.term)
-      .order("sort_order"),
-  );
+      .order("sort_order"));
   const routeIds = (routes ?? []).map((r) => r.id);
   if (routeIds.length === 0) {
     return NextResponse.json({ label: link.label, youtubeVideoId: link.youtube_video_id, routes: [] });
@@ -61,21 +71,17 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   const [{ data: stops }, eventsRes] = await Promise.all([
     // 정류장·배정은 학기 중 거의 안 바뀝니다. 안내보드는 3초마다 물어보는 화면이라,
     // 매번 다시 읽으면 안 바뀌는 것을 하루 수천 번 실어 나릅니다.
-    cached(`brd:stops:${routeIds.join(",")}`, async () =>
-      supabase.from("shuttle_stops").select("id, route_id, seq").in("route_id", routeIds),
-    ),
+    (supabase.from("shuttle_stops").select("id, route_id, seq").in("route_id", routeIds)),
     supabase.from("shuttle_run_events").select("route_id, event, created_at").in("route_id", routeIds).eq("service_date", today).order("created_at", { ascending: true }),
   ]);
   const stopIds = (stops ?? []).map((s) => s.id);
   const stopById = new Map((stops ?? []).map((s) => [s.id, s]));
 
   const { data: assignments } = stopIds.length
-    ? await cached(`brd:assign:${stopIds.join(",")}`, async () =>
-        supabase
+    ? await (supabase
           .from("shuttle_assignments")
           .select("id, stop_id, student_name_raw, weekdays, override_route_id, choice_group")
-          .in("stop_id", stopIds),
-      )
+          .in("stop_id", stopIds))
     : { data: [] as { id: string; stop_id: string; student_name_raw: string; weekdays: number[]; override_route_id: string | null; choice_group: string | null }[] };
   // 체크표를 **먼저** 읽습니다. 요일로 먼저 거르면 오늘만 태우는 아이는 읽히지도 않습니다
   // - 자세한 사정은 ridesToday.ts 에 적어 두었습니다.

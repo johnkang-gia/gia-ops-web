@@ -5,6 +5,7 @@ import { buildWhereMaps, normName as normStudentName } from "@/lib/studentLabel"
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { subscribeShuttleLive } from "@/lib/shuttleLive";
 import { logChecklist, reasonOf, type ChecklistLogRow, type LogActor } from "@/lib/checklistLog";
 import { setBoardingStatus } from "@/lib/boardingWrite";
 import { useToast } from "@/components/common/ToastProvider";
@@ -236,22 +237,20 @@ export default function ShuttleChecklistClient({
    *
    * 걸러내지 않고 전부 받습니다 - 화면에 아직 없는 노선이 새로 생기는 것은 필터에 안 걸립니다.
    */
-  useEffect(() => {
-    const supabase = createClient();
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const refresh = () => {
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(() => router.refresh(), 300);
-    };
-    const ch = supabase
-      .channel("checklist-routes")
-      .on("postgres_changes", { event: "*", schema: "public", table: "shuttle_routes" }, refresh)
-      .subscribe();
-    return () => {
-      if (timer) clearTimeout(timer);
-      void supabase.removeChannel(ch);
-    };
-  }, [router]);
+  //
+  // **무엇을 듣는지는 `shuttleLive.ts` 한 곳에서 정합니다.** 예전에는 이 자리가 노선만
+  // 듣고 있어서 정류장을 옮기거나 하원수단을 고쳐도 체크표는 몰랐습니다. 아래에서 아주
+  // 촘촘히 듣는 세 표는 빼고(눌렀을 때 그 줄만 바로 고치는 것이 더 빠릅니다), 나머지는
+  // 전부 여기서 받아 화면을 다시 그립니다.
+  useEffect(
+    () =>
+      subscribeShuttleLive(createClient(), () => router.refresh(), "checklist-live", [
+        "shuttle_assignments",
+        "shuttle_boardings",
+        "shuttle_persistent_notes",
+      ]),
+    [router],
+  );
   const [activityLog, setActivityLog] = useState<ChecklistLogRow[]>(initialLog);
 
   /**

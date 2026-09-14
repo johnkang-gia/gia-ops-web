@@ -197,6 +197,26 @@ export default function ImportReviewClient({
 
   const readyCount = rows.filter((r) => r.decision === "승인" && !r.appliedAt).length;
 
+  /** 잘못 올린 묶음을 버립니다. 버리는 길이 없으면 그 파일은 목록에 남고, 남으면 언젠가 눌립니다. */
+  async function discard() {
+    const reason = window.prompt("이 묶음을 버립니다. 왜 버리나요?\n(예: 잘못 올림 / 시험으로 올림)", "");
+    if (reason === null) return;
+    setBusy(true);
+    const res = await fetch("/api/finance/import/discard", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ batchId, reason }),
+    });
+    const json = (await res.json().catch(() => null)) as { error?: string } | null;
+    setBusy(false);
+    if (!res.ok) {
+      notify(json?.error ?? "버리지 못했습니다.", "error");
+      return;
+    }
+    notify("버렸습니다.", "success");
+    router.push("/finance/import");
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {/* ── 진행 ─────────────────────────────────────────────────────────── */}
@@ -228,6 +248,17 @@ export default function ImportReviewClient({
           >
             📥 승인한 {readyCount}줄 반영하기
           </button>
+          {status !== "반영됨" && status !== "버림" && (
+            <button
+              type="button"
+              disabled={busy || counts.반영됨 > 0}
+              onClick={() => void discard()}
+              className="rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-500 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-40"
+              title={counts.반영됨 > 0 ? "이미 나간 줄이 있어 버릴 수 없습니다" : "잘못 올린 묶음을 버립니다"}
+            >
+              🗑 버리기
+            </button>
+          )}
         </div>
       </div>
 

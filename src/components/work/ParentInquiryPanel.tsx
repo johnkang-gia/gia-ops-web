@@ -645,11 +645,29 @@ export default function ParentInquiryPanel({
   // 명부는 문의보다 늦게 옵니다. 먼저 만든 이름표에는 반이 없을 수 있어, 명부가 들어오면
   // **한 번 더** 만듭니다 - 그러지 않으면 「정레인」으로 남고 반이 영영 안 붙습니다.
   useEffect(() => {
-    studentOfRef.current = studentOf;
+    studentOfRef.current = whoForResult;
     if (roster.length === 0 || rows.length === 0) return;
-    void loadAuto(rows.map((r) => r.id), new Map(rows.map((r) => [r.id, studentOf(r)])));
+    void loadAuto(rows.map((r) => r.id), new Map(rows.map((r) => [r.id, whoForResult(r)])));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roster, rows]);
+
+  /**
+   * 처리 결과 문구에 쓸 이름 — **반을 늘 붙입니다.**
+   *
+   * 목록에서는 겹치는 이름에만 반을 붙입니다(§2-4-2) - 137명 전부에 붙이면 정작 구분이
+   * 필요한 이름이 묻히기 때문입니다. 그런데 여기는 목록이 아니라 **한 건을 열어 읽는
+   * 자리**라 묻힐 것이 없고, 「누구에게 된 것인가」가 이 줄의 전부입니다. 그래서 반대로
+   * 합니다 - 반이 있으면 무조건 적습니다.
+   */
+  function whoForResult(r: Inquiry): string {
+    const label = studentOf(r);
+    const base = label.replace(/\(.*?\)$/, "").trim();
+    const hit = roster.filter((x) => x.name === base);
+    // 명부에서 한 명으로 좁혀질 때만 반을 붙입니다. 여럿이면 목록이 붙여준 표시
+    // (「김재이(G2C·G2A 중 누구?)」)를 그대로 둡니다 - 거기에 반을 또 붙이면 거짓말이 됩니다.
+    const cls = hit.length === 1 ? hit[0].class_name : null;
+    return cls ? `${base}(${cls})` : label;
+  }
 
   const Row = ({ r, full }: { r: Inquiry; full?: boolean }) => (
     <div

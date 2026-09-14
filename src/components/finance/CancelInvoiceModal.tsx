@@ -72,13 +72,19 @@ export default function CancelInvoiceModal({
       const done = json.invoice as Invoice;
       const moved = Number(json?.detached ?? 0);
       const gone = Number(json?.removed ?? 0);
+      const back = Number(json?.returned ?? 0);
       onDone(done);
+      // **되돌리기라는 것을 말로도 맞춥니다.** 원래 선입금이던 돈이 선입금으로 돌아간 것은
+      // 새로 생긴 일이 아니므로 「남습니다」가 아니라 「돌아갔습니다」로 적습니다 - 앞의
+      // 말투는 못 보던 일이 생긴 것처럼 읽혀서, 담당자가 뭔가 잘못됐다고 여깁니다.
       notify(
         moved > 0
-          ? `${done.invoice_no} 을(를) 취소했습니다. 수납에서 붙였던 ${moved.toLocaleString("ko-KR")}원은 선입금으로 남습니다.`
-          : gone > 0
-            ? `${done.invoice_no} 을(를) 취소하고, 함께 넣었던 ${gone.toLocaleString("ko-KR")}원 입금도 내렸습니다. 발행 전으로 돌아갔습니다.`
-            : `${done.invoice_no} 을(를) 취소했습니다. 항목을 고친 뒤 다시 발행할 수 있습니다.`,
+          ? `${done.invoice_no} 을(를) 취소했습니다. 수납에서 붙였던 ${moved.toLocaleString("ko-KR")}원은 선입금으로 남습니다 — [수납 → 선입금]에서 확인하세요.`
+          : back > 0
+            ? `${done.invoice_no} 을(를) 취소했습니다. 충당했던 선입금 ${back.toLocaleString("ko-KR")}원은 원래대로 돌아갔습니다.`
+            : gone > 0
+              ? `${done.invoice_no} 을(를) 취소하고, 함께 넣었던 ${gone.toLocaleString("ko-KR")}원 입금도 내렸습니다. 발행 전으로 돌아갔습니다.`
+              : `${done.invoice_no} 을(를) 취소했습니다. 항목을 고친 뒤 다시 발행할 수 있습니다.`,
         "success",
       );
       onClose();

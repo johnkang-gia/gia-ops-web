@@ -353,6 +353,9 @@ const DOCS_TABS: TabDef[] = [
 // 순서는 자주 여는 것부터입니다. 재무 일은 대개 "지금 어디까지 됐나"에서 시작합니다.
 const FINANCE_TABS: TabDef[] = [
   { key: "overview", label: "개요", icon: "📊", href: "/finance", match: ["/finance"] },
+  // **월별·학기별**은 「지금」이 아니라 「흐름」을 보는 자리입니다. 다음 달에 얼마를 청구할지는
+  // 지난 달들을 나란히 놓고 정하는 일인데, 지금까지 나란히 놓을 자리가 없었습니다.
+  { key: "monthly", label: "월별", icon: "📅", href: "/finance/monthly", match: ["/finance/monthly"] },
   // 청구 — 학비와 학비외를 **한 자리에** 둡니다.
   //
   // 둘은 대분류로 나란히 서 있었습니다. 그런데 하는 일은 하나입니다 - 이번 달에 이 아이에게
@@ -382,9 +385,13 @@ const FINANCE_TABS: TabDef[] = [
     label: "수납",
     icon: "💳",
     href: "/finance/payments",
-    match: ["/finance/payments", "/finance/receipts"],
+    match: ["/finance/payments", "/finance/receipts", "/finance/prepaid"],
     children: [
       { label: "수납", href: "/finance/payments", match: ["/finance/payments"] },
+      // 선입금은 **수납의 한 종류**입니다 — 청구서보다 먼저 들어왔거나, 취소로 떨어져 나온
+      // 돈입니다. 지금까지 보는 자리가 없어서 그 돈이 다음 청구서를 저절로 깎았고, 왜
+      // 깎였는지 알 방법이 없었습니다.
+      { label: "선입금", href: "/finance/prepaid", match: ["/finance/prepaid"] },
       { label: "현금영수증", href: "/finance/receipts", match: ["/finance/receipts"] },
     ],
   },

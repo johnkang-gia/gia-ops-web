@@ -104,8 +104,49 @@ export default function WorkBoardClient({
    * 비용이고, 안 누르면 「오늘 할 일이 없네」로 읽힙니다.
    */
   const [activeDeptId, setActiveDeptId] = useState<string | null>(
-    deptList.find((d) => d.name === myDepartment)?.id ?? deptList.find((d) => d.name !== ALL_SCOPE)?.id ?? deptList[0]?.id ?? null,
+    // **「전체」는 첫 화면이 되지 않습니다.**
+    //
+    // 앞 판은 자기 소속을 그대로 폈습니다. 그런데 최고관리자·개발자의 소속은 「전체」라서
+    // 그분들에게는 여전히 전체 탭이 떴습니다 - 전체 탭은 부서가 안 정해진 업무만 보여주는
+    // 자리라, 열면 대개 비어 있고 「오늘 할 일이 없네」로 읽힙니다.
+    //
+    // 소속이 「전체」인 사람에게는 **실제 부서 중 첫 번째**를 폅니다. 전체를 보고 싶으면
+    // 탭을 한 번 누르면 되고, 그 선택은 아래에서 기억합니다.
+    deptList.find((d) => d.name === myDepartment && d.name !== ALL_SCOPE)?.id ??
+      deptList.find((d) => d.name !== ALL_SCOPE)?.id ??
+      deptList[0]?.id ??
+      null,
   );
+
+  /**
+   * **마지막으로 고른 부서를 기억합니다.**
+   *
+   * 소속이 「전체」인 분은 볼 부서가 정해져 있지 않습니다. 매번 같은 탭을 다시 누르게 두면
+   * 그 한 번이 매일 쌓입니다. 사람마다 다른 답이라 사람 것으로 기억합니다.
+   *
+   * 기억이 없거나 그 부서가 사라졌으면 위의 기본값을 그대로 씁니다 - 기억을 못 읽었다고
+   * 화면이 비면 안 됩니다.
+   */
+  const deptMemoryKey = `work.dept.${userEmail}`;
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(deptMemoryKey);
+      if (saved && deptList.some((d) => d.id === saved)) setActiveDeptId(saved);
+    } catch {
+      // 브라우저가 저장소를 막아둔 경우(사생활 보호 모드). 기본값으로 그냥 엽니다.
+    }
+    // 목록이 바뀌는 일은 거의 없고, 바뀌었다고 사람이 보던 탭을 옮기면 안 됩니다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function chooseDept(id: string) {
+    setActiveDeptId(id);
+    try {
+      window.localStorage.setItem(deptMemoryKey, id);
+    } catch {
+      // 못 적어도 이번 화면은 바뀝니다. 다음에 다시 고르면 됩니다.
+    }
+  }
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [toasts, setToasts] = useState<StatusToast[]>([]);
   const [guideOpen, setGuideOpen] = useState(false);
@@ -342,7 +383,7 @@ export default function WorkBoardClient({
           return (
             <button
               key={dept.id}
-              onClick={() => setActiveDeptId(dept.id)}
+              onClick={() => chooseDept(dept.id)}
               style={active ? { backgroundColor: dept.color + "22", color: dept.color } : undefined}
               className={"flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-semibold transition " + (active ? "" : "text-slate-500 hover:bg-black/5")}
             >

@@ -65,12 +65,24 @@ export async function POST(req: Request) {
 
   type PayRow = { id: string; amount: number | string; matched_by: string | null };
   const rows = (pays as PayRow[] | null) ?? [];
-  const fromIssue = rows.filter((p) => p.matched_by === "이미받음");
-  const fromDesk = rows.filter((p) => p.matched_by !== "이미받음");
-  const deskPaid = fromDesk.reduce((n, p) => n + Number(p.amount), 0);
 
-  // 되묻는 것은 **사람이 따로 넣은 입금**이 있을 때뿐입니다. 「이미 받음」으로 만든 줄까지
-  // 매번 물으면, 가장 흔한 경우(금액 고쳐 다시 발행)에 확인 창이 하나 더 끼어듭니다.
+  // ③ **발행이 끌어다 붙인 선입금**(`선입금 자동충당`).
+  //
+  // 이 돈은 발행 **전부터** 선입금으로 있던 것을 발행이 가져다 붙인 것입니다. 취소하면 원래
+  // 있던 자리로 돌아갈 뿐이라, 새로 생기는 것이 없습니다.
+  //
+  // 앞 판은 이것을 ②(사람이 붙인 입금)와 같이 취급해서 **매번 「선입금으로 남습니다」라고
+  // 물었습니다.** 취소는 되돌리기인데 되돌릴 때마다 못 보던 경고가 뜨니, 담당자는 뭔가
+  // 잘못됐다고 읽게 됩니다. 원래 자리로 돌아가는 것은 물을 일이 아닙니다.
+  const fromIssue = rows.filter((p) => p.matched_by === "이미받음");
+  const fromPrepaid = rows.filter((p) => p.matched_by === "선입금 자동충당");
+  const fromDesk = rows.filter((p) => p.matched_by !== "이미받음" && p.matched_by !== "선입금 자동충당");
+  const deskPaid = fromDesk.reduce((n, p) => n + Number(p.amount), 0);
+  const prepaidBack = fromPrepaid.reduce((n, p) => n + Number(p.amount), 0);
+
+  // 되묻는 것은 **사람이 따로 넣은 입금**이 있을 때뿐입니다. 「이미 받음」으로 만든 줄과
+  // 원래 선입금이던 줄까지 매번 물으면, 가장 흔한 경우(금액 고쳐 다시 발행)에 확인 창이
+  // 하나 더 끼어듭니다.
   if (deskPaid > 0 && !force) {
     return NextResponse.json(
       {
@@ -100,8 +112,27 @@ export async function POST(req: Request) {
     removed = fromIssue.reduce((n, p) => n + Number(p.amount), 0);
   }
 
+  // 끌어다 붙였던 선입금은 **원래대로** 떼어냅니다. 출처 이름을 그대로 둡니다 - 예전에는
+  // 「청구 취소로 떼어냄」으로 덮어써서, 그 줄이 원래 무엇이었는지가 사라졌습니다.
+  let returned = 0;
+  if (fromPrepaid.length > 0) {
+    const { error: backErr } = await supabase
+      .from("payments")
+      .update({ invoice_id: null })
+      .in("id", fromPrepaid.map((p) => p.id));
+    if (backErr) {
+      return NextResponse.json(
+        { error: `충당했던 선입금을 되돌리지 못해 취소하지 않았습니다: ${backErr.message}` },
+        { status: 500 },
+      );
+    }
+    returned = prepaidBack;
+  }
+
   let detached = 0;
   if (fromDesk.length > 0) {
+    // 원래 출처를 지우지 않고 **덧붙입니다.** 「수기 · 청구 취소로 떼어냄」처럼 남겨야
+    // 선입금 화면에서 이 돈이 어디서 왔는지 읽을 수 있습니다.
     const { error: cutErr } = await supabase
       .from("payments")
       .update({ invoice_id: null, matched_by: "청구 취소로 떼어냄" })
@@ -129,5 +160,5 @@ export async function POST(req: Request) {
     .single();
   if (error || !data) return NextResponse.json({ error: error?.message ?? "취소하지 못했습니다." }, { status: 500 });
 
-  return NextResponse.json({ ok: true, invoice: data, detached, removed });
+  return NextResponse.json({ ok: true, invoice: data, detached, removed, returned });
 }

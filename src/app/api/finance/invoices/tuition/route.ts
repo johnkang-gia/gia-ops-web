@@ -157,6 +157,14 @@ export async function POST(req: Request) {
   // 세어져, 월별 수납 집계가 통째로 어긋납니다.
   const issue = paidAt ?? todayKst();
   const due = dueDate && /^\d{4}-\d{2}-\d{2}$/.test(dueDate) ? dueDate : issue;
+  /**
+   * 청구월(YYYY-MM). 안 주면 발행일의 월입니다.
+   *
+   * 서식이 어긋난 값은 **받지 않고 발행일로 눕힙니다** - 여기서 거절하면 청구가 통째로
+   * 멈추고, 그대로 넣으면 데이터베이스의 검사에 걸려 같은 결과가 됩니다.
+   */
+  const rawMonth = String((body as { billingMonth?: unknown } | null)?.billingMonth ?? "").trim();
+  const billingMonth = /^\d{4}-(0[1-9]|1[0-2])$/.test(rawMonth) ? rawMonth : null;
 
   const recipient = resolveRecipient(
     // 판정은 @/lib/alltalkpay 한 곳에서. 학생별 결제번호가 기본이고, 이번 건만 다르게
@@ -191,6 +199,9 @@ export async function POST(req: Request) {
       student_name_ko: student.name,
       grade_label: gradeLabel({ grade: student.grade, className: student.class_name }),
       issue_date: issue,
+      // **몇 월치인가.** 화면이 안 주면 발행일의 월을 씁니다 - 지금까지 그렇게 세어 왔으니
+      // 그 값이 지금의 참입니다. 9월분을 8월 말에 미리 보내는 경우에만 화면이 따로 고릅니다.
+      billing_month: billingMonth ?? issue.slice(0, 7),
       due_date: due,
       total_amount: total + carry.total,
       guardian_phone: recipient?.phone ?? null,

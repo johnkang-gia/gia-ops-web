@@ -216,6 +216,27 @@ export function resolveRecipient(
   return null;
 }
 
+/**
+ * **청구사유 앞에 붙이는 청구서 번호.**
+ *
+ * ── 왜 넣나 ────────────────────────────────────────────────────────────────
+ *
+ * 올톡페이에서 내려받은 결제 결과에는 **우리 청구서 번호가 없습니다.** 있는 것은 고객명·
+ * 핸드폰·청구사유·금액뿐입니다. 그래서 「누가 냈나」를 이름과 금액으로 맞춰야 하는데,
+ *
+ *   · 같은 이름이 셋입니다(김재이).
+ *   · 형제 둘을 한 번호로 합쳐 보내면 이름이 두 개 붙습니다.
+ *   · 실제 자료에서 청구사유가 「악기비」·「악기(바이올린)」·「악기비 (바이올린)」로
+ *     흔들렸습니다 — 같은 것인데 글자가 달라 따로 세어집니다.
+ *
+ * 번호를 앞에 박아두면 되받은 엑셀에서 **기계가 정확히 그 청구서를 찾습니다.** 학부모
+ * 화면에도 번호가 보여서, 문의가 왔을 때 그 번호로 바로 찾습니다.
+ */
+export function withInvoiceNo(memo: string, invoiceNos: readonly string[]): string {
+  const tag = invoiceNos.filter(Boolean).join(",");
+  return tag ? `[${tag}] ${memo}` : memo;
+}
+
 /** 청구 내용 문구. 항목 이름을 그대로 이어 붙이되 너무 길면 "외 N건"으로 줄입니다. */
 export function memoFor(names: string[], max = 40): string {
   if (names.length === 0) return "학비외 납부";
@@ -298,7 +319,10 @@ export function buildBillPlan(
         phone,
         role: list[0].role,
         amount: list.reduce((n, e) => n + Number(e.inv.total_amount), 0),
-        memo: list.length > 1 ? `${names.join(", ")} 학비외 납부` : memoFor(list[0].inv.itemNames),
+        memo: withInvoiceNo(
+          list.length > 1 ? `${names.join(", ")} 학비외 납부` : memoFor(list[0].inv.itemNames),
+          list.map((e) => e.inv.invoice_no),
+        ),
         // 형제의 납부기한이 다르면 **빠른 쪽**에 맞춥니다. 늦은 쪽에 맞추면 하나가 연체됩니다.
         dueDate: list.map((e) => e.inv.due_date).sort()[0],
         invoiceNos: list.map((e) => e.inv.invoice_no),
@@ -313,7 +337,7 @@ export function buildBillPlan(
         phone,
         role,
         amount: Number(inv.total_amount),
-        memo: memoFor(inv.itemNames),
+        memo: withInvoiceNo(memoFor(inv.itemNames), [inv.invoice_no]),
         dueDate: inv.due_date,
         invoiceNos: [inv.invoice_no],
         invoiceIds: [inv.id],

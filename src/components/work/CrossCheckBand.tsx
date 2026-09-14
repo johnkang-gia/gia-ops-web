@@ -32,7 +32,12 @@ const VERDICT_STYLE: Record<Verdict, { chip: string; dot: string; label: string 
   "양쪽 확인": { chip: "bg-emerald-100 text-emerald-700", dot: "bg-emerald-500", label: "양쪽 확인" },
 };
 
-/** 며칠치를 볼 것인가. 학기 전체를 훑으면 오늘 볼 것이 지난 것에 묻힙니다. */
+/**
+ * 며칠 전까지 볼 것인가. 학기 전체를 훑으면 오늘 볼 것이 지난 것에 묻힙니다.
+ *
+ * **앞날은 자릅니다.** 「21~23일 결석합니다」처럼 미리 온 연락도 대조 대상입니다 - 오히려
+ * 그런 건이 처리에서 빠지기 쉬우므로 지금 보여주는 것이 맞습니다.
+ */
 const DAYS = 14;
 
 export default function CrossCheckBand() {
@@ -107,7 +112,7 @@ export default function CrossCheckBand() {
         title="토들(학부모)과 구글챗(직원방)이 같은 말을 했는지 맞대어 봅니다"
       >
         <span className="text-[11px] font-bold text-slate-700">🔀 두 창구 대조</span>
-        <span className="text-[10px] text-slate-400">최근 {DAYS}일 결석</span>
+        <span className="text-[10px] text-slate-400">최근 {DAYS}일 · 앞날 결석</span>
         <span className="ml-auto flex items-center gap-1">
           <Pill n={summary.both} kind="양쪽 확인" />
           <Pill n={summary.chatOnly} kind="구글챗에만" />
@@ -170,7 +175,7 @@ export default function CrossCheckBand() {
 
           {needLook === 0 && (
             <p className="border-t border-slate-100 px-2.5 py-1.5 text-[10px] font-semibold text-emerald-700">
-              최근 {DAYS}일 결석은 두 창구가 모두 같은 말을 했습니다.
+              최근 {DAYS}일과 앞날 결석은 두 창구가 모두 같은 말을 했습니다.
             </p>
           )}
         </div>

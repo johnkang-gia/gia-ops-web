@@ -241,6 +241,12 @@ export default function ParentInquiryPanel({
   // 영어로 온 이름을 한글로 바꾸기 위한 명부. 요청: "영어이름으로 문의를 올렸다면 학생명부와
   // 대조후에 한글이름으로 올려줘". 한 번만 읽어 재사용합니다.
   const [roster, setRoster] = useState<RosterEntry[]>([]);
+  // `loadAuto` 는 한 번만 만들어 두는 함수라(useCallback[]), 안에서 `roster` 를 그냥 읽으면
+  // 처음의 빈 배열에 묶입니다. 명부가 나중에 도착해도 이름을 못 찾게 되므로 ref 로 봅니다.
+  const rosterRef = useRef<RosterEntry[]>([]);
+  useEffect(() => {
+    rosterRef.current = roster;
+  }, [roster]);
 
   /**
    * 앱이 이 문의로 **무엇을 했는가.**
@@ -337,7 +343,14 @@ export default function ParentInquiryPanel({
         .select("source_message_id, status, state, date_from, date_to, reason")
         .eq("source", "toddle")
         .in("source_message_id", ids),
-      supabase.from("shuttle_ride_alongs").select("request_id, status, student_name, student_surface, route_no").in("request_id", ids),
+      // **칸 이름을 표와 맞춥니다.** 예전에는 `student_name` · `route_no` 를 달라고 했는데
+      // 그 표에는 그런 칸이 없습니다(`student_surface` · `route_id`). 조회가 통째로 실패해
+      // **동승 자동 처리가 이 화면에 한 번도 뜬 적이 없었습니다** - 화면에는 오류가 아니라
+      // 「아무것도 안 했나 보다」로 보였습니다.
+      supabase
+        .from("shuttle_ride_alongs")
+        .select("request_id, status, student_id, student_surface, route_id, shuttle_routes(name)")
+        .in("request_id", ids),
     ]);
     // 표가 아직 없어도(마이그레이션 전) 목록은 떠야 합니다. 뱃지만 안 붙습니다.
     if (entRes.error) console.error("[학부모 문의] 자동 출결 처리를 읽지 못했습니다:", entRes.error.message);
@@ -363,15 +376,28 @@ export default function ParentInquiryPanel({
               : "출결이 아니라고 판단해 아무것도 하지 않았습니다.",
       });
     }
-    for (const r of (rideRes.data as { request_id: string; status: string; student_name: string | null; student_surface: string | null; route_no: string | null }[] | null) ?? []) {
-      const who = r.student_name ?? r.student_surface ?? "학생";
+    type RideRow = {
+      request_id: string;
+      status: string;
+      student_id: string | null;
+      student_surface: string | null;
+      route_id: string | null;
+      shuttle_routes: { name: string | null } | { name: string | null }[] | null;
+    };
+    for (const r of ((rideRes.data as unknown as RideRow[] | null) ?? [])) {
+      // **번호가 있으면 명부에서 이름을 찾습니다.** `student_surface` 는 학부모가 적어 온
+      // 원문 표기(「하임이」)라 그것만 띄우면 누구인지 알 수 없습니다.
+      const named = r.student_id ? rosterRef.current.find((s) => s.id === r.student_id) : null;
+      const who = named?.name ?? r.student_surface ?? "학생";
+      const route = Array.isArray(r.shuttle_routes) ? r.shuttle_routes[0]?.name : r.shuttle_routes?.name;
+      const car = route ? `${route} ` : "";
       push(r.request_id, {
         kind: "동승",
         state: r.status === "확정" ? "등록" : r.status === "취소" ? "무시" : "확인필요",
-        label: r.status === "확정" ? `동승 ${r.route_no ? `${r.route_no}호` : ""}`.trim() : r.status === "취소" ? "동승 취소" : "동승? 확인 필요",
+        label: r.status === "확정" ? `동승 ${route ?? ""}`.trim() : r.status === "취소" ? "동승 취소" : "동승? 확인 필요",
         detail:
           r.status === "확정"
-            ? `자동으로 ${who}를 오늘 ${r.route_no ? `${r.route_no}호에 ` : ""}같이 타도록 올렸습니다.`
+            ? `자동으로 ${who}를 오늘 ${car}에 같이 타도록 올렸습니다.`.replace(" 에 ", " ")
             : r.status === "취소"
               ? "사람이 아니라고 판단해 아무것도 하지 않았습니다."
               : `${who} 가 누구인지 못 가려서 아직 올리지 않았습니다. 픽업 인박스에서 체크 필요.`,

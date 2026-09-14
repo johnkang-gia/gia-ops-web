@@ -401,13 +401,15 @@ const FINANCE_TABS: TabDef[] = [
     label: "수납",
     icon: "💳",
     href: "/finance/payments",
-    match: ["/finance/payments", "/finance/receipts", "/finance/prepaid"],
+    match: ["/finance/payments", "/finance/receipts", "/finance/prepaid", "/finance/import"],
     children: [
       { label: "수납", href: "/finance/payments", match: ["/finance/payments"] },
       // 선입금은 **수납의 한 종류**입니다 — 청구서보다 먼저 들어왔거나, 취소로 떨어져 나온
       // 돈입니다. 지금까지 보는 자리가 없어서 그 돈이 다음 청구서를 저절로 깎았고, 왜
       // 깎였는지 알 방법이 없었습니다.
       { label: "선입금", href: "/finance/prepaid", match: ["/finance/prepaid"] },
+      // 올톡페이에서 받은 파일을 올려 검수하는 자리. 수납과 같은 일이라 여기 둡니다.
+      { label: "결제내역 올리기", href: "/finance/import", match: ["/finance/import"] },
       { label: "현금영수증", href: "/finance/receipts", match: ["/finance/receipts"] },
     ],
   },

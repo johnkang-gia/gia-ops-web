@@ -9,6 +9,7 @@ import RunCronButtons from "@/components/dev/RunCronButtons";
 import DiagnosticsToolbar from "@/components/dev/DiagnosticsToolbar";
 import MigrationSqlButton from "@/components/dev/MigrationSqlButton";
 import { runIntegrityChecks } from "@/lib/integrityChecks";
+import { buildAccuracy, pct, type AccuracyEntry, type AccuracyPickup, type AccuracyRule } from "@/lib/pickupAccuracy";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -135,6 +136,9 @@ export default async function DevDiagnosticsPage() {
     { count: todayReq },
     { count: todayPickup },
     { count: openInquiry },
+    { data: accPickups },
+    { data: accEntries },
+    { data: accRules },
     integrity,
   ] = await Promise.all([
     supabase.from("shuttle_routes").select("id, route_no, vehicle_no, driver_name, term").eq("active", true).eq("direction", "하원"),
@@ -146,9 +150,22 @@ export default async function DevDiagnosticsPage() {
     supabase.from("pickup_requests").select("id", { count: "exact", head: true }).gte("received_at", dayStart),
     supabase.from("pickup_requests").select("id", { count: "exact", head: true }).eq("kind", "픽업").eq("service_date", today),
     supabase.from("pickup_requests").select("id", { count: "exact", head: true }).eq("kind", "문의").is("answered_at", null),
+    // 자동 분류 정확도. 「몇 %가 맞았나」 하나로 뭉뚱그리지 않습니다 - 고칠 자리가 저마다 다릅니다.
+    supabase
+      .from("pickup_requests")
+      .select("student_id, channel_id, channel_label, raw_text, summary, kind, inquiry_type")
+      .eq("is_demo", false),
+    supabase.from("attendance_entries").select("state, touched_by_human"),
+    supabase.from("attendance_learning_rules").select("kind, pattern, student_name"),
     // 화면에서는 멀쩡해 보이는데 실제로는 틀린 것들. 사고가 나기 전에는 아무도 모릅니다.
     runIntegrityChecks(supabase),
   ]);
+
+  const acc = buildAccuracy({
+    pickups: (accPickups ?? []) as AccuracyPickup[],
+    entries: (accEntries ?? []) as AccuracyEntry[],
+    rules: (accRules ?? []) as AccuracyRule[],
+  });
   const routeById = new Map((routes ?? []).map((r) => [r.id as string, r]));
   const integrityBad = integrity.filter((i) => i.count > 0);
 
@@ -467,6 +484,72 @@ export default async function DevDiagnosticsPage() {
             );
           })
         )}
+      </Card>
+
+      {/* ── 자동 분류가 얼마나 맞고 있는가 ──────────────────────────────────
+          토들 방을 학생에게 이어 둔 이유는 **실수 없이 아이를 특정해서 출결을 자동으로
+          하기 위해서**입니다. 그게 지금 얼마나 되고 있는지 화면 어디에도 없었습니다 -
+          숫자가 없으면 고쳐도 나아졌는지 알 수 없습니다. */}
+      <Card title="⑦ 토들 연락 자동 분류 정확도">
+        <Row
+          label="아이가 정해짐"
+          verdict={acc.withStudent / Math.max(acc.total, 1) > 0.9 ? "ok" : "warn"}
+          detail={`${acc.withStudent} / ${acc.total}건 (${pct(acc.withStudent, acc.total)})`}
+        />
+        <Row
+          label="집만 정해짐"
+          verdict="info"
+          detail={`${acc.houseOnly}건 — 아이를 한 명 정할 필요가 없는 글입니다(준비물·감사 인사 등). 그 집 아이들 모두의 이력에 뜹니다.`}
+        />
+        <Row
+          label="집도 학생도 없음"
+          verdict={acc.orphan > 0 ? "warn" : "ok"}
+          detail={
+            acc.orphan > 0
+              ? `${acc.orphan}건 — 방 연결이 없습니다. [학교 → 학생 → 토들 채널]에서 이으면 저절로 채워집니다.`
+              : "없습니다."
+          }
+        />
+        <Row
+          label="사람이 봐야 할 줄"
+          verdict={acc.needsOneUnresolved > 0 ? "bad" : "ok"}
+          detail={
+            acc.needsOneUnresolved > 0
+              ? `${acc.needsOneUnresolved} / ${acc.needsOne}건 — 출결·하원 글인데 형제 중 누구인지 못 갈랐습니다. 이 숫자가 0이어야 합니다.`
+              : `출결·하원 ${acc.needsOne}건 모두 아이가 정해졌습니다.`
+          }
+        />
+        <Row
+          label="본문이 없는 줄"
+          verdict={acc.noText / Math.max(acc.total, 1) > 0.2 ? "warn" : "info"}
+          detail={`${acc.noText}건 (${pct(acc.noText, acc.total)}) — 대부분 「감사합니다」 같은 인사말이라 일부러 안 남긴 것입니다(대화를 쌓아두지 않는 원칙).`}
+        />
+        <Row
+          label="요약도 없는 줄"
+          verdict={acc.noTextNoSummary > 0 ? "warn" : "ok"}
+          detail={
+            acc.noTextNoSummary > 0
+              ? `${acc.noTextNoSummary}건 — 사람이 봐도 무슨 글인지 알 수 없습니다. 수집기가 본문을 못 가져왔을 수 있습니다.`
+              : "없습니다."
+          }
+        />
+        <Row
+          label="믿기 어려운 별칭"
+          verdict={acc.shakyAliases.length > 0 ? "warn" : "ok"}
+          detail={
+            acc.shakyAliases.length > 0
+              ? `${acc.shakyAliases.length}건 — ${acc.shakyAliases
+                  .slice(0, 4)
+                  .map((r) => `「${r.pattern}」(${r.studentName ?? "?"}: ${r.why})`)
+                  .join(" · ")}. 이런 규칙은 엉뚱한 글을 그 아이 것으로 만듭니다.`
+              : "가르친 별칭이 모두 멀쩡합니다."
+          }
+        />
+        <Row
+          label="사람이 고친 출결 판정"
+          verdict={acc.entriesHumanFixed / Math.max(acc.entriesLive, 1) > 0.2 ? "warn" : "info"}
+          detail={`${acc.entriesHumanFixed} / ${acc.entriesLive}건 (${pct(acc.entriesHumanFixed, acc.entriesLive)}) — 자동이 틀렸거나 애매했던 비율입니다. 줄어야 자동을 믿을 수 있습니다.`}
+        />
       </Card>
 
       <Card title="⑥ 오늘 들어온 학부모 연락">

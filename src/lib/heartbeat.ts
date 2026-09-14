@@ -67,6 +67,12 @@ export const INTEGRATIONS: IntegrationSpec[] = [
   { key: "cron:purge-shuttle-locations", label: "GPS 기록 정리", what: "오래된 위치 기록을 지웁니다. 용량 관리의 핵심입니다.", everyMinutes: 60 * 24 },
   { key: "cron:purge-trash", label: "휴지통 비우기", what: "30일 지난 삭제 항목을 정리합니다.", everyMinutes: 60 * 24 },
   { key: "cron:archive-tasks", label: "완료업무 보관", what: "끝난 업무를 보관함으로 옮깁니다.", everyMinutes: 60 * 24 },
+  {
+    key: "cron:toddle-backfill",
+    label: "토들 방↔학생 되짚기",
+    what: "이어 둔 방으로 지난 연락의 집·학생을 채웁니다. 멈추면 누구 것인지 모르는 연락이 쌓입니다.",
+    everyMinutes: 60 * 24,
+  },
   { key: "cron:daily-backup", label: "일일 백업", what: "", everyMinutes: 60 * 24 },
   { key: "cron:chat-subscription-renew", label: "구글챗 구독 갱신", what: "실시간 푸시 유효기간을 연장합니다.", everyMinutes: 60 * 24 },
   { key: "cron:term-switch", label: "학기 전환 확인", what: "", everyMinutes: 60 * 24 },

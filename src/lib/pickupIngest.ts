@@ -11,7 +11,7 @@ import {
 } from "@/lib/pickupParse";
 import { resolveStudent } from "@/lib/studentMatch";
 import { loadAliasIndex } from "@/lib/aliasIndex";
-import { loadChannelLink, touchChannel } from "@/lib/channelLink";
+import { findChannelId, loadChannelLink, touchChannel } from "@/lib/channelLink";
 import { decideOwner } from "@/lib/pickupOwner";
 import { othersMentioned, otherChildNote, ambiguousNote } from "@/lib/toddleChannel";
 import { extractTargetDate, extractTargetRange } from "@/lib/attendanceDigest";
@@ -443,6 +443,9 @@ export async function ingestPickup(
   // 이 방에서 글이 들어왔다는 사실을 남깁니다. 토들에서 방 목록을 받아올 길이 없으니,
   // **글이 들어온 방이 우리가 아는 전부**입니다. 남기지 않으면 연결 화면에 안 뜹니다.
   await touchChannel(supabase, input.channelLabel, receivedAt.toISOString());
+  // **어느 집에서 온 연락인가.** 사람이 확인했든 아니든 방은 방입니다 - 「어느 방에서
+  // 왔나」는 판단이 아니라 사실이라, 학생을 한 명으로 못 좁혀도 버리지 않습니다.
+  const channelId = await findChannelId(supabase, input.channelLabel);
 
   // ── 「감사합니다」로 끝나는 글은 AI를 부르지 않습니다 ──────────────────
   //
@@ -461,6 +464,9 @@ export async function ingestPickup(
       source_chat_id: input.chatId ?? null,
       source_url: input.sourceUrl ?? null,
       channel_label: input.channelLabel ?? null,
+      // **어느 집에서 온 연락인가.** 방이 확정되면 집은 언제나 확정입니다 - 형제방이라
+      // 아이를 한 명으로 못 좁혀도 그 집 것이라는 사실은 버리지 않습니다.
+      channel_id: channelId,
       sender_name: input.senderName ?? null,
       received_at: receivedAt.toISOString(),
       // 본문은 남기지 않습니다(학부모 대화를 쌓아두지 않겠다는 원칙 그대로).
@@ -649,6 +655,9 @@ export async function ingestPickup(
         source: input.source,
         source_ref: input.sourceRef,
         channel_label: input.channelLabel ?? null,
+      // **어느 집에서 온 연락인가.** 방이 확정되면 집은 언제나 확정입니다 - 형제방이라
+      // 아이를 한 명으로 못 좁혀도 그 집 것이라는 사실은 버리지 않습니다.
+      channel_id: channelId,
         received_at: receivedAt.toISOString(),
         // 본문은 남기지 않습니다(학부모 대화를 쌓아두지 않겠다는 원칙 그대로).
         raw_text: null,
@@ -857,6 +866,9 @@ export async function ingestPickup(
       source_chat_id: input.chatId ?? null,
       source_url: input.sourceUrl ?? null,
       channel_label: input.channelLabel ?? null,
+      // **어느 집에서 온 연락인가.** 방이 확정되면 집은 언제나 확정입니다 - 형제방이라
+      // 아이를 한 명으로 못 좁혀도 그 집 것이라는 사실은 버리지 않습니다.
+      channel_id: channelId,
       sender_name: input.senderName ?? null,
       received_at: receivedAt.toISOString(),
       raw_text: text,
@@ -918,6 +930,9 @@ export async function ingestPickup(
         // 안 그러면 중복 방지에 걸려 둘째 아이 줄이 조용히 안 만들어집니다.
         source_ref: input.sourceRef ? `${input.sourceRef}#${o.student.id}` : null,
         channel_label: input.channelLabel ?? null,
+      // **어느 집에서 온 연락인가.** 방이 확정되면 집은 언제나 확정입니다 - 형제방이라
+      // 아이를 한 명으로 못 좁혀도 그 집 것이라는 사실은 버리지 않습니다.
+      channel_id: channelId,
         sender_name: input.senderName ?? null,
         received_at: receivedAt.toISOString(),
         raw_text: text,

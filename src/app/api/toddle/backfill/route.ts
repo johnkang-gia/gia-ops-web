@@ -4,6 +4,7 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { isStaffOrAboveUser } from "@/lib/roles";
 import {
   planBackfill,
+  type BackfillPlan,
   pickSiblingFromText,
   type BackfillChannel,
   type BackfillRow,
@@ -40,20 +41,22 @@ async function loadPlan(supabase: Awaited<ReturnType<typeof createClient>>) {
       .from("pickup_requests")
       // **본문을 함께 읽습니다.** 형제방은 방이 하나뿐이라 본문 말고는 누구인지 가릴
       // 재료가 없습니다.
-      .select("id, channel_label, student_id, matched_name, ai_student_name, raw_text, summary")
-      .is("student_id", null)
+      .select("id, channel_label, channel_id, student_id, matched_name, ai_student_name, raw_text, summary, kind, inquiry_type")
+      // **집이 안 붙은 줄도 함께 봅니다.** 학생은 못 정해도 집은 정할 수 있고, 그것만으로도
+      // 그 연락이 그 집 아이들 이력에 뜹니다.
+      .or("student_id.is.null,channel_id.is.null")
       .eq("is_demo", false),
     // **사람이 확인한 방만** 씁니다. 화면이 제안만 해둔 줄을 쓰면, 기계가 제안한 것이
     // 사람이 확인한 것처럼 굳어집니다.
     supabase
       .from("toddle_channels")
-      .select("label, confirmed_at, toddle_channel_students(student_id, seq)")
+      .select("id, label, confirmed_at, toddle_channel_students(student_id, seq)")
       .not("confirmed_at", "is", null),
   ]);
   if (rowsRes.error) return { error: rowsRes.error.message } as const;
   if (chRes.error) return { error: chRes.error.message } as const;
 
-  type ChRow = { label: string; toddle_channel_students: { student_id: string; seq: number }[] };
+  type ChRow = { id: string; label: string; toddle_channel_students: { student_id: string; seq: number }[] };
   const chRows = (chRes.data ?? []) as unknown as ChRow[];
   const ids = [...new Set(chRows.flatMap((c) => (c.toddle_channel_students ?? []).map((l) => l.student_id)))];
 
@@ -98,6 +101,7 @@ async function loadPlan(supabase: Awaited<ReturnType<typeof createClient>>) {
   };
 
   const channels: BackfillChannel[] = chRows.map((c) => ({
+    id: c.id,
     label: c.label,
     // 졸업·전학으로 명부에서 빠진 아이는 뺍니다. 없는 아이를 가리키는 연결은 붙는 순간 틀립니다.
     students: [...(c.toddle_channel_students ?? [])]
@@ -119,15 +123,79 @@ export async function GET() {
   const r = await loadPlan(supabase);
   if ("error" in r) return NextResponse.json({ error: r.error }, { status: 500 });
 
-  const { fill, ask, skip } = r.plan;
+  const { fill, house, ask, skip } = r.plan;
   return NextResponse.json({
     ok: true,
-    summary: { fill: fill.length, ask: ask.length, skip: skip.length },
+    summary: { fill: fill.length, house: house.length, ask: ask.length, skip: skip.length },
     // 미리 보기용 몇 줄. 전부 내려보내면 화면이 무거워지고, 사람이 확인하는 데는 몇 줄이면 됩니다.
     sample: fill.slice(0, 20),
     askSample: ask.slice(0, 20),
   });
 }
+
+/**
+ * **계획을 실제 표로 내보냅니다.** 화면(POST)과 크론이 같은 함수를 씁니다 - 두 곳에 적으면
+ * 반드시 어긋나고, 어긋난 쪽은 「왜 크론은 다르게 채우지」가 됩니다.
+ */
+export async function applyPlan(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  plan: BackfillPlan,
+  by: string,
+) {
+  let filled = 0;
+  let housed = 0;
+  const failures: { what: string; error: string }[] = [];
+
+  // ── ① 집 붙이기 ───────────────────────────────────────────────────────
+  //
+  // 학생이 정해졌든 아니든 붙입니다. 같은 방끼리 묶어 한 번에 - 한 줄씩 보내면 수백 번의
+  // 왕복이 되고, 중간에 끊기면 어디까지 갔는지 모릅니다.
+  const byChannel = new Map<string, string[]>();
+  for (const h of plan.house) byChannel.set(h.channelId, [...(byChannel.get(h.channelId) ?? []), h.id]);
+  for (const [channelId, rowIds] of byChannel) {
+    const { data, error } = await supabase
+      .from("pickup_requests")
+      .update({ channel_id: channelId })
+      .in("id", rowIds)
+      // 그 사이에 붙었을 수 있습니다. **비어 있는 줄만** 고칩니다.
+      .is("channel_id", null)
+      .select("id");
+    if (error) {
+      failures.push({ what: `집 ${channelId}`, error: error.message });
+      continue;
+    }
+    housed += (data ?? []).length;
+  }
+
+  // ── ② 학생 붙이기 ─────────────────────────────────────────────────────
+  const byStudent = new Map<string, string[]>();
+  for (const f of plan.fill) byStudent.set(f.studentId, [...(byStudent.get(f.studentId) ?? []), f.id]);
+  for (const [studentId, rowIds] of byStudent) {
+    const name = plan.fill.find((f) => f.studentId === studentId)?.studentName ?? null;
+    const { data, error } = await supabase
+      .from("pickup_requests")
+      .update({
+        student_id: studentId,
+        matched_name: name,
+        // 되짚어 채웠다는 **사실을 남깁니다.** 나중에 이 줄이 왜 이 아이로 되어 있는지
+        // 물어볼 곳이 있어야 합니다.
+        ai_note: `사람이 확인한 토들 방 연결로 되짚어 채웠습니다 (${by})`,
+      })
+      .in("id", rowIds)
+      // 그 사이에 누가 손으로 정했을 수 있습니다. **비어 있는 줄만** 고칩니다.
+      .is("student_id", null)
+      .select("id");
+    if (error) {
+      failures.push({ what: `학생 ${name ?? studentId}`, error: error.message });
+      continue;
+    }
+    filled += (data ?? []).length;
+  }
+
+  return { filled, housed, failed: failures.length, failures: failures.slice(0, 10), stillAsk: plan.ask.length };
+}
+
+export { loadPlan };
 
 export async function POST() {
   const me = await getCurrentAppUser();
@@ -138,47 +206,6 @@ export async function POST() {
   const r = await loadPlan(supabase);
   if ("error" in r) return NextResponse.json({ error: r.error }, { status: 500 });
 
-  const { fill } = r.plan;
-  if (fill.length === 0) {
-    return NextResponse.json({ ok: true, filled: 0, note: "채울 수 있는 줄이 없습니다." });
-  }
-
-  // 같은 학생끼리 묶어 한 번에 고칩니다. 한 줄씩 보내면 134번의 왕복이 되고, 중간에
-  // 끊기면 어디까지 갔는지 모릅니다.
-  const byStudent = new Map<string, string[]>();
-  for (const f of fill) byStudent.set(f.studentId, [...(byStudent.get(f.studentId) ?? []), f.id]);
-
-  let filled = 0;
-  const failures: { studentId: string; error: string }[] = [];
-  for (const [studentId, rowIds] of byStudent) {
-    const name = fill.find((f) => f.studentId === studentId)?.studentName ?? null;
-    const { data, error } = await supabase
-      .from("pickup_requests")
-      .update({
-        student_id: studentId,
-        matched_name: name,
-        // 되짚어 채웠다는 **사실을 남깁니다.** 나중에 이 줄이 왜 이 아이로 되어 있는지
-        // 물어볼 곳이 있어야 합니다.
-        ai_note: `사람이 확인한 토들 방 연결로 되짚어 채웠습니다 (${me.email})`,
-      })
-      .in("id", rowIds)
-      // 그 사이에 누가 손으로 정했을 수 있습니다. **비어 있는 줄만** 고칩니다.
-      .is("student_id", null)
-      .select("id");
-    if (error) {
-      failures.push({ studentId, error: error.message });
-      continue;
-    }
-    filled += (data ?? []).length;
-  }
-
-  return NextResponse.json({
-    ok: true,
-    tried: fill.length,
-    filled,
-    // 조용히 넘기면 「다 됐다」로 보입니다. 안 된 것이 있으면 그대로 돌려줍니다.
-    failed: failures.length,
-    failures: failures.slice(0, 10),
-    stillAsk: r.plan.ask.length,
-  });
+  const out = await applyPlan(supabase, r.plan, me.email);
+  return NextResponse.json({ ok: true, ...out });
 }

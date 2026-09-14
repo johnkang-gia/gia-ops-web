@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/common/ToastProvider";
 
-type Summary = { fill: number; ask: number; skip: number };
+type Summary = { fill: number; house: number; ask: number; skip: number };
 type FillRow = { id: string; studentId: string; studentName: string; channel: string; why: string };
 type AskRow = { id: string; channel: string; candidates: { id: string; name: string }[]; text: string | null };
 
@@ -53,16 +53,16 @@ export default function ChannelBackfillBand() {
     try {
       const res = await fetch("/api/toddle/backfill", { method: "POST" });
       const j = (await res.json().catch(() => null)) as
-        | { error?: string; filled?: number; tried?: number; failed?: number; stillAsk?: number }
+        | { error?: string; filled?: number; housed?: number; failed?: number; stillAsk?: number }
         | null;
       if (!res.ok) {
         notify(j?.error ?? "채우지 못했습니다.", "error");
         return;
       }
       notify(
-        `${j?.filled}줄에 학생을 채웠습니다.` +
+        `학생 ${j?.filled}줄 · 집 ${j?.housed}줄을 채웠습니다.` +
           (j?.failed ? ` ${j.failed}건은 실패했습니다.` : "") +
-          (j?.stillAsk ? ` 형제방 ${j.stillAsk}줄은 사람이 골라야 합니다.` : ""),
+          (j?.stillAsk ? ` 형제방 출결 ${j.stillAsk}줄은 사람이 골라야 합니다.` : ""),
         j?.failed ? "error" : "success",
       );
       await load();
@@ -80,15 +80,17 @@ export default function ChannelBackfillBand() {
     );
   }
   // 채울 것도 물어볼 것도 없으면 띠 자체를 안 띄웁니다. 늘 떠 있는 0은 아무도 안 읽습니다.
-  if (!summary || (summary.fill === 0 && summary.ask === 0)) return null;
+  if (!summary || (summary.fill === 0 && summary.house === 0 && summary.ask === 0)) return null;
 
   return (
     <div className="mb-3 rounded-xl border border-indigo-200 bg-indigo-50/60">
       <div className="flex flex-wrap items-center gap-2 px-3 py-2.5">
         <span className="text-[12px] font-bold text-indigo-900">🔗 이어 둔 방으로 지난 연락 채우기</span>
         <span className="text-[11px] text-indigo-800">
-          학생이 안 정해진 연락 중 <b>{summary.fill}줄</b>은 방 연결과 본문으로 누구인지 정해집니다.
-          {summary.ask > 0 && <> 형제방인데 <b>본문으로도 못 가른 {summary.ask}줄</b>은 사람이 골라야 합니다.</>}
+          {summary.fill > 0 && <><b>{summary.fill}줄</b>은 아이가 정해집니다. </>}
+          {summary.house > 0 && <><b>{summary.house}줄</b>은 아이를 한 명 정할 필요가 없는 글이라 <b>집만</b> 붙입니다. </>}
+          {summary.ask > 0 && <>출결·하원인데 형제 중 누구인지 못 가른 <b>{summary.ask}줄</b>만 사람이 봅니다.</>}
+          {summary.ask === 0 && <span className="text-emerald-700">사람이 볼 줄은 없습니다.</span>}
         </span>
         <div className="ml-auto flex items-center gap-1.5">
           <button
@@ -100,11 +102,12 @@ export default function ChannelBackfillBand() {
           </button>
           <button
             type="button"
-            disabled={busy || summary.fill === 0}
+            disabled={busy || summary.fill + summary.house === 0}
             onClick={() => void apply()}
+            title="밤마다 저절로도 돕니다. 지금 바로 돌리고 싶을 때 누릅니다."
             className="rounded-lg bg-indigo-600 px-3 py-1 text-[11px] font-bold text-white hover:bg-indigo-700 disabled:opacity-40"
           >
-            {busy ? "채우는 중…" : `${summary.fill}줄 채우기`}
+            {busy ? "채우는 중…" : `지금 돌리기 (${summary.fill + summary.house}줄)`}
           </button>
         </div>
       </div>
@@ -112,9 +115,13 @@ export default function ChannelBackfillBand() {
       {open && (
         <div className="border-t border-indigo-200 px-3 py-2">
           <p className="mb-1.5 text-[10px] leading-relaxed text-indigo-800">
-            사람이 확인한 방만 씁니다. 토들은 한 집에 방이 하나라 <b>형제방은 본문을 읽어</b> 가릅니다 — 한 아이만
-            나오거나 한 아이만 결석·픽업으로 적혀 있으면 그 아이입니다. <b>둘 다 나오거나 아무도 안 나오면 고르지
-            않습니다</b> — 기계가 찍으면 오는 아이가 셔틀에서 빠집니다. 방을 못 찾은 {summary.skip}줄도 그대로 둡니다.
+            <b>밤마다 저절로 돕니다.</b> 사람이 확인한 방만 씁니다. 토들은 한 집에 방이 하나라 <b>형제방은 본문을
+            읽어</b> 가릅니다 — 한 아이만 나오거나 한 아이만 결석·픽업으로 적혀 있으면 그 아이입니다.
+            <br />
+            못 갈랐을 때는 <b>글의 성격을 봅니다</b> — 「아이들 방과후 신청합니다」처럼 아이를 한 명 정할 필요가 없는
+            글은 <b>집만 붙이고</b> 그 집 아이들 모두의 이력에 띄웁니다. 한 명을 찍으면 다른 아이 기록에서 그 연락이
+            사라지니까요. 출결·하원처럼 <b>한 명이어야만 하는 글</b>만 사람에게 남깁니다. 방을 못 찾은 {summary.skip}줄은
+            그대로 둡니다.
           </p>
           <div className="max-h-48 overflow-y-auto rounded-lg border border-indigo-100 bg-white">
             {sample.map((f) => (

@@ -62,3 +62,31 @@ export async function touchChannel(supabase: SupabaseClient, label: string | nul
     console.error("[channel] 방 기록을 남기지 못했습니다 — 연결 화면에 안 뜰 수 있습니다:", error.message);
   }
 }
+
+/**
+ * **방 번호만 찾습니다** — 사람이 확인했든 아니든.
+ *
+ * `loadChannelLink` 는 「이 연락은 누구 이야기인가」를 정하는 데 쓰므로 **사람이 확인한 방만**
+ * 돌려줍니다. 그건 판단이라서 그렇습니다.
+ *
+ * 하지만 「어느 방에서 왔는가」는 판단이 아니라 **사실**입니다. 확인 전이든 형제방이든 방은
+ * 방이고, 그 사실을 버릴 이유가 없습니다 - 학생을 한 명으로 못 좁혀도 그 집 아이들 이력에는
+ * 떠야 합니다.
+ */
+export async function findChannelId(
+  supabase: SupabaseClient,
+  label: string | null | undefined,
+): Promise<string | null> {
+  const clean = (label ?? "").trim();
+  if (!clean) return null;
+  const { data, error } = await supabase.from("toddle_channels").select("id").eq("label", clean).maybeSingle();
+  if (error) {
+    // 표가 아직 없는 경우(마이그레이션 전)는 조용히 넘깁니다. 그 밖에는 남깁니다 -
+    // 집이 안 붙으면 그 연락은 아무에게도 안 보입니다.
+    if (error.code !== "PGRST205" && error.code !== "42P01") {
+      console.error("[channel] 방 번호를 찾지 못했습니다 — 이 연락에 집이 안 붙습니다:", error.message);
+    }
+    return null;
+  }
+  return (data as { id: string } | null)?.id ?? null;
+}

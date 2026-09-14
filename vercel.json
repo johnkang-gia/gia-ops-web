@@ -51,6 +51,10 @@
     {
       "path": "/api/cron/data-export",
       "schedule": "40 14 * * *"
+    },
+    {
+      "path": "/api/cron/toddle-backfill",
+      "schedule": "5 15 * * *"
     }
   ]
 }

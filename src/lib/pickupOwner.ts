@@ -111,6 +111,37 @@ export function decideOwner(input: {
   };
 }
 
+
+// ── 학생 한 명이 꼭 필요한 글인가 ───────────────────────────────────────────
+
+/**
+ * **모든 연락에 아이를 한 명 정할 필요는 없습니다.**
+ *
+ * 남은 형제방 52건의 본문을 실제로 읽어 보고 알게 된 것입니다.
+ *
+ *     「언제까지 노트북 준비 하면 될까요?」
+ *     「아이들 화목 방과후 다음주부터 부탁드립니다」
+ *     「감사 인사」
+ *
+ * 이런 글에 아이를 한 명 찍으면 **오히려 틀립니다** - 「아이들 화목 방과후」를 형 한 명 것으로
+ * 적으면 동생 기록에서 그 연락이 사라집니다.
+ *
+ * 아이가 한 명으로 정해져야 하는 것은 **출결·하원에 반영되는 글**뿐입니다. 그 글은 누구를
+ * 셔틀에서 빼고 누구를 출석부에 적을지를 정하므로, 한 명이 아니면 아무것도 할 수 없습니다.
+ *
+ * 그 밖의 글은 **집만 확정되면 충분합니다**(`channel_id`). 그 집 아이들 모두의 이력에
+ * 함께 뜨는 것이 사실에 더 가깝습니다.
+ *
+ * 실측(2026-09-15): 형제방 52건 중 학생 한 명이 필요한 글은 **4건**이었습니다.
+ */
+const NEEDS_ONE_STUDENT_INQUIRY = ["출결", "차량·하원"];
+
+export function needsOneStudent(kind: string | null | undefined, inquiryType: string | null | undefined): boolean {
+  // 픽업은 그 아이를 오늘 셔틀에서 빼는 일입니다. 누구인지 모르면 할 수 없습니다.
+  if ((kind ?? "") === "픽업") return true;
+  return NEEDS_ONE_STUDENT_INQUIRY.includes(inquiryType ?? "");
+}
+
 // ── 지난 줄 되짚어 채우기 ────────────────────────────────────────────────────
 
 /** `pickup_requests` 한 줄 중 되짚기에 필요한 것만. */
@@ -123,6 +154,11 @@ export type BackfillRow = {
   /** 형제방을 가르는 유일한 재료. 방이 하나뿐이라 본문 말고는 가릴 것이 없습니다. */
   raw_text: string | null;
   summary?: string | null;
+  /** 아이를 한 명으로 정해야 하는 글인지 가릅니다(`needsOneStudent`). */
+  kind?: string | null;
+  inquiry_type?: string | null;
+  /** 이미 집이 붙어 있는가. 붙어 있으면 다시 안 붙입니다. */
+  channel_id?: string | null;
 };
 
 /**
@@ -173,6 +209,7 @@ export type SiblingReader = (
 
 /** 사람이 확인한 방 하나. 확인 안 된 방은 넘기지 않습니다. */
 export type BackfillChannel = {
+  id: string;
   label: string;
   students: OwnerCandidate[];
 };
@@ -180,8 +217,16 @@ export type BackfillChannel = {
 export type BackfillPlan = {
   /** 바로 채울 수 있는 줄. 방에 아이가 한 명이거나, 형제방이지만 본문이 갈라 준 경우입니다. */
   fill: { id: string; studentId: string; studentName: string; channel: string; why: string }[];
-  /** 형제방인데 **본문으로도 못 가른** 줄. 이때만 사람이 봅니다. */
-  ask: { id: string; channel: string; candidates: OwnerCandidate[]; text: string | null }[];
+  /**
+   * **집만 붙이고 넘어가는 줄.** 형제방인데 본문이 안 갈렸지만, 아이를 한 명 정할 필요가
+   * 없는 글입니다(문의·기타). 그 집 아이들 모두의 이력에 뜹니다.
+   */
+  house: { id: string; channelId: string; channel: string; candidates: OwnerCandidate[] }[];
+  /**
+   * 형제방인데 본문으로도 못 갈랐고, **아이가 한 명 정해져야 하는 글**입니다.
+   * 이때만 사람이 봅니다 - 출결·하원은 누구인지 모르면 아무것도 할 수 없습니다.
+   */
+  ask: { id: string; channelId: string; channel: string; candidates: OwnerCandidate[]; text: string | null }[];
   /** 방을 못 찾았거나 아직 확인 안 된 방. */
   skip: { id: string; channel: string | null; why: string }[];
 };
@@ -215,19 +260,37 @@ export function planBackfill(
     if (k) byLabel.set(k, c);
   }
 
-  const plan: BackfillPlan = { fill: [], ask: [], skip: [] };
+  const plan: BackfillPlan = { fill: [], house: [], ask: [], skip: [] };
   for (const r of rows) {
-    // 이미 정해진 줄은 건드리지 않습니다. 사람이 고른 것을 되짚기가 덮으면 안 됩니다.
-    if (r.student_id) continue;
-
     const key = labelKey(r.channel_label);
     const ch = key ? byLabel.get(key) : undefined;
     if (!ch) {
-      plan.skip.push({
-        id: r.id,
-        channel: r.channel_label,
-        why: key ? "사람이 확인한 방 목록에 이 방이 없습니다." : "방 이름이 비어 있습니다.",
-      });
+      // 학생도 집도 못 붙입니다. 이미 학생이 정해진 줄이면 굳이 적지 않습니다.
+      if (!r.student_id) {
+        plan.skip.push({
+          id: r.id,
+          channel: r.channel_label,
+          why: key ? "사람이 확인한 방 목록에 이 방이 없습니다." : "방 이름이 비어 있습니다.",
+        });
+      }
+      continue;
+    }
+
+    // ── ① 집 붙이기 ─────────────────────────────────────────────────────
+    //
+    // **학생이 정해졌든 아니든 집은 붙입니다.** 방이 확정되면 집은 언제나 확정이고,
+    // 그 확정을 버릴 이유가 없습니다.
+    if (!r.channel_id) {
+      plan.house.push({ id: r.id, channelId: ch.id, channel: ch.label, candidates: ch.students });
+    }
+
+    // ── ② 학생 정하기 ───────────────────────────────────────────────────
+    //
+    // 이미 정해진 줄은 건드리지 않습니다. 사람이 고른 것을 되짚기가 덮으면 안 됩니다.
+    if (r.student_id) continue;
+
+    if (ch.students.length === 0) {
+      plan.skip.push({ id: r.id, channel: ch.label, why: "이 방에 이어진 학생이 없습니다." });
       continue;
     }
     if (ch.students.length === 1) {
@@ -238,24 +301,27 @@ export function planBackfill(
         channel: ch.label,
         why: "이 방의 아이는 한 명입니다.",
       });
-    } else if (ch.students.length > 1) {
-      // 형제방. 방으로는 못 가르니 **본문을 읽습니다.**
-      const text = (r.raw_text ?? r.summary ?? "").trim();
-      const read = text && readSibling ? readSibling(text, ch.students) : null;
-      if (read) {
-        plan.fill.push({
-          id: r.id,
-          studentId: read.student.id,
-          studentName: read.student.name,
-          channel: ch.label,
-          why: read.why,
-        });
-      } else {
-        plan.ask.push({ id: r.id, channel: ch.label, candidates: ch.students, text: text || null });
-      }
-    } else {
-      plan.skip.push({ id: r.id, channel: ch.label, why: "이 방에 이어진 학생이 없습니다." });
+      continue;
     }
+
+    // 형제방. 방으로는 못 가르니 **본문을 읽습니다.**
+    const text = (r.raw_text ?? r.summary ?? "").trim();
+    const read = text && readSibling ? readSibling(text, ch.students) : null;
+    if (read) {
+      plan.fill.push({
+        id: r.id,
+        studentId: read.student.id,
+        studentName: read.student.name,
+        channel: ch.label,
+        why: read.why,
+      });
+    } else if (needsOneStudent(r.kind, r.inquiry_type)) {
+      // 출결·하원에 반영되는 글입니다. 한 명이 아니면 아무것도 할 수 없으므로 사람이 봅니다.
+      plan.ask.push({ id: r.id, channelId: ch.id, channel: ch.label, candidates: ch.students, text: text || null });
+    }
+    // 그 밖의 글은 위에서 집을 붙였습니다. **사람에게 넘기지 않습니다** - 「아이들 화목
+    // 방과후」에 아이를 한 명 찍으면 다른 아이 기록에서 그 연락이 사라집니다.
   }
+
   return plan;
 }

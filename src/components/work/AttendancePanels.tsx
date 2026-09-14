@@ -7,6 +7,7 @@ import type { RosterStudent } from "@/lib/attendanceDigest";
 import AttendanceDigestPanel from "./AttendanceDigestPanel";
 import ParentInquiryPanel from "./ParentInquiryPanel";
 import OfficeRequestsPanel from "./OfficeRequestsPanel";
+import CrossCheckBand from "./CrossCheckBand";
 
 // 통합 인박스(커맨드센터 개편): 학부모 문의·출결내역·출결알림·선생님요청 등 "들어오는 소식"을
 // 필터 탭 하나의 패널로 모았습니다. 예전에는 학부모 문의/픽업/선생님요청 배너가 화면 곳곳에
@@ -184,6 +185,9 @@ export default function AttendancePanels({
             {/* 「오늘 하원체크」는 업무보드 맨 위로 올라갔습니다. 같은 화면에 두 번 뜨면
                 둘 중 하나는 아무도 안 보게 되고, 안 보는 자리가 생기면 그 자리에만 있는
                 정보가 언젠가 묻힙니다. */}
+            {/* 두 창구 대조. **탭을 새로 만들지 않고** 출결을 이미 보고 있는 사람 위에
+                한 줄로 얹습니다 - 화면을 옮겨야 하는 일은 대개 안 하게 됩니다. */}
+            <CrossCheckBand />
             <div className="min-h-0 flex-1 overflow-hidden">
               <AttendanceDigestPanel messages={messages} department={department} roster={roster} currentUserEmail={userEmail} />
             </div>

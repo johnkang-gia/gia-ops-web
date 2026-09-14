@@ -179,7 +179,9 @@ export default async function ShuttleChecklistPage({
     // 자동이 사람보다 앞서 나가는 셈입니다.
     supabase
       .from("attendance_entries")
-      .select("id, student_id, student_name, status, date_from, date_to, source, raw_text, note, registered_by, registered_at")
+      // `touched_by_human` 을 함께 읽습니다. 이게 없으면 화면은 「누가 정했나」를 물을
+      // 재료가 없어, 사람이 고른 건까지 자동으로 그립니다.
+      .select("id, student_id, student_name, status, date_from, date_to, source, raw_text, note, touched_by_human, registered_by, registered_at")
       .in("status", ["결석", "픽업"])
       .eq("state", "등록")
       .lte("date_from", today)
@@ -225,6 +227,10 @@ export default async function ShuttleChecklistPage({
       matchedName: (r.matched_name as string | null) ?? null,
       sourceUrl: (r.source_url as string | null) ?? null,
       sourceChatId: (r.source_chat_id as string | null) ?? null,
+      // 픽업 인박스에서 읽어 붙은 건입니다. 여기는 정말 자동입니다.
+      decidedByHuman: false,
+      decidedBy: null,
+      note: null,
     };
     autoSourceByName.set(norm(name), src);
     // **번호로도 찾을 수 있게 둡니다.** 이름으로만 두면 김재이 셋이 한 칸을 나눠 쓰고,
@@ -247,9 +253,42 @@ export default async function ShuttleChecklistPage({
     source: string | null;
     raw_text: string | null;
     note: string | null;
+    touched_by_human: boolean | null;
     registered_by: string | null;
     registered_at: string | null;
   };
+
+  /**
+   * 출결내역 한 줄을 체크표가 보여줄 근거로 옮깁니다.
+   *
+   * 여기서 갈리는 것이 **「어디서 왔나」와 「누가 정했나」** 입니다. 예전에는 `source` 하나로
+   * 둘 다 말하려 해서, 사람이 🔎 로 직접 고른 건에도 「구글챗에서 자동」이 붙었습니다.
+   * 그러면서 정작 고른 사람(`registered_by`)은 「보낸 분」 칸에 들어가 학부모처럼 보였고,
+   * 원문이 없는 줄에서는 우리가 적은 메모(`note`)가 원문 자리에 그대로 떴습니다 -
+   * 「이 건만 사람이 지정(규칙 없음)」이 학부모 연락처럼 읽혔습니다.
+   */
+  const entrySourceOf = (r: AbsentRow, kind: "픽업" | "결석"): AutoSource => ({
+    requestId: r.id,
+    kind,
+    source: r.source === "googlechat" ? "구글챗" : r.source === "toddle" ? "토들" : "직접 등록",
+    channelLabel: null,
+    // 보낸 사람은 «연락을 보낸 학부모»입니다. 출결내역 줄에는 그 정보가 없으므로 비웁니다 -
+    // 여기에 등록한 직원을 넣으면 그 직원이 연락을 보낸 것처럼 보입니다.
+    senderName: null,
+    receivedAt: r.registered_at ?? "",
+    rawText: (r.raw_text ?? "").trim(),
+    aiNote: r.touched_by_human
+      ? null
+      : kind === "픽업"
+        ? "연락을 읽어 오늘 픽업으로 저절로 등록된 아이입니다."
+        : "연락을 읽어 오늘 결석으로 저절로 등록된 아이입니다.",
+    matchedName: r.student_name,
+    sourceUrl: null,
+    sourceChatId: null,
+    decidedByHuman: !!r.touched_by_human,
+    decidedBy: r.registered_by,
+    note: r.note,
+  });
   const allEntryRows = (absentRes.data as AbsentRow[] | null) ?? [];
   // 픽업으로 등록된 건은 픽업 명단으로 보냅니다. 아래 결석 대조에 섞이면 부모님이 데리러
   // 오는 아이가 결석으로 표시됩니다 - 둘은 학교에 왔느냐 안 왔느냐가 정반대입니다.
@@ -258,21 +297,7 @@ export default async function ShuttleChecklistPage({
     if ((r.status ?? "") !== "픽업") continue;
     if (r.student_name) pickupNames.push(r.student_name);
     const key = norm(r.student_name);
-    if (!autoSourceByName.has(key)) {
-      autoSourceByName.set(key, {
-        requestId: r.id,
-        kind: "픽업",
-        source: r.source === "googlechat" ? "구글챗" : r.source === "toddle" ? "토들" : "출석부",
-        channelLabel: null,
-        senderName: r.registered_by,
-        receivedAt: r.registered_at ?? "",
-        rawText: (r.raw_text ?? r.note ?? "").trim() || `${r.student_name} 학생이 오늘 픽업으로 등록되어 있습니다.`,
-        aiNote: "출결내역에서 오늘 픽업으로 등록된 아이입니다.",
-        matchedName: r.student_name,
-        sourceUrl: null,
-        sourceChatId: null,
-      });
-    }
+    if (!autoSourceByName.has(key)) autoSourceByName.set(key, entrySourceOf(r, "픽업"));
   }
   const absentById = new Map<string, AbsentRow>();
   const absentByName = new Map<string, AbsentRow>();
@@ -280,21 +305,7 @@ export default async function ShuttleChecklistPage({
     if (r.student_id) absentById.set(r.student_id, r);
     if (r.student_name) absentByName.set(norm(r.student_name), r);
   }
-  const absentSourceOf = (r: AbsentRow): AutoSource => ({
-    requestId: r.id,
-    kind: "결석",
-    source: r.source === "googlechat" ? "구글챗" : r.source === "toddle" ? "토들" : "출석부",
-    channelLabel: null,
-    senderName: r.registered_by,
-    receivedAt: r.registered_at ?? "",
-    rawText:
-      (r.raw_text ?? r.note ?? "").trim() ||
-      `${r.student_name} 학생이 오늘 결석으로 등록되어 있습니다.`,
-    aiNote: "출석부에 오늘 결석으로 등록된 아이입니다.",
-    matchedName: r.student_name,
-    sourceUrl: null,
-    sourceChatId: null,
-  });
+  const absentSourceOf = (r: AbsentRow): AutoSource => entrySourceOf(r, "결석");
 
   // 토들 주소는 "학교 주소 + /messaging/ + 방 id" 형태입니다. 주소 칸이 비어 있는 줄이
   // 많아서(수집기가 못 읽은 경우), 주소가 있는 가장 최근 기록 하나에서 학교 주소만 뽑아
@@ -428,6 +439,10 @@ export default async function ShuttleChecklistPage({
               matchedName: a.student_name_raw,
               sourceUrl: null,
               sourceChatId: null,
+              // 체크표에서 직접 찍은 줄입니다. 「AI」·「자동」이라고 적힌 이름만 기계입니다.
+              decidedByHuman: !(who.includes("AI") || who.includes("자동")),
+              decidedBy: who || null,
+              note: null,
             };
       }
 
@@ -470,6 +485,11 @@ export default async function ShuttleChecklistPage({
           matchedName: a.student_name_raw,
           sourceUrl: null,
           sourceChatId: null,
+          // 학생 프로필에 적힌 하원수단을 읽어 저절로 붙인 것입니다. 오늘 누가 정한 것이
+          // 아니므로 사람 이름을 붙이지 않습니다.
+          decidedByHuman: false,
+          decidedBy: null,
+          note: null,
         };
       }
 

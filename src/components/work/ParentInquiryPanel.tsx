@@ -708,6 +708,14 @@ export default function ParentInquiryPanel({
         </span>
       )}
 
+      {/* 분류(카테고리). **처리사항보다 앞에 둡니다** - 목록을 훑는 사람이 먼저 묻는 것은
+          「무슨 문의인가」이고, 「어떻게 처리됐나」는 그 다음입니다. */}
+      {r.inquiry_type && (
+        <span className={"shrink-0 rounded px-1 text-[10px] font-semibold " + (TYPE_STYLE[r.inquiry_type] ?? "bg-slate-100")}>
+          {r.inquiry_type}
+        </span>
+      )}
+
       {/* 앱이 한 일. 답글(사람)과는 **다른 모양**이어야 합니다.
           둘 다 초록 체크로 두면 어느 쪽이 된 것인지 여전히 모릅니다. 여기는 톱니바퀴를 달고
           무엇을 했는지 글자로 적습니다 - '처리됨' 만으로는 무엇이 처리됐는지 모릅니다. */}
@@ -728,29 +736,9 @@ export default function ParentInquiryPanel({
         </span>
       ))}
 
-      {/* **앱이 잘못 읽은 것을 여기서 되돌립니다.**
-          ─────────────────────────────────────────────────────────────────
-          「오피스에서 첼로를 픽업하려고 합니다」처럼 **가지러 가는 대상이 물건**인 글이
-          픽업으로 등록됐습니다. 되돌릴 자리가 하원 체크표에만 있어서, 이 목록에서 잘못을
-          발견한 사람은 다른 화면으로 옮겨가야 했습니다 - 옮겨가야 하는 일은 대개 안 합니다.
-
-          오늘 표시만 지우는 것이 아닙니다. 연락 자체를 「픽업 아님」으로 돌리고, 그 정정을
-          발신자별로 남겨 다음 판단의 신뢰도를 낮춥니다. 표시만 지우면 원래 연락이 그대로
-          남아 내일 또 올라오고, 사람은 같은 것을 매일 지우게 됩니다. */}
-      {!undone[r.id] && (auto.get(r.id) ?? []).some((a) => a.state === "등록") && (
-        <button
-          type="button"
-          disabled={busy}
-          onClick={(e) => {
-            e.stopPropagation();
-            void notPickup(r);
-          }}
-          title="앱이 잘못 읽었습니다. 이 연락을 픽업이 아닌 것으로 되돌리고, 등록된 출결도 함께 내립니다."
-          className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600 transition hover:bg-rose-100 hover:text-rose-700 disabled:opacity-40"
-        >
-          ↩ 아님
-        </button>
-      )}
+      {/* 되돌렸다는 **사실**만 목록에 남기고, 되돌리는 단추는 팝업으로 옮겼습니다.
+          목록의 한 줄에 누를 것이 다섯이면 훑어보기가 안 됩니다 - 목록은 「무엇이 왔고 어떻게
+          됐나」를 읽는 자리이고, 손대는 일은 이름을 눌러 원문을 본 다음에 합니다. */}
       {undone[r.id] && (
         <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-500">↩ 되돌림</span>
       )}
@@ -761,11 +749,6 @@ export default function ParentInquiryPanel({
           title={r.replied_by ? `${r.replied_by} 선생님이 답변 중입니다(아직 미해결)` : "답변 중"}
         >
           답변중
-        </span>
-      )}
-      {r.inquiry_type && (
-        <span className={"shrink-0 rounded px-1 text-[10px] font-semibold " + (TYPE_STYLE[r.inquiry_type] ?? "bg-slate-100")}>
-          {r.inquiry_type}
         </span>
       )}
       {/* 한 줄 미리보기.
@@ -792,51 +775,12 @@ export default function ParentInquiryPanel({
       <span className="shrink-0 text-[10px] text-slate-400" title={new Date(r.received_at).toLocaleString("ko-KR")}>
         {whenLabel(r.received_at)}
       </span>
+      {/* 이 자리에서 방금 처리한 것. **단추가 아니라 결과입니다** - 목록은 읽는 자리이고,
+          누르는 것은 팝업에서 합니다. */}
+      {acted[r.id] && (
+        <span className="shrink-0 rounded bg-emerald-100 px-1 text-[10px] font-bold text-emerald-700">🚌 {acted[r.id]}</span>
+      )}
       </button>
-      {/* 목록에서 바로 토들 원문으로. 담당자: "메시지 내용과 함께 토들에서 보기 버튼."
-          예전에는 상세 창을 한 번 더 열어야 이 버튼이 보였습니다. 답을 하려면 어차피 토들로
-          가야 하는데, 한 번 더 누르게 할 이유가 없습니다. */}
-      {toddleUrlOf(r) && (
-        <a
-          href={toddleUrlOf(r)!}
-          target="_blank"
-          rel="noreferrer"
-          onClick={(e) => e.stopPropagation()}
-          className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600 transition hover:bg-slate-800 hover:text-white"
-          title="토들에서 이 대화 열기"
-        >
-          토들 ↗
-        </a>
-      )}
-
-      {/* 출결 원클릭(요청 1) - 셔틀 화면으로 넘어가지 않고 여기서 바로 하원 체크표에 반영합니다.
-          출결·차량 문의에만 붙습니다(학습 상담에 [결석] 버튼이 있으면 오조작만 늘어납니다). */}
-      {!isDone(r) && isAttendanceInquiry(r) && (
-        <div className="flex shrink-0 items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
-          {acted[r.id] ? (
-            <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">🚌 {acted[r.id]}</span>
-          ) : (
-            (
-              [
-                ["결석", "bg-red-50 text-red-600 hover:bg-red-100"],
-                ["픽업", "bg-sky-50 text-sky-600 hover:bg-sky-100"],
-                ["탑승", "bg-emerald-50 text-emerald-600 hover:bg-emerald-100"],
-              ] as const
-            ).map(([label, cls]) => (
-              <button
-                key={label}
-                type="button"
-                disabled={busy}
-                onClick={() => attendanceAction(r, label)}
-                title={`${studentOf(r)} 학생을 오늘 하원 ${label}(으)로 바로 처리합니다 - 셔틀 체크표에 반영됩니다`}
-                className={"rounded px-1.5 py-0.5 text-[10px] font-bold transition disabled:opacity-40 " + cls}
-              >
-                {label}
-              </button>
-            ))
-          )}
-        </div>
-      )}
     </div>
   );
 
@@ -1089,6 +1033,61 @@ export default function ParentInquiryPanel({
                     </div>
                   );
                 })()}
+
+                {/* ── 여기서 처리합니다 ───────────────────────────────────
+                    예전에는 이 단추들이 목록의 한 줄에 붙어 있었습니다. 한 줄에 누를 것이
+                    다섯이면 훑어보기가 안 되고, 원문을 안 읽은 채 누르게 됩니다. 원문을 읽는
+                    자리에서 누르는 것이 순서로도 맞습니다. */}
+                {!isDone(detail) && isAttendanceInquiry(detail) && (
+                  <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2">
+                    <p className="mb-1.5 text-[10px] font-bold text-slate-500">오늘 하원 처리</p>
+                    {acted[detail.id] ? (
+                      <span className="rounded bg-emerald-100 px-2 py-1 text-[11px] font-bold text-emerald-700">
+                        🚌 {acted[detail.id]}(으)로 처리했습니다
+                      </span>
+                    ) : (
+                      <div className="flex flex-wrap gap-1">
+                        {(
+                          [
+                            ["결석", "bg-red-50 text-red-600 hover:bg-red-100"],
+                            ["픽업", "bg-sky-50 text-sky-600 hover:bg-sky-100"],
+                            ["탑승", "bg-emerald-50 text-emerald-600 hover:bg-emerald-100"],
+                          ] as const
+                        ).map(([label, cls]) => (
+                          <button
+                            key={label}
+                            type="button"
+                            disabled={busy}
+                            onClick={() => attendanceAction(detail, label)}
+                            title={`${studentOf(detail)} 학생을 오늘 하원 ${label}(으)로 처리합니다 - 셔틀 체크표에 반영됩니다`}
+                            className={"rounded-lg px-2.5 py-1.5 text-[11px] font-bold transition disabled:opacity-40 " + cls}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* **앱이 잘못 읽은 것을 되돌립니다.**
+                    「오피스에서 첼로를 픽업하려고 합니다」처럼 가지러 가는 대상이 물건인 글이
+                    픽업으로 등록됐습니다. 오늘 표시만 지우는 것이 아니라 연락 자체를 「픽업
+                    아님」으로 돌리고, 그 정정을 발신자별로 남겨 다음 판단의 신뢰도를 낮춥니다.
+                    표시만 지우면 원래 연락이 그대로 남아 내일 또 올라옵니다. */}
+                {!undone[detail.id] && (auto.get(detail.id) ?? []).some((a) => a.state === "등록") && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void notPickup(detail)}
+                    className="mt-2 rounded-lg border border-slate-300 px-2.5 py-1.5 text-[11px] font-bold text-slate-600 transition hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-40"
+                  >
+                    ↩ 이 연락은 그게 아닙니다 — 등록된 출결도 함께 내리기
+                  </button>
+                )}
+                {undone[detail.id] && (
+                  <p className="mt-2 text-[11px] font-semibold text-slate-500">↩ 되돌렸습니다.</p>
+                )}
 
                 {detail.answered_at && (
                   <p className="mt-2 text-[11px] text-emerald-600">

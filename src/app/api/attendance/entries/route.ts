@@ -198,6 +198,8 @@ export async function PATCH(req: NextRequest) {
       dateTo?: string;
       studentId: string;
       studentName: string;
+      /** 그 연락의 원문. 안 넘어오면 이 줄에는 원문이 비고, 근거를 보는 화면이 빈손이 됩니다. */
+      rawText?: string | null;
     };
   };
 
@@ -357,6 +359,9 @@ export async function PATCH(req: NextRequest) {
         registered_at: new Date().toISOString(),
         registered_by: auth.user.email ?? null,
         reason: null,
+        // 원문을 남겨 둡니다. 비면 이 줄의 근거를 보는 화면이 빈손이 되고, 예전에는 그
+        // 자리에 아래 메모가 대신 떠서 학부모 연락처럼 보였습니다.
+        raw_text: (a.rawText ?? "").trim() || null,
         note: "이 건만 사람이 지정(규칙 없음)",
       },
       { onConflict: "source,source_message_id,student_name,status" }

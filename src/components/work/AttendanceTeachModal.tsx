@@ -153,6 +153,10 @@ export default function AttendanceTeachModal({
           dateTo: entry.dateTo,
           studentId: sid,
           studentName: student.name,
+          // **원문을 함께 넘깁니다.** 안 넘기면 이 줄에는 원문이 비고, 나중에 하원 체크표가
+          // 근거를 보여줄 때 우리가 적은 메모가 원문 자리에 대신 떴습니다 - 학부모가
+          // 보낸 적 없는 문장이 연락 원문처럼 읽혔습니다.
+          rawText,
         },
       }),
     });

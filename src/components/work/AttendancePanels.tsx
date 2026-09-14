@@ -2,9 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import type { GoogleChatMirrorMessage, Task, TeamMember } from "@/lib/types";
+import type { GoogleChatMirrorMessage } from "@/lib/types";
 import type { RosterStudent } from "@/lib/attendanceDigest";
-import GoogleChatMirrorPanel from "./GoogleChatMirrorPanel";
 import AttendanceDigestPanel from "./AttendanceDigestPanel";
 import ParentInquiryPanel from "./ParentInquiryPanel";
 import OfficeRequestsPanel from "./OfficeRequestsPanel";
@@ -18,7 +17,7 @@ import OfficeRequestsPanel from "./OfficeRequestsPanel";
 // 항목 수를 탭 오른쪽 위 빨간 원으로 띄웁니다. 탭을 열면 본 것으로 치고 원이 사라집니다.
 // 예외로 [선생님요청]은 "보면 사라지는 안읽음"이 아니라 "아직 완료 처리하지 않은 건수"입니다 -
 // 요청은 읽는 게 아니라 처리해야 끝나는 것이라서, 완료를 눌러야 숫자가 내려갑니다.
-type TabKey = "inquiry" | "digest" | "chat" | "office";
+type TabKey = "inquiry" | "digest" | "office";
 
 const SEEN_STORAGE_KEY = "gia-work-inbox-seen-v1";
 
@@ -26,7 +25,7 @@ function loadSeen(): Record<TabKey, number> {
   const now = Date.now();
   // 처음 쓰는 브라우저에서는 "지금까지 온 것은 다 본 것"으로 시작합니다 - 첫 로드부터 지난
   // 메시지 수백 건이 전부 빨간 숫자로 뜨면 알림이 아니라 소음입니다.
-  const fallback: Record<TabKey, number> = { inquiry: now, digest: now, chat: now, office: now };
+  const fallback: Record<TabKey, number> = { inquiry: now, digest: now, office: now };
   if (typeof window === "undefined") return fallback;
   try {
     const raw = window.localStorage.getItem(SEEN_STORAGE_KEY);
@@ -35,7 +34,6 @@ function loadSeen(): Record<TabKey, number> {
     return {
       inquiry: typeof p.inquiry === "number" ? p.inquiry : now,
       digest: typeof p.digest === "number" ? p.digest : now,
-      chat: typeof p.chat === "number" ? p.chat : now,
       office: typeof p.office === "number" ? p.office : now,
     };
   } catch {
@@ -55,18 +53,14 @@ function UnreadDot({ count }: { count: number }) {
 
 export default function AttendancePanels({
   messages,
-  team,
   userEmail,
   department,
   roster,
-  onTaskCreated,
 }: {
   messages: GoogleChatMirrorMessage[];
-  team: TeamMember[];
   userEmail: string;
   department: string;
   roster: RosterStudent[];
-  onTaskCreated?: (task: Task) => void;
 }) {
   // 학부모 문의가 가장 자주 보는 것이므로 기본 탭입니다(기존 유지).
   const [tab, setTab] = useState<TabKey>("inquiry");
@@ -136,20 +130,22 @@ export default function AttendancePanels({
   );
 
   const unread: Record<TabKey, number> = useMemo(() => {
-    if (!seen) return { inquiry: 0, digest: 0, chat: 0, office: officeOpen };
+    if (!seen) return { inquiry: 0, digest: 0, office: officeOpen };
     return {
       inquiry: inquiryTimes.filter((t) => t > seen.inquiry).length,
       digest: attendanceTimes.filter((t) => t > seen.digest).length,
-      chat: attendanceTimes.filter((t) => t > seen.chat).length,
       // 선생님요청은 안읽음이 아니라 미완료 건수 - 처리해야 끝나는 것이라 보기만 해서는 안 꺼집니다.
       office: officeOpen,
     };
   }, [seen, inquiryTimes, attendanceTimes, officeOpen]);
 
+  // 「🚸 출결알림」 탭을 내렸습니다. 이 탭은 구글챗의 출결알림 방을 그대로 옮겨 보여주는
+  // 자리였는데, **바로 아래 칸(구글챗)이 같은 방을 이미 보여줍니다.** 창을 여러 개 띄우지
+  // 않으려고 만든 자리가 한 화면 안에서 같은 내용을 두 번 띄우는 자리가 됐고, 그러면 어느
+  // 쪽이 최신인지 묻게 됩니다. 구글챗에서 읽어 만든 출결 판정은 [출결내역] 탭에 남습니다.
   const tabs: { key: TabKey; label: string }[] = [
     { key: "inquiry", label: "💬 학부모 문의" },
     { key: "digest", label: "📊 출결내역" },
-    { key: "chat", label: "🚸 출결알림" },
     { key: "office", label: "❗ 선생님요청" },
   ];
 
@@ -192,18 +188,6 @@ export default function AttendancePanels({
               <AttendanceDigestPanel messages={messages} department={department} roster={roster} currentUserEmail={userEmail} />
             </div>
           </div>
-        )}
-        {tab === "chat" && (
-          <GoogleChatMirrorPanel
-            sourceKey="attendance"
-            title="출결알림"
-            icon="🚸"
-            messages={messages}
-            team={team}
-            userEmail={userEmail}
-            department={department}
-            onTaskCreated={onTaskCreated}
-          />
         )}
       </div>
     </div>

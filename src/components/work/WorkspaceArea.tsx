@@ -522,11 +522,9 @@ export default function WorkspaceArea({
       <div className="min-h-0 overflow-hidden" style={{ height: `${layout.inboxTopHeight}%` }}>
         <AttendancePanels
           messages={mirrorMessages}
-          team={team}
           userEmail={currentUserEmail}
           department={activeDepartment.name}
           roster={roster}
-          onTaskCreated={onTaskCreated}
         />
       </div>
       <HeightHandle

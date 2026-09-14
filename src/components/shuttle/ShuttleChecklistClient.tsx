@@ -48,6 +48,18 @@ export type AutoSource = {
   matchedName: string | null;
   sourceUrl: string | null;
   sourceChatId: string | null;
+  /**
+   * **사람이 직접 정한 건인가.**
+   *
+   * `source` 는 «메시지가 어디서 왔나»이지 «누가 정했나»가 아닙니다. 둘을 같은 것으로 쓰다가,
+   * 사람이 🔎 로 직접 고른 건에도 「구글챗에서 자동」이 붙었습니다 - 보는 사람은 기계가 한
+   * 일로 읽고, 정작 그 사람에게 물어볼 길이 화면에 없었습니다.
+   */
+  decidedByHuman: boolean;
+  /** 정한 사람. `decidedByHuman` 이 참인데 여기가 비면 **누가 했는지 안 남은 것**입니다. */
+  decidedBy: string | null;
+  /** 우리가 적어 둔 메모. 학부모 원문과 **섞지 않습니다.** */
+  note: string | null;
 };
 
 export type ChecklistItem = {
@@ -1337,9 +1349,21 @@ export default function ShuttleChecklistClient({
               >
                 {sourceOf.autoSource.kind}
               </span>
+              {/* 어디서 왔나 — 이건 언제나 사실입니다. */}
               <span className="rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-bold text-sky-700">
-                {sourceOf.autoSource.source}에서 자동
+                {sourceOf.autoSource.source}
               </span>
+              {/* 누가 정했나 — 위와 **다른 질문**입니다. 한 뱃지로 합치면 사람이 정한 건도
+                  「자동」으로 읽힙니다. */}
+              {sourceOf.autoSource.decidedByHuman ? (
+                <span className="rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-bold text-violet-700">
+                  사람이 지정
+                </span>
+              ) : (
+                <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">
+                  읽어서 자동
+                </span>
+              )}
             </div>
 
             <dl className="mb-2 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-[11px] text-slate-500">
@@ -1373,11 +1397,32 @@ export default function ShuttleChecklistClient({
               <dd className="min-w-0 break-words">
                 {sourceOf.autoSource.matchedName ?? <span className="text-amber-600">명부와 대조되지 않음(이름만 비교)</span>}
               </dd>
+              {/* 사람이 정했으면 **누가** 정했는지가 이 팝업에서 가장 중요한 한 줄입니다.
+                  틀렸을 때 물어볼 사람이 바로 이 사람입니다. 안 남아 있으면 그 사실도
+                  적습니다 - 빈 줄로 두면 «자동이었나 보다»로 읽힙니다. */}
+              {sourceOf.autoSource.decidedByHuman && (
+                <>
+                  <dt className="font-semibold">정한 사람</dt>
+                  <dd className="min-w-0 break-words">
+                    {sourceOf.autoSource.decidedBy ?? (
+                      <span className="font-bold text-rose-600">누가 정했는지 안 남았습니다</span>
+                    )}
+                  </dd>
+                </>
+              )}
             </dl>
 
+            {/* **원문 자리에는 원문만** 둡니다. 우리가 적은 메모를 여기 섞으면, 학부모가
+                보낸 적 없는 문장이 연락 원문처럼 보입니다. */}
             <p className="whitespace-pre-wrap break-words rounded-lg bg-slate-50 p-3 text-[12px] leading-relaxed text-slate-700">
               {sourceOf.autoSource.rawText || "(원문이 저장되지 않았습니다)"}
             </p>
+
+            {sourceOf.autoSource.note && (
+              <p className="mt-2 rounded-lg bg-violet-50 px-2 py-1.5 text-[11px] leading-relaxed text-violet-800">
+                <span className="font-bold">앱이 남긴 메모</span> · {sourceOf.autoSource.note}
+              </p>
+            )}
 
             {sourceOf.autoSource.aiNote && (
               <p className="mt-2 rounded-lg bg-amber-50 px-2 py-1.5 text-[11px] leading-relaxed text-amber-800">

@@ -355,7 +355,19 @@ const FINANCE_TABS: TabDef[] = [
   { key: "overview", label: "개요", icon: "📊", href: "/finance", match: ["/finance"] },
   // **월별·학기별**은 「지금」이 아니라 「흐름」을 보는 자리입니다. 다음 달에 얼마를 청구할지는
   // 지난 달들을 나란히 놓고 정하는 일인데, 지금까지 나란히 놓을 자리가 없었습니다.
-  { key: "monthly", label: "월별", icon: "📅", href: "/finance/monthly", match: ["/finance/monthly"] },
+  {
+    key: "monthly",
+    label: "월별",
+    icon: "📅",
+    href: "/finance/monthly",
+    match: ["/finance/monthly"],
+    children: [
+      { label: "월별 · 학기별", href: "/finance/monthly", match: ["/finance/monthly"] },
+      // 학교 전체 합계 다음에 오는 물음은 언제나 **「그 달에 누구에게 얼마」**입니다.
+      // 그 자리가 없어서 지금까지는 청구서를 하나씩 찾아 더했습니다.
+      { label: "학생별", href: "/finance/monthly/students", match: ["/finance/monthly/students"] },
+    ],
+  },
   // 청구 — 학비와 학비외를 **한 자리에** 둡니다.
   //
   // 둘은 대분류로 나란히 서 있었습니다. 그런데 하는 일은 하나입니다 - 이번 달에 이 아이에게

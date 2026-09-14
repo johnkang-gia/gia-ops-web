@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess } from "@/lib/roles";
+import { readAll, readNotice } from "@/lib/financeFetch";
 import { todayKst } from "@/lib/kst";
 import UnpaidClient from "@/components/finance/UnpaidClient";
 import type { UnpaidInvoice, UnpaidPayment } from "@/lib/unpaidLedger";
@@ -24,24 +25,29 @@ export default async function UnpaidPage() {
   const [invRes, payRes, stuRes] = await Promise.all([
     // **발행된 것만** 읽습니다. 취소·이월된 것까지 끌어오면 화면에서 다시 걸러야 하고,
     // 그 수가 한도를 넘는 날 진짜 미납이 조용히 사라집니다.
-    supabase
-      .from("invoices")
-      .select("id, invoice_no, student_id, student_name, student_name_ko, issue_date, due_date, total_amount, status, stream, category, carried_to_invoice_id, exported_at")
-      .eq("status", "발행")
-      .is("carried_to_invoice_id", null)
-      .order("due_date")
-      .limit(20000),
-    supabase.from("payments").select("invoice_id, amount").not("invoice_id", "is", null).limit(20000),
+    readAll<UnpaidInvoice>((from, to) =>
+      supabase
+        .from("invoices")
+        .select("id, invoice_no, student_id, student_name, student_name_ko, issue_date, due_date, total_amount, status, stream, category, carried_to_invoice_id, exported_at")
+        .eq("status", "발행")
+        .is("carried_to_invoice_id", null)
+        .order("due_date")
+        .order("id")
+        .range(from, to),
+    ),
+    readAll<UnpaidPayment>((from, to) =>
+      supabase.from("payments").select("invoice_id, amount").not("invoice_id", "is", null).order("invoice_id").range(from, to),
+    ),
     supabase.from("wr_students").select("id, name, grade, class_name").eq("is_demo", false),
   ]);
 
   return (
     <UnpaidClient
-      invoices={(invRes.data as UnpaidInvoice[] | null) ?? []}
-      payments={(payRes.data as UnpaidPayment[] | null) ?? []}
+      invoices={invRes.rows}
+      payments={payRes.rows}
       students={((stuRes.data as { id: string; name: string; grade: string | null; class_name: string | null }[] | null) ?? [])}
       today={todayKst()}
-      loadError={invRes.error?.message ?? payRes.error?.message ?? stuRes.error?.message ?? null}
+      loadError={readNotice(invRes, payRes) ?? stuRes.error?.message ?? null}
     />
   );
 }

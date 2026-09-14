@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess } from "@/lib/roles";
+import { readAll, readNotice } from "@/lib/financeFetch";
 import PrepaidClient from "@/components/finance/PrepaidClient";
 import type { PrepaidRow } from "@/lib/prepaidLedger";
 import type { Invoice } from "@/lib/types";
@@ -29,16 +30,18 @@ export default async function PrepaidPage() {
     supabase.from("wr_students").select("id, name, grade, class_name").eq("is_demo", false).order("name"),
     // 붙일 곳을 고르려면 그 학생의 **살아 있는 청구서**가 필요합니다. 취소된 것에 붙이면
     // 그 돈은 다시 사라집니다.
-    supabase.from("invoices").select("*").eq("status", "발행").order("issue_date", { ascending: false }).limit(1000),
+    readAll<Invoice>((from, to) =>
+      supabase.from("invoices").select("*").eq("status", "발행").order("issue_date").order("id").range(from, to),
+    ),
   ]);
 
   return (
     <PrepaidClient
       rows={(payRes.data as PrepaidRow[] | null) ?? []}
       students={((stuRes.data as { id: string; name: string; grade: string | null; class_name: string | null }[] | null) ?? [])}
-      invoices={(invRes.data as Invoice[] | null) ?? []}
+      invoices={invRes.rows}
       currentUserEmail={me.email}
-      loadError={payRes.error?.message ?? stuRes.error?.message ?? invRes.error?.message ?? null}
+      loadError={payRes.error?.message ?? stuRes.error?.message ?? readNotice(invRes)}
     />
   );
 }

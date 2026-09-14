@@ -11,6 +11,7 @@ import MethodSummary from "@/components/finance/MethodSummary";
 import type { PaymentRow } from "@/lib/payments";
 import type { FeeItem, Invoice, StudentFeeItem } from "@/lib/types";
 import { Who } from "@/components/common/HomonymProvider";
+import { readAll, readNotice } from "@/lib/financeFetch";
 
 // 재무 개요.
 //
@@ -30,13 +31,16 @@ export default async function FinanceOverviewPage() {
     supabase.from("wr_students").select("id, name, grade, class_name").eq("status", "active").eq("is_demo", false),
     supabase.from("fee_items").select("*"),
     supabase.from("student_fee_items").select("*"),
-    supabase.from("invoices").select("*").order("created_at", { ascending: false }).limit(500),
+    // **끝까지 읽습니다.** 예전에는 500줄만 읽었는데, 139명 × (학비+학비외) ≒ 월 278장이라
+    // 두 달이면 넘습니다. 넘는 순간 「발행한 금액」이 조용히 줄고 상습 미납에서 오래된
+    // 사람이 사라지는데, 오류가 아니라 그냥 다른 숫자로 보입니다(`financeFetch.ts`).
+    readAll<Invoice>((from, to) => supabase.from("invoices").select("*").order("created_at").order("id").range(from, to)),
     // 납부 현황과 상습 미납을 내려면 «들어온 돈»도 함께 봐야 합니다. 청구만 보면
     // «얼마를 받아야 하나»까지만 알 수 있습니다.
-    supabase.from("payments").select("*").order("paid_at", { ascending: false }).limit(2000),
+    readAll<PaymentRow>((from, to) => supabase.from("payments").select("*").order("paid_at").order("id").range(from, to)),
   ]);
 
-  const loadError = stuRes.error?.message ?? itemsRes.error?.message ?? ovRes.error?.message ?? invRes.error?.message ?? null;
+  const loadError = stuRes.error?.message ?? itemsRes.error?.message ?? ovRes.error?.message ?? readNotice(invRes, payRes);
 
   const students = ((stuRes.data as { id: string; name: string; grade: string | null; class_name: string | null }[] | null) ?? []).map(
     (s) => ({ id: s.id, name: s.name, grade: s.grade, className: s.class_name }),
@@ -44,8 +48,8 @@ export default async function FinanceOverviewPage() {
   // active 로 거르지 않습니다. 항목은 끄는 것이 아니라 지웁니다(2026-09).
   const items = (itemsRes.data as FeeItem[] | null) ?? [];
   const overrides = (ovRes.data as StudentFeeItem[] | null) ?? [];
-  const invoices = (invRes.data as Invoice[] | null) ?? [];
-  const payments = (payRes.data as PaymentRow[] | null) ?? [];
+  const invoices = invRes.rows;
+  const payments = payRes.rows;
 
   // 아이마다 얼마인지. 화면·발행과 **같은 함수**를 씁니다 - 개요만 따로 계산하면 숫자가
   // 어긋나고, 어긋난 개요는 아무도 안 믿습니다.
@@ -95,7 +99,7 @@ export default async function FinanceOverviewPage() {
 
       {loadError && (
         <p className="mb-3 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-[12px] text-orange-800">
-          자료를 읽지 못했습니다: {loadError}
+          {loadError}
         </p>
       )}
 

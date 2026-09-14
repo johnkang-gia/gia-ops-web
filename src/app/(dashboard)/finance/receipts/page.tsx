@@ -43,7 +43,7 @@ export default async function CashReceiptsPage() {
 
   const supabase = await createClient();
   const [{ data, error }, { data: studentRows }] = await Promise.all([
-    supabase.from("cash_receipts").select("*").order("created_at", { ascending: false }).limit(500),
+    supabase.from("cash_receipts").select("*").order("created_at", { ascending: false }).limit(500),  // finance-limit-ok: 현금영수증은 접수 순으로 처리하는 목록입니다. 합계를 내지 않으므로 최근 500건이면 일이 됩니다.
     // 접수할 때 이름으로 학생을 고릅니다. 명부 전체가 있어야 이름을 치는 순간 붙습니다.
     supabase
       .from("wr_students")

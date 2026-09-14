@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess } from "@/lib/roles";
+import { readAll, readNotice } from "@/lib/financeFetch";
 import { todayKst } from "@/lib/kst";
 import GuideButton from "@/components/common/GuideButton";
 import TuitionGridClient, {
@@ -61,12 +62,9 @@ export default async function TuitionPage() {
     supabase.from("terms").select("*").order("status").order("start_date", { ascending: false, nullsFirst: false }),
     supabase.from("student_fee_enrollments").select("id, student_id, plan_id, option_id, term_id").eq("active", true),
     supabase.from("student_fee_discounts").select("id, student_id, discount_id, term_id, reason").eq("active", true),
-    supabase
-      .from("invoices")
-      .select("*")
-      .eq("category", "학비")
-      .order("issue_date", { ascending: false })
-      .limit(1000),
+    readAll<Invoice>((from, to) =>
+      supabase.from("invoices").select("*").eq("category", "학비").order("issue_date").order("id").range(from, to),
+    ),
   ]);
 
   // 무엇을 못 읽었는지 **화면에 말합니다.** 조용히 비어 있으면 「아직 아무도 안 골랐구나」로
@@ -78,7 +76,7 @@ export default async function TuitionPage() {
     discRes.error?.message ??
     enrollRes.error?.message ??
     sdRes.error?.message ??
-    invRes.error?.message ??
+    readNotice(invRes) ??
     null;
 
   const students: TuitionStudent[] = ((stuRes.data as
@@ -111,7 +109,7 @@ export default async function TuitionPage() {
         terms={(termRes.data as Term[] | null) ?? []}
         initialEnrollments={(enrollRes.data as EnrollRow[] | null) ?? []}
         initialStudentDiscounts={(sdRes.data as StudentDiscountRow[] | null) ?? []}
-        recentInvoices={(invRes.data as Invoice[] | null) ?? []}
+        recentInvoices={invRes.rows}
         today={todayKst()}
         loadError={loadError}
       />

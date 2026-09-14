@@ -6,6 +6,7 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess } from "@/lib/roles";
 import MonthCloseBar, { type MonthClose } from "@/components/finance/MonthCloseBar";
 import { buildPeriodGrid, monthLabel, nextMonthEstimate, type PeriodInvoice, type PeriodPayment, type TermSpan } from "@/lib/financePeriod";
+import { readAll, readNotice } from "@/lib/financeFetch";
 
 export const dynamic = "force-dynamic";
 
@@ -35,12 +36,18 @@ export default async function FinanceMonthlyPage() {
   const supabase = await createClient();
   const [invRes, payRes, termRes, closeRes, itemRes] = await Promise.all([
     // 집계에 필요한 칸만 읽습니다. `select("*")` 로 끌어오면 줄마다 안 쓰는 칸까지 따라옵니다.
-    supabase
-      .from("invoices")
-      .select("id, student_id, billing_month, issue_date, stream, category, status, total_amount")
-      .order("billing_month", { ascending: false })
-      .limit(20000),
-    supabase.from("payments").select("invoice_id, amount, paid_at, method_kind").limit(20000),
+    // 끝까지 읽습니다 - 한도를 걸면 넘는 날 합계가 조용히 줄어듭니다(`financeFetch.ts`).
+    readAll<PeriodInvoice>((from, to) =>
+      supabase
+        .from("invoices")
+        .select("id, student_id, billing_month, issue_date, stream, category, status, total_amount, carried_to_invoice_id")
+        .order("issue_date")
+        .order("id")
+        .range(from, to),
+    ),
+    readAll<PeriodPayment>((from, to) =>
+      supabase.from("payments").select("invoice_id, amount, paid_at, method_kind").order("paid_at").order("invoice_id").range(from, to),
+    ),
     supabase.from("terms").select("id, year, term_type, start_date, end_date").order("start_date", { ascending: false }),
     // 닫힌 달. **화면이 「고칠 수 있는 달인가」를 스스로 판단하지 않습니다** - 막는 것은
     // 데이터베이스가 하고, 화면은 그 사실을 보여주기만 합니다.
@@ -52,11 +59,7 @@ export default async function FinanceMonthlyPage() {
   const terms: TermSpan[] = ((termRes.data as { id: string; year: number | null; term_type: string | null; start_date: string | null; end_date: string | null }[] | null) ?? [])
     .map((t) => ({ id: t.id, label: termLabelOf(t), start_date: t.start_date, end_date: t.end_date }));
 
-  const blocks = buildPeriodGrid(
-    (invRes.data as PeriodInvoice[] | null) ?? [],
-    (payRes.data as PeriodPayment[] | null) ?? [],
-    terms,
-  );
+  const blocks = buildPeriodGrid(invRes.rows, payRes.rows, terms);
   const estimate = nextMonthEstimate(blocks);
   const closes = new Map(((closeRes.data as MonthClose[] | null) ?? []).map((c) => [c.month, c]));
 
@@ -70,7 +73,7 @@ export default async function FinanceMonthlyPage() {
   }
   for (const list of itemsByMonth.values()) list.sort((a, b) => Number(b.billed) - Number(a.billed));
 
-  const loadError = invRes.error?.message ?? payRes.error?.message ?? termRes.error?.message ?? closeRes.error?.message ?? null;
+  const loadError = readNotice(invRes, payRes) ?? termRes.error?.message ?? closeRes.error?.message ?? null;
 
   return (
     <div className="mx-auto flex h-full max-w-5xl flex-col p-4 sm:p-6">
@@ -93,7 +96,7 @@ export default async function FinanceMonthlyPage() {
 
       {loadError && (
         <p className="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] font-semibold text-rose-700">
-          자료를 읽지 못했습니다: {loadError}
+          {loadError}
         </p>
       )}
 
@@ -139,11 +142,23 @@ export default async function FinanceMonthlyPage() {
                       return (
                         <tr key={m.month} className="border-b border-slate-50 last:border-b-0">
                           <td className="px-3 py-1.5 text-left font-semibold text-slate-700">
-                            {monthLabel(m.month)}
+                            {/* 달을 누르면 **학생별로 펼칩니다.** 합계만 보고 다음 행동이
+                                정해지는 일은 드뭅니다 - 「누가 안 냈나」로 바로 이어져야 합니다. */}
+                            <Link href={`/finance/monthly/${m.month}`} className="underline decoration-slate-300 hover:text-teal-700">
+                              {monthLabel(m.month)}
+                            </Link>
                             <span className="ml-1 text-[9px] text-slate-300">{m.month.slice(0, 4)}</span>
                             {m.cancelledCount > 0 && (
                               <span className="ml-1 rounded bg-amber-100 px-1 text-[9px] font-bold text-amber-700" title="그 달에 취소된 청구서">
                                 취소 {m.cancelledCount}
+                              </span>
+                            )}
+                            {m.carriedCount > 0 && (
+                              <span
+                                className="ml-1 rounded bg-sky-100 px-1 text-[9px] font-bold text-sky-700"
+                                title="다른 청구서로 합쳐진 건. 금액은 새 청구서 쪽에 있어 여기서 세지 않습니다"
+                              >
+                                합쳐짐 {m.carriedCount}
                               </span>
                             )}
                             <span className="ml-1 inline-flex align-middle">

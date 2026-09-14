@@ -59,6 +59,7 @@ export const SCREENS: string[] = [
   "/finance/payments",
   "/finance/plans",
   "/finance/monthly",
+  "/finance/monthly/students",
   "/finance/unpaid",
   "/finance/prepaid",
   "/finance/receipts",
@@ -216,6 +217,8 @@ const DYNAMIC_PREFIXES = [
   "/attendance/students/",
   "/finance/statement/",
   "/finance/invoices/",
+  // `/finance/monthly/2026-09` — 달이 주소에 들어갑니다. 달마다 화면을 등록할 수는 없습니다.
+  "/finance/monthly/",
   "/ops/",
   "/meetings/",
   "/events/",

@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess } from "@/lib/roles";
+import { readAll, readNotice } from "@/lib/financeFetch";
 import { todayKst } from "@/lib/kst";
 import { selectTolerant } from "@/lib/selectTolerant";
 import InvoiceGridClient, { type Student, type ReceiptLite, type PayLite } from "@/components/finance/InvoiceGridClient";
@@ -47,17 +48,23 @@ export default async function InvoicesPage() {
     ),
     supabase.from("fee_items").select("*").order("category").order("sort_order").order("name"),
     supabase.from("student_fee_items").select("*"),
-    supabase.from("invoices").select("*").order("issue_date", { ascending: false }).order("created_at", { ascending: false }).limit(1000),
+    readAll<Invoice>((from, to) =>
+      supabase.from("invoices").select("*").order("issue_date").order("created_at").order("id").range(from, to),
+    ),
     supabase.from("terms").select("*").order("status").order("start_date", { ascending: false, nullsFirst: false }).order("created_at", { ascending: false }),
     // 수강 그룹 명단. 그룹을 대상으로 삼은 항목(방과후 교재)이 붙는 근거입니다.
     supabase.from("student_group_members").select("group_id, student_id"),
     supabase.from("student_groups").select("id, name"),
     // 청구서에 붙은 현금영수증. 청구서를 보내드리면 그 답장에 「해주세요」가 함께 오므로,
     // 받는 자리가 청구서 칸 안에 있어야 그 순간에 적힙니다.
-    supabase.from("cash_receipts").select("id, invoice_id, student_id, purpose, identifier, amount, status").limit(2000),
+    readAll<ReceiptLite>((from, to) =>
+      supabase.from("cash_receipts").select("id, invoice_id, student_id, purpose, identifier, amount, status").order("id").range(from, to),
+    ),
     // 「보냈다」 옆에 「받았다」가 같이 보여야 합니다. 두 화면에 갈려 있으면 목록만 보고는
     // 누가 냈는지 알 수 없고, 결국 수납 화면을 따로 열게 됩니다.
-    supabase.from("payments").select("invoice_id, amount, paid_at, method_kind").limit(5000),
+    readAll<PayLite>((from, to) =>
+      supabase.from("payments").select("invoice_id, amount, paid_at, method_kind").order("paid_at").order("invoice_id").range(from, to),
+    ),
   ]);
   if (termRes.error) console.error("[인보이스] 학기를 읽지 못했습니다:", termRes.error.message);
 
@@ -101,16 +108,16 @@ export default async function InvoicesPage() {
       ? `명부에 아직 없는 칸: ${stuRes.missing.join(", ")} — 이 칸들은 비어 보입니다. 보호자 연락처 SQL(20260903060000_guardian_phones.sql)을 실행하면 채워집니다.`
       : null;
   const loadError =
-    stuRes.error ?? itemsRes.error?.message ?? ovRes.error?.message ?? invRes.error?.message ?? missingNote;
+    stuRes.error ?? itemsRes.error?.message ?? ovRes.error?.message ?? readNotice(invRes, crRes, payRes) ?? missingNote;
 
   return (
     <InvoiceGridClient
       students={students}
       items={itemsWithGroupName}
       initialOverrides={(ovRes.data as StudentFeeItem[] | null) ?? []}
-      recentInvoices={(invRes.data as Invoice[] | null) ?? []}
-      initialReceipts={(crRes.data as ReceiptLite[] | null) ?? []}
-      payments={(payRes.data as PayLite[] | null) ?? []}
+      recentInvoices={invRes.rows}
+      initialReceipts={crRes.rows}
+      payments={payRes.rows}
       terms={(termRes.data as Term[] | null) ?? []}
       currentUserEmail={me.email}
       loadError={loadError}

@@ -39,6 +39,17 @@ export function monthLabel(key: MonthKey): string {
   return m ? `${Number(m[2])}월` : key;
 }
 
+/**
+ * 앞뒤 달. **숫자로만 셉니다** - `Date` 로 하루를 더하고 빼면 그 코드가 도는 기계의 시간대가
+ * 끼어들어, 서버(UTC)와 브라우저(한국)에서 다른 달이 나옵니다(CLAUDE.md 4).
+ */
+export function shiftMonth(month: MonthKey, delta: number): MonthKey {
+  const m = month.match(/^(\d{4})-(\d{2})$/);
+  if (!m) return month;
+  const total = Number(m[1]) * 12 + (Number(m[2]) - 1) + delta;
+  return `${Math.floor(total / 12)}-${String((total % 12) + 1).padStart(2, "0")}`;
+}
+
 export type TermSpan = {
   id: string;
   /** 「2026-1학기」처럼 사람이 부르는 이름. */
@@ -86,6 +97,8 @@ export type PeriodInvoice = {
   category?: string | null;
   status: string;
   total_amount: number | string;
+  /** 미납이 다른 청구서로 합쳐졌으면 그 청구서. 여기서 또 세면 같은 돈이 두 번 잡힙니다. */
+  carried_to_invoice_id?: string | null;
 };
 
 export type PeriodPayment = {
@@ -105,6 +118,8 @@ export type MonthCell = {
   /** 아직 안 들어온 돈. 음수가 되면 더 받은 것입니다 - 0으로 눕히지 않습니다. */
   unpaid: number;
   cancelledCount: number;
+  /** 다른 청구서로 합쳐진 건수. 금액은 새 청구서 쪽에 있습니다. */
+  carriedCount: number;
   /** 학비 / 학비외로 나눈 청구액. 다음 달 산출은 갈래가 달라 따로 봐야 합니다. */
   byStream: Record<string, number>;
   /** 그 달에 **실제로 들어온 날** 기준 수납. 청구월과 다를 수 있습니다. */
@@ -159,6 +174,7 @@ export function buildPeriodGrid(
       paid: 0,
       unpaid: 0,
       cancelledCount: 0,
+      carriedCount: 0,
       byStream: {},
       receivedInMonth: 0,
     };
@@ -172,6 +188,13 @@ export function buildPeriodGrid(
     const cell = cellOf(month);
     if (inv.status === "취소") {
       cell.cancelledCount += 1;
+      continue;
+    }
+    // **합쳐진 청구서는 금액을 세지 않습니다.** 그 돈은 새 청구서에 이미 들어가 있어서,
+    // 여기서 또 세면 학교 전체 청구액이 실제보다 커집니다 - 오류로는 안 보이고 그냥
+    // 큰 숫자로 보입니다(settlement.ts 의 「이월됨」과 같은 규칙).
+    if (inv.carried_to_invoice_id) {
+      cell.carriedCount += 1;
       continue;
     }
     const amount = num(inv.total_amount);

@@ -353,7 +353,14 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
           onChange={(e) => setPlateQuery(e.target.value)}
           inputMode="numeric"
           placeholder="차번호 뒤 4자리 · 호차로 찾기"
-          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400"
+          // **글자 크기는 16px 이어야 합니다.** 그보다 작으면 아이폰이 이 칸을 누를 때마다
+          // 화면을 저절로 확대합니다. 한 번 확대되면 사람이 손으로 다시 줄여야 하는데,
+          // 하원 시간에 아이를 보면서 하는 일이라 그 한 동작이 매번 걸립니다.
+          //
+          // 화면 전체의 확대를 막는 방법(`maximum-scale=1`)도 있지만 쓰지 않습니다 - 잘
+          // 안 보이는 사람이 화면을 키우는 길까지 막습니다. 막을 것은 «저절로 확대»이지
+          // «사람이 키우는 것»이 아닙니다.
+          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-base outline-none focus:border-blue-400"
         />
         {plateQuery && (
           <button

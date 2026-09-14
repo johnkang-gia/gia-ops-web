@@ -89,6 +89,19 @@ export function cleanPayerName(v: string): string {
     .trim();
 }
 
+/**
+ * 청구사유에서 **우리 청구서 번호**를 읽어냅니다.
+ *
+ * 내보낼 때 `[2026-0123] 1학기 교재비` 또는 `[2026-0123,2026-0124] …`(형제 합산)로 적습니다.
+ * 그 글자가 되받은 엑셀에 그대로 들어 있으므로, 여기서 되읽어 정확히 그 청구서를 찾습니다.
+ *
+ * 대괄호 밖의 숫자는 보지 않습니다 - 금액이나 학번이 우연히 같은 모양일 수 있습니다.
+ */
+export function readInvoiceTags(memo: string | null | undefined): string[] {
+  const m = String(memo ?? "").match(/\[([0-9]{4}-[0-9]{3,6}(?:\s*,\s*[0-9]{4}-[0-9]{3,6})*)\]/);
+  return m ? m[1].split(",").map((x) => x.trim()).filter(Boolean) : [];
+}
+
 export function matchPayment(
   p: { amount: number; payerName: string; memo: string; phone?: string },
   invoices: Invoice[],
@@ -97,7 +110,43 @@ export function matchPayment(
   const open = invoices.filter((v) => v.status === "발행" && balanceOf(v, payments).balance > 0);
   const text = `${p.memo} ${p.payerName}`;
 
-  // 0) 청구할 때 쓴 **연락처**가 가장 강한 단서입니다. 이름 칸에는 사연이 붙지만
+  // ── 0) **청구서 번호가 적혀 있으면 그게 끝입니다.** ─────────────────────────
+  //
+  // 우리가 올톡페이로 내보낼 때 청구사유 앞에 「[2026-0123] 1학기 교재비」처럼 번호를
+  // 박습니다. 되받은 엑셀에 그 글자가 그대로 들어 있으므로, 추측할 이유가 없습니다.
+  //
+  // 예전에는 연락처·금액·이름 추측이 앞에 있었습니다. 그런데 실제 자료를 보면
+  //   · 같은 이름이 셋이고(김재이),
+  //   · 형제를 한 번호로 합쳐 보내면 연락처 하나에 청구서가 둘이며,
+  //   · 청구사유가 「악기비」·「악기(바이올린)」·「악기비 (바이올린)」로 흔들립니다.
+  // 추측이 앞서면 이 셋에서 엉뚱한 청구서에 돈이 붙고, 화면에는 「자동으로 붙음」으로
+  // 보입니다.
+  const tagged = readInvoiceTags(p.memo);
+  if (tagged.length > 0) {
+    const hit = tagged.map((no) => open.find((v) => v.invoice_no === no)).filter((v): v is Invoice => !!v);
+    // **번호가 하나면 그것입니다.** 금액이 달라도 그 청구서에 붙입니다 - 일부만 낸
+    // 경우이고, 잔액은 settlement 이 알아서 계산합니다.
+    if (hit.length === 1) return { picked: hit[0], reason: `청구서 번호 ${hit[0].invoice_no}`, candidates: [] };
+    // 형제를 합쳐 보낸 줄입니다. 한 입금을 둘로 나눠야 하므로 **사람이 정합니다** -
+    // 아무 쪽에나 통째로 붙이면 한 아이는 완납, 다른 아이는 미납으로 남습니다.
+    if (hit.length > 1) {
+      return {
+        picked: null,
+        reason: `형제 ${hit.length}건을 합쳐 보낸 줄입니다 — 나눠 붙일 곳을 골라주세요`,
+        candidates: hit.map((v) => ({ invoice: v, why: "청구사유의 번호" })),
+      };
+    }
+    // 번호는 적혀 있는데 그 청구서가 안 보입니다. 이미 완납됐거나 취소된 것입니다.
+    // **추측으로 넘어가지 않습니다** - 번호가 적힌 돈을 다른 청구서에 붙이면, 그 번호의
+    // 주인은 계속 미납으로 남고 엉뚱한 아이가 완납이 됩니다.
+    return {
+      picked: null,
+      reason: `청구사유에 ${tagged.join(", ")} 가 적혀 있는데 그 청구서가 미납 목록에 없습니다 — 이미 받았거나 취소된 건입니다`,
+      candidates: [],
+    };
+  }
+
+  // 1) 청구할 때 쓴 **연락처**가 그다음 단서입니다. 이름 칸에는 사연이 붙지만
   //    (`강하라/치과진료비12,900원포함`) 번호는 그대로입니다.
   const phone = (p.phone ?? "").replace(/[^\d]/g, "");
   if (phone.length >= 10) {
@@ -115,15 +164,15 @@ export function matchPayment(
     }
   }
 
-  // 1) 인보이스 번호가 적혀 있으면 그게 답입니다.
+  // 2) 대괄호 없이 번호만 적힌 옛 줄. 우리가 번호를 박기 전에 보낸 것들입니다.
   const byNo = open.find((v) => text.includes(v.invoice_no));
   if (byNo) return { picked: byNo, reason: `번호 ${byNo.invoice_no}`, candidates: [] };
 
-  // 2) 잔액이 딱 맞는 것.
+  // 3) 잔액이 딱 맞는 것.
   const exact = open.filter((v) => balanceOf(v, payments).balance === Math.round(p.amount));
   if (exact.length === 1) return { picked: exact[0], reason: "잔액과 금액 일치", candidates: [] };
 
-  // 3) 이름이 같은 것.
+  // 4) 이름이 같은 것.
   const key = norm(cleanPayerName(p.payerName));
   const byName = key.length >= 2
     ? open.filter((v) => norm(v.student_name_ko) === key || norm(v.student_name) === key)

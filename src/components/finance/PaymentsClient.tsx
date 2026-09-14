@@ -28,6 +28,15 @@ type Props = {
   today: string;
 };
 
+/**
+ * **중단만 하고 다시 안 보낸 청구.**
+ *
+ * 결제중단은 학교가 누른 것입니다 - 금액이 바뀌었거나 잘못 적어서 다시 보내려고 멈춥니다.
+ * 그런데 멈춘 뒤 다시 보내는 것을 잊으면, 그 아이는 **청구서를 아예 못 받습니다.** 미납
+ * 목록에도 안 뜹니다 - 청구가 없으니까요. 어느 화면에도 안 나오는 돈입니다.
+ */
+type StoppedRow = { name: string; memo: string; amount: number; at: string };
+
 type Staged = ImportedPayment & {
   invoiceId: string | null;
   reason: string;
@@ -53,6 +62,7 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
   const notify = useToast();
   const [payments, setPayments] = useState(initial);
   const [staged, setStaged] = useState<Staged[] | null>(null);
+  const [stopped, setStopped] = useState<StoppedRow[]>([]);
   const [fileName, setFileName] = useState("");
   /**
    * 이 파일의 결제수단.
@@ -140,12 +150,33 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
       setImportMethod(looksBank ? "계좌이체" : "올톡페이");
 
       const list: Staged[] = [];
+      const stoppedRows: StoppedRow[] = [];
       let notPaid = 0;
       let outgoing = 0;
       rows.forEach((r, i) => {
-        // 올톡페이 파일에는 아직 안 낸 것(발송완료)과 중간에 멈춘 것(결제중단)이 함께 있습니다.
+        // 올톡페이 파일에는 아직 안 낸 것(발송완료)과 멈춘 것(결제중단)이 함께 있습니다.
         // 그것까지 넣으면 **안 받은 돈을 받은 것으로** 기록하게 됩니다.
         const status = String(pick(r, ["상태", "결제상태"]) ?? "").trim();
+
+        // **결제중단은 버리지 않고 모읍니다.**
+        //
+        // 이것은 학부모가 멈춘 것이 아니라 **학교가 멈춘 것**입니다 - 금액이 바뀌었거나
+        // 잘못 적어서 다시 발행하려고 중단시킵니다. 그래서 중단 자체는 정상입니다.
+        //
+        // 문제는 **중단만 하고 다시 안 보낸 건**입니다. 그 아이는 청구서를 아예 못 받은
+        // 것이고, 미납 목록에도 안 뜹니다(청구가 없으니까). 8~9월 자료에서 10건 955,000원이
+        // 그 상태였습니다. 아무 화면에도 안 나오는 돈이라 스스로 드러나지 않습니다.
+        if (status && /중단|취소/.test(status)) {
+          const amt = toAmount(pick(r, ["청구금액", "금액", "amount"]));
+          stoppedRows.push({
+            name: String(pick(r, ["고객명", "성명", "이름"]) ?? "").trim(),
+            memo: String(pick(r, ["청구사유", "내용", "메모"]) ?? "").trim(),
+            amount: amt,
+            at: toIsoDate(pick(r, ["등록일자", "청구일", "날짜"])) || "",
+          });
+          notPaid += 1;
+          return;
+        }
         if (status && !/완료|성공|승인/.test(status)) {
           notPaid += 1;
           return;
@@ -206,6 +237,24 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
       const skipped = [notPaid > 0 ? `아직 안 낸 ${notPaid}줄` : "", outgoing > 0 ? `나간 돈 ${outgoing}줄` : ""].filter(Boolean);
       if (skipped.length > 0) notify(`${list.length}줄을 읽었습니다. ${skipped.join(" · ")}은 넣지 않았습니다.`, "success");
       setStaged(list);
+      // **다시 안 보낸 건만** 남깁니다. 같은 사람에게 같은 사유로 나중에 보낸 줄이 있으면
+      // 이미 처리된 것이므로 목록에서 뺍니다 - 처리된 것까지 띄우면 목록이 길어져서
+      // 정작 빠진 건이 묻힙니다.
+      const later = new Map<string, string>();
+      rows.forEach((r) => {
+        const st = String(pick(r, ["상태", "결제상태"]) ?? "").trim();
+        if (/중단|취소/.test(st)) return;
+        const k = `${String(pick(r, ["고객명", "성명"]) ?? "").replace(/\(.*?\)/g, "").trim()}|${String(pick(r, ["청구사유", "내용"]) ?? "").trim()}`;
+        const at = toIsoDate(pick(r, ["등록일자", "청구일", "날짜"])) || "";
+        if (!later.has(k) || at > (later.get(k) ?? "")) later.set(k, at);
+      });
+      setStopped(
+        stoppedRows.filter((sr) => {
+          const k = `${sr.name.replace(/\(.*?\)/g, "").trim()}|${sr.memo}`;
+          const re = later.get(k);
+          return !(re && re >= sr.at);
+        }),
+      );
     } catch (e) {
       notify("파일을 읽지 못했습니다: " + (e instanceof Error ? e.message : String(e)), "error");
     } finally {
@@ -229,6 +278,9 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
             paid_at: s.paidAt,
             amount: s.amount,
             method: importMethod,
+            // **수단을 칸으로도 남깁니다.** method 는 자유 글자라 집계가 글자 비교로
+            // 흐트러집니다 - 수단별 합계·현금영수증 대상 판단은 method_kind 를 봅니다.
+            method_kind: importMethod,
             payer_name: s.payerName || null,
             memo: s.memo || null,
             source: "엑셀",
@@ -433,6 +485,35 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
           학생의 청구서가 만들어지면 저절로 충당됩니다.
         </p>
       </div>
+
+      {/* ── 중단만 하고 다시 안 보낸 건 ──────────────────────────────
+          결제중단은 학교가 누른 것이라 그 자체는 정상입니다. 문제는 멈춘 뒤 **다시 보내는
+          것을 잊은 건**입니다. 그 아이는 청구서를 아예 못 받았고, 미납 목록에도 안 뜹니다 -
+          청구가 없으니까요. 어느 화면에도 안 나오는 돈이라 여기서 꺼내 보여줍니다. */}
+      {stopped.length > 0 && (
+        <div className="mb-4 rounded-xl border-2 border-amber-300 bg-amber-50/60 p-3">
+          <p className="mb-1.5 text-[12px] font-bold text-amber-900">
+            ⚠️ 중단하고 다시 안 보낸 청구 {stopped.length}건 ·{" "}
+            {stopped.reduce((n, r) => n + r.amount, 0).toLocaleString("ko-KR")}원
+          </p>
+          <p className="mb-2 text-[11px] leading-relaxed text-amber-800">
+            올톡페이에서 <b>결제중단</b>으로 멈춰 두고, 같은 사유로 다시 보낸 기록이 안 보이는 건입니다.
+            그 학부모는 <b>청구서를 못 받은 상태</b>이고 미납 목록에도 안 뜹니다 — 다시 발행해야 합니다.
+            <br />
+            (이름 표기가 다르면 실제로는 보냈는데 여기 뜰 수 있습니다. 올톡페이에서 한 번 확인해주세요.)
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {stopped.map((r, i) => (
+              <span key={i} className="rounded bg-white px-2 py-1 text-[11px] ring-1 ring-amber-200">
+                <b className="text-slate-800">{r.name}</b>
+                <span className="ml-1 text-slate-500">{r.memo}</span>
+                <b className="ml-1 tabular-nums text-amber-800">{r.amount.toLocaleString("ko-KR")}원</b>
+                <span className="ml-1 text-[9px] text-slate-400">{r.at}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── 올린 것 확인 ────────────────────────────────────────── */}
       {staged && (

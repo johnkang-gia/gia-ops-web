@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { timeAgo } from "@/lib/kst";
 import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
@@ -220,6 +220,14 @@ export default function ParentInquiryPanel({
   const [rows, setRows] = useState<Inquiry[]>([]);
   const [expanded, setExpanded] = useState(false);
   const [detail, setDetail] = useState<Inquiry | null>(null);
+  /**
+   * 이름표를 만드는 함수를 담아 둡니다.
+   *
+   * `studentOf` 는 명부(roster)를 읽으므로 아래쪽에서 정의되는데, 자료를 읽는 `load` 는
+   * 위쪽에 있습니다. ref 로 들고 있으면 **한 함수만** 쓰면서 순서 문제를 피할 수 있습니다 -
+   * 이름 만드는 규칙이 두 벌이 되면 팝업과 목록이 다른 아이를 가리키게 됩니다.
+   */
+  const studentOfRef = useRef<(r: Inquiry) => string>(() => "");
   const [busy, setBusy] = useState(false);
   // 내 반 것만 볼지. 담임 선생님은 대개 자기 반만 보면 됩니다.
   const [mineOnly, setMineOnly] = useState(false);
@@ -308,7 +316,9 @@ export default function ParentInquiryPanel({
     // 마이그레이션 전(칸이 아직 없음)이라도 undefined는 통과하므로 화면이 깨지지 않습니다.
     const list = ((data as (Inquiry & { is_demo?: boolean })[] | null) ?? []).filter((r) => !r.is_demo);
     setRows(list);
-    void loadAuto(list.map((r) => r.id));
+    // 이름표는 **화면과 같은 함수**로 만듭니다(studentOf). 여기서 따로 만들면 팝업과 목록이
+    // 다른 이름을 적게 되고, 동명이인에서는 그게 다른 아이가 됩니다.
+    void loadAuto(list.map((r) => r.id), new Map(list.map((r) => [r.id, studentOfRef.current(r)])));
   }, []);
 
   /**
@@ -318,7 +328,7 @@ export default function ParentInquiryPanel({
    * 열쇠가 서로 다릅니다 - 출결은 `source_message_id`(문의 id 를 글자로), 동승은
    * `request_id`(외래키). 처음 만든 시점이 달라서 그렇습니다.
    */
-  const loadAuto = useCallback(async (ids: string[]) => {
+  const loadAuto = useCallback(async (ids: string[], forWho?: Map<string, string>) => {
     if (ids.length === 0) return;
     const supabase = createClient();
     const [entRes, rideRes] = await Promise.all([
@@ -342,12 +352,15 @@ export default function ParentInquiryPanel({
         kind: "출결",
         state: e.state as AutoResult["state"],
         label: e.state === "등록" ? `${e.status} ${span}` : e.state === "확인필요" ? `${e.status}? 확인 필요` : `출결 아님`,
+        // **누구를 어떻게 했는지**를 한 줄로 적습니다. 「등록했습니다」만 적으면 보는 사람은
+        // 누구에게 된 것인지 몰라 결국 출결 화면을 따로 엽니다 - 그러면 이 줄이 없는 것과
+        // 같습니다. 동명이인이 셋인 학교라 **반까지** 적습니다(CLAUDE.md 2-4).
         detail:
           e.state === "등록"
-            ? `앱이 읽고 ${span} ${e.status}으로 등록했습니다. 출석부와 하원 체크표에 반영돼 있습니다.`
+            ? `자동으로 ${forWho?.get(e.source_message_id) ?? "이 학생"} ${span} ${e.status} 처리했습니다. 출석부와 하원 체크표에 반영돼 있습니다.`
             : e.state === "확인필요"
-              ? `${e.status}으로 읽었지만 ${e.reason ?? "확실하지 않아"} 등록하지 않았습니다. 출결 내역에서 확인해주세요.`
-              : "출결이 아니라고 판단해 내렸습니다.",
+              ? `${e.status}으로 읽었지만 ${e.reason ?? "확실하지 않아"} 처리하지 않았습니다. 픽업 인박스에서 체크 필요.`
+              : "출결이 아니라고 판단해 아무것도 하지 않았습니다.",
       });
     }
     for (const r of (rideRes.data as { request_id: string; status: string; student_name: string | null; student_surface: string | null; route_no: string | null }[] | null) ?? []) {
@@ -358,10 +371,10 @@ export default function ParentInquiryPanel({
         label: r.status === "확정" ? `동승 ${r.route_no ? `${r.route_no}호` : ""}`.trim() : r.status === "취소" ? "동승 취소" : "동승? 확인 필요",
         detail:
           r.status === "확정"
-            ? `${who}를 오늘 ${r.route_no ? `${r.route_no}호에 ` : ""}같이 타도록 올렸습니다.`
+            ? `자동으로 ${who}를 오늘 ${r.route_no ? `${r.route_no}호에 ` : ""}같이 타도록 올렸습니다.`
             : r.status === "취소"
-              ? "사람이 아니라고 판단해 내렸습니다."
-              : `${who} 가 누구인지 못 가려서 아직 올리지 않았습니다. 하원 체크표에서 골라주세요.`,
+              ? "사람이 아니라고 판단해 아무것도 하지 않았습니다."
+              : `${who} 가 누구인지 못 가려서 아직 올리지 않았습니다. 픽업 인박스에서 체크 필요.`,
       });
     }
     setAuto(m);
@@ -628,6 +641,15 @@ export default function ParentInquiryPanel({
     // 보는 사람은 이미 정해진 이름이라 믿고 엉뚱한 아이를 찾습니다.
     return markIfAmbiguous(label, roster) ?? r.channel_label ?? "미확인";
   }
+
+  // 명부는 문의보다 늦게 옵니다. 먼저 만든 이름표에는 반이 없을 수 있어, 명부가 들어오면
+  // **한 번 더** 만듭니다 - 그러지 않으면 「정레인」으로 남고 반이 영영 안 붙습니다.
+  useEffect(() => {
+    studentOfRef.current = studentOf;
+    if (roster.length === 0 || rows.length === 0) return;
+    void loadAuto(rows.map((r) => r.id), new Map(rows.map((r) => [r.id, studentOf(r)])));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roster, rows]);
 
   const Row = ({ r, full }: { r: Inquiry; full?: boolean }) => (
     <div
@@ -1009,6 +1031,46 @@ export default function ParentInquiryPanel({
                 ) : (
                   <p className="text-[11px] text-slate-400">보관 기간이 지나 원문은 지워졌습니다.</p>
                 )}
+
+                {/* ── 앱이 이 문의로 한 일 ─────────────────────────────────
+                    목록에는 뱃지로 떠 있었지만 **팝업에는 없었습니다.** 그래서 이름을 눌러
+                    원문을 읽는 사람은 「그래서 결석 처리가 된 건가」를 알 수 없었고, 결국
+                    출결 화면을 따로 열어 확인했습니다.
+
+                    되지 않은 것도 **되지 않았다고** 적습니다. 조용히 비어 있으면 「아무 일도
+                    없었다」와 「앱이 애매해서 넘겼다」가 구별되지 않습니다(CLAUDE.md 5). */}
+                {(() => {
+                  const acts = auto.get(detail.id) ?? [];
+                  if (acts.length === 0) {
+                    if (!isAttendanceInquiry(detail)) return null;
+                    return (
+                      <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] font-semibold text-amber-800">
+                        ⚙ 앱이 아무것도 하지 않았습니다 — 픽업 인박스에서 체크 필요
+                      </p>
+                    );
+                  }
+                  return (
+                    <div className="mt-2 flex flex-col gap-1">
+                      {acts.map((a, n) => (
+                        <p
+                          key={n}
+                          className={
+                            "rounded-lg px-2.5 py-2 text-[11px] leading-relaxed " +
+                            (a.state === "등록"
+                              ? "border border-teal-200 bg-teal-50 text-teal-900"
+                              : a.state === "확인필요"
+                                ? "border border-rose-200 bg-rose-50 text-rose-800"
+                                : "border border-slate-200 bg-slate-50 text-slate-500")
+                          }
+                        >
+                          <b>⚙ {a.label}</b>
+                          <br />
+                          {a.detail}
+                        </p>
+                      ))}
+                    </div>
+                  );
+                })()}
 
                 {detail.answered_at && (
                   <p className="mt-2 text-[11px] text-emerald-600">

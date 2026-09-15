@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { createPortal } from "react-dom";
 import { useToast } from "@/components/common/ToastProvider";
 
 type Summary = { fill: number; house: number; ask: number; skip: number };
@@ -27,11 +28,13 @@ export default function ChannelBackfillBand() {
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  /** 지금 고르고 있는 줄. 형제 중 누구인지 사람이 정해야 하는 것들입니다. */
+  const [picking, setPicking] = useState<AskRow | null>(null);
 
   const load = useCallback(async () => {
     const res = await fetch("/api/toddle/backfill");
     const j = (await res.json().catch(() => null)) as
-      | { error?: string; summary?: Summary; sample?: FillRow[]; askSample?: AskRow[] }
+      | { error?: string; summary?: Summary; sample?: FillRow[]; ask?: AskRow[] }
       | null;
     // 조용히 넘기면 「채울 것이 없다」와 「못 읽었다」가 구별되지 않습니다(CLAUDE.md 5).
     if (!res.ok) {
@@ -41,7 +44,7 @@ export default function ChannelBackfillBand() {
     setError(null);
     setSummary(j?.summary ?? null);
     setSample(j?.sample ?? []);
-    setAskSample(j?.askSample ?? []);
+    setAskSample(j?.ask ?? []);
   }, []);
 
   useEffect(() => {
@@ -65,6 +68,34 @@ export default function ChannelBackfillBand() {
           (j?.stillAsk ? ` 형제방 출결 ${j.stillAsk}줄은 사람이 골라야 합니다.` : ""),
         j?.failed ? "error" : "success",
       );
+      await load();
+      router.refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /**
+   * 형제 중 하나를 고릅니다.
+   *
+   * **고른 뒤에 목록을 다시 읽습니다.** 화면이 자기 상태를 손으로 고치면, 저장이 실패했는데도
+   * 화면에서는 사라져 「됐다」로 보입니다.
+   */
+  async function pick(row: AskRow, studentId: string, studentName: string) {
+    setBusy(true);
+    try {
+      const res = await fetch("/api/toddle/backfill", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: row.id, studentId }),
+      });
+      const j = (await res.json().catch(() => null)) as { error?: string } | null;
+      if (!res.ok) {
+        notify(j?.error ?? "정하지 못했습니다.", "error");
+        return;
+      }
+      notify(`${studentName} 으로 정했습니다.`, "success");
+      setPicking(null);
       await load();
       router.refresh();
     } finally {
@@ -136,26 +167,86 @@ export default function ChannelBackfillBand() {
                 <p className="ml-[13.5rem] text-[10px] text-slate-400">{f.why}</p>
               </div>
             ))}
+            {/* **누르면 그 자리에서 고릅니다.** 목록에 띄우기만 하고 고를 데가 없으면,
+                보고도 어디 가서 고쳐야 하는지 몰라 아무도 안 고칩니다. */}
             {askSample.map((a) => (
-              <div key={a.id} className="border-b border-slate-50 px-2.5 py-1 text-[11px] last:border-b-0">
+              <button
+                key={a.id}
+                type="button"
+                onClick={() => setPicking(a)}
+                className="block w-full border-b border-slate-50 px-2.5 py-1 text-left text-[11px] last:border-b-0 hover:bg-amber-50"
+              >
                 <div className="flex items-center gap-2">
                   <span className="w-48 shrink-0 truncate text-slate-500">{a.channel}</span>
                   <span className="text-slate-400">→</span>
                   <span className="rounded bg-amber-100 px-1 font-bold text-amber-800">
                     {a.candidates.map((c) => c.name).join(" · ")} 중 누구?
                   </span>
+                  <span className="ml-auto shrink-0 text-[10px] font-bold text-amber-700">고르기 →</span>
                 </div>
                 {a.text && <p className="ml-[13.5rem] truncate text-[10px] text-slate-400">{a.text}</p>}
-              </div>
+              </button>
             ))}
           </div>
-          {(summary.fill > sample.length || summary.ask > askSample.length) && (
+          {summary.fill > sample.length && (
             <p className="mt-1 text-[10px] text-indigo-700">
-              … 위는 앞쪽 몇 줄입니다. 누르면 채울 수 있는 {summary.fill}줄 전부에 반영됩니다.
+              … 채울 줄은 앞쪽 몇 개만 보입니다. 누르면 {summary.fill}줄 전부에 반영됩니다. 고를 줄은 전부 보입니다.
             </p>
           )}
         </div>
       )}
+
+      {/* ── 형제 중 누구인지 고르는 팝업 ────────────────────────────────────
+          **원문을 통째로 보여줍니다.** 목록의 한 줄로는 앞부분만 보이는데, 형제를 가르는
+          단서가 뒤에 있을 수 있습니다. 읽고 나서 고르는 것이 순서입니다. */}
+      {picking &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 p-4"
+            onClick={() => setPicking(null)}
+          >
+            <div onClick={(e) => e.stopPropagation()} className="w-full max-w-md rounded-xl bg-white p-4 shadow-2xl">
+              <div className="mb-1 flex items-center gap-2">
+                <span className="text-sm font-bold text-slate-800">형제 중 누구인가요?</span>
+                <button
+                  type="button"
+                  onClick={() => setPicking(null)}
+                  className="ml-auto rounded-lg px-2 py-1 text-sm text-slate-400 hover:bg-slate-100"
+                >
+                  ✕
+                </button>
+              </div>
+              <p className="mb-2 text-[11px] text-slate-500">{picking.channel}</p>
+
+              <p className="mb-3 whitespace-pre-wrap break-words rounded-lg bg-slate-50 p-3 text-[12px] leading-relaxed text-slate-700">
+                {picking.text || "(본문이 없습니다. 무슨 글인지 알 수 없으면 고르지 말고 닫아 주세요.)"}
+              </p>
+
+              <div className="flex flex-wrap gap-1.5">
+                {picking.candidates.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void pick(picking, c.id, c.name)}
+                    className="rounded-lg bg-indigo-600 px-3 py-2 text-[12px] font-bold text-white hover:bg-indigo-700 disabled:opacity-40"
+                  >
+                    {c.name}
+                  </button>
+                ))}
+              </div>
+
+              {/* **모르면 안 고르는 것이 맞습니다.** 둘 중 하나를 찍으면 오는 아이가 셔틀에서
+                  빠지거나 안 오는 아이가 남고, 하원 시간의 착오는 되돌릴 수 없습니다. */}
+              <p className="mt-2 text-[10px] leading-relaxed text-slate-400">
+                이 글은 출결·하원에 반영되는 글이라 아이가 한 명으로 정해져야 합니다. <b>본문만으로 모르겠으면 고르지
+                말고 닫으세요</b> — 잘못 고르면 오는 아이가 셔틀에서 빠집니다. 토들에서 학부모께 여쭙는 편이 낫습니다.
+              </p>
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

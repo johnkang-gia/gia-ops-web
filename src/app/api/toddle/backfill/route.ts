@@ -129,8 +129,85 @@ export async function GET() {
     summary: { fill: fill.length, house: house.length, ask: ask.length, skip: skip.length },
     // 미리 보기용 몇 줄. 전부 내려보내면 화면이 무거워지고, 사람이 확인하는 데는 몇 줄이면 됩니다.
     sample: fill.slice(0, 20),
-    askSample: ask.slice(0, 20),
+    // **사람이 골라야 하는 줄은 전부 내려보냅니다.** 이건 미리 보기가 아니라 할 일 목록이라,
+    // 앞쪽 몇 줄만 주면 나머지는 영영 아무도 못 봅니다. 지금 4건이고 많아야 수십 건입니다.
+    ask,
   });
+}
+
+/**
+ * **사람이 형제 중 하나를 고릅니다.**
+ *
+ * 형제방은 방이 하나뿐이라 본문 말고는 가릴 재료가 없고, 본문에 이름이 없으면 기계는
+ * 고를 수 없습니다. 그런데 그 글이 출결·하원이면 **누구인지 모르는 채로 둘 수도 없습니다** -
+ * 오는 아이가 셔틀에서 빠지거나 안 오는 아이가 남습니다.
+ *
+ * 그래서 이 창구가 있습니다. 고르는 것은 사람이고, 고른 사실을 남깁니다.
+ */
+export async function PATCH(req: Request) {
+  const me = await getCurrentAppUser();
+  if (!me) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
+  if (!isStaffOrAboveUser(me)) return NextResponse.json({ error: "행정 권한이 필요합니다." }, { status: 403 });
+
+  const body = (await req.json().catch(() => null)) as { id?: string; studentId?: string } | null;
+  const id = body?.id;
+  const studentId = body?.studentId;
+  if (!id || !studentId) return NextResponse.json({ error: "줄과 학생을 모두 골라야 합니다." }, { status: 400 });
+
+  const supabase = await createClient();
+
+  // **고른 아이가 정말 그 방의 아이인지 확인합니다.** 화면이 보낸 값을 그대로 믿으면,
+  // 남의 집 아이를 이 집 연락에 붙일 수 있습니다.
+  const { data: row, error: rowErr } = await supabase
+    .from("pickup_requests")
+    .select("id, channel_id, student_id")
+    .eq("id", id)
+    .maybeSingle();
+  if (rowErr) return NextResponse.json({ error: rowErr.message }, { status: 500 });
+  if (!row) return NextResponse.json({ error: "그 연락을 찾지 못했습니다." }, { status: 404 });
+  if ((row as { student_id: string | null }).student_id) {
+    return NextResponse.json({ error: "그 사이에 다른 사람이 이미 정했습니다. 새로고침해 주세요." }, { status: 409 });
+  }
+
+  const channelId = (row as { channel_id: string | null }).channel_id;
+  if (!channelId) return NextResponse.json({ error: "이 연락에는 방이 붙어 있지 않습니다." }, { status: 400 });
+
+  const { data: link, error: linkErr } = await supabase
+    .from("toddle_channel_students")
+    .select("student_id")
+    .eq("channel_id", channelId)
+    .eq("student_id", studentId)
+    .maybeSingle();
+  if (linkErr) return NextResponse.json({ error: linkErr.message }, { status: 500 });
+  if (!link) return NextResponse.json({ error: "그 아이는 이 방에 이어져 있지 않습니다." }, { status: 400 });
+
+  const { data: stu } = await supabase
+    // demo-ok: 고른 학생 번호로 한 줄만 찍어 읽습니다. 명부를 훑지 않습니다.
+    .from("wr_students")
+    .select("name")
+    .eq("id", studentId)
+    .maybeSingle();
+  const name = (stu as { name: string } | null)?.name ?? null;
+
+  const { data, error } = await supabase
+    .from("pickup_requests")
+    .update({
+      student_id: studentId,
+      matched_name: name,
+      // **누가 골랐는지 남깁니다.** 형제 중 하나를 고르는 일은 되돌리기 어려우므로,
+      // 나중에 물어볼 사람이 있어야 합니다.
+      ai_note: `형제방에서 사람이 ${name ?? "이 아이"} 로 정했습니다 (${me.email})`,
+    })
+    .eq("id", id)
+    // 그 사이에 누가 정했을 수 있습니다. **비어 있는 줄만** 고칩니다.
+    .is("student_id", null)
+    .select("id");
+  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+  // 0줄이면 화면에는 성공으로 보이지만 아무것도 안 바뀐 것입니다(CLAUDE.md 5).
+  if (!data || data.length === 0) {
+    return NextResponse.json({ error: "바뀐 줄이 없습니다. 그 사이에 다른 사람이 정했을 수 있습니다." }, { status: 409 });
+  }
+  return NextResponse.json({ ok: true, studentName: name });
 }
 
 /**

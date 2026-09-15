@@ -13,6 +13,7 @@ import { buildWhereMaps, RowStudentName } from "@/lib/studentLabel";
 import { nameSurfaces, readSiblings } from "@/lib/attendanceIntent";
 import { extractTargetRange, todayKey } from "@/lib/attendanceDigest";
 import { extractRecurringWeekdays, hasRecurringPhrase, weekdayLabel } from "@/lib/parentRecurrence";
+import { guessNote, isClockTime, KIND_LOOK, NOTE_KINDS, type NoteKind } from "@/lib/studentDayNotes";
 
 // 픽업 인박스. 토들·전화·교사·직접입력 어디로 들어왔든 여기 한 곳에 모입니다.
 //
@@ -80,6 +81,8 @@ export default function PickupInboxClient({
   const [manual, setManual] = useState("");
   const [manualSource, setManualSource] = useState<"전화" | "교사" | "직접입력">("전화");
   const [showDone, setShowDone] = useState(false);
+  /** 특이사항 폼이 열려 있는 줄. 한 번에 하나만 엽니다 - 여럿 열리면 어느 칸에 적는지 헷갈립니다. */
+  const [noteFor, setNoteFor] = useState<string | null>(null);
 
   const pending = useMemo(() => rows.filter((r) => r.status === "확인대기"), [rows]);
   /** AI가 못 읽어서 요약·시각이 비어 있는 줄. 원문은 남아 있어 다시 읽을 수 있습니다. */
@@ -371,10 +374,46 @@ export default function PickupInboxClient({
     void refresh();
   }
 
+  /**
+   * **픽업도 결석도 아닌 연락을 특이사항으로 남깁니다.**
+   *
+   * 전에는 이런 글에 대해 「픽업 아님」밖에 없었고, 누르면 그 부탁은 어디에도 안 남았습니다.
+   * 창구 한 번에 인박스에서 내리는 일과 특이사항으로 적는 일이 **함께** 일어납니다 -
+   * 화면이 둘로 나눠 부르면 한쪽만 되고 다른 쪽이 실패하는 날이 옵니다.
+   */
+  async function saveNote(row: PickupRow, form: { kind: NoteKind; atTime: string; content: string }) {
+    const json = await call({
+      action: "note",
+      id: row.id,
+      studentId: row.student_id,
+      kind: form.kind,
+      atTime: form.atTime,
+      content: form.content,
+      onDate: row.service_date,
+    });
+    if (!json) return;
+    setNoteFor(null);
+    const when = form.atTime ? ` ${form.atTime}` : "";
+    notify(`${json.name ?? row.matched_name ?? "학생"} · ${form.kind}${when} 특이사항으로 남겼습니다.`, "success");
+    const undoNote = (json as { undoNote?: string }).undoNote;
+    if (undoNote) notify(undoNote, "success");
+    await refresh();
+    // 학생 하루 보드(업무보드·중앙 대시보드)가 바로 받아보게 합니다.
+    router.refresh();
+  }
+
   async function confirm(row: PickupRow, studentId?: string) {
     const json = await call({ action: "confirm", id: row.id, studentId: studentId ?? row.student_id });
     if (!json) return;
-    notify(json.applied > 0 ? "픽업으로 체크했습니다." : "확정했습니다(셔틀 배정이 없는 학생입니다).", "success");
+    // 특이사항으로 잘못 넘겼던 것을 되돌린 경우, **무엇이 내려갔는지 말해줍니다.** 안 말하면
+    // 담당자는 보드에 남아 있는 줄 알고 학생 하루 보드를 다시 열어 확인해야 합니다.
+    const dropped = (json as { notesDropped?: number }).notesDropped ?? 0;
+    notify(
+      (json.applied > 0 ? "픽업으로 체크했습니다." : "확정했습니다(셔틀 배정이 없는 학생입니다).") +
+        (dropped > 0 ? ` 특이사항 ${dropped}건은 함께 내렸습니다.` : ""),
+      "success",
+    );
+    for (const p of ((json as { problems?: string[] }).problems ?? []).filter(Boolean)) notify(p, "error");
     await refresh();
   }
 
@@ -615,6 +654,20 @@ export default function PickupInboxClient({
                       >
                         지각
                       </button>
+                      {/* **픽업·결석·지각 어디에도 안 들어가는 연락이 많습니다.**
+                          「약 좀 챙겨주세요」·「오늘 결제할게요」에 대해 이 화면이 할 수 있는
+                          일은 「픽업 아님」뿐이었고, 그러면 그 부탁은 아무 데도 안 남았습니다. */}
+                      <button
+                        onClick={() => setNoteFor((v) => (v === r.id ? null : r.id))}
+                        disabled={busy}
+                        className={
+                          "rounded-lg px-3 py-1.5 text-xs font-bold disabled:opacity-50 " +
+                          (noteFor === r.id ? "bg-slate-800 text-white" : "bg-violet-600 text-white")
+                        }
+                        title="픽업이 아니라 약·결제·준비물 같은 부탁입니다. 학생 하루 보드에 남깁니다."
+                      >
+                        📌 특이사항
+                      </button>
                     </>
                   )}
                   <button
@@ -625,6 +678,10 @@ export default function PickupInboxClient({
                     픽업 아님
                   </button>
                 </div>
+
+                {noteFor === r.id && r.student_id && (
+                  <NoteBox row={r} busy={busy} onCancel={() => setNoteFor(null)} onSave={(f) => saveNote(r, f)} />
+                )}
               </div>
             ))}
           </div>
@@ -766,6 +823,110 @@ export default function PickupInboxClient({
         </button>
       </section>
       </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * **특이사항으로 확정하는 칸.**
+ *
+ * ── 왜 AI가 채워두고 사람이 고치나 ─────────────────────────────────────────
+ *
+ * 종류와 시각을 빈칸으로 두면, 바쁜 하원 시간에 담당자는 세 칸을 채우느니 「픽업 아님」을
+ * 누릅니다. 그러면 이 칸은 있으나 마나입니다.
+ *
+ * 그렇다고 짐작한 값을 바로 저장하지도 않습니다 - 이 저장소에서 짐작해 붙인 자리는 매번
+ * 사고가 났습니다(CLAUDE.md §2-4-1). **미리 채워두되 저장은 사람이 누를 때** 일어나고,
+ * 무엇을 짐작했는지 화면에 적어 고칠 거리를 사람이 알아보게 합니다.
+ *
+ * 내용은 원문 그대로 시작합니다. 요약하면 「왜 이 줄이 있는가」가 사라지고, 며칠 뒤
+ * 되짚을 때 남는 것은 우리가 줄인 문장뿐입니다.
+ */
+function NoteBox({
+  row,
+  busy,
+  onCancel,
+  onSave,
+}: {
+  row: PickupRow;
+  busy: boolean;
+  onCancel: () => void;
+  onSave: (form: { kind: NoteKind; atTime: string; content: string }) => void;
+}) {
+  const guess = useMemo(() => guessNote(row.raw_text ?? ""), [row.raw_text]);
+  const [kind, setKind] = useState<NoteKind>(guess.kind);
+  // 픽업 시각으로 읽힌 값이 있으면 그것이 더 정확합니다 - 같은 문장을 AI가 이미 한 번
+  // 읽었고, 여기 짐작은 글자만 보고 하는 것입니다.
+  const [atTime, setAtTime] = useState(row.ai_pickup_time?.slice(0, 5) || guess.atTime || "");
+  const [content, setContent] = useState((row.raw_text ?? "").trim().slice(0, 300));
+  const timeBad = atTime.trim() !== "" && !isClockTime(atTime.trim());
+
+  return (
+    <div className="mt-2 rounded-lg border border-violet-300 bg-violet-50 p-2.5">
+      <p className="mb-1.5 text-[11px] font-bold text-violet-800">
+        📌 {row.service_date} · 특이사항으로 남기기
+        <span className="ml-1 font-normal text-violet-500">
+          — 종류와 시각은 원문에서 짐작해 채웠습니다. 맞는지 보고 고쳐주세요.
+        </span>
+      </p>
+
+      <div className="mb-1.5 flex flex-wrap items-center gap-1">
+        {NOTE_KINDS.map((k) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => setKind(k)}
+            className={
+              "rounded-full px-2.5 py-1 text-[11px] font-bold " +
+              (kind === k ? "bg-violet-700 text-white" : "bg-white text-slate-600 ring-1 ring-slate-300")
+            }
+          >
+            {KIND_LOOK[k].icon} {k}
+          </button>
+        ))}
+        <input
+          value={atTime}
+          onChange={(e) => setAtTime(e.target.value)}
+          placeholder="14:30"
+          inputMode="numeric"
+          className={
+            "ml-1 w-[72px] rounded-lg border px-2 py-1 text-[12px] " +
+            (timeBad ? "border-red-400 bg-red-50 text-red-700" : "border-slate-300")
+          }
+          title="시각은 없어도 됩니다. 적으면 그 시각에 중앙 대시보드가 알립니다."
+        />
+        {/* 시각이 없으면 없다고 적습니다. 빈칸이 「못 읽었다」인지 「원래 없다」인지
+            구별이 안 되면 사람은 아무 시각이나 채워 넣게 됩니다. */}
+        <span className="text-[10px] text-violet-500">{atTime ? "그 시각에 알립니다" : "시각 없음 = 오늘 중에"}</span>
+      </div>
+
+      <textarea
+        value={content}
+        onChange={(e) => setContent(e.target.value.slice(0, 300))}
+        rows={2}
+        placeholder="예) 점심 뒤 감기약 한 봉 먹여주세요"
+        className="w-full rounded-lg border border-slate-300 p-2 text-xs"
+      />
+
+      <div className="mt-1.5 flex items-center gap-1.5">
+        <span className="text-[10px] text-slate-400">{content.length}/300</span>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="ml-auto rounded-lg border border-slate-300 px-2.5 py-1.5 text-[11px] font-semibold text-slate-500"
+        >
+          취소
+        </button>
+        <button
+          type="button"
+          disabled={busy || !content.trim() || timeBad}
+          onClick={() => onSave({ kind, atTime: atTime.trim(), content: content.trim() })}
+          className="rounded-lg bg-violet-700 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-40"
+          title={timeBad ? "시각은 14:30 처럼 적어주세요." : "학생 하루 보드에 남기고 인박스에서 내립니다."}
+        >
+          특이사항으로 남기기
+        </button>
       </div>
     </div>
   );

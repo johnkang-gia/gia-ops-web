@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { undoPickupTraces, undoSummary } from "@/lib/pickupUndo";
+import { undoInquiryNotes, undoPickupTraces, undoSummary } from "@/lib/pickupUndo";
+import { isClockTime, isNoteKind } from "@/lib/studentDayNotes";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isStaffOrAboveUser } from "@/lib/roles";
@@ -76,7 +77,103 @@ export async function POST(req: Request) {
       from: (row.channel_label as string | null) ?? (row.sender_name as string | null) ?? null,
       url: (row.source_url as string | null) ?? null,
     });
-    return NextResponse.json({ ok: true, applied });
+
+    // **특이사항으로 잘못 넘겼던 것을 되돌립니다.** 안 내리면 그 아이는 보드에서 픽업이면서
+    // 동시에 약을 먹는 아이가 되고, 어느 쪽이 지금 맞는지 화면으로는 알 수 없습니다.
+    const notes = await undoInquiryNotes(supabase, id, { email: me.email, name: me.name ?? null });
+    return NextResponse.json({
+      ok: true,
+      applied,
+      notesDropped: notes.notes,
+      problems: notes.problems,
+    });
+  }
+
+  // ── 픽업이 아니라 **특이사항**으로 확정 ───────────────────────────────────
+  //
+  // 토들로 오는 연락은 픽업·결석·지각만이 아닙니다. 「약 좀 챙겨주세요」·「오늘 결제할게요」
+  // 같은 글에 대해 이 화면이 할 수 있는 일은 「픽업 아님」뿐이었고, 그러면 그 부탁은
+  // **아무 데도 안 남은 채** 인박스에서 사라졌습니다.
+  //
+  // 순서가 중요합니다. 인박스에서 내리는 일(undoPickupTraces)이 **특이사항을 넣기 전에**
+  // 끝나야 합니다 - 반대로 하면 방금 넣은 줄을 그 되돌리기가 다시 내립니다.
+  if (action === "note") {
+    const id = body?.id as string | undefined;
+    if (!id) return NextResponse.json({ error: "id가 필요합니다." }, { status: 400 });
+
+    const kind = isNoteKind(body?.kind) ? body.kind : "기타";
+    const content = ((body?.content as string | undefined) ?? "").trim();
+    const rawTime = ((body?.atTime as string | undefined) ?? "").trim();
+    if (!content) return NextResponse.json({ error: "무엇을 해야 하는지 적어주세요." }, { status: 400 });
+    if (content.length > 300) return NextResponse.json({ error: "내용은 300자까지입니다." }, { status: 400 });
+    // 못 읽는 시각이 들어가면 알람이 그 줄만 조용히 건너뜁니다. 사람은 적어뒀다고 믿습니다.
+    if (rawTime && !isClockTime(rawTime)) return NextResponse.json({ error: "시각은 14:30 처럼 적어주세요." }, { status: 400 });
+
+    const { data: row } = await supabase
+      .from("pickup_requests")
+      .select("id, service_date, student_id, status")
+      .eq("id", id)
+      .maybeSingle();
+    if (!row) return NextResponse.json({ error: "요청을 찾을 수 없습니다." }, { status: 404 });
+
+    const studentId = ((body?.studentId as string | undefined) ?? (row.student_id as string | null)) || null;
+    if (!studentId) return NextResponse.json({ error: "학생을 먼저 선택해주세요." }, { status: 400 });
+
+    // 이름은 **명부에서** 읽습니다. 화면이 보낸 이름을 믿으면 김재이가 셋이라 나중에 어느
+    // 아이 것인지 되짚을 수 없습니다(CLAUDE.md §2-4-1).
+    const { data: student, error: stuErr } = await supabase
+      .from("wr_students")
+      .select("name")
+      .eq("is_demo", false)
+      .eq("id", studentId)
+      .maybeSingle();
+    if (stuErr) return NextResponse.json({ error: `명부를 읽지 못했습니다: ${stuErr.message}` }, { status: 500 });
+    if (!student) return NextResponse.json({ error: "명부에 없는 학생입니다. 다시 골라주세요." }, { status: 400 });
+
+    const onDate = ((body?.onDate as string | undefined) ?? "").trim() || ((row.service_date as string | null) ?? "");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(onDate)) return NextResponse.json({ error: "날짜 모양이 올바르지 않습니다." }, { status: 400 });
+
+    const before = (row.status as string | null) ?? "확인대기";
+    const { error: stErr } = await supabase
+      .from("pickup_requests")
+      .update({ student_id: studentId, status: "무시", resolved_by: me.email, resolved_at: new Date().toISOString() })
+      .eq("id", id);
+    if (stErr) return NextResponse.json({ error: stErr.message }, { status: 500 });
+
+    // 픽업이 아니었다고 알려줍니다. 이 정정이 쌓여야 다음부터 같은 집 연락을 덜 잘못 읽습니다.
+    await bumpPickupFeedback(supabase, id, false);
+    const undo = await undoPickupTraces(supabase, id, { email: me.email, name: me.name ?? null });
+
+    const { data: note, error: noteErr } = await supabase
+      .from("student_day_notes")
+      .insert({
+        student_id: studentId,
+        student_name: (student as { name: string }).name,
+        on_date: onDate,
+        at_time: rawTime || null,
+        kind,
+        content,
+        source_inquiry_id: id,
+        created_by: me.email,
+        created_by_name: me.name || me.email,
+      })
+      .select("id")
+      .single();
+
+    if (noteErr) {
+      // **못 적었으면 인박스에서도 내리지 않습니다.** 내려간 채로 실패하면 그 부탁은 어디에도
+      // 안 남고, 화면에는 처리된 것처럼 보입니다.
+      await supabase.from("pickup_requests").update({ status: before, resolved_by: null, resolved_at: null }).eq("id", id);
+      return NextResponse.json({ error: `특이사항을 저장하지 못했습니다: ${noteErr.message}` }, { status: 500 });
+    }
+
+    return NextResponse.json({
+      ok: true,
+      noteId: (note as { id: string }).id,
+      name: (student as { name: string }).name,
+      undo,
+      undoNote: undoSummary(undo),
+    });
   }
 
   // ── 픽업이 아니라고 표시 ──────────────────────────────────────────────────

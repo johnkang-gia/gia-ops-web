@@ -75,3 +75,72 @@ export function sortNotes(notes: DayNote[], today: string): DayNote[] {
 export function isClockTime(v: unknown): v is string {
   return typeof v === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
 }
+
+/**
+ * **원문에서 종류와 시각을 짐작합니다 — 짐작일 뿐이라 사람이 확정합니다.**
+ *
+ * 픽업 인박스로 들어온 연락이 픽업이 아니라 「약 좀 챙겨주세요」일 때, 담당자가 종류를
+ * 고르고 시각을 치고 내용을 옮겨 적게 하면 그 일을 안 하게 됩니다. 그러면 그 연락은
+ * 「픽업 아님」으로 내려가고 **아무 데도 안 남습니다** — 지금이 그렇습니다.
+ *
+ * 그렇다고 짐작한 값을 **그대로 저장하지는 않습니다.** 이 저장소에서 이름을 짐작해 붙인
+ * 자리는 매번 사고가 났습니다(CLAUDE.md §2-4-1). 짐작은 **입력칸을 미리 채우는 데까지만**
+ * 쓰고, 저장은 사람이 보고 누를 때 일어납니다.
+ *
+ * 순수 함수입니다 — 화면 없이 시험할 수 있습니다.
+ */
+export type NoteGuess = { kind: NoteKind; atTime: string | null };
+
+export function guessNote(text: string): NoteGuess {
+  return { kind: guessKind(text), atTime: guessTime(text) };
+}
+
+/**
+ * 종류 짐작. **먼저 걸리는 것이 이깁니다.**
+ *
+ * 「감기약」에는 감기(건강)와 약이 함께 있습니다. 이때 담당자가 해야 할 일은 «약을 먹이는
+ * 것»이지 «아픈 것을 아는 것»이 아니라, 약이 먼저입니다. 할 일이 있는 갈래를 앞에 둡니다.
+ */
+function guessKind(text: string): NoteKind {
+  const t = text.toLowerCase();
+  if (/(약|투약|해열제|시럽|알약|물약|먹여|먹이|medicine|medication)/.test(t)) return "약";
+  if (/(결제|납부|입금|송금|계좌|카드로|현금|수납|학비|payment|pay\b)/.test(t)) return "결제";
+  if (/(준비물|교재|책|체육복|도시락|가져|챙겨\s*보|제출|숙제|bring)/.test(t)) return "준비물";
+  if (/(열이|열나|아파|아프|감기|기침|콧물|배탈|병원|진료|알레르기|다쳐|다쳤|컨디션|fever|sick)/.test(t)) return "건강";
+  return "기타";
+}
+
+/**
+ * 시각 짐작.
+ *
+ * **오전·오후가 안 적힌 한 자리 시각은 오후로 봅니다.** 「1시 이후 약 주세요」의 1시는
+ * 새벽 1시일 수가 없습니다 - 학교에 아이가 있는 시간은 8시부터 6시까지입니다. 반대로
+ * 8~11시는 오전일 수 있어 그대로 둡니다.
+ *
+ * 못 읽으면 **null 입니다.** 아무 시각이나 채워 넣으면 그 시각에 알람이 울리고, 한 번
+ * 엉뚱하게 울린 알람은 그 뒤로 아무도 안 봅니다.
+ */
+function guessTime(text: string): string | null {
+  const colon = text.match(/\b([01]?\d|2[0-3])\s*:\s*([0-5]\d)\b/);
+  if (colon) {
+    const h = Number(colon[1]);
+    const m = Number(colon[2]);
+    if (h <= 23) return clock(h, m);
+  }
+
+  const k = text.match(/(오전|오후|아침|점심|저녁|낮)?\s*(\d{1,2})\s*시\s*(반|(\d{1,2})\s*분)?/);
+  if (k) {
+    const mark = k[1] ?? "";
+    let h = Number(k[2]);
+    const m = k[3] === "반" ? 30 : Number(k[4] ?? 0);
+    if (h > 23 || m > 59) return null;
+    if (/(오후|저녁|점심|낮)/.test(mark) && h < 12) h += 12;
+    else if (!mark && h >= 1 && h <= 7) h += 12;
+    return clock(h, m);
+  }
+  return null;
+}
+
+function clock(h: number, m: number): string {
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}

@@ -43,6 +43,8 @@ export type UndoResult = {
   records: number;
   /** 함께 내린 픽업 업무 수. */
   tasks: number;
+  /** 함께 내린 **특이사항** 줄 수. 인박스에서 특이사항으로 확정했던 건을 되돌릴 때 씁니다. */
+  notes: number;
   /** 되돌리다 실패한 것. 비어 있지 않으면 **사람에게 그대로 보여줍니다.** */
   problems: string[];
 };
@@ -58,7 +60,7 @@ export async function undoPickupTraces(
   requestId: string,
   actor: LogActor,
 ): Promise<UndoResult> {
-  const out: UndoResult = { boardings: 0, keptByHuman: 0, entries: 0, records: 0, tasks: 0, problems: [] };
+  const out: UndoResult = { boardings: 0, keptByHuman: 0, entries: 0, records: 0, tasks: 0, notes: 0, problems: [] };
 
   const { data: req, error: readErr } = await supabase
     .from("pickup_requests")
@@ -151,7 +153,37 @@ export async function undoPickupTraces(
     await supabase.from("pickup_requests").update({ task_id: null }).eq("id", requestId);
   }
 
+  // ── ④ 특이사항 ──────────────────────────────────────────────────────────
+  const notes = await undoInquiryNotes(supabase, requestId, actor);
+  out.notes = notes.notes;
+  out.problems.push(...notes.problems);
+
   return out;
+}
+
+/**
+ * **인박스에서 특이사항으로 확정했던 것을 내립니다.**
+ *
+ * 되돌리는 자리가 둘입니다 - 「픽업 아님」(undoPickupTraces)과 「사실은 픽업」(confirm).
+ * 둘이 각자 지우면 한쪽이 언젠가 빠지고, 빠진 쪽에서는 보드에 **픽업이면서 동시에 약인**
+ * 아이가 남습니다. 그래서 함수를 하나만 둡니다.
+ *
+ * **지우지 않고 내립니다.** 「없었다」와 「아니라고 판단했다」는 다른 말이고, 며칠 뒤
+ * 「그 약 얘기 어디 갔지」를 되짚을 수 있어야 합니다(`/api/student-notes` PATCH 와 같은 방식).
+ */
+export async function undoInquiryNotes(
+  supabase: SupabaseClient,
+  requestId: string,
+  actor: LogActor,
+): Promise<{ notes: number; problems: string[] }> {
+  const { data, error } = await supabase
+    .from("student_day_notes")
+    .update({ deleted_at: new Date().toISOString(), deleted_by: actor.email })
+    .eq("source_inquiry_id", requestId)
+    .is("deleted_at", null)
+    .select("id");
+  if (error) return { notes: 0, problems: [`특이사항을 내리지 못했습니다: ${error.message}`] };
+  return { notes: (data ?? []).length, problems: [] };
 }
 
 /** 화면에 띄울 한 줄. 무엇이 함께 내려갔는지 사람이 바로 알 수 있게 적습니다. */
@@ -161,6 +193,7 @@ export function undoSummary(r: UndoResult): string {
   if (r.entries > 0) parts.push(`출결 등록 ${r.entries}건`);
   if (r.records > 0) parts.push(`출석부 ${r.records}일치`);
   if (r.tasks > 0) parts.push("픽업 업무");
+  if (r.notes > 0) parts.push(`특이사항 ${r.notes}건`);
   const done = parts.length > 0 ? `${parts.join(" · ")}도 함께 내렸습니다.` : "";
   const kept = r.keptByHuman > 0 ? ` 체크표에서 사람이 직접 정한 ${r.keptByHuman}건은 그대로 두었습니다.` : "";
   return (done + kept).trim();

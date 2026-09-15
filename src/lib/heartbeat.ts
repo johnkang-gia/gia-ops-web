@@ -68,6 +68,12 @@ export const INTEGRATIONS: IntegrationSpec[] = [
   { key: "cron:purge-trash", label: "휴지통 비우기", what: "30일 지난 삭제 항목을 정리합니다.", everyMinutes: 60 * 24 },
   { key: "cron:archive-tasks", label: "완료업무 보관", what: "끝난 업무를 보관함으로 옮깁니다.", everyMinutes: 60 * 24 },
   {
+    key: "cron:pickup-close",
+    label: "픽업 업무 저녁 마감",
+    what: "오후 6시에 남은 픽업 카드를 닫습니다. 멈추면 처리된 픽업이 다음 날 지연으로 뜹니다.",
+    everyMinutes: 60 * 24,
+  },
+  {
     key: "cron:toddle-backfill",
     label: "토들 방↔학생 되짚기",
     what: "이어 둔 방으로 지난 연락의 집·학생을 채웁니다. 멈추면 누구 것인지 모르는 연락이 쌓입니다.",

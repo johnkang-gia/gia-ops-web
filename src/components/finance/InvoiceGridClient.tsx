@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useFinanceLive } from "@/lib/useFinanceLive";
+import DragScroll from "@/components/common/DragScroll";
 import AlreadyPaidModal from "@/components/finance/AlreadyPaidModal";
 // 돈을 정하는 판단은 화면에서 떼어 `@/lib/invoiceGrid` 에 두고 시험합니다. 섞여 있으면
 // 화면을 손보다 판단을 건드려도 티가 안 나고, 조금 다른 청구서는 그대로 나갑니다.
@@ -1289,7 +1290,10 @@ export default function InvoiceGridClient({
           left-0)이 옆으로 밀 때 그대로 남습니다. 옆으로 스무 칸을 밀어도 누구 줄인지 보이는
           것이, 세로로 내릴 때 항목 이름이 보이는 것보다 중요합니다 - 금액을 잘못 넣는 사고는
           «어느 학생인지» 놓칠 때 납니다. */}
-      <div className="w-full min-w-0 max-w-full overflow-x-auto rounded-xl border border-slate-200 bg-white">
+      {/* 잡아서 밀 수 있습니다(`DragScroll`). 스크롤 막대는 가만히 있으면 숨는데, 열이
+          스무 개 넘는 이 표에서는 그 막대가 «오른쪽에 더 있다»는 유일한 표시입니다.
+          `g-scroll-x` 로 늘 보이게 하고, 마우스만 쓰는 자리를 위해 밀기도 붙입니다. */}
+      <DragScroll className="g-scroll-x w-full min-w-0 max-w-full overflow-x-auto rounded-xl border border-slate-200 bg-white">
         <table className="min-w-full border-collapse text-left text-[12px]">
           <thead className="sticky top-0 z-20">
             {/* 분류 줄 — 열이 많아지면 무엇끼리 묶인 것인지 보여야 합니다. */}
@@ -1640,7 +1644,7 @@ export default function InvoiceGridClient({
             </tr>
           </tfoot>
         </table>
-      </div>
+      </DragScroll>
 
       {/* ── 발행 전 검토 ────────────────────────────────────────── */}
       {alreadyFor && (

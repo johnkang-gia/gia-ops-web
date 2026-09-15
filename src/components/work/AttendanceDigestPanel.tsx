@@ -57,6 +57,18 @@ type RegRow = {
   reason: string | null;
 };
 
+/** ✕ 로 내려둔 한 줄. 되돌릴 수 있게 원문까지 함께 받습니다. */
+type DismissedRow = {
+  id: string;
+  source_message_id: string | null;
+  student_name: string;
+  status: string;
+  date_from: string | null;
+  date_to: string | null;
+  raw_text: string | null;
+  note: string | null;
+};
+
 // 기간을 짧게: 하루면 생략하고, 여러 날이면 "~8/28"처럼 마지막 날만 보여줍니다.
 // 칸이 좁아서 "2026-08-26 ~ 2026-08-28"을 그대로 쓰면 이름이 밀립니다.
 function rangeChip(from: string, to: string): string | null {
@@ -395,6 +407,13 @@ export default function AttendanceDigestPanel({
   const [regs, setRegs] = useState<Map<string, RegRow>>(new Map());
   // 사람이 "출결 아님"으로 내린 것들. 목록에서 아예 빼야 다시 안 묻습니다.
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  /**
+   * **✕ 로 내린 줄 그 자체.** 키만 받으면 목록에서 빼는 데밖에 못 쓰고, 잘못 내린 것을
+   * 되돌릴 자리가 없습니다. 옆 줄인 줄 알고 ✕ 를 눌러도 그 아이의 결석은 그대로 묻히는데,
+   * 화면에는 오류가 아니라 「처리된 것」으로 보입니다.
+   */
+  const [dismissedRows, setDismissedRows] = useState<DismissedRow[]>([]);
+  const [showDismissed, setShowDismissed] = useState(false);
   // 멘션(@…)을 지울 때 쓰는 교직원 성함. 서버가 계정 명단에서 실어 보냅니다.
   // 담당자: "@Carina Ann John까지가 이름인데 carina ann까지만 읽어서 john이 요한이로 매칭돼."
   const [staffNames, setStaffNames] = useState<string[]>([]);
@@ -410,7 +429,13 @@ export default function AttendanceDigestPanel({
   const loadRegs = useCallback(async () => {
     try {
       const res = await fetch("/api/attendance/entries", { cache: "no-store" });
-      const json = (await res.json()) as { entries?: RegRow[]; dismissed?: string[]; staffNames?: string[]; teachers?: TeacherClass[] };
+      const json = (await res.json()) as {
+        entries?: RegRow[];
+        dismissed?: string[];
+        dismissedRows?: DismissedRow[];
+        staffNames?: string[];
+        teachers?: TeacherClass[];
+      };
       const m = new Map<string, RegRow>();
       for (const e of json.entries ?? []) {
         if (!e.source_message_id) continue;
@@ -426,6 +451,7 @@ export default function AttendanceDigestPanel({
       }
       setRegs(m);
       setDismissed(new Set(json.dismissed ?? []));
+      setDismissedRows(json.dismissedRows ?? []);
       setStaffNames(json.staffNames ?? []);
       setTeachers(json.teachers ?? []);
     } catch {
@@ -521,6 +547,40 @@ export default function AttendanceDigestPanel({
     setError(null);
     await loadRegs();
     // 사무실 벽면 대시보드도 곧바로 따라오도록 신호를 보냅니다.
+    void notifyOpsBoardRefresh();
+  }
+
+  /**
+   * **✕ 를 되돌립니다.**
+   *
+   * 「등록」이 아니라 **「확인필요」**로 되돌립니다. 되돌리는 사람이 아는 것은 「내린 것이
+   * 잘못이었다」뿐이지 「이 판정이 맞다」가 아닙니다. 되살리면서 등록까지 해 버리면, 잘못
+   * 내린 것을 고치려다 확인 안 된 결석을 체크표에 걸게 됩니다.
+   */
+  async function restoreDismissed(row: DismissedRow) {
+    setBusyKey(row.id);
+    const res = await fetch("/api/attendance/entries", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: row.id, state: "확인필요" }),
+    });
+    setBusyKey(null);
+    if (!res.ok) {
+      const msg = (await res.json().catch(() => ({}))) as { error?: string };
+      setError(msg.error || "되돌리지 못했습니다.");
+      return;
+    }
+    setError(null);
+    // 목록에서 빼던 열쇠도 함께 풉니다. 안 풀면 서버는 되살렸는데 화면에는 안 나타나,
+    // 사람은 「되돌리기가 안 먹었다」고 봅니다.
+    const key = `${row.source_message_id ?? ""}|${row.student_name}|${row.status}`;
+    setDismissed((prev) => {
+      const n = new Set(prev);
+      n.delete(key);
+      return n;
+    });
+    setDismissedRows((prev) => prev.filter((r) => r.id !== row.id));
+    await loadRegs();
     void notifyOpsBoardRefresh();
   }
 
@@ -776,6 +836,19 @@ export default function AttendanceDigestPanel({
         {/* 이 위젯만 다시 읽습니다.
             가르친 뒤 화면이 안 바뀌면 사람은 "안 배웠나" 하고 또 가르칩니다. 페이지 전체를
             새로고침하면 하던 체크가 날아가므로, 이 칸만 다시 읽습니다. */}
+        {/* **잘못 누른 ✕ 가 돌아올 자리.** 내린 줄은 목록에서 사라지므로, 여기 없으면
+            되돌릴 방법이 아예 없습니다. 0건이면 안 보입니다 - 늘 떠 있는 단추는 안 보게
+            됩니다. */}
+        {dismissedRows.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowDismissed((v) => !v)}
+            className="rounded bg-slate-100 px-1.5 text-[10px] font-bold text-slate-600 transition hover:bg-slate-200"
+            title="✕ 로 내린 줄을 보고 되돌립니다"
+          >
+            ↩ 내린 것 {dismissedRows.length}
+          </button>
+        )}
         <button
           type="button"
           onClick={() => {
@@ -812,6 +885,38 @@ export default function AttendanceDigestPanel({
         >
           {notice} <span className="text-emerald-400">(눌러서 닫기)</span>
         </button>
+      )}
+
+      {showDismissed && dismissedRows.length > 0 && (
+        <div className="mb-1.5 shrink-0 rounded-lg border border-slate-200 bg-slate-50 p-2">
+          <p className="mb-1.5 text-[10px] leading-relaxed text-slate-500">
+            ✕ 로 <b>「출결 아님」</b>이라고 내린 줄입니다(오늘 이후 날짜만). 잘못 눌렀으면 되돌리세요 — 목록에 다시
+            뜨지만 <b>등록되지는 않습니다.</b> 되살리면서 등록까지 하면, 확인 안 된 결석이 체크표에 걸립니다.
+          </p>
+          <div className="flex max-h-40 flex-col gap-1 overflow-y-auto pr-1">
+            {dismissedRows.map((r) => (
+              <div key={r.id} className="flex items-start gap-2 rounded bg-white px-2 py-1.5">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[11px] font-bold text-slate-700">
+                    {r.student_name} <span className="font-normal text-slate-400">· {r.status}</span>
+                    {r.date_from && <span className="ml-1 font-normal text-slate-400">{r.date_from.slice(5)}</span>}
+                  </p>
+                  {(r.raw_text || r.note) && (
+                    <p className="truncate text-[10px] text-slate-400">{r.raw_text || r.note}</p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  disabled={busyKey === r.id}
+                  onClick={() => void restoreDismissed(r)}
+                  className="shrink-0 rounded border border-slate-300 bg-white px-2 py-1 text-[10px] font-bold text-slate-600 transition hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700 disabled:opacity-40"
+                >
+                  되돌리기
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
       {entries.length === 0 && upcoming.length === 0 ? (
@@ -1049,7 +1154,34 @@ export default function AttendanceDigestPanel({
               <p className="whitespace-pre-wrap break-words rounded-lg bg-slate-50 p-3 text-[12px] leading-relaxed text-slate-700">
                 {detail.rawText}
               </p>
-              <div className="mt-3 flex items-center gap-2">
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                {/* **틀린 것을 고치는 길.** 「오늘 병결석, 내일 등교 예정」이 내일 결석으로
+                    잡힌 일이 있었는데, 그때 이 창에서 할 수 있는 일은 통째로 내리는 것(✕)
+                    뿐이었습니다. 내리면 오늘 결석까지 함께 사라져, 고치려던 것보다 더 큰
+                    것을 잃습니다. 등록된 줄이 있으면 날짜·종류를 고치고, 없으면 직접 넣는
+                    창을 자동이 읽은 값으로 채워 엽니다. */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const row =
+                      regs.get(`${detail.messageId}|${detail.studentName}|${detail.category}`) ??
+                      regs.get(`${detail.messageId}|${nameKey(detail.studentName)}|${detail.category}`);
+                    if (row) setRangeEdit({ row, name: detail.studentName });
+                    else
+                      setManual({
+                        name: detail.studentName.replace(/\(.*$/, "").trim(),
+                        messageId: detail.messageId ?? null,
+                        raw: detail.rawText,
+                        status: detail.category,
+                        from: detail.targetDate,
+                        to: detail.targetDateTo ?? detail.targetDate,
+                      });
+                    setDetail(null);
+                  }}
+                  className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-[11px] font-bold text-amber-800 hover:bg-amber-100"
+                >
+                  📅 날짜·종류 고치기
+                </button>
                 <button
                   type="button"
                   onClick={() => {

@@ -575,3 +575,22 @@ button:disabled {
   .g-panel, .g-panel-solid, .g-panel-hover { transition: none; }
   .g-panel-hover:hover { transform: none; }
 }
+
+/* 가로로 긴 표 — 스크롤 막대를 늘 보이게 합니다.
+
+   맥 기본값은 «가만히 있으면 막대를 숨김»입니다. 열이 스무 개 넘는 청구표에서는 그
+   막대가 «오른쪽에 더 있다»는 유일한 표시라, 숨는 순간 보는 사람에게는 잘린 표가
+   됩니다. 잘린 줄 알면 거기 있는 항목은 아예 안 봅니다. */
+.g-scroll-x {
+  scrollbar-width: auto;
+  scrollbar-color: #94a3b8 #f1f5f9;
+}
+.g-scroll-x::-webkit-scrollbar { height: 12px; width: 12px; }
+.g-scroll-x::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 6px; }
+.g-scroll-x::-webkit-scrollbar-thumb {
+  background: #94a3b8; border-radius: 6px; border: 3px solid #f1f5f9;
+}
+.g-scroll-x::-webkit-scrollbar-thumb:hover { background: #64748b; }
+
+/* 인쇄본에는 막대가 없습니다. */
+@media print { .g-scroll-x::-webkit-scrollbar { display: none; } }

@@ -140,6 +140,24 @@ export function shortAgo(iso: string): string {
   return `${Math.floor(h / 24)}일 전`;
 }
 
+/**
+ * **이 줄은 자동이 한 것인가.**
+ *
+ * 판단은 `actor_email` 하나로 합니다. 자동으로 찍는 자리(토들 수집·크론·차량 체크인)는
+ * 이메일을 빈 값으로 두고 이름 자리에 「AI(기간 특이사항)」·「차량 체크인」처럼 창구 이름을
+ * 넣습니다. 사람이 누른 줄에는 반드시 그 사람의 이메일이 있습니다.
+ *
+ * 이름으로 가르지 않습니다 - 창구 이름은 앞으로 늘어나고, 늘어난 이름을 여기에 적는 것을
+ * 잊으면 그 줄만 조용히 「사람이 한 일」로 섞입니다(CLAUDE.md §2-4).
+ *
+ * **왜 갈라야 하나.** 「오늘 한 일」은 사람이 오늘 무엇을 손댔는지 보는 자리인데, 자동이
+ * 찍은 수십 줄이 섞이면 사람이 한 서너 줄이 묻힙니다. 그러면 정작 «누가 이 아이를 결석으로
+ * 바꿨나»를 물을 때 목록을 끝까지 넘겨야 합니다.
+ */
+export function isAutoLog(r: ChecklistLogRow): boolean {
+  return !(r.actor_email ?? "").trim();
+}
+
 /** 한 줄을 사람이 읽는 문장으로. 화면 여러 곳에서 같은 말이 나와야 합니다. */
 export function describeLog(r: ChecklistLogRow): string {
   const who = r.actor_name || r.actor_email;

@@ -8,6 +8,15 @@ import { genCaseId } from "./caseId";
  */
 export const PICKUP_ORIGIN = "픽업";
 
+/**
+ * 오후 6시 크론이 자동으로 닫은 픽업 업무에 남기는 자국(`tasks.updated_by`).
+ *
+ * 이 값이 없으면 「해 놓고 안 눌렀다」와 「아무도 안 했는데 완료로 되어 있다」가 기록에서
+ * 똑같이 보입니다. 나중에 «그날 픽업을 실제로 누가 처리했나»를 물을 때 답할 수 있어야
+ * 합니다.
+ */
+export const AUTO_CLOSED_BY = "자동(오후 6시)";
+
 /** 픽업에서 자동으로 생긴 업무인가. 판단은 이 함수 한 곳에서만 합니다. */
 export function isPickupTask(task: { origin?: string | null } | null | undefined): boolean {
   return (task?.origin ?? null) === PICKUP_ORIGIN;

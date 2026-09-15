@@ -233,6 +233,55 @@ export function todayKey(base: Date = new Date()): string {
   return toDateKey(base);
 }
 
+/**
+ * **「내일 등교」는 결석 날짜가 아니라 돌아오는 날입니다.**
+ *
+ * ── 무엇이 잘못됐나 ────────────────────────────────────────────────────────
+ *
+ * 「감기로 오늘 병결석, 내일 등교 예정」이 **내일 결석**으로 등록됐습니다. 이유는 둘이
+ * 겹쳤습니다.
+ *
+ *   ① 날짜를 뽑을 때 「내일」을 「오늘」보다 먼저 봅니다. 두 낱말이 한 문장에 있으면
+ *      적힌 자리와 상관없이 언제나 「내일」이 이깁니다.
+ *   ② 「등교」라는 말을 전혀 안 봤습니다. 돌아오는 날인지 안 오는 날인지를 가르는
+ *      낱말인데, 날짜만 뽑고 무슨 말인지는 안 읽었습니다.
+ *
+ * 결과는 오지도 않을 결석이 내일 명단에 박히는 것이고, **화면에는 오류가 아니라 그냥
+ * 결석 한 줄**로 보입니다. 다음 날 아이가 와도 아무도 이상하다고 느끼지 않습니다.
+ *
+ * ── 어떻게 고치나 ──────────────────────────────────────────────────────────
+ *
+ * 날짜를 뽑기 **전에** 돌아오는 날 이야기를 문장에서 덜어냅니다. 우선순위를 바꾸는 것보다
+ * 이쪽이 맞습니다 - 「내일부터 3일간 결석, 목요일 등교」처럼 결석 쪽에도 날짜가 있고
+ * 복귀 쪽에도 날짜가 있는 글이 흔한데, 순서만 바꾸면 그런 글에서 또 틀립니다.
+ *
+ * **「등교하지 않습니다」는 덜어내지 않습니다.** 같은 낱말이지만 뜻이 반대입니다.
+ */
+const RETURN_DATE =
+  /(?:\d{1,2}\s*[./월]\s*\d{1,2}\s*일?|\d{1,2}\s*일|내일모레|모레|내일|오늘|[월화수목금토일]\s*요일|tomorrow|monday|tuesday|wednesday|thursday|friday)/;
+const RETURN_VERB = /(?:정상\s*)?(?:등교|등원|복귀|출석|나옵니다|나올\s*예정|올\s*예정|come\s*back|back\s*to\s*school|returns?)/;
+/** 「등교하지 않습니다」처럼 뜻이 뒤집히는 꼬리. 이게 붙으면 덜어내지 않습니다. */
+const RETURN_NEGATION = /^\s*(?:하지\s*않|안\s*하|못\s*하|안\s*함|어렵|불가|못\s*할)/;
+
+/**
+ * 영어는 **말이 뒤집힙니다** — 「return tomorrow」처럼 돌아온다는 말이 날짜 앞에 옵니다.
+ * 한글 규칙 하나로는 이쪽이 통째로 안 걸립니다.
+ */
+const RETURN_VERB_EN = /(?:will\s+)?(?:return|returns|returning|come\s*back|be\s*back|back)\s*(?:to\s*school\s*)?(?:on\s*)?/;
+
+export function stripReturnDay(text: string): string {
+  const blank = (hit: string, offset: number, src: string) => {
+    const tail = src.slice(offset + hit.length);
+    if (RETURN_NEGATION.test(tail)) return hit; // 「등교하지 않습니다」 - 그대로 둡니다.
+    // 자리를 빈칸으로 바꿉니다. 지우면 앞뒤 낱말이 붙어 없던 말이 생깁니다.
+    return " ".repeat(hit.length);
+  };
+  const ko = new RegExp(`(?:${RETURN_DATE.source})\\s*(?:부터|에|엔|은|는|이|가|도|만)?\\s*${RETURN_VERB.source}`, "gi");
+  const en = new RegExp(`${RETURN_VERB_EN.source}(?:${RETURN_DATE.source})`, "gi");
+  const once = text.replace(ko, (hit, offset: number) => blank(hit, offset, text));
+  return once.replace(en, (hit, offset: number) => blank(hit, offset, once));
+}
+
 // 문장에서 대상 날짜를 뽑습니다. baseDate는 그 문장이 적힌 날(구글챗 메시지 시각/오늘)이고,
 // 상대 표현(내일, 금요일 등)은 이 날을 기준으로 계산합니다. 날짜 언급이 전혀 없으면 null을
 // 돌려주고, 호출하는 쪽에서 "적힌 날 당일"로 봅니다.
@@ -469,8 +518,11 @@ function spanDays(text: string): number | null {
  *
  * baseDate는 그 문장이 적힌 날입니다(구글챗 메시지 시각 / 문의 받은 시각).
  */
-export function extractTargetRange(text: string, baseDate: Date): TargetRange | null {
+export function extractTargetRange(rawText: string, baseDate: Date): TargetRange | null {
   const base = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate());
+  // **돌아오는 날 이야기를 먼저 덜어냅니다.** 「오늘 병결석, 내일 등교 예정」에서 「내일」이
+  // 결석 날짜로 잡히던 자리입니다(`stripReturnDay`).
+  const text = stripReturnDay(rawText);
 
   // 「…부터」로 적어준 시작점과 「N일간」으로 적어준 길이. 둘 다 있으면 그것으로 끝납니다.
   //

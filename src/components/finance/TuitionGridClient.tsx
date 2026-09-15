@@ -1,5 +1,6 @@
 "use client";
 
+import DragScroll from "@/components/common/DragScroll";
 import { useEffect, useMemo, useState } from "react";
 import { useFinanceLive } from "@/lib/useFinanceLive";
 import AlreadyPaidModal from "@/components/finance/AlreadyPaidModal";
@@ -503,10 +504,21 @@ export default function TuitionGridClient({
       <p className="mb-2 text-[11px] leading-relaxed text-slate-500">
         칸에 <b>학부모가 고른 납부 옵션</b>을 넣습니다. 금액은 <b>기준금액 × 회차수 × (1 − 옵션 할인)</b>으로 그때그때
         계산합니다 — 요금이 오르면 [납부 항목 · 할인]에서 기준금액 하나만 고치면 전부 따라옵니다.
+        <br />
+        {/* 연 1회 내는 항목(Learning Management & Assessment Fee 등)을 학비외에 넣으면 이
+            표에 안 뜨고, 청구 자료와 계속 어긋납니다. 어디에 넣어야 하는지를 이 자리에
+            적어 둡니다 - 화면 밖에 있는 규칙은 아무도 모릅니다. */}
+        <b>연 1회 내는 항목도 학비입니다.</b>{" "}
+        <a href="/finance/plans" className="font-semibold text-indigo-600 underline">
+          [납부 항목 · 할인]
+        </a>{" "}
+        의 <b>학비</b> 탭에서 단위를 <b>연간</b>으로 만들고 <b>「1년 납부」 옵션 하나</b>를 붙이면 이 표에 열로 뜹니다. 이름은
+        나중에 <b>고치기</b>로 바꿀 수 있고, 이미 나간 청구서는 그대로 남습니다.
       </p>
 
       {/* ── 표 ─────────────────────────────────────────────────────── */}
-      <div className="overflow-auto rounded-xl border border-slate-200 bg-white" style={{ maxHeight: "70vh" }}>
+      {/* 학비표도 잡아서 밀 수 있습니다. 여기는 세로도 갇혀 있어(70vh) 양쪽 다 밉니다. */}
+      <DragScroll axis="both" className="g-scroll-x max-h-[70vh] overflow-auto rounded-xl border border-slate-200 bg-white">
         <table className="min-w-full border-collapse text-left text-[12px]">
           <thead className="sticky top-0 z-20">
             <tr>
@@ -753,7 +765,7 @@ export default function TuitionGridClient({
             </tr>
           </tfoot>
         </table>
-      </div>
+      </DragScroll>
 
       {discountFor && (
         <DiscountModal

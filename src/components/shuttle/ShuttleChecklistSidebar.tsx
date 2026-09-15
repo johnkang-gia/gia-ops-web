@@ -21,7 +21,7 @@ import {
 } from "@/lib/attendanceDigest";
 import AttendanceTeachModal from "@/components/work/AttendanceTeachModal";
 import AttendanceRulesModal from "@/components/work/AttendanceRulesModal";
-import { clockOf, describeLog, reasonOf, shortAgo, type ChecklistLogRow } from "@/lib/checklistLog";
+import { clockOf, describeLog, isAutoLog, reasonOf, shortAgo, type ChecklistLogRow } from "@/lib/checklistLog";
 import { Who } from "@/components/common/HomonymProvider";
 
 const POLL_MS = 15000;
@@ -97,6 +97,30 @@ export default function ShuttleChecklistSidebar({
   // 수영학원", "4호 김재이 개별하원"). 효과를 고르면 셔틀이 자동으로 바뀝니다.
   // 기본은 펼침입니다. 접어두면 아무도 안 봅니다.
   const [logOpen, setLogOpen] = useState(true);
+  const [autoOpen, setAutoOpen] = useState(true);
+
+  /**
+   * **사람이 한 것과 자동이 한 것을 갈라 둡니다.**
+   *
+   * 「오늘 한 일」은 «누가 이 아이를 결석으로 바꿨나»를 묻는 자리인데, 자동이 찍은 수십
+   * 줄이 섞여 있으면 사람이 한 서너 줄이 묻힙니다. 실제로 목록 맨 위 40줄이 전부 자동인
+   * 날이 있었고, 그런 날에는 아무도 그 목록을 안 봅니다.
+   *
+   * 자동 쪽은 지우지 않고 **따로 셉니다.** 자동이 오늘 몇 건을 찍었는지는 그 자체로 봐야
+   * 하는 숫자입니다 - 갑자기 0이면 수집이 멈춘 것이고, 평소보다 많으면 무언가를 잘못 읽고
+   * 있는 것입니다.
+   */
+  const humanLog = useMemo(() => activityLog.filter((r) => !isAutoLog(r)), [activityLog]);
+  const autoLog = useMemo(() => activityLog.filter((r) => isAutoLog(r)), [activityLog]);
+  /** 자동이 무엇을 근거로 찍었나 — 창구별 건수. 어느 통로가 일하고 있는지 한눈에 봅니다. */
+  const autoBySource = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of autoLog) {
+      const key = (r.reason_source ?? "").trim() || r.actor_name || "출처 미상";
+      m.set(key, (m.get(key) ?? 0) + 1);
+    }
+    return [...m.entries()].sort((a, b) => b[1] - a[1]);
+  }, [autoLog]);
 
   /**
    * **붙은 뒤에만 「3분 전」을 씁니다.**
@@ -494,17 +518,18 @@ export default function ShuttleChecklistSidebar({
           onClick={() => setLogOpen((v) => !v)}
           className="flex w-full items-center justify-between text-[11px] font-bold text-slate-700"
         >
-          <span>🕘 오늘 한 일 {activityLog.length > 0 && <span className="text-slate-400">{activityLog.length}</span>}</span>
+          <span>🕘 오늘 한 일 {humanLog.length > 0 && <span className="text-slate-400">{humanLog.length}</span>}</span>
           <span className="text-slate-400">{logOpen ? "▾" : "▸"}</span>
         </button>
         {logOpen && (
           <div className="mt-2 flex flex-col gap-1">
-            {activityLog.length === 0 ? (
+            {humanLog.length === 0 ? (
               <p className="text-[9px] leading-relaxed text-slate-400">
-                오늘은 아직 아무도 손대지 않았습니다. 픽업·결석을 누르거나 차를 바꾸면 여기에 남습니다.
+                오늘은 아직 <b>사람이</b> 손댄 것이 없습니다. 픽업·결석을 누르거나 차를 바꾸면 여기에 남습니다.
+                {autoLog.length > 0 && <> 자동이 찍은 {autoLog.length}건은 아래 칸에 있습니다.</>}
               </p>
             ) : (
-              activityLog.slice(0, 40).map((r) => {
+              humanLog.slice(0, 40).map((r) => {
                 // **왜 바꿨는가를 한 줄 아래 붙입니다.** 「토들 · 홍길동 픽업」만 보이면
                 // 토들은 창구 이름이라 되물을 곳이 없습니다. 근거가 결과 옆에 없으면 사람은
                 // 결과를 못 믿고, 확인하려고 매번 인박스로 넘어갑니다.
@@ -533,6 +558,79 @@ export default function ShuttleChecklistSidebar({
                   </button>
                 );
               })
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── 자동으로 된 것 ────────────────────────────────────────────────
+          「오늘 한 일」에서 갈라낸 쪽입니다. 지우지 않고 따로 세는 이유: 자동이 오늘 몇 건을
+          찍었는지는 그 자체로 봐야 하는 숫자입니다. 갑자기 0이면 수집이 멈춘 것이고, 평소보다
+          많으면 무언가를 잘못 읽고 있는 것입니다. 둘 다 화면에 안 보이면 며칠이 지나야
+          알아챕니다. */}
+      <div className="rounded-xl border border-indigo-200 bg-white p-3">
+        <button
+          type="button"
+          onClick={() => setAutoOpen((v) => !v)}
+          className="flex w-full items-center justify-between text-[11px] font-bold text-indigo-700"
+        >
+          <span>🤖 자동으로 된 것 {autoLog.length > 0 && <span className="text-indigo-400">{autoLog.length}</span>}</span>
+          <span className="text-indigo-400">{autoOpen ? "▾" : "▸"}</span>
+        </button>
+        {autoOpen && (
+          <div className="mt-2 flex flex-col gap-1.5">
+            {autoLog.length === 0 ? (
+              <p className="text-[9px] leading-relaxed text-slate-400">
+                오늘은 자동으로 바뀐 것이 없습니다. <b>평소에 있던 날인데 0이면</b> 토들·구글챗 수집이 멈춘 것일 수
+                있습니다 — [개발자 → 연동 상태]에서 확인해 주세요.
+              </p>
+            ) : (
+              <>
+                {/* 무엇이 일하고 있는지부터. 줄을 하나씩 읽기 전에 숫자로 먼저 보입니다. */}
+                <div className="flex flex-wrap gap-1">
+                  {autoBySource.map(([src, n]) => (
+                    <span
+                      key={src}
+                      className="rounded-full bg-indigo-50 px-1.5 py-0.5 text-[9px] font-bold text-indigo-700"
+                      title={`${src} 통로로 ${n}건이 자동 반영됐습니다`}
+                    >
+                      {src} {n}
+                    </span>
+                  ))}
+                </div>
+                <div className="flex max-h-56 flex-col gap-1 overflow-y-auto pr-1">
+                  {autoLog.slice(0, 40).map((r) => {
+                    const why = reasonOf(r);
+                    return (
+                      <button
+                        key={r.id}
+                        type="button"
+                        onClick={() => onSelectStudentName?.(r.student_name)}
+                        title={`${new Date(r.created_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}${why ? `\n\n[${why.source}${why.from ? ` · ${why.from}` : ""}]\n${why.text}` : ""}`}
+                        className="flex flex-col gap-0.5 rounded px-1 py-0.5 text-left text-[10px] leading-snug text-slate-600 hover:bg-indigo-50"
+                      >
+                        <span className="flex items-baseline gap-1">
+                          <span className="shrink-0 tabular-nums text-[9px] text-slate-400">
+                            {agoReady ? shortAgo(r.created_at) : clockOf(r.created_at)}
+                          </span>
+                          <span className="min-w-0 flex-1">{describeLog(r)}</span>
+                        </span>
+                        {/* **근거 없는 자동 줄은 그 사실을 적습니다.** 자동인데 왜 그랬는지가
+                            없으면 되물을 곳이 아예 없습니다 - 빈 줄로 두면 그냥 지나갑니다. */}
+                        {why ? (
+                          <span className="ml-[1.9rem] block border-l-2 border-indigo-200 pl-1.5 text-[9px] leading-snug text-slate-500">
+                            <b className="text-indigo-400">{why.source}</b>
+                            {why.from ? <span className="text-slate-400"> · {why.from}</span> : null}
+                            <span className="ml-1 line-clamp-2">{why.text}</span>
+                          </span>
+                        ) : (
+                          <span className="ml-[1.9rem] block text-[9px] text-rose-500">근거가 안 남았습니다</span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
             )}
           </div>
         )}

@@ -212,6 +212,14 @@ export function RangeEditModal({
 }) {
   const [from, setFrom] = useState(from0);
   const [to, setTo] = useState(to0);
+  /**
+   * **종류도 여기서 고칩니다.**
+   *
+   * 자동이 틀리는 것은 날짜만이 아닙니다. 「오늘 병결석, 내일 등교 예정」이 내일 결석으로
+   * 잡힌 일이 있었는데, 그때 사람이 할 수 있는 일은 통째로 내리는 것(✕)뿐이었습니다.
+   * 내리면 그 아이의 **오늘 결석까지 함께 사라집니다** - 고치려던 것보다 더 큰 것을 잃습니다.
+   */
+  const [kind, setKind] = useState(status);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -221,7 +229,7 @@ export function RangeEditModal({
     const res = await fetch("/api/attendance/entries", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: entryId, dateFrom: from, dateTo: to, state: "등록" }),
+      body: JSON.stringify({ id: entryId, dateFrom: from, dateTo: to, status: kind, state: "등록" }),
     });
     setBusy(false);
     if (!res.ok) {
@@ -233,7 +241,22 @@ export function RangeEditModal({
   }
 
   return (
-    <Shell title={`기간 고치기 — ${name} ${status}`} onClose={onClose}>
+    <Shell title={`기간·종류 고치기 — ${name}`} onClose={onClose}>
+      <div className="mb-2 flex flex-wrap gap-1">
+        {(["결석", "지각", "조퇴", "픽업"] as const).map((k) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => setKind(k)}
+            className={
+              "rounded-lg px-2.5 py-1.5 text-[12px] font-bold transition " +
+              (kind === k ? "bg-emerald-600 text-white" : "border border-slate-300 text-slate-600 hover:bg-slate-50")
+            }
+          >
+            {k}
+          </button>
+        ))}
+      </div>
       <RangePicker from={from} to={to} setFrom={setFrom} setTo={setTo} />
       {err && <p className="mt-2 rounded bg-rose-50 px-2 py-1 text-[11px] font-bold text-rose-700">{err}</p>}
       <button

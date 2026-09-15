@@ -83,6 +83,19 @@ export default function FeePlansClient({
   const [showPlanForm, setShowPlanForm] = useState(false);
   const [discountForm, setDiscountForm] = useState(EMPTY_DISCOUNT);
   const [showDiscountForm, setShowDiscountForm] = useState(false);
+  /**
+   * **고치는 중인 항목.**
+   *
+   * 지금까지 만든 항목은 켜고 끄는 것밖에 못 했습니다. 이름이 길거나 오타가 나면 끄고 새로
+   * 만들어야 했는데, 그러면 **이미 그 항목으로 등록해 둔 학생이 통째로 떨어져 나갑니다**
+   * (`student_fee_enrollments` 가 항목 번호를 가리킵니다). 화면에는 오류가 아니라 「아무도
+   * 안 고른 항목」으로 보입니다.
+   *
+   * 이름을 고쳐도 **이미 나간 청구서는 안 바뀝니다** — 청구서에는 발행 시점의 이름이 글자로
+   * 굳어 있습니다(`invoice_lines.name`). 지난 청구서가 왜 그 이름이었는지 설명할 수 있어야
+   * 하니 그게 맞습니다.
+   */
+  const [editPlan, setEditPlan] = useState<FeePlan | null>(null);
   const [showInactive, setShowInactive] = useState(false);
 
   const optionsByPlan = useMemo(() => {
@@ -139,6 +152,47 @@ export default function FeePlansClient({
     setBusy(false);
     if (error || !data) return setErr(error?.message ?? "만들지 못했습니다.");
     setOptions((prev) => [...prev, data as FeePaymentOption]);
+  }
+
+  async function savePlan() {
+    const p = editPlan;
+    if (!p) return;
+    if (!p.name.trim()) return setErr("항목 이름을 넣어주세요.");
+    setBusy(true);
+    setErr(null);
+    const supabase = createClient();
+    const patch = {
+      name: p.name.trim(),
+      description: (p.description ?? "").trim() || null,
+      base_amount: Number(p.base_amount) || 0,
+      unit: p.unit,
+    };
+    const { error } = await supabase.from("fee_plans").update(patch).eq("id", p.id);
+    setBusy(false);
+    if (error) return setErr(error.message);
+    setPlans((prev) => prev.map((x) => (x.id === p.id ? { ...x, ...patch } : x)));
+    setEditPlan(null);
+  }
+
+  /** 옵션 이름·회차·할인율을 고칩니다. 옵션도 학생 등록이 가리키므로 지우지 않고 고칩니다. */
+  async function editOption(plan: FeePlan, o: FeePaymentOption) {
+    const name = window.prompt(`${plan.name} — 옵션 이름`, o.name);
+    if (name === null || !name.trim()) return;
+    const periodsRaw = window.prompt(`몇 ${plan.unit}분을 한 번에 내나요? (숫자)`, String(o.periods));
+    if (periodsRaw === null) return;
+    const rateRaw = window.prompt("할인율 (%). 없으면 0", String(Math.round(Number(o.discount_rate) * 100)));
+    if (rateRaw === null) return;
+    const periods = Math.max(1, Number(periodsRaw) || 1);
+    const discount_rate = Math.min(100, Math.max(0, Number(rateRaw) || 0)) / 100;
+    setBusy(true);
+    const supabase = createClient();
+    const { error } = await supabase
+      .from("fee_payment_options")
+      .update({ name: name.trim(), periods, discount_rate })
+      .eq("id", o.id);
+    setBusy(false);
+    if (error) return setErr(error.message);
+    setOptions((prev) => prev.map((x) => (x.id === o.id ? { ...x, name: name.trim(), periods, discount_rate } : x)));
   }
 
   async function togglePlan(plan: FeePlan) {
@@ -332,11 +386,59 @@ export default function FeePlansClient({
                         </span>
                         {!p.active && <Badge>꺼둠</Badge>}
                       </div>
-                      <Button size="sm" variant="glass" onClick={() => togglePlan(p)}>
-                        {p.active ? "끄기" : "켜기"}
-                      </Button>
+                      <div className="flex gap-1">
+                        {/* 이름·금액을 고치는 자리. 없으면 오타 하나 때문에 항목을 새로
+                            만들게 되고, 그러면 그 항목으로 등록해 둔 학생이 통째로 떨어져
+                            나갑니다. */}
+                        <Button size="sm" variant="glass" onClick={() => setEditPlan({ ...p })}>
+                          고치기
+                        </Button>
+                        <Button size="sm" variant="glass" onClick={() => togglePlan(p)}>
+                          {p.active ? "끄기" : "켜기"}
+                        </Button>
+                      </div>
                     </CardHeader>
                     <CardContent className="space-y-1.5">
+                      {editPlan?.id === p.id && (
+                        <div className="mb-2 flex flex-wrap items-end gap-2 rounded-lg border border-[var(--g-accent)] bg-white/70 p-2">
+                          <Input
+                            value={editPlan.name}
+                            onChange={(e) => setEditPlan((f) => (f ? { ...f, name: e.target.value } : f))}
+                            className="w-64"
+                            placeholder="항목 이름"
+                          />
+                          <label className="text-[11px] text-slate-500">
+                            기준 금액
+                            <Input
+                              type="number"
+                              value={editPlan.base_amount}
+                              onChange={(e) =>
+                                setEditPlan((f) => (f ? { ...f, base_amount: Number(e.target.value) || 0 } : f))
+                              }
+                              className="ml-1 w-32"
+                            />
+                          </label>
+                          <Select
+                            value={editPlan.unit}
+                            onChange={(e) => setEditPlan((f) => (f ? { ...f, unit: e.target.value as FeePlan["unit"] } : f))}
+                          >
+                            <option value="월">월당</option>
+                            <option value="학기">학기당</option>
+                            <option value="연">연간</option>
+                            <option value="회">1회</option>
+                          </Select>
+                          <Button size="sm" onClick={() => void savePlan()} disabled={busy}>
+                            저장
+                          </Button>
+                          <Button size="sm" variant="glass" onClick={() => setEditPlan(null)}>
+                            취소
+                          </Button>
+                          <p className="w-full text-[10px] text-[var(--g-muted)]">
+                            이름을 고쳐도 <b>이미 나간 청구서는 그대로</b>입니다 — 청구서에는 발행 시점의 이름이 굳어
+                            있습니다. 등록해 둔 학생과 앞으로 나갈 청구서에만 새 이름이 쓰입니다.
+                          </p>
+                        </div>
+                      )}
                       {opts.map((o) => (
                         <div key={o.id}>
                           <BarRow
@@ -346,20 +448,39 @@ export default function FeePlansClient({
                             suffix="원"
                             color={Number(o.discount_rate) > 0 ? "#10b981" : "var(--g-accent)"}
                           />
-                          <div className="ml-[5.25rem] text-[10px] text-[var(--g-muted)]">
-                            {o.periods}
-                            {p.unit}분
+                          <div className="ml-[5.25rem] flex items-center gap-1.5 text-[10px] text-[var(--g-muted)]">
+                            <span>
+                              {o.periods}
+                              {p.unit}분
+                            </span>
                             {Number(o.discount_rate) > 0 && (
-                              <span className="ml-1 font-bold text-emerald-600">
+                              <span className="font-bold text-emerald-600">
                                 −{Math.round(Number(o.discount_rate) * 100)}%
                               </span>
                             )}
+                            {/* 옵션도 고칠 수 있어야 합니다. 옵션 번호를 학생 등록이
+                                가리키므로 지우고 새로 만들면 고른 학생이 떨어져 나갑니다. */}
+                            <button
+                              type="button"
+                              onClick={() => void editOption(p, o)}
+                              disabled={busy}
+                              className="rounded px-1 font-bold text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-40"
+                              title="옵션 이름·회차·할인율을 고칩니다"
+                            >
+                              고치기
+                            </button>
                           </div>
                         </div>
                       ))}
                       {opts.length === 0 && (
                         <p className="py-2 text-center text-[11px] text-[var(--g-muted)]">
                           납부 옵션이 없습니다 — 학부모가 고를 것이 없다는 뜻입니다.
+                          {p.unit === "연" && (
+                            <>
+                              <br />
+                              연 1회 내는 항목도 <b>「1년 납부」 옵션 하나</b>는 있어야 명단에 뜹니다.
+                            </>
+                          )}
                         </p>
                       )}
                       <Button size="sm" variant="soft" onClick={() => addOption(p)} disabled={busy} className="mt-1">

@@ -271,6 +271,13 @@ export default function TaskCard({
           </button>
         </div>
       )}
+      {/* 안 눌러도 저녁에 닫힙니다. 이 한 줄이 없으면 「안 누르면 내일까지 남는다」고
+          생각해 급하게 누르거나, 남은 카드를 보고 안 한 일로 오해합니다. */}
+      {canPickupDone && pickupOpen && (
+        <p className="border-t border-yellow-200 bg-yellow-50 px-2.5 py-1 text-[10px] text-yellow-800">
+          못 누르고 지나가도 <b>오후 6시에 저절로 닫힙니다.</b> 픽업 기록은 인박스와 하원 체크표에 그대로 남습니다.
+        </p>
+      )}
 
       {/* 마우스를 올렸을 때만 펼쳐지는 상세 영역 */}
       <div className="hidden border-t border-dashed border-slate-200 px-2.5 py-1.5 group-hover:block">

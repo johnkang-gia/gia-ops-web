@@ -31,7 +31,7 @@ export async function POST(req: Request) {
 
     const { data: row, error: readErr } = await supabase
       .from("pickup_requests")
-      .select("id, sender_name, channel_label, kind, raw_text")
+      .select("id, sender_name, channel_label, kind, raw_text, status, ai_is_pickup")
       .eq("id", requestId)
       .maybeSingle();
     if (readErr) throw readErr;
@@ -47,6 +47,15 @@ export async function POST(req: Request) {
         resolved_by: me.email,
         resolved_at: new Date().toISOString(),
         ai_note: `사람이 '픽업 아님'으로 정정 (${me.name ?? me.email})`,
+        // **누르기 전 상태를 남깁니다.** 되돌릴 수 없는 단추는 조심해서 누르게 하는 것이
+        // 아니라 안 누르게 만들고, 그러면 틀린 자동 판정이 그대로 남습니다.
+        undo_state: {
+          status: (row.status as string | null) ?? null,
+          kind: (row.kind as string | null) ?? null,
+          ai_is_pickup: (row.ai_is_pickup as boolean | null) ?? null,
+          at: new Date().toISOString(),
+          by: me.email,
+        },
       })
       .eq("id", requestId);
     if (updErr) throw updErr;

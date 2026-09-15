@@ -48,6 +48,10 @@ export type Inquiry = {
   replied_by?: string | null;
   replied_at?: string | null;
   reply_status?: string | null;
+  /** '무시' 면 사람이 ✕(아님)로 내린 연락입니다. */
+  status?: string | null;
+  /** ✕ 를 누르기 직전 상태. 있으면 되돌릴 수 있습니다. */
+  undo_state?: { status?: string | null; kind?: string | null } | null;
 };
 
 /** 앱이 이 문의를 읽고 한 일 한 가지. */
@@ -606,6 +610,40 @@ export default function ParentInquiryPanel({
     }
   }
 
+  /**
+   * **✕ 를 되돌립니다.**
+   *
+   * 되돌리는 것은 연락의 상태뿐입니다. 체크표·출결 등록은 다시 걸지 않습니다 - ✕ 를 누른
+   * 뒤에 다른 사람이 그 아이를 직접 체크했을 수 있고, 그 위에 옛 값을 덮으면 오늘 명단이
+   * 조용히 바뀝니다. 서버가 돌려주는 문장을 그대로 띄워 «아직 안 걸렸다»를 알립니다.
+   */
+  async function restoreNotPickup(r: Inquiry) {
+    setBusy(true);
+    try {
+      const res = await fetch("/api/pickup/restore", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requestId: r.id }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { error?: string; note?: string };
+      if (!res.ok) {
+        notify(json.error ?? "되돌리지 못했습니다.", "error");
+        return;
+      }
+      setUndone((p) => {
+        const n = { ...p };
+        delete n[r.id];
+        return n;
+      });
+      notify(json.note ?? "되돌렸습니다.", "success");
+      setDetail(null);
+      load();
+      void notifyOpsBoardRefresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function attendanceAction(r: Inquiry, action: "결석" | "픽업" | "탑승") {
     const studentName =
       toKoreanDisplayName(r.matched_name ?? r.ai_student_name, r.channel_label, roster, `${r.summary ?? ""} ${r.raw_text ?? ""}`) ??
@@ -1111,8 +1149,28 @@ export default function ParentInquiryPanel({
                     ↩ 이 연락은 그게 아닙니다 — 등록된 출결도 함께 내리기
                   </button>
                 )}
-                {undone[detail.id] && (
-                  <p className="mt-2 text-[11px] font-semibold text-slate-500">↩ 되돌렸습니다.</p>
+                {/* **잘못 눌렀을 때 돌아올 자리.** 되돌릴 수 없는 단추는 조심해서 누르게
+                    하는 것이 아니라 안 누르게 만들고, 그러면 틀린 자동 판정이 그대로 남습니다.
+                    방금 누른 경우(`undone`)와 예전에 내려 둔 경우(`status === "무시"`) 둘 다
+                    같은 자리에서 되돌립니다. */}
+                {(undone[detail.id] || detail.status === "무시") && (
+                  <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
+                    <p className="mb-1.5 text-[11px] font-semibold text-slate-600">
+                      ↩ 이 연락은 「그게 아님」으로 내려져 있습니다.
+                    </p>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void restoreNotPickup(detail)}
+                      className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-[11px] font-bold text-slate-700 transition hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700 disabled:opacity-40"
+                    >
+                      잘못 눌렀습니다 — 원래대로 되돌리기
+                    </button>
+                    <p className="mt-1 text-[10px] text-slate-500">
+                      연락만 목록으로 돌아옵니다. <b>하원 체크표·출결 등록은 다시 걸리지 않으니</b> 필요하면 결석·픽업·탑승을
+                      한 번 더 눌러주세요.
+                    </p>
+                  </div>
                 )}
 
                 {detail.answered_at && (

@@ -142,17 +142,36 @@ export async function GET(req: NextRequest) {
   //
   // 위 entries에서는 무시를 빼고 있어서, 화면은 그 항목을 "아직 등록 안 된 것"으로 오해하고
   // 계속 목록에 띄웁니다. 내린 것은 목록에서도 사라져야 하므로 키만 따로 실어 보냅니다.
+  //
+  // **내린 줄 자체도 함께 보냅니다.** 키만 보내면 화면은 그것을 목록에서 빼는 데만 쓸 수
+  // 있고, 잘못 내린 것을 되돌릴 자리가 없습니다. ✕ 를 옆 줄인 줄 알고 눌러도 그 아이의
+  // 결석은 그대로 묻히는데, 화면에는 오류가 아니라 「처리된 것」으로 보입니다.
   const { data: ignored } = await db
     .from("attendance_entries")
-    .select("source_message_id, student_name, status")
+    .select("id, source_message_id, student_name, status, date_from, date_to, raw_text, note")
     .eq("state", "무시")
-    .gte("date_to", addDaysKey(today, -30));
-  const dismissed = ((ignored as { source_message_id: string | null; student_name: string; status: string }[] | null) ?? [])
+    .gte("date_to", addDaysKey(today, -30))
+    .order("date_from", { ascending: false });
+  type Ign = {
+    id: string;
+    source_message_id: string | null;
+    student_name: string;
+    status: string;
+    date_from: string | null;
+    date_to: string | null;
+    raw_text: string | null;
+    note: string | null;
+  };
+  const ignoredRows = ((ignored as Ign[] | null) ?? []);
+  const dismissed = ignoredRows
     .filter((r) => r.source_message_id)
     .map((r) => `${r.source_message_id}|${r.student_name}|${r.status}`);
+  // 되돌릴 수 있는 것은 **오늘 이후 날짜**만 보여줍니다. 지난 날짜를 되살려도 체크표에
+  // 걸 자리가 없어서, 목록만 길어지고 진짜 되돌려야 하는 줄이 묻힙니다.
+  const dismissedRows = ignoredRows.filter((r) => (r.date_to ?? r.date_from ?? "") >= today);
 
   return NextResponse.json(
-    { ok: true, scan, today, entries: entries ?? [], dismissed, staffNames, teachers },
+    { ok: true, scan, today, entries: entries ?? [], dismissed, dismissedRows, staffNames, teachers },
     { headers: { "Cache-Control": "no-store, no-cache, must-revalidate" } },
   );
 }

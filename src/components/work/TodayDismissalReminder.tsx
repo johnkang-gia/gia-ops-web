@@ -225,7 +225,12 @@ export default function TodayDismissalReminder({
           ⚠️ 오늘 픽업을 읽지 못했습니다: {pickupError}
         </p>
       )}
-      {board.today.length === 0 && board.notApplied.length === 0 && !error ? (
+      {/* **배너 자리에서는 명단을 그리지 않습니다.**
+          업무보드 가운데 칸의 [오늘 학생 → 🚗 픽업·하원] 이 **같은 아이들을 같은 근거로**
+          보여줍니다. 둘이 나란히 있으면 사람은 매번 「어느 쪽이 맞나」를 판단해야 하고, 두
+          목록이 자리를 먹어 정작 아래가 밀립니다. 여기서는 숫자와 고치는 단추만 둡니다 -
+          이 자리의 쓸모는 「하원수단 넣기·고치기」로 가는 길입니다. */}
+      {variant === "배너" ? null : board.today.length === 0 && board.notApplied.length === 0 && !error ? (
         <p className="text-[11px] text-lime-700/80">오늘은 전원 셔틀·평소대로 하원합니다.</p>
       ) : (
         <div className="flex flex-wrap gap-1">

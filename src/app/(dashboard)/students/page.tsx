@@ -34,22 +34,27 @@ export default async function StudentsSearchPage() {
     redirect("/home");
   }
 
-  // "재적" 학생만 보이던 것을, 검색이 안 된다는 문의에 맞춰 전체 학생(비재적 포함)으로 넓혔습니다.
-  // 비재적 학생은 프로필 화면 상단 뱃지로 구분됩니다.
-  const { data } = await supabase
-    .from("wr_students")
-    .select(
-      "id, student_no, name, name_en, grade, class_name, class_id, birth_date, phone, mother_phone, father_phone, parent_phone, parent_email, gender, allergies, address, note, custom_fields, status, shuttle_mode, photo_path, created_at"
-    ).eq("is_demo", false)
-    .order("name", { ascending: true });
-
-  // 셔틀 타는 아이 표시(요청 ⑨: "학생명부에도 셔틀여부로 체크되도록").
   //
-  // 명부의 shuttle_mode는 **손으로 적는 값**이고, 실제로 차에 배정됐는지는 별개입니다.
-  // 그래서 여기서는 명부값이 아니라 **실제 배정**을 봅니다 - 명부에 "하원"이라 적혀 있어도
-  // 배정이 없으면 그 아이는 아무 차에도 안 탑니다. 둘이 어긋나는 것이 실제로 사고가 나는
-  // 지점이라, 어긋나면 화면에서 알려줍니다.
-  const [{ data: routeRows }, { data: stopRows }, { data: asgRows }] = await Promise.all([
+  // ── 한 번에 묻습니다 ─────────────────────────────────────────────────────
+  //
+  // 명부와 셔틀 배정은 **서로의 답을 안 씁니다.** 그런데 명부를 먼저 기다린 뒤 셔틀 셋을
+  // 물었습니다 - 순서를 지킬 이유 없이 줄 서 있었던 셈입니다. 한 묶음으로 던집니다.
+  //
+  // "재적" 학생만 보이던 것을, 검색이 안 된다는 문의에 맞춰 전체 학생(비재적 포함)으로
+  // 넓혔습니다. 비재적 학생은 프로필 화면 상단 뱃지로 구분됩니다.
+  //
+  // 셔틀 타는 아이 표시(요청 ⑨: "학생명부에도 셔틀여부로 체크되도록"). 명부의 shuttle_mode는
+  // **손으로 적는 값**이고, 실제로 차에 배정됐는지는 별개입니다. 그래서 명부값이 아니라
+  // **실제 배정**을 봅니다 - 명부에 "하원"이라 적혀 있어도 배정이 없으면 그 아이는 아무
+  // 차에도 안 탑니다. 둘이 어긋나는 것이 실제로 사고가 나는 지점입니다.
+  const [{ data }, { data: routeRows }, { data: stopRows }, { data: asgRows }] = await Promise.all([
+    supabase
+      .from("wr_students")
+      .select(
+        "id, student_no, name, name_en, grade, class_name, class_id, birth_date, phone, mother_phone, father_phone, parent_phone, parent_email, gender, allergies, address, note, custom_fields, status, shuttle_mode, photo_path, created_at",
+      )
+      .eq("is_demo", false)
+      .order("name", { ascending: true }),
     supabase.from("shuttle_routes").select("id, route_no, direction").eq("term", CURRENT_SHUTTLE_TERM).eq("active", true),
     supabase.from("shuttle_stops").select("id, route_id"),
     supabase.from("shuttle_assignments").select("student_id, stop_id").not("student_id", "is", null).limit(5000),

@@ -42,57 +42,66 @@ export default async function ShuttlePilotPage() {
   // 요청: "등원은 패스하고 하원만 진행되도록 우선 만들어줘" - 하원 노선만 링크 관리 대상으로
   // 보여줍니다(등원 노선/링크 자체는 DB에 남아있지만 이 화면에서는 노출하지 않습니다).
   // term='정규학기'만 대상으로 합니다(여름캠프2 같은 임시 노선은 섞이지 않게 분리).
-  const routesRes = await supabase
-    .from("shuttle_routes")
-    .select("*")
-    .eq("active", true)
-    .eq("direction", "하원")
-    .eq("term", "정규학기")
-    .order("sort_order");
-  const routeIds = (routesRes.data ?? []).map((r) => r.id);
-  const pilotsRes =
-    routeIds.length > 0
-      ? await supabase.from("shuttle_pilot_routes").select("*").in("route_id", routeIds).order("created_at", { ascending: false })
-      : { data: [] as ShuttlePilotRoute[] };
-  // 기사·차량 변경 이력(요청 채택). 트리거가 자동으로 쌓아둔 스냅샷을 최신순으로 보여줍니다.
-  const historyRes =
-    routeIds.length > 0
-      ? await supabase
-          .from("shuttle_route_vehicle_history")
-          .select("route_no, driver_name, driver_phone, vehicle_no, teacher_name, note, changed_at")
-          .in("route_id", routeIds)
-          .order("changed_at", { ascending: false })
-          .limit(200)
-      : { data: [] as Record<string, unknown>[] };
-  const history = (historyRes.data ?? []) as {
-    route_no: string | null;
-    driver_name: string | null;
-    driver_phone: string | null;
-    vehicle_no: string | null;
-    teacher_name: string | null;
-    note: string | null;
-    changed_at: string;
-  }[];
-  const boardLinksRes = await supabase.from("shuttle_board_links").select("*").order("created_at", { ascending: false });
-  const arrivalLinksRes = await supabase.from("shuttle_arrival_links").select("*").order("created_at", { ascending: false });
+  //
+  // ── 한 번에 묻습니다 ─────────────────────────────────────────────────────
+  //
+  // 예전에는 **일곱 번을 차례로** 기다렸습니다. 뒤의 여섯이 앞에서 받은 노선 번호를
+  // `.in()` 열쇠로 썼기 때문인데, 이 표들은 전부 하원 노선 몇 개에 딸린 작은 표라
+  // **통째로 받아 여기서 거르는 편**이 왕복 여섯 번을 아낍니다. 거르는 결과는 같습니다.
+  //
+  // 이력·관측은 최근 것만 봐도 충분해서 제한을 그대로 둡니다. 다만 노선을 안 거르고 받으니
+  // 제한을 넉넉히 잡고(다른 노선 줄이 섞여 들어올 수 있으므로) 여기서 다시 거릅니다 -
+  // 안 그러면 **이 화면에 보여야 할 줄이 제한에 밀려 사라집니다.**
+  const [routesRes, pilotsAll, historyAll, boardLinksRes, arrivalLinksRes, devicesAll, stopsAll, obsAll] = await Promise.all([
+    // 요청: "등원은 패스하고 하원만 진행되도록 우선 만들어줘" - 하원 노선만 링크 관리 대상으로
+    // 보여줍니다. term='정규학기'만 대상입니다(여름캠프2 같은 임시 노선은 섞이지 않게).
+    supabase
+      .from("shuttle_routes")
+      .select("*")
+      .eq("active", true)
+      .eq("direction", "하원")
+      .eq("term", "정규학기")
+      .order("sort_order"),
+    supabase.from("shuttle_pilot_routes").select("*").order("created_at", { ascending: false }),
+    // 기사·차량 변경 이력. 트리거가 자동으로 쌓아둔 스냅샷을 최신순으로 보여줍니다.
+    supabase
+      .from("shuttle_route_vehicle_history")
+      .select("route_id, route_no, driver_name, driver_phone, vehicle_no, teacher_name, note, changed_at")
+      .order("changed_at", { ascending: false })
+      .limit(600),
+    supabase.from("shuttle_board_links").select("*").order("created_at", { ascending: false }),
+    supabase.from("shuttle_arrival_links").select("*").order("created_at", { ascending: false }),
+    // Traccar(기사님 휴대폰 GPS) 등록 기기.
+    supabase.from("shuttle_tracker_devices").select("*").order("created_at", { ascending: false }),
+    supabase.from("shuttle_stops").select("*").order("seq"),
+    // 그 위치에서 학습한 정차 관측. 최근 것만 봐도 충분합니다.
+    supabase.from("shuttle_stop_observations").select("*").order("arrived_at", { ascending: false }).limit(600),
+  ]);
 
-  // Traccar(기사님 휴대폰 GPS) 등록 기기와, 그 위치에서 학습한 정류장 좌표·정차 관측을 함께
-  // 불러옵니다. 관측은 최근 것만 봐도 충분해서 최신 200건으로 제한합니다.
-  const devicesRes =
-    routeIds.length > 0
-      ? await supabase.from("shuttle_tracker_devices").select("*").in("route_id", routeIds).order("created_at", { ascending: false })
-      : { data: [] as ShuttleTrackerDevice[] };
-  const stopsRes =
-    routeIds.length > 0 ? await supabase.from("shuttle_stops").select("*").in("route_id", routeIds).order("seq") : { data: [] as ShuttleStop[] };
-  const observationsRes =
-    routeIds.length > 0
-      ? await supabase
-          .from("shuttle_stop_observations")
-          .select("*")
-          .in("route_id", routeIds)
-          .order("arrived_at", { ascending: false })
-          .limit(200)
-      : { data: [] as ShuttleStopObservation[] };
+  const routeIds = new Set((routesRes.data ?? []).map((r) => r.id as string));
+  const mine = <T extends { route_id?: string | null }>(rows: T[] | null) =>
+    (rows ?? []).filter((r) => r.route_id && routeIds.has(r.route_id));
+
+  const pilotsRes = { data: mine((pilotsAll.data as (ShuttlePilotRoute & { route_id: string })[] | null) ?? []) };
+  const history = mine(
+    (historyAll.data as
+      | {
+          route_id: string | null;
+          route_no: string | null;
+          driver_name: string | null;
+          driver_phone: string | null;
+          vehicle_no: string | null;
+          teacher_name: string | null;
+          note: string | null;
+          changed_at: string;
+        }[]
+      | null) ?? [],
+  ).slice(0, 200);
+  const devicesRes = { data: mine((devicesAll.data as (ShuttleTrackerDevice & { route_id: string | null })[] | null) ?? []) };
+  const stopsRes = { data: mine((stopsAll.data as (ShuttleStop & { route_id: string | null })[] | null) ?? []) };
+  const observationsRes = {
+    data: mine((obsAll.data as (ShuttleStopObservation & { route_id: string | null })[] | null) ?? []).slice(0, 200),
+  };
 
   // 링크·기기 개요(요청 ⑰: 한눈에 정보를 볼 수 있는 개요). 등록 기기·연결(최근 10분 내 신호)·
   // 미설치, 안내보드/도착 링크 수를 위에 요약합니다.

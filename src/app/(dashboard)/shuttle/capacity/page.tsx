@@ -40,12 +40,32 @@ export default async function ShuttleCapacityPage({
 
   const supabase = await createClient();
 
-  const { data: routes } = await supabase
-    .from("shuttle_routes")
-    .select("id, route_no, name, direction, term, seat_capacity, usable_capacity, driver_name")
-    .eq("active", true)
-    .order("sort_order");
-  const routeList = (routes ?? []) as {
+  // ── 한 번에 묻습니다 ─────────────────────────────────────────────────────
+  //
+  // 예전에는 **네 번을 차례로** 기다렸습니다 — 노선을 받고, 그 번호로 정류장을 묻고, 그
+  // 번호로 배정을 묻고, 마지막에 탑승 기록. 뒤의 조회가 앞의 답을 열쇠로 쓰니 순서를
+  // 지킨 것인데, **정류장과 배정은 표 전체가 수백 줄**입니다. 통째로 받아 메모리에서
+  // 거르는 편이 왕복 세 번을 아끼고 훨씬 빠릅니다.
+  //
+  // 거르는 결과는 같습니다 - 어차피 활성 노선에 딸린 것만 쓰고, 그 판단을 여기서 합니다.
+  const [routesRes, stopsRes, asgRes, boardingsRes] = await Promise.all([
+    supabase
+      .from("shuttle_routes")
+      .select("id, route_no, name, direction, term, seat_capacity, usable_capacity, driver_name")
+      .eq("active", true)
+      .order("sort_order"),
+    supabase.from("shuttle_stops").select("id, route_id"),
+    supabase.from("shuttle_assignments").select("id, stop_id, choice_group, override_route_id"),
+    // 기간 안 실제 탑승(현실). 픽업·결석은 빼고 셉니다 - 그날 그 차에 실제로 탄 사람만.
+    supabase
+      .from("shuttle_boardings")
+      .select("assignment_id, status, service_date, override_route_id")
+      .gte("service_date", from)
+      .lte("service_date", to)
+      .limit(30000),
+  ]);
+
+  const routeList = (routesRes.data ?? []) as {
     id: string;
     route_no: string;
     name: string | null;
@@ -56,17 +76,14 @@ export default async function ShuttleCapacityPage({
     driver_name: string | null;
   }[];
   const routeIds = routeList.map((r) => r.id);
+  const routeIdSet = new Set(routeIds);
 
-  const { data: stops } = routeIds.length
-    ? await supabase.from("shuttle_stops").select("id, route_id").in("route_id", routeIds)
-    : { data: [] };
+  const stops = ((stopsRes.data ?? []) as { id: string; route_id: string }[]).filter((s) => routeIdSet.has(s.route_id));
   const stopRoute = new Map(((stops ?? []) as { id: string; route_id: string }[]).map((s) => [s.id, s.route_id]));
 
-  const stopIds = [...stopRoute.keys()];
-  const { data: assigns } = stopIds.length
-    ? await supabase.from("shuttle_assignments").select("id, stop_id, choice_group, override_route_id").in("stop_id", stopIds)
-    : { data: [] };
-  const assignList = (assigns ?? []) as { id: string; stop_id: string; choice_group: string | null; override_route_id: string | null }[];
+  const assignList = (
+    (asgRes.data ?? []) as { id: string; stop_id: string; choice_group: string | null; override_route_id: string | null }[]
+  ).filter((a) => stopRoute.has(a.stop_id));
   // **계속 옮긴 아이는 옮겨간 차의 인원입니다.**
   //
   // 이 화면은 그동안 정류장이 속한 노선만 보고 셌습니다. 그래서 옮겨진 아이는 지금 타지도
@@ -77,7 +94,7 @@ export default async function ShuttleCapacityPage({
       a.id,
       stopRoute.has(a.stop_id)
         ? effectiveRouteId(
-            routeChoiceOf({ stopRouteId: stopRoute.get(a.stop_id)!, assignmentOverride: a.override_route_id }, (id) => routeIds.includes(id)),
+            routeChoiceOf({ stopRouteId: stopRoute.get(a.stop_id)!, assignmentOverride: a.override_route_id }, (id) => routeIdSet.has(id)),
           )
         : "",
     ]),
@@ -91,14 +108,8 @@ export default async function ShuttleCapacityPage({
     plannedByRoute.set(rid, (plannedByRoute.get(rid) ?? 0) + 1);
   }
 
-  // 기간 안 실제 탑승(현실). 픽업·결석은 빼고 셉니다 - 그날 그 차에 실제로 탄 사람만.
-  const { data: boardings, error } = await supabase
-    .from("shuttle_boardings")
-    .select("assignment_id, status, service_date, override_route_id")
-    .gte("service_date", from)
-    .lte("service_date", to)
-    .limit(30000);
-  const bRows = (boardings ?? []) as {
+  const error = boardingsRes.error;
+  const bRows = (boardingsRes.data ?? []) as {
     assignment_id: string;
     status: string;
     service_date: string;

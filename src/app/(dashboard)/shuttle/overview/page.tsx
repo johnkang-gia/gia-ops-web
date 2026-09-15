@@ -26,17 +26,46 @@ export default async function ShuttleOverviewPage() {
   const term = "정규학기";
   const supabase = await createClient();
 
-  const { data: routesRaw } = await supabase
-    .from("shuttle_routes")
-    .select("id, route_no, name, driver_name, vehicle_no, seat_capacity, usable_capacity, sort_order")
-    .eq("active", true)
-    .eq("direction", "하원")
-    .eq("term", term)
-    .order("sort_order");
-  const routes = routesRaw ?? [];
-  const routeIds = routes.map((r) => r.id as string);
+  const today0 = todayKst();
 
-  const today = todayKst();
+  //
+  // ── 한 번에 묻습니다 ─────────────────────────────────────────────────────
+  //
+  // 예전에는 **여덟 번을 차례로** 기다렸습니다. 뒤의 조회들이 앞에서 받은 노선·정류장 번호를
+  // `.in()` 열쇠로 썼기 때문인데, 정류장·배정은 표 전체가 수백 줄이라 **통째로 받아 여기서
+  // 거르는 편**이 왕복 여러 번을 아낍니다. 거르는 결과는 같습니다.
+  //
+  // 노선도 한 번만 받습니다. 개요 표(하원)와 아래 지도(등·하원 전부)가 **같은 학기의 같은
+  // 표**를 보고 있었는데 따로 물었습니다 - 한 번 받아 하원만 걸러 쓰면 됩니다.
+  const [allRoutesRes, allStopsRes, asgBasicRes, preqRes, boardingsRes, notesRes, devicesRes, regionAsgRes] =
+    await Promise.all([
+      // 지금 학기 노선 전부. 예전에는 여름캠프 노선까지 지도에 얹혀 같은 호차가 두 번 보였습니다.
+      supabase.from("shuttle_routes").select("*").eq("term", CURRENT_SHUTTLE_TERM).eq("active", true).order("direction").order("sort_order"),
+      supabase.from("shuttle_stops").select("*").order("seq"),
+      supabase.from("shuttle_assignments_basic").select("id, stop_id, student_name_raw, weekdays, student_id"),
+      // 오늘 픽업/결석(체크표와 동일: pickup_requests)
+      supabase.from("pickup_requests").select("*").eq("is_demo", false).neq("status", "무시").eq("service_date", today0),
+      // 오늘 탑승 기록
+      supabase.from("shuttle_boardings").select("assignment_id, status").eq("service_date", today0),
+      // 지속 특이사항 목록(개요에 요약 표시)
+      supabase
+        .from("shuttle_persistent_notes")
+        .select("student_name, route_no, content, effect_kind, effect_days")
+        .eq("term", term)
+        .eq("active", true)
+        .order("created_at", { ascending: false }),
+      // GPS 기기 상태
+      supabase.from("shuttle_tracker_devices").select("route_id, last_hit_at, enabled"),
+      supabase.from("shuttle_assignments").select("id, stop_id"),
+    ]);
+
+  const allRoutes = (allRoutesRes.data ?? []) as ShuttleRoute[];
+  // 개요 표는 하원만 봅니다(요청: 하원 우선). 지도는 등·하원을 함께 그립니다.
+  const routes = allRoutes.filter((r) => r.direction === "하원");
+  const routeIds = routes.map((r) => r.id as string);
+  const routeIdSet = new Set(routeIds);
+
+  const today = today0;
   const todayWeekday = new Date().getDay();
   // ── 이름 맞대기 ───────────────────────────────────────────────────────
   //
@@ -52,21 +81,27 @@ export default async function ShuttleOverviewPage() {
     return x.length >= 2 && x === y;
   };
 
-  // 정류장 → 배정 → 오늘 탑승자(요일 포함)
-  let stops: { id: string; route_id: string; seq: number; gu: string | null; dong: string | null }[] = [];
-  let assigns: { id: string; stop_id: string; student_name_raw: string; weekdays: number[]; student_id: string | null }[] = [];
-  if (routeIds.length) {
-    const { data: s } = await supabase.from("shuttle_stops").select("id, route_id, seq, gu, dong").in("route_id", routeIds);
-    stops = s ?? [];
-    const stopIds = stops.map((x) => x.id);
-    if (stopIds.length) {
-      const { data: a } = await supabase
-        .from("shuttle_assignments_basic")
-        .select("id, stop_id, student_name_raw, weekdays, student_id")
-        .in("stop_id", stopIds);
-      assigns = a ?? [];
-    }
-  }
+  // 정류장 → 배정 → 오늘 탑승자(요일 포함). 위에서 통째로 받은 것을 하원 노선으로 거릅니다.
+  const allStops = (allStopsRes.data ?? []) as ShuttleStop[];
+  const stops = allStops
+    .filter((x) => routeIdSet.has(x.route_id as string))
+    .map((x) => ({
+      id: x.id as string,
+      route_id: x.route_id as string,
+      seq: Number(x.seq ?? 0),
+      gu: (x.gu as string | null) ?? null,
+      dong: (x.dong as string | null) ?? null,
+    }));
+  const stopIdSet = new Set(stops.map((x) => x.id));
+  const assigns = (
+    (asgBasicRes.data ?? []) as {
+      id: string;
+      stop_id: string;
+      student_name_raw: string;
+      weekdays: number[];
+      student_id: string | null;
+    }[]
+  ).filter((a) => stopIdSet.has(a.stop_id));
   const routeByStop = new Map(stops.map((s) => [s.id, s.route_id]));
 
   // 노선(호차)별 대표 구 + 동 목록(요청: 지역을 호차 표에 통합). 정류장이 가장 많은 구를 대표로.
@@ -87,13 +122,7 @@ export default async function ShuttleOverviewPage() {
     }
   }
 
-  // 오늘 픽업/결석(체크표와 동일: pickup_requests)
-  const { data: preq } = await supabase
-    .from("pickup_requests")
-    .select("*")
-    .eq("is_demo", false)
-    .neq("status", "무시")
-    .eq("service_date", today);
+  const preq = preqRes.data;
   const pickupNames: string[] = [];
   const absentNames: string[] = [];
   // **학생 번호가 먼저입니다.** 번호는 겹치지 않습니다 - 이름은 셋이 나눠 씁니다.
@@ -112,12 +141,12 @@ export default async function ShuttleOverviewPage() {
     else if (nm) (isPick ? pickupNames : absentNames).push(nm);
   }
 
-  // 오늘 탑승 기록
-  const assignIds = assigns.map((a) => a.id);
-  const { data: boardings } = assignIds.length
-    ? await supabase.from("shuttle_boardings").select("assignment_id, status").eq("service_date", today).in("assignment_id", assignIds)
-    : { data: [] as { assignment_id: string; status: string }[] };
-  const boardStatus = new Map((boardings ?? []).map((b) => [b.assignment_id, b.status]));
+  // 오늘 탑승 기록. 오늘치 전부를 받아 이 화면의 배정으로 거릅니다.
+  const assignIdSet = new Set(assigns.map((a) => a.id));
+  const boardings = ((boardingsRes.data ?? []) as { assignment_id: string; status: string }[]).filter((b) =>
+    assignIdSet.has(b.assignment_id),
+  );
+  const boardStatus = new Map(boardings.map((b) => [b.assignment_id, b.status]));
   // 오늘만 타기로 체크표에서 바꾼 아이도 오늘 인원에 셉니다. 안 세면 정원·좌석 계산이
   // 실제보다 적게 나오는데, 그건 차가 꽉 찬 다음에야 드러납니다.
   const ridingToday = ridingIds(boardings ?? []);
@@ -158,14 +187,7 @@ export default async function ShuttleOverviewPage() {
   }
   const MIN_PER_STOP = 3; // 정류장 1곳 건너뛸 때 아끼는 대략 시간(분)
 
-  // 지속 특이사항 목록(개요에 요약 표시)
-  const { data: noteRows } = await supabase
-    .from("shuttle_persistent_notes")
-    .select("student_name, route_no, content, effect_kind, effect_days")
-    .eq("term", term)
-    .eq("active", true)
-    .order("created_at", { ascending: false });
-  const notes = (noteRows ?? []).map((n) => {
+  const notes = (notesRes.data ?? []).map((n) => {
     const kind = n.effect_kind as string;
     const days = (n.effect_days as number[] | null) ?? [];
     const effLabel =
@@ -224,10 +246,7 @@ export default async function ShuttleOverviewPage() {
     for (const [sid, list] of acc) avgByStop.set(sid, list.reduce((x, y) => x + y, 0) / list.length);
   }
 
-  // GPS 기기 상태
-  const { data: devices } = await supabase
-    .from("shuttle_tracker_devices")
-    .select("route_id, last_hit_at, enabled");
+  const devices = devicesRes.data;
   const now = Date.now();
   const liveByRoute = new Map<string, boolean>();
   const hasDeviceRoute = new Set<string>();
@@ -292,14 +311,8 @@ export default async function ShuttleOverviewPage() {
 
   const dateStr = new Date().toLocaleDateString("ko-KR", { month: "long", day: "numeric", weekday: "short" });
 
-  // 실시간·지역 지도(요청: 실시간·지역 탭을 개요에 통합, 맨 위에 지도). 지역별 현황과 같은
-  // 데이터(활성 노선·정류장·배정)를 실어 개요 상단 지도에 그대로 씁니다.
-  const [regionRoutesRes, regionStopsRes, regionAsgRes] = await Promise.all([
-    // 지금 학기 노선만. 예전에는 여름캠프 노선까지 지도에 얹혀 같은 호차가 두 번 보였습니다.
-    supabase.from("shuttle_routes").select("*").eq("term", CURRENT_SHUTTLE_TERM).eq("active", true).order("direction").order("sort_order"),
-    supabase.from("shuttle_stops").select("*").order("seq"),
-    supabase.from("shuttle_assignments").select("id, stop_id"),
-  ]);
+  // 실시간·지역 지도(요청: 실시간·지역 탭을 개요에 통합, 맨 위에 지도). 위 첫 묶음에서
+  // 이미 받은 노선·정류장을 그대로 씁니다 - 같은 표를 두 번 묻지 않습니다.
 
   return (
     <div className="p-4 sm:p-6">
@@ -310,8 +323,8 @@ export default async function ShuttleOverviewPage() {
         pickupNames={[...new Set(pickupNames)]}
         absentNames={[...new Set(absentNames)]}
         notes={notes}
-        regionRoutes={(regionRoutesRes.data as ShuttleRoute[] | null) ?? []}
-        regionStops={(regionStopsRes.data as ShuttleStop[] | null) ?? []}
+        regionRoutes={allRoutes}
+        regionStops={allStops}
         regionAssignments={(regionAsgRes.data as Pick<ShuttleAssignment, "stop_id">[] | null) ?? []}
       />
     </div>

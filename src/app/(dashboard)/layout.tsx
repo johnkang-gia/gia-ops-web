@@ -314,13 +314,33 @@ export default async function DashboardLayout({
   // 이 두 조회 중 하나가 네트워크 순간 장애 등으로 실패해도 로그인 여부(me) 확인과 화면 전체가
   // 함께 죽어서는 안 됩니다. Promise.all 대신 allSettled로 서로 독립시키고, 배지 조회가 실패하면
   // 0으로 조용히 대체합니다(사용자에게는 배지가 잠깐 안 보이는 정도의 영향만).
-  const [meResult, pendingProposalsResult, pendingAdoptedResult, homonymResult] = await Promise.allSettled([
-    getCurrentAppUser(),
-    supabase.from("proposals").select("id", { count: "exact", head: true }).eq("status", "검토대기"),
-    supabase.from("adopted").select("id", { count: "exact", head: true }).eq("publish", false),
-    // 겹치는 이름 목록. 실패해도 화면을 막지 않습니다(뱃지만 안 붙습니다).
-    loadHomonyms(),
-  ]);
+  //
+  // ── 한 번에 묶어서 묻습니다 ──────────────────────────────────────────────
+  //
+  // **이 틀은 화면 100개에 전부 붙습니다.** 여기서 한 번 더 기다리면 모든 화면이 그만큼
+  // 늦어집니다. 예전에는 아래 넷을 묶어 놓고 «학기 범위»와 «가입 대기»를 그 뒤에 따로
+  // 물었는데, 둘 다 앞의 답을 안 쓰는 조회였습니다 - 순서를 지킬 이유 없이 줄 서 있었던
+  // 셈이고, 개발자 계정은 화면을 열 때마다 세 번을 차례로 기다렸습니다.
+  //
+  // 가입 대기는 **개발자에게만 보여주지만 조회는 누구든 함께 던집니다.** 누구인지 알려면
+  // 첫 답을 기다려야 하는데, 그 한 번을 기다리느니 작은 조회 하나를 같이 던지고 쓰지 않는
+  // 편이 빠릅니다. 보여줄지는 아래에서 여전히 개발자만 가릅니다.
+  const [meResult, pendingProposalsResult, pendingAdoptedResult, homonymResult, termScopeResult, signupsResult] =
+    await Promise.allSettled([
+      getCurrentAppUser(),
+      supabase.from("proposals").select("id", { count: "exact", head: true }).eq("status", "검토대기"),
+      supabase.from("adopted").select("id", { count: "exact", head: true }).eq("publish", false),
+      // 겹치는 이름 목록. 실패해도 화면을 막지 않습니다(뱃지만 안 붙습니다).
+      loadHomonyms(),
+      // 지금 보고 있는 학기. 학기 표가 아직 없어도 화면은 떠야 하므로 빈 값으로 받습니다.
+      getTermScope(),
+      supabase
+        .from("app_users")
+        .select("email, name, department, position, requested_at")
+        .eq("status", "pending")
+        .order("requested_at", { ascending: false })
+        .limit(20),
+    ]);
   if (meResult.status === "rejected") throw meResult.reason;
   const me = meResult.value;
   const pendingProposals = pendingProposalsResult.status === "fulfilled" ? (pendingProposalsResult.value.count ?? 0) : 0;
@@ -337,9 +357,9 @@ export default async function DashboardLayout({
   // 뜹니다(한글로 그렸다가 영어로 바뀌는 깜빡임이 없습니다).
   const lang = await getLang();
   const t = makeT(lang);
-  // 지금 보고 있는 학기. 학기 표가 아직 없어도(마이그레이션 전) 화면은 그대로 떠야 하므로
-  // 안에서 오류를 삼키고 빈 값을 돌려줍니다.
-  const termScope = await getTermScope().catch(() => ({ term: null, terms: [], isPast: false }));
+  // 학기 표가 아직 없어도(마이그레이션 전) 화면은 그대로 떠야 하므로 빈 값으로 대신합니다.
+  const termScope =
+    termScopeResult.status === "fulfilled" ? termScopeResult.value : { term: null, terms: [], isPast: false };
   const isDemoAccountUser = isDemoAccount(me.email);
 
   // 승인을 기다리는 가입 신청. **개발자 계정일 때만** 읽습니다 - 승인할 수 없는 사람에게
@@ -349,14 +369,11 @@ export default async function DashboardLayout({
   // 화면에서 똑같이 «표시 없음»으로 보이는데, 뒤쪽은 사람이 기다려도 모른다는 뜻입니다.
   let signupsFailed = false;
   if (isDeveloperEmail(me.email)) {
-    const { data, error } = await supabase
-      .from("app_users")
-      .select("email, name, department, position, requested_at")
-      .eq("status", "pending")
-      .order("requested_at", { ascending: false })
-      .limit(20);
-    if (error) signupsFailed = true;
-    pendingSignups = (data as PendingSignup[] | null) ?? [];
+    if (signupsResult.status === "fulfilled" && !signupsResult.value.error) {
+      pendingSignups = (signupsResult.value.data as PendingSignup[] | null) ?? [];
+    } else {
+      signupsFailed = true;
+    }
   }
 
   const displayName = me.name || me.email;

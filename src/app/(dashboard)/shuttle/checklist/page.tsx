@@ -67,78 +67,16 @@ export default async function ShuttleChecklistPage({
   const term: "정규학기" | "여름캠프2" = termParam === "여름캠프2" ? "여름캠프2" : "정규학기";
 
   const supabase = await createClient();
-  const routesRes = await supabase
-    .from("shuttle_routes")
-    .select("id, route_no, name, driver_name, driver_phone, vehicle_no")
-    .eq("active", true)
-    .eq("direction", "하원")
-    .eq("term", term)
-    .order("sort_order");
-  const routes = (routesRes.data as ChecklistRoute[] | null) ?? [];
-  const routeIds = routes.map((r) => r.id);
-
-  let stopsData: { id: string; route_id: string; seq: number }[] = [];
-  let assignmentsData: {
-    id: string;
-    stop_id: string;
-    student_id: string | null;
-    student_name_raw: string;
-    weekdays: number[];
-    override_route_id: string | null;
-    note: string | null;
-    /** 행선지를 그날 정하는 학생 묶음. 대부분의 학생은 null입니다. */
-    choice_group: string | null;
-  }[] = [];
-  if (routeIds.length > 0) {
-    const stopsRes = await supabase.from("shuttle_stops").select("id, route_id, seq").in("route_id", routeIds).order("seq");
-    stopsData = stopsRes.data ?? [];
-    const stopIds = stopsData.map((s) => s.id);
-    if (stopIds.length > 0) {
-      const assignRes = await supabase
-        .from("shuttle_assignments_basic")
-        .select("id, stop_id, student_id, student_name_raw, weekdays, override_route_id, note, choice_group")
-        .in("stop_id", stopIds);
-      assignmentsData = assignRes.data ?? [];
-    }
-  }
+  // 한국 요일입니다. new Date().getDay()는 서버(UTC)의 요일이라 한국시간 오전 9시 이전에는
+  // 어제 요일이 나옵니다 - 월요일 새벽에 열면 일요일이 되어 아무도 안 타는 표가 됩니다.
+  const todayWeekday = kstWeekday();
+  const today = todayKst();
 
   // 예전에는 PDF에서 통째로 들어온 배정(유치부 포함)을 초등부 명부+허용목록으로 걸러냈지만,
   // 하원 명단 재세팅(v0.228, 사용자 원문 1-1호~31호 그대로) 이후에는 shuttle_assignments 자체가
   // 확정 명단입니다. 필터를 걸면 오히려 구분표기 이름(김재이(G2A)·이준서(중등)·에이바(일라이아나)
   // 등)이 명부 이름과 달라 떨어져 나가므로, 배정된 학생을 전부 그대로 보여줍니다(요청: "내가
   // 보내준 정규학기 하원명단하고 달라 체크해서 반영해줘").
-
-  // 한국 요일입니다. new Date().getDay()는 서버(UTC)의 요일이라 한국시간 오전 9시 이전에는
-  // 어제 요일이 나옵니다 - 월요일 새벽에 열면 일요일이 되어 아무도 안 타는 표가 됩니다.
-  const todayWeekday = kstWeekday();
-  const today = todayKst();
-  const stopById = new Map(stopsData.map((s) => [s.id, s]));
-  const routeIdSet = new Set(routeIds);
-
-  // 요청: "안타는 아이도 옅은 회색으로 표시 (...) 갑자기 탑승하게 되면 눌러서 탑승으로" - 오늘
-  // 요일에 안 타는 학생도 명단에 넣되, ridingToday=false로 표시해 회색으로 보여줍니다. 탑승 상태를
-  // 저장할 수 있어야 하므로 오늘 탑승 기록도 전체 배정에 대해 함께 조회합니다.
-  const allAssignmentIds = assignmentsData.map((a) => a.id);
-  const boardingsRes = allAssignmentIds.length
-    ? await supabase
-        .from("shuttle_boardings")
-        // updated_by는 이 표에 **없는 칸**입니다. 여기 적혀 있는 동안 PostgREST가 이 조회
-        // 전체를 400으로 거절했고, 그래서 오늘 사람이 누른 픽업·결석·노선이동이 **하나도
-        // 화면에 반영되지 않았습니다.** 화면에는 오류가 없어서 아무도 몰랐습니다.
-        // 누가 눌렀는지는 checked_by에 적습니다 - 있는 칸을 씁니다.
-        .select("assignment_id, status, override_route_id, checked_by, checked_at")
-        .eq("service_date", today)
-        .in("assignment_id", allAssignmentIds)
-    : { data: [] as { assignment_id: string; status: string; override_route_id: string | null; checked_by: string | null; checked_at: string | null }[], error: null };
-  // 이 조회가 실패하면 오늘 눌러둔 것이 전부 없는 것처럼 보입니다. 조용히 넘기지 않습니다.
-  if ("error" in boardingsRes && boardingsRes.error) {
-    console.error("[checklist] 오늘 탑승 기록 조회 실패 — 눌러둔 픽업·결석이 화면에 안 뜹니다:", boardingsRes.error.message);
-  }
-  const boardingByAssignment = new Map((boardingsRes.data ?? []).map((b) => [b.assignment_id, b]));
-  // 기록에 이름을 적기 위한 대조표. 배정 번호만 남으면 나중에 누구였는지 못 읽습니다.
-  const assignmentNameById = new Map(
-    (assignmentsData ?? []).map((a) => [a.id as string, (a.student_name_raw as string) ?? "이름 미확인"]),
-  );
 
   // 요청: "이제 토들도 가져오니까 하원체크표에 오늘픽업 결석에 여기도 반영" - 토들·전화·구글챗으로
   // 들어온 오늘 픽업/결석(pickup_requests)을 명단에 자동으로 얹습니다. 사람이 직접 누른 값이
@@ -156,7 +94,43 @@ export default async function ShuttleChecklistPage({
   // 이 기다림이 그대로 쌓입니다(실측 1,973ms — 다른 화면의 두 배였습니다).
   //
   // 서로의 결과를 쓰지 않는 조회이므로 한꺼번에 보냅니다. 가장 느린 하나만큼만 걸립니다.
-  const [preqRes, baseRes, noteRes, planRes, mirrorRes, rosterRes, logRes, rideRes, absentRes] = await Promise.all([
+  const [
+    routesRes,
+    allStopsRes,
+    allAsgRes,
+    boardingsRes,
+    preqRes,
+    baseRes,
+    noteRes,
+    planRes,
+    mirrorRes,
+    rosterRes,
+    logRes,
+    rideRes,
+    absentRes,
+  ] = await Promise.all([
+    // 노선·정류장·배정·오늘 탑승도 함께 던집니다. 예전에는 이 넷을 **차례로** 기다렸는데,
+    // 뒤엣것이 앞의 번호를 `.in()` 열쇠로 썼기 때문입니다. 정류장·배정은 표 전체가 수백
+    // 줄이라 통째로 받아 여기서 거르는 편이 왕복 세 번을 아낍니다. 거르는 결과는 같습니다.
+    supabase
+      .from("shuttle_routes")
+      .select("id, route_no, name, driver_name, driver_phone, vehicle_no")
+      .eq("active", true)
+      .eq("direction", "하원")
+      .eq("term", term)
+      .order("sort_order"),
+    supabase.from("shuttle_stops").select("id, route_id, seq").order("seq"),
+    supabase
+      .from("shuttle_assignments_basic")
+      .select("id, stop_id, student_id, student_name_raw, weekdays, override_route_id, note, choice_group"),
+    supabase
+      .from("shuttle_boardings")
+      // updated_by는 이 표에 **없는 칸**입니다. 여기 적혀 있는 동안 PostgREST가 이 조회
+      // 전체를 400으로 거절했고, 그래서 오늘 사람이 누른 픽업·결석·노선이동이 **하나도
+      // 화면에 반영되지 않았습니다.** 화면에는 오류가 없어서 아무도 몰랐습니다.
+      // 누가 눌렀는지는 checked_by에 적습니다 - 있는 칸을 씁니다.
+      .select("assignment_id, status, override_route_id, checked_by, checked_at")
+      .eq("service_date", today),
     supabase.from("pickup_requests").select("*").eq("is_demo", false).neq("status", "무시").eq("service_date", today),
     supabase.from("pickup_requests").select("source_url").not("source_url", "is", null).order("received_at", { ascending: false }).limit(1).maybeSingle(),
     supabase.from("shuttle_persistent_notes").select("id, term, student_name, student_id, route_no, content, effect_kind, effect_days, effect_from, effect_to, active").eq("term", term).eq("active", true).order("created_at", { ascending: false }),
@@ -187,6 +161,57 @@ export default async function ShuttleChecklistPage({
       .lte("date_from", today)
       .gte("date_to", today),
   ]);
+
+  const routes = (routesRes.data as ChecklistRoute[] | null) ?? [];
+  const routeIds = routes.map((r) => r.id);
+  const routeIdSet = new Set(routeIds);
+  const stopsData = ((allStopsRes.data ?? []) as { id: string; route_id: string; seq: number }[]).filter((x) =>
+    routeIdSet.has(x.route_id),
+  );
+  const stopIdSet = new Set(stopsData.map((x) => x.id));
+  const assignmentsData = (
+    (allAsgRes.data ?? []) as {
+      id: string;
+      stop_id: string;
+      student_id: string | null;
+      student_name_raw: string;
+      weekdays: number[];
+      override_route_id: string | null;
+      note: string | null;
+      /** 행선지를 그날 정하는 학생 묶음. 대부분의 학생은 null입니다. */
+      choice_group: string | null;
+    }[]
+  ).filter((a) => stopIdSet.has(a.stop_id));
+  const assignmentIdSet = new Set(assignmentsData.map((a) => a.id));
+
+  const stopById = new Map(stopsData.map((s) => [s.id, s]));
+
+  // 요청: "안타는 아이도 옅은 회색으로 표시 (...) 갑자기 탑승하게 되면 눌러서 탑승으로" - 오늘
+  // 요일에 안 타는 학생도 명단에 넣되, ridingToday=false로 표시해 회색으로 보여줍니다. 탑승
+  // 상태를 저장할 수 있어야 하므로 오늘 탑승 기록도 전체 배정에 대해 함께 조회합니다.
+  //
+  // 이 조회가 실패하면 오늘 눌러둔 것이 전부 없는 것처럼 보입니다. 조용히 넘기지 않습니다.
+  if (boardingsRes.error) {
+    console.error("[checklist] 오늘 탑승 기록 조회 실패 — 눌러둔 픽업·결석이 화면에 안 뜹니다:", boardingsRes.error.message);
+  }
+  const boardingByAssignment = new Map(
+    (
+      (boardingsRes.data ?? []) as {
+        assignment_id: string;
+        status: string;
+        override_route_id: string | null;
+        checked_by: string | null;
+        checked_at: string | null;
+      }[]
+    )
+      .filter((b) => assignmentIdSet.has(b.assignment_id))
+      .map((b) => [b.assignment_id, b]),
+  );
+  // 기록에 이름을 적기 위한 대조표. 배정 번호만 남으면 나중에 누구였는지 못 읽습니다.
+  const assignmentNameById = new Map(
+    (assignmentsData ?? []).map((a) => [a.id as string, (a.student_name_raw as string) ?? "이름 미확인"]),
+  );
+
 
   const { data: preqRows } = preqRes;
   // 이름만 뽑지 않고 **어느 연락에서 왔는지**를 함께 들고 갑니다.

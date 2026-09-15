@@ -349,12 +349,25 @@ export function TodayStudentNotes({
   notes: { id: string; name: string; kind: string; content: string; onDate: string; today: boolean; atTime: string | null; classId: string | null }[];
   pending: { name: string; date: string | null; time: string | null; today: boolean }[];
 }) {
-  const shown = notes.slice(0, 8);
+  // **여섯 줄까지만.** 이 칸은 시간표 아래 «남는 자리»를 쓰는 곳입니다. 줄이 늘수록 칸이
+  // 커지면 시간표를 밀어내는데, 이 화면에서 가장 큰 글자여야 하는 것은 시간표입니다.
+  // 넘치는 것은 숫자로 알리고 업무보드로 보냅니다.
+  const shown = notes.slice(0, 6);
   const todayCount = notes.filter((n) => n.today).length;
 
   return (
-    <Panel sc={sc} title="📌 오늘의 특이사항" right={todayCount > 0 ? `오늘 ${todayCount}건` : null} grow={1}>
-      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: sc.s(4, 3) }}>
+    /**
+     * **`grow` 를 주지 않습니다.** 옆(위)의 시간표가 `grow={1}` 이므로, 이 칸도 `grow` 를
+     * 가지면 남는 자리를 **반씩 나눠 갖습니다** - 시간표가 절반으로 줄어듭니다. 이 칸은
+     * 내용만큼만 차지하고, 남는 자리는 전부 시간표가 가져갑니다.
+     */
+    <Panel
+      sc={sc}
+      title="📌 오늘의 특이사항"
+      right={todayCount > 0 ? `오늘 ${todayCount}건` : null}
+      maxHeight={sc.s(214, 150)}
+    >
+      <div style={{ minHeight: 0, display: "flex", flexDirection: "column", gap: sc.s(4, 3) }}>
         {shown.length === 0 ? (
           <Empty sc={sc} text="오늘 따로 챙길 것 없음" tone="good" />
         ) : (
@@ -418,7 +431,7 @@ export function TodayStudentNotes({
         )}
 
         {/* 아래 = 아직 사람이 한 번 봐야 하는 픽업 요청. 밀린 날에만 커집니다. */}
-        <div style={{ marginTop: "auto", paddingTop: sc.s(6, 4), flexShrink: 0 }}>
+        <div style={{ paddingTop: sc.s(6, 4), flexShrink: 0 }}>
           <PendingInbox sc={sc} items={pending} />
         </div>
       </div>
@@ -776,6 +789,7 @@ export function Panel({
   sc,
   grow,
   fixedHeight,
+  maxHeight,
 }: {
   title: string;
   right?: string | null;
@@ -784,6 +798,13 @@ export function Panel({
   grow?: number;
   /** 높이를 못 박습니다(시간표처럼 내용이 늘어도 칸 크기가 흔들리면 안 되는 위젯용). */
   fixedHeight?: number;
+  /**
+   * **여기까지만 커집니다.** 내용만큼만 차지하되, 많아져도 이 높이를 넘지 않습니다.
+   *
+   * `grow` 와 다릅니다 - `grow` 는 남는 자리를 **가져갑니다.** 옆 칸도 `grow` 면 자리를
+   * 반씩 나눠 갖게 되어, 정작 커야 하는 칸(시간표)이 반으로 줄어듭니다.
+   */
+  maxHeight?: number;
 }) {
   return (
     <div
@@ -794,7 +815,14 @@ export function Panel({
         display: "flex",
         flexDirection: "column",
         minHeight: 0,
-        ...(fixedHeight ? { height: fixedHeight, flex: "0 0 auto" } : grow ? { flex: `${grow} 1 0` } : {}),
+        ...(fixedHeight
+          ? { height: fixedHeight, flex: "0 0 auto" }
+          : grow
+            ? { flex: `${grow} 1 0` }
+            : maxHeight
+              ? // 내용만큼만. 남는 자리는 옆 칸(시간표)이 전부 가져갑니다.
+                { maxHeight, flex: "0 1 auto" }
+              : {}),
       }}
     >
       <div style={{ display: "flex", alignItems: "baseline", gap: sc.s(8, 5), marginBottom: sc.s(8, 5), flexShrink: 0 }}>

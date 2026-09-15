@@ -4,7 +4,9 @@ import { isClockTime, isNoteKind } from "@/lib/studentDayNotes";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isStaffOrAboveUser } from "@/lib/roles";
-import { applyPickup, ingestPickup, loadRoster } from "@/lib/pickupIngest";
+import { applyBoarding, applyPickup, ingestPickup, loadRoster } from "@/lib/pickupIngest";
+import { weekStartOf } from "@/lib/dismissalWeek";
+import { todayKst } from "@/lib/kst";
 import { kstParts } from "@/lib/shuttleTracking";
 
 export const dynamic = "force-dynamic";
@@ -87,6 +89,99 @@ export async function POST(req: Request) {
       notesDropped: notes.notes,
       problems: notes.problems,
     });
+  }
+
+  // ── 오늘만 셔틀 탑승 (픽업의 반대) ────────────────────────────────────────
+  //
+  // 백서아는 수요일에 셔틀을 안 탑니다(하원수단: 블루웨일버스). 그래서 아침 크론이 체크표에서
+  // 빼고 「픽업」으로 찍습니다. 그날 학부모가 「오늘 서아 셔틀로 하원부탁드립니다」라고 보내면
+  // **그 기본을 오늘만 뒤집어야** 하는데, 인박스에는 그 갈래가 없어 글이 문의로만 남고
+  // 체크표는 여전히 픽업이었습니다 - 화면에 적힌 답이 **정반대**이고, 그대로 두면 아이가
+  // 셔틀을 못 탑니다.
+  //
+  // **판정은 한 곳에서만 합니다**(CLAUDE.md §2-11). 「오늘 이 아이가 무엇을 타는가」는
+  // `student_dismissal_plans` 를 `loadDismissalForDay` 가 읽어 정하므로, 여기서도 그 표에
+  // **이번 주만 유효한 줄**을 넣습니다. 체크표·셔틀명단·도착체크·크론이 전부 그 답을
+  // 따라옵니다 - 화면마다 따로 고치면 언젠가 한 화면만 옛 답을 냅니다.
+  if (action === "ride-shuttle") {
+    const id = body?.id as string | undefined;
+    if (!id) return NextResponse.json({ error: "id가 필요합니다." }, { status: 400 });
+
+    const { data: row } = await supabase
+      .from("pickup_requests")
+      .select("id, service_date, student_id, raw_text, source, channel_label, sender_name, source_url, status")
+      .eq("id", id)
+      .maybeSingle();
+    if (!row) return NextResponse.json({ error: "요청을 찾을 수 없습니다." }, { status: 404 });
+
+    const studentId = ((body?.studentId as string | undefined) ?? (row.student_id as string | null)) || null;
+    if (!studentId) return NextResponse.json({ error: "학생을 먼저 선택해주세요." }, { status: 400 });
+
+    const { data: student, error: stuErr } = await supabase
+      .from("wr_students")
+      .select("name")
+      .eq("is_demo", false)
+      .eq("id", studentId)
+      .maybeSingle();
+    if (stuErr) return NextResponse.json({ error: `명부를 읽지 못했습니다: ${stuErr.message}` }, { status: 500 });
+    if (!student) return NextResponse.json({ error: "명부에 없는 학생입니다." }, { status: 400 });
+    const name = (student as { name: string }).name;
+
+    // **오늘 것만** 뒤집습니다. 며칠 뒤 것을 이 단추로 바꾸면 그날 아침에 아무도 모릅니다.
+    const day = ((row.service_date as string | null) ?? todayKst());
+    if (day !== todayKst()) {
+      return NextResponse.json({ error: "오늘 연락만 여기서 바꿀 수 있습니다. 다른 날은 학생 프로필의 하원수단에서 고쳐주세요." }, { status: 400 });
+    }
+    const weekday = new Date(`${day}T12:00:00+09:00`).getDay();
+    if (weekday === 0 || weekday === 6) {
+      return NextResponse.json({ error: "주말에는 하원 차량이 없습니다." }, { status: 400 });
+    }
+
+    // ① 먼저 픽업 자국을 걷어냅니다. 남겨두면 체크표는 픽업, 하원수단은 셔틀이 되어 두
+    //    화면이 다른 답을 합니다.
+    const undo = await undoPickupTraces(supabase, id, { email: me.email, name: me.name ?? null });
+
+    // ② 이번 주 그 요일만 「셔틀」로. 매주 줄(블루웨일버스)은 그대로 두므로 다음 주에는
+    //    저절로 원래대로 돌아갑니다 - 사람이 되돌리는 것을 기억할 필요가 없습니다.
+    // **저장은 `set_dismissal_plan` 한 곳을 지납니다**(CLAUDE.md §2-9). 조건부 유일 색인
+    // 때문에 화면에서 upsert 를 쓸 수 없고, 「지우고 다시 넣기」는 지우기만 성공하면 적혀
+    // 있던 하원수단이 조용히 사라집니다.
+    const weekStart = weekStartOf(day);
+    const note = `오늘만 셔틀 (${(row.channel_label as string | null) ?? (row.source as string | null) ?? "연락"})`;
+    const { error: planErr } = await supabase.rpc("set_dismissal_plan", {
+      p_student: studentId,
+      p_weekday: weekday,
+      p_kind: "셔틀",
+      p_label: null,
+      p_time: null,
+      p_note: note,
+      p_week_start: weekStart,
+      p_by: me.email,
+    });
+    if (planErr) {
+      return NextResponse.json(
+        { error: `오늘 하원수단을 셔틀로 바꾸지 못했습니다: ${planErr.message}`, undo },
+        { status: 500 },
+      );
+    }
+
+    // ③ 체크표에도 지금 바로. 사람이 정한 줄로 남겨야 크론이 다시 픽업으로 덮지 않습니다.
+    const applied = await applyBoarding(supabase, studentId, day, me.name || me.email, {
+      text: ((row.raw_text as string | null) ?? "").trim() || "인박스에서 오늘만 셔틀 탑승으로 확정했습니다.",
+      source: (row.source as string | null) ?? "토들",
+      from: (row.channel_label as string | null) ?? (row.sender_name as string | null) ?? null,
+      url: (row.source_url as string | null) ?? null,
+    });
+
+    // ④ 인박스에서 내립니다. 픽업이 아니었다는 정정도 함께 쌓습니다.
+    const { error: stErr } = await supabase
+      .from("pickup_requests")
+      .update({ student_id: studentId, matched_name: name, status: "무시", resolved_by: me.email, resolved_at: new Date().toISOString() })
+      .eq("id", id);
+    if (stErr) return NextResponse.json({ error: stErr.message }, { status: 500 });
+    await bumpPickupFeedback(supabase, id, false);
+
+    return NextResponse.json({ ok: true, name, seats: applied, undo, undoNote: undoSummary(undo) });
   }
 
   // ── 학생만 잇기 ───────────────────────────────────────────────────────────

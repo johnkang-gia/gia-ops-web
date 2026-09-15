@@ -12,6 +12,12 @@ import NotesWindow from "@/components/work/NotesWindow";
  * 정작 쪽지가 손바닥만 해집니다.
  */
 
+/**
+ * 창 제목을 따로 둡니다. 크롬 작업표시줄·창 목록에서 「GIA 운영」이 둘이면 어느 쪽이
+ * 업무 화면인지 눌러 봐야 압니다.
+ */
+export const metadata = { title: "GIA 운영 — 쪽지" };
+
 export const dynamic = "force-dynamic";
 
 export default async function NotesWindowPage() {

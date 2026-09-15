@@ -6,6 +6,7 @@ import { fetchCurrentTerm } from "@/lib/termQuery";
 import type { DayReminder, Department, GoogleChatMirrorMessage, Task, TaskModeColor, TaskStatus, TeamMember, WorkTag } from "@/lib/types";
 import WorkCalendar from "./WorkCalendar";
 import StudentDayBoard from "./StudentDayBoard";
+import NotesPipButton from "./NotesPipButton";
 import TaskBoard from "./TaskBoard";
 import QuickTaskWidget from "./QuickTaskWidget";
 import AttendancePanels from "./AttendancePanels";
@@ -738,21 +739,12 @@ export default function WorkspaceArea({
       </button>
       {/* **쪽지는 별도 창으로 나갔습니다.** 아래 띠로 늘 깔려 있을 때는 자리를 계속 먹으면서
           정작 잘 안 쓰였습니다 - 화면을 보는 이유와 쪽지를 적는 순간이 다릅니다. 이제 옆에
-          띄워두고 쓰는 작은 창입니다. */}
-      <button
-        type="button"
-        onClick={() =>
-          window.open(
-            "/notes-window",
-            "gia-notes",
-            "width=420,height=620,menubar=no,toolbar=no,location=no,status=no",
-          )
-        }
-        title="쪽지를 작은 창으로 띄웁니다 (옆에 두고 쓰세요)"
-        className="rounded-full border border-black/10 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-600 transition hover:bg-slate-50"
-      >
-        📝 쪽지 창
-      </button>
+          띄워두고 쓰는 작은 창이고, **다른 창을 눌러도 맨 위에 남습니다**(문서 PiP). */}
+      <NotesPipButton
+        department={activeDepartment.name}
+        currentUserEmail={currentUserEmail}
+        currentUserName={team.find((m) => m.email === currentUserEmail)?.name ?? null}
+      />
       <span className="ml-auto">
         <IntegrationStatus />
       </span>

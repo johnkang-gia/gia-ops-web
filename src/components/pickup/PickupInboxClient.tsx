@@ -14,6 +14,7 @@ import { nameSurfaces, readSiblings } from "@/lib/attendanceIntent";
 import { extractTargetRange, todayKey } from "@/lib/attendanceDigest";
 import { extractRecurringWeekdays, hasRecurringPhrase, weekdayLabel } from "@/lib/parentRecurrence";
 import { guessNote, isClockTime, KIND_LOOK, NOTE_KINDS, type NoteKind } from "@/lib/studentDayNotes";
+import { readsShuttleRequest } from "@/lib/shuttleRequest";
 
 // 픽업 인박스. 토들·전화·교사·직접입력 어디로 들어왔든 여기 한 곳에 모입니다.
 //
@@ -402,6 +403,26 @@ export default function PickupInboxClient({
     router.refresh();
   }
 
+  /**
+   * **오늘만 셔틀 탑승 — 픽업의 반대.**
+   *
+   * 평소 셔틀을 안 타는 아이가 「오늘은 셔틀로 보내주세요」라고 한 경우입니다. 지금까지는
+   * 이 글이 문의로만 남고 체크표는 하원수단대로 **픽업**이었습니다 - 화면에 적힌 답이
+   * 정반대라, 그대로 두면 아이가 셔틀을 못 탑니다.
+   */
+  async function rideShuttle(row: PickupRow) {
+    const json = await call({ action: "ride-shuttle", id: row.id, studentId: row.student_id });
+    if (!json) return;
+    notify(
+      `${json.name ?? row.matched_name ?? "학생"} — 오늘만 셔틀 탑승으로 바꿨습니다. 체크표·명단·도착체크가 함께 바뀝니다.`,
+      "success",
+    );
+    const undoNote = (json as { undoNote?: string }).undoNote;
+    if (undoNote) notify(undoNote, "success");
+    await refresh();
+    router.refresh();
+  }
+
   async function confirm(row: PickupRow, studentId?: string) {
     const json = await call({ action: "confirm", id: row.id, studentId: studentId ?? row.student_id });
     if (!json) return;
@@ -585,6 +606,14 @@ export default function PickupInboxClient({
                     )}
                   </div>
                 )}
+                {/* **셔틀로 보내달라는 요청**은 규칙으로 먼저 읽습니다. AI 는 이 글을 「문의」로만
+                    분류했고, 그러면 체크표는 하원수단대로 픽업으로 남습니다 - 정반대입니다. */}
+                {readsShuttleRequest(r.raw_text ?? "").yes && (
+                  <p className="mb-2 rounded-lg border border-lime-300 bg-lime-50 p-2 text-[11px] leading-relaxed text-lime-900">
+                    <b>🚌 오늘 셔틀로 보내달라는 요청</b>으로 읽힙니다. 이 아이가 평소 셔틀을 안 타는 날이면 지금 체크표에는
+                    <b> 픽업</b>으로 적혀 있습니다 — 아래 [🚌 오늘 셔틀]을 누르면 오늘 하루만 탑승으로 바뀝니다.
+                  </p>
+                )}
                 {r.ai_note && <p className="mb-2 text-[11px] text-slate-500">AI: {r.ai_note}</p>}
 
                 {/* 결석으로 읽히는 연락. 담당자: "AI가 결석으로 체크한 부분인데도 픽업이냐
@@ -657,6 +686,16 @@ export default function PickupInboxClient({
                       {/* **픽업·결석·지각 어디에도 안 들어가는 연락이 많습니다.**
                           「약 좀 챙겨주세요」·「오늘 결제할게요」에 대해 이 화면이 할 수 있는
                           일은 「픽업 아님」뿐이었고, 그러면 그 부탁은 아무 데도 안 남았습니다. */}
+                      {/* **픽업의 반대 갈래.** 하원수단이 셔틀이 아닌 아이에게 「오늘은
+                          셔틀로」가 오면, 픽업으로 찍힌 오늘 줄을 탑승으로 되돌려야 합니다. */}
+                      <button
+                        onClick={() => rideShuttle(r)}
+                        disabled={busy}
+                        className="rounded-lg bg-lime-600 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-50"
+                        title="오늘만 셔틀을 타게 합니다. 하원수단(학원차 등)은 이번 주 오늘만 셔틀로 덮이고, 다음 주에는 원래대로 돌아갑니다."
+                      >
+                        🚌 오늘 셔틀
+                      </button>
                       <button
                         onClick={() => setNoteFor((v) => (v === r.id ? null : r.id))}
                         disabled={busy}

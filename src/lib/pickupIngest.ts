@@ -1218,6 +1218,71 @@ export async function applyPickup(
   return ids.length;
 }
 
+/**
+ * **오늘만 셔틀을 타게 합니다 — `applyPickup` 의 반대.**
+ *
+ * 평소 셔틀을 안 타는 아이(하원수단이 학원차·자차)가 「오늘은 셔틀로 보내주세요」라고
+ * 연락한 경우입니다. 체크표에서 그 아이의 줄을 **탑승**으로 되돌립니다.
+ *
+ * **사람이 정한 줄로 남깁니다**(`checked_by` 에 사람 이름). 그래야 아침 크론이 하원수단을
+ * 다시 읽고 픽업으로 덮지 않습니다 - `applyPickup` 의 `isHumanSet` 검사가 그 약속입니다.
+ *
+ * 줄이 없으면 만듭니다. 오늘 그 아이가 셔틀에서 빠져 있어 줄 자체가 없을 수 있고, 줄이
+ * 없으면 체크표·도착체크 어디에도 안 뜹니다 - 그러면 차가 그냥 떠납니다.
+ */
+export async function applyBoarding(
+  supabase: SupabaseClient,
+  studentId: string,
+  serviceDate: string,
+  updatedBy: string,
+  reason?: ChecklistReason | null,
+): Promise<number> {
+  const { data: assignments } = await supabase
+    .from("shuttle_assignments")
+    .select("id, student_name_raw")
+    .eq("student_id", studentId);
+
+  const rows = (assignments ?? []) as { id: string; student_name_raw: string | null }[];
+  if (rows.length === 0) return 0;
+
+  let changed = 0;
+  for (const a of rows) {
+    const { data: existing } = await supabase
+      .from("shuttle_boardings")
+      .select("id, status")
+      .eq("service_date", serviceDate)
+      .eq("assignment_id", a.id)
+      .maybeSingle();
+
+    // 이미 탑승이면 손대지 않습니다. 아무것도 안 바뀐 일은 기록이 아닙니다.
+    if (existing && (existing.status as string | null) === "탑승") continue;
+
+    // boarding-ok: 사람이 인박스에서 「오늘은 셔틀」로 정한 줄입니다. 기록은 바로 아래에서
+    // 똑같이 남깁니다.
+    const { error } = existing
+      ? await supabase.from("shuttle_boardings").update({ status: "탑승", checked_by: updatedBy }).eq("id", existing.id)
+      : await supabase
+          .from("shuttle_boardings")
+          .insert({ service_date: serviceDate, assignment_id: a.id, status: "탑승", checked_by: updatedBy });
+    if (error) {
+      console.error(`[applyBoarding] ${studentId} ${serviceDate} 탑승 표시 실패:`, error.message);
+      throw new Error(error.message);
+    }
+    changed += 1;
+    await logChecklist(supabase, {
+      serviceDate,
+      assignmentId: a.id,
+      studentName: a.student_name_raw ?? "이름 미확인",
+      action: "상태변경",
+      before: (existing?.status as string | null) ?? null,
+      after: "탑승",
+      actor: { email: "", name: updatedBy },
+      reason: reason ?? null,
+    });
+  }
+  return changed;
+}
+
 /** 명부를 한 번만 읽어 여러 건에 재사용합니다(수집기가 한 번에 여러 건을 보냅니다). */
 export async function loadRoster(supabase: SupabaseClient): Promise<RosterEntry[]> {
   const { data } = await supabase

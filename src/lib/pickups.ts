@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { assumeAfternoon, extractTimeFromText } from "@/lib/pickupParse";
 import { loadActiveEntries } from "@/lib/attendanceEntries";
 import { isHumanSet } from "@/lib/pickupIngest";
+import { loadDismissalForDay } from "@/lib/dismissalToday";
 
 /**
  * 오늘 픽업인 아이 — **여기 한 곳에서만 정합니다.**
@@ -261,5 +262,30 @@ export async function loadTodayPickups(
     })
     .filter((v): v is { name: string; studentId: string | null; time: string | null } => !!v));
 
-  return mergePickups({ boardingPickups, decidedKeys, entries, requests });
+  const merged = mergePickups({ boardingPickups, decidedKeys, entries, requests });
+
+  // ── 시각이 없으면 평소 하원수단의 출발 시각을 물려받습니다 ────────────────
+  //
+  // 「하원수단」에서 나온 픽업(아침 크론이 걸어둔 줄)은 체크표에 시각이 안 적힙니다 -
+  // 시각은 학생의 하원수단(요일별)에 있습니다. 그걸 안 물려받으면 화면에 「시각 미정」으로
+  // 뜨고, 행정실은 몇 시에 데려와야 하는지 모릅니다.
+  //
+  // **이 규칙은 여기 한 곳에 둡니다.** 예전에는 5분 전 알람 창구만 이 물려받기를 했고,
+  // 다른 화면들은 같은 아이를 「시각 미정」으로 보고 있었습니다 - 같은 자료에 화면마다
+  // 다른 답이 나오는 자리였습니다(CLAUDE.md §2-11 과 같은 종류).
+  const weekday = new Date(`${dateKey}T12:00:00Z`).getUTCDay();
+  const { byStudent: planByStudent, error: planErr } = await loadDismissalForDay(supabase, {
+    dayIso: dateKey,
+    weekday,
+    excludeShuttle: true,
+  });
+  if (planErr) console.error("[오늘 픽업] 하원수단을 읽지 못했습니다(시각을 못 채웁니다):", planErr);
+
+  for (const p of merged) {
+    if (p.time || !p.studentId) continue;
+    const t = (planByStudent.get(p.studentId)?.depart_time ?? "").slice(0, 5);
+    if (t) p.time = t;
+  }
+
+  return merged;
 }

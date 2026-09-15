@@ -5,7 +5,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchCurrentTerm } from "@/lib/termQuery";
 import type { DayReminder, Department, GoogleChatMirrorMessage, Task, TaskModeColor, TaskStatus, TeamMember, WorkTag } from "@/lib/types";
 import WorkCalendar from "./WorkCalendar";
-import NoteBoard from "./NoteBoard";
 import StudentDayBoard from "./StudentDayBoard";
 import TaskBoard from "./TaskBoard";
 import QuickTaskWidget from "./QuickTaskWidget";
@@ -246,8 +245,10 @@ export default function WorkspaceArea({
   const [isMobileView, setIsMobileView] = useState(false);
   // 모바일 기본 탭도 가장 많이 쓰는 등록·달력입니다.
   const notify = useToast();
-  const [noteOpen, setNoteOpen] = useState(true);
-  const [mobileTab, setMobileTab] = useState<"inbox" | "board" | "talk">("talk");
+  const [mobileTab, setMobileTab] = useState<"inbox" | "today" | "talk">("today");
+  /** 흐름판·업무 등록은 팝업입니다 - 늘 펼쳐둘 만큼 자주 손대는 자리가 아닙니다. */
+  const [boardOpen, setBoardOpen] = useState(false);
+  const [taskFormOpen, setTaskFormOpen] = useState(false);
   /** 달력에서 누른 날짜. 그 날 마감으로 새 업무를 만드는 창을 엽니다. */
   const [newTaskDay, setNewTaskDay] = useState<string | null>(null);
   /** 달력에서 끌어서 고른 기간. */
@@ -381,7 +382,12 @@ export default function WorkspaceArea({
     setDayPick(null);
     if (!day) return;
     if (kind === "알림") setReminderDay(day);
-    else if (kind === "업무") setNewTaskDay(day);
+    else if (kind === "업무") {
+      // 등록 칸이 화면에서 빠졌으므로 **창으로 엽니다.** 날짜만 채워두고 창을 안 열면
+      // 누른 사람 눈에는 아무 일도 안 일어난 것으로 보입니다.
+      setNewTaskDay(day);
+      setTaskFormOpen(true);
+    }
     else void openAcademic(day);
   }
 
@@ -540,272 +546,64 @@ export default function WorkspaceArea({
     [roster],
   );
 
+  /**
+   * ① 인박스 — 밖에서 들어오는 것(학부모 문의·출결·선생님 요청).
+   *
+   * 예전에는 이 칸이 위아래로 나뉘어 아래쪽에 「오늘 학생」이 함께 있었습니다. 성격이 다른
+   * 둘을 한 칸에 포개니 둘 다 좁았고, 사이의 높이 손잡이까지 있어 볼 것이 하나 더 늘었습니다.
+   * 이제 오늘 학생은 **가운데 제 칸**을 씁니다.
+   */
   const inbox = (
-    <div ref={inboxRef} className="flex h-full flex-col overflow-hidden">
-      <div className="min-h-0 overflow-hidden" style={{ height: `${layout.inboxTopHeight}%` }}>
-        <AttendancePanels
-          messages={mirrorMessages}
-          userEmail={currentUserEmail}
-          department={activeDepartment.name}
-          roster={roster}
-        />
-      </div>
-      <HeightHandle
-        onStart={startVerticalResize}
-        onReset={() => setLayout((p) => ({ ...p, inboxTopHeight: DEFAULT_LAYOUT.inboxTopHeight }))}
+    <div ref={inboxRef} className="h-full overflow-hidden">
+      <AttendancePanels
+        messages={mirrorMessages}
+        userEmail={currentUserEmail}
+        department={activeDepartment.name}
+        roster={roster}
       />
-      <div className="min-h-0 flex-1 overflow-hidden">
-        {/* 적는 칸에서 **보는 보드**로 넓혔습니다. 픽업·결석·특이사항·미답 문의가 학생
-            번호로 묶여 한 아이 한 줄로 섭니다. 적는 폼은 「+ 특이사항」에 접혀 있습니다 -
-            보는 일은 하루에 수십 번, 적는 일은 몇 번입니다. */}
-        <StudentDayBoard students={noteStudents} />
-      </div>
     </div>
   );
 
-  // compact: 흐름판이 오른쪽 좁은 칸에 들어가므로 3열 대신 세로로 쌓습니다.
-  const board = (
-    <TaskBoard
-      tasks={tasks}
-      team={team}
-      // 색 이름표를 흐름판에도 내려줍니다. 달력 막대만 태그 색을 쓰고 카드는 안 써서,
-      // 태그를 붙여도 카드는 그대로였습니다(아래 TaskCard 주석).
-      tagMap={new Map(tags.map((t) => [t.id, { name: t.name, color: t.color }]))}
-      deptColorMap={deptColorMap}
-      modeColorMap={modeColorMap}
-      isAdmin={isAdmin}
-      currentUserEmail={currentUserEmail}
-      onOpenTask={onOpenTask}
-      onChangeStatus={onChangeStatus}
-      onToggleAck={onToggleAck}
-      onPickupDone={onPickupDone}
-      mineOnly={mineOnly}
-      compact={!isMobileView}
-    />
+  /** ② 오늘 학생 — 픽업·하원과 특이사항. 자세한 규칙은 StudentDayBoard 에 있습니다. */
+  const todayStudents = (
+    <div className="h-full overflow-hidden">
+      <StudentDayBoard students={noteStudents} />
+    </div>
   );
 
   /**
-   * 가운데 — 등록 + 달력.
+   * ③ 일정 — 달력.
    *
-   * 여기 있던 채팅창을 뺐습니다. 사무실에 다 같이 앉아 있으니 말로 해버려서 거의 안 쓰였고,
-   * 안 쓰는 것이 화면에서 가장 넓은 자리를 차지하고 있었습니다.
-   *
-   * 대신 **언제 무엇이 몰려 있는가**를 봅니다. 흐름판(오른쪽)은 «무엇이 어디까지 됐나»를
-   * 보는 자리라 둘은 겹치지 않습니다 - 흐름판만 보면 다음 주 수요일에 마감이 다섯 개 겹친
-   * 것을 그날 아침에야 압니다.
+   * 등록 칸(QuickTaskWidget)은 여기서 뺐습니다. 늘 펼쳐져 자리의 위쪽을 먹었는데, 적는
+   * 일은 하루에 몇 번뿐입니다. 이제 **달력에서 날짜를 눌러** 띄우거나 [+ 업무] 로 엽니다 -
+   * 등록하는 순간에는 어차피 「며칠 것인가」를 먼저 고릅니다.
    */
   const center = (
-    <div className="flex h-full flex-col overflow-hidden">
-      <div className="shrink-0 border-b border-black/5 pb-1">
-        <QuickTaskWidget
-          department={activeDepartment.name}
-          team={team}
-          currentUserEmail={currentUserEmail}
-          onTaskCreated={onTaskCreated}
-          modeColorMap={modeColorMap}
-          isAdmin={isAdmin}
-          onModeColorChange={onModeColorChange}
-          students={noteStudents}
-          prefillDay={newTaskDay}
-          prefillRange={newTaskRange}
-          onPrefillUsed={() => {
-            setNewTaskDay(null);
-            setNewTaskRange(null);
-          }}
-          tags={tags}
-          onTagsChanged={onTagsChanged}
-        />
-      </div>
-      <div className="min-h-0 flex-1 overflow-hidden pt-1">
-        <WorkCalendar
-          tasks={tasks}
-          tags={tags}
-          reminders={reminders}
-          onToggleReminder={(r) => void toggleReminder(r)}
-          onDeleteReminder={(r) => void deleteReminder(r)}
-          onPickDate={setDayPick}
-          onPickRange={(from, to) => setNewTaskRange({ from, to })}
-          academicItems={academicItems}
-          // 학사일정 막대를 누르면 그날의 학사 팝업이 열립니다. 따로 만들지 않고 이미 있는
-          // 창을 그대로 씁니다 - 같은 일을 두 가지 창으로 만들면 둘이 어긋납니다.
-          onOpenAcademic={(it) => void openAcademic(it.due_date)}
-          onOpenTask={(t) => onOpenTask(t.id)}
-          onMoveDue={(t, dayKey) => void moveDue(t, dayKey)}
-          onRename={(t, title) => void renameTask(t, title)}
-        />
-      </div>
+    <div className="h-full overflow-hidden">
+      <WorkCalendar
+        tasks={tasks}
+        tags={tags}
+        reminders={reminders}
+        onToggleReminder={(r) => void toggleReminder(r)}
+        onDeleteReminder={(r) => void deleteReminder(r)}
+        onPickDate={setDayPick}
+        onPickRange={(from, to) => {
+          setNewTaskRange({ from, to });
+          setTaskFormOpen(true);
+        }}
+        academicItems={academicItems}
+        // 학사일정 막대를 누르면 그날의 학사 팝업이 열립니다. 따로 만들지 않고 이미 있는
+        // 창을 그대로 씁니다 - 같은 일을 두 가지 창으로 만들면 둘이 어긋납니다.
+        onOpenAcademic={(it) => void openAcademic(it.due_date)}
+        onOpenTask={(t) => onOpenTask(t.id)}
+        onMoveDue={(t, dayKey) => void moveDue(t, dayKey)}
+        onRename={(t, title) => void renameTask(t, title)}
+      />
     </div>
   );
 
-  // 흐름판 머리글에 들어가는 조작부 - 세 칸의 머리글 높이를 맞추려고 여기서 그립니다.
-  // 흐름판과 똑같은 기준(isMyTask)으로 세야 머리글 숫자와 카드 수가 어긋나지 않습니다.
-  const openCount = tasks.filter((t) => t.status !== "완료" && (!mineOnly || isMyTask(t, currentUserEmail))).length;
-  const boardControls = (
+  const dialogs = (
     <>
-      <div className="flex shrink-0 overflow-hidden rounded-full border border-black/10 text-[10px] font-bold">
-        <button
-          type="button"
-          onClick={() => setMineOnly(true)}
-          className={"px-2 py-0.5 transition " + (mineOnly ? "bg-blue-600 text-white" : "bg-white text-slate-400 hover:bg-slate-50")}
-        >
-          🙋 내 업무만
-        </button>
-        <button
-          type="button"
-          onClick={() => setMineOnly(false)}
-          className={"px-2 py-0.5 transition " + (!mineOnly ? "bg-blue-600 text-white" : "bg-white text-slate-400 hover:bg-slate-50")}
-        >
-          🗂️ 전체
-        </button>
-      </div>
-      <span className="shrink-0 rounded-full bg-black/5 px-2 py-0.5 text-[10px] tabular-nums text-slate-400">진행 {openCount}건</span>
-    </>
-  );
-
-  if (isMobileView) {
-    return (
-      <div className="flex h-full flex-col overflow-hidden">
-        <div className="glass-panel flex shrink-0 divide-x divide-black/5 border-b border-black/5">
-          {(
-            [
-              { key: "inbox", label: "📥 인박스" },
-              { key: "talk", label: "🗓️ 등록·달력" },
-              { key: "board", label: "🔀 흐름판" },
-            ] as const
-          ).map((t) => (
-            <button
-              key={t.key}
-              onClick={() => setMobileTab(t.key)}
-              className={"flex-1 py-2.5 text-xs font-bold transition " + (mobileTab === t.key ? "bg-blue-50 text-blue-600" : "text-slate-500")}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-        <div className="min-h-0 flex-1 overflow-hidden">
-          {mobileTab === "inbox" && (
-            <div className="flex h-full flex-col overflow-hidden">
-              {/* 모바일에서도 연결상태를 볼 수 있게 인박스 탭 위에 한 줄로 둡니다. */}
-              <div className="flex h-7 shrink-0 items-center justify-end border-b border-black/5 px-2.5">
-                <IntegrationStatus />
-              </div>
-              <div className="min-h-0 flex-1 overflow-hidden">{inbox}</div>
-            </div>
-          )}
-          {mobileTab === "board" && (
-            <div className="flex h-full flex-col overflow-hidden">
-              <div className="flex h-8 shrink-0 items-center justify-end gap-1 border-b border-black/5 px-2.5">{boardControls}</div>
-              <div className="min-h-0 flex-1 overflow-hidden">{board}</div>
-            </div>
-          )}
-          {mobileTab === "talk" && center}
-        </div>
-      </div>
-    );
-  }
-
-  /**
-   * 공용 쪽지 - 말로 하고 지나가는 것을 남기는 자리. 채팅창이 있던 몫입니다.
-   *
-   * **인박스 아래로는 내려가지 않습니다.** 왼쪽 칸은 위아래로 이미 나뉘어 있어서(들어오는
-   * 것 · 구글챗) 거기까지 쪽지가 깔리면 세 겹이 됩니다. 등록·달력 아래에서 흐름판까지만
-   * 깔면 쪽지는 여전히 «지나가다 보이는 자리»에 있고, 왼쪽은 세로로 길게 쓸 수 있습니다.
-   */
-  const noteStrip = noteOpen ? (
-    <div className="h-[132px] shrink-0 border-t border-black/10 bg-white/60 px-2.5 py-1.5">
-      <div className="mb-1 flex items-center gap-1.5">
-        <span className="text-[11px] font-bold text-slate-600">📝 쪽지</span>
-        <span className="text-[10px] text-slate-400">다같이 봅니다 · 지난 것은 저절로 떨어집니다</span>
-        <button onClick={() => setNoteOpen(false)} className="ml-auto rounded px-1.5 text-[11px] text-slate-400 hover:bg-slate-100" title="접기">
-          ▾
-        </button>
-      </div>
-      <div className="h-[96px]">
-        <NoteBoard
-          department={activeDepartment.name}
-          currentUserEmail={currentUserEmail}
-          currentUserName={team.find((m) => m.email === currentUserEmail)?.name ?? null}
-        />
-      </div>
-    </div>
-  ) : (
-    <button
-      onClick={() => setNoteOpen(true)}
-      className="flex h-7 shrink-0 items-center gap-1.5 border-t border-black/10 bg-white/60 px-2.5 text-[11px] font-bold text-slate-500 hover:bg-slate-50"
-    >
-      📝 쪽지 <span className="font-normal text-slate-400">펼치기</span>
-    </button>
-  );
-
-  return (
-    // 「곧 하원」 줄은 **여기서 그리지 않습니다.** 업무보드 머리글 바로 아래(WorkBoardClient)에
-    // 이미 같은 줄이 있어서, 한 화면에 똑같은 경고가 두 번 떴습니다. 같은 것이 두 곳에 있으면
-    // 어느 쪽을 봐야 하는지 사람이 매번 판단해야 하고, 두 줄이 자리를 먹어 정작 아래 목록이
-    // 밀립니다. 경고는 한 자리에만 있어야 경고입니다.
-    <div className="flex h-full flex-col overflow-hidden">
-      {/* 왼쪽(인박스)은 화면 끝까지 내려오고, 쪽지는 등록·달력부터 흐름판까지의 아래에만 깔립니다. */}
-      <div ref={containerRef} className="flex min-h-0 flex-1 overflow-hidden">
-      {/* ① 들어오는 것 - 학부모 문의·출결·선생님 요청을 한 곳에서 받습니다. 머리글 오른쪽에
-          토들·구글챗 연결상태 불이 들어옵니다(요청: "인박스탭제목 오른쪽 빈공간에 토들: 초록불
-          구글챗: 초록불 형식으로"). */}
-      {layout.leftOpen ? (
-        <>
-          <Zone
-            icon="📥"
-            title="인박스"
-            right={<IntegrationStatus />}
-            onCollapse={() => setLayout((p) => ({ ...p, leftOpen: false }))}
-            style={{ width: `${layout.leftWidth}%` }}
-          >
-            {inbox}
-          </Zone>
-          <ResizeHandle
-            onStart={startResize("left")}
-            onReset={() => setLayout((p) => ({ ...p, leftWidth: DEFAULT_LAYOUT.leftWidth }))}
-          />
-        </>
-      ) : (
-        <CollapsedRail icon="📥" title="인박스" side="left" onOpen={() => setLayout((p) => ({ ...p, leftOpen: true }))} />
-      )}
-
-      {/* ②③ 등록·달력 + 흐름판, 그리고 그 아래 폭만큼 깔리는 쪽지. */}
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <div className="flex min-h-0 flex-1 overflow-hidden">
-          {/* ② 일하는 곳 - 등록창 + 달력. 남는 폭을 전부 씁니다. */}
-          <Zone icon="🗓️" title="등록 · 달력" className="flex-1">
-            {center}
-          </Zone>
-
-          {/* ③ 현황판 - 흐름판은 드래그로 진행상황을 옮기고 훑어보는 용도라 오른쪽 좁은 칸이면
-              충분합니다. 세로 스택(compact)이라 좁아도 카드가 잘리지 않고, 안 볼 때는 접습니다. */}
-          {layout.rightOpen ? (
-            <>
-              <ResizeHandle
-                onStart={startResize("right")}
-                onReset={() => setLayout((p) => ({ ...p, rightWidth: DEFAULT_LAYOUT.rightWidth }))}
-              />
-              <Zone
-                icon="🔀"
-                title="흐름판"
-                right={boardControls}
-                onCollapse={() => setLayout((p) => ({ ...p, rightOpen: false }))}
-                style={{ width: `${layout.rightWidth}%` }}
-              >
-                {board}
-              </Zone>
-            </>
-          ) : (
-            <CollapsedRail icon="🔀" title="흐름판" side="right" onOpen={() => setLayout((p) => ({ ...p, rightOpen: true }))} />
-          )}
-        </div>
-
-        {/* ④ 공용 쪽지 - 등록·달력 아래에서 흐름판까지. 접을 수 있게 두되 기본은 펼침입니다 -
-            접힌 채로 두면 붙일 생각이 안 납니다. */}
-        {noteStrip}
-      </div>
-
-      </div>
-
       {/* ── 날짜를 누르면 뜨는 것들 ────────────────────────────────────
           갈래 → 그 갈래의 등록 창. 업무는 창을 따로 띄우지 않고 위쪽 등록 칸에 날짜를
           채워 넣습니다 - 이미 잘 쓰던 자리라 새 창을 하나 더 만들 이유가 없습니다. */}
@@ -835,6 +633,277 @@ export default function WorkspaceArea({
           }}
         />
       )}
+    </>
+  );
+
+  /**
+   * **흐름판은 요약 한 줄 + 팝업입니다.**
+   *
+   * 오른쪽 큰 칸을 늘 차지하고 있었는데, 거기서 하는 일은 「몇 건 남았나」를 훑는 것과
+   * 가끔 카드를 옮기는 것뿐이었습니다. 늘 펼쳐둘 만큼 자주 손대는 자리가 아닙니다.
+   *
+   * 그래서 **숫자만 한 줄로** 두고, 누르면 넓은 팝업으로 엽니다 - 팝업이 오히려 넓어서
+   * 세 칸(할 일·진행·완료)이 제 모양으로 섭니다.
+   */
+  const scoped = tasks.filter((t) => !mineOnly || isMyTask(t, currentUserEmail));
+  const openCount = scoped.filter((t) => t.status !== "완료").length;
+  const doingCount = scoped.filter((t) => t.status === "진행중").length;
+  const dueTodayCount = scoped.filter((t) => t.status !== "완료" && (t.due_at ?? "").slice(0, 10) === todayKst()).length;
+
+  const board = (
+    <TaskBoard
+      tasks={tasks}
+      team={team}
+      // 색 이름표를 흐름판에도 내려줍니다. 달력 막대만 태그 색을 쓰고 카드는 안 써서,
+      // 태그를 붙여도 카드는 그대로였습니다(아래 TaskCard 주석).
+      tagMap={new Map(tags.map((t) => [t.id, { name: t.name, color: t.color }]))}
+      deptColorMap={deptColorMap}
+      modeColorMap={modeColorMap}
+      isAdmin={isAdmin}
+      currentUserEmail={currentUserEmail}
+      onOpenTask={onOpenTask}
+      onChangeStatus={onChangeStatus}
+      onToggleAck={onToggleAck}
+      onPickupDone={onPickupDone}
+      mineOnly={mineOnly}
+      compact={isMobileView}
+    />
+  );
+
+  /** 업무 등록 창. 달력에서 날짜를 누르거나 [+ 업무] 로 엽니다. */
+  const taskForm = (
+    <QuickTaskWidget
+      department={activeDepartment.name}
+      team={team}
+      currentUserEmail={currentUserEmail}
+      onTaskCreated={(t) => {
+        onTaskCreated?.(t);
+        setTaskFormOpen(false);
+      }}
+      modeColorMap={modeColorMap}
+      isAdmin={isAdmin}
+      onModeColorChange={onModeColorChange}
+      students={noteStudents}
+      prefillDay={newTaskDay}
+      prefillRange={newTaskRange}
+      onPrefillUsed={() => {
+        setNewTaskDay(null);
+        setNewTaskRange(null);
+      }}
+      tags={tags}
+      onTagsChanged={onTagsChanged}
+    />
+  );
+
+  /**
+   * 머리글 한 줄 — 흐름판 요약 · 업무 등록 · 쪽지 창.
+   *
+   * 늘 보이는 것은 **숫자와 단추 세 개**뿐입니다. 나머지는 눌렀을 때만 자리를 씁니다.
+   */
+  const toolbar = (
+    <div className="flex h-9 shrink-0 items-center gap-1.5 border-b border-black/5 bg-white/60 px-2.5">
+      <button
+        type="button"
+        onClick={() => setBoardOpen(true)}
+        title="업무 흐름판을 크게 엽니다"
+        className="flex items-center gap-1.5 rounded-full border border-black/10 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-600 transition hover:bg-slate-50"
+      >
+        🔀 흐름판
+        <span className="tabular-nums text-slate-500">할 일 {openCount - doingCount}</span>
+        <span className="tabular-nums text-blue-600">진행 {doingCount}</span>
+        {dueTodayCount > 0 && <span className="tabular-nums text-rose-600">오늘 마감 {dueTodayCount}</span>}
+      </button>
+      <div className="flex shrink-0 overflow-hidden rounded-full border border-black/10 text-[10px] font-bold">
+        <button
+          type="button"
+          onClick={() => setMineOnly(true)}
+          className={"px-2 py-1 transition " + (mineOnly ? "bg-blue-600 text-white" : "bg-white text-slate-400 hover:bg-slate-50")}
+        >
+          내 것
+        </button>
+        <button
+          type="button"
+          onClick={() => setMineOnly(false)}
+          className={"px-2 py-1 transition " + (!mineOnly ? "bg-blue-600 text-white" : "bg-white text-slate-400 hover:bg-slate-50")}
+        >
+          전체
+        </button>
+      </div>
+      <button
+        type="button"
+        onClick={() => setTaskFormOpen(true)}
+        className="rounded-full bg-blue-600 px-2.5 py-1 text-[11px] font-bold text-white transition hover:bg-blue-700"
+      >
+        + 업무
+      </button>
+      {/* **쪽지는 별도 창으로 나갔습니다.** 아래 띠로 늘 깔려 있을 때는 자리를 계속 먹으면서
+          정작 잘 안 쓰였습니다 - 화면을 보는 이유와 쪽지를 적는 순간이 다릅니다. 이제 옆에
+          띄워두고 쓰는 작은 창입니다. */}
+      <button
+        type="button"
+        onClick={() =>
+          window.open(
+            "/notes-window",
+            "gia-notes",
+            "width=420,height=620,menubar=no,toolbar=no,location=no,status=no",
+          )
+        }
+        title="쪽지를 작은 창으로 띄웁니다 (옆에 두고 쓰세요)"
+        className="rounded-full border border-black/10 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-600 transition hover:bg-slate-50"
+      >
+        📝 쪽지 창
+      </button>
+      <span className="ml-auto">
+        <IntegrationStatus />
+      </span>
+    </div>
+  );
+
+  const modals = (
+    <>
+      {boardOpen && (
+        <FullModal title="🔀 업무 흐름판" onClose={() => setBoardOpen(false)}>
+          {board}
+        </FullModal>
+      )}
+      {taskFormOpen && (
+        <FullModal title="＋ 업무 등록" width="max-w-3xl" onClose={() => setTaskFormOpen(false)}>
+          {taskForm}
+        </FullModal>
+      )}
+    </>
+  );
+
+  if (isMobileView) {
+    return (
+      <div className="flex h-full flex-col overflow-hidden">
+        {toolbar}
+        <div className="glass-panel flex shrink-0 divide-x divide-black/5 border-b border-black/5">
+          {(
+            [
+              { key: "inbox", label: "📥 인박스" },
+              { key: "today", label: "🧒 오늘 학생" },
+              { key: "talk", label: "🗓️ 일정" },
+            ] as const
+          ).map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setMobileTab(t.key)}
+              className={"flex-1 py-2.5 text-xs font-bold transition " + (mobileTab === t.key ? "bg-blue-50 text-blue-600" : "text-slate-500")}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <div className="min-h-0 flex-1 overflow-hidden">
+          {mobileTab === "inbox" && inbox}
+          {mobileTab === "today" && todayStudents}
+          {mobileTab === "talk" && center}
+        </div>
+        {modals}
+        {dialogs}
+      </div>
+    );
+  }
+
+  return (
+    // 「곧 하원」 줄은 **여기서 그리지 않습니다.** 업무보드 머리글 바로 아래(WorkBoardClient)에
+    // 이미 같은 줄이 있어서, 한 화면에 똑같은 경고가 두 번 떴습니다. 같은 것이 두 곳에 있으면
+    // 어느 쪽을 봐야 하는지 사람이 매번 판단해야 하고, 두 줄이 자리를 먹어 정작 아래 목록이
+    // 밀립니다. 경고는 한 자리에만 있어야 경고입니다.
+    <div className="flex h-full flex-col overflow-hidden">
+      {toolbar}
+
+      {/* 칸은 셋입니다 — 들어오는 것(인박스) · 오늘 학생 · 일정(달력). 셋 다 「오늘 무엇을
+          해야 하는가」에 답하고, 서로 답이 겹치지 않습니다. */}
+      <div ref={containerRef} className="flex min-h-0 flex-1 overflow-hidden">
+        {layout.leftOpen ? (
+          <>
+            <Zone
+              icon="📥"
+              title="인박스"
+              onCollapse={() => setLayout((p) => ({ ...p, leftOpen: false }))}
+              style={{ width: `${layout.leftWidth}%` }}
+            >
+              {inbox}
+            </Zone>
+            <ResizeHandle
+              onStart={startResize("left")}
+              onReset={() => setLayout((p) => ({ ...p, leftWidth: DEFAULT_LAYOUT.leftWidth }))}
+            />
+          </>
+        ) : (
+          <CollapsedRail icon="📥" title="인박스" side="left" onOpen={() => setLayout((p) => ({ ...p, leftOpen: true }))} />
+        )}
+
+        <Zone icon="🧒" title="오늘 학생" className="flex-1">
+          {todayStudents}
+        </Zone>
+
+        {layout.rightOpen ? (
+          <>
+            <ResizeHandle
+              onStart={startResize("right")}
+              onReset={() => setLayout((p) => ({ ...p, rightWidth: DEFAULT_LAYOUT.rightWidth }))}
+            />
+            <Zone
+              icon="🗓️"
+              title="일정"
+              onCollapse={() => setLayout((p) => ({ ...p, rightOpen: false }))}
+              style={{ width: `${layout.rightWidth}%` }}
+            >
+              {center}
+            </Zone>
+          </>
+        ) : (
+          <CollapsedRail icon="🗓️" title="일정" side="right" onOpen={() => setLayout((p) => ({ ...p, rightOpen: true }))} />
+        )}
+      </div>
+
+      {modals}
+      {dialogs}
+    </div>
+  );
+}
+
+/** 넓은 팝업 한 틀. 흐름판·업무 등록이 같은 모양으로 뜹니다 - 창마다 다르면 닫는 자리를 찾습니다. */
+function FullModal({
+  title,
+  width = "max-w-6xl",
+  onClose,
+  children,
+}: {
+  title: string;
+  width?: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-[900] flex items-start justify-center bg-black/40 p-3 sm:p-6" onClick={onClose}>
+      <div
+        className={"flex max-h-full w-full flex-col overflow-hidden rounded-2xl bg-white shadow-2xl " + width}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-black/5 px-4 py-2.5">
+          <h2 className="text-sm font-bold text-slate-800">{title}</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg bg-slate-800 px-3 py-1 text-[12px] font-bold text-white hover:bg-slate-700"
+          >
+            닫기
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-3">{children}</div>
+      </div>
     </div>
   );
 }

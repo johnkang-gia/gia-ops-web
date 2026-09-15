@@ -427,21 +427,22 @@ export default function WorkBoardClient({
             </div>
           )}
         </div>
-        {/* 학기·학기말 D-day·재학생 수. 예전에는 이 화면만을 위한 별도 헤더 줄에 있었는데,
-            "지금 상황"을 알려주는 배지라는 점에서 부서·접속자와 성격이 같아 한 줄로 모았습니다. */}
-        {termLabel && (
+        {/* **배지 셋을 하나로 합쳤습니다.** 학기·학기말·재학생 수는 전부 「지금 어느
+            학기인가」에 딸린 사실인데, 알약 세 개로 흩어져 있어 머리글이 그만큼 시끄러웠고
+            정작 눌러야 하는 단추(하원 체크표·검색)가 뒤로 밀렸습니다. */}
+        {(termLabel || termDday != null) && (
           <span className="shrink-0 whitespace-nowrap rounded-full bg-purple-50 px-2.5 py-1 text-[11px] font-bold text-purple-800">
-            📚 {termLabel}
+            📚 {termLabel ?? "학기 미설정"}
+            {termDday != null && (
+              <span className={termDday >= 0 && termDday <= 14 ? "text-rose-600" : "text-purple-500"}>
+                {" · "}
+                {termDday > 0 ? `D-${termDday}` : termDday === 0 ? "오늘 학기말" : "종료"}
+              </span>
+            )}
+            <span className="font-semibold text-purple-500">{" · 초등 "}{elemActive}명</span>
           </span>
         )}
-        {termDday != null && (
-          <span className="shrink-0 whitespace-nowrap rounded-full bg-purple-600 px-2 py-1 text-[11px] font-bold text-white">
-            {termDday > 0 ? `학기말 D-${termDday}` : termDday === 0 ? "오늘 학기말" : "학기 종료"}
-          </span>
-        )}
-        <span className="shrink-0 whitespace-nowrap rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700">
-          🎓 초등부 <b>{elemActive}</b>명
-        </span>
+
         {/* 업무와 하원, 이 둘이 하루 중 가장 자주 오가는 두 화면입니다. 셔틀 메뉴를 펼쳐
             들어가는 두 번의 클릭이 매번 반복되고 있었습니다. */}
         <Link

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import StudentSelect, { type SelectableStudent } from "@/components/common/StudentSelect";
 import { useToast } from "@/components/common/ToastProvider";
-import { ITEM_LOOK, bucketOf, toMinutes, whenLabel, type DayBoard, type DayItem, type StudentDay, type UnknownItem } from "@/lib/studentDay";
+import { ITEM_LOOK, bucketOf, toMinutes, whenLabel, type DayBoard, type DayItem, type DayItemKind, type StudentDay, type UnknownItem } from "@/lib/studentDay";
 import { NOTE_KINDS, KIND_LOOK, type NoteKind } from "@/lib/studentDayNotes";
 
 /**
@@ -33,6 +33,31 @@ type Draft = { studentId: string | null; kind: NoteKind; content: string; onDate
  * 칸이 없거나 제 화면에서 처리돼야 하는 것이라, **여기서 이을 수 없다고 적습니다** -
  * 고를 수 있게 해놓고 아무 일도 안 일어나는 것이 가장 나쁩니다.
  */
+/**
+ * **오늘 칸을 둘로 나눕니다 — 가는 일과 챙길 일.**
+ *
+ * 한 줄에 「13:55 픽업 · 1시 이후 약」이 함께 있으면 두 가지를 동시에 읽어야 합니다. 그런데
+ * 하는 일이 다릅니다 - 픽업은 **그 시각에 아이를 내보내는 일**이고, 약·결제·준비물은
+ * **오늘 안에 챙기는 일**입니다. 보는 사람도 대개 둘 중 하나를 찾고 있습니다.
+ *
+ * 아이로 가르지 않고 **일로 가릅니다.** 백서아는 위(픽업)에도 아래(특이사항)에도 섭니다 -
+ * 한쪽에만 두면 다른 쪽을 보는 사람이 그 아이를 놓칩니다.
+ */
+const MOVE_KINDS: ReadonlySet<DayItemKind> = new Set(["픽업", "결석", "지각", "조퇴"]);
+
+function slice(day: StudentDay, keep: (k: DayItemKind) => boolean, date: string): StudentDay | null {
+  const items = day.items.filter((i) => keep(i.kind));
+  if (items.length === 0) return null;
+  return {
+    ...day,
+    items,
+    // 시각·확인 수는 **남은 것만으로 다시 셉니다.** 그대로 두면 아래 칸에 위 칸의 시각이
+    // 찍혀, 약을 13:55에 먹이는 것처럼 보입니다.
+    firstTime: items.find((i) => i.onDate === date && i.at)?.at ?? null,
+    pendingCount: items.filter((i) => i.pending).length,
+  };
+}
+
 function linkableId(u: UnknownItem): string | null {
   for (const p of ["pending:", "inquiry:"]) if (u.id.startsWith(p)) return u.id.slice(p.length);
   return null;
@@ -96,6 +121,21 @@ export default function StudentDayBoard({ students }: { students: SelectableStud
     }
     return out;
   }, [board, q, onlyPending, nowMin]);
+
+  /**
+   * 오늘 칸을 둘로. **시각이 있는 것이 먼저이고, 이른 것부터**입니다 - 그 시각에 사람이
+   * 움직여야 하고 놓치면 그날 못 합니다.
+   */
+  const byTime = (a: StudentDay, b: StudentDay) =>
+    (a.firstTime ?? "99:99").localeCompare(b.firstTime ?? "99:99") || a.name.localeCompare(b.name, "ko");
+  const todayMove = useMemo(
+    () => today.map((d) => slice(d, (k) => MOVE_KINDS.has(k), date)).filter((d): d is StudentDay => !!d).sort(byTime),
+    [today, date],
+  );
+  const todayNote = useMemo(
+    () => today.map((d) => slice(d, (k) => !MOVE_KINDS.has(k), date)).filter((d): d is StudentDay => !!d).sort(byTime),
+    [today, date],
+  );
 
   const pendingTotal = (board?.days.reduce((n, d) => n + d.pendingCount, 0) ?? 0) + (board?.unknown.length ?? 0);
 
@@ -238,19 +278,37 @@ export default function StudentDayBoard({ students }: { students: SelectableStud
                 오늘 평소와 다른 아이가 없습니다. 연락이 오면 여기 모입니다.
               </p>
             ) : (
-              <ul className="space-y-1">
-                {today.map((d) => (
-                  <Row
-                    key={d.studentId}
-                    day={d}
-                    date={date}
-                    nowMin={nowMin}
-                    open={open.has(d.studentId)}
-                    onToggle={() => toggle(d.studentId)}
-                    onDrop={dropNote}
-                  />
-                ))}
-              </ul>
+              <>
+                {/* 위 — 가는 일. **시각이 이른 것부터**입니다. 다가오면 색이 변합니다. */}
+                <Group icon="🚗" label="픽업 · 하원" n={todayMove.length} tone="blue">
+                  {todayMove.map((d) => (
+                    <Row
+                      key={d.studentId}
+                      day={d}
+                      date={date}
+                      nowMin={nowMin}
+                      open={open.has(`move:${d.studentId}`)}
+                      onToggle={() => toggle(`move:${d.studentId}`)}
+                      onDrop={dropNote}
+                    />
+                  ))}
+                </Group>
+
+                {/* 아래 — 챙길 일. 시각이 있으면 그 순서, 없으면 「오늘 중에」라 뒤로. */}
+                <Group icon="📌" label="특이사항" n={todayNote.length} tone="violet">
+                  {todayNote.map((d) => (
+                    <Row
+                      key={d.studentId}
+                      day={d}
+                      date={date}
+                      nowMin={nowMin}
+                      open={open.has(`note:${d.studentId}`)}
+                      onToggle={() => toggle(`note:${d.studentId}`)}
+                      onDrop={dropNote}
+                    />
+                  ))}
+                </Group>
+              </>
             )}
 
             {/* ── 누구인지 모름. 접지 않습니다 — 여기 남아 있으면 누군가 놓칩니다. ── */}
@@ -310,6 +368,41 @@ export default function StudentDayBoard({ students }: { students: SelectableStud
  * 누르면 그 줄만 펼쳐져 전체 글과 출처가 보입니다 - 보드는 훑는 곳이고, 자세한 것은
  * 필요한 한 줄에서만 봅니다.
  */
+/**
+ * 묶음 머리. **비어 있어도 줄은 남깁니다** - 칸이 통째로 사라지면 「오늘 픽업이 없다」와
+ * 「그 칸이 어디 갔지」가 구별되지 않습니다.
+ */
+function Group({
+  icon,
+  label,
+  n,
+  tone,
+  children,
+}: {
+  icon: string;
+  label: string;
+  n: number;
+  tone: "blue" | "violet";
+  children: React.ReactNode;
+}) {
+  const head =
+    tone === "blue" ? "text-sky-700 border-sky-200 bg-sky-50" : "text-violet-700 border-violet-200 bg-violet-50";
+  return (
+    <section className="mb-2 last:mb-0">
+      <div className={"mb-1 flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-[11px] font-bold " + head}>
+        <span>{icon}</span>
+        <span>{label}</span>
+        <span className="tabular-nums opacity-70">{n}</span>
+      </div>
+      {n === 0 ? (
+        <p className="px-2 py-1 text-[11px] text-slate-400">없습니다.</p>
+      ) : (
+        <ul className="space-y-1">{children}</ul>
+      )}
+    </section>
+  );
+}
+
 function Row({
   day,
   date,
@@ -328,18 +421,40 @@ function Row({
   onDrop: (item: DayItem) => void;
   dim?: boolean;
 }) {
-  const soon = day.firstTime !== null && toMinutes(day.firstTime) - nowMin <= 30 && toMinutes(day.firstTime) - nowMin >= -20;
+  /**
+   * **시각이 다가오면 줄이 스스로 말합니다.**
+   *
+   * 목록이 길어지면 사람은 위에서부터 훑는데, 정작 급한 줄은 가운데 있을 수 있습니다.
+   * 10분 안쪽은 붉게 **깜박이고**, 30분 안쪽은 노랗습니다 - 색이 두 단계여야 「곧」과
+   * 「지금」이 구별됩니다. 한 가지 색으로만 하면 아침부터 노란 줄이 열 개라 아무 뜻이
+   * 없습니다.
+   */
+  const left = day.firstTime !== null ? toMinutes(day.firstTime) - nowMin : null;
+  const urgent = left !== null && left <= 10 && left >= -20;
+  const soon = left !== null && left <= 30 && left > 10;
   return (
     <li
       className={
-        "rounded-lg border px-2 py-1.5 " +
-        (dim ? "border-slate-100 bg-slate-50" : soon ? "border-amber-300 bg-amber-50" : "border-slate-200 bg-white")
+        "rounded-lg border px-2 py-1.5 transition-colors duration-500 " +
+        (dim
+          ? "border-slate-100 bg-slate-50"
+          : urgent
+            ? "animate-pulse border-rose-400 bg-rose-50"
+            : soon
+              ? "border-amber-300 bg-amber-50"
+              : "border-slate-200 bg-white")
       }
     >
       <button type="button" onClick={onToggle} className="flex w-full items-baseline gap-1.5 text-left">
         {/* 시각이 이름보다 먼저입니다 — 몇 시가 움직이는 시점을 정합니다. */}
         {day.firstTime && (
           <b className={"shrink-0 tabular-nums text-[13px] " + (dim ? "text-slate-400" : "text-slate-900")}>{day.firstTime}</b>
+        )}
+        {/* 색만으로는 몇 분 남았는지 모릅니다. 색은 눈에 먼저 들어오고, 숫자가 답을 줍니다. */}
+        {!dim && left !== null && left <= 30 && left >= -20 && (
+          <span className={"shrink-0 text-[10px] font-bold " + (urgent ? "text-rose-600" : "text-amber-700")}>
+            {left > 0 ? `${left}분 뒤` : left === 0 ? "지금" : `${-left}분 지남`}
+          </span>
         )}
         <b className={"shrink-0 text-[13px] " + (dim ? "text-slate-500" : "text-slate-900")}>{day.name}</b>
         <span className="shrink-0 text-[10px] text-slate-400">{day.className ?? day.grade ?? ""}</span>

@@ -509,12 +509,15 @@ function Row({
         {/* 칩은 **한 줄에서 넘치지 않게** 잘립니다. 줄바꿈되면 두 줄로 세운 칸이 들쭉날쭉해져
             어느 줄이 누구 것인지 눈으로 다시 이어야 합니다. */}
         <span className="flex min-w-0 flex-1 items-baseline gap-1 overflow-hidden whitespace-nowrap">
-          {day.items.map((i) => (
+          {/* 같은 갈래가 여럿이면 하나로 묶고 개수만 적습니다 - 「💬 문의 💬 문의」는
+              칸만 먹고 알려주는 것이 없습니다. */}
+          {groupItems(day.items).map(({ item, count }) => (
             <span
-              key={i.id}
-              className={"max-w-[9rem] shrink-0 truncate rounded px-1 text-[11px] font-semibold " + (past ? "bg-slate-100 text-slate-500" : ITEM_LOOK[i.kind].chip)}
+              key={item.id}
+              className={"max-w-[6.5rem] shrink-0 truncate rounded px-1 text-[11px] font-semibold " + (past ? "bg-slate-100 text-slate-500" : ITEM_LOOK[item.kind].chip)}
             >
-              {ITEM_LOOK[i.kind].icon} {shortOf(i, date)}
+              {ITEM_LOOK[item.kind].icon} {shortOf(item, date)}
+              {count > 1 ? ` ${count}` : ""}
             </span>
           ))}
         </span>
@@ -634,10 +637,27 @@ function Folded({
 }
 
 /** 접힌 줄에 들어갈 짧은 글. 칩 하나가 줄을 통째로 먹으면 「몇 건인가」가 안 보입니다. */
+/**
+ * 칩에 적는 짧은 글.
+ *
+ * **두 줄로 세운 칸에서는 내용을 넣으면 한두 글자만 보입니다** — 「💬 흭」처럼 잘린 글자는
+ * 아무 뜻도 전하지 못하면서 이름 자리를 먹습니다. 그래서 칩은 **갈래와 날짜**만 말하고,
+ * 내용은 줄을 눌러 세부 창에서 봅니다.
+ */
 function shortOf(i: DayItem, date: string): string {
   const when = i.onDate === date ? "" : `${whenLabel(i.onDate, null, date)} `;
-  const body = i.text.trim() || i.kind;
-  return `${when}${body}`;
+  return `${when}${i.kind}`;
+}
+
+/** 같은 날·같은 갈래는 한 칩으로. 세부는 창에서 하나씩 봅니다. */
+function groupItems(items: DayItem[]): { item: DayItem; count: number }[] {
+  const out: { item: DayItem; count: number }[] = [];
+  for (const it of items) {
+    const hit = out.find((o) => o.item.kind === it.kind && o.item.onDate === it.onDate);
+    if (hit) hit.count += 1;
+    else out.push({ item: it, count: 1 });
+  }
+  return out;
 }
 
 function nowMinutesKst(): number {

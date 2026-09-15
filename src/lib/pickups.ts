@@ -174,7 +174,18 @@ export async function loadTodayPickups(
     loadActiveEntries(supabase, dateKey),
     supabase
       .from("pickup_requests")
-      .select("student_id, pickup_time")
+      // **`ai_pickup_time` 입니다.** 이 표의 시각 칸 이름이 그렇습니다 - `pickup_time` 은
+      // `pickup_schedules`·`attendance_entries` 의 칸 이름이고, 여기에는 없습니다.
+      //
+      // 없는 칸을 달라고 하면 supabase-js 는 **오류를 돌려주고 data 는 null** 입니다.
+      // 아래에서 `?? []` 로 받고 있었으므로 이 갈래는 조용히 빈 목록이 됐고, 픽업은
+      // 체크표·출결내역에서도 들어오므로 화면에는 그럴듯하게 떴습니다. 그래서 아무도
+      // 몰랐습니다 - **조용한 실패의 교과서적 자리**입니다(CLAUDE.md §5).
+      //
+      // **이름 칸도 함께 달라고 합니다.** 아래 매핑이 `matched_name`·`ai_student_name` 을
+      // 읽는데 조회에는 없었습니다 - 학생을 못 이은 연락의 이름 되살리기가 통째로 안
+      // 돌고 있었습니다(값이 undefined 라 오류도 안 납니다).
+      .select("student_id, ai_pickup_time, matched_name, ai_student_name")
       .eq("kind", "픽업")
       .eq("status", "확정")
       .eq("service_date", dateKey)
@@ -233,8 +244,11 @@ export async function loadTodayPickups(
   // 형제방이라 학생을 못 잇는 경우가 실제로 있고, 그 아이는 픽업 목록 어디에도 안 떴습니다.
   // 「연락은 왔는데 화면에 없다」가 가장 나쁜 실패입니다 - 아무도 그 아이를 데리러 가지
   // 않습니다. 이름이라도 있으면 올리고, 화면이 「학생 미연결」로 표시합니다.
+  // 못 읽었으면 조용히 넘기지 않습니다. 이 갈래가 빈 것과 「연락이 없는 것」은 다른 말이고,
+  // 픽업은 다른 갈래에서도 들어오므로 화면만 보고는 절대 알 수 없습니다.
+  if (reqRes.error) console.error("[오늘 픽업] 확정된 학부모 연락을 읽지 못했습니다:", reqRes.error.message);
   const requests = (((reqRes.data as
-    | { student_id: string | null; pickup_time: string | null; matched_name: string | null; ai_student_name: string | null }[]
+    | { student_id: string | null; ai_pickup_time: string | null; matched_name: string | null; ai_student_name: string | null }[]
     | null) ?? [])
     .map((r) => {
       const nm =
@@ -243,7 +257,7 @@ export async function loadTodayPickups(
         (r.ai_student_name ?? "").trim();
       // 인박스에 03:40 으로 저장된 옛 줄도 오후로 읽습니다. 저장을 고치지 않고 읽을 때
       // 바로잡는 이유는, 이미 쌓인 줄이 있고 그것들도 오늘 화면에 떠야 하기 때문입니다.
-      return nm ? { name: nm, studentId: r.student_id, time: assumeAfternoon(r.pickup_time) } : null;
+      return nm ? { name: nm, studentId: r.student_id, time: assumeAfternoon(r.ai_pickup_time) } : null;
     })
     .filter((v): v is { name: string; studentId: string | null; time: string | null } => !!v));
 

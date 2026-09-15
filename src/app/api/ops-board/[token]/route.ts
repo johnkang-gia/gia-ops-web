@@ -468,13 +468,17 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   // 날짜가 지난 확인대기는 뺍니다. 그날은 이미 끝나서 지금 할 수 있는 일이 없는데, 쌓이면
   // 숫자가 늘 크게 남아 아무도 안 보게 됩니다. 날짜가 아예 없는 건은 «언제인지도 모르는»
   // 것이라 오히려 남깁니다.
-  const { data: pendingRows } = await supabase
+  const { data: pendingRows, error: pendingErr } = await supabase
     .from("pickup_requests")
-    .select("id, service_date, pickup_time, status, kind, is_demo, matched_name, ai_student_name, channel_label")
+    // **`ai_pickup_time` 입니다** - 이 표에 `pickup_time` 칸은 없습니다. 없는 칸을 달라고
+    // 하면 조회가 통째로 실패하고 data 는 null 이 되는데, 아래에서 `?? []` 로 받고 있어서
+    // 「⚠ 확인 필요」 칸이 **줄곧 「✓ 인박스 비었습니다」로 떠 있었습니다.**
+    .select("id, service_date, ai_pickup_time, status, kind, is_demo, matched_name, ai_student_name, channel_label")
     .eq("status", "확인대기")
     .or(`service_date.gte.${todayK},service_date.is.null`)
     .limit(60);
 
+  if (pendingErr) console.error("[중앙 대시보드] 확인대기 인박스를 읽지 못했습니다:", pendingErr.message);
   const pendingInbox = (pendingRows ?? [])
     .filter((r) => !r.is_demo && r.kind === "픽업")
     .map((r) => ({
@@ -487,7 +491,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
         (r.channel_label as string | null) ??
         "이름 미확인",
       date: (r.service_date as string | null) ?? null,
-      time: (r.pickup_time as string | null) ?? null,
+      time: (r.ai_pickup_time as string | null) ?? null,
       today: r.service_date === todayK,
     }))
     // 오늘 것이 먼저, 그중에서도 이른 시각부터. 날짜 미정은 맨 뒤.

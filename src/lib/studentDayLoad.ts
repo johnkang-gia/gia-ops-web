@@ -82,7 +82,8 @@ export async function loadStudentDay(supabase: SupabaseClient, opts: LoadOptions
     // 학부모 문의 + 아직 누구인지 못 가린 연락. 한 표라 한 번에 읽습니다.
     supabase
       .from("pickup_requests")
-      .select("id, kind, status, student_id, service_date, pickup_time, channel_label, ai_student_name, matched_name, summary, raw_text, answered_at, is_demo")
+      // 시각 칸은 `ai_pickup_time` 입니다 - 이 표에 `pickup_time` 은 없습니다.
+      .select("id, kind, status, student_id, service_date, ai_pickup_time, channel_label, ai_student_name, matched_name, summary, raw_text, answered_at, is_demo")
       .gte("service_date", date)
       .lte("service_date", until)
       .limit(300),
@@ -161,7 +162,7 @@ export async function loadStudentDay(supabase: SupabaseClient, opts: LoadOptions
   if (inquiryRes.error) problems.push(`학부모 연락을 읽지 못했습니다: ${inquiryRes.error.message}`);
   type Req = {
     id: string; kind: string | null; status: string; student_id: string | null;
-    service_date: string; pickup_time: string | null; channel_label: string | null;
+    service_date: string; ai_pickup_time: string | null; channel_label: string | null;
     ai_student_name: string | null; matched_name: string | null; summary: string | null;
     raw_text: string | null; answered_at: string | null; is_demo?: boolean | null;
   };
@@ -175,7 +176,7 @@ export async function loadStudentDay(supabase: SupabaseClient, opts: LoadOptions
       push(r.student_id, r.channel_label ?? r.ai_student_name, {
         id: `pending:${r.id}`,
         kind: r.kind === "문의" ? "문의" : "픽업",
-        at: r.pickup_time,
+        at: r.ai_pickup_time,
         text: cut(r.summary ?? r.raw_text ?? "확인이 필요한 연락"),
         onDate: r.service_date,
         from: { table: "pickup_requests", screen: "/pickup/inbox" },

@@ -547,7 +547,9 @@ function Row({
               글자만 남는데, 잘린 글자는 아무 뜻도 전하지 못하면서 이름 자리를 먹습니다.
               갈래는 색과 아이콘으로 알아보고, 무엇인지는 줄을 눌러 봅니다(마우스를 올리면
               글자로도 뜹니다). */}
-          {groupItems(day.items).map(({ item, count }) => (
+          {/* **칩은 두 개까지.** 세 개가 되면 좁은 칸에서 셋 다 잘려 아무것도 못 읽습니다 -
+              나머지는 「+N」으로 세고 줄을 눌러 봅니다. */}
+          {groupItems(day.items).slice(0, 2).map(({ item, count }) => (
             <span
               key={item.id}
               title={`${item.kind} · ${shortOf(item, date)}${item.text ? ` — ${item.text}` : ""}`}
@@ -564,6 +566,11 @@ function Row({
               {count > 1 ? count : ""}
             </span>
           ))}
+          {groupItems(day.items).length > 2 && (
+            <span className="shrink-0 rounded bg-slate-100 px-1 text-[10px] font-bold text-slate-500">
+              +{groupItems(day.items).length - 2}
+            </span>
+          )}
         </span>
 
         {day.pendingCount > 0 && (

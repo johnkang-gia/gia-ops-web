@@ -74,6 +74,14 @@ export type BoardData = {
   inquiries: { id: string; student: string; type: string | null; typeGuessed?: boolean; summary: string; urgent: boolean; at: string; replied?: boolean }[];
   /** 아직 사람이 한 번 봐야 하는 픽업 요청(확인대기). 비어 있는 것이 정상입니다. */
   pendingInbox?: { name: string; date: string | null; time: string | null; today: boolean }[];
+  /**
+   * 오늘 이 아이에 대해 알아야 할 것 — 약·결제·준비물처럼 출결도 픽업도 아닌 것.
+   *
+   * 업무보드 [학생 특이사항]에서 적으면 여기로 옵니다. 적는 자리와 보는 자리를 나눈
+   * 이유: 적는 것은 전화를 받은 사람이 자기 자리에서 하고, 보는 것은 사무실 모두가
+   * 큰 모니터로 합니다.
+   */
+  dayNotes?: { id: string; name: string; kind: string; content: string; onDate: string; today: boolean }[];
   collector: { lastSeen: string | null; status: string | null; stale: boolean } | null;
   taskSummary: {
     statusCounts: Record<string, number>;

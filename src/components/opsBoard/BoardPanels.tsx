@@ -319,6 +319,112 @@ export function PendingInbox({ sc, items }: { sc: BoardScale; items: { name: str
   );
 }
 
+/**
+ * **오늘 이 아이에 대해 알아야 할 것 + 확인 필요 인박스.**
+ *
+ * ── 왜 한 칸에 합쳤나 ──────────────────────────────────────────────────────
+ *
+ * 시간표 아래는 늘 어중간하게 남는 자리였습니다. 인박스 한 줄만 있으면 그 아래가 통째로
+ * 비고, 인박스가 밀린 날에는 그 줄만 커졌습니다.
+ *
+ * 그런데 그 자리에 들어가야 할 것이 있었습니다 — 「서후 약 점심에」, 「어머니 픽업 오시면서
+ * 결제」 같은 것들입니다. 지금까지는 적을 데가 없어서 포스트잇이었고, 적은 사람이 자리를
+ * 비우면 사라졌습니다.
+ *
+ * 둘은 성격이 같습니다: **오늘 사람이 한 번 손대야 하는 것.** 그래서 한 칸에 두고, 특이사항이
+ * 위(하는 일), 인박스가 아래(확인할 일)입니다. 상자를 둘로 나누면 테두리·여백이 두 겹이 되어
+ * 멀리서 보는 화면에서 정작 글자에 쓸 자리가 줄어듭니다.
+ *
+ * ── 스크롤이 없습니다 ──────────────────────────────────────────────────────
+ *
+ * 공용 모니터라 아무도 내릴 수 없습니다. 그래서 넘치면 잘리는 대신 **몇 건인지는 반드시
+ * 적습니다** - 「3건 더 있음」이 보이면 사람이 업무보드를 열어 봅니다.
+ */
+export function TodayStudentNotes({
+  sc,
+  notes,
+  pending,
+}: {
+  sc: BoardScale;
+  notes: { id: string; name: string; kind: string; content: string; onDate: string; today: boolean }[];
+  pending: { name: string; date: string | null; time: string | null; today: boolean }[];
+}) {
+  const shown = notes.slice(0, 8);
+  const todayCount = notes.filter((n) => n.today).length;
+
+  return (
+    <Panel sc={sc} title="📌 오늘의 특이사항" right={todayCount > 0 ? `오늘 ${todayCount}건` : null} grow={1}>
+      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: sc.s(4, 3) }}>
+        {shown.length === 0 ? (
+          <Empty sc={sc} text="오늘 따로 챙길 것 없음" tone="good" />
+        ) : (
+          shown.map((n) => {
+            const look = NOTE_LOOK[n.kind] ?? NOTE_LOOK["기타"];
+            return (
+              <div
+                key={n.id}
+                style={{
+                  display: "flex",
+                  alignItems: "baseline",
+                  gap: sc.s(7, 4),
+                  background: n.today ? look.bg : "#0f172a",
+                  borderRadius: sc.s(8, 6),
+                  padding: `${sc.s(5, 3)}px ${sc.s(9, 6)}px`,
+                  // 넘치면 잘립니다(스크롤 없음). 한 줄 안에 이름과 할 일이 다 들어가야 합니다.
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  flexShrink: 0,
+                }}
+              >
+                <span style={{ fontSize: sc.s(15, 11) }}>{look.icon}</span>
+                <b style={{ fontSize: sc.s(17, 12), color: n.today ? look.text : "#64748b" }}>{shortName(n.name)}</b>
+                {/* 내일 것은 반드시 표시합니다 - 오늘 화면에서 내일 것이 오늘 것처럼 읽히면
+                    사람이 하루 일찍 움직입니다. */}
+                {!n.today && (
+                  <span style={{ fontSize: sc.s(12, 9), fontWeight: 800, color: "#94a3b8" }}>내일</span>
+                )}
+                <span
+                  style={{
+                    fontSize: sc.s(15, 11),
+                    color: n.today ? "#e2e8f0" : "#475569",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  }}
+                >
+                  {n.content}
+                </span>
+              </div>
+            );
+          })
+        )}
+        {notes.length > shown.length && (
+          <p style={{ margin: 0, fontSize: sc.s(12, 9), color: "#64748b", flexShrink: 0 }}>
+            외 {notes.length - shown.length}건 — 업무보드 [학생 특이사항]에서 전부 볼 수 있습니다
+          </p>
+        )}
+
+        {/* 아래 = 아직 사람이 한 번 봐야 하는 픽업 요청. 밀린 날에만 커집니다. */}
+        <div style={{ marginTop: "auto", paddingTop: sc.s(6, 4), flexShrink: 0 }}>
+          <PendingInbox sc={sc} items={pending} />
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
+/**
+ * 종류별 색. 업무보드와 **같은 뜻의 색**을 씁니다(`studentDayNotes.ts`) - 공용 모니터를
+ * 멀리서 보는 사람은 글자보다 색을 먼저 읽습니다.
+ */
+const NOTE_LOOK: Record<string, { icon: string; bg: string; text: string }> = {
+  약: { icon: "💊", bg: "#3f1d2b", text: "#fda4af" },
+  결제: { icon: "💳", bg: "#0f2f22", text: "#6ee7b7" },
+  준비물: { icon: "🎒", bg: "#2f2206", text: "#fcd34d" },
+  건강: { icon: "🩹", bg: "#0c2740", text: "#7dd3fc" },
+  기타: { icon: "📌", bg: "#1e2a44", text: "#cbd5e1" },
+};
+
 // 오늘 변동사항 - 픽업(시각이 주인공) + 결석·지각(작은 배지).
 //
 // 예전에는 결석·지각·픽업을 같은 크기로 셋에 나눠 담았습니다. 그런데 이 셋은 화면 앞에 선

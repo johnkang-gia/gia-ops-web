@@ -40,6 +40,9 @@ export const BACKUP_GROUPS: { group: string; tables: string[] }[] = [
       // 담으면 백업 파일이 통째로 무거워집니다. 목록이 없으면 저장소에 파일만 남아 누구
       // 것인지 알 수 없게 되므로, 목록은 반드시 담습니다.
       "student_absence_docs",
+      // 오늘 이 아이에 대해 알아야 할 것(약·결제·준비물). 하루짜리 메모라 가벼워 보이지만
+      // **사람이 전화를 받아 적은 판단**이고, 잃으면 되살릴 방법이 없습니다.
+      "student_day_notes",
       "terms",
       "school_days",
     ],

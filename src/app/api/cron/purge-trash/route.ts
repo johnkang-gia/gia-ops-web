@@ -48,11 +48,24 @@ export async function GET(req: NextRequest) {
     // 않습니다 - 몇 달째 안 지워지고 있는데 아무도 모르는 쪽이 더 나쁩니다.
     if (usageErr) console.error("[cron:purge-trash] 이용 기록을 정리하지 못했습니다:", usageErr.message);
 
+    // ── 지나간 학생 특이사항 ────────────────────────────────────────────────
+    //
+    // 하루짜리 메모입니다. 「지난 학기에 누가 무슨 약을 먹었나」는 묻지 않고, 물어야 하는
+    // 일이라면 그건 이 칸이 아니라 건강기록에 있어야 합니다. 한 학기(180일)만 둡니다.
+    const noteCutoff = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
+    const { data: notesPurged, error: notesErr } = await supabase
+      .from("student_day_notes")
+      .delete()
+      .lt("on_date", noteCutoff)
+      .select("id");
+    if (notesErr) console.error("[cron:purge-trash] 학생 특이사항을 정리하지 못했습니다:", notesErr.message);
+
     await touchHeartbeat(supabase, "cron:purge-trash");
     return NextResponse.json({
       ok: true,
       purgedCount: purged?.length ?? 0,
       usagePurgedCount: usagePurged?.length ?? 0,
+      dayNotesPurgedCount: notesPurged?.length ?? 0,
       usageProblem: usageErr?.message ?? null,
     });
   } catch (err) {

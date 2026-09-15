@@ -1,12 +1,12 @@
 "use client";
 
 import { ALL_SCOPE } from "@/lib/department";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchCurrentTerm } from "@/lib/termQuery";
 import type { DayReminder, Department, GoogleChatMirrorMessage, Task, TaskModeColor, TaskStatus, TeamMember, WorkTag } from "@/lib/types";
 import WorkCalendar from "./WorkCalendar";
 import NoteBoard from "./NoteBoard";
-import GoogleChatRooms from "./GoogleChatRooms";
+import StudentDayNotes from "./StudentDayNotes";
 import TaskBoard from "./TaskBoard";
 import QuickTaskWidget from "./QuickTaskWidget";
 import AttendancePanels from "./AttendancePanels";
@@ -479,14 +479,16 @@ export default function WorkspaceArea({
   );
 
   /**
-   * 왼쪽 칸 — 위는 «들어오는 것», 아래는 «구글챗».
+   * 왼쪽 칸 — 위는 «들어오는 것», 아래는 «오늘 이 아이에 대해 알아야 할 것».
    *
-   * 아래를 구글챗으로 둔 이유: 직원들은 구글챗을 띄워놓고 일합니다. 읽기만 되면 답할 때마다
-   * 구글챗을 열어야 해서 창이 하나도 안 줄고, 그러면 이 화면을 놓을 자리가 여전히 없습니다.
-   * 읽고 답하는 것까지 한 칸 안에서 돼야 창 하나를 실제로 닫습니다.
+   * 아래는 구글챗이었습니다. 직원들은 어차피 구글챗을 따로 띄워놓고 일하므로, 같은 대화를
+   * 이 좁은 칸에 한 번 더 비추는 것은 자리만 먹었습니다.
    *
-   * 위아래 비율은 이 브라우저에 기억해둡니다 - 사람마다 문의를 더 보는 날과 채팅을 더 보는
-   * 날이 다릅니다.
+   * 그 자리에 들어온 것은 **적을 데가 없던 말들**입니다 — 「서후 약 점심에 챙겨주세요」,
+   * 「오늘 어머니 픽업 오시면서 교재비 결제하신대요」. 출결도 픽업도 업무도 아니라서
+   * 지금까지는 포스트잇이거나 「제가 기억할게요」였고, 그 사람이 자리를 비우면 사라졌습니다.
+   *
+   * 위아래 비율은 이 브라우저에 기억해둡니다.
    */
   // 인박스 안 위아래 나누기. 가로 손잡이와 같은 방식이되 기준이 컨테이너의 높이입니다.
   const inboxRef = useRef<HTMLDivElement>(null);
@@ -517,6 +519,27 @@ export default function WorkspaceArea({
     [layout.inboxTopHeight],
   );
 
+  /**
+   * 특이사항에서 고를 수 있는 학생.
+   *
+   * 명부를 한 번 더 읽지 않습니다 - 출결내역이 쓰는 목록(`roster`)과 **같은 자료**입니다.
+   * 두 번 읽으면 언젠가 한쪽에만 조건이 붙고, 그러면 여기서는 안 보이는 아이가 생깁니다.
+   */
+  const noteStudents = useMemo(
+    () =>
+      roster
+        .filter((s): s is typeof s & { id: string } => !!s.id)
+        .map((s) => ({
+          id: s.id,
+          name: s.name,
+          grade: s.grade,
+          class_name: s.className ?? null,
+          name_en: s.nameEn ?? null,
+          birth_date: s.birthDate ?? null,
+        })),
+    [roster],
+  );
+
   const inbox = (
     <div ref={inboxRef} className="flex h-full flex-col overflow-hidden">
       <div className="min-h-0 overflow-hidden" style={{ height: `${layout.inboxTopHeight}%` }}>
@@ -532,7 +555,9 @@ export default function WorkspaceArea({
         onReset={() => setLayout((p) => ({ ...p, inboxTopHeight: DEFAULT_LAYOUT.inboxTopHeight }))}
       />
       <div className="min-h-0 flex-1 overflow-hidden">
-        <GoogleChatRooms messages={mirrorMessages} currentUserName={team.find((m) => m.email === currentUserEmail)?.name ?? null} />
+        {/* 학생은 **검색해서 명부에서** 고릅니다. 번호가 없는 줄은 어느 김재이인지 알 수
+            없으므로 고를 목록에도 넣지 않습니다(CLAUDE.md §2-4-1). */}
+        <StudentDayNotes students={noteStudents} />
       </div>
     </div>
   );

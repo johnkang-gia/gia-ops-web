@@ -9,6 +9,7 @@ import { loadTodayPickups } from "@/lib/pickups";
 import { displayInquiryType } from "@/lib/inquiryType";
 import { createClient } from "@supabase/supabase-js";
 import { kstParts } from "@/lib/shuttleTracking";
+import { kstDateOffset } from "@/lib/kst";
 import { departmentOf, gradeSortKey, isVisibleDepartment, VISIBLE_DEPARTMENTS, type VisibleDepartment } from "@/lib/department";
 import { loadDismissalForDay, DISMISSAL_SELECT, isMissingWeekStart, type DismissalRow } from "@/lib/dismissalToday";
 import { addDays, nextWeekStart, weekStartOf } from "@/lib/dismissalWeek";
@@ -497,6 +498,39 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
         (a.time ?? "99:99").localeCompare(b.time ?? "99:99")
     );
 
+  // ── 오늘 이 아이에 대해 알아야 할 것 ────────────────────────────────────
+  //
+  // 약·결제·준비물처럼 출결도 픽업도 업무도 아닌 것. 업무보드 [학생 특이사항]에서 적습니다.
+  //
+  // **오늘과 내일까지만** 가져옵니다. 이 화면은 사무실 큰 모니터라 스크롤이 없어서, 먼
+  // 앞날 것까지 실으면 정작 오늘 약이 아래로 밀려 잘립니다. 앞날 것 전체는 업무보드에서 봅니다.
+  const { data: noteRowsToday, error: noteErr } = await supabase
+    .from("student_day_notes")
+    .select("id, student_id, student_name, on_date, kind, content")
+    .is("deleted_at", null)
+    .gte("on_date", todayK)
+    .lte("on_date", kstDateOffset(1))
+    .order("on_date")
+    .order("created_at")
+    .limit(40);
+  if (noteErr) console.error("[중앙 대시보드] 학생 특이사항을 읽지 못했습니다:", noteErr.message);
+
+  const dayNotes = ((noteRowsToday as { id: string; student_id: string; student_name: string; on_date: string; kind: string; content: string }[] | null) ?? [])
+    // **이 화면이 보는 부서의 아이만.** 초등부 모니터에 중고등부 아이의 약이 뜨면, 그 앞에
+    // 선 사람은 할 수 있는 일이 없는데 화면 자리만 먹습니다.
+    .filter((r) => deptStudentIds.has(r.student_id))
+    .map((r) => ({
+      id: r.id,
+      // 명부의 지금 이름이 먼저입니다. 적을 때의 이름은 명부에서 사라진 아이에만 씁니다.
+      name: studentById.get(r.student_id)?.name ?? r.student_name,
+      kind: r.kind,
+      content: r.content,
+      onDate: r.on_date,
+      today: r.on_date === todayK,
+    }))
+    // 오늘 것이 먼저. 내일 것은 알아두면 좋은 정도이고, 오늘 것은 안 하면 그날 못 합니다.
+    .sort((a, b) => Number(b.today) - Number(a.today) || a.onDate.localeCompare(b.onDate));
+
   // ── 오늘 학원차·보호자 하원 ──────────────────────────────────────────────
   //
   // 매주 같은 요일에 학원 차를 타는 아이가 있습니다(월·금 14:40 와이키키짐). 셔틀을 안 타니
@@ -757,6 +791,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     classroomNotes,
     inquiries,
     pendingInbox,
+    dayNotes,
     collector,
     taskSummary: { statusCounts, todayTasks: todayTasks.slice(0, 20), todayTotal: todayTasks.length },
       shuttle: {

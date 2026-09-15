@@ -38,7 +38,7 @@ import { OPS_REFRESH_CHANNEL, OPS_REFRESH_EVENT } from "@/lib/opsRefresh";
 //   BoardChrome  — 글자 크기·전체화면 손잡이
 import { BoardData, STATUS_COLOR, WEEKDAY_KO, shortName } from "./boardShared";
 import { InquiryPopup, WeekTimetablePopup } from "./BoardPopups";
-import { ClassroomNotes, Empty, NightInfoPanel, Panel, PendingInbox, TodayChanges } from "./BoardPanels";
+import { ClassroomNotes, Empty, NightInfoPanel, Panel, TodayChanges, TodayStudentNotes } from "./BoardPanels";
 import { PickupAlarm, PickupToast } from "./PickupAlerts";
 import { DensityPicker, FullscreenPrompt } from "./BoardChrome";
 
@@ -752,9 +752,10 @@ export default function OpsBoardClient({ token }: { token: string }) {
         </Panel>
         )}
 
-        {/* ② 아직 손 안 댄 인박스. 시간표 아래 한 줄만 씁니다 -
-            평소에는 «비었습니다» 한 줄로 접혀 자리를 거의 안 먹고, 밀린 날에만 커집니다. */}
-        <PendingInbox sc={sc} items={data.pendingInbox ?? []} />
+        {/* ② 시간표 아래 남는 자리 = **오늘의 특이사항 + 확인 필요 인박스** 한 칸.
+            둘 다 «오늘 사람이 한 번 손대야 하는 것»이라 한 상자에 둡니다. 예전에는 인박스
+            한 줄만 있어서 그 아래가 통째로 비어 있었습니다. */}
+        <TodayStudentNotes sc={sc} notes={data.dayNotes ?? []} pending={data.pendingInbox ?? []} />
         </div>
 
         {/* ── 오른쪽: 오늘 변동사항 + 학부모 문의 ───────────────────────────────

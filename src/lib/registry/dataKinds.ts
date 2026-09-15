@@ -87,6 +87,9 @@ export const DATA_KINDS: DataKindDef[] = [
       "toddle_channel_students",
       "student_dup_dismissals",
       "student_absence_docs",
+      // 오늘 이 아이에 대해 알아야 할 것(약·결제·준비물). 학생 줄이 사라지면 함께
+      // 사라집니다(on delete cascade) - 그 아이가 없으면 그 아이의 오늘도 없습니다.
+      "student_day_notes",
     ],
     // 학생은 이름으로 겹칩니다(김재이가 셋). 학생 번호가 유일한 열쇠입니다.
     dedupe: { by: ["id"] },

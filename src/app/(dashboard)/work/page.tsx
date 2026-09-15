@@ -44,8 +44,11 @@ export default async function WorkPage() {
   // 출결내역 위젯이 "정서안만 픽업" 같은 문장에서 이름을 추측하지 않고 실제 명부와 대조하도록
   // 재적생 명단을 가져옵니다. 동명이인(같은 이름 여러 명)을 문장의 학년 힌트("2학년 김재이",
   // "김재이(2)")로 구분해야 해서 학년도 함께 가져옵니다.
-  const { data: rosterData } = await supabase.from("wr_students_basic").select("name, grade, name_en, birth_date, class_name").eq("status", "active");
-  const roster = ((rosterData as { name: string; grade: string | null; name_en: string | null; birth_date: string | null; class_name: string | null }[] | null) ?? []).map((s) => ({
+  // 학생 번호(id)도 함께 읽습니다 - [학생 특이사항]은 이름이 아니라 번호로 붙여야 하고
+  // (CLAUDE.md §2-4-1), 번호가 없으면 김재이 셋 중 누구의 약인지 알 수 없습니다.
+  const { data: rosterData } = await supabase.from("wr_students_basic").select("id, name, grade, name_en, birth_date, class_name").eq("status", "active");
+  const roster = ((rosterData as { id: string; name: string; grade: string | null; name_en: string | null; birth_date: string | null; class_name: string | null }[] | null) ?? []).map((s) => ({
+    id: s.id,
     name: s.name,
     grade: s.grade,
     nameEn: s.name_en,

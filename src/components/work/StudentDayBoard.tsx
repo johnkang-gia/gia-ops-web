@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import StudentSelect, { type SelectableStudent } from "@/components/common/StudentSelect";
 import { useToast } from "@/components/common/ToastProvider";
-import { ITEM_LOOK, TOPIC_LOOK, bucketOf, toMinutes, topicOf, whenLabel, type DayBoard, type DayItem, type DayItemKind, type StudentDay, type UnknownItem } from "@/lib/studentDay";
+import { ITEM_LOOK, TOPIC_LOOK, bucketOf, toMinutes, topicOf, whenLabel, type Topic, type DayBoard, type DayItem, type DayItemKind, type StudentDay, type UnknownItem } from "@/lib/studentDay";
 import { NOTE_KINDS, KIND_LOOK, type NoteKind } from "@/lib/studentDayNotes";
 import DismissalModal from "./DismissalModal";
 
@@ -142,6 +142,13 @@ export default function StudentDayBoard({ students }: { students: SelectableStud
     () => today.map((d) => slice(d, (k) => !MOVE_KINDS.has(k), date)).filter((d): d is StudentDay => !!d).sort(byTime),
     [today, date],
   );
+
+  /** 이 보드 안에서 겹치는 이름. 겹칠 때만 반을 붙입니다. */
+  const dupNames = useMemo(() => {
+    const seen = new Map<string, number>();
+    for (const d of board?.days ?? []) seen.set(d.name, (seen.get(d.name) ?? 0) + 1);
+    return new Set([...seen.entries()].filter(([, n]) => n > 1).map(([n]) => n));
+  }, [board]);
 
   const pendingTotal = (board?.days.reduce((n, d) => n + d.pendingCount, 0) ?? 0) + (board?.unknown.length ?? 0);
 
@@ -335,6 +342,7 @@ export default function StudentDayBoard({ students }: { students: SelectableStud
                       day={d}
                       date={date}
                       nowMin={nowMin}
+                      dupName={dupNames.has(d.name)}
                       onOpen={() => setDetail(d)}
                     />
                   ))}
@@ -348,6 +356,7 @@ export default function StudentDayBoard({ students }: { students: SelectableStud
                       day={d}
                       date={date}
                       nowMin={nowMin}
+                      dupName={dupNames.has(d.name)}
                       onOpen={() => setDetail(d)}
                     />
                   ))}
@@ -391,12 +400,12 @@ export default function StudentDayBoard({ students }: { students: SelectableStud
             {/* ── 접어두는 둘 ──────────────────────────────────────────── */}
             <Folded label="지난 것" n={past.length} open={showPast} onToggle={() => setShowPast((v) => !v)}>
               {past.map((d) => (
-                <Row key={d.studentId} day={d} date={date} nowMin={nowMin} dim onOpen={() => setDetail(d)} />
+                <Row key={d.studentId} day={d} date={date} nowMin={nowMin} dim dupName={dupNames.has(d.name)} onOpen={() => setDetail(d)} />
               ))}
             </Folded>
             <Folded label="앞날" n={ahead.length} open={showAhead} onToggle={() => setShowAhead((v) => !v)}>
               {ahead.map((d) => (
-                <Row key={d.studentId} day={d} date={date} nowMin={nowMin} dim onOpen={() => setDetail(d)} />
+                <Row key={d.studentId} day={d} date={date} nowMin={nowMin} dim dupName={dupNames.has(d.name)} onOpen={() => setDetail(d)} />
               ))}
             </Folded>
           </>
@@ -471,10 +480,13 @@ function Row({
   nowMin,
   onOpen,
   dim,
+  dupName,
 }: {
   day: StudentDay;
   date: string;
   nowMin: number;
+  /** 이름이 겹치는 아이인가. 겹칠 때만 반을 붙입니다. */
+  dupName?: boolean;
   /** 누르면 세부 창이 뜹니다. 줄 안에서 펼치지 않습니다 - 두 줄로 세운 칸에서 한 줄만
       길어지면 옆 줄과 어긋나 읽기 어렵습니다. */
   onOpen: () => void;
@@ -519,7 +531,10 @@ function Row({
           </span>
         )}
         <b className={"shrink-0 text-[13px] " + (past ? "text-slate-500" : "text-slate-900")}>{day.name}</b>
-        <span className="shrink-0 text-[10px] text-slate-400">{day.className ?? day.grade ?? ""}</span>
+        {/* **반은 겹치는 이름에만** 붙입니다. 김재이가 셋일 때만 구분이 필요하고, 139명
+            전부에 붙이면 정작 구분이 필요한 이름이 묻힙니다(CLAUDE.md §2-4-2). 두 줄로
+            세운 좁은 칸에서는 그 글자가 칩 자리를 먹습니다. */}
+        {dupName && <span className="shrink-0 text-[10px] text-slate-400">{day.className ?? day.grade ?? ""}</span>}
 
         {/* 칩은 **한 줄에서 넘치지 않게** 잘립니다. 줄바꿈되면 두 줄로 세운 칸이 들쭉날쭉해져
             어느 줄이 누구 것인지 눈으로 다시 이어야 합니다. */}
@@ -542,16 +557,19 @@ function Row({
               }
             >
               <span className="text-[12px] leading-none">{ITEM_LOOK[item.kind].icon}</span>
+              {/* **문의는 주제를 글자로** 적습니다(학사·차량·출결·납부·건강) - 담임이 볼
+                  것과 행정실이 볼 것이 갈리는데 화면에는 다 같은 「문의」였습니다. 아이콘과
+                  주제를 각각 칩으로 두면 좁은 칸에서 둘 다 잘립니다. */}
+              {topicLabel(item)}
               {count > 1 ? count : ""}
-              {/* **문의는 무엇에 관한 것인지** 한 글자 이름표를 붙입니다 - 담임이 볼 것과
-                  행정실이 볼 것이 갈리는데 화면에는 다 같은 「문의」였습니다. */}
-              {topicChip(item)}
             </span>
           ))}
         </span>
 
         {day.pendingCount > 0 && (
-          <span className="shrink-0 rounded-full bg-amber-100 px-1.5 text-[10px] font-bold text-amber-800">확인 {day.pendingCount}</span>
+          <span title={`확인이 필요한 것 ${day.pendingCount}건`} className="shrink-0 rounded-full bg-amber-100 px-1.5 text-[10px] font-bold text-amber-800">
+            ❗{day.pendingCount}
+          </span>
         )}
       </button>
     </li>
@@ -684,11 +702,22 @@ function shortOf(i: DayItem, date: string): string {
  * 픽업·결석처럼 **갈래 자체가 이미 무슨 일인지 말하는 것에는 붙이지 않습니다** - 「🚗 픽업
  * 차량」은 같은 말을 두 번 하는 것입니다.
  */
-function topicChip(item: DayItem) {
+function topicOfItem(item: DayItem): Topic | null {
   if (item.kind !== "문의" && item.kind !== "기타") return null;
   const topic = topicOf(item.text);
-  if (topic === "기타") return null;
-  return <span className={"ml-0.5 rounded px-1 text-[10px] font-bold " + TOPIC_LOOK[topic].chip}>{topic}</span>;
+  return topic === "기타" ? null : topic;
+}
+
+/** 줄에 붙는 주제 글자. 칩 안에 들어가므로 테두리를 또 두르지 않습니다. */
+function topicLabel(item: DayItem) {
+  const topic = topicOfItem(item);
+  return topic ? <span className="text-[10px] font-bold">{topic}</span> : null;
+}
+
+/** 세부 창에 붙는 주제 칩. 여기는 자리가 넉넉하므로 따로 두릅니다. */
+function topicChip(item: DayItem) {
+  const topic = topicOfItem(item);
+  return topic ? <span className={"shrink-0 rounded px-1 text-[10px] font-bold " + TOPIC_LOOK[topic].chip}>{topic}</span> : null;
 }
 
 /** 같은 날·같은 갈래는 한 칩으로. 세부는 창에서 하나씩 봅니다. */

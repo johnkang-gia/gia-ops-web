@@ -8,6 +8,8 @@ import type { BoardScale } from "@/lib/useBoardDensity";
  * 어디를 고쳐야 하는지 찾는 것부터 일이 됐습니다. **동작은 그대로 두고 자리만 나눴습니다.**
  */
 
+import type { DayBoard } from "@/lib/studentDay";
+
 export type Lesson = { subjectName: string; teacherName: string | null; room: string | null };
 export type BoardData = {
   appVersion?: string;
@@ -93,6 +95,13 @@ export type BoardData = {
     /** 지금 어느 교실에 있는지 찾는 열쇠. 이름만으로는 못 움직입니다. */
     classId: string | null;
   }[];
+  /**
+   * 학생 하루 보드 — 「누가 오늘 평소와 다른가」. 업무보드와 **같은 함수**가 묶습니다.
+   *
+   * 마이그레이션 전이거나 못 읽었으면 없을 수 있습니다. 화면은 그때 예전처럼 갈래별로
+   * 보여줍니다 - 새 칸 하나 때문에 대시보드가 통째로 비면 안 됩니다.
+   */
+  studentDay?: DayBoard;
   collector: { lastSeen: string | null; status: string | null; stale: boolean } | null;
   taskSummary: {
     statusCounts: Record<string, number>;

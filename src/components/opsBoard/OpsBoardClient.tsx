@@ -38,7 +38,7 @@ import { OPS_REFRESH_CHANNEL, OPS_REFRESH_EVENT } from "@/lib/opsRefresh";
 //   BoardChrome  — 글자 크기·전체화면 손잡이
 import { BoardData, STATUS_COLOR, WEEKDAY_KO, shortName } from "./boardShared";
 import { InquiryPopup, WeekTimetablePopup } from "./BoardPopups";
-import { ClassroomNotes, Empty, NightInfoPanel, Panel, TodayChanges, TodayStudentNotes } from "./BoardPanels";
+import { ClassroomNotes, Empty, NightInfoPanel, Panel, TodayChanges, TodayStudentNotes, TodayStudents } from "./BoardPanels";
 import { PickupAlarm, PickupToast } from "./PickupAlerts";
 import { DensityPicker, FullscreenPrompt } from "./BoardChrome";
 
@@ -771,8 +771,16 @@ export default function OpsBoardClient({ token }: { token: string }) {
           title="오늘 변동사항"
           right={`재적 ${data.studentCount}명`}
         >
-          {/* ── 위: 오늘 변동사항 ─────────────────────────────────────────── */}
-          <TodayChanges sc={sc} data={data} />
+          {/* ── 위: 오늘 변동사항 ───────────────────────────────────────────
+              **학생별 한 줄**입니다. 예전에는 픽업 칸·결석 칸이 따로였고, 백서아처럼 픽업도
+              있고 약도 있는 아이는 두 칸에 나뉘어 앞에 선 사람이 다시 눈으로 이었습니다.
+
+              묶는 규칙은 업무보드와 **같은 함수**를 씁니다 - 화면마다 따로 모으면 화면마다
+              다른 명단이 나옵니다.
+
+              보드를 못 받았으면(마이그레이션 전·못 읽음) 예전 갈래별 칸으로 돌아갑니다.
+              새 칸 하나 때문에 대시보드가 통째로 비면 안 됩니다. */}
+          {data.studentDay ? <TodayStudents sc={sc} board={data.studentDay} /> : <TodayChanges sc={sc} data={data} />}
 
           {/* 구분선 하나. 칸을 나누지 않고 선만 긋습니다. */}
           <div style={{ height: 1, background: "#1e2a44", flexShrink: 0, margin: `${sc.s(10, 6)}px 0` }} />

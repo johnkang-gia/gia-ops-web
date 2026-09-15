@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { BoardScale } from "@/lib/useBoardDensity";
 import { lessonPlace } from "@/lib/lessonLocation";
 import { BoardData, STATUS_COLOR, WEEKDAY_KO, btn, dayRange, mergeByStudent, shortName } from "./boardShared";
+import { ITEM_LOOK, bucketOf, toMinutes, type DayBoard, type StudentDay } from "@/lib/studentDay";
 
 /**
  * 대시보드의 **칸들** — 밤 정보, 교실 쪽지, 확인대기 인박스, 오늘 변동사항, 그리고 이 칸들을
@@ -460,6 +461,186 @@ const NOTE_LOOK: Record<string, { icon: string; bg: string; text: string }> = {
 //
 // 시각이 안 적힌 픽업은 빼지 않고 "시각 미정"으로 남깁니다 - 연락은 왔는데 시각만 모르는
 // 것이고, 그건 오히려 물어봐야 할 건입니다.
+/**
+ * **오늘 변동사항 — 학생별 한 줄.**
+ *
+ * ── 왜 갈래별에서 학생별로 바꾸나 ──────────────────────────────────────────
+ *
+ * 예전에는 픽업 칸·결석 칸·지각 칸이 따로 있었습니다. 그런데 백서아처럼 **픽업도 있고
+ * 약도 있는 아이**는 두 칸에 나뉘어, 앞에 선 사람이 다시 눈으로 이어야 했습니다.
+ *
+ * 화면 앞에서 하는 질문은 「누가 오늘 뭐가 다른가」이지 「결석이 몇 명인가」가 아닙니다.
+ *
+ * ── 스크롤이 없습니다 ──────────────────────────────────────────────────────
+ *
+ * 공용 모니터라 아무도 내릴 수 없습니다. 줄 수를 못박고, 넘치면 **몇 명 더 있는지는 반드시
+ * 적습니다** - 잘려서 아무도 모르는 것보다 낫습니다.
+ *
+ * ── 문의는 표시만 붙입니다 ─────────────────────────────────────────────────
+ *
+ * 학부모 문의는 바로 아래 칸에 원문과 함께 있습니다. 여기서 내용까지 적으면 같은 것이 한
+ * 화면에 두 번 뜨고, 그게 이 칸을 어지럽게 만듭니다. 「이 아이 문의도 있다」만 알리고
+ * 내용은 아래에서 봅니다.
+ */
+export function TodayStudents({ sc, board }: { sc: BoardScale; board: DayBoard }) {
+  const nowMin = nowMinutesKstBoard();
+  const today: StudentDay[] = [];
+  const ahead: StudentDay[] = [];
+  for (const d of board.days) {
+    const b = bucketOf(d, board.date, nowMin);
+    if (b === "앞날") ahead.push(d);
+    else today.push(d); // 지난 것도 오늘 칸에 둡니다 - 놓친 것이 화면에서 사라지면 안 됩니다
+  }
+
+  const SHOWN = 10;
+  const shown = today.slice(0, SHOWN);
+
+  return (
+    <div style={{ flexShrink: 0, minHeight: 0 }}>
+      {/* 앞날 - 한 줄로 접어 이름만. 「그날이 되면 아래로 내려옵니다」. */}
+      {ahead.length > 0 && (
+        <div
+          style={{
+            background: "#1a1330",
+            border: "1px solid #4c1d95",
+            borderRadius: sc.s(10, 6),
+            padding: `${sc.s(6, 4)}px ${sc.s(9, 6)}px`,
+            marginBottom: sc.s(8, 5),
+            display: "flex",
+            alignItems: "baseline",
+            flexWrap: "wrap",
+            gap: `${sc.s(3, 2)}px ${sc.s(7, 4)}px`,
+          }}
+        >
+          <span style={{ fontSize: sc.s(15, 11), fontWeight: 800, color: "#c4b5fd", flexShrink: 0 }}>
+            📌 예정 {ahead.length}명
+          </span>
+          {ahead.slice(0, 8).map((d) => (
+            <span key={d.studentId} style={{ fontSize: sc.s(14, 11), color: "#a78bfa", whiteSpace: "nowrap" }}>
+              {shortName(d.name)}
+            </span>
+          ))}
+          {ahead.length > 8 && (
+            <span style={{ fontSize: sc.s(12, 9), color: "#7c6ba8" }}>외 {ahead.length - 8}명</span>
+          )}
+        </div>
+      )}
+
+      {shown.length === 0 ? (
+        <Empty sc={sc} text="오늘 평소와 다른 아이 없음" tone="good" />
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: sc.s(4, 3) }}>
+          {shown.map((d) => {
+            // 문의는 아래 칸에 원문이 있습니다. 여기서는 개수만 - 같은 것을 한 화면에 두 번
+            // 적으면 그게 어지러움의 정체입니다.
+            const visible = d.items.filter((i) => i.kind !== "문의");
+            const inquiries = d.items.length - visible.length;
+            const late = d.firstTime !== null && toMinutes(d.firstTime) < nowMin - 20;
+            const soon = d.firstTime !== null && !late && toMinutes(d.firstTime) - nowMin <= 30;
+            return (
+              <div
+                key={d.studentId}
+                style={{
+                  display: "flex",
+                  alignItems: "baseline",
+                  flexWrap: "wrap",
+                  gap: `${sc.s(2, 1)}px ${sc.s(8, 5)}px`,
+                  background: soon ? "#2a1a0c" : "#0f172a",
+                  border: `1px solid ${soon ? "#b45309" : "#1e2a44"}`,
+                  borderRadius: sc.s(9, 6),
+                  padding: `${sc.s(5, 3)}px ${sc.s(10, 6)}px`,
+                  opacity: late ? 0.55 : 1,
+                  flexShrink: 0,
+                }}
+              >
+                {/* 시각이 이름보다 먼저 - 몇 시가 움직이는 시점을 정합니다. */}
+                {d.firstTime && (
+                  <b
+                    style={{
+                      fontSize: sc.s(22, 15),
+                      fontWeight: 900,
+                      color: soon ? "#fbbf24" : "#7dd3fc",
+                      fontVariantNumeric: "tabular-nums",
+                    }}
+                  >
+                    {d.firstTime}
+                  </b>
+                )}
+                <b style={{ fontSize: sc.s(21, 15), fontWeight: 900, color: "#fff", whiteSpace: "nowrap" }}>
+                  {shortName(d.name)}
+                </b>
+                <span style={{ fontSize: sc.s(13, 10), color: "#64748b" }}>{d.className ?? d.grade ?? ""}</span>
+
+                {visible.map((i) => {
+                  const look = ITEM_LOOK[i.kind];
+                  return (
+                    <span
+                      key={i.id}
+                      style={{
+                        fontSize: sc.s(15, 11),
+                        fontWeight: 700,
+                        color: look.darkText,
+                        background: look.dark,
+                        borderRadius: 6,
+                        padding: `${sc.s(2, 1)}px ${sc.s(7, 4)}px`,
+                        whiteSpace: "nowrap",
+                        maxWidth: sc.s(260, 170),
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                    >
+                      {look.icon} {i.at && i.at !== d.firstTime ? `${i.at} ` : ""}
+                      {i.text}
+                    </span>
+                  );
+                })}
+
+                {inquiries > 0 && (
+                  <span style={{ fontSize: sc.s(14, 10), color: "#c4b5fd" }} title="문의는 아래 칸에 있습니다">
+                    💬 {inquiries}
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {today.length > shown.length && (
+        <p style={{ margin: `${sc.s(5, 3)}px 0 0`, fontSize: sc.s(13, 10), color: "#64748b" }}>
+          외 {today.length - shown.length}명 — 업무보드 [오늘 학생]에서 전부 볼 수 있습니다
+        </p>
+      )}
+
+      {/* 누구인지 못 가린 연락. **접지 않습니다** - 여기 남아 있으면 누군가를 놓칩니다. */}
+      {board.unknown.length > 0 && (
+        <p
+          style={{
+            margin: `${sc.s(7, 4)}px 0 0`,
+            fontSize: sc.s(14, 10),
+            fontWeight: 800,
+            color: "#fbbf24",
+          }}
+        >
+          ❓ 누구인지 모르는 연락 {board.unknown.length}건 — 픽업 인박스에서 학생을 이어주세요
+        </p>
+      )}
+
+      {/* 못 읽은 갈래는 숨기지 않습니다 - 「오늘은 아무 일 없구나」와 다른 말입니다. */}
+      {board.problems.length > 0 && (
+        <p style={{ margin: `${sc.s(5, 3)}px 0 0`, fontSize: sc.s(12, 9), color: "#fca5a5" }}>
+          {board.problems.join(" · ")}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function nowMinutesKstBoard(): number {
+  const d = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  return d.getUTCHours() * 60 + d.getUTCMinutes();
+}
+
 export function TodayChanges({ sc, data }: { sc: BoardScale; data: BoardData }) {
   const absent = data.absences.filter((a) => a.status === "결석");
   const late = data.absences.filter((a) => a.status !== "결석");

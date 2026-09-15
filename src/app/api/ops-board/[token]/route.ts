@@ -10,6 +10,7 @@ import { displayInquiryType } from "@/lib/inquiryType";
 import { createClient } from "@supabase/supabase-js";
 import { kstParts } from "@/lib/shuttleTracking";
 import { kstDateOffset } from "@/lib/kst";
+import { loadStudentDay } from "@/lib/studentDayLoad";
 import { departmentOf, gradeSortKey, isVisibleDepartment, VISIBLE_DEPARTMENTS, type VisibleDepartment } from "@/lib/department";
 import { loadDismissalForDay, DISMISSAL_SELECT, isMissingWeekStart, type DismissalRow } from "@/lib/dismissalToday";
 import { addDays, nextWeekStart, weekStartOf } from "@/lib/dismissalWeek";
@@ -548,6 +549,17 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
         (a.atTime ?? "99:99").localeCompare(b.atTime ?? "99:99"),
     );
 
+  // ── 학생 하루 보드 ───────────────────────────────────────────────────────
+  //
+  // 「오늘 변동사항」을 갈래별(픽업·결석·지각)이 아니라 **학생별**로 보여주기 위한 것입니다.
+  // 앞에 선 사람이 하는 질문은 「누가 오늘 뭐가 다른가」이지 「결석이 몇 명인가」가 아닙니다.
+  //
+  // **묶는 규칙은 업무보드와 같은 함수**를 씁니다(`loadStudentDay`). 화면마다 따로 모으면
+  // 화면마다 다른 명단이 나오고, 그때는 어느 쪽이 맞는지 아무도 모릅니다.
+  //
+  // 조회가 몇 개 늘지만 이 자리는 **번호 문지기 뒤**입니다 - 안 바뀌면 여기까지 안 옵니다.
+  const studentDay = await loadStudentDay(supabase, { date: todayK, department });
+
   // ── 오늘 학원차·보호자 하원 ──────────────────────────────────────────────
   //
   // 매주 같은 요일에 학원 차를 타는 아이가 있습니다(월·금 14:40 와이키키짐). 셔틀을 안 타니
@@ -809,6 +821,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     inquiries,
     pendingInbox,
     dayNotes,
+    studentDay,
     collector,
     taskSummary: { statusCounts, todayTasks: todayTasks.slice(0, 20), todayTotal: todayTasks.length },
       shuttle: {

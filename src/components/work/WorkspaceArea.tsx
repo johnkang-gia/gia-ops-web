@@ -6,7 +6,7 @@ import { fetchCurrentTerm } from "@/lib/termQuery";
 import type { DayReminder, Department, GoogleChatMirrorMessage, Task, TaskModeColor, TaskStatus, TeamMember, WorkTag } from "@/lib/types";
 import WorkCalendar from "./WorkCalendar";
 import NoteBoard from "./NoteBoard";
-import StudentDayNotes from "./StudentDayNotes";
+import StudentDayBoard from "./StudentDayBoard";
 import TaskBoard from "./TaskBoard";
 import QuickTaskWidget from "./QuickTaskWidget";
 import AttendancePanels from "./AttendancePanels";
@@ -479,7 +479,7 @@ export default function WorkspaceArea({
   );
 
   /**
-   * 왼쪽 칸 — 위는 «들어오는 것», 아래는 «오늘 이 아이에 대해 알아야 할 것».
+   * 왼쪽 칸 — 위는 «들어오는 것», 아래는 «오늘 누가 평소와 다른가».
    *
    * 아래는 구글챗이었습니다. 직원들은 어차피 구글챗을 따로 띄워놓고 일하므로, 같은 대화를
    * 이 좁은 칸에 한 번 더 비추는 것은 자리만 먹었습니다.
@@ -555,9 +555,10 @@ export default function WorkspaceArea({
         onReset={() => setLayout((p) => ({ ...p, inboxTopHeight: DEFAULT_LAYOUT.inboxTopHeight }))}
       />
       <div className="min-h-0 flex-1 overflow-hidden">
-        {/* 학생은 **검색해서 명부에서** 고릅니다. 번호가 없는 줄은 어느 김재이인지 알 수
-            없으므로 고를 목록에도 넣지 않습니다(CLAUDE.md §2-4-1). */}
-        <StudentDayNotes students={noteStudents} />
+        {/* 적는 칸에서 **보는 보드**로 넓혔습니다. 픽업·결석·특이사항·미답 문의가 학생
+            번호로 묶여 한 아이 한 줄로 섭니다. 적는 폼은 「+ 특이사항」에 접혀 있습니다 -
+            보는 일은 하루에 수십 번, 적는 일은 몇 번입니다. */}
+        <StudentDayBoard students={noteStudents} />
       </div>
     </div>
   );

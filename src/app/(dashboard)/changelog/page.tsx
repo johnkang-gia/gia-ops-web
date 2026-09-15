@@ -113,11 +113,30 @@ function EntryCard({ entry, index }: { entry: ChangelogEntry; index: number }) {
   );
 }
 
-export default async function ChangelogPage() {
+/**
+ * 한 번에 그리는 판 수.
+ *
+ * **버전 기록은 매 배포마다 늘기만 합니다.** 지금 590판인데 전부 그리면 내려받는 화면이
+ * 3MB 를 넘고, 그 대부분은 아무도 읽지 않는 옛 기록입니다. 이 숫자는 앞으로도 계속 늘 테니
+ * 「지금은 괜찮다」로 두면 언젠가 이 화면만 유독 느려집니다.
+ *
+ * 사람이 버전 기록을 여는 이유는 대개 **「방금 뭐가 바뀌었지」**입니다. 최근 것을 먼저 주고,
+ * 옛 기록은 눌러서 봅니다.
+ */
+const RECENT = 40;
+
+export default async function ChangelogPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ all?: string }>;
+}) {
   const me = await getCurrentAppUser();
   if (!me) redirect("/login");
 
-  const entries = getChangelogEntries();
+  const showAll = (await searchParams).all === "1";
+  const all = getChangelogEntries();
+  const entries = showAll ? all : all.slice(0, RECENT);
+  const hidden = all.length - entries.length;
 
   return (
     <div className="mx-auto max-w-2xl">
@@ -135,6 +154,16 @@ export default async function ChangelogPage() {
           <EntryCard key={`${entry.version}-${entry.date}-${idx}`} entry={entry} index={idx} />
         ))}
         {entries.length === 0 && <p className="text-sm text-slate-400">버전 기록을 불러올 수 없습니다.</p>}
+        {/* 감춘 것이 있으면 **몇 개인지 적습니다.** 그냥 끊으면 「여기까지가 전부」로 보이고,
+            v0.491 에서 84개가 조용히 빠져 있던 일이 이 화면에서 실제로 있었습니다. */}
+        {hidden > 0 && (
+          <a
+            href="/changelog?all=1"
+            className="mx-auto rounded-lg border border-slate-300 bg-white px-4 py-2 text-[13px] font-bold text-slate-600 hover:bg-slate-50"
+          >
+            지난 기록 {hidden}개 더 보기
+          </a>
+        )}
       </div>
     </div>
   );

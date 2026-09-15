@@ -95,31 +95,34 @@ export default async function DevDiagnosticsPage() {
   // 왕복만 144번이었습니다 - 이 화면이 6초 걸린 이유가 그것이고, 검사가 늘수록 그만큼 더
   // 느려집니다. 한 검사의 칸들은 `select("a, b, c")` 로 한 번에 물으면 됩니다. 어느 칸이
   // 없는지는 오류 메시지가 알려줍니다.
-  const schemaResults = await Promise.all(
-    SCHEMA_CHECKS.map(async (check) => {
-      const { error } = await supabase.from(check.table).select(check.columns.join(", ")).limit(1);
-      return {
-        feature: check.feature,
-        ok: !error,
-        migration: check.migration,
-        impact: check.impact,
-        note: error?.message ?? null,
-      };
-    }),
-  );
+  const [schemaResults, extraResults] = await Promise.all([
+    Promise.all(
+      SCHEMA_CHECKS.map(async (check) => {
+        const { error } = await supabase.from(check.table).select(check.columns.join(", ")).limit(1);
+        return {
+          feature: check.feature,
+          ok: !error,
+          migration: check.migration,
+          impact: check.impact,
+          note: error?.message ?? null,
+        };
+      }),
+    ),
+    // 이번 주에 새로 만든 칸들은 SCHEMA_CHECKS에 아직 없을 수 있어 따로 확인합니다.
+    // **같은 묶음에서 함께 묻습니다** - 스키마 검사가 끝나기를 기다릴 이유가 없습니다.
+    Promise.all(
+      (
+        [
+          { label: "행선지 선택 묶음", table: "shuttle_assignments", column: "choice_group", migration: "20260828120000" },
+          { label: "행선지 버튼 이름", table: "shuttle_assignments", column: "choice_label", migration: "20260828140000" },
+        ] as { label: string; table: string; column: string; migration: string }[]
+      ).map(async (e) => {
+        const { error } = await supabase.from(e.table).select(e.column).limit(1);
+        return { label: e.label, ok: !error, migration: e.migration };
+      }),
+    ),
+  ]);
   const schemaBad = schemaResults.filter((r) => !r.ok);
-
-  // 이번 주에 새로 만든 칸들은 SCHEMA_CHECKS에 아직 없을 수 있어 따로 확인합니다.
-  const extraCols: { label: string; table: string; column: string; migration: string }[] = [
-    { label: "행선지 선택 묶음", table: "shuttle_assignments", column: "choice_group", migration: "20260828120000" },
-    { label: "행선지 버튼 이름", table: "shuttle_assignments", column: "choice_label", migration: "20260828140000" },
-  ];
-  const extraResults = await Promise.all(
-    extraCols.map(async (e) => {
-      const { error } = await supabase.from(e.table).select(e.column).limit(1);
-      return { label: e.label, ok: !error, migration: e.migration };
-    }),
-  );
 
   // ── ③~⑧ 서로 기다릴 이유가 없는 조회는 한꺼번에 ──────────────────────────
   //
@@ -140,6 +143,7 @@ export default async function DevDiagnosticsPage() {
     { data: accEntries },
     { data: accRules },
     integrity,
+    allStopsRes,
   ] = await Promise.all([
     supabase.from("shuttle_routes").select("id, route_no, vehicle_no, driver_name, term").eq("active", true).eq("direction", "하원"),
     supabase.from("shuttle_run_events").select("route_id, event, created_by, created_at").eq("service_date", today),
@@ -159,6 +163,7 @@ export default async function DevDiagnosticsPage() {
     supabase.from("attendance_learning_rules").select("kind, pattern, student_name"),
     // 화면에서는 멀쩡해 보이는데 실제로는 틀린 것들. 사고가 나기 전에는 아무도 모릅니다.
     runIntegrityChecks(supabase),
+    supabase.from("shuttle_stops").select("id, route_id, address, lat, lng, seq"),
   ]);
 
   const acc = buildAccuracy({
@@ -189,10 +194,19 @@ export default async function DevDiagnosticsPage() {
     .sort((a, b) => a.routeNo.localeCompare(b.routeNo, "ko", { numeric: true }));
 
   // 정류장 좌표. 좌표가 없으면 아무리 가까이 가도 도착이 안 잡힙니다.
-  const routeIds = (routes ?? []).map((r) => r.id as string);
-  const { data: stops } = routeIds.length
-    ? await supabase.from("shuttle_stops").select("id, route_id, address, lat, lng, seq").in("route_id", routeIds)
-    : { data: [] as { id: string; route_id: string; address: string | null; lat: number | null; lng: number | null; seq: number }[] };
+  // 위 묶음에서 통째로 받아 여기서 하원 노선으로 거릅니다 - 노선 번호를 기다릴 이유가
+  // 없습니다(표 전체가 수백 줄입니다).
+  const routeIdSet = new Set((routes ?? []).map((r) => r.id as string));
+  const stops = (
+    (allStopsRes.data ?? []) as {
+      id: string;
+      route_id: string;
+      address: string | null;
+      lat: number | null;
+      lng: number | null;
+      seq: number;
+    }[]
+  ).filter((x) => routeIdSet.has(x.route_id));
   const noCoord = (stops ?? []).filter((s) => s.lat == null || s.lng == null);
   const noAddress = (stops ?? []).filter((s) => !s.address || !s.address.trim());
 

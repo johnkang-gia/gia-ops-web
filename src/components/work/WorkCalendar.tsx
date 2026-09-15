@@ -452,7 +452,11 @@ export default function WorkCalendar({
 
       {/* 업무가 많아지면 칸이 늘어나고, 달력이 위젯보다 길어지면 **여기서** 굴립니다.
           예전에는 높이를 위젯에 맞춰 눌러 담고 넘치는 것을 「+n」으로 접었습니다. */}
-      <div className="grid min-h-0 flex-1 auto-rows-min gap-px overflow-y-auto rounded-lg bg-slate-200">
+      {/* **주 칸이 남는 높이를 나눠 씁니다.** 앞 판은 `auto-rows-min` 이라 칸이 내용만큼만
+          커졌고, 달력 아래에 빈 자리가 그대로 남았습니다 - 화면은 넓은데 달력만 작아 보였습니다.
+          `auto-rows-fr` 는 남는 높이를 주마다 똑같이 나눠 주고, 내용이 더 많은 주는
+          `minHeight` 덕분에 그만큼 커집니다(그때는 이 칸 안에서 굴러갑니다). */}
+      <div className="grid min-h-0 flex-1 auto-rows-fr gap-px overflow-y-auto rounded-lg bg-slate-200">
         {weeks.map((week) => {
           const laid = layoutWeek(bars, week.start, true);
           const shown = laid;

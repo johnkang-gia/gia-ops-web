@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import StudentSelect, { type SelectableStudent } from "@/components/common/StudentSelect";
 import { useToast } from "@/components/common/ToastProvider";
-import { ITEM_LOOK, bucketOf, toMinutes, whenLabel, type DayBoard, type DayItem, type DayItemKind, type StudentDay, type UnknownItem } from "@/lib/studentDay";
+import { ITEM_LOOK, TOPIC_LOOK, bucketOf, toMinutes, topicOf, whenLabel, type DayBoard, type DayItem, type DayItemKind, type StudentDay, type UnknownItem } from "@/lib/studentDay";
 import { NOTE_KINDS, KIND_LOOK, type NoteKind } from "@/lib/studentDayNotes";
 import DismissalModal from "./DismissalModal";
 
@@ -402,6 +402,21 @@ export default function StudentDayBoard({ students }: { students: SelectableStud
           </>
         )}
       </div>
+
+      {/* **줄을 누르면 여기가 뜹니다.** 앞 판에서는 이 줄이 빠져 있어, 눌러도 아무 일도
+          일어나지 않았습니다. */}
+      {detail && (
+        <DetailModal
+          day={detail}
+          date={date}
+          onClose={() => setDetail(null)}
+          onDrop={(i) => {
+            void dropNote(i);
+            setDetail(null);
+          }}
+        />
+      )}
+      {dismissalOpen && <DismissalModal onClose={() => setDismissalOpen(false)} />}
     </section>
   );
 }
@@ -508,7 +523,9 @@ function Row({
 
         {/* 칩은 **한 줄에서 넘치지 않게** 잘립니다. 줄바꿈되면 두 줄로 세운 칸이 들쭉날쭉해져
             어느 줄이 누구 것인지 눈으로 다시 이어야 합니다. */}
-        <span className="flex min-w-0 flex-1 items-baseline gap-1 overflow-hidden whitespace-nowrap">
+        {/* **아이콘이 잘리지 않게** — baseline 으로 맞추고 넘침을 자르면 이모지의 아래위가
+            깎입니다. 가운데 정렬로 두고, 넘치는 칩은 다음 줄로 넘기지 않고 그냥 둡니다. */}
+        <span className="flex min-w-0 flex-1 items-center gap-1 whitespace-nowrap">
           {/* 같은 갈래가 여럿이면 하나로 묶고 개수만 적습니다 - 「💬 문의 💬 문의」는
               칸만 먹고 알려주는 것이 없습니다. */}
           {/* **칩은 아이콘입니다.** 두 줄로 세운 칸에서 글자를 넣으면 「💬 문」처럼 한
@@ -519,10 +536,16 @@ function Row({
             <span
               key={item.id}
               title={`${item.kind} · ${shortOf(item, date)}${item.text ? ` — ${item.text}` : ""}`}
-              className={"shrink-0 rounded px-1 text-[11px] font-semibold " + (past ? "bg-slate-100 text-slate-500" : ITEM_LOOK[item.kind].chip)}
+              className={
+                "inline-flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 text-[11px] font-semibold leading-none " +
+                (past ? "bg-slate-100 text-slate-500" : ITEM_LOOK[item.kind].chip)
+              }
             >
-              {ITEM_LOOK[item.kind].icon}
+              <span className="text-[12px] leading-none">{ITEM_LOOK[item.kind].icon}</span>
               {count > 1 ? count : ""}
+              {/* **문의는 무엇에 관한 것인지** 한 글자 이름표를 붙입니다 - 담임이 볼 것과
+                  행정실이 볼 것이 갈리는데 화면에는 다 같은 「문의」였습니다. */}
+              {topicChip(item)}
             </span>
           ))}
         </span>
@@ -580,6 +603,7 @@ function DetailModal({
                 <span className={"shrink-0 rounded px-1 text-[10px] font-bold " + ITEM_LOOK[i.kind].chip}>
                   {ITEM_LOOK[i.kind].icon} {i.kind}
                 </span>
+                {topicChip(i)}
                 {whenLabel(i.onDate, i.at, date) && (
                   <b className="shrink-0 tabular-nums text-[12px] text-slate-700">{whenLabel(i.onDate, i.at, date)}</b>
                 )}
@@ -652,6 +676,19 @@ function Folded({
 function shortOf(i: DayItem, date: string): string {
   const when = i.onDate === date ? "" : `${whenLabel(i.onDate, null, date)} `;
   return `${when}${i.at ?? ""}`.trim() || i.kind;
+}
+
+/**
+ * 문의·기타에 붙는 주제 이름표(학사·차량·출결·납부·건강).
+ *
+ * 픽업·결석처럼 **갈래 자체가 이미 무슨 일인지 말하는 것에는 붙이지 않습니다** - 「🚗 픽업
+ * 차량」은 같은 말을 두 번 하는 것입니다.
+ */
+function topicChip(item: DayItem) {
+  if (item.kind !== "문의" && item.kind !== "기타") return null;
+  const topic = topicOf(item.text);
+  if (topic === "기타") return null;
+  return <span className={"ml-0.5 rounded px-1 text-[10px] font-bold " + TOPIC_LOOK[topic].chip}>{topic}</span>;
 }
 
 /** 같은 날·같은 갈래는 한 칩으로. 세부는 창에서 하나씩 봅니다. */

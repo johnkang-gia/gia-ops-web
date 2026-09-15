@@ -216,3 +216,43 @@ export function whenLabel(onDate: string, at: string | null, today: string): str
         : `${onDate.slice(5).replace("-", "/")} `;
   return `${day}${at ?? ""}`.trim();
 }
+
+/**
+ * **문의가 무엇에 관한 것인가 — 한 글자 이름표.**
+ *
+ * ── 왜 필요한가 ─────────────────────────────────────────────────────────────
+ *
+ * 특이사항 칸에 「💬 문의」가 넷 서 있으면, 어느 것이 내 일인지 열어봐야 압니다. 성적
+ * 이야기는 담임이, 차량 이야기는 행정실이, 병결은 출결 담당이 봅니다 - **누가 볼 것인가가
+ * 갈리는데 화면에는 다 같은 「문의」**였습니다.
+ *
+ * 그래서 글에서 주제를 읽어 이름표를 붙입니다. 짐작이므로 **틀릴 수 있고, 틀려도 줄이
+ * 사라지지는 않습니다** - 이름표는 훑는 순서를 돕는 것이지 무엇을 감추는 것이 아닙니다.
+ *
+ * 순수 함수입니다.
+ */
+export type Topic = "학사" | "차량" | "출결" | "납부" | "건강" | "기타";
+
+export const TOPIC_LOOK: Record<Topic, { chip: string; dark: string; darkText: string }> = {
+  학사: { chip: "bg-indigo-100 text-indigo-800", dark: "#1e1b4b", darkText: "#a5b4fc" },
+  차량: { chip: "bg-sky-100 text-sky-800", dark: "#0c2740", darkText: "#7dd3fc" },
+  출결: { chip: "bg-orange-100 text-orange-800", dark: "#2f1e06", darkText: "#fdba74" },
+  납부: { chip: "bg-emerald-100 text-emerald-800", dark: "#0f2f22", darkText: "#6ee7b7" },
+  건강: { chip: "bg-rose-100 text-rose-800", dark: "#3f1d2b", darkText: "#fda4af" },
+  기타: { chip: "bg-slate-100 text-slate-600", dark: "#1e2a44", darkText: "#cbd5e1" },
+};
+
+/**
+ * 주제 읽기. **먼저 걸리는 것이 이깁니다** — 「병원 때문에 결석합니다」는 출결이 아니라
+ * 결석 처리를 해야 하는 일이므로 출결이 먼저이고, 「차 타고 병원 갑니다」는 차량입니다.
+ * 한 글에 둘이 섞이면 **해야 할 일이 있는 쪽**을 고릅니다.
+ */
+export function topicOf(text: string): Topic {
+  const t = text.toLowerCase();
+  if (/(결석|지각|조퇴|등원\s*안|안\s*가|못\s*가|병결|출석|쉬(어|겠|려)|absent|late)/.test(t)) return "출결";
+  if (/(픽업|하원|등원|차량|셔틀|버스|정류장|기사|태워|데리러|행선지|타고\s*가|pick\s*up)/.test(t)) return "차량";
+  if (/(성적|수업|과제|숙제|시험|평가|리포트|교재|수업료\s*외|담임|교실|학습|상담|과목|레슨|방과후)/.test(t)) return "학사";
+  if (/(납부|결제|입금|청구|환불|카드|계좌|학비|영수증|payment)/.test(t)) return "납부";
+  if (/(아파|아프|열이|열나|감기|기침|병원|약|진료|알레르기|다쳐|다쳤|치과|건강)/.test(t)) return "건강";
+  return "기타";
+}

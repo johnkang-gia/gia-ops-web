@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import PickupTriagePanel from "./PickupTriagePanel";
 import type { GoogleChatMirrorMessage } from "@/lib/types";
 import type { RosterStudent } from "@/lib/attendanceDigest";
 import AttendanceDigestPanel from "./AttendanceDigestPanel";
@@ -191,6 +192,13 @@ export default function AttendancePanels({
             </div>
           </div>
         )}
+      </div>
+
+      {/* **학부모 문의 아래가 픽업 자리입니다.** 탭이 무엇이든 늘 보입니다 - 탭 안에 넣으면
+          다른 탭을 보는 동안 확인이 필요한 픽업이 화면에서 사라지고, 안 보이는 것은 없는
+          것과 같습니다. 열고 닫을 수 있어 자리를 다 먹지도 않습니다. */}
+      <div className="flex max-h-[46%] shrink-0 flex-col overflow-hidden">
+        <PickupTriagePanel roster={roster} />
       </div>
     </div>
   );

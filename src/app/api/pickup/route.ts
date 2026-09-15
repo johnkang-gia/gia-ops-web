@@ -225,13 +225,32 @@ export async function POST(req: Request) {
     const id = body?.id as string | undefined;
     if (!id) return NextResponse.json({ error: "id가 필요합니다." }, { status: 400 });
 
-    const kind = isNoteKind(body?.kind) ? body.kind : "기타";
-    const content = ((body?.content as string | undefined) ?? "").trim();
-    const rawTime = ((body?.atTime as string | undefined) ?? "").trim();
-    if (!content) return NextResponse.json({ error: "무엇을 해야 하는지 적어주세요." }, { status: 400 });
-    if (content.length > 300) return NextResponse.json({ error: "내용은 300자까지입니다." }, { status: 400 });
+    /**
+     * **한 글에 부탁이 여럿일 수 있습니다.**
+     *
+     * 「점심 뒤 약, 그리고 잃어버린 후디 찾기」는 할 일이 둘입니다. 한 건으로 받으면 종류가
+     * 하나로 정해지고 나머지는 딸린 말이 되어 아무도 안 찾습니다.
+     *
+     * 예전 모양(kind/content/atTime 한 벌)도 그대로 받습니다 - 열려 있는 화면이 바로
+     * 실패하지 않게 합니다.
+     */
+    const rawNotes = Array.isArray(body?.notes)
+      ? (body.notes as { kind?: unknown; content?: unknown; atTime?: unknown }[])
+      : [{ kind: body?.kind, content: body?.content, atTime: body?.atTime }];
+
+    const notes = rawNotes.map((n) => ({
+      kind: isNoteKind(n?.kind) ? n.kind : ("기타" as const),
+      content: String((n?.content as string | undefined) ?? "").trim(),
+      atTime: String((n?.atTime as string | undefined) ?? "").trim(),
+    }));
+
+    if (notes.length === 0 || notes.every((n) => !n.content))
+      return NextResponse.json({ error: "무엇을 해야 하는지 적어주세요." }, { status: 400 });
+    if (notes.some((n) => n.content.length > 300))
+      return NextResponse.json({ error: "내용은 한 건에 300자까지입니다." }, { status: 400 });
     // 못 읽는 시각이 들어가면 알람이 그 줄만 조용히 건너뜁니다. 사람은 적어뒀다고 믿습니다.
-    if (rawTime && !isClockTime(rawTime)) return NextResponse.json({ error: "시각은 14:30 처럼 적어주세요." }, { status: 400 });
+    if (notes.some((n) => n.atTime && !isClockTime(n.atTime)))
+      return NextResponse.json({ error: "시각은 14:30 처럼 적어주세요." }, { status: 400 });
 
     const { data: row } = await supabase
       .from("pickup_requests")
@@ -268,32 +287,41 @@ export async function POST(req: Request) {
     await bumpPickupFeedback(supabase, id, false);
     const undo = await undoPickupTraces(supabase, id, { email: me.email, name: me.name ?? null });
 
-    const { data: note, error: noteErr } = await supabase
+    // **전부 들어가거나 아무것도 안 들어갑니다.** 한 번에 넣어야 둘 중 하나만 남는 상태가
+    // 생기지 않습니다 - 절반만 들어간 것을 「완료」로 보여주면 빠진 쪽은 아무도 안 찾습니다.
+    const { data: inserted, error: noteErr } = await supabase
       .from("student_day_notes")
-      .insert({
-        student_id: studentId,
-        student_name: (student as { name: string }).name,
-        on_date: onDate,
-        at_time: rawTime || null,
-        kind,
-        content,
-        source_inquiry_id: id,
-        created_by: me.email,
-        created_by_name: me.name || me.email,
-      })
-      .select("id")
-      .single();
+      .insert(
+        notes
+          .filter((n) => n.content)
+          .map((n) => ({
+            student_id: studentId,
+            student_name: (student as { name: string }).name,
+            on_date: onDate,
+            at_time: n.atTime || null,
+            kind: n.kind,
+            content: n.content,
+            source_inquiry_id: id,
+            created_by: me.email,
+            created_by_name: me.name || me.email,
+          })),
+      )
+      .select("id");
 
-    if (noteErr) {
+    if (noteErr || !inserted?.length) {
       // **못 적었으면 인박스에서도 내리지 않습니다.** 내려간 채로 실패하면 그 부탁은 어디에도
       // 안 남고, 화면에는 처리된 것처럼 보입니다.
       await supabase.from("pickup_requests").update({ status: before, resolved_by: null, resolved_at: null }).eq("id", id);
-      return NextResponse.json({ error: `특이사항을 저장하지 못했습니다: ${noteErr.message}` }, { status: 500 });
+      return NextResponse.json(
+        { error: `특이사항을 저장하지 못했습니다: ${noteErr?.message ?? "저장된 줄이 없습니다"}` },
+        { status: 500 },
+      );
     }
 
     return NextResponse.json({
       ok: true,
-      noteId: (note as { id: string }).id,
+      noteIds: (inserted as { id: string }[]).map((n) => n.id),
+      noteCount: inserted.length,
       name: (student as { name: string }).name,
       undo,
       undoNote: undoSummary(undo),

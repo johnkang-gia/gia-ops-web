@@ -81,7 +81,18 @@ export type BoardData = {
    * 이유: 적는 것은 전화를 받은 사람이 자기 자리에서 하고, 보는 것은 사무실 모두가
    * 큰 모니터로 합니다.
    */
-  dayNotes?: { id: string; name: string; kind: string; content: string; onDate: string; today: boolean }[];
+  dayNotes?: {
+    id: string;
+    name: string;
+    kind: string;
+    content: string;
+    onDate: string;
+    today: boolean;
+    /** 몇 시에. 비어 있으면 알람이 울리지 않고 칸에만 남습니다. */
+    atTime: string | null;
+    /** 지금 어느 교실에 있는지 찾는 열쇠. 이름만으로는 못 움직입니다. */
+    classId: string | null;
+  }[];
   collector: { lastSeen: string | null; status: string | null; stale: boolean } | null;
   taskSummary: {
     statusCounts: Record<string, number>;

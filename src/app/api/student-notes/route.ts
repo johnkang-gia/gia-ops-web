@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { todayKst, kstDateOffset } from "@/lib/kst";
-import { isNoteKind, type DayNote } from "@/lib/studentDayNotes";
+import { isClockTime, isNoteKind, type DayNote } from "@/lib/studentDayNotes";
 
 /**
  * **오늘 이 아이에 대해 알아야 할 것** 창구.
@@ -30,6 +30,7 @@ type Row = {
   student_id: string;
   student_name: string;
   on_date: string;
+  at_time: string | null;
   kind: string;
   content: string;
   created_by_name: string | null;
@@ -44,6 +45,9 @@ function toNote(r: Row, nameById: Map<string, string>): DayNote {
     // 명부에서 사라진 아이(전학)만 그날 적힌 이름으로 보여줍니다.
     studentName: nameById.get(r.student_id) ?? r.student_name,
     onDate: r.on_date,
+    // DB 의 time 은 「14:30:00」으로 옵니다. 화면과 알람은 분까지만 씁니다 - 초가 붙으면
+    // 시각끼리 견주는 자리마다 자르는 코드를 따로 두게 됩니다.
+    atTime: r.at_time ? r.at_time.slice(0, 5) : null,
     kind: isNoteKind(r.kind) ? r.kind : "기타",
     content: r.content,
     createdByName: r.created_by_name,
@@ -61,7 +65,7 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from("student_day_notes")
-    .select("id, student_id, student_name, on_date, kind, content, created_by_name, created_at")
+    .select("id, student_id, student_name, on_date, at_time, kind, content, created_by_name, created_at")
     .is("deleted_at", null)
     .gte("on_date", today)
     .lte("on_date", until)
@@ -80,7 +84,7 @@ export async function POST(req: Request) {
   if (!me) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
 
   const body = (await req.json().catch(() => null)) as
-    | { studentId?: string; onDate?: string; kind?: string; content?: string }
+    | { studentId?: string; onDate?: string; atTime?: string | null; kind?: string; content?: string }
     | null;
   if (!body) return NextResponse.json({ error: "보낸 내용을 읽지 못했습니다." }, { status: 400 });
 
@@ -88,6 +92,13 @@ export async function POST(req: Request) {
   const content = (body.content ?? "").trim();
   const onDate = (body.onDate ?? "").trim() || todayKst();
   const kind = isNoteKind(body.kind) ? body.kind : "기타";
+  // 시각은 없어도 됩니다. **다만 모양이 틀린 것은 받지 않습니다** - 못 읽는 시각이
+  // 들어가면 알람이 조용히 그 줄만 건너뛰고, 사람은 적어뒀다고 믿습니다.
+  const rawTime = (body.atTime ?? "").trim();
+  if (rawTime && !isClockTime(rawTime)) {
+    return NextResponse.json({ error: "시각은 14:30 처럼 적어주세요." }, { status: 400 });
+  }
+  const atTime = rawTime || null;
 
   if (!studentId) return NextResponse.json({ error: "학생을 먼저 고르세요." }, { status: 400 });
   if (!content) return NextResponse.json({ error: "무엇을 해야 하는지 적어주세요." }, { status: 400 });
@@ -112,12 +123,13 @@ export async function POST(req: Request) {
       student_id: studentId,
       student_name: (student as { name: string }).name,
       on_date: onDate,
+      at_time: atTime,
       kind,
       content,
       created_by: me.email,
       created_by_name: me.name || me.email,
     })
-    .select("id, student_id, student_name, on_date, kind, content, created_by_name, created_at")
+    .select("id, student_id, student_name, on_date, at_time, kind, content, created_by_name, created_at")
     .single();
 
   if (error) return NextResponse.json({ error: `저장하지 못했습니다: ${error.message}` }, { status: 500 });

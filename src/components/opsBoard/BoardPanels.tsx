@@ -346,7 +346,7 @@ export function TodayStudentNotes({
   pending,
 }: {
   sc: BoardScale;
-  notes: { id: string; name: string; kind: string; content: string; onDate: string; today: boolean }[];
+  notes: { id: string; name: string; kind: string; content: string; onDate: string; today: boolean; atTime: string | null; classId: string | null }[];
   pending: { name: string; date: string | null; time: string | null; today: boolean }[];
 }) {
   const shown = notes.slice(0, 8);
@@ -378,6 +378,19 @@ export function TodayStudentNotes({
                 }}
               >
                 <span style={{ fontSize: sc.s(15, 11) }}>{look.icon}</span>
+                {/* 시각이 있으면 **이름보다 먼저**입니다. 몇 시가 움직이는 시점을 정하고,
+                    이름은 그 다음입니다. 시각이 적힌 것은 5분 전에 위쪽 알람으로도 뜹니다. */}
+                {n.atTime && (
+                  <b
+                    style={{
+                      fontSize: sc.s(17, 12),
+                      color: n.today ? "#e2e8f0" : "#475569",
+                      fontVariantNumeric: "tabular-nums",
+                    }}
+                  >
+                    {n.atTime}
+                  </b>
+                )}
                 <b style={{ fontSize: sc.s(17, 12), color: n.today ? look.text : "#64748b" }}>{shortName(n.name)}</b>
                 {/* 내일 것은 반드시 표시합니다 - 오늘 화면에서 내일 것이 오늘 것처럼 읽히면
                     사람이 하루 일찍 움직입니다. */}

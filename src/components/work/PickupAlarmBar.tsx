@@ -4,7 +4,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 /**
- * **5분 전 알림** — 곧 데리러 오는 아이를 화면 맨 위에 띄웁니다.
+ * **5분 전 알림** — 곧 해야 하는 일을 화면 맨 위에 띄웁니다.
+ *
+ * 두 갈래가 한 줄에 섭니다: **곧 하원하는 아이**와 **시각이 적힌 학생 특이사항**
+ * (「12:40 약」·「15:30 결제」). 알릴 때를 아는 기준은 하나 - 시각이 적혀 있는가.
  *
  * ── 왜 필요한가 ──────────────────────────────────────────────────────
  *
@@ -24,7 +27,23 @@ import { createPortal } from "react-dom";
  * 업무보드가 다른 답을 내고, 그러면 어느 쪽이 맞는지 아무도 모릅니다.
  */
 
-type Alarm = { key: string; name: string; time: string; className: string | null; where: string; via: string | null };
+type Alarm = {
+  key: string;
+  name: string;
+  time: string;
+  className: string | null;
+  where: string;
+  via: string | null;
+  /** 「하원」이면 데리러 가는 것, 그 밖은 학생 특이사항의 종류(약·결제…). */
+  kind?: string;
+  /** 특이사항 본문. 하원 건에는 없습니다. */
+  note?: string | null;
+};
+
+/** 하는 일이 다르면 말도 달라야 합니다 - 「데리러 가기」와 「약 챙기기」는 같은 말이 아닙니다. */
+function isPickup(a: { kind?: string }): boolean {
+  return (a.kind ?? "하원") === "하원";
+}
 
 /** 얼마나 앞두고 띄울 것인가. 30분은 «준비할 수 있는 시간», 5분은 «지금 움직여야 하는 시간». */
 const SOON_MIN = 30;
@@ -85,7 +104,12 @@ export default function PickupAlarmBar() {
       if (a.left > NOW_MIN || notifiedRef.current.has(a.key)) continue;
       notifiedRef.current.add(a.key);
       if (Notification.permission === "granted") {
-        new Notification(`${a.time} ${a.name} 하원`, { body: `${a.where}${a.via ? ` · ${a.via}` : ""}`, tag: a.key });
+        new Notification(`${a.time} ${a.name} ${isPickup(a) ? "하원" : a.kind}`, {
+          // 특이사항은 **무엇을 해야 하는지**가 본문입니다. 「어디 있는지」만 알려주면
+          // 가서 뭘 해야 하는지 다시 찾아봐야 합니다.
+          body: isPickup(a) ? `${a.where}${a.via ? ` · ${a.via}` : ""}` : `${a.note ?? ""} · ${a.where}`,
+          tag: a.key,
+        });
       }
     }
   }, [soon]);
@@ -118,7 +142,9 @@ export default function PickupAlarmBar() {
           <div className="fixed inset-x-0 top-3 z-[70] flex justify-center px-3">
             <div className="w-full max-w-lg rounded-2xl border-2 border-red-400 bg-white p-3 shadow-2xl">
               <div className="mb-1.5 flex items-baseline gap-2">
-                <b className="text-sm font-extrabold text-red-600">🔔 곧 하원합니다</b>
+                <b className="text-sm font-extrabold text-red-600">
+                  {popup.every(isPickup) ? "🔔 곧 하원합니다" : popup.some(isPickup) ? "🔔 곧 할 일" : "🔔 곧 챙길 것"}
+                </b>
                 <button
                   type="button"
                   onClick={() => setPopup([])}
@@ -134,9 +160,15 @@ export default function PickupAlarmBar() {
                     {/* **이름은 줄이지 않습니다.** 가려지면 누구를 데려오는지 모릅니다. */}
                     <b className="whitespace-nowrap text-lg font-black text-slate-900">{a.name}</b>
                     <span className="text-xs font-bold text-slate-500">{a.className ?? "반 미확인"}</span>
+                    {/* **무엇을 해야 하는가**가 먼저입니다. 특이사항은 이름만 알면 못 움직입니다. */}
+                    {!isPickup(a) && a.note && (
+                      <span className="text-sm font-black text-rose-700">
+                        {a.via} {a.note}
+                      </span>
+                    )}
                     {/* 어디로 가야 하는가. 이름만 알면 못 움직입니다. */}
                     <span className="text-xs font-bold text-amber-700">📍 {a.where}</span>
-                    {a.via && <span className="text-xs text-slate-500">{a.via}</span>}
+                    {isPickup(a) && a.via && <span className="text-xs text-slate-500">{a.via}</span>}
                     <span className="ml-auto text-[11px] font-bold text-red-500">{a.left <= 0 ? "지금" : `${a.left}분 뒤`}</span>
                   </div>
                 ))}
@@ -158,7 +190,9 @@ export default function PickupAlarmBar() {
     <>
       {alarmPopup}
     <div className="flex shrink-0 items-center gap-1.5 overflow-x-auto border-b border-black/5 bg-amber-50/70 px-2.5 py-1">
-      <span className="shrink-0 text-[11px] font-extrabold text-amber-700">⏰ 곧 하원</span>
+      <span className="shrink-0 text-[11px] font-extrabold text-amber-700">
+        {soon.every(isPickup) ? "⏰ 곧 하원" : "⏰ 곧 할 일"}
+      </span>
       {soon.map((a) => {
         const urgent = a.left <= NOW_MIN;
         return (
@@ -168,10 +202,17 @@ export default function PickupAlarmBar() {
               "flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] " +
               (urgent ? "bg-red-500 font-bold text-white" : "bg-white text-slate-600 ring-1 ring-black/10")
             }
-            title={`${a.where}${a.via ? ` · ${a.via}` : ""}`}
+            title={`${isPickup(a) ? "하원" : `${a.kind} — ${a.note ?? ""}`} · ${a.where}`}
           >
             <b className="tabular-nums">{a.time}</b>
             <span>{a.name}</span>
+            {/* 무엇을 하러 가는지. 하원은 이 띠의 기본값이라 따로 안 적고, 특이사항만
+                아이콘과 내용을 붙입니다 - 「약」과 「하원」은 하는 일이 다릅니다. */}
+            {!isPickup(a) && (
+              <span className={"max-w-[14rem] truncate font-bold " + (urgent ? "text-white" : "text-rose-700")}>
+                {a.via} {a.note}
+              </span>
+            )}
             {a.className && <span className={urgent ? "text-white/70" : "text-slate-400"}>{a.className}</span>}
             <span className={urgent ? "text-white/80" : "text-slate-400"}>
               {a.left <= 0 ? "지금" : `${a.left}분 뒤`}

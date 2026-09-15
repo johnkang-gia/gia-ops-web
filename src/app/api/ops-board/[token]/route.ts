@@ -506,7 +506,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   // 앞날 것까지 실으면 정작 오늘 약이 아래로 밀려 잘립니다. 앞날 것 전체는 업무보드에서 봅니다.
   const { data: noteRowsToday, error: noteErr } = await supabase
     .from("student_day_notes")
-    .select("id, student_id, student_name, on_date, kind, content")
+    .select("id, student_id, student_name, on_date, at_time, kind, content")
     .is("deleted_at", null)
     .gte("on_date", todayK)
     .lte("on_date", kstDateOffset(1))
@@ -515,7 +515,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     .limit(40);
   if (noteErr) console.error("[중앙 대시보드] 학생 특이사항을 읽지 못했습니다:", noteErr.message);
 
-  const dayNotes = ((noteRowsToday as { id: string; student_id: string; student_name: string; on_date: string; kind: string; content: string }[] | null) ?? [])
+  const dayNotes = ((noteRowsToday as { id: string; student_id: string; student_name: string; on_date: string; at_time: string | null; kind: string; content: string }[] | null) ?? [])
     // **이 화면이 보는 부서의 아이만.** 초등부 모니터에 중고등부 아이의 약이 뜨면, 그 앞에
     // 선 사람은 할 수 있는 일이 없는데 화면 자리만 먹습니다.
     .filter((r) => deptStudentIds.has(r.student_id))
@@ -527,9 +527,22 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
       content: r.content,
       onDate: r.on_date,
       today: r.on_date === todayK,
+      // DB 의 time 은 「14:30:00」으로 옵니다. 화면과 알람은 분까지만 씁니다.
+      atTime: r.at_time ? r.at_time.slice(0, 5) : null,
+      // 알람이 「지금 어느 교실인지」를 찾는 열쇠. 이름만 알면 못 움직입니다.
+      classId:
+        classIdByGradeName.get(
+          `${studentById.get(r.student_id)?.grade ?? ""}|${studentById.get(r.student_id)?.class_name ?? ""}`,
+        ) ?? null,
     }))
     // 오늘 것이 먼저. 내일 것은 알아두면 좋은 정도이고, 오늘 것은 안 하면 그날 못 합니다.
-    .sort((a, b) => Number(b.today) - Number(a.today) || a.onDate.localeCompare(b.onDate));
+    // 그 안에서는 시각순 - 시각이 적힌 것은 그 순서대로 해야 하는 일입니다.
+    .sort(
+      (a, b) =>
+        Number(b.today) - Number(a.today) ||
+        a.onDate.localeCompare(b.onDate) ||
+        (a.atTime ?? "99:99").localeCompare(b.atTime ?? "99:99"),
+    );
 
   // ── 오늘 학원차·보호자 하원 ──────────────────────────────────────────────
   //

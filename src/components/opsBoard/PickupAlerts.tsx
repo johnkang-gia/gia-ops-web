@@ -65,6 +65,9 @@ export function PickupToast({
     lesson: { subjectName: string; room?: string | null } | null;
     room: string | null;
     until: number;
+    /** 학생 특이사항이면 종류와 내용. 하원 건에는 없습니다. */
+    noteKind?: string | null;
+    note?: string | null;
   }[];
   onClose: () => void;
 }) {
@@ -85,7 +88,8 @@ export function PickupToast({
         title="누르면 닫힙니다"
       >
         <div style={{ fontSize: 16, fontWeight: 900, color: "#92400e", marginBottom: 6 }}>
-          🔔 곧 하원{items.length > 1 ? ` · ${items.length}명` : ""}
+          {items.every((i) => !i.note) ? "🔔 곧 하원" : items.some((i) => !i.note) ? "🔔 곧 할 일" : "🔔 곧 챙길 것"}
+          {items.length > 1 ? ` · ${items.length}건` : ""}
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {items.map((p, i) => {
@@ -107,6 +111,12 @@ export function PickupToast({
                 <span style={{ fontSize: 16, fontWeight: 700, color: "#78350f" }}>
                   {[p.grade ? `${p.grade}학년` : null, p.className].filter(Boolean).join(" ") || "반 미확인"}
                 </span>
+                {/* **무엇을 해야 하는가**가 이름 다음입니다. 특이사항은 이름만 알면 못 움직입니다. */}
+                {p.note && (
+                  <span style={{ fontSize: 20, fontWeight: 900, color: "#9f1239" }}>
+                    {p.noteKind} · {p.note}
+                  </span>
+                )}
                 {/* 어디로 가야 하는가. 이름만 알면 못 움직입니다. */}
                 <span style={{ fontSize: 18, fontWeight: 900, color: "#a16207" }}>📍 {where}</span>
                 <span style={{ fontSize: 13, fontWeight: 700, color: "#92400e" }}>
@@ -126,7 +136,7 @@ export function PickupAlarm({ sc, data, nowMin }: { sc: BoardScale; data: BoardD
   // 오는 아이도 그 시각에 내려보내야 합니다. 알릴 때를 아는 것은 **시각이 적혀 있는가**
   // 하나뿐이라, 두 갈래를 여기서 한 줄로 세웁니다.
   const timed = [
-    ...data.pickups,
+    ...data.pickups.map((p) => ({ ...p, noteKind: null as string | null, note: null as string | null })),
     ...(data.dismissalToday ?? []).map((d) => ({
       name: d.name,
       time: d.time,
@@ -136,7 +146,28 @@ export function PickupAlarm({ sc, data, nowMin }: { sc: BoardScale; data: BoardD
       source: undefined,
       unmatched: false,
       plan: [d.kind, d.label].filter(Boolean).join(" · "),
+      noteKind: null as string | null,
+      note: null as string | null,
     })),
+    // 「12:40 서후 약」처럼 **시각이 적힌 학생 특이사항**. 알릴 때를 아는 기준은 하나뿐입니다 -
+    // 시각이 적혀 있는가. 갈래마다 알람을 따로 만들면 화면이 두 벌 생기고, 한 벌이 틀리면
+    // 그쪽만 조용히 안 울립니다.
+    //
+    // 오늘 것만입니다. 내일 12시에 할 일을 오늘 11시 55분에 울리면 사람이 하루 일찍 움직입니다.
+    ...(data.dayNotes ?? [])
+      .filter((n) => n.today && n.atTime)
+      .map((n) => ({
+        name: n.name,
+        time: n.atTime,
+        grade: null as string | null,
+        className: null as string | null,
+        classId: n.classId ?? null,
+        source: undefined,
+        unmatched: false,
+        plan: null as string | null,
+        noteKind: n.kind,
+        note: n.content,
+      })),
   ];
 
   const due = timed
@@ -237,6 +268,13 @@ export function PickupAlarm({ sc, data, nowMin }: { sc: BoardScale; data: BoardD
               {p.time}
             </span>
             <span style={{ fontSize: sc.s(30, 20), fontWeight: 900, color: "#fff" }}>{p.name}</span>
+            {/* 무엇을 하러 가는지. 하원은 이 띠의 기본값이라 따로 안 적고, 특이사항만
+                종류와 내용을 붙입니다 - 「약」과 「하원」은 하는 일이 다릅니다. */}
+            {p.note && (
+              <span style={{ fontSize: sc.s(24, 16), fontWeight: 900, color: late ? "#fecaca" : "#fde68a" }}>
+                {p.noteKind} · {p.note}
+              </span>
+            )}
             <span style={{ fontSize: sc.s(20, 14), fontWeight: 700, color: late ? "#fca5a5" : "#bae6fd" }}>
               {[p.grade ? `${p.grade}학년` : null, p.className].filter(Boolean).join(" ") || "반 미확인"}
             </span>

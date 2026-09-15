@@ -14,6 +14,13 @@ export type DayNote = {
   studentId: string;
   studentName: string;
   onDate: string;
+  /**
+   * 몇 시에 해야 하는가. **비어 있을 수 있습니다.**
+   *
+   * 「오늘 중에 교재 전달」처럼 시각이 없는 것도 많습니다. 반드시 적게 하면 사람은 아무
+   * 시각이나 넣게 되고, 그렇게 들어간 시각으로 알람이 울리면 알람 자체를 못 믿게 됩니다.
+   */
+  atTime: string | null;
   kind: NoteKind;
   content: string;
   createdByName: string | null;
@@ -57,6 +64,14 @@ export function sortNotes(notes: DayNote[], today: string): DayNote[] {
     (a, b) =>
       Number(b.onDate === today) - Number(a.onDate === today) ||
       a.onDate.localeCompare(b.onDate) ||
+      // **같은 날 안에서는 시각순**입니다. 시각이 적힌 것은 그 순서대로 해야 하는 일이고,
+      // 시각이 없는 것은 「오늘 중에」라 뒤로 보냅니다.
+      (a.atTime ?? "99:99").localeCompare(b.atTime ?? "99:99") ||
       a.createdAt.localeCompare(b.createdAt),
   );
+}
+
+/** 「14:30」 모양인지. 이 모양이 아니면 알람이 시각을 못 읽습니다. */
+export function isClockTime(v: unknown): v is string {
+  return typeof v === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
 }

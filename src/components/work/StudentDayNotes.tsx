@@ -35,6 +35,8 @@ export default function StudentDayNotes({ students }: { students: SelectableStud
   const [kind, setKind] = useState<NoteKind>("약");
   const [content, setContent] = useState("");
   const [onDate, setOnDate] = useState("");
+  /** 몇 시에. 비워두면 알람이 울리지 않고 목록에만 남습니다. */
+  const [atTime, setAtTime] = useState("");
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -83,7 +85,7 @@ export default function StudentDayNotes({ students }: { students: SelectableStud
       const res = await fetch("/api/student-notes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ studentId, kind, content: content.trim(), onDate: onDate || today }),
+        body: JSON.stringify({ studentId, kind, content: content.trim(), onDate: onDate || today, atTime: atTime || null }),
       });
       const body = await res.json();
       if (!res.ok) {
@@ -94,6 +96,7 @@ export default function StudentDayNotes({ students }: { students: SelectableStud
       setContent("");
       setStudentId(null);
       setOnDate(today);
+      setAtTime("");
     } catch (err) {
       notify(err instanceof Error ? err.message : String(err), "error");
     } finally {
@@ -149,6 +152,26 @@ export default function StudentDayNotes({ students }: { students: SelectableStud
             className="rounded-lg border border-slate-300 px-2 py-1.5 text-[12px]"
             title="어느 날의 일인가요. 기본은 오늘입니다."
           />
+          {/* 시각은 **선택**입니다. 반드시 적게 하면 사람은 아무 시각이나 넣게 되고,
+              그렇게 들어간 시각으로 알람이 울리면 알람 자체를 못 믿게 됩니다. */}
+          <input
+            type="time"
+            value={atTime}
+            onChange={(e) => setAtTime(e.target.value)}
+            disabled={busy}
+            className="rounded-lg border border-slate-300 px-2 py-1.5 text-[12px]"
+            title="몇 시에 할 일인가요. 적어두면 5분 전에 알림이 뜹니다. 비워도 됩니다."
+          />
+          {atTime && (
+            <button
+              type="button"
+              onClick={() => setAtTime("")}
+              className="rounded px-1 text-[11px] text-slate-400 hover:text-slate-700"
+              title="시각 없이 (오늘 중에)"
+            >
+              시각 지우기
+            </button>
+          )}
         </div>
 
         {/* 종류는 단추입니다. 목록에서 고르면 한 번 더 눌러야 하고, 다섯 개뿐이라
@@ -222,6 +245,13 @@ export default function StudentDayNotes({ students }: { students: SelectableStud
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-baseline gap-1.5">
+                      {/* 시각이 있으면 **이름보다 먼저** 읽혀야 합니다 - 「몇 시에」가
+                          움직이는 시점을 정하고, 이름은 그 다음입니다. */}
+                      {n.atTime && (
+                        <b className={"tabular-nums text-[13px] " + (isToday ? "text-slate-900" : "text-slate-400")}>
+                          {n.atTime}
+                        </b>
+                      )}
                       <b className={"text-[13px] " + (isToday ? "text-slate-900" : "text-slate-500")}>{n.studentName}</b>
                       {/* 앞날 것은 날짜를 반드시 적습니다 - 오늘 화면에서 내일 것이 오늘
                           것처럼 읽히면 사람이 하루 일찍 움직입니다. */}
@@ -232,7 +262,12 @@ export default function StudentDayNotes({ students }: { students: SelectableStud
                       )}
                     </div>
                     <p className={"break-words text-[12px] " + (isToday ? "text-slate-700" : "text-slate-500")}>{n.content}</p>
-                    {n.createdByName && <p className="text-[10px] text-slate-400">{n.createdByName}</p>}
+                    <p className="text-[10px] text-slate-400">
+                      {n.createdByName}
+                      {/* 시각이 있으면 5분 전에 위쪽 알림 띠에 뜹니다. 그 사실을 여기 적어두지
+                          않으면, 사람은 적어놓고도 계속 시계를 봅니다. */}
+                      {n.atTime && isToday && <span className="ml-1 text-amber-600">· ⏰ 5분 전 알림</span>}
+                    </p>
                   </div>
                   <button
                     type="button"

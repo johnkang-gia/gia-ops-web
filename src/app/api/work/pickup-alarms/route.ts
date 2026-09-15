@@ -4,6 +4,7 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { loadTodayPickups } from "@/lib/pickups";
 import { kstParts } from "@/lib/shuttleTracking";
 import { loadDismissalForDay } from "@/lib/dismissalToday";
+import { isNoteKind, KIND_LOOK } from "@/lib/studentDayNotes";
 
 /**
  * 오늘 「시각이 정해진 하원」과 그 아이가 지금 있는 자리.
@@ -14,6 +15,15 @@ import { loadDismissalForDay } from "@/lib/dismissalToday";
  *
  * **판단은 두 곳에서 하지 않습니다.** 픽업은 loadTodayPickups 한 곳에서 모으고, 시각이
  * 없으면 평소 하원수단(요일별)의 출발 시각을 물려받습니다 - 운영 대시보드와 같은 규칙입니다.
+ *
+ * ── 하원만이 아닙니다 ────────────────────────────────────────────────────
+ *
+ * 「12:40 서후 약」처럼 **시각이 적힌 학생 특이사항**도 같은 목록에 섭니다. 알릴 때를
+ * 아는 기준은 하나뿐입니다 - **시각이 적혀 있는가.** 갈래마다 알람을 따로 만들면 화면이
+ * 두 벌 생기고, 한 벌이 틀리면 그쪽만 조용히 안 울립니다.
+ *
+ * 무엇을 하러 가는지는 `kind` 로 갈라 화면이 다르게 적습니다 - 「데리러 가기」와
+ * 「약 챙기기」는 하는 일이 다릅니다.
  */
 
 export const dynamic = "force-dynamic";
@@ -72,7 +82,18 @@ export async function GET() {
       : { data: [] as { class_id: string; subject_name: string; room: string | null }[] };
   const lessonByClass = new Map((lessons ?? []).map((l) => [l.class_id as string, l]));
 
-  type Alarm = { key: string; name: string; time: string; className: string | null; where: string; via: string | null };
+  type Alarm = {
+    key: string;
+    name: string;
+    time: string;
+    className: string | null;
+    where: string;
+    via: string | null;
+    /** 「하원」이면 데리러 가는 것, 그 밖은 학생 특이사항의 종류(약·결제…). */
+    kind: string;
+    /** 특이사항 본문. 하원 건에는 없습니다. */
+    note: string | null;
+  };
   const out: Alarm[] = [];
   const seen = new Set<string>();
 
@@ -102,6 +123,8 @@ export async function GET() {
       where: place((st?.grade as string | null) ?? null, (st?.class_name as string | null) ?? null),
       // 무슨 차인지만. 학교 앞에서 타는 것이라 시각과 차 이름이면 충분합니다.
       via: plan ? (plan.label ?? "").trim() || plan.kind : null,
+      kind: "하원",
+      note: null,
     });
   }
 
@@ -121,6 +144,45 @@ export async function GET() {
       className: (st.class_name as string | null) ?? null,
       where: place((st.grade as string | null) ?? null, (st.class_name as string | null) ?? null),
       via: (plan.label ?? "").trim() || plan.kind,
+      kind: "하원",
+      note: null,
+    });
+  }
+
+  // ── 시각이 적힌 학생 특이사항 ────────────────────────────────────────────
+  //
+  // 「12:40 약」·「15:30 결제」처럼 **몇 시에 해야 하는 일**. 시각이 비어 있으면 알리지
+  // 않습니다 - 「오늘 중에」인 일을 시각도 없이 울리면, 사람은 알람을 끄는 법부터 배웁니다.
+  const { data: noteRows, error: noteErr } = await supabase
+    .from("student_day_notes")
+    .select("id, student_id, student_name, at_time, kind, content")
+    .eq("on_date", today)
+    .not("at_time", "is", null)
+    .is("deleted_at", null)
+    .order("at_time")
+    .limit(60);
+  // 조용히 빈 목록으로 두지 않습니다 - 적어둔 약이 안 울리는데 아무도 이유를 모르는 쪽이
+  // 더 나쁩니다.
+  if (noteErr) return NextResponse.json({ error: `학생 특이사항을 읽지 못했습니다: ${noteErr.message}` }, { status: 500 });
+
+  for (const n of ((noteRows as { id: string; student_id: string; student_name: string; at_time: string; kind: string; content: string }[] | null) ?? [])) {
+    const time = (n.at_time ?? "").slice(0, 5);
+    if (!time) continue;
+    // 이름은 **번호로** 명부에서 다시 읽습니다. 적을 때의 이름을 그대로 부르면 개명·오타가
+    // 알람에까지 남습니다(CLAUDE.md §2-4-1).
+    const st = byId.get(n.student_id);
+    if (!st) continue;
+    const kind = isNoteKind(n.kind) ? n.kind : "기타";
+    out.push({
+      // 픽업 알람과 열쇠가 겹치면 한쪽이 묻힙니다. 줄 번호를 그대로 씁니다.
+      key: `note:${n.id}`,
+      name: st.name as string,
+      time,
+      className: (st.class_name as string | null) ?? null,
+      where: place((st.grade as string | null) ?? null, (st.class_name as string | null) ?? null),
+      via: `${KIND_LOOK[kind].icon} ${kind}`,
+      kind,
+      note: n.content,
     });
   }
 

@@ -146,6 +146,35 @@ export async function POST(req: Request) {
     detached = deskPaid;
   }
 
+  // ── 현금영수증도 함께 내립니다 ──────────────────────────────────────────
+  //
+  // 청구서를 취소하면 그 청구서에 붙은 현금영수증 **신청**은 더 이상 발행할 것이 없습니다.
+  // 그런데 지금까지는 그대로 남았습니다 - 청구 화면에서는 안 보이고 현금영수증 화면에는
+  // 그대로 떠서, 두 화면의 숫자가 달랐습니다. 담당자는 없는 청구서의 영수증을 발행하려고
+  // 단말기 앞에 섭니다.
+  //
+  // **이미 발행된 것은 건드리지 않습니다.** 종이가 이미 나갔고 국세청에도 올라갔으므로,
+  // 앱에서 상태만 바꾼다고 없던 일이 되지 않습니다. 그건 취소 신고를 따로 해야 하는 일이라
+  // 사람이 알아야 합니다 - 숫자로 돌려주고 화면이 적습니다.
+  let receiptsCancelled = 0;
+  let receiptsIssued = 0;
+  {
+    const { data: rs } = await supabase.from("cash_receipts").select("id, status").eq("invoice_id", id);
+    const list = ((rs as { id: string; status: string }[] | null) ?? []);
+    receiptsIssued = list.filter((r) => r.status === "발행").length;
+    const pending = list.filter((r) => r.status === "신청").map((r) => r.id);
+    if (pending.length > 0) {
+      const { error: crErr } = await supabase.from("cash_receipts").update({ status: "취소" }).in("id", pending);
+      if (crErr) {
+        return NextResponse.json(
+          { error: `현금영수증 신청을 내리지 못해 취소하지 않았습니다: ${crErr.message}` },
+          { status: 500 },
+        );
+      }
+      receiptsCancelled = pending.length;
+    }
+  }
+
   const { data, error } = await supabase
     .from("invoices")
     .update({
@@ -160,5 +189,19 @@ export async function POST(req: Request) {
     .single();
   if (error || !data) return NextResponse.json({ error: error?.message ?? "취소하지 못했습니다." }, { status: 500 });
 
-  return NextResponse.json({ ok: true, invoice: data, detached, removed, returned });
+  return NextResponse.json({
+    ok: true,
+    invoice: data,
+    detached,
+    removed,
+    returned,
+    receiptsCancelled,
+    receiptsIssued,
+    // 이미 발행된 영수증은 앱이 없앨 수 없습니다. 그 사실을 문장으로 돌려줍니다 -
+    // 숫자만 주면 화면마다 다르게 해석합니다.
+    receiptNote:
+      receiptsIssued > 0
+        ? `이미 발행된 현금영수증 ${receiptsIssued}건은 그대로 있습니다 — 국세청 취소 신고는 따로 해주세요.`
+        : null,
+  });
 }

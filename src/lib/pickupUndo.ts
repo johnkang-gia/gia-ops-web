@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isHumanSet } from "./pickupIngest";
 import { logChecklist, type LogActor } from "./checklistLog";
+import { undoAttendanceEntries } from "./attendanceUndo";
 
 /**
  * **픽업 하나를 없던 일로 되돌립니다** — 되돌리는 자리는 여기 한 곳입니다.
@@ -38,6 +39,8 @@ export type UndoResult = {
   keptByHuman: number;
   /** 함께 내린 출결 등록 수. */
   entries: number;
+  /** 함께 지운 **출석부** 줄 수. 이게 없으면 되돌려도 출석률이 안 돌아옵니다. */
+  records: number;
   /** 함께 내린 픽업 업무 수. */
   tasks: number;
   /** 되돌리다 실패한 것. 비어 있지 않으면 **사람에게 그대로 보여줍니다.** */
@@ -55,7 +58,7 @@ export async function undoPickupTraces(
   requestId: string,
   actor: LogActor,
 ): Promise<UndoResult> {
-  const out: UndoResult = { boardings: 0, keptByHuman: 0, entries: 0, tasks: 0, problems: [] };
+  const out: UndoResult = { boardings: 0, keptByHuman: 0, entries: 0, records: 0, tasks: 0, problems: [] };
 
   const { data: req, error: readErr } = await supabase
     .from("pickup_requests")
@@ -120,14 +123,14 @@ export async function undoPickupTraces(
   }
 
   // ── ③ 출결 등록 ─────────────────────────────────────────────────────────
-  const { data: entries, error: eErr } = await supabase
-    .from("attendance_entries")
-    .update({ state: "무시", touched_by_human: true, note: "픽업을 되돌려 함께 내렸습니다" })
-    .eq("source_message_id", requestId)
-    .neq("state", "무시")
-    .select("id");
-  if (eErr) out.problems.push(`출결 등록을 내리지 못했습니다: ${eErr.message}`);
-  else out.entries = (entries ?? []).length;
+  //
+  // **짝 함수 한 곳을 지납니다**(`undoAttendanceEntries`). 예전에는 여기서 인박스 줄만
+  // 「무시」로 바꿨는데, 그 줄이 만들어 둔 **출석부 줄은 그대로 남았습니다** - 픽업을
+  // 되돌려도 그 아이의 결석이 학기 출석률에서 계속 빠졌습니다.
+  const und = await undoAttendanceEntries(supabase, { sourceMessageId: requestId }, "픽업을 되돌려 함께 내렸습니다");
+  out.entries = und.entries;
+  out.records = und.records;
+  out.problems.push(...und.problems);
 
   // ── ③ 픽업 업무 ─────────────────────────────────────────────────────────
   //
@@ -156,6 +159,7 @@ export function undoSummary(r: UndoResult): string {
   const parts: string[] = [];
   if (r.boardings > 0) parts.push(`체크표 ${r.boardings}건`);
   if (r.entries > 0) parts.push(`출결 등록 ${r.entries}건`);
+  if (r.records > 0) parts.push(`출석부 ${r.records}일치`);
   if (r.tasks > 0) parts.push("픽업 업무");
   const done = parts.length > 0 ? `${parts.join(" · ")}도 함께 내렸습니다.` : "";
   const kept = r.keptByHuman > 0 ? ` 체크표에서 사람이 직접 정한 ${r.keptByHuman}건은 그대로 두었습니다.` : "";

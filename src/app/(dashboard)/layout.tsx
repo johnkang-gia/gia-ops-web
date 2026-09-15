@@ -621,7 +621,14 @@ export default async function DashboardLayout({
         </div>
       </aside>
 
-      <div className="flex h-screen flex-1 flex-col">
+      {/* **`min-w-0` 이 없으면 본문 칸이 표 너비만큼 늘어납니다.**
+          플렉스 칸의 기본 최소 너비는 `auto` — 즉 «안에 든 것이 요구하는 만큼»입니다.
+          그래서 열이 스무 개 넘는 청구표가 들어오면 이 칸이 4000px 로 벌어지고, 안쪽
+          `<main>` 의 `overflow-x-hidden` 은 이미 늘어난 칸을 기준으로 자르므로 아무것도
+          막지 못합니다. 결과는 상단 탭줄과 제목까지 화면 밖으로 밀려나가고, 표를 보려면
+          페이지를 통째로 옆으로 미는 것 - 실제로 그렇게 보였습니다.
+          늘어나야 하는 것은 **표 안쪽뿐**입니다. */}
+      <div className="flex h-screen min-w-0 flex-1 flex-col">
         <header className="shell-blur flex items-center justify-between border-b border-[var(--shell-border)] bg-[var(--shell-bg)] px-4 py-3 sm:hidden print:!hidden">
           <Link href={homeHref} className="inline-block cursor-pointer">
             <Image src="/logo-main.png" alt="GIA Micro Lab" width={538} height={120} className="shell-logo-mark h-7 w-auto" />

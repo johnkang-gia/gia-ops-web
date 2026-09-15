@@ -5,7 +5,7 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { isDeveloperEmail } from "@/lib/roles";
 import GuideButton from "@/components/common/GuideButton";
 import SiteCheckPanel from "@/components/dev/SiteCheckPanel";
-import { openGaps } from "@/lib/registry/dataKinds";
+import { byDesignNotes, openGaps } from "@/lib/registry/dataKinds";
 import DataRegistryPanel from "@/components/dev/DataRegistryPanel";
 import { DevReportProvider } from "@/components/dev/DevReportProvider";
 import { APP_VERSION } from "@/lib/version";
@@ -176,7 +176,7 @@ export default async function DevDashboardPage() {
       <DevReportProvider>
         <div className="mb-6 flex flex-col gap-4">
           <SiteCheckPanel gaps={openGaps()} version={APP_VERSION} />
-          <DataRegistryPanel gaps={openGaps()} />
+          <DataRegistryPanel gaps={openGaps()} design={byDesignNotes()} />
         </div>
       </DevReportProvider>
 

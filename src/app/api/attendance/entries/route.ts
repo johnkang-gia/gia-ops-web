@@ -4,6 +4,7 @@ import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { scanIntoEntries, type ScanSource } from "@/lib/attendanceEntries";
 import { buildStaffNames, todayKey, type LearningRule, type RosterStudent } from "@/lib/attendanceDigest";
 import { classHintFromMentions, type TeacherClass } from "@/lib/mentionHints";
+import { attendanceUndoSummary, undoAttendanceEntries } from "@/lib/attendanceUndo";
 
 // 업무보드 인박스가 쓰는 출결 등록 창구입니다.
 //
@@ -390,6 +391,19 @@ export async function PATCH(req: NextRequest) {
   }
 
   if (!body.id) return NextResponse.json({ error: "id가 필요합니다." }, { status: 400 });
+
+  // ── 내리는 일은 짝 함수 한 곳에서 ─────────────────────────────────────────
+  //
+  // 등록하면 **두 곳에 자국이 남습니다** — 인박스 줄(`attendance_entries`)과 출석부
+  // (`attendance_records`). 그런데 여기서 `state` 만 바꾸면 **출석부는 그대로 남습니다.**
+  // 오지도 않은 결석이 학기 출석률을 계속 깎는데, 화면에는 오류가 아니라 「결석 한 줄」로
+  // 보여서 학기 말 통지표에 가서야 드러납니다.
+  if (body.state === "무시") {
+    const undo = await undoAttendanceEntries(db, { ids: [body.id] }, body.note ?? "사람이 출결이 아니라고 표시");
+    // 조용히 넘기지 않습니다. 출석부를 못 지웠으면 그 사실이 화면에 떠야 합니다.
+    if (undo.problems.length > 0) return NextResponse.json({ error: undo.problems.join(" / ") }, { status: 500 });
+    return NextResponse.json({ ok: true, undo, undoNote: attendanceUndoSummary(undo) });
+  }
 
   const patch: Record<string, unknown> = {
     // 사람이 손댄 표시. 이게 켜지면 자동 스캔이 다시는 이 줄을 건드리지 않습니다.

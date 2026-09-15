@@ -204,19 +204,46 @@ export default function UpcomingPickups({ initialRows }: { initialRows: Schedule
 
   const needsConfirmCount = rows.filter((r) => r.needs_confirm && r.status === "예정").length;
 
+  /**
+   * 예약을 취소합니다.
+   *
+   * **업무보드의 픽업 카드도 함께 내립니다.** 예약이 그날 아침에 확정되면 업무가 하나
+   * 만들어지는데(`pickup_schedules.task_id`), 예전에는 예약만 취소하고 그 카드는 그대로
+   * 뒀습니다. 그러면 「데리러 가세요」가 흐름판에 남아, 담당자는 오지도 않는 아이를 데리러
+   * 교실로 갑니다 - 화면에는 오류가 아니라 「할 일 한 줄」로 보입니다.
+   */
   async function cancel(row: ScheduleRow) {
     setBusy(true);
     const supabase = createClient();
     setRows((prev) => prev.filter((r) => r.id !== row.id));
-    const { error } = await supabase
+    const now = new Date().toISOString();
+    const { data: done, error } = await supabase
       .from("pickup_schedules")
-      .update({ status: "취소", cancelled_at: new Date().toISOString() })
-      .eq("id", row.id);
-    setBusy(false);
+      .update({ status: "취소", cancelled_at: now })
+      .eq("id", row.id)
+      .select("task_id")
+      .maybeSingle();
     if (error) {
+      setBusy(false);
       notify("취소하지 못했습니다: " + error.message, "error");
       load();
+      return;
     }
+    const taskId = (done?.task_id as string | null) ?? null;
+    if (taskId) {
+      // 지우지 않고 내립니다(휴지통 7일). 잘못 눌렀을 때 되돌릴 자리가 없으면 내린 것이
+      // 곧 사라진 것이 됩니다.
+      const { error: tErr } = await supabase
+        .from("tasks")
+        .update({ deleted_at: now })
+        .eq("id", taskId)
+        .is("deleted_at", null);
+      // 조용히 넘기지 않습니다. 예약은 내려갔는데 카드가 남았다는 사실을 사람이 알아야
+      // 손으로라도 지웁니다.
+      if (tErr) notify("예약은 취소했지만 업무보드의 픽업 카드를 내리지 못했습니다: " + tErr.message, "error");
+      else await supabase.from("pickup_schedules").update({ task_id: null }).eq("id", row.id);
+    }
+    setBusy(false);
   }
 
   // 사람이 고른 학생으로 연결합니다. 이름도 명부 이름으로 맞춰둡니다 - 예약에 남은 이름이

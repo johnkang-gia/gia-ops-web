@@ -27,7 +27,18 @@ type Check = {
   summary: Record<string, number>;
 };
 
-export default function DataRegistryPanel({ gaps }: { gaps: { key: string; gap: string }[] }) {
+export default function DataRegistryPanel({
+  gaps,
+  design = [],
+}: {
+  gaps: { key: string; gap: string }[];
+  /**
+   * **일부러 짝을 두지 않은 자리.** 고칠 목록과 섞지 않습니다 - 섞으면 목록이 줄지 않고,
+   * 줄지 않는 목록은 아무도 안 봅니다. 그래도 적어 둬야 「왜 여긴 내리는 길이 없지?」를
+   * 다음 사람이 다시 묻지 않습니다.
+   */
+  design?: { key: string; note: string }[];
+}) {
   const report = useDevReport();
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<Check | null>(null);
@@ -85,11 +96,19 @@ export default function DataRegistryPanel({ gaps }: { gaps: { key: string; gap: 
     if (gaps.length > 0) {
       lines.push("", "### 넣기와 내리기가 아직 짝이 아닌 자리 (코드)");
       for (const g of gaps) lines.push(`- **${g.key}** — ${g.gap}`);
+    } else {
+      lines.push("", "### 넣기와 내리기");
+      lines.push("- 고쳐야 할 짝 없음 — 다섯 갈래 모두 내리는 길이 한 곳으로 모여 있습니다.");
+    }
+    if (design.length > 0) {
+      lines.push("", "### 일부러 짝을 두지 않은 것 (고칠 일 아님)");
+      for (const d of design) lines.push(`- **${d.key}** — ${d.note}`);
     }
     report.put("registry", 20, lines.join("\n"));
-  }, [result, gaps, report]);
+  }, [result, gaps, design, report]);
 
   const byKind = new Map((result?.kinds ?? []).map((k) => [k.kind, k]));
+  const [designOpen, setDesignOpen] = useState(false);
 
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-4">
@@ -209,6 +228,28 @@ export default function DataRegistryPanel({ gaps }: { gaps: { key: string; gap: 
               <b>{g.key}</b> — {g.gap}
             </p>
           ))}
+        </div>
+      )}
+
+      {/* **일부러 이렇게 한 것.** 고칠 목록과 같은 자리에 두면 목록이 줄지 않고, 줄지 않는
+          목록은 아무도 안 봅니다. 기본은 접어 두되 없애지는 않습니다 - 「왜 여긴 내리는
+          길이 없지?」를 다음 사람이 다시 묻지 않도록. */}
+      {design.length > 0 && (
+        <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+          <button
+            type="button"
+            onClick={() => setDesignOpen((v) => !v)}
+            className="flex w-full items-center justify-between text-[12px] font-bold text-slate-600"
+          >
+            <span>이렇게 정한 것 {design.length} (고칠 일 아님)</span>
+            <span className="text-slate-400">{designOpen ? "▾" : "▸"}</span>
+          </button>
+          {designOpen &&
+            design.map((d) => (
+              <p key={d.key} className="mt-1 text-[11px] leading-relaxed text-slate-600">
+                <b className="text-slate-800">{d.key}</b> — {d.note}
+              </p>
+            ))}
         </div>
       )}
     </section>

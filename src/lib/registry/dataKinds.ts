@@ -48,8 +48,19 @@ export type DataKindDef = {
   apply: string | null;
   /** 되돌리는 일을 하는 함수. **null 이면 한 곳에서 지워도 다른 곳에 남습니다.** */
   undo: string | null;
-  /** 넣기·내리기가 아직 짝이 아니면 그 사실을 적습니다. 숨기지 않습니다. */
+  /**
+   * 넣기·내리기가 아직 짝이 아니면 그 사실을 적습니다. 숨기지 않습니다.
+   *
+   * **여기 적힌 것은 「고쳐야 하는 것」입니다.** 일부러 짝을 안 둔 것은 아래 `byDesign`
+   * 으로 갈랐습니다 - 섞어두면 고칠 목록이 줄지 않고, 줄지 않는 목록은 아무도 안 봅니다.
+   */
   gap: string | null;
+  /**
+   * **일부러 짝을 두지 않은 것.** 고칠 일이 아니라 정해진 일입니다.
+   *
+   * 그래도 적어 둡니다 - 「왜 여긴 내리는 길이 없지?」를 다음 사람이 다시 묻지 않도록.
+   */
+  byDesign: string | null;
   /** 사람이 가르친 규칙이 담긴 표. 이 종류를 해석할 때 **반드시 함께 읽습니다.** */
   rules: string[];
 };
@@ -81,7 +92,10 @@ export const DATA_KINDS: DataKindDef[] = [
     dedupe: { by: ["id"] },
     apply: "src/lib/classAssign.ts",
     undo: null,
-    gap: "학생을 지우는 길이 없습니다. 졸업·전학은 status 로만 표시하고 줄은 남깁니다 - 지난 청구·출결이 함께 사라지면 안 됩니다.",
+    gap: null,
+    byDesign:
+      "학생을 지우는 길은 **일부러 없습니다.** 졸업·전학은 status 로만 표시하고 줄은 남깁니다 - " +
+      "지우면 그 아이의 지난 청구·출결이 함께 사라지고, 몇 년 뒤 «그때 얼마를 냈나»에 답할 수 없습니다.",
     rules: ["attendance_learning_rules", "toddle_channel_students"],
   },
   {
@@ -91,7 +105,11 @@ export const DATA_KINDS: DataKindDef[] = [
     dedupe: { by: ["source", "source_ref"] },
     apply: "src/lib/pickupIngest.ts",
     undo: "src/lib/pickupUndo.ts",
-    gap: "pickup_requests 의 상태를 바꾸는 자리 7곳 중 2곳만 undo 를 거칩니다. 나머지 5곳은 각자 처리합니다.",
+    gap: null,
+    byDesign:
+      "연락을 **내리는** 자리는 둘뿐이고(인박스 「무시」·「픽업 아님」) 둘 다 `pickupUndo` 를 지납니다. " +
+      "나머지 자리(확정·업무 만들기·답변 표시·다시 읽기·되짚어 채우기)는 내리는 일이 아니라 **붙이거나 고치는** 일이라 " +
+      "되돌릴 자국이 없습니다. 예약 취소(`pickup_schedules`)도 이제 업무 카드를 함께 내립니다.",
     rules: ["attendance_learning_rules", "toddle_channel_students"],
   },
   {
@@ -100,8 +118,11 @@ export const DATA_KINDS: DataKindDef[] = [
     satellites: ["attendance_records", "attendance_coverage", "school_days"],
     dedupe: { by: ["source", "source_message_id", "student_name", "status"] },
     apply: "src/lib/attendanceEntries.ts",
-    undo: null,
-    gap: "출결을 내리는 짝 함수가 없습니다. 지금은 state='무시' 로 바꾸는 코드가 화면마다 따로 있습니다.",
+    undo: "src/lib/attendanceUndo.ts",
+    gap: null,
+    byDesign:
+      "담임이 출석부에서 직접 찍은 줄(`confirmed_by_human`)은 **되돌리지 않습니다.** " +
+      "그날 교실에서 보고 찍은 값이 인박스 판단보다 셉니다 - 몇 줄을 안 건드렸는지 세어서 화면에 적습니다.",
     rules: ["attendance_learning_rules"],
   },
   {
@@ -111,7 +132,11 @@ export const DATA_KINDS: DataKindDef[] = [
     dedupe: { by: ["service_date", "assignment_id"] },
     apply: "src/lib/pickups.ts",
     undo: "src/lib/pickupUndo.ts",
-    gap: "shuttle_boardings 에 (service_date, assignment_id) unique 색인이 없습니다. 코드로만 막고 있어, 두 사람이 동시에 누르면 두 줄이 생길 수 있습니다.",
+    gap: null,
+    byDesign:
+      "(service_date, assignment_id) 유일 색인을 데이터베이스가 지킵니다" +
+      "(20261005000000_boarding_unique.sql — 이미 있으면 그대로 두고, 겹친 줄이 있으면 먼저 정리합니다). " +
+      "겹친 줄이 생겼는지는 `select * from shuttle_boarding_duplicates;` 로 언제든 봅니다. 비어 있어야 정상입니다.",
     rules: [],
   },
   {
@@ -139,7 +164,11 @@ export const DATA_KINDS: DataKindDef[] = [
     dedupe: { by: ["student_id", "term_id", "kind"] },
     apply: "src/app/api/finance/invoices",
     undo: "src/app/api/finance/invoices/cancel/route.ts",
-    gap: "청구서를 취소해도 cash_receipts 는 그대로 남습니다. 화면에서 가리고 있을 뿐이라 현금영수증 화면과 숫자가 다릅니다.",
+    gap: null,
+    byDesign:
+      "청구서를 취소하면 그 청구서의 현금영수증 **신청**도 함께 내립니다. " +
+      "**이미 발행된 것은 건드리지 않습니다** - 종이가 이미 나갔고 국세청에도 올라갔으므로 앱에서 상태만 바꾼다고 없던 일이 " +
+      "되지 않습니다. 몇 건이 남았는지 세어 화면이 「취소 신고는 따로 해주세요」라고 적습니다.",
     rules: [],
   },
   {
@@ -150,6 +179,7 @@ export const DATA_KINDS: DataKindDef[] = [
     apply: "src/lib/pickupTask.ts",
     undo: "src/lib/pickupUndo.ts",
     gap: null,
+    byDesign: null,
     rules: [],
   },
 ];
@@ -205,4 +235,13 @@ export function kindOfTable(table: string): DataKindDef | null {
 /** 짝이 없는 갈래. 개발자 화면이 이 목록을 그대로 띄웁니다 - 숨기면 아무도 안 고칩니다. */
 export function openGaps(): { key: string; gap: string }[] {
   return DATA_KINDS.filter((k) => k.gap).map((k) => ({ key: k.key, gap: k.gap as string }));
+}
+
+/**
+ * **일부러 짝을 두지 않은 자리.** 고칠 목록이 아니라 「이렇게 정했다」는 기록입니다.
+ *
+ * 고칠 것과 섞어두면 목록이 줄지 않고, 줄지 않는 목록은 아무도 안 봅니다.
+ */
+export function byDesignNotes(): { key: string; note: string }[] {
+  return DATA_KINDS.filter((k) => k.byDesign).map((k) => ({ key: k.key, note: k.byDesign as string }));
 }

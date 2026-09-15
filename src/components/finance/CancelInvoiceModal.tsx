@@ -73,6 +73,10 @@ export default function CancelInvoiceModal({
       const moved = Number(json?.detached ?? 0);
       const gone = Number(json?.removed ?? 0);
       const back = Number(json?.returned ?? 0);
+      const crOff = Number(json?.receiptsCancelled ?? 0);
+      // 이미 발행된 영수증은 앱이 없앨 수 없습니다. 서버가 준 문장을 그대로 띄웁니다 -
+      // 조용히 두면 담당자는 취소했으니 영수증도 정리된 줄 압니다.
+      const crNote = (json?.receiptNote as string | null) ?? null;
       onDone(done);
       // **되돌리기라는 것을 말로도 맞춥니다.** 원래 선입금이던 돈이 선입금으로 돌아간 것은
       // 새로 생긴 일이 아니므로 「남습니다」가 아니라 「돌아갔습니다」로 적습니다 - 앞의
@@ -87,6 +91,8 @@ export default function CancelInvoiceModal({
               : `${done.invoice_no} 을(를) 취소했습니다. 항목을 고친 뒤 다시 발행할 수 있습니다.`,
         "success",
       );
+      if (crOff > 0) notify(`현금영수증 신청 ${crOff}건도 함께 내렸습니다.`, "success");
+      if (crNote) notify(crNote, "error");
       onClose();
     } finally {
       setBusy(false);

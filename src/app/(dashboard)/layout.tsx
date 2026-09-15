@@ -478,7 +478,9 @@ export default async function DashboardLayout({
           { href: "/finance/invoices", label: "청구 · 학비외", icon: "🧾" },
           { href: "/finance/payments", label: "수납", icon: "💳" },
           { href: "/finance/items", label: "학비외 항목", icon: "📚" },
-          { href: "/finance/plans", label: "납부 항목 · 할인", icon: "💵" },
+          // 「납부 항목 · 할인」은 옆 메뉴에서 뺐습니다. 청구를 하다가 손대는 일이라
+          // [청구 · 학비] 화면의 「📚 납부 항목 · 할인」 단추가 같은 자리에서 팝업으로
+          // 엽니다 - 건너가면 보고 있던 표의 학기·부서·체크가 전부 풀립니다.
         ],
       });
     }

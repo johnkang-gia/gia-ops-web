@@ -956,11 +956,8 @@ function DiscountModal({
         <div className="mt-3 border-t border-slate-100 pt-3">
           {usable.length === 0 ? (
             <p className="text-[12px] leading-relaxed text-slate-500">
-              지금 붙일 수 있는 할인이 없습니다.{" "}
-              <a href="/finance/plans" className="underline">
-                [납부 항목 · 할인]
-              </a>
-              에서 먼저 만들어주세요 — 어떤 할인이 몇 %인지는 사람이 정합니다.
+              지금 붙일 수 있는 할인이 없습니다. 이 창을 닫고 위의 <b>[📚 납부 항목 · 할인]</b> 에서 먼저
+              만들어주세요 — 어떤 할인이 몇 %인지는 사람이 정합니다.
             </p>
           ) : (
             <>

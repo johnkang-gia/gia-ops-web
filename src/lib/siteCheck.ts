@@ -168,7 +168,7 @@ export function verdictOf(input: {
   if (s >= 500) return { verdict: "오류", note: `서버가 ${s} 로 답했습니다` };
   if (s >= 400) return { verdict: "오류", note: `${s} 로 답했습니다` };
   // 200 인데 오류 화면인 경우. Next 는 오류를 200 짜리 화면으로 그려줄 때가 있습니다.
-  const broken = ERROR_MARKS.find((m) => input.body.includes(m));
+  const broken = brokenMark(input.body);
   if (broken) return { verdict: "오류", note: `화면에 「${broken}」 가 떠 있습니다` };
   if (input.ms > SLOW_MS) return { verdict: "느림", note: `${(input.ms / 1000).toFixed(1)}초 걸렸습니다` };
   return { verdict: "정상", note: "" };
@@ -182,6 +182,37 @@ const ERROR_MARKS = [
   "문제가 발생했습니다",
   "Unhandled Runtime Error",
 ];
+
+/**
+ * **글자가 들어 있다고 오류는 아닙니다.**
+ *
+ * `/changelog` 가 「오류」로 잡혔습니다. 실제로는 멀쩡했고, **버전 기록 본문에 「Application
+ * error」라는 말이 적혀 있었을 뿐**입니다 - 이 점검기를 만들면서 「화면 안에 Application
+ * error 같은 글자가 있으면 잡습니다」라고 적어 둔 그 문장이었습니다. 검사기가 자기 설명을
+ * 읽고 자기를 고장 났다고 말한 셈입니다.
+ *
+ * 헛걸리는 검사는 사람이 무시하게 되고, 무시당하는 검사는 없는 것과 같습니다(CLAUDE.md 1).
+ *
+ * ── 이제 두 갈래로 봅니다 ───────────────────────────────────────────────────
+ *
+ *   ① **우리 오류 화면**은 자국을 남깁니다(`data-app-error="1"`, `ErrorScreen`).
+ *      글이 아니라 속성이라 본문에 우연히 들어갈 수 없습니다. 이게 제일 확실합니다.
+ *   ② 우리 오류 화면조차 못 뜬 경우에는 Next 기본 화면이 뜹니다. 그 화면은 **거의 비어
+ *      있고** 문장이 맨 앞에 옵니다 - 그래서 앞부분에 있고 본문이 짧을 때만 오류로 봅니다.
+ *      메뉴와 목록이 잔뜩 실린 화면에 그 글자가 섞여 있다면 그건 글입니다.
+ */
+const APP_ERROR_MARK = 'data-app-error="1"';
+const ERROR_HEAD_CHARS = 4000;
+const ERROR_MAX_BODY = 40000;
+
+export function brokenMark(body: string): string | null {
+  if (body.includes(APP_ERROR_MARK)) return "화면을 불러오는 중 문제가 생겼습니다";
+  const hit = ERROR_MARKS.find((m) => body.slice(0, ERROR_HEAD_CHARS).includes(m));
+  if (!hit) return null;
+  // 내용이 잔뜩 실린 화면이면 오류 화면이 아닙니다.
+  if (body.length > ERROR_MAX_BODY) return null;
+  return hit;
+}
 
 /** 화면 안의 앱 내부 링크를 모읍니다. 바깥 주소·앵커·파일은 뺍니다. */
 export function collectLinks(html: string): string[] {

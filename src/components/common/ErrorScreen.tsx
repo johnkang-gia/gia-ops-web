@@ -25,7 +25,10 @@ export default function ErrorScreen({ error, reset }: { error: Error & { digest?
   }, [error]);
 
   return (
-    <div className="flex min-h-[60vh] flex-col items-center justify-center gap-3 px-6 text-center">
+    // **기계가 읽을 표시.** 한 바퀴 점검(`siteCheck`)이 「이 화면은 오류다」를 글자로 찾으면
+    // 오류를 **설명하는 글**까지 걸립니다 - 실제로 버전 기록 화면이 그렇게 걸렸습니다.
+    // 글이 아니라 자국으로 알립니다. 본문에 우연히 들어갈 수 없는 값입니다.
+    <div data-app-error="1" className="flex min-h-[60vh] flex-col items-center justify-center gap-3 px-6 text-center">
       <div className="text-3xl">⚠️</div>
       <h1 className="text-base font-bold text-slate-800">화면을 불러오는 중 문제가 생겼습니다</h1>
       <p className="max-w-sm text-sm text-slate-500">

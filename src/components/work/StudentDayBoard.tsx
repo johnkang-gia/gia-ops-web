@@ -511,13 +511,18 @@ function Row({
         <span className="flex min-w-0 flex-1 items-baseline gap-1 overflow-hidden whitespace-nowrap">
           {/* 같은 갈래가 여럿이면 하나로 묶고 개수만 적습니다 - 「💬 문의 💬 문의」는
               칸만 먹고 알려주는 것이 없습니다. */}
+          {/* **칩은 아이콘입니다.** 두 줄로 세운 칸에서 글자를 넣으면 「💬 문」처럼 한
+              글자만 남는데, 잘린 글자는 아무 뜻도 전하지 못하면서 이름 자리를 먹습니다.
+              갈래는 색과 아이콘으로 알아보고, 무엇인지는 줄을 눌러 봅니다(마우스를 올리면
+              글자로도 뜹니다). */}
           {groupItems(day.items).map(({ item, count }) => (
             <span
               key={item.id}
-              className={"max-w-[6.5rem] shrink-0 truncate rounded px-1 text-[11px] font-semibold " + (past ? "bg-slate-100 text-slate-500" : ITEM_LOOK[item.kind].chip)}
+              title={`${item.kind} · ${shortOf(item, date)}${item.text ? ` — ${item.text}` : ""}`}
+              className={"shrink-0 rounded px-1 text-[11px] font-semibold " + (past ? "bg-slate-100 text-slate-500" : ITEM_LOOK[item.kind].chip)}
             >
-              {ITEM_LOOK[item.kind].icon} {shortOf(item, date)}
-              {count > 1 ? ` ${count}` : ""}
+              {ITEM_LOOK[item.kind].icon}
+              {count > 1 ? count : ""}
             </span>
           ))}
         </span>
@@ -646,7 +651,7 @@ function Folded({
  */
 function shortOf(i: DayItem, date: string): string {
   const when = i.onDate === date ? "" : `${whenLabel(i.onDate, null, date)} `;
-  return `${when}${i.kind}`;
+  return `${when}${i.at ?? ""}`.trim() || i.kind;
 }
 
 /** 같은 날·같은 갈래는 한 칩으로. 세부는 창에서 하나씩 봅니다. */

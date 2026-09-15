@@ -144,11 +144,26 @@ export async function PATCH(req: Request) {
   const me = await getCurrentAppUser();
   if (!me) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
 
-  const body = (await req.json().catch(() => null)) as { id?: string } | null;
+  const body = (await req.json().catch(() => null)) as { id?: string; restore?: boolean } | null;
   const id = (body?.id ?? "").trim();
   if (!id) return NextResponse.json({ error: "무엇을 내릴지 알 수 없습니다." }, { status: 400 });
 
   const supabase = await createClient();
+
+  // **되돌리기.** 방금 내린 것을 그 자리에서 되살립니다 - 잘못 눌렀을 때 이 칸을 다시 찾아
+  // 적게 하면 대개 안 적습니다. 내린 것을 지우지 않고 표시만 하기 때문에 가능합니다.
+  if (body?.restore) {
+    const { data: back, error: backErr } = await supabase
+      .from("student_day_notes")
+      .update({ deleted_at: null, deleted_by: null })
+      .eq("id", id)
+      .not("deleted_at", "is", null)
+      .select("id");
+    if (backErr) return NextResponse.json({ error: `되돌리지 못했습니다: ${backErr.message}` }, { status: 500 });
+    if (!back || back.length === 0) return NextResponse.json({ error: "이미 올라와 있는 줄입니다." }, { status: 409 });
+    return NextResponse.json({ ok: true, restored: true });
+  }
+
   const { data, error } = await supabase
     .from("student_day_notes")
     .update({ deleted_at: new Date().toISOString(), deleted_by: me.email })

@@ -42,7 +42,7 @@ import type { RosterStudent } from "@/lib/attendanceDigest";
 // 옆 칸이 되면서 3열 대신 위에서 아래로(예정→진행중→완료) 쌓이는 세로 배치를 씁니다 - 좁은
 // 폭에 3열을 욱여넣으면 카드 제목이 다 잘립니다. 폭과 접힘 상태는 이 브라우저에 기억해둡니다.
 const LAYOUT_STORAGE_KEY = "gia-ops-work-layout-v4";
-const DEFAULT_LAYOUT = { leftWidth: 26, rightWidth: 27, leftOpen: true, rightOpen: true, inboxTopHeight: 55 };
+const DEFAULT_LAYOUT = { leftWidth: 23, rightWidth: 34, leftOpen: true, rightOpen: true, inboxTopHeight: 55 };
 type Layout = typeof DEFAULT_LAYOUT;
 
 // 한 칸이 이보다 좁아지면 안에 든 표·채팅이 읽을 수 없게 되므로 드래그를 여기서 멈춥니다.
@@ -759,6 +759,40 @@ export default function WorkspaceArea({
     </div>
   );
 
+  /**
+   * **붙여넣으면 접수됩니다.**
+   *
+   * 토들 글을 받아 인박스에 넣으려면 [픽업 인박스] → [손으로 접수] 칸까지 가야 했습니다.
+   * 건너가는 동안 손에 든 글을 놓치기도 하고, 대개는 「나중에」가 됩니다.
+   *
+   * 이제 업무보드 아무 곳에서나 ⌘V 하면 그 자리에서 접수합니다. **입력칸 안에서 붙여넣는
+   * 것은 건드리지 않습니다** - 글을 쓰다 붙여넣는 것까지 가로채면 아무것도 못 씁니다.
+   */
+  useEffect(() => {
+    async function onPaste(e: ClipboardEvent) {
+      const el = e.target as HTMLElement | null;
+      if (el?.closest("input,textarea,[contenteditable]")) return;
+      const text = (e.clipboardData?.getData("text") ?? "").trim();
+      if (text.length < 6) return; // 실수로 복사된 한두 글자는 접수하지 않습니다
+      if (!window.confirm(`붙여넣은 글을 픽업 인박스로 접수할까요?\n\n${text.slice(0, 120)}${text.length > 120 ? "…" : ""}`)) return;
+      try {
+        const res = await fetch("/api/pickup", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "manual", text, source: "직접입력" }),
+        });
+        const body = await res.json().catch(() => null);
+        if (!res.ok) return notify(body?.error ?? "접수하지 못했습니다.", "error");
+        const found = ((body?.results as { isPickup: boolean }[] | undefined) ?? []).filter((r) => r.isPickup).length;
+        notify(found > 0 ? `픽업 ${found}건으로 읽어 인박스에 넣었습니다.` : "인박스에 넣었습니다(픽업으로는 안 읽혔습니다).", "success");
+      } catch (err) {
+        notify(err instanceof Error ? err.message : String(err), "error");
+      }
+    }
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, [notify]);
+
   const modals = (
     <>
       {boardOpen && (
@@ -836,10 +870,12 @@ export default function WorkspaceArea({
           <CollapsedRail icon="📥" title="인박스" side="left" onOpen={() => setLayout((p) => ({ ...p, leftOpen: true }))} />
         )}
 
-        <Zone icon="🧒" title="오늘 학생" className="flex-1">
-          {todayStudents}
+        {/* 가운데 — **일정**. 학사와 행정이 함께 보는 자리라 가장 넓게 씁니다. */}
+        <Zone icon="🗓️" title="일정" className="flex-1">
+          {center}
         </Zone>
 
+        {/* 오른쪽 — 오늘 학생. 픽업·하원과 특이사항이 두 줄로 섭니다. */}
         {layout.rightOpen ? (
           <>
             <ResizeHandle
@@ -847,16 +883,16 @@ export default function WorkspaceArea({
               onReset={() => setLayout((p) => ({ ...p, rightWidth: DEFAULT_LAYOUT.rightWidth }))}
             />
             <Zone
-              icon="🗓️"
-              title="일정"
+              icon="🧒"
+              title="오늘 학생"
               onCollapse={() => setLayout((p) => ({ ...p, rightOpen: false }))}
               style={{ width: `${layout.rightWidth}%` }}
             >
-              {center}
+              {todayStudents}
             </Zone>
           </>
         ) : (
-          <CollapsedRail icon="🗓️" title="일정" side="right" onOpen={() => setLayout((p) => ({ ...p, rightOpen: true }))} />
+          <CollapsedRail icon="🧒" title="오늘 학생" side="right" onOpen={() => setLayout((p) => ({ ...p, rightOpen: true }))} />
         )}
       </div>
 

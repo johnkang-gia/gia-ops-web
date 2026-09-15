@@ -21,7 +21,6 @@ import WorkspaceArea from "./WorkspaceArea";
 import TaskDetailPanel from "./TaskDetailPanel";
 import WorkGuideModal from "./WorkGuideModal";
 import NoticeBanner from "./NoticeBanner";
-import TodayDismissalReminder from "./TodayDismissalReminder";
 import PickupAlarmBar from "./PickupAlarmBar";
 import type { RosterStudent } from "@/lib/attendanceDigest";
 
@@ -481,13 +480,9 @@ export default function WorkBoardClient({
           있고 그때 놓치면 아이가 문 앞에서 기다립니다. 사람이 앉아서 보는 화면은 여기입니다. */}
       <PickupAlarmBar />
 
-      {/* 오늘 하원체크 - 예전에 공지가 있던 자리.
-          매주 같은 요일에 학원 차를 타는 아이는 셔틀을 안 타니 체크표에 줄이 없고, 학사일정도
-          아니라 달력에도 안 뜹니다. **반복되는 일이라 오히려 잊힙니다.** 그날 안에 끝나는
-          일이고 놓치면 되돌릴 수 없으므로, 맨 위 자리를 여기에 줍니다. */}
-      <div className="shrink-0 px-3 pt-1.5">
-        <TodayDismissalReminder variant="배너" />
-      </div>
+      {/* **「오늘 하원체크」 배너를 뺐습니다.**
+          같은 아이들이 [오늘 학생 → 🚗 픽업·하원]에 이미 서 있고, 거기서 [🎒 하원수단]도
+          바로 열립니다. 맨 위 자리를 두 번째 목록에 내주면 정작 화면이 아래로 밀립니다. */}
 
       {guideOpen && <WorkGuideModal onClose={() => setGuideOpen(false)} />}
 

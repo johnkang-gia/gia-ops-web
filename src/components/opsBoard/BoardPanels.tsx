@@ -492,7 +492,8 @@ export function TodayStudents({ sc, board }: { sc: BoardScale; board: DayBoard }
     else today.push(d); // 지난 것도 오늘 칸에 둡니다 - 놓친 것이 화면에서 사라지면 안 됩니다
   }
 
-  const SHOWN = 10;
+  // 두 줄로 서므로 같은 높이에 두 배가 들어갑니다.
+  const SHOWN = 20;
   const shown = today.slice(0, SHOWN);
 
   return (
@@ -529,7 +530,16 @@ export function TodayStudents({ sc, board }: { sc: BoardScale; board: DayBoard }
       {shown.length === 0 ? (
         <Empty sc={sc} text="오늘 평소와 다른 아이 없음" tone="good" />
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: sc.s(4, 3) }}>
+        // **두 줄로 세웁니다.** 한 줄에 하나씩이면 열 명에서 칸이 꽉 차고, 그 아래 아이는
+        // 「외 N명」으로 묻힙니다. 두 줄이면 같은 높이에 스무 명이 섭니다.
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: sc.narrow ? "1fr" : "1fr 1fr",
+            gap: sc.s(4, 3),
+            alignItems: "start",
+          }}
+        >
           {shown.map((d) => {
             // 문의는 아래 칸에 원문이 있습니다. 여기서는 개수만 - 같은 것을 한 화면에 두 번
             // 적으면 그게 어지러움의 정체입니다.
@@ -545,11 +555,15 @@ export function TodayStudents({ sc, board }: { sc: BoardScale; board: DayBoard }
                   alignItems: "baseline",
                   flexWrap: "wrap",
                   gap: `${sc.s(2, 1)}px ${sc.s(8, 5)}px`,
-                  background: soon ? "#2a1a0c" : "#0f172a",
-                  border: `1px solid ${soon ? "#b45309" : "#1e2a44"}`,
+                  background: late ? "#0b1220" : soon ? "#2a1a0c" : "#0f172a",
+                  border: `1px solid ${late ? "#15203a" : soon ? "#b45309" : "#1e2a44"}`,
                   borderRadius: sc.s(9, 6),
                   padding: `${sc.s(5, 3)}px ${sc.s(10, 6)}px`,
-                  opacity: late ? 0.55 : 1,
+                  // **지난 것은 채도를 뺍니다 — 지우지는 않습니다.** 놓친 것이 화면에서
+                  // 사라지면 아무도 안 찾습니다. 흐리게 두면 「지난 일」로 읽히면서도
+                  // 거기 있다는 것은 보입니다.
+                  opacity: late ? 0.5 : 1,
+                  filter: late ? "saturate(0.35)" : undefined,
                   flexShrink: 0,
                 }}
               >
@@ -559,14 +573,14 @@ export function TodayStudents({ sc, board }: { sc: BoardScale; board: DayBoard }
                     style={{
                       fontSize: sc.s(22, 15),
                       fontWeight: 900,
-                      color: soon ? "#fbbf24" : "#7dd3fc",
+                      color: late ? "#64748b" : soon ? "#fbbf24" : "#7dd3fc",
                       fontVariantNumeric: "tabular-nums",
                     }}
                   >
                     {d.firstTime}
                   </b>
                 )}
-                <b style={{ fontSize: sc.s(21, 15), fontWeight: 900, color: "#fff", whiteSpace: "nowrap" }}>
+                <b style={{ fontSize: sc.s(21, 15), fontWeight: 900, color: late ? "#94a3b8" : "#fff", whiteSpace: "nowrap" }}>
                   {shortName(d.name)}
                 </b>
                 <span style={{ fontSize: sc.s(13, 10), color: "#64748b" }}>{d.className ?? d.grade ?? ""}</span>

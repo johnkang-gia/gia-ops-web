@@ -34,6 +34,8 @@ export default function CommandPalette({
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  /** 지금 짚고 있는 줄. ↑↓ 로 움직이고 Enter 로 갑니다. */
+  const [cursor, setCursor] = useState(0);
   const router = useRouter();
 
   useEffect(() => {
@@ -94,6 +96,30 @@ export default function CommandPalette({
     router.push(href);
   }
 
+  /**
+   * **키보드로 고를 수 있어야 키보드로 여는 뜻이 있습니다.**
+   *
+   * ⌘K 로 열어놓고 결국 마우스로 눌러야 했습니다. 손이 자판에서 떠나는 순간 사이드바를
+   * 훑는 것과 걸리는 시간이 같아집니다.
+   */
+  const ordered = [
+    ...filteredQuickLinks.map((l) => l.href),
+    ...results.map((r) => r.href),
+  ];
+  function onNavKey(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setCursor((c) => Math.min(c + 1, ordered.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setCursor((c) => Math.max(c - 1, 0));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const href = ordered[cursor];
+      if (href) go(href);
+    }
+  }
+
   if (!open || typeof document === "undefined") return null;
 
   return createPortal(
@@ -105,7 +131,11 @@ export default function CommandPalette({
         <input
           ref={inputRef}
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setCursor(0);
+          }}
+          onKeyDown={onNavKey}
           placeholder="🔍 메뉴 이동, 학생·사건·회의·행사·업무 검색..."
           className="w-full border-b border-slate-100 px-4 py-3 text-sm outline-none"
         />
@@ -113,11 +143,15 @@ export default function CommandPalette({
           {!query.trim() && (
             <div className="px-2 pb-1 pt-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">바로가기</div>
           )}
-          {filteredQuickLinks.map((l) => (
+          {filteredQuickLinks.map((l, i) => (
             <button
               key={l.href + l.label}
               onClick={() => go(l.href)}
-              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm text-slate-700 transition-colors hover:bg-slate-100"
+              onMouseEnter={() => setCursor(i)}
+              className={
+                "flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition-colors " +
+                (cursor === i ? "bg-blue-50 text-blue-800" : "text-slate-700 hover:bg-slate-100")
+              }
             >
               <span className="shrink-0">{l.icon}</span>
               <span className="truncate">{l.label}</span>
@@ -131,11 +165,15 @@ export default function CommandPalette({
                 <div className="px-2.5 py-2 text-xs text-slate-400">결과가 없습니다.</div>
               )}
               {!loading &&
-                results.map((r) => (
+                results.map((r, i) => (
                   <button
                     key={`${r.type}-${r.id}`}
                     onClick={() => go(r.href)}
-                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm text-slate-700 transition-colors hover:bg-slate-100"
+                    onMouseEnter={() => setCursor(filteredQuickLinks.length + i)}
+                    className={
+                      "flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition-colors " +
+                      (cursor === filteredQuickLinks.length + i ? "bg-blue-50 text-blue-800" : "text-slate-700 hover:bg-slate-100")
+                    }
                   >
                     <span className="shrink-0">{TYPE_ICON[r.type]}</span>
                     <span className="min-w-0 flex-1 truncate">
@@ -148,7 +186,7 @@ export default function CommandPalette({
           )}
         </div>
         <div className="border-t border-slate-100 px-4 py-1.5 text-[10px] text-slate-400">
-          ⌘K / Ctrl+K로 언제든 열 수 있어요 · Esc로 닫기
+          ↑↓ 고르기 · Enter 이동 · Esc 닫기 · 어디서든 ⌘K / Ctrl+K
         </div>
       </div>
     </div>,

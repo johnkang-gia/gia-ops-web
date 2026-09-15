@@ -5,6 +5,7 @@ import StudentSelect, { type SelectableStudent } from "@/components/common/Stude
 import { useToast } from "@/components/common/ToastProvider";
 import { ITEM_LOOK, bucketOf, toMinutes, whenLabel, type DayBoard, type DayItem, type DayItemKind, type StudentDay, type UnknownItem } from "@/lib/studentDay";
 import { NOTE_KINDS, KIND_LOOK, type NoteKind } from "@/lib/studentDayNotes";
+import DismissalModal from "./DismissalModal";
 
 /**
  * **오늘 학생 — 「누가 오늘 평소와 다른가」를 한 곳에 모은 보드.**
@@ -75,6 +76,11 @@ export default function StudentDayBoard({ students }: { students: SelectableStud
   const [showPast, setShowPast] = useState(false);
   const [showAhead, setShowAhead] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
+  /** 하원수단 창. 머리글 [🎒 하원수단]에서 엽니다. */
+  const [dismissalOpen, setDismissalOpen] = useState(false);
+  /** 누른 아이의 세부. **줄에서 펼치지 않고 창으로 엽니다** - 두 줄로 세운 칸에서 한 줄만
+      길어지면 옆 줄과 어긋나 읽기 어렵습니다. */
+  const [detail, setDetail] = useState<StudentDay | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -151,6 +157,21 @@ export default function StudentDayBoard({ students }: { students: SelectableStud
   async function dropNote(item: DayItem) {
     const id = item.id.startsWith("note:") ? item.id.slice(5) : null;
     if (!id) return;
+
+    // **먼저 화면에서 뺍니다.** 서버를 기다리면 누른 뒤 한 박자 동안 아무 일도 안 일어난
+    // 것처럼 보여, 사람이 한 번 더 누릅니다. 실패하면 되돌리고 그 사실을 알립니다.
+    const before = board;
+    setBoard((b) =>
+      b
+        ? {
+            ...b,
+            days: b.days
+              .map((d) => ({ ...d, items: d.items.filter((i) => i.id !== item.id) }))
+              .filter((d) => d.items.length > 0),
+          }
+        : b,
+    );
+
     try {
       const res = await fetch("/api/student-notes", {
         method: "PATCH",
@@ -159,12 +180,28 @@ export default function StudentDayBoard({ students }: { students: SelectableStud
       });
       if (!res.ok) {
         const body = await res.json().catch(() => null);
+        setBoard(before); // 되돌립니다 - 화면에서만 사라진 줄이 남으면 안 됩니다
         notify(body?.error ?? "내리지 못했습니다.", "error");
         return;
       }
-      // 서버가 정답입니다. 화면에서만 빼면 다음 갱신에 되살아날 수 있습니다.
+      // 되돌릴 수 있게 알립니다. 잘못 누르고 이 칸을 다시 찾아 적는 일은 대개 안 합니다.
+      notify(`「${item.text.slice(0, 20)}」 내렸습니다.`, "success", {
+        undo: async () => {
+          const r = await fetch("/api/student-notes", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id, restore: true }),
+          });
+          if (!r.ok) {
+            const b = await r.json().catch(() => null);
+            notify(b?.error ?? "되돌리지 못했습니다.", "error");
+          }
+          void load();
+        },
+      });
       void load();
     } catch (err) {
+      setBoard(before);
       notify(err instanceof Error ? err.message : String(err), "error");
     }
   }
@@ -220,10 +257,21 @@ export default function StudentDayBoard({ students }: { students: SelectableStud
         {pendingTotal > 0 && (
           <span className="rounded-full bg-amber-100 px-1.5 text-[11px] font-bold text-amber-800">확인 {pendingTotal}</span>
         )}
+        {/* **하원수단은 여기서 고칩니다.** 예전에는 화면 맨 위 배너에 단추가 있었는데,
+            그 배너가 보여주던 명단이 이 칸과 같아서 배너를 뺐습니다. 고치는 자리는 그 명단
+            옆에 있어야 합니다. */}
+        <button
+          type="button"
+          onClick={() => setDismissalOpen(true)}
+          title="요일별 하원수단을 넣거나 고칩니다. 오늘 것은 셔틀 체크표에 바로 반영됩니다."
+          className="ml-auto rounded-lg bg-lime-600 px-2 py-0.5 text-[11px] font-bold text-white hover:bg-lime-700"
+        >
+          🎒 하원수단
+        </button>
         <button
           type="button"
           onClick={() => setFormOpen((v) => !v)}
-          className="ml-auto rounded-lg border border-slate-300 px-2 py-0.5 text-[11px] font-bold text-slate-600 hover:bg-slate-50"
+          className="rounded-lg border border-slate-300 px-2 py-0.5 text-[11px] font-bold text-slate-600 hover:bg-slate-50"
         >
           {formOpen ? "닫기" : "+ 특이사항"}
         </button>
@@ -287,9 +335,7 @@ export default function StudentDayBoard({ students }: { students: SelectableStud
                       day={d}
                       date={date}
                       nowMin={nowMin}
-                      open={open.has(`move:${d.studentId}`)}
-                      onToggle={() => toggle(`move:${d.studentId}`)}
-                      onDrop={dropNote}
+                      onOpen={() => setDetail(d)}
                     />
                   ))}
                 </Group>
@@ -302,9 +348,7 @@ export default function StudentDayBoard({ students }: { students: SelectableStud
                       day={d}
                       date={date}
                       nowMin={nowMin}
-                      open={open.has(`note:${d.studentId}`)}
-                      onToggle={() => toggle(`note:${d.studentId}`)}
-                      onDrop={dropNote}
+                      onOpen={() => setDetail(d)}
                     />
                   ))}
                 </Group>
@@ -347,12 +391,12 @@ export default function StudentDayBoard({ students }: { students: SelectableStud
             {/* ── 접어두는 둘 ──────────────────────────────────────────── */}
             <Folded label="지난 것" n={past.length} open={showPast} onToggle={() => setShowPast((v) => !v)}>
               {past.map((d) => (
-                <Row key={d.studentId} day={d} date={date} nowMin={nowMin} dim open={open.has(d.studentId)} onToggle={() => toggle(d.studentId)} onDrop={dropNote} />
+                <Row key={d.studentId} day={d} date={date} nowMin={nowMin} dim onOpen={() => setDetail(d)} />
               ))}
             </Folded>
             <Folded label="앞날" n={ahead.length} open={showAhead} onToggle={() => setShowAhead((v) => !v)}>
               {ahead.map((d) => (
-                <Row key={d.studentId} day={d} date={date} nowMin={nowMin} dim open={open.has(d.studentId)} onToggle={() => toggle(d.studentId)} onDrop={dropNote} />
+                <Row key={d.studentId} day={d} date={date} nowMin={nowMin} dim onOpen={() => setDetail(d)} />
               ))}
             </Folded>
           </>
@@ -388,7 +432,8 @@ function Group({
   const head =
     tone === "blue" ? "text-sky-700 border-sky-200 bg-sky-50" : "text-violet-700 border-violet-200 bg-violet-50";
   return (
-    <section className="mb-2 last:mb-0">
+    // 두 묶음 사이에 **굵은 선**을 둡니다. 색만으로 가르면 줄이 많아질수록 경계가 흐려집니다.
+    <section className="mb-3 border-b-2 border-slate-200 pb-3 last:mb-0 last:border-b-0 last:pb-0">
       <div className={"mb-1 flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-[11px] font-bold " + head}>
         <span>{icon}</span>
         <span>{label}</span>
@@ -397,7 +442,9 @@ function Group({
       {n === 0 ? (
         <p className="px-2 py-1 text-[11px] text-slate-400">없습니다.</p>
       ) : (
-        <ul className="space-y-1">{children}</ul>
+        // **두 줄로 세웁니다.** 한 줄에 하나씩이면 여덟 명만 되어도 스크롤이 생기고, 스크롤
+        // 아래에 있는 아이는 없는 것과 같습니다. 칸이 좁아지면 저절로 한 줄로 돌아갑니다.
+        <ul className="grid grid-cols-1 gap-1 xl:grid-cols-2">{children}</ul>
       )}
     </section>
   );
@@ -407,64 +454,65 @@ function Row({
   day,
   date,
   nowMin,
-  open,
-  onToggle,
-  onDrop,
+  onOpen,
   dim,
 }: {
   day: StudentDay;
   date: string;
   nowMin: number;
-  open: boolean;
-  onToggle: () => void;
-  /** 사람이 적은 특이사항을 내립니다. 다른 갈래에는 안 붙습니다. */
-  onDrop: (item: DayItem) => void;
+  /** 누르면 세부 창이 뜹니다. 줄 안에서 펼치지 않습니다 - 두 줄로 세운 칸에서 한 줄만
+      길어지면 옆 줄과 어긋나 읽기 어렵습니다. */
+  onOpen: () => void;
   dim?: boolean;
 }) {
   /**
    * **시각이 다가오면 줄이 스스로 말합니다.**
    *
-   * 목록이 길어지면 사람은 위에서부터 훑는데, 정작 급한 줄은 가운데 있을 수 있습니다.
    * 10분 안쪽은 붉게 **깜박이고**, 30분 안쪽은 노랗습니다 - 색이 두 단계여야 「곧」과
-   * 「지금」이 구별됩니다. 한 가지 색으로만 하면 아침부터 노란 줄이 열 개라 아무 뜻이
-   * 없습니다.
+   * 「지금」이 구별됩니다. **지난 것은 채도를 빼되 지우지 않습니다** - 놓친 것이 화면에서
+   * 사라지면 아무도 안 찾습니다.
    */
   const left = day.firstTime !== null ? toMinutes(day.firstTime) - nowMin : null;
   const urgent = left !== null && left <= 10 && left >= -20;
   const soon = left !== null && left <= 30 && left > 10;
+  const past = dim || (left !== null && left < -20);
+
   return (
-    <li
-      className={
-        "rounded-lg border px-2 py-1.5 transition-colors duration-500 " +
-        (dim
-          ? "border-slate-100 bg-slate-50"
-          : urgent
-            ? "animate-pulse border-rose-400 bg-rose-50"
-            : soon
-              ? "border-amber-300 bg-amber-50"
-              : "border-slate-200 bg-white")
-      }
-    >
-      <button type="button" onClick={onToggle} className="flex w-full items-baseline gap-1.5 text-left">
+    <li>
+      <button
+        type="button"
+        onClick={onOpen}
+        className={
+          "flex w-full items-baseline gap-1.5 rounded-lg border px-2 py-1.5 text-left transition-colors duration-500 " +
+          (past
+            ? "border-slate-100 bg-slate-50 opacity-60 saturate-50"
+            : urgent
+              ? "animate-pulse border-rose-400 bg-rose-50"
+              : soon
+                ? "border-amber-300 bg-amber-50"
+                : "border-slate-200 bg-white hover:bg-slate-50")
+        }
+      >
         {/* 시각이 이름보다 먼저입니다 — 몇 시가 움직이는 시점을 정합니다. */}
         {day.firstTime && (
-          <b className={"shrink-0 tabular-nums text-[13px] " + (dim ? "text-slate-400" : "text-slate-900")}>{day.firstTime}</b>
+          <b className={"shrink-0 tabular-nums text-[13px] " + (past ? "text-slate-400" : "text-slate-900")}>{day.firstTime}</b>
         )}
         {/* 색만으로는 몇 분 남았는지 모릅니다. 색은 눈에 먼저 들어오고, 숫자가 답을 줍니다. */}
-        {!dim && left !== null && left <= 30 && left >= -20 && (
+        {!past && left !== null && left <= 30 && (
           <span className={"shrink-0 text-[10px] font-bold " + (urgent ? "text-rose-600" : "text-amber-700")}>
             {left > 0 ? `${left}분 뒤` : left === 0 ? "지금" : `${-left}분 지남`}
           </span>
         )}
-        <b className={"shrink-0 text-[13px] " + (dim ? "text-slate-500" : "text-slate-900")}>{day.name}</b>
+        <b className={"shrink-0 text-[13px] " + (past ? "text-slate-500" : "text-slate-900")}>{day.name}</b>
         <span className="shrink-0 text-[10px] text-slate-400">{day.className ?? day.grade ?? ""}</span>
 
-        {/* 할 일들. 접혀 있을 때는 아이콘 + 짧은 글만. */}
-        <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-1">
+        {/* 칩은 **한 줄에서 넘치지 않게** 잘립니다. 줄바꿈되면 두 줄로 세운 칸이 들쭉날쭉해져
+            어느 줄이 누구 것인지 눈으로 다시 이어야 합니다. */}
+        <span className="flex min-w-0 flex-1 items-baseline gap-1 overflow-hidden whitespace-nowrap">
           {day.items.map((i) => (
             <span
               key={i.id}
-              className={"max-w-[11rem] truncate rounded px-1 text-[11px] font-semibold " + (dim ? "bg-slate-100 text-slate-500" : ITEM_LOOK[i.kind].chip)}
+              className={"max-w-[9rem] shrink-0 truncate rounded px-1 text-[11px] font-semibold " + (past ? "bg-slate-100 text-slate-500" : ITEM_LOOK[i.kind].chip)}
             >
               {ITEM_LOOK[i.kind].icon} {shortOf(i, date)}
             </span>
@@ -474,45 +522,86 @@ function Row({
         {day.pendingCount > 0 && (
           <span className="shrink-0 rounded-full bg-amber-100 px-1.5 text-[10px] font-bold text-amber-800">확인 {day.pendingCount}</span>
         )}
-        <span className="shrink-0 text-[10px] text-slate-300">{open ? "▾" : "▸"}</span>
       </button>
-
-      {open && (
-        <ul className="mt-1.5 space-y-1 border-t border-slate-100 pt-1.5">
-          {day.items.map((i) => (
-            <li key={i.id} className="flex items-baseline gap-1.5 text-[12px]">
-              <span className={"shrink-0 rounded px-1 text-[10px] font-bold " + ITEM_LOOK[i.kind].chip}>
-                {ITEM_LOOK[i.kind].icon} {i.kind}
-              </span>
-              {whenLabel(i.onDate, i.at, date) && (
-                <b className="shrink-0 tabular-nums text-slate-600">{whenLabel(i.onDate, i.at, date)}</b>
-              )}
-              <span className="min-w-0 flex-1 break-words text-slate-700">{i.text}</span>
-              {/* 어디서 온 줄인지. 이게 없으면 사람은 보드를 못 믿고 원래 화면을 다시 엽니다. */}
-              <a href={i.from.screen} className="shrink-0 text-[10px] text-slate-400 underline hover:text-slate-700">
-                원래 화면
-              </a>
-              {/* 사람이 적은 특이사항만 여기서 내립니다. 픽업·결석·문의는 각자 제 화면에서
-                  처리되어야 하고, 여기서 지우면 그 화면과 답이 갈립니다. */}
-              {i.from.table === "student_day_notes" && (
-                <button
-                  type="button"
-                  onClick={() => onDrop(i)}
-                  title="잘못 적었으면 내립니다"
-                  className="shrink-0 rounded px-1 text-[11px] text-slate-300 hover:bg-slate-100 hover:text-slate-600"
-                >
-                  ✕
-                </button>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
     </li>
   );
 }
 
-/** 접힌 묶음. **숫자는 접혀 있어도 보입니다** — 「없는 것」과 「접힌 것」은 다른 말입니다. */
+/**
+ * 한 아이의 오늘 — 창으로 엽니다.
+ *
+ * 목록에서는 한 줄에 요약만 보이므로, 원문·근거·시각은 여기서 봅니다. 사람이 적은
+ * 특이사항은 여기서 바로 내릴 수 있습니다(다른 갈래는 제 화면에서 처리해야 합니다).
+ */
+function DetailModal({
+  day,
+  date,
+  onClose,
+  onDrop,
+}: {
+  day: StudentDay;
+  date: string;
+  onClose: () => void;
+  onDrop: (item: DayItem) => void;
+}) {
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-[950] flex items-start justify-center bg-black/40 p-4 pt-[10vh]" onClick={onClose}>
+      <div className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-baseline gap-2 border-b border-slate-200 px-4 py-2.5">
+          <b className="text-[15px] text-slate-900">{day.name}</b>
+          <span className="text-[11px] text-slate-400">{day.className ?? day.grade ?? ""}</span>
+          <a href={`/students/${day.studentId}`} className="text-[11px] font-bold text-blue-600 underline">
+            학생 기록 →
+          </a>
+          <button type="button" onClick={onClose} className="ml-auto rounded-lg bg-slate-800 px-3 py-1 text-[12px] font-bold text-white">
+            닫기
+          </button>
+        </div>
+        <ul className="max-h-[60vh] space-y-1.5 overflow-y-auto p-3">
+          {day.items.map((i) => (
+            <li key={i.id} className="rounded-lg border border-slate-200 px-2.5 py-2">
+              <div className="flex items-baseline gap-1.5">
+                <span className={"shrink-0 rounded px-1 text-[10px] font-bold " + ITEM_LOOK[i.kind].chip}>
+                  {ITEM_LOOK[i.kind].icon} {i.kind}
+                </span>
+                {whenLabel(i.onDate, i.at, date) && (
+                  <b className="shrink-0 tabular-nums text-[12px] text-slate-700">{whenLabel(i.onDate, i.at, date)}</b>
+                )}
+                {i.pending && (
+                  <span className="shrink-0 rounded-full bg-amber-100 px-1.5 text-[10px] font-bold text-amber-800">확인 필요</span>
+                )}
+                {i.id.startsWith("note:") && (
+                  <button
+                    type="button"
+                    onClick={() => onDrop(i)}
+                    title="이 특이사항을 내립니다"
+                    className="ml-auto shrink-0 rounded px-1 text-[12px] font-bold text-slate-300 hover:bg-red-50 hover:text-red-500"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+              <p className="mt-1 whitespace-pre-wrap text-[12px] leading-relaxed text-slate-700">{i.text}</p>
+              {/* 「왜 이 줄이 떴지」에 답하는 값. 이게 없으면 사람은 보드를 못 믿습니다. */}
+              <a href={i.from.screen} className="mt-1 inline-block text-[10px] text-slate-400 underline">
+                {i.from.screen} 에서 옴
+              </a>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
 function Folded({
   label,
   n,

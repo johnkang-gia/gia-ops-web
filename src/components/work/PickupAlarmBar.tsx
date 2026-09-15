@@ -131,9 +131,38 @@ export default function PickupAlarmBar() {
     if (fresh.length === 0) return;
     for (const f of fresh) poppedRef.current.add(f.key);
     setPopup((prev) => [...prev, ...fresh]);
+    // **소리도 냅니다.** 화면을 보고 있지 않으면 팝업도 브라우저 알림도 눈에 안 들어옵니다 -
+    // 그 순간 놓치면 아이가 문 앞에서 기다립니다. 소리 파일을 두지 않고 그 자리에서
+    // 만듭니다(파일 하나를 더 관리할 이유가 없습니다). 소리가 막힌 브라우저에서는 조용히
+    // 넘어갑니다 - 알림 하나 때문에 화면이 멈추면 안 됩니다.
+    beep();
     const t = setTimeout(() => setPopup((prev) => prev.filter((p) => !fresh.some((f) => f.key === p.key))), POPUP_SEC * 1000);
     return () => clearTimeout(t);
   }, [soon]);
+
+  /** 짧은 두 번의 「띵」. 길게 울리면 사무실에서 꺼버립니다. */
+  function beep() {
+    try {
+      const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!Ctx) return;
+      const ctx = new Ctx();
+      [0, 0.28].forEach((delay) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.value = 880;
+        gain.gain.setValueAtTime(0.0001, ctx.currentTime + delay);
+        gain.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + delay + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + delay + 0.22);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(ctx.currentTime + delay);
+        osc.stop(ctx.currentTime + delay + 0.24);
+      });
+      setTimeout(() => void ctx.close(), 1200);
+    } catch {
+      /* 소리가 막힌 브라우저 - 팝업과 띠는 그대로 뜹니다 */
+    }
+  }
 
   const alarmPopup =
     popup.length === 0 || typeof document === "undefined"

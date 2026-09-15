@@ -8,10 +8,19 @@ import { createPortal } from "react-dom";
 // 어긋난다" 문제를 해결). 화면 우하단에 쌓이고, 몇 초 후 자동으로 사라지거나 눌러서 바로 닫을
 // 수 있습니다.
 type ToastType = "error" | "success" | "info";
-type Toast = { id: number; message: string; type: ToastType };
+type Toast = { id: number; message: string; type: ToastType; undo?: () => void | Promise<void> };
+
+/**
+ * **되돌리기 단추가 붙는 알림.**
+ *
+ * 「내렸습니다」만 뜨고 사라지면, 잘못 누른 사람은 원래 화면을 찾아가 되살려야 합니다.
+ * 대개 안 찾아가고, 그러면 잘못 내린 줄이 그대로 남습니다. 방금 한 일을 **그 자리에서**
+ * 되돌릴 수 있어야 사람이 과감하게 누릅니다.
+ */
+export type ToastOptions = { undo?: () => void | Promise<void> };
 
 type ToastContextValue = {
-  notify: (message: string, type?: ToastType) => void;
+  notify: (message: string, type?: ToastType, options?: ToastOptions) => void;
 };
 
 const ToastContext = createContext<ToastContextValue>({ notify: () => {} });
@@ -32,11 +41,12 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const idRef = useRef(0);
 
-  const notify = useCallback((message: string, type: ToastType = "info") => {
+  const notify = useCallback((message: string, type: ToastType = "info", options?: ToastOptions) => {
     const id = ++idRef.current;
-    setToasts((prev) => [...prev, { id, message, type }]);
+    setToasts((prev) => [...prev, { id, message, type, undo: options?.undo }]);
     // 에러는 조금 더 오래(사용자가 실패 사유를 읽을 시간을 주기 위해), 성공/안내는 짧게.
-    const ttl = type === "error" ? 5000 : 3000;
+    // 되돌릴 수 있는 알림은 더 오래 둡니다 - 3초는 「어? 잘못 눌렀나」를 알아채기에 짧습니다.
+    const ttl = options?.undo ? 8000 : type === "error" ? 5000 : 3000;
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, ttl);
@@ -84,6 +94,19 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
               >
                 <span className="shrink-0">{TYPE_ICON[t.type]}</span>
                 <span className="min-w-0 flex-1 leading-relaxed">{t.message}</span>
+                {t.undo && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation(); // 알림을 닫는 클릭과 겹치지 않게
+                      dismiss(t.id);
+                      void t.undo?.();
+                    }}
+                    className="shrink-0 rounded-md bg-slate-800 px-2 py-0.5 text-[11px] font-bold text-white hover:bg-slate-700"
+                  >
+                    되돌리기
+                  </button>
+                )}
               </div>
             ))}
           </div>,

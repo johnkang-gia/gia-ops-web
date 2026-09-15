@@ -159,6 +159,14 @@ export type BackfillRow = {
   inquiry_type?: string | null;
   /** 이미 집이 붙어 있는가. 붙어 있으면 다시 안 붙입니다. */
   channel_id?: string | null;
+  /**
+   * 「확정」이면 **사람이 이미 본 줄**입니다. 다시 물어보지 않습니다.
+   *
+   * 형제방 글의 절반은 「선우 다현이 셔틀버스 부탁」·「아이들 여행 일정」처럼 **둘 다**를
+   * 가리킵니다. 한 명을 고르면 틀리므로, 사람이 「둘 다」라고 표시한 줄은 아이가 비어
+   * 있는 채로 확정됩니다. 그 줄을 계속 물어보면 매일 같은 것을 다시 보게 됩니다.
+   */
+  status?: string | null;
 };
 
 /**
@@ -315,8 +323,10 @@ export function planBackfill(
         channel: ch.label,
         why: read.why,
       });
-    } else if (needsOneStudent(r.kind, r.inquiry_type)) {
+    } else if (needsOneStudent(r.kind, r.inquiry_type) && r.status !== "확정") {
       // 출결·하원에 반영되는 글입니다. 한 명이 아니면 아무것도 할 수 없으므로 사람이 봅니다.
+      // **사람이 이미 본 줄(확정)은 빼고** 묻습니다 - 「둘 다」로 표시한 것을 매일 다시
+      // 물어보면 그 목록을 아무도 안 보게 됩니다.
       plan.ask.push({ id: r.id, channelId: ch.id, channel: ch.label, candidates: ch.students, text: text || null });
     }
     // 그 밖의 글은 위에서 집을 붙였습니다. **사람에게 넘기지 않습니다** - 「아이들 화목

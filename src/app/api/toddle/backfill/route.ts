@@ -41,7 +41,7 @@ async function loadPlan(supabase: Awaited<ReturnType<typeof createClient>>) {
       .from("pickup_requests")
       // **본문을 함께 읽습니다.** 형제방은 방이 하나뿐이라 본문 말고는 누구인지 가릴
       // 재료가 없습니다.
-      .select("id, channel_label, channel_id, student_id, matched_name, ai_student_name, raw_text, summary, kind, inquiry_type")
+      .select("id, channel_label, channel_id, student_id, matched_name, ai_student_name, raw_text, summary, kind, inquiry_type, status")
       // **집이 안 붙은 줄도 함께 봅니다.** 학생은 못 정해도 집은 정할 수 있고, 그것만으로도
       // 그 연락이 그 집 아이들 이력에 뜹니다.
       .or("student_id.is.null,channel_id.is.null")
@@ -149,10 +149,12 @@ export async function PATCH(req: Request) {
   if (!me) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
   if (!isStaffOrAboveUser(me)) return NextResponse.json({ error: "행정 권한이 필요합니다." }, { status: 403 });
 
-  const body = (await req.json().catch(() => null)) as { id?: string; studentId?: string } | null;
+  const body = (await req.json().catch(() => null)) as { id?: string; studentId?: string; both?: boolean } | null;
   const id = body?.id;
   const studentId = body?.studentId;
-  if (!id || !studentId) return NextResponse.json({ error: "줄과 학생을 모두 골라야 합니다." }, { status: 400 });
+  const both = body?.both === true;
+  if (!id) return NextResponse.json({ error: "어느 줄인지 골라야 합니다." }, { status: 400 });
+  if (!both && !studentId) return NextResponse.json({ error: "학생을 골라야 합니다." }, { status: 400 });
 
   const supabase = await createClient();
 
@@ -172,11 +174,37 @@ export async function PATCH(req: Request) {
   const channelId = (row as { channel_id: string | null }).channel_id;
   if (!channelId) return NextResponse.json({ error: "이 연락에는 방이 붙어 있지 않습니다." }, { status: 400 });
 
+  // ── 「둘 다」 ─────────────────────────────────────────────────────────
+  //
+  // 형제방 글의 절반은 「선우 다현이 셔틀버스 부탁」·「아이들 여행 일정」처럼 **두 아이를
+  // 함께** 가리킵니다. 한 명을 고르면 다른 아이 기록에서 그 연락이 사라집니다.
+  //
+  // `pickup_requests` 는 아이를 한 명만 담으므로, 이때는 **아이를 비워 둔 채 확정**합니다.
+  // 집은 이미 붙어 있어 그 집 아이들 모두의 이력에 뜨고, 실제 출결·하원 처리는 픽업
+  // 인박스에서 아이마다 따로 겁니다.
+  if (both) {
+    const { data, error } = await supabase
+      .from("pickup_requests")
+      .update({
+        status: "확정",
+        resolved_by: me.email,
+        resolved_at: new Date().toISOString(),
+        ai_note: `형제방에서 사람이 「둘 다」로 확인했습니다 - 아이를 한 명으로 정하지 않습니다 (${me.email})`,
+      })
+      .eq("id", id)
+      .select("id");
+    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+    if (!data || data.length === 0) {
+      return NextResponse.json({ error: "바뀐 줄이 없습니다." }, { status: 409 });
+    }
+    return NextResponse.json({ ok: true, both: true });
+  }
+
   const { data: link, error: linkErr } = await supabase
     .from("toddle_channel_students")
     .select("student_id")
     .eq("channel_id", channelId)
-    .eq("student_id", studentId)
+    .eq("student_id", studentId as string)
     .maybeSingle();
   if (linkErr) return NextResponse.json({ error: linkErr.message }, { status: 500 });
   if (!link) return NextResponse.json({ error: "그 아이는 이 방에 이어져 있지 않습니다." }, { status: 400 });
@@ -185,7 +213,7 @@ export async function PATCH(req: Request) {
     // demo-ok: 고른 학생 번호로 한 줄만 찍어 읽습니다. 명부를 훑지 않습니다.
     .from("wr_students")
     .select("name")
-    .eq("id", studentId)
+    .eq("id", studentId as string)
     .maybeSingle();
   const name = (stu as { name: string } | null)?.name ?? null;
 

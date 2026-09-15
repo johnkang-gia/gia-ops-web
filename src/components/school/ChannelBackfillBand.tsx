@@ -81,20 +81,20 @@ export default function ChannelBackfillBand() {
    * **고른 뒤에 목록을 다시 읽습니다.** 화면이 자기 상태를 손으로 고치면, 저장이 실패했는데도
    * 화면에서는 사라져 「됐다」로 보입니다.
    */
-  async function pick(row: AskRow, studentId: string, studentName: string) {
+  async function pick(row: AskRow, studentId: string | null, studentName: string) {
     setBusy(true);
     try {
       const res = await fetch("/api/toddle/backfill", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: row.id, studentId }),
+        body: JSON.stringify(studentId ? { id: row.id, studentId } : { id: row.id, both: true }),
       });
       const j = (await res.json().catch(() => null)) as { error?: string } | null;
       if (!res.ok) {
         notify(j?.error ?? "정하지 못했습니다.", "error");
         return;
       }
-      notify(`${studentName} 으로 정했습니다.`, "success");
+      notify(studentId ? `${studentName} 으로 정했습니다.` : "둘 다로 표시했습니다.", "success");
       setPicking(null);
       await load();
       router.refresh();
@@ -235,13 +235,27 @@ export default function ChannelBackfillBand() {
                     {c.name}
                   </button>
                 ))}
+                {/* **「둘 다」가 흔합니다.** 실제 남은 글의 절반이 「선우 다현이 셔틀버스
+                    부탁」·「아이들 여행 일정」처럼 두 아이를 함께 가리킵니다. 한 명을 고르면
+                    다른 아이 기록에서 그 연락이 사라집니다. */}
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void pick(picking, null, "")}
+                  className="rounded-lg border border-slate-300 px-3 py-2 text-[12px] font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                >
+                  둘 다 · 여러 명
+                </button>
               </div>
 
               {/* **모르면 안 고르는 것이 맞습니다.** 둘 중 하나를 찍으면 오는 아이가 셔틀에서
                   빠지거나 안 오는 아이가 남고, 하원 시간의 착오는 되돌릴 수 없습니다. */}
               <p className="mt-2 text-[10px] leading-relaxed text-slate-400">
-                이 글은 출결·하원에 반영되는 글이라 아이가 한 명으로 정해져야 합니다. <b>본문만으로 모르겠으면 고르지
-                말고 닫으세요</b> — 잘못 고르면 오는 아이가 셔틀에서 빠집니다. 토들에서 학부모께 여쭙는 편이 낫습니다.
+                <b>「둘 다」면 아이를 정하지 않습니다.</b> 집은 이미 붙어 있어 그 집 아이들 모두의 이력에 뜨고, 실제
+                출결·하원은 픽업 인박스에서 아이마다 따로 겁니다. 한 명을 고르면 다른 아이 기록에서 그 연락이 사라집니다.
+                <br />
+                <b>본문만으로 모르겠으면 고르지 말고 닫으세요</b> — 잘못 고르면 오는 아이가 셔틀에서 빠집니다. 토들에서
+                학부모께 여쭙는 편이 낫습니다.
               </p>
             </div>
           </div>,

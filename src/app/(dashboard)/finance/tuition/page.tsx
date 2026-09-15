@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
-import { hasFinanceAccess } from "@/lib/roles";
+import { hasFinanceAccess, isSuperAdminUser } from "@/lib/roles";
 import { readAll, readNotice } from "@/lib/financeFetch";
 import { todayKst } from "@/lib/kst";
 import GuideButton from "@/components/common/GuideButton";
@@ -56,7 +56,9 @@ export default async function TuitionPage() {
       .eq("is_demo", false)
       .order("grade")
       .order("name"),
-    supabase.from("fee_plans").select("*").eq("category", "학비").order("sort_order").order("name"),
+    // **학비만 거르지 않습니다.** 표에는 학비만 뜨지만, 팝업에서는 학비외 항목도 고칠 수
+    // 있어야 합니다 - 거기서 안 보이면 결국 다른 화면으로 건너가게 됩니다.
+    supabase.from("fee_plans").select("*").order("category").order("sort_order").order("name"),
     supabase.from("fee_payment_options").select("*").order("sort_order").order("periods"),
     supabase.from("fee_discounts").select("*").order("sort_order").order("name"),
     supabase.from("terms").select("*").order("status").order("start_date", { ascending: false, nullsFirst: false }),
@@ -103,7 +105,11 @@ export default async function TuitionPage() {
 
       <TuitionGridClient
         students={students}
-        plans={(planRes.data as FeePlan[] | null) ?? []}
+        // 표는 학비만 그립니다. 팝업에는 전부 넘깁니다(`allPlans`).
+        plans={((planRes.data as FeePlan[] | null) ?? []).filter((p) => p.category === "학비")}
+        catalogPlans={(planRes.data as FeePlan[] | null) ?? []}
+        canApprove={isSuperAdminUser(me)}
+        currentUserEmail={me.email}
         options={(optRes.data as FeePaymentOption[] | null) ?? []}
         discounts={(discRes.data as FeeDiscount[] | null) ?? []}
         terms={(termRes.data as Term[] | null) ?? []}

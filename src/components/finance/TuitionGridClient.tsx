@@ -1,6 +1,7 @@
 "use client";
 
 import DragScroll from "@/components/common/DragScroll";
+import FeePlansModal from "./FeePlansModal";
 import { useEffect, useMemo, useState } from "react";
 import { useFinanceLive } from "@/lib/useFinanceLive";
 import AlreadyPaidModal from "@/components/finance/AlreadyPaidModal";
@@ -70,6 +71,9 @@ export default function TuitionGridClient({
   recentInvoices,
   today,
   loadError,
+  catalogPlans,
+  canApprove,
+  currentUserEmail,
 }: {
   students: TuitionStudent[];
   plans: FeePlan[];
@@ -81,6 +85,14 @@ export default function TuitionGridClient({
   recentInvoices: Invoice[];
   today: string;
   loadError: string | null;
+  /**
+   * 팝업에서 다루는 **모든** 납부 항목(학비·학비외). 표에 뜨는 `plans` 는 학비만이라
+   * 따로 받습니다 - 팝업에서 학비외 항목이 안 보이면 거기서 고칠 수 없습니다.
+   */
+  catalogPlans: FeePlan[];
+  /** 승인이 필요한 할인을 만들 수 있는 사람인가(최고관리자). */
+  canApprove: boolean;
+  currentUserEmail: string;
 }) {
   // 돈에 닿는 자료가 바뀌면 이 화면이 함께 다시 그려집니다. 한 사람이 고치고
   // 여러 사람이 보는 화면이라, 고친 사람만 새 금액을 보면 안 됩니다.
@@ -105,6 +117,14 @@ export default function TuitionGridClient({
    */
   const [cancelling, setCancelling] = useState<{ invoice: Invoice; studentName: string } | null>(null);
   const [onlyUnissued, setOnlyUnissued] = useState(false);
+  /**
+   * 납부 항목·할인 팝업.
+   *
+   * 예전에는 **다른 대분류 탭**이었습니다. 고치러 건너가면 보고 있던 표의 학기·부서·체크가
+   * 전부 풀리고, 돌아와서 처음부터 다시 찾아야 했습니다 - 그러면 「나중에 정리하자」가 되고,
+   * 그 사이 학부모에게는 옛 금액이 나갑니다.
+   */
+  const [plansOpen, setPlansOpen] = useState(false);
 
   useEffect(() => {
     setTermId(initialTermId(terms));
@@ -508,13 +528,32 @@ export default function TuitionGridClient({
         {/* 연 1회 내는 항목(Learning Management & Assessment Fee 등)을 학비외에 넣으면 이
             표에 안 뜨고, 청구 자료와 계속 어긋납니다. 어디에 넣어야 하는지를 이 자리에
             적어 둡니다 - 화면 밖에 있는 규칙은 아무도 모릅니다. */}
-        <b>연 1회 내는 항목도 학비입니다.</b>{" "}
-        <a href="/finance/plans" className="font-semibold text-indigo-600 underline">
-          [납부 항목 · 할인]
-        </a>{" "}
-        의 <b>학비</b> 탭에서 단위를 <b>연간</b>으로 만들고 <b>「1년 납부」 옵션 하나</b>를 붙이면 이 표에 열로 뜹니다. 이름은
-        나중에 <b>고치기</b>로 바꿀 수 있고, 이미 나간 청구서는 그대로 남습니다.
+        <b>연 1회 내는 항목도 학비입니다.</b> 아래 <b>[📚 납부 항목 · 할인]</b> 의 <b>학비</b> 탭에서 단위를{" "}
+        <b>연간</b>으로 만들고 <b>「1년 납부」 옵션 하나</b>를 붙이면 이 표에 열로 뜹니다. 이름은 나중에 <b>고치기</b>로
+        바꿀 수 있고, 이미 나간 청구서는 그대로 남습니다.
       </p>
+
+      {/* 항목·할인은 **청구를 하다가** 손대게 됩니다 - 「이 아이 할인이 목록에 없네」,
+          「기준금액이 올랐네」. 화면을 옮겨야 하는 일은 대개 안 하게 되므로 이 자리에서
+          엽니다. */}
+      <button
+        type="button"
+        onClick={() => setPlansOpen(true)}
+        className="mb-2 rounded-lg border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-[12px] font-bold text-indigo-700 transition hover:bg-indigo-100"
+        title="기준금액·납부 옵션·할인을 이 화면에서 바로 고칩니다"
+      >
+        📚 납부 항목 · 할인
+      </button>
+
+      <FeePlansModal
+        open={plansOpen}
+        onClose={() => setPlansOpen(false)}
+        plans={catalogPlans}
+        options={options}
+        discounts={discounts}
+        canApprove={canApprove}
+        currentUserEmail={currentUserEmail}
+      />
 
       {/* ── 표 ─────────────────────────────────────────────────────── */}
       {/* 학비표도 잡아서 밀 수 있습니다. 여기는 세로도 갇혀 있어(70vh) 양쪽 다 밉니다. */}
@@ -565,7 +604,11 @@ export default function TuitionGridClient({
               <th className="min-w-[104px] border-b border-l border-slate-200 bg-white px-2 py-1.5 text-right font-semibold text-slate-600">
                 청구액
               </th>
-              <th className="min-w-[130px] border-b border-l border-slate-200 bg-white px-2 py-1.5 font-semibold text-slate-600">
+              {/* **세 단추가 한 줄에 들어가야 합니다.** 미발행 줄에는 「미발행 · 💰 이미
+                  받음 · 발행 →」 셋이 들어가는데 칸이 130px 이라 글자가 접혀 내려가면서
+                  줄 높이가 들쭉날쭉했습니다. 접힌 글자는 반쯤 잘려 보여 무슨 단추인지
+                  읽히지 않습니다. */}
+              <th className="min-w-[218px] whitespace-nowrap border-b border-l border-slate-200 bg-white px-2 py-1.5 font-semibold text-slate-600">
                 청구서
               </th>
             </tr>
@@ -663,7 +706,7 @@ export default function TuitionGridClient({
                     </span>
                   </td>
 
-                  <td className="border-b border-l border-slate-200 px-2 py-1">
+                  <td className="whitespace-nowrap border-b border-l border-slate-200 px-2 py-1">
                     {inv ? (
                       <span className="flex flex-wrap items-center gap-1">
                         {(invoicesOf.get(s.id) ?? []).map((v) => {
@@ -699,14 +742,14 @@ export default function TuitionGridClient({
                         )}
                       </span>
                     ) : total > 0 ? (
-                      <span className="flex items-center gap-1">
-                        <span className="text-[11px] font-semibold text-amber-600">미발행</span>
+                      <span className="flex flex-nowrap items-center gap-1">
+                        <span className="shrink-0 text-[11px] font-semibold text-amber-600">미발행</span>
                         {/* 이미 받은 건. 청구서를 받은 날짜로 만들고 입금까지 함께 넣습니다 -
                             지금 밀려 있는 「이미 낸 분들」을 여기서 하나씩 정리합니다. */}
                         <button
                           onClick={() => setAlreadyFor(s)}
                           disabled={busy}
-                          className="rounded bg-sky-100 px-1 text-[11px] font-bold text-sky-800 hover:bg-sky-200 disabled:opacity-40"
+                          className="shrink-0 whitespace-nowrap rounded bg-sky-100 px-1.5 py-0.5 text-[11px] font-bold text-sky-800 hover:bg-sky-200 disabled:opacity-40"
                           title={`${s.name} — 이미 받은 돈으로 넣습니다 (청구서를 받은 날짜로 만들고 안 보냄 표시)`}
                         >
                           💰 이미 받음
@@ -718,7 +761,7 @@ export default function TuitionGridClient({
                             void issueChecked([], [s.id]);
                           }}
                           disabled={busy}
-                          className="rounded bg-amber-100 px-1 text-[11px] font-bold text-amber-800 hover:bg-amber-200 disabled:opacity-40"
+                          className="shrink-0 whitespace-nowrap rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-bold text-amber-800 hover:bg-amber-200 disabled:opacity-40"
                           title={`${s.name} 한 명만 지금 발행합니다 (${won(total)})`}
                         >
                           발행 →

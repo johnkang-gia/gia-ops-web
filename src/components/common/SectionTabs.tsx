@@ -416,18 +416,20 @@ const FINANCE_TABS: TabDef[] = [
       { label: "현금영수증", href: "/finance/receipts", match: ["/finance/receipts"] },
     ],
   },
-  // 「무엇을 얼마에 걷는가」를 정하는 두 화면입니다. 청구하는 화면과 달리 자주 열지 않고,
-  // 학기 초에 한 번 정해두는 자리라 함께 둡니다.
+  // 「무엇을 얼마에 걷는가」를 정하는 자리.
+  //
+  // **납부 항목·할인은 여기서 뺐습니다.** 그건 청구를 하다가 손대게 되는 일이라
+  // ([청구 → 학비]의 「📚 납부 항목 · 할인」 단추가 같은 화면에서 팝업으로 엽니다),
+  // 다른 대분류로 건너가면 보고 있던 표의 학기·부서·체크가 전부 풀립니다. 화면을 옮겨야
+  // 하는 일은 대개 안 하게 되고, 그 사이 학부모에게는 옛 금액이 나갑니다.
+  //
+  // 주소(`/finance/plans`)는 그대로 둡니다 - 예전 링크와 즐겨찾기가 끊기면 안 됩니다.
   {
     key: "catalog",
-    label: "항목 · 할인",
+    label: "학비외 항목",
     icon: "📚",
-    href: "/finance/plans",
-    match: ["/finance/plans", "/finance/items"],
-    children: [
-      { label: "납부 항목 · 할인", href: "/finance/plans", match: ["/finance/plans"] },
-      { label: "학비외 항목", href: "/finance/items", match: ["/finance/items"] },
-    ],
+    href: "/finance/items",
+    match: ["/finance/items", "/finance/plans"],
   },
 ];
 

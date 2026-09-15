@@ -22,6 +22,25 @@
 
 export type MonthKey = string; // "2026-09"
 
+/**
+ * **납입기한은 발행한 날로부터 이레입니다.**
+ *
+ * 한 곳에만 적습니다. 화면(학비·학비외)과 창구 두 곳이 각자 적으면, 한 곳을 고치고 나머지를
+ * 잊는 날이 옵니다 - 그러면 같은 날 발행한 두 청구서의 마감일이 다르고, 학부모는 그것을
+ * 우리보다 먼저 알아봅니다.
+ */
+export const DUE_DAYS = 7;
+
+/**
+ * 며칠 뒤. **글자로 셉니다** - 브라우저와 서버의 시간대가 달라도 같은 답이 나와야 합니다
+ * (CLAUDE.md §4). 정오로 만들어 서머타임·자정 경계에서 하루가 밀리지 않게 합니다.
+ */
+export function addDays(dateIso: string, days: number): string {
+  const d = new Date(`${dateIso}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 /** 날짜(YYYY-MM-DD)에서 월. 글자를 자르기만 합니다 - Date 로 바꾸면 시간대가 끼어듭니다. */
 export function monthOf(date: string | null | undefined): MonthKey | null {
   const m = String(date ?? "").match(/^(\d{4})-(\d{2})/);

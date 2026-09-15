@@ -92,6 +92,14 @@ export async function logChecklist(
     reason?: ChecklistReason | null;
   },
 ): Promise<void> {
+  // **바뀐 것이 없으면 기록하지 않습니다.**
+  //
+  // 자동이 「픽업 → 픽업」을 남기고 있었습니다. 크론이 돌 때마다 같은 아이에게 같은 줄이
+  // 쌓였고, 활동 기록을 보는 사람에게는 **방금 또 무슨 일이 있었던 것처럼** 보였습니다.
+  // 실제 변경과 구별할 방법이 화면에 없습니다. 부르는 쪽에서 막는 것이 먼저이지만, 자리가
+  // 여럿이라 한 곳이라도 잊으면 다시 쌓입니다 - 여기서 한 번 더 걸러냅니다.
+  if (entry.action === "상태변경" && (entry.before ?? null) === (entry.after ?? null)) return;
+
   const { error } = await supabase.from("shuttle_checklist_log").insert({
     ...reasonColumns(entry.reason),
     service_date: entry.serviceDate,

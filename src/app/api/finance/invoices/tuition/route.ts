@@ -7,6 +7,7 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess } from "@/lib/roles";
 import { gradeLabel } from "@/lib/feeItems";
 import { selectTolerant } from "@/lib/selectTolerant";
+import { addDays, DUE_DAYS } from "@/lib/financePeriod";
 import { todayKst } from "@/lib/kst";
 import { resolveRecipient, type GuardianRole, phonesOf, chosenRoleOf, type StudentBilling } from "@/lib/alltalkpay";
 import { tuitionLine, type TuitionLine } from "@/lib/tuition";
@@ -156,7 +157,10 @@ export async function POST(req: Request) {
   // 이미 받은 건은 **받은 날**이 발행일입니다. 오늘로 적으면 지난달 수납이 이번 달로
   // 세어져, 월별 수납 집계가 통째로 어긋납니다.
   const issue = paidAt ?? todayKst();
-  const due = dueDate && /^\d{4}-\d{2}-\d{2}$/.test(dueDate) ? dueDate : issue;
+  // 화면이 기한을 안 보냈으면 **발행일 + 이레**입니다. 앞 판은 발행일 그대로였는데,
+  // 그러면 학부모가 문자를 받는 순간 이미 마감일이고 다음 날 전부 연체가 됩니다 -
+  // 연체 표시가 온통 빨개지면 정작 진짜 밀린 건이 묻힙니다.
+  const due = dueDate && /^\d{4}-\d{2}-\d{2}$/.test(dueDate) ? dueDate : addDays(issue, DUE_DAYS);
   /**
    * 청구월(YYYY-MM). 안 주면 발행일의 월입니다.
    *

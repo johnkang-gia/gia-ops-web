@@ -25,6 +25,19 @@ import { NOTE_KINDS, KIND_LOOK, type NoteKind } from "@/lib/studentDayNotes";
 
 type Draft = { studentId: string | null; kind: NoteKind; content: string; onDate: string; atTime: string };
 
+/**
+ * **여기서 이을 수 있는 줄인가.**
+ *
+ * 인박스에서 온 연락(`pending:` · `inquiry:`)만 잇습니다. 그 줄에는 이을 자리
+ * (`pickup_requests.student_id`)가 있고, 창구가 이미 있습니다. 다른 갈래는 번호를 담을
+ * 칸이 없거나 제 화면에서 처리돼야 하는 것이라, **여기서 이을 수 없다고 적습니다** -
+ * 고를 수 있게 해놓고 아무 일도 안 일어나는 것이 가장 나쁩니다.
+ */
+function linkableId(u: UnknownItem): string | null {
+  for (const p of ["pending:", "inquiry:"]) if (u.id.startsWith(p)) return u.id.slice(p.length);
+  return null;
+}
+
 export default function StudentDayBoard({ students }: { students: SelectableStudent[] }) {
   const notify = useToast();
   const [board, setBoard] = useState<DayBoard | null>(null);
@@ -110,6 +123,39 @@ export default function StudentDayBoard({ students }: { students: SelectableStud
         return;
       }
       // 서버가 정답입니다. 화면에서만 빼면 다음 갱신에 되살아날 수 있습니다.
+      void load();
+    } catch (err) {
+      notify(err instanceof Error ? err.message : String(err), "error");
+    }
+  }
+
+  /**
+   * **누구인지 모르는 연락에 학생을 바로 잇습니다.**
+   *
+   * 예전에는 이 줄에서 할 수 있는 일이 「픽업 인박스 열기」 링크뿐이었습니다. 건너가서
+   * 그 줄을 다시 찾아야 했고, 건너간 김에 다른 일을 하다 잊습니다 - 그러면 그 연락은
+   * 누구의 것도 아닌 채로 남습니다.
+   *
+   * **픽업으로 읽힌 줄은 확정까지, 문의는 잇기만** 합니다. 문의에는 확정이라는 것이 없고,
+   * 픽업은 이으면서 확정하는 것이 인박스와 같은 손놀림입니다(같은 창구를 씁니다 - 두
+   * 화면이 다른 일을 하면 언젠가 답이 갈립니다).
+   */
+  async function linkStudent(u: UnknownItem, studentId: string) {
+    const id = linkableId(u);
+    if (!id) return;
+    const asPickup = u.kind !== "문의";
+    try {
+      const res = await fetch("/api/pickup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: asPickup ? "confirm" : "link", id, studentId }),
+      });
+      const body = await res.json().catch(() => null);
+      if (!res.ok) {
+        notify(body?.error ?? "잇지 못했습니다.", "error");
+        return;
+      }
+      notify(asPickup ? "학생을 잇고 픽업으로 확정했습니다." : "학생을 이었습니다.", "success");
       void load();
     } catch (err) {
       notify(err instanceof Error ? err.message : String(err), "error");
@@ -213,15 +259,29 @@ export default function StudentDayBoard({ students }: { students: SelectableStud
                 <p className="mb-1 text-[11px] font-bold text-amber-800">❓ 누구인지 아직 모릅니다 · {unknown.length}건</p>
                 <ul className="space-y-1">
                   {unknown.slice(0, 6).map((u) => (
-                    <li key={u.id} className="flex items-baseline gap-1.5 text-[12px]">
+                    <li key={u.id} className="flex flex-wrap items-center gap-1.5 text-[12px]">
                       <span>{ITEM_LOOK[u.kind].icon}</span>
                       <span className="min-w-0 flex-1 truncate text-slate-700">{u.text}</span>
                       {u.hint && <span className="shrink-0 text-[10px] text-amber-700">{u.hint}</span>}
+                      {/* **여기서 바로 잇습니다.** 예전에는 「픽업 인박스에서 연결하세요」
+                          링크뿐이었는데, 건너간 김에 다른 일을 하다 잊습니다 - 그러면 그
+                          연락은 누구의 것도 아닌 채로 남습니다. */}
+                      {linkableId(u) ? (
+                        <StudentSelect
+                          students={students}
+                          value={null}
+                          onChange={(id) => id && void linkStudent(u, id)}
+                          placeholder="학생 잇기…"
+                          className="w-40 shrink-0"
+                        />
+                      ) : (
+                        <span className="shrink-0 text-[10px] text-amber-700">여기서는 이을 수 없습니다</span>
+                      )}
                     </li>
                   ))}
                 </ul>
                 <a href="/pickup/inbox" className="mt-1 inline-block text-[11px] font-bold text-amber-800 underline">
-                  픽업 인박스에서 학생 연결 →
+                  픽업 인박스 열기 →
                 </a>
               </div>
             )}

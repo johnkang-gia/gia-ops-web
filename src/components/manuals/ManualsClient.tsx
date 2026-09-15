@@ -501,7 +501,7 @@ export default function ManualsClient({
         )}
         </div>
 
-        <div className="flex-1 overflow-y-auto">
+        <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="flex flex-col gap-2">
           {docItems.length === 0 && !addingOpen && (
             <div className="rounded-lg bg-white p-4 text-sm text-slate-400 shadow-sm">

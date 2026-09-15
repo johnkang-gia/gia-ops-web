@@ -76,7 +76,7 @@ export default function StudentQuickLookup({ students }: { students: WrStudent[]
             placeholder="학생 이름 또는 학번으로 검색"
             className="mb-3 w-full shrink-0 rounded-lg border border-slate-300 px-3 py-2 text-sm"
           />
-          <div className="flex-1 overflow-y-auto">
+          <div className="min-h-0 flex-1 overflow-y-auto">
             {query.trim() && results.length === 0 && <p className="text-sm text-slate-400">검색 결과가 없습니다.</p>}
             <div className="flex flex-col gap-1.5">
               {results.map((s) => (

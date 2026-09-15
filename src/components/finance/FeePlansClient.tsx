@@ -104,7 +104,56 @@ export default function FeePlansClient({
     return m;
   }, [options]);
 
-  const shownPlans = plans.filter((p) => p.category === tab && (showInactive || p.active));
+  // 표에 뜨는 순서와 **같은 기준**으로 세웁니다(`sort_order`). 여기서만 다른 순서로 보이면,
+  // 끌어서 옮겨놓고 청구 표를 열었을 때 그대로가 아닙니다.
+  const shownPlans = plans
+    .filter((p) => p.category === tab && (showInactive || p.active))
+    .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name, "ko"));
+
+  /** 지금 끌고 있는 항목. 놓을 자리를 표시하는 데도 씁니다. */
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [overId, setOverId] = useState<string | null>(null);
+
+  /**
+   * **끌어서 순서 바꾸기.**
+   *
+   * 청구 표의 열 순서가 이 순서입니다. 자주 쓰는 항목이 뒤에 있으면 표를 옆으로 밀어야
+   * 닿는데, 지금까지는 순서를 바꾸는 길이 아예 없었습니다(만든 순서로 굳었습니다).
+   *
+   * 옮긴 순서는 **그 갈래 전체에 다시 번호를 매겨** 저장합니다. 옮긴 줄 하나만 고치면
+   * 번호가 겹치고, 겹치면 그 뒤로는 이름순으로 밀려 「왜 안 옮겨지지」가 됩니다.
+   */
+  async function dropOn(targetId: string) {
+    const fromId = dragId;
+    setDragId(null);
+    setOverId(null);
+    if (!fromId || fromId === targetId) return;
+
+    const list = [...shownPlans];
+    const from = list.findIndex((p) => p.id === fromId);
+    const to = list.findIndex((p) => p.id === targetId);
+    if (from < 0 || to < 0) return;
+    const [moved] = list.splice(from, 1);
+    list.splice(to, 0, moved);
+
+    // 화면을 먼저 옮깁니다. 저장을 기다리면 손이 놓은 자리와 화면이 한 박자 어긋나 보입니다.
+    const orderById = new Map(list.map((p, i) => [p.id, i]));
+    setPlans((prev) => prev.map((p) => (orderById.has(p.id) ? { ...p, sort_order: orderById.get(p.id)! } : p)));
+
+    const supabase = createClient();
+    const changed = list.filter((p, i) => p.sort_order !== i);
+    for (const [i, p] of list.entries()) {
+      if (p.sort_order === i) continue;
+      const { error } = await supabase.from("fee_plans").update({ sort_order: i }).eq("id", p.id);
+      // 조용히 넘기지 않습니다 - 화면에서는 옮겨졌는데 저장이 안 됐으면, 새로고침하면
+      // 원래대로 돌아가고 사람은 자기가 잘못 끈 줄 압니다.
+      if (error) {
+        setErr(`순서를 저장하지 못했습니다: ${error.message}`);
+        return;
+      }
+    }
+    if (changed.length > 0) router.refresh();
+  }
   const shownDiscounts = discounts.filter((d) => showInactive || d.active);
 
   async function addPlan() {
@@ -331,9 +380,16 @@ export default function FeePlansClient({
 
       {tab !== "할인" ? (
         <>
-          <Button variant="glass" size="sm" className="mb-2" onClick={() => setShowPlanForm((v) => !v)}>
-            + {tab} 항목 추가
-          </Button>
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <Button variant="glass" size="sm" onClick={() => setShowPlanForm((v) => !v)}>
+              + {tab} 항목 추가
+            </Button>
+            {/* 청구 표의 열 순서가 여기 순서입니다. 그 사실을 적어두지 않으면, 표에서 열을
+                옮기려고 표 쪽을 뒤지게 됩니다. */}
+            <span className="text-[11px] text-[var(--g-muted)]">
+              ⠿ 를 잡고 <b>끌어서 순서를 옮길 수 있습니다</b> — 이 순서가 청구 표의 열 순서입니다.
+            </span>
+          </div>
           {showPlanForm && (
             <div className="g-panel mb-3 flex flex-wrap items-end gap-2 p-3">
               <Input
@@ -377,9 +433,44 @@ export default function FeePlansClient({
                 // 덩어리인지"와 "월납이 그중 얼마인지"가 한눈에 견줍니다.
                 const maxAmt = Math.max(1, ...opts.map((o) => optionAmount(p, o)));
                 return (
-                  <Card key={p.id} hover className={p.active ? "" : "opacity-55"}>
+                  <div
+                    key={p.id}
+                    draggable
+                    onDragStart={(e) => {
+                      setDragId(p.id);
+                      e.dataTransfer.effectAllowed = "move";
+                      // 파이어폭스는 담긴 자료가 없으면 끌기를 시작하지 않습니다.
+                      e.dataTransfer.setData("text/plain", p.id);
+                    }}
+                    onDragEnd={() => {
+                      setDragId(null);
+                      setOverId(null);
+                    }}
+                    onDragOver={(e) => {
+                      if (!dragId || dragId === p.id) return;
+                      e.preventDefault(); // 막지 않으면 놓을 수 없습니다.
+                      e.dataTransfer.dropEffect = "move";
+                      setOverId(p.id);
+                    }}
+                    onDragLeave={() => setOverId((o) => (o === p.id ? null : o))}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      void dropOn(p.id);
+                    }}
+                    className={
+                      "rounded-2xl transition " +
+                      (overId === p.id ? "ring-2 ring-teal-400 ring-offset-2" : "") +
+                      (dragId === p.id ? " opacity-40" : "")
+                    }
+                  >
+                  <Card hover className={p.active ? "" : "opacity-55"}>
                     <CardHeader>
                       <div className="flex flex-wrap items-baseline gap-2">
+                        {/* 끌 수 있다는 것은 **보여야** 압니다. 아무 표시 없이 끌리기만 하면
+                            아무도 시도하지 않습니다. */}
+                        <span className="cursor-grab select-none text-slate-300" title="끌어서 순서를 옮깁니다">
+                          ⠿
+                        </span>
                         <CardTitle>{p.name}</CardTitle>
                         <span className="text-[11px] font-semibold text-[var(--g-muted)]">
                           {won(Number(p.base_amount))} / {p.unit}
@@ -488,6 +579,7 @@ export default function FeePlansClient({
                       </Button>
                     </CardContent>
                   </Card>
+                  </div>
                 );
               })()
             ))}

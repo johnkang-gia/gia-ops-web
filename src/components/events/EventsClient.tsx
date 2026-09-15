@@ -349,7 +349,7 @@ function RegularEventsSection({
       )}
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="flex flex-col gap-2">
           {pageItems.map((it) => (
             <EventOccurrenceCard key={it.id} item={it} onEdit={() => startEdit(it)} onPhotosChange={(p) => updatePhotos(it.id, p)} />
@@ -531,7 +531,7 @@ function AdhocEventsSection({
       )}
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="flex flex-col gap-2">
         {sorted.length === 0 && (
           <div className="rounded-lg bg-white p-4 text-sm text-slate-400 shadow-sm">

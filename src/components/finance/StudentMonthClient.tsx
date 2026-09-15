@@ -18,7 +18,21 @@ const STATE_TONE: Record<RowState, string> = {
   "청구 없음": "bg-slate-50 text-slate-400",
 };
 
-type Filter = "전체" | "안 낸 사람" | "한 푼도 안 냄" | "완납";
+/**
+ * 고르개.
+ *
+ * 앞 판은 「전체 · 안 낸 사람 · 한 푼도 안 냄 · 완납」이었는데, 가운데 둘이 **서로를
+ * 품고 있었습니다** — 한 푼도 안 낸 사람은 안 낸 사람이기도 합니다. 그래서 두 칸의 합이
+ * 전체보다 크고, 「안 낸 사람 40명」과 「한 푼도 안 냄 25명」을 나란히 보는 사람은 그 25명이
+ * 40명 안에 있는지 밖에 있는지 알 수 없었습니다.
+ *
+ * 지금은 **서로 겹치지 않게** 셋으로 가릅니다. 셋을 더하면 청구가 있는 사람 전부입니다.
+ *
+ *   미납  — 한 푼도 안 들어옴 (연락해야 할 사람)
+ *   부분납 — 내다 말았음 (남은 금액만 말하면 되는 사람)
+ *   완납  — 다 냈음
+ */
+type Filter = "전체" | "미납" | "부분납" | "완납";
 
 /**
  * **그 달의 학생별 거래내역** — 통장 조회처럼 봅니다.
@@ -53,12 +67,25 @@ export default function StudentMonthClient({
     const needle = q.trim().toLowerCase();
     return rows.filter((r) => {
       if (needle && !r.name.toLowerCase().includes(needle) && !(r.where ?? "").toLowerCase().includes(needle)) return false;
-      if (filter === "안 낸 사람") return r.balance > 0;
-      if (filter === "한 푼도 안 냄") return r.invoiceCount > 0 && r.received === 0;
+      // 청구가 없는 사람은 셋 어디에도 넣지 않습니다 - 낼 것이 없는 사람을 「미납」에 세우면
+      // 연락할 명단이 부풀어 오릅니다.
+      if (filter === "미납") return r.invoiceCount > 0 && r.received === 0;
+      if (filter === "부분납") return r.invoiceCount > 0 && r.received > 0 && r.balance > 0;
       if (filter === "완납") return r.invoiceCount > 0 && r.balance <= 0;
       return true;
     });
   }, [rows, filter, q]);
+
+  /** 단추에 적을 사람 수. 검색어와 무관하게 **그 달 전체**를 셉니다 - 검색 중에 숫자가 줄면
+      「사라진 사람」이 있는 줄 압니다. */
+  const counts = useMemo(
+    () => ({
+      미납: rows.filter((r) => r.invoiceCount > 0 && r.received === 0).length,
+      부분납: rows.filter((r) => r.invoiceCount > 0 && r.received > 0 && r.balance > 0).length,
+      완납: rows.filter((r) => r.invoiceCount > 0 && r.balance <= 0).length,
+    }),
+    [rows],
+  );
 
   function toggle(id: string) {
     setOpen((p) => {
@@ -95,7 +122,7 @@ export default function StudentMonthClient({
         <Card
           label="미납"
           value={won(totals.balance)}
-          sub={totals.untouched > 0 ? `한 푼도 안 낸 사람 ${totals.untouched}명` : "전부 일부라도 냈습니다"}
+          sub={totals.untouched > 0 ? `미납(한 푼도 안 냄) ${totals.untouched}명` : "전부 일부라도 냈습니다"}
           tone={totals.balance > 0 ? "rose" : "slate"}
         />
         <Card
@@ -116,7 +143,7 @@ export default function StudentMonthClient({
 
       {/* ── 고르개 ───────────────────────────────────────────────────────── */}
       <div className="mb-2 flex flex-wrap items-center gap-1.5">
-        {(["전체", "안 낸 사람", "한 푼도 안 냄", "완납"] as Filter[]).map((f) => (
+        {(["전체", "미납", "부분납", "완납"] as Filter[]).map((f) => (
           <button
             key={f}
             type="button"
@@ -127,6 +154,9 @@ export default function StudentMonthClient({
             }
           >
             {f}
+            {/* 몇 명인지 단추에 적습니다. 눌러 보고서야 「아무도 없네」를 알면, 그 한 번의
+                헛걸음 때문에 다음부터는 안 누르게 됩니다. */}
+            {f !== "전체" && <span className="ml-1 font-semibold opacity-70">{counts[f]}</span>}
           </button>
         ))}
         <input

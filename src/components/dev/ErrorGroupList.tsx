@@ -15,6 +15,14 @@ import { formatGroup, type ErrorGroup } from "@/lib/errorGroup";
  * 해결 표시 뒤에 또 나면 **저절로 최근 쪽으로 되돌아옵니다** - 「다시 났습니다」를 달고.
  */
 
+/** 전체 다시 확인의 결과. 창구가 돌려주는 모양 그대로입니다. */
+type RecheckReport = {
+  checked: number;
+  probed: number;
+  resolved: number;
+  outcomes: { fingerprint: string; route: string; resolved: boolean; why: string }[];
+};
+
 async function copyText(text: string): Promise<boolean> {
   try {
     if (navigator.clipboard && window.isSecureContext) {
@@ -69,6 +77,9 @@ export default function ErrorGroupList({
   const [error, setError] = useState<string | null>(null);
   const [noteFor, setNoteFor] = useState<string | null>(null);
   const [note, setNote] = useState("");
+  /** 전체 다시 확인 결과. 무엇을 넘겼고 무엇이 아직 나는지 그대로 보여줍니다. */
+  const [recheck, setRecheck] = useState<RecheckReport | null>(null);
+  const [rechecking, setRechecking] = useState(false);
 
   const open = useMemo(() => groups.filter((g) => !g.resolved), [groups]);
   const done = useMemo(() => groups.filter((g) => g.resolved), [groups]);
@@ -78,6 +89,33 @@ export default function ErrorGroupList({
     setCopied(key);
     setTimeout(() => setCopied((c) => (c === key ? null : c)), 1500);
   };
+
+  /**
+   * **전부 다시 확인합니다.**
+   *
+   * 창구가 열어볼 수 있는 화면은 실제로 열어보고, 열 수 없는 자리(크론·POST)는 조용한
+   * 시간으로 봅니다. 고쳐진 것만 해결로 넘어가고, 아직 나는 것은 그대로 남습니다 -
+   * **무엇을 왜 그렇게 판단했는지** 줄마다 돌려받아 화면에 적습니다.
+   */
+  async function recheckAll() {
+    setRechecking(true);
+    setError(null);
+    setRecheck(null);
+    try {
+      const res = await fetch("/api/dev/error-recheck", { method: "POST" });
+      const json = (await res.json().catch(() => ({}))) as RecheckReport & { error?: string };
+      if (!res.ok) {
+        setError(json.error ?? `창구가 ${res.status} 로 답했습니다`);
+        return;
+      }
+      setRecheck(json);
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRechecking(false);
+    }
+  }
 
   async function resolve(g: ErrorGroup, memo: string) {
     setBusy(g.fingerprint);
@@ -134,6 +172,17 @@ export default function ErrorGroupList({
             해결된 기록 {done.length}
           </button>
         </div>
+        {/* **전부 다시 확인.** 오류마다 하나씩 누르게 하면 아무도 안 누릅니다 - 고친 뒤에
+            확인할 것이 스무 가지면 스무 번을 눌러야 했습니다. */}
+        <button
+          type="button"
+          onClick={() => void recheckAll()}
+          disabled={rechecking || open.length === 0}
+          title="열어볼 수 있는 화면은 실제로 열어보고, 열 수 없는 자리(크론·창구)는 조용한 시간으로 봅니다. 고쳐진 것만 해결로 넘어갑니다."
+          className="rounded-lg bg-blue-600 px-2.5 py-1.5 text-xs font-bold text-white hover:bg-blue-700 disabled:opacity-40"
+        >
+          {rechecking ? "확인하는 중…" : `↻ ${open.length}가지 전부 다시 확인`}
+        </button>
         {shown.length > 0 && (
           <button
             type="button"
@@ -159,6 +208,26 @@ export default function ErrorGroupList({
         <p className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs font-bold text-red-700">
           표시하지 못했습니다: {error}
         </p>
+      )}
+
+      {recheck && (
+        <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-[11px] leading-relaxed text-blue-900">
+          <b>
+            {recheck.checked}가지를 다시 확인했습니다 — {recheck.resolved}가지를 해결로 넘겼고,{" "}
+            {recheck.checked - recheck.resolved}가지는 그대로 남았습니다.
+          </b>
+          {recheck.probed > 0 && <span className="text-blue-700"> (그중 {recheck.probed}가지는 화면을 실제로 열어봤습니다)</span>}
+          <ul className="mt-1 flex flex-col gap-0.5">
+            {recheck.outcomes.map((o) => (
+              <li key={o.fingerprint} className={o.resolved ? "text-emerald-800" : "text-slate-600"}>
+                {o.resolved ? "✓" : "·"} <span className="font-mono">{o.route}</span> — {o.why}
+              </li>
+            ))}
+          </ul>
+          {/* 넘긴 판단이 틀려도 되돌릴 필요가 없다는 것을 적어둡니다 - 안 적으면 누르기를
+              망설이게 되고, 망설이는 단추는 안 쓰이는 단추입니다. */}
+          <p className="mt-1 text-blue-700">해결로 넘긴 것이 또 나면 저절로 「다시 났습니다」를 달고 돌아옵니다.</p>
+        </div>
       )}
 
       {shown.length === 0 && (
@@ -251,16 +320,19 @@ export default function ErrorGroupList({
               >
                 ✓ 고쳤습니다
               </button>
-              {/* 「다시 확인」은 창구를 다시 불러보는 것이 아닙니다. 오류가 나는 창구는 대개
-                  자료를 바꾸는 자리라, 확인하려다 진짜 자료를 건드리게 됩니다. 대신 지금까지의
-                  발생을 다시 세어옵니다 - 누른 뒤로 안 났으면 조용한 시간이 늘어납니다. */}
+              {/* 예전에는 이 단추가 목록을 다시 세어올 뿐이라, 눌러도 **아무 일도 안 일어나
+                  보였습니다.** 이제 위의 「전부 다시 확인」과 같은 일을 합니다 - 열어볼 수 있는
+                  화면은 실제로 열어보고, 열 수 없는 자리는 조용한 시간으로 봅니다. 한 줄만
+                  확인하는 길은 두지 않습니다: 고친 뒤에는 어차피 전부 봐야 하고, 길이 둘이면
+                  한쪽만 고치는 날이 옵니다. */}
               <button
                 type="button"
-                onClick={() => router.refresh()}
-                title="창구를 다시 부르지는 않습니다. 지금까지의 발생을 다시 세어옵니다."
-                className="rounded-md border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-500 hover:bg-slate-50"
+                disabled={rechecking}
+                onClick={() => void recheckAll()}
+                title="열어볼 수 있는 화면은 실제로 열어봅니다. 고쳐졌으면 해결로 넘어가고, 아직 나면 그대로 남습니다."
+                className="rounded-md border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-500 hover:bg-slate-50 disabled:opacity-40"
               >
-                ↻ 다시 확인
+                {rechecking ? "확인 중…" : "↻ 다시 확인"}
               </button>
             </div>
           )}

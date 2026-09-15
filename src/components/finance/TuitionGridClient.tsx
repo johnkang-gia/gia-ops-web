@@ -9,6 +9,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
 import { won } from "@/lib/feeItems";
 import { departmentOf, gradeSortKey, type Department } from "@/lib/department";
+import { addDays, DUE_DAYS } from "@/lib/financePeriod";
 import { tuitionLine, tuitionTotal, discountUsable, type TuitionLine } from "@/lib/tuition";
 import TermPicker, { initialTermId } from "./TermPicker";
 import InvoicePreviewModal from "./InvoicePreviewModal";
@@ -106,7 +107,10 @@ export default function TuitionGridClient({
   const [q, setQ] = useState("");
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
-  const [dueDate, setDueDate] = useState(today);
+  // 납입기한은 **발행한 날로부터 이레**입니다. 앞 판은 오늘이 기본이었는데, 그대로 발행하면
+  // 학부모가 문자를 받는 순간 이미 마감일입니다 - 다음 날이면 전부 연체로 넘어가고, 그러면
+  // 연체 표시가 온통 빨개져서 정작 진짜 밀린 건이 묻힙니다.
+  const [dueDate, setDueDate] = useState(() => addDays(today, DUE_DAYS));
   const [discountFor, setDiscountFor] = useState<TuitionStudent | null>(null);
   const [preview, setPreview] = useState<{ id: string; label: string } | null>(null);
   /**

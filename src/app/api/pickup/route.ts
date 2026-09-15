@@ -89,6 +89,35 @@ export async function POST(req: Request) {
     });
   }
 
+  // ── 학생만 잇기 ───────────────────────────────────────────────────────────
+  //
+  // 「누구인지 모르는 연락」을 업무보드에서 바로 이을 수 있어야 합니다. 지금까지는 그 줄을
+  // 보고 **픽업 인박스로 건너가서** 다시 찾아야 했고, 건너간 김에 다른 일을 하다 잊습니다.
+  //
+  // **상태는 건드리지 않습니다.** 확인대기는 확인대기로 남습니다 - 학생을 이었다는 것과
+  // 「이 연락이 픽업이 맞다」는 다른 판단이고, 문의 줄에는 확정이라는 것이 없습니다.
+  if (action === "link") {
+    const id = body?.id as string | undefined;
+    const studentId = (body?.studentId as string | undefined) ?? null;
+    if (!id || !studentId) return NextResponse.json({ error: "어느 연락에 어느 학생인지가 필요합니다." }, { status: 400 });
+
+    const { data: student, error: stuErr } = await supabase
+      .from("wr_students")
+      .select("name")
+      .eq("is_demo", false)
+      .eq("id", studentId)
+      .maybeSingle();
+    if (stuErr) return NextResponse.json({ error: `명부를 읽지 못했습니다: ${stuErr.message}` }, { status: 500 });
+    if (!student) return NextResponse.json({ error: "명부에 없는 학생입니다." }, { status: 400 });
+
+    const { error } = await supabase
+      .from("pickup_requests")
+      .update({ student_id: studentId, matched_name: (student as { name: string }).name })
+      .eq("id", id);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true, name: (student as { name: string }).name });
+  }
+
   // ── 픽업이 아니라 **특이사항**으로 확정 ───────────────────────────────────
   //
   // 토들로 오는 연락은 픽업·결석·지각만이 아닙니다. 「약 좀 챙겨주세요」·「오늘 결제할게요」

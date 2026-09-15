@@ -306,7 +306,12 @@ export default function AdoptedClient({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      {/* **안쪽 스크롤 칸에는 min-h-0 이 있어야 합니다.**
+          세로 flex 안에서 칸의 최소 높이는 기본이 「내용만큼」이라, 목록을 펼치면 이 칸이
+          부모보다 커집니다. 그러면 자기 안에서 굴러가지 않고 부모의 overflow-hidden 에
+          잘려서, **아래쪽에 손이 닿지 않습니다**(CLAUDE.md §2-10). 접혀 있을 때는 멀쩡해
+          보이므로 펼쳐 봐야 드러납니다. */}
+      <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="flex flex-col gap-2">
           {filteredGroups.length === 0 && (
             <div className="rounded-lg bg-white p-4 text-sm text-slate-400 shadow-sm">

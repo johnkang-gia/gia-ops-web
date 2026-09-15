@@ -8,6 +8,7 @@ import AlreadyPaidModal from "@/components/finance/AlreadyPaidModal";
 // 돈을 정하는 판단은 화면에서 떼어 `@/lib/invoiceGrid` 에 두고 시험합니다. 섞여 있으면
 // 화면을 손보다 판단을 건드려도 티가 안 나고, 조금 다른 청구서는 그대로 나갑니다.
 import { matchesInstrument, planInvoices, typicalByGroup, unusualAmount } from "@/lib/invoiceGrid";
+import { addDays, DUE_DAYS } from "@/lib/financePeriod";
 import PayModal from "./PayModal";
 import { ReceiptChip, ReceiptModal } from "./ReceiptBits";
 import { settle, type SettleInvoice } from "@/lib/settlement";
@@ -222,11 +223,9 @@ export default function InvoiceGridClient({
    * 것을 고를 때는 분류별로 펼쳐놓고 보는 편이 낫습니다. 표에서 이름을 누르면 열립니다.
    */
   const [detail, setDetail] = useState<Student | null>(null);
-  const [dueDate, setDueDate] = useState(() => {
-    const d = new Date(`${today}T12:00:00+09:00`);
-    d.setDate(d.getDate() + 11);
-    return d.toISOString().slice(0, 10);
-  });
+  // 납입기한은 **발행한 날로부터 이레**입니다(`DUE_DAYS`). 학비와 같은 규칙을 써야 합니다 -
+  // 같은 날 보낸 두 청구서의 마감일이 다르면 학부모가 먼저 알아봅니다.
+  const [dueDate, setDueDate] = useState(() => addDays(today, DUE_DAYS));
 
   /**
    * 지금 보는 부서에서 쓰는 항목만.

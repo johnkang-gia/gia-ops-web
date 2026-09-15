@@ -177,7 +177,16 @@ export const DATA_KINDS: DataKindDef[] = [
   {
     key: "업무",
     canonical: "tasks",
-    satellites: ["board_notes", "board_revisions", "work_notices", "day_reminders", "work_tags"],
+    satellites: [
+      "board_notes",
+      "board_revisions",
+      "work_notices",
+      "day_reminders",
+      "work_tags",
+      // 업무 ↔ 학생. **이름이 아니라 번호로** 잇습니다 - 학생 프로필이 쓰던
+      // `ilike '%이름%'` 은 김재이 셋을 한꺼번에 걸었습니다(CLAUDE.md §2-4-1).
+      "task_students",
+    ],
     dedupe: { none: "업무는 같은 내용이 여러 번 생겨도 각각 다른 일입니다. 픽업에서 생기는 업무만 pickup_requests.task_id 로 한 번만 만듭니다." },
     apply: "src/lib/pickupTask.ts",
     undo: "src/lib/pickupUndo.ts",

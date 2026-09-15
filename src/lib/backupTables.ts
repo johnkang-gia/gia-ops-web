@@ -105,6 +105,9 @@ export const BACKUP_GROUPS: { group: string; tables: string[] }[] = [
       "board_notes",
       "day_reminders",
       "work_tags",
+      // 업무 ↔ 학생 이음. 사람이 고른 판단이라 잃으면 되살릴 방법이 없습니다 -
+      // 이름으로 짐작해 다시 잇는 것은 일부러 안 하기로 한 일입니다.
+      "task_students",
       "work_notices",
       "department_memos",
       "incidents",

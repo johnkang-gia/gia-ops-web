@@ -605,6 +605,7 @@ export default function WorkspaceArea({
           modeColorMap={modeColorMap}
           isAdmin={isAdmin}
           onModeColorChange={onModeColorChange}
+          students={noteStudents}
           prefillDay={newTaskDay}
           prefillRange={newTaskRange}
           onPrefillUsed={() => {

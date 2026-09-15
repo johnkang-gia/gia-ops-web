@@ -11,6 +11,7 @@ import { deadlineLabel } from "@/lib/deadlineLabel";
 import { nameFor } from "@/lib/teamName";
 import type { Task, TaskModeColor, TaskRecurrence, TeamMember, WorkTag } from "@/lib/types";
 import { useToast } from "@/components/common/ToastProvider";
+import StudentSelect, { type SelectableStudent } from "@/components/common/StudentSelect";
 import AcademicItemDialog from "@/components/academic/AcademicItemDialog";
 import type { ChecklistTemplate, Term } from "@/lib/types";
 
@@ -65,6 +66,7 @@ export default function QuickTaskWidget({
   onPrefillUsed,
   tags,
   onTagsChanged,
+  students = [],
 }: {
   department: string;
   team: TeamMember[];
@@ -73,6 +75,13 @@ export default function QuickTaskWidget({
   modeColorMap: Map<string, string>;
   isAdmin: boolean;
   onModeColorChange: (mode: TaskModeColor["mode"], color: string) => void;
+  /**
+   * 고를 수 있는 학생. **선택입니다** - 대부분의 업무는 특정 아이와 상관없습니다.
+   *
+   * 이었을 때만 그 아이의 [오늘 학생] 보드와 프로필에 뜹니다. 이름을 제목에 적는 것과
+   * 다릅니다 - 제목의 이름으로는 김재이 셋을 가를 수 없습니다(CLAUDE.md §2-4-1).
+   */
+  students?: SelectableStudent[];
   /**
    * 달력에서 누른 날짜(YYYY-MM-DD). 그 날 마감으로 미리 채웁니다.
    *
@@ -227,6 +236,13 @@ export default function QuickTaskWidget({
     setQuickBadge(key);
   }
 
+  /**
+   * 이 업무가 어느 아이에 관한 것인가. **선택입니다.**
+   *
+   * 여러 명일 수 있습니다 - 「G2 교재 배부」는 스무 명이고 「형제 둘 하원 변경」은 둘입니다.
+   */
+  const [taskStudents, setTaskStudents] = useState<SelectableStudent[]>([]);
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     const raw = text.trim();
@@ -286,7 +302,20 @@ export default function QuickTaskWidget({
       notify("업무를 등록하지 못했습니다: " + (error?.message ?? "알 수 없는 오류"), "error");
       return;
     }
+    // ── 학생 잇기 ──────────────────────────────────────────────────────────
+    //
+    // 업무는 이미 저장됐습니다. 이음이 실패해도 업무를 되돌리지 않습니다 - 업무가 사라지는
+    // 것이 이음이 빠진 것보다 나쁩니다. 다만 **조용히 넘기지 않습니다**: 실패를 말해줘야
+    // 사람이 업무 상세에서 다시 이을 수 있습니다.
+    if (taskStudents.length > 0) {
+      const { error: linkErr } = await supabase.from("task_students").insert(
+        taskStudents.map((st) => ({ task_id: (data as Task).id, student_id: st.id, linked_by: currentUserEmail })),
+      );
+      if (linkErr) notify(`업무는 등록됐지만 학생을 잇지 못했습니다: ${linkErr.message}`, "error");
+    }
+
     onTaskCreated?.(data as Task);
+    setTaskStudents([]);
     setText("");
     setUrgent(false);
     setQuickBadge(null);
@@ -609,6 +638,51 @@ export default function QuickTaskWidget({
           등록
         </button>
       </form>
+
+      {/* ── 어느 아이에 관한 업무인가 ──────────────────────────────────────────
+          **선택입니다.** 대부분의 업무는 특정 아이와 상관없습니다.
+
+          제목에 이름을 적는 것과 다릅니다 - 제목의 「김재이」로는 셋 중 누구인지 가릴 수
+          없고, 그 상태로 학생 프로필이나 [오늘 학생] 보드에 뜨면 엉뚱한 아이에게 붙습니다
+          (CLAUDE.md §2-4-1). 여기서 고른 것은 **학생 번호**로 저장됩니다. */}
+      {students.length > 0 && (
+        <div className="mt-1.5 flex flex-wrap items-center gap-1">
+          <StudentSelect
+            students={students}
+            value={null}
+            onChange={(id) => {
+              if (!id) return;
+              const st = students.find((x) => x.id === id);
+              // 같은 아이를 두 번 고르면 넣지 않습니다 - 표의 기본키가 (업무, 학생)이라
+              // 저장에서 걸리는데, 그때 나오는 오류 글은 사람에게 아무 뜻도 없습니다.
+              if (!st || taskStudents.some((x) => x.id === id)) return;
+              setTaskStudents((prev) => [...prev, st]);
+            }}
+            placeholder="🧑‍🎓 학생 잇기 (선택)"
+            className="min-w-[140px]"
+            disabled={submitting}
+          />
+          {taskStudents.map((st) => (
+            <span
+              key={st.id}
+              className="flex items-center gap-1 rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-bold text-indigo-800 ring-1 ring-indigo-300"
+            >
+              {st.name}
+              {st.class_name && <span className="font-normal text-indigo-500">{st.class_name}</span>}
+              <button
+                type="button"
+                onClick={() => setTaskStudents((prev) => prev.filter((x) => x.id !== st.id))}
+                className="rounded px-0.5 hover:bg-indigo-200"
+              >
+                ✕
+              </button>
+            </span>
+          ))}
+          {taskStudents.length > 0 && (
+            <span className="text-[10px] text-slate-400">이 아이의 [오늘 학생] 보드와 프로필에 뜹니다</span>
+          )}
+        </div>
+      )}
 
       {/* 학사일정 화면과 **같은 팝업**입니다. 여기서 등록한 것은 곧바로 학사일정에 들어가고,
           때가 되면 크론이 업무보드로 올려줍니다. */}

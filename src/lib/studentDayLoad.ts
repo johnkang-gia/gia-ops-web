@@ -20,6 +20,11 @@ import { kstDateOffset } from "./kst";
  *   ③ 특이사항    `student_day_notes` — 약·결제·준비물
  *   ④ 학부모 문의 `pickup_requests` 중 아직 답 안 한 것
  *   ⑤ 확인대기    `pickup_requests` 중 누구인지 아직 못 가린 것 → 「모름」 칸으로
+ *   ⑥ 업무        `task_students` 로 이어진 업무 중 **마감이 오늘~앞날**인 것
+ *
+ * 업무는 **이어진 것만** 올립니다. 제목에 이름이 적혀 있어도 이어지지 않았으면 안 뜹니다 -
+ * 제목의 「김재이」로는 셋 중 누구인지 가릴 수 없고, 짐작해서 붙이면 엉뚱한 아이에게
+ * 붙습니다(CLAUDE.md §2-4-1).
  *
  * 하원수단(학원차)은 ①에 이미 섞여 들어옵니다 - 아침 크론이 체크표에 픽업으로 걸고,
  * `loadTodayPickups` 가 `via: "하원수단"` 으로 표시합니다. 여기서 또 읽으면 한 아이가
@@ -68,7 +73,7 @@ export async function loadStudentDay(supabase: SupabaseClient, opts: LoadOptions
   const items: BoardInput["items"] = [];
   const push = (studentId: string | null, hint: string | null, item: DayItem) => items.push({ studentId, hint, item });
 
-  const [pickups, active, upcoming, noteRes, inquiryRes] = await Promise.all([
+  const [pickups, active, upcoming, noteRes, inquiryRes, taskRes] = await Promise.all([
     loadTodayPickups(supabase, date, (id) => nameById.get(id) ?? null),
     loadActiveEntries(supabase, date),
     loadUpcomingEntries(supabase, date, aheadDays),
@@ -87,6 +92,18 @@ export async function loadStudentDay(supabase: SupabaseClient, opts: LoadOptions
       .gte("service_date", date)
       .lte("service_date", until)
       .limit(300),
+    // 학생에 이어진 업무. **이어진 것만** 읽습니다 - 이름으로 찾으면 김재이 셋이 한꺼번에
+    // 걸립니다. `!inner` 는 이음이 있는 줄만 남깁니다.
+    supabase
+      .from("tasks")
+      .select("id, title, status, due_at, task_students!inner(student_id)")
+      .is("archived_at", null)
+      .is("deleted_at", null)
+      .neq("status", "완료")
+      .not("due_at", "is", null)
+      .gte("due_at", `${date}T00:00:00`)
+      .lte("due_at", `${until}T23:59:59`)
+      .limit(200),
   ]);
 
   // ── ① 픽업 ───────────────────────────────────────────────────────────────
@@ -199,6 +216,27 @@ export async function loadStudentDay(supabase: SupabaseClient, opts: LoadOptions
     });
   }
 
+  // ── ⑥ 이어진 업무 ────────────────────────────────────────────────────────
+  //
+  // **완료된 것은 올리지 않습니다** - 보드는 「오늘 해야 할 것」이지 기록이 아닙니다.
+  if (taskRes.error) problems.push(`업무를 읽지 못했습니다: ${taskRes.error.message}`);
+  for (const t of ((taskRes.data as { id: string; title: string; status: string; due_at: string; task_students: { student_id: string }[] }[] | null) ?? [])) {
+    // 한 업무가 여러 아이에 걸립니다(「G2 교재 배부」는 스무 명). 아이마다 한 줄씩 섭니다.
+    for (const link of t.task_students ?? []) {
+      push(link.student_id, null, {
+        id: `task:${t.id}:${link.student_id}`,
+        kind: "기타",
+        // 마감 시각이 23:59 면 「오늘 중에」라는 뜻입니다 - 그걸 시각으로 띄우면 모든 업무가
+        // 밤 11시 59분에 몰린 것처럼 보입니다.
+        at: dueClock(t.due_at),
+        text: `업무 · ${cut(t.title, 40)}`,
+        onDate: t.due_at.slice(0, 10),
+        from: { table: "tasks", screen: "/work" },
+        pending: false,
+      });
+    }
+  }
+
   return buildBoard({ date, roster, items }, problems);
 }
 
@@ -213,6 +251,16 @@ function entryKind(status: string): DayItemKind {
 function spanLabel(from: string, to: string): string {
   if (from === to) return "";
   return `${from.slice(5).replace("-", "/")}~${to.slice(5).replace("-", "/")}`;
+}
+
+/**
+ * 마감 시각. **23:59 는 시각이 아니라 「그날 중에」입니다** - 날짜만 고른 업무가 그렇게
+ * 저장됩니다. 그걸 시각으로 띄우면 보드에서 모든 업무가 밤 11시 59분에 몰린 것처럼
+ * 보이고, 정작 시각이 있는 약·픽업이 그 아래로 밀립니다.
+ */
+function dueClock(dueAt: string): string | null {
+  const hhmm = new Date(dueAt).toLocaleTimeString("en-GB", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit" });
+  return hhmm === "23:59" || hhmm === "00:00" ? null : hhmm;
 }
 
 /** 한 줄에 들어갈 만큼만. 보드는 훑는 곳이고, 원문은 눌러서 봅니다. */

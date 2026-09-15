@@ -79,6 +79,7 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
     messagesRes,
     currentClassRes,
     fieldDefsRes,
+    linkedTasksRes,
   ] = await Promise.all([
     supabase.from("wr_enrollments").select("*").eq("student_id", id).order("created_at", { ascending: false }),
     supabase.from("wr_reports").select("*").eq("student_id", id).order("report_date", { ascending: false }),
@@ -97,6 +98,15 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
     supabase.from("messages").select("*").ilike("content", `%${searchName}%`).order("created_at", { ascending: false }).limit(20),
     student.class_id ? supabase.from("wr_classes").select("*").eq("is_demo", false).eq("id", student.class_id).maybeSingle() : Promise.resolve({ data: null }),
     supabase.from("wr_student_field_defs").select("*").order("sort_order", { ascending: true }),
+    // **이어진 업무.** 위의 `ilike` 검색과 다릅니다 - 이건 사람이 학생 번호로 이어둔 것이라
+    // 「김재이」 셋이 섞이지 않고, 제목에 이름이 안 적혀 있어도 나옵니다(CLAUDE.md §2-4-1).
+    supabase
+      .from("tasks")
+      .select("id, case_id, title, status, due_at, task_students!inner(student_id)")
+      .eq("task_students.student_id", id)
+      .is("deleted_at", null)
+      .order("due_at", { ascending: false, nullsFirst: false })
+      .limit(50),
   ]);
   const fieldDefs = (fieldDefsRes.data as WrStudentFieldDef[] | null) ?? [];
 
@@ -183,6 +193,14 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
   const reports = (reportsRes.data as WrReport[] | null) ?? [];
   const incidentIds = ((incidentLinksRes.data as { incident_id: string }[] | null) ?? []).map((r) => r.incident_id);
   const tasks = (tasksRes.data as Task[] | null) ?? [];
+  /**
+   * **이어진 업무** — 사람이 학생 번호로 이어둔 것.
+   *
+   * 아래 「참고용 언급」과 다릅니다. 저건 이름 글자 검색이라 김재이 셋이 섞이고, 제목에
+   * 이름이 안 적힌 업무는 아예 안 나옵니다. 이건 번호로 이어진 것이라 둘 다 아닙니다.
+   */
+  const linkedTasks = (linkedTasksRes.data as { id: string; case_id: string; title: string; status: string; due_at: string | null }[] | null) ?? [];
+  const linkedError = linkedTasksRes.error?.message ?? null;
   const taskComments = (taskCommentsRes.data as TaskComment[] | null) ?? [];
   const messages = (messagesRes.data as ChatMessage[] | null) ?? [];
   const currentClass = currentClassRes.data as WrClass | null;
@@ -509,6 +527,40 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
                 </span>
                 <span className="shrink-0 text-slate-400">{r.report_date}</span>
               </Link>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── 이어진 업무 ─────────────────────────────────────────────────────
+          **번호로 이어진 것만.** 아래 「참고용 언급」은 이름 글자 검색이라 김재이 셋이
+          섞이고 제목에 이름이 없는 업무는 안 나옵니다. 이 칸은 둘 다 아닙니다. */}
+      <div className="g-panel-solid p-4 shadow-sm">
+        <h2 className="mb-1 text-sm font-bold text-slate-700">🔗 이어진 업무</h2>
+        <p className="mb-2 text-[11px] text-slate-400">
+          업무를 등록할 때 <b>학생을 이어둔 것</b>만 나옵니다. 이름으로 찾은 것이 아니라 학생 번호로
+          이어진 것이라, 같은 이름의 다른 아이가 섞이지 않습니다.
+        </p>
+        {linkedError ? (
+          <p className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-[12px] text-orange-800">
+            이어진 업무를 읽지 못했습니다: {linkedError}
+          </p>
+        ) : linkedTasks.length === 0 ? (
+          <p className="text-xs text-slate-400">
+            아직 이어진 업무가 없습니다. 업무를 등록할 때 <b>[🧑‍🎓 학생 잇기]</b> 로 고르면 여기 쌓입니다.
+          </p>
+        ) : (
+          <div className="flex max-h-60 flex-col gap-1.5 overflow-y-auto pr-1">
+            {linkedTasks.map((t) => (
+              <div key={`lt-${t.id}`} className="flex items-center gap-2 rounded-lg bg-indigo-50 px-2.5 py-1.5 text-xs">
+                <span className="shrink-0 rounded-full bg-indigo-100 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700">
+                  {t.status}
+                </span>
+                <span className="min-w-0 flex-1 truncate">{t.title}</span>
+                {t.due_at && (
+                  <span className="shrink-0 text-[10px] text-slate-400">{t.due_at.slice(0, 10)}</span>
+                )}
+              </div>
             ))}
           </div>
         )}

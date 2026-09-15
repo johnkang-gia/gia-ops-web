@@ -164,6 +164,54 @@ export default function InvoiceGridClient({
   // 항목도 상태로 들고 있습니다. 여기서 바로 만들면 **그 자리에서 열이 생겨야** 합니다 -
   // 화면을 새로 고쳐야 보이면 결국 항목 화면으로 건너가서 만들게 됩니다.
   const [itemList, setItemList] = useState(items);
+
+  /**
+   * **열 순서를 표에서 바로 바꿉니다.**
+   *
+   * 열 순서는 항목의 `sort_order` 인데, 바꾸려면 항목 관리 화면까지 가야 했습니다. 정작
+   * 「이 열을 맨 뒤로」라고 생각하는 순간은 표를 보고 있을 때입니다.
+   *
+   * **같은 분류 안에서만** 옮깁니다 - 표는 분류(교재·교복…)로 먼저 세우므로, 분류를
+   * 건너뛰어 옮기면 저장은 되지만 화면에서는 제자리로 돌아온 것처럼 보입니다.
+   */
+  const [dragItem, setDragItem] = useState<string | null>(null);
+  const [overItem, setOverItem] = useState<string | null>(null);
+
+  async function moveItemColumn(targetId: string) {
+    const fromId = dragItem;
+    setDragItem(null);
+    setOverItem(null);
+    if (!fromId || fromId === targetId) return;
+
+    const from = itemList.find((x) => x.id === fromId);
+    const to = itemList.find((x) => x.id === targetId);
+    if (!from || !to) return;
+    if (from.category !== to.category) {
+      notify("같은 분류 안에서만 옮길 수 있습니다. 표가 분류로 먼저 세워집니다.", "error");
+      return;
+    }
+
+    const group = itemList
+      .filter((x) => x.category === from.category)
+      .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name));
+    const f = group.findIndex((x) => x.id === fromId);
+    const t = group.findIndex((x) => x.id === targetId);
+    const [moved] = group.splice(f, 1);
+    group.splice(t, 0, moved);
+
+    const orderById = new Map(group.map((x, idx) => [x.id, idx]));
+    setItemList((prev) => prev.map((x) => (orderById.has(x.id) ? { ...x, sort_order: orderById.get(x.id)! } : x)));
+
+    const supabase = createClient();
+    for (const [idx, x] of group.entries()) {
+      if (x.sort_order === idx) continue;
+      const { error } = await supabase.from("fee_items").update({ sort_order: idx }).eq("id", x.id);
+      // 화면에서는 옮겨졌는데 저장이 안 됐으면, 새로고침에 되돌아가고 사람은 자기가 잘못
+      // 끈 줄 압니다.
+      if (error) return notify(`열 순서를 저장하지 못했습니다: ${error.message}`, "error");
+    }
+    notify(`「${moved.name_ko || moved.name}」 열을 옮겼습니다.`, "success");
+  }
   const [newOpen, setNewOpen] = useState(false);
   const [newItem, setNewItem] = useState({ category: "", name: "", name_ko: "", unit_price: 0, applyToView: true });
   const [invoices, setInvoices] = useState(recentInvoices);
@@ -1333,8 +1381,38 @@ export default function InvoiceGridClient({
                 인보이스
               </th>
               {usedItems.map((i) => (
-                <th key={i.id} className="min-w-[86px] border-b border-r border-slate-100 bg-white px-1 py-1.5 align-bottom">
+                <th
+                  key={i.id}
+                  draggable
+                  onDragStart={(e) => {
+                    setDragItem(i.id);
+                    e.dataTransfer.effectAllowed = "move";
+                    e.dataTransfer.setData("text/plain", i.id);
+                  }}
+                  onDragEnd={() => {
+                    setDragItem(null);
+                    setOverItem(null);
+                  }}
+                  onDragOver={(e) => {
+                    if (!dragItem || dragItem === i.id) return;
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                    setOverItem(i.id);
+                  }}
+                  onDragLeave={() => setOverItem((o) => (o === i.id ? null : o))}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    void moveItemColumn(i.id);
+                  }}
+                  title="제목을 끌어서 열 순서를 옮깁니다"
+                  className={
+                    "min-w-[86px] cursor-grab border-b border-r border-slate-100 bg-white px-1 py-1.5 align-bottom " +
+                    (overItem === i.id ? "!bg-teal-50 outline outline-2 outline-teal-400 " : "") +
+                    (dragItem === i.id ? "opacity-40 " : "")
+                  }
+                >
                   <span className="block truncate text-[11px] font-semibold text-slate-700" title={`${i.name}${i.name_ko ? ` · ${i.name_ko}` : ""}`}>
+                    <span className="mr-0.5 select-none text-slate-300">⠿</span>
                     {i.name_ko || i.name}
                   </span>
                   {/* 대상을 이름 아래 뱃지로. 이것이 있으면 이름에 `4학년` 을 적을 이유가

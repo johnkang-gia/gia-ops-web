@@ -26,7 +26,9 @@ import { useCallback, useEffect, useRef, type ReactNode } from "react";
  *     눌립니다.
  */
 
-const NO_DRAG = "input,textarea,select,button,a,label,[contenteditable],[data-no-drag]";
+// `[draggable="true"]` 도 잡지 않습니다. 열 제목을 끌어 순서를 바꾸는 자리인데, 미는 동작이
+// 함께 일어나면 **표가 따라 밀려** 어디에 놓는지 보이지 않습니다.
+const NO_DRAG = 'input,textarea,select,button,a,label,[contenteditable],[data-no-drag],[draggable="true"]';
 
 export default function DragScroll({
   children,

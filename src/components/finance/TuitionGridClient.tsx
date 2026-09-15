@@ -2,7 +2,7 @@
 
 import DragScroll from "@/components/common/DragScroll";
 import FeePlansModal from "./FeePlansModal";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useFinanceLive } from "@/lib/useFinanceLive";
 import AlreadyPaidModal from "@/components/finance/AlreadyPaidModal";
 import { createClient } from "@/lib/supabase/client";
@@ -134,10 +134,67 @@ export default function TuitionGridClient({
     setTermId(initialTermId(terms));
   }, [terms]);
 
-  const allPlans = useMemo(
-    () => plans.filter((p) => p.active).sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name, "ko")),
-    [plans],
+  /**
+   * **열 순서는 여기서 바로 바꿉니다.**
+   *
+   * 열 순서는 항목의 `sort_order` 인데, 그것을 바꾸려면 [납부 항목·할인] 팝업까지 가야
+   * 했습니다. 정작 「이 열을 맨 뒤로」라고 생각하는 순간은 **표를 보고 있을 때**입니다.
+   *
+   * 끌어서 놓으면 그 자리에서 저장하고, 저장될 때까지는 화면이 먼저 움직입니다
+   * (`orderOverride`) - 저장을 기다리면 손이 놓은 자리와 화면이 한 박자 어긋나 보입니다.
+   */
+  const [orderOverride, setOrderOverride] = useState<Record<string, number> | null>(null);
+  const [dragPlan, setDragPlan] = useState<string | null>(null);
+  const [overPlan, setOverPlan] = useState<string | null>(null);
+
+  const orderOf = useCallback(
+    (p: FeePlan) => orderOverride?.[p.id] ?? p.sort_order,
+    [orderOverride],
   );
+
+  const allPlans = useMemo(
+    () => plans.filter((p) => p.active).sort((a, b) => orderOf(a) - orderOf(b) || a.name.localeCompare(b.name, "ko")),
+    [plans, orderOf],
+  );
+
+  /**
+   * 끌어다 놓은 자리로 열을 옮깁니다.
+   *
+   * **학비 항목 전체에 번호를 다시 매깁니다.** 보고 있는 갈래(정규과정만·방과후만)에서
+   * 옮겼더라도, 번호는 전체가 한 줄로 이어져야 합니다 - 일부만 고치면 번호가 겹치고
+   * 겹치면 이름순으로 밀려 「왜 안 옮겨지지」가 됩니다.
+   */
+  async function moveColumn(targetId: string) {
+    const fromId = dragPlan;
+    setDragPlan(null);
+    setOverPlan(null);
+    if (!fromId || fromId === targetId) return;
+
+    const list = [...allPlans];
+    const from = list.findIndex((p) => p.id === fromId);
+    const to = list.findIndex((p) => p.id === targetId);
+    if (from < 0 || to < 0) return;
+    const [moved] = list.splice(from, 1);
+    list.splice(to, 0, moved);
+
+    const next: Record<string, number> = {};
+    list.forEach((p, i) => (next[p.id] = i));
+    setOrderOverride(next);
+
+    const supabase = createClient();
+    for (const [i, p] of list.entries()) {
+      if (orderOf(p) === i) continue;
+      const { error } = await supabase.from("fee_plans").update({ sort_order: i }).eq("id", p.id);
+      // 조용히 넘기지 않습니다 - 화면에서는 옮겨졌는데 저장이 안 됐으면, 새로고침하면
+      // 원래대로 돌아가고 사람은 자기가 잘못 끈 줄 압니다.
+      if (error) {
+        notify(`열 순서를 저장하지 못했습니다: ${error.message}`, "error");
+        setOrderOverride(null);
+        return;
+      }
+    }
+    notify(`「${moved.name}」 열을 옮겼습니다.`, "success");
+  }
 
   /**
    * **보고 있는 항목** — 정규과정만, 방과후만, 또는 전부.
@@ -577,8 +634,43 @@ export default function TuitionGridClient({
                 학생
               </th>
               {usedPlans.map((p) => (
-                <th key={p.id} className="min-w-[168px] border-b border-r border-slate-100 bg-white px-2 py-1.5 align-bottom">
-                  <span className="block text-[11px] font-bold text-slate-700">{p.name}</span>
+                <th
+                  key={p.id}
+                  draggable
+                  onDragStart={(e) => {
+                    setDragPlan(p.id);
+                    e.dataTransfer.effectAllowed = "move";
+                    // 담긴 자료가 없으면 파이어폭스는 끌기를 시작하지 않습니다.
+                    e.dataTransfer.setData("text/plain", p.id);
+                  }}
+                  onDragEnd={() => {
+                    setDragPlan(null);
+                    setOverPlan(null);
+                  }}
+                  onDragOver={(e) => {
+                    if (!dragPlan || dragPlan === p.id) return;
+                    e.preventDefault(); // 막지 않으면 놓을 수 없습니다.
+                    e.dataTransfer.dropEffect = "move";
+                    setOverPlan(p.id);
+                  }}
+                  onDragLeave={() => setOverPlan((o) => (o === p.id ? null : o))}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    void moveColumn(p.id);
+                  }}
+                  className={
+                    "min-w-[168px] cursor-grab border-b border-r border-slate-100 bg-white px-2 py-1.5 align-bottom " +
+                    (overPlan === p.id ? "!bg-teal-50 outline outline-2 outline-teal-400 " : "") +
+                    (dragPlan === p.id ? "opacity-40 " : "")
+                  }
+                  title="제목을 끌어서 열 순서를 옮깁니다"
+                >
+                  <span className="block text-[11px] font-bold text-slate-700">
+                    {/* 끌 수 있다는 것은 보여야 압니다 - 표시가 없으면 아무도 시도하지
+                        않습니다. */}
+                    <span className="mr-1 select-none text-slate-300">⠿</span>
+                    {p.name}
+                  </span>
                   <span className="block text-[10px] tabular-nums text-slate-400">
                     {won(Number(p.base_amount))} / {p.unit}
                   </span>

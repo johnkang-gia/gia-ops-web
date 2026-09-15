@@ -31,8 +31,30 @@ export async function GET(req: NextRequest) {
       .select("id");
     if (error) throw error;
 
+    // ── 이용 기록 정리 ────────────────────────────────────────────────────
+    //
+    // 화면 사용량은 **최근 것만 쓸모가 있습니다.** 「지난봄에 이 화면이 몇 번 열렸나」는
+    // 아무도 묻지 않는데, 그대로 두면 하루 수천 줄이 해마다 쌓여 정작 이번 달 숫자를
+    // 뽑는 조회가 느려집니다. 90일만 둡니다.
+    //
+    // 숫자로 돌려줍니다 - 「정리했다」만 말하면 실제로 도는지 알 수 없습니다.
+    const usageCutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+    const { data: usagePurged, error: usageErr } = await supabase
+      .from("usage_events")
+      .delete()
+      .lt("created_at", usageCutoff)
+      .select("id");
+    // 이 정리가 실패해도 업무 휴지통 정리까지 되돌리지는 않습니다. 다만 조용히 넘기지
+    // 않습니다 - 몇 달째 안 지워지고 있는데 아무도 모르는 쪽이 더 나쁩니다.
+    if (usageErr) console.error("[cron:purge-trash] 이용 기록을 정리하지 못했습니다:", usageErr.message);
+
     await touchHeartbeat(supabase, "cron:purge-trash");
-    return NextResponse.json({ ok: true, purgedCount: purged?.length ?? 0 });
+    return NextResponse.json({
+      ok: true,
+      purgedCount: purged?.length ?? 0,
+      usagePurgedCount: usagePurged?.length ?? 0,
+      usageProblem: usageErr?.message ?? null,
+    });
   } catch (err) {
     await logApiError(supabase, "cron:purge-trash", err);
     return NextResponse.json({ error: "internal error" }, { status: 500 });

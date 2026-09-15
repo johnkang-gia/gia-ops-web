@@ -1,5 +1,6 @@
 "use client";
 
+import StudentSelect from "@/components/common/StudentSelect";
 import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { ShuttleAssignment, ShuttleDirection, ShuttleRoute, ShuttleStop, WrStudent } from "@/lib/types";
@@ -66,24 +67,22 @@ function StudentCell({
   // "확인필요"가 실제로 줄어듭니다 - 다른 화면으로 넘어가야 하면 아무도 안 합니다.
   if (editing) {
     return (
-      <select
-        autoFocus
-        defaultValue={d.linked ? "" : ""}
-        onBlur={() => setEditing(false)}
-        onChange={(e) => {
-          onLink(e.target.value || null);
-          setEditing(false);
-        }}
-        className="w-36 shrink-0 rounded border border-blue-300 bg-white px-1 py-0.5 text-[10px] outline-none"
-      >
-        <option value="">{d.linked ? "(연결 해제)" : "학생 선택…"}</option>
-        {students.map((s) => (
-          <option key={s.id} value={s.id}>
-            {s.name}
-            {s.grade ? ` (${s.grade}${s.class_name ? ` ${s.class_name}` : ""})` : ""}
-          </option>
-        ))}
-      </select>
+      // 139명을 목록으로 내리면 아무도 안 고릅니다(§학생 고르기는 검색으로).
+      <div className="w-36 shrink-0">
+        <StudentSelect
+          students={students}
+          value={null}
+          autoOpen
+          initialQuery={d.name}
+          clearLabel={d.linked ? "연결 해제" : undefined}
+          placeholder="학생 고르기…"
+          onChange={(id) => {
+            onLink(id);
+            setEditing(false);
+          }}
+          className="flex w-full items-center justify-between gap-1 rounded border border-blue-300 bg-white px-1 py-0.5 text-left text-[10px] outline-none"
+        />
+      </div>
     );
   }
 

@@ -75,6 +75,9 @@ const DEV_TABS: TabDef[] = [
   { key: "diagnostics", label: "진단", icon: "🔎", href: "/dev/diagnostics", match: ["/dev/diagnostics"] },
   { key: "errors", label: "오류", icon: "🚨", href: "/dev/errors", match: ["/dev/errors"] },
   { key: "ai", label: "AI 과금", icon: "🤖", href: "/dev/ai", match: ["/dev/ai"] },
+  // 어떤 화면이 실제로 쓰이는지는 물어볼 데가 없었습니다. 안 쓰이는 화면을 지우려면
+  // 「안 쓰인다」를 보여줄 수 있어야 합니다.
+  { key: "usage", label: "이용 기록", icon: "📈", href: "/dev/usage", match: ["/dev/usage"] },
   {
     key: "data",
     label: "데이터",

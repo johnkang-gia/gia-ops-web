@@ -1,5 +1,6 @@
 "use client";
 
+import StudentSelect from "@/components/common/StudentSelect";
 import { useMemo, useState } from "react";
 import { useFinanceLive } from "@/lib/useFinanceLive";
 import Link from "next/link";
@@ -253,19 +254,17 @@ export default function PrepaidClient({
                         {!r.student_id && (
                           <div className="mt-1 flex items-center gap-1">
                             <span className="text-[10px] font-semibold text-rose-700">누구 것인가요?</span>
-                            <select
-                              defaultValue=""
-                              disabled={busy === r.id}
-                              onChange={(e) => e.target.value && void link(r, e.target.value)}
-                              className="rounded border border-rose-300 bg-white px-1 py-0.5 text-[11px]"
-                            >
-                              <option value="">명부에서 고르기…</option>
-                              {students.map((s) => (
-                                <option key={s.id} value={s.id}>
-                                  {s.name} {[s.grade, s.class_name].filter(Boolean).join(" ")}
-                                </option>
-                              ))}
-                            </select>
+                            <div className="w-44">
+                              <StudentSelect
+                                students={students}
+                                value={null}
+                                disabled={busy === r.id}
+                                placeholder="명부에서 고르기…"
+                                initialQuery={r.payer_name ?? ""}
+                                onChange={(id) => id && void link(r, id)}
+                                className="flex w-full items-center justify-between gap-1 rounded border border-rose-300 bg-white px-1 py-0.5 text-left text-[11px]"
+                              />
+                            </div>
                           </div>
                         )}
 

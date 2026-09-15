@@ -170,6 +170,9 @@ export const LOG_TABLES = [
   "classroom_calls",
   "apparel_stock_moves",
   "apparel_exchanges",
+  // 교직원이 어느 화면을 언제 얼마나 봤나. 학교 운영 자료가 아니라 **화면 사용량**을
+  // 세는 기록이라, 어느 갈래에도 붙지 않고 혼자 쌓입니다.
+  "usage_events",
 ];
 
 /** 어느 갈래에도 안 붙는 표. **왜 안 붙는지** 적습니다 - 이유 없이는 뺄 수 없습니다. */

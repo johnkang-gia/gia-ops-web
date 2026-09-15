@@ -1,5 +1,6 @@
 "use client";
 
+import StudentSelect from "@/components/common/StudentSelect";
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
@@ -120,20 +121,18 @@ export default function AttendanceRulesModal({ onClose }: { onClose: () => void 
                     {r.kind === "alias" ? (
                       // 별칭은 어느 학생인지 바로 바꿀 수 있어야 합니다 - 잘못 가르친 것의
                       // 대부분이 "다른 아이로 연결한" 경우입니다.
-                      <select
-                        value={r.student_id ?? ""}
-                        disabled={busy === r.id}
-                        onChange={(e) => reassign(r, e.target.value)}
-                        className="min-w-0 max-w-[45%] flex-1 rounded border border-black/10 bg-white px-1.5 py-1 text-[11px] text-slate-700 outline-none focus:border-blue-300 disabled:opacity-40"
-                      >
-                        <option value="">(연결 안 됨)</option>
-                        {students.map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.name}
-                            {s.grade ? ` (${s.grade})` : ""}
-                          </option>
-                        ))}
-                      </select>
+                      <div className="min-w-0 max-w-[45%] flex-1">
+                        <StudentSelect
+                          students={students}
+                          value={r.student_id ?? null}
+                          disabled={busy === r.id}
+                          placeholder="(연결 안 됨)"
+                          clearLabel="연결 안 함"
+                          initialQuery={r.student_name ?? ""}
+                          onChange={(id) => reassign(r, id ?? "")}
+                          className="flex w-full items-center justify-between gap-1 rounded border border-black/10 bg-white px-1.5 py-1 text-left text-[11px] text-slate-700 outline-none disabled:opacity-40"
+                        />
+                      </div>
                     ) : (
                       <span className="max-w-[45%] flex-1 truncate text-[11px] text-slate-600">
                         {r.category ?? r.student_name ?? "-"}

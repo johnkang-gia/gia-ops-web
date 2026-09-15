@@ -1,5 +1,6 @@
 "use client";
 
+import StudentSelect from "@/components/common/StudentSelect";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -375,20 +376,22 @@ export default function DismissalRosterClient({
                           // 두면 아무도 안 고치고, 그 줄은 내일도 누군지 모르는 채 남습니다.
                           // 누르면 그 자리에서 명부의 아이를 고릅니다.
                           return linkingId === a.id ? (
-                            <select
-                              autoFocus
-                              defaultValue=""
-                              onBlur={() => setLinkingId(null)}
-                              onChange={(e) => void linkStudent(r.id, a, e.target.value || null)}
-                              className="ml-1 w-40 rounded border border-blue-300 bg-white px-1 py-0.5 text-[10px] font-normal outline-none"
-                            >
-                              <option value="">명부에서 고르기…</option>
-                              {sameNameFirst(a.student_name_raw).map((s) => (
-                                <option key={s.id} value={s.id}>
-                                  {s.name} {[s.grade, s.class_name].filter(Boolean).join(" ")}
-                                </option>
-                              ))}
-                            </select>
+                            <span className="ml-1 inline-block w-40 align-baseline">
+                              <StudentSelect
+                                students={sameNameFirst(a.student_name_raw)}
+                                value={null}
+                                autoOpen
+                                // 그 줄에 적혀 있던 이름으로 먼저 좁힙니다. 대개 한두 명으로
+                                // 줄어들어 바로 고를 수 있습니다.
+                                initialQuery={a.student_name_raw ?? ""}
+                                placeholder="명부에서 고르기…"
+                                onChange={(id) => {
+                                  void linkStudent(r.id, a, id);
+                                  setLinkingId(null);
+                                }}
+                                className="flex w-full items-center justify-between gap-1 rounded border border-blue-300 bg-white px-1 py-0.5 text-left text-[10px] font-normal outline-none"
+                              />
+                            </span>
                           ) : (
                             <button
                               type="button"

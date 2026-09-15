@@ -1,5 +1,6 @@
 "use client";
 
+import StudentSelect from "@/components/common/StudentSelect";
 import { Fragment, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -409,19 +410,17 @@ export default function ImportReviewClient({
                                   {/* 확인필요·못찾음이면 **누구인지 고르는 자리**를 바로 옆에
                                       둡니다. 다른 화면으로 보내면 돌아오지 않습니다. */}
                                   {r.matchKind !== "자동" && (
-                                    <select
-                                      value={studentIdOf(r) ?? ""}
-                                      disabled={busy}
-                                      onChange={(e) => void decide([r.id], r.decision, e.target.value || null, true)}
-                                      className="w-36 rounded border border-amber-300 px-1 py-0.5 text-[10px]"
-                                    >
-                                      <option value="">— 누구인가요? —</option>
-                                      {students.map((s) => (
-                                        <option key={s.id} value={s.id}>
-                                          {s.name} {s.where}
-                                        </option>
-                                      ))}
-                                    </select>
+                                    <div className="w-36">
+                                      <StudentSelect
+                                        students={students.map((s) => ({ id: s.id, name: s.name, class_name: s.where }))}
+                                        value={studentIdOf(r) ?? null}
+                                        disabled={busy}
+                                        placeholder="— 누구인가요? —"
+                                        initialQuery={r.rawName}
+                                        onChange={(id) => void decide([r.id], r.decision, id, true)}
+                                        className="flex w-full items-center justify-between gap-1 rounded border border-amber-300 bg-white px-1 py-0.5 text-left text-[10px]"
+                                      />
+                                    </div>
                                   )}
                                   {(["승인", "보류", "건너뜀"] as const).map((d) => (
                                     <button

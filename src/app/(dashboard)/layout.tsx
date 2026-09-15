@@ -35,6 +35,7 @@ import ConnectionBanner from "@/components/common/ConnectionBanner";
 import VersionUpdateBanner from "@/components/common/VersionUpdateBanner";
 import VersionBroadcastButton from "@/components/common/VersionBroadcastButton";
 import CommandPalette from "@/components/common/CommandPalette";
+import UsageTracker from "@/components/common/UsageTracker";
 import type { AiFeatureFlag } from "@/lib/types";
 
 // 홈 화면에 추가했을 때 브라우저 주소창 없이 앱처럼 열리도록(standalone) 하는 최소 PWA
@@ -489,6 +490,9 @@ export default async function DashboardLayout({
           돕니다. 화면에 표시가 없으면 본인은 최신인 줄 압니다. */}
       <VersionUpdateBanner />
       <CommandPalette categories={categories} homeHref={homeHref} />
+      {/* 어느 화면이 실제로 쓰이는지를 세는 자리. 화면에 무엇이 떠 있었는지는 안 담고
+          누가·언제·어디를·얼마나만 담습니다([개발자 → 이용 기록]). */}
+      <UsageTracker />
       {/* 인쇄할 때는 사이드바를 감춥니다 - 체크표 인쇄본이 종이 폭을 온전히 쓰도록. */}
       {/* **사이드바는 자기 안에서 굴립니다.**
           예전에는 높이를 안 정해 둬서, 메뉴가 화면보다 길어지면 사이드바가 그만큼 늘어나고

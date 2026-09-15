@@ -1,5 +1,6 @@
 "use client";
 
+import StudentSelect from "@/components/common/StudentSelect";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/common/ToastProvider";
@@ -347,24 +348,28 @@ export default function ToddleChannelsClient({
                     );
                   })}
                   {canEdit && (
-                    <select
-                      value=""
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        if (!v) return;
-                        setPicked((p) => ({ ...p, [r.label]: [...new Set([...sel, v])] }));
-                      }}
-                      className="rounded-lg border border-slate-300 px-1.5 py-0.5 text-[11px]"
-                    >
-                      <option value="">+ 학생 추가</option>
-                      {students.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name}
-                          {s.className ? ` (${s.className})` : ""}
-                          {s.nameEn ? ` · ${s.nameEn}` : ""}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="w-36">
+                      <StudentSelect
+                        students={students.map((s) => ({
+                          id: s.id,
+                          name: s.name,
+                          grade: s.grade,
+                          class_name: s.className,
+                          name_en: s.nameEn,
+                          birth_date: s.birthDate,
+                        }))}
+                        value={null}
+                        placeholder="+ 학생 추가"
+                        // 방 이름에 대개 아이 영문 이름이 들어 있습니다(「G3_Diane Lim_Office」).
+                        // 그 글자로 먼저 좁혀 두면 한두 명으로 줄어 바로 고를 수 있습니다.
+                        initialQuery={(r.label ?? "").replace(/[_·]/g, " ").replace(/\b(Office|G\d+)\b/gi, "").trim()}
+                        onChange={(id) => {
+                          if (!id) return;
+                          setPicked((p) => ({ ...p, [r.label]: [...new Set([...sel, id])] }));
+                        }}
+                        className="flex w-full items-center justify-between gap-1 rounded-lg border border-slate-300 bg-white px-1.5 py-0.5 text-left text-[11px]"
+                      />
+                    </div>
                   )}
                 </div>
 

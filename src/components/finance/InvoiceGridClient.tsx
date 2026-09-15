@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useFinanceLive } from "@/lib/useFinanceLive";
 import DragScroll from "@/components/common/DragScroll";
+import FeeItemsButton from "./FeeItemsModal";
 import AlreadyPaidModal from "@/components/finance/AlreadyPaidModal";
 // 돈을 정하는 판단은 화면에서 떼어 `@/lib/invoiceGrid` 에 두고 시험합니다. 섞여 있으면
 // 화면을 손보다 판단을 건드려도 티가 안 나고, 조금 다른 청구서는 그대로 나갑니다.
@@ -884,9 +885,9 @@ export default function InvoiceGridClient({
       <div className="mb-1 flex flex-wrap items-baseline gap-2">
         <h1 className="text-lg font-bold">🧾 청구 · 학비외</h1>
         <span className="text-xs text-slate-400">교재 · 교복 등 · 학생 × 항목</span>
-        <a href="/finance/items" className="text-xs font-semibold text-teal-700 underline">
-          항목 관리 →
-        </a>
+        {/* 예전에는 「항목 관리 →」 링크였습니다. 누르면 다른 대분류 탭으로 넘어가면서
+            보고 있던 학기·부서·체크가 전부 풀렸고, 돌아와서 처음부터 다시 찾아야 했습니다. */}
+        <FeeItemsButton />
       </div>
       <p className="mb-3 text-xs leading-relaxed text-slate-500">
         표는 <b>보는 곳</b>입니다. 넣고 빼는 것은 <b>이름을 눌러 나오는 창</b>에서만 합니다 — 칸이 촘촘해서
@@ -902,10 +903,7 @@ export default function InvoiceGridClient({
       {activeItems.length === 0 && (
         <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800">
           아직 등록된 항목이 없습니다.{" "}
-          <a href="/finance/items" className="font-bold underline">
-            학비외 항목
-          </a>
-          에서 먼저 교재·교복 등을 만들어주세요.
+          위의 <b>[📚 학비외 항목]</b> 에서 먼저 교재·교복 등을 만들어주세요.
         </p>
       )}
 
@@ -1175,11 +1173,7 @@ export default function InvoiceGridClient({
               + 만들기
             </button>
             <span className="w-full text-[11px] text-slate-400">
-              단가·기본 대상을 더 손보려면{" "}
-              <a href="/finance/items" className="font-semibold text-teal-700 underline">
-                학비외 항목
-              </a>{" "}
-              탭에서 고칠 수 있습니다.
+              단가·기본 대상을 더 손보려면 화면 위의 <b>[📚 학비외 항목]</b> 에서 고칠 수 있습니다.
             </span>
           </div>
         )}

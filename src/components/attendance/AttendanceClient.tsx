@@ -8,6 +8,7 @@ import EvidenceModal from "./EvidenceModal";
 import { useRealtimeTable } from "@/lib/useRealtimeTable";
 import { useToast } from "@/components/common/ToastProvider";
 import GuideButton from "@/components/common/GuideButton";
+import SchoolDaysButton from "./SchoolDaysModal";
 import type { AttendanceRecord, AttendanceStatus, WrClass, WrStudent } from "@/lib/types";
 import type { ReasonType } from "@/lib/attendanceRegister";
 import TodayNotices, { type PendingEntry } from "./TodayNotices";
@@ -524,6 +525,9 @@ export default function AttendanceClient({
           >
             📊 {t("출석현황", "Status")}
           </Link>
+          {/* 수업일은 출석률의 **분모**입니다. 「이 반이 왜 이렇지」를 보다가 곧바로 그날이
+              수업일인지 확인하게 되는데, 달력이 다른 화면이면 보고 있던 날짜가 풀립니다. */}
+          <SchoolDaysButton />
           <GuideButton title={t("출석부 사용 가이드", "Attendance guide")} sections={guideSections(t)} />
         </div>
       </div>
@@ -599,9 +603,7 @@ export default function AttendanceClient({
         <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-[12px] text-slate-600">
           이 날은 <b>수업일이 아닙니다</b>
           {closedLabel ? ` — ${closedLabel}` : ""}. 출결을 찍지 않아도 되고, 집계에서도 빠집니다.{" "}
-          <Link href="/attendance/calendar" className="font-semibold underline">
-            달력 고치기
-          </Link>
+          위의 <b>[📆 수업일 달력]</b> 에서 고칠 수 있습니다.
         </div>
       )}
 

@@ -179,9 +179,11 @@ const SCHOOL_TABS: TabDef[] = [
     href: "/attendance",
     match: ["/attendance"],
     children: [
-      { label: "출석부", href: "/attendance", match: ["/attendance"] },
+      { label: "출석부", href: "/attendance", match: ["/attendance", "/attendance/calendar"] },
       { label: "출석현황", href: "/attendance/status", match: ["/attendance/status"] },
-      { label: "수업일 달력", href: "/attendance/calendar", match: ["/attendance/calendar"] },
+      // 「수업일 달력」을 뺐습니다. 수업일은 출석률의 **분모**라 출석부를 보다가 곧바로
+      // 확인하게 되는데, 건너가면 보고 있던 날짜·반이 풀립니다. 두 화면 모두 위쪽의
+      // 「📆 수업일 달력」 단추가 팝업으로 엽니다.
     ],
   },
   { key: "staff", label: "교직원", icon: "🧑‍💼", href: "/staff", match: ["/staff"] },
@@ -192,8 +194,10 @@ const SCHOOL_TABS: TabDef[] = [
     href: "/weekly-report/admin/classes",
     match: ["/weekly-report/admin/classes", "/weekly-report/admin/subjects", "/school/timetable"],
     children: [
-      { label: "반/담임", href: "/weekly-report/admin/classes" },
-      { label: "과목", href: "/weekly-report/admin/subjects" },
+      { label: "반/담임", href: "/weekly-report/admin/classes", match: ["/weekly-report/admin/classes", "/weekly-report/admin/subjects"] },
+      // 「과목」을 뺐습니다. 반을 만들고 담임을 붙이는 일과 과목에 담당을 붙이는 일은 학기
+      // 초에 한 자리에서 한 번에 끝내야 하는데, 화면이 갈려 있어서 한쪽만 하고 잊는 일이
+      // 반복됐습니다. [반/담임] 위의 「📗 과목반 세팅」 단추가 팝업으로 엽니다.
       { label: "수업 시간표", href: "/school/timetable" },
     ],
   },
@@ -416,21 +420,17 @@ const FINANCE_TABS: TabDef[] = [
       { label: "현금영수증", href: "/finance/receipts", match: ["/finance/receipts"] },
     ],
   },
-  // 「무엇을 얼마에 걷는가」를 정하는 자리.
+  // **「학비외 항목」 대분류를 여기서 뺐습니다.**
   //
-  // **납부 항목·할인은 여기서 뺐습니다.** 그건 청구를 하다가 손대게 되는 일이라
-  // ([청구 → 학비]의 「📚 납부 항목 · 할인」 단추가 같은 화면에서 팝업으로 엽니다),
-  // 다른 대분류로 건너가면 보고 있던 표의 학기·부서·체크가 전부 풀립니다. 화면을 옮겨야
-  // 하는 일은 대개 안 하게 되고, 그 사이 학부모에게는 옛 금액이 나갑니다.
+  // 항목은 청구를 하다가 손대게 됩니다 - 「이 교재가 목록에 없네」. 항목이 없으면 표에 열이
+  // 안 생기고, 그러면 그 아이에게 청구할 방법이 없습니다. 그런데 고치러 다른 대분류로
+  // 건너가면 보고 있던 학기·부서·체크가 전부 풀리고, 돌아와서 처음부터 다시 찾아야 했습니다.
+  // 이제 [청구 → 학비외] 표 위의 「📚 학비외 항목」 단추가 같은 화면에서 팝업으로 엽니다.
   //
-  // 주소(`/finance/plans`)는 그대로 둡니다 - 예전 링크와 즐겨찾기가 끊기면 안 됩니다.
-  {
-    key: "catalog",
-    label: "학비외 항목",
-    icon: "📚",
-    href: "/finance/items",
-    match: ["/finance/items", "/finance/plans"],
-  },
+  // 「납부 항목 · 할인」도 같은 이유로 [청구 → 학비] 안의 팝업입니다.
+  //
+  // 주소(`/finance/items` · `/finance/plans`)는 그대로 둡니다 - 즐겨찾기와 옛 링크가
+  // 끊기면 안 됩니다.
 ];
 
 type Section = { title: string; titleEn?: string; icon: string; accent: AccentKey; tabs: TabDef[] };

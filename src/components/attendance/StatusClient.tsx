@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import SchoolDaysButton from "./SchoolDaysModal";
 import { useRouter } from "next/navigation";
 import {
   summarizeAll,
@@ -188,9 +189,12 @@ export default function StatusClient({
         <span className="text-xs text-slate-400">
           {termLabel} · 수업일 {schoolDays.length}일
         </span>
-        <Link href="/attendance" className="ml-auto text-[12px] font-semibold text-teal-700 underline">
-          ← 오늘 출석부
-        </Link>
+        <span className="ml-auto flex items-center gap-2">
+          <SchoolDaysButton />
+          <Link href="/attendance" className="text-[12px] font-semibold text-teal-700 underline">
+            ← 오늘 출석부
+          </Link>
+        </span>
       </div>
       <p className="mb-3 text-[11px] leading-relaxed text-slate-500">
         표시 없는 날은 <b>출석</b>입니다. 출석률 = (수업일수 − 결석일수) ÷ 수업일수 —{" "}
@@ -198,9 +202,7 @@ export default function StatusClient({
         {!coverageStart && (
           <>
             {" "}
-            <Link href="/attendance/calendar" className="font-bold text-amber-700 underline">
-              기록 시작일이 아직 없습니다
-            </Link>{" "}
+            <b className="text-amber-700">기록 시작일이 아직 없습니다</b>{" "}
             — 출석부를 쓰기 전 날짜까지 세고 있습니다.
           </>
         )}
@@ -210,9 +212,9 @@ export default function StatusClient({
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-6 text-center text-[13px] text-amber-900">
           <b>수업일 달력이 비어 있습니다.</b> 며칠이 수업일인지 모르면 출석률을 낼 수 없습니다.
           <br />
-          <Link href="/attendance/calendar" className="mt-1 inline-block font-bold underline">
-            수업일 달력 만들기 →
-          </Link>
+          <span className="mt-2 inline-block">
+            <SchoolDaysButton />
+          </span>
         </div>
       ) : (
         <>

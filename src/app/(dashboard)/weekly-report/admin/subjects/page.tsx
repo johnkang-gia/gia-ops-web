@@ -2,12 +2,12 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isAdminUser } from "@/lib/roles";
-import type { TeamMember, WrClass, WrStudent, WrSubject } from "@/lib/types";
 import SubjectManageClient from "@/components/weeklyReport/admin/SubjectManageClient";
 import GuideButton from "@/components/common/GuideButton";
 import TermSettingTabs from "@/components/school/TermSettingTabs";
 import { TermSnapshotSubjects } from "@/components/school/TermSnapshotView";
 import { loadTermSettingView } from "@/lib/termSettingView";
+import { loadSubjectsPanel } from "@/lib/panels/subjects";
 
 const GUIDE_SECTIONS = [
   {
@@ -31,12 +31,9 @@ export default async function SubjectManagePage({
   const sp = await searchParams;
   const view = await loadTermSettingView(supabase, sp.term);
 
-  const [{ data: subjectsData }, { data: teamData }, { data: classesData }, { data: studentsData }] = await Promise.all([
-    supabase.from("wr_subjects").select("*").order("name", { ascending: true }),
-    supabase.from("app_users").select("email, name").eq("status", "approved").order("email", { ascending: true }),
-    supabase.from("wr_classes").select("*").order("grade", { ascending: true }),
-    supabase.from("wr_students").select("*").eq("is_demo", false).eq("status", "active").order("grade", { ascending: true }).order("name", { ascending: true }),
-  ]);
+  // 이 화면은 [반/담임] 위의 팝업에서도 열립니다. 자료를 모으는 일은 **같은 함수**를
+  // 씁니다 - 두 곳에 적으면 어느 날 한쪽에만 칸이 늘고, 그러면 같은 화면이 두 답을 합니다.
+  const d = await loadSubjectsPanel(supabase);
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -50,12 +47,14 @@ export default async function SubjectManagePage({
       <TermSettingTabs terms={view.terms} currentTermId={view.currentTermId} selectedTermId={view.selectedTermId} />
 
       {view.isCurrent ? (
-        <SubjectManageClient
-          initialSubjects={(subjectsData as WrSubject[] | null) ?? []}
-          team={(teamData as TeamMember[] | null) ?? []}
-          classes={(classesData as WrClass[] | null) ?? []}
-          students={(studentsData as WrStudent[] | null) ?? []}
-        />
+        <>
+          {d.loadError && (
+            <p className="mb-3 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-[12px] text-orange-800">
+              자료를 읽지 못했습니다: {d.loadError}
+            </p>
+          )}
+          <SubjectManageClient initialSubjects={d.initialSubjects} team={d.team} classes={d.classes} students={d.students} />
+        </>
       ) : (
         <TermSnapshotSubjects snapshot={view.snapshot} termLabel={view.selectedLabel} />
       )}

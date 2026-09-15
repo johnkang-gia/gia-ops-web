@@ -11,6 +11,7 @@ import { TermSnapshotClasses } from "@/components/school/TermSnapshotView";
 import { loadTermSettingView } from "@/lib/termSettingView";
 import ClassroomTabletManager from "@/components/classroom/ClassroomTabletManager";
 import ClassroomHistory from "@/components/classroom/ClassroomHistory";
+import SubjectsButton from "@/components/weeklyReport/admin/SubjectsModal";
 
 const GUIDE_SECTIONS = [
   {
@@ -47,7 +48,12 @@ export default async function ClassManagePage({
     <div className="mx-auto max-w-6xl">
       <div className="mb-1 flex items-center justify-between gap-2">
         <h1 className="text-lg font-bold">반/담임</h1>
-        <GuideButton title="반/담임 사용 가이드" sections={GUIDE_SECTIONS} />
+        <div className="flex items-center gap-2">
+          {/* 반을 만드는 일과 과목 담당을 붙이는 일은 학기 초에 한 번에 끝내야 합니다.
+              화면이 갈려 있어서 한쪽만 하고 잊는 일이 반복됐습니다. */}
+          {view.isCurrent && <SubjectsButton />}
+          <GuideButton title="반/담임 사용 가이드" sections={GUIDE_SECTIONS} />
+        </div>
       </div>
       {/* 아이를 반에 넣는 일은 여기서 뺐습니다. 그것은 학생 명부를 고치는 일이라 학기
           고르개 아래에 있으면 안 됩니다 - 지난 학기를 골라 놓고 옮겨도 지금 명부가

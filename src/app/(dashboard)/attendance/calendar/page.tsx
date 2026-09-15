@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isStaffOrAboveUser } from "@/lib/roles";
 import CalendarClient from "@/components/attendance/CalendarClient";
+import { loadSchoolDaysPanel } from "@/lib/panels/schoolDays";
 
 export const dynamic = "force-dynamic";
 
@@ -21,37 +22,24 @@ export default async function AttendanceCalendarPage() {
   if (!isStaffOrAboveUser(me)) redirect("/attendance");
 
   const supabase = await createClient();
-  const [termRes, coverageRes] = await Promise.all([
-    supabase
-      .from("terms")
-      .select("id, year, term_type, start_date, end_date, status")
-      .order("status")
-      .order("start_date", { ascending: false, nullsFirst: false }),
-    supabase.from("attendance_coverage").select("starts_on, note").eq("id", true).maybeSingle(),
-  ]);
-
-  const terms = (termRes.data as { id: string; year: string; term_type: string; start_date: string | null; end_date: string | null; status: string }[] | null) ?? [];
-  const current = terms.find((t) => t.status === "진행중") ?? terms[0] ?? null;
-
-  let days: { day: string; is_school_day: boolean; closed_reason: string | null; label: string | null; touched_by_human: boolean }[] = [];
-  if (current?.start_date && current?.end_date) {
-    const res = await supabase
-      .from("school_days")
-      .select("day, is_school_day, closed_reason, label, touched_by_human")
-      .gte("day", current.start_date)
-      .lte("day", current.end_date)
-      .order("day");
-    if (res.error) console.error("[수업일 달력] 읽지 못했습니다:", res.error.message);
-    days = (res.data as typeof days | null) ?? [];
-  }
+  // [출석부]·[출석현황] 위의 팝업에서도 같은 화면이 열립니다. 자료를 모으는 일은 **같은
+  // 함수**를 씁니다 - 분모가 되는 자료라 두 자리가 다른 답을 하면 출석률이 화면마다 달라집니다.
+  const d = await loadSchoolDaysPanel(supabase);
 
   return (
-    <CalendarClient
-      terms={terms}
-      initialTermId={current?.id ?? ""}
-      initialDays={days}
-      coverageStart={(coverageRes.data as { starts_on: string | null } | null)?.starts_on ?? null}
-      currentUserEmail={me.email}
-    />
+    <>
+      {d.loadError && (
+        <p className="m-4 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-[12px] text-orange-800">
+          자료를 읽지 못했습니다: {d.loadError}
+        </p>
+      )}
+      <CalendarClient
+        terms={d.terms}
+        initialTermId={d.initialTermId}
+        initialDays={d.initialDays}
+        coverageStart={d.coverageStart}
+        currentUserEmail={me.email}
+      />
+    </>
   );
 }

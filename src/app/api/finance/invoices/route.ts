@@ -226,6 +226,9 @@ export async function POST(req: Request) {
       invoice_id: inv.id,
       seq: i + 1,
       name: l.item.name,
+      // **번호를 함께 남깁니다.** 이름이 같은 항목이 넷 있어서(학년별 중국어 교재) 이름만
+      // 으로는 「이 항목이 이미 나갔는가」를 가릴 수 없습니다.
+      item_id: l.item.id,
       qty: l.qty,
       unit_price: Number(l.item.unit_price),
       amount: l.amount,

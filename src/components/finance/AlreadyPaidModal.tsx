@@ -134,6 +134,12 @@ export default function AlreadyPaidModal({
                  * 배로 뜹니다 - 오류가 아니라 「청구된 금액」으로 보입니다.
                  */
                 const locked = !!l.lockedNote;
+                /**
+                 * **잠그지는 않지만 확인이 필요한 줄.** 이름이 같은 항목이 여럿이라 옛
+                 * 청구서 줄로는 어느 것이 나갔는지 가릴 수 없습니다. 잠그면 아직 안 받은
+                 * 돈이 사라지고, 아무 표시 없이 두면 이미 받은 것을 또 적습니다.
+                 */
+                const warn = !locked && !!l.warnNote;
                 return (
                   <div
                     key={l.id}
@@ -143,14 +149,16 @@ export default function AlreadyPaidModal({
                         ? "border-slate-200 bg-slate-100"
                         : on
                           ? "border-emerald-400 bg-emerald-50"
-                          : "border-slate-200 bg-white hover:border-slate-300")
+                          : warn
+                            ? "border-amber-300 bg-amber-50/60"
+                            : "border-slate-200 bg-white hover:border-slate-300")
                     }
                   >
                     <button
                       type="button"
                       disabled={locked}
                       onClick={() => toggle(l.id)}
-                      title={locked ? l.lockedNote ?? undefined : undefined}
+                      title={locked ? (l.lockedNote ?? undefined) : warn ? (l.warnNote ?? undefined) : undefined}
                       className="flex min-w-0 flex-1 items-center gap-2 text-left disabled:cursor-not-allowed"
                     >
                       <span className={"text-[13px] " + (locked ? "text-slate-300" : on ? "text-emerald-600" : "text-slate-300")}>
@@ -162,6 +170,11 @@ export default function AlreadyPaidModal({
                       {locked && (
                         <span className="shrink-0 rounded bg-slate-300 px-1 text-[9px] font-bold text-slate-700">
                           {l.lockedNote}
+                        </span>
+                      )}
+                      {warn && (
+                        <span className="shrink-0 rounded bg-amber-600 px-1 text-[9px] font-bold text-white" title={l.warnNote ?? undefined}>
+                          확인 필요
                         </span>
                       )}
                     </button>

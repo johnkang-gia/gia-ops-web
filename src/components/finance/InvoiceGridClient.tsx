@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { BILL_LABEL, billedItems } from "@/lib/billedItems";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { BILL_LABEL, billedItems, markOf } from "@/lib/billedItems";
 import { useFinanceLive } from "@/lib/useFinanceLive";
 import DragScroll from "@/components/common/DragScroll";
 import FeeItemsButton from "./FeeItemsModal";
@@ -131,7 +131,7 @@ type Props = {
    * 이게 없어서 같은 항목이 두 번 나갔습니다 - 교복을 한 번 청구한 뒤 다시 발행하면 교복이
    * 또 담겼고, 「이미 받음」으로 만든 청구서에는 안 고른 항목까지 함께 담겼습니다.
    */
-  invoiceLines: { invoice_id: string; name: string }[];
+  invoiceLines: { invoice_id: string; name: string; item_id?: string | null }[];
   terms: Term[];
   currentUserEmail: string;
   loadError: string | null;
@@ -242,6 +242,25 @@ export default function InvoiceGridClient({
   const billed = useMemo(
     () => billedItems(invoices as unknown as Parameters<typeof billedItems>[0], lineRows, payments),
     [invoices, lineRows, payments],
+  );
+  /**
+   * **그 이름을 쓰는 항목이 몇 개인가.**
+   *
+   * 「《加油(Go for it)-小学中文 3》」은 2·3·4·5학년 네 항목이 **이름이 같습니다**(다른 것은
+   * 한국어 이름뿐). 옛 청구서 줄에는 번호가 없어서 이름으로 맞춰볼 수밖에 없는데, 겹치는
+   * 이름이면 넷 중 어느 것이 나갔는지 알 수 없습니다. 그때는 잠그지도 열지도 않고 사람에게
+   * 묻습니다 - 모르는 채로 잠그면 받을 돈이 사라지고, 모르는 채로 열면 두 번 청구됩니다.
+   */
+  const sameName = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const it of items) m.set(it.name, (m.get(it.name) ?? 0) + 1);
+    return m;
+  }, [items]);
+  /** 화면이 부르는 한 줄. 판정은 `markOf` 한 곳입니다. */
+  const markFor = useCallback(
+    (studentId: string, item: { id: string; name: string }) =>
+      markOf(billed.get(studentId), item, sameName.get(item.name) ?? 1),
+    [billed, sameName],
   );
   const [dept, setDept] = useState<DeptTab>("초등부");
   /** 보고 있는 분류. "전체" 면 분류를 가리지 않습니다. */
@@ -824,9 +843,26 @@ export default function InvoiceGridClient({
          *
          * 판정은 `billedItems` 한 곳입니다. 발행·이미받음·표가 같은 답을 봐야 합니다.
          */
-        const marks = billed.get(s.id);
         const mine = (linesByStudent.get(s.id) ?? []).filter((l) => !category || l.item.category === category);
-        const rest = mine.filter((l) => !marks?.has(l.item.name));
+        /**
+         * **모르는 것은 넣지도 빼지도 않습니다.**
+         *
+         * 옛 청구서 줄에는 항목 번호가 없어서 이름으로만 맞춰볼 수 있습니다. 이름이 겹치는
+         * 항목(학년별 중국어 교재)은 넷 중 어느 것이 나갔는지 알 수 없는데, 그대로 담으면
+         * 두 번 청구되고 그대로 빼면 받을 돈이 사라집니다. 둘 다 조용합니다.
+         *
+         * 그래서 이 발행에서는 빼되, **왜 빠졌는지를 사람에게 말합니다**(§5). 상세 팝업에서
+         * 한 건씩 확인해 넣을 수 있습니다.
+         */
+        const unsure = mine.filter((l) => markFor(s.id, l.item)?.unsure);
+        const rest = mine.filter((l) => markFor(s.id, l.item) == null);
+        if (unsure.length > 0) {
+          failed.push(
+            `${s.name} — 이름이 같은 항목이 있어 이미 나갔는지 가릴 수 없습니다(${unsure
+              .map((l) => l.item.name_ko?.trim() || l.item.name)
+              .join(", ")}). 상세에서 확인해주세요`,
+          );
+        }
         if (rest.length === 0) {
           // 조용히 건너뛰면 발행된 줄 알고 넘어갑니다. 왜 빠졌는지 말해줍니다(§5).
           failed.push(`${s.name}(${category ?? "학비외"} — 이미 모두 청구서에 나갔습니다)`);
@@ -867,7 +903,10 @@ export default function InvoiceGridClient({
           // **방금 나간 줄을 바로 얹습니다.** 안 얹으면 표가 다시 불러올 때까지 안 잠기고,
           // 그 사이에 또 누르면 같은 항목이 두 장에 담깁니다.
           const invId = (body.invoice as Invoice | undefined)?.id;
-          if (invId) setLineRows((p) => [...p, ...rest.map((l) => ({ invoice_id: invId, name: l.item.name }))]);
+          // **번호를 함께 얹습니다.** 이름만 얹으면 이름이 같은 다른 학년 교재까지 함께
+          // 잠깁니다 - 아직 안 나간 교재가 화면에서 사라집니다.
+          if (invId)
+            setLineRows((p) => [...p, ...rest.map((l) => ({ invoice_id: invId, name: l.item.name, item_id: l.item.id }))]);
         }
         // 한 명이 실패해도 나머지는 계속합니다. 다만 **누가 실패했는지 반드시 말합니다** -
         // 조용히 넘기면 그 아이만 인보이스 없이 남습니다.
@@ -985,11 +1024,12 @@ export default function InvoiceGridClient({
           made.push(b.invoice);
           // 고른 항목만 담았으므로 그 이름들을 그대로 얹습니다. 이름은 명부가 아니라 **표가
           // 들고 있는 항목 이름**입니다 - 서버가 청구서에 찍은 것과 같은 글자입니다.
-          const names = (linesByStudent.get(s.id) ?? [])
-            .filter((l) => j.itemIds.length === 0 || j.itemIds.includes(l.item.id))
-            .map((l) => l.item.name);
+          const got = (linesByStudent.get(s.id) ?? []).filter(
+            (l) => j.itemIds.length === 0 || j.itemIds.includes(l.item.id),
+          );
           const invId = b.invoice.id;
-          setLineRows((p) => [...p, ...names.map((name) => ({ invoice_id: invId, name }))]);
+          // 번호를 함께 얹습니다 - 이름이 같은 다른 학년 항목까지 잠기면 안 됩니다.
+          setLineRows((p) => [...p, ...got.map((l) => ({ invoice_id: invId, name: l.item.name, item_id: l.item.id }))]);
         }
       }
 
@@ -1831,12 +1871,15 @@ export default function InvoiceGridClient({
           lines={(linesByStudent.get(alreadyFor.id) ?? []).map((l) => {
             // 이미 청구서에 담긴 항목은 **다시 고를 수 없게** 잠급니다. 고를 수 있게 두면
             // 같은 항목이 두 장에 담기고, 학부모 화면에는 낼 돈이 두 배로 뜹니다.
-            const mark = billed.get(alreadyFor.id)?.get(l.item.name);
+            const mark = markFor(alreadyFor.id, l.item);
             return {
               id: l.item.id,
               label: l.item.name_ko?.trim() || l.item.name,
               amount: Number(l.amount ?? 0),
-              lockedNote: mark ? BILL_LABEL[mark.state] : null,
+              // 이름만으로 맞은 것(옛 줄 · 겹치는 이름)은 **잠그지 않습니다.** 잠그면 아직
+              // 안 받은 돈이 화면에서 사라지고, 사라진 돈은 아무도 안 찾습니다.
+              lockedNote: mark && !mark.unsure ? BILL_LABEL[mark.state] : null,
+              warnNote: mark?.unsure ? "확인 필요 — 이름이 같은 항목이 있습니다" : null,
             };
           })}
           busy={busy}
@@ -2228,31 +2271,41 @@ export default function InvoiceGridClient({
                            * 화면에서는 「없던 일」처럼 보입니다 - 그 상태로 다시 발행하면 같은
                            * 항목이 또 담기거나(중복), 받을 돈이 목록에서 사라집니다(누락).
                            */
-                          const mark = billed.get(detail.id)?.get(item.name);
+                          const mark = markFor(detail.id, item);
+                          /**
+                           * 이름만으로 맞은 것은 **잠그지 않습니다.** 넷 중 어느 것이
+                           * 나갔는지 모르는 채로 잠그면 아직 안 나간 교재가 목록에서 사라지고,
+                           * 그건 오류가 아니라 「이미 받은 것」으로 보입니다.
+                           */
+                          const lock = mark && !mark.unsure ? mark : null;
                           return (
                             <div
                               key={item.id}
                               className={
                                 "flex items-center gap-2 rounded-lg border px-2 py-2 " +
-                                (mark
+                                (lock
                                   ? "border-slate-200 bg-slate-100"
-                                  : l
-                                    ? "border-teal-300 bg-teal-50/60"
-                                    : "border-slate-100")
+                                  : mark?.unsure
+                                    ? "border-amber-300 bg-amber-50/60"
+                                    : l
+                                      ? "border-teal-300 bg-teal-50/60"
+                                      : "border-slate-100")
                               }
                             >
                               <button
                                 type="button"
-                                disabled={!!mark}
+                                disabled={!!lock}
                                 onClick={() => toggleCell(detail, item)}
                                 title={
-                                  mark
-                                    ? `이미 청구서에 나갔습니다(${BILL_LABEL[mark.state]}). 고치려면 그 청구서를 취소해주세요.`
-                                    : undefined
+                                  lock
+                                    ? `이미 청구서에 나갔습니다(${BILL_LABEL[lock.state]}). 고치려면 그 청구서를 취소해주세요.`
+                                    : mark?.unsure
+                                      ? "이름이 같은 항목이 여럿이라, 이미 나간 것이 이 항목인지 가릴 수 없습니다. 그 청구서를 열어 확인해주세요."
+                                      : undefined
                                 }
                                 className={
                                   "flex h-5 w-5 shrink-0 items-center justify-center rounded border text-[11px] font-bold disabled:cursor-not-allowed " +
-                                  (mark
+                                  (lock
                                     ? "border-slate-300 bg-slate-300 text-white"
                                     : l
                                       ? "border-teal-600 bg-teal-600 text-white"
@@ -2280,18 +2333,25 @@ export default function InvoiceGridClient({
                                 )}
                                 {/* **이미 나간 것은 그 자리에서 말해줍니다.** 안 적으면 왜 못
                                     빼는지 모르고, 모르면 항목 쪽을 뒤지게 됩니다. */}
-                                {mark && (
+                                {lock && (
                                   <span
                                     className={
                                       "ml-1.5 rounded px-1 text-[10px] font-bold " +
-                                      (mark.state === "완납"
+                                      (lock.state === "완납"
                                         ? "bg-emerald-600 text-white"
-                                        : mark.state === "일부"
+                                        : lock.state === "일부"
                                           ? "bg-amber-500 text-white"
                                           : "bg-slate-400 text-white")
                                     }
                                   >
-                                    {BILL_LABEL[mark.state]}
+                                    {BILL_LABEL[lock.state]}
+                                  </span>
+                                )}
+                                {/* **모르면 모른다고 적습니다.** 잠긴 것처럼 회색으로 두면
+                                    사람은 이미 받은 것으로 읽고 다시는 안 봅니다. */}
+                                {mark?.unsure && (
+                                  <span className="ml-1.5 rounded bg-amber-600 px-1 text-[10px] font-bold text-white">
+                                    확인 필요
                                   </span>
                                 )}
                               </span>

@@ -33,6 +33,14 @@ export type PayableLine = {
    * 줄을 회색으로 잠급니다 - 다시 고를 수 있게 두면 같은 항목이 두 장에 담깁니다.
    */
   lockedNote?: string | null;
+  /**
+   * **잠그지는 않지만 사람이 봐야 하는 줄.**
+   *
+   * 이름이 같은 항목이 넷 있어서(학년별 중국어 교재) 옛 청구서 줄로는 어느 것이 나갔는지
+   * 가릴 수 없습니다. 그 줄을 잠그면 아직 안 받은 돈이 화면에서 사라지므로, 고를 수는 있게
+   * 두고 **왜 헷갈리는지를 적어둡니다.**
+   */
+  warnNote?: string | null;
 };
 
 export type AlreadyPaidInput = {

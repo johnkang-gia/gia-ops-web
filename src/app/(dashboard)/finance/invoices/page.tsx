@@ -75,8 +75,16 @@ export default async function InvoicesPage() {
      * 근거는 **청구서에 실제로 찍힌 줄**입니다. 항목을 나중에 지우거나 이름을 바꿔도 그때
      * 나간 종이는 안 바뀝니다. 자르지 않고 끝까지 읽습니다(§2-12).
      */
-    readAll<{ invoice_id: string; name: string }>((from, to) =>
-      supabase.from("invoice_lines").select("invoice_id, name").order("invoice_id").order("seq").range(from, to),
+    readAll<{ invoice_id: string; name: string; item_id: string | null }>((from, to) =>
+      supabase
+        .from("invoice_lines")
+        // **번호도 함께 읽습니다.** 이름이 같은 항목이 넷 있어서(학년별 중국어 교재) 이름만
+        // 보면 하나가 나갔을 때 넷이 모두 나간 것으로 읽힙니다 - 아직 안 나간 교재가
+        // 화면에서 「받음」으로 잠기고 발행에서도 빠져, 받을 돈이 조용히 사라집니다.
+        .select("invoice_id, name, item_id")
+        .order("invoice_id")
+        .order("seq")
+        .range(from, to),
     ),
   ]);
   if (termRes.error) console.error("[인보이스] 학기를 읽지 못했습니다:", termRes.error.message);

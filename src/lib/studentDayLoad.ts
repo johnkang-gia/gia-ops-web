@@ -272,7 +272,11 @@ export async function loadStudentDay(supabase: SupabaseClient, opts: LoadOptions
       continue;
     }
 
-    // 확정된 픽업은 ①에 이미 있습니다. 문의만 올립니다.
+    // **확정된 줄은 사람이 픽업으로 정한 것입니다.** ①이 이미 픽업으로 세웠으므로 여기서
+    // 다시 세우지 않습니다. 갈래(`kind`)로만 갈랐더니, AI가 「문의」로 읽은 글은 사람이 픽업
+    // 확정을 눌러도 특이사항 칸에 **문의로 남아 있었습니다** - 홍선우가 그랬습니다. 판단의
+    // 근거는 AI의 첫인상이 아니라 사람이 내린 결정입니다.
+    if (r.status === "확정") continue;
     if (r.kind !== "문의") continue;
     if (r.answered_at) continue; // 답한 것은 할 일이 아닙니다
     push(r.student_id, r.channel_label ?? r.matched_name, {

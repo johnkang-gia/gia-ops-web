@@ -49,6 +49,8 @@ export type PickupRow = {
   matched_name: string | null;
   status: "확인대기" | "확정" | "무시";
   resolved_by: string | null;
+  /** 사람이 이어 둔 집(토들 방). 형제방이면 이것만으로도 「누구 집인지」는 확실합니다. */
+  channel_id?: string | null;
 };
 
 export type StudentOption = {
@@ -80,10 +82,17 @@ export default function PickupTriage({
   students,
   onChanged,
   compact = false,
+  houseOf,
 }: {
   /** 확인이 필요한 줄만. 가르는 일은 부르는 쪽이 합니다 - 여기서 또 거르면 두 곳이 어긋납니다. */
   rows: PickupRow[];
   students: StudentOption[];
+  /**
+   * 방 번호 → 그 방에 이어 둔 아이들. **형제방은 「미연결」이 아닙니다** - 집은 학기 초에
+   * 사람이 이어 두었고, 본문이 둘 중 누구인지 안 가른 것뿐입니다. 없으면 예전처럼 「학생
+   * 미연결」로 뜹니다(방 연결 자체가 없는 경우가 그렇습니다).
+   */
+  houseOf?: Map<string, { id: string; name: string }[]>;
   /** 무언가 처리한 뒤. 부르는 화면이 제 목록을 다시 읽습니다. */
   onChanged: () => void | Promise<void>;
   /** 업무보드처럼 좁은 칸. 글자·여백만 줄이고 고를 수 있는 것은 같습니다. */
@@ -506,6 +515,17 @@ export default function PickupTriage({
                   {r.student_id ? (
                     <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-bold text-blue-800">
                       <RowStudentName maps={whereMaps} studentId={r.student_id} name={r.matched_name} />
+                    </span>
+                  ) : houseOf?.get(r.channel_id ?? "")?.length ? (
+                    // **집은 이미 정해져 있습니다.** 「미연결」이라고 적으면 보는 사람은 이어
+                    // 둔 것이 없는 줄 알고 137명 목록을 처음부터 다시 뒤집니다 - 이미 한 일을
+                    // 또 하게 됩니다. 아이만 안 갈린 것이므로 그 집 아이 전부를 적습니다.
+                    <span
+                      className="rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-bold text-indigo-800"
+                      title="이 방에 이어 둔 아이들입니다. 본문에서 누구인지 안 갈려서, 기본은 둘 다 해당입니다. 한 명만 해당하면 아래에서 그 아이를 고르세요."
+                    >
+                      🏠 {houseOf.get(r.channel_id ?? "")!.map((s) => s.name).join("·")}{" "}
+                      {houseOf.get(r.channel_id ?? "")!.length === 2 ? "둘 다 해당" : "모두 해당"}
                     </span>
                   ) : (
                     <span

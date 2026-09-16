@@ -213,7 +213,14 @@ export async function loadTodayPickups(
       // 읽는데 조회에는 없었습니다 - 학생을 못 이은 연락의 이름 되살리기가 통째로 안
       // 돌고 있었습니다(값이 undefined 라 오류도 안 납니다).
       .select("student_id, ai_pickup_time, matched_name, ai_student_name")
-      .eq("kind", "픽업")
+      // **갈래(`kind`)로 거르지 않습니다.** 이 표의 `kind` 는 **AI가 읽은 첫인상**이고,
+      // `status = "확정"` 은 **사람이 픽업으로 정한 것**입니다. 둘을 함께 걸면 AI가 「문의」로
+      // 읽은 글은 사람이 픽업으로 확정해도 여기 영영 안 들어옵니다 - 홍선우가 그랬습니다.
+      // 화면에는 오류가 아니라 「픽업 목록에 없는 아이」로 보이고, 하원 시간에 그 아이만
+      // 남습니다.
+      //
+      // 확정은 이 창구에서 픽업 확정 단추 하나만 만듭니다. 결석·지각·오늘셔틀·아님은 전부
+      // `status = "무시"` 로 내려갑니다. 그래서 **확정 = 픽업**이 맞습니다.
       .eq("status", "확정")
       .eq("service_date", dateKey)
       .eq("is_demo", false)

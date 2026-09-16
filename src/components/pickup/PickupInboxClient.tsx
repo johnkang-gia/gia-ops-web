@@ -15,6 +15,7 @@ import { extractTargetRange, todayKey } from "@/lib/attendanceDigest";
 import { extractRecurringWeekdays, hasRecurringPhrase, weekdayLabel } from "@/lib/parentRecurrence";
 import { guessNote, isClockTime, KIND_LOOK, NOTE_KINDS, type NoteKind } from "@/lib/studentDayNotes";
 import { readsShuttleRequest } from "@/lib/shuttleRequest";
+import { loadHouseCandidates, type HouseChild } from "@/lib/houseCandidates";
 
 // 픽업 인박스. 토들·전화·교사·직접입력 어디로 들어왔든 여기 한 곳에 모입니다.
 //
@@ -38,6 +39,8 @@ export type PickupRow = {
   matched_name: string | null;
   status: "확인대기" | "확정" | "무시";
   resolved_by: string | null;
+  /** 사람이 이어 둔 집(토들 방). 형제방이면 이것만으로도 「누구 집인지」는 확실합니다. */
+  channel_id?: string | null;
 };
 
 export type StudentOption = {
@@ -85,6 +88,34 @@ export default function PickupInboxClient({
 
   /** 아직 판단이 안 난 줄. 판단은 `PickupTriage` 한 곳에서만 합니다. */
   const pending = useMemo(() => rows.filter((r) => r.status === "확인대기"), [rows]);
+
+  /**
+   * 방에 이어 둔 아이들. **형제방은 「미연결」이 아닙니다** - 집은 학기 초에 사람이 이어
+   * 두었고, 본문이 둘 중 누구인지 안 가른 것뿐입니다. 업무보드와 **같은 함수**로 찾습니다.
+   */
+  const [houseOf, setHouseOf] = useState<Map<string, HouseChild[]>>(new Map());
+  const houseKeys = pending
+    .filter((r) => !r.student_id && r.channel_id)
+    .map((r) => r.channel_id as string)
+    .sort()
+    .join(",");
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      const { houseOf: h, problem } = await loadHouseCandidates(
+        createClient(),
+        houseKeys ? houseKeys.split(",") : [],
+        students,
+      );
+      if (!alive) return;
+      // 조용히 넘기지 않습니다(§5). 이어 둔 것이 안 보이는 것과 없는 것은 다른 말입니다.
+      if (problem) notify(problem, "error");
+      setHouseOf(h);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [houseKeys, students, notify]);
   /** 특이사항 폼이 열려 있는 줄. 한 번에 하나만 엽니다 - 여럿 열리면 어느 칸에 적는지 헷갈립니다. */
   // ── 오늘 픽업: 한 아이는 한 칸 ────────────────────────────────────────────
   //
@@ -309,6 +340,7 @@ export default function PickupInboxClient({
         <PickupTriage
           rows={pending}
           students={students}
+          houseOf={houseOf}
           onChanged={async () => {
             await refresh();
             router.refresh();

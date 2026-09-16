@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { todayKst } from "@/lib/kst";
 import PickupTriage, { type PickupRow, type StudentOption } from "@/components/pickup/PickupTriage";
+import { loadHouseCandidates, type HouseChild } from "@/lib/houseCandidates";
 import type { RosterStudent } from "@/lib/attendanceDigest";
 
 /**
@@ -26,43 +27,9 @@ import type { RosterStudent } from "@/lib/attendanceDigest";
  */
 export default function PickupTriagePanel({ roster }: { roster: RosterStudent[] }) {
   const [rows, setRows] = useState<PickupRow[] | null>(null);
+  const [houseOf, setHouseOf] = useState<Map<string, HouseChild[]>>(new Map());
   const [open, setOpen] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    const supabase = createClient();
-    const { data, error: err } = await supabase
-      .from("pickup_requests")
-      .select(
-        "id, service_date, source, channel_label, sender_name, received_at, raw_text, ai_student_name, ai_pickup_time, ai_confidence, ai_note, student_id, matched_name, status, resolved_by, is_demo",
-      )
-      .eq("status", "확인대기")
-      // 지난 것까지 전부 끌어오면 오래된 줄이 오늘 것을 덮습니다. 어제 것은 인박스에서 봅니다.
-      .gte("service_date", todayKst())
-      .order("received_at", { ascending: false })
-      .limit(40);
-    // 조용히 넘기지 않습니다(CLAUDE.md §5) - 빈 목록은 「없음」과 구별되지 않습니다.
-    if (err) {
-      setError(err.message);
-      return;
-    }
-    setError(null);
-    setRows(((data as (PickupRow & { is_demo?: boolean })[] | null) ?? []).filter((r) => !r.is_demo));
-  }, []);
-
-  useEffect(() => {
-    void load();
-    const supabase = createClient();
-    // 조건을 걸지 않습니다. 화면에 아직 없는 줄이 새로 생기거나 처리되어 빠지는 것은
-    // 조건에 안 걸려 통째로 놓칩니다.
-    const channel = supabase
-      .channel("work-pickup-triage")
-      .on("postgres_changes", { event: "*", schema: "public", table: "pickup_requests" }, () => void load())
-      .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [load]);
 
   /** 명부는 업무보드가 이미 들고 있습니다 - 139명을 또 읽지 않습니다. */
   const students = useMemo<StudentOption[]>(
@@ -79,6 +46,54 @@ export default function PickupTriagePanel({ roster }: { roster: RosterStudent[] 
         })),
     [roster],
   );
+
+  const load = useCallback(async () => {
+    const supabase = createClient();
+    const { data, error: err } = await supabase
+      .from("pickup_requests")
+      .select(
+        // `channel_id` 를 함께 읽습니다. 형제방은 「미연결」이 아니라 **아이만 안 갈린 것**이고,
+        // 그 사실은 이 칸에만 있습니다.
+        "id, service_date, source, channel_label, sender_name, received_at, raw_text, ai_student_name, ai_pickup_time, ai_confidence, ai_note, student_id, matched_name, status, resolved_by, channel_id, is_demo",
+      )
+      .eq("status", "확인대기")
+      // 지난 것까지 전부 끌어오면 오래된 줄이 오늘 것을 덮습니다. 어제 것은 인박스에서 봅니다.
+      .gte("service_date", todayKst())
+      .order("received_at", { ascending: false })
+      .limit(40);
+    // 조용히 넘기지 않습니다(CLAUDE.md §5) - 빈 목록은 「없음」과 구별되지 않습니다.
+    if (err) {
+      setError(err.message);
+      return;
+    }
+    setError(null);
+    const list = ((data as (PickupRow & { is_demo?: boolean })[] | null) ?? []).filter((r) => !r.is_demo);
+    setRows(list);
+
+    // 아이가 안 정해진 줄만 집을 찾아봅니다. 이미 정해진 줄에는 붙일 자리가 없습니다.
+    const { houseOf: h, problem } = await loadHouseCandidates(
+      supabase,
+      list.filter((r) => !r.student_id && r.channel_id).map((r) => r.channel_id as string),
+      students,
+    );
+    // 조용히 넘기지 않습니다(§5) - 이어 둔 것이 안 보이는 것과 없는 것은 다른 말입니다.
+    if (problem) setError(problem);
+    setHouseOf(h);
+  }, [students]);
+
+  useEffect(() => {
+    void load();
+    const supabase = createClient();
+    // 조건을 걸지 않습니다. 화면에 아직 없는 줄이 새로 생기거나 처리되어 빠지는 것은
+    // 조건에 안 걸려 통째로 놓칩니다.
+    const channel = supabase
+      .channel("work-pickup-triage")
+      .on("postgres_changes", { event: "*", schema: "public", table: "pickup_requests" }, () => void load())
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [load]);
 
   const count = rows?.length ?? 0;
 
@@ -110,7 +125,7 @@ export default function PickupTriagePanel({ roster }: { roster: RosterStudent[] 
           ) : rows === null ? (
             <p className="py-3 text-center text-[11px] text-slate-400">불러오는 중…</p>
           ) : (
-            <PickupTriage rows={rows} students={students} onChanged={load} compact />
+            <PickupTriage rows={rows} students={students} onChanged={load} compact houseOf={houseOf} />
           )}
         </div>
       )}

@@ -124,10 +124,36 @@ export async function POST(req: Request) {
   );
   // 분류를 고르는 것도 서버가 합니다. 화면이 고른 줄만 받아서 넣으면, 화면이 틀렸을 때
   // 틀린 내역이 그대로 나갑니다.
-  const lines = category ? all.filter((l) => l.item.category === category) : all;
+  const byCategory = category ? all.filter((l) => l.item.category === category) : all;
+
+  /**
+   * **어느 항목을 담을 것인가.**
+   *
+   * ── 무엇이 문제였나 ───────────────────────────────────────────────────────
+   *
+   * 「이미 받음」에서 교복 10만원만 체크해도 **그 아이의 학비외 항목이 전부** 담겼습니다.
+   * 입금은 체크한 10만원만 붙으니 그 청구서는 일부납으로 남았고, 함께 담긴 교재비가
+   * 미납·연체 목록에 다시 떴습니다 - 이미 받았다고 적어둔 것이 되돌아오는 것처럼 보입니다.
+   *
+   * 이제 화면이 고른 항목 번호를 보내면 **그것만** 담습니다. 금액은 여전히 서버가 냅니다 -
+   * 무엇을 담을지는 사람이 정하지만 얼마인지는 자료가 정합니다(§2-12).
+   *
+   * 안 보내면 예전처럼 전부 담습니다. 고친 적 없는 화면이 갑자기 빈 청구서를 만들면 안
+   * 됩니다.
+   */
+  const askedIds = Array.isArray((body as { itemIds?: unknown } | null)?.itemIds)
+    ? ((body as { itemIds: unknown[] }).itemIds.filter((v) => typeof v === "string") as string[])
+    : null;
+  const lines = askedIds && askedIds.length > 0 ? byCategory.filter((l) => askedIds.includes(l.item.id)) : byCategory;
   if (lines.length === 0) {
     return NextResponse.json(
-      { error: category ? `이 학생에게 붙은 ${category} 항목이 없습니다.` : "이 학생에게 붙은 항목이 없습니다." },
+      {
+        error: askedIds
+          ? "고른 항목이 이 학생에게 붙어 있지 않습니다. 표에서 다시 확인해주세요."
+          : category
+            ? `이 학생에게 붙은 ${category} 항목이 없습니다.`
+            : "이 학생에게 붙은 항목이 없습니다.",
+      },
       { status: 400 },
     );
   }

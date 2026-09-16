@@ -27,7 +27,7 @@ export default async function InvoicesPage() {
   const supabase = await createClient();
   // 명부는 **원본 표**에서 읽습니다. 공용 뷰(wr_students_basic)에도 학생이 있지만, 이 화면은
   // 돈에 관한 화면이라 재무 권한으로만 열리고 필요한 칸이 전부 원본에 있습니다.
-  const [stuRes, itemsRes, ovRes, invRes, termRes, gmRes, gRes, crRes, payRes] = await Promise.all([
+  const [stuRes, itemsRes, ovRes, invRes, termRes, gmRes, gRes, crRes, payRes, lineRes] = await Promise.all([
     // 명부의 칸을 그대로 가져옵니다. 보호자 연락처가 없으면 청구서가 못 나가고, 악기 칸이
     // 없으면 인보이스의 악기가 명부와 어긋나도 아무도 모릅니다.
     //
@@ -64,6 +64,19 @@ export default async function InvoicesPage() {
     // 누가 냈는지 알 수 없고, 결국 수납 화면을 따로 열게 됩니다.
     readAll<PayLite>((from, to) =>
       supabase.from("payments").select("invoice_id, amount, paid_at, method_kind").order("paid_at").order("invoice_id").range(from, to),
+    ),
+    /**
+     * **무엇이 이미 청구서에 담겼는가.**
+     *
+     * 이 판정이 없어서 같은 항목이 두 번 나갔습니다 - 교복을 한 번 청구한 뒤 교재비를
+     * 청구하려고 다시 발행하면 교복이 또 담겼고, 「이미 받음」으로 만든 청구서에도 안 고른
+     * 항목까지 함께 담겼습니다.
+     *
+     * 근거는 **청구서에 실제로 찍힌 줄**입니다. 항목을 나중에 지우거나 이름을 바꿔도 그때
+     * 나간 종이는 안 바뀝니다. 자르지 않고 끝까지 읽습니다(§2-12).
+     */
+    readAll<{ invoice_id: string; name: string }>((from, to) =>
+      supabase.from("invoice_lines").select("invoice_id, name").order("invoice_id").order("seq").range(from, to),
     ),
   ]);
   if (termRes.error) console.error("[인보이스] 학기를 읽지 못했습니다:", termRes.error.message);
@@ -108,7 +121,7 @@ export default async function InvoicesPage() {
       ? `명부에 아직 없는 칸: ${stuRes.missing.join(", ")} — 이 칸들은 비어 보입니다. 보호자 연락처 SQL(20260903060000_guardian_phones.sql)을 실행하면 채워집니다.`
       : null;
   const loadError =
-    stuRes.error ?? itemsRes.error?.message ?? ovRes.error?.message ?? readNotice(invRes, crRes, payRes) ?? missingNote;
+    stuRes.error ?? itemsRes.error?.message ?? ovRes.error?.message ?? readNotice(invRes, crRes, payRes, lineRes) ?? missingNote;
 
   return (
     <InvoiceGridClient
@@ -118,6 +131,7 @@ export default async function InvoicesPage() {
       recentInvoices={invRes.rows}
       initialReceipts={crRes.rows}
       payments={payRes.rows}
+      invoiceLines={lineRes.rows}
       terms={(termRes.data as Term[] | null) ?? []}
       currentUserEmail={me.email}
       loadError={loadError}

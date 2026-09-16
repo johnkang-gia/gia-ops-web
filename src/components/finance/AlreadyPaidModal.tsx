@@ -1,7 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { mismatch, paidMemo, remaining, resolveAmount, sumPicked, won, type PayableLine } from "@/lib/alreadyPaid";
+import {
+  batchByDate,
+  batchNote,
+  mismatch,
+  paidMemo,
+  remaining,
+  resolveAmount,
+  sumPicked,
+  won,
+  type PaidBatch,
+  type PayableLine,
+} from "@/lib/alreadyPaid";
 import { todayKst } from "@/lib/kst";
 import { Who } from "@/components/common/HomonymProvider";
 
@@ -35,6 +46,15 @@ export type AlreadyPaidResult = {
   memo: string;
   /** 체크한 항목. 부르는 쪽이 「무엇이 남았는지」를 셀 때 씁니다. */
   pickedIds: string[];
+  /**
+   * **받은 날로 묶은 결과.** 교복은 8/24, 교재비는 8/28에 받은 경우 두 묶음이 됩니다.
+   *
+   * 부르는 쪽은 묶음마다 청구서를 한 장씩 만듭니다 - 청구서 날짜가 곧 그 돈이 잡히는
+   * 달이라, 두 날짜를 한 장에 묶으면 월 마감 숫자가 어긋납니다.
+   *
+   * 항목을 안 고르고 금액만 적은 경우에는 빈 배열입니다.
+   */
+  batches: PaidBatch[];
 };
 
 const METHODS = ["계좌이체", "카드", "현금", "올톡페이"];
@@ -56,6 +76,13 @@ export default function AlreadyPaidModal({
   onClose: () => void;
 }) {
   const [pickedIds, setPickedIds] = useState<string[]>([]);
+  /**
+   * 항목마다 받은 날. **비어 있으면 아래 공통 날짜**를 씁니다.
+   *
+   * 기본을 공통 날짜로 두는 이유: 같은 날 다 받은 집이 대부분이라, 줄마다 날짜를 찍게
+   * 하면 안 바꿔도 되는 것까지 손대게 됩니다. 다른 줄만 고치면 됩니다.
+   */
+  const [dateOf, setDateOf] = useState<Record<string, string>>({});
   const [typedAmount, setTypedAmount] = useState("");
   const [paidAt, setPaidAt] = useState(todayKst());
   const [method, setMethod] = useState(METHODS[0]);
@@ -65,6 +92,16 @@ export default function AlreadyPaidModal({
   const amount = resolveAmount(lines, input);
   const m = mismatch(lines, input);
   const left = remaining(lines, pickedIds);
+  /** 받은 날로 묶은 결과. 날짜가 하나면 묶음도 하나입니다. */
+  const batches = batchByDate(lines, pickedIds.map((id) => ({ id, paidAt: dateOf[id] ?? "" })), paidAt);
+  const split = batches.length > 1;
+  /**
+   * **날짜를 나눠 적었으면 금액 칸은 쓰지 않습니다.**
+   *
+   * 「8/24에 10만, 8/28에 8만2천」인데 금액 칸에 18만2천을 적으면, 그 숫자가 어느 날의
+   * 것인지 알 수 없습니다. 나눠 적는 순간 금액은 **각 묶음의 합**이 답입니다.
+   */
+  const total = split ? batches.reduce((n, b) => n + b.amount, 0) : amount;
 
   function toggle(id: string) {
     setPickedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -90,25 +127,75 @@ export default function AlreadyPaidModal({
             <div className="space-y-1">
               {lines.map((l) => {
                 const on = pickedIds.includes(l.id);
+                /**
+                 * 이미 청구서에 담겨 있는 항목. **다시 고를 수 없습니다.**
+                 *
+                 * 고를 수 있게 두면 같은 항목이 두 장에 담기고, 학부모 화면에는 낼 돈이 두
+                 * 배로 뜹니다 - 오류가 아니라 「청구된 금액」으로 보입니다.
+                 */
+                const locked = !!l.lockedNote;
                 return (
-                  <button
+                  <div
                     key={l.id}
-                    type="button"
-                    onClick={() => toggle(l.id)}
                     className={
                       "flex w-full items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left text-[12px] transition " +
-                      (on ? "border-emerald-400 bg-emerald-50" : "border-slate-200 bg-white hover:border-slate-300")
+                      (locked
+                        ? "border-slate-200 bg-slate-100"
+                        : on
+                          ? "border-emerald-400 bg-emerald-50"
+                          : "border-slate-200 bg-white hover:border-slate-300")
                     }
                   >
-                    <span className={"text-[13px] " + (on ? "text-emerald-600" : "text-slate-300")}>{on ? "☑" : "☐"}</span>
-                    <span className={on ? "font-bold text-emerald-900" : "text-slate-700"}>{l.label}</span>
-                    <span className="ml-auto tabular-nums text-[11px] text-slate-500">{won(l.amount)}</span>
-                  </button>
+                    <button
+                      type="button"
+                      disabled={locked}
+                      onClick={() => toggle(l.id)}
+                      title={locked ? l.lockedNote ?? undefined : undefined}
+                      className="flex min-w-0 flex-1 items-center gap-2 text-left disabled:cursor-not-allowed"
+                    >
+                      <span className={"text-[13px] " + (locked ? "text-slate-300" : on ? "text-emerald-600" : "text-slate-300")}>
+                        {locked ? "▪" : on ? "☑" : "☐"}
+                      </span>
+                      <span className={locked ? "text-slate-400 line-through" : on ? "font-bold text-emerald-900" : "text-slate-700"}>
+                        {l.label}
+                      </span>
+                      {locked && (
+                        <span className="shrink-0 rounded bg-slate-300 px-1 text-[9px] font-bold text-slate-700">
+                          {l.lockedNote}
+                        </span>
+                      )}
+                    </button>
+                    {/* **줄마다 받은 날.** 교복은 8/24, 교재비는 8/28처럼 며칠 간격으로 나눠
+                        들어오는 일이 흔합니다. 체크한 줄에만 뜹니다 - 안 고른 줄에 날짜 칸이
+                        있으면 무엇을 적는 칸인지 헷갈립니다. */}
+                    {on && !locked && (
+                      <input
+                        type="date"
+                        value={dateOf[l.id] ?? paidAt}
+                        onChange={(e) => setDateOf((v) => ({ ...v, [l.id]: e.target.value }))}
+                        title="이 항목을 받은 날. 아래 「받은 날」과 다르면 그 날짜로 따로 만듭니다."
+                        className={
+                          "shrink-0 rounded border px-1 py-0.5 text-[11px] " +
+                          ((dateOf[l.id] ?? paidAt) !== paidAt
+                            ? "border-amber-400 bg-amber-50 font-bold text-amber-800"
+                            : "border-slate-200 text-slate-500")
+                        }
+                      />
+                    )}
+                    <span className={"shrink-0 tabular-nums text-[11px] " + (locked ? "text-slate-400" : "text-slate-500")}>
+                      {won(l.amount)}
+                    </span>
+                  </div>
                 );
               })}
             </div>
             {/* 아직 안 받은 것을 그 자리에서 보여줍니다. 「무엇이 남았나」가 이 화면을
                 여는 이유의 절반입니다. */}
+            {split && (
+              <p className="mt-1 rounded-lg bg-amber-50 px-2 py-1 text-[10px] font-semibold leading-relaxed text-amber-900">
+                🗓 {batchNote(batches)}
+              </p>
+            )}
             {pickedIds.length > 0 && left.length > 0 && (
               <p className="mt-1 text-[10px] text-amber-700">
                 아직 안 받음: {left.map((l) => l.label).join(" · ")} ({won(left.reduce((n, l) => n + l.amount, 0))})
@@ -126,14 +213,21 @@ export default function AlreadyPaidModal({
             </span>
           </p>
           <input
-            value={typedAmount}
+            value={split ? "" : typedAmount}
+            disabled={split}
             onChange={(e) => setTypedAmount(e.target.value)}
             inputMode="numeric"
-            placeholder={pickedIds.length > 0 ? `${sumPicked(lines, pickedIds).toLocaleString()} (체크한 합)` : "예: 300000"}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm tabular-nums outline-none focus:border-blue-400"
+            placeholder={
+              split
+                ? "받은 날을 나눠 적었습니다 — 금액은 날짜별 합으로 들어갑니다"
+                : pickedIds.length > 0
+                  ? `${sumPicked(lines, pickedIds).toLocaleString()} (체크한 합)`
+                  : "예: 300000"
+            }
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm tabular-nums outline-none focus:border-blue-400 disabled:bg-slate-100 disabled:text-slate-400"
           />
           {/* 체크한 합과 다르면 **그대로 적습니다.** 막지 않습니다 - 실제로 흔한 일입니다. */}
-          {m.differs && (
+          {m.differs && !split && (
             <p className="mt-1 rounded-lg bg-amber-50 px-2 py-1 text-[10px] font-semibold text-amber-800">
               체크한 합 {won(m.picked)} 과 다릅니다. {won(m.actual)} 으로 기록하고, 차이는 미납으로 남습니다.
             </p>
@@ -172,17 +266,43 @@ export default function AlreadyPaidModal({
         />
 
         {/* 무엇으로 남는지 미리 보여줍니다. 누른 뒤에 확인하는 것보다 낫습니다. */}
-        <p className="mb-2 rounded-lg bg-slate-50 px-2.5 py-1.5 text-[10px] text-slate-500">
-          기록될 내용: <b className="text-slate-700">{won(amount)}</b> · {paidMemo(lines, input, note)}
+        <p className="mb-2 rounded-lg bg-slate-50 px-2.5 py-1.5 text-[10px] leading-relaxed text-slate-500">
+          기록될 내용: <b className="text-slate-700">{won(total)}</b>
+          {split ? (
+            <>
+              {" "}— 청구서 {batches.length}장
+              <br />
+              {batches.map((b) => `${b.paidAt} · ${b.labels.join(" · ")} ${won(b.amount)}`).join(" / ")}
+            </>
+          ) : (
+            <> · {paidMemo(lines, input, note)}</>
+          )}
         </p>
 
         <button
           type="button"
-          disabled={busy || amount <= 0}
-          onClick={() => void onSubmit({ paidAt, amount, method, memo: paidMemo(lines, input, note), pickedIds })}
+          disabled={busy || total <= 0}
+          onClick={() =>
+            void onSubmit({
+              paidAt,
+              amount: total,
+              method,
+              memo: paidMemo(lines, input, note),
+              pickedIds,
+              // 날짜가 하나뿐이어도 묶음을 함께 넘깁니다. 부르는 쪽이 「항목만 담기」를
+              // 늘 같은 길로 하게 하려는 것입니다 - 갈래가 둘이면 한쪽만 고쳐집니다.
+              batches,
+            })
+          }
           className="w-full rounded-xl bg-slate-900 py-2.5 text-sm font-bold text-white disabled:opacity-40"
         >
-          {busy ? "기록 중…" : amount <= 0 ? "금액을 적거나 항목을 골라주세요" : `${won(amount)} 받음으로 기록`}
+          {busy
+            ? "기록 중…"
+            : total <= 0
+              ? "금액을 적거나 항목을 골라주세요"
+              : split
+                ? `${won(total)} — 청구서 ${batches.length}장으로 기록`
+                : `${won(total)} 받음으로 기록`}
         </button>
 
         <p className="mt-1.5 text-center text-[10px] text-slate-400">

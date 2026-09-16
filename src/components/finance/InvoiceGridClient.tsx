@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { BILL_LABEL, billedItems } from "@/lib/billedItems";
 import { useFinanceLive } from "@/lib/useFinanceLive";
 import DragScroll from "@/components/common/DragScroll";
 import FeeItemsButton from "./FeeItemsModal";
-import AlreadyPaidModal from "@/components/finance/AlreadyPaidModal";
+import AlreadyPaidModal, { type AlreadyPaidResult } from "@/components/finance/AlreadyPaidModal";
 // 돈을 정하는 판단은 화면에서 떼어 `@/lib/invoiceGrid` 에 두고 시험합니다. 섞여 있으면
 // 화면을 손보다 판단을 건드려도 티가 안 나고, 조금 다른 청구서는 그대로 나갑니다.
 import { matchesInstrument, planInvoices, typicalByGroup, unusualAmount } from "@/lib/invoiceGrid";
@@ -124,6 +125,13 @@ type Props = {
   recentInvoices: Invoice[];
   initialReceipts: ReceiptLite[];
   payments: PayLite[];
+  /**
+   * 청구서에 실제로 찍힌 줄. **무엇이 이미 나갔는지**의 유일한 근거입니다.
+   *
+   * 이게 없어서 같은 항목이 두 번 나갔습니다 - 교복을 한 번 청구한 뒤 다시 발행하면 교복이
+   * 또 담겼고, 「이미 받음」으로 만든 청구서에는 안 고른 항목까지 함께 담겼습니다.
+   */
+  invoiceLines: { invoice_id: string; name: string }[];
   terms: Term[];
   currentUserEmail: string;
   loadError: string | null;
@@ -145,6 +153,7 @@ export default function InvoiceGridClient({
   recentInvoices,
   initialReceipts,
   payments: initialPayments,
+  invoiceLines,
   terms,
   currentUserEmail,
   loadError,
@@ -217,6 +226,23 @@ export default function InvoiceGridClient({
   const [newOpen, setNewOpen] = useState(false);
   const [newItem, setNewItem] = useState({ category: "", name: "", name_ko: "", unit_price: 0, applyToView: true });
   const [invoices, setInvoices] = useState(recentInvoices);
+  /**
+   * 청구서에 찍힌 줄. **state 로 둡니다.**
+   *
+   * 발행하거나 「이미 받음」을 넣은 **그 순간** 표가 회색으로 잠겨야 합니다. 다시 불러올
+   * 때까지 안 잠기면, 사람은 기록이 안 된 줄 알고 또 누릅니다 - 그러면 같은 항목이 두
+   * 장에 담깁니다.
+   */
+  const [lineRows, setLineRows] = useState(invoiceLines);
+
+  /**
+   * **이 학생의 이 항목이 이미 청구서에 담겼는가.** 판정은 `billedItems` 한 곳입니다 -
+   * 발행·이미받음·표가 같은 답을 봐야 같은 돈이 두 번 나가지 않습니다.
+   */
+  const billed = useMemo(
+    () => billedItems(invoices as unknown as Parameters<typeof billedItems>[0], lineRows, payments),
+    [invoices, lineRows, payments],
+  );
   const [dept, setDept] = useState<DeptTab>("초등부");
   /** 보고 있는 분류. "전체" 면 분류를 가리지 않습니다. */
   const [cat, setCat] = useState<string>("전체");
@@ -789,10 +815,33 @@ export default function InvoiceGridClient({
     const failed: string[] = [];
     try {
       for (const { student: s, category } of jobs) {
+        /**
+         * **이미 나간 항목은 빼고 보냅니다.**
+         *
+         * 예전에는 분류만 보냈습니다. 그래서 교복을 한 번 청구한 뒤 교재비를 청구하려고
+         * 다시 발행하면 **교복이 또 담겼습니다** - 학부모 화면에는 낼 돈이 두 배로 뜨는데,
+         * 오류가 아니라 「청구된 금액」으로 보입니다.
+         *
+         * 판정은 `billedItems` 한 곳입니다. 발행·이미받음·표가 같은 답을 봐야 합니다.
+         */
+        const marks = billed.get(s.id);
+        const mine = (linesByStudent.get(s.id) ?? []).filter((l) => !category || l.item.category === category);
+        const rest = mine.filter((l) => !marks?.has(l.item.name));
+        if (rest.length === 0) {
+          // 조용히 건너뛰면 발행된 줄 알고 넘어갑니다. 왜 빠졌는지 말해줍니다(§5).
+          failed.push(`${s.name}(${category ?? "학비외"} — 이미 모두 청구서에 나갔습니다)`);
+          continue;
+        }
         const res = await fetch("/api/finance/invoices", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ studentId: s.id, dueDate, feeTermId: termId || null, category }),
+          body: JSON.stringify({
+            studentId: s.id,
+            dueDate,
+            feeTermId: termId || null,
+            category,
+            itemIds: rest.map((l) => l.item.id),
+          }),
         });
         // ── 돌아온 것이 우리 답이 맞는가 ─────────────────────────────────────
         //
@@ -813,7 +862,13 @@ export default function InvoiceGridClient({
         }
 
         const body = await res.json().catch(() => ({}));
-        if (res.ok) made.push(body.invoice as Invoice);
+        if (res.ok) {
+          made.push(body.invoice as Invoice);
+          // **방금 나간 줄을 바로 얹습니다.** 안 얹으면 표가 다시 불러올 때까지 안 잠기고,
+          // 그 사이에 또 누르면 같은 항목이 두 장에 담깁니다.
+          const invId = (body.invoice as Invoice | undefined)?.id;
+          if (invId) setLineRows((p) => [...p, ...rest.map((l) => ({ invoice_id: invId, name: l.item.name }))]);
+        }
         // 한 명이 실패해도 나머지는 계속합니다. 다만 **누가 실패했는지 반드시 말합니다** -
         // 조용히 넘기면 그 아이만 인보이스 없이 남습니다.
         else failed.push(`${s.name}${category ? `·${category}` : ""}(${body.error ?? res.statusText})`);
@@ -876,35 +931,96 @@ export default function InvoiceGridClient({
    * 하는 셈이 되니까요. 대신 무엇을 받았는지는 입금 메모에 이름으로 남습니다 - 나중에
    * 「교재는 아직 안 냈다」를 셀 수 있어야 합니다.
    */
-  async function recordAlreadyPaid(
-    s: Student,
-    r: { paidAt: string; amount: number; method: string; memo: string; pickedIds: string[] },
-  ) {
+  async function recordAlreadyPaid(s: Student, r: AlreadyPaidResult) {
     setBusy(true);
     try {
-      const res = await fetch("/api/finance/invoices", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          studentId: s.id,
-          // 청구서 날짜를 **받은 날**로 맞춥니다. 오늘로 두면 지난달에 받은 돈이 이번 달
-          // 장부에 잡혀서, 월별로 세는 숫자가 어긋납니다.
-          dueDate: r.paidAt,
-          feeTermId: termId || null,
-          category: cat === "전체" ? null : cat,
-          alreadyPaid: { paidAt: r.paidAt, amount: r.amount, method: r.method, memo: r.memo },
-        }),
-      });
-      const b = (await res.json().catch(() => ({}))) as { error?: string; paid?: number; invoice?: Invoice };
-      if (!res.ok) {
-        notify(b.error ?? "이미 받은 건을 넣지 못했습니다.", "error");
-        return;
+      /**
+       * **받은 날로 나눠 만듭니다.**
+       *
+       * 교복은 8월 24일, 교재비는 8월 28일에 받았으면 청구서도 두 장입니다. 청구서 날짜가
+       * 곧 그 돈이 잡히는 달이라, 한 장에 묶으면 월 마감 숫자가 어긋납니다 - 8월 31일과
+       * 9월 1일이 섞이는 날이 반드시 옵니다.
+       *
+       * 항목을 안 고르고 금액만 적었으면 묶음이 없습니다. 그때는 예전처럼 한 장입니다.
+       */
+      const jobs =
+        r.batches.length > 0
+          ? r.batches.map((b) => ({
+              paidAt: b.paidAt,
+              amount: b.amount,
+              itemIds: b.itemIds,
+              memo: `받은 항목: ${b.labels.join(" · ")}`,
+            }))
+          : [{ paidAt: r.paidAt, amount: r.amount, itemIds: [] as string[], memo: r.memo }];
+
+      const made: Invoice[] = [];
+      const failed: string[] = [];
+      for (const j of jobs) {
+        const res = await fetch("/api/finance/invoices", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            studentId: s.id,
+            // 청구서 날짜를 **받은 날**로 맞춥니다. 오늘로 두면 지난달에 받은 돈이 이번 달
+            // 장부에 잡혀서, 월별로 세는 숫자가 어긋납니다.
+            dueDate: j.paidAt,
+            billingMonth: j.paidAt.slice(0, 7),
+            feeTermId: termId || null,
+            category: cat === "전체" ? null : cat,
+            // **고른 항목만 담습니다.** 이게 없어서 교복만 체크해도 교재비까지 담겼고,
+            // 입금은 교복 값만 붙어 그 청구서가 일부납으로 남았습니다 - 이미 받은 항목이
+            // 미납·연체에 다시 뜨는 것처럼 보였습니다.
+            ...(j.itemIds.length > 0 ? { itemIds: j.itemIds } : {}),
+            alreadyPaid: { paidAt: j.paidAt, amount: j.amount, method: r.method, memo: j.memo },
+          }),
+        });
+        const b = (await res.json().catch(() => ({}))) as { error?: string; paid?: number; invoice?: Invoice };
+        if (!res.ok) {
+          // 한 장이 실패해도 나머지는 계속합니다. 다만 **어느 날짜가 실패했는지** 말합니다 -
+          // 조용히 넘기면 그 날 받은 돈이 통째로 안 적힌 채 남습니다(§5).
+          failed.push(`${j.paidAt}(${b.error ?? "이유 모름"})`);
+          continue;
+        }
+        if (b.invoice) {
+          made.push(b.invoice);
+          // 고른 항목만 담았으므로 그 이름들을 그대로 얹습니다. 이름은 명부가 아니라 **표가
+          // 들고 있는 항목 이름**입니다 - 서버가 청구서에 찍은 것과 같은 글자입니다.
+          const names = (linesByStudent.get(s.id) ?? [])
+            .filter((l) => j.itemIds.length === 0 || j.itemIds.includes(l.item.id))
+            .map((l) => l.item.name);
+          const invId = b.invoice.id;
+          setLineRows((p) => [...p, ...names.map((name) => ({ invoice_id: invId, name }))]);
+        }
       }
+
       // 새로고침 없이 화면에 바로 얹습니다. 다시 불러오게 하면 이 표는 통째로 다시
       // 그려져서, 여러 명을 연달아 넣을 때 스크롤과 체크가 매번 튑니다.
-      if (b.invoice) setInvoices((p) => [b.invoice as Invoice, ...p]);
-      setAlreadyFor(null);
-      notify(`${s.name} — 이미 받은 것으로 넣었습니다 (${won(b.paid ?? r.amount)}).`, "success");
+      if (made.length > 0) setInvoices((p) => [...made, ...p]);
+      /**
+       * **입금도 바로 얹습니다.** 이걸 안 하면 방금 넣은 청구서가 화면에서 미납으로 보이고,
+       * 그 항목은 회색으로 안 잠깁니다 - 사람은 「기록이 안 됐나」 하고 또 누릅니다.
+       */
+      if (made.length > 0) {
+        setPayments((p) => [
+          ...p,
+          ...made.map((inv, i) => ({
+            invoice_id: inv.id,
+            amount: jobs[i]?.amount ?? 0,
+            paid_at: jobs[i]?.paidAt ?? r.paidAt,
+            method_kind: r.method,
+          })),
+        ]);
+      }
+      if (failed.length > 0) notify(`${made.length}장 기록 · ${failed.length}장 실패: ${failed.join(", ")}`, "error");
+      else {
+        setAlreadyFor(null);
+        notify(
+          made.length > 1
+            ? `${s.name} — 받은 날로 나눠 ${made.length}장 기록했습니다.`
+            : `${s.name} — 이미 받은 것으로 넣었습니다 (${won(jobs[0]?.amount ?? r.amount)}).`,
+          "success",
+        );
+      }
     } finally {
       setBusy(false);
     }
@@ -1712,11 +1828,17 @@ export default function InvoiceGridClient({
           studentName={alreadyFor.name}
           // 항목마다 금액을 함께 넘깁니다. 올톡페이는 항목별로 결제 문자가 나가서,
           // 「교복만 결제됨」을 그 자리에서 체크할 수 있어야 합니다.
-          lines={(linesByStudent.get(alreadyFor.id) ?? []).map((l) => ({
-            id: l.item.id,
-            label: l.item.name_ko?.trim() || l.item.name,
-            amount: Number(l.amount ?? 0),
-          }))}
+          lines={(linesByStudent.get(alreadyFor.id) ?? []).map((l) => {
+            // 이미 청구서에 담긴 항목은 **다시 고를 수 없게** 잠급니다. 고를 수 있게 두면
+            // 같은 항목이 두 장에 담기고, 학부모 화면에는 낼 돈이 두 배로 뜹니다.
+            const mark = billed.get(alreadyFor.id)?.get(l.item.name);
+            return {
+              id: l.item.id,
+              label: l.item.name_ko?.trim() || l.item.name,
+              amount: Number(l.amount ?? 0),
+              lockedNote: mark ? BILL_LABEL[mark.state] : null,
+            };
+          })}
           busy={busy}
           onClose={() => setAlreadyFor(null)}
           onSubmit={(r) => void recordAlreadyPaid(alreadyFor, r)}
@@ -2099,20 +2221,42 @@ export default function InvoiceGridClient({
                         {list.map((item) => {
                           const l = dLines.find((x) => x.item.id === item.id);
                           const ov = overrides.find((o) => o.student_id === detail.id && o.item_id === item.id) ?? null;
+                          /**
+                           * **이미 청구서에 나간 항목.**
+                           *
+                           * 뺄 수 없게 잠급니다. 여기서 빼도 이미 나간 종이는 안 바뀌는데,
+                           * 화면에서는 「없던 일」처럼 보입니다 - 그 상태로 다시 발행하면 같은
+                           * 항목이 또 담기거나(중복), 받을 돈이 목록에서 사라집니다(누락).
+                           */
+                          const mark = billed.get(detail.id)?.get(item.name);
                           return (
                             <div
                               key={item.id}
                               className={
                                 "flex items-center gap-2 rounded-lg border px-2 py-2 " +
-                                (l ? "border-teal-300 bg-teal-50/60" : "border-slate-100")
+                                (mark
+                                  ? "border-slate-200 bg-slate-100"
+                                  : l
+                                    ? "border-teal-300 bg-teal-50/60"
+                                    : "border-slate-100")
                               }
                             >
                               <button
                                 type="button"
+                                disabled={!!mark}
                                 onClick={() => toggleCell(detail, item)}
+                                title={
+                                  mark
+                                    ? `이미 청구서에 나갔습니다(${BILL_LABEL[mark.state]}). 고치려면 그 청구서를 취소해주세요.`
+                                    : undefined
+                                }
                                 className={
-                                  "flex h-5 w-5 shrink-0 items-center justify-center rounded border text-[11px] font-bold " +
-                                  (l ? "border-teal-600 bg-teal-600 text-white" : "border-slate-300 text-transparent")
+                                  "flex h-5 w-5 shrink-0 items-center justify-center rounded border text-[11px] font-bold disabled:cursor-not-allowed " +
+                                  (mark
+                                    ? "border-slate-300 bg-slate-300 text-white"
+                                    : l
+                                      ? "border-teal-600 bg-teal-600 text-white"
+                                      : "border-slate-300 text-transparent")
                                 }
                                 aria-label={l ? "빼기" : "넣기"}
                               >
@@ -2132,6 +2276,22 @@ export default function InvoiceGridClient({
                                 {ov && (
                                   <span className="ml-1.5 text-[10px] font-semibold text-amber-700">
                                     {ov.mode === "exclude" ? "직접 뺌" : "직접 넣음"}
+                                  </span>
+                                )}
+                                {/* **이미 나간 것은 그 자리에서 말해줍니다.** 안 적으면 왜 못
+                                    빼는지 모르고, 모르면 항목 쪽을 뒤지게 됩니다. */}
+                                {mark && (
+                                  <span
+                                    className={
+                                      "ml-1.5 rounded px-1 text-[10px] font-bold " +
+                                      (mark.state === "완납"
+                                        ? "bg-emerald-600 text-white"
+                                        : mark.state === "일부"
+                                          ? "bg-amber-500 text-white"
+                                          : "bg-slate-400 text-white")
+                                    }
+                                  >
+                                    {BILL_LABEL[mark.state]}
                                   </span>
                                 )}
                               </span>

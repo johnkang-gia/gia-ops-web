@@ -28,6 +28,11 @@ export type PayableLine = {
   id: string;
   label: string;
   amount: number;
+  /**
+   * 이미 청구서에 담겨 있으면 그 상태를 적습니다(「받음」·「청구됨」). 있으면 화면이 그
+   * 줄을 회색으로 잠급니다 - 다시 고를 수 있게 두면 같은 항목이 두 장에 담깁니다.
+   */
+  lockedNote?: string | null;
 };
 
 export type AlreadyPaidInput = {
@@ -93,4 +98,66 @@ export function remaining(lines: PayableLine[], pickedIds: readonly string[]): P
 /** 화면에 적는 금액. 천 단위 쉼표. */
 export function won(n: number): string {
   return `${Math.round(Number(n) || 0).toLocaleString()}원`;
+}
+
+// ── 항목마다 받은 날이 다를 때 ───────────────────────────────────────────────
+
+/**
+ * **교복은 8월 24일, 교재비는 8월 28일에 받았습니다.**
+ *
+ * 올톡페이는 항목마다 결제 문자가 따로 나가므로, 한 집에서 며칠 간격으로 나눠 들어오는
+ * 일이 흔합니다. 그런데 이 창은 받은 날을 **하나만** 받았습니다. 그래서 둘 다 적으려면
+ * 창을 두 번 열어야 했고, 두 번째는 대개 안 열었습니다 - 안 적힌 돈은 미납으로 남습니다.
+ *
+ * ── 왜 날짜별로 청구서를 나누나 ─────────────────────────────────────────────
+ *
+ * 청구서 날짜가 곧 **그 돈이 잡히는 달**입니다(`billing_month`). 8월 24일과 28일을 한 장에
+ * 묶으면 둘 다 한 날짜로 눕고, 월 마감에서 숫자가 어긋납니다. 며칠 차이는 같은 달이라
+ * 괜찮아 보이지만, 8월 31일과 9월 1일이 섞이는 날이 반드시 옵니다.
+ *
+ * 순수 함수입니다 — 화면 없이 시험할 수 있습니다.
+ */
+export type DatedPick = {
+  id: string;
+  /** 'YYYY-MM-DD'. 비어 있으면 부르는 쪽이 공통 날짜를 넣어 줍니다. */
+  paidAt: string;
+};
+
+export type PaidBatch = {
+  paidAt: string;
+  itemIds: string[];
+  /** 그 날 받은 금액. 체크한 항목의 합입니다. */
+  amount: number;
+  /** 그 날 받은 항목 이름. 입금 메모에 그대로 들어갑니다. */
+  labels: string[];
+};
+
+/**
+ * 고른 항목을 **받은 날로 묶습니다.** 날짜가 하나면 묶음도 하나입니다.
+ *
+ * 날짜 순으로 돌려줍니다 - 만들어지는 청구서 번호가 받은 순서를 따라가야 나중에 장부를
+ * 훑을 때 읽힙니다.
+ */
+export function batchByDate(lines: PayableLine[], picks: readonly DatedPick[], fallbackDate: string): PaidBatch[] {
+  const byId = new Map(lines.map((l) => [l.id, l]));
+  const groups = new Map<string, PaidBatch>();
+  for (const p of picks) {
+    const line = byId.get(p.id);
+    if (!line) continue; // 표에 없는 항목. 조용히 버리지 않고 부르는 쪽이 셀 수 있게 아래에서 세어 줍니다.
+    const day = /^\d{4}-\d{2}-\d{2}$/.test(p.paidAt) ? p.paidAt : fallbackDate;
+    const g = groups.get(day) ?? { paidAt: day, itemIds: [], amount: 0, labels: [] };
+    g.itemIds.push(line.id);
+    g.labels.push(line.label);
+    g.amount += Number(line.amount) || 0;
+    groups.set(day, g);
+  }
+  return [...groups.values()].sort((a, b) => a.paidAt.localeCompare(b.paidAt));
+}
+
+/** 묶음이 여럿인가. 화면이 「청구서 2장으로 나눠 만듭니다」라고 미리 말해 줍니다. */
+export function batchNote(batches: readonly PaidBatch[]): string {
+  if (batches.length <= 1) return "";
+  return `받은 날이 ${batches.length}가지라 청구서를 ${batches.length}장으로 나눠 만듭니다 — ${batches
+    .map((b) => `${b.paidAt.slice(5).replace("-", "/")} ${won(b.amount)}`)
+    .join(" · ")}`;
 }

@@ -93,6 +93,26 @@ export async function POST() {
     if (!reqByStudent.has(r.student_id)) reqByStudent.set(r.student_id, r);
   }
 
+  /**
+   * **날짜가 어디에도 없는 옛 픽업 업무를 메웁니다.**
+   *
+   * 시각이 없는 픽업은 마감이 안 걸립니다. 그런 줄은 달력의 어느 날에도 안 붙어서 숫자가
+   * 조용히 적어졌습니다. 오늘 만드는 줄에는 `start_on` 을 적지만, **이미 있는 줄은 그대로**
+   * 남아 오늘 화면에서도 계속 빠집니다 - 고친 뒤에도 안 고쳐진 것처럼 보입니다.
+   *
+   * 오늘 것만 메웁니다. 지난 날짜는 어느 날이었는지 알 수 없고, 짐작해서 채우면 그 날짜가
+   * 사실처럼 굳습니다.
+   */
+  const { error: fixErr } = await supabase
+    .from("tasks")
+    .update({ start_on: today })
+    .eq("origin", "픽업")
+    .is("due_at", null)
+    .is("start_on", null)
+    .is("deleted_at", null)
+    .gte("created_at", `${today}T00:00:00+09:00`);
+  if (fixErr) console.error("[픽업→업무] 옛 줄의 날짜를 메우지 못했습니다:", fixErr.message);
+
   let created = 0;
   const problems: string[] = [];
   for (const p of pickups) {

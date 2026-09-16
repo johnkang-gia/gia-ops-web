@@ -79,7 +79,7 @@ export async function loadStudentDay(supabase: SupabaseClient, opts: LoadOptions
     loadUpcomingEntries(supabase, date, aheadDays),
     supabase
       .from("student_day_notes")
-      .select("id, student_id, on_date, at_time, kind, content")
+      .select("id, student_id, on_date, at_time, kind, content, source_inquiry_id")
       .is("deleted_at", null)
       .gte("on_date", date)
       .lte("on_date", until)
@@ -88,7 +88,7 @@ export async function loadStudentDay(supabase: SupabaseClient, opts: LoadOptions
     supabase
       .from("pickup_requests")
       // 시각 칸은 `ai_pickup_time` 입니다 - 이 표에 `pickup_time` 은 없습니다.
-      .select("id, kind, status, student_id, service_date, ai_pickup_time, channel_label, ai_student_name, matched_name, summary, raw_text, answered_at, is_demo")
+      .select("id, kind, status, student_id, service_date, ai_pickup_time, channel_label, ai_student_name, matched_name, summary, raw_text, ai_note, answered_at, is_demo, source")
       .gte("service_date", date)
       .lte("service_date", until)
       .limit(300),
@@ -120,6 +120,15 @@ export async function loadStudentDay(supabase: SupabaseClient, opts: LoadOptions
       onDate: date,
       from: { table: "shuttle_boardings·attendance_entries·pickup_requests", screen: "/shuttle/checklist" },
       pending: false,
+      evidence: {
+        label:
+          p.via === "하원수단"
+            ? "하원수단 설정 — 이 아이는 오늘 요일에 셔틀을 타지 않습니다"
+            : p.via === "사람"
+              ? "사람이 체크표에서 직접 픽업으로 지정"
+              : "학부모 연락(토들·전화)으로 들어온 픽업",
+        raw: null,
+      },
     });
   }
 
@@ -163,7 +172,14 @@ export async function loadStudentDay(supabase: SupabaseClient, opts: LoadOptions
 
   // ── ③ 학생 특이사항 ──────────────────────────────────────────────────────
   if (noteRes.error) problems.push(`학생 특이사항을 읽지 못했습니다: ${noteRes.error.message}`);
-  for (const n of ((noteRes.data as { id: string; student_id: string; on_date: string; at_time: string | null; kind: string; content: string }[] | null) ?? [])) {
+  // 특이사항이 어느 연락에서 나왔는지. 같은 날짜 범위의 연락을 이미 읽었으므로 여기서
+  // 이어 붙입니다 - 줄마다 또 읽으면 스무 줄에 스무 번 왕복합니다.
+  const rawById = new Map<string, { raw: string | null; channel: string | null; source: string | null }>();
+  for (const r of ((inquiryRes.data as { id: string; raw_text: string | null; channel_label: string | null; source?: string | null }[] | null) ?? []))
+    rawById.set(r.id, { raw: r.raw_text, channel: r.channel_label, source: r.source ?? null });
+
+  for (const n of ((noteRes.data as { id: string; student_id: string; on_date: string; at_time: string | null; kind: string; content: string; source_inquiry_id: string | null }[] | null) ?? [])) {
+    const src = n.source_inquiry_id ? rawById.get(n.source_inquiry_id) : undefined;
     push(n.student_id, null, {
       id: `note:${n.id}`,
       kind: isNoteKind(n.kind) ? n.kind : "기타",
@@ -172,6 +188,9 @@ export async function loadStudentDay(supabase: SupabaseClient, opts: LoadOptions
       onDate: n.on_date,
       from: { table: "student_day_notes", screen: "/work" },
       pending: false,
+      evidence: src
+        ? { label: `${src.source ?? "토들"}${src.channel ? ` · ${src.channel}` : ""}`, raw: src.raw, sourceId: n.id }
+        : { label: "사람이 직접 적은 특이사항", raw: null, sourceId: n.id },
     });
   }
 
@@ -181,7 +200,7 @@ export async function loadStudentDay(supabase: SupabaseClient, opts: LoadOptions
     id: string; kind: string | null; status: string; student_id: string | null;
     service_date: string; ai_pickup_time: string | null; channel_label: string | null;
     ai_student_name: string | null; matched_name: string | null; summary: string | null;
-    raw_text: string | null; answered_at: string | null; is_demo?: boolean | null;
+    raw_text: string | null; ai_note?: string | null; answered_at: string | null; is_demo?: boolean | null;
   };
   for (const r of ((inquiryRes.data as Req[] | null) ?? [])) {
     if (r.is_demo) continue;
@@ -198,6 +217,11 @@ export async function loadStudentDay(supabase: SupabaseClient, opts: LoadOptions
         onDate: r.service_date,
         from: { table: "pickup_requests", screen: "/pickup/inbox" },
         pending: true,
+        evidence: {
+          label: `${r.channel_label ?? "학부모 연락"}${r.ai_note ? ` · AI: ${cut(r.ai_note, 60)}` : ""}`,
+          raw: r.raw_text,
+          sourceId: r.id,
+        },
       });
       continue;
     }
@@ -213,6 +237,11 @@ export async function loadStudentDay(supabase: SupabaseClient, opts: LoadOptions
       onDate: r.service_date,
       from: { table: "pickup_requests", screen: "/work" },
       pending: true,
+      evidence: {
+        label: `${r.channel_label ?? "학부모 문의"}${r.ai_note ? ` · AI: ${cut(r.ai_note, 60)}` : ""}`,
+        raw: r.raw_text,
+        sourceId: r.id,
+      },
     });
   }
 

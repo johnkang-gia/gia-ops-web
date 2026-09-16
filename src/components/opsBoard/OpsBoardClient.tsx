@@ -346,6 +346,20 @@ export default function OpsBoardClient({ token }: { token: string }) {
     );
   }
 
+  /**
+   * 갈래별 문의 수. **내용은 세지 않습니다** — 이 화면에서 필요한 것은 「무엇이 몇 건
+   * 와 있는가」뿐이고, 답하는 일은 업무보드에서 합니다.
+   */
+  const inquiryByType: [string, number, boolean][] = (() => {
+    const m = new Map<string, { n: number; urgent: boolean }>();
+    for (const q of data?.inquiries ?? []) {
+      const key = (q.type ?? "").trim() || "기타";
+      const cur = m.get(key) ?? { n: 0, urgent: false };
+      m.set(key, { n: cur.n + 1, urgent: cur.urgent || q.urgent });
+    }
+    return [...m.entries()].sort((a, b) => b[1].n - a[1].n).map(([k, v]) => [k, v.n, v.urgent] as [string, number, boolean]);
+  })();
+
   const urgentInquiries = (data.inquiries ?? []).filter((q) => q.urgent).length;
 
   //
@@ -783,7 +797,7 @@ export default function OpsBoardClient({ token }: { token: string }) {
           {data.studentDay ? <TodayStudents sc={sc} board={data.studentDay} /> : <TodayChanges sc={sc} data={data} />}
 
           {/* 구분선 하나. 칸을 나누지 않고 선만 긋습니다. */}
-          <div style={{ height: 1, background: "#1e2a44", flexShrink: 0, margin: `${sc.s(10, 6)}px 0` }} />
+          <div style={{ height: 1, background: "#1e2a44", flexShrink: 0, margin: `${sc.s(8, 5)}px 0` }} />
 
           {/* ── 아래: 학부모 문의 ─────────────────────────────────────────── */}
           <div style={{ display: "flex", alignItems: "baseline", gap: sc.s(8, 5), marginBottom: sc.s(7, 4), flexShrink: 0 }}>
@@ -803,51 +817,56 @@ export default function OpsBoardClient({ token }: { token: string }) {
             </span>
           </div>
 
-          <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+          {/* **분류만 작게.** 문의는 하원 시간에 화면 앞에서 처리하는 일이 아닙니다 —
+              답하는 자리는 업무보드입니다. 여기서 원문까지 돌려 보여주면 자리를 크게 먹는데,
+              정작 그 자리는 「오늘 변동사항」이 써야 합니다(그쪽은 양이 많고, 시각에 맞춰
+              움직여야 하는 일입니다).
+
+              그렇다고 없애지는 않습니다 — 몇 건이 어느 갈래로 와 있는지는 보여야, 급한 것이
+              쌓이고 있다는 사실이 화면에 남습니다. */}
+          <div style={{ flexShrink: 0 }}>
             {data.collector?.stale ? (
               <div
                 style={{
                   background: "#3f1d1d",
                   border: "1px solid #b91c1c",
                   borderRadius: sc.s(8, 6),
-                  padding: sc.s(9, 6),
-                  fontSize: sc.s(14, 11),
+                  padding: sc.s(8, 5),
+                  fontSize: sc.s(13, 10),
                   color: "#fca5a5",
-                  lineHeight: 1.5,
+                  lineHeight: 1.4,
                 }}
               >
-                <b>토들 수집기가 멈춰 있습니다.</b>
-                <br />
+                <b>토들 수집기가 멈춰 있습니다.</b>{" "}
                 {data.collector.status === "login_required"
                   ? "사무실 PC 크롬에서 토들에 다시 로그인해주세요."
-                  : data.collector.lastSeen
-                  ? `마지막 신호 ${new Date(data.collector.lastSeen).toLocaleString("ko-KR")} · 지금은 토들 문의가 자동으로 들어오지 않습니다.`
-                  : "아직 한 번도 연결된 적이 없습니다."}
+                  : "지금은 토들 문의가 자동으로 들어오지 않습니다."}
               </div>
             ) : !data.inquiries || data.inquiries.length === 0 ? (
               <Empty sc={sc} text="답할 문의 없음" tone="good" />
             ) : (
-              /* 한 줄에 두 건씩. 「마야-출석」처럼 누구의 무슨 이야기인지가 한 덩어리로 읽히면
-                 이름과 분류를 따로 눈으로 잇지 않아도 되고, 그만큼 한 화면에 두 배가 들어갑니다. */
-              <InquiryBoard
-                items={data.inquiries}
-                s={sc.s}
-                dense
-                onOpen={(q) => setInquiryView({ student: q.student, channel: q.channel ?? null, raw: q.raw ?? null, at: q.at })}
-                onDismiss={async (q) => {
-                  // 낙관적으로 화면에서 먼저 빼고, 서버에 처리 완료로 표시합니다.
-                  setData((prev) => (prev ? { ...prev, inquiries: prev.inquiries.filter((x) => x.id !== q.id) } : prev));
-                  try {
-                    await fetch(`/api/ops-board/${token}/inquiry`, {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ id: q.id }),
-                    });
-                  } catch {
-                    load(); // 실패하면 되돌립니다(다음 갱신에서 다시 나타납니다).
-                  }
-                }}
-              />
+              <div style={{ display: "flex", flexWrap: "wrap", gap: `${sc.s(4, 3)}px ${sc.s(6, 4)}px` }}>
+                {inquiryByType.map(([type, n, urgent]) => (
+                  <span
+                    key={type}
+                    style={{
+                      fontSize: sc.s(15, 11),
+                      fontWeight: 800,
+                      color: urgent ? "#fca5a5" : "#c4b5fd",
+                      background: urgent ? "#3f1d2b" : "#1e1b3a",
+                      border: `1px solid ${urgent ? "#7f1d1d" : "#3b2a63"}`,
+                      borderRadius: sc.s(999, 999),
+                      padding: `${sc.s(3, 2)}px ${sc.s(10, 6)}px`,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {type} {n}
+                  </span>
+                ))}
+                <span style={{ fontSize: sc.s(13, 10), color: "#64748b", alignSelf: "center" }}>
+                  내용은 업무보드에서
+                </span>
+              </div>
             )}
           </div>
         </Panel>

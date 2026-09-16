@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { BoardScale } from "@/lib/useBoardDensity";
 import { lessonPlace } from "@/lib/lessonLocation";
 import { BoardData, STATUS_COLOR, WEEKDAY_KO, btn, dayRange, mergeByStudent, shortName } from "./boardShared";
-import { ITEM_LOOK, bucketOf, toMinutes, type DayBoard, type StudentDay } from "@/lib/studentDay";
+import { ITEM_LOOK, bucketOf, toMinutes, type DayBoard, type DayItem, type StudentDay } from "@/lib/studentDay";
 
 /**
  * 대시보드의 **칸들** — 밤 정보, 교실 쪽지, 확인대기 인박스, 오늘 변동사항, 그리고 이 칸들을
@@ -496,40 +496,27 @@ export function TodayStudents({ sc, board }: { sc: BoardScale; board: DayBoard }
   const SHOWN = 20;
   const shown = today.slice(0, SHOWN);
 
-  return (
-    <div style={{ flexShrink: 0, minHeight: 0 }}>
-      {/* 앞날 - 한 줄로 접어 이름만. 「그날이 되면 아래로 내려옵니다」. */}
-      {ahead.length > 0 && (
-        <div
-          style={{
-            background: "#1a1330",
-            border: "1px solid #4c1d95",
-            borderRadius: sc.s(10, 6),
-            padding: `${sc.s(6, 4)}px ${sc.s(9, 6)}px`,
-            marginBottom: sc.s(8, 5),
-            display: "flex",
-            alignItems: "baseline",
-            flexWrap: "wrap",
-            gap: `${sc.s(3, 2)}px ${sc.s(7, 4)}px`,
-          }}
-        >
-          <span style={{ fontSize: sc.s(15, 11), fontWeight: 800, color: "#c4b5fd", flexShrink: 0 }}>
-            📌 예정 {ahead.length}명
-          </span>
-          {ahead.slice(0, 8).map((d) => (
-            <span key={d.studentId} style={{ fontSize: sc.s(14, 11), color: "#a78bfa", whiteSpace: "nowrap" }}>
-              {shortName(d.name)}
-            </span>
-          ))}
-          {ahead.length > 8 && (
-            <span style={{ fontSize: sc.s(12, 9), color: "#7c6ba8" }}>외 {ahead.length - 8}명</span>
-          )}
-        </div>
-      )}
+  /**
+   * **픽업·하원과 특이사항을 가릅니다.**
+   *
+   * 둘은 할 일이 다릅니다 — 픽업은 **정해진 시각에 교실에서 아이를 데려오는** 일이고,
+   * 특이사항은 「점심 뒤 약」처럼 그날 중에 챙기는 일입니다. 섞어두면 하원 시간에 화면
+   * 앞에 선 사람이 시각 있는 줄을 눈으로 다시 골라내야 합니다.
+   *
+   * 한 아이가 둘 다 있으면 **양쪽에 섭니다** — 그 아이는 실제로 두 가지를 해야 합니다.
+   */
+  const RIDE_KINDS = new Set(["픽업", "결석", "지각", "조퇴"]);
+  const pickupSide = shown.filter((d) => d.items.some((i) => RIDE_KINDS.has(i.kind)));
+  const noteSide = shown.filter((d) => d.items.some((i) => !RIDE_KINDS.has(i.kind) && i.kind !== "문의"));
 
-      {shown.length === 0 ? (
-        <Empty sc={sc} text="오늘 평소와 다른 아이 없음" tone="good" />
-      ) : (
+  /** 한 묶음의 학생 줄들. 칩은 그 묶음에 해당하는 것만 그립니다. */
+  function renderRows(list: StudentDay[], keep: (i: DayItem) => boolean) {
+    if (list.length === 0)
+      return (
+        <p style={{ margin: `${sc.s(2, 1)}px 0 0`, fontSize: sc.s(14, 10), color: "#475569" }}>없습니다.</p>
+      );
+    return (
+
         // **두 줄로 세웁니다.** 한 줄에 하나씩이면 열 명에서 칸이 꽉 차고, 그 아래 아이는
         // 「외 N명」으로 묻힙니다. 두 줄이면 같은 높이에 스무 명이 섭니다.
         <div
@@ -540,11 +527,11 @@ export function TodayStudents({ sc, board }: { sc: BoardScale; board: DayBoard }
             alignItems: "start",
           }}
         >
-          {shown.map((d) => {
-            // 문의는 아래 칸에 원문이 있습니다. 여기서는 개수만 - 같은 것을 한 화면에 두 번
-            // 적으면 그게 어지러움의 정체입니다.
-            const visible = d.items.filter((i) => i.kind !== "문의");
-            const inquiries = d.items.length - visible.length;
+          {list.map((d) => {
+            // 이 묶음에 해당하는 것만 칩으로 그립니다. 문의는 아래 칸에 원문이 있으므로
+            // 여기서는 개수만 - 같은 것을 한 화면에 두 번 적으면 그게 어지러움의 정체입니다.
+            const visible = d.items.filter(keep);
+            const inquiries = d.items.filter((i) => i.kind === "문의").length;
             const late = d.firstTime !== null && toMinutes(d.firstTime) < nowMin - 20;
             const soon = d.firstTime !== null && !late && toMinutes(d.firstTime) - nowMin <= 30;
             return (
@@ -618,8 +605,51 @@ export function TodayStudents({ sc, board }: { sc: BoardScale; board: DayBoard }
             );
           })}
         </div>
+    );
+  }
+
+  return (
+    <div style={{ flexShrink: 0, minHeight: 0 }}>
+      {/* 앞날 - 한 줄로 접어 이름만. 「그날이 되면 아래로 내려옵니다」. */}
+      {ahead.length > 0 && (
+        <div
+          style={{
+            background: "#1a1330",
+            border: "1px solid #4c1d95",
+            borderRadius: sc.s(10, 6),
+            padding: `${sc.s(6, 4)}px ${sc.s(9, 6)}px`,
+            marginBottom: sc.s(8, 5),
+            display: "flex",
+            alignItems: "baseline",
+            flexWrap: "wrap",
+            gap: `${sc.s(3, 2)}px ${sc.s(7, 4)}px`,
+          }}
+        >
+          <span style={{ fontSize: sc.s(15, 11), fontWeight: 800, color: "#c4b5fd", flexShrink: 0 }}>
+            📌 예정 {ahead.length}명
+          </span>
+          {ahead.slice(0, 8).map((d) => (
+            <span key={d.studentId} style={{ fontSize: sc.s(14, 11), color: "#a78bfa", whiteSpace: "nowrap" }}>
+              {shortName(d.name)}
+            </span>
+          ))}
+          {ahead.length > 8 && (
+            <span style={{ fontSize: sc.s(12, 9), color: "#7c6ba8" }}>외 {ahead.length - 8}명</span>
+          )}
+        </div>
       )}
 
+      {shown.length === 0 ? (
+        <Empty sc={sc} text="오늘 평소와 다른 아이 없음" tone="good" />
+      ) : (
+        <>
+        <BoardGroupHead sc={sc} icon="🚗" label="픽업 · 하원" n={pickupSide.length} tone="sky" />
+        {renderRows(pickupSide, (i) => RIDE_KINDS.has(i.kind))}
+        <div style={{ height: sc.s(7, 4) }} />
+        <BoardGroupHead sc={sc} icon="📌" label="특이사항" n={noteSide.length} tone="violet" />
+        {renderRows(noteSide, (i) => !RIDE_KINDS.has(i.kind) && i.kind !== "문의")}
+        </>
+      )}
       {today.length > shown.length && (
         <p style={{ margin: `${sc.s(5, 3)}px 0 0`, fontSize: sc.s(13, 10), color: "#64748b" }}>
           외 {today.length - shown.length}명 — 업무보드 [오늘 학생]에서 전부 볼 수 있습니다
@@ -1036,5 +1066,46 @@ export function Panel({
 export function Empty({ text, tone, sc }: { text: string; tone?: "good"; sc: BoardScale }) {
   return (
     <p style={{ margin: 0, padding: `${sc.s(10, 5)}px 0`, fontSize: sc.s(16, 12), color: tone === "good" ? "#10b981" : "#475569" }}>{text}</p>
+  );
+}
+
+
+/**
+ * 묶음 머리 — 「🚗 픽업 · 하원 5」.
+ *
+ * **비어 있어도 줄은 남깁니다.** 칸이 통째로 사라지면 「오늘 픽업이 없다」와 「그 칸이
+ * 어디 갔지」가 구별되지 않습니다.
+ */
+function BoardGroupHead({
+  sc,
+  icon,
+  label,
+  n,
+  tone,
+}: {
+  sc: BoardScale;
+  icon: string;
+  label: string;
+  n: number;
+  tone: "sky" | "violet";
+}) {
+  const color = tone === "sky" ? "#7dd3fc" : "#c4b5fd";
+  const line = tone === "sky" ? "#1e3a5f" : "#3b2a63";
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: sc.s(6, 4),
+        borderBottom: `1px solid ${line}`,
+        paddingBottom: sc.s(3, 2),
+        marginBottom: sc.s(5, 3),
+        flexShrink: 0,
+      }}
+    >
+      <span style={{ fontSize: sc.s(15, 11) }}>{icon}</span>
+      <b style={{ fontSize: sc.s(16, 12), fontWeight: 800, color }}>{label}</b>
+      <span style={{ fontSize: sc.s(14, 10), color: "#64748b", fontVariantNumeric: "tabular-nums" }}>{n}</span>
+    </div>
   );
 }

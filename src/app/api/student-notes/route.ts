@@ -144,7 +144,13 @@ export async function PATCH(req: Request) {
   const me = await getCurrentAppUser();
   if (!me) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
 
-  const body = (await req.json().catch(() => null)) as { id?: string; restore?: boolean } | null;
+  const body = (await req.json().catch(() => null)) as {
+    id?: string;
+    restore?: boolean;
+    /** 고치기 — 내용·시각. 둘 다 없으면 「내리기」입니다. */
+    content?: string;
+    atTime?: string | null;
+  } | null;
   const id = (body?.id ?? "").trim();
   if (!id) return NextResponse.json({ error: "무엇을 내릴지 알 수 없습니다." }, { status: 400 });
 
@@ -162,6 +168,36 @@ export async function PATCH(req: Request) {
     if (backErr) return NextResponse.json({ error: `되돌리지 못했습니다: ${backErr.message}` }, { status: 500 });
     if (!back || back.length === 0) return NextResponse.json({ error: "이미 올라와 있는 줄입니다." }, { status: 409 });
     return NextResponse.json({ ok: true, restored: true });
+  }
+
+  /**
+   * **고치기.** 잘못 적힌 시각·내용을 그 자리에서 바로잡습니다.
+   *
+   * 예전에는 내리고 새로 적는 길뿐이었습니다. 그러면 「왜 이 줄이 있었나」를 잇는 실(원문
+   * 연결)이 끊기고, 바쁜 사람은 고치는 대신 그냥 둡니다 - 틀린 시각으로 알람이 울립니다.
+   */
+  if (typeof body?.content === "string" || body?.atTime !== undefined) {
+    const content = (body.content ?? "").trim();
+    const at = (body.atTime ?? "").trim();
+    if (typeof body.content === "string" && !content)
+      return NextResponse.json({ error: "무엇을 해야 하는지 적어주세요." }, { status: 400 });
+    if (content.length > 300) return NextResponse.json({ error: "내용은 300자까지입니다." }, { status: 400 });
+    // 못 읽는 시각이 들어가면 알람이 그 줄만 조용히 건너뜁니다.
+    if (at && !isClockTime(at)) return NextResponse.json({ error: "시각은 14:30 처럼 적어주세요." }, { status: 400 });
+
+    const patch: Record<string, unknown> = {};
+    if (typeof body.content === "string") patch.content = content;
+    if (body.atTime !== undefined) patch.at_time = at || null;
+
+    const { data: fixed, error: fixErr } = await supabase
+      .from("student_day_notes")
+      .update(patch)
+      .eq("id", id)
+      .is("deleted_at", null)
+      .select("id");
+    if (fixErr) return NextResponse.json({ error: `고치지 못했습니다: ${fixErr.message}` }, { status: 500 });
+    if (!fixed || fixed.length === 0) return NextResponse.json({ error: "이미 내려간 줄입니다." }, { status: 409 });
+    return NextResponse.json({ ok: true, updated: true });
   }
 
   const { data, error } = await supabase

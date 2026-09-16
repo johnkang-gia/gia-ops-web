@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import StudentSelect, { type SelectableStudent } from "@/components/common/StudentSelect";
+import { useRouter } from "next/navigation";
 import { useToast } from "@/components/common/ToastProvider";
 import { ITEM_LOOK, TOPIC_LOOK, bucketOf, toMinutes, topicOf, whenLabel, type Topic, type DayBoard, type DayItem, type DayItemKind, type StudentDay, type UnknownItem } from "@/lib/studentDay";
 import { NOTE_KINDS, KIND_LOOK, type NoteKind } from "@/lib/studentDayNotes";
@@ -66,6 +67,7 @@ function linkableId(u: UnknownItem): string | null {
 
 export default function StudentDayBoard({ students }: { students: SelectableStudent[] }) {
   const notify = useToast();
+  const router = useRouter();
   const [board, setBoard] = useState<DayBoard | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [nowMin, setNowMin] = useState(() => nowMinutesKst());
@@ -423,6 +425,7 @@ export default function StudentDayBoard({ students }: { students: SelectableStud
             void dropNote(i);
             setDetail(null);
           }}
+          onFixed={() => router.refresh()}
         />
       )}
       {dismissalOpen && <DismissalModal onClose={() => setDismissalOpen(false)} />}
@@ -594,11 +597,14 @@ function DetailModal({
   date,
   onClose,
   onDrop,
+  onFixed,
 }: {
   day: StudentDay;
   date: string;
   onClose: () => void;
   onDrop: (item: DayItem) => void;
+  /** 고친 뒤. 보드를 다시 읽습니다 - 화면이 자기 상태를 손으로 고치지 않습니다. */
+  onFixed: () => void;
 }) {
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -647,9 +653,30 @@ function DetailModal({
                 )}
               </div>
               <p className="mt-1 whitespace-pre-wrap text-[12px] leading-relaxed text-slate-700">{i.text}</p>
-              {/* 「왜 이 줄이 떴지」에 답하는 값. 이게 없으면 사람은 보드를 못 믿습니다. */}
+
+              {/* **근거.** 「왜 이 줄이 떴지」에 답하는 자리입니다. 표 이름은 사람에게 아무
+                  말도 아니므로, 토들에서 온 것이면 **학부모가 쓴 글 그대로**를 보여줍니다 -
+                  요약이 잘못됐을 때 그걸 알아채는 길은 이것뿐입니다. */}
+              {i.evidence && (
+                <div className="mt-1.5 rounded-lg bg-slate-50 p-2">
+                  <p className="text-[10px] font-bold text-slate-500">📎 {i.evidence.label}</p>
+                  {i.evidence.raw ? (
+                    <p className="mt-1 whitespace-pre-wrap text-[11px] leading-relaxed text-slate-600">
+                      {i.evidence.raw}
+                    </p>
+                  ) : (
+                    <p className="mt-1 text-[11px] text-slate-400">글로 온 근거는 없습니다(설정·체크로 정해진 것).</p>
+                  )}
+                </div>
+              )}
+
+              {/* 특이사항은 **그 자리에서 고칩니다.** 내리고 새로 적게 하면 원문과 이어둔
+                  실이 끊기고, 바쁜 사람은 고치는 대신 그냥 둡니다 - 틀린 시각으로 알람이
+                  울립니다. */}
+              {i.id.startsWith("note:") && <FixNote item={i} onDone={onFixed} />}
+
               <a href={i.from.screen} className="mt-1 inline-block text-[10px] text-slate-400 underline">
-                {i.from.screen} 에서 옴
+                {i.from.screen} 에서 보기 →
               </a>
             </li>
           ))}
@@ -863,5 +890,86 @@ function NoteForm({
         </button>
       </div>
     </form>
+  );
+}
+
+
+/**
+ * **특이사항 한 줄 고치기** — 시각과 내용.
+ *
+ * 창을 새로 띄우지 않습니다. 고칠 것은 두 칸뿐이고, 창이 또 뜨면 뒤에 있던 근거(원문)가
+ * 가려집니다 - 원문을 보면서 고치는 것이 이 자리의 목적입니다.
+ */
+function FixNote({ item, onDone }: { item: DayItem; onDone: () => void }) {
+  const notify = useToast();
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState(item.text);
+  const [at, setAt] = useState(item.at ?? "");
+  const [busy, setBusy] = useState(false);
+  const id = item.id.slice("note:".length);
+
+  async function save() {
+    setBusy(true);
+    const res = await fetch("/api/student-notes", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, content: text.trim(), atTime: at.trim() }),
+    });
+    const json = (await res.json().catch(() => ({}))) as { error?: string };
+    setBusy(false);
+    // 조용히 넘기지 않습니다 - 안 고쳐진 줄 모르고 창을 닫으면 틀린 값이 그대로 남습니다.
+    if (!res.ok) return notify(json.error ?? "고치지 못했습니다.", "error");
+    notify("고쳤습니다.", "success");
+    setOpen(false);
+    onDone();
+  }
+
+  if (!open)
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="mt-1.5 mr-2 rounded-lg border border-violet-300 px-2 py-1 text-[11px] font-bold text-violet-700 hover:bg-violet-50"
+      >
+        ✏️ 고치기
+      </button>
+    );
+
+  return (
+    <div className="mt-1.5 rounded-lg border border-violet-300 bg-violet-50/60 p-2">
+      <div className="mb-1 flex items-center gap-1.5">
+        <input
+          value={at}
+          onChange={(e) => setAt(e.target.value)}
+          placeholder="14:30"
+          inputMode="numeric"
+          className="w-[72px] rounded border border-slate-300 px-1.5 py-1 text-[11px]"
+        />
+        <span className="text-[10px] text-violet-600">{at ? "그 시각에 알립니다" : "시각 없음 = 오늘 중에"}</span>
+      </div>
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value.slice(0, 300))}
+        rows={2}
+        className="w-full rounded border border-slate-300 p-1.5 text-[12px]"
+      />
+      <div className="mt-1 flex items-center gap-1.5">
+        <button
+          type="button"
+          disabled={busy || !text.trim()}
+          onClick={() => void save()}
+          className="rounded-lg bg-violet-700 px-2.5 py-1 text-[11px] font-bold text-white disabled:opacity-40"
+        >
+          저장
+        </button>
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          className="rounded-lg border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-500"
+        >
+          취소
+        </button>
+      </div>
+    </div>
   );
 }

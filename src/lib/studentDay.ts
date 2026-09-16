@@ -50,6 +50,21 @@ export type DayItem = {
   from: { table: string; screen: string };
   /** 아직 사람이 한 번 봐야 하는가(미답 문의 등). */
   pending: boolean;
+  /**
+   * **왜 이 줄이 떴는가 — 사람이 읽을 수 있는 근거.**
+   *
+   * 「어디서 왔는가」(`from`)는 표 이름이라 사람에게는 아무 말도 아닙니다. 토들에서 온
+   * 것이면 **학부모가 쓴 글 그대로**를 보여줘야, 요약이 잘못됐을 때 사람이 알아챕니다.
+   * 근거가 안 보이면 담당자는 보드를 안 믿고 결국 원래 화면을 다시 엽니다.
+   */
+  evidence?: {
+    /** 「토들 · G3_Grace Lim_Office」 처럼 어디서 온 것인지 한 줄. */
+    label: string;
+    /** 원문. 없을 수 있습니다(하원수단처럼 글이 아닌 근거). */
+    raw: string | null;
+    /** 고칠 수 있는 자리면 그 줄의 번호. */
+    sourceId?: string | null;
+  };
 };
 
 export type StudentDay = {

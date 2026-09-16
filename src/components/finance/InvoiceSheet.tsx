@@ -1,8 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
 import type { Invoice, InvoiceLine } from "@/lib/types";
-import { invoiceFileTitle } from "@/lib/invoiceTitle";
 
 // 인보이스 한 장. 담당자가 쓰던 구글독스 양식과 같은 모양입니다.
 //
@@ -90,18 +88,6 @@ export default function InvoiceSheet({
   const sum = lines.reduce((n, l) => n + Number(l.amount), 0);
   const mismatch = Math.round(sum) !== Math.round(Number(invoice.total_amount));
 
-  /**
-   * **PDF 파일 이름은 탭 제목에서 나옵니다.**
-   *
-   * 브라우저의 「PDF로 저장」은 `document.title` 을 그대로 파일 이름으로 씁니다. 두지 않으면
-   * 139명 것이 전부 같은 이름으로 저장되고, 받는 쪽은 열어봐야 누구 것인지 압니다.
-   *
-   * 인쇄할 때만 바꾸지 않고 **늘** 바꿉니다 - 탭 제목도 「김사랑(G2C) 학비 청구서」가 되어,
-   * 여러 장을 띄워놓고 고를 때 탭만 보고 찾습니다.
-   */
-  useEffect(() => {
-    document.title = invoiceFileTitle(invoice);
-  }, [invoice]);
 
   return (
     <div className={"inv-page p-4 print:min-h-0 print:bg-white print:p-0 " + (embed ? "bg-white p-2" : "min-h-screen bg-slate-100")}>

@@ -1,5 +1,6 @@
 "use client";
 
+import { Fragment } from "react";
 import type { Invoice, InvoiceLine } from "@/lib/types";
 
 // 인보이스 한 장. 담당자가 쓰던 구글독스 양식과 같은 모양입니다.
@@ -73,20 +74,48 @@ function dot(d: string): string {
   return (d ?? "").replaceAll("-", ".");
 }
 
+/** 청구서 한 장에 들어가는 아이 하나 몫. 형제를 합치면 이것이 여럿입니다. */
+export type SheetPart = { invoice: Invoice; lines: InvoiceLine[] };
+
+/**
+ * **형제를 합쳐도 아이별 내역이 보여야 합니다.**
+ *
+ * 보호자 번호가 같으면 청구는 한 장으로 합쳐 보냅니다 - 안 그러면 그 집에 청구서가 두 번
+ * 갑니다. 그런데 합친 청구서에 금액만 한 줄로 찍히면, **그 집은 어느 아이 몫이 얼마인지
+ * 알 수 없습니다.** 문의가 오면 행정실이 두 장을 다시 찾아 더해 설명해야 합니다.
+ *
+ * 그래서 한 장 안에서 아이마다 칸을 나누고, 아이별 소계와 전체 합계를 따로 적습니다.
+ *
+ * 화면을 두 벌로 만들지 않습니다. 한 명짜리는 **아이가 한 명인 합본**일 뿐이라, 같은 코드가
+ * 그립니다 - 두 벌이면 한쪽만 고쳐지는 날이 오고, 학부모에게 가는 종이가 서로 달라집니다.
+ */
 export default function InvoiceSheet({
-  invoice,
-  lines,
+  parts,
   embed = false,
 }: {
-  invoice: Invoice;
-  lines: InvoiceLine[];
+  parts: SheetPart[];
   /** 미리보기 창 안에 들어간 경우. 바깥 창에 이미 인쇄 단추가 있어 머리줄을 숨깁니다. */
   embed?: boolean;
 }) {
+  const invoice = parts[0].invoice;
+  const many = parts.length > 1;
+  const lines = parts.flatMap((p) => p.lines);
+
   // 합계는 굳어진 줄에서 다시 더해 보여줍니다. 머리줄의 total_amount와 어긋나면 그 사실이
   // 화면에 보여야 합니다 - 조용히 한쪽만 믿으면 어긋난 채로 나갑니다.
   const sum = lines.reduce((n, l) => n + Number(l.amount), 0);
-  const mismatch = Math.round(sum) !== Math.round(Number(invoice.total_amount));
+  const stored = parts.reduce((n, p) => n + Number(p.invoice.total_amount), 0);
+  const mismatch = Math.round(sum) !== Math.round(stored);
+
+  /** 아이 이름(반). 누구 몫인지 한 줄로 보여줄 때 씁니다. */
+  const whoOf = (inv: Invoice): string => {
+    const name = (inv.student_name_ko?.trim() || inv.student_name || "").trim();
+    const g = (inv.grade_label ?? "").trim();
+    return g ? `${name} · ${g}` : name;
+  };
+
+  // 형제의 납부기한이 다르면 **빠른 쪽**을 적습니다. 늦은 쪽을 적으면 한 아이가 연체됩니다.
+  const due = parts.map((p) => p.invoice.due_date).sort()[0];
 
 
   return (
@@ -94,15 +123,19 @@ export default function InvoiceSheet({
       <style>{PRINT_CSS}</style>
 
       <div className={"no-print mx-auto mb-3 flex max-w-[210mm] flex-wrap items-center gap-2 " + (embed ? "hidden" : "")}>
-        <span className="text-sm font-bold text-slate-700">{invoice.invoice_no}</span>
-        <span className="text-xs text-slate-500">{invoice.student_name}</span>
-        {invoice.status === "취소" && (
-          <span className="rounded bg-red-100 px-2 py-0.5 text-[11px] font-bold text-red-700">
-            취소된 인보이스
-            {invoice.cancel_reason && <span className="ml-1 font-medium">· {invoice.cancel_reason}</span>}
-            {invoice.cancelled_by && <span className="ml-1 font-medium opacity-70">({invoice.cancelled_by})</span>}
-          </span>
-        )}
+        <span className="text-sm font-bold text-slate-700">{parts.map((p) => p.invoice.invoice_no).join(" · ")}</span>
+        <span className="text-xs text-slate-500">{parts.map((p) => whoOf(p.invoice)).join(" · ")}</span>
+        {/* 합본이면 **어느 아이 것이 취소됐는지**까지 적습니다. 「취소된 인보이스」만 뜨면
+            두 장 중 어느 쪽인지 몰라 둘 다 다시 확인하게 됩니다. */}
+        {parts
+          .filter((p) => p.invoice.status === "취소")
+          .map((p) => (
+            <span key={p.invoice.id} className="rounded bg-red-100 px-2 py-0.5 text-[11px] font-bold text-red-700">
+              {many ? `${whoOf(p.invoice)} · ` : ""}취소된 인보이스
+              {p.invoice.cancel_reason && <span className="ml-1 font-medium">· {p.invoice.cancel_reason}</span>}
+              {p.invoice.cancelled_by && <span className="ml-1 font-medium opacity-70">({p.invoice.cancelled_by})</span>}
+            </span>
+          ))}
         <button
           onClick={() => window.print()}
           className="ml-auto rounded-lg bg-slate-800 px-4 py-2 text-sm font-bold text-white"
@@ -113,7 +146,7 @@ export default function InvoiceSheet({
 
       {mismatch && (
         <p className="no-print mx-auto mb-3 max-w-[210mm] rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-800">
-          내역 합({won(sum)})과 저장된 총액({won(Number(invoice.total_amount))})이 다릅니다. 발행을 다시 해주세요.
+          내역 합({won(sum)})과 저장된 총액({won(stored)})이 다릅니다. 발행을 다시 해주세요.
         </p>
       )}
 
@@ -150,7 +183,7 @@ export default function InvoiceSheet({
                 </td>
                 <td style={{ background: "#f7f4ee", padding: "9px 14px" }}>
                   <div style={{ fontSize: 8, fontWeight: 700, letterSpacing: 0.6, color: "#a07d2e" }}>PAYMENT DUE</div>
-                  <div style={{ fontSize: 11.5, fontWeight: 800, marginTop: 2 }}>{dot(invoice.due_date)}</div>
+                  <div style={{ fontSize: 11.5, fontWeight: 800, marginTop: 2 }}>{dot(due)}</div>
                 </td>
               </tr>
             </tbody>
@@ -159,18 +192,21 @@ export default function InvoiceSheet({
           {/* 학생 */}
           <table style={{ marginTop: 20 }}>
             <tbody>
-              <tr>
-                <td style={{ width: 130, padding: "3px 0", fontSize: 8.5, fontWeight: 700, letterSpacing: 0.6, color: "#6b7280" }}>
-                  STUDENT NAME
-                </td>
-                <td style={{ padding: "3px 0", fontSize: 11.5, fontWeight: 800 }}>{invoice.student_name}</td>
-              </tr>
-              <tr>
-                <td style={{ padding: "3px 0", fontSize: 8.5, fontWeight: 700, letterSpacing: 0.6, color: "#6b7280" }}>
-                  GRADE / CLASS
-                </td>
-                <td style={{ padding: "3px 0", fontSize: 11.5 }}>{invoice.grade_label ?? ""}</td>
-              </tr>
+              {/* 형제를 합쳤으면 아이를 한 줄씩 적습니다. 한 칸에 이어 붙이면 어느 반이 누구
+                  것인지 짝이 안 맞습니다 - 아래 내역도 아이별로 나뉘므로 여기도 나눕니다. */}
+              {parts.map((p, i) => (
+                <tr key={p.invoice.id}>
+                  <td style={{ width: 130, padding: "3px 0", fontSize: 8.5, fontWeight: 700, letterSpacing: 0.6, color: "#6b7280" }}>
+                    {i === 0 ? (many ? "STUDENTS" : "STUDENT NAME") : ""}
+                  </td>
+                  <td style={{ padding: "3px 0", fontSize: 11.5, fontWeight: 800 }}>
+                    {p.invoice.student_name}
+                    {p.invoice.grade_label && (
+                      <span style={{ fontWeight: 400, color: "#6b7280" }}> · {p.invoice.grade_label}</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
 
@@ -185,21 +221,55 @@ export default function InvoiceSheet({
               </tr>
             </thead>
             <tbody>
-              {lines.map((l, i) => (
-                <tr key={l.id} style={{ background: i % 2 === 1 ? "#f4f5f7" : "#fff" }}>
-                  <td style={{ padding: "7px 10px", fontSize: 10.5 }}>{l.seq}</td>
-                  <td style={{ padding: "7px 10px", fontSize: 10.5 }}>{l.name}</td>
-                  <td style={{ padding: "7px 10px", fontSize: 10.5 }}>{l.qty}</td>
-                  <td style={{ padding: "7px 10px", fontSize: 10.5 }}>{won(Number(l.amount))}</td>
-                </tr>
-              ))}
-              {lines.length === 0 && (
-                <tr>
-                  <td colSpan={4} style={{ padding: "18px 10px", fontSize: 10.5, color: "#9ca3af" }}>
-                    내역이 없습니다.
-                  </td>
-                </tr>
-              )}
+              {/*
+                **아이마다 칸을 나눕니다.**
+
+                형제를 합치면 줄이 섞여서, 「악기비 12만원」이 형 것인지 동생 것인지 알 수
+                없습니다. 그 집이 물어보면 행정실이 두 장을 다시 찾아 더해 설명해야 합니다.
+
+                한 명짜리는 머리줄도 소계도 없이 예전 그대로 나옵니다 - 아이가 한 명인데
+                「김사랑 소계」를 적으면 총액과 같은 숫자가 두 번 찍힙니다.
+              */}
+              {parts.map((part) => {
+                const subtotal = part.lines.reduce((n, l) => n + Number(l.amount), 0);
+                return (
+                  <Fragment key={part.invoice.id}>
+                    {many && (
+                      <tr style={{ background: "#e8eaf0" }}>
+                        <td colSpan={4} style={{ padding: "6px 10px", fontSize: 10, fontWeight: 800, color: "#1e2a44" }}>
+                          {whoOf(part.invoice)}
+                          <span style={{ fontWeight: 400, color: "#6b7280" }}> · No. {part.invoice.invoice_no}</span>
+                        </td>
+                      </tr>
+                    )}
+                    {part.lines.map((l, i) => (
+                      <tr key={l.id} style={{ background: i % 2 === 1 ? "#f4f5f7" : "#fff" }}>
+                        <td style={{ padding: "7px 10px", fontSize: 10.5 }}>{l.seq}</td>
+                        <td style={{ padding: "7px 10px", fontSize: 10.5 }}>{l.name}</td>
+                        <td style={{ padding: "7px 10px", fontSize: 10.5 }}>{l.qty}</td>
+                        <td style={{ padding: "7px 10px", fontSize: 10.5 }}>{won(Number(l.amount))}</td>
+                      </tr>
+                    ))}
+                    {part.lines.length === 0 && (
+                      <tr>
+                        <td colSpan={4} style={{ padding: "18px 10px", fontSize: 10.5, color: "#9ca3af" }}>
+                          내역이 없습니다.
+                        </td>
+                      </tr>
+                    )}
+                    {many && (
+                      <tr>
+                        <td colSpan={3} style={{ padding: "6px 10px", fontSize: 10, fontWeight: 700, textAlign: "right", color: "#374151" }}>
+                          {(part.invoice.student_name_ko?.trim() || part.invoice.student_name)} 소계
+                        </td>
+                        <td style={{ padding: "6px 10px", fontSize: 10.5, fontWeight: 800, borderTop: "1px solid #c7ccd8" }}>
+                          {won(subtotal)}
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
 
@@ -239,7 +309,7 @@ export default function InvoiceSheet({
                 <td style={{ background: "#f4f5f7", padding: "12px 14px", verticalAlign: "top" }}>
                   <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.6, color: "#374151" }}>NOTES</div>
                   <div style={{ fontSize: 9.5, marginTop: 6, lineHeight: 1.6 }}>
-                    • Please complete payment by {dot(invoice.due_date)} via the Altok Pay payment request.
+                    • Please complete payment by {dot(due)} via the Altok Pay payment request.
                     <br />
                     • Issued on {dot(invoice.issue_date)}.
                     <br />• Please contact the school office with any questions.
@@ -251,7 +321,7 @@ export default function InvoiceSheet({
 
           <div className="inv-keep" style={{ marginTop: 26, borderTop: "1px solid #d1d5db", paddingTop: 8, textAlign: "center", fontSize: 9, fontStyle: "italic", color: "#6b7280" }}>
             GIA Micro Lab · Gangnam-gu, Seoul · Thank you for your prompt payment.
-            <span style={{ marginLeft: 8, fontStyle: "normal" }}>No. {invoice.invoice_no}</span>
+            <span style={{ marginLeft: 8, fontStyle: "normal" }}>No. {parts.map((p) => p.invoice.invoice_no).join(", ")}</span>
           </div>
         </div>
       </div>

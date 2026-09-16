@@ -246,7 +246,7 @@ export function withInvoiceNo(memo: string, invoiceNos: readonly string[]): stri
  * 여러 장을 한 줄로 합칠 때 쓸 갈래 이름. 섞였으면 둘 다 적습니다 - 한쪽만 적으면 나머지
  * 한 장이 무슨 돈인지 문구에서 사라집니다.
  */
-export function streamsLabel(list: { stream?: string | null; category?: string | null }[]): string {
+export function streamsLabel(list: readonly { stream?: string | null; category?: string | null }[]): string {
   const set = new Set(list.map(streamOf));
   return [...set].join("·");
 }
@@ -269,6 +269,32 @@ export function memoFor(names: string[], stream: InvoiceStream = "학비외", ma
   }
   const rest = names.length - used;
   return rest > 0 ? `${out} 외 ${rest}건` : out;
+}
+
+/**
+ * **형제를 한 줄로 합쳤을 때의 청구 문구.**
+ *
+ * 합쳐 보내면 그 집에는 금액이 하나로 찍힙니다. 갈래 이름만 적으면(「황라원, 황라윤 학비
+ * 납부」) **어느 아이 몫이 얼마인지 알 수 없어서**, 문의가 오면 행정실이 두 장을 다시 찾아
+ * 더해 설명해야 합니다.
+ *
+ * 그래서 아이마다 항목을 적습니다 — 「황라원 학비, 급식비 / 황라윤 학비」.
+ *
+ * 올톡페이 청구사유 칸은 길지 않습니다. 길이를 넘기면 **아이 단위로** 줄입니다(항목을
+ * 지우고 갈래 이름으로). 항목을 앞에서부터 자르면 뒤에 적힌 아이가 통째로 사라지는데,
+ * 그건 그 아이 몫이 안 청구된 것처럼 보입니다.
+ */
+export function familyMemo(
+  list: readonly { name: string; itemNames: string[]; stream?: string | null; category?: string | null }[],
+  max = 60,
+): string {
+  const full = list.map((e) => `${e.name} ${memoFor(e.itemNames, streamOf(e), 24)}`).join(" / ");
+  if (full.length <= max) return full;
+  const short = list.map((e) => `${e.name} ${streamOf(e)}`).join(" / ");
+  if (short.length <= max) return short;
+  // 이름조차 다 못 적을 만큼 형제가 많은 집. 그때는 아이 수를 밝힙니다 - 이름 몇 개를
+  // 잘라 적으면 빠진 아이의 보호자는 자기 아이 것이 안 왔다고 읽습니다.
+  return `${list.map((e) => e.name).join(", ")} ${streamsLabel(list)} 납부`.slice(0, max);
 }
 
 export function buildBillPlan(
@@ -340,9 +366,18 @@ export function buildBillPlan(
         role: list[0].role,
         amount: list.reduce((n, e) => n + Number(e.inv.total_amount), 0),
         memo: withInvoiceNo(
-          // 형제를 합치면 항목 이름을 다 적을 수 없어 갈래 이름만 씁니다. 두 아이의 갈래가
-          // 다르면 둘 다 적습니다 - 한쪽만 적으면 나머지 한 장이 무슨 돈인지 사라집니다.
-          list.length > 1 ? `${names.join(", ")} ${streamsLabel(list.map((e) => e.inv))} 납부` : memoFor(list[0].inv.itemNames, streamOf(list[0].inv)),
+          // **아이별로 적습니다.** 갈래 이름만 적으면 그 집은 어느 아이 몫이 얼마인지 알 수
+          // 없고, 종이 청구서도 아이마다 따로여서 대조할 길이 없습니다.
+          list.length > 1
+            ? familyMemo(
+                list.map((e) => ({
+                  name: e.inv.student_name_ko || e.inv.student_name,
+                  itemNames: e.inv.itemNames,
+                  stream: e.inv.stream,
+                  category: e.inv.category,
+                })),
+              )
+            : memoFor(list[0].inv.itemNames, streamOf(list[0].inv)),
           list.map((e) => e.inv.invoice_no),
         ),
         // 형제의 납부기한이 다르면 **빠른 쪽**에 맞춥니다. 늦은 쪽에 맞추면 하나가 연체됩니다.

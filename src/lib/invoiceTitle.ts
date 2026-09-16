@@ -52,10 +52,29 @@ export function safeFileName(s: string): string {
   return s.replace(/[\\/:*?"<>|]/g, " ").replace(/\s+/g, " ").trim();
 }
 
-/** 「김사랑(G2C) 학비 청구서」. 확장자는 브라우저가 붙입니다. */
-export function invoiceFileTitle(inv: TitleInvoice): string {
+/** 「김사랑(G2C)」. 이름만으로는 김재이 셋을 못 가릅니다(§2-4). */
+function whoOf(inv: TitleInvoice): string {
   const name = (inv.student_name_ko?.trim() || inv.student_name || "").trim();
   const klass = classOfLabel(inv.grade_label);
-  const who = klass ? `${name}(${klass})` : name;
-  return safeFileName(`${who} ${streamOf(inv)} 청구서`);
+  return klass ? `${name}(${klass})` : name;
+}
+
+/** 「김사랑(G2C) 학비 청구서」. 확장자는 브라우저가 붙입니다. */
+export function invoiceFileTitle(inv: TitleInvoice): string {
+  return safeFileName(`${whoOf(inv)} ${streamOf(inv)} 청구서`);
+}
+
+/**
+ * 형제를 한 장으로 합친 청구서의 파일 이름 — 「황라원(G2C)·황라윤(G4A) 학비 청구서」.
+ *
+ * **아이 이름을 다 적습니다.** 대표 한 명만 적으면 폴더에서 동생 것은 아예 안 보이고, 그
+ * 집에 「동생 청구서는 안 왔다」는 문의가 옵니다. 갈래가 섞이면 둘 다 적습니다 - 한쪽만
+ * 적으면 나머지 한 장이 무슨 돈인지 이름에서 사라집니다.
+ */
+export function familyFileTitle(list: readonly TitleInvoice[]): string {
+  if (list.length === 0) return "청구서";
+  if (list.length === 1) return invoiceFileTitle(list[0]);
+  const who = list.map(whoOf).join("·");
+  const streams = [...new Set(list.map((v) => streamOf(v)))].join("·");
+  return safeFileName(`${who} ${streams} 청구서`);
 }

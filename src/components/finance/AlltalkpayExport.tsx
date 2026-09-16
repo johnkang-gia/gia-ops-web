@@ -256,6 +256,25 @@ export default function AlltalkpayExport({ invoiceIds, onClose, onMarked }: Prop
                         <td className="px-2 py-1 font-semibold text-slate-800">
                           {r.name}
                           {r.resent && <span className="ml-1 text-[10px] font-bold text-rose-600">보낸 적 있음</span>}
+                          {/*
+                            **합친 줄에는 합본 청구서로 가는 길을 둡니다.**
+
+                            금액은 한 줄로 합쳐져 나가는데 종이 청구서는 아이마다 따로여서, 그 집은
+                            어느 아이 몫이 얼마인지 알 수 없었습니다. 합본은 한 장 안에서 아이별
+                            내역과 소계를 보여줍니다. 합친 줄에만 답니다 - 한 명짜리는 원래 청구서가
+                            그대로 그 아이 것입니다.
+                          */}
+                          {r.invoiceIds.length > 1 && (
+                            <a
+                              href={`/finance/invoices/${r.invoiceIds[0]}/print?also=${r.invoiceIds.slice(1).join(",")}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              title="한 장 안에 아이별 내역과 소계를 나눠 담은 청구서입니다."
+                              className="ml-1 rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-bold text-indigo-700 hover:bg-indigo-200"
+                            >
+                              합본 청구서
+                            </a>
+                          )}
                         </td>
                         <td className="px-2 py-1">
                           {/*

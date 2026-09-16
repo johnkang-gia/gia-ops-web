@@ -8,6 +8,7 @@ import { todayKst } from "@/lib/kst";
 import { resolveStudentItems, sumLines, won } from "@/lib/feeItems";
 import CollectionStatus from "@/components/finance/CollectionStatus";
 import MethodSummary from "@/components/finance/MethodSummary";
+import MoneyFlowBoard from "@/components/finance/MoneyFlowBoard";
 import type { PaymentRow } from "@/lib/payments";
 import type { FeeItem, Invoice, StudentFeeItem } from "@/lib/types";
 import { Who } from "@/components/common/HomonymProvider";
@@ -93,15 +94,31 @@ export default async function FinanceOverviewPage() {
 
       <div className="mb-1 flex flex-wrap items-baseline gap-2">
         <h1 className="text-lg font-bold">📊 재무 개요</h1>
-        <span className="text-xs text-slate-400">{today} 기준 · 학비외</span>
+        <span className="text-xs text-slate-400">{today} 기준</span>
       </div>
-      <p className="mb-4 text-xs text-slate-500">지금 어디까지 됐는지만 봅니다. 고치는 일은 옆 탭에서 합니다.</p>
+      <p className="mb-4 text-xs text-slate-500">
+        지금 어디까지 됐는지만 봅니다. 고치는 일은 옆 탭에서 합니다. 아래 표 가운데 「받아야 할 금액」부터는 <b>학비외</b>만 셉니다.
+      </p>
 
       {loadError && (
         <p className="mb-3 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-[12px] text-orange-800">
           {loadError}
         </p>
       )}
+
+      {/* **학교의 돈이 지금 어디까지 왔는가.** 전체 수납률 하나만으로는 모든 반이 고르게
+          82%인 것과 한 반만 30%인 것을 가릴 수 없습니다 - 뒤엣것은 그 반 담임에게 전화
+          한 통이면 풀리는데, 전체 숫자만 보면 그 반이 있다는 것조차 모릅니다.
+
+          학년·반은 **학생 번호로** 찾습니다(§2-4). 이름으로 지도를 만들면 김재이 셋이 한
+          칸을 나눠 써서 엉뚱한 반 금액이 부풀고, 그건 화면에 «그 반이 많이 밀렸다»로
+          보입니다. */}
+      <MoneyFlowBoard
+        invoices={invoices}
+        payments={payments}
+        meta={students.map((s) => [s.id, { name: s.name, grade: s.grade, className: s.className }])}
+        today={today}
+      />
 
       <CollectionStatus invoices={invoices} payments={payments} today={today} />
       <MethodSummary payments={payments} />

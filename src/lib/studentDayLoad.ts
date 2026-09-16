@@ -153,6 +153,11 @@ export async function loadStudentDay(supabase: SupabaseClient, opts: LoadOptions
       onDate: date,
       from: { table: "attendance_entries", screen: "/work" },
       pending: false,
+      evidence: {
+        // 사유 칸이 곧 근거입니다. 비어 있으면 사람이 손으로 등록한 것이라 그렇다고 적습니다.
+        label: e.note?.trim() ? "학부모 연락에서 읽은 사유" : "사람이 출결로 등록",
+        raw: e.note?.trim() || null,
+      },
     });
   }
 
@@ -167,6 +172,10 @@ export async function loadStudentDay(supabase: SupabaseClient, opts: LoadOptions
       onDate: e.date_from,
       from: { table: "attendance_entries", screen: "/work" },
       pending: false,
+      evidence: {
+        label: e.note?.trim() ? "학부모 연락에서 읽은 사유" : "사람이 출결로 등록",
+        raw: e.note?.trim() || null,
+      },
     });
   }
 

@@ -245,7 +245,16 @@ export default function WorkCalendar({
     const m = new Map<string, Task[]>();
     for (const t of tasks) {
       if (t.origin !== "픽업") continue;
-      const key = dayKeyOf(t.due_at);
+      /**
+       * **시각이 없는 픽업도 그날에 붙입니다.**
+       *
+       * 「데리러 갑니다」만 오고 몇 시인지 안 적힌 연락이 있습니다. 그런 업무는 마감이
+       * 없어서(`due_at = null`) 달력의 어느 날에도 안 붙었고, 그래서 달력 숫자가 오늘 학생
+       * 화면보다 늘 적었습니다 - 시각을 모른다고 그 픽업이 없는 것은 아닙니다.
+       *
+       * 만들 때 시작일(`start_on`)에 그날이 적혀 있으므로 그것을 씁니다.
+       */
+      const key = dayKeyOf(t.due_at) ?? (t.start_on ? t.start_on.slice(0, 10) : null);
       if (!key) continue;
       const list = m.get(key) ?? [];
       list.push(t);

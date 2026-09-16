@@ -81,6 +81,14 @@ export function buildPickupTask(input: PickupTaskInput) {
     assignee_emails: input.assigneeEmails,
     position: Date.now(),
     due_at: pickupDueAt(input.serviceDate, input.pickupTime),
+    /**
+     * **어느 날의 픽업인가.**
+     *
+     * 시각이 없는 연락(「데리러 갑니다」만 오고 몇 시인지 안 적힌 경우)은 마감이 안 걸립니다.
+     * 그러면 달력이 그 업무를 어느 날에도 못 붙여서 숫자가 조용히 적어집니다 - 시각을
+     * 모른다고 그 픽업이 없는 것은 아닙니다.
+     */
+    start_on: input.serviceDate,
     description: [
       `${input.serviceDate} ${input.pickupTime ?? "시각 미정"} 픽업`,
       input.place ? `데리러 갈 곳: ${input.place}` : null,

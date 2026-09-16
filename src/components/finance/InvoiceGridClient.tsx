@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { BILL_LABEL, billedItems, markOf } from "@/lib/billedItems";
 import { askText, compareIssue, type IssueCompare } from "@/lib/issueCompare";
-import { gridTotals } from "@/lib/gridTotals";
+import { gridTotals, gridTotalsByStudent } from "@/lib/gridTotals";
 import { useFinanceLive } from "@/lib/useFinanceLive";
 import DragScroll from "@/components/common/DragScroll";
 import FeeItemsButton from "./FeeItemsModal";
@@ -60,6 +60,18 @@ import { ALL_SCOPE, gradeOfClass } from "@/lib/gradeScope";
 const W_CHECK = 32;
 const W_NAME = 166;
 const LEFT_INVOICE = W_CHECK + W_NAME;
+
+/**
+ * **오른쪽에 고정되는 세 칸**(총청구액 · 이미 받은 · 미납)의 너비.
+ *
+ * 항목이 스무 개 넘게 이어지는 표라, 가로로 밀면 맨 오른쪽 금액이 화면 밖으로 나갑니다.
+ * 그러면 지금 보고 있는 줄이 얼마인지 알 수 없어서, 사람이 다시 왼쪽으로 밀었다가 오게
+ * 됩니다. 왼쪽 세 칸과 같은 이유로 **너비와 right 를 같은 수에서** 냅니다 - 둘이 어긋난
+ * 만큼 옆 칸이 덮입니다.
+ */
+const W_MONEY = 104;
+const RIGHT_PAID = W_MONEY;
+const RIGHT_BILLED = W_MONEY * 2;
 
 /**
  * 표의 한 줄.
@@ -623,6 +635,11 @@ export default function InvoiceGridClient({
    */
   const money = useMemo(
     () => gridTotals(rows.map((s) => s.id), totalOf, invoices, payments),
+    [rows, totalOf, invoices, payments],
+  );
+  /** 아이별 세 숫자. 표 오른쪽 고정 칸이 줄마다 이것을 읽습니다. */
+  const moneyOf = useMemo(
+    () => gridTotalsByStudent(rows.map((s) => s.id), totalOf, invoices, payments),
     [rows, totalOf, invoices, payments],
   );
   const unissued = rows.filter((s) => !invoiceByStudent.has(s.id)).length;
@@ -1458,39 +1475,12 @@ export default function InvoiceGridClient({
       </div>
 
       {/* ── 요약 ─────────────────────────────────────────────────── */}
-      {/* **표를 굴려도 이 줄은 붙어 있습니다.** 항목이 스무 개 넘게 이어지는 표라, 아래로
-          내려가면 금액이 화면 밖으로 나가고 그러면 지금 보고 있는 숫자가 무엇인지 알 수
-          없습니다. */}
-      <div className="sticky top-0 z-40 mb-2 flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+      <div className="mb-2 flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2">
         <span className="text-[12px] text-slate-500">
           {view.kind === "전체" ? "전체" : `${view.value}${view.kind === "학년" ? "학년" : ""}`} <b className="text-slate-800">{rows.length}명</b>
         </span>
-        {/* 세 숫자를 **갈라서** 보여줍니다. 합계 하나만 두면 이미 받은 것이 섞여 보입니다. */}
-        <span
-          className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1"
-          title="표에 등록된 항목의 합. 아직 청구서가 안 나간 것도 들어갑니다."
-        >
-          <span className="text-[11px] text-slate-500">총청구액</span>
-          <b className="text-base font-black tabular-nums text-slate-800">{won(money.billed)}</b>
-        </span>
-        <span
-          className="flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1"
-          title="실제로 들어온 돈. 「이미 받음」으로 적어둔 것도 들어갑니다."
-        >
-          <span className="text-[11px] text-emerald-700">이미 받은 금액</span>
-          <b className="text-base font-black tabular-nums text-emerald-800">{won(money.paid)}</b>
-        </span>
-        <span
-          className={
-            "flex items-center gap-1.5 rounded-lg border px-2 py-1 " +
-            (money.due > 0 ? "border-rose-200 bg-rose-50" : "border-slate-200 bg-slate-50")
-          }
-          title="총청구액에서 받은 돈을 뺀 값. 더 받았으면 음수로 나옵니다 - 0으로 눕히면 과납이 화면에서 사라집니다."
-        >
-          <span className={"text-[11px] " + (money.due > 0 ? "text-rose-700" : "text-slate-500")}>미납 청구액</span>
-          <b className={"text-base font-black tabular-nums " + (money.due > 0 ? "text-rose-800" : "text-slate-500")}>
-            {won(money.due)}
-          </b>
+        <span className="text-[12px] text-slate-500">
+          합계 <b className="text-base font-black tabular-nums text-slate-800">{won(grandTotal)}</b>
         </span>
         <span className={"text-[12px] " + (unissued > 0 ? "font-bold text-amber-700" : "text-slate-400")}>
           미발행 {unissued}명
@@ -1714,8 +1704,28 @@ export default function InvoiceGridClient({
                   </span>
                 </th>
               ))}
-              <th className="min-w-[92px] border-b border-l border-slate-200 bg-white px-2 py-1.5 text-right font-semibold text-slate-600">
-                합계
+              {/* **오른쪽에 붙여 둡니다.** 가로로 밀어도 금액 세 칸은 그 자리에 남습니다 -
+                  가운데 항목들만 움직입니다. */}
+              <th
+                className="sticky z-20 border-b border-l-2 border-slate-300 bg-white px-2 py-1.5 text-right font-semibold text-slate-600"
+                style={{ right: RIGHT_BILLED, minWidth: W_MONEY, width: W_MONEY }}
+                title="이 아이의 표에 등록된 항목 합. 아직 청구서가 안 나간 것도 들어갑니다."
+              >
+                총청구액
+              </th>
+              <th
+                className="sticky z-20 border-b border-l border-slate-200 bg-emerald-50 px-2 py-1.5 text-right font-semibold text-emerald-700"
+                style={{ right: RIGHT_PAID, minWidth: W_MONEY, width: W_MONEY }}
+                title="이 아이에게서 실제로 들어온 돈. 「이미 받음」으로 적어둔 것도 들어갑니다."
+              >
+                이미 받은
+              </th>
+              <th
+                className="sticky right-0 z-20 border-b border-l border-slate-200 bg-rose-50 px-2 py-1.5 text-right font-semibold text-rose-700"
+                style={{ minWidth: W_MONEY, width: W_MONEY }}
+                title="총청구액에서 받은 돈을 뺀 값. 더 받았으면 음수로 나옵니다."
+              >
+                미납
               </th>
             </tr>
           </thead>
@@ -1723,6 +1733,9 @@ export default function InvoiceGridClient({
           <tbody>
             {rows.map((s) => {
               const total = totalOf(s.id);
+              // 아이별 청구·수납·미납. 합계 줄과 같은 규칙에서 나옵니다 - 위아래가 다른
+              // 숫자를 말하면 그 표는 아무도 안 믿습니다.
+              const mine = moneyOf.get(s.id) ?? { billed: total, paid: 0, due: total };
               const inv = invoiceByStudent.get(s.id);
               const on = checked.has(s.id);
               return (
@@ -1936,10 +1949,40 @@ export default function InvoiceGridClient({
                     );
                   })}
 
-                  <td className="border-b border-l border-slate-200 px-2 py-1 text-right">
+                  {/* **아이별 총청구액 · 이미 받은 · 미납.** 합계 하나만 두면 이미 받은
+                      것이 섞여 보여서, 누가 얼마를 아직 안 냈는지 세려면 수납 화면을 따로
+                      열어야 했습니다. 판정은 `gridTotals` 한 곳입니다. */}
+                  <td
+                    className={"sticky z-10 border-b border-l-2 border-slate-300 px-2 py-1 text-right " + (on ? "bg-teal-50" : "bg-white")}
+                    style={{ right: RIGHT_BILLED, minWidth: W_MONEY, width: W_MONEY }}
+                  >
                     <span className={"font-bold tabular-nums " + (total > 0 ? "text-slate-800" : "text-slate-300")}>
                       {total > 0 ? won(total) : "—"}
                     </span>
+                  </td>
+                  <td
+                    className="sticky z-10 border-b border-l border-slate-200 bg-emerald-50 px-2 py-1 text-right"
+                    style={{ right: RIGHT_PAID, minWidth: W_MONEY, width: W_MONEY }}
+                  >
+                    <span className={"font-bold tabular-nums " + (mine.paid > 0 ? "text-emerald-800" : "text-emerald-200")}>
+                      {mine.paid > 0 ? won(mine.paid) : "—"}
+                    </span>
+                  </td>
+                  <td
+                    className="sticky right-0 z-10 border-b border-l border-slate-200 bg-rose-50 px-2 py-1 text-right"
+                    style={{ minWidth: W_MONEY, width: W_MONEY }}
+                  >
+                    {/* 다 받았으면 초록 「완납」. 0원을 그냥 적으면 「아직 안 걷은 0원」인지
+                        「다 걷었다」인지 구별되지 않습니다. */}
+                    {total <= 0 ? (
+                      <span className="tabular-nums text-rose-200">—</span>
+                    ) : mine.due <= 0 ? (
+                      <span className="rounded bg-emerald-600 px-1 text-[11px] font-bold text-white">
+                        {mine.due < 0 ? `과납 ${won(-mine.due)}` : "완납"}
+                      </span>
+                    ) : (
+                      <span className="font-bold tabular-nums text-rose-800">{won(mine.due)}</span>
+                    )}
                   </td>
                 </tr>
               );
@@ -1977,8 +2020,23 @@ export default function InvoiceGridClient({
                   </td>
                 );
               })}
-              <td className="border-t-2 border-l border-slate-300 bg-slate-100 px-2 py-1.5 text-right">
-                <span className="text-[13px] font-black tabular-nums text-slate-800">{won(grandTotal)}</span>
+              <td
+                className="sticky z-20 border-t-2 border-l-2 border-slate-300 bg-slate-100 px-2 py-1.5 text-right"
+                style={{ right: RIGHT_BILLED, minWidth: W_MONEY, width: W_MONEY }}
+              >
+                <span className="text-[13px] font-black tabular-nums text-slate-800">{won(money.billed)}</span>
+              </td>
+              <td
+                className="sticky z-20 border-t-2 border-l border-slate-300 bg-emerald-100 px-2 py-1.5 text-right"
+                style={{ right: RIGHT_PAID, minWidth: W_MONEY, width: W_MONEY }}
+              >
+                <span className="text-[13px] font-black tabular-nums text-emerald-800">{won(money.paid)}</span>
+              </td>
+              <td
+                className="sticky right-0 z-20 border-t-2 border-l border-slate-300 bg-rose-100 px-2 py-1.5 text-right"
+                style={{ minWidth: W_MONEY, width: W_MONEY }}
+              >
+                <span className="text-[13px] font-black tabular-nums text-rose-800">{won(money.due)}</span>
               </td>
             </tr>
           </tfoot>

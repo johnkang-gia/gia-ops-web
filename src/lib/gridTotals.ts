@@ -68,3 +68,45 @@ export function gridTotals(
 
   return { billed, paid, due: billed - paid };
 }
+
+/**
+ * **아이별로 같은 세 숫자.** 표의 오른쪽 세 칸이 이것을 씁니다.
+ *
+ * 줄마다 `gridTotals` 를 다시 부르면 입금 목록을 학생 수만큼 훑습니다(103명 × 수백 줄).
+ * 한 번만 훑고 학생별로 나눠 담습니다 - 답은 같고 읽는 횟수만 줄입니다.
+ *
+ * 합계 줄의 숫자와 **반드시 같아야 합니다.** 위아래가 다른 숫자를 말하면 그 표는 아무도
+ * 안 믿습니다. 그래서 같은 규칙을 두 번 적지 않고, 여기서 낸 값을 더해 합계로 씁니다.
+ */
+export function gridTotalsByStudent(
+  studentIds: readonly string[],
+  totalOf: (studentId: string) => number,
+  invoices: readonly TotalsInvoice[],
+  payments: readonly TotalsPayment[],
+): Map<string, GridTotals> {
+  const seen = new Set(studentIds);
+
+  // 장 → 학생. 취소된 장에 붙은 입금은 세지 않습니다.
+  const ownerOf = new Map<string, string>();
+  for (const v of invoices) {
+    if (!v.student_id || !seen.has(v.student_id)) continue;
+    if ((v.status ?? "") === "취소") continue;
+    ownerOf.set(v.id, v.student_id);
+  }
+
+  const paidBy = new Map<string, number>();
+  for (const p of payments) {
+    if (!p.invoice_id) continue;
+    const sid = ownerOf.get(p.invoice_id);
+    if (!sid) continue;
+    paidBy.set(sid, (paidBy.get(sid) ?? 0) + Number(p.amount));
+  }
+
+  const out = new Map<string, GridTotals>();
+  for (const id of seen) {
+    const billed = totalOf(id);
+    const paid = paidBy.get(id) ?? 0;
+    out.set(id, { billed, paid, due: billed - paid });
+  }
+  return out;
+}

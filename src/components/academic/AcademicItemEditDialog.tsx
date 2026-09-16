@@ -26,7 +26,16 @@ import type { ChecklistItem } from "@/lib/types";
  * 준비가 그날에 맞춰 굳습니다. 대신 「12월 중」처럼 말로 적어둡니다.
  */
 
-type Meeting = { id: string; item_id: string; seq: number; meet_date: string; title: string | null; done: boolean };
+type Meeting = {
+  id: string;
+  item_id: string;
+  seq: number;
+  meet_date: string;
+  title: string | null;
+  /** 그 회의에서 정한 것. 회의 전 메모와 섞지 않습니다. */
+  decisions: string | null;
+  done: boolean;
+};
 type LogRow = { id: string; action: string; changes: Record<string, [unknown, unknown]> | null; changed_by_name: string | null; changed_by: string; changed_at: string };
 
 const FIELD_LABEL: Record<string, string> = {
@@ -68,7 +77,11 @@ export default function AcademicItemEditDialog({
   const load = useCallback(async () => {
     const supabase = createClient();
     const [m, l] = await Promise.all([
-      supabase.from("academic_checklist_meetings").select("id, item_id, seq, meet_date, title, done").eq("item_id", item.id).order("seq"),
+      supabase
+        .from("academic_checklist_meetings")
+        .select("id, item_id, seq, meet_date, title, decisions, done")
+        .eq("item_id", item.id)
+        .order("seq"),
       supabase
         .from("academic_item_log")
         .select("id, action, changes, changed_by, changed_by_name, changed_at")
@@ -151,11 +164,76 @@ export default function AcademicItemEditDialog({
     onClose();
   }
 
+  /**
+   * 회의 한 건 넣기.
+   *
+   * **제목을 받습니다.** 「2차 회의」만으로는 달력에서 무슨 자리인지 모르고, 그러면 그날
+   * 무엇을 준비해 가야 하는지도 모른 채 모입니다.
+   *
+   * 회의 칸은 저장 단추와 상관없이 **넣는 즉시** 저장합니다 - 회의를 세 건 넣고 저장을 안
+   * 누른 채 창을 닫으면 세 건이 통째로 사라지는데, 그건 화면에 오류로 안 보입니다.
+   */
+  async function addMeeting(date: string, mTitle: string) {
+    if (!date) return notify("회의 날짜를 정해주세요.", "error");
+    if (!mTitle.trim()) return notify("무슨 회의인지 제목을 적어주세요.", "error");
+    const seq = meetings.reduce((mx, m) => Math.max(mx, m.seq), 0) + 1;
+    const supabase = createClient();
+    const { error } = await supabase.from("academic_checklist_meetings").insert({
+      item_id: item.id,
+      term_id: item.term_id ?? null,
+      seq,
+      meet_date: date,
+      title: mTitle.trim(),
+    });
+    if (error) return notify(`회의를 넣지 못했습니다: ${error.message}`, "error");
+    await logMeeting("회의 추가", { [`${seq}차`]: [null, `${mTitle.trim()} (${date})`] });
+    await load();
+    onSaved();
+    notify("회의를 넣었습니다. 달력 그날에 점이 섭니다.", "success");
+  }
+
+  /** 회의 한 칸 고치기. 날짜·제목·결정사항 모두 여기를 지납니다. */
+  async function patchMeeting(m: Meeting, patch: Partial<Meeting>, logLabel?: string) {
+    const supabase = createClient();
+    const { error } = await supabase.from("academic_checklist_meetings").update(patch).eq("id", m.id);
+    if (error) return notify(`고치지 못했습니다: ${error.message}`, "error");
+    if (logLabel) {
+      const key = m.title?.trim() || `${m.seq}차 회의`;
+      await logMeeting(logLabel, { [key]: [null, String(Object.values(patch)[0] ?? "")] });
+    }
+    await load();
+    onSaved();
+  }
+
+  async function removeMeeting(m: Meeting) {
+    const supabase = createClient();
+    const { error } = await supabase.from("academic_checklist_meetings").delete().eq("id", m.id);
+    if (error) return notify(`빼지 못했습니다: ${error.message}`, "error");
+    await logMeeting("회의 뺌", { [m.title?.trim() || `${m.seq}차 회의`]: [m.meet_date, null] });
+    await load();
+    onSaved();
+  }
+
+  /** 회의 쪽 내력도 같은 자리에 남깁니다 - 두 곳에 나눠두면 아무도 둘 다 안 봅니다. */
+  async function logMeeting(action: string, changes: Record<string, [unknown, unknown]>) {
+    const supabase = createClient();
+    const { error } = await supabase.from("academic_item_log").insert({
+      item_id: item.id,
+      item_title: item.title,
+      action,
+      changes,
+      changed_by: currentUserEmail,
+      changed_by_name: currentUserName,
+    });
+    // 기록이 실패해도 회의 자체는 되돌리지 않습니다. 다만 조용히 넘기지 않습니다.
+    if (error) notify(`기록은 남기지 못했습니다: ${error.message}`, "error");
+  }
+
   return (
     <div className="fixed inset-0 z-[960] flex items-start justify-center bg-black/40 p-4 pt-[8vh]" onClick={onClose}>
       <div className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-2.5">
-          <b className="text-[14px] text-slate-900">🎓 학사일정 고치기</b>
+          <b className="text-[14px] text-slate-900">🎓 학사일정 등록·수정</b>
           <span className="text-[11px] text-slate-400">누구나 고칠 수 있고, 고친 내력이 남습니다</span>
           <button type="button" onClick={onClose} className="ml-auto rounded-lg bg-slate-800 px-3 py-1 text-[12px] font-bold text-white">
             닫기
@@ -235,20 +313,20 @@ export default function AcademicItemEditDialog({
           <div className="rounded-lg bg-slate-50 p-2.5">
             <p className="mb-1 text-[11px] font-bold text-slate-600">🗣️ 회의 {meetings.length}회</p>
             {meetings.length === 0 ? (
-              <p className="text-[11px] text-slate-400">회의가 없습니다. 학사일정 화면에서 회의를 넣으면 달력에 점으로 섭니다.</p>
+              <p className="mb-1.5 text-[11px] text-slate-400">아직 회의가 없습니다. 넣으면 달력 그날에 점이 서고, 그 주에 업무보드에도 올라갑니다.</p>
             ) : (
-              <ul className="space-y-0.5">
+              <ul className="mb-1.5 space-y-1.5">
                 {meetings.map((m) => (
-                  <li key={m.id} className="flex items-center gap-1.5 text-[11px]">
-                    <span className={m.done ? "text-slate-400 line-through" : "font-semibold text-slate-700"}>
-                      {m.title?.trim() || `${m.seq}차 회의`}
-                    </span>
-                    <span className="tabular-nums text-slate-500">{m.meet_date}</span>
-                    {m.done && <span className="rounded bg-slate-200 px-1 text-[10px] text-slate-500">마침</span>}
-                  </li>
+                  <MeetingRow
+                    key={m.id}
+                    m={m}
+                    onPatch={(patch, label) => void patchMeeting(m, patch, label)}
+                    onRemove={() => void removeMeeting(m)}
+                  />
                 ))}
               </ul>
             )}
+            <MeetingAdd onAdd={(d, t) => void addMeeting(d, t)} />
           </div>
 
           {/* **고친 내력.** 누구나 고칠 수 있게 한 대가로 반드시 보여야 하는 자리입니다. */}
@@ -288,6 +366,108 @@ export default function AcademicItemEditDialog({
           <span className="text-[10px] text-slate-400">고친 사람과 바뀐 칸이 위 내력에 남습니다.</span>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * 회의 한 줄 — 제목·날짜·정한 것.
+ *
+ * **정한 것을 적을 자리가 회의 옆에 있어야 합니다.** 따로 문서로 빼면 그 문서를 찾는 사람만
+ * 보게 되고, 회의에 못 온 사람은 결국 물어봅니다. 접어두었다가 필요할 때 펴는 것은 되지만,
+ * 다른 화면으로 옮기지는 않습니다.
+ */
+function MeetingRow({
+  m,
+  onPatch,
+  onRemove,
+}: {
+  m: Meeting;
+  onPatch: (patch: Partial<Meeting>, logLabel?: string) => void;
+  onRemove: () => void;
+}) {
+  const [open, setOpen] = useState(!!m.decisions);
+  const [draft, setDraft] = useState(m.decisions ?? "");
+  useEffect(() => setDraft(m.decisions ?? ""), [m.decisions]);
+
+  return (
+    <li className="rounded-lg border border-slate-200 bg-white p-1.5">
+      <div className="flex flex-wrap items-center gap-1">
+        <input
+          defaultValue={m.title ?? ""}
+          onBlur={(e) => {
+            const v = e.target.value.trim();
+            if (v !== (m.title ?? "")) onPatch({ title: v || null }, "회의 제목");
+          }}
+          placeholder={`${m.seq}차 회의 — 무슨 회의인지`}
+          className="min-w-[8rem] flex-1 rounded border border-slate-300 px-1.5 py-0.5 text-[12px] font-semibold"
+        />
+        <input
+          type="date"
+          value={m.meet_date}
+          onChange={(e) => e.target.value && onPatch({ meet_date: e.target.value }, "회의 날짜")}
+          className="rounded border border-slate-300 px-1 py-0.5 text-[11px]"
+        />
+        <button
+          type="button"
+          onClick={() => onPatch({ done: !m.done })}
+          title="회의를 마쳤는지"
+          className={
+            "rounded px-1.5 py-0.5 text-[10px] font-bold " +
+            (m.done ? "bg-slate-200 text-slate-600" : "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200")
+          }
+        >
+          {m.done ? "마침" : "예정"}
+        </button>
+        <button type="button" onClick={() => setOpen((v) => !v)} className="rounded px-1 text-[11px] text-slate-500 hover:bg-slate-100">
+          {open ? "▾" : "▸"} 정한 것{m.decisions ? " ●" : ""}
+        </button>
+        <button type="button" onClick={onRemove} className="rounded px-1 text-[11px] text-rose-500 hover:bg-rose-50">
+          빼기
+        </button>
+      </div>
+      {open && (
+        <textarea
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => {
+            if (draft.trim() !== (m.decisions ?? "")) onPatch({ decisions: draft.trim() || null }, "회의 결정사항");
+          }}
+          rows={2}
+          placeholder="이 회의에서 정한 것 (누가 무엇을 언제까지)"
+          className="mt-1 w-full rounded border border-slate-300 p-1.5 text-[11px]"
+        />
+      )}
+    </li>
+  );
+}
+
+/** 회의 넣기. 제목 없이 못 넣게 합니다 — 「3차 회의」만으로는 무슨 자리인지 모릅니다. */
+function MeetingAdd({ onAdd }: { onAdd: (date: string, title: string) => void }) {
+  const [date, setDate] = useState("");
+  const [title, setTitle] = useState("");
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      <input
+        value={title}
+        onChange={(e) => setTitle(e.target.value.slice(0, 60))}
+        placeholder="무슨 회의인지 (예: 무대·의상 정하기)"
+        className="min-w-[9rem] flex-1 rounded border border-slate-300 px-1.5 py-1 text-[12px]"
+      />
+      <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="rounded border border-slate-300 px-1 py-1 text-[11px]" />
+      <button
+        type="button"
+        onClick={() => {
+          onAdd(date, title);
+          if (date && title.trim()) {
+            setDate("");
+            setTitle("");
+          }
+        }}
+        className="rounded-lg bg-slate-800 px-2.5 py-1 text-[11px] font-bold text-white"
+      >
+        + 회의
+      </button>
     </div>
   );
 }

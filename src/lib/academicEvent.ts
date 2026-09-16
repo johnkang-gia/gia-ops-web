@@ -41,6 +41,8 @@ export type MeetingLike = {
   seq: number;
   meet_date: string;
   title?: string | null;
+  /** 그 회의에서 정한 것. 회의가 끝난 뒤 사람이 적습니다. */
+  decisions?: string | null;
   done?: boolean;
 };
 
@@ -71,8 +73,20 @@ export type EventDot = {
   kind: "시작" | "회의" | "행사" | "마감";
   itemId: string;
   title: string;
+  /**
+   * 달력 칸에 실제로 적는 글자.
+   *
+   * 마디 이름만 적으면 「준비 시작」이 되어 **무엇을 준비하는지 알 수 없습니다.** 달력에
+   * 학사 일정이 둘만 되어도 어느 것의 시작인지 구별이 안 됩니다. 그래서 일정 제목을 앞에
+   * 답니다. 행사 당일은 제목 자체가 그날의 일이라 「행사 당일」을 덧붙이지 않습니다.
+   */
+  text: string;
   done: boolean;
 };
+
+function dotText(kind: EventDot["kind"], title: string, label: string): string {
+  return kind === "행사" ? title : `${title} ${label}`;
+}
 
 /**
  * 막대로 안 그리는 항목을 **점들**로 바꿉니다.
@@ -86,26 +100,52 @@ export function eventDots(item: EventItemLike, meetings: MeetingLike[]): EventDo
   const out: EventDot[] = [];
   const done = !!item.done;
 
-  out.push({ date: item.due_date, label: "준비 시작", kind: "시작", itemId: item.id, title: item.title, done });
+  out.push({
+    date: item.due_date,
+    label: "준비 시작",
+    kind: "시작",
+    itemId: item.id,
+    title: item.title,
+    text: dotText("시작", item.title, "준비 시작"),
+    done,
+  });
 
   for (const m of meetings.filter((m) => m.item_id === item.id).sort((a, b) => a.seq - b.seq)) {
+    const label = m.title?.trim() || `${m.seq}차 회의`;
     out.push({
       date: m.meet_date,
-      label: m.title?.trim() || `${m.seq}차 회의`,
+      label,
       kind: "회의",
       itemId: item.id,
       title: item.title,
+      text: dotText("회의", item.title, label),
       done: !!m.done,
     });
   }
 
   const eventDay = item.event_date ?? null;
   if (eventDay) {
-    out.push({ date: eventDay, label: "행사 당일", kind: "행사", itemId: item.id, title: item.title, done });
+    out.push({
+      date: eventDay,
+      label: "행사 당일",
+      kind: "행사",
+      itemId: item.id,
+      title: item.title,
+      text: dotText("행사", item.title, "행사 당일"),
+      done,
+    });
   } else if (item.end_date && item.end_date !== item.due_date) {
     // 행사일을 안 정했으면 준비 마감일이라도 찍습니다. 아무 점도 없으면 그 일은 달력에서
     // 통째로 사라집니다.
-    out.push({ date: item.end_date, label: "준비 마감", kind: "마감", itemId: item.id, title: item.title, done });
+    out.push({
+      date: item.end_date,
+      label: "준비 마감",
+      kind: "마감",
+      itemId: item.id,
+      title: item.title,
+      text: dotText("마감", item.title, "준비 마감"),
+      done,
+    });
   }
   return out;
 }

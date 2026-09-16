@@ -602,9 +602,9 @@ export default function WorkCalendar({
                         }
                       >
                         <span className="shrink-0">{d.kind === "행사" ? "🎉" : d.kind === "회의" ? "🗣️" : "🚩"}</span>
-                        <span className="truncate">
-                          {d.kind === "행사" ? d.title : d.label}
-                        </span>
+                        {/* **무엇을 준비하는지**가 먼저입니다. 「준비 시작」만 적으면 달력에
+                            일정이 둘만 되어도 어느 것의 시작인지 구별이 안 됩니다. */}
+                        <span className="truncate">{d.text}</span>
                       </button>
                     ))}
                     {/* 🔔 그날 알림. **업무보다 위에** 둡니다 - 그날에만 뜻이 있으니 그날

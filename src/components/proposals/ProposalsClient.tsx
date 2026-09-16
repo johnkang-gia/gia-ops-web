@@ -331,7 +331,7 @@ export default function ProposalsClient({
         {scanMsg && <p className="mt-2 text-xs text-slate-600">{scanMsg}</p>}
       </div>
 
-      <div className="mb-4 flex gap-1 overflow-x-auto border-b border-slate-200">
+      <div className="mb-4 flex gap-1 overflow-x-auto px-0.5 border-b border-slate-200">
         {CATEGORY_TABS.map((t) => (
           <button
             key={t.key}

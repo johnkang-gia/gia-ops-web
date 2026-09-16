@@ -42,7 +42,7 @@ export default function PageTabs({ tabs, isAdmin = false }: { tabs: PageTab[]; i
 
   return (
     // h-10 고정: 화면을 옮길 때마다 이 줄이 위아래로 튀면 사람은 매번 눈으로 다시 찾습니다.
-    <div className="mb-2 flex h-10 shrink-0 items-center gap-1 overflow-x-auto print:!hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div className="mb-2 flex h-10 shrink-0 items-center gap-1 overflow-x-auto px-0.5 print:!hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {shown.map((t) => {
         const on = t.href === active;
         return (

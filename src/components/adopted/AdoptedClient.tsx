@@ -288,7 +288,7 @@ export default function AdoptedClient({
           매뉴얼(운영계획안/실무자매뉴얼)에 실제로 반영됩니다.
         </p>
 
-        <div className="mb-4 flex gap-1 overflow-x-auto border-b border-slate-200">
+        <div className="mb-4 flex gap-1 overflow-x-auto px-0.5 border-b border-slate-200">
           {CATEGORY_TABS.map((t) => (
             <button
               key={t.key}

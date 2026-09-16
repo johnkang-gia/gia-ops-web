@@ -26,7 +26,7 @@ export default function InlineTabs({
 }) {
   return (
     // h-10: 높이를 못 박습니다. 안에 무엇이 들어와도 아래 내용이 밀리지 않습니다.
-    <div className="mb-2 flex h-10 shrink-0 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div className="mb-2 flex h-10 shrink-0 items-center gap-1 overflow-x-auto px-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {tabs.map((t) => {
         const on = t.key === active;
         return (

@@ -536,7 +536,7 @@ export default function SectionTabs({ isTeacher, isHomeroom }: { isTeacher: bool
           담당자: "메뉴바 (...) 구분이 없어져서 가시성이 너무 떨어져."
           유리 배경 위에 글자만 떠 있으면 탭인지 문장인지 구분이 안 됩니다. 아래에 실선을
           한 줄 깔아 두면, 켜진 탭이 그 선 위에 올라앉은 모양이 되어 한눈에 읽힙니다. */}
-      <div className="flex items-center gap-x-1 overflow-x-auto border-b-2 border-[var(--shell-border)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="flex items-center gap-x-1 overflow-x-auto px-0.5 border-b-2 border-[var(--shell-border)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <span className={"mr-2 shrink-0 whitespace-nowrap text-base font-extrabold " + accent.title}>
           {section.icon} {section.titleEn ? t(section.title, section.titleEn) : section.title}
         </span>
@@ -567,7 +567,9 @@ export default function SectionTabs({ isTeacher, isHomeroom }: { isTeacher: bool
       {/* 대분류를 줄이면서 흡수한 화면들. 탭을 5개로 줄이되 어떤 화면도 사라지지 않게 합니다.
           하위 줄이 없는 탭에서도 **이 자리는 비워 둡니다.** 있을 때만 그리면 탭을 옮길 때마다
           본문 전체가 그 높이만큼 위아래로 튑니다. */}
-      <div className={"flex items-center gap-1 overflow-x-auto pt-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden " + SUB_ROW_H}>
+      {/* 켜진 알약의 링은 상자 **바깥**에 그려지는데 이 줄은 넘친 것을 잘라냅니다. 안쪽에
+          2px 을 두지 않으면 맨 앞 알약의 왼쪽 링이 깎여 잘린 것처럼 보입니다. */}
+      <div className={"flex items-center gap-1 overflow-x-auto px-0.5 pt-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden " + SUB_ROW_H}>
         {subs.length > 0 &&
           subs.map((c) => {
             const on = c.href === activeSub;

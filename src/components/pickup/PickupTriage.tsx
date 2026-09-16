@@ -479,6 +479,21 @@ export default function PickupTriage({
                     {r.source}
                   </span>
                   {r.channel_label && <span className="text-[11px] font-semibold text-slate-600">{r.channel_label}</span>}
+                  {/* **이 글이 누구 것인가.** 방 이름(G3_Grace Lim_Office)만으로는 우리 명부의
+                      어느 아이인지 알 수 없습니다 - 영문 이름이고, 형제가 쓰는 방도 있습니다.
+                      단추에 붙은 이름은 누르기 직전에야 읽게 되므로, 줄 맨 위에 먼저 답니다. */}
+                  {r.student_id ? (
+                    <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-bold text-blue-800">
+                      <RowStudentName maps={whereMaps} studentId={r.student_id} name={r.matched_name} />
+                    </span>
+                  ) : (
+                    <span
+                      className="rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-bold text-rose-700"
+                      title="이 글이 어느 아이 것인지 아직 정하지 않았습니다. 아래에서 학생을 연결해주세요."
+                    >
+                      학생 미연결
+                    </span>
+                  )}
                   <span className="text-[11px] text-slate-400">{hhmm(r.received_at)} 수신</span>
                   {r.ai_pickup_time && (
                     <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[11px] font-bold text-white">

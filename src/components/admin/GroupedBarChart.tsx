@@ -36,7 +36,7 @@ export default function GroupedBarChart({
           ))}
         </div>
       )}
-      <div className="flex items-end gap-3 overflow-x-auto pb-1">
+      <div className="flex items-end gap-3 overflow-x-auto px-0.5 pb-1">
         {data.map((d) => (
           <div key={d.label} className="flex flex-1 flex-col items-center gap-1">
             <div className="flex items-end gap-1" style={{ height }}>

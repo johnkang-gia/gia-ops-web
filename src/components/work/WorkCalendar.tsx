@@ -397,7 +397,7 @@ export default function WorkCalendar({
           </button>
         )}
         {/* 색이 무엇을 뜻하는지 달력 안에 둡니다 - 범례가 다른 화면에 있으면 아무도 안 봅니다. */}
-        <div className="ml-auto flex min-w-0 items-center gap-1 overflow-x-auto">
+        <div className="ml-auto flex min-w-0 items-center gap-1 overflow-x-auto px-0.5">
           {tags.slice(0, 6).map((t) => (
             <span key={t.id} className="flex shrink-0 items-center gap-0.5 text-[9px] text-slate-500">
               <span className="h-2 w-2 rounded-sm" style={{ backgroundColor: t.color }} />

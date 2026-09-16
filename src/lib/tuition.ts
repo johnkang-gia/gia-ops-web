@@ -1,4 +1,5 @@
 import { normClass, normGrade } from "./feeItems";
+import { departmentOf } from "./department";
 
 /**
  * 학비 청구액 계산 — **한 곳에서만** 냅니다.
@@ -229,13 +230,37 @@ export function discountsForPlan<D extends { id: string; plan_id: string | null 
  * 순수 함수입니다 — 화면 없이 시험할 수 있습니다.
  */
 export function planTargets(
-  plan: { target_scope?: string | null; target_grades?: string[] | null; target_classes?: string[] | null },
-  student: { grade: string | null; className: string | null },
+  plan: {
+    target_scope?: string | null;
+    target_departments?: string[] | null;
+    target_grades?: string[] | null;
+    target_classes?: string[] | null;
+  },
+  student: { grade: string | null; className: string | null; department?: string | null },
 ): boolean {
   const scope = plan.target_scope ?? "전체";
   // 예전 항목(칸이 없던 시절)은 전체입니다. 빈 값을 「아무에게도 안 열림」으로 읽으면
   // 어제까지 쓰던 항목이 오늘 통째로 잠깁니다.
   if (scope === "전체") return true;
+
+  /**
+   * **부서(초등부·중고등부)로 가른 항목.** 학비는 부서마다 다릅니다.
+   *
+   * 학년 목록으로 부서를 흉내 내지 않습니다 - 그 목록은 적던 날의 사진이라 학년이 하나
+   * 늘면 그 학년만 조용히 빠지고, **6학년은 중고등부**라는 규칙(§2-2)도 모릅니다.
+   * 판정은 `departmentOf` 한 곳에 맡깁니다.
+   */
+  if (scope === "부서") {
+    const want = (plan.target_departments ?? []).filter(Boolean);
+    // 부서라고 해놓고 부서가 비었으면 적다 만 것입니다. 「아무도 아님」으로 읽어 잠가버리면
+    // 화면에는 「대상 있음」으로 보이면서 아무 칸도 안 열립니다.
+    if (want.length === 0) return true;
+    const dept = departmentOf({ department: student.department, grade: student.grade });
+    // 학년도 부서 칸도 없는 아이는 어느 부서인지 알 수 없습니다. **닫습니다** - 모르는 채로
+    // 열어두면 초등부 학비가 그 아이에게 붙을 수 있고, 붙은 뒤에는 「청구된 금액」이 됩니다.
+    // 화면이 「부서 미정」이라고 적어 사람이 명부를 고치게 합니다.
+    return dept !== null && want.includes(dept);
+  }
 
   const g = normGrade(student.grade);
   const byGrade = (plan.target_grades ?? []).some((x) => normGrade(x) === g && g !== "");

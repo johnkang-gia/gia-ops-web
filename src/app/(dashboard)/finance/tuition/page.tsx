@@ -48,7 +48,7 @@ export default async function TuitionPage() {
   if (!hasFinanceAccess(me)) redirect("/home");
 
   const supabase = await createClient();
-  const [stuRes, planRes, optRes, discRes, termRes, enrollRes, sdRes, invRes] = await Promise.all([
+  const [stuRes, planRes, optRes, discRes, termRes, enrollRes, sdRes, invRes, payRes] = await Promise.all([
     supabase
       .from("wr_students")
       .select("id, name, name_en, grade, class_name, department")
@@ -70,6 +70,19 @@ export default async function TuitionPage() {
     readAll<Invoice>((from, to) =>
       supabase.from("invoices").select("*").eq("category", "학비").order("issue_date").order("id").range(from, to),
     ),
+    /**
+     * **이미 들어온 돈.** 발행 전 표에 「입금완료」를 적으려면 있어야 합니다.
+     *
+     * 예전에는 청구서가 있는지만 보여줬습니다. 그래서 「이미 받음」으로 넣어둔 항목과 아직
+     * 못 받은 항목이 표에서 똑같이 보였고, 담당자는 다 받았는지 확인하러 수납 화면을
+     * 따로 열어야 했습니다. 두 화면을 왕복하면 대개 확인을 건너뜁니다.
+     *
+     * 자르지 않고 끝까지 읽습니다 - 139명 × 두 갈래라 한도에 걸리면 합계가 조용히
+     * 줄어듭니다(CLAUDE.md §2-12).
+     */
+    readAll<{ invoice_id: string | null; amount: number | string }>((from, to) =>
+      supabase.from("payments").select("invoice_id, amount").range(from, to),
+    ),
   ]);
 
   // 무엇을 못 읽었는지 **화면에 말합니다.** 조용히 비어 있으면 「아직 아무도 안 골랐구나」로
@@ -82,6 +95,7 @@ export default async function TuitionPage() {
     enrollRes.error?.message ??
     sdRes.error?.message ??
     readNotice(invRes) ??
+    readNotice(payRes) ??
     null;
 
   const students: TuitionStudent[] = ((stuRes.data as
@@ -123,6 +137,7 @@ export default async function TuitionPage() {
         initialEnrollments={(enrollRes.data as EnrollRow[] | null) ?? []}
         initialStudentDiscounts={(sdRes.data as StudentDiscountRow[] | null) ?? []}
         recentInvoices={invRes.rows}
+        payments={payRes.rows}
         today={todayKst()}
         loadError={loadError}
       />

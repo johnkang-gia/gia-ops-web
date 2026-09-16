@@ -89,6 +89,7 @@ const btn = "rounded-lg px-2.5 py-1 text-[11px] font-bold transition disabled:cu
 export default function TuitionGridClient({
   students,
   plans,
+  payments,
   options,
   discounts,
   terms,
@@ -104,6 +105,14 @@ export default function TuitionGridClient({
 }: {
   students: TuitionStudent[];
   plans: FeePlan[];
+  /**
+   * 청구서에 들어온 입금. **발행 전 표에 「입금완료」를 적으려면 있어야 합니다.**
+   *
+   * 청구서가 있는지만 보여주면 「이미 받음」으로 넣어둔 항목과 아직 못 받은 항목이 표에서
+   * 똑같이 보입니다. 그러면 다 받았는지 확인하러 수납 화면을 따로 열어야 하고, 두 화면을
+   * 왕복하면 대개 확인을 건너뜁니다.
+   */
+  payments: { invoice_id: string | null; amount: number | string }[];
   options: FeePaymentOption[];
   discounts: FeeDiscount[];
   terms: Term[];
@@ -420,6 +429,53 @@ export default function TuitionGridClient({
     return m;
   }, [invoicesOf]);
 
+  /**
+   * **이 항목이 이미 다 걷혔는가** — 발행 전 표에 그대로 적습니다.
+   *
+   * ── 무엇이 문제였나 ───────────────────────────────────────────────────────
+   *
+   * 「💰 이미 받음」으로 넣어둔 항목과 아직 못 받은 항목이 표에서 **똑같이 보였습니다.**
+   * 담당자는 다 받았는지 확인하러 수납 화면을 따로 열어야 했고, 두 화면을 왕복하면 대개
+   * 확인을 건너뜁니다 - 그러면 이미 낸 분에게 청구서가 또 갑니다.
+   *
+   * 판정은 **청구서 단위**입니다. 항목별로 얼마가 들어왔는지는 어디에도 없습니다 - 입금은
+   * 청구서에 붙지 줄에 붙지 않으니까요. 그래서 「그 항목이 담긴 청구서가 다 걷혔는가」로
+   * 읽습니다. 한 장에 항목이 여럿이면 그 장이 다 걷혀야 완납입니다.
+   */
+  const paidByInvoice = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const p of payments) {
+      if (!p.invoice_id) continue;
+      m.set(p.invoice_id, (m.get(p.invoice_id) ?? 0) + Number(p.amount));
+    }
+    return m;
+  }, [payments]);
+
+  /** 항목 이름 → 그 항목이 담긴 청구서의 상태. 발행 전 칸에 뱃지로 붙습니다. */
+  const billStateOf = useMemo(() => {
+    const m = new Map<string, Map<string, "완납" | "일부" | "미납">>();
+    for (const [sid, list] of invoicesOf) {
+      const per = new Map<string, "완납" | "일부" | "미납">();
+      for (const v of list) {
+        if (v.status === "취소") continue;
+        const total = Number(v.total_amount);
+        const paid = paidByInvoice.get(v.id) ?? 0;
+        const state = paid <= 0 ? "미납" : paid >= total ? "완납" : "일부";
+        const scope = (v as Invoice & { plan_scope?: string | null }).plan_scope ?? null;
+        // 범위가 없는 장은 학비 **전부**를 담은 것입니다. 그 장의 상태를 모든 항목에 씁니다.
+        const names = scope ? scope.split(" · ").map((x) => x.trim()) : usedPlans.map((p) => p.name);
+        for (const n of names) {
+          // 같은 항목이 여러 장에 있으면 **덜 걷힌 쪽**이 사실입니다. 완납으로 덮으면
+          // 아직 안 받은 돈이 화면에서 사라집니다.
+          const cur = per.get(n);
+          if (!cur || (cur === "완납" && state !== "완납") || (cur === "일부" && state === "미납")) per.set(n, state);
+        }
+      }
+      m.set(sid, per);
+    }
+    return m;
+  }, [invoicesOf, paidByInvoice, usedPlans]);
+
   /** 아직 청구서에 안 담긴 항목이 남아 있는가. */
   const hasUnbilled = (sid: string) => {
     const b = billed.get(sid);
@@ -637,7 +693,22 @@ export default function TuitionGridClient({
       notify("발행할 학생을 골라주세요(납부 옵션을 고르지 않은 학생은 제외됩니다).", "error");
       return;
     }
-    const scopeLabel = scoped ? usedPlans.filter((p) => planIds.includes(p.id)).map((p) => p.name).join(" · ") : "학비 전체";
+    /**
+     * **이미 청구서에 담긴 항목은 빼고 보냅니다.**
+     *
+     * 예전에는 「학비 전체」로 발행하면 이미 나간 항목까지 다시 담겼습니다. 그러면 같은 돈이
+     * 두 장에 미납으로 남고, 학부모 화면에는 낼 돈이 두 배로 뜹니다 - 오류가 아니라
+     * 「청구된 금액」으로 보입니다.
+     *
+     * 학생마다 남은 항목이 다르므로 **학생별로** 무엇을 담을지 정합니다. 한 명이라도 남은
+     * 것이 없으면 그 학생은 발행에서 빠지고, 왜 빠졌는지 화면이 말해줍니다.
+     */
+    const restOf = (sid: string): string[] => {
+      const b = billed.get(sid);
+      if (!b || b.all) return [];
+      return usedPlans.filter((p) => lineFor(sid, p) && !b.names.has(p.name)).map((p) => p.id);
+    };
+    const scopeLabel = scoped ? usedPlans.filter((p) => planIds.includes(p.id)).map((p) => p.name).join(" · ") : "아직 안 보낸 학비";
     // 학생 줄에서 한 명을 짚어 누른 것은 이미 「이 학생」이라고 말한 것입니다. 되물으면
     // 같은 대답을 두 번 하게 됩니다. 여러 명을 한꺼번에 보낼 때만 한 번 묻습니다.
     if (!only && !confirm(`${targets.length}명에게 「${scopeLabel}」 청구서를 발행합니다. 되돌리려면 취소해야 합니다.`)) return;
@@ -647,10 +718,22 @@ export default function TuitionGridClient({
     const failed: string[] = [];
     try {
       for (const s of targets) {
+        // 고른 항목이 없으면(「학비 전체」) **아직 안 보낸 항목만** 담습니다. 한 장도 안 나간
+        // 학생은 남은 목록이 빈 배열이므로 예전처럼 전부(null) 담깁니다.
+        const rest = scoped ? planIds : restOf(s.id);
+        if (!scoped && billed.get(s.id) && !billed.get(s.id)!.all && rest.length === 0) {
+          failed.push(`${s.name}(이미 모든 항목이 청구서에 담겼습니다)`);
+          continue;
+        }
         const res = await fetch("/api/finance/invoices/tuition", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ studentId: s.id, dueDate, termId: termId || null, planIds: scoped ? planIds : null }),
+          body: JSON.stringify({
+            studentId: s.id,
+            dueDate,
+            termId: termId || null,
+            planIds: scoped ? planIds : rest.length > 0 ? rest : null,
+          }),
         });
         const ctype = res.headers.get("content-type") ?? "";
         if (!ctype.includes("application/json")) {
@@ -954,8 +1037,14 @@ export default function TuitionGridClient({
                       아이에게 열리지 않는 과정을 실수로 고를 수 있습니다. */}
                   {(p.target_scope ?? "전체") !== "전체" && (
                     <span className="block text-[10px] font-bold text-indigo-700">
-                      🎯 {(p.target_grades ?? []).join("·")}
-                      {(p.target_classes ?? []).length > 0 ? ` ${(p.target_classes ?? []).join("·")}` : "학년"}
+                      {/* **부서로 가른 항목은 부서를 적습니다.** 예전에는 학년만 적어서, 부서
+                          항목의 이 줄이 「🎯 학년」으로 비어 보였습니다. */}
+                      🎯{" "}
+                      {(p.target_scope ?? "") === "부서"
+                        ? (p.target_departments ?? []).join("·")
+                        : `${(p.target_grades ?? []).join("·")}${
+                            (p.target_classes ?? []).length > 0 ? ` ${(p.target_classes ?? []).join("·")}` : "학년"
+                          }`}
                     </span>
                   )}
                   {/* 정규과정처럼 대부분이 같은 것을 고르는 항목은 한 번에 넣습니다. */}
@@ -1063,7 +1152,16 @@ export default function TuitionGridClient({
                                 ? "border-slate-200 hover:bg-white"
                                 : "cursor-not-allowed border-dashed border-slate-200 opacity-60")
                           }
-                          title={mine ? "납부 옵션과 이 항목 할인을 정합니다" : `${p.name}은 이 학생의 학년·반 대상이 아닙니다`}
+                          title={
+                            mine
+                              ? "납부 옵션과 이 항목 할인을 정합니다"
+                              : (p.target_scope ?? "") === "부서"
+                                ? // 부서를 못 읽는 아이(학년도 부서 칸도 빈 줄)는 **왜** 안 열리는지를
+                                  // 적어줘야 명부를 고치러 갑니다. 「대상 아님」만 뜨면 항목이
+                                  // 잘못된 줄 알고 항목을 고칩니다.
+                                  `${p.name}은 ${(p.target_departments ?? []).join("·")} 항목입니다. ${s.name}의 학년·부서를 명부에서 확인해주세요.`
+                                : `${p.name}은 이 학생의 학년·반 대상이 아닙니다`
+                          }
                         >
                           {/* **한 줄에 하나씩.** 예전에는 「— 신청 안 함」 아래에 「—」가 또
                               오른쪽에 붙어 두 줄이 됐습니다. 아무것도 안 고른 칸에 글자가 둘이면
@@ -1078,6 +1176,34 @@ export default function TuitionGridClient({
                             >
                               {line ? line.optionName : mine ? "신청 안 함" : "대상 아님"}
                             </span>
+                            {/* **이미 걷힌 항목은 칸에서 바로 보입니다.** 안 보이면 수납 화면을
+                                따로 열어 확인해야 하고, 그 왕복은 대개 건너뜁니다 - 그러면
+                                이미 낸 분에게 청구서가 또 갑니다. */}
+                            {line &&
+                              (() => {
+                                const st = billStateOf.get(s.id)?.get(p.name);
+                                if (!st) return null;
+                                const look =
+                                  st === "완납"
+                                    ? "bg-emerald-600 text-white"
+                                    : st === "일부"
+                                      ? "bg-amber-500 text-white"
+                                      : "bg-slate-200 text-slate-600";
+                                return (
+                                  <span
+                                    className={"shrink-0 rounded px-1 text-[9px] font-bold " + look}
+                                    title={
+                                      st === "완납"
+                                        ? "이 항목이 담긴 청구서가 다 걷혔습니다"
+                                        : st === "일부"
+                                          ? "이 항목이 담긴 청구서에 일부만 들어왔습니다 — 미납금 화면에서 잔액만 다시 청구할 수 있습니다"
+                                          : "청구서는 나갔고 아직 안 들어왔습니다"
+                                    }
+                                  >
+                                    {st === "완납" ? "입금완료" : st === "일부" ? "일부입금" : "청구됨"}
+                                  </span>
+                                );
+                              })()}
                             {ds.length > 0 && (
                               <span className="shrink-0 rounded bg-violet-100 px-1 text-[10px] font-bold text-violet-800">
                                 할인 {ds.length}

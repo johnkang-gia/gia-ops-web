@@ -112,6 +112,32 @@ export default function PickupTriage({
    */
   const [timeFor, setTimeFor] = useState<Record<string, string>>({});
 
+  /**
+   * **형제방에서 체크를 푼 아이.** 줄마다 「이 아이는 아니다」로 빼둔 목록입니다.
+   *
+   * 기본값이 「전부 체크」라서 **빼는 쪽을 기억합니다.** 고른 쪽을 기억하면 화면이 처음
+   * 뜰 때 누가 골라져 있는지를 줄마다 채워 넣어야 하고, 방에 아이가 늘면 그 채워 넣기를
+   * 빠뜨린 줄이 「아무도 해당 없음」이 됩니다.
+   */
+  const [unchecked, setUnchecked] = useState<Record<string, Set<string>>>({});
+  const houseOfRow = useCallback(
+    (r: PickupRow) => (r.student_id ? [] : houseOf?.get(r.channel_id ?? "") ?? []),
+    [houseOf],
+  );
+  /** 이 줄에서 지금 체크되어 있는 아이들. */
+  const checkedOf = useCallback(
+    (r: PickupRow) => houseOfRow(r).filter((s) => !(unchecked[r.id] ?? new Set()).has(s.id)),
+    [houseOfRow, unchecked],
+  );
+  function toggleChild(rowId: string, childId: string) {
+    setUnchecked((v) => {
+      const cur = new Set(v[rowId] ?? []);
+      if (cur.has(childId)) cur.delete(childId);
+      else cur.add(childId);
+      return { ...v, [rowId]: cur };
+    });
+  }
+
   const pending = rows;
   /**
    * 좁은 칸에서 줄이는 것은 **글자와 여백뿐**입니다. 단추를 빼면 그 화면에서만 못 하는 일이
@@ -460,6 +486,20 @@ export default function PickupTriage({
     await refresh();
   }
 
+  /**
+   * **그 집 아이 전부에게 해당하는 글로 확정합니다.**
+   *
+   * 「올톡페이 금액이 안 맞습니다」는 그 집 이야기입니다. 한 명을 찍으면 나머지 아이
+   * 기록에서 그 연락이 사라지는데, 그건 오류가 아니라 **없는 것**으로 보입니다.
+   */
+  async function confirmHouse(row: PickupRow, names: string[]) {
+    const json = await call({ action: "house", id: row.id });
+    if (!json) return;
+    notify(`${names.join("·")} 모두에게 해당하는 연락으로 확인했습니다.`, "success");
+    await refresh();
+    router.refresh();
+  }
+
   async function ignore(row: PickupRow) {
     const json = await call({ action: "ignore", id: row.id });
     if (!json) return;
@@ -519,13 +559,12 @@ export default function PickupTriage({
                   ) : houseOf?.get(r.channel_id ?? "")?.length ? (
                     // **집은 이미 정해져 있습니다.** 「미연결」이라고 적으면 보는 사람은 이어
                     // 둔 것이 없는 줄 알고 137명 목록을 처음부터 다시 뒤집니다 - 이미 한 일을
-                    // 또 하게 됩니다. 아이만 안 갈린 것이므로 그 집 아이 전부를 적습니다.
+                    // 또 하게 됩니다. 누구를 뺄지는 아래 체크줄에서 고릅니다.
                     <span
                       className="rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-bold text-indigo-800"
-                      title="이 방에 이어 둔 아이들입니다. 본문에서 누구인지 안 갈려서, 기본은 둘 다 해당입니다. 한 명만 해당하면 아래에서 그 아이를 고르세요."
+                      title="사람이 이어 둔 방입니다. 아이만 안 갈렸습니다."
                     >
-                      🏠 {houseOf.get(r.channel_id ?? "")!.map((s) => s.name).join("·")}{" "}
-                      {houseOf.get(r.channel_id ?? "")!.length === 2 ? "둘 다 해당" : "모두 해당"}
+                      🏠 형제방
                     </span>
                   ) : (
                     <span
@@ -628,6 +667,71 @@ export default function PickupTriage({
                       >
                         결석 {absenceOf(r)!.dates.length}일 처리
                       </button>
+                    </div>
+                  </div>
+                )}
+
+                {/*
+                  ── 형제방: 누구 이야기인가 ────────────────────────────────────
+
+                  **기본은 그 집 아이 전부입니다.** 「선우 다현이 셔틀버스 부탁」처럼 둘 다를
+                  가리키는 글이 절반이고, 한 명을 찍으면 나머지 아이 기록에서 그 연락이
+                  사라집니다 - 틀린 것으로 안 보이고 **없는 것**으로 보입니다.
+
+                  아닌 아이를 눌러서 뺍니다. 고르는 쪽이 아니라 빼는 쪽으로 만든 이유는,
+                  아무것도 안 만졌을 때 나오는 답이 가장 넓어야 하기 때문입니다 - 좁은 쪽이
+                  기본이면 빠뜨린 아이가 조용히 생깁니다.
+                */}
+                {houseOfRow(r).length > 0 && (
+                  <div className="mb-2 rounded-lg border border-indigo-200 bg-indigo-50/70 p-2">
+                    <p className="mb-1.5 text-[11px] font-bold text-indigo-900">
+                      🏠 이 방의 아이 — 기본은 {houseOfRow(r).length === 2 ? "둘 다" : "모두"} 해당입니다. 아닌 아이는 눌러서 빼주세요.
+                    </p>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {houseOfRow(r).map((child) => {
+                        const on = !(unchecked[r.id] ?? new Set()).has(child.id);
+                        return (
+                          <button
+                            key={child.id}
+                            type="button"
+                            onClick={() => toggleChild(r.id, child.id)}
+                            className={
+                              "rounded-full px-2.5 py-1 text-[11px] font-bold transition " +
+                              (on
+                                ? "bg-indigo-600 text-white"
+                                : "bg-white text-slate-400 line-through ring-1 ring-slate-300")
+                            }
+                          >
+                            {on ? "☑" : "☐"} {child.name}
+                          </button>
+                        );
+                      })}
+                      {checkedOf(r).length === 0 ? (
+                        // 아무도 안 남았으면 무엇을 확정하는지가 없습니다. 「아님」으로 내리는
+                        // 길은 아래 단추에 이미 있습니다.
+                        <span className="ml-auto text-[11px] font-semibold text-rose-600">
+                          한 명은 남겨주세요. 아무에게도 해당 없으면 [문의사항이 아님]입니다.
+                        </span>
+                      ) : checkedOf(r).length === 1 ? (
+                        <button
+                          type="button"
+                          onClick={() => confirm(r, checkedOf(r)[0].id)}
+                          disabled={busy}
+                          className={"ml-auto rounded-lg bg-indigo-600 font-bold text-white disabled:opacity-50 " + btn}
+                        >
+                          {checkedOf(r)[0].name} 한 명으로 확정
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => confirmHouse(r, checkedOf(r).map((c) => c.name))}
+                          disabled={busy}
+                          title="아이를 한 명으로 정하지 않고, 그 집 아이 모두의 이력에 남깁니다."
+                          className={"ml-auto rounded-lg bg-indigo-600 font-bold text-white disabled:opacity-50 " + btn}
+                        >
+                          {checkedOf(r).map((c) => c.name).join("·")} {checkedOf(r).length === 2 ? "둘 다" : "모두"} 해당으로 확인
+                        </button>
+                      )}
                     </div>
                   </div>
                 )}

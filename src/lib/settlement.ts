@@ -136,9 +136,19 @@ export function carryForwardCandidates(
 }
 
 /** 이월 줄에 적을 이름. 무슨 돈인지 학부모가 바로 알아야 합니다. */
-export function carryForwardLineName(inv: SettleInvoice): string {
+export function carryForwardLineName(inv: SettleInvoice, paid = 0): string {
   const [, m, d] = inv.issue_date.split("-");
-  return `이전 미납 (${Number(m)}/${Number(d)} 청구 ${inv.invoice_no})`;
+  const head = `이전 미납 (${Number(m)}/${Number(d)} 청구 ${inv.invoice_no})`;
+  /**
+   * **일부 낸 건은 얼마를 냈는지까지 적습니다.**
+   *
+   * 300만원 청구에 100만원이 들어온 뒤 남은 200만원을 다시 보내면, 학부모 화면에는 이유
+   * 없는 200만원이 뜹니다. 「냈는데 왜 또」가 되고 그러면 물어보지도 않고 안 냅니다.
+   * 원 청구액과 낸 금액을 함께 적으면 **뺄셈이 화면에서 끝납니다.**
+   */
+  if (paid <= 0) return head;
+  const won = (n: number) => Math.round(n).toLocaleString("ko-KR");
+  return `${head} — 청구 ${won(Number(inv.total_amount))}원 중 ${won(paid)}원 납부, 잔액`;
 }
 
 // ── 월별·수단별 집계 ─────────────────────────────────────────────────────────

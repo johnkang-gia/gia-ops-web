@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { VISIBLE_DEPARTMENTS } from "@/lib/department";
 import { useFinanceLive } from "@/lib/useFinanceLive";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -326,14 +327,21 @@ export default function FeePlansClient({
    * 학년을 바꾸면 반은 비웁니다 - 4학년으로 바꿨는데 G2A 가 남아 있으면 그 항목은
    * 아무에게도 안 열리는데, 화면에는 「대상 있음」으로 보입니다.
    */
-  async function saveTarget(plan: FeePlan, scope: "전체" | "학년" | "반", grades: string[], classes: string[]) {
+  async function saveTarget(
+    plan: FeePlan,
+    scope: "전체" | "부서" | "학년" | "반",
+    grades: string[],
+    classes: string[],
+    departments: string[] = [],
+  ) {
     setBusy(true);
     setErr(null);
     const patch = {
       target_scope: scope,
       // 「전체」에 학년을 채워두지 않습니다 - 그 목록은 적던 날의 사진이라, 학년이 하나
-      // 늘면 새 학년만 조용히 빠집니다.
-      target_grades: scope === "전체" ? [] : grades,
+      // 늘면 새 학년만 조용히 빠집니다. **부서도 같은 이유로 학년으로 풀어 적지 않습니다.**
+      target_departments: scope === "부서" ? departments : [],
+      target_grades: scope === "전체" || scope === "부서" ? [] : grades,
       target_classes: scope === "반" ? classes : [],
     };
     const { error } = await createClient().from("fee_plans").update(patch).eq("id", plan.id);
@@ -747,25 +755,45 @@ export default function FeePlansClient({
                           됩니다. 그건 오류가 아니라 «청구된 금액»으로 보입니다. */}
                       <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-dashed border-slate-200 pt-2">
                         <span className="text-[11px] font-bold text-slate-500">대상</span>
+                        {/* **부서가 먼저입니다.** 학비는 초등부와 중고등부가 다릅니다.
+                            학년 목록으로 부서를 흉내 내면 학년이 하나 늘 때 그 학년만
+                            조용히 빠지고, 6학년이 중고등부라는 규칙(§2-2)도 모릅니다. */}
                         <Select
-                          value={(p.target_scope ?? "전체") === "전체" ? "전체" : (p.target_grades ?? [])[0] ?? ""}
+                          value={
+                            (p.target_scope ?? "전체") === "전체"
+                              ? "전체"
+                              : (p.target_scope ?? "") === "부서"
+                                ? `d:${(p.target_departments ?? [])[0] ?? ""}`
+                                : (p.target_grades ?? [])[0] ?? ""
+                          }
                           onChange={(e) => {
                             const v = e.target.value;
                             if (v === "전체") void saveTarget(p, "전체", [], []);
+                            else if (v.startsWith("d:")) void saveTarget(p, "부서", [], [], [v.slice(2)]);
                             else void saveTarget(p, "학년", [v], []);
                           }}
-                          title="이 항목이 열리는 학년"
+                          title="이 항목이 열리는 범위"
                         >
                           <option value="전체">전체 학년</option>
-                          {gradeOptions.map((g) => (
-                            <option key={g} value={g}>
-                              {g} 학년만
-                            </option>
-                          ))}
+                          <optgroup label="부서">
+                            {VISIBLE_DEPARTMENTS.map((d) => (
+                              <option key={d} value={`d:${d}`}>
+                                {d} 전체
+                              </option>
+                            ))}
+                          </optgroup>
+                          <optgroup label="학년">
+                            {gradeOptions.map((g) => (
+                              <option key={g} value={g}>
+                                {g} 학년만
+                              </option>
+                            ))}
+                          </optgroup>
                         </Select>
                         {/* 학년을 고른 뒤에만 반이 뜹니다. 학년 없이 반만 고르면 같은 반
                             이름을 쓰는 다른 학년에도 열립니다. */}
                         {(p.target_scope ?? "전체") !== "전체" &&
+                          (p.target_scope ?? "") !== "부서" &&
                           (classesByGrade[(p.target_grades ?? [])[0] ?? ""] ?? []).map((c) => {
                             const on = (p.target_classes ?? []).includes(c);
                             return (
@@ -791,9 +819,11 @@ export default function FeePlansClient({
                         <span className="text-[10px] text-slate-400">
                           {(p.target_scope ?? "전체") === "전체"
                             ? "모든 학생 칸이 열립니다"
-                            : (p.target_classes ?? []).length > 0
-                              ? `${(p.target_grades ?? []).join("·")} 학년 ${(p.target_classes ?? []).join("·")} 반만`
-                              : `${(p.target_grades ?? []).join("·")} 학년 전체`}
+                            : (p.target_scope ?? "") === "부서"
+                              ? `${(p.target_departments ?? []).join("·")} 학생만 (학년이 늘어도 따라갑니다)`
+                              : (p.target_classes ?? []).length > 0
+                                ? `${(p.target_grades ?? []).join("·")} 학년 ${(p.target_classes ?? []).join("·")} 반만`
+                                : `${(p.target_grades ?? []).join("·")} 학년 전체`}
                         </span>
                       </div>
 

@@ -957,7 +957,14 @@ export type FeePlan = {
    *   학년  target_grades 의 학년만
    *   반    그 학년의 그 반만
    */
-  target_scope?: "전체" | "학년" | "반" | null;
+  target_scope?: "전체" | "부서" | "학년" | "반" | null;
+  /**
+   * **부서로 가른 항목**(초등부·중고등부). 학비는 부서마다 다릅니다.
+   *
+   * 학년 목록으로 부서를 흉내 내면 그 목록은 적던 날의 사진이라, 학년이 하나 늘면 그
+   * 학년만 조용히 빠집니다. 판정은 `planOpensFor` 가 `departmentOf` 로 합니다(§2-2).
+   */
+  target_departments?: string[] | null;
   target_grades?: string[] | null;
   target_classes?: string[] | null;
   name: string;

@@ -33,7 +33,17 @@ export async function POST(req: Request) {
 
   const body = (await req.json().catch(() => null)) as { invoiceIds?: string[]; dueDate?: string } | null;
   const ids = (body?.invoiceIds ?? []).filter((x) => typeof x === "string");
-  if (ids.length < 2) return NextResponse.json({ error: "합칠 청구서를 두 건 이상 골라주세요." }, { status: 400 });
+  /**
+   * **한 건도 됩니다.** 여기가 「합치기」만 하는 창구가 아닙니다.
+   *
+   * 청구서 한 장에 일부만 입금되는 일이 흔합니다 - 300만원을 청구했는데 100만원이 들어온
+   * 식입니다. 남은 200만원을 다시 받으려면 원 청구서를 그대로 또 보낼 수밖에 없었는데,
+   * 그러면 **학부모 화면에 300만원이 다시 뜹니다.** 이미 낸 100만원이 안 보이니 「냈는데
+   * 왜 또」가 되고, 그 청구서는 대개 그대로 남습니다.
+   *
+   * 남은 금액으로 새 장을 만들면 학부모가 보는 숫자가 실제로 내야 할 돈과 같아집니다.
+   */
+  if (ids.length < 1) return NextResponse.json({ error: "다시 청구할 청구서를 골라주세요." }, { status: 400 });
 
   const supabase = await createClient();
 
@@ -76,7 +86,11 @@ export async function POST(req: Request) {
     .map((v) => ({ v, balance: Number(v.total_amount) - (paidBy.get(v.id) ?? 0) }))
     .filter((x) => x.balance > 0)
     .sort((a, b) => a.v.issue_date.localeCompare(b.v.issue_date));
-  if (lines.length < 2) return NextResponse.json({ error: "아직 안 받은 금액이 있는 청구서가 두 건 미만입니다." }, { status: 400 });
+  // 다 받은 것만 골랐으면 만들 것이 없습니다. 0원짜리 청구서를 만들면 학부모에게 0원 고지가
+  // 가고, 그건 오류가 아니라 「이상한 청구서」로 보입니다.
+  if (lines.length === 0) {
+    return NextResponse.json({ error: "고른 청구서에 아직 안 받은 금액이 없습니다." }, { status: 400 });
+  }
 
   const total = lines.reduce((n, x) => n + x.balance, 0);
   const stream = lines[0].v.stream === "학비" || lines[0].v.category === "학비" ? "학비" : "학비외";
@@ -115,7 +129,12 @@ export async function POST(req: Request) {
       due_date: due,
       total_amount: total,
       status: "발행",
-      note: `미납 ${lines.length}건을 합침 (${lines.map((x) => x.v.invoice_no).join(", ")})`,
+      // **적는 말이 사실과 같아야 합니다.** 한 건짜리에 「합침」이라고 적으면, 나중에 이
+      // 줄을 보는 사람은 어디에 합쳐졌는지를 찾다가 없는 것을 찾게 됩니다.
+      note:
+        lines.length === 1
+          ? `${lines[0].v.invoice_no} 의 남은 금액을 다시 청구 (원 청구액 ${Math.round(Number(lines[0].v.total_amount)).toLocaleString("ko-KR")}원 중 ${Math.round(total).toLocaleString("ko-KR")}원 미납)`
+          : `미납 ${lines.length}건을 합침 (${lines.map((x) => x.v.invoice_no).join(", ")})`,
       guardian_phone: recipient?.phone ?? null,
       guardian_role: recipient?.role ?? null,
       issued_by: me.email,
@@ -130,7 +149,9 @@ export async function POST(req: Request) {
     lines.map((x, i) => ({
       invoice_id: inv.id as string,
       seq: i + 1,
-      name: carryForwardLineName(x.v),
+      // 일부 낸 건은 **얼마를 냈는지**까지 줄 이름에 적습니다. 그래야 학부모가 남은 금액의
+      // 까닭을 그 줄에서 바로 읽습니다.
+      name: carryForwardLineName(x.v, paidBy.get(x.v.id) ?? 0),
       qty: 1,
       unit_price: x.balance,
       amount: x.balance,

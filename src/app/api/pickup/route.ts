@@ -38,6 +38,59 @@ export async function POST(req: Request) {
 
   // ── 확인 대기 건을 픽업으로 확정 ──────────────────────────────────────────
   // 학생을 바꿔서 확정할 수도 있습니다(AI가 형제 중 다른 아이로 잡았을 때).
+  /**
+   * **형제방 — 그 집 아이 전부에게 해당하는 글.**
+   *
+   * ── 왜 학생을 한 명 고르지 않나 ────────────────────────────────────────
+   *
+   * 「올톡페이와 인보이스 금액이 안 맞습니다」는 그 집 이야기입니다. 황라원·황라윤 중 한
+   * 명을 찍으면 **나머지 아이 기록에서 그 연락이 사라집니다** - 없는 것으로 보이지 틀린
+   * 것으로 보이지 않아서, 나중에 그 아이 이력을 훑는 사람은 이 글을 못 봅니다.
+   *
+   * 그래서 아이는 비운 채 **집(`channel_id`)으로 확정**합니다. 화면은 그 집 아이 모두의
+   * 이력에 함께 띄웁니다. 이미 `planBackfill` 이 이 규칙으로 돌고 있었고(확정된 줄은 다시
+   * 묻지 않습니다), 이제 사람이 그 결정을 직접 내릴 수 있습니다.
+   *
+   * 출결·하원에 반영되는 글은 이 길로 오지 않습니다 - 누구인지 모르면 셔틀에서 뺄 수도
+   * 없으므로, 그런 글은 학생을 골라야 합니다(`confirm`).
+   */
+  if (action === "house") {
+    const id = body?.id as string | undefined;
+    if (!id) return NextResponse.json({ error: "id가 필요합니다." }, { status: 400 });
+
+    const { data: row } = await supabase
+      .from("pickup_requests")
+      .select("id, channel_id, kind")
+      .eq("id", id)
+      .maybeSingle();
+    if (!row) return NextResponse.json({ error: "요청을 찾을 수 없습니다." }, { status: 404 });
+    // 집이 없으면 「둘 다」가 성립하지 않습니다. 조용히 확정해버리면 아무에게도 안 붙은
+    // 줄이 목록에서만 사라집니다(§5).
+    if (!row.channel_id) {
+      return NextResponse.json({ error: "이 연락에는 이어 둔 방이 없습니다. 학생을 골라주세요." }, { status: 400 });
+    }
+    if ((row.kind as string | null) === "픽업") {
+      return NextResponse.json(
+        { error: "픽업은 누구인지 정해야 셔틀에서 뺄 수 있습니다. 아이를 한 명 골라주세요." },
+        { status: 400 },
+      );
+    }
+
+    const { error } = await supabase
+      .from("pickup_requests")
+      .update({
+        // 아이는 비워 둡니다. 비어 있다는 것이 「그 집 전부」라는 뜻입니다.
+        student_id: null,
+        matched_name: null,
+        status: "확정",
+        resolved_by: me.email,
+        resolved_at: new Date().toISOString(),
+      })
+      .eq("id", id);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
+
   if (action === "confirm") {
     const id = body?.id as string | undefined;
     const studentId = (body?.studentId as string | undefined) ?? null;

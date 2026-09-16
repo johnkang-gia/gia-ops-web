@@ -62,6 +62,14 @@ export default function UnpaidClient({
   const [sending, setSending] = useState<string[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [bucket, setBucket] = useState<AgingBucket | "전체">("전체");
+  /**
+   * 방금 만든 재청구서. **만들고 끝내지 않습니다.**
+   *
+   * 예전에는 「합쳤습니다」 안내만 띄우고 사라졌습니다. 그러면 그 청구서를 보내려고 다시
+   * 목록에서 찾아야 하는데, 새 번호를 외우고 있지 않으면 못 찾습니다 - 그래서 만들어만
+   * 놓고 안 보낸 청구서가 남습니다. 만든 자리에서 바로 PDF와 올톡페이로 이어갑니다.
+   */
+  const [made, setMade] = useState<{ id: string; invoice_no: string; total: number; count: number } | null>(null);
 
   const whereById = useMemo(
     () => new Map(students.map((s) => [s.id, [s.grade, s.class_name].filter(Boolean).join(" ")])),
@@ -124,17 +132,28 @@ export default function UnpaidClient({
     });
   }
 
+  /**
+   * **남은 금액으로 새 청구서를 만듭니다.**
+   *
+   * 한 건이면 「일부만 낸 청구서의 잔액 재청구」이고, 여러 건이면 「합쳐서 한 장」입니다.
+   * 하는 일은 같습니다 - 아직 안 받은 금액만 모아 새 장을 만들고 원본을 잠급니다.
+   * 두 단추로 나누면 코드가 두 벌이 되고, 한쪽만 고쳐지는 날이 옵니다.
+   */
   async function merge() {
-    if (pickedRows.length < 2) {
-      notify("합칠 청구서를 두 건 이상 골라주세요.", "error");
+    if (pickedRows.length < 1) {
+      notify("다시 청구할 청구서를 골라주세요.", "error");
       return;
     }
     if (!onePerson) {
       notify("한 학생의 청구서끼리만 합칠 수 있습니다.", "error");
       return;
     }
+    const one = pickedRows.length === 1;
     const ok = await confirmAction(
-      `${pickedRows.length}건을 ${won(pickedTotal)} 짜리 한 장으로 합칩니다.\n` +
+      (one
+        ? `${pickedRows[0].invoice.invoice_no} 에서 아직 안 받은 ${won(pickedTotal)} 으로 새 청구서를 만듭니다.\n` +
+          (pickedRows[0].paid > 0 ? `이미 받은 ${won(pickedRows[0].paid)} 은 빠집니다.\n` : "")
+        : `${pickedRows.length}건을 ${won(pickedTotal)} 짜리 한 장으로 합칩니다.\n`) +
         `원 청구서는 「이월됨」으로 잠기고, 학부모에게는 새 번호로 한 장이 갑니다.` +
         (warn ? `\n\n⚠️ ${warn.replace(/\*\*/g, "")}` : ""),
       { danger: !!warn },
@@ -146,14 +165,21 @@ export default function UnpaidClient({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ invoiceIds: [...picked] }),
     });
-    const json = (await res.json().catch(() => null)) as { error?: string; invoice?: { invoice_no: string } } | null;
+    const json = (await res.json().catch(() => null)) as
+      | { error?: string; invoice?: { id: string; invoice_no: string }; total?: number; merged?: number }
+      | null;
     setBusy(false);
     // 조용히 넘기면 합쳐진 줄 알고 또 합칩니다. 그러면 같은 돈이 두 장에 남습니다.
-    if (!res.ok) {
-      notify(json?.error ?? "합치지 못했습니다.", "error");
+    if (!res.ok || !json?.invoice) {
+      notify(json?.error ?? "다시 청구하지 못했습니다.", "error");
       return;
     }
-    notify(`${json?.invoice?.invoice_no} 한 장으로 합쳤습니다. 이제 올톡페이로 보내세요.`, "success");
+    setMade({
+      id: json.invoice.id,
+      invoice_no: json.invoice.invoice_no,
+      total: Number(json.total ?? pickedTotal),
+      count: Number(json.merged ?? pickedRows.length),
+    });
     setPicked(new Set());
     router.refresh();
   }
@@ -177,6 +203,49 @@ export default function UnpaidClient({
         <b className="text-rose-700"> 200만원을 넘긴 청구서는 한 건도 안 걷혔습니다</b>(7건 3,190만원).
         합치면 금액이 커지고 학부모는 무슨 돈인지 모릅니다.
       </p>
+
+      {/*
+        ── 방금 만든 재청구서 ─────────────────────────────────────────────────
+
+        **만든 것과 보내는 것은 다른 일입니다.** 예전에는 안내 한 줄만 뜨고 사라져서, 보내려면
+        새 번호를 들고 목록을 다시 뒤져야 했습니다. 그래서 만들어만 놓고 안 보낸 청구서가
+        남았습니다 - 그건 오류가 아니라 「발행된 청구서」로 보입니다.
+      */}
+      {made && (
+        <div className="mb-3 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[12px] font-bold text-emerald-900">
+              ✅ {made.invoice_no} · {won(made.total)}
+              <span className="ml-1 font-normal">
+                {made.count === 1 ? "잔액을 다시 청구했습니다" : `미납 ${made.count}건을 한 장으로 합쳤습니다`}
+              </span>
+            </span>
+            {/* 학부모에게 보내는 길 둘. **이 자리에서 끝나야** 왕복이 없습니다. */}
+            <a
+              href={`/finance/invoices/${made.id}/print`}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-lg bg-white px-3 py-1.5 text-[12px] font-bold text-emerald-800 ring-1 ring-emerald-300 hover:bg-emerald-100"
+            >
+              🖨 청구서 PDF
+            </a>
+            <button
+              type="button"
+              onClick={() => setSending([made.id])}
+              className="rounded-lg bg-emerald-700 px-3 py-1.5 text-[12px] font-bold text-white hover:bg-emerald-800"
+            >
+              📤 올톡페이로 청구
+            </button>
+            <button
+              type="button"
+              onClick={() => setMade(null)}
+              className="ml-auto text-[11px] font-bold text-emerald-700 underline"
+            >
+              닫기
+            </button>
+          </div>
+        </div>
+      )}
 
       {loadError && (
         <p className="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] font-semibold text-rose-700">
@@ -224,14 +293,23 @@ export default function UnpaidClient({
             >
               📤 따로 다시 보내기 ({picked.size}장)
             </button>
+            {/* **한 건이면 「잔액만 다시 청구」입니다.** 일부만 입금된 장을 그대로 다시
+                보내면 학부모 화면에 원래 금액이 뜨고, 이미 낸 돈이 안 보이니 「냈는데 왜
+                또」가 됩니다. 그 청구서는 대개 그대로 남습니다. */}
             <button
               type="button"
-              disabled={busy || picked.size < 2 || !onePerson}
+              disabled={busy || picked.size < 1 || !onePerson}
               onClick={() => void merge()}
-              title={!onePerson ? "한 학생의 청구서끼리만 합칠 수 있습니다" : undefined}
+              title={
+                !onePerson
+                  ? "한 학생의 청구서끼리만 합칠 수 있습니다"
+                  : picked.size === 1
+                    ? "아직 안 받은 금액만으로 새 청구서를 만듭니다. 이미 받은 돈은 빠집니다."
+                    : undefined
+              }
               className="rounded-lg bg-white px-3 py-1.5 text-[12px] font-bold text-slate-600 ring-1 ring-slate-300 hover:bg-slate-50 disabled:text-slate-300 disabled:ring-slate-200"
             >
-              🧾 합쳐서 한 장
+              {picked.size === 1 ? "🧾 잔액만 다시 청구" : "🧾 합쳐서 한 장"}
             </button>
             <button type="button" onClick={() => setPicked(new Set())} className="ml-auto text-[11px] text-slate-400 hover:text-slate-700">
               고르기 해제

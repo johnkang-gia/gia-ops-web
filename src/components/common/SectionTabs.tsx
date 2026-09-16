@@ -37,14 +37,25 @@ type AccentKey = "blue" | "purple" | "navy" | "amber" | "teal" | "red" | "emeral
 //
 // 100 단계 배경 + 800 단계 글자 + 같은 색 테두리로 올렸습니다. 「고름」은 눈으로 한 번에
 // 읽혀야 하고, 그건 취향이 아니라 화면이 해야 할 일입니다.
+/**
+ * **켜진 하위탭은 진한 바탕에 흰 글자입니다.**
+ *
+ * 예전에는 연한 바탕(`bg-*-100`)에 같은 계열 글자였습니다. 재무 > 청구의 학비·학비외·미납금이
+ * 셋 다 옅은 초록이라, **지금 어느 화면에 있는지가 한눈에 안 들어왔습니다.** 세 화면의
+ * 생김새가 비슷해서(학생 × 항목 표) 탭 색이 유일한 표시인데, 그 표시가 배경과 거의 같은
+ * 밝기였습니다.
+ *
+ * 켜진 것과 안 켜진 것은 **밝기로** 갈라야 합니다. 같은 색의 진하기 차이는 화면 밝기·각도에
+ * 따라 사라지지만, 진한 바탕 위의 흰 글자는 어디서 봐도 보입니다.
+ */
 const ACCENT: Record<AccentKey, { title: string; on: string; subOn: string }> = {
-  blue: { title: "text-blue-700", on: "border-blue-600 text-blue-700", subOn: "bg-blue-100 text-blue-800 ring-1 ring-blue-300" },
-  purple: { title: "text-purple-700", on: "border-purple-600 text-purple-700", subOn: "bg-purple-100 text-purple-800 ring-1 ring-purple-300" },
-  navy: { title: "text-gia-navy", on: "border-gia-navy text-gia-navy", subOn: "bg-slate-200 text-gia-navy ring-1 ring-slate-400" },
-  amber: { title: "text-amber-700", on: "border-amber-600 text-amber-700", subOn: "bg-amber-100 text-amber-800 ring-1 ring-amber-300" },
-  teal: { title: "text-teal-700", on: "border-teal-600 text-teal-700", subOn: "bg-teal-100 text-teal-800 ring-1 ring-teal-300" },
-  red: { title: "text-red-700", on: "border-red-600 text-red-700", subOn: "bg-red-100 text-red-800 ring-1 ring-red-300" },
-  emerald: { title: "text-emerald-700", on: "border-emerald-600 text-emerald-700", subOn: "bg-emerald-100 text-emerald-800 ring-1 ring-emerald-400" },
+  blue: { title: "text-blue-700", on: "border-blue-600 text-blue-700", subOn: "bg-blue-600 text-white shadow-sm" },
+  purple: { title: "text-purple-700", on: "border-purple-600 text-purple-700", subOn: "bg-purple-600 text-white shadow-sm" },
+  navy: { title: "text-gia-navy", on: "border-gia-navy text-gia-navy", subOn: "bg-gia-navy text-white shadow-sm" },
+  amber: { title: "text-amber-700", on: "border-amber-600 text-amber-700", subOn: "bg-amber-600 text-white shadow-sm" },
+  teal: { title: "text-teal-700", on: "border-teal-600 text-teal-700", subOn: "bg-teal-600 text-white shadow-sm" },
+  red: { title: "text-red-700", on: "border-red-600 text-red-700", subOn: "bg-red-600 text-white shadow-sm" },
+  emerald: { title: "text-emerald-700", on: "border-emerald-600 text-emerald-700", subOn: "bg-emerald-700 text-white shadow-sm" },
 };
 
 // 상단 탭줄의 **고정 높이**. 픽셀을 박아 두는 이유가 있습니다.

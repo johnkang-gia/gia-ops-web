@@ -850,7 +850,7 @@ export default function TuitionGridClient({
                   title="전부 고르기"
                 />
               </th>
-              <th className="sticky left-8 z-30 min-w-[150px] border-b border-r border-slate-200 bg-white px-2 py-1.5 font-semibold text-slate-600">
+              <th className="sticky left-8 z-30 min-w-[118px] border-b border-r border-slate-200 bg-white px-2 py-1.5 font-semibold text-slate-600">
                 학생
               </th>
               {usedPlans.map((p) => (
@@ -879,7 +879,7 @@ export default function TuitionGridClient({
                     void moveColumn(p.id);
                   }}
                   className={
-                    "min-w-[168px] cursor-grab border-b border-r border-slate-100 bg-white px-2 py-1.5 align-bottom " +
+                    "min-w-[132px] cursor-grab border-b border-r border-slate-100 bg-white px-2 py-1.5 align-bottom " +
                     (overPlan === p.id ? "!bg-teal-50 outline outline-2 outline-teal-400 " : "") +
                     (dragPlan === p.id ? "opacity-40 " : "")
                   }
@@ -922,17 +922,17 @@ export default function TuitionGridClient({
                   </select>
                 </th>
               ))}
-              <th className="min-w-[190px] border-b border-l border-slate-200 bg-white px-2 py-1.5 font-semibold text-slate-600">
+              <th className="min-w-[150px] border-b border-l border-slate-200 bg-white px-2 py-1.5 font-semibold text-slate-600">
                 비고 <span className="font-normal text-slate-400">(받는 할인)</span>
               </th>
-              <th className="min-w-[104px] border-b border-l border-slate-200 bg-white px-2 py-1.5 text-right font-semibold text-slate-600">
+              <th className="min-w-[92px] border-b border-l border-slate-200 bg-white px-2 py-1.5 text-right font-semibold text-slate-600">
                 청구액
               </th>
               {/* **세 단추가 한 줄에 들어가야 합니다.** 미발행 줄에는 「미발행 · 💰 이미
                   받음 · 발행 →」 셋이 들어가는데 칸이 130px 이라 글자가 접혀 내려가면서
                   줄 높이가 들쭉날쭉했습니다. 접힌 글자는 반쯤 잘려 보여 무슨 단추인지
                   읽히지 않습니다. */}
-              <th className="min-w-[218px] whitespace-nowrap border-b border-l border-slate-200 bg-white px-2 py-1.5 font-semibold text-slate-600">
+              <th className="min-w-[196px] whitespace-nowrap border-b border-l border-slate-200 bg-white px-2 py-1.5 font-semibold text-slate-600">
                 청구서
               </th>
             </tr>

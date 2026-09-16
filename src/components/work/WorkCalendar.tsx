@@ -7,6 +7,7 @@ import { addDays, layoutWeek, orderRange, type SpanTask } from "@/lib/taskSpan";
 import { ghostOccurrences } from "@/lib/taskRepeat";
 import { recurrenceLabel } from "@/lib/recurrence";
 import { eventDots, eventProgressList, showAsBar, type EventDot } from "@/lib/academicEvent";
+import ScheduleSearch from "./ScheduleSearch";
 
 /**
  * 업무 달력 — 업무보드 한가운데.
@@ -409,6 +410,7 @@ export default function WorkCalendar({
         >
           오늘
         </button>
+
         {/* 🎓 학사일정 겹쳐 보기. **기본은 켬** - 꺼져 있으면 아무도 안 켭니다. */}
         {academicItems.length > 0 && (
           <button
@@ -438,6 +440,18 @@ export default function WorkCalendar({
             </span>
           ))}
         </div>
+        {/* **등록해 둔 일정 찾기.** 일정이 쌓이면 「그거 언제였지」를 달마다 넘겨보며
+            찾게 되고, 대개 찾다 말고 옆 사람에게 물어봅니다. 업무와 학사일정을 **함께**
+            찾습니다 - 어느 쪽에 등록했는지는 등록한 사람만 압니다. */}
+        <ScheduleSearch
+          tasks={tasks.map((t) => ({ id: t.id, title: t.title, description: t.description, dueAt: t.due_at, startOn: t.start_on }))}
+          academics={academicItems}
+          today={today}
+          onJump={(date) => {
+            const [y, m] = date.split("-").map(Number);
+            setCursor({ y, m0: m - 1 });
+          }}
+        />
       </div>
       <p className="mb-1 shrink-0 text-[10px] text-slate-400">
         날짜를 누르면 <b>알림 · 업무 · 학사</b> 중에서 고릅니다 · <b>가로로 끌면 그 기간</b>짜리 업무(막대가 그만큼 길어집니다) ·

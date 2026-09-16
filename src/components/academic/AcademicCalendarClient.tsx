@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import ScheduleSearch from "@/components/work/ScheduleSearch";
+import { todayKst } from "@/lib/kst";
 import { useRouter } from "next/navigation";
 import { getHolidayPreset } from "@hyunbinseo/holidays-kr";
 import { createClient } from "@/lib/supabase/client";
@@ -485,6 +487,21 @@ export default function AcademicCalendarClient({
               >
                 ▶
               </button>
+
+              {/* **등록해 둔 일정 찾기.** 업무보드 달력과 **같은 덩어리**를 씁니다 -
+                  같은 일을 하다 화면만 옮겼는데 찾는 방법이 다르면 그걸 고장으로 여깁니다.
+                  여기서는 학사일정만 있으므로 업무 쪽은 빈 목록을 넘깁니다. */}
+              <ScheduleSearch
+                tasks={[]}
+                academics={items}
+                today={todayKst()}
+                onJump={(date) => {
+                  const [y, mo] = date.split("-").map(Number);
+                  setViewYear(y);
+                  setViewMonth(mo - 1);
+                  setSelectedDate(date);
+                }}
+              />
             </div>
             <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-semibold text-slate-400">
               {WEEKDAYS.map((w, i) => (

@@ -817,11 +817,34 @@ export default function WorkCalendar({
       {/* ── 마감 없는 업무 ────────────────────────────────────────────
           달력에 설 자리가 없다고 없는 셈 치면, 마감을 안 정한 업무가 조용히 잊힙니다.
           끌어다 날짜에 놓으면 그날로 정해집니다. */}
+      {undated.length > 0 && (
+        <div className="mt-1 shrink-0">
+          <p className="mb-0.5 text-[10px] font-semibold text-slate-400">
+            마감 없음 {undated.length} · 끌어다 날짜에 놓으면 그날로 정해집니다
+          </p>
+          <div className="flex max-h-12 flex-wrap gap-1 overflow-y-auto">
+            {undated.map((t) => (
+              <button
+                key={t.id}
+                draggable
+                onDragStart={() => setDragId(t.id)}
+                onDragEnd={() => setDragId(null)}
+                onClick={() => onOpenTask(t)}
+                className="max-w-[140px] truncate rounded border border-dashed border-slate-300 bg-white px-1.5 py-0.5 text-[10px] text-slate-600 hover:border-teal-400"
+              >
+                {t.title}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* **진행 중인 행사 — 달력 칸을 한 개도 안 먹는 한 줄.**
 
           긴 준비 기간을 막대로 안 그리는 대신, 「지금 어디까지 왔는가」를 여기서 늘 보여
           줍니다. 알림이 아니라 상시 표시라 안 보고 지나칠 수는 있어도 「몰랐다」가 되지는
-          않습니다. 자리를 적게 쓰려고 한 줄에 여러 행사를 나란히 둡니다. */}
+          않습니다. 자리를 적게 쓰려고 한 줄에 여러 행사를 나란히 둡니다. 달력이 주인공이라
+          맨 아래 — 마감 없는 업무 밑 — 에 둡니다. */}
       {progress.length > 0 && (
         <div className="mt-1 flex shrink-0 flex-wrap items-center gap-1">
           <span className="text-[10px] font-bold text-fuchsia-700">진행 중</span>
@@ -849,28 +872,6 @@ export default function WorkCalendar({
             );
           })}
           {progress.length > 4 && <span className="text-[10px] text-slate-400">외 {progress.length - 4}건</span>}
-        </div>
-      )}
-
-      {undated.length > 0 && (
-        <div className="mt-1 shrink-0">
-          <p className="mb-0.5 text-[10px] font-semibold text-slate-400">
-            마감 없음 {undated.length} · 끌어다 날짜에 놓으면 그날로 정해집니다
-          </p>
-          <div className="flex max-h-12 flex-wrap gap-1 overflow-y-auto">
-            {undated.map((t) => (
-              <button
-                key={t.id}
-                draggable
-                onDragStart={() => setDragId(t.id)}
-                onDragEnd={() => setDragId(null)}
-                onClick={() => onOpenTask(t)}
-                className="max-w-[140px] truncate rounded border border-dashed border-slate-300 bg-white px-1.5 py-0.5 text-[10px] text-slate-600 hover:border-teal-400"
-              >
-                {t.title}
-              </button>
-            ))}
-          </div>
         </div>
       )}
     </div>

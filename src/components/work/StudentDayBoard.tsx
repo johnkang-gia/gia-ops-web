@@ -7,6 +7,8 @@ import { useToast } from "@/components/common/ToastProvider";
 import { ITEM_LOOK, TOPIC_LOOK, bucketOf, toMinutes, topicOf, whenLabel, type Topic, type DayBoard, type DayItem, type DayItemKind, type StudentDay, type UnknownItem } from "@/lib/studentDay";
 import { NOTE_KINDS, KIND_LOOK, type NoteKind } from "@/lib/studentDayNotes";
 import DismissalModal from "./DismissalModal";
+import { Who } from "@/components/common/HomonymProvider";
+import { createClient } from "@/lib/supabase/client";
 
 /**
  * **오늘 학생 — 「누가 오늘 평소와 다른가」를 한 곳에 모은 보드.**
@@ -46,6 +48,21 @@ type Draft = { studentId: string | null; kind: NoteKind; content: string; onDate
  * 한쪽에만 두면 다른 쪽을 보는 사람이 그 아이를 놓칩니다.
  */
 const MOVE_KINDS: ReadonlySet<DayItemKind> = new Set(["픽업", "결석", "지각", "조퇴"]);
+
+/**
+ * **이 보드가 듣는 표.**
+ *
+ * 픽업·결석·특이사항이 만들어지는 자리 전부입니다. 한 곳이라도 빠지면 그 화면에서 건 픽업이
+ * 보드에 안 뜨는데, 그건 오류가 아니라 「그 아이는 오늘 아무 일 없음」으로 보입니다.
+ * 목록은 `studentDayLoad.ts` 가 읽는 표와 **같아야** 합니다.
+ */
+const BOARD_LIVE_TABLES = [
+  "pickup_requests",
+  "shuttle_boardings",
+  "attendance_entries",
+  "student_dismissal_plans",
+  "student_day_notes",
+] as const;
 
 function slice(day: StudentDay, keep: (k: DayItemKind) => boolean, date: string): StudentDay | null {
   const items = day.items.filter((i) => keep(i.kind));
@@ -106,6 +123,29 @@ export default function StudentDayBoard({ students }: { students: SelectableStud
     return () => clearInterval(t);
   }, [load]);
 
+  /**
+   * **픽업이 걸리는 순간 이 보드에 떠야 합니다.**
+   *
+   * 앞 판은 60초 폴링뿐이었습니다. 인박스에서 픽업으로 확정해도 최대 1분 동안 보드에는
+   * 없었고, 그 사이에 보드만 보는 사람은 그 아이를 모릅니다. 픽업은 놓치면 되돌릴 수
+   * 없습니다.
+   *
+   * 픽업이 만들어지는 **모든 표**를 듣습니다(§2-11 · §2-13 과 같은 규칙). 어느 화면에서
+   * 걸든 여기로 옵니다. **조건(filter)을 걸지 않습니다** - 화면에 아직 없는 줄이 새로
+   * 생기는 것은 조건에 안 걸려 통째로 놓칩니다.
+   */
+  useEffect(() => {
+    const supabase = createClient();
+    const ch = supabase.channel("student-day-live");
+    for (const table of BOARD_LIVE_TABLES) {
+      ch.on("postgres_changes", { event: "*", schema: "public", table }, () => void load());
+    }
+    ch.subscribe();
+    return () => {
+      void supabase.removeChannel(ch);
+    };
+  }, [load]);
+
   const date = board?.date ?? "";
 
   /** 검색·필터를 먼저 걸고, 그 다음에 묶음으로 가릅니다. */
@@ -144,13 +184,6 @@ export default function StudentDayBoard({ students }: { students: SelectableStud
     () => today.map((d) => slice(d, (k) => !MOVE_KINDS.has(k), date)).filter((d): d is StudentDay => !!d).sort(byTime),
     [today, date],
   );
-
-  /** 이 보드 안에서 겹치는 이름. 겹칠 때만 반을 붙입니다. */
-  const dupNames = useMemo(() => {
-    const seen = new Map<string, number>();
-    for (const d of board?.days ?? []) seen.set(d.name, (seen.get(d.name) ?? 0) + 1);
-    return new Set([...seen.entries()].filter(([, n]) => n > 1).map(([n]) => n));
-  }, [board]);
 
   const pendingTotal = (board?.days.reduce((n, d) => n + d.pendingCount, 0) ?? 0) + (board?.unknown.length ?? 0);
 
@@ -344,7 +377,6 @@ export default function StudentDayBoard({ students }: { students: SelectableStud
                       day={d}
                       date={date}
                       nowMin={nowMin}
-                      dupName={dupNames.has(d.name)}
                       onOpen={() => setDetail(d)}
                     />
                   ))}
@@ -358,7 +390,6 @@ export default function StudentDayBoard({ students }: { students: SelectableStud
                       day={d}
                       date={date}
                       nowMin={nowMin}
-                      dupName={dupNames.has(d.name)}
                       onOpen={() => setDetail(d)}
                     />
                   ))}
@@ -434,12 +465,12 @@ export default function StudentDayBoard({ students }: { students: SelectableStud
             {/* ── 접어두는 둘 ──────────────────────────────────────────── */}
             <Folded label="지난 것" n={past.length} open={showPast} onToggle={() => setShowPast((v) => !v)}>
               {past.map((d) => (
-                <Row key={d.studentId} day={d} date={date} nowMin={nowMin} dim dupName={dupNames.has(d.name)} onOpen={() => setDetail(d)} />
+                <Row key={d.studentId} day={d} date={date} nowMin={nowMin} dim onOpen={() => setDetail(d)} />
               ))}
             </Folded>
             <Folded label="앞날" n={ahead.length} open={showAhead} onToggle={() => setShowAhead((v) => !v)}>
               {ahead.map((d) => (
-                <Row key={d.studentId} day={d} date={date} nowMin={nowMin} dim dupName={dupNames.has(d.name)} onOpen={() => setDetail(d)} />
+                <Row key={d.studentId} day={d} date={date} nowMin={nowMin} dim onOpen={() => setDetail(d)} />
               ))}
             </Folded>
           </>
@@ -515,13 +546,10 @@ function Row({
   nowMin,
   onOpen,
   dim,
-  dupName,
 }: {
   day: StudentDay;
   date: string;
   nowMin: number;
-  /** 이름이 겹치는 아이인가. 겹칠 때만 반을 붙입니다. */
-  dupName?: boolean;
   /** 누르면 세부 창이 뜹니다. 줄 안에서 펼치지 않습니다 - 두 줄로 세운 칸에서 한 줄만
       길어지면 옆 줄과 어긋나 읽기 어렵습니다. */
   onOpen: () => void;
@@ -565,11 +593,15 @@ function Row({
             {left > 0 ? `${left}분 뒤` : left === 0 ? "지금" : `${-left}분 지남`}
           </span>
         )}
-        <b className={"shrink-0 text-[13px] " + (past ? "text-slate-500" : "text-slate-900")}>{day.name}</b>
         {/* **반은 겹치는 이름에만** 붙입니다. 김재이가 셋일 때만 구분이 필요하고, 139명
-            전부에 붙이면 정작 구분이 필요한 이름이 묻힙니다(CLAUDE.md §2-4-2). 두 줄로
-            세운 좁은 칸에서는 그 글자가 칩 자리를 먹습니다. */}
-        {dupName && <span className="shrink-0 text-[10px] text-slate-400">{day.className ?? day.grade ?? ""}</span>}
+            전부에 붙이면 정작 구분이 필요한 이름이 묻힙니다(CLAUDE.md §2-4-2).
+
+            **판정은 학교 전체 기준**입니다(`Who`). 예전에는 이 보드 안에서만 세어서,
+            김재이가 오늘 한 명만 떴으면 반이 안 붙었습니다 - 명부에는 셋인데 화면에는
+            그냥 「김재이」라, 보는 사람은 누구인지 모른 채 픽업을 처리하게 됩니다. */}
+        <b className={"shrink-0 text-[13px] " + (past ? "text-slate-500" : "text-slate-900")}>
+          <Who id={day.studentId} name={day.name} badgeClassName="text-[9px]" />
+        </b>
 
         {/* 칩은 **한 줄에서 넘치지 않게** 잘립니다. 줄바꿈되면 두 줄로 세운 칸이 들쭉날쭉해져
             어느 줄이 누구 것인지 눈으로 다시 이어야 합니다. */}

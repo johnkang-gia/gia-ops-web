@@ -94,6 +94,14 @@ export default function PickupTriage({
   const [busy, setBusy] = useState(false);
   /** 특이사항 폼이 열려 있는 줄. 한 번에 하나만 엽니다 - 여럿 열리면 어느 칸에 적는지 헷갈립니다. */
   const [noteFor, setNoteFor] = useState<string | null>(null);
+  /**
+   * 줄마다 고친 픽업 시각. 기본값은 AI가 읽은 값이고, 사람이 그 자리에서 고칩니다.
+   *
+   * **시각이 곧 사람이 움직이는 시점입니다.** 「하교시간보다 10분 늦어 2시 30분 도착」 같은
+   * 글은 AI가 시각을 못 뽑거나 엉뚱하게 뽑는데, 고칠 자리가 없어서 보드에 「미정」으로
+   * 떴습니다 - 행정실은 언제 아이를 내보낼지 모릅니다.
+   */
+  const [timeFor, setTimeFor] = useState<Record<string, string>>({});
 
   const pending = rows;
   /**
@@ -416,13 +424,26 @@ export default function PickupTriage({
   }
 
   async function confirm(row: PickupRow, studentId?: string) {
-    const json = await call({ action: "confirm", id: row.id, studentId: studentId ?? row.student_id });
+    // **시각을 함께 보냅니다.** 「하교시간보다 10분 늦어 2시 30분 도착」 같은 글은 AI가
+    // 시각을 못 뽑거나 엉뚱하게 뽑습니다. 픽업에서 시각은 곧 사람이 움직이는 시점이라,
+    // 없으면 보드에 「미정」으로 떠서 언제 아이를 내보낼지 모릅니다.
+    const t = (timeFor[row.id] ?? "").trim();
+    if (t && !isClockTime(t)) {
+      notify("시각은 14:30 처럼 적어주세요.", "error");
+      return;
+    }
+    const json = await call({ action: "confirm", id: row.id, studentId: studentId ?? row.student_id, pickupTime: t || null });
     if (!json) return;
     // 특이사항으로 잘못 넘겼던 것을 되돌린 경우, **무엇이 내려갔는지 말해줍니다.** 안 말하면
     // 담당자는 보드에 남아 있는 줄 알고 학생 하루 보드를 다시 열어 확인해야 합니다.
     const dropped = (json as { notesDropped?: number }).notesDropped ?? 0;
     notify(
-      (json.applied > 0 ? "픽업으로 체크했습니다." : "확정했습니다(셔틀 배정이 없는 학생입니다).") +
+      (json.applied > 0
+        ? "픽업으로 체크했습니다."
+        : // 셔틀을 안 타는 아이는 체크표에 줄이 안 생기는 것이 정상입니다. 그래도 **어디서
+          // 봐야 하는지**를 말해줘야 체크표에서 그 아이를 찾다가 헤매지 않습니다.
+          "픽업으로 확정했습니다. 셔틀 배정이 없는 학생이라 체크표에는 줄이 없고, 업무보드 [오늘 학생]에 뜹니다.") +
+        (t ? ` ${t}` : "") +
         (dropped > 0 ? ` 특이사항 ${dropped}건은 함께 내렸습니다.` : ""),
       "success",
     );
@@ -603,6 +624,23 @@ export default function PickupTriage({
                   />
                   {r.student_id && (
                     <>
+                      {/* **시각을 여기서 넣습니다.** 확정과 같은 줄에 두어야 「몇 시?」를
+                          떠올린 그 자리에서 적습니다 - 다른 화면으로 건너가게 하면 대개
+                          안 적고 넘어가고, 그 아이는 「미정」으로 남습니다. */}
+                      <input
+                        value={timeFor[r.id] ?? r.ai_pickup_time ?? ""}
+                        onChange={(e) => setTimeFor((v) => ({ ...v, [r.id]: e.target.value }))}
+                        placeholder="14:30"
+                        title="몇 시에 데리러 오는지. 비워두면 「미정」으로 뜹니다."
+                        className={
+                          "w-16 shrink-0 rounded-lg border text-center tabular-nums " +
+                          btn +
+                          " " +
+                          ((timeFor[r.id] ?? "").trim() !== "" && !isClockTime((timeFor[r.id] ?? "").trim())
+                            ? "border-rose-400 bg-rose-50"
+                            : "border-slate-300")
+                        }
+                      />
                       <button
                         onClick={() => confirm(r)}
                         disabled={busy}

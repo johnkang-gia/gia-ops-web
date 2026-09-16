@@ -43,6 +43,18 @@ export async function POST(req: Request) {
     const studentId = (body?.studentId as string | undefined) ?? null;
     if (!id) return NextResponse.json({ error: "id가 필요합니다." }, { status: 400 });
 
+    /**
+     * **몇 시에 데리러 오는가.** 화면에서 고쳐 보낼 수 있습니다.
+     *
+     * 「하교시간보다 10분 늦어 2시 30분에 도착」 같은 글은 AI가 시각을 못 뽑거나 엉뚱하게
+     * 뽑습니다. 그런데 픽업에서 시각은 **곧 사람이 움직이는 시점**이라, 없으면 「미정」으로
+     * 떠서 행정실이 언제 아이를 내보낼지 모릅니다.
+     */
+    const rawTime = typeof body?.pickupTime === "string" ? body.pickupTime.trim() : null;
+    if (rawTime && !isClockTime(rawTime)) {
+      return NextResponse.json({ error: "시각은 14:30 처럼 적어주세요." }, { status: 400 });
+    }
+
     const { data: row } = await supabase
       .from("pickup_requests")
       .select("id, service_date, student_id, raw_text, source, channel_label, sender_name, source_url")
@@ -62,6 +74,14 @@ export async function POST(req: Request) {
       .update({
         student_id: finalStudentId,
         matched_name: matchedName,
+        // **갈래도 픽업으로 바꿉니다.**
+        //
+        // 예전에는 상태만 「확정」으로 바꾸고 `kind` 는 그대로 뒀습니다. 그래서 AI가 문의로
+        // 읽은 글을 사람이 픽업으로 확정해도, 「오늘 픽업」을 세는 자리는 `kind = 픽업` 인
+        // 줄만 보므로 **그 아이가 픽업 목록에 안 떴습니다** - 홍선우가 그랬습니다. 화면에는
+        // 오류가 아니라 「문의 한 건」으로 보이고, 픽업 칸은 비어 있습니다.
+        kind: "픽업",
+        ...(rawTime ? { ai_pickup_time: rawTime } : {}),
         status: "확정",
         resolved_by: me.email,
         resolved_at: new Date().toISOString(),
@@ -83,9 +103,16 @@ export async function POST(req: Request) {
     // **특이사항으로 잘못 넘겼던 것을 되돌립니다.** 안 내리면 그 아이는 보드에서 픽업이면서
     // 동시에 약을 먹는 아이가 되고, 어느 쪽이 지금 맞는지 화면으로는 알 수 없습니다.
     const notes = await undoInquiryNotes(supabase, id, { email: me.email, name: me.name ?? null });
+    // **체크표에 줄이 하나도 안 생겼으면 그렇다고 말합니다.**
+    //
+    // `applyPickup` 은 셔틀 배정이 있는 아이에게만 줄을 만듭니다. 셔틀을 안 타는 아이는
+    // 0을 돌려주는데, 예전에는 그 0을 아무도 보지 않았습니다 - 「확정했습니다」만 뜨고
+    // 체크표에는 아무것도 없었습니다. 셔틀을 안 타는 아이라 정상이지만, **그 사실이 화면에
+    // 보여야** 사람이 체크표에서 그 아이를 찾다가 헤매지 않습니다.
     return NextResponse.json({
       ok: true,
       applied,
+      noShuttleRow: applied === 0,
       notesDropped: notes.notes,
       problems: notes.problems,
     });

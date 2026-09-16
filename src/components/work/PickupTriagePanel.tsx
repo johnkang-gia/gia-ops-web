@@ -89,7 +89,10 @@ export default function PickupTriagePanel({ roster }: { roster: RosterStudent[] 
         onClick={() => setOpen((v) => !v)}
         className="flex shrink-0 items-center gap-1.5 px-2 py-1.5 text-left"
       >
-        <span className="text-[11px] font-bold text-slate-600">{open ? "▾" : "▸"} 🚗 확인이 필요한 픽업</span>
+        {/* **「픽업」이라고 적으면 픽업 글만 있는 줄로 읽힙니다.** 여기 모이는 것은 약·
+            준비물·분실물처럼 픽업이 아닌 부탁이 더 많고, 그 이름 때문에 픽업 담당이 아닌
+            사람은 열어보지 않았습니다. */}
+        <span className="text-[11px] font-bold text-slate-600">{open ? "▾" : "▸"} 📥 확인이 필요한 사항</span>
         {count > 0 ? (
           <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">{count}건</span>
         ) : (

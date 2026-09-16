@@ -657,12 +657,17 @@ export default function PickupTriage({
                       </button>
                     </>
                   )}
+                  {/* **「픽업 아님」은 하는 일보다 좁게 말했습니다.** 이 단추는 픽업이
+                      아니라고만 하는 것이 아니라 그 글을 **아무 일도 아닌 것으로 내립니다** -
+                      인사·광고·잘못 온 글입니다. 이름이 좁으면 약·준비물 부탁까지 여기로
+                      내려보내게 됩니다. */}
                   <button
                     onClick={() => ignore(r)}
                     disabled={busy}
+                    title="인사·광고처럼 처리할 일이 없는 글입니다. 잘못 눌렀으면 아래 접힌 목록에서 되돌립니다."
                     className="ml-auto rounded-lg border border-slate-300 px-2 py-1.5 text-[11px] font-semibold text-slate-500"
                   >
-                    픽업 아님
+                    문의사항이 아님
                   </button>
                 </div>
 

@@ -85,7 +85,12 @@ export type EventDot = {
 };
 
 function dotText(kind: EventDot["kind"], title: string, label: string): string {
-  return kind === "행사" ? title : `${title} ${label}`;
+  if (kind === "행사") return title;
+  // **제목이 이미 그 마디를 말하고 있으면 덧붙이지 않습니다.** 사람은 일정을 「크리스마스
+  // 콘서트 준비 시작」처럼 마디까지 넣어 적는 경우가 많고, 그대로 이으면 「…준비 시작 준비
+  // 시작」이 됩니다. 오류가 아니라 그냥 이상한 글자라 아무도 신고하지 않습니다.
+  if (title.includes(label)) return title;
+  return `${title} ${label}`;
 }
 
 /**

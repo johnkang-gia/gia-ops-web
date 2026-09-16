@@ -595,9 +595,3 @@ button:disabled {
 /* 인쇄본에는 막대가 없습니다. */
 @media print { .g-scroll-x::-webkit-scrollbar { display: none; } }
 
-
-/* **넓게 보기** — 청구 표처럼 열이 많은 화면에서 사이드바를 잠시 접습니다.
-   화면을 떠나면 컴포넌트가 이 클래스를 지웁니다(TuitionGridClient 의 WideToggle). */
-body.wide-screen aside.shell-blur {
-  display: none !important;
-}

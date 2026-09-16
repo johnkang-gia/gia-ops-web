@@ -676,7 +676,10 @@ export default function TuitionGridClient({
   }
 
   return (
-    <div>
+    // **표가 화면 끝까지 갑니다.** 좌우 여백은 글에만 두고(px-2), 표는 그만큼 밖으로
+    // 빼냅니다(-mx-2). 여백은 넓은데 정작 오른쪽 끝의 「청구액·청구서」가 잘려 보이던 것이
+    // 이 때문이었습니다 - 잘린 표는 없는 것처럼 보이고, 거기 있는 단추는 아무도 안 누릅니다.
+    <div className="px-2">
       {loadError && (
         <p className="mb-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] text-rose-800">{loadError}</p>
       )}
@@ -685,7 +688,6 @@ export default function TuitionGridClient({
       {/* **지금 이 화면을 함께 보는 사람.** 혼자인지 아닌지를 알면 「지금 고쳐도 되나」를
           묻지 않아도 됩니다. 브라우저를 닫으면 저절로 사라집니다. */}
       <div className="mb-2 flex flex-wrap items-center gap-1.5">
-        <WideToggle />
         {presence.others.length > 0 ? (
           <span className="flex flex-wrap items-center gap-1 rounded-full bg-rose-50 px-2 py-1 text-[11px] font-bold text-rose-700 ring-1 ring-rose-200">
             👥 지금 함께 보는 중
@@ -836,7 +838,7 @@ export default function TuitionGridClient({
 
       {/* ── 표 ─────────────────────────────────────────────────────── */}
       {/* 학비표도 잡아서 밀 수 있습니다. 여기는 세로도 갇혀 있어(70vh) 양쪽 다 밉니다. */}
-      <DragScroll axis="both" className="g-scroll-x max-h-[70vh] overflow-auto rounded-xl border border-slate-200 bg-white">
+      <DragScroll axis="both" className="g-scroll-x -mx-2 max-h-[80vh] overflow-auto border-y border-slate-200 bg-white">
         <table className="min-w-full border-collapse text-left text-[12px]">
           <thead className="sticky top-0 z-20">
             <tr>
@@ -1494,38 +1496,3 @@ function CellEditor({
 }
 
 
-/**
- * **넓게 보기** — 사이드바를 잠시 접습니다.
- *
- * 청구 표는 열이 열 개를 넘어서, 사이드바(224px)와 좌우 여백까지 빼고 나면 오른쪽 끝의
- * 「청구액·청구서」가 잘립니다. 잘린 표는 **없는 것처럼 보입니다** - 거기 있는 단추를 아무도
- * 안 누릅니다.
- *
- * 사이드바를 아주 없애지는 않습니다. 다른 화면으로 건너갈 길이 사라지면, 접어두고 잊은
- * 사람은 새로고침 말고는 돌아갈 방법을 못 찾습니다. 그래서 **이 화면에서만, 단추 하나로**
- * 접고 폅니다.
- */
-function WideToggle() {
-  const [wide, setWide] = useState(false);
-
-  useEffect(() => {
-    document.body.classList.toggle("wide-screen", wide);
-    // 이 화면을 떠날 때는 반드시 돌려놓습니다 - 접힌 채로 다른 화면에 가면 그 화면에서
-    // 사이드바가 사라진 이유를 알 길이 없습니다.
-    return () => document.body.classList.remove("wide-screen");
-  }, [wide]);
-
-  return (
-    <button
-      type="button"
-      onClick={() => setWide((v) => !v)}
-      className={
-        "rounded-full px-2.5 py-1 text-[11px] font-bold transition " +
-        (wide ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200")
-      }
-      title="사이드바를 접어 표를 넓게 봅니다"
-    >
-      {wide ? "↤ 사이드바 펴기" : "⤢ 넓게 보기"}
-    </button>
-  );
-}

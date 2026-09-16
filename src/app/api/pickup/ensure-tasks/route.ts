@@ -4,6 +4,7 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { isStaffOrAboveUser } from "@/lib/roles";
 import { kstParts } from "@/lib/shuttleTracking";
 import { buildPickupTask } from "@/lib/pickupTask";
+import { loadTodayPickups } from "@/lib/pickups";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,24 @@ export const dynamic = "force-dynamic";
  * 이제 판단을 데이터베이스가 합니다. 업무 줄에 `origin_ref` 로 연락의 번호를 적고 그 값에
  * 유일 색인을 걸어, 동시에 둘이 넣으면 **한 줄만 들어갑니다.** 실패한 쪽은 이미 있는 줄을
  * 찾아 이어 붙입니다 - 실패했다고 연결까지 빠뜨리면 다음번에 또 만들려 듭니다.
+ *
+ * ── 픽업은 네 갈래로 들어옵니다 ────────────────────────────────────────────
+ *
+ * 예전에는 **학부모 연락(`pickup_requests`)에서 확정된 것만** 업무로 만들었습니다. 그런데
+ * 오늘 픽업인 아이는 그 갈래만으로 정해지지 않습니다.
+ *
+ *   ① 하원 체크표에서 사람이 픽업으로 찍은 아이
+ *   ② 출결내역에서 픽업으로 등록한 아이
+ *   ③ 학부모 연락을 확정한 아이
+ *   ④ 미리 등록해 둔 하원수단이 픽업인 아이
+ *
+ * 그래서 업무보드 달력에는 「픽업 2건」인데 오늘 학생 화면에는 6명이 떴습니다. **같은 날
+ * 같은 일을 두 화면이 다르게 셌습니다** - 오류로 안 보이고 그냥 다른 숫자로 보이므로,
+ * 달력만 보는 사람은 네 명을 없는 것으로 압니다. 픽업은 사람이 교실로 가서 아이를 데려오는
+ * 일이라, 업무에 없으면 그 아이는 아무도 안 데리러 갑니다.
+ *
+ * 이제 **`loadTodayPickups` 한 곳**이 정한 명단 전부를 업무로 만듭니다(CLAUDE.md §2-13 과
+ * 같은 규칙 - 하원 명단은 한 곳에서 정합니다).
  */
 export async function POST() {
   const me = await getCurrentAppUser();
@@ -33,32 +52,13 @@ export async function POST() {
   const supabase = await createClient();
   const today = kstParts(new Date()).iso;
 
-  const { data: rows, error } = await supabase
-    .from("pickup_requests")
-    .select(
-      "id, kind, status, service_date, student_id, matched_name, ai_student_name, ai_pickup_time, raw_text, summary, source, source_url, task_id, is_demo",
-    )
-    .eq("service_date", today)
-    .eq("status", "확정")
-    .is("task_id", null)
-    .limit(100);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
-  const targets = (rows ?? []).filter(
-    (r) => !r.is_demo && (r.kind === "픽업" || r.kind === null),
-  );
-  if (targets.length === 0) return NextResponse.json({ ok: true, created: 0 });
-
-  // 학생의 부서·반, 그리고 반의 교실을 한 번에 읽습니다. 줄마다 조회하면 픽업이 많은 날
-  // 화면이 그만큼 늦게 뜹니다.
-  const ids = targets.map((r) => r.student_id).filter((v): v is string => !!v);
-  const { data: students } = ids.length
-    ? await supabase
-        .from("wr_students")
-        .select("id, name, grade, class_name, class_id, department")
-        .eq("is_demo", false)
-        .in("id", ids)
-    : { data: [] };
+  // 명부를 먼저 읽습니다. 픽업 판정이 학생 번호 → 이름을 물어보고, 만든 업무에 학년·반·
+  // 교실을 적어야 「어디로 가야 하나」가 제목에 있습니다.
+  const { data: students } = await supabase
+    .from("wr_students")
+    .select("id, name, grade, class_name, class_id, department")
+    .eq("is_demo", false)
+    .eq("status", "active");
   const { data: classes } = await supabase
     .from("wr_classes")
     .select("id, grade, class_name, room")
@@ -69,16 +69,58 @@ export async function POST() {
   const byId = new Map(((students as S[] | null) ?? []).map((s) => [s.id, s]));
   const clsById = new Map(((classes as C[] | null) ?? []).map((c) => [c.id, c]));
 
+  // **오늘 픽업이 누구인가는 여기서 정하지 않습니다.** 네 갈래를 합치는 규칙은 한 곳에만
+  // 있고(`loadTodayPickups`), 오늘 학생·중앙 대시보드·알람이 모두 그것을 씁니다.
+  const pickups = await loadTodayPickups(supabase, today, (id) => byId.get(id)?.name ?? null);
+  if (pickups.length === 0) return NextResponse.json({ ok: true, created: 0 });
+
+  // 연락에서 온 갈래는 원문·출처·연결을 붙일 수 있습니다. 학생 번호로 찾습니다 - 이름으로
+  // 찾으면 김재이 셋이 한 줄을 나눠 씁니다(CLAUDE.md §2-4-1).
+  const { data: reqRows } = await supabase
+    .from("pickup_requests")
+    .select("id, student_id, matched_name, ai_pickup_time, raw_text, summary, source, source_url, task_id, is_demo, kind, status")
+    .eq("service_date", today)
+    .eq("status", "확정")
+    .limit(300);
+  type R = {
+    id: string; student_id: string | null; matched_name: string | null; ai_pickup_time: string | null;
+    raw_text: string | null; summary: string | null; source: string | null; source_url: string | null;
+    task_id: string | null; is_demo?: boolean | null;
+  };
+  const reqByStudent = new Map<string, R>();
+  for (const r of ((reqRows as R[] | null) ?? [])) {
+    if (r.is_demo || !r.student_id) continue;
+    if (!reqByStudent.has(r.student_id)) reqByStudent.set(r.student_id, r);
+  }
+
   let created = 0;
-  for (const r of targets) {
-    const s = r.student_id ? byId.get(r.student_id) : undefined;
+  const problems: string[] = [];
+  for (const p of pickups) {
+    const s = p.studentId ? byId.get(p.studentId) : undefined;
+    const req = p.studentId ? reqByStudent.get(p.studentId) : undefined;
+    // 이미 업무가 붙은 연락은 건너뜁니다. 연락이 없는 갈래(체크표·하원수단)는 아래
+    // `origin_ref` 유일 색인이 두 번 만드는 것을 막습니다.
+    if (req?.task_id) continue;
+
+    /**
+     * **한 아이에 하루 한 줄.** 갈래가 넷이라 열쇠를 갈래별로 두면 같은 아이가 네 줄
+     * 생깁니다 - 화면에는 오류가 아니라 「픽업 네 건」으로 보이고, 사람은 네 번 데리러
+     * 갑니다. 그래서 열쇠는 **연락 번호(있으면) 또는 학생 번호+날짜**입니다.
+     *
+     * 학생 번호가 없는 줄(옛 탑승표 이름만 있는 경우)은 이름+날짜로 둡니다. 겹치는 이름이
+     * 같은 날 둘 다 픽업이면 한 줄로 합쳐지는데, 그건 두 번 데리러 가는 것보다 낫습니다 -
+     * 제목에 이름이 적히므로 사람이 보고 알아챕니다.
+     */
+    const ref = req?.id ?? (p.studentId ? `pickup:${p.studentId}:${today}` : `pickup:${p.name}:${today}`);
+
     const cls = s?.class_id ? clsById.get(s.class_id) : undefined;
     const place =
       [s?.grade ? `${s.grade}학년` : null, s?.class_name ?? null, cls?.room ?? null].filter(Boolean).join(" ") || null;
 
     const payload = buildPickupTask({
-      studentName: s?.name ?? ((r.matched_name as string | null) ?? (r.ai_student_name as string | null) ?? "학생 미확인"),
-      pickupTime: (r.ai_pickup_time as string | null) ?? null,
+      studentName: s?.name ?? req?.matched_name ?? p.name,
+      // 시각은 픽업 판정이 이미 갈래별로 골라 왔습니다. 여기서 다시 고르면 두 곳이 어긋납니다.
+      pickupTime: p.time ?? req?.ai_pickup_time ?? null,
       serviceDate: today,
       place,
       department: s?.department ?? null,
@@ -86,14 +128,16 @@ export async function POST() {
       // 일이 붙습니다. 지금 화면을 연 행정직원이 맡되, 화면에서 바꿀 수 있습니다.
       ownerEmail: me.email,
       assigneeEmails: [me.email],
-      rawText: ((r.raw_text as string | null) ?? (r.summary as string | null)) ?? null,
-      sourceLabel: (r.source as string | null) ?? null,
-      sourceUrl: (r.source_url as string | null) ?? null,
+      // 연락이 없는 갈래는 **왜 픽업인지**를 적어줍니다. 「체크표에서 사람이 찍음」과
+      // 「미리 등록한 하원수단」은 나중에 「이 아이가 왜 떴지」를 답하는 유일한 근거입니다.
+      rawText: req?.raw_text ?? req?.summary ?? `${p.source}에서 온 픽업입니다 (${p.via}).`,
+      sourceLabel: req?.source ?? p.source,
+      sourceUrl: req?.source_url ?? null,
     });
 
     const { data: task, error: taskErr } = await supabase
       .from("tasks")
-      .insert({ ...payload, origin_ref: r.id as string })
+      .insert({ ...payload, origin_ref: ref })
       .select("id")
       .single();
 
@@ -102,23 +146,25 @@ export async function POST() {
       // 그 줄을 찾아 연락에 이어 붙입니다 - 여기서 그냥 넘어가면 연결이 빈 채로 남아
       // 다음번에 또 만들려 듭니다.
       if (taskErr?.code === "23505") {
-        const { data: mine } = await supabase
-          .from("tasks")
-          .select("id")
-          .eq("origin_ref", r.id as string)
-          .is("deleted_at", null)
-          .maybeSingle();
-        if (mine?.id) await supabase.from("pickup_requests").update({ task_id: mine.id }).eq("id", r.id);
+        if (req) {
+          const { data: mine } = await supabase
+            .from("tasks")
+            .select("id")
+            .eq("origin_ref", ref)
+            .is("deleted_at", null)
+            .maybeSingle();
+          if (mine?.id) await supabase.from("pickup_requests").update({ task_id: mine.id }).eq("id", req.id);
+        }
         continue;
       }
-      // 한 건이 실패해도 나머지는 계속 만듭니다. 다만 조용히 넘기지 않고 소리는 냅니다 -
-      // 픽업 업무가 통째로 안 생기는 것이 가장 나쁩니다.
-      console.error("[픽업→업무] 만들지 못했습니다:", taskErr?.message);
+      // 한 건이 실패해도 나머지는 계속 만듭니다. 다만 조용히 넘기지 않고 **화면에도**
+      // 돌려줍니다 - 픽업 업무가 통째로 안 생기는 것이 가장 나쁩니다(§5).
+      problems.push(`${p.name}(${taskErr?.message ?? "이유 모름"})`);
       continue;
     }
-    await supabase.from("pickup_requests").update({ task_id: task.id }).eq("id", r.id);
+    if (req) await supabase.from("pickup_requests").update({ task_id: task.id }).eq("id", req.id);
     created += 1;
   }
 
-  return NextResponse.json({ ok: true, created });
+  return NextResponse.json({ ok: true, created, problems });
 }

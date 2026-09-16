@@ -90,6 +90,22 @@ export default function FeePlansClient({
   const [options, setOptions] = useState(initialOptions);
   const [discounts, setDiscounts] = useState(initialDiscounts);
   const [tab, setTab] = useState<"학비" | "학비외" | "할인">("학비");
+  /**
+   * **부서를 먼저 고릅니다.**
+   *
+   * ── 무엇이 문제였나 ───────────────────────────────────────────────────────
+   *
+   * 항목을 만든 뒤에 「대상」을 골랐습니다. 그래서 초등부 학비와 중고등부 학비가 한 목록에
+   * 섞여 있었고, 어느 것이 누구 것인지는 줄마다 대상 글자를 읽어야 알았습니다. 금액이 다른
+   * 같은 이름의 항목이 둘이면(정규과정 × 2) 특히 헷갈립니다.
+   *
+   * 실제로 일하는 순서는 반대입니다 - **「중고등부 학비를 정한다」가 먼저**이고, 그 안에서
+   * 항목을 만듭니다. 화면이 그 순서를 따라가면 대상을 고르는 일 자체가 없어집니다.
+   *
+   * 「공통」은 부서로 안 가른 옛 항목이 사는 자리입니다. 숨기지 않습니다 - 안 보이면 그
+   * 항목이 아직 모두에게 걸려 있다는 사실도 안 보입니다.
+   */
+  const [dept, setDept] = useState<"초등부" | "중고등부" | "공통">("초등부");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -143,8 +159,15 @@ export default function FeePlansClient({
 
   // 표에 뜨는 순서와 **같은 기준**으로 세웁니다(`sort_order`). 여기서만 다른 순서로 보이면,
   // 끌어서 옮겨놓고 청구 표를 열었을 때 그대로가 아닙니다.
+  /** 이 항목이 지금 고른 부서 칸의 것인가. 부서로 안 가른 항목은 「공통」에 모입니다. */
+  const inDept = (p: FeePlan): boolean => {
+    const scoped = (p.target_scope ?? "") === "부서";
+    if (dept === "공통") return !scoped;
+    return scoped && (p.target_departments ?? []).includes(dept);
+  };
+
   const shownPlans = plans
-    .filter((p) => p.category === tab && (showInactive || p.active))
+    .filter((p) => p.category === tab && inDept(p) && (showInactive || p.active))
     .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name, "ko"));
 
   /** 지금 끌고 있는 항목. 놓을 자리를 표시하는 데도 씁니다. */
@@ -206,6 +229,12 @@ export default function FeePlansClient({
         description: planForm.description.trim() || null,
         base_amount: planForm.base_amount,
         unit: planForm.unit,
+        // **지금 보고 있는 부서 것으로 만듭니다.** 만든 뒤에 대상을 따로 고르게 하면 그
+        // 고르기를 빠뜨린 항목이 모두에게 걸립니다 - 초등부 학비가 중고등부 청구 표에
+        // 열리고, 그건 오류가 아니라 「고를 수 있는 항목」으로 보입니다.
+        ...(dept === "공통"
+          ? {}
+          : { target_scope: "부서" as const, target_departments: [dept] }),
         sort_order: plans.length,
         created_by: currentUserEmail,
       })
@@ -474,6 +503,45 @@ export default function FeePlansClient({
         </p>
       )}
 
+      {/*
+        ── 부서가 먼저 ──────────────────────────────────────────────────────
+
+        일하는 순서가 「중고등부 학비를 정한다」이므로 화면도 그 순서입니다. 부서를 고른 뒤에
+        만드는 항목은 그 부서 것으로 **저절로** 정해집니다 - 만든 뒤에 대상을 고르게 하면
+        그 고르기를 빠뜨린 항목이 모두에게 걸립니다.
+      */}
+      {tab !== "할인" && (
+        <div className="mb-2 flex flex-wrap items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 p-2">
+          <span className="text-[11px] font-bold text-slate-500">부서</span>
+          {(["초등부", "중고등부", "공통"] as const).map((d) => (
+            <button
+              key={d}
+              type="button"
+              onClick={() => setDept(d)}
+              title={
+                d === "공통"
+                  ? "부서로 안 가른 항목입니다. 모든 학생에게 열립니다 - 초등부·중고등부로 옮기려면 줄 안의 [대상]에서 바꿔주세요."
+                  : `${d} 학생에게만 열리는 항목입니다.`
+              }
+              className={
+                "rounded-full px-3 py-1 text-[12px] font-bold transition " +
+                (dept === d ? "bg-slate-800 text-white shadow-sm" : "bg-white text-slate-600 ring-1 ring-slate-300 hover:bg-slate-100")
+              }
+            >
+              {d}
+              <span className={"ml-1 font-normal " + (dept === d ? "text-white/70" : "text-slate-400")}>
+                {plans.filter((p) => p.active && (d === "공통" ? (p.target_scope ?? "") !== "부서" : (p.target_scope ?? "") === "부서" && (p.target_departments ?? []).includes(d))).length}
+              </span>
+            </button>
+          ))}
+          <span className="ml-auto text-[11px] text-slate-500">
+            {dept === "공통"
+              ? "부서를 안 가른 항목입니다 — 모든 학생 칸이 열립니다."
+              : `여기서 만들면 ${dept} 학생에게만 열립니다.`}
+          </span>
+        </div>
+      )}
+
       <div className="mb-3 flex flex-wrap items-center gap-1.5">
         {(["학비", "학비외", "할인"] as const).map((t) => (
           <Button key={t} size="sm" variant={tab === t ? "default" : "glass"} onClick={() => setTab(t)}>
@@ -490,7 +558,7 @@ export default function FeePlansClient({
         <>
           <div className="mb-2 flex flex-wrap items-center gap-2">
             <Button variant="glass" size="sm" onClick={() => setShowPlanForm((v) => !v)}>
-              + {tab} 항목 추가
+              + {dept === "공통" ? "" : `${dept} `}{tab} 항목 추가
             </Button>
             {/* 청구 표의 열 순서가 여기 순서입니다. 그 사실을 적어두지 않으면, 표에서 열을
                 옮기려고 표 쪽을 뒤지게 됩니다. */}
@@ -531,7 +599,7 @@ export default function FeePlansClient({
           <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
             {shownPlans.length === 0 && (
               <p className="col-span-full py-10 text-center text-sm text-slate-400">
-                아직 {tab} 항목이 없습니다. 위에서 하나 만들어보세요.
+                아직 {dept === "공통" ? "" : `${dept} `}{tab} 항목이 없습니다. 위에서 하나 만들어보세요.
               </p>
             )}
             {shownPlans.map((p) => (

@@ -28,7 +28,15 @@ type ArrivalRoute = {
   driverName: string | null;
   driverPhone: string | null;
   vehicleNo: string | null;
-  roster: { assignmentId: string; studentName: string; status: string; addedToday?: boolean }[];
+  roster: {
+    assignmentId: string;
+    studentName: string;
+    status: string;
+    addedToday?: boolean;
+    studentId?: string | null;
+    /** 오늘 챙겨 보내야 하는 물건. 비어 있으면 아무 표시도 안 합니다. */
+    objects?: { content: string; done: boolean }[];
+  }[];
   events: { event: string; created_at: string; createdBy: string | null }[];
   // 기사님 휴대폰이 마지막으로 위치를 보내온 시각(GPS 살아있는지 확인용). 미설정이면 null.
   gpsLastSeen?: string | null;
@@ -95,7 +103,44 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
   const [callSheet, setCallSheet] = useState<{ routeNo: string; driverName: string | null; driverPhone: string | null } | null>(null);
   // 현장에서 아이 하나를 픽업으로 바꾸기 전에 한 번 묻습니다.
   // 잘못 누르면 그 아이가 명단에서 사라지고, 사라진 아이는 아무도 찾지 않습니다.
-  const [pickupAsk, setPickupAsk] = useState<{ assignmentId: string; studentName: string; routeNo: string } | null>(null);
+  const [pickupAsk, setPickupAsk] = useState<{
+    assignmentId: string;
+    studentName: string;
+    routeNo: string;
+    studentId?: string | null;
+    objects?: { content: string; done: boolean }[];
+  } | null>(null);
+  /** 방금 챙겼다고 누른 물건. 화면이 바로 지워지도록 - 3초 폴링을 기다리면 또 누릅니다. */
+  const [objDone, setObjDone] = useState<Set<string>>(new Set());
+  const [objBusy, setObjBusy] = useState<string | null>(null);
+
+  /**
+   * **챙겼다고 표시합니다.**
+   *
+   * 누가 언제 눌렀는지가 남아야 「분명히 챙겨 보냈다는데 집에 안 왔다」에 답할 수 있습니다.
+   * 로그인 없는 화면이라 사람 이름은 없지만, 링크 이름(`label`)이 어느 자리에서 눌렸는지를
+   * 말해 줍니다.
+   */
+  async function markObjectDone(studentId: string, content: string) {
+    const key = `${studentId}|${content}`;
+    setObjBusy(key);
+    try {
+      const res = await fetch(`/api/shuttle/arrival/${token}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "object-done", studentId, content }),
+      });
+      if (!res.ok) {
+        // 조용히 넘기면 챙긴 줄 알고 넘어갑니다. 그 물건은 그날 학교에 남습니다(§5).
+        const j = (await res.json().catch(() => ({}))) as { error?: string };
+        alert(j.error ?? "표시하지 못했습니다. 다시 눌러주세요.");
+        return;
+      }
+      setObjDone((p) => new Set(p).add(key));
+    } finally {
+      setObjBusy(null);
+    }
+  }
   /**
    * 차번호로 찾기.
    *
@@ -529,22 +574,54 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
                         **손가락으로 누를 수 있는 크기**로 키웠습니다. 8px 글자에 여백이 거의
                         없던 뱃지는 휴대폰에서 사실상 못 누릅니다. 잘못 눌렀을 때가 더 위험하므로
                         (아이가 명단에서 사라집니다) 누르면 바로 바꾸지 않고 한 번 묻습니다. */}
-                    {waiting.map((s) => (
-                      <button
-                        key={s.assignmentId}
-                        type="button"
-                        onClick={() => setPickupAsk({ assignmentId: s.assignmentId, studentName: s.studentName, routeNo: r.routeNo })}
-                        title={s.addedToday ? "하원 체크표에서 오늘만 태우기로 한 아이입니다" : undefined}
-                        className={
-                          "min-h-[22px] rounded border px-1 py-0.5 text-[10px] font-bold leading-tight active:scale-95 " +
-                          // 오늘만 타는 아이는 눈에 띄게. 평소 명단에 없던 아이라 그냥 섞어 두면
-                          // 기사님도 선생님도 «원래 있던 아이»로 넘깁니다.
-                          (s.addedToday ? "border-amber-400 bg-amber-100 text-amber-800" : "border-red-300 bg-red-50 text-red-600")
-                        }
-                      >
-                        {s.addedToday ? `✚ ${s.studentName}` : s.studentName}
-                      </button>
-                    ))}
+                    {waiting.map((s) => {
+                      /**
+                       * **오늘 챙겨 보내야 할 물건이 있는 아이.**
+                       *
+                       * 「두고 온 잠바·파일·간식 가방을 챙겨 보내주세요」는 아이가 차에 타기
+                       * 전에 끝나야 하는 일입니다. 이름표 테두리를 바꿔 **멀리서 먼저** 보이게
+                       * 하고, 누르면 그 목록이 개별하원보다 위에 뜹니다 - 개별하원 창만 뜨면
+                       * 물건은 안 보이고, 안 보이는 일은 아무도 안 합니다.
+                       */
+                      const todo = (s.objects ?? []).filter((o) => !o.done);
+                      const hasObj = todo.length > 0;
+                      return (
+                        <button
+                          key={s.assignmentId}
+                          type="button"
+                          onClick={() =>
+                            setPickupAsk({
+                              assignmentId: s.assignmentId,
+                              studentName: s.studentName,
+                              routeNo: r.routeNo,
+                              studentId: s.studentId ?? null,
+                              objects: s.objects ?? [],
+                            })
+                          }
+                          title={
+                            hasObj
+                              ? `챙길 물건 ${todo.length}건 — 누르면 목록이 뜹니다`
+                              : s.addedToday
+                                ? "하원 체크표에서 오늘만 태우기로 한 아이입니다"
+                                : undefined
+                          }
+                          className={
+                            "min-h-[22px] rounded px-1 py-0.5 text-[10px] font-bold leading-tight active:scale-95 " +
+                            // 물건이 가장 급합니다. 못 챙기면 그날 학교에 남고, 그건 되돌릴
+                            // 기회가 하원이 끝나면 없습니다. 테두리를 굵게 해 멀리서 보이게.
+                            (hasObj
+                              ? "border-2 border-orange-500 bg-orange-100 text-orange-900"
+                              : s.addedToday
+                                ? // 오늘만 타는 아이는 눈에 띄게. 평소 명단에 없던 아이라 그냥
+                                  // 섞어 두면 기사님도 선생님도 «원래 있던 아이»로 넘깁니다.
+                                  "border border-amber-400 bg-amber-100 text-amber-800"
+                                : "border border-red-300 bg-red-50 text-red-600")
+                          }
+                        >
+                          {hasObj ? `📦 ${s.studentName}` : s.addedToday ? `✚ ${s.studentName}` : s.studentName}
+                        </button>
+                      );
+                    })}
                     {(pickedUpCount > 0 || absentCount > 0) && (
                       <span className="px-0.5 py-0.5 text-[7px] font-semibold leading-none text-slate-400">
                         {pickedUpCount > 0 && <>픽업 {pickedUpCount}</>}
@@ -612,6 +689,42 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3" onClick={() => setPickupAsk(null)}>
           <div className="w-full max-w-sm rounded-2xl bg-white p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <p className="mb-1 text-lg font-black text-slate-800"><Who name={pickupAsk.studentName} /></p>
+
+            {/*
+              ── 챙길 물건이 먼저입니다 ────────────────────────────────────────
+
+              개별하원 확인만 뜨면 물건은 안 보이고, 안 보이는 일은 아무도 안 합니다. 그래서
+              **개별하원 단추보다 위**에 둡니다. 개별하원으로 가는 아이든 차를 타는 아이든,
+              이 창을 연 순간 물건은 눈에 들어와야 합니다.
+            */}
+            {(pickupAsk.objects ?? []).filter((o) => !o.done && !objDone.has(`${pickupAsk.studentId}|${o.content}`)).length > 0 && (
+              <div className="mb-3 rounded-xl border-2 border-orange-400 bg-orange-50 p-3">
+                <p className="mb-2 text-[13px] font-black text-orange-900">📦 챙겨 보낼 물건</p>
+                <div className="flex flex-col gap-1.5">
+                  {(pickupAsk.objects ?? [])
+                    .filter((o) => !o.done && !objDone.has(`${pickupAsk.studentId}|${o.content}`))
+                    .map((o) => {
+                      const key = `${pickupAsk.studentId}|${o.content}`;
+                      return (
+                        <button
+                          key={o.content}
+                          type="button"
+                          disabled={!pickupAsk.studentId || objBusy === key}
+                          onClick={() => pickupAsk.studentId && void markObjectDone(pickupAsk.studentId, o.content)}
+                          className="flex items-start gap-2 rounded-lg bg-white px-2.5 py-2 text-left text-[13px] leading-relaxed text-slate-800 ring-1 ring-orange-200 active:scale-95 disabled:opacity-50"
+                        >
+                          <span className="mt-0.5 shrink-0 text-base">{objBusy === key ? "⏳" : "☐"}</span>
+                          <span className="min-w-0 flex-1">{o.content}</span>
+                        </button>
+                      );
+                    })}
+                </div>
+                <p className="mt-2 text-[11px] leading-relaxed text-orange-800">
+                  아이 손에 들려 보낸 뒤 눌러주세요. 누르면 이 목록에서 내려갑니다.
+                </p>
+              </div>
+            )}
+
             <p className="mb-4 text-[13px] leading-relaxed text-slate-500">
               {pickupAsk.routeNo}호를 타지 않고 <b className="text-slate-700">보호자가 데려가는 것</b>으로 표시합니다.
               <br />

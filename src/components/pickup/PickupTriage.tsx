@@ -138,6 +138,26 @@ export default function PickupTriage({
     });
   }
 
+  /**
+   * **이 줄에서 실제로 무엇을 할 대상인가.**
+   *
+   * ── 무엇이 문제였나 ───────────────────────────────────────────────────────
+   *
+   * 픽업·결석·지각·셔틀·특이사항 단추가 전부 `r.student_id` 안에 들어 있었습니다. 형제방
+   * 글은 아이가 안 갈려서 그 값이 비어 있으니, **[문의사항이 아님]밖에 누를 수 없었습니다** -
+   * 「황라원은 일찍 픽업, 황라윤은 셔틀」 같은 연락을 이 화면에서 처리할 방법이 없었습니다.
+   *
+   * 이제 대상은 **체크된 아이들**입니다. 한 명이면 예전과 똑같이 한 줄, 여럿이면 아이마다
+   * 한 줄씩 나옵니다 - 한 글에 할 일이 둘이면 단추도 둘이어야 합니다.
+   */
+  const actorsOf = useCallback(
+    (r: PickupRow): { id: string; name: string }[] => {
+      if (r.student_id) return [{ id: r.student_id, name: r.matched_name ?? "학생" }];
+      return houseOfRow(r).filter((s) => !(unchecked[r.id] ?? new Set()).has(s.id));
+    },
+    [houseOfRow, unchecked],
+  );
+
   const pending = rows;
   /**
    * 좁은 칸에서 줄이는 것은 **글자와 여백뿐**입니다. 단추를 빼면 그 화면에서만 못 하는 일이
@@ -347,8 +367,20 @@ export default function PickupTriage({
    * 창구가 셔틀 체크표와 출석부를 **한 짝으로** 처리합니다 - 셔틀을 안 타는 아이도 출석부에
    * 남습니다(임주한이 「셔틀 배정이 없습니다」로 거절당하던 자리).
    */
-  async function markAttendance(row: PickupRow, dates: string[], action: "결석" | "지각" | "조퇴" | "예정") {
-    if (!row.matched_name) return;
+  /**
+   * @param who 이 일을 걸 아이. 형제방이면 체크된 아이가 들어옵니다 - 줄에 적힌 학생이
+   *            비어 있어도 처리할 수 있어야 합니다.
+   * @param keepOpen 줄을 내리지 않습니다. 형제방에서 아이마다 다른 일을 걸 때 씁니다.
+   */
+  async function markAttendance(
+    row: PickupRow,
+    dates: string[],
+    action: "결석" | "지각" | "조퇴" | "예정",
+    who?: { id: string; name: string },
+    keepOpen = false,
+  ) {
+    const target = who ?? (row.student_id ? { id: row.student_id, name: row.matched_name ?? "학생" } : null);
+    if (!target) return;
     setBusy(true);
     let ok = 0;
     let refused: string | null = null;
@@ -360,8 +392,8 @@ export default function PickupTriage({
         // **학생 번호를 함께 보냅니다.** 이름만 보내면 창구가 이름으로 배정을 찾는데,
         // 김재이가 셋이라 셋의 배정이 모두 걸려 한 번의 결석이 세 아이를 결석으로 만듭니다.
         body: JSON.stringify({
-          studentId: row.student_id,
-          studentName: row.matched_name,
+          studentId: target.id,
+          studentName: target.name,
           action,
           serviceDate: d,
           inquiryId: row.id,
@@ -381,15 +413,17 @@ export default function PickupTriage({
     }
     // 한 건도 못 했으면 인박스에서 내리지 않습니다 - 내리면 아무도 다시 안 봅니다.
     // 되돌리기(예정)는 이미 내려가 있는 줄에서 누르므로 또 내리지 않습니다.
-    if (ok > 0 && action !== "예정") await call({ action: "ignore", id: row.id });
+    // **줄을 열어두라고 했으면 안 내립니다.** 형제방에서 첫 아이를 걸면서 줄이 사라지면
+    // 나머지 아이를 걸 자리가 없어집니다.
+    if (ok > 0 && action !== "예정" && !keepOpen) await call({ action: "ignore", id: row.id });
     setBusy(false);
     if (ok === 0) notify(refused ?? lastNote ?? "처리하지 못했습니다.", "error");
     else
       notify(
         ok === dates.length
           ? action === "예정"
-            ? `${row.matched_name} 출결 처리를 되돌렸습니다.`
-            : `${row.matched_name} ${action} ${ok}일 처리했습니다(출석부에도 남습니다).`
+            ? `${target.name} 출결 처리를 되돌렸습니다.`
+            : `${target.name} ${action} ${ok}일 처리했습니다(출석부에도 남습니다).`
           : `${ok}/${dates.length}일만 처리됐습니다. ${lastNote ?? ""}`,
         ok === dates.length ? "success" : "error",
       );
@@ -414,17 +448,28 @@ export default function PickupTriage({
    * **전부 저장되거나 아무것도 저장되지 않습니다.** 셋 중 둘만 들어간 채로 인박스에서
    * 내려가면, 빠진 하나는 어디에도 안 남는데 화면에는 처리된 것으로 보입니다.
    */
-  async function saveNotes(row: PickupRow, forms: { kind: NoteKind; atTime: string; content: string }[]) {
+  async function saveNotes(
+    row: PickupRow,
+    forms: { kind: NoteKind; atTime: string; content: string }[],
+    who?: { id: string; name: string },
+    keepOpen = false,
+  ) {
+    const target = who ?? (row.student_id ? { id: row.student_id, name: row.matched_name ?? "학생" } : null);
+    if (!target) {
+      notify("누구 것인지 먼저 골라주세요.", "error");
+      return;
+    }
     const json = await call({
       action: "note",
       id: row.id,
-      studentId: row.student_id,
+      studentId: target.id,
       notes: forms.map((f) => ({ kind: f.kind, atTime: f.atTime, content: f.content })),
       onDate: row.service_date,
+      keepOpen,
     });
     if (!json) return;
     setNoteFor(null);
-    const name = json.name ?? row.matched_name ?? "학생";
+    const name = json.name ?? target.name;
     notify(
       forms.length === 1
         ? `${name} · ${forms[0].kind}${forms[0].atTime ? ` ${forms[0].atTime}` : ""} 특이사항으로 남겼습니다.`
@@ -445,11 +490,13 @@ export default function PickupTriage({
    * 이 글이 문의로만 남고 체크표는 하원수단대로 **픽업**이었습니다 - 화면에 적힌 답이
    * 정반대라, 그대로 두면 아이가 셔틀을 못 탑니다.
    */
-  async function rideShuttle(row: PickupRow) {
-    const json = await call({ action: "ride-shuttle", id: row.id, studentId: row.student_id });
+  async function rideShuttle(row: PickupRow, who?: { id: string; name: string }) {
+    const target = who ?? (row.student_id ? { id: row.student_id, name: row.matched_name ?? "학생" } : null);
+    if (!target) return;
+    const json = await call({ action: "ride-shuttle", id: row.id, studentId: target.id });
     if (!json) return;
     notify(
-      `${json.name ?? row.matched_name ?? "학생"} — 오늘만 셔틀 탑승으로 바꿨습니다. 체크표·명단·도착체크가 함께 바뀝니다.`,
+      `${json.name ?? target.name} — 오늘만 셔틀 탑승으로 바꿨습니다. 체크표·명단·도착체크가 함께 바뀝니다.`,
       "success",
     );
     const undoNote = (json as { undoNote?: string }).undoNote;
@@ -458,7 +505,7 @@ export default function PickupTriage({
     router.refresh();
   }
 
-  async function confirm(row: PickupRow, studentId?: string) {
+  async function confirm(row: PickupRow, studentId?: string, keepOpen = false) {
     // **시각을 함께 보냅니다.** 「하교시간보다 10분 늦어 2시 30분 도착」 같은 글은 AI가
     // 시각을 못 뽑거나 엉뚱하게 뽑습니다. 픽업에서 시각은 곧 사람이 움직이는 시점이라,
     // 없으면 보드에 「미정」으로 떠서 언제 아이를 내보낼지 모릅니다.
@@ -467,7 +514,13 @@ export default function PickupTriage({
       notify("시각은 14:30 처럼 적어주세요.", "error");
       return;
     }
-    const json = await call({ action: "confirm", id: row.id, studentId: studentId ?? row.student_id, pickupTime: t || null });
+    const json = await call({
+      action: "confirm",
+      id: row.id,
+      studentId: studentId ?? row.student_id,
+      pickupTime: t || null,
+      keepOpen,
+    });
     if (!json) return;
     // 특이사항으로 잘못 넘겼던 것을 되돌린 경우, **무엇이 내려갔는지 말해줍니다.** 안 말하면
     // 담당자는 보드에 남아 있는 줄 알고 학생 하루 보드를 다시 열어 확인해야 합니다.
@@ -713,20 +766,17 @@ export default function PickupTriage({
                           한 명은 남겨주세요. 아무에게도 해당 없으면 [문의사항이 아님]입니다.
                         </span>
                       ) : checkedOf(r).length === 1 ? (
-                        <button
-                          type="button"
-                          onClick={() => confirm(r, checkedOf(r)[0].id)}
-                          disabled={busy}
-                          className={"ml-auto rounded-lg bg-indigo-600 font-bold text-white disabled:opacity-50 " + btn}
-                        >
-                          {checkedOf(r)[0].name} 한 명으로 확정
-                        </button>
+                        // 한 명만 남았으면 아래 대상 줄이 그 아이 것으로 이미 떠 있습니다.
+                        // 같은 일을 하는 단추를 두 개 두면 어느 쪽을 눌러야 하는지 매번 봅니다.
+                        <span className="ml-auto text-[11px] text-indigo-700">
+                          아래 단추가 <b>{checkedOf(r)[0].name}</b> 것입니다.
+                        </span>
                       ) : (
                         <button
                           type="button"
                           onClick={() => confirmHouse(r, checkedOf(r).map((c) => c.name))}
                           disabled={busy}
-                          title="아이를 한 명으로 정하지 않고, 그 집 아이 모두의 이력에 남깁니다."
+                          title="픽업·결석 같은 처리 없이, 그 집 아이 모두의 이력에 이 연락만 남기고 줄을 내립니다."
                           className={"ml-auto rounded-lg bg-indigo-600 font-bold text-white disabled:opacity-50 " + btn}
                         >
                           {checkedOf(r).map((c) => c.name).join("·")} {checkedOf(r).length === 2 ? "둘 다" : "모두"} 해당으로 확인
@@ -742,83 +792,109 @@ export default function PickupTriage({
                   <StudentPicker
                     students={students}
                     disabled={busy}
-                    label={r.student_id ? "학생 바꾸기" : "학생 연결"}
+                    // **「연결」과 「바꾸기」는 다른 말입니다.** 형제방은 이미 이어져 있고 아이만
+                    // 안 갈린 것이라, 「연결」이라고 적으면 아직 아무것도 안 된 줄로 읽힙니다.
+                    label={actorsOf(r).length > 0 ? "다른 학생으로" : "학생 연결"}
                     autoFocusQuery={(r.ai_student_name ?? "").replace(/\(.*$/, "").trim()}
                     onPick={(s) => confirm(r, s.id)}
                   />
-                  {r.student_id && (
-                    <>
-                      {/* **시각을 여기서 넣습니다.** 확정과 같은 줄에 두어야 「몇 시?」를
-                          떠올린 그 자리에서 적습니다 - 다른 화면으로 건너가게 하면 대개
-                          안 적고 넘어가고, 그 아이는 「미정」으로 남습니다. */}
-                      <input
-                        value={timeFor[r.id] ?? r.ai_pickup_time ?? ""}
-                        onChange={(e) => setTimeFor((v) => ({ ...v, [r.id]: e.target.value }))}
-                        placeholder="14:30"
-                        title="몇 시에 데리러 오는지. 비워두면 「미정」으로 뜹니다."
-                        className={
-                          "w-16 shrink-0 rounded-lg border text-center tabular-nums " +
-                          btn +
-                          " " +
-                          ((timeFor[r.id] ?? "").trim() !== "" && !isClockTime((timeFor[r.id] ?? "").trim())
-                            ? "border-rose-400 bg-rose-50"
-                            : "border-slate-300")
-                        }
-                      />
-                      <button
-                        onClick={() => confirm(r)}
-                        disabled={busy}
-                        className={"rounded-lg bg-blue-600 font-bold text-white disabled:opacity-50 " + btn}
-                      >
-                        <RowStudentName maps={whereMaps} studentId={r.student_id} name={r.matched_name} markClassName="!bg-white/25 !text-white" />{" "}
-                        픽업 확정
-                      </button>
-                      {/* **픽업만 고를 수 있으면 안 됩니다.** 토들에서 오는 연락은 결석·지각일
-                          수도 있는데, 이 화면에는 픽업이냐 아니냐밖에 없었습니다. AI가 결석으로
-                          읽어준 줄에는 위에 기간까지 붙은 단추가 따로 뜨고, 여기 둘은 **못 읽었을
-                          때도** 사람이 직접 고를 수 있게 둡니다. */}
-                      <button
-                        onClick={() => markAttendance(r, [r.service_date || todayKey(new Date())], "결석")}
-                        disabled={busy}
-                        className={"rounded-lg bg-rose-600 font-bold text-white disabled:opacity-50 " + btn}
-                        title="그날 결석으로 처리합니다. 셔틀 체크표와 출석부에 함께 남습니다."
-                      >
-                        결석
-                      </button>
-                      <button
-                        onClick={() => markAttendance(r, [r.service_date || todayKey(new Date())], "지각")}
-                        disabled={busy}
-                        className={"rounded-lg bg-amber-500 font-bold text-white disabled:opacity-50 " + btn}
-                        title="그날 지각으로 출석부에 남깁니다. 하원 셔틀은 그대로 탑니다."
-                      >
-                        지각
-                      </button>
-                      {/* **픽업·결석·지각 어디에도 안 들어가는 연락이 많습니다.**
-                          「약 좀 챙겨주세요」·「오늘 결제할게요」에 대해 이 화면이 할 수 있는
-                          일은 「픽업 아님」뿐이었고, 그러면 그 부탁은 아무 데도 안 남았습니다. */}
-                      {/* **픽업의 반대 갈래.** 하원수단이 셔틀이 아닌 아이에게 「오늘은
-                          셔틀로」가 오면, 픽업으로 찍힌 오늘 줄을 탑승으로 되돌려야 합니다. */}
-                      <button
-                        onClick={() => rideShuttle(r)}
-                        disabled={busy}
-                        className={"rounded-lg bg-lime-600 font-bold text-white disabled:opacity-50 " + btn}
-                        title="오늘만 셔틀을 타게 합니다. 하원수단(학원차 등)은 이번 주 오늘만 셔틀로 덮이고, 다음 주에는 원래대로 돌아갑니다."
-                      >
-                        🚌 오늘 셔틀
-                      </button>
-                      <button
-                        onClick={() => setNoteFor((v) => (v === r.id ? null : r.id))}
-                        disabled={busy}
-                        className={
-                          "rounded-lg font-bold disabled:opacity-50 " + btn + " " +
-                          (noteFor === r.id ? "bg-slate-800 text-white" : "bg-violet-600 text-white")
-                        }
-                        title="픽업이 아니라 약·결제·준비물 같은 부탁입니다. 학생 하루 보드에 남깁니다."
-                      >
-                        📌 특이사항
-                      </button>
-                    </>
-                  )}
+                  {/*
+                    ── 대상마다 한 줄 ──────────────────────────────────────────
+
+                    한 명이면 예전과 똑같이 한 줄입니다. 형제방에서 둘을 남겼으면 **아이마다
+                    한 줄**이 나옵니다 - 「선우는 일찍 픽업, 다현이는 셔틀인데 핸드폰을 두고
+                    왔다」처럼 한 글에 할 일이 둘인 연락이 실제로 옵니다. 단추가 하나뿐이면
+                    둘 중 하나는 처리할 수가 없고, 못 한 쪽은 아무 데도 안 남습니다.
+
+                    여럿일 때는 **줄을 내리지 않습니다**(`keepOpen`). 첫 아이를 걸면서 줄이
+                    사라지면 나머지를 걸 자리가 없어집니다. 다 걸고 나서 사람이 [처리 끝]을
+                    누릅니다.
+                  */}
+                  {actorsOf(r).map((who) => {
+                    const many = actorsOf(r).length > 1;
+                    const keyOf = `${r.id}|${who.id}`;
+                    return (
+                      <div key={who.id} className="flex w-full flex-wrap items-center gap-1.5">
+                        {many && (
+                          <span className="shrink-0 rounded bg-indigo-100 px-1.5 py-0.5 text-[11px] font-bold text-indigo-800">
+                            {who.name} ▸
+                          </span>
+                        )}
+                        {/* **시각을 여기서 넣습니다.** 확정과 같은 줄에 두어야 「몇 시?」를
+                            떠올린 그 자리에서 적습니다 - 다른 화면으로 건너가게 하면 대개
+                            안 적고 넘어가고, 그 아이는 「미정」으로 남습니다. */}
+                        <input
+                          value={timeFor[keyOf] ?? r.ai_pickup_time ?? ""}
+                          onChange={(e) => setTimeFor((v) => ({ ...v, [keyOf]: e.target.value }))}
+                          placeholder="14:30"
+                          title="몇 시에 데리러 오는지. 비워두면 「미정」으로 뜹니다."
+                          className={
+                            "w-16 shrink-0 rounded-lg border text-center tabular-nums " +
+                            btn +
+                            " " +
+                            ((timeFor[keyOf] ?? "").trim() !== "" && !isClockTime((timeFor[keyOf] ?? "").trim())
+                              ? "border-rose-400 bg-rose-50"
+                              : "border-slate-300")
+                          }
+                        />
+                        {/* **이름을 다시 적지 않습니다.** 줄 맨 위에 이미 누구인지 적혀 있어서,
+                            단추에까지 넣으면 좁은 칸에서 단추가 길어지기만 합니다. 아이가
+                            여럿일 때는 위 뱃지가 누구인지 말해 줍니다. */}
+                        <button
+                          onClick={() => confirm(r, who.id, many)}
+                          disabled={busy}
+                          className={"rounded-lg bg-blue-600 font-bold text-white disabled:opacity-50 " + btn}
+                          title={`${who.name} 을(를) 오늘 픽업으로 확정합니다.`}
+                        >
+                          픽업 확정
+                        </button>
+                        {/* **픽업만 고를 수 있으면 안 됩니다.** 토들에서 오는 연락은 결석·지각일
+                            수도 있는데, 이 화면에는 픽업이냐 아니냐밖에 없었습니다. */}
+                        <button
+                          onClick={() => markAttendance(r, [r.service_date || todayKey(new Date())], "결석", who, many)}
+                          disabled={busy}
+                          className={"rounded-lg bg-rose-600 font-bold text-white disabled:opacity-50 " + btn}
+                          title="그날 결석으로 처리합니다. 셔틀 체크표와 출석부에 함께 남습니다."
+                        >
+                          결석
+                        </button>
+                        <button
+                          onClick={() => markAttendance(r, [r.service_date || todayKey(new Date())], "지각", who, many)}
+                          disabled={busy}
+                          className={"rounded-lg bg-amber-500 font-bold text-white disabled:opacity-50 " + btn}
+                          title="그날 지각으로 출석부에 남깁니다. 하원 셔틀은 그대로 탑니다."
+                        >
+                          지각
+                        </button>
+                        {/* **픽업의 반대 갈래.** 하원수단이 셔틀이 아닌 아이에게 「오늘은
+                            셔틀로」가 오면, 픽업으로 찍힌 오늘 줄을 탑승으로 되돌려야 합니다. */}
+                        <button
+                          onClick={() => rideShuttle(r, who)}
+                          disabled={busy}
+                          className={"rounded-lg bg-lime-600 font-bold text-white disabled:opacity-50 " + btn}
+                          title="오늘만 셔틀을 타게 합니다. 하원수단(학원차 등)은 이번 주 오늘만 셔틀로 덮이고, 다음 주에는 원래대로 돌아갑니다."
+                        >
+                          🚌 오늘 셔틀
+                        </button>
+                        {/* **픽업·결석·지각 어디에도 안 들어가는 연락이 많습니다.**
+                            「약 좀 챙겨주세요」·「두고 간 물건 챙겨주세요」에 대해 이 화면이 할
+                            수 있는 일은 「픽업 아님」뿐이었고, 그러면 그 부탁은 아무 데도
+                            안 남았습니다. */}
+                        <button
+                          onClick={() => setNoteFor((v) => (v === keyOf ? null : keyOf))}
+                          disabled={busy}
+                          className={
+                            "rounded-lg font-bold disabled:opacity-50 " + btn + " " +
+                            (noteFor === keyOf ? "bg-slate-800 text-white" : "bg-violet-600 text-white")
+                          }
+                          title="픽업이 아니라 약·결제·준비물·물건 챙기기 같은 부탁입니다. 학생 하루 보드에 남깁니다."
+                        >
+                          📌 특이사항
+                        </button>
+                      </div>
+                    );
+                  })}
+
                   {/* **「픽업 아님」은 하는 일보다 좁게 말했습니다.** 이 단추는 픽업이
                       아니라고만 하는 것이 아니라 그 글을 **아무 일도 아닌 것으로 내립니다** -
                       인사·광고·잘못 온 글입니다. 이름이 좁으면 약·준비물 부탁까지 여기로
@@ -833,8 +909,34 @@ export default function PickupTriage({
                   </button>
                 </div>
 
-                {noteFor === r.id && r.student_id && (
-                  <NotesBox row={r} busy={busy} onCancel={() => setNoteFor(null)} onSave={(fs) => saveNotes(r, fs)} />
+                {actorsOf(r).map((who) =>
+                  noteFor === `${r.id}|${who.id}` ? (
+                    <NotesBox
+                      key={who.id}
+                      row={r}
+                      who={who}
+                      busy={busy}
+                      onCancel={() => setNoteFor(null)}
+                      onSave={(fs) => saveNotes(r, fs, who, actorsOf(r).length > 1)}
+                    />
+                  ) : null,
+                )}
+
+                {/* **여럿을 걸고 나면 줄을 사람이 내립니다.** 자동으로 내리면 아직 안 건 아이가
+                    남아 있는데도 목록에서 사라집니다. */}
+                {actorsOf(r).length > 1 && (
+                  <div className="mt-2 flex items-center gap-2 border-t border-dashed border-slate-200 pt-2">
+                    <span className="text-[11px] text-slate-500">
+                      아이마다 처리한 뒤 이 줄을 내립니다. 처리한 것은 이미 저장되어 있습니다.
+                    </span>
+                    <button
+                      onClick={() => confirmHouse(r, actorsOf(r).map((c) => c.name))}
+                      disabled={busy}
+                      className={"ml-auto rounded-lg bg-slate-800 font-bold text-white disabled:opacity-50 " + btn}
+                    >
+                      ✅ 처리 끝 — 줄 내리기
+                    </button>
+                  </div>
                 )}
               </div>
             ))}
@@ -853,11 +955,14 @@ export default function PickupTriage({
  */
 function NotesBox({
   row,
+  who,
   busy,
   onCancel,
   onSave,
 }: {
   row: PickupRow;
+  /** 누구 것으로 남기는가. 형제방이면 아이마다 칸이 따로 열립니다. */
+  who?: { id: string; name: string };
   busy: boolean;
   onCancel: () => void;
   onSave: (forms: { kind: NoteKind; atTime: string; content: string }[]) => void;
@@ -883,7 +988,7 @@ function NotesBox({
   return (
     <div className="mt-2 rounded-lg border border-violet-300 bg-violet-50 p-2.5">
       <p className="mb-1.5 text-[11px] font-bold text-violet-800">
-        📌 {row.service_date} · 특이사항으로 남기기
+        📌 {row.service_date} · {who ? `${who.name} ` : ""}특이사항으로 남기기
         <span className="ml-1 font-normal text-violet-500">
           {guessed.length > 1
             ? `— 한 글에 부탁이 ${guessed.length}가지로 읽혀 나눠 담았습니다. 맞는지 보고 고쳐주세요.`

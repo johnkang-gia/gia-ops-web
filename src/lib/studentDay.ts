@@ -32,7 +32,7 @@
  */
 
 /** 갈래. 화면의 색·아이콘이 여기서 나옵니다. */
-export type DayItemKind = "픽업" | "결석" | "지각" | "조퇴" | "약" | "결제" | "준비물" | "건강" | "문의" | "기타";
+export type DayItemKind = "픽업" | "결석" | "지각" | "조퇴" | "약" | "결제" | "준비물" | "물건" | "건강" | "문의" | "기타";
 
 export type DayItem = {
   id: string;
@@ -227,6 +227,8 @@ export const ITEM_LOOK: Record<DayItemKind, { icon: string; chip: string; dark: 
   약: { icon: "💊", chip: "bg-rose-100 text-rose-800 ring-1 ring-rose-300", dark: "#3f1d2b", darkText: "#fda4af" },
   결제: { icon: "💳", chip: "bg-emerald-100 text-emerald-800 ring-1 ring-emerald-300", dark: "#0f2f22", darkText: "#6ee7b7" },
   준비물: { icon: "🎒", chip: "bg-amber-100 text-amber-800 ring-1 ring-amber-300", dark: "#2f2206", darkText: "#fcd34d" },
+  // 두고 간 물건. 하원 전에 손에 들려야 끝나는 일이라 준비물과 색을 가릅니다.
+  물건: { icon: "📦", chip: "bg-orange-100 text-orange-900 ring-1 ring-orange-400", dark: "#3a1f06", darkText: "#fdba74" },
   건강: { icon: "🩹", chip: "bg-sky-100 text-sky-800 ring-1 ring-sky-300", dark: "#0c2740", darkText: "#7dd3fc" },
   문의: { icon: "💬", chip: "bg-violet-100 text-violet-800 ring-1 ring-violet-300", dark: "#241a3f", darkText: "#c4b5fd" },
   기타: { icon: "📌", chip: "bg-slate-100 text-slate-700 ring-1 ring-slate-300", dark: "#1e2a44", darkText: "#cbd5e1" },

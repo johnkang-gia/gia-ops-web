@@ -176,9 +176,40 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
 
   const pendingChoice: { assignmentId: string; studentName: string; group: string; routeId: string; stopAddress: string | null; label: string | null }[] = [];
 
+  /**
+   * **오늘 챙겨 보내야 하는 물건.**
+   *
+   * 「두고 온 잠바 2개·수학학원 파일·간식 가방을 챙겨갈 수 있게 해주세요」 같은 부탁은 아이가
+   * **차에 타기 전에** 손에 들려야 끝납니다. 그런데 그 부탁이 남는 곳은 행정실이 보는
+   * 특이사항 칸뿐이었고, 하원 시간에 담임과 차량 담당자가 보는 화면은 여기 하나입니다 -
+   * 여기 안 뜨면 그 물건은 그날 학교에 남습니다. 오류가 아니라 「그냥 안 챙긴 것」으로
+   * 보이므로 아무도 못 찾습니다.
+   *
+   * **「물건」 갈래만** 읽습니다. 약·결제까지 하원 화면에 쏟아지면 아무도 안 봅니다.
+   * 학생 번호로 붙입니다 - 이름으로 붙이면 김재이 셋이 서로의 물건을 받습니다(§2-4).
+   */
+  const objectNotes = new Map<string, { content: string; done: boolean }[]>();
+  if (studentIds.length > 0) {
+    const { data: noteRows, error: noteErr } = await supabase
+      .from("student_day_notes")
+      .select("student_id, content, done")
+      .eq("on_date", today)
+      .eq("kind", "물건")
+      .in("student_id", studentIds);
+    // 조용히 넘기지 않습니다(§5). 못 읽으면 물건이 통째로 안 뜨는데, 화면에는 「챙길 것
+    // 없음」으로 보입니다.
+    if (noteErr) console.error("[도착체크] 물건 특이사항을 읽지 못했습니다:", noteErr.message);
+    for (const n of ((noteRows as { student_id: string; content: string; done?: boolean | null }[] | null) ?? [])) {
+      (objectNotes.get(n.student_id) ?? objectNotes.set(n.student_id, []).get(n.student_id)!).push({
+        content: n.content,
+        done: !!n.done,
+      });
+    }
+  }
+
   // assignmentId를 함께 보냅니다. 현장에서 아이 이름을 눌러 픽업으로 바꾸려면, 어느 배정
   // 줄인지 알아야 합니다. 이름만으로는 동명이인을 가릴 수 없습니다.
-  const rosterByRoute: Record<string, { assignmentId: string; studentName: string; status: string; addedToday: boolean }[]> = {};
+  const rosterByRoute: Record<string, { assignmentId: string; studentName: string; status: string; addedToday: boolean; studentId: string | null; objects: { content: string; done: boolean }[] }[]> = {};
   for (const a of relevant) {
     const stop = stopById.get(a.stop_id);
     if (!stop) continue;
@@ -222,6 +253,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
       studentName: displayName(a),
       status: boarding?.status ?? "예정",
       addedToday: !(a.weekdays as number[] | null ?? []).includes(todayWeekday),
+      // 학생 번호를 함께 보냅니다. 물건을 챙겼다고 표시하려면 어느 아이인지가 번호로
+      // 정해져야 합니다 - 이름으로는 김재이 셋을 가를 수 없습니다.
+      studentId: (a.student_id as string | null) ?? null,
+      objects: a.student_id ? objectNotes.get(a.student_id as string) ?? [] : [],
     });
   }
 
@@ -316,6 +351,40 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       actor: { email: "", name: on ? "하원지도(현장 픽업)" : "하원지도(픽업 취소)" },
     });
     if (error) return NextResponse.json({ error }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
+
+  /**
+   * **물건을 챙겨 보냈다고 표시합니다.**
+   *
+   * 「두고 온 잠바·파일·간식 가방」은 적어두기만 하면 하원 화면에 하루 종일 같은 줄이
+   * 떠 있고, 그러면 챙긴 것과 안 챙긴 것이 구별되지 않습니다 - 며칠 지나면 그 줄 자체를
+   * 아무도 안 봅니다.
+   *
+   * 내용까지 함께 받아 **그 한 줄만** 내립니다. 학생 번호만으로 내리면 세 가지 중 하나만
+   * 챙겼는데 셋이 다 사라집니다.
+   */
+  if (action === "object-done") {
+    const studentId = body?.studentId as string | undefined;
+    const content = String((body?.content as string | undefined) ?? "").trim();
+    if (!studentId || !content) {
+      return NextResponse.json({ error: "어느 아이의 무엇인지가 필요합니다." }, { status: 400 });
+    }
+    const { error } = await supabase
+      .from("student_day_notes")
+      .update({
+        done: true,
+        done_at: new Date().toISOString(),
+        // 로그인이 없는 화면이라 사람 이름을 알 수 없습니다. **자리**라도 적어야 「현장에서
+        // 눌렀다」와 「사무실에서 눌렀다」가 구별됩니다.
+        done_by: "하원지도(도착체크)",
+      })
+      .eq("student_id", studentId)
+      .eq("on_date", today)
+      .eq("kind", "물건")
+      .eq("content", content)
+      .is("deleted_at", null);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json({ ok: true });
   }
 

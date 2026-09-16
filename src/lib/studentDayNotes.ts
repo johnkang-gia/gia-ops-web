@@ -6,7 +6,15 @@
  * 모니터를 멀리서 보는 사람은 색으로 먼저 읽습니다.
  */
 
-export const NOTE_KINDS = ["약", "결제", "준비물", "건강", "기타"] as const;
+/**
+ * 특이사항 갈래.
+ *
+ * **「물건」은 준비물과 다릅니다.** 준비물은 집에서 가져와야 하는 것이고, 물건은 **학교에
+ * 두고 간 것을 하원 전에 손에 들려 보내야** 하는 것입니다. 확인하는 사람도 다릅니다 -
+ * 준비물은 행정실, 물건은 담임과 하원 차량 담당자입니다. 섞어두면 하원 화면에 약·결제까지
+ * 쏟아지고, 그러면 아무도 안 봅니다.
+ */
+export const NOTE_KINDS = ["약", "결제", "준비물", "물건", "건강", "기타"] as const;
 export type NoteKind = (typeof NOTE_KINDS)[number];
 
 export type DayNote = {
@@ -32,6 +40,7 @@ export const KIND_LOOK: Record<NoteKind, { icon: string; /** 밝은 화면(업�
   약: { icon: "💊", chip: "bg-rose-100 text-rose-800 ring-1 ring-rose-300", dark: "#3f1d2b", darkText: "#fda4af" },
   결제: { icon: "💳", chip: "bg-emerald-100 text-emerald-800 ring-1 ring-emerald-300", dark: "#0f2f22", darkText: "#6ee7b7" },
   준비물: { icon: "🎒", chip: "bg-amber-100 text-amber-800 ring-1 ring-amber-300", dark: "#2f2206", darkText: "#fcd34d" },
+  물건: { icon: "📦", chip: "bg-orange-100 text-orange-900 ring-1 ring-orange-400", dark: "#3a1f06", darkText: "#fdba74" },
   건강: { icon: "🩹", chip: "bg-sky-100 text-sky-800 ring-1 ring-sky-300", dark: "#0c2740", darkText: "#7dd3fc" },
   기타: { icon: "📌", chip: "bg-slate-100 text-slate-700 ring-1 ring-slate-300", dark: "#1e2a44", darkText: "#cbd5e1" },
 };
@@ -105,6 +114,17 @@ function guessKind(text: string): NoteKind {
   const t = text.toLowerCase();
   if (/(약|투약|해열제|시럽|알약|물약|먹여|먹이|medicine|medication)/.test(t)) return "약";
   if (/(결제|납부|입금|송금|계좌|카드로|현금|수납|학비|payment|pay\b)/.test(t)) return "결제";
+  /**
+   * **두고 간 물건이 준비물보다 먼저입니다.**
+   *
+   * 「학교에 두고 온 것들을 챙겨 보내주세요 — 잠바, 파일, 간식 가방」은 하원 전에 아이 손에
+   * 들려야 하는 일이고, 확인하는 사람은 담임과 하원 차량 담당자입니다. 준비물로 들어가면
+   * 행정실 칸에만 남아 하원 화면에는 안 뜨고, 그러면 그 물건은 학교에 남습니다.
+   *
+   * 「가져」·「챙겨」는 두 갈래에 다 나오므로, **두고 간 것**을 가리키는 말이 함께 있을
+   * 때만 물건으로 봅니다.
+   */
+  if (/(두고\s*(온|간|왔)|놓고\s*(온|간|왔)|잃어버|분실|맡겨\s*둔|left\s+(at|behind)|lost)/.test(t)) return "물건";
   if (/(준비물|교재|책|체육복|도시락|가져|챙겨\s*보|제출|숙제|bring)/.test(t)) return "준비물";
   if (/(열이|열나|아파|아프|감기|기침|콧물|배탈|병원|진료|알레르기|다쳐|다쳤|컨디션|fever|sick)/.test(t)) return "건강";
   return "기타";

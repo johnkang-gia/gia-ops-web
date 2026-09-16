@@ -97,6 +97,18 @@ export async function POST(req: Request) {
     if (!id) return NextResponse.json({ error: "id가 필요합니다." }, { status: 400 });
 
     /**
+     * **줄을 닫지 않고 처리만 합니다** — 형제방에서 아이마다 다른 일을 걸 때.
+     *
+     * 「선우는 일찍 픽업하고, 다현이는 셔틀인데 핸드폰을 두고 왔으니 찾아주세요」는 한 글에
+     * 할 일이 둘입니다. 첫 번째를 걸면서 줄을 닫아버리면 두 번째를 걸 자리가 사라집니다 -
+     * 목록에서 없어지고, 사람은 다 처리한 줄 압니다.
+     *
+     * 그래서 이 표시가 있으면 픽업은 걸되 `status`·`student_id` 는 그대로 둡니다. 줄을
+     * 내리는 것은 사람이 마지막에 [처리 끝]을 누를 때입니다.
+     */
+    const keepOpen = body?.keepOpen === true;
+
+    /**
      * **몇 시에 데리러 오는가.** 화면에서 고쳐 보낼 수 있습니다.
      *
      * 「하교시간보다 10분 늦어 2시 30분에 도착」 같은 글은 AI가 시각을 못 뽑거나 엉뚱하게
@@ -122,7 +134,9 @@ export async function POST(req: Request) {
     const { data: student } = await supabase.from("wr_students").select("name").eq("is_demo", false).eq("id", finalStudentId).maybeSingle();
     if (student) matchedName = student.name as string;
 
-    const { error } = await supabase
+    const { error } = keepOpen
+      ? { error: null }
+      : await supabase
       .from("pickup_requests")
       .update({
         student_id: finalStudentId,
@@ -356,16 +370,33 @@ export async function POST(req: Request) {
     const onDate = ((body?.onDate as string | undefined) ?? "").trim() || ((row.service_date as string | null) ?? "");
     if (!/^\d{4}-\d{2}-\d{2}$/.test(onDate)) return NextResponse.json({ error: "날짜 모양이 올바르지 않습니다." }, { status: 400 });
 
+    /**
+     * **줄을 닫지 않고 특이사항만 남깁니다** — 형제방에서 아이마다 다른 일을 걸 때.
+     *
+     * 한 글에 「선우 일찍 픽업」과 「다현이 핸드폰 찾기」가 함께 오면, 앞엣것을 걸면서 줄을
+     * 내리면 뒤엣것을 걸 자리가 사라집니다. 이 표시가 있으면 특이사항만 넣고 줄은 그대로
+     * 둡니다 - 내리는 것은 사람이 [처리 끝]을 누를 때입니다.
+     *
+     * 되돌리기(`undoPickupTraces`)도 하지 않습니다. 같은 줄에 방금 건 픽업을 그 되돌리기가
+     * 다시 내려버립니다.
+     */
+    const keepOpen = body?.keepOpen === true;
+
     const before = (row.status as string | null) ?? "확인대기";
-    const { error: stErr } = await supabase
-      .from("pickup_requests")
-      .update({ student_id: studentId, status: "무시", resolved_by: me.email, resolved_at: new Date().toISOString() })
-      .eq("id", id);
-    if (stErr) return NextResponse.json({ error: stErr.message }, { status: 500 });
+    if (!keepOpen) {
+      const { error: stErr } = await supabase
+        .from("pickup_requests")
+        .update({ student_id: studentId, status: "무시", resolved_by: me.email, resolved_at: new Date().toISOString() })
+        .eq("id", id);
+      if (stErr) return NextResponse.json({ error: stErr.message }, { status: 500 });
+    }
 
     // 픽업이 아니었다고 알려줍니다. 이 정정이 쌓여야 다음부터 같은 집 연락을 덜 잘못 읽습니다.
-    await bumpPickupFeedback(supabase, id, false);
-    const undo = await undoPickupTraces(supabase, id, { email: me.email, name: me.name ?? null });
+    let undo: Awaited<ReturnType<typeof undoPickupTraces>> | null = null;
+    if (!keepOpen) {
+      await bumpPickupFeedback(supabase, id, false);
+      undo = await undoPickupTraces(supabase, id, { email: me.email, name: me.name ?? null });
+    }
 
     // **전부 들어가거나 아무것도 안 들어갑니다.** 한 번에 넣어야 둘 중 하나만 남는 상태가
     // 생기지 않습니다 - 절반만 들어간 것을 「완료」로 보여주면 빠진 쪽은 아무도 안 찾습니다.
@@ -404,7 +435,8 @@ export async function POST(req: Request) {
       noteCount: inserted.length,
       name: (student as { name: string }).name,
       undo,
-      undoNote: undoSummary(undo),
+      // 줄을 열어둔 채 넣은 것은 되돌린 것이 없으므로 적을 말도 없습니다.
+      undoNote: undo ? undoSummary(undo) : null,
     });
   }
 

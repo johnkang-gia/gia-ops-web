@@ -107,3 +107,44 @@ export function discountUsable(
   if (d.effective_to && today > d.effective_to) return false;
   return true;
 }
+
+/**
+ * **이 학생의 이 항목에 걸리는 할인** — 한 곳에서만 고릅니다.
+ *
+ * 할인은 항목마다 다릅니다. 정규과정에는 목사 자제·형제자매·유치부 졸업이 붙고, 방과후에는
+ * 5개월납·10개월납이 붙습니다. 두 목록이 섞이면 방과후 금액에서 형제 할인이 또 빠지는데,
+ * 화면에는 오류가 아니라 **그냥 깎인 금액**으로 보입니다.
+ *
+ * 세 화면(청구 표·청구서 발행·인쇄본)이 이 함수를 같이 씁니다. 각자 거르면 언젠가 한 곳이
+ * 다른 금액을 내고, 돈에서 그건 「청구서 금액이 왜 다르죠」가 됩니다.
+ *
+ * 걸러내는 기준은 둘입니다.
+ *
+ * | 무엇 | 뜻 |
+ * |---|---|
+ * | 붙인 줄의 `plan_id` | 이 학생에게 **어느 항목에** 붙였는가. 비었으면 학비 전체(예전 줄) |
+ * | 할인 규칙의 `plan_id` | 이 할인이 **원래 어느 항목 것인가**. 비었으면 아무 항목에나 |
+ *
+ * 둘 다 맞아야 겁니다. 규칙이 정규과정 전용인데 방과후에 붙어 있으면 그건 잘못 붙은
+ * 것이고, 잘못 붙은 채로 깎으면 아무도 못 찾습니다.
+ */
+export function discountsForPlan<D extends { id: string; plan_id: string | null }>(
+  rows: { discount_id: string; term_id: string | null; plan_id: string | null }[],
+  discounts: D[],
+  planId: string,
+  termId: string | null,
+): D[] {
+  const out: D[] = [];
+  for (const r of rows) {
+    // 학기가 없는 줄은 「학기를 안 가린다」는 뜻입니다 - 예전 줄이 그렇습니다.
+    if (r.term_id && termId && r.term_id !== termId) continue;
+    if (r.plan_id && r.plan_id !== planId) continue;
+    const d = discounts.find((x) => x.id === r.discount_id);
+    if (!d) continue;
+    if (d.plan_id && d.plan_id !== planId) continue;
+    // 같은 할인이 두 줄로 들어와 있으면 한 번만 겁니다. 두 번 깎이면 금액이 조용히 틀립니다.
+    if (out.some((x) => x.id === d.id)) continue;
+    out.push(d);
+  }
+  return out;
+}

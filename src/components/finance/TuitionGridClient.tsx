@@ -10,7 +10,7 @@ import { useToast } from "@/components/common/ToastProvider";
 import { won } from "@/lib/feeItems";
 import { departmentOf, gradeSortKey, type Department } from "@/lib/department";
 import { addDays, DUE_DAYS } from "@/lib/financePeriod";
-import { tuitionLine, tuitionTotal, discountUsable, type TuitionLine } from "@/lib/tuition";
+import { discountsForPlan, tuitionLine, tuitionTotal, discountUsable, type TuitionLine } from "@/lib/tuition";
 import TermPicker, { initialTermId } from "./TermPicker";
 import InvoicePreviewModal from "./InvoicePreviewModal";
 import CancelInvoiceModal from "./CancelInvoiceModal";
@@ -53,6 +53,14 @@ export type StudentDiscountRow = {
   student_id: string;
   discount_id: string;
   term_id: string | null;
+  /**
+   * **어느 항목에 붙인 할인인가.** 비어 있으면 그 학생의 학비 전체입니다(예전 줄).
+   *
+   * 할인은 항목마다 다릅니다 - 정규과정에는 목사 자제·형제자매·유치부 졸업이, 방과후에는
+   * 5개월납·10개월납이 붙습니다. 이 칸이 없을 때는 형제 할인을 붙이면 방과후에서도 10%가
+   * 빠졌는데, 화면에는 오류가 아니라 그냥 깎인 금액으로 보입니다.
+   */
+  plan_id: string | null;
   reason: string | null;
 };
 
@@ -111,7 +119,11 @@ export default function TuitionGridClient({
   // 학부모가 문자를 받는 순간 이미 마감일입니다 - 다음 날이면 전부 연체로 넘어가고, 그러면
   // 연체 표시가 온통 빨개져서 정작 진짜 밀린 건이 묻힙니다.
   const [dueDate, setDueDate] = useState(() => addDays(today, DUE_DAYS));
-  const [discountFor, setDiscountFor] = useState<TuitionStudent | null>(null);
+  /**
+   * 지금 열려 있는 칸. **한 번에 하나만** 엽니다 - 여럿 열리면 어느 아이의 어느 항목을
+   * 고치는 중인지 헷갈리고, 돈에서 그건 엉뚱한 아이가 깎이는 일이 됩니다.
+   */
+  const [cellFor, setCellFor] = useState<{ studentId: string; planId: string } | null>(null);
   const [preview, setPreview] = useState<{ id: string; label: string } | null>(null);
   /**
    * 발행 취소하려는 청구서.
@@ -231,25 +243,46 @@ export default function TuitionGridClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enrollments, termId]);
 
-  const discountsOf = useMemo(() => {
-    const m = new Map<string, FeeDiscount[]>();
-    for (const sd of sdRows) {
-      if (!sameTerm(sd)) continue;
-      const d = discounts.find((x) => x.id === sd.discount_id);
-      if (!d) continue;
-      (m.get(sd.student_id) ?? m.set(sd.student_id, []).get(sd.student_id)!).push(d);
-    }
+  /** 학생별로 붙어 있는 할인 **줄**. 어느 항목에 거는지는 `discountsForPlan` 이 정합니다. */
+  const sdOf = useMemo(() => {
+    const m = new Map<string, StudentDiscountRow[]>();
+    for (const sd of sdRows) (m.get(sd.student_id) ?? m.set(sd.student_id, []).get(sd.student_id)!).push(sd);
     return m;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sdRows, discounts, termId]);
+  }, [sdRows]);
+
+  /** 이 학생의 이 항목에 걸리는 할인. 서버(청구서 발행)와 **같은 함수**를 씁니다. */
+  const discountsFor = useCallback(
+    (studentId: string, planId: string) => discountsForPlan(sdOf.get(studentId) ?? [], discounts, planId, termId || null),
+    [sdOf, discounts, termId],
+  );
 
   /** 한 학생의 한 항목 줄. 화면과 서버가 **같은 함수**를 씁니다. */
   function lineFor(studentId: string, plan: FeePlan): TuitionLine | null {
     const e = enrollOf.get(`${studentId}|${plan.id}`);
     const option = options.find((o) => o.id === e?.option_id) ?? null;
-    const ds = (discountsOf.get(studentId) ?? []).filter((d) => !d.plan_id || d.plan_id === plan.id);
-    return tuitionLine(plan, option, ds);
+    return tuitionLine(plan, option, discountsFor(studentId, plan.id));
   }
+  /**
+   * **비고 한 줄** — 「정규과정: 1년 납부 −10% · 목사자제 −10%」.
+   *
+   * 학부모가 묻는 것은 「얼마가 왜 깎였나」입니다. 할인 이름만 모아 두면 어느 항목에서
+   * 깎였는지 알 수 없고, 그러면 답하려고 계산기를 다시 두드리게 됩니다. 옵션 할인(한 번에
+   * 내서 깎이는 기본 할인)도 함께 적습니다 - 그것도 학부모에게는 할인입니다.
+   */
+  function remarkOf(studentId: string): { planId: string; planName: string; text: string }[] {
+    const out: { planId: string; planName: string; text: string }[] = [];
+    for (const p of usedPlans) {
+      const line = lineFor(studentId, p);
+      if (!line) continue;
+      const bits: string[] = [];
+      if (line.optionDiscount > 0) bits.push(`${line.optionName} −${won(line.optionDiscount)}`);
+      for (const d of line.discounts) bits.push(`${d.name} −${won(d.amount)}`);
+      if (bits.length === 0) continue;
+      out.push({ planId: p.id, planName: p.name, text: bits.join(" · ") });
+    }
+    return out;
+  }
+
   function totalOf(studentId: string): number {
     return tuitionTotal(usedPlans.map((p) => lineFor(studentId, p)));
   }
@@ -361,6 +394,49 @@ export default function TuitionGridClient({
     setBusy(false);
     if (error || !data) return notify("넣지 못했습니다: " + (error?.message ?? ""), "error");
     setEnrollments((p) => [...p, data as EnrollRow]);
+  }
+
+  /**
+   * **이 학생의 이 항목에 할인을 붙이고 뗍니다.**
+   *
+   * 붙일 때 `plan_id` 를 함께 적습니다. 안 적으면 그 학생의 학비 전체에 걸려서, 정규과정
+   * 형제 할인이 방과후·셔틀 금액에서도 빠집니다 - 화면에는 오류가 아니라 깎인 금액으로만
+   * 보입니다.
+   */
+  async function toggleDiscount(student: TuitionStudent, plan: FeePlan, d: FeeDiscount, next: boolean) {
+    setBusy(true);
+    const sb = createClient();
+
+    if (!next) {
+      const row = (sdOf.get(student.id) ?? []).find(
+        (r) => r.discount_id === d.id && (r.plan_id ?? null) === plan.id && (!r.term_id || !termId || r.term_id === termId),
+      );
+      if (!row) return setBusy(false);
+      const { error } = await sb.from("student_fee_discounts").delete().eq("id", row.id);
+      setBusy(false);
+      if (error) return notify("떼지 못했습니다: " + error.message, "error");
+      setSdRows((p) => p.filter((x) => x.id !== row.id));
+      return;
+    }
+
+    const { data, error } = await sb
+      .from("student_fee_discounts")
+      .insert({ student_id: student.id, discount_id: d.id, plan_id: plan.id, term_id: termId || null })
+      .select("id, student_id, discount_id, term_id, plan_id, reason")
+      .single();
+    setBusy(false);
+    // 조용히 넘기지 않습니다 - 안 붙은 줄 모르고 청구서를 내보내면 금액이 말한 것과 다릅니다.
+    if (error || !data) return notify("붙이지 못했습니다: " + (error?.message ?? ""), "error");
+    setSdRows((p) => [...p, data as StudentDiscountRow]);
+  }
+
+  /** 항목을 안 정하고 붙어 있던 예전 줄을 뗍니다. */
+  async function detachLoose(row: StudentDiscountRow) {
+    setBusy(true);
+    const { error } = await createClient().from("student_fee_discounts").delete().eq("id", row.id);
+    setBusy(false);
+    if (error) return notify("떼지 못했습니다: " + error.message, "error");
+    setSdRows((p) => p.filter((x) => x.id !== row.id));
   }
 
   /** 보이는 명단 전원에게 한 옵션을 한 번에. 정규과정처럼 대부분이 같은 것을 고르는 항목에 씁니다. */
@@ -694,8 +770,8 @@ export default function TuitionGridClient({
                   </select>
                 </th>
               ))}
-              <th className="min-w-[150px] border-b border-l border-slate-200 bg-white px-2 py-1.5 font-semibold text-slate-600">
-                할인
+              <th className="min-w-[190px] border-b border-l border-slate-200 bg-white px-2 py-1.5 font-semibold text-slate-600">
+                비고 <span className="font-normal text-slate-400">(받는 할인)</span>
               </th>
               <th className="min-w-[104px] border-b border-l border-slate-200 bg-white px-2 py-1.5 text-right font-semibold text-slate-600">
                 청구액
@@ -714,7 +790,9 @@ export default function TuitionGridClient({
             {rows.map((s) => {
               const on = checked.has(s.id);
               const total = totalOf(s.id);
-              const ds = discountsOf.get(s.id) ?? [];
+              const noteRows = remarkOf(s.id);
+              /** 항목을 안 정하고 붙어 있는 줄(예전 줄). 비고에 「학비 전체」로 적습니다. */
+              const loose = (sdOf.get(s.id) ?? []).filter((r) => !r.plan_id && (!r.term_id || !termId || r.term_id === termId));
               const inv = invoiceOf.get(s.id);
               return (
                 <tr key={s.id} className={on ? "bg-teal-50/40" : "hover:bg-slate-50/60"}>
@@ -740,60 +818,98 @@ export default function TuitionGridClient({
                   </td>
 
                   {usedPlans.map((p) => {
-                    const e = enrollOf.get(`${s.id}|${p.id}`);
                     const line = lineFor(s.id, p);
+                    const ds = discountsFor(s.id, p.id);
+                    const open = cellFor?.studentId === s.id && cellFor.planId === p.id;
                     return (
-                      <td key={p.id} className={"border-b border-r border-slate-100 px-1.5 py-1 " + (line ? "bg-teal-50/50" : "")}>
-                        <select
-                          value={e?.option_id ?? ""}
+                      <td key={p.id} className={"relative border-b border-r border-slate-100 px-1.5 py-1 " + (line ? "bg-teal-50/50" : "")}>
+                        {/* **칸을 누르면 그 자리에서 정합니다.** 납부 옵션(분기납·1년납)이 먼저이고,
+                            그 아래에 이 항목에만 붙는 할인이 옵니다 - 옵션은 계약이고 할인은
+                            그 위에 얹는 것이라, 순서가 곧 계산 순서입니다. */}
+                        <button
+                          type="button"
                           disabled={busy}
-                          onChange={(ev) => void pickOption(s, p, ev.target.value)}
-                          className="w-full rounded border border-slate-200 px-1 py-0.5 text-[11px]"
+                          onClick={() => setCellFor(open ? null : { studentId: s.id, planId: p.id })}
+                          className={
+                            "w-full rounded border px-1 py-0.5 text-left text-[11px] transition " +
+                            (open ? "border-teal-500 bg-white ring-2 ring-teal-200" : "border-slate-200 hover:bg-white")
+                          }
+                          title="납부 옵션과 이 항목 할인을 정합니다"
                         >
-                          <option value="">— 신청 안 함</option>
-                          {(optionsOf.get(p.id) ?? []).map((o) => (
-                            <option key={o.id} value={o.id}>
-                              {o.name}
-                              {Number(o.discount_rate) > 0 ? ` (−${Math.round(Number(o.discount_rate) * 100)}%)` : ""}
-                            </option>
-                          ))}
-                        </select>
-                        {/* 고른 옵션의 금액을 그 자리에 보여줍니다. 다른 화면에서 확인해야 하면
-                            결국 확인하지 않고 발행합니다. */}
-                        {line ? (
-                          <span className="mt-0.5 block text-right text-[11px] font-bold tabular-nums text-teal-800" title={`기준 ${won(line.base)} − 옵션할인 ${won(line.optionDiscount)}`}>
-                            {won(line.amount)}
+                          <span className={line ? "font-semibold text-slate-700" : "text-slate-400"}>
+                            {line ? line.optionName : "— 신청 안 함"}
                           </span>
-                        ) : (
-                          <span className="mt-0.5 block text-right text-[11px] text-slate-300">—</span>
+                          {ds.length > 0 && (
+                            <span className="ml-1 rounded bg-violet-100 px-1 text-[10px] font-bold text-violet-800">
+                              할인 {ds.length}
+                            </span>
+                          )}
+                          <span className="mt-0.5 block text-right font-bold tabular-nums text-teal-800">
+                            {line ? won(line.amount) : "—"}
+                          </span>
+                        </button>
+
+                        {open && (
+                          <CellEditor
+                            student={s}
+                            plan={p}
+                            optionId={enrollOf.get(`${s.id}|${p.id}`)?.option_id ?? ""}
+                            options={optionsOf.get(p.id) ?? []}
+                            usableDiscounts={discounts.filter(
+                              (d) =>
+                                (!d.category || d.category === "학비") &&
+                                (!d.plan_id || d.plan_id === p.id) &&
+                                (discountUsable(d, today) || ds.some((x) => x.id === d.id)),
+                            )}
+                            attached={ds}
+                            line={line}
+                            busy={busy}
+                            onPickOption={(id) => void pickOption(s, p, id)}
+                            onToggleDiscount={(d, next) => void toggleDiscount(s, p, d, next)}
+                            onClose={() => setCellFor(null)}
+                          />
                         )}
                       </td>
                     );
                   })}
 
-                  <td className="border-b border-l border-slate-200 px-2 py-1">
-                    <span className="flex flex-wrap items-center gap-1">
-                      {ds.length === 0 ? (
-                        <span className="text-[11px] text-slate-300">없음</span>
+                  {/* **비고 — 이 아이가 무엇을 얼마나 깎이는가.**
+
+                      예전에는 이 자리에 할인 이름만 나란히 떴습니다. 할인이 항목마다 다른데
+                      한 줄로 모아두니 「정규과정에서 깎인 건지 방과후에서 깎인 건지」를 알 수
+                      없었고, 그건 학부모가 묻는 바로 그 물음입니다. 이제 항목별로 적습니다. */}
+                  <td className="border-b border-l border-slate-200 px-2 py-1 align-top">
+                    <div className="flex flex-col gap-0.5">
+                      {noteRows.length === 0 && loose.length === 0 ? (
+                        <span className="text-[11px] text-slate-300">기본 납부</span>
                       ) : (
-                        ds.map((d) => (
-                          <span
-                            key={d.id}
-                            className="rounded bg-violet-100 px-1 text-[10px] font-bold text-violet-800"
-                            title={d.kind === "percent" ? `${Math.round(Number(d.value) * 100)}% 할인` : `${won(Number(d.value))} 할인`}
-                          >
-                            {d.name}
+                        noteRows.map((n) => (
+                          <span key={n.planId} className="text-[11px] leading-snug">
+                            <b className="text-slate-600">{n.planName}</b>{" "}
+                            <span className="text-slate-500">{n.text}</span>
                           </span>
                         ))
                       )}
-                      <button
-                        onClick={() => setDiscountFor(s)}
-                        className="rounded bg-slate-100 px-1 text-[10px] font-bold text-slate-500 hover:bg-slate-200"
-                        title="이 학생에게 할인을 붙이거나 뗍니다"
-                      >
-                        ＋
-                      </button>
-                    </span>
+                      {/* 항목을 안 정하고 붙어 있던 예전 줄. 「학비 전체」라고 적고, 여기서 뗍니다 -
+                          어디서 푸는지 모르면 아무도 안 풉니다. */}
+                      {loose.map((r) => {
+                        const d = discounts.find((x) => x.id === r.discount_id);
+                        return (
+                          <span key={r.id} className="flex items-center gap-1 text-[11px] text-violet-800">
+                            <span className="rounded bg-violet-100 px-1 font-bold">학비 전체</span>
+                            {d?.name ?? "지워진 할인"}
+                            <button
+                              onClick={() => void detachLoose(r)}
+                              disabled={busy}
+                              className="rounded bg-slate-100 px-1 text-[10px] font-bold text-slate-500 hover:bg-rose-100 hover:text-rose-700"
+                              title="이 할인을 뗍니다"
+                            >
+                              ✕
+                            </button>
+                          </span>
+                        );
+                      })}
+                    </div>
                   </td>
 
                   <td className="border-b border-l border-slate-200 px-2 py-1 text-right">
@@ -906,19 +1022,6 @@ export default function TuitionGridClient({
         </table>
       </DragScroll>
 
-      {discountFor && (
-        <DiscountModal
-          student={discountFor}
-          discounts={discounts}
-          termId={termId || null}
-          today={today}
-          mine={sdRows.filter((r) => r.student_id === discountFor.id && sameTerm(r))}
-          onClose={() => setDiscountFor(null)}
-          onChanged={(next) => setSdRows(next)}
-          allRows={sdRows}
-        />
-      )}
-
       {preview && <InvoicePreviewModal invoiceId={preview.id} label={preview.label} onClose={() => setPreview(null)} />}
 
       {/* 학비외 청구 화면과 **같은 창**입니다. 화면마다 따로 만들면 한쪽에만 경고가 붙습니다. */}
@@ -955,145 +1058,159 @@ export default function TuitionGridClient({
   );
 }
 
+
 /**
- * 한 학생에게 할인을 붙이고 뗍니다.
+ * **칸 하나를 정하는 자리** — 납부 옵션이 먼저, 그 항목 할인이 그다음.
  *
- * **이유를 반드시 받습니다.** 몇 달 뒤 「이 아이는 왜 깎였지」를 답할 수 있어야 하고, 그때
- * 남아 있는 것은 기억이 아니라 이 칸입니다.
+ * ── 왜 칸 안에서 정하나 ────────────────────────────────────────────────────
+ *
+ * 예전에는 옵션은 칸의 고르개로, 할인은 줄 끝의 팝업으로 정했습니다. 그래서 「이 아이
+ * 정규과정이 왜 이 금액이지」를 보려면 두 자리를 오가야 했고, 할인은 **어느 항목에 붙는지
+ * 고를 수조차 없었습니다** - 붙이면 그 학생의 모든 항목에서 빠졌습니다.
+ *
+ * 이제 한 칸에서 정합니다. 위에 옵션(분기납·1년납 — 한 번에 내서 깎이는 기본 할인),
+ * 아래에 이 항목에만 붙는 할인(목사 자제·형제자매 …). **순서가 곧 계산 순서**입니다:
+ * 기준액 → 옵션 할인 → 소계 → 붙인 할인 → 청구액.
+ *
+ * 금액을 줄마다 적어 보여줍니다. 고르기 전에 얼마가 되는지 모르면, 고르고 나서 표를 보고
+ * 다시 고치게 됩니다.
  */
-function DiscountModal({
+function CellEditor({
   student,
-  discounts,
-  termId,
-  today,
-  mine,
-  allRows,
+  plan,
+  optionId,
+  options,
+  usableDiscounts,
+  attached,
+  line,
+  busy,
+  onPickOption,
+  onToggleDiscount,
   onClose,
-  onChanged,
 }: {
   student: TuitionStudent;
-  discounts: FeeDiscount[];
-  termId: string | null;
-  today: string;
-  mine: StudentDiscountRow[];
-  allRows: StudentDiscountRow[];
+  plan: FeePlan;
+  optionId: string;
+  options: FeePaymentOption[];
+  /** 이 항목에 붙일 수 있는 할인만. 다른 항목 전용 할인이 여기 뜨면 잘못 붙습니다. */
+  usableDiscounts: FeeDiscount[];
+  attached: FeeDiscount[];
+  line: TuitionLine | null;
+  busy: boolean;
+  onPickOption: (optionId: string) => void;
+  onToggleDiscount: (d: FeeDiscount, next: boolean) => void;
   onClose: () => void;
-  onChanged: (next: StudentDiscountRow[]) => void;
 }) {
-  const notify = useToast();
-  const [busy, setBusy] = useState(false);
-  const [pick, setPick] = useState("");
-  const [reason, setReason] = useState("");
-
-  const attached = new Set(mine.map((r) => r.discount_id));
-  // 학비에 걸리는 할인만. 학비외 전용 할인이 여기 뜨면 잘못 붙습니다.
-  const usable = discounts.filter((d) => (!d.category || d.category === "학비") && discountUsable(d, today));
-
-  async function attach() {
-    if (!pick) return notify("붙일 할인을 골라주세요.", "error");
-    if (!reason.trim()) return notify("왜 붙이는지 적어주세요. 나중에 이 칸만 남습니다.", "error");
-    setBusy(true);
-    const { data, error } = await createClient()
-      .from("student_fee_discounts")
-      .insert({ student_id: student.id, discount_id: pick, term_id: termId, reason: reason.trim() })
-      .select("id, student_id, discount_id, term_id, reason")
-      .single();
-    setBusy(false);
-    if (error || !data) return notify("붙이지 못했습니다: " + (error?.message ?? ""), "error");
-    onChanged([...allRows, data as StudentDiscountRow]);
-    setPick("");
-    setReason("");
-  }
-
-  async function detach(row: StudentDiscountRow) {
-    setBusy(true);
-    const { error } = await createClient().from("student_fee_discounts").delete().eq("id", row.id);
-    setBusy(false);
-    if (error) return notify("떼지 못했습니다: " + error.message, "error");
-    onChanged(allRows.filter((r) => r.id !== row.id));
-  }
+  const on = new Set(attached.map((d) => d.id));
 
   return (
-    <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 p-4" onClick={() => !busy && onClose()}>
-      <div className="w-full max-w-md rounded-xl bg-white p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <p className="text-sm font-bold text-slate-800">
-          {student.name} 할인
-          <span className="ml-1 text-[11px] font-normal text-slate-400">
-            {[student.grade, student.className].filter(Boolean).join(" ")}
-          </span>
+    <>
+      {/* 바깥을 누르면 닫힙니다. 닫는 X 만 있으면 표를 이어 보려다 매번 그 작은 글자를 찾습니다. */}
+      <div className="fixed inset-0 z-30" onClick={onClose} />
+      <div className="absolute left-0 top-full z-40 mt-1 w-[290px] rounded-xl border border-slate-300 bg-white p-2.5 text-left shadow-xl">
+        <p className="mb-1.5 text-[11px] font-bold text-slate-700">
+          {student.name} · {plan.name}
+          <span className="ml-1 font-normal text-slate-400">기준 {won(Number(plan.base_amount))}/{plan.unit}</span>
         </p>
 
-        <ul className="mt-2 flex flex-col gap-1">
-          {mine.length === 0 ? (
-            <li className="rounded-lg bg-slate-50 px-2 py-2 text-center text-[12px] text-slate-400">붙은 할인이 없습니다.</li>
-          ) : (
-            mine.map((r) => {
-              const d = discounts.find((x) => x.id === r.discount_id);
-              return (
-                <li key={r.id} className="flex items-center gap-2 rounded-lg bg-violet-50 px-2 py-1.5">
-                  <b className="text-[12px] text-violet-900">{d?.name ?? "지워진 할인"}</b>
-                  <span className="text-[11px] text-violet-700">
-                    {d ? (d.kind === "percent" ? `${Math.round(Number(d.value) * 100)}%` : won(Number(d.value))) : ""}
+        <p className="mb-1 text-[10px] font-bold text-slate-500">① 납부 옵션 — 한 번에 낼수록 깎입니다</p>
+        <div className="mb-2 flex flex-col gap-0.5">
+          <label className="flex cursor-pointer items-center gap-1.5 rounded px-1 py-0.5 hover:bg-slate-50">
+            <input type="radio" checked={!optionId} disabled={busy} onChange={() => onPickOption("")} />
+            <span className="text-[11px] text-slate-400">신청 안 함</span>
+          </label>
+          {options.map((o) => {
+            const l = tuitionLine(plan, o, attached);
+            return (
+              <label key={o.id} className="flex cursor-pointer items-center gap-1.5 rounded px-1 py-0.5 hover:bg-slate-50">
+                <input type="radio" checked={optionId === o.id} disabled={busy} onChange={() => onPickOption(o.id)} />
+                <span className="text-[11px] font-semibold text-slate-700">{o.name}</span>
+                {Number(o.discount_rate) > 0 && (
+                  <span className="rounded bg-teal-100 px-1 text-[10px] font-bold text-teal-800">
+                    −{Math.round(Number(o.discount_rate) * 100)}%
                   </span>
-                  {r.reason && <span className="text-[11px] text-slate-500">{r.reason}</span>}
-                  <button
-                    onClick={() => void detach(r)}
-                    disabled={busy}
-                    className="ml-auto text-[11px] font-semibold text-slate-400 underline hover:text-rose-600 disabled:opacity-40"
-                  >
-                    떼기
-                  </button>
-                </li>
-              );
-            })
-          )}
-        </ul>
-
-        <div className="mt-3 border-t border-slate-100 pt-3">
-          {usable.length === 0 ? (
-            <p className="text-[12px] leading-relaxed text-slate-500">
-              지금 붙일 수 있는 할인이 없습니다. 이 창을 닫고 위의 <b>[📚 납부 항목 · 할인]</b> 에서 먼저
-              만들어주세요 — 어떤 할인이 몇 %인지는 사람이 정합니다.
+                )}
+                {/* **다른 옵션 금액도 함께 보입니다.** 고르기 전에 견주지 못하면 학부모 전화를
+                    받은 채로 창을 여닫게 됩니다. */}
+                <span className="ml-auto text-[11px] font-bold tabular-nums text-slate-600">{won(l?.amount ?? 0)}</span>
+              </label>
+            );
+          })}
+          {options.length === 0 && (
+            <p className="rounded bg-amber-50 px-1.5 py-1 text-[10px] text-amber-800">
+              이 항목에는 납부 옵션이 없습니다. [📚 납부 항목 · 할인]에서 먼저 만들어주세요.
             </p>
-          ) : (
-            <>
-              <select
-                value={pick}
-                onChange={(e) => setPick(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-[13px]"
-              >
-                <option value="">할인 고르기</option>
-                {usable
-                  .filter((d) => !attached.has(d.id))
-                  .map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.name} · {d.kind === "percent" ? `${Math.round(Number(d.value) * 100)}%` : won(Number(d.value))}
-                      {d.requires_approval ? " (승인 필요)" : ""}
-                    </option>
-                  ))}
-              </select>
-              <input
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                placeholder="왜 붙이는지 (필수)"
-                className="mt-1.5 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-[13px]"
-              />
-              <button
-                onClick={() => void attach()}
-                disabled={busy}
-                className="mt-2 rounded-lg bg-violet-600 px-3 py-1.5 text-[12px] font-bold text-white disabled:opacity-40"
-              >
-                붙이기
-              </button>
-            </>
           )}
         </div>
 
-        <button onClick={onClose} className="mt-3 w-full rounded-lg border border-slate-200 py-1.5 text-[12px] font-semibold text-slate-600">
+        <p className="mb-1 text-[10px] font-bold text-slate-500">② 이 항목에 붙는 할인</p>
+        <div className="flex max-h-[160px] flex-col gap-0.5 overflow-y-auto">
+          {usableDiscounts.length === 0 ? (
+            <p className="rounded bg-slate-50 px-1.5 py-1 text-[10px] text-slate-400">
+              이 항목에 걸 수 있는 할인이 없습니다. [📚 납부 항목 · 할인]의 <b>{plan.name}</b> 카드에서 만들어주세요.
+            </p>
+          ) : (
+            usableDiscounts.map((d) => (
+              <label key={d.id} className="flex cursor-pointer items-center gap-1.5 rounded px-1 py-0.5 hover:bg-violet-50">
+                <input
+                  type="checkbox"
+                  checked={on.has(d.id)}
+                  disabled={busy}
+                  onChange={(e) => onToggleDiscount(d, e.target.checked)}
+                />
+                <span className="text-[11px] text-slate-700">{d.name}</span>
+                <span className="rounded bg-violet-100 px-1 text-[10px] font-bold text-violet-800">
+                  {d.kind === "percent" ? `−${Math.round(Number(d.value) * 100)}%` : `−${won(Number(d.value))}`}
+                </span>
+                {d.requires_approval && (
+                  <span className="rounded bg-amber-100 px-1 text-[10px] font-bold text-amber-800" title="최고관리자 승인이 필요한 할인입니다">
+                    승인
+                  </span>
+                )}
+              </label>
+            ))
+          )}
+        </div>
+
+        {/* 계산 순서를 그대로 보여줍니다. 「왜 이 금액인가」를 이 자리에서 답할 수 있어야
+            학부모 전화에 바로 답합니다. */}
+        <div className="mt-2 rounded-lg bg-slate-50 p-1.5 text-[10px] text-slate-600">
+          {line ? (
+            <>
+              <div className="flex justify-between">
+                <span>기준 {line.optionName}</span>
+                <span className="tabular-nums">{won(line.base)}</span>
+              </div>
+              {line.optionDiscount > 0 && (
+                <div className="flex justify-between text-teal-700">
+                  <span>옵션 할인</span>
+                  <span className="tabular-nums">−{won(line.optionDiscount)}</span>
+                </div>
+              )}
+              {line.discounts.map((d) => (
+                <div key={d.name} className="flex justify-between text-violet-700">
+                  <span>{d.name}</span>
+                  <span className="tabular-nums">−{won(d.amount)}</span>
+                </div>
+              ))}
+              <div className="mt-0.5 flex justify-between border-t border-slate-200 pt-0.5 text-[11px] font-bold text-slate-800">
+                <span>청구액</span>
+                <span className="tabular-nums">{won(line.amount)}</span>
+              </div>
+            </>
+          ) : (
+            <span className="text-slate-400">옵션을 고르면 금액이 나옵니다.</span>
+          )}
+        </div>
+
+        <button
+          type="button"
+          onClick={onClose}
+          className="mt-1.5 w-full rounded-lg bg-slate-800 px-2 py-1.5 text-[11px] font-bold text-white"
+        >
           닫기
         </button>
       </div>
-    </div>
+    </>
   );
 }
-

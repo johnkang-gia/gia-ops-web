@@ -63,7 +63,7 @@ export default async function TuitionPage() {
     supabase.from("fee_discounts").select("*").order("sort_order").order("name"),
     supabase.from("terms").select("*").order("status").order("start_date", { ascending: false, nullsFirst: false }),
     supabase.from("student_fee_enrollments").select("id, student_id, plan_id, option_id, term_id").eq("active", true),
-    supabase.from("student_fee_discounts").select("id, student_id, discount_id, term_id, reason").eq("active", true),
+    supabase.from("student_fee_discounts").select("id, student_id, discount_id, term_id, plan_id, reason").eq("active", true),
     readAll<Invoice>((from, to) =>
       supabase.from("invoices").select("*").eq("category", "학비").order("issue_date").order("id").range(from, to),
     ),

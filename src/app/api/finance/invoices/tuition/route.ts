@@ -10,7 +10,7 @@ import { selectTolerant } from "@/lib/selectTolerant";
 import { addDays, DUE_DAYS } from "@/lib/financePeriod";
 import { todayKst } from "@/lib/kst";
 import { resolveRecipient, type GuardianRole, phonesOf, chosenRoleOf, type StudentBilling } from "@/lib/alltalkpay";
-import { tuitionLine, type TuitionLine } from "@/lib/tuition";
+import { discountsForPlan, tuitionLine, type TuitionLine } from "@/lib/tuition";
 import type { FeePlan, FeePaymentOption, FeeDiscount } from "@/lib/types";
 
 // 학비 청구서 발행.
@@ -114,21 +114,19 @@ export async function POST(req: Request) {
   const enrollments = ((enrollRes.data as { plan_id: string; option_id: string | null; term_id: string | null }[] | null) ?? [])
     .filter(sameTerm)
     .filter((e) => !planIds || planIds.length === 0 || planIds.includes(e.plan_id));
-  const studentDiscounts = ((sdRes.data as { discount_id: string; term_id: string | null }[] | null) ?? []).filter(sameTerm);
-
-  // 이 학생에게 걸린 할인. **끈 할인도 그대로 씁니다** - 이미 붙어 있던 건을 빼면 학부모가
-  // 들은 금액과 청구서가 달라집니다. 새로 붙이는 것만 화면에서 막습니다.
-  const applied = studentDiscounts
-    .map((sd) => discounts.find((d) => d.id === sd.discount_id))
-    .filter((d): d is FeeDiscount => !!d);
+  // 이 학생에게 붙은 할인 줄. **끈 할인도 그대로 씁니다** - 이미 붙어 있던 건을 빼면
+  // 학부모가 들은 금액과 청구서가 달라집니다. 새로 붙이는 것만 화면에서 막습니다.
+  const studentDiscounts =
+    (sdRes.data as { discount_id: string; term_id: string | null; plan_id: string | null }[] | null) ?? [];
 
   const lines: TuitionLine[] = [];
   for (const e of enrollments) {
     const plan = plans.find((p) => p.id === e.plan_id);
     if (!plan) continue;
     const option = options.find((o) => o.id === e.option_id) ?? null;
-    // 항목에 딱 걸린 할인 + 학비 전체에 걸린 할인. 다른 항목 전용 할인은 여기 안 붙습니다.
-    const forPlan = applied.filter((d) => !d.plan_id || d.plan_id === plan.id);
+    // 항목에 딱 걸린 할인 + 학비 전체에 걸린 할인. 고르는 일은 화면과 **같은 함수**가
+    // 합니다 - 각자 거르면 표에 뜬 금액과 청구서 금액이 달라집니다.
+    const forPlan = discountsForPlan(studentDiscounts, discounts, plan.id, termId);
     const line = tuitionLine(plan, option, forPlan);
     if (line) lines.push(line);
   }

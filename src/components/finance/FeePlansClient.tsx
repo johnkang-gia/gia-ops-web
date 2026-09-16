@@ -47,6 +47,13 @@ const EMPTY_DISCOUNT = {
   kind: "percent" as "percent" | "amount",
   value: 0,
   category: "" as "" | "학비" | "학비외",
+  /**
+   * **어느 납부 항목에 붙는 할인인가.**
+   *
+   * 할인은 항목마다 다릅니다 - 정규과정에는 목사 자제·형제자매·유치부 졸업이, 방과후에는
+   * 5개월납·10개월납이 붙습니다. 비워두면 그 분류(학비/학비외) 전체에 걸립니다.
+   */
+  plan_id: "",
   requires_approval: false,
   effective_from: "",
   effective_to: "",
@@ -96,7 +103,30 @@ export default function FeePlansClient({
    * 하니 그게 맞습니다.
    */
   const [editPlan, setEditPlan] = useState<FeePlan | null>(null);
+
+  /**
+   * **납부 옵션을 그 자리에서 적습니다.**
+   *
+   * 예전에는 `window.prompt` 세 번(이름 → 회차 → 할인율)이었습니다. 창이 뜨는 동안 **다른
+   * 옵션 금액이 안 보여서**, 「5개월납을 몇 %로 할까」를 견줄 재료가 화면에서 사라졌습니다.
+   * 셋 중 하나에서 취소를 누르면 앞에 친 것도 함께 날아갔습니다.
+   */
+  const [optForm, setOptForm] = useState<
+    { planId: string; id: string | null; name: string; periods: number; rate: number } | null
+  >(null);
+
+  /** 항목 카드 안에서 바로 만드는 할인. 이 항목에만 붙습니다. */
+  const [planDiscForm, setPlanDiscForm] = useState<
+    { planId: string; name: string; kind: "percent" | "amount"; value: number } | null
+  >(null);
   const [showInactive, setShowInactive] = useState(false);
+
+  /** 항목별 할인 목록. 항목 카드가 제 할인을 그 자리에서 보여줍니다. */
+  const discountsByPlan = useMemo(() => {
+    const m = new Map<string, FeeDiscount[]>();
+    for (const d of discounts) if (d.plan_id) m.set(d.plan_id, [...(m.get(d.plan_id) ?? []), d]);
+    return m;
+  }, [discounts]);
 
   const optionsByPlan = useMemo(() => {
     const m = new Map<string, FeePaymentOption[]>();
@@ -181,26 +211,87 @@ export default function FeePlansClient({
     setShowPlanForm(false);
   }
 
-  async function addOption(plan: FeePlan) {
-    const name = window.prompt(`${plan.name} — 납부 옵션 이름 (예: 월 납부 / 5개월 납부 / 1년 납부)`, "");
-    if (!name?.trim()) return;
-    const periodsRaw = window.prompt(`몇 ${plan.unit}분을 한 번에 내나요? (숫자)`, "1");
-    if (periodsRaw === null) return;
-    const rateRaw = window.prompt("할인율 (%). 없으면 0", "0");
-    if (rateRaw === null) return;
-    const periods = Math.max(1, Number(periodsRaw) || 1);
-    const rate = Math.min(100, Math.max(0, Number(rateRaw) || 0)) / 100;
+  /**
+   * 납부 옵션 저장 — **새로 만들 때와 고칠 때가 같은 자리**입니다.
+   *
+   * 옵션 번호를 학생 등록(`student_fee_enrollments`)이 가리킵니다. 그래서 고칠 때 지우고
+   * 새로 만들면 그 옵션을 고른 학생이 통째로 떨어져 나가는데, 화면에는 오류가 아니라
+   * 「아무도 안 고른 옵션」으로 보입니다.
+   */
+  async function saveOption() {
+    const form = optForm;
+    if (!form) return;
+    if (!form.name.trim()) return setErr("옵션 이름을 넣어주세요.");
+    const periods = Math.max(1, Number(form.periods) || 1);
+    const discount_rate = Math.min(100, Math.max(0, Number(form.rate) || 0)) / 100;
 
     setBusy(true);
+    setErr(null);
     const supabase = createClient();
+
+    if (form.id) {
+      const patch = { name: form.name.trim(), periods, discount_rate };
+      const { error } = await supabase.from("fee_payment_options").update(patch).eq("id", form.id);
+      setBusy(false);
+      if (error) return setErr(error.message);
+      setOptions((prev) => prev.map((x) => (x.id === form.id ? { ...x, ...patch } : x)));
+      setOptForm(null);
+      return;
+    }
+
     const { data, error } = await supabase
       .from("fee_payment_options")
-      .insert({ plan_id: plan.id, name: name.trim(), periods, discount_rate: rate, sort_order: periods })
+      .insert({ plan_id: form.planId, name: form.name.trim(), periods, discount_rate, sort_order: periods })
       .select()
       .single();
     setBusy(false);
     if (error || !data) return setErr(error?.message ?? "만들지 못했습니다.");
     setOptions((prev) => [...prev, data as FeePaymentOption]);
+    setOptForm(null);
+  }
+
+  /**
+   * **이 항목에만 붙는 할인**을 항목 카드에서 바로 만듭니다.
+   *
+   * 할인 탭까지 건너가서 만들면 「어느 항목 것이었지」를 다시 골라야 하고, 그 자리에서는
+   * 그 항목의 기준금액·옵션이 안 보입니다. 10%가 얼마인지 모르는 채로 10%를 적게 됩니다.
+   */
+  async function addPlanDiscount() {
+    const form = planDiscForm;
+    if (!form) return;
+    if (!form.name.trim()) return setErr("할인 이름을 넣어주세요.");
+    const plan = plans.find((p) => p.id === form.planId);
+    setBusy(true);
+    setErr(null);
+    const supabase = createClient();
+    const value = form.kind === "percent" ? (Number(form.value) || 0) / 100 : Number(form.value) || 0;
+    const { data, error } = await supabase
+      .from("fee_discounts")
+      .insert({
+        name: form.name.trim(),
+        kind: form.kind,
+        value,
+        category: plan?.category ?? null,
+        plan_id: form.planId,
+        sort_order: discounts.length,
+        created_by: currentUserEmail,
+      })
+      .select()
+      .single();
+    if (error || !data) {
+      setBusy(false);
+      return setErr(error?.message ?? "만들지 못했습니다.");
+    }
+    await supabase.from("fee_discount_log").insert({
+      discount_id: data.id,
+      discount_name: form.name.trim(),
+      action: "생성",
+      after_value: data,
+      changed_by: currentUserEmail,
+    });
+    setBusy(false);
+    setDiscounts((prev) => [data as FeeDiscount, ...prev]);
+    setPlanDiscForm(null);
   }
 
   async function savePlan() {
@@ -221,27 +312,6 @@ export default function FeePlansClient({
     if (error) return setErr(error.message);
     setPlans((prev) => prev.map((x) => (x.id === p.id ? { ...x, ...patch } : x)));
     setEditPlan(null);
-  }
-
-  /** 옵션 이름·회차·할인율을 고칩니다. 옵션도 학생 등록이 가리키므로 지우지 않고 고칩니다. */
-  async function editOption(plan: FeePlan, o: FeePaymentOption) {
-    const name = window.prompt(`${plan.name} — 옵션 이름`, o.name);
-    if (name === null || !name.trim()) return;
-    const periodsRaw = window.prompt(`몇 ${plan.unit}분을 한 번에 내나요? (숫자)`, String(o.periods));
-    if (periodsRaw === null) return;
-    const rateRaw = window.prompt("할인율 (%). 없으면 0", String(Math.round(Number(o.discount_rate) * 100)));
-    if (rateRaw === null) return;
-    const periods = Math.max(1, Number(periodsRaw) || 1);
-    const discount_rate = Math.min(100, Math.max(0, Number(rateRaw) || 0)) / 100;
-    setBusy(true);
-    const supabase = createClient();
-    const { error } = await supabase
-      .from("fee_payment_options")
-      .update({ name: name.trim(), periods, discount_rate })
-      .eq("id", o.id);
-    setBusy(false);
-    if (error) return setErr(error.message);
-    setOptions((prev) => prev.map((x) => (x.id === o.id ? { ...x, name: name.trim(), periods, discount_rate } : x)));
   }
 
   async function togglePlan(plan: FeePlan) {
@@ -269,6 +339,8 @@ export default function FeePlansClient({
         kind: discountForm.kind,
         value,
         category: discountForm.category || null,
+        // 항목을 고르면 그 항목 전용입니다. 안 고르면 그 분류(학비/학비외) 전체에 걸립니다.
+        plan_id: discountForm.plan_id || null,
         requires_approval: discountForm.requires_approval,
         effective_from: discountForm.effective_from || null,
         effective_to: discountForm.effective_to || null,
@@ -553,7 +625,15 @@ export default function FeePlansClient({
                                 가리키므로 지우고 새로 만들면 고른 학생이 떨어져 나갑니다. */}
                             <button
                               type="button"
-                              onClick={() => void editOption(p, o)}
+                              onClick={() =>
+                                setOptForm({
+                                  planId: p.id,
+                                  id: o.id,
+                                  name: o.name,
+                                  periods: o.periods,
+                                  rate: Math.round(Number(o.discount_rate) * 100),
+                                })
+                              }
                               disabled={busy}
                               className="rounded px-1 font-bold text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-40"
                               title="옵션 이름·회차·할인율을 고칩니다"
@@ -574,9 +654,138 @@ export default function FeePlansClient({
                           )}
                         </p>
                       )}
-                      <Button size="sm" variant="soft" onClick={() => addOption(p)} disabled={busy} className="mt-1">
-                        + 납부 옵션
-                      </Button>
+                      {/* **옵션을 그 자리에서 적습니다.** 창을 띄우면 다른 옵션 금액이 가려져,
+                          「5개월납을 몇 %로 할까」를 견줄 재료가 화면에서 사라집니다. */}
+                      {optForm?.planId === p.id ? (
+                        <div className="mt-1 flex flex-wrap items-end gap-1.5 rounded-lg border border-[var(--g-accent)] bg-white/70 p-2">
+                          <Input
+                            value={optForm.name}
+                            onChange={(e) => setOptForm((f) => (f ? { ...f, name: e.target.value } : f))}
+                            placeholder="예: 1년 납부"
+                            className="w-36"
+                          />
+                          <label className="text-[11px] text-slate-500">
+                            몇 {p.unit}분
+                            <Input
+                              type="number"
+                              value={optForm.periods}
+                              onChange={(e) => setOptForm((f) => (f ? { ...f, periods: Number(e.target.value) || 1 } : f))}
+                              className="ml-1 w-16"
+                            />
+                          </label>
+                          <label className="text-[11px] text-slate-500">
+                            할인 %
+                            <Input
+                              type="number"
+                              value={optForm.rate}
+                              onChange={(e) => setOptForm((f) => (f ? { ...f, rate: Number(e.target.value) || 0 } : f))}
+                              className="ml-1 w-16"
+                            />
+                          </label>
+                          {/* 적는 동안 금액이 따라 움직입니다. 다 적고 저장한 뒤에야 금액을 보면
+                              틀린 것을 고치려고 같은 자리를 또 엽니다. */}
+                          <span className="rounded bg-slate-100 px-2 py-1 text-[11px] font-bold tabular-nums text-slate-700">
+                            {won(
+                              Math.round(
+                                Number(p.base_amount) *
+                                  Math.max(1, optForm.periods || 1) *
+                                  (1 - Math.min(100, Math.max(0, optForm.rate || 0)) / 100),
+                              ),
+                            )}
+                          </span>
+                          <Button size="sm" onClick={() => void saveOption()} disabled={busy}>
+                            저장
+                          </Button>
+                          <Button size="sm" variant="glass" onClick={() => setOptForm(null)}>
+                            취소
+                          </Button>
+                        </div>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="soft"
+                          onClick={() => setOptForm({ planId: p.id, id: null, name: "", periods: 1, rate: 0 })}
+                          disabled={busy}
+                          className="mt-1"
+                        >
+                          + 납부 옵션
+                        </Button>
+                      )}
+
+                      {/* ── 이 항목에 붙는 할인 ─────────────────────────────────────
+                          할인은 항목마다 다릅니다. 정규과정에는 목사 자제·형제자매·유치부
+                          졸업이, 방과후에는 5개월납·10개월납이 붙습니다. 한 목록으로 두면
+                          청구 표에서 고를 때 남의 항목 할인이 섞여 뜨고, 잘못 붙은 할인은
+                          오류가 아니라 그냥 깎인 금액으로 보입니다. */}
+                      <div className="mt-2 border-t border-dashed border-slate-200 pt-2">
+                        <div className="mb-1 flex flex-wrap items-center gap-1">
+                          <span className="text-[11px] font-bold text-slate-500">이 항목 할인</span>
+                          {(discountsByPlan.get(p.id) ?? []).length === 0 && (
+                            <span className="text-[10px] text-slate-400">아직 없습니다</span>
+                          )}
+                          {(discountsByPlan.get(p.id) ?? []).map((d) => (
+                            <span
+                              key={d.id}
+                              className={
+                                "flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold " +
+                                (d.active ? "bg-violet-100 text-violet-800" : "bg-slate-100 text-slate-400 line-through")
+                              }
+                            >
+                              {d.name}
+                              <span className="font-extrabold">
+                                {d.kind === "percent" ? `−${Math.round(Number(d.value) * 100)}%` : `−${won(Number(d.value))}`}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => void toggleDiscount(d)}
+                                className="text-slate-400 hover:text-slate-700"
+                                title={d.active ? "이 할인을 끕니다(지우지 않습니다)" : "다시 켭니다"}
+                              >
+                                {d.active ? "끄기" : "켜기"}
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                        {planDiscForm?.planId === p.id ? (
+                          <div className="flex flex-wrap items-end gap-1.5 rounded-lg border border-violet-300 bg-violet-50/60 p-2">
+                            <Input
+                              value={planDiscForm.name}
+                              onChange={(e) => setPlanDiscForm((f) => (f ? { ...f, name: e.target.value } : f))}
+                              placeholder="예: 목사 자제 / 형제자매"
+                              className="w-40"
+                            />
+                            <Select
+                              value={planDiscForm.kind}
+                              onChange={(e) =>
+                                setPlanDiscForm((f) => (f ? { ...f, kind: e.target.value as "percent" | "amount" } : f))
+                              }
+                            >
+                              <option value="percent">％ 비율</option>
+                              <option value="amount">원 정액</option>
+                            </Select>
+                            <Input
+                              type="number"
+                              value={planDiscForm.value}
+                              onChange={(e) => setPlanDiscForm((f) => (f ? { ...f, value: Number(e.target.value) || 0 } : f))}
+                              className="w-24"
+                            />
+                            <Button size="sm" onClick={() => void addPlanDiscount()} disabled={busy}>
+                              만들기
+                            </Button>
+                            <Button size="sm" variant="glass" onClick={() => setPlanDiscForm(null)}>
+                              취소
+                            </Button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setPlanDiscForm({ planId: p.id, name: "", kind: "percent", value: 10 })}
+                            className="rounded-lg border border-violet-300 px-2 py-1 text-[11px] font-bold text-violet-700 hover:bg-violet-50"
+                          >
+                            + 이 항목 할인
+                          </button>
+                        )}
+                      </div>
                     </CardContent>
                   </Card>
                   </div>
@@ -617,10 +826,28 @@ export default function FeePlansClient({
                 onChange={(e) => setDiscountForm((f) => ({ ...f, value: Number(e.target.value) || 0 }))}
                 className="w-24"
               />
+              {/* **어느 항목에 붙는 할인인가.** 할인은 항목마다 다릅니다 - 정규과정에는 목사
+                  자제·형제자매가, 방과후에는 5개월납·10개월납이 붙습니다. 안 고르면 그
+                  분류(학비/학비외) 전체에 걸립니다. */}
+              <Select
+                value={discountForm.plan_id}
+                onChange={(e) => setDiscountForm((f) => ({ ...f, plan_id: e.target.value }))}
+                title="이 할인이 붙는 납부 항목"
+              >
+                <option value="">항목 가리지 않음</option>
+                {plans
+                  .filter((p) => p.active)
+                  .map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.category} · {p.name}
+                    </option>
+                  ))}
+              </Select>
               <Select
                 value={discountForm.category}
                 onChange={(e) => setDiscountForm((f) => ({ ...f, category: e.target.value as "" | "학비" | "학비외" }))}
-                
+                disabled={!!discountForm.plan_id}
+                title={discountForm.plan_id ? "항목을 고르면 그 항목의 분류를 따릅니다" : undefined}
               >
                 <option value="">학비·학비외 모두</option>
                 <option value="학비">학비만</option>
@@ -673,7 +900,17 @@ export default function FeePlansClient({
                     <td className="px-2 py-1.5 font-semibold text-slate-700">
                       {d.kind === "percent" ? `${Math.round(Number(d.value) * 100)}%` : won(Number(d.value))}
                     </td>
-                    <td className="px-2 py-1.5 text-slate-500">{d.category ?? "전체"}</td>
+                    {/* 어느 항목 것인지 적습니다. 「학비」라고만 적혀 있으면 정규과정 할인인지
+                        방과후 할인인지 알 수 없고, 그러면 청구 표에서 엉뚱한 칸에 붙입니다. */}
+                    <td className="px-2 py-1.5 text-slate-500">
+                      {d.plan_id ? (
+                        <span className="rounded bg-violet-100 px-1.5 py-0.5 text-[11px] font-bold text-violet-800">
+                          {plans.find((p) => p.id === d.plan_id)?.name ?? "지워진 항목"}
+                        </span>
+                      ) : (
+                        <>{d.category ?? "전체"}</>
+                      )}
+                    </td>
                     <td className="px-2 py-1.5 text-slate-500">
                       {d.effective_from || d.effective_to ? `${d.effective_from ?? "…"} ~ ${d.effective_to ?? "…"}` : "제한 없음"}
                     </td>

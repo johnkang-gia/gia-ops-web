@@ -30,6 +30,13 @@ export type SearchHit = {
   when: string;
   /** 오늘 기준 며칠 뒤인가. 지난 것은 음수. 날짜가 없으면 null. */
   dayDiff: number | null;
+  /**
+   * 기간이 **오늘을 품고 있는가.**
+   *
+   * 크리스마스 콘서트 준비는 9/7~12/18 입니다. 시작일만 보고 「지남」이라고 적으면 아직 석 달
+   * 남은 일이 끝난 일처럼 보입니다 - 오류가 아니라 그냥 틀린 말입니다.
+   */
+  ongoing: boolean;
 };
 
 export type SearchableTask = {
@@ -97,6 +104,7 @@ export function searchSchedules(
       date: start,
       when: whenLabel(start, due),
       dayDiff: start ? diff(today, start) : null,
+      ongoing: !!start && !!due && start <= today && today <= due,
     });
   }
 
@@ -112,14 +120,18 @@ export function searchSchedules(
       date: jump,
       when: a.event_date ? whenLabel(a.event_date, null) : whenLabel(a.due_date, a.end_date ?? null),
       dayDiff: diff(today, jump),
+      // 행사일이 정해졌으면 그날이 답이라 기간은 보지 않습니다. 안 정했으면 준비 기간이
+      // 오늘을 품는지를 봅니다.
+      ongoing: !a.event_date && a.due_date <= today && today <= (a.end_date ?? a.due_date),
     });
   }
 
   return hits
     .sort((x, y) => {
       // 앞날이 먼저, 그중 가까운 것부터. 지난 것은 뒤로 보내되 최근 것이 위입니다.
-      const ax = x.dayDiff ?? 99999;
-      const ay = y.dayDiff ?? 99999;
+      // **진행 중인 것이 맨 위입니다.** 지금 굴러가는 일보다 급한 것은 없습니다.
+      const ax = x.ongoing ? 0 : (x.dayDiff ?? 99999);
+      const ay = y.ongoing ? 0 : (y.dayDiff ?? 99999);
       const fx = ax >= 0 ? ax : 10000 - ax;
       const fy = ay >= 0 ? ay : 10000 - ay;
       return fx - fy || x.title.localeCompare(y.title, "ko");

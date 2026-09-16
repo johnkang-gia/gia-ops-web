@@ -101,15 +101,19 @@ export default function ScheduleSearch({
                 <span className="shrink-0 text-[10px] tabular-nums text-slate-400">{h.when}</span>
                 {/* 며칠 남았는지가 「언제인가」보다 먼저 읽힙니다 - 오늘 할 일인지 아닌지가
                     그 한 글자로 갈립니다. */}
-                {h.dayDiff !== null && (
-                  <span
-                    className={
-                      "shrink-0 text-[10px] font-bold " +
-                      (h.dayDiff === 0 ? "text-rose-600" : h.dayDiff > 0 ? "text-slate-500" : "text-slate-300")
-                    }
-                  >
-                    {h.dayDiff === 0 ? "오늘" : h.dayDiff > 0 ? `D-${h.dayDiff}` : "지남"}
-                  </span>
+                {h.ongoing ? (
+                  <span className="shrink-0 text-[10px] font-bold text-emerald-600">진행 중</span>
+                ) : (
+                  h.dayDiff !== null && (
+                    <span
+                      className={
+                        "shrink-0 text-[10px] font-bold " +
+                        (h.dayDiff === 0 ? "text-rose-600" : h.dayDiff > 0 ? "text-slate-500" : "text-slate-300")
+                      }
+                    >
+                      {h.dayDiff === 0 ? "오늘" : h.dayDiff > 0 ? `D-${h.dayDiff}` : "지남"}
+                    </span>
+                  )
                 )}
               </button>
             ))

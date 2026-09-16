@@ -65,6 +65,8 @@ export default function FeePlansClient({
   discounts: initialDiscounts,
   canApprove,
   currentUserEmail,
+  gradeOptions,
+  classesByGrade,
   loadError,
 }: {
   plans: FeePlan[];
@@ -73,6 +75,10 @@ export default function FeePlansClient({
   /** 최고관리자인가. '승인 필요' 할인을 만들 수 있는지 등에 씁니다. */
   canApprove: boolean;
   currentUserEmail: string;
+  /** 명부에 실제로 있는 학년. 손으로 치게 하면 「4」·「4학년」·「G4」가 섞여 아무에게도 안 걸립니다. */
+  gradeOptions: string[];
+  /** 그 학년의 반만. 학년과 상관없는 반을 고르면 그 항목은 아무에게도 안 열립니다. */
+  classesByGrade: Record<string, string[]>;
   loadError: string | null;
 }) {
   // 돈에 닿는 자료가 바뀌면 이 화면이 함께 다시 그려집니다. 한 사람이 고치고
@@ -312,6 +318,28 @@ export default function FeePlansClient({
     if (error) return setErr(error.message);
     setPlans((prev) => prev.map((x) => (x.id === p.id ? { ...x, ...patch } : x)));
     setEditPlan(null);
+  }
+
+  /**
+   * **누구를 위한 항목인가**를 정합니다.
+   *
+   * 학년을 바꾸면 반은 비웁니다 - 4학년으로 바꿨는데 G2A 가 남아 있으면 그 항목은
+   * 아무에게도 안 열리는데, 화면에는 「대상 있음」으로 보입니다.
+   */
+  async function saveTarget(plan: FeePlan, scope: "전체" | "학년" | "반", grades: string[], classes: string[]) {
+    setBusy(true);
+    setErr(null);
+    const patch = {
+      target_scope: scope,
+      // 「전체」에 학년을 채워두지 않습니다 - 그 목록은 적던 날의 사진이라, 학년이 하나
+      // 늘면 새 학년만 조용히 빠집니다.
+      target_grades: scope === "전체" ? [] : grades,
+      target_classes: scope === "반" ? classes : [],
+    };
+    const { error } = await createClient().from("fee_plans").update(patch).eq("id", plan.id);
+    setBusy(false);
+    if (error) return setErr(error.message);
+    setPlans((prev) => prev.map((x) => (x.id === plan.id ? { ...x, ...patch } : x)));
   }
 
   async function togglePlan(plan: FeePlan) {
@@ -711,6 +739,63 @@ export default function FeePlansClient({
                           + 납부 옵션
                         </Button>
                       )}
+
+                      {/* ── 누구를 위한 항목인가 ───────────────────────────────────
+                          학비도 전교생 것이 아닙니다 - 방과후 2일반은 특정 학년에만 열리고,
+                          어떤 과정은 한 반에만 있습니다. 적어두지 않으면 청구 표에서 139명
+                          칸이 모두 열려, 그 아이에게 열리지 않는 과정을 실수로 고르게
+                          됩니다. 그건 오류가 아니라 «청구된 금액»으로 보입니다. */}
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-dashed border-slate-200 pt-2">
+                        <span className="text-[11px] font-bold text-slate-500">대상</span>
+                        <Select
+                          value={(p.target_scope ?? "전체") === "전체" ? "전체" : (p.target_grades ?? [])[0] ?? ""}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            if (v === "전체") void saveTarget(p, "전체", [], []);
+                            else void saveTarget(p, "학년", [v], []);
+                          }}
+                          title="이 항목이 열리는 학년"
+                        >
+                          <option value="전체">전체 학년</option>
+                          {gradeOptions.map((g) => (
+                            <option key={g} value={g}>
+                              {g} 학년만
+                            </option>
+                          ))}
+                        </Select>
+                        {/* 학년을 고른 뒤에만 반이 뜹니다. 학년 없이 반만 고르면 같은 반
+                            이름을 쓰는 다른 학년에도 열립니다. */}
+                        {(p.target_scope ?? "전체") !== "전체" &&
+                          (classesByGrade[(p.target_grades ?? [])[0] ?? ""] ?? []).map((c) => {
+                            const on = (p.target_classes ?? []).includes(c);
+                            return (
+                              <button
+                                key={c}
+                                type="button"
+                                disabled={busy}
+                                onClick={() => {
+                                  const next = on
+                                    ? (p.target_classes ?? []).filter((x) => x !== c)
+                                    : [...(p.target_classes ?? []), c];
+                                  void saveTarget(p, next.length > 0 ? "반" : "학년", p.target_grades ?? [], next);
+                                }}
+                                className={
+                                  "rounded-full px-2 py-0.5 text-[10px] font-bold " +
+                                  (on ? "bg-indigo-600 text-white" : "bg-white text-slate-500 ring-1 ring-slate-300")
+                                }
+                              >
+                                {c}
+                              </button>
+                            );
+                          })}
+                        <span className="text-[10px] text-slate-400">
+                          {(p.target_scope ?? "전체") === "전체"
+                            ? "모든 학생 칸이 열립니다"
+                            : (p.target_classes ?? []).length > 0
+                              ? `${(p.target_grades ?? []).join("·")} 학년 ${(p.target_classes ?? []).join("·")} 반만`
+                              : `${(p.target_grades ?? []).join("·")} 학년 전체`}
+                        </span>
+                      </div>
 
                       {/* ── 이 항목에 붙는 할인 ─────────────────────────────────────
                           할인은 항목마다 다릅니다. 정규과정에는 목사 자제·형제자매·유치부

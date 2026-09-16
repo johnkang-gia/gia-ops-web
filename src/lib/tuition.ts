@@ -1,3 +1,5 @@
+import { normClass, normGrade } from "./feeItems";
+
 /**
  * 학비 청구액 계산 — **한 곳에서만** 냅니다.
  *
@@ -211,4 +213,37 @@ export function discountsForPlan<D extends { id: string; plan_id: string | null 
     out.push(d);
   }
   return out;
+}
+
+/**
+ * **이 항목이 이 아이의 것인가.**
+ *
+ * 학비 항목도 전교생 것이 아닙니다 - 방과후 2일반은 특정 학년에만 열리고, 어떤 과정은 한
+ * 반에만 있습니다. 대상이 아닌 칸이 열려 있으면 실수로 고를 수 있고, 그건 오류가 아니라
+ * 그냥 «청구된 금액»으로 보입니다.
+ *
+ * 학비외 항목(`inTarget`)과 **같은 방식으로 읽습니다** — 학년 표기가 「5」·「5학년」·「G5」로
+ * 섞여 들어와도 같게 봅니다. 두 화면이 학년을 다르게 읽으면 같은 아이가 한쪽에서만
+ * 대상이 됩니다.
+ *
+ * 순수 함수입니다 — 화면 없이 시험할 수 있습니다.
+ */
+export function planTargets(
+  plan: { target_scope?: string | null; target_grades?: string[] | null; target_classes?: string[] | null },
+  student: { grade: string | null; className: string | null },
+): boolean {
+  const scope = plan.target_scope ?? "전체";
+  // 예전 항목(칸이 없던 시절)은 전체입니다. 빈 값을 「아무에게도 안 열림」으로 읽으면
+  // 어제까지 쓰던 항목이 오늘 통째로 잠깁니다.
+  if (scope === "전체") return true;
+
+  const g = normGrade(student.grade);
+  const byGrade = (plan.target_grades ?? []).some((x) => normGrade(x) === g && g !== "");
+  if (scope === "학년") return byGrade;
+
+  // 반까지 정한 항목은 **둘 다** 맞아야 합니다 - 같은 반 이름을 다른 학년이 쓰는 경우가
+  // 있어서, 하나만 맞아도 붙이면 남의 학년에 열립니다.
+  const c = normClass(student.className);
+  const byClass = (plan.target_classes ?? []).some((x) => normClass(x) === c && c !== "");
+  return byGrade && byClass;
 }

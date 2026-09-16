@@ -54,11 +54,11 @@ export function inDepartment(item: FeeItem, s: StudentLike): boolean {
 }
 
 /** 학년 표기가 "5", "5학년", "G5" 등으로 섞여 들어와도 같게 봅니다. */
-function normGrade(v: string | null | undefined): string {
+export function normGrade(v: string | null | undefined): string {
   return (v ?? "").toString().trim().replace(/^G/i, "").replace(/학년$/, "").trim();
 }
 
-function normClass(v: string | null | undefined): string {
+export function normClass(v: string | null | undefined): string {
   return (v ?? "").toString().trim().toUpperCase();
 }
 

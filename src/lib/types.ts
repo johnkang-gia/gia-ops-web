@@ -929,6 +929,16 @@ export type WrTermClassSnapshot = {
 export type FeePlan = {
   id: string;
   category: "학비" | "학비외";
+  /**
+   * **누구를 위한 항목인가.** 방과후 2일반이 특정 학년에만 열리는 식입니다.
+   *
+   *   전체  모든 학생 (정규과정)
+   *   학년  target_grades 의 학년만
+   *   반    그 학년의 그 반만
+   */
+  target_scope?: "전체" | "학년" | "반" | null;
+  target_grades?: string[] | null;
+  target_classes?: string[] | null;
   name: string;
   description: string | null;
   base_amount: number;

@@ -10,7 +10,7 @@ import { useToast } from "@/components/common/ToastProvider";
 import { won } from "@/lib/feeItems";
 import { departmentOf, gradeSortKey, type Department } from "@/lib/department";
 import { addDays, DUE_DAYS } from "@/lib/financePeriod";
-import { discountsForPlan, tuitionLine, tuitionTotal, discountUsable, type TuitionLine } from "@/lib/tuition";
+import { discountsForPlan, planTargets, tuitionLine, tuitionTotal, discountUsable, type TuitionLine } from "@/lib/tuition";
 import TermPicker, { initialTermId } from "./TermPicker";
 import InvoicePreviewModal from "./InvoicePreviewModal";
 import CancelInvoiceModal from "./CancelInvoiceModal";
@@ -264,6 +264,27 @@ export default function TuitionGridClient({
   }, [sdRows]);
 
   /** 이 학생의 이 항목에 걸리는 할인. 서버(청구서 발행)와 **같은 함수**를 씁니다. */
+  /**
+   * 대상(학년·반)을 고를 재료. **명부에 실제로 있는 값만** 띄웁니다 - 손으로 치게 하면
+   * 「4」·「4학년」·「G4」가 섞여 들어오고, 그렇게 적힌 대상은 아무에게도 안 걸립니다.
+   */
+  const gradeOptions = useMemo(
+    () => [...new Set(students.map((s) => (s.grade ?? "").trim()).filter(Boolean))].sort(),
+    [students],
+  );
+  const classesByGrade = useMemo(() => {
+    const m: Record<string, string[]> = {};
+    for (const s of students) {
+      const g = (s.grade ?? "").trim();
+      const c = (s.className ?? "").trim();
+      if (!g || !c) continue;
+      if (!m[g]) m[g] = [];
+      if (!m[g].includes(c)) m[g].push(c);
+    }
+    for (const g of Object.keys(m)) m[g].sort();
+    return m;
+  }, [students]);
+
   const discountsFor = useCallback(
     (studentId: string, planId: string) => discountsForPlan(sdOf.get(studentId) ?? [], discounts, planId, termId || null),
     [sdOf, discounts, termId],
@@ -501,7 +522,9 @@ export default function TuitionGridClient({
 
   /** 보이는 명단 전원에게 한 옵션을 한 번에. 정규과정처럼 대부분이 같은 것을 고르는 항목에 씁니다. */
   async function fillColumn(plan: FeePlan, optionId: string) {
-    const targets = checked.size > 0 ? rows.filter((s) => checked.has(s.id)) : rows;
+    // **대상 밖 학생은 건너뜁니다.** 한 번에 채우는 단추가 대상을 무시하면, 대상을 적어둔
+    // 뜻이 사라집니다 - 방과후 2일반이 전교생에게 붙습니다.
+    const targets = (checked.size > 0 ? rows.filter((s) => checked.has(s.id)) : rows).filter((s) => planTargets(plan, s));
     if (targets.length === 0) return;
     // 되묻지 않습니다. 요금제를 붙이는 것은 되돌릴 수 있는 편집입니다.
     setBusy(true);
@@ -750,6 +773,8 @@ export default function TuitionGridClient({
         discounts={discounts}
         canApprove={canApprove}
         currentUserEmail={currentUserEmail}
+        gradeOptions={gradeOptions}
+        classesByGrade={classesByGrade}
       />
 
       {/* ── 표 ─────────────────────────────────────────────────────── */}
@@ -810,6 +835,14 @@ export default function TuitionGridClient({
                   <span className="block text-[10px] tabular-nums text-slate-400">
                     {won(Number(p.base_amount))} / {p.unit}
                   </span>
+                  {/* **누구를 위한 항목인가.** 적어두지 않으면 139명 칸이 모두 열려서, 그
+                      아이에게 열리지 않는 과정을 실수로 고를 수 있습니다. */}
+                  {(p.target_scope ?? "전체") !== "전체" && (
+                    <span className="block text-[10px] font-bold text-indigo-700">
+                      🎯 {(p.target_grades ?? []).join("·")}
+                      {(p.target_classes ?? []).length > 0 ? ` ${(p.target_classes ?? []).join("·")}` : "학년"}
+                    </span>
+                  )}
                   {/* 정규과정처럼 대부분이 같은 것을 고르는 항목은 한 번에 넣습니다. */}
                   <select
                     value=""
@@ -881,23 +914,50 @@ export default function TuitionGridClient({
                     const line = lineFor(s.id, p);
                     const ds = discountsFor(s.id, p.id);
                     const open = cellFor?.studentId === s.id && cellFor.planId === p.id;
+                    /**
+                     * **이 아이의 항목인가.** 방과후 2일반이 특정 학년에만 열리는 식입니다.
+                     *
+                     * 대상이 아니면 칸을 잠급니다. 다만 **이미 고른 것이 있으면 열어둡니다** -
+                     * 대상을 나중에 좁혔는데 이미 등록된 아이가 있으면, 잠가버리는 순간 그
+                     * 금액을 고칠 길이 없어집니다.
+                     */
+                    const mine = planTargets(p, s) || !!line;
                     return (
-                      <td key={p.id} className={"relative border-b border-r border-slate-100 px-1.5 py-1 " + (line ? "bg-teal-50/50" : "")}>
+                      <td
+                        key={p.id}
+                        className={
+                          "relative border-b border-r border-slate-100 px-1.5 py-1 " +
+                          (line ? "bg-teal-50/50 " : "") +
+                          (mine ? "" : "bg-slate-50/70")
+                        }
+                      >
                         {/* **칸을 누르면 그 자리에서 정합니다.** 납부 옵션(분기납·1년납)이 먼저이고,
                             그 아래에 이 항목에만 붙는 할인이 옵니다 - 옵션은 계약이고 할인은
                             그 위에 얹는 것이라, 순서가 곧 계산 순서입니다. */}
                         <button
                           type="button"
-                          disabled={busy}
+                          disabled={busy || !mine}
                           onClick={() => setCellFor(open ? null : { studentId: s.id, planId: p.id })}
                           className={
                             "w-full rounded border px-1 py-0.5 text-left text-[11px] transition " +
-                            (open ? "border-teal-500 bg-white ring-2 ring-teal-200" : "border-slate-200 hover:bg-white")
+                            (open
+                              ? "border-teal-500 bg-white ring-2 ring-teal-200"
+                              : mine
+                                ? "border-slate-200 hover:bg-white"
+                                : "cursor-not-allowed border-dashed border-slate-200 opacity-60")
                           }
-                          title="납부 옵션과 이 항목 할인을 정합니다"
+                          title={mine ? "납부 옵션과 이 항목 할인을 정합니다" : `${p.name}은 이 학생의 학년·반 대상이 아닙니다`}
                         >
-                          <span className={line ? "font-semibold text-slate-700" : "text-slate-400"}>
-                            {line ? line.optionName : "— 신청 안 함"}
+                          {/* **한 줄로 둡니다.** 「— 신청 안 함」이 「신청 / 안 함」으로 접히면
+                              줄 높이가 아이마다 달라져서, 139줄을 훑을 때 눈이 계속 걸립니다.
+                              칸보다 길면 잘라 보여주고 전체는 풀이말(title)로 봅니다. */}
+                          <span
+                            className={
+                              "block truncate whitespace-nowrap " +
+                              (line ? "font-semibold text-slate-700" : "text-slate-400")
+                            }
+                          >
+                            {line ? line.optionName : mine ? "— 신청 안 함" : "대상 아님"}
                           </span>
                           {ds.length > 0 && (
                             <span className="ml-1 rounded bg-violet-100 px-1 text-[10px] font-bold text-violet-800">
@@ -911,7 +971,7 @@ export default function TuitionGridClient({
                               직접
                             </span>
                           )}
-                          <span className="mt-0.5 block text-right font-bold tabular-nums text-teal-800">
+                          <span className="mt-0.5 block whitespace-nowrap text-right font-bold tabular-nums text-teal-800">
                             {line ? won(line.amount) : "—"}
                           </span>
                         </button>

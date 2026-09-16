@@ -23,11 +23,26 @@ export default async function FeePlansPage() {
   if (!hasFinanceAccess(me)) redirect("/home");
 
   const supabase = await createClient();
-  const [plansRes, optionsRes, discountsRes] = await Promise.all([
+  // 대상(학년·반)을 고를 재료. **명부에 실제로 있는 값만** 띄웁니다 - 손으로 치게 하면
+  // 「4」와 「4학년」과 「G4」가 섞여 들어오고, 그렇게 적힌 대상은 아무에게도 안 걸립니다.
+  const [plansRes, optionsRes, discountsRes, rosterRes] = await Promise.all([
     supabase.from("fee_plans").select("*").order("category").order("sort_order").order("name"),
     supabase.from("fee_payment_options").select("*").order("sort_order").order("periods"),
     supabase.from("fee_discounts").select("*").order("active", { ascending: false }).order("sort_order").order("name"),
+    supabase.from("wr_students").select("grade, class_name").eq("is_demo", false).eq("status", "active"),
   ]);
+
+  const roster = (rosterRes.data as { grade: string | null; class_name: string | null }[] | null) ?? [];
+  const gradeOptions = [...new Set(roster.map((r) => (r.grade ?? "").trim()).filter(Boolean))].sort();
+  const classesByGrade: Record<string, string[]> = {};
+  for (const r of roster) {
+    const g = (r.grade ?? "").trim();
+    const c = (r.class_name ?? "").trim();
+    if (!g || !c) continue;
+    if (!classesByGrade[g]) classesByGrade[g] = [];
+    if (!classesByGrade[g].includes(c)) classesByGrade[g].push(c);
+  }
+  for (const g of Object.keys(classesByGrade)) classesByGrade[g].sort();
 
   const loadError = plansRes.error?.message ?? optionsRes.error?.message ?? discountsRes.error?.message ?? null;
 
@@ -38,6 +53,8 @@ export default async function FeePlansPage() {
       discounts={(discountsRes.data as FeeDiscount[] | null) ?? []}
       canApprove={isSuperAdminUser(me)}
       currentUserEmail={me.email}
+      gradeOptions={gradeOptions}
+      classesByGrade={classesByGrade}
       loadError={loadError}
     />
   );

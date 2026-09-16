@@ -31,6 +31,8 @@ export default function FeePlansModal({
   discounts,
   canApprove,
   currentUserEmail,
+  gradeOptions,
+  classesByGrade,
 }: {
   open: boolean;
   onClose: () => void;
@@ -39,6 +41,9 @@ export default function FeePlansModal({
   discounts: FeeDiscount[];
   canApprove: boolean;
   currentUserEmail: string;
+  /** 대상(학년·반)을 고를 재료. 청구 표가 이미 들고 있는 명부에서 만듭니다. */
+  gradeOptions: string[];
+  classesByGrade: Record<string, string[]>;
 }) {
   const router = useRouter();
 
@@ -93,6 +98,8 @@ export default function FeePlansModal({
             discounts={discounts}
             canApprove={canApprove}
             currentUserEmail={currentUserEmail}
+            gradeOptions={gradeOptions}
+            classesByGrade={classesByGrade}
             loadError={null}
           />
         </div>

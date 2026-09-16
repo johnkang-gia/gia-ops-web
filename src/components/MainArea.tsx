@@ -90,7 +90,9 @@ export default function MainArea({ children }: { children: React.ReactNode }) {
   // 넓은 표: 세로는 페이지째 내려가고, 가로만 표 안에서 스크롤합니다.
   // `min-w-0` 이 있어야 안쪽 표가 넓어질 때 이 칸이 함께 늘어나지 않습니다.
   if (WIDE_TABLE_PATHS.some((p) => pathname === p)) {
-    return <main className="shell-content shell-content-bg min-w-0 flex-1 overflow-x-hidden p-4 sm:p-6">{children}</main>;
+    // **여백을 줄입니다.** 열이 열 개를 넘는 표라 좌우 24px씩이 그대로 잘리는 칸이 됩니다 -
+    // 여백은 넓은데 표는 잘려 보이는 것이 그 때문이었습니다.
+    return <main className="shell-content shell-content-bg min-w-0 flex-1 overflow-x-hidden px-2 py-3 sm:px-3 sm:py-4">{children}</main>;
   }
 
   // 좌우 여백(sm:p-6)은 상단탭바의 sm:px-6과 같은 값입니다. 예전에는 여기만 sm:p-8이라

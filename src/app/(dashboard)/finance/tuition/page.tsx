@@ -113,6 +113,7 @@ export default async function TuitionPage() {
         catalogPlans={(planRes.data as FeePlan[] | null) ?? []}
         canApprove={isSuperAdminUser(me)}
         currentUserEmail={me.email}
+        currentUserName={me.name ?? me.email}
         options={(optRes.data as FeePaymentOption[] | null) ?? []}
         discounts={(discRes.data as FeeDiscount[] | null) ?? []}
         terms={(termRes.data as Term[] | null) ?? []}

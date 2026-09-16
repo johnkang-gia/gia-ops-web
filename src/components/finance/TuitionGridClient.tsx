@@ -17,6 +17,7 @@ import CancelInvoiceModal from "./CancelInvoiceModal";
 import type { FeePlan, FeePaymentOption, FeeDiscount, Term, Invoice } from "@/lib/types";
 import { PAYMENT_METHOD_KINDS } from "@/lib/payments";
 import { todayKst } from "@/lib/kst";
+import { useEditingPresence } from "@/lib/useEditingPresence";
 
 /**
  * 학비 청구 명단 — 학생이 행, 납부 항목이 열.
@@ -96,6 +97,7 @@ export default function TuitionGridClient({
   catalogPlans,
   canApprove,
   currentUserEmail,
+  currentUserName,
 }: {
   students: TuitionStudent[];
   plans: FeePlan[];
@@ -115,6 +117,8 @@ export default function TuitionGridClient({
   /** 승인이 필요한 할인을 만들 수 있는 사람인가(최고관리자). */
   canApprove: boolean;
   currentUserEmail: string;
+  /** 「누가 고치는 중」에 띄울 이름. 메일 주소만 뜨면 누군지 모릅니다. */
+  currentUserName: string;
 }) {
   // 돈에 닿는 자료가 바뀌면 이 화면이 함께 다시 그려집니다. 한 사람이 고치고
   // 여러 사람이 보는 화면이라, 고친 사람만 새 금액을 보면 안 됩니다.
@@ -123,6 +127,25 @@ export default function TuitionGridClient({
   const [enrollments, setEnrollments] = useState(initialEnrollments);
   const [sdRows, setSdRows] = useState(initialStudentDiscounts);
   const [invoices, setInvoices] = useState(recentInvoices);
+
+  /**
+   * **옆자리에서 고친 것이 이 화면에도 옵니다.**
+   *
+   * `useFinanceLive` 가 돈에 닿는 표를 듣고 서버에 다시 그리라고 말합니다(CLAUDE.md §2-12).
+   * 그런데 이 화면은 서버가 준 값을 `useState` 의 **첫 값으로만** 썼습니다 - 서버가 다시
+   * 그려서 새 값을 내려보내도, 화면은 처음 받은 값을 계속 들고 있었습니다.
+   *
+   * 그래서 옆자리에서 옵션을 바꾸면 그 사람 화면만 바뀌고 내 화면은 옛 금액 그대로였습니다.
+   * 오류가 아니라 **그냥 다른 금액**이라, 둘 다 자기 화면을 믿고 일하다가 청구서가 나간
+   * 뒤에야 압니다.
+   *
+   * 화면이 「무엇이 바뀌었으니 무엇을 고친다」를 스스로 적지 않습니다 - 서버가 읽어온 값을
+   * 그대로 따릅니다. 그 규칙을 화면마다 적으면 한 벌이 틀렸을 때 그 화면만 다른 답을 합니다.
+   */
+  useEffect(() => setEnrollments(initialEnrollments), [initialEnrollments]);
+  useEffect(() => setSdRows(initialStudentDiscounts), [initialStudentDiscounts]);
+  useEffect(() => setInvoices(recentInvoices), [recentInvoices]);
+
   const [termId, setTermId] = useState("");
   const [dept, setDept] = useState<DeptTab>("초등부");
   const [q, setQ] = useState("");
@@ -137,6 +160,19 @@ export default function TuitionGridClient({
    * 고치는 중인지 헷갈리고, 돈에서 그건 엉뚱한 아이가 깎이는 일이 됩니다.
    */
   const [cellFor, setCellFor] = useState<{ studentId: string; planId: string } | null>(null);
+
+  /**
+   * **누가 지금 어느 칸을 고치는 중인가.**
+   *
+   * 잠그지 않고 보여주기만 합니다 - 잠그면 창을 닫거나 인터넷이 끊긴 사람의 줄이 아무도 못
+   * 고치는 채로 남고, 그걸 푸는 화면을 또 만들어야 합니다. 자세한 까닭은
+   * `useEditingPresence` 에 적어두었습니다.
+   */
+  const presence = useEditingPresence(
+    "finance-tuition",
+    useMemo(() => ({ email: currentUserEmail, name: currentUserName }), [currentUserEmail, currentUserName]),
+    cellFor ? `${cellFor.studentId}|${cellFor.planId}` : null,
+  );
   const [preview, setPreview] = useState<{ id: string; label: string } | null>(null);
   /**
    * 발행 취소하려는 청구서.
@@ -646,6 +682,27 @@ export default function TuitionGridClient({
       )}
 
       {/* ── 학기·부서·검색 ─────────────────────────────────────────── */}
+      {/* **지금 이 화면을 함께 보는 사람.** 혼자인지 아닌지를 알면 「지금 고쳐도 되나」를
+          묻지 않아도 됩니다. 브라우저를 닫으면 저절로 사라집니다. */}
+      <div className="mb-2 flex flex-wrap items-center gap-1.5">
+        <WideToggle />
+        {presence.others.length > 0 ? (
+          <span className="flex flex-wrap items-center gap-1 rounded-full bg-rose-50 px-2 py-1 text-[11px] font-bold text-rose-700 ring-1 ring-rose-200">
+            👥 지금 함께 보는 중
+            {presence.others.map((p) => (
+              <span key={p.email} className="rounded-full bg-white px-1.5 py-0.5">
+                {p.name}
+                {p.editing ? " (고치는 중)" : ""}
+              </span>
+            ))}
+          </span>
+        ) : (
+          <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-500">
+            👤 지금 이 화면은 나만 보고 있습니다
+          </span>
+        )}
+      </div>
+
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <TermPicker terms={terms} value={termId} onChange={setTermId} />
         <span className="flex gap-1">
@@ -922,6 +979,8 @@ export default function TuitionGridClient({
                      * 금액을 고칠 길이 없어집니다.
                      */
                     const mine = planTargets(p, s) || !!line;
+                    /** 지금 이 칸을 열어둔 다른 사람. 막지는 않고 **누구인지 알려줍니다.** */
+                    const busyBy = presence.byCell.get(`${s.id}|${p.id}`) ?? [];
                     return (
                       <td
                         key={p.id}
@@ -969,6 +1028,14 @@ export default function TuitionGridClient({
                           {line?.manual && (
                             <span className="ml-1 rounded bg-amber-100 px-1 text-[10px] font-bold text-amber-800">
                               직접
+                            </span>
+                          )}
+                          {/* **같은 칸을 둘이 만지면 나중에 저장한 쪽이 앞사람 것을 덮습니다.**
+                              덮였다는 사실은 화면에 안 나타나므로, 만지는 중이라는 것만이라도
+                              보여야 옆자리에 물어볼 수 있습니다. */}
+                          {busyBy.length > 0 && (
+                            <span className="ml-1 animate-pulse rounded bg-rose-100 px-1 text-[10px] font-bold text-rose-700">
+                              ✍ {busyBy.map((x) => x.name).join("·")}
                             </span>
                           )}
                           <span className="mt-0.5 block whitespace-nowrap text-right font-bold tabular-nums text-teal-800">
@@ -1423,5 +1490,42 @@ function CellEditor({
         </button>
       </div>
     </>
+  );
+}
+
+
+/**
+ * **넓게 보기** — 사이드바를 잠시 접습니다.
+ *
+ * 청구 표는 열이 열 개를 넘어서, 사이드바(224px)와 좌우 여백까지 빼고 나면 오른쪽 끝의
+ * 「청구액·청구서」가 잘립니다. 잘린 표는 **없는 것처럼 보입니다** - 거기 있는 단추를 아무도
+ * 안 누릅니다.
+ *
+ * 사이드바를 아주 없애지는 않습니다. 다른 화면으로 건너갈 길이 사라지면, 접어두고 잊은
+ * 사람은 새로고침 말고는 돌아갈 방법을 못 찾습니다. 그래서 **이 화면에서만, 단추 하나로**
+ * 접고 폅니다.
+ */
+function WideToggle() {
+  const [wide, setWide] = useState(false);
+
+  useEffect(() => {
+    document.body.classList.toggle("wide-screen", wide);
+    // 이 화면을 떠날 때는 반드시 돌려놓습니다 - 접힌 채로 다른 화면에 가면 그 화면에서
+    // 사이드바가 사라진 이유를 알 길이 없습니다.
+    return () => document.body.classList.remove("wide-screen");
+  }, [wide]);
+
+  return (
+    <button
+      type="button"
+      onClick={() => setWide((v) => !v)}
+      className={
+        "rounded-full px-2.5 py-1 text-[11px] font-bold transition " +
+        (wide ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200")
+      }
+      title="사이드바를 접어 표를 넓게 봅니다"
+    >
+      {wide ? "↤ 사이드바 펴기" : "⤢ 넓게 보기"}
+    </button>
   );
 }

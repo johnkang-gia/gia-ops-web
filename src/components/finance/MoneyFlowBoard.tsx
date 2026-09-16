@@ -57,6 +57,18 @@ export default function MoneyFlowBoard({
   const unpaid = useMemo(() => unpaidPeople(invoices, payments, metaMap, today, only), [invoices, payments, metaMap, today, only]);
   const total = useMemo(() => totalOf(byGrade), [byGrade]);
 
+  /**
+   * **어느 청구서인지 못 붙인 돈.**
+   *
+   * 여기 숫자는 청구서에 붙은 입금만 셉니다 - 학년·반은 청구서를 통해서만 알 수 있기
+   * 때문입니다. 그래서 주인 없는 입금이 있으면 이 판의 수납액이 아래 「납부 현황」보다
+   * 작아집니다. **적어두지 않으면 두 숫자가 다른 것이 고장으로 보입니다.**
+   */
+  const unmatched = useMemo(
+    () => payments.filter((p) => !p.invoice_id).reduce((n, p) => n + Math.round(Number(p.amount ?? 0)), 0),
+    [payments],
+  );
+
   // 도넛은 **학년 순서대로** 세웁니다. 표는 급한 곳이 먼저지만, 도넛 줄은 2·3·4·5학년이
   // 늘 같은 자리에 있어야 매일 보는 사람이 눈으로 찾습니다.
   const gradeDonuts = useMemo(() => [...byGrade].sort((a, b) => gradeSortKey(a.key) - gradeSortKey(b.key)), [byGrade]);
@@ -114,6 +126,19 @@ export default function MoneyFlowBoard({
               tone={total.overdue > 0 ? "rose" : "slate"}
             />
           </div>
+
+          {/* 주인 없는 입금이 있으면 이 판의 수납액이 아래 「납부 현황」보다 작습니다.
+              말해두지 않으면 두 숫자가 다른 것이 고장으로 보이고, 그러면 둘 다 안 믿게
+              됩니다. 얼마인지와 어디서 붙이는지를 함께 적습니다. */}
+          {unmatched > 0 && (
+            <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-900">
+              <b>주인 없는 입금 {won(unmatched)}</b> 은 이 판에서 빠져 있습니다 — 어느 청구서인지 모르면 어느 학년·반의 돈인지도 알 수 없습니다.{" "}
+              <Link href="/finance/payments" className="font-bold underline">
+                수납 화면
+              </Link>
+              에서 청구서에 붙이면 이 숫자에 들어옵니다.
+            </p>
+          )}
 
           <div className="flex flex-col gap-3 lg:flex-row">
             {/* ── ② 학년·반 표 ───────────────────────────────────────── */}

@@ -32,6 +32,8 @@ import CancelInvoiceModal from "./CancelInvoiceModal";
 import TermPicker, { initialTermId } from "./TermPicker";
 import { gradeLabel } from "@/lib/feeItems";
 import type { FeeItem, Term, Invoice, StudentFeeItem } from "@/lib/types";
+import ScopeTabs from "./ScopeTabs";
+import { ALL_SCOPE, gradeOfClass } from "@/lib/gradeScope";
 
 // 인보이스 명단 표 — 학생이 행, 항목이 열인 스프레드시트.
 //
@@ -346,15 +348,6 @@ export default function InvoiceGridClient({
   }, [deptTabs, dept]);
 
   const inDept = useMemo(() => students.filter((s) => deptOf(s) === dept), [students, dept]);
-
-  const grades = useMemo(
-    () => [...new Set(inDept.map((s) => (s.grade ?? "").trim()).filter(Boolean))].sort((a, b) => gradeSortKey(a) - gradeSortKey(b)),
-    [inDept],
-  );
-  const classes = useMemo(
-    () => [...new Set(inDept.map((s) => (s.className ?? "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ko")),
-    [inDept],
-  );
 
   /**
    * 학생 한 명의 이번 학기 청구서들.
@@ -876,10 +869,6 @@ export default function InvoiceGridClient({
     URL.revokeObjectURL(a.href);
   }
 
-  const tabCls = (on: boolean) =>
-    "shrink-0 rounded-lg px-2.5 py-1 text-xs font-semibold " +
-    (on ? "bg-slate-800 text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50");
-
   /**
    * **이미 받은 학비외 청구.**
    *
@@ -1042,25 +1031,24 @@ export default function InvoiceGridClient({
       )}
 
       {/* ── 보기 ─────────────────────────────────────────────────
-          반이 먼저입니다. 교재는 반 단위로 붙고, 재무 담당자가 실제로 여는 것도 반입니다.
-          학년은 악기처럼 반을 넘어 흩어지는 것을 볼 때 씁니다. */}
-      <div className="mb-2 flex flex-wrap items-center gap-1.5">
-        <span className="text-[11px] font-bold text-slate-400">반</span>
-        {classes.map((c) => (
-          <button key={c} className={tabCls(view.kind === "반" && view.value === c)} onClick={() => setView({ kind: "반", value: c })}>
-            {c}
-          </button>
-        ))}
-        <span className="ml-2 text-[11px] font-bold text-slate-400">학년</span>
-        {grades.map((g) => (
-          <button key={g} className={tabCls(view.kind === "학년" && view.value === g)} onClick={() => setView({ kind: "학년", value: g })}>
-            {g}학년
-          </button>
-        ))}
-        <button className={tabCls(view.kind === "전체")} onClick={() => setView({ kind: "전체" })}>
-          전체
-        </button>
-      </div>
+          예전에는 반 열댓 개와 학년이 **한 줄에 평평하게** 서 있었습니다. 그러면 「2학년을
+          통째로」 보는 길이 반들 사이에 묻히고, 초등부 반이 늘수록 줄이 접혀 학년은 아예
+          화면 밖으로 나갑니다.
+
+          이제 부서 → 학년 → 반으로 한 단씩 내려갑니다. 학비 청구와 **같은 덩어리**를
+          씁니다 - 같은 일을 하다 화면만 옮겼는데 좁히는 방법이 다르면 그걸 고장으로
+          여깁니다. */}
+      <ScopeTabs
+        dept={dept === "기타" ? "부서 미상" : dept}
+        students={inDept}
+        scope={view.kind === "반" ? { grade: gradeOfClass(inDept, view.value), klass: view.value } : view.kind === "학년" ? { grade: view.value, klass: "" } : ALL_SCOPE}
+        onChange={(next) => {
+          setView(next.klass ? { kind: "반", value: next.klass } : next.grade ? { kind: "학년", value: next.grade } : { kind: "전체" });
+          // 고른 것도 함께 풉니다 - 화면에 없는 학생이 골라진 채 남으면 청구서가 안 보이는
+          // 아이에게 나갑니다.
+          setChecked(new Set());
+        }}
+      />
 
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <input

@@ -18,6 +18,8 @@ import type { FeePlan, FeePaymentOption, FeeDiscount, Term, Invoice } from "@/li
 import { PAYMENT_METHOD_KINDS } from "@/lib/payments";
 import { todayKst } from "@/lib/kst";
 import { useEditingPresence } from "@/lib/useEditingPresence";
+import ScopeTabs from "./ScopeTabs";
+import { ALL_SCOPE, inScope, type Scope } from "@/lib/gradeScope";
 
 /**
  * 학비 청구 명단 — 학생이 행, 납부 항목이 열.
@@ -148,6 +150,14 @@ export default function TuitionGridClient({
 
   const [termId, setTermId] = useState("");
   const [dept, setDept] = useState<DeptTab>("초등부");
+  /**
+   * 부서 안에서 더 좁혀 보는 두 칸. **빈 글자가 「전체」입니다.**
+   *
+   * 초등부가 100명이 넘어 한 화면에 안 들어오고, 학비를 정하는 일은 대개 **한 학년씩** 또는
+   * **한 반씩** 훑으며 합니다. 검색칸으로 반 이름을 쳐서 보던 것을 단추로 올렸습니다 -
+   * 검색은 무엇을 쳐야 하는지 아는 사람만 씁니다.
+   */
+  const [scope, setScope] = useState<Scope>(ALL_SCOPE);
   const [q, setQ] = useState("");
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
@@ -428,7 +438,7 @@ export default function TuitionGridClient({
   };
 
   const rows = useMemo(() => {
-    let list = students.filter((s) => deptOf(s) === dept);
+    let list = students.filter((s) => deptOf(s) === dept && inScope(s, scope));
     const needle = q.trim().toLowerCase();
     if (needle) list = list.filter((s) => `${s.name} ${s.nameEn ?? ""} ${s.className ?? ""}`.toLowerCase().includes(needle));
     // 「미발행만」은 **남은 항목이 있는가**로 봅니다. 한 장 나갔다고 다 된 것이 아닙니다.
@@ -440,7 +450,7 @@ export default function TuitionGridClient({
         a.name.localeCompare(b.name, "ko"),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [students, dept, q, onlyUnissued, billed]);
+  }, [students, dept, scope, q, onlyUnissued, billed]);
 
   /** 옵션을 고릅니다. 같은 학생·같은 항목은 **덮어씁니다** - 바꿀 때마다 줄이 쌓이면 청구서에 같은 항목이 두 번 찍힙니다. */
   async function pickOption(student: TuitionStudent, plan: FeePlan, optionId: string) {
@@ -713,6 +723,9 @@ export default function TuitionGridClient({
               key={d}
               onClick={() => {
                 setDept(d);
+                setScope(ALL_SCOPE);
+                // 고른 것도 함께 풉니다 - 안 보이는 학생이 골라진 채로 남으면 「고른 3명
+                // 발행」이 화면에 없는 아이에게 나갑니다.
                 setChecked(new Set());
               }}
               className={
@@ -770,6 +783,21 @@ export default function TuitionGridClient({
             ))}
         </span>
       </div>
+
+      {/* 부서 하나가 100명이 넘어 한 화면에 안 들어옵니다. 학비를 정하는 일은 대개
+          **한 학년씩** 또는 **한 반씩** 훑으며 하므로, 좁히는 단추를 표 위에 둡니다.
+          학비외와 **같은 덩어리**를 씁니다(ScopeTabs). */}
+      <ScopeTabs
+        dept={dept}
+        students={students.filter((s) => deptOf(s) === dept)}
+        scope={scope}
+        onChange={(next) => {
+          setScope(next);
+          // 고른 것도 함께 풉니다 - 화면에 없는 학생이 골라진 채로 남으면 「고른 3명
+          // 발행」이 안 보이는 아이에게 나갑니다.
+          setChecked(new Set());
+        }}
+      />
 
       {/* ── 보기: 정규과정 / 방과후 ─────────────────────────────────────────
           발행은 예전부터 항목별로 됐지만 화면은 늘 전부를 함께 보여줬습니다. 그래서

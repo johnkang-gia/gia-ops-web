@@ -96,7 +96,10 @@ export default async function TuitionPage() {
   }));
 
   return (
-    <div className="mx-auto w-full max-w-[1500px] p-4 sm:p-6">
+    // **가운데로 몰지 않습니다.** 1500px 로 묶고 가운데 정렬해 두어서, 넓은 화면에서는
+    // 좌우에 각각 250px 가까운 빈 자리가 생기고 정작 표는 오른쪽이 잘렸습니다. 이 표는
+    // 열이 열 개라 화면이 넓을수록 그만큼 더 보여야 합니다.
+    <div className="w-full px-2 py-3">
       <div className="mb-1 flex items-center justify-between gap-2">
         <h1 className="text-lg font-bold">💰 청구 · 학비</h1>
         <GuideButton title="학비 청구 사용 가이드" sections={GUIDE_SECTIONS} />

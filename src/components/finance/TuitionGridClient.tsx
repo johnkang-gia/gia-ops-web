@@ -1000,7 +1000,7 @@ export default function TuitionGridClient({
                           disabled={busy || !mine}
                           onClick={() => setCellFor(open ? null : { studentId: s.id, planId: p.id })}
                           className={
-                            "w-full rounded border px-1 py-0.5 text-left text-[11px] transition " +
+                            "block min-h-[38px] w-full rounded border px-1 py-1 text-left text-[11px] leading-tight transition " +
                             (open
                               ? "border-teal-500 bg-white ring-2 ring-teal-200"
                               : mine
@@ -1009,40 +1009,45 @@ export default function TuitionGridClient({
                           }
                           title={mine ? "납부 옵션과 이 항목 할인을 정합니다" : `${p.name}은 이 학생의 학년·반 대상이 아닙니다`}
                         >
-                          {/* **한 줄로 둡니다.** 「— 신청 안 함」이 「신청 / 안 함」으로 접히면
-                              줄 높이가 아이마다 달라져서, 139줄을 훑을 때 눈이 계속 걸립니다.
-                              칸보다 길면 잘라 보여주고 전체는 풀이말(title)로 봅니다. */}
-                          <span
-                            className={
-                              "block truncate whitespace-nowrap " +
-                              (line ? "font-semibold text-slate-700" : "text-slate-400")
-                            }
-                          >
-                            {line ? line.optionName : mine ? "— 신청 안 함" : "대상 아님"}
-                          </span>
-                          {ds.length > 0 && (
-                            <span className="ml-1 rounded bg-violet-100 px-1 text-[10px] font-bold text-violet-800">
-                              할인 {ds.length}
+                          {/* **한 줄에 하나씩.** 예전에는 「— 신청 안 함」 아래에 「—」가 또
+                              오른쪽에 붙어 두 줄이 됐습니다. 아무것도 안 고른 칸에 글자가 둘이면
+                              139줄을 훑을 때 고른 칸과 안 고른 칸이 한눈에 안 갈립니다.
+                              고른 칸만 아랫줄에 금액을 답니다. */}
+                          <span className="flex min-w-0 items-center gap-1">
+                            <span
+                              className={
+                                "min-w-0 flex-1 truncate whitespace-nowrap " +
+                                (line ? "font-semibold text-slate-700" : "text-slate-400")
+                              }
+                            >
+                              {line ? line.optionName : mine ? "신청 안 함" : "대상 아님"}
                             </span>
-                          )}
+                            {ds.length > 0 && (
+                              <span className="shrink-0 rounded bg-violet-100 px-1 text-[10px] font-bold text-violet-800">
+                                할인 {ds.length}
+                              </span>
+                            )}
                           {/* **계산된 금액과 사람이 정한 금액은 구별되어야 합니다.** 표시가
                               없으면 요금이 오를 때 이 칸이 왜 안 따라오는지 아무도 모릅니다. */}
-                          {line?.manual && (
-                            <span className="ml-1 rounded bg-amber-100 px-1 text-[10px] font-bold text-amber-800">
-                              직접
-                            </span>
-                          )}
+                            {line?.manual && (
+                              <span className="shrink-0 rounded bg-amber-100 px-1 text-[10px] font-bold text-amber-800">
+                                직접
+                              </span>
+                            )}
                           {/* **같은 칸을 둘이 만지면 나중에 저장한 쪽이 앞사람 것을 덮습니다.**
                               덮였다는 사실은 화면에 안 나타나므로, 만지는 중이라는 것만이라도
                               보여야 옆자리에 물어볼 수 있습니다. */}
-                          {busyBy.length > 0 && (
-                            <span className="ml-1 animate-pulse rounded bg-rose-100 px-1 text-[10px] font-bold text-rose-700">
-                              ✍ {busyBy.map((x) => x.name).join("·")}
+                            {busyBy.length > 0 && (
+                              <span className="shrink-0 animate-pulse rounded bg-rose-100 px-1 text-[10px] font-bold text-rose-700">
+                                ✍ {busyBy.map((x) => x.name).join("·")}
+                              </span>
+                            )}
+                          </span>
+                          {line && (
+                            <span className="mt-0.5 block whitespace-nowrap text-right font-bold tabular-nums text-teal-800">
+                              {won(line.amount)}
                             </span>
                           )}
-                          <span className="mt-0.5 block whitespace-nowrap text-right font-bold tabular-nums text-teal-800">
-                            {line ? won(line.amount) : "—"}
-                          </span>
                         </button>
 
                         {open && (

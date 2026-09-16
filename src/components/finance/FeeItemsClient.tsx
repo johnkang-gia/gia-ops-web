@@ -849,6 +849,13 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
               <tr key={i.id} className="border-t border-slate-100">
                 <td className="px-3 py-2 text-[11px] font-semibold text-slate-500">{i.category}</td>
                 <td className="px-3 py-2">
+                  {/* **고유 번호를 이름 앞에 둡니다.** 이름이 같은 항목이 넷 있어서(학년별
+                      중국어 교재) 이름만으로는 어느 것을 보고 있는지 알 수 없습니다. */}
+                  {i.code && (
+                    <span className="mr-1.5 rounded bg-slate-100 px-1 py-0.5 font-mono text-[10px] font-bold text-slate-600">
+                      {i.code}
+                    </span>
+                  )}
                   <span className="font-semibold text-slate-800">{i.name}</span>
                   {i.name_ko && <span className="ml-1.5 text-[11px] text-slate-400">{i.name_ko}</span>}
                   {i.note && <span className="ml-1.5 text-[11px] text-slate-400">· {i.note}</span>}

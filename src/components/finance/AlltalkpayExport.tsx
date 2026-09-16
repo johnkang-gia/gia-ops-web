@@ -10,6 +10,8 @@ import {
   ROLE_LABEL,
   ROLE_SHORT,
   SHEET_NAME,
+  PAY_WINDOW_DAYS,
+  payExpiryDate,
   prettyPhone,
   toAoa,
   type BillPlan,
@@ -52,6 +54,22 @@ export default function AlltalkpayExport({ invoiceIds, onClose, onMarked }: Prop
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [dueHour, setDueHour] = useState<number>(DEFAULT_DUE_HOUR);
+  /**
+   * **결제만료일자** — 이 파일을 만드는 날 기준 이레 뒤.
+   *
+   * 예전에는 청구서의 납부 기한을 그대로 넣었습니다. 그 기한은 발행한 날 정해진 것이라,
+   * 며칠 지나 다시 보내거나 밀린 건을 모아 보내면 **이미 지난 날짜**가 파일에 들어갑니다.
+   * 학부모는 결제창을 열자마자 만료라 아무것도 못 내는데, 우리 화면에는 「보냈음」으로
+   * 남아서 아무도 못 찾습니다.
+   *
+   * 화면에서 열 때 한 번 정합니다 - 창을 열어둔 채 자정을 넘기는 일은 드물고, 파일 안의
+   * 모든 줄이 같은 날짜여야 어느 줄이 먼저 닫히는지 셀 수 있습니다.
+   */
+  const expiryDate = useMemo(
+    // kst-ok: 브라우저에서 도는 화면이고, 담당자가 보는 「오늘」이 한국 날짜입니다.
+    () => payExpiryDate(new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" })),
+    [],
+  );
   /** 청구서마다 바꾼 대상. 서버로 함께 보내 명단을 다시 만듭니다. */
   const [roles, setRoles] = useState<Record<string, GuardianRole>>({});
 
@@ -111,7 +129,7 @@ export default function AlltalkpayExport({ invoiceIds, onClose, onMarked }: Prop
     setBusy(true);
     try {
       const XLSX = await import("xlsx");
-      const ws = XLSX.utils.aoa_to_sheet(toAoa(plan.rows, { dueHour }));
+      const ws = XLSX.utils.aoa_to_sheet(toAoa(plan.rows, { dueHour, expiryDate }));
 
       // 번호 칸(C열)은 글자로 굳힙니다. 숫자로 두면 엑셀이 앞의 0을 지워 01012345678이
       // 1012345678이 되고, 올톡페이는 그 번호로 못 보냅니다.
@@ -184,6 +202,16 @@ export default function AlltalkpayExport({ invoiceIds, onClose, onMarked }: Prop
                     형제 <b>한 장으로</b> 합치기
                   </span>
                 </label>
+
+                {/* **만료일자는 고르는 값이 아닙니다.** 보내는 날 기준 이레로 고정합니다 -
+                    고를 수 있게 두면 지난 날짜를 그대로 두고 보내는 날이 옵니다. */}
+                <span
+                  className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-[12px] text-slate-600"
+                  title={`오늘부터 ${PAY_WINDOW_DAYS}일 동안 결제할 수 있습니다. 청구서의 납부 기한과 따로입니다 - 지난 건을 다시 보내도 결제창이 열려 있어야 합니다.`}
+                >
+                  결제만료일자 <b className="tabular-nums text-slate-800">{expiryDate}</b>
+                  <span className="ml-1 text-slate-400">(오늘+{PAY_WINDOW_DAYS}일)</span>
+                </span>
 
                 <label className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-2 py-1.5 text-[12px]">
                   <span className="text-slate-500">결제만료시간</span>
@@ -315,7 +343,7 @@ export default function AlltalkpayExport({ invoiceIds, onClose, onMarked }: Prop
                         <td className="px-2 py-1 text-right tabular-nums font-bold text-slate-800">{won(r.amount)}</td>
                         <td className="px-2 py-1 text-slate-500">{r.memo}</td>
                         <td className="px-2 py-1 tabular-nums text-slate-500">
-                          {r.dueDate} {String(dueHour).padStart(2, "0")}시
+                          {expiryDate} {String(dueHour).padStart(2, "0")}시
                         </td>
                       </tr>
                     ))}

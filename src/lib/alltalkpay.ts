@@ -446,9 +446,36 @@ export function ymd(date: string): number {
   return Number(date.replace(/\D/g, "").slice(0, 8));
 }
 
+/** 결제창을 열어두는 날 수. 오늘부터 이레입니다. */
+export const PAY_WINDOW_DAYS = 7;
+
+/**
+ * **올톡페이 결제만료일자** — 보내는 날 기준 이레 뒤.
+ *
+ * 청구서의 납부 기한을 그대로 쓰면 안 됩니다. 기한은 발행한 날 정해진 것이라, 며칠 지나
+ * 다시 보내거나 밀린 건을 모아 보낼 때 **이미 지난 날짜**가 파일에 들어갑니다. 그러면
+ * 학부모가 결제창을 열자마자 만료라 아무것도 못 내고, 화면에는 오류가 아니라 「보냈음」으로
+ * 남습니다.
+ *
+ * 날짜는 한국 기준입니다 - 서버는 세계표준시로 도는데 오전 9시 이전에는 하루 어제가 됩니다(§4).
+ */
+export function payExpiryDate(today: string): string {
+  const [y, m, d] = today.split("-").map(Number);
+  // kst-ok: 받은 글자(이미 한국 날짜)에 날을 더하기만 합니다. 「지금」을 기계 시간대로 굳히지 않습니다.
+  const t = new Date(Date.UTC(y, m - 1, d + PAY_WINDOW_DAYS));
+  return t.toISOString().slice(0, 10);
+}
+
 export type SendOptions = {
   /** 결제만료시간(시). */
   dueHour: number;
+  /**
+   * 결제만료일자(YYYY-MM-DD). 보내는 날 기준 이레 뒤입니다.
+   *
+   * 줄마다 다르지 않습니다 - 한 번에 내보내는 파일은 같은 날 같은 창구로 나가므로, 줄마다
+   * 다른 만료일을 두면 어느 줄이 먼저 닫히는지 아무도 못 셉니다.
+   */
+  expiryDate: string;
   /** 예약 발송을 쓸 때의 날짜(YYYY-MM-DD). 비우면 예약 없이 바로 보냅니다. */
   reserveDate?: string | null;
   /** 예약 발송 시각(시). */
@@ -467,9 +494,12 @@ export function toAoa(rows: BillRow[], opts: SendOptions): (string | number)[][]
   const reserveHour =
     opts.reserveDate && opts.reserveHour != null ? hourLabel(opts.reserveHour) : "";
 
+  // 만료일자는 **보내는 날 기준**입니다. 청구서의 납부 기한(`r.dueDate`)을 쓰면 지난 건을
+  // 다시 보낼 때 이미 만료된 날짜가 들어갑니다.
+  const expiry = ymd(opts.expiryDate);
   return [
     [...COLUMNS],
-    ...rows.map((r) => [r.memo, r.name, r.phone, r.amount, ymd(r.dueDate), hour, reserveDay, reserveHour]),
+    ...rows.map((r) => [r.memo, r.name, r.phone, r.amount, expiry, hour, reserveDay, reserveHour]),
   ];
 }
 

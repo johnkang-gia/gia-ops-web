@@ -336,8 +336,12 @@ function PilotRouteCard({
             {route ? `${route.direction} ${route.route_no}호 ${route.name ?? ""}` : "노선 정보 없음"}
           </p>
           <p className="text-xs text-slate-400">
+            {/* 한 번도 안 온 것과 오다가 늦는 것은 다릅니다 - 앞은 기사님께 연락해야 하고
+                뒤는 기다리면 됩니다. 같은 글자로 적으면 할 일을 정할 수 없습니다. */}
             {running ? (
-              <span className="font-semibold text-blue-600">🔵 운행중{fresh ? "" : " · 수신 지연"}</span>
+              <span className="font-semibold text-blue-600">
+                🔵 운행중{freshnessSec == null ? " · GPS 신호 없음(사람이 체크)" : fresh ? "" : " · 수신 지연"}
+              </span>
             ) : endEvent ? (
               <span className="text-emerald-600">완주 · {durationMin}분 소요</span>
             ) : (

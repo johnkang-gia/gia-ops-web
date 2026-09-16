@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { BILL_LABEL, billedItems, markOf } from "@/lib/billedItems";
+import { askText, compareIssue, type IssueCompare } from "@/lib/issueCompare";
 import { useFinanceLive } from "@/lib/useFinanceLive";
 import DragScroll from "@/components/common/DragScroll";
 import FeeItemsButton from "./FeeItemsModal";
@@ -487,6 +488,37 @@ export default function InvoiceGridClient({
   }, [rows, scopedItems, overrides]);
 
   /**
+   * **이번에 담을 것이 지난번과 같은가.** 판정은 `compareIssue` 한 곳입니다.
+   *
+   * 「지난번에 없던 항목이 생겼다」와 「지난번과 똑같다」는 뜻이 정반대인데, 예전에는 둘 다
+   * 그냥 발행됐습니다. 앞쪽을 놓치면 새 항목이 빠지고, 뒤쪽을 놓치면 같은 돈이 두 번
+   * 나갑니다 - 화면에는 둘 다 「발행됨」으로 보입니다.
+   */
+  const compareFor = useCallback(
+    (studentId: string, category: string | null): IssueCompare => {
+      const mine = (linesByStudent.get(studentId) ?? []).filter((l) => !category || l.item.category === category);
+      return compareIssue(
+        mine.map((l) => {
+          const m = markFor(studentId, l.item);
+          return {
+            label: l.item.name_ko?.trim() || l.item.name,
+            state: !m ? ("안나감" as const) : m.unsure ? ("모름" as const) : ("나감" as const),
+          };
+        }),
+      );
+    },
+    [linesByStudent, markFor],
+  );
+  /**
+   * **한 번 더 발행해도 좋다고 사람이 정한 학생.**
+   *
+   * 「지난번과 똑같다」는 대개 잘못 누른 것이라 기본은 안 보냅니다. 분실·재발송처럼 정말
+   * 한 장 더 필요한 경우가 있어서 길은 열어두되, **사람이 그 줄에서 직접 체크**해야
+   * 열립니다 - 전체를 한 번에 푸는 단추를 두면 그게 곧 기본값이 됩니다.
+   */
+  const [againOk, setAgainOk] = useState<Set<string>>(new Set());
+
+  /**
    * 지금 보이는 명단에서 실제로 쓰이는 항목만 열로 세웁니다.
    *
    * 여기에 한 겹을 더 뒀습니다 — **이 명단과 상관없는 항목은 펼쳐도 세우지 않습니다.**
@@ -863,9 +895,20 @@ export default function InvoiceGridClient({
               .join(", ")}). 상세에서 확인해주세요`,
           );
         }
-        if (rest.length === 0) {
+        /**
+         * **담을 것이 모두 이미 나갔을 때** — 사람이 그 줄에서 「한 번 더」를 체크했으면
+         * 전부 다시 담고, 안 했으면 보내지 않습니다.
+         *
+         * 잘못 누른 것이 대부분이라 기본은 안 보냅니다. 다만 분실·재발송처럼 정말 한 장 더
+         * 필요한 경우가 있어서, 사람이 정하면 그때는 **전부** 담습니다 - 재발송인데 절반만
+         * 담긴 종이가 나가면 그게 더 나쁩니다.
+         */
+        const send = rest.length === 0 && againOk.has(s.id) ? mine : rest;
+        if (send.length === 0) {
           // 조용히 건너뛰면 발행된 줄 알고 넘어갑니다. 왜 빠졌는지 말해줍니다(§5).
-          failed.push(`${s.name}(${category ?? "학비외"} — 이미 모두 청구서에 나갔습니다)`);
+          failed.push(
+            `${s.name}(${category ?? "학비외"} — 이전 발행과 같습니다. 한 번 더 보내려면 발행 전 확인에서 체크해주세요)`,
+          );
           continue;
         }
         const res = await fetch("/api/finance/invoices", {
@@ -876,7 +919,7 @@ export default function InvoiceGridClient({
             dueDate,
             feeTermId: termId || null,
             category,
-            itemIds: rest.map((l) => l.item.id),
+            itemIds: send.map((l) => l.item.id),
           }),
         });
         // ── 돌아온 것이 우리 답이 맞는가 ─────────────────────────────────────
@@ -906,7 +949,7 @@ export default function InvoiceGridClient({
           // **번호를 함께 얹습니다.** 이름만 얹으면 이름이 같은 다른 학년 교재까지 함께
           // 잠깁니다 - 아직 안 나간 교재가 화면에서 사라집니다.
           if (invId)
-            setLineRows((p) => [...p, ...rest.map((l) => ({ invoice_id: invId, name: l.item.name, item_id: l.item.id }))]);
+            setLineRows((p) => [...p, ...send.map((l) => ({ invoice_id: invId, name: l.item.name, item_id: l.item.id }))]);
         }
         // 한 명이 실패해도 나머지는 계속합니다. 다만 **누가 실패했는지 반드시 말합니다** -
         // 조용히 넘기면 그 아이만 인보이스 없이 남습니다.
@@ -1874,7 +1917,8 @@ export default function InvoiceGridClient({
             const mark = markFor(alreadyFor.id, l.item);
             return {
               id: l.item.id,
-              label: l.item.name_ko?.trim() || l.item.name,
+              // 번호를 앞에 붙입니다 - 한글 이름만 다르고 이름이 같은 항목이 넷 있습니다.
+              label: `${l.item.code ? `${l.item.code} ` : ""}${l.item.name_ko?.trim() || l.item.name}`,
               amount: Number(l.amount ?? 0),
               // 이름만으로 맞은 것(옛 줄 · 겹치는 이름)은 **잠그지 않습니다.** 잠그면 아직
               // 안 받은 돈이 화면에서 사라지고, 사라진 돈은 아무도 안 찾습니다.
@@ -1952,17 +1996,71 @@ export default function InvoiceGridClient({
                   {review.map((s) => {
                     const typical = unusual(s);
                     const ls = linesByStudent.get(s.id) ?? [];
+                    /**
+                     * **이전 발행과 대조합니다.** 지난번에 없던 항목이 생긴 것과 지난번과
+                     * 똑같은 것은 뜻이 정반대인데, 예전에는 둘 다 그냥 나갔습니다.
+                     */
+                    const cmp = compareFor(s.id, cat === "전체" ? null : cat);
+                    const ask = askText(cmp);
+                    const again = cmp.verdict === "같음";
                     return (
-                      <tr key={s.id} className={"border-t border-slate-100 " + (typical != null ? "bg-amber-50/60" : "")}>
+                      <tr
+                        key={s.id}
+                        className={
+                          "border-t border-slate-100 " +
+                          (again && !againOk.has(s.id) ? "bg-slate-100" : typical != null ? "bg-amber-50/60" : "")
+                        }
+                      >
                         <td className="px-2 py-1.5 align-top">
                           <span className="font-semibold text-slate-800">{s.name}</span>
                           <span className="ml-1 text-[10px] text-slate-400">{s.className}</span>
-                          {invoiceByStudent.has(s.id) && (
-                            <span className="ml-1 text-[10px] font-bold text-amber-700">이미 발행됨 — 한 장 더 나갑니다</span>
+                          {ask && (
+                            <span
+                              className={
+                                "ml-1 block text-[10px] font-bold " + (again ? "text-slate-600" : "text-amber-700")
+                              }
+                            >
+                              {ask}
+                            </span>
+                          )}
+                          {/* **똑같은 건은 기본으로 안 보냅니다.** 대개 잘못 누른 것입니다.
+                              분실·재발송처럼 정말 한 장 더 필요하면 이 줄에서 체크합니다 -
+                              전체를 한 번에 푸는 단추를 두면 그게 곧 기본값이 됩니다. */}
+                          {again && (
+                            <label className="mt-1 flex cursor-pointer items-center gap-1 text-[11px] font-semibold text-slate-700">
+                              <input
+                                type="checkbox"
+                                checked={againOk.has(s.id)}
+                                onChange={(e) =>
+                                  setAgainOk((p) => {
+                                    const next = new Set(p);
+                                    if (e.target.checked) next.add(s.id);
+                                    else next.delete(s.id);
+                                    return next;
+                                  })
+                                }
+                              />
+                              한 번 더 발행
+                            </label>
+                          )}
+                          {cmp.unsure.length > 0 && (
+                            <span className="mt-0.5 block text-[10px] font-bold text-amber-700">
+                              확인 필요 — 이름이 같은 항목이 있어 가릴 수 없습니다: {cmp.unsure.join(", ")}
+                            </span>
                           )}
                         </td>
                         <td className="px-2 py-1.5 text-[11px] leading-relaxed text-slate-500">
-                          {ls.map((l) => `${l.item.name}${l.qty > 1 ? `×${l.qty}` : ""}`).join(" · ")}
+                          {/* 새로 나가는 것과 이미 나간 것을 **갈라서** 보여줍니다. 한 줄에
+                              섞어 두면 무엇이 이번에 청구되는지 눈으로 셀 수 없습니다. */}
+                          {cmp.fresh.length > 0 && (
+                            <span className="block font-semibold text-slate-700">새로: {cmp.fresh.join(" · ")}</span>
+                          )}
+                          {cmp.again.length > 0 && (
+                            <span className="block text-slate-400">이미 나감: {cmp.again.join(" · ")}</span>
+                          )}
+                          {cmp.fresh.length === 0 && cmp.again.length === 0 && (
+                            <span>{ls.map((l) => `${l.item.name}${l.qty > 1 ? `×${l.qty}` : ""}`).join(" · ")}</span>
+                          )}
                         </td>
                         <td className="px-2 py-1.5 text-right align-top">
                           <span className="block font-bold tabular-nums text-slate-800">{won(totalOf(s.id))}</span>
@@ -1987,7 +2085,15 @@ export default function InvoiceGridClient({
               >
                 {busy
                   ? "발행 중…"
-                  : `${review.length}명 · ${planFor(review, issueMode).length}장 발행${cat === "전체" ? "" : ` (${cat})`}`}
+                  : (() => {
+                      // **실제로 나가는 사람 수**를 적습니다. 고른 사람 수를 적으면 이전과
+                      // 똑같아 빠지는 학생까지 세어져, 끝나고 숫자가 안 맞습니다.
+                      const going = review.filter((s) => {
+                        const c = compareFor(s.id, cat === "전체" ? null : cat);
+                        return c.verdict !== "같음" || againOk.has(s.id);
+                      });
+                      return `${going.length}명 · ${planFor(going, issueMode).length}장 발행${cat === "전체" ? "" : ` (${cat})`}`;
+                    })()}
               </button>
             </div>
           </div>
@@ -2316,6 +2422,13 @@ export default function InvoiceGridClient({
                                 ✓
                               </button>
                               <span className="min-w-0 flex-1">
+                                {/* **고유 번호를 이름 앞에.** 이름이 같은 항목이 넷 있어서
+                                    (학년별 중국어 교재) 이름만 보면 어느 것인지 모릅니다. */}
+                                {item.code && (
+                                  <span className="mr-1 rounded bg-slate-100 px-1 py-0.5 font-mono text-[9px] font-bold text-slate-500">
+                                    {item.code}
+                                  </span>
+                                )}
                                 <span className={"text-sm " + (l ? "font-semibold text-slate-800" : "text-slate-500")}>
                                   {item.name}
                                 </span>

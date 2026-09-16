@@ -496,13 +496,25 @@ function RouteChip({
 //
 // 요청: "출발했다면 어느정류장으로 가고있는지, 정류장에 도착했다면 누가 내리는지". 기사님 휴대폰
 // GPS가 정류장 반경에 들어오면 그 정류장을 도착으로 잡고(track), 여기서 "방금 어느 정류장에
-// 닿았고 거기서 누가 내리며, 다음은 어느 정류장인지"를 한 줄로 보여줍니다. 아직 정류장 좌표가
-// 학습되지 않았거나 GPS가 없는 차는 이 목록에 나타나지 않습니다(카드 띠의 도착·출발만 표시).
+// 닿았고 거기서 누가 내리며, 다음은 어느 정류장인지"를 한 줄로 보여줍니다.
+//
+// ── GPS 없는 차도 여기 떴습니다 ─────────────────────────────────────────────
+//
+// 이 패널의 제목은 「운행 상황 (GPS)」인데, 담는 기준은 **사람이 누른 출발**이었습니다.
+// 그래서 GPS를 한 번도 켠 적 없는 차(기기는 48대 전부 발급돼 있고, 실제로 신호가 오는 것은
+// 두 대뿐입니다)도 도착체크에서 출발을 누르는 순간 이 목록에 올라왔습니다. 보는 사람에게는
+// 「GPS가 잡고 있는 차」로 읽힙니다 - 그 차의 위치를 우리가 알고 있다고 믿게 됩니다.
+//
+// 이제 **GPS 신호가 있거나 정류장 도착이 잡힌 차**만 담고, 사람이 눌러서 운행중인 차는
+// 「사람이 체크」라고 적어 따로 보여줍니다. 지우지 않는 이유는 그 차도 실제로 길 위에 있기
+// 때문입니다 - 안 보이면 이번에는 빠뜨립니다.
 function RunningPanel({ routes, sc }: { routes: RouteRow[]; sc: BoardScale }) {
   // 출발했거나(운행중) 정류장 도착이 하나라도 잡힌 차만 - "지금 길 위에 있는 차"에 집중합니다.
   const active = routes
     .map((r, i) => ({ r, color: routeColorAt(i, routes.length) }))
     .filter(({ r }) => r.status === "운행중" || (r.stopProgress ?? []).some((s) => s.arrived));
+  /** GPS가 실제로 잡고 있는 차인가. 아니면 사람이 눌러서 운행중인 것입니다. */
+  const tracked = (r: RouteRow) => !!r.ping || (r.stopProgress ?? []).some((s) => s.arrived);
   if (active.length === 0) return null;
 
   return (
@@ -519,6 +531,13 @@ function RunningPanel({ routes, sc }: { routes: RouteRow[]; sc: BoardScale }) {
             <div key={r.routeId} style={{ display: "flex", alignItems: "flex-start", gap: sc.s(7, 5), background: "#1e293b", borderLeft: `4px solid ${color}`, borderRadius: sc.s(8, 5), padding: `${sc.s(5, 3)}px ${sc.s(9, 6)}px` }}>
               <span style={{ fontSize: sc.s(15, 12), fontWeight: 900, color: "#fff", whiteSpace: "nowrap" }}>{r.routeNo}호</span>
               <div style={{ minWidth: 0, flex: 1 }}>
+                {/* **GPS가 잡고 있는 차인지 적습니다.** 안 적으면 제목이 「GPS」라서 여기
+                    올라온 차는 모두 위치를 알고 있는 것으로 읽힙니다. */}
+                {!tracked(r) && (
+                  <span style={{ fontSize: sc.s(10, 9), fontWeight: 700, color: "#fbbf24" }}>
+                    사람이 체크 · GPS 신호 없음
+                  </span>
+                )}
                 {current ? (
                   <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: sc.s(5, 3) }}>
                     <span style={{ fontSize: sc.s(12, 10), fontWeight: 800, color: "#fdba74", whiteSpace: "nowrap" }}>

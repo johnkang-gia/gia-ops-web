@@ -1,5 +1,6 @@
 import type { ChecklistAnchor, ChecklistTemplate, Term } from "./types";
 import { anchorDate, repeatDates, type AnchorNode } from "./academicRepeat";
+import { dateOfTermWeek } from "./termWeek";
 import { appliesToTerm } from "./termTypes";
 
 export function toDateStr(d: Date): string {
@@ -22,6 +23,17 @@ export function toDateStr(d: Date): string {
 function occurrencesFor(term: Term, t: ChecklistTemplate, nodes: Map<string, AnchorNode>): string[] {
   const kind = t.repeat_kind ?? "term";
   if (kind === "term") {
+    // **주차로 적은 규칙이 먼저입니다.** 「학기 3주차 월요일」은 학기 시작이 언제로 밀리든
+    // 같은 자리에 옵니다. 안 적었으면(`week_no` 가 비었으면) 예전처럼 학기 시작·종료일에서
+    // 며칠 전·후로 셉니다 - 새 칸이 생겼다고 고친 적 없는 규칙의 날짜가 움직이면 안 됩니다.
+    if (t.week_no != null && term.start_date) {
+      const day = dateOfTermWeek(term.start_date, t.week_no, t.week_dow);
+      // 학기 밖으로 나간 주차는 만들지 않습니다. 캠프에 「12주차」를 걸어두면 캠프가 끝난
+      // 뒤 날짜가 나오는데, 달력에는 뜨지만 아무도 못 하는 일입니다.
+      if (!day) return [];
+      if (term.end_date && day > term.end_date) return [];
+      return [day];
+    }
     const node = nodes.get(t.id);
     const day = node ? anchorDate(node, nodes, { start: term.start_date, end: term.end_date }) : null;
     return day ? [day] : [];

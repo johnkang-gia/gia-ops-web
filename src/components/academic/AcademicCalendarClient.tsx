@@ -9,6 +9,7 @@ import { createClient } from "@/lib/supabase/client";
 import type { ChecklistAnchor, ChecklistItem, ChecklistMeeting, ChecklistTemplate, Term } from "@/lib/types";
 import { ANCHOR_LABEL, toDateStr, addDays } from "@/lib/academicChecklist";
 import { describeRepeat } from "@/lib/academicRepeat";
+import { describeTermWeek, type TermKind } from "@/lib/termWeek";
 import { describeTermScope } from "@/lib/termTypes";
 import { friendlyError } from "@/lib/errorMessage";
 import GuideButton from "@/components/common/GuideButton";
@@ -372,7 +373,12 @@ export default function AcademicCalendarClient({
                     훑어서는 무슨 규칙인지 알 수 없고, 잘못 만든 규칙도 눈에 안 띕니다. */}
                 <span className="text-[11px] text-slate-400">
                   {(t.repeat_kind ?? "term") === "term"
-                    ? `${ANCHOR_LABEL[t.anchor]} ${Math.abs(t.offset_days)}일 ${t.offset_days < 0 ? "후" : "전"}`
+                    ? // **주차로 적은 규칙은 주차로 보여줍니다.** 계산이 주차를 먼저 보는데
+                      // 목록이 「학기 시작일 0일 전」이라고 적으면, 화면에 적힌 말과 실제로
+                      // 생기는 날짜가 다릅니다.
+                      t.week_no != null
+                      ? describeTermWeek(t.week_no, t.week_dow, (t.term_kind as TermKind | null) ?? null)
+                      : `${ANCHOR_LABEL[t.anchor]} ${Math.abs(t.offset_days)}일 ${t.offset_days < 0 ? "후" : "전"}`
                     : describeRepeat(
                         { kind: t.repeat_kind, month: t.repeat_month, day: t.repeat_day, dow: t.repeat_dow },
                         t.offset_days,
@@ -563,17 +569,40 @@ export default function AcademicCalendarClient({
                         {(isTermStart || isTermEnd) && (
                           <span className="text-[9px] font-bold text-emerald-600">{isTermStart ? "🏫 학기 시작" : "🏁 학기 종료"}</span>
                         )}
-                        {dayItems.slice(0, 2).map((it) => (
-                          <span
-                            key={it.id}
-                            className={
-                              "w-full truncate rounded px-1 text-[9px] " +
-                              (it.done ? "bg-slate-100 text-slate-400 line-through" : "bg-amber-100 text-amber-700")
-                            }
-                          >
-                            {it.title}
-                          </span>
-                        ))}
+                        {/*
+                          **기간짜리는 막대 하나입니다.**
+
+                          예전에는 걸쳐 있는 날마다 제목을 통째로 적었습니다. 그래서 9월 7일부터
+                          12월 18일까지인 「크리스마스 콘서트 준비」가 백 날 넘게 같은 글자로
+                          도배되어, 그 달에 **다른 일정이 있는지조차 안 보였습니다** - 칸마다
+                          두 줄뿐이라 다른 일이 「+3개 더」 뒤로 밀립니다.
+                          업무 달력과 같은 규칙으로 그립니다: 제목은 **시작한 날과 주가 바뀌는
+                          날(일요일)** 에만 적고, 나머지 날은 이어지는 막대만 둡니다. 그러면 한
+                          줄짜리 일이 그 달에 몇 건인지 한눈에 보입니다.
+                        */}
+                        {dayItems.slice(0, 2).map((it) => {
+                          const last = it.end_date && it.end_date > it.due_date ? it.end_date : it.due_date;
+                          const isRangeStart = it.due_date === dateKey;
+                          const isRangeEnd = last === dateKey;
+                          // 주가 바뀌면 다시 적습니다. 안 적으면 둘째 줄부터는 무슨 막대인지
+                          // 모릅니다 - 앞 줄 끝까지 눈으로 되짚어야 합니다.
+                          const showTitle = isRangeStart || col === 0;
+                          return (
+                            <span
+                              key={it.id}
+                              title={it.title}
+                              className={
+                                "w-full truncate px-1 text-[9px] " +
+                                (isRangeStart ? "rounded-l " : "") +
+                                (isRangeEnd ? "rounded-r " : "") +
+                                (!isRangeStart && !isRangeEnd ? "" : "") +
+                                (it.done ? "bg-slate-100 text-slate-400 line-through" : "bg-amber-100 text-amber-700")
+                              }
+                            >
+                              {showTitle ? it.title : "\u00a0"}
+                            </span>
+                          );
+                        })}
                         {dayItems.length > 2 && <span className="text-[9px] text-slate-400">+{dayItems.length - 2}개 더</span>}
                       </>
                     )}

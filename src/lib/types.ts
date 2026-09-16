@@ -155,6 +155,18 @@ export type ChecklistTemplate = {
    * 안 도는 것은 오류로 안 보이고, 그 학기가 다 지난 뒤에야 발견됩니다.
    */
   term_types: string[] | null;
+  /**
+   * **학기 시작 후 몇 주차**(시작 주가 1주차). 채워져 있으면 anchor·offset_days 대신
+   * 이것으로 날짜를 정합니다.
+   *
+   * 날짜로 적어두면 해마다 어긋납니다 - 학기 시작이 한 주 밀리면 준비 기간이 한 주
+   * 짧아지는데, 날짜는 그대로라 달력에는 그 사실이 안 보입니다.
+   */
+  week_no: number | null;
+  /** 0=일 … 6=토. 비어 있으면 그 주 월요일. */
+  week_dow: number | null;
+  /** 정규 | 캠프. 주차의 길이가 다르므로 섞어 쓰지 않습니다. */
+  term_kind: string | null;
   created_at: string;
   updated_at: string;
 };

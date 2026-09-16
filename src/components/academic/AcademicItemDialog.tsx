@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { ChecklistAnchor, ChecklistTemplate, Term } from "@/lib/types";
 import { addDays, meetingDates, ANCHOR_LABEL } from "@/lib/academicChecklist";
 import { anchorDate, repeatDates, REPEAT_LABEL, DOW_LABEL, type AnchorNode, type RepeatKind } from "@/lib/academicRepeat";
+import { dateOfTermWeek, describeTermWeek, spotLabel, weekOfTerm, DOW_KO, TERM_KINDS, type TermKind } from "@/lib/termWeek";
 import { TERM_GROUPS, TERM_TYPES, describeTermScope } from "@/lib/termTypes";
 
 // 학사일정 항목 추가 팝업 (요청 ④⑤⑥)
@@ -117,6 +118,52 @@ export default function AcademicItemDialog({
   const [recurring, setRecurring] = useState(false);
   const isRecurring = mode === "date" ? recurring : true;
 
+  /**
+   * **정규인가 캠프인가.**
+   *
+   * 정규학기는 스무 주, 캠프는 서너 주입니다. 주차를 섞어 쓰면 캠프에 「12주차」 일정이
+   * 생기는데 그 날짜는 캠프가 끝난 뒤입니다 - 달력에는 뜨지만 아무도 못 하는 일입니다.
+   * 그래서 주차로 적기 전에 갈래를 먼저 고릅니다.
+   */
+  const [termKind, setTermKind] = useState<TermKind>(
+    (currentTerm?.term_type ?? "").includes("캠프") ? "캠프" : "정규",
+  );
+  /**
+   * **날짜가 아니라 「학기 몇 주차 무슨 요일」로 저장합니다.**
+   *
+   * 날짜로 적어두면 해마다 어긋납니다. 「12월 18일」은 올해 16주차 금요일인데, 내년에 학기
+   * 시작이 한 주 밀리면 15주차가 됩니다 - 준비 기간이 한 주 짧아진 것인데 날짜는 그대로라
+   * 달력에는 그 사실이 안 보입니다.
+   *
+   * 기본값은 **지금 고른 날짜가 실제로 몇 주차인가**입니다. 사람이 날짜로 생각한 것을 주차로
+   * 옮기는 계산을 머릿속으로 시키면 대개 안 하고 날짜 그대로 둡니다.
+   */
+  const [useTermWeek, setUseTermWeek] = useState(true);
+  const [weekNo, setWeekNo] = useState<number | null>(null);
+  /** null 이면 그 주 월요일. 준비 시작은 대개 그 주 첫 근무일에 겁니다. */
+  const [weekDow, setWeekDow] = useState<number | null>(null);
+
+  /** 고른 날짜가 이번 학기 어디쯤인지. 화면이 그대로 보여주고, 주차 칸의 기본값이 됩니다. */
+  const pickedSpot = useMemo(
+    () => (currentTerm?.start_date && startDate ? weekOfTerm(currentTerm.start_date, startDate) : null),
+    [currentTerm?.start_date, startDate],
+  );
+  // 날짜를 바꾸면 주차도 따라갑니다. 사람이 주차를 직접 만졌으면 그대로 둡니다.
+  const [weekTouched, setWeekTouched] = useState(false);
+  useEffect(() => {
+    if (weekTouched || !pickedSpot) return;
+    setWeekNo(pickedSpot.week >= 1 ? pickedSpot.week : 1);
+    setWeekDow(pickedSpot.dow);
+  }, [pickedSpot, weekTouched]);
+
+  /** 주차로 저장하면 이번 학기에는 며칠이 되는가. 저장 전에 눈으로 확인시켜 줍니다. */
+  const weekDate = useMemo(
+    () => (currentTerm?.start_date && weekNo != null ? dateOfTermWeek(currentTerm.start_date, weekNo, weekDow) : null),
+    [currentTerm?.start_date, weekNo, weekDow],
+  );
+  /** 주차 방식이 실제로 켜져 있는가. 날짜 방식 + 되풀이일 때만 뜻이 있습니다. */
+  const byWeek = mode === "date" && recurring && useTermWeek && weekNo != null;
+
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
@@ -137,8 +184,14 @@ export default function AcademicItemDialog({
   const preview = useMemo(() => {
     if (mode === "date") {
       if (!startDate) return null;
-      const end = useRange && endDate ? endDate : null;
-      return { start: startDate, end };
+      // **주차로 저장하면 미리보기도 주차가 정한 날짜입니다.** 고른 날짜를 그대로 보여주면
+      // 화면과 실제로 생기는 항목의 날짜가 갈립니다 - 요일을 바꿨을 때 특히 어긋납니다.
+      const start = byWeek && weekDate ? weekDate : startDate;
+      const span =
+        useRange && endDate && startDate
+          ? Math.max(0, Math.round((Date.parse(`${endDate}T12:00:00`) - Date.parse(`${startDate}T12:00:00`)) / 86400000))
+          : 0;
+      return { start, end: span > 0 ? addDays(start, span) : null };
     }
     if (mode === "cycle") {
       const first = cycleDates[0];
@@ -158,7 +211,7 @@ export default function AcademicItemDialog({
     const start = anchorDate(me, nodes, { start: currentTerm?.start_date ?? null, end: currentTerm?.end_date ?? null });
     if (!start) return null;
     return { start, end: durationDays > 0 ? addDays(start, durationDays) : null };
-  }, [mode, startDate, useRange, endDate, anchor, anchorTemplateId, templates, currentTerm, offsetDays, durationDays, cycleDates]);
+  }, [mode, startDate, useRange, endDate, anchor, anchorTemplateId, templates, currentTerm, offsetDays, durationDays, cycleDates, byWeek, weekDate]);
 
   const meetPreview = useMemo(() => {
     if (!needsMeeting || !preview) return [];
@@ -218,9 +271,13 @@ export default function AcademicItemDialog({
             return;
           }
           ruleAnchor = "term_start";
-          ruleOffset = Math.round(
-            (new Date(`${base}T12:00:00`).getTime() - new Date(`${startDate}T12:00:00`).getTime()) / 86400000
-          );
+          // 주차로 저장하면 anchor·offset 은 쓰지 않습니다. 둘 다 채워두면 어느 쪽이 날짜를
+          // 정하는지 나중에 읽는 사람이 알 수 없습니다.
+          ruleOffset = byWeek
+            ? 0
+            : Math.round(
+                (new Date(`${base}T12:00:00`).getTime() - new Date(`${startDate}T12:00:00`).getTime()) / 86400000
+              );
         }
         const dur =
           mode === "date" && useRange && endDate
@@ -245,6 +302,11 @@ export default function AcademicItemDialog({
           repeat_month: mode === "cycle" && cycleKind === "year" ? cycleMonth : null,
           repeat_day: mode === "cycle" && (cycleKind === "year" || cycleKind === "month") ? cycleDay : null,
           repeat_dow: mode === "cycle" && cycleKind === "week" ? cycleDow : null,
+          // **학기 시작 후 몇 주차.** 채워져 있으면 계산이 이것을 먼저 봅니다 - 학기 시작일이
+          // 해마다 달라져도 같은 자리에 옵니다.
+          week_no: byWeek ? weekNo : null,
+          week_dow: byWeek ? weekDow : null,
+          term_kind: byWeek ? termKind : null,
           duration_days: dur,
           needs_meeting: needsMeeting,
           meeting_count: meetingCount,
@@ -258,7 +320,9 @@ export default function AcademicItemDialog({
         onSaved(
           mode === "cycle"
             ? `${REPEAT_LABEL[cycleKind]} 되풀이로 등록했습니다. 이번 학기에는 ${cycleDates.length}번 걸립니다.`
-            : "매 학기 되풀이되는 일로 등록했습니다. 화면을 새로 고치면 이번 학기 날짜로 항목이 생깁니다.",
+            : byWeek
+              ? `${describeTermWeek(weekNo!, weekDow, termKind)}로 등록했습니다. 학기 시작일이 바뀌어도 같은 자리에 옵니다.`
+              : "매 학기 되풀이되는 일로 등록했습니다. 화면을 새로 고치면 이번 학기 날짜로 항목이 생깁니다.",
         );
       } else {
         // 이번 학기만 → 항목 한 줄.
@@ -497,6 +561,94 @@ export default function AcademicItemDialog({
               걸쳐 있는 일은 <b>기간</b>으로 적어주세요. 하루로 적으면 시작한 날부터 챙겨야 하는데 마지막 날에야
               눈에 띕니다.
             </p>
+
+            {/*
+              ── 매 학기 되풀이일 때만 뜨는 칸 ────────────────────────────────
+
+              한 번짜리 일정에 「학기 3주차」를 묻는 것은 쓸데없습니다 - 이번 학기의 그 날짜가
+              이미 정해져 있으니까요. 되풀이를 켠 순간부터가 「해가 바뀌면 어디로 가야 하나」를
+              정해야 하는 자리입니다.
+            */}
+            {recurring && (
+              <div className="mt-2 rounded-lg border border-indigo-200 bg-indigo-50/60 p-2">
+                {/* ① 정규인가 캠프인가. 주차의 길이가 달라서 먼저 갈라야 합니다. */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-[11px] font-bold text-indigo-900">학기 갈래</span>
+                  {TERM_KINDS.map((k) => (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => setTermKind(k)}
+                      className={
+                        "rounded-full px-2 py-0.5 text-[11px] font-bold transition " +
+                        (termKind === k ? "bg-indigo-600 text-white" : "bg-white text-indigo-700 ring-1 ring-indigo-200")
+                      }
+                    >
+                      {k}
+                    </button>
+                  ))}
+                  <label className="ml-auto flex items-center gap-1 text-[11px] font-semibold text-indigo-900">
+                    <input type="checkbox" checked={useTermWeek} onChange={(e) => setUseTermWeek(e.target.checked)} />
+                    학기 주차로 저장
+                  </label>
+                </div>
+
+                {/* ② 지금 고른 날짜가 학기 어디쯤인지 **먼저 알려줍니다.** 사람이 날짜로
+                    생각한 것을 주차로 옮기는 계산을 머릿속으로 시키면 대개 안 합니다. */}
+                {currentTerm?.start_date ? (
+                  <p className="mt-1.5 text-[11px] leading-relaxed text-indigo-900">
+                    지금 고른 <b>{startDate || "날짜"}</b> 는{" "}
+                    <b>{spotLabel(currentTerm.start_date, startDate, termKind) || "…"}</b> 입니다
+                    <span className="text-indigo-500"> (학기 시작 {currentTerm.start_date})</span>.
+                  </p>
+                ) : (
+                  <p className="mt-1.5 text-[11px] leading-relaxed text-rose-700">
+                    진행중 학기에 시작일이 없어 주차를 셀 수 없습니다. 학기 관리에서 먼저 채워주세요.
+                  </p>
+                )}
+
+                {useTermWeek && currentTerm?.start_date && (
+                  <>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px]">
+                      <span className="font-bold text-indigo-900">학기 시작 후</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={53}
+                        value={weekNo ?? 1}
+                        onChange={(e) => {
+                          setWeekTouched(true);
+                          setWeekNo(Math.max(1, Math.min(53, Number(e.target.value) || 1)));
+                        }}
+                        className="w-14 rounded-lg border border-slate-300 px-1.5 py-1 text-center tabular-nums"
+                      />
+                      <span className="font-bold text-indigo-900">주차</span>
+                      {/* 요일을 안 고르면 **그 주 월요일**입니다. 비워두면 그 일정이 달력에 안
+                          뜨는데, 안 뜨는 일은 아무도 못 합니다. */}
+                      <select
+                        value={weekDow == null ? "" : String(weekDow)}
+                        onChange={(e) => {
+                          setWeekTouched(true);
+                          setWeekDow(e.target.value === "" ? null : Number(e.target.value));
+                        }}
+                        className="rounded-lg border border-slate-300 px-1.5 py-1"
+                      >
+                        <option value="">요일 안 정함 (월요일)</option>
+                        {DOW_KO.map((d, i) => (
+                          <option key={d} value={i}>
+                            {d}요일
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <p className="mt-1 text-[11px] leading-relaxed text-indigo-700">
+                      이번 학기에는 <b>{weekDate ?? "…"}</b> 입니다. 다음 학기에 시작일이 달라져도{" "}
+                      <b>{describeTermWeek(weekNo ?? 1, weekDow, termKind)}</b> 자리에 그대로 옵니다.
+                    </p>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         ) : (
           <div className="mb-3 rounded-xl border border-blue-200 bg-blue-50/50 p-2.5">

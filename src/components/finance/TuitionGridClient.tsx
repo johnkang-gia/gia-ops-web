@@ -19,6 +19,7 @@ import { PAYMENT_METHOD_KINDS } from "@/lib/payments";
 import { todayKst } from "@/lib/kst";
 import { useEditingPresence } from "@/lib/useEditingPresence";
 import ScopeTabs from "./ScopeTabs";
+import AlltalkpayExport from "./AlltalkpayExport";
 import { ALL_SCOPE, inScope, type Scope } from "@/lib/gradeScope";
 
 /**
@@ -158,6 +159,8 @@ export default function TuitionGridClient({
    * 검색은 무엇을 쳐야 하는지 아는 사람만 씁니다.
    */
   const [scope, setScope] = useState<Scope>(ALL_SCOPE);
+  /** 올톡페이 대량발송 파일을 만들 청구서. 값이 있으면 창이 열립니다. */
+  const [exportIds, setExportIds] = useState<string[] | null>(null);
   const [q, setQ] = useState("");
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
@@ -781,6 +784,31 @@ export default function TuitionGridClient({
                 🧾 {p.name}만
               </button>
             ))}
+
+          {/* **올톡페이 대량발송 파일.** 학비외와 **같은 창**을 씁니다 - 대상(어머니/아버지)·
+              합치기·이미 보낸 표시를 두 벌 만들면 한쪽만 고쳐지고, 그러면 같은 집에 청구서가
+              두 번 갑니다. */}
+          <button
+            onClick={() => {
+              // 고른 줄이 있으면 그것만, 없으면 지금 보이는 명단에서 **아직 안 보낸** 것만.
+              // 전부를 기본으로 잡으면 이미 보낸 청구서까지 다시 올리게 됩니다.
+              const picked = rows.filter((s) => checked.has(s.id));
+              const src = picked.length > 0 ? picked : rows;
+              const ids = src
+                .flatMap((s) => invoicesOf.get(s.id) ?? [])
+                .filter((v) => picked.length > 0 || !v.exported_at)
+                .map((v) => v.id);
+              if (ids.length === 0) {
+                notify(picked.length > 0 ? "고른 학생 중 발행된 학비 청구서가 없습니다." : "보낼 청구서가 없습니다. 먼저 발행해주세요.", "error");
+                return;
+              }
+              setExportIds(ids);
+            }}
+            className={btn + " border border-emerald-300 bg-emerald-50 px-3 py-1.5 font-bold text-emerald-800 hover:bg-emerald-100"}
+            title="발행된 학비 청구서를 올톡페이 대량발송 엑셀로 만듭니다"
+          >
+            📤 올톡페이 청구
+          </button>
         </span>
       </div>
 
@@ -1261,6 +1289,19 @@ export default function TuitionGridClient({
       </DragScroll>
 
       {preview && <InvoicePreviewModal invoiceId={preview.id} label={preview.label} onClose={() => setPreview(null)} />}
+
+      {exportIds && (
+        <AlltalkpayExport
+          invoiceIds={exportIds}
+          onClose={() => setExportIds(null)}
+          // 내보낸 표시가 남으면 화면의 청구서도 따라가야 합니다. 안 그러면 방금 보낸 것이
+          // 「아직 안 보냄」으로 남아 다음 사람이 또 올리고, 그 집에 청구서가 두 번 갑니다.
+          onMarked={(ids) => {
+            const at = new Date().toISOString();
+            setInvoices((p) => p.map((v) => (ids.includes(v.id) ? { ...v, exported_at: at } : v)));
+          }}
+        />
+      )}
 
       {/* 학비외 청구 화면과 **같은 창**입니다. 화면마다 따로 만들면 한쪽에만 경고가 붙습니다. */}
       {cancelling && (

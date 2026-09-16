@@ -15,6 +15,8 @@
 //   3) 형제. 두 아이의 보호자 번호가 같으면 청구서가 두 번 갑니다. 합칠지 말지는 학교가
 //      정할 일이라 옵션으로 두되, 같은 번호가 몇 쌍인지는 항상 세어 보여줍니다.
 
+import { streamOf, type InvoiceStream } from "@/lib/settlement";
+
 /** 청구서를 누구 앞으로 보낼지. */
 export type GuardianRole = "direct" | "mother" | "father" | "guardian";
 
@@ -79,6 +81,9 @@ export type BillInvoice = {
   phones: GuardianPhones;
   /** 인보이스 내역의 항목 이름들. 청구 내용 문구를 만드는 데 씁니다. */
   itemNames: string[];
+  /** 학비인가 학비외인가. 청구 내용 문구에 그대로 들어갑니다. */
+  stream?: string | null;
+  category?: string | null;
 };
 
 export type BillRow = {
@@ -237,9 +242,24 @@ export function withInvoiceNo(memo: string, invoiceNos: readonly string[]): stri
   return tag ? `[${tag}] ${memo}` : memo;
 }
 
-/** 청구 내용 문구. 항목 이름을 그대로 이어 붙이되 너무 길면 "외 N건"으로 줄입니다. */
-export function memoFor(names: string[], max = 40): string {
-  if (names.length === 0) return "학비외 납부";
+/**
+ * 여러 장을 한 줄로 합칠 때 쓸 갈래 이름. 섞였으면 둘 다 적습니다 - 한쪽만 적으면 나머지
+ * 한 장이 무슨 돈인지 문구에서 사라집니다.
+ */
+export function streamsLabel(list: { stream?: string | null; category?: string | null }[]): string {
+  const set = new Set(list.map(streamOf));
+  return [...set].join("·");
+}
+
+/**
+ * 청구 내용 문구. 항목 이름을 그대로 이어 붙이되 너무 길면 "외 N건"으로 줄입니다.
+ *
+ * 항목 이름이 하나도 없을 때 쓸 말은 **갈래에 따라 다릅니다.** 학비 청구서에 「학비외 납부」
+ * 라고 적히면 학부모 화면에 그 글자가 그대로 뜨고, 그러면 무엇을 내는 돈인지 묻는 전화가
+ * 옵니다.
+ */
+export function memoFor(names: string[], stream: InvoiceStream = "학비외", max = 40): string {
+  if (names.length === 0) return `${stream} 납부`;
   let out = names[0];
   let used = 1;
   for (const n of names.slice(1)) {
@@ -320,7 +340,9 @@ export function buildBillPlan(
         role: list[0].role,
         amount: list.reduce((n, e) => n + Number(e.inv.total_amount), 0),
         memo: withInvoiceNo(
-          list.length > 1 ? `${names.join(", ")} 학비외 납부` : memoFor(list[0].inv.itemNames),
+          // 형제를 합치면 항목 이름을 다 적을 수 없어 갈래 이름만 씁니다. 두 아이의 갈래가
+          // 다르면 둘 다 적습니다 - 한쪽만 적으면 나머지 한 장이 무슨 돈인지 사라집니다.
+          list.length > 1 ? `${names.join(", ")} ${streamsLabel(list.map((e) => e.inv))} 납부` : memoFor(list[0].inv.itemNames, streamOf(list[0].inv)),
           list.map((e) => e.inv.invoice_no),
         ),
         // 형제의 납부기한이 다르면 **빠른 쪽**에 맞춥니다. 늦은 쪽에 맞추면 하나가 연체됩니다.
@@ -337,7 +359,7 @@ export function buildBillPlan(
         phone,
         role,
         amount: Number(inv.total_amount),
-        memo: withInvoiceNo(memoFor(inv.itemNames), [inv.invoice_no]),
+        memo: withInvoiceNo(memoFor(inv.itemNames, streamOf(inv)), [inv.invoice_no]),
         dueDate: inv.due_date,
         invoiceNos: [inv.invoice_no],
         invoiceIds: [inv.id],

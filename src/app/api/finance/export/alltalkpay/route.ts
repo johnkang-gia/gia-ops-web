@@ -68,6 +68,9 @@ export async function POST(req: Request) {
     student_name_ko: string | null; grade_label: string | null; total_amount: number;
     due_date: string; guardian_phone: string | null; guardian_role: string | null;
     exported_at: string | null;
+    // 청구 내용 문구가 「학비 납부」인지 「학비외 납부」인지를 가릅니다. 옛 줄은 stream 이
+    // 비어 있어 category 로 되짚습니다.
+    stream: string | null; category: string | null;
   };
   const rows = (invRes.data as Row[] | null) ?? [];
 

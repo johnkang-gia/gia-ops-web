@@ -16,6 +16,7 @@ import {
   nextWeekStart,
   weekStartFor,
   weekStartOf,
+  pickByStudent,
   type DismissalRepeat,
 } from "@/lib/dismissalWeek";
 import { DISMISSAL_SELECT, isMissingWeekStart, WEEK_START_NOTICE, type DismissalRow } from "@/lib/dismissalToday";
@@ -279,13 +280,13 @@ export default function DismissalModal({ onClose }: { onClose: () => void }) {
   /** 오늘 실제로 적용되는 줄. 그 주짜리가 매주짜리를 이깁니다. */
   const todayRows = (() => {
     if (todayWd < 1 || todayWd > 5) return [];
-    const ws = weekStartOf(today);
-    const byStudent = new Map<string, Plan>();
-    for (const p of all.filter((p) => p.weekday === todayWd)) {
-      const cur = byStudent.get(p.student_id);
-      if (p.week_start === ws) byStudent.set(p.student_id, p);
-      else if (!cur && p.week_start === null) byStudent.set(p.student_id, p);
-    }
+    // **고르는 규칙은 `dismissalWeek.ts` 한 곳입니다**(§2-11). 예전에는 이 창이 같은 규칙을
+    // 손으로 한 번 더 썼습니다 - 그 규칙이 조금이라도 다르면 이 창의 「오늘 하원 N명」과
+    // 업무보드의 「오늘 학생」이 다른 답을 하는데, 둘 다 오류를 내지 않습니다.
+    const byStudent = pickByStudent(
+      all.filter((p) => p.weekday === todayWd),
+      weekStartOf(today),
+    );
     return [...byStudent.values()].sort(
       (a, b) => (a.depart_time ?? "99:99").localeCompare(b.depart_time ?? "99:99") || a.name.localeCompare(b.name, "ko"),
     );

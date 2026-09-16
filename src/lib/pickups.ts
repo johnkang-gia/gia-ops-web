@@ -35,7 +35,7 @@ import { loadDismissalForDay } from "@/lib/dismissalToday";
  * 체크표에 줄이 아예 없는 학생(차량을 안 타는 아이)만 ①②에서 가져옵니다.
  */
 
-export type PickupSource = "체크표" | "출결내역" | "학부모연락";
+export type PickupSource = "체크표" | "출결내역" | "학부모연락" | "하원수단";
 
 /**
  * **이 픽업이 어디서 비롯됐는가.**
@@ -96,6 +96,20 @@ export type PickupInputs = {
   entries: { name: string; studentId: string | null; time: string | null }[];
   /** 확정된 학부모 연락. */
   requests: { name: string; studentId: string | null; time: string | null }[];
+  /**
+   * **오늘 셔틀을 안 타기로 미리 등록해 둔 아이**(하원수단: 도보·자가용·학원차…).
+   *
+   * ── 왜 갈래로 올렸나 ─────────────────────────────────────────────────
+   *
+   * 예전에는 이 갈래가 **없었습니다.** 하원수단은 아침 크론이 체크표에 픽업 줄을 만들어야
+   * 비로소 ①로 들어왔습니다. 그래서 **크론이 돈 뒤에 등록한 아이는 오늘 하루 종일 「오늘
+   * 학생」에 안 떴습니다** — 하원수단 창에는 「오늘 하원 3명」인데 보드에는 한 명이었고,
+   * 어느 쪽도 오류를 내지 않아 아무도 원인을 몰랐습니다.
+   *
+   * 픽업은 놓치면 되돌릴 수 없습니다. 그래서 크론이 돌았는지에 기대지 않고 **표를 직접**
+   * 봅니다. 크론은 이제 체크표를 맞춰두는 일만 하고, 화면에 띄우는 판단은 여기서 합니다.
+   */
+  plans: { name: string; studentId: string | null; time: string | null }[];
 };
 
 /**
@@ -149,6 +163,18 @@ export function mergePickups(input: PickupInputs): TodayPickup[] {
       // 출결내역·학부모연락은 그날 들어온 이야기입니다 - 미리 등록해 둔 규칙이 아닙니다.
       via: "연락",
     });
+  }
+
+  // ④ 미리 등록해 둔 하원수단. **가장 약합니다** - 오늘 들어온 이야기와 사람이 누른 것이
+  //     먼저입니다. 평소에는 걸어가는 아이도 오늘은 어머니가 데리러 올 수 있습니다.
+  //
+  //     체크표에 사람이 줄을 찍었으면(decidedKeys) 올리지 않습니다 - 사람이 「오늘은 탄다」
+  //     고 정한 것을 미리 적어둔 규칙이 뒤집으면 안 됩니다.
+  for (const p of input.plans) {
+    const k = keyOf(p);
+    if (out.has(k)) continue;
+    if (input.decidedKeys.has(k)) continue;
+    out.set(k, { name: p.name, studentId: p.studentId, time: p.time ?? timeOf.get(k) ?? null, source: "하원수단", via: "하원수단" });
   }
 
   // 시각이 있는 아이가 먼저, 그중에서도 이른 시각부터. 대시보드는 «다음에 무엇을 해야 하나»
@@ -262,7 +288,31 @@ export async function loadTodayPickups(
     })
     .filter((v): v is { name: string; studentId: string | null; time: string | null } => !!v));
 
-  const merged = mergePickups({ boardingPickups, decidedKeys, entries, requests });
+  // ── 하원수단 ────────────────────────────────────────────────────────────
+  //
+  // **merge 앞에서 읽습니다.** 예전에는 merge 뒤에 읽어 「이미 목록에 있는 아이의 시각을
+  // 채우는 데」만 썼습니다. 그러면 하원수단만 등록된 아이는 목록에 **들어올 길이 아예
+  // 없었습니다** - 아침 크론이 체크표에 줄을 만들어 준 아이만 떴습니다.
+  const weekday = new Date(`${dateKey}T12:00:00Z`).getUTCDay();
+  const { byStudent: planByStudent, error: planErr } = await loadDismissalForDay(supabase, {
+    dayIso: dateKey,
+    weekday,
+    excludeShuttle: true,
+  });
+  // 못 읽었으면 조용히 넘기지 않습니다. 이 갈래가 빈 것과 「오늘 하원수단이 없는 것」은
+  // 다른 말이고, 화면만 보고는 절대 구별할 수 없습니다(CLAUDE.md §5).
+  if (planErr) console.error("[오늘 픽업] 하원수단을 읽지 못했습니다:", planErr);
+
+  const plans = [...planByStudent.entries()]
+    .map(([sid, p]) => {
+      // 이름은 **번호로** 찾습니다. 하원수단 표에는 이름이 없고, 이름으로 찾으면 김재이
+      // 셋이 한 줄을 나눠 씁니다(§2-4).
+      const nm = nameOfStudent(sid);
+      return nm ? { name: nm, studentId: sid, time: (p.depart_time ?? "").slice(0, 5) || null } : null;
+    })
+    .filter((v): v is { name: string; studentId: string; time: string | null } => !!v);
+
+  const merged = mergePickups({ boardingPickups, decidedKeys, entries, requests, plans });
 
   // ── 시각이 없으면 평소 하원수단의 출발 시각을 물려받습니다 ────────────────
   //
@@ -273,14 +323,6 @@ export async function loadTodayPickups(
   // **이 규칙은 여기 한 곳에 둡니다.** 예전에는 5분 전 알람 창구만 이 물려받기를 했고,
   // 다른 화면들은 같은 아이를 「시각 미정」으로 보고 있었습니다 - 같은 자료에 화면마다
   // 다른 답이 나오는 자리였습니다(CLAUDE.md §2-11 과 같은 종류).
-  const weekday = new Date(`${dateKey}T12:00:00Z`).getUTCDay();
-  const { byStudent: planByStudent, error: planErr } = await loadDismissalForDay(supabase, {
-    dayIso: dateKey,
-    weekday,
-    excludeShuttle: true,
-  });
-  if (planErr) console.error("[오늘 픽업] 하원수단을 읽지 못했습니다(시각을 못 채웁니다):", planErr);
-
   for (const p of merged) {
     if (p.time || !p.studentId) continue;
     const t = (planByStudent.get(p.studentId)?.depart_time ?? "").slice(0, 5);

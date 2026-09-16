@@ -136,6 +136,8 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
   //
   // week_start 가 아직 없으면(마이그레이션 전) **있는 칸만으로 다시 읽습니다.** 없는 칸 하나
   // 때문에 학생 프로필 전체가 안 뜨면, 하원수단이 아니라 그 아이의 모든 정보가 사라집니다.
+  // dismissal-ok: 이 화면은 「오늘 무엇을 타는가」를 정하지 않습니다. 그 아이의 요일별 줄을
+  // **전부 펼쳐 고치는** 자리라, 매주/그 주만 중 하나를 고르면 오히려 안 보이는 줄이 생깁니다.
   const DP_COLS = "id, student_id, weekday, kind, label, depart_time, note, updated_by, updated_at";
   const readPlans = async (withWeek: boolean) =>
     supabase

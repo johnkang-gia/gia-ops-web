@@ -384,8 +384,11 @@ export default function WorkCalendar({
     else onPickRange(from, to);
   }
 
+  // **맨 아래 줄이 상자 모서리에 붙어 깎였습니다.** 바깥 상자가 overflow-hidden 이라,
+  // 여백이 0이면 마지막 줄의 알약 링과 글자 아래가 잘립니다 - 오류가 아니라 「그렇게 생긴
+  // 화면」으로 보입니다. 아래쪽에만 조금 둡니다(달력이 주인공이라 위는 그대로).
   return (
-    <div className="flex h-full min-h-0 flex-col" onMouseLeave={() => setPicking(null)}>
+    <div className="flex h-full min-h-0 flex-col pb-1" onMouseLeave={() => setPicking(null)}>
       {/* ── 달 옮기기 ─────────────────────────────────────────────── */}
       <div className="mb-1 flex shrink-0 items-center gap-2">
         <button onClick={() => move(-1)} className="rounded px-1.5 py-0.5 text-[13px] text-slate-500 hover:bg-slate-100">
@@ -818,11 +821,13 @@ export default function WorkCalendar({
           달력에 설 자리가 없다고 없는 셈 치면, 마감을 안 정한 업무가 조용히 잊힙니다.
           끌어다 날짜에 놓으면 그날로 정해집니다. */}
       {undated.length > 0 && (
-        <div className="mt-1 shrink-0">
-          <p className="mb-0.5 text-[10px] font-semibold text-slate-400">
+        <div className="mt-1.5 shrink-0">
+          <p className="mb-1 text-[10px] font-semibold text-slate-400">
             마감 없음 {undated.length} · 끌어다 날짜에 놓으면 그날로 정해집니다
           </p>
-          <div className="flex max-h-12 flex-wrap gap-1 overflow-y-auto">
+          {/* 칩 줄에도 안쪽 여백을 둡니다 - 점선 테두리가 상자 모서리에 닿아 한 변이
+              깎이고 있었습니다(가로 단추 줄과 같은 종류의 문제). */}
+          <div className="flex max-h-14 flex-wrap gap-1 overflow-y-auto px-0.5 py-0.5">
             {undated.map((t) => (
               <button
                 key={t.id}
@@ -830,7 +835,7 @@ export default function WorkCalendar({
                 onDragStart={() => setDragId(t.id)}
                 onDragEnd={() => setDragId(null)}
                 onClick={() => onOpenTask(t)}
-                className="max-w-[140px] truncate rounded border border-dashed border-slate-300 bg-white px-1.5 py-0.5 text-[10px] text-slate-600 hover:border-teal-400"
+                className="max-w-[140px] truncate rounded border border-dashed border-slate-300 bg-white px-2 py-1 text-[10px] leading-tight text-slate-600 hover:border-teal-400"
               >
                 {t.title}
               </button>
@@ -846,7 +851,7 @@ export default function WorkCalendar({
           않습니다. 자리를 적게 쓰려고 한 줄에 여러 행사를 나란히 둡니다. 달력이 주인공이라
           맨 아래 — 마감 없는 업무 밑 — 에 둡니다. */}
       {progress.length > 0 && (
-        <div className="mt-1 flex shrink-0 flex-wrap items-center gap-1">
+        <div className="mt-1.5 flex shrink-0 flex-wrap items-center gap-1 px-0.5 py-0.5">
           <span className="text-[10px] font-bold text-fuchsia-700">진행 중</span>
           {progress.slice(0, 4).map((p) => {
             const it = academicItems.find((x) => x.id === p.itemId);
@@ -857,7 +862,7 @@ export default function WorkCalendar({
                 onClick={() => it && onOpenAcademic?.(it)}
                 title="누르면 일정을 열어 고칩니다"
                 className={
-                  "flex max-w-full items-center gap-1 overflow-hidden rounded-full px-2 py-0.5 text-[10px] font-bold transition " +
+                  "flex max-w-full items-center gap-1 overflow-hidden rounded-full px-2.5 py-1 text-[10px] font-bold leading-tight transition " +
                   (p.soon
                     ? "bg-rose-100 text-rose-800 ring-1 ring-rose-300 hover:bg-rose-200"
                     : "bg-fuchsia-50 text-fuchsia-800 ring-1 ring-fuchsia-200 hover:bg-fuchsia-100")

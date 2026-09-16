@@ -68,11 +68,25 @@ export async function POST(req: Request) {
     student_name_ko: string | null; grade_label: string | null; total_amount: number;
     due_date: string; guardian_phone: string | null; guardian_role: string | null;
     exported_at: string | null;
+    /** 이미 받은 돈을 적기만 한 장인가. 이런 장은 보내면 안 됩니다. */
+    issued_offline: boolean | null;
     // 청구 내용 문구가 「학비 납부」인지 「학비외 납부」인지를 가릅니다. 옛 줄은 stream 이
     // 비어 있어 category 로 되짚습니다.
     stream: string | null; category: string | null;
   };
-  const rows = (invRes.data as Row[] | null) ?? [];
+  /**
+   * **이미 받은 것을 적기만 한 장은 빼고 만듭니다.**
+   *
+   * 「이미 받음」으로 만든 장은 받은 돈을 장부에 남기려고 만든 것이라 학부모에게는 청구할
+   * 것이 없습니다. 그대로 보내면 이미 낸 분께 또 내라는 문자가 나갑니다 - 되돌릴 수 없고,
+   * 우리 화면에는 「보냄」으로만 남아 아무도 못 찾습니다.
+   *
+   * 화면도 안 담지만 여기서도 막습니다. 보내는 창구가 마지막 문이라, 여기서 새면 앞의
+   * 조심이 전부 소용없습니다.
+   */
+  const all = (invRes.data as Row[] | null) ?? [];
+  const rows = all.filter((v) => v.issued_offline !== true);
+  const skipped = all.filter((v) => v.issued_offline === true).map((v) => v.invoice_no);
 
   // 지금 명부의 세 칸을 함께 읽어옵니다.
   //
@@ -133,5 +147,10 @@ export async function POST(req: Request) {
     itemNames: namesByInvoice.get(v.id) ?? [],
   }));
 
-  return NextResponse.json({ ok: true, plan: buildBillPlan(invoices, { mergeSiblings, roleOverrides }) });
+  // 뺀 것이 있으면 **말해줍니다**(§5). 조용히 빼면 몇 명이 왜 빠졌는지 아무도 모릅니다.
+  return NextResponse.json({
+    ok: true,
+    plan: buildBillPlan(invoices, { mergeSiblings, roleOverrides }),
+    skipped,
+  });
 }

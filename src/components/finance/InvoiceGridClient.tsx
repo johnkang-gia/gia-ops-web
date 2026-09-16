@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { BILL_LABEL, billedItems, markOf } from "@/lib/billedItems";
 import { askText, compareIssue, type IssueCompare } from "@/lib/issueCompare";
+import { gridTotals } from "@/lib/gridTotals";
 import { useFinanceLive } from "@/lib/useFinanceLive";
 import DragScroll from "@/components/common/DragScroll";
 import FeeItemsButton from "./FeeItemsModal";
@@ -456,14 +457,43 @@ export default function InvoiceGridClient({
    * 통합('전체') 에서는 분류 없이 나간 통합 청구서를, 분류 탭에서는 그 분류 청구서를 찾습니다.
    * 통합 청구서에는 그 분류도 이미 들어 있으므로 그것도 나간 것으로 봅니다.
    */
+  /**
+   * **청구할 것이 있는 장만.** 「이미 받음」으로 만든 장은 뺍니다.
+   *
+   * 「이미 받음」은 받은 돈을 장부에 남기려고 청구서와 입금을 짝으로 만듭니다(완납·미납은
+   * 칸에 적어두지 않고 청구액·입금합에서 냅니다 §2-12). 그런데 그 장이 학생 줄의 대표
+   * 청구서가 되는 바람에, 교복 10만원만 받은 아이 줄에 **「완납」**이 떴습니다 - 교재비는
+   * 아직 안 받았는데요.
+   *
+   * 가르는 칸은 `issued_offline` 이고 창구는 처음부터 채우고 있었습니다. 읽는 화면이
+   * 한 곳도 없었을 뿐입니다 - 이 저장소에서 반복된 사고의 모양 그대로입니다(§2-11).
+   */
+  const billableByStudent = useMemo(() => {
+    const m = new Map<string, Invoice[]>();
+    for (const [sid, list] of invoicesByStudent) {
+      const keep = list.filter((v) => (v as Invoice & { issued_offline?: boolean | null }).issued_offline !== true);
+      if (keep.length > 0) m.set(sid, keep);
+    }
+    return m;
+  }, [invoicesByStudent]);
+  /** 「이미 받음」으로 적기만 한 장. 줄에 회색 표시로만 뜹니다 - 청구 대상이 아닙니다. */
+  const receiptOnlyByStudent = useMemo(() => {
+    const m = new Map<string, Invoice[]>();
+    for (const [sid, list] of invoicesByStudent) {
+      const only = list.filter((v) => (v as Invoice & { issued_offline?: boolean | null }).issued_offline === true);
+      if (only.length > 0) m.set(sid, only);
+    }
+    return m;
+  }, [invoicesByStudent]);
+
   const invoiceByStudent = useMemo(() => {
     const m = new Map<string, Invoice>();
-    for (const [sid, list] of invoicesByStudent) {
+    for (const [sid, list] of billableByStudent) {
       const hit = cat === "전체" ? list.find((v) => !v.category) : list.find((v) => v.category === cat || !v.category);
       if (hit) m.set(sid, hit);
     }
     return m;
-  }, [invoicesByStudent, cat]);
+  }, [billableByStudent, cat]);
 
   /** 지금 보고 있는 명단. */
   const rows = useMemo(() => {
@@ -581,6 +611,20 @@ export default function InvoiceGridClient({
 
   const totalOf = (sid: string) => sumLines(linesByStudent.get(sid) ?? []);
   const grandTotal = rows.reduce((n, s) => n + totalOf(s.id), 0);
+  /**
+   * **총청구액 · 이미 받은 금액 · 미납 청구액.**
+   *
+   * 예전에는 합계 하나뿐이었습니다. 그 숫자는 「표에 등록된 항목의 값어치」인데 보는 사람은
+   * 「받아야 할 돈」으로 읽습니다 - 이미 받은 것이 섞여 있어 둘은 다릅니다. 이 화면을 여는
+   * 이유의 절반이 「얼마가 아직 안 들어왔나」인데, 그 숫자가 없으면 수납 화면을 따로 열어
+   * 손으로 빼게 되고 손으로 뺀 숫자는 장부가 아닙니다.
+   *
+   * 판정은 `gridTotals` 한 곳입니다.
+   */
+  const money = useMemo(
+    () => gridTotals(rows.map((s) => s.id), totalOf, invoices, payments),
+    [rows, totalOf, invoices, payments],
+  );
   const unissued = rows.filter((s) => !invoiceByStudent.has(s.id)).length;
 
   /** 열 합계 — 이 항목을 몇 명이 사고 얼마인가. */
@@ -1414,12 +1458,39 @@ export default function InvoiceGridClient({
       </div>
 
       {/* ── 요약 ─────────────────────────────────────────────────── */}
-      <div className="mb-2 flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2">
+      {/* **표를 굴려도 이 줄은 붙어 있습니다.** 항목이 스무 개 넘게 이어지는 표라, 아래로
+          내려가면 금액이 화면 밖으로 나가고 그러면 지금 보고 있는 숫자가 무엇인지 알 수
+          없습니다. */}
+      <div className="sticky top-0 z-40 mb-2 flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
         <span className="text-[12px] text-slate-500">
           {view.kind === "전체" ? "전체" : `${view.value}${view.kind === "학년" ? "학년" : ""}`} <b className="text-slate-800">{rows.length}명</b>
         </span>
-        <span className="text-[12px] text-slate-500">
-          합계 <b className="text-base font-black tabular-nums text-slate-800">{won(grandTotal)}</b>
+        {/* 세 숫자를 **갈라서** 보여줍니다. 합계 하나만 두면 이미 받은 것이 섞여 보입니다. */}
+        <span
+          className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1"
+          title="표에 등록된 항목의 합. 아직 청구서가 안 나간 것도 들어갑니다."
+        >
+          <span className="text-[11px] text-slate-500">총청구액</span>
+          <b className="text-base font-black tabular-nums text-slate-800">{won(money.billed)}</b>
+        </span>
+        <span
+          className="flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1"
+          title="실제로 들어온 돈. 「이미 받음」으로 적어둔 것도 들어갑니다."
+        >
+          <span className="text-[11px] text-emerald-700">이미 받은 금액</span>
+          <b className="text-base font-black tabular-nums text-emerald-800">{won(money.paid)}</b>
+        </span>
+        <span
+          className={
+            "flex items-center gap-1.5 rounded-lg border px-2 py-1 " +
+            (money.due > 0 ? "border-rose-200 bg-rose-50" : "border-slate-200 bg-slate-50")
+          }
+          title="총청구액에서 받은 돈을 뺀 값. 더 받았으면 음수로 나옵니다 - 0으로 눕히면 과납이 화면에서 사라집니다."
+        >
+          <span className={"text-[11px] " + (money.due > 0 ? "text-rose-700" : "text-slate-500")}>미납 청구액</span>
+          <b className={"text-base font-black tabular-nums " + (money.due > 0 ? "text-rose-800" : "text-slate-500")}>
+            {won(money.due)}
+          </b>
         </span>
         <span className={"text-[12px] " + (unissued > 0 ? "font-bold text-amber-700" : "text-slate-400")}>
           미발행 {unissued}명
@@ -1716,9 +1787,19 @@ export default function InvoiceGridClient({
                       <span className="rounded bg-slate-100 px-1 text-[10px] font-bold text-slate-600">
                         {inv.category ?? "통합"}
                       </span>
-                      {(invoicesByStudent.get(s.id)?.length ?? 0) > 1 && (
+                      {(billableByStudent.get(s.id)?.length ?? 0) > 1 && (
                         <span className="text-[10px] font-semibold text-slate-400" title="이 학생의 이번 학기 청구서 수">
-                          외 {(invoicesByStudent.get(s.id)?.length ?? 1) - 1}장
+                          외 {(billableByStudent.get(s.id)?.length ?? 1) - 1}장
+                        </span>
+                      )}
+                      {/* **이미 받아서 적기만 한 장.** 청구서가 아니므로 회색입니다 -
+                          「완납」처럼 보이면 아직 못 받은 돈이 다 받은 것으로 읽힙니다. */}
+                      {(receiptOnlyByStudent.get(s.id)?.length ?? 0) > 0 && (
+                        <span
+                          className="rounded bg-slate-200 px-1 text-[10px] font-bold text-slate-600"
+                          title="이미 받은 돈을 적어둔 기록입니다. 청구서로 나가지 않습니다."
+                        >
+                          이미 받음 {receiptOnlyByStudent.get(s.id)!.length}건
                         </span>
                       )}
                       {/* 발행과 발송은 다릅니다. 종이를 만든 것과 학부모에게 청구가 간 것을

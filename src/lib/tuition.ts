@@ -24,6 +24,14 @@ export type PlanLike = { id: string; name: string; base_amount: number; unit: st
 export type OptionLike = { id: string; name: string; periods: number; discount_rate: number };
 export type DiscountLike = { id: string; name: string; kind: "percent" | "amount"; value: number };
 
+/**
+ * 사람이 직접 정한 금액. 교장님과 상담해서 정한 금액처럼 **목록에 없는 할인**입니다.
+ *
+ * 그때마다 할인 규칙을 새로 만들면(「○○네 감면 17.4%」) 할인 목록이 학생 수만큼 늘고,
+ * 그 목록은 다음 학기에 아무도 못 지웁니다. 정한 금액을 그대로 적는 편이 낫습니다.
+ */
+export type OverrideLike = { amount: number | null; note?: string | null } | null;
+
 export type TuitionLine = {
   /** 안내문의 「Option B. 1년 납부」 같은 이름. 청구서에 이대로 찍습니다. */
   label: string;
@@ -39,6 +47,10 @@ export type TuitionLine = {
   discounts: { name: string; amount: number }[];
   /** 실제로 청구할 금액 */
   amount: number;
+  /** 사람이 직접 정한 금액인가. 화면이 「계산된 금액」과 구별해 보여줍니다. */
+  manual: boolean;
+  /** 왜 그 금액인가. 비고에 그대로 적습니다. */
+  note: string | null;
 };
 
 /** 원 단위로 맞춥니다. 1원 미만은 청구서에 찍을 자리가 없습니다. */
@@ -56,8 +68,30 @@ export function tuitionLine(
   plan: PlanLike,
   option: OptionLike | null,
   discounts: DiscountLike[] = [],
+  override: OverrideLike = null,
 ): TuitionLine | null {
-  if (!option) return null;
+  const manual = typeof override?.amount === "number" && Number.isFinite(override.amount);
+
+  // **직접 기입은 옵션 없이도 한 줄입니다.** 교장님과 정한 금액만 있고 납부 회차는 아직
+  // 안 정한 경우가 있는데, 옵션이 없다고 줄을 안 만들면 그 금액이 청구서에서 통째로
+  // 빠집니다 - 화면에는 오류가 아니라 「안 고른 아이」로 보입니다.
+  if (!option && !manual) return null;
+
+  if (!option) {
+    const amount = won(Math.max(0, Number(override!.amount)));
+    return {
+      label: `${plan.name} · 직접 기입`,
+      planName: plan.name,
+      optionName: "직접 기입",
+      base: amount,
+      optionDiscount: 0,
+      subtotal: amount,
+      discounts: [],
+      amount,
+      manual: true,
+      note: override?.note ?? null,
+    };
+  }
 
   const base = Number(plan.base_amount) * Number(option.periods);
   const optionDiscount = base * Number(option.discount_rate);
@@ -73,7 +107,35 @@ export function tuitionLine(
   const off = applied.reduce((n, d) => n + d.amount, 0);
   // 할인이 금액을 넘으면 0으로 멈춥니다. 마이너스 청구서는 환불이지 청구가 아니고,
   // 그건 이 화면이 다룰 일이 아닙니다.
-  const amount = Math.max(0, won(subtotal) - off);
+  const calculated = Math.max(0, won(subtotal) - off);
+
+  /**
+   * **직접 기입이 있으면 그것이 청구액입니다.**
+   *
+   * 옵션과 할인은 그대로 두고 **마지막 줄만** 덮습니다. 옵션까지 지우면 「몇 회로 나눠
+   * 내는가」를 잃어버리고, 원래 얼마였는지도 화면에서 사라집니다 - 그러면 몇 달 뒤에
+   * 「이 아이는 왜 이 금액이죠」에 답할 수 없습니다.
+   *
+   * 깎인 만큼을 한 줄로 적어 보여줍니다. 붙여둔 할인 위에 또 깎는 것이 아니라, **정해진
+   * 금액에 맞추는** 것입니다.
+   */
+  if (manual) {
+    const amount = won(Math.max(0, Number(override!.amount)));
+    const gap = calculated - amount;
+    if (gap > 0) applied.push({ name: override?.note?.trim() ? `직접 기입 (${override.note!.trim()})` : "직접 기입", amount: gap });
+    return {
+      label: `${plan.name} · ${option.name}`,
+      planName: plan.name,
+      optionName: option.name,
+      base: won(base),
+      optionDiscount: won(optionDiscount),
+      subtotal: won(subtotal),
+      discounts: applied,
+      amount,
+      manual: true,
+      note: override?.note ?? null,
+    };
+  }
 
   return {
     label: `${plan.name} · ${option.name}`,
@@ -83,7 +145,9 @@ export function tuitionLine(
     optionDiscount: won(optionDiscount),
     subtotal: won(subtotal),
     discounts: applied,
-    amount,
+    amount: calculated,
+    manual: false,
+    note: null,
   };
 }
 

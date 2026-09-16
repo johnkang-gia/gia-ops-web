@@ -111,7 +111,13 @@ export async function POST(req: Request) {
 
   const sameTerm = <T extends { term_id?: string | null }>(r: T) => !r.term_id || !termId || r.term_id === termId;
 
-  const enrollments = ((enrollRes.data as { plan_id: string; option_id: string | null; term_id: string | null }[] | null) ?? [])
+  const enrollments = ((enrollRes.data as {
+    plan_id: string;
+    option_id: string | null;
+    term_id: string | null;
+    override_amount: number | null;
+    override_note: string | null;
+  }[] | null) ?? [])
     .filter(sameTerm)
     .filter((e) => !planIds || planIds.length === 0 || planIds.includes(e.plan_id));
   // 이 학생에게 붙은 할인 줄. **끈 할인도 그대로 씁니다** - 이미 붙어 있던 건을 빼면
@@ -127,7 +133,12 @@ export async function POST(req: Request) {
     // 항목에 딱 걸린 할인 + 학비 전체에 걸린 할인. 고르는 일은 화면과 **같은 함수**가
     // 합니다 - 각자 거르면 표에 뜬 금액과 청구서 금액이 달라집니다.
     const forPlan = discountsForPlan(studentDiscounts, discounts, plan.id, termId);
-    const line = tuitionLine(plan, option, forPlan);
+    // 사람이 직접 정한 금액이 있으면 그것이 청구액입니다(교장님 상담 등). 화면과 같은
+    // 함수가 정합니다 - 서버가 따로 계산하면 표에 뜬 금액과 청구서가 달라집니다.
+    const line = tuitionLine(plan, option, forPlan, {
+      amount: e.override_amount === null || e.override_amount === undefined ? null : Number(e.override_amount),
+      note: e.override_note,
+    });
     if (line) lines.push(line);
   }
 

@@ -47,7 +47,20 @@ export type TuitionStudent = {
   department: string | null;
 };
 
-export type EnrollRow = { id: string; student_id: string; plan_id: string; option_id: string | null; term_id: string | null };
+export type EnrollRow = {
+  id: string;
+  student_id: string;
+  plan_id: string;
+  option_id: string | null;
+  term_id: string | null;
+  /**
+   * **사람이 직접 정한 청구액.** 교장님과 상담해서 정한 금액처럼 목록에 없는 할인입니다.
+   * 비어 있으면 기준금액·옵션·할인으로 계산합니다. 0원(전액 면제)도 값입니다.
+   */
+  override_amount: number | null;
+  /** 왜 그 금액인가. 비고에 그대로 뜹니다. 안 적어도 됩니다. */
+  override_note: string | null;
+};
 export type StudentDiscountRow = {
   id: string;
   student_id: string;
@@ -260,7 +273,10 @@ export default function TuitionGridClient({
   function lineFor(studentId: string, plan: FeePlan): TuitionLine | null {
     const e = enrollOf.get(`${studentId}|${plan.id}`);
     const option = options.find((o) => o.id === e?.option_id) ?? null;
-    return tuitionLine(plan, option, discountsFor(studentId, plan.id));
+    return tuitionLine(plan, option, discountsFor(studentId, plan.id), {
+      amount: e?.override_amount === null || e?.override_amount === undefined ? null : Number(e.override_amount),
+      note: e?.override_note ?? null,
+    });
   }
   /**
    * **비고 한 줄** — 「정규과정: 1년 납부 −10% · 목사자제 −10%」.
@@ -277,6 +293,13 @@ export default function TuitionGridClient({
       const bits: string[] = [];
       if (line.optionDiscount > 0) bits.push(`${line.optionName} −${won(line.optionDiscount)}`);
       for (const d of line.discounts) bits.push(`${d.name} −${won(d.amount)}`);
+      // **사람이 정한 금액은 깎인 액수가 0이어도 적습니다.** 원래 금액과 같아도 「이건
+      // 계산이 아니라 사람이 정한 것」이라는 사실이 요금 인상 때 이 칸이 안 따라오는
+      // 이유가 됩니다.
+      if (line.manual && bits.length === 0) bits.push(`직접 기입 ${won(line.amount)}`);
+      if (line.manual && line.note?.trim() && !bits.some((b) => b.includes(line.note!.trim()))) {
+        bits.push(line.note.trim());
+      }
       if (bits.length === 0) continue;
       out.push({ planId: p.id, planName: p.name, text: bits.join(" · ") });
     }
@@ -393,6 +416,43 @@ export default function TuitionGridClient({
       .single();
     setBusy(false);
     if (error || !data) return notify("넣지 못했습니다: " + (error?.message ?? ""), "error");
+    setEnrollments((p) => [...p, data as EnrollRow]);
+  }
+
+  /**
+   * **직접 기입 — 사람이 정한 금액을 그대로 적습니다.**
+   *
+   * 교장님과 상담해서 정한 금액은 목록의 할인으로 설명되지 않습니다. 그때마다 할인 규칙을
+   * 새로 만들면(「○○네 감면 17.4%」) 할인 목록이 학생 수만큼 늘어나고, 그 목록은 다음
+   * 학기에 아무도 못 지웁니다.
+   *
+   * 옵션은 지우지 않습니다 - 「몇 회로 나눠 내는가」는 그대로 필요하고, 원래 얼마였는지가
+   * 화면에 남아 있어야 몇 달 뒤 「이 아이는 왜 이 금액이죠」에 답할 수 있습니다.
+   */
+  async function saveOverride(student: TuitionStudent, plan: FeePlan, amount: number | null, note: string) {
+    setBusy(true);
+    const sb = createClient();
+    const existing = enrollOf.get(`${student.id}|${plan.id}`);
+    const patch = { override_amount: amount, override_note: note.trim() || null };
+
+    if (existing) {
+      const { error } = await sb.from("student_fee_enrollments").update(patch).eq("id", existing.id);
+      setBusy(false);
+      if (error) return notify("저장하지 못했습니다: " + error.message, "error");
+      setEnrollments((p) => p.map((x) => (x.id === existing.id ? { ...x, ...patch } : x)));
+      return;
+    }
+
+    // 옵션을 아직 안 골랐어도 금액만 적을 수 있습니다. 「금액은 정해졌는데 회차는 나중에」가
+    // 실제로 있고, 줄이 없으면 그 금액이 청구서에서 통째로 빠집니다.
+    if (amount === null) return setBusy(false);
+    const { data, error } = await sb
+      .from("student_fee_enrollments")
+      .insert({ student_id: student.id, plan_id: plan.id, option_id: null, term_id: termId || null, ...patch })
+      .select("id, student_id, plan_id, option_id, term_id, override_amount, override_note")
+      .single();
+    setBusy(false);
+    if (error || !data) return notify("저장하지 못했습니다: " + (error?.message ?? ""), "error");
     setEnrollments((p) => [...p, data as EnrollRow]);
   }
 
@@ -844,6 +904,13 @@ export default function TuitionGridClient({
                               할인 {ds.length}
                             </span>
                           )}
+                          {/* **계산된 금액과 사람이 정한 금액은 구별되어야 합니다.** 표시가
+                              없으면 요금이 오를 때 이 칸이 왜 안 따라오는지 아무도 모릅니다. */}
+                          {line?.manual && (
+                            <span className="ml-1 rounded bg-amber-100 px-1 text-[10px] font-bold text-amber-800">
+                              직접
+                            </span>
+                          )}
                           <span className="mt-0.5 block text-right font-bold tabular-nums text-teal-800">
                             {line ? won(line.amount) : "—"}
                           </span>
@@ -864,6 +931,15 @@ export default function TuitionGridClient({
                             attached={ds}
                             line={line}
                             busy={busy}
+                            override={{
+                              amount:
+                                enrollOf.get(`${s.id}|${p.id}`)?.override_amount === null ||
+                                enrollOf.get(`${s.id}|${p.id}`)?.override_amount === undefined
+                                  ? null
+                                  : Number(enrollOf.get(`${s.id}|${p.id}`)!.override_amount),
+                              note: enrollOf.get(`${s.id}|${p.id}`)?.override_note ?? null,
+                            }}
+                            onSaveOverride={(amt, note) => void saveOverride(s, p, amt, note)}
                             onPickOption={(id) => void pickOption(s, p, id)}
                             onToggleDiscount={(d, next) => void toggleDiscount(s, p, d, next)}
                             onClose={() => setCellFor(null)}
@@ -1084,8 +1160,10 @@ function CellEditor({
   attached,
   line,
   busy,
+  override,
   onPickOption,
   onToggleDiscount,
+  onSaveOverride,
   onClose,
 }: {
   student: TuitionStudent;
@@ -1097,11 +1175,20 @@ function CellEditor({
   attached: FeeDiscount[];
   line: TuitionLine | null;
   busy: boolean;
+  /** 사람이 직접 정해둔 금액과 그 이유. 없으면 amount 가 null 입니다. */
+  override: { amount: number | null; note: string | null };
   onPickOption: (optionId: string) => void;
   onToggleDiscount: (d: FeeDiscount, next: boolean) => void;
+  onSaveOverride: (amount: number | null, note: string) => void;
   onClose: () => void;
 }) {
   const on = new Set(attached.map((d) => d.id));
+  /** 직접 기입 칸을 펼쳤는가. 이미 값이 있으면 열어둡니다 - 접혀 있으면 있는 줄 모릅니다. */
+  const [manual, setManual] = useState(override.amount !== null);
+  const [amt, setAmt] = useState(override.amount === null ? "" : String(override.amount));
+  const [note, setNote] = useState(override.note ?? "");
+  const amtNum = amt.trim() === "" ? null : Number(amt.replace(/[,\s원]/g, ""));
+  const amtBad = amt.trim() !== "" && (!Number.isFinite(amtNum) || (amtNum ?? 0) < 0);
 
   return (
     <>
@@ -1169,6 +1256,70 @@ function CellEditor({
                 )}
               </label>
             ))
+          )}
+        </div>
+
+        {/* ③ **목록에 없는 할인** — 교장님과 상담해서 정한 금액.
+
+            할인 규칙을 그때마다 새로 만들면(「○○네 감면 17.4%」) 할인 목록이 학생 수만큼
+            늘어나고, 그 목록은 다음 학기에 아무도 못 지웁니다. 정한 금액을 그대로 적습니다. */}
+        <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50/60 p-1.5">
+          <label className="flex cursor-pointer items-center gap-1.5">
+            <input
+              type="checkbox"
+              checked={manual}
+              disabled={busy}
+              onChange={(e) => {
+                setManual(e.target.checked);
+                // 끄면 **그 자리에서 계산으로 되돌립니다.** 체크만 풀고 값이 남아 있으면,
+                // 화면에는 안 보이는데 금액은 그대로인 상태가 됩니다.
+                if (!e.target.checked) {
+                  setAmt("");
+                  onSaveOverride(null, "");
+                }
+              }}
+            />
+            <span className="text-[10px] font-bold text-amber-900">③ 직접 기입 — 금액을 정해서 넣습니다</span>
+          </label>
+          {manual && (
+            <div className="mt-1 flex flex-col gap-1">
+              <div className="flex items-center gap-1">
+                <input
+                  value={amt}
+                  onChange={(e) => setAmt(e.target.value)}
+                  inputMode="numeric"
+                  placeholder="예: 20000000"
+                  className={
+                    "w-[130px] rounded border px-1.5 py-1 text-right text-[11px] tabular-nums " +
+                    (amtBad ? "border-red-400 bg-red-50 text-red-700" : "border-slate-300")
+                  }
+                />
+                <span className="text-[10px] text-slate-500">원</span>
+                {amtNum !== null && !amtBad && (
+                  <span className="text-[10px] font-bold text-amber-800">{won(amtNum)}</span>
+                )}
+              </div>
+              {/* 이유는 **안 적어도 됩니다.** 적으라고 막으면 급할 때 아무 글자나 넣게 되고,
+                  그렇게 들어간 글은 나중에 아무 도움이 안 됩니다. */}
+              <input
+                value={note}
+                onChange={(e) => setNote(e.target.value.slice(0, 120))}
+                placeholder="비고 — 예: 교장님 상담 감면 (안 적어도 됩니다)"
+                className="rounded border border-slate-300 px-1.5 py-1 text-[11px]"
+              />
+              <button
+                type="button"
+                disabled={busy || amtBad || amt.trim() === ""}
+                onClick={() => onSaveOverride(amtNum, note)}
+                className="rounded-lg bg-amber-600 px-2 py-1 text-[11px] font-bold text-white disabled:opacity-40"
+              >
+                이 금액으로 정하기
+              </button>
+              <p className="text-[10px] leading-snug text-amber-800">
+                옵션과 할인은 그대로 두고 <b>청구액만</b> 이 금액이 됩니다. 원래 얼마였는지가 아래에 남아,
+                나중에 「왜 이 금액이죠」에 답할 수 있습니다.
+              </p>
+            </div>
           )}
         </div>
 

@@ -56,6 +56,18 @@ export function gradeOfClass(list: ScopeStudent[], klass: string): string {
   return "";
 }
 
+/**
+ * 화면에 적는 학년 이름.
+ *
+ * 명부에는 숫자만 들어 있어서 단추가 「2 3 4 5」로 떴습니다. 그 줄만 보면 무엇을 세는
+ * 숫자인지 알 수 없습니다 - 반 개수인지 인원인지 학년인지.
+ *
+ * 「중1」·「고1」처럼 **이미 학년으로 읽히는 글자**에는 붙이지 않습니다. 「중1학년」이 됩니다.
+ */
+export function gradeText(grade: string): string {
+  return /^\d+$/.test(grade.trim()) ? `${grade.trim()}학년` : grade.trim();
+}
+
 export function inScope(s: ScopeStudent, scope: Scope): boolean {
   if (scope.grade && (s.grade ?? "").trim() !== scope.grade) return false;
   if (scope.klass && (s.className ?? "").trim() !== scope.klass) return false;
@@ -70,7 +82,7 @@ export function inScope(s: ScopeStudent, scope: Scope): boolean {
  */
 export function scopeLabel(dept: string, scope: Scope): string {
   if (scope.klass) return scope.klass;
-  if (scope.grade) return `${dept} ${scope.grade}`;
+  if (scope.grade) return `${dept} ${gradeText(scope.grade)}`;
   return `${dept} 전체`;
 }
 

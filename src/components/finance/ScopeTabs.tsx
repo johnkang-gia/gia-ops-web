@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { gradeSortKey } from "@/lib/department";
-import { classesIn, fixScope, gradesIn, type Scope, type ScopeStudent } from "@/lib/gradeScope";
+import { classesIn, fixScope, gradeText, gradesIn, type Scope, type ScopeStudent } from "@/lib/gradeScope";
 
 /**
  * **부서 → 학년 → 반**, 한 단씩 좁혀 보는 줄.
@@ -50,7 +50,7 @@ export default function ScopeTabs({
         </Chip>
         {grades.map((g) => (
           <Chip key={g} on={scope.grade === g} onClick={() => onChange({ grade: g, klass: "" })}>
-            {g}
+            {gradeText(g)}
           </Chip>
         ))}
       </div>
@@ -63,7 +63,7 @@ export default function ScopeTabs({
           {/* 「학년 전체」가 먼저입니다 - 한 학년을 통째로 보는 일이 반을 고르는 것만큼
               잦고, 없으면 반을 눌러본 사람이 전체로 돌아올 길을 못 찾습니다. */}
           <Chip on={!scope.klass} onClick={() => onChange({ grade: scope.grade, klass: "" })}>
-            {scope.grade} 전체
+            {gradeText(scope.grade)} 전체
           </Chip>
           {classes.map((c) => (
             <Chip key={c} on={scope.klass === c} onClick={() => onChange({ grade: scope.grade, klass: c })}>

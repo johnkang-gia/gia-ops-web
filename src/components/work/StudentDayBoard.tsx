@@ -376,10 +376,42 @@ export default function StudentDayBoard({ students }: { students: SelectableStud
                       <span>{ITEM_LOOK[u.kind].icon}</span>
                       <span className="min-w-0 flex-1 truncate text-slate-700">{u.text}</span>
                       {u.hint && <span className="shrink-0 text-[10px] text-amber-700">{u.hint}</span>}
+
+                      {/* **이어 둔 형제방은 「미연결」이 아닙니다.**
+                          학기 초에 사람이 황라원·황라윤을 그 방에 이어 두었는데, 본문이
+                          둘 중 누구인지 안 갈랐다고 화면이 아무것도 모르는 것처럼 떴습니다.
+                          그러면 사람은 연결이 안 된 줄 알고 처음부터 다시 찾습니다.
+
+                          이어 둔 것이 있으면 **그 집 아이 전부가 기본**이고, 한 명만
+                          해당하면 그 자리에서 눌러 좁힙니다. */}
+                      {u.house.length > 1 && (
+                        <span className="flex shrink-0 flex-wrap items-center gap-1">
+                          <span className="rounded bg-white px-1 text-[10px] font-bold text-amber-800 ring-1 ring-amber-300">
+                            🏠 {u.house.map((s) => s.name).join("·")} 둘 다 해당
+                          </span>
+                          <span className="text-[10px] text-amber-700">한 명이면 →</span>
+                          {u.house.map((s) => (
+                            <button
+                              key={s.id}
+                              type="button"
+                              onClick={() => void linkStudent(u, s.id)}
+                              title={`이 연락을 ${s.name} 한 명의 것으로 정합니다`}
+                              className="rounded bg-amber-600 px-1.5 py-0.5 text-[10px] font-bold text-white hover:bg-amber-700"
+                            >
+                              {s.name}
+                            </button>
+                          ))}
+                        </span>
+                      )}
+
                       {/* **여기서 바로 잇습니다.** 예전에는 「픽업 인박스에서 연결하세요」
                           링크뿐이었는데, 건너간 김에 다른 일을 하다 잊습니다 - 그러면 그
-                          연락은 누구의 것도 아닌 채로 남습니다. */}
-                      {linkableId(u) ? (
+                          연락은 누구의 것도 아닌 채로 남습니다.
+
+                          집이 이어진 줄에는 검색칸을 안 띄웁니다 - 그 집 아이는 위 단추로
+                          고르는 것이 맞고, 검색칸을 함께 두면 남의 집 아이를 고를 수 있게
+                          됩니다. */}
+                      {u.house.length > 1 ? null : linkableId(u) ? (
                         <StudentSelect
                           students={students}
                           value={null}

@@ -71,7 +71,8 @@ export async function loadStudentDay(supabase: SupabaseClient, opts: LoadOptions
   const nameById = new Map(all.map((s) => [s.id, s.name]));
 
   const items: BoardInput["items"] = [];
-  const push = (studentId: string | null, hint: string | null, item: DayItem) => items.push({ studentId, hint, item });
+  const push = (studentId: string | null, hint: string | null, item: DayItem, house?: { id: string; name: string }[]) =>
+    items.push({ studentId, hint, item, house });
 
   const [pickups, active, upcoming, noteRes, inquiryRes, taskRes] = await Promise.all([
     loadTodayPickups(supabase, date, (id) => nameById.get(id) ?? null),
@@ -88,7 +89,7 @@ export async function loadStudentDay(supabase: SupabaseClient, opts: LoadOptions
     supabase
       .from("pickup_requests")
       // 시각 칸은 `ai_pickup_time` 입니다 - 이 표에 `pickup_time` 은 없습니다.
-      .select("id, kind, status, student_id, service_date, ai_pickup_time, channel_label, ai_student_name, matched_name, summary, raw_text, ai_note, answered_at, is_demo, source")
+      .select("id, kind, status, student_id, service_date, ai_pickup_time, channel_label, ai_student_name, matched_name, summary, raw_text, ai_note, answered_at, is_demo, source, channel_id")
       .gte("service_date", date)
       .lte("service_date", until)
       .limit(300),
@@ -205,11 +206,47 @@ export async function loadStudentDay(supabase: SupabaseClient, opts: LoadOptions
 
   // ── ④⑤ 학부모 문의 · 누구인지 모르는 연락 ────────────────────────────────
   if (inquiryRes.error) problems.push(`학부모 연락을 읽지 못했습니다: ${inquiryRes.error.message}`);
+
+  // ── 이어 둔 집의 아이들 ────────────────────────────────────────────────
+  //
+  // **형제방은 「미연결」이 아닙니다.** 학기 초에 사람이 황라원·황라윤을 그 방에 이어
+  // 두었습니다. 본문이 둘 중 누구인지 안 가른 것뿐인데, 화면은 그냥 「누구인지 모릅니다」로
+  // 띄웠습니다 - 이어 둔 것이 있는데도 없는 것처럼 보이면, 사람은 처음부터 다시 찾습니다.
+  //
+  // 그래서 방에 이어진 아이들을 함께 들고 갑니다. 화면은 **그 집 아이 전부를 기본**으로
+  // 보여주고, 한 명만 해당하면 그 자리에서 좁힙니다.
+  const houseIds = [
+    ...new Set(
+      ((inquiryRes.data as { channel_id?: string | null; student_id: string | null }[] | null) ?? [])
+        .filter((r) => !r.student_id && r.channel_id)
+        .map((r) => r.channel_id as string),
+    ),
+  ];
+  const houseOf = new Map<string, { id: string; name: string }[]>();
+  if (houseIds.length > 0) {
+    const { data: linkRows, error: linkErr } = await supabase
+      .from("toddle_channel_students")
+      .select("channel_id, student_id, seq")
+      .in("channel_id", houseIds);
+    // 못 읽으면 조용히 넘기지 않습니다. 이어 둔 것이 안 보이는 것과 이어 둔 것이 없는 것은
+    // 다른 말이고, 화면만 보고는 구별할 수 없습니다(§5).
+    if (linkErr) problems.push(`이어 둔 방의 아이를 읽지 못했습니다: ${linkErr.message}`);
+    for (const l of ((linkRows as { channel_id: string; student_id: string; seq: number }[] | null) ?? []).sort(
+      (a, b) => a.seq - b.seq,
+    )) {
+      // **번호로** 명부를 찾습니다. 이름으로 찾으면 김재이 셋이 한 줄을 나눠 씁니다(§2-4).
+      const st = roster.find((x) => x.id === l.student_id);
+      if (!st) continue; // 졸업·전학으로 빠진 아이. 없는 아이를 고르게 두지 않습니다.
+      houseOf.set(l.channel_id, [...(houseOf.get(l.channel_id) ?? []), { id: st.id, name: st.name }]);
+    }
+  }
   type Req = {
     id: string; kind: string | null; status: string; student_id: string | null;
     service_date: string; ai_pickup_time: string | null; channel_label: string | null;
     ai_student_name: string | null; matched_name: string | null; summary: string | null;
     raw_text: string | null; ai_note?: string | null; answered_at: string | null; is_demo?: boolean | null;
+    /** 사람이 이어 둔 집(토들 방). 형제방이면 이것만으로도 「누구 집인지」는 확실합니다. */
+    channel_id?: string | null;
   };
   for (const r of ((inquiryRes.data as Req[] | null) ?? [])) {
     if (r.is_demo) continue;
@@ -231,7 +268,7 @@ export async function loadStudentDay(supabase: SupabaseClient, opts: LoadOptions
           raw: r.raw_text,
           sourceId: r.id,
         },
-      });
+      }, r.channel_id ? houseOf.get(r.channel_id) : undefined);
       continue;
     }
 

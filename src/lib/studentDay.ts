@@ -83,6 +83,17 @@ export type StudentDay = {
 export type UnknownItem = DayItem & {
   /** 화면에 보여줄 단서 — 채널 이름·적힌 이름. 사람이 이걸 보고 연결합니다. */
   hint: string | null;
+  /**
+   * **이 방에 이어 둔 아이들.**
+   *
+   * 형제방(황라원·황라윤)은 학기 초에 사람이 이미 이어 두었습니다. 그런데 본문이 누구인지
+   * 안 가르면 화면은 그냥 「미연결」로 떴습니다 — 이어 둔 것이 있는데도 아무것도 모르는
+   * 것처럼 보였고, 그러면 사람은 연결이 안 된 줄 알고 처음부터 다시 찾습니다.
+   *
+   * 이어 둔 것이 있으면 **그 집 아이 전부가 기본**입니다. 그중 한 명만 해당하면 사람이
+   * 한 번 눌러 좁힙니다. 비어 있으면 정말로 방이 안 이어진 것입니다.
+   */
+  house: { id: string; name: string }[];
 };
 
 export type DayBoard = {
@@ -98,7 +109,7 @@ export type BoardInput = {
   date: string;
   /** 이 보드가 다루는 학생(부서로 좁힌 뒤). 여기 없는 번호는 「모름」으로 갑니다. */
   roster: { id: string; name: string; grade: string | null; className: string | null }[];
-  items: { studentId: string | null; hint: string | null; item: DayItem }[];
+  items: { studentId: string | null; hint: string | null; item: DayItem; house?: { id: string; name: string }[] }[];
 };
 
 /**
@@ -119,7 +130,7 @@ export function buildBoard(input: BoardInput, problems: string[] = []): DayBoard
       // **번호가 있는데 명단 밖인 것은 조용히 버립니다** - 중고등부 아이의 픽업을 초등부
       // 모니터의 「누구인지 모름」에 올리면, 앞에 선 사람은 할 수 있는 일이 없는데 고칠
       // 것이 있는 줄 압니다. 번호가 **아예 없는** 것만 사람에게 묻습니다.
-      if (!row.studentId) unknown.push({ ...row.item, hint: row.hint });
+      if (!row.studentId) unknown.push({ ...row.item, hint: row.hint, house: row.house ?? [] });
       continue;
     }
     let day = days.get(student.id);

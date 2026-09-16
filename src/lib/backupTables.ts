@@ -129,6 +129,10 @@ export const BACKUP_GROUPS: { group: string; tables: string[] }[] = [
       "academic_checklist_templates",
       "academic_checklist_items",
       "academic_checklist_meetings",
+      // 학사 일정은 누구나 고칠 수 있게 열어 둔 대신, **누가 언제 무엇을 바꿨는가**는 이
+      // 표에만 있습니다. 항목 표에는 지금 값만 남으므로 이것이 없으면 「원래 날짜가
+      // 언제였나」에 아무도 답할 수 없습니다.
+      "academic_item_log",
       "wr_timetable",
       "wr_periods",
       "wr_subjects",

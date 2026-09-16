@@ -170,6 +170,15 @@ export type ChecklistItem = {
   due_date: string;
   /** 기간의 끝. null이면 due_date 하루짜리. */
   end_date: string | null;
+  /**
+   * 무엇인가. **행사**는 당일이 주인공이라 준비 기간을 달력에 막대로 그리지 않습니다 -
+   * 3개월짜리 막대가 달력을 통째로 덮었습니다.
+   */
+  kind?: "일반" | "행사" | null;
+  /** 행사 당일. 비어 있으면 아직 안 정한 것입니다 - 가짜 날짜는 확정처럼 읽힙니다. */
+  event_date?: string | null;
+  /** 날짜를 못 정했을 때 사람이 적는 말. 「12월 중」. */
+  event_when_note?: string | null;
   done: boolean;
   done_by: string | null;
   done_at: string | null;

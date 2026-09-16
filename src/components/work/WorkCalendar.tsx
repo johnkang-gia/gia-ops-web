@@ -6,6 +6,7 @@ import { todayKst } from "@/lib/kst";
 import { addDays, layoutWeek, orderRange, type SpanTask } from "@/lib/taskSpan";
 import { ghostOccurrences } from "@/lib/taskRepeat";
 import { recurrenceLabel } from "@/lib/recurrence";
+import { eventDots, eventProgressList, showAsBar, type EventDot } from "@/lib/academicEvent";
 
 /**
  * 업무 달력 — 업무보드 한가운데.
@@ -151,6 +152,7 @@ export default function WorkCalendar({
   tags,
   reminders = [],
   academicItems = [],
+  academicMeetings = [],
   onOpenAcademic,
   onToggleReminder,
   onDeleteReminder,
@@ -179,6 +181,8 @@ export default function WorkCalendar({
    * 무엇을 하는지입니다. 따로 그리고, 끌 수 있게 둡니다.
    */
   academicItems?: ChecklistItem[];
+  /** 긴 학사일정에 딸린 회의. 달력에는 이 날짜에만 점이 섭니다. */
+  academicMeetings?: { id: string; item_id: string; seq: number; meet_date: string; title: string | null; done: boolean }[];
   onOpenAcademic?: (item: ChecklistItem) => void;
   onToggleReminder?: (r: DayReminder) => void;
   onDeleteReminder?: (r: DayReminder) => void;
@@ -261,11 +265,17 @@ export default function WorkCalendar({
    */
   const [showAcademic, setShowAcademic] = useState(true);
 
-  /** 학사일정 막대. 업무와 **같은 줄 셈법**을 쓰되, 업무 아래 줄부터 앉힙니다. */
+  /**
+   * 학사일정 막대. 업무와 **같은 줄 셈법**을 쓰되, 업무 아래 줄부터 앉힙니다.
+   *
+   * **긴 준비 기간은 막대로 그리지 않습니다.** 「크리스마스 콘서트 준비」를 9월~12월로
+   * 넣으면 그 사이 모든 날에 줄이 그어져 달력이 통째로 덮입니다. 행사와 2주 넘는 일은
+   * 아래 `academicDots` 로 빠져 **마디(준비 시작·회의·당일)에만 점**으로 섭니다.
+   */
   const academicBars = useMemo<(SpanTask & { item: ChecklistItem })[]>(
     () =>
       showAcademic
-        ? academicItems.map((it) => ({
+        ? academicItems.filter((it) => showAsBar(it)).map((it) => ({
             id: `acad-${it.id}`,
             title: it.title,
             // 기간의 시작은 due_date, 끝은 end_date(없으면 하루짜리).
@@ -275,6 +285,26 @@ export default function WorkCalendar({
           }))
         : [],
     [academicItems, showAcademic],
+  );
+
+  /**
+   * 긴 학사일정의 **점**들. 날짜별로 모아 둡니다 - 칸을 그릴 때 그 날 것만 꺼내 씁니다.
+   */
+  const dotsByDay = useMemo(() => {
+    const m = new Map<string, EventDot[]>();
+    if (!showAcademic) return m;
+    for (const it of academicItems) {
+      for (const d of eventDots(it, academicMeetings)) {
+        (m.get(d.date) ?? m.set(d.date, []).get(d.date)!).push(d);
+      }
+    }
+    return m;
+  }, [academicItems, academicMeetings, showAcademic]);
+
+  /** 달력 아래 한 줄로 알릴 진행 중인 행사. 달력 칸은 한 개도 안 먹습니다. */
+  const progress = useMemo(
+    () => eventProgressList(academicItems, academicMeetings, today),
+    [academicItems, academicMeetings, today],
   );
 
   /** 달력에 그릴 재료. 끝날은 마감일의 한국 날짜입니다. */
@@ -546,6 +576,37 @@ export default function WorkCalendar({
                     </div>
                     {/* 막대가 앉을 만큼 자리를 비워둡니다 - 안 그러면 막대가 하루짜리 위에 겹칩니다. */}
                     <div style={{ height: BAR_TOP - 20 + laneCount * LANE_H }} className="shrink-0" />
+
+                    {/* 🎄 긴 학사일정의 **마디**. 준비 기간 전체를 막대로 긋는 대신 준비
+                        시작·회의·행사 당일에만 점을 찍습니다. 그 사이 날들을 비워 두는 것이
+                        이 칸의 요점입니다 - 달력은 「그날 무엇을 하는가」를 보는 자리입니다. */}
+                    {(dotsByDay.get(c.key) ?? []).slice(0, 3).map((d) => (
+                      <button
+                        key={`${d.itemId}-${d.kind}-${d.date}`}
+                        type="button"
+                        data-task
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const it = academicItems.find((x) => x.id === d.itemId);
+                          if (it) onOpenAcademic?.(it);
+                        }}
+                        title={`${d.title} — ${d.label}`}
+                        className={
+                          "mt-0.5 flex w-full items-center gap-1 overflow-hidden rounded px-1 py-0.5 text-left text-[9px] font-bold transition " +
+                          (d.kind === "행사"
+                            ? "bg-fuchsia-600 text-white hover:bg-fuchsia-700"
+                            : d.done
+                              ? "bg-slate-100 text-slate-400 line-through"
+                              : "bg-fuchsia-50 text-fuchsia-800 ring-1 ring-fuchsia-200 hover:bg-fuchsia-100")
+                        }
+                      >
+                        <span className="shrink-0">{d.kind === "행사" ? "🎉" : d.kind === "회의" ? "🗣️" : "🚩"}</span>
+                        <span className="truncate">
+                          {d.kind === "행사" ? d.title : d.label}
+                        </span>
+                      </button>
+                    ))}
                     {/* 🔔 그날 알림. **업무보다 위에** 둡니다 - 그날에만 뜻이 있으니 그날
                         가장 먼저 눈에 들어와야 합니다. 챙긴 것은 지우지 않고 흐리게 둡니다. */}
                     {(remindersByDay.get(c.key) ?? []).slice(0, 2).map((r) => (
@@ -756,6 +817,41 @@ export default function WorkCalendar({
       {/* ── 마감 없는 업무 ────────────────────────────────────────────
           달력에 설 자리가 없다고 없는 셈 치면, 마감을 안 정한 업무가 조용히 잊힙니다.
           끌어다 날짜에 놓으면 그날로 정해집니다. */}
+      {/* **진행 중인 행사 — 달력 칸을 한 개도 안 먹는 한 줄.**
+
+          긴 준비 기간을 막대로 안 그리는 대신, 「지금 어디까지 왔는가」를 여기서 늘 보여
+          줍니다. 알림이 아니라 상시 표시라 안 보고 지나칠 수는 있어도 「몰랐다」가 되지는
+          않습니다. 자리를 적게 쓰려고 한 줄에 여러 행사를 나란히 둡니다. */}
+      {progress.length > 0 && (
+        <div className="mt-1 flex shrink-0 flex-wrap items-center gap-1">
+          <span className="text-[10px] font-bold text-fuchsia-700">진행 중</span>
+          {progress.slice(0, 4).map((p) => {
+            const it = academicItems.find((x) => x.id === p.itemId);
+            return (
+              <button
+                key={p.itemId}
+                type="button"
+                onClick={() => it && onOpenAcademic?.(it)}
+                title="누르면 일정을 열어 고칩니다"
+                className={
+                  "flex max-w-full items-center gap-1 overflow-hidden rounded-full px-2 py-0.5 text-[10px] font-bold transition " +
+                  (p.soon
+                    ? "bg-rose-100 text-rose-800 ring-1 ring-rose-300 hover:bg-rose-200"
+                    : "bg-fuchsia-50 text-fuchsia-800 ring-1 ring-fuchsia-200 hover:bg-fuchsia-100")
+                }
+              >
+                <span className="truncate">🎄 {p.title}</span>
+                <span className="shrink-0 rounded bg-white/70 px-1 tabular-nums">{p.when}</span>
+                {/* 다음 회의가 곧 「지금 해야 할 일」입니다 - 행사 당일은 아직 멀어도
+                    회의는 이번 주일 수 있습니다. */}
+                {p.nextMeeting && <span className="shrink-0 font-semibold opacity-80">· {p.nextMeeting}</span>}
+              </button>
+            );
+          })}
+          {progress.length > 4 && <span className="text-[10px] text-slate-400">외 {progress.length - 4}건</span>}
+        </div>
+      )}
+
       {undated.length > 0 && (
         <div className="mt-1 shrink-0">
           <p className="mb-0.5 text-[10px] font-semibold text-slate-400">

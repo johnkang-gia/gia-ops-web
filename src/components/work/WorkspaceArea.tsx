@@ -13,6 +13,7 @@ import AttendancePanels from "./AttendancePanels";
 import IntegrationStatus from "./IntegrationStatus";
 import DayEntryDialog, { DayReminderDialog, type DayEntryKind } from "./DayEntryDialog";
 import AcademicItemDialog from "@/components/academic/AcademicItemDialog";
+import AcademicItemEditDialog from "@/components/academic/AcademicItemEditDialog";
 import type { ChecklistItem, ChecklistTemplate, Term } from "@/lib/types";
 import { isMyTask } from "@/lib/myTask";
 import { addDays } from "@/lib/taskSpan";
@@ -280,6 +281,12 @@ export default function WorkspaceArea({
    * 일정이 빠져 있으면, 그 달력은 절반만 보여주는 것입니다.
    */
   const [academicItems, setAcademicItems] = useState<ChecklistItem[]>([]);
+  /** 긴 학사일정에 딸린 회의. 달력은 이 날짜에만 점을 찍습니다. */
+  const [academicMeetings, setAcademicMeetings] = useState<
+    { id: string; item_id: string; seq: number; meet_date: string; title: string | null; done: boolean }[]
+  >([]);
+  /** 고치려고 연 학사일정. 등록한 사람만이 아니라 **누구나** 열 수 있습니다. */
+  const [academicEdit, setAcademicEdit] = useState<ChecklistItem | null>(null);
 
   const loadAcademicItems = useCallback(async () => {
     // 알림과 같은 창(앞 45일 ~ 뒤 120일). 달력이 앞뒤 달 칸을 함께 그리기 때문입니다.
@@ -298,6 +305,15 @@ export default function WorkspaceArea({
       return;
     }
     setAcademicItems((data as ChecklistItem[] | null) ?? []);
+    // 회의는 항목과 **함께** 읽습니다 - 따로 읽으면 달력이 점 없이 한 번 그려졌다가
+    // 뒤늦게 점이 튀어나옵니다.
+    const { data: meets } = await createClient()
+      .from("academic_checklist_meetings")
+      .select("id, item_id, seq, meet_date, title, done")
+      .order("meet_date");
+    setAcademicMeetings(
+      (meets as { id: string; item_id: string; seq: number; meet_date: string; title: string | null; done: boolean }[] | null) ?? [],
+    );
   }, [notify]);
 
   useEffect(() => {
@@ -593,9 +609,12 @@ export default function WorkspaceArea({
           setTaskFormOpen(true);
         }}
         academicItems={academicItems}
+        academicMeetings={academicMeetings}
         // 학사일정 막대를 누르면 그날의 학사 팝업이 열립니다. 따로 만들지 않고 이미 있는
         // 창을 그대로 씁니다 - 같은 일을 두 가지 창으로 만들면 둘이 어긋납니다.
-        onOpenAcademic={(it) => void openAcademic(it.due_date)}
+        // 막대·점을 누르면 **그 일정을 고치는 창**이 뜹니다. 예전에는 같은 날짜로 새로
+        // 등록하는 창이 떠서, 고치려던 사람이 같은 일을 하나 더 만들었습니다.
+        onOpenAcademic={(it) => setAcademicEdit(it)}
         onOpenTask={(t) => onOpenTask(t.id)}
         onMoveDue={(t, dayKey) => void moveDue(t, dayKey)}
         onRename={(t, title) => void renameTask(t, title)}
@@ -619,6 +638,16 @@ export default function WorkspaceArea({
           onSaved={() => void loadReminders()}
         />
       )}
+      {academicEdit && (
+        <AcademicItemEditDialog
+          item={academicEdit}
+          currentUserEmail={currentUserEmail}
+          currentUserName={team.find((m) => m.email === currentUserEmail)?.name ?? currentUserEmail}
+          onClose={() => setAcademicEdit(null)}
+          onSaved={() => void loadAcademicItems()}
+        />
+      )}
+
       {academicDay && (
         <AcademicItemDialog
           currentTerm={academicTerm}

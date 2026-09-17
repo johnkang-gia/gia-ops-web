@@ -8,6 +8,7 @@ import { notifyOpsBoardRefresh, OPS_REFRESH_CHANNEL, OPS_REFRESH_EVENT } from "@
 import { useToast } from "@/components/common/ToastProvider";
 import { useConfirm } from "@/components/common/ConfirmProvider";
 import { markIfAmbiguous, toKoreanDisplayName, toRosterEntries, ROSTER_SELECT, type RosterEntry } from "@/lib/pickupParse";
+import { loadHouseCandidates } from "@/lib/houseCandidates";
 
 // 학부모 문의사항 — 예전 실시간 로그가 있던 자리입니다.
 //
@@ -245,6 +246,16 @@ export default function ParentInquiryPanel({
   // 영어로 온 이름을 한글로 바꾸기 위한 명부. 요청: "영어이름으로 문의를 올렸다면 학생명부와
   // 대조후에 한글이름으로 올려줘". 한 번만 읽어 재사용합니다.
   const [roster, setRoster] = useState<RosterEntry[]>([]);
+  /**
+   * **이어 둔 방 → 그 방의 아이들.**
+   *
+   * 이준서가 3학년과 9학년 둘입니다. 방은 이미 학기 초에 사람이 이어 두었는데, 이 화면은
+   * 그 사실을 한 번도 안 읽고 이름만 명부와 대조해서 「이준서(G3JA·G9… 중 누구?)」로
+   * 띄웠습니다 - 이미 답이 있는데 사람에게 다시 물은 것입니다.
+   *
+   * 방으로 먼저 정하고, 그 사실을 화면에 적습니다. 사람이 아니라고 보면 그 자리에서 바꿉니다.
+   */
+  const [houseOf, setHouseOf] = useState<Map<string, { id: string; name: string }[]>>(new Map());
   // `loadAuto` 는 한 번만 만들어 두는 함수라(useCallback[]), 안에서 `roster` 를 그냥 읽으면
   // 처음의 빈 배열에 묶입니다. 명부가 나중에 도착해도 이름을 못 찾게 되므로 ref 로 봅니다.
   const rosterRef = useRef<RosterEntry[]>([]);
@@ -701,10 +712,51 @@ export default function ParentInquiryPanel({
       roster,
       `${r.summary ?? ""} ${r.raw_text ?? ""}`,
     );
+    const marked = markIfAmbiguous(label, roster);
+    /**
+     * **못 가렸으면 이어 둔 방으로 정합니다.**
+     *
+     * 방은 학기 초에 사람이 이어 두었습니다 — 그 방에서 온 연락이 누구 이야기인지는 이미
+     * 정해져 있는데, 예전에는 그 사실을 안 읽고 이름만 명부와 대조해 「이준서(G3JA·G9…
+     * 중 누구?)」로 물었습니다. 답이 있는데 다시 묻는 것은 사람의 시간을 쓰는 것이고,
+     * 그런 물음이 쌓이면 진짜 물어야 할 건까지 함께 무시됩니다.
+     *
+     * 방에서 정한 것은 **정했다고 적습니다**(「방 기준」). 사람이 아니라고 보면 바꿉니다 -
+     * 조용히 정해두면 틀렸을 때 아무도 못 찾습니다.
+     */
+    if (marked && r.source_chat_id && label) {
+      const base = label.replace(/\(.*?\)$/, "").trim();
+      const inHouse = (houseOf.get(r.source_chat_id) ?? []).filter((c) => c.name === base);
+      if (inHouse.length === 1) {
+        const hit = roster.find((x) => x.id === inHouse[0].id);
+        return `${base}${hit?.class_name ? `(${hit.class_name})` : ""} · 방 기준`;
+      }
+    }
     // 그래도 못 정했으면 **정하지 못했다고 적습니다.** 김재이가 셋인데 그냥 「김재이」로 뜨면
     // 보는 사람은 이미 정해진 이름이라 믿고 엉뚱한 아이를 찾습니다.
-    return markIfAmbiguous(label, roster) ?? r.channel_label ?? "미확인";
+    return marked ?? r.channel_label ?? "미확인";
   }
+
+  /**
+   * **이어 둔 방을 읽습니다.** 명부와 목록이 모두 온 뒤에 한 번.
+   *
+   * 못 읽어도 화면은 떠야 합니다 - 그때는 예전처럼 이름으로만 가리고 「누구?」가 뜹니다.
+   * 조용히 비워두지 않고 기록을 남깁니다(§5).
+   */
+  useEffect(() => {
+    if (roster.length === 0 || rows.length === 0) return;
+    const chans = [...new Set(rows.map((r) => r.source_chat_id).filter((x): x is string => !!x))];
+    if (chans.length === 0) return;
+    void (async () => {
+      const { houseOf: hm, problem } = await loadHouseCandidates(
+        createClient(),
+        chans,
+        roster.map((e) => ({ id: e.id, name: e.name })),
+      );
+      if (problem) console.error("[학부모 문의] 이어 둔 방을 읽지 못했습니다:", problem);
+      setHouseOf(hm);
+    })();
+  }, [roster, rows]);
 
   // 명부는 문의보다 늦게 옵니다. 먼저 만든 이름표에는 반이 없을 수 있어, 명부가 들어오면
   // **한 번 더** 만듭니다 - 그러지 않으면 「정레인」으로 남고 반이 영영 안 붙습니다.

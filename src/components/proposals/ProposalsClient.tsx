@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { proposalGroupKey } from "@/lib/proposalGroups";
 import { createClient } from "@/lib/supabase/client";
 import type { Proposal, ProposalSourceContext } from "@/lib/types";
 import Pagination from "@/components/Pagination";
@@ -32,7 +33,6 @@ const SOURCE_LABEL: Record<string, string> = {
 // 그룹화 대상(같은 원본 기록에서 학부모용/실무자용 두 건이 동시에 나올 수 있는 출처)만 source_id로
 // 묶습니다. system은 origin 개념이 다르거나(UUID 참조) 중복 생성 케이스가 아니라서 그룹화 대상에서
 // 제외합니다.
-const GROUPABLE_SOURCES = new Set(["incidents", "events", "meetings", "manual"]);
 // 요청: "제안함 사건들도 다시돌리기 가능하게" - AI 스캔(/api/ai/scan)이 실제로 지원하는 원본
 // 유형만 재분석 대상이 됩니다(manual/system은 사건/행사/회의 원본이 아니라 이 API로 재분석할 수
 // 없어 버튼을 노출하지 않습니다).
@@ -81,8 +81,8 @@ type ProposalGroup = {
 function groupProposals(items: Proposal[]): ProposalGroup[] {
   const map = new Map<string, ProposalGroup>();
   for (const it of items) {
-    const groupKey =
-      it.source_id && GROUPABLE_SOURCES.has(it.source) ? `${it.source}:${it.source_id}` : `${it.source}:id:${it.id}`;
+    // 묶는 규칙은 `proposalGroupKey` 한 곳입니다 - 사이드바 배지가 같은 규칙으로 셉니다.
+    const groupKey = proposalGroupKey(it);
     const existing = map.get(groupKey);
     if (existing) {
       existing.variants.push(it);

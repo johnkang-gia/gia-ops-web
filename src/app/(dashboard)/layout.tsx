@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { countProposalGroups, type GroupableProposal } from "@/lib/proposalGroups";
 import Image from "next/image";
 import { Suspense } from "react";
 import type { Metadata } from "next";
@@ -328,7 +329,11 @@ export default async function DashboardLayout({
   const [meResult, pendingProposalsResult, pendingAdoptedResult, homonymResult, termScopeResult, signupsResult] =
     await Promise.allSettled([
       getCurrentAppUser(),
-      supabase.from("proposals").select("id", { count: "exact", head: true }).eq("status", "검토대기"),
+      // **줄 수가 아니라 「사람이 보게 될 건수」를 셉니다.** 한 사건에는 학부모용·실무자용
+      // 제안이 함께 만들어져 줄로는 둘인데 화면에는 한 건으로 묶여 뜹니다. 줄을 세면
+      // 사이드바 배지만 2가 되고, 보는 사람은 못 찾는 하나를 찾아 목록을 다시 훑습니다.
+      // 검토대기는 많아야 수십 건이라 묶을 재료를 함께 읽어도 부담이 없습니다.
+      supabase.from("proposals").select("id, source, source_id").eq("status", "검토대기").limit(500),
       supabase.from("adopted").select("id", { count: "exact", head: true }).eq("publish", false),
       // 겹치는 이름 목록. 실패해도 화면을 막지 않습니다(뱃지만 안 붙습니다).
       loadHomonyms(),
@@ -343,7 +348,11 @@ export default async function DashboardLayout({
     ]);
   if (meResult.status === "rejected") throw meResult.reason;
   const me = meResult.value;
-  const pendingProposals = pendingProposalsResult.status === "fulfilled" ? (pendingProposalsResult.value.count ?? 0) : 0;
+  // 묶은 뒤의 건수. 화면의 「검토대기 (N건)」과 같은 규칙입니다.
+  const pendingProposals =
+    pendingProposalsResult.status === "fulfilled"
+      ? countProposalGroups(((pendingProposalsResult.value.data ?? []) as GroupableProposal[]) ?? [])
+      : 0;
   const pendingAdopted = pendingAdoptedResult.status === "fulfilled" ? (pendingAdoptedResult.value.count ?? 0) : 0;
   const homonyms = homonymResult.status === "fulfilled" ? homonymResult.value : { byId: {}, names: [] };
 

@@ -3,6 +3,7 @@ import { extractTimeFromText } from "./pickupParse";
 import {
   categorize,
   extractTargetRange,
+  extractTargetDays,
   looksLikePronounReply,
   matchRosterStudents,
   categoryForStudent,
@@ -114,6 +115,18 @@ export async function scanIntoEntries(
     }
 
     const range = extractTargetRange(m.text, m.sentAt);
+    /**
+     * **흩어진 날들**(「next monday and wednesday」)은 기간 하나로 담을 수 없습니다.
+     *
+     * 예전에는 맨 앞 요일 하나만 잡히고 나머지는 **아무 데도 안 남았습니다.** 오류가 아니라
+     * 「월요일 결석 한 건」으로 보이므로, 수요일 아침에 그 아이를 찾기 전까지 아무도 모릅니다.
+     * 기간으로 펴는 것도 안 됩니다 - 월~수로 펴면 멀쩡히 온 화요일까지 결석이 됩니다.
+     *
+     * 그래서 이런 글은 **날마다 한 줄씩** 만듭니다. 판정은 `extractTargetDays` 한 곳입니다.
+     */
+    const listed = extractTargetDays(m.text, m.sentAt);
+    const spans: { from: string; to: string }[] =
+      listed?.kind === "목록" ? listed.days.map((d) => ({ from: d, to: d })) : [];
 
     // 학생 특정: AI가 연결해 둔 student_id가 가장 정확하고, 없으면 본문을 명부와 대조합니다.
     //
@@ -203,16 +216,20 @@ export async function scanIntoEntries(
           : null;
       const state: EntryState = reason || spanTooLong ? "확인필요" : "등록";
 
-      const key = `${m.source}|${m.messageId}|${st.display}|${status}`;
+      // 흩어진 날들이면 날마다 한 줄, 아니면 예전처럼 한 줄.
+      const mySpans = spans.length > 0 ? spans : [{ from, to }];
+      for (const span of mySpans) {
+      const key = `${m.source}|${m.messageId}|${st.display}|${status}|${span.from}`;
       const prev = existing.get(key);
       if (prev) {
         // 사람이 손대지 않았는데 기간이 달라졌으면 고칩니다. 그대로 두면 「내일부터 3일간」이
         // 하루 밀린 채로 계속 오늘 결석 명단에 남습니다.
-        if (!prev.touched && (prev.from !== from || prev.to !== to)) fixes.push({ id: prev.id, from, to });
+        if (!prev.touched && (prev.from !== span.from || prev.to !== span.to))
+          fixes.push({ id: prev.id, from: span.from, to: span.to });
         skipped += 1;
         continue;
       }
-      existing.set(key, { id: "", from, to, touched: false });
+      existing.set(key, { id: "", from: span.from, to: span.to, touched: false });
       if (state === "확인필요") needsReview += 1;
       rows.push({
         source: m.source,
@@ -222,8 +239,8 @@ export async function scanIntoEntries(
         grade: st.grade,
         class_name: st.className,
         status,
-        date_from: from,
-        date_to: to,
+        date_from: span.from,
+        date_to: span.to,
         state,
         reason:
           reason ??
@@ -236,6 +253,7 @@ export async function scanIntoEntries(
         registered_at: state === "등록" ? new Date().toISOString() : null,
         registered_by: state === "등록" ? "자동" : null,
       });
+      }
     }
   }
 
@@ -246,7 +264,9 @@ export async function scanIntoEntries(
     // ignoreDuplicates: 이미 있는 줄은 조용히 넘어갑니다(사람이 바꿔둔 값을 지키기 위함).
     const { error } = await supabase
       .from("attendance_entries")
-      .upsert(chunk, { onConflict: "source,source_message_id,student_name,status", ignoreDuplicates: true });
+      // **열쇠에 날짜를 더합니다.** 한 글에서 「월요일과 수요일」처럼 날이 둘 나오면 줄도 둘인데,
+      // 날짜가 열쇠에 없으면 둘이 같은 줄로 취급되어 **뒤엣것이 조용히 버려집니다**.
+      .upsert(chunk, { onConflict: "source,source_message_id,student_name,status,date_from", ignoreDuplicates: true });
     if (!error) created += chunk.length;
     // 오류를 삼키지 않습니다. 여기서 조용히 넘어가는 바람에, 유일 인덱스에 조건이 붙어 있어
     // upsert가 매번 42P10으로 실패하는데도 화면은 "그냥 등록될 게 없나 보다"로 보였습니다.

@@ -1711,3 +1711,109 @@ export function dedupeEntries(entries: AttendanceEntry[]): AttendanceEntry[] {
   }
   return out;
 }
+
+// ── 「월요일과 수요일」 — 이어진 기간이 아니라 **날짜 여러 개** ───────────────
+//
+// ── 무엇이 문제였나 ─────────────────────────────────────────────────────────
+//
+// 「Yeni will be absent next monday and wednesday」는 **이틀**인데 서로 붙어 있지 않습니다.
+// 그런데 지금까지 읽어내는 도구가 `{from, to}` 하나뿐이라, 이런 글은 맨 앞 요일(월요일)만
+// 하루로 잡히고 수요일은 **아무 데도 안 남았습니다.** 오류가 아니라 「월요일 결석 한 건」으로
+// 보이므로, 수요일 아침에 그 아이를 찾기 전까지 아무도 모릅니다.
+//
+// 기간으로 읽어도 안 됩니다 - 월~수로 펴면 화요일까지 결석이 되어 멀쩡히 온 날이 빠집니다.
+//
+// ── 어떻게 가르나 ───────────────────────────────────────────────────────────
+//
+// **잇는 말이 무엇이냐**로 가릅니다.
+//
+//   · `to` · `until` · `~` · 「부터」 · 「까지」  → 이어진 기간
+//   · `and` · `,` · `&` · 「과」 · 「와」 · 「랑」 · 「하고」 → 따로 떨어진 날들
+//
+// 기간을 나타내는 말이 하나라도 있으면 기간으로 봅니다 - 「월요일부터 수요일, 그리고 금요일」
+// 같은 섞인 글은 사람이 봐야 합니다. 찍어서 반만 맞히는 것보다 낫습니다.
+
+/** 결석·지각으로 잡을 날들. 이어진 기간이든 흩어진 날이든 **날짜 목록 하나**로 돌려줍니다. */
+export type TargetDays = {
+  days: string[];
+  /** 「월~수」인가 「월·수」인가. 화면이 사람에게 그대로 적어줍니다. */
+  kind: "기간" | "목록";
+  /** 기간이 상한에 걸려 뒤가 잘렸는가. */
+  clamped?: boolean;
+};
+
+/** 기간을 나타내는 말. 하나라도 있으면 목록으로 읽지 않습니다. */
+const RANGE_WORDS = /\b(?:to|until|till|through|thru)\b|[~〜]|부터|까지|사이/i;
+/** 날을 잇는 말. */
+const LIST_WORDS = /\band\b|[,&]|과\s|와\s|이랑|랑\s|하고\s|그리고/i;
+
+const KO_WEEKDAYS: [RegExp, number][] = [
+  [/일\s*요일/, 0],
+  [/월\s*요일/, 1],
+  [/화\s*요일/, 2],
+  [/수\s*요일/, 3],
+  [/목\s*요일/, 4],
+  [/금\s*요일/, 5],
+  [/토\s*요일/, 6],
+];
+
+/**
+ * **이 글이 가리키는 등교일들.** 부르는 쪽은 이것만 보면 됩니다.
+ *
+ * 흩어진 날들이 먼저입니다 - 기간으로 먼저 읽으면 「월요일과 수요일」이 월~수로 펴지고,
+ * 멀쩡히 온 화요일까지 결석이 됩니다. 되돌리려면 사람이 화요일을 찾아 지워야 하는데,
+ * 그 화요일이 화면에 「결석」으로 적혀 있으면 아무도 의심하지 않습니다.
+ */
+export function extractTargetDays(rawText: string, baseDate: Date): TargetDays | null {
+  const base = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate());
+  const text = stripReturnDay(rawText);
+
+  const list = weekdayList(text, base);
+  if (list) return { days: list, kind: "목록" };
+
+  const range = extractTargetRange(rawText, baseDate);
+  if (!range) return null;
+  const days = daysBetween(range.from, range.to);
+  // 등교일이 하나도 안 남으면 없는 것입니다 - 빈 목록을 돌려주면 부르는 쪽이 「읽었는데
+  // 날이 없다」를 「오늘」로 메우게 됩니다.
+  if (days.length === 0) return null;
+  return { days, kind: "기간", clamped: range.clamped };
+}
+
+/** 한 줄에 요일이 둘 이상 적혀 있고 잇는 말이 「과·and」이면 그 날들만 돌려줍니다. */
+function weekdayList(text: string, base: Date): string[] | null {
+  if (RANGE_WORDS.test(text)) return null;
+  if (!LIST_WORDS.test(text)) return null;
+
+  // 영어·한국어 어느 쪽이든 **본문에 나온 요일을 전부** 모읍니다.
+  const idxs = new Set<number>();
+  for (const [re, i] of EN_WEEKDAYS) if (re.test(text)) idxs.add(i);
+  for (const [re, i] of KO_WEEKDAYS) if (re.test(text)) idxs.add(i);
+  if (idxs.size < 2) return null;
+
+  // 「next」·「다음 주」가 붙어 있으면 전부 다음 주입니다. 하나에만 붙여 적는 것이 보통이고
+  // (「next monday and wednesday」) 그 뜻은 둘 다 다음 주입니다.
+  const isNext = /\bnext\b/i.test(text) || /다음\s*주|담주/.test(text);
+  const toMonday = (8 - base.getDay()) % 7 || 7;
+  const nextMonday = addDays(base, toMonday);
+
+  const days = [...idxs]
+    .map((i) => (isNext ? addDays(nextMonday, (i + 6) % 7) : addDays(base, (i - base.getDay() + 7) % 7)))
+    // 주말은 등교일이 아닙니다. 남기면 토요일 결석이 대시보드에 뜹니다.
+    .filter((d) => d.getDay() !== 0 && d.getDay() !== 6)
+    .map(toDateKey)
+    .sort();
+  return days.length >= 2 ? [...new Set(days)] : null;
+}
+
+/** 이어진 기간을 날짜 목록으로 폅니다. 주말은 `extractTargetRange` 가 이미 잘랐습니다. */
+function daysBetween(from: string, to: string): string[] {
+  const out: string[] = [];
+  let d = fromKey(from);
+  const end = fromKey(to);
+  while (d <= end) {
+    if (d.getDay() !== 0 && d.getDay() !== 6) out.push(toDateKey(d));
+    d = addDays(d, 1);
+  }
+  return out;
+}

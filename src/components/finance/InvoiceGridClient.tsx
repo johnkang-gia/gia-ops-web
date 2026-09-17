@@ -1843,6 +1843,20 @@ export default function InvoiceGridClient({
                     }
                     style={{ left: LEFT_INVOICE }}
                   >
+                    {/* **「이미 받음」 기록은 청구서가 있든 없든 보여야 합니다.**
+                        예전에는 청구서가 있는 줄에만 그렸습니다. 그런데 이 기록만 있고 아직
+                        청구서가 안 나간 아이가 대부분이라(그게 정상입니다), 정작 되돌릴
+                        단추가 필요한 줄에서 안 보였습니다. */}
+                    {(receiptOnlyByStudent.get(s.id)?.length ?? 0) > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setUndoFor({ student: s, list: receiptOnlyByStudent.get(s.id) ?? [] })}
+                        className="mr-1 rounded bg-slate-200 px-1 text-[10px] font-bold text-slate-600 hover:bg-slate-300"
+                        title="이미 받은 돈을 적어둔 기록입니다. 청구서로 나가지 않습니다. 눌러서 되돌릴 수 있습니다."
+                      >
+                        이미 받음 {receiptOnlyByStudent.get(s.id)!.length}건 ↩
+                      </button>
+                    )}
                     {inv ? (
                       <span className="flex items-center gap-1">
                       <button
@@ -1861,18 +1875,6 @@ export default function InvoiceGridClient({
                         <span className="text-[10px] font-semibold text-slate-400" title="이 학생의 이번 학기 청구서 수">
                           외 {(billableByStudent.get(s.id)?.length ?? 1) - 1}장
                         </span>
-                      )}
-                      {/* **이미 받아서 적기만 한 장.** 청구서가 아니므로 회색입니다 -
-                          「완납」처럼 보이면 아직 못 받은 돈이 다 받은 것으로 읽힙니다. */}
-                      {(receiptOnlyByStudent.get(s.id)?.length ?? 0) > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => setUndoFor({ student: s, list: receiptOnlyByStudent.get(s.id) ?? [] })}
-                          className="rounded bg-slate-200 px-1 text-[10px] font-bold text-slate-600 hover:bg-slate-300"
-                          title="이미 받은 돈을 적어둔 기록입니다. 청구서로 나가지 않습니다. 눌러서 되돌릴 수 있습니다."
-                        >
-                          이미 받음 {receiptOnlyByStudent.get(s.id)!.length}건 ↩
-                        </button>
                       )}
                       {/* 발행과 발송은 다릅니다. 종이를 만든 것과 학부모에게 청구가 간 것을
                           같은 표시로 두면, 발행만 해놓고 안 보낸 것을 아무도 모릅니다. */}

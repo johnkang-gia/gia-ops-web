@@ -45,6 +45,13 @@ export type BilledInvoice = {
   status?: string | null;
   total_amount: number | string;
   carried_to_invoice_id?: string | null;
+  /**
+   * 「이미 받음」으로 적기만 한 장인가. 밖으로 나간 적이 없어 **되돌릴 수 있습니다.**
+   *
+   * 진짜 청구서는 학부모가 이미 받았으므로 되돌리지 않고 취소로만 다룹니다. 화면이 되돌리기
+   * 단추를 어디에 달지 이 값으로 가릅니다.
+   */
+  issued_offline?: boolean | null;
 };
 
 export type BilledLine = {
@@ -65,6 +72,8 @@ export type BilledMark = {
   state: BillState;
   /** 어느 청구서에 담겼나. 화면이 「그 청구서 보기」로 이어줍니다. */
   invoiceId: string;
+  /** 되돌릴 수 있는 기록인가(「이미 받음」으로 적기만 한 장). */
+  receiptOnly?: boolean;
   /**
    * **번호가 아니라 이름으로 찾은 것인가.** 옛 줄에는 번호가 없습니다.
    *
@@ -123,7 +132,8 @@ export function billedItems(
     for (const { key, byName } of keys) {
       const cur = per.get(key);
       // 덜 걷힌 쪽이 이깁니다. 미납 > 일부 > 완납 순으로 셉니다.
-      if (!cur || rank(state) > rank(cur.state)) per.set(key, { state, invoiceId: inv.id, byName });
+      if (!cur || rank(state) > rank(cur.state))
+        per.set(key, { state, invoiceId: inv.id, byName, receiptOnly: inv.issued_offline === true });
     }
   }
   return out;

@@ -51,6 +51,19 @@ export async function POST(req: Request) {
   if (!hasFinanceAccess(me)) return NextResponse.json({ error: "재무 권한이 필요합니다." }, { status: 403 });
 
   const body = await req.json().catch(() => ({}));
+
+  /**
+   * **항목 하나만 되돌리기.** 「교복 세트를 받았다」고 적었는데 알고 보니 안 받은 경우입니다.
+   *
+   * 한 번의 기록에 항목이 여럿 들어갈 수 있어서(교복 + 교재를 같은 날 받음), 장을 통째로
+   * 지우면 멀쩡한 기록까지 사라집니다. 그래서 **그 줄만 빼고 입금도 그만큼 줄입니다.**
+   * 줄이 하나도 안 남으면 그때 장을 지웁니다.
+   */
+  const one = body?.item as { invoiceId?: unknown; itemId?: unknown; name?: unknown } | undefined;
+  if (typeof one?.invoiceId === "string" && one.invoiceId) {
+    return undoOneItem(await createClient(), one.invoiceId, typeof one.itemId === "string" ? one.itemId : null, typeof one.name === "string" ? one.name : null);
+  }
+
   const ids = Array.isArray(body?.invoiceIds)
     ? (body.invoiceIds as unknown[]).filter((x): x is string => typeof x === "string" && x.length > 0)
     : [];
@@ -134,4 +147,87 @@ export async function POST(req: Request) {
     // 막힌 것이 있으면 함께 돌려줍니다. 되돌린 것만 말하면 나머지가 왜 남았는지 모릅니다.
     blocked,
   });
+}
+
+/**
+ * 장 하나에서 **항목 한 줄만** 빼고, 그만큼 입금을 줄입니다.
+ *
+ * 순서가 중요합니다 — 줄을 먼저 지우면 합계 트리거가 장의 총액을 다시 세고, 그 다음 입금을
+ * 맞춥니다. 반대로 하면 잠깐 「입금이 총액보다 적은」 상태가 되는데, 그 사이에 화면을 본
+ * 사람에게는 미납으로 보입니다.
+ */
+async function undoOneItem(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  invoiceId: string,
+  itemId: string | null,
+  name: string | null,
+) {
+  const { data: inv, error: invErr } = await supabase
+    .from("invoices")
+    .select("id, invoice_no, status, issued_offline, exported_at, carried_to_invoice_id")
+    .eq("id", invoiceId)
+    .maybeSingle();
+  if (invErr) return NextResponse.json({ error: `기록을 읽지 못했습니다: ${invErr.message}` }, { status: 500 });
+  if (!inv) return NextResponse.json({ error: "그 기록을 찾지 못했습니다." }, { status: 404 });
+
+  const v = inv as Row;
+  const who = v.invoice_no ?? invoiceId.slice(0, 8);
+  if (v.issued_offline !== true)
+    return NextResponse.json({ error: `${who} — 「이미 받음」으로 적은 장이 아니라 실제로 나간 청구서입니다. 취소로 다뤄주세요.` }, { status: 400 });
+  if (v.exported_at) return NextResponse.json({ error: `${who} — 올톡페이로 이미 내보냈습니다.` }, { status: 400 });
+  if (v.carried_to_invoice_id) return NextResponse.json({ error: `${who} — 이월과 엮여 있습니다.` }, { status: 400 });
+
+  const { data: lines, error: lineErr } = await supabase
+    .from("invoice_lines")
+    .select("id, name, item_id, amount")
+    .eq("invoice_id", invoiceId);
+  if (lineErr) return NextResponse.json({ error: `내역을 읽지 못했습니다: ${lineErr.message}` }, { status: 500 });
+
+  const all = ((lines as { id: string; name: string; item_id: string | null; amount: number | string }[] | null) ?? []);
+  // **번호로 먼저 고릅니다.** 이름이 같은 항목이 넷 있어서(학년별 중국어 교재) 이름으로
+  // 고르면 엉뚱한 줄이 빠집니다.
+  const hit = itemId ? all.filter((l) => l.item_id === itemId) : all.filter((l) => l.name === name);
+  if (hit.length === 0)
+    return NextResponse.json({ error: `${who} 에서 그 항목을 찾지 못했습니다. 화면을 새로 고쳐 다시 시도해주세요.` }, { status: 404 });
+
+  const back = hit.reduce((n, l) => n + Number(l.amount), 0);
+  const rest = all.length - hit.length;
+
+  // 줄이 하나도 안 남으면 장 자체를 지웁니다. 빈 장은 「내역이 없는 청구서」로 남습니다.
+  if (rest === 0) {
+    const { error: pErr } = await supabase.from("payments").delete().eq("invoice_id", invoiceId);
+    if (pErr) return NextResponse.json({ error: `입금을 지우지 못했습니다: ${pErr.message}` }, { status: 500 });
+    const { error: lErr } = await supabase.from("invoice_lines").delete().eq("invoice_id", invoiceId);
+    if (lErr) return NextResponse.json({ error: `내역을 지우지 못했습니다: ${lErr.message}` }, { status: 500 });
+    const { error: dErr } = await supabase.from("invoices").delete().eq("id", invoiceId);
+    if (dErr) return NextResponse.json({ error: `기록을 지우지 못했습니다: ${dErr.message}` }, { status: 500 });
+    return NextResponse.json({ ok: true, undone: 1, amount: back, removedInvoice: true, blocked: [] });
+  }
+
+  const { error: rmErr } = await supabase.from("invoice_lines").delete().in("id", hit.map((l) => l.id));
+  if (rmErr) return NextResponse.json({ error: `내역을 지우지 못했습니다: ${rmErr.message}` }, { status: 500 });
+
+  /**
+   * **입금도 그만큼 줄입니다.** 안 줄이면 받은 적 없는 돈이 장부에 남고, 그 장은 과납으로
+   * 보입니다 - 과납은 다음 달에 돌려줄 돈으로 읽혀서 더 큰 사고가 됩니다.
+   */
+  const { data: pays } = await supabase
+    .from("payments")
+    .select("id, amount, paid_at")
+    .eq("invoice_id", invoiceId)
+    .order("paid_at", { ascending: false });
+  let left = back;
+  for (const p of ((pays as { id: string; amount: number | string }[] | null) ?? [])) {
+    if (left <= 0) break;
+    const cur = Number(p.amount);
+    const next = Math.max(0, cur - left);
+    left -= cur - next;
+    const { error } =
+      next === 0
+        ? await supabase.from("payments").delete().eq("id", p.id)
+        : await supabase.from("payments").update({ amount: next }).eq("id", p.id);
+    if (error) return NextResponse.json({ error: `입금을 고치지 못했습니다: ${error.message}` }, { status: 500 });
+  }
+
+  return NextResponse.json({ ok: true, undone: 1, amount: back, removedInvoice: false, blocked: [] });
 }

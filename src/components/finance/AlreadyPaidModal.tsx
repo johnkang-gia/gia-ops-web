@@ -65,6 +65,7 @@ export default function AlreadyPaidModal({
   lines,
   busy,
   onSubmit,
+  onUndoItem,
   onClose,
 }: {
   title: string;
@@ -73,6 +74,13 @@ export default function AlreadyPaidModal({
   lines: PayableLine[];
   busy?: boolean;
   onSubmit: (r: AlreadyPaidResult) => void | Promise<void>;
+  /**
+   * **이 항목 하나만 되돌리기.** 「받았다」고 적은 것이 사실이 아니었을 때.
+   *
+   * 되돌리는 일은 부르는 쪽이 합니다 - 이 창은 무엇을 되돌릴지만 알려줍니다. 여기서 직접
+   * 창구를 부르면 같은 규칙이 두 곳에 생깁니다.
+   */
+  onUndoItem?: (line: PayableLine) => void | Promise<void>;
   onClose: () => void;
 }) {
   const [pickedIds, setPickedIds] = useState<string[]>([]);
@@ -172,12 +180,27 @@ export default function AlreadyPaidModal({
                           {l.lockedNote}
                         </span>
                       )}
+                      {/* **항목마다 되돌리기.** 「교복 세트를 받았다」고 적었는데 알고 보니 안
+                          받은 경우입니다. 장을 통째로 되돌리는 길만 두면 같은 날 함께 적어둔
+                          교재 기록까지 사라집니다. 누르는 자리는 바깥 단추 안이 아니라
+                          형제로 두어야 합니다 - 단추 안의 단추는 눌리지 않습니다. */}
                       {warn && (
                         <span className="shrink-0 rounded bg-amber-600 px-1 text-[9px] font-bold text-white" title={l.warnNote ?? undefined}>
                           확인 필요
                         </span>
                       )}
                     </button>
+                    {locked && l.undoInvoiceId && onUndoItem && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void onUndoItem(l)}
+                        title="이 항목을 「받음」으로 적은 것을 적기 전으로 되돌립니다. 다시 미납으로 돌아갑니다."
+                        className="shrink-0 rounded border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[10px] font-bold text-rose-700 hover:bg-rose-100 disabled:opacity-40"
+                      >
+                        되돌리기 ↩
+                      </button>
+                    )}
                     {/* **줄마다 받은 날.** 교복은 8/24, 교재비는 8/28처럼 며칠 간격으로 나눠
                         들어오는 일이 흔합니다. 체크한 줄에만 뜹니다 - 안 고른 줄에 날짜 칸이
                         있으면 무엇을 적는 칸인지 헷갈립니다. */}

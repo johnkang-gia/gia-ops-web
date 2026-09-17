@@ -41,6 +41,16 @@ export type PayableLine = {
    * 두고 **왜 헷갈리는지를 적어둡니다.**
    */
   warnNote?: string | null;
+  /**
+   * **이 줄을 되돌릴 수 있는 기록.** 「이미 받음」으로 적어둔 장의 번호입니다.
+   *
+   * 교복 세트를 받았다고 적었는데 알고 보니 안 받은 경우 — 예전에는 고칠 자리가 어디에도
+   * 없었습니다. 장을 통째로 되돌리는 길은 있었지만, 한 번의 기록에 항목이 여럿이면
+   * 멀쩡한 기록까지 함께 사라집니다.
+   */
+  undoInvoiceId?: string | null;
+  /** 청구서에 찍힌 이름. 번호 없는 옛 줄을 화면에서 지울 때 씁니다. */
+  rawName?: string | null;
 };
 
 export type AlreadyPaidInput = {

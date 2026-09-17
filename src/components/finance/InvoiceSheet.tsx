@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment } from "react";
+import { sectionMode, sectionTitle, sectionSubtotalLabel } from "@/lib/invoiceSections";
 import type { Invoice, InvoiceLine } from "@/lib/types";
 
 // 인보이스 한 장. 담당자가 쓰던 구글독스 양식과 같은 모양입니다.
@@ -99,6 +100,13 @@ export default function InvoiceSheet({
 }) {
   const invoice = parts[0].invoice;
   const many = parts.length > 1;
+  /**
+   * **칸을 무엇으로 나누는가.** 형제 합본이면 아이 이름, 한 아이의 학비+학비외면 갈래.
+   *
+   * 판정은 `invoiceSections` 한 곳입니다 - 합본이 늘 때마다 이 종이가 「이건 이름으로,
+   * 저건 갈래로」를 다시 정하면 기준이 화면마다 갈립니다.
+   */
+  const mode = sectionMode(parts.map((p) => p.invoice));
   const lines = parts.flatMap((p) => p.lines);
 
   // 합계는 굳어진 줄에서 다시 더해 보여줍니다. 머리줄의 total_amount와 어긋나면 그 사실이
@@ -237,7 +245,7 @@ export default function InvoiceSheet({
                     {many && (
                       <tr style={{ background: "#e8eaf0" }}>
                         <td colSpan={4} style={{ padding: "6px 10px", fontSize: 10, fontWeight: 800, color: "#1e2a44" }}>
-                          {whoOf(part.invoice)}
+                          {sectionTitle(part.invoice, mode)}
                           <span style={{ fontWeight: 400, color: "#6b7280" }}> · No. {part.invoice.invoice_no}</span>
                         </td>
                       </tr>
@@ -260,7 +268,7 @@ export default function InvoiceSheet({
                     {many && (
                       <tr>
                         <td colSpan={3} style={{ padding: "6px 10px", fontSize: 10, fontWeight: 700, textAlign: "right", color: "#374151" }}>
-                          {(part.invoice.student_name_ko?.trim() || part.invoice.student_name)} 소계
+                          {sectionSubtotalLabel(part.invoice, mode)}
                         </td>
                         <td style={{ padding: "6px 10px", fontSize: 10.5, fontWeight: 800, borderTop: "1px solid #c7ccd8" }}>
                           {won(subtotal)}

@@ -292,7 +292,7 @@ export default function InvoiceGridClient({
   /** 취소하려는 청구서. 이유를 적게 하려고 창을 한 번 거칩니다. */
   const [cancelling, setCancelling] = useState<{ invoice: Invoice; studentName: string; reason?: string } | null>(null);
   /** 미리보기 창. 새 탭으로 열면 확인할 때마다 탭을 열고 닫아야 합니다. */
-  const [preview, setPreview] = useState<{ id: string; label: string } | null>(null);
+  const [preview, setPreview] = useState<{ id: string; label: string; studentId?: string | null } | null>(null);
   /** 이 화면에서 고친 연락처. 새로고침 없이 바로 반영합니다. */
   const [studentPhones, setStudentPhones] = useState<
     Record<string, Partial<Pick<Student, "motherPhone" | "fatherPhone" | "parentPhone" | "billingRole" | "billingPhone">>>
@@ -965,6 +965,60 @@ export default function InvoiceGridClient({
       );
       for (const b of body.blocked ?? []) notify(b, "error");
       setUndoFor(null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /**
+   * **항목 하나만 되돌립니다.** 「교복 세트를 받았다」고 적었는데 알고 보니 안 받은 경우.
+   *
+   * 장을 통째로 되돌리는 길만 두면, 같은 날 교복과 교재를 함께 적어둔 집에서 멀쩡한 교재
+   * 기록까지 사라집니다. 창구가 그 줄만 빼고 입금도 그만큼 줄입니다.
+   */
+  async function undoOneItem(
+    student: Student,
+    line: { id: string; label: string; undoInvoiceId?: string | null; rawName?: string | null },
+  ) {
+    if (!line.undoInvoiceId) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/finance/invoices/undo-receipt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // 번호와 이름을 함께 보냅니다 - 번호 없는 옛 줄은 이름으로 찾습니다.
+        body: JSON.stringify({ item: { invoiceId: line.undoInvoiceId, itemId: line.id, name: line.rawName ?? null } }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { error?: string; amount?: number; removedInvoice?: boolean };
+      if (!res.ok) {
+        notify(body.error ?? "되돌리지 못했습니다.", "error");
+        return;
+      }
+      // **그 자리에서 화면도 고칩니다.** 다시 불러올 때까지 「받음」으로 남아 있으면 사람이
+      // 또 누릅니다.
+      const invId = line.undoInvoiceId;
+      setLineRows((p) =>
+        p.filter((l) => !(l.invoice_id === invId && (l.item_id === line.id || (!l.item_id && l.name === line.rawName)))),
+      );
+      if (body.removedInvoice) {
+        setInvoices((p) => p.filter((v) => v.id !== invId));
+        setPayments((p) => p.filter((x) => x.invoice_id !== invId));
+      } else {
+        // 입금이 줄어든 만큼만 덜어냅니다. 장은 그대로 남습니다.
+        let left = Number(body.amount ?? 0);
+        setPayments((p) =>
+          p
+            .map((x) => {
+              if (x.invoice_id !== invId || left <= 0) return x;
+              const cur = Number(x.amount);
+              const next = Math.max(0, cur - left);
+              left -= cur - next;
+              return { ...x, amount: next };
+            })
+            .filter((x) => Number(x.amount) > 0 || x.invoice_id !== invId),
+        );
+      }
+      notify(`${student.name} — 「${line.label}」 받음 기록을 되돌렸습니다(${won(Number(body.amount ?? 0))}).`, "success");
     } finally {
       setBusy(false);
     }
@@ -1860,7 +1914,7 @@ export default function InvoiceGridClient({
                     {inv ? (
                       <span className="flex items-center gap-1">
                       <button
-                        onClick={() => setPreview({ id: inv.id, label: `${s.name} · ${inv.invoice_no}${inv.category ? ` · ${inv.category}` : ""}` })}
+                        onClick={() => setPreview({ id: inv.id, label: `${s.name} · ${inv.invoice_no}${inv.category ? ` · ${inv.category}` : ""}`, studentId: s.id })}
                         className="text-[11px] font-bold text-emerald-700 underline"
                         title="여기서 바로 보기"
                       >
@@ -2123,12 +2177,17 @@ export default function InvoiceGridClient({
               // 이름만으로 맞은 것(옛 줄 · 겹치는 이름)은 **잠그지 않습니다.** 잠그면 아직
               // 안 받은 돈이 화면에서 사라지고, 사라진 돈은 아무도 안 찾습니다.
               lockedNote: mark && !mark.unsure ? BILL_LABEL[mark.state] : null,
+              // 「이미 받음」으로 적어둔 장만 되돌릴 수 있습니다. 진짜 청구서는 학부모가
+              // 이미 받았으므로 취소로만 다룹니다.
+              undoInvoiceId: mark && !mark.unsure && mark.receiptOnly ? mark.invoiceId : null,
+              rawName: l.item.name,
               warnNote: mark?.unsure ? "확인 필요 — 이름이 같은 항목이 있습니다" : null,
             };
           })}
           busy={busy}
           onClose={() => setAlreadyFor(null)}
           onSubmit={(r) => void recordAlreadyPaid(alreadyFor, r)}
+          onUndoItem={(l) => void undoOneItem(alreadyFor, l)}
         />
       )}
 
@@ -2399,7 +2458,16 @@ export default function InvoiceGridClient({
         </div>
       )}
 
-      {preview && <InvoicePreviewModal invoiceId={preview.id} label={preview.label} onClose={() => setPreview(null)} />}
+      {preview && (
+        <InvoicePreviewModal
+          invoiceId={preview.id}
+          label={preview.label}
+          // 합본은 학생 번호로 모읍니다 - 한쪽을 고치면 합본도 따라옵니다.
+          studentId={preview.studentId}
+          termId={termId || null}
+          onClose={() => setPreview(null)}
+        />
+      )}
 
       {/* 발행 취소 창은 학비 화면과 **같은 것**을 씁니다. 화면마다 따로 만들면 한쪽에만
           경고가 붙고, 빠진 쪽에서 사고가 납니다. */}
@@ -2489,7 +2557,7 @@ export default function InvoiceGridClient({
                 </span>
                 {dInv && (
                   <button
-                    onClick={() => setPreview({ id: dInv.id, label: `${detail.name} · ${dInv.invoice_no}${dInv.category ? ` · ${dInv.category}` : ""}` })}
+                    onClick={() => setPreview({ id: dInv.id, label: `${detail.name} · ${dInv.invoice_no}${dInv.category ? ` · ${dInv.category}` : ""}`, studentId: detail.id })}
                     className="text-[11px] font-bold text-emerald-700 underline"
                   >
                     {dInv.invoice_no}{dInv.category ? ` · ${dInv.category}` : " · 통합"} 보기

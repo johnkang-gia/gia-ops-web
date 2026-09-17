@@ -195,7 +195,7 @@ export default function TuitionGridClient({
     useMemo(() => ({ email: currentUserEmail, name: currentUserName }), [currentUserEmail, currentUserName]),
     cellFor ? `${cellFor.studentId}|${cellFor.planId}` : null,
   );
-  const [preview, setPreview] = useState<{ id: string; label: string } | null>(null);
+  const [preview, setPreview] = useState<{ id: string; label: string; studentId?: string | null } | null>(null);
   /**
    * 발행 취소하려는 청구서.
    *
@@ -1318,7 +1318,7 @@ export default function TuitionGridClient({
                           return (
                             <span key={v.id} className="inline-flex items-center gap-0.5">
                               <button
-                                onClick={() => setPreview({ id: v.id, label: `${s.name} · ${v.invoice_no}` })}
+                                onClick={() => setPreview({ id: v.id, label: `${s.name} · ${v.invoice_no}`, studentId: s.id })}
                                 className="text-[11px] font-bold text-emerald-700 underline"
                                 title={scope ? `${scope} 청구서` : "학비 전부를 담은 청구서"}
                               >
@@ -1414,7 +1414,16 @@ export default function TuitionGridClient({
         </table>
       </DragScroll>
 
-      {preview && <InvoicePreviewModal invoiceId={preview.id} label={preview.label} onClose={() => setPreview(null)} />}
+      {preview && (
+        <InvoicePreviewModal
+          invoiceId={preview.id}
+          label={preview.label}
+          // 합본은 학생 번호로 모읍니다 - 학비를 고치면 합본도 따라옵니다.
+          studentId={preview.studentId}
+          termId={termId || null}
+          onClose={() => setPreview(null)}
+        />
+      )}
 
       {exportIds && (
         <AlltalkpayExport

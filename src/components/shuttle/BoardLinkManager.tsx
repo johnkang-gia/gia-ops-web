@@ -6,16 +6,9 @@ import { useToast } from "@/components/common/ToastProvider";
 import { parseYoutubeMultilineInput, youtubeValueToEditableText } from "@/lib/youtube";
 import type { ShuttleBoardLink } from "@/lib/types";
 import { shareUrl } from "@/lib/appUrl";
-
-// 짧은 주소용 코드에 헷갈리는 글자(0/O, 1/I/l)를 빼서 공용컴퓨터에서 눈으로 보고 타이핑해도
-// 실수하지 않게 합니다(요청: "주소가 너무 복잡해서 바로 주소를 공용컴퓨터 주소창에 치는게
-// 어려워... 짧은 주소로 만들어줘").
-const SHORT_CODE_CHARS = "23456789abcdefghjkmnpqrstuvwxyz";
-function randomShortCode(len = 4) {
-  let out = "";
-  for (let i = 0; i < len; i++) out += SHORT_CODE_CHARS[Math.floor(Math.random() * SHORT_CODE_CHARS.length)];
-  return out;
-}
+// 짧은 주소 코드는 로그인을 지나가는 열쇠라 만드는 규칙을 화면마다 적지 않습니다
+// (`shortCode.ts`). 이 화면과 운영 대시보드가 각자 적어 두었고 둘 다 짧고 약했습니다.
+import { randomShortCode } from "@/lib/shortCode";
 
 // 안내보드(로비/복도 화면) 링크 관리 - 관리자 전용(요청: "운영앱에서 로그인하지 않고 별도의
 // 페이지로 안내보드는 나오도록"). 화면마다 이름(label)과 재생할 유튜브 영상을 따로 설정할 수

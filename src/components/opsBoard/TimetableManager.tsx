@@ -6,6 +6,7 @@ import { useToast } from "@/components/common/ToastProvider";
 import type { WrClass, WrPeriod, WrTimetableEntry, OpsBoardLink } from "@/lib/types";
 import { departmentOf, gradeSortKey, VISIBLE_DEPARTMENTS } from "@/lib/department";
 import { shareUrl } from "@/lib/appUrl";
+import { randomShortCode } from "@/lib/shortCode";
 
 // 요청: "지금 시간에 각반이 무슨 수업시간인지" - 대시보드가 이 정보를 보여주려면 교시(몇 시부터
 // 몇 시까지가 몇 교시인지)와 시간표(어느 반이 무슨 요일 몇 교시에 무슨 수업인지)가 있어야 하는데
@@ -14,14 +15,8 @@ import { shareUrl } from "@/lib/appUrl";
 // 유치부는 별도 프로그램으로 분리하기로 해서 이 화면에서는 감춥니다(요청: "유치부는 우선
 // 분리해서 표면적으로는 안보이게"). 데이터는 그대로 남아 있고, 나중에 다시 보이게 하려면
 // src/lib/department.ts의 VISIBLE_DEPARTMENTS에 넣기만 하면 됩니다.
-// 짧은 주소 코드에서 헷갈리는 글자(0/O, 1/I/l)를 뺐습니다 - 눈으로 보고 손으로 옮겨 치는
-// 값이라 가장 흔한 실수가 0과 O를 헷갈리는 것입니다.
-const SHORT_CODE_CHARS = "23456789abcdefghjkmnpqrstuvwxyz";
-function randomShortCode(len = 4) {
-  let out = "";
-  for (let i = 0; i < len; i++) out += SHORT_CODE_CHARS[Math.floor(Math.random() * SHORT_CODE_CHARS.length)];
-  return out;
-}
+// 짧은 주소 코드를 만드는 규칙은 `shortCode.ts` 한 곳입니다 - 이 주소는 로그인을 지나가는
+// 열쇠라, 화면마다 각자 적어 두면 한쪽만 고쳐지고 다른 쪽은 약한 채로 남습니다.
 
 // 짧은 주소 칸(short_code)이 아직 DB에 없거나, DB에는 생겼지만 Supabase의 API 계층이 아직
 // 예전 구조를 캐시하고 있는 상태를 알아냅니다. 배포 직후 몇 분 동안 실제로 일어나는 일이라,

@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isDeveloperEmail } from "@/lib/roles";
 import { SCHEMA_CHECKS } from "@/lib/schemaChecks";
+import { INTEGRITY_VIEWS } from "@/lib/integrityViews";
 import { kstParts } from "@/lib/shuttleTracking";
 import RunCronButtons from "@/components/dev/RunCronButtons";
 import DiagnosticsToolbar from "@/components/dev/DiagnosticsToolbar";
@@ -220,6 +221,20 @@ export default async function DevDiagnosticsPage() {
     choiceByName.set(a.student_name_raw as string, list);
   }
 
+  // ── ⑨ 무결성 뷰 ──────────────────────────────────────────────────────────
+  //
+  // 「비어 있어야 정상」인 점검 뷰들입니다. 만들어만 두고 읽는 화면이 없어서, 어긋난 줄이
+  // 생겨도 그 사실이 어디에도 안 나타났습니다(`integrityViews.ts` 주석).
+  //
+  // **줄을 쏟지 않고 세기만 합니다.** 청구서 합계가 어긋난 장이 몇 개인지가 먼저이고,
+  // 어느 장인지는 그 다음입니다. 몇 개인지 모르면 볼지 말지도 못 정합니다.
+  const integrityRows = await Promise.all(
+    INTEGRITY_VIEWS.map(async (v) => {
+      const { count, error } = await supabase.from(v.view).select("*", { count: "exact", head: true });
+      return { ...v, count: count ?? null, error: error?.message ?? null };
+    }),
+  );
+
   // ── ⑧ 마이그레이션 실행 이력 ─────────────────────────────────────────────
   //
   // 담당자: "마이그레이션 실행 이력."
@@ -324,6 +339,48 @@ export default async function DevDiagnosticsPage() {
             detail={e.ok ? "칸 있음" : `없음 → ${e.migration} 마이그레이션 실행 필요`}
           />
         ))}
+      </Card>
+
+      <Card
+        title="⑨ 무결성"
+        note="「비어 있어야 정상」인 점검 뷰. 여기가 빨간색이면 자료가 서로 어긋나 있다는 뜻이고, 화면에는 오류가 아니라 그냥 다른 숫자로 보입니다."
+      >
+        {integrityRows.map((r) => {
+          // 뷰를 못 읽은 것과 「0건」은 다릅니다. 못 읽었는데 초록불을 켜면 점검이 안 도는
+          // 것을 정상으로 읽게 됩니다 - 없느니만 못합니다(§5).
+          const verdict: Verdict = r.error
+            ? "bad"
+            : r.expect === "비어야_정상"
+              ? (r.count ?? 0) === 0
+                ? "ok"
+                : "bad"
+              : r.expect === "있어야_정상"
+                ? (r.count ?? 0) > 0
+                  ? "ok"
+                  : "bad"
+                : "info";
+          return (
+            <Row
+              key={r.view}
+              label={r.label}
+              verdict={verdict}
+              detail={
+                r.error ? (
+                  <>
+                    읽지 못했습니다: {r.error}
+                    <span className="text-slate-400"> · 뷰({r.view})가 없거나 권한이 막혔습니다</span>
+                  </>
+                ) : verdict === "ok" ? (
+                  r.expect === "있어야_정상" ? `${r.count}명` : "0건"
+                ) : (
+                  <>
+                    <b>{r.count}건</b> — {r.impact}
+                  </>
+                )
+              }
+            />
+          );
+        })}
       </Card>
 
       <Card title="③ GPS 차량" note="신호가 들어오는지, 오늘 도착·출발이 찍혔는지. 도착·출발 판정은 오후 4시부터 시작합니다.">

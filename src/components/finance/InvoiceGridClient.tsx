@@ -566,6 +566,8 @@ export default function InvoiceGridClient({
    * 열립니다 - 전체를 한 번에 푸는 단추를 두면 그게 곧 기본값이 됩니다.
    */
   const [againOk, setAgainOk] = useState<Set<string>>(new Set());
+  /** 되돌리려는 「이미 받음」 기록. 값이 있으면 확인 창이 열립니다. */
+  const [undoFor, setUndoFor] = useState<{ student: Student; list: Invoice[] } | null>(null);
 
   /**
    * 지금 보이는 명단에서 실제로 쓰이는 항목만 열로 세웁니다.
@@ -922,6 +924,50 @@ export default function InvoiceGridClient({
       categoriesOf: (s) =>
         (linesByStudent.get(s.id) ?? resolveStudentItems(scopedItems, s as StudentLike, overrides)).map((l) => l.item.category),
     });
+  }
+
+  /**
+   * **「이미 받음」 기록을 적기 전으로 되돌립니다.**
+   *
+   * 금액이나 날짜를 잘못 적는 일이 실제로 생기는데, 예전에는 한 번 누르면 고칠 길이 없었습니다.
+   * 그러면 사람은 그 학생을 아예 안 건드리게 되고, 그 아이의 미납은 계속 틀린 채 남습니다.
+   *
+   * 장을 **지웁니다** - 청구서와 달리 이 장은 밖으로 나간 적이 없는 우리 쪽 기록이라,
+   * 취소로 남기면 아무도 못 본 장이 목록에 쌓이기만 합니다. 밖에 자국이 남은 장(현금영수증·
+   * 올톡페이 발송·이월)은 창구가 막고 이유를 돌려줍니다.
+   */
+  async function undoReceipts(student: Student, list: Invoice[]) {
+    setBusy(true);
+    try {
+      const res = await fetch("/api/finance/invoices/undo-receipt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ invoiceIds: list.map((v) => v.id) }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        undone?: number;
+        amount?: number;
+        blocked?: string[];
+      };
+      if (!res.ok) {
+        notify(body.error ?? "되돌리지 못했습니다.", "error");
+        return;
+      }
+      const gone = new Set(list.map((v) => v.id));
+      // 화면에서도 **그 자리에서** 지웁니다. 다시 불러올 때까지 남아 있으면 사람이 또 누릅니다.
+      setInvoices((p) => p.filter((v) => !gone.has(v.id)));
+      setPayments((p) => p.filter((x) => !x.invoice_id || !gone.has(x.invoice_id)));
+      setLineRows((p) => p.filter((l) => !gone.has(l.invoice_id)));
+      notify(
+        `${student.name} — 「이미 받음」 기록 ${body.undone ?? 0}건(${won(body.amount ?? 0)})을 적기 전으로 되돌렸습니다.`,
+        "success",
+      );
+      for (const b of body.blocked ?? []) notify(b, "error");
+      setUndoFor(null);
+    } finally {
+      setBusy(false);
+    }
   }
 
   /** 고른 줄을 한 번에 발행합니다. */
@@ -1819,12 +1865,14 @@ export default function InvoiceGridClient({
                       {/* **이미 받아서 적기만 한 장.** 청구서가 아니므로 회색입니다 -
                           「완납」처럼 보이면 아직 못 받은 돈이 다 받은 것으로 읽힙니다. */}
                       {(receiptOnlyByStudent.get(s.id)?.length ?? 0) > 0 && (
-                        <span
-                          className="rounded bg-slate-200 px-1 text-[10px] font-bold text-slate-600"
-                          title="이미 받은 돈을 적어둔 기록입니다. 청구서로 나가지 않습니다."
+                        <button
+                          type="button"
+                          onClick={() => setUndoFor({ student: s, list: receiptOnlyByStudent.get(s.id) ?? [] })}
+                          className="rounded bg-slate-200 px-1 text-[10px] font-bold text-slate-600 hover:bg-slate-300"
+                          title="이미 받은 돈을 적어둔 기록입니다. 청구서로 나가지 않습니다. 눌러서 되돌릴 수 있습니다."
                         >
-                          이미 받음 {receiptOnlyByStudent.get(s.id)!.length}건
-                        </span>
+                          이미 받음 {receiptOnlyByStudent.get(s.id)!.length}건 ↩
+                        </button>
                       )}
                       {/* 발행과 발송은 다릅니다. 종이를 만든 것과 학부모에게 청구가 간 것을
                           같은 표시로 두면, 발행만 해놓고 안 보낸 것을 아무도 모릅니다. */}
@@ -2291,6 +2339,58 @@ export default function InvoiceGridClient({
                       });
                       return `${going.length}명 · ${planFor(going, issueMode).length}장 발행${cat === "전체" ? "" : ` (${cat})`}`;
                     })()}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 「이미 받음」 되돌리기 확인 ────────────────────────────────
+          **무엇이 사라지는지 먼저 보여줍니다.** 숫자 없는 「되돌리기」 단추는 아무도 못
+          누릅니다 - 눌러도 되는지 판단할 재료가 없으니까요(§2-7). */}
+      {undoFor && (
+        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 p-4" onClick={() => !busy && setUndoFor(null)}>
+          <div className="w-full max-w-md rounded-xl bg-white p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <p className="text-sm font-bold text-slate-800">
+              {undoFor.student.name} — 「이미 받음」 기록 되돌리기
+            </p>
+            <p className="mt-1 text-[12px] leading-relaxed text-slate-500">
+              적어둔 기록을 **적기 전으로** 되돌립니다. 이 기록은 청구서로 나간 적이 없어서
+              학부모 쪽에는 아무 영향이 없고, 되돌리면 그 항목이 다시 미납으로 돌아갑니다.
+            </p>
+            <div className="mt-2 flex flex-col gap-1 rounded-lg border border-slate-200 bg-slate-50 p-2">
+              {undoFor.list.map((v) => {
+                const paid = payments
+                  .filter((x) => x.invoice_id === v.id)
+                  .reduce((n, x) => n + Number(x.amount), 0);
+                const names = lineRows.filter((l) => l.invoice_id === v.id).map((l) => l.name);
+                return (
+                  <div key={v.id} className="text-[12px]">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="font-semibold text-slate-700">{v.issue_date ?? "날짜 모름"}</span>
+                      <span className="font-bold tabular-nums text-slate-800">{won(paid)}</span>
+                    </div>
+                    {names.length > 0 && (
+                      <p className="text-[11px] leading-snug text-slate-500">{names.join(" · ")}</p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="mt-3 flex items-center gap-2">
+              <button
+                onClick={() => setUndoFor(null)}
+                disabled={busy}
+                className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600"
+              >
+                그만두기
+              </button>
+              <button
+                onClick={() => void undoReceipts(undoFor.student, undoFor.list)}
+                disabled={busy}
+                className="ml-auto rounded-lg bg-rose-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-40"
+              >
+                {busy ? "되돌리는 중…" : `${undoFor.list.length}건 되돌리기`}
               </button>
             </div>
           </div>

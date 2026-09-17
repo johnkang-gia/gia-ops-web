@@ -545,6 +545,25 @@ export default function PickupTriage({
    * 「올톡페이 금액이 안 맞습니다」는 그 집 이야기입니다. 한 명을 찍으면 나머지 아이
    * 기록에서 그 연락이 사라지는데, 그건 오류가 아니라 **없는 것**으로 보입니다.
    */
+  /**
+   * **연결만 합니다 — 픽업으로 확정하지 않습니다.**
+   *
+   * 예전에는 학생을 고르는 순간 픽업 확정까지 함께 걸렸습니다. 그래서 줄이 그 자리에서
+   * 목록을 떠났고, **연결한 다음에 할 일을 고를 자리가 없었습니다** - 「약 좀 챙겨주세요」
+   * 처럼 픽업이 아닌 연락은 학생만 이어두고 특이사항이나 출결로 보내야 하는데, 이어두는
+   * 순간 픽업이 되어 버렸습니다.
+   *
+   * 「연결」과 「확정」은 다른 일입니다. 연결은 **누구 이야기인지 정하는 것**이고, 확정은
+   * **무엇을 할지 정하는 것**입니다. 이어둔 뒤에도 줄은 남아 있고, 그 자리에서 픽업·결석·
+   * 지각·셔틀·특이사항·문의를 고릅니다.
+   */
+  async function linkOnly(row: PickupRow, student: { id: string; name: string }) {
+    const json = await call({ action: "link", id: row.id, studentId: student.id });
+    if (!json) return;
+    notify(`${student.name} 으로 이어뒀습니다. 이제 무엇으로 처리할지 골라주세요.`, "success");
+    await refresh();
+  }
+
   async function confirmHouse(row: PickupRow, names: string[]) {
     const json = await call({ action: "house", id: row.id });
     if (!json) return;
@@ -796,7 +815,7 @@ export default function PickupTriage({
                     // 안 갈린 것이라, 「연결」이라고 적으면 아직 아무것도 안 된 줄로 읽힙니다.
                     label={actorsOf(r).length > 0 ? "다른 학생으로" : "학생 연결"}
                     autoFocusQuery={(r.ai_student_name ?? "").replace(/\(.*$/, "").trim()}
-                    onPick={(s) => confirm(r, s.id)}
+                    onPick={(s) => linkOnly(r, s)}
                   />
                   {/*
                     ── 대상마다 한 줄 ──────────────────────────────────────────

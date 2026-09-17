@@ -197,6 +197,7 @@ export async function POST(req: Request) {
           payer_name: s.name,
           memo: `올톡페이 ${r.raw_why ?? ""}`.trim(),
           source: "올톡페이 가져오기",
+          origin: "올톡페이",
           source_key: r.source_key,
           matched_by: me.email,
           created_by: me.email,

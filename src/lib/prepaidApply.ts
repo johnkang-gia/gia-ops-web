@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { planApply, splitMemo, type PrepaidPayment } from "@/lib/prepaid";
+import { planApply, splitMemo, leftoverMemo, type PrepaidPayment } from "@/lib/prepaid";
 
 /**
  * 새로 만든 청구서에 **남은 선입금을 저절로 붙입니다.**
@@ -27,13 +27,18 @@ export async function applyPrepaid(
 
   const { data, error } = await supabase
     .from("payments")
-    .select("id, amount, paid_at, payer_name")
+    // **출처(`origin`)를 함께 읽습니다.** 쪼갠 조각이 뿌리의 출처를 물려받아야, 나중에
+    // 청구서를 취소할 때 「이 돈은 발행이 만든 것」임을 알아볼 수 있습니다.
+    .select("id, amount, paid_at, payer_name, origin")
     .eq("student_id", invoice.student_id)
     .is("invoice_id", null)
     .order("paid_at");
   if (error) return { applied: 0, error: `남은 선입금을 읽지 못했습니다: ${error.message}` };
 
-  const list: PrepaidPayment[] = ((data as { id: string; amount: number | string; paid_at: string; payer_name: string | null }[] | null) ?? []).map(
+  type Row = { id: string; amount: number | string; paid_at: string; payer_name: string | null; origin: string | null };
+  const rows = (data as Row[] | null) ?? [];
+  const originOf = new Map(rows.map((r) => [r.id, r.origin]));
+  const list: PrepaidPayment[] = rows.map(
     (r) => ({ id: r.id, amount: Number(r.amount), paidAt: r.paid_at, payerName: r.payer_name }),
   );
   if (list.length === 0) return { applied: 0, error: null };
@@ -44,6 +49,8 @@ export async function applyPrepaid(
   if (plan.whole.length > 0) {
     const { error: upErr } = await supabase
       .from("payments")
+      // `matched_by` 만 바꿉니다. **`origin` 은 건드리지 않습니다** - 이 칸이 덮어써지던 것이
+      // 「취소해도 안 지워지는 돈」의 원인이었습니다(20261026 마이그레이션).
       .update({ invoice_id: invoice.id, matched_by: "선입금 자동충당" })
       .in("id", plan.whole);
     if (upErr) return { applied: 0, error: `선입금을 붙이지 못했습니다: ${upErr.message}` };
@@ -60,8 +67,12 @@ export async function applyPrepaid(
         paid_at: src.paidAt,
         amount: plan.split.leftover,
         payer_name: src.payerName ?? null,
-        memo: splitMemo(src.amount, plan.split.applied, invoice.invoice_no),
+        memo: leftoverMemo(src.amount, plan.split.applied, invoice.invoice_no),
         source: "쪼갬",
+        // 쪼개도 **돈의 출처는 그대로**입니다. 100,000원을 9,000원과 91,000원으로 나눠도
+        // 그 돈이 어디서 왔는지는 안 바뀝니다. 이것을 안 물려주면 나머지 조각이 「출처를
+        // 모르는 선입금」이 되어, 청구서를 취소해도 안 지워지고 살아남습니다.
+        origin: originOf.get(src.id) ?? null,
         split_from_id: src.id,
         created_by: actor,
       });

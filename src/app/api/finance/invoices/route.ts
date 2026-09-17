@@ -281,6 +281,9 @@ export async function POST(req: Request) {
       memo: (alreadyPaid?.memo ?? "").trim() || "이미 받은 건을 소급 등록",
       source: "수기",
       matched_by: "이미받음",
+      // **출처는 한 번 적고 안 바꿉니다.** `matched_by` 는 나중에 충당이 덮어쓰므로, 취소가
+      // 이 돈을 알아보려면 안 덮이는 칸이 따로 있어야 합니다.
+      origin: "이미받음",
       created_by: me.email,
     });
     // 청구서는 만들어졌는데 입금이 안 붙으면 **미납으로 남습니다.** 이미 낸 분에게 독촉이
@@ -296,7 +299,21 @@ export async function POST(req: Request) {
     paidRecorded = amount;
   }
 
-  // 먼저 받아둔 돈이 있으면 저절로 붙입니다. 안 붙이면 이미 낸 분에게 독촉이 나갑니다.
-  const pre = await applyPrepaid(supabase, inv, me.email);
+  /**
+   * 먼저 받아둔 돈이 있으면 저절로 붙입니다. 안 붙이면 이미 낸 분에게 독촉이 나갑니다.
+   *
+   * **「이미 받음」으로 만든 장에는 붙이지 않습니다.** 그 장은 만들면서 받은 돈을 바로
+   * 붙였으므로 이미 완납입니다 - 그 위에 선입금까지 얹으면 **받지도 않은 돈이 장부에
+   * 들어옵니다.**
+   *
+   * 실제로 났습니다. 한 학생의 학비외 총청구액이 291,000원인데 납부금액이 482,000원으로
+   * 찍혔습니다. 291,000원은 「이미 받음」이 붙인 진짜 돈이고, 나머지 191,000원은 옛
+   * 선입금이 그 위에 자동으로 얹힌 것이었습니다. 화면에는 오류가 아니라 **과납**으로
+   * 보이고, 과납은 다음 달에 돌려줄 돈으로 읽힙니다.
+   *
+   * 학비 창구(`/tuition`)에는 이 문지기가 처음부터 있었습니다. 학비외에만 빠져 있었습니다 -
+   * 같은 규칙을 두 파일에 각자 적어서 한쪽만 고쳐진 자리입니다.
+   */
+  const pre = paidAt ? { applied: 0, error: null } : await applyPrepaid(supabase, inv, me.email);
   return NextResponse.json({ ok: true, invoice: inv, paid: paidRecorded, prepaidApplied: pre.applied, warning: pre.error });
 }

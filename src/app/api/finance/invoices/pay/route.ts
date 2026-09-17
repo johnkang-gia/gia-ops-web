@@ -119,6 +119,7 @@ export async function POST(req: Request) {
     // 어디서 들어온 줄인지. 이 표시가 있어야 체크 해제로 지울 것과 통장 대사로 붙은 것을 가릅니다.
     source: "완납체크",
     matched_by: me.email,
+    origin: "완납체크",
     created_by: me.email,
   }).select("id").single();
   if (error || !made) return NextResponse.json({ error: error?.message ?? "저장 실패" }, { status: 500 });

@@ -304,6 +304,7 @@ export async function POST(req: Request) {
       memo: (alreadyPaid?.memo ?? "").trim() || "이미 받은 건을 소급 등록",
       source: "수기",
       matched_by: "이미받음",
+      origin: "이미받음",
       created_by: me.email,
     });
     // 청구서는 만들어졌는데 입금이 안 붙으면 **미납으로 남습니다.** 이미 낸 분에게 독촉이

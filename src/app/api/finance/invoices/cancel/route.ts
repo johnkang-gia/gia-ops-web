@@ -52,7 +52,10 @@ export async function POST(req: Request) {
   //    (`invoice_id = null`) 다음 청구서에 충당되게 둡니다.
   const { data: pays, error: payErr } = await supabase
     .from("payments")
-    .select("id, amount, matched_by")
+    // **출처(`origin`)로 가릅니다.** `matched_by` 는 선입금 충당이 덮어쓰므로, 한 번이라도
+    // 충당을 거친 「이미 받음」 입금은 그 이름을 잃습니다. 그러면 취소가 못 알아보고 그 돈이
+    // 선입금으로 살아남아, 다음 청구서에 저절로 얹힙니다(20261026 마이그레이션).
+    .select("id, amount, matched_by, origin")
     .eq("invoice_id", id);
   // 읽지 못했으면 취소를 **하지 않습니다.** 붙은 돈이 있는지 모르는 채로 취소하면, 그 돈이
   // 취소된 청구서에 매달린 채 남습니다 - 화면에는 아무 표시도 안 납니다.
@@ -63,7 +66,7 @@ export async function POST(req: Request) {
     );
   }
 
-  type PayRow = { id: string; amount: number | string; matched_by: string | null };
+  type PayRow = { id: string; amount: number | string; matched_by: string | null; origin: string | null };
   const rows = (pays as PayRow[] | null) ?? [];
 
   // ③ **발행이 끌어다 붙인 선입금**(`선입금 자동충당`).
@@ -74,9 +77,12 @@ export async function POST(req: Request) {
   // 앞 판은 이것을 ②(사람이 붙인 입금)와 같이 취급해서 **매번 「선입금으로 남습니다」라고
   // 물었습니다.** 취소는 되돌리기인데 되돌릴 때마다 못 보던 경고가 뜨니, 담당자는 뭔가
   // 잘못됐다고 읽게 됩니다. 원래 자리로 돌아가는 것은 물을 일이 아닙니다.
-  const fromIssue = rows.filter((p) => p.matched_by === "이미받음");
-  const fromPrepaid = rows.filter((p) => p.matched_by === "선입금 자동충당");
-  const fromDesk = rows.filter((p) => p.matched_by !== "이미받음" && p.matched_by !== "선입금 자동충당");
+  // 출처가 「이미받음」이면 **충당을 거쳤든 아니든** 발행이 만든 돈입니다. 옛 줄은 출처가
+  // 비어 있을 수 있어 예전 기준(`matched_by`)도 함께 봅니다.
+  const madeByIssue = (p: PayRow) => p.origin === "이미받음" || (!p.origin && p.matched_by === "이미받음");
+  const fromIssue = rows.filter(madeByIssue);
+  const fromPrepaid = rows.filter((p) => !madeByIssue(p) && p.matched_by === "선입금 자동충당");
+  const fromDesk = rows.filter((p) => !madeByIssue(p) && p.matched_by !== "선입금 자동충당");
   const deskPaid = fromDesk.reduce((n, p) => n + Number(p.amount), 0);
   const prepaidBack = fromPrepaid.reduce((n, p) => n + Number(p.amount), 0);
 

@@ -56,6 +56,13 @@ export const INTEGRITY_VIEWS: IntegrityView[] = [
       "장의 총액과 줄의 합이 다릅니다. 청구서에는 항목이 3줄인데 합계는 4줄짜리로 찍히고, 학부모는 그 합계로 결제합니다.",
   },
   {
+    view: "invoice_overpaid",
+    label: "입금이 청구액보다 많은 장",
+    expect: "비어야_정상",
+    impact:
+      "같은 돈이 두 번 붙었을 수 있습니다. 화면에는 오류가 아니라 과납으로 보이고, 과납은 다음 달에 돌려줄 돈으로 읽혀서 더 큰 사고가 됩니다.",
+  },
+  {
     view: "students_without_class",
     label: "반 연결이 빈 재학생",
     expect: "비어야_정상",

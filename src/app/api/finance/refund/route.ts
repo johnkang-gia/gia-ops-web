@@ -84,6 +84,7 @@ export async function POST(req: Request) {
       payer_name: (inv.student_name_ko as string | null) ?? (inv.student_name as string),
       memo: `환불 · ${reason}`,
       source: "환불",
+      origin: "환불",
       matched_by: me.email,
       created_by: me.email,
     })

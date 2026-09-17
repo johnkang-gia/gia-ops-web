@@ -82,3 +82,14 @@ export function planApply(list: PrepaidPayment[], invoiceTotal: number): ApplyPl
 export function splitMemo(original: number, applied: number, invoiceNo: string): string {
   return `선입금 ${original.toLocaleString("ko-KR")}원 중 ${applied.toLocaleString("ko-KR")}원을 ${invoiceNo} 에 충당`;
 }
+
+/**
+ * 쪼개고 **남은** 조각에 적을 말.
+ *
+ * 예전에는 붙인 조각과 남은 조각에 **같은 글**을 적었습니다. 그래서 82,000원짜리 줄에
+ * 「9,000원을 충당」이라고 적혀 있어, 나중에 내역을 읽는 사람이 금액과 글이 안 맞는 것을
+ * 보고 자료가 깨진 줄 압니다. 붙은 것과 남은 것은 다른 사실이므로 다르게 적습니다.
+ */
+export function leftoverMemo(original: number, applied: number, invoiceNo: string): string {
+  return `선입금 ${original.toLocaleString("ko-KR")}원 중 ${applied.toLocaleString("ko-KR")}원을 ${invoiceNo} 에 충당하고 남은 금액`;
+}

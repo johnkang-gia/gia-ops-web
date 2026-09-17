@@ -439,17 +439,23 @@ export default function InvoiceGridClient({
   }, [receipts]);
 
   /**
-   * 같은 학생·같은 분류로 두 장 이상 나간 청구서.
+   * 같은 학생·같은 분류로 두 장 이상 **학부모에게 나간** 청구서.
    *
    * 학생을 합치거나 발행을 두 번 눌렀을 때 생깁니다. 그대로 두면 청구액이 두 배로 잡혀
    * 미수금이 부풀고, 학부모에게 두 장이 나갑니다. 표에서는 «외 1장»이라는 작은 글씨로만
    * 보여서 눈에 띄지 않았습니다.
+   *
+   * **「이미 받음」으로 적은 장은 세지 않습니다.** 그 장은 밖으로 나간 적이 없는 우리 쪽
+   * 기록이고, 교복을 한 번·교재를 한 번 적으면 한 아이에 두 장이 생기는 것이 **정상**입니다.
+   * 그것까지 세어서 경고가 14건으로 뜨면, 정작 진짜 중복 발행이 그 안에 묻힙니다 - 늘
+   * 빨간 경고는 아무도 안 봅니다.
    */
   const dupInvoices = useMemo(() => {
     const out: { studentName: string; category: string; list: Invoice[] }[] = [];
     for (const [, list] of invoicesByStudent) {
       const byCat = new Map<string, Invoice[]>();
       for (const v of list) {
+        if (v.issued_offline === true) continue;
         const k = v.category ?? "통합";
         (byCat.get(k) ?? byCat.set(k, []).get(k)!).push(v);
       }

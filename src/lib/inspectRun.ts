@@ -33,9 +33,19 @@ async function probeAnon(): Promise<CheckResult[]> {
     ];
   }
 
+  // 목록은 **관리 열쇠로** 받고, 물어보는 것은 **공개 열쇠로** 합니다.
+  //
+  // 목록 창구(`/rest/v1/`)는 공개 열쇠로는 안 열립니다(「Secret API key required」). 그래서
+  // 공개 열쇠만으로 훑으면 목록이 0개가 되고, 그건 「하나도 안 열렸다」가 아니라 **아무것도
+  // 안 물어봤다**는 뜻입니다. 둘을 같은 초록불로 적으면 검사가 안 도는 것을 정상으로 읽게
+  // 됩니다(§5). 관리 열쇠는 이 파일이 서버에서만 돌기 때문에 브라우저로 나가지 않습니다.
+  const admin = process.env.SUPABASE_SERVICE_ROLE_KEY;
   let names: string[] = [];
   try {
-    const res = await fetch(`${url}/rest/v1/`, { headers: { apikey: key }, cache: "no-store" });
+    const res = await fetch(`${url}/rest/v1/`, {
+      headers: admin ? { apikey: admin, Authorization: `Bearer ${admin}` } : { apikey: key },
+      cache: "no-store",
+    });
     const doc = (await res.json()) as { paths?: Record<string, unknown> };
     names = Object.keys(doc.paths ?? {})
       .map((p) => p.replace(/^\//, ""))
@@ -71,12 +81,25 @@ async function probeAnon(): Promise<CheckResult[]> {
     }),
   );
 
+  // 물어본 것이 없으면 「안 열렸다」가 아니라 **못 물어봤다**입니다.
+  if (names.length === 0) {
+    return [
+      {
+        group: "보호",
+        name: "로그인 없이 읽히는 표",
+        level: "확인",
+        detail: "물어볼 표 목록을 못 받아 검사하지 못했습니다.",
+        impact: "검사가 안 돈 것과 「안전한 것」은 다릅니다. 관리 열쇠 설정을 확인해주세요.",
+      },
+    ];
+  }
+
   return [
     {
       group: "보호",
       name: "로그인 없이 읽히는 표",
       level: open.length === 0 ? "정상" : "문제",
-      detail: open.length === 0 ? `${names.length}개를 물어봤고 하나도 안 열렸습니다` : `${open.length}개가 열려 있습니다`,
+      detail: open.length === 0 ? `${names.length}개를 물어봤고 하나도 안 열렸습니다` : `${names.length}개 중 ${open.length}개가 열려 있습니다`,
       impact:
         open.length === 0
           ? undefined

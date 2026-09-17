@@ -107,6 +107,17 @@ export default function InvoiceSheet({
    * 저건 갈래로」를 다시 정하면 기준이 화면마다 갈립니다.
    */
   const mode = sectionMode(parts.map((p) => p.invoice));
+  /**
+   * **이름을 적을 아이들 — 겹치면 한 번만.**
+   *
+   * 학비 + 학비외를 한 장으로 합치면 장이 둘이지만 아이는 하나입니다. 장마다 한 줄씩 적으면
+   * 같은 이름이 두 번 찍히고, 받는 사람은 왜 두 번인지 몰라 「형제인가?」 하고 다시 읽습니다.
+   *
+   * 형제 합본은 그대로 여럿입니다 - 그때는 이름이 실제로 여럿이니까요.
+   */
+  const named = parts.filter(
+    (p, i) => parts.findIndex((q) => (q.invoice.student_id ?? whoOf(q.invoice)) === (p.invoice.student_id ?? whoOf(p.invoice))) === i,
+  );
   const lines = parts.flatMap((p) => p.lines);
 
   // 합계는 굳어진 줄에서 다시 더해 보여줍니다. 머리줄의 total_amount와 어긋나면 그 사실이
@@ -132,7 +143,8 @@ export default function InvoiceSheet({
 
       <div className={"no-print mx-auto mb-3 flex max-w-[210mm] flex-wrap items-center gap-2 " + (embed ? "hidden" : "")}>
         <span className="text-sm font-bold text-slate-700">{parts.map((p) => p.invoice.invoice_no).join(" · ")}</span>
-        <span className="text-xs text-slate-500">{parts.map((p) => whoOf(p.invoice)).join(" · ")}</span>
+        {/* 미리보기 머리줄도 이름은 한 번만. 합본이면 장이 둘이어도 아이는 하나입니다. */}
+        <span className="text-xs text-slate-500">{named.map((p) => whoOf(p.invoice)).join(" · ")}</span>
         {/* 합본이면 **어느 아이 것이 취소됐는지**까지 적습니다. 「취소된 인보이스」만 뜨면
             두 장 중 어느 쪽인지 몰라 둘 다 다시 확인하게 됩니다. */}
         {parts
@@ -202,10 +214,10 @@ export default function InvoiceSheet({
             <tbody>
               {/* 형제를 합쳤으면 아이를 한 줄씩 적습니다. 한 칸에 이어 붙이면 어느 반이 누구
                   것인지 짝이 안 맞습니다 - 아래 내역도 아이별로 나뉘므로 여기도 나눕니다. */}
-              {parts.map((p, i) => (
+              {named.map((p, i) => (
                 <tr key={p.invoice.id}>
                   <td style={{ width: 130, padding: "3px 0", fontSize: 8.5, fontWeight: 700, letterSpacing: 0.6, color: "#6b7280" }}>
-                    {i === 0 ? (many ? "STUDENTS" : "STUDENT NAME") : ""}
+                    {i === 0 ? (named.length > 1 ? "STUDENTS" : "STUDENT NAME") : ""}
                   </td>
                   <td style={{ padding: "3px 0", fontSize: 11.5, fontWeight: 800 }}>
                     {p.invoice.student_name}

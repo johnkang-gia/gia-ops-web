@@ -2357,8 +2357,8 @@ export default function InvoiceGridClient({
               {undoFor.student.name} — 「이미 받음」 기록 되돌리기
             </p>
             <p className="mt-1 text-[12px] leading-relaxed text-slate-500">
-              적어둔 기록을 **적기 전으로** 되돌립니다. 이 기록은 청구서로 나간 적이 없어서
-              학부모 쪽에는 아무 영향이 없고, 되돌리면 그 항목이 다시 미납으로 돌아갑니다.
+              적어둔 기록을 <b className="text-slate-700">적기 전으로</b> 되돌립니다. 이 기록은 청구서로 나간
+              적이 없어서 학부모 쪽에는 아무 영향이 없고, 되돌리면 그 항목이 다시 미납으로 돌아갑니다.
             </p>
             <div className="mt-2 flex flex-col gap-1 rounded-lg border border-slate-200 bg-slate-50 p-2">
               {undoFor.list.map((v) => {

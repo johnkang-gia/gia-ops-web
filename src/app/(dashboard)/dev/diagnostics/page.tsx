@@ -230,7 +230,9 @@ export default async function DevDiagnosticsPage() {
   // 어느 장인지는 그 다음입니다. 몇 개인지 모르면 볼지 말지도 못 정합니다.
   const integrityRows = await Promise.all(
     INTEGRITY_VIEWS.map(async (v) => {
-      const { count, error } = await supabase.from(v.view).select("*", { count: "exact", head: true });
+      let q = supabase.from(v.view).select("*", { count: "exact", head: true });
+      if (v.onlyWhere) q = q.eq(v.onlyWhere.column, v.onlyWhere.value);
+      const { count, error } = await q;
       return { ...v, count: count ?? null, error: error?.message ?? null };
     }),
   );

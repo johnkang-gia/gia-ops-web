@@ -37,6 +37,14 @@ export type IntegrityView = {
   expect: "비어야_정상" | "있어야_정상" | "숫자표";
   /** 어긋났을 때 무엇이 잘못되는지. 고칠지 말지를 여기서 정합니다. */
   impact: string;
+  /**
+   * 뷰 전체가 아니라 **그중 문제인 줄만** 셀 때 거는 조건.
+   *
+   * 목록으로 만든 뷰가 있습니다 - `students_without_billing_phone` 은 재학생을 전부 담고
+   * 번호가 있는지를 칸(`has_any_phone`)으로 적습니다. 그냥 세면 139명이 전부 빨간 줄이
+   * 됩니다. **늘 빨간 점검은 아무도 안 봅니다** - 없는 것과 같습니다.
+   */
+  onlyWhere?: { column: string; value: string | number | boolean };
 };
 
 export const INTEGRITY_VIEWS: IntegrityView[] = [
@@ -65,6 +73,8 @@ export const INTEGRITY_VIEWS: IntegrityView[] = [
     label: "청구 번호 없는 재학생",
     expect: "비어야_정상",
     impact: "올톡페이 발송 명단에서 조용히 빠집니다. 안 보낸 것이 「보냈는데 안 낸 것」으로 보입니다.",
+    // 이 뷰는 재학생을 전부 담고 번호 유무를 칸으로 적습니다. 번호가 하나도 없는 줄만 셉니다.
+    onlyWhere: { column: "has_any_phone", value: false },
   },
   {
     view: "toddle_channels_unlinked",

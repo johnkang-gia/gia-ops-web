@@ -7,7 +7,7 @@ import { todayKst, kstWeekday } from "@/lib/kst";
 import { loadDismissalForDay, DISMISSAL_SELECT, isMissingWeekStart, type DismissalRow } from "@/lib/dismissalToday";
 import { addDays, nextWeekStart, weekStartOf } from "@/lib/dismissalWeek";
 import { buildDismissalBoard, type PlanEntry } from "@/lib/dismissalBoard";
-import type { PickupVia } from "@/lib/pickups";
+import { setterLabel, type PickupVia } from "@/lib/pickups";
 
 /**
  * **오늘 하원체크** — 업무보드 맨 위.
@@ -32,7 +32,7 @@ import type { PickupVia } from "@/lib/pickups";
 
 type Row = PlanEntry;
 /** 오늘 학부모가 연락해 온 픽업. 미리 등록해 둔 하원수단과 갈래가 다릅니다. */
-type Pickup = { name: string; studentId: string | null; time: string | null; source: string; via: PickupVia };
+type Pickup = { name: string; studentId: string | null; time: string | null; source: string; via: PickupVia; by: string | null };
 type Ahead = { name: string; date: string; kind: string; label: string | null; time: string | null };
 
 const KIND_TONE: Record<string, string> = {
@@ -243,7 +243,7 @@ export default function TodayDismissalReminder({
                 r.via === "하원수단"
                   ? `🎒 미리 등록해 둔 하원수단 — ${[r.plan?.kind, r.plan?.label].filter(Boolean).join(" ")}`
                   : r.via === "사람"
-                    ? `✋ 사람이 체크표에서 픽업으로 표시 (${r.source})`
+                    ? `✋ ${setterLabel(r.by) ?? "담당자"}이 체크표에서 픽업으로 표시 (${r.source})`
                     : `🚗 오늘 들어온 연락 (${r.source})`,
                 r.plan?.note,
               ]

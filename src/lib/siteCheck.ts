@@ -50,6 +50,7 @@ export const SCREENS: string[] = [
   "/dev/ai",
   "/dev/diagnostics",
   "/dev/errors",
+  "/dev/inspect",
   "/dev/usage",
   "/documents",
   "/documents/new",

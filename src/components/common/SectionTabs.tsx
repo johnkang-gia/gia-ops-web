@@ -84,6 +84,9 @@ const SUB_ROW_H = "h-[34px]";
 const DEV_TABS: TabDef[] = [
   { key: "overview", label: "개요", icon: "📊", href: "/dev", match: ["/dev"] },
   { key: "diagnostics", label: "진단", icon: "🔎", href: "/dev/diagnostics", match: ["/dev/diagnostics"] },
+  // 진단은 「지금 무엇이 안 도는가」, 점검은 「무엇이 잘못된 채로 잘 돌고 있는가」입니다.
+  // 뒤의 것은 오류를 안 내므로 물어보지 않으면 영영 안 드러납니다.
+  { key: "inspect", label: "점검", icon: "🧪", href: "/dev/inspect", match: ["/dev/inspect"] },
   { key: "errors", label: "오류", icon: "🚨", href: "/dev/errors", match: ["/dev/errors"] },
   { key: "ai", label: "AI 과금", icon: "🤖", href: "/dev/ai", match: ["/dev/ai"] },
   // 어떤 화면이 실제로 쓰이는지는 물어볼 데가 없었습니다. 안 쓰이는 화면을 지우려면

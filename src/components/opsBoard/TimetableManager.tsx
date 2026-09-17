@@ -224,6 +224,30 @@ export default function TimetableManager({
     if (error) notify("변경하지 못했습니다: " + error.message, "error");
   }
 
+  /**
+   * 링크를 지웁니다. **되돌릴 수 없으므로 한 번 묻습니다.**
+   *
+   * 지운 주소로 열려 있던 화면은 다음 새로고침에 「유효하지 않거나 종료된 주소」가 됩니다.
+   * 로비 TV·사무실 모니터에 하루 종일 띄워두는 화면이라, 그 사실을 묻는 창에 적어둡니다 -
+   * 「지울까요?」만 뜨면 무엇이 멈추는지 모르는 채로 누르게 됩니다.
+   */
+  async function removeLink(l: OpsBoardLink) {
+    const who = l.label?.trim() || l.short_code || l.token.slice(0, 8);
+    if (!confirm(`「${who}」 링크를 지웁니다.\n\n이 주소로 열어둔 화면은 다음 새로고침에 멈춥니다. 되돌릴 수 없습니다.`)) return;
+    const previous = links;
+    setLinks((prev) => prev.filter((x) => x.id !== l.id));
+    const supabase = createClient();
+    const { error } = await supabase.from("ops_board_links").delete().eq("id", l.id);
+    // 실패하면 목록을 되돌립니다. 화면에서만 사라지면 지운 줄 알고 넘어가는데 주소는 살아
+    // 있습니다 - 조용한 실패입니다(CLAUDE.md §5).
+    if (error) {
+      setLinks(previous);
+      notify("지우지 못했습니다: " + error.message, "error");
+      return;
+    }
+    notify("링크를 지웠습니다.", "success");
+  }
+
   function copyUrl(token: string) {
     const url = shareUrl(`/ops-board/${token}`);
     navigator.clipboard.writeText(url).then(
@@ -346,6 +370,17 @@ export default function TimetableManager({
                     className={"rounded px-2 py-1 font-semibold " + (l.enabled ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-400")}
                   >
                     {l.enabled ? "사용중" : "중지"}
+                  </button>
+                  {/*
+                    **지우기는 중지와 다릅니다.** 중지는 주소를 살려둔 채 화면만 막는 것이고,
+                    잘못 만든 링크·시험용 링크는 목록에 계속 쌓여 「어느 게 진짜인지」를
+                    흐립니다. 지금까지는 지울 길이 아예 없어서 중지된 링크가 늘기만 했습니다.
+
+                    지운 링크의 주소는 **그 자리에서 죽습니다.** 모니터에 띄워 둔 화면이 있으면
+                    다음 새로고침에 「유효하지 않은 주소」가 뜨므로, 묻는 창에 그 사실을 적습니다.
+                  */}
+                  <button onClick={() => removeLink(l)} className="rounded px-2 py-1 font-semibold text-red-500 hover:bg-red-50">
+                    지우기
                   </button>
                 </div>
               </div>

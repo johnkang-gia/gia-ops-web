@@ -51,6 +51,8 @@ export type PickupEntry = {
   time: string | null;
   source: string;
   via: PickupVia;
+  /** 누가 지정했는가(`checked_by` 원문). 사람이 누른 줄에만 있습니다. */
+  by: string | null;
 };
 
 export type BoardRow = {
@@ -61,6 +63,8 @@ export type BoardRow = {
   time: string | null;
   via: PickupVia;
   source: string;
+  /** 누가 지정했는가. 화면이 「사람이 지정」 대신 이름을 적습니다. */
+  by: string | null;
   /** 이 아이의 하원수단. 붙어 있으면 「무엇을 타고 가는지」를 줄에 적을 수 있습니다. */
   plan: { kind: string; label: string | null; note: string | null } | null;
 };
@@ -96,6 +100,7 @@ export function buildDismissalBoard(plans: PlanEntry[], pickups: PickupEntry[]):
       time: q.time ?? plan?.time ?? null,
       via: q.via,
       source: q.source,
+      by: q.by,
       plan: plan ? { kind: plan.kind, label: plan.label, note: plan.note } : null,
     };
   });

@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildBoard, type BoardInput, type DayBoard, type DayItem, type DayItemKind } from "./studentDay";
 import { isNoteKind } from "./studentDayNotes";
-import { loadTodayPickups } from "./pickups";
+import { loadTodayPickups, setterLabel } from "./pickups";
 import { loadActiveEntries, loadUpcomingEntries } from "./attendanceEntries";
 import { departmentOf } from "./department";
 import { kstDateOffset } from "./kst";
@@ -117,7 +117,15 @@ export async function loadStudentDay(supabase: SupabaseClient, opts: LoadOptions
       kind: "픽업",
       at: p.time,
       // 어디서 온 픽업인지 한 마디. 「왜 이 아이가 떴지」에 답하는 값입니다.
-      text: p.via === "하원수단" ? "하원수단" : p.via === "사람" ? "픽업(사람이 지정)" : "픽업",
+      // **누가 지정했는지 이름으로 적습니다.** 「사람이 지정」이라고만 하면 하원 시간에
+      // 「이거 누가 바꿨어요?」가 나왔을 때 아무도 답을 못 합니다 - 자료에는 처음부터
+      // 이름이 있었고 화면만 뭉뚱그리고 있었습니다. 이름을 못 읽은 옛 줄만 예전 표기입니다.
+      text:
+        p.via === "하원수단"
+          ? "하원수단"
+          : p.via === "사람"
+            ? `픽업(${setterLabel(p.by) ?? "사람"}이 지정)`
+            : "픽업",
       onDate: date,
       from: { table: "shuttle_boardings·attendance_entries·pickup_requests", screen: "/shuttle/checklist" },
       pending: false,
@@ -126,7 +134,7 @@ export async function loadStudentDay(supabase: SupabaseClient, opts: LoadOptions
           p.via === "하원수단"
             ? "하원수단 설정 — 이 아이는 오늘 요일에 셔틀을 타지 않습니다"
             : p.via === "사람"
-              ? "사람이 체크표에서 직접 픽업으로 지정"
+              ? `${setterLabel(p.by) ?? "담당자"}이 체크표에서 직접 픽업으로 지정`
               : "학부모 연락(토들·전화)으로 들어온 픽업",
         raw: null,
       },

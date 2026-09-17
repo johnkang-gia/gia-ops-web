@@ -80,11 +80,35 @@ export type TodayPickup = {
   source: PickupSource;
   /** 미리 등록해 둔 하원수단에서 나온 것인가, 오늘 온 연락인가, 사람이 누른 것인가. */
   via: PickupVia;
+  /**
+   * **누가 지정했는가**(`checked_by` 원문). 사람이 누른 줄에만 있습니다.
+   *
+   * 화면이 「사람이 지정」이라고만 적으면 되물을 곳이 없습니다 - 하원 시간에 「이거 누가
+   * 바꿨어요?」가 나오면 아무도 답을 못 하고, 결국 다시 확인하느라 시간이 갑니다.
+   * 자료에는 처음부터 이름이 있었고 화면만 뭉뚱그리고 있었습니다.
+   */
+  by: string | null;
 };
+
+/**
+ * `checked_by` 를 사람이 읽는 말로. 「강경원」 → 「강경원님」.
+ *
+ * 이 칸에는 이름이 들어올 때도 있고 메일이 들어올 때도 있습니다(`actor.name || actor.email`).
+ * 메일이면 앞부분만 씁니다 - 화면에 「johnkang@giamicro.com님이 지정」이라고 적히면 길어서
+ * 옆 칸을 밀어냅니다.
+ *
+ * 판정은 여기 한 곳입니다. 화면마다 자르는 규칙을 다시 쓰면 화면마다 다른 이름이 뜹니다.
+ */
+export function setterLabel(checkedBy: string | null | undefined): string | null {
+  const v = (checkedBy ?? "").trim();
+  if (!v || viaOf(v) !== "사람") return null;
+  const name = v.includes("@") ? v.split("@")[0] : v;
+  return name ? `${name}님` : null;
+}
 
 export type PickupInputs = {
   /** 체크표에서 픽업으로 찍힌 학생. `via` 는 그 줄의 `checked_by` 에서 가립니다. */
-  boardingPickups: { name: string; studentId: string | null; via: PickupVia }[];
+  boardingPickups: { name: string; studentId: string | null; via: PickupVia; by: string | null }[];
   /**
    * 오늘 체크표에 **사람이** 줄을 찍은 학생의 열쇠 — 탄다·픽업·결석 무엇이든.
    *
@@ -146,7 +170,7 @@ export function mergePickups(input: PickupInputs): TodayPickup[] {
   // ① 체크표 — 가장 세다.
   for (const b of input.boardingPickups) {
     const k = keyOf(b);
-    out.set(k, { name: b.name, studentId: b.studentId, time: timeOf.get(k) ?? null, source: "체크표", via: b.via });
+    out.set(k, { name: b.name, studentId: b.studentId, time: timeOf.get(k) ?? null, source: "체크표", via: b.via, by: b.by });
   }
 
   // ②③ 체크표에 줄이 없는 아이만. 줄이 있는데 픽업이 아니라면 사람이 「픽업 아님」으로
@@ -162,6 +186,7 @@ export function mergePickups(input: PickupInputs): TodayPickup[] {
       source: input.entries.some((e) => keyOf(e) === k) ? "출결내역" : "학부모연락",
       // 출결내역·학부모연락은 그날 들어온 이야기입니다 - 미리 등록해 둔 규칙이 아닙니다.
       via: "연락",
+      by: null,
     });
   }
 
@@ -174,7 +199,7 @@ export function mergePickups(input: PickupInputs): TodayPickup[] {
     const k = keyOf(p);
     if (out.has(k)) continue;
     if (input.decidedKeys.has(k)) continue;
-    out.set(k, { name: p.name, studentId: p.studentId, time: p.time ?? timeOf.get(k) ?? null, source: "하원수단", via: "하원수단" });
+    out.set(k, { name: p.name, studentId: p.studentId, time: p.time ?? timeOf.get(k) ?? null, source: "하원수단", via: "하원수단", by: null });
   }
 
   // 시각이 있는 아이가 먼저, 그중에서도 이른 시각부터. 대시보드는 «다음에 무엇을 해야 하나»
@@ -240,7 +265,7 @@ export async function loadTodayPickups(
     return (a.student_id ? nameOfStudent(a.student_id) : null) || a.student_name_raw || null;
   };
 
-  const boardingPickups: { name: string; studentId: string | null; via: PickupVia }[] = [];
+  const boardingPickups: { name: string; studentId: string | null; via: PickupVia; by: string | null }[] = [];
   const decidedKeys = new Set<string>();
   for (const b of boardings) {
     const nm = nameOfAsg(b.assignment_id);
@@ -256,7 +281,7 @@ export async function loadTodayPickups(
     // 여기 적힌 규칙은 원래 「사람이 체크표에서 정한 것이 이긴다」였는데, 코드가 그보다
     // 넓게 막고 있었습니다.
     if (isHumanSet(b.checked_by)) decidedKeys.add(keyOf({ name: nm, studentId: sid }));
-    if (b.status === "픽업") boardingPickups.push({ name: nm, studentId: sid, via: viaOf(b.checked_by) });
+    if (b.status === "픽업") boardingPickups.push({ name: nm, studentId: sid, via: viaOf(b.checked_by), by: b.checked_by });
   }
 
   const entries = entryRows

@@ -73,6 +73,7 @@ const LABELS: Record<string, string> = {
   "/dev/usage": "이용 기록",
   "/dev/diagnostics": "진단",
   "/dev/errors": "오류",
+  "/dev/inspect": "점검",
   "/account": "내 계정",
 };
 

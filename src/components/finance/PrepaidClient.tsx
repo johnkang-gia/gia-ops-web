@@ -139,6 +139,57 @@ export default function PrepaidClient({
     router.refresh();
   }
 
+  /**
+   * **전부 내리기.**
+   *
+   * 한 줄씩만 내릴 수 있어서, 잘못 쌓인 선입금을 정리하려면 같은 창을 스무 번 닫아야 했습니다.
+   * 그러면 사람은 중간에 포기하고, 정리 안 된 선입금은 다음 청구서를 계속 저절로 깎습니다.
+   *
+   * **한 번 묻고, 이유를 한 번 받고, 줄마다 그 이유를 적은 뒤 내립니다.** 이유를 안 받으면
+   * 몇 달 뒤 「이 돈이 왜 없어졌지」에 답할 수 없습니다.
+   *
+   * 실패한 줄은 **모아서** 알립니다. 절반만 지워진 상태를 「완료」로 보여주면 며칠 뒤에야
+   * 남은 줄을 발견합니다(§2-7).
+   */
+  async function dropAll() {
+    const ok = await confirmAction(
+      `선입금 ${sum.count}줄(모두 ${won(sum.total)})을 전부 내립니다. 되돌릴 수 없습니다.\n\n` +
+        `청구서에 붙어 있지 않은 돈이라 청구·수납 금액은 바뀌지 않지만, 다음 청구서에 저절로 충당되던 것이 없어집니다.`,
+    );
+    if (!ok) return;
+    const reason = window.prompt("왜 내리나요? 줄마다 이 이유가 적힙니다.\n(예: 선입금 대장 초기화)", "선입금 대장 초기화");
+    if (reason === null) return;
+    if (!reason.trim()) {
+      notify("이유를 적어야 내릴 수 있습니다.", "error");
+      return;
+    }
+
+    setBusy("all");
+    const supabase = createClient();
+    const failed: string[] = [];
+    let done = 0;
+    for (const r of rows) {
+      const { error: memoErr } = await supabase
+        .from("payments")
+        .update({ memo: `${(r.memo ?? "").trim()} | 내림: ${reason.trim()} (${currentUserEmail})`.trim() })
+        .eq("id", r.id);
+      if (memoErr) {
+        failed.push(`${won(Number(r.amount))} — 이유를 못 남김(${memoErr.message})`);
+        continue;
+      }
+      const { error } = await supabase.from("payments").delete().eq("id", r.id);
+      if (error) failed.push(`${won(Number(r.amount))} — ${error.message}`);
+      else done += 1;
+    }
+    setBusy(null);
+    if (failed.length > 0) {
+      notify(`${done}줄을 내렸고 ${failed.length}줄이 남았습니다:\n${failed.join("\n")}`, "error");
+    } else {
+      notify(`${done}줄을 내렸습니다.`, "success");
+    }
+    router.refresh();
+  }
+
   return (
     <div className="mx-auto flex h-full max-w-5xl flex-col p-4 sm:p-6">
       <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -151,9 +202,21 @@ export default function PrepaidClient({
             주인 미상 {sum.unknownCount}줄 · {won(sum.unknown)}
           </span>
         )}
-        <Link href="/finance/payments" className="ml-auto text-[12px] font-semibold text-teal-700 underline">
-          수납 화면 →
-        </Link>
+        <div className="ml-auto flex items-center gap-2">
+          {sum.count > 0 && (
+            <button
+              type="button"
+              disabled={busy !== null}
+              onClick={() => void dropAll()}
+              className="rounded-lg border border-rose-200 px-2 py-1 text-[11px] font-bold text-rose-600 hover:bg-rose-50 disabled:opacity-50"
+            >
+              {busy === "all" ? "내리는 중…" : "전부 내리기"}
+            </button>
+          )}
+          <Link href="/finance/payments" className="text-[12px] font-semibold text-teal-700 underline">
+            수납 화면 →
+          </Link>
+        </div>
       </div>
 
       <p className="mb-3 rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-[11px] leading-relaxed text-teal-900">

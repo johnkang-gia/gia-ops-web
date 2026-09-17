@@ -23,6 +23,10 @@ export type CompareRow = {
   /** 사람이 읽는 이름. 번호가 있으면 앞에 붙여 두면 헷갈리지 않습니다. */
   label: string;
   state: ItemState;
+  /** 어느 분류인가(교복·교재·악기…). 발행 전 확인창이 분류로 묶어 보여줍니다. */
+  category?: string | null;
+  /** 이 줄의 금액. 몇 권이면 이미 곱해진 값입니다. */
+  amount?: number;
 };
 
 export type IssueVerdict =
@@ -70,4 +74,37 @@ export function askText(c: IssueCompare): string | null {
   if (c.verdict === "처음") return null;
   if (c.verdict === "같음") return "이전 발행 항목과 같습니다. 한 번 더 발행하시겠습니까?";
   return "이전 발행 항목과 다릅니다. 발행하시겠습니까?";
+}
+
+/**
+ * **발행 전 확인창에 뜨는 묶음** — 분류마다 항목·금액·소계.
+ *
+ * 예전에는 항목 이름을 「 · 」로 죽 이어 붙였습니다. 한 아이에게 교복 넷 + 교재 여덟이
+ * 걸리면 한 줄이 열 두 칸짜리 글자 띠가 되고, 그 상태로는 **무엇이 얼마인지 눈으로 셀 수
+ * 없습니다.** 발행은 되돌릴 수 없는데, 확인하라고 띄운 창에서 확인이 안 됐습니다.
+ *
+ * 분류 안에서는 **새로 나갈 것을 먼저** 둡니다. 이번에 청구되는 것이 먼저 읽혀야 합니다.
+ */
+export type IssueGroup = {
+  category: string;
+  rows: CompareRow[];
+  /** 이번에 새로 나갈 금액의 합. 이미 나간 것은 빼고 셉니다. */
+  freshTotal: number;
+};
+
+export function groupIssue(rows: readonly CompareRow[]): IssueGroup[] {
+  const by = new Map<string, CompareRow[]>();
+  for (const r of rows) {
+    const c = (r.category ?? "").trim() || "기타";
+    by.set(c, [...(by.get(c) ?? []), r]);
+  }
+  const rank = (s: ItemState) => (s === "안나감" ? 0 : s === "모름" ? 1 : 2);
+  return [...by.entries()]
+    .map(([category, list]) => ({
+      category,
+      rows: [...list].sort((a, b) => rank(a.state) - rank(b.state) || a.label.localeCompare(b.label, "ko")),
+      // 새로 나갈 것만 더합니다. 이미 나간 것을 섞으면 이번에 청구되는 금액이 부풀려집니다.
+      freshTotal: list.reduce((n, r) => n + (r.state === "안나감" ? (r.amount ?? 0) : 0), 0),
+    }))
+    .sort((a, b) => a.category.localeCompare(b.category, "ko"));
 }

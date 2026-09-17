@@ -350,107 +350,31 @@ export function TodayStudentNotes({
   notes: { id: string; name: string; kind: string; content: string; onDate: string; today: boolean; atTime: string | null; classId: string | null }[];
   pending: { name: string; date: string | null; time: string | null; today: boolean }[];
 }) {
-  // **여섯 줄까지만.** 이 칸은 시간표 아래 «남는 자리»를 쓰는 곳입니다. 줄이 늘수록 칸이
-  // 커지면 시간표를 밀어내는데, 이 화면에서 가장 큰 글자여야 하는 것은 시간표입니다.
-  // 넘치는 것은 숫자로 알리고 업무보드로 보냅니다.
-  const shown = notes.slice(0, 6);
-  const todayCount = notes.filter((n) => n.today).length;
+  /**
+   * **특이사항은 여기서 빼고, 오른쪽 「오늘 변동사항」 한 곳에서만 보여줍니다.**
+   *
+   * 예전에는 같은 특이사항이 두 자리에 떴습니다 - 여기(시간표 아래)와 오른쪽 학생별 줄.
+   * 같은 것을 한 화면에 두 번 적으면 그게 곧 어지러움의 정체이고, 둘 중 어느 쪽이 최신인지
+   * 앞에 선 사람이 매번 다시 확인하게 됩니다. 오른쪽은 **학생별 한 줄**이라 「백서아 — 픽업
+   * 3시 · 약」처럼 한 아이의 할 일이 모여 보이므로, 남길 쪽은 그쪽입니다.
+   *
+   * `notes` 는 계속 받습니다 - 화면 위쪽 5분 전 알람이 같은 자료를 씁니다.
+   */
+  void notes;
+
+  // 확인 필요 인박스만 남습니다. **없으면 칸 자체를 그리지 않습니다** - 빈 상자가 자리를
+  // 차지하면 그만큼 시간표가 줄어듭니다.
+  if (pending.length === 0) return null;
 
   return (
-    /**
-     * **`grow` 를 주지 않습니다.** 옆(위)의 시간표가 `grow={1}` 이므로, 이 칸도 `grow` 를
-     * 가지면 남는 자리를 **반씩 나눠 갖습니다** - 시간표가 절반으로 줄어듭니다. 이 칸은
-     * 내용만큼만 차지하고, 남는 자리는 전부 시간표가 가져갑니다.
-     */
-    <Panel
-      sc={sc}
-      title="📌 오늘의 특이사항"
-      right={todayCount > 0 ? `오늘 ${todayCount}건` : null}
-      maxHeight={sc.s(214, 150)}
-    >
+    <Panel sc={sc} title="📥 확인 필요" right={`${pending.length}건`} maxHeight={sc.s(214, 150)}>
       <div style={{ minHeight: 0, display: "flex", flexDirection: "column", gap: sc.s(4, 3) }}>
-        {shown.length === 0 ? (
-          <Empty sc={sc} text="오늘 따로 챙길 것 없음" tone="good" />
-        ) : (
-          shown.map((n) => {
-            const look = NOTE_LOOK[n.kind] ?? NOTE_LOOK["기타"];
-            return (
-              <div
-                key={n.id}
-                style={{
-                  display: "flex",
-                  alignItems: "baseline",
-                  gap: sc.s(7, 4),
-                  background: n.today ? look.bg : "#0f172a",
-                  borderRadius: sc.s(8, 6),
-                  padding: `${sc.s(5, 3)}px ${sc.s(9, 6)}px`,
-                  // 넘치면 잘립니다(스크롤 없음). 한 줄 안에 이름과 할 일이 다 들어가야 합니다.
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  flexShrink: 0,
-                }}
-              >
-                <span style={{ fontSize: sc.s(15, 11) }}>{look.icon}</span>
-                {/* 시각이 있으면 **이름보다 먼저**입니다. 몇 시가 움직이는 시점을 정하고,
-                    이름은 그 다음입니다. 시각이 적힌 것은 5분 전에 위쪽 알람으로도 뜹니다. */}
-                {n.atTime && (
-                  <b
-                    style={{
-                      fontSize: sc.s(17, 12),
-                      color: n.today ? "#e2e8f0" : "#475569",
-                      fontVariantNumeric: "tabular-nums",
-                    }}
-                  >
-                    {n.atTime}
-                  </b>
-                )}
-                <b style={{ fontSize: sc.s(17, 12), color: n.today ? look.text : "#64748b" }}>{shortName(n.name)}</b>
-                {/* 내일 것은 반드시 표시합니다 - 오늘 화면에서 내일 것이 오늘 것처럼 읽히면
-                    사람이 하루 일찍 움직입니다. */}
-                {!n.today && (
-                  <span style={{ fontSize: sc.s(12, 9), fontWeight: 800, color: "#94a3b8" }}>내일</span>
-                )}
-                <span
-                  style={{
-                    fontSize: sc.s(15, 11),
-                    color: n.today ? "#e2e8f0" : "#475569",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                  }}
-                >
-                  {n.content}
-                </span>
-              </div>
-            );
-          })
-        )}
-        {notes.length > shown.length && (
-          <p style={{ margin: 0, fontSize: sc.s(12, 9), color: "#64748b", flexShrink: 0 }}>
-            외 {notes.length - shown.length}건 — 업무보드 [학생 특이사항]에서 전부 볼 수 있습니다
-          </p>
-        )}
-
-        {/* 아래 = 아직 사람이 한 번 봐야 하는 픽업 요청. 밀린 날에만 커집니다. */}
-        <div style={{ paddingTop: sc.s(6, 4), flexShrink: 0 }}>
-          <PendingInbox sc={sc} items={pending} />
-        </div>
+        <PendingInbox sc={sc} items={pending} />
       </div>
     </Panel>
   );
 }
 
-/**
- * 종류별 색. 업무보드와 **같은 뜻의 색**을 씁니다(`studentDayNotes.ts`) - 공용 모니터를
- * 멀리서 보는 사람은 글자보다 색을 먼저 읽습니다.
- */
-const NOTE_LOOK: Record<string, { icon: string; bg: string; text: string }> = {
-  약: { icon: "💊", bg: "#3f1d2b", text: "#fda4af" },
-  결제: { icon: "💳", bg: "#0f2f22", text: "#6ee7b7" },
-  준비물: { icon: "🎒", bg: "#2f2206", text: "#fcd34d" },
-  건강: { icon: "🩹", bg: "#0c2740", text: "#7dd3fc" },
-  기타: { icon: "📌", bg: "#1e2a44", text: "#cbd5e1" },
-};
 
 // 오늘 변동사항 - 픽업(시각이 주인공) + 결석·지각(작은 배지).
 //

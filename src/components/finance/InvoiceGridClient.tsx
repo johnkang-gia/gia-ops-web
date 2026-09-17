@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { BILL_LABEL, billedItems, markOf } from "@/lib/billedItems";
-import { askText, compareIssue, type IssueCompare } from "@/lib/issueCompare";
+import { askText, compareIssue, groupIssue, type CompareRow, type IssueCompare } from "@/lib/issueCompare";
 import { gridTotals, gridTotalsByStudent } from "@/lib/gridTotals";
 import { useFinanceLive } from "@/lib/useFinanceLive";
 import DragScroll from "@/components/common/DragScroll";
@@ -536,20 +536,27 @@ export default function InvoiceGridClient({
    * 그냥 발행됐습니다. 앞쪽을 놓치면 새 항목이 빠지고, 뒤쪽을 놓치면 같은 돈이 두 번
    * 나갑니다 - 화면에는 둘 다 「발행됨」으로 보입니다.
    */
-  const compareFor = useCallback(
-    (studentId: string, category: string | null): IssueCompare => {
+  /** 확인창에 그릴 줄. 분류·금액을 함께 싣습니다 - 이름만으로는 무엇이 얼마인지 못 셉니다. */
+  const compareRowsFor = useCallback(
+    (studentId: string, category: string | null): CompareRow[] => {
       const mine = (linesByStudent.get(studentId) ?? []).filter((l) => !category || l.item.category === category);
-      return compareIssue(
-        mine.map((l) => {
-          const m = markFor(studentId, l.item);
-          return {
-            label: l.item.name_ko?.trim() || l.item.name,
-            state: !m ? ("안나감" as const) : m.unsure ? ("모름" as const) : ("나감" as const),
-          };
-        }),
-      );
+      return mine.map((l) => {
+        const m = markFor(studentId, l.item);
+        return {
+          label: l.item.name_ko?.trim() || l.item.name,
+          state: !m ? ("안나감" as const) : m.unsure ? ("모름" as const) : ("나감" as const),
+          category: l.item.category,
+          amount: Number(l.amount ?? 0),
+        };
+      });
     },
     [linesByStudent, markFor],
+  );
+  const compareFor = useCallback(
+    (studentId: string, category: string | null): IssueCompare => {
+      return compareIssue(compareRowsFor(studentId, category));
+    },
+    [compareRowsFor],
   );
   /**
    * **한 번 더 발행해도 좋다고 사람이 정한 학생.**
@@ -1599,7 +1606,34 @@ export default function InvoiceGridClient({
                   {c}
                 </th>
               ))}
-              <th className="border-b border-slate-200 bg-slate-100 px-2 py-1" />
+              {/* **금액 세 칸은 분류 줄까지 함께 덮습니다.**
+                  예전에는 이 자리에 빈 칸이 있어서, 항목 칸이 그 아래로 지나갈 때 분류 이름이
+                  금액 칸 위에 얹혀 보였습니다. 두 줄을 한 칸으로 덮으면 지나갈 자리가
+                  없어집니다. */}
+              <th
+                className="sticky z-30 border-b border-l-2 border-slate-400 bg-slate-100 px-2 py-1 text-right align-bottom text-[11px] font-bold text-slate-600"
+                style={{ right: RIGHT_BILLED, minWidth: W_MONEY, width: W_MONEY, boxShadow: "-8px 0 8px -6px rgba(15,23,42,0.25)" }}
+                rowSpan={2}
+                title="이 아이의 표에 등록된 항목 합. 아직 청구서가 안 나간 것도 들어갑니다."
+              >
+                총청구액
+              </th>
+              <th
+                className="sticky z-30 border-b border-l border-emerald-200 bg-emerald-100 px-2 py-1 text-right align-bottom text-[11px] font-bold text-emerald-800"
+                style={{ right: RIGHT_PAID, minWidth: W_MONEY, width: W_MONEY }}
+                rowSpan={2}
+                title="이 아이에게서 실제로 들어온 돈. 「이미 받음」으로 적어둔 것도 들어갑니다."
+              >
+                납부금액
+              </th>
+              <th
+                className="sticky right-0 z-30 border-b border-l border-rose-200 bg-rose-100 px-2 py-1 text-right align-bottom text-[11px] font-bold text-rose-800"
+                style={{ minWidth: W_MONEY, width: W_MONEY }}
+                rowSpan={2}
+                title="총청구액에서 받은 돈을 뺀 값. 더 받았으면 음수로 나옵니다."
+              >
+                미납
+              </th>
             </tr>
             <tr>
               <th
@@ -1704,29 +1738,6 @@ export default function InvoiceGridClient({
                   </span>
                 </th>
               ))}
-              {/* **오른쪽에 붙여 둡니다.** 가로로 밀어도 금액 세 칸은 그 자리에 남습니다 -
-                  가운데 항목들만 움직입니다. */}
-              <th
-                className="sticky z-20 border-b border-l-2 border-slate-300 bg-white px-2 py-1.5 text-right font-semibold text-slate-600"
-                style={{ right: RIGHT_BILLED, minWidth: W_MONEY, width: W_MONEY }}
-                title="이 아이의 표에 등록된 항목 합. 아직 청구서가 안 나간 것도 들어갑니다."
-              >
-                총청구액
-              </th>
-              <th
-                className="sticky z-20 border-b border-l border-slate-200 bg-emerald-50 px-2 py-1.5 text-right font-semibold text-emerald-700"
-                style={{ right: RIGHT_PAID, minWidth: W_MONEY, width: W_MONEY }}
-                title="이 아이에게서 실제로 들어온 돈. 「이미 받음」으로 적어둔 것도 들어갑니다."
-              >
-                이미 받은
-              </th>
-              <th
-                className="sticky right-0 z-20 border-b border-l border-slate-200 bg-rose-50 px-2 py-1.5 text-right font-semibold text-rose-700"
-                style={{ minWidth: W_MONEY, width: W_MONEY }}
-                title="총청구액에서 받은 돈을 뺀 값. 더 받았으면 음수로 나옵니다."
-              >
-                미납
-              </th>
             </tr>
           </thead>
 
@@ -1953,8 +1964,8 @@ export default function InvoiceGridClient({
                       것이 섞여 보여서, 누가 얼마를 아직 안 냈는지 세려면 수납 화면을 따로
                       열어야 했습니다. 판정은 `gridTotals` 한 곳입니다. */}
                   <td
-                    className={"sticky z-10 border-b border-l-2 border-slate-300 px-2 py-1 text-right " + (on ? "bg-teal-50" : "bg-white")}
-                    style={{ right: RIGHT_BILLED, minWidth: W_MONEY, width: W_MONEY }}
+                    className={"sticky z-10 border-b border-l-2 border-slate-400 px-2 py-1 text-right " + (on ? "bg-teal-50" : "bg-white")}
+                    style={{ right: RIGHT_BILLED, minWidth: W_MONEY, width: W_MONEY, boxShadow: "-8px 0 8px -6px rgba(15,23,42,0.25)" }}
                   >
                     <span className={"font-bold tabular-nums " + (total > 0 ? "text-slate-800" : "text-slate-300")}>
                       {total > 0 ? won(total) : "—"}
@@ -2021,8 +2032,8 @@ export default function InvoiceGridClient({
                 );
               })}
               <td
-                className="sticky z-20 border-t-2 border-l-2 border-slate-300 bg-slate-100 px-2 py-1.5 text-right"
-                style={{ right: RIGHT_BILLED, minWidth: W_MONEY, width: W_MONEY }}
+                className="sticky z-20 border-t-2 border-l-2 border-slate-400 bg-slate-100 px-2 py-1.5 text-right"
+                style={{ right: RIGHT_BILLED, minWidth: W_MONEY, width: W_MONEY, boxShadow: "-8px 0 8px -6px rgba(15,23,42,0.25)" }}
               >
                 <span className="text-[13px] font-black tabular-nums text-slate-800">{won(money.billed)}</span>
               </td>
@@ -2140,6 +2151,8 @@ export default function InvoiceGridClient({
                      * 똑같은 것은 뜻이 정반대인데, 예전에는 둘 다 그냥 나갔습니다.
                      */
                     const cmp = compareFor(s.id, cat === "전체" ? null : cat);
+                    const groups = groupIssue(compareRowsFor(s.id, cat === "전체" ? null : cat));
+                    const freshTotal = groups.reduce((n, g) => n + g.freshTotal, 0);
                     const ask = askText(cmp);
                     const again = cmp.verdict === "같음";
                     return (
@@ -2188,21 +2201,66 @@ export default function InvoiceGridClient({
                             </span>
                           )}
                         </td>
-                        <td className="px-2 py-1.5 text-[11px] leading-relaxed text-slate-500">
-                          {/* 새로 나가는 것과 이미 나간 것을 **갈라서** 보여줍니다. 한 줄에
-                              섞어 두면 무엇이 이번에 청구되는지 눈으로 셀 수 없습니다. */}
-                          {cmp.fresh.length > 0 && (
-                            <span className="block font-semibold text-slate-700">새로: {cmp.fresh.join(" · ")}</span>
-                          )}
-                          {cmp.again.length > 0 && (
-                            <span className="block text-slate-400">이미 나감: {cmp.again.join(" · ")}</span>
-                          )}
-                          {cmp.fresh.length === 0 && cmp.again.length === 0 && (
-                            <span>{ls.map((l) => `${l.item.name}${l.qty > 1 ? `×${l.qty}` : ""}`).join(" · ")}</span>
+                        <td className="px-2 py-1.5 align-top text-[11px] leading-relaxed text-slate-500">
+                          {/* **분류로 묶어 보여줍니다.** 예전에는 항목 이름을 「 · 」로 죽 이어
+                              붙였는데, 교복 넷 + 교재 여덟이면 한 줄이 글자 띠가 되어 무엇이
+                              얼마인지 눈으로 셀 수 없었습니다. 발행은 되돌릴 수 없는데,
+                              확인하라고 띄운 창에서 확인이 안 됐습니다. */}
+                          {groups.length === 0 ? (
+                            <span className="text-slate-300">담을 항목이 없습니다</span>
+                          ) : (
+                            <div className="flex flex-col gap-1">
+                              {groups.map((g) => (
+                                <div key={g.category} className="rounded-lg border border-slate-100 bg-slate-50/60 px-1.5 py-1">
+                                  <div className="flex items-baseline justify-between gap-2">
+                                    <span className="text-[11px] font-bold text-slate-600">{g.category}</span>
+                                    <span className="text-[11px] font-bold tabular-nums text-slate-700">
+                                      {g.freshTotal > 0 ? won(g.freshTotal) : "—"}
+                                    </span>
+                                  </div>
+                                  {g.rows.map((r) => (
+                                    <div key={`${g.category}-${r.label}`} className="flex items-baseline justify-between gap-2">
+                                      <span
+                                        className={
+                                          r.state === "안나감"
+                                            ? "text-slate-700"
+                                            : r.state === "모름"
+                                              ? "text-amber-700"
+                                              : "text-slate-300 line-through"
+                                        }
+                                      >
+                                        {r.label}
+                                        {r.state === "모름" && <span className="ml-1 text-[10px] font-bold">확인 필요</span>}
+                                        {r.state === "나감" && <span className="ml-1 text-[10px]">이미 나감</span>}
+                                      </span>
+                                      <span
+                                        className={
+                                          "shrink-0 tabular-nums " +
+                                          (r.state === "안나감" ? "text-slate-600" : "text-slate-300")
+                                        }
+                                      >
+                                        {won(r.amount ?? 0)}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              ))}
+                              {/* 이번에 실제로 나가는 합계. 줄마다 더해 놓고 총합이 없으면
+                                  사람이 손으로 더하게 되고, 손으로 더한 숫자는 틀립니다. */}
+                              <div className="flex items-baseline justify-between gap-2 border-t border-slate-200 pt-0.5">
+                                <span className="text-[11px] font-bold text-slate-600">이번 청구 합계</span>
+                                <span className="text-[12px] font-black tabular-nums text-slate-800">{won(freshTotal)}</span>
+                              </div>
+                            </div>
                           )}
                         </td>
                         <td className="px-2 py-1.5 text-right align-top">
-                          <span className="block font-bold tabular-nums text-slate-800">{won(totalOf(s.id))}</span>
+                          {/* **이번에 나가는 금액**이 큰 숫자입니다. 등록 합계를 크게 두면
+                              이미 나간 것까지 이번에 청구되는 줄로 읽힙니다. */}
+                          <span className="block font-bold tabular-nums text-slate-800">{won(freshTotal)}</span>
+                          {freshTotal !== totalOf(s.id) && (
+                            <span className="block text-[10px] tabular-nums text-slate-400">등록 합계 {won(totalOf(s.id))}</span>
+                          )}
                           {typical != null && (
                             <span className="block text-[10px] font-semibold text-amber-700">평소 {won(typical)}</span>
                           )}

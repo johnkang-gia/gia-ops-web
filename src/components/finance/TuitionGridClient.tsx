@@ -511,6 +511,64 @@ export default function TuitionGridClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [students, dept, scope, q, onlyUnissued, billed]);
 
+  /**
+   * **이 학생·이 항목의 등록 줄 하나를 확보해 값을 적습니다.**
+   *
+   * 화면이 들고 있는 `enrollOf` 는 **열어둔 시점의 사진**입니다. 옆에서 누가 같은 칸을
+   * 먼저 골랐거나 다른 탭에서 건드렸으면, 화면에는 「없다」고 보이는데 표에는 이미 줄이
+   * 있습니다. 그대로 넣으면 유니크 인덱스가 거부합니다.
+   *
+   *   duplicate key value violates unique constraint "student_fee_enrollments_uniq"
+   *
+   * 사람에게는 「저장하지 못했습니다」로만 보이고 **무엇을 하면 되는지가 없습니다.** 새로
+   * 고치면 되는데 그걸 알 방법이 없어서, 같은 칸을 몇 번이고 다시 누릅니다.
+   *
+   * 그래서 거부당하면 **표를 다시 보고 그 줄을 고칩니다.** upsert 로는 안 됩니다 - 유니크
+   * 인덱스가 둘로 나뉘어 있고(학기 있음 / 학기 없음, 둘 다 부분 인덱스), 포스트그레스는
+   * `insert ... on conflict` 에서 부분 인덱스를 지목할 수 없습니다.
+   */
+  async function putEnrollment(
+    key: { studentId: string; planId: string; termId: string | null },
+    values: Record<string, unknown>,
+  ): Promise<{ row: EnrollRow | null; error: string | null }> {
+    const sb = createClient();
+    const cols = "id, student_id, plan_id, option_id, term_id, override_amount, override_note";
+
+    const ins = await sb
+      .from("student_fee_enrollments")
+      .insert({ student_id: key.studentId, plan_id: key.planId, term_id: key.termId, ...values })
+      .select(cols)
+      .single();
+    if (!ins.error && ins.data) return { row: ins.data as EnrollRow, error: null };
+    // 23505 = 유니크 위반. 그 밖의 오류는 고칠 방법이 다르므로 그대로 올립니다.
+    if (ins.error?.code !== "23505") return { row: null, error: ins.error?.message ?? "알 수 없는 오류" };
+
+    let find = sb
+      .from("student_fee_enrollments")
+      .select(cols)
+      .eq("student_id", key.studentId)
+      .eq("plan_id", key.planId);
+    // 학기 없는 줄은 `is null` 로 찾습니다 - `eq(null)` 은 아무것도 안 맞습니다.
+    find = key.termId === null ? find.is("term_id", null) : find.eq("term_id", key.termId);
+    const got = await find.maybeSingle();
+    if (got.error || !got.data) {
+      return { row: null, error: `이미 있는 줄을 찾지 못했습니다: ${got.error?.message ?? "표에 없습니다"}` };
+    }
+    const up = await sb
+      .from("student_fee_enrollments")
+      .update(values)
+      .eq("id", (got.data as EnrollRow).id)
+      .select(cols)
+      .single();
+    if (up.error || !up.data) return { row: null, error: up.error?.message ?? "고치지 못했습니다" };
+    return { row: up.data as EnrollRow, error: null };
+  }
+
+  /** 돌려받은 줄을 화면 상태에 넣습니다. 이미 있던 줄이면 갈아끼웁니다(번호로 가릅니다). */
+  function mergeEnrollment(row: EnrollRow) {
+    setEnrollments((p) => (p.some((x) => x.id === row.id) ? p.map((x) => (x.id === row.id ? row : x)) : [...p, row]));
+  }
+
   /** 옵션을 고릅니다. 같은 학생·같은 항목은 **덮어씁니다** - 바꿀 때마다 줄이 쌓이면 청구서에 같은 항목이 두 번 찍힙니다. */
   async function pickOption(student: TuitionStudent, plan: FeePlan, optionId: string) {
     setBusy(true);
@@ -535,14 +593,13 @@ export default function TuitionGridClient({
       return;
     }
 
-    const { data, error } = await sb
-      .from("student_fee_enrollments")
-      .insert({ student_id: student.id, plan_id: plan.id, option_id: optionId, term_id: termId || null })
-      .select("id, student_id, plan_id, option_id, term_id")
-      .single();
+    const { row, error } = await putEnrollment(
+      { studentId: student.id, planId: plan.id, termId: termId || null },
+      { option_id: optionId },
+    );
     setBusy(false);
-    if (error || !data) return notify("넣지 못했습니다: " + (error?.message ?? ""), "error");
-    setEnrollments((p) => [...p, data as EnrollRow]);
+    if (error || !row) return notify("넣지 못했습니다: " + (error ?? ""), "error");
+    mergeEnrollment(row);
   }
 
   /**
@@ -572,14 +629,13 @@ export default function TuitionGridClient({
     // 옵션을 아직 안 골랐어도 금액만 적을 수 있습니다. 「금액은 정해졌는데 회차는 나중에」가
     // 실제로 있고, 줄이 없으면 그 금액이 청구서에서 통째로 빠집니다.
     if (amount === null) return setBusy(false);
-    const { data, error } = await sb
-      .from("student_fee_enrollments")
-      .insert({ student_id: student.id, plan_id: plan.id, option_id: null, term_id: termId || null, ...patch })
-      .select("id, student_id, plan_id, option_id, term_id, override_amount, override_note")
-      .single();
+    const { row, error } = await putEnrollment(
+      { studentId: student.id, planId: plan.id, termId: termId || null },
+      { option_id: null, ...patch },
+    );
     setBusy(false);
-    if (error || !data) return notify("저장하지 못했습니다: " + (error?.message ?? ""), "error");
-    setEnrollments((p) => [...p, data as EnrollRow]);
+    if (error || !row) return notify("저장하지 못했습니다: " + (error ?? ""), "error");
+    mergeEnrollment(row);
   }
 
   /**

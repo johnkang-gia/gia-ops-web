@@ -22,9 +22,9 @@ export const CLAUDE_MODEL_FAST = "claude-haiku-4-5-20251001";
 // 부를 때마다 클라이언트 생성과 쿠키 파싱이 두세 번씩 일어났습니다.
 type SupabaseLike = Awaited<ReturnType<typeof createClient>>;
 
-// 요청("6개 AI 프롬프트가 각자 기관 소개문·법령 목록(공통 콘텐츠)을 매번 새로 캐싱하고 있는데,
-// 이걸 하나의 공유 캐시 블록으로 묶어서 캐시적중률을 올려줘"): 시스템 프롬프트가 prompts.ts의
-// SHARED_CACHE_CONTEXT로 시작하면, 그 부분만 별도 cache_control 블록으로 잘라서 보냅니다.
+// AI 프롬프트 여섯 개가 각자 기관 소개문·법령 목록(공통 콘텐츠)을 매번 새로 캐싱하고
+// 있었습니다. 지금은 시스템 프롬프트가 prompts.ts의 SHARED_CACHE_CONTEXT로 시작하면, 그
+// 부분만 별도 cache_control 블록으로 잘라서 보냅니다.
 // Claude API의 prompt caching은 "완전히 동일한 접두사"에만 적중하므로, 예전처럼 시스템 프롬프트
 // 전체를 통째로 캐싱하면 라우트마다 뒷부분 문구가 달라 사실상 서로 다른 캐시 항목이 되어 절대
 // 공유되지 않았습니다. 공용 부분과 라우트별 부분을 나눠서 각각 캐시 브레이크포인트를 두면, 같은
@@ -48,6 +48,78 @@ function buildSystemBlocks(systemPrompt: string): SystemBlock[] {
   }
   // 공용 앞부분을 쓰지 않는 프롬프트는 그 라우트에서만 쓰이므로 캐싱해도 적중하지 않습니다.
   return [{ type: "text", text: systemPrompt }];
+}
+
+// ── 응답에서 JSON 을 꺼내는 일은 한 곳에서만 합니다 ──────────────────────
+//
+// 두 호출(검색 없는 판 · 검색 붙은 판)이 각자 파싱하고 있었고, **양쪽이 서로 다르게
+// 틀렸습니다.**
+//
+//   · 검색 없는 판  `content.find(text)` — **첫** 텍스트 블록만
+//   · 검색 붙은 판  `blocks[length - 1]`  — **마지막** 텍스트 블록만
+//
+// Claude 는 답을 한 블록에 담는다고 약속하지 않습니다. 검색이 섞이면 생각·인용·최종 답이
+// 여러 text 블록으로 나뉘고, 그러면 어느 쪽이든 **JSON 의 일부만** 파싱합니다. 개발자 오류
+// 기록의 `cron:education-news` 실패가 문장 중간부터 시작하는 이유가 이것입니다.
+//
+//   Claude 응답을 JSON으로 해석하지 못했습니다: 육 격차 해소를 위한 …
+//
+// 그리고 **길이에서 잘린 것을 아무도 안 봤습니다.** `stop_reason` 을 검색 붙은 판만 보고
+// 그것도 `pause_turn` 만 봤습니다. `max_tokens` 로 끊기면 여는 중괄호만 있는 글자가 그대로
+// 파싱으로 넘어가고, 사람에게는 「해석하지 못했습니다」로만 보입니다 - **원인이 길이라는
+// 사실이 어디에도 안 남습니다.** 고치는 곳이 다르므로(프롬프트가 아니라 max_tokens) 이
+// 구별이 중요합니다.
+type ClaudeReply = {
+  content?: { type: string; text?: string }[];
+  stop_reason?: string;
+};
+
+function parseJsonReply(json: ClaudeReply): unknown {
+  const blocks = (json.content ?? []).filter(
+    (b): b is { type: string; text: string } => !!b && b.type === "text" && typeof b.text === "string",
+  );
+  if (blocks.length === 0) {
+    throw new Error(`Claude 응답에서 텍스트를 찾을 수 없습니다: ${JSON.stringify(json.content).slice(0, 300)}`);
+  }
+
+  // 잘렸는지를 **파싱 전에** 봅니다. 잘린 글자는 어차피 JSON 이 아니고, 그때 나오는
+  // 「해석하지 못했습니다」는 원인을 가립니다.
+  if (json.stop_reason === "pause_turn") {
+    throw new Error("검색이 길어져 응답이 끊겼습니다. 잠시 후 다시 시도해주세요.");
+  }
+  if (json.stop_reason === "max_tokens") {
+    throw new Error("응답이 최대 길이에 닿아 잘렸습니다. 한 번에 요청하는 양을 줄이거나 maxTokens 를 올려주세요.");
+  }
+
+  // 블록을 **전부 이어붙입니다.** 어느 하나를 고르면 그 판단이 틀리는 날이 옵니다.
+  let text = blocks
+    .map((b) => b.text)
+    .join("\n")
+    .trim();
+  text = text
+    .replace(/^```json/i, "")
+    .replace(/^```/, "")
+    .replace(/```$/, "")
+    .trim();
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    // 앞뒤에 설명이 붙어 온 경우를 살려냅니다 - 가장 바깥 괄호 한 쌍만 떼어 다시 봅니다.
+    // 이것마저 실패하면 정말 JSON 이 아닌 것이므로, 원문을 넉넉히 실어 던집니다(300자로
+    // 자르면 어디가 어긋났는지 안 보였습니다).
+    const first = Math.min(...[text.indexOf("{"), text.indexOf("[")].filter((i) => i >= 0));
+    const last = Math.max(text.lastIndexOf("}"), text.lastIndexOf("]"));
+    if (Number.isFinite(first) && last > first) {
+      try {
+        return JSON.parse(text.slice(first, last + 1));
+      } catch {
+        // 아래 공통 오류로 떨어집니다
+      }
+    }
+    const why = json.stop_reason ? ` (끝난 이유: ${json.stop_reason}, 텍스트 블록 ${blocks.length}개)` : "";
+    throw new Error(`Claude 응답을 JSON으로 해석하지 못했습니다${why}: ${text.slice(0, 800)}`);
+  }
 }
 
 // 개발자 대시보드에서 과금이 부담스러운 AI 기능을 항목별로 끌 수 있게 하는 게이트입니다.
@@ -129,6 +201,9 @@ export async function callClaudeJson(
       error?: { message?: string };
       content?: { type: string; text?: string }[];
       usage?: { input_tokens?: number; output_tokens?: number };
+      // 검색 없는 판도 잘립니다. 예전에는 이 칸을 안 받아서 「왜 JSON 이 아닌가」를
+      // 알 방법이 없었습니다.
+      stop_reason?: string;
     };
     try {
       json = JSON.parse(raw);
@@ -148,22 +223,7 @@ export async function callClaudeJson(
     if (!json.content || !json.content.length) {
       throw new Error(`Claude 응답에 내용이 없습니다: ${raw.slice(0, 300)}`);
     }
-    const textBlock = json.content.find((b) => b && b.type === "text" && typeof b.text === "string");
-    if (!textBlock || !textBlock.text) {
-      throw new Error(`Claude 응답에서 텍스트를 찾을 수 없습니다: ${JSON.stringify(json.content).slice(0, 300)}`);
-    }
-    let text = textBlock.text.trim();
-    text = text
-      .replace(/^```json/i, "")
-      .replace(/^```/, "")
-      .replace(/```$/, "")
-      .trim();
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      throw new Error(`Claude 응답을 JSON으로 해석하지 못했습니다: ${text.slice(0, 300)}`);
-    }
+    const parsed = parseJsonReply(json);
     await recordUsage(true);
     return parsed;
   } catch (err) {
@@ -177,8 +237,10 @@ export async function callClaudeJson(
 // 서버에서 직접 검색을 수행하는 web_search 도구를 붙여서 호출합니다(우리가 직접 검색 API를
 // 연동할 필요 없이, 한 번의 메시지 요청 안에서 Claude가 알아서 여러 번 검색하고 최종 답을
 // 만들어 돌려줍니다). 응답 content에는 검색 과정(server_tool_use/web_search_tool_result)과
-// 최종 텍스트가 섞여 있는데, 우리는 마지막 text 블록만 최종 답으로 취급합니다 - 프롬프트에서
-// "최종 답은 반드시 JSON 하나만"이라고 명시해야 안전하게 파싱됩니다.
+// 최종 텍스트가 섞여 있습니다. text 블록을 **전부 이어붙여** 파싱합니다(parseJsonReply) -
+// 예전에는 마지막 블록만 썼는데, 검색이 섞이면 답이 여러 블록으로 나뉘어 JSON 의 뒷토막만
+// 파싱했습니다. 프롬프트에서 "최종 답은 반드시 JSON 하나만"이라고 명시하는 것은 그대로
+// 둡니다 - 설명이 덜 섞이면 살려낼 일도 줄어듭니다.
 export async function callClaudeJsonWithWebSearch(
   systemPrompt: string,
   userPrompt: string,
@@ -253,27 +315,7 @@ export async function callClaudeJsonWithWebSearch(
     if (!response.ok) {
       throw new Error(`Claude API 오류(코드 ${response.status}): ${raw.slice(0, 300)}`);
     }
-    if (json.stop_reason === "pause_turn") {
-      throw new Error("검색이 길어져 응답이 끊겼습니다. 잠시 후 다시 시도해주세요.");
-    }
-    const textBlocks = (json.content ?? []).filter(
-      (b): b is { type: string; text: string } => b && b.type === "text" && typeof b.text === "string"
-    );
-    if (!textBlocks.length) {
-      throw new Error(`Claude 응답에서 텍스트를 찾을 수 없습니다: ${JSON.stringify(json.content).slice(0, 300)}`);
-    }
-    let text = textBlocks[textBlocks.length - 1].text.trim();
-    text = text
-      .replace(/^```json/i, "")
-      .replace(/^```/, "")
-      .replace(/```$/, "")
-      .trim();
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      throw new Error(`Claude 응답을 JSON으로 해석하지 못했습니다: ${text.slice(0, 300)}`);
-    }
+    const parsed = parseJsonReply(json);
     await recordUsage(true);
     return parsed;
   } catch (err) {

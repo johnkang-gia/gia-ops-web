@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isDeveloperEmail } from "@/lib/roles";
-import { runInspect } from "@/lib/inspectRun";
+import { ANON_CHECK_NAME, runInspect } from "@/lib/inspectRun";
 import { kstParts } from "@/lib/shuttleTracking";
 import { APP_VERSION } from "@/lib/version";
 import InspectClient from "@/components/dev/InspectClient";
@@ -14,8 +14,12 @@ import InspectClient from "@/components/dev/InspectClient";
  * 잘못된 채로 잘 돌고 있는가**를 봅니다 - 로그인 없이 읽히는 표, 서로 어긋난 숫자, 반영이
  * 안 된 마이그레이션. 둘 다 오류를 내지 않아서, 물어보지 않으면 영영 안 드러납니다.
  *
- * 개발자만 엽니다. 로그인 안 한 열쇠로 실제로 물어보는 검사가 들어 있어서, 그 결과는
- * 「무엇이 뚫려 있는지」의 목록이기도 합니다.
+ * 개발자만 엽니다. 로그인 안 한 열쇠로 실제로 물어보는 검사가 있어서, 그 결과는 「무엇이
+ * 뚫려 있는지」의 목록이기도 합니다.
+ *
+ * 그 검사만 **누를 때** 돕니다 - 표를 하나씩 물어봐야 해서 4~5초이고, 화면 열 때마다
+ * 돌려서 이 화면이 6.2초였습니다. 안 돌렸으면 화면과 복사한 글에 「아직 안 돌렸습니다」로
+ * 남습니다. 왜 추측으로 바꾸지 않았는지는 `inspectRun.ts` 에 적어두었습니다.
  */
 
 export const dynamic = "force-dynamic";
@@ -30,5 +34,5 @@ export default async function DevInspectPage() {
   const { iso, hour, minute } = kstParts(new Date());
   const at = `${iso} ${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 
-  return <InspectClient rows={rows} at={at} version={APP_VERSION} />;
+  return <InspectClient rows={rows} at={at} version={APP_VERSION} anonCheckName={ANON_CHECK_NAME} />;
 }

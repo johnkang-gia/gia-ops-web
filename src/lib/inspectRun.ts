@@ -18,7 +18,23 @@ import type { CheckResult } from "@/lib/inspect";
  * 볼 표 목록을 손으로 적지 않습니다. `/rest/v1/` 는 **그 열쇠로 보이는 것을 전부** 적어
  * 돌려줍니다. 적을 것이 없으면 빠뜨릴 것도 없습니다.
  */
-async function probeAnon(): Promise<CheckResult[]> {
+export const ANON_CHECK_NAME = "로그인 없이 읽히는 표";
+
+/**
+ * **이 검사만 누를 때 돕니다.**
+ *
+ * 표가 164개이고 하나씩 물어봐야 합니다 - 한 번에 물어볼 창구가 없습니다. 표당 30밀리초쯤
+ * 걸리고 포스트그레스트가 줄을 세우므로 전부 4~5초입니다. 이것을 화면 열 때마다 돌려서
+ * 점검 화면이 6.2초였습니다.
+ *
+ * 그렇다고 **추측으로 바꾸지는 않습니다.** 정책만 읽어 「열렸을 것이다」를 계산하면 빠르지만,
+ * 이 저장소는 그 추측이 틀려서 세 번 새어나갔습니다(뷰 아홉 개 · 표 여섯 개 · `using (true)`
+ * 정책 넷). 실제로 물어보는 것이 이 검사의 전부입니다.
+ *
+ * 그래서 **돌리는 시점만** 사람이 정합니다. 안 돌렸으면 화면과 복사한 글 모두에 「아직 안
+ * 돌렸습니다」라고 적힙니다 - 검사가 안 돈 것을 초록불로 적으면 그것이 가장 나쁩니다(§5).
+ */
+export async function probeAnon(): Promise<CheckResult[]> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !key) {
@@ -136,8 +152,20 @@ async function probeAnon(): Promise<CheckResult[]> {
 }
 
 export async function runInspect(supabase: SupabaseClient): Promise<CheckResult[]> {
-  const [anon, rest] = await Promise.all([probeAnon(), runDbChecks(supabase)]);
-  return [...anon, ...rest];
+  const rest = await runDbChecks(supabase);
+  // 안 돌린 검사를 **자리째 비워두지 않습니다.** 없는 줄은 사람 눈에 「검사가 없다」가
+  // 아니라 아무것도 아닌 것으로 보이고, 복사한 글에도 안 남습니다. 자리를 남기고
+  // 「아직 안 돌렸습니다」라고 적어야 누를 생각을 합니다.
+  return [
+    {
+      group: "보호",
+      name: ANON_CHECK_NAME,
+      level: "확인",
+      detail: "아직 안 돌렸습니다",
+      impact: "표를 하나씩 물어봐야 해서 몇 초 걸립니다. 위의 [🔓 로그인 없이 읽히는지] 를 눌러주세요.",
+    },
+    ...rest,
+  ];
 }
 
 async function runDbChecks(supabase: SupabaseClient): Promise<CheckResult[]> {

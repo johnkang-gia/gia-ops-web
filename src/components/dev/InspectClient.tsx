@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { buildReport, GROUP_LABEL, GROUP_NOTE, levelMark, worstOf, type CheckResult, type InspectGroup } from "@/lib/inspect";
 
@@ -16,13 +16,62 @@ import { buildReport, GROUP_LABEL, GROUP_NOTE, levelMark, worstOf, type CheckRes
 
 const ORDER: InspectGroup[] = ["보호", "데이터", "코드"];
 
-export default function InspectClient({ rows, at, version }: { rows: CheckResult[]; at: string; version: string }) {
+export default function InspectClient({
+  rows: initialRows,
+  at,
+  version,
+  anonCheckName,
+}: {
+  rows: CheckResult[];
+  at: string;
+  version: string;
+  /** 눌러서 따로 돌리는 검사의 이름. 답이 오면 이 줄을 갈아끼웁니다. */
+  anonCheckName: string;
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [copied, setCopied] = useState(false);
+  const [rows, setRows] = useState(initialRows);
+  const [sweeping, setSweeping] = useState(false);
+
+  // 「다시 점검」이 서버에서 새로 재오면 그것으로 갈아끼웁니다. 안 하면 화면은 처음 잰
+  // 값을 계속 보여주는데, 버튼을 눌렀으니 사람은 새 값이라고 믿습니다. 방금 물어본
+  // 로그인-없이 검사도 함께 초기화됩니다 - 다시 잰 것이므로 그것이 맞습니다.
+  useEffect(() => setRows(initialRows), [initialRows]);
 
   const report = useMemo(() => buildReport(rows, { at, version }), [rows, at, version]);
   const bad = rows.filter((r) => r.level !== "정상");
+  const anonDone = rows.some((r) => r.name === anonCheckName && r.detail !== "아직 안 돌렸습니다");
+
+  /**
+   * **로그인 없이 읽히는 표**를 지금 물어봅니다.
+   *
+   * 표를 하나씩 물어봐야 해서 몇 초 걸립니다. 화면 열 때마다 돌리지 않는 이유는
+   * `inspectRun.ts` 에 적어두었습니다 - 추측으로 바꾸지 않고 **돌리는 시점만** 사람이
+   * 정합니다.
+   */
+  async function sweepAnon() {
+    setSweeping(true);
+    try {
+      const res = await fetch("/api/dev/inspect-anon", { method: "POST" });
+      const body = (await res.json().catch(() => null)) as { rows?: CheckResult[]; error?: string } | null;
+      if (!res.ok || !body?.rows) {
+        // 실패를 삼키면 「안 돌렸는데 안 돌린 줄 모르는」 상태가 됩니다(§5).
+        setRows((p) =>
+          p.map((r) =>
+            r.name === anonCheckName
+              ? { ...r, level: "확인", detail: `물어보지 못했습니다: ${body?.error ?? res.status}`, impact: "검사가 안 돈 것과 「안전한 것」은 다릅니다." }
+              : r,
+          ),
+        );
+        return;
+      }
+      const got = body.rows;
+      setRows((p) => [...got, ...p.filter((r) => r.name !== anonCheckName)]);
+    } finally {
+      setSweeping(false);
+    }
+  }
 
   async function copy() {
     try {
@@ -46,6 +95,17 @@ export default function InspectClient({ rows, at, version }: { rows: CheckResult
           </span>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={sweepAnon}
+            disabled={sweeping}
+            className={
+              "rounded-lg px-3 py-1.5 text-xs font-bold disabled:opacity-50 " +
+              (anonDone ? "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50" : "bg-amber-500 text-white hover:bg-amber-600")
+            }
+          >
+            {sweeping ? "표를 하나씩 물어보는 중…" : anonDone ? "🔓 다시 물어보기" : "🔓 로그인 없이 읽히는지"}
+          </button>
           <button
             type="button"
             onClick={() => startTransition(() => router.refresh())}

@@ -16,9 +16,6 @@ import path from "node:path";
 
 // 진단 화면 - 개발자 전용.
 //
-// 담당자: "매번 SQL 내가 붙여넣는 게 싫어서 (...) 진단 화면 만들어줘. 섭베이스 쪽도 제대로
-//          되어 있는지 점검할 수 있게끔."
-//
 // 지금까지는 뭔가 이상할 때마다 제가 SQL을 써 드리고, 담당자님이 Supabase에서 돌리고, 결과
 // 표를 복사해 주셔야 했습니다. 네 단계입니다. 그중 세 단계가 사람 손입니다.
 //
@@ -145,6 +142,7 @@ export default async function DevDiagnosticsPage() {
     { data: accRules },
     integrity,
     allStopsRes,
+    integrityRows,
   ] = await Promise.all([
     supabase.from("shuttle_routes").select("id, route_no, vehicle_no, driver_name, term").eq("active", true).eq("direction", "하원"),
     supabase.from("shuttle_run_events").select("route_id, event, created_by, created_at").eq("service_date", today),
@@ -165,6 +163,20 @@ export default async function DevDiagnosticsPage() {
     // 화면에서는 멀쩡해 보이는데 실제로는 틀린 것들. 사고가 나기 전에는 아무도 모릅니다.
     runIntegrityChecks(supabase),
     supabase.from("shuttle_stops").select("id, route_id, address, lat, lng, seq"),
+    // ⑨ 「비어 있어야 정상」인 점검 뷰들. **이 묶음에 함께 넣습니다** - 예전에는 위의
+    // 열네 조회가 다 끝난 뒤에 따로 물어서, 아무것도 기다릴 이유가 없는 조회 여덟 개가
+    // 화면 맨 끝에 한 번 더 붙어 있었습니다.
+    //
+    // **줄을 쏟지 않고 세기만 합니다.** 청구서 합계가 어긋난 장이 몇 개인지가 먼저이고,
+    // 어느 장인지는 그 다음입니다. 몇 개인지 모르면 볼지 말지도 못 정합니다.
+    Promise.all(
+      INTEGRITY_VIEWS.map(async (v) => {
+        let q = supabase.from(v.view).select("*", { count: "exact", head: true });
+        if (v.onlyWhere) q = q.eq(v.onlyWhere.column, v.onlyWhere.value);
+        const { count, error } = await q;
+        return { ...v, count: count ?? null, error: error?.message ?? null };
+      }),
+    ),
   ]);
 
   const acc = buildAccuracy({
@@ -221,25 +233,10 @@ export default async function DevDiagnosticsPage() {
     choiceByName.set(a.student_name_raw as string, list);
   }
 
-  // ── ⑨ 무결성 뷰 ──────────────────────────────────────────────────────────
-  //
-  // 「비어 있어야 정상」인 점검 뷰들입니다. 만들어만 두고 읽는 화면이 없어서, 어긋난 줄이
-  // 생겨도 그 사실이 어디에도 안 나타났습니다(`integrityViews.ts` 주석).
-  //
-  // **줄을 쏟지 않고 세기만 합니다.** 청구서 합계가 어긋난 장이 몇 개인지가 먼저이고,
-  // 어느 장인지는 그 다음입니다. 몇 개인지 모르면 볼지 말지도 못 정합니다.
-  const integrityRows = await Promise.all(
-    INTEGRITY_VIEWS.map(async (v) => {
-      let q = supabase.from(v.view).select("*", { count: "exact", head: true });
-      if (v.onlyWhere) q = q.eq(v.onlyWhere.column, v.onlyWhere.value);
-      const { count, error } = await q;
-      return { ...v, count: count ?? null, error: error?.message ?? null };
-    }),
-  );
+  // ⑨ 무결성 뷰(`integrityRows`)는 위 묶음에서 함께 받았습니다. 만들어만 두고 읽는 화면이
+  // 없으면 어긋난 줄이 생겨도 그 사실이 어디에도 안 나타납니다(`integrityViews.ts`).
 
   // ── ⑧ 마이그레이션 실행 이력 ─────────────────────────────────────────────
-  //
-  // 담당자: "마이그레이션 실행 이력."
   //
   // `column ... does not exist` 오류의 원인은 늘 같습니다 - **무엇이 돌았고 무엇이 안
   // 돌았는지 아무도 모른다.** 파일은 폴더에 있고 실행 기록은 DB 안쪽에 있어서, 맞춰보려면
@@ -274,9 +271,6 @@ export default async function DevDiagnosticsPage() {
   }
 
   return (
-    // 담당자: "개발자 진단탭 아직도 화면 너무 좁게 써, 넓게 쓰고 화면 양쪽으로 나눠서
-    //          한눈에 보이게 만들어줘."
-    //
     // max-w-4xl(896px)은 글 읽는 화면의 폭입니다. 여기는 **훑어보는 화면**이라 한 덩이씩
     // 세로로 쌓으면 아래 것을 보려고 계속 스크롤하게 되고, 그러면 "지금 뭐가 빨간지"가
     // 한눈에 안 들어옵니다. 폭을 풀고 두 단으로 나눕니다.

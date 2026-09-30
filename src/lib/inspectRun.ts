@@ -62,21 +62,47 @@ async function probeAnon(): Promise<CheckResult[]> {
     ];
   }
 
-  // 한 줄이라도 돌아오면 그 표는 로그인 없이 읽힙니다. `Range: 0-0` 으로 한 줄만 받고,
-  // 전체 줄 수는 머리글(`content-range`)에서 읽습니다 - 자료를 끌어오지 않습니다.
-  const open: string[] = [];
+  // 한 줄이라도 돌아오면 그 표는 로그인 없이 읽힙니다. `Range: 0-0` 으로 **한 줄만** 받고,
+  // 그 줄이 있는지만 봅니다 - 자료를 끌어오지 않습니다.
+  //
+  // **줄 수를 묻지 않습니다.** 예전에는 표마다 `Prefer: count=exact` 를 걸어 「몇 줄인가」를
+  // 함께 받았습니다. 그 머리글 하나를 만들려고 포스트그레스는 **표를 끝까지 셉니다.** 표가
+  // 164개니 그 전수 세기가 164번이었고, 이 화면이 6.2초 걸린 이유가 그것입니다.
+  //
+  // 그런데 여기서 정작 알아야 하는 것은 「열렸나 안 열렸나」이고, 줄 수는 **열린 표에만**
+  // 쓰입니다. 그래서 세는 일을 뒤로 미룹니다 - 하나도 안 열려 있으면 한 번도 안 셉니다.
+  const openNames: string[] = [];
   await Promise.all(
     names.map(async (n) => {
+      try {
+        const r = await fetch(`${url}/rest/v1/${n}?select=*`, {
+          headers: { apikey: key, Range: "0-0" },
+          cache: "no-store",
+        });
+        if (r.status !== 200 && r.status !== 206) return;
+        // 잠긴 표는 200 에 빈 배열로 옵니다 - 오류가 아니라 「아무것도 안 보인다」입니다.
+        // 그래서 상태만 보고 판단할 수 없고, 줄이 실제로 왔는지를 봐야 합니다.
+        const rows = (await r.json()) as unknown[];
+        if (Array.isArray(rows) && rows.length > 0) openNames.push(n);
+      } catch {
+        // 한 표를 못 물어본 것으로 전체를 멈추지 않습니다. 나머지 결과가 더 쓸모 있습니다.
+      }
+    }),
+  );
+
+  // 열린 표만 몇 줄인지 셉니다. 「열려 있다」와 「138명이 통째로 새어나간다」는 사람에게
+  // 다른 말이고, 움직이게 하는 것은 뒤쪽입니다.
+  const open = await Promise.all(
+    openNames.sort().map(async (n) => {
       try {
         const r = await fetch(`${url}/rest/v1/${n}?select=*`, {
           headers: { apikey: key, Prefer: "count=exact", Range: "0-0" },
           cache: "no-store",
         });
-        if (r.status !== 200 && r.status !== 206) return;
         const total = (r.headers.get("content-range") ?? "").split("/")[1];
-        if (total && total !== "0") open.push(`${n}(${total}줄)`);
+        return total ? `${n}(${total}줄)` : n;
       } catch {
-        // 한 표를 못 물어본 것으로 전체를 멈추지 않습니다. 나머지 결과가 더 쓸모 있습니다.
+        return n;
       }
     }),
   );
@@ -104,7 +130,7 @@ async function probeAnon(): Promise<CheckResult[]> {
         open.length === 0
           ? undefined
           : "공개 열쇠는 앱 화면 안에 들어 있습니다. 주소만 알면 누구나 그대로 받아갑니다.",
-      items: open.sort(),
+      items: open,
     },
   ];
 }
@@ -116,12 +142,35 @@ export async function runInspect(supabase: SupabaseClient): Promise<CheckResult[
 
 async function runDbChecks(supabase: SupabaseClient): Promise<CheckResult[]> {
   const out: CheckResult[] = [];
+  const since = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
+
+  // **네 검사를 한 묶음으로 묻습니다.** 서로의 답을 쓰지 않는데 차례로 물으면 왕복이 그대로
+  // 쌓입니다 - 결과를 화면에 쌓는 순서는 아래에서 정하면 되고, 묻는 순서와는 상관없습니다.
+  const [keys, schema, integrity, errRes] = await Promise.all([
+    // 재무 열쇠 — 가진 사람이 하나도 없으면 재무 화면이 통째로 빕니다. 그건 오류로 안 보이고
+    // 「자료가 없네」로 보입니다.
+    supabase.from("finance_key_holders").select("email", { count: "exact", head: true }),
+    // 기능별 스키마 — 칸이 있어도 권한이 막으면 기능은 똑같이 안 됩니다. 그래서 앱과
+    // **똑같은 방식**으로 그 칸을 읽어봅니다.
+    Promise.all(
+      SCHEMA_CHECKS.map(async (c) => {
+        const { error } = await supabase.from(c.table).select(c.columns.join(", ")).limit(1);
+        return { c, ok: !error, why: error?.message ?? "" };
+      }),
+    ),
+    // 무결성 뷰 — 비어 있어야 정상인 것들.
+    Promise.all(
+      INTEGRITY_VIEWS.filter((v) => v.expect === "비어야_정상").map(async (v) => {
+        let q = supabase.from(v.view).select("*", { count: "exact", head: true });
+        if (v.onlyWhere) q = q.eq(v.onlyWhere.column, v.onlyWhere.value);
+        const { count, error } = await q;
+        return { v, count: count ?? 0, err: error?.message ?? null };
+      }),
+    ),
+    supabase.from("error_logs").select("route, message").gte("created_at", since).limit(500),
+  ]);
 
   // ── 보호 — 재무 열쇠 ─────────────────────────────────────────────────────
-  //
-  // 열쇠를 가진 사람이 하나도 없으면 재무 화면이 통째로 빕니다. 그건 오류로 안 보이고
-  // 「자료가 없네」로 보입니다.
-  const keys = await supabase.from("finance_key_holders").select("email", { count: "exact", head: true });
   out.push({
     group: "보호",
     name: "재무 열쇠 보유자",
@@ -131,15 +180,6 @@ async function runDbChecks(supabase: SupabaseClient): Promise<CheckResult[]> {
   });
 
   // ── 데이터 — 기능별 스키마 ───────────────────────────────────────────────
-  //
-  // 칸이 있어도 권한이 막으면 기능은 똑같이 안 됩니다. 그래서 앱과 **똑같은 방식**으로
-  // 그 칸을 읽어봅니다.
-  const schema = await Promise.all(
-    SCHEMA_CHECKS.map(async (c) => {
-      const { error } = await supabase.from(c.table).select(c.columns.join(", ")).limit(1);
-      return { c, ok: !error, why: error?.message ?? "" };
-    }),
-  );
   const schemaBad = schema.filter((s) => !s.ok);
   out.push({
     group: "코드",
@@ -151,14 +191,6 @@ async function runDbChecks(supabase: SupabaseClient): Promise<CheckResult[]> {
   });
 
   // ── 데이터 — 무결성 뷰 ───────────────────────────────────────────────────
-  const integrity = await Promise.all(
-    INTEGRITY_VIEWS.filter((v) => v.expect === "비어야_정상").map(async (v) => {
-      let q = supabase.from(v.view).select("*", { count: "exact", head: true });
-      if (v.onlyWhere) q = q.eq(v.onlyWhere.column, v.onlyWhere.value);
-      const { count, error } = await q;
-      return { v, count: count ?? 0, err: error?.message ?? null };
-    }),
-  );
   for (const r of integrity) {
     out.push({
       group: "데이터",
@@ -172,11 +204,10 @@ async function runDbChecks(supabase: SupabaseClient): Promise<CheckResult[]> {
   }
 
   // ── 코드 — 화면에서 난 오류 ──────────────────────────────────────────────
-  const since = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
-  const [errRes, resolvedRes] = await Promise.all([
-    supabase.from("error_logs").select("route, message").gte("created_at", since).limit(500),
-    supabase.from("error_resolutions").select("fingerprint").limit(500),
-  ]);
+  //
+  // 예전에는 `error_resolutions` 도 함께 받았는데 **쓰지 않고 버렸습니다**(`void`). 「해결로
+  // 표시했나」는 오류 화면이 보여주는 것이고 여기서는 가짓수만 셉니다. 안 쓰는 조회는
+  // 지웁니다 - 남겨두면 다음 사람이 「왜 받아두는 거지」를 다시 알아내야 합니다.
   if (errRes.error) {
     out.push({
       group: "코드",
@@ -200,7 +231,6 @@ async function runDbChecks(supabase: SupabaseClient): Promise<CheckResult[]> {
       detail: top.length === 0 ? "없습니다" : `${top.length}가지 · 모두 ${rows.length}건`,
       items: top.slice(0, 10).map(([k, n]) => `${n}회 · ${k}`),
     });
-    void resolvedRes;
   }
 
   // ── 코드 — 자료 갈래의 짝 없는 자리 ──────────────────────────────────────

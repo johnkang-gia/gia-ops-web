@@ -18,6 +18,7 @@
  *
  * 순수 함수입니다 — 화면 없이 시험할 수 있습니다.
  */
+import { kstDate } from "@/lib/kst";
 
 export type SearchHit = {
   id: string;
@@ -95,7 +96,7 @@ export function searchSchedules(
   for (const t of tasks) {
     if (!flat(`${t.title} ${t.description ?? ""}`).includes(needle)) continue;
     // 마감 시각은 버리고 날짜만 씁니다 - 달력은 날짜로 넘깁니다.
-    const due = t.dueAt ? t.dueAt.slice(0, 10) : null;
+    const due = t.dueAt ? kstDate(t.dueAt) : null;
     const start = t.startOn ?? due;
     hits.push({
       id: t.id,

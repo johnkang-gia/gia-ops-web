@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { kstDate } from "@/lib/kst";
 import { useRealtimeTable } from "@/lib/useRealtimeTable";
 import type { Proposal, ManualDraft } from "@/lib/types";
 import AiSourcePanel from "@/components/ai/AiSourcePanel";
@@ -122,7 +123,7 @@ export default function AiManualClient({
             >
               <span className="truncate text-xs font-medium">{oneLine(d.raw_text)}</span>
               <span className="text-[10px] text-slate-400">
-                {d.target_doc ?? "분석 대기"} · {d.created_at.slice(0, 10)}
+                {d.target_doc ?? "분석 대기"} · {kstDate(d.created_at)}
               </span>
             </button>
           ))}

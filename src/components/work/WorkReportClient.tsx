@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { kstDate } from "@/lib/kst";
 import type { Task, TaskStatus } from "@/lib/types";
 import { STATUS_LABEL, STATUS_COLOR } from "./statusConfig";
 import GuideButton from "@/components/common/GuideButton";
@@ -55,7 +56,7 @@ export default function WorkReportClient({
   const completed = useMemo(
     () =>
       scoped
-        .filter((t) => t.completed_at && t.completed_at.slice(0, 10) >= range.start && t.completed_at.slice(0, 10) <= range.end)
+        .filter((t) => t.completed_at && kstDate(t.completed_at) >= range.start && kstDate(t.completed_at) <= range.end)
         .sort((a, b) => (a.completed_at ?? "").localeCompare(b.completed_at ?? "")),
     [scoped, range]
   );
@@ -63,7 +64,7 @@ export default function WorkReportClient({
   const active = useMemo(
     () =>
       scoped
-        .filter((t) => t.status !== "완료" && t.created_at.slice(0, 10) <= range.end)
+        .filter((t) => t.status !== "완료" && kstDate(t.created_at) <= range.end)
         .sort((a, b) => (a.due_at ?? "9999").localeCompare(b.due_at ?? "9999")),
     [scoped, range]
   );
@@ -273,7 +274,7 @@ export default function WorkReportClient({
                   </span>
                   <span className="flex-1 truncate font-medium text-slate-700">{t.title}</span>
                   <span className="shrink-0 text-slate-400">{t.assignee_emails.length ? t.assignee_emails.map(nameOf).join(", ") : nameOf(t.owner_email)}</span>
-                  {t.due_at && <span className="shrink-0 text-slate-400">마감 {t.due_at.slice(0, 10)}</span>}
+                  {t.due_at && <span className="shrink-0 text-slate-400">마감 {kstDate(t.due_at)}</span>}
                 </div>
               ))}
             </div>

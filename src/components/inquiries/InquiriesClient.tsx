@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { kstDate } from "@/lib/kst";
 import { useRealtimeTable } from "@/lib/useRealtimeTable";
 import type { Inquiry } from "@/lib/types";
 import Pagination from "@/components/Pagination";
@@ -243,7 +244,7 @@ export default function InquiriesClient({
               {expanded && (
                 <div className="border-t border-slate-100 px-4 py-3 text-sm">
                   <div className="mb-2 text-xs text-slate-400">
-                    {it.reporter_email} · {it.created_at.slice(0, 10)}
+                    {it.reporter_email} · {kstDate(it.created_at)}
                   </div>
                   <p className="mb-3 whitespace-pre-wrap">{it.content}</p>
 

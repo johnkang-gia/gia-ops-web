@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useFinanceLive } from "@/lib/useFinanceLive";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
-import { todayKst } from "@/lib/kst";
+import { todayKst, kstDate } from "@/lib/kst";
 import {
   IDENTIFIER_LABEL,
   digitsOnly,
@@ -441,7 +441,7 @@ function Row({
         )}
 
         {r.note && <span className="text-[11px] text-slate-400">{r.note}</span>}
-        <span className="text-[11px] text-slate-300">{r.created_at.slice(0, 10)}</span>
+        <span className="text-[11px] text-slate-300">{kstDate(r.created_at)}</span>
 
         {r.status === "신청" && r.printed_at && (
           <span

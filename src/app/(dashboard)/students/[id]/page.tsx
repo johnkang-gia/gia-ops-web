@@ -1,4 +1,5 @@
 import { redirect, notFound } from "next/navigation";
+import { kstDate } from "@/lib/kst";
 import { describeBilling } from "@/lib/alltalkpay";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
@@ -564,7 +565,7 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
                 </span>
                 <span className="min-w-0 flex-1 truncate">{t.title}</span>
                 {t.due_at && (
-                  <span className="shrink-0 text-[10px] text-slate-400">{t.due_at.slice(0, 10)}</span>
+                  <span className="shrink-0 text-[10px] text-slate-400">{kstDate(t.due_at)}</span>
                 )}
               </div>
             ))}

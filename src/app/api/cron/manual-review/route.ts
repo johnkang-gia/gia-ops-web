@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { kstDate } from "@/lib/kst";
 import { createClient } from "@supabase/supabase-js";
 import { logApiError } from "@/lib/logging";
 import { touchHeartbeat } from "@/lib/heartbeat";
@@ -42,7 +43,7 @@ export async function GET(req: NextRequest) {
         .eq("resolved", false)
         .maybeSingle();
       if (existing) continue;
-      const lastUpdated = s.updated_at.slice(0, 10);
+      const lastUpdated = kstDate(s.updated_at);
       const { error: insertErr } = await supabase.from("manual_review_flags").insert({
         section_id: s.id,
         reason: "오래됨",

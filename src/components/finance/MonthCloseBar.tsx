@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { kstDate } from "@/lib/kst";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/common/ToastProvider";
 import { useConfirm } from "@/components/common/ConfirmProvider";
@@ -73,7 +74,7 @@ export default function MonthCloseBar({ month, state }: { month: string; state: 
     <span className="flex items-center gap-1">
       {closed ? (
         <>
-          <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[9px] font-bold text-white" title={`${state?.closed_by} · ${state?.closed_at?.slice(0, 10)}`}>
+          <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[9px] font-bold text-white" title={`${state?.closed_by} · ${state?.closed_at ? kstDate(state.closed_at) : ""}`}>
             🔒 마감됨
           </span>
           <button

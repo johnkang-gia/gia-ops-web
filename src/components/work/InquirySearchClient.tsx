@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { timeAgo } from "@/lib/kst";
+import { timeAgo, kstDate } from "@/lib/kst";
 import { Who } from "@/components/common/HomonymProvider";
 
 // 학부모 연락 검색 화면.
@@ -192,7 +192,7 @@ export default function InquirySearchClient({
                       <b className="text-sm text-slate-800">{highlight(who, q)}</b>
                       {r.inquiry_type && <span className="text-[11px] text-slate-400">{r.inquiry_type}</span>}
                       <span className="text-[11px] text-slate-400">
-                        {r.received_at.slice(0, 10)} · {timeAgo(r.received_at)}
+                        {kstDate(r.received_at)} · {timeAgo(r.received_at)}
                       </span>
                       {r.answered_at && <span className="text-[11px] text-emerald-600">✓ 처리됨</span>}
                     </span>

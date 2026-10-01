@@ -1,6 +1,7 @@
 "use client";
 
 import { realPeople } from "@/lib/taskAck";
+import { kstDate } from "@/lib/kst";
 import { fetchCurrentTerm } from "@/lib/termQuery";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -287,7 +288,7 @@ export default function QuickTaskWidget({
         due_at: dueAt,
         // 시작일은 마감보다 뒤일 수 없습니다. 뒤면 달력에서 그 일정이 아예 안 보이는데
         // 오류도 안 나고 그냥 사라집니다.
-        start_on: startOn && (!dueAt || startOn <= dueAt.slice(0, 10)) ? startOn : null,
+        start_on: startOn && (!dueAt || startOn <= kstDate(dueAt)) ? startOn : null,
         tag_id: tagId,
         position: Date.now(),
         origin_mode: mode,

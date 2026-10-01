@@ -292,6 +292,16 @@ export async function syncEntriesIntoRegister(
   supabase: SupabaseClient,
   dateKey: string,
 ): Promise<{ added: number; skipped: number; error: string | null }> {
+  // **쉬는 날에는 출석부를 채우지 않습니다.** 「내일부터 다음주 화요일까지」가 기간으로 들어오면
+  // 그 사이의 공휴일(대체공휴일 포함)도 기간 안에 있습니다. 수업일 달력(`school_days`)에서 쉬는
+  // 날로 적힌 날은 결석으로 세지 않습니다 - 쉬는 날 결석은 출석률을 깎는 거짓 숫자입니다.
+  const { data: dayRow, error: dayErr } = await supabase.from("school_days").select("is_school_day").eq("day", dateKey).maybeSingle();
+  if (dayErr) return { added: 0, skipped: 0, error: `수업일 달력: ${dayErr.message}` };
+  if (dayRow && dayRow.is_school_day === false) return { added: 0, skipped: 0, error: null };
+  // 주말도 마찬가지입니다 - 달력에 안 적혀 있어도 토·일은 수업일이 아닙니다.
+  const wd = new Date(`${dateKey}T12:00:00+09:00`).getDay();
+  if (wd === 0 || wd === 6) return { added: 0, skipped: 0, error: null };
+
   const [entryRes, recRes] = await Promise.all([
     supabase
       .from("attendance_entries")

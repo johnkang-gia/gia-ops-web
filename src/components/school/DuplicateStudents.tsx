@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { kstDate } from "@/lib/kst";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
 import { useConfirm } from "@/components/common/ConfirmProvider";
@@ -271,7 +272,7 @@ export default function DuplicateStudents({
                             </span>
                           ))
                         )}
-                        <span className="text-[10px] text-slate-300">등록 {s.created_at.slice(0, 10)}</span>
+                        <span className="text-[10px] text-slate-300">등록 {kstDate(s.created_at)}</span>
 
                         {canMerge && (
                           <button

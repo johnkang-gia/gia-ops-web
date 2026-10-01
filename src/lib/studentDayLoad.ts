@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { kstDate } from "@/lib/kst";
 import { buildBoard, type BoardInput, type DayBoard, type DayItem, type DayItemKind } from "./studentDay";
 import { isNoteKind } from "./studentDayNotes";
 import { loadTodayPickups, setterLabel } from "./pickups";
@@ -317,7 +318,7 @@ export async function loadStudentDay(supabase: SupabaseClient, opts: LoadOptions
         // 밤 11시 59분에 몰린 것처럼 보입니다.
         at: dueClock(t.due_at),
         text: `업무 · ${cut(t.title, 40)}`,
-        onDate: t.due_at.slice(0, 10),
+        onDate: kstDate(t.due_at),
         from: { table: "tasks", screen: "/work" },
         pending: false,
       });

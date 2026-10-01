@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { kstDate } from "@/lib/kst";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import StudentLedgerModal from "@/components/finance/StudentLedgerModal";
@@ -300,7 +301,7 @@ function RecordsTab({ d }: { d: Overview }) {
               <li key={t.id} className="flex items-baseline gap-1">
                 <span className={"rounded px-1 text-[10px] font-bold " + (t.status === "완료" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700")}>{t.status}</span>
                 <span className="min-w-0 flex-1 truncate">{t.title}</span>
-                {t.due_at && <span className="tabular-nums text-[10px] text-slate-400">{t.due_at.slice(0, 10)}</span>}
+                {t.due_at && <span className="tabular-nums text-[10px] text-slate-400">{kstDate(t.due_at)}</span>}
               </li>
             ))}
           </ul>

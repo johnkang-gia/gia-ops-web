@@ -1,6 +1,6 @@
 "use client";
 
-import { todayKst } from "@/lib/kst";
+import { kstDate, todayKst } from "@/lib/kst";
 import { buildWhereMaps, normName as normStudentName } from "@/lib/studentLabel";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -1405,10 +1405,10 @@ export default function ShuttleChecklistClient({
                   <dt className="font-semibold">받은 때</dt>
                   <dd>
                     {new Date(sourceOf.autoSource.receivedAt).toLocaleString("ko-KR")}
-                    {/* 받은 날과 오늘이 다르면 짚어줍니다.
-                        담당자: "김리안의 경우 어제 픽업인데 오늘까지 반영되어 있어."
-                        어제 온 연락이 오늘 대상으로 잡혀 있으면 그게 바로 원인입니다. */}
-                    {sourceOf.autoSource.receivedAt.slice(0, 10) !== todayStr() && (
+                    {/* 받은 날과 오늘이 다르면 짚어줍니다 - 어제 온 연락이 오늘 대상으로 잡혀 있으면
+                        그게 바로 원인입니다. 받은 때는 세계표준시로 저장돼 있어 앞 열 글자를 그대로
+                        자르면 **아침 9시 전에 온 연락이 전부 어제**가 됩니다(한국 날짜로 바꿔 비교). */}
+                    {kstDate(sourceOf.autoSource.receivedAt) !== todayStr() && (
                       <span className="ml-1 font-bold text-amber-600">← 오늘 온 연락이 아닙니다</span>
                     )}
                   </dd>

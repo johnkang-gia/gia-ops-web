@@ -1,4 +1,5 @@
 import { ensureKoreanFont, pdfDisposition } from "@/lib/pdfFont";
+import { kstDate } from "@/lib/kst";
 import { Document, Page, Text, View, StyleSheet, renderToBuffer } from "@react-pdf/renderer";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
@@ -121,7 +122,7 @@ function ReportDocument({
                 <Text style={[styles.cell, styles.colWho2]}>
                   {t.assignee_emails.length ? t.assignee_emails.map(nameOf).join(", ") : nameOf(t.owner_email)}
                 </Text>
-                <Text style={[styles.cell, styles.colDue]}>{t.due_at ? t.due_at.slice(0, 10) : "-"}</Text>
+                <Text style={[styles.cell, styles.colDue]}>{t.due_at ? kstDate(t.due_at) : "-"}</Text>
               </View>
             ))}
           </View>
@@ -176,11 +177,11 @@ async function handle(request: Request) {
   const scoped = department === "전체" ? allTasks : allTasks.filter((t) => t.department === department);
 
   const completed = scoped
-    .filter((t) => t.completed_at && t.completed_at.slice(0, 10) >= range.start && t.completed_at.slice(0, 10) <= range.end)
+    .filter((t) => t.completed_at && kstDate(t.completed_at) >= range.start && kstDate(t.completed_at) <= range.end)
     .sort((a, b) => (a.completed_at ?? "").localeCompare(b.completed_at ?? ""));
 
   const active = scoped
-    .filter((t) => t.status !== "완료" && t.created_at.slice(0, 10) <= range.end)
+    .filter((t) => t.status !== "완료" && kstDate(t.created_at) <= range.end)
     .sort((a, b) => (a.due_at ?? "9999").localeCompare(b.due_at ?? "9999"));
 
   const counts: Record<TaskStatus, number> = { 예정: 0, 진행중: 0, 보류: 0, 완료: completed.length };

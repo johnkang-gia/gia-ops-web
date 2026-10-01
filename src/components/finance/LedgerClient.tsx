@@ -28,8 +28,8 @@ export type LedgerRow = {
   grade: string | null;
   className: string | null;
   department: string | null;
-  /** 학비내역 — 정규 → 방과후 → 나머지. 줄인 이름 + 금액. */
-  tuition: { label: string; amount: number; none: boolean }[];
+  /** 학비내역 — 정규 · 방과후 · 그 외 칸. 칸 안에는 고른 옵션과 금액. */
+  tuition: { slot: "정규" | "방과후" | "그외"; label: string; amount: number; none: boolean }[];
   tuitionTotal: number;
   /** 학비외내역 — 분류별 개수와 금액. */
   extra: { category: string; count: number; amount: number }[];
@@ -121,6 +121,12 @@ export default function LedgerClient({
   }, [inDept, scope, q, onlyOpen]);
 
   const sum = (f: (r: LedgerRow) => number) => studentRows.reduce((n, r) => n + f(r), 0);
+  /** 학비외 분류 칸 — 보이는 학생들에게 붙은 분류를 전부 모아 금액 큰 순으로. 칸이 같아야 줄이 맞습니다. */
+  const extraCats = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of studentRows) for (const e of r.extra) m.set(e.category, (m.get(e.category) ?? 0) + e.amount);
+    return [...m.entries()].sort((a, b) => b[1] - a[1]).map(([c]) => c);
+  }, [studentRows]);
 
   // ── 청구서 탭 ──────────────────────────────────────────────────────────
   const invRows = useMemo(() => {
@@ -240,13 +246,14 @@ export default function LedgerClient({
           {/* 고정 — 학생 */}
           <table className="shrink-0 border-r border-slate-200 text-[12px]">
             <thead className="bg-slate-50 text-[11px] text-slate-500">
-              <tr className="h-8">
-                <th className="px-2 text-left">학생</th>
+              <tr className="h-12">
+                <th rowSpan={2} className="px-2 text-left align-bottom">학생</th>
               </tr>
+              <tr className="h-7" />
             </thead>
             <tbody>
               {studentRows.map((r) => (
-                <tr key={r.id} onClick={() => setOpen(r.id)} className="h-8 cursor-pointer border-t border-slate-100 hover:bg-indigo-50/40" title="누르면 학생 금전 창이 열립니다">
+                <tr key={r.id} onClick={() => setOpen(r.id)} className="h-12 cursor-pointer border-t border-slate-100 hover:bg-indigo-50/40" title="누르면 학생 금전 창이 열립니다">
                   <td className="whitespace-nowrap px-2 font-semibold text-slate-800">
                     <Who id={r.id} name={r.name} />
                     <span className="ml-1 text-[10px] font-normal text-slate-400">
@@ -256,13 +263,13 @@ export default function LedgerClient({
                 </tr>
               ))}
               {studentRows.length === 0 && (
-                <tr className="h-8">
+                <tr className="h-12">
                   <td className="px-2 text-slate-400">해당 없음</td>
                 </tr>
               )}
             </tbody>
             <tfoot className="border-t-2 border-slate-200 bg-slate-50 text-[12px] font-bold">
-              <tr className="h-8">
+              <tr className="h-12">
                 <td className="px-2">{studentRows.length}명</td>
               </tr>
             </tfoot>
@@ -271,58 +278,84 @@ export default function LedgerClient({
           {/* 흐르는 부분 — 학비내역 · 학비외내역 */}
           {/* pill-clip-ok: 알약이 아니라 표입니다. 여백을 두면 양옆 고정 표와 격자선이 어긋납니다. */}
           <div className="min-w-0 flex-1 overflow-x-auto">
+            {/*
+              칸마다 두 줄 - 위에 고른 것, 아래에 금액. 한 줄에 「정규 신청안함 · 방과후5일 월납 ₩450,000 · LMA…」
+              처럼 이어 붙이면 아이마다 길이가 달라 세로로 아무것도 안 맞고, 눈이 금액을 못 찾습니다.
+              칸을 정규 · 방과후 · 그 외 · 분류별로 고정하면 같은 종류의 돈이 같은 세로줄에 섭니다.
+            */}
             <table className="text-[12px]">
               <thead className="bg-slate-50 text-[11px] text-slate-500">
-                <tr className="h-8">
-                  <th className="whitespace-nowrap px-2 text-left">학비내역 <span className="font-normal text-slate-400">정규 → 방과후 → 그 외</span></th>
-                  <th className="whitespace-nowrap px-2 text-left">학비외내역 <span className="font-normal text-slate-400">분류별 개수 · 금액</span></th>
+                <tr className="h-12">
+                  <th colSpan={4} className="whitespace-nowrap border-b border-slate-200 px-2 text-left text-indigo-700">학비내역</th>
+                  <th colSpan={extraCats.length + 1} className="whitespace-nowrap border-b border-l border-slate-200 px-2 text-left text-orange-700">학비외내역</th>
+                </tr>
+                <tr className="h-7">
+                  <th className="whitespace-nowrap px-2 text-left font-semibold">정규</th>
+                  <th className="whitespace-nowrap px-2 text-left font-semibold">방과후</th>
+                  <th className="whitespace-nowrap px-2 text-left font-semibold">그 외</th>
+                  <th className="whitespace-nowrap px-2 text-right font-bold text-indigo-700">학비 합</th>
+                  {extraCats.map((c) => (
+                    <th key={c} className="whitespace-nowrap border-l border-slate-100 px-2 text-left font-semibold first:border-l-slate-200">{c}</th>
+                  ))}
+                  <th className="whitespace-nowrap px-2 text-right font-bold text-orange-700">학비외 합</th>
                 </tr>
               </thead>
               <tbody>
-                {studentRows.map((r) => (
-                  <tr key={r.id} onClick={() => setOpen(r.id)} className="h-8 cursor-pointer border-t border-slate-100 hover:bg-indigo-50/40">
-                    <td className="whitespace-nowrap px-2 text-slate-700">
-                      {r.tuition.length === 0 ? (
-                        <span className="text-slate-300">열린 학비 항목 없음</span>
-                      ) : (
-                        r.tuition.map((c, i) => (
-                          <span key={i} className="mr-2 inline-flex items-baseline gap-1">
-                            {i > 0 && <span className="text-slate-300">·</span>}
-                            <span className={c.none ? "text-slate-400" : "font-semibold"}>{c.none ? `${c.label} 신청안함` : c.label}</span>
-                            {!c.none && <span className="tabular-nums text-slate-500">{won(c.amount)}</span>}
-                          </span>
-                        ))
-                      )}
-                      {r.tuitionTotal > 0 && <span className="ml-1 rounded bg-indigo-50 px-1 text-[11px] font-bold tabular-nums text-indigo-700">= {won(r.tuitionTotal)}</span>}
-                    </td>
-                    <td className="whitespace-nowrap px-2 text-slate-700">
-                      {r.extra.length === 0 ? (
-                        <span className="text-slate-300">—</span>
-                      ) : (
-                        r.extra.map((e, i) => (
-                          <span key={e.category} className="mr-2 inline-flex items-baseline gap-1">
-                            {i > 0 && <span className="text-slate-300">·</span>}
-                            <span className="font-semibold">
-                              {e.category} {e.count}
-                            </span>
-                            <span className="tabular-nums text-slate-500">{won(e.amount)}</span>
-                          </span>
-                        ))
-                      )}
-                      {r.extraTotal > 0 && <span className="ml-1 rounded bg-orange-50 px-1 text-[11px] font-bold tabular-nums text-orange-700">= {won(r.extraTotal)}</span>}
-                    </td>
-                  </tr>
-                ))}
+                {studentRows.map((r) => {
+                  const slot = (k: "정규" | "방과후" | "그외") => r.tuition.filter((c) => c.slot === k);
+                  const tuitionCell = (k: "정규" | "방과후" | "그외") => {
+                    const cs = slot(k);
+                    const amount = cs.reduce((n, c) => n + c.amount, 0);
+                    const none = cs.length === 0 || cs.every((c) => c.none);
+                    return (
+                      <td key={k} className="whitespace-nowrap px-2 align-middle leading-tight">
+                        <div className={none ? "text-slate-300" : "font-semibold text-slate-800"}>{cs.length === 0 ? "—" : cs.map((c) => c.label).join(" · ")}</div>
+                        <div className={"tabular-nums " + (none ? "text-slate-200" : "text-slate-500")}>{amount > 0 ? won(amount) : "—"}</div>
+                      </td>
+                    );
+                  };
+                  const extraOf = new Map(r.extra.map((e) => [e.category, e]));
+                  return (
+                    <tr key={r.id} onClick={() => setOpen(r.id)} className="h-12 cursor-pointer border-t border-slate-100 hover:bg-indigo-50/40">
+                      {tuitionCell("정규")}
+                      {tuitionCell("방과후")}
+                      {tuitionCell("그외")}
+                      <td className="whitespace-nowrap px-2 text-right align-middle font-bold tabular-nums text-indigo-700">{r.tuitionTotal > 0 ? won(r.tuitionTotal) : <span className="font-normal text-slate-300">—</span>}</td>
+                      {extraCats.map((c) => {
+                        const e = extraOf.get(c);
+                        return (
+                          <td key={c} className="whitespace-nowrap border-l border-slate-100 px-2 align-middle leading-tight first:border-l-slate-200">
+                            {e ? (
+                              <>
+                                <div className="font-semibold text-slate-800">{e.count}개</div>
+                                <div className="tabular-nums text-slate-500">{won(e.amount)}</div>
+                              </>
+                            ) : (
+                              <div className="text-slate-200">—</div>
+                            )}
+                          </td>
+                        );
+                      })}
+                      <td className="whitespace-nowrap px-2 text-right align-middle font-bold tabular-nums text-orange-700">{r.extraTotal > 0 ? won(r.extraTotal) : <span className="font-normal text-slate-300">—</span>}</td>
+                    </tr>
+                  );
+                })}
                 {studentRows.length === 0 && (
-                  <tr className="h-8">
-                    <td colSpan={2} className="px-2 text-slate-400">해당하는 학생이 없습니다.</td>
+                  <tr className="h-12">
+                    <td colSpan={5 + extraCats.length} className="px-2 text-slate-400">해당하는 학생이 없습니다.</td>
                   </tr>
                 )}
               </tbody>
               <tfoot className="border-t-2 border-slate-200 bg-slate-50 text-[12px] font-bold">
-                <tr className="h-8">
-                  <td className="whitespace-nowrap px-2 tabular-nums text-indigo-700">학비 {won(sum((r) => r.tuitionTotal))}</td>
-                  <td className="whitespace-nowrap px-2 tabular-nums text-orange-700">학비외 {won(sum((r) => r.extraTotal))}</td>
+                <tr className="h-12">
+                  {(["정규", "방과후", "그외"] as const).map((k) => (
+                    <td key={k} className="whitespace-nowrap px-2 text-left tabular-nums text-slate-600">{won(sum((r) => r.tuition.filter((c) => c.slot === k).reduce((n, c) => n + c.amount, 0)))}</td>
+                  ))}
+                  <td className="whitespace-nowrap px-2 text-right tabular-nums text-indigo-700">{won(sum((r) => r.tuitionTotal))}</td>
+                  {extraCats.map((c) => (
+                    <td key={c} className="whitespace-nowrap border-l border-slate-100 px-2 text-left tabular-nums text-slate-600 first:border-l-slate-200">{won(sum((r) => r.extra.find((e) => e.category === c)?.amount ?? 0))}</td>
+                  ))}
+                  <td className="whitespace-nowrap px-2 text-right tabular-nums text-orange-700">{won(sum((r) => r.extraTotal))}</td>
                 </tr>
               </tfoot>
             </table>
@@ -331,13 +364,14 @@ export default function LedgerClient({
           {/* 고정 — 금액 다섯 칸 */}
           <table className="shrink-0 border-l border-slate-200 text-[12px]">
             <thead className="bg-slate-50 text-[11px] text-slate-500">
-              <tr className="h-8">
-                <th className="whitespace-nowrap px-2 text-right">청구할 금액</th>
-                <th className="whitespace-nowrap px-2 text-right">청구됨</th>
-                <th className="whitespace-nowrap px-2 text-right">미납</th>
-                <th className="whitespace-nowrap px-2 text-right">예치금</th>
-                <th className="whitespace-nowrap px-2 text-right">이 학기 받을 돈</th>
+              <tr className="h-12">
+                <th rowSpan={2} className="whitespace-nowrap px-2 text-right align-bottom">청구할 금액</th>
+                <th rowSpan={2} className="whitespace-nowrap px-2 text-right align-bottom">청구됨</th>
+                <th rowSpan={2} className="whitespace-nowrap px-2 text-right align-bottom">미납</th>
+                <th rowSpan={2} className="whitespace-nowrap px-2 text-right align-bottom">예치금</th>
+                <th rowSpan={2} className="whitespace-nowrap px-2 text-right align-bottom">이 학기 받을 돈</th>
               </tr>
+              <tr className="h-7" />
             </thead>
             <tbody>
               {studentRows.map((r) => (

@@ -158,6 +158,51 @@ export async function POST(req: Request) {
     );
   }
 
+  /**
+   * **같은 항목을 두 번 담지 않습니다.**
+   *
+   * 학비는 데이터베이스의 유일 조건이 막는데(`invoices_tuition_scope_month_uniq`), 학비외는
+   * 항목이 청구서 줄(`invoice_lines`)에 있어서 표 하나의 조건으로는 못 막습니다. 화면은 이미
+   * 담긴 항목을 회색으로 잠그지만, 두 탭을 열어 두거나 「이미 받음」을 두 번 누르면 화면이
+   * 모르는 사이에 두 장이 생깁니다 - 그러면 학부모에게 같은 교재비가 두 번 가고, 「이미
+   * 받음」이면 받지도 않은 돈이 받은 것으로 적힙니다.
+   *
+   * 그래서 서버가 넣기 직전에 **살아 있는 청구서**(발행 · 이월 안 됨)에 같은 항목 번호가
+   * 있는지 봅니다. 있으면 409 로 어느 장인지 돌려주고 만들지 않습니다. 정말 두 번 청구해야
+   * 하면(한 학기에 교재를 두 번 사는 경우) 화면이 `allowDuplicate: true` 를 보내고, 그 선택은
+   * 사람이 확인창에서 한 것입니다.
+   */
+  const allowDuplicate = (body as { allowDuplicate?: unknown } | null)?.allowDuplicate === true;
+  if (!allowDuplicate) {
+    const { data: aliveInv, error: aliveErr } = await supabase
+      .from("invoices")
+      .select("id, invoice_no, term_id")
+      .eq("student_id", student.id)
+      .eq("status", "발행")
+      .is("carried_to_invoice_id", null);
+    if (aliveErr) return NextResponse.json({ error: `기존 청구서를 읽지 못했습니다: ${aliveErr.message}` }, { status: 500 });
+    const sameTerm = (aliveInv ?? []).filter((v) => !termId || !v.term_id || v.term_id === termId);
+    if (sameTerm.length > 0) {
+      const { data: dupLines, error: dupErr } = await supabase
+        .from("invoice_lines")
+        .select("invoice_id, item_id, name")
+        .in("invoice_id", sameTerm.map((v) => v.id))
+        .in("item_id", lines.map((l) => l.item.id));
+      if (dupErr) return NextResponse.json({ error: `기존 청구서 줄을 읽지 못했습니다: ${dupErr.message}` }, { status: 500 });
+      if (dupLines && dupLines.length > 0) {
+        const noOf = new Map(sameTerm.map((v) => [v.id, v.invoice_no]));
+        const duplicates = dupLines.map((d) => ({ itemId: d.item_id, name: d.name, invoiceNo: noOf.get(d.invoice_id) ?? "" }));
+        return NextResponse.json(
+          {
+            error: `이미 청구서에 담긴 항목입니다: ${duplicates.map((d) => `${d.name}(${d.invoiceNo})`).join(", ")}. 그 장을 취소한 뒤 다시 만들거나, 정말 한 번 더 청구하는 것이면 확인해주세요.`,
+            duplicates,
+          },
+          { status: 409 },
+        );
+      }
+    }
+  }
+
   const total = lines.reduce((n, l) => n + l.amount, 0);
   const issue = todayKst();
   // 화면이 기한을 안 보냈으면 **발행일 + 이레**입니다. 앞 판은 발행일 그대로였는데,

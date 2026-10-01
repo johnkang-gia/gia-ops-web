@@ -154,7 +154,14 @@ export default function StudentLedgerModal({
         else failed.push(`학비(${String(r.body.error ?? "")})`);
       }
       if (extra.length > 0) {
-        const r = await post("/api/finance/invoices", { studentId, feeTermId: termId, itemIds: extra });
+        let r = await post("/api/finance/invoices", { studentId, feeTermId: termId, itemIds: extra });
+        // 서버가 「이미 담긴 항목」을 잡으면 사람에게 묻습니다. 한 학기에 같은 교재를 두 번 사는
+        // 일은 있지만 드물고, 두 번 청구되는 사고는 흔합니다 - 기본은 막고 확인한 때만 넘깁니다.
+        if (!r.ok && Array.isArray(r.body.duplicates)) {
+          const dups = r.body.duplicates as { name: string; invoiceNo: string }[];
+          const again = confirm(`이미 청구서에 담긴 항목입니다:\n${dups.map((d) => `· ${d.name} — ${d.invoiceNo}`).join("\n")}\n\n정말 한 번 더 청구할까요? (아니면 그 장을 먼저 취소하세요)`);
+          if (again) r = await post("/api/finance/invoices", { studentId, feeTermId: termId, itemIds: extra, allowDuplicate: true });
+        }
         if (r.ok) made.push(String((r.body.invoice as { invoice_no?: string } | undefined)?.invoice_no ?? "학비외"));
         else failed.push(`학비외(${String(r.body.error ?? "")})`);
       }
@@ -211,6 +218,26 @@ export default function StudentLedgerModal({
   async function setOption(c: LedgerCharge, optionId: string) {
     setBusy(true);
     const r = await post("/api/finance/ledger/enroll", { studentId, planId: c.id, optionId: optionId || null, termId });
+    setBusy(false);
+    if (!r.ok) return notify(String(r.body.error ?? "바꾸지 못했습니다."), "error");
+    await changed();
+  }
+
+  /** 학비 금액을 손으로 정하기 / 요금표대로 되돌리기. 이유 없이는 저장되지 않습니다(서버). */
+  async function setOverride(c: LedgerCharge) {
+    if (!c.tuition?.optionId) return notify("먼저 납부 옵션을 고르세요.", "error");
+    const raw = prompt(`${c.label} — 이 학생만 다른 금액으로 청구하려면 금액을 적으세요.\n비우면 요금표대로 돌아갑니다.`, c.amount > 0 ? String(c.amount) : "");
+    if (raw === null) return;
+    const amount = raw.trim() === "" ? null : Math.round(Number(raw.replace(/[^\d]/g, "")));
+    if (amount !== null && (!Number.isFinite(amount) || amount < 0)) return notify("금액이 올바르지 않습니다.", "error");
+    let note: string | null = null;
+    if (amount !== null) {
+      note = prompt("왜 다른지 한 줄로 적어주세요. (예: 형제 할인 별도 협의)", c.note?.replace(/^직접 정한 금액 · /, "") ?? "");
+      if (note === null) return;
+      if (!note.trim()) return notify("이유를 적어야 저장됩니다.", "error");
+    }
+    setBusy(true);
+    const r = await post("/api/finance/ledger/enroll", { studentId, planId: c.id, optionId: c.tuition.optionId, termId, overrideAmount: amount, overrideNote: note });
     setBusy(false);
     if (!r.ok) return notify(String(r.body.error ?? "바꾸지 못했습니다."), "error");
     await changed();
@@ -369,8 +396,32 @@ export default function StudentLedgerModal({
                             )}
                             {c.note && <div className="text-[10px] text-slate-400">{c.note}</div>}
                           </div>
+                          {c.extra && !c.billed && (
+                            <label className="flex shrink-0 items-center gap-0.5 text-[10px] text-slate-500" title="수량">
+                              ×
+                              <input
+                                type="number"
+                                min={1}
+                                defaultValue={c.extra.qty}
+                                disabled={busy}
+                                onBlur={(e) => {
+                                  const q = Math.max(1, Math.round(Number(e.target.value)) || 1);
+                                  if (q !== c.extra!.qty) void setItem(c.extra!.itemId, true, c.extra!.fromDefault, q);
+                                }}
+                                onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+                                className="w-10 rounded border border-slate-200 px-1 py-0.5 text-right text-[11px]"
+                              />
+                            </label>
+                          )}
                           <div className="shrink-0 text-right">
-                            <div className="tabular-nums font-bold">{c.amount > 0 ? won(c.amount) : "—"}</div>
+                            <div className="tabular-nums font-bold">
+                              {c.amount > 0 ? won(c.amount) : "—"}
+                              {c.tuition && !c.billed && c.tuition.optionId && (
+                                <button onClick={() => void setOverride(c)} disabled={busy} className="ml-1 text-[10px] font-normal text-slate-400 hover:text-slate-700" title="이 학생만 다른 금액으로">
+                                  ✎
+                                </button>
+                              )}
+                            </div>
                             {c.billed ? (
                               <button
                                 onClick={() => setPreview({ id: c.billed!.invoiceId, label: `${student?.name} · ${c.billed!.invoiceNo ?? ""}`, receipt: false })}

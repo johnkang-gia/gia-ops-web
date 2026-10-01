@@ -25,27 +25,32 @@ export const dynamic = "force-dynamic";
  * 이름은 줄여 적습니다 - 표 한 칸에 「Learning Management & Assessment Fee(Annual)」가
  * 그대로 들어가면 다른 칸이 밀립니다.
  */
-function tuitionCells(charges: ReturnType<typeof buildLedger>["charges"]): { label: string; amount: number; none: boolean }[] {
-  const rank = (name: string) => (/정규/.test(name) ? 0 : /방과후/.test(name) ? 1 : 2);
-  const all = charges.filter((c) => c.kind === "학비").sort((a, b) => rank(a.label) - rank(b.label) || a.label.localeCompare(b.label, "ko"));
-  const cell = (c: (typeof all)[number]) => ({
-    label: `${shortPlan(c.label)}${c.optionName ? ` ${shortOption(c.optionName)}` : ""}`,
-    amount: c.amount,
-    none: !c.optionName,
-  });
-  // 정규는 늘 한 칸(안 골랐으면 「정규 신청안함」). 방과후는 2일·3일·5일이 따로 항목이라
-  // 전부 적으면 한 줄에 「신청안함」이 셋 서고 정작 고른 것이 묻힙니다 - 고른 것만 적고,
-  // 하나도 안 골랐으면 「방과후 신청안함」 한 칸. 그 외(LMA 등)는 고른 것만 적습니다.
-  const out: { label: string; amount: number; none: boolean }[] = [];
-  const regular = all.filter((c) => rank(c.label) === 0);
-  const after = all.filter((c) => rank(c.label) === 1);
-  const rest = all.filter((c) => rank(c.label) === 2);
-  if (regular.length === 0) out.push({ label: "정규", amount: 0, none: true });
-  else if (regular.some((c) => c.optionName)) out.push(...regular.filter((c) => c.optionName).map(cell));
-  else out.push(cell(regular[0]));
+type TuitionCell = { slot: "정규" | "방과후" | "그외"; label: string; amount: number; none: boolean };
+function tuitionCells(charges: ReturnType<typeof buildLedger>["charges"]): TuitionCell[] {
+  const slotOf = (name: string): TuitionCell["slot"] => (/정규/.test(name) ? "정규" : /방과후/.test(name) ? "방과후" : "그외");
+  const all = charges.filter((c) => c.kind === "학비").sort((a, b) => a.label.localeCompare(b.label, "ko"));
+  // 칸 안의 글자는 항목 이름이 아니라 **고른 것**입니다 - 칸 머리가 이미 「정규」「방과후」이므로
+  // 정규 칸에는 「학기납」, 방과후 칸에는 「5일 월납」만 적습니다.
+  const cell = (c: (typeof all)[number]): TuitionCell => {
+    const slot = slotOf(c.label);
+    const plan = shortPlan(c.label);
+    const opt = c.optionName ? shortOption(c.optionName) : "";
+    const label = slot === "정규" ? opt : slot === "방과후" ? `${plan.replace(/^방과후/, "")} ${opt}`.trim() : `${plan} ${opt}`.trim();
+    return { slot, label, amount: c.amount, none: !c.optionName };
+  };
+  // 정규는 늘 한 칸(안 골랐으면 「신청안함」). 방과후는 2일·3일·5일이 따로 항목이라 전부
+  // 적으면 「신청안함」이 셋 서고 정작 고른 것이 묻힙니다 - 고른 것만 적고, 하나도 안 골랐으면
+  // 「신청안함」 한 칸. 그 외(LMA 등)는 고른 것만 적습니다.
+  const out: TuitionCell[] = [];
+  const regular = all.filter((c) => slotOf(c.label) === "정규");
+  const after = all.filter((c) => slotOf(c.label) === "방과후");
+  const rest = all.filter((c) => slotOf(c.label) === "그외");
+  const regPicked = regular.filter((c) => c.optionName);
+  if (regPicked.length > 0) out.push(...regPicked.map(cell));
+  else out.push({ slot: "정규", label: "신청안함", amount: 0, none: true });
   const afterPicked = after.filter((c) => c.optionName);
   if (afterPicked.length > 0) out.push(...afterPicked.map(cell));
-  else if (after.length > 0) out.push({ label: "방과후", amount: 0, none: true });
+  else out.push({ slot: "방과후", label: after.length > 0 ? "신청안함" : "—", amount: 0, none: true });
   out.push(...rest.filter((c) => c.optionName).map(cell));
   return out;
 }

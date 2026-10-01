@@ -49,10 +49,9 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       .eq("is_demo", false)
       .eq("id", id)
       .maybeSingle(),
-    supabase
-      .from("shuttle_assignments")
-      .select("id, weekdays, stop_id, shuttle_stops(seq, gate, route_id, shuttle_routes(route_no, name, direction, term, active))")
-      .eq("student_id", id),
+    // 정류장·노선은 아래에서 번호로 따로 읽습니다. 중첩 조인은 shuttle_stops→shuttle_routes 사이에
+    // 외래키가 둘이라 PostgREST 가 어느 것인지 못 정합니다.
+    supabase.from("shuttle_assignments").select("id, weekdays, stop_id").eq("student_id", id),
     supabase.from("attendance_records").select("date, status, note").eq("student_id", id).gte("date", since).order("date", { ascending: false }),
     supabase
       .from("pickup_requests")
@@ -61,8 +60,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       .gte("service_date", since)
       .order("service_date", { ascending: false })
       .limit(30),
-    supabase.from("incident_students").select("incident_id, incidents(id, title, date, category)").eq("student_id", id).limit(10),
-    supabase.from("wr_reports").select("id, report_date, term").eq("student_id", id).order("report_date", { ascending: false }).limit(5),
+    supabase.from("incident_students").select("incident_id, incidents(id, title, date, manual_cat)").eq("student_id", id).limit(10),
+    supabase.from("wr_reports").select("id, report_date, subject").eq("student_id", id).order("report_date", { ascending: false }).limit(5),
     supabase
       .from("tasks")
       .select("id, title, status, due_at, task_students!inner(student_id)")
@@ -81,29 +80,30 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     if (r.error) warnings.push(`${label}: ${r.error.message}`);
   }
 
-  type AsgRow = {
-    id: string;
-    weekdays: number[] | null;
-    shuttle_stops: { seq: number; gate: string | null; route_id: string; shuttle_routes: { route_no: string; name: string | null; direction: string; term: string; active: boolean } | null } | null;
-  };
-  const shuttle = ((asgRes.data as unknown as AsgRow[] | null) ?? [])
-    .filter((a) => a.shuttle_stops?.shuttle_routes)
-    .map((a) => ({
-      id: a.id,
-      routeNo: a.shuttle_stops!.shuttle_routes!.route_no,
-      routeName: a.shuttle_stops!.shuttle_routes!.name,
-      direction: a.shuttle_stops!.shuttle_routes!.direction,
-      term: a.shuttle_stops!.shuttle_routes!.term,
-      active: a.shuttle_stops!.shuttle_routes!.active,
-      stop: a.shuttle_stops!.gate,
-      weekdays: a.weekdays ?? [],
-    }));
+  type AsgRow = { id: string; weekdays: number[] | null; stop_id: string };
+  const asg = (asgRes.data as AsgRow[] | null) ?? [];
+  const stopIds = [...new Set(asg.map((a) => a.stop_id))];
+  const { data: stopRows } = stopIds.length ? await supabase.from("shuttle_stops").select("id, gate, route_id").in("id", stopIds) : { data: [] as { id: string; gate: string | null; route_id: string }[] };
+  const stops = new Map(((stopRows as { id: string; gate: string | null; route_id: string }[] | null) ?? []).map((x) => [x.id, x]));
+  const routeIds = [...new Set([...stops.values()].map((x) => x.route_id))];
+  const { data: routeRows } = routeIds.length
+    ? await supabase.from("shuttle_routes").select("id, route_no, name, direction, term, active").in("id", routeIds)
+    : { data: [] as { id: string; route_no: string; name: string | null; direction: string; term: string; active: boolean }[] };
+  const routes = new Map(((routeRows as { id: string; route_no: string; name: string | null; direction: string; term: string; active: boolean }[] | null) ?? []).map((x) => [x.id, x]));
+  const shuttle = asg
+    .map((a) => {
+      const st = stops.get(a.stop_id);
+      const r = st ? routes.get(st.route_id) : undefined;
+      if (!st || !r) return null;
+      return { id: a.id, routeNo: r.route_no, routeName: r.name, direction: r.direction, term: r.term, active: r.active, stop: st.gate, weekdays: a.weekdays ?? [] };
+    })
+    .filter((x): x is NonNullable<typeof x> => !!x);
 
   const att = (attRes.data as { date: string; status: string; note: string | null }[] | null) ?? [];
   const attSummary = { 결석: 0, 지각: 0, 조퇴: 0 };
   for (const a of att) if (a.status in attSummary) attSummary[a.status as keyof typeof attSummary] += 1;
 
-  type IncRow = { incident_id: string; incidents: { id: string; title: string | null; date: string | null; category: string | null } | null };
+  type IncRow = { incident_id: string; incidents: { id: string; title: string | null; date: string | null; manual_cat: string | null } | null };
 
   return NextResponse.json({
     today,
@@ -114,8 +114,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     dismissal: dismissalThisWeek((dpRes.data as DpRow[] | null) ?? [], today),
     attendance: { summary: attSummary, rows: att.filter((a) => a.status !== "출석").slice(0, 20) },
     pickups: (pickRes.data as Record<string, unknown>[] | null) ?? [],
-    incidents: ((incRes.data as unknown as IncRow[] | null) ?? []).map((r) => r.incidents).filter(Boolean),
-    reports: (repRes.data as { id: string; report_date: string; term: string | null }[] | null) ?? [],
+    incidents: ((incRes.data as unknown as IncRow[] | null) ?? []).map((r) => r.incidents).filter(Boolean).map((i) => ({ id: i!.id, title: i!.title, date: i!.date, category: i!.manual_cat })),
+    reports: ((repRes.data as { id: string; report_date: string; subject: string | null }[] | null) ?? []).map((r) => ({ id: r.id, report_date: r.report_date, term: r.subject })),
     tasks: ((taskRes.data as unknown as { id: string; title: string; status: string; due_at: string | null }[] | null) ?? []).map((t) => ({ id: t.id, title: t.title, status: t.status, due_at: t.due_at })),
     warnings,
   });

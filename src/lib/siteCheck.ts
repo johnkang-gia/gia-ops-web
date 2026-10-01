@@ -84,6 +84,7 @@ export const SCREENS: string[] = [
   "/records/drive",
   "/school",
   "/school/apparel",
+  "/school/library",
   "/school/data-check",
   "/school/documents",
   "/school/documents/reports",

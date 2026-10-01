@@ -194,6 +194,19 @@ export const DATA_KINDS: DataKindDef[] = [
     byDesign: null,
     rules: [],
   },
+  {
+    key: "도서관",
+    canonical: "lib_loans",
+    satellites: ["lib_books", "lib_visits", "lib_card_issues", "lib_settings", "lib_locations", "lib_map", "lib_student_photos", "lib_label_levels"],
+    dedupe: { none: "대출은 같은 아이가 같은 책을 다시 빌릴 수 있는 기록입니다. 중복이 아니라 이력입니다." },
+    apply: null,
+    undo: null,
+    gap: null,
+    byDesign:
+      "넣고 내리는 일은 **도서관 앱(gia-lib-web)** 이 합니다. 운영앱은 `src/lib/library.ts` 로 읽기만 합니다 - " +
+      "두 앱이 같은 표를 고치면 두 화면이 다른 답을 하게 됩니다. 학생은 `student_id` 로 잇고, 번호(`student_no`)는 바코드입니다.",
+    rules: [],
+  },
 ];
 
 /** 자료가 아니라 **기록**인 표. 쌓이는 것이 맞고, 중복을 막지 않습니다. */

@@ -82,7 +82,7 @@ const migrated = new Set();
 for (const f of readdirSync("supabase/migrations")) {
   if (!f.endsWith(".sql")) continue;
   const sql = readFileSync(join("supabase/migrations", f), "utf8");
-  for (const m of sql.matchAll(/create table (?:if not exists )?public\.([a-z_]+)/g)) migrated.add(m[1]);
+  for (const m of sql.matchAll(/create table (?:if not exists )?(?:public\.)?([a-z_]+)/g)) migrated.add(m[1]);
 }
 const ghosts = [...covered].filter((t) => !used.has(t) && !migrated.has(t));
 if (ghosts.length > 0) {

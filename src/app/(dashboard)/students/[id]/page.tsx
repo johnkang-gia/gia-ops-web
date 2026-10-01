@@ -15,6 +15,7 @@ import { won } from "@/lib/feeItems";
 import type { Invoice } from "@/lib/types";
 import type { Incident, Task, TaskComment, ChatMessage, WrClass, WrEnrollment, WrReport, WrStudent, WrStudentFieldDef } from "@/lib/types";
 import { loadStudents, loadStudentsFull } from "@/lib/students";
+import { LIBRARY_URL, loadStudentLibrary, overdueDays } from "@/lib/library";
 
 export const dynamic = "force-dynamic";
 
@@ -144,6 +145,11 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
   if (isMissingWeekStart(dpRes.error)) dpRes = await readPlans(false);
   if (dpRes.error) console.error("[학생] 하원수단을 읽지 못했습니다:", dpRes.error.message);
   const dismissalPlans = ((dpRes.data ?? []) as unknown as DismissalPlan[]) ?? [];
+
+  // 도서관 - 대출 중·연체·마지막 방문. 학부모 연락 전에 담임이 보는 자리입니다. 도서관 앱에
+  // 따로 들어가야 보이면 아무도 안 보고, 안 보는 연체는 학기 말에 한꺼번에 나옵니다.
+  const lib = await loadStudentLibrary(supabase, id);
+  if (lib.error) console.error("[학생] 도서관 자료를 읽지 못했습니다:", lib.error);
 
   // 이 아이가 어느 셔틀을 타는지.
   //
@@ -432,6 +438,51 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
           <p className="mt-1.5 text-[11px] text-slate-400">요일 표시가 없으면 매일 탑니다.</p>
         </div>
       )}
+
+      {/* 도서관 - 운영앱에서는 읽기만. 대출·반납은 도서관 앱의 일입니다. */}
+      <div className="mb-5 g-panel-solid p-4 shadow-sm">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <h2 className="text-sm font-bold text-slate-700">
+            📚 도서관
+            {lib.overdue.length > 0 && <span className="ml-2 rounded bg-red-100 px-1.5 py-0.5 text-[11px] font-bold text-red-700">연체 {lib.overdue.length}권</span>}
+          </h2>
+          <span className="flex items-center gap-2 text-[11px]">
+            <Link href="/school/library" className="text-blue-500 hover:underline">도서관 현황</Link>
+            {LIBRARY_URL && (
+              <a href={LIBRARY_URL} target="_blank" rel="noreferrer" className="text-emerald-600 hover:underline">
+                도서관 앱 ↗
+              </a>
+            )}
+          </span>
+        </div>
+        {lib.error ? (
+          <p className="text-xs text-red-600">도서관 자료를 읽지 못했습니다: {lib.error}</p>
+        ) : lib.active.length === 0 && lib.recent.length === 0 && !lib.lastVisit ? (
+          <p className="text-xs text-slate-400">도서관 이용 기록이 없습니다.</p>
+        ) : (
+          <div className="flex flex-col gap-1.5 text-xs">
+            {lib.active.map((l) => {
+              const od = overdueDays(l.due_date);
+              return (
+                <div key={l.id} className={"flex flex-wrap items-center gap-2 rounded-lg px-2.5 py-1.5 " + (od > 0 ? "bg-red-50" : "bg-slate-50")}>
+                  <span className={"rounded px-1.5 py-0.5 font-bold " + (od > 0 ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700")}>
+                    {od > 0 ? `연체 ${od}일` : "대출 중"}
+                  </span>
+                  <span className="font-semibold text-slate-800">{l.book?.title ?? "(책 정보 없음)"}</span>
+                  <span className="text-slate-400">기한 {l.due_date.slice(5).replace("-", "/")}</span>
+                </div>
+              );
+            })}
+            {lib.active.length === 0 && <p className="text-slate-400">지금 빌린 책이 없습니다.</p>}
+            {(lib.recent.length > 0 || lib.lastVisit) && (
+              <p className="mt-1 text-[11px] text-slate-400">
+                {lib.lastVisit && <>마지막 방문 {kstDate(lib.lastVisit.visited_at)} · </>}
+                최근 반납 {lib.recent.map((l) => l.book?.title ?? "?").slice(0, 3).join(" · ") || "없음"}
+              </p>
+            )}
+          </div>
+        )}
+      </div>
 
       <div id="academic" className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2 scroll-mt-16">
         <div className="g-panel-solid p-4 shadow-sm">

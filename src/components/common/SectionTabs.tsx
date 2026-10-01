@@ -160,6 +160,7 @@ const SCHOOL_TABS: TabDef[] = [
       "/school/groups",
       "/school/apparel",
       "/school/toddle",
+      "/school/library",
     ],
     children: [
       { label: "학생 조회", href: "/students", match: ["/students"] },
@@ -182,6 +183,9 @@ const SCHOOL_TABS: TabDef[] = [
       // 토들 방 이름 ↔ 학생. 학기에 한 번 하는 일이라 명부 옆에 둡니다 - 학기 초에
       // 명부를 정리할 때 함께 끝내야 잊지 않습니다.
       { label: "토들 채널", href: "/school/toddle", match: ["/school/toddle"] },
+      // 도서관은 별도 앱이지만 자료는 같은 DB 입니다. 연체·오늘 방문·학생증 미발급을 여기서 읽고,
+      // 대출·반납은 도서관 앱으로 넘어갑니다.
+      { label: "도서관", href: "/school/library", match: ["/school/library"] },
     ],
   },
   // 출석부는 학교 자료입니다. 업무 메뉴(연락·출결)에 있던 것을 옮겼습니다 - 거기서는

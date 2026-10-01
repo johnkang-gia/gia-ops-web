@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import type { HomonymEntry } from "@/components/common/HomonymProvider";
+import { loadStudents } from "@/lib/students";
 
 /**
  * 겹치는 이름과 그 아이들의 반을 읽어옵니다 — **로그인 영역 레이아웃에서 한 번만.**
@@ -19,18 +20,12 @@ import type { HomonymEntry } from "@/components/common/HomonymProvider";
  */
 export async function loadHomonyms(): Promise<HomonymEntry> {
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("wr_students")
-    .select("id, name, grade, class_name")
-    .eq("is_demo", false)
-    .eq("status", "active");
+  const { rows, error } = await loadStudents(supabase);
 
   if (error) {
-    console.error("[동명이인] 명부를 읽지 못해 반 뱃지를 못 붙입니다:", error.message);
+    console.error("[동명이인] 명부를 읽지 못해 반 뱃지를 못 붙입니다:", error);
     return { byId: {}, names: [] };
   }
-
-  const rows = (data as { id: string; name: string; grade: string | null; class_name: string | null }[] | null) ?? [];
 
   const count = new Map<string, number>();
   for (const s of rows) {

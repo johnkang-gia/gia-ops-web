@@ -6,6 +6,7 @@ import { readAll, readNotice } from "@/lib/financeFetch";
 import { todayKst } from "@/lib/kst";
 import UnpaidClient from "@/components/finance/UnpaidClient";
 import type { UnpaidInvoice, UnpaidPayment } from "@/lib/unpaidLedger";
+import { loadStudents } from "@/lib/students";
 
 export const dynamic = "force-dynamic";
 
@@ -38,16 +39,17 @@ export default async function UnpaidPage() {
     readAll<UnpaidPayment>((from, to) =>
       supabase.from("payments").select("invoice_id, amount").not("invoice_id", "is", null).order("invoice_id").range(from, to),
     ),
-    supabase.from("wr_students").select("id, name, grade, class_name").eq("is_demo", false),
+    // 퇴소한 아이의 미납도 보여야 하므로 전부 읽습니다.
+    loadStudents(supabase, { status: "all" }),
   ]);
 
   return (
     <UnpaidClient
       invoices={invRes.rows}
       payments={payRes.rows}
-      students={((stuRes.data as { id: string; name: string; grade: string | null; class_name: string | null }[] | null) ?? [])}
+      students={stuRes.rows}
       today={todayKst()}
-      loadError={readNotice(invRes, payRes) ?? stuRes.error?.message ?? null}
+      loadError={readNotice(invRes, payRes) ?? stuRes.error ?? null}
     />
   );
 }

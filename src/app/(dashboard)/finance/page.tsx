@@ -13,6 +13,7 @@ import type { PaymentRow } from "@/lib/payments";
 import type { FeeItem, Invoice, StudentFeeItem } from "@/lib/types";
 import { Who } from "@/components/common/HomonymProvider";
 import { readAll, readNotice } from "@/lib/financeFetch";
+import { loadStudents } from "@/lib/students";
 
 // 재무 개요.
 //
@@ -29,7 +30,7 @@ export default async function FinanceOverviewPage() {
 
   const supabase = await createClient();
   const [stuRes, itemsRes, ovRes, invRes, payRes] = await Promise.all([
-    supabase.from("wr_students").select("id, name, grade, class_name").eq("status", "active").eq("is_demo", false),
+    loadStudents(supabase),
     supabase.from("fee_items").select("*"),
     supabase.from("student_fee_items").select("*"),
     // **끝까지 읽습니다.** 예전에는 500줄만 읽었는데, 139명 × (학비+학비외) ≒ 월 278장이라
@@ -41,9 +42,9 @@ export default async function FinanceOverviewPage() {
     readAll<PaymentRow>((from, to) => supabase.from("payments").select("*").order("paid_at").order("id").range(from, to)),
   ]);
 
-  const loadError = stuRes.error?.message ?? itemsRes.error?.message ?? ovRes.error?.message ?? readNotice(invRes, payRes);
+  const loadError = stuRes.error ?? itemsRes.error?.message ?? ovRes.error?.message ?? readNotice(invRes, payRes);
 
-  const students = ((stuRes.data as { id: string; name: string; grade: string | null; class_name: string | null }[] | null) ?? []).map(
+  const students = stuRes.rows.map(
     (s) => ({ id: s.id, name: s.name, grade: s.grade, className: s.class_name }),
   );
   // active 로 거르지 않습니다. 항목은 끄는 것이 아니라 지웁니다(2026-09).

@@ -5,6 +5,7 @@ import { loadTodayPickups } from "@/lib/pickups";
 import { kstParts } from "@/lib/shuttleTracking";
 import { loadDismissalForDay } from "@/lib/dismissalToday";
 import { isNoteKind, KIND_LOOK } from "@/lib/studentDayNotes";
+import { loadStudents } from "@/lib/students";
 
 /**
  * 오늘 「시각이 정해진 하원」과 그 아이가 지금 있는 자리.
@@ -38,13 +39,9 @@ export async function GET() {
   const minute = new Date(now.getTime() + 9 * 60 * 60 * 1000).getUTCMinutes();
   const nowMinutes = hour * 60 + minute;
 
-  const { data: students } = await supabase
-    .from("wr_students")
-    .select("id, name, grade, class_name")
-    .eq("status", "active")
-    .eq("is_demo", false);
-  const byId = new Map((students ?? []).map((s) => [s.id as string, s]));
-  const byName = new Map((students ?? []).map((s) => [(s.name as string) ?? "", s]));
+  const { rows: students } = await loadStudents(supabase);
+  const byId = new Map(students.map((s) => [s.id, s]));
+  const byName = new Map(students.map((s) => [s.name ?? "", s]));
 
   const pickups = await loadTodayPickups(supabase, today, (id: string) => (byId.get(id)?.name as string) ?? null);
 

@@ -11,6 +11,7 @@ import TuitionGridClient, {
   type StudentDiscountRow,
 } from "@/components/finance/TuitionGridClient";
 import type { FeePlan, FeePaymentOption, FeeDiscount, Term, Invoice } from "@/lib/types";
+import { loadStudents } from "@/lib/students";
 
 export const dynamic = "force-dynamic";
 
@@ -49,13 +50,7 @@ export default async function TuitionPage() {
 
   const supabase = await createClient();
   const [stuRes, planRes, optRes, discRes, termRes, enrollRes, sdRes, invRes, payRes] = await Promise.all([
-    supabase
-      .from("wr_students")
-      .select("id, name, name_en, grade, class_name, department")
-      .eq("status", "active")
-      .eq("is_demo", false)
-      .order("grade")
-      .order("name"),
+    loadStudents(supabase, { order: "grade" }),
     // **학비만 거르지 않습니다.** 표에는 학비만 뜨지만, 팝업에서는 학비외 항목도 고칠 수
     // 있어야 합니다 - 거기서 안 보이면 결국 다른 화면으로 건너가게 됩니다.
     supabase.from("fee_plans").select("*").order("category").order("sort_order").order("name"),
@@ -88,7 +83,7 @@ export default async function TuitionPage() {
   // 무엇을 못 읽었는지 **화면에 말합니다.** 조용히 비어 있으면 「아직 아무도 안 골랐구나」로
   // 오해하고 그대로 발행하게 됩니다.
   const loadError =
-    stuRes.error?.message ??
+    stuRes.error ??
     planRes.error?.message ??
     optRes.error?.message ??
     discRes.error?.message ??
@@ -98,9 +93,7 @@ export default async function TuitionPage() {
     readNotice(payRes) ??
     null;
 
-  const students: TuitionStudent[] = ((stuRes.data as
-    | { id: string; name: string; name_en: string | null; grade: string | null; class_name: string | null; department: string | null }[]
-    | null) ?? []).map((s) => ({
+  const students: TuitionStudent[] = stuRes.rows.map((s) => ({
     id: s.id,
     name: s.name,
     nameEn: s.name_en,

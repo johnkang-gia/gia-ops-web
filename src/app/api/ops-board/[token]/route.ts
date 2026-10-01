@@ -14,6 +14,7 @@ import { loadStudentDay } from "@/lib/studentDayLoad";
 import { departmentOf, gradeSortKey, isVisibleDepartment, VISIBLE_DEPARTMENTS, type VisibleDepartment } from "@/lib/department";
 import { loadDismissalForDay, DISMISSAL_SELECT, isMissingWeekStart, type DismissalRow } from "@/lib/dismissalToday";
 import { addDays, nextWeekStart, weekStartOf } from "@/lib/dismissalWeek";
+import { loadStudents } from "@/lib/students";
 
 export const dynamic = "force-dynamic";
 
@@ -172,14 +173,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   // 예전에는 여기서 한 번(재학생), 아래 문의 이름을 한글로 바꾸는 데서 또 한 번(재학+보류)
   // 읽었습니다. 같은 137명을 30초마다 두 벌씩 실어 날랐습니다. 넓은 쪽으로 한 번 읽고
   // 좁은 쪽은 걸러 씁니다.
-  const { data: everyone } = await cached("students:all", async () =>
-    supabase
-      .from("wr_students")
-      .select("id, name, name_en, grade, class_name, department, birth_date, status")
-      .in("status", ["active", "보류"])
-      .eq("is_demo", false),
-  );
-  const students = (everyone ?? []).filter((s) => s.status === "active");
+  const { rows: students } = await cached("students:all", () => loadStudents(supabase));
   const deptStudents = students.filter((s) => departmentOf(s) === department);
   const studentById = new Map(students.map((s) => [s.id, s]));
   // 부서를 가리지 않은 전체 명부 이름. 「이 이름이 다른 부서 아이인가, 아예 못 찾는 이름인가」를
@@ -394,7 +388,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   // **손으로 옮기지 않습니다.** 예전에는 여기서 map 을 직접 썼고, 조회에는 있던 birth_date 가
   // 그 map 에서 빠져 있었습니다. 생일로 가르는 규칙은 멀쩡했는데 재료가 없어서, 김재이 셋이
   // 화면에는 그냥 「김재이」로 떴습니다. 빠뜨려도 오류가 아니라 «그냥 이름»으로 보입니다.
-  const nameRoster: RosterEntry[] = toRosterEntries(everyone);
+  const nameRoster: RosterEntry[] = toRosterEntries(students);
 
   const { data: inquiryRows } = await supabase
     .from("pickup_requests")

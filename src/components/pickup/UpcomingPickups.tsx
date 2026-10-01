@@ -7,6 +7,7 @@ import StudentPicker from "@/components/pickup/StudentPicker";
 import { type RosterEntry } from "@/lib/pickupParse";
 import { buildAliasIndex, resolveStudent, type AliasRule } from "@/lib/studentMatch";
 import { Who } from "@/components/common/HomonymProvider";
+import { loadStudents } from "@/lib/students";
 
 // 앞으로 예정된 픽업.
 //
@@ -82,13 +83,8 @@ export default function UpcomingPickups({ initialRows }: { initialRows: Schedule
 
   useEffect(() => {
     void (async () => {
-      const { data } = await createClient()
-        .from("wr_students")
-        .select("id, name, grade, class_name, name_en, student_no, birth_date")
-        .eq("status", "active")
-        .eq("is_demo", false)
-        .order("name");
-      setStudents((data as StudentOption[] | null) ?? []);
+      const { rows } = await loadStudents(createClient());
+      setStudents(rows as StudentOption[]);
     })();
   }, []);
 

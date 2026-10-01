@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import { todayKst } from "@/lib/kst";
 import { DISMISSAL_REPEATS, REPEAT_HINT, weekStartFor, type DismissalRepeat } from "@/lib/dismissalWeek";
+import { loadStudents } from "@/lib/students";
 
 /**
  * 업무보드에서 연락 하나를 **그 자리에서** 처리하는 팝업들.
@@ -132,17 +133,11 @@ export function StudentPicker({
 
   useEffect(() => {
     const supabase = createClient();
-    supabase
-      .from("wr_students")
-      .select("id, name, grade, class_name")
-      .eq("is_demo", false)
-      .eq("status", "active")
-      .order("name")
-      .then(({ data, error }) => {
-        // 조용히 빈 목록을 두면 「명부에 없는 아이」로 보입니다.
-        if (error) setErr(error.message);
-        else setAll((data as StudentPick[]) ?? []);
-      });
+    void loadStudents(supabase).then(({ rows, error }) => {
+      // 조용히 빈 목록을 두면 「명부에 없는 아이」로 보입니다.
+      if (error) setErr(error);
+      else setAll(rows);
+    });
   }, []);
 
   const hits = useMemo(() => {

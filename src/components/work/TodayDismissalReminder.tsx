@@ -8,6 +8,7 @@ import { loadDismissalForDay, DISMISSAL_SELECT, isMissingWeekStart, type Dismiss
 import { addDays, nextWeekStart, weekStartOf } from "@/lib/dismissalWeek";
 import { buildDismissalBoard, type PlanEntry } from "@/lib/dismissalBoard";
 import { setterLabel, type PickupVia } from "@/lib/pickups";
+import { loadStudents } from "@/lib/students";
 
 /**
  * **오늘 하원체크** — 업무보드 맨 위.
@@ -113,14 +114,8 @@ export default function TodayDismissalReminder({
         return;
       }
 
-      const { data: students } = await supabase
-        .from("wr_students")
-        .select("id, name, grade, class_name")
-        .eq("is_demo", false)
-        .in("id", ids);
-      const byId = new Map(
-        ((students as { id: string; name: string; grade: string | null; class_name: string | null }[] | null) ?? []).map((s) => [s.id, s]),
-      );
+      const { rows: students } = await loadStudents(supabase, { ids, status: "all" });
+      const byId = new Map(students.map((s) => [s.id, s]));
 
       setRows(
         todayIds

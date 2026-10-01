@@ -4,6 +4,7 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess } from "@/lib/roles";
 import GuideButton from "@/components/common/GuideButton";
 import CashReceiptsClient, { type CashReceiptRow, type StudentLite } from "@/components/finance/CashReceiptsClient";
+import { loadStudents } from "@/lib/students";
 
 export const dynamic = "force-dynamic";
 
@@ -42,21 +43,15 @@ export default async function CashReceiptsPage() {
   if (!hasFinanceAccess(me)) redirect("/home");
 
   const supabase = await createClient();
-  const [{ data, error }, { data: studentRows }] = await Promise.all([
+  const [{ data, error }, { rows: studentRows }] = await Promise.all([
     supabase.from("cash_receipts").select("*").order("created_at", { ascending: false }).limit(500),  // finance-limit-ok: 현금영수증은 접수 순으로 처리하는 목록입니다. 합계를 내지 않으므로 최근 500건이면 일이 됩니다.
     // 접수할 때 이름으로 학생을 고릅니다. 명부 전체가 있어야 이름을 치는 순간 붙습니다.
-    supabase
-      .from("wr_students")
-      .select("id, name, grade, class_name")
-      .eq("status", "active")
-      .eq("is_demo", false)
-      .order("grade")
-      .order("name"),
+    loadStudents(supabase, { order: "grade" }),
   ]);
   if (error) console.error("[현금영수증] 목록을 읽지 못했습니다:", error.message);
 
   const rows = (data as CashReceiptRow[] | null) ?? [];
-  const students = (studentRows as StudentLite[] | null) ?? [];
+  const students: StudentLite[] = studentRows;
 
   // 어느 청구서 건인지. 「이 사람 얼마짜리였지」를 확인하러 인보이스 명단으로 건너가야
   // 하면 그 왕복이 곧 안 하게 되는 이유가 됩니다.

@@ -4,6 +4,7 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess, isSuperAdminUser } from "@/lib/roles";
 import type { FeePlan, FeePaymentOption, FeeDiscount } from "@/lib/types";
 import FeePlansClient from "@/components/finance/FeePlansClient";
+import { loadStudents } from "@/lib/students";
 
 // 납부 항목 · 할인 (재무 전용)
 //
@@ -29,10 +30,10 @@ export default async function FeePlansPage() {
     supabase.from("fee_plans").select("*").order("category").order("sort_order").order("name"),
     supabase.from("fee_payment_options").select("*").order("sort_order").order("periods"),
     supabase.from("fee_discounts").select("*").order("active", { ascending: false }).order("sort_order").order("name"),
-    supabase.from("wr_students").select("grade, class_name").eq("is_demo", false).eq("status", "active"),
+    loadStudents(supabase),
   ]);
 
-  const roster = (rosterRes.data as { grade: string | null; class_name: string | null }[] | null) ?? [];
+  const roster = rosterRes.rows;
   const gradeOptions = [...new Set(roster.map((r) => (r.grade ?? "").trim()).filter(Boolean))].sort();
   const classesByGrade: Record<string, string[]> = {};
   for (const r of roster) {

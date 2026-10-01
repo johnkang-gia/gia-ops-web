@@ -6,6 +6,7 @@ import { isStaffOrAboveUser } from "@/lib/roles";
 import type { WrStudent } from "@/lib/types";
 import AssignmentClient from "@/components/shuttle/AssignmentClient";
 import GuideButton from "@/components/common/GuideButton";
+import { loadStudents } from "@/lib/students";
 
 const GUIDE_SECTIONS = [
   {
@@ -37,7 +38,7 @@ export default async function ShuttleAssignmentsPage() {
   const [world, studentsRes] = await Promise.all([
     // 대기(꺼둔) 노선도 함께 - 새로 온 아이를 빈 차에 넣는 자리입니다. 거르는 규칙은 shuttleWorld 한 곳.
     loadShuttleWorld(supabase, { includeDormant: true, assignments: "full" }),
-    supabase.from("wr_students").select("id, name, grade, class_name").eq("status", "active").eq("is_demo", false).order("name"),
+    loadStudents(supabase),
   ]);
 
   return (
@@ -57,7 +58,7 @@ export default async function ShuttleAssignmentsPage() {
           routes={world.routes}
           stops={world.stops}
           initialAssignments={world.assignments}
-          students={(studentsRes.data as Pick<WrStudent, "id" | "name" | "grade" | "class_name">[] | null) ?? []}
+          students={studentsRes.rows}
         />
       </div>
     </div>

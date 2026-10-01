@@ -7,6 +7,7 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess } from "@/lib/roles";
 import { readAll, readNotice } from "@/lib/financeFetch";
 import { studentIdOf, type ReviewRow, type StudentBefore, type MatchKind, type PlanKind } from "@/lib/paymentImport";
+import { loadStudents } from "@/lib/students";
 
 export const dynamic = "force-dynamic";
 
@@ -76,14 +77,8 @@ export default async function ImportReviewPage({ params }: { params: Promise<{ b
     applyError: r.apply_error,
   }));
 
-  const { data: stuRows } = await supabase
-    .from("wr_students")
-    .select("id, name, grade, class_name")
-    .eq("is_demo", false)
-    .eq("status", "active")
-    .order("grade")
-    .order("name");
-  const students = ((stuRows as { id: string; name: string; grade: string | null; class_name: string | null }[] | null) ?? []).map((s) => ({
+  const { rows: stuRows } = await loadStudents(supabase, { order: "grade" });
+  const students = stuRows.map((s) => ({
     id: s.id,
     name: s.name,
     where: s.class_name || (s.grade ? `${s.grade}학년` : ""),

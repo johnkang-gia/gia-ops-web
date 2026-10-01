@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
+import { loadStudents } from "@/lib/students";
 
 // 가르친 규칙 목록 - 보고, 고치고, 지웁니다.
 //
@@ -40,12 +41,12 @@ export default function AttendanceRulesModal({ onClose }: { onClose: () => void 
 
   const load = useCallback(async () => {
     const supabase = createClient();
-    const [{ data: r }, { data: s }] = await Promise.all([
+    const [{ data: r }, { rows: s }] = await Promise.all([
       supabase.from("attendance_learning_rules").select("*").order("kind").order("pattern"),
-      supabase.from("wr_students").select("id, name, grade").eq("status", "active").eq("is_demo", false).order("name"),
+      loadStudents(supabase),
     ]);
     setRules((r as Rule[] | null) ?? []);
-    setStudents((s as { id: string; name: string; grade: string | null }[] | null) ?? []);
+    setStudents(s);
     setLoading(false);
   }, []);
 

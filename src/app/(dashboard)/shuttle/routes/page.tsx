@@ -6,6 +6,7 @@ import { isStaffOrAboveUser } from "@/lib/roles";
 import type { WrStudent } from "@/lib/types";
 import RouteManageClient, { type RouteAssignment } from "@/components/shuttle/RouteManageClient";
 import GuideButton from "@/components/common/GuideButton";
+import { loadStudents } from "@/lib/students";
 
 const GUIDE_SECTIONS = [
   {
@@ -37,7 +38,7 @@ export default async function ShuttleRoutesPage() {
   const [world, studentsRes] = await Promise.all([
     // 노선 관리는 고치는 화면이라 대기(꺼둔) 노선도 봅니다. 운영 화면은 켠 노선만 봅니다.
     loadShuttleWorld(supabase, { includeDormant: true, assignments: "full" }),
-    supabase.from("wr_students").select("id, name, grade, class_name").eq("status", "active").eq("is_demo", false).order("name"),
+    loadStudents(supabase),
   ]);
 
   return (
@@ -58,7 +59,7 @@ export default async function ShuttleRoutesPage() {
           initialStops={world.stops}
           assignmentCounts={world.assignments as RouteAssignment[]}
           assignments={world.assignments}
-          students={(studentsRes.data as Pick<WrStudent, "id" | "name" | "grade" | "class_name">[] | null) ?? []}
+          students={studentsRes.rows}
         />
       </div>
     </div>

@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { departmentOf } from "@/lib/department";
 import { departmentFromClassName } from "@/lib/shuttleDivision";
+import { loadStudents } from "@/lib/students";
 
 // 셔틀 배정(shuttle_assignments)의 이름 문자열을 학생 ID로 승격시킵니다.
 //
@@ -103,17 +104,14 @@ export async function GET(req: NextRequest) {
 
   const apply = req.nextUrl.searchParams.get("apply") === "1";
 
-  const [{ data: studentRows }, { data: rows }] = await Promise.all([
+  const [{ rows: studentRows }, { data: rows }] = await Promise.all([
     // **재학 중인 학생만** 명부로 씁니다.
     //
     // 처음엔 이 조건을 빼먹어서 454행 중 292명이 대조 대상으로 잡혔습니다. 실제 명부는 137명
     // (초등 101 + 중고등 36)인데, 지난 학기 학생과 중복 행까지 섞여 들어간 것입니다.
     // 그 상태로 연결했다면 셔틀 배정이 **이미 나간 학생에게 붙었을** 수 있습니다.
     // 미리보기로 돌려서 다행이었습니다.
-    db.from("wr_students")
-      .select("id, name, name_en, grade, department, birth_date, class_name, status")
-      .eq("is_demo", false)
-      .eq("status", "active"),
+    loadStudents(db),
     // 칸을 콕 집지 않고 전부 가져옵니다 - 이 표는 마이그레이션 밖에서 만들어져서 어떤 칸이
     // 있는지 코드로 확신할 수 없습니다. 아래 debug에 실제 칸 목록을 함께 돌려줍니다.
     db.from("shuttle_assignments").select("*").is("student_id", null),
@@ -132,7 +130,7 @@ export async function GET(req: NextRequest) {
     .select("kind, pattern, student_name, student_id")
     .eq("kind", "alias");
 
-  const all = (studentRows ?? []) as Student[];
+  const all = studentRows as unknown as Student[];
 
   // ── 명부 = 절대 기준 ──────────────────────────────────────────────────────
   // 초등부·중고등부만 대조 대상입니다. 유치부는 명부에 있더라도 연결하지 않습니다.

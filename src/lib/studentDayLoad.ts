@@ -6,6 +6,7 @@ import { loadTodayPickups, setterLabel } from "./pickups";
 import { loadActiveEntries, loadUpcomingEntries } from "./attendanceEntries";
 import { departmentOf } from "./department";
 import { kstDateOffset } from "./kst";
+import { loadStudents } from "@/lib/students";
 
 /**
  * **여러 표에서 읽어 학생 하루 보드로 조립합니다.**
@@ -55,18 +56,11 @@ export async function loadStudentDay(supabase: SupabaseClient, opts: LoadOptions
   // ── 명부를 한 번만 읽습니다 ──────────────────────────────────────────────
   //
   // 여러 갈래가 각자 명부를 읽으면 같은 139명을 대여섯 벌씩 실어 나릅니다.
-  const { data: stuRows, error: stuErr } = await supabase
-    .from("wr_students")
-    .select("id, name, grade, class_name, department")
-    .eq("status", "active")
-    .eq("is_demo", false);
+  const { rows: all, error: stuErr } = await loadStudents(supabase);
   if (stuErr) {
     // 명부를 못 읽으면 아무것도 못 묶습니다. 빈 보드를 조용히 띄우지 않습니다.
-    return { date, days: [], unknown: [], problems: [`명부를 읽지 못했습니다: ${stuErr.message}`] };
+    return { date, days: [], unknown: [], problems: [`명부를 읽지 못했습니다: ${stuErr}`] };
   }
-
-  type Row = { id: string; name: string; grade: string | null; class_name: string | null; department: string | null };
-  const all = (stuRows as Row[] | null) ?? [];
   const mine = department ? all.filter((s) => departmentOf(s) === department) : all;
   const roster = mine.map((s) => ({ id: s.id, name: s.name, grade: s.grade, className: s.class_name }));
   const nameById = new Map(all.map((s) => [s.id, s.name]));

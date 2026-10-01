@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import DismissalRosterClient, { type RosterRoute, type RosterAssignment, type RosterStudent } from "@/components/shuttle/DismissalRosterClient";
 import { effectiveRouteId, routeChoiceOf } from "@/lib/shuttleRoute";
+import { loadStudents } from "@/lib/students";
 
 export const dynamic = "force-dynamic";
 
@@ -76,18 +77,12 @@ export default async function DismissalRosterPage() {
 
   // 명부. 이름을 손으로 치지 않고 여기서 고르게 합니다 - 오타 한 글자면 다른 아이가 되고,
   // 그 줄은 대시보드·체크표에서 학생을 못 찾습니다.
-  const { data: studentRows } = await supabase
-    .from("wr_students")
-    .select("id, name, grade, class_name")
-    .eq("status", "active")
-    .eq("is_demo", false)
-    .order("grade")
-    .order("name");
+  const { rows: studentRows } = await loadStudents(supabase, { order: "grade" });
 
   return (
     <DismissalRosterClient
       initialRoutes={rosterRoutes}
-      students={((studentRows as RosterStudent[] | null) ?? [])}
+      students={studentRows as RosterStudent[]}
     />
   );
 }

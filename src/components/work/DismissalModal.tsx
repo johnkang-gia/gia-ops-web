@@ -20,6 +20,7 @@ import {
   type DismissalRepeat,
 } from "@/lib/dismissalWeek";
 import { DISMISSAL_SELECT, isMissingWeekStart, WEEK_START_NOTICE, type DismissalRow } from "@/lib/dismissalToday";
+import { loadStudents } from "@/lib/students";
 
 /**
  * **하원수단 팝업** — 업무보드에서 화면을 떠나지 않고 오늘·앞날 하원을 관리합니다.
@@ -165,14 +166,8 @@ export default function DismissalModal({ onClose }: { onClose: () => void }) {
       setPlans([]);
       return;
     }
-    const { data: students } = await supabase
-      .from("wr_students")
-      .select("id, name, grade, class_name")
-      .eq("is_demo", false)
-      .in("id", ids);
-    const byId = new Map(
-      ((students as { id: string; name: string; grade: string | null; class_name: string | null }[] | null) ?? []).map((s) => [s.id, s]),
-    );
+    const { rows: students } = await loadStudents(supabase, { ids, status: "all" });
+    const byId = new Map(students.map((s) => [s.id, s]));
     setPlans(
       rows
         .map((r) => {

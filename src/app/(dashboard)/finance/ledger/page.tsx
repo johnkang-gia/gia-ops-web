@@ -27,14 +27,27 @@ export const dynamic = "force-dynamic";
  */
 function tuitionCells(charges: ReturnType<typeof buildLedger>["charges"]): { label: string; amount: number; none: boolean }[] {
   const rank = (name: string) => (/정규/.test(name) ? 0 : /방과후/.test(name) ? 1 : 2);
-  return charges
-    .filter((c) => c.kind === "학비")
-    .sort((a, b) => rank(a.label) - rank(b.label) || a.label.localeCompare(b.label, "ko"))
-    .map((c) => ({
-      label: `${shortPlan(c.label)}${c.optionName ? ` ${shortOption(c.optionName)}` : ""}`,
-      amount: c.amount,
-      none: !c.optionName,
-    }));
+  const all = charges.filter((c) => c.kind === "학비").sort((a, b) => rank(a.label) - rank(b.label) || a.label.localeCompare(b.label, "ko"));
+  const cell = (c: (typeof all)[number]) => ({
+    label: `${shortPlan(c.label)}${c.optionName ? ` ${shortOption(c.optionName)}` : ""}`,
+    amount: c.amount,
+    none: !c.optionName,
+  });
+  // 정규는 늘 한 칸(안 골랐으면 「정규 신청안함」). 방과후는 2일·3일·5일이 따로 항목이라
+  // 전부 적으면 한 줄에 「신청안함」이 셋 서고 정작 고른 것이 묻힙니다 - 고른 것만 적고,
+  // 하나도 안 골랐으면 「방과후 신청안함」 한 칸. 그 외(LMA 등)는 고른 것만 적습니다.
+  const out: { label: string; amount: number; none: boolean }[] = [];
+  const regular = all.filter((c) => rank(c.label) === 0);
+  const after = all.filter((c) => rank(c.label) === 1);
+  const rest = all.filter((c) => rank(c.label) === 2);
+  if (regular.length === 0) out.push({ label: "정규", amount: 0, none: true });
+  else if (regular.some((c) => c.optionName)) out.push(...regular.filter((c) => c.optionName).map(cell));
+  else out.push(cell(regular[0]));
+  const afterPicked = after.filter((c) => c.optionName);
+  if (afterPicked.length > 0) out.push(...afterPicked.map(cell));
+  else if (after.length > 0) out.push({ label: "방과후", amount: 0, none: true });
+  out.push(...rest.filter((c) => c.optionName).map(cell));
+  return out;
 }
 
 /** 학비외는 분류별로 셉니다 - 「교재 5 · 교복 2」. 항목 이름을 다 적으면 한 줄에 열 개가 섭니다. */

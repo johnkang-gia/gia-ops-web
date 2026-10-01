@@ -271,6 +271,9 @@ function StockView({
   );
 }
 
+/** 한 아이·한 항목의 청구 상태. 청구서가 없으면 키 자체가 없습니다. */
+export type ApparelBilling = { invoiceNo: string; paid: boolean };
+
 export default function ApparelClient({
   initialOrders,
   initialPieces,
@@ -284,6 +287,9 @@ export default function ApparelClient({
   groupMembers,
   currentUserEmail,
   isDemo,
+  canSeeFinance,
+  feeItems,
+  billing,
 }: {
   initialOrders: ApparelOrder[];
   initialPieces: ApparelOrderPiece[];
@@ -297,6 +303,11 @@ export default function ApparelClient({
   groupMembers: Record<string, string[]>;
   currentUserEmail: string;
   isDemo: boolean;
+  /** 재무 권한. 없으면 납부 항목·청구 상태는 안 보입니다(표가 잠겨 있어 읽어도 비어 옵니다). */
+  canSeeFinance: boolean;
+  feeItems: { id: string; code: string | null; name: string; name_ko: string | null; unit_price: number }[];
+  /** `${itemId}|${studentId}` → 청구 상태 */
+  billing: Record<string, ApparelBilling>;
 }) {
   const notify = useToast();
   const [orders, setOrders] = useState(initialOrders);
@@ -489,6 +500,24 @@ export default function ApparelClient({
         : `${students}명을 넣었습니다. 사이즈를 적어주세요.`,
       "success",
     );
+  }
+
+  /**
+   * 제작 건에 납부 항목을 답니다. 달면 명단의 아이마다 그 항목이 붙습니다(트리거). 떼면 붙은
+   * 것은 그대로 둡니다 - 이미 청구된 줄이 가리키고 있을 수 있어서, 지우는 것은 학비외 화면에서
+   * 사람이 합니다.
+   */
+  async function linkFeeItem(o: ApparelOrder, feeItemId: string | null) {
+    setBusy(true);
+    const supabase = createClient();
+    const { error } = await supabase.from("apparel_orders").update({ fee_item_id: feeItemId }).eq("id", o.id);
+    setBusy(false);
+    if (error) {
+      notify("납부 항목을 달지 못했습니다: " + error.message, "error");
+      return;
+    }
+    setOrders((list) => list.map((x) => (x.id === o.id ? { ...x, fee_item_id: feeItemId } : x)));
+    notify(feeItemId ? "납부 항목을 달았습니다. 명단의 아이마다 이 항목이 붙습니다." : "납부 항목을 뗐습니다.", "success");
   }
 
   async function setSize(item: ApparelOrderItem, raw: string) {
@@ -823,6 +852,24 @@ export default function ApparelClient({
                 </span>
                 <span className="text-[11px] font-semibold text-slate-600">{orderStudentIds.length}명</span>
                 {pending > 0 && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800">사이즈 빈 칸 {pending}</span>}
+                {canSeeFinance && (
+                  <label className="ml-auto flex items-center gap-1 text-[11px] text-slate-500" title="달아 두면 명단의 아이마다 이 항목이 붙고, 청구서 상태가 오른쪽 열에 보입니다">
+                    납부 항목
+                    <select
+                      value={order.fee_item_id ?? ""}
+                      disabled={busy}
+                      onChange={(e) => void linkFeeItem(order, e.target.value || null)}
+                      className="rounded border border-slate-200 px-1.5 py-0.5 text-[11px]"
+                    >
+                      <option value="">(없음)</option>
+                      {feeItems.map((f) => (
+                        <option key={f.id} value={f.id}>
+                          {f.code ? `${f.code} ` : ""}{f.name_ko ?? f.name} · ₩{f.unit_price.toLocaleString("ko-KR")}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
               </div>
 
               {/* 대상 넣기 - 학년·그룹 통째로. 한 명씩 넣는 것은 마지막 수단입니다. */}
@@ -898,12 +945,14 @@ export default function ApparelClient({
                           )}
                         </th>
                       ))}
+                      {canSeeFinance && order.fee_item_id && <th className="w-28 px-2 py-1.5">청구</th>}
                     </tr>
                   </thead>
                   <tbody>
                     {orderStudentIds.map((sid) => {
                       const s = byStudent.get(sid);
                       if (!s) return null;
+                      const bill = order.fee_item_id ? billing[`${order.fee_item_id}|${sid}`] : undefined;
                       return (
                         <tr key={sid} className="border-t border-slate-100">
                           <td className="px-3 py-1 text-[12px] font-semibold text-slate-700">{s.name}</td>
@@ -943,6 +992,17 @@ export default function ApparelClient({
                               </td>
                             );
                           })}
+                          {canSeeFinance && order.fee_item_id && (
+                            <td className="px-2 py-1 text-[11px]">
+                              {bill ? (
+                                <span className={bill.paid ? "font-semibold text-emerald-600" : "text-blue-600"} title={bill.invoiceNo}>
+                                  {bill.paid ? "수납 완료" : `청구 ${bill.invoiceNo}`}
+                                </span>
+                              ) : (
+                                <span className="text-slate-300">미청구</span>
+                              )}
+                            </td>
+                          )}
                         </tr>
                       );
                     })}

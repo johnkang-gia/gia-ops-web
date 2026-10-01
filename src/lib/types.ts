@@ -809,6 +809,8 @@ export type ApparelOrder = {
   due_date: string | null;
   status: "준비" | "진행" | "발주" | "완료";
   note: string | null;
+  /** 이 제작 건의 납부 항목. 달려 있으면 명단의 아이마다 그 항목이 붙습니다(트리거). */
+  fee_item_id?: string | null;
   created_at: string;
 };
 

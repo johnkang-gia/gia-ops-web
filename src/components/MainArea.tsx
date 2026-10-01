@@ -54,7 +54,7 @@ const BOUNDED_LIST_PATHS = [
 //
 // 옆으로 길어지는 것만 막으면 됩니다. 안 막으면 항목이 늘 때 페이지가 통째로 늘어나
 // 상단 탭줄과 제목까지 밀려 나갑니다.
-const WIDE_TABLE_PATHS = ["/finance/invoices", "/finance/tuition"];
+const WIDE_TABLE_PATHS = ["/finance/invoices", "/finance/tuition", "/finance/ledger"];
 
 export default function MainArea({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();

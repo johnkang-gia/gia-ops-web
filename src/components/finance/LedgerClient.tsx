@@ -34,6 +34,9 @@ export type LedgerRow = {
   /** 학비외내역 — 분류별 개수와 금액. */
   extra: { category: string; count: number; amount: number }[];
   extraTotal: number;
+  /** 이 학기 청구서에 붙은 수납액 · 결제 수단(올톡페이·계좌이체…). */
+  paid: number;
+  methods: string[];
   toBill: number;
   billed: number;
   unpaid: number;
@@ -99,7 +102,7 @@ export default function LedgerClient({
    * 몇 초 밝히고, 머리에 「방금: 고진우 청구됨 ₩291,000 → ₩741,000」처럼 적어 둡니다.
    * 처음 한 번(직전 자료가 없을 때)은 비교하지 않습니다.
    */
-  const sigOfRow = (r: LedgerRow) => [r.toBill, r.billed, r.unpaid, r.deposit, r.expected, r.tuitionTotal, r.extraTotal, r.tuition.map((c) => c.label).join("|"), r.extra.map((e) => `${e.category}${e.count}`).join("|")].join("/");
+  const sigOfRow = (r: LedgerRow) => [r.toBill, r.billed, r.unpaid, r.deposit, r.expected, r.paid, r.tuitionTotal, r.extraTotal, r.tuition.map((c) => c.label).join("|"), r.extra.map((e) => `${e.category}${e.count}`).join("|")].join("/");
   const sigOfInv = (v: LedgerInvoiceRow) => [v.state, v.balance, v.amount, v.exported ? 1 : 0].join("/");
   const prevRef = useRef<{ rows: Map<string, string>; inv: Map<string, string> } | null>(null);
   const [flash, setFlash] = useState<Set<string>>(new Set());
@@ -122,6 +125,7 @@ export default function LedgerClient({
         b[2] !== r.unpaid ? `미수금 ${won(b[2])} → ${won(r.unpaid)}`
         : b[1] !== r.billed ? `청구액 ${won(b[1])} → ${won(r.billed)}`
         : b[3] !== r.deposit ? `예치금 ${won(b[3])} → ${won(r.deposit)}`
+        : b[5] !== r.paid ? `수납액 ${won(b[5])} → ${won(r.paid)}`
         : b[0] !== r.toBill ? `청구 예정액 ${won(b[0])} → ${won(r.toBill)}`
         : "항목 변경";
       notes.push({ key: `s:${r.id}:${at}`, text: `${r.name} · ${what}`, at });
@@ -237,7 +241,7 @@ export default function LedgerClient({
   }, [invRows]);
 
   return (
-    <div className="mx-auto w-full max-w-[1400px] p-3">
+    <div className="w-full p-3">
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <h1 className="text-lg font-black text-slate-800">📒 회계</h1>
         <span className="flex overflow-hidden rounded-lg border border-slate-300 text-[12px] font-bold">
@@ -355,7 +359,7 @@ export default function LedgerClient({
               처럼 이어 붙이면 아이마다 길이가 달라 세로로 아무것도 안 맞고, 눈이 금액을 못 찾습니다.
               칸을 정규 · 방과후 · 그 외 · 분류별로 고정하면 같은 종류의 돈이 같은 세로줄에 섭니다.
             */}
-            <table className="text-[12px]">
+            <table className="w-full text-[12px]">
               <thead className="bg-slate-50 text-[11px] text-slate-500">
                 <tr className="h-12">
                   <th colSpan={4} className="whitespace-nowrap border-b border-slate-200 px-2 text-left text-indigo-700">학비내역</th>
@@ -439,6 +443,8 @@ export default function LedgerClient({
               <tr className="h-12">
                 <th rowSpan={2} className="whitespace-nowrap px-2 text-right align-bottom">청구 예정액</th>
                 <th rowSpan={2} className="whitespace-nowrap px-2 text-right align-bottom">청구액</th>
+                <th rowSpan={2} className="whitespace-nowrap px-2 text-right align-bottom">수납액</th>
+                <th rowSpan={2} className="whitespace-nowrap px-2 text-left align-bottom">수단</th>
                 <th rowSpan={2} className="whitespace-nowrap px-2 text-right align-bottom">미수금</th>
                 <th rowSpan={2} className="whitespace-nowrap px-2 text-right align-bottom">예치금</th>
                 <th rowSpan={2} className="whitespace-nowrap px-2 text-right align-bottom">학기 수납 예정액</th>
@@ -450,6 +456,8 @@ export default function LedgerClient({
                 <tr key={r.id} onClick={() => setOpen(r.id)} className="h-8 cursor-pointer border-t border-slate-100 hover:bg-indigo-50/40">
                   <td className={"whitespace-nowrap px-2 text-right tabular-nums font-bold " + (r.toBill > 0 ? "text-amber-700" : "text-slate-300")}>{r.toBill > 0 ? won(r.toBill) : "—"}</td>
                   <td className="whitespace-nowrap px-2 text-right tabular-nums text-slate-600">{r.billed > 0 ? won(r.billed) : "—"}</td>
+                  <td className={"whitespace-nowrap px-2 text-right tabular-nums " + (r.paid > 0 ? "font-semibold text-emerald-700" : "text-slate-300")}>{r.paid > 0 ? won(r.paid) : "—"}</td>
+                  <td className="whitespace-nowrap px-2 text-left text-[11px] text-slate-500">{r.methods.length ? r.methods.join("·") : <span className="text-slate-300">—</span>}</td>
                   <td className={"whitespace-nowrap px-2 text-right tabular-nums font-bold " + (r.unpaid > 0 ? "text-rose-700" : "text-slate-300")}>{r.unpaid > 0 ? won(r.unpaid) : "—"}</td>
                   <td className={"whitespace-nowrap px-2 text-right tabular-nums " + (r.deposit > 0 ? "font-bold text-teal-700" : "text-slate-300")}>{r.deposit > 0 ? won(r.deposit) : "—"}</td>
                   <td className="whitespace-nowrap px-2 text-right tabular-nums text-slate-700">{r.expected > 0 ? won(r.expected) : "—"}</td>
@@ -457,7 +465,7 @@ export default function LedgerClient({
               ))}
               {studentRows.length === 0 && (
                 <tr className="h-8">
-                  <td colSpan={5} />
+                  <td colSpan={7} />
                 </tr>
               )}
             </tbody>
@@ -465,6 +473,8 @@ export default function LedgerClient({
               <tr className="h-8">
                 <td className="whitespace-nowrap px-2 text-right tabular-nums text-amber-700">{won(sum((r) => r.toBill))}</td>
                 <td className="whitespace-nowrap px-2 text-right tabular-nums">{won(sum((r) => r.billed))}</td>
+                <td className="whitespace-nowrap px-2 text-right tabular-nums text-emerald-700">{won(sum((r) => r.paid))}</td>
+                <td />
                 <td className="whitespace-nowrap px-2 text-right tabular-nums text-rose-700">{won(sum((r) => r.unpaid))}</td>
                 <td className="whitespace-nowrap px-2 text-right tabular-nums text-teal-700">{won(sum((r) => r.deposit))}</td>
                 <td className="whitespace-nowrap px-2 text-right tabular-nums">{won(sum((r) => r.expected))}</td>

@@ -86,7 +86,7 @@ export type LedgerCharge = {
   /** 이미 청구서에 담겼으면 그 장. 없으면 아직 안 보낸 것(「남음」). */
   billed: { state: BillState; invoiceId: string; invoiceNo: string | null; unsure: boolean } | null;
   /** 학비 전용: 옵션 고르기용. */
-  tuition?: { planId: string; optionId: string | null; options: { id: string; name: string }[] };
+  tuition?: { planId: string; optionId: string | null; options: { id: string; name: string }[]; discounts: { id: string; name: string; on: boolean }[] };
   /** 학비외 전용: 기본 세트인가, 사람이 따로 넣었나, 수량. */
   extra?: { itemId: string; qty: number; fromDefault: boolean };
 };
@@ -164,6 +164,11 @@ function stateOf(inv: Invoice, payments: LedgerPayment[]): BillState {
   return paid <= 0 ? "미납" : paid >= total ? "완납" : "일부";
 }
 
+/** 이 항목에 붙은 할인 번호. 옵션을 안 고른 항목(line 없음)에도 붙은 할인은 보여야 합니다. */
+function forPlanIds(sd: StudentDiscountRow[], discounts: FeeDiscount[], planId: string, termId: string | null): string[] {
+  return discountsForPlan(sd, discounts, planId, termId).map((d) => d.id);
+}
+
 export function buildLedger(world: LedgerWorld, student: LedgerStudent): Ledger {
   const { termId, termIsCurrent, today } = world;
   const myPayments = world.payments.filter((p) => p.student_id === student.id);
@@ -211,6 +216,10 @@ export function buildLedger(world: LedgerWorld, student: LedgerStudent): Ledger 
         planId: plan.id,
         optionId: e?.option_id ?? null,
         options: world.options.filter((o) => o.plan_id === plan.id && o.active).map((o) => ({ id: o.id, name: o.name })),
+        // 이 항목에 걸 수 있는 할인 전부와 지금 붙어 있는지. 학비 일괄 표와 같은 재료라 같은 금액이 나옵니다.
+        discounts: world.discounts
+          .filter((d) => d.active && (d.category === "학비" || d.category === null) && (!d.plan_id || d.plan_id === plan.id))
+          .map((d) => ({ id: d.id, name: d.name, on: forPlanIds(mySd, world.discounts, plan.id, termId).includes(d.id) })),
       },
     });
   }

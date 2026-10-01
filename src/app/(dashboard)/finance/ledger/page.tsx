@@ -110,6 +110,9 @@ export default async function LedgerPage({ searchParams }: { searchParams: Promi
       tuitionTotal: l.charges.filter((c) => c.kind === "학비").reduce((n, c) => n + c.amount, 0),
       extra: extraCells(l.charges),
       extraTotal: l.charges.filter((c) => c.kind === "학비외").reduce((n, c) => n + c.amount, 0),
+      // 이 학기 청구서에 붙은 수납액과 결제 수단. 예치금(청구서 없는 입금)은 따로 셉니다(deposit).
+      paid: l.payments.filter((p) => p.invoice_id && (p.kind ?? "payment") !== "refund").reduce((n, p) => n + Number(p.amount), 0),
+      methods: [...new Set(l.payments.filter((p) => p.invoice_id).map((p) => (p.method ?? "").trim()).filter(Boolean))],
       toBill: l.totals.toBill,
       billed: l.totals.billed,
       unpaid: l.totals.unpaid,

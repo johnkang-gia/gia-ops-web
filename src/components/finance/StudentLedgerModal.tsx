@@ -16,6 +16,9 @@ import PayModal from "@/components/finance/PayModal";
 import CancelInvoiceModal from "@/components/finance/CancelInvoiceModal";
 import InvoicePreviewModal from "@/components/finance/InvoicePreviewModal";
 import AlltalkpayExport from "@/components/finance/AlltalkpayExport";
+import InvoiceSheet, { type SheetPart } from "@/components/finance/InvoiceSheet";
+import { addDays, DUE_DAYS } from "@/lib/financePeriod";
+import type { InvoiceLine } from "@/lib/types";
 
 /**
  * **학생 금전 창** — 학생 한 명의 돈을 한 창에서 봅니다. 그리고 그 창에서 다 합니다.
@@ -83,6 +86,8 @@ export default function StudentLedgerModal({
 
   // 하위 창들
   const [already, setAlready] = useState(false);
+  // 발행 전에 보는 초안. 먼저 보고 그대로 발행합니다 - 눌러봐야 아는 단추는 아무도 안 누릅니다.
+  const [draft, setDraft] = useState<{ combine: boolean } | null>(null);
   const [paying, setPaying] = useState<LedgerInvoice | null>(null);
   const [cancelling, setCancelling] = useState<LedgerInvoice | null>(null);
   const [preview, setPreview] = useState<{ id: string; label: string; receipt: boolean } | null>(null);
@@ -163,21 +168,22 @@ export default function StudentLedgerModal({
    * 학비와 학비외는 **두 장**입니다(원칙). 둘 다 있으면 둘 다 보내고, 어느 쪽이 실패했는지
    * 그대로 말합니다. 한쪽만 나갔는데 「발행했습니다」라고 하면 나머지 돈이 조용히 남습니다.
    */
-  async function issue() {
+  async function issue(combine: boolean) {
     if (!ledger) return;
     if (targetCharges.length === 0) return notify("보낼 항목이 없습니다. 옵션을 고르거나 항목을 넣어주세요.", "error");
     const tuition = targetCharges.filter((c) => c.kind === "학비").map((c) => c.id);
-    const extra = targetCharges.filter((c) => c.kind === "학비외").map((c) => c.id);
-    const labels = targetCharges.map((c) => c.label).join(" · ");
-    if (!confirm(`${ledger.student.name} — 「${labels}」 ${won(targetCharges.reduce((n, c) => n + c.amount, 0))} 청구서를 만듭니다.${tuition.length && extra.length ? "\n학비와 학비외는 두 장으로 나갑니다." : ""}`)) return;
+    let extra = targetCharges.filter((c) => c.kind === "학비외").map((c) => c.id);
+    // 한 장으로 묶으면 학비 장에 학비외 줄이 항목 번호와 함께 들어가 「이미 나갔는가」 판정은 그대로 됩니다.
+    const merged = combine && tuition.length > 0 && extra.length > 0;
     setBusy(true);
     const failed: string[] = [];
     const made: string[] = [];
     try {
       if (tuition.length > 0) {
-        const r = await post("/api/finance/invoices/tuition", { studentId, termId, planIds: tuition });
+        const r = await post("/api/finance/invoices/tuition", { studentId, termId, planIds: tuition, ...(merged ? { itemIds: extra } : {}) });
         if (r.ok) made.push(String((r.body.invoice as { invoice_no?: string } | undefined)?.invoice_no ?? "학비"));
-        else failed.push(`학비(${String(r.body.error ?? "")})`);
+        else failed.push(`학비${merged ? "+학비외" : ""}(${String(r.body.error ?? "")})`);
+        if (merged) extra = [];
       }
       if (extra.length > 0) {
         let r = await post("/api/finance/invoices", { studentId, feeTermId: termId, itemIds: extra });
@@ -194,9 +200,59 @@ export default function StudentLedgerModal({
     } finally {
       setBusy(false);
     }
+    setDraft(null);
     if (failed.length) notify(`${made.length ? `${made.join(", ")} 발행 · ` : ""}실패: ${failed.join(" / ")}`, "error");
     else notify(`${made.join(", ")} 발행했습니다.`, "success");
     await changed();
+  }
+
+  /**
+   * **발행 전 초안.** 고른 항목(없으면 미청구 전부)으로 종이에 찍힐 그대로 만듭니다. 금액은 서버와
+   * 같은 함수(`studentLedger`)가 이미 셌으므로 발행본과 같습니다 - 할인은 줄 안에 반영된 금액입니다.
+   */
+  function draftParts(combine: boolean): SheetPart[] {
+    if (!ledger) return [];
+    const today = todayKst();
+    const mk = (stream: "학비" | "학비외", charges: LedgerCharge[]): SheetPart => {
+      const inv: Invoice & { stream: string; plan_scope?: string | null } = {
+        id: `draft-${stream}`,
+        invoice_no: "(발행 전 미리보기)",
+        student_id: ledger.student.id,
+        student_name: ledger.student.name_en?.trim() || ledger.student.name,
+        student_name_ko: ledger.student.name,
+        grade_label: [ledger.student.grade ? `${ledger.student.grade}학년` : null, ledger.student.class_name].filter(Boolean).join(" ") || null,
+        issue_date: today,
+        due_date: addDays(today, DUE_DAYS),
+        total_amount: charges.reduce((n, c) => n + c.amount, 0),
+        status: "발행",
+        note: null,
+        issued_by: null,
+        created_at: new Date().toISOString(),
+        term_id: termId,
+        category: stream,
+        guardian_phone: null,
+        exported_at: null,
+        export_batch: null,
+        stream,
+      };
+      const lines: InvoiceLine[] = charges.map((c, i) => ({
+        id: `draft-line-${c.kind}-${c.id}`,
+        invoice_id: inv.id,
+        seq: i + 1,
+        name: c.kind === "학비" ? `${c.label}${c.optionName ? ` · ${c.optionName}` : ""}` : c.label,
+        qty: c.extra?.qty ?? 1,
+        unit_price: c.extra && c.extra.qty > 1 ? Math.round(c.amount / c.extra.qty) : c.amount,
+        amount: c.amount,
+      }));
+      return { invoice: inv, lines };
+    };
+    const t = targetCharges.filter((c) => c.kind === "학비");
+    const e = targetCharges.filter((c) => c.kind === "학비외");
+    if (combine && t.length > 0 && e.length > 0) return [mk("학비", t), mk("학비외", e)];
+    const parts: SheetPart[] = [];
+    if (t.length > 0) parts.push(mk("학비", t));
+    if (e.length > 0) parts.push(mk("학비외", e));
+    return parts;
   }
 
   /** 「이미 받음」. 받은 날로 묶어 장을 만들고 입금을 붙입니다 - 학비·학비외 창구를 각각 부릅니다. */
@@ -264,6 +320,15 @@ export default function StudentLedgerModal({
     }
     setBusy(true);
     const r = await post("/api/finance/ledger/enroll", { studentId, planId: c.id, optionId: c.tuition.optionId, termId, overrideAmount: amount, overrideNote: note });
+    setBusy(false);
+    if (!r.ok) return notify(String(r.body.error ?? "바꾸지 못했습니다."), "error");
+    await changed();
+  }
+
+  /** 학비 항목에 할인 붙이기 / 떼기. 학비 일괄 표와 같은 창구·같은 규칙. */
+  async function setDiscount(c: LedgerCharge, discountId: string, on: boolean) {
+    setBusy(true);
+    const r = await post("/api/finance/ledger/discount", { studentId, planId: c.id, discountId, on, termId });
     setBusy(false);
     if (!r.ok) return notify(String(r.body.error ?? "바꾸지 못했습니다."), "error");
     await changed();
@@ -422,6 +487,23 @@ export default function StudentLedgerModal({
                             ) : (
                               c.optionName && <div className="text-[10px] text-slate-500">{c.optionName}</div>
                             )}
+                            {/* 할인 - 누르면 붙고 다시 누르면 떨어집니다. 담긴 항목은 잠깁니다(금액이 이미 나갔습니다). */}
+                            {c.tuition && c.tuition.discounts.length > 0 && (
+                              <div className="mt-0.5 flex flex-wrap gap-1">
+                                {c.tuition.discounts.map((d) => (
+                                  <button
+                                    key={d.id}
+                                    type="button"
+                                    disabled={busy || !!c.billed}
+                                    onClick={() => void setDiscount(c, d.id, !d.on)}
+                                    className={"rounded px-1 text-[10px] font-semibold " + (d.on ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-400 hover:bg-slate-200")}
+                                    title={d.on ? "붙어 있는 할인 - 누르면 뗍니다" : "누르면 이 할인을 붙입니다"}
+                                  >
+                                    {d.on ? "✓ " : ""}{d.name}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
                             {c.note && <div className="text-[10px] text-slate-400">{c.note}</div>}
                           </div>
                           {c.extra && !c.billed && (
@@ -505,12 +587,12 @@ export default function StudentLedgerModal({
               })}
               <div className="mt-2 flex flex-wrap gap-1.5">
                 <button
-                  onClick={() => void issue()}
+                  onClick={() => setDraft({ combine: true })}
                   disabled={busy || unbilled.length === 0}
                   className="rounded-lg bg-slate-900 px-3 py-1.5 text-[12px] font-bold text-white disabled:opacity-40"
-                  title="선택한 항목(미선택 시 미청구 항목 전체)으로 청구서를 발행합니다"
+                  title="선택한 항목(미선택 시 미청구 항목 전체)으로 청구서가 어떻게 나갈지 먼저 보고, 그대로 발행합니다"
                 >
-                  🧾 청구서 발행{targetCharges.length > 0 ? ` (${won(targetCharges.reduce((n, c) => n + c.amount, 0))})` : ""}
+                  🧾 청구서 보기{targetCharges.length > 0 ? ` (${won(targetCharges.reduce((n, c) => n + c.amount, 0))})` : ""}
                 </button>
                 <button
                   onClick={() => setAlready(true)}
@@ -659,6 +741,46 @@ export default function StudentLedgerModal({
       </div>
 
       {/* ── 하위 창 — 전부 이미 있는 것들입니다 ──────────────────────────── */}
+      {draft && ledger && (() => {
+        const hasBoth = targetCharges.some((c) => c.kind === "학비") && targetCharges.some((c) => c.kind === "학비외");
+        const parts = draftParts(draft.combine);
+        const total = targetCharges.reduce((n, c) => n + c.amount, 0);
+        return (
+          <div className="fixed inset-0 z-[95] flex items-center justify-center bg-black/50 p-3" onClick={() => !busy && setDraft(null)}>
+            <div className="flex max-h-[94vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+              <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-slate-50 px-4 py-2">
+                <b className="text-sm">발행 전 미리보기 · {ledger.student.name} · {won(total)}</b>
+                {hasBoth && (
+                  <span className="ml-2 flex overflow-hidden rounded-lg border border-slate-300 text-[11px] font-bold">
+                    <button onClick={() => setDraft({ combine: true })} className={"px-2.5 py-1 " + (draft.combine ? "bg-slate-800 text-white" : "bg-white text-slate-500")}>학비+학비외 한 장</button>
+                    <button onClick={() => setDraft({ combine: false })} className={"px-2.5 py-1 " + (!draft.combine ? "bg-slate-800 text-white" : "bg-white text-slate-500")}>두 장으로</button>
+                  </span>
+                )}
+                <span className="ml-auto text-[11px] text-slate-500">번호·납기는 발행할 때 정해집니다(납기 = 발행일 + {DUE_DAYS}일)</span>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto bg-slate-100 p-3">
+                {draft.combine || !hasBoth ? (
+                  <div className="mx-auto max-w-[720px] bg-white shadow"><InvoiceSheet parts={parts} embed /></div>
+                ) : (
+                  parts.map((p) => (
+                    <div key={p.invoice.id} className="mx-auto mb-3 max-w-[720px] bg-white shadow"><InvoiceSheet parts={[p]} embed /></div>
+                  ))
+                )}
+              </div>
+              <div className="flex items-center gap-2 border-t border-slate-200 px-4 py-2">
+                <button onClick={() => setDraft(null)} disabled={busy} className="rounded-lg border border-slate-300 px-3 py-1.5 text-[12px] font-bold text-slate-600">닫기</button>
+                <button
+                  onClick={() => void issue(draft.combine)}
+                  disabled={busy}
+                  className="ml-auto rounded-lg bg-slate-900 px-4 py-1.5 text-[12px] font-bold text-white disabled:opacity-40"
+                >
+                  {busy ? "발행 중…" : hasBoth && !draft.combine ? "이대로 두 장 발행" : "이대로 발행"}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
       {already && ledger && (
         <AlreadyPaidModal
           title="기수납 등록"

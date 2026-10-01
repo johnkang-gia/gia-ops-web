@@ -5,13 +5,13 @@ import { applyPrepaid } from "@/lib/prepaidApply";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess } from "@/lib/roles";
-import { gradeLabel } from "@/lib/feeItems";
+import { gradeLabel, inTerm, resolveStudentItems } from "@/lib/feeItems";
 import { selectTolerant } from "@/lib/selectTolerant";
 import { addDays, DUE_DAYS } from "@/lib/financePeriod";
 import { todayKst } from "@/lib/kst";
 import { resolveRecipient, type GuardianRole, phonesOf, chosenRoleOf, type StudentBilling } from "@/lib/alltalkpay";
 import { discountsForPlan, tuitionLine, type TuitionLine } from "@/lib/tuition";
-import type { FeePlan, FeePaymentOption, FeeDiscount } from "@/lib/types";
+import type { FeePlan, FeePaymentOption, FeeDiscount, FeeItem, StudentFeeItem } from "@/lib/types";
 
 // 학비 청구서 발행.
 //
@@ -73,6 +73,13 @@ export async function POST(req: Request) {
    * 함께 기록합니다 - 청구서가 있어야만 결제를 체크할 수 있으니, 이미 낸 분을 넣으려면
    * 이 한 걸음이 필요합니다.
    */
+  /**
+   * **학비외 항목을 같은 장에 담을 때.** 학비와 학비외는 원래 두 장입니다(금액 자릿수·납기가 다름).
+   * 그러나 학부모 한 분께 같은 날 두 장을 보내면 「왜 두 번이냐」가 돌아오므로, 화면이 고르면
+   * 한 장으로 묶습니다. 담긴 학비외 줄은 `item_id` 로 남아 「그 항목이 이미 나갔는가」 판정이
+   * 그대로 됩니다. 장의 갈래(`stream`)는 학비입니다 - 월별 집계에서 학비로 셉니다.
+   */
+  const itemIds = Array.isArray(body?.itemIds) ? (body.itemIds as unknown[]).filter((v): v is string => typeof v === "string") : [];
   const alreadyPaid = body?.alreadyPaid as { paidAt?: string; amount?: number; method?: string; memo?: string } | undefined;
   const paidAt = typeof alreadyPaid?.paidAt === "string" && /^\d{4}-\d{2}-\d{2}$/.test(alreadyPaid.paidAt) ? alreadyPaid.paidAt : null;
   const askedRole = body?.guardianRole;
@@ -162,7 +169,44 @@ export async function POST(req: Request) {
   // 청구서였는지 설명할 수 없게 됩니다.
   const planScope = planIds && planIds.length > 0 ? lines.map((l) => l.label.split(" · ")[0]).join(" · ") : null;
 
-  const total = lines.reduce((n, l) => n + l.amount, 0);
+  // ── 같은 장에 담을 학비외 ───────────────────────────────────────────────
+  type ExtraLine = { name: string; item_id: string; qty: number; unit_price: number; amount: number };
+  const extraLines: ExtraLine[] = [];
+  if (itemIds.length > 0) {
+    const [itemsRes, ovRes, termRes] = await Promise.all([
+      supabase.from("fee_items").select("*"),
+      supabase.from("student_fee_items").select("*").eq("student_id", studentId),
+      termId ? supabase.from("terms").select("status").eq("id", termId).maybeSingle() : Promise.resolve({ data: null, error: null }),
+    ]);
+    if (itemsRes.error) return NextResponse.json({ error: itemsRes.error.message }, { status: 500 });
+    if (ovRes.error) return NextResponse.json({ error: ovRes.error.message }, { status: 500 });
+    const termIsCurrent = (termRes.data as { status?: string } | null)?.status === "진행중";
+    const resolved = resolveStudentItems(
+      ((itemsRes.data as FeeItem[] | null) ?? []).filter((i) => inTerm(i, termId ?? "", termIsCurrent)),
+      { id: student.id, grade: student.grade, className: student.class_name, department: student.department },
+      (ovRes.data as StudentFeeItem[] | null) ?? [],
+    ).filter((l) => itemIds.includes(l.item.id));
+    if (resolved.length !== itemIds.length) {
+      return NextResponse.json({ error: "고른 학비외 항목 중 이 학생에게 붙어 있지 않은 것이 있습니다. 표에서 다시 확인해주세요." }, { status: 400 });
+    }
+    // 같은 항목을 두 번 담지 않습니다 - 학비외 창구와 같은 규칙(살아 있는 청구서의 같은 항목 번호).
+    const { data: aliveInv } = await supabase.from("invoices").select("id, invoice_no, term_id").eq("student_id", student.id).eq("status", "발행").is("carried_to_invoice_id", null);
+    const sameTermInv = (aliveInv ?? []).filter((v) => !termId || !v.term_id || v.term_id === termId);
+    if (sameTermInv.length > 0) {
+      const { data: dup } = await supabase.from("invoice_lines").select("invoice_id, name").in("invoice_id", sameTermInv.map((v) => v.id)).in("item_id", itemIds);
+      if (dup && dup.length > 0) {
+        const noOf = new Map(sameTermInv.map((v) => [v.id, v.invoice_no]));
+        return NextResponse.json(
+          { error: `이미 청구서에 담긴 항목입니다: ${dup.map((d) => `${d.name}(${noOf.get(d.invoice_id) ?? ""})`).join(", ")}. 그 장을 취소한 뒤 다시 만들어주세요.` },
+          { status: 409 },
+        );
+      }
+    }
+    for (const l of resolved) extraLines.push({ name: l.item.name, item_id: l.item.id, qty: l.qty, unit_price: Number(l.item.unit_price), amount: l.amount });
+  }
+  const extraTotal = extraLines.reduce((n, l) => n + l.amount, 0);
+
+  const total = lines.reduce((n, l) => n + l.amount, 0) + extraTotal;
   // 이미 받은 건은 **받은 날**이 발행일입니다. 오늘로 적으면 지난달 수납이 이번 달로
   // 세어져, 월별 수납 집계가 통째로 어긋납니다.
   const issue = paidAt ?? todayKst();
@@ -234,7 +278,7 @@ export async function POST(req: Request) {
       guardian_role: recipient?.role ?? null,
       // 학비 청구서는 학비외와 **한 장에 섞지 않습니다.** 금액 자릿수가 다르고 납기도
       // 다릅니다. 분류로 갈라두면 명단에서도 따로 셉니다.
-      category: "학비",
+      category: extraLines.length > 0 ? "학비+학비외" : "학비",
       // 학기 칸은 학비외 청구서와 **같은 칸**을 씁니다. 두 종류가 다른 칸에 학기를 넣으면
       // 학기별 집계가 한쪽만 세게 됩니다.
       term_id: termId,
@@ -270,10 +314,13 @@ export async function POST(req: Request) {
     }
   }
 
+  // 같은 장에 담은 학비외 줄. 항목 번호를 함께 남겨 「이미 나갔는가」 판정이 됩니다.
+  const extraRows: (typeof rows[number] & { item_id: string })[] = extraLines.map((l) => ({ invoice_id: inv.id, seq: ++seq, name: l.name, item_id: l.item_id, qty: l.qty, unit_price: l.unit_price, amount: l.amount }));
+
   // 이월 줄은 맨 아래. 이번에 새로 청구하는 것이 먼저 읽혀야 합니다.
   for (const c of carry.lines) rows.push({ invoice_id: inv.id, seq: ++seq, ...c });
 
-  const { error: lineErr } = await supabase.from("invoice_lines").insert(rows);
+  const { error: lineErr } = await supabase.from("invoice_lines").insert([...rows, ...extraRows]);
   // 줄을 못 넣었으면 총액만 있고 내역이 없는 종이가 나갑니다. 머리줄을 지우고 실패로 답합니다.
   if (lineErr) {
     // 되돌리기도 실패할 수 있습니다. 그러면 **총액만 있고 내역이 없는 청구서**가 남는데,

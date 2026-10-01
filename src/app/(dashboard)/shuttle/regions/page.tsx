@@ -1,9 +1,8 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { CURRENT_SHUTTLE_TERM } from "@/lib/shuttleTerm";
+import { loadShuttleWorld } from "@/lib/shuttleWorld";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isStaffOrAboveUser } from "@/lib/roles";
-import type { ShuttleAssignment, ShuttleRoute, ShuttleStop } from "@/lib/types";
 import ShuttleRegionDashboard from "@/components/shuttle/ShuttleRegionDashboard";
 import GuideButton from "@/components/common/GuideButton";
 
@@ -26,12 +25,8 @@ export default async function ShuttleRegionsPage() {
   if (!me) redirect("/login");
   if (!isStaffOrAboveUser(me)) redirect("/home");
 
-  const [routesRes, stopsRes, asgRes] = await Promise.all([
-    // 지금 학기 노선만(여름캠프 노선이 섞이면 지역별 인원이 두 배로 보입니다).
-    supabase.from("shuttle_routes").select("*").eq("term", CURRENT_SHUTTLE_TERM).eq("active", true).order("direction").order("sort_order"),
-    supabase.from("shuttle_stops").select("*").order("seq"),
-    supabase.from("shuttle_assignments").select("id, stop_id"),
-  ]);
+  // 거르는 규칙(학기·켠 노선·딸린 정류장·배정)은 shuttleWorld 한 곳입니다.
+  const world = await loadShuttleWorld(supabase, { assignments: "basic" });
 
   return (
     <div className="mx-auto flex h-full max-w-6xl flex-col overflow-hidden">
@@ -44,9 +39,9 @@ export default async function ShuttleRegionsPage() {
       </div>
       <div className="min-h-0 flex-1">
         <ShuttleRegionDashboard
-          routes={(routesRes.data as ShuttleRoute[] | null) ?? []}
-          stops={(stopsRes.data as ShuttleStop[] | null) ?? []}
-          assignments={(asgRes.data as Pick<ShuttleAssignment, "id" | "stop_id">[] | null) ?? []}
+          routes={world.routes}
+          stops={world.stops}
+          assignments={world.assignments}
         />
       </div>
     </div>

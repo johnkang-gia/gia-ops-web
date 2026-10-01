@@ -1,9 +1,9 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { CURRENT_SHUTTLE_TERM } from "@/lib/shuttleTerm";
+import { loadShuttleWorld } from "@/lib/shuttleWorld";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isStaffOrAboveUser } from "@/lib/roles";
-import type { ShuttleAssignment, ShuttleRoute, ShuttleStop, WrStudent } from "@/lib/types";
+import type { WrStudent } from "@/lib/types";
 import AssignmentClient from "@/components/shuttle/AssignmentClient";
 import GuideButton from "@/components/common/GuideButton";
 
@@ -27,7 +27,6 @@ const GUIDE_SECTIONS = [
 export const dynamic = "force-dynamic";
 
 // 지금 쓰는 학기. 여름캠프2가 끝난 뒤로 운영은 정규학기 하나뿐입니다.
-const TERM = CURRENT_SHUTTLE_TERM;
 
 export default async function ShuttleAssignmentsPage() {
   const supabase = await createClient();
@@ -35,21 +34,9 @@ export default async function ShuttleAssignmentsPage() {
   if (!me) redirect("/login");
   if (!isStaffOrAboveUser(me)) redirect("/home");
 
-  const [routesRes, stopsRes, asgRes, studentsRes] = await Promise.all([
-    // 학기와 사용여부로 걸러냅니다.
-    //
-    // 담당자: "탑승 배정에 중복 차들이 많고 이전 데이터에 중복되는 것 같아."
-    //
-    // 맞습니다. 이 화면은 지금까지 **모든 학기, 꺼둔 노선까지 전부** 불러왔습니다.
-    // 여름캠프2 노선이 남아 있으면 같은 호차가 두 번씩 보입니다 - 하원 체크표는
-    // term으로 거르는데 여기만 안 걸렀습니다. 같은 자료를 두 화면이 다르게 보고
-    // 있었던 셈입니다.
-    // 꺼둔(대기) 노선도 함께 읽습니다. 등원 전체와 배정 없는 하원 노선은 꺼져 있지만 지운 것이
-    // 아닙니다 - 새로 온 아이를 빈 차에 넣거나 등원을 다시 돌릴 때 여기서 고릅니다. 화면은
-    // 회색으로 구분합니다. 체크표·안내보드 같은 운영 화면은 여전히 켠 노선만 읽습니다.
-    supabase.from("shuttle_routes").select("*").eq("term", TERM).order("direction").order("sort_order"),
-    supabase.from("shuttle_stops").select("*").order("seq"),
-    supabase.from("shuttle_assignments").select("*"),
+  const [world, studentsRes] = await Promise.all([
+    // 대기(꺼둔) 노선도 함께 - 새로 온 아이를 빈 차에 넣는 자리입니다. 거르는 규칙은 shuttleWorld 한 곳.
+    loadShuttleWorld(supabase, { includeDormant: true, assignments: "full" }),
     supabase.from("wr_students").select("id, name, grade, class_name").eq("status", "active").eq("is_demo", false).order("name"),
   ]);
 
@@ -65,10 +52,11 @@ export default async function ShuttleAssignmentsPage() {
         </p>
       </div>
       <div className="min-h-0 flex-1">
+        {world.errors.length > 0 && <p className="mb-2 rounded-lg bg-rose-50 px-3 py-2 text-[12px] font-bold text-rose-700">일부 자료를 못 읽었습니다: {world.errors.join(" · ")}</p>}
         <AssignmentClient
-          routes={(routesRes.data as ShuttleRoute[] | null) ?? []}
-          stops={(stopsRes.data as ShuttleStop[] | null) ?? []}
-          initialAssignments={(asgRes.data as ShuttleAssignment[] | null) ?? []}
+          routes={world.routes}
+          stops={world.stops}
+          initialAssignments={world.assignments}
           students={(studentsRes.data as Pick<WrStudent, "id" | "name" | "grade" | "class_name">[] | null) ?? []}
         />
       </div>

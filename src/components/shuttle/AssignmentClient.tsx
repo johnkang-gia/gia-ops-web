@@ -144,20 +144,33 @@ export default function AssignmentClient({
   stops,
   initialAssignments,
   students,
+  onlyRouteId,
+  onChanged,
 }: {
   routes: ShuttleRoute[];
   stops: ShuttleStop[];
   initialAssignments: ShuttleAssignment[];
   students: StudentLite[];
+  /**
+   * 노선 관리 화면 안에 **한 노선만** 끼울 때. 머리(등원/하원·검색)를 빼고 그 호차 카드 하나만
+   * 그립니다. 노선과 탄 아이를 한 화면에서 보려고 둔 자리입니다 - 같은 자료를 두 화면이 반씩
+   * 보여주면 한쪽에서 고친 것을 다른 쪽에 가서 확인해야 합니다.
+   */
+  onlyRouteId?: string;
+  /** 배정이 바뀌면 부르는 쪽이 자기 표를 다시 읽게 합니다(노선 관리의 정류장 줄 등). */
+  onChanged?: () => void;
 }) {
   const notify = useToast();
   const confirmAction = useConfirm();
   const [assignments, setAssignments] = useState(initialAssignments);
   // 하원이 먼저입니다. 지금 운영하는 것이 하원이고, 등원은 전부 대기(회색)입니다.
-  const [direction, setDirection] = useState<ShuttleDirection>("하원");
+  const onlyRoute = onlyRouteId ? routes.find((r) => r.id === onlyRouteId) ?? null : null;
+  const [direction, setDirection] = useState<ShuttleDirection>(onlyRoute?.direction ?? "하원");
   const [query, setQuery] = useState("");
   const [addingForRoute, setAddingForRoute] = useState<string | null>(null);
-  const [newStudentName, setNewStudentName] = useState("");
+  // 학생은 **명부에서 고릅니다.** 이름을 글자로 받아 명부와 맞추던 때는 번호 없는 배정이 생겼고,
+  // 번호 없는 줄은 동명이인을 못 가르고 학생 창도 못 엽니다(CLAUDE.md §2-4-1).
+  const [newStudentId, setNewStudentId] = useState<string | null>(null);
   const [newStopId, setNewStopId] = useState("");
 
   // 하원 대기 차에 아이를 넣으면 그 차를 켜야 체크표에 뜹니다. 켠 결과를 화면에도 바로 반영하려고
@@ -214,6 +227,7 @@ export default function AssignmentClient({
       setAssignments((prev) => prev.map((x) => (x.id === a.id ? a : x)));
       return;
     }
+    onChanged?.();
     const s = studentId ? studentById.get(studentId) : null;
     notify(s ? `${a.student_name_raw} → ${s.name} 으로 연결했습니다` : "연결을 해제했습니다", "success");
   }
@@ -226,11 +240,12 @@ export default function AssignmentClient({
     const groups = new Map<string, { route: ShuttleRoute; rows: Row[] }>();
     // 배정이 없는 차와 꺼둔 차도 카드로 섭니다(회색). 그래야 새로 온 아이를 빈 차에 넣거나 다른
     // 차로 옮길 수 있습니다 - 배정이 있는 차만 보이면 빈 차는 어디에도 안 보여서 못 고릅니다.
-    for (const r of routeList) if (r.direction === direction) groups.set(r.id, { route: r, rows: [] });
+    for (const r of routeList) if (r.direction === direction && (!onlyRouteId || r.id === onlyRouteId)) groups.set(r.id, { route: r, rows: [] });
     for (const a of assignments) {
       const stop = stopById.get(a.stop_id);
       const route = stop ? routeById.get(stop.route_id) : undefined;
       if (!stop || !route || route.direction !== direction) continue;
+      if (onlyRouteId && route.id !== onlyRouteId) continue;
       const g = groups.get(route.id) ?? { route, rows: [] };
       g.rows.push({ assignment: a, route, stop, grade: gradeFor(a) });
       groups.set(route.id, g);
@@ -248,7 +263,7 @@ export default function AssignmentClient({
       return x.route.route_no.localeCompare(y.route.route_no, "ko");
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [assignments, direction, stopById, routeById, routeList]);
+  }, [assignments, direction, stopById, routeById, routeList, onlyRouteId]);
 
   // 연결 상태 요약. 화면 위에 숫자로 떠 있어야 "지금 몇 개가 안 붙어 있는지"가 보입니다.
   const linkSummary = useMemo(() => {
@@ -317,6 +332,7 @@ export default function AssignmentClient({
     const supabase = createClient();
     const { error } = await supabase.from("shuttle_assignments").update({ weekdays: next }).eq("id", a.id);
     if (error) notify("저장하지 못했습니다: " + error.message, "error");
+    else onChanged?.();
   }
 
   async function moveAssignment(a: ShuttleAssignment, stopId: string) {
@@ -324,6 +340,7 @@ export default function AssignmentClient({
     const supabase = createClient();
     const { error } = await supabase.from("shuttle_assignments").update({ stop_id: stopId }).eq("id", a.id);
     if (error) notify("옮기지 못했습니다: " + error.message, "error");
+    else onChanged?.();
   }
 
   async function removeAssignment(a: ShuttleAssignment) {
@@ -332,28 +349,29 @@ export default function AssignmentClient({
     const supabase = createClient();
     const { error } = await supabase.from("shuttle_assignments").delete().eq("id", a.id);
     if (error) notify("삭제하지 못했습니다: " + error.message, "error");
+    else onChanged?.();
   }
 
   // 학생을 새로 추가합니다 - 어느 호차인지는 newStopId(그 호차 소속 정류장)로 결정됩니다.
   async function addAssignment() {
-    const name = newStudentName.trim();
-    if (!name) {
-      notify("학생 이름을 입력해주세요.", "error");
+    const matched = newStudentId ? studentById.get(newStudentId) : undefined;
+    if (!matched) {
+      notify("학생을 명부에서 골라주세요.", "error");
       return;
     }
     if (!newStopId) {
       notify("정류장을 선택해주세요.", "error");
       return;
     }
-    const matched = students.find((s) => s.name.split("(")[0].trim() === name);
+    const name = matched.name.split("(")[0].trim();
     const supabase = createClient();
     const { data, error } = await supabase
       .from("shuttle_assignments")
       .insert({
         stop_id: newStopId,
-        student_id: matched?.id ?? null,
+        student_id: matched.id,
         student_name_raw: name,
-        class_raw: matched?.class_name ?? null,
+        class_raw: matched.class_name ?? null,
         weekdays: [1, 2, 3, 4, 5],
         guardian_phone: null,
       })
@@ -377,13 +395,15 @@ export default function AssignmentClient({
       }
     }
     setAddingForRoute(null);
-    setNewStudentName("");
+    setNewStudentId(null);
     setNewStopId("");
+    onChanged?.();
   }
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
-      {/* 요청: "탑승배정은 등원/하원으로 나눠서 관리 되로록". */}
+    <div className={onlyRouteId ? "flex flex-col" : "flex h-full flex-col overflow-hidden"}>
+      {/* 요청: "탑승배정은 등원/하원으로 나눠서 관리 되로록". 한 노선만 끼운 자리에서는 머리가 없습니다. */}
+      {!onlyRouteId && (
       <div className="mb-2 flex shrink-0 items-center gap-2">
         <div className="flex shrink-0 gap-1 rounded-full bg-slate-100 p-0.5">
           {(["등원", "하원"] as const).map((d) => (
@@ -437,6 +457,7 @@ export default function AssignmentClient({
           )}
         </span>
       </div>
+      )}
 
       {onlyUnassignedStop && (
         <div className="mb-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-[11px] text-violet-800">
@@ -445,7 +466,7 @@ export default function AssignmentClient({
         </div>
       )}
 
-      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
+      <div className={onlyRouteId ? "space-y-2" : "min-h-0 flex-1 space-y-2 overflow-y-auto pr-1"}>
         {visibleGroups.map((g) => {
           const over = g.route.usable_capacity != null && g.rows.length > g.route.usable_capacity;
           const stopsOfRoute = stops.filter((s) => s.route_id === g.route.id).sort((a, b) => a.seq - b.seq);
@@ -478,7 +499,7 @@ export default function AssignmentClient({
                 <button
                   onClick={() => {
                     setAddingForRoute(addingForRoute === g.route.id ? null : g.route.id);
-                    setNewStudentName("");
+                    setNewStudentId(null);
                     setNewStopId("");
                   }}
                   className="ml-auto rounded-lg border border-slate-300 px-2 py-1 text-[11px] text-slate-600 hover:bg-slate-50"
@@ -489,14 +510,14 @@ export default function AssignmentClient({
 
               {addingForRoute === g.route.id && (
                 <div className="mb-2 flex flex-wrap items-end gap-2 rounded-lg bg-slate-50 p-2">
-                  <div>
-                    <label className="mb-1 block text-[10px] text-slate-400">학생 이름</label>
-                    <input
-                      list="assignment-student-names"
-                      value={newStudentName}
-                      onChange={(e) => setNewStudentName(e.target.value)}
-                      className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-[11px]"
-                      placeholder="이름"
+                  <div className="w-44">
+                    <label className="mb-1 block text-[10px] text-slate-400">학생 (명부에서)</label>
+                    <StudentSelect
+                      students={students}
+                      value={newStudentId}
+                      onChange={(id) => setNewStudentId(id)}
+                      placeholder="이름으로 찾기…"
+                      className="flex w-full items-center justify-between gap-1 rounded-lg border border-slate-300 bg-white px-2 py-1 text-left text-[11px]"
                     />
                   </div>
                   <div>
@@ -579,11 +600,6 @@ export default function AssignmentClient({
         {visibleGroups.length === 0 && <p className="py-10 text-center text-sm text-slate-400">{direction} 배정이 없습니다.</p>}
       </div>
 
-      <datalist id="assignment-student-names">
-        {students.map((s) => (
-          <option key={s.id} value={s.name.split("(")[0].trim()} />
-        ))}
-      </datalist>
     </div>
   );
 }

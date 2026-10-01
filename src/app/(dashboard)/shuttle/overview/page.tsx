@@ -2,10 +2,10 @@ import { redirect } from "next/navigation";
 import { ridingIds } from "@/lib/ridesToday";
 import { todayKst } from "@/lib/kst";
 import { createClient } from "@/lib/supabase/server";
-import { CURRENT_SHUTTLE_TERM } from "@/lib/shuttleTerm";
+import { loadShuttleWorld } from "@/lib/shuttleWorld";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { categorize } from "@/lib/attendanceDigest";
-import type { ShuttleRoute, ShuttleStop, ShuttleAssignment } from "@/lib/types";
+import type { ShuttleAssignment } from "@/lib/types";
 import ShuttleOverviewClient, { type RouteStat, type OverviewKpi } from "@/components/shuttle/ShuttleOverviewClient";
 import { normName, splitNameMark } from "@/lib/studentLabel";
 
@@ -37,12 +37,10 @@ export default async function ShuttleOverviewPage() {
   //
   // 노선도 한 번만 받습니다. 개요 표(하원)와 아래 지도(등·하원 전부)가 **같은 학기의 같은
   // 표**를 보고 있었는데 따로 물었습니다 - 한 번 받아 하원만 걸러 쓰면 됩니다.
-  const [allRoutesRes, allStopsRes, asgBasicRes, preqRes, boardingsRes, notesRes, devicesRes, regionAsgRes] =
+  const [world, preqRes, boardingsRes, notesRes, devicesRes, regionAsgRes] =
     await Promise.all([
-      // 지금 학기 노선 전부. 예전에는 여름캠프 노선까지 지도에 얹혀 같은 호차가 두 번 보였습니다.
-      supabase.from("shuttle_routes").select("*").eq("term", CURRENT_SHUTTLE_TERM).eq("active", true).order("direction").order("sort_order"),
-      supabase.from("shuttle_stops").select("*").order("seq"),
-      supabase.from("shuttle_assignments_basic").select("id, stop_id, student_name_raw, weekdays, student_id"),
+      // 지금 학기·켠 노선과 그에 딸린 정류장·배정. 거르는 규칙은 shuttleWorld 한 곳입니다.
+      loadShuttleWorld(supabase, { assignments: "basic" }),
       // 오늘 픽업/결석(체크표와 동일: pickup_requests)
       supabase.from("pickup_requests").select("*").eq("is_demo", false).neq("status", "무시").eq("service_date", today0),
       // 오늘 탑승 기록
@@ -59,7 +57,7 @@ export default async function ShuttleOverviewPage() {
       supabase.from("shuttle_assignments").select("id, stop_id"),
     ]);
 
-  const allRoutes = (allRoutesRes.data ?? []) as ShuttleRoute[];
+  const allRoutes = world.routes;
   // 개요 표는 하원만 봅니다(요청: 하원 우선). 지도는 등·하원을 함께 그립니다.
   const routes = allRoutes.filter((r) => r.direction === "하원");
   const routeIds = routes.map((r) => r.id as string);
@@ -82,7 +80,7 @@ export default async function ShuttleOverviewPage() {
   };
 
   // 정류장 → 배정 → 오늘 탑승자(요일 포함). 위에서 통째로 받은 것을 하원 노선으로 거릅니다.
-  const allStops = (allStopsRes.data ?? []) as ShuttleStop[];
+  const allStops = world.stops;
   const stops = allStops
     .filter((x) => routeIdSet.has(x.route_id as string))
     .map((x) => ({
@@ -93,15 +91,7 @@ export default async function ShuttleOverviewPage() {
       dong: (x.dong as string | null) ?? null,
     }));
   const stopIdSet = new Set(stops.map((x) => x.id));
-  const assigns = (
-    (asgBasicRes.data ?? []) as {
-      id: string;
-      stop_id: string;
-      student_name_raw: string;
-      weekdays: number[];
-      student_id: string | null;
-    }[]
-  ).filter((a) => stopIdSet.has(a.stop_id));
+  const assigns = world.assignments.filter((a) => stopIdSet.has(a.stop_id));
   const routeByStop = new Map(stops.map((s) => [s.id, s.route_id]));
 
   // 노선(호차)별 대표 구 + 동 목록(요청: 지역을 호차 표에 통합). 정류장이 가장 많은 구를 대표로.

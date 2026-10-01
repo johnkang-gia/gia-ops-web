@@ -1,9 +1,9 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { CURRENT_SHUTTLE_TERM } from "@/lib/shuttleTerm";
+import { loadShuttleWorld } from "@/lib/shuttleWorld";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isStaffOrAboveUser } from "@/lib/roles";
-import type { ShuttleRoute, ShuttleStop } from "@/lib/types";
+import type { WrStudent } from "@/lib/types";
 import RouteManageClient, { type RouteAssignment } from "@/components/shuttle/RouteManageClient";
 import GuideButton from "@/components/common/GuideButton";
 
@@ -27,7 +27,6 @@ const GUIDE_SECTIONS = [
 export const dynamic = "force-dynamic";
 
 // 지금 쓰는 학기. 여름캠프2가 끝난 뒤로 운영은 정규학기 하나뿐입니다.
-const TERM = CURRENT_SHUTTLE_TERM;
 
 export default async function ShuttleRoutesPage() {
   const supabase = await createClient();
@@ -35,17 +34,10 @@ export default async function ShuttleRoutesPage() {
   if (!me) redirect("/login");
   if (!isStaffOrAboveUser(me)) redirect("/home");
 
-  const [routesRes, stopsRes, asgRes] = await Promise.all([
-    // 탑승 배정 화면과 같은 이유로 학기·사용여부를 겁니다. 노선 관리에서 여름캠프2 노선까지
-    // 보이면 "27호가 왜 두 개지?"가 됩니다.
-    // 꺼둔(대기) 노선도 함께 읽습니다. 등원 전체와 배정 없는 하원 노선은 꺼져 있지만 지운 것이
-    // 아닙니다 - 새로 온 아이를 빈 차에 넣거나 등원을 다시 돌릴 때 여기서 고릅니다. 화면은
-    // 회색으로 구분합니다. 체크표·안내보드 같은 운영 화면은 여전히 켠 노선만 읽습니다.
-    supabase.from("shuttle_routes").select("*").eq("term", TERM).order("direction").order("sort_order"),
-    supabase.from("shuttle_stops").select("*").order("seq"),
-    // 인원 숫자만 있으면 "이 정류장에 몇 명"까지는 알아도 "누가"는 모릅니다(담당자 요청).
-    // 이름과 요일까지 함께 들고 와서 정류장 줄에 그대로 적습니다.
-    supabase.from("shuttle_assignments_basic").select("id, stop_id, student_name_raw, weekdays"),
+  const [world, studentsRes] = await Promise.all([
+    // 노선 관리는 고치는 화면이라 대기(꺼둔) 노선도 봅니다. 운영 화면은 켠 노선만 봅니다.
+    loadShuttleWorld(supabase, { includeDormant: true, assignments: "full" }),
+    supabase.from("wr_students").select("id, name, grade, class_name").eq("status", "active").eq("is_demo", false).order("name"),
   ]);
 
   return (
@@ -60,10 +52,13 @@ export default async function ShuttleRoutesPage() {
         </p>
       </div>
       <div className="min-h-0 flex-1">
+        {world.errors.length > 0 && <p className="mb-2 rounded-lg bg-rose-50 px-3 py-2 text-[12px] font-bold text-rose-700">일부 자료를 못 읽었습니다: {world.errors.join(" · ")}</p>}
         <RouteManageClient
-          initialRoutes={(routesRes.data as ShuttleRoute[] | null) ?? []}
-          initialStops={(stopsRes.data as ShuttleStop[] | null) ?? []}
-          assignmentCounts={(asgRes.data as RouteAssignment[] | null) ?? []}
+          initialRoutes={world.routes}
+          initialStops={world.stops}
+          assignmentCounts={world.assignments as RouteAssignment[]}
+          assignments={world.assignments}
+          students={(studentsRes.data as Pick<WrStudent, "id" | "name" | "grade" | "class_name">[] | null) ?? []}
         />
       </div>
     </div>

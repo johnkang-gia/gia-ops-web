@@ -1,8 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import AssignmentClient from "@/components/shuttle/AssignmentClient";
 import { createClient } from "@/lib/supabase/client";
-import type { ShuttleDirection, ShuttleRoute, ShuttleStop } from "@/lib/types";
+import type { ShuttleAssignment, ShuttleDirection, ShuttleRoute, ShuttleStop, WrStudent } from "@/lib/types";
 import { useToast } from "@/components/common/ToastProvider";
 import { useConfirm } from "@/components/common/ConfirmProvider";
 import { geocodeAddress } from "@/lib/kakaoMap";
@@ -33,11 +35,17 @@ export default function RouteManageClient({
   initialRoutes,
   initialStops,
   assignmentCounts,
+  assignments,
+  students,
 }: {
   initialRoutes: ShuttleRoute[];
   initialStops: ShuttleStop[];
   assignmentCounts: RouteAssignment[];
+  /** 고른 노선의 탄 아이 카드(AssignmentClient)에 넘깁니다. 노선과 배정을 한 화면에서. */
+  assignments: ShuttleAssignment[];
+  students: Pick<WrStudent, "id" | "name" | "grade" | "class_name">[];
 }) {
+  const router = useRouter();
   const notify = useToast();
   const confirmAction = useConfirm();
   const [routes, setRoutes] = useState(initialRoutes);
@@ -550,6 +558,21 @@ export default function RouteManageClient({
                 )}
               </tbody>
             </table>
+
+            {/* 탄 아이 - 탑승 배정 화면의 그 호차 카드를 그대로 끼웁니다. 노선·정류장과 배정이 한 화면에
+                있어야 「이 정류장을 지우면 누가 떨어지나」를 다른 화면에 가지 않고 봅니다. */}
+            <div className="mt-4">
+              <h3 className="mb-1 text-sm font-bold text-slate-700">🧑‍🎓 탑승 학생</h3>
+              <AssignmentClient
+                key={selected.id}
+                routes={routes}
+                stops={stops}
+                initialAssignments={assignments}
+                students={students}
+                onlyRouteId={selected.id}
+                onChanged={() => router.refresh()}
+              />
+            </div>
           </>
         )}
       </div>

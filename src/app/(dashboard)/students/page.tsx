@@ -5,7 +5,7 @@ import { isStaffOrAboveUser } from "@/lib/roles";
 import type { WrStudent } from "@/lib/types";
 import StudentSearchClient from "@/components/students/StudentSearchClient";
 import GuideButton from "@/components/common/GuideButton";
-import { CURRENT_SHUTTLE_TERM } from "@/lib/shuttleTerm";
+import { loadShuttleWorld } from "@/lib/shuttleWorld";
 
 const GUIDE_SECTIONS = [
   {
@@ -47,7 +47,7 @@ export default async function StudentsSearchPage() {
   // **손으로 적는 값**이고, 실제로 차에 배정됐는지는 별개입니다. 그래서 명부값이 아니라
   // **실제 배정**을 봅니다 - 명부에 "하원"이라 적혀 있어도 배정이 없으면 그 아이는 아무
   // 차에도 안 탑니다. 둘이 어긋나는 것이 실제로 사고가 나는 지점입니다.
-  const [{ data }, { data: routeRows }, { data: stopRows }, { data: asgRows }] = await Promise.all([
+  const [{ data }, shuttle] = await Promise.all([
     supabase
       .from("wr_students")
       .select(
@@ -55,18 +55,14 @@ export default async function StudentsSearchPage() {
       )
       .eq("is_demo", false)
       .order("name", { ascending: true }),
-    supabase.from("shuttle_routes").select("id, route_no, direction").eq("term", CURRENT_SHUTTLE_TERM).eq("active", true),
-    supabase.from("shuttle_stops").select("id, route_id"),
-    supabase.from("shuttle_assignments").select("student_id, stop_id").not("student_id", "is", null).limit(5000),
+    // 지금 학기·켠 노선에 딸린 배정만 - 거르는 규칙은 shuttleWorld 한 곳입니다.
+    loadShuttleWorld(supabase, { assignments: "basic" }),
   ]);
-  const routeById = new Map(
-    ((routeRows ?? []) as { id: string; route_no: string; direction: string }[]).map((r) => [r.id, r])
-  );
-  const routeOfStop = new Map(((stopRows ?? []) as { id: string; route_id: string }[]).map((s) => [s.id, s.route_id]));
   const shuttleByStudent: Record<string, string> = {};
-  for (const a of (asgRows ?? []) as { student_id: string; stop_id: string }[]) {
-    const r = routeById.get(routeOfStop.get(a.stop_id) ?? "");
-    if (!r) continue; // 지난 학기·꺼둔 노선의 배정은 세지 않습니다.
+  for (const a of shuttle.assignments) {
+    if (!a.student_id) continue;
+    const r = shuttle.routeById.get(shuttle.stopById.get(a.stop_id)?.route_id ?? "");
+    if (!r) continue;
     const prev = shuttleByStudent[a.student_id] ?? "";
     const tag = `${r.direction} ${r.route_no}호`;
     shuttleByStudent[a.student_id] = prev ? (prev.includes(tag) ? prev : `${prev} · ${tag}`) : tag;

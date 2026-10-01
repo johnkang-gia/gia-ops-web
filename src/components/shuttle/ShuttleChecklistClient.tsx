@@ -694,6 +694,28 @@ export default function ShuttleChecklistClient({
       before: item.status,
       after: finalStatus,
     });
+    // **결석은 출석부에도 갑니다.** 체크표에서 결석을 찍으면 출석부에 노란(미확인) 줄이 생기고,
+    // 결석을 풀면 그 자동 줄만 지웁니다. 인박스 결석은 체크표로 오는데 반대가 없어서, 체크표만
+    // 맞고 출석부는 비어 있는 날이 생겼습니다. 번호 없는 줄은 출석부에 못 씁니다 - 그 사실을
+    // 알립니다.
+    const wasAbsent = item.status === "결석";
+    const nowAbsent = finalStatus === "결석";
+    if (wasAbsent !== nowAbsent) {
+      if (!item.studentId) {
+        notify(`${item.studentName} — 명부와 연결되지 않아 출석부에는 남기지 못했습니다. 탑승 배정에서 학생을 연결해주세요.`, "error");
+      } else {
+        const res = await fetch("/api/attendance/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ studentId: item.studentId, serviceDate: todayStr(), action: nowAbsent ? "결석" : "예정" }),
+        });
+        const b = (await res.json().catch(() => ({}))) as { ok?: boolean; register?: string; error?: string };
+        if (!res.ok) notify(`출석부에 반영하지 못했습니다: ${b.error ?? res.status}`, "error");
+        else if (b.register === "넣음") notify(`${item.studentName} — 출석부에 결석으로 남겼습니다(담임 확인 전).`, "success");
+        else if (b.register === "지움") notify(`${item.studentName} — 출석부의 자동 결석 줄을 지웠습니다.`, "success");
+        else if (nowAbsent && b.register === "이미 있음") notify(`${item.studentName} — 출석부에는 이미 오늘 기록이 있어 그대로 두었습니다.`, "info");
+      }
+    }
   }
 
   // 드래그로 놓으면 바로 옮기지 않고, 계속 유지할지 오늘만 적용할지부터 물어봅니다(요청:

@@ -448,7 +448,34 @@ export default function AttendanceClient({
       const exists = prev.some((r) => r.id === row.id);
       return exists ? prev.map((r) => (r.id === row.id ? row : r)) : [row, ...prev];
     });
-    void existing;
+    // **결석은 하원 체크표에도 갑니다.** 출석부에서 결석을 찍으면 그날 그 아이의 셔틀 줄이
+    // 결석이 되고, 결석을 풀면 체크표의 결석만 예정으로 돌립니다(픽업·탑승으로 바뀐 줄은 그대로).
+    // 체크표는 종이로 뽑아 쓰는 표라, 출석부에만 결석이 있고 체크표에는 없으면 그 아이를 차에서
+    // 기다립니다.
+    const wasAbsent = existing?.status === "결석";
+    const nowAbsent = status === "결석";
+    if (wasAbsent !== nowAbsent) {
+      try {
+        const res = await fetch("/api/work/attendance-action", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            studentId: student.id,
+            studentName: student.name,
+            action: nowAbsent ? "결석" : "예정",
+            serviceDate: date,
+            source: "직접 등록",
+            reasonText: nowAbsent ? "출석부에서 결석 처리" : "출석부에서 결석 해제",
+            onlyIf: nowAbsent ? undefined : "결석",
+          }),
+        });
+        const b = (await res.json().catch(() => ({}))) as { ok?: boolean; message?: string; boardings?: number; error?: string };
+        if (!res.ok) notify(`${t("하원 체크표에 반영하지 못했습니다", "Could not update the dismissal checklist")}: ${b.error ?? res.status}`, "error");
+        else if (b.ok && (b.boardings ?? 0) > 0) notify(nowAbsent ? t("하원 체크표에도 결석으로 표시했습니다.", "Marked absent on the dismissal checklist too.") : t("하원 체크표의 결석을 되돌렸습니다.", "Reverted the absence on the dismissal checklist."), "success");
+      } catch (e) {
+        notify(`${t("하원 체크표에 반영하지 못했습니다", "Could not update the dismissal checklist")}: ${e instanceof Error ? e.message : String(e)}`, "error");
+      }
+    }
   }
 
   async function setReason(record: AttendanceRecord, reason: ReasonType) {

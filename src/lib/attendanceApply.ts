@@ -98,61 +98,10 @@ export async function applyAttendance(
   }
 
   // ── ② 출석부 ──────────────────────────────────────────────────────────────
-  //
-  // 학생 번호가 없으면 출석부에 쓸 수 없습니다(`attendance_records.student_id` 는 필수).
-  // 조용히 넘기지 않고 그 사실을 적어 돌려줍니다 - 사람이 학생을 이어주면 됩니다.
   const registerStatus = REGISTER_STATUS[action];
-  let register: ApplyResult["register"] = "해당 없음";
-
-  if (action === "예정") {
-    // 되돌리기. **이 자리가 자동으로 넣은 줄만** 지웁니다.
-    if (studentId) {
-      const { data, error } = await supabase
-        .from("attendance_records")
-        .delete()
-        .eq("student_id", studentId)
-        .eq("date", serviceDate)
-        .eq("confirmed_by_human", false)
-        .select("id");
-      if (error) errors.push(`출석부 되돌리기: ${error.message}`);
-      else register = (data ?? []).length > 0 ? "지움" : "해당 없음";
-    }
-  } else if (registerStatus) {
-    if (!studentId) {
-      errors.push("학생이 연결되지 않아 출석부에 남기지 못했습니다. 인박스에서 학생을 골라주세요.");
-    } else {
-      // **사람이 찍어둔 줄은 덮어쓰지 않습니다.** (학생, 날짜)가 유일해서 upsert 로 밀면
-      // 담임이 정한 값이 조용히 바뀝니다.
-      const { data: existing, error: readErr } = await supabase
-        .from("attendance_records")
-        .select("id, confirmed_by_human")
-        .eq("student_id", studentId)
-        .eq("date", serviceDate)
-        .maybeSingle();
-      if (readErr) {
-        errors.push(`출석부 조회: ${readErr.message}`);
-      } else if (existing) {
-        register = "이미 있음";
-      } else {
-        const { error } = await supabase.from("attendance_records").insert({
-          student_id: studentId,
-          date: serviceDate,
-          status: registerStatus,
-          // 사유는 연락 글에서 가릴 수 없습니다. 비워두고 사람이 고르게 합니다 - 여기서
-          // 「질병」을 찍어두면 아무도 다시 안 봅니다.
-          reason_type: null,
-          source: input.source,
-          // 자동으로 들어왔다는 표시. 되돌릴 때 이 줄만 지웁니다.
-          confirmed_by_human: false,
-          checked_by: actor.email,
-          checked_by_name: actor.name,
-          checked_at: new Date().toISOString(),
-        });
-        if (error) errors.push(`출석부 기록: ${error.message}`);
-        else register = "넣음";
-      }
-    }
-  }
+  const reg = await applyRegister(supabase, { studentId, serviceDate, action, actor, source: input.source });
+  errors.push(...reg.errors);
+  const register = reg.register;
 
   // ── ③ 사람이 읽을 한 줄 ───────────────────────────────────────────────────
   const parts: string[] = [];
@@ -175,4 +124,81 @@ export async function applyAttendance(
   }
 
   return { boardings, register, note: `${studentName} — ${parts.join(" · ")}`, errors };
+}
+
+/**
+ * **출석부(`attendance_records`)만** 넣거나 되돌립니다. 셔틀은 건드리지 않습니다.
+ *
+ * 하원 체크표에서 결석을 찍을 때 씁니다 - 체크표는 셔틀 상태를 자기 손으로 이미 바꿨으므로
+ * 출석부 쪽만 따라가면 됩니다. 인박스는 `applyAttendance` 로 둘을 한 짝으로 처리합니다.
+ *
+ * 규칙은 같습니다. 사람이 찍어둔 줄은 덮어쓰지 않고, 되돌리기는 자동으로 들어온 줄만 지웁니다.
+ */
+export async function applyRegister(
+  supabase: SupabaseClient,
+  input: {
+    studentId: string | null;
+    serviceDate: string;
+    action: AttendanceAction;
+    actor: { email: string; name: string | null };
+    source: "토들" | "구글챗" | "직접 등록" | "하원 체크표";
+  },
+): Promise<{ register: ApplyResult["register"]; errors: string[] }> {
+  const errors: string[] = [];
+  const { studentId, serviceDate, action, actor } = input;
+  const registerStatus = REGISTER_STATUS[action];
+  let register: ApplyResult["register"] = "해당 없음";
+  // 출석부의 「출처」 칸은 담임·행정·토들·구글챗 넷뿐입니다(표의 제약). 사람이 직접 등록한 것과
+  // 체크표에서 찍은 것은 행정실의 판단이므로 「행정」으로 적습니다.
+  const source = input.source === "토들" || input.source === "구글챗" ? input.source : "행정";
+
+  if (action === "예정") {
+    // 되돌리기. **자동으로 넣은 줄만** 지웁니다 - 담임이 찍은 줄은 담임의 판단입니다.
+    if (studentId) {
+      const { data, error } = await supabase
+        .from("attendance_records")
+        .delete()
+        .eq("student_id", studentId)
+        .eq("date", serviceDate)
+        .eq("confirmed_by_human", false)
+        .select("id");
+      if (error) errors.push(`출석부 되돌리기: ${error.message}`);
+      else register = (data ?? []).length > 0 ? "지움" : "해당 없음";
+    }
+  } else if (registerStatus) {
+    if (!studentId) {
+      errors.push("학생이 연결되지 않아 출석부에 남기지 못했습니다. 학생을 먼저 연결해주세요.");
+    } else {
+      // **사람이 찍어둔 줄은 덮어쓰지 않습니다.** (학생, 날짜)가 유일해서 upsert 로 밀면
+      // 담임이 정한 값이 조용히 바뀝니다.
+      const { data: existing, error: readErr } = await supabase
+        .from("attendance_records")
+        .select("id, confirmed_by_human")
+        .eq("student_id", studentId)
+        .eq("date", serviceDate)
+        .maybeSingle();
+      if (readErr) {
+        errors.push(`출석부 조회: ${readErr.message}`);
+      } else if (existing) {
+        register = "이미 있음";
+      } else {
+        const { error } = await supabase.from("attendance_records").insert({
+          student_id: studentId,
+          date: serviceDate,
+          status: registerStatus,
+          // 사유는 연락 글에서 가릴 수 없습니다. 비워두고 사람이 고르게 합니다.
+          reason_type: null,
+          source,
+          // 자동으로 들어왔다는 표시(노란 줄). 되돌릴 때 이 줄만 지웁니다.
+          confirmed_by_human: false,
+          checked_by: actor.email,
+          checked_by_name: actor.name,
+          checked_at: new Date().toISOString(),
+        });
+        if (error) errors.push(`출석부 기록: ${error.message}`);
+        else register = "넣음";
+      }
+    }
+  }
+  return { register, errors };
 }

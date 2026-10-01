@@ -133,7 +133,14 @@ export async function POST(req: Request) {
     // 번호가 있으면 번호로 고릅니다. 옛 배정 줄에는 번호가 안 붙어 있어서, 번호로 하나도
     // 못 찾으면 이름으로 한 번 더 봅니다 - 다만 위에서 이미 겹치는 이름은 걸러냈습니다.
     const byId = studentId ? todays.filter((a) => a.student_id === studentId) : [];
-    const matches = byId.length > 0 ? byId : todays.filter((a) => compareKey(a.student_name_raw ?? "") === key);
+    let matches = byId.length > 0 ? byId : todays.filter((a) => compareKey(a.student_name_raw ?? "") === key);
+    // **지금 그 상태인 줄만.** 출석부에서 결석을 풀 때 `onlyIf: "결석"` 으로 와서, 체크표에서
+    // 그 사이 픽업·탑승으로 바뀐 줄은 건드리지 않습니다 - 되돌리기가 남의 체크를 지우면 안 됩니다.
+    const onlyIf = typeof (body as { onlyIf?: unknown } | null)?.onlyIf === "string" ? String((body as { onlyIf: string }).onlyIf) : null;
+    if (onlyIf) {
+      const statusOf = new Map(((dayBoardings as { assignment_id: string; status: string | null }[] | null) ?? []).map((b) => [b.assignment_id, b.status]));
+      matches = matches.filter((a) => (statusOf.get(a.id) ?? "예정") === onlyIf);
+    }
 
     // ── 셔틀 배정이 없어도 멈추지 않습니다 ───────────────────────────────
     //
@@ -208,6 +215,7 @@ export async function POST(req: Request) {
     return NextResponse.json({
       ok: applied.errors.length === 0,
       matched: applied.boardings,
+      boardings: applied.boardings,
       register: applied.register,
       studentName: matches[0]?.student_name_raw ?? rawName,
       serviceDate,

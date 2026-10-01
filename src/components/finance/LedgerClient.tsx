@@ -441,26 +441,26 @@ export default function LedgerClient({
           <table className="shrink-0 border-l border-slate-200 text-[12px]">
             <thead className="bg-slate-50 text-[11px] text-slate-500">
               <tr className="h-12">
-                <th rowSpan={2} className="whitespace-nowrap px-2 text-right align-bottom">청구 예정액</th>
-                <th rowSpan={2} className="whitespace-nowrap px-2 text-right align-bottom">청구액</th>
-                <th rowSpan={2} className="whitespace-nowrap px-2 text-right align-bottom">수납액</th>
-                <th rowSpan={2} className="whitespace-nowrap px-2 text-left align-bottom">수단</th>
-                <th rowSpan={2} className="whitespace-nowrap px-2 text-right align-bottom">미수금</th>
-                <th rowSpan={2} className="whitespace-nowrap px-2 text-right align-bottom">예치금</th>
-                <th rowSpan={2} className="whitespace-nowrap px-2 text-right align-bottom">학기 수납 예정액</th>
+                <th rowSpan={2} className="whitespace-nowrap px-1.5 text-right align-bottom">청구예정</th>
+                <th rowSpan={2} className="whitespace-nowrap px-1.5 text-right align-bottom">청구액</th>
+                <th rowSpan={2} className="whitespace-nowrap px-1.5 text-right align-bottom">수납</th>
+                <th rowSpan={2} className="whitespace-nowrap px-1.5 text-left align-bottom">수단</th>
+                <th rowSpan={2} className="whitespace-nowrap px-1.5 text-right align-bottom">미수금</th>
+                <th rowSpan={2} className="whitespace-nowrap px-1.5 text-right align-bottom">예치금</th>
+                <th rowSpan={2} className="whitespace-nowrap px-1.5 text-right align-bottom">학기예정</th>
               </tr>
               <tr className="h-7" />
             </thead>
             <tbody>
               {studentRows.map((r) => (
                 <tr key={r.id} onClick={() => setOpen(r.id)} className="h-8 cursor-pointer border-t border-slate-100 hover:bg-indigo-50/40">
-                  <td className={"whitespace-nowrap px-2 text-right tabular-nums font-bold " + (r.toBill > 0 ? "text-amber-700" : "text-slate-300")}>{r.toBill > 0 ? won(r.toBill) : "—"}</td>
-                  <td className="whitespace-nowrap px-2 text-right tabular-nums text-slate-600">{r.billed > 0 ? won(r.billed) : "—"}</td>
-                  <td className={"whitespace-nowrap px-2 text-right tabular-nums " + (r.paid > 0 ? "font-semibold text-emerald-700" : "text-slate-300")}>{r.paid > 0 ? won(r.paid) : "—"}</td>
-                  <td className="whitespace-nowrap px-2 text-left text-[11px] text-slate-500">{r.methods.length ? r.methods.join("·") : <span className="text-slate-300">—</span>}</td>
-                  <td className={"whitespace-nowrap px-2 text-right tabular-nums font-bold " + (r.unpaid > 0 ? "text-rose-700" : "text-slate-300")}>{r.unpaid > 0 ? won(r.unpaid) : "—"}</td>
-                  <td className={"whitespace-nowrap px-2 text-right tabular-nums " + (r.deposit > 0 ? "font-bold text-teal-700" : "text-slate-300")}>{r.deposit > 0 ? won(r.deposit) : "—"}</td>
-                  <td className="whitespace-nowrap px-2 text-right tabular-nums text-slate-700">{r.expected > 0 ? won(r.expected) : "—"}</td>
+                  <td className={"whitespace-nowrap px-1.5 text-right tabular-nums font-bold " + (r.toBill > 0 ? "text-amber-700" : "text-slate-300")}>{r.toBill > 0 ? won(r.toBill) : "—"}</td>
+                  <td className="whitespace-nowrap px-1.5 text-right tabular-nums text-slate-600">{r.billed > 0 ? won(r.billed) : "—"}</td>
+                  <td className={"whitespace-nowrap px-1.5 text-right tabular-nums " + (r.paid > 0 ? "font-semibold text-emerald-700" : "text-slate-300")}>{r.paid > 0 ? won(r.paid) : "—"}</td>
+                  <td className="whitespace-nowrap px-1.5 text-left text-[11px] text-slate-500">{r.methods.length ? r.methods.join("·") : <span className="text-slate-300">—</span>}</td>
+                  <td className={"whitespace-nowrap px-1.5 text-right tabular-nums font-bold " + (r.unpaid > 0 ? "text-rose-700" : "text-slate-300")}>{r.unpaid > 0 ? won(r.unpaid) : "—"}</td>
+                  <td className={"whitespace-nowrap px-1.5 text-right tabular-nums " + (r.deposit > 0 ? "font-bold text-teal-700" : "text-slate-300")}>{r.deposit > 0 ? won(r.deposit) : "—"}</td>
+                  <td className="whitespace-nowrap px-1.5 text-right tabular-nums text-slate-700">{r.expected > 0 ? won(r.expected) : "—"}</td>
                 </tr>
               ))}
               {studentRows.length === 0 && (
@@ -471,13 +471,13 @@ export default function LedgerClient({
             </tbody>
             <tfoot className="border-t-2 border-slate-200 bg-slate-50 text-[12px] font-bold">
               <tr className="h-8">
-                <td className="whitespace-nowrap px-2 text-right tabular-nums text-amber-700">{won(sum((r) => r.toBill))}</td>
-                <td className="whitespace-nowrap px-2 text-right tabular-nums">{won(sum((r) => r.billed))}</td>
-                <td className="whitespace-nowrap px-2 text-right tabular-nums text-emerald-700">{won(sum((r) => r.paid))}</td>
+                <td className="whitespace-nowrap px-1.5 text-right tabular-nums text-amber-700">{won(sum((r) => r.toBill))}</td>
+                <td className="whitespace-nowrap px-1.5 text-right tabular-nums">{won(sum((r) => r.billed))}</td>
+                <td className="whitespace-nowrap px-1.5 text-right tabular-nums text-emerald-700">{won(sum((r) => r.paid))}</td>
                 <td />
-                <td className="whitespace-nowrap px-2 text-right tabular-nums text-rose-700">{won(sum((r) => r.unpaid))}</td>
-                <td className="whitespace-nowrap px-2 text-right tabular-nums text-teal-700">{won(sum((r) => r.deposit))}</td>
-                <td className="whitespace-nowrap px-2 text-right tabular-nums">{won(sum((r) => r.expected))}</td>
+                <td className="whitespace-nowrap px-1.5 text-right tabular-nums text-rose-700">{won(sum((r) => r.unpaid))}</td>
+                <td className="whitespace-nowrap px-1.5 text-right tabular-nums text-teal-700">{won(sum((r) => r.deposit))}</td>
+                <td className="whitespace-nowrap px-1.5 text-right tabular-nums">{won(sum((r) => r.expected))}</td>
               </tr>
             </tfoot>
           </table>

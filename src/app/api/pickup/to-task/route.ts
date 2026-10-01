@@ -5,9 +5,7 @@ import { genCaseId } from "@/lib/caseId";
 
 export const dynamic = "force-dynamic";
 
-// 학부모 문의 한 건을 업무로 올립니다.
-//
-// 요청: "문의탭에서만 우선보이고 클릭해서 업무로 등록할 수 있도록 만들어줘"
+// 학부모 문의 한 건을 업무로 올립니다. 담당자가 문의 창에서 단추를 눌러야 만들어집니다.
 //
 // 자동으로 만들지 않는 이유
 //   문의는 하루에도 수십 건 들어옵니다. 전부 업무가 되면 원래 업무가 그 안에 묻히고, 업무
@@ -16,6 +14,13 @@ export const dynamic = "force-dynamic";
 //
 // 담당자는 담임 선생님으로 미리 채웁니다. 학부모 문의는 대개 담임이 답하고, 아니면 화면에서
 // 바꾸면 됩니다.
+//
+// 돌아오는 길은 데이터베이스가 맡습니다 - 이 업무가 완료되면 트리거(`tasks_inquiry_follow`)가
+// 문의에 답한 때를 적습니다. 화면마다 그 줄을 적지 않습니다.
+//
+// 같은 문의로 두 번 만들지 않는 것도 데이터베이스입니다. `task_id` 가 비었나 보는 검사는 두 창이
+// 동시에 누르면 둘 다 통과합니다. `origin_ref` 에 문의 번호를 적고 유일 색인이 막습니다 -
+// 막히면 이미 있는 업무를 찾아 이어 붙입니다(픽업 업무와 같은 방식).
 export async function POST(req: Request) {
   const me = await getCurrentAppUser();
   if (!me) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
@@ -49,10 +54,12 @@ export async function POST(req: Request) {
   // 아예 안 보여서 그대로 잊힙니다.
   const assignee = (row.homeroom_email as string | null) ?? me.email;
 
-  const { data: task, error } = await supabase
+  const { data: inserted, error } = await supabase
     .from("tasks")
     .insert({
       case_id: genCaseId("TSK"),
+      origin: "문의",
+      origin_ref: row.id,
       title,
       status: "예정",
       priority: row.urgency === "높음" ? "긴급" : "보통",
@@ -73,9 +80,15 @@ export async function POST(req: Request) {
     .select("id")
     .single();
 
-  if (error || !task) return NextResponse.json({ error: error?.message ?? "업무를 만들지 못했습니다." }, { status: 500 });
+  let task = inserted;
+  if (error?.code === "23505") {
+    const { data: mine } = await supabase.from("tasks").select("id").eq("origin_ref", row.id).is("deleted_at", null).maybeSingle();
+    task = mine ?? null;
+  }
+  if (!task) return NextResponse.json({ error: error?.message ?? "업무를 만들지 못했습니다." }, { status: 500 });
 
-  await supabase.from("pickup_requests").update({ task_id: task.id }).eq("id", id);
+  const { error: linkErr } = await supabase.from("pickup_requests").update({ task_id: task.id }).eq("id", id);
+  if (linkErr) return NextResponse.json({ error: `업무는 만들었지만 문의에 잇지 못했습니다: ${linkErr.message}` }, { status: 500 });
 
   return NextResponse.json({ ok: true, taskId: task.id });
 }

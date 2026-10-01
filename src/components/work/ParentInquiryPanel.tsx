@@ -42,6 +42,8 @@ export type Inquiry = {
   answered_at: string | null;
   answered_by: string | null;
   task_id: string | null;
+  /** 업무로 넘긴 경우 그 업무의 상태. 끝났으면 트리거가 이 문의를 답한 것으로 적습니다. */
+  task?: { status: string; deleted_at: string | null } | null;
   /** 같은 내용이 다른 경로로도 들어왔을 때, 그 경로들. 화면에는 이 줄 하나만 뜹니다. */
   merged_sources?: string[] | null;
   /** '수동'이면 직원이 체크한 것, '답글'이면 토들에서 답글이 확인된 것. */
@@ -329,7 +331,8 @@ export default function ParentInquiryPanel({
       // 그 사이에 아직 없는 칸을 콕 집어 달라고 하면 **조회 자체가 실패해 화면이 통째로**
       // 비어버립니다. 실제로 그렇게 깨졌습니다. 전부 달라고 하면 있는 것만 돌아오고,
       // 없는 칸은 undefined로 남아 화면은 그대로 뜹니다.
-      .select("*")
+      // 업무로 넘긴 것은 그 업무의 상태를 함께 봅니다 - 「업무」 글자만 있으면 끝났는지 알 수 없습니다.
+      .select("*, task:tasks!pickup_requests_task_id_fkey(status, deleted_at)")
       .eq("kind", "문의")
       .order("received_at", { ascending: false })
       .limit(200);
@@ -887,7 +890,11 @@ export default function ParentInquiryPanel({
           +{r.merged_sources.join(",")}
         </span>
       )}
-      {r.task_id && <span className="shrink-0 text-[10px] text-blue-500">업무</span>}
+      {r.task_id && (
+        <span className={"shrink-0 text-[10px] " + (r.task?.status === "완료" ? "text-emerald-600" : "text-blue-500")}>
+          업무{r.task?.status ? `·${r.task.status}` : ""}
+        </span>
+      )}
       <span className="shrink-0 text-[10px] text-slate-400" title={new Date(r.received_at).toLocaleString("ko-KR")}>
         {whenLabel(r.received_at)}
       </span>
@@ -1227,7 +1234,7 @@ export default function ParentInquiryPanel({
 
                 {detail.answered_at && (
                   <p className="mt-2 text-[11px] text-emerald-600">
-                    ✓ {detail.answered_by} 님이 {timeAgo(detail.answered_at)} 답변 완료로 표시
+                    ✓ {detail.answered_via === "업무완료" ? "업무가 완료되어" : `${detail.answered_by} 님이`} {timeAgo(detail.answered_at)} 답변 완료로 표시
                   </p>
                 )}
               </div>
@@ -1266,7 +1273,11 @@ export default function ParentInquiryPanel({
                     + 업무로 등록
                   </button>
                 )}
-                {detail.task_id && <span className="ml-auto self-center text-[11px] font-semibold text-blue-500">이미 업무로 등록됨</span>}
+                {detail.task_id && (
+                  <a href="/work" className="ml-auto self-center text-[11px] font-semibold text-blue-500 underline-offset-2 hover:underline">
+                    업무로 등록됨{detail.task?.status ? ` · ${detail.task.status}` : ""} →
+                  </a>
+                )}
               </div>
             </div>
           </div>,

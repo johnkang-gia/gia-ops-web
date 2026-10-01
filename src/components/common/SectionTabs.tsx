@@ -373,84 +373,59 @@ const DOCS_TABS: TabDef[] = [
 //
 // 순서는 자주 여는 것부터입니다. 재무 일은 대개 "지금 어디까지 됐나"에서 시작합니다.
 const FINANCE_TABS: TabDef[] = [
-  { key: "overview", label: "개요", icon: "📊", href: "/finance", match: ["/finance"] },
-  // **회계가 재무의 중심입니다.** 학생이 이 학기에 내야 할 돈 전부와 청구서를 한 화면에서 보고,
-  // 학생을 누르면 창 하나에서 발행·입금·영수증·항목 수정·올톡페이를 다 합니다. 청구 안에
-  // 묻어 두면 한 단계 더 들어가야 해서 가장 많이 여는 화면이 가장 멀리 있게 됩니다.
-  { key: "ledger", label: "회계", icon: "📒", href: "/finance/ledger", match: ["/finance/ledger"] },
-  // **월별·학기별**은 「지금」이 아니라 「흐름」을 보는 자리입니다. 다음 달에 얼마를 청구할지는
-  // 지난 달들을 나란히 놓고 정하는 일인데, 지금까지 나란히 놓을 자리가 없었습니다.
+  // **재무는 셋입니다 - 회계 · 월별 · 설정.**
+  //
+  // 열여섯 화면이 다섯 탭에 흩어져 있었습니다. 「이 아이 미수금이 얼마지」를 보려고 미납금으로,
+  // 입금을 적으려고 수납으로, 선납을 적으려고 예치금으로 옮겨 다녔는데 셋 다 회계 화면의 학생
+  // 창에서 이미 되는 일입니다. 주소는 전부 남겨 두었습니다(즐겨찾기·옛 링크) - 상단 탭의 자리만
+  // 셋으로 줄이고, 일괄로 하는 화면들은 회계 아래 작은 줄에 둡니다.
   {
-    key: "monthly",
-    label: "월별",
-    icon: "📅",
-    href: "/finance/monthly",
-    match: ["/finance/monthly"],
+    key: "ledger",
+    label: "회계",
+    icon: "📒",
+    href: "/finance/ledger",
+    match: ["/finance/ledger", "/finance/tuition", "/finance/invoices", "/finance/unpaid", "/finance/payments", "/finance/prepaid", "/finance/import", "/finance/receipts", "/finance/statement"],
     children: [
-      { label: "월별 · 학기별", href: "/finance/monthly", match: ["/finance/monthly"] },
-      // 학교 전체 합계 다음에 오는 물음은 언제나 **「그 달에 누구에게 얼마」**입니다.
-      // 그 자리가 없어서 지금까지는 청구서를 하나씩 찾아 더했습니다.
-      { label: "학생별", href: "/finance/monthly/students", match: ["/finance/monthly/students"] },
-    ],
-  },
-  // 청구 — 학비와 학비외를 **한 자리에** 둡니다.
-  //
-  // 둘은 대분류로 나란히 서 있었습니다. 그런데 하는 일은 하나입니다 - 이번 달에 이 아이에게
-  // 얼마를 청구하는가. 대분류가 둘이면 「학비 넣고, 다시 위로 올라가서, 학비외 넣고」가 되고,
-  // 그 사이에 한쪽을 빠뜨립니다.
-  //
-  // 표는 여전히 둘입니다. 학비는 학부모가 서명해서 고른 **납부 옵션**이고, 학비외는 «이 아이가
-  // 이 책을 산다»는 **체크**라 근거가 다릅니다. 한 표에 섞으면 둘 다 안 됩니다.
-  //
-  // 하위 이름은 DB 의 `invoices.stream` 값(학비·학비외)과 **같은 말**을 씁니다. 화면에서 부르는
-  // 이름과 저장된 값이 다르면, 집계가 안 맞을 때 어느 쪽 이야기인지부터 헷갈립니다.
-  {
-    key: "billing",
-    label: "청구",
-    icon: "🧾",
-    href: "/finance/tuition",
-    match: ["/finance/tuition", "/finance/invoices", "/finance/unpaid"],
-    children: [
-      // 반 전체를 한 번에 체크해서 발행할 때 쓰는 표들입니다. 학생 한 명의 일은 회계 탭에서 합니다.
-      { label: "학비", href: "/finance/tuition", match: ["/finance/tuition"] },
-      { label: "학비외", href: "/finance/invoices", match: ["/finance/invoices"] },
-      // **미납금은 따로 관리합니다.** 예전에는 새 청구서를 발행할 때 저절로 얹혔는데,
-      // 그렇게 커진 청구서는 실측에서 한 건도 안 걷혔습니다. 이제 여기서 따로 보낼지
-      // 합칠지를 사람이 고릅니다.
+      // 학생 한 명의 일은 전부 여기 - 학생을 누르면 창 하나에서 발행·기수납·입금·영수증·올톡페이.
+      { label: "회계", href: "/finance/ledger", match: ["/finance/ledger"] },
+      // 반 전체를 한 번에 체크해서 발행하는 표. 하위 이름은 DB 의 `invoices.stream` 값과 같은 말입니다.
+      { label: "학비 일괄", href: "/finance/tuition", match: ["/finance/tuition"] },
+      { label: "학비외 일괄", href: "/finance/invoices", match: ["/finance/invoices"] },
       { label: "미납금", href: "/finance/unpaid", match: ["/finance/unpaid"] },
-    ],
-  },
-  // 현금영수증은 수납 안으로 들여놨습니다. 수납을 넣는 자리에서 신청이 생기고 그 결과를
-  // 보는 자리가 현금영수증이라, 둘은 한 가지 일의 앞뒤입니다.
-  {
-    key: "payments",
-    label: "수납",
-    icon: "💳",
-    href: "/finance/payments",
-    match: ["/finance/payments", "/finance/receipts", "/finance/prepaid", "/finance/import"],
-    children: [
       { label: "수납", href: "/finance/payments", match: ["/finance/payments"] },
-      // 선입금은 **수납의 한 종류**입니다 — 청구서보다 먼저 들어왔거나, 취소로 떨어져 나온
-      // 돈입니다. 지금까지 보는 자리가 없어서 그 돈이 다음 청구서를 저절로 깎았고, 왜
-      // 깎였는지 알 방법이 없었습니다.
       { label: "예치금", href: "/finance/prepaid", match: ["/finance/prepaid"] },
-      // 올톡페이에서 받은 파일을 올려 검수하는 자리. 수납과 같은 일이라 여기 둡니다.
       { label: "결제내역 올리기", href: "/finance/import", match: ["/finance/import"] },
       { label: "현금영수증", href: "/finance/receipts", match: ["/finance/receipts"] },
     ],
   },
-  // **「학비외 항목」 대분류를 여기서 뺐습니다.**
-  //
-  // 항목은 청구를 하다가 손대게 됩니다 - 「이 교재가 목록에 없네」. 항목이 없으면 표에 열이
-  // 안 생기고, 그러면 그 아이에게 청구할 방법이 없습니다. 그런데 고치러 다른 대분류로
-  // 건너가면 보고 있던 학기·부서·체크가 전부 풀리고, 돌아와서 처음부터 다시 찾아야 했습니다.
-  // 이제 [청구 → 학비외] 표 위의 「📚 학비외 항목」 단추가 같은 화면에서 팝업으로 엽니다.
-  //
-  // 「납부 항목 · 할인」도 같은 이유로 [청구 → 학비] 안의 팝업입니다.
-  //
-  // 주소(`/finance/items` · `/finance/plans`)는 그대로 둡니다 - 즐겨찾기와 옛 링크가
-  // 끊기면 안 됩니다.
+  // **월별** - 「지금」이 아니라 「흐름」. 개요(이번 달)도 같은 뷰(`finance_monthly`)를 읽으므로 여기 둡니다.
+  {
+    key: "monthly",
+    label: "월별",
+    icon: "📅",
+    href: "/finance",
+    match: ["/finance", "/finance/monthly"],
+    children: [
+      { label: "이번 달 개요", href: "/finance", match: ["/finance"] },
+      { label: "월별 · 학기별", href: "/finance/monthly", match: ["/finance/monthly"] },
+      { label: "학생별", href: "/finance/monthly/students", match: ["/finance/monthly/students"] },
+    ],
+  },
+  // **설정** - 요금표·납부항목·할인. 청구를 하다가 손대는 일이라 각 표 위의 단추로도 열리지만,
+  // 처음 학기를 세팅할 때는 여기서 한 번에 봅니다.
+  {
+    key: "settings",
+    label: "설정",
+    icon: "⚙️",
+    href: "/finance/plans",
+    match: ["/finance/plans", "/finance/items"],
+    children: [
+      { label: "학비 요금표 · 할인", href: "/finance/plans", match: ["/finance/plans"] },
+      { label: "학비외 항목", href: "/finance/items", match: ["/finance/items"] },
+    ],
+  },
 ];
+
 
 type Section = { title: string; titleEn?: string; icon: string; accent: AccentKey; tabs: TabDef[] };
 

@@ -482,16 +482,10 @@ export default async function DashboardLayout({
         // 재무를 누르면 회계로 갑니다 - 가장 많이 여는 화면이자 모든 일을 처리하는 자리입니다.
         href: "/finance/ledger",
         items: [
-          { href: "/finance", label: "개요", icon: "📊" },
+          // 재무는 셋 - 회계(모든 일) · 월별(흐름) · 설정(요금표). 나머지 화면은 회계 아래 작은 줄에 있습니다.
           { href: "/finance/ledger", label: "회계", icon: "📒" },
-          // 청구는 학비·학비외 두 화면입니다. 상단 탭에서는 「청구」 하나로 묶여 있고,
-          // 옆 메뉴에서는 둘 다 보여야 바로 건너뛸 수 있습니다.
-          { href: "/finance/tuition", label: "청구 · 학비", icon: "💰" },
-          { href: "/finance/invoices", label: "청구 · 학비외", icon: "🧾" },
-          { href: "/finance/payments", label: "수납", icon: "💳" },
-          // 「학비외 항목」·「납부 항목 · 할인」은 옆 메뉴에서 뺐습니다. 둘 다 청구를 하다가
-          // 손대는 일이라, 각각 [청구 · 학비외]·[청구 · 학비] 화면의 단추가 같은 자리에서
-          // 팝업으로 엽니다 - 건너가면 보고 있던 표의 학기·부서·체크가 전부 풀립니다.
+          { href: "/finance", label: "월별", icon: "📅" },
+          { href: "/finance/plans", label: "설정", icon: "⚙️" },
         ],
       });
     }

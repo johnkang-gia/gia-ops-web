@@ -239,7 +239,7 @@ export function buildLedger(world: LedgerWorld, student: LedgerStudent): Ledger 
       category: r.item.category,
       amount: r.amount,
       optionName: r.qty > 1 ? `${r.qty}개` : null,
-      note: r.fromDefault ? null : "따로 넣음",
+      note: r.fromDefault ? null : "개별 추가",
       billed: m ? { state: m.state, invoiceId: m.invoiceId, invoiceNo: inv?.invoice_no ?? null, unsure: m.unsure } : null,
       extra: { itemId: r.item.id, qty: r.qty, fromDefault: r.fromDefault },
     });

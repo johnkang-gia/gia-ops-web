@@ -8,6 +8,7 @@ import { hasFinanceAccess, isStaffOrAboveUser } from "@/lib/roles";
 import DismissalPlanEditor from "@/components/students/DismissalPlanEditor";
 import AbsenceDocsPanel from "@/components/students/AbsenceDocsPanel";
 import StudentFeeHistory from "@/components/finance/StudentFeeHistory";
+import OpenStudentPanelButton from "@/components/students/OpenStudentPanelButton";
 import type { DismissalPlan } from "@/lib/dismissalPlan";
 import { won } from "@/lib/feeItems";
 import type { Invoice } from "@/lib/types";
@@ -297,6 +298,9 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
             {n.label}
           </a>
         ))}
+        {/* 최근 30일 출결·픽업과 회계는 학생 창이 보여줍니다 - 프로필에 또 그리지 않습니다. */}
+        <OpenStudentPanelButton studentId={id} tab="출결·픽업" label="🗓 출결 · 픽업" className="bg-slate-100 text-slate-700 hover:bg-slate-200" />
+        {canSeeFinance && <OpenStudentPanelButton studentId={id} tab="회계" label="💰 회계" className="bg-indigo-50 text-indigo-800 hover:bg-indigo-100" />}
         <span className="mx-1 h-4 w-px bg-slate-200" />
         <span className="rounded-full bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-500">
           학적 이력 {enrollments.length}건

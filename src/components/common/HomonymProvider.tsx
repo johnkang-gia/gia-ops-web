@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, type ReactNode } from "react";
+import { useStudentPanel } from "@/components/students/StudentPanelProvider";
 
 /**
  * **동명이인 뱃지를 자료에서 나오게 합니다** — 화면마다 붙이지 않습니다.
@@ -69,22 +70,47 @@ export function Who({
   name,
   className = "",
   badgeClassName = "",
+  plain = false,
 }: {
   id?: string | null;
   name?: string | null;
   className?: string;
   badgeClassName?: string;
+  /** 누르는 동작을 뺍니다 - 이름 자체가 다른 단추 안에 있거나, 학생 창 안일 때. */
+  plain?: boolean;
 }) {
   const { byId, names } = useHomonyms();
+  const panel = useStudentPanel();
   const raw = String(name ?? "").trim();
   if (!raw) return null;
 
+  /**
+   * **번호가 있으면 누를 수 있습니다** - 학생 창이 열립니다. 이름을 그리는 자리가 23곳이고
+   * 그중 18곳이 어디로도 안 이어졌는데, 여기 한 번 넣으면 전부 이어집니다. 번호 없는 이름은
+   * 그대로 글자입니다 - 이름으로 고르면 동명이인이 같이 걸립니다(CLAUDE.md §2-4-1).
+   */
+  const clickable = !plain && !panel.inside && !!id;
+  const onClick = clickable
+    ? (e: React.MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        panel.open(id!);
+      }
+    : undefined;
+  const linkCls = clickable ? "cursor-pointer rounded hover:bg-indigo-50 hover:text-indigo-800 " : "";
+  const title = clickable ? "누르면 학생 창이 열립니다" : undefined;
+
   const shown = bare(raw);
-  if (!names.includes(normName(shown))) return <span className={className}>{raw}</span>;
+  if (!names.includes(normName(shown)))
+    return (
+      <span className={linkCls + className} onClick={onClick} title={title}>
+        {raw}
+      </span>
+    );
 
   const where = id ? byId[id] : undefined;
   return (
-    <span className={"inline-flex items-baseline gap-1 " + className}>
+    <span className={"inline-flex items-baseline gap-1 " + linkCls + className} onClick={onClick} title={title}>
       <span>{shown}</span>
       <span
         className={

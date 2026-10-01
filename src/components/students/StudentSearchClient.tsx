@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { Who } from "@/components/common/HomonymProvider";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { departmentTabs, tabIncludes, departmentOf, gradeSortKey } from "@/lib/department";
@@ -219,7 +220,7 @@ export default function StudentSearchClient({
               </span>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
-                  <span className="truncate text-sm font-bold text-slate-800">{s.name}</span>
+                  <span className="truncate text-sm font-bold text-slate-800"><Who id={s.id} name={s.name} plain /></span>
                   {s.name_en && <span className="truncate text-[11px] text-slate-400">{s.name_en}</span>}
                 </div>
                 <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[11px] text-slate-500">

@@ -62,12 +62,15 @@ export default function StudentLedgerModal({
   termId: initialTermId,
   onClose,
   onChanged,
+  embedded = false,
 }: {
   studentId: string;
   termId?: string | null;
   onClose: () => void;
   /** 발행·입금 등으로 자료가 바뀌면 부르는 쪽이 자기 목록을 다시 읽게 합니다. */
   onChanged?: () => void;
+  /** 학생 창(StudentPanel)의 회계 탭 안에 끼울 때. 덮개·닫기 단추 없이 본문만 그립니다. */
+  embedded?: boolean;
 }) {
   const notify = useToast();
   const [data, setData] = useState<LedgerResponse | null>(null);
@@ -126,10 +129,10 @@ export default function StudentLedgerModal({
   }, [studentId, load]);
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !already && !paying && !cancelling && !preview && !exporting && onClose();
+    const onKey = (e: KeyboardEvent) => !embedded && e.key === "Escape" && !already && !paying && !cancelling && !preview && !exporting && onClose();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, already, paying, cancelling, preview, exporting]);
+  }, [onClose, already, paying, cancelling, preview, exporting, embedded]);
 
   /** 무엇이든 바꾼 뒤에는 다시 읽습니다. 그리고 닫을 때 바깥에도 알립니다. */
   async function changed() {
@@ -317,13 +320,13 @@ export default function StudentLedgerModal({
   const invoicesCancelled = (ledger?.invoices ?? []).filter((v) => v.settled.state === "취소");
 
   return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 p-3" onClick={close}>
-      <div className="flex max-h-[94vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+    <div className={embedded ? "contents" : "fixed inset-0 z-[90] flex items-center justify-center bg-black/40 p-3"} onClick={embedded ? undefined : close}>
+      <div className={embedded ? "flex min-h-0 flex-1 flex-col overflow-hidden" : "flex max-h-[94vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"} onClick={(e) => e.stopPropagation()}>
         {/* ── 머리 ─────────────────────────────────────────────────────── */}
         <div className="flex flex-wrap items-center gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3">
           <div className="min-w-0">
             <div className="text-base font-black text-slate-900">
-              {student ? <Who id={student.id} name={student.name} /> : "…"}
+              {student ? <Who id={student.id} name={student.name} plain /> : "…"}
               {student && (
                 <span className="ml-1.5 text-[12px] font-semibold text-slate-500">
                   {[student.grade ? `${student.grade}학년` : null, student.class_name].filter(Boolean).join(" ")}
@@ -354,9 +357,11 @@ export default function StudentLedgerModal({
               <Stat label="학기 수납 예정액" value={ledger.totals.expected} tone="slate" />
             </div>
           )}
-          <button onClick={close} className="ml-1 px-1 text-lg font-bold text-slate-400 hover:text-slate-700" title="닫기 (Esc)">
-            ✕
-          </button>
+          {!embedded && (
+            <button onClick={close} className="ml-1 px-1 text-lg font-bold text-slate-400 hover:text-slate-700" title="닫기 (Esc)">
+              ✕
+            </button>
+          )}
         </div>
 
         {loadErr && <p className="m-3 rounded-lg bg-rose-50 px-3 py-2 text-[12px] font-bold text-rose-700">읽지 못했습니다: {loadErr}</p>}

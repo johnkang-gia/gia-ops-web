@@ -327,7 +327,7 @@ export default function LedgerClient({
               {studentRows.map((r) => (
                 <tr key={r.id} onClick={() => setOpen(r.id)} className={"h-12 cursor-pointer border-t border-slate-100 hover:bg-indigo-50/40" + flashCls(r.id)} title="누르면 학생 금전 창이 열립니다">
                   <td className="whitespace-nowrap px-2 font-semibold text-slate-800">
-                    <Who id={r.id} name={r.name} />
+                    <Who id={r.id} name={r.name} plain />
                     <span className="ml-1 text-[10px] font-normal text-slate-400">
                       {r.grade ?? ""} {r.className ?? ""}
                     </span>

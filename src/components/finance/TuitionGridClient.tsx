@@ -1,6 +1,7 @@
 "use client";
 
 import DragScroll from "@/components/common/DragScroll";
+import { Who } from "@/components/common/HomonymProvider";
 import FeePlansModal from "./FeePlansModal";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useFinanceLive } from "@/lib/useFinanceLive";
@@ -1164,7 +1165,7 @@ export default function TuitionGridClient({
                     />
                   </td>
                   <td className={"sticky left-8 z-10 border-b border-r border-slate-200 px-2 py-1 " + (on ? "bg-teal-50" : "bg-white")}>
-                    <b className="text-slate-800">{s.name}</b>
+                    <b className="text-slate-800"><Who id={s.id} name={s.name} /></b>
                     <span className="ml-1 text-[10px] text-slate-400">
                       {[s.grade, s.className].filter(Boolean).join(" ")}
                     </span>

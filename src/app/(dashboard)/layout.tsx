@@ -22,6 +22,7 @@ import NotificationBell, { NotificationProvider, TaskCountBadge } from "@/compon
 import { APP_VERSION } from "@/lib/version";
 import { ToastProvider } from "@/components/common/ToastProvider";
 import { HomonymProvider } from "@/components/common/HomonymProvider";
+import { StudentPanelProvider } from "@/components/students/StudentPanelProvider";
 import { loadHomonyms } from "@/lib/homonyms";
 import { ConfirmProvider } from "@/components/common/ConfirmProvider";
 import { LanguageProvider } from "@/components/common/LanguageProvider";
@@ -513,6 +514,9 @@ export default async function DashboardLayout({
     {/* 겹치는 이름 목록을 로그인 영역 전체에 한 번 깝니다. 화면은 준비 없이
         <Who id name /> 만 쓰면 됩니다 - 준비할 것이 없으면 빠뜨릴 것도 없습니다. */}
     <HomonymProvider value={homonyms}>
+    {/* 학생 창도 한 번 깝니다. <Who> 가 번호를 들고 있으면 누르면 열립니다 - 교사도 기본·출결·기록은
+        봅니다(자기 반 아이의 자료). 회계 탭은 재무 열쇠가 있을 때만 생깁니다. */}
+    <StudentPanelProvider canSeeFinance={hasFinanceAccess(me)}>
     <div data-theme={theme} className="shell-page-bg relative flex h-screen flex-1">
       <ConnectionBanner />
       {/* 탭을 켜둔 채로 며칠 일하는 분들이 있어, 배포해도 그 화면에는 어제 코드가 계속
@@ -711,6 +715,7 @@ export default async function DashboardLayout({
         <MainArea>{children}</MainArea>
       </div>
     </div>
+    </StudentPanelProvider>
     </HomonymProvider>
     </NotificationProvider>
     </ConfirmProvider>

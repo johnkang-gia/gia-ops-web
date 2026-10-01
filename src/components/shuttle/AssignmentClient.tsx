@@ -153,13 +153,17 @@ export default function AssignmentClient({
   const notify = useToast();
   const confirmAction = useConfirm();
   const [assignments, setAssignments] = useState(initialAssignments);
-  const [direction, setDirection] = useState<ShuttleDirection>("등원");
+  // 하원이 먼저입니다. 지금 운영하는 것이 하원이고, 등원은 전부 대기(회색)입니다.
+  const [direction, setDirection] = useState<ShuttleDirection>("하원");
   const [query, setQuery] = useState("");
   const [addingForRoute, setAddingForRoute] = useState<string | null>(null);
   const [newStudentName, setNewStudentName] = useState("");
   const [newStopId, setNewStopId] = useState("");
 
-  const routeById = useMemo(() => new Map(routes.map((r) => [r.id, r])), [routes]);
+  // 하원 대기 차에 아이를 넣으면 그 차를 켜야 체크표에 뜹니다. 켠 결과를 화면에도 바로 반영하려고
+  // 노선 목록을 상태로 듭니다.
+  const [routeList, setRouteList] = useState(routes);
+  const routeById = useMemo(() => new Map(routeList.map((r) => [r.id, r])), [routeList]);
   const stopById = useMemo(() => new Map(stops.map((s) => [s.id, s])), [stops]);
 
   // ── 명부와의 연결 ────────────────────────────────────────────────────────
@@ -220,6 +224,9 @@ export default function AssignmentClient({
   // 학년 순으로 정렬합니다.
   const busGroups = useMemo(() => {
     const groups = new Map<string, { route: ShuttleRoute; rows: Row[] }>();
+    // 배정이 없는 차와 꺼둔 차도 카드로 섭니다(회색). 그래야 새로 온 아이를 빈 차에 넣거나 다른
+    // 차로 옮길 수 있습니다 - 배정이 있는 차만 보이면 빈 차는 어디에도 안 보여서 못 고릅니다.
+    for (const r of routeList) if (r.direction === direction) groups.set(r.id, { route: r, rows: [] });
     for (const a of assignments) {
       const stop = stopById.get(a.stop_id);
       const route = stop ? routeById.get(stop.route_id) : undefined;
@@ -241,7 +248,7 @@ export default function AssignmentClient({
       return x.route.route_no.localeCompare(y.route.route_no, "ko");
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [assignments, direction, stopById, routeById]);
+  }, [assignments, direction, stopById, routeById, routeList]);
 
   // 연결 상태 요약. 화면 위에 숫자로 떠 있어야 "지금 몇 개가 안 붙어 있는지"가 보입니다.
   const linkSummary = useMemo(() => {
@@ -357,6 +364,18 @@ export default function AssignmentClient({
       return;
     }
     setAssignments((prev) => [...prev, data as ShuttleAssignment]);
+    // 꺼둔 하원 차에 첫 아이가 탔으면 그 차를 켭니다 - 안 켜면 배정은 됐는데 체크표에는 그 아이가
+    // 없고, 종이에 없는 아이는 아무도 안 찾습니다. 등원은 지금 운영하지 않으므로 켜지 않습니다.
+    const stop = stopById.get(newStopId);
+    const route = stop ? routeById.get(stop.route_id) : undefined;
+    if (route && !route.active && route.direction === "하원") {
+      const { error: actErr } = await supabase.from("shuttle_routes").update({ active: true }).eq("id", route.id);
+      if (actErr) notify(`배정은 됐지만 ${route.route_no}호차를 켜지 못했습니다: ${actErr.message}. 노선 관리에서 「운영 켜기」를 눌러주세요.`, "error");
+      else {
+        setRouteList((prev) => prev.map((r) => (r.id === route.id ? { ...r, active: true } : r)));
+        notify(`${route.route_no}호차를 켰습니다. 이제 하원 체크표에 뜹니다.`, "success");
+      }
+    }
     setAddingForRoute(null);
     setNewStudentName("");
     setNewStopId("");
@@ -430,8 +449,11 @@ export default function AssignmentClient({
         {visibleGroups.map((g) => {
           const over = g.route.usable_capacity != null && g.rows.length > g.route.usable_capacity;
           const stopsOfRoute = stops.filter((s) => s.route_id === g.route.id).sort((a, b) => a.seq - b.seq);
+          // 대기 = 꺼둔 노선(등원 전부 · 배정 없던 하원) 또는 아직 아무도 없는 차. 회색으로 두되 학생
+          // 추가는 됩니다. 하원 대기 차에 아이를 넣으면 그 차가 저절로 켜져 체크표에 뜹니다.
+          const dormant = !g.route.active || g.rows.length === 0;
           return (
-            <div key={g.route.id} className="g-panel-solid p-3">
+            <div key={g.route.id} className={"g-panel-solid p-3" + (dormant ? " border-dashed opacity-60 grayscale hover:opacity-100 hover:grayscale-0" : "")}>
               <div className="mb-2 flex flex-wrap items-center gap-2">
                 <span
                   className={
@@ -448,6 +470,11 @@ export default function AssignmentClient({
                   {g.rows.length}명{g.route.usable_capacity != null && ` / ${g.route.usable_capacity}`}
                 </span>
                 {over && <span className="text-[10px] font-bold text-red-500">⚠️ 정원 초과</span>}
+                {!g.route.active && (
+                  <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500" title={direction === "등원" ? "등원은 지금 운영하지 않습니다. 배정은 남겨두고 나중에 켭니다." : "아이를 넣으면 저절로 켜져 체크표에 뜹니다."}>
+                    대기{direction === "등원" ? " · 등원 미운영" : ""}
+                  </span>
+                )}
                 <button
                   onClick={() => {
                     setAddingForRoute(addingForRoute === g.route.id ? null : g.route.id);

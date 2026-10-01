@@ -44,7 +44,10 @@ export default async function ShuttleAssignmentsPage() {
     // 여름캠프2 노선이 남아 있으면 같은 호차가 두 번씩 보입니다 - 하원 체크표는
     // term으로 거르는데 여기만 안 걸렀습니다. 같은 자료를 두 화면이 다르게 보고
     // 있었던 셈입니다.
-    supabase.from("shuttle_routes").select("*").eq("term", TERM).eq("active", true).order("direction").order("sort_order"),
+    // 꺼둔(대기) 노선도 함께 읽습니다. 등원 전체와 배정 없는 하원 노선은 꺼져 있지만 지운 것이
+    // 아닙니다 - 새로 온 아이를 빈 차에 넣거나 등원을 다시 돌릴 때 여기서 고릅니다. 화면은
+    // 회색으로 구분합니다. 체크표·안내보드 같은 운영 화면은 여전히 켠 노선만 읽습니다.
+    supabase.from("shuttle_routes").select("*").eq("term", TERM).order("direction").order("sort_order"),
     supabase.from("shuttle_stops").select("*").order("seq"),
     supabase.from("shuttle_assignments").select("*"),
     supabase.from("wr_students").select("id, name, grade, class_name").eq("status", "active").eq("is_demo", false).order("name"),

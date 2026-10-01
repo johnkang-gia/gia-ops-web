@@ -47,10 +47,10 @@ function tuitionCells(charges: ReturnType<typeof buildLedger>["charges"]): Tuiti
   const rest = all.filter((c) => slotOf(c.label) === "그외");
   const regPicked = regular.filter((c) => c.optionName);
   if (regPicked.length > 0) out.push(...regPicked.map(cell));
-  else out.push({ slot: "정규", label: "신청안함", amount: 0, none: true });
+  else out.push({ slot: "정규", label: "미신청", amount: 0, none: true });
   const afterPicked = after.filter((c) => c.optionName);
   if (afterPicked.length > 0) out.push(...afterPicked.map(cell));
-  else out.push({ slot: "방과후", label: after.length > 0 ? "신청안함" : "—", amount: 0, none: true });
+  else out.push({ slot: "방과후", label: after.length > 0 ? "미신청" : "—", amount: 0, none: true });
   out.push(...rest.filter((c) => c.optionName).map(cell));
   return out;
 }

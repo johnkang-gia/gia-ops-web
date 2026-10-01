@@ -130,7 +130,7 @@ export default function AlreadyPaidModal({
         {lines.length > 0 && (
           <div className="mb-2">
             <p className="mb-1 text-[11px] font-bold text-slate-600">
-              받은 항목 <span className="font-normal text-slate-400">— 항목별로 따로 결제된 경우 체크하세요</span>
+              수납 항목 <span className="font-normal text-slate-400">— 항목별로 따로 결제된 경우 선택</span>
             </p>
             <div className="space-y-1">
               {lines.map((l) => {
@@ -209,7 +209,7 @@ export default function AlreadyPaidModal({
                         type="date"
                         value={dateOf[l.id] ?? paidAt}
                         onChange={(e) => setDateOf((v) => ({ ...v, [l.id]: e.target.value }))}
-                        title="이 항목을 받은 날. 아래 「받은 날」과 다르면 그 날짜로 따로 만듭니다."
+                        title="이 항목의 수납일. 아래 공통 수납일과 다르면 그 날짜로 따로 등록됩니다."
                         className={
                           "shrink-0 rounded border px-1 py-0.5 text-[11px] " +
                           ((dateOf[l.id] ?? paidAt) !== paidAt
@@ -234,7 +234,7 @@ export default function AlreadyPaidModal({
             )}
             {pickedIds.length > 0 && left.length > 0 && (
               <p className="mt-1 text-[10px] text-amber-700">
-                아직 안 받음: {left.map((l) => l.label).join(" · ")} ({won(left.reduce((n, l) => n + l.amount, 0))})
+                미수납: {left.map((l) => l.label).join(" · ")} ({won(left.reduce((n, l) => n + l.amount, 0))})
               </p>
             )}
           </div>
@@ -255,7 +255,7 @@ export default function AlreadyPaidModal({
             inputMode="numeric"
             placeholder={
               split
-                ? "받은 날을 나눠 적었습니다 — 금액은 날짜별 합으로 들어갑니다"
+                ? "수납일을 나누어 입력했습니다 — 금액은 날짜별 합계로 등록됩니다"
                 : pickedIds.length > 0
                   ? `${sumPicked(lines, pickedIds).toLocaleString()} (체크한 합)`
                   : "예: 300000"
@@ -272,7 +272,7 @@ export default function AlreadyPaidModal({
 
         <div className="mb-2 flex flex-wrap gap-2">
           <label className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-600">
-            받은 날
+            수납일
             <input
               type="date"
               value={paidAt}
@@ -333,16 +333,16 @@ export default function AlreadyPaidModal({
           className="w-full rounded-xl bg-slate-900 py-2.5 text-sm font-bold text-white disabled:opacity-40"
         >
           {busy
-            ? "기록 중…"
+            ? "등록 중…"
             : total <= 0
-              ? "금액을 적거나 항목을 골라주세요"
+              ? "금액을 입력하거나 항목을 선택하세요"
               : split
-                ? `${won(total)} — 청구서 ${batches.length}장으로 기록`
-                : `${won(total)} 받음으로 기록`}
+                ? `${won(total)} — 청구서 ${batches.length}장으로 등록`
+                : `${won(total)} 기수납 등록`}
         </button>
 
         <p className="mt-1.5 text-center text-[10px] text-slate-400">
-          청구서는 만들되 학부모에게는 안 나갑니다 — 이미 낸 분께 또 내라고 하는 셈이 되니까요.
+          청구서는 생성되지만 학부모에게 발송되지 않습니다(기수납 건).
         </p>
       </div>
     </div>

@@ -1525,7 +1525,7 @@ export default function TuitionGridClient({
 
       {alreadyFor && (
         <AlreadyPaidModal
-          title="이미 받은 학비 등록"
+          title="학비 기수납 등록"
           studentName={alreadyFor.name}
           // 항목마다 **금액을 함께** 넘깁니다. 이름만 주면 「교복은 냈고 교재는 안 냈다」를
           // 골라도 얼마인지 몰라서, 결국 사람이 다시 계산해 적게 됩니다.

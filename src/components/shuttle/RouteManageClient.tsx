@@ -262,11 +262,13 @@ export default function RouteManageClient({
               onClick={() => setSelectedId(r.id)}
               className={
                 "w-full rounded-lg border px-2.5 py-2 text-left transition " +
-                (selected?.id === r.id ? "border-gia-navy bg-gia-gold-soft/20" : "border-slate-200 bg-white hover:border-slate-300")
+                (selected?.id === r.id ? "border-gia-navy bg-gia-gold-soft/20" : r.active ? "border-slate-200 bg-white hover:border-slate-300" : "border-dashed border-slate-200 bg-slate-50 hover:border-slate-300")
               }
             >
-              <div className="text-xs font-bold text-slate-700">{r.route_no}호</div>
-              <div className="truncate text-[11px] text-slate-500">{r.name || "(권역명 없음)"}</div>
+              <div className={"text-xs font-bold " + (r.active ? "text-slate-700" : "text-slate-400")}>
+                {r.route_no}호{!r.active && <span className="ml-1 rounded bg-slate-100 px-1 text-[9px] font-semibold text-slate-400">대기</span>}
+              </div>
+              <div className={"truncate text-[11px] " + (r.active ? "text-slate-500" : "text-slate-300")}>{r.name || "(권역명 없음)"}</div>
             </button>
           ))}
           {visibleRoutes.length === 0 && <p className="px-1 py-4 text-center text-xs text-slate-400">노선이 없습니다.</p>}
@@ -282,7 +284,18 @@ export default function RouteManageClient({
             <div className="mb-3 flex items-center justify-between gap-2">
               <h2 className="text-base font-bold text-slate-800">
                 {selected.direction} {selected.route_no}호
+                {!selected.active && <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">대기 — 운영 화면에 안 뜹니다</span>}
               </h2>
+              {/* 켜고 끄는 것은 지우는 것과 다릅니다. 꺼진 노선은 정류장·배정이 그대로 남고, 체크표·
+                  안내보드·지도에만 안 뜹니다. 등원은 지금 운영하지 않아 전부 꺼져 있습니다. */}
+              <button
+                onClick={() => updateRoute(selected.id, { active: !selected.active })}
+                disabled={busy}
+                className={"rounded-lg border px-2.5 py-1.5 text-xs font-semibold " + (selected.active ? "border-slate-300 text-slate-600 hover:bg-slate-50" : "border-emerald-300 text-emerald-700 hover:bg-emerald-50")}
+                title={selected.active ? "운영 화면에서 숨깁니다(자료는 남습니다)" : "체크표·안내보드·지도에 다시 띄웁니다"}
+              >
+                {selected.active ? "대기로 끄기" : "운영 켜기"}
+              </button>
               <button
                 onClick={() => deleteRoute(selected)}
                 className="rounded-lg border border-red-200 px-2.5 py-1.5 text-xs font-semibold text-red-500 hover:bg-red-50"

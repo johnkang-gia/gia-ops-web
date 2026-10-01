@@ -216,14 +216,14 @@ export default function StudentLedgerModal({
         if (tuition.length > 0) {
           const res = await post("/api/finance/invoices/tuition", {
             studentId, termId, planIds: tuition, dueDate: b.paidAt, billingMonth: b.paidAt.slice(0, 7),
-            alreadyPaid: { paidAt: b.paidAt, amount: single === "학비" ? b.amount : tAmount, method: r.method, memo: `받은 항목: ${b.labels.join(" · ")}` },
+            alreadyPaid: { paidAt: b.paidAt, amount: single === "학비" ? b.amount : tAmount, method: r.method, memo: `기수납 항목: ${b.labels.join(" · ")}` },
           });
           if (res.ok) count++; else failed.push(`학비 ${b.paidAt}(${String(res.body.error ?? "")})`);
         }
         if (extra.length > 0) {
           const res = await post("/api/finance/invoices", {
             studentId, feeTermId: termId, itemIds: extra, dueDate: b.paidAt, billingMonth: b.paidAt.slice(0, 7),
-            alreadyPaid: { paidAt: b.paidAt, amount: single === "학비외" ? b.amount : eAmount, method: r.method, memo: `받은 항목: ${b.labels.join(" · ")}` },
+            alreadyPaid: { paidAt: b.paidAt, amount: single === "학비외" ? b.amount : eAmount, method: r.method, memo: `기수납 항목: ${b.labels.join(" · ")}` },
           });
           if (res.ok) count++; else failed.push(`학비외 ${b.paidAt}(${String(res.body.error ?? "")})`);
         }
@@ -348,10 +348,10 @@ export default function StudentLedgerModal({
           </div>
           {ledger && (
             <div className="ml-auto flex flex-wrap items-stretch gap-2 text-right">
-              <Stat label="청구할 금액" value={ledger.totals.toBill} tone={ledger.totals.toBill > 0 ? "amber" : "slate"} />
-              <Stat label="미납" value={ledger.totals.unpaid} tone={ledger.totals.unpaid > 0 ? "rose" : "slate"} />
+              <Stat label="청구 예정액" value={ledger.totals.toBill} tone={ledger.totals.toBill > 0 ? "amber" : "slate"} />
+              <Stat label="미수금" value={ledger.totals.unpaid} tone={ledger.totals.unpaid > 0 ? "rose" : "slate"} />
               <Stat label="예치금" value={ledger.totals.deposit} tone={ledger.totals.deposit > 0 ? "teal" : "slate"} />
-              <Stat label="이 학기 받을 돈" value={ledger.totals.expected} tone="slate" />
+              <Stat label="학기 수납 예정액" value={ledger.totals.expected} tone="slate" />
             </div>
           )}
           <button onClick={close} className="ml-1 px-1 text-lg font-bold text-slate-400 hover:text-slate-700" title="닫기 (Esc)">
@@ -373,15 +373,15 @@ export default function StudentLedgerModal({
             {/* ── 받을 돈 ─────────────────────────────────────────────── */}
             <section className="border-b border-slate-200 p-3 md:col-span-2 md:border-b-0 md:border-r">
               <h3 className="mb-1 flex items-center justify-between text-[12px] font-black text-slate-700">
-                <span>받을 돈 — 요금표에서</span>
-                <span className="text-[10px] font-semibold text-slate-400">체크한 것만 보내고, 안 체크하면 남은 것 전부</span>
+                <span>수납 대상 항목 — 요금표 기준</span>
+                <span className="text-[10px] font-semibold text-slate-400">선택한 항목만 발행 · 미선택 시 미청구 항목 전체</span>
               </h3>
               {(["학비", "학비외"] as const).map((kind) => {
                 const rows = ledger.charges.filter((c) => c.kind === kind);
                 return (
                   <div key={kind} className="mb-2">
                     <div className="mb-0.5 text-[11px] font-bold text-slate-500">{kind}</div>
-                    {rows.length === 0 && <p className="px-1 py-1 text-[11px] text-slate-400">{kind === "학비" ? "이 학생에게 열린 학비 항목이 없습니다." : "붙은 항목이 없습니다."}</p>}
+                    {rows.length === 0 && <p className="px-1 py-1 text-[11px] text-slate-400">{kind === "학비" ? "해당 학생에게 적용되는 학비 항목이 없습니다." : "등록된 학비외 항목이 없습니다."}</p>}
                     {rows.map((c) => {
                       const key = `${c.kind}:${c.id}`;
                       const canPick = !c.billed && c.amount > 0;
@@ -397,7 +397,7 @@ export default function StudentLedgerModal({
                           <div className="min-w-0 flex-1">
                             <div className={"truncate " + (c.billed ? "" : "font-semibold text-slate-800")} title={c.label}>
                               {c.label}
-                              {c.extra && !c.extra.fromDefault && <span className="ml-1 text-[10px] text-sky-600">따로 넣음</span>}
+                              {c.extra && !c.extra.fromDefault && <span className="ml-1 text-[10px] text-sky-600">개별 추가</span>}
                             </div>
                             {c.tuition ? (
                               <select
@@ -407,7 +407,7 @@ export default function StudentLedgerModal({
                                 className="mt-0.5 max-w-full rounded border border-slate-200 bg-white px-1 py-0.5 text-[11px] disabled:bg-transparent"
                                 title={c.billed ? "이미 청구서에 담긴 항목은 옵션을 바꿀 수 없습니다. 그 장을 취소한 뒤 바꿔주세요." : "납부 옵션"}
                               >
-                                <option value="">신청 안 함</option>
+                                <option value="">미신청</option>
                                 {c.tuition.options.map((o) => (
                                   <option key={o.id} value={o.id}>
                                     {o.name}
@@ -451,11 +451,11 @@ export default function StudentLedgerModal({
                                 className={"text-[10px] font-bold underline " + (c.billed.state === "완납" ? "text-emerald-700" : c.billed.state === "일부" ? "text-amber-700" : "text-slate-500")}
                                 title="그 청구서 보기"
                               >
-                                {c.billed.state === "완납" ? "납부완료" : c.billed.state === "일부" ? "일부받음" : "청구됨"} {c.billed.invoiceNo ?? ""}
+                                {c.billed.state === "완납" ? "수납 완료" : c.billed.state === "일부" ? "일부 수납" : "청구 완료"} {c.billed.invoiceNo ?? ""}
                                 {c.billed.unsure ? " ?" : ""}
                               </button>
                             ) : c.amount > 0 ? (
-                              <span className="rounded bg-amber-100 px-1 text-[10px] font-bold text-amber-800">남음</span>
+                              <span className="rounded bg-amber-100 px-1 text-[10px] font-bold text-amber-800">미청구</span>
                             ) : null}
                           </div>
                           {c.extra && !c.billed && (
@@ -503,17 +503,17 @@ export default function StudentLedgerModal({
                   onClick={() => void issue()}
                   disabled={busy || unbilled.length === 0}
                   className="rounded-lg bg-slate-900 px-3 py-1.5 text-[12px] font-bold text-white disabled:opacity-40"
-                  title="체크한 항목(없으면 남은 것 전부)으로 청구서를 만듭니다"
+                  title="선택한 항목(미선택 시 미청구 항목 전체)으로 청구서를 발행합니다"
                 >
-                  🧾 청구서 만들기{targetCharges.length > 0 ? ` (${won(targetCharges.reduce((n, c) => n + c.amount, 0))})` : ""}
+                  🧾 청구서 발행{targetCharges.length > 0 ? ` (${won(targetCharges.reduce((n, c) => n + c.amount, 0))})` : ""}
                 </button>
                 <button
                   onClick={() => setAlready(true)}
                   disabled={busy || unbilled.length === 0}
                   className="rounded-lg bg-sky-100 px-3 py-1.5 text-[12px] font-bold text-sky-800 hover:bg-sky-200 disabled:opacity-40"
-                  title="이미 받은 항목을 받은 날짜로 적습니다(청구서 + 입금)"
+                  title="이미 수납된 항목을 수납일 기준으로 등록합니다(청구서 + 입금)"
                 >
-                  💰 이미 받음
+                  💰 기수납 등록
                 </button>
               </div>
             </section>
@@ -544,7 +544,7 @@ export default function StudentLedgerModal({
                     <span className={"rounded px-1 text-[10px] font-bold " + (v.stream === "학비" ? "bg-indigo-50 text-indigo-700" : "bg-orange-50 text-orange-700")}>{v.stream}</span>
                     <span className="min-w-0 flex-1 truncate text-slate-600" title={(v as { plan_scope?: string | null }).plan_scope ?? ""}>
                       {(v as { plan_scope?: string | null }).plan_scope ?? (v.stream === "학비" ? "학비 전부" : v.category ?? "")} · {v.issue_date}
-                      {v.issued_offline ? <span className="ml-1 text-[10px] text-sky-600">이미받음</span> : null}
+                      {v.issued_offline ? <span className="ml-1 text-[10px] text-sky-600">기수납</span> : null}
                     </span>
                     <span className="tabular-nums font-bold">{won(Number(v.total_amount))}</span>
                     <span className={"rounded px-1.5 py-0.5 text-[10px] font-bold " + (STATE_STYLE[v.settled.state] ?? "")} title={v.settled.balance > 0 ? `남은 ${won(v.settled.balance)}` : ""}>
@@ -587,9 +587,9 @@ export default function StudentLedgerModal({
               )}
 
               <h3 className="mb-1 mt-3 flex items-center justify-between text-[12px] font-black text-slate-700">
-                <span>입금 · 예치금</span>
+                <span>수납 · 예치금</span>
                 <button onClick={() => setDepositOpen((v) => !v)} className="rounded bg-teal-100 px-2 py-0.5 text-[11px] font-bold text-teal-800 hover:bg-teal-200" title="청구서 없이 미리 받은 돈">
-                  ＋ 예치금 넣기
+                  ＋ 예치금 등록
                 </button>
               </h3>
               {depositOpen && (
@@ -599,11 +599,11 @@ export default function StudentLedgerModal({
                     <input type="number" value={dep.amount} onChange={(e) => setDep({ ...dep, amount: e.target.value })} className="w-28 rounded border border-slate-300 px-1.5 py-0.5 text-right tabular-nums" />
                   </label>
                   <label>
-                    <span className="block text-[10px] text-slate-500">받은 날</span>
+                    <span className="block text-[10px] text-slate-500">수납일</span>
                     <input type="date" value={dep.paidAt} onChange={(e) => setDep({ ...dep, paidAt: e.target.value })} className="rounded border border-slate-300 px-1.5 py-0.5" />
                   </label>
                   <label>
-                    <span className="block text-[10px] text-slate-500">수단</span>
+                    <span className="block text-[10px] text-slate-500">결제 수단</span>
                     <select value={dep.method} onChange={(e) => setDep({ ...dep, method: e.target.value })} className="rounded border border-slate-300 px-1.5 py-0.5">
                       {PAYMENT_METHOD_KINDS.map((m) => (
                         <option key={m}>{m}</option>
@@ -611,8 +611,8 @@ export default function StudentLedgerModal({
                     </select>
                   </label>
                   <label className="min-w-[160px] flex-1">
-                    <span className="block text-[10px] text-slate-500">왜</span>
-                    <input value={dep.memo} onChange={(e) => setDep({ ...dep, memo: e.target.value })} placeholder="학기 전체 선납 · 두 번 결제돼 다음 달에서 빼기로 …" className="w-full rounded border border-slate-300 px-1.5 py-0.5" />
+                    <span className="block text-[10px] text-slate-500">사유</span>
+                    <input value={dep.memo} onChange={(e) => setDep({ ...dep, memo: e.target.value })} placeholder="학기 전액 선납 · 중복 결제분 익월 차감 …" className="w-full rounded border border-slate-300 px-1.5 py-0.5" />
                   </label>
                   <button onClick={() => void addDeposit()} disabled={busy} className="rounded bg-slate-900 px-2.5 py-1 font-bold text-white disabled:opacity-40">
                     넣기
@@ -656,7 +656,7 @@ export default function StudentLedgerModal({
       {/* ── 하위 창 — 전부 이미 있는 것들입니다 ──────────────────────────── */}
       {already && ledger && (
         <AlreadyPaidModal
-          title="이미 받은 것 넣기"
+          title="기수납 등록"
           studentName={ledger.student.name}
           lines={targetCharges.map((c) => ({ id: `${c.kind}:${c.id}`, label: `[${c.kind}] ${c.label}`, amount: c.amount }))}
           busy={busy}

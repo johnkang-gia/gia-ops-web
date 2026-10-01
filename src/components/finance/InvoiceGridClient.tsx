@@ -2167,7 +2167,7 @@ export default function InvoiceGridClient({
       {/* ── 발행 전 검토 ────────────────────────────────────────── */}
       {alreadyFor && (
         <AlreadyPaidModal
-          title="이미 받은 학비외 청구 등록"
+          title="학비외 기수납 등록"
           studentName={alreadyFor.name}
           // 항목마다 금액을 함께 넘깁니다. 올톡페이는 항목별로 결제 문자가 나가서,
           // 「교복만 결제됨」을 그 자리에서 체크할 수 있어야 합니다.

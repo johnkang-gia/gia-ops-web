@@ -211,6 +211,9 @@ export default function OpsBoardClient({ token }: { token: string }) {
   }, [department]);
 
   useEffect(() => {
+    // 앱이 떴다는 표시. 서버 화면의 12초 문지기가 이것을 보고 「브라우저가 오래됐다」는 안내를
+    // 띄울지 말지 정합니다.
+    (window as unknown as { __opsBoardReady?: boolean }).__opsBoardReady = true;
     load();
   }, [load]);
 
@@ -316,7 +319,7 @@ export default function OpsBoardClient({ token }: { token: string }) {
   }
   if (!data) {
     return (
-      <div style={{ minHeight: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", background: "#0f172a", color: "#64748b", fontSize: 20 }}>
+      <div id="ops-board-loading" style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#0f172a", color: "#64748b", fontSize: 20 }}>
         불러오는 중...
       </div>
     );

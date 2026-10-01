@@ -1,6 +1,6 @@
 {
   "name": "gia-ops-web",
-  "version": "0.675.0",
+  "version": "0.676.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -41,6 +41,13 @@
     "check:viewgrants": "node scripts/check-view-grants.mjs",
     "check:openpolicy": "node scripts/check-open-policy.mjs"
   },
+  "browserslist": [
+    "chrome >= 64",
+    "edge >= 79",
+    "firefox >= 67",
+    "safari >= 12",
+    "opera >= 51"
+  ],
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",

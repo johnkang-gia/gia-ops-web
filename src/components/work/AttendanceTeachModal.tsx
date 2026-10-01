@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
 import { normalizeRulePattern, type LearningRule, type RosterStudent } from "@/lib/attendanceDigest";
+import { loadStudents } from "@/lib/students";
 
 // 🔎(명부 대조 실패)·⚠️(동명이인 미확정) 항목을 눌렀을 때 뜨는 "학생 지정" 창입니다.
 //
@@ -114,27 +115,13 @@ export default function AttendanceTeachModal({
     }
     setBusy(true);
     const supabase = createClient();
-    const { data: found } = await supabase
-      .from("wr_students")
-      .select("id")
-      .eq("is_demo", false)
-      .eq("name", student.name)
-      .eq("birth_date", student.birthDate ?? "")
-      .limit(1)
-      .maybeSingle();
-    let sid = (found as { id: string } | null)?.id ?? null;
-    if (!sid) {
-      // 생년월일이 비어 있는 줄도 있어서 이름으로 한 번 더 찾습니다. 후보가 둘 이상이면
-      // 고르지 않습니다 - 엉뚱한 아이를 결석으로 만드는 것이 더 나쁩니다.
-      const { data: hits } = await supabase
-        .from("wr_students")
-        .select("id")
-        .eq("is_demo", false)
-        .eq("name", student.name)
-        .limit(2);
-      const rows = (hits as { id: string }[] | null) ?? [];
-      if (rows.length === 1) sid = rows[0].id;
-    }
+    // 이름과 생일로 한 명을 찾습니다. 생일이 비어 있는 줄도 있어서 이름만으로 한 번 더 보되,
+    // 후보가 둘 이상이면 고르지 않습니다 - 엉뚱한 아이를 결석으로 만드는 것이 더 나쁩니다.
+    const { rows: roster } = await loadStudents(supabase, { status: "all" });
+    const sameName = roster.filter((s) => s.name === student.name);
+    const byBirth = student.birthDate ? sameName.filter((s) => s.birth_date === student.birthDate) : [];
+    let sid = byBirth.length === 1 ? byBirth[0].id : null;
+    if (!sid && sameName.length === 1) sid = sameName[0].id;
     if (!sid) {
       setBusy(false);
       notify(`${student.name} 학생을 명부에서 한 명으로 찾지 못했습니다.`, "error");
@@ -192,11 +179,14 @@ export default function AttendanceTeachModal({
     }
     setBusy(true);
     const supabase = createClient();
-    // 학생 id는 명부에서 찾아 넣습니다(이름이 바뀌어도 연결이 유지되도록).
-    const { data: found } =
-      kind === "alias" && student
-        ? await supabase.from("wr_students").select("id").eq("is_demo", false).eq("name", student.name).limit(1).maybeSingle()
-        : { data: null };
+    // 학생 번호는 명부에서 찾아 넣습니다(이름이 바뀌어도 연결이 유지되도록). 같은 이름이 둘
+    // 이상이면 비워 둡니다 - 첫 번째를 고르면 별칭이 엉뚱한 아이에게 붙습니다.
+    let found: { id: string } | null = null;
+    if (kind === "alias" && student) {
+      const { rows: roster } = await loadStudents(supabase, { status: "all" });
+      const hits = roster.filter((s) => s.name === student.name);
+      found = hits.length === 1 ? { id: hits[0].id } : null;
+    }
 
     const { error } = await supabase.from("attendance_learning_rules").upsert(
       {

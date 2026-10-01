@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { genCaseId } from "@/lib/caseId";
+import { loadStudent } from "@/lib/students";
 
 export const dynamic = "force-dynamic";
 
@@ -42,8 +43,8 @@ export async function POST(req: Request) {
 
   let studentDepartment: string | null = null;
   if (row.student_id) {
-    const { data: s } = await supabase.from("wr_students").select("department").eq("is_demo", false).eq("id", row.student_id).maybeSingle();
-    studentDepartment = (s?.department as string | null) ?? null;
+    const { row: s } = await loadStudent(supabase, row.student_id);
+    studentDepartment = s?.department ?? null;
   }
 
   const student = (row.matched_name as string | null) ?? (row.ai_student_name as string | null) ?? "학생 미확인";

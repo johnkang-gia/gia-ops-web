@@ -7,8 +7,9 @@ import { createClient } from "@/lib/supabase/client";
 import { notifyOpsBoardRefresh, OPS_REFRESH_CHANNEL, OPS_REFRESH_EVENT } from "@/lib/opsRefresh";
 import { useToast } from "@/components/common/ToastProvider";
 import { useConfirm } from "@/components/common/ConfirmProvider";
-import { markIfAmbiguous, toKoreanDisplayName, toRosterEntries, ROSTER_SELECT, type RosterEntry } from "@/lib/pickupParse";
+import { markIfAmbiguous, toKoreanDisplayName, toRosterEntries, type RosterEntry } from "@/lib/pickupParse";
 import { loadHouseCandidates } from "@/lib/houseCandidates";
+import { loadStudents } from "@/lib/students";
 
 // 학부모 문의사항 — 예전 실시간 로그가 있던 자리입니다.
 //
@@ -428,19 +429,10 @@ export default function ParentInquiryPanel({
     // 명부는 자주 바뀌지 않으므로 처음 한 번만 읽습니다.
     (async () => {
       const supabase = createClient();
-      const { data } = await supabase
-        .from("wr_students")
-        // **반과 생일까지 읽습니다.** 이 둘이 없으면 동명이인을 가를 수도, 화면에 「김재이(G2C)」로
-        // 적을 수도 없습니다. 김재이가 셋인데 셋 다 그냥 「김재이」로 뜬 원인이 이 한 줄이었습니다.
-        // 상태도 수신 쪽(loadRoster)과 같게 맞춥니다 - 보류 학생이 화면에서만 빠지면
-        // 같은 이름이 화면과 처리에서 다르게 갈립니다.
-        .select(ROSTER_SELECT)
-        .in("status", ["active", "보류"])
-        .eq("is_demo", false);
-      // **손으로 옮기지 않습니다.** 조회에는 birth_date·class_name 이 있는데 바로 아래
-      // map 에서 그 두 줄이 빠져 있었습니다. 가르는 규칙은 멀쩡했고 재료만 없었는데,
-      // 화면에는 오류가 아니라 그냥 「김재이」로 보였습니다 - 같은 실수가 네 번째였습니다.
-      setRoster(toRosterEntries(data));
+      // 상태는 수신 쪽(loadRoster)과 같게 맞춥니다 - 보류 학생이 화면에서만 빠지면 같은 이름이
+      // 화면과 처리에서 다르게 갈립니다. 반·생일은 로더가 늘 들고 옵니다.
+      const { rows } = await loadStudents(supabase, { status: "all" });
+      setRoster(toRosterEntries(rows.filter((s) => s.status === "active" || s.status === "보류")));
     })();
     load();
     const supabase = createClient();

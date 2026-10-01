@@ -8,6 +8,7 @@ import { applyBoarding, applyPickup, ingestPickup, loadRoster } from "@/lib/pick
 import { weekStartOf } from "@/lib/dismissalWeek";
 import { todayKst } from "@/lib/kst";
 import { kstParts } from "@/lib/shuttleTracking";
+import { loadStudent } from "@/lib/students";
 
 export const dynamic = "force-dynamic";
 
@@ -131,8 +132,8 @@ export async function POST(req: Request) {
     if (!finalStudentId) return NextResponse.json({ error: "학생을 먼저 선택해주세요." }, { status: 400 });
 
     let matchedName: string | null = null;
-    const { data: student } = await supabase.from("wr_students").select("name").eq("is_demo", false).eq("id", finalStudentId).maybeSingle();
-    if (student) matchedName = student.name as string;
+    const { row: student } = await loadStudent(supabase, finalStudentId);
+    if (student) matchedName = student.name;
 
     const { error } = keepOpen
       ? { error: null }
@@ -211,15 +212,10 @@ export async function POST(req: Request) {
     const studentId = ((body?.studentId as string | undefined) ?? (row.student_id as string | null)) || null;
     if (!studentId) return NextResponse.json({ error: "학생을 먼저 선택해주세요." }, { status: 400 });
 
-    const { data: student, error: stuErr } = await supabase
-      .from("wr_students")
-      .select("name")
-      .eq("is_demo", false)
-      .eq("id", studentId)
-      .maybeSingle();
-    if (stuErr) return NextResponse.json({ error: `명부를 읽지 못했습니다: ${stuErr.message}` }, { status: 500 });
+    const { row: student, error: stuErr } = await loadStudent(supabase, studentId);
+    if (stuErr) return NextResponse.json({ error: `명부를 읽지 못했습니다: ${stuErr}` }, { status: 500 });
     if (!student) return NextResponse.json({ error: "명부에 없는 학생입니다." }, { status: 400 });
-    const name = (student as { name: string }).name;
+    const name = student.name;
 
     // **오늘 것만** 뒤집습니다. 며칠 뒤 것을 이 단추로 바꾸면 그날 아침에 아무도 모릅니다.
     const day = ((row.service_date as string | null) ?? todayKst());
@@ -290,13 +286,8 @@ export async function POST(req: Request) {
     const studentId = (body?.studentId as string | undefined) ?? null;
     if (!id || !studentId) return NextResponse.json({ error: "어느 연락에 어느 학생인지가 필요합니다." }, { status: 400 });
 
-    const { data: student, error: stuErr } = await supabase
-      .from("wr_students")
-      .select("name")
-      .eq("is_demo", false)
-      .eq("id", studentId)
-      .maybeSingle();
-    if (stuErr) return NextResponse.json({ error: `명부를 읽지 못했습니다: ${stuErr.message}` }, { status: 500 });
+    const { row: student, error: stuErr } = await loadStudent(supabase, studentId);
+    if (stuErr) return NextResponse.json({ error: `명부를 읽지 못했습니다: ${stuErr}` }, { status: 500 });
     if (!student) return NextResponse.json({ error: "명부에 없는 학생입니다." }, { status: 400 });
 
     const { error } = await supabase
@@ -358,13 +349,8 @@ export async function POST(req: Request) {
 
     // 이름은 **명부에서** 읽습니다. 화면이 보낸 이름을 믿으면 김재이가 셋이라 나중에 어느
     // 아이 것인지 되짚을 수 없습니다(CLAUDE.md §2-4-1).
-    const { data: student, error: stuErr } = await supabase
-      .from("wr_students")
-      .select("name")
-      .eq("is_demo", false)
-      .eq("id", studentId)
-      .maybeSingle();
-    if (stuErr) return NextResponse.json({ error: `명부를 읽지 못했습니다: ${stuErr.message}` }, { status: 500 });
+    const { row: student, error: stuErr } = await loadStudent(supabase, studentId);
+    if (stuErr) return NextResponse.json({ error: `명부를 읽지 못했습니다: ${stuErr}` }, { status: 500 });
     if (!student) return NextResponse.json({ error: "명부에 없는 학생입니다. 다시 골라주세요." }, { status: 400 });
 
     const onDate = ((body?.onDate as string | undefined) ?? "").trim() || ((row.service_date as string | null) ?? "");

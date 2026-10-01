@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { isDeveloperEmail } from "@/lib/roles";
 import type { Incident, WrClass, WrEnrollment, WrReport, WrStudent } from "@/lib/types";
+import { loadStudentsFull } from "@/lib/students";
 
 export const dynamic = "force-dynamic";
 
@@ -30,8 +31,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     }
   }
 
-  const { data: studentData } = await supabase.from("wr_students").select("*").eq("is_demo", false).eq("id", id).maybeSingle();
-  const student = studentData as WrStudent | null;
+  const { rows: studentRows } = await loadStudentsFull<WrStudent>(supabase, { ids: [id], status: "all" });
+  const student = studentRows[0] ?? null;
   if (!student) return NextResponse.json({ error: "학생을 찾을 수 없습니다." }, { status: 404 });
 
   const searchName = coreName(student.name);

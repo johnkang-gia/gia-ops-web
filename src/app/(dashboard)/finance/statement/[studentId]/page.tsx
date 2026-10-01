@@ -10,6 +10,7 @@ import { studentLedger, settle, isOutstanding, agingBucket, type SettleInvoice }
 import type { PaymentRow } from "@/lib/payments";
 import PrintButton from "@/components/finance/PrintButton";
 import StatementRefunds from "@/components/finance/StatementRefunds";
+import { loadStudent } from "@/lib/students";
 
 /**
  * 학생별 원장(거래명세서) 한 장.
@@ -30,13 +31,13 @@ export default async function StatementPage({ params }: { params: Promise<{ stud
 
   const supabase = await createClient();
   const [stuRes, invRes, payRes] = await Promise.all([
-    supabase.from("wr_students").select("id, name, name_en, grade, class_name").eq("is_demo", false).eq("id", studentId).maybeSingle(),
+    loadStudent(supabase, studentId),
     supabase.from("invoices").select("*").eq("student_id", studentId).order("issue_date"),
     supabase.from("payments").select("*").eq("student_id", studentId).order("paid_at"),
   ]);
 
-  const loadError = stuRes.error?.message ?? invRes.error?.message ?? payRes.error?.message ?? null;
-  const student = stuRes.data as { id: string; name: string; name_en: string | null; grade: string | null; class_name: string | null } | null;
+  const loadError = stuRes.error ?? invRes.error?.message ?? payRes.error?.message ?? null;
+  const student = stuRes.row;
   const invoices = ((invRes.data as SettleInvoice[] | null) ?? []);
   const payments = ((payRes.data as PaymentRow[] | null) ?? []);
   const today = todayKst();

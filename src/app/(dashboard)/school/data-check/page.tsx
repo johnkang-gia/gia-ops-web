@@ -9,7 +9,7 @@ import GuideButton from "@/components/common/GuideButton";
 import DataCheckIssues, { type ImportIssue } from "@/components/school/DataCheckIssues";
 import DuplicateStudents from "@/components/school/DuplicateStudents";
 import { findDuplicateGroups, type DupPerson } from "@/lib/studentDuplicates";
-import { selectTolerant } from "@/lib/selectTolerant";
+import { loadStudentsFull } from "@/lib/students";
 
 export const dynamic = "force-dynamic";
 
@@ -93,18 +93,12 @@ export default async function DataCheckPage() {
   //
   // 보호자 연락처는 나중에 붙인 칸이라 없는 DB가 있습니다. 그 한 칸 때문에 중복 목록 전체가
   // 안 뜨면 안 되므로 없는 칸만 빼고 읽습니다.
-  const dupRes = await selectTolerant<DupPerson>(
-    (columns) =>
-      supabase
-        .from("wr_students")
-        .select(columns)
-        .eq("is_demo", false)
-        .in("status", ["active", "보류"])
-        .order("created_at") as unknown as PromiseLike<{ data: DupPerson[] | null; error: { message: string } | null }>,
-    ["id", "name", "name_en", "grade", "class_name", "birth_date", "status", "created_at"],
-    ["mother_phone", "father_phone", "parent_phone"],
-  );
-  if (dupRes.error) console.error("[명부 점검] 중복 조회 실패:", dupRes.error);
+  // 중복 점검은 보호자 번호·만든 때까지 봅니다(같은 아이가 두 줄인지는 번호로 가장 잘 갈립니다).
+  const dupAll = await loadStudentsFull<DupPerson & { status: string; created_at: string }>(supabase, { status: "all" });
+  if (dupAll.error) console.error("[명부 점검] 중복 조회 실패:", dupAll.error);
+  const dupRes = {
+    data: dupAll.rows.filter((s) => s.status === "active" || s.status === "보류").sort((a, b) => a.created_at.localeCompare(b.created_at)),
+  };
 
   // 「확인했고 다른 아이다」로 내린 묶음은 목록에서 뺍니다. 정말 다른 아이인 묶음이 늘
   // 남아 있으면, 새로 올라온 진짜 중복이 그 사이에 묻혀서 눈에 안 띕니다.

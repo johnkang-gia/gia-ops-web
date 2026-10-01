@@ -254,6 +254,33 @@ departmentOf({ department: s.department, grade: s.grade }); // → "초등부" |
 
 ---
 
+## 2-4-5. 명부는 한 함수로만 읽습니다
+
+`wr_students` 를 79 파일이 16가지 칸 조합으로 읽었습니다. 그래서 동명이인을 가르는 칸을 빠뜨리는
+사고(§2-4)가 네 번, `is_demo` 를 빠뜨리는 사고(§2-1)가 났고, 전부 검사로 막고 있었습니다. 검사가
+잡는 것은 빠뜨린 자리인데, **빠뜨릴 수 있는 구조**가 문제였습니다.
+
+명부는 `src/lib/students.ts` 로만 읽습니다.
+
+```ts
+const { rows } = await loadStudents(supabase);                       // 재학생, 늘 같은 칸
+const { rows } = await loadStudents(supabase, { status: "all" });    // 퇴소 포함(이력·미납·예치금)
+const { rows } = await loadStudents(supabase, { ids, demo });        // 번호로 찍어서 · 교사 화면은 demo
+const { rows } = await loadStudentsWithPhones(supabase);             // 보호자·결제 번호까지(행정실 이상)
+const { rows } = await loadStudentsFull<WrStudent>(supabase);        // 칸 전부(학생 관리·프로필만)
+const { row }  = await loadStudent(supabase, id, { phones: true }); // 한 명
+```
+
+- `is_demo` 와 `status` 는 함수 안에서 겁니다. 화면은 범위만 말합니다.
+- 반·생일·반 연결·부서가 늘 들어 있어서, 동명이인을 가를 재료를 빠뜨릴 수 없습니다.
+- 명부에 칸이 하나 늘면 `STUDENT_COLUMNS` 한 줄만 고칩니다.
+- 넣고 고치는 자리(`insert` · `update`)와 세는 자리(`head: true`)는 이 함수의 일이 아닙니다.
+
+`npm run build` 가 `scripts/check-students-loader.mjs` 를 돌려 직접 읽는 자리를 막습니다. 정말 직접
+읽어야 하면 그 줄 위에 `// students-ok: 이유` 를 적습니다. 따로 확인하려면 `npm run check:students`.
+
+---
+
 ## 2-5. 짝지어 저장하는 칸 (반 이름 ↔ 반 연결)
 
 학생의 반이 두 칸에 나뉘어 있습니다.

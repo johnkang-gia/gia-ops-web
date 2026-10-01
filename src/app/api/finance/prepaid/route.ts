@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess } from "@/lib/roles";
 import { PAYMENT_METHOD_KINDS } from "@/lib/payments";
+import { loadStudent } from "@/lib/students";
 
 /**
  * **예치금 넣기** — 청구서에 안 붙는 입금 한 줄.
@@ -45,13 +46,8 @@ export async function POST(req: Request) {
   if (!paidAt) return NextResponse.json({ error: "받은 날을 적어주세요." }, { status: 400 });
 
   const supabase = await createClient();
-  const { data: student, error: stErr } = await supabase
-    .from("wr_students")
-    .select("id, name")
-    .eq("is_demo", false)
-    .eq("id", studentId)
-    .maybeSingle();
-  if (stErr) return NextResponse.json({ error: stErr.message }, { status: 500 });
+  const { row: student, error: stErr } = await loadStudent(supabase, studentId);
+  if (stErr) return NextResponse.json({ error: stErr }, { status: 500 });
   if (!student) return NextResponse.json({ error: "학생을 찾지 못했습니다." }, { status: 404 });
 
   const memo = String(body.memo ?? "").trim();

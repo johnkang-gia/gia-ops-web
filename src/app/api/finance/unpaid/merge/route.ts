@@ -6,6 +6,7 @@ import { todayKst } from "@/lib/kst";
 import { lockCarried } from "@/lib/carryForward";
 import { carryForwardLineName, type SettleInvoice } from "@/lib/settlement";
 import { phonesOf, chosenRoleOf, resolveRecipient, type StudentBilling } from "@/lib/alltalkpay";
+import { loadStudent } from "@/lib/students";
 
 export const dynamic = "force-dynamic";
 
@@ -96,14 +97,8 @@ export async function POST(req: Request) {
   const stream = lines[0].v.stream === "학비" || lines[0].v.category === "학비" ? "학비" : "학비외";
 
   // 받는 번호는 **학생별 결제번호**가 기본입니다(@/lib/alltalkpay 한 곳에서 판정).
-  const { data: stu } = await supabase
-    // 명부 목록을 그리는 자리가 아니라, 청구서에 적힌 학생 번호로 **그 한 명**을 찍어
-    // 읽습니다. is_demo 로 거르면 연습용 청구서에서만 결제번호가 조용히 안 붙습니다.
-    // demo-ok: 번호로 한 명을 찍어 읽습니다. 명부를 훑지 않습니다.
-    .from("wr_students")
-    .select("billing_phone_role, billing_phone, mother_phone, father_phone, parent_phone")
-    .eq("id", studentId)
-    .maybeSingle();
+  // 청구서에 적힌 학생 번호로 그 한 명을 찍어 읽습니다. 결제번호 판정에 보호자 번호가 필요합니다.
+  const { row: stu } = await loadStudent(supabase, studentId, { phones: true });
   const billing = (stu ?? { billing_phone_role: null, billing_phone: null, mother_phone: null, father_phone: null, parent_phone: null }) as StudentBilling;
   const recipient = resolveRecipient(phonesOf(billing), chosenRoleOf(billing));
 

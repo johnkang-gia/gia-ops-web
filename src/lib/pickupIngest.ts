@@ -22,7 +22,7 @@ import { logChecklist, type ChecklistReason } from "@/lib/checklistLog";
 import { effectiveRouteId, routeChoiceOf } from "@/lib/shuttleRoute";
 import { isPleasantry, pleasantryNote } from "@/lib/shortTalk";
 import { objectPickupNote } from "@/lib/objectPickup";
-import { loadStudents } from "@/lib/students";
+import { loadStudent, loadStudents } from "@/lib/students";
 
 // 어느 경로로 들어온 연락이든 이 함수 하나를 거쳐 픽업으로 바뀝니다.
 // 토들 수집기, 전화 통화 텍스트, 교사 전달, 직접 입력이 모두 같은 판단을 받도록 하기 위해서입니다.
@@ -1111,7 +1111,7 @@ export async function ingestPickup(
 
 /** 학생의 반 담임 이메일을 찾습니다. 반이 없거나 담임이 아직 가입 전이면 null입니다. */
 async function findHomeroomEmail(supabase: SupabaseClient, studentId: string): Promise<string | null> {
-  const { data: student } = await supabase.from("wr_students").select("class_id").eq("is_demo", false).eq("id", studentId).maybeSingle();
+  const { row: student } = await loadStudent(supabase, studentId);
   if (!student?.class_id) return null;
   const { data: cls } = await supabase.from("wr_classes").select("teacher_email").eq("is_demo", false).eq("id", student.class_id).maybeSingle();
   return (cls?.teacher_email as string | null) ?? null;

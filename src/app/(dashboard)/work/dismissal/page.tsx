@@ -23,6 +23,7 @@ type RawInquiry = {
   received_at: string;
   source_url: string | null;
   is_demo: boolean | null;
+  student_id: string | null;
 };
 
 // 조인해서 받은 셔틀 배정 한 줄. 정류장 → 노선까지 따라갑니다.
@@ -73,7 +74,7 @@ export default async function DismissalBulkPage() {
     // 요약만으로는 시각이 잘려 있는 경우가 있습니다.
     supabase
       .from("pickup_requests")
-      .select("id, kind, matched_name, ai_student_name, channel_label, summary, raw_text, received_at, source_url, is_demo")
+      .select("id, kind, matched_name, ai_student_name, channel_label, summary, raw_text, received_at, source_url, is_demo, student_id")
       .gte("received_at", since)
       .order("received_at", { ascending: false })
       .limit(80),
@@ -120,6 +121,8 @@ export default async function DismissalBulkPage() {
               (r): InquiryLite => ({
                 id: r.id,
                 kind: r.kind ?? "문의",
+                // 번호가 있으면 번호로 고릅니다. 이름으로 고르면 김재이 셋이 함께 걸립니다.
+                studentId: r.student_id,
                 // 이름만 띄우면 보는 사람은 **이미 정해진 이름이라고 믿습니다.** 김재이가
                 // 셋이라, 그 상태로 하원수단을 고치면 엉뚱한 아이 것이 바뀝니다.
                 name:

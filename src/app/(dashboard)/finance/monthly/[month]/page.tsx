@@ -10,6 +10,7 @@ import { todayKst } from "@/lib/kst";
 import { readAll, readNotice } from "@/lib/financeFetch";
 import { lastDayOf, monthLabel, shiftMonth } from "@/lib/financePeriod";
 import { buildStudentMonth, type MonthInvoice, type MonthPayment } from "@/lib/studentMonthLedger";
+import { loadStudents } from "@/lib/students";
 
 export const dynamic = "force-dynamic";
 
@@ -78,11 +79,12 @@ export default async function FinanceMonthStudentsPage({ params }: { params: Pro
   );
 
   const [stuRes, closeRes] = await Promise.all([
-    supabase.from("wr_students").select("id, name, grade, class_name").eq("is_demo", false),
+    // 월별 집계에는 퇴소한 아이의 그 달 청구도 들어갑니다.
+    loadStudents(supabase, { status: "all" }),
     supabase.from("finance_month_closes").select("*").eq("month", month).maybeSingle(),
   ]);
 
-  const students = (stuRes.data as { id: string; name: string; grade: string | null; class_name: string | null }[] | null) ?? [];
+  const students = stuRes.rows;
   const nameById = new Map(students.map((s) => [s.id, s.name]));
   const whereById = new Map(students.map((s) => [s.id, s.class_name || (s.grade ? `${s.grade}학년` : "")]));
 
@@ -95,7 +97,7 @@ export default async function FinanceMonthStudentsPage({ params }: { params: Pro
 
   const receivedInMonth = inMonthRes.rows.reduce((n, p) => n + Math.round(Number(p.amount ?? 0)), 0);
   const notice = readNotice(invRes, payRes, inMonthRes);
-  const loadError = stuRes.error?.message ?? null;
+  const loadError = stuRes.error ?? null;
 
   return (
     <div className="mx-auto flex h-full max-w-5xl flex-col p-4 sm:p-6">

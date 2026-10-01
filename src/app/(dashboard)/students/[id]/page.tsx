@@ -14,6 +14,7 @@ import type { DismissalPlan } from "@/lib/dismissalPlan";
 import { won } from "@/lib/feeItems";
 import type { Invoice } from "@/lib/types";
 import type { Incident, Task, TaskComment, ChatMessage, WrClass, WrEnrollment, WrReport, WrStudent, WrStudentFieldDef } from "@/lib/types";
+import { loadStudents, loadStudentsFull } from "@/lib/students";
 
 export const dynamic = "force-dynamic";
 
@@ -38,8 +39,8 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
     redirect("/home");
   }
 
-  const { data: studentData } = await supabase.from("wr_students").select("*").eq("is_demo", false).eq("id", id).maybeSingle();
-  const student = studentData as WrStudent | null;
+  const { rows: studentRows } = await loadStudentsFull<WrStudent>(supabase, { ids: [id], status: "all" });
+  const student = studentRows[0] ?? null;
   if (!student) notFound();
 
   const searchName = coreName(student.name);
@@ -120,18 +121,10 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
   //
   // `sibling_group_id` 는 나중에 붙인 칸이라 아직 없는 DB 도 있습니다. 없다고 프로필 전체가
   // 안 뜨면 안 되므로, 없으면 조용히 형제자매만 안 보입니다.
-  const sibRes = await supabase
-    .from("wr_students")
-    .select("id, name, grade, class_name")
-    .eq("is_demo", false)
-    .eq("sibling_group_id", (student as { sibling_group_id?: string | null }).sibling_group_id ?? "00000000-0000-0000-0000-000000000000")
-    .neq("id", student.id);
-  const siblings = (student as { sibling_group_id?: string | null }).sibling_group_id
-    ? ((sibRes.data ?? []) as { id: string; name: string; grade: string | null; class_name: string | null }[])
-    : [];
-  if (sibRes.error && !/sibling_group_id/.test(sibRes.error.message)) {
-    console.error("[학생] 형제자매를 읽지 못했습니다:", sibRes.error.message);
-  }
+  const sibGroup = (student as { sibling_group_id?: string | null }).sibling_group_id ?? null;
+  const sibRes = sibGroup ? await loadStudents(supabase, { status: "all" }) : { rows: [], error: null };
+  const siblings = sibRes.rows.filter((s) => s.sibling_group_id === sibGroup && s.id !== student.id);
+  if (sibRes.error) console.error("[학생] 형제자매를 읽지 못했습니다:", sibRes.error);
 
   // 요일별 하원수단(학원 버스·보호자 픽업·도보 등). 셔틀과 별개의 표입니다 - 셔틀을 안 타는
   // 날은 셔틀 배정 자체가 없어서 적을 자리가 없었습니다.

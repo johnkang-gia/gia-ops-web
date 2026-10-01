@@ -5,6 +5,7 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { isStaffOrAboveUser, isTeacherOnly } from "@/lib/roles";
 import type { WrClass, WrComment, WrReport, WrStudent, WrSubject } from "@/lib/types";
 import StudentProfileClient from "@/components/weeklyReport/StudentProfileClient";
+import { loadStudentsFull } from "@/lib/students";
 
 export const dynamic = "force-dynamic";
 
@@ -14,14 +15,14 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
   const me = await getCurrentAppUser();
   if (!me) redirect("/login");
 
-  const [{ data: student }, { data: reports }, { data: comments }] = await Promise.all([
-    supabase.from("wr_students").select("*").eq("is_demo", isDemoAccount(me.email)).eq("id", id).maybeSingle(),
+  const [{ rows: studentRows }, { data: reports }, { data: comments }] = await Promise.all([
+    loadStudentsFull<WrStudent>(supabase, { demo: isDemoAccount(me.email), ids: [id], status: "all" }),
     supabase.from("wr_reports").select("*").eq("student_id", id).order("report_date", { ascending: false }),
     supabase.from("wr_comments").select("*").eq("student_id", id).order("created_at", { ascending: false }),
   ]);
 
-  if (!student) notFound();
-  const s = student as WrStudent;
+  const s = studentRows[0];
+  if (!s) notFound();
 
   // 교사는 부모 연락처를 포함한 학생 전체 기록을 볼 수 있는 화면이라, 자기 담임반이나 자기
   // 담당과목에 속한 학생일 때만 들어올 수 있게 막습니다(그 외 반은 검색으로도 우회 못하게

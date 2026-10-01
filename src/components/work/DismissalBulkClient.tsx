@@ -26,6 +26,8 @@ export type StudentLite = { id: string; name: string; grade: string | null; clas
 export type InquiryLite = {
   id: string;
   kind: string;
+  /** 연락이 가리키는 학생 번호. 있으면 이름을 보지 않고 이걸로 고릅니다. */
+  studentId: string | null;
   name: string;
   summary: string | null;
   raw: string | null;
@@ -129,21 +131,36 @@ export default function DismissalBulkClient({
   }
 
   /**
-   * 연락에 적힌 이름으로 아이를 찾아 고릅니다.
+   * 연락이 가리키는 아이를 고릅니다. **번호가 먼저**이고, 번호가 없을 때만 이름을 봅니다.
+   *
+   * 이름이 둘 이상에 걸리면 고르지 않습니다 - 김재이가 셋이라, 첫 번째를 고르면 엉뚱한 아이의
+   * 하원수단이 바뀌고 그건 오류가 아니라 «저장됨»으로 보입니다(CLAUDE.md 2-4-1).
    *
    * 못 찾으면 **검색칸에 그 이름을 넣어둡니다.** 조용히 아무 일도 안 하면 «눌렀는데 안 되네»가
    * 되는데, 이름이 명부와 다르게 적힌 경우가 실제로 많아서 사람이 직접 골라야 합니다.
    */
-  function pickByName(raw: string) {
-    const q = raw.trim();
-    const hit = students.find((s) => s.name === q) ?? students.find((s) => s.name.includes(q) || q.includes(s.name));
-    if (hit) {
-      setPicked((p) => (p.includes(hit.id) ? p : [...p, hit.id]));
+  function pickFromInquiry(q: InquiryLite) {
+    const byId = q.studentId ? students.find((s) => s.id === q.studentId) : null;
+    if (byId) {
+      setPicked((p) => (p.includes(byId.id) ? p : [...p, byId.id]));
       setQuery("");
       return;
     }
-    setQuery(q);
-    notify(`명부에서 「${q}」를 찾지 못했습니다. 아래 목록에서 직접 골라주세요.`, "error");
+    const name = q.name.replace(/\(.*$/, "").trim();
+    const exact = students.filter((s) => s.name === name);
+    const hits = exact.length > 0 ? exact : students.filter((s) => s.name.includes(name) || name.includes(s.name));
+    if (hits.length === 1) {
+      setPicked((p) => (p.includes(hits[0].id) ? p : [...p, hits[0].id]));
+      setQuery("");
+      return;
+    }
+    setQuery(name);
+    notify(
+      hits.length > 1
+        ? `「${name}」가 ${hits.length}명입니다. 아래 목록에서 누구인지 골라주세요.`
+        : `명부에서 「${name}」를 찾지 못했습니다. 아래 목록에서 직접 골라주세요.`,
+      "error",
+    );
   }
 
   // 고른 아이들의 셔틀 배정. 셔틀을 타는 요일에 학원차를 넣으려 하면 눈에 띄어야 합니다.
@@ -396,7 +413,7 @@ export default function DismissalBulkClient({
                   <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                     <button
                       type="button"
-                      onClick={() => pickByName(q.name)}
+                      onClick={() => pickFromInquiry(q)}
                       className="rounded bg-slate-800 px-1.5 py-0.5 text-[11px] font-bold text-white hover:bg-slate-700"
                       title="이 아이를 위에서 고릅니다"
                     >

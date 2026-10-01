@@ -12,6 +12,7 @@ import {
   type SiblingReader,
 } from "@/lib/pickupOwner";
 import { nameSurfaces, readSiblings } from "@/lib/attendanceIntent";
+import { loadStudent, loadStudents } from "@/lib/students";
 
 export const dynamic = "force-dynamic";
 
@@ -60,17 +61,12 @@ async function loadPlan(supabase: Awaited<ReturnType<typeof createClient>>) {
   const chRows = (chRes.data ?? []) as unknown as ChRow[];
   const ids = [...new Set(chRows.flatMap((c) => (c.toddle_channel_students ?? []).map((l) => l.student_id)))];
 
-  const { data: stu, error: sErr } = await supabase
-    // demo-ok: 확인된 방이 가리키는 학생 번호로 찍어 읽습니다. 명부를 훑지 않습니다.
-    .from("wr_students")
-    // **영문명까지 읽습니다.** 「Sunwoo」로만 적어 오는 연락이 있어서, 한글 이름만으로는
-    // 형제방에서 누구인지 못 가릅니다.
-    .select("id, name, name_en")
-    .in("id", ids.length > 0 ? ids : ["00000000-0000-0000-0000-000000000000"]);
-  if (sErr) return { error: sErr.message } as const;
-  type Stu = { id: string; name: string; name_en: string | null };
-  const byId = new Map(((stu ?? []) as Stu[]).map((s) => [s.id, s]));
-  const surfacesById = new Map(((stu ?? []) as Stu[]).map((s) => [s.id, nameSurfaces(s.name, s.name_en)]));
+  // 확인된 방이 가리키는 학생 번호로 찍어 읽습니다. 영문명도 - 「Sunwoo」로만 적어 오는 연락이
+  // 있어서, 한글 이름만으로는 형제방에서 누구인지 못 가릅니다.
+  const { rows: stu, error: sErr } = await loadStudents(supabase, { ids, status: "all" });
+  if (sErr) return { error: sErr } as const;
+  const byId = new Map(stu.map((s) => [s.id, s]));
+  const surfacesById = new Map(stu.map((s) => [s.id, nameSurfaces(s.name, s.name_en)]));
 
   /**
    * 형제방 한 줄을 본문으로 가릅니다. 두 단계입니다.
@@ -107,7 +103,7 @@ async function loadPlan(supabase: Awaited<ReturnType<typeof createClient>>) {
     students: [...(c.toddle_channel_students ?? [])]
       .sort((a, b) => a.seq - b.seq)
       .map((l) => byId.get(l.student_id))
-      .filter((x): x is Stu => !!x)
+      .filter((x): x is NonNullable<typeof x> => !!x)
       .map((x) => ({ id: x.id, name: x.name }) satisfies OwnerCandidate),
   }));
 
@@ -209,13 +205,8 @@ export async function PATCH(req: Request) {
   if (linkErr) return NextResponse.json({ error: linkErr.message }, { status: 500 });
   if (!link) return NextResponse.json({ error: "그 아이는 이 방에 이어져 있지 않습니다." }, { status: 400 });
 
-  const { data: stu } = await supabase
-    // demo-ok: 고른 학생 번호로 한 줄만 찍어 읽습니다. 명부를 훑지 않습니다.
-    .from("wr_students")
-    .select("name")
-    .eq("id", studentId as string)
-    .maybeSingle();
-  const name = (stu as { name: string } | null)?.name ?? null;
+  const { row: stu } = await loadStudent(supabase, studentId as string);
+  const name = stu?.name ?? null;
 
   const { data, error } = await supabase
     .from("pickup_requests")

@@ -5,6 +5,7 @@ import { hasFinanceAccess, isStaffOrAboveUser } from "@/lib/roles";
 import { kstDateOffset, todayKst } from "@/lib/kst";
 import { pickForWeek, weekStartOf } from "@/lib/dismissalWeek";
 import { planLabel } from "@/lib/dismissalPlan";
+import { loadStudent } from "@/lib/students";
 
 /**
  * **학생 한 명의 요약** — 학생 창(StudentPanel)이 읽습니다.
@@ -43,12 +44,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   const today = todayKst();
 
   const [stuRes, asgRes, attRes, pickRes, incRes, repRes, taskRes, dpRes] = await Promise.all([
-    supabase
-      .from("wr_students")
-      .select("id, name, name_en, grade, class_name, department, status, birth_date, mother_phone, father_phone, parent_phone, photo_path")
-      .eq("is_demo", false)
-      .eq("id", id)
-      .maybeSingle(),
+    loadStudent(supabase, id, { phones: true }),
     // 정류장·노선은 아래에서 번호로 따로 읽습니다. 중첩 조인은 shuttle_stops→shuttle_routes 사이에
     // 외래키가 둘이라 PostgREST 가 어느 것인지 못 정합니다.
     supabase.from("shuttle_assignments").select("id, weekdays, stop_id").eq("student_id", id),
@@ -72,8 +68,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     supabase.from("student_dismissal_plans").select("weekday, kind, label, depart_time, note, week_start").eq("student_id", id),
   ]);
 
-  if (stuRes.error) return NextResponse.json({ error: stuRes.error.message }, { status: 500 });
-  if (!stuRes.data) return NextResponse.json({ error: "학생을 찾지 못했습니다." }, { status: 404 });
+  if (stuRes.error) return NextResponse.json({ error: stuRes.error }, { status: 500 });
+  if (!stuRes.row) return NextResponse.json({ error: "학생을 찾지 못했습니다." }, { status: 404 });
 
   const warnings: string[] = [];
   for (const [label, r] of [["셔틀", asgRes], ["출결", attRes], ["픽업", pickRes], ["사건", incRes], ["관찰기록", repRes], ["업무", taskRes], ["하원수단", dpRes]] as const) {
@@ -109,7 +105,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     today,
     since,
     canSeeFinance: hasFinanceAccess(me),
-    student: staff ? stuRes.data : { ...stuRes.data, mother_phone: null, father_phone: null, parent_phone: null },
+    student: staff ? stuRes.row : { ...stuRes.row, mother_phone: null, father_phone: null, parent_phone: null },
     shuttle,
     dismissal: dismissalThisWeek((dpRes.data as DpRow[] | null) ?? [], today),
     attendance: { summary: attSummary, rows: att.filter((a) => a.status !== "출석").slice(0, 20) },

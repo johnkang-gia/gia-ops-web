@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { Who } from "@/components/common/HomonymProvider";
 import { overdueDays, type LibLoan, type LibVisit } from "@/lib/library";
+import { kstDate } from "@/lib/kst";
 
 type Lite = { id: string; name: string; grade: string | null; class_name: string | null };
 
@@ -23,7 +24,9 @@ type Props = {
 type Tab = "overdue" | "today" | "active" | "card";
 
 const hm = (iso: string) => new Date(iso).toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", hour12: false });
+// 날짜 칸(due_date)은 그대로, 시각 칸(borrowed_at·returned_at)은 한국 날짜로 바꿔서 씁니다.
 const md = (d: string) => d.slice(5).replace("-", "/");
+const mdAt = (iso: string) => md(kstDate(iso));
 
 export default function LibraryOverviewClient(p: Props) {
   // 연체가 있으면 연체부터. 없으면 오늘. 첫 화면이 「할 일」이어야 합니다.
@@ -176,7 +179,7 @@ function LoanTable({ rows, empty, showOverdue, compact, returned }: { rows: LibL
                   {l.book?.title ?? "(책 정보 없음)"}
                   {l.renew_count > 0 && <span className="ml-1 text-[10px] text-slate-400">연장 {l.renew_count}</span>}
                 </td>
-                <td className="px-2 py-1.5 text-slate-500">{returned && l.returned_at ? md(l.returned_at.slice(0, 10)) : md(l.borrowed_at.slice(0, 10))}</td>
+                <td className="px-2 py-1.5 text-slate-500">{returned && l.returned_at ? mdAt(l.returned_at) : mdAt(l.borrowed_at)}</td>
                 <td className="px-2 py-1.5 text-slate-500">{md(l.due_date)}</td>
                 {showOverdue && <td className={"px-2 py-1.5 font-bold " + (od > 0 ? "text-red-600" : "text-slate-300")}>{od > 0 ? `${od}일` : "-"}</td>}
               </tr>

@@ -90,13 +90,22 @@ export type SheetPart = { invoice: Invoice; lines: InvoiceLine[] };
  * 화면을 두 벌로 만들지 않습니다. 한 명짜리는 **아이가 한 명인 합본**일 뿐이라, 같은 코드가
  * 그립니다 - 두 벌이면 한쪽만 고쳐지는 날이 오고, 학부모에게 가는 종이가 서로 달라집니다.
  */
+/**
+ * 영수증으로 찍을 때 넘기는 것. **청구서와 같은 양식**에 제목과 날짜 칸만 다릅니다 - 양식을
+ * 두 벌 두면 한쪽만 고쳐지는 날이 옵니다. 받은 날·수단은 그 장에 붙은 입금에서 옵니다.
+ */
+export type ReceiptInfo = { paidAt: string; methods: string[]; paid: number };
+
 export default function InvoiceSheet({
   parts,
   embed = false,
+  receipt = null,
 }: {
   parts: SheetPart[];
   /** 미리보기 창 안에 들어간 경우. 바깥 창에 이미 인쇄 단추가 있어 머리줄을 숨깁니다. */
   embed?: boolean;
+  /** 있으면 영수증으로 찍습니다. */
+  receipt?: ReceiptInfo | null;
 }) {
   const invoice = parts[0].invoice;
   const many = parts.length > 1;
@@ -181,7 +190,7 @@ export default function InvoiceSheet({
                   {/* 교재 말고도 나갑니다 - 교복·악기·방과후·학비. 제목에 한 품목을 박아두면
                       다른 품목 청구서가 나갈 때마다 제목이 거짓말이 됩니다. */}
                   <div style={{ fontSize: 10, fontWeight: 700, color: "#d6b370", marginTop: 3 }}>
-                    Payment Invoice
+                    {receipt ? "Payment Receipt · 영수증" : "Payment Invoice"}
                   </div>
                 </td>
                 <td style={{ background: "#1e2a44", color: "#fff", padding: "14px 18px", textAlign: "right", fontSize: 9.5, lineHeight: 1.5 }}>
@@ -202,8 +211,10 @@ export default function InvoiceSheet({
                   <div style={{ fontSize: 11.5, marginTop: 2 }}>{dot(invoice.issue_date)}</div>
                 </td>
                 <td style={{ background: "#f7f4ee", padding: "9px 14px" }}>
-                  <div style={{ fontSize: 8, fontWeight: 700, letterSpacing: 0.6, color: "#a07d2e" }}>PAYMENT DUE</div>
-                  <div style={{ fontSize: 11.5, fontWeight: 800, marginTop: 2 }}>{dot(due)}</div>
+                  <div style={{ fontSize: 8, fontWeight: 700, letterSpacing: 0.6, color: "#a07d2e" }}>{receipt ? "PAID ON" : "PAYMENT DUE"}</div>
+                  <div style={{ fontSize: 11.5, fontWeight: 800, marginTop: 2 }}>
+                    {receipt ? `${dot(receipt.paidAt)} · ${receipt.methods.join(", ")}` : dot(due)}
+                  </div>
                 </td>
               </tr>
             </tbody>
@@ -302,8 +313,8 @@ export default function InvoiceSheet({
                   <table>
                     <tbody>
                       <tr>
-                        <td style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.4 }}>TOTAL DUE</td>
-                        <td style={{ textAlign: "right", fontSize: 13, fontWeight: 800 }}>{won(sum)}</td>
+                        <td style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.4 }}>{receipt ? "TOTAL PAID" : "TOTAL DUE"}</td>
+                        <td style={{ textAlign: "right", fontSize: 13, fontWeight: 800 }}>{won(receipt ? receipt.paid : sum)}</td>
                       </tr>
                     </tbody>
                   </table>

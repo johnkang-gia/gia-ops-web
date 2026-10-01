@@ -483,6 +483,7 @@ export default async function DashboardLayout({
           { href: "/finance", label: "개요", icon: "📊" },
           // 청구는 학비·학비외 두 화면입니다. 상단 탭에서는 「청구」 하나로 묶여 있고,
           // 옆 메뉴에서는 둘 다 보여야 바로 건너뛸 수 있습니다.
+          { href: "/finance/ledger", label: "회계", icon: "📒" },
           { href: "/finance/tuition", label: "청구 · 학비", icon: "💰" },
           { href: "/finance/invoices", label: "청구 · 학비외", icon: "🧾" },
           { href: "/finance/payments", label: "수납", icon: "💳" },

@@ -24,9 +24,11 @@ type Props = {
   studentId?: string | null;
   /** 지금 보고 있는 학기. 합본이 다른 학기 것까지 끌어오지 않게 좁힙니다. */
   termId?: string | null;
+  /** 영수증으로 엽니다(완납된 장만). 같은 양식에 제목·날짜만 다릅니다. */
+  receipt?: boolean;
 };
 
-export default function InvoicePreviewModal({ invoiceId, label, onClose, studentId, termId }: Props) {
+export default function InvoicePreviewModal({ invoiceId, label, onClose, studentId, termId, receipt = false }: Props) {
   const ref = useRef<HTMLIFrameElement | null>(null);
   const [ready, setReady] = useState(false);
   /**
@@ -38,7 +40,7 @@ export default function InvoicePreviewModal({ invoiceId, label, onClose, student
   const [merged, setMerged] = useState(false);
   const src = merged && studentId
     ? `/finance/invoices/student/${studentId}/print?embed=1${termId ? `&term=${termId}` : ""}`
-    : `/finance/invoices/${invoiceId}/print?embed=1`;
+    : `/finance/invoices/${invoiceId}/print?embed=1${receipt ? "&receipt=1" : ""}`;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -58,7 +60,7 @@ export default function InvoicePreviewModal({ invoiceId, label, onClose, student
     <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/50 p-3" onClick={onClose}>
       <div className="flex h-[92vh] w-full max-w-4xl flex-col rounded-xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-3 py-2">
-          <span className="text-sm font-black text-slate-800">🧾 {label ?? "인보이스"}</span>
+          <span className="text-sm font-black text-slate-800">{receipt ? "📄" : "🧾"} {label ?? (receipt ? "영수증" : "인보이스")}</span>
           {/* **학비 + 학비외 한 장.** 두 장을 따로 보내면 학부모는 두 번 결제하고, 어느 쪽을
               냈는지 물어봅니다. 합본은 열 때마다 살아 있는 장을 다시 읽으므로 한쪽을 고치면
               함께 바뀝니다 - 숫자를 옮겨 적는 자리가 없습니다. */}

@@ -2,7 +2,7 @@ import { redirect, notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess } from "@/lib/roles";
-import InvoiceSheet, { type SheetPart } from "@/components/finance/InvoiceSheet";
+import InvoiceSheet, { type SheetPart, type ReceiptInfo } from "@/components/finance/InvoiceSheet";
 import type { Invoice, InvoiceLine } from "@/lib/types";
 import { invoiceFileTitle, familyFileTitle } from "@/lib/invoiceTitle";
 
@@ -70,19 +70,21 @@ export default async function InvoicePrintPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ embed?: string; also?: string }>;
+  searchParams: Promise<{ embed?: string; also?: string; receipt?: string }>;
 }) {
   const { id } = await params;
-  const { embed, also } = await searchParams;
+  const { embed, also, receipt } = await searchParams;
   const me = await getCurrentAppUser();
   if (!me) redirect("/login");
   if (!hasFinanceAccess(me)) redirect("/home");
 
   const ids = [id, ...alsoIds(also)];
   const supabase = await createClient();
-  const [invRes, lineRes] = await Promise.all([
+  const [invRes, lineRes, payRes] = await Promise.all([
     supabase.from("invoices").select("*").in("id", ids),
     supabase.from("invoice_lines").select("*").in("invoice_id", ids).order("seq"),
+    // 영수증일 때만 쓰지만 함께 읽습니다 - 한 번 더 왕복할 이유가 없습니다.
+    supabase.from("payments").select("invoice_id, amount, paid_at, method").in("invoice_id", ids).order("paid_at"),
   ]);
   // 조용히 넘기지 않습니다(CLAUDE.md §5) - 빈 청구서는 「내역이 없는 청구서」로 보이고,
   // 그건 학부모에게 그대로 나갑니다.
@@ -97,5 +99,35 @@ export default async function InvoicePrintPage({
     .map((inv) => ({ invoice: inv, lines: allLines.filter((l) => l.invoice_id === inv.id) }));
   if (parts.length === 0) notFound();
 
-  return <InvoiceSheet parts={parts} embed={embed === "1"} />;
+  /**
+   * **영수증은 완납된 장에서만 찍습니다.** 덜 받은 장에 「영수증」이라고 찍어 주면 학부모는
+   * 다 낸 줄 압니다. 입금이 모자라면 영수증이 아니라 청구서로 떨어집니다 - 조용히 바꾸지
+   * 않고 그 사실을 화면에 적습니다.
+   */
+  let receiptInfo: ReceiptInfo | null = null;
+  let receiptRefused: string | null = null;
+  if (receipt === "1") {
+    if (payRes.error) throw new Error(`입금을 읽지 못했습니다: ${payRes.error.message}`);
+    const pays = (payRes.data as { invoice_id: string; amount: number | string; paid_at: string; method: string | null }[] | null) ?? [];
+    const paid = pays.reduce((n, p) => n + Number(p.amount), 0);
+    const billed = parts.reduce((n, p) => n + Number(p.invoice.total_amount), 0);
+    if (pays.length === 0 || paid < billed) {
+      receiptRefused = `아직 다 받지 않은 청구서입니다(받은 ${paid.toLocaleString()} / 청구 ${billed.toLocaleString()}). 영수증 대신 청구서로 보여줍니다.`;
+    } else {
+      receiptInfo = {
+        paidAt: pays[pays.length - 1].paid_at,
+        methods: [...new Set(pays.map((p) => p.method ?? "기타"))],
+        paid,
+      };
+    }
+  }
+
+  return (
+    <>
+      {receiptRefused && (
+        <p className="no-print mx-auto max-w-[210mm] rounded bg-rose-50 px-3 py-2 text-[12px] font-bold text-rose-700">{receiptRefused}</p>
+      )}
+      <InvoiceSheet parts={parts} embed={embed === "1"} receipt={receiptInfo} />
+    </>
+  );
 }

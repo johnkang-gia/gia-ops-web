@@ -404,9 +404,12 @@ const FINANCE_TABS: TabDef[] = [
     key: "billing",
     label: "청구",
     icon: "🧾",
-    href: "/finance/tuition",
-    match: ["/finance/tuition", "/finance/invoices", "/finance/unpaid"],
+    href: "/finance/ledger",
+    match: ["/finance/ledger", "/finance/tuition", "/finance/invoices", "/finance/unpaid"],
     children: [
+      // **회계가 첫 자리입니다.** 학생을 누르면 창 하나에서 발행·입금·영수증·항목 수정·올톡페이를
+      // 다 합니다. 학비·학비외 표는 반 전체를 한 번에 체크할 때 씁니다.
+      { label: "회계", href: "/finance/ledger", match: ["/finance/ledger"] },
       { label: "학비", href: "/finance/tuition", match: ["/finance/tuition"] },
       { label: "학비외", href: "/finance/invoices", match: ["/finance/invoices"] },
       // **미납금은 따로 관리합니다.** 예전에는 새 청구서를 발행할 때 저절로 얹혔는데,

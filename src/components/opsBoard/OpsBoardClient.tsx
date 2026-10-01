@@ -75,8 +75,10 @@ const POLL_MS = 30_000;
 const IDLE_POLL_MS = 3 * 60 * 60_000;
 
 
-export default function OpsBoardClient({ token }: { token: string }) {
-  const [data, setData] = useState<BoardData | null>(null);
+export default function OpsBoardClient({ token, initialData = null }: { token: string; initialData?: (BoardData & { revision?: number }) | null }) {
+  // 서버가 첫 자료를 담아 보냈으면 그것으로 바로 그립니다. 자바스크립트가 못 도는 기기에서도
+  // 이 첫 그림은 보입니다.
+  const [data, setData] = useState<BoardData | null>(initialData);
   // 일정 시간 안 움직이면 마우스 커서를 숨깁니다(요청: 대시보드 상시 표시라 커서가 거슬림).
   const cursorHidden = useIdleCursor(4000);
   // 요청: "cctv프로그램이 너무 많이 차지해서 공간이 많이 없더라고... 시간표랑함께 모든정보들이
@@ -93,7 +95,7 @@ export default function OpsBoardClient({ token }: { token: string }) {
   })();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   /** 서버에서 받은 마지막 번호. 다음에 물어볼 때 이걸 보내 「바뀌었는지」만 확인합니다. */
-  const revRef = useRef<number | null>(null);
+  const revRef = useRef<number | null>(typeof initialData?.revision === "number" ? initialData.revision : null);
   // 부서는 화면에서 바로 바꿀 수 있습니다(요청: "화면에서 유치부,초등부,중고등부 선택할 수
   // 있게"). null이면 링크에 설정된 기본 부서를 씁니다.
   const [department, setDepartment] = useState<string | null>(null);

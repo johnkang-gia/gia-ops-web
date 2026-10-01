@@ -4,7 +4,7 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess } from "@/lib/roles";
 import { buildBillPlan, type BillInvoice, type GuardianRole, phonesOf, chosenRoleOf, type GuardianPhones } from "@/lib/alltalkpay";
 import { todayKst } from "@/lib/kst";
-import { selectTolerant } from "@/lib/selectTolerant";
+import { loadStudentsWithPhones } from "@/lib/students";
 
 // 올톡페이 대량발송 파일에 넣을 내용을 서버에서 만듭니다.
 //
@@ -100,19 +100,7 @@ export async function POST(req: Request) {
   const phonesById = new Map<string, GuardianPhones>();
   const chosenById = new Map<string, GuardianRole>();
   if (studentIds.length > 0) {
-    const { data, error, missing } = await selectTolerant<{
-      id: string; mother_phone?: string | null; father_phone?: string | null; parent_phone?: string | null;
-      billing_phone_role?: string | null; billing_phone?: string | null;
-    }>(
-      (columns) =>
-        supabase.from("wr_students").select(columns).eq("is_demo", false).in("id", studentIds) as unknown as
-          PromiseLike<{ data: { id: string }[] | null; error: { message: string } | null }>,
-      ["id"],
-      ["mother_phone", "father_phone", "parent_phone", "billing_phone_role", "billing_phone"],
-    );
-    if (missing.length > 0) {
-      console.error("[올톡페이] 명부에 없는 연락처 칸:", missing.join(", "));
-    }
+    const { rows: data, error } = await loadStudentsWithPhones(supabase, { ids: studentIds, status: "all" });
     if (error) {
       // 명부를 못 읽으면 굳은 번호로만 만들게 됩니다. 조용히 넘기면 왜 몇 명이 빠졌는지
       // 아무도 모르므로 기록은 남깁니다.

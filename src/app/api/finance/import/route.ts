@@ -4,6 +4,7 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess } from "@/lib/roles";
 import { buildImportPlan, invoiceNosOf, summarizePlan, type AppInvoice, type RawImportRow, type StudentLite } from "@/lib/paymentImport";
 import { readAll } from "@/lib/financeFetch";
+import { loadStudentsWithPhones } from "@/lib/students";
 
 export const dynamic = "force-dynamic";
 
@@ -32,25 +33,10 @@ export async function POST(req: Request) {
 
   // ── 명부 ──────────────────────────────────────────────────────────────
   // 번호는 **넷 다** 봅니다. 결제번호를 따로 정한 집이 있고, 옛 줄은 보호자 칸만 차 있습니다.
-  const { data: stuRows, error: stuErr } = await supabase
-    .from("wr_students")
-    .select("id, name, grade, class_name, mother_phone, father_phone, parent_phone, billing_phone")
-    .eq("is_demo", false)
-    .eq("status", "active");
-  if (stuErr) return NextResponse.json({ error: `명부를 읽지 못했습니다: ${stuErr.message}` }, { status: 500 });
+  const { rows: stuRows, error: stuErr } = await loadStudentsWithPhones(supabase);
+  if (stuErr) return NextResponse.json({ error: `명부를 읽지 못했습니다: ${stuErr}` }, { status: 500 });
 
-  const students: StudentLite[] = (
-    (stuRows ?? []) as {
-      id: string;
-      name: string;
-      grade: string | null;
-      class_name: string | null;
-      mother_phone: string | null;
-      father_phone: string | null;
-      parent_phone: string | null;
-      billing_phone: string | null;
-    }[]
-  ).map((s) => ({
+  const students: StudentLite[] = stuRows.map((s) => ({
     id: s.id,
     name: s.name,
     grade: s.grade,

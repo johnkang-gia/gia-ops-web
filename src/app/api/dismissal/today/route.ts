@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { loadTodayPickups } from "@/lib/pickups";
 import { todayKst } from "@/lib/kst";
+import { loadStudents } from "@/lib/students";
 
 /**
  * **오늘 픽업** — 「오늘 하원체크」가 셔틀 아닌 아이를 전부 보여주기 위해 씁니다.
@@ -26,15 +27,12 @@ export async function GET() {
   const supabase = await createClient();
   const day = todayKst();
 
-  const { data: roster, error: rosterErr } = await supabase
-    .from("wr_students")
-    .select("id, name")
-    .eq("is_demo", false);
+  const { rows: roster, error: rosterErr } = await loadStudents(supabase, { status: "all" });
   // 명부를 못 읽으면 **빈 목록으로 답하지 않습니다.** 「오늘 픽업이 없다」와 「못 읽었다」가
   // 화면에서 똑같이 보이면, 아무도 안 데리러 가는 날에도 아무 일 없어 보입니다.
-  if (rosterErr) return NextResponse.json({ error: `명부를 읽지 못했습니다: ${rosterErr.message}` }, { status: 500 });
+  if (rosterErr) return NextResponse.json({ error: `명부를 읽지 못했습니다: ${rosterErr}` }, { status: 500 });
 
-  const nameById = new Map(((roster as { id: string; name: string }[] | null) ?? []).map((s) => [s.id, s.name]));
+  const nameById = new Map(roster.map((s) => [s.id, s.name]));
   const pickups = await loadTodayPickups(supabase, day, (id) => nameById.get(id) ?? null);
 
   return NextResponse.json({ day, pickups });

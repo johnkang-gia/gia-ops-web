@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { departmentOf, gradeSortKey } from "@/lib/department";
 import type { FeeCategory, FeeItem, StudentGroup, Term } from "@/lib/types";
+import { loadStudents } from "@/lib/students";
 
 /**
  * **학비외 항목 화면이 쓰는 자료를 모으는 자리 — 한 곳입니다.**
@@ -36,7 +37,7 @@ export async function loadFeeItemsPanel(supabase: SupabaseClient): Promise<FeeIt
     supabase.from("wr_classes").select("grade, class_name, department").eq("is_demo", false).order("grade").order("class_name"),
     // 중고등부는 반이 없는 학년이 있어서 반 표만 보면 학년이 통째로 빠집니다. 명부에서도
     // 학년·반을 모아 합칩니다 - 항목의 기본 대상을 고를 수 없으면 그 학년은 등록이 안 됩니다.
-    supabase.from("wr_students").select("grade, class_name, department").eq("is_demo", false).in("status", ["active", "재학"]),
+    loadStudents(supabase),
     // 항목을 지울 때 "이 조정이 몇 명분 함께 사라지는지" 를 보여주기 위한 것입니다.
     supabase.from("student_fee_items").select("item_id"),
     supabase.from("student_groups").select("*").eq("is_demo", false).order("kind").order("name"),
@@ -45,11 +46,11 @@ export async function loadFeeItemsPanel(supabase: SupabaseClient): Promise<FeeIt
   // 분류·학기 표가 아직 없어도(마이그레이션 전) 화면은 열려야 합니다.
   if (catRes.error) console.error("[학비외 항목] 분류를 읽지 못했습니다:", catRes.error.message);
   if (termRes.error) console.error("[학비외 항목] 학기를 읽지 못했습니다:", termRes.error.message);
-  if (stuRes.error) console.error("[학비외 항목] 명부를 읽지 못했습니다:", stuRes.error.message);
+  if (stuRes.error) console.error("[학비외 항목] 명부를 읽지 못했습니다:", stuRes.error);
   if (useRes.error) console.error("[학비외 항목] 아이별 가감을 읽지 못했습니다:", useRes.error.message);
 
   type Row = { grade: string | null; class_name: string | null; department: string | null };
-  const rows = [...(((clsRes.data as Row[] | null) ?? [])), ...(((stuRes.data as Row[] | null) ?? []))];
+  const rows = [...(((clsRes.data as Row[] | null) ?? [])), ...(stuRes.rows as Row[])];
 
   const gradesByDept: Record<string, string[]> = {};
   const classesByDept: Record<string, string[]> = {};

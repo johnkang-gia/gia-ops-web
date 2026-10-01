@@ -4,6 +4,7 @@ import { todayKst } from "@/lib/kst";
 import type { FeeDiscount, FeeItem, FeePaymentOption, FeePlan, Invoice, StudentFeeItem, Term } from "@/lib/types";
 import type { BilledLine } from "@/lib/billedItems";
 import type { Enrollment, LedgerPayment, LedgerStudent, LedgerWorld, StudentDiscountRow } from "@/lib/studentLedger";
+import { loadStudents } from "@/lib/students";
 
 /**
  * 원장이 필요로 하는 자료를 **한 번에** 읽습니다. 회계 화면은 전교생 것을, 학생 창은 한
@@ -43,9 +44,8 @@ export async function loadLedgerWorld(
   };
 
   const [stuRes, termRes, planRes, optRes, discRes, enrRes, sdRes, itemRes, ovRes, invRes, lineRes, payRes] = await Promise.all([
-    only
-      ? supabase.from("wr_students").select("id, name, name_en, grade, class_name, department, status").eq("is_demo", false).eq("id", only)
-      : supabase.from("wr_students").select("id, name, name_en, grade, class_name, department, status").eq("is_demo", false).eq("status", "active").order("name"),
+    // 한 명을 찍어 읽을 때는 퇴소한 아이도 돌려줍니다 - 그 아이의 미납·예치금을 보는 자리입니다.
+    only ? loadStudents(supabase, { ids: [only], status: "all" }) : loadStudents(supabase),
     supabase.from("terms").select("*").order("status").order("start_date", { ascending: false, nullsFirst: false }),
     supabase.from("fee_plans").select("*").order("category").order("sort_order").order("name"),
     supabase.from("fee_payment_options").select("*").order("sort_order").order("periods"),
@@ -66,7 +66,7 @@ export async function loadLedgerWorld(
     ["학생", stuRes], ["학기", termRes], ["학비 항목", planRes], ["납부 옵션", optRes], ["할인", discRes],
     ["학비 신청", enrRes], ["학생 할인", sdRes], ["학비외 항목", itemRes], ["학비외 신청", ovRes],
   ] as const) {
-    if (r.error) errors.push(`${name}: ${r.error.message}`);
+    if (r.error) errors.push(`${name}: ${typeof r.error === "string" ? r.error : r.error.message}`);
   }
   if (invRes.error) errors.push(`청구서: ${invRes.error}`);
   if (invRes.truncated) errors.push("청구서가 한도를 넘어 일부만 읽었습니다.");
@@ -103,7 +103,7 @@ export async function loadLedgerWorld(
     lines,
     payments: payRes.rows,
   };
-  const students = ((stuRes.data as (LedgerStudent & { status?: string })[] | null) ?? []).map((s) => ({
+  const students = stuRes.rows.map((s) => ({
     id: s.id,
     name: s.name,
     name_en: s.name_en ?? null,

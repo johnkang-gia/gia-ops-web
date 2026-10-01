@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isStaffOrAboveUser } from "@/lib/roles";
 import { createClient } from "@/lib/supabase/server";
+import { loadStudents } from "@/lib/students";
 import TimetableClient, {
   type TtPeriod,
   type TtCell,
@@ -35,11 +36,11 @@ export default async function TimetablePage() {
   if (!isStaffOrAboveUser(me)) redirect("/home");
 
   const supabase = await createClient();
-  const [{ data: periodsRaw }, { data: ttRaw }, { data: classesRaw }, { data: studsRaw }] = await Promise.all([
+  const [{ data: periodsRaw }, { data: ttRaw }, { data: classesRaw }, { rows: studsRaw }] = await Promise.all([
     supabase.from("wr_periods").select("id, department, period_no, label, start_time, end_time").order("start_time"),
     supabase.from("wr_timetable").select("class_id, weekday, period_id, subject_name, teacher_name, room"),
-    supabase.from("wr_classes").select("id, grade, class_name, department"),
-    supabase.from("wr_students").select("class_id, status").eq("is_demo", false),
+    supabase.from("wr_classes").select("id, grade, class_name, department").eq("is_demo", false),
+    loadStudents(supabase, { status: "all" }),
   ]);
 
   // 과목 색 덮어쓰기(요청 ③). 비어 있는 것이 정상입니다 - 아무것도 없으면 과목 이름을

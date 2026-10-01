@@ -11,6 +11,7 @@ import Pagination from "@/components/Pagination";
 import GuideButton from "@/components/common/GuideButton";
 import CollapsedStrip from "@/components/common/CollapsedStrip";
 import AutoGrowTextarea from "@/components/common/AutoGrowTextarea";
+import { loadStudents } from "@/lib/students";
 
 // 사건이 쌓일수록 목록이 끝없이 길어지지 않도록, 게시판처럼 페이지 단위로 잘라 보여줍니다.
 const PAGE_SIZE = 10;
@@ -173,12 +174,7 @@ export default function IncidentsClient({
 
   useEffect(() => {
     const supabase = createClient();
-    supabase
-      .from("wr_students")
-      .select("*").eq("is_demo", false)
-      .eq("status", "active")
-      .order("name", { ascending: true })
-      .then(({ data }) => setAllStudents((data as WrStudent[] | null) ?? []));
+    void loadStudents(supabase).then(({ rows }) => setAllStudents(rows as unknown as WrStudent[]));
   }, []);
 
   const studentMatches = useMemo(() => {

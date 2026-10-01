@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { loadStudents } from "@/lib/students";
 
 // 학기별 반·담임·과목 세팅 보관본을 뜨고 읽는 곳.
 //
@@ -64,10 +65,10 @@ export async function buildTermSnapshot(
   supabase: SupabaseClient
 ): Promise<{ classes: SnapshotClass[]; subjects: SnapshotSubject[] }> {
   const [classesRes, subjectsRes, studentsRes, usersRes] = await Promise.all([
-    supabase.from("wr_classes").select("*").order("grade").order("class_name"),
+    supabase.from("wr_classes").select("*").eq("is_demo", false).order("grade").order("class_name"),
     supabase.from("wr_subjects").select("*").order("name"),
     // 재학생만. 퇴원한 아이까지 담으면 그 학기 반 인원이 부풀려집니다.
-    supabase.from("wr_students").select("id, name, student_no, grade, class_id").eq("is_demo", false).eq("status", "active"),
+    loadStudents(supabase),
     supabase.from("app_users").select("email, name").eq("status", "approved"),
   ]);
 
@@ -77,7 +78,7 @@ export async function buildTermSnapshot(
       .map((u) => [u.email, u.name as string])
   );
 
-  const students = (studentsRes.data ?? []) as {
+  const students = studentsRes.rows as {
     id: string;
     name: string;
     student_no: string | null;

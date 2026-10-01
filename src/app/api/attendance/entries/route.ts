@@ -5,6 +5,7 @@ import { scanIntoEntries, type ScanSource } from "@/lib/attendanceEntries";
 import { buildStaffNames, todayKey, type LearningRule, type RosterStudent } from "@/lib/attendanceDigest";
 import { classHintFromMentions, type TeacherClass } from "@/lib/mentionHints";
 import { attendanceUndoSummary, undoAttendanceEntries } from "@/lib/attendanceUndo";
+import { loadStudents } from "@/lib/students";
 
 // 업무보드 인박스가 쓰는 출결 등록 창구입니다.
 //
@@ -45,8 +46,8 @@ export async function GET(req: NextRequest) {
   const now = new Date();
   const since = new Date(now.getTime() - SCAN_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
-  const [{ data: students }, { data: rules }, { data: classRows }, { data: staffRows }, { data: mirror }, { data: reqs }] = await Promise.all([
-    db.from("wr_students").select("id, name, name_en, grade, class_name, birth_date").eq("status", "active").eq("is_demo", false),
+  const [{ rows: students }, { data: rules }, { data: classRows }, { data: staffRows }, { data: mirror }, { data: reqs }] = await Promise.all([
+    loadStudents(db),
     db.from("attendance_learning_rules").select("kind, pattern, student_name, category"),
     // 담임 ↔ 반. 멘션에서 행정실을 빼고 남은 사람이 담임이면 «이건 그 반 아이 이야기»가
     // 됩니다. 동명이인을 가르는 마지막 근거로 씁니다.
@@ -243,8 +244,8 @@ export async function PATCH(req: NextRequest) {
     const bare = k.studentName.replace(/\(.*$/, "").trim();
     let studentId: string | null = null;
     if (bare.length >= 2) {
-      const { data: hit } = await db.from("wr_students").select("id").eq("is_demo", false).eq("status", "active").eq("name", bare).limit(2);
-      const rows = (hit as { id: string }[] | null) ?? [];
+      const { rows: all } = await loadStudents(db);
+      const rows = all.filter((s) => s.name === bare);
       if (rows.length === 1) studentId = rows[0].id; // 동명이인이면 비워둡니다(엉뚱한 아이에 붙는 것이 더 나쁩니다).
     }
 

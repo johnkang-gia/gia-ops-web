@@ -6,12 +6,12 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess } from "@/lib/roles";
 import { gradeLabel, inTerm, resolveStudentItems } from "@/lib/feeItems";
-import { selectTolerant } from "@/lib/selectTolerant";
 import { addDays, DUE_DAYS } from "@/lib/financePeriod";
 import { todayKst } from "@/lib/kst";
 import { resolveRecipient, type GuardianRole, phonesOf, chosenRoleOf, type StudentBilling } from "@/lib/alltalkpay";
 import { discountsForPlan, tuitionLine, type TuitionLine } from "@/lib/tuition";
 import type { FeePlan, FeePaymentOption, FeeDiscount, FeeItem, StudentFeeItem } from "@/lib/types";
+import { loadStudentsWithPhones } from "@/lib/students";
 
 // 학비 청구서 발행.
 //
@@ -90,13 +90,8 @@ export async function POST(req: Request) {
   const supabase = await createClient();
 
   const [stuRes, planRes, optRes, enrollRes, sdRes, discRes] = await Promise.all([
-    selectTolerant<StudentRow>(
-      (columns) =>
-        supabase.from("wr_students").select(columns).eq("is_demo", false).eq("id", studentId) as unknown as
-          PromiseLike<{ data: StudentRow[] | null; error: { message: string } | null }>,
-      ["id", "name", "name_en", "grade", "class_name", "department"],
-      ["mother_phone", "father_phone", "parent_phone", "billing_phone_role", "billing_phone"],
-    ),
+    // 퇴소한 아이에게도 발행할 수 있어야 합니다(미납 정산). 보호자 번호는 청구서에 찍힙니다.
+    loadStudentsWithPhones(supabase, { ids: [studentId], status: "all" }),
     supabase.from("fee_plans").select("*").eq("category", "학비"),
     supabase.from("fee_payment_options").select("*"),
     // 학기를 안 건 옛 줄도 함께 봅니다. 학기가 생기기 전에 넣어둔 신청이 있고, 그걸 빼면
@@ -109,7 +104,7 @@ export async function POST(req: Request) {
   const err = planRes.error ?? optRes.error ?? enrollRes.error ?? sdRes.error ?? discRes.error;
   if (err) return NextResponse.json({ error: err.message }, { status: 500 });
 
-  const student = stuRes.data[0] ?? null;
+  const student = (stuRes.rows[0] as StudentRow | undefined) ?? null;
   if (!student) return NextResponse.json({ error: "학생을 찾지 못했습니다." }, { status: 404 });
 
   const plans = (planRes.data as FeePlan[] | null) ?? [];

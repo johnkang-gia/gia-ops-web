@@ -3,6 +3,7 @@ import { todayKst } from "@/lib/kst";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isStaffOrAboveUser } from "@/lib/roles";
 import { createClient } from "@/lib/supabase/server";
+import { loadStudents } from "@/lib/students";
 import SchoolOverviewClient, {
   type GradeCount,
   type SchoolKpi,
@@ -26,9 +27,9 @@ export default async function SchoolOverviewPage() {
   const today = todayKst();
   const sinceWeek = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
-  const [{ data: students }, { data: classes }, { data: eventRows }, reportsRes, { data: appUsers }, { data: subjectRows }, { data: termRows }] =
+  const [{ rows: students }, { data: classes }, { data: eventRows }, reportsRes, { data: appUsers }, { data: subjectRows }, { data: termRows }] =
     await Promise.all([
-      supabase.from("wr_students").select("name, grade, status, class_name, department").eq("is_demo", false),
+      loadStudents(supabase, { status: "all" }),
       supabase.from("wr_classes").select("grade, class_name, teacher_email, teacher_name").eq("is_demo", false).order("grade").order("class_name"),
       supabase.from("events").select("date, name").gte("date", today).order("date", { ascending: true }).limit(8),
       supabase.from("wr_reports").select("id", { count: "exact", head: true }).eq("status", "published").gte("report_date", sinceWeek),

@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { logApiError } from "@/lib/logging";
 import { normalizeName } from "@/lib/studentName";
+import { loadStudents } from "@/lib/students";
 
 export const dynamic = "force-dynamic";
 
@@ -98,12 +99,8 @@ export async function POST(req: Request) {
     // 셋 중 누구인지 모르는 채로 손대는 것보다 사람에게 묻는 편이 낫습니다.
     const studentId = (body?.studentId ?? "").trim() || null;
     if (!studentId) {
-      const { data: same } = await supabase
-        .from("wr_students")
-        .select("id, name, grade, class_name")
-        .eq("is_demo", false)
-        .eq("name", rawName);
-      const rows = (same as { id: string; grade: string | null; class_name: string | null }[] | null) ?? [];
+      const { rows: everyone } = await loadStudents(supabase, { status: "all" });
+      const rows = everyone.filter((s) => s.name === rawName);
       if (rows.length > 1) {
         return NextResponse.json(
           {

@@ -6,6 +6,7 @@ import { ridesToday } from "@/lib/ridesToday";
 import { kstParts } from "@/lib/shuttleTracking";
 import { isUndecidedChoice } from "@/lib/shuttleChoice";
 import { effectiveRouteId, routeChoiceOf } from "@/lib/shuttleRoute";
+import { loadStudents } from "@/lib/students";
 
 export const dynamic = "force-dynamic";
 
@@ -153,11 +154,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   // **원본 표(wr_students)를 읽습니다.** 공용 뷰(wr_students_basic)에는 `where
   // is_giamicro_user()`가 박혀 있어서, 로그인 없이 도는 이 화면(서비스 키)에서는 한 줄도
   // 안 나옵니다. 오류도 안 납니다 - 그냥 빈 결과라, 학년이 조용히 안 붙었습니다.
-  const { data: stuRows, error: stuErr } = studentIds.length
-    ? await (supabase.from("wr_students").select("id, name, grade, class_name").eq("is_demo", false).in("id", studentIds))
-    : { data: [] as { id: string; name: string; grade: string | null; class_name: string | null }[], error: null };
-  if (stuErr) console.error("[arrival] 학생 학년·반 조회 실패 — 동명이인 구분이 안 붙습니다:", stuErr.message);
-  const stuById = new Map(((stuRows as { id: string; name: string; grade: string | null; class_name: string | null }[] | null) ?? []).map((r) => [r.id, r]));
+  const { rows: stuRows, error: stuErr } = await loadStudents(supabase, { ids: studentIds, status: "all" });
+  if (stuErr) console.error("[arrival] 학생 학년·반 조회 실패 — 동명이인 구분이 안 붙습니다:", stuErr);
+  const stuById = new Map(stuRows.map((r) => [r.id, r]));
   // 배정이 여러 줄인 아이(행선지 선택)도 있어서, 줄 수가 아니라 **사람 수**로 셉니다.
   const peopleByName = new Map<string, Set<string>>();
   for (const a of relevant) {

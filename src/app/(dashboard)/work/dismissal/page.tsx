@@ -6,6 +6,7 @@ import { isStaffOrAboveUser } from "@/lib/roles";
 import GuideButton from "@/components/common/GuideButton";
 import { markIfAmbiguous, toKoreanDisplayName, toRosterEntries, ROSTER_SELECT } from "@/lib/pickupParse";
 import DismissalBulkClient, { type InquiryLite, type PlanRow, type RideLite, type StudentLite } from "@/components/work/DismissalBulkClient";
+import { loadStudents } from "@/lib/students";
 
 export const dynamic = "force-dynamic";
 
@@ -63,15 +64,8 @@ export default async function DismissalBulkPage() {
   // 업무보드나 셔틀로 돌아가야 했는데, 그 왕복이 곧 «나중에 하자»가 됩니다.
   // 새 자료를 만들지 않습니다 - 저 두 곳이 원본이고 여기는 창문일 뿐입니다.
   const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
-  const [{ data: students }, plansRes, { data: inquiries }, { data: rides }] = await Promise.all([
-    supabase
-      .from("wr_students")
-      .select(ROSTER_SELECT)
-      .eq("status", "active")
-      .eq("is_demo", false)
-      .order("grade")
-      .order("class_name")
-      .order("name"),
+  const [{ rows: students }, plansRes, { data: inquiries }, { data: rides }] = await Promise.all([
+    loadStudents(supabase, { order: "grade" }),
     // dismissal-ok: 한 줄씩 고치는 대장 화면입니다. 「오늘 답」을 내지 않고 등록된 줄을
     // 전부 보여줍니다 - 여기서 골라내면 고쳐야 할 줄이 화면에서 사라집니다.
     supabase.from("student_dismissal_plans").select("id, student_id, weekday, kind, label, depart_time, note, week_start"),
@@ -117,7 +111,7 @@ export default async function DismissalBulkPage() {
       </p>
 
       <DismissalBulkClient
-        students={((students as StudentLite[] | null) ?? [])}
+        students={students as StudentLite[]}
         initialPlans={((plans as PlanRow[] | null) ?? [])}
         inquiries={
           ((inquiries as RawInquiry[] | null) ?? [])

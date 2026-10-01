@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess } from "@/lib/roles";
+import { loadStudents } from "@/lib/students";
 
 export const dynamic = "force-dynamic";
 
@@ -83,17 +84,9 @@ export async function POST(req: Request) {
   // 청구서에 적을 학생 이름·학년. 명부 이름이 먼저입니다 - 올톡페이 고객명 칸은 자유
   // 글자라 사유가 섞여 있습니다(「강하라/치과진료비12,900원포함」).
   const ids = [...new Set(rows.map((r) => r.decided_student_id ?? r.suggested_student_id).filter(Boolean))] as string[];
-  const { data: stu } = await supabase
-    // demo-ok: 승인한 줄이 가리키는 학생 번호로 찍어 읽습니다. 명부를 훑지 않습니다.
-    .from("wr_students")
-    .select("id, name, name_en, grade, class_name")
-    .in("id", ids.length > 0 ? ids : ["00000000-0000-0000-0000-000000000000"]);
-  const byId = new Map(
-    ((stu ?? []) as { id: string; name: string; name_en: string | null; grade: string | null; class_name: string | null }[]).map((s) => [
-      s.id,
-      s,
-    ]),
-  );
+  // 승인한 줄이 가리키는 학생 번호로 찍어 읽습니다. 퇴소한 아이의 결제도 들어올 수 있습니다.
+  const { rows: stu } = await loadStudents(supabase, { ids, status: "all" });
+  const byId = new Map(stu.map((s) => [s.id, s]));
 
   let madeInvoices = 0;
   let madePayments = 0;

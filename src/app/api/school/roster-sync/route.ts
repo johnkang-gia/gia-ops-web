@@ -3,6 +3,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { FIELD_LABEL, parseRosterGrid } from "@/lib/pasteRoster";
 import { planRoster, type StudentLite } from "@/lib/rosterPlan";
 import { TEST_MARK } from "@/lib/rosterSync";
+import { loadStudentsWithPhones } from "@/lib/students";
 
 /**
  * 구글시트 스크립트가 명부를 보내는 창구입니다.
@@ -99,16 +100,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: why }, { status: 400 });
   }
 
-  const { data: students, error: stuErr } = await supabase
-    .from("wr_students")
-    .select("id, name, birth_date, name_en, grade, class_name, student_no, status, mother_phone, father_phone, parent_phone")
-    .eq("is_demo", false);
+  // 퇴소한 아이도 읽습니다 - 시트에 다시 나타나면 되살리는 자리입니다.
+  const { rows: students, error: stuErr } = await loadStudentsWithPhones(supabase, { status: "all" });
   if (stuErr) {
-    await note(supabase, link.id, raw.length, 0, stuErr.message, { header: headerText, columns: columnsText });
-    return NextResponse.json({ error: stuErr.message }, { status: 500 });
+    await note(supabase, link.id, raw.length, 0, stuErr, { header: headerText, columns: columnsText });
+    return NextResponse.json({ error: stuErr }, { status: 500 });
   }
 
-  const plans = planRoster((students ?? []) as StudentLite[], rows);
+  const plans = planRoster(students as unknown as StudentLite[], rows);
   // 「그대로」는 대기함에 넣지 않습니다. 바뀌는 것이 없는 줄까지 쌓이면 사람이 볼 수 없습니다.
   const queue = plans.filter((p) => p.kind !== "그대로");
 

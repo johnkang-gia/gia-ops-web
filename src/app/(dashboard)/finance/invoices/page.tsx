@@ -4,9 +4,9 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess } from "@/lib/roles";
 import { readAll, readNotice } from "@/lib/financeFetch";
 import { todayKst } from "@/lib/kst";
-import { selectTolerant } from "@/lib/selectTolerant";
 import InvoiceGridClient, { type Student, type ReceiptLite, type PayLite } from "@/components/finance/InvoiceGridClient";
 import type { FeeItem, Term, Invoice, StudentFeeItem } from "@/lib/types";
+import { loadStudentsFull } from "@/lib/students";
 
 export const dynamic = "force-dynamic";
 
@@ -29,23 +29,9 @@ export default async function InvoicesPage() {
   // 돈에 관한 화면이라 재무 권한으로만 열리고 필요한 칸이 전부 원본에 있습니다.
   const [stuRes, itemsRes, ovRes, invRes, termRes, gmRes, gRes, crRes, payRes, lineRes] = await Promise.all([
     // 명부의 칸을 그대로 가져옵니다. 보호자 연락처가 없으면 청구서가 못 나가고, 악기 칸이
-    // 없으면 인보이스의 악기가 명부와 어긋나도 아무도 모릅니다.
-    //
-    // 보호자 연락처·악기는 나중에 붙인 칸이라, 마이그레이션을 아직 안 돌린 DB에는 없습니다.
-    // 그 한 칸 때문에 명단 전체가 안 뜨면 안 되므로 없는 칸만 빼고 읽고, 무엇이 없었는지는
-    // 화면 위에 띄웁니다.
-    selectTolerant<Row>(
-      (columns) =>
-        supabase
-          .from("wr_students")
-          .select(columns)
-          .eq("status", "active")
-          .eq("is_demo", false)
-          .order("grade")
-          .order("name") as unknown as PromiseLike<{ data: Row[] | null; error: { message: string } | null }>,
-      ["id", "name", "name_en", "grade", "class_name", "department", "student_no"],
-      ["mother_phone", "father_phone", "parent_phone", "parent_email", "instrument", "billing_phone_role", "billing_phone"],
-    ),
+    // 없으면 인보이스의 악기가 명부와 어긋나도 아무도 모릅니다. 재무 권한 뒤의 화면이라
+    // 연락처·이메일·악기까지 전부 읽습니다.
+    loadStudentsFull<Row>(supabase, { order: "grade" }),
     supabase.from("fee_items").select("*").order("category").order("sort_order").order("name"),
     supabase.from("student_fee_items").select("*"),
     readAll<Invoice>((from, to) =>
@@ -102,7 +88,7 @@ export default async function InvoicesPage() {
     i.target_group_id ? { ...i, target_group_name: groupName.get(i.target_group_id) ?? null } : i,
   );
 
-  const students: Student[] = stuRes.data.map((s) => ({
+  const students: Student[] = stuRes.rows.map((s) => ({
     id: s.id,
     name: s.name,
     nameEn: s.name_en,
@@ -123,13 +109,8 @@ export default async function InvoicesPage() {
     groupIds: groupOf[s.id] ?? [],
   }));
 
-  // 빠진 칸은 감추지 않습니다. 연락처 없이 명단만 보이면 청구가 왜 안 나가는지 알 수 없습니다.
-  const missingNote =
-    stuRes.missing.length > 0
-      ? `명부에 아직 없는 칸: ${stuRes.missing.join(", ")} — 이 칸들은 비어 보입니다. 보호자 연락처 SQL(20260903060000_guardian_phones.sql)을 실행하면 채워집니다.`
-      : null;
   const loadError =
-    stuRes.error ?? itemsRes.error?.message ?? ovRes.error?.message ?? readNotice(invRes, crRes, payRes, lineRes) ?? missingNote;
+    stuRes.error ?? itemsRes.error?.message ?? ovRes.error?.message ?? readNotice(invRes, crRes, payRes, lineRes);
 
   return (
     <InvoiceGridClient

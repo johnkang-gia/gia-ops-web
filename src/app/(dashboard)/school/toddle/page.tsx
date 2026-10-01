@@ -2,9 +2,10 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isAdminUser } from "@/lib/roles";
-import { ROSTER_SELECT, toRosterEntries } from "@/lib/pickupParse";
+import { toRosterEntries } from "@/lib/pickupParse";
 import ToddleChannelsClient, { type ChannelRow, type StudentOption } from "@/components/school/ToddleChannelsClient";
 import ChannelBackfillBand from "@/components/school/ChannelBackfillBand";
+import { loadStudents } from "@/lib/students";
 
 export const dynamic = "force-dynamic";
 
@@ -26,10 +27,10 @@ export default async function ToddleChannelsPage() {
   const supabase = await createClient();
 
   // 이미 만들어진 방 + 연결된 학생.
-  const [{ data: channels, error: chErr }, { data: links }, { data: students }, { data: seen }] = await Promise.all([
+  const [{ data: channels, error: chErr }, { data: links }, { rows: students }, { data: seen }] = await Promise.all([
     supabase.from("toddle_channels").select("id, label, grades, confirmed_at, confirmed_by, ignored, last_seen_at").order("label"),
     supabase.from("toddle_channel_students").select("channel_id, student_id, seq").order("seq"),
-    supabase.from("wr_students").select(ROSTER_SELECT).eq("is_demo", false).eq("status", "active").order("name"),
+    loadStudents(supabase),
     // 아직 표에 없는 방. 수집된 글의 채널 이름에서 찾아옵니다 - 토들에서 방 목록을 따로
     // 받아올 길이 없으니, **실제로 글이 들어온 방**이 우리가 아는 전부입니다.
     supabase

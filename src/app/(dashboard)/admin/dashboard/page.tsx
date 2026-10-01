@@ -8,6 +8,7 @@ import StatCard from "@/components/admin/StatCard";
 import GroupedBarChart, { type BarDataPoint } from "@/components/admin/GroupedBarChart";
 import RankedList, { type RankedItem } from "@/components/admin/RankedList";
 import GuideButton from "@/components/common/GuideButton";
+import { loadStudents } from "@/lib/students";
 
 const GUIDE_SECTIONS = [
   {
@@ -70,7 +71,7 @@ export default async function AdminDashboardPage() {
   const { start: weekStart, end: weekEnd } = currentWeekRange();
 
   const [
-    { data: studentsData },
+    { rows: studentsData },
     incidentsRes,
     eventsRes,
     meetingsRes,
@@ -78,7 +79,7 @@ export default async function AdminDashboardPage() {
     deptRes,
     wrReportsRes,
   ] = await Promise.all([
-    supabase.from("wr_students").select("id, name").eq("is_demo", false).eq("status", "active"),
+    loadStudents(supabase),
     supabase.from("incidents").select("date, manual_cat").gte("date", rangeStart).order("date", { ascending: false }),
     supabase.from("events").select("date").gte("date", rangeStart),
     supabase.from("meetings").select("date").gte("date", rangeStart),
@@ -87,7 +88,7 @@ export default async function AdminDashboardPage() {
     supabase.from("wr_reports").select("id, student_id, term_id, eval_badges, status, report_date").gte("report_date", rangeStart),
   ]);
 
-  const students = (studentsData as { id: string; name: string }[] | null) ?? [];
+  const students = studentsData;
   const incidents = (incidentsRes.data as IncidentRow[] | null) ?? [];
   const events = (eventsRes.data as DateRow[] | null) ?? [];
   const meetings = (meetingsRes.data as DateRow[] | null) ?? [];

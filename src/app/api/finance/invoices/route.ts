@@ -4,12 +4,12 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess } from "@/lib/roles";
 import { gradeLabel, inTerm, resolveStudentItems } from "@/lib/feeItems";
-import { selectTolerant } from "@/lib/selectTolerant";
 import { addDays, DUE_DAYS } from "@/lib/financePeriod";
 import { todayKst } from "@/lib/kst";
 import { planCarryForward, lockCarried } from "@/lib/carryForward";
 import { resolveRecipient, type GuardianRole, phonesOf, chosenRoleOf, type StudentBilling } from "@/lib/alltalkpay";
 import type { FeeItem, StudentFeeItem } from "@/lib/types";
+import { loadStudentsWithPhones } from "@/lib/students";
 
 // 인보이스 발행.
 //
@@ -87,13 +87,8 @@ export async function POST(req: Request) {
 
   const [stuRes, itemsRes, ovRes] = await Promise.all([
     // 보호자 연락처 칸이 아직 없는 DB에서도 발행 자체는 되어야 합니다(연락처만 비게 됩니다).
-    selectTolerant<StudentRow>(
-      (columns) =>
-        supabase.from("wr_students").select(columns).eq("is_demo", false).eq("id", studentId) as unknown as
-          PromiseLike<{ data: StudentRow[] | null; error: { message: string } | null }>,
-      ["id", "name", "name_en", "grade", "class_name", "department"],
-      ["mother_phone", "father_phone", "parent_phone", "billing_phone_role", "billing_phone"],
-    ),
+    // 퇴소한 아이에게도 발행할 수 있어야 합니다(미납 정산). 보호자 번호는 청구서에 찍힙니다.
+    loadStudentsWithPhones(supabase, { ids: [studentId], status: "all" }),
     // 항목은 전부 읽고 학기는 아래에서 거릅니다. DB에서 `term_id = ?` 로 자르면 학기 칸이
     // 비어 있는 예전 항목이 통째로 빠지는데, 화면에는 그것들이 보입니다 - 표에서 체크한
     // 항목이 청구서에 안 실리는 것이 가장 나쁩니다.
@@ -105,7 +100,7 @@ export async function POST(req: Request) {
   if (itemsRes.error) return NextResponse.json({ error: itemsRes.error.message }, { status: 500 });
   if (ovRes.error) return NextResponse.json({ error: ovRes.error.message }, { status: 500 });
 
-  const student = stuRes.data[0] ?? null;
+  const student = (stuRes.rows[0] as StudentRow | undefined) ?? null;
   if (!student) return NextResponse.json({ error: "학생을 찾지 못했습니다." }, { status: 404 });
 
   // 고른 학기가 «진행중»인지. 학기 칸이 빈 예전 항목은 진행중 학기에서만 함께 청구됩니다.

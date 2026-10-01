@@ -6,6 +6,7 @@ import type { WrStudent } from "@/lib/types";
 import StudentSearchClient from "@/components/students/StudentSearchClient";
 import GuideButton from "@/components/common/GuideButton";
 import { loadShuttleWorld } from "@/lib/shuttleWorld";
+import { loadStudentsFull } from "@/lib/students";
 
 const GUIDE_SECTIONS = [
   {
@@ -47,14 +48,9 @@ export default async function StudentsSearchPage() {
   // **손으로 적는 값**이고, 실제로 차에 배정됐는지는 별개입니다. 그래서 명부값이 아니라
   // **실제 배정**을 봅니다 - 명부에 "하원"이라 적혀 있어도 배정이 없으면 그 아이는 아무
   // 차에도 안 탑니다. 둘이 어긋나는 것이 실제로 사고가 나는 지점입니다.
-  const [{ data }, shuttle] = await Promise.all([
-    supabase
-      .from("wr_students")
-      .select(
-        "id, student_no, name, name_en, grade, class_name, class_id, birth_date, phone, mother_phone, father_phone, parent_phone, parent_email, gender, allergies, address, note, custom_fields, status, shuttle_mode, photo_path, created_at",
-      )
-      .eq("is_demo", false)
-      .order("name", { ascending: true }),
+  const [{ rows: data }, shuttle] = await Promise.all([
+    // 학생 관리는 주소·알레르기·메모까지 고치는 화면이라 칸 전부를 읽습니다. 퇴소한 아이도 - 상태를 되돌리는 자리입니다.
+    loadStudentsFull<WrStudent>(supabase, { status: "all" }),
     // 지금 학기·켠 노선에 딸린 배정만 - 거르는 규칙은 shuttleWorld 한 곳입니다.
     loadShuttleWorld(supabase, { assignments: "basic" }),
   ]);
@@ -70,7 +66,7 @@ export default async function StudentsSearchPage() {
 
   // 사진은 비공개 버킷이라 서명 주소가 필요합니다. **한 번에 묶어서** 받습니다 - 한 명씩
   // 받으면 137번을 부르게 되고, 목록이 그만큼 늦게 뜹니다.
-  const photoPaths = ((data as WrStudent[] | null) ?? []).map((s) => s.photo_path).filter((v): v is string => !!v);
+  const photoPaths = data.map((s) => s.photo_path).filter((v): v is string => !!v);
   const photoUrlByPath: Record<string, string> = {};
   if (photoPaths.length > 0) {
     const { data: signed, error: signErr } = await supabase.storage
@@ -99,7 +95,7 @@ export default async function StudentsSearchPage() {
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto pb-4">
         <StudentSearchClient
-          students={(data as WrStudent[] | null) ?? []}
+          students={data}
           shuttleByStudent={shuttleByStudent}
           photoUrlByPath={photoUrlByPath}
           myDepartment={me?.department ?? null}

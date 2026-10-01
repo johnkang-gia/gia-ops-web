@@ -22,6 +22,7 @@ import { logChecklist, type ChecklistReason } from "@/lib/checklistLog";
 import { effectiveRouteId, routeChoiceOf } from "@/lib/shuttleRoute";
 import { isPleasantry, pleasantryNote } from "@/lib/shortTalk";
 import { objectPickupNote } from "@/lib/objectPickup";
+import { loadStudents } from "@/lib/students";
 
 // 어느 경로로 들어온 연락이든 이 함수 하나를 거쳐 픽업으로 바뀝니다.
 // 토들 수집기, 전화 통화 텍스트, 교사 전달, 직접 입력이 모두 같은 판단을 받도록 하기 위해서입니다.
@@ -1290,12 +1291,9 @@ export async function applyBoarding(
 
 /** 명부를 한 번만 읽어 여러 건에 재사용합니다(수집기가 한 번에 여러 건을 보냅니다). */
 export async function loadRoster(supabase: SupabaseClient): Promise<RosterEntry[]> {
-  const { data } = await supabase
-    .from("wr_students")
-    .select("id, name, name_en, grade, birth_date, class_name")
-    .eq("is_demo", false)
-    .in("status", ["active", "보류"]);
-  return (data ?? []) as RosterEntry[];
+  // 보류 중인 아이도 - 입학 전에 셔틀·픽업 연락이 먼저 옵니다.
+  const { rows } = await loadStudents(supabase, { status: "all" });
+  return rows.filter((s) => s.status === "active" || s.status === "보류");
 }
 
 /**

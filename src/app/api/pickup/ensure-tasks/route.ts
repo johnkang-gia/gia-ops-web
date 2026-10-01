@@ -5,6 +5,7 @@ import { isStaffOrAboveUser } from "@/lib/roles";
 import { kstParts } from "@/lib/shuttleTracking";
 import { buildPickupTask } from "@/lib/pickupTask";
 import { loadTodayPickups } from "@/lib/pickups";
+import { loadStudents } from "@/lib/students";
 
 export const dynamic = "force-dynamic";
 
@@ -54,11 +55,7 @@ export async function POST() {
 
   // 명부를 먼저 읽습니다. 픽업 판정이 학생 번호 → 이름을 물어보고, 만든 업무에 학년·반·
   // 교실을 적어야 「어디로 가야 하나」가 제목에 있습니다.
-  const { data: students } = await supabase
-    .from("wr_students")
-    .select("id, name, grade, class_name, class_id, department")
-    .eq("is_demo", false)
-    .eq("status", "active");
+  const { rows: students } = await loadStudents(supabase);
   const { data: classes } = await supabase
     .from("wr_classes")
     .select("id, grade, class_name, room")
@@ -66,7 +63,7 @@ export async function POST() {
 
   type S = { id: string; name: string; grade: string | null; class_name: string | null; class_id: string | null; department: string | null };
   type C = { id: string; grade: string | null; class_name: string | null; room: string | null };
-  const byId = new Map(((students as S[] | null) ?? []).map((s) => [s.id, s]));
+  const byId = new Map((students as S[]).map((s) => [s.id, s]));
   const clsById = new Map(((classes as C[] | null) ?? []).map((c) => [c.id, c]));
 
   // **오늘 픽업이 누구인가는 여기서 정하지 않습니다.** 네 갈래를 합치는 규칙은 한 곳에만

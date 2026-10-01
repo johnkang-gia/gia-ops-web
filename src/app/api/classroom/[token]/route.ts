@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { APP_VERSION } from "@/lib/version";
 import { kstParts } from "@/lib/shuttleTracking";
+import { loadStudents } from "@/lib/students";
 
 export const dynamic = "force-dynamic";
 
@@ -63,14 +64,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
 
   // 반 학생 명단(출결 확정용). 태블릿은 교실에 놓여 아이들이 지나다니므로 **이름만** 보냅니다 -
   // 보호자 연락처·생년월일·형제자매는 이 화면에 있을 이유가 없습니다.
-  const { data: roster } = await db
-    .from("wr_students")
-    .select("id, name")
-    .eq("status", "active")
-    .eq("is_demo", false)
-    .eq("grade", cls.grade)
-    .eq("class_name", cls.class_name)
-    .order("name");
+  // 반 연결(class_id)이 아니라 학년·반 이름으로 거릅니다 - 이 화면은 반 표의 이름을 기준으로
+  // 만들어졌고, 연결이 비어 있는 아이도 반 이름이 같으면 같은 교실에 있습니다.
+  const { rows: everyone } = await loadStudents(db);
+  const roster = everyone.filter((s) => s.grade === cls.grade && s.class_name === cls.class_name);
 
   // 오늘 이미 찍힌 출결.
   const ids = (roster ?? []).map((s) => s.id as string);
@@ -122,10 +119,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
       at: c.created_at as string,
       by: (c.created_by as string | null) ?? null,
     })),
-    roster: (roster ?? []).map((s) => ({
-      id: s.id as string,
-      name: s.name as string,
-      status: markByStudent[s.id as string] ?? null,
+    roster: roster.map((s) => ({
+      id: s.id,
+      name: s.name,
+      status: markByStudent[s.id] ?? null,
     })),
     notes: (notes ?? []).map((n) => ({
       id: n.id as string,

@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isDemoAccount } from "@/lib/sharedAccounts";
+import { loadStudents } from "@/lib/students";
 import TeacherOverviewClient, {
   type TeacherClass,
   type TtPeriod,
@@ -82,13 +83,10 @@ export default async function MyClassPage() {
   if (isHomeroom) {
     const classIds = myClasses.map((c) => c.id as string);
     // 우리 반 학생 명단
-    const { data: studs } = await supabase
-      .from("wr_students")
-      .select("name, name_en, class_id, status")
-      .in("class_id", classIds)
-      .eq("is_demo", demo);
+    const { rows: everyone } = await loadStudents(supabase, { demo, status: "all" });
+    const studs = everyone.filter((s) => s.class_id && classIds.includes(s.class_id));
     const studentsByClass = new Map<string, string[]>();
-    for (const s of studs ?? []) {
+    for (const s of studs) {
       const st = (s.status as string | null) ?? null;
       // 재학(active)만 - 보관(inactive)·전출예정 등은 명단에서 제외(요청: 명부 리셋).
       if (st !== "active" && st !== "재학") continue;

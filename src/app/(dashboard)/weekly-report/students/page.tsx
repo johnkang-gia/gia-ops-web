@@ -6,6 +6,7 @@ import { getCurrentTerm } from "@/lib/currentTerm";
 import { isStaffOrAboveUser } from "@/lib/roles";
 import type { WrClass, WrStudent } from "@/lib/types";
 import TermClassOverviewClient from "@/components/weeklyReport/TermClassOverviewClient";
+import { loadStudentsFull } from "@/lib/students";
 
 export const dynamic = "force-dynamic";
 
@@ -23,19 +24,13 @@ export default async function StudentsPage() {
   if (!me) redirect("/login");
   if (!isStaffOrAboveUser(me)) redirect("/weekly-report/homeroom");
 
-  const [{ data: studentsData }, { data: classesData }, term] = await Promise.all([
-    supabase
-      .from("wr_students")
-      .select("*").eq("is_demo", isDemoAccount(me.email))
-      .eq("status", "active")
-      .order("grade", { ascending: true })
-      .order("class_name", { ascending: true })
-      .order("name", { ascending: true }),
+  const [{ rows: studentsData }, { data: classesData }, term] = await Promise.all([
+    loadStudentsFull<WrStudent>(supabase, { demo: isDemoAccount(me.email), order: "grade" }),
     supabase.from("wr_classes").select("*").eq("is_demo", isDemoAccount(me.email)).order("grade", { ascending: true }).order("class_name", { ascending: true }),
     getCurrentTerm(),
   ]);
 
-  const students = (studentsData as WrStudent[] | null) ?? [];
+  const students = studentsData;
   const classes = (classesData as WrClass[] | null) ?? [];
 
   // 담임/부담임 이메일 → 이름 표시를 위해 한 번에 조회합니다.

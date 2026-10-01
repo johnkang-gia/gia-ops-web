@@ -95,6 +95,19 @@ export async function loadStudentsWithPhones(
   return { rows: ((data as unknown as StudentWithPhones[] | null) ?? []), error: error?.message ?? null };
 }
 
+/**
+ * **칸 전부.** 학생 관리·프로필처럼 주소·알레르기·메모까지 고치는 화면만 씁니다. 목록을 그리는
+ * 자리에서 쓰면 보호자 연락처가 브라우저까지 실려 갑니다 - 그런 자리는 `loadStudents` 입니다.
+ */
+export async function loadStudentsFull<T = StudentWithPhones & Record<string, unknown>>(
+  supabase: SupabaseClient,
+  opts: LoadStudentsOpts = {},
+): Promise<StudentsResult<T>> {
+  if (opts.ids && opts.ids.length === 0) return { rows: [], error: null };
+  const { data, error } = await build(supabase, "*", opts);
+  return { rows: ((data as unknown as T[] | null) ?? []), error: error?.message ?? null };
+}
+
 /** 한 명. 없으면 null. 퇴소한 아이도 돌려줍니다 - 번호로 찍어 찾는 자리는 이력을 보는 자리입니다. */
 export async function loadStudent(
   supabase: SupabaseClient,

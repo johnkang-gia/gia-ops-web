@@ -6,6 +6,7 @@ import { isStaffOrAboveUser } from "@/lib/roles";
 import type { Term, WrStudent } from "@/lib/types";
 import PrintSelectorClient from "@/components/weeklyReport/PrintSelectorClient";
 import GuideButton from "@/components/common/GuideButton";
+import { loadStudentsFull } from "@/lib/students";
 
 const GUIDE_SECTIONS = [
   {
@@ -28,14 +29,8 @@ export default async function PrintPage() {
   if (!me) redirect("/login");
   if (!isStaffOrAboveUser(me)) redirect("/weekly-report/homeroom");
 
-  const [{ data }, { data: terms }] = await Promise.all([
-    supabase
-      .from("wr_students")
-      .select("*").eq("is_demo", isDemoAccount(me.email))
-      .eq("status", "active")
-      .order("grade", { ascending: true })
-      .order("class_name", { ascending: true })
-      .order("name", { ascending: true }),
+  const [{ rows: data }, { data: terms }] = await Promise.all([
+    loadStudentsFull<WrStudent>(supabase, { demo: isDemoAccount(me.email), order: "grade" }),
     supabase.from("terms").select("*").order("year", { ascending: false }).order("start_date", { ascending: false }),
   ]);
 
@@ -49,7 +44,7 @@ export default async function PrintPage() {
         학생을 선택하면 발행(published)된 최신 리포트를 인쇄용 PDF로 볼 수 있고, 학기를 함께 고르면 그
         학기 동안 발행된 모든 리포트를 모은 학기 종합 PDF도 만들 수 있습니다.
       </p>
-      <PrintSelectorClient students={(data as WrStudent[] | null) ?? []} terms={(terms as Term[] | null) ?? []} />
+      <PrintSelectorClient students={data} terms={(terms as Term[] | null) ?? []} />
     </div>
   );
 }

@@ -7,6 +7,7 @@ import { isDeveloperEmail, isAdminUser, isStaffOrAboveUser } from "@/lib/roles";
 import type { AppUser, WrClass, WrStudent, WrSubject } from "@/lib/types";
 import StatCard from "@/components/admin/StatCard";
 import GuideButton from "@/components/common/GuideButton";
+import { loadStudents } from "@/lib/students";
 
 const GUIDE_SECTIONS = [
   {
@@ -45,19 +46,19 @@ export default async function SchoolDashboardPage() {
   const isStaffOrAbove = isStaffOrAboveUser(me);
   if (!isStaffOrAbove) redirect("/home");
 
-  const [currentTerm, { data: classesData }, { data: subjectsData }, { data: usersData }, { data: studentsData }] =
+  const [currentTerm, { data: classesData }, { data: subjectsData }, { data: usersData }, { rows: studentsData }] =
     await Promise.all([
       getCurrentTerm(),
-      supabase.from("wr_classes").select("*").order("grade", { ascending: true }).order("class_name", { ascending: true }),
+      supabase.from("wr_classes").select("*").eq("is_demo", false).order("grade", { ascending: true }).order("class_name", { ascending: true }),
       supabase.from("wr_subjects").select("*").order("name", { ascending: true }),
       supabase.from("app_users").select("*").eq("status", "approved").order("name", { ascending: true }),
-      supabase.from("wr_students").select("*").eq("is_demo", false).eq("status", "active").order("grade", { ascending: true }).order("name", { ascending: true }),
+      loadStudents(supabase, { order: "grade" }),
     ]);
 
   const classes = (classesData as WrClass[] | null) ?? [];
   const subjects = (subjectsData as WrSubject[] | null) ?? [];
   const users = (usersData as AppUser[] | null) ?? [];
-  const students = (studentsData as WrStudent[] | null) ?? [];
+  const students = studentsData as unknown as WrStudent[];
 
   const nameByEmail = new Map(users.map((u) => [u.email, u.name || u.email]));
   const teachers = users.filter((u) => !isDeveloperEmail(u.email) && u.position === "교사");

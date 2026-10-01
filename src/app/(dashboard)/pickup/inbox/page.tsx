@@ -7,6 +7,7 @@ import GuideButton from "@/components/common/GuideButton";
 import PickupInboxClient, { type PickupRow, type StudentOption } from "@/components/pickup/PickupInboxClient";
 import { type ScheduleRow } from "@/components/pickup/UpcomingPickups";
 import TodayPickupList from "@/components/pickup/TodayPickupList";
+import { loadStudents } from "@/lib/students";
 import {
   buildTodayPickupList,
   type PickupClass,
@@ -68,12 +69,7 @@ export default async function PickupInboxPage() {
       .gte("service_date", today)
       .order("received_at", { ascending: false })
       .limit(200),
-    supabase
-      .from("wr_students")
-      .select("id, name, grade, class_name, class_id, name_en, student_no, birth_date")
-      .eq("is_demo", false)
-      .eq("status", "active")
-      .order("name"),
+    loadStudents(supabase),
     supabase.from("integration_heartbeats").select("last_seen_at, status, detail").eq("key", "toddle-collector").maybeSingle(),
     // 앞으로 예정된 픽업. 오늘 것만 보면 "이번주 목금" 같은 예약을 놓칩니다.
     supabase
@@ -129,12 +125,12 @@ export default async function PickupInboxPage() {
 
   const todayPickups = buildTodayPickupList(
     todayPickupRows,
-    ((studentsRes.data as Record<string, unknown>[] | null) ?? []).map<PickupRosterStudent>((s) => ({
-      id: s.id as string,
-      name: (s.name as string) ?? "",
-      grade: (s.grade as string | null) ?? null,
-      className: (s.class_name as string | null) ?? null,
-      classId: (s.class_id as string | null) ?? null,
+    studentsRes.rows.map<PickupRosterStudent>((s) => ({
+      id: s.id,
+      name: s.name ?? "",
+      grade: s.grade,
+      className: s.class_name,
+      classId: s.class_id,
     })),
     ((classesRes.data as Record<string, unknown>[] | null) ?? []).map<PickupClass>((c) => ({
       id: c.id as string,
@@ -176,7 +172,7 @@ export default async function PickupInboxPage() {
 
       <PickupInboxClient
         initialRows={(rowsRes.data as PickupRow[] | null) ?? []}
-        students={(studentsRes.data as StudentOption[] | null) ?? []}
+        students={studentsRes.rows as StudentOption[]}
         collector={
           (heartbeatRes.data as { last_seen_at: string; status: string | null; detail: string | null } | null) ?? null
         }

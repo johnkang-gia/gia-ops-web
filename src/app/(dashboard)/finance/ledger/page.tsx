@@ -19,6 +19,57 @@ import LedgerClient, { type LedgerRow, type LedgerInvoiceRow } from "@/component
  */
 export const dynamic = "force-dynamic";
 
+/**
+ * 학비내역 한 줄 — **정규과정이 먼저, 방과후가 다음, 나머지는 뒤.** 학비에서 제일 큰 돈이
+ * 정규과정이라 그것이 맨 앞에 있어야 「이 아이는 연납인가 월납인가」가 한눈에 읽힙니다.
+ * 이름은 줄여 적습니다 - 표 한 칸에 「Learning Management & Assessment Fee(Annual)」가
+ * 그대로 들어가면 다른 칸이 밀립니다.
+ */
+function tuitionCells(charges: ReturnType<typeof buildLedger>["charges"]): { label: string; amount: number; none: boolean }[] {
+  const rank = (name: string) => (/정규/.test(name) ? 0 : /방과후/.test(name) ? 1 : 2);
+  return charges
+    .filter((c) => c.kind === "학비")
+    .sort((a, b) => rank(a.label) - rank(b.label) || a.label.localeCompare(b.label, "ko"))
+    .map((c) => ({
+      label: `${shortPlan(c.label)}${c.optionName ? ` ${shortOption(c.optionName)}` : ""}`,
+      amount: c.amount,
+      none: !c.optionName,
+    }));
+}
+
+/** 학비외는 분류별로 셉니다 - 「교재 5 · 교복 2」. 항목 이름을 다 적으면 한 줄에 열 개가 섭니다. */
+function extraCells(charges: ReturnType<typeof buildLedger>["charges"]): { category: string; count: number; amount: number }[] {
+  const m = new Map<string, { count: number; amount: number }>();
+  for (const c of charges) {
+    if (c.kind !== "학비외") continue;
+    const cur = m.get(c.category) ?? { count: 0, amount: 0 };
+    cur.count += 1;
+    cur.amount += c.amount;
+    m.set(c.category, cur);
+  }
+  return [...m.entries()].map(([category, v]) => ({ category, ...v })).sort((a, b) => b.amount - a.amount);
+}
+
+function shortPlan(name: string): string {
+  const n = name.replace(/\(.*?\)/g, "").trim();
+  if (/정규/.test(n)) return "정규";
+  const m = /방과후\s*(\d+)\s*일/.exec(n);
+  if (m) return `방과후${m[1]}일`;
+  if (/Learning Management/i.test(n)) return "LMA";
+  return n.length > 8 ? `${n.slice(0, 8)}…` : n;
+}
+
+function shortOption(name: string): string {
+  const n = name.trim();
+  if (/연|1년|year/i.test(n)) return "연납";
+  if (/학기|분기/.test(n)) return "학기납";
+  const m = /(\d+)\s*개월/.exec(n);
+  if (m) return `${m[1]}개월`;
+  if (/월/.test(n)) return "월납";
+  if (/1회/.test(n)) return "1회";
+  return n.length > 5 ? n.slice(0, 5) : n;
+}
+
 export default async function LedgerPage({ searchParams }: { searchParams: Promise<{ term?: string }> }) {
   const me = await getCurrentAppUser();
   if (!me) redirect("/login");
@@ -37,8 +88,10 @@ export default async function LedgerPage({ searchParams }: { searchParams: Promi
       grade: s.grade,
       className: s.class_name,
       department: s.department ?? null,
-      tuition: l.charges.filter((c) => c.kind === "학비" && c.amount > 0).map((c) => `${c.label}${c.optionName ? ` · ${c.optionName}` : ""}`),
-      extra: l.charges.filter((c) => c.kind === "학비외").length,
+      tuition: tuitionCells(l.charges),
+      tuitionTotal: l.charges.filter((c) => c.kind === "학비").reduce((n, c) => n + c.amount, 0),
+      extra: extraCells(l.charges),
+      extraTotal: l.charges.filter((c) => c.kind === "학비외").reduce((n, c) => n + c.amount, 0),
       toBill: l.totals.toBill,
       billed: l.totals.billed,
       unpaid: l.totals.unpaid,

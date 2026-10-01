@@ -28,8 +28,12 @@ export type LedgerRow = {
   grade: string | null;
   className: string | null;
   department: string | null;
-  tuition: string[];
-  extra: number;
+  /** 학비내역 — 정규 → 방과후 → 나머지. 줄인 이름 + 금액. */
+  tuition: { label: string; amount: number; none: boolean }[];
+  tuitionTotal: number;
+  /** 학비외내역 — 분류별 개수와 금액. */
+  extra: { category: string; count: number; amount: number }[];
+  extraTotal: number;
   toBill: number;
   billed: number;
   unpaid: number;
@@ -224,58 +228,140 @@ export default function LedgerClient({
       <ScopeTabs dept={dept} students={scopeStudents} scope={scope} onChange={setScope} />
 
       {tab === "학생" ? (
-        <div className="g-panel-solid overflow-x-auto">
-          <table className="w-full text-[12px]">
+        /**
+         * **왼쪽 학생과 오른쪽 금액 다섯 칸은 고정, 가운데 내역만 가로로 흐릅니다.**
+         *
+         * 내역은 아이마다 길이가 다르고 앞으로 더 길어집니다. 표 전체를 흐르게 하면 금액 칸이
+         * 화면 밖으로 밀려 「이 아이 미납이 얼마지」를 보려고 매번 끝까지 굴려야 합니다. 세
+         * 표를 나란히 두고 줄 높이를 같게 고정합니다 - 한 줄이 두 줄이 되는 순간 세 표가
+         * 어긋나므로 모든 칸이 한 줄(nowrap)입니다.
+         */
+        <div className="g-panel-solid flex overflow-hidden">
+          {/* 고정 — 학생 */}
+          <table className="shrink-0 border-r border-slate-200 text-[12px]">
             <thead className="bg-slate-50 text-[11px] text-slate-500">
-              <tr>
-                <th className="px-2 py-1.5 text-left">학생</th>
-                <th className="px-2 py-1.5 text-left">고른 학비</th>
-                <th className="px-2 py-1.5 text-right">학비외</th>
-                <th className="px-2 py-1.5 text-right">청구할 금액</th>
-                <th className="px-2 py-1.5 text-right">청구됨</th>
-                <th className="px-2 py-1.5 text-right">미납</th>
-                <th className="px-2 py-1.5 text-right">예치금</th>
-                <th className="px-2 py-1.5 text-right">이 학기 받을 돈</th>
+              <tr className="h-8">
+                <th className="px-2 text-left">학생</th>
               </tr>
             </thead>
             <tbody>
               {studentRows.map((r) => (
-                <tr key={r.id} onClick={() => setOpen(r.id)} className="cursor-pointer border-t border-slate-100 hover:bg-indigo-50/40" title="누르면 학생 금전 창이 열립니다">
-                  <td className="whitespace-nowrap px-2 py-1 font-semibold text-slate-800">
+                <tr key={r.id} onClick={() => setOpen(r.id)} className="h-8 cursor-pointer border-t border-slate-100 hover:bg-indigo-50/40" title="누르면 학생 금전 창이 열립니다">
+                  <td className="whitespace-nowrap px-2 font-semibold text-slate-800">
                     <Who id={r.id} name={r.name} />
                     <span className="ml-1 text-[10px] font-normal text-slate-400">
-                      {r.grade ? `${r.grade}` : ""} {r.className ?? ""}
+                      {r.grade ?? ""} {r.className ?? ""}
                     </span>
                   </td>
-                  <td className="max-w-[280px] truncate px-2 py-1 text-slate-600" title={r.tuition.join(" · ")}>
-                    {r.tuition.length ? r.tuition.join(" · ") : <span className="text-slate-300">신청 없음</span>}
-                  </td>
-                  <td className="px-2 py-1 text-right tabular-nums text-slate-600">{r.extra || "—"}</td>
-                  <td className={"px-2 py-1 text-right tabular-nums font-bold " + (r.toBill > 0 ? "text-amber-700" : "text-slate-300")}>{r.toBill > 0 ? won(r.toBill) : "—"}</td>
-                  <td className="px-2 py-1 text-right tabular-nums text-slate-600">{r.billed > 0 ? won(r.billed) : "—"}</td>
-                  <td className={"px-2 py-1 text-right tabular-nums font-bold " + (r.unpaid > 0 ? "text-rose-700" : "text-slate-300")}>{r.unpaid > 0 ? won(r.unpaid) : "—"}</td>
-                  <td className={"px-2 py-1 text-right tabular-nums " + (r.deposit > 0 ? "font-bold text-teal-700" : "text-slate-300")}>{r.deposit > 0 ? won(r.deposit) : "—"}</td>
-                  <td className="px-2 py-1 text-right tabular-nums text-slate-700">{r.expected > 0 ? won(r.expected) : "—"}</td>
                 </tr>
               ))}
               {studentRows.length === 0 && (
-                <tr>
-                  <td colSpan={8} className="px-2 py-8 text-center text-slate-400">
-                    해당하는 학생이 없습니다.
-                  </td>
+                <tr className="h-8">
+                  <td className="px-2 text-slate-400">해당 없음</td>
                 </tr>
               )}
             </tbody>
             <tfoot className="border-t-2 border-slate-200 bg-slate-50 text-[12px] font-bold">
-              <tr>
-                <td className="px-2 py-1.5">{studentRows.length}명</td>
-                <td />
-                <td />
-                <td className="px-2 py-1.5 text-right tabular-nums text-amber-700">{won(sum((r) => r.toBill))}</td>
-                <td className="px-2 py-1.5 text-right tabular-nums">{won(sum((r) => r.billed))}</td>
-                <td className="px-2 py-1.5 text-right tabular-nums text-rose-700">{won(sum((r) => r.unpaid))}</td>
-                <td className="px-2 py-1.5 text-right tabular-nums text-teal-700">{won(sum((r) => r.deposit))}</td>
-                <td className="px-2 py-1.5 text-right tabular-nums">{won(sum((r) => r.expected))}</td>
+              <tr className="h-8">
+                <td className="px-2">{studentRows.length}명</td>
+              </tr>
+            </tfoot>
+          </table>
+
+          {/* 흐르는 부분 — 학비내역 · 학비외내역 */}
+          {/* pill-clip-ok: 알약이 아니라 표입니다. 여백을 두면 양옆 고정 표와 격자선이 어긋납니다. */}
+          <div className="min-w-0 flex-1 overflow-x-auto">
+            <table className="text-[12px]">
+              <thead className="bg-slate-50 text-[11px] text-slate-500">
+                <tr className="h-8">
+                  <th className="whitespace-nowrap px-2 text-left">학비내역 <span className="font-normal text-slate-400">정규 → 방과후 → 그 외</span></th>
+                  <th className="whitespace-nowrap px-2 text-left">학비외내역 <span className="font-normal text-slate-400">분류별 개수 · 금액</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {studentRows.map((r) => (
+                  <tr key={r.id} onClick={() => setOpen(r.id)} className="h-8 cursor-pointer border-t border-slate-100 hover:bg-indigo-50/40">
+                    <td className="whitespace-nowrap px-2 text-slate-700">
+                      {r.tuition.length === 0 ? (
+                        <span className="text-slate-300">열린 학비 항목 없음</span>
+                      ) : (
+                        r.tuition.map((c, i) => (
+                          <span key={i} className="mr-2 inline-flex items-baseline gap-1">
+                            {i > 0 && <span className="text-slate-300">·</span>}
+                            <span className={c.none ? "text-slate-400" : "font-semibold"}>{c.none ? `${c.label} 신청안함` : c.label}</span>
+                            {!c.none && <span className="tabular-nums text-slate-500">{won(c.amount)}</span>}
+                          </span>
+                        ))
+                      )}
+                      {r.tuitionTotal > 0 && <span className="ml-1 rounded bg-indigo-50 px-1 text-[11px] font-bold tabular-nums text-indigo-700">= {won(r.tuitionTotal)}</span>}
+                    </td>
+                    <td className="whitespace-nowrap px-2 text-slate-700">
+                      {r.extra.length === 0 ? (
+                        <span className="text-slate-300">—</span>
+                      ) : (
+                        r.extra.map((e, i) => (
+                          <span key={e.category} className="mr-2 inline-flex items-baseline gap-1">
+                            {i > 0 && <span className="text-slate-300">·</span>}
+                            <span className="font-semibold">
+                              {e.category} {e.count}
+                            </span>
+                            <span className="tabular-nums text-slate-500">{won(e.amount)}</span>
+                          </span>
+                        ))
+                      )}
+                      {r.extraTotal > 0 && <span className="ml-1 rounded bg-orange-50 px-1 text-[11px] font-bold tabular-nums text-orange-700">= {won(r.extraTotal)}</span>}
+                    </td>
+                  </tr>
+                ))}
+                {studentRows.length === 0 && (
+                  <tr className="h-8">
+                    <td colSpan={2} className="px-2 text-slate-400">해당하는 학생이 없습니다.</td>
+                  </tr>
+                )}
+              </tbody>
+              <tfoot className="border-t-2 border-slate-200 bg-slate-50 text-[12px] font-bold">
+                <tr className="h-8">
+                  <td className="whitespace-nowrap px-2 tabular-nums text-indigo-700">학비 {won(sum((r) => r.tuitionTotal))}</td>
+                  <td className="whitespace-nowrap px-2 tabular-nums text-orange-700">학비외 {won(sum((r) => r.extraTotal))}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          {/* 고정 — 금액 다섯 칸 */}
+          <table className="shrink-0 border-l border-slate-200 text-[12px]">
+            <thead className="bg-slate-50 text-[11px] text-slate-500">
+              <tr className="h-8">
+                <th className="whitespace-nowrap px-2 text-right">청구할 금액</th>
+                <th className="whitespace-nowrap px-2 text-right">청구됨</th>
+                <th className="whitespace-nowrap px-2 text-right">미납</th>
+                <th className="whitespace-nowrap px-2 text-right">예치금</th>
+                <th className="whitespace-nowrap px-2 text-right">이 학기 받을 돈</th>
+              </tr>
+            </thead>
+            <tbody>
+              {studentRows.map((r) => (
+                <tr key={r.id} onClick={() => setOpen(r.id)} className="h-8 cursor-pointer border-t border-slate-100 hover:bg-indigo-50/40">
+                  <td className={"whitespace-nowrap px-2 text-right tabular-nums font-bold " + (r.toBill > 0 ? "text-amber-700" : "text-slate-300")}>{r.toBill > 0 ? won(r.toBill) : "—"}</td>
+                  <td className="whitespace-nowrap px-2 text-right tabular-nums text-slate-600">{r.billed > 0 ? won(r.billed) : "—"}</td>
+                  <td className={"whitespace-nowrap px-2 text-right tabular-nums font-bold " + (r.unpaid > 0 ? "text-rose-700" : "text-slate-300")}>{r.unpaid > 0 ? won(r.unpaid) : "—"}</td>
+                  <td className={"whitespace-nowrap px-2 text-right tabular-nums " + (r.deposit > 0 ? "font-bold text-teal-700" : "text-slate-300")}>{r.deposit > 0 ? won(r.deposit) : "—"}</td>
+                  <td className="whitespace-nowrap px-2 text-right tabular-nums text-slate-700">{r.expected > 0 ? won(r.expected) : "—"}</td>
+                </tr>
+              ))}
+              {studentRows.length === 0 && (
+                <tr className="h-8">
+                  <td colSpan={5} />
+                </tr>
+              )}
+            </tbody>
+            <tfoot className="border-t-2 border-slate-200 bg-slate-50 text-[12px] font-bold">
+              <tr className="h-8">
+                <td className="whitespace-nowrap px-2 text-right tabular-nums text-amber-700">{won(sum((r) => r.toBill))}</td>
+                <td className="whitespace-nowrap px-2 text-right tabular-nums">{won(sum((r) => r.billed))}</td>
+                <td className="whitespace-nowrap px-2 text-right tabular-nums text-rose-700">{won(sum((r) => r.unpaid))}</td>
+                <td className="whitespace-nowrap px-2 text-right tabular-nums text-teal-700">{won(sum((r) => r.deposit))}</td>
+                <td className="whitespace-nowrap px-2 text-right tabular-nums">{won(sum((r) => r.expected))}</td>
               </tr>
             </tfoot>
           </table>

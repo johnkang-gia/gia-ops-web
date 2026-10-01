@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { checkAlerts } from "@/lib/integrationHealth";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +33,9 @@ export async function POST(req: Request) {
     detail: typeof body?.detail === "string" ? body.detail.slice(0, 300) : null,
     updated_at: new Date().toISOString(),
   });
+
+  // 토들 수집기는 1분마다 신호를 보냅니다. 크론 둘이 다 죽어도 이 길로 경보가 올라갑니다.
+  await checkAlerts(supabase).catch(() => undefined);
 
   return NextResponse.json({ ok: true });
 }

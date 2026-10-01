@@ -29,7 +29,16 @@ function ago(iso: string | null): string {
   return `${Math.floor(s / 3600)}시간 전`;
 }
 
-function Light({ label, beat }: { label: string; beat: Beat | null }) {
+function Light({ label, beat, loaded }: { label: string; beat: Beat | null; loaded: boolean }) {
+  // 아직 안 읽었을 때는 빨간불이 아닙니다. 화면이 열리는 1초 동안 둘 다 🔴로 보여서 「또 끊겼나」
+  // 하고 놀라게 했습니다.
+  if (!loaded) {
+    return (
+      <span className="flex items-center gap-0.5 whitespace-nowrap text-[10px] font-semibold text-slate-400">
+        {label} <span className="text-[8px]">⚪</span>
+      </span>
+    );
+  }
   const lastSeen = beat?.last_seen_at ?? null;
   const stale = !lastSeen || Date.now() - new Date(lastSeen).getTime() > STALE_MS;
   const errored = !stale && beat?.status && beat.status !== "ok";
@@ -48,6 +57,7 @@ function Light({ label, beat }: { label: string; beat: Beat | null }) {
 
 export default function IntegrationStatus() {
   const [beats, setBeats] = useState<Record<string, Beat>>({});
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     let stopped = false;
@@ -61,6 +71,7 @@ export default function IntegrationStatus() {
       const map: Record<string, Beat> = {};
       for (const b of data as Beat[]) map[b.key] = b;
       setBeats(map);
+      setLoaded(true);
     }
     load();
     // 상태 표시는 급하지 않으므로 60초에 한 번, 화면이 보일 때만 확인합니다(서버 호출 절감
@@ -76,8 +87,8 @@ export default function IntegrationStatus() {
 
   return (
     <div className="flex shrink-0 items-center gap-2">
-      <Light label="토들" beat={beats["toddle-collector"] ?? null} />
-      <Light label="구글챗" beat={beats["google-chat-poll"] ?? null} />
+      <Light label="토들" beat={beats["toddle-collector"] ?? null} loaded={loaded} />
+      <Light label="구글챗" beat={beats["google-chat-poll"] ?? null} loaded={loaded} />
     </div>
   );
 }

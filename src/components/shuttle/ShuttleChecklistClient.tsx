@@ -1064,6 +1064,29 @@ export default function ShuttleChecklistClient({
     return true;
   }
 
+  /**
+   * 적용 기간을 고칩니다. 날짜가 틀린 특이사항은 지우고 다시 넣어야 했는데, 그 사이 셔틀에서 그
+   * 아이가 잠깐 원래대로 돌아가고, 다시 넣을 때 사유를 또 적어야 했습니다. 기간만 바꿉니다.
+   * 끝날이 시작일보다 앞서면 저장하지 않습니다 - 그 줄은 어느 날에도 안 걸려 조용히 죽습니다.
+   */
+  async function updatePersistentDates(id: string, from: string | null, to: string | null) {
+    if (from && to && to < from) {
+      notify("끝날이 시작일보다 앞섭니다.", "error");
+      return false;
+    }
+    const prev = notes;
+    setNotes((cur) => cur.map((n) => (n.id === id ? { ...n, effectFrom: from, effectTo: to } : n)));
+    const supabase = createClient();
+    const { error } = await supabase.from("shuttle_persistent_notes").update({ effect_from: from, effect_to: to }).eq("id", id);
+    if (error) {
+      notify("날짜를 바꾸지 못했습니다: " + error.message, "error");
+      setNotes(prev);
+      return false;
+    }
+    notify("적용 기간을 바꿨습니다.", "success");
+    return true;
+  }
+
   async function removePersistentNote(id: string) {
     const prev = notes;
     setNotes((cur) => cur.filter((n) => n.id !== id));
@@ -1189,6 +1212,24 @@ export default function ShuttleChecklistClient({
                     </button>
                     {noteMenuId === n.id && (
                       <span className="absolute right-0 top-full z-10 mt-1 flex flex-col g-panel-solid p-1 shadow-lg print:hidden">
+                        <form
+                          className="mb-1 flex items-center gap-1 px-1 py-0.5"
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            const fd = new FormData(e.currentTarget);
+                            const from = String(fd.get("from") ?? "").trim() || null;
+                            const to = String(fd.get("to") ?? "").trim() || null;
+                            void updatePersistentDates(n.id, from, to).then((ok) => ok && setNoteMenuId(null));
+                          }}
+                        >
+                          <span className="text-[10px] text-slate-500">📅</span>
+                          <input type="date" name="from" defaultValue={n.effectFrom ?? ""} className="rounded border border-slate-200 px-1 py-0.5 text-[11px]" title="시작일 (비우면 학기 내내)" />
+                          <span className="text-[10px] text-slate-400">~</span>
+                          <input type="date" name="to" defaultValue={n.effectTo ?? ""} className="rounded border border-slate-200 px-1 py-0.5 text-[11px]" title="마지막 날 (이 날 포함 · 비우면 끝나지 않음)" />
+                          <button type="submit" disabled={noteBusyPersist} className="rounded bg-orange-600 px-2 py-0.5 text-[11px] font-bold text-white disabled:opacity-50">
+                            저장
+                          </button>
+                        </form>
                         <button
                           type="button"
                           disabled={noteBusyPersist}

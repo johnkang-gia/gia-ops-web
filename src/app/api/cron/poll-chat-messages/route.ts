@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { checkAlerts } from "@/lib/integrationHealth";
 import { logApiError } from "@/lib/logging";
 import { pollAllSpaces } from "@/lib/googleChat";
 import { isChatPollPeakHour } from "@/lib/shuttleTracking";
@@ -80,5 +81,8 @@ export async function GET(req: NextRequest) {
     updated_at: new Date().toISOString(),
   });
 
-  return NextResponse.json({ ok: true, peak, rounds, newMessages: totalNew, lastError });
+  // 끊기면 안 되는 연동이 끊겼으면 전체공지를 올립니다. 이 크론이 1분마다 돌므로 가장 빠른 파수꾼입니다.
+  const alerts = await checkAlerts(supabase).catch((e) => ({ broken: [`경보 검사 실패: ${e instanceof Error ? e.message : String(e)}`] }));
+
+  return NextResponse.json({ ok: true, peak, rounds, newMessages: totalNew, lastError, alerts });
 }

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { checkAlerts } from "@/lib/integrationHealth";
 import { applyPickup, isHumanSet } from "@/lib/pickupIngest";
 import { kstParts } from "@/lib/shuttleTracking";
 import { genCaseId } from "@/lib/caseId";
@@ -276,5 +277,7 @@ export async function GET(req: Request) {
   }
 
   await touchHeartbeat(supabase, "cron:pickup-schedules");
+  // 구글챗 크론이 죽으면 그쪽 경보도 같이 죽습니다. 여기서 한 번 더 봅니다.
+  await checkAlerts(supabase).catch(() => undefined);
   return NextResponse.json({ ok: true, date: today, applied, failed, notified, periodApplied, dismissalApplied });
 }

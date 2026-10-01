@@ -4,6 +4,7 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { isAdminUser } from "@/lib/roles";
 import { INTEGRATIONS } from "@/lib/heartbeat";
 import IntegrationsClient, { type Row, type DataStat } from "@/components/admin/IntegrationsClient";
+import type { SpaceLite } from "@/lib/integrationHealth";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +27,17 @@ export default async function IntegrationsPage() {
   if (!me) redirect("/login");
   if (!isAdminUser(me)) redirect("/home");
 
-  const { data: beats } = await supabase.from("integration_heartbeats").select("key, last_seen_at, status, detail");
+  const [{ data: beats }, { data: spaceRows }] = await Promise.all([
+    supabase.from("integration_heartbeats").select("key, last_seen_at, status, detail"),
+    // 구글챗 방. 크론이 초록이어도 방이 꺼져 있으면 그 방 글은 안 옵니다 - 출결알림 방이 2주 꺼져
+    // 있었는데 신호만 보고는 알 수 없었습니다. 켜고 끄는 단추를 여기 둡니다.
+    supabase
+      .from("google_chat_spaces")
+      .select("google_space_id, display_name, source_key, enabled, last_polled_at, last_error")
+      .order("sort_order")
+      .order("display_name"),
+  ]);
+  const spaces = (spaceRows as SpaceLite[] | null) ?? [];
   const byKey = new Map((beats ?? []).map((b) => [b.key as string, b]));
 
   const rows: Row[] = INTEGRATIONS.map((spec) => {
@@ -88,5 +99,5 @@ export default async function IntegrationsPage() {
     },
   ];
 
-  return <IntegrationsClient rows={rows} stats={stats} />;
+  return <IntegrationsClient rows={rows} stats={stats} spaces={spaces} />;
 }

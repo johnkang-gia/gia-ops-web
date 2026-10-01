@@ -31,13 +31,18 @@ export async function GET(req: NextRequest) {
 
   // 운행 시간대 밖이면 루프에 들어가지 않고 바로 돌아섭니다. 창 밖에는 애초에 볼 위치 자체가
   // 저장되지 않으므로(/api/shuttle/track이 버립니다) 없는 데이터를 다시 확인할 이유가 없습니다.
-  if (!shouldRunShuttleCron()) {
-    return NextResponse.json({ ok: true, skipped: "out_of_service_window" });
-  }
-
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !serviceKey) return NextResponse.json({ error: "service role key not configured" }, { status: 500 });
+
+  if (!shouldRunShuttleCron()) {
+    // 창 밖에서도 신호는 남깁니다. 신호가 뜻하는 것은 「스케줄러가 우리를 부르고 있다」이지
+    // 「차를 봤다」가 아닙니다. 창 밖에서 신호를 안 남기면 연동 상태 화면이 15:30 전에는 늘
+    // 빨간불이고, 사람은 그것을 끊김으로 읽습니다 - 진짜 끊긴 날과 구별이 안 됩니다.
+    const sb = createClient(url, serviceKey, { auth: { persistSession: false } });
+    await touchHeartbeat(sb, "cron:shuttle-auto", "ok", "운행 시간대 밖 · 대기 중");
+    return NextResponse.json({ ok: true, skipped: "out_of_service_window" });
+  }
   const supabase = createClient(url, serviceKey, { auth: { persistSession: false } });
 
   const startedAt = Date.now();

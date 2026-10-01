@@ -52,7 +52,8 @@ export const INTEGRATIONS: IntegrationSpec[] = [
     label: "셔틀 자동 도착·출발",
     what: "GPS를 보고 출발·도착을 판단합니다. 멈추면 기록분석이 빕니다.",
     everyMinutes: 1,
-    officeHoursOnly: true,
+    // 창 밖에서도 「대기 중」 신호를 남기므로 24시간 판정합니다. 예전에는 07~19시만 봤는데, 크론은
+    // 15:30 전에는 신호를 안 남겨서 매일 오전~오후 내내 빨간불이었습니다.
   },
   { key: "google-chat-poll", label: "구글챗 수집", what: "출결알림·문의를 인박스로 가져옵니다.", everyMinutes: 1 },
   { key: "toddle-collector", label: "토들 수집기", what: "학부모 문의를 가져옵니다. 브라우저가 켜져 있어야 합니다.", everyMinutes: 1 },

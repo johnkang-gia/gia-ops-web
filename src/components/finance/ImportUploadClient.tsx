@@ -89,7 +89,7 @@ export default function ImportUploadClient({ batches }: { batches: BatchRow[] })
         body: JSON.stringify({ fileName: file.name, rows }),
       });
       const json = (await res.json().catch(() => null)) as
-        | { error?: string; batchId?: string; summary?: { total: number; auto: number; needPerson: number; notFound: number; already: number } }
+        | { error?: string; batchId?: string; summary?: { total: number; auto: number; needPerson: number; notFound: number; already: number; preApproved?: number } }
         | null;
       // 조용히 넘기면 올린 줄 알고 기다리게 됩니다.
       if (!res.ok) {
@@ -98,7 +98,7 @@ export default function ImportUploadClient({ batches }: { batches: BatchRow[] })
       }
       const s = json?.summary;
       notify(
-        `${s?.total}줄을 읽었습니다 — 자동 ${s?.auto} · 확인필요 ${s?.needPerson} · 못찾음 ${s?.notFound}${s?.already ? ` · 이미 있음 ${s.already}` : ""}. 아직 반영되지 않았습니다.`,
+        `${s?.total}줄을 읽었습니다 — 자동 ${s?.auto} · 확인필요 ${s?.needPerson} · 못찾음 ${s?.notFound}${s?.already ? ` · 이미 있음 ${s.already}` : ""}${s?.preApproved ? ` · 앱 청구서와 번호·금액이 맞아 승인된 줄 ${s.preApproved}` : ""}. 아직 반영되지 않았습니다.`,
         "success",
       );
       router.push(`/finance/import/${json?.batchId}`);

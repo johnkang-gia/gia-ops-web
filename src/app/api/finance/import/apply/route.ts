@@ -23,6 +23,7 @@ type Row = {
   suggested_student_id: string | null;
   decided_student_id: string | null;
   applied_at: string | null;
+  matched_invoice_nos: string[] | null;
 };
 
 /**
@@ -35,6 +36,8 @@ type Row = {
  *
  *   · 결제완료 → 청구서 + 입금  (완납으로 잡힙니다)
  *   · 발송완료 → 청구서만       (미납금 화면에 저절로 뜹니다)
+ *   · 앱이 보낸 청구서(번호가 적힌 줄) → **그 장에 입금만.** 청구서를 또 만들면 같은 돈이
+ *     두 장으로 잡힙니다. 형제를 합쳐 보낸 줄은 장마다 남은 금액만큼 차례로 나눕니다.
  *
  * ── 한 줄이 실패해도 나머지는 계속합니다 ───────────────────────────────────
  *
@@ -106,15 +109,6 @@ export async function POST(req: Request) {
       await supabase.from("payment_import_rows").update({ apply_error: msg }).eq("id", r.id);
     };
 
-    if (!studentId) {
-      await fail("학생이 정해지지 않았습니다. 누구 것인지 골라주세요.");
-      continue;
-    }
-    const s = byId.get(studentId);
-    if (!s) {
-      await fail("고른 학생을 명부에서 찾지 못했습니다.");
-      continue;
-    }
     if (!issue) {
       await fail("날짜가 없습니다. 파일에 등록일자·수납일자가 있는지 확인해주세요.");
       continue;
@@ -124,8 +118,94 @@ export async function POST(req: Request) {
       continue;
     }
 
+    // ── ⓪ 앱이 보낸 청구서에 붙이기 ──────────────────────────────────
+    //
+    // 학생 검사보다 **앞에** 있습니다. 형제를 합쳐 보낸 줄은 학생이 둘이라 「고른 학생」이
+    // 비어 있는데, 청구서가 각자 학생을 알고 있으니 고를 필요가 없습니다.
+    if (r.matched_invoice_nos && r.matched_invoice_nos.length > 0) {
+      if (r.plan !== "수납만 붙이기") {
+        await fail(`앱 청구서(${r.matched_invoice_nos.join(", ")})가 있는 줄은 입금만 붙입니다. 판정이 「${r.plan}」이라 멈췄습니다.`);
+        continue;
+      }
+      const { data: invs, error: invErr } = await supabase
+        .from("invoices")
+        .select("id, invoice_no, student_id, student_name_ko, student_name, total_amount, status")
+        .in("invoice_no", r.matched_invoice_nos);
+      if (invErr) {
+        await fail(`청구서를 읽지 못했습니다: ${invErr.message}`);
+        continue;
+      }
+      type Inv = { id: string; invoice_no: string; student_id: string | null; student_name_ko: string | null; student_name: string; total_amount: number | string; status: string };
+      const list = ((invs ?? []) as Inv[]).filter((v) => v.status !== "취소");
+      if (list.length !== r.matched_invoice_nos.length) {
+        await fail(`청구서 ${r.matched_invoice_nos.join(", ")} 중 지금은 없는(취소된) 장이 있습니다. 다시 올려서 판정해주세요.`);
+        continue;
+      }
+      const { data: prior } = await supabase.from("payments").select("invoice_id, amount").in("invoice_id", list.map((v) => v.id));
+      const paidBy = new Map<string, number>();
+      for (const p of (prior ?? []) as { invoice_id: string | null; amount: number | string }[]) {
+        if (p.invoice_id) paidBy.set(p.invoice_id, (paidBy.get(p.invoice_id) ?? 0) + Math.round(Number(p.amount)));
+      }
+      // 번호 순서대로 남은 만큼 채웁니다. 남는 돈은 **마지막 장에** 붙입니다 - 떠 있는 선입금으로
+      // 두면 아무 장에도 안 보이고, 과납은 그 장의 과납으로 보여야 사람이 예치금으로 돌릴 수 있습니다.
+      let left = amount;
+      let lastPaymentId: string | null = null;
+      let ok = true;
+      for (let i = 0; i < list.length; i += 1) {
+        const v = list[i];
+        const remaining = Math.max(0, Math.round(Number(v.total_amount)) - (paidBy.get(v.id) ?? 0));
+        const share = i === list.length - 1 ? left : Math.min(remaining, left);
+        if (share <= 0) continue;
+        const { data: pay, error: payErr } = await supabase
+          .from("payments")
+          .insert({
+            invoice_id: v.id,
+            student_id: v.student_id,
+            paid_at: r.paid_at ?? issue,
+            amount: share,
+            kind: "입금",
+            method: r.method ?? "올톡페이",
+            method_kind: r.method && /카드|현금|계좌/.test(r.method) ? r.method : "올톡페이",
+            payer_name: v.student_name_ko ?? v.student_name,
+            memo: `올톡페이 ${r.raw_why ?? ""}`.trim(),
+            source: "올톡페이 가져오기",
+            origin: "올톡페이",
+            // 한 줄을 여러 장에 나누면 열쇠도 장마다 달라야 유일 색인을 지나갑니다.
+            source_key: list.length === 1 ? r.source_key : `${r.source_key}#${v.invoice_no}`,
+            matched_by: me.email,
+            created_by: me.email,
+          })
+          .select("id")
+          .single();
+        if (payErr || !pay) {
+          const dup = /duplicate key|unique/i.test(payErr?.message ?? "");
+          await fail(dup ? `청구서 ${v.invoice_no} 에는 이미 이 입금이 붙어 있습니다.` : `청구서 ${v.invoice_no} 에 입금을 못 붙였습니다: ${payErr?.message}`);
+          ok = false;
+          break;
+        }
+        lastPaymentId = pay.id as string;
+        madePayments += 1;
+        left -= share;
+      }
+      if (!ok) continue;
+      await supabase
+        .from("payment_import_rows")
+        .update({ applied_invoice_id: list[0].id, applied_payment_id: lastPaymentId, applied_at: new Date().toISOString(), apply_error: null })
+        .eq("id", r.id);
+      continue;
+    }
+
     let invoiceId: string | null = null;
 
+    if (!studentId) {
+      await fail("학생이 정해지지 않았습니다. 누구 것인지 골라주세요.");
+      continue;
+    }
+    const s = byId.get(studentId);
+    if (!s) {
+      await fail("고른 학생을 명부에서 찾지 못했습니다.");
+      continue;
+    }
     // ── ① 청구서 ─────────────────────────────────────────────────────
     if (r.plan === "청구서 만들고 수납" || r.plan === "청구서만 만들기(미납)") {
       const { data: noRow, error: noErr } = await supabase.rpc("next_invoice_no");

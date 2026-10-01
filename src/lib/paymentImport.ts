@@ -61,6 +61,18 @@ export type PlanKind = "청구서 만들고 수납" | "청구서만 만들기(�
 
 export type Candidate = { id: string; name: string; where: string };
 
+/** 앱이 발행한 청구서 한 장. 올톡페이로 보낼 때 청구사유 앞에 번호를 박았으므로 되받은 줄에서 찾을 수 있습니다. */
+export type AppInvoice = {
+  id: string;
+  invoiceNo: string;
+  studentId: string | null;
+  studentName: string;
+  total: number;
+  /** 이미 붙은 입금 합. */
+  paid: number;
+  status: string;
+};
+
 export type PlannedRow = {
   raw: RawImportRow;
   /** 정규화한 항목 이름. 원문은 `raw.why` 에 그대로 남아 있습니다. */
@@ -76,7 +88,24 @@ export type PlannedRow = {
   sourceKey: string;
   /** 이미 앱에 들어온 줄인가(같은 열쇠). 두 번 넣으면 같은 돈이 두 번 잡힙니다. */
   already: boolean;
+  /** 청구사유의 번호로 찾은 앱 청구서. 비어 있으면 앱이 모르는 건이라 새로 만듭니다. */
+  matchedInvoiceNos: string[];
+  /** 번호·금액·학생이 다 맞아 사람이 볼 것이 없는 줄. 검수 화면에 승인된 채로 올라갑니다. */
+  preApproved: boolean;
 };
+
+/**
+ * 청구사유 앞의 `[2026-0012,2026-0013]` 에서 청구서 번호를 꺼냅니다. `withInvoiceNo` 가 붙인
+ * 꼴 그대로입니다. 없으면 빈 배열 - 앱 밖에서 보낸 건입니다.
+ */
+export function invoiceNosOf(why: string | null | undefined): string[] {
+  const m = String(why ?? "").match(/^\s*\[([^\]]+)\]/);
+  if (!m) return [];
+  return m[1]
+    .split(/[,\s]+/)
+    .map((v) => v.trim())
+    .filter((v) => /^\d{4}-\d{4}$/.test(v));
+}
 
 const digits = (v: string | null | undefined) => String(v ?? "").replace(/\D/g, "");
 
@@ -240,14 +269,75 @@ export function buildImportPlan(
   raws: readonly RawImportRow[],
   students: readonly StudentLite[],
   existingKeys: ReadonlySet<string>,
+  invoicesByNo: ReadonlyMap<string, AppInvoice> = new Map(),
 ): PlannedRow[] {
   return raws.map((raw) => {
     const key = sourceKeyOf(raw);
     const already = existingKeys.has(key);
+    const item = normalizeItem(raw.why);
+
+    // ── 앱이 보낸 청구서 ──────────────────────────────────────────────────
+    //
+    // 청구사유 앞에 번호가 있으면 **그 청구서에 입금만 붙입니다.** 청구서를 또 만들면 같은
+    // 돈이 두 장으로 잡혀 그 아이의 미납이 두 배가 됩니다. 학생도 이름·번호가 아니라 청구서가
+    // 가리키는 아이입니다 - 형제 둘을 한 줄로 합쳐 보낸 경우 이름이 둘 붙어 있어서 이름으로는
+    // 못 가릅니다.
+    const nos = invoiceNosOf(raw.why);
+    const found = nos.map((n) => invoicesByNo.get(n)).filter((v): v is AppInvoice => !!v);
+    if (nos.length > 0 && found.length === nos.length) {
+      const total = found.reduce((n, v) => n + v.total, 0);
+      const remaining = found.reduce((n, v) => n + Math.max(0, v.total - v.paid), 0);
+      const amount = Math.round(Number(raw.amount));
+      const label = found.map((v) => `${v.invoiceNo} ${v.studentName}`).join(", ");
+      const studentIds = [...new Set(found.map((v) => v.studentId).filter(Boolean))] as string[];
+      const st = String(raw.status ?? "");
+      const paidDone = /완료/.test(st) && /결제|수납/.test(st);
+      const base = { raw, itemName: item.itemName, stream: item.stream, sourceKey: key, already, matchedInvoiceNos: found.map((v) => v.invoiceNo) };
+      const cands: Candidate[] = found.map((v) => ({ id: v.studentId ?? "", name: v.studentName, where: v.invoiceNo }));
+      const suggested = studentIds.length === 1 ? studentIds[0] : null;
+      if (already) {
+        return { ...base, match: "자동", suggestedStudentId: suggested, candidates: cands, why: `청구서 ${label} · 이미 앱에 들어와 있습니다`, plan: "건너뜀", preApproved: false };
+      }
+      if (!paidDone) {
+        // 보냈는데 아직 안 낸 줄. 청구서는 이미 앱에 있으니 할 일이 없습니다 - 미납금 화면이 이미 그 장을 보고 있습니다.
+        const why = /중단|실패/.test(st) ? `청구서 ${label} · ${st} — 앱 청구서는 그대로 둡니다` : `청구서 ${label} · 아직 미납 — 앱 청구서가 이미 미납으로 잡고 있습니다`;
+        return { ...base, match: "자동", suggestedStudentId: suggested, candidates: cands, why, plan: "건너뜀", preApproved: false };
+      }
+      if (remaining <= 0) {
+        return { ...base, match: "자동", suggestedStudentId: suggested, candidates: cands, why: `청구서 ${label} · 이미 수납 완료된 장입니다`, plan: "건너뜀", preApproved: false };
+      }
+      if (amount === remaining) {
+        return { ...base, match: "자동", suggestedStudentId: suggested, candidates: cands, why: `청구서 ${label} 와 번호·금액이 맞습니다 · 결제완료`, plan: "수납만 붙이기", preApproved: true };
+      }
+      // 금액이 다릅니다. 청구서가 맞는 것은 확실하니 수납은 붙이되 사람이 봅니다 - 일부만 냈거나
+      // 올톡페이에서 금액을 고쳐 보낸 것입니다.
+      return {
+        ...base,
+        match: "확인필요",
+        suggestedStudentId: suggested,
+        candidates: cands,
+        why: `청구서 ${label} 는 찾았는데 금액이 다릅니다 — 청구 ${total.toLocaleString()}원(남은 ${remaining.toLocaleString()}원), 결제 ${amount.toLocaleString()}원`,
+        plan: "수납만 붙이기",
+        preApproved: false,
+      };
+    }
+    if (nos.length > 0 && found.length < nos.length) {
+      // 번호는 적혀 있는데 앱에 없습니다. 취소했거나 다른 환경에서 보낸 것 - 사람이 봐야 합니다.
+      const m = matchImportRow(raw, students);
+      const p = planOf(raw, already);
+      return {
+        raw, itemName: item.itemName, stream: item.stream,
+        match: "확인필요", suggestedStudentId: m.suggestedStudentId, candidates: m.candidates,
+        why: `청구서 번호 ${nos.filter((n) => !invoicesByNo.has(n)).join(", ")} 가 앱에 없습니다(취소됐을 수 있습니다) · ${m.why} · ${p.why}`,
+        plan: p.plan, sourceKey: key, already, matchedInvoiceNos: [], preApproved: false,
+      };
+    }
+
     const m = matchImportRow(raw, students);
     const p = planOf(raw, already);
-    const item = normalizeItem(raw.why);
     return {
+      matchedInvoiceNos: [],
+      preApproved: false,
       raw,
       itemName: item.itemName,
       stream: item.stream,
@@ -273,6 +363,8 @@ export type PlanSummary = {
   skipped: number;
   /** 실제로 반영될 후보 줄 수(건너뜀 제외). */
   actionable: number;
+  /** 앱 청구서 번호로 맞아 승인된 채 올라간 줄 수. */
+  preApproved: number;
   billAmount: number;
   payAmount: number;
 };
@@ -286,6 +378,7 @@ export function summarizePlan(rows: readonly PlannedRow[]): PlanSummary {
     already: 0,
     skipped: 0,
     actionable: 0,
+    preApproved: 0,
     billAmount: 0,
     payAmount: 0,
   };
@@ -294,6 +387,7 @@ export function summarizePlan(rows: readonly PlannedRow[]): PlanSummary {
     else if (r.match === "확인필요") s.needPerson += 1;
     else s.notFound += 1;
     if (r.already) s.already += 1;
+    if (r.preApproved) s.preApproved += 1;
     if (r.plan === "건너뜀") {
       s.skipped += 1;
       continue;

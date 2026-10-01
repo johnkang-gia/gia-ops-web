@@ -1,3 +1,4 @@
+import { ATTENDANCE_ENTRY_KEY } from "@/lib/attendanceEntries";
 // 데이터베이스가 앱이 기대하는 모양을 갖췄는지 확인할 목록.
 //
 // 마이그레이션을 올려도 실제로 적용됐는지는 지금까지 화면이 깨져야 알 수 있었습니다.
@@ -85,11 +86,11 @@ export const SCHEMA_CHECKS: SchemaCheck[] = [
     feature: "출결 저장(upsert)",
     table: "attendance_entries",
     columns: [],
-    migration: "20260827230000_attendance_entries_uniq_fix.sql",
+    migration: "20261022000000_attendance_entries_uniq_date.sql",
     impact:
-      "출결내역이 전부 ⬜로만 보이고, ✕(출결 아님)을 눌러도 사라지지 않습니다. 유일 인덱스에 조건이 붙어 있으면 저장 자체가 실패합니다.",
+      "출결내역이 전부 ⬜로만 보이고, 넘기기·직접 등록·오늘만 이 아이로가 전부 실패합니다. 유일 인덱스의 칸이 앱의 열쇠와 다르면 저장 자체가 실패합니다.",
     upsertProbe: {
-      onConflict: "source,source_message_id,student_name,status",
+      onConflict: ATTENDANCE_ENTRY_KEY,
       row: {
         source: "manual",
         source_message_id: "__schema_probe__",

@@ -22,6 +22,15 @@ import {
 //   - 사람이 손댄 줄(touched_by_human)은 **다시 건드리지 않습니다.** 지운 것이 되살아나던
 //     문제가 바로 이 자리가 없어서 생겼습니다.
 
+/**
+ * **출결 등록표의 유일 열쇠.** 데이터베이스의 `attendance_entries_source_uniq` 와 글자 그대로
+ * 같아야 합니다. 열쇠가 바뀌면(20261022 에 날짜가 더해졌습니다) upsert 하는 자리 전부가 함께
+ * 바뀌어야 하는데, 일곱 군데에 손으로 적혀 있어서 한 곳만 바뀌었습니다. 나머지 여섯은 42P10
+ * (no unique or exclusion constraint matching the ON CONFLICT) 으로 2주 동안 실패했고,
+ * 「넘기기」·「직접 등록」·「오늘만 이 아이로」가 전부 안 됐습니다. 여기 한 곳에서만 적습니다.
+ */
+export const ATTENDANCE_ENTRY_KEY = "source,source_message_id,student_name,status,date_from";
+
 export type EntryState = "등록" | "확인필요" | "무시";
 
 export type ScanSource = {
@@ -266,7 +275,7 @@ export async function scanIntoEntries(
       .from("attendance_entries")
       // **열쇠에 날짜를 더합니다.** 한 글에서 「월요일과 수요일」처럼 날이 둘 나오면 줄도 둘인데,
       // 날짜가 열쇠에 없으면 둘이 같은 줄로 취급되어 **뒤엣것이 조용히 버려집니다**.
-      .upsert(chunk, { onConflict: "source,source_message_id,student_name,status,date_from", ignoreDuplicates: true });
+      .upsert(chunk, { onConflict: ATTENDANCE_ENTRY_KEY, ignoreDuplicates: true });
     if (!error) created += chunk.length;
     // 오류를 삼키지 않습니다. 여기서 조용히 넘어가는 바람에, 유일 인덱스에 조건이 붙어 있어
     // upsert가 매번 42P10으로 실패하는데도 화면은 "그냥 등록될 게 없나 보다"로 보였습니다.

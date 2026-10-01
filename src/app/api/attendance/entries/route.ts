@@ -7,6 +7,7 @@ import { classHintFromMentions, type TeacherClass } from "@/lib/mentionHints";
 import { attendanceUndoSummary, undoAttendanceEntries } from "@/lib/attendanceUndo";
 import { reconcileEntryChange, reconcileSummary, type EntryShape } from "@/lib/attendanceReconcile";
 import { loadStudents } from "@/lib/students";
+import { ATTENDANCE_ENTRY_KEY } from "@/lib/attendanceEntries";
 
 // 업무보드 인박스가 쓰는 출결 등록 창구입니다.
 //
@@ -263,7 +264,7 @@ export async function PATCH(req: NextRequest) {
         touched_by_human: true,
         note: "사람이 출결이 아니라고 표시",
       },
-      { onConflict: "source,source_message_id,student_name,status" }
+      { onConflict: ATTENDANCE_ENTRY_KEY }
     );
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json({ ok: true, dismissed: true });
@@ -301,7 +302,7 @@ export async function PATCH(req: NextRequest) {
           touched_by_human: true,
           note: `사람이 ${m.studentName} 으로 직접 등록해 이 줄은 내림`,
         },
-        { onConflict: "source,source_message_id,student_name,status" },
+        { onConflict: ATTENDANCE_ENTRY_KEY },
       );
       if (offErr) return NextResponse.json({ error: offErr.message }, { status: 500 });
     }
@@ -325,7 +326,7 @@ export async function PATCH(req: NextRequest) {
         note: m.note ?? "사람이 직접 등록",
         raw_text: (m.rawText ?? "").slice(0, 500) || null,
       },
-      { onConflict: "source,source_message_id,student_name,status" }
+      { onConflict: ATTENDANCE_ENTRY_KEY }
     );
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json({ ok: true, manual: true });
@@ -361,7 +362,7 @@ export async function PATCH(req: NextRequest) {
           touched_by_human: true,
           note: `사람이 ${a.studentName} 으로 지정해 이 줄은 내림`,
         },
-        { onConflict: "source,source_message_id,student_name,status" }
+        { onConflict: ATTENDANCE_ENTRY_KEY }
       );
       if (offErr) return NextResponse.json({ error: offErr.message }, { status: 500 });
     }
@@ -386,7 +387,7 @@ export async function PATCH(req: NextRequest) {
         raw_text: (a.rawText ?? "").trim() || null,
         note: "이 건만 사람이 지정(규칙 없음)",
       },
-      { onConflict: "source,source_message_id,student_name,status" }
+      { onConflict: ATTENDANCE_ENTRY_KEY }
     );
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json({ ok: true, assigned: true });

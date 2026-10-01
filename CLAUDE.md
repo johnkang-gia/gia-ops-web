@@ -642,3 +642,19 @@ const routeId = effectiveRouteId(
 도착체크 쪽 번호를 올리는 SQL 트리거의 표 목록도 같아야 합니다.
 `npm run build` 가 `scripts/check-shuttle-live.mjs` 를 돌려 둘이 어긋나면 막습니다. 따로
 확인하려면 `npm run check:live-shuttle`.
+
+---
+
+## 2-14. upsert 열쇠는 상수 하나로 적습니다
+
+출결 등록표(`attendance_entries`)의 유일 인덱스에 날짜를 더했을 때, 앱의 upsert 일곱 곳 중 **한 곳만**
+따라 바뀌었습니다. 나머지 여섯은 2주 동안 42P10 으로 실패했고, 화면에는 「저장 실패」로만 보였습니다 -
+넘기기·직접 등록·오늘만 이 아이로가 전부 안 됐는데 아무도 원인을 몰랐습니다.
+
+열쇠는 `src/lib/attendanceEntries.ts` 의 `ATTENDANCE_ENTRY_KEY` 하나입니다. 글자로 적지 않습니다.
+`npm run build` 가 `scripts/check-attendance-key.mjs` 로 막습니다. 데이터베이스 쪽은 마이그레이션이
+**이름이 아니라 모양**(칸 목록)으로 확인합니다 - 같은 이름의 옛 인덱스가 남아 있으면 `if not exists` 는
+조용히 넘어갑니다.
+
+관리 > 연동 상태 옆의 스키마 점검(`/api/admin/schema-check`)이 실제로 넣어 보고 알려줍니다. 「저장 실패」가
+보이면 그것부터 봅니다.

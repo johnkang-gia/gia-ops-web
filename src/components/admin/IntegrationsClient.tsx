@@ -10,6 +10,7 @@ import {
   CRITICAL_KEYS,
   DEFAULT_GUIDE,
   FIX_GUIDE,
+  consoleLinksOf,
   judge,
   type SpaceLite,
 } from "@/lib/integrationHealth";
@@ -210,6 +211,24 @@ export default function IntegrationsClient({ rows, stats, spaces }: { rows: Row[
                     )}
                     {r.what && <p className="text-[11px] text-slate-400">{r.what}</p>}
                     {r.detail && <p className="text-[11px] text-amber-600">{r.detail}</p>}
+                    {consoleLinksOf(r.key).length > 0 && (
+                      <p className="mt-1 flex flex-wrap gap-1">
+                        {consoleLinksOf(r.key).map((l) => (
+                          <a
+                            key={l.url}
+                            href={l.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className={
+                              "rounded border px-1.5 py-0.5 text-[11px] " +
+                              (bad ? "border-red-300 bg-red-50 font-semibold text-red-700 hover:bg-red-100" : "border-slate-200 text-slate-500 hover:bg-slate-50")
+                            }
+                          >
+                            {l.label} ↗
+                          </a>
+                        ))}
+                      </p>
+                    )}
                     {bad && (
                       <div className="mt-1.5 rounded-lg border border-red-100 bg-white px-2 py-1.5">
                         <p className="text-[11px] font-bold text-red-600">고치는 길</p>

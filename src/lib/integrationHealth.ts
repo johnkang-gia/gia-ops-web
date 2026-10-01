@@ -70,6 +70,25 @@ export const FIX_GUIDE: Record<string, string[]> = {
 
 export const DEFAULT_GUIDE = ["cron-job.org 에 등록되어 있는지, 주소와 Authorization 헤더가 맞는지 확인."];
 
+/**
+ * 「어디서 돌리는가」. 빨간불이 켜졌을 때 그 사이트로 바로 가야 하는데, 고치는 길에 이름만 적혀 있으면
+ * 사람은 주소를 찾다가 그만둡니다. 바깥 스케줄러(cron-job.org)와 Vercel 크론은 다른 사이트이고,
+ * 토들 수집기는 사무실 PC 의 크롬 확장이라 갈 사이트가 없습니다.
+ */
+export type ConsoleLink = { label: string; url: string };
+const CRON_JOB_ORG: ConsoleLink = { label: "cron-job.org 열기", url: "https://console.cron-job.org/jobs" };
+const VERCEL_CRON: ConsoleLink = { label: "Vercel 크론 열기", url: "https://vercel.com/dashboard" };
+/** 바깥 스케줄러가 돌리는 것. vercel.json 에 없는 크론은 전부 여기입니다. */
+const ON_CRON_JOB_ORG = new Set(["cron:shuttle-auto", "google-chat-poll", "cron:pickup-schedules", "cron:chat-subscription-renew"]);
+export function consoleLinksOf(key: string): ConsoleLink[] {
+  if (key === "toddle-collector") return [];
+  if (ON_CRON_JOB_ORG.has(key)) {
+    // 픽업 예약은 둘 다 돕니다 - 5분마다는 cron-job.org, 아침 7시 한 번은 Vercel.
+    return key === "cron:pickup-schedules" ? [CRON_JOB_ORG, VERCEL_CRON] : [CRON_JOB_ORG];
+  }
+  return key.startsWith("cron:") ? [VERCEL_CRON] : [];
+}
+
 export type SpaceLite = { google_space_id: string; display_name: string | null; source_key: string | null; enabled: boolean; last_polled_at: string | null; last_error: string | null };
 
 /** 출결알림 방이 꺼져 있으면 크론이 초록이어도 출결 연락은 안 옵니다. 신호와 별개로 봅니다. */

@@ -15,6 +15,7 @@ import { categorize } from "@/lib/attendanceDigest";
 import GuideButton from "@/components/common/GuideButton";
 import { isStaffOrAboveUser } from "@/lib/roles";
 import { effectiveRouteId, routeChoiceOf } from "@/lib/shuttleRoute";
+import { compareRoster } from "@/lib/rosterOrder";
 
 const GUIDE_SECTIONS = [
   {
@@ -122,7 +123,7 @@ export default async function ShuttleChecklistPage({
     supabase.from("shuttle_stops").select("id, route_id, seq").order("seq"),
     supabase
       .from("shuttle_assignments_basic")
-      .select("id, stop_id, student_id, student_name_raw, weekdays, override_route_id, note, choice_group"),
+      .select("id, stop_id, student_id, student_name_raw, weekdays, override_route_id, note, choice_group, sort_order"),
     supabase
       .from("shuttle_boardings")
       // updated_by는 이 표에 **없는 칸**입니다. 여기 적혀 있는 동안 PostgREST가 이 조회
@@ -178,6 +179,7 @@ export default async function ShuttleChecklistPage({
       weekdays: number[];
       override_route_id: string | null;
       note: string | null;
+      sort_order?: number | null;
       /** 행선지를 그날 정하는 학생 묶음. 대부분의 학생은 null입니다. */
       choice_group: string | null;
     }[]
@@ -523,6 +525,7 @@ export default async function ShuttleChecklistPage({
         studentId: a.student_id,
         studentName: a.student_name_raw,
         stopSeq: stop.seq,
+        sortOrder: (a.sort_order as number | null) ?? 0,
         // 판정 재료를 만드는 일도 @/lib/shuttleRoute 한 곳에서 합니다 - 괄호 위치가 한 번만
         // 어긋나도 이 화면만 다른 호차를 말하게 됩니다(CLAUDE.md 2-11).
         ...routeChoiceOf(
@@ -539,7 +542,7 @@ export default async function ShuttleChecklistPage({
       return item;
     })
     .filter((x): x is ChecklistItem => !!x)
-    .sort((x, y) => x.stopSeq - y.stopSeq || x.studentName.localeCompare(y.studentName, "ko"));
+    .sort(compareRoster);
 
   // 왼쪽 사이드바용 - 업무 메뉴의 출결내역(구글챗 출결알림)과 같은 자료를 다시 훑어 오늘
   // 픽업·결석 학생을 보여줍니다(요청: "업무메뉴에있는 결석과 픽업아이들이 목록으로 떴으면

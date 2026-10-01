@@ -68,6 +68,8 @@ export type ChecklistItem = {
   studentId?: string | null;
   studentName: string;
   stopSeq: number;
+  /** 같은 정류장 안에서 사람이 정한 순서. 0이면 이름 순. 정렬은 @/lib/rosterOrder 한 곳. */
+  sortOrder?: number | null;
   homeRouteId: string; // 정류장 기준 평소(절대 원래) 노선 - 바뀌지 않는 기준점
   permanentRouteId: string | null; // 계속 유지되는 영구 이동 - null이면 homeRouteId 그대로
   overrideRouteId: string | null; // 오늘 하루만의 이동 - null이면 적용 안 됨
@@ -241,6 +243,18 @@ export default function ShuttleChecklistClient({
   // **무엇을 듣는지는 `shuttleLive.ts` 한 곳에서 정합니다.** 예전에는 이 자리가 노선만
   // 듣고 있어서 정류장을 옮기거나 하원수단을 고쳐도 체크표는 몰랐습니다. 아래에서 아주
   // 촘촘히 듣는 세 표는 빼고(눌렀을 때 그 줄만 바로 고치는 것이 더 빠릅니다), 나머지는
+  // 탭을 오갈 때 서버를 다시 읽습니다. 옆 탭(하원 셔틀명단)에서 학생을 넣고 돌아오면 브라우저가
+  // 조금 전 화면을 그대로 보여줬습니다 - 실시간 신호를 놓친 사이에 돌아오면 「넣었는데 없는」
+  // 명단이 됩니다. 명단은 사람이 세어 종이로 뽑는 것이라 한 번 더 읽는 비용이 쌉니다.
+  useEffect(() => {
+    router.refresh();
+    const onShow = () => {
+      if (document.visibilityState === "visible") router.refresh();
+    };
+    document.addEventListener("visibilitychange", onShow);
+    return () => document.removeEventListener("visibilitychange", onShow);
+  }, [router]);
+
   // 전부 여기서 받아 화면을 다시 그립니다.
   useEffect(
     () =>
@@ -614,8 +628,8 @@ export default function ShuttleChecklistClient({
       // 세 가지 다 화면에는 오류가 아니라 「그냥 다른 명단」으로 보입니다. 그래서 걸러내지
       // 않고 전부 받습니다 - 명단을 고치는 일은 하루에 몇 번뿐이라 그래도 가볍습니다.
       .on("postgres_changes", { event: "*", schema: "public", table: "shuttle_assignments" }, (payload) => {
-        const next = payload.new as { id?: string; override_route_id?: string | null; note?: string | null; weekdays?: number[] } | undefined;
-        const prevRow = payload.old as { id?: string; weekdays?: number[] } | undefined;
+        const next = payload.new as { id?: string; override_route_id?: string | null; note?: string | null; weekdays?: number[]; sort_order?: number } | undefined;
+        const prevRow = payload.old as { id?: string; weekdays?: number[]; sort_order?: number } | undefined;
         const id = next?.id ?? prevRow?.id;
 
         // 넣기·빼기는 **누가 타는가**가 달라진 것이라 화면에서 기워 맞출 수 없습니다.
@@ -623,7 +637,9 @@ export default function ShuttleChecklistClient({
         const rosterChanged =
           payload.eventType === "INSERT" ||
           payload.eventType === "DELETE" ||
-          JSON.stringify(next?.weekdays ?? null) !== JSON.stringify(prevRow?.weekdays ?? null);
+          JSON.stringify(next?.weekdays ?? null) !== JSON.stringify(prevRow?.weekdays ?? null) ||
+          // 명단에서 순서를 바꾸면 줄의 자리가 달라집니다. 화면에서 기워 맞추지 않고 다시 읽습니다.
+          (next?.sort_order ?? 0) !== (prevRow?.sort_order ?? 0);
         if (rosterChanged) {
           router.refresh();
           return;

@@ -5,6 +5,7 @@ import { nameWithoutMark, needsCheck, whereOf, type WhereMaps } from "@/lib/stud
 import { createPortal, flushSync } from "react-dom";
 import type { ChecklistItem, ChecklistRoute } from "./ShuttleChecklistClient";
 import { effectiveRouteId } from "./ShuttleChecklistTable";
+import { compareRoster } from "@/lib/rosterOrder";
 
 // 인쇄 전용 하원 체크표 - A4 세로 한 장.
 //
@@ -105,7 +106,7 @@ export default function ChecklistPrintSheet({
     }
     // 기사님이 도는 순서(정류장 순서)와 같아야 종이가 쓸모 있습니다.
     for (const [, list] of map) {
-      list.sort((a, b) => a.stopSeq - b.stopSeq || a.studentName.localeCompare(b.studentName, "ko"));
+      list.sort(compareRoster);
     }
     return { byRoute: map, riding, pickedUp, absent };
   }, [items, routes, todayW]);

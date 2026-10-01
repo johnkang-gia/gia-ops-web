@@ -4,6 +4,7 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import DismissalRosterClient, { type RosterRoute, type RosterAssignment, type RosterStudent } from "@/components/shuttle/DismissalRosterClient";
 import { effectiveRouteId, routeChoiceOf } from "@/lib/shuttleRoute";
 import { loadStudents } from "@/lib/students";
+import { compareRoster } from "@/lib/rosterOrder";
 
 export const dynamic = "force-dynamic";
 
@@ -40,13 +41,14 @@ export default async function DismissalRosterPage() {
       // 화면 어디에도 안 나왔으니까요.
       const { data: a } = await supabase
         .from("shuttle_assignments")
-        .select("id, stop_id, student_id, student_name_raw, weekdays, note, override_route_id")
+        .select("id, stop_id, student_id, student_name_raw, weekdays, note, override_route_id, sort_order")
         .in("stop_id", stopIds)
         .order("student_name_raw");
       assigns = (a ?? []) as RosterAssignment[];
     }
   }
 
+  const stopSeqOf = new Map(stops.map((st) => [st.id, st.seq]));
   const firstStop = new Map<string, string>();
   for (const st of stops) if (!firstStop.has(st.route_id)) firstStop.set(st.route_id, st.id);
 
@@ -60,7 +62,7 @@ export default async function DismissalRosterPage() {
     const rid = effectiveRouteId(
       routeChoiceOf({ stopRouteId: home, assignmentOverride: a.override_route_id }, knownRoute),
     );
-    (byRoute.get(rid) ?? byRoute.set(rid, []).get(rid)!).push({ ...a, homeRouteId: home });
+    (byRoute.get(rid) ?? byRoute.set(rid, []).get(rid)!).push({ ...a, homeRouteId: home, stopSeq: stopSeqOf.get(a.stop_id) ?? 0 });
   }
 
   const rosterRoutes: RosterRoute[] = routes
@@ -70,7 +72,11 @@ export default async function DismissalRosterPage() {
       name: (r.name as string | null) ?? null,
       driver_name: (r.driver_name as string | null) ?? null,
       firstStopId: firstStop.get(r.id as string) ?? null,
-      assignments: byRoute.get(r.id as string) ?? [],
+      // 순서는 체크표·인쇄본과 같은 규칙으로(@/lib/rosterOrder). 여기서 다르게 그리면 명단에서
+      // 옮긴 순서가 체크표에서는 안 보입니다.
+      assignments: (byRoute.get(r.id as string) ?? []).sort((x, y) =>
+        compareRoster({ stopSeq: x.stopSeq ?? 0, sortOrder: x.sort_order, studentName: x.student_name_raw }, { stopSeq: y.stopSeq ?? 0, sortOrder: y.sort_order, studentName: y.student_name_raw }),
+      ),
     }))
     // 명단이 없는 노선도 학생을 추가할 수 있게 전부 보여주되, 배정 있는 노선을 앞에.
     .sort((a, b) => Number(b.assignments.length > 0) - Number(a.assignments.length > 0));

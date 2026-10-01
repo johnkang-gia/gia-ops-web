@@ -79,7 +79,7 @@ export default async function ShuttleLivePage() {
     if (stopIds.length > 0) {
       const assignRes = await supabase
         .from("shuttle_assignments_basic")
-        .select("id, stop_id, student_name_raw, weekdays, override_route_id")
+        .select("id, stop_id, student_name_raw, weekdays, override_route_id, sort_order")
         .in("stop_id", stopIds);
       assignmentsData = assignRes.data ?? [];
     }
@@ -116,7 +116,7 @@ export default async function ShuttleLivePage() {
     const permanentRouteId = effectiveRouteId(
       routeChoiceOf({ stopRouteId: stop.route_id, assignmentOverride: a.override_route_id }, (id) => routeIds.includes(id)),
     );
-    allRoster.push({ assignmentId: a.id, studentName: a.student_name_raw, stopSeq: stop.seq, stopTime: stop.stop_time, routeId: permanentRouteId });
+    allRoster.push({ assignmentId: a.id, studentName: a.student_name_raw, stopSeq: stop.seq, sortOrder: (a as { sort_order?: number | null }).sort_order ?? 0, stopTime: stop.stop_time, routeId: permanentRouteId });
   }
 
   return (

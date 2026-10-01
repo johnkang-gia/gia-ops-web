@@ -10,6 +10,7 @@ import { useToast } from "@/components/common/ToastProvider";
 import { buildWhereMaps, nameWithoutMark, needsCheck, normName, whereOf } from "@/lib/studentLabel";
 import { DAY_LABEL, describeTaken, freeDays, takenDays, type RosterSlot } from "@/lib/rosterDays";
 import { isMovedPermanently } from "@/lib/shuttleRoute";
+import { compareRoster } from "@/lib/rosterOrder";
 
 // 하원 셔틀명단 설정(요청: 하원체크표 탭 분리). 노선(호차)별로 누가 무슨 요일에 타는지 한
 // 화면에서 보고 바로 고칩니다. 요일 버튼(월~금)을 눌러 켜고 끄면 즉시 저장되고, 체크표·안내
@@ -29,6 +30,10 @@ export type RosterAssignment = {
   override_route_id?: string | null;
   /** 정류장이 속한 원래 노선. 옮겨진 아이에게 「원래 N호」를 적어주기 위해 필요합니다. */
   homeRouteId?: string | null;
+  /** 같은 정류장 안에서 사람이 정한 순서. 0이면 이름 순. */
+  sort_order?: number | null;
+  /** 정류장 순서. 순서를 바꿀 때 정류장을 넘어가지 않게 하는 울타리입니다. */
+  stopSeq?: number;
 };
 
 /** 명부에서 고를 학생. 이름만 손으로 치면 오타 한 글자로 다른 아이가 됩니다. */
@@ -242,6 +247,48 @@ export default function DismissalRosterClient({
    * 그리고 명부의 학생 번호를 함께 남깁니다 - 이름만 적힌 줄은 오타 한 글자로 다른 아이가
    * 되고, 대시보드·체크표가 그 아이를 못 찾습니다.
    */
+  /**
+   * 한 칸 위·아래로. 같은 정류장 안에서만 움직입니다 - 차가 서는 순서를 거스르는 명단은 현장에서
+   * 못 씁니다. 그 정류장의 아이들을 보이는 순서 그대로 10·20·30… 으로 다시 매기고 둘을 바꿔
+   * 저장합니다. 전부 다시 매기는 이유: 0(안 정함)과 정한 수가 섞여 있으면 둘만 바꿔서는
+   * 보이는 순서가 안 바뀝니다.
+   */
+  async function moveStudent(route: RosterRoute, asg: RosterAssignment, dir: -1 | 1) {
+    const sameStop = route.assignments.filter((a) => a.stop_id === asg.stop_id);
+    const i = sameStop.findIndex((a) => a.id === asg.id);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= sameStop.length) return;
+    const next = [...sameStop];
+    [next[i], next[j]] = [next[j], next[i]];
+    const orders = new Map(next.map((a, n) => [a.id, (n + 1) * 10]));
+    setBusy(true);
+    const supabase = createClient();
+    const results = await Promise.all([...orders].map(([id, so]) => supabase.from("shuttle_assignments").update({ sort_order: so }).eq("id", id)));
+    setBusy(false);
+    const failed = results.find((r) => r.error);
+    if (failed?.error) {
+      notify("순서를 바꾸지 못했습니다: " + failed.error.message, "error");
+      return;
+    }
+    setRoutes((prev) =>
+      prev.map((r) =>
+        r.id !== route.id
+          ? r
+          : {
+              ...r,
+              assignments: [...r.assignments]
+                .map((a) => (orders.has(a.id) ? { ...a, sort_order: orders.get(a.id)! } : a))
+                .sort((x, y) =>
+                  compareRoster(
+                    { stopSeq: x.stopSeq ?? 0, sortOrder: x.sort_order, studentName: x.student_name_raw },
+                    { stopSeq: y.stopSeq ?? 0, sortOrder: y.sort_order, studentName: y.student_name_raw },
+                  ),
+                ),
+            },
+      ),
+    );
+  }
+
   async function addStudent(route: RosterRoute, s: RosterStudent) {
     if (!route.firstStopId) {
       notify(`${route.route_no}호에 정류장이 없어 학생을 넣을 수 없습니다. [노선 관리]에서 정류장을 먼저 만들어주세요.`, "error");
@@ -267,7 +314,7 @@ export default function DismissalRosterClient({
       // **이동은 비워서 넣습니다.** 값이 기본값에 기대면 언젠가 기본값이 바뀌고, 그때
       // 새로 넣은 아이가 엉뚱한 호차에 나타납니다. 여기서 넣는 아이는 이 노선을 탑니다.
       .insert({ stop_id: route.firstStopId, student_id: s.id, student_name_raw: s.name, weekdays: free, override_route_id: null })
-      .select("id, stop_id, student_id, student_name_raw, weekdays, note, override_route_id")
+      .select("id, stop_id, student_id, student_name_raw, weekdays, note, override_route_id, sort_order")
       .single();
     setBusy(false);
     if (error || !data) {
@@ -345,6 +392,26 @@ export default function DismissalRosterClient({
                     }
                   >
                     <div className="flex items-center gap-1.5">
+                      <span className="flex shrink-0 flex-col leading-none">
+                        <button
+                          type="button"
+                          onClick={() => void moveStudent(r, a, -1)}
+                          disabled={busy}
+                          className="text-[9px] text-slate-300 hover:text-slate-600 disabled:opacity-30"
+                          title="한 칸 위로 (같은 정류장 안에서)"
+                        >
+                          ▲
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void moveStudent(r, a, 1)}
+                          disabled={busy}
+                          className="text-[9px] text-slate-300 hover:text-slate-600 disabled:opacity-30"
+                          title="한 칸 아래로 (같은 정류장 안에서)"
+                        >
+                          ▼
+                        </button>
+                      </span>
                       <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-slate-700">
                         {nameWithoutMark(a.student_name_raw)}
                         {/* 학년·반은 **학생 번호로** 찾습니다. 이름으로 찾으면 김재이 셋이

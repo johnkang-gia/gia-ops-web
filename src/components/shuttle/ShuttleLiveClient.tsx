@@ -14,8 +14,9 @@ import { Who } from "@/components/common/HomonymProvider";
 // 속도 더 개선"). 재연결 등으로 이벤트를 놓쳤을 때를 대비한 안전망 폴링만 느슨하게 남겨둡니다.
 const FALLBACK_POLL_MS = 25000;
 import { effectiveRouteId, routeChoiceOf } from "@/lib/shuttleRoute";
+import { compareRoster } from "@/lib/rosterOrder";
 
-export type LiveRosterItem = { assignmentId: string; studentName: string; stopSeq: number; stopTime: string | null; routeId: string };
+export type LiveRosterItem = { assignmentId: string; studentName: string; stopSeq: number; sortOrder?: number | null; stopTime: string | null; routeId: string };
 type BoardingRow = { assignment_id: string; status: string; alighted_at: string | null; override_route_id: string | null };
 
 function natCompare(a: string, b: string) {
@@ -74,7 +75,7 @@ export default function ShuttleLiveClient({
       (map[targetRouteId] ??= []).push(item);
     }
     for (const key of Object.keys(map)) {
-      map[key].sort((x, y) => x.stopSeq - y.stopSeq || x.studentName.localeCompare(y.studentName, "ko"));
+      map[key].sort(compareRoster);
     }
     return map;
   }, [allRoster, boardingByAssignment, routeIdSet]);

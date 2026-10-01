@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { nameWithoutMark, needsCheck, normName, whereOf, type WhereMaps } from "@/lib/studentLabel";
 import { effectiveRouteId, isMovedPermanently, isMovedToday } from "@/lib/shuttleRoute";
 import type { ChecklistItem, ChecklistRoute } from "./ShuttleChecklistClient";
+import { compareRoster } from "@/lib/rosterOrder";
 
 function natCompare(a: string, b: string) {
   return a.localeCompare(b, "ko", { numeric: true });
@@ -92,7 +93,7 @@ export default function ShuttleChecklistTable({
       (map[routeId] ??= []).push(it);
     }
     for (const key of Object.keys(map)) {
-      map[key].sort((x, y) => x.stopSeq - y.stopSeq || x.studentName.localeCompare(y.studentName, "ko"));
+      map[key].sort(compareRoster);
     }
     return map;
   }, [items, routeById]);

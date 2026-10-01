@@ -11,6 +11,8 @@ import { useConfirm } from "@/components/common/ConfirmProvider";
 import { Who } from "@/components/common/HomonymProvider";
 import { groupPrepaid, summarize, ORIGIN_NOTE, type PrepaidRow, type PrepaidItem } from "@/lib/prepaidLedger";
 import type { Invoice } from "@/lib/types";
+import { PAYMENT_METHOD_KINDS } from "@/lib/payments";
+import { todayKst } from "@/lib/kst";
 
 const won = (n: number) => `${Math.round(n).toLocaleString("ko-KR")}원`;
 
@@ -48,6 +50,40 @@ export default function PrepaidClient({
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
+
+  /**
+   * **예치금 넣기** — 청구서에 안 붙는 입금 한 줄.
+   *
+   * 큰 돈을 먼저 내고 거기서 깎아 달라는 집이 있는데, 지금까지는 청구서가 있어야만 입금을
+   * 넣을 수 있어서 그 돈을 적을 자리가 없었습니다. 여기서 넣으면 「미리 받음」으로 이 대장에
+   * 뜨고, 다음 청구서를 만들 때 저절로 깎입니다.
+   */
+  const [adding, setAdding] = useState(false);
+  const [addStudent, setAddStudent] = useState<string | null>(null);
+  const [addAmount, setAddAmount] = useState("");
+  const [addDate, setAddDate] = useState(todayKst());
+  const [addMethod, setAddMethod] = useState<string>(PAYMENT_METHOD_KINDS[0]);
+  const [addMemo, setAddMemo] = useState("");
+
+  async function addPrepaid() {
+    const amount = Math.round(Number(addAmount));
+    if (!addStudent) return notify("학생을 골라주세요.", "error");
+    if (!Number.isFinite(amount) || amount <= 0) return notify("금액을 적어주세요.", "error");
+    setBusy("add");
+    const res = await fetch("/api/finance/prepaid", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ studentId: addStudent, amount, paidAt: addDate, method: addMethod, memo: addMemo }),
+    });
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    setBusy(null);
+    if (!res.ok) return notify(body.error ?? "넣지 못했습니다.", "error");
+    notify(`${nameById.get(addStudent) ?? "학생"} · ${won(amount)}을 예치금으로 넣었습니다. 다음 청구서에서 깎입니다.`, "success");
+    setAdding(false);
+    setAddAmount("");
+    setAddMemo("");
+    router.refresh();
+  }
 
   const nameById = useMemo(() => new Map(students.map((s) => [s.id, s.name])), [students]);
   const whereById = useMemo(
@@ -193,7 +229,7 @@ export default function PrepaidClient({
   return (
     <div className="mx-auto flex h-full max-w-5xl flex-col p-4 sm:p-6">
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <h1 className="text-lg font-bold">💰 선입금</h1>
+        <h1 className="text-lg font-bold">💰 예치금</h1>
         <span className="rounded-full bg-teal-50 px-2 py-0.5 text-[11px] font-bold text-teal-700">
           {sum.count}줄 · {won(sum.total)}
         </span>
@@ -203,6 +239,14 @@ export default function PrepaidClient({
           </span>
         )}
         <div className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            disabled={busy !== null}
+            onClick={() => setAdding((v) => !v)}
+            className="rounded-lg bg-teal-600 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-teal-700 disabled:opacity-50"
+          >
+            ＋ 예치금 넣기
+          </button>
           {sum.count > 0 && (
             <button
               type="button"
@@ -218,6 +262,62 @@ export default function PrepaidClient({
           </Link>
         </div>
       </div>
+
+      {adding && (
+        <div className="mb-3 rounded-xl border border-teal-300 bg-white p-3">
+          <p className="mb-2 text-[12px] font-bold text-slate-800">예치금 넣기 — 청구서 없이 미리 받은 돈</p>
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="min-w-[220px] flex-1">
+              <label className="block text-[11px] font-semibold text-slate-500">학생</label>
+              <StudentSelect students={students} value={addStudent} onChange={setAddStudent} />
+            </div>
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-500">금액</label>
+              <input
+                type="number"
+                value={addAmount}
+                onChange={(e) => setAddAmount(e.target.value)}
+                className="w-32 rounded-lg border border-slate-300 px-2 py-1 text-right text-[12px] tabular-nums"
+                placeholder="원"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-500">받은 날</label>
+              <input type="date" value={addDate} onChange={(e) => setAddDate(e.target.value)} className="rounded-lg border border-slate-300 px-2 py-1 text-[12px]" />
+            </div>
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-500">수단</label>
+              <select value={addMethod} onChange={(e) => setAddMethod(e.target.value)} className="rounded-lg border border-slate-300 px-2 py-1 text-[12px]">
+                {PAYMENT_METHOD_KINDS.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="min-w-[200px] flex-1">
+              <label className="block text-[11px] font-semibold text-slate-500">왜 미리 받았나</label>
+              <input
+                value={addMemo}
+                onChange={(e) => setAddMemo(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-2 py-1 text-[12px]"
+                placeholder="예: 학기 전체를 한 번에 내심 · 두 번 결제돼 다음 달에서 빼기로"
+              />
+            </div>
+            <button
+              type="button"
+              disabled={busy !== null}
+              onClick={() => void addPrepaid()}
+              className="rounded-lg bg-slate-900 px-3 py-1.5 text-[12px] font-bold text-white disabled:opacity-50"
+            >
+              {busy === "add" ? "넣는 중…" : "넣기"}
+            </button>
+          </div>
+          <p className="mt-2 text-[11px] text-slate-500">
+            넣은 돈은 이 학생의 다음 청구서(학비·학비외 구분 없음)에서 오래된 것부터 저절로 깎입니다. 돌려드려야 하면 이 대장에서 「내리기」로 이유를 적고 내립니다.
+          </p>
+        </div>
+      )}
 
       <p className="mb-3 rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-[11px] leading-relaxed text-teal-900">
         <b>어느 청구서에도 안 붙은 돈</b>입니다. 그대로 두면 다음 청구서에 저절로 충당되지만,
@@ -235,7 +335,7 @@ export default function PrepaidClient({
       {/* 가둔 화면 안쪽에서 굴립니다(CLAUDE.md 2-10). */}
       <div className="min-h-0 flex-1 overflow-y-auto">
         {groups.length === 0 ? (
-          <p className="py-16 text-center text-sm text-slate-400">떠 있는 선입금이 없습니다.</p>
+          <p className="py-16 text-center text-sm text-slate-400">떠 있는 예치금이 없습니다.</p>
         ) : (
           <div className="flex flex-col gap-2">
             {groups.map((g) => (

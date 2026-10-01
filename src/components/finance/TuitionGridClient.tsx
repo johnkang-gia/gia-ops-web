@@ -1395,9 +1395,28 @@ export default function TuitionGridClient({
                         })}
                         {/* 한 장 나갔다고 다 된 것이 아닙니다. 남은 항목이 있으면 말해줍니다 -
                             아무 표시가 없으면 담당자는 끝난 줄로 읽습니다. */}
+                        {/* 「남음」 표시만 띄우고 단추가 없던 자리입니다. 한 장이 나간 학생은 이 칸에
+                            발행 단추가 사라져서, 남은 항목(황이안 LMA 30만)을 보낼 길이 **그 줄에
+                            없었습니다.** 체크박스 → 위쪽 발행이 그 길이었는데 아무도 모릅니다.
+                            남은 것이 있으면 그 자리에서 보내거나, 이미 받은 것으로 넣습니다. */}
                         {hasUnbilled(s.id) && (
-                          <span className="rounded bg-amber-100 px-1 text-[10px] font-bold text-amber-800" title="아직 청구서에 안 담긴 항목이 있습니다">
-                            남음
+                          <span className="inline-flex items-center gap-1">
+                            <button
+                              onClick={() => issueChecked([], [s.id])}
+                              disabled={busy}
+                              className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800 hover:bg-amber-200 disabled:opacity-40"
+                              title="아직 청구서에 안 담긴 항목만 담아 발행합니다"
+                            >
+                              남은 항목 발행 →
+                            </button>
+                            <button
+                              onClick={() => setAlreadyFor(s)}
+                              disabled={busy}
+                              className="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-bold text-sky-800 hover:bg-sky-200 disabled:opacity-40"
+                              title="남은 항목 중 이미 받은 것을 넣습니다"
+                            >
+                              💰
+                            </button>
                           </span>
                         )}
                       </span>
@@ -1513,7 +1532,21 @@ export default function TuitionGridClient({
           lines={usedPlans
             .map((p) => ({ plan: p, line: lineFor(alreadyFor.id, p) }))
             .filter((x) => !!x.line)
-            .map((x) => ({ id: x.plan.id, label: x.plan.name, amount: Number(x.line?.subtotal ?? 0) }))}
+            .map((x) => {
+              // 이미 청구서에 담긴 항목은 **잠급니다.** 학비외 창은 처음부터 잠갔는데 학비 창은
+              // 안 잠가서, 「이미 받음」을 두 번 누르면 같은 항목 청구서가 두 장 됐습니다
+              // (황이안 2026-0169/0170). 데이터베이스도 막지만, 눌러보고 거절당하는 것보다
+              // 처음부터 회색인 편이 낫습니다.
+              const b = billed.get(alreadyFor.id);
+              const taken = !!b && (b.all || b.names.has(x.plan.name));
+              const state = billStateOf.get(alreadyFor.id)?.get(x.plan.name);
+              return {
+                id: x.plan.id,
+                label: x.plan.name,
+                amount: Number(x.line?.subtotal ?? 0),
+                lockedNote: taken ? (state === "완납" ? "이미 받음(청구서 있음)" : "이미 청구서에 담김") : null,
+              };
+            })}
           busy={busy}
           onClose={() => setAlreadyFor(null)}
           onSubmit={(r) => void recordAlreadyPaid(alreadyFor, r.paidAt, r.amount, r.method, r.memo, r.pickedIds)}

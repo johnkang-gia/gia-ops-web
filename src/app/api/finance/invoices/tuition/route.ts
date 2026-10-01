@@ -246,7 +246,18 @@ export async function POST(req: Request) {
     })
     .select()
     .single();
-  if (invErr || !inv) return NextResponse.json({ error: invErr?.message ?? "발행 실패" }, { status: 500 });
+  if (invErr || !inv) {
+    // 23505 = 같은 학생·학기·청구월·항목 범위의 학비 청구서가 이미 「발행」 상태입니다
+    // (`invoices_tuition_scope_month_uniq`). 두 탭에서 눌렀거나 어제 누른 것을 잊은 경우입니다.
+    // 데이터베이스 메시지를 그대로 보여주면 사람은 무엇을 해야 하는지 모릅니다.
+    if (invErr?.code === "23505") {
+      return NextResponse.json(
+        { error: `${planScope ?? "학비 전부"} 청구서가 이 달에 이미 있습니다. 같은 항목을 두 번 발행하지 않습니다 - 그 장을 취소한 뒤 다시 만들어주세요.` },
+        { status: 409 },
+      );
+    }
+    return NextResponse.json({ error: invErr?.message ?? "발행 실패" }, { status: 500 });
+  }
 
   // 할인을 **별도 줄로** 남깁니다. 깎인 금액만 적으면 학부모가 「원래 얼마였는데 얼마
   // 깎였는지」를 알 수 없고, 그 문의가 그대로 행정실로 옵니다.

@@ -34,15 +34,18 @@ export type PrepaidRow = {
   memo: string | null;
   source: string | null;
   matched_by: string | null;
+  /** 어디서 온 돈인가(payments.origin). 넣을 때 적고 못 바꿉니다. */
+  origin?: string | null;
   created_at?: string | null;
 };
 
 /** 이 돈이 어쩌다 여기 있게 됐나. */
-export type PrepaidOrigin = "주인 미상" | "청구 취소" | "미리 받음";
+export type PrepaidOrigin = "주인 미상" | "청구 취소" | "과납" | "미리 받음";
 
 export const ORIGIN_NOTE: Record<PrepaidOrigin, string> = {
   "주인 미상": "누구 것인지 모르는 돈입니다. 학생을 이어주세요.",
   "청구 취소": "청구서를 취소하면서 떨어져 나온 돈입니다. 다시 붙이거나 돌려주세요.",
+  "과납": "청구액보다 많이 낸 돈입니다(두 번 결제 등). 다음 청구서에 저절로 충당됩니다 - 돌려드려야 하면 내리세요.",
   "미리 받음": "청구서보다 먼저 받은 돈입니다. 다음 청구서에 저절로 충당됩니다.",
 };
 
@@ -50,7 +53,8 @@ export const ORIGIN_NOTE: Record<PrepaidOrigin, string> = {
 const ORIGIN_RANK: Record<PrepaidOrigin, number> = {
   "주인 미상": 0,
   "청구 취소": 1,
-  "미리 받음": 2,
+  "과납": 2,
+  "미리 받음": 3,
 };
 
 /**
@@ -60,6 +64,7 @@ const ORIGIN_RANK: Record<PrepaidOrigin, number> = {
 export function originOf(r: PrepaidRow): PrepaidOrigin {
   if (!r.student_id) return "주인 미상";
   if ((r.matched_by ?? "").includes("취소")) return "청구 취소";
+  if (r.origin === "과납") return "과납";
   return "미리 받음";
 }
 

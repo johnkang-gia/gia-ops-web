@@ -71,7 +71,7 @@ export default function PayModal({
   const finalAmount = useLines ? pickedTotal : amount;
   const leftAfter = target.balance - finalAmount;
 
-  async function save() {
+  async function save(keepExcess = false) {
     if (!method) return setErr("납부 수단을 골라주세요.");
     if (useLines && picked.size === 0) return setErr("받은 항목을 골라주세요.");
     setBusy(true);
@@ -83,12 +83,26 @@ export default function PayModal({
         method,
         paidAt,
         ...(useLines ? { lineIds: [...picked] } : { amount }),
+        keepExcess,
       }),
     });
-    const body = await res.json().catch(() => ({}));
+    const body = (await res.json().catch(() => ({}))) as { error?: string; excess?: number; balance?: number };
     setBusy(false);
-    if (!res.ok) return setErr((body as { error?: string }).error ?? "저장하지 못했습니다.");
-    onDone(`${target.label} · ${won(finalAmount)} ${method}으로 받았습니다.`);
+    // 청구액보다 많이 적었을 때. 거절하지 않고 **넘는 돈을 예치금으로 둘지** 묻습니다 -
+    // 두 번 낸 집, 큰 돈을 미리 낸 집이 실제로 있고, 그 돈은 다음 청구에서 깎아야 합니다.
+    // 창은 서버가 센 금액을 그대로 보여줍니다. 여기서 다시 계산하면 두 숫자가 어긋납니다.
+    if (res.status === 409 && typeof body.excess === "number" && body.excess > 0) {
+      const ok = confirm(
+        `이 청구서의 남은 금액은 ${won(body.balance ?? 0)}입니다.\n` +
+          `넘는 ${won(body.excess)}을 이 학생의 예치금으로 두고, 다음 청구서에서 깎을까요?\n\n` +
+          `(돌려드려야 하는 돈이면 「취소」하고 환불로 처리해주세요.)`,
+      );
+      if (!ok) return;
+      return save(true);
+    }
+    if (!res.ok) return setErr(body.error ?? "저장하지 못했습니다.");
+    const ex = typeof body.excess === "number" && body.excess > 0 ? ` · 넘는 ${won(body.excess)}은 예치금으로` : "";
+    onDone(`${target.label} · ${won(Math.min(finalAmount, target.balance))} ${method}으로 받았습니다.${ex}`);
     onClose();
   }
 
@@ -214,7 +228,9 @@ export default function PayModal({
                     .map((l) => l.name)
                     .join(" · ")}`
                 : "")
-            : "이 청구서는 완납됩니다"}
+            : leftAfter < 0
+              ? `이 청구서는 완납되고, 넘는 ${won(-leftAfter)}은 예치금으로 둡니다(다음 청구서에서 깎임)`
+              : "이 청구서는 완납됩니다"}
         </p>
 
         <div className="mb-3 flex items-center gap-2">

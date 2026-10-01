@@ -103,15 +103,41 @@ export async function POST(req: Request) {
   const asked = Number(body?.amount);
   const amount = lineIds.length > 0 ? lineTotal : Number.isFinite(asked) && asked > 0 ? Math.round(asked) : s.balance;
   if (amount <= 0) return NextResponse.json({ error: "이미 완납된 청구서입니다." }, { status: 400 });
-  if (amount > s.balance) {
-    return NextResponse.json({ error: `남은 금액(${s.balance.toLocaleString()}원)보다 많습니다.` }, { status: 400 });
-  }
 
-  const { data: made, error } = await supabase.from("payments").insert({
+  // ── 청구액보다 많이 받았을 때 ────────────────────────────────────────────
+  //
+  // 예전에는 거절했습니다(「남은 금액보다 많습니다」). 그런데 실수로 두 번 낸 집, 큰 돈을
+  // 미리 보낸 집이 실제로 있고, 그분들은 환불이 아니라 **다음 청구에서 빼 달라**고 합니다.
+  // 거절하면 그 돈은 어디에도 안 적히고, 메모는 장부가 아닙니다.
+  //
+  // 넘는 만큼은 **예치금**으로 적습니다 - 청구서에 안 붙은 입금 한 줄(`invoice_id = null`,
+  // `origin = '과납'`). 다음 청구서를 만들 때 저절로 깎입니다(`prepaidApply`). 다만 사람이
+  // 그 사실을 **알고 눌러야** 하므로, 화면이 `keepExcess: true` 를 함께 보낼 때만 그렇게 하고
+  // 아니면 얼마가 남는지를 알려주고 멈춥니다.
+  const asksTotal = Number.isFinite(asked) && asked > 0 && lineIds.length === 0 ? Math.round(asked) : amount;
+  const excess = Math.max(0, asksTotal - s.balance);
+  const keepExcess = body?.keepExcess === true;
+  if (excess > 0 && !keepExcess) {
+    return NextResponse.json(
+      {
+        error: `남은 금액(${s.balance.toLocaleString()}원)보다 ${excess.toLocaleString()}원 많습니다.`,
+        excess,
+        balance: s.balance,
+      },
+      { status: 409 },
+    );
+  }
+  const onInvoice = Math.min(asksTotal, s.balance);
+
+  // 청구서에 붙는 몫이 0이면(이미 완납인데 또 낸 경우) 청구서 줄은 만들지 않고 예치금만 적습니다.
+  // 0원짜리 입금 줄은 「받았다」로 세어져 목록을 흐립니다.
+  const { data: made, error } = onInvoice <= 0
+    ? { data: { id: null as string | null }, error: null }
+    : await supabase.from("payments").insert({
     invoice_id: inv.id,
     student_id: inv.student_id,
     paid_at: paidAt,
-    amount,
+    amount: onInvoice,
     method,
     method_kind: method,
     payer_name: (inv.student_name_ko as string | null) ?? (inv.student_name as string),
@@ -124,9 +150,35 @@ export async function POST(req: Request) {
   }).select("id").single();
   if (error || !made) return NextResponse.json({ error: error?.message ?? "저장 실패" }, { status: 500 });
 
+  // 넘는 돈은 예치금 한 줄. 어느 장에서 넘쳤는지를 메모에 남깁니다 - 몇 달 뒤 「이 돈이
+  // 왜 있지」에 답할 수 있어야 합니다. 출처는 과납이고, 다음 청구서가 저절로 가져갑니다.
+  if (excess > 0) {
+    const { error: exErr } = await supabase.from("payments").insert({
+      invoice_id: null,
+      student_id: inv.student_id,
+      paid_at: paidAt,
+      amount: excess,
+      method,
+      method_kind: method,
+      payer_name: (inv.student_name_ko as string | null) ?? (inv.student_name as string),
+      memo: `${inv.invoice_no} 청구액을 넘긴 ${excess.toLocaleString()}원. 다음 청구서에서 깎입니다.${body?.memo ? ` · ${body.memo}` : ""}`,
+      source: "완납체크",
+      matched_by: "예치금",
+      origin: "과납",
+      created_by: me.email,
+    });
+    // 청구서 몫은 들어갔는데 넘는 돈이 안 적히면 그 돈은 어디에도 없습니다. 반드시 알립니다.
+    if (exErr) {
+      return NextResponse.json(
+        { error: `청구서 몫(${onInvoice.toLocaleString()}원)은 넣었지만 넘는 ${excess.toLocaleString()}원을 예치금으로 적지 못했습니다: ${exErr.message}. 예치금 화면에서 직접 넣어주세요.` },
+        { status: 500 },
+      );
+    }
+  }
+
   // 어느 항목을 덮었는지 표시합니다. 실패를 삼키지 않습니다 - 돈은 들어갔는데 항목이
   // 안 붙으면 「무엇이 남았나」가 영영 틀립니다.
-  if (lineIds.length > 0) {
+  if (lineIds.length > 0 && made.id) {
     const { error: markErr } = await supabase
       .from("invoice_lines")
       .update({ paid_payment_id: made.id })
@@ -140,5 +192,5 @@ export async function POST(req: Request) {
     }
   }
 
-  return NextResponse.json({ ok: true, amount, balance: s.balance - amount });
+  return NextResponse.json({ ok: true, amount: onInvoice, excess, balance: s.balance - onInvoice });
 }

@@ -10,6 +10,8 @@ import type { Ledger, LedgerCharge, LedgerInvoice } from "@/lib/studentLedger";
 import type { Invoice } from "@/lib/types";
 import type { AlreadyPaidResult } from "@/components/finance/AlreadyPaidModal";
 import AlreadyPaidModal from "@/components/finance/AlreadyPaidModal";
+import { FINANCE_TABLES } from "@/lib/useFinanceLive";
+import { createClient } from "@/lib/supabase/client";
 import PayModal from "@/components/finance/PayModal";
 import CancelInvoiceModal from "@/components/finance/CancelInvoiceModal";
 import InvoicePreviewModal from "@/components/finance/InvoicePreviewModal";
@@ -101,6 +103,27 @@ export default function StudentLedgerModal({
   useEffect(() => {
     void load();
   }, [load]);
+
+  /**
+   * 열린 창도 실시간입니다. 옆자리에서 이 아이의 입금을 넣거나 항목을 고치면 이 창이 옛 숫자를
+   * 들고 있게 되고, 그 숫자로 청구서를 만들면 두 번 청구됩니다. 재무 표가 바뀌면 다시 읽습니다 -
+   * 자기 손으로 바꾼 것도 한 번 더 읽게 되지만, 틀린 숫자를 드는 것보다 낫습니다.
+   */
+  useEffect(() => {
+    const supabase = createClient();
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const reload = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => void load(), 400);
+    };
+    const channel = supabase.channel(`student-ledger-${studentId}`);
+    for (const table of [...FINANCE_TABLES, "wr_students"]) channel.on("postgres_changes", { event: "*", schema: "public", table }, reload);
+    channel.subscribe();
+    return () => {
+      if (timer) clearTimeout(timer);
+      void supabase.removeChannel(channel);
+    };
+  }, [studentId, load]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && !already && !paying && !cancelling && !preview && !exporting && onClose();

@@ -374,6 +374,10 @@ const DOCS_TABS: TabDef[] = [
 // 순서는 자주 여는 것부터입니다. 재무 일은 대개 "지금 어디까지 됐나"에서 시작합니다.
 const FINANCE_TABS: TabDef[] = [
   { key: "overview", label: "개요", icon: "📊", href: "/finance", match: ["/finance"] },
+  // **회계가 재무의 중심입니다.** 학생이 이 학기에 내야 할 돈 전부와 청구서를 한 화면에서 보고,
+  // 학생을 누르면 창 하나에서 발행·입금·영수증·항목 수정·올톡페이를 다 합니다. 청구 안에
+  // 묻어 두면 한 단계 더 들어가야 해서 가장 많이 여는 화면이 가장 멀리 있게 됩니다.
+  { key: "ledger", label: "회계", icon: "📒", href: "/finance/ledger", match: ["/finance/ledger"] },
   // **월별·학기별**은 「지금」이 아니라 「흐름」을 보는 자리입니다. 다음 달에 얼마를 청구할지는
   // 지난 달들을 나란히 놓고 정하는 일인데, 지금까지 나란히 놓을 자리가 없었습니다.
   {
@@ -404,12 +408,10 @@ const FINANCE_TABS: TabDef[] = [
     key: "billing",
     label: "청구",
     icon: "🧾",
-    href: "/finance/ledger",
-    match: ["/finance/ledger", "/finance/tuition", "/finance/invoices", "/finance/unpaid"],
+    href: "/finance/tuition",
+    match: ["/finance/tuition", "/finance/invoices", "/finance/unpaid"],
     children: [
-      // **회계가 첫 자리입니다.** 학생을 누르면 창 하나에서 발행·입금·영수증·항목 수정·올톡페이를
-      // 다 합니다. 학비·학비외 표는 반 전체를 한 번에 체크할 때 씁니다.
-      { label: "회계", href: "/finance/ledger", match: ["/finance/ledger"] },
+      // 반 전체를 한 번에 체크해서 발행할 때 쓰는 표들입니다. 학생 한 명의 일은 회계 탭에서 합니다.
       { label: "학비", href: "/finance/tuition", match: ["/finance/tuition"] },
       { label: "학비외", href: "/finance/invoices", match: ["/finance/invoices"] },
       // **미납금은 따로 관리합니다.** 예전에는 새 청구서를 발행할 때 저절로 얹혔는데,

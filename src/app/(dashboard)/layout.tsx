@@ -478,12 +478,13 @@ export default async function DashboardLayout({
         label: "재무",
         icon: "💰",
         accent: "teal",
-        href: "/finance",
+        // 재무를 누르면 회계로 갑니다 - 가장 많이 여는 화면이자 모든 일을 처리하는 자리입니다.
+        href: "/finance/ledger",
         items: [
           { href: "/finance", label: "개요", icon: "📊" },
+          { href: "/finance/ledger", label: "회계", icon: "📒" },
           // 청구는 학비·학비외 두 화면입니다. 상단 탭에서는 「청구」 하나로 묶여 있고,
           // 옆 메뉴에서는 둘 다 보여야 바로 건너뛸 수 있습니다.
-          { href: "/finance/ledger", label: "회계", icon: "📒" },
           { href: "/finance/tuition", label: "청구 · 학비", icon: "💰" },
           { href: "/finance/invoices", label: "청구 · 학비외", icon: "🧾" },
           { href: "/finance/payments", label: "수납", icon: "💳" },

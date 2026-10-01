@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useFinanceLive } from "@/lib/useFinanceLive";
 import { useToast } from "@/components/common/ToastProvider";
@@ -89,6 +89,66 @@ export default function LedgerClient({
 }) {
   // 돈에 닿는 표가 바뀌면 서버가 다시 셉니다. 창에서 발행하면 뒤의 목록도 함께 바뀝니다.
   useFinanceLive(["wr_students", "student_fee_enrollments", "student_fee_items", "fee_plans", "fee_items"]);
+
+  /**
+   * **무엇이 방금 바뀌었는지 화면이 말합니다.**
+   *
+   * 실시간 구독은 서버가 다시 그리게만 하므로 숫자는 맞아도 **어디가 바뀌었는지는 안 보입니다.**
+   * 옆자리에서 입금을 넣거나 학생 창에서 항목을 고치면 표의 한 칸이 조용히 바뀌는데, 보는 사람은
+   * 그 칸을 보고 있지 않습니다. 그래서 새로 받은 자료를 직전 것과 견줘 달라진 학생·청구서 줄을
+   * 몇 초 밝히고, 머리에 「방금: 고진우 청구됨 ₩291,000 → ₩741,000」처럼 적어 둡니다.
+   * 처음 한 번(직전 자료가 없을 때)은 비교하지 않습니다.
+   */
+  const sigOfRow = (r: LedgerRow) => [r.toBill, r.billed, r.unpaid, r.deposit, r.expected, r.tuitionTotal, r.extraTotal, r.tuition.map((c) => c.label).join("|"), r.extra.map((e) => `${e.category}${e.count}`).join("|")].join("/");
+  const sigOfInv = (v: LedgerInvoiceRow) => [v.state, v.balance, v.amount, v.exported ? 1 : 0].join("/");
+  const prevRef = useRef<{ rows: Map<string, string>; inv: Map<string, string> } | null>(null);
+  const [flash, setFlash] = useState<Set<string>>(new Set());
+  const [recent, setRecent] = useState<{ key: string; text: string; at: number }[]>([]);
+  useEffect(() => {
+    const curRows = new Map(rows.map((r) => [r.id, sigOfRow(r)]));
+    const curInv = new Map(invoices.map((v) => [v.id, sigOfInv(v)]));
+    const prev = prevRef.current;
+    prevRef.current = { rows: curRows, inv: curInv };
+    if (!prev) return;
+    const changed = new Set<string>();
+    const notes: { key: string; text: string; at: number }[] = [];
+    const at = Date.now();
+    for (const r of rows) {
+      const before = prev.rows.get(r.id);
+      if (before === undefined || before === curRows.get(r.id)) continue;
+      changed.add(r.id);
+      const b = before.split("/").map(Number);
+      const what =
+        b[2] !== r.unpaid ? `미납 ${won(b[2])} → ${won(r.unpaid)}`
+        : b[1] !== r.billed ? `청구됨 ${won(b[1])} → ${won(r.billed)}`
+        : b[3] !== r.deposit ? `예치금 ${won(b[3])} → ${won(r.deposit)}`
+        : b[0] !== r.toBill ? `청구할 금액 ${won(b[0])} → ${won(r.toBill)}`
+        : "항목이 바뀜";
+      notes.push({ key: `s:${r.id}:${at}`, text: `${r.name} · ${what}`, at });
+    }
+    for (const v of invoices) {
+      const before = prev.inv.get(v.id);
+      if (before === undefined) {
+        notes.push({ key: `i:${v.id}:${at}`, text: `${v.studentName} · ${v.invoiceNo} 새로 발행 ${won(v.amount)}`, at });
+        changed.add(v.id);
+        continue;
+      }
+      if (before === curInv.get(v.id)) continue;
+      changed.add(v.id);
+      const [state, , , exp] = before.split("/");
+      const what = state !== v.state ? `${v.invoiceNo} ${state} → ${v.state}` : exp !== (v.exported ? "1" : "0") ? `${v.invoiceNo} 올톡 ${v.exported ? "보냄" : "표시 지움"}` : `${v.invoiceNo} 바뀜`;
+      notes.push({ key: `i:${v.id}:${at}`, text: `${v.studentName} · ${what}`, at });
+    }
+    for (const [id] of prev.inv) if (!curInv.has(id)) notes.push({ key: `x:${id}:${at}`, text: "청구서 한 장이 취소·이월됨", at });
+    if (changed.size === 0 && notes.length === 0) return;
+    setFlash(changed);
+    setRecent((p) => [...notes, ...p].slice(0, 6));
+    const t = setTimeout(() => setFlash(new Set()), 6000);
+    return () => clearTimeout(t);
+    // 자료가 새로 올 때만. 서명 함수는 안정적입니다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, invoices]);
+  const flashCls = (id: string) => (flash.has(id) ? " bg-amber-100 transition-colors duration-700" : "");
   const router = useRouter();
   const notify = useToast();
 
@@ -231,6 +291,18 @@ export default function LedgerClient({
 
       {loadError && <p className="mb-2 rounded-lg bg-rose-50 px-3 py-2 text-[12px] font-bold text-rose-700">일부 자료를 못 읽었습니다 — 숫자가 모자랄 수 있습니다: {loadError}</p>}
 
+      {recent.length > 0 && (
+        <div className="mb-2 flex flex-wrap items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-900">
+          <span className="font-black">방금 바뀜</span>
+          {recent.map((n) => (
+            <span key={n.key} className="rounded bg-white/70 px-1.5 py-0.5">
+              {n.text} <span className="text-amber-500">{new Date(n.at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}</span>
+            </span>
+          ))}
+          <button onClick={() => setRecent([])} className="ml-auto text-amber-400 hover:text-amber-800" title="지우기">✕</button>
+        </div>
+      )}
+
       <ScopeTabs dept={dept} students={scopeStudents} scope={scope} onChange={setScope} />
 
       {tab === "학생" ? (
@@ -253,7 +325,7 @@ export default function LedgerClient({
             </thead>
             <tbody>
               {studentRows.map((r) => (
-                <tr key={r.id} onClick={() => setOpen(r.id)} className="h-12 cursor-pointer border-t border-slate-100 hover:bg-indigo-50/40" title="누르면 학생 금전 창이 열립니다">
+                <tr key={r.id} onClick={() => setOpen(r.id)} className={"h-12 cursor-pointer border-t border-slate-100 hover:bg-indigo-50/40" + flashCls(r.id)} title="누르면 학생 금전 창이 열립니다">
                   <td className="whitespace-nowrap px-2 font-semibold text-slate-800">
                     <Who id={r.id} name={r.name} />
                     <span className="ml-1 text-[10px] font-normal text-slate-400">
@@ -316,7 +388,7 @@ export default function LedgerClient({
                   };
                   const extraOf = new Map(r.extra.map((e) => [e.category, e]));
                   return (
-                    <tr key={r.id} onClick={() => setOpen(r.id)} className="h-12 cursor-pointer border-t border-slate-100 hover:bg-indigo-50/40">
+                    <tr key={r.id} onClick={() => setOpen(r.id)} className={"h-12 cursor-pointer border-t border-slate-100 hover:bg-indigo-50/40" + flashCls(r.id)}>
                       {tuitionCell("정규")}
                       {tuitionCell("방과후")}
                       {tuitionCell("그외")}
@@ -443,7 +515,7 @@ export default function LedgerClient({
               <table className="w-full text-[12px]">
                 <tbody>
                   {list.map((v) => (
-                    <tr key={v.id} className="border-t border-slate-100 hover:bg-slate-50">
+                    <tr key={v.id} className={"border-t border-slate-100 hover:bg-slate-50" + flashCls(v.id)}>
                       <td className="w-6 px-2 py-1">
                         <input type="checkbox" checked={picked.has(v.id)} onChange={() => togglePick(v.id)} />
                       </td>

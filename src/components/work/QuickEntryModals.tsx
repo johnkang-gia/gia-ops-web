@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { todayKst } from "@/lib/kst";
 import { DISMISSAL_REPEATS, REPEAT_HINT, weekStartFor, type DismissalRepeat } from "@/lib/dismissalWeek";
 import { loadStudents } from "@/lib/students";
+import { useToast } from "@/components/common/ToastProvider";
 
 /**
  * 업무보드에서 연락 하나를 **그 자리에서** 처리하는 팝업들.
@@ -205,6 +206,7 @@ export function RangeEditModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const notify = useToast();
   const [from, setFrom] = useState(from0);
   const [to, setTo] = useState(to0);
   /**
@@ -227,10 +229,10 @@ export function RangeEditModal({
       body: JSON.stringify({ id: entryId, dateFrom: from, dateTo: to, status: kind, state: "등록" }),
     });
     setBusy(false);
-    if (!res.ok) {
-      const b = await res.json().catch(() => ({}));
-      return setErr((b as { error?: string }).error || "저장하지 못했습니다.");
-    }
+    const b = (await res.json().catch(() => ({}))) as { error?: string; reconcileNote?: string | null };
+    if (!res.ok) return setErr(b.error || "저장하지 못했습니다.");
+    // 셔틀·출석부가 어떻게 따라갔는지 보여줍니다. 조용히 닫으면 「날짜만 바뀌었나」 하고 의심하게 됩니다.
+    if (b.reconcileNote) notify(b.reconcileNote, "success");
     onSaved();
     onClose();
   }

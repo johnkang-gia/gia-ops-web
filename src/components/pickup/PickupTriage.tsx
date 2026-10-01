@@ -144,7 +144,7 @@ export default function PickupTriage({
    * ── 무엇이 문제였나 ───────────────────────────────────────────────────────
    *
    * 픽업·결석·지각·셔틀·특이사항 단추가 전부 `r.student_id` 안에 들어 있었습니다. 형제방
-   * 글은 아이가 안 갈려서 그 값이 비어 있으니, **[문의사항이 아님]밖에 누를 수 없었습니다** -
+   * 글은 아이가 안 갈려서 그 값이 비어 있으니, **[넘기기]밖에 누를 수 없었습니다** -
    * 「황라원은 일찍 픽업, 황라윤은 셔틀」 같은 연락을 이 화면에서 처리할 방법이 없었습니다.
    *
    * 이제 대상은 **체크된 아이들**입니다. 한 명이면 예전과 똑같이 한 줄, 여럿이면 아이마다
@@ -782,7 +782,7 @@ export default function PickupTriage({
                         // 아무도 안 남았으면 무엇을 확정하는지가 없습니다. 「아님」으로 내리는
                         // 길은 아래 단추에 이미 있습니다.
                         <span className="ml-auto text-[11px] font-semibold text-rose-600">
-                          한 명은 남겨주세요. 아무에게도 해당 없으면 [문의사항이 아님]입니다.
+                          한 명은 남겨주세요. 아무에게도 해당 없으면 [넘기기]입니다.
                         </span>
                       ) : checkedOf(r).length === 1 ? (
                         // 한 명만 남았으면 아래 대상 줄이 그 아이 것으로 이미 떠 있습니다.
@@ -921,10 +921,10 @@ export default function PickupTriage({
                   <button
                     onClick={() => ignore(r)}
                     disabled={busy}
-                    title="인사·광고처럼 처리할 일이 없는 글입니다. 잘못 눌렀으면 아래 접힌 목록에서 되돌립니다."
+                    title="처리할 일이 없는 글(인사·광고·이미 끝난 일)을 목록에서 내립니다. 잘못 눌렀으면 아래 접힌 목록에서 되돌립니다."
                     className="ml-auto rounded-lg border border-slate-300 px-2 py-1.5 text-[11px] font-semibold text-slate-500"
                   >
-                    문의사항이 아님
+                    넘기기
                   </button>
                 </div>
 

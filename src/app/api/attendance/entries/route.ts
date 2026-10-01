@@ -5,6 +5,7 @@ import { scanIntoEntries, type ScanSource } from "@/lib/attendanceEntries";
 import { buildStaffNames, todayKey, type LearningRule, type RosterStudent } from "@/lib/attendanceDigest";
 import { classHintFromMentions, type TeacherClass } from "@/lib/mentionHints";
 import { attendanceUndoSummary, undoAttendanceEntries } from "@/lib/attendanceUndo";
+import { reconcileEntryChange, reconcileSummary, type EntryShape } from "@/lib/attendanceReconcile";
 import { loadStudents } from "@/lib/students";
 
 // 업무보드 인박스가 쓰는 출결 등록 창구입니다.
@@ -422,8 +423,30 @@ export async function PATCH(req: NextRequest) {
   if (body.dateTo) patch.date_to = body.dateTo;
   if (body.note !== undefined) patch.note = body.note;
 
+  // 고치기 **전**을 읽어 둡니다. 날짜·상태가 바뀌면 전과 후의 날짜를 비교해 셔틀 체크표와
+  // 출석부를 따라 고쳐야 하는데, 고친 뒤에는 무엇이 전이었는지 알 수 없습니다.
+  const { data: beforeRow } = await db
+    .from("attendance_entries")
+    .select("id, student_id, student_name, status, state, date_from, date_to, source")
+    .eq("id", body.id)
+    .maybeSingle();
+
   const { data, error } = await db.from("attendance_entries").update(patch).eq("id", body.id).select().maybeSingle();
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
 
-  return NextResponse.json({ ok: true, entry: data });
+  // 인박스 줄만 고치고 끝내지 않습니다. 10/1~10/6 로 잘못 잡힌 결석의 시작일을 10/2 로 고쳤는데
+  // 10/1 체크표·출석부의 결석이 그대로 남아, 학교에 나온 아이가 셔틀에서 빠져 있었습니다.
+  let reconcileNote: string | null = null;
+  if (beforeRow && data) {
+    const r = await reconcileEntryChange(db, beforeRow as EntryShape, data as EntryShape, {
+      email: auth.user.email ?? "",
+      name: null,
+    });
+    if (r.errors.length > 0) {
+      return NextResponse.json({ ok: false, entry: data, error: `줄은 고쳤지만 셔틀·출석부를 따라 고치지 못했습니다: ${r.errors.join(" / ")}` }, { status: 500 });
+    }
+    reconcileNote = reconcileSummary(r);
+  }
+
+  return NextResponse.json({ ok: true, entry: data, reconcileNote });
 }

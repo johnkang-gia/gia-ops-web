@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { subscribeShuttleLive } from "@/lib/shuttleLive";
+import { usePagePresence } from "@/lib/usePagePresence";
 import { logChecklist, reasonOf, type ChecklistLogRow, type LogActor } from "@/lib/checklistLog";
 import { setBoardingStatus } from "@/lib/boardingWrite";
 import { useToast } from "@/components/common/ToastProvider";
@@ -200,6 +201,10 @@ export default function ShuttleChecklistClient({
    * 누른 것을 덮어쓰지 않습니다. 서버는 오늘 탑승 상태(shuttle_boardings)도 함께 읽어 오므로,
    * 갈아끼운 뒤의 값이 곧 지금 참입니다.
    */
+  // 오늘 체크표를 함께 열어 둔 사람. 체크표는 늘 오늘치입니다.
+  const present = usePagePresence(`shuttle-checklist-${todayStr()}`, actor);
+  const others = present.filter((p) => p.email !== actor.email);
+
   useEffect(() => {
     setItems(initialItems);
   }, [initialItems]);
@@ -1162,6 +1167,18 @@ export default function ShuttleChecklistClient({
         onStatusReverted={() => router.refresh()}
       />
       <div className="min-w-0 flex-1">
+        {/* 함께 보고 있는 사람. 혼자면 조용히 - 늘 떠 있는 표시는 아무도 안 봅니다. */}
+        {others.length > 0 && (
+          <div className="mb-2 flex flex-wrap items-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-3 py-1.5 text-[11px] text-sky-800 print:hidden">
+            <span className="font-bold">👥 함께 보는 중 {others.length}명</span>
+            {others.map((p) => (
+              <span key={p.email} className="rounded-full border border-sky-300 bg-white px-2 py-0.5" title={p.email}>
+                {p.name || p.email.split("@")[0]}
+              </span>
+            ))}
+            <span className="text-sky-600">· 같은 아이를 동시에 고치면 나중 것이 남습니다</span>
+          </div>
+        )}
         {notes.length > 0 && (
           <div className="mb-2 rounded-xl border border-orange-200 bg-orange-50 px-3 py-2 print:border-black print:bg-white">
             <p className="mb-1.5 text-[11px] font-bold text-orange-700">📌 지속 특이사항 {notes.length}건 (셔틀 자동 반영 중)</p>

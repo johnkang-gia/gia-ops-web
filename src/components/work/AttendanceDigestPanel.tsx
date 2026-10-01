@@ -298,9 +298,12 @@ function AttendanceMemoPanel({ department, currentUserEmail }: { department: str
 
   return (
     <div className="flex h-full min-w-0 flex-col">
-      <div className="mb-1.5 flex shrink-0 items-center justify-between text-[12px] font-bold text-slate-600">
-        <span>📝 출결 메모</span>
-        <span className="text-[9px] font-medium text-slate-400">{saving ? "저장 중…" : updatedBy ? `${updatedBy} 수정` : ""}</span>
+      <div className="mb-1.5 flex shrink-0 items-center justify-between gap-1 text-[12px] font-bold text-slate-600">
+        {/* 제목은 줄지 않고, 누가 고쳤는지는 남는 폭에서 말줄임. 반대로 하면 제목이 세로로 늘어섭니다. */}
+        <span className="shrink-0 whitespace-nowrap">📝 출결 메모</span>
+        <span className="min-w-0 truncate text-[9px] font-medium text-slate-400" title={updatedBy ?? undefined}>
+          {saving ? "저장 중…" : updatedBy ? `${updatedBy} 수정` : ""}
+        </span>
       </div>
       <textarea
         value={content}

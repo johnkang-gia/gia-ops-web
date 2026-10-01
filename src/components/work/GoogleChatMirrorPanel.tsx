@@ -176,11 +176,11 @@ export default function GoogleChatMirrorPanel({
 
   return (
     <div className="glass flex h-full flex-col overflow-hidden p-2.5">
-      <div className="mb-1.5 flex shrink-0 items-center justify-between text-[12px] font-bold text-blue-600">
-        <span>
+      <div className="mb-1.5 flex shrink-0 items-center justify-between gap-1 text-[12px] font-bold text-blue-600">
+        <span className="min-w-0 truncate">
           {icon} {title}
         </span>
-        <span className="rounded-full bg-black/5 px-1.5 py-0.5 text-[10px] text-slate-500">{items.length}건</span>
+        <span className="shrink-0 rounded-full bg-black/5 px-1.5 py-0.5 text-[10px] text-slate-500">{items.length}건</span>
       </div>
       {error && <p className="mb-1 shrink-0 text-[10px] text-red-500">{error}</p>}
       {items.length === 0 ? (

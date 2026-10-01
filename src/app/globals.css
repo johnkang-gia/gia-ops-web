@@ -40,6 +40,13 @@ body {
   background: var(--glass-mesh);
   background-attachment: fixed;
   color: var(--g-ink);
+  /* 한글은 기본값(word-break: normal)에서 **글자 단위로** 접힙니다. 좁은 칸에서 「출결 메모」가
+     「출/결/메/모」로 세로로 늘어서고, 「김재이」가 두 줄로 갈라집니다. keep-all 은 띄어쓰기에서만
+     접고, break-word 는 띄어쓰기가 없는 긴 글자(주소·URL)만 칸이 넘칠 때 자릅니다.
+     anywhere 를 안 쓴 이유: 그건 낱말의 최소 너비까지 줄여 버려서, flex 안의 제목 칸이 글자
+     하나 폭으로 쪼그라드는 바로 그 사고를 다시 냅니다. */
+  word-break: keep-all;
+  overflow-wrap: break-word;
 }
 
 /* ===== 테마(라이트/다크/리퀴드글라스/GIA) - 공용 셸(사이드바/헤더/카드/버튼) 전용 =====

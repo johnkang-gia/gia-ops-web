@@ -32,8 +32,15 @@ export async function GET(req: Request) {
 
   const { iso: today, weekday } = kstParts(new Date());
 
+  // ── 신호는 **돌았으면 언제나** 남깁니다 ─────────────────────────────
+  //
+  // 예전에는 맨 끝에서만 남겨서, 주말이거나 그날 예약이 하나도 없는 날은 일찍 끝나며 신호를
+  // 안 남겼습니다. 크론 사이트는 매번 200(성공)을 받는데 우리 연동 상태는 「끊김」이 되어, 두
+  // 화면이 반대로 말했습니다. 할 일이 없는 것은 고장이 아닙니다 - 「대기」로 남깁니다.
+
   // 주말에는 하원 차량이 없습니다.
   if (weekday === 0 || weekday === 6) {
+    await touchHeartbeat(supabase, "cron:pickup-schedules", "skipped", "주말 - 할 일 없음");
     return NextResponse.json({ ok: true, skipped: "주말" });
   }
 
@@ -77,8 +84,14 @@ export async function GET(req: Request) {
     .eq("service_date", today)
     .eq("status", "예정");
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  if (!rows || rows.length === 0) return NextResponse.json({ ok: true, applied: 0, dismissalApplied });
+  if (error) {
+    await touchHeartbeat(supabase, "cron:pickup-schedules", "error", `예약 조회 실패: ${error.message}`);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+  if (!rows || rows.length === 0) {
+    await touchHeartbeat(supabase, "cron:pickup-schedules", "ok", `오늘 걸 예약 없음 · 하원수단 ${dismissalApplied}명`);
+    return NextResponse.json({ ok: true, applied: 0, dismissalApplied });
+  }
 
   // 예약이 생긴 **근거가 된 연락 원문**을 한 번에 읽어둡니다.
   //

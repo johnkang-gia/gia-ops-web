@@ -5,9 +5,10 @@ import { scanIntoEntries, type ScanSource } from "@/lib/attendanceEntries";
 import { buildStaffNames, todayKey, type LearningRule, type RosterStudent } from "@/lib/attendanceDigest";
 import { classHintFromMentions, type TeacherClass } from "@/lib/mentionHints";
 import { attendanceUndoSummary, undoAttendanceEntries } from "@/lib/attendanceUndo";
-import { reconcileEntryChange, reconcileSummary, type EntryShape } from "@/lib/attendanceReconcile";
+import { reconcileDismissal, reconcileEntryChange, reconcileSummary, type EntryShape } from "@/lib/attendanceReconcile";
 import { loadStudents } from "@/lib/students";
 import { ATTENDANCE_ENTRY_KEY } from "@/lib/attendanceEntries";
+import { isClockTime } from "@/lib/studentDayNotes";
 
 // 업무보드 인박스가 쓰는 출결 등록 창구입니다.
 //
@@ -192,6 +193,8 @@ export async function PATCH(req: NextRequest) {
     dateFrom?: string;
     dateTo?: string;
     note?: string;
+    /** 픽업 시각(14:30). 빈 글자면 지웁니다. 글로 온 시각이 틀렸거나 비어 있을 때 사람이 넣습니다. */
+    pickupTime?: string | null;
     // 아직 등록 대상으로 잡히지 않은 항목(⬜)을 내릴 때 씁니다. id 대신 이 셋을 보냅니다.
     dismissKey?: { messageId: string; studentName: string; status: string; date?: string };
     // 사람이 처음부터 손으로 넣는 한 건.
@@ -202,6 +205,8 @@ export async function PATCH(req: NextRequest) {
       dateFrom?: string;
       dateTo?: string;
       note?: string | null;
+      /** 픽업이면 몇 시에 오는지. 없으면 「미정」으로 뜹니다. */
+      pickupTime?: string | null;
       messageId?: string | null;
       rawText?: string | null;
       /**
@@ -284,6 +289,8 @@ export async function PATCH(req: NextRequest) {
     if (!m.studentId || !m.studentName || !m.status) {
       return NextResponse.json({ error: "학생과 종류가 필요합니다." }, { status: 400 });
     }
+    const mt = (m.pickupTime ?? "").trim();
+    if (mt && !isClockTime(mt)) return NextResponse.json({ error: "시각은 14:30 처럼 적어주세요." }, { status: 400 });
     const from = ok(m.dateFrom) ? m.dateFrom! : todayKey(new Date());
     const to = ok(m.dateTo) && m.dateTo! >= from ? m.dateTo! : from;
 
@@ -324,6 +331,8 @@ export async function PATCH(req: NextRequest) {
         registered_by: auth.user.email ?? null,
         reason: null,
         note: m.note ?? "사람이 직접 등록",
+        // 시각은 픽업에만 답니다. 결석에 시각이 붙으면 화면이 「몇 시에 온다」로 읽습니다.
+        pickup_time: m.status === "픽업" && mt ? mt : null,
         raw_text: (m.rawText ?? "").slice(0, 500) || null,
       },
       { onConflict: ATTENDANCE_ENTRY_KEY }
@@ -402,10 +411,28 @@ export async function PATCH(req: NextRequest) {
   // 오지도 않은 결석이 학기 출석률을 계속 깎는데, 화면에는 오류가 아니라 「결석 한 줄」로
   // 보여서 학기 말 통지표에 가서야 드러납니다.
   if (body.state === "무시") {
+    // 내리기 **전**의 줄. 셔틀 체크표를 날마다 되돌리려면 무엇이 등록돼 있었는지 알아야 합니다.
+    const { data: before } = await db
+      .from("attendance_entries")
+      .select("id, student_id, student_name, status, state, date_from, date_to, source")
+      .eq("id", body.id)
+      .maybeSingle();
     const undo = await undoAttendanceEntries(db, { ids: [body.id] }, body.note ?? "사람이 출결이 아니라고 표시");
     // 조용히 넘기지 않습니다. 출석부를 못 지웠으면 그 사실이 화면에 떠야 합니다.
     if (undo.problems.length > 0) return NextResponse.json({ error: undo.problems.join(" / ") }, { status: 500 });
-    return NextResponse.json({ ok: true, undo, undoNote: attendanceUndoSummary(undo) });
+    // 출석부만 지우고 끝내면 **체크표의 결석 표시가 남습니다.** 겹친 다른 줄이 덮는 날은 그대로 둡니다.
+    let reconcileNote: string | null = null;
+    if (before && (before as EntryShape).state === "등록") {
+      const r = await reconcileDismissal(db, before as EntryShape, { email: auth.user.email ?? "", name: null });
+      if (r.errors.length > 0) {
+        return NextResponse.json(
+          { error: `줄은 내렸지만 셔틀 체크표를 따라 고치지 못했습니다: ${r.errors.join(" / ")}` },
+          { status: 500 },
+        );
+      }
+      reconcileNote = reconcileSummary(r);
+    }
+    return NextResponse.json({ ok: true, undo, undoNote: [attendanceUndoSummary(undo), reconcileNote].filter(Boolean).join(" ") });
   }
 
   const patch: Record<string, unknown> = {
@@ -423,6 +450,11 @@ export async function PATCH(req: NextRequest) {
   if (body.dateFrom) patch.date_from = body.dateFrom;
   if (body.dateTo) patch.date_to = body.dateTo;
   if (body.note !== undefined) patch.note = body.note;
+  if (body.pickupTime !== undefined) {
+    const t = (body.pickupTime ?? "").trim();
+    if (t && !isClockTime(t)) return NextResponse.json({ error: "시각은 14:30 처럼 적어주세요." }, { status: 400 });
+    patch.pickup_time = t || null;
+  }
 
   // 고치기 **전**을 읽어 둡니다. 날짜·상태가 바뀌면 전과 후의 날짜를 비교해 셔틀 체크표와
   // 출석부를 따라 고쳐야 하는데, 고친 뒤에는 무엇이 전이었는지 알 수 없습니다.

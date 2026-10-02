@@ -121,12 +121,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "시각은 14:30 처럼 적어주세요." }, { status: 400 });
     }
 
+    // **사람이 고른 날짜.** AI 가 「내일 픽업」을 오늘로 읽었을 때 이 화면에서 고칩니다.
+    const pickedDate = typeof body?.serviceDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.serviceDate) ? (body.serviceDate as string) : null;
+
     const { data: row } = await supabase
       .from("pickup_requests")
       .select("id, service_date, student_id, raw_text, source, channel_label, sender_name, source_url")
       .eq("id", id)
       .maybeSingle();
     if (!row) return NextResponse.json({ error: "요청을 찾을 수 없습니다." }, { status: 404 });
+    const serviceDate = pickedDate ?? (row.service_date as string);
 
     const finalStudentId = studentId ?? (row.student_id as string | null);
     if (!finalStudentId) return NextResponse.json({ error: "학생을 먼저 선택해주세요." }, { status: 400 });
@@ -150,6 +154,8 @@ export async function POST(req: Request) {
         // 오류가 아니라 「문의 한 건」으로 보이고, 픽업 칸은 비어 있습니다.
         kind: "픽업",
         ...(rawTime ? { ai_pickup_time: rawTime } : {}),
+        // 날짜를 고쳤으면 줄에도 남깁니다. 안 남기면 픽업 목록은 원래 날짜를 계속 읽습니다.
+        service_date: serviceDate,
         status: "확정",
         resolved_by: me.email,
         resolved_at: new Date().toISOString(),
@@ -161,7 +167,7 @@ export async function POST(req: Request) {
     // 사람이 인박스에서 확정한 것이라 「누가」는 분명합니다. 그래도 **근거 원문**을 함께
     // 남깁니다 - 며칠 뒤 기록을 보는 사람에게는 「누가 눌렀다」만으로 왜 픽업인지 알 수
     // 없고, 그 연락은 인박스에서 이미 정리됐을 수 있습니다.
-    const applied = await applyPickup(supabase, finalStudentId, row.service_date as string, me.name || me.email, {
+    const applied = await applyPickup(supabase, finalStudentId, serviceDate, me.name || me.email, {
       text: ((row.raw_text as string | null) ?? "").trim() || "인박스에서 사람이 직접 픽업으로 확정했습니다.",
       source: (row.source as string | null) ?? "토들",
       from: (row.channel_label as string | null) ?? (row.sender_name as string | null) ?? null,

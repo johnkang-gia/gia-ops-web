@@ -80,7 +80,15 @@ export async function scanIntoEntries(
   // 이미 만들어 둔 것들을 한 번에 읽어옵니다(메시지마다 조회하면 왕복이 수백 번이 됩니다).
   const ids = messages.map((m) => m.messageId);
   type Prev = { id: string; from: string; to: string; touched: boolean };
-  const existing = new Map<string, Prev>();
+  /**
+   * **같은 글 · 같은 아이 · 같은 갈래로 이미 만든 줄들** (날짜 없이 묶습니다).
+   *
+   * 예전에는 묶을 때는 날짜 없이, 찾을 때는 날짜를 붙여 찾아서 **한 번도 찾지 못했습니다.**
+   * 그래도 DB 의 중복 막기에 걸려 조용히 넘어갔는데, 사람이 시작일을 고치는 순간(10/1 → 10/2)
+   * 더 이상 막히지 않아 같은 글이 10/1 로 **다시 들어왔습니다** - 고친 것이 되살아난 셈이고,
+   * 학교에 나온 날이 다시 결석이 됐습니다.
+   */
+  const existing = new Map<string, Prev[]>();
   for (let i = 0; i < ids.length; i += 200) {
     const { data } = await supabase
       .from("attendance_entries")
@@ -89,12 +97,11 @@ export async function scanIntoEntries(
       .select("id, source, source_message_id, student_name, status, date_from, date_to, touched_by_human")
       .in("source_message_id", ids.slice(i, i + 200));
     for (const r of data ?? []) {
-      existing.set(`${r.source}|${r.source_message_id}|${r.student_name}|${r.status}`, {
-        id: r.id as string,
-        from: r.date_from as string,
-        to: r.date_to as string,
-        touched: r.touched_by_human === true,
-      });
+      const k = `${r.source}|${r.source_message_id}|${r.student_name}|${r.status}`;
+      existing.set(k, [
+        ...(existing.get(k) ?? []),
+        { id: r.id as string, from: r.date_from as string, to: r.date_to as string, touched: r.touched_by_human === true },
+      ]);
     }
   }
 
@@ -228,17 +235,30 @@ export async function scanIntoEntries(
       // 흩어진 날들이면 날마다 한 줄, 아니면 예전처럼 한 줄.
       const mySpans = spans.length > 0 ? spans : [{ from, to }];
       for (const span of mySpans) {
-      const key = `${m.source}|${m.messageId}|${st.display}|${status}|${span.from}`;
-      const prev = existing.get(key);
+      const base = `${m.source}|${m.messageId}|${st.display}|${status}`;
+      const group = existing.get(base) ?? [];
+      // **사람이 이 글의 이 아이 줄을 한 번이라도 고쳤으면, 이 글은 사람 것입니다.** 날짜를
+      // 고쳤든 내렸든 자동이 다시 읽어 새 줄을 만들면 사람 판단을 덮게 됩니다.
+      if (group.some((g) => g.touched)) {
+        skipped += 1;
+        continue;
+      }
+      // 같은 시작일이 있으면 그 줄. 날이 하나뿐인 글인데 줄도 하나면, 시작일이 달라도 같은 줄입니다
+      // (읽는 규칙이 나아져 날짜가 바뀐 경우) - 새로 넣지 않고 그 줄을 고칩니다.
+      const prev = group.find((g) => g.from === span.from) ?? (mySpans.length === 1 && group.length === 1 ? group[0] : undefined);
       if (prev) {
         // 사람이 손대지 않았는데 기간이 달라졌으면 고칩니다. 그대로 두면 「내일부터 3일간」이
         // 하루 밀린 채로 계속 오늘 결석 명단에 남습니다.
-        if (!prev.touched && (prev.from !== span.from || prev.to !== span.to))
+        //
+        // 시작일이 다른 줄은 **고치지 않고 그대로 둡니다.** 이 자리는 예전 버그 때문에 한 번도
+        // 돈 적이 없어서, 지금 시작일까지 바꾸게 하면 쌓여 있던 옛 줄이 한꺼번에 움직입니다.
+        // 새 줄을 안 만드는 것만으로 중복은 막힙니다. 끝날만 다른 경우만 고칩니다.
+        if (prev.id && prev.from === span.from && prev.to !== span.to)
           fixes.push({ id: prev.id, from: span.from, to: span.to });
         skipped += 1;
         continue;
       }
-      existing.set(key, { id: "", from: span.from, to: span.to, touched: false });
+      existing.set(base, [...group, { id: "", from: span.from, to: span.to, touched: false }]);
       if (state === "확인필요") needsReview += 1;
       rows.push({
         source: m.source,
@@ -319,7 +339,7 @@ export async function loadActiveEntries(supabase: SupabaseClient, dateKey: strin
     // 픽업은 «몇 시»가 이름보다 먼저 필요한 정보입니다. pickup_time 은 저장할 때 그 아이를
     // 가리키는 조각에서 한 번 읽어둔 값이고, 그 칸이 생기기 전 줄을 위해 raw_text 도 함께
     // 가져옵니다(읽는 쪽이 없으면 원문에서 뽑습니다).
-    .select("student_id, student_name, grade, class_name, status, note, raw_text, pickup_time, date_from, date_to")
+    .select("id, source, student_id, student_name, grade, class_name, status, note, raw_text, pickup_time, date_from, date_to")
     .eq("state", "등록")
     .lte("date_from", dateKey)
     .gte("date_to", dateKey);

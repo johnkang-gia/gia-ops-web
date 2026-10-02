@@ -10,6 +10,7 @@ import { useConfirm } from "@/components/common/ConfirmProvider";
 import { markIfAmbiguous, toKoreanDisplayName, toRosterEntries, type RosterEntry } from "@/lib/pickupParse";
 import { loadHouseCandidates } from "@/lib/houseCandidates";
 import { loadStudents } from "@/lib/students";
+import { loadRideBadges, type RideBadge } from "@/lib/rideBadge";
 
 // 학부모 문의사항 — 예전 실시간 로그가 있던 자리입니다.
 //
@@ -278,6 +279,8 @@ export default function ParentInquiryPanel({
    * 두면 어느 쪽이 된 것인지 여전히 모릅니다.
    */
   const [auto, setAuto] = useState<Map<string, AutoResult[]>>(new Map());
+  /** 아이마다 「하원 때 차를 타는가」. 문의를 열기 전에 첫 판단을 하게 해 줍니다(@/lib/rideBadge). */
+  const [rides, setRides] = useState<Map<string, RideBadge>>(new Map());
 
   // 토들 원문 주소.
   //
@@ -341,6 +344,7 @@ export default function ParentInquiryPanel({
     // 마이그레이션 전(칸이 아직 없음)이라도 undefined는 통과하므로 화면이 깨지지 않습니다.
     const list = ((data as (Inquiry & { is_demo?: boolean })[] | null) ?? []).filter((r) => !r.is_demo);
     setRows(list);
+    void loadRideBadges(supabase, list.map((r) => r.student_id ?? "").filter(Boolean)).then(setRides);
     // 이름표는 **화면과 같은 함수**로 만듭니다(studentOf). 여기서 따로 만들면 팝업과 목록이
     // 다른 이름을 적게 되고, 동명이인에서는 그게 다른 아이가 됩니다.
     void loadAuto(list.map((r) => r.id), new Map(list.map((r) => [r.id, studentOfRef.current(r)])));
@@ -809,6 +813,7 @@ export default function ParentInquiryPanel({
       <button type="button" onClick={() => setDetail(r)} className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden text-left">
       {r.urgency === "높음" && !isDone(r) && <span className="shrink-0 text-red-500">●</span>}
       <span className={"shrink-0 font-semibold text-slate-700 " + (full ? "text-sm" : "")}>{studentOf(r)}</span>
+      <RideChip badge={r.student_id ? rides.get(r.student_id) : undefined} />
       {/* 초록 ✓ 는 **사람이 토들에 답글을 단 것**입니다. */}
       {r.answered_via === "답글" && (
         <span
@@ -1068,6 +1073,7 @@ export default function ParentInquiryPanel({
                     ) : (
                       <span className="text-sm font-bold text-slate-800">{studentOf(detail)}</span>
                     )}
+                    <RideChip badge={detail.student_id ? rides.get(detail.student_id) : undefined} long />
                     {detail.inquiry_type && (
                       <span className={"rounded px-1.5 py-0.5 text-[10px] font-semibold " + (TYPE_STYLE[detail.inquiry_type] ?? "bg-slate-100")}>
                         {detail.inquiry_type}
@@ -1278,3 +1284,23 @@ export default function ParentInquiryPanel({
     </div>
   );
 }
+
+/**
+ * 차를 타는 아이인지 한 칸. 파랑은 셔틀, 회색은 셔틀 없음. 학생이 아직 안 이어진 문의는
+ * 아무것도 안 그립니다 - 모르는 것을 「셔틀 없음」으로 적으면 틀린 판단을 하게 됩니다.
+ */
+function RideChip({ badge, long = false }: { badge?: RideBadge; long?: boolean }) {
+  if (!badge) return null;
+  return (
+    <span
+      title={badge.title}
+      className={
+        "shrink-0 rounded px-1 py-0.5 text-[10px] font-bold leading-none " +
+        (badge.rides ? "bg-sky-100 text-sky-800" : "bg-slate-100 text-slate-600")
+      }
+    >
+      {long ? badge.title.replace(/^하원 셔틀을 탑니다: /, "🚌 ") : badge.label}
+    </span>
+  );
+}
+

@@ -46,7 +46,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
         typeof document !== "undefined" &&
         createPortal(
           <div
-            className="fixed inset-0 z-[210] flex items-center justify-center bg-black/40 p-4"
+            className="fixed inset-0 z-[1005] flex items-center justify-center bg-black/40 p-4"
             onClick={() => close(false)}
           >
             <div

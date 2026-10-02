@@ -9,6 +9,8 @@ import { NOTE_KINDS, KIND_LOOK, type NoteKind } from "@/lib/studentDayNotes";
 import DismissalModal from "./DismissalModal";
 import { Who } from "@/components/common/HomonymProvider";
 import { createClient } from "@/lib/supabase/client";
+import { RangeEditModal } from "./QuickEntryModals";
+import { useConfirm } from "@/components/common/ConfirmProvider";
 
 /**
  * **오늘 학생 — 「누가 오늘 평소와 다른가」를 한 곳에 모은 보드.**
@@ -668,13 +670,47 @@ function DetailModal({
   /** 고친 뒤. 보드를 다시 읽습니다 - 화면이 자기 상태를 손으로 고치지 않습니다. */
   onFixed: () => void;
 }) {
+  const notify = useToast();
+  const confirmAction = useConfirm();
+  const [editing, setEditing] = useState<DayItem | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape" && !editing) onClose();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, editing]);
+
+  /**
+   * **출결 줄을 보드에서 내립니다.** 내리면 출석부와 셔틀 체크표가 함께 따라갑니다(서버의 짝 함수).
+   * 같은 아이의 다른 줄이 덮고 있는 날은 그대로 남습니다 - 중복 하나를 내렸다고 결석이 풀리면 안 됩니다.
+   */
+  async function dismissEntries(ids: string[], what: string) {
+    if (ids.length === 0) return;
+    if (!(await confirmAction(`${what}\n내리면 출석부·셔틀 체크표도 함께 고쳐집니다. 겹친 다른 줄이 덮는 날은 그대로 둡니다.`))) return;
+    setBusyId(ids[0]);
+    const notes: string[] = [];
+    for (const id of ids) {
+      const res = await fetch("/api/attendance/entries", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, state: "무시", note: "보드에서 사람이 내림" }),
+      });
+      const b = (await res.json().catch(() => ({}))) as { error?: string; undoNote?: string };
+      if (!res.ok) {
+        setBusyId(null);
+        notify(b.error ?? "내리지 못했습니다.", "error");
+        onFixed();
+        return;
+      }
+      if (b.undoNote) notes.push(b.undoNote);
+    }
+    setBusyId(null);
+    notify(notes.join(" ") || "내렸습니다.", "success");
+    onFixed();
+  }
 
   return (
     <div className="fixed inset-0 z-[950] flex items-start justify-center bg-black/40 p-4 pt-[10vh]" onClick={onClose}>
@@ -732,6 +768,45 @@ function DetailModal({
                 </div>
               )}
 
+              {/* **출결 줄은 여기서 고칩니다.** 날짜가 틀렸거나 같은 결석이 두 줄로 들어왔을 때
+                  고칠 자리가 보드에 없어서, 「결석3」을 보고도 손을 못 댔습니다. */}
+              {i.entry && (
+                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                  <span className="text-[10px] text-slate-400">
+                    {i.entry.source === "googlechat" ? "구글챗" : i.entry.source === "manual" ? "직접 등록" : "토들"} · {i.entry.from.slice(5)}
+                    {i.entry.to !== i.entry.from ? `~${i.entry.to.slice(5)}` : ""}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={busyId !== null}
+                    onClick={() => setEditing(i)}
+                    className="rounded border border-slate-300 px-1.5 py-0.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                  >
+                    날짜·종류 고치기
+                  </button>
+                  {i.entry.dupIds.length > 0 && (
+                    <button
+                      type="button"
+                      disabled={busyId !== null}
+                      onClick={() => void dismissEntries(i.entry!.dupIds, `같은 내용으로 들어온 중복 ${i.entry!.dupIds.length}줄을 내립니다.`)}
+                      className="rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[11px] font-bold text-amber-800 hover:bg-amber-100 disabled:opacity-40"
+                      title="토들·구글챗에 같은 연락이 와서 두 줄이 된 것입니다. 하나만 남깁니다."
+                    >
+                      중복 {i.entry.dupIds.length}줄 정리
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    disabled={busyId !== null}
+                    onClick={() => void dismissEntries([i.entry!.id, ...i.entry!.dupIds], `${day.name} ${i.kind} ${i.entry!.from.slice(5)} 줄을 내립니다.`)}
+                    className="ml-auto rounded px-1.5 py-0.5 text-[11px] font-semibold text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40"
+                    title="잘못 들어온 줄이면 내립니다."
+                  >
+                    내리기
+                  </button>
+                </div>
+              )}
+
               {/* 특이사항은 **그 자리에서 고칩니다.** 내리고 새로 적게 하면 원문과 이어둔
                   실이 끊기고, 바쁜 사람은 고치는 대신 그냥 둡니다 - 틀린 시각으로 알람이
                   울립니다. */}
@@ -743,6 +818,22 @@ function DetailModal({
             </li>
           ))}
         </ul>
+      {/* 안쪽 상자 **안에** 둡니다. 포털로 그려도 클릭은 React 나무를 따라 올라가서, 바깥에 두면
+          고치기 창을 누를 때마다 바깥 배경의 「닫기」가 함께 눌립니다. */}
+      {editing?.entry && (
+        <RangeEditModal
+          entryId={editing.entry.id}
+          name={day.name}
+          status={editing.entry.status}
+          from0={editing.entry.from}
+          to0={editing.entry.to}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            onFixed();
+          }}
+        />
+      )}
       </div>
     </div>
   );

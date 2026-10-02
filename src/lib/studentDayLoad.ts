@@ -138,6 +138,8 @@ export async function loadStudentDay(supabase: SupabaseClient, opts: LoadOptions
 
   // ── ② 결석·지각 (오늘) ───────────────────────────────────────────────────
   type Entry = {
+    id: string;
+    source?: string | null;
     student_id: string | null;
     student_name: string;
     status: string;
@@ -146,11 +148,20 @@ export async function loadStudentDay(supabase: SupabaseClient, opts: LoadOptions
     date_from: string;
     date_to: string;
   };
+  // **같은 결석이 두 창구로 들어온 것은 한 줄로.** 정서우의 결석이 토들·구글챗 두 곳에서
+  // 들어와 보드에 「결석2」로 떴습니다 - 이틀 결석으로 읽힙니다.
+  const firstOf = new Map<string, Entry & { dupIds: string[] }>();
   for (const e of (active as Entry[])) {
-    // 픽업은 ①에서 이미 셌습니다. 여기서 또 올리면 한 아이가 두 줄이 됩니다.
     if (e.status === "픽업") continue;
+    const k = `${e.student_id ?? e.student_name}|${e.status}|${e.date_from}|${e.date_to}`;
+    const hit = firstOf.get(k);
+    if (hit) hit.dupIds.push(e.id);
+    else firstOf.set(k, { ...e, dupIds: [] });
+  }
+  for (const e of firstOf.values()) {
     push(e.student_id, e.student_name, {
       id: `entry:${e.student_id ?? e.student_name}:${e.date_from}:${e.status}`,
+      entry: { id: e.id, status: e.status, from: e.date_from, to: e.date_to, source: e.source ?? null, dupIds: e.dupIds },
       kind: entryKind(e.status),
       at: null,
       text: [e.note?.trim(), spanLabel(e.date_from, e.date_to)].filter(Boolean).join(" · ") || e.status,
@@ -166,10 +177,11 @@ export async function loadStudentDay(supabase: SupabaseClient, opts: LoadOptions
   }
 
   // ── ②-b 앞날 예정 ────────────────────────────────────────────────────────
-  for (const e of (upcoming as (Entry & { id: string })[])) {
+  for (const e of (upcoming as Entry[])) {
     if (e.status === "픽업") continue;
     push(e.student_id, e.student_name, {
       id: `upcoming:${e.id}`,
+      entry: { id: e.id, status: e.status, from: e.date_from, to: e.date_to, source: e.source ?? null, dupIds: [] },
       kind: entryKind(e.status),
       at: null,
       text: [e.note?.trim(), spanLabel(e.date_from, e.date_to)].filter(Boolean).join(" · ") || e.status,

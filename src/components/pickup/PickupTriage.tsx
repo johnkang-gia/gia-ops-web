@@ -111,6 +111,13 @@ export default function PickupTriage({
    * 떴습니다 - 행정실은 언제 아이를 내보낼지 모릅니다.
    */
   const [timeFor, setTimeFor] = useState<Record<string, string>>({});
+  /**
+   * **날짜를 여기서 고칩니다.** 「내일 픽업」을 오늘로 읽거나, 금요일 연락을 받은 날로 읽은 글을
+   * 고칠 자리가 이 화면에 없어서, 날짜가 틀린 글은 [넘기기]로 내리고 다른 화면에서 새로 넣어야
+   * 했습니다. 고른 날짜는 픽업 확정·결석·지각이 모두 함께 씁니다.
+   */
+  const [dateFor, setDateFor] = useState<Record<string, string>>({});
+  const dayOf = (r: PickupRow) => dateFor[r.id] || r.service_date || todayKey(new Date());
 
   /**
    * **형제방에서 체크를 푼 아이.** 줄마다 「이 아이는 아니다」로 빼둔 목록입니다.
@@ -509,7 +516,10 @@ export default function PickupTriage({
     // **시각을 함께 보냅니다.** 「하교시간보다 10분 늦어 2시 30분 도착」 같은 글은 AI가
     // 시각을 못 뽑거나 엉뚱하게 뽑습니다. 픽업에서 시각은 곧 사람이 움직이는 시점이라,
     // 없으면 보드에 「미정」으로 떠서 언제 아이를 내보낼지 모릅니다.
-    const t = (timeFor[row.id] ?? "").trim();
+    // 시각 칸은 아이마다 하나라 `줄번호|학생번호` 로 저장됩니다. 예전에는 여기서 `줄번호` 로만
+    // 읽어서 **적은 시각이 한 번도 전송되지 않았습니다** - 확정해도 「미정」으로 떴습니다.
+    const sid = studentId ?? row.student_id ?? "";
+    const t = (timeFor[`${row.id}|${sid}`] ?? timeFor[row.id] ?? row.ai_pickup_time ?? "").trim();
     if (t && !isClockTime(t)) {
       notify("시각은 14:30 처럼 적어주세요.", "error");
       return;
@@ -519,6 +529,7 @@ export default function PickupTriage({
       id: row.id,
       studentId: studentId ?? row.student_id,
       pickupTime: t || null,
+      serviceDate: dayOf(row),
       keepOpen,
     });
     if (!json) return;
@@ -817,6 +828,19 @@ export default function PickupTriage({
                     autoFocusQuery={(r.ai_student_name ?? "").replace(/\(.*$/, "").trim()}
                     onPick={(s) => linkOnly(r, s)}
                   />
+                  <label className="flex shrink-0 items-center gap-1 text-[11px] font-semibold text-slate-500" title="이 연락이 가리키는 날. 틀렸으면 고친 뒤 확정·결석·지각을 누릅니다.">
+                    날짜
+                    <input
+                      type="date"
+                      value={dayOf(r)}
+                      onChange={(e) => setDateFor((v) => ({ ...v, [r.id]: e.target.value }))}
+                      disabled={busy}
+                      className={
+                        "rounded-lg border px-1.5 py-1 text-[12px] tabular-nums " +
+                        (dateFor[r.id] && dateFor[r.id] !== r.service_date ? "border-violet-400 bg-violet-50 font-bold text-violet-800" : "border-slate-300")
+                      }
+                    />
+                  </label>
                   {/*
                     ── 대상마다 한 줄 ──────────────────────────────────────────
 
@@ -870,7 +894,7 @@ export default function PickupTriage({
                         {/* **픽업만 고를 수 있으면 안 됩니다.** 토들에서 오는 연락은 결석·지각일
                             수도 있는데, 이 화면에는 픽업이냐 아니냐밖에 없었습니다. */}
                         <button
-                          onClick={() => markAttendance(r, [r.service_date || todayKey(new Date())], "결석", who, many)}
+                          onClick={() => markAttendance(r, [dayOf(r)], "결석", who, many)}
                           disabled={busy}
                           className={"rounded-lg bg-rose-600 font-bold text-white disabled:opacity-50 " + btn}
                           title="그날 결석으로 처리합니다. 셔틀 체크표와 출석부에 함께 남습니다."
@@ -878,7 +902,7 @@ export default function PickupTriage({
                           결석
                         </button>
                         <button
-                          onClick={() => markAttendance(r, [r.service_date || todayKey(new Date())], "지각", who, many)}
+                          onClick={() => markAttendance(r, [dayOf(r)], "지각", who, many)}
                           disabled={busy}
                           className={"rounded-lg bg-amber-500 font-bold text-white disabled:opacity-50 " + btn}
                           title="그날 지각으로 출석부에 남깁니다. 하원 셔틀은 그대로 탑니다."

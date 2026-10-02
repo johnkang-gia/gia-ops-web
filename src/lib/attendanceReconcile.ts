@@ -88,7 +88,25 @@ export async function reconcileEntryChange(
 
   const source = after.source === "googlechat" ? "구글챗" : after.source === "manual" ? "직접 등록" : "토들";
 
+  // 같은 아이의 다른 등록 줄이 그 날을 덮고 있으면 「예정」으로 되돌리지 않습니다 - 토들과
+  // 구글챗에 같은 결석이 두 줄로 들어와 있는데 한 줄의 날짜를 줄이면, 남은 줄의 결석까지 풀립니다.
+  const { data: othersRaw } = toUndo.length
+    ? await supabase
+        .from("attendance_entries")
+        .select("id, status, date_from, date_to")
+        .eq("student_id", studentId)
+        .eq("state", "등록")
+        .neq("id", after.id)
+    : { data: [] };
+  const others = ((othersRaw as { status: string; date_from: string | null; date_to: string | null }[] | null) ?? []).filter((o) => ACTIONS[o.status]);
+  const coveredBy = (day: string) => others.find((o) => o.date_from && o.date_from <= day && (o.date_to ?? o.date_from) >= day);
+
   for (const day of toUndo) {
+    const cover = coveredBy(day);
+    if (cover) {
+      out.notes.push(`${day.slice(5)}은 다른 줄(${cover.status})이 덮고 있어 그대로 둠`);
+      continue;
+    }
     const r = await applyAttendance(supabase, {
       studentId,
       studentName: after.student_name,
@@ -129,4 +147,65 @@ export function reconcileSummary(r: { undone: string[]; applied: string[]; notes
   if (r.applied.length) parts.push(`${r.applied.map((d) => d.slice(5)).join("·")} 적용`);
   parts.push(...r.notes);
   return parts.length ? `셔틀·출석부: ${parts.join(" / ")}` : null;
+}
+
+/**
+ * **등록된 줄 하나를 내렸을 때 셔틀 체크표를 따라 고칩니다.**
+ *
+ * 내리기(`undoAttendanceEntries`)는 출석부의 자동 줄만 지우고 **셔틀 체크표의 결석 표시는
+ * 남겨 두었습니다.** 그리고 같은 아이에게 같은 결석이 두 줄로 겹쳐 있으면(학부모가 토들과
+ * 구글챗에 같은 내용을 올린 경우) 하나를 내렸다고 그 날들을 모두 「예정」으로 돌리면 안 됩니다 -
+ * 남은 줄이 아직 그 날을 덮고 있습니다.
+ *
+ * 그래서 날마다 봅니다. 남은 줄이 덮는 날은 **그 줄의 갈래로 다시 겁니다**(출석부 줄도 다시
+ * 생깁니다). 아무도 안 덮는 날만 「예정」으로 되돌립니다.
+ */
+export async function reconcileDismissal(
+  supabase: SupabaseClient,
+  dismissed: EntryShape,
+  actor: { email: string; name: string | null },
+): Promise<{ undone: string[]; applied: string[]; notes: string[]; errors: string[] }> {
+  const out = { undone: [] as string[], applied: [] as string[], notes: [] as string[], errors: [] as string[] };
+  if (!dismissed.student_id || !ACTIONS[dismissed.status]) return out;
+  const days = [...datesOf({ ...dismissed, state: "등록" })];
+  if (days.length === 0) return out;
+
+  const { data: othersRaw } = await supabase
+    .from("attendance_entries")
+    .select("id, student_id, student_name, status, state, date_from, date_to, source")
+    .eq("student_id", dismissed.student_id)
+    .eq("state", "등록")
+    .neq("id", dismissed.id)
+    .lte("date_from", days[days.length - 1])
+    .gte("date_to", days[0]);
+  const others = ((othersRaw as EntryShape[] | null) ?? []).filter((o) => ACTIONS[o.status]);
+
+  const { data: asg } = await supabase
+    .from("shuttle_assignments_basic")
+    .select("id, student_name_raw, weekdays")
+    .eq("student_id", dismissed.student_id);
+  type Asg = { id: string; student_name_raw: string; weekdays: number[] | null };
+  const assignments = (asg as Asg[] | null) ?? [];
+  const forDay = (day: string) => {
+    const wd = new Date(`${day}T12:00:00+09:00`).getDay();
+    return assignments.filter((a) => !a.weekdays || a.weekdays.length === 0 || a.weekdays.includes(wd)).map((a) => ({ id: a.id, student_name_raw: a.student_name_raw }));
+  };
+  const sourceOf = (e: EntryShape) => (e.source === "googlechat" ? "구글챗" : e.source === "manual" ? "직접 등록" : "토들") as "구글챗" | "직접 등록" | "토들";
+
+  for (const day of days) {
+    const cover = others.find((o) => o.date_from && o.date_from <= day && (o.date_to ?? o.date_from) >= day);
+    const r = await applyAttendance(supabase, {
+      studentId: dismissed.student_id,
+      studentName: (cover ?? dismissed).student_name,
+      serviceDate: day,
+      action: cover ? ACTIONS[cover.status]! : "예정",
+      assignments: forDay(day),
+      actor,
+      source: sourceOf(cover ?? dismissed),
+    });
+    out.errors.push(...r.errors);
+    if (r.errors.length === 0) (cover ? out.applied : out.undone).push(day);
+  }
+  if (out.applied.length > 0) out.notes.push(`겹친 다른 줄이 있어 ${out.applied.map((d) => d.slice(5)).join("·")}은 그대로 둠`);
+  return out;
 }

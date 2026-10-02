@@ -7,6 +7,7 @@ import { todayKst } from "@/lib/kst";
 import { DISMISSAL_REPEATS, REPEAT_HINT, weekStartFor, type DismissalRepeat } from "@/lib/dismissalWeek";
 import { loadStudents } from "@/lib/students";
 import { useToast } from "@/components/common/ToastProvider";
+import { isClockTime } from "@/lib/studentDayNotes";
 
 /**
  * 업무보드에서 연락 하나를 **그 자리에서** 처리하는 팝업들.
@@ -45,7 +46,7 @@ function Shell({ title, onClose, children }: { title: string; onClose: () => voi
   useEffect(() => setMounted(true), []);
   if (!mounted) return null;
   return createPortal(
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[960] flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div
         className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-4 shadow-xl"
         onClick={(e) => e.stopPropagation()}
@@ -195,6 +196,7 @@ export function RangeEditModal({
   status,
   from0,
   to0,
+  time0,
   onClose,
   onSaved,
 }: {
@@ -203,6 +205,8 @@ export function RangeEditModal({
   status: string;
   from0: string;
   to0: string;
+  /** 지금 걸려 있는 픽업 시각. 픽업일 때 고칠 수 있게 미리 채웁니다. */
+  time0?: string | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -217,16 +221,26 @@ export function RangeEditModal({
    * 내리면 그 아이의 **오늘 결석까지 함께 사라집니다** - 고치려던 것보다 더 큰 것을 잃습니다.
    */
   const [kind, setKind] = useState(status);
+  const [time, setTime] = useState((time0 ?? "").slice(0, 5));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   async function save() {
     if (to < from) return setErr("끝날이 시작날보다 앞입니다.");
+    if (kind === "픽업" && time.trim() && !isClockTime(time.trim())) return setErr("시각은 14:30 처럼 적어주세요.");
     setBusy(true);
     const res = await fetch("/api/attendance/entries", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: entryId, dateFrom: from, dateTo: to, status: kind, state: "등록" }),
+      body: JSON.stringify({
+        id: entryId,
+        dateFrom: from,
+        dateTo: to,
+        status: kind,
+        state: "등록",
+        // 픽업이 아니면 시각을 지웁니다 - 결석에 시각이 남으면 화면이 「몇 시에 온다」로 읽습니다.
+        pickupTime: kind === "픽업" ? time.trim() || null : null,
+      }),
     });
     setBusy(false);
     const b = (await res.json().catch(() => ({}))) as { error?: string; reconcileNote?: string | null };
@@ -255,6 +269,7 @@ export function RangeEditModal({
         ))}
       </div>
       <RangePicker from={from} to={to} setFrom={setFrom} setTo={setTo} />
+      {kind === "픽업" && <PickupTimeField value={time} onChange={setTime} />}
       {err && <p className="mt-2 rounded bg-rose-50 px-2 py-1 text-[11px] font-bold text-rose-700">{err}</p>}
       <button
         onClick={() => void save()}
@@ -265,6 +280,28 @@ export function RangeEditModal({
       </button>
       <p className="mt-1 text-[11px] text-slate-400">고쳐서 저장하면 확인한 것으로 보고 바로 등록됩니다.</p>
     </Shell>
+  );
+}
+
+/**
+ * **픽업 시각 한 칸.** 픽업일 때만 보입니다.
+ *
+ * 글에 「4시 픽업」이라고 적혀 와도 이 창에는 시각을 넣을 자리가 없어서, 사람 손으로 넣은 픽업은
+ * 늘 「미정」으로 떴습니다. 픽업에서 시각은 곧 아이를 내보내는 때입니다.
+ */
+function PickupTimeField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const bad = value.trim() !== "" && !isClockTime(value.trim());
+  return (
+    <div className="mt-2">
+      <p className="mb-1 text-[11px] font-semibold text-slate-500">픽업 시각</p>
+      <input
+        type="time"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className={"w-28 rounded-lg border px-2 py-1 text-[13px] tabular-nums " + (bad ? "border-rose-400 bg-rose-50" : "border-slate-300")}
+      />
+      <span className="ml-2 text-[11px] text-slate-400">비우면 「미정」으로 뜹니다</span>
+    </div>
   );
 }
 
@@ -279,10 +316,13 @@ export function ManualAttendanceModal({
   initialStatus,
   initialFrom,
   initialTo,
+  initialTime,
   fromName,
   onClose,
   onSaved,
 }: {
+  /** 원문에서 읽은 픽업 시각. 픽업이면 미리 채웁니다(틀린 데만 고치도록). */
+  initialTime?: string | null;
   initialName?: string;
   messageId?: string | null;
   rawText?: string | null;
@@ -303,12 +343,14 @@ export function ManualAttendanceModal({
   const [from, setFrom] = useState(initialFrom || today);
   const [to, setTo] = useState(initialTo || initialFrom || today);
   const [note, setNote] = useState("");
+  const [time, setTime] = useState((initialTime ?? "").slice(0, 5));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   async function save() {
     if (!student) return setErr("학생을 골라주세요.");
     if (to < from) return setErr("끝날이 시작날보다 앞입니다.");
+    if (status === "픽업" && time.trim() && !isClockTime(time.trim())) return setErr("시각은 14:30 처럼 적어주세요.");
     setBusy(true);
     const res = await fetch("/api/attendance/entries", {
       method: "PATCH",
@@ -321,6 +363,7 @@ export function ManualAttendanceModal({
           dateFrom: from,
           dateTo: to,
           note: note.trim() || null,
+          pickupTime: status === "픽업" ? time.trim() || null : null,
           messageId: messageId ?? null,
           rawText: rawText ?? null,
           fromName: fromName ?? null,
@@ -376,6 +419,7 @@ export function ManualAttendanceModal({
       <div className="mb-2">
         <p className="mb-1 text-[11px] font-semibold text-slate-500">기간</p>
         <RangePicker from={from} to={to} setFrom={setFrom} setTo={setTo} />
+        {status === "픽업" && <PickupTimeField value={time} onChange={setTime} />}
       </div>
 
       <input

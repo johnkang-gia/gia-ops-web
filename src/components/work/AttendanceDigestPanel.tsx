@@ -30,6 +30,7 @@ import {
   type RosterStudent,
 } from "@/lib/attendanceDigest";
 import { Who } from "@/components/common/HomonymProvider";
+import { extractTimeFromText } from "@/lib/pickupParse";
 
 /**
  * 이름을 견줄 때 쓰는 열쇠.
@@ -55,6 +56,8 @@ type RegRow = {
   date_from: string;
   date_to: string;
   reason: string | null;
+  /** 픽업 시각. 고치는 창에 미리 채웁니다. */
+  pickup_time?: string | null;
 };
 
 /** ✕ 로 내려둔 한 줄. 되돌릴 수 있게 원문까지 함께 받습니다. */
@@ -1218,6 +1221,7 @@ export default function AttendanceDigestPanel({
           status={rangeEdit.row.status}
           from0={rangeEdit.row.date_from}
           to0={rangeEdit.row.date_to}
+          time0={rangeEdit.row.pickup_time ?? null}
           onClose={() => setRangeEdit(null)}
           onSaved={async () => {
             await loadRegs();
@@ -1231,6 +1235,8 @@ export default function AttendanceDigestPanel({
           messageId={manual.messageId}
           rawText={manual.raw}
           initialStatus={manual.status}
+          // 글에 적힌 시각을 미리 채웁니다(「4시 픽업」). 틀렸으면 사람이 고칩니다.
+          initialTime={extractTimeFromText(manual.raw ?? "")}
           initialFrom={manual.from}
           initialTo={manual.to}
           fromName={manual.fromName}

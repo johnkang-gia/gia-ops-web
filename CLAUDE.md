@@ -658,3 +658,19 @@ const routeId = effectiveRouteId(
 
 관리 > 연동 상태 옆의 스키마 점검(`/api/admin/schema-check`)이 실제로 넣어 보고 알려줍니다. 「저장 실패」가
 보이면 그것부터 봅니다.
+
+---
+
+## 2-15. 도서관 앱(gia-lib-web)과 DB 를 함께 씁니다
+
+도서관 앱은 별도 저장소지만 **같은 Supabase** 를 씁니다. `lib_*` 표·`lib_students` 뷰·자물쇠는 **이
+저장소의 마이그레이션**이 만듭니다. 도서관 쪽 작업이 표나 칸을 필요로 하면 그 작업이 이 저장소의
+`supabase/migrations` 에 파일을 직접 넣고 올립니다(도서관 저장소 `CLAUDE.md` 1). 사람에게 SQL 을 건네
+SQL 창에 붙이게 하지 않습니다 - 손으로 돌린 SQL 은 기록에 남지 않아 다음 자동 적용과 어긋납니다.
+
+자동 적용(`supabase-migrate.yml`)은 끝에 **스키마 캐시 새로 읽기**(`notify pgrst, 'reload schema'`)를
+늘 보냅니다. 안 보내면 칸을 만들어도 앱이 몇 분간 「schema cache」 오류를 냅니다.
+
+운영앱은 도서관 표를 **읽기만** 합니다(`src/lib/library.ts`). 반대로 도서관 앱이 운영앱에서 받는 것은
+명부(`lib_students`)와 명부 변경 신호(`lib_roster_version`, `wr_students` 트리거)입니다. 부서 판정 규칙은
+두 저장소에 같은 모양으로 있으니(`departmentOf`) 바꿀 때 함께 바꿉니다.

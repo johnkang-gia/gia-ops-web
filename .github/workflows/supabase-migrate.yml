@@ -201,4 +201,13 @@ jobs:
               -c "insert into public.error_logs (route, message, stack) values ('migration:push', '스키마 반영이 실패했습니다. 새 칸을 쓰는 화면이 오류를 냅니다. GitHub Actions > Supabase 마이그레이션 에서 원인을 확인해주세요.', :'log')" \
               || echo "오류 목록에 남기지 못했습니다(원인 파악에는 영향 없음)."
           fi
+
+          # ── 스키마 캐시 새로 읽기 ──────────────────────────────────────────
+          #
+          # 칸을 만들어도 앱은 곧바로 「Could not find the '…' column … in the schema cache」 를
+          # 낼 수 있습니다. 앱은 DB 에 직접 묻지 않고 그 앞의 PostgREST 를 거치는데, 그쪽이 표의
+          # 생김새를 기억해 두고 씁니다. 도서카드 뒷면 칸에서 실제로 걸렸고 그때는 사람이 SQL 창에서
+          # 손으로 알렸습니다. 마이그레이션마다 손으로 할 일을 남기면 언젠가 빠지므로 여기서 늘 합니다.
+          psql "$SUPABASE_DB_URL" -c "notify pgrst, 'reload schema';" \
+            || echo "스키마 캐시 새로 읽기 알림을 보내지 못했습니다(몇 분 안에 저절로 갱신됩니다)."
           exit "$code"

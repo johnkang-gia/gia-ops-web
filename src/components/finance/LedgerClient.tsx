@@ -317,11 +317,18 @@ export default function LedgerClient({
          * 화면 밖으로 밀려 「이 아이 미납이 얼마지」를 보려고 매번 끝까지 굴려야 합니다. 세
          * 표를 나란히 두고 줄 높이를 같게 고정합니다 - 한 줄이 두 줄이 되는 순간 세 표가
          * 어긋나므로 모든 칸이 한 줄(nowrap)입니다.
+         *
+         * **머리줄은 위에, 합계줄은 아래에 붙여 둡니다.** 139명을 내려 보다 보면 어느 칸이 학비내역이고
+         * 어느 칸이 수납인지 알 수 없어서 다시 위로 올라가야 했습니다. 붙여 두는 설정(sticky)은 **가장
+         * 가까운 스크롤 상자** 기준이라, 예전처럼 가운데 표만 따로 가로 스크롤 상자에 넣어 두면 그 상자에
+         * 붙어 버려 위로 같이 올라갑니다. 그래서 스크롤 상자를 하나로 합치고, 학생 칸은 왼쪽·금액 칸은
+         * 오른쪽에 붙여 가로로 밀어도 남게 합니다.
          */
-        <div className="g-panel-solid flex overflow-hidden">
+        <div className="g-panel-solid max-h-[calc(100vh-12rem)] overflow-auto">
+          <div className="flex w-max min-w-full">
           {/* 고정 — 학생 */}
-          <table className="shrink-0 border-r border-slate-200 text-[12px]">
-            <thead className="bg-slate-50 text-[11px] text-slate-500">
+          <table className="sticky left-0 z-20 shrink-0 border-r border-slate-200 bg-white text-[12px]">
+            <thead className="sticky top-0 z-10 bg-slate-50 text-[11px] text-slate-500">
               <tr className="h-12">
                 <th rowSpan={2} className="px-2 text-left align-bottom">학생</th>
               </tr>
@@ -344,7 +351,7 @@ export default function LedgerClient({
                 </tr>
               )}
             </tbody>
-            <tfoot className="border-t-2 border-slate-200 bg-slate-50 text-[12px] font-bold">
+            <tfoot className="sticky bottom-0 z-10 border-t-2 border-slate-200 bg-slate-50 text-[12px] font-bold">
               <tr className="h-12">
                 <td className="px-2">{studentRows.length}명</td>
               </tr>
@@ -353,14 +360,14 @@ export default function LedgerClient({
 
           {/* 흐르는 부분 — 학비내역 · 학비외내역 */}
           {/* pill-clip-ok: 알약이 아니라 표입니다. 여백을 두면 양옆 고정 표와 격자선이 어긋납니다. */}
-          <div className="min-w-0 flex-1 overflow-x-auto">
+          <div className="flex-1">
             {/*
               칸마다 두 줄 - 위에 고른 것, 아래에 금액. 한 줄에 「정규 신청안함 · 방과후5일 월납 ₩450,000 · LMA…」
               처럼 이어 붙이면 아이마다 길이가 달라 세로로 아무것도 안 맞고, 눈이 금액을 못 찾습니다.
               칸을 정규 · 방과후 · 그 외 · 분류별로 고정하면 같은 종류의 돈이 같은 세로줄에 섭니다.
             */}
             <table className="w-full text-[12px]">
-              <thead className="bg-slate-50 text-[11px] text-slate-500">
+              <thead className="sticky top-0 z-10 bg-slate-50 text-[11px] text-slate-500">
                 <tr className="h-12">
                   <th colSpan={4} className="whitespace-nowrap border-b border-slate-200 px-2 text-left text-indigo-700">학비내역</th>
                   <th colSpan={extraCats.length + 1} className="whitespace-nowrap border-b border-l border-slate-200 px-2 text-left text-orange-700">학비외내역</th>
@@ -422,7 +429,7 @@ export default function LedgerClient({
                   </tr>
                 )}
               </tbody>
-              <tfoot className="border-t-2 border-slate-200 bg-slate-50 text-[12px] font-bold">
+              <tfoot className="sticky bottom-0 z-10 border-t-2 border-slate-200 bg-slate-50 text-[12px] font-bold">
                 <tr className="h-12">
                   {(["정규", "방과후", "그외"] as const).map((k) => (
                     <td key={k} className="whitespace-nowrap px-2 text-left tabular-nums text-slate-600">{won(sum((r) => r.tuition.filter((c) => c.slot === k).reduce((n, c) => n + c.amount, 0)))}</td>
@@ -438,8 +445,8 @@ export default function LedgerClient({
           </div>
 
           {/* 고정 — 금액 다섯 칸 */}
-          <table className="shrink-0 border-l border-slate-200 text-[12px]">
-            <thead className="bg-slate-50 text-[11px] text-slate-500">
+          <table className="sticky right-0 z-20 shrink-0 border-l border-slate-200 bg-white text-[12px]">
+            <thead className="sticky top-0 z-10 bg-slate-50 text-[11px] text-slate-500">
               <tr className="h-12">
                 <th rowSpan={2} className="whitespace-nowrap px-1.5 text-right align-bottom">청구예정</th>
                 <th rowSpan={2} className="whitespace-nowrap px-1.5 text-right align-bottom">청구액</th>
@@ -453,7 +460,7 @@ export default function LedgerClient({
             </thead>
             <tbody>
               {studentRows.map((r) => (
-                <tr key={r.id} onClick={() => setOpen(r.id)} className="h-8 cursor-pointer border-t border-slate-100 hover:bg-indigo-50/40">
+                <tr key={r.id} onClick={() => setOpen(r.id)} className="h-12 cursor-pointer border-t border-slate-100 hover:bg-indigo-50/40">
                   <td className={"whitespace-nowrap px-1.5 text-right tabular-nums font-bold " + (r.toBill > 0 ? "text-amber-700" : "text-slate-300")}>{r.toBill > 0 ? won(r.toBill) : "—"}</td>
                   <td className="whitespace-nowrap px-1.5 text-right tabular-nums text-slate-600">{r.billed > 0 ? won(r.billed) : "—"}</td>
                   <td className={"whitespace-nowrap px-1.5 text-right tabular-nums " + (r.paid > 0 ? "font-semibold text-emerald-700" : "text-slate-300")}>{r.paid > 0 ? won(r.paid) : "—"}</td>
@@ -464,13 +471,13 @@ export default function LedgerClient({
                 </tr>
               ))}
               {studentRows.length === 0 && (
-                <tr className="h-8">
+                <tr className="h-12">
                   <td colSpan={7} />
                 </tr>
               )}
             </tbody>
-            <tfoot className="border-t-2 border-slate-200 bg-slate-50 text-[12px] font-bold">
-              <tr className="h-8">
+            <tfoot className="sticky bottom-0 z-10 border-t-2 border-slate-200 bg-slate-50 text-[12px] font-bold">
+              <tr className="h-12">
                 <td className="whitespace-nowrap px-1.5 text-right tabular-nums text-amber-700">{won(sum((r) => r.toBill))}</td>
                 <td className="whitespace-nowrap px-1.5 text-right tabular-nums">{won(sum((r) => r.billed))}</td>
                 <td className="whitespace-nowrap px-1.5 text-right tabular-nums text-emerald-700">{won(sum((r) => r.paid))}</td>
@@ -481,12 +488,13 @@ export default function LedgerClient({
               </tr>
             </tfoot>
           </table>
+          </div>
         </div>
       ) : (
         <div>
           <div className="mb-2 flex flex-wrap items-center gap-2 text-[12px]">
             <span className="font-bold text-slate-700">{invRows.length}장 · {won(invSum)}</span>
-            <span className="text-rose-700">미수 {won(invBalance)}</span>
+            <span className="text-rose-700">미수금 {won(invBalance)}</span>
             <span className="ml-auto flex items-center gap-1">
               <button
                 onClick={() => setExporting(picked.size > 0 ? [...picked] : invRows.filter((v) => v.state !== "완납" && !v.offline && !v.exported).map((v) => v.id))}

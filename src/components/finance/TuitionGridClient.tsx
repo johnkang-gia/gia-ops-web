@@ -22,6 +22,7 @@ import { useEditingPresence } from "@/lib/useEditingPresence";
 import ScopeTabs from "./ScopeTabs";
 import AlltalkpayExport from "./AlltalkpayExport";
 import { ALL_SCOPE, inScope, type Scope } from "@/lib/gradeScope";
+import { gridTotals, gridTotalsByStudent } from "@/lib/gridTotals";
 
 /**
  * 학비 청구 명단 — 학생이 행, 납부 항목이 열.
@@ -813,6 +814,17 @@ export default function TuitionGridClient({
   }
 
   const grandTotal = rows.reduce((n, s) => n + totalOf(s.id), 0);
+  /**
+   * **청구액 · 수납 · 미수금** — 학비외 일괄·회계와 같은 세 숫자, 같은 계산(`gridTotals`).
+   *
+   * 학비 일괄에는 청구액 한 칸뿐이라, 누가 얼마를 아직 안 냈는지 보려면 회계 화면을 따로 열어야
+   * 했습니다. 세 화면이 같은 말·같은 계산을 써야 숫자를 서로 맞대어 볼 수 있습니다.
+   *
+   * 입금은 이 학기에 나간 학비 청구서(`invoicesOf`)에 붙은 것만 셉니다.
+   */
+  const termInvoices = [...invoicesOf.values()].flat();
+  const money = gridTotals(rows.map((s) => s.id), totalOf, termInvoices, payments);
+  const moneyOf = gridTotalsByStudent(rows.map((s) => s.id), totalOf, termInvoices, payments);
   const unissued = rows.filter((s) => totalOf(s.id) > 0 && hasUnbilled(s.id)).length;
 
   if (usedPlans.length === 0) {
@@ -1127,8 +1139,23 @@ export default function TuitionGridClient({
               <th className="min-w-[150px] border-b border-l border-slate-200 bg-white px-2 py-1.5 font-semibold text-slate-600">
                 비고 <span className="font-normal text-slate-400">(받는 할인)</span>
               </th>
-              <th className="min-w-[92px] border-b border-l border-slate-200 bg-white px-2 py-1.5 text-right font-semibold text-slate-600">
+              <th
+                className="min-w-[92px] border-b border-l-2 border-slate-400 bg-slate-100 px-2 py-1.5 text-right font-semibold text-slate-600"
+                title="이 아이의 표에 정해진 학비 합. 아직 청구서가 안 나간 것도 들어갑니다."
+              >
                 청구액
+              </th>
+              <th
+                className="min-w-[92px] border-b border-l border-emerald-200 bg-emerald-100 px-2 py-1.5 text-right font-semibold text-emerald-800"
+                title="이 학기 학비 청구서에 실제로 들어온 돈. 「이미 받음」으로 적어둔 것도 들어갑니다."
+              >
+                수납
+              </th>
+              <th
+                className="min-w-[92px] border-b border-l border-rose-200 bg-rose-100 px-2 py-1.5 text-right font-semibold text-rose-800"
+                title="청구액에서 수납을 뺀 값. 더 받았으면 「과납」으로 적습니다."
+              >
+                미수금
               </th>
               {/* **세 단추가 한 줄에 들어가야 합니다.** 미발행 줄에는 「미발행 · 💰 이미
                   받음 · 발행 →」 셋이 들어가는데 칸이 130px 이라 글자가 접혀 내려가면서
@@ -1361,11 +1388,36 @@ export default function TuitionGridClient({
                     </div>
                   </td>
 
-                  <td className="border-b border-l border-slate-200 px-2 py-1 text-right">
+                  <td className="border-b border-l-2 border-slate-400 px-2 py-1 text-right">
                     <span className={"font-bold tabular-nums " + (total > 0 ? "text-slate-800" : "text-slate-300")}>
                       {total > 0 ? won(total) : "—"}
                     </span>
                   </td>
+                  {(() => {
+                    // 아이별 청구·수납·미수금. 합계 줄과 같은 규칙에서 나옵니다.
+                    const mine = moneyOf.get(s.id) ?? { billed: total, paid: 0, due: total };
+                    return (
+                      <>
+                        <td className="border-b border-l border-slate-200 bg-emerald-50 px-2 py-1 text-right">
+                          <span className={"font-bold tabular-nums " + (mine.paid > 0 ? "text-emerald-800" : "text-emerald-200")}>
+                            {mine.paid > 0 ? won(mine.paid) : "—"}
+                          </span>
+                        </td>
+                        <td className="border-b border-l border-slate-200 bg-rose-50 px-2 py-1 text-right">
+                          {/* 다 받았으면 초록 「완납」. 0원을 그냥 적으면 안 걷은 것과 구별되지 않습니다. */}
+                          {total <= 0 ? (
+                            <span className="tabular-nums text-rose-200">—</span>
+                          ) : mine.due <= 0 ? (
+                            <span className="rounded bg-emerald-600 px-1 text-[11px] font-bold text-white">
+                              {mine.due < 0 ? `과납 ${won(-mine.due)}` : "완납"}
+                            </span>
+                          ) : (
+                            <span className="font-bold tabular-nums text-rose-800">{won(mine.due)}</span>
+                          )}
+                        </td>
+                      </>
+                    );
+                  })()}
 
                   <td className="whitespace-nowrap border-b border-l border-slate-200 px-2 py-1">
                     {inv ? (
@@ -1456,7 +1508,7 @@ export default function TuitionGridClient({
             })}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={usedPlans.length + 5} className="px-3 py-12 text-center text-sm text-slate-400">
+                <td colSpan={usedPlans.length + 7} className="px-3 py-12 text-center text-sm text-slate-400">
                   학생이 없습니다.
                 </td>
               </tr>
@@ -1481,8 +1533,14 @@ export default function TuitionGridClient({
                 );
               })}
               <td className="border-t-2 border-l border-slate-300 bg-slate-100 px-2 py-1.5" />
-              <td className="border-t-2 border-l border-slate-300 bg-slate-100 px-2 py-1.5 text-right">
-                <span className="text-[13px] font-black tabular-nums text-slate-800">{won(grandTotal)}</span>
+              <td className="border-t-2 border-l-2 border-slate-400 bg-slate-100 px-2 py-1.5 text-right">
+                <span className="text-[13px] font-black tabular-nums text-slate-800">{won(money.billed)}</span>
+              </td>
+              <td className="border-t-2 border-l border-slate-300 bg-emerald-100 px-2 py-1.5 text-right">
+                <span className="text-[13px] font-black tabular-nums text-emerald-800">{won(money.paid)}</span>
+              </td>
+              <td className="border-t-2 border-l border-slate-300 bg-rose-100 px-2 py-1.5 text-right">
+                <span className="text-[13px] font-black tabular-nums text-rose-800">{won(money.due)}</span>
               </td>
               <td className="border-t-2 border-l border-slate-300 bg-slate-100 px-2 py-1.5" />
             </tr>

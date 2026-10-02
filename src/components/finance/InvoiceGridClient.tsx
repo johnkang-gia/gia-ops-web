@@ -62,7 +62,7 @@ const W_NAME = 166;
 const LEFT_INVOICE = W_CHECK + W_NAME;
 
 /**
- * **오른쪽에 고정되는 세 칸**(총청구액 · 이미 받은 · 미납)의 너비.
+ * **오른쪽에 고정되는 세 칸**(청구액 · 수납 · 미수금 — 회계와 같은 말)의 너비.
  *
  * 항목이 스무 개 넘게 이어지는 표라, 가로로 밀면 맨 오른쪽 금액이 화면 밖으로 나갑니다.
  * 그러면 지금 보고 있는 줄이 얼마인지 알 수 없어서, 사람이 다시 왼쪽으로 밀었다가 오게
@@ -639,7 +639,7 @@ export default function InvoiceGridClient({
   const totalOf = (sid: string) => sumLines(linesByStudent.get(sid) ?? []);
   const grandTotal = rows.reduce((n, s) => n + totalOf(s.id), 0);
   /**
-   * **총청구액 · 이미 받은 금액 · 미납 청구액.**
+   * **청구액 · 수납 · 미수금** — 회계·학비 일괄과 같은 말입니다.
    *
    * 예전에는 합계 하나뿐이었습니다. 그 숫자는 「표에 등록된 항목의 값어치」인데 보는 사람은
    * 「받아야 할 돈」으로 읽습니다 - 이미 받은 것이 섞여 있어 둘은 다릅니다. 이 화면을 여는
@@ -1722,7 +1722,7 @@ export default function InvoiceGridClient({
                 rowSpan={2}
                 title="이 아이의 표에 등록된 항목 합. 아직 청구서가 안 나간 것도 들어갑니다."
               >
-                총청구액
+                청구액
               </th>
               <th
                 className="sticky z-30 border-b border-l border-emerald-200 bg-emerald-100 px-2 py-1 text-right align-bottom text-[11px] font-bold text-emerald-800"
@@ -1730,15 +1730,15 @@ export default function InvoiceGridClient({
                 rowSpan={2}
                 title="이 아이에게서 실제로 들어온 돈. 「이미 받음」으로 적어둔 것도 들어갑니다."
               >
-                납부금액
+                수납
               </th>
               <th
                 className="sticky right-0 z-30 border-b border-l border-rose-200 bg-rose-100 px-2 py-1 text-right align-bottom text-[11px] font-bold text-rose-800"
                 style={{ minWidth: W_MONEY, width: W_MONEY }}
                 rowSpan={2}
-                title="총청구액에서 받은 돈을 뺀 값. 더 받았으면 음수로 나옵니다."
+                title="청구액에서 수납을 뺀 값. 더 받았으면 「과납」으로 적습니다."
               >
-                미납
+                미수금
               </th>
             </tr>
             <tr>
@@ -2070,7 +2070,7 @@ export default function InvoiceGridClient({
                     );
                   })}
 
-                  {/* **아이별 총청구액 · 이미 받은 · 미납.** 합계 하나만 두면 이미 받은
+                  {/* **아이별 청구액 · 수납 · 미수금.** 합계 하나만 두면 이미 받은
                       것이 섞여 보여서, 누가 얼마를 아직 안 냈는지 세려면 수납 화면을 따로
                       열어야 했습니다. 판정은 `gridTotals` 한 곳입니다. */}
                   <td

@@ -9,10 +9,10 @@ import { todayKst } from "@/lib/kst";
  * 운영앱은 **읽기만** 합니다 - 대출·반납·카드 발급은 도서관 앱의 일입니다. 두 앱이 같은 표를
  * 고치면 「두 화면이 다른 답」(CLAUDE.md 2-11)이 다시 납니다.
  *
- * 도서관 앱 주소는 환경변수로 둡니다. 비어 있으면 링크를 안 그립니다 - 깨진 링크보다 없는
- * 링크가 낫습니다.
+ * 도서관 앱 주소는 정식 주소를 기본값으로 두고, 환경변수(`NEXT_PUBLIC_LIBRARY_URL`)가 있으면
+ * 그것을 씁니다 - 미리보기 배포에서 다른 주소를 가리켜야 할 때를 위해서입니다.
  */
-export const LIBRARY_URL = (process.env.NEXT_PUBLIC_LIBRARY_URL ?? "").replace(/\/$/, "");
+export const LIBRARY_URL = (process.env.NEXT_PUBLIC_LIBRARY_URL || "https://gia-lib-web.vercel.app").replace(/\/$/, "");
 
 export type LibLoan = {
   id: string;

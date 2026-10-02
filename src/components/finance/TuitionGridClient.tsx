@@ -6,6 +6,7 @@ import FeePlansModal from "./FeePlansModal";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useFinanceLive } from "@/lib/useFinanceLive";
 import AlreadyPaidModal from "@/components/finance/AlreadyPaidModal";
+import { loadPartnerMode, savePartnerMode, unbilledOf, issueExtraInvoice, PARTNER_LABEL, type PartnerMode } from "@/lib/issuePartner";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
 import { won } from "@/lib/feeItems";
@@ -710,6 +711,17 @@ export default function TuitionGridClient({
    */
   const [alreadyFor, setAlreadyFor] = useState<TuitionStudent | null>(null);
 
+  /**
+   * **학비외도 이 화면에서 함께 발행.** 학생마다 학비 일괄과 학비외 일괄을 오가지 않게 합니다.
+   * 고른 것은 기억합니다(학비외 일괄 화면과 같은 값) - 매번 다시 고르면 빠뜨립니다.
+   */
+  const [partnerMode, setPartnerModeState] = useState<PartnerMode>("off");
+  useEffect(() => setPartnerModeState(loadPartnerMode()), []);
+  const setPartnerMode = (m: PartnerMode) => {
+    setPartnerModeState(m);
+    savePartnerMode(m);
+  };
+
   async function recordAlreadyPaid(s: TuitionStudent, paidAt: string, amount: number, method: string, memo: string, planIds: string[]) {
     setBusy(true);
     const res = await fetch("/api/finance/invoices/tuition", {
@@ -743,6 +755,8 @@ export default function TuitionGridClient({
    */
   async function issueChecked(planIds: string[], only?: string[]) {
     const scoped = planIds.length > 0;
+    // 학비외도 함께 낼지. 고른 그대로 이 발행 전체에 씁니다(`issuePartner`).
+    const partner = partnerMode;
     const pick = only ? new Set(only) : checked;
     const targets = rows.filter(
       (s) => pick.has(s.id) && (scoped ? planIds.some((pid) => lineFor(s.id, usedPlans.find((p) => p.id === pid)!)) : totalOf(s.id) > 0),
@@ -769,20 +783,39 @@ export default function TuitionGridClient({
     const scopeLabel = scoped ? usedPlans.filter((p) => planIds.includes(p.id)).map((p) => p.name).join(" · ") : "아직 안 보낸 학비";
     // 학생 줄에서 한 명을 짚어 누른 것은 이미 「이 학생」이라고 말한 것입니다. 되물으면
     // 같은 대답을 두 번 하게 됩니다. 여러 명을 한꺼번에 보낼 때만 한 번 묻습니다.
-    if (!only && !confirm(`${targets.length}명에게 「${scopeLabel}」 청구서를 발행합니다. 되돌리려면 취소해야 합니다.`)) return;
+    const partnerNote = partner === "off" ? "" : ` + 학비외(${partner === "merge" ? "한 장으로" : "따로 한 장"})`;
+    if (!only && !confirm(`${targets.length}명에게 「${scopeLabel}」${partnerNote} 청구서를 발행합니다. 되돌리려면 취소해야 합니다.`)) return;
 
     setBusy(true);
     const made: Invoice[] = [];
     const failed: string[] = [];
+    let madeExtra = 0;
     try {
       for (const s of targets) {
         // 고른 항목이 없으면(「학비 전체」) **아직 안 보낸 항목만** 담습니다. 한 장도 안 나간
         // 학생은 남은 목록이 빈 배열이므로 예전처럼 전부(null) 담깁니다.
         const rest = scoped ? planIds : restOf(s.id);
-        if (!scoped && billed.get(s.id) && !billed.get(s.id)!.all && rest.length === 0) {
-          failed.push(`${s.name}(이미 모든 항목이 청구서에 담겼습니다)`);
+        const tuitionDone = !scoped && billed.get(s.id) && !billed.get(s.id)!.all && rest.length === 0;
+
+        // ── 학비외도 함께 ───────────────────────────────────────────────
+        // 아직 안 나간 학비외 항목을 금전 창과 같은 판정으로 읽습니다. 못 읽으면 학비만 내고
+        // 그 사실을 말합니다 - 조용히 학비만 나가면 학비외가 빠진 줄 모릅니다.
+        let extras: string[] = [];
+        if (partner !== "off") {
+          const u = await unbilledOf(s.id, termId || null);
+          if (u.error) failed.push(`${s.name}·학비외(안 나간 항목을 읽지 못해 학비만 냅니다: ${u.error})`);
+          else extras = u.extra;
+        }
+        // 학비가 다 나갔어도 학비외가 남았으면 학비외만 따로 냅니다.
+        if (tuitionDone) {
+          if (extras.length > 0) {
+            const r = await issueExtraInvoice(s.id, termId || null, dueDate, extras);
+            if (r.ok) madeExtra++;
+            else failed.push(`${s.name}·학비외(${r.error})`);
+          } else failed.push(`${s.name}(이미 모든 항목이 청구서에 담겼습니다)`);
           continue;
         }
+        const merge = partner === "merge" && extras.length > 0;
         const res = await fetch("/api/finance/invoices/tuition", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -791,6 +824,7 @@ export default function TuitionGridClient({
             dueDate,
             termId: termId || null,
             planIds: scoped ? planIds : rest.length > 0 ? rest : null,
+            ...(merge ? { itemIds: extras } : {}),
           }),
         });
         const ctype = res.headers.get("content-type") ?? "";
@@ -800,13 +834,23 @@ export default function TuitionGridClient({
           continue;
         }
         const body = await res.json().catch(() => ({}));
-        if (res.ok) made.push(body.invoice as Invoice);
+        if (res.ok) {
+          made.push(body.invoice as Invoice);
+          // 따로 한 장: 학비가 나간 뒤에 학비외를 냅니다. 학비가 실패했는데 학비외만 나가면
+          // 반쪽 청구가 되므로 순서를 이렇게 둡니다.
+          if (partner === "separate" && extras.length > 0) {
+            const r = await issueExtraInvoice(s.id, termId || null, dueDate, extras);
+            if (r.ok) madeExtra++;
+            else failed.push(`${s.name}·학비외(학비는 나갔고 학비외는 못 냈습니다: ${r.error})`);
+          }
+        }
         // 한 명이 실패해도 나머지는 계속합니다. 다만 **누가 실패했는지 반드시 말합니다.**
         else failed.push(`${s.name}(${body.error ?? res.statusText})`);
       }
       if (made.length > 0) setInvoices((p) => [...made, ...p]);
-      if (failed.length > 0) notify(`${made.length}건 발행 · ${failed.length}건 실패: ${failed.join(", ")}`, "error");
-      else notify(`${made.length}건 발행했습니다.`, "success");
+      const extraNote = madeExtra > 0 ? ` · 학비외 ${madeExtra}장 따로` : "";
+      if (failed.length > 0) notify(`${made.length}건 발행${extraNote} · ${failed.length}건 실패: ${failed.join(", ")}`, "error");
+      else notify(`${made.length}건 발행했습니다${extraNote}.`, "success");
       setChecked(new Set());
     } finally {
       setBusy(false);
@@ -912,6 +956,20 @@ export default function TuitionGridClient({
               onChange={(e) => setDueDate(e.target.value)}
               className="rounded-lg border border-slate-300 px-2 py-1 text-[11px]"
             />
+          </label>
+          <label className="flex items-center gap-1 text-[11px] font-semibold text-slate-600" title="학비외의 아직 안 나간 항목도 이 화면에서 함께 발행합니다">
+            학비외
+            <select
+              value={partnerMode}
+              onChange={(e) => setPartnerMode(e.target.value as PartnerMode)}
+              className={"rounded-lg border px-1.5 py-1 text-[11px] " + (partnerMode === "off" ? "border-slate-300" : "border-orange-400 bg-orange-50 font-bold text-orange-800")}
+            >
+              {(["off", "merge", "separate"] as PartnerMode[]).map((m) => (
+                <option key={m} value={m}>
+                  {m === "off" ? "함께 안 냄" : PARTNER_LABEL[m]}
+                </option>
+              ))}
+            </select>
           </label>
           <button
             onClick={() => void issueChecked([])}

@@ -13,6 +13,7 @@ import AlreadyPaidModal, { type AlreadyPaidResult } from "@/components/finance/A
 import { matchesInstrument, planInvoices, typicalByGroup, unusualAmount } from "@/lib/invoiceGrid";
 import { addDays, DUE_DAYS } from "@/lib/financePeriod";
 import PayModal from "./PayModal";
+import { loadPartnerMode, savePartnerMode, unbilledOf, issueTuitionInvoice, PARTNER_LABEL, type PartnerMode } from "@/lib/issuePartner";
 import { ReceiptChip, ReceiptModal } from "./ReceiptBits";
 import { settle, type SettleInvoice } from "@/lib/settlement";
 import { createClient } from "@/lib/supabase/client";
@@ -323,6 +324,16 @@ export default function InvoiceGridClient({
    * 교복은 치수를 잰 뒤에 보낼 수 있습니다. 어느 쪽이 맞는지는 그때그때 다릅니다.
    */
   const [issueMode, setIssueMode] = useState<IssueMode>("통합");
+  /**
+   * **학비도 이 화면에서 함께 발행.** 학생마다 학비 일괄과 학비외 일괄을 오가지 않게 합니다.
+   * 학비 일괄 화면과 같은 값을 기억합니다(`issuePartner`).
+   */
+  const [partnerMode, setPartnerModeState] = useState<PartnerMode>("off");
+  useEffect(() => setPartnerModeState(loadPartnerMode()), []);
+  const setPartnerMode = (m: PartnerMode) => {
+    setPartnerModeState(m);
+    savePartnerMode(m);
+  };
   /** 발주 목록 창. 합계 줄의 개수가 그대로 발주 수량입니다. */
   const [orderOpen, setOrderOpen] = useState(false);
   /**
@@ -1038,6 +1049,10 @@ export default function InvoiceGridClient({
     setBusy(true);
     const made: Invoice[] = [];
     const failed: string[] = [];
+    const partner = partnerMode;
+    /** 학비를 이미 함께 낸 학생. 분류마다 따로 낼 때 학비가 두 번 나가지 않게 합니다. */
+    const partnered = new Set<string>();
+    let madeTuition = 0;
     try {
       for (const { student: s, category } of jobs) {
         /**
@@ -1085,6 +1100,26 @@ export default function InvoiceGridClient({
           );
           continue;
         }
+        // ── 학비도 함께 ─────────────────────────────────────────────────
+        // 아직 안 나간 학비 항목을 금전 창과 같은 판정으로 읽습니다. 학생마다 한 번만 냅니다.
+        let tuition: string[] = [];
+        if (partner !== "off" && !partnered.has(s.id)) {
+          partnered.add(s.id);
+          const u = await unbilledOf(s.id, termId || null);
+          if (u.error) failed.push(`${s.name}·학비(안 나간 항목을 읽지 못해 학비외만 냅니다: ${u.error})`);
+          else tuition = u.tuition;
+        }
+        // 한 장으로: 학비 창구가 학비외 줄을 함께 담아 한 장을 냅니다.
+        if (partner === "merge" && tuition.length > 0) {
+          const r = await issueTuitionInvoice(s.id, termId || null, dueDate, tuition, send.map((l) => l.item.id));
+          if (r.ok && r.invoice) {
+            made.push(r.invoice as unknown as Invoice);
+            madeTuition++;
+            const invId = r.invoice.id;
+            setLineRows((p) => [...p, ...send.map((l) => ({ invoice_id: invId, name: l.item.name, item_id: l.item.id }))]);
+          } else failed.push(`${s.name}·학비+학비외(${r.error})`);
+          continue;
+        }
         const res = await fetch("/api/finance/invoices", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1124,6 +1159,12 @@ export default function InvoiceGridClient({
           // 잠깁니다 - 아직 안 나간 교재가 화면에서 사라집니다.
           if (invId)
             setLineRows((p) => [...p, ...send.map((l) => ({ invoice_id: invId, name: l.item.name, item_id: l.item.id }))]);
+          // 따로 한 장: 학비외가 나간 뒤에 학비를 냅니다.
+          if (partner === "separate" && tuition.length > 0) {
+            const r = await issueTuitionInvoice(s.id, termId || null, dueDate, tuition);
+            if (r.ok) madeTuition++;
+            else failed.push(`${s.name}·학비(학비외는 나갔고 학비는 못 냈습니다: ${r.error})`);
+          }
         }
         // 한 명이 실패해도 나머지는 계속합니다. 다만 **누가 실패했는지 반드시 말합니다** -
         // 조용히 넘기면 그 아이만 인보이스 없이 남습니다.
@@ -1135,8 +1176,9 @@ export default function InvoiceGridClient({
         // 발행만 해놓고 올톡페이에 안 올리는 일이 생깁니다.
         setJustIssued(made);
       }
-      if (failed.length > 0) notify(`${made.length}건 발행 · ${failed.length}건 실패: ${failed.join(", ")}`, "error");
-      else notify(`${made.length}건 발행했습니다.`, "success");
+      const tNote = madeTuition > 0 ? ` (학비 ${madeTuition}장 ${partner === "merge" ? "한 장으로 합침" : "따로"})` : "";
+      if (failed.length > 0) notify(`${made.length}건 발행${tNote} · ${failed.length}건 실패: ${failed.join(", ")}`, "error");
+      else notify(`${made.length}건 발행했습니다${tNote}.`, "success");
       setChecked(new Set());
       setReview(null);
     } finally {
@@ -2242,6 +2284,29 @@ export default function InvoiceGridClient({
                   </span>
                 </div>
               )}
+              {/* 학비도 함께. 학생마다 학비 일괄 화면으로 넘어가지 않게 합니다. */}
+              <div className="mt-2 flex flex-wrap items-center gap-1.5 rounded-lg bg-indigo-50/60 px-2 py-1.5">
+                <span className="text-[11px] font-bold text-slate-500">학비도 함께</span>
+                {(["off", "merge", "separate"] as PartnerMode[]).map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => setPartnerMode(m)}
+                    className={
+                      "rounded-full px-2.5 py-1 text-[12px] font-bold transition-colors " +
+                      (partnerMode === m ? "bg-indigo-700 text-white" : "bg-white text-slate-500 ring-1 ring-slate-200 hover:text-slate-800")
+                    }
+                  >
+                    {m === "off" ? "학비외만" : PARTNER_LABEL[m]}
+                  </button>
+                ))}
+                <span className="text-[11px] text-slate-500">
+                  {partnerMode === "merge"
+                    ? "아직 안 나간 학비가 있는 학생은 학비+학비외 한 장으로 나갑니다"
+                    : partnerMode === "separate"
+                      ? "아직 안 나간 학비가 있으면 학비 청구서도 한 장 더 나갑니다"
+                      : "학비외만 나갑니다"}
+                </span>
+              </div>
               {cat !== "전체" && (
                 <p className="mt-2 rounded-lg bg-teal-50 px-2 py-1.5 text-[12px] font-semibold text-teal-800">
                   <b>{cat}</b> 항목만 담은 청구서가 나갑니다. 다른 분류는 이 청구서에 들어가지 않습니다.

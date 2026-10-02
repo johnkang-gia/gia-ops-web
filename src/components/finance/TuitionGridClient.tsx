@@ -1602,7 +1602,10 @@ export default function TuitionGridClient({
               return {
                 id: x.plan.id,
                 label: x.plan.name,
-                amount: Number(x.line?.subtotal ?? 0),
+                // **할인까지 뺀 금액**(`amount`)입니다. 앞 판은 `subtotal`(옵션 할인만 뺀 값)을
+                // 넘겨서, 표에는 할인 적용 금액이 찍히는데 이 창은 할인 전 금액을 보여줬고 그대로
+                // 누르면 받은 돈이 청구서보다 크게 적혔습니다. 표의 칸·청구서 줄과 같은 값이어야 합니다.
+                amount: Number(x.line?.amount ?? 0),
                 lockedNote: taken ? (state === "완납" ? "이미 받음(청구서 있음)" : "이미 청구서에 담김") : null,
               };
             })}

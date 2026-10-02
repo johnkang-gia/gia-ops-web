@@ -51,6 +51,8 @@ export type LedgerPayment = {
   memo: string | null;
   origin?: string | null;
   kind?: string | null;
+  /** 예치금에서 옮겨 붙은 돈인지 가릴 때 씁니다(`isFromDeposit`). */
+  matched_by?: string | null;
 };
 
 /** 원장이 받는 자료 전부. 화면이 한 번 읽어 넘기고, 학생마다 `buildLedger` 를 부릅니다. */

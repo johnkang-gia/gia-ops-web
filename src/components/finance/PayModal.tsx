@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { won } from "@/lib/feeItems";
 import { PAYMENT_METHOD_KINDS, needsCashReceipt, type PaymentMethodKind } from "@/lib/payments";
+import { depositBalance, groupLines, isFromDeposit } from "@/lib/depositLines";
+import DepositApplyModal from "./DepositApplyModal";
 
 /**
  * 결제완료 체크 창.
@@ -41,6 +43,11 @@ export default function PayModal({
   /** 항목이 아니라 금액으로 받는 경우(현금 일부만 들고 오시는 등). */
   const [byAmount, setByAmount] = useState(false);
   const [amount, setAmount] = useState(target.balance);
+  /** 이 학생 앞으로 남은 예치금. 있으면 「예치금에서 빼기」를 먼저 보여줍니다. */
+  const [deposit, setDeposit] = useState(0);
+  /** 항목별로 예치금이 이미 덮은 금액(일부만 덮인 항목은 나머지만 받습니다). */
+  const [fromDep, setFromDep] = useState<Map<string, number>>(new Map());
+  const [depOpen, setDepOpen] = useState(false);
 
   useEffect(() => {
     const supabase = createClient();
@@ -60,13 +67,39 @@ export default function PayModal({
         }
         const rows = (data as Line[]) ?? [];
         setLines(rows);
-        setPicked(new Set(rows.filter((l) => !l.paid_payment_id && Number(l.amount) > 0).map((l) => l.id)));
+        setPicked(new Set(groupLines(rows.map((l) => ({ ...l, amount: Number(l.amount) }))).filter((i) => !i.paid).map((i) => i.id)));
       });
+    void (async () => {
+      const { data: inv } = await supabase.from("invoices").select("student_id").eq("id", target.id).maybeSingle();
+      const [onInv, dep] = await Promise.all([
+        supabase.from("payments").select("amount, matched_by, applied_line_id").eq("invoice_id", target.id),
+        inv?.student_id
+          ? supabase.from("payments").select("amount").eq("student_id", inv.student_id).is("invoice_id", null)
+          : Promise.resolve({ data: [], error: null }),
+      ]);
+      // 예치금을 못 읽어도 결제는 받을 수 있어야 합니다. 다만 「예치금 없음」으로 보이면 안 되므로
+      // 읽은 것만 씁니다(못 읽으면 0으로 두고 단추를 숨깁니다).
+      setDeposit(depositBalance(((dep.data as { amount: number | string }[] | null) ?? []).map((x) => ({ amount: Number(x.amount) }))));
+      const m = new Map<string, number>();
+      for (const p of (onInv.data as { amount: number | string; matched_by: string | null; applied_line_id: string | null }[] | null) ?? []) {
+        if (p.applied_line_id && isFromDeposit(p.matched_by)) m.set(p.applied_line_id, (m.get(p.applied_line_id) ?? 0) + Number(p.amount));
+      }
+      setFromDep(m);
+    })();
   }, [target.id]);
 
-  const unpaid = (lines ?? []).filter((l) => !l.paid_payment_id);
-  const paidLines = (lines ?? []).filter((l) => l.paid_payment_id);
-  const pickedTotal = unpaid.filter((l) => picked.has(l.id)).reduce((n, l) => n + Math.round(Number(l.amount)), 0);
+  /**
+   * 할인 줄은 그 위 항목과 **한 덩어리**입니다(`groupLines`). 줄마다 고르게 두면 「정규과정
+   * 4,000,000」만 받고 「└ 할인 −400,000」은 남아, 할인 전 금액을 받게 됩니다.
+   */
+  const items = groupLines((lines ?? []).map((l) => ({ ...l, amount: Number(l.amount) }))).map((i) => ({
+    ...i,
+    // 예치금이 일부 덮은 항목은 남은 몫만 받습니다.
+    rest: Math.max(0, i.amount - (fromDep.get(i.id) ?? 0)),
+  }));
+  const unpaid = items.filter((i) => !i.paid);
+  const paidLines = items.filter((i) => i.paid);
+  const pickedTotal = unpaid.filter((l) => picked.has(l.id)).reduce((n, l) => n + l.rest, 0);
   const useLines = !byAmount && unpaid.length > 0;
   const finalAmount = useLines ? pickedTotal : amount;
   const leftAfter = target.balance - finalAmount;
@@ -82,7 +115,7 @@ export default function PayModal({
         invoiceId: target.id,
         method,
         paidAt,
-        ...(useLines ? { lineIds: [...picked] } : { amount }),
+        ...(useLines ? { lineIds: unpaid.filter((i) => picked.has(i.id)).flatMap((i) => i.members) } : { amount }),
         keepExcess,
       }),
     });
@@ -111,6 +144,19 @@ export default function PayModal({
       <div className="max-h-[88vh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-4" onClick={(e) => e.stopPropagation()}>
         <h3 className="mb-1 text-sm font-bold text-slate-800">결제완료</h3>
         <p className="mb-3 text-[12px] text-slate-500">{target.label}</p>
+
+        {/* 예치금이 있으면 맨 위에 둡니다. 이미 맡겨둔 돈이 있는데 새 돈을 받으면 학부모가 두 번 냅니다. */}
+        {(deposit > 0 || fromDep.size > 0) && (
+          <div className="mb-3 flex items-center gap-2 rounded-lg bg-teal-50 px-2.5 py-1.5 text-[12px] text-teal-900">
+            <span className="min-w-0 flex-1">
+              남은 예치금 <b className="tabular-nums">{won(deposit)}</b>
+              {fromDep.size > 0 && <span className="ml-1 text-[11px] text-teal-700">· 이 청구서에서 이미 {won([...fromDep.values()].reduce((n, v) => n + v, 0))} 뺌</span>}
+            </span>
+            <button onClick={() => setDepOpen(true)} className="shrink-0 rounded bg-teal-600 px-2 py-1 text-[11px] font-bold text-white">
+              예치금에서 빼기
+            </button>
+          </div>
+        )}
 
         {/* ── 무엇을 받았는가 ─────────────────────────────────────────── */}
         {lines === null ? (
@@ -157,8 +203,11 @@ export default function PayModal({
                             })
                           }
                         />
-                        <span className="min-w-0 flex-1 truncate text-slate-800">{l.name}</span>
-                        <span className="tabular-nums text-slate-600">{won(Math.round(Number(l.amount)))}</span>
+                        <span className="min-w-0 flex-1 truncate text-slate-800">
+                          {l.name}
+                          {l.rest < l.amount && <span className="ml-1 text-[10px] text-teal-700">예치금 {won(l.amount - l.rest)} 차감</span>}
+                        </span>
+                        <span className="tabular-nums text-slate-600">{won(l.rest)}</span>
                       </label>
                     </li>
                   ))}
@@ -174,7 +223,7 @@ export default function PayModal({
                   {paidLines.map((l) => (
                     <li key={l.id} className="flex items-center gap-2 text-[11px] text-emerald-700">
                       <span className="min-w-0 flex-1 truncate line-through">{l.name}</span>
-                      <span className="tabular-nums">{won(Math.round(Number(l.amount)))}</span>
+                      <span className="tabular-nums">{won(l.amount)}</span>
                     </li>
                   ))}
                 </ul>
@@ -247,6 +296,18 @@ export default function PayModal({
           {busy ? "저장 중…" : "받았습니다"}
         </button>
       </div>
+      {depOpen && (
+        <DepositApplyModal
+          invoiceId={target.id}
+          label={target.label}
+          onClose={() => setDepOpen(false)}
+          onDone={(msg) => {
+            // 예치금을 빼면 남은 금액이 바뀝니다. 옛 금액을 든 채 결제를 받지 않도록 이 창도 닫습니다.
+            onDone(msg);
+            onClose();
+          }}
+        />
+      )}
     </div>
   );
 }

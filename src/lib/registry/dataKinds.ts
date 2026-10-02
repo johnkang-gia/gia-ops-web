@@ -197,7 +197,7 @@ export const DATA_KINDS: DataKindDef[] = [
   {
     key: "도서관",
     canonical: "lib_loans",
-    satellites: ["lib_books", "lib_visits", "lib_card_issues", "lib_settings", "lib_locations", "lib_map", "lib_student_photos", "lib_label_levels", "lib_roster_version"],
+    satellites: ["lib_books", "lib_visits", "lib_card_issues", "lib_settings", "lib_locations", "lib_map", "lib_student_photos", "lib_label_levels", "lib_roster_version", "lib_card_prefs"],
     dedupe: { none: "대출은 같은 아이가 같은 책을 다시 빌릴 수 있는 기록입니다. 중복이 아니라 이력입니다." },
     apply: null,
     undo: null,

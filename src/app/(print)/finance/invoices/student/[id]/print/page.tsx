@@ -6,6 +6,7 @@ import InvoiceSheet, { type SheetPart } from "@/components/finance/InvoiceSheet"
 import type { Invoice, InvoiceLine } from "@/lib/types";
 import { invoiceFileTitle } from "@/lib/invoiceTitle";
 import { sortForSheet } from "@/lib/invoiceSections";
+import { loadDepositView } from "@/lib/depositView";
 
 export const dynamic = "force-dynamic";
 
@@ -104,5 +105,6 @@ export default async function StudentInvoicePrintPage({
   const { parts } = await loadParts(id, term);
   if (parts.length === 0) notFound();
 
-  return <InvoiceSheet parts={parts} embed={embed === "1"} />;
+  const depositView = await loadDepositView(await createClient(), parts);
+  return <InvoiceSheet parts={parts} embed={embed === "1"} deposit={depositView} />;
 }

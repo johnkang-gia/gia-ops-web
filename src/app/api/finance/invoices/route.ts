@@ -354,6 +354,8 @@ export async function POST(req: Request) {
    * 학비 창구(`/tuition`)에는 이 문지기가 처음부터 있었습니다. 학비외에만 빠져 있었습니다 -
    * 같은 규칙을 두 파일에 각자 적어서 한쪽만 고쳐진 자리입니다.
    */
-  const pre = paidAt ? { applied: 0, error: null } : await applyPrepaid(supabase, inv, me.email);
+  // 금전 창처럼 **사람이 그 자리에서 뺄 항목을 고르는 곳**은 `skipPrepaid` 를 보냅니다. 저절로
+  // 빼고 나서 다시 고르게 하면 같은 돈이 두 번 오갑니다.
+  const pre = paidAt || body?.skipPrepaid === true ? { applied: 0, error: null } : await applyPrepaid(supabase, inv, me.email);
   return NextResponse.json({ ok: true, invoice: inv, paid: paidRecorded, prepaidApplied: pre.applied, warning: pre.error });
 }

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isFromDeposit } from "@/lib/depositLines";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess } from "@/lib/roles";
@@ -81,8 +82,10 @@ export async function POST(req: Request) {
   // 비어 있을 수 있어 예전 기준(`matched_by`)도 함께 봅니다.
   const madeByIssue = (p: PayRow) => p.origin === "이미받음" || (!p.origin && p.matched_by === "이미받음");
   const fromIssue = rows.filter(madeByIssue);
-  const fromPrepaid = rows.filter((p) => !madeByIssue(p) && p.matched_by === "선입금 자동충당");
-  const fromDesk = rows.filter((p) => !madeByIssue(p) && p.matched_by !== "선입금 자동충당");
+  // 예치금에서 옮겨 붙은 돈은 붙인 자리가 셋(발행 자동 · 대장에서 손으로 · 항목 골라 차감)이라
+  // 판정을 `isFromDeposit` 한 곳에 둡니다. 하나만 보면 나머지 둘은 「청구 취소로 떼어냄」이 됩니다.
+  const fromPrepaid = rows.filter((p) => !madeByIssue(p) && isFromDeposit(p.matched_by));
+  const fromDesk = rows.filter((p) => !madeByIssue(p) && !isFromDeposit(p.matched_by));
   const deskPaid = fromDesk.reduce((n, p) => n + Number(p.amount), 0);
   const prepaidBack = fromPrepaid.reduce((n, p) => n + Number(p.amount), 0);
 
@@ -124,7 +127,7 @@ export async function POST(req: Request) {
   if (fromPrepaid.length > 0) {
     const { error: backErr } = await supabase
       .from("payments")
-      .update({ invoice_id: null })
+      .update({ invoice_id: null, applied_line_id: null })
       .in("id", fromPrepaid.map((p) => p.id));
     if (backErr) {
       return NextResponse.json(

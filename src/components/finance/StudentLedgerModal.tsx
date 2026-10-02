@@ -13,6 +13,8 @@ import AlreadyPaidModal from "@/components/finance/AlreadyPaidModal";
 import { FINANCE_TABLES } from "@/lib/useFinanceLive";
 import { createClient } from "@/lib/supabase/client";
 import PayModal from "@/components/finance/PayModal";
+import DepositApplyModal from "@/components/finance/DepositApplyModal";
+import { isFromDeposit } from "@/lib/depositLines";
 import CancelInvoiceModal from "@/components/finance/CancelInvoiceModal";
 import InvoicePreviewModal from "@/components/finance/InvoicePreviewModal";
 import AlltalkpayExport from "@/components/finance/AlltalkpayExport";
@@ -89,6 +91,8 @@ export default function StudentLedgerModal({
   // 발행 전에 보는 초안. 먼저 보고 그대로 발행합니다 - 눌러봐야 아는 단추는 아무도 안 누릅니다.
   const [draft, setDraft] = useState<{ combine: boolean } | null>(null);
   const [paying, setPaying] = useState<LedgerInvoice | null>(null);
+  /** 예치금에서 뺄 항목을 고르는 청구서. 발행 직후에도 열립니다. */
+  const [depositFor, setDepositFor] = useState<{ id: string; label: string } | null>(null);
   const [cancelling, setCancelling] = useState<LedgerInvoice | null>(null);
   const [preview, setPreview] = useState<{ id: string; label: string; receipt: boolean } | null>(null);
   const [exporting, setExporting] = useState<string[] | null>(null);
@@ -178,23 +182,32 @@ export default function StudentLedgerModal({
     setBusy(true);
     const failed: string[] = [];
     const made: string[] = [];
+    const madeIds: { id: string; no: string }[] = [];
+    // 예치금이 있으면 저절로 빼지 않고, 발행한 뒤 **뺄 항목을 고르는 창**을 엽니다. 사람이 이 자리에
+    // 있으니 무엇을 예치금에서 낼지는 사람이 정합니다.
+    const skipPrepaid = (ledger.totals.deposit ?? 0) > 0;
+    const keep = (r: { body: Record<string, unknown> }, fallback: string) => {
+      const v = r.body.invoice as { id?: string; invoice_no?: string } | undefined;
+      made.push(String(v?.invoice_no ?? fallback));
+      if (v?.id) madeIds.push({ id: v.id, no: String(v.invoice_no ?? fallback) });
+    };
     try {
       if (tuition.length > 0) {
-        const r = await post("/api/finance/invoices/tuition", { studentId, termId, planIds: tuition, ...(merged ? { itemIds: extra } : {}) });
-        if (r.ok) made.push(String((r.body.invoice as { invoice_no?: string } | undefined)?.invoice_no ?? "학비"));
+        const r = await post("/api/finance/invoices/tuition", { studentId, termId, planIds: tuition, skipPrepaid, ...(merged ? { itemIds: extra } : {}) });
+        if (r.ok) keep(r, "학비");
         else failed.push(`학비${merged ? "+학비외" : ""}(${String(r.body.error ?? "")})`);
         if (merged) extra = [];
       }
       if (extra.length > 0) {
-        let r = await post("/api/finance/invoices", { studentId, feeTermId: termId, itemIds: extra });
+        let r = await post("/api/finance/invoices", { studentId, feeTermId: termId, itemIds: extra, skipPrepaid });
         // 서버가 「이미 담긴 항목」을 잡으면 사람에게 묻습니다. 한 학기에 같은 교재를 두 번 사는
         // 일은 있지만 드물고, 두 번 청구되는 사고는 흔합니다 - 기본은 막고 확인한 때만 넘깁니다.
         if (!r.ok && Array.isArray(r.body.duplicates)) {
           const dups = r.body.duplicates as { name: string; invoiceNo: string }[];
           const again = confirm(`이미 청구서에 담긴 항목입니다:\n${dups.map((d) => `· ${d.name} — ${d.invoiceNo}`).join("\n")}\n\n정말 한 번 더 청구할까요? (아니면 그 장을 먼저 취소하세요)`);
-          if (again) r = await post("/api/finance/invoices", { studentId, feeTermId: termId, itemIds: extra, allowDuplicate: true });
+          if (again) r = await post("/api/finance/invoices", { studentId, feeTermId: termId, itemIds: extra, allowDuplicate: true, skipPrepaid });
         }
-        if (r.ok) made.push(String((r.body.invoice as { invoice_no?: string } | undefined)?.invoice_no ?? "학비외"));
+        if (r.ok) keep(r, "학비외");
         else failed.push(`학비외(${String(r.body.error ?? "")})`);
       }
     } finally {
@@ -204,6 +217,7 @@ export default function StudentLedgerModal({
     if (failed.length) notify(`${made.length ? `${made.join(", ")} 발행 · ` : ""}실패: ${failed.join(" / ")}`, "error");
     else notify(`${made.join(", ")} 발행했습니다.`, "success");
     await changed();
+    if (skipPrepaid && madeIds.length > 0) setDepositFor({ id: madeIds[0].id, label: `${ledger.student.name} · ${madeIds[0].no}` });
   }
 
   /**
@@ -643,6 +657,15 @@ export default function StudentLedgerModal({
                       올톡
                     </label>
                     <span className="flex items-center gap-0.5">
+                      {(v.settled.balance > 0 && ledger.totals.deposit > 0) || ledger.payments.some((p) => p.invoice_id === v.id && isFromDeposit(p.matched_by)) ? (
+                        <button
+                          onClick={() => setDepositFor({ id: v.id, label: `${student?.name ?? ""} · ${v.invoice_no}` })}
+                          className="rounded bg-teal-100 px-1.5 py-0.5 text-[10px] font-bold text-teal-800 hover:bg-teal-200"
+                          title="예치금에서 낼 항목을 고릅니다"
+                        >
+                          예치금
+                        </button>
+                      ) : null}
                       {v.settled.balance > 0 && (
                         <button onClick={() => setPaying(v)} className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800 hover:bg-emerald-200" title="입금 기록">
                           입금
@@ -723,6 +746,7 @@ export default function StudentLedgerModal({
                         {inv ? (
                           <>
                             → <button onClick={() => setPreview({ id: inv.id, label: `${student?.name} · ${inv.invoice_no}`, receipt: false })} className="underline">{inv.invoice_no}</button>
+                            {isFromDeposit(p.matched_by) && <span className="ml-1 rounded bg-teal-50 px-1 font-bold text-teal-700">예치금에서</span>}
                           </>
                         ) : refund ? (
                           <span className="font-bold text-rose-600">돌려줌</span>
@@ -799,6 +823,18 @@ export default function StudentLedgerModal({
           onDone={(msg) => {
             notify(msg, "success");
             setPaying(null);
+            void changed();
+          }}
+        />
+      )}
+      {depositFor && (
+        <DepositApplyModal
+          invoiceId={depositFor.id}
+          label={depositFor.label}
+          onClose={() => setDepositFor(null)}
+          onDone={(msg) => {
+            notify(msg, "success");
+            setDepositFor(null);
             void changed();
           }}
         />

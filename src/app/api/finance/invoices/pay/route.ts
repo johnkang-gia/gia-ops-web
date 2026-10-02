@@ -97,6 +97,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `이미 받은 항목이 섞여 있습니다(${already.length}건).` }, { status: 400 });
     }
     lineTotal = rows.reduce((n, r) => n + Math.round(Number(r.amount)), 0);
+    // 예치금이 이 항목을 **일부** 덮었으면 그만큼은 이미 받은 돈입니다. 빼지 않으면 항목값을
+    // 통째로 한 번 더 받아, 그 차액이 과납으로 예치금에 되돌아갑니다.
+    const { data: part, error: partErr } = await supabase
+      .from("payments")
+      .select("amount")
+      .eq("invoice_id", inv.id)
+      .in("applied_line_id", lineIds);
+    if (partErr) return NextResponse.json({ error: partErr.message }, { status: 500 });
+    lineTotal -= ((part as { amount: number | string }[] | null) ?? []).reduce((n, p) => n + Math.round(Number(p.amount)), 0);
+    lineTotal = Math.max(0, lineTotal);
   }
 
   // 금액을 안 적으면 남은 만큼. 항목을 골랐으면 그 합계가 곧 금액입니다.

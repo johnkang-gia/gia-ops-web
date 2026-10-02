@@ -27,7 +27,7 @@ export async function loadLedgerWorld(
     return only ? q.eq("student_id", only) : q;
   };
   const payQ = (from: number, to: number) => {
-    const q = supabase.from("payments").select("id, invoice_id, student_id, paid_at, amount, method, memo, origin, kind").order("paid_at").order("id").range(from, to);
+    const q = supabase.from("payments").select("id, invoice_id, student_id, paid_at, amount, method, memo, origin, kind, matched_by").order("paid_at").order("id").range(from, to);
     return only ? q.eq("student_id", only) : q;
   };
   const enrQ = () => {

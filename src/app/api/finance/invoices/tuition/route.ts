@@ -374,7 +374,9 @@ export async function POST(req: Request) {
   // ── 남은 선입금 충당 ────────────────────────────────────────────────
   //
   // 먼저 받아둔 돈이 있는데 이 청구서가 「미납」으로 뜨면 이미 낸 분에게 독촉이 나갑니다.
-  const pre = paidAt ? { applied: 0, error: null } : await applyPrepaid(supabase, inv, me.email);
+  // 금전 창처럼 **사람이 그 자리에서 뺄 항목을 고르는 곳**은 `skipPrepaid` 를 보냅니다. 저절로
+  // 빼고 나서 다시 고르게 하면 같은 돈이 두 번 오갑니다.
+  const pre = paidAt || body?.skipPrepaid === true ? { applied: 0, error: null } : await applyPrepaid(supabase, inv, me.email);
 
   return NextResponse.json({
     ok: true,

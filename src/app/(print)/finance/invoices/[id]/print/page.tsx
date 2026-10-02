@@ -5,6 +5,8 @@ import { hasFinanceAccess } from "@/lib/roles";
 import InvoiceSheet, { type SheetPart, type ReceiptInfo } from "@/components/finance/InvoiceSheet";
 import type { Invoice, InvoiceLine } from "@/lib/types";
 import { invoiceFileTitle, familyFileTitle } from "@/lib/invoiceTitle";
+import { loadDepositView } from "@/lib/depositView";
+import { isFromDeposit } from "@/lib/depositLines";
 
 export const dynamic = "force-dynamic";
 
@@ -84,7 +86,7 @@ export default async function InvoicePrintPage({
     supabase.from("invoices").select("*").in("id", ids),
     supabase.from("invoice_lines").select("*").in("invoice_id", ids).order("seq"),
     // 영수증일 때만 쓰지만 함께 읽습니다 - 한 번 더 왕복할 이유가 없습니다.
-    supabase.from("payments").select("invoice_id, amount, paid_at, method").in("invoice_id", ids).order("paid_at"),
+    supabase.from("payments").select("invoice_id, amount, paid_at, method, matched_by").in("invoice_id", ids).order("paid_at"),
   ]);
   // 조용히 넘기지 않습니다(CLAUDE.md §5) - 빈 청구서는 「내역이 없는 청구서」로 보이고,
   // 그건 학부모에게 그대로 나갑니다.
@@ -108,7 +110,7 @@ export default async function InvoicePrintPage({
   let receiptRefused: string | null = null;
   if (receipt === "1") {
     if (payRes.error) throw new Error(`입금을 읽지 못했습니다: ${payRes.error.message}`);
-    const pays = (payRes.data as { invoice_id: string; amount: number | string; paid_at: string; method: string | null }[] | null) ?? [];
+    const pays = (payRes.data as { invoice_id: string; amount: number | string; paid_at: string; method: string | null; matched_by: string | null }[] | null) ?? [];
     const paid = pays.reduce((n, p) => n + Number(p.amount), 0);
     const billed = parts.reduce((n, p) => n + Number(p.invoice.total_amount), 0);
     if (pays.length === 0 || paid < billed) {
@@ -116,18 +118,22 @@ export default async function InvoicePrintPage({
     } else {
       receiptInfo = {
         paidAt: pays[pays.length - 1].paid_at,
-        methods: [...new Set(pays.map((p) => p.method ?? "기타"))],
+        // 예치금에서 옮겨 붙은 돈은 원래 들어온 수단(계좌이체 등)이 아니라 「예치금」으로 적습니다.
+        // 이번에 계좌로 보낸 적이 없는데 영수증에 계좌이체가 찍히면 학부모가 되묻습니다.
+        methods: [...new Set(pays.map((p) => (isFromDeposit(p.matched_by) ? "예치금" : p.method ?? "기타")))],
         paid,
       };
     }
   }
+
+  const depositView = await loadDepositView(supabase, parts);
 
   return (
     <>
       {receiptRefused && (
         <p className="no-print mx-auto max-w-[210mm] rounded bg-rose-50 px-3 py-2 text-[12px] font-bold text-rose-700">{receiptRefused}</p>
       )}
-      <InvoiceSheet parts={parts} embed={embed === "1"} receipt={receiptInfo} />
+      <InvoiceSheet parts={parts} embed={embed === "1"} receipt={receiptInfo} deposit={depositView} />
     </>
   );
 }

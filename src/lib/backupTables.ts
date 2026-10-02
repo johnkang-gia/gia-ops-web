@@ -148,7 +148,7 @@ export const BACKUP_GROUPS: { group: string; tables: string[] }[] = [
   {
     // 도서관 앱(gia-lib-web)의 자료. 표는 이 저장소가 만들고, 운영앱은 읽기만 합니다.
     group: "도서관",
-    tables: ["lib_books", "lib_loans", "lib_visits", "lib_settings", "lib_locations", "lib_map", "lib_student_photos", "lib_label_levels", "lib_card_issues"],
+    tables: ["lib_books", "lib_loans", "lib_visits", "lib_settings", "lib_locations", "lib_map", "lib_student_photos", "lib_label_levels", "lib_card_issues", "lib_card_prefs"],
   },
   {
     group: "의류",

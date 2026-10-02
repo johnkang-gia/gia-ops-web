@@ -3,6 +3,7 @@
 import { Fragment } from "react";
 import { sectionMode, sectionTitle, sectionSubtotalLabel } from "@/lib/invoiceSections";
 import type { Invoice, InvoiceLine } from "@/lib/types";
+import type { DepositView } from "@/lib/depositView";
 
 // 인보이스 한 장. 담당자가 쓰던 구글독스 양식과 같은 모양입니다.
 //
@@ -100,12 +101,18 @@ export default function InvoiceSheet({
   parts,
   embed = false,
   receipt = null,
+  deposit = null,
 }: {
   parts: SheetPart[];
   /** 미리보기 창 안에 들어간 경우. 바깥 창에 이미 인쇄 단추가 있어 머리줄을 숨깁니다. */
   embed?: boolean;
   /** 있으면 영수증으로 찍습니다. */
   receipt?: ReceiptInfo | null;
+  /**
+   * 예치금에서 낸 항목과 남은 예치금. 있으면 종이에 그대로 적습니다 - 학부모가 「무엇이
+   * 빠졌고 얼마가 남았나」를 묻지 않아도 되게.
+   */
+  deposit?: DepositView | null;
 }) {
   const invoice = parts[0].invoice;
   const many = parts.length > 1;
@@ -141,6 +148,28 @@ export default function InvoiceSheet({
     const g = (inv.grade_label ?? "").trim();
     return g ? `${name} · ${g}` : name;
   };
+
+  // ── 예치금 ──────────────────────────────────────────────────────────
+  const depOf = (id: string) => deposit?.byInvoice[id] ?? null;
+  const depTotal = parts.reduce((n, p) => n + (depOf(p.invoice.id)?.deposit ?? 0), 0);
+  const otherPaid = parts.reduce((n, p) => n + (depOf(p.invoice.id)?.otherPaid ?? 0), 0);
+  const depLineIds = new Set(parts.flatMap((p) => depOf(p.invoice.id)?.lineIds ?? []));
+  const depItemOf = (lineId: string) => {
+    for (const p of parts) {
+      const d = depOf(p.invoice.id);
+      const i = d?.lineIds.indexOf(lineId) ?? -1;
+      if (d && i >= 0) return d.items[i];
+    }
+    return null;
+  };
+  /** 청구서라면 실제로 내실 금액. 예치금·이미 받은 돈을 뺍니다. */
+  const toPay = Math.max(0, sum - depTotal - otherPaid);
+  const showBreakdown = !receipt && (depTotal > 0 || otherPaid > 0);
+  /** 아이별로 남은 예치금(형제 합본이면 여럿). */
+  const depositLeft = deposit
+    ? named
+        .map((p) => ({ who: whoOf(p.invoice), left: p.invoice.student_id ? deposit.left[p.invoice.student_id] ?? 0 : 0 }))
+    : [];
 
   // 형제의 납부기한이 다르면 **빠른 쪽**을 적습니다. 늦은 쪽을 적으면 한 아이가 연체됩니다.
   const due = parts.map((p) => p.invoice.due_date).sort()[0];
@@ -276,7 +305,17 @@ export default function InvoiceSheet({
                     {part.lines.map((l, i) => (
                       <tr key={l.id} style={{ background: i % 2 === 1 ? "#f4f5f7" : "#fff" }}>
                         <td style={{ padding: "7px 10px", fontSize: 10.5 }}>{l.seq}</td>
-                        <td style={{ padding: "7px 10px", fontSize: 10.5 }}>{l.name}</td>
+                        <td style={{ padding: "7px 10px", fontSize: 10.5 }}>
+                          {l.name}
+                          {depLineIds.has(l.id) && (() => {
+                            const it = depItemOf(l.id);
+                            return (
+                              <span style={{ marginLeft: 6, fontSize: 8.5, fontWeight: 700, color: "#0f766e", background: "#ccfbf1", borderRadius: 3, padding: "1px 5px" }}>
+                                {it?.partial ? `예치금 ${won(it.amount)} 차감 · Partly paid from deposit` : "예치금 차감 · Paid from deposit"}
+                              </span>
+                            );
+                          })()}
+                        </td>
                         <td style={{ padding: "7px 10px", fontSize: 10.5 }}>{l.qty}</td>
                         <td style={{ padding: "7px 10px", fontSize: 10.5 }}>{won(Number(l.amount))}</td>
                       </tr>
@@ -312,16 +351,94 @@ export default function InvoiceSheet({
                 <td style={{ background: "#1e2a44", color: "#fff", padding: "12px 16px" }}>
                   <table>
                     <tbody>
+                      {/* 예치금·이미 받은 돈이 있으면 청구액에서 무엇을 빼고 얼마를 내시면 되는지
+                          단계별로 적습니다. 합계 한 줄만 적으면 청구서 내역과 숫자가 안 맞아 보입니다. */}
+                      {showBreakdown && (
+                        <>
+                          <tr>
+                            <td style={{ fontSize: 9.5, opacity: 0.85 }}>SUBTOTAL · 청구액</td>
+                            <td style={{ textAlign: "right", fontSize: 10.5 }}>{won(sum)}</td>
+                          </tr>
+                          {depTotal > 0 && (
+                            <tr>
+                              <td style={{ fontSize: 9.5, color: "#99f6e4" }}>DEPOSIT APPLIED · 예치금 차감</td>
+                              <td style={{ textAlign: "right", fontSize: 10.5, color: "#99f6e4" }}>−{won(depTotal)}</td>
+                            </tr>
+                          )}
+                          {otherPaid > 0 && (
+                            <tr>
+                              <td style={{ fontSize: 9.5, opacity: 0.85 }}>PAID · 기납부</td>
+                              <td style={{ textAlign: "right", fontSize: 10.5 }}>−{won(otherPaid)}</td>
+                            </tr>
+                          )}
+                        </>
+                      )}
                       <tr>
-                        <td style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.4 }}>{receipt ? "TOTAL PAID" : "TOTAL DUE"}</td>
-                        <td style={{ textAlign: "right", fontSize: 13, fontWeight: 800 }}>{won(receipt ? receipt.paid : sum)}</td>
+                        <td style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.4, paddingTop: showBreakdown ? 4 : 0 }}>
+                          {receipt ? "TOTAL PAID" : showBreakdown ? "AMOUNT DUE · 납부하실 금액" : "TOTAL DUE"}
+                        </td>
+                        <td style={{ textAlign: "right", fontSize: 13, fontWeight: 800, paddingTop: showBreakdown ? 4 : 0 }}>
+                          {won(receipt ? receipt.paid : showBreakdown ? toPay : sum)}
+                        </td>
                       </tr>
+                      {receipt && depTotal > 0 && (
+                        <tr>
+                          <td colSpan={2} style={{ fontSize: 9, textAlign: "right", color: "#99f6e4", paddingTop: 2 }}>
+                            예치금 {won(depTotal)}{receipt.paid - depTotal > 0 ? ` + 입금 ${won(receipt.paid - depTotal)}` : ""}
+                          </td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </td>
               </tr>
             </tbody>
           </table>
+
+          {/*
+            **예치금 안내.** 무엇을 예치금에서 냈고 얼마가 남았는지. 학부모가 맡긴 돈의 행방을
+            묻기 전에 종이가 먼저 답합니다. 남은 금액은 찍는 날 기준이라 날짜를 함께 적습니다.
+          */}
+          {depTotal > 0 && (
+            <table className="inv-keep" style={{ marginTop: 18 }}>
+              <tbody>
+                <tr>
+                  <td style={{ background: "#f0fdfa", border: "1px solid #99f6e4", padding: "12px 14px" }}>
+                    <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.6, color: "#0f766e" }}>DEPOSIT · 예치금 안내</div>
+                    <table style={{ marginTop: 6 }}>
+                      <tbody>
+                        {parts.flatMap((p) =>
+                          (depOf(p.invoice.id)?.items ?? []).map((it, i) => (
+                            <tr key={`${p.invoice.id}-${i}`}>
+                              <td style={{ fontSize: 10, padding: "1px 0" }}>
+                                {many ? `${sectionTitle(p.invoice, mode)} · ` : ""}
+                                {it.name}
+                                {it.partial ? " (일부)" : ""}
+                              </td>
+                              <td style={{ fontSize: 10, padding: "1px 0", textAlign: "right", width: 120 }}>−{won(it.amount)}</td>
+                            </tr>
+                          )),
+                        )}
+                        <tr>
+                          <td style={{ fontSize: 10, fontWeight: 800, paddingTop: 4, borderTop: "1px solid #ccfbf1" }}>예치금에서 차감한 금액 · Deposit applied</td>
+                          <td style={{ fontSize: 10.5, fontWeight: 800, paddingTop: 4, borderTop: "1px solid #ccfbf1", textAlign: "right" }}>{won(depTotal)}</td>
+                        </tr>
+                        {depositLeft.map((d) => (
+                          <tr key={d.who}>
+                            <td style={{ fontSize: 10, fontWeight: 800, color: "#0f766e" }}>
+                              남은 예치금 · Remaining deposit{depositLeft.length > 1 ? ` (${d.who})` : ""}
+                              <span style={{ fontWeight: 400, color: "#6b7280" }}> — {dot(deposit!.asOf)} 기준</span>
+                            </td>
+                            <td style={{ fontSize: 10.5, fontWeight: 800, color: "#0f766e", textAlign: "right" }}>{won(d.left)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          )}
 
           {/* 입금 정보 · 안내 */}
           <table style={{ marginTop: 26 }}>
@@ -340,7 +457,9 @@ export default function InvoiceSheet({
                 <td style={{ background: "#f4f5f7", padding: "12px 14px", verticalAlign: "top" }}>
                   <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.6, color: "#374151" }}>NOTES</div>
                   <div style={{ fontSize: 9.5, marginTop: 6, lineHeight: 1.6 }}>
-                    • Please complete payment by {dot(due)} via the Altok Pay payment request.
+                    {showBreakdown && toPay === 0
+                      ? "• No further payment is needed for this invoice. 추가로 내실 금액이 없습니다."
+                      : `• Please complete payment by ${dot(due)} via the Altok Pay payment request.`}
                     <br />
                     • Issued on {dot(invoice.issue_date)}.
                     <br />• Please contact the school office with any questions.

@@ -43,8 +43,11 @@ type KindReport = {
     duplicates: { key: string; count: number }[];
     rows: number | null;
     note: string | null;
+    /** 실제로 센 표. 정식 표와 다를 수 있습니다(셔틀). */
+    table: string;
   };
   gap: string | null;
+  fix: { href: string | null; how: string };
 };
 
 export async function GET() {
@@ -75,20 +78,30 @@ export async function GET() {
     }
 
     const by = "by" in kind.dedupe ? kind.dedupe.by : null;
+    // 열쇠를 지키는 표와 조건. 데이터베이스 유일 색인과 같은 표·같은 조건으로 세야, 정상 줄을
+    // 중복으로 잘못 세지 않습니다.
+    const dedupeTable = ("by" in kind.dedupe && kind.dedupe.table) || kind.canonical;
+    const where = "by" in kind.dedupe ? kind.dedupe.where : undefined;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const scoped = (q: any) => {
+      for (const [c, v] of Object.entries(where?.eq ?? {})) q = q.eq(c, v);
+      for (const c of where?.isNull ?? []) q = q.is(c, null);
+      return q;
+    };
     let duplicates: { key: string; count: number }[] = [];
     let rows: number | null = null;
     let note: string | null = "by" in kind.dedupe ? null : kind.dedupe.none;
 
     // 열쇠가 `id` 하나뿐이면 셀 것이 없습니다 - 기본키라 데이터베이스가 이미 막습니다.
-    const worthCounting = by && !(by.length === 1 && by[0] === "id") && !unreadable.some((u) => u.table === kind.canonical);
+    const worthCounting = by && !(by.length === 1 && by[0] === "id") && !unreadable.some((u) => u.table === dedupeTable);
 
     if (worthCounting && by) {
-      const { count } = await db.from(kind.canonical).select("id", { head: true, count: "exact" });
+      const { count } = await scoped(db.from(dedupeTable).select("id", { head: true, count: "exact" }));
       rows = count ?? null;
       if ((rows ?? 0) > MAX_ROWS) {
         note = `줄이 ${rows?.toLocaleString()}개라 세지 않았습니다(${MAX_ROWS.toLocaleString()}개까지만 셉니다).`;
       } else {
-        const { data, error } = await db.from(kind.canonical).select(by.join(", ")).limit(MAX_ROWS);
+        const { data, error } = await scoped(db.from(dedupeTable).select(by.join(", "))).limit(MAX_ROWS);
         if (error) {
           note = `열쇠 칸을 읽지 못했습니다: ${error.message}`;
         } else {
@@ -109,7 +122,7 @@ export async function GET() {
       }
     }
 
-    reports.push({ kind: kind.key, canonical: kind.canonical, unreadable, dedupe: { by, duplicates, rows, note }, gap: kind.gap });
+    reports.push({ kind: kind.key, canonical: kind.canonical, unreadable, dedupe: { by, duplicates, rows, note, table: dedupeTable }, gap: kind.gap, fix: kind.fix });
   }
 
   // 기록 표와 어디에도 안 붙인 표도 **읽히는지만** 봅니다. 중복은 원래 안 막는 표들입니다.

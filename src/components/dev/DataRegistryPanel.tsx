@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { DATA_KINDS } from "@/lib/registry/dataKinds";
 import { useDevReport } from "@/components/dev/DevReportProvider";
 
@@ -19,8 +20,9 @@ type Check = {
     kind: string;
     canonical: string;
     unreadable: { table: string; why: string }[];
-    dedupe: { by: string[] | null; duplicates: { key: string; count: number }[]; rows: number | null; note: string | null };
+    dedupe: { by: string[] | null; duplicates: { key: string; count: number }[]; rows: number | null; note: string | null; table?: string };
     gap: string | null;
+    fix?: { href: string | null; how: string };
   }[];
   otherUnreadable: { table: string; why: string }[];
   gaps: { key: string; gap: string }[];
@@ -85,6 +87,7 @@ export default function DataRegistryPanel({
         for (const k of dup) {
           lines.push(`- **${k.kind}** \`${k.canonical}\` (열쇠: ${k.dedupe.by?.join(" + ")}) — ${k.dedupe.duplicates.length}묶음`);
           for (const d of k.dedupe.duplicates.slice(0, 5)) lines.push(`  - \`${d.key}\` × ${d.count}`);
+          if (k.fix) lines.push(`  - 고치는 곳: ${k.fix.how}${k.fix.href ? ` (${k.fix.href})` : ""}`);
         }
       }
       const notes = result.kinds.filter((k) => k.dedupe.note && k.dedupe.by);
@@ -182,13 +185,28 @@ export default function DataRegistryPanel({
                     {!r ? (
                       <span className="text-slate-300">-</span>
                     ) : r.unreadable.length > 0 ? (
-                      <span className="font-bold text-red-600">
-                        표 {r.unreadable.length}개를 못 읽었습니다: {r.unreadable.map((u) => u.table).join(", ")}
-                      </span>
+                      <div>
+                        <span className="font-bold text-red-600">
+                          표 {r.unreadable.length}개를 못 읽었습니다: {r.unreadable.map((u) => u.table).join(", ")}
+                        </span>
+                        <UnreadableHint />
+                      </div>
                     ) : r.dedupe.duplicates.length > 0 ? (
-                      <span className="font-bold text-red-600" title={r.dedupe.duplicates.map((d) => `${d.key} × ${d.count}`).join("\n")}>
-                        같은 열쇠 {r.dedupe.duplicates.length}묶음 — 규칙이 실제로는 안 막고 있습니다
-                      </span>
+                      <div>
+                        <span className="font-bold text-red-600">
+                          같은 열쇠 {r.dedupe.duplicates.length}묶음 — 규칙이 실제로는 안 막고 있습니다
+                        </span>
+                        {/* 무엇이 겹쳤는지 펼쳐 둡니다. 마우스를 올려야 보이면 아무도 안 봅니다. */}
+                        <ul className="mt-0.5 space-y-0.5 text-slate-600">
+                          {r.dedupe.duplicates.slice(0, 5).map((d) => (
+                            <li key={d.key} className="break-all font-mono text-[10px]">
+                              {d.key} × {d.count}
+                            </li>
+                          ))}
+                          {r.dedupe.duplicates.length > 5 && <li className="text-[10px] text-slate-400">외 {r.dedupe.duplicates.length - 5}묶음</li>}
+                        </ul>
+                        <FixHint fix={r.fix} />
+                      </div>
                     ) : r.dedupe.note ? (
                       <span className="text-slate-500">{r.dedupe.note}</span>
                     ) : (
@@ -212,6 +230,7 @@ export default function DataRegistryPanel({
               <span className="font-mono">{u.table}</span> — {u.why}
             </p>
           ))}
+          <UnreadableHint />
         </div>
       )}
 
@@ -253,5 +272,38 @@ export default function DataRegistryPanel({
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * **어디서 고치나.** 점검이 문제를 찾고 끝나면 보는 사람은 손을 못 댑니다. 갈래마다 고치는
+ * 화면과 방법을 등기소(`fix`)에 적어 두고 여기서 그대로 보여줍니다. 지우는 단추를 여기 두지
+ * 않습니다 - 겹친 줄 중 어느 것이 맞는지는 그 화면에서 내용을 보고 사람이 정해야 하고, 지울 때도
+ * 갈래의 내리기 함수를 지나야 딸린 표까지 함께 정리됩니다.
+ */
+function FixHint({ fix }: { fix?: { href: string | null; how: string } }) {
+  if (!fix) return null;
+  return (
+    <p className="mt-1 rounded bg-amber-50 px-1.5 py-1 text-[11px] leading-relaxed text-amber-900">
+      <b>고치는 곳</b> · {fix.how}
+      {fix.href && (
+        <Link href={fix.href} className="ml-1 font-bold text-amber-800 underline">
+          열기 →
+        </Link>
+      )}
+    </p>
+  );
+}
+
+/** 못 읽은 표는 대개 마이그레이션이 덜 걸렸거나 이름이 바뀐 것입니다. 화면에서 고칠 수 없습니다. */
+function UnreadableHint() {
+  return (
+    <p className="mt-1 rounded bg-amber-50 px-1.5 py-1 text-[11px] leading-relaxed text-amber-900">
+      <b>고치는 곳</b> · 표가 아직 안 만들어졌거나(마이그레이션 미적용) 이름이 바뀐 경우입니다. 스키마 점검에서 무엇이 빠졌는지
+      확인하고, 화면에서 고칠 수 없으면 위 [개발자에게 보낼 쪽지 복사]로 보내주세요.
+      <Link href="/admin/schema" className="ml-1 font-bold text-amber-800 underline">
+        스키마 점검 →
+      </Link>
+    </p>
   );
 }

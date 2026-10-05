@@ -1,3 +1,4 @@
+import { ATTENDANCE_ENTRY_KEY } from "@/lib/attendanceKey";
 /**
  * **자료 등기소** — 이 앱이 다루는 자료의 종류를 한 곳에 적어 둡니다.
  *
@@ -32,7 +33,16 @@
 
 export type DedupeKey =
   /** 이 칸들이 모두 같으면 같은 자료입니다. DB 의 unique 색인과 **같은 값**이어야 합니다. */
-  | { by: string[] }
+  | {
+      by: string[];
+      /**
+       * 열쇠를 지키는 표가 정식 표와 다를 때. 셔틀은 「누가 어느 차」(배정)가 정식이지만
+       * 겹치면 안 되는 것은 「그날 그 배정의 탑승 줄」입니다.
+       */
+      table?: string;
+      /** 열쇠가 이 조건의 줄에서만 지켜질 때(유일 색인의 `where`). 같은 값이어야 합니다. */
+      where?: { eq?: Record<string, string>; isNull?: string[] };
+    }
   /** 중복을 막지 않는 표. 왜 안 막는지 적습니다(기록·로그처럼 쌓이는 것이 맞는 표). */
   | { none: string };
 
@@ -63,6 +73,11 @@ export type DataKindDef = {
   byDesign: string | null;
   /** 사람이 가르친 규칙이 담긴 표. 이 종류를 해석할 때 **반드시 함께 읽습니다.** */
   rules: string[];
+  /**
+   * **점검에서 문제가 나오면 어디서 고치나.** 찾기만 하고 고칠 곳을 안 알려주면 점검 결과를
+   * 보고도 아무도 손을 못 댑니다. 화면에서 고칠 수 있으면 그 화면, 아니면 무엇을 해야 하는지.
+   */
+  fix: { href: string | null; how: string };
 };
 
 /**
@@ -100,6 +115,7 @@ export const DATA_KINDS: DataKindDef[] = [
       "학생을 지우는 길은 **일부러 없습니다.** 졸업·전학은 status 로만 표시하고 줄은 남깁니다 - " +
       "지우면 그 아이의 지난 청구·출결이 함께 사라지고, 몇 년 뒤 «그때 얼마를 냈나»에 답할 수 없습니다.",
     rules: ["attendance_learning_rules", "toddle_channel_students"],
+    fix: { href: "/school/data-check", how: "학교 → 자료 점검에서 겹친 학생을 합치거나 반 연결을 고칩니다." },
   },
   {
     key: "픽업",
@@ -114,12 +130,15 @@ export const DATA_KINDS: DataKindDef[] = [
       "나머지 자리(확정·업무 만들기·답변 표시·다시 읽기·되짚어 채우기)는 내리는 일이 아니라 **붙이거나 고치는** 일이라 " +
       "되돌릴 자국이 없습니다. 예약 취소(`pickup_schedules`)도 이제 업무 카드를 함께 내립니다.",
     rules: ["attendance_learning_rules", "toddle_channel_students"],
+    fix: { href: "/pickup/inbox", how: "픽업 인박스에서 같은 연락이 두 줄이면 한 줄을 「무시」합니다(되돌리기 함수를 지나 딸린 표까지 함께 내려갑니다)." },
   },
   {
     key: "출결",
     canonical: "attendance_entries",
     satellites: ["attendance_records", "attendance_coverage", "school_days"],
-    dedupe: { by: ["source", "source_message_id", "student_name", "status"] },
+    // 데이터베이스 유일 색인과 **같은 열쇠**(날짜 포함). 날짜를 빼고 세면 기간이 다른 정상 줄까지
+    // 중복으로 잡혀, 점검이 없는 문제를 빨갛게 띄웁니다.
+    dedupe: { by: ATTENDANCE_ENTRY_KEY.split(",") },
     apply: "src/lib/attendanceEntries.ts",
     undo: "src/lib/attendanceUndo.ts",
     gap: null,
@@ -127,12 +146,15 @@ export const DATA_KINDS: DataKindDef[] = [
       "담임이 출석부에서 직접 찍은 줄(`confirmed_by_human`)은 **되돌리지 않습니다.** " +
       "그날 교실에서 보고 찍은 값이 인박스 판단보다 셉니다 - 몇 줄을 안 건드렸는지 세어서 화면에 적습니다.",
     rules: ["attendance_learning_rules"],
+    fix: { href: "/work", how: "업무보드 → 출결내역에서 그 학생을 열어 「중복 N줄 정리」 또는 「내리기」를 누릅니다." },
   },
   {
     key: "셔틀",
     canonical: "shuttle_assignments",
     satellites: ["shuttle_boardings", "shuttle_ride_alongs", "shuttle_checklist_log", "shuttle_persistent_notes", "shuttle_stops"],
-    dedupe: { by: ["service_date", "assignment_id"] },
+    // 겹치면 안 되는 것은 배정이 아니라 「그날 그 배정의 탑승 줄」입니다(유일 색인이 그 표에 있음).
+    // 앞 판은 배정 표에서 이 칸을 찾다 「열쇠 칸을 읽지 못했습니다」를 냈습니다.
+    dedupe: { by: ["service_date", "assignment_id"], table: "shuttle_boardings" },
     apply: "src/lib/pickups.ts",
     undo: "src/lib/pickupUndo.ts",
     gap: null,
@@ -141,6 +163,7 @@ export const DATA_KINDS: DataKindDef[] = [
       "(20261005000000_boarding_unique.sql — 이미 있으면 그대로 두고, 겹친 줄이 있으면 먼저 정리합니다). " +
       "겹친 줄이 생겼는지는 `select * from shuttle_boarding_duplicates;` 로 언제든 봅니다. 비어 있어야 정상입니다.",
     rules: [],
+    fix: { href: "/shuttle/checklist", how: "하원 체크표에서 그날 그 아이를 다시 지정하면 한 줄로 맞춰집니다. 화면에서 안 풀리면 개발자에게 쪽지를 보냅니다." },
   },
   {
     key: "재무",
@@ -164,7 +187,14 @@ export const DATA_KINDS: DataKindDef[] = [
       "payment_imports",
       "payment_import_rows",
     ],
-    dedupe: { by: ["student_id", "term_id", "kind"] },
+    // 한 학생·한 학기에 청구서가 여러 장인 것은 정상입니다(학비·학비외·분류별·재청구). 데이터베이스가
+    // 막는 것은 「같은 학생·학기·청구월·항목 범위의 학비 청구서가 발행 상태로 두 장」뿐이라
+    // (`invoices_tuition_scope_month_uniq`), 점검도 그 열쇠·그 조건으로 셉니다. 학비외 같은 항목 두 장은
+    // 발행 창구와 빌드 검사(check-double-billing)가 막습니다.
+    dedupe: {
+      by: ["student_id", "term_id", "billing_month", "plan_scope"],
+      where: { eq: { status: "발행", stream: "학비" }, isNull: ["carried_to_invoice_id"] },
+    },
     apply: "src/app/api/finance/invoices",
     undo: "src/app/api/finance/invoices/cancel/route.ts",
     gap: null,
@@ -173,6 +203,7 @@ export const DATA_KINDS: DataKindDef[] = [
       "**이미 발행된 것은 건드리지 않습니다** - 종이가 이미 나갔고 국세청에도 올라갔으므로 앱에서 상태만 바꾼다고 없던 일이 " +
       "되지 않습니다. 몇 건이 남았는지 세어 화면이 「취소 신고는 따로 해주세요」라고 적습니다.",
     rules: [],
+    fix: { href: "/finance/ledger", how: "회계에서 그 학생의 금전 창을 열어 겹친 청구서 하나를 「↩ 취소」합니다(지우지 않고 취소로 남습니다)." },
   },
   {
     key: "업무",
@@ -193,6 +224,7 @@ export const DATA_KINDS: DataKindDef[] = [
     gap: null,
     byDesign: null,
     rules: [],
+    fix: { href: "/work", how: "업무보드에서 해당 업무를 정리합니다." },
   },
   {
     key: "도서관",
@@ -206,6 +238,7 @@ export const DATA_KINDS: DataKindDef[] = [
       "넣고 내리는 일은 **도서관 앱(gia-lib-web)** 이 합니다. 운영앱은 `src/lib/library.ts` 로 읽기만 합니다 - " +
       "두 앱이 같은 표를 고치면 두 화면이 다른 답을 하게 됩니다. 학생은 `student_id` 로 잇고, 번호(`student_no`)는 바코드입니다.",
     rules: [],
+    fix: { href: null, how: "도서관 앱(gia-lib-web)에서 고칩니다. 운영앱은 도서관 표를 읽기만 합니다." },
   },
 ];
 

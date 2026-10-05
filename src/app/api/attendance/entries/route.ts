@@ -174,9 +174,25 @@ export async function GET(req: NextRequest) {
   // 되돌릴 수 있는 것은 **오늘 이후 날짜**만 보여줍니다. 지난 날짜를 되살려도 체크표에
   // 걸 자리가 없어서, 목록만 길어지고 진짜 되돌려야 하는 줄이 묻힙니다.
   const dismissedRows = ignoredRows.filter((r) => (r.date_to ?? r.date_from ?? "") >= today);
+  /**
+   * **사람이 학생을 정해 준 줄** — 「잘못 읽힌 이름 → 고른 아이」.
+   *
+   * 「이 건만 이 아이로」는 잘못 읽힌 이름의 줄을 내리고(무시) 고른 아이로 새 줄을 등록합니다.
+   * 그런데 화면은 원문을 다시 읽어 **잘못 읽힌 이름**으로 목록을 만들고, 그 이름이 내린 목록에
+   * 있으니 통째로 뺐습니다. 그래서 학생을 정해 주면 그 연락이 결석 칸에서 **사라졌습니다** -
+   * 등록은 됐는데 화면에는 「없어진 것」으로 보였습니다.
+   *
+   * 내린 이유가 「사람이 다른 아이로 지정」이면 빼지 말고 **그 아이 이름으로 바꿔** 보이게
+   * 합니다. 바뀐 이름으로 등록 줄과 짝이 맞아 초록 체크도 붙습니다.
+   */
+  const reassigned: Record<string, string> = {};
+  for (const r of ignoredRows) {
+    const m = /^사람이 (.+?) 으로 지정/.exec(r.note ?? "");
+    if (m && r.source_message_id) reassigned[`${r.source_message_id}|${r.student_name}|${r.status}`] = m[1];
+  }
 
   return NextResponse.json(
-    { ok: true, scan, today, entries: entries ?? [], dismissed, dismissedRows, staffNames, teachers },
+    { ok: true, scan, today, entries: entries ?? [], dismissed, dismissedRows, reassigned, staffNames, teachers },
     { headers: { "Cache-Control": "no-store, no-cache, must-revalidate" } },
   );
 }
@@ -355,13 +371,21 @@ export async function PATCH(req: NextRequest) {
     const a = body.assign;
     const day = /^\d{4}-\d{2}-\d{2}$/.test(a.dateFrom ?? "") ? a.dateFrom! : todayKey(new Date());
     const dayTo = /^\d{4}-\d{2}-\d{2}$/.test(a.dateTo ?? "") ? a.dateTo! : day;
+    // **어느 통로의 연락인가.** 토들 연락도 이 창으로 오는데 예전에는 늘 구글챗으로 적었습니다.
+    // 그러면 내린 줄이 스캐너가 만든 토들 줄과 열쇠가 달라 그 줄을 못 누르고, 같은 연락이 두
+    // 이름으로 남습니다. 픽업 인박스에 그 번호가 있으면 토들입니다.
+    let src = "googlechat";
+    if (/^[0-9a-f-]{36}$/i.test(a.messageId)) {
+      const { data: pr } = await db.from("pickup_requests").select("id").eq("id", a.messageId).maybeSingle();
+      if (pr) src = "toddle";
+    }
 
     // ① 잘못 읽힌 이름으로 잡혀 있던 줄을 내립니다. 안 내리면 같은 연락이 두 아이로
     //    집계되어, 오지도 않은 아이가 결석 명단에 남습니다.
     if (a.fromName && a.fromName !== a.studentName) {
       const { error: offErr } = await db.from("attendance_entries").upsert(
         {
-          source: "googlechat",
+          source: src,
           source_message_id: a.messageId,
           student_name: a.fromName,
           status: a.status,
@@ -379,7 +403,7 @@ export async function PATCH(req: NextRequest) {
     // ② 고른 아이로 등록합니다.
     const { error } = await db.from("attendance_entries").upsert(
       {
-        source: "googlechat",
+        source: src,
         source_message_id: a.messageId,
         student_id: a.studentId,
         student_name: a.studentName,

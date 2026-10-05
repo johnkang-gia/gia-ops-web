@@ -419,6 +419,8 @@ export default function AttendanceDigestPanel({
    * 화면에는 오류가 아니라 「처리된 것」으로 보입니다.
    */
   const [dismissedRows, setDismissedRows] = useState<DismissedRow[]>([]);
+  /** 사람이 「이 건만 이 아이로」 정해 준 것: 「메시지|읽힌 이름|종류」 → 고른 아이 이름. */
+  const [reassigned, setReassigned] = useState<Record<string, string>>({});
   const [showDismissed, setShowDismissed] = useState(false);
   // 멘션(@…)을 지울 때 쓰는 교직원 성함. 서버가 계정 명단에서 실어 보냅니다.
   // 담당자: "@Carina Ann John까지가 이름인데 carina ann까지만 읽어서 john이 요한이로 매칭돼."
@@ -439,6 +441,7 @@ export default function AttendanceDigestPanel({
         entries?: RegRow[];
         dismissed?: string[];
         dismissedRows?: DismissedRow[];
+        reassigned?: Record<string, string>;
         staffNames?: string[];
         teachers?: TeacherClass[];
       };
@@ -458,6 +461,7 @@ export default function AttendanceDigestPanel({
       setRegs(m);
       setDismissed(new Set(json.dismissed ?? []));
       setDismissedRows(json.dismissedRows ?? []);
+      setReassigned(json.reassigned ?? {});
       setStaffNames(json.staffNames ?? []);
       setTeachers(json.teachers ?? []);
     } catch {
@@ -771,9 +775,18 @@ export default function AttendanceDigestPanel({
   //
   // 담당자: "'픽업'이 들어갔지만 픽업에 관한 글이 아닌 것 - 계속 픽업으로 집계돼."
   // 낱말이 스쳐 지나간 문장까지 기계가 가려낼 수는 없으니, 한 번 내리면 다시 안 묻습니다.
+  //
+  // **사람이 다른 아이로 정해 준 것은 빼지 않고 이름을 바꿉니다.** 정해 주면 잘못 읽힌 이름의 줄이
+  // 내려지는데, 그 열쇠만 보고 빼면 등록한 연락이 결석 칸에서 통째로 사라집니다(서버 `reassigned`).
   const liveEntries = useMemo(
-    () => allEntries.filter((e) => !dismissed.has(`${e.messageId ?? ""}|${e.studentName}|${e.category}`)),
-    [allEntries, dismissed]
+    () =>
+      allEntries.flatMap((e) => {
+        const k = `${e.messageId ?? ""}|${e.studentName}|${e.category}`;
+        const to = reassigned[k];
+        if (to) return [{ ...e, studentName: to, studentKey: to, unmatched: false, ambiguous: false }];
+        return dismissed.has(k) ? [] : [e];
+      }),
+    [allEntries, dismissed, reassigned]
   );
   const entries = useMemo(
     () => liveEntries.filter((e) => e.targetDate <= today && (e.targetDateTo ?? e.targetDate) >= today),

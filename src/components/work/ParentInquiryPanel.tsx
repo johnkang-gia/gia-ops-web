@@ -1318,15 +1318,9 @@ export default function ParentInquiryPanel({
  */
 function RideChip({ badge, long = false }: { badge?: RideBadge; long?: boolean }) {
   if (!badge) return null;
-  // 셔틀 없는 아이는 자동차에 ✕ 하나. 글자로 「셔틀 없음」을 적으면 목록 한 줄이 그만큼 밀립니다.
-  if (!badge.rides) {
-    return (
-      <span title={badge.title} className="relative inline-flex h-4 w-4 shrink-0 items-center justify-center text-[12px] leading-none opacity-60">
-        🚗
-        <span className="absolute inset-0 flex items-center justify-center text-[13px] font-black leading-none text-rose-600">✕</span>
-      </span>
-    );
-  }
+  // 셔틀 없는 아이는 아무것도 그리지 않습니다. 목록 대부분이 셔틀 없는 아이라 표시가 줄마다 반복되면
+  // 정작 봐야 할 「차 타는 아이」가 묻힙니다.
+  if (!badge.rides) return null;
   return (
     <span title={badge.title} className="shrink-0 rounded bg-sky-100 px-1 py-0.5 text-[10px] font-bold leading-none text-sky-800">
       {long ? badge.title.replace(/^하원 셔틀을 탑니다: /, "🚗 ") : badge.label}

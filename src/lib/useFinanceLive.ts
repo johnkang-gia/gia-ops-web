@@ -53,6 +53,11 @@ export const FINANCE_TABLES = [
   "fee_discounts",
   "student_fee_discounts",
   "student_fee_enrollments",
+  // 결손·환불 결재. 승인되면 잔액이 바뀌고, 대기 목록은 다른 사람이 처리합니다.
+  "finance_requests",
+  // 세입과목과 과목경정. 과목별 수입현황이 이 둘로 모입니다.
+  "revenue_accounts",
+  "invoice_line_reclass_log",
 ] as const;
 
 /**

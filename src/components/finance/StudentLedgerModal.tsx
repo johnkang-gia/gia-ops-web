@@ -16,6 +16,7 @@ import PayModal from "@/components/finance/PayModal";
 import DepositApplyModal from "@/components/finance/DepositApplyModal";
 import { isFromDeposit } from "@/lib/depositLines";
 import CancelInvoiceModal from "@/components/finance/CancelInvoiceModal";
+import InvoiceFixModal from "@/components/finance/InvoiceFixModal";
 import InvoicePreviewModal from "@/components/finance/InvoicePreviewModal";
 import AlltalkpayExport from "@/components/finance/AlltalkpayExport";
 import InvoiceSheet, { type SheetPart } from "@/components/finance/InvoiceSheet";
@@ -56,6 +57,7 @@ type LedgerResponse = {
 const STATE_STYLE: Record<string, string> = {
   완납: "bg-emerald-100 text-emerald-800",
   부분납부: "bg-amber-100 text-amber-800",
+  결손: "bg-violet-100 text-violet-700",
   연체: "bg-rose-100 text-rose-700",
   미납: "bg-slate-100 text-slate-600",
   취소: "bg-slate-100 text-slate-400 line-through",
@@ -94,6 +96,7 @@ export default function StudentLedgerModal({
   /** 예치금에서 뺄 항목을 고르는 청구서. 발행 직후에도 열립니다. */
   const [depositFor, setDepositFor] = useState<{ id: string; label: string } | null>(null);
   const [cancelling, setCancelling] = useState<LedgerInvoice | null>(null);
+  const [fixing, setFixing] = useState<LedgerInvoice | null>(null);
   const [preview, setPreview] = useState<{ id: string; label: string; receipt: boolean } | null>(null);
   const [exporting, setExporting] = useState<string[] | null>(null);
   const [addItemId, setAddItemId] = useState("");
@@ -676,7 +679,19 @@ export default function StudentLedgerModal({
                           📄
                         </button>
                       )}
-                      <button onClick={() => setCancelling(v)} className="px-1 text-[11px] text-slate-300 hover:text-rose-600" title="발행 취소 (지우지 않고 취소로 남깁니다)">
+                      {/* 보낸 장은 정정, 안 보낸 장은 취소 후 재발행이 기본입니다. 둘 다 열어두되 기본 쪽을 눈에 띄게 둡니다. */}
+                      <button
+                        onClick={() => setFixing(v)}
+                        className={"rounded px-1.5 py-0.5 text-[10px] font-bold " + (v.exported ? "bg-slate-800 text-white hover:bg-slate-900" : "bg-slate-100 text-slate-500 hover:bg-slate-200")}
+                        title={v.exported ? "보낸 청구서 정정 · 결손 요청 · 과목 경정" : "결손 요청 · 과목 경정 (금액은 ↩ 취소 후 다시 발행)"}
+                      >
+                        {v.exported ? "정정" : "🛠"}
+                      </button>
+                      <button
+                        onClick={() => setCancelling(v)}
+                        className={"px-1 text-[11px] hover:text-rose-600 " + (v.exported ? "text-slate-200" : "text-slate-400")}
+                        title={v.exported ? "발행 취소 — 이미 보낸 장입니다. 금액이 틀렸다면 [정정]이 번호를 지킵니다" : "발행 취소 (지우지 않고 취소로 남깁니다) — 고쳐서 다시 발행"}
+                      >
                         ↩
                       </button>
                     </span>
@@ -846,6 +861,25 @@ export default function StudentLedgerModal({
           onClose={() => setCancelling(null)}
           onDone={() => {
             setCancelling(null);
+            void changed();
+          }}
+        />
+      )}
+      {fixing && (
+        <InvoiceFixModal
+          target={{
+            id: fixing.id,
+            invoiceNo: fixing.invoice_no,
+            studentName: student?.name ?? "",
+            stream: fixing.stream,
+            sent: fixing.exported,
+            total: Number(fixing.total_amount),
+            balance: fixing.settled.balance,
+          }}
+          onClose={() => setFixing(null)}
+          onDone={(msg) => {
+            notify(msg, "success");
+            setFixing(null);
             void changed();
           }}
         />

@@ -19,7 +19,7 @@ export type RefundTarget = {
 };
 
 /**
- * **돌려드린 돈을 적습니다.**
+ * **돌려드릴 돈을 결재에 올립니다.** 승인되면 장부에 들어갑니다(`financeRequests.ts`).
  *
  * 원래 입금 줄은 **안 지웁니다.** 지우면 그날 수납 집계가 바뀌고 이미 보고한 숫자와
  * 달라지는데, 왜 달라졌는지 되짚을 곳이 없습니다. 대신 반대 방향 한 줄을 더합니다 -
@@ -66,10 +66,10 @@ export default function RefundModal({ target, onClose }: { target: RefundTarget;
     setBusy(false);
     // 조용히 넘기면 돌려준 줄 알고 또 돌려줍니다.
     if (!res.ok) {
-      notify(json?.error ?? "환불을 적지 못했습니다.", "error");
+      notify(json?.error ?? "환불 요청을 올리지 못했습니다.", "error");
       return;
     }
-    notify(`${won(asked)} 환불을 적었습니다.`, "success");
+    notify(`${won(asked)} 환불 요청을 올렸습니다. 다른 관리자가 승인하면 장부에 들어갑니다.`, "success");
     onClose();
     router.refresh();
   }
@@ -77,14 +77,14 @@ export default function RefundModal({ target, onClose }: { target: RefundTarget;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <h2 className="text-[15px] font-bold text-slate-900">↩️ 환불 적기</h2>
+        <h2 className="text-[15px] font-bold text-slate-900">↩️ 환불 요청</h2>
         <p className="mt-0.5 text-[12px] text-slate-500">
           {target.invoiceNo} · {target.studentName} · 받은 돈 <b className="text-slate-700">{won(target.held)}</b>
         </p>
 
         <p className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] leading-relaxed text-slate-600">
-          원래 입금 줄은 <b>지우지 않습니다.</b> 반대 방향 한 줄을 더합니다 — 그래야 그날 수납 집계가
-          그대로 남고, 나중에 「왜 줄었지」를 되짚을 수 있습니다.
+          환불은 <b>결재</b>를 거칩니다 — 올린 사람이 아닌 관리자가 [재무 → 회계 → 결재]에서 승인하면
+          장부에 들어갑니다. 원래 입금 줄은 지우지 않고 반대 방향 한 줄을 더합니다.
         </p>
 
         <label className="mt-3 block text-[11px] font-semibold text-slate-600">돌려줄 금액</label>
@@ -144,7 +144,7 @@ export default function RefundModal({ target, onClose }: { target: RefundTarget;
             onClick={() => void submit()}
             className="rounded-lg bg-rose-600 px-3 py-1.5 text-[12px] font-bold text-white hover:bg-rose-700 disabled:bg-slate-300"
           >
-            {busy ? "적는 중…" : "환불 적기"}
+            {busy ? "올리는 중…" : "환불 요청 올리기"}
           </button>
         </div>
       </div>

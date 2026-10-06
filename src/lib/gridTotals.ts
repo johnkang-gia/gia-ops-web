@@ -27,6 +27,8 @@ export type TotalsInvoice = {
   id: string;
   student_id: string | null;
   status?: string | null;
+  /** 결재로 받지 않기로 한 금액. 받은 돈이 아니라 「미납」에서만 뺍니다. */
+  written_off_amount?: number | string | null;
 };
 export type TotalsPayment = { invoice_id: string | null; amount: number | string };
 
@@ -35,7 +37,7 @@ export type GridTotals = {
   billed: number;
   /** 실제로 들어온 돈. */
   paid: number;
-  /** 아직 안 들어온 돈. 더 받았으면 음수입니다. */
+  /** 아직 안 들어온 돈. 더 받았으면 음수입니다. 결손으로 정리한 돈은 뺍니다. */
   due: number;
 };
 
@@ -51,10 +53,12 @@ export function gridTotals(
 
   // 이 학생들의 살아 있는 장. 취소된 장에 붙은 입금은 세지 않습니다.
   const mine = new Set<string>();
+  let writtenOff = 0;
   for (const v of invoices) {
     if (!v.student_id || !seen.has(v.student_id)) continue;
     if ((v.status ?? "") === "취소") continue;
     mine.add(v.id);
+    writtenOff += Number(v.written_off_amount ?? 0) || 0;
   }
 
   let paid = 0;
@@ -66,7 +70,7 @@ export function gridTotals(
   let billed = 0;
   for (const id of seen) billed += totalOf(id);
 
-  return { billed, paid, due: billed - paid };
+  return { billed, paid, due: billed - paid - writtenOff };
 }
 
 /**
@@ -88,10 +92,13 @@ export function gridTotalsByStudent(
 
   // 장 → 학생. 취소된 장에 붙은 입금은 세지 않습니다.
   const ownerOf = new Map<string, string>();
+  const woBy = new Map<string, number>();
   for (const v of invoices) {
     if (!v.student_id || !seen.has(v.student_id)) continue;
     if ((v.status ?? "") === "취소") continue;
     ownerOf.set(v.id, v.student_id);
+    const wo = Number(v.written_off_amount ?? 0) || 0;
+    if (wo > 0) woBy.set(v.student_id, (woBy.get(v.student_id) ?? 0) + wo);
   }
 
   const paidBy = new Map<string, number>();
@@ -106,7 +113,7 @@ export function gridTotalsByStudent(
   for (const id of seen) {
     const billed = totalOf(id);
     const paid = paidBy.get(id) ?? 0;
-    out.set(id, { billed, paid, due: billed - paid });
+    out.set(id, { billed, paid, due: billed - paid - (woBy.get(id) ?? 0) });
   }
   return out;
 }

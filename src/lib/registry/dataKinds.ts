@@ -183,6 +183,10 @@ export const DATA_KINDS: DataKindDef[] = [
       "apparel_order_pieces",
       // 마감한 달. 닫힌 달의 청구서·입금은 고칠 수 없습니다(트리거).
       "finance_month_closes",
+      // 결손·환불 결재. 승인되면 청구서의 결손 칸이나 환불 입금 줄이 됩니다(financeRequests.ts).
+      "finance_requests",
+      // 세입과목(관·항·목). 항목·분류·청구 줄이 여기 매달리고 과목별 수입현황이 이 번호로 모입니다.
+      "revenue_accounts",
       // 올린 파일과 그 줄들. 승인하기 전까지는 어떤 집계에도 안 잡힙니다.
       "payment_imports",
       "payment_import_rows",
@@ -250,6 +254,8 @@ export const LOG_TABLES = [
   // 청구 합계가 바뀐 내력. 트리거가 항목에서 합계를 다시 셀 때마다 한 줄 남습니다 -
   // 돈이 바뀌면 왜 바뀌었는지 물어볼 곳이 있어야 합니다.
   "invoice_amount_log",
+  // 과목경정 내력. 금액은 그대로이고 어느 과목으로 셀지만 바뀐 기록입니다.
+  "invoice_line_reclass_log",
   "fee_discount_log",
   "fee_item_price_log",
   "data_export_log",

@@ -57,6 +57,10 @@ export const BACKUP_GROUPS: { group: string; tables: string[] }[] = [
       "invoices",
       // 마감한 달. 잃으면 닫아둔 달이 전부 열리고, 지난 보고서가 다시 움직일 수 있게 됩니다.
       "finance_month_closes",
+      // 결손·환불 결재. 잃으면 「누가 확인하고 돌려줬나」에 답할 수 없습니다.
+      "finance_requests",
+      // 세입과목. 잃으면 모든 항목이 「미분류」로 떨어지고 과목별 수입현황이 비어 버립니다.
+      "revenue_accounts",
       // 올린 파일과 검수 기록. 잃으면 「이 청구서가 어느 파일 어느 줄에서 왔나」에 답할 수 없습니다.
       "payment_imports",
       "payment_import_rows",
@@ -167,7 +171,7 @@ export const BACKUP_GROUPS: { group: string; tables: string[] }[] = [
     // 지금 값은 fee_items·fee_discounts 에 있지만, **언제 얼마에서 얼마로 바뀌었는지**는
     // 여기에만 있습니다. 되돌릴 수 없는 기록이라 담습니다 - 회계는 「지금 얼마인가」보다
     // 「그때 얼마였나」를 더 자주 묻습니다.
-    tables: ["fee_item_price_log", "fee_discount_log", "finance_access_log"],
+    tables: ["fee_item_price_log", "fee_discount_log", "finance_access_log", "invoice_line_reclass_log"],
   },
   {
     group: "오류 판단",

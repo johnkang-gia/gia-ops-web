@@ -1648,6 +1648,11 @@ export type Invoice = {
    * 보내면 이미 낸 분께 또 내라고 하는 셈이 됩니다.
    */
   issued_offline?: boolean | null;
+  /** 결재로 받지 않기로 한 금액(결손). 잔액에서 빠지지만 받은 돈은 아닙니다. */
+  written_off_amount?: number | string | null;
+  written_off_at?: string | null;
+  written_off_by?: string | null;
+  written_off_reason?: string | null;
 };
 
 export type InvoiceLine = {
@@ -1658,6 +1663,47 @@ export type InvoiceLine = {
   qty: number;
   unit_price: number;
   amount: number;
+  /** 보낸 뒤에 더한 정정 줄. */
+  is_adjustment?: boolean | null;
+  adjust_reason?: string | null;
+  adjusted_by?: string | null;
+  adjusted_at?: string | null;
+  item_id?: string | null;
+  plan_id?: string | null;
+  carried_from_invoice_id?: string | null;
+  /** 과목경정으로 사람이 정한 세입과목. */
+  revenue_account_id?: string | null;
+};
+
+/** 세입과목(관·항·목). */
+export type RevenueAccount = {
+  id: string;
+  code: string;
+  name: string;
+  level: "관" | "항" | "목";
+  parent_id: string | null;
+  sort_order: number;
+  active: boolean;
+  note: string | null;
+};
+
+/** 결손·환불 결재. */
+export type FinanceRequest = {
+  id: string;
+  kind: "결손" | "환불";
+  invoice_id: string;
+  student_id: string | null;
+  amount: number | string;
+  reason: string;
+  payload: { refundedAt?: string; method?: string } | null;
+  status: "대기" | "승인" | "반려" | "취소";
+  requested_by: string;
+  requested_at: string;
+  decided_by: string | null;
+  decided_at: string | null;
+  decision_note: string | null;
+  applied_payment_id: string | null;
+  applied_at: string | null;
 };
 
 /** 학비외 항목의 분류. 항목보다 먼저 만들 수 있어야 "악기" 아래를 채우는 순서가 됩니다. */

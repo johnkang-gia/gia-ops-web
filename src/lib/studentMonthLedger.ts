@@ -45,6 +45,9 @@ export type MonthInvoice = {
   category?: string | null;
   carried_to_invoice_id?: string | null;
   note?: string | null;
+  written_off_amount?: number | string | null;
+  written_off_at?: string | null;
+  written_off_reason?: string | null;
 };
 
 export type MonthPayment = {
@@ -56,7 +59,7 @@ export type MonthPayment = {
   kind?: string | null;
 };
 
-export type EntryKind = "청구" | "수납" | "환불" | "취소" | "이월됨";
+export type EntryKind = "청구" | "수납" | "환불" | "결손" | "취소" | "이월됨";
 
 export type MonthEntry = {
   date: string;
@@ -69,6 +72,8 @@ export type MonthEntry = {
   billed: number;
   /** 들어온 금액(+). 환불은 음수로 그대로 둡니다 - 되돌린 돈은 잔액을 다시 늘립니다. */
   received: number;
+  /** 결재로 받지 않기로 한 금액(+). 받은 돈이 아니라 수납에 섞지 않습니다. */
+  writtenOff?: number;
   /** 그 줄까지의 잔액. 통장의 오른쪽 칸입니다. */
   running: number;
   method?: string | null;
@@ -76,7 +81,7 @@ export type MonthEntry = {
   outsideMonth: boolean;
 };
 
-export type RowState = "완납" | "부분납부" | "연체" | "미납" | "청구 없음";
+export type RowState = "완납" | "결손" | "부분납부" | "연체" | "미납" | "청구 없음";
 
 export type StudentMonthRow = {
   studentId: string;
@@ -85,6 +90,7 @@ export type StudentMonthRow = {
   invoiceCount: number;
   billed: number;
   received: number;
+  writtenOff: number;
   balance: number;
   state: RowState;
   /** 그 달 청구서 중 가장 늦은 마감일. 연체 판정의 기준입니다. */
@@ -101,6 +107,7 @@ export type MonthTotals = {
   invoiceCount: number;
   billed: number;
   received: number;
+  writtenOff: number;
   balance: number;
   /** 한 푼도 안 들어온 학생 수. 「부분납부」와 섞으면 연락할 사람을 못 고릅니다. */
   untouched: number;
@@ -155,6 +162,7 @@ export function buildStudentMonth(
       invoiceCount: 0,
       billed: 0,
       received: 0,
+      writtenOff: 0,
       balance: 0,
       state: "미납",
       lastDue: null,
@@ -224,6 +232,24 @@ export function buildStudentMonth(
       running: 0,
       outsideMonth: false,
     });
+
+    const wo = num(v.written_off_amount);
+    if (wo > 0) {
+      row.writtenOff += wo;
+      row.entries.push({
+        date: (v.written_off_at ?? "").slice(0, 10) || v.issue_date,
+        kind: "결손",
+        invoiceId: v.id,
+        invoiceNo: v.invoice_no,
+        stream,
+        label: `${v.invoice_no} 결손${v.written_off_reason ? ` · ${v.written_off_reason}` : ""}`,
+        billed: 0,
+        received: 0,
+        writtenOff: wo,
+        running: 0,
+        outsideMonth: (v.written_off_at ?? "").slice(0, 7) !== opts.month,
+      });
+    }
   }
 
   for (const p of payments) {
@@ -261,15 +287,17 @@ export function buildStudentMonth(
     );
     let running = 0;
     for (const e of row.entries) {
-      running += e.billed - e.received;
+      running += e.billed - e.received - (e.writtenOff ?? 0);
       e.running = running;
     }
-    row.balance = row.billed - row.received;
+    row.balance = row.billed - row.received - row.writtenOff;
     row.state =
       row.invoiceCount === 0
         ? "청구 없음"
         : row.balance <= 0
-          ? "완납"
+          ? row.writtenOff > 0
+            ? "결손"
+            : "완납"
           : row.received > 0
             ? "부분납부"
             : row.lastDue && row.lastDue < opts.today
@@ -288,6 +316,7 @@ export function buildStudentMonth(
     invoiceCount: rows.reduce((n, r) => n + r.invoiceCount, 0),
     billed: rows.reduce((n, r) => n + r.billed, 0),
     received: rows.reduce((n, r) => n + r.received, 0),
+    writtenOff: rows.reduce((n, r) => n + r.writtenOff, 0),
     balance: rows.reduce((n, r) => n + r.balance, 0),
     untouched: rows.filter((r) => r.invoiceCount > 0 && r.received === 0).length,
     cancelled,
@@ -299,7 +328,7 @@ export function buildStudentMonth(
 
 /** 같은 날 줄 사이의 순서. 청구 → 수납 → 환불 → 그 밖. */
 function order(kind: EntryKind): number {
-  return kind === "청구" ? 0 : kind === "수납" ? 1 : kind === "환불" ? 2 : 3;
+  return kind === "청구" ? 0 : kind === "수납" ? 1 : kind === "환불" ? 2 : kind === "결손" ? 3 : 4;
 }
 
 /**

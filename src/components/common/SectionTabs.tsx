@@ -408,7 +408,7 @@ const FINANCE_TABS: TabDef[] = [
     label: "회계",
     icon: "📒",
     href: "/finance/ledger",
-    match: ["/finance/ledger", "/finance/tuition", "/finance/invoices", "/finance/unpaid", "/finance/payments", "/finance/prepaid", "/finance/import", "/finance/receipts", "/finance/statement"],
+    match: ["/finance/ledger", "/finance/tuition", "/finance/invoices", "/finance/unpaid", "/finance/payments", "/finance/prepaid", "/finance/import", "/finance/receipts", "/finance/statement", "/finance/approvals"],
     children: [
       // 학생 한 명의 일은 전부 여기 - 학생을 누르면 창 하나에서 발행·기수납·입금·영수증·올톡페이.
       { label: "회계", href: "/finance/ledger", match: ["/finance/ledger"] },
@@ -420,6 +420,8 @@ const FINANCE_TABS: TabDef[] = [
       { label: "예치금", href: "/finance/prepaid", match: ["/finance/prepaid"] },
       { label: "결제내역 올리기", href: "/finance/import", match: ["/finance/import"] },
       { label: "현금영수증", href: "/finance/receipts", match: ["/finance/receipts"] },
+      // 결손·환불은 올린 사람이 아닌 관리자가 승인해야 장부에 들어갑니다.
+      { label: "결재", href: "/finance/approvals", match: ["/finance/approvals"] },
     ],
   },
   // **월별** - 「지금」이 아니라 「흐름」. 개요(이번 달)도 같은 뷰(`finance_monthly`)를 읽으므로 여기 둡니다.
@@ -428,11 +430,13 @@ const FINANCE_TABS: TabDef[] = [
     label: "월별",
     icon: "📅",
     href: "/finance",
-    match: ["/finance", "/finance/monthly"],
+    match: ["/finance", "/finance/monthly", "/finance/revenue"],
     children: [
       { label: "이번 달 개요", href: "/finance", match: ["/finance"] },
       { label: "월별 · 학기별", href: "/finance/monthly", match: ["/finance/monthly"] },
       { label: "학생별", href: "/finance/monthly/students", match: ["/finance/monthly/students"] },
+      // 「무슨 돈으로 얼마」 - 세입과목(관·항·목)별 부과·수납·결손·미수.
+      { label: "과목별 수입", href: "/finance/revenue", match: ["/finance/revenue"] },
     ],
   },
   // **설정** - 요금표·납부항목·할인. 청구를 하다가 손대는 일이라 각 표 위의 단추로도 열리지만,
@@ -442,10 +446,12 @@ const FINANCE_TABS: TabDef[] = [
     label: "설정",
     icon: "⚙️",
     href: "/finance/plans",
-    match: ["/finance/plans", "/finance/items"],
+    match: ["/finance/plans", "/finance/items", "/finance/accounts", "/finance/promotion"],
     children: [
       { label: "학비 요금표 · 할인", href: "/finance/plans", match: ["/finance/plans"] },
       { label: "학비외 항목", href: "/finance/items", match: ["/finance/items"] },
+      { label: "세입과목", href: "/finance/accounts", match: ["/finance/accounts"] },
+      { label: "진급 · 학기 넘기기", href: "/finance/promotion", match: ["/finance/promotion"] },
     ],
   },
 ];

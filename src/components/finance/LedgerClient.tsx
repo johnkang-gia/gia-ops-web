@@ -70,6 +70,7 @@ type Stream = "학비" | "학비외";
 const STATE_STYLE: Record<string, string> = {
   완납: "bg-emerald-100 text-emerald-800",
   부분납부: "bg-amber-100 text-amber-800",
+  결손: "bg-violet-100 text-violet-700",
   연체: "bg-rose-100 text-rose-700",
   미납: "bg-slate-100 text-slate-600",
   이월됨: "bg-slate-100 text-slate-400",

@@ -13,6 +13,7 @@ const won = (n: number) => `${Math.round(n).toLocaleString("ko-KR")}원`;
 const STATE_TONE: Record<RowState, string> = {
   완납: "bg-emerald-100 text-emerald-800",
   부분납부: "bg-amber-100 text-amber-800",
+  결손: "bg-violet-100 text-violet-700",
   연체: "bg-rose-100 text-rose-800",
   미납: "bg-slate-100 text-slate-600",
   "청구 없음": "bg-slate-50 text-slate-400",
@@ -122,7 +123,7 @@ export default function StudentMonthClient({
         <Card
           label="미납"
           value={won(totals.balance)}
-          sub={totals.untouched > 0 ? `미납(한 푼도 안 냄) ${totals.untouched}명` : "전부 일부라도 냈습니다"}
+          sub={(totals.untouched > 0 ? `미납(한 푼도 안 냄) ${totals.untouched}명` : "전부 일부라도 냈습니다") + (totals.writtenOff > 0 ? ` · 결손 ${won(totals.writtenOff)} 제외` : "")}
           tone={totals.balance > 0 ? "rose" : "slate"}
         />
         <Card
@@ -259,8 +260,8 @@ export default function StudentMonthClient({
                                   {e.method && <span className="ml-1 text-[10px] text-slate-400">{e.method}</span>}
                                 </td>
                                 <td className="py-1 tabular-nums text-slate-700">{e.billed > 0 ? won(e.billed) : ""}</td>
-                                <td className={"py-1 tabular-nums " + (e.received < 0 ? "text-rose-600" : "text-emerald-700")}>
-                                  {e.received !== 0 ? won(e.received) : ""}
+                                <td className={"py-1 tabular-nums " + (e.kind === "결손" ? "text-violet-700" : e.received < 0 ? "text-rose-600" : "text-emerald-700")}>
+                                  {e.kind === "결손" ? `결손 ${won(e.writtenOff ?? 0)}` : e.received !== 0 ? won(e.received) : ""}
                                 </td>
                                 <td className="py-1 font-bold tabular-nums text-slate-900">
                                   {e.kind === "취소" || e.kind === "이월됨" ? "" : won(e.running)}

@@ -34,7 +34,7 @@ export async function POST(req: Request) {
   const supabase = await createClient();
   const { data: inv, error: invErr } = await supabase
     .from("invoices")
-    .select("id, invoice_no, student_id, student_name, student_name_ko, issue_date, due_date, total_amount, status, category, stream, carried_to_invoice_id")
+    .select("id, invoice_no, student_id, student_name, student_name_ko, issue_date, due_date, total_amount, status, category, stream, carried_to_invoice_id, written_off_amount")
     .eq("id", invoiceId)
     .maybeSingle();
   if (invErr) return NextResponse.json({ error: invErr.message }, { status: 500 });

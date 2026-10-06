@@ -30,6 +30,8 @@ export type SettleInvoice = {
   category?: string | null;
   stream?: string | null;
   carried_to_invoice_id?: string | null;
+  /** 결재로 받지 않기로 한 금액(결손). 안 읽어온 화면에서는 0 으로 셉니다. */
+  written_off_amount?: number | string | null;
 };
 
 export type SettlePayment = { invoice_id: string | null; amount: number | string };
@@ -39,12 +41,15 @@ export type InvoiceState =
   | "이월됨"
   | "완납"
   | "부분납부"
+  | "결손"
   | "미납"
   | "연체";
 
 export type Settled = {
   billed: number;
   paid: number;
+  /** 결손으로 정리한 금액. */
+  writtenOff: number;
   balance: number;
   state: InvoiceState;
   /** 마감일이 며칠 지났는가. 마감 전이면 0. */
@@ -65,12 +70,15 @@ function daysBetween(a: string, b: string): number {
  * 순서가 뜻을 가집니다.
  *   ① 취소   - 무효로 만든 것. 금액을 세지 않습니다.
  *   ② 이월됨 - 미납이 새 청구서로 옮겨간 것. **여기서 또 세면 같은 돈을 두 번 청구합니다.**
- *   ③ 완납 / 부분납부 / 연체 / 미납
+ *   ③ 완납 / 결손(남은 것을 결재로 정리) / 부분납부 / 연체 / 미납
  */
 export function settle(inv: SettleInvoice, payments: SettlePayment[], today: string): Settled {
   const billed = num(inv.total_amount);
   const paid = payments.filter((p) => p.invoice_id === inv.id).reduce((n, p) => n + num(p.amount), 0);
-  const balance = billed - paid;
+  const writtenOff = num(inv.written_off_amount);
+  // 결손은 **받은 돈이 아닙니다.** 입금에 섞으면 수납 합계가 부풀고, 빼지 않으면 받지 않기로
+  // 결재한 돈이 미수금에 영영 남습니다. 그래서 따로 셉니다.
+  const balance = billed - paid - writtenOff;
   const overdueDays = Math.max(0, daysBetween(inv.due_date, today));
 
   const state: InvoiceState =
@@ -79,14 +87,16 @@ export function settle(inv: SettleInvoice, payments: SettlePayment[], today: str
       : inv.carried_to_invoice_id
         ? "이월됨"
         : balance <= 0
-          ? "완납"
+          ? writtenOff > 0
+            ? "결손"
+            : "완납"
           : paid > 0
             ? "부분납부"
             : overdueDays > 0
               ? "연체"
               : "미납";
 
-  return { billed, paid, balance, state, overdueDays };
+  return { billed, paid, writtenOff, balance, state, overdueDays };
 }
 
 /** 아직 받아야 하는 돈인가. 취소·이월·완납은 아닙니다. */

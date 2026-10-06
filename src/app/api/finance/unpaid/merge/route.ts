@@ -50,7 +50,7 @@ export async function POST(req: Request) {
 
   const { data: invs, error: invErr } = await supabase
     .from("invoices")
-    .select("id, invoice_no, student_id, student_name, student_name_ko, grade_label, issue_date, due_date, total_amount, status, category, stream, carried_to_invoice_id")
+    .select("id, invoice_no, student_id, student_name, student_name_ko, grade_label, issue_date, due_date, total_amount, status, category, stream, carried_to_invoice_id, written_off_amount")
     .in("id", ids);
   if (invErr) return NextResponse.json({ error: `청구서를 읽지 못했습니다: ${invErr.message}` }, { status: 500 });
   const rows = (invs ?? []) as unknown as (SettleInvoice & { grade_label: string | null })[];

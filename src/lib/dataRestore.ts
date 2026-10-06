@@ -47,7 +47,9 @@ const PARENT_FIRST = [
   "student_group_members",
   "student_apparel_sizes",
   "student_dismissal_plans",
-  // 요금 → 학생별 요금 → 청구서 → 내역·수납
+  // 세입과목 → 요금 → 학생별 요금 → 청구서 → 내역·수납 → 결재
+  // 과목은 요금표·분류·청구 줄이 가리키므로 맨 앞입니다.
+  "revenue_accounts",
   "fee_categories",
   "fee_plans",
   "fee_terms",
@@ -61,6 +63,8 @@ const PARENT_FIRST = [
   "invoice_lines",
   "payments",
   "cash_receipts",
+  "finance_requests",
+  "invoice_line_reclass_log",
   // 셔틀
   "shuttle_routes",
   "shuttle_stops",

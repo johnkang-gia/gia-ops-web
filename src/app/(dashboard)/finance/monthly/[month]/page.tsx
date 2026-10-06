@@ -50,7 +50,7 @@ export default async function FinanceMonthStudentsPage({ params }: { params: Pro
     supabase
       .from("invoices")
       .select(
-        "id, invoice_no, student_id, student_name, student_name_ko, billing_month, issue_date, due_date, total_amount, status, stream, category, carried_to_invoice_id, note",
+        "id, invoice_no, student_id, student_name, student_name_ko, billing_month, issue_date, due_date, total_amount, status, stream, category, carried_to_invoice_id, note, written_off_amount, written_off_at, written_off_reason",
       )
       .or(`billing_month.eq.${month},and(billing_month.is.null,issue_date.gte.${first},issue_date.lte.${lastOfMonth})`)
       .order("issue_date")

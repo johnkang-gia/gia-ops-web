@@ -29,7 +29,7 @@ export default async function UnpaidPage() {
     readAll<UnpaidInvoice>((from, to) =>
       supabase
         .from("invoices")
-        .select("id, invoice_no, student_id, student_name, student_name_ko, issue_date, due_date, total_amount, status, stream, category, carried_to_invoice_id, exported_at")
+        .select("id, invoice_no, student_id, student_name, student_name_ko, issue_date, due_date, total_amount, status, stream, category, carried_to_invoice_id, exported_at, written_off_amount")
         .eq("status", "발행")
         .is("carried_to_invoice_id", null)
         .order("due_date")

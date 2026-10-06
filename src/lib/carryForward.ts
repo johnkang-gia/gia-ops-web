@@ -26,7 +26,7 @@ export type CarryLine = {
 };
 
 const COLS =
-  "id, invoice_no, student_id, student_name, student_name_ko, issue_date, due_date, total_amount, status, category, stream, carried_to_invoice_id";
+  "id, invoice_no, student_id, student_name, student_name_ko, issue_date, due_date, total_amount, status, category, stream, carried_to_invoice_id, written_off_amount";
 
 /** 이 학생·이 갈래에서 아직 안 받은 돈. 새 청구서에 넣을 줄로 만들어 돌려줍니다. */
 export async function planCarryForward(

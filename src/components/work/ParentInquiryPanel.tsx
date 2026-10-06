@@ -11,6 +11,7 @@ import { markIfAmbiguous, toKoreanDisplayName, toRosterEntries, type RosterEntry
 import { loadHouseCandidates } from "@/lib/houseCandidates";
 import { loadStudents } from "@/lib/students";
 import { loadRideBadges, type RideBadge } from "@/lib/rideBadge";
+import StudentPicker from "@/components/pickup/StudentPicker";
 
 // 학부모 문의사항 — 예전 실시간 로그가 있던 자리입니다.
 //
@@ -700,6 +701,23 @@ export default function ParentInquiryPanel({
     return /결석|안 ?가|안 ?와|픽업|데리러|하원|지각|조퇴|absent|pick ?up|late/i.test(t);
   }
 
+  /** 문의의 학생을 바꿉니다. 상태(확인대기·완료)는 그대로 둡니다 - 누구 이야기인가와 처리했는가는 다른 판단입니다. */
+  async function relink(id: string, studentId: string) {
+    const res = await fetch("/api/pickup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "link", id, studentId }),
+    });
+    const json = (await res.json().catch(() => null)) as { name?: string; error?: string } | null;
+    if (!res.ok) {
+      notify(json?.error ?? "학생을 바꾸지 못했습니다.", "error");
+      return;
+    }
+    notify(`${json?.name ?? "학생"}(으)로 바꿨습니다.`, "success");
+    setDetail((d) => (d && d.id === id ? { ...d, student_id: studentId, matched_name: json?.name ?? d.matched_name } : d));
+    void load();
+  }
+
   function studentOf(r: Inquiry) {
     // 명부와 대조해 한글 이름으로 바꿉니다. 명부가 아직 안 왔거나 못 찾으면 원래 값을 씁니다.
     //
@@ -1074,6 +1092,15 @@ export default function ParentInquiryPanel({
                       <span className="text-sm font-bold text-slate-800">{studentOf(detail)}</span>
                     )}
                     <RideChip badge={detail.student_id ? rides.get(detail.student_id) : undefined} long />
+                    {/* 형제방에서 온 연락은 방에 이어진 아이로 들어옵니다. 다른 아이 이야기면 여기서 바꿉니다 -
+                        잘못 붙은 채로 두면 그 아이 프로필에 남의 연락이 쌓입니다. */}
+                    <StudentPicker
+                      students={roster}
+                      label={detail.student_id ? "학생 바꾸기" : "학생 연결"}
+                      title="이 문의가 어느 학생 이야기인지 바꿉니다"
+                      buttonClassName="rounded border border-slate-300 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 hover:bg-slate-100"
+                      onPick={(st) => void relink(detail.id, st.id)}
+                    />
                     {detail.inquiry_type && (
                       <span className={"rounded px-1.5 py-0.5 text-[10px] font-semibold " + (TYPE_STYLE[detail.inquiry_type] ?? "bg-slate-100")}>
                         {detail.inquiry_type}
@@ -1291,15 +1318,18 @@ export default function ParentInquiryPanel({
  */
 function RideChip({ badge, long = false }: { badge?: RideBadge; long?: boolean }) {
   if (!badge) return null;
+  // 셔틀 없는 아이는 자동차에 ✕ 하나. 글자로 「셔틀 없음」을 적으면 목록 한 줄이 그만큼 밀립니다.
+  if (!badge.rides) {
+    return (
+      <span title={badge.title} className="relative inline-flex h-4 w-4 shrink-0 items-center justify-center text-[12px] leading-none opacity-60">
+        🚗
+        <span className="absolute inset-0 flex items-center justify-center text-[13px] font-black leading-none text-rose-600">✕</span>
+      </span>
+    );
+  }
   return (
-    <span
-      title={badge.title}
-      className={
-        "shrink-0 rounded px-1 py-0.5 text-[10px] font-bold leading-none " +
-        (badge.rides ? "bg-sky-100 text-sky-800" : "bg-slate-100 text-slate-600")
-      }
-    >
-      {long ? badge.title.replace(/^하원 셔틀을 탑니다: /, "🚌 ") : badge.label}
+    <span title={badge.title} className="shrink-0 rounded bg-sky-100 px-1 py-0.5 text-[10px] font-bold leading-none text-sky-800">
+      {long ? badge.title.replace(/^하원 셔틀을 탑니다: /, "🚗 ") : badge.label}
     </span>
   );
 }

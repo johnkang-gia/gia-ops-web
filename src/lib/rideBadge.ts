@@ -13,7 +13,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  * 어떤 아이인가»를 말합니다.
  */
 export type RideBadge = {
-  /** 「🚌 하원 12호」 · 「🚌 하원 12호 · 목 보호자픽업」 · 「🚶 보호자픽업」 · 「🚶 셔틀 없음」 */
+  /** 「🚗 12호」 · 「🚗 12호(월수) · 일부」. 셔틀이 없으면 화면이 🚗✕ 로 그립니다(label 은 설명용). */
   label: string;
   rides: boolean;
   /** 마우스를 올렸을 때 풀어 쓴 설명. */
@@ -69,7 +69,7 @@ export async function loadRideBadges(supabase: SupabaseClient, studentIds: reado
       const days = [...new Set(routes.flatMap((r) => r.days))].sort();
       const dayText = days.length > 0 && days.length < 5 ? `(${days.map((d) => WD[d]).join("")})` : "";
       out.set(id, {
-        label: `🚌 ${nos}${dayText}${plans.length ? " · 일부 다른 수단" : ""}`,
+        label: `🚗 ${nos}${dayText}${plans.length ? " · 일부" : ""}`,
         rides: true,
         title: `하원 셔틀을 탑니다: ${nos}${dayText}${planText ? ` / 요일별 다른 수단: ${planText}` : ""}`,
       });

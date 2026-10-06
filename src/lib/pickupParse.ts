@@ -51,14 +51,22 @@ export function parseChannelLabel(label: string | null | undefined): ChannelPars
 
   // 첫 칸이 학년('G2', 'G3&G6'), 마지막 칸은 보통 'Office' 같은 꼬리표입니다.
   const gradePart = parts[0];
-  const grades = gradePart.split(/[&,/]/).map((g) => g.trim()).filter((g) => /^[A-Za-z]*\d+$/.test(g));
+  const head = gradePart.split(/[&,/]/).map((g) => g.trim()).filter(Boolean);
+  const isGrade = (g: string) => /^[A-Za-z]*\d+$/.test(g);
+  const grades = head.filter(isGrade);
   if (grades.length === 0) return null;
+  /**
+   * **첫 칸에 학년만 있는 것이 아닙니다.** 「G4 & G7, Jay_Heather Yu_Office」 처럼 학년 뒤에 쉼표로
+   * 첫 아이 이름이 붙어 옵니다. 예전에는 학년이 아닌 글자를 그냥 버려서 Jay 가 사라졌고, 이 방은
+   * 「Heather Yu」 한 명의 방으로 읽혔습니다 - 재이 이야기도 전부 하이 이름으로 들어갔습니다.
+   */
+  const leading = head.filter((g) => !isGrade(g));
 
   // 학년과 꼬리표(Office 등)를 뺀 가운데가 이름입니다. 가운데가 여러 칸이면 이어 붙입니다.
   const middle = parts.slice(1, parts.length > 2 ? parts.length - 1 : undefined).join(" ").trim();
-  if (!middle) return null;
+  if (!middle && leading.length === 0) return null;
 
-  const rawNames = middle.split(/\s*&\s*|\s*,\s*/).map((n) => n.trim()).filter(Boolean);
+  const rawNames = [...leading, ...middle.split(/\s*&\s*|\s*,\s*/)].map((n) => n.trim()).filter(Boolean);
   if (rawNames.length === 0) return null;
 
   if (rawNames.length === 1) {
@@ -431,8 +439,10 @@ export function toKoreanDisplayName(
   // 채널 이름에서 사람들을 뽑아 각각 대조합니다. 채널이 가장 규칙적이라 먼저 씁니다.
   const parsed = parseChannelLabel(channelLabel);
   if (parsed) {
-    const kos = parsed.names.map((n) => {
-      const grade = parsed.grades[0] ?? null;
+    const kos = parsed.names.map((n, i) => {
+      // 형제방은 학년이 사람마다 다릅니다(G4 & G7). 사람 수와 학년 수가 같으면 순서대로 짝짓고,
+      // 아니면 학년으로 거르지 않습니다 - 첫 학년을 모두에게 쓰면 동생 학년으로 누나를 찾게 됩니다.
+      const grade = parsed.grades.length === parsed.names.length ? parsed.grades[i] : parsed.grades.length === 1 ? parsed.grades[0] : null;
       const m = matchStudent(n, roster, grade, `${channelLabel ?? ""} ${context ?? ""}`);
       // 동명이인이면 반을 붙여 누구인지 알아볼 수 있게 합니다(담당자 요청).
       return m ? studentLabel(m, roster) : null;

@@ -171,11 +171,54 @@ export function detectDwells(pings: Ping[]): Dwell[] {
 
 // ── 관측 묶기 ────────────────────────────────────────────────────────────────
 
-export type Obs = { id: number; lat: number; lng: number; service_date: string; dwell_seconds: number | null };
+export type Obs = {
+  id: number;
+  lat: number;
+  lng: number;
+  service_date: string;
+  dwell_seconds: number | null;
+  /** 이 정차를 이룬 점 수. 1이면 「기록이 빈 구간」으로 추정한 정차라 덜 정확합니다. */
+  sample_count?: number | null;
+};
+
+/**
+ * **치우침에 강한 중심** — 가중 중앙값(위도·경도 따로).
+ *
+ * 예전에는 평균을 냈습니다. 평균은 한두 번 엉뚱한 자리(앞차 때문에 30m 앞에서 선 날)에 그대로
+ * 끌려갑니다. 중앙값은 절반 넘게 같은 자리에 서면 그 자리를 답합니다 - 날이 쌓일수록 실제
+ * 하차 자리로 모입니다.
+ *
+ * 점 여럿이 뭉친 정차(뭉친 자리의 평균이라 정확)는 2, 기록이 빈 구간으로 추정한 정차(빈 구간
+ * 직전 점이라 수십 m 어긋날 수 있음)는 1로 가중합니다.
+ */
+export function robustCenter(points: { lat: number; lng: number; w: number }[]): { lat: number; lng: number } {
+  const med = (key: "lat" | "lng") => {
+    const arr = [...points].sort((a, b) => a[key] - b[key]);
+    const total = arr.reduce((n, p) => n + p.w, 0);
+    let acc = 0;
+    for (const p of arr) {
+      acc += p.w;
+      if (acc >= total / 2) return p[key];
+    }
+    return arr[arr.length - 1]?.[key] ?? 0;
+  };
+  return { lat: med("lat"), lng: med("lng") };
+}
+
+export const weightOf = (o: { sample_count?: number | null }) => ((o.sample_count ?? 1) >= DWELL_MIN_SAMPLES ? 2 : 1);
+
+/** 관측 정차들이 중심에서 떨어진 거리의 중앙값(m). 작을수록 매일 같은 자리에 섭니다. */
+export function spreadMeters(center: { lat: number; lng: number }, points: { lat: number; lng: number }[]): number {
+  if (points.length === 0) return 0;
+  const d = points.map((p) => haversineMeters(center.lat, center.lng, p.lat, p.lng)).sort((a, b) => a - b);
+  return Math.round(d[Math.floor(d.length / 2)]);
+}
 
 export type Place = {
   lat: number;
   lng: number;
+  /** 관측 정차들이 중심에서 떨어진 거리의 중앙값(m). */
+  spreadM: number;
   /** 이 자리에서 정차가 관측된 **날** 수. 같은 날 여러 번 서도 1일입니다. */
   dayCount: number;
   /** 관측 건수(하루에 두 번 설 수도 있습니다). */
@@ -185,7 +228,7 @@ export type Place = {
   obsIds: number[];
 };
 
-type Spot = { lat: number; lng: number; days: Set<string>; dwellTotal: number; count: number; ids: number[] };
+type Spot = { lat: number; lng: number; days: Set<string>; dwellTotal: number; count: number; ids: number[]; pts: { lat: number; lng: number; w: number }[] };
 
 /** ① 40m — GPS 오차 범위의 「같은 점」끼리 묶습니다. */
 function clusterSpots(rows: Obs[]): Spot[] {
@@ -200,9 +243,10 @@ function clusterSpots(rows: Obs[]): Spot[] {
     }
     const dwell = r.dwell_seconds ?? 0;
     if (!hit) {
-      spots.push({ lat: r.lat, lng: r.lng, days: new Set([r.service_date]), dwellTotal: dwell, count: 1, ids: [r.id] });
+      spots.push({ lat: r.lat, lng: r.lng, days: new Set([r.service_date]), dwellTotal: dwell, count: 1, ids: [r.id], pts: [{ lat: r.lat, lng: r.lng, w: weightOf(r) }] });
       continue;
     }
+    hit.pts.push({ lat: r.lat, lng: r.lng, w: weightOf(r) });
     // 중심을 새 점까지 포함해 다시 평균 냅니다(관측이 쌓일수록 중심이 정확해집니다).
     hit.lat = (hit.lat * hit.count + r.lat) / (hit.count + 1);
     hit.lng = (hit.lng * hit.count + r.lng) / (hit.count + 1);
@@ -227,9 +271,10 @@ export function groupIntoPlaces(rows: Obs[]): Place[] {
   for (const s of spots) {
     const host = places.find((p) => haversineMeters(p.lat, p.lng, s.lat, s.lng) <= STOP_MERGE_M);
     if (!host) {
-      places.push({ ...s, days: new Set(s.days), ids: [...s.ids], merged: [s] });
+      places.push({ ...s, days: new Set(s.days), ids: [...s.ids], pts: [...s.pts], merged: [s] });
       continue;
     }
+    host.pts.push(...s.pts);
     host.lat = (host.lat * host.count + s.lat * s.count) / (host.count + s.count);
     host.lng = (host.lng * host.count + s.lng * s.count) / (host.count + s.count);
     host.count += s.count;
@@ -240,9 +285,16 @@ export function groupIntoPlaces(rows: Obs[]): Place[] {
   }
 
   return places
+    .map((p) => {
+      // 묶는 동안은 평균으로 자리를 잡고(어느 자리를 흡수할지 정하는 데 충분), **최종 좌표는
+      // 흡수한 정차 전부의 중앙값**으로 냅니다 - 엉뚱한 날 하루가 좌표를 끌고 가지 못하게.
+      const c = robustCenter(p.pts);
+      return { ...p, lat: c.lat, lng: c.lng, spreadM: spreadMeters(c, p.pts) };
+    })
     .map((p) => ({
       lat: p.lat,
       lng: p.lng,
+      spreadM: p.spreadM,
       dayCount: p.days.size,
       count: p.count,
       dwellAvg: p.count > 0 ? Math.round(p.dwellTotal / p.count) : 0,
@@ -319,4 +371,108 @@ export function matchPlacesToStops(places: Place[], runDays: number, stops: Lear
   }
 
   return out;
+}
+
+// ── 한 노선 학습 전체 ────────────────────────────────────────────────────────
+
+export type LearnObs = Obs & { matched_stop_id: string | null; assigned_by_human?: boolean | null };
+
+export type StopUpdate = {
+  stopId: string;
+  lat: number;
+  lng: number;
+  dayCount: number;
+  count: number;
+  rate: number;
+  dwellAvg: number;
+  spreadM: number;
+  /** 이 정류장 좌표에 쓰인 정차들. 화면이 「어느 날 어디 섰나」를 그릴 때 씁니다. */
+  obsIds: number[];
+  /** 사람이 고른 정차가 섞였는가. */
+  human: boolean;
+};
+
+/**
+ * 한 노선의 최근 정차 관측으로 **정류장마다 좌표 하나**를 냅니다.
+ *
+ * **사람이 고른 정차는 거리로 다시 짝짓지 않습니다.** 사람이 「이건 3번 정류장」이라고 골라
+ * 준 것은 기사님이 실제로 거기서 내려준다는 사람의 판단이라, 등록 좌표와 멀어도 그 정류장의
+ * 학습에 그대로 들어갑니다. 예전 재계산은 이 표시를 읽지 않아 고른 것이 다음 날 그대로
+ * 버려졌습니다 - 화면에는 「다음부터 반영됩니다」라고 적혀 있었습니다.
+ */
+export function learnRoute(rows: LearnObs[], stops: LearnStop[]): { verdicts: PlaceVerdict[]; updates: StopUpdate[]; runDays: number } {
+  const runDays = new Set(rows.map((r) => r.service_date)).size;
+  const manual = rows.filter((r) => r.assigned_by_human && r.matched_stop_id);
+  const auto = rows.filter((r) => !(r.assigned_by_human && r.matched_stop_id));
+  const verdicts = matchPlacesToStops(groupIntoPlaces(auto), runDays, stops);
+
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const idsByStop = new Map<string, { ids: number[]; human: boolean }>();
+  for (const v of verdicts) {
+    if (v.accepted && v.stopId) idsByStop.set(v.stopId, { ids: [...v.obsIds], human: false });
+  }
+  for (const m of manual) {
+    const cur = idsByStop.get(m.matched_stop_id as string) ?? { ids: [], human: true };
+    cur.ids.push(m.id);
+    cur.human = true;
+    idsByStop.set(m.matched_stop_id as string, cur);
+  }
+
+  const updates: StopUpdate[] = [];
+  for (const [stopId, { ids, human }] of idsByStop) {
+    const obs = ids.map((id) => byId.get(id)).filter((o): o is LearnObs => !!o);
+    if (obs.length === 0) continue;
+    const pts = obs.map((o) => ({ lat: o.lat, lng: o.lng, w: weightOf(o) }));
+    const c = robustCenter(pts);
+    const days = new Set(obs.map((o) => o.service_date)).size;
+    updates.push({
+      stopId,
+      lat: c.lat,
+      lng: c.lng,
+      dayCount: days,
+      count: obs.length,
+      rate: runDays > 0 ? Number((days / runDays).toFixed(2)) : 0,
+      dwellAvg: Math.round(obs.reduce((n, o) => n + (o.dwell_seconds ?? 0), 0) / obs.length),
+      spreadM: spreadMeters(c, pts),
+      obsIds: ids,
+      human,
+    });
+  }
+  return { verdicts, updates, runDays };
+}
+
+// ── 화면용 ──────────────────────────────────────────────────────────────────
+
+/** 「주소 위치에서 실제 정차는 어느 쪽으로 얼마」 — 미터만 적으면 어디로 가야 하는지 모릅니다. */
+export function directionLabel(from: { lat: number; lng: number }, to: { lat: number; lng: number }): string {
+  const y = to.lat - from.lat;
+  const x = (to.lng - from.lng) * Math.cos((from.lat * Math.PI) / 180);
+  const deg = ((Math.atan2(x, y) * 180) / Math.PI + 360) % 360;
+  const names = ["북쪽", "북동쪽", "동쪽", "남동쪽", "남쪽", "남서쪽", "서쪽", "북서쪽"];
+  return names[Math.round(deg / 45) % 8];
+}
+
+/** 정확도 등급. 퍼짐(매일 선 자리가 학습 좌표에서 떨어진 중앙값)과 관측 일수로 매깁니다. */
+export function precisionGrade(spreadM: number | null | undefined, dayCount: number | null | undefined): { label: string; tone: "good" | "mid" | "low" } {
+  const d = dayCount ?? 0;
+  const s = spreadM ?? 999;
+  if (d >= 5 && s <= 15) return { label: "확정 수준", tone: "good" };
+  if (d >= 3 && s <= 40) return { label: "거의 확정", tone: "mid" };
+  return { label: "더 지켜봐야 함", tone: "low" };
+}
+
+/**
+ * **날이 갈수록 모이고 있는가** — 날짜순으로 하루씩 더하면서 그때까지의 중심이 지금 중심에서
+ * 얼마나 떨어져 있었는지. 숫자가 작아지며 0에 붙으면 수렴한 것이고, 오락가락하면 서는 자리가
+ * 날마다 다른 것입니다.
+ */
+export function convergence(obs: { lat: number; lng: number; service_date: string; sample_count?: number | null }[]): { date: string; offM: number }[] {
+  if (obs.length === 0) return [];
+  const all = robustCenter(obs.map((o) => ({ lat: o.lat, lng: o.lng, w: weightOf(o) })));
+  const dates = [...new Set(obs.map((o) => o.service_date))].sort();
+  return dates.map((d) => {
+    const upto = obs.filter((o) => o.service_date <= d).map((o) => ({ lat: o.lat, lng: o.lng, w: weightOf(o) }));
+    const c = robustCenter(upto);
+    return { date: d, offM: Math.round(haversineMeters(c.lat, c.lng, all.lat, all.lng)) };
+  });
 }

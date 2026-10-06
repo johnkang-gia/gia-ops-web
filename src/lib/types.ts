@@ -1286,6 +1286,8 @@ export type ShuttleStop = {
   gps_day_count?: number | null;
   gps_confidence?: number | null;
   gps_dwell_seconds?: number | null;
+  /** 학습에 쓰인 정차들이 학습 좌표에서 떨어진 거리의 중앙값(m). 작을수록 매일 같은 자리. */
+  gps_spread_m?: number | null;
   gps_updated_at: string | null;
   created_at: string;
 };
@@ -1330,6 +1332,8 @@ export type ShuttleStopObservation = {
   verdict?: string | null;
   /** 인정되지 않은 이유(사람이 읽는 문장). 인정된 관측은 null 입니다. */
   reject_reason?: string | null;
+  /** 사람이 정류장을 골라 준 정차인가. */
+  assigned_by_human?: boolean | null;
 };
 
 // weekdays: 1=월 ... 5=금. 요일별로 내리는 곳이 다른 학생은 같은 학생이 여러 행을 갖습니다.

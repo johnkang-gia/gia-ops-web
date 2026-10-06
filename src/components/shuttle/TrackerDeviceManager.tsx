@@ -8,7 +8,9 @@ import { driverSetupPath, setupMessage, smsHref } from "@/lib/driverSetup";
 import { formatTrackWindows } from "@/lib/shuttleTracking";
 import type { ShuttleRoute, ShuttleTrackerDevice, ShuttleStop, ShuttleStopObservation } from "@/lib/types";
 import { shareUrl } from "@/lib/appUrl";
-import { groupIntoPlaces } from "@/lib/shuttleStopLearn";
+import { groupIntoPlaces, precisionGrade } from "@/lib/shuttleStopLearn";
+import StopLearnMapModal from "./StopLearnMapModal";
+import { useRouter } from "next/navigation";
 
 // 요청: "기사님들은 네비를 핸드폰으로 하시는 경우도 많아서... 백그라운드에서 돌아갈 수 있도록",
 // "각 정류장도 우리는 지금 정확한 정보를 가지고 있지 않아서, gps를 통해서... 정확도를 높여서"
@@ -31,6 +33,10 @@ export default function TrackerDeviceManager({
   const [devices, setDevices] = useState(initialDevices);
   const [stopList, setStopList] = useState(stops);
   const [obs, setObs] = useState(observations);
+  // 학습 지도에서 반영·재계산하면 서버가 다시 그려 새 값을 내려줍니다. 받아서 갈아끼웁니다 -
+  // 안 그러면 지도에서는 반영됐는데 이 목록은 옛 좌표를 들고 있습니다.
+  useEffect(() => setStopList(stops), [stops]);
+  useEffect(() => setObs(observations), [observations]);
   const [busy, setBusy] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
   // 연결된 차량만 보기(요청 ②: "연결된 차량과 미연결 차량을 분리해서 연결된 차량들만 볼 수
@@ -289,6 +295,9 @@ export default function TrackerDeviceManager({
   }, [learnedStops]);
 
   const [openLearned, setOpenLearned] = useState<Set<string>>(new Set());
+  /** 정류장 학습 지도(등록 주소 ↔ 실제 정차 자리를 한 지도에서). */
+  const [learnMap, setLearnMap] = useState<{ routeId: string; stopId: string | null } | null>(null);
+  const router = useRouter();
 
   /**
    * **학습이 어디까지 왔는지**를 숫자로 먼저 보여줍니다.
@@ -352,6 +361,15 @@ export default function TrackerDeviceManager({
 
   return (
     <div className="g-panel-solid p-4">
+      {learnMap && (
+        <StopLearnMapModal
+          routeId={learnMap.routeId}
+          routeLabel={`${routeById.get(learnMap.routeId)?.route_no ?? ""}호`}
+          focusStopId={learnMap.stopId}
+          onClose={() => setLearnMap(null)}
+          onChanged={() => router.refresh()}
+        />
+      )}
       {qrFor && (
         <SetupLinkModal
           url={setupUrl(qrFor)}
@@ -788,6 +806,14 @@ export default function TrackerDeviceManager({
 
                 {open && (
                   <div className="flex flex-col gap-1 border-t border-slate-100 p-2 pt-1.5">
+                    {/* 숫자만으로는 어디서 어디로 몇 m인지, 매일 같은 자리인지 알 수 없습니다. 지도에서 봅니다. */}
+                    <button
+                      type="button"
+                      onClick={() => setLearnMap({ routeId, stopId: null })}
+                      className="self-start rounded-lg bg-blue-600 px-2.5 py-1 text-[11px] font-bold text-white"
+                    >
+                      🗺 {route?.route_no ?? ""}호 학습 지도로 보기 (주소 ↔ 실제 정차)
+                    </button>
                     {list.map((s) => {
                       const shift =
                         s.lat != null && s.lng != null && s.gps_lat != null && s.gps_lng != null
@@ -839,14 +865,29 @@ export default function TrackerDeviceManager({
                           {shift != null && (
                             <span className={shift > 100 ? "font-bold text-orange-600" : "text-slate-400"}>기존 좌표와 {shift}m 차이</span>
                           )}
-                          <a
-                            href={`https://map.kakao.com/link/map/${encodeURIComponent(s.address ?? "정차지점")},${s.gps_lat},${s.gps_lng}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="rounded border border-slate-300 px-1.5 py-0.5 text-slate-500"
+                          {/* 정확도 — 매일 선 자리의 퍼짐과 관측 일수로 매깁니다. 날이 쌓일수록 올라가야 정상입니다. */}
+                          {(() => {
+                            const g = precisionGrade(s.gps_spread_m, s.gps_day_count);
+                            return (
+                              <span
+                                className={
+                                  "rounded px-1.5 py-0.5 font-bold " +
+                                  (g.tone === "good" ? "bg-emerald-100 text-emerald-700" : g.tone === "mid" ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-500")
+                                }
+                                title="매일 선 자리가 학습 좌표에서 떨어진 거리(중앙값)와 관측 일수로 매긴 정확도"
+                              >
+                                {g.label}
+                                {s.gps_spread_m != null ? ` · ±${s.gps_spread_m}m` : ""}
+                              </span>
+                            );
+                          })()}
+                          <button
+                            type="button"
+                            onClick={() => setLearnMap({ routeId: s.route_id, stopId: s.id })}
+                            className="rounded border border-blue-300 px-1.5 py-0.5 font-semibold text-blue-700"
                           >
-                            지도
-                          </a>
+                            지도에서 비교
+                          </button>
                           <button
                             type="button"
                             onClick={() => applyGps(s)}
@@ -889,7 +930,7 @@ export default function TrackerDeviceManager({
           </div>
           <p className="mb-2 text-[11px] leading-relaxed text-slate-500">
             차가 멈춰 있었지만 기존 정류장과 연결되지 않은 자리입니다. 등록되지 않은 정류장이거나, 기존 좌표가 많이 틀린
-            경우입니다. 어느 정류장인지 골라주시면 다음부터 그 정류장의 학습에 함께 반영됩니다.
+            경우입니다. 어느 정류장인지 골라주시면 그 정류장의 학습에 들어갑니다(밤 크론 또는 학습 지도의 「지금 다시 계산」).
           </p>
           <div className="flex flex-col gap-1.5">
             {unmatchedByRoute.map(([routeId, list]) => {

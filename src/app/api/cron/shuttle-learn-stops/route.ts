@@ -5,15 +5,12 @@ import { haversineMeters } from "@/lib/shuttleRecommend";
 import { ensureCampusLocation } from "@/lib/shuttleCampus";
 import { kstParts, isWithinTrackingWindow } from "@/lib/shuttleTracking";
 import { touchHeartbeat } from "@/lib/heartbeat";
+import { recomputeStopCoords } from "@/lib/shuttleStopRelearn";
 import {
   detectDwells,
-  groupIntoPlaces,
-  matchPlacesToStops,
   CAMPUS_EXCLUDE_M,
   DWELL_MIN_SAMPLES,
-  LEARN_WINDOW_DAYS,
   MATCH_RADIUS_M,
-  type Obs,
   type Ping,
 } from "@/lib/shuttleStopLearn";
 
@@ -164,80 +161,6 @@ async function learnForDate(supabase: SupabaseClient, serviceDate: string, route
   }
 
   return results;
-}
-
-/**
- * 최근 관측을 자리별로 묶어, 매일 같은 곳에 서는 자리만 정류장 좌표로 인정합니다.
- *
- * **하루치로는 정류장과 신호대기를 구별할 수 없습니다** - 신호에 걸려 60초 선 것과 정류장에서
- * 60초 선 것은 GPS만 보면 똑같이 생겼습니다. 갈리는 것은 반복성뿐입니다.
- *
- *   · 정류장  : 결석이 아니면 매일 섭니다 → 겹쳐 보면 한 자리에 모입니다.
- *   · 신호대기: 어떤 날은 서고 어떤 날은 지나갑니다 → 겹쳐 보면 흩어집니다.
- */
-async function recomputeStopCoords(supabase: SupabaseClient, results: RouteResult[]): Promise<void> {
-  const since = kstParts(new Date(Date.now() - LEARN_WINDOW_DAYS * 24 * 60 * 60 * 1000)).iso;
-
-  for (const result of results) {
-    const routeId = result.routeId;
-    const { data: obsRows, error: obsError } = await supabase
-      .from("shuttle_stop_observations")
-      .select("id, lat, lng, service_date, dwell_seconds")
-      .eq("route_id", routeId)
-      .gte("service_date", since);
-    if (obsError) {
-      result.errors.push(`관측 조회 실패: ${obsError.message}`);
-      continue;
-    }
-    const rows = (obsRows as Obs[] | null) ?? [];
-    if (rows.length === 0) continue;
-
-    // 운행한 날 = 관측이 하나라도 있는 날. 방학·주말처럼 안 다닌 날이 분모에 섞이면 모든
-    // 정류장의 비율이 낮게 나와 아무것도 인정되지 않습니다.
-    const runDays = new Set(rows.map((r) => r.service_date)).size;
-
-    const { data: stopRows, error: stopError } = await supabase
-      .from("shuttle_stops")
-      .select("id, seq, lat, lng, gps_lat, gps_lng")
-      .eq("route_id", routeId);
-    if (stopError) {
-      result.errors.push(`정류장 조회 실패: ${stopError.message}`);
-      continue;
-    }
-    type Row = { id: string; seq: number; lat: number | null; lng: number | null; gps_lat: number | null; gps_lng: number | null };
-    const stops = ((stopRows as Row[] | null) ?? []).map((s) => ({ id: s.id, seq: s.seq, lat: s.gps_lat ?? s.lat, lng: s.gps_lng ?? s.lng }));
-
-    const verdicts = matchPlacesToStops(groupIntoPlaces(rows), runDays, stops);
-
-    for (const v of verdicts) {
-      // 판단 결과를 관측에 남겨, 화면에서 「왜 제외됐는지」를 볼 수 있게 합니다.
-      const { error: markError } = await supabase
-        .from("shuttle_stop_observations")
-        .update({ verdict: v.accepted ? "stop" : "transit", reject_reason: v.accepted ? null : v.reason })
-        .in("id", v.obsIds);
-      if (markError) result.errors.push(`판단 기록 실패: ${markError.message}`);
-
-      if (!v.accepted || !v.stopId) {
-        result.rejected.push({ dayCount: v.dayCount, reason: v.reason, nearestSeq: v.stopSeq, distanceM: v.distanceM });
-        continue;
-      }
-
-      const { error } = await supabase
-        .from("shuttle_stops")
-        .update({
-          gps_lat: v.lat,
-          gps_lng: v.lng,
-          gps_sample_count: v.count,
-          gps_updated_at: new Date().toISOString(),
-          gps_day_count: v.dayCount,
-          gps_confidence: v.rate,
-          gps_dwell_seconds: v.dwellAvg,
-        })
-        .eq("id", v.stopId);
-      if (error) result.errors.push(`정류장 좌표 갱신 실패(seq ${v.stopSeq}): ${error.message}`);
-      else result.stopsUpdated += 1;
-    }
-  }
 }
 
 export async function GET(req: NextRequest) {

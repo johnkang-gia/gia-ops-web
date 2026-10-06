@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isAdminUser } from "@/lib/roles";
+import { recomputeStopCoords } from "@/lib/shuttleStopRelearn";
 
 export const dynamic = "force-dynamic";
 
@@ -138,10 +139,23 @@ export async function POST(req: Request) {
     if (!observationId) return NextResponse.json({ error: "observationId가 필요합니다." }, { status: 400 });
     const { error } = await supabase
       .from("shuttle_stop_observations")
-      .update({ matched_stop_id: stopId })
+      // 사람이 골랐다는 표시를 함께 남깁니다. 없으면 다음 재계산이 거리로 다시 짝지어, 고른 것이
+      // 그대로 버려집니다. 지정을 풀면 표시도 풀어 자동 판단으로 돌아갑니다.
+      .update({ matched_stop_id: stopId, assigned_by_human: !!stopId })
       .eq("id", observationId);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json({ ok: true });
+  }
+
+  // 이 호차의 정류장 좌표를 **지금** 다시 셉니다. 사람이 정차를 정류장에 골라 준 뒤 다음 운행일
+  // 밤까지 기다리지 않고 결과를 바로 보게 합니다 - 고른 것이 먹혔는지 바로 확인할 수 있어야 합니다.
+  if (action === "relearn") {
+    const routeId = body?.routeId as string | undefined;
+    if (!routeId) return NextResponse.json({ error: "routeId가 필요합니다." }, { status: 400 });
+    const target = { routeId, stopsUpdated: 0, rejected: [], errors: [] as string[] };
+    await recomputeStopCoords(supabase, [target]);
+    if (target.errors.length > 0) return NextResponse.json({ error: target.errors.join(" / ") }, { status: 500 });
+    return NextResponse.json({ ok: true, stopsUpdated: target.stopsUpdated });
   }
 
   return NextResponse.json({ error: "알 수 없는 action입니다." }, { status: 400 });

@@ -7,6 +7,7 @@ import Link from "next/link";
 import CronStatusBadge from "./CronStatusBadge";
 import ArrivalQrBadge from "./ArrivalQrBadge";
 import StudentSearchBadge from "./StudentSearchBadge";
+import TodayTimetableBadge from "./TodayTimetableBadge";
 import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import { useRealtimeTable } from "@/lib/useRealtimeTable";
@@ -453,6 +454,9 @@ export default function WorkBoardClient({
         </Link>
         <ArrivalQrBadge />
         <StudentSearchBadge />
+        {/* 지금 각 반이 어디 있는가. 아이를 찾으러 가거나 학부모 전화를 받을 때 학교 메뉴까지
+            가지 않고 여기서 엽니다. */}
+        <TodayTimetableBadge />
         {/* 공지는 헤더의 아이콘으로 들어왔습니다. 맨 위 자리는 「오늘 하원체크」가 씁니다 -
             아이를 몇 시에 어디로 내보내는가는 그날 안에 끝나는 일이고 놓치면 되돌릴 수
             없는데, 공지는 나중에 읽어도 됩니다. 없애지는 않았습니다: 안 읽은 공지가 있으면

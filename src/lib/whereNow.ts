@@ -142,24 +142,8 @@ export function whereNow(args: {
   const periodLabel = period.label || `${period.period_no}교시`;
   if (!cell) return { known: false, why: `${periodLabel} 시간표가 없습니다`, short: `${periodLabel} 시간표 없음` };
 
-  const room = (cell.room ?? "").trim();
-  if (room) return { known: true, place: room, subject: cell.subject_name, periodLabel, fromTimetableRoom: true };
-
-  const home = (classRoom ?? "").trim();
-
-  // **제 교실에서 하는 과목이 먼저입니다.**
-  //
-  // Novel Studies·WSC 는 특별실로 옮기지 않습니다. 과목 이름으로 장소를 짐작하는 규칙보다
-  // 앞에 둡니다 - 나중에 누가 「studies」 같은 넓은 규칙을 넣으면 이 아이들이 엉뚱한 방으로
-  // 끌려가는데, 그건 화면에 오류가 아니라 «그럴듯한 장소»로 보입니다.
-  if (isHomeroomSubject(cell.subject_name) && home) {
-    return { known: true, place: home, subject: cell.subject_name, periodLabel, fromTimetableRoom: false, homeroomSubject: true };
-  }
-
-  const guessed = placeOfSubject(cell.subject_name);
-  if (guessed) return { known: true, place: guessed, subject: cell.subject_name, periodLabel, fromTimetableRoom: false };
-
-  if (home) return { known: true, place: home, subject: cell.subject_name, periodLabel, fromTimetableRoom: false };
+  const p = placeOfCell(cell, classRoom);
+  if (p) return { known: true, place: p.place, subject: cell.subject_name, periodLabel, fromTimetableRoom: p.from === "시간표", ...(p.from === "제교실과목" ? { homeroomSubject: true } : {}) };
 
   // 여기까지 왔으면 **반 교실이 명부에 안 적혀 있는 것**입니다. 사람이 고칠 수 있는 일이라
   // 그렇게 말해줍니다 - 「장소가 없다」로 뭉뚱그리면 무엇을 고쳐야 하는지 알 수 없습니다.
@@ -168,6 +152,28 @@ export function whereNow(args: {
     why: `${periodLabel} ${cell.subject_name} - 시간표에도 반 명부에도 교실이 적혀 있지 않습니다`,
     short: "교실 미지정",
   };
+}
+
+/**
+ * **시간표 한 칸의 장소.** 「지금 위치」와 주간 시간표가 같은 규칙을 씁니다 - 둘이 따로
+ * 정하면 지금 칸에는 GYM 인데 주간표 같은 칸에는 교실로 떠서 어느 쪽을 믿을지 모릅니다.
+ *
+ * 순서: 시간표에 적힌 장소 → 제 교실 과목 → 과목 이름으로 읽은 특별실 → 반 교실. 다 없으면 null.
+ */
+export function placeOfCell(
+  cell: { subject_name: string; room: string | null },
+  classRoom: string | null,
+): { place: string; from: "시간표" | "제교실과목" | "과목" | "반교실" } | null {
+  const room = (cell.room ?? "").trim();
+  if (room) return { place: room, from: "시간표" };
+  const home = (classRoom ?? "").trim();
+  // **제 교실 과목이 과목 이름 짐작보다 먼저입니다.** Novel Studies·WSC 는 특별실로 옮기지 않습니다.
+  // 나중에 누가 「studies」 같은 넓은 규칙을 넣어도 이 아이들이 엉뚱한 방으로 끌려가지 않게 합니다.
+  if (isHomeroomSubject(cell.subject_name) && home) return { place: home, from: "제교실과목" };
+  const guessed = placeOfSubject(cell.subject_name);
+  if (guessed) return { place: guessed, from: "과목" };
+  if (home) return { place: home, from: "반교실" };
+  return null;
 }
 
 /** 주어진 시각의 한국 요일. 0=일 … 6=토. */

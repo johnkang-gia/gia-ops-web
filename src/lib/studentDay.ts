@@ -59,6 +59,14 @@ export type DayItem = {
    */
   entry?: { id: string; status: string; from: string; to: string; source: string | null; dupIds: string[] };
   /**
+   * **사람이 정한 줄.** 화면은 사유 대신 👤 표시와 날짜만 적습니다.
+   *
+   * 예전에는 사유 칸에 적힌 「이 건만 사람이 지정(규칙 없음)」 같은 **우리가 남긴 메모**가 그대로
+   * 칩 글자로 떠서, 좁은 칸을 넘치고 학부모가 보낸 사유처럼 읽혔습니다. 누가 정했는지는 세부 창의
+   * 근거에 남아 있습니다.
+   */
+  byHuman?: boolean;
+  /**
    * **왜 이 줄이 떴는가 — 사람이 읽을 수 있는 근거.**
    *
    * 「어디서 왔는가」(`from`)는 표 이름이라 사람에게는 아무 말도 아닙니다. 토들에서 온
@@ -82,6 +90,11 @@ export type StudentDay = {
   grade: string | null;
   className: string | null;
   items: DayItem[];
+  /**
+   * **지금 이 아이가 있는 곳**(시간표 기준, 「GYM · 체육」). 픽업하러 갈 때 반 이름만 알면
+   * 교실에 갔다가 체육관까지 한 번 더 걷습니다. 모르면 비웁니다 - 지어내지 않습니다.
+   */
+  where?: string | null;
   /** 가장 이른 시각. 보드를 세우는 열쇠입니다. */
   firstTime: string | null;
   pendingCount: number;
@@ -291,4 +304,12 @@ export function topicOf(text: string): Topic {
   if (/(납부|결제|입금|청구|환불|카드|계좌|학비|영수증|payment)/.test(t)) return "납부";
   if (/(아파|아프|열이|열나|감기|기침|병원|약|진료|알레르기|다쳐|다쳤|치과|건강)/.test(t)) return "건강";
   return "기타";
+}
+
+/**
+ * 사유 칸에 적힌 것이 **학부모가 아니라 우리가 남긴 메모**인가 - 사람이 직접 등록·지정한 줄.
+ * 이 글은 보드의 칩에 띄우지 않습니다(`byHuman`).
+ */
+export function isHumanSetNote(note: string | null | undefined): boolean {
+  return /^(이 건만 사람이 지정|사람이 직접 등록|사람이 .+ 으로 (지정|직접 등록))/.test((note ?? "").trim());
 }

@@ -434,7 +434,7 @@ export function TodayStudents({ sc, board }: { sc: BoardScale; board: DayBoard }
   const noteSide = shown.filter((d) => d.items.some((i) => !RIDE_KINDS.has(i.kind) && i.kind !== "문의"));
 
   /** 한 묶음의 학생 줄들. 칩은 그 묶음에 해당하는 것만 그립니다. */
-  function renderRows(list: StudentDay[], keep: (i: DayItem) => boolean) {
+  function renderRows(list: StudentDay[], keep: (i: DayItem) => boolean, side: "ride" | "note") {
     if (list.length === 0)
       return (
         <p style={{ margin: `${sc.s(2, 1)}px 0 0`, fontSize: sc.s(14, 10), color: "#475569" }}>없습니다.</p>
@@ -495,6 +495,13 @@ export function TodayStudents({ sc, board }: { sc: BoardScale; board: DayBoard }
                   {shortName(d.name)}
                 </b>
                 <span style={{ fontSize: sc.s(13, 10), color: "#64748b" }}>{d.className ?? d.grade ?? ""}</span>
+                {/* **지금 어디 있는가**(픽업 쪽만). 데리러 가는 사람에게 반 이름보다 필요한 것은
+                    장소입니다 - 체육 시간이면 교실이 아니라 체육관으로 가야 합니다. */}
+                {side === "ride" && d.where && (
+                  <span style={{ fontSize: sc.s(12, 9), color: "#94a3b8", whiteSpace: "nowrap" }} title="지금 시간표 기준 위치">
+                    📍 {d.where}
+                  </span>
+                )}
 
                 {visible.map((i) => {
                   const look = ITEM_LOOK[i.kind];
@@ -515,7 +522,9 @@ export function TodayStudents({ sc, board }: { sc: BoardScale; board: DayBoard }
                       }}
                     >
                       {look.icon} {i.at && i.at !== d.firstTime ? `${i.at} ` : ""}
-                      {i.text}
+                      {/* 특이사항은 **종류만**(물건·약…). 내용까지 적으면 칸을 넘치고, 내용은 업무보드에서
+                          봅니다. 사람이 정한 줄은 👤 와 날짜만 - 사유 칸의 메모는 우리가 남긴 글입니다. */}
+                      {side === "note" ? i.kind : i.byHuman ? `👤 ${i.text}` : i.text}
                     </span>
                   );
                 })}
@@ -568,10 +577,10 @@ export function TodayStudents({ sc, board }: { sc: BoardScale; board: DayBoard }
       ) : (
         <>
         <BoardGroupHead sc={sc} icon="🚗" label="픽업 · 하원" n={pickupSide.length} tone="sky" />
-        {renderRows(pickupSide, (i) => RIDE_KINDS.has(i.kind))}
+        {renderRows(pickupSide, (i) => RIDE_KINDS.has(i.kind), "ride")}
         <div style={{ height: sc.s(7, 4) }} />
         <BoardGroupHead sc={sc} icon="📌" label="특이사항" n={noteSide.length} tone="violet" />
-        {renderRows(noteSide, (i) => !RIDE_KINDS.has(i.kind) && i.kind !== "문의")}
+        {renderRows(noteSide, (i) => !RIDE_KINDS.has(i.kind) && i.kind !== "문의", "note")}
         </>
       )}
       {today.length > shown.length && (

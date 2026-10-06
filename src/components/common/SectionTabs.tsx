@@ -83,27 +83,50 @@ const SUB_ROW_H = "h-[34px]";
 // 안 됩니다. 다른 대분류와 같은 모양으로 갈랐습니다.
 const DEV_TABS: TabDef[] = [
   { key: "overview", label: "개요", icon: "📊", href: "/dev", match: ["/dev"] },
-  { key: "diagnostics", label: "진단", icon: "🔎", href: "/dev/diagnostics", match: ["/dev/diagnostics"] },
-  // 진단은 「지금 무엇이 안 도는가」, 점검은 「무엇이 잘못된 채로 잘 돌고 있는가」입니다.
-  // 뒤의 것은 오류를 안 내므로 물어보지 않으면 영영 안 드러납니다.
-  { key: "inspect", label: "점검", icon: "🧪", href: "/dev/inspect", match: ["/dev/inspect"] },
-  { key: "errors", label: "오류", icon: "🚨", href: "/dev/errors", match: ["/dev/errors"] },
-  { key: "ai", label: "AI 과금", icon: "🤖", href: "/dev/ai", match: ["/dev/ai"] },
-  // 어떤 화면이 실제로 쓰이는지는 물어볼 데가 없었습니다. 안 쓰이는 화면을 지우려면
-  // 「안 쓰인다」를 보여줄 수 있어야 합니다.
-  { key: "usage", label: "이용 기록", icon: "📈", href: "/dev/usage", match: ["/dev/usage"] },
+  /**
+   * **「잘 도는가」를 묻는 화면은 한 탭 아래에.** 진단(지금 안 도는 것)·점검(잘못된 채로 잘
+   * 도는 것)·DB 점검(마이그레이션이 걸렸는가)이 탭 셋과 관리 메뉴 하나에 흩어져 있어서, 무엇이
+   * 고장 났을 때 어디부터 열어야 하는지가 매번 질문이었습니다. 같은 질문이므로 한 자리에 둡니다.
+   */
   {
-    key: "data",
-    label: "데이터",
-    icon: "💾",
-    href: "/admin/backups",
-    match: ["/admin/backups", "/admin/schema-check"],
+    key: "health",
+    label: "점검",
+    icon: "🔎",
+    href: "/dev/diagnostics",
+    match: ["/dev/diagnostics", "/dev/inspect", "/admin/schema"],
     children: [
-      { label: "백업 · 복원", href: "/admin/backups" },
-      { label: "스키마 점검", href: "/admin/schema-check" },
+      { label: "시스템 진단", href: "/dev/diagnostics" },
+      { label: "보호 · 코드 점검", href: "/dev/inspect" },
+      { label: "DB 스키마", href: "/admin/schema" },
     ],
   },
-  { key: "changelog", label: "변경 기록", icon: "📜", href: "/changelog", match: ["/changelog"] },
+  { key: "errors", label: "오류", icon: "🚨", href: "/dev/errors", match: ["/dev/errors"] },
+  // 「얼마나 쓰였나」 둘(AI 호출 과금 · 화면 이용)을 한 탭으로. 어떤 화면이 안 쓰이는지와 어떤
+  // 기능이 돈을 쓰는지는 같은 판단(남길까 끌까)에 쓰입니다.
+  {
+    key: "usage",
+    label: "사용량",
+    icon: "📈",
+    href: "/dev/ai",
+    match: ["/dev/ai", "/dev/usage"],
+    children: [
+      { label: "AI 과금", href: "/dev/ai" },
+      { label: "화면 이용 기록", href: "/dev/usage" },
+    ],
+  },
+  // 예전 「데이터」 탭의 「스키마 점검」은 **없는 주소**(/admin/schema-check)를 가리켰습니다.
+  // 화면은 /admin/schema 이고, 지금은 위 「점검」 아래에 있습니다.
+  {
+    key: "records",
+    label: "백업 · 기록",
+    icon: "💾",
+    href: "/admin/backups",
+    match: ["/admin/backups", "/changelog"],
+    children: [
+      { label: "백업 · 복원", href: "/admin/backups" },
+      { label: "변경 기록", href: "/changelog" },
+    ],
+  },
 ];
 
 // ── 업무 ────────────────────────────────────────────────────────────────────

@@ -376,6 +376,7 @@ export default function StudentDayBoard({ students }: { students: SelectableStud
                   {todayMove.map((d) => (
                     <Row
                       key={d.studentId}
+                      showWhere
                       day={d}
                       date={date}
                       nowMin={nowMin}
@@ -548,8 +549,11 @@ function Row({
   nowMin,
   onOpen,
   dim,
+  showWhere,
 }: {
   day: StudentDay;
+  /** 픽업 쪽에서만 지금 위치를 적습니다. */
+  showWhere?: boolean;
   date: string;
   nowMin: number;
   /** 누르면 세부 창이 뜹니다. 줄 안에서 펼치지 않습니다 - 두 줄로 세운 칸에서 한 줄만
@@ -604,6 +608,12 @@ function Row({
         <b className={"shrink-0 text-[13px] " + (past ? "text-slate-500" : "text-slate-900")}>
           <Who id={day.studentId} name={day.name} badgeClassName="text-[9px]" />
         </b>
+        {/* 지금 있는 곳(시간표 기준). 픽업하러 갈 때 반 이름보다 필요한 것은 장소입니다. */}
+        {showWhere && day.where && (
+          <span className="max-w-[9rem] shrink truncate text-[10px] text-slate-400" title={`지금 위치: ${day.where}`}>
+            📍 {day.where}
+          </span>
+        )}
 
         {/* 칩은 **한 줄에서 넘치지 않게** 잘립니다. 줄바꿈되면 두 줄로 세운 칸이 들쭉날쭉해져
             어느 줄이 누구 것인지 눈으로 다시 이어야 합니다. */}
@@ -640,6 +650,12 @@ function Row({
           )}
         </span>
 
+        {/* 사람이 정한 줄이 있으면 👤 만. 「이 건만 사람이 지정」 같은 메모를 적으면 칸을 넘칩니다. */}
+        {day.items.some((i) => i.byHuman) && (
+          <span className="shrink-0 text-[11px]" title="사람이 직접 정한 줄이 있습니다 (눌러서 누가 정했는지 보기)">
+            👤
+          </span>
+        )}
         {day.pendingCount > 0 && (
           <span title={`확인이 필요한 것 ${day.pendingCount}건`} className="shrink-0 rounded-full bg-amber-100 px-1.5 text-[10px] font-bold text-amber-800">
             ❗{day.pendingCount}

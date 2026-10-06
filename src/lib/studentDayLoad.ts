@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { kstDate } from "@/lib/kst";
-import { buildBoard, type BoardInput, type DayBoard, type DayItem, type DayItemKind } from "./studentDay";
+import { buildBoard, isHumanSetNote, type BoardInput, type DayBoard, type DayItem, type DayItemKind } from "./studentDay";
+import { whereNow, type PeriodRow, type TimetableRow } from "./whereNow";
 import { isNoteKind } from "./studentDayNotes";
 import { loadTodayPickups, setterLabel } from "./pickups";
 import { loadActiveEntries, loadUpcomingEntries } from "./attendanceEntries";
@@ -115,12 +116,10 @@ export async function loadStudentDay(supabase: SupabaseClient, opts: LoadOptions
       // **누가 지정했는지 이름으로 적습니다.** 「사람이 지정」이라고만 하면 하원 시간에
       // 「이거 누가 바꿨어요?」가 나왔을 때 아무도 답을 못 합니다 - 자료에는 처음부터
       // 이름이 있었고 화면만 뭉뚱그리고 있었습니다. 이름을 못 읽은 옛 줄만 예전 표기입니다.
-      text:
-        p.via === "하원수단"
-          ? "하원수단"
-          : p.via === "사람"
-            ? `픽업(${setterLabel(p.by) ?? "사람"}이 지정)`
-            : "픽업",
+      // 사람이 정한 것은 👤 로 표시하고 글자는 짧게 둡니다. 누가 정했는지는 아래 근거에 남습니다 -
+      // 칩에 「픽업(○○이 지정)」을 적으면 좁은 칸을 넘칩니다.
+      text: p.via === "하원수단" ? "하원수단" : "픽업",
+      byHuman: p.via === "사람",
       onDate: date,
       from: { table: "shuttle_boardings·attendance_entries·pickup_requests", screen: "/shuttle/checklist" },
       pending: false,
@@ -164,7 +163,10 @@ export async function loadStudentDay(supabase: SupabaseClient, opts: LoadOptions
       entry: { id: e.id, status: e.status, from: e.date_from, to: e.date_to, source: e.source ?? null, dupIds: e.dupIds },
       kind: entryKind(e.status),
       at: null,
-      text: [e.note?.trim(), spanLabel(e.date_from, e.date_to)].filter(Boolean).join(" · ") || e.status,
+      // 사람이 정한 줄의 사유 칸은 우리가 남긴 메모입니다. 칩에는 날짜만 적습니다.
+      ...(isHumanSetNote(e.note)
+        ? { text: dayLabel(e.date_from, e.date_to), byHuman: true }
+        : { text: [e.note?.trim(), spanLabel(e.date_from, e.date_to)].filter(Boolean).join(" · ") || e.status }),
       onDate: date,
       from: { table: "attendance_entries", screen: "/work" },
       pending: false,
@@ -184,7 +186,9 @@ export async function loadStudentDay(supabase: SupabaseClient, opts: LoadOptions
       entry: { id: e.id, status: e.status, from: e.date_from, to: e.date_to, source: e.source ?? null, dupIds: [] },
       kind: entryKind(e.status),
       at: null,
-      text: [e.note?.trim(), spanLabel(e.date_from, e.date_to)].filter(Boolean).join(" · ") || e.status,
+      ...(isHumanSetNote(e.note)
+        ? { text: dayLabel(e.date_from, e.date_to), byHuman: true }
+        : { text: [e.note?.trim(), spanLabel(e.date_from, e.date_to)].filter(Boolean).join(" · ") || e.status }),
       onDate: e.date_from,
       from: { table: "attendance_entries", screen: "/work" },
       pending: false,
@@ -331,7 +335,35 @@ export async function loadStudentDay(supabase: SupabaseClient, opts: LoadOptions
     }
   }
 
-  return buildBoard({ date, roster, items }, problems);
+  const board = buildBoard({ date, roster, items }, problems);
+
+  // ── 지금 있는 곳 ─────────────────────────────────────────────────────────
+  //
+  // 보드에 뜬 아이만 셉니다. 시간표를 못 읽어도 보드는 그대로 띄우고, 그 사실만 적습니다 -
+  // 위치 하나 때문에 픽업 목록이 안 뜨면 손해가 더 큽니다.
+  if (board.days.length > 0) {
+    const [clsRes, perRes, ttRes] = await Promise.all([
+      supabase.from("wr_classes").select("id, room").eq("is_demo", false),
+      supabase.from("wr_periods").select("id, department, period_no, label, start_time, end_time"),
+      supabase.from("wr_timetable").select("class_id, weekday, period_id, subject_name, room"),
+    ]);
+    if (clsRes.error || perRes.error || ttRes.error) {
+      problems.push(`시간표를 읽지 못해 지금 위치를 적지 못했습니다: ${(clsRes.error ?? perRes.error ?? ttRes.error)?.message}`);
+    } else {
+      const roomOf = new Map(((clsRes.data as { id: string; room: string | null }[] | null) ?? []).map((c) => [c.id, c.room]));
+      const stById = new Map(all.map((s) => [s.id, s]));
+      const periods = (perRes.data as PeriodRow[] | null) ?? [];
+      const timetable = (ttRes.data as TimetableRow[] | null) ?? [];
+      for (const d of board.days) {
+        const st = stById.get(d.studentId);
+        if (!st?.class_id) continue;
+        const room = roomOf.get(st.class_id) ?? null;
+        const w = whereNow({ classId: st.class_id, department: departmentOf(st), classRoom: room, periods, timetable });
+        d.where = w.known ? `${w.place} · ${w.subject}` : room ? `교실 ${room}` : null;
+      }
+    }
+  }
+  return board;
 }
 
 function entryKind(status: string): DayItemKind {
@@ -342,6 +374,12 @@ function entryKind(status: string): DayItemKind {
 }
 
 /** 하루짜리면 안 적습니다 - 「09/15 ~ 09/15」는 읽는 사람에게 아무것도 안 알려줍니다. */
+/** 날짜만. 하루면 「10/6」, 기간이면 「10/6~10/8」. 사람이 정한 줄은 사유 대신 이것만 적습니다. */
+function dayLabel(from: string, to: string): string {
+  const f = from.slice(5).replace("-", "/");
+  return from === to ? f : `${f}~${to.slice(5).replace("-", "/")}`;
+}
+
 function spanLabel(from: string, to: string): string {
   if (from === to) return "";
   return `${from.slice(5).replace("-", "/")}~${to.slice(5).replace("-", "/")}`;

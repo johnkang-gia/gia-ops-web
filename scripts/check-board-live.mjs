@@ -39,6 +39,9 @@ const NOT_LIVE = {
   task_students: "업무↔학생 이음. 위와 같습니다.",
   shuttle_assignments: "배정. 체크표 줄에서 이름을 꺼내는 데만 씁니다 - 오늘 할 일을 만들지 않습니다.",
   attendance_records: "출석부. 등록된 결석은 attendance_entries 로 들어옵니다.",
+  wr_classes: "반 교실. 「지금 위치」를 적는 데만 씁니다 - 줄을 만들지 않고, 학기 중에는 거의 안 바뀝니다.",
+  wr_periods: "교시표. 「지금 위치」 계산용. 줄을 만들지 않습니다.",
+  wr_timetable: "시간표. 「지금 위치」 계산용. 줄을 만들지 않습니다 - 위치는 보드가 다시 읽을 때마다 새로 셉니다.",
 };
 
 const load = LOAD_FILES.map((f) => readFileSync(f, "utf8")).join("\n");

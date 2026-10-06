@@ -464,8 +464,13 @@ export function TodayStudents({ sc, board }: { sc: BoardScale; board: DayBoard }
                 style={{
                   display: "flex",
                   alignItems: "baseline",
-                  flexWrap: "wrap",
-                  gap: `${sc.s(2, 1)}px ${sc.s(8, 5)}px`,
+                  // **한 줄.** 줄바꿈되면 두 줄로 세운 칸이 들쭉날쭉해져 어느 줄이 누구 것인지 눈으로
+                  // 다시 이어야 하고, 같은 높이에 들어가는 아이 수도 줄어듭니다. 넘치는 칩은
+                  // 말줄임으로 자르고, 시각·이름은 자르지 않습니다.
+                  flexWrap: "nowrap",
+                  overflow: "hidden",
+                  minWidth: 0,
+                  gap: sc.s(7, 4),
                   background: late ? "#0b1220" : soon ? "#2a1a0c" : "#0f172a",
                   border: `1px solid ${late ? "#15203a" : soon ? "#b45309" : "#1e2a44"}`,
                   borderRadius: sc.s(9, 6),
@@ -486,19 +491,20 @@ export function TodayStudents({ sc, board }: { sc: BoardScale; board: DayBoard }
                       fontWeight: 900,
                       color: late ? "#64748b" : soon ? "#fbbf24" : "#7dd3fc",
                       fontVariantNumeric: "tabular-nums",
+                      flexShrink: 0,
                     }}
                   >
                     {d.firstTime}
                   </b>
                 )}
-                <b style={{ fontSize: sc.s(21, 15), fontWeight: 900, color: late ? "#94a3b8" : "#fff", whiteSpace: "nowrap" }}>
+                <b style={{ fontSize: sc.s(21, 15), fontWeight: 900, color: late ? "#94a3b8" : "#fff", whiteSpace: "nowrap", flexShrink: 0 }}>
                   {shortName(d.name)}
                 </b>
-                <span style={{ fontSize: sc.s(13, 10), color: "#64748b" }}>{d.className ?? d.grade ?? ""}</span>
+                <span style={{ fontSize: sc.s(13, 10), color: "#64748b", whiteSpace: "nowrap", flexShrink: 0 }}>{d.className ?? d.grade ?? ""}</span>
                 {/* **지금 어디 있는가**(픽업 쪽만). 데리러 가는 사람에게 반 이름보다 필요한 것은
                     장소입니다 - 체육 시간이면 교실이 아니라 체육관으로 가야 합니다. */}
                 {side === "ride" && d.where && (
-                  <span style={{ fontSize: sc.s(12, 9), color: "#94a3b8", whiteSpace: "nowrap" }} title="지금 시간표 기준 위치">
+                  <span style={{ fontSize: sc.s(12, 9), color: "#94a3b8", whiteSpace: "nowrap", flexShrink: 0 }} title="지금 시간표 기준 위치">
                     📍 {d.where}
                   </span>
                 )}
@@ -516,7 +522,9 @@ export function TodayStudents({ sc, board }: { sc: BoardScale; board: DayBoard }
                         borderRadius: 6,
                         padding: `${sc.s(2, 1)}px ${sc.s(7, 4)}px`,
                         whiteSpace: "nowrap",
-                        maxWidth: sc.s(260, 170),
+                        maxWidth: sc.s(200, 130),
+                        minWidth: 0,
+                        flexShrink: 1,
                         overflow: "hidden",
                         textOverflow: "ellipsis",
                       }}
@@ -530,7 +538,7 @@ export function TodayStudents({ sc, board }: { sc: BoardScale; board: DayBoard }
                 })}
 
                 {inquiries > 0 && (
-                  <span style={{ fontSize: sc.s(14, 10), color: "#c4b5fd" }} title="문의는 아래 칸에 있습니다">
+                  <span style={{ fontSize: sc.s(14, 10), color: "#c4b5fd", whiteSpace: "nowrap", flexShrink: 0 }} title="문의는 아래 칸에 있습니다">
                     💬 {inquiries}
                   </span>
                 )}

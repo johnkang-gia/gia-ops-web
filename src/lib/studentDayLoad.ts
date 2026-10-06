@@ -8,6 +8,7 @@ import { loadActiveEntries, loadUpcomingEntries } from "./attendanceEntries";
 import { departmentOf } from "./department";
 import { kstDateOffset } from "./kst";
 import { loadStudents } from "@/lib/students";
+import { cached } from "@/lib/ttlCache";
 
 /**
  * **여러 표에서 읽어 학생 하루 보드로 조립합니다.**
@@ -339,27 +340,46 @@ export async function loadStudentDay(supabase: SupabaseClient, opts: LoadOptions
 
   // ── 지금 있는 곳 ─────────────────────────────────────────────────────────
   //
-  // 보드에 뜬 아이만 셉니다. 시간표를 못 읽어도 보드는 그대로 띄우고, 그 사실만 적습니다 -
-  // 위치 하나 때문에 픽업 목록이 안 뜨면 손해가 더 큽니다.
+  // **장소만** 적습니다(「GYM」 · 「3-2」). 몇 교시 무슨 수업인지는 시간표 창과 중앙 대시보드가
+  // 보여줍니다 - 여기서 필요한 것은 일찍 픽업 오셨을 때 「어디로 데리러 가나」 하나입니다.
+  //
+  // 반·교시·시간표는 **10분 담아 둡니다.** 학기 중에는 거의 안 바뀌는데, 보드는 30~60초마다
+  // 다시 읽습니다. 담아 둔 표로 매번 지금 시각에 맞춰 다시 세므로, 교시가 바뀌면 다음 읽기에서
+  // 위치가 따라 바뀝니다 - 표를 다시 실어 나를 필요가 없습니다.
+  //
+  // 시간표를 못 읽어도 보드는 그대로 띄우고, 그 사실만 적습니다.
   if (board.days.length > 0) {
-    const [clsRes, perRes, ttRes] = await Promise.all([
-      supabase.from("wr_classes").select("id, room").eq("is_demo", false),
-      supabase.from("wr_periods").select("id, department, period_no, label, start_time, end_time"),
-      supabase.from("wr_timetable").select("class_id, weekday, period_id, subject_name, room"),
-    ]);
-    if (clsRes.error || perRes.error || ttRes.error) {
-      problems.push(`시간표를 읽지 못해 지금 위치를 적지 못했습니다: ${(clsRes.error ?? perRes.error ?? ttRes.error)?.message}`);
-    } else {
-      const roomOf = new Map(((clsRes.data as { id: string; room: string | null }[] | null) ?? []).map((c) => [c.id, c.room]));
+    const tt = await cached(
+      "studentDay:timetable",
+      async () => {
+        const [clsRes, perRes, ttRes] = await Promise.all([
+          supabase.from("wr_classes").select("id, room").eq("is_demo", false),
+          supabase.from("wr_periods").select("id, department, period_no, label, start_time, end_time"),
+          supabase.from("wr_timetable").select("class_id, weekday, period_id, subject_name, room"),
+        ]);
+        const err = clsRes.error ?? perRes.error ?? ttRes.error;
+        // 실패한 답은 담아 두면 안 됩니다 - 10분 동안 위치가 안 뜹니다. 던져서 담기지 않게 합니다.
+        if (err) throw new Error(err.message);
+        return {
+          rooms: ((clsRes.data as { id: string; room: string | null }[] | null) ?? []).map((c) => [c.id, c.room] as const),
+          periods: (perRes.data as PeriodRow[] | null) ?? [],
+          timetable: (ttRes.data as TimetableRow[] | null) ?? [],
+        };
+      },
+      10 * 60_000,
+    ).catch((e: unknown) => {
+      problems.push(`시간표를 읽지 못해 지금 위치를 적지 못했습니다: ${e instanceof Error ? e.message : String(e)}`);
+      return null;
+    });
+    if (tt) {
+      const roomOf = new Map(tt.rooms);
       const stById = new Map(all.map((s) => [s.id, s]));
-      const periods = (perRes.data as PeriodRow[] | null) ?? [];
-      const timetable = (ttRes.data as TimetableRow[] | null) ?? [];
       for (const d of board.days) {
         const st = stById.get(d.studentId);
         if (!st?.class_id) continue;
         const room = roomOf.get(st.class_id) ?? null;
-        const w = whereNow({ classId: st.class_id, department: departmentOf(st), classRoom: room, periods, timetable });
-        d.where = w.known ? `${w.place} · ${w.subject}` : room ? `교실 ${room}` : null;
+        const w = whereNow({ classId: st.class_id, department: departmentOf(st), classRoom: room, periods: tt.periods, timetable: tt.timetable });
+        d.where = w.known ? w.place : room;
       }
     }
   }

@@ -82,12 +82,22 @@ const SUB_ROW_H = "h-[34px]";
 // 아래라, 정작 오류가 났을 때 한참 스크롤해야 보였습니다. 급할 때 찾는 것을 맨 아래 두면
 // 안 됩니다. 다른 대분류와 같은 모양으로 갈랐습니다.
 const DEV_TABS: TabDef[] = [
-  { key: "overview", label: "개요", icon: "📊", href: "/dev", match: ["/dev"] },
   /**
-   * **「잘 도는가」를 묻는 화면은 한 탭 아래에.** 진단(지금 안 도는 것)·점검(잘못된 채로 잘
-   * 도는 것)·DB 점검(마이그레이션이 걸렸는가)이 탭 셋과 관리 메뉴 하나에 흩어져 있어서, 무엇이
-   * 고장 났을 때 어디부터 열어야 하는지가 매번 질문이었습니다. 같은 질문이므로 한 자리에 둡니다.
+   * **개발자 메뉴는 세 갈래.** 「지금 어떤가」(현황·오류) · 「잘못된 데가 있나」(점검) · 「무엇을
+   * 얼마나 썼고 무엇을 남겼나」(사용량·백업·변경 기록). 탭이 여덟일 때는 무엇이 고장 났을 때
+   * 어디부터 열어야 하는지가 매번 질문이었습니다. 화면은 그대로 두고 탭 아래 작은 줄로 엽니다.
    */
+  {
+    key: "overview",
+    label: "현황",
+    icon: "📊",
+    href: "/dev",
+    match: ["/dev", "/dev/errors"],
+    children: [
+      { label: "개요 · 사이트 점검", href: "/dev", match: ["/dev"] },
+      { label: "오류", href: "/dev/errors" },
+    ],
+  },
   {
     key: "health",
     label: "점검",
@@ -100,29 +110,16 @@ const DEV_TABS: TabDef[] = [
       { label: "DB 스키마", href: "/admin/schema" },
     ],
   },
-  { key: "errors", label: "오류", icon: "🚨", href: "/dev/errors", match: ["/dev/errors"] },
-  // 「얼마나 쓰였나」 둘(AI 호출 과금 · 화면 이용)을 한 탭으로. 어떤 화면이 안 쓰이는지와 어떤
-  // 기능이 돈을 쓰는지는 같은 판단(남길까 끌까)에 쓰입니다.
+  // 예전 「데이터」 탭의 「스키마 점검」은 없는 주소(/admin/schema-check)를 가리켰습니다.
   {
-    key: "usage",
-    label: "사용량",
-    icon: "📈",
+    key: "records",
+    label: "사용량 · 기록",
+    icon: "💾",
     href: "/dev/ai",
-    match: ["/dev/ai", "/dev/usage"],
+    match: ["/dev/ai", "/dev/usage", "/admin/backups", "/changelog"],
     children: [
       { label: "AI 과금", href: "/dev/ai" },
       { label: "화면 이용 기록", href: "/dev/usage" },
-    ],
-  },
-  // 예전 「데이터」 탭의 「스키마 점검」은 **없는 주소**(/admin/schema-check)를 가리켰습니다.
-  // 화면은 /admin/schema 이고, 지금은 위 「점검」 아래에 있습니다.
-  {
-    key: "records",
-    label: "백업 · 기록",
-    icon: "💾",
-    href: "/admin/backups",
-    match: ["/admin/backups", "/changelog"],
-    children: [
       { label: "백업 · 복원", href: "/admin/backups" },
       { label: "변경 기록", href: "/changelog" },
     ],

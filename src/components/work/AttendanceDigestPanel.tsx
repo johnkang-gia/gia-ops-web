@@ -51,6 +51,8 @@ type RegRow = {
   id: string;
   source_message_id: string | null;
   student_name: string;
+  /** 자동 등록이 가려낸 학생 번호. 동명이인 표시(「누구?」)를 푸는 재료입니다. */
+  student_id?: string | null;
   status: string;
   state: "등록" | "확인필요" | "무시";
   date_from: string;
@@ -475,6 +477,19 @@ export default function AttendanceDigestPanel({
 
   // 등록 / 해제. 해제는 '무시'로 남깁니다 - 지운 것이 다시 살아나지 않게 하려면 "없음"이
   // 아니라 "아니라고 판단했음"이 기록으로 남아야 합니다.
+  /**
+   * 이 항목의 등록 줄. **학생 번호는 여기 있습니다.**
+   *
+   * 김재이가 셋이라 이름만 넘기면 화면은 늘 「누구?」를 붙입니다. 등록 줄에는 자동 등록이 반·생일·
+   * 방으로 이미 가려낸 학생 번호가 들어 있는데, 이 화면은 그 번호를 안 넘기고 이름만 그렸습니다.
+   */
+  function regOf(entry: AttendanceEntry): RegRow | undefined {
+    return (
+      regs.get(`${entry.messageId}|${entry.studentName}|${entry.category}`) ??
+      regs.get(`${entry.messageId}|${nameKey(entry.studentName)}|${entry.category}`)
+    );
+  }
+
   async function setState(entry: AttendanceEntry, next: "등록" | "무시") {
     const key = `${entry.messageId}|${entry.studentName}|${entry.category}`;
     // 글자 그대로 못 찾으면 괄호를 뗀 이름으로 한 번 더 봅니다.
@@ -996,7 +1011,7 @@ export default function AttendanceDigestPanel({
                               {e.studentName}
                             </button>
                           ) : (
-                            <span className="truncate text-[11px] font-semibold text-slate-700"><Who name={e.studentName} /></span>
+                            <span className="truncate text-[11px] font-semibold text-slate-700"><Who id={regOf(e)?.student_id} name={e.studentName} /></span>
                           )}
                           <RegBadge entry={e} regs={regs} busyKey={busyKey} onSet={setState} onEditRange={(row, nm) => setRangeEdit({ row, name: nm })} onFill={openFill} />
                           <span className="shrink-0 text-[9px] text-slate-400">
@@ -1072,7 +1087,7 @@ export default function AttendanceDigestPanel({
                               {e.studentName}
                             </button>
                           ) : (
-                            <span className="truncate text-[11px] font-semibold text-slate-700"><Who name={e.studentName} /></span>
+                            <span className="truncate text-[11px] font-semibold text-slate-700"><Who id={regOf(e)?.student_id} name={e.studentName} /></span>
                           )}
                         </span>
                         <RegBadge entry={e} regs={regs} busyKey={busyKey} onSet={setState} onEditRange={(row, nm) => setRangeEdit({ row, name: nm })} onFill={openFill} />
@@ -1115,7 +1130,7 @@ export default function AttendanceDigestPanel({
               onClick={(ev) => ev.stopPropagation()}
             >
               <div className="mb-2 flex items-center gap-2">
-                <span className="text-sm font-bold text-slate-800"><Who name={detail.studentName} /></span>
+                <span className="text-sm font-bold text-slate-800"><Who id={regOf(detail)?.student_id} name={detail.studentName} /></span>
                 <span
                   className={
                     "rounded-full px-1.5 py-0.5 text-[10px] font-semibold " +

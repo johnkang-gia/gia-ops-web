@@ -312,3 +312,37 @@ export function treeOrder(accounts: readonly AccountRow[]): (AccountRow & { dept
 }
 
 export const accountLabel = (a: { code: string; name: string } | undefined | null) => (a ? `${a.code} ${a.name}` : "미분류");
+
+/**
+ * **다음 코드를 자동으로 정합니다.** 사람이 번호를 고르면 겹치거나, 자리 규칙(관 1000 · 항 1100 ·
+ * 목 1110)이 흐트러져 위아래가 번호만 보고는 안 읽힙니다.
+ *
+ *   · 관: 1000 단위 — 1000, 2000 … (빈 자리 중 가장 앞)
+ *   · 항: 그 관 안의 100 단위 — 1100, 1200 …
+ *   · 목: 그 항 안의 10 단위 — 1210, 1220 …
+ *
+ * **빈 자리 중 가장 앞**을 씁니다. 「1290 기타」가 이미 있으면 새 목은 1270 처럼 그 앞에 들어가,
+ * 「기타」가 늘 맨 끝에 남습니다. 열 칸이 다 차면 1 단위로 내려가 빈 번호를 찾습니다.
+ * 자리가 하나도 없으면 null - 화면이 「더 넣을 자리가 없다」고 말합니다.
+ */
+export function nextAccountCode(
+  accounts: readonly { code: string; level: string; parent_id: string | null; id: string }[],
+  level: "관" | "항" | "목",
+  parent: { code: string } | null,
+): string | null {
+  const used = new Set(accounts.map((a) => a.code));
+  const base = parent ? Number(parent.code) : 0;
+  const tries: number[] = [];
+  if (level === "관") for (let n = 1000; n <= 9000; n += 1000) tries.push(n);
+  else if (level === "항") for (let n = base + 100; n < base + 1000; n += 100) tries.push(n);
+  else {
+    for (let n = base + 10; n < base + 100; n += 10) tries.push(n);
+    for (let n = base + 1; n < base + 100; n++) if (n % 10 !== 0) tries.push(n);
+  }
+  if (level !== "관" && (!parent || !Number.isFinite(base))) return null;
+  const hit = tries.find((n) => !used.has(String(n)));
+  return hit === undefined ? null : String(hit);
+}
+
+/** 이 과목에 바로 아래로 둘 수 있는 구분. 목 아래로는 더 내려가지 않습니다. */
+export const childLevel = (level: "관" | "항" | "목"): "항" | "목" | null => (level === "관" ? "항" : level === "항" ? "목" : null);

@@ -410,7 +410,7 @@ const FINANCE_TABS: TabDef[] = [
     href: "/finance/ledger",
     match: ["/finance/ledger", "/finance/tuition", "/finance/invoices", "/finance/unpaid", "/finance/payments", "/finance/prepaid", "/finance/import", "/finance/receipts", "/finance/statement", "/finance/approvals"],
     children: [
-      // 학생 한 명의 일은 전부 여기 - 학생을 누르면 창 하나에서 발행·기수납·입금·영수증·올톡페이.
+      // 학생 한 명의 일은 전부 여기 - 학생을 누르면 창 하나에서 발행·이미 받음·입금·영수증·올톡페이.
       { label: "회계", href: "/finance/ledger", match: ["/finance/ledger"] },
       // 반 전체를 한 번에 체크해서 발행하는 표. 하위 이름은 DB 의 `invoices.stream` 값과 같은 말입니다.
       { label: "학비 일괄", href: "/finance/tuition", match: ["/finance/tuition"] },

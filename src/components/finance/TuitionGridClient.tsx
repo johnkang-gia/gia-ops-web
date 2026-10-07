@@ -4,6 +4,10 @@ import DragScroll from "@/components/common/DragScroll";
 import { Who } from "@/components/common/HomonymProvider";
 import FeePlansModal from "./FeePlansModal";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import MonthPicker from "@/components/finance/MonthPicker";
+import { billingMonthOf, termOfMonth } from "@/lib/financePeriod";
+import { planBillForMonth } from "@/lib/tuitionMonth";
+import { resolveAddon, addonPlanForLine, type AddonPrice } from "@/lib/tuitionAddon";
 import { useFinanceLive } from "@/lib/useFinanceLive";
 import AlreadyPaidModal from "@/components/finance/AlreadyPaidModal";
 import { loadPartnerMode, savePartnerMode, unbilledOf, issueExtraInvoice, PARTNER_LABEL, type PartnerMode } from "@/lib/issuePartner";
@@ -67,6 +71,8 @@ export type EnrollRow = {
   override_amount: number | null;
   /** 왜 그 금액인가. 비고에 그대로 뜹니다. 안 적어도 됩니다. */
   override_note: string | null;
+  /** 여러 달 묶음 납부의 시작월(YYYY-MM). */
+  paid_from?: string | null;
 };
 export type StudentDiscountRow = {
   id: string;
@@ -101,6 +107,7 @@ export default function TuitionGridClient({
   recentInvoices,
   today,
   loadError,
+  addonPrices = [],
   catalogPlans,
   canApprove,
   currentUserEmail,
@@ -129,6 +136,8 @@ export default function TuitionGridClient({
    * 따로 받습니다 - 팝업에서 학비외 항목이 안 보이면 거기서 고칠 수 없습니다.
    */
   catalogPlans: FeePlan[];
+  /** 함께 하면 합친 금액이 정해진 프로그램(오케스트라). */
+  addonPrices?: AddonPrice[];
   /** 승인이 필요한 할인을 만들 수 있는 사람인가(최고관리자). */
   canApprove: boolean;
   currentUserEmail: string;
@@ -162,6 +171,12 @@ export default function TuitionGridClient({
   useEffect(() => setInvoices(recentInvoices), [recentInvoices]);
 
   const [termId, setTermId] = useState("");
+  /**
+   * **보고 있는 달.** 월 납부 항목은 그 달 청구서가 있어야 「청구됨」입니다. 예전에는 학기에
+   * 한 장이면 그 학기 내내 「청구됨」으로 남아 다음 달분을 낼 자리가 없었습니다.
+   */
+  const thisMonth = today.slice(0, 7);
+  const [month, setMonth] = useState(thisMonth);
   const [dept, setDept] = useState<DeptTab>("초등부");
   /**
    * 부서 안에서 더 좁혀 보는 두 칸. **빈 글자가 「전체」입니다.**
@@ -317,6 +332,12 @@ export default function TuitionGridClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enrollments, termId]);
 
+  /** 이 학생이 이 학기에 고른(옵션·직접 금액이 있는) 학비 항목 - 함께 하는 프로그램이 짝을 찾는 범위. */
+  const chosenOf = (studentId: string): string[] =>
+    enrollments
+      .filter((e) => e.student_id === studentId && sameTerm(e) && (e.option_id || (e.override_amount !== null && e.override_amount !== undefined)))
+      .map((e) => e.plan_id);
+
   /** 학생별로 붙어 있는 할인 **줄**. 어느 항목에 거는지는 `discountsForPlan` 이 정합니다. */
   const sdOf = useMemo(() => {
     const m = new Map<string, StudentDiscountRow[]>();
@@ -355,7 +376,9 @@ export default function TuitionGridClient({
   function lineFor(studentId: string, plan: FeePlan): TuitionLine | null {
     const e = enrollOf.get(`${studentId}|${plan.id}`);
     const option = options.find((o) => o.id === e?.option_id) ?? null;
-    return tuitionLine(plan, option, discountsFor(studentId, plan.id), {
+    // 함께 하는 프로그램(오케스트라)은 같이 하는 방과후에 따라 금액이 정해집니다 - 서버와 같은 함수.
+    const addon = resolveAddon(plan, addonPrices, allPlans, chosenOf(studentId));
+    return tuitionLine(addonPlanForLine(plan, addon), option, discountsFor(studentId, plan.id), {
       amount: e?.override_amount === null || e?.override_amount === undefined ? null : Number(e.override_amount),
       note: e?.override_note ?? null,
     });
@@ -398,10 +421,11 @@ export default function TuitionGridClient({
   // **한 학생에게 청구서가 여럿일 수 있습니다.** 정규과정과 방과후를 따로 발행하면 두 장이
   // 됩니다. 앞 판은 첫 장만 기억해서, 정규과정만 발행한 아이가 「발행됨」으로 바뀌고
   // 방과후는 영영 안 나갔습니다 - 오류가 아니라 «다 된 것처럼» 보이는 자리였습니다.
-  const invoicesOf = useMemo(() => {
+  const termInvoicesOf = useMemo(() => {
     const m = new Map<string, Invoice[]>();
     for (const v of invoices) {
       if (!v.student_id || v.status !== "발행" || v.category !== "학비") continue;
+      if ((v as Invoice & { carried_to_invoice_id?: string | null }).carried_to_invoice_id) continue;
       const sameT = (v.term_id ?? "") === termId || (!v.term_id && terms.find((x) => x.id === termId)?.status === "진행중");
       if (!sameT) continue;
       const list = m.get(v.student_id);
@@ -411,6 +435,36 @@ export default function TuitionGridClient({
     return m;
   }, [invoices, termId, terms]);
 
+  /** **보고 있는 달의** 학비 청구서. 표의 청구서 칸·합계·올톡페이 묶음이 이 달 것만 다룹니다. */
+  const invoicesOf = useMemo(() => {
+    const m = new Map<string, Invoice[]>();
+    for (const [sid, list] of termInvoicesOf) {
+      const mine = list.filter((v) => billingMonthOf(v) === month);
+      if (mine.length > 0) m.set(sid, mine);
+    }
+    return m;
+  }, [termInvoicesOf, month]);
+
+  /**
+   * 학생 × 항목의 그 달 판정(`tuitionMonth.ts`). 월 납부는 그 달 청구서, 여러 달 묶음은 납부 기간,
+   * 학기·연 단위는 학기에 한 장. 학생 금전 창과 같은 함수입니다.
+   */
+  const monthBill = useMemo(() => {
+    const m = new Map<string, ReturnType<typeof planBillForMonth>>();
+    for (const e of enrollments) {
+      if (!sameTerm(e)) continue;
+      const plan = allPlans.find((p) => p.id === e.plan_id);
+      if (!plan) continue;
+      const option = options.find((o) => o.id === e.option_id) ?? null;
+      m.set(
+        `${e.student_id}|${plan.id}`,
+        planBillForMonth({ plan, option, paidFrom: e.paid_from ?? null, invoices: termInvoicesOf.get(e.student_id) ?? [], month }),
+      );
+    }
+    return m;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enrollments, allPlans, options, termInvoicesOf, month, termId]);
+
   /**
    * 이 학생의 이 항목이 이미 청구서에 담겼는가.
    *
@@ -418,19 +472,20 @@ export default function TuitionGridClient({
    * 생기기 전에 나간 것 포함). 그런 장이 하나라도 있으면 모든 항목이 담긴 것으로 봅니다.
    */
   const billed = useMemo(() => {
+    // 「청구됨」은 **그 달 판정**입니다(`monthBill`). 학기에 한 장이면 끝이던 예전 규칙은 학기·연
+    // 단위 항목에만 남습니다.
     const m = new Map<string, { all: boolean; names: Set<string> }>();
-    for (const [sid, list] of invoicesOf) {
-      const names = new Set<string>();
-      let all = false;
-      for (const v of list) {
-        const scope = (v as Invoice & { plan_scope?: string | null }).plan_scope ?? null;
-        if (!scope) all = true;
-        else for (const n of scope.split(" · ")) names.add(n.trim());
-      }
-      m.set(sid, { all, names });
+    for (const [key, mb] of monthBill) {
+      if (!mb.covered) continue;
+      const [sid, planId] = key.split("|");
+      const name = allPlans.find((p) => p.id === planId)?.name;
+      if (!name) continue;
+      const cur = m.get(sid) ?? { all: false, names: new Set<string>() };
+      cur.names.add(name);
+      m.set(sid, cur);
     }
     return m;
-  }, [invoicesOf]);
+  }, [monthBill, allPlans]);
 
   /**
    * **이 항목이 이미 다 걷혔는가** — 발행 전 표에 그대로 적습니다.
@@ -457,27 +512,25 @@ export default function TuitionGridClient({
   /** 항목 이름 → 그 항목이 담긴 청구서의 상태. 발행 전 칸에 뱃지로 붙습니다. */
   const billStateOf = useMemo(() => {
     const m = new Map<string, Map<string, "완납" | "일부" | "미납">>();
-    for (const [sid, list] of invoicesOf) {
-      const per = new Map<string, "완납" | "일부" | "미납">();
-      for (const v of list) {
-        if (v.status === "취소") continue;
-        const total = Number(v.total_amount);
-        const paid = paidByInvoice.get(v.id) ?? 0;
-        const state = paid <= 0 ? "미납" : paid >= total ? "완납" : "일부";
-        const scope = (v as Invoice & { plan_scope?: string | null }).plan_scope ?? null;
-        // 범위가 없는 장은 학비 **전부**를 담은 것입니다. 그 장의 상태를 모든 항목에 씁니다.
-        const names = scope ? scope.split(" · ").map((x) => x.trim()) : usedPlans.map((p) => p.name);
-        for (const n of names) {
-          // 같은 항목이 여러 장에 있으면 **덜 걷힌 쪽**이 사실입니다. 완납으로 덮으면
-          // 아직 안 받은 돈이 화면에서 사라집니다.
-          const cur = per.get(n);
-          if (!cur || (cur === "완납" && state !== "완납") || (cur === "일부" && state === "미납")) per.set(n, state);
-        }
+    for (const [key, mb] of monthBill) {
+      if (!mb.covered) continue;
+      const [sid, planId] = key.split("|");
+      const name = allPlans.find((p) => p.id === planId)?.name;
+      if (!name) continue;
+      const per = m.get(sid) ?? new Map<string, "완납" | "일부" | "미납">();
+      if (!mb.invoice) {
+        // 운영앱 이전에 받은 기간(사람이 시작월을 적음) - 장은 없지만 받은 달입니다.
+        per.set(name, "완납");
+      } else {
+        const v = invoices.find((x) => x.id === mb.invoice!.id);
+        const total = Number(v?.total_amount ?? 0);
+        const paid = paidByInvoice.get(mb.invoice.id) ?? 0;
+        per.set(name, paid <= 0 ? "미납" : paid >= total ? "완납" : "일부");
       }
       m.set(sid, per);
     }
     return m;
-  }, [invoicesOf, paidByInvoice, usedPlans]);
+  }, [monthBill, allPlans, invoices, paidByInvoice]);
 
   /** 아직 청구서에 안 담긴 항목이 남아 있는가. */
   const hasUnbilled = (sid: string) => {
@@ -732,6 +785,8 @@ export default function TuitionGridClient({
         dueDate: paidAt,
         termId: termId || null,
         planIds: planIds.length > 0 ? planIds : null,
+        // 보고 있는 달의 청구서입니다 - 10월분을 9월 말에 받았어도 10월 화면에서 넣으면 10월분입니다.
+        billingMonth: month,
         alreadyPaid: { paidAt, amount, method, memo },
       }),
     });
@@ -809,7 +864,7 @@ export default function TuitionGridClient({
         // 학비가 다 나갔어도 학비외가 남았으면 학비외만 따로 냅니다.
         if (tuitionDone) {
           if (extras.length > 0) {
-            const r = await issueExtraInvoice(s.id, termId || null, dueDate, extras);
+            const r = await issueExtraInvoice(s.id, termId || null, dueDate, extras, month);
             if (r.ok) madeExtra++;
             else failed.push(`${s.name}·학비외(${r.error})`);
           } else failed.push(`${s.name}(이미 모든 항목이 청구서에 담겼습니다)`);
@@ -824,6 +879,7 @@ export default function TuitionGridClient({
             dueDate,
             termId: termId || null,
             planIds: scoped ? planIds : rest.length > 0 ? rest : null,
+            billingMonth: month,
             ...(merge ? { itemIds: extras } : {}),
           }),
         });
@@ -839,7 +895,7 @@ export default function TuitionGridClient({
           // 따로 한 장: 학비가 나간 뒤에 학비외를 냅니다. 학비가 실패했는데 학비외만 나가면
           // 반쪽 청구가 되므로 순서를 이렇게 둡니다.
           if (partner === "separate" && extras.length > 0) {
-            const r = await issueExtraInvoice(s.id, termId || null, dueDate, extras);
+            const r = await issueExtraInvoice(s.id, termId || null, dueDate, extras, month);
             if (r.ok) madeExtra++;
             else failed.push(`${s.name}·학비외(학비는 나갔고 학비외는 못 냈습니다: ${r.error})`);
           }
@@ -915,6 +971,20 @@ export default function TuitionGridClient({
       </div>
 
       <div className="mb-2 flex flex-wrap items-center gap-2">
+        <MonthPicker
+          value={month}
+          thisMonth={thisMonth}
+          onChange={(m) => {
+            const next = m ?? thisMonth;
+            setMonth(next);
+            // 달을 옮기면 그 달이 담긴 학기로 따라갑니다(학기 칸을 따로 맞추지 않아도 되게).
+            const t = termOfMonth(
+              next,
+              terms.map((x) => ({ id: x.id, label: `${x.year} ${x.term_type}`, start_date: x.start_date ?? null, end_date: x.end_date ?? null })),
+            );
+            if (t) setTermId(t.id);
+          }}
+        />
         <TermPicker terms={terms} value={termId} onChange={setTermId} />
         <span className="flex gap-1">
           {DEPTS.map((d) => (
@@ -1642,7 +1712,7 @@ export default function TuitionGridClient({
 
       {alreadyFor && (
         <AlreadyPaidModal
-          title="학비 기수납 등록"
+          title="학비 이미 받음"
           studentName={alreadyFor.name}
           // 항목마다 **금액을 함께** 넘깁니다. 이름만 주면 「교복은 냈고 교재는 안 냈다」를
           // 골라도 얼마인지 몰라서, 결국 사람이 다시 계산해 적게 됩니다.

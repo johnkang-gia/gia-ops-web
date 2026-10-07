@@ -174,6 +174,8 @@ export const DATA_KINDS: DataKindDef[] = [
       "cash_receipts",
       "fee_items",
       "fee_plans",
+      // 함께 하면 합친 금액이 정해진 프로그램(오케스트라). 학비 항목 둘을 잇습니다.
+      "fee_addon_prices",
       "fee_discounts",
       "student_fee_items",
       "student_fee_discounts",

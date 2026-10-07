@@ -1973,11 +1973,33 @@ export default function InvoiceGridClient({
                       <span className="rounded bg-slate-100 px-1 text-[10px] font-bold text-slate-600">
                         {inv.category ?? "통합"}
                       </span>
-                      {(billableByStudent.get(s.id)?.length ?? 0) > 1 && (
-                        <span className="text-[10px] font-semibold text-slate-400" title="이 학생의 이번 학기 청구서 수">
-                          외 {(billableByStudent.get(s.id)?.length ?? 1) - 1}장
-                        </span>
-                      )}
+                      {/* **다른 장도 이 칸에서 처리합니다.** 남은 항목을 다시 청구한 장(재청구)은 대표 장이
+                          아니라서 「외 1장」 글자로만 보였고, 그 장의 받은 돈을 적을 자리가 없었습니다.
+                          장마다 상태를 붙이고, 못 받은 장은 눌러서 바로 받은 돈을 적습니다. */}
+                      {(billableByStudent.get(s.id) ?? [])
+                        .filter((v) => v.id !== inv.id)
+                        .map((v) => {
+                          const st = settle(v as unknown as SettleInvoice, payments, today);
+                          if (st.state === "취소") return null;
+                          const open = st.balance > 0 && st.state !== "이월됨";
+                          return (
+                            <button
+                              key={v.id}
+                              onClick={() =>
+                                open
+                                  ? setPayFor({ id: v.id, label: `${s.name} · ${v.invoice_no}`, balance: st.balance })
+                                  : setPreview({ id: v.id, label: `${s.name} · ${v.invoice_no}`, studentId: s.id })
+                              }
+                              className={
+                                "rounded px-1 text-[10px] font-bold " +
+                                (open ? "bg-slate-500 text-white hover:bg-slate-600" : "bg-emerald-100 text-emerald-800")
+                              }
+                              title={open ? `${v.invoice_no} 남은 ${won(st.balance)} — 눌러서 받은 돈 적기` : `${v.invoice_no} ${st.state}`}
+                            >
+                              {v.invoice_no.slice(-4)} {open ? `미납 ${won(st.balance)}` : st.state}
+                            </button>
+                          );
+                        })}
                       {/* 발행과 발송은 다릅니다. 종이를 만든 것과 학부모에게 청구가 간 것을
                           같은 표시로 두면, 발행만 해놓고 안 보낸 것을 아무도 모릅니다. */}
                       {inv.exported_at ? (
@@ -2017,7 +2039,7 @@ export default function InvoiceGridClient({
                               "rounded px-1 text-[10px] font-bold text-white " +
                               (st.state === "연체" ? "bg-rose-600" : st.state === "부분납부" ? "bg-amber-600" : "bg-slate-500")
                             }
-                            title={`남은 ${won(st.balance)} — 눌러서 결제완료`}
+                            title={`남은 ${won(st.balance)} — 눌러서 받은 돈 적기`}
                           >
                             {st.state === "부분납부" ? `일부 · 남은 ${won(st.balance)}` : st.state === "연체" ? "연체" : "미납"}
                           </button>
@@ -2209,7 +2231,7 @@ export default function InvoiceGridClient({
       {/* ── 발행 전 검토 ────────────────────────────────────────── */}
       {alreadyFor && (
         <AlreadyPaidModal
-          title="학비외 기수납 등록"
+          title="학비외 이미 받음"
           studentName={alreadyFor.name}
           // 항목마다 금액을 함께 넘깁니다. 올톡페이는 항목별로 결제 문자가 나가서,
           // 「교복만 결제됨」을 그 자리에서 체크할 수 있어야 합니다.

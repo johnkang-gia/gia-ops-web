@@ -10,6 +10,8 @@ import { agingBucket, type AgingBucket } from "@/lib/settlement";
 import PayModal from "./PayModal";
 import RefundModal, { type RefundTarget } from "./RefundModal";
 import InlineTabs from "@/components/common/InlineTabs";
+import MonthPicker from "./MonthPicker";
+import { billingMonthOf } from "@/lib/financePeriod";
 import type { Invoice } from "@/lib/types";
 import { Who } from "@/components/common/HomonymProvider";
 
@@ -110,7 +112,19 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
         .sort((a, b) => b.balance - a.balance || a.v.invoice_no.localeCompare(b.v.invoice_no)),
     [issued, payments],
   );
-  const unpaid = withBalance.filter((x) => x.balance > 0);
+  const unpaidAll = withBalance.filter((x) => x.balance > 0);
+
+  /**
+   * **달로 봅니다.** 발행 목록은 그 달 청구서, 입금 목록은 그 달에 들어온 돈입니다. 미납은 그
+   * 달**까지** 못 받은 장 전부입니다 - 지난달 미납이 이번 달 화면에서 사라지면 아무도 안 걷습니다.
+   * 「전체」를 고르면 예전처럼 달을 가리지 않습니다.
+   */
+  const [ym, setYm] = useState<string | null>(today.slice(0, 7));
+  const unpaid = unpaidAll.filter((x) => !ym || (billingMonthOf(x.v) ?? "") <= ym);
+  const issuedInMonth = withBalance.filter((x) => !ym || billingMonthOf(x.v) === ym);
+  const paymentsInMonth = payments.filter((p) => !ym || String(p.paid_at ?? "").slice(0, 7) === ym);
+  const paidSum = paymentsInMonth.filter((p) => (p as { kind?: string | null }).kind !== "refund").reduce((n, p) => n + Number(p.amount), 0);
+  const billedSum = issuedInMonth.reduce((n, x) => n + Number(x.v.total_amount), 0);
 
   /**
    * 그 청구서로 **지금 들고 있는 돈**. 이미 돌려준 것을 뺀 값입니다.
@@ -437,7 +451,7 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
         {[
           { label: "청구 합계", v: won(totalBilled), sub: `${issued.length}건 발행` },
           { label: "받은 금액", v: won(totalPaid), sub: `${payments.length}건 입금` },
-          { label: "미납", v: won(totalBilled - totalPaid), sub: `${unpaid.length}명`, warn: unpaid.length > 0 },
+          { label: "미납", v: won(totalBilled - totalPaid), sub: `${unpaidAll.length}명`, warn: unpaidAll.length > 0 },
           {
             label: "선입금 (청구서 없이 받은 돈)",
             v: won(prepaidTotal),
@@ -588,7 +602,7 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
                             ⭐ {c.label} ({c.why})
                           </option>
                         ))}
-                        {unpaid
+                        {unpaidAll
                           .filter((u) => !s.candidates.some((c) => c.id === u.v.id))
                           .map((u) => (
                             <option key={u.v.id} value={u.v.id}>
@@ -615,11 +629,18 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
       )}
 
       {/* ── 목록 ────────────────────────────────────────────────── */}
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <MonthPicker value={ym} thisMonth={today.slice(0, 7)} onChange={setYm} allowAll />
+        <span className="text-[12px] text-slate-600">
+          {ym ? `${ym.replace("-", "년 ")}월` : "전체 기간"} · 청구 <b className="tabular-nums">{won(billedSum)}</b> ({issuedInMonth.length}장) · 수납{" "}
+          <b className="tabular-nums text-emerald-700">{won(paidSum)}</b> ({paymentsInMonth.length}건) · 미납 <b className="tabular-nums text-rose-700">{won(unpaid.reduce((n, x) => n + x.balance, 0))}</b>
+        </span>
+      </div>
       <InlineTabs
         tabs={[
           { key: "미납", label: "미납", badge: unpaid.length, tone: unpaid.length > 0 ? "warn" : "default" },
-          { key: "전체", label: "발행", badge: issued.length },
-          { key: "입금", label: "입금", badge: payments.length },
+          { key: "전체", label: "발행", badge: issuedInMonth.length },
+          { key: "입금", label: "입금", badge: paymentsInMonth.length },
         ]}
         active={tab}
         onPick={(k) => setTab(k as "미납" | "전체" | "입금")}
@@ -641,7 +662,7 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
               </tr>
             </thead>
             <tbody>
-              {(tab === "미납" ? unpaid : withBalance).map((x) => {
+              {(tab === "미납" ? unpaid : issuedInMonth).map((x) => {
                 const overdue = x.balance > 0 && x.v.due_date < today;
                 return (
                   <tr key={x.v.id} className="border-t border-slate-100">
@@ -705,7 +726,7 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
                   </tr>
                 );
               })}
-              {(tab === "미납" ? unpaid : withBalance).length === 0 && (
+              {(tab === "미납" ? unpaid : issuedInMonth).length === 0 && (
                 <tr>
                   <td colSpan={8} className="px-3 py-10 text-center text-slate-400">
                     {tab === "미납" ? "미납이 없습니다." : "발행한 인보이스가 없습니다."}
@@ -729,7 +750,7 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
               </tr>
             </thead>
             <tbody>
-              {payments.map((p) => {
+              {paymentsInMonth.map((p) => {
                 const inv = invoices.find((v) => v.id === p.invoice_id) ?? null;
                 return (
                   <tr key={p.id} className={"border-t border-slate-100 " + (inv ? "" : "bg-amber-50/60")}>
@@ -751,7 +772,7 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
                           className="w-60 rounded border border-amber-300 px-1 py-0.5 text-[12px]"
                         >
                           <option value="">— 붙일 인보이스 고르기 —</option>
-                          {unpaid.map((u) => (
+                          {unpaidAll.map((u) => (
                             <option key={u.v.id} value={u.v.id}>
                               {u.v.invoice_no} {u.v.student_name_ko ?? u.v.student_name} · {won(u.balance)}
                             </option>
@@ -813,14 +834,14 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
               value={manual.invoiceId}
               onChange={(e) => {
                 const id = e.target.value;
-                const u = unpaid.find((x) => x.v.id === id);
+                const u = unpaidAll.find((x) => x.v.id === id);
                 // 잔액을 기본값으로 채웁니다 - 대개 잔액만큼 들어옵니다.
                 setManual((m) => ({ ...m, invoiceId: id, amount: u ? u.balance : m.amount }));
               }}
               className="ml-1 w-72 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
             >
               <option value="">고르기...</option>
-              {unpaid.map((u) => (
+              {unpaidAll.map((u) => (
                 <option key={u.v.id} value={u.v.id}>
                   {u.v.invoice_no} {u.v.student_name_ko ?? u.v.student_name} · 잔액 {won(u.balance)}
                 </option>

@@ -62,11 +62,12 @@ export async function unbilledOf(
 }
 
 /** 학비외 한 장을 따로 냅니다. */
-export async function issueExtraInvoice(studentId: string, termId: string | null, dueDate: string, itemIds: string[]) {
+export async function issueExtraInvoice(studentId: string, termId: string | null, dueDate: string, itemIds: string[], billingMonth?: string | null) {
   const res = await fetch("/api/finance/invoices", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ studentId, feeTermId: termId, dueDate, itemIds }),
+    // 청구월은 화면이 보고 있는 달입니다. 안 주면 발행일의 달입니다(창구가 정함).
+    body: JSON.stringify({ studentId, feeTermId: termId, dueDate, itemIds, ...(billingMonth ? { billingMonth } : {}) }),
   });
   const body = (await res.json().catch(() => ({}))) as { invoice?: { id: string; invoice_no: string }; error?: string };
   return { ok: res.ok, invoice: body.invoice ?? null, error: body.error ?? (res.ok ? null : res.statusText) };
@@ -79,11 +80,12 @@ export async function issueTuitionInvoice(
   dueDate: string,
   planIds: string[] | null,
   itemIds: string[] = [],
+  billingMonth?: string | null,
 ) {
   const res = await fetch("/api/finance/invoices/tuition", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ studentId, termId, dueDate, planIds, ...(itemIds.length > 0 ? { itemIds } : {}) }),
+    body: JSON.stringify({ studentId, termId, dueDate, planIds, ...(itemIds.length > 0 ? { itemIds } : {}), ...(billingMonth ? { billingMonth } : {}) }),
   });
   const body = (await res.json().catch(() => ({}))) as { invoice?: { id: string; invoice_no: string }; error?: string };
   return { ok: res.ok, invoice: body.invoice ?? null, error: body.error ?? (res.ok ? null : res.statusText) };

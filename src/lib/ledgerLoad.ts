@@ -5,6 +5,8 @@ import type { FeeDiscount, FeeItem, FeePaymentOption, FeePlan, Invoice, StudentF
 import type { BilledLine } from "@/lib/billedItems";
 import type { Enrollment, LedgerPayment, LedgerStudent, LedgerWorld, StudentDiscountRow } from "@/lib/studentLedger";
 import { loadStudents } from "@/lib/students";
+import type { AddonPrice } from "@/lib/tuitionAddon";
+import { termOfMonth } from "@/lib/financePeriod";
 
 /**
  * 원장이 필요로 하는 자료를 **한 번에** 읽습니다. 회계 화면은 전교생 것을, 학생 창은 한
@@ -16,7 +18,7 @@ import { loadStudents } from "@/lib/students";
  */
 export async function loadLedgerWorld(
   supabase: SupabaseClient,
-  opts: { termId: string | null; studentId?: string | null },
+  opts: { termId: string | null; studentId?: string | null; month?: string | null },
 ): Promise<{ world: LedgerWorld; students: LedgerStudent[]; terms: Term[]; errors: string[] }> {
   const errors: string[] = [];
   const only = opts.studentId ?? null;
@@ -31,7 +33,7 @@ export async function loadLedgerWorld(
     return only ? q.eq("student_id", only) : q;
   };
   const enrQ = () => {
-    const q = supabase.from("student_fee_enrollments").select("student_id, plan_id, option_id, term_id, active, override_amount, override_note").eq("active", true);
+    const q = supabase.from("student_fee_enrollments").select("student_id, plan_id, option_id, term_id, active, override_amount, override_note, paid_from").eq("active", true);
     return only ? q.eq("student_id", only) : q;
   };
   const sdQ = () => {
@@ -43,7 +45,7 @@ export async function loadLedgerWorld(
     return only ? q.eq("student_id", only) : q;
   };
 
-  const [stuRes, termRes, planRes, optRes, discRes, enrRes, sdRes, itemRes, ovRes, invRes, lineRes, payRes] = await Promise.all([
+  const [stuRes, termRes, planRes, optRes, discRes, enrRes, sdRes, itemRes, ovRes, invRes, lineRes, payRes, addonRes] = await Promise.all([
     // 한 명을 찍어 읽을 때는 퇴소한 아이도 돌려줍니다 - 그 아이의 미납·예치금을 보는 자리입니다.
     only ? loadStudents(supabase, { ids: [only], status: "all" }) : loadStudents(supabase),
     supabase.from("terms").select("*").order("status").order("start_date", { ascending: false, nullsFirst: false }),
@@ -60,11 +62,13 @@ export async function loadLedgerWorld(
       ? Promise.resolve({ rows: [] as BilledLine[], error: null, truncated: false })
       : readAll<BilledLine>((from, to) => supabase.from("invoice_lines").select("invoice_id, name, item_id").order("invoice_id").order("seq").range(from, to)),
     readAll<LedgerPayment>(payQ),
+    // 함께 하면 합친 금액이 정해진 프로그램. 작은 표라 전부 읽습니다.
+    supabase.from("fee_addon_prices").select("addon_plan_id, base_plan_id, combined_amount, active"),
   ]);
 
   for (const [name, r] of [
     ["학생", stuRes], ["학기", termRes], ["학비 항목", planRes], ["납부 옵션", optRes], ["할인", discRes],
-    ["학비 신청", enrRes], ["학생 할인", sdRes], ["학비외 항목", itemRes], ["학비외 신청", ovRes],
+    ["학비 신청", enrRes], ["학생 할인", sdRes], ["학비외 항목", itemRes], ["학비외 신청", ovRes], ["함께 하는 프로그램", addonRes],
   ] as const) {
     if (r.error) errors.push(`${name}: ${typeof r.error === "string" ? r.error : r.error.message}`);
   }
@@ -85,7 +89,12 @@ export async function loadLedgerWorld(
   }
 
   const terms = (termRes.data as Term[] | null) ?? [];
-  const termId = opts.termId ?? terms.find((t) => t.status === "진행중")?.id ?? null;
+  // 달을 골랐으면 그 달이 담긴 학기입니다(`termOfMonth`). 학기를 따로 골랐으면 그것이 먼저입니다.
+  const monthOk = /^\d{4}-(0[1-9]|1[0-2])$/.test(opts.month ?? "") ? (opts.month as string) : null;
+  const termOfPicked = monthOk
+    ? termOfMonth(monthOk, terms.map((t) => ({ id: t.id, label: `${t.year} ${t.term_type}`, start_date: t.start_date ?? null, end_date: t.end_date ?? null })))?.id ?? null
+    : null;
+  const termId = opts.termId ?? termOfPicked ?? terms.find((t) => t.status === "진행중")?.id ?? null;
   const termIsCurrent = terms.find((t) => t.id === termId)?.status === "진행중";
 
   const world: LedgerWorld = {
@@ -102,6 +111,8 @@ export async function loadLedgerWorld(
     invoices: invRes.rows,
     lines,
     payments: payRes.rows,
+    month: /^\d{4}-(0[1-9]|1[0-2])$/.test(opts.month ?? "") ? (opts.month as string) : null,
+    addonPrices: (addonRes.data as AddonPrice[] | null) ?? [],
   };
   const students = stuRes.rows.map((s) => ({
     id: s.id,

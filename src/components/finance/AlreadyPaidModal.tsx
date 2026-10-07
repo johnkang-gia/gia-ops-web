@@ -338,11 +338,11 @@ export default function AlreadyPaidModal({
               ? "금액을 입력하거나 항목을 선택하세요"
               : split
                 ? `${won(total)} — 청구서 ${batches.length}장으로 등록`
-                : `${won(total)} 기수납 등록`}
+                : `${won(total)} 이미 받음으로 넣기`}
         </button>
 
         <p className="mt-1.5 text-center text-[10px] text-slate-400">
-          청구서는 생성되지만 학부모에게 발송되지 않습니다(기수납 건).
+          청구서는 생성되지만 학부모에게 보내지 않습니다(이미 받음).
         </p>
       </div>
     </div>

@@ -19,6 +19,9 @@ import { tuitionLine, discountsForPlan, planTargets, type TuitionLine } from "@/
 import { resolveStudentItems, inTerm, type ResolvedLine } from "@/lib/feeItems";
 import { billedItems, markOf, type BilledLine, type BillState } from "@/lib/billedItems";
 import { settle, streamOf, type Settled } from "@/lib/settlement";
+import { billingMonthOf, type MonthKey } from "@/lib/financePeriod";
+import { planBillForMonth, type BillRule, type MonthSpan } from "@/lib/tuitionMonth";
+import { resolveAddon, addonPlanForLine, addonNote, type AddonPrice } from "@/lib/tuitionAddon";
 
 export type LedgerStudent = {
   id: string;
@@ -37,6 +40,8 @@ export type Enrollment = {
   active?: boolean;
   override_amount: number | null;
   override_note: string | null;
+  /** 여러 달 묶음 납부의 시작월(YYYY-MM). 사람이 적거나 첫 청구 때 채워집니다. */
+  paid_from?: string | null;
 };
 
 export type StudentDiscountRow = { student_id: string; discount_id: string; term_id: string | null; plan_id: string | null };
@@ -70,6 +75,13 @@ export type LedgerWorld = {
   invoices: Invoice[];
   lines: BilledLine[];
   payments: LedgerPayment[];
+  /**
+   * **보고 있는 달.** 주면 월 단위 학비는 그 달 청구서로 판정하고(`tuitionMonth.ts`), 청구액도
+   * 그 달 청구서만 셉니다. 안 주면 예전처럼 학기 단위입니다.
+   */
+  month?: MonthKey | null;
+  /** 함께 하면 합친 금액이 정해진 프로그램(오케스트라). 없으면 빈 목록. */
+  addonPrices?: AddonPrice[];
 };
 
 /** 받을 돈 한 줄. 학비든 학비외든 같은 모양입니다 - 화면이 둘을 따로 그릴 이유가 없습니다. */
@@ -89,11 +101,20 @@ export type LedgerCharge = {
   billed: { state: BillState; invoiceId: string; invoiceNo: string | null; unsure: boolean } | null;
   /** 학비 전용: 옵션 고르기용. */
   tuition?: { planId: string; optionId: string | null; options: { id: string; name: string }[]; discounts: { id: string; name: string; on: boolean }[] };
+  /** 학비 전용 · 월별 보기: 어떤 갈래로 판정했나, 묶음 납부면 그 기간과 시작월. */
+  month?: { rule: BillRule; months: number; span: MonthSpan | null; spanSource: "입력" | "청구서" | null; paidFrom: string | null };
   /** 학비외 전용: 기본 세트인가, 사람이 따로 넣었나, 수량. */
   extra?: { itemId: string; qty: number; fromDefault: boolean };
 };
 
-export type LedgerInvoice = Invoice & { settled: Settled; stream: "학비" | "학비외"; exported: boolean };
+export type LedgerInvoice = Invoice & {
+  settled: Settled;
+  stream: "학비" | "학비외";
+  exported: boolean;
+  /** 보고 있는 달의 청구서인가(월별 보기가 아니면 늘 참). */
+  inMonth: boolean;
+  billingMonth: string | null;
+};
 
 export type Ledger = {
   student: LedgerStudent;
@@ -181,6 +202,19 @@ export function buildLedger(world: LedgerWorld, student: LedgerStudent): Ledger 
   const myEnroll = world.enrollments.filter((e) => e.student_id === student.id && e.active !== false).filter(sameTerm);
   const mySd = world.studentDiscounts.filter((d) => d.student_id === student.id);
   const tb = tuitionBilledOf(myInvoices, myPayments, student.id, termId, termIsCurrent);
+  const month = world.month ?? null;
+  // 월별 판정에 쓰는 이 학생의 같은 학기 학비 청구서(살아 있는 장).
+  const tuitionAlive = myInvoices.filter(
+    (v) =>
+      v.status === "발행" &&
+      streamOf(v) === "학비" &&
+      !(v as { carried_to_invoice_id?: string | null }).carried_to_invoice_id &&
+      ((v.term_id ?? "") === (termId ?? "") || (!v.term_id && termIsCurrent)),
+  );
+  // 옵션이나 직접 금액을 고른 항목 - 함께 하는 프로그램이 짝을 찾는 범위입니다.
+  const chosenPlanIds = myEnroll
+    .filter((e) => e.option_id || (e.override_amount !== null && e.override_amount !== undefined))
+    .map((e) => e.plan_id);
 
   const charges: LedgerCharge[] = [];
   for (const plan of world.plans) {
@@ -190,14 +224,24 @@ export function buildLedger(world: LedgerWorld, student: LedgerStudent): Ledger 
     if (!planTargets(plan, { grade: student.grade, className: student.class_name, department: student.department ?? null })) continue;
     const e = myEnroll.find((x) => x.plan_id === plan.id) ?? null;
     const option = world.options.find((o) => o.id === e?.option_id) ?? null;
+    const addon = resolveAddon(plan, world.addonPrices ?? [], world.plans, chosenPlanIds);
     const line: TuitionLine | null = e
-      ? tuitionLine(plan, option, discountsForPlan(mySd, world.discounts, plan.id, termId), {
+      ? tuitionLine(addonPlanForLine(plan, addon), option, discountsForPlan(mySd, world.discounts, plan.id, termId), {
           amount: e.override_amount === null || e.override_amount === undefined ? null : Number(e.override_amount),
           note: e.override_note,
         })
       : null;
-    const billedInv = tb.all ?? tb.byName.get(plan.name) ?? null;
+    const mb = month
+      ? planBillForMonth({ plan, option, paidFrom: e?.paid_from ?? null, invoices: tuitionAlive, month })
+      : null;
+    const billedInv = mb
+      ? mb.covered
+        ? (myInvoices.find((v) => v.id === mb.invoice?.id) ?? null)
+        : null
+      : tb.all ?? tb.byName.get(plan.name) ?? null;
     const bits: string[] = [];
+    const an = addonNote(addon);
+    if (an && e) bits.push(an);
     if (line) {
       if (line.optionDiscount > 0) bits.push(`${line.optionName} −${Math.round(line.optionDiscount).toLocaleString()}`);
       for (const d of line.discounts) bits.push(`${d.name} −${Math.round(d.amount).toLocaleString()}`);
@@ -213,7 +257,11 @@ export function buildLedger(world: LedgerWorld, student: LedgerStudent): Ledger 
       note: bits.length ? bits.join(" · ") : null,
       billed: billedInv
         ? { state: stateOf(billedInv, myPayments), invoiceId: billedInv.id, invoiceNo: billedInv.invoice_no, unsure: false }
-        : null,
+        : mb?.covered
+          ? // 기간 납부를 사람이 적기만 한 경우(운영앱 이전에 받은 돈) - 장은 없지만 받은 달입니다.
+            { state: "완납", invoiceId: "", invoiceNo: null, unsure: false }
+          : null,
+      month: mb ? { rule: mb.rule, months: mb.months, span: mb.span, spanSource: mb.spanSource, paidFrom: e?.paid_from ?? null } : undefined,
       tuition: {
         planId: plan.id,
         optionId: e?.option_id ?? null,
@@ -263,6 +311,8 @@ export function buildLedger(world: LedgerWorld, student: LedgerStudent): Ledger 
       settled: settle(v as unknown as Parameters<typeof settle>[0], myPayments, today),
       stream: streamOf(v),
       exported: !!v.exported_at,
+      billingMonth: billingMonthOf(v),
+      inMonth: !month || billingMonthOf(v) === month,
     }))
     .sort((a, b) => (a.issue_date < b.issue_date ? 1 : a.issue_date > b.issue_date ? -1 : a.invoice_no < b.invoice_no ? 1 : -1));
 
@@ -271,7 +321,9 @@ export function buildLedger(world: LedgerWorld, student: LedgerStudent): Ledger 
   // 고른 학비 항목은 0원이라 저절로 빠집니다.
   const toBill = charges.filter((c) => !c.billed && c.amount > 0).reduce((n, c) => n + c.amount, 0);
   const alive = invoices.filter((v) => v.settled.state !== "취소" && v.settled.state !== "이월됨");
-  const billed = alive.reduce((n, v) => n + num(v.total_amount), 0);
+  // 월별 보기에서 「청구액」은 그 달 청구서만입니다. 미수금은 달과 상관없이 남은 돈 전부입니다 -
+  // 지난달 못 받은 돈이 이번 달 화면에서 사라지면 아무도 안 걷습니다.
+  const billed = alive.filter((v) => v.inMonth).reduce((n, v) => n + num(v.total_amount), 0);
   const unpaid = alive.reduce((n, v) => n + Math.max(0, v.settled.balance), 0);
   const deposit = myPayments.filter((p) => !p.invoice_id && (p.kind ?? "") !== "refund").reduce((n, p) => n + num(p.amount), 0);
 

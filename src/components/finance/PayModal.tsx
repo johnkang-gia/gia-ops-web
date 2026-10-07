@@ -142,7 +142,7 @@ export default function PayModal({
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div className="max-h-[88vh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-4" onClick={(e) => e.stopPropagation()}>
-        <h3 className="mb-1 text-sm font-bold text-slate-800">결제완료</h3>
+        <h3 className="mb-1 text-sm font-bold text-slate-800">받은 돈 적기</h3>
         <p className="mb-3 text-[12px] text-slate-500">{target.label}</p>
 
         {/* 예치금이 있으면 맨 위에 둡니다. 이미 맡겨둔 돈이 있는데 새 돈을 받으면 학부모가 두 번 냅니다. */}

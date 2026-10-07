@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { billRuleOf } from "@/lib/tuitionMonth";
+import { resolveAddon, addonPlanForLine, type AddonPrice } from "@/lib/tuitionAddon";
 import { planCarryForward, lockCarried } from "@/lib/carryForward";
 import { applyPrepaid } from "@/lib/prepaidApply";
 
@@ -89,7 +91,7 @@ export async function POST(req: Request) {
 
   const supabase = await createClient();
 
-  const [stuRes, planRes, optRes, enrollRes, sdRes, discRes] = await Promise.all([
+  const [stuRes, planRes, optRes, enrollRes, sdRes, discRes, addonRes] = await Promise.all([
     // 퇴소한 아이에게도 발행할 수 있어야 합니다(미납 정산). 보호자 번호는 청구서에 찍힙니다.
     loadStudentsWithPhones(supabase, { ids: [studentId], status: "all" }),
     supabase.from("fee_plans").select("*").eq("category", "학비"),
@@ -99,9 +101,11 @@ export async function POST(req: Request) {
     supabase.from("student_fee_enrollments").select("*").eq("student_id", studentId).eq("active", true),
     supabase.from("student_fee_discounts").select("*").eq("student_id", studentId).eq("active", true),
     supabase.from("fee_discounts").select("*"),
+    // 함께 하면 합친 금액이 정해진 프로그램(오케스트라). 화면과 같은 표·같은 함수로 셉니다.
+    supabase.from("fee_addon_prices").select("addon_plan_id, base_plan_id, combined_amount, active"),
   ]);
   if (stuRes.error) return NextResponse.json({ error: stuRes.error }, { status: 500 });
-  const err = planRes.error ?? optRes.error ?? enrollRes.error ?? sdRes.error ?? discRes.error;
+  const err = planRes.error ?? optRes.error ?? enrollRes.error ?? sdRes.error ?? discRes.error ?? addonRes.error;
   if (err) return NextResponse.json({ error: err.message }, { status: 500 });
 
   const student = (stuRes.rows[0] as StudentRow | undefined) ?? null;
@@ -127,6 +131,14 @@ export async function POST(req: Request) {
   const studentDiscounts =
     (sdRes.data as { discount_id: string; term_id: string | null; plan_id: string | null }[] | null) ?? [];
 
+  // 함께 하는 프로그램이 짝을 찾는 범위 - **이번에 담는 항목만이 아니라** 이 학기에 고른 학비 전부입니다.
+  // 오케스트라만 따로 발행해도 방과후 5일반을 하고 있으면 그 조합 금액이어야 합니다.
+  const addonPrices = (addonRes.data as AddonPrice[] | null) ?? [];
+  const chosenPlanIds = ((enrollRes.data as { plan_id: string; option_id: string | null; term_id: string | null; override_amount: number | null }[] | null) ?? [])
+    .filter(sameTerm)
+    .filter((e) => e.option_id || (e.override_amount !== null && e.override_amount !== undefined))
+    .map((e) => e.plan_id);
+
   const lines: TuitionLine[] = [];
   for (const e of enrollments) {
     const plan = plans.find((p) => p.id === e.plan_id);
@@ -137,7 +149,8 @@ export async function POST(req: Request) {
     const forPlan = discountsForPlan(studentDiscounts, discounts, plan.id, termId);
     // 사람이 직접 정한 금액이 있으면 그것이 청구액입니다(교장님 상담 등). 화면과 같은
     // 함수가 정합니다 - 서버가 따로 계산하면 표에 뜬 금액과 청구서가 달라집니다.
-    const line = tuitionLine(plan, option, forPlan, {
+    const addon = resolveAddon(plan, addonPrices, plans, chosenPlanIds);
+    const line = tuitionLine(addonPlanForLine(plan, addon), option, forPlan, {
       amount: e.override_amount === null || e.override_amount === undefined ? null : Number(e.override_amount),
       note: e.override_note,
     });
@@ -332,6 +345,24 @@ export async function POST(req: Request) {
     );
   }
 
+  // ── 여러 달 묶음 납부의 시작월 ──────────────────────────────────────────
+  //
+  // 5개월·10개월 납부를 운영앱에서 처음 청구하면 **그 청구월이 시작월**입니다. 적어두지 않으면
+  // 다음 달 화면에서 이 항목이 다시 「미청구」로 떠 같은 돈을 또 청구하게 됩니다. 사람이 이미
+  // 적은 시작월(운영앱 이전 납부)은 건드리지 않습니다. 못 적어도 청구서는 이미 나갔으므로
+  // 실패로 돌리지 않고 경고로 알립니다 - 청구서 청구월에서 같은 기간을 셀 수 있습니다.
+  const startMonth = (inv as { billing_month?: string | null }).billing_month ?? issue.slice(0, 7);
+  const spanWarnings: string[] = [];
+  for (const e of (enrollRes.data as { id: string; plan_id: string; option_id: string | null; term_id: string | null; paid_from?: string | null }[] | null) ?? []) {
+    if (e.paid_from || !e.option_id) continue;
+    if (!sameTerm(e) || (planIds && planIds.length > 0 && !planIds.includes(e.plan_id))) continue;
+    const plan = plans.find((p) => p.id === e.plan_id);
+    const opt = options.find((o) => o.id === e.option_id);
+    if (!plan || !opt || billRuleOf(plan, opt).rule !== "기간") continue;
+    const { error: pfErr } = await supabase.from("student_fee_enrollments").update({ paid_from: startMonth }).eq("id", e.id);
+    if (pfErr) spanWarnings.push(`${plan.name} 시작월을 적지 못했습니다(${pfErr.message})`);
+  }
+
   const lockErr = await lockCarried(supabase, carry.lockIds, inv.id as string);
   if (lockErr) {
     return NextResponse.json(
@@ -386,6 +417,6 @@ export async function POST(req: Request) {
     prepaidApplied: pre.applied,
     // 붙이다 실패해도 청구서는 그대로 둡니다. 지우면 방금 만든 종이가 사라지고, 그냥
     // 넘어가면 이미 받은 돈이 미납으로 남습니다. 사실만 올려 사람이 보게 합니다.
-    warning: pre.error,
+    warning: [pre.error, ...spanWarnings].filter(Boolean).join(" / ") || null,
   });
 }

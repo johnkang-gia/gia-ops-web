@@ -56,6 +56,7 @@ const PARENT_FIRST = [
   "fee_items",
   "fee_discounts",
   "fee_payment_options",
+  "fee_addon_prices",
   "student_fee_enrollments",
   "student_fee_items",
   "student_fee_discounts",

@@ -4,6 +4,7 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess, isSuperAdminUser } from "@/lib/roles";
 import type { FeePlan, FeePaymentOption, FeeDiscount } from "@/lib/types";
 import FeePlansClient from "@/components/finance/FeePlansClient";
+import AddonPricesPanel, { type AddonRow } from "@/components/finance/AddonPricesPanel";
 import { loadStudents } from "@/lib/students";
 
 // 납부 항목 · 할인 (재무 전용)
@@ -26,11 +27,12 @@ export default async function FeePlansPage() {
   const supabase = await createClient();
   // 대상(학년·반)을 고를 재료. **명부에 실제로 있는 값만** 띄웁니다 - 손으로 치게 하면
   // 「4」와 「4학년」과 「G4」가 섞여 들어오고, 그렇게 적힌 대상은 아무에게도 안 걸립니다.
-  const [plansRes, optionsRes, discountsRes, rosterRes] = await Promise.all([
+  const [plansRes, optionsRes, discountsRes, rosterRes, addonRes] = await Promise.all([
     supabase.from("fee_plans").select("*").order("category").order("sort_order").order("name"),
     supabase.from("fee_payment_options").select("*").order("sort_order").order("periods"),
     supabase.from("fee_discounts").select("*").order("active", { ascending: false }).order("sort_order").order("name"),
     loadStudents(supabase),
+    supabase.from("fee_addon_prices").select("id, addon_plan_id, base_plan_id, combined_amount, active, note").order("created_at"),
   ]);
 
   const roster = rosterRes.rows;
@@ -45,9 +47,13 @@ export default async function FeePlansPage() {
   }
   for (const g of Object.keys(classesByGrade)) classesByGrade[g].sort();
 
-  const loadError = plansRes.error?.message ?? optionsRes.error?.message ?? discountsRes.error?.message ?? null;
+  const loadError = plansRes.error?.message ?? optionsRes.error?.message ?? discountsRes.error?.message ?? addonRes.error?.message ?? null;
 
   return (
+    <>
+    <div className="px-4 pt-4">
+      <AddonPricesPanel plans={(plansRes.data as FeePlan[] | null) ?? []} rows={(addonRes.data as AddonRow[] | null) ?? []} />
+    </div>
     <FeePlansClient
       plans={(plansRes.data as FeePlan[] | null) ?? []}
       options={(optionsRes.data as FeePaymentOption[] | null) ?? []}
@@ -58,5 +64,6 @@ export default async function FeePlansPage() {
       classesByGrade={classesByGrade}
       loadError={loadError}
     />
+    </>
   );
 }

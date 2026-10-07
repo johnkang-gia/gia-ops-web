@@ -18,9 +18,12 @@ export async function GET(req: Request, ctx: { params: Promise<{ studentId: stri
   if (!hasFinanceAccess(me)) return NextResponse.json({ error: "재무 권한이 필요합니다." }, { status: 403 });
 
   const { studentId } = await ctx.params;
-  const termId = new URL(req.url).searchParams.get("term") || null;
+  const sp = new URL(req.url).searchParams;
+  const termId = sp.get("term") || null;
+  // 보고 있는 달. 주면 월 단위 학비를 그 달 청구서로 판정합니다(`tuitionMonth.ts`).
+  const month = sp.get("month") || null;
   const supabase = await createClient();
-  const { world, students, terms, errors } = await loadLedgerWorld(supabase, { termId, studentId });
+  const { world, students, terms, errors } = await loadLedgerWorld(supabase, { termId, studentId, month });
   const student = students[0];
   if (!student) return NextResponse.json({ error: "학생을 찾지 못했습니다." }, { status: 404 });
   const ledger = buildLedger(world, student);
@@ -41,6 +44,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ studentId: stri
     ledger,
     addableItems,
     termId: world.termId,
+    month: world.month ?? null,
     terms: terms.map((t) => ({ id: t.id, name: `${t.year} ${t.term_type}`, status: t.status })),
     // 읽기 실패는 숨기지 않습니다. 반쪽 자료로 셈한 금액을 그대로 보여주면 틀린 숫자가 「청구할 금액」이 됩니다.
     warnings: errors,

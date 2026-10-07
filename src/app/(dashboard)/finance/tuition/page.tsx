@@ -12,6 +12,7 @@ import TuitionGridClient, {
 } from "@/components/finance/TuitionGridClient";
 import type { FeePlan, FeePaymentOption, FeeDiscount, Term, Invoice } from "@/lib/types";
 import { loadStudents } from "@/lib/students";
+import type { AddonPrice } from "@/lib/tuitionAddon";
 
 export const dynamic = "force-dynamic";
 
@@ -49,7 +50,7 @@ export default async function TuitionPage() {
   if (!hasFinanceAccess(me)) redirect("/home");
 
   const supabase = await createClient();
-  const [stuRes, planRes, optRes, discRes, termRes, enrollRes, sdRes, invRes, payRes] = await Promise.all([
+  const [stuRes, planRes, optRes, discRes, termRes, enrollRes, sdRes, invRes, payRes, addonRes] = await Promise.all([
     loadStudents(supabase, { order: "grade" }),
     // **학비만 거르지 않습니다.** 표에는 학비만 뜨지만, 팝업에서는 학비외 항목도 고칠 수
     // 있어야 합니다 - 거기서 안 보이면 결국 다른 화면으로 건너가게 됩니다.
@@ -59,7 +60,7 @@ export default async function TuitionPage() {
     supabase.from("terms").select("*").order("status").order("start_date", { ascending: false, nullsFirst: false }),
     supabase
       .from("student_fee_enrollments")
-      .select("id, student_id, plan_id, option_id, term_id, override_amount, override_note")
+      .select("id, student_id, plan_id, option_id, term_id, override_amount, override_note, paid_from")
       .eq("active", true),
     supabase.from("student_fee_discounts").select("id, student_id, discount_id, term_id, plan_id, reason").eq("active", true),
     readAll<Invoice>((from, to) =>
@@ -78,6 +79,8 @@ export default async function TuitionPage() {
     readAll<{ invoice_id: string | null; amount: number | string }>((from, to) =>
       supabase.from("payments").select("invoice_id, amount").range(from, to),
     ),
+    // 함께 하면 합친 금액이 정해진 프로그램(오케스트라). 표의 금액을 서버와 같은 함수로 셉니다.
+    supabase.from("fee_addon_prices").select("addon_plan_id, base_plan_id, combined_amount, active"),
   ]);
 
   // 무엇을 못 읽었는지 **화면에 말합니다.** 조용히 비어 있으면 「아직 아무도 안 골랐구나」로
@@ -89,6 +92,7 @@ export default async function TuitionPage() {
     discRes.error?.message ??
     enrollRes.error?.message ??
     sdRes.error?.message ??
+    addonRes.error?.message ??
     readNotice(invRes) ??
     readNotice(payRes) ??
     null;
@@ -132,6 +136,7 @@ export default async function TuitionPage() {
         recentInvoices={invRes.rows}
         payments={payRes.rows}
         today={todayKst()}
+        addonPrices={(addonRes.data as AddonPrice[] | null) ?? []}
         loadError={loadError}
       />
     </div>

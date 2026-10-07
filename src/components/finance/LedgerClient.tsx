@@ -12,6 +12,7 @@ import InvoicePreviewModal from "@/components/finance/InvoicePreviewModal";
 import { ALL_SCOPE, inScope, type Scope } from "@/lib/gradeScope";
 import { departmentOf, gradeSortKey, tabIncludes } from "@/lib/department";
 import { won } from "@/lib/feeItems";
+import MonthPicker from "@/components/finance/MonthPicker";
 
 /**
  * **회계 화면** — 학생 탭과 청구서 탭.
@@ -62,6 +63,8 @@ export type LedgerInvoiceRow = {
   exported: boolean;
   offline: boolean;
   termId: string | null;
+  /** 청구월(YYYY-MM). 칸이 비어 있는 옛 장은 발행일의 달입니다. */
+  billingMonth: string | null;
 };
 
 type Tab = "학생" | "청구서";
@@ -80,6 +83,8 @@ export default function LedgerClient({
   rows,
   invoices,
   termId,
+  month,
+  thisMonth,
   terms,
   deptTabs,
   loadError,
@@ -87,6 +92,9 @@ export default function LedgerClient({
   rows: LedgerRow[];
   invoices: LedgerInvoiceRow[];
   termId: string | null;
+  /** 보고 있는 달(YYYY-MM). 학비 「청구됨」 판정과 청구서 탭이 이 달을 따릅니다. */
+  month: string;
+  thisMonth: string;
   terms: { id: string; name: string; status: string }[];
   deptTabs: string[];
   loadError: string | null;
@@ -198,7 +206,9 @@ export default function LedgerClient({
     const needle = q.trim().toLowerCase();
     return invoices
       .filter((v) => v.stream === stream)
-      .filter((v) => (v.termId ?? "") === (termId ?? "") || !v.termId)
+      // **그 달의 청구서만.** 「미수」를 고르면 그 달까지 못 받은 장을 달을 가리지 않고 모읍니다 -
+      // 지난달에 못 받은 돈이 이번 달 화면에서 사라지면 아무도 안 걷습니다.
+      .filter((v) => (invState === "미수" ? (v.billingMonth ?? "") <= month : v.billingMonth === month))
       .filter((v) => tabIncludes(dept, deptOf(v)))
       .filter((v) => inScope({ grade: v.grade, className: v.className }, scope))
       .filter((v) => !needle || `${v.studentName} ${v.invoiceNo} ${v.scope ?? ""}`.toLowerCase().includes(needle))
@@ -206,7 +216,7 @@ export default function LedgerClient({
         invState === "전체" ? true : invState === "수납 완료" ? v.state === "완납" : invState === "올톡페이 미발송" ? !v.exported && v.state !== "완납" && !v.offline : v.state !== "완납" && v.state !== "이월됨",
       )
       .sort((a, b) => gradeSortKey(a.grade) - gradeSortKey(b.grade) || (a.className ?? "").localeCompare(b.className ?? "", "ko") || a.studentName.localeCompare(b.studentName, "ko") || (a.issueDate < b.issueDate ? 1 : -1));
-  }, [invoices, stream, termId, dept, scope, q, invState]);
+  }, [invoices, stream, month, dept, scope, q, invState]);
 
   const invSum = invRows.reduce((n, v) => n + v.amount, 0);
   const invBalance = invRows.reduce((n, v) => n + Math.max(0, v.balance), 0);
@@ -252,15 +262,11 @@ export default function LedgerClient({
             </button>
           ))}
         </span>
+        <MonthPicker value={month} thisMonth={thisMonth} onChange={(m) => router.push(`/finance/ledger?ym=${m ?? thisMonth}`)} />
         {terms.length > 1 && (
-          <select value={termId ?? ""} onChange={(e) => router.push(`/finance/ledger?term=${e.target.value}`)} className="rounded-lg border border-slate-300 px-2 py-1 text-[12px]">
-            {terms.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-                {t.status === "진행중" ? " (지금)" : ""}
-              </option>
-            ))}
-          </select>
+          <span className="text-[11px] font-bold text-slate-500" title="고른 달이 담긴 학기입니다">
+            {terms.find((t) => t.id === termId)?.name ?? ""}
+          </span>
         )}
         {deptTabs.length > 1 && (
           <span className="flex overflow-hidden rounded-lg border border-slate-300 text-[12px] font-bold">
@@ -449,8 +455,8 @@ export default function LedgerClient({
           <table className="sticky right-0 z-20 shrink-0 border-l border-slate-200 bg-white text-[12px]">
             <thead className="sticky top-0 z-10 bg-slate-50 text-[11px] text-slate-500">
               <tr className="h-12">
-                <th rowSpan={2} className="whitespace-nowrap px-1.5 text-right align-bottom">청구예정</th>
-                <th rowSpan={2} className="whitespace-nowrap px-1.5 text-right align-bottom">청구액</th>
+                <th rowSpan={2} className="whitespace-nowrap px-1.5 text-right align-bottom" title="이 달에 아직 청구서에 안 담긴 금액">{Number(month.slice(5))}월 청구예정</th>
+                <th rowSpan={2} className="whitespace-nowrap px-1.5 text-right align-bottom" title="이 달 청구서의 합">{Number(month.slice(5))}월 청구액</th>
                 <th rowSpan={2} className="whitespace-nowrap px-1.5 text-right align-bottom">수납</th>
                 <th rowSpan={2} className="whitespace-nowrap px-1.5 text-left align-bottom">수단</th>
                 <th rowSpan={2} className="whitespace-nowrap px-1.5 text-right align-bottom">미수금</th>
@@ -551,7 +557,7 @@ export default function LedgerClient({
                         <button onClick={() => setPreview({ id: v.id, label: `${v.studentName} · ${v.invoiceNo}`, receipt: false })} className="font-bold text-slate-700 underline">
                           {v.invoiceNo}
                         </button>
-                        {v.offline && <span className="ml-1 text-[10px] text-sky-600">기수납</span>}
+                        {v.offline && <span className="ml-1 text-[10px] text-sky-600">이미 받음</span>}
                       </td>
                       <td className="max-w-[240px] truncate px-2 py-1 text-slate-600" title={v.scope ?? ""}>
                         {v.scope ?? (v.stream === "학비" ? "학비 전부" : "")}
@@ -583,7 +589,7 @@ export default function LedgerClient({
         </div>
       )}
 
-      {open && <StudentLedgerModal studentId={open} termId={termId} onClose={() => setOpen(null)} onChanged={() => router.refresh()} />}
+      {open && <StudentLedgerModal studentId={open} termId={termId} month={month} onClose={() => setOpen(null)} onChanged={() => router.refresh()} />}
       {exporting && (
         <AlltalkpayExport
           invoiceIds={exporting}

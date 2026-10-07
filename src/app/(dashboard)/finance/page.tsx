@@ -14,6 +14,8 @@ import type { FeeItem, Invoice, StudentFeeItem } from "@/lib/types";
 import { Who } from "@/components/common/HomonymProvider";
 import { readAll, readNotice } from "@/lib/financeFetch";
 import { loadStudents } from "@/lib/students";
+import { MonthNav } from "@/components/finance/MonthPicker";
+import { billingMonthOf } from "@/lib/financePeriod";
 
 // 재무 개요.
 //
@@ -23,10 +25,16 @@ import { loadStudents } from "@/lib/students";
 
 export const dynamic = "force-dynamic";
 
-export default async function FinanceOverviewPage() {
+export default async function FinanceOverviewPage({ searchParams }: { searchParams: Promise<{ ym?: string }> }) {
   const me = await getCurrentAppUser();
   if (!me) redirect("/login");
   if (!hasFinanceAccess(me)) redirect("/home");
+
+  // **보고 있는 달.** 기본은 이번 달, 「전체」를 고르면 달을 가리지 않습니다. 청구는 청구월,
+  // 수납은 들어온 날의 달로 거릅니다(`financePeriod.ts`).
+  const { ym } = await searchParams;
+  const thisMonth = todayKst().slice(0, 7);
+  const month: string | null = ym === "all" ? null : /^\d{4}-(0[1-9]|1[0-2])$/.test(ym ?? "") ? (ym as string) : thisMonth;
 
   const supabase = await createClient();
   const [stuRes, itemsRes, ovRes, invRes, payRes] = await Promise.all([
@@ -50,8 +58,10 @@ export default async function FinanceOverviewPage() {
   // active 로 거르지 않습니다. 항목은 끄는 것이 아니라 지웁니다(2026-09).
   const items = (itemsRes.data as FeeItem[] | null) ?? [];
   const overrides = (ovRes.data as StudentFeeItem[] | null) ?? [];
-  const invoices = invRes.rows;
-  const payments = payRes.rows;
+  const allInvoices = invRes.rows;
+  const allPayments = payRes.rows;
+  const invoices = month ? allInvoices.filter((v) => billingMonthOf(v) === month) : allInvoices;
+  const payments = month ? allPayments.filter((p) => String(p.paid_at ?? "").slice(0, 7) === month) : allPayments;
 
   // 아이마다 얼마인지. 화면·발행과 **같은 함수**를 씁니다 - 개요만 따로 계산하면 숫자가
   // 어긋나고, 어긋난 개요는 아무도 안 믿습니다.
@@ -59,7 +69,9 @@ export default async function FinanceOverviewPage() {
   const withItems = perStudent.filter((x) => x.amount > 0);
   const expected = withItems.reduce((n, x) => n + x.amount, 0);
 
-  const issuedByStudent = new Set(invoices.filter((v) => v.status === "발행" && v.student_id).map((v) => v.student_id as string));
+  // 「아직 발행 안 함」은 달과 상관없이 봅니다 - 학비외 항목은 학기에 한 번 나가므로, 지난달에 나간
+  // 아이를 이번 달 화면에서 「안 나감」으로 세면 같은 교재가 두 번 청구됩니다.
+  const issuedByStudent = new Set(allInvoices.filter((v) => v.status === "발행" && v.student_id).map((v) => v.student_id as string));
   const pending = withItems.filter((x) => !issuedByStudent.has(x.s.id));
   const issuedTotal = invoices.filter((v) => v.status === "발행").reduce((n, v) => n + Number(v.total_amount), 0);
 
@@ -96,6 +108,7 @@ export default async function FinanceOverviewPage() {
       <div className="mb-1 flex flex-wrap items-baseline gap-2">
         <h1 className="text-lg font-bold">📊 재무 개요</h1>
         <span className="text-xs text-slate-400">{today} 기준</span>
+        <MonthNav basePath="/finance" value={month} thisMonth={thisMonth} allowAll />
       </div>
       <p className="mb-4 text-xs text-slate-500">
         지금 어디까지 됐는지만 봅니다. 고치는 일은 옆 탭에서 합니다. 아래 표 가운데 「받아야 할 금액」부터는 <b>학비외</b>만 셉니다.
@@ -114,19 +127,21 @@ export default async function FinanceOverviewPage() {
           학년·반은 **학생 번호로** 찾습니다(§2-4). 이름으로 지도를 만들면 김재이 셋이 한
           칸을 나눠 써서 엉뚱한 반 금액이 부풀고, 그건 화면에 «그 반이 많이 밀렸다»로
           보입니다. */}
+      {/* 청구는 그 달 것, 입금은 **그 청구서에 붙은 것 전부**입니다 - 10월분을 11월에 받아도 10월 청구의
+          수납입니다. 입금을 달로 자르면 수납률이 실제보다 낮게 나옵니다. */}
       <MoneyFlowBoard
         invoices={invoices}
-        payments={payments}
+        payments={allPayments}
         meta={students.map((s) => [s.id, { name: s.name, grade: s.grade, className: s.className }])}
         today={today}
       />
 
-      <CollectionStatus invoices={invoices} payments={payments} today={today} />
+      <CollectionStatus invoices={invoices} payments={allPayments} today={today} />
       <MethodSummary payments={payments} />
 
       <div className="mb-4 flex flex-wrap gap-2">
         <Card label="받아야 할 금액" value={won(expected)} sub={`${withItems.length}명에게 항목이 붙어 있습니다`} />
-        <Card label="발행한 금액" value={won(issuedTotal)} sub={`${invoices.filter((v) => v.status === "발행").length}건`} />
+        <Card label={month ? `${Number(month.slice(5))}월 발행한 금액` : "발행한 금액"} value={won(issuedTotal)} sub={`${invoices.filter((v) => v.status === "발행").length}건`} />
         <Card
           label="아직 발행 안 함"
           value={`${pending.length}명`}

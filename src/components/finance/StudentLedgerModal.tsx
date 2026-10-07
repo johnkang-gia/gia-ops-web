@@ -67,12 +67,18 @@ const STATE_STYLE: Record<string, string> = {
 export default function StudentLedgerModal({
   studentId,
   termId: initialTermId,
+  month = null,
   onClose,
   onChanged,
   embedded = false,
 }: {
   studentId: string;
   termId?: string | null;
+  /**
+   * 보고 있는 달(YYYY-MM). 주면 월 단위 학비를 그 달 청구서로 판정하고, 발행하는 청구서도 이
+   * 달의 청구서가 됩니다. 안 주면 예전처럼 학기 단위입니다.
+   */
+  month?: string | null;
   onClose: () => void;
   /** 발행·입금 등으로 자료가 바뀌면 부르는 쪽이 자기 목록을 다시 읽게 합니다. */
   onChanged?: () => void;
@@ -105,7 +111,10 @@ export default function StudentLedgerModal({
 
   const load = useCallback(async () => {
     setLoadErr(null);
-    const res = await fetch(`/api/finance/ledger/${studentId}${termId ? `?term=${termId}` : ""}`, { cache: "no-store" });
+    const qs = new URLSearchParams();
+    if (termId) qs.set("term", termId);
+    if (month) qs.set("month", month);
+    const res = await fetch(`/api/finance/ledger/${studentId}${qs.size ? `?${qs}` : ""}`, { cache: "no-store" });
     const body = (await res.json().catch(() => ({}))) as LedgerResponse & { error?: string };
     if (!res.ok) {
       setLoadErr(body.error ?? `읽지 못했습니다 (${res.status})`);
@@ -113,7 +122,7 @@ export default function StudentLedgerModal({
     }
     setData(body);
     if (!termId && body.termId) setTermId(body.termId);
-  }, [studentId, termId]);
+  }, [studentId, termId, month]);
 
   useEffect(() => {
     void load();
@@ -193,22 +202,24 @@ export default function StudentLedgerModal({
       const v = r.body.invoice as { id?: string; invoice_no?: string } | undefined;
       made.push(String(v?.invoice_no ?? fallback));
       if (v?.id) madeIds.push({ id: v.id, no: String(v.invoice_no ?? fallback) });
+      // 청구서는 나갔지만 덧붙이는 일(예치금·시작월)이 실패한 경우 - 숨기지 않고 알립니다.
+      if (typeof r.body.warning === "string" && r.body.warning) notify(`${String(v?.invoice_no ?? fallback)}: ${r.body.warning}`, "error");
     };
     try {
       if (tuition.length > 0) {
-        const r = await post("/api/finance/invoices/tuition", { studentId, termId, planIds: tuition, skipPrepaid, ...(merged ? { itemIds: extra } : {}) });
+        const r = await post("/api/finance/invoices/tuition", { studentId, termId, planIds: tuition, skipPrepaid, ...(month ? { billingMonth: month } : {}), ...(merged ? { itemIds: extra } : {}) });
         if (r.ok) keep(r, "학비");
         else failed.push(`학비${merged ? "+학비외" : ""}(${String(r.body.error ?? "")})`);
         if (merged) extra = [];
       }
       if (extra.length > 0) {
-        let r = await post("/api/finance/invoices", { studentId, feeTermId: termId, itemIds: extra, skipPrepaid });
+        let r = await post("/api/finance/invoices", { studentId, feeTermId: termId, itemIds: extra, skipPrepaid, ...(month ? { billingMonth: month } : {}) });
         // 서버가 「이미 담긴 항목」을 잡으면 사람에게 묻습니다. 한 학기에 같은 교재를 두 번 사는
         // 일은 있지만 드물고, 두 번 청구되는 사고는 흔합니다 - 기본은 막고 확인한 때만 넘깁니다.
         if (!r.ok && Array.isArray(r.body.duplicates)) {
           const dups = r.body.duplicates as { name: string; invoiceNo: string }[];
           const again = confirm(`이미 청구서에 담긴 항목입니다:\n${dups.map((d) => `· ${d.name} — ${d.invoiceNo}`).join("\n")}\n\n정말 한 번 더 청구할까요? (아니면 그 장을 먼저 취소하세요)`);
-          if (again) r = await post("/api/finance/invoices", { studentId, feeTermId: termId, itemIds: extra, allowDuplicate: true, skipPrepaid });
+          if (again) r = await post("/api/finance/invoices", { studentId, feeTermId: termId, itemIds: extra, allowDuplicate: true, skipPrepaid, ...(month ? { billingMonth: month } : {}) });
         }
         if (r.ok) keep(r, "학비외");
         else failed.push(`학비외(${String(r.body.error ?? "")})`);
@@ -291,15 +302,15 @@ export default function StudentLedgerModal({
         const single = tuition.length > 0 && extra.length === 0 ? "학비" : extra.length > 0 && tuition.length === 0 ? "학비외" : null;
         if (tuition.length > 0) {
           const res = await post("/api/finance/invoices/tuition", {
-            studentId, termId, planIds: tuition, dueDate: b.paidAt, billingMonth: b.paidAt.slice(0, 7),
-            alreadyPaid: { paidAt: b.paidAt, amount: single === "학비" ? b.amount : tAmount, method: r.method, memo: `기수납 항목: ${b.labels.join(" · ")}` },
+            studentId, termId, planIds: tuition, dueDate: b.paidAt, billingMonth: month ?? b.paidAt.slice(0, 7),
+            alreadyPaid: { paidAt: b.paidAt, amount: single === "학비" ? b.amount : tAmount, method: r.method, memo: `이미 받은 항목: ${b.labels.join(" · ")}` },
           });
           if (res.ok) count++; else failed.push(`학비 ${b.paidAt}(${String(res.body.error ?? "")})`);
         }
         if (extra.length > 0) {
           const res = await post("/api/finance/invoices", {
-            studentId, feeTermId: termId, itemIds: extra, dueDate: b.paidAt, billingMonth: b.paidAt.slice(0, 7),
-            alreadyPaid: { paidAt: b.paidAt, amount: single === "학비외" ? b.amount : eAmount, method: r.method, memo: `기수납 항목: ${b.labels.join(" · ")}` },
+            studentId, feeTermId: termId, itemIds: extra, dueDate: b.paidAt, billingMonth: month ?? b.paidAt.slice(0, 7),
+            alreadyPaid: { paidAt: b.paidAt, amount: single === "학비외" ? b.amount : eAmount, method: r.method, memo: `이미 받은 항목: ${b.labels.join(" · ")}` },
           });
           if (res.ok) count++; else failed.push(`학비외 ${b.paidAt}(${String(res.body.error ?? "")})`);
         }
@@ -339,6 +350,19 @@ export default function StudentLedgerModal({
     const r = await post("/api/finance/ledger/enroll", { studentId, planId: c.id, optionId: c.tuition.optionId, termId, overrideAmount: amount, overrideNote: note });
     setBusy(false);
     if (!r.ok) return notify(String(r.body.error ?? "바꾸지 못했습니다."), "error");
+    await changed();
+  }
+
+  /**
+   * 여러 달 묶음 납부의 **시작월**. 운영앱 이전에 받은 돈은 청구서가 없어 사람이 적어야
+   * 「언제부터 언제까지 냈나」를 압니다. 비우면 청구서의 청구월에서 다시 셉니다.
+   */
+  async function setPaidFrom(c: LedgerCharge, value: string) {
+    setBusy(true);
+    const r = await post("/api/finance/ledger/enroll", { studentId, planId: c.id, optionId: c.tuition?.optionId ?? null, termId, paidFrom: value || null });
+    setBusy(false);
+    if (!r.ok) return notify(String(r.body.error ?? "적지 못했습니다."), "error");
+    notify(value ? `${c.label} — ${value}부터 납부 기간으로 적었습니다.` : `${c.label} — 시작월을 지웠습니다.`, "success");
     await changed();
   }
 
@@ -398,7 +422,70 @@ export default function StudentLedgerModal({
     });
 
   const student = ledger?.student;
-  const invoicesAlive = (ledger?.invoices ?? []).filter((v) => v.settled.state !== "취소");
+  const invoicesAllAlive = (ledger?.invoices ?? []).filter((v) => v.settled.state !== "취소");
+  // **이 달의 청구서**만 위에 둡니다. 다른 달 것은 접어 두되, 못 받은 장은 개수를 머리에 적습니다 -
+  // 지난달 미수가 화면에서 사라지면 아무도 안 걷습니다.
+  const invoicesAlive = invoicesAllAlive.filter((v) => v.inMonth);
+  const invoicesOther = invoicesAllAlive.filter((v) => !v.inMonth);
+  // 청구서 한 줄. 이 달 것과 다른 달 것을 같은 모양으로 그립니다 - 입금·정정·취소가 어느 쪽에서든 됩니다.
+  const invRow = (v: LedgerInvoice) => (
+                  <div key={v.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 px-2 py-1 text-[12px]">
+                    <input type="checkbox" checked={pickedInv.has(v.id)} onChange={() => togglePickInv(v.id)} className="h-3.5 w-3.5" />
+                    <button onClick={() => setPreview({ id: v.id, label: `${student?.name} · ${v.invoice_no}`, receipt: false })} className="font-bold text-slate-800 underline" title="청구서 보기 · 인쇄">
+                      {v.invoice_no}
+                    </button>
+                    <span className={"rounded px-1 text-[10px] font-bold " + (v.stream === "학비" ? "bg-indigo-50 text-indigo-700" : "bg-orange-50 text-orange-700")}>{v.stream}</span>
+                    <span className="min-w-0 flex-1 truncate text-slate-600" title={(v as { plan_scope?: string | null }).plan_scope ?? ""}>
+                      {(v as { plan_scope?: string | null }).plan_scope ?? (v.stream === "학비" ? "학비 전부" : v.category ?? "")} · {v.billingMonth ? `${Number(v.billingMonth.slice(5))}월분 · ` : ""}{v.issue_date}
+                      {v.issued_offline ? <span className="ml-1 text-[10px] text-sky-600">이미 받음</span> : null}
+                    </span>
+                    <span className="tabular-nums font-bold">{won(Number(v.total_amount))}</span>
+                    <span className={"rounded px-1.5 py-0.5 text-[10px] font-bold " + (STATE_STYLE[v.settled.state] ?? "")} title={v.settled.balance > 0 ? `남은 ${won(v.settled.balance)}` : ""}>
+                      {v.settled.state}
+                      {v.settled.balance > 0 && v.settled.state !== "미납" ? ` ${won(v.settled.balance)}` : ""}
+                    </span>
+                    <label className="flex items-center gap-0.5 text-[10px] text-slate-500" title="올톡페이에 올렸는가">
+                      <input type="checkbox" checked={v.exported} disabled={busy} onChange={() => void toggleExported(v)} className="h-3 w-3" />
+                      올톡
+                    </label>
+                    <span className="flex items-center gap-0.5">
+                      {(v.settled.balance > 0 && (ledger?.totals.deposit ?? 0) > 0) || (ledger?.payments ?? []).some((p) => p.invoice_id === v.id && isFromDeposit(p.matched_by)) ? (
+                        <button
+                          onClick={() => setDepositFor({ id: v.id, label: `${student?.name ?? ""} · ${v.invoice_no}` })}
+                          className="rounded bg-teal-100 px-1.5 py-0.5 text-[10px] font-bold text-teal-800 hover:bg-teal-200"
+                          title="예치금에서 낼 항목을 고릅니다"
+                        >
+                          예치금
+                        </button>
+                      ) : null}
+                      {v.settled.balance > 0 && (
+                        <button onClick={() => setPaying(v)} className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800 hover:bg-emerald-200" title="받은 돈 적기">
+                          받음 적기
+                        </button>
+                      )}
+                      {v.settled.state === "완납" && (
+                        <button onClick={() => setPreview({ id: v.id, label: `${student?.name} · ${v.invoice_no} 영수증`, receipt: true })} className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-700 hover:bg-slate-200" title="영수증 (청구서와 같은 양식)">
+                          📄
+                        </button>
+                      )}
+                      {/* 보낸 장은 정정, 안 보낸 장은 취소 후 재발행이 기본입니다. 둘 다 열어두되 기본 쪽을 눈에 띄게 둡니다. */}
+                      <button
+                        onClick={() => setFixing(v)}
+                        className={"rounded px-1.5 py-0.5 text-[10px] font-bold " + (v.exported ? "bg-slate-800 text-white hover:bg-slate-900" : "bg-slate-100 text-slate-500 hover:bg-slate-200")}
+                        title={v.exported ? "보낸 청구서 정정 · 결손 요청 · 과목 경정" : "결손 요청 · 과목 경정 (금액은 ↩ 취소 후 다시 발행)"}
+                      >
+                        {v.exported ? "정정" : "🛠"}
+                      </button>
+                      <button
+                        onClick={() => setCancelling(v)}
+                        className={"px-1 text-[11px] hover:text-rose-600 " + (v.exported ? "text-slate-200" : "text-slate-400")}
+                        title={v.exported ? "발행 취소 — 이미 보낸 장입니다. 금액이 틀렸다면 [정정]이 번호를 지킵니다" : "발행 취소 (지우지 않고 취소로 남깁니다) — 고쳐서 다시 발행"}
+                      >
+                        ↩
+                      </button>
+                    </span>
+                  </div>
+  );
   const invoicesCancelled = (ledger?.invoices ?? []).filter((v) => v.settled.state === "취소");
 
   return (
@@ -416,7 +503,12 @@ export default function StudentLedgerModal({
                 </span>
               )}
             </div>
-            {data && data.terms.length > 1 && (
+            {month && (
+              <div className="mt-1 text-[11px] font-bold text-indigo-700">
+                {month.replace("-", "년 ")}월 청구 · {data?.terms.find((t) => t.id === termId)?.name ?? ""}
+              </div>
+            )}
+            {!month && data && data.terms.length > 1 && (
               <select
                 value={termId ?? ""}
                 onChange={(e) => setTermId(e.target.value || null)}
@@ -436,7 +528,7 @@ export default function StudentLedgerModal({
               <Stat label="청구 예정액" value={ledger.totals.toBill} tone={ledger.totals.toBill > 0 ? "amber" : "slate"} />
               <Stat label="미수금" value={ledger.totals.unpaid} tone={ledger.totals.unpaid > 0 ? "rose" : "slate"} />
               <Stat label="예치금" value={ledger.totals.deposit} tone={ledger.totals.deposit > 0 ? "teal" : "slate"} />
-              <Stat label="학기 수납 예정액" value={ledger.totals.expected} tone="slate" />
+              <Stat label={month ? `${Number(month.slice(5))}월 수납 예정액` : "학기 수납 예정액"} value={ledger.totals.expected} tone="slate" />
             </div>
           )}
           {!embedded && (
@@ -521,6 +613,26 @@ export default function StudentLedgerModal({
                                 ))}
                               </div>
                             )}
+                            {c.month?.rule === "기간" && c.tuition?.optionId && (
+                              <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[10px]">
+                                <span className={c.month.span ? "font-bold text-indigo-700" : "font-bold text-amber-700"}>
+                                  {c.month.span ? `납부 기간 ${c.month.span.from} ~ ${c.month.span.to}` : `${c.month.months}개월 묶음 · 납부 기간 없음`}
+                                  {c.month.spanSource === "청구서" ? " (청구서 기준)" : c.month.spanSource === "입력" ? " (적은 시작월)" : ""}
+                                </span>
+                                <label className="flex items-center gap-0.5 text-slate-500" title="운영앱 이전에 받았으면 그 시작월을 적으세요. 비우면 청구서 기준으로 셉니다.">
+                                  시작월
+                                  <input
+                                    type="month"
+                                    defaultValue={c.month.paidFrom ?? ""}
+                                    disabled={busy}
+                                    onBlur={(e) => {
+                                      if ((e.target.value || "") !== (c.month?.paidFrom ?? "")) void setPaidFrom(c, e.target.value);
+                                    }}
+                                    className="rounded border border-slate-200 px-1 py-0 text-[10px]"
+                                  />
+                                </label>
+                              </div>
+                            )}
                             {c.note && <div className="text-[10px] text-slate-400">{c.note}</div>}
                           </div>
                           {c.extra && !c.billed && (
@@ -549,7 +661,11 @@ export default function StudentLedgerModal({
                                 </button>
                               )}
                             </div>
-                            {c.billed ? (
+                            {c.billed && !c.billed.invoiceId ? (
+                              <span className="text-[10px] font-bold text-emerald-700" title="운영앱 이전에 받은 기간입니다 - 시작월을 사람이 적었습니다">
+                                기간 납부 완료
+                              </span>
+                            ) : c.billed ? (
                               <button
                                 onClick={() => setPreview({ id: c.billed!.invoiceId, label: `${student?.name} · ${c.billed!.invoiceNo ?? ""}`, receipt: false })}
                                 className={"text-[10px] font-bold underline " + (c.billed.state === "완납" ? "text-emerald-700" : c.billed.state === "일부" ? "text-amber-700" : "text-slate-500")}
@@ -561,6 +677,22 @@ export default function StudentLedgerModal({
                             ) : c.amount > 0 ? (
                               <span className="rounded bg-amber-100 px-1 text-[10px] font-bold text-amber-800">미청구</span>
                             ) : null}
+                            {/* **청구는 됐는데 아직 못 받은 항목** - 다시 청구해서 받은 돈(재청구)도 여기서 바로 적습니다.
+                                「이미 받음」은 청구서가 없는 항목에만 열려서, 한 번 청구한 항목의 입금을 적을 자리를
+                                찾기 어려웠습니다. */}
+                            {c.billed && c.billed.invoiceId && c.billed.state !== "완납" && (() => {
+                              const inv = (ledger?.invoices ?? []).find((v) => v.id === c.billed!.invoiceId);
+                              return inv && inv.settled.balance > 0 ? (
+                                <button
+                                  onClick={() => setPaying(inv)}
+                                  disabled={busy}
+                                  className="ml-1 rounded bg-emerald-100 px-1 text-[10px] font-bold text-emerald-800 hover:bg-emerald-200"
+                                  title={`${inv.invoice_no} 남은 ${won(inv.settled.balance)} — 받은 돈 적기`}
+                                >
+                                  받음 적기
+                                </button>
+                              ) : null;
+                            })()}
                           </div>
                           {c.extra && !c.billed && (
                             <button
@@ -617,7 +749,7 @@ export default function StudentLedgerModal({
                   className="rounded-lg bg-sky-100 px-3 py-1.5 text-[12px] font-bold text-sky-800 hover:bg-sky-200 disabled:opacity-40"
                   title="이미 수납된 항목을 수납일 기준으로 등록합니다(청구서 + 입금)"
                 >
-                  💰 기수납 등록
+                  💰 이미 받음
                 </button>
               </div>
             </section>
@@ -637,67 +769,21 @@ export default function StudentLedgerModal({
                   </button>
                 </span>
               </h3>
-              {invoicesAlive.length === 0 && <p className="px-1 py-2 text-[11px] text-slate-400">이 학기 청구서가 없습니다.</p>}
+              {invoicesAlive.length === 0 && <p className="px-1 py-2 text-[11px] text-slate-400">{month ? `${Number(month.slice(5))}월 청구서가 없습니다.` : "이 학기 청구서가 없습니다."}</p>}
               <div className="space-y-1">
-                {invoicesAlive.map((v) => (
-                  <div key={v.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 px-2 py-1 text-[12px]">
-                    <input type="checkbox" checked={pickedInv.has(v.id)} onChange={() => togglePickInv(v.id)} className="h-3.5 w-3.5" />
-                    <button onClick={() => setPreview({ id: v.id, label: `${student?.name} · ${v.invoice_no}`, receipt: false })} className="font-bold text-slate-800 underline" title="청구서 보기 · 인쇄">
-                      {v.invoice_no}
-                    </button>
-                    <span className={"rounded px-1 text-[10px] font-bold " + (v.stream === "학비" ? "bg-indigo-50 text-indigo-700" : "bg-orange-50 text-orange-700")}>{v.stream}</span>
-                    <span className="min-w-0 flex-1 truncate text-slate-600" title={(v as { plan_scope?: string | null }).plan_scope ?? ""}>
-                      {(v as { plan_scope?: string | null }).plan_scope ?? (v.stream === "학비" ? "학비 전부" : v.category ?? "")} · {v.issue_date}
-                      {v.issued_offline ? <span className="ml-1 text-[10px] text-sky-600">기수납</span> : null}
-                    </span>
-                    <span className="tabular-nums font-bold">{won(Number(v.total_amount))}</span>
-                    <span className={"rounded px-1.5 py-0.5 text-[10px] font-bold " + (STATE_STYLE[v.settled.state] ?? "")} title={v.settled.balance > 0 ? `남은 ${won(v.settled.balance)}` : ""}>
-                      {v.settled.state}
-                      {v.settled.balance > 0 && v.settled.state !== "미납" ? ` ${won(v.settled.balance)}` : ""}
-                    </span>
-                    <label className="flex items-center gap-0.5 text-[10px] text-slate-500" title="올톡페이에 올렸는가">
-                      <input type="checkbox" checked={v.exported} disabled={busy} onChange={() => void toggleExported(v)} className="h-3 w-3" />
-                      올톡
-                    </label>
-                    <span className="flex items-center gap-0.5">
-                      {(v.settled.balance > 0 && ledger.totals.deposit > 0) || ledger.payments.some((p) => p.invoice_id === v.id && isFromDeposit(p.matched_by)) ? (
-                        <button
-                          onClick={() => setDepositFor({ id: v.id, label: `${student?.name ?? ""} · ${v.invoice_no}` })}
-                          className="rounded bg-teal-100 px-1.5 py-0.5 text-[10px] font-bold text-teal-800 hover:bg-teal-200"
-                          title="예치금에서 낼 항목을 고릅니다"
-                        >
-                          예치금
-                        </button>
-                      ) : null}
-                      {v.settled.balance > 0 && (
-                        <button onClick={() => setPaying(v)} className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800 hover:bg-emerald-200" title="입금 기록">
-                          입금
-                        </button>
-                      )}
-                      {v.settled.state === "완납" && (
-                        <button onClick={() => setPreview({ id: v.id, label: `${student?.name} · ${v.invoice_no} 영수증`, receipt: true })} className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-700 hover:bg-slate-200" title="영수증 (청구서와 같은 양식)">
-                          📄
-                        </button>
-                      )}
-                      {/* 보낸 장은 정정, 안 보낸 장은 취소 후 재발행이 기본입니다. 둘 다 열어두되 기본 쪽을 눈에 띄게 둡니다. */}
-                      <button
-                        onClick={() => setFixing(v)}
-                        className={"rounded px-1.5 py-0.5 text-[10px] font-bold " + (v.exported ? "bg-slate-800 text-white hover:bg-slate-900" : "bg-slate-100 text-slate-500 hover:bg-slate-200")}
-                        title={v.exported ? "보낸 청구서 정정 · 결손 요청 · 과목 경정" : "결손 요청 · 과목 경정 (금액은 ↩ 취소 후 다시 발행)"}
-                      >
-                        {v.exported ? "정정" : "🛠"}
-                      </button>
-                      <button
-                        onClick={() => setCancelling(v)}
-                        className={"px-1 text-[11px] hover:text-rose-600 " + (v.exported ? "text-slate-200" : "text-slate-400")}
-                        title={v.exported ? "발행 취소 — 이미 보낸 장입니다. 금액이 틀렸다면 [정정]이 번호를 지킵니다" : "발행 취소 (지우지 않고 취소로 남깁니다) — 고쳐서 다시 발행"}
-                      >
-                        ↩
-                      </button>
-                    </span>
-                  </div>
-                ))}
+                {invoicesAlive.map((v) => invRow(v))}
               </div>
+              {invoicesOther.length > 0 && (
+                <details className="mt-1" open={invoicesOther.some((v) => v.settled.balance > 0)}>
+                  <summary className="cursor-pointer text-[11px] font-bold text-slate-500">
+                    다른 달 청구서 {invoicesOther.length}장
+                    {invoicesOther.filter((v) => v.settled.balance > 0 && v.settled.state !== "이월됨").length > 0
+                      ? ` · 미수 ${invoicesOther.filter((v) => v.settled.balance > 0 && v.settled.state !== "이월됨").length}장`
+                      : ""}
+                  </summary>
+                  <div className="mt-1 space-y-1">{invoicesOther.map((v) => invRow(v))}</div>
+                </details>
+              )}
               {invoicesCancelled.length > 0 && (
                 <details className="mt-1">
                   <summary className="cursor-pointer text-[10px] text-slate-400">취소된 장 {invoicesCancelled.length}</summary>
@@ -822,7 +908,7 @@ export default function StudentLedgerModal({
       })()}
       {already && ledger && (
         <AlreadyPaidModal
-          title="기수납 등록"
+          title="이미 받음"
           studentName={ledger.student.name}
           lines={targetCharges.map((c) => ({ id: `${c.kind}:${c.id}`, label: `[${c.kind}] ${c.label}`, amount: c.amount }))}
           busy={busy}

@@ -5,6 +5,8 @@ import { hasFinanceAccess } from "@/lib/roles";
 import { departmentTabs } from "@/lib/department";
 import { loadLedgerWorld } from "@/lib/ledgerLoad";
 import { buildLedger } from "@/lib/studentLedger";
+import { todayKst } from "@/lib/kst";
+import { billingMonthOf } from "@/lib/financePeriod";
 import LedgerClient, { type LedgerRow, type LedgerInvoiceRow } from "@/components/finance/LedgerClient";
 
 /**
@@ -27,7 +29,8 @@ export const dynamic = "force-dynamic";
  */
 type TuitionCell = { slot: "정규" | "방과후" | "그외"; label: string; amount: number; none: boolean };
 function tuitionCells(charges: ReturnType<typeof buildLedger>["charges"]): TuitionCell[] {
-  const slotOf = (name: string): TuitionCell["slot"] => (/정규/.test(name) ? "정규" : /방과후/.test(name) ? "방과후" : "그외");
+  // 특별 방과후(매쓰팀·오케스트라)도 방과후 칸입니다 - 「그 외」에 두면 방과후를 무엇을 하는지 두 칸을 봐야 읽힙니다.
+  const slotOf = (name: string): TuitionCell["slot"] => (/정규/.test(name) ? "정규" : /방과후|매쓰|오케스트라/.test(name) ? "방과후" : "그외");
   const all = charges.filter((c) => c.kind === "학비").sort((a, b) => a.label.localeCompare(b.label, "ko"));
   // 칸 안의 글자는 항목 이름이 아니라 **고른 것**입니다 - 칸 머리가 이미 「정규」「방과후」이므로
   // 정규 칸에는 「학기납」, 방과후 칸에는 「5일 월납」만 적습니다.
@@ -74,6 +77,8 @@ function shortPlan(name: string): string {
   const m = /방과후\s*(\d+)\s*일/.exec(n);
   if (m) return `방과후${m[1]}일`;
   if (/Learning Management/i.test(n)) return "LMA";
+  if (/매쓰/.test(n)) return "매쓰팀";
+  if (/오케스트라/.test(n)) return "오케";
   return n.length > 8 ? `${n.slice(0, 8)}…` : n;
 }
 
@@ -88,14 +93,18 @@ function shortOption(name: string): string {
   return n.length > 5 ? n.slice(0, 5) : n;
 }
 
-export default async function LedgerPage({ searchParams }: { searchParams: Promise<{ term?: string }> }) {
+export default async function LedgerPage({ searchParams }: { searchParams: Promise<{ term?: string; ym?: string }> }) {
   const me = await getCurrentAppUser();
   if (!me) redirect("/login");
   if (!hasFinanceAccess(me)) redirect("/finance");
-  const { term } = await searchParams;
+  const { term, ym } = await searchParams;
+  // **보고 있는 달.** 기본은 이번 달입니다. 월 단위 학비는 그 달 청구서로 「청구됨」을 판정하고,
+  // 청구서 탭도 그 달 것만 보입니다. 학기는 그 달이 담긴 학기를 따라갑니다.
+  const thisMonth = todayKst().slice(0, 7);
+  const month = /^\d{4}-(0[1-9]|1[0-2])$/.test(ym ?? "") ? (ym as string) : thisMonth;
 
   const supabase = await createClient();
-  const { world, students, terms, errors } = await loadLedgerWorld(supabase, { termId: term || null });
+  const { world, students, terms, errors } = await loadLedgerWorld(supabase, { termId: term || null, month });
 
   const rows: LedgerRow[] = students.map((s) => {
     const l = buildLedger(world, s);
@@ -146,6 +155,7 @@ export default async function LedgerPage({ searchParams }: { searchParams: Promi
         exported: !!v.exported_at,
         offline: v.issued_offline === true,
         termId: v.term_id ?? null,
+        billingMonth: billingMonthOf(v),
       };
     });
 
@@ -154,6 +164,8 @@ export default async function LedgerPage({ searchParams }: { searchParams: Promi
       rows={rows}
       invoices={invoices}
       termId={world.termId}
+      month={month}
+      thisMonth={thisMonth}
       terms={terms.map((t) => ({ id: t.id, name: `${t.year} ${t.term_type}`, status: t.status }))}
       deptTabs={departmentTabs(me.department)}
       loadError={errors.length ? errors.join(" · ") : null}

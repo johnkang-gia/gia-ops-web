@@ -50,6 +50,8 @@ export const FINANCE_TABLES = [
   "fee_plans",
   // 납부 옵션(회차·할인율)이 바뀌면 아직 발행 안 한 학비가 전부 달라집니다.
   "fee_payment_options",
+  // 함께 하는 프로그램의 합친 금액. 바뀌면 오케스트라 같은 항목의 금액이 달라집니다.
+  "fee_addon_prices",
   "fee_discounts",
   "student_fee_discounts",
   "student_fee_enrollments",

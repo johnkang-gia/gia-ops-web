@@ -25,6 +25,11 @@ export async function POST(req: Request) {
     /** 금액을 손으로 정할 때. `undefined` 면 안 건드리고, `null` 이면 지웁니다(요금표대로). */
     overrideAmount?: number | null;
     overrideNote?: string | null;
+    /**
+     * 여러 달 묶음 납부의 **시작월**(YYYY-MM). 운영앱 이전에 받은 돈은 청구서가 없어서 사람이
+     * 적어야만 「언제부터 언제까지 냈나」를 압니다. `null` 이면 지웁니다(청구서에서 셉니다).
+     */
+    paidFrom?: string | null;
   };
   const studentId = String(body.studentId ?? "");
   const planId = String(body.planId ?? "");
@@ -45,6 +50,27 @@ export async function POST(req: Request) {
   const overridePatch = touchOverride ? { override_amount: overrideAmount, override_note: overrideAmount === null ? null : overrideNote } : {};
 
   const supabase = await createClient();
+
+  // ── 시작월만 고칠 때 ─────────────────────────────────────────────────────
+  if ("paidFrom" in body) {
+    const raw = body.paidFrom === null || body.paidFrom === undefined ? "" : String(body.paidFrom).trim();
+    if (raw && !/^\d{4}-(0[1-9]|1[0-2])$/.test(raw)) return NextResponse.json({ error: "시작월은 2026-09 처럼 적어주세요." }, { status: 400 });
+    // 학기를 안 건 옛 줄도 같은 아이의 같은 항목입니다 - 못 찾으면 그 줄을 봅니다.
+    const base = () => supabase.from("student_fee_enrollments").select("id").eq("student_id", studentId).eq("plan_id", planId).eq("active", true);
+    const { data: hit, error: e1 } = termId ? await base().eq("term_id", termId).limit(1) : await base().is("term_id", null).limit(1);
+    if (e1) return NextResponse.json({ error: e1.message }, { status: 500 });
+    let rowId = hit?.[0]?.id as string | undefined;
+    if (!rowId && termId) {
+      const { data: loose, error: e2 } = await base().is("term_id", null).limit(1);
+      if (e2) return NextResponse.json({ error: e2.message }, { status: 500 });
+      rowId = loose?.[0]?.id as string | undefined;
+    }
+    if (!rowId) return NextResponse.json({ error: "먼저 납부 옵션을 고르세요." }, { status: 400 });
+    const { error } = await supabase.from("student_fee_enrollments").update({ paid_from: raw || null }).eq("id", rowId);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
+
   let find = supabase.from("student_fee_enrollments").select("id").eq("student_id", studentId).eq("plan_id", planId);
   find = termId ? find.eq("term_id", termId) : find.is("term_id", null);
   const { data: existing, error: findErr } = await find.maybeSingle();

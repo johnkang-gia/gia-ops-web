@@ -73,6 +73,8 @@ export const BACKUP_GROUPS: { group: string; tables: string[] }[] = [
       "fee_categories",
       "fee_discounts",
       "fee_payment_options",
+      // 함께 하면 합친 금액. 잃으면 오케스트라 같은 프로그램의 청구 금액을 다시 정해야 합니다.
+      "fee_addon_prices",
       "student_fee_enrollments",
       "student_fee_items",
       "student_fee_discounts",

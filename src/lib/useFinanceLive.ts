@@ -83,7 +83,10 @@ export function useFinanceLive(extra: readonly string[] = []) {
       timer = setTimeout(() => router.refresh(), 300);
     };
 
-    const channel = supabase.channel(`finance-live-${extraKey}`);
+    // 채널 이름은 훅마다 따로입니다. 한 화면에 이 훅이 둘 붙으면(요금표 + 함께 하는 프로그램)
+    // 같은 이름의 채널을 함께 쓰게 되고, 두 번째가 이미 구독한 채널에 줄을 더하려다 화면 전체가
+    // 오류로 멈췄습니다.
+    const channel = supabase.channel(`finance-live-${extraKey}-${Math.random().toString(36).slice(2, 10)}`);
     for (const table of [...FINANCE_TABLES, ...(extraKey ? extraKey.split(",") : [])]) {
       channel.on("postgres_changes", { event: "*", schema: "public", table }, refresh);
     }

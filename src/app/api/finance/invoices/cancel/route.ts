@@ -12,7 +12,7 @@ import { hasFinanceAccess } from "@/lib/roles";
 // 취소한 뒤에는 항목을 고쳐 **다시 발행**할 수 있습니다. 새 번호가 붙습니다 - 같은 번호를
 // 다시 쓰면 학부모가 받은 두 장이 같은 번호가 됩니다.
 //
-// 「이미 받음」이 함께 만든 입금은 **함께 지웁니다** - 그 줄은 발행이 만든 것이라, 발행을
+// 「직접수납」이 함께 만든 입금은 **함께 지웁니다** - 그 줄은 발행이 만든 것이라, 발행을
 // 없던 일로 하면 함께 없던 일이 됩니다. 수납 화면에서 사람이 따로 붙인 입금만 선입금으로
 // 떼어냅니다.
 
@@ -43,7 +43,7 @@ export async function POST(req: Request) {
   //
   // 그래서 입금을 두 갈래로 가릅니다.
   //
-  // **① 「이미 받음」이 만든 입금**(`matched_by = '이미받음'`) - 이 줄은 발행이 만든 것입니다.
+  // **① 「직접수납」이 만든 입금**(`matched_by = '이미받음'`) - 이 줄은 발행이 만든 것입니다.
   //    사람이 수납 화면에서 따로 넣은 것이 아니라, 청구서를 만드는 그 동작에 딸려 들어왔습니다.
   //    발행을 없던 일로 하면 이 줄도 함께 없던 일이 됩니다. 남겨두면 선입금이 하나 떠서,
   //    고쳐서 다시 발행할 때 금액이 저절로 깎입니다 - 담당자가 기대하는 것과 다릅니다.
@@ -54,7 +54,7 @@ export async function POST(req: Request) {
   const { data: pays, error: payErr } = await supabase
     .from("payments")
     // **출처(`origin`)로 가릅니다.** `matched_by` 는 선입금 충당이 덮어쓰므로, 한 번이라도
-    // 충당을 거친 「이미 받음」 입금은 그 이름을 잃습니다. 그러면 취소가 못 알아보고 그 돈이
+    // 충당을 거친 「직접수납」 입금은 그 이름을 잃습니다. 그러면 취소가 못 알아보고 그 돈이
     // 선입금으로 살아남아, 다음 청구서에 저절로 얹힙니다(20261026 마이그레이션).
     .select("id, amount, matched_by, origin")
     .eq("invoice_id", id);
@@ -89,7 +89,7 @@ export async function POST(req: Request) {
   const deskPaid = fromDesk.reduce((n, p) => n + Number(p.amount), 0);
   const prepaidBack = fromPrepaid.reduce((n, p) => n + Number(p.amount), 0);
 
-  // 되묻는 것은 **사람이 따로 넣은 입금**이 있을 때뿐입니다. 「이미 받음」으로 만든 줄과
+  // 되묻는 것은 **사람이 따로 넣은 입금**이 있을 때뿐입니다. 「직접수납」으로 만든 줄과
   // 원래 선입금이던 줄까지 매번 물으면, 가장 흔한 경우(금액 고쳐 다시 발행)에 확인 창이
   // 하나 더 끼어듭니다.
   if (deskPaid > 0 && !force) {
@@ -114,7 +114,7 @@ export async function POST(req: Request) {
       .in("id", fromIssue.map((p) => p.id));
     if (delErr) {
       return NextResponse.json(
-        { error: `「이미 받음」으로 넣은 입금을 지우지 못해 취소하지 않았습니다: ${delErr.message}` },
+        { error: `「직접수납」으로 넣은 입금을 지우지 못해 취소하지 않았습니다: ${delErr.message}` },
         { status: 500 },
       );
     }

@@ -12,7 +12,6 @@ import AlreadyPaidModal, { type AlreadyPaidResult } from "@/components/finance/A
 // 화면을 손보다 판단을 건드려도 티가 안 나고, 조금 다른 청구서는 그대로 나갑니다.
 import { matchesInstrument, planInvoices, typicalByGroup, unusualAmount } from "@/lib/invoiceGrid";
 import { addDays, DUE_DAYS } from "@/lib/financePeriod";
-import PayModal from "./PayModal";
 import { loadPartnerMode, savePartnerMode, unbilledOf, issueTuitionInvoice, PARTNER_LABEL, type PartnerMode } from "@/lib/issuePartner";
 import { ReceiptChip, ReceiptModal } from "./ReceiptBits";
 import { settle, type SettleInvoice } from "@/lib/settlement";
@@ -144,7 +143,7 @@ type Props = {
    * 청구서에 실제로 찍힌 줄. **무엇이 이미 나갔는지**의 유일한 근거입니다.
    *
    * 이게 없어서 같은 항목이 두 번 나갔습니다 - 교복을 한 번 청구한 뒤 다시 발행하면 교복이
-   * 또 담겼고, 「이미 받음」으로 만든 청구서에는 안 고른 항목까지 함께 담겼습니다.
+   * 또 담겼고, 「직접수납」으로 만든 청구서에는 안 고른 항목까지 함께 담겼습니다.
    */
   invoiceLines: { invoice_id: string; name: string; item_id?: string | null }[];
   terms: Term[];
@@ -183,8 +182,9 @@ export default function InvoiceGridClient({
   const [receipts, setReceipts] = useState(initialReceipts);
   /** 이 청구서들에 들어온 돈. 「보냈다」 옆에 「받았다」가 같이 보여야 합니다. */
   const [payments, setPayments] = useState(initialPayments);
-  /** 결제완료를 체크할 청구서. 값이 있으면 창이 열립니다. */
-  const [payFor, setPayFor] = useState<{ id: string; label: string; balance: number } | null>(null);
+  // 서버가 다시 그리면(재무 실시간) 새 입금을 받아 씁니다. 안 받으면 수납 창에서 적은 돈이
+  // 이 표에만 안 보이고, 표는 계속 「미수」라고 합니다.
+  useEffect(() => setPayments(initialPayments), [initialPayments]);
   /** 현금영수증을 넣거나 고칠 청구서. 값이 있으면 창이 열립니다. */
   const [receiptFor, setReceiptFor] = useState<{ invoice: Invoice; studentName: string } | null>(null);
   // 항목도 상태로 들고 있습니다. 여기서 바로 만들면 **그 자리에서 열이 생겨야** 합니다 -
@@ -241,10 +241,12 @@ export default function InvoiceGridClient({
   const [newOpen, setNewOpen] = useState(false);
   const [newItem, setNewItem] = useState({ category: "", name: "", name_ko: "", unit_price: 0, applyToView: true });
   const [invoices, setInvoices] = useState(recentInvoices);
+  // 미수금 청구서가 새로 생기거나 원 청구서가 이월되면 서버 값으로 다시 맞춥니다.
+  useEffect(() => setInvoices(recentInvoices), [recentInvoices]);
   /**
    * 청구서에 찍힌 줄. **state 로 둡니다.**
    *
-   * 발행하거나 「이미 받음」을 넣은 **그 순간** 표가 회색으로 잠겨야 합니다. 다시 불러올
+   * 발행하거나 「직접수납」을 넣은 **그 순간** 표가 회색으로 잠겨야 합니다. 다시 불러올
    * 때까지 안 잠기면, 사람은 기록이 안 된 줄 알고 또 누릅니다 - 그러면 같은 항목이 두
    * 장에 담깁니다.
    */
@@ -312,7 +314,7 @@ export default function InvoiceGridClient({
    */
   const [showOffTarget, setShowOffTarget] = useState(false);
   const [onlyUnissued, setOnlyUnissued] = useState(false);
-  /** 「이미 받음」 창을 연 학생. 청구서를 소급해 만들고 입금까지 함께 넣습니다. */
+  /** 「직접수납」 창을 연 학생. 청구서를 소급해 만들고 입금까지 함께 넣습니다. */
   const [alreadyFor, setAlreadyFor] = useState<Student | null>(null);
 
   /** 발행 전 검토 창. 누르자마자 나가면 잘못 나간 것을 되돌릴 수 없습니다. */
@@ -456,7 +458,7 @@ export default function InvoiceGridClient({
    * 미수금이 부풀고, 학부모에게 두 장이 나갑니다. 표에서는 «외 1장»이라는 작은 글씨로만
    * 보여서 눈에 띄지 않았습니다.
    *
-   * **「이미 받음」으로 적은 장은 세지 않습니다.** 그 장은 밖으로 나간 적이 없는 우리 쪽
+   * **「직접수납」으로 적은 장은 세지 않습니다.** 그 장은 밖으로 나간 적이 없는 우리 쪽
    * 기록이고, 교복을 한 번·교재를 한 번 적으면 한 아이에 두 장이 생기는 것이 **정상**입니다.
    * 그것까지 세어서 경고가 14건으로 뜨면, 정작 진짜 중복 발행이 그 안에 묻힙니다 - 늘
    * 빨간 경고는 아무도 안 봅니다.
@@ -487,9 +489,9 @@ export default function InvoiceGridClient({
    * 통합 청구서에는 그 분류도 이미 들어 있으므로 그것도 나간 것으로 봅니다.
    */
   /**
-   * **청구할 것이 있는 장만.** 「이미 받음」으로 만든 장은 뺍니다.
+   * **청구할 것이 있는 장만.** 「직접수납」으로 만든 장은 뺍니다.
    *
-   * 「이미 받음」은 받은 돈을 장부에 남기려고 청구서와 입금을 짝으로 만듭니다(완납·미납은
+   * 「직접수납」은 받은 돈을 장부에 남기려고 청구서와 입금을 짝으로 만듭니다(완납·미납은
    * 칸에 적어두지 않고 청구액·입금합에서 냅니다 §2-12). 그런데 그 장이 학생 줄의 대표
    * 청구서가 되는 바람에, 교복 10만원만 받은 아이 줄에 **「완납」**이 떴습니다 - 교재비는
    * 아직 안 받았는데요.
@@ -505,7 +507,7 @@ export default function InvoiceGridClient({
     }
     return m;
   }, [invoicesByStudent]);
-  /** 「이미 받음」으로 적기만 한 장. 줄에 회색 표시로만 뜹니다 - 청구 대상이 아닙니다. */
+  /** 「직접수납」으로 적기만 한 장. 줄에 회색 표시로만 뜹니다 - 청구 대상이 아닙니다. */
   const receiptOnlyByStudent = useMemo(() => {
     const m = new Map<string, Invoice[]>();
     for (const [sid, list] of invoicesByStudent) {
@@ -583,7 +585,7 @@ export default function InvoiceGridClient({
    * 열립니다 - 전체를 한 번에 푸는 단추를 두면 그게 곧 기본값이 됩니다.
    */
   const [againOk, setAgainOk] = useState<Set<string>>(new Set());
-  /** 되돌리려는 「이미 받음」 기록. 값이 있으면 확인 창이 열립니다. */
+  /** 되돌리려는 「직접수납」 기록. 값이 있으면 확인 창이 열립니다. */
   const [undoFor, setUndoFor] = useState<{ student: Student; list: Invoice[] } | null>(null);
 
   /**
@@ -944,7 +946,7 @@ export default function InvoiceGridClient({
   }
 
   /**
-   * **「이미 받음」 기록을 적기 전으로 되돌립니다.**
+   * **「직접수납」 기록을 적기 전으로 되돌립니다.**
    *
    * 금액이나 날짜를 잘못 적는 일이 실제로 생기는데, 예전에는 한 번 누르면 고칠 길이 없었습니다.
    * 그러면 사람은 그 학생을 아예 안 건드리게 되고, 그 아이의 미납은 계속 틀린 채 남습니다.
@@ -977,7 +979,7 @@ export default function InvoiceGridClient({
       setPayments((p) => p.filter((x) => !x.invoice_id || !gone.has(x.invoice_id)));
       setLineRows((p) => p.filter((l) => !gone.has(l.invoice_id)));
       notify(
-        `${student.name} — 「이미 받음」 기록 ${body.undone ?? 0}건(${won(body.amount ?? 0)})을 적기 전으로 되돌렸습니다.`,
+        `${student.name} — 「직접수납」 기록 ${body.undone ?? 0}건(${won(body.amount ?? 0)})을 적기 전으로 되돌렸습니다.`,
         "success",
       );
       for (const b of body.blocked ?? []) notify(b, "error");
@@ -1770,7 +1772,7 @@ export default function InvoiceGridClient({
                 className="sticky z-30 border-b border-l border-emerald-200 bg-emerald-100 px-2 py-1 text-right align-bottom text-[11px] font-bold text-emerald-800"
                 style={{ right: RIGHT_PAID, minWidth: W_MONEY, width: W_MONEY }}
                 rowSpan={2}
-                title="이 아이에게서 실제로 들어온 돈. 「이미 받음」으로 적어둔 것도 들어갑니다."
+                title="이 아이에게서 실제로 들어온 돈. 「직접수납」으로 적어둔 것도 들어갑니다."
               >
                 수납
               </th>
@@ -1945,7 +1947,7 @@ export default function InvoiceGridClient({
                     }
                     style={{ left: LEFT_INVOICE }}
                   >
-                    {/* **「이미 받음」 기록은 청구서가 있든 없든 보여야 합니다.**
+                    {/* **「직접수납」 기록은 청구서가 있든 없든 보여야 합니다.**
                         예전에는 청구서가 있는 줄에만 그렸습니다. 그런데 이 기록만 있고 아직
                         청구서가 안 나간 아이가 대부분이라(그게 정상입니다), 정작 되돌릴
                         단추가 필요한 줄에서 안 보였습니다. */}
@@ -1954,9 +1956,9 @@ export default function InvoiceGridClient({
                         type="button"
                         onClick={() => setUndoFor({ student: s, list: receiptOnlyByStudent.get(s.id) ?? [] })}
                         className="mr-1 rounded bg-slate-200 px-1 text-[10px] font-bold text-slate-600 hover:bg-slate-300"
-                        title="이미 받은 돈을 적어둔 기록입니다. 청구서로 나가지 않습니다. 눌러서 되돌릴 수 있습니다."
+                        title="받은 돈을 직접 수납으로 적어둔 기록입니다. 청구서로 나가지 않습니다. 눌러서 되돌릴 수 있습니다."
                       >
-                        이미 받음 {receiptOnlyByStudent.get(s.id)!.length}건 ↩
+                        직접수납 {receiptOnlyByStudent.get(s.id)!.length}건 ↩
                       </button>
                     )}
                     {inv ? (
@@ -1973,9 +1975,9 @@ export default function InvoiceGridClient({
                       <span className="rounded bg-slate-100 px-1 text-[10px] font-bold text-slate-600">
                         {inv.category ?? "통합"}
                       </span>
-                      {/* **다른 장도 이 칸에서 처리합니다.** 남은 항목을 다시 청구한 장(재청구)은 대표 장이
-                          아니라서 「외 1장」 글자로만 보였고, 그 장의 받은 돈을 적을 자리가 없었습니다.
-                          장마다 상태를 붙이고, 못 받은 장은 눌러서 바로 받은 돈을 적습니다. */}
+                      {/* **다른 장도 이 칸에 보입니다.** 남은 항목을 다시 청구한 장(미수금 청구서)은 대표 장이
+                          아니라서 「외 1장」 글자로만 보였습니다. 장마다 상태를 붙이고, 못 받은 장을 누르면
+                          💰 수납 창이 열립니다 - 받는 일은 그 창 하나에서 합니다. */}
                       {(billableByStudent.get(s.id) ?? [])
                         .filter((v) => v.id !== inv.id)
                         .map((v) => {
@@ -1986,17 +1988,15 @@ export default function InvoiceGridClient({
                             <button
                               key={v.id}
                               onClick={() =>
-                                open
-                                  ? setPayFor({ id: v.id, label: `${s.name} · ${v.invoice_no}`, balance: st.balance })
-                                  : setPreview({ id: v.id, label: `${s.name} · ${v.invoice_no}`, studentId: s.id })
+                                open ? setAlreadyFor(s) : setPreview({ id: v.id, label: `${s.name} · ${v.invoice_no}`, studentId: s.id })
                               }
                               className={
                                 "rounded px-1 text-[10px] font-bold " +
                                 (open ? "bg-slate-500 text-white hover:bg-slate-600" : "bg-emerald-100 text-emerald-800")
                               }
-                              title={open ? `${v.invoice_no} 남은 ${won(st.balance)} — 눌러서 받은 돈 적기` : `${v.invoice_no} ${st.state}`}
+                              title={open ? `${v.invoice_no} 미수 ${won(st.balance)} — 눌러서 수납` : `${v.invoice_no} ${st.state}`}
                             >
-                              {v.invoice_no.slice(-4)} {open ? `미납 ${won(st.balance)}` : st.state}
+                              {v.invoice_no.slice(-4)} {open ? `미수 ${won(st.balance)}` : st.state}
                             </button>
                           );
                         })}
@@ -2032,19 +2032,27 @@ export default function InvoiceGridClient({
                         if (st.state === "취소") return null;
                         return (
                           <button
-                            onClick={() =>
-                              setPayFor({ id: inv.id, label: `${s.name} · ${inv.invoice_no}`, balance: st.balance })
-                            }
+                            onClick={() => setAlreadyFor(s)}
                             className={
                               "rounded px-1 text-[10px] font-bold text-white " +
                               (st.state === "연체" ? "bg-rose-600" : st.state === "부분납부" ? "bg-amber-600" : "bg-slate-500")
                             }
-                            title={`남은 ${won(st.balance)} — 눌러서 받은 돈 적기`}
+                            title={`미수 ${won(st.balance)} — 눌러서 수납`}
                           >
                             {st.state === "부분납부" ? `일부 · 남은 ${won(st.balance)}` : st.state === "연체" ? "연체" : "미납"}
                           </button>
                         );
                       })()}
+                      {/* 💰 수납 — 청구서가 나간 뒤에도 그대로 둡니다. 청구 전 항목을 받았거나, 미수금이
+                          들어왔거나, 남은 금액만 청구서로 낼 때 모두 이 창에서 합니다. */}
+                      <button
+                        onClick={() => setAlreadyFor(s)}
+                        disabled={busy}
+                        className="rounded bg-emerald-100 px-1 text-[10px] font-bold text-emerald-800 hover:bg-emerald-200 disabled:opacity-40"
+                        title={`${s.name} — 수납 (청구 전 항목 · 미수금 · 미수금 청구서)`}
+                      >
+                        💰 수납
+                      </button>
                       {/* 현금영수증. 청구서를 보내드리면 그 답장에 「해주세요, 번호는 …」이
                           함께 옵니다. 받는 자리가 다른 화면에 있으면 그 순간에 못 적습니다. */}
                       <ReceiptChip
@@ -2084,9 +2092,9 @@ export default function InvoiceGridClient({
                           onClick={() => setAlreadyFor(s)}
                           disabled={busy}
                           className="rounded bg-emerald-100 px-1 text-[11px] font-bold text-emerald-800 hover:bg-emerald-200 disabled:opacity-40"
-                          title={`${s.name} — 이미 받은 돈으로 넣습니다 (청구서는 만들되 안 보냄)`}
+                          title={`${s.name} — 받은 돈을 수납으로 넣습니다 (청구서는 만들되 안 보냄)`}
                         >
-                          💰
+                          💰 수납
                         </button>
                       </span>
                     ) : (
@@ -2231,8 +2239,10 @@ export default function InvoiceGridClient({
       {/* ── 발행 전 검토 ────────────────────────────────────────── */}
       {alreadyFor && (
         <AlreadyPaidModal
-          title="학비외 이미 받음"
+          title="학비외 수납"
           studentName={alreadyFor.name}
+          // 미수 청구서도 함께 띄웁니다. 수납·재청구가 되면 재무 실시간이 표를 다시 그립니다.
+          studentId={alreadyFor.id}
           // 항목마다 금액을 함께 넘깁니다. 올톡페이는 항목별로 결제 문자가 나가서,
           // 「교복만 결제됨」을 그 자리에서 체크할 수 있어야 합니다.
           lines={(linesByStudent.get(alreadyFor.id) ?? []).map((l) => {
@@ -2247,7 +2257,7 @@ export default function InvoiceGridClient({
               // 이름만으로 맞은 것(옛 줄 · 겹치는 이름)은 **잠그지 않습니다.** 잠그면 아직
               // 안 받은 돈이 화면에서 사라지고, 사라진 돈은 아무도 안 찾습니다.
               lockedNote: mark && !mark.unsure ? BILL_LABEL[mark.state] : null,
-              // 「이미 받음」으로 적어둔 장만 되돌릴 수 있습니다. 진짜 청구서는 학부모가
+              // 「직접수납」으로 적어둔 장만 되돌릴 수 있습니다. 진짜 청구서는 학부모가
               // 이미 받았으므로 취소로만 다룹니다.
               undoInvoiceId: mark && !mark.unsure && mark.receiptOnly ? mark.invoiceId : null,
               rawName: l.item.name,
@@ -2499,14 +2509,14 @@ export default function InvoiceGridClient({
         </div>
       )}
 
-      {/* ── 「이미 받음」 되돌리기 확인 ────────────────────────────────
+      {/* ── 「직접수납」 되돌리기 확인 ────────────────────────────────
           **무엇이 사라지는지 먼저 보여줍니다.** 숫자 없는 「되돌리기」 단추는 아무도 못
           누릅니다 - 눌러도 되는지 판단할 재료가 없으니까요(§2-7). */}
       {undoFor && (
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 p-4" onClick={() => !busy && setUndoFor(null)}>
           <div className="w-full max-w-md rounded-xl bg-white p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <p className="text-sm font-bold text-slate-800">
-              {undoFor.student.name} — 「이미 받음」 기록 되돌리기
+              {undoFor.student.name} — 「직접수납」 기록 되돌리기
             </p>
             <p className="mt-1 text-[12px] leading-relaxed text-slate-500">
               적어둔 기록을 <b className="text-slate-700">적기 전으로</b> 되돌립니다. 이 기록은 청구서로 나간
@@ -2616,20 +2626,6 @@ export default function InvoiceGridClient({
           }
         />
       )}
-      {payFor && (
-        <PayModal
-          target={payFor}
-          today={today}
-          onClose={() => setPayFor(null)}
-          onDone={async (msg) => {
-            notify(msg, "success");
-            const supabase = createClient();
-            const { data } = await supabase.from("payments").select("invoice_id, amount, paid_at, method_kind");
-            if (data) setPayments(data as PayLite[]);
-          }}
-        />
-      )}
-
       {/* ── 한 학생 자세히 ─────────────────────────────────────── */}
       {detail && (() => {
         // 표와 같은 분류만 보여줍니다. 교재를 붙이려고 연 창에 교복이 함께 있으면

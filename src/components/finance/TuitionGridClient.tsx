@@ -118,7 +118,7 @@ export default function TuitionGridClient({
   /**
    * 청구서에 들어온 입금. **발행 전 표에 「입금완료」를 적으려면 있어야 합니다.**
    *
-   * 청구서가 있는지만 보여주면 「이미 받음」으로 넣어둔 항목과 아직 못 받은 항목이 표에서
+   * 청구서가 있는지만 보여주면 「직접수납」으로 넣어둔 항목과 아직 못 받은 항목이 표에서
    * 똑같이 보입니다. 그러면 다 받았는지 확인하러 수납 화면을 따로 열어야 하고, 두 화면을
    * 왕복하면 대개 확인을 건너뜁니다.
    */
@@ -1275,7 +1275,7 @@ export default function TuitionGridClient({
               </th>
               <th
                 className="min-w-[92px] border-b border-l border-emerald-200 bg-emerald-100 px-2 py-1.5 text-right font-semibold text-emerald-800"
-                title="이 학기 학비 청구서에 실제로 들어온 돈. 「이미 받음」으로 적어둔 것도 들어갑니다."
+                title="이 학기 학비 청구서에 실제로 들어온 돈. 「직접수납」으로 적어둔 것도 들어갑니다."
               >
                 수납
               </th>
@@ -1580,6 +1580,18 @@ export default function TuitionGridClient({
                             발행 단추가 사라져서, 남은 항목(황이안 LMA 30만)을 보낼 길이 **그 줄에
                             없었습니다.** 체크박스 → 위쪽 발행이 그 길이었는데 아무도 모릅니다.
                             남은 것이 있으면 그 자리에서 보내거나, 이미 받은 것으로 넣습니다. */}
+                        {/* 미수금이 남은 아이에게도 같은 💰 단추를 둡니다. 한 번 수납한 뒤 남은 돈이
+                            들어오면 같은 창에서 이어 적고, 남은 금액만 청구서로 냅니다. */}
+                        {!hasUnbilled(s.id) && (moneyOf.get(s.id)?.due ?? 0) > 0 && (
+                          <button
+                            onClick={() => setAlreadyFor(s)}
+                            disabled={busy}
+                            className="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-bold text-sky-800 hover:bg-sky-200 disabled:opacity-40"
+                            title="미수금 수납 · 미수금 청구서"
+                          >
+                            💰 수납
+                          </button>
+                        )}
                         {hasUnbilled(s.id) && (
                           <span className="inline-flex items-center gap-1">
                             <button
@@ -1594,9 +1606,9 @@ export default function TuitionGridClient({
                               onClick={() => setAlreadyFor(s)}
                               disabled={busy}
                               className="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-bold text-sky-800 hover:bg-sky-200 disabled:opacity-40"
-                              title="남은 항목 중 이미 받은 것을 넣습니다"
+                              title="받은 돈 수납 (청구 전 항목 · 미수금)"
                             >
-                              💰
+                              💰 수납
                             </button>
                           </span>
                         )}
@@ -1610,9 +1622,9 @@ export default function TuitionGridClient({
                           onClick={() => setAlreadyFor(s)}
                           disabled={busy}
                           className="shrink-0 whitespace-nowrap rounded bg-sky-100 px-1.5 py-0.5 text-[11px] font-bold text-sky-800 hover:bg-sky-200 disabled:opacity-40"
-                          title={`${s.name} — 이미 받은 돈으로 넣습니다 (청구서를 받은 날짜로 만들고 안 보냄 표시)`}
+                          title={`${s.name} — 받은 돈을 수납으로 넣습니다 (청구서를 받은 날짜로 만들고 안 보냄 표시)`}
                         >
-                          💰 이미 받음
+                          💰 수납
                         </button>
                         <button
                           onClick={() => {
@@ -1712,8 +1724,10 @@ export default function TuitionGridClient({
 
       {alreadyFor && (
         <AlreadyPaidModal
-          title="학비 이미 받음"
+          title="학비 수납"
           studentName={alreadyFor.name}
+          // 미수 청구서에 수납·재청구를 하면 재무 실시간(useFinanceLive)이 표를 다시 그립니다.
+          studentId={alreadyFor.id}
           // 항목마다 **금액을 함께** 넘깁니다. 이름만 주면 「교복은 냈고 교재는 안 냈다」를
           // 골라도 얼마인지 몰라서, 결국 사람이 다시 계산해 적게 됩니다.
           lines={usedPlans
@@ -1721,7 +1735,7 @@ export default function TuitionGridClient({
             .filter((x) => !!x.line)
             .map((x) => {
               // 이미 청구서에 담긴 항목은 **잠급니다.** 학비외 창은 처음부터 잠갔는데 학비 창은
-              // 안 잠가서, 「이미 받음」을 두 번 누르면 같은 항목 청구서가 두 장 됐습니다
+              // 안 잠가서, 「직접수납」을 두 번 누르면 같은 항목 청구서가 두 장 됐습니다
               // (황이안 2026-0169/0170). 데이터베이스도 막지만, 눌러보고 거절당하는 것보다
               // 처음부터 회색인 편이 낫습니다.
               const b = billed.get(alreadyFor.id);
@@ -1734,7 +1748,7 @@ export default function TuitionGridClient({
                 // 넘겨서, 표에는 할인 적용 금액이 찍히는데 이 창은 할인 전 금액을 보여줬고 그대로
                 // 누르면 받은 돈이 청구서보다 크게 적혔습니다. 표의 칸·청구서 줄과 같은 값이어야 합니다.
                 amount: Number(x.line?.amount ?? 0),
-                lockedNote: taken ? (state === "완납" ? "이미 받음(청구서 있음)" : "이미 청구서에 담김") : null,
+                lockedNote: taken ? (state === "완납" ? "수납 완료" : "청구됨 · 미수") : null,
               };
             })}
           busy={busy}

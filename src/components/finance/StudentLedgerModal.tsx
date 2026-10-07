@@ -12,7 +12,6 @@ import type { AlreadyPaidResult } from "@/components/finance/AlreadyPaidModal";
 import AlreadyPaidModal from "@/components/finance/AlreadyPaidModal";
 import { FINANCE_TABLES } from "@/lib/useFinanceLive";
 import { createClient } from "@/lib/supabase/client";
-import PayModal from "@/components/finance/PayModal";
 import DepositApplyModal from "@/components/finance/DepositApplyModal";
 import { isFromDeposit } from "@/lib/depositLines";
 import CancelInvoiceModal from "@/components/finance/CancelInvoiceModal";
@@ -98,7 +97,6 @@ export default function StudentLedgerModal({
   const [already, setAlready] = useState(false);
   // 발행 전에 보는 초안. 먼저 보고 그대로 발행합니다 - 눌러봐야 아는 단추는 아무도 안 누릅니다.
   const [draft, setDraft] = useState<{ combine: boolean } | null>(null);
-  const [paying, setPaying] = useState<LedgerInvoice | null>(null);
   /** 예치금에서 뺄 항목을 고르는 청구서. 발행 직후에도 열립니다. */
   const [depositFor, setDepositFor] = useState<{ id: string; label: string } | null>(null);
   const [cancelling, setCancelling] = useState<LedgerInvoice | null>(null);
@@ -150,10 +148,10 @@ export default function StudentLedgerModal({
   }, [studentId, load]);
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => !embedded && e.key === "Escape" && !already && !paying && !cancelling && !preview && !exporting && onClose();
+    const onKey = (e: KeyboardEvent) => !embedded && e.key === "Escape" && !already && !cancelling && !preview && !exporting && onClose();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, already, paying, cancelling, preview, exporting, embedded]);
+  }, [onClose, already, cancelling, preview, exporting, embedded]);
 
   /** 무엇이든 바꾼 뒤에는 다시 읽습니다. 그리고 닫을 때 바깥에도 알립니다. */
   async function changed() {
@@ -283,7 +281,7 @@ export default function StudentLedgerModal({
     return parts;
   }
 
-  /** 「이미 받음」. 받은 날로 묶어 장을 만들고 입금을 붙입니다 - 학비·학비외 창구를 각각 부릅니다. */
+  /** 「직접수납」. 받은 날로 묶어 장을 만들고 입금을 붙입니다 - 학비·학비외 창구를 각각 부릅니다. */
   async function recordAlready(r: AlreadyPaidResult) {
     setBusy(true);
     const failed: string[] = [];
@@ -437,7 +435,7 @@ export default function StudentLedgerModal({
                     <span className={"rounded px-1 text-[10px] font-bold " + (v.stream === "학비" ? "bg-indigo-50 text-indigo-700" : "bg-orange-50 text-orange-700")}>{v.stream}</span>
                     <span className="min-w-0 flex-1 truncate text-slate-600" title={(v as { plan_scope?: string | null }).plan_scope ?? ""}>
                       {(v as { plan_scope?: string | null }).plan_scope ?? (v.stream === "학비" ? "학비 전부" : v.category ?? "")} · {v.billingMonth ? `${Number(v.billingMonth.slice(5))}월분 · ` : ""}{v.issue_date}
-                      {v.issued_offline ? <span className="ml-1 text-[10px] text-sky-600">이미 받음</span> : null}
+                      {v.issued_offline ? <span className="ml-1 text-[10px] text-sky-600">직접수납</span> : null}
                     </span>
                     <span className="tabular-nums font-bold">{won(Number(v.total_amount))}</span>
                     <span className={"rounded px-1.5 py-0.5 text-[10px] font-bold " + (STATE_STYLE[v.settled.state] ?? "")} title={v.settled.balance > 0 ? `남은 ${won(v.settled.balance)}` : ""}>
@@ -459,8 +457,8 @@ export default function StudentLedgerModal({
                         </button>
                       ) : null}
                       {v.settled.balance > 0 && (
-                        <button onClick={() => setPaying(v)} className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800 hover:bg-emerald-200" title="받은 돈 적기">
-                          받음 적기
+                        <button onClick={() => setAlready(true)} className="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-bold text-sky-800 hover:bg-sky-200" title="수납 창에서 이 청구서의 미수금을 받거나, 미수금만 청구서로 냅니다">
+                          💰 수납
                         </button>
                       )}
                       {v.settled.state === "완납" && (
@@ -677,22 +675,6 @@ export default function StudentLedgerModal({
                             ) : c.amount > 0 ? (
                               <span className="rounded bg-amber-100 px-1 text-[10px] font-bold text-amber-800">미청구</span>
                             ) : null}
-                            {/* **청구는 됐는데 아직 못 받은 항목** - 다시 청구해서 받은 돈(재청구)도 여기서 바로 적습니다.
-                                「이미 받음」은 청구서가 없는 항목에만 열려서, 한 번 청구한 항목의 입금을 적을 자리를
-                                찾기 어려웠습니다. */}
-                            {c.billed && c.billed.invoiceId && c.billed.state !== "완납" && (() => {
-                              const inv = (ledger?.invoices ?? []).find((v) => v.id === c.billed!.invoiceId);
-                              return inv && inv.settled.balance > 0 ? (
-                                <button
-                                  onClick={() => setPaying(inv)}
-                                  disabled={busy}
-                                  className="ml-1 rounded bg-emerald-100 px-1 text-[10px] font-bold text-emerald-800 hover:bg-emerald-200"
-                                  title={`${inv.invoice_no} 남은 ${won(inv.settled.balance)} — 받은 돈 적기`}
-                                >
-                                  받음 적기
-                                </button>
-                              ) : null;
-                            })()}
                           </div>
                           {c.extra && !c.billed && (
                             <button
@@ -743,13 +725,15 @@ export default function StudentLedgerModal({
                 >
                   🧾 청구서 보기{targetCharges.length > 0 ? ` (${won(targetCharges.reduce((n, c) => n + c.amount, 0))})` : ""}
                 </button>
+                {/* 💰 수납 — 미수금이 남아 있는 동안은 계속 열립니다. 청구 전 항목을 받았을 때, 청구서의
+                    미수금이 들어왔을 때, 미수금만 따로 청구서로 낼 때 모두 이 창 하나에서 합니다. */}
                 <button
                   onClick={() => setAlready(true)}
-                  disabled={busy || unbilled.length === 0}
+                  disabled={busy || (unbilled.length === 0 && (ledger?.totals.unpaid ?? 0) <= 0)}
                   className="rounded-lg bg-sky-100 px-3 py-1.5 text-[12px] font-bold text-sky-800 hover:bg-sky-200 disabled:opacity-40"
-                  title="이미 수납된 항목을 수납일 기준으로 등록합니다(청구서 + 입금)"
+                  title="수납 등록 — 청구 전 항목 · 미수금 · 미수금 청구서"
                 >
-                  💰 이미 받음
+                  💰 수납
                 </button>
               </div>
             </section>
@@ -908,24 +892,14 @@ export default function StudentLedgerModal({
       })()}
       {already && ledger && (
         <AlreadyPaidModal
-          title="이미 받음"
+          title="수납"
           studentName={ledger.student.name}
+          studentId={ledger.student.id}
+          onChanged={() => void changed()}
           lines={targetCharges.map((c) => ({ id: `${c.kind}:${c.id}`, label: `[${c.kind}] ${c.label}`, amount: c.amount }))}
           busy={busy}
           onClose={() => setAlready(false)}
           onSubmit={(r) => void recordAlready(r)}
-        />
-      )}
-      {paying && (
-        <PayModal
-          target={{ id: paying.id, label: `${student?.name ?? ""} · ${paying.invoice_no}`, balance: paying.settled.balance }}
-          today={todayKst()}
-          onClose={() => setPaying(null)}
-          onDone={(msg) => {
-            notify(msg, "success");
-            setPaying(null);
-            void changed();
-          }}
         />
       )}
       {depositFor && (

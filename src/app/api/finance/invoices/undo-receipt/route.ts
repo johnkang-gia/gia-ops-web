@@ -4,14 +4,14 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess } from "@/lib/roles";
 
 /**
- * **「이미 받음」 기록 되돌리기** — 적어둔 것을 적기 전으로 돌립니다.
+ * **「직접수납」 기록 되돌리기** — 적어둔 것을 적기 전으로 돌립니다.
  *
  * ── 왜 취소가 아니라 지우기인가 ─────────────────────────────────────────────
  *
  * 청구서는 **지우지 않고 취소로 남깁니다**(`/cancel`). 학부모가 이미 받은 종이가 있고, 번호가
  * 비면 「그 청구서 어디 갔냐」에 답할 수 없기 때문입니다.
  *
- * 「이미 받음」으로 만든 장은 다릅니다. 이것은 **밖으로 나간 적이 없는 우리 쪽 기록**입니다 -
+ * 「직접수납」으로 만든 장은 다릅니다. 이것은 **밖으로 나간 적이 없는 우리 쪽 기록**입니다 -
  * 이미 받은 돈을 장부에 남기려고 만든 짝(장 + 입금)이고, 청구서 목록·발행·올톡페이 발송
  * 명단 어디에도 안 뜹니다(`issued_offline`). 금액이나 날짜를 잘못 적었을 때 취소로 남기면
  * 취소된 장이 쌓이기만 하고, 그 장은 처음부터 아무도 못 본 것입니다.
@@ -95,7 +95,7 @@ export async function POST(req: Request) {
   for (const v of rows) {
     const who = v.invoice_no ?? v.id.slice(0, 8);
     if (v.issued_offline !== true) {
-      blocked.push(`${who} — 「이미 받음」으로 적은 장이 아니라 실제로 나간 청구서입니다. 취소로 다뤄주세요`);
+      blocked.push(`${who} — 「직접수납」으로 적은 장이 아니라 실제로 나간 청구서입니다. 취소로 다뤄주세요`);
     } else if (v.exported_at) {
       blocked.push(`${who} — 올톡페이로 이미 내보냈습니다`);
     } else if (hasReceipt.has(v.id)) {
@@ -173,7 +173,7 @@ async function undoOneItem(
   const v = inv as Row;
   const who = v.invoice_no ?? invoiceId.slice(0, 8);
   if (v.issued_offline !== true)
-    return NextResponse.json({ error: `${who} — 「이미 받음」으로 적은 장이 아니라 실제로 나간 청구서입니다. 취소로 다뤄주세요.` }, { status: 400 });
+    return NextResponse.json({ error: `${who} — 「직접수납」으로 적은 장이 아니라 실제로 나간 청구서입니다. 취소로 다뤄주세요.` }, { status: 400 });
   if (v.exported_at) return NextResponse.json({ error: `${who} — 올톡페이로 이미 내보냈습니다.` }, { status: 400 });
   if (v.carried_to_invoice_id) return NextResponse.json({ error: `${who} — 이월과 엮여 있습니다.` }, { status: 400 });
 

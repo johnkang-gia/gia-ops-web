@@ -557,7 +557,7 @@ export default function LedgerClient({
                         <button onClick={() => setPreview({ id: v.id, label: `${v.studentName} · ${v.invoiceNo}`, receipt: false })} className="font-bold text-slate-700 underline">
                           {v.invoiceNo}
                         </button>
-                        {v.offline && <span className="ml-1 text-[10px] text-sky-600">이미 받음</span>}
+                        {v.offline && <span className="ml-1 text-[10px] text-sky-600">직접수납</span>}
                       </td>
                       <td className="max-w-[240px] truncate px-2 py-1 text-slate-600" title={v.scope ?? ""}>
                         {v.scope ?? (v.stream === "학비" ? "학비 전부" : "")}

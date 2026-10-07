@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   batchByDate,
   batchNote,
@@ -59,6 +59,20 @@ export type AlreadyPaidResult = {
 
 const METHODS = ["계좌이체", "카드", "현금", "올톡페이"];
 
+/** 입금 창구(`/api/finance/invoices/pay`)가 받는 수단 이름. 이 창의 「카드」는 방문카드입니다. */
+const PAY_KIND: Record<string, string> = { 계좌이체: "계좌이체", 카드: "방문카드", 현금: "현금", 올톡페이: "올톡페이" };
+
+/** 이 학생의 아직 다 못 받은 청구서 한 장. */
+type OpenInvoice = {
+  id: string;
+  invoice_no: string;
+  label: string;
+  billed: number;
+  paid: number;
+  balance: number;
+  billingMonth: string | null;
+};
+
 export default function AlreadyPaidModal({
   title,
   studentName,
@@ -67,6 +81,8 @@ export default function AlreadyPaidModal({
   onSubmit,
   onUndoItem,
   onClose,
+  studentId,
+  onChanged,
 }: {
   title: string;
   studentName: string;
@@ -82,6 +98,14 @@ export default function AlreadyPaidModal({
    */
   onUndoItem?: (line: PayableLine) => void | Promise<void>;
   onClose: () => void;
+  /**
+   * 주면 이 학생의 **미수 청구서**를 창 안에 함께 띄웁니다. 한 번 수납한 뒤 남은 돈이
+   * 들어왔을 때 같은 창에서 이어 적고, 남은 금액만 따로 청구서로 낼 수 있게 하려는 것입니다.
+   * 「수납」 단추 하나로 받는 일을 다 합니다 - 단추가 늘면 어디서 하는지 아무도 모릅니다.
+   */
+  studentId?: string;
+  /** 미수 청구서에 수납·재청구를 한 뒤. 부르는 쪽이 자기 화면을 다시 읽습니다. */
+  onChanged?: () => void;
 }) {
   const [pickedIds, setPickedIds] = useState<string[]>([]);
   /**
@@ -111,6 +135,109 @@ export default function AlreadyPaidModal({
    */
   const total = split ? batches.reduce((n, b) => n + b.amount, 0) : amount;
 
+  // ── 미수 청구서 ──────────────────────────────────────────────────────────
+  const [open, setOpen] = useState<OpenInvoice[] | null>(null);
+  const [openErr, setOpenErr] = useState<string | null>(null);
+  const [openAmt, setOpenAmt] = useState<Record<string, string>>({});
+  const [openBusy, setOpenBusy] = useState(false);
+  const [openMsg, setOpenMsg] = useState<string | null>(null);
+
+  const loadOpen = useCallback(async () => {
+    if (!studentId) return;
+    const res = await fetch(`/api/finance/ledger/${studentId}`, { cache: "no-store" });
+    const j = (await res.json().catch(() => null)) as {
+      error?: string;
+      ledger?: {
+        invoices: {
+          id: string;
+          invoice_no: string;
+          plan_scope?: string | null;
+          category?: string | null;
+          stream?: string | null;
+          billingMonth?: string | null;
+          settled: { billed: number; paid: number; balance: number; state: string };
+        }[];
+      };
+    } | null;
+    if (!res.ok || !j?.ledger) {
+      // 못 읽은 것을 「미수 없음」으로 보이면 안 됩니다 - 남은 돈이 있는데 없는 것처럼 됩니다.
+      setOpenErr(j?.error ?? "미수 청구서를 읽지 못했습니다.");
+      return;
+    }
+    setOpenErr(null);
+    setOpen(
+      j.ledger.invoices
+        .filter((v) => v.settled.balance > 0 && v.settled.state !== "취소" && v.settled.state !== "이월됨" && v.settled.state !== "결손")
+        .map((v) => ({
+          id: v.id,
+          invoice_no: v.invoice_no,
+          label: v.plan_scope || v.category || v.stream || "",
+          billed: Math.round(Number(v.settled.billed)),
+          paid: Math.round(Number(v.settled.paid)),
+          balance: Math.round(Number(v.settled.balance)),
+          billingMonth: v.billingMonth ?? null,
+        })),
+    );
+  }, [studentId]);
+
+  useEffect(() => {
+    void loadOpen();
+  }, [loadOpen]);
+
+  /** 미수 청구서 한 장에 이어서 받은 돈. 청구서는 새로 만들지 않고 그 장에 입금 한 줄을 붙입니다. */
+  async function receiveOn(v: OpenInvoice) {
+    const raw = String(openAmt[v.id] ?? "").replace(/[^\d]/g, "");
+    const amount = raw ? Math.round(Number(raw)) : v.balance;
+    if (!(amount > 0)) return;
+    setOpenBusy(true);
+    setOpenMsg(null);
+    const res = await fetch("/api/finance/invoices/pay", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ invoiceId: v.id, amount, method: PAY_KIND[method] ?? "기타", paidAt, memo: note.trim() || "추가 수납" }),
+    });
+    const j = (await res.json().catch(() => null)) as { error?: string } | null;
+    setOpenBusy(false);
+    if (!res.ok) {
+      setOpenMsg(j?.error ?? "수납하지 못했습니다.");
+      return;
+    }
+    setOpenMsg(`${v.invoice_no} 에 ${won(amount)} 수납했습니다.`);
+    setOpenAmt((p) => ({ ...p, [v.id]: "" }));
+    await loadOpen();
+    onChanged?.();
+  }
+
+  /**
+   * **남은 금액만 새 청구서로.** 원 청구서를 그대로 다시 보내면 학부모 화면에 처음 금액이 또
+   * 뜹니다. 미납금 화면의 재청구와 같은 창구를 씁니다 - 규칙이 두 벌 생기지 않게.
+   */
+  async function rebill(v: OpenInvoice) {
+    setOpenBusy(true);
+    setOpenMsg(null);
+    const res = await fetch("/api/finance/unpaid/merge", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ invoiceIds: [v.id] }),
+    });
+    const j = (await res.json().catch(() => null)) as { error?: string; invoice?: { invoice_no: string } } | null;
+    setOpenBusy(false);
+    if (!res.ok || !j?.invoice) {
+      setOpenMsg(j?.error ?? "미수금 청구서를 만들지 못했습니다.");
+      return;
+    }
+    setOpenMsg(`${v.invoice_no} 의 미수금 ${won(v.balance)} 으로 청구서 ${j.invoice.invoice_no} 를 만들었습니다. 원 청구서는 이월됨으로 잠겼습니다.`);
+    await loadOpen();
+    onChanged?.();
+  }
+
+  /**
+   * 청구 전 항목이 하나도 없고 미수 청구서만 남았으면 **새로 적는 칸은 감춥니다.** 그 자리에
+   * 금액을 넣으면 항목 없는 청구서가 또 생겨, 미수 청구서는 그대로 남고 돈만 두 곳에 갈립니다.
+   */
+  const hasFree = lines.some((l) => !l.lockedNote);
+  const showNew = lines.length > 0 ? hasFree : !(open && open.length > 0);
+
   function toggle(id: string) {
     setPickedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   }
@@ -130,7 +257,7 @@ export default function AlreadyPaidModal({
         {lines.length > 0 && (
           <div className="mb-2">
             <p className="mb-1 text-[11px] font-bold text-slate-600">
-              수납 항목 <span className="font-normal text-slate-400">— 항목별로 따로 결제된 경우 선택</span>
+              청구 전 항목 수납 <span className="font-normal text-slate-400">— 받은 항목을 고르세요</span>
             </p>
             <div className="space-y-1">
               {lines.map((l) => {
@@ -240,6 +367,59 @@ export default function AlreadyPaidModal({
           </div>
         )}
 
+        {/* ── 미수 청구서 ──────────────────────────────────────────────────
+            한 번 수납한 뒤에도 남은 돈이 있으면 여기 뜹니다. 이어서 받은 돈을 그 장에 적거나,
+            남은 금액만 따로 청구서를 냅니다. 수납일·방법은 아래 공통 칸을 씁니다. */}
+        {studentId && (openErr || (open && open.length > 0)) && (
+          <div className="mb-2 rounded-lg border border-rose-200 bg-rose-50/50 p-2">
+            <p className="mb-1 text-[11px] font-bold text-rose-800">
+              미수금 <span className="font-normal text-rose-600">— 청구서에 남은 돈. 받은 만큼 적거나, 남은 금액만 청구서를 냅니다</span>
+            </p>
+            {openErr && <p className="text-[11px] font-bold text-rose-700">⚠️ {openErr}</p>}
+            <div className="space-y-1">
+              {(open ?? []).map((v) => (
+                <div key={v.id} className="flex flex-wrap items-center gap-1.5 rounded border border-rose-100 bg-white px-2 py-1 text-[11px]">
+                  <span className="font-bold text-slate-700">{v.invoice_no}</span>
+                  {v.billingMonth && <span className="text-slate-400">{Number(v.billingMonth.slice(5, 7))}월분</span>}
+                  {v.label && <span className="max-w-[10rem] truncate text-slate-500" title={v.label}>{v.label}</span>}
+                  <span className="text-slate-400">청구 {won(v.billed)}{v.paid > 0 ? ` · 수납 ${won(v.paid)}` : ""}</span>
+                  <span className="font-bold text-rose-700">미수 {won(v.balance)}</span>
+                  <span className="ml-auto flex items-center gap-1">
+                    <input
+                      value={openAmt[v.id] ?? ""}
+                      onChange={(e) => setOpenAmt((p) => ({ ...p, [v.id]: e.target.value }))}
+                      inputMode="numeric"
+                      placeholder={v.balance.toLocaleString()}
+                      title="이번에 받은 금액. 비우면 남은 금액 전부"
+                      className="w-20 rounded border border-slate-300 px-1 py-0.5 text-right tabular-nums"
+                    />
+                    <button
+                      type="button"
+                      disabled={openBusy || busy}
+                      onClick={() => void receiveOn(v)}
+                      className="rounded bg-slate-900 px-1.5 py-0.5 font-bold text-white disabled:opacity-40"
+                    >
+                      수납
+                    </button>
+                    <button
+                      type="button"
+                      disabled={openBusy || busy}
+                      onClick={() => void rebill(v)}
+                      title="남은 금액만 담은 새 청구서를 만듭니다. 원 청구서는 이월됨으로 잠깁니다."
+                      className="rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 font-bold text-amber-800 disabled:opacity-40"
+                    >
+                      미수금 청구서
+                    </button>
+                  </span>
+                </div>
+              ))}
+            </div>
+            {openMsg && <p className="mt-1 text-[10px] font-semibold text-slate-700">{openMsg}</p>}
+          </div>
+        )}
+
+        {showNew && (
+        <>
         {/* ── 받은 금액 ────────────────────────────────────────────────── */}
         <div className="mb-2">
           <p className="mb-1 text-[11px] font-bold text-slate-600">
@@ -269,6 +449,9 @@ export default function AlreadyPaidModal({
             </p>
           )}
         </div>
+
+        </>
+        )}
 
         <div className="mb-2 flex flex-wrap gap-2">
           <label className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-600">
@@ -301,6 +484,8 @@ export default function AlreadyPaidModal({
           className="mb-2 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-[12px] outline-none focus:border-blue-400"
         />
 
+        {showNew && (
+        <>
         {/* 무엇으로 남는지 미리 보여줍니다. 누른 뒤에 확인하는 것보다 낫습니다. */}
         <p className="mb-2 rounded-lg bg-slate-50 px-2.5 py-1.5 text-[10px] leading-relaxed text-slate-500">
           기록될 내용: <b className="text-slate-700">{won(total)}</b>
@@ -335,15 +520,17 @@ export default function AlreadyPaidModal({
           {busy
             ? "등록 중…"
             : total <= 0
-              ? "금액을 입력하거나 항목을 선택하세요"
+              ? lines.length > 0 ? "청구 전 항목을 고르거나 금액을 입력하세요" : "금액을 입력하세요"
               : split
                 ? `${won(total)} — 청구서 ${batches.length}장으로 등록`
-                : `${won(total)} 이미 받음으로 넣기`}
+                : `${won(total)} 수납 등록`}
         </button>
 
         <p className="mt-1.5 text-center text-[10px] text-slate-400">
-          청구서는 생성되지만 학부모에게 보내지 않습니다(이미 받음).
+          위 항목은 청구서를 만들되 학부모에게 보내지 않습니다(직접수납).
         </p>
+        </>
+        )}
       </div>
     </div>
   );

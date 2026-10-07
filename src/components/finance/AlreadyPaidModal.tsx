@@ -236,7 +236,8 @@ export default function AlreadyPaidModal({
    * 금액을 넣으면 항목 없는 청구서가 또 생겨, 미수 청구서는 그대로 남고 돈만 두 곳에 갈립니다.
    */
   const hasFree = lines.some((l) => !l.lockedNote);
-  const showNew = lines.length > 0 ? hasFree : !(open && open.length > 0);
+  // 미수 청구서를 읽는 동안에는 감춥니다. 먼저 뜨면 그 칸에 금액을 넣고 누르게 됩니다.
+  const showNew = lines.length > 0 ? hasFree : studentId ? open !== null && open.length === 0 : true;
 
   function toggle(id: string) {
     setPickedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));

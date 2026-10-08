@@ -88,6 +88,12 @@ export type TodayPickup = {
    * 자료에는 처음부터 이름이 있었고 화면만 뭉뚱그리고 있었습니다.
    */
   by: string | null;
+  /**
+   * **체크표와 어긋남.** 체크표에 사람이 다른 상태(탑승 등)를 먼저 찍어 두었는데, 그 뒤에 픽업이
+   * 등록된 경우입니다. 픽업으로 띄우되 「체크표에는 탑승」을 함께 적어 사람이 한 번 보게 합니다 -
+   * 어느 한쪽을 조용히 고르면, 고르지 않은 쪽 화면을 보는 사람이 그 아이를 다르게 압니다.
+   */
+  conflict?: string | null;
 };
 
 /**
@@ -116,8 +122,13 @@ export type PickupInputs = {
    * 때 나머지 김재이의 학부모 연락까지 함께 가려집니다.
    */
   decidedKeys: Set<string>;
-  /** 출결내역에서 픽업으로 등록된 건. */
-  entries: { name: string; studentId: string | null; time: string | null }[];
+  /**
+   * 사람이 체크표에 찍은 **때**와 그 상태·이름. 그 뒤에 등록된 픽업은 «더 새로운 결정»이라
+   * 가리지 않고 어긋남 표시를 달아 올립니다(`TodayPickup.conflict`). 없으면 예전처럼 가립니다.
+   */
+  decidedAt?: Map<string, { at: number; status: string; by: string | null }>;
+  /** 출결내역에서 픽업으로 등록된 건. `at` 은 등록된 때(밀리초). */
+  entries: { name: string; studentId: string | null; time: string | null; at?: number | null }[];
   /** 확정된 학부모 연락. */
   requests: { name: string; studentId: string | null; time: string | null }[];
   /**
@@ -178,8 +189,18 @@ export function mergePickups(input: PickupInputs): TodayPickup[] {
   for (const r of [...input.entries, ...input.requests]) {
     const k = keyOf(r);
     if (out.has(k)) continue;
-    if (input.decidedKeys.has(k)) continue;
+    // 사람이 체크표에 먼저 찍었는데 그 **뒤에** 픽업이 등록됐으면 가리지 않습니다. 아침에 「탑승」을
+    // 찍어 둔 아이에게 점심때 픽업 연락이 오면, 예전에는 픽업이 통째로 가려져 [오늘 학생]에도
+    // 중앙 대시보드에도 안 떴습니다 - 출결내역에는 있는데 보드에는 없는 아이가 됐습니다.
+    let conflict: string | null = null;
+    if (input.decidedKeys.has(k)) {
+      const d = input.decidedAt?.get(k);
+      const at = "at" in r ? (r as { at?: number | null }).at ?? null : null;
+      if (!d || !at || at <= d.at) continue;
+      conflict = `체크표에는 «${d.status}»${d.by ? `(${setterLabel(d.by) ?? d.by})` : ""}로 찍혀 있습니다 - 확인해 주세요`;
+    }
     out.set(k, {
+      conflict,
       name: r.name,
       studentId: r.studentId,
       time: timeOf.get(k) ?? null,
@@ -222,7 +243,7 @@ export async function loadTodayPickups(
 ): Promise<TodayPickup[]> {
   const [boardRes, entryRows, reqRes] = await Promise.all([
     // `checked_by` 를 함께 읽습니다. **누가 정했는지가 판단의 재료**입니다 - 아래를 보세요.
-    supabase.from("shuttle_boardings").select("assignment_id, status, checked_by").eq("service_date", dateKey),
+    supabase.from("shuttle_boardings").select("assignment_id, status, checked_by, checked_at, created_at").eq("service_date", dateKey),
     loadActiveEntries(supabase, dateKey),
     supabase
       .from("pickup_requests")
@@ -252,7 +273,8 @@ export async function loadTodayPickups(
       .limit(300),
   ]);
 
-  const boardings = (boardRes.data as { assignment_id: string; status: string; checked_by: string | null }[] | null) ?? [];
+  const boardings =
+    (boardRes.data as { assignment_id: string; status: string; checked_by: string | null; checked_at: string | null; created_at: string | null }[] | null) ?? [];
   const asgIds = boardings.map((b) => b.assignment_id);
   const { data: asgRows } = asgIds.length
     ? await supabase.from("shuttle_assignments").select("id, student_id, student_name_raw").in("id", asgIds)
@@ -267,6 +289,7 @@ export async function loadTodayPickups(
 
   const boardingPickups: { name: string; studentId: string | null; via: PickupVia; by: string | null }[] = [];
   const decidedKeys = new Set<string>();
+  const decidedAt = new Map<string, { at: number; status: string; by: string | null }>();
   for (const b of boardings) {
     const nm = nameOfAsg(b.assignment_id);
     if (!nm) continue;
@@ -280,7 +303,13 @@ export async function loadTodayPickups(
     //
     // 여기 적힌 규칙은 원래 「사람이 체크표에서 정한 것이 이긴다」였는데, 코드가 그보다
     // 넓게 막고 있었습니다.
-    if (isHumanSet(b.checked_by)) decidedKeys.add(keyOf({ name: nm, studentId: sid }));
+    if (isHumanSet(b.checked_by)) {
+      const key = keyOf({ name: nm, studentId: sid });
+      decidedKeys.add(key);
+      // 찍은 때. `checked_at` 이 없는 옛 줄은 만든 때로 봅니다.
+      const at = Date.parse(b.checked_at ?? b.created_at ?? "");
+      if (Number.isFinite(at)) decidedAt.set(key, { at, status: b.status, by: b.checked_by });
+    }
     if (b.status === "픽업") boardingPickups.push({ name: nm, studentId: sid, via: viaOf(b.checked_by), by: b.checked_by });
   }
 
@@ -295,6 +324,7 @@ export async function loadTodayPickups(
       time:
         assumeAfternoon(((e.pickup_time as string | null) ?? "").slice(0, 5) || null) ??
         extractTimeFromText((e.raw_text as string | null) ?? (e.note as string | null)),
+      at: Date.parse(((e.registered_at as string | null) ?? (e.created_at as string | null)) ?? "") || null,
     }));
 
   // 학생 연결이 없거나 명부에서 못 찾은 건도 **버리지 않습니다.**
@@ -344,7 +374,7 @@ export async function loadTodayPickups(
     })
     .filter((v): v is { name: string; studentId: string; time: string | null } => !!v);
 
-  const merged = mergePickups({ boardingPickups, decidedKeys, entries, requests, plans });
+  const merged = mergePickups({ boardingPickups, decidedKeys, decidedAt, entries, requests, plans });
 
   // ── 시각이 없으면 평소 하원수단의 출발 시각을 물려받습니다 ────────────────
   //

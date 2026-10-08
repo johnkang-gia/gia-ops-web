@@ -334,7 +334,7 @@ export async function loadActiveEntries(supabase: SupabaseClient, dateKey: strin
     // 픽업은 «몇 시»가 이름보다 먼저 필요한 정보입니다. pickup_time 은 저장할 때 그 아이를
     // 가리키는 조각에서 한 번 읽어둔 값이고, 그 칸이 생기기 전 줄을 위해 raw_text 도 함께
     // 가져옵니다(읽는 쪽이 없으면 원문에서 뽑습니다).
-    .select("id, source, student_id, student_name, grade, class_name, status, note, raw_text, pickup_time, date_from, date_to")
+    .select("id, source, student_id, student_name, grade, class_name, status, note, raw_text, pickup_time, date_from, date_to, registered_at, created_at")
     .eq("state", "등록")
     .lte("date_from", dateKey)
     .gte("date_to", dateKey);

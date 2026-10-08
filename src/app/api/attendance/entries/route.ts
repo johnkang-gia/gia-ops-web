@@ -9,6 +9,63 @@ import { reconcileDismissal, reconcileEntryChange, reconcileSummary, type EntryS
 import { loadStudents } from "@/lib/students";
 import { ATTENDANCE_ENTRY_KEY } from "@/lib/attendanceEntries";
 import { isClockTime } from "@/lib/studentDayNotes";
+import { setBoardingStatus } from "@/lib/boardingWrite";
+
+/**
+ * **사람이 픽업으로 정했으면 체크표도 따라갑니다.**
+ *
+ * 출결내역에서 사람이 픽업을 등록해도 체크표 줄은 그대로였습니다. 아침에 누군가 「탑승」을 찍어
+ * 둔 아이는 오후 연락으로 픽업이 등록돼도 체크표에 계속 «탑승»으로 남았고, 체크표는 인쇄해서
+ * 쓰는 표라 그 아이는 차에 탑니다. 오늘 학생 보드는 그 «탑승»을 사람의 결정으로 보고 픽업을
+ * 통째로 가렸습니다 - 출결내역에는 있는데 보드에는 없는 아이가 됐습니다.
+ *
+ * 사람이 **나중에** 내린 결정이므로 체크표의 사람 줄도 덮습니다. 자동 등록(스캔)은 여기를
+ * 지나지 않습니다 - 자동이 사람 판단을 덮지 않는다는 규칙은 그대로입니다. 오늘 이후 날만,
+ * 그 요일에 타는 배정만 고칩니다.
+ */
+async function pickupToChecklist(
+  db: NonNullable<ReturnType<typeof serviceClient>>,
+  args: { studentId: string; studentName: string; from: string; to: string; actor: { email: string; name: string | null } },
+): Promise<{ changed: number; error: string | null }> {
+  const today = todayKey(new Date());
+  const { data: asg, error: aErr } = await db
+    .from("shuttle_assignments_basic")
+    .select("id, student_name_raw, weekdays")
+    .eq("student_id", args.studentId);
+  if (aErr) return { changed: 0, error: aErr.message };
+  const assignments = (asg as { id: string; student_name_raw: string; weekdays: number[] | null }[] | null) ?? [];
+  if (assignments.length === 0) return { changed: 0, error: null };
+  let changed = 0;
+  for (let i = 0, day = args.from; i < 7 && day <= args.to; i++, day = addDaysKey(day, 1)) {
+    if (day < today) continue;
+    const wd = new Date(`${day}T12:00:00+09:00`).getDay();
+    for (const a of assignments) {
+      const { data: cur } = await db
+        .from("shuttle_boardings")
+        .select("status")
+        .eq("service_date", day)
+        .eq("assignment_id", a.id)
+        .maybeSingle();
+      const before = (cur as { status: string } | null)?.status ?? null;
+      if (before === "픽업") continue;
+      // rides-ok: 체크표 줄을 먼저 봤습니다. 줄이 있으면(오늘만 탑승 포함) 요일과 관계없이 고치고,
+      // 줄이 없을 때만 요일로 «그날 타는 배정인가»를 가립니다 - 안 타는 날에 픽업 줄을 만들지 않습니다.
+      const ridesByDay = !a.weekdays || a.weekdays.length === 0 || a.weekdays.includes(wd);
+      if (!cur && !ridesByDay) continue;
+      const r = await setBoardingStatus(db, {
+        serviceDate: day,
+        assignmentId: a.id,
+        studentName: a.student_name_raw || args.studentName,
+        status: "픽업",
+        before,
+        actor: args.actor,
+      });
+      if (r.error) return { changed, error: r.error };
+      changed += 1;
+    }
+  }
+  return { changed, error: null };
+}
 
 // 업무보드 인박스가 쓰는 출결 등록 창구입니다.
 //
@@ -354,6 +411,18 @@ export async function PATCH(req: NextRequest) {
       { onConflict: ATTENDANCE_ENTRY_KEY }
     );
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (m.status === "픽업") {
+      const c = await pickupToChecklist(db, {
+        studentId: m.studentId,
+        studentName: m.studentName,
+        from,
+        to,
+        actor: { email: auth.user.email ?? "", name: null },
+      });
+      // 등록은 됐습니다. 체크표만 못 고쳤으면 그 사실을 화면에 돌려줍니다(조용히 넘기지 않음).
+      if (c.error) return NextResponse.json({ ok: false, error: `픽업은 등록됐지만 체크표를 고치지 못했습니다: ${c.error}` }, { status: 500 });
+      return NextResponse.json({ ok: true, manual: true, checklistChanged: c.changed });
+    }
     return NextResponse.json({ ok: true, manual: true });
   }
 
@@ -423,6 +492,16 @@ export async function PATCH(req: NextRequest) {
       { onConflict: ATTENDANCE_ENTRY_KEY }
     );
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (a.status === "픽업") {
+      const c = await pickupToChecklist(db, {
+        studentId: a.studentId,
+        studentName: a.studentName,
+        from: day,
+        to: dayTo,
+        actor: { email: auth.user.email ?? "", name: null },
+      });
+      if (c.error) return NextResponse.json({ ok: false, error: `픽업은 등록됐지만 체크표를 고치지 못했습니다: ${c.error}` }, { status: 500 });
+    }
     return NextResponse.json({ ok: true, assigned: true });
   }
 
@@ -505,5 +584,24 @@ export async function PATCH(req: NextRequest) {
     reconcileNote = reconcileSummary(r);
   }
 
+  // 픽업으로 확정·변경됐으면 체크표도 따라갑니다(위 pickupToChecklist 설명).
+  const after = data as (EntryShape & { student_id: string | null }) | null;
+  if (after && after.state === "등록" && after.status === "픽업" && after.student_id && after.date_from) {
+    const b = beforeRow as EntryShape | null;
+    const changedNow = !b || b.state !== "등록" || b.status !== "픽업" || b.date_from !== after.date_from || b.date_to !== after.date_to;
+    if (changedNow) {
+      const c = await pickupToChecklist(db, {
+        studentId: after.student_id,
+        studentName: after.student_name,
+        from: after.date_from,
+        to: after.date_to ?? after.date_from,
+        actor: { email: auth.user.email ?? "", name: null },
+      });
+      if (c.error) {
+        return NextResponse.json({ ok: false, entry: data, error: `픽업은 등록됐지만 체크표를 고치지 못했습니다: ${c.error}` }, { status: 500 });
+      }
+      if (c.changed > 0) reconcileNote = [reconcileNote, `체크표 ${c.changed}줄을 픽업으로 바꿨습니다.`].filter(Boolean).join(" ");
+    }
+  }
   return NextResponse.json({ ok: true, entry: data, reconcileNote });
 }

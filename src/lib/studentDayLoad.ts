@@ -122,11 +122,12 @@ export async function loadStudentDay(supabase: SupabaseClient, opts: LoadOptions
       // 칩에 「픽업(○○이 지정)」을 적으면 좁은 칸을 넘칩니다.
       text: p.via === "하원수단" ? "하원수단" : "픽업",
       byHuman: p.via === "사람",
+      ...(p.conflict ? { text: "픽업 · 체크표 확인" } : {}),
       onDate: date,
       from: { table: "shuttle_boardings·attendance_entries·pickup_requests", screen: "/shuttle/checklist" },
-      pending: false,
+      pending: !!p.conflict,
       evidence: {
-        label:
+        label: p.conflict ? p.conflict :
           p.via === "하원수단"
             ? "하원수단 설정 — 이 아이는 오늘 요일에 셔틀을 타지 않습니다"
             : p.via === "사람"

@@ -10,6 +10,7 @@ import {
   pickNextRoom,
   roomQueue,
   startedAtMap,
+  timeToMinutes,
   toggleTarget,
   type ConsultAppt,
   type ConsultEvent,
@@ -461,15 +462,23 @@ export type RoomPayload = {
   }[];
   /** 방금 이 방에서 누른 것 - 잘못 눌렀을 때 되돌릴 자리. */
   last: { id: string; label: string; action: string; at: string; updatedAt: string } | null;
+  /** 이 방에 예약됐지만 아직 도착하지 않은 분(예약 시각 순). */
+  upcoming: { id: string; label: string; grade: string | null; time: string | null; delayMin: number }[];
+  /**
+   * 행사 전체의 대기 목록(상담중·상담준비·대기·미도착). 다른 방의 줄은 **현황판과 같은 정도로만**
+   * 담습니다 - 이름은 행사 설정대로 가리고, 학년·상담실·상태·예약 시각뿐입니다.
+   */
+  all: { id: string; label: string; grade: string | null; room: string | null; status: ConsultStatus; time: string | null; mine: boolean }[];
   done: number;
   avgMinutes: number;
 };
 
 /**
- * 상담실 한 곳에 보낼 자료. **그 방의 예약만** 담습니다.
+ * 상담실 한 곳에 보낼 자료. 누를 수 있는 것은 **그 방의 예약뿐**입니다.
  *
- * 이름은 가리지 않습니다 - 방 안의 선생님이 지금 들어온 가정이 누구인지 확인해야 하기 때문입니다.
- * 대신 전화번호·학생 번호·메모는 담지 않고, 다른 방의 대기열도 보내지 않습니다. 문에 붙인 QR이
+ * 이 방 줄의 이름은 가리지 않습니다 - 방 안의 선생님이 지금 들어온 가정이 누구인지 확인해야 하기
+ * 때문입니다. 다른 방의 줄은 전체 흐름을 보라고 함께 보내되 로비 현황판과 같은 정도(가린 이름·학년·
+ * 방·상태)로만 담습니다. 전화번호·학생 번호·메모는 어느 줄에도 담지 않습니다. 문에 붙인 QR이
  * 사진으로 돌면 행정실이 「상담실 링크 새로 만들기」로 닫습니다.
  */
 export function buildRoomPayload(state: ConsultState, roomId: string, now: number): RoomPayload | null {
@@ -523,7 +532,38 @@ export function buildRoomPayload(state: ConsultState, roomId: string, now: numbe
       lastLog && lastAppt && fresh
         ? { id: lastAppt.id, label: label(lastAppt), action: lastLog.action ?? "", at: lastLog.at, updatedAt: lastAppt.updated_at }
         : null,
+    upcoming: state.appts
+      .filter((a) => a.room_id === roomId && a.status === "미도착")
+      .sort((x, y) => (timeToMinutes(x.scheduled_time) ?? 9999) - (timeToMinutes(y.scheduled_time) ?? 9999))
+      .map((a) => ({ id: a.id, label: label(a), grade: gradeOf(a), time: a.scheduled_time, delayMin: a.delay_min })),
+    all: allWaiting(state, roomId, studentById),
     done: state.appts.filter((a) => a.done_room_ids.includes(roomId)).length,
     avgMinutes: timing.get(roomId)?.avg ?? state.event.default_minutes,
   };
+}
+
+const ALL_ORDER: Partial<Record<ConsultStatus, number>> = { 상담중: 0, 상담준비: 1, 대기: 2, 미도착: 3 };
+
+/** 행사 전체 대기 목록 — 상태 순, 같은 상태 안에서는 예약 시각 순. */
+function allWaiting(state: ConsultState, roomId: string, studentById: Map<string, Student | StudentWithPhones>): RoomPayload["all"] {
+  const roomName = new Map(state.rooms.map((r) => [r.id, r.name]));
+  return state.appts
+    .filter((a) => ALL_ORDER[a.status] !== undefined)
+    .sort(
+      (x, y) =>
+        (ALL_ORDER[x.status] ?? 9) - (ALL_ORDER[y.status] ?? 9) ||
+        (timeToMinutes(x.scheduled_time) ?? 9999) - (timeToMinutes(y.scheduled_time) ?? 9999),
+    )
+    .map((a) => {
+      const mine = a.room_id === roomId;
+      return {
+        id: a.id,
+        label: apptLabel(a, studentById, mine ? false : state.event.mask_names),
+        grade: studentById.get(a.student_ids[0] ?? "")?.grade ?? null,
+        room: a.room_id ? (roomName.get(a.room_id) ?? null) : null,
+        status: a.status,
+        time: a.scheduled_time,
+        mine,
+      };
+    });
 }

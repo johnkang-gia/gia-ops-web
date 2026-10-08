@@ -129,7 +129,16 @@ export async function updateSession(request: NextRequest) {
     // 토들 수집기(사무실 PC 크롬 확장)가 픽업 연락과 «살아 있음» 신호를 보내는 곳입니다.
     // 확장은 학교 구글 계정 세션이 없습니다. 인증은 PICKUP_INGEST_SECRET 으로 직접 확인합니다.
     path === "/api/pickup/ingest" ||
-    path === "/api/pickup/heartbeat";
+    path === "/api/pickup/heartbeat" ||
+    // 학부모 상담 현황판(로비 태블릿·전자칠판)과 학부모 개인 확인 링크(QR), 그리고 현황판 짧은
+    // 주소(/cs/코드). 셋 다 로그인 없는 기기·휴대폰이 엽니다. 인증은 각 화면의 API 가 열쇠(추측할 수
+    // 없는 uuid)로 직접 확인하고, 서버가 고른 칸(학년·가린 이름·상태)만 돌려줍니다 - 전화번호는
+    // 이 길로 나가지 않습니다.
+    path.startsWith("/consult-board/") ||
+    path.startsWith("/api/consult/board/") ||
+    path.startsWith("/consult-me/") ||
+    path.startsWith("/api/consult/me/") ||
+    path.startsWith("/cs/");
 
   if (!user && !isAuthRoute) {
     const url = request.nextUrl.clone();
@@ -229,6 +238,8 @@ export async function updateSession(request: NextRequest) {
         !path.startsWith("/attendance") &&
         !path.startsWith("/pickup") &&
         !path.startsWith("/inquiries") &&
+        // 학부모 상담 면담 화면. 선생님은 자기 상담실의 대기열만 다룹니다(API 가 다시 확인).
+        !(path === "/consult" || path.startsWith("/consult/")) &&
         !path.startsWith("/api/")
       ) {
         const url = request.nextUrl.clone();
@@ -255,6 +266,8 @@ export async function updateSession(request: NextRequest) {
         !path.startsWith("/attendance") &&
         !path.startsWith("/pickup") &&
         !path.startsWith("/inquiries") &&
+        // 학부모 상담 면담 화면. 선생님은 자기 상담실의 대기열만 다룹니다(API 가 다시 확인).
+        !(path === "/consult" || path.startsWith("/consult/")) &&
         !path.startsWith("/api/")
       ) {
         const url = request.nextUrl.clone();

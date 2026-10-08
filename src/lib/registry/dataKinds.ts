@@ -233,6 +233,21 @@ export const DATA_KINDS: DataKindDef[] = [
     fix: { href: "/work", how: "업무보드에서 해당 업무를 정리합니다." },
   },
   {
+    key: "상담",
+    canonical: "consult_appointments",
+    // 행사·상담실은 예약이 기대는 틀이고, 학생 잇기·상태 기록·메모는 예약에 딸립니다.
+    satellites: ["consult_events", "consult_rooms", "consult_appointment_students", "consult_notes"],
+    dedupe: { none: "같은 아이가 한 행사에 두 번 들어가지 않게 넣는 자리(appointments POST)가 막습니다. 취소된 예약은 다시 넣을 수 있어 색인으로 막지 않습니다." },
+    apply: "src/lib/consult/server.ts",
+    undo: "src/lib/consult/server.ts",
+    gap: null,
+    byDesign:
+      "상태는 `applyConsultAction` 으로만 바꾸고, 바꿀 때마다 바로 앞 값(before)을 기록에 남깁니다. 「되돌리기」는 그 값을 되살립니다 - " +
+      "상태 글자 하나만 되돌리면 순회 코스에서 끝낸 방 목록이 어긋납니다. 학생은 번호로만 잇습니다(이름을 적는 칸이 없습니다).",
+    rules: [],
+    fix: { href: "/school/consult", how: "학부모 상담 → 그 행사 → 명단 탭에서 겹친 예약을 지우거나 형제와 합칩니다." },
+  },
+  {
     key: "도서관",
     canonical: "lib_loans",
     satellites: ["lib_books", "lib_visits", "lib_card_issues", "lib_settings", "lib_locations", "lib_map", "lib_student_photos", "lib_label_levels", "lib_roster_version", "lib_card_prefs"],
@@ -271,6 +286,8 @@ export const LOG_TABLES = [
   // 교직원이 어느 화면을 언제 얼마나 봤나. 학교 운영 자료가 아니라 **화면 사용량**을
   // 세는 기록이라, 어느 갈래에도 붙지 않고 혼자 쌓입니다.
   "usage_events",
+  // 상담 예약의 상태가 바뀐 내력(누가·언제·무엇을, 그리고 되돌리기용 직전 값).
+  "consult_status_log",
 ];
 
 /** 어느 갈래에도 안 붙는 표. **왜 안 붙는지** 적습니다 - 이유 없이는 뺄 수 없습니다. */

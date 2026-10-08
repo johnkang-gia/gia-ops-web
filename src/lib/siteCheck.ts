@@ -78,6 +78,7 @@ export const SCREENS: string[] = [
   "/meetings",
   "/meetings/report",
   "/my-class",
+  "/consult",
   "/my-class/office",
   "/ops",
   "/ops-board",
@@ -88,6 +89,7 @@ export const SCREENS: string[] = [
   "/records/drive",
   "/school",
   "/school/apparel",
+  "/school/consult",
   "/school/library",
   "/school/data-check",
   "/school/documents",
@@ -252,6 +254,8 @@ export function deadLinks(links: string[], known: string[]): string[] {
 /** 값이 들어가는 주소. 뒤에 무엇이 붙든 그 화면은 있습니다. */
 const DYNAMIC_PREFIXES = [
   "/students/",
+  // 상담 행사마다 화면이 하나씩 생깁니다.
+  "/school/consult/",
   "/staff/",
   "/weekly-report/students/",
   "/attendance/students/",

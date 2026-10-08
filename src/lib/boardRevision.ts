@@ -31,7 +31,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  */
 
 /** 화면마다 보는 자료가 다릅니다. 하나로 묶으면 시간표 한 줄 고쳤다고 도착체크까지 다시 셉니다. */
-export type BoardKey = "ops" | "shuttle" | "timetable";
+export type BoardKey = "ops" | "shuttle" | "timetable" | "consult";
 
 /**
  * 번호가 같아도 이 시간이 지나면 한 번은 전부 계산합니다.

@@ -252,6 +252,18 @@ const SCHOOL_TABS: TabDef[] = [
       { label: "학기 관리", href: "/terms" },
     ],
   },
+  // 학부모 상담 — 행사마다 상담실·명단·기록이 따로 남습니다. 면담 화면(/consult)은 선생님도 씁니다.
+  {
+    key: "consult",
+    label: "학부모 상담",
+    icon: "🗣️",
+    href: "/school/consult",
+    match: ["/school/consult", "/consult"],
+    children: [
+      { label: "행사 · 안내데스크", href: "/school/consult", match: ["/school/consult"] },
+      { label: "면담 화면", href: "/consult", match: ["/consult"] },
+    ],
+  },
 ];
 
 // ── 셔틀 ────────────────────────────────────────────────────────────────────
@@ -475,10 +487,12 @@ function sectionFor(pathname: string, opts: { isTeacher: boolean; isHomeroom: bo
           },
           { key: "pickup", label: "우리 반 픽업", labelEn: "Pickup Check", icon: "🚗", href: "/pickup", match: ["/pickup"] },
           { key: "office", label: "행정실 문의", labelEn: "Office Request", icon: "💬", href: "/my-class/office", match: ["/my-class/office"] },
+          { key: "consult", label: "학부모 상담", labelEn: "Conferences", icon: "🗣️", href: "/consult", match: ["/consult"] },
         ]
       : [
           { key: "overview", label: "내 시간표", labelEn: "My Schedule", icon: "🗓️", href: "/my-class", match: ["/my-class"] },
           { key: "office", label: "행정실 문의", labelEn: "Office Request", icon: "💬", href: "/my-class/office", match: ["/my-class/office"] },
+          { key: "consult", label: "학부모 상담", labelEn: "Conferences", icon: "🗣️", href: "/consult", match: ["/consult"] },
         ];
     const hit = teacherTabs.some((t) => t.match.some((m) => pathname === m || pathname.startsWith(m + "/")));
     return hit ? { title: "교사", titleEn: "Teacher", icon: "👩‍🏫", accent: "teal", tabs: teacherTabs } : null;

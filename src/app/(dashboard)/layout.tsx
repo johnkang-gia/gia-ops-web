@@ -174,6 +174,8 @@ function buildSchoolCategory(isAdmin: boolean, isStaffOrAbove: boolean): NavCate
   }
   // 학사일정·당번표·학기 준비·학기 관리를 하나로 묶은 대분류입니다.
   items.push({ href: "/academic-calendar", label: "학사운영", icon: "📅" });
+  // 학부모 상담 — 행사·명단·상담실은 행정실이 만들고, 당일에는 로비 현황판과 면담 화면이 함께 돕니다.
+  if (isStaffOrAbove) items.push({ href: "/school/consult", label: "학부모 상담", labelEn: "Conferences", icon: "🗣️" });
   if (isAdmin) {
     // 사무실 대형 모니터 대시보드의 관리 화면입니다(요청: "운영 대시보드는 관리자만").
     // 상단탭에는 없는 유일한 항목이라 [설정] 구분선 아래에 둡니다.
@@ -444,6 +446,8 @@ export default async function DashboardLayout({
         : []),
       // 담임/과목 선생님 → 행정실 문의·도움요청 창구(요청 4).
       { key: "office", label: "행정실 문의", labelEn: "Office Request", icon: "💬", href: "/my-class/office", accent: "teal" },
+      // 학부모 상담 날의 면담 화면. 선생님은 자기 상담실(계정으로 지정된 방)의 대기열만 봅니다.
+      { key: "consult", label: "학부모 상담", labelEn: "Conferences", icon: "🗣️", href: "/consult", accent: "teal" },
       // 학사일정은 교사에게는 감춥니다(요청: "교사권한은 학사일정 안보이게"). 예전에는 이 자리에
       // "행정요청" 메뉴가 있었지만 제거되었습니다(요청: "행정요청도 없애줘, 구글챗 미러링이
       // 된다면 행정요청도 여기로 받을거라서 상관없어") - 교사는 계속 구글챗으로 행정직원에게

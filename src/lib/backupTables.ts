@@ -157,6 +157,11 @@ export const BACKUP_GROUPS: { group: string; tables: string[] }[] = [
     tables: ["lib_books", "lib_loans", "lib_visits", "lib_settings", "lib_locations", "lib_map", "lib_student_photos", "lib_label_levels", "lib_card_issues", "lib_card_prefs"],
   },
   {
+    // 학부모 상담. 상담 메모는 학생 기록이고, 상태 기록은 «누가 무엇을» 확인하는 근거입니다.
+    group: "학부모 상담",
+    tables: ["consult_events", "consult_rooms", "consult_appointments", "consult_appointment_students", "consult_status_log", "consult_notes"],
+  },
+  {
     group: "의류",
     tables: ["apparel_orders", "apparel_order_items", "apparel_order_pieces", "apparel_stock_moves", "apparel_exchanges"],
   },

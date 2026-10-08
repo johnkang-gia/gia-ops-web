@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import QRCode from "qrcode";
+import { APP_ORIGIN } from "@/lib/appUrl";
 import type { ConsultState } from "@/lib/consult/server";
 import type { StaffOption } from "./ConsultEventClient";
 import { send } from "./shared";
@@ -10,9 +12,9 @@ type Row = { key: string; id: string | null; name: string; teacher_email: string
 /**
  * 상담실 — 이름·면담 선생님·안내 글자.
  *
- * 선생님은 **계정으로** 고릅니다. 선생님 화면이 «내 상담실»을 그 계정으로 찾고, 선생님은 자기
- * 방에 온 예약만 호출·시작·종료할 수 있습니다. 계정이 없는 분(외부 상담사 등)은 이름만 적으면
- * 되고, 그 방은 안내데스크가 대신 눌러 줍니다.
+ * 선생님 계정을 고르면 그 선생님 면담 화면이 이 방을 먼저 엽니다. 다만 **누르는 사람을 방으로
+ * 막지는 않습니다** - 그날 대신 들어간 선생님, 계정 없는 외부 상담사도 방마다 놓은 태블릿이나
+ * 문에 붙인 QR(아래 「상담실 태블릿·QR」)로 호출·시작·종료를 누릅니다.
  */
 export default function RoomsTab({
   state,
@@ -138,6 +140,101 @@ export default function RoomsTab({
           {saving ? "저장 중…" : "저장"}
         </button>
       </div>
+      <RoomLinks state={state} onChanged={onChanged} onError={onError} />
     </section>
+  );
+}
+
+/**
+ * **상담실 태블릿·QR.** 방마다 로그인 없이 여는 주소가 하나씩 있습니다.
+ *
+ * 태블릿을 둘 수 있으면 그 주소를 태블릿에 띄워 두고, 어려우면 QR을 인쇄해 문에 붙입니다. 어느
+ * 휴대폰이든 찍으면 그 방의 호출·시작·종료 화면이 열립니다. 주소가 밖으로 돌면 「새로 만들기」로
+ * 한꺼번에 닫습니다(새 QR을 다시 붙여야 합니다).
+ */
+function RoomLinks({
+  state,
+  onChanged,
+  onError,
+}: {
+  state: ConsultState;
+  onChanged: () => Promise<void>;
+  onError: (msg: string | null) => void;
+}) {
+  const [qrFor, setQrFor] = useState<string | null>(null);
+  const [qr, setQr] = useState<string | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
+  const urlOf = (code: string) => `${APP_ORIGIN}/cr/${code}`;
+  const open = state.event.room_links_enabled && state.event.status !== "종료";
+
+  useEffect(() => {
+    const room = state.rooms.find((r) => r.id === qrFor);
+    if (!room) return setQr(null);
+    QRCode.toDataURL(urlOf(room.room_short_code), { margin: 1, width: 280 })
+      .then(setQr)
+      .catch((e: unknown) => onError(`QR을 만들지 못했습니다: ${e instanceof Error ? e.message : String(e)}`));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qrFor, state.rooms]);
+
+  async function rotate() {
+    if (!confirm("상담실 주소를 모두 새로 만듭니다. 지금 붙어 있는 QR과 태블릿 화면은 바로 닫히고, 새 QR을 다시 붙여야 합니다. 계속할까요?")) return;
+    const r = await send(`/api/consult/events/${state.event.id}`, "PATCH", { rotate_rooms: true });
+    if (!r.ok) return onError(r.error ?? "새로 만들지 못했습니다.");
+    onError(null);
+    await onChanged();
+  }
+
+  if (state.rooms.length === 0) return null;
+  return (
+    <div className="mt-2 space-y-2 border-t border-slate-200 pt-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <h3 className="text-sm font-bold text-slate-800">📱 상담실 태블릿·QR</h3>
+        <span className="text-xs text-slate-500">
+          로그인 없이 그 방의 호출·시작·종료만 할 수 있습니다. 태블릿에 띄워 두거나, QR을 인쇄해 문에 붙이세요.
+        </span>
+        <a
+          href={`/school/consult/${state.event.id}/room-qr`}
+          target="_blank"
+          rel="noreferrer"
+          className="ml-auto rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+        >
+          🖨️ QR 인쇄
+        </a>
+        <button onClick={() => void rotate()} className="rounded-lg px-2 py-1.5 text-xs text-slate-500 hover:bg-slate-100">
+          주소 새로 만들기
+        </button>
+      </div>
+      {!open && (
+        <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          지금은 상담실 링크가 닫혀 있습니다({state.event.status === "종료" ? "행사 종료" : "설정에서 꺼 둠"}).
+        </p>
+      )}
+      <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
+        {state.rooms.map((r) => (
+          <li key={r.id} className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm">
+            <span className="w-32 shrink-0 font-semibold text-slate-800">{r.name}</span>
+            <span className="break-all font-mono text-xs text-slate-600">{urlOf(r.room_short_code)}</span>
+            <button
+              onClick={() => {
+                void navigator.clipboard.writeText(urlOf(r.room_short_code));
+                setCopied(r.id);
+                setTimeout(() => setCopied((c) => (c === r.id ? null : c)), 1500);
+              }}
+              className="ml-auto rounded px-2 py-1 text-xs text-indigo-700 hover:bg-indigo-50"
+            >
+              {copied === r.id ? "복사됨" : "주소 복사"}
+            </button>
+            <button onClick={() => setQrFor((x) => (x === r.id ? null : r.id))} className="rounded px-2 py-1 text-xs text-slate-600 hover:bg-slate-100">
+              {qrFor === r.id ? "QR 닫기" : "QR 보기"}
+            </button>
+            {qrFor === r.id && (
+              <div className="w-full pt-1">
+                {qr ? <img src={qr} alt={`${r.name} QR`} className="h-40 w-40 rounded border border-slate-200" /> : <div className="h-40 w-40 animate-pulse rounded bg-slate-100" />}
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }

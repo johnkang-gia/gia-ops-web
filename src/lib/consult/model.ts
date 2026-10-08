@@ -39,6 +39,8 @@ export type ConsultEvent = {
   board_expires_at: string | null;
   board_short_code: string | null;
   personal_links_enabled: boolean;
+  /** 상담실 태블릿·QR 링크를 열어 둘지. */
+  room_links_enabled: boolean;
   is_demo: boolean;
   created_at: string;
 };
@@ -51,6 +53,10 @@ export type ConsultRoom = {
   teacher_name: string | null;
   grade_label: string | null;
   sort_order: number;
+  /** 상담실 태블릿·QR 열쇠. 이 방의 예약만 호출·시작·종료할 수 있습니다. */
+  room_token: string;
+  /** 태블릿 주소창에 치는 짧은 주소(/cr/코드). */
+  room_short_code: string;
 };
 
 export type ConsultAppt = {

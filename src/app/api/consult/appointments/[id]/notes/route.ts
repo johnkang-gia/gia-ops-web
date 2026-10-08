@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { consultSession, teacherOwnsAppt } from "@/lib/consult/access";
+import { consultSession } from "@/lib/consult/access";
 import { genCaseId } from "@/lib/caseId";
 import { departmentOf } from "@/lib/department";
 import { loadStudent } from "@/lib/students";
@@ -16,9 +16,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const { id: apptId } = await params;
   const s = await consultSession();
   if (!s.ok) return s.res;
-  if (!s.staff && !(await teacherOwnsAppt(s.supabase, s.me.email, apptId))) {
-    return NextResponse.json({ error: "선생님 상담실의 예약이 아닙니다." }, { status: 403 });
-  }
+  // 면담하는 선생님은 그날 정해지므로 담당 방으로 막지 않습니다(호출·시작·종료와 같은 이유).
+  // 메모는 쓴 사람과 관리자만 다시 읽으므로, 열어 두어도 남의 메모가 보이지는 않습니다.
 
   const body = (await req.json().catch(() => ({}))) as { student_id?: string | null; room_id?: string | null; body?: string; follow_up?: string | null };
   const text = String(body.body ?? "").trim();

@@ -141,6 +141,20 @@ function RegBadge({
         >
           📅 기간
         </button>
+        {/* **픽업은 기간을 안 정해도 등록됩니다.** 픽업은 그날 하루가 원칙이라, 날짜가 안
+            적힌 픽업은 «글이 온 날»입니다. 기간 창을 거쳐야만 등록되게 두었더니, 분명한
+            픽업인데도 기간을 안 넣은 줄은 [오늘 학생]에 끝내 안 떴습니다. */}
+        {entry.category === "픽업" && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => onSet(entry, "등록")}
+            className="rounded bg-blue-50 px-1 text-[9px] font-bold text-blue-700 transition hover:bg-blue-100 disabled:opacity-40"
+            title={`${entry.targetDate} 하루 픽업으로 등록합니다 - 다른 날이면 📅 기간으로 넣으세요`}
+          >
+            {busy ? "…" : "✅ 등록"}
+          </button>
+        )}
         {/* 빈 네모(⬜)를 없앴습니다.
             담당자: "출결내역 이름 옆에 아직도 네모칸 있어, 이거 거슬려."
             맞는 말입니다. ⬜는 "아직 등록 대상이 아니다"라는 **없음**을 그린 것인데,
@@ -1297,6 +1311,7 @@ export default function AttendanceDigestPanel({
           onSaved={async () => {
             await loadRules();
             await loadRegs();
+            void notifyOpsBoardRefresh();
           }}
         />
       )}

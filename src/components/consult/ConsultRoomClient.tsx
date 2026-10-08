@@ -10,7 +10,7 @@ import { useConsultEvent, waitLabel } from "./useConsultEvent";
 import { ApptNames, StatusChip, send } from "./shared";
 
 /**
- * **면담 화면.** 선생님 한 분이 자기 상담실에서 «다음 분 호출 → 시작 → 메모 → 종료»를 합니다.
+ * **면담 화면.** 선생님 한 분이 들어간 상담실에서 «다음 분 호출 → 시작 → 메모 → 종료»를 합니다.
  * 종료하면 순회 코스가 남은 분은 가장 빨리 볼 수 있는 다음 방으로 자동 배정되고, 그 방 선생님
  * 화면과 로비 현황판에 그 순간 뜹니다.
  *
@@ -74,8 +74,10 @@ function RoomInner({
   const { lang } = useLang();
   const live = useConsultEvent(initial.event.id, initial);
   const state = live.state ?? initial;
+  // 어느 방이든 고를 수 있습니다. 그날 대신 들어간 방도 그 선생님이 누를 수 있어야 하기 때문입니다.
+  // 자기 계정으로 정해진 방이 있으면 그 방을 먼저 엽니다.
   const mine = state.rooms.filter((r) => (r.teacher_email ?? "").toLowerCase() === myEmail.toLowerCase());
-  const pickable = staff ? state.rooms : mine;
+  const pickable = staff ? state.rooms : [...mine, ...state.rooms.filter((r) => !mine.includes(r))];
   const [roomId, setRoomId] = useState<string | null>(initialRoom && pickable.some((r) => r.id === initialRoom) ? initialRoom : pickable[0]?.id ?? null);
   const room = state.rooms.find((r) => r.id === roomId) ?? null;
   const studentById = useMemo(() => new Map<string, Student>(state.students.map((s) => [s.id, s])), [state.students]);
@@ -145,8 +147,8 @@ function RoomInner({
       {!room && (
         <p className="rounded-xl border border-dashed border-amber-300 bg-amber-50 p-6 text-center text-sm text-amber-800">
           {t(
-            "이 행사에 선생님 계정으로 정해진 상담실이 없습니다. 행정실에 상담실 선생님을 지정해 달라고 알려 주세요.",
-            "No conference room is assigned to your account for this event. Please ask the office to assign you a room.",
+            "이 행사에 아직 상담실이 없습니다. 행정실에 상담실을 만들어 달라고 알려 주세요.",
+            "This event has no conference rooms yet. Please ask the office to add them.",
           )}
         </p>
       )}

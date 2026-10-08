@@ -16,7 +16,17 @@ export const OPS_REFRESH_EVENT = "refresh";
 
 // 신호를 보냅니다. 실패해도 조용히 넘어갑니다 - 못 보내도 다음 폴링에서 반영되므로,
 // 이것 때문에 사용자가 하던 일이 막히면 안 됩니다.
+/**
+ * **같은 화면 안의 다른 칸에 알리는 신호.**
+ *
+ * 업무보드에서 출결내역을 등록하면 바로 옆 「오늘 학생」 칸이 따라와야 합니다. 표 구독이 오는
+ * 데는 몇 초가 걸리고, 구독이 끊겨 있으면 1분 폴링까지 기다립니다 - 그 사이 옆 칸만 보는 사람은
+ * 그 아이를 모릅니다. 같은 탭 안이라면 기다릴 이유가 없습니다.
+ */
+export const LOCAL_BOARD_EVENT = "gia:board-changed";
+
 export async function notifyOpsBoardRefresh(): Promise<void> {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(LOCAL_BOARD_EVENT));
   try {
     const supabase = createClient();
     const channel = supabase.channel(OPS_REFRESH_CHANNEL);

@@ -8,6 +8,8 @@ import {
   isConsultStatus,
   maskPersonName,
   pickNextRoom,
+  roomQueue,
+  startedAtMap,
   toggleTarget,
   type ConsultAppt,
   type ConsultEvent,
@@ -25,8 +27,8 @@ import {
  */
 
 export const EVENT_COLUMNS =
-  "id, name, event_date, end_date, status, mask_names, sibling_default, default_minutes, board_token, board_enabled, board_expires_at, board_short_code, personal_links_enabled, is_demo, created_at";
-export const ROOM_COLUMNS = "id, event_id, name, teacher_email, teacher_name, grade_label, sort_order";
+  "id, name, event_date, end_date, status, mask_names, sibling_default, default_minutes, board_token, board_enabled, board_expires_at, board_short_code, personal_links_enabled, room_links_enabled, is_demo, created_at";
+export const ROOM_COLUMNS = "id, event_id, name, teacher_email, teacher_name, grade_label, sort_order, room_token, room_short_code";
 export const APPT_COLUMNS =
   "id, event_id, scheduled_time, room_id, status, prev_status, delay_min, arrived_at, called_at, course_room_ids, done_room_ids, note, personal_token, updated_by, updated_at";
 const LOG_COLUMNS = "appointment_id, from_status, to_status, room_id, action, by_email, at";
@@ -426,4 +428,102 @@ export function boardOpen(e: Pick<ConsultEvent, "board_enabled" | "board_expires
   if (!e.board_enabled || e.status === "종료") return false;
   if (e.board_expires_at && Date.parse(e.board_expires_at) < now) return false;
   return true;
+}
+
+// ── 상담실 태블릿·QR(로그인 없음) ──────────────────────────────────────────
+
+/** 상담실 링크가 지금 열려 있어도 되는가. 행사가 끝났거나 행정실이 껐으면 닫습니다. */
+export function roomLinkOpen(e: Pick<ConsultEvent, "room_links_enabled" | "status">): boolean {
+  return e.room_links_enabled && e.status !== "종료";
+}
+
+/** 상담실 화면에서 누른 것을 기록에 남길 이름. 로그인이 없으니 «어느 방에서»가 «누가»를 대신합니다. */
+export function roomActor(roomName: string): string {
+  return `상담실:${roomName}`;
+}
+
+/** 상담실 화면이 누를 수 있는 단추. 도착·배정·취소·전화상담은 안내데스크의 일입니다. */
+export const ROOM_ACTIONS = new Set<ConsultAction["kind"]>(["call", "start", "finish", "delay", "undo"]);
+
+export type RoomPayload = {
+  eventName: string;
+  room: { name: string; teacher: string | null; gradeLabel: string | null };
+  now: { id: string; label: string; grade: string | null; startedAt: string | null; updatedAt: string; remaining: string[] }[];
+  queue: {
+    id: string;
+    label: string;
+    grade: string | null;
+    status: ConsultStatus;
+    called: boolean;
+    wait: number | null;
+    time: string | null;
+    updatedAt: string;
+  }[];
+  /** 방금 이 방에서 누른 것 - 잘못 눌렀을 때 되돌릴 자리. */
+  last: { id: string; label: string; action: string; at: string; updatedAt: string } | null;
+  done: number;
+  avgMinutes: number;
+};
+
+/**
+ * 상담실 한 곳에 보낼 자료. **그 방의 예약만** 담습니다.
+ *
+ * 이름은 가리지 않습니다 - 방 안의 선생님이 지금 들어온 가정이 누구인지 확인해야 하기 때문입니다.
+ * 대신 전화번호·학생 번호·메모는 담지 않고, 다른 방의 대기열도 보내지 않습니다. 문에 붙인 QR이
+ * 사진으로 돌면 행정실이 「상담실 링크 새로 만들기」로 닫습니다.
+ */
+export function buildRoomPayload(state: ConsultState, roomId: string, now: number): RoomPayload | null {
+  const room = state.rooms.find((r) => r.id === roomId);
+  if (!room) return null;
+  const studentById = new Map(state.students.map((s) => [s.id, s]));
+  const label = (a: ConsultAppt) => apptLabel(a, studentById, false);
+  const gradeOf = (a: ConsultAppt) => {
+    const s = studentById.get(a.student_ids[0] ?? "");
+    return s ? [s.grade, s.class_name].filter(Boolean).join(" ") || null : null;
+  };
+  const { rooms: timing, waits } = estimate(state.appts, state.rooms, state.logs, state.event.default_minutes, now);
+  const started = startedAtMap(state.logs);
+  const nameOf = (id: string) => state.rooms.find((r) => r.id === id)?.name ?? "";
+  const q = roomQueue(state.appts, roomId);
+
+  // 되돌리기는 **이 방 화면에서 누른 것**만 겨눕니다. 「종료」의 기록은 다음 방 번호로 남아서(그
+  // 예약이 옮겨 간 곳) 방 번호로는 이 방에서 누른 것을 찾을 수 없습니다.
+  const tag = roomActor(room.name);
+  const mine = state.logs.filter((l) => l.by_email === tag && l.action && l.action !== "undo" && ROOM_ACTIONS.has(l.action as ConsultAction["kind"]));
+  const lastLog = mine.length ? mine[mine.length - 1] : null;
+  const lastAppt = lastLog ? state.appts.find((a) => a.id === lastLog.appointment_id) : undefined;
+  const fresh = lastLog && now - Date.parse(lastLog.at) < 15 * 60_000;
+
+  return {
+    eventName: state.event.name,
+    room: { name: room.name, teacher: room.teacher_name, gradeLabel: room.grade_label },
+    now: q
+      .filter((a) => a.status === "상담중")
+      .map((a) => ({
+        id: a.id,
+        label: label(a),
+        grade: gradeOf(a),
+        startedAt: started.has(a.id) ? new Date(started.get(a.id) as number).toISOString() : null,
+        updatedAt: a.updated_at,
+        remaining: a.course_room_ids.filter((r) => r !== roomId && !a.done_room_ids.includes(r)).map(nameOf).filter(Boolean),
+      })),
+    queue: q
+      .filter((a) => a.status !== "상담중")
+      .map((a) => ({
+        id: a.id,
+        label: label(a),
+        grade: gradeOf(a),
+        status: a.status,
+        called: a.status === "상담준비" && !!a.called_at,
+        wait: waits.get(a.id) ?? null,
+        time: a.scheduled_time,
+        updatedAt: a.updated_at,
+      })),
+    last:
+      lastLog && lastAppt && fresh
+        ? { id: lastAppt.id, label: label(lastAppt), action: lastLog.action ?? "", at: lastLog.at, updatedAt: lastAppt.updated_at }
+        : null,
+    done: state.appts.filter((a) => a.done_room_ids.includes(roomId)).length,
+    avgMinutes: timing.get(roomId)?.avg ?? state.event.default_minutes,
+  };
 }

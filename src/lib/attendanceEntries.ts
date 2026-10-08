@@ -342,6 +342,27 @@ export async function loadActiveEntries(supabase: SupabaseClient, dateKey: strin
 }
 
 /**
+ * **자동이 확신하지 못한 픽업**(`state = 확인필요`).
+ *
+ * 등록된 줄만 읽으면 물음표 픽업은 [오늘 학생]에 아예 안 뜹니다. 그런데 픽업은 놓치면 되돌릴
+ * 수 없는 일이라, 「확인이 덜 됐다」는 이유로 보드에서 빼면 그 보드만 보는 사람은 그 아이를
+ * 모릅니다. **물음표를 단 채로 띄우고**, 사람이 날짜·학생을 정하면 그 날짜로 옮겨 갑니다.
+ *
+ * 끝날이 오늘 이후인 것만 읽습니다 - 지난 날의 물음표는 이미 지나간 일입니다.
+ */
+export async function loadReviewPickups(supabase: SupabaseClient, dateKey: string, untilKey: string) {
+  const { data, error } = await supabase
+    .from("attendance_entries")
+    .select("id, source, student_id, student_name, status, reason, raw_text, pickup_time, date_from, date_to")
+    .eq("state", "확인필요")
+    .eq("status", "픽업")
+    .gte("date_to", dateKey)
+    .lte("date_from", untilKey)
+    .limit(100);
+  return { rows: data ?? [], error: error?.message ?? null };
+}
+
+/**
  * 아직 시작하지 않은 등록 건 - «예정된 변동사항».
  *
  * 「이연우 9/21~23 결석」처럼 미리 알려온 것은 등록만 해두고 그날이 와야 화면에 뜹니다.

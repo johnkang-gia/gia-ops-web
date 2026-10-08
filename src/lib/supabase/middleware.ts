@@ -138,7 +138,12 @@ export async function updateSession(request: NextRequest) {
     path.startsWith("/api/consult/board/") ||
     path.startsWith("/consult-me/") ||
     path.startsWith("/api/consult/me/") ||
-    path.startsWith("/cs/");
+    path.startsWith("/cs/") ||
+    // 상담실 태블릿·QR(/consult-room/열쇠, 짧은 주소 /cr/코드). 그날 어느 선생님이 들어올지 몰라
+    // 로그인 없이 엽니다. 열쇠는 그 방 하나만 열고, 단추는 호출·시작·종료·지연·되돌리기뿐입니다.
+    path.startsWith("/consult-room/") ||
+    path.startsWith("/api/consult/room/") ||
+    path.startsWith("/cr/");
 
   if (!user && !isAuthRoute) {
     const url = request.nextUrl.clone();

@@ -4,7 +4,7 @@ import { buildBoard, isHumanSetNote, type BoardInput, type DayBoard, type DayIte
 import { whereNow, type PeriodRow, type TimetableRow } from "./whereNow";
 import { isNoteKind } from "./studentDayNotes";
 import { loadTodayPickups, setterLabel } from "./pickups";
-import { loadActiveEntries, loadUpcomingEntries } from "./attendanceEntries";
+import { loadActiveEntries, loadReviewPickups, loadUpcomingEntries } from "./attendanceEntries";
 import { departmentOf } from "./department";
 import { kstDateOffset } from "./kst";
 import { loadStudents } from "@/lib/students";
@@ -71,10 +71,11 @@ export async function loadStudentDay(supabase: SupabaseClient, opts: LoadOptions
   const push = (studentId: string | null, hint: string | null, item: DayItem, house?: { id: string; name: string }[]) =>
     items.push({ studentId, hint, item, house });
 
-  const [pickups, active, upcoming, noteRes, inquiryRes, taskRes] = await Promise.all([
+  const [pickups, active, upcoming, review, noteRes, inquiryRes, taskRes] = await Promise.all([
     loadTodayPickups(supabase, date, (id) => nameById.get(id) ?? null),
     loadActiveEntries(supabase, date),
     loadUpcomingEntries(supabase, date, aheadDays),
+    loadReviewPickups(supabase, date, until),
     supabase
       .from("student_day_notes")
       .select("id, student_id, on_date, at_time, kind, content, source_inquiry_id")
@@ -133,6 +134,44 @@ export async function loadStudentDay(supabase: SupabaseClient, opts: LoadOptions
               : "학부모 연락(토들·전화)으로 들어온 픽업",
         raw: null,
       },
+    });
+  }
+
+  // 오늘 이미 픽업으로 정해진 아이. 아래 물음표 픽업(①-b·⑤)이 같은 아이에게 또 붙지 않게 합니다 -
+  // 출결내역에서 확정했는데 인박스 쪽 물음표가 그대로 남아 있으면, 보는 사람은 «확정이 안 됐다»
+  // 고 읽습니다.
+  const confirmedPickup = new Set(pickups.filter((p) => p.studentId).map((p) => `${p.studentId}|${date}`));
+
+  // ── ①-b 확인이 덜 된 픽업 ────────────────────────────────────────────────
+  //
+  // **물음표를 단 채로 띄웁니다.** 확인이 덜 됐다고 보드에서 빼면, 보드만 보는 사람에게 그 아이는
+  // 오늘 아무 일 없는 아이가 됩니다. 픽업은 그날 하루가 원칙이라 날짜가 안 적혔으면 «글이 온 날»
+  // 에 세우고, 사람이 날짜를 정하면(보드의 「날짜·종류 고치기」 또는 출결내역) 그 날짜로 옮겨 갑니다.
+  //
+  // 같은 이름이 여럿이라 못 정한 줄은 **아이에게 붙이지 않고** 「누구인지 모름」으로 보냅니다.
+  // 자동이 고른 번호는 이름이 같은 첫 아이일 뿐이라, 그대로 붙이면 엉뚱한 아이가 픽업이 됩니다(§2-4-1).
+  if (review.error) problems.push(`확인이 필요한 픽업을 읽지 못했습니다: ${review.error}`);
+  type Review = {
+    id: string; source: string | null; student_id: string | null; student_name: string; status: string;
+    reason: string | null; raw_text: string | null; pickup_time: string | null; date_from: string; date_to: string;
+  };
+  for (const r of review.rows as Review[]) {
+    const onDate = r.date_from > date ? r.date_from : date;
+    const homonym = /같은 이름/.test(r.reason ?? "");
+    const sid = homonym ? null : r.student_id;
+    if (sid && confirmedPickup.has(`${sid}|${onDate}`)) continue;
+    push(sid, r.student_name, {
+      id: `review:${r.id}`,
+      kind: "픽업",
+      at: (r.pickup_time ?? "").slice(0, 5) || null,
+      text: `픽업? · ${cut(r.reason ?? "날짜·학생을 확인해 주세요", 40)}`,
+      onDate,
+      from: { table: "attendance_entries", screen: "/work" },
+      pending: true,
+      entry: homonym
+        ? undefined
+        : { id: r.id, status: r.status, from: r.date_from, to: r.date_to, source: r.source ?? null, dupIds: [] },
+      evidence: { label: "출결내역 — 자동이 확신하지 못한 픽업", raw: r.raw_text },
     });
   }
 
@@ -275,6 +314,8 @@ export async function loadStudentDay(supabase: SupabaseClient, opts: LoadOptions
     // 아직 사람이 한 번 봐야 하는 건. **누구인지 모르면 「모름」 칸으로** 갑니다 -
     // 「재이」를 셋 중 하나에 붙이면 나머지 둘의 보호자는 아무 소식도 못 받습니다.
     if (r.status === "확인대기") {
+      // 같은 아이가 오늘 이미 픽업으로 정해졌으면 이 물음표는 끝난 이야기입니다.
+      if (r.kind !== "문의" && r.student_id && confirmedPickup.has(`${r.student_id}|${r.service_date}`)) continue;
       push(r.student_id, r.channel_label ?? r.ai_student_name, {
         id: `pending:${r.id}`,
         kind: r.kind === "문의" ? "문의" : "픽업",

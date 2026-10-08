@@ -11,6 +11,7 @@ import { Who } from "@/components/common/HomonymProvider";
 import { createClient } from "@/lib/supabase/client";
 import { RangeEditModal } from "./QuickEntryModals";
 import { useConfirm } from "@/components/common/ConfirmProvider";
+import { LOCAL_BOARD_EVENT } from "@/lib/opsRefresh";
 
 /**
  * **오늘 학생 — 「누가 오늘 평소와 다른가」를 한 곳에 모은 보드.**
@@ -143,7 +144,11 @@ export default function StudentDayBoard({ students }: { students: SelectableStud
       ch.on("postgres_changes", { event: "*", schema: "public", table }, () => void load());
     }
     ch.subscribe();
+    // 같은 탭의 출결내역·인박스에서 고친 것은 표 구독을 기다리지 않고 바로 다시 읽습니다.
+    const onLocal = () => void load();
+    window.addEventListener(LOCAL_BOARD_EVENT, onLocal);
     return () => {
+      window.removeEventListener(LOCAL_BOARD_EVENT, onLocal);
       void supabase.removeChannel(ch);
     };
   }, [load]);
@@ -728,6 +733,20 @@ function DetailModal({
     onFixed();
   }
 
+  async function confirmEntry(id: string) {
+    setBusyId(id);
+    const res = await fetch("/api/attendance/entries", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, state: "등록" }),
+    });
+    const b = (await res.json().catch(() => ({}))) as { error?: string; reconcileNote?: string };
+    setBusyId(null);
+    if (!res.ok) notify(b.error ?? "확정하지 못했습니다.", "error");
+    else notify(b.reconcileNote || "픽업으로 확정했습니다.", "success");
+    onFixed();
+  }
+
   return (
     <div className="fixed inset-0 z-[950] flex items-start justify-center bg-black/40 p-4 pt-[10vh]" onClick={onClose}>
       <div className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
@@ -792,6 +811,18 @@ function DetailModal({
                     {i.entry.source === "googlechat" ? "구글챗" : i.entry.source === "manual" ? "직접 등록" : "토들"} · {i.entry.from.slice(5)}
                     {i.entry.to !== i.entry.from ? `~${i.entry.to.slice(5)}` : ""}
                   </span>
+                  {/* 물음표 픽업은 **그 자리에서 확정합니다.** 출결내역까지 가서 같은 줄을 찾게
+                      하면 대개 «나중에»가 됩니다. 날짜가 다르면 옆의 「날짜·종류 고치기」입니다. */}
+                  {i.id.startsWith("review:") && (
+                    <button
+                      type="button"
+                      disabled={busyId !== null}
+                      onClick={() => void confirmEntry(i.entry!.id)}
+                      className="rounded border border-blue-300 bg-blue-50 px-1.5 py-0.5 text-[11px] font-bold text-blue-800 hover:bg-blue-100 disabled:opacity-40"
+                    >
+                      ✅ {i.onDate === date ? "오늘" : i.onDate.slice(5).replace("-", "/")} 픽업 맞음
+                    </button>
+                  )}
                   <button
                     type="button"
                     disabled={busyId !== null}

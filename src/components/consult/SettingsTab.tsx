@@ -105,6 +105,12 @@ export default function SettingsTab({
           on={ev.personal_links_enabled}
           onChange={(v) => void save({ personal_links_enabled: v })}
         />
+        <Toggle
+          label="상담실 태블릿·QR 링크"
+          hint="상담실마다 로그인 없이 호출·시작·종료를 누르는 주소입니다(상담실 탭). 끄면 태블릿과 QR이 모두 닫힙니다."
+          on={ev.room_links_enabled}
+          onChange={(v) => void save({ room_links_enabled: v })}
+        />
         <label className="block text-xs text-slate-500">
           현황판 닫는 시각(비우면 행사를 «종료»할 때 닫힘)
           <input

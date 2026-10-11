@@ -5,7 +5,6 @@ import { useFinanceLive } from "@/lib/useFinanceLive";
 import { Who } from "@/components/common/HomonymProvider";
 import StudentLedgerModal from "@/components/finance/StudentLedgerModal";
 import { won } from "@/lib/feeItems";
-import { roundText } from "@/lib/invoiceRound";
 
 export type BatchRow = {
   billing_month: string;
@@ -98,7 +97,8 @@ export default function RoundsClient({ batches, invoices, problems }: { batches:
                         <li key={key} className="rounded-lg border border-slate-200">
                           <button onClick={() => setOpen(open === key ? null : key)} className="flex w-full flex-wrap items-baseline gap-2 px-2 py-1 text-left text-[12px] hover:bg-slate-50">
                             <b className="text-slate-800">{i + 1}차</b>
-                            <span className="text-slate-700">{roundText(r.issue_batch)}</span>
+                            {/* 「N차」는 이 달 이 갈래 안에서의 순서, 괄호 안 번호는 그날 몇 번째 묶음입니다. */}
+                            <span className="text-slate-700">{r.issue_date.slice(5).replace("-", "/")} 발행</span>
                             <span className="font-mono text-[10px] text-slate-400">({r.issue_batch})</span>
                             <span className="ml-auto tabular-nums text-slate-600">
                               {r.alive_count}장 · <b className="text-slate-800">{won(Number(r.alive_amount))}</b>

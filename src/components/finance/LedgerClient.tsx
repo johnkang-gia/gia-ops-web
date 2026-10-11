@@ -65,6 +65,8 @@ export type LedgerInvoiceRow = {
   termId: string | null;
   /** 청구월(YYYY-MM). 칸이 비어 있는 옛 장은 발행일의 달입니다. */
   billingMonth: string | null;
+  /** 「10월 학비(261007_1)」 - 몇 월분을 언제 몇 차로 냈는가. */
+  round: string;
 };
 
 type Tab = "학생" | "청구서";
@@ -211,7 +213,7 @@ export default function LedgerClient({
       .filter((v) => (invState === "미수" ? (v.billingMonth ?? "") <= month : v.billingMonth === month))
       .filter((v) => tabIncludes(dept, deptOf(v)))
       .filter((v) => inScope({ grade: v.grade, className: v.className }, scope))
-      .filter((v) => !needle || `${v.studentName} ${v.invoiceNo} ${v.scope ?? ""}`.toLowerCase().includes(needle))
+      .filter((v) => !needle || `${v.studentName} ${v.invoiceNo} ${v.scope ?? ""} ${v.round}`.toLowerCase().includes(needle))
       .filter((v) =>
         invState === "전체" ? true : invState === "수납 완료" ? v.state === "완납" : invState === "올톡페이 미발송" ? !v.exported && v.state !== "완납" && !v.offline : v.state !== "완납" && v.state !== "이월됨",
       )
@@ -562,7 +564,9 @@ export default function LedgerClient({
                       <td className="max-w-[240px] truncate px-2 py-1 text-slate-600" title={v.scope ?? ""}>
                         {v.scope ?? (v.stream === "학비" ? "학비 전부" : "")}
                       </td>
-                      <td className="whitespace-nowrap px-2 py-1 text-slate-500">{v.issueDate}</td>
+                      <td className="whitespace-nowrap px-2 py-1 text-slate-500" title={`발행일 ${v.issueDate}`}>
+                        <span className="font-semibold text-slate-700">{v.round}</span>
+                      </td>
                       <td className="px-2 py-1 text-right tabular-nums font-bold">{won(v.amount)}</td>
                       <td className="px-2 py-1">
                         <span className={"rounded px-1.5 py-0.5 text-[10px] font-bold " + (STATE_STYLE[v.state] ?? "")}>

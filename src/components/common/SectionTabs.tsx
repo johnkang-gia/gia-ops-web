@@ -442,11 +442,13 @@ const FINANCE_TABS: TabDef[] = [
     label: "월별",
     icon: "📅",
     href: "/finance",
-    match: ["/finance", "/finance/monthly", "/finance/revenue"],
+    match: ["/finance", "/finance/monthly", "/finance/revenue", "/finance/rounds"],
     children: [
       { label: "이번 달 개요", href: "/finance", match: ["/finance"] },
       { label: "월별 · 학기별", href: "/finance/monthly", match: ["/finance/monthly"] },
       { label: "학생별", href: "/finance/monthly/students", match: ["/finance/monthly/students"] },
+      // 몇 월분을 언제 몇 차로 냈는가 - 회차(발행일_순번)별 장수·금액.
+      { label: "청구 회차", href: "/finance/rounds", match: ["/finance/rounds"] },
       // 「무슨 돈으로 얼마」 - 세입과목(관·항·목)별 부과·수납·결손·미수.
       { label: "과목별 수입", href: "/finance/revenue", match: ["/finance/revenue"] },
     ],

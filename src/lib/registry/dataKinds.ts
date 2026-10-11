@@ -266,6 +266,8 @@ export const DATA_KINDS: DataKindDef[] = [
 /** 자료가 아니라 **기록**인 표. 쌓이는 것이 맞고, 중복을 막지 않습니다. */
 export const LOG_TABLES = [
   "finance_access_log",
+  // 도서관 앱의 라벨·카드 인쇄 기록. 같은 묶음을 두 번 뽑지 않게 하는 내력입니다.
+  "lib_print_jobs",
   // 학사일정을 누가 언제 무엇으로 고쳤는지. 누구나 고칠 수 있게 하는 대신 내력을 남깁니다.
   "academic_item_log",
   // 청구 합계가 바뀐 내력. 트리거가 항목에서 합계를 다시 셀 때마다 한 줄 남습니다 -

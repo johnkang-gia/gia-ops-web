@@ -154,7 +154,7 @@ export const BACKUP_GROUPS: { group: string; tables: string[] }[] = [
   {
     // 도서관 앱(gia-lib-web)의 자료. 표는 이 저장소가 만들고, 운영앱은 읽기만 합니다.
     group: "도서관",
-    tables: ["lib_books", "lib_loans", "lib_visits", "lib_settings", "lib_locations", "lib_map", "lib_student_photos", "lib_label_levels", "lib_card_issues", "lib_card_prefs"],
+    tables: ["lib_books", "lib_loans", "lib_visits", "lib_settings", "lib_locations", "lib_map", "lib_student_photos", "lib_label_levels", "lib_card_issues", "lib_card_prefs", "lib_print_jobs"],
   },
   {
     // 학부모 상담. 상담 메모는 학생 기록이고, 상태 기록은 «누가 무엇을» 확인하는 근거입니다.
@@ -205,6 +205,7 @@ export const BACKUP_TABLES: string[] = BACKUP_GROUPS.flatMap((g) => g.tables);
 export const BACKUP_SKIP: Record<string, string> = {
   payment_import_progress: "뷰입니다. 묶음과 줄에서 그때그때 세는 값이라 담아도 다시 쓸 것이 없습니다.",
   finance_item_monthly: "뷰입니다. 청구서·내역·입금에서 그때그때 세는 값이라 담아도 다시 쓸 것이 없습니다.",
+  invoice_batches: "뷰입니다. 청구서의 회차(issue_batch)를 묶어 세는 값이라 청구서를 담으면 다시 나옵니다.",
   // ── 담으면 안 되는 것 ──────────────────────────────────────────────
   google_chat_oauth_tokens: "접속 비밀값. 내려받는 파일에 들어가면 그 파일이 곧 열쇠가 됩니다.",
   lib_roster_version: "명부가 바뀔 때마다 오르는 번호 하나. 자료가 아니라 도서관 앱에 «다시 읽으라»고 알리는 신호입니다.",

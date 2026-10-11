@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { roundCode, roundLabel, roundText } from "@/lib/invoiceRound";
 import { useToast } from "@/components/common/ToastProvider";
 import { Who } from "@/components/common/HomonymProvider";
 import { won } from "@/lib/feeItems";
@@ -105,6 +106,12 @@ export default function StudentLedgerModal({
   const [exporting, setExporting] = useState<string[] | null>(null);
   const [addItemId, setAddItemId] = useState("");
   const [depositOpen, setDepositOpen] = useState(false);
+  /**
+   * 청구서를 어떻게 늘어놓나. 「이 달」은 보고 있는 달 것만 위에(예전 모양), 「월별」·「학기별」은
+   * 이 아이의 청구서 전부를 청구월·학기로 묶어 최근 것부터. 몇 월에 무엇이 몇 차로 나갔는지를
+   * 한 줄로 따라 읽으려면 묶음이 있어야 합니다.
+   */
+  const [invView, setInvView] = useState<"current" | "month" | "term">("current");
   const [dep, setDep] = useState({ amount: "", paidAt: todayKst(), method: PAYMENT_METHOD_KINDS[0] as string, memo: "" });
 
   const load = useCallback(async () => {
@@ -434,7 +441,9 @@ export default function StudentLedgerModal({
                     </button>
                     <span className={"rounded px-1 text-[10px] font-bold " + (v.stream === "학비" ? "bg-indigo-50 text-indigo-700" : "bg-orange-50 text-orange-700")}>{v.stream}</span>
                     <span className="min-w-0 flex-1 truncate text-slate-600" title={(v as { plan_scope?: string | null }).plan_scope ?? ""}>
-                      {(v as { plan_scope?: string | null }).plan_scope ?? (v.stream === "학비" ? "학비 전부" : v.category ?? "")} · {v.billingMonth ? `${Number(v.billingMonth.slice(5))}월분 · ` : ""}{v.issue_date}
+                      <b className="font-bold text-slate-700" title={`청구 회차 ${roundText(roundCode(v))} · 만든 시각 ${v.created_at ? new Date(v.created_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }) : "-"}`}>{roundLabel(v)}</b>
+                      {" · "}
+                      {(v as { plan_scope?: string | null }).plan_scope ?? (v.stream === "학비" ? "학비 전부" : v.category ?? "")} · 발행 {v.issue_date}
                       {v.issued_offline ? <span className="ml-1 text-[10px] text-sky-600">직접수납</span> : null}
                     </span>
                     <span className="tabular-nums font-bold">{won(Number(v.total_amount))}</span>
@@ -485,6 +494,60 @@ export default function StudentLedgerModal({
                   </div>
   );
   const invoicesCancelled = (ledger?.invoices ?? []).filter((v) => v.settled.state === "취소");
+
+  // 「월별」·「학기별」 보기의 묶음. 최근 것이 위, 묶음 안에서는 회차 순입니다.
+  const termName = (id: string | null | undefined) => data?.terms.find((t) => t.id === id)?.name ?? "학기 미지정";
+  const invGroups: { key: string; title: string; list: LedgerInvoice[] }[] = (() => {
+    if (invView === "current") return [];
+    const map = new Map<string, LedgerInvoice[]>();
+    for (const v of invoicesAllAlive) {
+      const key = invView === "month" ? (v.billingMonth ?? "청구월 없음") : (v.term_id ?? "");
+      map.set(key, [...(map.get(key) ?? []), v]);
+    }
+    const out = [...map.entries()].map(([key, list]) => ({
+      key,
+      title: invView === "month" ? (key.includes("-") ? `${key.replace("-", "년 ")}월` : key) : termName(key || null),
+      list: list.sort((a, b) => roundCode(a).localeCompare(roundCode(b)) || a.invoice_no.localeCompare(b.invoice_no)),
+      first: list.reduce((m, v) => (v.issue_date > m ? v.issue_date : m), ""),
+    }));
+    return out.sort((a, b) => (invView === "month" ? b.key.localeCompare(a.key) : b.first.localeCompare(a.first)));
+  })();
+
+  // 수납과 예치금을 나눕니다. 수납 = 청구서에 붙은 입금(예치금에서 옮긴 것 제외), 예치금 = 청구서 없이
+  // 받아 둔 돈 · 예치금에서 청구서로 옮긴 돈 · 돌려준 돈. 한 줄에 섞어 두면 «이 돈이 학비를 낸 것인지
+  // 맡겨 둔 것인지»를 줄마다 읽어야 했습니다.
+  const payRows = ledger?.payments ?? [];
+  const isRefund = (p: { kind?: string | null }) => (p.kind ?? "") === "refund";
+  const collected = payRows.filter((p) => p.invoice_id && !isFromDeposit(p.matched_by) && !isRefund(p));
+  const depositRows = payRows.filter((p) => !collected.includes(p));
+  const payLine = (p: (typeof payRows)[number]) => {
+    const inv = ledger?.invoices.find((v) => v.id === p.invoice_id);
+    const refund = isRefund(p);
+    return (
+      <div key={p.id} className="flex items-center gap-2 rounded px-2 py-0.5 text-[11px] odd:bg-slate-50">
+        <span className="w-20 shrink-0 tabular-nums text-slate-500">{p.paid_at}</span>
+        <span className="w-12 shrink-0 truncate text-slate-600">{p.method ?? ""}</span>
+        <span className={"w-24 shrink-0 text-right tabular-nums font-bold " + (refund ? "text-rose-600" : "text-slate-800")}>
+          {refund ? "−" : ""}
+          {won(Number(p.amount))}
+        </span>
+        <span className="min-w-0 flex-1 truncate text-slate-500" title={p.memo ?? ""}>
+          {inv ? (
+            <>
+              → <button onClick={() => setPreview({ id: inv.id, label: `${student?.name} · ${inv.invoice_no}`, receipt: false })} className="underline">{roundLabel(inv)}</button>
+              {isFromDeposit(p.matched_by) && <span className="ml-1 rounded bg-teal-50 px-1 font-bold text-teal-700">예치금에서</span>}
+            </>
+          ) : refund ? (
+            <span className="font-bold text-rose-600">돌려줌</span>
+          ) : (
+            <span className="rounded bg-teal-100 px-1 font-bold text-teal-800">맡겨 둠{p.origin ? ` · ${p.origin}` : ""}</span>
+          )}
+          {p.memo ? ` · ${p.memo}` : ""}
+        </span>
+      </div>
+    );
+  };
+  const sumOf = (rows: typeof payRows) => rows.reduce((n, p) => n + (isRefund(p) ? -1 : 1) * Number(p.amount), 0);
 
   return (
     <div className={embedded ? "contents" : "fixed inset-0 z-[90] flex items-center justify-center bg-black/40 p-3"} onClick={embedded ? undefined : close}>
@@ -743,6 +806,17 @@ export default function StudentLedgerModal({
               <h3 className="mb-1 flex items-center justify-between text-[12px] font-black text-slate-700">
                 <span>청구서</span>
                 <span className="flex items-center gap-1">
+                  <span className="flex overflow-hidden rounded border border-slate-300 text-[10px] font-bold">
+                    {([["current", month ? "이 달" : "이 학기"], ["month", "월별 전체"], ["term", "학기별 전체"]] as const).map(([k, label]) => (
+                      <button
+                        key={k}
+                        onClick={() => setInvView(k)}
+                        className={"px-1.5 py-0.5 " + (invView === k ? "bg-slate-800 text-white" : "bg-white text-slate-500 hover:bg-slate-50")}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </span>
                   <button
                     onClick={() => setExporting(pickedInv.size > 0 ? [...pickedInv] : invoicesAlive.filter((v) => v.settled.state !== "완납" && !v.issued_offline).map((v) => v.id))}
                     disabled={busy || invoicesAlive.length === 0}
@@ -753,11 +827,32 @@ export default function StudentLedgerModal({
                   </button>
                 </span>
               </h3>
-              {invoicesAlive.length === 0 && <p className="px-1 py-2 text-[11px] text-slate-400">{month ? `${Number(month.slice(5))}월 청구서가 없습니다.` : "이 학기 청구서가 없습니다."}</p>}
+              {invView !== "current" && (
+                <div className="space-y-2">
+                  {invGroups.length === 0 && <p className="px-1 py-2 text-[11px] text-slate-400">청구서가 없습니다.</p>}
+                  {invGroups.map((g) => {
+                    const total = g.list.reduce((n, v) => n + Number(v.total_amount), 0);
+                    const left = g.list.reduce((n, v) => n + (v.settled.state === "이월됨" ? 0 : Math.max(0, v.settled.balance)), 0);
+                    return (
+                      <div key={g.key}>
+                        <div className="mb-0.5 flex items-baseline gap-2 border-b border-slate-200 px-1 text-[11px]">
+                          <b className="text-slate-800">{g.title}</b>
+                          <span className="text-slate-500">{g.list.length}장 · {won(total)}</span>
+                          {left > 0 && <span className="font-bold text-rose-600">미수 {won(left)}</span>}
+                        </div>
+                        <div className="space-y-1">{g.list.map((v) => invRow(v))}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {invView === "current" && invoicesAlive.length === 0 && <p className="px-1 py-2 text-[11px] text-slate-400">{month ? `${Number(month.slice(5))}월 청구서가 없습니다.` : "이 학기 청구서가 없습니다."}</p>}
+              {invView === "current" && (
               <div className="space-y-1">
                 {invoicesAlive.map((v) => invRow(v))}
               </div>
-              {invoicesOther.length > 0 && (
+              )}
+              {invView === "current" && invoicesOther.length > 0 && (
                 <details className="mt-1" open={invoicesOther.some((v) => v.settled.balance > 0)}>
                   <summary className="cursor-pointer text-[11px] font-bold text-slate-500">
                     다른 달 청구서 {invoicesOther.length}장
@@ -815,35 +910,26 @@ export default function StudentLedgerModal({
                 </div>
               )}
               {ledger.payments.length === 0 && <p className="px-1 py-1 text-[11px] text-slate-400">들어온 돈이 없습니다.</p>}
-              <div className="space-y-0.5">
-                {ledger.payments.map((p) => {
-                  const inv = ledger.invoices.find((v) => v.id === p.invoice_id);
-                  const refund = (p.kind ?? "") === "refund";
-                  return (
-                    <div key={p.id} className="flex items-center gap-2 rounded px-2 py-0.5 text-[11px] odd:bg-slate-50">
-                      <span className="w-20 shrink-0 tabular-nums text-slate-500">{p.paid_at}</span>
-                      <span className="w-14 shrink-0 text-slate-600">{p.method ?? ""}</span>
-                      <span className={"w-24 shrink-0 text-right tabular-nums font-bold " + (refund ? "text-rose-600" : "text-slate-800")}>
-                        {refund ? "−" : ""}
-                        {won(Number(p.amount))}
-                      </span>
-                      <span className="min-w-0 flex-1 truncate text-slate-500" title={p.memo ?? ""}>
-                        {inv ? (
-                          <>
-                            → <button onClick={() => setPreview({ id: inv.id, label: `${student?.name} · ${inv.invoice_no}`, receipt: false })} className="underline">{inv.invoice_no}</button>
-                            {isFromDeposit(p.matched_by) && <span className="ml-1 rounded bg-teal-50 px-1 font-bold text-teal-700">예치금에서</span>}
-                          </>
-                        ) : refund ? (
-                          <span className="font-bold text-rose-600">돌려줌</span>
-                        ) : (
-                          <span className="rounded bg-teal-100 px-1 font-bold text-teal-800">예치금{p.origin ? ` · ${p.origin}` : ""}</span>
-                        )}
-                        {p.memo ? ` · ${p.memo}` : ""}
-                      </span>
+              {ledger.payments.length > 0 && (
+                <div className="grid gap-2 md:grid-cols-2">
+                  <div>
+                    <div className="mb-0.5 flex items-baseline justify-between border-b-2 border-slate-300 px-1 text-[11px]">
+                      <b className="text-slate-800">💰 수납 — 청구서에 받은 돈</b>
+                      <span className="tabular-nums font-bold text-slate-700">{won(sumOf(collected))}</span>
                     </div>
-                  );
-                })}
-              </div>
+                    {collected.length === 0 && <p className="px-1 py-1 text-[11px] text-slate-400">없음</p>}
+                    <div className="space-y-0.5">{collected.map((p) => payLine(p))}</div>
+                  </div>
+                  <div className="md:border-l md:border-slate-200 md:pl-2">
+                    <div className="mb-0.5 flex items-baseline justify-between border-b-2 border-teal-300 px-1 text-[11px]">
+                      <b className="text-teal-800">🏦 예치금 — 맡겨 둔 돈 · 옮겨 쓴 돈 · 돌려준 돈</b>
+                      <span className="tabular-nums font-bold text-teal-700" title="지금 남은 예치금">남음 {won(ledger.totals.deposit)}</span>
+                    </div>
+                    {depositRows.length === 0 && <p className="px-1 py-1 text-[11px] text-slate-400">없음</p>}
+                    <div className="space-y-0.5">{depositRows.map((p) => payLine(p))}</div>
+                  </div>
+                </div>
+              )}
             </section>
           </div>
         )}

@@ -7,6 +7,7 @@ import { loadLedgerWorld } from "@/lib/ledgerLoad";
 import { buildLedger } from "@/lib/studentLedger";
 import { todayKst } from "@/lib/kst";
 import { billingMonthOf } from "@/lib/financePeriod";
+import { roundLabel } from "@/lib/invoiceRound";
 import LedgerClient, { type LedgerRow, type LedgerInvoiceRow } from "@/components/finance/LedgerClient";
 
 /**
@@ -156,6 +157,7 @@ export default async function LedgerPage({ searchParams }: { searchParams: Promi
         offline: v.issued_offline === true,
         termId: v.term_id ?? null,
         billingMonth: billingMonthOf(v),
+        round: roundLabel(v),
       };
     });
 

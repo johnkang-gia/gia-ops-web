@@ -1647,6 +1647,8 @@ export type Invoice = {
    * 「직접수납」으로 소급해 만든 청구서인가. 참이면 **학부모에게 보내지 않습니다** -
    * 보내면 이미 낸 분께 또 내라고 하는 셈이 됩니다.
    */
+  /** 청구 회차(「261007_1」 = 발행일 _ 그날 몇 번째 묶음). 넣을 때 데이터베이스가 붙입니다. */
+  issue_batch?: string | null;
   issued_offline?: boolean | null;
   /** 결재로 받지 않기로 한 금액(결손). 잔액에서 빠지지만 받은 돈은 아닙니다. */
   written_off_amount?: number | string | null;

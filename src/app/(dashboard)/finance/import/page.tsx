@@ -31,9 +31,9 @@ export default async function FinanceImportPage() {
     <div className="mx-auto flex h-full max-w-5xl flex-col p-4 sm:p-6">
       <FinanceLive />
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <h1 className="text-lg font-bold">📥 결제내역 올리기</h1>
+        <h1 className="text-lg font-bold">📥 앱 밖 청구 가져오기</h1>
         <Link href="/finance/payments" className="ml-auto text-[12px] font-semibold text-teal-700 underline">
-          수납 →
+          수납 내역 →
         </Link>
       </div>
 

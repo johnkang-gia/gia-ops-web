@@ -19,6 +19,7 @@ import CancelInvoiceModal from "@/components/finance/CancelInvoiceModal";
 import InvoiceFixModal from "@/components/finance/InvoiceFixModal";
 import InvoicePreviewModal from "@/components/finance/InvoicePreviewModal";
 import AlltalkpayExport from "@/components/finance/AlltalkpayExport";
+import { StudentBillingPhone } from "@/components/finance/BillingPhoneChips";
 import InvoiceSheet, { type SheetPart } from "@/components/finance/InvoiceSheet";
 import { addDays, DUE_DAYS } from "@/lib/financePeriod";
 import type { InvoiceLine } from "@/lib/types";
@@ -451,9 +452,9 @@ export default function StudentLedgerModal({
                       {v.settled.state}
                       {v.settled.balance > 0 && v.settled.state !== "미납" ? ` ${won(v.settled.balance)}` : ""}
                     </span>
-                    <label className="flex items-center gap-0.5 text-[10px] text-slate-500" title="올톡페이에 올렸는가">
+                    <label className="flex items-center gap-0.5 text-[10px] text-slate-500" title="올톡으로 보냈는가(올톡 보내기로 파일을 만들면 저절로 켜집니다)">
                       <input type="checkbox" checked={v.exported} disabled={busy} onChange={() => void toggleExported(v)} className="h-3 w-3" />
-                      올톡
+                      보냄
                     </label>
                     <span className="flex items-center gap-0.5">
                       {(v.settled.balance > 0 && (ledger?.totals.deposit ?? 0) > 0) || (ledger?.payments ?? []).some((p) => p.invoice_id === v.id && isFromDeposit(p.matched_by)) ? (
@@ -564,6 +565,8 @@ export default function StudentLedgerModal({
                 </span>
               )}
             </div>
+            {/* 이 창에서 청구서를 만들고 올톡으로 보내므로, 누구 번호로 가는지가 여기서 보이고 바뀌어야 합니다. */}
+            <StudentBillingPhone studentId={studentId} />
             {month && (
               <div className="mt-1 text-[11px] font-bold text-indigo-700">
                 {month.replace("-", "년 ")}월 청구 · {data?.terms.find((t) => t.id === termId)?.name ?? ""}
@@ -823,7 +826,7 @@ export default function StudentLedgerModal({
                     className="rounded bg-violet-100 px-2 py-0.5 text-[11px] font-bold text-violet-800 hover:bg-violet-200 disabled:opacity-40"
                     title="올톡페이 등록 파일을 만듭니다(체크한 장, 없으면 아직 안 걷힌 장 전부)"
                   >
-                    📤 올톡페이로 청구{pickedInv.size > 0 ? ` (${pickedInv.size})` : ""}
+                    📤 올톡 보내기{pickedInv.size > 0 ? ` (${pickedInv.size})` : ""}
                   </button>
                 </span>
               </h3>

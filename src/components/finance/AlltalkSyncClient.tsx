@@ -270,8 +270,9 @@ export default function AlltalkSyncClient() {
     <div className="mx-auto max-w-[1500px] p-3 sm:p-5">
       {/* ── 머리: 파일 · 남은 일 ───────────────────────────────────────── */}
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <h1 className="text-lg font-bold">🔁 올톡 대조</h1>
+        <h1 className="text-lg font-bold">🔁 올톡 결과 맞추기</h1>
         <span className="text-[12px] text-slate-500">올톡페이 「청구서관리목록」을 올리면 학생마다 운영앱과 맞춰 봅니다.</span>
+        <Link href="/finance/send" className="text-[12px] font-semibold text-teal-700 underline">← 올톡 보내기</Link>
         <span className="ml-auto flex items-center gap-2">
           {data && data.files.length > 0 && (
             <select
@@ -319,8 +320,8 @@ export default function AlltalkSyncClient() {
           {matchedRows.length > 0 && byNumberN < matchedRows.length && (
             <p className="mb-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-[11px] leading-relaxed text-violet-900">
               이 파일은 앱 청구서와 맞은 {matchedRows.length}건 중 <b>{byNumberN}건만 청구서 번호로</b> 맞았고, 나머지는 금액으로 짐작해 맞췄습니다.
-              다음 발송부터는 금전 창·회계·미납금 화면의 <b>「📤 올톡페이로 청구」</b>로 만든 파일을 올톡에 올리세요 — 청구사유 앞에 번호가 붙어
-              결과를 받으면 금액이 같은 형제·정산 건도 엇갈리지 않습니다. 「앱에만 있음」 탭에서 바로 만들 수도 있습니다.
+              다음 발송부터는 <b>올톡페이 › 보내기</b>(또는 학생 회계 창의 「📤 올톡 보내기」)로 만든 파일을 올톡에 올리세요 — 청구사유 앞에 번호가 붙어
+              결과를 받으면 금액이 같은 형제·정산 건도 엇갈리지 않습니다. 「앱에만 있음」 탭에서 바로 보낼 수도 있습니다.
             </p>
           )}
 
@@ -433,7 +434,7 @@ export default function AlltalkSyncClient() {
           </div>
           <p className="mt-2 px-1 text-[11px] leading-relaxed text-slate-400">
             같은 청구를 다시 보낸 줄은 하나로 묶었습니다(→ 는 보낸 순서). 수납일은 올톡 결제일, 수단은 올톡페이, 메모에 승인번호가 들어갑니다. 같은 승인번호는 두 번
-            들어가지 않습니다. 이 파일을 <Link href="/finance/import" className="underline">결제내역 올리기</Link>에 다시 올리지 마세요 — 그쪽은 청구서를 새로 만듭니다.
+            들어가지 않습니다. 이 파일을 <Link href="/finance/import" className="underline">앱 밖 청구 가져오기</Link>에 다시 올리지 마세요 — 그쪽은 청구서를 새로 만듭니다.
           </p>
         </>
       )}
@@ -491,7 +492,7 @@ function SyncLine({
         <span className={"mb-0.5 inline-block rounded border px-1 text-[10px] font-bold " + info.tone}>{info.label}</span>
         <div className="flex items-center gap-1">
           {r.studentId ? (
-            <button onClick={onOpen} className="font-bold text-slate-800 underline decoration-slate-300 hover:decoration-slate-700" title="금전 창 열기">
+            <button onClick={onOpen} className="font-bold text-slate-800 underline decoration-slate-300 hover:decoration-slate-700" title="학생 회계 창 열기">
               <Who id={r.studentId} name={r.studentName} plain />
             </button>
           ) : (

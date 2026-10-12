@@ -86,7 +86,7 @@ export default function ApprovalsClient({ rows, loadError }: { rows: ApprovalRow
       {loadError && <p className="mb-2 rounded-lg bg-rose-50 px-3 py-2 text-[12px] text-rose-700">{loadError}</p>}
       {list.length === 0 && (
         <p className="rounded-lg border border-dashed border-slate-200 px-3 py-6 text-center text-[12px] text-slate-400">
-          {show === "대기" ? "기다리는 결재가 없습니다." : "올라온 결재가 없습니다."} 결손은 학생 금전 창의 청구서 [🛠/정정]에서, 환불은 수납 화면에서 올립니다.
+          {show === "대기" ? "기다리는 결재가 없습니다." : "올라온 결재가 없습니다."} 결손은 학생 회계 창의 청구서 [🛠/정정]에서, 환불은 수납 내역 화면에서 올립니다.
         </p>
       )}
 

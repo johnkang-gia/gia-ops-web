@@ -433,7 +433,7 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
   return (
     <div className="mx-auto max-w-6xl p-4 sm:p-6">
       <div className="mb-1 flex flex-wrap items-baseline gap-2">
-        <h1 className="text-lg font-bold">💳 수납</h1>
+        <h1 className="text-lg font-bold">💳 수납 내역</h1>
         <span className="text-xs text-slate-400">올톡페이 엑셀을 올리면 인보이스에 붙습니다</span>
       </div>
       <p className="mb-4 text-xs leading-relaxed text-slate-500">

@@ -25,6 +25,15 @@ import { billingMonthOf } from "@/lib/financePeriod";
 
 export const dynamic = "force-dynamic";
 
+/** 할 일 칸의 색. 테일윈드는 글자를 조립한 클래스 이름을 못 찾으므로 통째로 적어 둡니다. */
+const TONE: Record<string, { border: string; text: string }> = {
+  emerald: { border: "border-emerald-300", text: "text-emerald-700" },
+  sky: { border: "border-sky-300", text: "text-sky-700" },
+  rose: { border: "border-rose-300", text: "text-rose-700" },
+  amber: { border: "border-amber-300", text: "text-amber-700" },
+  violet: { border: "border-violet-300", text: "text-violet-700" },
+};
+
 export default async function FinanceOverviewPage({ searchParams }: { searchParams: Promise<{ ym?: string }> }) {
   const me = await getCurrentAppUser();
   if (!me) redirect("/login");
@@ -91,6 +100,54 @@ export default async function FinanceOverviewPage({ searchParams }: { searchPara
   const today = todayKst();
   const recent = invoices.slice(0, 12);
 
+  // ── 이번 달 할 일 ───────────────────────────────────────────────────────────
+  //
+  // 숫자 요약만 있으면 담당자는 「그래서 지금 뭘 하지」를 다른 화면을 하나씩 열어 찾습니다.
+  // 할 일을 건수로 세어 그 화면으로 바로 보냅니다. 달과 상관없이 셉니다 - 지난달에 안 보낸
+  // 청구서도 지금 할 일입니다.
+  const paidByInv = new Map<string, number>();
+  for (const p of allPayments) if (p.invoice_id) paidByInv.set(p.invoice_id, (paidByInv.get(p.invoice_id) ?? 0) + Number(p.amount));
+  const openInv = allInvoices.filter(
+    (v) =>
+      v.status === "발행" &&
+      !(v as { carried_to_invoice_id?: string | null }).carried_to_invoice_id &&
+      Number(v.total_amount) - (paidByInv.get(v.id) ?? 0) - Number((v as { written_off_amount?: number | string | null }).written_off_amount ?? 0) > 0,
+  );
+  const balanceOf = (v: Invoice) => Number(v.total_amount) - (paidByInv.get(v.id) ?? 0) - Number((v as { written_off_amount?: number | string | null }).written_off_amount ?? 0);
+  const unsent = openInv.filter((v) => !v.issued_offline && !v.exported_at);
+  const weekAgo = new Date(Date.now() - 7 * 864e5).toISOString();
+  const lateSent = openInv.filter((v) => v.exported_at && v.exported_at < weekAgo);
+  const [{ count: approvalsWaiting }, { data: lastSync }] = await Promise.all([
+    supabase.from("finance_requests").select("id", { count: "exact", head: true }).eq("status", "대기"),
+    supabase.from("alltalk_sync_files").select("uploaded_at").order("uploaded_at", { ascending: false }).range(0, 0),
+  ]);
+  const lastSyncAt = ((lastSync as { uploaded_at: string }[] | null) ?? [])[0]?.uploaded_at ?? null;
+  const todo = [
+    {
+      href: "/finance/send",
+      label: "올톡으로 안 보낸 청구서",
+      count: unsent.length,
+      sub: `${won(unsent.reduce((n, v) => n + balanceOf(v), 0))} · 올톡페이 › 보내기`,
+      tone: "emerald",
+    },
+    {
+      href: "/finance/alltalk-sync",
+      label: "올톡 결과 맞추기",
+      count: null as number | null,
+      sub: lastSyncAt ? `마지막 ${lastSyncAt.slice(5, 10).replace("-", "/")} · 결제된 건 수납 넣기` : "아직 올린 결과가 없습니다",
+      tone: "sky",
+    },
+    {
+      href: "/finance/unpaid",
+      label: "보낸 지 7일 지난 미납",
+      count: lateSent.length,
+      sub: `${won(lateSent.reduce((n, v) => n + balanceOf(v), 0))} · 다시 안내할 대상`,
+      tone: "rose",
+    },
+    { href: "/finance/approvals", label: "환불·결손 결재 대기", count: approvalsWaiting ?? 0, sub: "관리자 승인 필요", tone: "amber" },
+    { href: "/finance/invoices", label: "학비외 아직 발행 안 한 학생", count: pending.length, sub: "학비외 일괄 발행", tone: "violet" },
+  ];
+
   const Card = ({ label, value, sub, tone = "slate" }: { label: string; value: string; sub?: string; tone?: string }) => (
     <div className="min-w-[150px] flex-1 rounded-xl border border-slate-200 bg-white p-3">
       <p className="text-[11px] font-semibold text-slate-500">{label}</p>
@@ -106,7 +163,7 @@ export default async function FinanceOverviewPage({ searchParams }: { searchPara
       <FinanceLive />
 
       <div className="mb-1 flex flex-wrap items-baseline gap-2">
-        <h1 className="text-lg font-bold">📊 재무 개요</h1>
+        <h1 className="text-lg font-bold">📊 이번 달 할 일 · 개요</h1>
         <span className="text-xs text-slate-400">{today} 기준</span>
         <MonthNav basePath="/finance" value={month} thisMonth={thisMonth} allowAll />
       </div>
@@ -129,6 +186,20 @@ export default async function FinanceOverviewPage({ searchParams }: { searchPara
           보입니다. */}
       {/* 청구는 그 달 것, 입금은 **그 청구서에 붙은 것 전부**입니다 - 10월분을 11월에 받아도 10월 청구의
           수납입니다. 입금을 달로 자르면 수납률이 실제보다 낮게 나옵니다. */}
+      <div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+        {todo.map((t) => (
+          <Link
+            key={t.href}
+            href={t.href}
+            className={`rounded-xl border bg-white p-3 transition hover:shadow ${t.count ? TONE[t.tone].border : "border-slate-200"}`}
+          >
+            <p className="text-[11px] font-bold text-slate-500">{t.label}</p>
+            {t.count !== null && <p className={`mt-0.5 text-2xl font-black tabular-nums ${t.count ? TONE[t.tone].text : "text-slate-300"}`}>{t.count}</p>}
+            <p className="mt-0.5 text-[11px] text-slate-500">{t.sub} →</p>
+          </Link>
+        ))}
+      </div>
+
       <MoneyFlowBoard
         invoices={invoices}
         payments={allPayments}

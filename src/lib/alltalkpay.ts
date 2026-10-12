@@ -100,12 +100,19 @@ export type BillRow = {
   invoiceIds: string[];
   /** 이미 한 번 내보낸 청구서가 섞여 있는지. 두 번 보내는 것을 막는 표시입니다. */
   resent: boolean;
+  /** 이 줄의 학생들. 발송 창에서 결제번호를 바로 바꿔 저장할 때 씁니다. */
+  studentIds: string[];
+  /**
+   * 고를 수 있는 번호(명부에 실제로 있는 것만). 발송 창이 역할 이름이 아니라 **번호 자체**를
+   * 보여줘야 사람이 맞는 번호인지 판단할 수 있습니다 - 「M」만 보고는 어느 번호인지 모릅니다.
+   */
+  options: { role: GuardianRole; phone: string }[];
 };
 
 export type BillPlan = {
   rows: BillRow[];
   /** 연락처가 없어서 파일에 못 넣은 것. 빈 칸으로 섞어 올리면 조용히 빠집니다. */
-  missing: { invoiceId: string; invoiceNo: string; name: string; reason: string }[];
+  missing: { invoiceId: string; invoiceNo: string; studentId: string | null; name: string; reason: string }[];
   /** 보호자 번호가 같은 묶음(형제). 합치지 않으면 그 집에 청구서가 두 번 갑니다. */
   sharedPhones: { phone: string; names: string[] }[];
   total: number;
@@ -338,6 +345,7 @@ export function buildBillPlan(
       missing.push({
         invoiceId: inv.id,
         invoiceNo: inv.invoice_no,
+        studentId: inv.student_id,
         name: inv.student_name_ko || inv.student_name,
         reason: raw ? `번호 형식이 맞지 않습니다 (${raw})` : "명부에 보호자 연락처가 없습니다",
       });
@@ -355,6 +363,12 @@ export function buildBillPlan(
       phone,
       names: list.map((e) => e.inv.student_name_ko || e.inv.student_name),
     }));
+
+  const optionsOf = (inv: BillInvoice) =>
+    ROLE_ORDER.map((role) => ({ role, phone: phoneOf(inv.phones, role) })).filter(
+      (o): o is { role: GuardianRole; phone: string } => o.phone !== null,
+    );
+  const idsOf = (list: readonly { inv: BillInvoice }[]) => [...new Set(list.map((e) => e.inv.student_id).filter(Boolean))] as string[];
 
   const rows: BillRow[] = [];
   if (opts.mergeSiblings) {
@@ -385,6 +399,8 @@ export function buildBillPlan(
         invoiceNos: list.map((e) => e.inv.invoice_no),
         invoiceIds: list.map((e) => e.inv.id),
         resent: list.some((e) => !!e.inv.exported_at),
+        studentIds: idsOf(list),
+        options: optionsOf(list[0].inv),
       });
     }
   } else {
@@ -399,6 +415,8 @@ export function buildBillPlan(
         invoiceNos: [inv.invoice_no],
         invoiceIds: [inv.id],
         resent: !!inv.exported_at,
+        studentIds: inv.student_id ? [inv.student_id] : [],
+        options: optionsOf(inv),
       });
     }
   }

@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess } from "@/lib/roles";
-import { ROLE_ORDER } from "@/lib/alltalkpay";
+import { ROLE_ORDER, billingPhoneOf, phoneOf, phonesOf } from "@/lib/alltalkpay";
+import { createClient as createUserClient } from "@/lib/supabase/server";
+import { loadStudent, type StudentWithPhones } from "@/lib/students";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +34,37 @@ export const dynamic = "force-dynamic";
  * 「직접 등록」은 명부 셋 중 아무도 아닌 번호라 **여기가 원본**입니다. 그래서 번호 자체를
  * 저장합니다(결제만 담당하는 분이 따로 계신 집이 있습니다).
  */
+/**
+ * 학생 한 명의 청구 번호 후보와 지금 나가는 번호. 학생 회계 창 머리에서 번호를 보여주고 바꿀 때 씁니다.
+ * 번호는 재무 권한이 있을 때만 돌려줍니다.
+ */
+export async function GET(req: Request) {
+  const me = await getCurrentAppUser();
+  if (!me) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
+  if (!hasFinanceAccess(me)) return NextResponse.json({ error: "재무 권한이 필요합니다." }, { status: 403 });
+  const studentId = new URL(req.url).searchParams.get("studentId");
+  if (!studentId) return NextResponse.json({ error: "학생을 고르지 못했습니다." }, { status: 400 });
+  const supabase = await createUserClient();
+  const { row, error } = await loadStudent(supabase, studentId, { phones: true });
+  if (error) return NextResponse.json({ error }, { status: 500 });
+  if (!row) return NextResponse.json({ error: "학생을 찾지 못했습니다." }, { status: 404 });
+  const s = row as StudentWithPhones;
+  const b = {
+    billing_phone_role: s.billing_phone_role ?? null,
+    billing_phone: s.billing_phone ?? null,
+    mother_phone: s.mother_phone ?? null,
+    father_phone: s.father_phone ?? null,
+    parent_phone: s.parent_phone ?? null,
+  };
+  const phones = phonesOf(b);
+  const picked = billingPhoneOf(b);
+  return NextResponse.json({
+    current: picked?.role ?? null,
+    phone: picked?.phone ?? null,
+    options: ROLE_ORDER.map((role) => ({ role, phone: phoneOf(phones, role) })).filter((o) => o.phone),
+  });
+}
+
 export async function POST(req: Request) {
   const me = await getCurrentAppUser();
   if (!me) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });

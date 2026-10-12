@@ -256,7 +256,7 @@ export default function LedgerClient({
   return (
     <div className="w-full p-3">
       <div className="mb-2 flex flex-wrap items-center gap-2">
-        <h1 className="text-lg font-black text-slate-800">📒 회계</h1>
+        <h1 className="text-lg font-black text-slate-800">📒 학생별 회계</h1>
         <span className="flex overflow-hidden rounded-lg border border-slate-300 text-[12px] font-bold">
           {(["학생", "청구서"] as Tab[]).map((t) => (
             <button key={t} onClick={() => setTab(t)} className={"px-3 py-1.5 " + (tab === t ? "bg-slate-800 text-white" : "bg-white text-slate-500 hover:bg-slate-50")}>
@@ -345,7 +345,7 @@ export default function LedgerClient({
             </thead>
             <tbody>
               {studentRows.map((r) => (
-                <tr key={r.id} onClick={() => setOpen(r.id)} className={"h-12 cursor-pointer border-t border-slate-100 hover:bg-indigo-50/40" + flashCls(r.id)} title="누르면 학생 금전 창이 열립니다">
+                <tr key={r.id} onClick={() => setOpen(r.id)} className={"h-12 cursor-pointer border-t border-slate-100 hover:bg-indigo-50/40" + flashCls(r.id)} title="누르면 학생 회계 창이 열립니다">
                   <td className="whitespace-nowrap px-2 font-semibold text-slate-800">
                     <Who id={r.id} name={r.name} plain />
                     <span className="ml-1 text-[10px] font-normal text-slate-400">
@@ -511,7 +511,7 @@ export default function LedgerClient({
                 className="rounded-lg bg-violet-600 px-3 py-1.5 font-bold text-white hover:bg-violet-700 disabled:opacity-40"
                 title="체크한 장(없으면 아직 안 보낸 안 걷힌 장 전부)으로 올톡페이 등록 파일을 만듭니다"
               >
-                📤 올톡페이로 청구{picked.size > 0 ? ` (${picked.size})` : ""}
+                📤 올톡 보내기{picked.size > 0 ? ` (${picked.size})` : ""}
               </button>
               <button onClick={() => void markExported([...picked], true)} disabled={busy || picked.size === 0} className="rounded-lg border border-slate-300 px-2 py-1.5 font-semibold text-slate-600 disabled:opacity-40" title="올톡페이 화면에서 직접 등록한 건을 발송으로 표시">
                 발송 표시
@@ -548,7 +548,7 @@ export default function LedgerClient({
                       </td>
                       <td className="whitespace-nowrap px-2 py-1 font-semibold text-slate-800">
                         {v.studentId ? (
-                          <button onClick={() => setOpen(v.studentId)} className="underline-offset-2 hover:underline" title="학생 금전 창">
+                          <button onClick={() => setOpen(v.studentId)} className="underline-offset-2 hover:underline" title="학생 회계 창">
                             <Who id={v.studentId} name={v.studentName} />
                           </button>
                         ) : (

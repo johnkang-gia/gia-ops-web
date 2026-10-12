@@ -1379,7 +1379,7 @@ export default function InvoiceGridClient({
             onClick={() => setExportIds(justIssued.map((v) => v.id))}
             className="ml-auto rounded-lg bg-emerald-600 px-3 py-1.5 text-[12px] font-bold text-white"
           >
-            📤 올톡페이로 청구하기
+            📤 올톡 보내기
           </button>
           <button onClick={() => setJustIssued([])} className="text-[11px] font-bold text-emerald-700 underline">
             닫기

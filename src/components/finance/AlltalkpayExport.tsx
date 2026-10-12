@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useToast } from "@/components/common/ToastProvider";
 import { won } from "@/lib/feeItems";
+import BillingPhoneChips, { saveBillingPhone } from "@/components/finance/BillingPhoneChips";
 import {
   COLUMNS,
   COLUMN_WIDTHS,
@@ -72,6 +73,15 @@ export default function AlltalkpayExport({ invoiceIds, onClose, onMarked }: Prop
   );
   /** 청구서마다 바꾼 대상. 서버로 함께 보내 명단을 다시 만듭니다. */
   const [roles, setRoles] = useState<Record<string, GuardianRole>>({});
+  /**
+   * 고른 번호를 **학생의 청구 번호로도 저장**할지. 기본은 켜 둡니다 - 이번 파일에서만 바꾸고
+   * 저장하지 않으면 다음 달에 또 같은 번호를 고쳐야 하고, 그러다 올톡페이 화면에서 따로 보내게 됩니다.
+   */
+  const [saveDefault, setSaveDefault] = useState(true);
+  /** 번호를 새로 저장했을 때 명단을 다시 읽게 하는 번호. */
+  const [reloadKey, setReloadKey] = useState(0);
+  const [phoneBusy, setPhoneBusy] = useState(false);
+  const [missingInput, setMissingInput] = useState<Record<string, string>>({});
 
   // 결제만료시간은 학교마다 정해두고 계속 쓰는 값이라 이 브라우저에 기억해 둡니다.
   useEffect(() => {
@@ -102,7 +112,7 @@ export default function AlltalkpayExport({ invoiceIds, onClose, onMarked }: Prop
     return () => {
       alive = false;
     };
-  }, [invoiceIds, merge, roles]);
+  }, [invoiceIds, merge, roles, reloadKey]);
 
   const resent = useMemo(() => (plan?.rows ?? []).filter((r) => r.resent).length, [plan]);
 
@@ -112,6 +122,40 @@ export default function AlltalkpayExport({ invoiceIds, onClose, onMarked }: Prop
       localStorage.setItem(HOUR_KEY, String(h));
     } catch {
       // 기억해 두지 못해도 이번 파일에는 그대로 적용됩니다.
+    }
+  }
+
+  /** 번호 칩을 눌렀을 때. 이번 파일에 적용하고, 켜져 있으면 학생 청구 번호로도 저장합니다. */
+  async function pickRole(invoiceIds: string[], studentIds: string[], role: GuardianRole) {
+    setRole(invoiceIds, role);
+    if (!saveDefault || studentIds.length === 0) return;
+    setPhoneBusy(true);
+    try {
+      const errs = (await Promise.all(studentIds.map((id) => saveBillingPhone(id, role)))).filter(Boolean);
+      if (errs.length) notify(`이번 파일에는 적용했지만 청구 번호로 저장하지 못했습니다: ${errs[0]}`, "error");
+    } finally {
+      setPhoneBusy(false);
+    }
+  }
+
+  /** 새 번호를 적었을 때. 학생의 「결제」 번호로 저장하고 그 번호로 보냅니다. */
+  async function addPhone(invoiceIds: string[], studentIds: string[], phone: string) {
+    if (studentIds.length === 0) {
+      notify("학생이 연결되지 않은 청구서라 번호를 저장할 곳이 없습니다.", "error");
+      return;
+    }
+    setPhoneBusy(true);
+    try {
+      const errs = (await Promise.all(studentIds.map((id) => saveBillingPhone(id, "direct", phone)))).filter(Boolean);
+      if (errs.length) {
+        notify(`번호를 저장하지 못했습니다: ${errs[0]}`, "error");
+        return;
+      }
+      setRole(invoiceIds, "direct");
+      setReloadKey((k) => k + 1);
+      notify("청구 번호로 저장했습니다. 다음 청구부터도 이 번호로 나갑니다.", "success");
+    } finally {
+      setPhoneBusy(false);
     }
   }
 
@@ -176,7 +220,7 @@ export default function AlltalkpayExport({ invoiceIds, onClose, onMarked }: Prop
     <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div className="flex max-h-[88vh] w-full max-w-4xl flex-col rounded-xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-2 border-b border-slate-100 p-3">
-          <span className="text-base font-black text-slate-800">📤 올톡페이 발송 파일</span>
+          <span className="text-base font-black text-slate-800">📤 올톡 보내기</span>
           <span className="text-[11px] text-slate-400">청구서 {invoiceIds.length}건</span>
           <button onClick={onClose} className="ml-auto text-sm font-bold text-slate-400 hover:text-slate-700">
             ✕
@@ -231,6 +275,10 @@ export default function AlltalkpayExport({ invoiceIds, onClose, onMarked }: Prop
                 <span className="text-[11px] text-slate-400">
                   번호가 같은 묶음 {plan.sharedPhones.length}쌍 · 합치지 않으면 그 집에 청구서가 두 번 갑니다
                 </span>
+                <label className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-2 py-1.5 text-[12px] text-sky-900" title="끄면 이번 파일에서만 바뀝니다">
+                  <input type="checkbox" checked={saveDefault} onChange={(e) => setSaveDefault(e.target.checked)} />
+                  고른 번호를 학생 청구 번호로 저장
+                </label>
               </div>
 
               {plan.missing.length > 0 && (
@@ -239,13 +287,31 @@ export default function AlltalkpayExport({ invoiceIds, onClose, onMarked }: Prop
                     연락처가 없어 파일에서 빠지는 학생 {plan.missing.length}명
                   </p>
                   <p className="mb-2 text-[11px] text-orange-800">
-                    빈 칸으로 올리면 그 아이만 청구서가 안 갑니다. 학생 명부의{" "}
-                    <b>어머니·아버지·보호자</b> 칸 중 하나를 채운 뒤 다시 여세요.
+                    빈 칸으로 올리면 그 아이만 청구서가 안 갑니다. 여기서 번호를 적으면 그 학생의 청구 번호로 저장되고 바로 명단에 들어갑니다.
                   </p>
-                  <ul className="flex flex-wrap gap-1.5">
+                  <ul className="flex flex-col gap-1">
                     {plan.missing.map((m) => (
-                      <li key={m.invoiceId} className="rounded border border-orange-200 bg-white px-1.5 py-0.5 text-[11px] text-orange-900">
-                        {m.name} <span className="opacity-60">{m.reason}</span>
+                      <li key={m.invoiceId} className="flex flex-wrap items-center gap-1.5 rounded border border-orange-200 bg-white px-2 py-1 text-[11px] text-orange-900">
+                        <b>{m.name}</b> <span className="opacity-60">{m.reason}</span>
+                        {m.studentId && (
+                          <span className="ml-auto flex items-center gap-1">
+                            <input
+                              value={missingInput[m.invoiceId] ?? ""}
+                              onChange={(e) => setMissingInput((p) => ({ ...p, [m.invoiceId]: e.target.value }))}
+                              placeholder="010-0000-0000"
+                              inputMode="tel"
+                              className="w-28 rounded border border-orange-300 px-1 py-0.5 tabular-nums"
+                            />
+                            <button
+                              type="button"
+                              disabled={phoneBusy || (missingInput[m.invoiceId] ?? "").replace(/\D/g, "").length < 10}
+                              onClick={() => void addPhone([m.invoiceId], [m.studentId!], (missingInput[m.invoiceId] ?? "").replace(/\D/g, ""))}
+                              className="rounded bg-orange-600 px-2 py-0.5 font-bold text-white disabled:opacity-40"
+                            >
+                              번호 저장
+                            </button>
+                          </span>
+                        )}
                       </li>
                     ))}
                   </ul>
@@ -262,7 +328,7 @@ export default function AlltalkpayExport({ invoiceIds, onClose, onMarked }: Prop
                 <span className="text-[12px] font-bold text-slate-700">보낼 줄 {plan.rows.length}개</span>
                 <span className="text-[13px] font-black tabular-nums text-slate-800">{won(plan.total)}</span>
                 <span className="ml-auto text-[11px] text-slate-400">
-                  대상을 눌러 어머니 ↔ 아버지 ↔ 보호자로 바꿀 수 있습니다
+                  누구 번호로 보낼지 눌러 바꾸고, 없는 번호는 「+ 번호」로 바로 적으세요
                 </span>
               </div>
 
@@ -309,35 +375,14 @@ export default function AlltalkpayExport({ invoiceIds, onClose, onMarked }: Prop
                             대상 바꾸기. 명부에 그 칸이 비어 있으면 골라도 소용이 없으므로,
                             고른 뒤 실제로 어느 번호가 쓰였는지는 옆의 번호가 말해 줍니다.
                           */}
-                          <div className="flex gap-0.5">
-                            {(["mother", "father", "guardian"] as GuardianRole[]).map((role) => {
-                              const on = r.role === role;
-                              return (
-                                <button
-                                  key={role}
-                                  type="button"
-                                  onClick={() => setRole(r.invoiceIds, role)}
-                                  title={ROLE_LABEL[role]}
-                                  className={
-                                    "rounded px-1.5 py-0.5 text-[10px] font-bold transition " +
-                                    (on
-                                      ? "bg-slate-800 text-white"
-                                      : "bg-slate-100 text-slate-500 hover:bg-slate-200")
-                                  }
-                                >
-                                  {ROLE_SHORT[role]}
-                                </button>
-                              );
-                            })}
-                            {r.role === "manual" && (
-                              <span
-                                className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800"
-                                title="명부에 없는 번호입니다 - 발행할 때 굳혀 둔 번호를 씁니다"
-                              >
-                                직접입력
-                              </span>
-                            )}
-                          </div>
+                          <BillingPhoneChips
+                            options={r.options}
+                            current={r.role}
+                            busy={phoneBusy}
+                            compact
+                            onPick={(role) => void pickRole(r.invoiceIds, r.studentIds, role)}
+                            onNew={(phone) => void addPhone(r.invoiceIds, r.studentIds, phone)}
+                          />
                         </td>
                         <td className="px-2 py-1 tabular-nums text-slate-600">{prettyPhone(r.phone)}</td>
                         <td className="px-2 py-1 text-right tabular-nums font-bold text-slate-800">{won(r.amount)}</td>

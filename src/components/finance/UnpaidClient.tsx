@@ -234,7 +234,7 @@ export default function UnpaidClient({
               onClick={() => setSending([made.id])}
               className="rounded-lg bg-emerald-700 px-3 py-1.5 text-[12px] font-bold text-white hover:bg-emerald-800"
             >
-              📤 올톡페이로 청구
+              📤 올톡 보내기
             </button>
             <button
               type="button"

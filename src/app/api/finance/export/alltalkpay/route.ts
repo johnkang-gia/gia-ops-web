@@ -31,7 +31,8 @@ export async function POST(req: Request) {
   const rawOverrides = body?.roleOverrides;
   if (rawOverrides && typeof rawOverrides === "object") {
     for (const [id, role] of Object.entries(rawOverrides as Record<string, unknown>)) {
-      if (role === "mother" || role === "father" || role === "guardian") roleOverrides[id] = role;
+      // 「결제」(직접 등록 번호)도 받습니다. 발송 창에서 번호를 새로 적으면 그 번호로 바로 나가야 합니다.
+      if (role === "mother" || role === "father" || role === "guardian" || role === "direct") roleOverrides[id] = role;
     }
   }
   const mark = !!body?.mark;
@@ -124,11 +125,14 @@ export async function POST(req: Request) {
     ...v,
     // 발행할 때 고른 것이 먼저이고, 없으면 **그 아이의 결제번호**를 씁니다. 예전에 발행한
     // 청구서에는 고른 값이 없는데, 그렇다고 어머니로 되돌려 보내면 그 집은 못 받습니다.
+    // **학생에게 정해 둔 청구 번호가 먼저입니다.** 청구서를 만들 때 굳혀 둔 대상이 이기면, 담당자가
+    // 번호를 바꿔 저장해도 이미 만든 청구서는 옛 번호로 나가고 그 사실이 화면에 안 보입니다.
     guardian_role:
-      v.guardian_role === "direct" || v.guardian_role === "mother" || v.guardian_role === "father" ||
+      (v.student_id ? chosenById.get(v.student_id) : undefined) ??
+      (v.guardian_role === "direct" || v.guardian_role === "mother" || v.guardian_role === "father" ||
       v.guardian_role === "guardian" || v.guardian_role === "manual"
         ? v.guardian_role
-        : (v.student_id ? chosenById.get(v.student_id) : undefined) ?? null,
+        : null),
     phones:
       (v.student_id ? phonesById.get(v.student_id) : undefined) ??
       { billing_phone: null, mother_phone: null, father_phone: null, parent_phone: null },

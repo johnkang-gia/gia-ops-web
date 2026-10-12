@@ -78,7 +78,7 @@ export default function ImportUploadClient({ batches }: { batches: BatchRow[] })
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="mb-3 rounded-xl border border-teal-200 bg-teal-50/60 px-3 py-3">
         <p className="mb-1.5 rounded-lg bg-amber-100 px-2 py-1 text-[11px] font-bold text-amber-900">
-          앱에서 이미 청구서를 발행한 달이면 여기가 아니라 <Link href="/finance/alltalk-sync" className="underline">올톡 대조</Link>에 올리세요. 여기는 앱에 없는 청구를 새로 만드는 곳이라, 같은 청구서가 한 장 더 생깁니다.
+          앱에서 이미 청구서를 발행한 달이면 여기가 아니라 <Link href="/finance/alltalk-sync" className="underline">올톡페이 › 결과 맞추기</Link>에 올리세요. 여기는 앱에 없는 청구를 새로 만드는 곳이라, 같은 청구서가 한 장 더 생깁니다.
         </p>
         <p className="text-[12px] font-bold text-teal-900">올톡페이 「청구서관리목록」 엑셀을 그대로 올리세요.</p>
         <p className="mt-0.5 text-[11px] leading-relaxed text-teal-800">

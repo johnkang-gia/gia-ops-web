@@ -409,48 +409,71 @@ const DOCS_TABS: TabDef[] = [
 //
 // 순서는 자주 여는 것부터입니다. 재무 일은 대개 "지금 어디까지 됐나"에서 시작합니다.
 const FINANCE_TABS: TabDef[] = [
-  // **재무는 셋입니다 - 회계 · 월별 · 설정.**
+  // **재무는 일의 순서대로 다섯 갈래입니다 - 청구 → 올톡페이 → 수납 → 월별·보고 → 설정.**
   //
-  // 열여섯 화면이 다섯 탭에 흩어져 있었습니다. 「이 아이 미수금이 얼마지」를 보려고 미납금으로,
-  // 입금을 적으려고 수납으로, 선납을 적으려고 예치금으로 옮겨 다녔는데 셋 다 회계 화면의 학생
-  // 창에서 이미 되는 일입니다. 주소는 전부 남겨 두었습니다(즐겨찾기·옛 링크) - 상단 탭의 자리만
-  // 셋으로 줄이고, 일괄로 하는 화면들은 회계 아래 작은 줄에 둡니다.
+  // 예전에는 「회계」 한 갈래 아래에 청구·보내기·받기·대조·결재가 열 개로 섞여 있어서, 이번 달에
+  // 무엇을 했고 무엇이 남았는지 메뉴로는 알 수 없었습니다. 특히 「올톡페이로 실제 청구하기」가
+  // 어디에도 따로 없어서 담당자가 올톡페이 화면에서 직접 보냈고, 앱에는 9~10월 발행분이 한 장도
+  // 「보냄」으로 남지 않았습니다. 주소는 전부 그대로입니다(즐겨찾기·옛 링크).
+  //
+  // 용어: 청구서(인보이스 X) · 발행 · 올톡 보내기(보냄) · 수납(받은 돈) · 직접수납(창구에서 받음) · 예치금.
   {
-    key: "ledger",
-    label: "회계",
-    icon: "📒",
+    key: "billing",
+    label: "청구",
+    icon: "🧾",
     href: "/finance/ledger",
-    match: ["/finance/ledger", "/finance/tuition", "/finance/invoices", "/finance/unpaid", "/finance/payments", "/finance/prepaid", "/finance/import", "/finance/receipts", "/finance/statement", "/finance/approvals"],
+    match: ["/finance/ledger", "/finance/tuition", "/finance/invoices", "/finance/rounds", "/finance/statement"],
     children: [
-      // 학생 한 명의 일은 전부 여기 - 학생을 누르면 창 하나에서 발행·이미 받음·입금·영수증·올톡페이.
-      { label: "회계", href: "/finance/ledger", match: ["/finance/ledger"] },
-      // 반 전체를 한 번에 체크해서 발행하는 표. 하위 이름은 DB 의 `invoices.stream` 값과 같은 말입니다.
-      { label: "학비 일괄", href: "/finance/tuition", match: ["/finance/tuition"] },
-      { label: "학비외 일괄", href: "/finance/invoices", match: ["/finance/invoices"] },
-      { label: "미납금", href: "/finance/unpaid", match: ["/finance/unpaid"] },
-      { label: "수납", href: "/finance/payments", match: ["/finance/payments"] },
-      { label: "예치금", href: "/finance/prepaid", match: ["/finance/prepaid"] },
-      // 올톡페이 청구서관리목록을 올려 앱 청구서와 맞춤 - 결제된 건은 수납, 보낸 건은 올톡 표시를 한 화면에서.
-      { label: "올톡 대조", href: "/finance/alltalk-sync", match: ["/finance/alltalk-sync"] },
-      { label: "결제내역 올리기", href: "/finance/import", match: ["/finance/import"] },
-      { label: "현금영수증", href: "/finance/receipts", match: ["/finance/receipts"] },
-      // 결손·환불은 올린 사람이 아닌 관리자가 승인해야 장부에 들어갑니다.
-      { label: "결재", href: "/finance/approvals", match: ["/finance/approvals"] },
-    ],
-  },
-  // **월별** - 「지금」이 아니라 「흐름」. 개요(이번 달)도 같은 뷰(`finance_monthly`)를 읽으므로 여기 둡니다.
-  {
-    key: "monthly",
-    label: "월별",
-    icon: "📅",
-    href: "/finance",
-    match: ["/finance", "/finance/monthly", "/finance/revenue", "/finance/rounds"],
-    children: [
-      { label: "이번 달 개요", href: "/finance", match: ["/finance"] },
-      { label: "월별 · 학기별", href: "/finance/monthly", match: ["/finance/monthly"] },
-      { label: "학생별", href: "/finance/monthly/students", match: ["/finance/monthly/students"] },
+      // 학생 한 명의 일은 전부 여기 - 학생을 누르면 회계 창 하나에서 발행·수납·영수증·올톡 보내기.
+      { label: "학생별 회계", href: "/finance/ledger", match: ["/finance/ledger", "/finance/statement"] },
+      // 반 전체를 한 번에 체크해서 발행하는 표. 이름은 DB 의 `invoices.stream` 값과 같은 말입니다.
+      { label: "학비 일괄 발행", href: "/finance/tuition", match: ["/finance/tuition"] },
+      { label: "학비외 일괄 발행", href: "/finance/invoices", match: ["/finance/invoices"] },
       // 몇 월분을 언제 몇 차로 냈는가 - 회차(발행일_순번)별 장수·금액.
       { label: "청구 회차", href: "/finance/rounds", match: ["/finance/rounds"] },
+    ],
+  },
+  {
+    key: "alltalk",
+    label: "올톡페이",
+    icon: "📤",
+    href: "/finance/send",
+    match: ["/finance/send", "/finance/alltalk-sync", "/finance/import"],
+    children: [
+      // 발행한 청구서를 골라 청구 번호 확인 → 올톡 등록 파일. 청구사유 앞에 청구서 번호가 붙습니다.
+      { label: "보내기", href: "/finance/send", match: ["/finance/send"] },
+      // 올톡 청구서관리목록을 올려 결과를 맞춤 - 결제된 건 수납, 보낸 건 보냄 표시를 한 화면에서.
+      { label: "결과 맞추기", href: "/finance/alltalk-sync", match: ["/finance/alltalk-sync"] },
+      // 앱에 없는 청구(앱 밖에서 보낸 것)를 새로 만드는 곳. 앱에서 발행한 달에는 쓰지 않습니다.
+      { label: "앱 밖 청구 가져오기", href: "/finance/import", match: ["/finance/import"] },
+    ],
+  },
+  {
+    key: "collect",
+    label: "수납",
+    icon: "💰",
+    href: "/finance/unpaid",
+    match: ["/finance/unpaid", "/finance/payments", "/finance/prepaid", "/finance/receipts", "/finance/approvals"],
+    children: [
+      { label: "미납금", href: "/finance/unpaid", match: ["/finance/unpaid"] },
+      { label: "수납 내역", href: "/finance/payments", match: ["/finance/payments"] },
+      { label: "예치금", href: "/finance/prepaid", match: ["/finance/prepaid"] },
+      { label: "현금영수증", href: "/finance/receipts", match: ["/finance/receipts"] },
+      // 결손·환불은 올린 사람이 아닌 관리자가 승인해야 장부에 들어갑니다.
+      { label: "환불·결손 결재", href: "/finance/approvals", match: ["/finance/approvals"] },
+    ],
+  },
+  // **월별·보고** - 「지금」이 아니라 「흐름」. 첫 화면(이번 달 할 일·개요)도 같은 뷰를 읽으므로 여기 둡니다.
+  {
+    key: "monthly",
+    label: "월별·보고",
+    icon: "📅",
+    href: "/finance",
+    match: ["/finance", "/finance/monthly", "/finance/revenue"],
+    children: [
+      { label: "이번 달 할 일 · 개요", href: "/finance", match: ["/finance"] },
+      { label: "월별 · 학기별", href: "/finance/monthly", match: ["/finance/monthly"] },
+      { label: "학생별", href: "/finance/monthly/students", match: ["/finance/monthly/students"] },
       // 「무슨 돈으로 얼마」 - 세입과목(관·항·목)별 부과·수납·결손·미수.
       { label: "과목별 수입", href: "/finance/revenue", match: ["/finance/revenue"] },
     ],

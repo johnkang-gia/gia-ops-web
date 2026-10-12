@@ -69,7 +69,7 @@ export default async function DismissalBulkPage() {
     loadStudents(supabase, { order: "grade" }),
     // dismissal-ok: 한 줄씩 고치는 대장 화면입니다. 「오늘 답」을 내지 않고 등록된 줄을
     // 전부 보여줍니다 - 여기서 골라내면 고쳐야 할 줄이 화면에서 사라집니다.
-    supabase.from("student_dismissal_plans").select("id, student_id, weekday, kind, label, depart_time, note, week_start"),
+    supabase.from("student_dismissal_plans").select("id, student_id, weekday, kind, label, depart_time, note, week_start, range_id, range_start, range_end"),
     // 최근 2주 학부모 연락. 원문(raw_text)까지 가져와야 «몇 시 무슨 차»가 읽힙니다 -
     // 요약만으로는 시각이 잘려 있는 경우가 있습니다.
     supabase
@@ -87,7 +87,11 @@ export default async function DismissalBulkPage() {
   // week_start 가 아직 없으면(마이그레이션 전) **있는 칸만으로 다시 읽습니다.** 없는 칸 하나
   // 때문에 이 화면이 통째로 비면, 하원수단을 고칠 자리 자체가 사라집니다.
   let plans = plansRes.data as { id: string; student_id: string; weekday: number }[] | null;
-  if (isMissingWeekStart(plansRes.error)) {
+  if (plansRes.error && (plansRes.error.message ?? "").includes("range_")) {
+    // 기간 칸이 아직 없으면(마이그레이션 직전) 기간 없이 읽습니다.
+    const retry = await supabase.from("student_dismissal_plans").select("id, student_id, weekday, kind, label, depart_time, note, week_start");
+    plans = retry.data as typeof plans;
+  } else if (isMissingWeekStart(plansRes.error)) {
     const retry = await supabase
       .from("student_dismissal_plans")
       .select("id, student_id, weekday, kind, label, depart_time, note");

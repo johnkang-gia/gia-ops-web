@@ -3,7 +3,17 @@
 import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
-import { DISMISSAL_REPEATS, REPEAT_HINT, describeWeek, weekStartFor, type DismissalRepeat } from "@/lib/dismissalWeek";
+import {
+  DISMISSAL_REPEATS,
+  RANGE_HINT,
+  REPEAT_HINT,
+  addDays,
+  countWeekdayInRange,
+  describeRange,
+  describeWeek,
+  weekStartFor,
+  type DismissalChoice,
+} from "@/lib/dismissalWeek";
 import { todayKst } from "@/lib/kst";
 
 /**
@@ -54,6 +64,10 @@ export type PlanRow = {
   note: string | null;
   /** 적용되는 주의 월요일. 비어 있으면 매주 — 규칙은 `src/lib/dismissalWeek.ts` 한 곳입니다. */
   week_start?: string | null;
+  /** 기간으로 넣은 줄이면 묶음 번호와 기간(마이그레이션 전에는 없음). */
+  range_id?: string | null;
+  range_start?: string | null;
+  range_end?: string | null;
 };
 
 const WEEKDAYS = [
@@ -101,10 +115,14 @@ export default function DismissalBulkClient({
   const [openRaw, setOpenRaw] = useState<string | null>(null);
   // 이 화면은 「매주 이렇게 갑니다」를 몰아 넣는 자리라 매주가 기본입니다. 그 주 한 번짜리는
   // 업무보드의 빠른등록으로 들어옵니다.
-  const [repeat, setRepeat] = useState<DismissalRepeat>("매주");
+  const [repeat, setRepeat] = useState<DismissalChoice>("매주");
 
   const today = todayKst();
-  const weekStart = weekStartFor(repeat, today);
+  /** 「기간」일 때 달력으로 고르는 시작·끝 날짜. 기본은 오늘부터 4주. */
+  const [rangeStart, setRangeStart] = useState<string>(today);
+  const [rangeEnd, setRangeEnd] = useState<string>(addDays(today, 27));
+  const isRange = repeat === "기간";
+  const weekStart = isRange ? null : weekStartFor(repeat, today);
 
   const planKey = (studentId: string, weekday: number) => `${studentId}|${weekday}`;
   // **보고 있는 갈래의 줄만** 표에 세웁니다. 매주와 이번주만을 한 칸에 섞으면 지우기를
@@ -112,9 +130,14 @@ export default function DismissalBulkClient({
   const planMap = useMemo(
     () =>
       new Map(
-        plans.filter((p) => (p.week_start ?? null) === weekStart).map((p) => [planKey(p.student_id, p.weekday), p]),
+        plans
+          // 기간 보기에서는 **고른 기간과 똑같은 기간**으로 넣은 줄만 세웁니다(주별로 펼쳐진 줄 중 하나씩).
+          .filter((p) =>
+            isRange ? p.range_start === rangeStart && p.range_end === rangeEnd : !p.range_id && (p.week_start ?? null) === weekStart,
+          )
+          .map((p) => [planKey(p.student_id, p.weekday), p]),
       ),
-    [plans, weekStart],
+    [plans, weekStart, isRange, rangeStart, rangeEnd],
   );
 
   const list = useMemo(() => {
@@ -174,6 +197,10 @@ export default function DismissalBulkClient({
       notify("아이와 요일을 고른 뒤 저장해주세요.", "error");
       return;
     }
+    if (isRange) {
+      await saveRange();
+      return;
+    }
     setBusy(true);
     const supabase = createClient();
     // 저장은 함수 한 곳(set_dismissal_plan)에서 합니다 - 「매주」와 「그 주만」이 각각
@@ -228,9 +255,82 @@ export default function DismissalBulkClient({
     setDays([]);
   }
 
+  /**
+   * 기간으로 넣기. 주별 줄로 펼쳐 한 트랜잭션에 넣어야 해서 하원수단 창구(`/api/work/dismissal`)를
+   * 지납니다 - 오늘이 기간 안이면 셔틀 체크표에도 바로 거는 것까지 하원수단 창과 같습니다.
+   */
+  async function saveRange() {
+    if (!rangeStart || !rangeEnd || rangeEnd < rangeStart) {
+      notify("기간의 시작일과 종료일을 달력에서 골라주세요.", "error");
+      return;
+    }
+    if (days.every((d) => countWeekdayInRange(rangeStart, rangeEnd, d) === 0)) {
+      notify("고른 기간 안에 고른 요일이 없습니다.", "error");
+      return;
+    }
+    setBusy(true);
+    const failed: string[] = [];
+    const done: string[] = [];
+    try {
+      for (const sid of picked) {
+        const res = await fetch("/api/work/dismissal", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ studentId: sid, weekdays: days, kind, label, time, note, range: { start: rangeStart, end: rangeEnd } }),
+        });
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        const name = students.find((s) => s.id === sid)?.name ?? sid;
+        if (!res.ok) failed.push(`${name}(${body.error ?? "저장 실패"})`);
+        else done.push(sid);
+      }
+      // dismissal-ok: 오늘의 답을 고르는 자리가 아니라, 방금 넣은 기간 줄을 편집 표에 다시 세우는 자리입니다.
+      // 넣은 줄을 다시 읽어 표에 세웁니다. 묶음 번호(range_id)가 있어야 표에서 바로 지울 수 있습니다.
+      if (done.length > 0) {
+        const supabase = createClient();
+        const { data, error } = await supabase
+          .from("student_dismissal_plans")
+          .select("id, student_id, weekday, kind, label, depart_time, note, week_start, range_id, range_start, range_end")
+          .in("student_id", done)
+          .eq("range_start", rangeStart)
+          .eq("range_end", rangeEnd);
+        if (error) notify(`저장은 했지만 표를 새로 읽지 못했습니다: ${error.message}. 화면을 새로고침해주세요.`, "error");
+        else {
+          const fresh = (data as PlanRow[] | null) ?? [];
+          setPlans((prev) => [...prev.filter((p) => !fresh.some((f) => f.id === p.id)), ...fresh]);
+        }
+      }
+    } finally {
+      setBusy(false);
+    }
+    if (done.length > 0) {
+      notify(
+        `${done.length}명 × ${days.length}요일을 ${describeRange(rangeStart, rangeEnd)} 기간으로 저장했습니다.` +
+          (failed.length ? ` 실패 ${failed.length}명: ${failed.join(", ")}` : ""),
+        failed.length ? "error" : "success",
+      );
+      setPicked([]);
+      setDays([]);
+    } else notify(`저장하지 못했습니다: ${failed.join(", ")}`, "error");
+  }
+
   async function clearOne(studentId: string, weekday: number) {
     const p = planMap.get(planKey(studentId, weekday));
     if (!p) return;
+    if (p.range_id) {
+      // 기간으로 넣은 줄은 그 요일의 기간 전체를 지웁니다. 한 주만 지우면 남은 주가 계속 살아 있습니다.
+      const res = await fetch("/api/work/dismissal", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ studentId, weekday, rangeId: p.range_id }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        notify("지우지 못했습니다: " + (body.error ?? ""), "error");
+        return;
+      }
+      setPlans((prev) => prev.filter((x) => !(x.range_id === p.range_id && x.weekday === weekday)));
+      return;
+    }
     const supabase = createClient();
     const { error } = await supabase.rpc("clear_dismissal_plan", {
       p_student: studentId,
@@ -268,10 +368,61 @@ export default function DismissalBulkClient({
               {r === "매주" ? "매주" : `${r}만`}
             </button>
           ))}
+          <button
+            type="button"
+            onClick={() => setRepeat("기간")}
+            title={RANGE_HINT}
+            className={
+              "rounded-full px-2.5 py-1 text-[11px] font-bold " +
+              (isRange ? "bg-slate-800 text-white" : "border border-slate-200 text-slate-500 hover:bg-slate-50")
+            }
+          >
+            📅 기간 지정
+          </button>
           <span className="text-[11px] text-slate-400">
-            {REPEAT_HINT[repeat]} · 아래 표는 <b>{describeWeek(weekStart, today)}</b>에 적힌 것만 보여줍니다
+            {isRange ? (
+              <>
+                {RANGE_HINT} · 아래 표는 <b>{describeRange(rangeStart, rangeEnd)}</b> 기간으로 넣은 것만 보여줍니다
+              </>
+            ) : (
+              <>
+                {REPEAT_HINT[repeat as Exclude<DismissalChoice, "기간">]} · 아래 표는 <b>{describeWeek(weekStart, today)}</b>에 적힌 것만 보여줍니다
+              </>
+            )}
           </span>
         </div>
+        {isRange && (
+          <div className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-violet-200 bg-violet-50/60 px-2.5 py-1.5 text-sm">
+            <label className="flex items-center gap-1">
+              <span className="text-[11px] font-semibold text-slate-500">시작</span>
+              <input
+                type="date"
+                value={rangeStart}
+                min={today}
+                onChange={(e) => {
+                  setRangeStart(e.target.value);
+                  if (e.target.value > rangeEnd) setRangeEnd(e.target.value);
+                }}
+                className="rounded border border-slate-300 bg-white px-1.5 py-0.5"
+              />
+            </label>
+            <span className="text-slate-400">~</span>
+            <label className="flex items-center gap-1">
+              <span className="text-[11px] font-semibold text-slate-500">끝</span>
+              <input type="date" value={rangeEnd} min={rangeStart || today} onChange={(e) => setRangeEnd(e.target.value)} className="rounded border border-slate-300 bg-white px-1.5 py-0.5" />
+            </label>
+            {/* 실제로 며칠이 되는지 보여줍니다. 요일과 기간이 안 맞으면 0번인데, 그걸 저장 뒤에 알면 늦습니다. */}
+            <span className="text-[11px] text-violet-800">
+              {days.length === 0
+                ? "요일을 골라주세요"
+                : days
+                    .slice()
+                    .sort()
+                    .map((d) => `${WEEKDAYS.find((w) => w.n === d)?.ko} ${countWeekdayInRange(rangeStart, rangeEnd, d)}번`)
+                    .join(" · ")}
+            </span>
+          </div>
+        )}
 
         <div className="mb-2 flex flex-wrap items-center gap-2">
           <span className="text-[11px] font-semibold text-slate-500">요일</span>

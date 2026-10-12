@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { BATCH, SCREENS, allTargets, type CheckResult, type Verdict } from "@/lib/siteCheck";
+import { BATCH, SCREENS, SITE_CHECK_FRAME, allTargets, findClipped, type CheckResult, type ClipHit, type Verdict } from "@/lib/siteCheck";
 import { useDevReport } from "@/components/dev/DevReportProvider";
 
 /**
@@ -28,7 +28,49 @@ const COLOR: Record<Verdict, string> = {
   "없는 화면": "text-red-700 bg-red-50 border-red-300",
   "로그인으로 튕김": "text-orange-800 bg-orange-50 border-orange-300",
   "권한 막힘": "text-orange-800 bg-orange-50 border-orange-300",
+  잘림: "text-red-700 bg-red-50 border-red-300",
 };
+
+/** 한 번에 그려 보는 화면 수. 많이 띄우면 점검하는 컴퓨터가 버거워 시간 초과가 늘어납니다. */
+const MEASURE_PARALLEL = 3;
+const MEASURE_TIMEOUT_MS = 20_000;
+/** 다 열린 뒤 이만큼 더 기다립니다. 화면이 자료를 받아 그리는 데 걸리는 시간입니다. */
+const SETTLE_MS = 1500;
+
+/**
+ * 화면 하나를 숨은 틀에 열어 그린 뒤 **잘린 상자**를 잽니다(findClipped).
+ *
+ * 창 크기는 행정실 노트북 정도(1280×820)로 둡니다. 큰 모니터에서만 재면 내용이 다 들어와
+ * 멀쩡해 보이고, 정작 작은 화면에서 잘린 것은 못 잡습니다.
+ */
+function measure(path: string): Promise<ClipHit[] | string> {
+  return new Promise((resolve) => {
+    const f = document.createElement("iframe");
+    f.name = SITE_CHECK_FRAME;
+    f.setAttribute("aria-hidden", "true");
+    f.style.cssText = "position:fixed;left:-20000px;top:0;width:1280px;height:820px;border:0;visibility:hidden;pointer-events:none";
+    let done = false;
+    const finish = (v: ClipHit[] | string) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      f.remove();
+      resolve(v);
+    };
+    const timer = setTimeout(() => finish(`${MEASURE_TIMEOUT_MS / 1000}초 안에 다 그려지지 않아 재지 못했습니다`), MEASURE_TIMEOUT_MS);
+    f.onload = () =>
+      setTimeout(() => {
+        try {
+          const doc = f.contentDocument;
+          finish(doc ? findClipped(doc) : "화면을 읽지 못했습니다");
+        } catch (err) {
+          finish(`화면을 재지 못했습니다: ${String(err)}`);
+        }
+      }, SETTLE_MS);
+    f.src = path;
+    document.body.appendChild(f);
+  });
+}
 /** 가운뎃값. 평균은 느린 화면 하나에 통째로 끌려가서 「보통 얼마나 걸리나」를 못 보여줍니다. */
 function median(xs: number[]): number {
   if (xs.length === 0) return 0;
@@ -38,7 +80,7 @@ function median(xs: number[]): number {
 }
 
 /** 위험한 순서. 사람이 위에서부터 읽고 손대면 됩니다. */
-const ORDER: Verdict[] = ["오류", "안 열림", "없는 화면", "로그인으로 튕김", "권한 막힘", "느림", "정상"];
+const ORDER: Verdict[] = ["오류", "안 열림", "없는 화면", "잘림", "로그인으로 튕김", "권한 막힘", "느림", "정상"];
 
 /**
  * **고칠 수 있는 자리인가.**
@@ -55,6 +97,7 @@ const FIXABLE: Record<Verdict, { who: "코드" | "설정"; how: string }> = {
   "없는 화면": { who: "코드", how: "가리키는 화면이 없습니다. 링크를 고치거나 화면을 만들어야 합니다." },
   "로그인으로 튕김": { who: "설정", how: "지금 계정으로 열 수 없는 화면입니다. 계정 권한을 확인해 주세요." },
   "권한 막힘": { who: "설정", how: "지금 계정으로 열 수 없는 화면입니다. 계정 권한을 확인해 주세요." },
+  잘림: { who: "코드", how: "화면 아래가 잘려 굴려도 안 내려갑니다. 그 상자에 스크롤을 두거나 가두지 않게 고쳐야 합니다." },
 };
 
 export default function SiteCheckPanel({ gaps, version }: { gaps: { key: string; gap: string }[]; version: string }) {
@@ -66,6 +109,10 @@ export default function SiteCheckPanel({ gaps, version }: { gaps: { key: string;
   const [finishedAt, setFinishedAt] = useState<string | null>(null);
   const [onlyBad, setOnlyBad] = useState(true);
   const [copied, setCopied] = useState(false);
+  /** 두 번째 단계(그려 보고 재기) 진행. 첫 단계와 따로 셉니다 - 어디서 시간이 드는지 보이게. */
+  const [measuring, setMeasuring] = useState<{ done: number; total: number } | null>(null);
+  /** 재지 못한 화면. 못 잰 것을 「정상」으로 두면 잘린 화면이 그대로 빠져나갑니다. */
+  const [unmeasured, setUnmeasured] = useState<{ path: string; why: string }[]>([]);
   const report = useDevReport();
 
   async function run() {
@@ -74,9 +121,11 @@ export default function SiteCheckPanel({ gaps, version }: { gaps: { key: string;
     setResults([]);
     setMissed([]);
     setFinishedAt(null);
+    setUnmeasured([]);
     setDone(0);
     setTotal(targets.length);
 
+    const opened: CheckResult[] = [];
     for (let i = 0; i < targets.length; i += BATCH) {
       const chunk = targets.slice(i, i + BATCH);
       try {
@@ -90,6 +139,7 @@ export default function SiteCheckPanel({ gaps, version }: { gaps: { key: string;
           setMissed((p) => [...p, { paths: chunk, why: j?.error ?? `창구가 ${res.status} 로 답했습니다` }]);
         } else {
           const j = (await res.json()) as { results: CheckResult[] };
+          opened.push(...(j.results ?? []));
           setResults((p) => [...p, ...(j.results ?? [])]);
         }
       } catch (err) {
@@ -97,6 +147,29 @@ export default function SiteCheckPanel({ gaps, version }: { gaps: { key: string;
       }
       setDone(i + chunk.length);
     }
+    // ── 두 번째 단계: 열린 화면을 실제로 그려 보고 잘린 곳을 잽니다 ──────────────
+    const toMeasure = opened.filter((r) => !r.path.startsWith("/api") && (r.verdict === "정상" || r.verdict === "느림")).map((r) => r.path);
+    setMeasuring({ done: 0, total: toMeasure.length });
+    let next = 0;
+    let measured = 0;
+    const worker = async () => {
+      while (next < toMeasure.length) {
+        const path = toMeasure[next++];
+        const out = await measure(path);
+        measured += 1;
+        setMeasuring({ done: measured, total: toMeasure.length });
+        if (typeof out === "string") {
+          setUnmeasured((p) => [...p, { path, why: out }]);
+          continue;
+        }
+        if (out.length === 0) continue;
+        const note = out.map((h) => `${h.where}에서 ${h.hiddenPx}px 가 가려져 굴려도 안 보입니다`).join(" · ");
+        setResults((p) => p.map((r) => (r.path === path ? { ...r, verdict: "잘림", note } : r)));
+      }
+    };
+    await Promise.all(Array.from({ length: MEASURE_PARALLEL }, worker));
+    setMeasuring(null);
+
     setFinishedAt(new Date().toLocaleTimeString("ko-KR"));
     setRunning(false);
   }
@@ -145,6 +218,11 @@ export default function SiteCheckPanel({ gaps, version }: { gaps: { key: string;
       lines.push("## 점검하지 못한 화면");
       for (const m of missed) lines.push(`- ${m.paths.join(" · ")} — ${m.why}`);
     }
+    if (unmeasured.length > 0) {
+      lines.push("");
+      lines.push("## 잘림을 재지 못한 화면");
+      for (const u of unmeasured) lines.push(`- \`${u.path}\` — ${u.why}`);
+    }
     if (gaps.length > 0) {
       lines.push("");
       lines.push("## 자료 등기소 — 넣기와 내리기가 아직 짝이 아닌 자리");
@@ -165,7 +243,7 @@ export default function SiteCheckPanel({ gaps, version }: { gaps: { key: string;
   useEffect(() => {
     report.put("site", 10, buildOwn());
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [results, missed, finishedAt, gaps, version]);
+  }, [results, missed, unmeasured, finishedAt, gaps, version]);
 
   async function copyReport() {
     const text = report.build();
@@ -201,12 +279,17 @@ export default function SiteCheckPanel({ gaps, version }: { gaps: { key: string;
           disabled={running}
           className="rounded-lg bg-slate-900 px-3.5 py-1.5 text-[12px] font-bold text-white disabled:opacity-40"
         >
-          {running ? `점검 중… ${done}/${total}` : "한 바퀴 점검하기"}
+          {running
+            ? measuring
+              ? `화면 그려 보는 중… ${measuring.done}/${measuring.total}`
+              : `점검 중… ${done}/${total}`
+            : "한 바퀴 점검하기"}
         </button>
       </div>
       <p className="mb-3 text-[11px] leading-relaxed text-slate-500">
         안 열리는 화면 · 오류가 난 화면 · 로그인으로 튕기는 화면 · 눈에 띄게 느린 화면을 찾고, 화면 안의 링크가 실제로 있는
-        곳을 가리키는지 봅니다. <b className="text-slate-600">저장·발송·삭제 단추는 누르지 않습니다</b> — 눌러보면 실제로
+        곳을 가리키는지 봅니다. 그다음 열린 화면을 노트북 크기(1280×820)로 <b className="text-slate-600">실제로 그려 보고</b>, 아래가
+        잘려 굴려도 안 내려가는 화면을 「잘림」으로 잡습니다. <b className="text-slate-600">저장·발송·삭제 단추는 누르지 않습니다</b> — 눌러보면 실제로
         저장되고 실제로 나갑니다.
       </p>
       <p className="mb-3 rounded-lg bg-slate-50 px-3 py-2 text-[11px] leading-relaxed text-slate-600">
@@ -243,6 +326,17 @@ export default function SiteCheckPanel({ gaps, version }: { gaps: { key: string;
           {missed.map((m, i) => (
             <p key={i} className="mt-0.5 text-[11px] text-red-800">
               {m.paths.join(" · ")} — {m.why}
+            </p>
+          ))}
+        </div>
+      )}
+
+      {unmeasured.length > 0 && (
+        <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2">
+          <p className="text-[12px] font-bold text-amber-800">잘림을 재지 못한 화면 {unmeasured.length}개 — 이 화면들은 아직 모릅니다</p>
+          {unmeasured.slice(0, 8).map((u) => (
+            <p key={u.path} className="mt-0.5 text-[11px] text-amber-900">
+              {u.path} — {u.why}
             </p>
           ))}
         </div>

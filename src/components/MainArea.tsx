@@ -54,6 +54,19 @@ const BOUNDED_LIST_PATHS = [
 //
 // 옆으로 길어지는 것만 막으면 됩니다. 안 막으면 항목이 늘 때 페이지가 통째로 늘어나
 // 상단 탭줄과 제목까지 밀려 나갑니다.
+// **화면 하나를 꽉 채우고 칸마다 스스로 굴리는 화면.** 정확히 같은 주소만 적습니다.
+//
+// 예전에는 `/work` 로 **시작하는** 주소를 전부 가뒀습니다. 칸반 보드는 그래야 하지만, 같은 줄에
+// 걸린 하원수단·지난 업무·휴지통·문의 검색은 보통 화면이라 안쪽에 스크롤 칸이 없었고, 화면
+// 아래가 통째로 잘려 아무리 굴려도 내려가지 않았습니다. 가둔 목록(BOUNDED_LIST_PATHS)은 빌드가
+// 검사했지만 이 «앞글자로 가두기»는 검사 밖이라, 새 화면이 생길 때마다 조용히 잘렸습니다.
+// 그래서 이제 가두는 것은 이 목록과 BOUNDED_LIST_PATHS 의 **정확한 주소**로만 정하고, 빌드
+// (`check-bounded-scroll.mjs`)가 두 목록의 화면 모두에 안쪽 스크롤이 있는지 봅니다.
+const FILL_SCREEN_PATHS = [
+  "/work",
+  "/staff-manual",
+];
+
 const WIDE_TABLE_PATHS = ["/finance/invoices", "/finance/tuition", "/finance/ledger"];
 
 export default function MainArea({ children }: { children: React.ReactNode }) {
@@ -63,19 +76,23 @@ export default function MainArea({ children }: { children: React.ReactNode }) {
   // 반 배정은 «학교» 메뉴에 걸린 행정 화면인데 주소만 /weekly-report 아래에 있어서, 들어가면
   // 배경이 갑자기 초록으로 바뀌었습니다. 주소가 아니라 **어느 메뉴의 화면인가**로 갈라야 합니다.
   const isWeekly = pathname?.startsWith("/weekly-report") && !pathname?.startsWith("/weekly-report/admin");
-  const isStaffManual = pathname?.startsWith("/staff-manual");
+  const isFillScreen = FILL_SCREEN_PATHS.some((p) => pathname === p);
   const isBoundedList = BOUNDED_LIST_PATHS.some((p) => pathname === p);
 
   // 업무 보드는 칸반이 화면을 꽉 채워야 해서 예전에는 여백이 아예 없었는데, 그러면 상단탭이
   // 페이지 내용에 딱 붙어 답답합니다(요청 ③: "업무탭부분 너무 페이지랑 가까워 조금 여유는 줘").
   // 좌우는 상단탭과 같은 px를 써서 왼쪽 선을 맞추고, 위쪽에만 작은 숨통을 둡니다.
-  if (isWork) {
+  if (isWork && isFillScreen) {
     return <main className="workflatform-theme flex-1 overflow-hidden px-4 pb-3 pt-3 sm:px-6 sm:pb-4">{children}</main>;
+  }
+  // 업무 아래 다른 화면(하원수단·지난 업무·휴지통·문의 검색·보고)은 같은 테마에 페이지째 굴립니다.
+  if (isWork) {
+    return <main className="workflatform-theme flex-1 overflow-y-auto overflow-x-hidden px-4 pb-3 pt-3 sm:px-6 sm:pb-4">{children}</main>;
   }
 
   // 실무자매뉴얼은 좌(매뉴얼)/우(학생검색) 두 영역이 각자 스크롤되며 화면 안에 같이 떠 있어야
   // 전화 응대 중 둘 다 스크롤 없이 훑어보기 편해서, 다른 페이지와 달리 높이를 뷰포트에 맞춥니다.
-  if (isStaffManual) {
+  if (isFillScreen) {
     return <main className="shell-content shell-content-bg flex-1 overflow-hidden p-4 sm:p-6">{children}</main>;
   }
 

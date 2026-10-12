@@ -10,11 +10,14 @@ import {
   addDays,
   countWeekdayInRange,
   describeRange,
+  describePlan,
   describeWeek,
   weekStartFor,
+  weekStartOf,
   type DismissalChoice,
 } from "@/lib/dismissalWeek";
 import { todayKst } from "@/lib/kst";
+import { Who } from "@/components/common/HomonymProvider";
 
 /**
  * 하원수단 한 화면에서 몰아 넣기.
@@ -131,13 +134,61 @@ export default function DismissalBulkClient({
     () =>
       new Map(
         plans
-          // 기간 보기에서는 **고른 기간과 똑같은 기간**으로 넣은 줄만 세웁니다(주별로 펼쳐진 줄 중 하나씩).
+          // 기간 보기에서는 **끝나지 않은 기간 줄을 전부** 세웁니다. 예전에는 달력에 고른 날짜와
+          // 똑같은 기간만 보여서, 다시 들어오면 기본 날짜(오늘~4주)와 안 맞아 넣은 것이 하나도 안
+          // 보였습니다. 같은 요일에 기간이 둘이면 먼저 시작하는 것을 세웁니다.
           .filter((p) =>
-            isRange ? p.range_start === rangeStart && p.range_end === rangeEnd : !p.range_id && (p.week_start ?? null) === weekStart,
+            isRange ? !!p.range_id && !!p.range_end && p.range_end >= today : !p.range_id && (p.week_start ?? null) === weekStart,
           )
+          .sort((a, b) => (b.range_start ?? "").localeCompare(a.range_start ?? ""))
           .map((p) => [planKey(p.student_id, p.weekday), p]),
       ),
-    [plans, weekStart, isRange, rangeStart, rangeEnd],
+    [plans, weekStart, isRange, today],
+  );
+
+  /**
+   * **지금 넣어둔 하원수단 전부** — 갈래(매주·이번주만·기간)와 상관없이 한 목록으로.
+   *
+   * 아래 표는 고른 갈래의 줄만 세웁니다. 그래서 기간으로 넣고 다시 들어오면(기본은 「매주」)
+   * 표에는 아무것도 없어 «저장이 안 됐다»로 보였습니다. 무엇이 걸려 있는지는 갈래를 고르기
+   * 전에 보여야 합니다. 지난 주·끝난 기간은 뺍니다.
+   */
+  const registered = useMemo(() => {
+    const thisWeek = weekStartOf(today);
+    const seen = new Set<string>();
+    const byStudent = new Map<string, { key: string; days: number[]; what: string; when: string; kind: string }[]>();
+    for (const p of plans) {
+      if (p.range_id) {
+        if (!p.range_end || p.range_end < today) continue;
+      } else if (p.week_start && p.week_start < thisWeek) continue;
+      // 기간은 주마다 한 줄씩 펼쳐져 있어 묶음·요일로 한 번만 셉니다.
+      const once = p.range_id ? `${p.range_id}|${p.weekday}` : p.id;
+      if (seen.has(once)) continue;
+      seen.add(once);
+      const what = [p.depart_time, p.label || p.kind].filter(Boolean).join(" ");
+      const when = describePlan(p, today);
+      const key = `${what}|${when}|${p.kind}`;
+      const list = byStudent.get(p.student_id) ?? [];
+      const hit = list.find((x) => x.key === key);
+      if (hit) {
+        if (!hit.days.includes(p.weekday)) hit.days.push(p.weekday);
+      } else list.push({ key, days: [p.weekday], what, when, kind: p.kind });
+      byStudent.set(p.student_id, list);
+    }
+    const nameOf = new Map(students.map((s) => [s.id, s]));
+    return [...byStudent.entries()]
+      .map(([id, items]) => ({ id, student: nameOf.get(id), items }))
+      .filter((r) => !!r.student)
+      .sort((a, b) => (a.student!.name ?? "").localeCompare(b.student!.name ?? "", "ko"));
+  }, [plans, students, today]);
+  // 셔틀도 하원수단이지만, 셔틀만 적힌 아이까지 다 늘어놓으면 정작 «다르게 가는 아이»가 묻힙니다.
+  const [showShuttleToo, setShowShuttleToo] = useState(false);
+  const registeredShown = useMemo(
+    () =>
+      registered
+        .map((r) => ({ ...r, items: showShuttleToo ? r.items : r.items.filter((i) => i.kind !== "셔틀") }))
+        .filter((r) => r.items.length > 0),
+    [registered, showShuttleToo],
   );
 
   const list = useMemo(() => {
@@ -347,6 +398,46 @@ export default function DismissalBulkClient({
   return (
     <div className="flex flex-col gap-3">
       {/* ── 넣기 ───────────────────────────────────────────────────────────── */}
+      {/* ── 지금 넣어둔 하원수단 ─────────────────────────────────────────── */}
+      <section className="rounded-2xl border border-violet-200 bg-violet-50/40 p-3">
+        <div className="mb-2 flex flex-wrap items-baseline gap-2">
+          <h2 className="text-sm font-bold text-slate-800">📋 넣어둔 하원수단</h2>
+          <span className="text-[11px] text-slate-500">
+            {registeredShown.length}명 · 매주 · 이번주만 · 기간을 모두 함께 보여줍니다 · 지운 것과 끝난 기간은 빠집니다
+          </span>
+          <label className="ml-auto flex items-center gap-1 text-[11px] font-semibold text-slate-500">
+            <input type="checkbox" checked={showShuttleToo} onChange={(e) => setShowShuttleToo(e.target.checked)} className="h-3 w-3" />
+            셔틀도 보기
+          </label>
+        </div>
+        {registeredShown.length === 0 ? (
+          <p className="py-3 text-center text-xs text-slate-400">넣어둔 하원수단이 없습니다.</p>
+        ) : (
+          <ul className="grid max-h-72 grid-cols-1 gap-1 overflow-y-auto sm:grid-cols-2">
+            {registeredShown.map((r) => (
+              <li key={r.id} className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[11px]">
+                <b className="text-slate-800">
+                  <Who id={r.id} name={r.student!.name} />
+                </b>
+                {r.items.map((i) => (
+                  <div key={i.key} className="mt-0.5 flex flex-wrap items-center gap-1">
+                    <span className="font-semibold text-slate-600">
+                      {i.days
+                        .slice()
+                        .sort()
+                        .map((d) => WEEKDAYS.find((w) => w.n === d)?.ko)
+                        .join("·")}
+                    </span>
+                    <span className={"rounded px-1.5 py-0.5 font-semibold " + (KIND_TONE[i.kind] ?? KIND_TONE.기타)}>{i.what}</span>
+                    <span className="text-slate-500">{i.when}</span>
+                  </div>
+                ))}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
       <section className="rounded-2xl border border-slate-200 bg-white p-3">
         <h2 className="mb-2 text-sm font-bold text-slate-800">한 번에 넣기</h2>
 
@@ -382,7 +473,7 @@ export default function DismissalBulkClient({
           <span className="text-[11px] text-slate-400">
             {isRange ? (
               <>
-                {RANGE_HINT} · 아래 표는 <b>{describeRange(rangeStart, rangeEnd)}</b> 기간으로 넣은 것만 보여줍니다
+                {RANGE_HINT} · 아래 표는 <b>기간으로 넣은 것</b>을 모두 보여줍니다(칸마다 기간이 적혀 있습니다)
               </>
             ) : (
               <>
@@ -668,6 +759,9 @@ export default function DismissalBulkClient({
                           >
                             {p.depart_time ? `${p.depart_time} ` : ""}
                             {p.label || p.kind}
+                            {p.range_start && p.range_end && (
+                              <span className="ml-1 font-normal opacity-70">{describeRange(p.range_start, p.range_end)}</span>
+                            )}
                           </button>
                         ) : (
                           <span className="text-[11px] text-slate-300">—</span>

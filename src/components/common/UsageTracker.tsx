@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import { labelOf, scrubPath, type UsageEventIn } from "@/lib/usageTrack";
+import { SITE_CHECK_FRAME } from "@/lib/siteCheck";
 
 /**
  * **화면을 열고 닫은 것을 기록합니다.**
@@ -55,6 +56,9 @@ export default function UsageTracker() {
       const events = queue.current;
       if (events.length === 0) return;
       queue.current = [];
+      // 사이트 점검이 화면을 숨은 틀(iframe)로 열어 재는 중입니다. 사람이 연 화면이 아니라
+      // 여기 세면 개발자 한 명이 몇 초 만에 화면 백 개를 «이용»한 것으로 기록됩니다.
+      if (typeof window !== "undefined" && window.name === SITE_CHECK_FRAME) return;
       const body = JSON.stringify({ events });
       try {
         if (useBeacon && typeof navigator !== "undefined" && navigator.sendBeacon) {

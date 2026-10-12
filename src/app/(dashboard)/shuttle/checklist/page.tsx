@@ -3,6 +3,7 @@ import { todayKst, kstWeekday } from "@/lib/kst";
 import { isUndecidedChoice } from "@/lib/shuttleChoice";
 import { WEEKDAY_NAMES } from "@/lib/dismissalPlan";
 import { loadDismissalForDay, type DismissalRow } from "@/lib/dismissalToday";
+import { loadHomonyms } from "@/lib/homonyms";
 import type { ChecklistLogRow } from "@/lib/checklistLog";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
@@ -373,6 +374,12 @@ export default async function ShuttleChecklistPage({
   }
   const plans = [...planByStudentId.values()];
   // 배정에 학생 연결이 안 된 줄이 아직 많아서, 이름으로도 한 번 더 찾습니다.
+  //
+  // **이름 길은 학생 번호가 없는 배정 줄에만, 그리고 한 명뿐인 이름에만 씁니다**(CLAUDE.md 2-4-1).
+  // 예전에는 번호로 못 찾으면 무조건 이름으로 찾았는데, 김재이(G3JA)의 월요일 하원수단
+  // 「14:20 픽업」이 번호가 다른 김재이(G2A)·김재이(G2C) 줄에도 붙었습니다. 그 둘은 그날
+  // 셔틀을 타는 아이라, 표에 픽업 표시가 남았다면 차를 못 탔습니다.
+  const homonymNames = new Set((await loadHomonyms()).names);
   const planByName = new Map<string, (typeof plans)[number]>();
   if (plans.length > 0) {
     const { data: planStudents } = await supabase
@@ -382,7 +389,7 @@ export default async function ShuttleChecklistPage({
     const nameById = new Map(((planStudents as { id: string; name: string }[] | null) ?? []).map((r) => [r.id, r.name]));
     for (const p of plans) {
       const nm = nameById.get(p.student_id);
-      if (nm) planByName.set(norm(nm), p);
+      if (nm && !homonymNames.has(norm(nm))) planByName.set(norm(nm), p);
     }
   }
   const planLabelOf = (p: DismissalRow) =>
@@ -497,7 +504,8 @@ export default async function ShuttleChecklistPage({
 
       // 하원수단이 셔틀이 아닌 날. 사람이 아직 아무것도 안 눌렀을 때만 자동으로 붙입니다 -
       // 사람이 "오늘은 그래도 탄다"고 눌렀으면 그 판단이 이깁니다.
-      const plan = (a.student_id ? planByStudentId.get(a.student_id) : undefined) ?? planByName.get(norm(a.student_name_raw));
+      // 번호가 있는 줄은 번호로만 찾습니다. 번호로 못 찾았다는 것은 「그 아이의 하원수단이 없다」입니다.
+      const plan = a.student_id ? planByStudentId.get(a.student_id) : planByName.get(norm(a.student_name_raw));
       if (plan && ridingToday && !boarding) {
         status = "픽업";
         autoSource = {

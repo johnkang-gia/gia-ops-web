@@ -77,6 +77,10 @@ left join public.lib_shelf_check c on c.book_id = b.id
 left join public.lib_locations l on l.id = c.location_id
 group by b.id;
 
+-- 뷰는 만든 사람의 권한으로 돌고 anon 에게도 열립니다(운영앱 CLAUDE.md 2-8). 읽는 사람의 권한으로.
+alter view public.lib_shelf_check_summary set (security_invoker = on);
+revoke all on public.lib_shelf_check_summary from anon;
+
 comment on view public.lib_shelf_check_summary is
   '책마다 기록상 권수와 실제로 찾은 권수, 그리고 어느 칸에 몇 권씩 있는지.';
 

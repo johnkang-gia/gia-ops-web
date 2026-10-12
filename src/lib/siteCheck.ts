@@ -148,7 +148,7 @@ export const SCREENS: string[] = [
  */
 export const READONLY_APIS: string[] = ["/api/admin/pending-signups"];
 
-export type Verdict = "정상" | "느림" | "오류" | "안 열림" | "없는 화면" | "로그인으로 튕김" | "권한 막힘";
+export type Verdict = "정상" | "느림" | "오류" | "안 열림" | "없는 화면" | "로그인으로 튕김" | "권한 막힘" | "잘림";
 
 export type CheckResult = {
   path: string;
@@ -302,3 +302,61 @@ export function allTargets(): string[] {
 
 /** 한 번에 보낼 개수. 너무 크게 잡으면 창구가 시간을 넘겨 통째로 실패합니다. */
 export const BATCH = 8;
+
+// ── 화면이 잘려 있는가(스크롤이 안 되는 화면) ─────────────────────────────────
+//
+// 위의 점검은 서버에서 HTML 을 받아 보므로 **화면이 열린다**까지만 압니다. 하원수단 화면은
+// 잘 열렸고 오류도 없었는데, 본문이 화면 높이에 갇혀 있어서 아래쪽에 아예 손이 닿지 않았습니다.
+// 그건 실제로 그려 봐야만 압니다. 그래서 점검 화면이 각 화면을 **숨은 틀(iframe)** 에 열어 그린
+// 뒤 잽니다 - 부르는 사람의 로그인이 그대로 따라가므로 그 사람이 보는 화면과 같습니다.
+
+/** 점검용 틀의 이름. 이용 기록은 이 이름의 틀에서 온 것을 세지 않습니다. */
+export const SITE_CHECK_FRAME = "gia-site-check";
+
+/** 이만큼 넘게 가려져 있으면 «잘림»입니다. 몇 px 짜리는 그림자·테두리라 사람이 못 느낍니다. */
+export const CLIP_PX = 24;
+
+export type ClipHit = { where: string; hiddenPx: number };
+
+/**
+ * **넘치는데 굴릴 수 없는 상자**를 찾습니다.
+ *
+ * 세로 넘침을 숨긴(`overflow-y: hidden/clip`) 상자인데 안의 내용이 상자보다 크면, 그 차이만큼은
+ * 어떤 방법으로도 볼 수 없습니다 - 안쪽에 스크롤 칸이 있었다면 내용이 그 칸 안에서 굴러 상자
+ * 높이를 넘지 않았을 것이기 때문입니다. 그래서 «안쪽에 스크롤이 있나»를 따로 찾지 않고 넘친
+ * 양만 봅니다.
+ *
+ * 보는 상자는 본문(<main>)과 그 바깥 껍데기, 그리고 본문 안의 큰 상자(높이 300px 이상)입니다.
+ * 작은 상자까지 보면 말줄임·접힌 펼침 같은 **일부러 자른 것**이 다 걸립니다. 일부러 자른 큰
+ * 상자는 `data-clip-ok` 를 답니다.
+ */
+export function findClipped(doc: Document): ClipHit[] {
+  const win = doc.defaultView;
+  if (!win) return [];
+  const main = doc.querySelector("main");
+  if (!main) return [];
+  const boxes = new Set<Element>();
+  for (let el: Element | null = main; el && el !== doc.documentElement; el = el.parentElement) boxes.add(el);
+  main.querySelectorAll("*").forEach((el) => {
+    if ((el as HTMLElement).clientHeight >= 300) boxes.add(el);
+  });
+  const hits: ClipHit[] = [];
+  for (const el of boxes) {
+    if (el.closest("[data-clip-ok]")) continue;
+    const oy = win.getComputedStyle(el).overflowY;
+    if (oy !== "hidden" && oy !== "clip") continue;
+    const box = el as HTMLElement;
+    if (box.clientHeight === 0) continue;
+    const hidden = box.scrollHeight - box.clientHeight;
+    if (hidden > CLIP_PX) hits.push({ where: describeBox(box), hiddenPx: hidden });
+  }
+  // 바깥 상자가 잘렸으면 안쪽도 함께 잘려 보입니다. 가장 많이 가린 것 하나가 원인에 가깝습니다.
+  return hits.sort((a, b) => b.hiddenPx - a.hiddenPx).slice(0, 3);
+}
+
+function describeBox(el: HTMLElement): string {
+  if (el.tagName === "MAIN") return "본문(main)";
+  const heading = el.querySelector("h1, h2, h3")?.textContent?.trim().slice(0, 20);
+  const cls = (el.getAttribute("class") ?? "").split(/\s+/).filter(Boolean).slice(0, 4).join(".");
+  return `${el.tagName.toLowerCase()}${cls ? "." + cls : ""}${heading ? ` (「${heading}」)` : ""}`;
+}

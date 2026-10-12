@@ -46,19 +46,44 @@ const MAX_DEPTH = 3;
 const text = readFileSync(MAIN, "utf8");
 
 /** `BOUNDED_LIST_PATHS = [ … ]` 안의 줄만 읽습니다. */
-const block = text.match(/const BOUNDED_LIST_PATHS[^=]*=\s*\[([\s\S]*?)\];/);
-if (!block) {
-  console.error("✗ MainArea.tsx 에서 BOUNDED_LIST_PATHS 를 찾지 못했습니다. 이름이 바뀌었다면 이 검사도 함께 고쳐주세요.");
-  process.exit(1);
+// 가두는 목록은 둘입니다 - 게시판형(BOUNDED_LIST_PATHS)과 화면을 꽉 채우는 것(FILL_SCREEN_PATHS).
+const entries = [];
+for (const name of ["BOUNDED_LIST_PATHS", "FILL_SCREEN_PATHS"]) {
+  const block = text.match(new RegExp(`const ${name}[^=]*=\\s*\\[([\\s\\S]*?)\\];`));
+  if (!block) {
+    console.error(`✗ MainArea.tsx 에서 ${name} 를 찾지 못했습니다. 이름이 바뀌었다면 이 검사도 함께 고쳐주세요.`);
+    process.exit(1);
+  }
+  for (const line of block[1].split("\n")) {
+    const m = line.match(/^\s*"([^"]+)"\s*,?/);
+    if (!m) continue;
+    // 면제는 이유와 함께. 끄는 것은 쉬워야 하지만 왜 껐는지는 남아야 합니다.
+    if (/scroll-ok:/.test(line)) continue;
+    entries.push(m[1]);
+  }
 }
 
-const entries = [];
-for (const line of block[1].split("\n")) {
-  const m = line.match(/^\s*"([^"]+)"\s*,?/);
-  if (!m) continue;
-  // 면제는 이유와 함께. 끄는 것은 쉬워야 하지만 왜 껐는지는 남아야 합니다.
-  if (/scroll-ok:/.test(line)) continue;
-  entries.push(m[1]);
+// **목록 밖에서 가두는 자리.** 예전에는 `/work` 로 시작하는 주소를 통째로 가둬서, 그 아래 하원수단
+// 화면이 이 검사를 지나 잘린 채 나갔습니다. 본문(<main>)을 overflow-hidden 으로 만드는 분기는
+// 위 두 목록으로만 정해야 합니다 - 바로 위 몇 줄에 isBoundedList / isFillScreen 이 있어야 합니다.
+{
+  const lines = text.split("\n");
+  const stray = [];
+  lines.forEach((line, i) => {
+    if (!/<main\b/.test(line) || !/overflow-hidden/.test(line)) return;
+    const above = lines.slice(Math.max(0, i - 6), i + 1).join("\n");
+    if (/isBoundedList|isFillScreen/.test(above) || /scroll-ok:/.test(above)) return;
+    stray.push(`${MAIN}:${i + 1}`);
+  });
+  if (stray.length > 0) {
+    console.error("✗ 목록이 아니라 다른 조건으로 본문을 가두는 자리가 있습니다.\n");
+    for (const s of stray) console.error(`  ${s}`);
+    console.error(
+      "\n  앞글자(startsWith)로 가두면 그 아래 새 화면이 전부 함께 갇히고, 이 검사도 그 화면을 모릅니다." +
+        "\n  가둘 화면은 FILL_SCREEN_PATHS 나 BOUNDED_LIST_PATHS 에 정확한 주소로 적어주세요.\n",
+    );
+    process.exit(1);
+  }
 }
 
 /** 그 파일이 들여오는 우리 컴포넌트 파일들(한 겹). */

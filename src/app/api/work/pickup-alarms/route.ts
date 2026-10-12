@@ -41,7 +41,11 @@ export async function GET() {
 
   const { rows: students } = await loadStudents(supabase);
   const byId = new Map(students.map((s) => [s.id, s]));
-  const byName = new Map(students.map((s) => [s.name ?? "", s]));
+  // 이름으로 찾는 길은 한 명뿐인 이름에만 둡니다. 김재이가 셋이라 Map 에 그냥 넣으면 마지막에
+  // 넣은 한 명의 반·하원수단 시각이 셋 모두에게 붙습니다(CLAUDE.md 2-4).
+  const nameCount = new Map<string, number>();
+  for (const s of students) nameCount.set(s.name ?? "", (nameCount.get(s.name ?? "") ?? 0) + 1);
+  const byName = new Map(students.filter((s) => nameCount.get(s.name ?? "") === 1).map((s) => [s.name ?? "", s]));
 
   const pickups = await loadTodayPickups(supabase, today, (id: string) => (byId.get(id)?.name as string) ?? null);
 

@@ -148,7 +148,7 @@ export const SCREENS: string[] = [
  */
 export const READONLY_APIS: string[] = ["/api/admin/pending-signups"];
 
-export type Verdict = "정상" | "느림" | "오류" | "안 열림" | "없는 화면" | "로그인으로 튕김" | "권한 막힘" | "잘림";
+export type Verdict = "정상" | "느림" | "오류" | "안 열림" | "없는 화면" | "로그인으로 튕김" | "권한 막힘" | "잘림" | "먹통" | "화면 오류";
 
 export type CheckResult = {
   path: string;
@@ -359,4 +359,122 @@ function describeBox(el: HTMLElement): string {
   const heading = el.querySelector("h1, h2, h3")?.textContent?.trim().slice(0, 20);
   const cls = (el.getAttribute("class") ?? "").split(/\s+/).filter(Boolean).slice(0, 4).join(".");
   return `${el.tagName.toLowerCase()}${cls ? "." + cls : ""}${heading ? ` (「${heading}」)` : ""}`;
+}
+
+// ── 그려 본 화면의 종합 진찰 ─────────────────────────────────────────────────
+//
+// 아침에 점검을 돌려 「모두 정상」을 봤는데 낮에 «스크롤이 안 된다», «눌러도 반응이 없다»가
+// 나왔습니다. 서버에서 받아 보는 점검은 화면이 **열리는가**까지만 알고, 사람이 실제로 쓰는
+// 모습(굴리기·누르기)은 그려 봐야만 압니다. 그래서 숨은 틀에 그린 화면을 여러 방향으로 진찰합니다.
+//
+//   잘림      — 세로·가로로 넘치는데 굴릴 수 없는 상자, 페이지 전체 스크롤이 잠긴 것
+//   먹통      — 화면을 덮은 투명 막, 다른 것에 가려 안 눌리는 단추, 끝나지 않는 로딩,
+//               화면이 오래 멈추는 무거운 작업
+//   화면 오류 — 화면 안에서 난 자바스크립트 오류, 오류 화면, 아무것도 안 그려진 빈 화면
+//
+// 단추는 **누르지 않습니다**(저장·발송이 실제로 일어납니다). 대신 «눌리는 자리에 그 단추가 맨
+// 위에 있는가»를 봅니다 - 먹통의 대부분은 투명한 막이 위를 덮고 있는 경우입니다.
+
+/**
+ * 점검용 틀 안에서만 켜지는 기록기(root layout 의 <head> 에 들어갑니다). 화면이 그려지기 **전에**
+ * 붙어야 첫 오류·첫 멈춤까지 잡습니다. 점검용 틀이 아니면 아무것도 하지 않습니다.
+ */
+export const SITE_CHECK_COLLECTOR = `(function(){try{if(window.name!=="${SITE_CHECK_FRAME}")return;var g=window.__giaCheck={errors:[],warns:[],longest:0,blocked:0};
+function cut(x){return String(x==null?"":x).slice(0,220)}
+addEventListener("error",function(e){if(e&&e.target&&e.target!==window&&e.target.tagName){g.warns.push("불러오지 못함: "+cut(e.target.src||e.target.href));return}g.errors.push(cut((e&&(e.message||(e.error&&e.error.message)))||"오류"))},true);
+addEventListener("unhandledrejection",function(e){var r=e&&e.reason;g.errors.push("처리 안 된 오류: "+cut((r&&r.message)||r))});
+var ce=console.error;console.error=function(){try{var m=Array.prototype.map.call(arguments,function(a){return a&&a.message?a.message:String(a)}).join(" ");(/Minified React error|Hydration|hydrat/i.test(m)?g.errors:g.warns).push(cut(m))}catch(_){}return ce.apply(console,arguments)};
+if(window.PerformanceObserver){new PerformanceObserver(function(l){l.getEntries().forEach(function(t){g.blocked+=Math.max(0,t.duration-50);if(t.duration>g.longest)g.longest=t.duration})}).observe({type:"longtask",buffered:true})}}catch(_){}})();`;
+
+export type RenderIssue = { kind: "잘림" | "먹통" | "화면 오류"; text: string };
+
+type Collected = { errors: string[]; warns: string[]; longest: number; blocked: number };
+
+/** 화면이 이만큼 한 번에 멈추면 사람은 «눌렀는데 반응이 없다»고 느낍니다. */
+export const FREEZE_MS = 1500;
+/** 자바스크립트 오류 중 화면과 무관한 잡음. 여기 넣을 때는 왜 무관한지 확신이 있어야 합니다. */
+const ERROR_NOISE = [/ResizeObserver loop/i, /Script error\.?$/i];
+
+const LOADING_TEXT = /불러오는 중|로딩 중|Loading\.\.\./;
+
+/** 지금 화면에 «끝나지 않은 로딩»이 보이는가. 뱅글이·「불러오는 중」 글자. */
+export function stillLoading(doc: Document): boolean {
+  const main = doc.querySelector("main");
+  if (!main) return false;
+  const spin = [...main.querySelectorAll(".animate-spin, [aria-busy='true']")].some((el) => (el as HTMLElement).offsetParent !== null);
+  return spin || LOADING_TEXT.test((main as HTMLElement).innerText.slice(0, 3000));
+}
+
+export function inspectRendered(doc: Document): RenderIssue[] {
+  const win = doc.defaultView;
+  if (!win) return [];
+  const issues: RenderIssue[] = [];
+  const g = (win as unknown as { __giaCheck?: Collected }).__giaCheck;
+
+  // ── 화면 오류 ───────────────────────────────────────────────────────────
+  if (doc.querySelector('[data-app-error="1"]')) issues.push({ kind: "화면 오류", text: "화면에 「문제가 생겼습니다」 오류 화면이 떠 있습니다" });
+  const errs = (g?.errors ?? []).filter((e) => !ERROR_NOISE.some((n) => n.test(e)));
+  if (errs.length > 0) issues.push({ kind: "화면 오류", text: `화면 안에서 오류 ${errs.length}건: ${[...new Set(errs)].slice(0, 2).join(" / ")}` });
+  const main = doc.querySelector("main") as HTMLElement | null;
+  if (!main) issues.push({ kind: "화면 오류", text: "본문(main)이 그려지지 않았습니다" });
+  else if (main.innerText.trim().length < 5 && !main.querySelector("img, svg, canvas, iframe, table")) {
+    issues.push({ kind: "화면 오류", text: "본문이 비어 있습니다(아무것도 그려지지 않음)" });
+  }
+
+  // ── 잘림 ────────────────────────────────────────────────────────────────
+  for (const h of findClipped(doc)) issues.push({ kind: "잘림", text: `${h.where}에서 ${h.hiddenPx}px 가 가려져 굴려도 안 보입니다` });
+  if (main && win.getComputedStyle(main).overflowX === "hidden" && main.scrollWidth - main.clientWidth > CLIP_PX * 2) {
+    issues.push({ kind: "잘림", text: `본문 오른쪽 ${main.scrollWidth - main.clientWidth}px 가 잘려 옆으로도 굴릴 수 없습니다` });
+  }
+  // 창(모달)이 닫히면서 페이지 스크롤 잠금을 안 풀고 간 경우. 화면은 멀쩡한데 굴려지지 않습니다.
+  for (const el of [doc.documentElement, doc.body]) {
+    const st = win.getComputedStyle(el);
+    if ((st.overflow === "hidden" || st.overflowY === "hidden") && el.style.overflow === "hidden" && el.scrollHeight - el.clientHeight > CLIP_PX) {
+      issues.push({ kind: "잘림", text: `페이지 스크롤이 잠겨 있습니다(${el.tagName.toLowerCase()} 에 overflow:hidden 이 남음)` });
+    }
+  }
+
+  // ── 먹통 ────────────────────────────────────────────────────────────────
+  if (main) {
+    const vw = win.innerWidth;
+    const vh = win.innerHeight;
+    // ① 본문 한가운데를 누르면 무엇이 맞나. 본문 밖의 큰 막이면 화면 전체가 안 눌립니다.
+    const r = main.getBoundingClientRect();
+    const cx = Math.min(vw - 2, Math.max(2, r.left + r.width / 2));
+    const cy = Math.min(vh - 2, Math.max(2, r.top + Math.min(r.height, vh - r.top) / 2));
+    const hit = doc.elementFromPoint(cx, cy);
+    if (hit && !main.contains(hit) && !hit.contains(main)) {
+      const box = (hit as HTMLElement).getBoundingClientRect();
+      if (box.width * box.height > vw * vh * 0.5) {
+        issues.push({ kind: "먹통", text: `화면을 덮은 막이 있어 본문이 안 눌립니다(덮은 것: ${describeBox(hit as HTMLElement)})` });
+      }
+    }
+    // ② 보이는 단추·링크가 그 자리에서 맨 위에 있는가.
+    const clickables = [...main.querySelectorAll<HTMLElement>("a[href], button:not([disabled]), [role='button'], input:not([type='hidden']), select, textarea")]
+      .filter((el) => {
+        const b = el.getBoundingClientRect();
+        if (b.width < 4 || b.height < 4 || b.bottom <= 0 || b.top >= vh || b.right <= 0 || b.left >= vw) return false;
+        const st = win.getComputedStyle(el);
+        return st.visibility !== "hidden" && st.pointerEvents !== "none" && Number(st.opacity) > 0.05;
+      })
+      .slice(0, 80);
+    const blocked: { el: HTMLElement; by: Element }[] = [];
+    for (const el of clickables) {
+      const b = el.getBoundingClientRect();
+      const at = doc.elementFromPoint(Math.min(vw - 1, b.left + b.width / 2), Math.min(vh - 1, b.top + b.height / 2));
+      if (!at || el === at || el.contains(at) || at.contains(el)) continue;
+      if (at.closest("label")?.contains(el)) continue;
+      blocked.push({ el, by: at });
+    }
+    if (blocked.length >= 3 && blocked.length >= clickables.length * 0.3) {
+      issues.push({
+        kind: "먹통",
+        text: `보이는 단추 ${clickables.length}개 중 ${blocked.length}개가 다른 것에 가려 안 눌립니다(가린 것: ${describeBox(blocked[0].by as HTMLElement)})`,
+      });
+    }
+  }
+  if (g && g.longest > FREEZE_MS) {
+    issues.push({ kind: "먹통", text: `여는 동안 화면이 ${(g.longest / 1000).toFixed(1)}초 동안 멈췄습니다(그동안 눌러도 반응 없음)` });
+  }
+  return issues;
 }

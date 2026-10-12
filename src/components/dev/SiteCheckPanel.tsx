@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { BATCH, SCREENS, SITE_CHECK_FRAME, allTargets, findClipped, type CheckResult, type ClipHit, type Verdict } from "@/lib/siteCheck";
+import { BATCH, SCREENS, SITE_CHECK_FRAME, allTargets, inspectRendered, stillLoading, type CheckResult, type RenderIssue, type Verdict } from "@/lib/siteCheck";
 import { useDevReport } from "@/components/dev/DevReportProvider";
 
 /**
@@ -29,28 +29,40 @@ const COLOR: Record<Verdict, string> = {
   "로그인으로 튕김": "text-orange-800 bg-orange-50 border-orange-300",
   "권한 막힘": "text-orange-800 bg-orange-50 border-orange-300",
   잘림: "text-red-700 bg-red-50 border-red-300",
+  먹통: "text-red-700 bg-red-50 border-red-300",
+  "화면 오류": "text-red-700 bg-red-50 border-red-300",
 };
+
+/**
+ * 그려 볼 창 크기. 행정실 노트북과 휴대폰(도착체크·담임 화면은 휴대폰으로 엽니다).
+ * 큰 모니터에서만 재면 내용이 다 들어와 멀쩡해 보이고, 작은 화면에서 잘린 것은 못 잡습니다.
+ */
+const VIEWPORTS = [
+  { label: "노트북", w: 1280, h: 820 },
+  { label: "휴대폰", w: 390, h: 844 },
+] as const;
+/** 로딩이 이만큼 지나도 안 끝나면 «끝나지 않는 로딩»입니다. */
+const LOADING_GRACE_MS = 6000;
+const LAST_RUN_KEY = "gia-site-check-last";
 
 /** 한 번에 그려 보는 화면 수. 많이 띄우면 점검하는 컴퓨터가 버거워 시간 초과가 늘어납니다. */
 const MEASURE_PARALLEL = 3;
-const MEASURE_TIMEOUT_MS = 20_000;
+const MEASURE_TIMEOUT_MS = 25_000;
 /** 다 열린 뒤 이만큼 더 기다립니다. 화면이 자료를 받아 그리는 데 걸리는 시간입니다. */
 const SETTLE_MS = 1500;
 
 /**
- * 화면 하나를 숨은 틀에 열어 그린 뒤 **잘린 상자**를 잽니다(findClipped).
- *
- * 창 크기는 행정실 노트북 정도(1280×820)로 둡니다. 큰 모니터에서만 재면 내용이 다 들어와
- * 멀쩡해 보이고, 정작 작은 화면에서 잘린 것은 못 잡습니다.
+ * 화면 하나를 숨은 틀에 열어 그린 뒤 **종합 진찰**합니다(inspectRendered): 잘림·먹통·화면 오류.
+ * 로딩 뱅글이가 보이면 조금 더 기다렸다가, 그래도 안 끝나면 «끝나지 않는 로딩»으로 적습니다.
  */
-function measure(path: string): Promise<ClipHit[] | string> {
+function measure(path: string, vp: { w: number; h: number }): Promise<RenderIssue[] | string> {
   return new Promise((resolve) => {
     const f = document.createElement("iframe");
     f.name = SITE_CHECK_FRAME;
     f.setAttribute("aria-hidden", "true");
-    f.style.cssText = "position:fixed;left:-20000px;top:0;width:1280px;height:820px;border:0;visibility:hidden;pointer-events:none";
+    f.style.cssText = `position:fixed;left:-20000px;top:0;width:${vp.w}px;height:${vp.h}px;border:0;visibility:hidden;pointer-events:none`;
     let done = false;
-    const finish = (v: ClipHit[] | string) => {
+    const finish = (v: RenderIssue[] | string) => {
       if (done) return;
       done = true;
       clearTimeout(timer);
@@ -59,10 +71,20 @@ function measure(path: string): Promise<ClipHit[] | string> {
     };
     const timer = setTimeout(() => finish(`${MEASURE_TIMEOUT_MS / 1000}초 안에 다 그려지지 않아 재지 못했습니다`), MEASURE_TIMEOUT_MS);
     f.onload = () =>
-      setTimeout(() => {
+      setTimeout(async () => {
         try {
           const doc = f.contentDocument;
-          finish(doc ? findClipped(doc) : "화면을 읽지 못했습니다");
+          if (!doc) return finish("화면을 읽지 못했습니다");
+          // 로그인 화면으로 끌려갔으면 그 화면을 잰 것이 됩니다. 재지 않은 것으로 적습니다.
+          if (/\/login(\?|$)/.test(f.contentWindow?.location.pathname ?? "")) return finish("로그인 화면으로 넘어가 재지 못했습니다");
+          let waited = 0;
+          while (stillLoading(doc) && waited < LOADING_GRACE_MS) {
+            await new Promise((r) => setTimeout(r, 500));
+            waited += 500;
+          }
+          const issues = inspectRendered(doc);
+          if (stillLoading(doc)) issues.push({ kind: "먹통", text: `${(SETTLE_MS + LOADING_GRACE_MS) / 1000}초가 지나도 로딩이 끝나지 않습니다` });
+          finish(issues);
         } catch (err) {
           finish(`화면을 재지 못했습니다: ${String(err)}`);
         }
@@ -80,7 +102,7 @@ function median(xs: number[]): number {
 }
 
 /** 위험한 순서. 사람이 위에서부터 읽고 손대면 됩니다. */
-const ORDER: Verdict[] = ["오류", "안 열림", "없는 화면", "잘림", "로그인으로 튕김", "권한 막힘", "느림", "정상"];
+const ORDER: Verdict[] = ["오류", "안 열림", "없는 화면", "화면 오류", "먹통", "잘림", "로그인으로 튕김", "권한 막힘", "느림", "정상"];
 
 /**
  * **고칠 수 있는 자리인가.**
@@ -98,6 +120,8 @@ const FIXABLE: Record<Verdict, { who: "코드" | "설정"; how: string }> = {
   "로그인으로 튕김": { who: "설정", how: "지금 계정으로 열 수 없는 화면입니다. 계정 권한을 확인해 주세요." },
   "권한 막힘": { who: "설정", how: "지금 계정으로 열 수 없는 화면입니다. 계정 권한을 확인해 주세요." },
   잘림: { who: "코드", how: "화면 아래가 잘려 굴려도 안 내려갑니다. 그 상자에 스크롤을 두거나 가두지 않게 고쳐야 합니다." },
+  먹통: { who: "코드", how: "눌러도 반응이 없을 수 있습니다(덮은 막·끝나지 않는 로딩·긴 멈춤). 코드를 고쳐야 합니다." },
+  "화면 오류": { who: "코드", how: "화면 안에서 오류가 났습니다. 열리긴 해도 일부 기능이 안 될 수 있습니다." },
 };
 
 export default function SiteCheckPanel({ gaps, version }: { gaps: { key: string; gap: string }[]; version: string }) {
@@ -113,6 +137,10 @@ export default function SiteCheckPanel({ gaps, version }: { gaps: { key: string;
   const [measuring, setMeasuring] = useState<{ done: number; total: number } | null>(null);
   /** 재지 못한 화면. 못 잰 것을 「정상」으로 두면 잘린 화면이 그대로 빠져나갑니다. */
   const [unmeasured, setUnmeasured] = useState<{ path: string; why: string }[]>([]);
+  /** 휴대폰 크기로도 그려 볼지. 시간이 두 배 들지만 휴대폰으로 여는 화면이 많습니다. */
+  const [mobileToo, setMobileToo] = useState(true);
+  /** 지난번 점검의 문제 목록. 이번에 «새로 생긴» 것을 가리는 데 씁니다(없으면 첫 점검). */
+  const [prevBad, setPrevBad] = useState<Set<string> | null>(null);
   const report = useDevReport();
 
   async function run() {
@@ -147,34 +175,61 @@ export default function SiteCheckPanel({ gaps, version }: { gaps: { key: string;
       }
       setDone(i + chunk.length);
     }
-    // ── 두 번째 단계: 열린 화면을 실제로 그려 보고 잘린 곳을 잽니다 ──────────────
-    const toMeasure = opened.filter((r) => !r.path.startsWith("/api") && (r.verdict === "정상" || r.verdict === "느림")).map((r) => r.path);
-    setMeasuring({ done: 0, total: toMeasure.length });
+    // ── 두 번째 단계: 열린 화면을 노트북·휴대폰 크기로 실제로 그려 보고 진찰합니다 ──────
+    const pages = opened.filter((r) => !r.path.startsWith("/api") && (r.verdict === "정상" || r.verdict === "느림")).map((r) => r.path);
+    const jobs = pages.flatMap((path) => VIEWPORTS.filter((v) => mobileToo || v.label === "노트북").map((v) => ({ path, v })));
+    setMeasuring({ done: 0, total: jobs.length });
+    const found = new Map<string, { kind: RenderIssue["kind"]; text: string }[]>();
     let next = 0;
     let measured = 0;
     const worker = async () => {
-      while (next < toMeasure.length) {
-        const path = toMeasure[next++];
-        const out = await measure(path);
+      while (next < jobs.length) {
+        const { path, v } = jobs[next++];
+        const out = await measure(path, v);
         measured += 1;
-        setMeasuring({ done: measured, total: toMeasure.length });
+        setMeasuring({ done: measured, total: jobs.length });
         if (typeof out === "string") {
-          setUnmeasured((p) => [...p, { path, why: out }]);
+          setUnmeasured((p) => [...p, { path: `${path} (${v.label})`, why: out }]);
           continue;
         }
         if (out.length === 0) continue;
-        const note = out.map((h) => `${h.where}에서 ${h.hiddenPx}px 가 가려져 굴려도 안 보입니다`).join(" · ");
-        setResults((p) => p.map((r) => (r.path === path ? { ...r, verdict: "잘림", note } : r)));
+        const list = found.get(path) ?? [];
+        for (const i of out) list.push({ kind: i.kind, text: `[${v.label}] ${i.text}` });
+        found.set(path, list);
+        // 가장 무거운 판정 하나를 화면의 판정으로 씁니다. 나머지는 설명에 모두 남깁니다.
+        const worst = (["화면 오류", "먹통", "잘림"] as const).find((k) => list.some((i) => i.kind === k))!;
+        const note = list.map((i) => `${i.kind} · ${i.text}`).join(" ／ ");
+        setResults((p) => p.map((r) => (r.path === path ? { ...r, verdict: worst, note } : r)));
       }
     };
     await Promise.all(Array.from({ length: MEASURE_PARALLEL }, worker));
     setMeasuring(null);
+
+    // 지난번 결과와 견줘 «새로 생긴 문제»를 표시합니다. 아침마다 같은 목록을 보면 새로 깨진
+    // 것이 묻힙니다.
+    {
+      const worstOf = (path: string, v: Verdict): Verdict => {
+        const list = found.get(path);
+        return list ? (["화면 오류", "먹통", "잘림"] as const).find((k) => list.some((i) => i.kind === k)) ?? v : v;
+      };
+      const now = opened.map((r) => ({ path: r.path, v: worstOf(r.path, r.verdict) })).filter((x) => x.v !== "정상").map((x) => `${x.path}|${x.v}`);
+      try {
+        const prev = JSON.parse(localStorage.getItem(LAST_RUN_KEY) ?? "null") as string[] | null;
+        setPrevBad(prev ? new Set(prev) : null);
+        localStorage.setItem(LAST_RUN_KEY, JSON.stringify(now));
+      } catch {
+        // 저장소를 못 쓰는 브라우저. 비교만 못 할 뿐 점검 결과는 그대로입니다.
+        setPrevBad(null);
+      }
+    }
 
     setFinishedAt(new Date().toLocaleTimeString("ko-KR"));
     setRunning(false);
   }
 
   const bad = results.filter((r) => r.verdict !== "정상");
+  const isNew = (r: CheckResult) => !!prevBad && r.verdict !== "정상" && !prevBad.has(`${r.path}|${r.verdict}`);
+  const newBad = bad.filter(isNew);
   const withDead = results.filter((r) => r.deadLinks.length > 0);
   /** 사람이 설정으로 풀 수 있는 것과, 코드를 고쳐야 하는 것. 손댈 곳이 다릅니다. */
   const byWho = {
@@ -195,6 +250,7 @@ export default function SiteCheckPanel({ gaps, version }: { gaps: { key: string;
     lines.push("");
     if (finishedAt) {
       lines.push(`화면 ${results.length}개 점검 · 정상 ${results.length - bad.length} · 손봐야 할 것 ${bad.length} · 끊긴 링크가 있는 화면 ${withDead.length}`);
+      if (newBad.length > 0) lines.push(`지난번 점검보다 새로 생긴 문제 ${newBad.length}: ${newBad.map((r) => `\`${r.path}\` ${r.verdict}`).join(", ")}`);
     } else {
       lines.push("사이트 점검은 아직 안 돌렸습니다. [한 바퀴 점검하기]를 누른 뒤 다시 복사하면 결과가 함께 담깁니다.");
     }
@@ -243,7 +299,7 @@ export default function SiteCheckPanel({ gaps, version }: { gaps: { key: string;
   useEffect(() => {
     report.put("site", 10, buildOwn());
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [results, missed, unmeasured, finishedAt, gaps, version]);
+  }, [results, missed, unmeasured, finishedAt, gaps, version, prevBad]);
 
   async function copyReport() {
     const text = report.build();
@@ -274,6 +330,10 @@ export default function SiteCheckPanel({ gaps, version }: { gaps: { key: string;
         >
           {copied ? "복사했습니다" : `개발자에게 보낼 쪽지 복사${report.count > 1 ? ` (${report.count}칸)` : ""}`}
         </button>
+        <label className="flex items-center gap-1 text-[11px] font-semibold text-slate-500" title="휴대폰 크기(390×844)로도 그려 봅니다. 시간이 두 배 걸립니다.">
+          <input type="checkbox" checked={mobileToo} disabled={running} onChange={(e) => setMobileToo(e.target.checked)} className="h-3 w-3" />
+          휴대폰 크기도
+        </label>
         <button
           onClick={() => void run()}
           disabled={running}
@@ -288,9 +348,10 @@ export default function SiteCheckPanel({ gaps, version }: { gaps: { key: string;
       </div>
       <p className="mb-3 text-[11px] leading-relaxed text-slate-500">
         안 열리는 화면 · 오류가 난 화면 · 로그인으로 튕기는 화면 · 눈에 띄게 느린 화면을 찾고, 화면 안의 링크가 실제로 있는
-        곳을 가리키는지 봅니다. 그다음 열린 화면을 노트북 크기(1280×820)로 <b className="text-slate-600">실제로 그려 보고</b>, 아래가
-        잘려 굴려도 안 내려가는 화면을 「잘림」으로 잡습니다. <b className="text-slate-600">저장·발송·삭제 단추는 누르지 않습니다</b> — 눌러보면 실제로
-        저장되고 실제로 나갑니다.
+        곳을 가리키는지 봅니다. 그다음 열린 화면을 <b className="text-slate-600">노트북·휴대폰 크기로 실제로 그려 보고</b> 사람이 쓰는
+        모습대로 진찰합니다 — <b>잘림</b>(굴려도 안 내려감·옆으로 잘림·페이지 스크롤 잠김), <b>먹통</b>(화면을 덮은 막·가려서 안 눌리는 단추·끝나지
+        않는 로딩·오래 멈춤), <b>화면 오류</b>(화면 안 오류·빈 화면). <b className="text-slate-600">저장·발송·삭제 단추는 누르지 않습니다</b> —
+        눌러보면 실제로 저장되고 실제로 나갑니다. 대신 «그 단추가 눌리는 자리에 있는가»를 봅니다.
       </p>
       <p className="mb-3 rounded-lg bg-slate-50 px-3 py-2 text-[11px] leading-relaxed text-slate-600">
         결과마다 <b>손댈 곳</b>을 함께 적습니다. <b className="text-blue-700">설정</b>은 여기서 계정 권한을 확인하면 풀리고,
@@ -312,6 +373,8 @@ export default function SiteCheckPanel({ gaps, version }: { gaps: { key: string;
           {byWho.코드.length > 0 && <span className="text-slate-600">그중 코드 {byWho.코드.length}</span>}
           {byWho.설정.length > 0 && <span className="text-slate-600">계정·설정 {byWho.설정.length}</span>}
           {withDead.length > 0 && <span className="text-orange-700">끊긴 링크가 있는 화면 {withDead.length}</span>}
+          {prevBad && newBad.length > 0 && <span className="rounded bg-red-600 px-1.5 py-0.5 font-bold text-white">지난번보다 새로 생김 {newBad.length}</span>}
+          {prevBad && newBad.length === 0 && bad.length > 0 && <span className="text-slate-500">새로 생긴 문제 없음(지난번과 같음)</span>}
           <label className="ml-auto flex items-center gap-1 text-[11px] font-semibold text-slate-500">
             <input type="checkbox" checked={onlyBad} onChange={(e) => setOnlyBad(e.target.checked)} className="h-3 w-3" />
             문제만 보기
@@ -364,6 +427,7 @@ export default function SiteCheckPanel({ gaps, version }: { gaps: { key: string;
                   </td>
                   <td className="px-2 py-1.5 text-center">
                     <span className={"rounded-full border px-1.5 py-0.5 text-[10px] font-bold " + COLOR[r.verdict]}>{r.verdict}</span>
+                    {isNew(r) && <span className="ml-1 rounded bg-red-600 px-1 text-[9px] font-bold text-white">새로</span>}
                   </td>
                   <td className="px-2 py-1.5 text-center tabular-nums text-slate-500">{(r.ms / 1000).toFixed(1)}초</td>
                   {/* 손댈 곳을 안 적으면 보는 사람은 셋 다 「내가 못 하는 것」으로 넘깁니다. */}

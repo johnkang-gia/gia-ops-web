@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import "./globals.css";
+import { SITE_CHECK_COLLECTOR } from "@/lib/siteCheck";
 
 export const metadata: Metadata = {
   title: "GIA 운영",
@@ -22,6 +23,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ko" className="h-full antialiased">
+      <head>
+        {/* 개발자 사이트 점검이 숨은 틀로 열 때만 켜지는 기록기(오류·멈춤). 사람이 여는 화면에서는
+            첫 줄에서 바로 끝나 아무 일도 하지 않습니다. 화면이 그려지기 전에 붙어야 첫 오류까지 잡습니다. */}
+        <script dangerouslySetInnerHTML={{ __html: SITE_CHECK_COLLECTOR }} />
+      </head>
       <body className="min-h-full flex flex-col bg-gia-bg text-slate-900">
         {children}
         <Analytics />

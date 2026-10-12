@@ -5,7 +5,7 @@ import { applyPickup } from "@/lib/pickupIngest";
 import { logApiError } from "@/lib/logging";
 import { todayKst, kstWeekday } from "@/lib/kst";
 import { assumeAfternoon } from "@/lib/pickupParse";
-import { weekStartOf } from "@/lib/dismissalWeek";
+import { rangeAppliesOn, weekStartOf } from "@/lib/dismissalWeek";
 
 /**
  * **하원수단을 넣고, 오늘 것이면 셔틀 체크표까지 바로 겁니다.**
@@ -42,7 +42,11 @@ type Body = {
   note?: string | null;
   /** 그 주의 월요일. 비어 있으면 매주입니다. */
   weekStart?: string | null;
+  /** 기간 지정. 주면 weekStart 는 무시하고 그 기간의 주별 줄로 펼쳐 넣습니다. */
+  range?: { start?: string; end?: string } | null;
 };
+
+const ISO = /^\d{4}-\d{2}-\d{2}$/;
 
 const KINDS = new Set(["셔틀", "외부버스", "보호자픽업", "도보", "기타"]);
 
@@ -61,8 +65,42 @@ export async function POST(req: Request) {
     if (weekdays.length === 0) return NextResponse.json({ error: "요일을 하나 이상 골라주세요." }, { status: 400 });
 
     const weekStart = body?.weekStart ?? null;
+    const range = body?.range && ISO.test(body.range.start ?? "") && ISO.test(body.range.end ?? "") ? { start: body.range.start!, end: body.range.end! } : null;
+    if (body?.range && !range) return NextResponse.json({ error: "기간의 시작일과 종료일을 달력에서 골라주세요." }, { status: 400 });
+    if (range && range.end < range.start) return NextResponse.json({ error: "종료일이 시작일보다 앞입니다." }, { status: 400 });
     const saved: number[] = [];
-    for (const w of weekdays) {
+
+    if (range) {
+      // 이 학생의 이번 기간 전체가 한 묶음입니다 - 요일이 여럿이어도 한 번에 보여주고 지웁니다.
+      const rangeId = crypto.randomUUID();
+      let rows = 0;
+      for (const w of weekdays) {
+        const { data, error } = await supabase.rpc("set_dismissal_range", {
+          p_student: studentId,
+          p_weekday: w,
+          p_kind: kind,
+          p_label: (body?.label ?? "").trim() || null,
+          p_time: assumeAfternoon((body?.time ?? "").trim() || null),
+          p_note: (body?.note ?? "").trim() || null,
+          p_start: range.start,
+          p_end: range.end,
+          p_range_id: rangeId,
+          p_by: me.name ?? me.email,
+        });
+        if (error) {
+          return NextResponse.json(
+            { error: `${["", "월", "화", "수", "목", "금"][w]}요일을 저장하지 못했습니다: ${error.message}`, saved },
+            { status: 500 },
+          );
+        }
+        rows += Number(data ?? 0);
+        saved.push(w);
+      }
+      // 기간 안에 고른 요일이 한 번도 없으면 아무 줄도 안 생깁니다. 「저장됨」으로 보이면 넣은 줄 압니다.
+      if (rows === 0) return NextResponse.json({ error: "고른 기간 안에 고른 요일이 없습니다. 요일이나 날짜를 확인해주세요." }, { status: 400 });
+    }
+
+    for (const w of range ? [] : weekdays) {
       const { error } = await supabase.rpc("set_dismissal_plan", {
         p_student: studentId,
         p_weekday: w,
@@ -96,8 +134,8 @@ export async function POST(req: Request) {
       // 체크표와는 다른 것을 셉니다.
       weekdays.includes(todayWd) &&
       kind !== "셔틀" &&
-      // 「다음 주만」으로 넣은 것은 오늘 걸면 안 됩니다.
-      (weekStart === null || weekStart === weekStartOf(today));
+      // 「다음 주만」으로 넣은 것은 오늘 걸면 안 됩니다. 기간이면 오늘이 그 안일 때만.
+      (range ? rangeAppliesOn(range.start, range.end, todayWd, today) : weekStart === null || weekStart === weekStartOf(today));
 
     let applied = 0;
     if (appliesToday) {
@@ -130,7 +168,16 @@ export async function DELETE(req: Request) {
     const me = await getCurrentAppUser();
     if (!me) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
 
-    const body = (await req.json().catch(() => null)) as { studentId?: string; weekday?: number; weekStart?: string | null } | null;
+    const body = (await req.json().catch(() => null)) as { studentId?: string; weekday?: number; weekStart?: string | null; rangeId?: string | null } | null;
+    // 기간으로 넣은 줄은 기간째 지웁니다(그 요일의 주별 줄 전부). 한 주씩 지우게 두면 몇 주가 남습니다.
+    if (body?.rangeId) {
+      const { data, error } = await supabase.rpc("clear_dismissal_range", {
+        p_range_id: body.rangeId,
+        p_weekday: Number.isInteger(body.weekday) ? body.weekday : null,
+      });
+      if (error) return NextResponse.json({ error: `지우지 못했습니다: ${error.message}` }, { status: 500 });
+      return NextResponse.json({ ok: true, removed: Number(data ?? 0) });
+    }
     if (!body?.studentId || !Number.isInteger(body.weekday)) {
       return NextResponse.json({ error: "학생과 요일이 필요합니다." }, { status: 400 });
     }

@@ -12,12 +12,15 @@ import {
   DISMISSAL_REPEATS,
   REPEAT_HINT,
   addDays,
-  describeWeek,
+  RANGE_HINT,
+  countWeekdayInRange,
+  describePlan,
+  describeRange,
   nextWeekStart,
   weekStartFor,
   weekStartOf,
   pickByStudent,
-  type DismissalRepeat,
+  type DismissalChoice,
 } from "@/lib/dismissalWeek";
 import { DISMISSAL_SELECT, isMissingWeekStart, WEEK_START_NOTICE, type DismissalRow } from "@/lib/dismissalToday";
 import { loadStudents } from "@/lib/students";
@@ -38,7 +41,8 @@ import { loadStudents } from "@/lib/students";
  * 다른 답이 나오면 결국 아무도 안 믿습니다.
  */
 
-type Plan = DismissalRow & { name: string; className: string };
+/** 기간으로 넣은 줄이면 묶음 번호와 기간이 함께 옵니다(마이그레이션 전에는 없음). */
+type Plan = DismissalRow & { name: string; className: string; range_id?: string | null; range_start?: string | null; range_end?: string | null };
 
 const KIND_TONE: Record<string, string> = {
   셔틀: "border-sky-300 bg-sky-50 text-sky-800",
@@ -83,7 +87,10 @@ export default function DismissalModal({ onClose }: { onClose: () => void }) {
    */
   const [students, setStudents] = useState<StudentPick[]>([]);
   const [days, setDays] = useState<number[]>(todayWd >= 1 && todayWd <= 5 ? [todayWd] : []);
-  const [repeat, setRepeat] = useState<DismissalRepeat>("이번주");
+  const [repeat, setRepeat] = useState<DismissalChoice>("이번주");
+  /** 「기간」을 골랐을 때 달력으로 정하는 시작·끝 날짜. 기본은 오늘부터 4주. */
+  const [rangeStart, setRangeStart] = useState<string>(today);
+  const [rangeEnd, setRangeEnd] = useState<string>(addDays(today, 27));
   const [kind, setKind] = useState<string>("보호자픽업");
   const [label, setLabel] = useState("");
   const [time, setTime] = useState("");
@@ -141,10 +148,18 @@ export default function DismissalModal({ onClose }: { onClose: () => void }) {
   const load = useCallback(async () => {
     const supabase = createClient();
     const weeks = [weekStartOf(today), nextWeekStart(today)];
+    // 기간으로 넣은 줄은 몇 주 뒤까지 펼쳐져 있으므로 끝나지 않은 기간도 함께 읽습니다.
     let res = await supabase
       .from("student_dismissal_plans")
-      .select(DISMISSAL_SELECT)
-      .or(`week_start.is.null,week_start.in.(${weeks.join(",")})`);
+      .select(`${DISMISSAL_SELECT}, range_id, range_start, range_end`)
+      .or(`week_start.is.null,week_start.in.(${weeks.join(",")}),range_end.gte.${today}`);
+    if (res.error && (res.error.code === "42703" || (res.error.message ?? "").includes("range_"))) {
+      // 기간 칸이 아직 없으면(마이그레이션 직전) 예전처럼 읽습니다. 화면이 멈추면 그날 하원을 아무도 못 고칩니다.
+      res = (await supabase
+        .from("student_dismissal_plans")
+        .select(DISMISSAL_SELECT)
+        .or(`week_start.is.null,week_start.in.(${weeks.join(",")})`)) as typeof res;
+    }
     if (isMissingWeekStart(res.error)) {
       // 칸이 아직 없으면(마이그레이션 전) 전부 매주로 읽습니다. 화면이 멈추면 그날 하원을
       // 아무도 못 고칩니다.
@@ -160,7 +175,7 @@ export default function DismissalModal({ onClose }: { onClose: () => void }) {
       return;
     }
     // 읽을 때 시각을 바로잡습니다 - 「3:35」는 오후 3시 35분입니다(loadDismissalForDay 와 같은 규칙).
-    const rows = ((res.data as DismissalRow[] | null) ?? []).map((r) => ({ ...r, depart_time: assumeAfternoon(r.depart_time) }));
+    const rows = ((res.data as (DismissalRow & { range_id?: string | null })[] | null) ?? []).map((r) => ({ ...r, depart_time: assumeAfternoon(r.depart_time) }));
     const ids = [...new Set(rows.map((r) => r.student_id))];
     if (ids.length === 0) {
       setPlans([]);
@@ -191,6 +206,11 @@ export default function DismissalModal({ onClose }: { onClose: () => void }) {
   async function save() {
     if (students.length === 0) return notify("학생을 골라주세요.", "error");
     if (days.length === 0) return notify("요일을 하나 이상 골라주세요.", "error");
+    if (repeat === "기간") {
+      if (!rangeStart || !rangeEnd) return notify("기간의 시작일과 종료일을 달력에서 골라주세요.", "error");
+      if (rangeEnd < rangeStart) return notify("종료일이 시작일보다 앞입니다.", "error");
+      if (days.every((d) => countWeekdayInRange(rangeStart, rangeEnd, d) === 0)) return notify("고른 기간 안에 고른 요일이 없습니다.", "error");
+    }
     setBusy(true);
     try {
       let ok = 0;
@@ -209,7 +229,7 @@ export default function DismissalModal({ onClose }: { onClose: () => void }) {
             label,
             time,
             note,
-            weekStart: weekStartFor(repeat, today),
+            ...(repeat === "기간" ? { range: { start: rangeStart, end: rangeEnd } } : { weekStart: weekStartFor(repeat, today) }),
           }),
         });
         const body = (await res.json().catch(() => ({}))) as {
@@ -227,7 +247,8 @@ export default function DismissalModal({ onClose }: { onClose: () => void }) {
 
       // **무슨 일이 일어났는지 그대로 말합니다.** 「저장됨」만 뜨면 셔틀에 걸렸는지 아닌지를
       // 사람이 다시 확인하러 가야 합니다.
-      const dayLabels = days.map((d) => WEEK.find((w) => w.n === d)?.ko).join("·");
+      const dayLabels =
+        days.map((d) => WEEK.find((w) => w.n === d)?.ko).join("·") + (repeat === "기간" ? ` (${describeRange(rangeStart, rangeEnd)})` : "");
       if (ok > 0) {
         notify(
           `${ok}명 · ${dayLabels} ${kind}` +
@@ -254,12 +275,17 @@ export default function DismissalModal({ onClose }: { onClose: () => void }) {
       const res = await fetch("/api/work/dismissal", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ studentId: p.student_id, weekday: p.weekday, weekStart: p.week_start }),
+        // 기간으로 넣은 줄은 그 요일의 기간 전체를 지웁니다 - 한 주만 지우면 남은 주가 계속 살아 있습니다.
+        body: JSON.stringify(
+          p.range_id
+            ? { studentId: p.student_id, weekday: p.weekday, rangeId: p.range_id }
+            : { studentId: p.student_id, weekday: p.weekday, weekStart: p.week_start },
+        ),
       });
       const body = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) return notify(body.error ?? "지우지 못했습니다.", "error");
       notify(
-        `${p.name} ${WEEK.find((w) => w.n === p.weekday)?.ko}요일 하원수단을 지웠습니다.` +
+        `${p.name} ${WEEK.find((w) => w.n === p.weekday)?.ko}요일 하원수단${p.range_start && p.range_end ? `(${describeRange(p.range_start, p.range_end)})` : ""}을 지웠습니다.` +
           (p.weekday === todayWd ? " 오늘 걸어둔 픽업 표시는 그대로입니다 - 체크표에서 되돌려주세요." : ""),
         "success",
       );
@@ -288,11 +314,27 @@ export default function DismissalModal({ onClose }: { onClose: () => void }) {
   })();
 
   /** 앞으로 예약된 것(그 주짜리만). 매주짜리는 「예약」이 아니라 평소 규칙입니다. */
-  const ahead = all
-    .filter((p) => p.week_start)
-    .map((p) => ({ ...p, date: addDays(p.week_start as string, p.weekday - 1) }))
-    .filter((p) => p.date > today)
-    .sort((a, b) => a.date.localeCompare(b.date) || (a.depart_time ?? "99:99").localeCompare(b.depart_time ?? "99:99"));
+  //
+  // 기간으로 넣은 줄은 주마다 펼쳐져 있어서 그대로 늘어놓으면 같은 일정이 몇 주 치 쌓입니다.
+  // 기간·요일마다 **한 줄**로 접고, 날짜 칸에는 다음에 오는 날을 적습니다.
+  const ahead = (() => {
+    const out: (Plan & { date: string })[] = [];
+    const seenRange = new Set<string>();
+    const sorted = all
+      .filter((p) => p.week_start)
+      .map((p) => ({ ...p, date: addDays(p.week_start as string, p.weekday - 1) }))
+      .filter((p) => p.date > today)
+      .sort((a, b) => a.date.localeCompare(b.date));
+    for (const p of sorted) {
+      if (p.range_id) {
+        const k = `${p.range_id}|${p.weekday}`;
+        if (seenRange.has(k)) continue;
+        seenRange.add(k);
+      }
+      out.push(p);
+    }
+    return out.sort((a, b) => a.date.localeCompare(b.date) || (a.depart_time ?? "99:99").localeCompare(b.depart_time ?? "99:99"));
+  })();
 
   /**
    * 평소(매주) 규칙을 **아이별로** 묶습니다.
@@ -433,8 +475,57 @@ export default function DismissalModal({ onClose }: { onClose: () => void }) {
                 {r === "매주" ? "매주" : `${r}만`}
               </button>
             ))}
-            <span className="text-[11px] text-slate-400">{REPEAT_HINT[repeat]}</span>
+            <button
+              type="button"
+              onClick={() => setRepeat("기간")}
+              title={RANGE_HINT}
+              className={
+                "rounded-lg px-2.5 py-1 text-[12px] font-bold " +
+                (repeat === "기간" ? "bg-slate-800 text-white" : "bg-white text-slate-500 ring-1 ring-slate-200")
+              }
+            >
+              📅 기간 지정
+            </button>
+            <span className="text-[11px] text-slate-400">{repeat === "기간" ? RANGE_HINT : REPEAT_HINT[repeat]}</span>
           </div>
+          {repeat === "기간" && (
+            <div className="mb-2 flex flex-wrap items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50/60 px-2 py-1.5 text-[12px]">
+              <label className="flex items-center gap-1">
+                <span className="text-[11px] font-semibold text-slate-500">시작</span>
+                <input
+                  type="date"
+                  value={rangeStart}
+                  min={today}
+                  onChange={(e) => {
+                    setRangeStart(e.target.value);
+                    if (rangeEnd && e.target.value > rangeEnd) setRangeEnd(e.target.value);
+                  }}
+                  className="rounded border border-slate-300 bg-white px-1.5 py-0.5"
+                />
+              </label>
+              <span className="text-slate-400">~</span>
+              <label className="flex items-center gap-1">
+                <span className="text-[11px] font-semibold text-slate-500">끝</span>
+                <input
+                  type="date"
+                  value={rangeEnd}
+                  min={rangeStart || today}
+                  onChange={(e) => setRangeEnd(e.target.value)}
+                  className="rounded border border-slate-300 bg-white px-1.5 py-0.5"
+                />
+              </label>
+              {/* 실제로 며칠이 되는지 보여줍니다. 요일과 기간이 안 맞으면 0번이 되는데, 그걸 저장 뒤에 알면 늦습니다. */}
+              <span className="text-[11px] text-violet-800">
+                {days.length === 0
+                  ? "요일을 골라주세요"
+                  : days
+                      .slice()
+                      .sort()
+                      .map((d) => `${WEEK.find((w) => w.n === d)?.ko} ${countWeekdayInRange(rangeStart, rangeEnd, d)}번`)
+                      .join(" · ")}
+              </span>
+            </div>
+          )}
 
           <div className="mb-2 flex flex-wrap items-center gap-1">
             <span className="mr-1 text-[11px] font-semibold text-slate-500">수단</span>
@@ -514,12 +605,12 @@ export default function DismissalModal({ onClose }: { onClose: () => void }) {
             <div className="flex flex-col gap-1">
               {ahead.map((p) => (
                 <PlanRow
-                  key={`${p.student_id}-${p.weekday}-${p.week_start}`}
+                  key={`${p.student_id}-${p.weekday}-${p.range_id ?? p.week_start}`}
                   p={p}
                   today={today}
                   busy={busy}
                   onRemove={remove}
-                  dateLabel={dayLabel(p.date)}
+                  dateLabel={p.range_id ? `다음 ${dayLabel(p.date)}` : dayLabel(p.date)}
                 />
               ))}
             </div>
@@ -601,7 +692,7 @@ function PlanRow({
       {/* 어느 갈래인지 적습니다. 「매주」와 「이번주만」이 겹칠 수 있어서, 무엇을 지우는지
           모르면 엉뚱한 줄을 지우게 됩니다. */}
       <span className="ml-auto shrink-0 rounded bg-white/70 px-1.5 py-0.5 text-[10px] font-bold opacity-80">
-        {describeWeek(p.week_start ?? null, today)}
+        {describePlan(p, today)}
       </span>
       <button
         type="button"

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import { todayKst } from "@/lib/kst";
-import { DISMISSAL_REPEATS, REPEAT_HINT, weekStartFor, type DismissalRepeat } from "@/lib/dismissalWeek";
+import { DISMISSAL_REPEATS, RANGE_HINT, REPEAT_HINT, countWeekdayInRange, describeRange, weekStartFor, type DismissalChoice } from "@/lib/dismissalWeek";
 import { loadStudents } from "@/lib/students";
 import { useToast } from "@/components/common/ToastProvider";
 import { isClockTime } from "@/lib/studentDayNotes";
@@ -468,13 +468,32 @@ export function DismissalQuickModal({
   const [time, setTime] = useState("");
   // **기본은 이번주.** 여기로 들어오는 연락은 거의 다 그 주 한 번짜리입니다("오늘은 할머니가
   // 데리러 가요"). 매주가 기본이면 그 한 번짜리가 영원히 남고, 다음 주에 지우기를 잊습니다.
-  const [repeat, setRepeat] = useState<DismissalRepeat>("이번주");
+  const [repeat, setRepeat] = useState<DismissalChoice>("이번주");
+  const [rangeStart, setRangeStart] = useState<string>(todayKst());
+  const [rangeEnd, setRangeEnd] = useState<string>(addDays(todayKst(), 27));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   async function save() {
     if (!student) return setErr("학생을 골라주세요.");
     if (days.length === 0) return setErr("요일을 하나 이상 골라주세요.");
+    if (repeat === "기간") {
+      // 기간은 주별 줄로 펼쳐 한 번에 넣어야 해서(한 트랜잭션) 하원수단 창구를 지납니다. 오늘이 그 안이면
+      // 셔틀 체크표에도 바로 겁니다 - 하원수단 창과 같은 동작입니다.
+      if (!rangeStart || !rangeEnd || rangeEnd < rangeStart) return setErr("기간의 시작일과 종료일을 달력에서 골라주세요.");
+      setBusy(true);
+      const res = await fetch("/api/work/dismissal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ studentId: student.id, weekdays: days, kind, label: labelText, time, note: null, range: { start: rangeStart, end: rangeEnd } }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      setBusy(false);
+      if (!res.ok) return setErr(body.error ?? "저장하지 못했습니다.");
+      onSaved(`${student.name} · ${days.map((d) => WEEK.find((w) => w.n === d)?.ko).join("·")} ${kind} · ${describeRange(rangeStart, rangeEnd)}로 저장했습니다.`);
+      onClose();
+      return;
+    }
     setBusy(true);
     const supabase = createClient();
     const weekStart = weekStartFor(repeat, todayKst());
@@ -550,8 +569,27 @@ export function DismissalQuickModal({
               {r === "매주" ? "매주" : `${r}만`}
             </button>
           ))}
+          <button
+            onClick={() => setRepeat("기간")}
+            title={RANGE_HINT}
+            className={"flex-1 rounded-lg px-2 py-1.5 text-[12px] font-bold " + (repeat === "기간" ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-500")}
+          >
+            📅 기간
+          </button>
         </div>
-        <p className="mt-0.5 text-[11px] text-slate-400">{REPEAT_HINT[repeat]}</p>
+        <p className="mt-0.5 text-[11px] text-slate-400">{repeat === "기간" ? RANGE_HINT : REPEAT_HINT[repeat]}</p>
+        {repeat === "기간" && (
+          <div className="mt-1 flex flex-wrap items-center gap-1 text-[12px]">
+            <input type="date" value={rangeStart} min={todayKst()} onChange={(e) => { setRangeStart(e.target.value); if (e.target.value > rangeEnd) setRangeEnd(e.target.value); }} className="rounded border border-slate-300 px-1.5 py-0.5" />
+            <span className="text-slate-400">~</span>
+            <input type="date" value={rangeEnd} min={rangeStart} onChange={(e) => setRangeEnd(e.target.value)} className="rounded border border-slate-300 px-1.5 py-0.5" />
+            {days.length > 0 && (
+              <span className="text-[11px] text-violet-800">
+                {days.slice().sort().map((d) => `${WEEK.find((w) => w.n === d)?.ko} ${countWeekdayInRange(rangeStart, rangeEnd, d)}번`).join(" · ")}
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="mb-2">

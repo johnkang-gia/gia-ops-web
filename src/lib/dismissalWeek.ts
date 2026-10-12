@@ -151,3 +151,47 @@ export function pickByStudent<T extends { student_id: string; week_start?: strin
 export function isExpired(weekStart: string | null, todayIso: string): boolean {
   return weekStart !== null && weekStart < weekStartOf(todayIso);
 }
+
+// ── 기간 지정 ───────────────────────────────────────────────────────────
+//
+// 「10/15부터 11/20까지 목요일은 할머니」. 데이터베이스는 기간을 **주별 줄로 펼쳐** 담고
+// (set_dismissal_range, 같은 range_id), 읽는 쪽은 위의 「그 주 줄 > 매주 줄」 규칙 그대로
+// 씁니다. 그래서 여기에는 화면이 기간을 고르고 보여주는 데 필요한 것만 있습니다.
+
+/** 화면의 「언제까지」 선택지. 기간은 날짜를 두 개 더 받습니다. */
+export type DismissalChoice = DismissalRepeat | "기간";
+
+export const RANGE_HINT = "고른 날부터 고른 날까지 그 요일만. 끝나면 저절로 없어집니다";
+
+/** 「10/15~11/20」. 같은 날이면 하루만 적습니다. */
+export function describeRange(start: string, end: string): string {
+  const md = (iso: string) => `${Number(iso.slice(5, 7))}/${Number(iso.slice(8, 10))}`;
+  return start === end ? md(start) : `${md(start)}~${md(end)}`;
+}
+
+/** ISO 날짜의 요일(1=월 … 7=일). 시간대를 쓰지 않고 셉니다. */
+export function isoWeekday(iso: string): number {
+  const [y, m, d] = iso.split("-").map(Number);
+  const days = Math.floor(Date.UTC(y, m - 1, d) / 86_400_000);
+  const dow = (days + 4) % 7; // 0=일
+  return dow === 0 ? 7 : dow;
+}
+
+/** 기간 안에 그 요일이 몇 번 있는가. 0이면 저장해도 아무 줄도 안 생깁니다 - 화면이 먼저 알려야 합니다. */
+export function countWeekdayInRange(start: string, end: string, weekday: number): number {
+  if (!start || !end || end < start) return 0;
+  let n = 0;
+  for (let d = start; d <= end; d = addDays(d, 1)) if (isoWeekday(d) === weekday) n += 1;
+  return n;
+}
+
+/** 그 날짜가 기간 안의 그 요일인가. */
+export function rangeAppliesOn(start: string, end: string, weekday: number, dayIso: string): boolean {
+  return dayIso >= start && dayIso <= end && isoWeekday(dayIso) === weekday;
+}
+
+/** 한 줄이 어느 갈래인지 사람 말로. 기간으로 넣은 줄은 기간을, 아니면 주를 적습니다. */
+export function describePlan(p: { week_start?: string | null; range_start?: string | null; range_end?: string | null }, todayIso: string): string {
+  if (p.range_start && p.range_end) return describeRange(p.range_start, p.range_end);
+  return describeWeek(p.week_start ?? null, todayIso);
+}

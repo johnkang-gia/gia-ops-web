@@ -7,6 +7,7 @@ import { useFinanceLive } from "@/lib/useFinanceLive";
 import { useToast } from "@/components/common/ToastProvider";
 import { Who } from "@/components/common/HomonymProvider";
 import StudentLedgerModal from "@/components/finance/StudentLedgerModal";
+import AlltalkpayExport from "@/components/finance/AlltalkpayExport";
 import { readAlltalkFile } from "@/lib/alltalkFile";
 import { DECISIONS, SYNC_CODES, type SyncCode, type SyncRow, type SyncSummary } from "@/lib/alltalkSync";
 
@@ -37,6 +38,12 @@ const CODE_INFO: Record<SyncCode, { label: string; tone: string; help: string }>
 /** 사람이 버튼을 눌러야 끝나는 줄. 나머지는 판단만 표시하면 끝납니다. */
 const ACTION_CODES: SyncCode[] = ["수납", "올톡표시"];
 
+/** 「앱에 넣음」으로 판단해서 이제 청구서로 만들 수 있는 줄. */
+const canInsert = (r: SyncRow) => r.code === "앱에없음" && r.mark?.decision === "앱에 넣음" && !!r.studentId && !/로 넣음$/.test(r.mark?.memo ?? "");
+/** 앱에만 있어서 올톡 파일로 보낼 수 있는 줄. */
+const canExport = (r: SyncRow) => r.code === "앱에만" && r.invoices.length > 0;
+const isPickable = (r: SyncRow) => ACTION_CODES.includes(r.code) || canInsert(r) || canExport(r);
+
 export default function AlltalkSyncClient() {
   useFinanceLive(["alltalk_sync_marks", "alltalk_sync_files"]);
   const notify = useToast();
@@ -48,6 +55,7 @@ export default function AlltalkSyncClient() {
   const [q, setQ] = useState("");
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [ledger, setLedger] = useState<{ id: string; month: string | null } | null>(null);
+  const [exporting, setExporting] = useState<string[] | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const fileId = data?.file?.id ?? null;
 
@@ -179,6 +187,40 @@ export default function AlltalkSyncClient() {
     else notify(`${list.length}줄을 처리했습니다.`, "success");
   }
 
+  /** 「앱에 넣음」 줄을 청구서로. 서버가 다시 판정해서 여전히 넣을 줄만 넣습니다. */
+  async function insertRows(list: SyncRow[]) {
+    if (!fileId || list.length === 0) return;
+    const sum = list.reduce((n, r) => n + (r.paidAmount || r.openAmount), 0);
+    const paidN = list.filter((r) => r.paidAmount > 0).length;
+    if (
+      !confirm(
+        `${list.length}건을 운영앱 청구서로 만듭니다(합계 ${won(sum)}원).\n\n· 결제된 ${paidN}건은 입금까지 함께 넣습니다(올톡 결제일·승인번호).\n· 나머지는 미납 청구서가 되어 미납금에 잡힙니다.\n· 「올톡」 표시는 켜진 채로 만듭니다(이미 올톡으로 나간 청구).\n\n계속할까요?`,
+      )
+    )
+      return;
+    setBusy("insert");
+    try {
+      const res = await fetch("/api/finance/alltalk-sync/apply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileId, keys: list.map((r) => r.key) }),
+      });
+      const json = (await res.json().catch(() => null)) as { error?: string; made?: string[]; failures?: string[]; skipped?: string[] } | null;
+      if (!res.ok || !json) {
+        notify(json?.error ?? "넣지 못했습니다.", "error");
+        return;
+      }
+      const made = json.made?.length ?? 0;
+      const bad = [...(json.failures ?? []), ...(json.skipped ?? [])];
+      if (bad.length) notify(`${made}건을 넣었습니다. 못 넣은 ${bad.length}건: ${bad.slice(0, 4).join(" / ")}${bad.length > 4 ? " …" : ""}`, "error");
+      else notify(`${made}건을 청구서로 넣었습니다.`, "success");
+    } finally {
+      setBusy(null);
+      setPicked(new Set());
+      await load(fileId);
+    }
+  }
+
   async function saveMark(body: { key: string; kind: "link" | "decision"; studentId?: string | null; decision?: string | null; memo?: string | null }) {
     setBusy(body.key);
     try {
@@ -190,7 +232,8 @@ export default function AlltalkSyncClient() {
     }
   }
 
-  const isDone = (r: SyncRow) => r.code === "일치" || (!ACTION_CODES.includes(r.code) && r.code !== "학생확인" && !!r.mark?.decision);
+  // 「앱에 넣음」은 판단만 끝났고 넣는 일이 남아 있어서 끝난 줄이 아닙니다.
+  const isDone = (r: SyncRow) => r.code === "일치" || (!ACTION_CODES.includes(r.code) && r.code !== "학생확인" && !!r.mark?.decision && !canInsert(r));
 
   const shown = useMemo(() => {
     const term = q.trim();
@@ -208,10 +251,19 @@ export default function AlltalkSyncClient() {
       action: rows.filter((r) => ACTION_CODES.includes(r.code)).length,
       who: rows.filter((r) => r.code === "학생확인").length,
       judge: rows.filter((r) => ["확인", "앱에없음", "앱에만"].includes(r.code) && !r.mark?.decision).length,
+      insert: rows.filter(canInsert).length,
     };
   }, [data]);
 
-  const pickable = shown.filter((r) => ACTION_CODES.includes(r.code));
+  const pickable = shown.filter(isPickable);
+  const pickedRows = (data?.rows ?? []).filter((r) => picked.has(r.key));
+  const pickedAct = pickedRows.filter((r) => ACTION_CODES.includes(r.code));
+  const pickedIns = pickedRows.filter(canInsert);
+  const pickedExp = pickedRows.filter(canExport);
+
+  // 번호로 맞은 비율. 금액으로 짐작한 짝이 많으면 다음 발송부터 앱에서 만든 파일을 쓰도록 권합니다.
+  const matchedRows = (data?.rows ?? []).filter((r) => ["수납", "올톡표시", "일치"].includes(r.code) && r.history.length > 0);
+  const byNumberN = matchedRows.filter((r) => r.byNumber).length;
   const allPicked = pickable.length > 0 && pickable.every((r) => picked.has(r.key));
 
   return (
@@ -257,11 +309,20 @@ export default function AlltalkSyncClient() {
             <span className={left.action ? "font-bold text-emerald-700" : "text-slate-400"}>누를 것 {left.action}</span>
             <span className={left.who ? "font-bold text-violet-700" : "text-slate-400"}>학생 고르기 {left.who}</span>
             <span className={left.judge ? "font-bold text-amber-700" : "text-slate-400"}>판단 표시 {left.judge}</span>
-            {left.action + left.who + left.judge === 0 && <span className="rounded bg-emerald-600 px-2 py-0.5 font-bold text-white">이 파일은 다 맞췄습니다 ✓</span>}
+            <span className={left.insert ? "font-bold text-amber-700" : "text-slate-400"}>앱에 넣을 것 {left.insert}</span>
+            {left.action + left.who + left.judge + left.insert === 0 && <span className="rounded bg-emerald-600 px-2 py-0.5 font-bold text-white">이 파일은 다 맞췄습니다 ✓</span>}
             <span className="ml-auto text-[11px] text-slate-400">
               {data.file.file_name} · {data.file.row_count}줄 → 청구 {data.rows.filter((r) => r.code !== "앱에만").length}건
             </span>
           </div>
+
+          {matchedRows.length > 0 && byNumberN < matchedRows.length && (
+            <p className="mb-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-[11px] leading-relaxed text-violet-900">
+              이 파일은 앱 청구서와 맞은 {matchedRows.length}건 중 <b>{byNumberN}건만 청구서 번호로</b> 맞았고, 나머지는 금액으로 짐작해 맞췄습니다.
+              다음 발송부터는 금전 창·회계·미납금 화면의 <b>「📤 올톡페이로 청구」</b>로 만든 파일을 올톡에 올리세요 — 청구사유 앞에 번호가 붙어
+              결과를 받으면 금액이 같은 형제·정산 건도 엇갈리지 않습니다. 「앱에만 있음」 탭에서 바로 만들 수도 있습니다.
+            </p>
+          )}
 
           {/* ── 탭 ─────────────────────────────────────────────────────── */}
           <div className="sticky top-0 z-10 -mx-1 mb-2 flex flex-wrap items-center gap-1 bg-slate-50/95 px-1 py-1.5 backdrop-blur">
@@ -292,9 +353,24 @@ export default function AlltalkSyncClient() {
               끝난 줄 숨기기
             </label>
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="이름·반·사유 찾기" className="ml-auto w-44 rounded-lg border border-slate-300 px-2 py-1 text-[12px]" />
-            {picked.size > 0 && (
+            {pickedAct.length > 0 && (
               <button onClick={() => void runPicked()} disabled={busy !== null} className="rounded-lg bg-emerald-700 px-3 py-1 text-[12px] font-bold text-white disabled:opacity-40">
-                {busy === "bulk" ? "처리 중…" : `고른 ${picked.size}줄 처리`}
+                {busy === "bulk" ? "처리 중…" : `고른 ${pickedAct.length}줄 처리`}
+              </button>
+            )}
+            {pickedIns.length > 0 && (
+              <button onClick={() => void insertRows(pickedIns)} disabled={busy !== null} className="rounded-lg bg-amber-600 px-3 py-1 text-[12px] font-bold text-white disabled:opacity-40">
+                {busy === "insert" ? "넣는 중…" : `고른 ${pickedIns.length}줄 앱에 넣기`}
+              </button>
+            )}
+            {pickedExp.length > 0 && (
+              <button
+                onClick={() => setExporting(pickedExp.flatMap((r) => r.invoices.map((v) => v.id)))}
+                disabled={busy !== null}
+                className="rounded-lg bg-violet-700 px-3 py-1 text-[12px] font-bold text-white disabled:opacity-40"
+                title="고른 청구서로 올톡페이 등록 파일을 만듭니다. 청구사유 앞에 청구서 번호가 붙어, 결과를 다시 올리면 번호로 정확히 맞춰집니다."
+              >
+                고른 {pickedExp.length}장 올톡 파일 만들기
               </button>
             )}
           </div>
@@ -339,6 +415,8 @@ export default function AlltalkSyncClient() {
                     }
                     onRun={() => void runOne(r)}
                     onMark={(b) => void saveMark(b)}
+                    onInsert={() => void insertRows([r])}
+                    onExport={() => setExporting(r.invoices.map((v) => v.id))}
                     onOpen={() => r.studentId && setLedger({ id: r.studentId, month: r.invoices[0]?.billingMonth ?? null })}
                     students={data.students}
                   />
@@ -360,6 +438,16 @@ export default function AlltalkSyncClient() {
         </>
       )}
 
+      {exporting && (
+        <AlltalkpayExport
+          invoiceIds={exporting}
+          onClose={() => setExporting(null)}
+          onMarked={() => {
+            setPicked(new Set());
+            void load(fileId);
+          }}
+        />
+      )}
       {ledger && <StudentLedgerModal studentId={ledger.id} month={ledger.month} onClose={() => setLedger(null)} onChanged={() => void load(fileId)} />}
     </div>
   );
@@ -373,6 +461,8 @@ function SyncLine({
   onRun,
   onMark,
   onOpen,
+  onInsert,
+  onExport,
   students,
 }: {
   r: SyncRow;
@@ -382,12 +472,14 @@ function SyncLine({
   onRun: () => void;
   onMark: (b: { key: string; kind: "link" | "decision"; studentId?: string | null; decision?: string | null; memo?: string | null }) => void;
   onOpen: () => void;
+  onInsert: () => void;
+  onExport: () => void;
   students: { id: string; name: string; where: string }[];
 }) {
   const info = CODE_INFO[r.code];
   const [memo, setMemo] = useState(r.mark?.kind === "decision" ? r.mark.memo ?? "" : "");
   const [find, setFind] = useState("");
-  const canAct = ACTION_CODES.includes(r.code);
+  const canAct = isPickable(r);
   const found = find.trim().length >= 1 ? students.filter((s) => s.name.includes(find.trim())).slice(0, 8) : [];
 
   return (
@@ -445,6 +537,9 @@ function SyncLine({
       {/* 운영앱 */}
       <td className="px-2 py-1.5">
         {r.invoices.length === 0 && <span className="text-slate-400">같은 금액 청구서 없음</span>}
+        {r.invoices.length > 0 && r.history.length > 0 && ["수납", "올톡표시", "일치"].includes(r.code) && (
+          <div className={"text-[10px] font-semibold " + (r.byNumber ? "text-emerald-700" : "text-slate-400")}>{r.byNumber ? "번호로 맞음" : "금액으로 맞춤"}</div>
+        )}
         <div className="flex flex-col gap-0.5">
           {r.invoices.map((v) => (
             <span key={v.id} className="whitespace-nowrap">
@@ -510,6 +605,16 @@ function SyncLine({
           </div>
         )}
 
+        {canInsert(r) && (
+          <button onClick={onInsert} disabled={busy} className="mb-1 w-full rounded-lg bg-amber-600 px-2 py-1 text-[12px] font-bold text-white disabled:opacity-40" title="이 금액으로 운영앱 청구서를 만듭니다(결제됐으면 입금까지)">
+            앱에 넣기 {won(r.paidAmount || r.openAmount)}
+          </button>
+        )}
+        {canExport(r) && !r.invoices.every((v) => v.exported) && (
+          <button onClick={onExport} disabled={busy} className="mb-1 w-full rounded-lg bg-violet-600 px-2 py-1 text-[12px] font-bold text-white disabled:opacity-40" title="이 청구서를 올톡페이 등록 파일로 만듭니다(청구서 번호가 붙습니다)">
+            올톡 파일 만들기
+          </button>
+        )}
         {["확인", "앱에없음", "앱에만", "참고"].includes(r.code) && (
           <div className="space-y-1">
             <select

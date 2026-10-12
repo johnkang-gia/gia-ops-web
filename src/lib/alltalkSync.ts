@@ -103,6 +103,12 @@ export type SyncRow = {
   markExported: string[];
   note: string;
   mark: SyncMark | null;
+  /**
+   * 앱 청구서와 **번호로** 맞았는가(청구사유 앞 `[2026-0123]`). 아니면 금액으로 짐작한 짝입니다 -
+   * 금액이 같은 형제·정산 건에서 엇갈릴 수 있어, 화면이 비율을 보여주고 앱에서 만든 파일로
+   * 보내기를 권합니다.
+   */
+  byNumber: boolean;
 };
 
 export type SyncSummary = Record<SyncCode, { count: number; amount: number; decided: number }>;
@@ -255,6 +261,7 @@ export function reconcile(input: {
       sourceKey: approvals.length === 1 ? approvalKey(approvals[0]) : null,
       markExported: [] as string[],
       mark: markBy.get(key) ?? null,
+      byNumber: false,
     };
     const invView = (vs: readonly SyncInvoice[]) =>
       vs.map((v) => ({ id: v.id, invoiceNo: v.invoiceNo, billingMonth: v.billingMonth, stream: v.stream, total: v.total, balance: balanceOf(v), offline: v.offline, exported: v.exported }));
@@ -273,12 +280,16 @@ export function reconcile(input: {
     const target = paidAmount > 0 ? paidAmount : openAmount;
     let match: SyncInvoice[] | null = null;
     let matchNote = "";
+    let byNumber = false;
 
     // 앱에서 내보낸 파일로 보낸 건은 청구사유 앞에 번호가 있습니다. 번호가 곧 답입니다.
     const nos = invoiceNosOf(why);
     if (nos.length > 0) {
       const hit = alive.filter((v) => nos.includes(v.invoiceNo));
-      if (hit.length === nos.length) match = hit;
+      if (hit.length === nos.length) {
+        match = hit;
+        byNumber = true;
+      }
     }
     const hint = monthHintOf(why, first.raw.issuedAt);
     if (!match) {
@@ -303,6 +314,8 @@ export function reconcile(input: {
         match = subsetMatch(done, target, (v) => v.total);
       }
     }
+
+    base.byNumber = byNumber;
 
     // 승인번호가 이미 앱에 들어가 있으면 그 결제는 끝난 것입니다.
     const alreadyIn = approvals.length > 0 && approvals.every((a) => paidKeys.has(approvalKey(a)));
@@ -406,6 +419,7 @@ export function reconcile(input: {
         ? "앱에서 올톡 파일로 내보냈는데 이 파일에는 없습니다. 올톡에 실제로 등록됐는지 확인하세요."
         : "앱에서 발행했는데 올톡으로 나간 기록이 없습니다. 직접 받았으면 수납, 보내야 하면 올톡페이로 청구, 잘못 만든 장이면 취소.",
       mark: markBy.get(key) ?? null,
+      byNumber: false,
     });
   }
 

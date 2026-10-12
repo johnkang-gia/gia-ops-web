@@ -430,6 +430,8 @@ const FINANCE_TABS: TabDef[] = [
       { label: "미납금", href: "/finance/unpaid", match: ["/finance/unpaid"] },
       { label: "수납", href: "/finance/payments", match: ["/finance/payments"] },
       { label: "예치금", href: "/finance/prepaid", match: ["/finance/prepaid"] },
+      // 올톡페이 청구서관리목록을 올려 앱 청구서와 맞춤 - 결제된 건은 수납, 보낸 건은 올톡 표시를 한 화면에서.
+      { label: "올톡 대조", href: "/finance/alltalk-sync", match: ["/finance/alltalk-sync"] },
       { label: "결제내역 올리기", href: "/finance/import", match: ["/finance/import"] },
       { label: "현금영수증", href: "/finance/receipts", match: ["/finance/receipts"] },
       // 결손·환불은 올린 사람이 아닌 관리자가 승인해야 장부에 들어갑니다.

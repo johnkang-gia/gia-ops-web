@@ -64,6 +64,9 @@ export const BACKUP_GROUPS: { group: string; tables: string[] }[] = [
       // 올린 파일과 검수 기록. 잃으면 「이 청구서가 어느 파일 어느 줄에서 왔나」에 답할 수 없습니다.
       "payment_imports",
       "payment_import_rows",
+      // 올톡 대조. 잃으면 「이 올톡 이름은 이 학생」·「이 건은 앱에 안 넣음」 판단을 매달 다시 해야 합니다.
+      "alltalk_sync_files",
+      "alltalk_sync_marks",
       "invoice_lines",
       "payments",
       "cash_receipts",

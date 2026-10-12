@@ -5,8 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useFinanceLive } from "@/lib/useFinanceLive";
 import { useToast } from "@/components/common/ToastProvider";
-import { toAmount, toIsoDate } from "@/lib/payments";
-import type { RawImportRow } from "@/lib/paymentImport";
+import { readAlltalkFile } from "@/lib/alltalkFile";
 
 const won = (n: number) => `${Math.round(n).toLocaleString("ko-KR")}원`;
 
@@ -41,42 +40,7 @@ export default function ImportUploadClient({ batches }: { batches: BatchRow[] })
   async function upload(file: File) {
     setBusy(true);
     try {
-      const XLSX = await import("xlsx");
-      const wb = XLSX.read(await file.arrayBuffer(), { cellDates: true });
-      const sheet = wb.Sheets[wb.SheetNames[0]];
-      const raw = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
-
-      // 칸 이름은 **적어준 순서대로** 찾습니다. 순서가 없으면 올톡페이 파일에서 `등록일자`가
-      // `수납일자`보다 먼저 걸려, 돈 들어온 날이 아니라 청구서 만든 날이 입금일로 들어갑니다.
-      const pick = (r: Record<string, unknown>, names: string[]) => {
-        const keys = Object.keys(r);
-        for (const n of names) {
-          const k = keys.find((k) => k.replace(/\s+/g, "").includes(n));
-          if (k !== undefined && String(r[k] ?? "").trim() !== "" && String(r[k]).trim() !== "-") return r[k];
-        }
-        return "";
-      };
-
-      const rows: RawImportRow[] = [];
-      raw.forEach((r, i) => {
-        const amount = toAmount(pick(r, ["청구금액", "결제금액", "금액", "amount"]));
-        const name = String(pick(r, ["고객명", "성명", "이름"]) ?? "").trim();
-        // 금액도 이름도 없는 줄은 합계행·머리글입니다.
-        if (!amount && !name) return;
-        rows.push({
-          seq: i + 1,
-          name,
-          phone: String(pick(r, ["청구핸드폰", "핸드폰", "휴대폰", "연락처", "phone"]) ?? "").replace(/\D/g, ""),
-          why: String(pick(r, ["청구사유", "내용", "메모", "적요"]) ?? "").trim(),
-          amount,
-          issuedAt: toIsoDate(pick(r, ["등록일자", "청구일", "발행일"])) || null,
-          status: String(pick(r, ["상태", "결제상태"]) ?? "").trim(),
-          paidAt: toIsoDate(pick(r, ["수납일자", "결제일", "승인일"])) || null,
-          method: String(pick(r, ["수납구분", "결제수단", "수단"]) ?? "").trim() || null,
-          card: String(pick(r, ["카드사"]) ?? "").trim() || null,
-          approvalNo: String(pick(r, ["승인번호", "거래번호"]) ?? "").trim() || null,
-        });
-      });
+      const rows = await readAlltalkFile(file);
 
       if (rows.length === 0) {
         notify("읽을 줄이 없습니다. 첫 시트에 고객명·청구금액 칸이 있는지 확인해주세요.", "error");
@@ -113,6 +77,9 @@ export default function ImportUploadClient({ batches }: { batches: BatchRow[] })
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="mb-3 rounded-xl border border-teal-200 bg-teal-50/60 px-3 py-3">
+        <p className="mb-1.5 rounded-lg bg-amber-100 px-2 py-1 text-[11px] font-bold text-amber-900">
+          앱에서 이미 청구서를 발행한 달이면 여기가 아니라 <Link href="/finance/alltalk-sync" className="underline">올톡 대조</Link>에 올리세요. 여기는 앱에 없는 청구를 새로 만드는 곳이라, 같은 청구서가 한 장 더 생깁니다.
+        </p>
         <p className="text-[12px] font-bold text-teal-900">올톡페이 「청구서관리목록」 엑셀을 그대로 올리세요.</p>
         <p className="mt-0.5 text-[11px] leading-relaxed text-teal-800">
           올리면 <b>검수 대기</b>로만 들어갑니다 — 청구서도 입금도 아직 만들어지지 않습니다. 학생별로 무엇이 어떻게

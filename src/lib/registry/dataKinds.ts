@@ -192,6 +192,9 @@ export const DATA_KINDS: DataKindDef[] = [
       // 올린 파일과 그 줄들. 승인하기 전까지는 어떤 집계에도 안 잡힙니다.
       "payment_imports",
       "payment_import_rows",
+      // 올톡 대조에 올린 파일과 사람의 판단(학생 연결·앱에 넣을지). 돈은 담지 않습니다.
+      "alltalk_sync_files",
+      "alltalk_sync_marks",
     ],
     // 한 학생·한 학기에 청구서가 여러 장인 것은 정상입니다(학비·학비외·분류별·재청구). 데이터베이스가
     // 막는 것은 「같은 학생·학기·청구월·항목 범위의 학비 청구서가 발행 상태로 두 장」뿐이라

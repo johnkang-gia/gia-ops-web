@@ -139,6 +139,15 @@ export async function POST(req: Request) {
   }
   const onInvoice = Math.min(asksTotal, s.balance);
 
+  // 바깥 결제의 열쇠(올톡 승인번호 등). 같은 결제를 두 사람이, 또는 같은 사람이 두 번 눌러도
+  // 입금은 한 줄만 들어가야 합니다 - 열쇠가 같으면 넣지 않고 그 사실을 말합니다.
+  const sourceKey = typeof body?.sourceKey === "string" && body.sourceKey.trim() ? body.sourceKey.trim().slice(0, 200) : null;
+  if (sourceKey) {
+    const { data: dup, error: dupErr } = await supabase.from("payments").select("id").eq("source_key", sourceKey).maybeSingle();
+    if (dupErr) return NextResponse.json({ error: dupErr.message }, { status: 500 });
+    if (dup) return NextResponse.json({ error: "이미 넣은 결제입니다(같은 승인번호).", already: true }, { status: 409 });
+  }
+
   // 청구서에 붙는 몫이 0이면(이미 완납인데 또 낸 경우) 청구서 줄은 만들지 않고 예치금만 적습니다.
   // 0원짜리 입금 줄은 「받았다」로 세어져 목록을 흐립니다.
   const { data: made, error } = onInvoice <= 0
@@ -154,6 +163,7 @@ export async function POST(req: Request) {
     memo: (body?.memo as string | null) ?? null,
     // 어디서 들어온 줄인지. 이 표시가 있어야 체크 해제로 지울 것과 통장 대사로 붙은 것을 가릅니다.
     source: "완납체크",
+    source_key: sourceKey,
     matched_by: me.email,
     origin: "완납체크",
     created_by: me.email,

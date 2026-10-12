@@ -67,7 +67,7 @@ export async function POST(req: Request) {
     const weekStart = body?.weekStart ?? null;
     // **날짜가 정해진 하원수단은 모두 기간입니다.** 「이번주만·다음주만」도 그 주 월~금 기간으로
     // 넣습니다. 그래야 기간 묶음(range_id)이 생기고, 지속 특이사항과 서로 따라 바뀝니다
-    // (마이그레이션 20261121003000 의 트리거). 묶음이 없으면 한쪽만 바뀌고, 두 화면이 다른 말을 합니다.
+    // (마이그레이션 20261122003000 의 트리거). 묶음이 없으면 한쪽만 바뀌고, 두 화면이 다른 말을 합니다.
     const asRange =
       body?.range ??
       (weekStart && ISO.test(weekStart) ? { start: weekStart, end: addDaysIso(weekStart, 4) } : null);

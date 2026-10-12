@@ -12,6 +12,8 @@ import { ridesToday } from "@/lib/ridesToday";
 import { kstWeekdayNum, planLabel, type DismissalKind } from "@/lib/dismissalPlan";
 import { loadDismissalForDay } from "@/lib/dismissalToday";
 import { effectiveRouteId, routeChoiceOf } from "@/lib/shuttleRoute";
+import { StudentIndex, nameKey } from "@/lib/studentKey";
+import { loadHomonyms } from "@/lib/homonyms";
 
 // 사용 가이드도 화면 언어를 따라갑니다. 안내문은 문장이 길어서 한글·영어를 함께 적으면
 // 모달이 두 배로 길어지고, 정작 자기 언어 문장을 찾느라 눈이 왔다 갔다 하게 됩니다.
@@ -143,9 +145,9 @@ export default async function PickupPage() {
   const { data: assignmentsData } = stopIds.length
     ? await supabase
         .from("shuttle_assignments_basic")
-        .select("id, stop_id, student_name_raw, weekdays, override_route_id")
+        .select("id, stop_id, student_id, student_name_raw, weekdays, override_route_id")
         .in("stop_id", stopIds)
-    : { data: [] as { id: string; stop_id: string; student_name_raw: string; weekdays: number[]; override_route_id: string | null }[] };
+    : { data: [] as { id: string; stop_id: string; student_id: string | null; student_name_raw: string; weekdays: number[]; override_route_id: string | null }[] };
 
   // 오늘의 하원수단(학생 기준). 셔틀을 안 타는 날 이 아이가 무엇을 타는지 여기에만 있습니다.
   //
@@ -176,16 +178,11 @@ export default async function PickupPage() {
   // 한 아이가 여기 없으면 그 반에서는 아무도 모릅니다.
   const todayAssignments = ridesToday(assignmentsData ?? [], boardingsData ?? [], todayWeekday);
 
-  // 배정표 이름은 "김연우A"처럼 뒤에 표기가 붙거나 괄호 영문이 섞일 수 있어서, 비교할 때만
-  // 괄호·공백을 떼고 맞춰봅니다.
-  function normalize(name: string) {
-    return name.split("(")[0].replace(/\s+/g, "").trim();
-  }
-  const assignmentByName = new Map<string, (typeof todayAssignments)[number]>();
-  for (const a of todayAssignments) {
-    const key = normalize(a.student_name_raw);
-    if (!assignmentByName.has(key)) assignmentByName.set(key, a);
-  }
+  // 학생 → 오늘 배정.
+  // **학생 번호로 찾습니다**(CLAUDE.md 2-4-6). 예전에는 이름으로 찾아서, 김재이가 셋이면 먼저
+  // 나온 한 명의 배정이 셋 모두의 «오늘 타는 차»로 떴습니다.
+  const assignmentIdx = new StudentIndex<(typeof todayAssignments)[number]>(new Set((await loadHomonyms()).names.map(nameKey)));
+  for (const a of todayAssignments) assignmentIdx.add(a.student_id, a.student_name_raw, a);
 
   const groups: PickupClassGroup[] = myClasses
     .map((c) => {
@@ -193,7 +190,7 @@ export default async function PickupPage() {
         (s) => (s.class_id && s.class_id === c.id) || (`${s.grade ?? ""}|${s.class_name ?? ""}` === `${c.grade ?? ""}|${c.class_name ?? ""}`)
       );
       const items: PickupItem[] = students.map((s) => {
-        const a = assignmentByName.get(normalize(s.name));
+        const a = assignmentIdx.find(s.id, s.name);
         const b = a ? boardingByAssignment.get(a.id) : undefined;
         const baseRouteId = a ? stopRouteById.get(a.stop_id) ?? null : null;
         // 어느 차를 타는가는 @/lib/shuttleRoute 한 곳에서만 판정합니다(CLAUDE.md 2-11).

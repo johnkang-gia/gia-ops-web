@@ -5,7 +5,7 @@ import { applyPickup } from "@/lib/pickupIngest";
 import { logApiError } from "@/lib/logging";
 import { todayKst, kstWeekday } from "@/lib/kst";
 import { assumeAfternoon } from "@/lib/pickupParse";
-import { rangeAppliesOn, weekStartOf } from "@/lib/dismissalWeek";
+import { addDays as addDaysIso, rangeAppliesOn, weekStartOf } from "@/lib/dismissalWeek";
 
 /**
  * **하원수단을 넣고, 오늘 것이면 셔틀 체크표까지 바로 겁니다.**
@@ -65,7 +65,13 @@ export async function POST(req: Request) {
     if (weekdays.length === 0) return NextResponse.json({ error: "요일을 하나 이상 골라주세요." }, { status: 400 });
 
     const weekStart = body?.weekStart ?? null;
-    const range = body?.range && ISO.test(body.range.start ?? "") && ISO.test(body.range.end ?? "") ? { start: body.range.start!, end: body.range.end! } : null;
+    // **날짜가 정해진 하원수단은 모두 기간입니다.** 「이번주만·다음주만」도 그 주 월~금 기간으로
+    // 넣습니다. 그래야 기간 묶음(range_id)이 생기고, 지속 특이사항과 서로 따라 바뀝니다
+    // (마이그레이션 20261121003000 의 트리거). 묶음이 없으면 한쪽만 바뀌고, 두 화면이 다른 말을 합니다.
+    const asRange =
+      body?.range ??
+      (weekStart && ISO.test(weekStart) ? { start: weekStart, end: addDaysIso(weekStart, 4) } : null);
+    const range = asRange && ISO.test(asRange.start ?? "") && ISO.test(asRange.end ?? "") ? { start: asRange.start!, end: asRange.end! } : null;
     if (body?.range && !range) return NextResponse.json({ error: "기간의 시작일과 종료일을 달력에서 골라주세요." }, { status: 400 });
     if (range && range.end < range.start) return NextResponse.json({ error: "종료일이 시작일보다 앞입니다." }, { status: 400 });
     const saved: number[] = [];

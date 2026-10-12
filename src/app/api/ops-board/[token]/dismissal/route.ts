@@ -4,6 +4,8 @@ import { isUndecidedChoice } from "@/lib/shuttleChoice";
 import { createClient } from "@supabase/supabase-js";
 import { kstParts } from "@/lib/shuttleTracking";
 import { effectiveRouteId, routeChoiceOf } from "@/lib/shuttleRoute";
+import { StudentIndex, homonymKeys } from "@/lib/studentKey";
+import { loadStudents } from "@/lib/students";
 
 export const dynamic = "force-dynamic";
 
@@ -132,8 +134,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
   // 하원 체크표에서 오늘 하루만 다른 노선으로 옮긴 학생까지 반영합니다(도착체크 API와 같은 규칙).
   const stopIds = (stops ?? []).map((s) => s.id);
   const { data: assignments } = stopIds.length
-    ? await supabase.from("shuttle_assignments").select("id, stop_id, student_name_raw, weekdays, override_route_id, choice_group").in("stop_id", stopIds)
-    : { data: [] as { id: string; stop_id: string; student_name_raw: string; weekdays: number[]; override_route_id: string | null; choice_group: string | null }[] };
+    ? await supabase.from("shuttle_assignments").select("id, stop_id, student_id, student_name_raw, weekdays, override_route_id, choice_group").in("stop_id", stopIds)
+    : { data: [] as { id: string; stop_id: string; student_id: string | null; student_name_raw: string; weekdays: number[]; override_route_id: string | null; choice_group: string | null }[] };
   // 체크표를 먼저 읽고 명단을 정합니다(ridesToday.ts). 순서가 거꾸로면 오늘만 타는 아이가
   // 이 화면에도 안 나타납니다.
   const allIds = (assignments ?? []).map((a) => a.id);
@@ -150,7 +152,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
   const stopRouteById = new Map((stops ?? []).map((s) => [s.id, s.route_id]));
   const routeIdSet = new Set(routeIds);
 
-  type Rider = { name: string; status: string };
+  type Rider = { name: string; studentId: string | null; status: string };
   const ridersByRoute = new Map<string, Rider[]>();
   for (const a of relevant) {
     const baseRouteId = stopRouteById.get(a.stop_id);
@@ -166,7 +168,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
       ),
     );
     const list = ridersByRoute.get(target) ?? [];
-    list.push({ name: a.student_name_raw, status: b?.status ?? "예정" });
+    list.push({ name: a.student_name_raw, studentId: (a.student_id as string | null) ?? null, status: b?.status ?? "예정" });
     ridersByRoute.set(target, list);
   }
 
@@ -271,14 +273,16 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
   // 그 경우를 따로 표시해 바로 눈에 띄게 합니다.
   const { data: pickupReqs } = await supabase
     .from("pickup_requests")
-    .select("matched_name, ai_pickup_time, resolved_at, source")
+    .select("student_id, matched_name, ai_pickup_time, resolved_at, source")
     .eq("service_date", today)
     .eq("status", "확정");
 
-  const reqByName = new Map<string, { time: string | null; resolvedAt: string | null; source: string }>();
+  // 픽업 연락 ↔ 차 명단의 아이는 **학생 번호로** 짝짓습니다(CLAUDE.md 2-4-6). 이름으로 두면
+  // 김재이 셋 중 한 명의 픽업 시각이 셋 모두에게 붙습니다.
+  const { rows: rosterRows } = await loadStudents(supabase);
+  const reqIdx = new StudentIndex<{ time: string | null; resolvedAt: string | null; source: string }>(homonymKeys(rosterRows));
   for (const p of pickupReqs ?? []) {
-    const name = (p.matched_name as string | null)?.trim();
-    if (name) reqByName.set(name, { time: p.ai_pickup_time, resolvedAt: p.resolved_at, source: p.source });
+    reqIdx.add(p.student_id as string | null, p.matched_name as string | null, { time: p.ai_pickup_time, resolvedAt: p.resolved_at, source: p.source });
   }
 
   const departedAtByRoute = new Map<string, string | null>();
@@ -298,7 +302,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
     const route = (routes ?? []).find((r) => r.id === routeId);
     for (const rider of riders) {
       if (rider.status !== "픽업") continue;
-      const req = reqByName.get(rider.name.trim()) ?? null;
+      const req = reqIdx.find(rider.studentId, rider.name) ?? null;
       const resolvedMs = req?.resolvedAt ? new Date(req.resolvedAt).getTime() : null;
       const departedAt = departedAtByRoute.get(routeId) ?? null;
       pickups.push({

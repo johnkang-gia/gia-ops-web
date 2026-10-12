@@ -227,6 +227,7 @@ export default async function DevDiagnosticsPage() {
   const stopById = new Map((stops ?? []).map((s) => [s.id as string, s]));
   const choiceByName = new Map<string, { label: string | null; hasAddress: boolean }[]>();
   for (const a of choiceRows ?? []) {
+    // name-lookup-ok: 개발자 진단 화면 - 이름별로 묶어 «같은 이름 줄이 몇 개인가»를 보여주는 자리입니다.
     const list = choiceByName.get(a.student_name_raw as string) ?? [];
     const stop = stopById.get(a.stop_id as string);
     list.push({ label: (a.choice_label as string | null) ?? null, hasAddress: !!stop?.address });

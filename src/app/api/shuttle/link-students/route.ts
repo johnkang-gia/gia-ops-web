@@ -142,6 +142,7 @@ export async function GET(req: NextRequest) {
   const byName = new Map<string, Student[]>();
   const add = (k: string, s: Student) => {
     if (!k) return;
+    // name-lookup-ok: 후보 «목록»을 꺼내 생일·반·학년으로 좁히고, 둘 이상 남으면 연결하지 않습니다.
     byName.set(k, [...(byName.get(k) ?? []), s]);
   };
   for (const s of roster) {
@@ -211,6 +212,7 @@ export async function GET(req: NextRequest) {
 
     for (const cand of candidatesRaw) {
       const { name, birth, cls: hintCls, dept: hintDept } = parseHint(cand);
+      // name-lookup-ok: 후보 «목록»을 꺼내 생일·반·학년으로 좁히고, 둘 이상 남으면 연결하지 않습니다.
       let hits = byName.get(norm(name)) ?? [];
 
       // 괄호 힌트로 좁힙니다. 좁혀서 하나도 안 남으면 힌트가 틀린 것이니 원래대로 둡니다

@@ -138,7 +138,12 @@ export default function DismissalBulkClient({
           // 똑같은 기간만 보여서, 다시 들어오면 기본 날짜(오늘~4주)와 안 맞아 넣은 것이 하나도 안
           // 보였습니다. 같은 요일에 기간이 둘이면 먼저 시작하는 것을 세웁니다.
           .filter((p) =>
-            isRange ? !!p.range_id && !!p.range_end && p.range_end >= today : !p.range_id && (p.week_start ?? null) === weekStart,
+            isRange
+              ? !!p.range_id && !!p.range_end && p.range_end >= today
+              : weekStart
+                ? // 「이번주만·다음주만」도 이제 그 주 월~금 기간으로 들어갑니다. 예전 줄(묶음 없음)도 함께.
+                  p.week_start === weekStart && (!p.range_id || (p.range_start === weekStart && p.range_end === addDays(weekStart, 4)))
+                : !p.range_id && !p.week_start,
           )
           .sort((a, b) => (b.range_start ?? "").localeCompare(a.range_start ?? ""))
           .map((p) => [planKey(p.student_id, p.weekday), p]),
@@ -248,8 +253,14 @@ export default function DismissalBulkClient({
       notify("아이와 요일을 고른 뒤 저장해주세요.", "error");
       return;
     }
+    // 날짜가 정해진 것(기간 · 이번주만 · 다음주만)은 모두 기간으로 넣습니다 - 지속 특이사항과
+    // 서로 따라 바뀌려면 기간 묶음이 있어야 합니다.
     if (isRange) {
-      await saveRange();
+      await saveRange(rangeStart, rangeEnd);
+      return;
+    }
+    if (weekStart) {
+      await saveRange(weekStart, addDays(weekStart, 4));
       return;
     }
     setBusy(true);
@@ -310,7 +321,7 @@ export default function DismissalBulkClient({
    * 기간으로 넣기. 주별 줄로 펼쳐 한 트랜잭션에 넣어야 해서 하원수단 창구(`/api/work/dismissal`)를
    * 지납니다 - 오늘이 기간 안이면 셔틀 체크표에도 바로 거는 것까지 하원수단 창과 같습니다.
    */
-  async function saveRange() {
+  async function saveRange(rangeStart: string, rangeEnd: string) {
     if (!rangeStart || !rangeEnd || rangeEnd < rangeStart) {
       notify("기간의 시작일과 종료일을 달력에서 골라주세요.", "error");
       return;

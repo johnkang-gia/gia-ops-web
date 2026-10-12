@@ -152,8 +152,11 @@ export function buildTodayPickupList(
     if (seen.has(key)) continue;
     seen.add(key);
 
-    const stu =
-      (r.studentId ? studentById.get(r.studentId) : undefined) ?? studentByName.get(normPickupName(r.name)) ?? null;
+    // 번호가 있으면 번호로만 찾습니다. 번호로 못 찾은 것은 «다른 아이»이지 이름으로 다시 찾을 대상이 아닙니다.
+    const stu = r.studentId
+      ? (studentById.get(r.studentId) ?? null)
+      : // name-lookup-ok: 위에서 겹치는 이름을 비워 둔(null) 표라 한 명뿐인 이름만 걸립니다.
+        (studentByName.get(normPickupName(r.name)) ?? null);
 
     const cls = stu
       ? (stu.classId ? classById.get(stu.classId) : undefined) ??

@@ -110,6 +110,7 @@ export function reconcile(lines: BillLine[], students: StudentSide[]): Reconcili
   const byName = new Map<string, StudentSide[]>();
   for (const s of students) {
     const k = flat(s.name);
+    // name-lookup-ok: 후보 «목록»을 꺼내 연락처로 좁히고, 못 좁히면 짝짓지 않습니다.
     byName.set(k, [...(byName.get(k) ?? []), s]);
   }
 
@@ -122,6 +123,7 @@ export function reconcile(lines: BillLine[], students: StudentSide[]): Reconcili
       const narrowed = cands.filter((s) => flat(s.name) === flat(l.name));
       if (narrowed.length === 1) return { s: narrowed[0], by: "연락처" };
     }
+    // name-lookup-ok: 후보 «목록»을 꺼내 연락처로 좁히고, 못 좁히면 짝짓지 않습니다.
     const named = byName.get(flat(l.name)) ?? [];
     if (named.length === 1) return { s: named[0], by: "이름" };
     return { s: null, by: null };

@@ -1404,6 +1404,7 @@ function matchRosterStudentsCore(
   const byName = new Map<string, RosterStudent[]>();
   for (const s of roster) {
     if (!s.name) continue;
+    // name-lookup-ok: 후보 «목록»을 꺼내 좁히는 자리이거나(둘 이상이면 누구?로 남김), 같은 이름 수를 세는 자리입니다.
     const arr = byName.get(s.name) ?? [];
     arr.push(s);
     byName.set(s.name, arr);
@@ -1418,6 +1419,7 @@ function matchRosterStudentsCore(
     const idx = remaining.indexOf(name);
     if (idx === -1) continue;
 
+    // name-lookup-ok: 후보 «목록»을 꺼내 좁히는 자리이거나(둘 이상이면 누구?로 남김), 같은 이름 수를 세는 자리입니다.
     const candidates = byName.get(name)!;
     const hasHomonym = candidates.length > 1;
 
@@ -1572,6 +1574,7 @@ function matchRosterStudentsCore(
     if (!s.nameEn) continue;
     const key = normalizeEnName(s.nameEn);
     if (!key) continue;
+    // name-lookup-ok: 후보 «목록»을 꺼내 좁히는 자리이거나(둘 이상이면 누구?로 남김), 같은 이름 수를 세는 자리입니다.
     (byNameEn.get(key) ?? byNameEn.set(key, []).get(key)!).push(s);
     const first = key.split(" ")[0];
     if (first && first.length >= 2) (byFirstEn.get(first) ?? byFirstEn.set(first, []).get(first)!).push(s);
@@ -1590,6 +1593,7 @@ function matchRosterStudentsCore(
       const key = normalizeEnName(candidate);
       if (!key) continue;
       // 전체 이름 우선, 없으면 first-name으로.
+      // name-lookup-ok: 후보 «목록»을 꺼내 좁히는 자리이거나(둘 이상이면 누구?로 남김), 같은 이름 수를 세는 자리입니다.
       let list = byNameEn.get(key) ?? byFirstEn.get(key) ?? [];
       if (list.length === 0) continue;
 
@@ -1638,6 +1642,7 @@ function matchRosterStudentsCore(
         // 명부에 같은 한글 이름이 여럿이면 반을 함께 적습니다 - "김재이(Jay Kim · G3JA)".
         // 좁혀서 한 명으로 확정했더라도 마찬가지입니다. 확정했다는 사실은 우리만 알고,
         // 화면을 보는 사람은 "김재이 셋 중 누구지?"를 여전히 물어야 하니까요.
+        // name-lookup-ok: 후보 «목록»을 꺼내 좁히는 자리이거나(둘 이상이면 누구?로 남김), 같은 이름 수를 세는 자리입니다.
         displayName: (byName.get(picked.name)?.length ?? 1) > 1 && picked.className
           ? `${picked.name}(${picked.nameEn} · ${picked.className})`
           : `${picked.name}(${picked.nameEn})`,

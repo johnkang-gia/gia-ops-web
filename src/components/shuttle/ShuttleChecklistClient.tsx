@@ -16,7 +16,8 @@ import RideAlongPanel, { type RideAlongRow } from "./RideAlongPanel";
 import ShuttleChecklistSidebar, { type ChangedRouteEntry } from "./ShuttleChecklistSidebar";
 import type { GoogleChatMirrorMessage } from "@/lib/types";
 import type { RosterStudent } from "@/lib/attendanceDigest";
-import { Who } from "@/components/common/HomonymProvider";
+import { Who, useHomonyms } from "@/components/common/HomonymProvider";
+import { nameKey } from "@/lib/studentKey";
 
 // 실시간 반영을 postgres_changes로 하더라도, 네트워크가 잠깐 끊기는 등의 이유로 이벤트를
 // 놓칠 수 있어(요청: "하원체크표에 표시하면 실시간으로 반영되도록") 안전망으로 느슨한 폴링을
@@ -448,6 +449,8 @@ export default function ShuttleChecklistClient({
   // 오늘 타는 셔틀은 선명, 안 타는 날은 옅게 전부 보이게). notes를 지우면 자동으로 원래대로
   // 돌아오도록, 파괴적 수정 없이 여기서 계산만 합니다.
   const normName = (s: string) => (s ?? "").replace(/\s+/g, "").trim();
+  const homonymNames = useHomonyms().names;
+  const homonymKeySet = useMemo(() => new Set(homonymNames.map(nameKey)), [homonymNames]);
   const displayItems: ChecklistItem[] = useMemo(() => {
     // 요일별로 다른 노선(homeRouteId)에 배정된 같은 학생을 찾아 색을 배정합니다.
     const routesByKey = new Map<string, Set<string>>();
@@ -469,11 +472,15 @@ export default function ShuttleChecklistClient({
     const today = todayStr();
     // 요일도 한국 기준으로 셉니다.
     const todayW = new Date(`${today}T12:00:00+09:00`).getDay();
+    // 특이사항 ↔ 표의 아이는 **학생 번호로** 짝짓습니다(CLAUDE.md 2-4-6). 예전에는 한쪽에만 번호가
+    // 있으면 이름으로 넘어가서, 번호 없는 「김재이 픽업」 한 줄이 김재이 셋 모두에게 걸렸습니다.
+    // 이름 길은 명부에 한 명뿐인 이름이거나, 호차(route_no)가 적혀 있어 그 차의 아이로 좁혀질 때만.
     const matches = (note: PersistentNote, it: ChecklistItem) => {
       if (note.studentId && it.studentId) {
         if (note.studentId !== it.studentId) return false;
-      } else if (normName(note.studentName) !== normName(it.studentName)) {
-        return false;
+      } else {
+        if (normName(note.studentName) !== normName(it.studentName)) return false;
+        if (homonymKeySet.has(nameKey(note.studentName)) && !note.routeNo) return false;
       }
       if (note.routeNo) return routeNoOf(it.homeRouteId).replace(/\s+/g, "") === note.routeNo.replace(/[호\s]/g, "");
       return true;
@@ -541,7 +548,7 @@ export default function ShuttleChecklistClient({
         groupColor: colorByKey.get(key) ?? null,
       };
     });
-  }, [items, notes, routeById]);
+  }, [items, notes, routeById, homonymKeySet]);
 
   // 오늘 실제로 자리에 남는 인원(픽업·결석은 셔틀을 안 타므로 뺍니다) - 요청: "탑승예정인원이
   // 나타나도록".

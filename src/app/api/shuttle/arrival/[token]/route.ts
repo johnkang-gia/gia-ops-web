@@ -162,11 +162,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   for (const a of relevant) {
     const key = a.student_name_raw;
     const who = (a.student_id as string | null) ?? `raw:${key}`;
+    // name-lookup-ok: 같은 이름이 몇 명인지 세어 뱃지를 붙일지 정하는 자리입니다. 학생을 고르지 않습니다.
     (peopleByName.get(key) ?? peopleByName.set(key, new Set()).get(key)!).add(who);
   }
   /** 같은 이름이 두 사람 이상일 때만 학년·반을 덧붙입니다. 한 명뿐인 이름까지 붙이면 화면이 글자로 찹니다. */
   const displayName = (a: { student_name_raw: string; student_id?: string | null }) => {
     const raw = a.student_name_raw;
+    // name-lookup-ok: 같은 이름이 몇 명인지 세어 뱃지를 붙일지 정하는 자리입니다. 학생을 고르지 않습니다.
     if ((peopleByName.get(raw)?.size ?? 1) < 2) return raw;
     const s = a.student_id ? stuById.get(a.student_id) : null;
     const where = [s?.grade ? (s.class_name ? `${s.grade}` : `${s.grade}학년`) : null, s?.class_name].filter(Boolean).join(" ");

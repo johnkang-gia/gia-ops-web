@@ -4,6 +4,7 @@ import { isUndecidedChoice } from "@/lib/shuttleChoice";
 import { WEEKDAY_NAMES } from "@/lib/dismissalPlan";
 import { loadDismissalForDay, type DismissalRow } from "@/lib/dismissalToday";
 import { loadHomonyms } from "@/lib/homonyms";
+import { StudentIndex, nameKey } from "@/lib/studentKey";
 import type { ChecklistLogRow } from "@/lib/checklistLog";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
@@ -83,12 +84,11 @@ export default async function ShuttleChecklistPage({
   // 요청: "이제 토들도 가져오니까 하원체크표에 오늘픽업 결석에 여기도 반영" - 토들·전화·구글챗으로
   // 들어온 오늘 픽업/결석(pickup_requests)을 명단에 자동으로 얹습니다. 사람이 직접 누른 값이
   // 있으면 그걸 존중하고, 없을 때만 자동으로 채웁니다.
-  const norm = (s: string) => (s ?? "").replace(/\s+/g, "").trim();
-  const nameMatch = (a: string, b: string) => {
-    const x = norm(a), y = norm(b);
-    if (x.length < 2 || y.length < 2) return false;
-    return x === y || x.includes(y) || y.includes(x);
-  };
+  //
+  // **어느 줄에 얹을지는 학생 번호로 정합니다**(`StudentIndex`, CLAUDE.md 2-4-6). 예전에는 이름이
+  // 일부만 겹쳐도 얹었는데, 김재이 셋 중 한 명의 픽업 연락이 셋 모두를 픽업으로 만들었습니다.
+  // 겹치는 이름은 이름으로 아무것도 찾지 않습니다.
+  const homonymNames = new Set((await loadHomonyms()).names.map(nameKey));
   // ── 여기서부터는 서로 기다릴 이유가 없습니다 ──────────────────────────────
   //
   // 예전에는 여덟 개를 **한 줄씩 차례로** 기다렸습니다. 하나가 100ms 면 여덟 개는 800ms 이고,
@@ -224,11 +224,10 @@ export default async function ShuttleChecklistPage({
   //
   // 지금까지는 이름만 넘겨서, 표에 사선이 그어진 이유를 확인하려면 인박스로 넘어가
   // 그 아이를 다시 찾아야 했습니다. 근거가 결과 옆에 없으면 사람은 결과를 못 믿습니다.
-  const pickupNames: string[] = [];
-  const absentNames: string[] = [];
-  const autoSourceByName = new Map<string, AutoSource>();
-  /** 같은 연락을 학생 번호로도 찾습니다. 번호가 먼저이고 이름은 옛 줄을 위한 길입니다. */
-  const autoSourceById = new Map<string, AutoSource>();
+  /** 같은 아이에게 여러 연락이 왔으면 가장 최근 것을 씁니다. */
+  const newer = (old: AutoSource, next: AutoSource) => next.receivedAt > old.receivedAt;
+  const pickupIdx = new StudentIndex<AutoSource>(homonymNames, newer);
+  const absentIdx = new StudentIndex<AutoSource>(homonymNames, newer);
   for (const r of preqRows ?? []) {
     const name = ((r.matched_name as string | null) ?? (r.ai_student_name as string | null) ?? "").trim();
     if (!name) continue;
@@ -237,12 +236,7 @@ export default async function ShuttleChecklistPage({
     const isPickup = r.kind === "픽업" || cat === "픽업";
     const isAbsent = !isPickup && cat === "결석";
     if (!isPickup && !isAbsent) continue;
-    if (isPickup) pickupNames.push(name);
-    else absentNames.push(name);
-    // 같은 아이에게 여러 연락이 왔으면 가장 최근 것을 씁니다.
-    const prev = autoSourceByName.get(norm(name));
     const at = (r.received_at as string | null) ?? "";
-    if (prev && prev.receivedAt >= at) continue;
     const src: AutoSource = {
       requestId: r.id as string,
       kind: isPickup ? "픽업" : "결석",
@@ -260,10 +254,7 @@ export default async function ShuttleChecklistPage({
       decidedBy: null,
       note: null,
     };
-    autoSourceByName.set(norm(name), src);
-    // **번호로도 찾을 수 있게 둡니다.** 이름으로만 두면 김재이 셋이 한 칸을 나눠 쓰고,
-    // 마지막에 넣은 한 명의 연락이 셋 모두의 근거로 붙습니다(CLAUDE.md 2-4).
-    if (r.student_id) autoSourceById.set(r.student_id as string, src);
+    (isPickup ? pickupIdx : absentIdx).add(r.student_id as string | null, name, src);
   }
 
   // 오늘 결석으로 등록된 아이. 학생 연결(student_id)이 있으면 그것으로, 없으면 이름으로 붙입니다.
@@ -323,16 +314,11 @@ export default async function ShuttleChecklistPage({
   const absentRows = allEntryRows.filter((r) => (r.status ?? "결석") === "결석");
   for (const r of allEntryRows) {
     if ((r.status ?? "") !== "픽업") continue;
-    if (r.student_name) pickupNames.push(r.student_name);
-    const key = norm(r.student_name);
-    if (!autoSourceByName.has(key)) autoSourceByName.set(key, entrySourceOf(r, "픽업"));
+    // 인박스 연락이 이미 있으면 그쪽 원문이 근거입니다.
+    if (!pickupIdx.find(r.student_id, r.student_name)) pickupIdx.add(r.student_id, r.student_name, entrySourceOf(r, "픽업"));
   }
-  const absentById = new Map<string, AbsentRow>();
-  const absentByName = new Map<string, AbsentRow>();
-  for (const r of absentRows) {
-    if (r.student_id) absentById.set(r.student_id, r);
-    if (r.student_name) absentByName.set(norm(r.student_name), r);
-  }
+  const absentEntryIdx = new StudentIndex<AbsentRow>(homonymNames);
+  for (const r of absentRows) absentEntryIdx.add(r.student_id, r.student_name, r);
   const absentSourceOf = (r: AbsentRow): AutoSource => entrySourceOf(r, "결석");
 
   // 토들 주소는 "학교 주소 + /messaging/ + 방 id" 형태입니다. 주소 칸이 비어 있는 줄이
@@ -379,18 +365,14 @@ export default async function ShuttleChecklistPage({
   // 예전에는 번호로 못 찾으면 무조건 이름으로 찾았는데, 김재이(G3JA)의 월요일 하원수단
   // 「14:20 픽업」이 번호가 다른 김재이(G2A)·김재이(G2C) 줄에도 붙었습니다. 그 둘은 그날
   // 셔틀을 타는 아이라, 표에 픽업 표시가 남았다면 차를 못 탔습니다.
-  const homonymNames = new Set((await loadHomonyms()).names);
-  const planByName = new Map<string, (typeof plans)[number]>();
+  const planIdx = new StudentIndex<(typeof plans)[number]>(homonymNames);
   if (plans.length > 0) {
     const { data: planStudents } = await supabase
       .from("wr_students_basic")
       .select("id, name")
       .in("id", plans.map((p) => p.student_id));
     const nameById = new Map(((planStudents as { id: string; name: string }[] | null) ?? []).map((r) => [r.id, r.name]));
-    for (const p of plans) {
-      const nm = nameById.get(p.student_id);
-      if (nm && !homonymNames.has(norm(nm))) planByName.set(norm(nm), p);
-    }
+    for (const p of plans) planIdx.add(p.student_id, nameById.get(p.student_id), p);
   }
   const planLabelOf = (p: DismissalRow) =>
     [p.depart_time, p.label].filter(Boolean).join(" ") || p.kind;
@@ -443,10 +425,8 @@ export default async function ShuttleChecklistPage({
         //
         // 확인해야 하는 것은 「누가 찍었나」가 아니라 **「AI가 무엇을 읽고 그렇게 판단했나」**
         // 입니다. 원문이 없으면 맞게 읽었는지 가릴 수가 없습니다.
-        const linked =
-          (a.student_id ? autoSourceById.get(a.student_id) : undefined) ??
-          autoSourceByName.get(norm(a.student_name_raw)) ??
-          null;
+        const [same, other] = boarding.status === "픽업" ? [pickupIdx, absentIdx] : [absentIdx, pickupIdx];
+        const linked = same.find(a.student_id, a.student_name_raw) ?? other.find(a.student_id, a.student_name_raw) ?? null;
 
         autoSource = linked
           ? {
@@ -481,20 +461,18 @@ export default async function ShuttleChecklistPage({
       }
 
       if (ridingToday && !boarding) {
-        const hit = (list: string[]) => list.find((n) => nameMatch(n, a.student_name_raw));
-        const p = hit(pickupNames);
-        const b = p ? null : hit(absentNames);
+        const p = pickupIdx.find(a.student_id, a.student_name_raw);
+        const b = p ? undefined : absentIdx.find(a.student_id, a.student_name_raw);
         if (p) {
           status = "픽업";
-          autoSource = autoSourceByName.get(norm(p)) ?? null;
+          autoSource = p;
         } else if (b) {
           status = "결석";
-          autoSource = autoSourceByName.get(norm(b)) ?? null;
+          autoSource = b;
         } else {
           // 출석부에 등록된 결석. 픽업 인박스에 줄이 없어도 여기서 붙습니다 -
           // 구글챗으로 온 결석은 픽업 인박스를 거치지 않습니다.
-          const ab =
-            (a.student_id ? absentById.get(a.student_id) : undefined) ?? absentByName.get(norm(a.student_name_raw));
+          const ab = absentEntryIdx.find(a.student_id, a.student_name_raw);
           if (ab) {
             status = "결석";
             autoSource = absentSourceOf(ab);
@@ -505,7 +483,7 @@ export default async function ShuttleChecklistPage({
       // 하원수단이 셔틀이 아닌 날. 사람이 아직 아무것도 안 눌렀을 때만 자동으로 붙입니다 -
       // 사람이 "오늘은 그래도 탄다"고 눌렀으면 그 판단이 이깁니다.
       // 번호가 있는 줄은 번호로만 찾습니다. 번호로 못 찾았다는 것은 「그 아이의 하원수단이 없다」입니다.
-      const plan = a.student_id ? planByStudentId.get(a.student_id) : planByName.get(norm(a.student_name_raw));
+      const plan = planIdx.find(a.student_id, a.student_name_raw);
       if (plan && ridingToday && !boarding) {
         status = "픽업";
         autoSource = {

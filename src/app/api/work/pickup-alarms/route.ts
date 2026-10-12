@@ -6,6 +6,7 @@ import { kstParts } from "@/lib/shuttleTracking";
 import { loadDismissalForDay } from "@/lib/dismissalToday";
 import { isNoteKind, KIND_LOOK } from "@/lib/studentDayNotes";
 import { loadStudents } from "@/lib/students";
+import { StudentIndex, homonymKeys } from "@/lib/studentKey";
 
 /**
  * 오늘 「시각이 정해진 하원」과 그 아이가 지금 있는 자리.
@@ -41,11 +42,9 @@ export async function GET() {
 
   const { rows: students } = await loadStudents(supabase);
   const byId = new Map(students.map((s) => [s.id, s]));
-  // 이름으로 찾는 길은 한 명뿐인 이름에만 둡니다. 김재이가 셋이라 Map 에 그냥 넣으면 마지막에
-  // 넣은 한 명의 반·하원수단 시각이 셋 모두에게 붙습니다(CLAUDE.md 2-4).
-  const nameCount = new Map<string, number>();
-  for (const s of students) nameCount.set(s.name ?? "", (nameCount.get(s.name ?? "") ?? 0) + 1);
-  const byName = new Map(students.filter((s) => nameCount.get(s.name ?? "") === 1).map((s) => [s.name ?? "", s]));
+  // 연락 → 학생은 번호로, 번호가 없으면 명부에 한 명뿐인 이름일 때만(CLAUDE.md 2-4-6).
+  const studentIdx = new StudentIndex<(typeof students)[number]>(homonymKeys(students));
+  for (const s of students) studentIdx.add(s.id as string, s.name as string | null, s);
 
   const pickups = await loadTodayPickups(supabase, today, (id: string) => (byId.get(id)?.name as string) ?? null);
 
@@ -107,7 +106,7 @@ export async function GET() {
   }
 
   for (const p of pickups) {
-    const st = (p.studentId ? byId.get(p.studentId) : byName.get(p.name)) ?? null;
+    const st = studentIdx.find(p.studentId, p.name) ?? null;
     const plan = st ? planByStudent.get(st.id as string) : undefined;
     // 학부모 연락에 시각이 없으면 평소 하원수단의 출발 시각을 씁니다. 시각을 모르면
     // 알릴 때도 모릅니다 - 그런 건은 알람 목록에서 빠지고 화면 목록에만 남습니다.

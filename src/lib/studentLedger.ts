@@ -169,6 +169,7 @@ function tuitionBilledOf(
     for (const n of scope.split(" · ")) {
       const key = n.trim();
       // 같은 항목이 여러 장이면 덜 걷힌 쪽이 사실입니다(학비 표와 같음).
+      // name-lookup-ok: 학생이 아니라 납부 항목 이름입니다.
       const cur = byName.get(key);
       if (!cur) byName.set(key, v);
       else {
@@ -238,6 +239,7 @@ export function buildLedger(world: LedgerWorld, student: LedgerStudent): Ledger 
       ? mb.covered
         ? (myInvoices.find((v) => v.id === mb.invoice?.id) ?? null)
         : null
+      // name-lookup-ok: 학생이 아니라 납부 항목 이름입니다.
       : tb.all ?? tb.byName.get(plan.name) ?? null;
     const bits: string[] = [];
     const an = addonNote(addon);

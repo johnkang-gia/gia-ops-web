@@ -130,9 +130,11 @@ export function whereOf(maps: WhereMaps | null | undefined, studentId: string | 
   const { name: bare, mark } = splitNameMark(name);
   const k = normName(bare);
   if (mark) {
+    // name-lookup-ok: buildWhereMaps 가 한 명뿐인 이름만 담아 둔 표입니다(CLAUDE.md 2-4).
     const hit = maps.byNameClass.get(`${k}|${normClass(mark)}`);
     if (hit) return hit;
   }
+  // name-lookup-ok: buildWhereMaps 가 한 명뿐인 이름만 담아 둔 표입니다(CLAUDE.md 2-4).
   return maps.byName.get(k) ?? null;
 }
 

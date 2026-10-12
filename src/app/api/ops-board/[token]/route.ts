@@ -346,7 +346,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     })
     .map((p) => {
       // 번호가 있으면 번호로, 없으면 한 명뿐인 이름일 때만.
-      const c = (p.studentId ? whereById.get(p.studentId) : null) ?? classByName.get(p.name) ?? null;
+      const c = p.studentId
+        ? (whereById.get(p.studentId) ?? null)
+        : // name-lookup-ok: 겹치는 이름은 위에서 null 로 비워 둔 표에서 걸러낸 것이라 한 명뿐인 이름만 남습니다.
+          (classByName.get(p.name) ?? null);
       return {
         name: p.name,
         time: p.time,

@@ -8,6 +8,8 @@ import { categorize } from "@/lib/attendanceDigest";
 import type { ShuttleAssignment } from "@/lib/types";
 import ShuttleOverviewClient, { type RouteStat, type OverviewKpi } from "@/components/shuttle/ShuttleOverviewClient";
 import { normName, splitNameMark } from "@/lib/studentLabel";
+import { nameKey } from "@/lib/studentKey";
+import { loadHomonyms } from "@/lib/homonyms";
 
 export const dynamic = "force-dynamic";
 
@@ -73,10 +75,13 @@ export default async function ShuttleOverviewPage() {
   //
   // 이제 괄호로 적혀 온 반만 떼고(「김재이(G2A)」) **정확히 같을 때만** 같은 사람입니다.
   // 아래에서 학생 번호로 먼저 맞대므로, 이 길은 번호가 없는 옛 줄에만 씁니다.
+  // 그리고 **명부에 두 명 이상인 이름은 이름으로 맞대지 않습니다**(CLAUDE.md 2-4-6) - 번호 없는
+  // 「김재이」 픽업 한 건이 김재이 셋을 모두 픽업으로 세었습니다.
+  const homonymSet = new Set((await loadHomonyms()).names.map(nameKey));
   const nameMatch = (a: string, b: string) => {
     const x = normName(splitNameMark(a ?? "").name);
     const y = normName(splitNameMark(b ?? "").name);
-    return x.length >= 2 && x === y;
+    return x.length >= 2 && x === y && !homonymSet.has(nameKey(splitNameMark(b ?? "").name));
   };
 
   // 정류장 → 배정 → 오늘 탑승자(요일 포함). 위에서 통째로 받은 것을 하원 노선으로 거릅니다.

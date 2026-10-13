@@ -113,27 +113,25 @@ export function tuitionLine(
   const calculated = Math.max(0, won(subtotal) - off);
 
   /**
-   * **직접 기입이 있으면 그것이 청구액입니다.**
+   * **직접 기입이 있으면 그 금액이 통째로 청구액입니다.**
    *
-   * 옵션과 할인은 그대로 두고 **마지막 줄만** 덮습니다. 옵션까지 지우면 「몇 회로 나눠
-   * 내는가」를 잃어버리고, 원래 얼마였는지도 화면에서 사라집니다 - 그러면 몇 달 뒤에
-   * 「이 아이는 왜 이 금액이죠」에 답할 수 없습니다.
+   * 할인을 걸거나 원래 금액에서 더하고 빼는 모양으로 적지 않습니다. 직접 기입은 상담으로 정한
+   * 금액이라, 청구서에 「325,000 + 조정 112,500」처럼 찍히면 학부모에게 «원래 금액에 무언가가
+   * 붙었다»로 읽힙니다. 그래서 할인 줄은 비우고(`discounts: []`) 금액 한 줄로 냅니다.
    *
-   * 깎인 만큼을 한 줄로 적어 보여줍니다. 붙여둔 할인 위에 또 깎는 것이 아니라, **정해진
-   * 금액에 맞추는** 것입니다.
+   * 원래 계산값은 버리지 않습니다 - `base`·`optionDiscount` 는 그대로 두어, 화면이 「원래
+   * 얼마였나」를 옆에 작게 보여줄 수 있습니다. 청구서에는 나가지 않습니다(invoiceRowsForLine).
    */
   if (manual) {
     const amount = won(Math.max(0, Number(override!.amount)));
-    const gap = calculated - amount;
-    if (gap > 0) applied.push({ name: override?.note?.trim() ? `직접 기입 (${override.note!.trim()})` : "직접 기입", amount: gap });
     return {
       label: `${plan.name} · ${option.name}`,
       planName: plan.name,
       optionName: option.name,
       base: won(base),
       optionDiscount: won(optionDiscount),
-      subtotal: won(subtotal),
-      discounts: applied,
+      subtotal: amount,
+      discounts: [],
       amount,
       manual: true,
       note: override?.note ?? null,
@@ -276,17 +274,17 @@ export function planTargets(
 /**
  * **청구서에 찍을 줄들 — 더하면 언제나 `line.amount` 입니다.**
  *
- * 청구서는 「원래 금액 한 줄 + 할인마다 한 줄」로 찍습니다(학부모가 원래 얼마에서 얼마가
- * 깎였는지 읽을 수 있게). 그런데 직접 기입이 **계산값보다 큰** 경우를 그 모양이 담지
- * 못했습니다. 깎인 만큼은 할인 줄로 적었지만 늘어난 만큼은 적을 자리가 없어서, 최서연의
- * 방과후 3일반이 직접 기입 437,500원인데 청구서에는 원래 금액 325,000원으로 나갔습니다.
- * 데이터베이스는 청구서 합계를 줄의 합으로 다시 세므로(§2-12), 합계도 함께 줄었습니다.
+ * 계산한 금액은 「원래 금액 한 줄 + 할인마다 한 줄」로 찍습니다(학부모가 원래 얼마에서 얼마가
+ * 깎였는지 읽을 수 있게). **직접 기입은 금액 한 줄**입니다 - 상담으로 정한 금액을 원래 금액에
+ * 더하거나 빼는 모양으로 찍으면 다른 금액처럼 읽힙니다.
  *
- * 그래서 차이가 어느 쪽이든 **조정 한 줄**로 맞춥니다. 화면에 뜬 금액과 청구서가 다를 수
- * 있는 길을 이 함수 하나에서 닫습니다 - 발행 창구는 이 결과를 그대로 넣고, 넣기 전에
- * 합을 한 번 더 확인합니다.
+ * 예전에는 직접 기입도 원래 금액 줄 아래에 차이를 적었는데, 계산값보다 **큰** 경우를 적을 자리가
+ * 없어 최서연의 방과후 3일반(직접 기입 437,500원)이 325,000원으로 나갔습니다. 발행 창구는 이
+ * 결과를 그대로 넣고, 넣기 전에 합을 한 번 더 확인합니다.
  */
 export function invoiceRowsForLine(line: TuitionLine): { name: string; amount: number }[] {
+  // 직접 기입은 금액 한 줄로 통째로 찍습니다(위 tuitionLine 의 설명).
+  if (line.manual) return [{ name: line.label, amount: line.amount }];
   const rows: { name: string; amount: number }[] = [{ name: line.label, amount: line.subtotal }];
   for (const d of line.discounts) rows.push({ name: `　└ ${d.name}`, amount: -d.amount });
   const sum = rows.reduce((n, r) => n + r.amount, 0);

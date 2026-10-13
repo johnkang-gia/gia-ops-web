@@ -245,7 +245,7 @@ export function buildLedger(world: LedgerWorld, student: LedgerStudent): Ledger 
     const an = addonNote(addon);
     if (an && e) bits.push(an);
     if (line) {
-      if (line.optionDiscount > 0) bits.push(`${line.optionName} −${Math.round(line.optionDiscount).toLocaleString()}`);
+      if (!line.manual && line.optionDiscount > 0) bits.push(`${line.optionName} −${Math.round(line.optionDiscount).toLocaleString()}`);
       for (const d of line.discounts) bits.push(`${d.name} −${Math.round(d.amount).toLocaleString()}`);
       if (line.manual) bits.push(`직접 정한 금액${line.note ? ` · ${line.note}` : ""}`);
     }

@@ -396,7 +396,9 @@ export default function TuitionGridClient({
       const line = lineFor(studentId, p);
       if (!line) continue;
       const bits: string[] = [];
-      if (line.optionDiscount > 0) bits.push(`${line.optionName} −${won(line.optionDiscount)}`);
+      // 직접 기입은 옵션 할인·학생 할인이 붙지 않은 «정한 금액»입니다. 할인을 비고에 적으면
+      // 청구서에 없는 할인을 학부모에게 설명하게 됩니다.
+      if (!line.manual && line.optionDiscount > 0) bits.push(`${line.optionName} −${won(line.optionDiscount)}`);
       for (const d of line.discounts) bits.push(`${d.name} −${won(d.amount)}`);
       // **사람이 정한 금액은 깎인 액수가 0이어도 적습니다.** 원래 금액과 같아도 「이건
       // 계산이 아니라 사람이 정한 것」이라는 사실이 요금 인상 때 이 칸이 안 따라오는
@@ -1959,11 +1961,20 @@ function CellEditor({
         <div className="mt-2 rounded-lg bg-slate-50 p-1.5 text-[10px] text-slate-600">
           {line ? (
             <>
-              <div className="flex justify-between">
-                <span>기준 {line.optionName}</span>
-                <span className="tabular-nums">{won(line.base)}</span>
-              </div>
-              {line.optionDiscount > 0 && (
+              {/* 직접 기입이면 원래 금액·할인을 보이지 않습니다. 정한 금액 하나가 전부이고, 원래
+                  금액에서 계산한 모양으로 보이면 다른 금액처럼 읽힙니다. */}
+              {line.manual ? (
+                <div className="flex justify-between text-amber-700">
+                  <span>직접 기입</span>
+                  <span className="tabular-nums">{won(line.amount)}</span>
+                </div>
+              ) : (
+                <div className="flex justify-between">
+                  <span>기준 {line.optionName}</span>
+                  <span className="tabular-nums">{won(line.base)}</span>
+                </div>
+              )}
+              {!line.manual && line.optionDiscount > 0 && (
                 <div className="flex justify-between text-teal-700">
                   <span>옵션 할인</span>
                   <span className="tabular-nums">−{won(line.optionDiscount)}</span>

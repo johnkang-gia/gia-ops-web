@@ -25,13 +25,19 @@ export const PARTNER_LABEL: Record<PartnerMode, string> = {
   separate: "함께 · 따로 한 장",
 };
 
-const KEY = "gia.finance.partnerMode";
+/**
+ * **기본은 「한 장으로」입니다.** 예전 기본값은 「이 갈래만」이었는데, 고르는 칸이 작아서
+ * 함께 낼 수 있다는 것을 모르고 학비 화면에서 내고 → 학비외 화면에서 또 내는 일이 반복됐습니다.
+ * 학부모 한 분께 같은 달 두 장을 보내는 것보다 한 장이 흔한 경우라서 기본으로 둡니다.
+ * 저장 열쇠를 바꾼 것은 예전 기본값(「이 갈래만」)이 저장돼 남아 있으면 새 기본이 안 먹기 때문입니다.
+ */
+const KEY = "gia.finance.partnerMode.v2";
 export function loadPartnerMode(): PartnerMode {
   try {
     const v = localStorage.getItem(KEY);
-    return v === "merge" || v === "separate" ? v : "off";
+    return v === "off" || v === "separate" ? v : "merge";
   } catch {
-    return "off";
+    return "merge";
   }
 }
 export function savePartnerMode(m: PartnerMode) {

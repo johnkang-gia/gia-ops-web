@@ -770,7 +770,7 @@ export default function TuitionGridClient({
    * **학비외도 이 화면에서 함께 발행.** 학생마다 학비 일괄과 학비외 일괄을 오가지 않게 합니다.
    * 고른 것은 기억합니다(학비외 일괄 화면과 같은 값) - 매번 다시 고르면 빠뜨립니다.
    */
-  const [partnerMode, setPartnerModeState] = useState<PartnerMode>("off");
+  const [partnerMode, setPartnerModeState] = useState<PartnerMode>("merge");
   useEffect(() => setPartnerModeState(loadPartnerMode()), []);
   const setPartnerMode = (m: PartnerMode) => {
     setPartnerModeState(m);
@@ -847,6 +847,7 @@ export default function TuitionGridClient({
     const made: Invoice[] = [];
     const failed: string[] = [];
     let madeExtra = 0;
+    let mergedExtra = 0;
     try {
       for (const s of targets) {
         // 고른 항목이 없으면(「학비 전체」) **아직 안 보낸 항목만** 담습니다. 한 장도 안 나간
@@ -873,6 +874,7 @@ export default function TuitionGridClient({
           continue;
         }
         const merge = partner === "merge" && extras.length > 0;
+        if (merge) mergedExtra += extras.length;
         const res = await fetch("/api/finance/invoices/tuition", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -906,7 +908,11 @@ export default function TuitionGridClient({
         else failed.push(`${s.name}(${body.error ?? res.statusText})`);
       }
       if (made.length > 0) setInvoices((p) => [...made, ...p]);
-      const extraNote = madeExtra > 0 ? ` · 학비외 ${madeExtra}장 따로` : "";
+      // 학비외를 함께 담았는지 말해줍니다 - 안 말하면 학비외 화면에 가서 또 냅니다.
+      const extraNote =
+        (mergedExtra > 0 ? ` · 학비외 ${mergedExtra}개 항목을 같은 장에 담음` : "") +
+        (madeExtra > 0 ? ` · 학비외 ${madeExtra}장 따로` : "") +
+        (partner !== "off" && mergedExtra === 0 && madeExtra === 0 ? " · 함께 낼 학비외 없음" : "");
       if (failed.length > 0) notify(`${made.length}건 발행${extraNote} · ${failed.length}건 실패: ${failed.join(", ")}`, "error");
       else notify(`${made.length}건 발행했습니다${extraNote}.`, "success");
       setChecked(new Set());
@@ -1029,20 +1035,24 @@ export default function TuitionGridClient({
               className="rounded-lg border border-slate-300 px-2 py-1 text-[11px]"
             />
           </label>
-          <label className="flex items-center gap-1 text-[11px] font-semibold text-slate-600" title="학비외의 아직 안 나간 항목도 이 화면에서 함께 발행합니다">
-            학비외
-            <select
-              value={partnerMode}
-              onChange={(e) => setPartnerMode(e.target.value as PartnerMode)}
-              className={"rounded-lg border px-1.5 py-1 text-[11px] " + (partnerMode === "off" ? "border-slate-300" : "border-orange-400 bg-orange-50 font-bold text-orange-800")}
-            >
-              {(["off", "merge", "separate"] as PartnerMode[]).map((m) => (
-                <option key={m} value={m}>
-                  {m === "off" ? "함께 안 냄" : PARTNER_LABEL[m]}
-                </option>
-              ))}
-            </select>
-          </label>
+          {/* **학비외도 함께.** 학생마다 학비외 일괄 화면으로 넘어가 또 발행하지 않게, 이 화면에서 정합니다.
+              작은 드롭다운이던 때는 있는 줄 몰라 두 화면을 오갔습니다 - 학비외 화면과 같은 모양으로 둡니다. */}
+          <span className="flex flex-wrap items-center gap-1 rounded-lg bg-orange-50 px-1.5 py-1 ring-1 ring-orange-200" title="학비외의 아직 안 나간 항목(교재·교복 등)을 이 화면에서 함께 발행합니다">
+            <span className="text-[11px] font-bold text-orange-800">학비외</span>
+            {(["merge", "separate", "off"] as PartnerMode[]).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setPartnerMode(m)}
+                className={
+                  "rounded-full px-2 py-0.5 text-[11px] font-bold transition-colors " +
+                  (partnerMode === m ? "bg-orange-600 text-white" : "bg-white text-slate-500 ring-1 ring-slate-200 hover:text-slate-800")
+                }
+              >
+                {m === "off" ? "학비만" : m === "merge" ? "함께 · 한 장으로" : "함께 · 따로 한 장"}
+              </button>
+            ))}
+          </span>
           <button
             onClick={() => void issueChecked([])}
             disabled={busy || checked.size === 0}

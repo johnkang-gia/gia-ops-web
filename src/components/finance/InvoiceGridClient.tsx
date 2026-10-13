@@ -330,7 +330,7 @@ export default function InvoiceGridClient({
    * **학비도 이 화면에서 함께 발행.** 학생마다 학비 일괄과 학비외 일괄을 오가지 않게 합니다.
    * 학비 일괄 화면과 같은 값을 기억합니다(`issuePartner`).
    */
-  const [partnerMode, setPartnerModeState] = useState<PartnerMode>("off");
+  const [partnerMode, setPartnerModeState] = useState<PartnerMode>("merge");
   useEffect(() => setPartnerModeState(loadPartnerMode()), []);
   const setPartnerMode = (m: PartnerMode) => {
     setPartnerModeState(m);
@@ -1178,7 +1178,13 @@ export default function InvoiceGridClient({
         // 발행만 해놓고 올톡페이에 안 올리는 일이 생깁니다.
         setJustIssued(made);
       }
-      const tNote = madeTuition > 0 ? ` (학비 ${madeTuition}장 ${partner === "merge" ? "한 장으로 합침" : "따로"})` : "";
+      // 학비를 함께 냈는지 말해줍니다 - 안 말하면 학비 화면에 가서 또 냅니다.
+      const tNote =
+        madeTuition > 0
+          ? ` (학비 ${madeTuition}장 ${partner === "merge" ? "한 장으로 합침" : "따로"})`
+          : partner !== "off"
+            ? " (함께 낼 학비 없음)"
+            : "";
       if (failed.length > 0) notify(`${made.length}건 발행${tNote} · ${failed.length}건 실패: ${failed.join(", ")}`, "error");
       else notify(`${made.length}건 발행했습니다${tNote}.`, "success");
       setChecked(new Set());

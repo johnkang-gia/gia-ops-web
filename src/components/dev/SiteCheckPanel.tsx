@@ -179,7 +179,11 @@ export default function SiteCheckPanel({ gaps, version }: { gaps: { key: string;
       setDone(i + chunk.length);
     }
     // ── 두 번째 단계: 열린 화면을 노트북·휴대폰 크기로 실제로 그려 보고 진찰합니다 ──────
-    const pages = opened.filter((r) => !r.path.startsWith("/api") && (r.verdict === "정상" || r.verdict === "느림")).map((r) => r.path);
+    // 다른 주소로 넘겨주기만 하는 화면(예: 이번 달 화면으로 보내는 주소)은 그리지 않습니다. 넘어간 화면은
+    // 따로 점검 목록에 있고, 넘어가는 순간을 재면 «빈 본문»으로 헛걸립니다.
+    const pages = opened
+      .filter((r) => !r.path.startsWith("/api") && !r.redirectedTo && (r.verdict === "정상" || r.verdict === "느림"))
+      .map((r) => r.path);
     const jobs = pages.flatMap((path) => VIEWPORTS.filter((v) => mobileToo || v.label === "노트북").map((v) => ({ path, v })));
     setMeasuring({ done: 0, total: jobs.length });
     const found = new Map<string, { kind: RenderIssue["kind"]; text: string }[]>();

@@ -159,6 +159,8 @@ export type CheckResult = {
   note: string;
   /** 이 화면 안에서 없는 곳을 가리키는 링크. */
   deadLinks: string[];
+  /** 다른 주소로 넘겨주기만 하는 화면이면 넘어간 주소. 그려 보기는 넘어간 쪽에서 합니다. */
+  redirectedTo?: string | null;
 };
 
 /** 화면 하나의 판정. 상태·시간·본문을 함께 봅니다 - 200 인데 오류 화면인 경우가 있습니다. */

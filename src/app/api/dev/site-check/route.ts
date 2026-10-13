@@ -65,7 +65,14 @@ export async function POST(req: Request) {
         const v = verdictOf({ status: res.status, ms, finalUrl: res.url, body: text });
         // 창구(/api)는 화면이 아니라 자료를 돌려줍니다. 링크를 찾을 것이 없습니다.
         const dead = path.startsWith("/api") ? [] : deadLinks(collectLinks(text), known);
-        return { path, status: res.status, ms, verdict: v.verdict, note: v.note, deadLinks: dead };
+        let redirectedTo: string | null = null;
+        try {
+          const finalPath = new URL(res.url).pathname;
+          if (res.redirected && finalPath !== path) redirectedTo = finalPath;
+        } catch {
+          redirectedTo = null; // 주소를 못 읽으면 넘겨준 것으로 보지 않습니다 - 그려 보기에서 한 번 더 봅니다.
+        }
+        return { path, status: res.status, ms, verdict: v.verdict, note: v.note, deadLinks: dead, redirectedTo };
       } catch (err) {
         const ms = Date.now() - started;
         const why = err instanceof Error && err.name === "AbortError" ? `${TIMEOUT_MS / 1000}초 안에 안 열렸습니다` : String(err);

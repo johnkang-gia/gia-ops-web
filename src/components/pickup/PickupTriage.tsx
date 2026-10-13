@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { todayKst } from "@/lib/kst";
+import { receivedLabel, todayKst } from "@/lib/kst";
 import { useToast } from "@/components/common/ToastProvider";
 import StudentPicker from "@/components/pickup/StudentPicker";
 import { createClient } from "@/lib/supabase/client";
@@ -72,10 +72,6 @@ const SOURCE_STYLE: Record<string, string> = {
   직접입력: "bg-slate-100 text-slate-600",
   학부모링크: "bg-amber-50 text-amber-700",
 };
-
-function hhmm(iso: string): string {
-  return new Date(iso).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
-}
 
 export default function PickupTriage({
   rows,
@@ -657,7 +653,7 @@ export default function PickupTriage({
                       학생 미연결
                     </span>
                   )}
-                  <span className="text-[11px] text-slate-400">{hhmm(r.received_at)} 수신</span>
+                  <span className="text-[11px] text-slate-400" title={new Date(r.received_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}>{receivedLabel(r.received_at)} 수신</span>
                   {r.ai_pickup_time && (
                     <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[11px] font-bold text-white">
                       {r.ai_pickup_time} 픽업

@@ -57,3 +57,24 @@ export function timeAgo(iso: string): string {
   if (hr < 24) return `${hr}시간 전`;
   return new Date(iso).toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric" });
 }
+
+/**
+ * **받은 때를 «오늘 오전 10:05» 처럼.** 어제·그제 것이 섞이는 목록(확인 필요 등)에서 시각만 적으면
+ * 어제 온 「오후 3:10 픽업」이 오늘 것처럼 읽히고, 사람은 오늘 아이를 기다립니다.
+ *
+ *   오늘 → 「오늘 오전 10:05」 · 어제 → 「어제 오후 3:20」 · 그 전 → 「10/12(일) 오전 9:00」
+ *
+ * 날짜는 한국 날짜로 견줍니다(브라우저·서버 시간대와 무관).
+ */
+export function receivedLabel(iso: string): string {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return "";
+  // 오전·오후는 손으로 붙입니다 - 기기마다 한국어 표기가 없으면 「AM」으로 나옵니다.
+  const [h, m] = kstTime(at).split(":").map(Number);
+  const time = `${h < 12 ? "오전" : "오후"} ${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, "0")}`;
+  const day = kstDate(at);
+  if (day === todayKst()) return `오늘 ${time}`;
+  if (day === kstDateOffset(-1)) return `어제 ${time}`;
+  const wd = "일월화수목금토"[new Date(`${day}T12:00:00+09:00`).getDay()];
+  return `${Number(day.slice(5, 7))}/${Number(day.slice(8, 10))}(${wd}) ${time}`;
+}

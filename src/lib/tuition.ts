@@ -272,3 +272,28 @@ export function planTargets(
   const byClass = (plan.target_classes ?? []).some((x) => normClass(x) === c && c !== "");
   return byGrade && byClass;
 }
+
+/**
+ * **청구서에 찍을 줄들 — 더하면 언제나 `line.amount` 입니다.**
+ *
+ * 청구서는 「원래 금액 한 줄 + 할인마다 한 줄」로 찍습니다(학부모가 원래 얼마에서 얼마가
+ * 깎였는지 읽을 수 있게). 그런데 직접 기입이 **계산값보다 큰** 경우를 그 모양이 담지
+ * 못했습니다. 깎인 만큼은 할인 줄로 적었지만 늘어난 만큼은 적을 자리가 없어서, 최서연의
+ * 방과후 3일반이 직접 기입 437,500원인데 청구서에는 원래 금액 325,000원으로 나갔습니다.
+ * 데이터베이스는 청구서 합계를 줄의 합으로 다시 세므로(§2-12), 합계도 함께 줄었습니다.
+ *
+ * 그래서 차이가 어느 쪽이든 **조정 한 줄**로 맞춥니다. 화면에 뜬 금액과 청구서가 다를 수
+ * 있는 길을 이 함수 하나에서 닫습니다 - 발행 창구는 이 결과를 그대로 넣고, 넣기 전에
+ * 합을 한 번 더 확인합니다.
+ */
+export function invoiceRowsForLine(line: TuitionLine): { name: string; amount: number }[] {
+  const rows: { name: string; amount: number }[] = [{ name: line.label, amount: line.subtotal }];
+  for (const d of line.discounts) rows.push({ name: `　└ ${d.name}`, amount: -d.amount });
+  const sum = rows.reduce((n, r) => n + r.amount, 0);
+  const gap = line.amount - sum;
+  if (gap !== 0) {
+    const why = line.note?.trim() ? ` (${line.note.trim()})` : "";
+    rows.push({ name: `　└ ${line.manual ? "직접 기입" : "금액"} 조정${why}`, amount: gap });
+  }
+  return rows;
+}

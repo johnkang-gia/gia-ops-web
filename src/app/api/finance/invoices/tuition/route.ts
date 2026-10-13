@@ -11,7 +11,7 @@ import { gradeLabel, inTerm, resolveStudentItems } from "@/lib/feeItems";
 import { addDays, DUE_DAYS } from "@/lib/financePeriod";
 import { todayKst } from "@/lib/kst";
 import { resolveRecipient, type GuardianRole, phonesOf, chosenRoleOf, type StudentBilling } from "@/lib/alltalkpay";
-import { discountsForPlan, tuitionLine, type TuitionLine } from "@/lib/tuition";
+import { discountsForPlan, invoiceRowsForLine, tuitionLine, type TuitionLine } from "@/lib/tuition";
 import type { FeePlan, FeePaymentOption, FeeDiscount, FeeItem, StudentFeeItem } from "@/lib/types";
 import { loadStudentsWithPhones } from "@/lib/students";
 
@@ -263,6 +263,24 @@ export async function POST(req: Request) {
       : await planCarryForward(supabase, { studentId: student.id, stream: "학비", today: todayKst() });
   if (carry.error) return NextResponse.json({ error: `지난 미납을 읽지 못했습니다: ${carry.error}` }, { status: 500 });
 
+  /**
+   * **찍을 줄의 합 = 청구액** 인지 넣기 전에 확인합니다.
+   *
+   * 데이터베이스는 청구서 합계를 줄의 합으로 다시 셉니다(§2-12). 그래서 줄이 틀리면 합계도
+   * 조용히 따라 틀리고, 학부모는 그 금액으로 결제합니다. 직접 기입이 계산값보다 클 때 늘어난
+   * 만큼이 줄에서 빠져 437,500원이 325,000원으로 나간 일이 있었습니다. 어긋나면 **발행하지
+   * 않고** 이유를 돌려줍니다 - 틀린 청구서가 나가는 것보다 안 나가는 편이 낫습니다.
+   */
+  const tuitionRows = lines.flatMap((l) => invoiceRowsForLine(l));
+  const rowsTotal = tuitionRows.reduce((n, r) => n + r.amount, 0) + extraTotal;
+  if (rowsTotal !== total) {
+    console.error("[학비 청구] 줄의 합과 청구액이 다릅니다", { student: student.id, rowsTotal, total });
+    return NextResponse.json(
+      { error: `청구서 줄의 합(${rowsTotal.toLocaleString()}원)이 청구액(${total.toLocaleString()}원)과 달라 발행하지 않았습니다. 개발자에게 알려주세요.` },
+      { status: 500 },
+    );
+  }
+
   // 번호는 DB가 정합니다. 사람이 손으로 붙이면 반드시 겹칩니다.
   const { data: noRow, error: noErr } = await supabase.rpc("next_invoice_no");
   if (noErr) return NextResponse.json({ error: `번호를 만들지 못했습니다: ${noErr.message}` }, { status: 500 });
@@ -315,11 +333,9 @@ export async function POST(req: Request) {
   // 깎였는지」를 알 수 없고, 그 문의가 그대로 행정실로 옵니다.
   const rows: { invoice_id: string; seq: number; name: string; qty: number; unit_price: number; amount: number }[] = [];
   let seq = 0;
-  for (const l of lines) {
-    rows.push({ invoice_id: inv.id, seq: ++seq, name: l.label, qty: 1, unit_price: l.subtotal, amount: l.subtotal });
-    for (const d of l.discounts) {
-      rows.push({ invoice_id: inv.id, seq: ++seq, name: `　└ ${d.name}`, qty: 1, unit_price: -d.amount, amount: -d.amount });
-    }
+  // 원래 금액 · 할인 · (직접 기입이면) 조정 줄 - 더하면 화면에 뜬 금액입니다(invoiceRowsForLine).
+  for (const r of tuitionRows) {
+    rows.push({ invoice_id: inv.id, seq: ++seq, name: r.name, qty: 1, unit_price: r.amount, amount: r.amount });
   }
 
   // 같은 장에 담은 학비외 줄. 항목 번호를 함께 남겨 「이미 나갔는가」 판정이 됩니다.

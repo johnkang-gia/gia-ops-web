@@ -397,11 +397,23 @@ function cut(x){return String(x==null?"":x).slice(0,220)}
 addEventListener("error",function(e){if(e&&e.target&&e.target!==window&&e.target.tagName){g.warns.push("불러오지 못함: "+cut(e.target.src||e.target.href));return}g.errors.push(cut((e&&(e.message||(e.error&&e.error.message)))||"오류"))},true);
 addEventListener("unhandledrejection",function(e){var r=e&&e.reason;g.errors.push("처리 안 된 오류: "+cut((r&&r.message)||r))});
 var ce=console.error;console.error=function(){try{var m=Array.prototype.map.call(arguments,function(a){return a&&a.message?a.message:String(a)}).join(" ");(/Minified React error|Hydration|hydrat/i.test(m)?g.errors:g.warns).push(cut(m))}catch(_){}return ce.apply(console,arguments)};
-if(window.PerformanceObserver){new PerformanceObserver(function(l){l.getEntries().forEach(function(t){g.blocked+=Math.max(0,t.duration-50);if(t.duration>g.longest)g.longest=t.duration})}).observe({type:"longtask",buffered:true})}}catch(_){}})();`;
+if(window.PerformanceObserver){new PerformanceObserver(function(l){l.getEntries().forEach(function(t){g.blocked+=Math.max(0,t.duration-50);if(t.duration>g.longest)g.longest=t.duration})}).observe({type:"longtask",buffered:true})}
+g.removed=[];var t0=Date.now();function desc(n){var p=[];for(var e=n,i=0;e&&e.nodeType===1&&i<4;e=e.parentElement,i++){var c=(e.getAttribute("class")||"").split(" ").filter(Boolean).slice(0,3).join(".");p.unshift(e.tagName.toLowerCase()+(c?"."+c:""))}var h=n.querySelector&&n.querySelector("h1,h2,h3,button,a");var t=h?(h.textContent||"").trim().slice(0,24):"";return p.join(" > ")+(t?" 「"+t+"」":"")}
+function note(c){try{if(c&&c.nodeType===1&&Date.now()-t0<8000&&g.removed.length<30){var k=c.querySelectorAll("*").length;if(k>=2)g.removed.push({at:Date.now()-t0,size:k,where:desc(c)})}}catch(_){}}
+var rc=Node.prototype.removeChild;Node.prototype.removeChild=function(c){note(c);return rc.apply(this,arguments)};
+var rp=Node.prototype.replaceChild;Node.prototype.replaceChild=function(n,o){note(o);return rp.apply(this,arguments)};
+}catch(_){}})();`;
 
 export type RenderIssue = { kind: "잘림" | "먹통" | "화면 오류"; text: string };
 
-type Collected = { errors: string[]; warns: string[]; longest: number; blocked: number };
+type Collected = {
+  errors: string[];
+  warns: string[];
+  longest: number;
+  blocked: number;
+  /** 열린 뒤 8초 안에 지워진 큰 덩어리. 하이드레이션이 실패하면 React 가 서버가 그린 부분을 지우고 다시 그립니다. */
+  removed?: { at: number; size: number; where: string }[];
+};
 
 /** 화면이 이만큼 한 번에 멈추면 사람은 «눌렀는데 반응이 없다»고 느낍니다. */
 export const FREEZE_MS = 1500;
@@ -430,6 +442,12 @@ export function inspectRendered(doc: Document): RenderIssue[] {
   // 오류마다 한 줄씩. 같은 오류가 여러 화면에 나면 점검 화면이 «공통 문제»로 한데 모읍니다.
   for (const e of [...new Set(errs.map((x) => x.replace(/;?\s*visit https?:\/\/\S+.*$/i, "").trim()))].slice(0, 3)) {
     issues.push({ kind: "화면 오류", text: `화면 안 오류: ${e}` });
+  }
+  // 하이드레이션이 깨지면 어디가 다시 그려졌는지 적습니다. 오류 번호(#418)만으로는 고칠 곳을 모릅니다 -
+  // React 는 어긋난 곳을 감싼 가장 가까운 경계를 지우고 다시 그리므로, 지워진 가장 큰 덩어리가 그 경계입니다.
+  if (errs.some((e) => /#41[89]|#423|#425|hydrat/i.test(e)) && g?.removed?.length) {
+    const top = [...g.removed].sort((a, b) => b.size - a.size).slice(0, 2);
+    issues.push({ kind: "화면 오류", text: `하이드레이션으로 다시 그려진 곳: ${top.map((r) => `${r.where} (${r.size}칸)`).join(" / ")}` });
   }
   const main = doc.querySelector("main") as HTMLElement | null;
   if (!main) issues.push({ kind: "화면 오류", text: "본문(main)이 그려지지 않았습니다" });

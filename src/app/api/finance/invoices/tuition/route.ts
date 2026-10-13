@@ -281,6 +281,45 @@ export async function POST(req: Request) {
     );
   }
 
+  /**
+   * **같은 달에 같은 항목이 이미 「발행」 상태면 만들지 않습니다 — 범위 글자가 아니라 항목으로 견줍니다.**
+   *
+   * 데이터베이스의 유일 인덱스(`invoices_tuition_scope_month_uniq`)는 `plan_scope` **글자**가 같을
+   * 때만 막습니다. 「전부」(빈 칸)로 낸 장과 「정규과정 · 방과후 3일반 · …」으로 낸 장은 같은
+   * 항목인데 글자가 달라 둘 다 들어갔습니다 - 최서연 10월분이 학비+학비외 한 장(2026-0352)과 학비
+   * 한 장(2026-0353)으로 두 번 「발행」 상태가 됐습니다. 학부모는 둘 다 받으면 둘 다 냅니다.
+   *
+   * 빈 범위는 «그 달 학비 전부»라서 무엇과도 겹칩니다.
+   */
+  {
+    const month = billingMonth ?? issue.slice(0, 7);
+    const mine = new Set(lines.map((l) => l.planName));
+    const { data: live, error: liveErr } = await supabase
+      .from("invoices")
+      .select("invoice_no, plan_scope, stream, category, term_id")
+      .eq("student_id", student.id)
+      .eq("status", "발행")
+      .eq("billing_month", month)
+      .is("carried_to_invoice_id", null);
+    if (liveErr) return NextResponse.json({ error: `이미 낸 청구서를 확인하지 못해 발행하지 않았습니다: ${liveErr.message}` }, { status: 500 });
+    type LiveInv = { invoice_no: string | null; plan_scope: string | null; stream: string | null; category: string | null; term_id: string | null };
+    const clash = ((live as LiveInv[] | null) ?? [])
+      .filter((v) => (v.stream ?? v.category) === "학비" && (v.term_id ?? null) === (termId ?? null))
+      .map((v) => {
+        const theirs = v.plan_scope ? v.plan_scope.split(" · ").map((x) => x.trim()) : null;
+        const shared = theirs ? [...mine].filter((n) => theirs.includes(n)) : [...mine];
+        return { no: v.invoice_no, shared };
+      })
+      .filter((c) => c.shared.length > 0);
+    if (clash.length > 0) {
+      const desc = clash.map((c) => `${c.no ?? "번호 없음"}(${c.shared.join(", ")})`).join(" · ");
+      return NextResponse.json(
+        { error: `${month} 학비가 이미 발행되어 있습니다: ${desc}. 같은 항목을 두 번 청구하지 않습니다 - 그 장을 취소한 뒤 다시 발행해주세요.` },
+        { status: 409 },
+      );
+    }
+  }
+
   // 번호는 DB가 정합니다. 사람이 손으로 붙이면 반드시 겹칩니다.
   const { data: noRow, error: noErr } = await supabase.rpc("next_invoice_no");
   if (noErr) return NextResponse.json({ error: `번호를 만들지 못했습니다: ${noErr.message}` }, { status: 500 });

@@ -3,6 +3,7 @@ import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import "./globals.css";
 import Script from "next/script";
+import { Suspense } from "react";
 import { SITE_CHECK_COLLECTOR } from "@/lib/siteCheck";
 
 export const metadata: Metadata = {
@@ -32,8 +33,13 @@ export default function RootLayout({
           {SITE_CHECK_COLLECTOR}
         </Script>
         {children}
-        <Analytics />
-        <SpeedInsights />
+        {/* 바깥 도구도 경계 안에 둡니다. 어긋나면 이것만 다시 그리고 화면 전체는 그대로입니다. */}
+        <Suspense fallback={null}>
+          <Analytics />
+        </Suspense>
+        <Suspense fallback={null}>
+          <SpeedInsights />
+        </Suspense>
       </body>
     </html>
   );

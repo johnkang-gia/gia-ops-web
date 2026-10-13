@@ -530,14 +530,14 @@ export default async function DashboardLayout({
         봅니다(자기 반 아이의 자료). 회계 탭은 재무 열쇠가 있을 때만 생깁니다. */}
     <StudentPanelProvider canSeeFinance={hasFinanceAccess(me)}>
     <div data-theme={theme} className="shell-page-bg relative flex h-screen flex-1">
-      <ConnectionBanner />
+      <Isolate><ConnectionBanner /></Isolate>
       {/* 탭을 켜둔 채로 며칠 일하는 분들이 있어, 배포해도 그 화면에는 어제 코드가 계속
           돕니다. 화면에 표시가 없으면 본인은 최신인 줄 압니다. */}
-      <VersionUpdateBanner />
-      <CommandPalette categories={categories} homeHref={homeHref} />
+      <Isolate><VersionUpdateBanner /></Isolate>
+      <Isolate><CommandPalette categories={categories} homeHref={homeHref} /></Isolate>
       {/* 어느 화면이 실제로 쓰이는지를 세는 자리. 화면에 무엇이 떠 있었는지는 안 담고
           누가·언제·어디를·얼마나만 담습니다([개발자 → 이용 기록]). */}
-      <UsageTracker />
+      <Isolate><UsageTracker /></Isolate>
       {/* 인쇄할 때는 사이드바를 감춥니다 - 체크표 인쇄본이 종이 폭을 온전히 쓰도록. */}
       {/* **사이드바는 자기 안에서 굴립니다.**
           예전에는 높이를 안 정해 둬서, 메뉴가 화면보다 길어지면 사이드바가 그만큼 늘어나고
@@ -593,7 +593,7 @@ export default async function DashboardLayout({
                 <div className="truncate text-[11px] text-[var(--shell-text-muted)]">{me.email}</div>
               </div>
             </Link>
-            {!isTeacher && <TaskCountBadge />}
+            {!isTeacher && <Isolate><TaskCountBadge /></Isolate>}
             {!isTeacher && <Isolate><NotificationBell /></Isolate>}
           </div>
           <Suspense fallback={null}>
@@ -656,13 +656,13 @@ export default async function DashboardLayout({
           </Link>
           {/* 새로고침 안내는 배포마다가 아니라 **개발자가 알릴 때만** 뜹니다. 그 판단을
               기계가 하면 안내가 잦아지고, 잦은 안내는 읽히지 않습니다. */}
-          {isDeveloper && <VersionBroadcastButton userName={me.name ?? me.email} />}
+          {isDeveloper && <Isolate><VersionBroadcastButton userName={me.name ?? me.email} /></Isolate>}
         </div>
         <div className="border-t border-[var(--shell-border)] pt-3">
           {/* 요청("개발자 계정의 경우 로그아웃 바로위에 드롭다운메뉴로 권한을 변경할 수 있게") -
               실제 개발자 계정에게만 보이고, 다른 직위는 이 드롭다운 자체를 볼 수 없습니다. */}
-          {isDeveloper && <RolePreviewDropdown currentPreview={me.previewOf} />}
-          <SignOutButton />
+          {isDeveloper && <Isolate><RolePreviewDropdown currentPreview={me.previewOf} /></Isolate>}
+          <Isolate><SignOutButton /></Isolate>
         </div>
       </aside>
 
@@ -691,14 +691,14 @@ export default async function DashboardLayout({
               </Link>
               {!isTeacher && <Isolate><NotificationBell /></Isolate>}
             </div>
-            <SignOutButton />
+            <Isolate><SignOutButton /></Isolate>
           </div>
         </header>
         {/* 모바일에서도 같은 이유로 교사에게는 검색줄을 감춥니다 - 화면이 좁을수록 쓸 수 없는
             입력칸이 차지하는 자리가 아깝습니다. */}
         {!isTeacher && (
           <div className="shell-blur border-b border-[var(--shell-border)] bg-[var(--shell-bg)] px-3 py-2 sm:hidden">
-            <GlobalSearchBar compact />
+            <Isolate><GlobalSearchBar compact /></Isolate>
           </div>
         )}
         <nav className="shell-blur flex items-center gap-1 overflow-x-auto border-b border-[var(--shell-border)] bg-[var(--shell-bg)] px-2 py-2 sm:hidden">
@@ -724,7 +724,7 @@ export default async function DashboardLayout({
             때문에 탭의 시작점과 폭이 화면을 옮길 때마다 달라졌습니다. 본문 위 한 자리에서 한 번만
             그리면 어떤 화면에서든 같은 자리·같은 크기입니다. */}
         <Isolate><SectionTabs isTeacher={isTeacher} isHomeroom={isHomeroomTeacher} /></Isolate>
-        <MainArea>{children}</MainArea>
+        <Isolate><MainArea>{children}</MainArea></Isolate>
       </div>
     </div>
     </StudentPanelProvider>

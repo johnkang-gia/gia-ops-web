@@ -280,6 +280,13 @@ const plan = idx.find(a.student_id, a.student_name_raw);      // 못 가리면 u
 
 코드 검사는 «나쁜 모양»만 잡고 다음 사고는 새 모양으로 옵니다. 그래서 마지막 관문을 모양과 상관없는 곳에 둡니다.
 
+**다른 두 겹:**
+- **회귀 시험**(`scripts/test-homonym.ts`, 빌드마다): 지난 사고들을 실제 함수에 다시 넣어 봅니다. 새 사고가 나면
+  여기에 한 줄을 더합니다 - 같은 사고는 두 번 나지 않습니다.
+- **늘지 않는 목록**(`scripts/check-raw-name-ratchet.mjs`): 이름 글자 칸(`student_name_raw` · `matched_name` ·
+  `ai_student_name`)을 읽는 파일은 `scripts/raw-name-baseline.json` 에 있는 것뿐입니다. 새 파일은 못 들어오고,
+  옮긴 파일은 목록에서 지워야 빌드가 됩니다. 목록은 줄어들기만 합니다.
+
 ## 2-4-7. 날짜가 정해진 하원수단 = 지속 특이사항 (하나의 사실, 두 화면)
 
 「앞으로 5주 월요일 픽업」은 하원수단 화면에서도, 하원 체크표의 지속 특이사항에서도 들어옵니다.

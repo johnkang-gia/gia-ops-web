@@ -386,6 +386,7 @@ export default function ShuttleChecklistSidebar({
           studentName: s.displayName,
           studentKey: s.studentKey,
           ambiguous: s.ambiguous,
+          studentId: s.studentId,
           unmatched: false,
           rawText: m.content,
           time: m.created_at_google,

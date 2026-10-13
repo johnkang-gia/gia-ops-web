@@ -1679,6 +1679,11 @@ export type AttendanceEntry = {
   // 동명이인 구분까지 반영한 중복 제거용 키.
   studentKey: string;
   ambiguous: boolean;
+  /**
+   * 매칭이 고른 아이의 학생 번호(못 정했으면 null). 화면은 이 번호로 뱃지를 달고 등록합니다 -
+   * 이름으로 명부를 다시 찾으면 「김재이(G3JA)」처럼 이미 가려진 것도 셋 중 누구인지 모르게 됩니다.
+   */
+  studentId?: string | null;
   // 명부 대조에 실패해 studentName이 확정된 이름이 아니라 추정치(guessKoreanName) 또는
   // 원문 일부라는 표시입니다. true면 UI에서 확정 매칭과 구분해 보여줘야 합니다.
   unmatched: boolean;

@@ -7,7 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { notifyOpsBoardRefresh, OPS_REFRESH_CHANNEL, OPS_REFRESH_EVENT } from "@/lib/opsRefresh";
 import { useToast } from "@/components/common/ToastProvider";
 import { useConfirm } from "@/components/common/ConfirmProvider";
-import { markIfAmbiguous, toKoreanDisplayName, toRosterEntries, type RosterEntry } from "@/lib/pickupParse";
+import { displayStudent, toRosterEntries, type RosterEntry } from "@/lib/pickupParse";
 import { loadHouseCandidates } from "@/lib/houseCandidates";
 import { loadStudents } from "@/lib/students";
 import { loadRideBadges, type RideBadge } from "@/lib/rideBadge";
@@ -42,6 +42,11 @@ export type Inquiry = {
   student_id?: string | null;
   /** 토들 채팅방 id. source_url이 비어 있을 때 주소를 되살리는 데 씁니다. */
   source_chat_id?: string | null;
+  /**
+   * 이어 둔 방(toddle_channels.id). `source_chat_id`(토들 쪽 방 번호)와 **다른 번호**입니다 -
+   * 예전에는 이 자리에 토들 방 번호를 넘겨 이어 둔 방을 한 번도 못 찾았습니다.
+   */
+  channel_id?: string | null;
   answered_at: string | null;
   answered_by: string | null;
   task_id: string | null;
@@ -657,7 +662,7 @@ export default function ParentInquiryPanel({
 
   async function attendanceAction(r: Inquiry, action: "결석" | "픽업" | "탑승") {
     const studentName =
-      toKoreanDisplayName(r.matched_name ?? r.ai_student_name, r.channel_label, roster, `${r.summary ?? ""} ${r.raw_text ?? ""}`) ??
+      (displayStudent(r, roster)?.replace(/\(.*\)$/, "").trim() || null) ??
       r.matched_name ??
       r.ai_student_name;
     if (!studentName) {
@@ -669,7 +674,8 @@ export default function ParentInquiryPanel({
       const res = await fetch("/api/work/attendance-action", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ studentName, action, inquiryId: r.id }),
+        // 번호를 함께 보냅니다. 이름만 보내면 이준서 둘 중 누구의 셔틀인지 서버가 가릴 수 없습니다.
+        body: JSON.stringify({ studentName, studentId: r.student_id ?? undefined, action, inquiryId: r.id }),
       });
       const json = await res.json();
       if (!res.ok) {
@@ -719,17 +725,11 @@ export default function ParentInquiryPanel({
   }
 
   function studentOf(r: Inquiry) {
-    // 명부와 대조해 한글 이름으로 바꿉니다. 명부가 아직 안 왔거나 못 찾으면 원래 값을 씁니다.
-    //
-    // **원문을 함께 넘깁니다.** 반 이름과 생일은 본문에 적혀 옵니다("g2c 김재이", "(190510)").
-    // 이름 글자만 넘기던 때는 그 힌트를 하나도 못 읽었습니다.
-    const label = toKoreanDisplayName(
-      r.matched_name ?? r.ai_student_name,
-      r.channel_label,
-      roster,
-      `${r.summary ?? ""} ${r.raw_text ?? ""}`,
-    );
-    const marked = markIfAmbiguous(label, roster);
+    // 번호가 붙어 있으면 그 아이, 없으면 이름(+원문 힌트)으로 짐작합니다 — `displayStudent` 하나가 정합니다.
+    // 예전에는 여기서 번호를 안 읽고 이름만 다시 대조해서, 이어 둔 방에서 온 이준서(G3JA) 문의를
+    // 「누구?」로 물었습니다(위에 「학생 바꾸기」가 떠 있는데도).
+    const marked = displayStudent(r, roster);
+    const label = marked;
     /**
      * **못 가렸으면 이어 둔 방으로 정합니다.**
      *
@@ -741,9 +741,9 @@ export default function ParentInquiryPanel({
      * 방에서 정한 것은 **정했다고 적습니다**(「방 기준」). 사람이 아니라고 보면 바꿉니다 -
      * 조용히 정해두면 틀렸을 때 아무도 못 찾습니다.
      */
-    if (marked && r.source_chat_id && label) {
+    if (marked?.includes("누구?") && r.channel_id && label) {
       const base = label.replace(/\(.*?\)$/, "").trim();
-      const inHouse = (houseOf.get(r.source_chat_id) ?? []).filter((c) => c.name === base);
+      const inHouse = (houseOf.get(r.channel_id) ?? []).filter((c) => c.name === base);
       if (inHouse.length === 1) {
         const hit = roster.find((x) => x.id === inHouse[0].id);
         return `${base}${hit?.class_name ? `(${hit.class_name})` : ""} · 방 기준`;
@@ -762,7 +762,7 @@ export default function ParentInquiryPanel({
    */
   useEffect(() => {
     if (roster.length === 0 || rows.length === 0) return;
-    const chans = [...new Set(rows.map((r) => r.source_chat_id).filter((x): x is string => !!x))];
+    const chans = [...new Set(rows.map((r) => r.channel_id).filter((x): x is string => !!x))];
     if (chans.length === 0) return;
     void (async () => {
       const { houseOf: hm, problem } = await loadHouseCandidates(

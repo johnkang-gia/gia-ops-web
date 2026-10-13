@@ -249,6 +249,20 @@ const plan = idx.find(a.student_id, a.student_name_raw);      // 못 가리면 u
 
 ---
 
+## 2-4-8. 연락 한 건의 학생 이름은 `displayStudent` 하나로 (일곱 번째 재발)
+
+연락(`pickup_requests`)에 **학생 번호가 붙어 있으면 그 아이가 답입니다.** 번호는 수집할 때 이어 둔 방에서
+정해졌거나 사람이 고른 것입니다. 학부모 문의·하원수단·중앙 대시보드가 그 번호를 안 읽고 이름 글자만 다시
+대조해서, 사람이 이어 둔 「G3_Justin L_Office」 방의 이준서(G3JA) 문의를 「이준서(9학년·G3JA 중 누구?)」로
+물었습니다. 같은 창 위쪽에는 「학생 바꾸기」(= 연결됨)가 떠 있었습니다.
+
+이름은 `src/lib/pickupParse.ts` 의 `displayStudent(줄, 명부)` 로만 정합니다 - 번호 → 없으면 이름 짐작 → 겹치면
+«누구?». `toKoreanDisplayName` · `markIfAmbiguous` 를 화면이 직접 부르면 빌드가 막습니다
+(`scripts/check-display-student.mjs`). 번호가 정말 없는 자리는 `// display-ok: 이유`.
+
+**방 번호는 둘입니다.** `source_chat_id` 는 토들 쪽 방 번호, `channel_id` 는 우리가 이어 둔 방(`toddle_channels.id`)
+입니다. 이어 둔 방을 찾을 때는 `channel_id` 입니다 - 학부모 문의 화면이 토들 쪽 번호로 찾아 한 번도 못 찾았습니다.
+
 ## 2-4-7. 날짜가 정해진 하원수단 = 지속 특이사항 (하나의 사실, 두 화면)
 
 「앞으로 5주 월요일 픽업」은 하원수단 화면에서도, 하원 체크표의 지속 특이사항에서도 들어옵니다.

@@ -489,3 +489,46 @@ export function toKoreanDisplayName(
 
   return has(current) ? (current as string) : null;
 }
+
+/**
+ * **연락 한 건이 누구 이야기인지, 화면에 적을 이름 — 이것 하나만 씁니다.**
+ *
+ * 번호(`student_id`)가 붙어 있으면 **그 아이가 답입니다.** 번호는 수집할 때 이어 둔 방에서
+ * 정해졌거나 사람이 인박스에서 고른 것입니다. 그런데 학부모 문의·하원수단·중앙 대시보드
+ * 세 화면이 그 번호를 안 읽고 이름 글자만 명부와 다시 대조해서, 「G3_Justin L_Office」 방에서
+ * 온 이준서(G3JA) 문의를 「이준서(9학년·G3JA 중 누구?)」로 물었습니다. 화면 위에는 「학생
+ * 바꾸기」(= 이미 연결됨)가 떠 있는데 이름 옆에는 «누구?»가 뜨는, 서로 다른 말을 했습니다.
+ *
+ *   ① 번호가 명부에 있으면 그 아이. 동명이인이면 반을 붙입니다(「이준서(G3JA)」).
+ *   ② 번호가 없을 때만 이름으로 짐작하고, 겹치면 «누구?»로 적습니다.
+ *
+ * `toKoreanDisplayName` · `markIfAmbiguous` 를 화면이 직접 부르면 빌드가 막습니다
+ * (`scripts/check-display-student.mjs`).
+ */
+export function displayStudent(
+  r: {
+    student_id?: string | null;
+    matched_name?: string | null;
+    ai_student_name?: string | null;
+    channel_label?: string | null;
+    summary?: string | null;
+    raw_text?: string | null;
+  },
+  roster: RosterEntry[],
+): string | null {
+  if (r.student_id) {
+    const hit = roster.find((s) => s.id === r.student_id);
+    if (hit) {
+      const same = roster.filter((s) => s.name === hit.name).length;
+      const cls = (hit.class_name ?? "").trim() || (hit.grade ? `${hit.grade}학년` : "");
+      return same > 1 && cls ? `${hit.name}(${cls})` : hit.name;
+    }
+  }
+  const guessed = toKoreanDisplayName(
+    r.matched_name ?? r.ai_student_name,
+    r.channel_label,
+    roster,
+    `${r.summary ?? ""} ${r.raw_text ?? ""}`,
+  );
+  return markIfAmbiguous(guessed, roster);
+}

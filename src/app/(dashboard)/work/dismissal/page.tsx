@@ -4,7 +4,7 @@ import { isMissingWeekStart } from "@/lib/dismissalToday";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isStaffOrAboveUser } from "@/lib/roles";
 import GuideButton from "@/components/common/GuideButton";
-import { markIfAmbiguous, toKoreanDisplayName, toRosterEntries, ROSTER_SELECT } from "@/lib/pickupParse";
+import { ROSTER_SELECT, displayStudent, toRosterEntries } from "@/lib/pickupParse";
 import DismissalBulkClient, { type InquiryLite, type PlanRow, type RideLite, type StudentLite } from "@/components/work/DismissalBulkClient";
 import { loadStudents } from "@/lib/students";
 
@@ -130,15 +130,7 @@ export default async function DismissalBulkPage() {
                 // 이름만 띄우면 보는 사람은 **이미 정해진 이름이라고 믿습니다.** 김재이가
                 // 셋이라, 그 상태로 하원수단을 고치면 엉뚱한 아이 것이 바뀝니다.
                 name:
-                  markIfAmbiguous(
-                    toKoreanDisplayName(
-                      r.matched_name ?? r.ai_student_name,
-                      r.channel_label,
-                      nameRoster,
-                      `${r.summary ?? ""} ${r.raw_text ?? ""}`,
-                    ),
-                    nameRoster,
-                  ) ??
+                  displayStudent(r, nameRoster) ??
                   r.channel_label ??
                   "미확인",
                 summary: r.summary,

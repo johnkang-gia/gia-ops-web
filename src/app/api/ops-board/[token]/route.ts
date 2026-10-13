@@ -4,7 +4,7 @@ import { cached } from "@/lib/ttlCache";
 import { APP_VERSION } from "@/lib/version";
 import { buildStaffNames, categorize, extractTargetDate, matchRosterStudents, todayKey, type RosterStudent } from "@/lib/attendanceDigest";
 import { loadActiveEntries, loadUpcomingEntries } from "@/lib/attendanceEntries";
-import { markIfAmbiguous, toKoreanDisplayName, toRosterEntries, ROSTER_SELECT, type RosterEntry } from "@/lib/pickupParse";
+import { displayStudent, toRosterEntries, ROSTER_SELECT, type RosterEntry } from "@/lib/pickupParse";
 import { loadTodayPickups } from "@/lib/pickups";
 import { displayInquiryType } from "@/lib/inquiryType";
 import { createClient } from "@supabase/supabase-js";
@@ -414,25 +414,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
       id: r.id as string,
       // 학생이 연결돼 있으면 **그 아이가 답입니다.** 이름으로 다시 짐작하지 않습니다 -
       // 사람이 인박스에서 고른 것을 기계가 뒤집으면 안 됩니다.
-      student: (() => {
-        const sid = r.student_id as string | null;
-        const linked = sid ? (studentById.get(sid) as { name?: string; class_name?: string | null } | undefined) : undefined;
-        if (linked?.name) {
-          const same = nameRoster.filter((o) => o.name === linked.name);
-          const cls = (linked.class_name ?? "").trim();
-          return same.length > 1 && cls ? `${linked.name}(${cls})` : linked.name;
-        }
-        // 연결이 없으면 이름으로 찾되, 동명이인이면 **못 정했다고 적습니다.**
-        // 그냥 「김재이」로 띄우면 보는 사람이 정해진 이름이라고 믿고 엉뚱한 아이를 찾습니다.
-        const guessed = toKoreanDisplayName(
-          (r.matched_name as string | null) ?? (r.ai_student_name as string | null),
-          r.channel_label as string | null,
-          nameRoster,
-          // 원문도 함께 봅니다. 「G2C 김재이」처럼 본문에 적어 오시는 경우가 가장 많습니다.
-          `${(r.summary as string | null) ?? ""} ${(r.raw_text as string | null) ?? ""}`,
-        );
-        return markIfAmbiguous(guessed, nameRoster) ?? (r.channel_label as string | null) ?? "미확인";
-      })(),
+      // 번호가 붙어 있으면 그 아이, 없으면 이름으로 짐작하고 겹치면 «누구?» — `displayStudent` 하나가 정합니다.
+      student: displayStudent(r as Parameters<typeof displayStudent>[0], nameRoster) ?? (r.channel_label as string | null) ?? "미확인",
       // 분류가 비어 있으면 화면에 이름만 뜹니다 - 멀리서 보는 사람에게 «뭔가 왔다» 말고는
       // 아무것도 아닙니다. 저장된 값이 있으면 그대로 쓰고, 없을 때만 글에서 짐작합니다.
       type: displayInquiryType(r.inquiry_type as string | null, (r.summary as string | null) ?? (r.raw_text as string | null)).label,
@@ -471,7 +454,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     // **`ai_pickup_time` 입니다** - 이 표에 `pickup_time` 칸은 없습니다. 없는 칸을 달라고
     // 하면 조회가 통째로 실패하고 data 는 null 이 되는데, 아래에서 `?? []` 로 받고 있어서
     // 「⚠ 확인 필요」 칸이 **줄곧 「✓ 인박스 비었습니다」로 떠 있었습니다.**
-    .select("id, service_date, ai_pickup_time, status, kind, is_demo, matched_name, ai_student_name, channel_label")
+    .select("id, service_date, ai_pickup_time, status, kind, is_demo, matched_name, ai_student_name, channel_label, student_id, summary, raw_text")
     .eq("status", "확인대기")
     .or(`service_date.gte.${todayK},service_date.is.null`)
     .limit(60);
@@ -480,14 +463,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   const pendingInbox = (pendingRows ?? [])
     .filter((r) => !r.is_demo && r.kind === "픽업")
     .map((r) => ({
-      name:
-        toKoreanDisplayName(
-          (r.matched_name as string | null) ?? (r.ai_student_name as string | null),
-          r.channel_label as string | null,
-          nameRoster
-        ) ??
-        (r.channel_label as string | null) ??
-        "이름 미확인",
+      // 확인 대기 줄도 번호가 붙어 있으면 그 아이입니다. 이름만 띄우면 동명이인이 정해진 것처럼 보입니다.
+      name: displayStudent(r, nameRoster) ?? (r.channel_label as string | null) ?? "이름 미확인",
       date: (r.service_date as string | null) ?? null,
       time: (r.ai_pickup_time as string | null) ?? null,
       today: r.service_date === todayK,

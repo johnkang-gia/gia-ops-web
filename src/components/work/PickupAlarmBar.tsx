@@ -53,6 +53,10 @@ const POLL_MS = 60_000;
 const POPUP_SEC = 20;
 
 export default function PickupAlarmBar() {
+  const [notifAsk, setNotifAsk] = useState(false);
+  useEffect(() => {
+    setNotifAsk("Notification" in window && Notification.permission === "default");
+  }, []);
   const [alarms, setAlarms] = useState<Alarm[]>([]);
   const [nowMinutes, setNowMinutes] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -259,10 +263,12 @@ export default function PickupAlarmBar() {
           </span>
         );
       })}
-      {typeof window !== "undefined" && "Notification" in window && Notification.permission === "default" && (
+      {/* 알림 허락 여부는 브라우저에만 있습니다. 지금은 자료가 온 뒤에만 그려져 안전하지만,
+          순서가 바뀌면 서버와 첫 그림이 달라지므로(#418) 상태로 받아 둡니다. */}
+      {notifAsk && (
         <button
           type="button"
-          onClick={() => void Notification.requestPermission()}
+          onClick={() => void Notification.requestPermission().then(() => setNotifAsk(false))}
           className="ml-auto shrink-0 rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-amber-700 ring-1 ring-amber-200"
         >
           🔔 창 밖으로도 알림 받기

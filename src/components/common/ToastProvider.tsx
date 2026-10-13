@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 // 여기저기 흩어져 있던 네이티브 alert()를 대체하는 공용 토스트 알림입니다(요청: "UX 점검"에서
@@ -38,6 +38,8 @@ const TYPE_ICON: Record<ToastType, string> = {
 };
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const idRef = useRef(0);
 
@@ -80,7 +82,12 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastContext.Provider value={{ notify }}>
       {children}
-      {typeof document !== "undefined" &&
+      {/* **처음 그릴 때는 그리지 않습니다(mounted).** 예전에는 `typeof document !== "undefined"` 로
+          갈랐는데, 서버에는 document 가 없어 «아무것도 없음», 브라우저는 첫 그림부터 «알림 상자»를
+          그려 둘이 달랐습니다. 이 Provider 가 로그인 영역 전체를 감싸고 있어서, React 는 그 어긋남
+          때문에 **화면 전체(사이드바·상단탭·본문)를 지우고 다시 그렸습니다** - 110개 화면의 하이드레이션
+          오류(#418)가 전부 여기서 났습니다. mounted 는 서버와 첫 그림이 모두 false 라 둘이 같습니다. */}
+      {mounted &&
         createPortal(
           <div className="pointer-events-none fixed bottom-4 right-4 z-[1010] flex w-[calc(100%-2rem)] max-w-sm flex-col gap-2">
             {toasts.map((t) => (

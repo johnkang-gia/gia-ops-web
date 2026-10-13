@@ -45,6 +45,20 @@ import type { AiFeatureFlag } from "@/lib/types";
 // 같은 로그인 없는 토큰 링크를 홈 화면에 추가할 때도 이 manifest를 따라가서, 그 링크가 아니라
 // 앱 메인(manifest의 start_url)으로 등록돼버리는 문제가 있었습니다(요청: "이 링크 그대로는
 // 아이콘 등록이 안돼").
+/**
+ * **껍데기의 부품마다 하이드레이션 경계를 둡니다.**
+ *
+ * 서버가 그린 껍데기와 브라우저가 처음 그린 껍데기가 한 곳이라도 다르면, 경계가 없을 때 React 는
+ * **껍데기 전체**(사이드바·상단탭·본문 틀, 317칸)를 지우고 브라우저에서 다시 그렸습니다. 그 사이
+ * 화면이 깜빡이고, 누른 것이 지워진 요소 위라 «눌러도 반응 없음»이 됩니다. 사이트 점검이 거의 모든
+ * 화면에서 이 오류(#418)를 잡은 뒤에 경계를 나눴습니다 - 한 부품이 어긋나도 그 부품만 다시 그리고,
+ * 점검의 «다시 그려진 곳»이 어느 부품인지 바로 가리킵니다. fallback 은 비워 둡니다: 서버에서는
+ * 기다릴 것이 없어 늘 내용이 그려지고, fallback 이 보일 일이 없습니다.
+ */
+function Isolate({ children }: { children: React.ReactNode }) {
+  return <Suspense fallback={null}>{children}</Suspense>;
+}
+
 export const metadata: Metadata = {
   manifest: "/manifest.json",
 };
@@ -580,7 +594,7 @@ export default async function DashboardLayout({
               </div>
             </Link>
             {!isTeacher && <TaskCountBadge />}
-            {!isTeacher && <NotificationBell />}
+            {!isTeacher && <Isolate><NotificationBell /></Isolate>}
           </div>
           <Suspense fallback={null}>
             <DisabledFeaturesSection />
@@ -601,14 +615,14 @@ export default async function DashboardLayout({
         <div className="mb-2 shrink-0 rounded-lg border border-[var(--shell-border)] bg-[var(--shell-card-bg)] p-1.5">
           {!isTeacher && (
             <div className="mb-1.5 border-b border-[var(--shell-border)] pb-1.5">
-              <GlobalSearchBar compact />
+              <Isolate><GlobalSearchBar compact /></Isolate>
             </div>
           )}
-          <DateTimeCard compact />
+          <Isolate><DateTimeCard compact /></Isolate>
         </div>
 
         <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto overflow-x-visible">
-          <SidebarNavLinks categories={categories} />
+          <Isolate><SidebarNavLinks categories={categories} /></Isolate>
         </nav>
         {/* 문의및건의사항은 특정 부서/직급 전용 기능이 아니라 버그 제보·건의 창구라, 관리자
             메뉴에 묶지 않고 누구나 눈에 띄게 맨 아래에 작은 링크로 둡니다. 교사에게도 엽니다
@@ -626,10 +640,10 @@ export default async function DashboardLayout({
         {/* 지금 보고 있는 학기. 지난 학기를 열어둔 채로 새 기록을 남기려다 "왜 안 보이지"가
             되는 일이 가장 흔한 사고라, 사이드바에 늘 붙여둡니다. */}
         <div className="mb-2 px-3">
-          <TermScopeBar term={termScope.term} terms={termScope.terms} />
+          <Isolate><TermScopeBar term={termScope.term} terms={termScope.terms} /></Isolate>
         </div>
         <div className="mb-2 px-3">
-          <LanguageToggle />
+          <Isolate><LanguageToggle /></Isolate>
         </div>
         {/* 요청("현재 버전을 문의사항 아래에 표시해주고 어떤 버전에서 무엇이 개선되었는지
             버전로그 볼 수 있도록") - 누르면 /changelog로 이동합니다. */}
@@ -675,7 +689,7 @@ export default async function DashboardLayout({
               <Link href="/account" className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--shell-hover-bg)] text-xs font-bold text-[var(--shell-text-muted)]">
                 {displayName[0]?.toUpperCase()}
               </Link>
-              {!isTeacher && <NotificationBell />}
+              {!isTeacher && <Isolate><NotificationBell /></Isolate>}
             </div>
             <SignOutButton />
           </div>
@@ -688,7 +702,7 @@ export default async function DashboardLayout({
           </div>
         )}
         <nav className="shell-blur flex items-center gap-1 overflow-x-auto border-b border-[var(--shell-border)] bg-[var(--shell-bg)] px-2 py-2 sm:hidden">
-          <MobileNavLinks categories={categories} />
+          <Isolate><MobileNavLinks categories={categories} /></Isolate>
           <Link href="/inquiries" className="ml-auto shrink-0 rounded-lg px-2 py-1.5 text-xs text-[var(--shell-text-muted)]">
             🗣️ {t("문의", "Ask")}
           </Link>
@@ -709,7 +723,7 @@ export default async function DashboardLayout({
             페이지가 본문 안에서 직접 탭바를 그려서, 페이지마다 다른 바깥 상자(max-w·padding)
             때문에 탭의 시작점과 폭이 화면을 옮길 때마다 달라졌습니다. 본문 위 한 자리에서 한 번만
             그리면 어떤 화면에서든 같은 자리·같은 크기입니다. */}
-        <SectionTabs isTeacher={isTeacher} isHomeroom={isHomeroomTeacher} />
+        <Isolate><SectionTabs isTeacher={isTeacher} isHomeroom={isHomeroomTeacher} /></Isolate>
         <MainArea>{children}</MainArea>
       </div>
     </div>

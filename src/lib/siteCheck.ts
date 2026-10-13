@@ -343,6 +343,8 @@ export function findClipped(doc: Document): ClipHit[] {
   const hits: ClipHit[] = [];
   for (const el of boxes) {
     if (el.closest("[data-clip-ok]")) continue;
+    // 지도 라이브러리가 만든 상자(이름표 없이 위치만 박힌 div)는 일부러 넘치게 그립니다. 굴릴 대상이 아닙니다.
+    if (isMapInternal(el as HTMLElement)) continue;
     const oy = win.getComputedStyle(el).overflowY;
     if (oy !== "hidden" && oy !== "clip") continue;
     const box = el as HTMLElement;
@@ -352,6 +354,15 @@ export function findClipped(doc: Document): ClipHit[] {
   }
   // 바깥 상자가 잘렸으면 안쪽도 함께 잘려 보입니다. 가장 많이 가린 것 하나가 원인에 가깝습니다.
   return hits.sort((a, b) => b.hiddenPx - a.hiddenPx).slice(0, 3);
+}
+
+function isMapInternal(el: HTMLElement): boolean {
+  if (el.closest(".leaflet-container, [data-map], .gm-style")) return true;
+  // 카카오 지도 등은 클래스 없이 style 로만 자리를 잡은 div 를 겹겹이 만듭니다.
+  for (let e: HTMLElement | null = el, i = 0; e && i < 4; e = e.parentElement, i++) {
+    if (!e.getAttribute("class") && (e.getAttribute("style") ?? "").includes("position")) return true;
+  }
+  return false;
 }
 
 function describeBox(el: HTMLElement): string {
@@ -414,7 +425,10 @@ export function inspectRendered(doc: Document): RenderIssue[] {
   // ── 화면 오류 ───────────────────────────────────────────────────────────
   if (doc.querySelector('[data-app-error="1"]')) issues.push({ kind: "화면 오류", text: "화면에 「문제가 생겼습니다」 오류 화면이 떠 있습니다" });
   const errs = (g?.errors ?? []).filter((e) => !ERROR_NOISE.some((n) => n.test(e)));
-  if (errs.length > 0) issues.push({ kind: "화면 오류", text: `화면 안에서 오류 ${errs.length}건: ${[...new Set(errs)].slice(0, 2).join(" / ")}` });
+  // 오류마다 한 줄씩. 같은 오류가 여러 화면에 나면 점검 화면이 «공통 문제»로 한데 모읍니다.
+  for (const e of [...new Set(errs.map((x) => x.replace(/;?\s*visit https?:\/\/\S+.*$/i, "").trim()))].slice(0, 3)) {
+    issues.push({ kind: "화면 오류", text: `화면 안 오류: ${e}` });
+  }
   const main = doc.querySelector("main") as HTMLElement | null;
   if (!main) issues.push({ kind: "화면 오류", text: "본문(main)이 그려지지 않았습니다" });
   else if (main.innerText.trim().length < 5 && !main.querySelector("img, svg, canvas, iframe, table")) {

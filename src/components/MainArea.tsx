@@ -83,7 +83,7 @@ export default function MainArea({ children }: { children: React.ReactNode }) {
   // 페이지 내용에 딱 붙어 답답합니다(요청 ③: "업무탭부분 너무 페이지랑 가까워 조금 여유는 줘").
   // 좌우는 상단탭과 같은 px를 써서 왼쪽 선을 맞추고, 위쪽에만 작은 숨통을 둡니다.
   if (isWork && isFillScreen) {
-    return <main className="workflatform-theme flex-1 overflow-hidden px-4 pb-3 pt-3 sm:px-6 sm:pb-4">{children}</main>;
+    return <main className="workflatform-theme flex-1 overflow-y-auto overflow-x-hidden px-4 pb-3 pt-3 sm:px-6 sm:pb-4">{children}</main>;
   }
   // 업무 아래 다른 화면(하원수단·지난 업무·휴지통·문의 검색·보고)은 같은 테마에 페이지째 굴립니다.
   if (isWork) {
@@ -93,12 +93,16 @@ export default function MainArea({ children }: { children: React.ReactNode }) {
   // 실무자매뉴얼은 좌(매뉴얼)/우(학생검색) 두 영역이 각자 스크롤되며 화면 안에 같이 떠 있어야
   // 전화 응대 중 둘 다 스크롤 없이 훑어보기 편해서, 다른 페이지와 달리 높이를 뷰포트에 맞춥니다.
   if (isFillScreen) {
-    return <main className="shell-content shell-content-bg flex-1 overflow-hidden p-4 sm:p-6">{children}</main>;
+    return <main className="shell-content shell-content-bg flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6">{children}</main>;
   }
 
   if (isBoundedList) {
     return (
-      <main className={"flex-1 overflow-hidden p-4 sm:p-6 " + (isWeekly ? "bg-wr-bg" : "shell-content shell-content-bg")}>
+      // **가두되 자르지는 않습니다.** 예전에는 overflow-hidden 이라, 안쪽 스크롤 칸 바깥에 놓인 내용이
+      // 넘치면 그 부분은 영영 볼 수 없었습니다(기록·문서·보고서 모음·과목 관리에서 실제로 62~488px 가
+      // 잘려 있었고, 사이트 점검이 그려 보고서야 드러났습니다). overflow-y-auto 는 내용이 화면에
+      // 들어오면 오늘과 똑같고, 넘칠 때만 본문이 굴러갑니다 - 잘리는 일은 생길 수 없습니다.
+      <main className={"flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 " + (isWeekly ? "bg-wr-bg" : "shell-content shell-content-bg")}>
         {children}
       </main>
     );

@@ -141,6 +141,8 @@ export default function SiteCheckPanel({ gaps, version }: { gaps: { key: string;
   const [mobileToo, setMobileToo] = useState(true);
   /** 지난번 점검의 문제 목록. 이번에 «새로 생긴» 것을 가리는 데 씁니다(없으면 첫 점검). */
   const [prevBad, setPrevBad] = useState<Set<string> | null>(null);
+  /** 여러 화면에 똑같이 난 문제(원인이 공통 부품 하나인 것). */
+  const [common, setCommon] = useState<{ kind: RenderIssue["kind"]; text: string; count: number }[]>([]);
   const report = useDevReport();
 
   async function run() {
@@ -150,6 +152,7 @@ export default function SiteCheckPanel({ gaps, version }: { gaps: { key: string;
     setMissed([]);
     setFinishedAt(null);
     setUnmeasured([]);
+    setCommon([]);
     setDone(0);
     setTotal(targets.length);
 
@@ -196,23 +199,50 @@ export default function SiteCheckPanel({ gaps, version }: { gaps: { key: string;
         const list = found.get(path) ?? [];
         for (const i of out) list.push({ kind: i.kind, text: `[${v.label}] ${i.text}` });
         found.set(path, list);
-        // 가장 무거운 판정 하나를 화면의 판정으로 씁니다. 나머지는 설명에 모두 남깁니다.
-        const worst = (["화면 오류", "먹통", "잘림"] as const).find((k) => list.some((i) => i.kind === k))!;
-        const note = list.map((i) => `${i.kind} · ${i.text}`).join(" ／ ");
-        setResults((p) => p.map((r) => (r.path === path ? { ...r, verdict: worst, note } : r)));
       }
     };
     await Promise.all(Array.from({ length: MEASURE_PARALLEL }, worker));
     setMeasuring(null);
 
+    // ── 여러 화면에 똑같이 나는 문제는 «공통 문제»로 한 번만 ─────────────────────
+    //
+    // 첫 점검에서 하이드레이션 오류(React #418) 하나가 110개 화면에 똑같이 찍혔습니다. 그러면
+    // 표가 온통 빨개져 정작 그 화면에만 있는 잘림·먹통이 묻힙니다. 같은 글이 여러 화면에 나면
+    // 원인은 화면마다가 아니라 공통 부품 하나이므로, 위에 한 줄로 올리고 화면 판정에서는 뺍니다.
+    const bare = (t: string) => t.replace(/^\[[^\]]+\]\s*/, "");
+    const spread = new Map<string, { kind: RenderIssue["kind"]; paths: Set<string> }>();
+    for (const [path, list] of found) {
+      for (const i of list) {
+        const k = bare(i.text);
+        const cur = spread.get(k) ?? { kind: i.kind, paths: new Set<string>() };
+        cur.paths.add(path);
+        spread.set(k, cur);
+      }
+    }
+    const threshold = Math.max(8, Math.ceil(pages.length * 0.3));
+    const commons = [...spread.entries()]
+      .filter(([, v]) => v.paths.size >= threshold)
+      .map(([text, v]) => ({ kind: v.kind, text, count: v.paths.size }))
+      .sort((a, b) => b.count - a.count);
+    setCommon(commons);
+    const commonSet = new Set(commons.map((c) => c.text));
+    const finalOf = (r: CheckResult): CheckResult => {
+      const list = (found.get(r.path) ?? []).filter((i) => !commonSet.has(bare(i.text)));
+      if (list.length === 0) return r;
+      // 가장 무거운 판정 하나를 화면의 판정으로 씁니다. 나머지는 설명에 모두 남깁니다.
+      const worst = (["화면 오류", "먹통", "잘림"] as const).find((k) => list.some((i) => i.kind === k))!;
+      return { ...r, verdict: worst, note: list.map((i) => `${i.kind} · ${i.text}`).join(" ／ ") };
+    };
+    const finals = opened.map(finalOf);
+    setResults(finals);
+
     // 지난번 결과와 견줘 «새로 생긴 문제»를 표시합니다. 아침마다 같은 목록을 보면 새로 깨진
     // 것이 묻힙니다.
     {
-      const worstOf = (path: string, v: Verdict): Verdict => {
-        const list = found.get(path);
-        return list ? (["화면 오류", "먹통", "잘림"] as const).find((k) => list.some((i) => i.kind === k)) ?? v : v;
-      };
-      const now = opened.map((r) => ({ path: r.path, v: worstOf(r.path, r.verdict) })).filter((x) => x.v !== "정상").map((x) => `${x.path}|${x.v}`);
+      const now = [
+        ...finals.filter((r) => r.verdict !== "정상").map((r) => `${r.path}|${r.verdict}`),
+        ...commons.map((c) => `공통|${c.text}`),
+      ];
       try {
         const prev = JSON.parse(localStorage.getItem(LAST_RUN_KEY) ?? "null") as string[] | null;
         setPrevBad(prev ? new Set(prev) : null);
@@ -269,6 +299,11 @@ export default function SiteCheckPanel({ gaps, version }: { gaps: { key: string;
       lines.push("## 끊긴 링크");
       for (const r of withDead) lines.push(`- \`${r.path}\` → ${r.deadLinks.join(" , ")}`);
     }
+    if (common.length > 0) {
+      lines.push("");
+      lines.push("## 여러 화면 공통 문제 (공통 부품 하나를 고치면 함께 풀림)");
+      for (const c of common) lines.push(`- ${c.kind} · ${c.count}개 화면 — ${c.text}${prevBad && !prevBad.has(`공통|${c.text}`) ? " (새로 생김)" : ""}`);
+    }
     if (missed.length > 0) {
       lines.push("");
       lines.push("## 점검하지 못한 화면");
@@ -299,7 +334,7 @@ export default function SiteCheckPanel({ gaps, version }: { gaps: { key: string;
   useEffect(() => {
     report.put("site", 10, buildOwn());
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [results, missed, unmeasured, finishedAt, gaps, version, prevBad]);
+  }, [results, missed, unmeasured, finishedAt, gaps, version, prevBad, common]);
 
   async function copyReport() {
     const text = report.build();
@@ -389,6 +424,18 @@ export default function SiteCheckPanel({ gaps, version }: { gaps: { key: string;
           {missed.map((m, i) => (
             <p key={i} className="mt-0.5 text-[11px] text-red-800">
               {m.paths.join(" · ")} — {m.why}
+            </p>
+          ))}
+        </div>
+      )}
+
+      {common.length > 0 && (
+        <div className="mb-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2">
+          <p className="text-[12px] font-bold text-red-700">여러 화면 공통 문제 — 공통 부품 하나를 고치면 함께 풀립니다</p>
+          {common.map((c) => (
+            <p key={c.text} className="mt-0.5 text-[11px] text-red-900">
+              <b>{c.kind}</b> · {c.count}개 화면 — {c.text}
+              {prevBad && !prevBad.has(`공통|${c.text}`) && <span className="ml-1 rounded bg-red-600 px-1 text-[9px] font-bold text-white">새로</span>}
             </p>
           ))}
         </div>

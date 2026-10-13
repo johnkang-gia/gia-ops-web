@@ -449,7 +449,7 @@ export default function ShuttleChecklistClient({
   // 오늘 타는 셔틀은 선명, 안 타는 날은 옅게 전부 보이게). notes를 지우면 자동으로 원래대로
   // 돌아오도록, 파괴적 수정 없이 여기서 계산만 합니다.
   const normName = (s: string) => (s ?? "").replace(/\s+/g, "").trim();
-  const homonymNames = useHomonyms().names;
+  const { names: homonymNames, byId: homonymWhere } = useHomonyms();
   const homonymKeySet = useMemo(() => new Set(homonymNames.map(nameKey)), [homonymNames]);
   const displayItems: ChecklistItem[] = useMemo(() => {
     // 요일별로 다른 노선(homeRouteId)에 배정된 같은 학생을 찾아 색을 배정합니다.
@@ -1039,14 +1039,40 @@ export default function ShuttleChecklistClient({
       notify("끝나는 날이 시작일보다 앞섭니다.", "error");
       return false;
     }
+    /**
+     * **적힌 이름 → 학생 번호.** 예전에는 체크표 줄에서 이름으로 **첫 번째**를 집었습니다 - 김재이가
+     * 셋이면 누구를 적었든 화면 맨 위 김재이에게 붙었습니다.
+     *
+     * 같은 이름이 여럿이면 「김재이(G3JA)」처럼 적힌 반, 또는 고른 호차로 좁힙니다. 그래도 둘 이상이면
+     * **저장하지 않고** 누구인지 묻습니다 - 데이터베이스도 번호 없는 동명이인 줄은 받지 않습니다.
+     */
+    const resolved: { name: string; id: string | null }[] = [];
+    for (const raw of names) {
+      const base = raw.replace(/\(.*\)\s*$/, "").trim();
+      const tag = (raw.match(/\(([^)]*)\)\s*$/)?.[1] ?? "").trim().toUpperCase();
+      // homonym-ok: 같은 이름 «목록»을 꺼내 반·호차로 좁히고, 둘 이상이면 저장하지 않습니다.
+      let cands = [...new Set(items.filter((it) => normName(it.studentName) === normName(base) && it.studentId).map((it) => it.studentId as string))];
+      if (cands.length > 1 && tag) cands = cands.filter((id) => (homonymWhere[id] ?? "").toUpperCase().includes(tag));
+      if (cands.length > 1 && input.routeNo?.trim()) {
+        const want = input.routeNo.trim();
+        cands = cands.filter((id) =>
+          items.some((it) => it.studentId === id && routeById.get(it.permanentRouteId ?? it.homeRouteId)?.route_no === want),
+        );
+      }
+      if (cands.length > 1) {
+        const where = cands.map((id) => homonymWhere[id] ?? "?").join(" · ");
+        notify(`「${base}」이(가) 여럿입니다(${where}). 「${base}(반)」처럼 반을 붙이거나 호차를 골라주세요.`, "error");
+        return false;
+      }
+      resolved.push({ name: base || raw, id: cands[0] ?? null });
+    }
     setNoteBusyPersist(true);
     const supabase = createClient();
-    const rows = names.map((studentName) => {
-      const matched = items.find((it) => normName(it.studentName) === normName(studentName));
+    const rows = resolved.map(({ name: studentName, id }) => {
       return {
         term,
         student_name: studentName,
-        student_id: matched?.studentId ?? null,
+        student_id: id,
         route_no: input.routeNo?.trim() || null,
         content: input.content.trim().slice(0, 300),
         effect_kind: input.effectKind,

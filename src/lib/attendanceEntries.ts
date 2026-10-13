@@ -144,22 +144,27 @@ export async function scanIntoEntries(
     // 여기서 **명부의 id를 반드시 같이 들고 나옵니다.** 이름만 들고 가면 저장할 때 다시 찾아야
     // 하는데, 그때 못 찾으면 학생 없는 줄이 만들어집니다. student_id는 NOT NULL로 잠겨 있어
     // (20260827090000_lock_student_fk.sql) 그런 줄은 애초에 저장되지 않아야 합니다.
-    let matched = matchRosterStudents(m.text, roster, rules, staffNames, m.mentionSpans, m.mentionClassNames)
-      .map((s) => {
-        const full = roster.find((r) => r.name === s.name);
+    // **번호는 고른 쪽이 넘겨준 것을 씁니다.** 예전에는 여기서 `roster.find(이름)` 으로 다시 찾아
+    // 첫 번째 김재이를 저장했습니다 - 매칭이 G3JA 를 골라도 저장은 G2A 였습니다(58줄).
+    //
+    // 못 정한 아이(`ambiguous`)는 번호를 비운 채 「확인필요」로 둡니다. 이 연락이 이어 둔 방에서
+    // 와서 학생 번호가 붙어 있고(`m.studentId`), 그 아이 이름이 이 이름이면 그 아이입니다.
+    const linked = m.studentId ? roster.find((r) => r.id === m.studentId) ?? null : null;
+    let matched: { id: string | null; name: string; display: string; grade: string | null; className: string | null; ambiguous: boolean }[] =
+      matchRosterStudents(m.text, roster, rules, staffNames, m.mentionSpans, m.mentionClassNames).map((s) => {
+        const byLink = s.ambiguous && linked && linked.name === s.name ? linked : null;
+        const id = byLink?.id ?? s.studentId ?? null;
+        const full = id ? roster.find((r) => r.id === id) ?? null : null;
         return {
-          id: full?.id ?? null,
+          id,
           name: s.name,
-          display: s.displayName,
-          grade: s.grade,
+          display: byLink ? `${s.name}${full?.className ? `(${full.className})` : ""}` : s.displayName,
+          grade: full?.grade ?? s.grade,
           className: full?.className ?? null,
           // **누구인지 못 정했는가.** 아래에서 이 값만 보고 확인 여부를 정합니다.
-          ambiguous: s.ambiguous === true,
+          ambiguous: !id,
         };
-      })
-      .filter(
-        (s): s is { id: string; name: string; display: string; grade: string | null; className: string | null; ambiguous: boolean } => !!s.id,
-      );
+      });
 
     if (matched.length === 0 && m.studentId) {
       const s = roster.find((r) => r.id === m.studentId);
@@ -258,7 +263,9 @@ export async function scanIntoEntries(
       rows.push({
         source: m.source,
         source_message_id: m.messageId,
-        student_id: st.id, // 위에서 id 없는 건 걸러냈으므로 항상 값이 있습니다.
+        // 못 정한 아이는 null 이고 state 는 「확인필요」입니다(위 reason). 데이터베이스도 「등록」 줄에는
+        // 번호를 요구합니다(attendance_entries_student_required).
+        student_id: st.id,
         student_name: st.display,
         grade: st.grade,
         class_name: st.className,

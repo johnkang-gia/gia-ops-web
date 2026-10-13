@@ -49,6 +49,13 @@ export type IntegrityView = {
 
 export const INTEGRITY_VIEWS: IntegrityView[] = [
   {
+    view: "homonym_unresolved",
+    label: "동명이인 · 번호 없음 / 근거 없이 붙음",
+    expect: "비어야_정상",
+    impact:
+      "김재이처럼 같은 이름이 여럿인데 학생 번호가 비었거나, 최근 출결이 근거 없이 한 아이에게 붙었습니다. 엉뚱한 아이가 결석·픽업 처리되고 화면에는 오류가 아니라 «처리됨»으로 보입니다.",
+  },
+  {
     view: "invoice_total_mismatch",
     label: "청구서 합계 ↔ 내역",
     expect: "비어야_정상",

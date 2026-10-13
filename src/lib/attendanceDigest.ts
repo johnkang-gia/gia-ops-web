@@ -757,6 +757,14 @@ export type MatchedStudent = {
   // 동명이인인데 문장에 학년 힌트가 없어서 누구인지 확정하지 못한 경우 true - 화면에서 "?"로
   // 표시해 사람이 직접 확인하도록 합니다(임의로 한 명을 골라버리면 조용히 틀립니다).
   ambiguous: boolean;
+  /**
+   * **고른 아이의 학생 번호.** 못 정했으면(`ambiguous`) null 입니다.
+   *
+   * 예전에는 이 결과에 번호가 없어서, 받는 쪽(출결 자동 등록)이 이름으로 명부를 다시 찾았고
+   * **첫 번째 김재이**를 저장했습니다. 여기서 생일·반·학년으로 G3JA 를 골라 놓고도, 저장된 것은
+   * 명부 순서상 앞에 있는 G2A 였습니다. 고른 결과는 번호로 넘깁니다.
+   */
+  studentId: string | null;
 };
 
 // 문장 안에서 이름 주변에 적힌 학년 힌트를 찾습니다(요청: "동명이인이 있을 수 있으니까,
@@ -1368,13 +1376,17 @@ export function matchRosterStudents(
     if (idx === -1) continue;
     const name = r.student_name as string;
     if (learned.some((m) => m.name === name)) continue;
-    const hit = roster.find((s) => s.name === name) ?? null;
+    // name-lookup-ok: 같은 이름 «목록»을 꺼내 한 명일 때만 번호를 씁니다.
+    const same = roster.filter((s) => s.name === name);
+    const hit = same.length === 1 ? same[0] : null;
     learned.push({
       name,
       grade: hit?.grade ?? null,
       displayName: name,
       studentKey: name,
-      ambiguous: false,
+      // 가르친 별칭이 가리키는 이름이 동명이인이면 누구인지 모릅니다 - 번호를 비우고 묻습니다.
+      ambiguous: same.length > 1,
+      studentId: hit?.id ?? null,
     });
     scratch = scratch.slice(0, idx) + " ".repeat(r.pattern.length) + scratch.slice(idx + r.pattern.length);
   }
@@ -1437,6 +1449,7 @@ function matchRosterStudentsCore(
       // 같은 문장이 여러 번 들어와도 중복으로 쌓이지 않게 합니다.
       studentKey: hasHomonym && !ambiguous ? homonymKey(picked) : name,
       ambiguous,
+      studentId: ambiguous ? null : picked.id ?? null,
     });
 
     remaining = remaining.slice(0, idx) + " ".repeat(name.length) + remaining.slice(idx + name.length);
@@ -1493,6 +1506,7 @@ function matchRosterStudentsCore(
             displayName: hasHomonym ? `${picked.name}(${homonymLabel(picked, ambiguous, by)})` : picked.name,
             studentKey: hasHomonym && !ambiguous ? homonymKey(picked) : picked.name,
             ambiguous,
+            studentId: ambiguous ? null : picked.id ?? null,
           });
           foundNames.add(picked.name);
           remaining = blankSpan(remaining, span.start, span.end);
@@ -1546,7 +1560,7 @@ function matchRosterStudentsCore(
         if (!matchedPair) continue;
         for (const s of matchedPair) {
           if (foundNames.has(s.name)) continue;
-          found.push({ name: s.name, grade: s.grade, displayName: s.name, studentKey: s.name, ambiguous: false });
+          found.push({ name: s.name, grade: s.grade, displayName: s.name, studentKey: s.name, ambiguous: false, studentId: s.id ?? null });
           foundNames.add(s.name);
         }
         remaining = blankSpan(remaining, span.start, span.end);
@@ -1648,6 +1662,7 @@ function matchRosterStudentsCore(
           : `${picked.name}(${picked.nameEn})`,
         studentKey: hasHomonym ? `${picked.name}#${normalizeGrade(picked.grade)}` : picked.name,
         ambiguous: hasHomonym,
+        studentId: hasHomonym ? null : picked.id ?? null,
       });
       alreadyFound.add(picked.name);
     }

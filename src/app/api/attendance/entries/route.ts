@@ -567,6 +567,14 @@ export async function PATCH(req: NextRequest) {
     .eq("id", body.id)
     .maybeSingle();
 
+  // 누구인지 아직 안 정한 줄(동명이인)을 「등록」하면 데이터베이스가 거절합니다. 그 영어 오류를 그대로
+  // 띄우면 무엇을 해야 하는지 모르므로 먼저 말해줍니다.
+  if (body.state === "등록" && beforeRow && !(beforeRow as { student_id: string | null }).student_id) {
+    return NextResponse.json(
+      { error: "같은 이름의 학생이 여럿이라 아직 누구인지 정하지 않은 줄입니다. 「오늘만 이 아이로」에서 학생을 먼저 골라주세요." },
+      { status: 400 },
+    );
+  }
   const { data, error } = await db.from("attendance_entries").update(patch).eq("id", body.id).select().maybeSingle();
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
 

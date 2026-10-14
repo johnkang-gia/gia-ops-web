@@ -14,7 +14,7 @@ import type { DepositView } from "@/lib/depositView";
 // 이 화면에는 **사람이 숫자를 쓰는 자리가 하나도 없습니다.** 항목도 금액도 합계도 발행할 때
 // 굳어진 값을 그대로 보여줍니다.
 
-const PRINT_CSS = `
+export const PRINT_CSS = `
   @page { size: A4 portrait; margin: 18mm 16mm; }
   @media print {
     .no-print { display: none !important; }
@@ -68,11 +68,11 @@ const PRINT_CSS = `
   .inv table { border-collapse: collapse; width: 100%; }
 `;
 
-function won(n: number): string {
+export function won(n: number): string {
   return `₩${Math.round(Number(n)).toLocaleString("ko-KR")}`;
 }
 
-function dot(d: string): string {
+export function dot(d: string): string {
   return (d ?? "").replaceAll("-", ".");
 }
 
@@ -117,6 +117,13 @@ export default function InvoiceSheet({
 }) {
   const invoice = parts[0].invoice;
   const many = parts.length > 1;
+  /**
+   * **색만 다릅니다.** 영수증은 청구서와 같은 틀·같은 칸이고 머리띠·표머리·합계 띠만 진한 초록입니다. 학부모가 받은 종이
+   * 둘을 나란히 놓았을 때 «내라는 종이»와 «냈다는 종이»가 색으로 먼저 갈려야 합니다 - 제목 글자만 다르면 같은 종이로
+   * 보고 영수증을 받고도 다시 냅니다.
+   */
+  const INK = receipt ? "#1f4d3a" : "#1e2a44";
+  const SECTION_BG = receipt ? "#e3efe8" : "#e8eaf0";
   /**
    * **칸을 무엇으로 나누는가.** 형제 합본이면 아이 이름, 한 아이의 학비+학비외면 갈래.
    *
@@ -169,7 +176,13 @@ export default function InvoiceSheet({
   /** 아이별로 남은 예치금(형제 합본이면 여럿). */
   const depositLeft = deposit
     ? named
-        .map((p) => ({ who: whoOf(p.invoice), left: p.invoice.student_id ? deposit.left[p.invoice.student_id] ?? 0 : 0 }))
+        .map((p) => ({
+          who: whoOf(p.invoice),
+          left: p.invoice.student_id ? deposit.left[p.invoice.student_id] ?? 0 : 0,
+          share: p.invoice.student_id ? deposit.shareNames?.[p.invoice.student_id] ?? null : null,
+        }))
+        // 형제가 한 통을 쓰면 같은 잔액이 아이마다 두 번 찍힙니다. 묶음 하나에 한 줄만.
+        .filter((d, i, all) => !d.share || all.findIndex((x) => x.share === d.share) === i)
     : [];
 
   // 형제의 납부기한이 다르면 **빠른 쪽**을 적습니다. 늦은 쪽을 적으면 한 아이가 연체됩니다.
@@ -215,7 +228,7 @@ export default function InvoiceSheet({
           <table>
             <tbody>
               <tr>
-                <td style={{ background: "#1e2a44", color: "#fff", padding: "14px 18px", width: "62%" }}>
+                <td style={{ background: INK, color: "#fff", padding: "14px 18px", width: "62%" }}>
                   <div style={{ fontSize: 19, fontWeight: 800, letterSpacing: -0.2 }}>GIA Micro Lab</div>
                   {/* 교재 말고도 나갑니다 - 교복·악기·방과후·학비. 제목에 한 품목을 박아두면
                       다른 품목 청구서가 나갈 때마다 제목이 거짓말이 됩니다. */}
@@ -223,7 +236,7 @@ export default function InvoiceSheet({
                     {receipt ? (receipt.partial ? "Partial Payment Receipt · 일부 납부 영수증" : "Payment Receipt · 영수증") : "Payment Invoice"}
                   </div>
                 </td>
-                <td style={{ background: "#1e2a44", color: "#fff", padding: "14px 18px", textAlign: "right", fontSize: 9.5, lineHeight: 1.5 }}>
+                <td style={{ background: INK, color: "#fff", padding: "14px 18px", textAlign: "right", fontSize: 9.5, lineHeight: 1.5 }}>
                   Gangnam-gu, Seoul
                   <br />
                   www.giamicro.com
@@ -274,7 +287,7 @@ export default function InvoiceSheet({
           {/* 내역 */}
           <table style={{ marginTop: 22 }}>
             <thead>
-              <tr style={{ background: "#1e2a44", color: "#fff" }}>
+              <tr style={{ background: INK, color: "#fff" }}>
                 <th style={{ width: 46, padding: "7px 10px", textAlign: "left", fontSize: 9, letterSpacing: 0.5 }}>NO.</th>
                 <th style={{ padding: "7px 10px", textAlign: "left", fontSize: 9, letterSpacing: 0.5 }}>DESCRIPTION</th>
                 <th style={{ width: 60, padding: "7px 10px", textAlign: "left", fontSize: 9, letterSpacing: 0.5 }}>QTY</th>
@@ -296,8 +309,8 @@ export default function InvoiceSheet({
                 return (
                   <Fragment key={part.invoice.id}>
                     {many && (
-                      <tr style={{ background: "#e8eaf0" }}>
-                        <td colSpan={4} style={{ padding: "6px 10px", fontSize: 10, fontWeight: 800, color: "#1e2a44" }}>
+                      <tr style={{ background: SECTION_BG }}>
+                        <td colSpan={4} style={{ padding: "6px 10px", fontSize: 10, fontWeight: 800, color: INK }}>
                           {sectionTitle(part.invoice, mode)}
                           <span style={{ fontWeight: 400, color: "#6b7280" }}> · No. {part.invoice.invoice_no}</span>
                         </td>
@@ -349,7 +362,7 @@ export default function InvoiceSheet({
             <tbody>
               <tr>
                 <td style={{ width: "58%" }} />
-                <td style={{ background: "#1e2a44", color: "#fff", padding: "12px 16px" }}>
+                <td style={{ background: INK, color: "#fff", padding: "12px 16px" }}>
                   <table>
                     <tbody>
                       {/* 예치금·이미 받은 돈이 있으면 청구액에서 무엇을 빼고 얼마를 내시면 되는지
@@ -433,7 +446,7 @@ export default function InvoiceSheet({
                         {depositLeft.map((d) => (
                           <tr key={d.who}>
                             <td style={{ fontSize: 10, fontWeight: 800, color: "#0f766e" }}>
-                              남은 예치금 · Remaining deposit{depositLeft.length > 1 ? ` (${d.who})` : ""}
+                              남은 예치금 · Remaining deposit{d.share ? ` (공유 · ${d.share})` : depositLeft.length > 1 ? ` (${d.who})` : ""}
                               <span style={{ fontWeight: 400, color: "#6b7280" }}> — {dot(deposit!.asOf)} 기준</span>
                             </td>
                             <td style={{ fontSize: 10.5, fontWeight: 800, color: "#0f766e", textAlign: "right" }}>{won(d.left)}</td>

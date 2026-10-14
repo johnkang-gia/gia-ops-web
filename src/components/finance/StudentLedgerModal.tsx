@@ -16,6 +16,7 @@ import { createClient } from "@/lib/supabase/client";
 import DepositApplyModal from "@/components/finance/DepositApplyModal";
 import { isFromDeposit } from "@/lib/depositLines";
 import CancelInvoiceModal from "@/components/finance/CancelInvoiceModal";
+import DepositShareBox from "@/components/finance/DepositShareBox";
 import InvoiceFixModal from "@/components/finance/InvoiceFixModal";
 import InvoicePreviewModal from "@/components/finance/InvoicePreviewModal";
 import AlltalkpayExport from "@/components/finance/AlltalkpayExport";
@@ -109,6 +110,8 @@ export default function StudentLedgerModal({
   const [exporting, setExporting] = useState<string[] | null>(null);
   const [addItemId, setAddItemId] = useState("");
   const [depositOpen, setDepositOpen] = useState(false);
+  /** 함께 쓸 수 있는 예치금(공유 묶음이면 형제 몫 포함). 자기 예치금만 보면 형제 돈이 있어도 묻지 않고 지나갑니다. */
+  const [poolBalance, setPoolBalance] = useState<number | null>(null);
   /**
    * 청구서를 어떻게 늘어놓나. 「이 달」은 보고 있는 달 것만 위에(예전 모양), 「월별」·「학기별」은
    * 이 아이의 청구서 전부를 청구월·학기로 묶어 최근 것부터. 몇 월에 무엇이 몇 차로 나갔는지를
@@ -205,7 +208,7 @@ export default function StudentLedgerModal({
     const madeIds: { id: string; no: string }[] = [];
     // 예치금이 있으면 저절로 빼지 않고, 발행한 뒤 **뺄 항목을 고르는 창**을 엽니다. 사람이 이 자리에
     // 있으니 무엇을 예치금에서 낼지는 사람이 정합니다.
-    const skipPrepaid = (ledger.totals.deposit ?? 0) > 0;
+    const skipPrepaid = Math.max(ledger.totals.deposit ?? 0, poolBalance ?? 0) > 0;
     const keep = (r: { body: Record<string, unknown> }, fallback: string) => {
       const v = r.body.invoice as { id?: string; invoice_no?: string } | undefined;
       made.push(String(v?.invoice_no ?? fallback));
@@ -465,7 +468,7 @@ export default function StudentLedgerModal({
                       보냄
                     </label>
                     <span className="flex items-center gap-0.5">
-                      {(v.settled.balance > 0 && (ledger?.totals.deposit ?? 0) > 0) || (ledger?.payments ?? []).some((p) => p.invoice_id === v.id && isFromDeposit(p.matched_by)) ? (
+                      {(v.settled.balance > 0 && Math.max(ledger?.totals.deposit ?? 0, poolBalance ?? 0) > 0) || (ledger?.payments ?? []).some((p) => p.invoice_id === v.id && isFromDeposit(p.matched_by)) ? (
                         <button
                           onClick={() => setDepositFor({ id: v.id, label: `${student?.name ?? ""} · ${v.invoice_no}` })}
                           className="rounded bg-teal-100 px-1.5 py-0.5 text-[10px] font-bold text-teal-800 hover:bg-teal-200"
@@ -942,6 +945,7 @@ export default function StudentLedgerModal({
                   </button>
                 </div>
               )}
+              <DepositShareBox studentId={studentId} onBalance={setPoolBalance} onChanged={() => void load()} />
               {ledger.payments.length === 0 && <p className="px-1 py-1 text-[11px] text-slate-400">들어온 돈이 없습니다.</p>}
               {ledger.payments.length > 0 && (
                 <div className="grid gap-2 md:grid-cols-2">

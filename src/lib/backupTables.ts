@@ -55,6 +55,9 @@ export const BACKUP_GROUPS: { group: string; tables: string[] }[] = [
     group: "회계",
     tables: [
       "invoices",
+      // 예치금 공유 묶음. 잃으면 형제가 나눠 쓰던 예치금이 다시 맡긴 아이 한 명에게만 묶입니다.
+      "deposit_shares",
+      "deposit_share_members",
       // 마감한 달. 잃으면 닫아둔 달이 전부 열리고, 지난 보고서가 다시 움직일 수 있게 됩니다.
       "finance_month_closes",
       // 결손·환불 결재. 잃으면 「누가 확인하고 돌려줬나」에 답할 수 없습니다.
@@ -157,7 +160,7 @@ export const BACKUP_GROUPS: { group: string; tables: string[] }[] = [
   {
     // 도서관 앱(gia-lib-web)의 자료. 표는 이 저장소가 만들고, 운영앱은 읽기만 합니다.
     group: "도서관",
-    tables: ["lib_books", "lib_loans", "lib_visits", "lib_settings", "lib_locations", "lib_map", "lib_student_photos", "lib_label_levels", "lib_card_issues", "lib_card_prefs", "lib_print_jobs", "lib_shelf_check", "lib_book_aliases", "lib_extra_cards"],
+    tables: ["lib_books", "lib_loans", "lib_visits", "lib_settings", "lib_locations", "lib_map", "lib_student_photos", "lib_label_levels", "lib_card_issues", "lib_card_prefs", "lib_print_jobs", "lib_shelf_check", "lib_book_aliases", "lib_extra_cards", "lib_holdings_fix"],
   },
   {
     // 학부모 상담. 상담 메모는 학생 기록이고, 상태 기록은 «누가 무엇을» 확인하는 근거입니다.

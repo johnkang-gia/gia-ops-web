@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { groupLines, isFromDeposit } from "@/lib/depositLines";
 import { todayKst } from "@/lib/kst";
+import { poolsOf } from "@/lib/depositShare";
 import type { InvoiceLine } from "@/lib/types";
 
 /**
@@ -18,8 +19,10 @@ export type DepositItem = { name: string; amount: number; partial: boolean };
 export type InvoiceDeposit = { deposit: number; otherPaid: number; items: DepositItem[]; lineIds: string[] };
 export type DepositView = {
   byInvoice: Record<string, InvoiceDeposit>;
-  /** 학생별 남은 예치금. */
+  /** 학생별 남은 예치금. **공유 묶음이면 묶음 전체 합계**입니다(형제가 함께 쓰는 돈). */
   left: Record<string, number>;
+  /** 공유 묶음 이름(있는 학생만). 종이에 «공유 예치금»으로 적습니다. */
+  shareNames: Record<string, string>;
   asOf: string;
 };
 
@@ -31,10 +34,14 @@ export async function loadDepositView(
 ): Promise<DepositView> {
   const ids = parts.map((p) => p.invoice.id);
   const students = [...new Set(parts.map((p) => p.invoice.student_id).filter((x): x is string => !!x))];
+  // 남은 예치금은 공유 묶음 전체로 셉니다. 자기 몫만 적으면 형제와 함께 쓰는 돈이 종이마다 다르게 찍힙니다.
+  const pools = await poolsOf(supabase, students);
+  if (pools.error) throw new Error(pools.error);
+  const everyone = [...new Set([...pools.pools.values()].flat())];
   const [payRes, depRes] = await Promise.all([
     supabase.from("payments").select("invoice_id, amount, matched_by, applied_line_id").in("invoice_id", ids),
-    students.length > 0
-      ? supabase.from("payments").select("student_id, amount").in("student_id", students).is("invoice_id", null)
+    everyone.length > 0
+      ? supabase.from("payments").select("student_id, amount").in("student_id", everyone).is("invoice_id", null)
       : Promise.resolve({ data: [], error: null }),
   ]);
   // 조용히 넘기지 않습니다(§5) - 예치금을 못 읽은 채 찍으면 이미 낸 돈이 「납부하실 금액」에 남습니다.
@@ -68,11 +75,17 @@ export async function loadDepositView(
     };
   }
 
-  const left: Record<string, number> = {};
+  const own: Record<string, number> = {};
   for (const r of (depRes.data as { student_id: string; amount: number | string }[] | null) ?? []) {
-    left[r.student_id] = (left[r.student_id] ?? 0) + Number(r.amount);
+    own[r.student_id] = (own[r.student_id] ?? 0) + Number(r.amount);
   }
-  for (const s of students) left[s] = Math.max(0, left[s] ?? 0);
+  const left: Record<string, number> = {};
+  const shareNames: Record<string, string> = {};
+  for (const s of students) {
+    left[s] = Math.max(0, (pools.pools.get(s) ?? [s]).reduce((n, id) => n + (own[id] ?? 0), 0));
+    const nm = pools.names.get(s);
+    if (nm) shareNames[s] = nm;
+  }
 
-  return { byInvoice, left, asOf: todayKst() };
+  return { byInvoice, left, shareNames, asOf: todayKst() };
 }

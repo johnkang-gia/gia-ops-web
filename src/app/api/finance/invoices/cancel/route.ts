@@ -56,7 +56,7 @@ export async function POST(req: Request) {
     // **출처(`origin`)로 가릅니다.** `matched_by` 는 선입금 충당이 덮어쓰므로, 한 번이라도
     // 충당을 거친 「직접수납」 입금은 그 이름을 잃습니다. 그러면 취소가 못 알아보고 그 돈이
     // 선입금으로 살아남아, 다음 청구서에 저절로 얹힙니다(20261026 마이그레이션).
-    .select("id, amount, matched_by, origin")
+    .select("id, amount, matched_by, origin, shared_from_student_id")
     .eq("invoice_id", id);
   // 읽지 못했으면 취소를 **하지 않습니다.** 붙은 돈이 있는지 모르는 채로 취소하면, 그 돈이
   // 취소된 청구서에 매달린 채 남습니다 - 화면에는 아무 표시도 안 납니다.
@@ -67,7 +67,7 @@ export async function POST(req: Request) {
     );
   }
 
-  type PayRow = { id: string; amount: number | string; matched_by: string | null; origin: string | null };
+  type PayRow = { id: string; amount: number | string; matched_by: string | null; origin: string | null; shared_from_student_id: string | null };
   const rows = (pays as PayRow[] | null) ?? [];
 
   // ③ **발행이 끌어다 붙인 선입금**(`선입금 자동충당`).
@@ -125,10 +125,21 @@ export async function POST(req: Request) {
   // 「청구 취소로 떼어냄」으로 덮어써서, 그 줄이 원래 무엇이었는지가 사라졌습니다.
   let returned = 0;
   if (fromPrepaid.length > 0) {
-    const { error: backErr } = await supabase
-      .from("payments")
-      .update({ invoice_id: null, applied_line_id: null })
-      .in("id", fromPrepaid.map((p) => p.id));
+    // 공유 예치금(형제가 맡긴 돈)은 **맡긴 학생에게** 돌려줍니다(`shared_from_student_id`).
+    const own = fromPrepaid.filter((p) => !p.shared_from_student_id).map((p) => p.id);
+    let backErr: { message: string } | null = null;
+    if (own.length > 0) {
+      const r = await supabase.from("payments").update({ invoice_id: null, applied_line_id: null, deposit_applied_at: null }).in("id", own);
+      backErr = r.error;
+    }
+    for (const p of fromPrepaid.filter((x) => x.shared_from_student_id)) {
+      if (backErr) break;
+      const r = await supabase
+        .from("payments")
+        .update({ invoice_id: null, applied_line_id: null, deposit_applied_at: null, student_id: p.shared_from_student_id, shared_from_student_id: null })
+        .eq("id", p.id);
+      backErr = r.error;
+    }
     if (backErr) {
       return NextResponse.json(
         { error: `충당했던 선입금을 되돌리지 못해 취소하지 않았습니다: ${backErr.message}` },

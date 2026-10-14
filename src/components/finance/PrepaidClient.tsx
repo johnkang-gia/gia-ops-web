@@ -364,6 +364,11 @@ export default function PrepaidClient({
                       거래명세서
                     </Link>
                   )}
+                  {g.studentId && (
+                    <a href={`/finance/deposits/${g.studentId}/print`} target="_blank" rel="noreferrer" className="text-[10px] font-semibold text-teal-700 underline" title="입금·차감·남은 금액(공유 묶음이면 함께)">
+                      예치금 사용내역서
+                    </a>
+                  )}
                 </div>
 
                 <div className="flex flex-col gap-1.5">

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { splitMemo, leftoverMemo } from "@/lib/prepaid";
 import { planDeduction, firstFitLines, depositBalance, isFromDeposit, groupLines, type LineNeed } from "@/lib/depositLines";
+import { poolOf } from "@/lib/depositShare";
 
 /**
  * **예치금을 청구서 항목에 붙이고 떼는 일** — 표를 고치는 곳은 여기 하나입니다.
@@ -23,6 +24,8 @@ import { planDeduction, firstFitLines, depositBalance, isFromDeposit, groupLines
 
 type DepositRow = {
   id: string;
+  /** 이 돈을 맡긴 학생. 공유 묶음이면 청구서 주인과 다를 수 있습니다. */
+  student_id: string;
   amount: number;
   paid_at: string;
   payer_name: string | null;
@@ -32,22 +35,27 @@ type DepositRow = {
   matched_by: string | null;
 };
 
-/** 이 학생 앞으로 남은 예치금 줄(청구서에 안 붙은 입금)과 쓸 수 있는 잔액. */
+/**
+ * 이 학생이 쓸 수 있는 예치금 줄(청구서에 안 붙은 입금)과 잔액. **공유 묶음이면 묶음 전체의 줄**입니다
+ * (`depositShare.ts`). 줄은 하나씩만 있으므로 형제가 같은 돈을 두 번 쓸 수 없습니다.
+ */
 export async function loadDeposits(
   supabase: SupabaseClient,
   studentId: string,
-): Promise<{ rows: DepositRow[]; balance: number; error: string | null }> {
+): Promise<{ rows: DepositRow[]; balance: number; memberIds: string[]; shareName: string | null; error: string | null }> {
+  const pool = await poolOf(supabase, studentId);
+  if (pool.error) return { rows: [], balance: 0, memberIds: [studentId], shareName: null, error: pool.error };
   const { data, error } = await supabase
     .from("payments")
     // **출처(`origin`)를 함께 읽습니다.** 쪼갠 조각이 뿌리의 출처를 물려받아야, 나중에
     // 청구서를 취소할 때 「이 돈은 발행이 만든 것」임을 알아볼 수 있습니다.
-    .select("id, amount, paid_at, payer_name, origin, method, method_kind, matched_by")
-    .eq("student_id", studentId)
+    .select("id, student_id, amount, paid_at, payer_name, origin, method, method_kind, matched_by")
+    .in("student_id", pool.memberIds)
     .is("invoice_id", null)
     .order("paid_at");
-  if (error) return { rows: [], balance: 0, error: `남은 예치금을 읽지 못했습니다: ${error.message}` };
+  if (error) return { rows: [], balance: 0, memberIds: pool.memberIds, shareName: null, error: `남은 예치금을 읽지 못했습니다: ${error.message}` };
   const rows = ((data as (DepositRow & { amount: number | string })[] | null) ?? []).map((r) => ({ ...r, amount: Number(r.amount) }));
-  return { rows, balance: depositBalance(rows), error: null };
+  return { rows, balance: depositBalance(rows), memberIds: pool.memberIds, shareName: pool.share?.name ?? null, error: null };
 }
 
 export type ApplyResult = {
@@ -69,17 +77,26 @@ export async function applyDepositToLines(
   lines: LineNeed[],
   actor: string,
   matchedBy: string,
+  /** 이번에 뺄 **최대 금액**. 사람이 「이 청구서에서는 30만원만」이라고 정한 경우. 없으면 고른 항목 전부. */
+  maxAmount?: number | null,
 ): Promise<ApplyResult> {
   const none: ApplyResult = { applied: 0, partial: null, left: 0, error: null };
   if (!invoice.student_id || lines.length === 0) return none;
+  const owner = invoice.student_id;
 
-  const dep = await loadDeposits(supabase, invoice.student_id);
+  const dep = await loadDeposits(supabase, owner);
   if (dep.error) return { ...none, error: dep.error };
+  const cap = maxAmount != null && maxAmount >= 0 ? Math.min(dep.balance, Math.round(maxAmount)) : dep.balance;
+  // 자기 돈을 먼저 씁니다. 형제 돈부터 빼면 맡긴 아이 청구서를 낼 때 그 아이 돈이 남고 형제 돈이 비어
+  // 「왜 둘째 예치금이 줄었나」를 설명해야 합니다. 같은 사람 돈 안에서는 먼저 들어온 것부터(`planDeduction`).
+  const ordered = [...dep.rows].sort((a, b) => Number(a.student_id !== owner) - Number(b.student_id !== owner));
+  const rank = new Map(ordered.map((r, i) => [r.id, i]));
   const plan = planDeduction(
-    dep.rows.map((r) => ({ id: r.id, amount: r.amount, paidAt: r.paid_at })),
+    ordered.map((r) => ({ id: r.id, amount: r.amount, paidAt: `${r.student_id === owner ? "0" : "1"}|${r.paid_at}|${String(rank.get(r.id)).padStart(5, "0")}` })),
     lines,
-    dep.balance,
+    cap,
   );
+  const appliedAt = new Date().toISOString();
   if (plan.applied <= 0) return { ...none, left: dep.balance };
 
   // 원래 예치금 줄 → 지금 그 돈이 들어 있는 줄. 쪼개면 남은 조각이 새 번호를 받습니다.
@@ -91,15 +108,22 @@ export async function applyDepositToLines(
       const cur = live.get(take.depositId);
       if (!cur) return { ...none, error: "예치금 줄을 따라가지 못했습니다. 다시 열어 확인해주세요." };
 
+      // 형제 돈이면 붙은 조각의 주인을 **청구서 주인**으로 바꾸고 원래 맡긴 학생을 남깁니다. 수납 합계는 모두
+      // 청구서 주인 기준이라, 주인을 그대로 두면 그 돈이 형제 쪽 «받은 돈»으로 셈해집니다.
+      const owned = cur.student_id === owner ? {} : { student_id: owner, shared_from_student_id: cur.student_id };
       if (take.amount >= cur.amount) {
-        const { error } = await supabase
+        const { data: got, error } = await supabase
           .from("payments")
           // `origin` 은 건드리지 않습니다 - 이 칸이 덮어써지던 것이 「취소해도 안 지워지는 돈」의
           // 원인이었습니다(20261026 마이그레이션).
-          .update({ invoice_id: invoice.id, matched_by: matchedBy, applied_line_id: lp.lineId })
+          .update({ invoice_id: invoice.id, matched_by: matchedBy, applied_line_id: lp.lineId, deposit_applied_at: appliedAt, ...owned })
           .eq("id", cur.id)
-          .is("invoice_id", null);
+          .is("invoice_id", null)
+          .select("id");
         if (error) return { ...none, applied: 0, error: `예치금을 붙이지 못했습니다: ${error.message}` };
+        // **안 붙은 줄일 때만** 고칩니다. 0줄이면 그 사이 다른 청구서(형제 창 등)가 먼저 썼다는 뜻입니다 -
+        // 그대로 넘어가면 이 청구서는 받은 줄 알고, 같은 돈이 두 장에 쓰인 것으로 보입니다.
+        if (!got || got.length === 0) return { ...none, error: "그 사이 다른 청구서에서 이 예치금을 먼저 썼습니다. 창을 다시 열어 남은 예치금을 확인해주세요." };
         firstPiece ??= cur.id;
         live.delete(take.depositId);
         continue;
@@ -128,12 +152,13 @@ export async function applyDepositToLines(
           origin: cur.origin,
           split_from_id: cur.id,
           created_by: actor,
+          // 남는 조각은 **맡긴 학생** 것입니다(위 student_id). 공유 묶음 잔액에 그대로 남습니다.
         })
         .select("id")
         .single();
       if (newErr || !made) return { ...none, error: `남은 예치금을 나누지 못했습니다: ${newErr?.message ?? ""}` };
 
-      const { error: cutErr } = await supabase
+      const { data: cut, error: cutErr } = await supabase
         .from("payments")
         .update({
           invoice_id: invoice.id,
@@ -141,9 +166,24 @@ export async function applyDepositToLines(
           matched_by: matchedBy,
           applied_line_id: lp.lineId,
           memo: splitMemo(cur.amount, take.amount, invoice.invoice_no),
+          deposit_applied_at: appliedAt,
+          ...owned,
         })
-        .eq("id", cur.id);
-      if (cutErr) return { ...none, error: `예치금을 나눠 붙이지 못했습니다: ${cutErr.message}` };
+        .eq("id", cur.id)
+        .is("invoice_id", null)
+        .select("id");
+      if (cutErr || !cut || cut.length === 0) {
+        // 원래 줄을 못 잘랐으면(그 사이 다른 청구서가 썼거나 실패) 방금 떼어낸 조각을 지웁니다. 안 지우면
+        // 원래 줄 + 조각이 함께 남아 같은 돈이 두 번 잡힙니다.
+        const { error: undoErr } = await supabase.from("payments").delete().eq("id", (made as { id: string }).id);
+        const why = cutErr ? cutErr.message : "그 사이 다른 청구서에서 이 예치금을 먼저 썼습니다";
+        return {
+          ...none,
+          error: undoErr
+            ? `예치금을 나눠 붙이지 못했고(${why}) 떼어낸 조각도 지우지 못했습니다(${undoErr.message}). 예치금 대장에서 ${rest.toLocaleString()}원 줄을 확인해주세요.`
+            : `예치금을 나눠 붙이지 못했습니다: ${why}. 창을 다시 열어 확인해주세요.`,
+        };
+      }
       firstPiece ??= cur.id;
       live.set(take.depositId, { ...cur, id: (made as { id: string }).id, amount: rest });
     }
@@ -177,22 +217,40 @@ export async function releaseDeposit(
   supabase: SupabaseClient,
   invoiceId: string,
 ): Promise<{ released: number; error: string | null }> {
-  const { data, error } = await supabase.from("payments").select("id, amount, matched_by").eq("invoice_id", invoiceId);
+  const { data, error } = await supabase.from("payments").select("id, amount, matched_by, shared_from_student_id").eq("invoice_id", invoiceId);
   if (error) return { released: 0, error: `이 청구서의 입금을 읽지 못했습니다: ${error.message}` };
-  const mine = ((data as { id: string; amount: number | string; matched_by: string | null }[] | null) ?? []).filter((p) =>
-    isFromDeposit(p.matched_by),
-  );
+  type P = { id: string; amount: number | string; matched_by: string | null; shared_from_student_id: string | null };
+  const mine = ((data as P[] | null) ?? []).filter((p) => isFromDeposit(p.matched_by));
   if (mine.length === 0) return { released: 0, error: null };
   const ids = mine.map((p) => p.id);
 
   const { error: lineErr } = await supabase.from("invoice_lines").update({ paid_payment_id: null }).in("paid_payment_id", ids);
   if (lineErr) return { released: 0, error: `항목 표시를 지우지 못해 되돌리지 않았습니다: ${lineErr.message}` };
 
-  const { error: backErr } = await supabase
-    .from("payments")
-    .update({ invoice_id: null, matched_by: "예치금", applied_line_id: null })
-    .in("id", ids);
-  if (backErr) return { released: 0, error: `예치금으로 되돌리지 못했습니다: ${backErr.message}` };
+  // 자기 돈은 한 번에, 형제 돈은 **맡긴 학생에게** 하나씩 돌려줍니다. 청구서 주인 앞으로 돌려두면 공유를 풀었을 때
+  // 형제가 맡긴 돈이 이 아이 돈으로 남습니다.
+  const own = mine.filter((p) => !p.shared_from_student_id).map((p) => p.id);
+  if (own.length > 0) {
+    const { error: backErr } = await supabase
+      .from("payments")
+      .update({ invoice_id: null, matched_by: "예치금", applied_line_id: null, deposit_applied_at: null })
+      .in("id", own);
+    if (backErr) return { released: 0, error: `예치금으로 되돌리지 못했습니다: ${backErr.message}` };
+  }
+  for (const p of mine.filter((x) => x.shared_from_student_id)) {
+    const { error: backErr } = await supabase
+      .from("payments")
+      .update({
+        invoice_id: null,
+        matched_by: "예치금",
+        applied_line_id: null,
+        deposit_applied_at: null,
+        student_id: p.shared_from_student_id,
+        shared_from_student_id: null,
+      })
+      .eq("id", p.id);
+    if (backErr) return { released: 0, error: `공유 예치금을 맡긴 학생에게 되돌리지 못했습니다: ${backErr.message}` };
+  }
 
   return { released: mine.reduce((n, p) => n + Number(p.amount), 0), error: null };
 }

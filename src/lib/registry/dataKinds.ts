@@ -195,6 +195,9 @@ export const DATA_KINDS: DataKindDef[] = [
       // 올톡 대조에 올린 파일과 사람의 판단(학생 연결·앱에 넣을지). 돈은 담지 않습니다.
       "alltalk_sync_files",
       "alltalk_sync_marks",
+      // 예치금 공유 묶음(형제 등). 돈은 payments 에만 있고 여기는 «누가 한 통을 쓰나»만 적습니다.
+      "deposit_shares",
+      "deposit_share_members",
     ],
     // 한 학생·한 학기에 청구서가 여러 장인 것은 정상입니다(학비·학비외·분류별·재청구). 데이터베이스가
     // 막는 것은 「같은 학생·학기·청구월·항목 범위의 학비 청구서가 발행 상태로 두 장」뿐이라
@@ -271,6 +274,8 @@ export const LOG_TABLES = [
   "finance_access_log",
   // 도서관 앱의 라벨·카드 인쇄 기록. 같은 묶음을 두 번 뽑지 않게 하는 내력입니다.
   "lib_print_jobs",
+  // 도서관 보유 권수를 자리 등록 기록에 맞춰 바꾼 내역(바꾸기 전 값 포함). 되돌리기의 재료입니다.
+  "lib_holdings_fix",
   // 학사일정을 누가 언제 무엇으로 고쳤는지. 누구나 고칠 수 있게 하는 대신 내력을 남깁니다.
   "academic_item_log",
   // 청구 합계가 바뀐 내력. 트리거가 항목에서 합계를 다시 셀 때마다 한 줄 남습니다 -

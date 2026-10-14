@@ -37,16 +37,35 @@ export default function DepositApplyModal({
   const [busy, setBusy] = useState(false);
   /** 고른 순서가 곧 덮는 순서입니다. 모자라면 마지막에 고른 항목이 일부만 덮입니다. */
   const [order, setOrder] = useState<string[]>([]);
+  /** 공유 묶음 이름과 함께 쓰는 학생 수. 둘 이상이면 «공유 예치금»으로 보여줍니다. */
+  const [share, setShare] = useState<{ name: string; count: number } | null>(null);
+  /**
+   * 이번에 뺄 금액(비우면 고른 항목 전부). 큰 예치금이 있어도 이번 달은 일부만 쓰고 나머지는 다음 학기로 두는
+   * 집이 있어서, «무엇을»과 함께 «얼마까지»도 사람이 정합니다.
+   */
+  const [maxText, setMaxText] = useState("");
 
   useEffect(() => {
     const supabase = createClient();
     (async () => {
       const { data: inv, error: invErr } = await supabase.from("invoices").select("student_id").eq("id", invoiceId).maybeSingle();
       if (invErr || !inv?.student_id) return setErr(invErr?.message ?? "학생이 이어지지 않은 청구서입니다.");
+      // 공유 묶음이면 묶음 전체의 예치금을 씁니다(`depositShare.ts` 와 같은 규칙 - 서버가 저장할 때 다시 셉니다).
+      let pool: string[] = [inv.student_id];
+      const { data: mem } = await supabase.from("deposit_share_members").select("share_id").eq("student_id", inv.student_id).maybeSingle();
+      if (mem) {
+        const sid = (mem as { share_id: string }).share_id;
+        const [all, sh] = await Promise.all([
+          supabase.from("deposit_share_members").select("student_id").eq("share_id", sid),
+          supabase.from("deposit_shares").select("name").eq("id", sid).maybeSingle(),
+        ]);
+        pool = [...new Set([inv.student_id, ...(((all.data as { student_id: string }[] | null) ?? []).map((r) => r.student_id))])];
+        setShare({ name: (sh.data as { name: string } | null)?.name ?? "공유 예치금", count: pool.length });
+      }
       const [l, p, d] = await Promise.all([
         supabase.from("invoice_lines").select("id, seq, name, amount, paid_payment_id").eq("invoice_id", invoiceId).order("seq"),
         supabase.from("payments").select("id, amount, matched_by, applied_line_id").eq("invoice_id", invoiceId),
-        supabase.from("payments").select("amount").eq("student_id", inv.student_id).is("invoice_id", null),
+        supabase.from("payments").select("amount").in("student_id", pool).is("invoice_id", null),
       ]);
       // 못 읽은 채로 고르게 하면 이미 뺀 항목을 모르고 다시 빼게 됩니다. 이유를 띄우고 멈춥니다.
       const bad = l.error ?? p.error ?? d.error;
@@ -84,9 +103,12 @@ export default function DepositApplyModal({
 
   const picked = order.map((id) => items.find((i) => i.id === id)).filter((i): i is (typeof items)[number] => !!i && !i.lockedBy);
   const need = picked.reduce((n, i) => n + i.amount, 0);
-  const willApply = Math.min(need, available);
-  const short = need > available ? picked[picked.length - 1] : null;
-  const shortCovered = short ? short.amount - (need - available) : 0;
+  const maxAmount = maxText.trim() === "" ? null : Math.max(0, Math.round(Number(maxText.replace(/[^0-9]/g, "")) || 0));
+  /** 실제로 쓸 수 있는 한도 = 남은 예치금과 사람이 정한 금액 중 작은 쪽. */
+  const limit = maxAmount === null ? available : Math.min(available, maxAmount);
+  const willApply = Math.min(need, limit);
+  const short = need > limit ? picked[picked.length - 1] : null;
+  const shortCovered = short ? short.amount - (need - limit) : 0;
 
   function toggle(id: string, on: boolean) {
     setOrder((o) => (on ? [...o.filter((x) => x !== id), id] : o.filter((x) => x !== id)));
@@ -98,7 +120,7 @@ export default function DepositApplyModal({
     const res = await fetch("/api/finance/invoices/deposit", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ invoiceId, lineIds: picked.map((i) => i.id), allowPartial }),
+      body: JSON.stringify({ invoiceId, lineIds: picked.map((i) => i.id), allowPartial, maxAmount }),
     });
     const body = (await res.json().catch(() => ({}))) as {
       error?: string;
@@ -130,6 +152,11 @@ export default function DepositApplyModal({
         {lines && (
           <>
             <div className="mb-3 rounded-lg bg-teal-50 px-3 py-2 text-[12px] text-teal-900">
+              {share && share.count > 1 ? (
+                <span className="mr-1 rounded bg-teal-600 px-1 text-[10px] font-bold text-white" title="묶음 안 학생들이 한 통으로 나눠 씁니다">
+                  공유 · {share.name} ({share.count}명)
+                </span>
+              ) : null}
               쓸 수 있는 예치금 <b className="tabular-nums">{won(available)}</b>
               {onInvoice > 0 && <span className="ml-1 text-[11px] text-teal-700">(이 청구서에서 이미 뺀 {won(onInvoice)} 포함)</span>}
             </div>
@@ -158,13 +185,24 @@ export default function DepositApplyModal({
               {items.length === 0 && <li className="text-[11px] text-slate-400">뺄 수 있는 항목이 없습니다.</li>}
             </ul>
 
+            <label className="mb-2 flex items-center gap-2 text-[12px]">
+              <span className="shrink-0 font-semibold text-slate-600">이번에 뺄 금액</span>
+              <input
+                value={maxText}
+                onChange={(e) => setMaxText(e.target.value.replace(/[^0-9,]/g, ""))}
+                inputMode="numeric"
+                placeholder={`비우면 고른 항목 전부 (최대 ${won(Math.min(need, available))})`}
+                className="min-w-0 flex-1 rounded border border-slate-300 px-2 py-1 text-right tabular-nums"
+                disabled={busy}
+              />
+            </label>
             <div className="mb-3 space-y-0.5 rounded-lg border border-slate-200 px-3 py-2 text-[12px]">
               <div className="flex justify-between"><span className="text-slate-500">예치금에서 뺄 금액</span><b className="tabular-nums">{won(willApply)}</b></div>
               <div className="flex justify-between"><span className="text-slate-500">빼고 남는 예치금</span><b className="tabular-nums text-teal-700">{won(available - willApply)}</b></div>
             </div>
             {short && (
               <p className="mb-2 rounded bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-900">
-                예치금이 {won(need - available)} 모자랍니다. 마지막에 고른 「{short.name.replace(/^[\s　└]+/, "")}」은 {won(shortCovered)}만 예치금에서 빠지고, 나머지
+                {maxAmount !== null && maxAmount < Math.min(need, available) ? `정한 금액(${won(maxAmount)})까지만 뺍니다.` : `예치금이 ${won(need - available)} 모자랍니다.`} 마지막에 고른 「{short.name.replace(/^[\s　└]+/, "")}」은 {won(shortCovered)}만 예치금에서 빠지고, 나머지
                 {" "}{won(short.amount - shortCovered)}은 청구서에 남습니다.
               </p>
             )}

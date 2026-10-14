@@ -889,3 +889,15 @@ SQL 창에 붙이게 하지 않습니다 - 손으로 돌린 SQL 은 기록에 �
   학비는 **같은 달 같은 plan_id**, 학비외는 **같은 학기 같은 item_id** 가 있으면 거절합니다(23505 → 화면에는 409).
   이월 줄·정정 줄, 사람이 「한 번 더 청구」를 고른 장(`invoices.allow_duplicate`)은 예외입니다.
 - 이미 쌓인 것은 `invoice_duplicate_lines` 뷰가 찾고, 재무 「이번 달」과 개발자 › 진단에 뜹니다. 비어 있어야 정상입니다.
+
+## 2-22. 예치금은 입금 줄 하나에 한 번만 있습니다 (공유 묶음)
+
+예치금 = 청구서에 안 붙은 입금 줄(`payments.invoice_id is null`). 형제가 함께 쓰는 돈은 **공유 묶음**
+(`deposit_shares` · `deposit_share_members`, `src/lib/depositShare.ts`)으로 «누구 줄까지 함께 보나»만 정합니다.
+공유 잔액을 따로 적어 두지 않습니다 - 두 곳에 있으면 같은 돈이 두 번 쓰입니다.
+
+- 예치금을 읽는 자리는 `poolOf` / `poolsOf` 로 학생 목록을 얻습니다(차감·자동 충당·청구서 인쇄·학생 창·사용내역서).
+- 붙이는 일은 `prepaidApply.ts` 하나입니다. **`invoice_id is null` 일 때만** 고치고, 0줄이면 «먼저 썼다»로 멈춥니다.
+- 형제 돈을 붙이면 조각의 `student_id` = 청구서 주인, `shared_from_student_id` = 맡긴 학생. 되돌리기·취소는 맡긴 학생에게 돌려줍니다.
+- 사용내역서는 `depositStatement.ts`(순수 함수 + 읽기). 쪼갠 줄은 `split_from_id` 뿌리로 모아 받은 돈을 한 번만 셉니다.
+- 종이 색: 청구서 남색 · 영수증 초록 · 예치금 내역 청록. 틀(`InvoiceSheet`·`PRINT_CSS`)은 하나입니다.

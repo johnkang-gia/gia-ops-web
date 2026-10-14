@@ -25,7 +25,11 @@ export async function POST(req: Request) {
   if (!me) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   if (!hasFinanceAccess(me)) return NextResponse.json({ error: "재무 권한이 필요합니다." }, { status: 403 });
 
-  const body = (await req.json().catch(() => ({}))) as { invoiceId?: string; lineIds?: unknown; allowPartial?: boolean };
+  const body = (await req.json().catch(() => ({}))) as { invoiceId?: string; lineIds?: unknown; allowPartial?: boolean; maxAmount?: unknown };
+  // 이번에 뺄 최대 금액. 사람이 「예치금에서 30만원만」이라고 정할 때. 비우면 고른 항목 전부입니다.
+  const rawMax = body.maxAmount === null || body.maxAmount === undefined || body.maxAmount === "" ? null : Math.round(Number(body.maxAmount));
+  if (rawMax !== null && (!Number.isFinite(rawMax) || rawMax < 0)) return NextResponse.json({ error: "뺄 금액을 숫자로 적어주세요." }, { status: 400 });
+  const maxAmount = rawMax;
   const invoiceId = String(body.invoiceId ?? "");
   if (!invoiceId) return NextResponse.json({ error: "invoiceId가 필요합니다." }, { status: 400 });
   const lineIds = Array.isArray(body.lineIds) ? body.lineIds.filter((x): x is string => typeof x === "string") : [];
@@ -94,7 +98,9 @@ export async function POST(req: Request) {
   }
   // 모자라면 **먼저 알리고 멈춥니다.** 마지막 항목을 일부만 덮을지는 사람이 정합니다 - 종이에
   // 「교복 중 일부」가 찍히는 일이라, 아무도 안 본 채로 그렇게 나가면 안 됩니다.
-  if (need > available && body.allowPartial !== true) {
+  // 사람이 금액을 정했으면 그 금액까지만 빼는 것이 뜻이므로 마지막 항목이 일부만 덮여도 됩니다.
+  const capped = maxAmount !== null && maxAmount < need;
+  if (need > available && body.allowPartial !== true && !capped) {
     return NextResponse.json(
       { error: `예치금(${available.toLocaleString()}원)이 고른 항목(${need.toLocaleString()}원)보다 적습니다.`, available, need },
       { status: 409 },
@@ -110,6 +116,7 @@ export async function POST(req: Request) {
     chosen,
     me.email,
     `${DEPOSIT_PICKED} · ${me.name || me.email}`,
+    maxAmount,
   );
   // 되돌리기는 됐는데 붙이기가 실패하면, 돈은 예치금에 그대로 있습니다(사라지지 않음).
   // 그 사실을 그대로 말합니다.
@@ -124,6 +131,7 @@ export async function POST(req: Request) {
     released: rel.released,
     applied: r.applied,
     left: r.left,
+    shareName: dep.shareName,
     partial: r.partial ? { ...r.partial, name: byId.get(r.partial.lineId)?.name ?? "" } : null,
   });
 }

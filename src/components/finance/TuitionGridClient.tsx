@@ -23,8 +23,8 @@ import UndoIssue from "@/components/finance/UndoIssue";
 import { usePersisted } from "@/lib/usePersisted";
 import { useRowKeys } from "@/lib/useRowKeys";
 import SummaryLine from "@/components/finance/SummaryLine";
-import { StatusBadge } from "@/components/finance/StatusBadge";
-import { BILL_STATUS } from "@/lib/billStatus";
+import { StatusBadge, StatusFillLegend, type FillKey } from "@/components/finance/StatusBadge";
+import { BILL_STATUS, rowStatus } from "@/lib/billStatus";
 import { matchesStudentQuery } from "@/lib/financeFilter";
 import { issuedLong, issuedShort } from "@/lib/invoiceIssued";
 import { addDays, DUE_DAYS } from "@/lib/financePeriod";
@@ -661,6 +661,8 @@ export default function TuitionGridClient({
   // 뜨지만, 성공했는지는 아무 표시가 없어 「저장된 건가」 하고 다시 열어 보게 됐습니다.
   const [saving, setSaving] = useState(0);
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  /** 범례에서 누른 상태(완납·일부·…). 그 상태의 아이만 남깁니다. */
+  const [fill, setFill] = useState<FillKey | null>(null);
   async function track<T>(p: Promise<T>): Promise<T> {
     setSaving((n) => n + 1);
     try {
@@ -1049,6 +1051,22 @@ export default function TuitionGridClient({
   const termInvoices = [...invoicesOf.values()].flat();
   const money = gridTotals(rows.map((s) => s.id), totalOf, termInvoices, payments);
   const moneyOf = gridTotalsByStudent(rows.map((s) => s.id), totalOf, termInvoices, payments);
+  /**
+   * **이 아이 줄의 색.** 학생별 회계·학비외 표와 같은 함수(`rowStatus`)로 정합니다 - 같은 아이가 화면마다
+   * 다른 색이면 색을 안 믿게 됩니다. 아직 한 장도 안 나갔으면 「미청구」, 표에 학비가 없으면 칠하지 않습니다.
+   */
+  const fillOf = (sid: string): FillKey => {
+    const total = totalOf(sid);
+    const m = moneyOf.get(sid) ?? { billed: total, paid: 0, due: total };
+    const issued = (invoicesOf.get(sid) ?? []).length > 0;
+    return rowStatus({ billed: issued ? m.billed : 0, paid: m.paid, due: m.due }) ?? (total > 0 ? "미청구" : "없음");
+  };
+  const fillCounts: Partial<Record<FillKey, number>> = {};
+  for (const s of rows) {
+    const k = fillOf(s.id);
+    fillCounts[k] = (fillCounts[k] ?? 0) + 1;
+  }
+  const shown = fill ? rows.filter((s) => fillOf(s.id) === fill) : rows;
   // 키보드: ↑↓ 줄 이동 · Space 고르기 · P 고정.
   const keyRow = useRowKeys(rows, {
     onToggle: (s) =>
@@ -1304,6 +1322,12 @@ export default function TuitionGridClient({
 
       {/* ── 표 ─────────────────────────────────────────────────────── */}
       {/* 학비표도 잡아서 밀 수 있습니다. 여기는 세로도 갇혀 있어(70vh) 양쪽 다 밉니다. */}
+      {/* 색 범례 겸 상태별 인원. 누르면 그 상태의 아이만 남습니다. */}
+      <div className="mb-1 flex flex-wrap items-center gap-2">
+        <span className="text-[11px] font-bold text-slate-500">납부 상태</span>
+        <StatusFillLegend counts={fillCounts} active={fill} onPick={setFill} />
+        <span className="text-[10px] text-slate-400">칸 색 = 그 항목 · 맨 앞 띠 = 그 아이 전체</span>
+      </div>
       <DragScroll axis="both" className="g-scroll-x -mx-2 max-h-[80vh] overflow-auto border-y border-slate-200 bg-white">
         <table className="min-w-full border-collapse text-left text-[12px]">
           <thead className="sticky top-0 z-20">
@@ -1426,9 +1450,11 @@ export default function TuitionGridClient({
           </thead>
 
           <tbody>
-            {rows.map((s) => {
+            {shown.map((s) => {
               const on = checked.has(s.id);
               const total = totalOf(s.id);
+              const rowFill = fillOf(s.id);
+              const rowBg = rowFill === "없음" || rowFill === "미청구" ? "bg-white" : BILL_STATUS[rowFill].bg;
               const noteRows = remarkOf(s.id);
               /** 항목을 안 정하고 붙어 있는 줄(예전 줄). 비고에 「학비 전체」로 적습니다. */
               const loose = (sdOf.get(s.id) ?? []).filter((r) => !r.plan_id && (!r.term_id || !termId || r.term_id === termId));
@@ -1439,7 +1465,14 @@ export default function TuitionGridClient({
                   data-row-id={s.id}
                   className={(on ? "bg-teal-50/40" : "hover:bg-slate-50/60") + (rows[keyRow]?.id === s.id ? " outline outline-2 -outline-offset-2 outline-indigo-400" : "")}
                 >
-                  <td className={"sticky left-0 z-10 border-b border-slate-100 px-2 py-1 " + (on ? "bg-teal-50" : "bg-white")}>
+                  <td
+                    className={
+                      "sticky left-0 z-10 border-b border-l-4 border-slate-100 px-2 py-1 " +
+                      (on ? "bg-teal-50 " : rowBg + " ") +
+                      // 줄 맨 앞의 굵은 색 띠 - 가로로 밀어도 남아 있어서 어느 칸을 보든 그 아이 상태가 보입니다.
+                      (rowFill === "완납" ? "!border-l-emerald-500" : rowFill === "일부" ? "!border-l-amber-400" : rowFill === "청구됨" ? "!border-l-sky-400" : "!border-l-transparent")
+                    }
+                  >
                     <input
                       type="checkbox"
                       checked={on}
@@ -1453,7 +1486,7 @@ export default function TuitionGridClient({
                       }
                     />
                   </td>
-                  <td className={"group sticky left-8 z-10 border-b border-r border-slate-200 px-2 py-1 " + (on ? "bg-teal-50" : "bg-white")}>
+                  <td className={"group sticky left-8 z-10 border-b border-r border-slate-200 px-2 py-1 " + (on ? "bg-teal-50" : rowBg)}>
                     <b className="text-slate-800"><Who id={s.id} name={s.name} /></b>
                     <PinButton id={s.id} name={s.name} />
                     <span className="ml-1 text-[10px] text-slate-400">
@@ -1475,12 +1508,18 @@ export default function TuitionGridClient({
                     const mine = planTargets(p, s) || !!line;
                     /** 지금 이 칸을 열어둔 다른 사람. 막지는 않고 **누구인지 알려줍니다.** */
                     const busyBy = presence.byCell.get(`${s.id}|${p.id}`) ?? [];
+                    /**
+                     * **칸 바탕 = 그 항목의 납부 상태.** 완납 초록 · 일부 노랑 · 청구만 됨 하늘 · 아직 청구 전 흰색.
+                     * 한 아이 줄 안에서도 「정규과정은 냈고 방과후는 남았다」가 칸 색으로 갈립니다.
+                     */
+                    const cellSt = line ? billStateOf.get(s.id)?.get(p.name) : undefined;
+                    const cellBg = cellSt === "완납" ? BILL_STATUS.완납.bg : cellSt === "일부" ? BILL_STATUS.일부.bg : cellSt === "미납" ? BILL_STATUS.청구됨.bg : line ? "bg-white" : "";
                     return (
                       <td
                         key={p.id}
                         className={
                           "relative border-b border-r border-slate-100 px-1.5 py-1 " +
-                          (line ? "bg-teal-50/50 " : "") +
+                          cellBg + " " +
                           (mine ? "" : "bg-slate-50/70")
                         }
                       >

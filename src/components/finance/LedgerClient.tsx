@@ -10,7 +10,8 @@ import { matchesStudentQuery } from "@/lib/financeFilter";
 import PinButton from "@/components/finance/PinButton";
 import SummaryLine from "@/components/finance/SummaryLine";
 import { useRowKeys } from "@/lib/useRowKeys";
-import { BILL_STATUS, statusFromSettle } from "@/lib/billStatus";
+import { BILL_STATUS, rowStatus, statusFromSettle } from "@/lib/billStatus";
+import { StatusFillLegend, type FillKey } from "@/components/finance/StatusBadge";
 import ScopeTabs from "@/components/finance/ScopeTabs";
 import StudentLedgerModal from "@/components/finance/StudentLedgerModal";
 import AlltalkpayExport from "@/components/finance/AlltalkpayExport";
@@ -184,6 +185,8 @@ export default function LedgerClient({
   const [exporting, setExporting] = useState<string[] | null>(null);
   const [preview, setPreview] = useState<{ id: string; label: string; receipt: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
+  /** 범례에서 누른 납부 상태. 그 상태의 아이만 남깁니다. */
+  const [fill, setFill] = useState<FillKey | null>(null);
 
   const deptOf = (r: { department: string | null; grade: string | null }) => departmentOf({ department: r.department, grade: r.grade }) ?? "기타";
 
@@ -195,7 +198,7 @@ export default function LedgerClient({
     for (const v of invoices) if (v.studentId) (m.get(v.studentId) ?? m.set(v.studentId, []).get(v.studentId)!).push(v.invoiceNo);
     return m;
   }, [invoices]);
-  const studentRows = useMemo(() => {
+  const baseRows = useMemo(() => {
     if (ff.pinned) return inDept.filter((r) => r.id === ff.pinned!.id);
     return inDept
       .filter((r) => inScope({ grade: r.grade, className: r.className }, scope))
@@ -204,6 +207,22 @@ export default function LedgerClient({
       .sort((a, b) => gradeSortKey(a.grade) - gradeSortKey(b.grade) || (a.className ?? "").localeCompare(b.className ?? "", "ko") || a.name.localeCompare(b.name, "ko"));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inDept, scope, q, onlyOpen, ff.pinned, invoiceNosOf]);
+  /**
+   * **이 아이 줄의 색** — 학비·학비외 표와 같은 함수(`rowStatus`). 청구 예정이 남았으면 다 냈어도 「일부」,
+   * 청구가 하나도 없으면 「미청구」, 돈 이야기가 없는 아이는 칠하지 않습니다.
+   */
+  const fillOf = (r: LedgerRow): FillKey =>
+    rowStatus({ billed: r.billed, paid: r.paid, due: r.unpaid, toBill: r.toBill }) ?? (r.toBill > 0 ? "미청구" : "없음");
+  const fillCounts: Partial<Record<FillKey, number>> = {};
+  for (const r of baseRows) {
+    const k = fillOf(r);
+    fillCounts[k] = (fillCounts[k] ?? 0) + 1;
+  }
+  const studentRows = fill ? baseRows.filter((r) => fillOf(r) === fill) : baseRows;
+  const bgOf = (r: LedgerRow) => {
+    const k = fillOf(r);
+    return k === "없음" || k === "미청구" ? "" : " " + BILL_STATUS[k].bg;
+  };
 
   const sum = (f: (r: LedgerRow) => number) => studentRows.reduce((n, r) => n + f(r), 0);
   // 키보드: ↑↓ 줄 이동 · Enter 학생 회계 창 · P 고정.
@@ -345,6 +364,13 @@ export default function LedgerClient({
           ]}
         />
       )}
+      {tab === "학생" && (
+        <div className="mb-1 flex flex-wrap items-center gap-2">
+          <span className="text-[11px] font-bold text-slate-500">납부 상태</span>
+          <StatusFillLegend counts={fillCounts} active={fill} onPick={setFill} />
+          <span className="text-[10px] text-slate-400">줄 색 = 그 아이의 이 달 청구·수납 · 누르면 그 상태만</span>
+        </div>
+      )}
 
       {tab === "학생" ? (
         /**
@@ -373,7 +399,7 @@ export default function LedgerClient({
                 setOpen(r.id);
                 ff.touch({ id: r.id, name: r.name });
               }}
-              className="rounded-xl border border-slate-200 bg-white p-3 text-left shadow-sm"
+              className={"rounded-xl border border-slate-200 p-3 text-left shadow-sm " + (bgOf(r) || "bg-white")}
             >
               <p className="font-bold text-slate-800">
                 {r.name} <span className="text-[11px] font-normal text-slate-400">{[r.grade, r.className].filter(Boolean).join(" ")}</span>
@@ -399,8 +425,14 @@ export default function LedgerClient({
             </thead>
             <tbody>
               {studentRows.map((r) => (
-                <tr key={r.id} data-row-id={r.id} onClick={() => { setOpen(r.id); ff.touch({ id: r.id, name: r.name }); }} className={"h-12 cursor-pointer border-t border-slate-100 hover:bg-indigo-50/40" + flashCls(r.id) + (studentRows[keyRow]?.id === r.id ? " bg-indigo-50 ring-2 ring-inset ring-indigo-400" : "")} title="누르면 학생 회계 창이 열립니다">
-                  <td className="group whitespace-nowrap px-2 font-semibold text-slate-800">
+                <tr key={r.id} data-row-id={r.id} onClick={() => { setOpen(r.id); ff.touch({ id: r.id, name: r.name }); }} className={"h-12 cursor-pointer border-t border-slate-100 hover:bg-indigo-50/40" + bgOf(r) + flashCls(r.id) + (studentRows[keyRow]?.id === r.id ? " bg-indigo-50 ring-2 ring-inset ring-indigo-400" : "")} title="누르면 학생 회계 창이 열립니다">
+                  <td
+                    className={
+                      "group whitespace-nowrap border-l-4 px-2 font-semibold text-slate-800 " +
+                      // 줄 맨 앞 띠 - 가운데 내역을 가로로 밀어도 학생 칸과 함께 남습니다.
+                      (({ 완납: "border-l-emerald-500", 일부: "border-l-amber-400", 청구됨: "border-l-sky-400", 연체: "border-l-rose-500" } as Record<string, string | undefined>)[fillOf(r)] ?? "border-l-transparent")
+                    }
+                  >
                     <Who id={r.id} name={r.name} plain />
                     <PinButton id={r.id} name={r.name} />
                     <span className="ml-1 text-[10px] font-normal text-slate-400">
@@ -463,7 +495,7 @@ export default function LedgerClient({
                   };
                   const extraOf = new Map(r.extra.map((e) => [e.category, e]));
                   return (
-                    <tr key={r.id} onClick={() => setOpen(r.id)} className={"h-12 cursor-pointer border-t border-slate-100 hover:bg-indigo-50/40" + flashCls(r.id)}>
+                    <tr key={r.id} onClick={() => setOpen(r.id)} className={"h-12 cursor-pointer border-t border-slate-100 hover:bg-indigo-50/40" + bgOf(r) + flashCls(r.id)}>
                       {tuitionCell("정규")}
                       {tuitionCell("방과후")}
                       {tuitionCell("그외")}
@@ -524,7 +556,7 @@ export default function LedgerClient({
             </thead>
             <tbody>
               {studentRows.map((r) => (
-                <tr key={r.id} onClick={() => setOpen(r.id)} className="h-12 cursor-pointer border-t border-slate-100 hover:bg-indigo-50/40">
+                <tr key={r.id} onClick={() => setOpen(r.id)} className={"h-12 cursor-pointer border-t border-slate-100 hover:bg-indigo-50/40" + bgOf(r)}>
                   <td className={"whitespace-nowrap px-1.5 text-right tabular-nums font-bold " + (r.toBill > 0 ? "text-amber-700" : "text-slate-300")}>{r.toBill > 0 ? won(r.toBill) : "—"}</td>
                   <td className="whitespace-nowrap px-1.5 text-right tabular-nums text-slate-600">{r.billed > 0 ? won(r.billed) : "—"}</td>
                   <td className={"whitespace-nowrap px-1.5 text-right tabular-nums " + (r.paid > 0 ? "font-semibold text-emerald-700" : "text-slate-300")}>{r.paid > 0 ? won(r.paid) : "—"}</td>

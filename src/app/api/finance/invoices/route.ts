@@ -256,6 +256,9 @@ export async function POST(req: Request) {
       // 됩니다. 화면이 보낼 것과 안 보낼 것을 이 값으로 가릅니다(학비와 같은 규칙).
       issued_offline: !!paidAt,
       issued_by: me.name || me.email,
+      // 사람이 확인창에서 「한 번 더 청구」를 골랐다는 표시. 데이터베이스 중복 문지기가 이 장만은
+      // 막지 않습니다(guard_invoice_line_duplicate). 안 고른 장은 위의 검사를 빠져나가도 거기서 막힙니다.
+      allow_duplicate: allowDuplicate,
     })
     .select()
     .single();
@@ -289,7 +292,8 @@ export async function POST(req: Request) {
           ? `내역을 저장하지 못했고(${lineErr.message}) 빈 청구서도 지우지 못했습니다(${rollbackErr.message}). 청구서 ${inv.invoice_no ?? inv.id} 를 직접 확인해주세요.`
           : `내역을 저장하지 못했습니다: ${lineErr.message}`,
       },
-      { status: 500 },
+      // 23505 = 데이터베이스 중복 문지기가 막은 것. 서버 오류가 아니라 «이미 나간 항목»입니다.
+      { status: lineErr.code === "23505" ? 409 : 500 },
     );
   }
 

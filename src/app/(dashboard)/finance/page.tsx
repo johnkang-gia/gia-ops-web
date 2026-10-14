@@ -125,10 +125,16 @@ export default async function FinanceOverviewPage({ searchParams }: { searchPara
   const unsent = openInv.filter((v) => !v.issued_offline && !v.exported_at);
   const weekAgo = new Date(Date.now() - 7 * 864e5).toISOString();
   const lateSent = openInv.filter((v) => v.exported_at && v.exported_at < weekAgo);
-  const [{ count: approvalsWaiting }, { data: lastSync }] = await Promise.all([
+  const [{ count: approvalsWaiting }, { data: lastSync }, dupRes] = await Promise.all([
     supabase.from("finance_requests").select("id", { count: "exact", head: true }).eq("status", "대기"),
     supabase.from("alltalk_sync_files").select("uploaded_at").order("uploaded_at", { ascending: false }).range(0, 0),
+    // 같은 항목이 살아 있는 청구서 두 장에 걸린 줄. 데이터베이스 문지기는 앞으로 들어오는 것만 막으므로,
+    // 이미 쌓인 것은 여기서 보여야 고쳐집니다. 진단 화면에만 두면 재무 담당자는 안 엽니다.
+    supabase.from("invoice_duplicate_lines").select("student_id, student_name, item_name, stream, period, invoice_a, invoice_b"),
   ]);
+  type DupRow = { student_id: string; student_name: string | null; item_name: string; stream: string; period: string; invoice_a: string; invoice_b: string };
+  // 뷰가 아직 없으면(마이그레이션 적용 전) 띠를 안 띄웁니다 - 그 사실은 진단 화면이 알려줍니다.
+  const dupRows = ((dupRes.data as DupRow[] | null) ?? []).filter((r) => inScopeIds(ids, r.student_id));
   const lastSyncAt = ((lastSync as { uploaded_at: string }[] | null) ?? [])[0]?.uploaded_at ?? null;
   // 이번 달 학비를 아직 청구서에 안 담은 학생 — 학생별 회계와 같은 함수(`buildLedger`)로 셉니다.
   // 화면마다 다른 식으로 세면 「이번 달 할 일」의 숫자와 학생별 회계의 숫자가 달라집니다.
@@ -193,6 +199,22 @@ export default async function FinanceOverviewPage({ searchParams }: { searchPara
       <Explain className="mb-4">
         지금 어디까지 됐는지만 봅니다. 고치는 일은 옆 탭에서 합니다. 아래 표 가운데 「받아야 할 금액」부터는 <b>학비외</b>만 셉니다.
       </Explain>
+
+      {dupRows.length > 0 && (
+        <div className="mb-3 rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-[12px] text-rose-900">
+          <p className="font-bold">⚠ 같은 항목이 청구서 두 장에 걸려 있습니다 — {dupRows.length}건</p>
+          <p className="mt-0.5 text-rose-700">학부모가 둘 다 받으면 둘 다 냅니다. 학생별 회계에서 한 장을 취소해주세요.</p>
+          <ul className="mt-1 space-y-0.5">
+            {dupRows.slice(0, 8).map((r, i) => (
+              <li key={i}>
+                <Who id={r.student_id} name={r.student_name ?? ""} /> · {r.stream} {r.item_name} ({r.stream === "학비" ? r.period : "같은 학기"}) ·{" "}
+                <b>{r.invoice_a}</b> ↔ <b>{r.invoice_b}</b>
+              </li>
+            ))}
+            {dupRows.length > 8 && <li>… 외 {dupRows.length - 8}건 (개발자 › 진단)</li>}
+          </ul>
+        </div>
+      )}
 
       {loadError && (
         <p className="mb-3 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-[12px] text-orange-800">

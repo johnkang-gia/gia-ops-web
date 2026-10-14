@@ -141,6 +141,13 @@ export async function POST(req: Request) {
     .map((e) => e.plan_id);
 
   const lines: TuitionLine[] = [];
+  /**
+   * 줄마다 어느 항목(fee_plans)인가. 청구서 줄에 **항목 번호를 남깁니다**(`invoice_lines.plan_id`).
+   *
+   * 예전에는 학비 줄에 번호가 없어 「이미 나간 항목인가」를 이름 글자와 `plan_scope` 글자로만 가렸습니다.
+   * 직접 기입 줄은 이름이 「정규과정 · 직접 기입」이라 글자로는 못 찾았고, 데이터베이스 문지기도 걸 수 없었습니다.
+   */
+  const planIdOfLine = new Map<TuitionLine, string>();
   for (const e of enrollments) {
     const plan = plans.find((p) => p.id === e.plan_id);
     if (!plan) continue;
@@ -155,7 +162,10 @@ export async function POST(req: Request) {
       amount: e.override_amount === null || e.override_amount === undefined ? null : Number(e.override_amount),
       note: e.override_note,
     });
-    if (line) lines.push(line);
+    if (line) {
+      lines.push(line);
+      planIdOfLine.set(line, plan.id);
+    }
   }
 
   if (lines.length === 0) {
@@ -272,7 +282,10 @@ export async function POST(req: Request) {
    * 만큼이 줄에서 빠져 437,500원이 325,000원으로 나간 일이 있었습니다. 어긋나면 **발행하지
    * 않고** 이유를 돌려줍니다 - 틀린 청구서가 나가는 것보다 안 나가는 편이 낫습니다.
    */
-  const tuitionRows = lines.flatMap((l) => invoiceRowsForLine(l));
+  // 각 항목의 첫 줄(원래 금액·직접 기입 금액)에만 번호를 붙입니다. 할인·조정 줄은 그 항목에 딸린 줄입니다.
+  const tuitionRows = lines.flatMap((l) =>
+    invoiceRowsForLine(l).map((r, i) => ({ ...r, planId: i === 0 ? (planIdOfLine.get(l) ?? null) : null })),
+  );
   const rowsTotal = tuitionRows.reduce((n, r) => n + r.amount, 0) + extraTotal;
   if (rowsTotal !== total) {
     console.error("[학비 청구] 줄의 합과 청구액이 다릅니다", { student: student.id, rowsTotal, total });
@@ -386,11 +399,11 @@ export async function POST(req: Request) {
 
   // 할인을 **별도 줄로** 남깁니다. 깎인 금액만 적으면 학부모가 「원래 얼마였는데 얼마
   // 깎였는지」를 알 수 없고, 그 문의가 그대로 행정실로 옵니다.
-  const rows: { invoice_id: string; seq: number; name: string; qty: number; unit_price: number; amount: number }[] = [];
+  const rows: { invoice_id: string; seq: number; name: string; qty: number; unit_price: number; amount: number; plan_id?: string | null }[] = [];
   let seq = 0;
   // 원래 금액 · 할인 · (직접 기입이면) 조정 줄 - 더하면 화면에 뜬 금액입니다(invoiceRowsForLine).
   for (const r of tuitionRows) {
-    rows.push({ invoice_id: inv.id, seq: ++seq, name: r.name, qty: 1, unit_price: r.amount, amount: r.amount });
+    rows.push({ invoice_id: inv.id, seq: ++seq, name: r.name, qty: 1, unit_price: r.amount, amount: r.amount, plan_id: r.planId });
   }
 
   // 같은 장에 담은 학비외 줄. 항목 번호를 함께 남겨 「이미 나갔는가」 판정이 됩니다.
@@ -412,7 +425,8 @@ export async function POST(req: Request) {
           ? `내역을 저장하지 못했고(${lineErr.message}) 빈 청구서도 지우지 못했습니다(${rollbackErr.message}). 청구서 ${inv.invoice_no ?? inv.id} 를 직접 확인해주세요.`
           : `내역을 저장하지 못했습니다: ${lineErr.message}`,
       },
-      { status: 500 },
+      // 23505 = 데이터베이스 중복 문지기(guard_invoice_line_duplicate)가 막은 것 - «이미 나간 항목»입니다.
+      { status: lineErr.code === "23505" ? 409 : 500 },
     );
   }
 

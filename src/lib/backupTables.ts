@@ -208,6 +208,7 @@ export const BACKUP_TABLES: string[] = BACKUP_GROUPS.flatMap((g) => g.tables);
 export const BACKUP_SKIP: Record<string, string> = {
   payment_import_progress: "뷰입니다. 묶음과 줄에서 그때그때 세는 값이라 담아도 다시 쓸 것이 없습니다.",
   finance_item_monthly: "뷰입니다. 청구서·내역·입금에서 그때그때 세는 값이라 담아도 다시 쓸 것이 없습니다.",
+  invoice_duplicate_lines: "점검 뷰입니다. 청구서·내역에서 그때그때 찾는 값이라 청구서를 담으면 다시 나옵니다.",
   invoice_batches: "뷰입니다. 청구서의 회차(issue_batch)를 묶어 세는 값이라 청구서를 담으면 다시 나옵니다.",
   // ── 담으면 안 되는 것 ──────────────────────────────────────────────
   google_chat_oauth_tokens: "접속 비밀값. 내려받는 파일에 들어가면 그 파일이 곧 열쇠가 됩니다.",

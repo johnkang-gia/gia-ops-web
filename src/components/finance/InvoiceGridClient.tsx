@@ -11,8 +11,8 @@ import UndoIssue from "@/components/finance/UndoIssue";
 import { usePersisted } from "@/lib/usePersisted";
 import { useEditingPresence } from "@/lib/useEditingPresence";
 import SummaryLine from "@/components/finance/SummaryLine";
-import { BILL_STATUS } from "@/lib/billStatus";
-import { StatusLegend } from "@/components/finance/StatusBadge";
+import { BILL_STATUS, rowStatus } from "@/lib/billStatus";
+import { StatusFillLegend, type FillKey } from "@/components/finance/StatusBadge";
 import { askText, compareIssue, groupIssue, type CompareRow, type IssueCompare } from "@/lib/issueCompare";
 import { gridTotals, gridTotalsByStudent } from "@/lib/gridTotals";
 import { useFinanceLive } from "@/lib/useFinanceLive";
@@ -302,6 +302,8 @@ export default function InvoiceGridClient({
   }, [lockedDept]);
   /** 보고 있는 분류. "전체" 면 분류를 가리지 않습니다. */
   const [cat, setCat] = useState<string>("전체");
+  /** 범례에서 누른 납부 상태. 그 상태의 아이만 남깁니다. */
+  const [fill, setFill] = useState<FillKey | null>(null);
   /** 보고 있는 학기. 항목 화면과 같은 학기를 봅니다(브라우저에 기억해둡니다). */
   // 학기·검색·학년반은 재무 화면들이 함께 씁니다(`FinanceFilterProvider`). 학비 표에서 고른 반·찾은
   // 아이가 이 화면으로 넘어와도 그대로입니다.
@@ -721,6 +723,22 @@ export default function InvoiceGridClient({
     [rows, totalOf, invoices, payments],
   );
   const unissued = rows.filter((s) => !invoiceByStudent.has(s.id)).length;
+  /**
+   * **이 아이 줄의 색** — 학비 표·학생별 회계와 같은 함수(`rowStatus`). 한 장도 안 나갔으면 「미청구」,
+   * 붙은 항목이 없으면 칠하지 않습니다. 낸 것은 다 냈어도 아직 청구 안 한 항목이 남았으면 「일부」입니다.
+   */
+  const fillOf = (sid: string): FillKey => {
+    const total = totalOf(sid);
+    const m = moneyOf.get(sid) ?? { billed: total, paid: 0, due: total };
+    const issued = invoiceByStudent.has(sid);
+    return rowStatus({ billed: issued ? m.billed : 0, paid: m.paid, due: m.due }) ?? (total > 0 ? "미청구" : "없음");
+  };
+  const fillCounts: Partial<Record<FillKey, number>> = {};
+  for (const s of rows) {
+    const k = fillOf(s.id);
+    fillCounts[k] = (fillCounts[k] ?? 0) + 1;
+  }
+  const shown = fill ? rows.filter((s) => fillOf(s.id) === fill) : rows;
 
   /** 열 합계 — 이 항목을 몇 명이 사고 얼마인가. */
   const colSummary = useMemo(() => {
@@ -1809,6 +1827,12 @@ export default function InvoiceGridClient({
       {/* 잡아서 밀 수 있습니다(`DragScroll`). 스크롤 막대는 가만히 있으면 숨는데, 열이
           스무 개 넘는 이 표에서는 그 막대가 «오른쪽에 더 있다»는 유일한 표시입니다.
           `g-scroll-x` 로 늘 보이게 하고, 마우스만 쓰는 자리를 위해 밀기도 붙입니다. */}
+      {/* 색 범례 겸 상태별 인원. 누르면 그 상태의 아이만 남습니다. */}
+      <div className="mb-1 flex flex-wrap items-center gap-2">
+        <span className="text-[11px] font-bold text-slate-500">납부 상태</span>
+        <StatusFillLegend counts={fillCounts} active={fill} onPick={setFill} />
+        <span className="text-[10px] text-slate-400">칸 색 = 그 항목(● 완납 · ✓ 청구 전/미납) · 맨 앞 띠 = 그 아이 전체</span>
+      </div>
       <DragScroll className="g-scroll-x w-full min-w-0 max-w-full overflow-x-auto rounded-xl border border-slate-200 bg-white">
         <table className="min-w-full border-collapse text-left text-[12px]">
           <thead className="sticky top-0 z-20">
@@ -1962,8 +1986,10 @@ export default function InvoiceGridClient({
           </thead>
 
           <tbody>
-            {rows.map((s) => {
+            {shown.map((s) => {
               const total = totalOf(s.id);
+              const rowFill = fillOf(s.id);
+              const rowBg = rowFill === "없음" || rowFill === "미청구" ? "bg-white" : BILL_STATUS[rowFill].bg;
               // 아이별 청구·수납·미납. 합계 줄과 같은 규칙에서 나옵니다 - 위아래가 다른
               // 숫자를 말하면 그 표는 아무도 안 믿습니다.
               const mine = moneyOf.get(s.id) ?? { billed: total, paid: 0, due: total };
@@ -1972,7 +1998,12 @@ export default function InvoiceGridClient({
               return (
                 <tr key={s.id} className={on ? "bg-teal-50/40" : "hover:bg-slate-50/60"}>
                   <td
-                    className={"sticky left-0 z-10 border-b border-slate-100 px-2 py-1 " + (on ? "bg-teal-50" : "bg-white")}
+                    className={
+                      "sticky left-0 z-10 border-b border-l-4 border-slate-100 px-2 py-1 " +
+                      (on ? "bg-teal-50 " : rowBg + " ") +
+                      // 줄 맨 앞의 굵은 색 띠 - 가로로 밀어도 남아서, 오른쪽 항목 칸을 보는 중에도 그 아이 상태가 보입니다.
+                      (rowFill === "완납" ? "!border-l-emerald-500" : rowFill === "일부" ? "!border-l-amber-400" : rowFill === "청구됨" ? "!border-l-sky-400" : "!border-l-transparent")
+                    }
                     style={{ width: W_CHECK, minWidth: W_CHECK, maxWidth: W_CHECK }}
                   >
                     <input
@@ -1991,7 +2022,7 @@ export default function InvoiceGridClient({
                   <td
                     className={
                       "group sticky z-10 overflow-hidden whitespace-nowrap border-b border-r border-slate-200 px-2 py-1 " +
-                      (on ? "bg-teal-50" : "bg-white")
+                      (on ? "bg-teal-50" : rowBg)
                     }
                     style={{ left: W_CHECK, width: W_NAME, minWidth: W_NAME, maxWidth: W_NAME }}
                   >
@@ -2179,12 +2210,26 @@ export default function InvoiceGridClient({
                   {usedItems.map((i) => {
                     const l = lineFor(s.id, i.id);
                     const ov = overrides.find((o) => o.student_id === s.id && o.item_id === i.id) ?? null;
+                    /**
+                     * **칸 바탕 = 그 항목의 납부 상태.** 완납 초록 · 일부 노랑 · 청구만 됨 하늘 · 아직 청구 전 연한 청록.
+                     * 「교복은 냈고 교재는 안 냈다」가 한 줄 안에서 색으로 갈립니다. 판정은 `markFor` 하나입니다.
+                     */
+                    const mk = l ? markFor(s.id, i) : null;
+                    const cellBg = !l
+                      ? ""
+                      : mk?.unsure
+                        ? "bg-orange-50"
+                        : mk?.state === "완납"
+                          ? BILL_STATUS.완납.bg
+                          : mk?.state === "일부"
+                            ? BILL_STATUS.일부.bg
+                            : mk?.state === "미납"
+                              ? BILL_STATUS.청구됨.bg
+                              : "bg-teal-50/70";
                     return (
                       <td
                         key={i.id}
-                        className={
-                          "border-b border-r border-slate-100 p-0 text-center " + (l ? "bg-teal-50/70" : "")
-                        }
+                        className={"border-b border-r border-slate-100 p-0 text-center " + cellBg}
                       >
                         {/* 표에서는 **바꾸지 않습니다.**
                             칸이 작고 촘촘해서 훑다가 옆 칸을 눌러도 알아채지 못했습니다. 항목이
@@ -2202,7 +2247,14 @@ export default function InvoiceGridClient({
                         >
                           {l ? (
                             <>
-                              <span className="text-[13px] font-black text-teal-700">✓</span>
+                              <span
+                                className={
+                                  "text-[13px] font-black " +
+                                  (mk?.state === "완납" ? "text-emerald-700" : mk?.state === "일부" ? "text-amber-700" : mk?.state === "미납" ? "text-sky-700" : "text-teal-700")
+                                }
+                              >
+                                {mk?.state === "완납" ? "●" : "✓"}
+                              </span>
                               {l.qty > 1 && <span className="text-[10px] font-bold text-teal-700">×{l.qty}</span>}
                               {/* 사람이 따로 넣은 것은 점 하나로 구분합니다. 기본 세트와 섞이면
                                   "왜 이게 여기 있지"를 매번 묻게 됩니다. */}

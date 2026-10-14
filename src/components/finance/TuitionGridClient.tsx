@@ -24,7 +24,7 @@ import { usePersisted } from "@/lib/usePersisted";
 import { useRowKeys } from "@/lib/useRowKeys";
 import SummaryLine from "@/components/finance/SummaryLine";
 import { StatusBadge, StatusFillLegend, type FillKey } from "@/components/finance/StatusBadge";
-import { BILL_STATUS, rowStatus } from "@/lib/billStatus";
+import { BILL_STATUS, rowStatus, tintOf } from "@/lib/billStatus";
 import { matchesStudentQuery } from "@/lib/financeFilter";
 import { issuedLong, issuedShort } from "@/lib/invoiceIssued";
 import { addDays, DUE_DAYS } from "@/lib/financePeriod";
@@ -1326,7 +1326,7 @@ export default function TuitionGridClient({
       <div className="mb-1 flex flex-wrap items-center gap-2">
         <span className="text-[11px] font-bold text-slate-500">납부 상태</span>
         <StatusFillLegend counts={fillCounts} active={fill} onPick={setFill} />
-        <span className="text-[10px] text-slate-400">칸 색 = 그 항목 · 맨 앞 띠 = 그 아이 전체</span>
+        <span className="text-[10px] text-slate-400">초록 줄 = 완납 · 연노랑 이름 = 청구서가 나가고 남은 돈 있음 · 맨 앞 띠 = 상태 · 누르면 그 상태만</span>
       </div>
       <DragScroll axis="both" className="g-scroll-x -mx-2 max-h-[80vh] overflow-auto border-y border-slate-200 bg-white">
         <table className="min-w-full border-collapse text-left text-[12px]">
@@ -1454,7 +1454,10 @@ export default function TuitionGridClient({
               const on = checked.has(s.id);
               const total = totalOf(s.id);
               const rowFill = fillOf(s.id);
-              const rowBg = rowFill === "없음" || rowFill === "미청구" ? "bg-white" : BILL_STATUS[rowFill].bg;
+              // 완납만 줄 전체, 청구서가 나간 줄은 이름 칸만 칠합니다(tintOf).
+              const tint = tintOf(rowFill === "미청구" ? null : rowFill);
+              const rowBg = tint.row || "bg-white";
+              const nameBg = tint.name || "bg-white";
               const noteRows = remarkOf(s.id);
               /** 항목을 안 정하고 붙어 있는 줄(예전 줄). 비고에 「학비 전체」로 적습니다. */
               const loose = (sdOf.get(s.id) ?? []).filter((r) => !r.plan_id && (!r.term_id || !termId || r.term_id === termId));
@@ -1463,7 +1466,7 @@ export default function TuitionGridClient({
                 <tr
                   key={s.id}
                   data-row-id={s.id}
-                  className={(on ? "bg-teal-50/40" : "hover:bg-slate-50/60") + (rows[keyRow]?.id === s.id ? " outline outline-2 -outline-offset-2 outline-indigo-400" : "")}
+                  className={(on ? "bg-teal-50/40" : tint.row || "hover:bg-slate-50/60") + (rows[keyRow]?.id === s.id ? " outline outline-2 -outline-offset-2 outline-indigo-400" : "")}
                 >
                   <td
                     className={
@@ -1486,7 +1489,7 @@ export default function TuitionGridClient({
                       }
                     />
                   </td>
-                  <td className={"group sticky left-8 z-10 border-b border-r border-slate-200 px-2 py-1 " + (on ? "bg-teal-50" : rowBg)}>
+                  <td className={"group sticky left-8 z-10 border-b border-r border-slate-200 px-2 py-1 " + (on ? "bg-teal-50" : nameBg)}>
                     <b className="text-slate-800"><Who id={s.id} name={s.name} /></b>
                     <PinButton id={s.id} name={s.name} />
                     <span className="ml-1 text-[10px] text-slate-400">
@@ -1513,7 +1516,7 @@ export default function TuitionGridClient({
                      * 한 아이 줄 안에서도 「정규과정은 냈고 방과후는 남았다」가 칸 색으로 갈립니다.
                      */
                     const cellSt = line ? billStateOf.get(s.id)?.get(p.name) : undefined;
-                    const cellBg = cellSt === "완납" ? BILL_STATUS.완납.bg : cellSt === "일부" ? BILL_STATUS.일부.bg : cellSt === "미납" ? BILL_STATUS.청구됨.bg : line ? "bg-white" : "";
+                    const cellBg = cellSt === "완납" ? tintOf("완납").cell : tint.row;
                     return (
                       <td
                         key={p.id}

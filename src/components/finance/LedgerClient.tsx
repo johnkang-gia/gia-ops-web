@@ -10,7 +10,7 @@ import { matchesStudentQuery } from "@/lib/financeFilter";
 import PinButton from "@/components/finance/PinButton";
 import SummaryLine from "@/components/finance/SummaryLine";
 import { useRowKeys } from "@/lib/useRowKeys";
-import { BILL_STATUS, rowStatus, statusFromSettle } from "@/lib/billStatus";
+import { BILL_STATUS, rowStatus, statusFromSettle, tintOf } from "@/lib/billStatus";
 import { StatusFillLegend, type FillKey } from "@/components/finance/StatusBadge";
 import ScopeTabs from "@/components/finance/ScopeTabs";
 import StudentLedgerModal from "@/components/finance/StudentLedgerModal";
@@ -219,9 +219,16 @@ export default function LedgerClient({
     fillCounts[k] = (fillCounts[k] ?? 0) + 1;
   }
   const studentRows = fill ? baseRows.filter((r) => fillOf(r) === fill) : baseRows;
+  // 완납만 줄 전체, 청구서가 나간 줄은 이름 칸만 칠합니다(tintOf).
   const bgOf = (r: LedgerRow) => {
     const k = fillOf(r);
-    return k === "없음" || k === "미청구" ? "" : " " + BILL_STATUS[k].bg;
+    const t = tintOf(k === "미청구" ? null : k).row;
+    return t ? " " + t : "";
+  };
+  const nameBgOf = (r: LedgerRow) => {
+    const k = fillOf(r);
+    const t = tintOf(k === "미청구" ? null : k).name;
+    return t ? " " + t : "";
   };
 
   const sum = (f: (r: LedgerRow) => number) => studentRows.reduce((n, r) => n + f(r), 0);
@@ -368,7 +375,7 @@ export default function LedgerClient({
         <div className="mb-1 flex flex-wrap items-center gap-2">
           <span className="text-[11px] font-bold text-slate-500">납부 상태</span>
           <StatusFillLegend counts={fillCounts} active={fill} onPick={setFill} />
-          <span className="text-[10px] text-slate-400">줄 색 = 그 아이의 이 달 청구·수납 · 누르면 그 상태만</span>
+          <span className="text-[10px] text-slate-400">초록 줄 = 완납 · 연노랑 이름 = 청구서가 나가고 남은 돈 있음 · 맨 앞 띠 = 상태 · 누르면 그 상태만</span>
         </div>
       )}
 
@@ -428,7 +435,7 @@ export default function LedgerClient({
                 <tr key={r.id} data-row-id={r.id} onClick={() => { setOpen(r.id); ff.touch({ id: r.id, name: r.name }); }} className={"h-12 cursor-pointer border-t border-slate-100 hover:bg-indigo-50/40" + bgOf(r) + flashCls(r.id) + (studentRows[keyRow]?.id === r.id ? " bg-indigo-50 ring-2 ring-inset ring-indigo-400" : "")} title="누르면 학생 회계 창이 열립니다">
                   <td
                     className={
-                      "group whitespace-nowrap border-l-4 px-2 font-semibold text-slate-800 " +
+                      "group whitespace-nowrap border-l-4 px-2 font-semibold text-slate-800" + nameBgOf(r) + " " +
                       // 줄 맨 앞 띠 - 가운데 내역을 가로로 밀어도 학생 칸과 함께 남습니다.
                       (({ 완납: "border-l-emerald-500", 일부: "border-l-amber-400", 청구됨: "border-l-sky-400", 연체: "border-l-rose-500" } as Record<string, string | undefined>)[fillOf(r)] ?? "border-l-transparent")
                     }

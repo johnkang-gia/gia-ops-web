@@ -29,6 +29,20 @@ export const BILL_STATUS: Record<BillStatus, { label: string; cls: string; bg: s
 };
 
 /**
+ * **표를 어디까지 칠하나.** 완납만 줄 전체를 초록으로 칠하고, 청구서가 나간 줄(청구됨·일부·연체)은 **이름 칸만**
+ * 연노랑으로 칠합니다.
+ *
+ * 처음에는 상태마다 줄 전체를 칠했는데, 청구서를 막 보낸 달에는 거의 모든 줄이 같은 색이 되어 표 전체가 한 덩어리로
+ * 보였고 오래 보기 어려웠습니다. 눈에 띄어야 하는 것은 «다 끝난 아이»와 «아직 남은 아이»의 구별이라, 끝난 줄만
+ * 크게 칠하고 남은 줄은 이름 칸 표시로 충분합니다. 항목 칸도 같은 이유로 완납만 칠합니다.
+ */
+export function tintOf(k: BillStatus | "없음" | null | undefined): { row: string; name: string; cell: string } {
+  if (k === "완납") return { row: "bg-emerald-100", name: "bg-emerald-100", cell: "bg-emerald-100" };
+  if (k === "일부" || k === "청구됨" || k === "연체") return { row: "", name: "bg-amber-50", cell: "" };
+  return { row: "", name: "", cell: "" };
+}
+
+/**
  * **한 학생 줄의 상태** — 청구액·받은 돈·남은 돈만으로 정합니다. 학비 표·학비외 표·학생별 회계가 같은 함수를
  * 써야 같은 아이가 세 화면에서 같은 색입니다.
  *

@@ -506,8 +506,8 @@ export default function UnpaidClient({
                         "flex cursor-pointer flex-wrap items-center gap-x-2 gap-y-0.5 rounded-lg px-2 py-1.5 text-[12px] " +
                         (picked.has(r.invoice.id)
                           ? "bg-teal-50 ring-1 ring-teal-300"
-                          : // 줄 바탕 = 납부 상태(학비·학비외 표와 같은 색). 일부 받음 노랑 · 기한 지남 분홍 · 그 밖 하늘.
-                            (r.paid > 0 ? BILL_STATUS.일부.bg : r.days > 0 ? BILL_STATUS.연체.bg : BILL_STATUS.청구됨.bg) + " hover:brightness-95")
+                          : // 일부 받은 장만 연노랑. 미납 목록은 전부 «남은 것»이라 줄마다 칠하면 한 색이 됩니다.
+                            (r.paid > 0 ? "bg-amber-50" : "bg-slate-50") + " hover:brightness-95")
                       }
                     >
                       <input

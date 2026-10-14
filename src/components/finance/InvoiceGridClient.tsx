@@ -11,7 +11,7 @@ import UndoIssue from "@/components/finance/UndoIssue";
 import { usePersisted } from "@/lib/usePersisted";
 import { useEditingPresence } from "@/lib/useEditingPresence";
 import SummaryLine from "@/components/finance/SummaryLine";
-import { BILL_STATUS, rowStatus } from "@/lib/billStatus";
+import { BILL_STATUS, rowStatus, tintOf } from "@/lib/billStatus";
 import { StatusFillLegend, type FillKey } from "@/components/finance/StatusBadge";
 import { useStudentPanel } from "@/components/students/StudentPanelProvider";
 import { askText, compareIssue, groupIssue, type CompareRow, type IssueCompare } from "@/lib/issueCompare";
@@ -1833,7 +1833,7 @@ export default function InvoiceGridClient({
       <div className="mb-1 flex flex-wrap items-center gap-2">
         <span className="text-[11px] font-bold text-slate-500">납부 상태</span>
         <StatusFillLegend counts={fillCounts} active={fill} onPick={setFill} />
-        <span className="text-[10px] text-slate-400">칸 색 = 그 항목(● 완납 · ✓ 청구 전/미납) · 맨 앞 띠 = 그 아이 전체</span>
+        <span className="text-[10px] text-slate-400">초록 줄 = 완납 · 연노랑 이름 = 청구서가 나가고 남은 돈 있음 · 맨 앞 띠 = 상태 · 누르면 그 상태만</span>
       </div>
       <DragScroll className="g-scroll-x w-full min-w-0 max-w-full overflow-x-auto rounded-xl border border-slate-200 bg-white">
         <table className="min-w-full border-collapse text-left text-[12px]">
@@ -1991,14 +1991,17 @@ export default function InvoiceGridClient({
             {shown.map((s) => {
               const total = totalOf(s.id);
               const rowFill = fillOf(s.id);
-              const rowBg = rowFill === "없음" || rowFill === "미청구" ? "bg-white" : BILL_STATUS[rowFill].bg;
+              // 완납만 줄 전체, 청구서가 나간 줄은 이름 칸만 칠합니다(tintOf).
+              const tint = tintOf(rowFill === "미청구" ? null : rowFill);
+              const rowBg = tint.row || "bg-white";
+              const nameBg = tint.name || "bg-white";
               // 아이별 청구·수납·미납. 합계 줄과 같은 규칙에서 나옵니다 - 위아래가 다른
               // 숫자를 말하면 그 표는 아무도 안 믿습니다.
               const mine = moneyOf.get(s.id) ?? { billed: total, paid: 0, due: total };
               const inv = invoiceByStudent.get(s.id);
               const on = checked.has(s.id);
               return (
-                <tr key={s.id} className={on ? "bg-teal-50/40" : "hover:bg-slate-50/60"}>
+                <tr key={s.id} className={on ? "bg-teal-50/40" : tint.row || "hover:bg-slate-50/60"}>
                   <td
                     className={
                       "sticky left-0 z-10 border-b border-l-4 border-slate-100 px-2 py-1 " +
@@ -2024,7 +2027,7 @@ export default function InvoiceGridClient({
                   <td
                     className={
                       "group sticky z-10 overflow-hidden whitespace-nowrap border-b border-r border-slate-200 px-2 py-1 " +
-                      (on ? "bg-teal-50" : rowBg)
+                      (on ? "bg-teal-50" : nameBg)
                     }
                     style={{ left: W_CHECK, width: W_NAME, minWidth: W_NAME, maxWidth: W_NAME }}
                   >
@@ -2056,7 +2059,7 @@ export default function InvoiceGridClient({
                   <td
                     className={
                       "sticky z-10 whitespace-nowrap border-b border-r-2 border-slate-300 px-2 py-1 " +
-                      (on ? "bg-teal-50" : "bg-white")
+                      (on ? "bg-teal-50" : rowBg)
                     }
                     style={{ left: LEFT_INVOICE }}
                   >
@@ -2226,17 +2229,8 @@ export default function InvoiceGridClient({
                      * 「교복은 냈고 교재는 안 냈다」가 한 줄 안에서 색으로 갈립니다. 판정은 `markFor` 하나입니다.
                      */
                     const mk = l ? markFor(s.id, i) : null;
-                    const cellBg = !l
-                      ? ""
-                      : mk?.unsure
-                        ? "bg-orange-50"
-                        : mk?.state === "완납"
-                          ? BILL_STATUS.완납.bg
-                          : mk?.state === "일부"
-                            ? BILL_STATUS.일부.bg
-                            : mk?.state === "미납"
-                              ? BILL_STATUS.청구됨.bg
-                              : "bg-teal-50/70";
+                    // 칸은 완납만 칠합니다 - 청구된 칸까지 칠하면 표 전체가 한 색이 됩니다(tintOf). 아직인 칸은 표시(✓)로 구별합니다.
+                    const cellBg = l && !mk?.unsure && mk?.state === "완납" ? tintOf("완납").cell : mk?.unsure ? "bg-orange-50" : tint.row;
                     return (
                       <td
                         key={i.id}

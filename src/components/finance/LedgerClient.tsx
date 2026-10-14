@@ -169,6 +169,10 @@ export default function LedgerClient({
 
   const [tab, setTab] = useState<Tab>("학생");
   const [dept, setDept] = useState<string>(deptTabs[0] ?? "전체");
+  // 장부(전체·초등·중고등)를 바꾸면 고를 수 있는 부서가 바뀝니다. 옛 부서에 머물면 빈 목록이 뜹니다.
+  useEffect(() => {
+    if (!deptTabs.includes(dept)) setDept(deptTabs[0] ?? "전체");
+  }, [deptTabs, dept]);
   const [scope, setScope] = useState<Scope>(ALL_SCOPE);
   const [q, setQ] = useState("");
   const [onlyOpen, setOnlyOpen] = useState(false);

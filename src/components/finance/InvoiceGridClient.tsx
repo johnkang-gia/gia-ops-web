@@ -284,6 +284,11 @@ export default function InvoiceGridClient({
     [billed, sameName],
   );
   const [dept, setDept] = useState<DeptTab>(((lockedDept as DeptTab | null) ?? "초등부") as DeptTab);
+  // 장부를 바꾸면 화면이 다시 그려지지만 이 상태는 처음 값을 들고 있습니다. 따라가지 않으면
+  // 중고등 회계로 옮겨도 초등부를 보고 있어 「학생이 없습니다」가 뜹니다.
+  useEffect(() => {
+    if (lockedDept) setDept(lockedDept as DeptTab);
+  }, [lockedDept]);
   /** 보고 있는 분류. "전체" 면 분류를 가리지 않습니다. */
   const [cat, setCat] = useState<string>("전체");
   /** 보고 있는 학기. 항목 화면과 같은 학기를 봅니다(브라우저에 기억해둡니다). */

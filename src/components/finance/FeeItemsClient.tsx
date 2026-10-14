@@ -87,6 +87,9 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
    */
   // dept-ok: 학생 판정이 아니라 고른 회계 장부(범위)를 첫 탭으로 옮겨 적는 자리입니다.
   const [deptTab, setDeptTab] = useState<ItemDept>(lockedDept === "중고등부" ? "중고등부" : "초등부");
+  useEffect(() => {
+    if (lockedDept === "초등부" || lockedDept === "중고등부") setDeptTab(lockedDept);
+  }, [lockedDept]);
   /**
    * 보고 있는 학기.
    *

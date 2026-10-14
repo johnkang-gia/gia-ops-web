@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { VISIBLE_DEPARTMENTS } from "@/lib/department";
 import { useFinanceLive } from "@/lib/useFinanceLive";
 import { useRouter } from "next/navigation";
@@ -110,6 +110,9 @@ export default function FeePlansClient({
    */
   // dept-ok: 학생 판정이 아니라 고른 회계 장부(범위)를 첫 탭으로 옮겨 적는 자리입니다.
   const [dept, setDept] = useState<"초등부" | "중고등부" | "공통">(lockedDept === "중고등부" ? "중고등부" : "초등부");
+  useEffect(() => {
+    if (lockedDept === "초등부" || lockedDept === "중고등부") setDept(lockedDept);
+  }, [lockedDept]);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 

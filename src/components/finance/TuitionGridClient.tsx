@@ -186,6 +186,11 @@ export default function TuitionGridClient({
   const thisMonth = today.slice(0, 7);
   const [month, setMonth] = useState(thisMonth);
   const [dept, setDept] = useState<DeptTab>(((lockedDept as DeptTab | null) ?? "초등부") as DeptTab);
+  // 장부를 바꾸면 화면이 다시 그려지지만 이 상태는 처음 값을 들고 있습니다. 따라가지 않으면
+  // 중고등 회계로 옮겨도 초등부를 보고 있어 「학생이 없습니다」가 뜹니다.
+  useEffect(() => {
+    if (lockedDept) setDept(lockedDept as DeptTab);
+  }, [lockedDept]);
   /**
    * 부서 안에서 더 좁혀 보는 두 칸. **빈 글자가 「전체」입니다.**
    *

@@ -13,9 +13,12 @@ export default function ActionBar({
   amount,
   onClear,
   children,
+  warn,
 }: {
   count: number;
   amount?: number;
+  /** 누르기 전에 알아야 할 것(예: 이미 일부가 나간 학생 2명). 숫자로 띄우고 마우스를 올리면 누구인지. */
+  warn?: { count: number; detail: string };
   onClear: () => void;
   children: React.ReactNode;
 }) {
@@ -27,6 +30,11 @@ export default function ActionBar({
           {count}명 선택
           {amount !== undefined && <span className="ml-1.5 tabular-nums text-emerald-300">{Math.round(amount).toLocaleString("ko-KR")}원</span>}
         </span>
+        {warn && warn.count > 0 && (
+          <span className="cursor-help rounded-full bg-amber-500 px-2 py-0.5 text-[11px] font-bold text-white" title={warn.detail}>
+            ⚠ {warn.count}
+          </span>
+        )}
         <span className="h-4 w-px bg-slate-600" />
         {children}
         <button type="button" onClick={onClear} className="rounded-lg px-2 py-1 text-[12px] font-semibold text-slate-300 hover:bg-slate-700 hover:text-white">

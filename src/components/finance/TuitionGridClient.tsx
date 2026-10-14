@@ -20,6 +20,8 @@ import { useFinanceFilter } from "@/components/finance/FinanceFilterProvider";
 import PinButton from "@/components/finance/PinButton";
 import ActionBar from "@/components/finance/ActionBar";
 import UndoIssue from "@/components/finance/UndoIssue";
+import { usePersisted } from "@/lib/usePersisted";
+import { useRowKeys } from "@/lib/useRowKeys";
 import SummaryLine from "@/components/finance/SummaryLine";
 import { StatusBadge } from "@/components/finance/StatusBadge";
 import { BILL_STATUS } from "@/lib/billStatus";
@@ -349,7 +351,8 @@ export default function TuitionGridClient({
    * 여기서 고른 것이 **표의 열·합계·발행 대상 전부**를 정합니다. 보는 것과 발행하는 것이
    * 다르면, 화면에 안 보이는 항목이 청구서에 실려 나갑니다.
    */
-  const [planTab, setPlanTab] = useState<string>("전체");
+  // 고른 보기(정규과정만·방과후만 …)는 사람마다 기억합니다. 매일 같은 보기를 다시 고르지 않게.
+  const [planTab, setPlanTab] = usePersisted<string>("gia.finance.tuition.planTab", "전체");
   const usedPlans = useMemo(
     () => (planTab === "전체" ? allPlans : allPlans.filter((p) => p.name === planTab)),
     [allPlans, planTab],
@@ -654,6 +657,24 @@ export default function TuitionGridClient({
    * 인덱스가 둘로 나뉘어 있고(학기 있음 / 학기 없음, 둘 다 부분 인덱스), 포스트그레스는
    * `insert ... on conflict` 에서 부분 인덱스를 지목할 수 없습니다.
    */
+  // **칸 저장 표시.** 고친 칸이 실제로 저장됐는지 화면에 보여야 합니다 - 저장 실패는 이미 알림으로
+  // 뜨지만, 성공했는지는 아무 표시가 없어 「저장된 건가」 하고 다시 열어 보게 됐습니다.
+  const [saving, setSaving] = useState(0);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
+  async function track<T>(p: Promise<T>): Promise<T> {
+    setSaving((n) => n + 1);
+    try {
+      return await p;
+    } finally {
+      setSaving((n) => n - 1);
+      setSavedAt(new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Seoul" }));
+    }
+  }
+  const pickOption = (...a: Parameters<typeof pickOptionRaw>) => track(pickOptionRaw(...a));
+  const saveOverride = (...a: Parameters<typeof saveOverrideRaw>) => track(saveOverrideRaw(...a));
+  const toggleDiscount = (...a: Parameters<typeof toggleDiscountRaw>) => track(toggleDiscountRaw(...a));
+  const fillColumn = (...a: Parameters<typeof fillColumnRaw>) => track(fillColumnRaw(...a));
+
   async function putEnrollment(
     key: { studentId: string; planId: string; termId: string | null },
     values: Record<string, unknown>,
@@ -697,7 +718,7 @@ export default function TuitionGridClient({
   }
 
   /** 옵션을 고릅니다. 같은 학생·같은 항목은 **덮어씁니다** - 바꿀 때마다 줄이 쌓이면 청구서에 같은 항목이 두 번 찍힙니다. */
-  async function pickOption(student: TuitionStudent, plan: FeePlan, optionId: string) {
+  async function pickOptionRaw(student: TuitionStudent, plan: FeePlan, optionId: string) {
     setBusy(true);
     const sb = createClient();
     const existing = enrollOf.get(`${student.id}|${plan.id}`);
@@ -739,7 +760,7 @@ export default function TuitionGridClient({
    * 옵션은 지우지 않습니다 - 「몇 회로 나눠 내는가」는 그대로 필요하고, 원래 얼마였는지가
    * 화면에 남아 있어야 몇 달 뒤 「이 아이는 왜 이 금액이죠」에 답할 수 있습니다.
    */
-  async function saveOverride(student: TuitionStudent, plan: FeePlan, amount: number | null, note: string) {
+  async function saveOverrideRaw(student: TuitionStudent, plan: FeePlan, amount: number | null, note: string) {
     setBusy(true);
     const sb = createClient();
     const existing = enrollOf.get(`${student.id}|${plan.id}`);
@@ -772,7 +793,7 @@ export default function TuitionGridClient({
    * 형제 할인이 방과후·셔틀 금액에서도 빠집니다 - 화면에는 오류가 아니라 깎인 금액으로만
    * 보입니다.
    */
-  async function toggleDiscount(student: TuitionStudent, plan: FeePlan, d: FeeDiscount, next: boolean) {
+  async function toggleDiscountRaw(student: TuitionStudent, plan: FeePlan, d: FeeDiscount, next: boolean) {
     setBusy(true);
     const sb = createClient();
 
@@ -809,7 +830,7 @@ export default function TuitionGridClient({
   }
 
   /** 보이는 명단 전원에게 한 옵션을 한 번에. 정규과정처럼 대부분이 같은 것을 고르는 항목에 씁니다. */
-  async function fillColumn(plan: FeePlan, optionId: string) {
+  async function fillColumnRaw(plan: FeePlan, optionId: string) {
     // **대상 밖 학생은 건너뜁니다.** 한 번에 채우는 단추가 대상을 무시하면, 대상을 적어둔
     // 뜻이 사라집니다 - 방과후 2일반이 전교생에게 붙습니다.
     const targets = (checked.size > 0 ? rows.filter((s) => checked.has(s.id)) : rows).filter((s) => planTargets(plan, s));
@@ -1028,6 +1049,17 @@ export default function TuitionGridClient({
   const termInvoices = [...invoicesOf.values()].flat();
   const money = gridTotals(rows.map((s) => s.id), totalOf, termInvoices, payments);
   const moneyOf = gridTotalsByStudent(rows.map((s) => s.id), totalOf, termInvoices, payments);
+  // 키보드: ↑↓ 줄 이동 · Space 고르기 · P 고정.
+  const keyRow = useRowKeys(rows, {
+    onToggle: (s) =>
+      setChecked((p) => {
+        const n = new Set(p);
+        if (n.has(s.id)) n.delete(s.id);
+        else n.add(s.id);
+        return n;
+      }),
+    onPin: (s) => ff.pin(ff.pinned?.id === s.id ? null : { id: s.id, name: s.name }),
+  });
   const unissued = rows.filter((s) => totalOf(s.id) > 0 && hasUnbilled(s.id)).length;
 
   if (usedPlans.length === 0) {
@@ -1064,6 +1096,9 @@ export default function TuitionGridClient({
       {/* **지금 이 화면을 함께 보는 사람.** 혼자인지 아닌지를 알면 「지금 고쳐도 되나」를
           묻지 않아도 됩니다. 브라우저를 닫으면 저절로 사라집니다. */}
       <div className="mb-2 flex flex-wrap items-center gap-1.5">
+        <span className={"rounded-full px-2 py-1 text-[11px] font-bold " + (saving > 0 ? "bg-amber-100 text-amber-800" : "bg-emerald-50 text-emerald-700")}>
+          {saving > 0 ? "저장 중…" : savedAt ? `✓ 저장됨 ${savedAt}` : "✓ 바뀐 것 없음"}
+        </span>
         {presence.others.length > 0 ? (
           <span className="flex flex-wrap items-center gap-1 rounded-full bg-rose-50 px-2 py-1 text-[11px] font-bold text-rose-700 ring-1 ring-rose-200">
             👥 지금 함께 보는 중
@@ -1399,7 +1434,11 @@ export default function TuitionGridClient({
               const loose = (sdOf.get(s.id) ?? []).filter((r) => !r.plan_id && (!r.term_id || !termId || r.term_id === termId));
               const inv = invoiceOf.get(s.id);
               return (
-                <tr key={s.id} className={on ? "bg-teal-50/40" : "hover:bg-slate-50/60"}>
+                <tr
+                  key={s.id}
+                  data-row-id={s.id}
+                  className={(on ? "bg-teal-50/40" : "hover:bg-slate-50/60") + (rows[keyRow]?.id === s.id ? " outline outline-2 -outline-offset-2 outline-indigo-400" : "")}
+                >
                   <td className={"sticky left-0 z-10 border-b border-slate-100 px-2 py-1 " + (on ? "bg-teal-50" : "bg-white")}>
                     <input
                       type="checkbox"
@@ -1858,6 +1897,16 @@ export default function TuitionGridClient({
         count={checked.size}
         amount={[...checked].reduce((n, id) => n + totalOf(id), 0)}
         onClear={() => setChecked(new Set())}
+        warn={(() => {
+          const names = [...checked]
+            .filter((id) => (billInfoOf.get(id)?.size ?? 0) > 0)
+            .map((id) => {
+              const s = students.find((x) => x.id === id);
+              const first = [...(billInfoOf.get(id) ?? new Map()).values()][0];
+              return `${s?.name ?? ""}(${issuedShort(first?.date)} ${first?.no ?? ""})`;
+            });
+          return { count: names.length, detail: `이 달에 이미 일부가 나간 학생 — 남은 항목만 담습니다: ${names.join(", ")}` };
+        })()}
       >
         <button
           type="button"

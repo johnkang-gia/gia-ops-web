@@ -9,6 +9,7 @@ import { useFinanceFilter } from "@/components/finance/FinanceFilterProvider";
 import { matchesStudentQuery } from "@/lib/financeFilter";
 import PinButton from "@/components/finance/PinButton";
 import SummaryLine from "@/components/finance/SummaryLine";
+import { useRowKeys } from "@/lib/useRowKeys";
 import { BILL_STATUS, statusFromSettle } from "@/lib/billStatus";
 import ScopeTabs from "@/components/finance/ScopeTabs";
 import StudentLedgerModal from "@/components/finance/StudentLedgerModal";
@@ -205,6 +206,14 @@ export default function LedgerClient({
   }, [inDept, scope, q, onlyOpen, ff.pinned, invoiceNosOf]);
 
   const sum = (f: (r: LedgerRow) => number) => studentRows.reduce((n, r) => n + f(r), 0);
+  // 키보드: ↑↓ 줄 이동 · Enter 학생 회계 창 · P 고정.
+  const keyRow = useRowKeys(studentRows, {
+    onOpen: (r) => {
+      setOpen(r.id);
+      ff.touch({ id: r.id, name: r.name });
+    },
+    onPin: (r) => ff.pin(ff.pinned?.id === r.id ? null : { id: r.id, name: r.name }),
+  });
   /** 학비외 분류 칸 — 보이는 학생들에게 붙은 분류를 전부 모아 금액 큰 순으로. 칸이 같아야 줄이 맞습니다. */
   const extraCats = useMemo(() => {
     const m = new Map<string, number>();
@@ -352,7 +361,33 @@ export default function LedgerClient({
          * 붙어 버려 위로 같이 올라갑니다. 그래서 스크롤 상자를 하나로 합치고, 학생 칸은 왼쪽·금액 칸은
          * 오른쪽에 붙여 가로로 밀어도 남게 합니다.
          */
-        <div className="g-panel-solid max-h-[calc(100vh-12rem)] overflow-auto">
+        <>
+        {/* **좁은 화면(태블릿 세로·휴대폰)은 카드로.** 표는 가로로 열 칸이 넘어 좁은 화면에서는
+            이름 옆 숫자가 화면 밖으로 밀립니다. 카드에는 판단에 필요한 네 숫자만 둡니다. */}
+        <div className="grid gap-2 md:hidden">
+          {studentRows.map((r) => (
+            <button
+              key={r.id}
+              type="button"
+              onClick={() => {
+                setOpen(r.id);
+                ff.touch({ id: r.id, name: r.name });
+              }}
+              className="rounded-xl border border-slate-200 bg-white p-3 text-left shadow-sm"
+            >
+              <p className="font-bold text-slate-800">
+                {r.name} <span className="text-[11px] font-normal text-slate-400">{[r.grade, r.className].filter(Boolean).join(" ")}</span>
+              </p>
+              <p className="mt-1 grid grid-cols-2 gap-x-3 text-[12px] text-slate-500">
+                <span>청구 예정 <b className="tabular-nums text-amber-700">{won(r.toBill)}</b></span>
+                <span>청구 <b className="tabular-nums text-sky-700">{won(r.billed)}</b></span>
+                <span>받음 <b className="tabular-nums text-emerald-700">{won(r.paid)}</b></span>
+                <span>미수 <b className="tabular-nums text-rose-700">{won(r.unpaid)}</b></span>
+              </p>
+            </button>
+          ))}
+        </div>
+        <div className="g-panel-solid hidden max-h-[calc(100vh-12rem)] overflow-auto md:block">
           <div className="flex w-max min-w-full">
           {/* 고정 — 학생 */}
           <table className="sticky left-0 z-20 shrink-0 border-r border-slate-200 bg-white text-[12px]">
@@ -364,7 +399,7 @@ export default function LedgerClient({
             </thead>
             <tbody>
               {studentRows.map((r) => (
-                <tr key={r.id} onClick={() => { setOpen(r.id); ff.touch({ id: r.id, name: r.name }); }} className={"h-12 cursor-pointer border-t border-slate-100 hover:bg-indigo-50/40" + flashCls(r.id)} title="누르면 학생 회계 창이 열립니다">
+                <tr key={r.id} data-row-id={r.id} onClick={() => { setOpen(r.id); ff.touch({ id: r.id, name: r.name }); }} className={"h-12 cursor-pointer border-t border-slate-100 hover:bg-indigo-50/40" + flashCls(r.id) + (studentRows[keyRow]?.id === r.id ? " bg-indigo-50 ring-2 ring-inset ring-indigo-400" : "")} title="누르면 학생 회계 창이 열립니다">
                   <td className="group whitespace-nowrap px-2 font-semibold text-slate-800">
                     <Who id={r.id} name={r.name} plain />
                     <PinButton id={r.id} name={r.name} />
@@ -519,6 +554,7 @@ export default function LedgerClient({
           </table>
           </div>
         </div>
+        </>
       ) : (
         <div>
           <div className="mb-2 flex flex-wrap items-center gap-2 text-[12px]">

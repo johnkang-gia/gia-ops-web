@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useFinanceFilter } from "@/components/finance/FinanceFilterProvider";
 import MonthPicker from "@/components/finance/MonthPicker";
 
@@ -33,6 +33,38 @@ export default function FinanceToolbar() {
   const box = useRef<HTMLInputElement | null>(null);
   const showMonth = MONTH_PAGES.includes(pathname);
   const showSearch = SEARCH_PAGES.some((p) => pathname === p || pathname.startsWith(p + "/"));
+  const [copied, setCopied] = useState(false);
+
+  // **마지막에 보던 재무 화면을 기억합니다.** 재무 메뉴를 다시 열 때 그 화면으로 돌아갑니다
+  // (메뉴 쪽이 읽습니다). 「이번 달」을 거쳐 매번 같은 탭을 다시 찾아가지 않게 합니다.
+  useEffect(() => {
+    try {
+      if (pathname.startsWith("/finance")) localStorage.setItem("gia.finance.lastPath", pathname);
+    } catch {
+      /* 기억만 못 할 뿐 */
+    }
+  }, [pathname]);
+
+  /** 지금 화면을 조건째로 담은 주소. 동료에게 보내면 같은 아이·같은 반이 열립니다. */
+  async function copyLink() {
+    const u = new URL(window.location.href);
+    for (const k of ["fq", "fg", "fk", "fp", "fpn"]) u.searchParams.delete(k);
+    if (f.q) u.searchParams.set("fq", f.q);
+    if (f.scope.grade) u.searchParams.set("fg", f.scope.grade);
+    if (f.scope.klass) u.searchParams.set("fk", f.scope.klass);
+    if (f.pinned) {
+      u.searchParams.set("fp", f.pinned.id);
+      u.searchParams.set("fpn", f.pinned.name);
+    }
+    if (f.month) u.searchParams.set("ym", f.month);
+    try {
+      await navigator.clipboard.writeText(u.toString());
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      window.prompt("이 주소를 복사하세요", u.toString());
+    }
+  }
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -89,6 +121,14 @@ export default function FinanceToolbar() {
           )}
         </span>
       )}
+      <button
+        type="button"
+        onClick={() => void copyLink()}
+        className="rounded-lg border border-slate-200 bg-white px-1.5 py-1 text-[11px] font-semibold text-slate-500 hover:border-slate-400 hover:text-slate-800"
+        title="지금 화면을 조건(검색·반·고정 학생·달)째로 담은 주소를 복사합니다"
+      >
+        {copied ? "✓ 복사됨" : "🔗"}
+      </button>
       {showMonth && (
         <MonthPicker
           value={f.month}

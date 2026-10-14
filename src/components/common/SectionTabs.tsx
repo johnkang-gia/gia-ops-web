@@ -610,7 +610,17 @@ export default function SectionTabs({ isTeacher, isHomeroom }: { isTeacher: bool
     // 아래 여백(pb)이 **주석에만 있고 실제로는 없었습니다.** 그래서 하위 탭 알약의 아래
     // 모서리가 본문이 시작하는 선과 정확히 같은 자리에 놓여, 알약이 바닥에 잘린 것처럼
     // 보였습니다(알약 아래끝 81px = 본문 시작 81px).
-    <div className="shrink-0 px-4 pb-1.5 pt-3 sm:px-6 print:!hidden">
+    <div
+      className={
+        "shrink-0 px-4 pb-1.5 pt-3 sm:px-6 print:!hidden " +
+        // 재무는 지금 장부의 색 띠를 위에 두릅니다(초등 초록 · 중고등 남색). 글자보다 색이 먼저 읽힙니다.
+        (isFinance
+          ? { emerald: "border-t-4 border-emerald-500", indigo: "border-t-4 border-indigo-500", pink: "border-t-4 border-pink-500", slate: "border-t-4 border-slate-400" }[
+              scopeTone(fs!.scope)
+            ]
+          : "")
+      }
+    >
       {/* 탭이 앉는 "선반"을 만듭니다.
           담당자: "메뉴바 (...) 구분이 없어져서 가시성이 너무 떨어져."
           유리 배경 위에 글자만 떠 있으면 탭인지 문장인지 구분이 안 됩니다. 아래에 실선을

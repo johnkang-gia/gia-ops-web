@@ -866,3 +866,12 @@ SQL 창에 붙이게 하지 않습니다 - 손으로 돌린 SQL 은 기록에 �
 
 중고등부는 **학년이 곧 반**입니다(G6 … G12, G12+). 트리거(`wr_students_secondary_class`)가 학년을 따라 반을 정하므로 화면이
 중고등부 반을 따로 고르지 않습니다.
+
+## 2-20. 재무 화면은 조건과 상태 표기를 함께 씁니다
+
+- **조건(검색·학년반·달·학기·고정 학생)**은 `FinanceFilterProvider` 하나가 들고 있습니다. 재무 화면은 자기 검색칸·달
+  고르개를 만들지 않고 `useFinanceFilter()` 로 읽습니다. 화면마다 따로 두면 탭을 옮길 때 조건이 풀립니다.
+- 검색은 `matchesStudentQuery`(이름·영문·초성·반·청구서 번호) 하나로 합니다.
+- **청구 상태의 말과 색**은 `billStatus.ts`(`BILL_STATUS` · `statusFromSettle` · `invoiceStatus`)에서만 옵니다. 화면이
+  「완납」「입금완료」「납부완료」를 저마다 적으면 같은 장이 화면마다 다른 상태로 읽힙니다.
+- 언제·누가 낸 청구서인지는 `invoiceIssued.ts`(`issuedShort` · `issuedLong`)로 적습니다.

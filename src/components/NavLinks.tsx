@@ -70,6 +70,16 @@ function NavBadge({ count }: { count: number }) {
   );
 }
 
+/** 마지막에 보던 재무 화면(재무 위 줄이 기억합니다). 없으면 메뉴가 정한 곳. */
+function lastFinancePath(fallback: string): string {
+  try {
+    const v = localStorage.getItem("gia.finance.lastPath");
+    return v && v.startsWith("/finance") ? v : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 function isActiveHref(pathname: string | null, href: string) {
   return pathname === href || pathname?.startsWith(href + "/");
 }
@@ -268,7 +278,7 @@ export function SidebarNavLinks({ categories }: { categories: NavCategory[] }) {
                     onTouchStart={() => router.prefetch(item.href)}
                     onClick={() => {
                       setOpenKey(null);
-                      if (item.financeScope && fs) fs.setScope(item.financeScope, item.href);
+                      if (item.financeScope && fs) fs.setScope(item.financeScope, lastFinancePath(item.href));
                       else router.push(item.href);
                     }}
                     className={
@@ -327,7 +337,7 @@ export function MobileNavLinks({ categories }: { categories: NavCategory[] }) {
           <button
             key={item.href + (item.financeScope ?? "")}
             type="button"
-            onClick={() => (item.financeScope && fs ? fs.setScope(item.financeScope, item.href) : router.push(item.href))}
+            onClick={() => (item.financeScope && fs ? fs.setScope(item.financeScope, lastFinancePath(item.href)) : router.push(item.href))}
             className={
               "shell-nav-btn flex shrink-0 cursor-pointer items-center gap-1 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium " +
               (active

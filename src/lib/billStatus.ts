@@ -1,3 +1,5 @@
+import { settle, type SettleInvoice, type SettlePayment } from "@/lib/settlement";
+
 /**
  * **청구 상태의 말과 색** — 재무 모든 화면이 이 표 하나를 씁니다.
  *
@@ -41,4 +43,15 @@ export function statusFromSettle(state: string): BillStatus | null {
     default:
       return "청구됨";
   }
+}
+
+/**
+ * **청구서 한 장의 화면 상태 — 이 함수 하나로.** 받은 돈·마감일로 판정(`settle`)하고 화면 상태로 옮깁니다.
+ * 화면마다 `settle` 결과를 저마다 다시 해석하면 같은 장이 화면마다 다른 말로 읽힙니다(김에스더 건).
+ * 취소된 장은 null 입니다.
+ */
+export function invoiceStatus(inv: SettleInvoice, payments: SettlePayment[], today: string): { status: BillStatus; balance: number } | null {
+  const s = settle(inv, payments, today);
+  const st = statusFromSettle(s.state);
+  return st ? { status: st, balance: s.balance } : null;
 }

@@ -8,6 +8,8 @@ import { matchesStudentQuery } from "@/lib/financeFilter";
 import PinButton from "@/components/finance/PinButton";
 import ActionBar from "@/components/finance/ActionBar";
 import UndoIssue from "@/components/finance/UndoIssue";
+import { usePersisted } from "@/lib/usePersisted";
+import { useEditingPresence } from "@/lib/useEditingPresence";
 import SummaryLine from "@/components/finance/SummaryLine";
 import { BILL_STATUS } from "@/lib/billStatus";
 import { StatusLegend } from "@/components/finance/StatusBadge";
@@ -335,10 +337,23 @@ export default function InvoiceGridClient({
   const [justIssued, setJustIssued] = useState<Invoice[]>([]);
   /** 방금 발행한 것(5초 되돌리기). */
   const [undo, setUndo] = useState<{ ids: string[]; label: string } | null>(null);
+  // **누가 함께 보고 있나** — 학비 표와 같은 방식(잠그지 않고 보여주기만). 옆자리에서 같은 아이를
+  // 고치고 있으면 그 줄에 「고치는 중」이 뜹니다.
+  const presence = useEditingPresence(
+    "finance-invoices",
+    useMemo(() => ({ email: currentUserEmail, name: currentUserEmail.split("@")[0] }), [currentUserEmail]),
+    null,
+  );
   const q = ff.q;
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
-  const [openCats, setOpenCats] = useState<Set<string>>(new Set());
+  // 펼쳐 둔 분류(열)는 사람마다 기억합니다. 매일 같은 열을 다시 펼치지 않게.
+  const [openCats, setOpenCats] = usePersisted<Set<string>>(
+    "gia.finance.invoices.openCats",
+    new Set(),
+    (v) => JSON.stringify([...v]),
+    (raw) => new Set(JSON.parse(raw) as string[]),
+  );
   /**
    * 대상이 안 맞는 항목까지 볼지.
    *
@@ -1430,6 +1445,16 @@ export default function InvoiceGridClient({
         </div>
       )}
 
+      {presence.others.length > 0 && (
+        <p className="mb-1 flex flex-wrap items-center gap-1 text-[11px] font-bold text-rose-700">
+          👥 지금 함께 보는 중
+          {presence.others.map((p) => (
+            <span key={p.email} className="rounded-full bg-rose-50 px-1.5 py-0.5 ring-1 ring-rose-200">
+              {p.name}
+            </span>
+          ))}
+        </p>
+      )}
       <SummaryLine
         people={rows.length}
         items={[

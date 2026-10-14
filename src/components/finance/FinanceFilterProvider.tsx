@@ -90,6 +90,25 @@ export function FinanceFilterProvider({
     } catch {
       // 저장소를 못 쓰는 창(사생활 보호 모드)이면 기억만 못 할 뿐 화면은 그대로 씁니다.
     }
+    // 「조건 그대로 링크」로 열었으면 주소의 조건이 이깁니다(동료가 보낸 화면을 그대로 봅니다).
+    try {
+      const u = new URL(window.location.href);
+      const fq = u.searchParams.get("fq");
+      const fg = u.searchParams.get("fg");
+      const fk = u.searchParams.get("fk");
+      const fp = u.searchParams.get("fp");
+      const fpn = u.searchParams.get("fpn");
+      if (fq !== null) setQState(fq);
+      if (fg !== null || fk !== null) setScopeState({ grade: fg ?? "", klass: fk ?? "" });
+      if (fp && fpn) setPinned({ id: fp, name: fpn });
+      const ym = u.searchParams.get("ym");
+      if (ym && /^\d{4}-(0[1-9]|1[0-2])$/.test(ym)) {
+        setMonthState(ym);
+        writeCookie(FINANCE_MONTH_COOKIE, ym);
+      }
+    } catch {
+      /* 주소를 못 읽으면 저장된 조건 그대로 */
+    }
     loaded.current = true;
   }, []);
 

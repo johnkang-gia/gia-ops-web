@@ -4,7 +4,6 @@ import DragScroll from "@/components/common/DragScroll";
 import { Who } from "@/components/common/HomonymProvider";
 import FeePlansModal from "./FeePlansModal";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import MonthPicker from "@/components/finance/MonthPicker";
 import { billingMonthOf, termOfMonth } from "@/lib/financePeriod";
 import { planBillForMonth } from "@/lib/tuitionMonth";
 import { resolveAddon, addonPlanForLine, type AddonPrice } from "@/lib/tuitionAddon";
@@ -16,6 +15,12 @@ import { useToast } from "@/components/common/ToastProvider";
 import { won } from "@/lib/feeItems";
 import { departmentOf, gradeSortKey, type Department } from "@/lib/department";
 import { streamOf } from "@/lib/settlement";
+import { useFinanceFilter } from "@/components/finance/FinanceFilterProvider";
+import PinButton from "@/components/finance/PinButton";
+import ActionBar from "@/components/finance/ActionBar";
+import { StatusBadge } from "@/components/finance/StatusBadge";
+import { BILL_STATUS } from "@/lib/billStatus";
+import { matchesStudentQuery } from "@/lib/financeFilter";
 import { issuedLong, issuedShort } from "@/lib/invoiceIssued";
 import { addDays, DUE_DAYS } from "@/lib/financePeriod";
 import { discountsForPlan, planTargets, tuitionLine, tuitionTotal, discountUsable, type TuitionLine } from "@/lib/tuition";
@@ -30,6 +35,7 @@ import ScopeTabs from "./ScopeTabs";
 import AlltalkpayExport from "./AlltalkpayExport";
 import { ALL_SCOPE, inScope, type Scope } from "@/lib/gradeScope";
 import { gridTotals, gridTotalsByStudent } from "@/lib/gridTotals";
+import Explain from "@/components/finance/Explain";
 
 /**
  * 학비 청구 명단 — 학생이 행, 납부 항목이 열.
@@ -178,13 +184,16 @@ export default function TuitionGridClient({
   useEffect(() => setSdRows(initialStudentDiscounts), [initialStudentDiscounts]);
   useEffect(() => setInvoices(recentInvoices), [recentInvoices]);
 
-  const [termId, setTermId] = useState("");
+  // 학기·달·검색·학년반은 재무 화면들이 함께 씁니다(`FinanceFilterProvider`). 탭을 옮겨도 그대로입니다.
+  const ff = useFinanceFilter();
+  const termId = ff.termId;
+  const setTermId = ff.setTermId;
   /**
    * **보고 있는 달.** 월 납부 항목은 그 달 청구서가 있어야 「청구됨」입니다. 예전에는 학기에
    * 한 장이면 그 학기 내내 「청구됨」으로 남아 다음 달분을 낼 자리가 없었습니다.
    */
   const thisMonth = today.slice(0, 7);
-  const [month, setMonth] = useState(thisMonth);
+  const month = ff.month ?? thisMonth;
   const [dept, setDept] = useState<DeptTab>(((lockedDept as DeptTab | null) ?? "초등부") as DeptTab);
   // 장부를 바꾸면 화면이 다시 그려지지만 이 상태는 처음 값을 들고 있습니다. 따라가지 않으면
   // 중고등 회계로 옮겨도 초등부를 보고 있어 「학생이 없습니다」가 뜹니다.
@@ -198,10 +207,11 @@ export default function TuitionGridClient({
    * **한 반씩** 훑으며 합니다. 검색칸으로 반 이름을 쳐서 보던 것을 단추로 올렸습니다 -
    * 검색은 무엇을 쳐야 하는지 아는 사람만 씁니다.
    */
-  const [scope, setScope] = useState<Scope>(ALL_SCOPE);
+  const scope = ff.scope;
+  const setScope = ff.setScope;
   /** 올톡페이 대량발송 파일을 만들 청구서. 값이 있으면 창이 열립니다. */
   const [exportIds, setExportIds] = useState<string[] | null>(null);
-  const [q, setQ] = useState("");
+  const q = ff.q;
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   // 납입기한은 **발행한 날로부터 이레**입니다. 앞 판은 오늘이 기본이었는데, 그대로 발행하면
@@ -244,9 +254,22 @@ export default function TuitionGridClient({
    */
   const [plansOpen, setPlansOpen] = useState(false);
 
+  // 함께 쓰는 학기가 비었거나 이 화면이 모르는 학기면 진행중 학기로. 이미 고른 학기는 덮지 않습니다 -
+  // 덮으면 다른 탭에서 고른 학기가 이 화면에 오는 순간 풀립니다.
   useEffect(() => {
-    setTermId(initialTermId(terms));
+    if (!termId || !terms.some((t) => t.id === termId)) setTermId(initialTermId(terms));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [terms]);
+  // 달을 옮기면 그 달이 담긴 학기로 따라갑니다(학기 칸을 따로 맞추지 않아도 되게). 달 고르개가 화면 위
+  // 공용 줄로 옮겨 갔으므로, 달이 바뀐 것을 여기서 받아 학기를 맞춥니다.
+  useEffect(() => {
+    const t = termOfMonth(
+      month,
+      terms.map((x) => ({ id: x.id, label: `${x.year} ${x.term_type}`, start_date: x.start_date ?? null, end_date: x.end_date ?? null })),
+    );
+    if (t && t.id !== termId) setTermId(t.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [month, terms]);
 
   /**
    * **열 순서는 여기서 바로 바꿉니다.**
@@ -592,8 +615,12 @@ export default function TuitionGridClient({
 
   const rows = useMemo(() => {
     let list = students.filter((s) => deptOf(s) === dept && inScope(s, scope));
-    const needle = q.trim().toLowerCase();
-    if (needle) list = list.filter((s) => `${s.name} ${s.nameEn ?? ""} ${s.className ?? ""}`.toLowerCase().includes(needle));
+    // 고정한 아이가 있으면 그 아이만. 검색은 이름·영문·초성·반·청구서 번호를 한 칸에서 받습니다(`matchesStudentQuery`).
+    if (ff.pinned) list = list.filter((s) => s.id === ff.pinned!.id);
+    else if (q.trim())
+      list = list.filter((s) =>
+        matchesStudentQuery(q, { ...s, invoiceNos: (invoicesOf.get(s.id) ?? []).map((v) => v.invoice_no) }),
+      );
     // 「미발행만」은 **남은 항목이 있는가**로 봅니다. 한 장 나갔다고 다 된 것이 아닙니다.
     if (onlyUnissued) list = list.filter((s) => hasUnbilled(s.id));
     return list.sort(
@@ -603,7 +630,7 @@ export default function TuitionGridClient({
         a.name.localeCompare(b.name, "ko"),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [students, dept, scope, q, onlyUnissued, billed]);
+  }, [students, dept, scope, q, onlyUnissued, billed, ff.pinned, invoicesOf]);
 
   /**
    * **이 학생·이 항목의 등록 줄 하나를 확보해 값을 적습니다.**
@@ -1015,20 +1042,6 @@ export default function TuitionGridClient({
       </div>
 
       <div className="mb-2 flex flex-wrap items-center gap-2">
-        <MonthPicker
-          value={month}
-          thisMonth={thisMonth}
-          onChange={(m) => {
-            const next = m ?? thisMonth;
-            setMonth(next);
-            // 달을 옮기면 그 달이 담긴 학기로 따라갑니다(학기 칸을 따로 맞추지 않아도 되게).
-            const t = termOfMonth(
-              next,
-              terms.map((x) => ({ id: x.id, label: `${x.year} ${x.term_type}`, start_date: x.start_date ?? null, end_date: x.end_date ?? null })),
-            );
-            if (t) setTermId(t.id);
-          }}
-        />
         <TermPicker terms={terms} value={termId} onChange={setTermId} />
         <span className={"flex gap-1" + (lockedDept ? " hidden" : "")}>
           {DEPTS.map((d) => (
@@ -1050,12 +1063,6 @@ export default function TuitionGridClient({
             </button>
           ))}
         </span>
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="이름·반 검색"
-          className="w-40 rounded-lg border border-slate-300 px-2 py-1.5 text-xs"
-        />
         <label className="flex items-center gap-1 text-[11px] font-semibold text-slate-600">
           <input type="checkbox" checked={onlyUnissued} onChange={(e) => setOnlyUnissued(e.target.checked)} />
           미발행만
@@ -1184,7 +1191,7 @@ export default function TuitionGridClient({
         </div>
       )}
 
-      <p className="mb-2 text-[11px] leading-relaxed text-slate-500">
+      <Explain className="mb-2">
         칸에 <b>학부모가 고른 납부 옵션</b>을 넣습니다. 금액은 <b>기준금액 × 회차수 × (1 − 옵션 할인)</b>으로 그때그때
         계산합니다 — 요금이 오르면 [납부 항목 · 할인]에서 기준금액 하나만 고치면 전부 따라옵니다.
         <br />
@@ -1194,7 +1201,7 @@ export default function TuitionGridClient({
         <b>연 1회 내는 항목도 학비입니다.</b> 아래 <b>[📚 납부 항목 · 할인]</b> 의 <b>학비</b> 탭에서 단위를{" "}
         <b>연간</b>으로 만들고 <b>「1년 납부」 옵션 하나</b>를 붙이면 이 표에 열로 뜹니다. 이름은 나중에 <b>고치기</b>로
         바꿀 수 있고, 이미 나간 청구서는 그대로 남습니다.
-      </p>
+      </Explain>
 
       {/* 항목·할인은 **청구를 하다가** 손대게 됩니다 - 「이 아이 할인이 목록에 없네」,
           「기준금액이 올랐네」. 화면을 옮겨야 하는 일은 대개 안 하게 되므로 이 자리에서
@@ -1367,8 +1374,9 @@ export default function TuitionGridClient({
                       }
                     />
                   </td>
-                  <td className={"sticky left-8 z-10 border-b border-r border-slate-200 px-2 py-1 " + (on ? "bg-teal-50" : "bg-white")}>
+                  <td className={"group sticky left-8 z-10 border-b border-r border-slate-200 px-2 py-1 " + (on ? "bg-teal-50" : "bg-white")}>
                     <b className="text-slate-800"><Who id={s.id} name={s.name} /></b>
+                    <PinButton id={s.id} name={s.name} />
                     <span className="ml-1 text-[10px] text-slate-400">
                       {[s.grade, s.className].filter(Boolean).join(" ")}
                     </span>
@@ -1446,26 +1454,14 @@ export default function TuitionGridClient({
                                 const info = billInfoOf.get(s.id)?.get(p.name);
                                 const when = info ? issuedShort(info.date) : "";
                                 const where = info ? ` · ${info.no} · ${info.date}${info.by ? ` ${info.by}` : ""} 발행` : "";
-                                const look =
-                                  st === "완납"
-                                    ? "bg-emerald-600 text-white"
-                                    : st === "일부"
-                                      ? "bg-amber-500 text-white"
-                                      : "bg-slate-200 text-slate-600";
+                                const status = st === "완납" ? "완납" : st === "일부" ? "일부" : "청구됨";
                                 return (
-                                  <span
-                                    className={"shrink-0 rounded px-1 text-[9px] font-bold " + look}
-                                    title={
-                                      (st === "완납"
-                                        ? "이 항목이 담긴 청구서가 다 걷혔습니다"
-                                        : st === "일부"
-                                          ? "이 항목이 담긴 청구서에 일부만 들어왔습니다 — 미납금 화면에서 잔액만 다시 청구할 수 있습니다"
-                                          : "청구서는 나갔고 아직 안 들어왔습니다") + where
-                                    }
-                                  >
-                                    {st === "완납" ? "입금완료" : st === "일부" ? "일부입금" : "청구됨"}
-                                    {when && <span className="ml-0.5 font-semibold opacity-80">{when}</span>}
-                                  </span>
+                                  <StatusBadge
+                                    status={status}
+                                    suffix={when}
+                                    className="text-[9px]"
+                                    title={BILL_STATUS[status].hint + where}
+                                  />
                                 );
                               })()}
                             {ds.length > 0 && (
@@ -1817,6 +1813,21 @@ export default function TuitionGridClient({
         할인은 [납부 항목 · 할인]에서 만든 것만 붙일 수 있습니다. 비율 할인은 <b>옵션 할인을 뺀 금액</b>에 걸립니다 —
         연납 10%를 받은 학생에게 특별감면 10%를 붙이면 20%가 아니라 연납가에서 다시 10%입니다.
       </p>
+      {/* 고른 학생이 있으면 아래에 작업 줄이 떠오릅니다(표 위 단추와 같은 함수). */}
+      <ActionBar
+        count={checked.size}
+        amount={[...checked].reduce((n, id) => n + totalOf(id), 0)}
+        onClear={() => setChecked(new Set())}
+      >
+        <button
+          type="button"
+          onClick={() => void issueChecked([])}
+          disabled={busy}
+          className="rounded-lg bg-emerald-500 px-3 py-1 text-[12px] font-bold text-white hover:bg-emerald-400 disabled:opacity-40"
+        >
+          🧾 발행
+        </button>
+      </ActionBar>
     </div>
   );
 }

@@ -1,5 +1,7 @@
 "use client";
 
+import { useFinanceFilter } from "@/components/finance/FinanceFilterProvider";
+import { matchesStudentQuery } from "@/lib/financeFilter";
 import { useMemo, useState } from "react";
 import { useFinanceLive } from "@/lib/useFinanceLive";
 import Link from "next/link";
@@ -95,7 +97,13 @@ export default function UnpaidClient({
   /** 고른 것이 한 학생인가. 섞이면 합칠 수 없습니다 - 남의 돈이 청구됩니다. */
   const onePerson = new Set(pickedRows.map((r) => r.invoice.student_id)).size === 1;
 
-  const visible = bucket === "전체" ? ledger.groups : ledger.groups.filter((g) => g.rows.some((r) => r.aging === bucket));
+  // 검색·고정 학생은 재무 화면들이 함께 씁니다(위 공용 줄).
+  const ff = useFinanceFilter();
+  const visible = (bucket === "전체" ? ledger.groups : ledger.groups.filter((g) => g.rows.some((r) => r.aging === bucket))).filter((g) =>
+    ff.pinned
+      ? g.studentId === ff.pinned.id
+      : matchesStudentQuery(ff.q, { name: g.label, className: whereById.get(g.studentId) ?? "", invoiceNos: g.rows.map((r) => r.invoice.invoice_no) }),
+  );
 
   /** 구간별 합계. 「어디에 얼마가 묶여 있나」가 한 줄로 보여야 다음 행동이 정해집니다. */
   const byBucket = useMemo(() => {

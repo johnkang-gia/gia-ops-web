@@ -3,6 +3,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { BILL_LABEL, billedItems, markOf } from "@/lib/billedItems";
 import { issuedLong, issuedShort } from "@/lib/invoiceIssued";
+import { useFinanceFilter } from "@/components/finance/FinanceFilterProvider";
+import { matchesStudentQuery } from "@/lib/financeFilter";
+import PinButton from "@/components/finance/PinButton";
+import ActionBar from "@/components/finance/ActionBar";
+import { BILL_STATUS } from "@/lib/billStatus";
+import { StatusLegend } from "@/components/finance/StatusBadge";
 import { askText, compareIssue, groupIssue, type CompareRow, type IssueCompare } from "@/lib/issueCompare";
 import { gridTotals, gridTotalsByStudent } from "@/lib/gridTotals";
 import { useFinanceLive } from "@/lib/useFinanceLive";
@@ -38,6 +44,7 @@ import { gradeLabel } from "@/lib/feeItems";
 import type { FeeItem, Term, Invoice, StudentFeeItem } from "@/lib/types";
 import ScopeTabs from "./ScopeTabs";
 import { ALL_SCOPE, gradeOfClass } from "@/lib/gradeScope";
+import Explain from "@/components/finance/Explain";
 
 // 인보이스 명단 표 — 학생이 행, 항목이 열인 스프레드시트.
 //
@@ -292,11 +299,24 @@ export default function InvoiceGridClient({
   /** 보고 있는 분류. "전체" 면 분류를 가리지 않습니다. */
   const [cat, setCat] = useState<string>("전체");
   /** 보고 있는 학기. 항목 화면과 같은 학기를 봅니다(브라우저에 기억해둡니다). */
-  const [termId, setTermId] = useState("");
+  // 학기·검색·학년반은 재무 화면들이 함께 씁니다(`FinanceFilterProvider`). 학비 표에서 고른 반·찾은
+  // 아이가 이 화면으로 넘어와도 그대로입니다.
+  const ff = useFinanceFilter();
+  const termId = ff.termId;
+  const setTermId = ff.setTermId;
   useEffect(() => {
-    setTermId(initialTermId(terms));
+    if (!termId || !terms.some((t) => t.id === termId)) setTermId(initialTermId(terms));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [terms]);
-  const [view, setView] = useState<View>({ kind: "전체" });
+  const view: View = ff.scope.klass
+    ? { kind: "반", value: ff.scope.klass }
+    : ff.scope.grade
+      ? { kind: "학년", value: ff.scope.grade }
+      : { kind: "전체" };
+  const setView = (v: View) =>
+    ff.setScope(
+      v.kind === "반" ? { grade: "", klass: v.value } : v.kind === "학년" ? { grade: v.value, klass: "" } : { grade: "", klass: "" },
+    );
   /** 올톡페이 발송 파일을 만들 청구서. 값이 있으면 창이 열립니다. */
   const [exportIds, setExportIds] = useState<string[] | null>(null);
   /** 올톡페이 청구서와 맞춰보기. 저장은 하지 않고 보기만 합니다. */
@@ -311,7 +331,7 @@ export default function InvoiceGridClient({
   >({});
   /** 방금 발행한 것. 발행 직후 바로 청구로 이어가라고 띄웁니다. */
   const [justIssued, setJustIssued] = useState<Invoice[]>([]);
-  const [q, setQ] = useState("");
+  const q = ff.q;
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [openCats, setOpenCats] = useState<Set<string>>(new Set());
@@ -538,18 +558,19 @@ export default function InvoiceGridClient({
 
   /** 지금 보고 있는 명단. */
   const rows = useMemo(() => {
-    const k = q.trim().toLowerCase().replace(/\s+/g, "");
     let list = inDept;
     if (view.kind === "반") list = list.filter((s) => (s.className ?? "") === view.value);
     if (view.kind === "학년") list = list.filter((s) => (s.grade ?? "") === view.value);
-    if (k) {
-      list = list.filter(
-        (s) => s.name.toLowerCase().replace(/\s+/g, "").includes(k) || (s.nameEn ?? "").toLowerCase().replace(/\s+/g, "").includes(k),
+    // 고정한 아이가 있으면 그 아이만. 검색은 이름·영문·초성·반·청구서 번호(`matchesStudentQuery`).
+    if (ff.pinned) list = inDept.filter((s) => s.id === ff.pinned!.id);
+    else if (q.trim())
+      list = list.filter((s) =>
+        matchesStudentQuery(q, { ...s, invoiceNos: (billableByStudent.get(s.id) ?? []).map((v) => v.invoice_no) }),
       );
-    }
     if (onlyUnissued) list = list.filter((s) => !invoiceByStudent.has(s.id));
     return list;
-  }, [inDept, view, q, onlyUnissued, invoiceByStudent]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inDept, ff.scope, q, onlyUnissued, invoiceByStudent, ff.pinned, billableByStudent]);
 
   /** 이 명단의 아이마다 사는 것. 표 전체가 이 하나에서 나옵니다. */
   const linesByStudent = useMemo(() => {
@@ -1358,11 +1379,11 @@ export default function InvoiceGridClient({
             보고 있던 학기·부서·체크가 전부 풀렸고, 돌아와서 처음부터 다시 찾아야 했습니다. */}
         <FeeItemsButton />
       </div>
-      <p className="mb-3 text-xs leading-relaxed text-slate-500">
+      <Explain className="mb-3">
         표는 <b>보는 곳</b>입니다. 넣고 빼는 것은 <b>이름을 눌러 나오는 창</b>에서만 합니다 — 칸이 촘촘해서
         훑다가 옆 칸을 눌러도 알아채지 못했습니다. 항목에 정해둔 <b>기본 학년·반</b>은 이미 체크된 채로 나오고,
         합계는 표가 계산합니다 — 사람이 더할 자리가 없습니다.
-      </p>
+      </Explain>
 
       {loadError && (
         <p className="mb-3 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-[12px] text-orange-800">
@@ -1484,12 +1505,6 @@ export default function InvoiceGridClient({
       />
 
       <div className="mb-2 flex flex-wrap items-center gap-2">
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="이름으로 찾기"
-          className="w-44 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
-        />
         <label className="flex items-center gap-1 text-[11px] text-slate-500">
           <input type="checkbox" checked={onlyUnissued} onChange={(e) => setOnlyUnissued(e.target.checked)} />
           아직 발행 안 된 학생만
@@ -1936,7 +1951,7 @@ export default function InvoiceGridClient({
                   </td>
                   <td
                     className={
-                      "sticky z-10 overflow-hidden whitespace-nowrap border-b border-r border-slate-200 px-2 py-1 " +
+                      "group sticky z-10 overflow-hidden whitespace-nowrap border-b border-r border-slate-200 px-2 py-1 " +
                       (on ? "bg-teal-50" : "bg-white")
                     }
                     style={{ left: W_CHECK, width: W_NAME, minWidth: W_NAME, maxWidth: W_NAME }}
@@ -1951,6 +1966,7 @@ export default function InvoiceGridClient({
                     >
                       {s.name}
                     </button>
+                    <PinButton id={s.id} name={s.name} />
                     <span className="ml-1 text-[10px] text-slate-400">
                       {[s.grade ? `${s.grade}` : null, s.className].filter(Boolean).join(" ")}
                     </span>
@@ -2036,15 +2052,15 @@ export default function InvoiceGridClient({
                         const st = settle(inv as unknown as SettleInvoice, payments, today);
                         if (st.state === "완납") {
                           return (
-                            <span className="rounded bg-emerald-600 px-1 text-[10px] font-bold text-white" title={`${won(st.paid)} 받음`}>
-                              완납
+                            <span className={"rounded px-1 text-[10px] font-bold " + BILL_STATUS.완납.cls} title={`${won(st.paid)} 받음`}>
+                              {BILL_STATUS.완납.label}
                             </span>
                           );
                         }
                         if (st.state === "이월됨") {
                           return (
-                            <span className="rounded bg-slate-200 px-1 text-[10px] font-bold text-slate-600" title="미납이 다음 청구서로 넘어갔습니다">
-                              이월됨
+                            <span className={"rounded px-1 text-[10px] font-bold " + BILL_STATUS.이월.cls} title={BILL_STATUS.이월.hint}>
+                              {BILL_STATUS.이월.label}
                             </span>
                           );
                         }
@@ -2053,12 +2069,12 @@ export default function InvoiceGridClient({
                           <button
                             onClick={() => setAlreadyFor(s)}
                             className={
-                              "rounded px-1 text-[10px] font-bold text-white " +
-                              (st.state === "연체" ? "bg-rose-600" : st.state === "부분납부" ? "bg-amber-600" : "bg-slate-500")
+                              "rounded px-1 text-[10px] font-bold " +
+                              BILL_STATUS[st.state === "연체" ? "연체" : st.state === "부분납부" ? "일부" : "청구됨"].cls
                             }
                             title={`미수 ${won(st.balance)} — 눌러서 수납`}
                           >
-                            {st.state === "부분납부" ? `일부 · 남은 ${won(st.balance)}` : st.state === "연체" ? "연체" : "미납"}
+                            {st.state === "부분납부" ? `${BILL_STATUS.일부.label} · 남은 ${won(st.balance)}` : st.state === "연체" ? BILL_STATUS.연체.label : BILL_STATUS.청구됨.label}
                           </button>
                         );
                       })()}
@@ -2926,11 +2942,7 @@ export default function InvoiceGridClient({
                                   <span
                                     className={
                                       "ml-1.5 rounded px-1 text-[10px] font-bold " +
-                                      (lock.state === "완납"
-                                        ? "bg-emerald-600 text-white"
-                                        : lock.state === "일부"
-                                          ? "bg-amber-500 text-white"
-                                          : "bg-slate-400 text-white")
+                                      BILL_STATUS[lock.state === "완납" ? "완납" : lock.state === "일부" ? "일부" : "청구됨"].cls
                                     }
                                   >
                                     {BILL_LABEL[lock.state]}
@@ -3062,6 +3074,21 @@ export default function InvoiceGridClient({
         넣은 것입니다. 열 머리의 <b>전체 +</b> 는 지금 보이는 명단 전원에게 한 번에 넣습니다. 합계 줄의 개수는 그대로
         발주 수량입니다.
       </p>
+      {/* 고른 학생이 있으면 아래에 작업 줄이 떠오릅니다(표 위 단추와 같은 함수). */}
+      <ActionBar
+        count={checked.size}
+        amount={[...checked].reduce((n, id) => n + totalOf(id), 0)}
+        onClear={() => setChecked(new Set())}
+      >
+        <button
+          type="button"
+          onClick={openReview}
+          disabled={busy}
+          className="rounded-lg bg-emerald-500 px-3 py-1 text-[12px] font-bold text-white hover:bg-emerald-400 disabled:opacity-40"
+        >
+          🧾 {cat === "전체" ? "발행" : `${cat} 발행`}
+        </button>
+      </ActionBar>
     </div>
   );
 }

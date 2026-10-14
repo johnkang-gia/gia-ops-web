@@ -168,7 +168,8 @@ function rank(s: BillState): number {
 export const BILL_LABEL: Record<BillState, string> = {
   // 「받음」보다 「납부완료」가 눈에 걸립니다 - 이 뱃지 하나로 그 항목을 다시 청구할지가
   // 갈리는데, 흐린 말로 적으면 사람이 한 번 더 확인하게 됩니다.
-  완납: "납부완료",
-  일부: "일부받음",
+  // 말은 `billStatus.ts` 와 같습니다 - 화면마다 같은 상태를 다르게 부르면 다른 상태로 읽힙니다.
+  완납: "완납",
+  일부: "일부 받음",
   미납: "청구됨",
 };

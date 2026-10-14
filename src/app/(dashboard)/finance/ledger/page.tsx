@@ -19,7 +19,7 @@ import LedgerClient, { type LedgerRow, type LedgerInvoiceRow } from "@/component
  * 숫자는 전부 `studentLedger.ts` 가 셉니다 - 학생 창과 같은 함수, 같은 자료입니다. 목록의
  * 숫자와 창의 숫자가 다르면 아무도 안 믿습니다.
  */
-import { getFinanceScope } from "@/lib/financeScopeServer";
+import { getFinanceScope, getFinanceMonth } from "@/lib/financeScopeServer";
 import { inScope, deptTabsForScope } from "@/lib/financeScope";
 
 export const dynamic = "force-dynamic";
@@ -104,7 +104,8 @@ export default async function LedgerPage({ searchParams }: { searchParams: Promi
   // **보고 있는 달.** 기본은 이번 달입니다. 월 단위 학비는 그 달 청구서로 「청구됨」을 판정하고,
   // 청구서 탭도 그 달 것만 보입니다. 학기는 그 달이 담긴 학기를 따라갑니다.
   const thisMonth = todayKst().slice(0, 7);
-  const month = /^\d{4}-(0[1-9]|1[0-2])$/.test(ym ?? "") ? (ym as string) : thisMonth;
+  // 주소에 달이 있으면 그 달(옛 링크·공유 주소), 없으면 재무 화면들이 함께 보는 달(위의 달 고르개).
+  const month = /^\d{4}-(0[1-9]|1[0-2])$/.test(ym ?? "") ? (ym as string) : ((await getFinanceMonth(thisMonth)) ?? thisMonth);
 
   const supabase = await createClient();
   const { world, students, terms, errors } = await loadLedgerWorld(supabase, { termId: term || null, month });

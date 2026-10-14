@@ -7,6 +7,7 @@ import CashReceiptsClient, { type CashReceiptRow, type StudentLite } from "@/com
 import { loadStudents } from "@/lib/students";
 
 import { getFinanceScope, scopeStudentIds, inScopeIds } from "@/lib/financeScopeServer";
+import Explain from "@/components/finance/Explain";
 export const dynamic = "force-dynamic";
 
 const GUIDE_SECTIONS = [
@@ -73,9 +74,9 @@ export default async function CashReceiptsPage() {
         <h1 className="text-lg font-bold">🧾 현금영수증</h1>
         <GuideButton title="현금영수증 사용 가이드" sections={GUIDE_SECTIONS} />
       </div>
-      <p className="mb-4 text-xs leading-relaxed text-slate-500">
+      <Explain className="mb-4">
         현금영수증을 요청하신 분을 모아두고, 번호를 미리 받아두고, 종이로 뽑아 단말기에서 끊은 뒤 체크하는 곳입니다.
-      </p>
+      </Explain>
       <CashReceiptsClient
         initialRows={rows}
         students={students}

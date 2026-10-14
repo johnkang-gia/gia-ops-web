@@ -14,7 +14,6 @@ import type { FeeItem, Invoice, StudentFeeItem } from "@/lib/types";
 import { Who } from "@/components/common/HomonymProvider";
 import { readAll, readNotice } from "@/lib/financeFetch";
 import { loadStudents } from "@/lib/students";
-import { MonthNav } from "@/components/finance/MonthPicker";
 import { billingMonthOf } from "@/lib/financePeriod";
 
 // 재무 개요.
@@ -23,7 +22,8 @@ import { billingMonthOf } from "@/lib/financePeriod";
 // 화면은 결국 안 보게 됩니다. 그래서 여기에는 숫자 네 개와 "남은 일" 목록만 둡니다:
 // 얼마를 받아야 하는지, 몇 명에게 보냈는지, 누가 아직 안 보내졌는지.
 
-import { getFinanceScope, scopeStudentIds, inScopeIds } from "@/lib/financeScopeServer";
+import { getFinanceScope, getFinanceMonth, scopeStudentIds, inScopeIds } from "@/lib/financeScopeServer";
+import Explain from "@/components/finance/Explain";
 export const dynamic = "force-dynamic";
 
 /** 할 일 칸의 색. 테일윈드는 글자를 조립한 클래스 이름을 못 찾으므로 통째로 적어 둡니다. */
@@ -44,7 +44,9 @@ export default async function FinanceOverviewPage({ searchParams }: { searchPara
   // 수납은 들어온 날의 달로 거릅니다(`financePeriod.ts`).
   const { ym } = await searchParams;
   const thisMonth = todayKst().slice(0, 7);
-  const month: string | null = ym === "all" ? null : /^\d{4}-(0[1-9]|1[0-2])$/.test(ym ?? "") ? (ym as string) : thisMonth;
+  // 주소에 달이 없으면 재무 화면들이 함께 보는 달(위의 달 고르개).
+  const month: string | null =
+    ym === "all" ? null : /^\d{4}-(0[1-9]|1[0-2])$/.test(ym ?? "") ? (ym as string) : await getFinanceMonth(thisMonth);
 
   const supabase = await createClient();
   const [stuRes, itemsRes, ovRes, invRes, payRes] = await Promise.all([
@@ -169,11 +171,11 @@ export default async function FinanceOverviewPage({ searchParams }: { searchPara
       <div className="mb-1 flex flex-wrap items-baseline gap-2">
         <h1 className="text-lg font-bold">📊 이번 달 할 일 · 개요</h1>
         <span className="text-xs text-slate-400">{today} 기준</span>
-        <MonthNav basePath="/finance" value={month} thisMonth={thisMonth} allowAll />
+        {/* 달은 화면 위 공용 줄에서 고릅니다 - 재무의 다른 화면과 같은 달을 봅니다. */}
       </div>
-      <p className="mb-4 text-xs text-slate-500">
+      <Explain className="mb-4">
         지금 어디까지 됐는지만 봅니다. 고치는 일은 옆 탭에서 합니다. 아래 표 가운데 「받아야 할 금액」부터는 <b>학비외</b>만 셉니다.
-      </p>
+      </Explain>
 
       {loadError && (
         <p className="mb-3 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-[12px] text-orange-800">

@@ -1,5 +1,7 @@
 "use client";
 
+import { useFinanceFilter } from "@/components/finance/FinanceFilterProvider";
+import { matchesStudentQuery } from "@/lib/financeFilter";
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -43,7 +45,9 @@ export default function SendClient({ rows, error }: { rows: SendRow[]; error: st
   const [view, setView] = useState<View>("안 보냄");
   const [month, setMonth] = useState<string>("");
   const [stream, setStream] = useState<"" | "학비" | "학비외">("");
-  const [q, setQ] = useState("");
+  // 검색·고정 학생은 재무 화면들이 함께 씁니다(위 공용 줄).
+  const ff = useFinanceFilter();
+  const q = ff.q;
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [exporting, setExporting] = useState<string[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -56,9 +60,10 @@ export default function SendClient({ rows, error }: { rows: SendRow[]; error: st
         .filter((r) => (view === "안 보냄" ? !r.exportedAt : view === "보냄·미납" ? !!r.exportedAt : true))
         .filter((r) => !month || r.billingMonth === month)
         .filter((r) => !stream || r.stream === stream)
-        .filter((r) => !q.trim() || `${r.name} ${r.where} ${r.invoiceNo}`.includes(q.trim()))
+        .filter((r) => (ff.pinned ? r.studentId === ff.pinned.id : matchesStudentQuery(q, { name: r.name, className: r.where, invoiceNos: [r.invoiceNo] })))
         .sort((a, b) => a.where.localeCompare(b.where) || a.name.localeCompare(b.name, "ko") || a.invoiceNo.localeCompare(b.invoiceNo)),
-    [rows, view, month, stream, q],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rows, view, month, stream, q, ff.pinned],
   );
   const counts = useMemo(
     () => ({ unsent: rows.filter((r) => !r.exportedAt).length, sent: rows.filter((r) => !!r.exportedAt).length }),
@@ -135,7 +140,6 @@ export default function SendClient({ rows, error }: { rows: SendRow[]; error: st
           <option value="학비">학비</option>
           <option value="학비외">학비외</option>
         </select>
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="이름·반·청구서 번호" className="w-40 rounded-lg border border-slate-300 px-2 py-1 text-[12px]" />
         {noPhone > 0 && <span className="rounded bg-orange-100 px-2 py-0.5 text-[11px] font-bold text-orange-800">번호 없음 {noPhone}명 — 「+ 번호」로 적어주세요</span>}
         <button
           onClick={() => setExporting(pickedRows.map((r) => r.id))}

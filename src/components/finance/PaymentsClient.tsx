@@ -10,10 +10,12 @@ import { agingBucket, type AgingBucket } from "@/lib/settlement";
 import PayModal from "./PayModal";
 import RefundModal, { type RefundTarget } from "./RefundModal";
 import InlineTabs from "@/components/common/InlineTabs";
-import MonthPicker from "./MonthPicker";
+import { useFinanceFilter } from "@/components/finance/FinanceFilterProvider";
+import { matchesStudentQuery } from "@/lib/financeFilter";
 import { billingMonthOf } from "@/lib/financePeriod";
 import type { Invoice } from "@/lib/types";
 import { Who } from "@/components/common/HomonymProvider";
+import Explain from "@/components/finance/Explain";
 
 // 수납 — 들어온 돈을 인보이스에 붙입니다.
 //
@@ -119,10 +121,22 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
    * 달**까지** 못 받은 장 전부입니다 - 지난달 미납이 이번 달 화면에서 사라지면 아무도 안 걷습니다.
    * 「전체」를 고르면 예전처럼 달을 가리지 않습니다.
    */
-  const [ym, setYm] = useState<string | null>(today.slice(0, 7));
-  const unpaid = unpaidAll.filter((x) => !ym || (billingMonthOf(x.v) ?? "") <= ym);
-  const issuedInMonth = withBalance.filter((x) => !ym || billingMonthOf(x.v) === ym);
-  const paymentsInMonth = payments.filter((p) => !ym || String(p.paid_at ?? "").slice(0, 7) === ym);
+  // 달은 재무 화면들이 함께 봅니다(위 공용 줄). 「전체」(null)도 고를 수 있습니다.
+  const ff = useFinanceFilter();
+  const ym = ff.month;
+  // 검색·고정 학생(위 공용 줄)도 함께 따릅니다. 청구서에 적힌 이름과 번호로 견줍니다.
+  const fits = (v: { student_id?: string | null; student_name?: string | null; student_name_ko?: string | null; invoice_no?: string | null } | undefined) =>
+    !v
+      ? !ff.pinned && !ff.q.trim()
+      : ff.pinned
+        ? v.student_id === ff.pinned.id
+        : matchesStudentQuery(ff.q, { name: v.student_name_ko || v.student_name || "", nameEn: v.student_name ?? null, invoiceNos: v.invoice_no ? [v.invoice_no] : [] });
+  const invById = new Map(invoices.map((v) => [v.id, v]));
+  const unpaid = unpaidAll.filter((x) => (!ym || (billingMonthOf(x.v) ?? "") <= ym) && fits(x.v));
+  const issuedInMonth = withBalance.filter((x) => (!ym || billingMonthOf(x.v) === ym) && fits(x.v));
+  const paymentsInMonth = payments.filter(
+    (p) => (!ym || String(p.paid_at ?? "").slice(0, 7) === ym) && (ff.pinned ? (p.invoice_id ? invById.get(p.invoice_id)?.student_id : p.student_id) === ff.pinned.id : !ff.q.trim() || fits(p.invoice_id ? invById.get(p.invoice_id) : undefined)),
+  );
   const paidSum = paymentsInMonth.filter((p) => (p as { kind?: string | null }).kind !== "refund").reduce((n, p) => n + Number(p.amount), 0);
   const billedSum = issuedInMonth.reduce((n, x) => n + Number(x.v.total_amount), 0);
 
@@ -436,10 +450,10 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
         <h1 className="text-lg font-bold">💳 수납 내역</h1>
         <span className="text-xs text-slate-400">올톡페이 엑셀을 올리면 인보이스에 붙습니다</span>
       </div>
-      <p className="mb-4 text-xs leading-relaxed text-slate-500">
+      <Explain className="mb-4">
         자동으로 붙일 수 있는 것만 붙이고, <b>애매한 것은 애매하다고 말합니다.</b> 어림짐작으로 붙이면 틀린 곳을 아무도
         못 찾습니다.
-      </p>
+      </Explain>
 
       {loadError && (
         <p className="mb-3 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-[12px] text-orange-800">
@@ -630,7 +644,6 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
 
       {/* ── 목록 ────────────────────────────────────────────────── */}
       <div className="mb-2 flex flex-wrap items-center gap-2">
-        <MonthPicker value={ym} thisMonth={today.slice(0, 7)} onChange={setYm} allowAll />
         <span className="text-[12px] text-slate-600">
           {ym ? `${ym.replace("-", "년 ")}월` : "전체 기간"} · 청구 <b className="tabular-nums">{won(billedSum)}</b> ({issuedInMonth.length}장) · 수납{" "}
           <b className="tabular-nums text-emerald-700">{won(paidSum)}</b> ({paymentsInMonth.length}건) · 미납 <b className="tabular-nums text-rose-700">{won(unpaid.reduce((n, x) => n + x.balance, 0))}</b>

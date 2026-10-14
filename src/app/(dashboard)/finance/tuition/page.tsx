@@ -18,6 +18,7 @@ import type { AddonPrice } from "@/lib/tuitionAddon";
 import { getFinanceScope } from "@/lib/financeScopeServer";
 import { inScope } from "@/lib/financeScope";
 import { ALL_SCOPE } from "@/lib/department";
+import Explain from "@/components/finance/Explain";
 
 export const dynamic = "force-dynamic";
 
@@ -124,10 +125,10 @@ export default async function TuitionPage() {
         <h1 className="text-lg font-bold">💰 청구 · 학비</h1>
         <GuideButton title="학비 청구 사용 가이드" sections={GUIDE_SECTIONS} />
       </div>
-      <p className="mb-3 text-xs leading-relaxed text-slate-500">
+      <Explain className="mb-3">
         정규과정·방과후 등록금입니다. 학부모가 고른 납부 옵션을 넣으면 금액이 계산되고, 할인을 붙인 뒤 청구서를
         발행합니다. 교재·교복 같은 <b>학비외 항목은 [청구 → 학비외]</b>에서 따로 다룹니다.
-      </p>
+      </Explain>
 
       <TuitionGridClient
         students={students}

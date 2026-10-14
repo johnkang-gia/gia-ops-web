@@ -4,6 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { loadStudents } from "@/lib/students";
 import { ALL_SCOPE } from "@/lib/department";
 import { inScope } from "@/lib/financeScope";
+import { FINANCE_MONTH_COOKIE, FINANCE_TERM_COOKIE } from "@/lib/financeFilter";
 /** 서버 화면이 지금 회계 범위를 읽는 곳. 화면마다 쿠키를 직접 읽지 않습니다. */
 export async function getFinanceScope(me: { department?: string | null }): Promise<string> {
   const jar = await cookies();
@@ -26,4 +27,19 @@ export async function scopeStudentIds(supabase: SupabaseClient, scope: string): 
 export function inScopeIds(ids: Set<string> | null, studentId: string | null | undefined): boolean {
   if (!ids) return true;
   return !!studentId && ids.has(studentId);
+}
+
+/** 재무 화면들이 함께 보는 달. 화면 위의 달 고르개가 쿠키에 적습니다. 없으면 이번 달. 「all」이면 null(달 안 가림). */
+export async function getFinanceMonth(thisMonth: string): Promise<string | null> {
+  const jar = await cookies();
+  const v = jar.get(FINANCE_MONTH_COOKIE)?.value;
+  if (v === "all") return null;
+  return v && /^\d{4}-(0[1-9]|1[0-2])$/.test(decodeURIComponent(v)) ? decodeURIComponent(v) : thisMonth;
+}
+
+/** 재무 화면들이 함께 보는 학기. 비어 있으면 화면이 진행중 학기를 고릅니다. */
+export async function getFinanceTerm(): Promise<string> {
+  const jar = await cookies();
+  const v = jar.get(FINANCE_TERM_COOKIE)?.value;
+  return v ? decodeURIComponent(v) : "";
 }

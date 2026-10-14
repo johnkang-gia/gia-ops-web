@@ -4,6 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useT } from "@/components/common/LanguageProvider";
 import { useFinanceScope } from "@/components/finance/FinanceScopeProvider";
 import { scopeLabel, scopeTone } from "@/lib/financeScope";
+import FinanceToolbar from "@/components/finance/FinanceToolbar";
 
 // 대분류 상단 탭바 - 전 화면 공용 단 하나의 구현입니다.
 //
@@ -689,6 +690,8 @@ export default function SectionTabs({ isTeacher, isHomeroom }: { isTeacher: bool
               </button>
             );
           })}
+        {/* 재무는 검색·달·고정 학생을 이 줄 오른쪽에 둡니다. 탭을 옮겨도 이 줄은 남습니다. */}
+        {isFinance && <FinanceToolbar />}
       </div>
     </div>
   );

@@ -5,6 +5,10 @@ import { useRouter } from "next/navigation";
 import { useFinanceLive } from "@/lib/useFinanceLive";
 import { useToast } from "@/components/common/ToastProvider";
 import { Who } from "@/components/common/HomonymProvider";
+import { useFinanceFilter } from "@/components/finance/FinanceFilterProvider";
+import { matchesStudentQuery } from "@/lib/financeFilter";
+import PinButton from "@/components/finance/PinButton";
+import { BILL_STATUS, statusFromSettle } from "@/lib/billStatus";
 import ScopeTabs from "@/components/finance/ScopeTabs";
 import StudentLedgerModal from "@/components/finance/StudentLedgerModal";
 import AlltalkpayExport from "@/components/finance/AlltalkpayExport";
@@ -12,7 +16,6 @@ import InvoicePreviewModal from "@/components/finance/InvoicePreviewModal";
 import { ALL_SCOPE, inScope, type Scope } from "@/lib/gradeScope";
 import { departmentOf, gradeSortKey, tabIncludes } from "@/lib/department";
 import { won } from "@/lib/feeItems";
-import MonthPicker from "@/components/finance/MonthPicker";
 
 /**
  * **회계 화면** — 학생 탭과 청구서 탭.
@@ -72,14 +75,6 @@ export type LedgerInvoiceRow = {
 type Tab = "학생" | "청구서";
 type Stream = "학비" | "학비외";
 
-const STATE_STYLE: Record<string, string> = {
-  완납: "bg-emerald-100 text-emerald-800",
-  부분납부: "bg-amber-100 text-amber-800",
-  결손: "bg-violet-100 text-violet-700",
-  연체: "bg-rose-100 text-rose-700",
-  미납: "bg-slate-100 text-slate-600",
-  이월됨: "bg-slate-100 text-slate-400",
-};
 
 export default function LedgerClient({
   rows,
@@ -173,8 +168,11 @@ export default function LedgerClient({
   useEffect(() => {
     if (!deptTabs.includes(dept)) setDept(deptTabs[0] ?? "전체");
   }, [deptTabs, dept]);
-  const [scope, setScope] = useState<Scope>(ALL_SCOPE);
-  const [q, setQ] = useState("");
+  // 검색·학년반·고정 학생은 재무 화면들이 함께 씁니다(`FinanceFilterProvider`).
+  const ff = useFinanceFilter();
+  const scope = ff.scope;
+  const setScope = ff.setScope;
+  const q = ff.q;
   const [onlyOpen, setOnlyOpen] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
 
@@ -190,14 +188,20 @@ export default function LedgerClient({
   // ── 학생 탭 ────────────────────────────────────────────────────────────
   const inDept = rows.filter((r) => tabIncludes(dept, deptOf(r)));
   const scopeStudents = inDept.map((r) => ({ grade: r.grade, className: r.className }));
+  const invoiceNosOf = useMemo(() => {
+    const m = new Map<string, string[]>();
+    for (const v of invoices) if (v.studentId) (m.get(v.studentId) ?? m.set(v.studentId, []).get(v.studentId)!).push(v.invoiceNo);
+    return m;
+  }, [invoices]);
   const studentRows = useMemo(() => {
-    const needle = q.trim().toLowerCase();
+    if (ff.pinned) return inDept.filter((r) => r.id === ff.pinned!.id);
     return inDept
       .filter((r) => inScope({ grade: r.grade, className: r.className }, scope))
-      .filter((r) => !needle || `${r.name} ${r.nameEn ?? ""} ${r.className ?? ""}`.toLowerCase().includes(needle))
+      .filter((r) => matchesStudentQuery(q, { ...r, invoiceNos: invoiceNosOf.get(r.id) ?? [] }))
       .filter((r) => !onlyOpen || r.toBill > 0 || r.unpaid > 0)
       .sort((a, b) => gradeSortKey(a.grade) - gradeSortKey(b.grade) || (a.className ?? "").localeCompare(b.className ?? "", "ko") || a.name.localeCompare(b.name, "ko"));
-  }, [inDept, scope, q, onlyOpen]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inDept, scope, q, onlyOpen, ff.pinned, invoiceNosOf]);
 
   const sum = (f: (r: LedgerRow) => number) => studentRows.reduce((n, r) => n + f(r), 0);
   /** 학비외 분류 칸 — 보이는 학생들에게 붙은 분류를 전부 모아 금액 큰 순으로. 칸이 같아야 줄이 맞습니다. */
@@ -217,12 +221,13 @@ export default function LedgerClient({
       .filter((v) => (invState === "미수" ? (v.billingMonth ?? "") <= month : v.billingMonth === month))
       .filter((v) => tabIncludes(dept, deptOf(v)))
       .filter((v) => inScope({ grade: v.grade, className: v.className }, scope))
-      .filter((v) => !needle || `${v.studentName} ${v.invoiceNo} ${v.scope ?? ""} ${v.round}`.toLowerCase().includes(needle))
+      .filter((v) => (ff.pinned ? v.studentId === ff.pinned.id : !needle || `${v.studentName} ${v.invoiceNo} ${v.scope ?? ""} ${v.round}`.toLowerCase().includes(needle)))
       .filter((v) =>
         invState === "전체" ? true : invState === "수납 완료" ? v.state === "완납" : invState === "올톡페이 미발송" ? !v.exported && v.state !== "완납" && !v.offline : v.state !== "완납" && v.state !== "이월됨",
       )
       .sort((a, b) => gradeSortKey(a.grade) - gradeSortKey(b.grade) || (a.className ?? "").localeCompare(b.className ?? "", "ko") || a.studentName.localeCompare(b.studentName, "ko") || (a.issueDate < b.issueDate ? 1 : -1));
-  }, [invoices, stream, month, dept, scope, q, invState]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [invoices, stream, month, dept, scope, q, invState, ff.pinned]);
 
   const invSum = invRows.reduce((n, v) => n + v.amount, 0);
   const invBalance = invRows.reduce((n, v) => n + Math.max(0, v.balance), 0);
@@ -268,7 +273,6 @@ export default function LedgerClient({
             </button>
           ))}
         </span>
-        <MonthPicker value={month} thisMonth={thisMonth} onChange={(m) => router.push(`/finance/ledger?ym=${m ?? thisMonth}`)} />
         {terms.length > 1 && (
           <span className="text-[11px] font-bold text-slate-500" title="고른 달이 담긴 학기입니다">
             {terms.find((t) => t.id === termId)?.name ?? ""}
@@ -283,7 +287,6 @@ export default function LedgerClient({
             ))}
           </span>
         )}
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="이름 · 반 · 청구서 번호" className="w-48 rounded-lg border border-slate-300 px-2 py-1 text-[12px]" />
         {tab === "학생" ? (
           <label className="flex items-center gap-1 text-[11px] text-slate-600">
             <input type="checkbox" checked={onlyOpen} onChange={(e) => setOnlyOpen(e.target.checked)} /> 미청구·미수 학생만
@@ -349,9 +352,10 @@ export default function LedgerClient({
             </thead>
             <tbody>
               {studentRows.map((r) => (
-                <tr key={r.id} onClick={() => setOpen(r.id)} className={"h-12 cursor-pointer border-t border-slate-100 hover:bg-indigo-50/40" + flashCls(r.id)} title="누르면 학생 회계 창이 열립니다">
-                  <td className="whitespace-nowrap px-2 font-semibold text-slate-800">
+                <tr key={r.id} onClick={() => { setOpen(r.id); ff.touch({ id: r.id, name: r.name }); }} className={"h-12 cursor-pointer border-t border-slate-100 hover:bg-indigo-50/40" + flashCls(r.id)} title="누르면 학생 회계 창이 열립니다">
+                  <td className="group whitespace-nowrap px-2 font-semibold text-slate-800">
                     <Who id={r.id} name={r.name} plain />
+                    <PinButton id={r.id} name={r.name} />
                     <span className="ml-1 text-[10px] font-normal text-slate-400">
                       {r.grade ?? ""} {r.className ?? ""}
                     </span>
@@ -573,10 +577,16 @@ export default function LedgerClient({
                       </td>
                       <td className="px-2 py-1 text-right tabular-nums font-bold">{won(v.amount)}</td>
                       <td className="px-2 py-1">
-                        <span className={"rounded px-1.5 py-0.5 text-[10px] font-bold " + (STATE_STYLE[v.state] ?? "")}>
-                          {v.state}
-                          {v.balance > 0 && v.state !== "미납" ? ` ${won(v.balance)}` : ""}
-                        </span>
+                        {(() => {
+                          // 말·색은 재무 모든 화면이 같은 표(`billStatus.ts`)에서 옵니다.
+                          const st = statusFromSettle(v.state) ?? "청구됨";
+                          return (
+                            <span className={"rounded px-1.5 py-0.5 text-[10px] font-bold " + BILL_STATUS[st].cls} title={BILL_STATUS[st].hint}>
+                              {BILL_STATUS[st].label}
+                              {v.balance > 0 && st !== "청구됨" ? ` ${won(v.balance)}` : ""}
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td className="px-2 py-1 text-[10px]">
                         {v.offline ? <span className="text-slate-300">—</span> : v.exported ? <span className="font-bold text-violet-700">올톡 보냄</span> : <span className="text-slate-400">안 보냄</span>}

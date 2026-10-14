@@ -40,7 +40,9 @@ import CommandPalette from "@/components/common/CommandPalette";
 import UsageTracker from "@/components/common/UsageTracker";
 import { ALL_SCOPE } from "@/lib/department";
 import { allowedScopes, scopeLabel } from "@/lib/financeScope";
-import { getFinanceScope } from "@/lib/financeScopeServer";
+import { getFinanceScope, getFinanceMonth, getFinanceTerm } from "@/lib/financeScopeServer";
+import { FinanceFilterProvider } from "@/components/finance/FinanceFilterProvider";
+import { todayKst } from "@/lib/kst";
 import { FinanceScopeProvider } from "@/components/finance/FinanceScopeProvider";
 import type { AiFeatureFlag } from "@/lib/types";
 
@@ -372,6 +374,10 @@ export default async function DashboardLayout({
   // 회계 범위(전체·초등·중고등). 재무 열쇠가 있는 사람만 고릅니다.
   const financeScopes = me && hasFinanceAccess(me) ? allowedScopes(me.department) : [];
   const financeScope = me && hasFinanceAccess(me) ? await getFinanceScope(me) : ALL_SCOPE;
+  // 재무 화면들이 함께 보는 달·학기(위의 달 고르개가 쿠키에 적습니다).
+  const financeThisMonth = todayKst().slice(0, 7);
+  const financeMonth = await getFinanceMonth(financeThisMonth);
+  const financeTerm = await getFinanceTerm();
   // 묶은 뒤의 건수. 화면의 「검토대기 (N건)」과 같은 규칙입니다.
   const pendingProposals =
     pendingProposalsResult.status === "fulfilled"
@@ -533,6 +539,7 @@ export default async function DashboardLayout({
     <LanguageProvider initialLang={lang}>
     <ToastProvider>
     <FinanceScopeProvider initialScope={financeScope} scopes={financeScopes}>
+    <FinanceFilterProvider initialMonth={financeMonth} initialTermId={financeTerm} thisMonth={financeThisMonth}>
     <ConfirmProvider>
     <NotificationProvider userEmail={isTeacher ? null : me.email}>
     {/* 겹치는 이름 목록을 로그인 영역 전체에 한 번 깝니다. 화면은 준비 없이
@@ -743,6 +750,7 @@ export default async function DashboardLayout({
     </HomonymProvider>
     </NotificationProvider>
     </ConfirmProvider>
+    </FinanceFilterProvider>
     </FinanceScopeProvider>
     </ToastProvider>
     </LanguageProvider>

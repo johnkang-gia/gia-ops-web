@@ -7,6 +7,7 @@ import { useToast } from "@/components/common/ToastProvider";
 import { targetLabel, won } from "@/lib/feeItems";
 import TermPicker, { initialTermId } from "./TermPicker";
 import { FEE_ITEM_CATEGORY_SUGGESTIONS, type FeeCategory, type FeeItem, type StudentGroup, type Term } from "@/lib/types";
+import Explain from "@/components/finance/Explain";
 
 // 학비외 항목 등록 (교재·악기·악기수리·교복).
 //
@@ -429,10 +430,10 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
 
       {/* 학기는 학교 전체가 함께 움직입니다. 재무만 따로 새 학기를 만들면 셔틀·업무와
           어긋나므로, 만드는 자리는 학기 화면 한 곳으로 모았습니다. */}
-      <p className="mb-4 text-xs leading-relaxed text-slate-500">
+      <Explain className="mb-4">
         단가는 <b>여기 한 곳에만</b> 있습니다. 아이마다 금액을 고칠 수 없게 해서 오타가 생길 자리를 없앴습니다.
         기본 학년·반을 정해두면 그 아이들에게 자동으로 들어가고, 예외만 학생 화면에서 빼면 됩니다.
-      </p>
+      </Explain>
 
       {loadError && (
         <p className="mb-3 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-[12px] text-orange-800">

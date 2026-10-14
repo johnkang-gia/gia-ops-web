@@ -412,41 +412,53 @@ const DOCS_TABS: TabDef[] = [
 //
 // 순서는 자주 여는 것부터입니다. 재무 일은 대개 "지금 어디까지 됐나"에서 시작합니다.
 const FINANCE_TABS: TabDef[] = [
-  // **재무는 일의 순서대로 다섯 갈래입니다 - 청구 → 올톡페이 → 수납 → 월별·보고 → 설정.**
+  // **재무는 다섯 갈래입니다 - 이번 달 → 청구 → 수납 → 보고 → 설정.**
   //
-  // 예전에는 「회계」 한 갈래 아래에 청구·보내기·받기·대조·결재가 열 개로 섞여 있어서, 이번 달에
-  // 무엇을 했고 무엇이 남았는지 메뉴로는 알 수 없었습니다. 특히 「올톡페이로 실제 청구하기」가
-  // 어디에도 따로 없어서 담당자가 올톡페이 화면에서 직접 보냈고, 앱에는 9~10월 발행분이 한 장도
-  // 「보냄」으로 남지 않았습니다. 주소는 전부 그대로입니다(즐겨찾기·옛 링크).
+  // 예전에는 「올톡페이」가 따로 한 갈래였고 결재는 수납 안에 있었습니다. 그런데 올톡으로 보내는 일은
+  // 발행 바로 다음 단계라 청구와 떨어져 있으면 발행만 하고 안 보낸 청구서가 남았고, 결재는 매일 볼
+  // 일이 아니라 「쌓였을 때 처리할 일」이었습니다. 그래서 올톡은 청구 안으로, 결재는 「이번 달」로
+  // 옮겼습니다. 주소는 전부 그대로입니다(즐겨찾기·옛 링크).
   //
   // 용어: 청구서(인보이스 X) · 발행 · 올톡 보내기(보냄) · 수납(받은 돈) · 직접수납(창구에서 받음) · 예치금.
+  {
+    key: "home",
+    label: "이번 달",
+    icon: "🏠",
+    href: "/finance",
+    match: ["/finance", "/finance/approvals"],
+    children: [
+      { label: "할 일 · 개요", href: "/finance", match: ["/finance"] },
+      // 결손·환불은 올린 사람이 아닌 관리자가 승인해야 장부에 들어갑니다. 쌓였을 때 처리하는 일이라 할 일 옆에 둡니다.
+      { label: "환불·결손 결재", href: "/finance/approvals", match: ["/finance/approvals"] },
+    ],
+  },
   {
     key: "billing",
     label: "청구",
     icon: "🧾",
     href: "/finance/ledger",
-    match: ["/finance/ledger", "/finance/tuition", "/finance/invoices", "/finance/rounds", "/finance/statement"],
+    match: [
+      "/finance/ledger",
+      "/finance/tuition",
+      "/finance/invoices",
+      "/finance/rounds",
+      "/finance/statement",
+      "/finance/send",
+      "/finance/alltalk-sync",
+      "/finance/import",
+    ],
     children: [
       // 학생 한 명의 일은 전부 여기 - 학생을 누르면 회계 창 하나에서 발행·수납·영수증·올톡 보내기.
       { label: "학생별 회계", href: "/finance/ledger", match: ["/finance/ledger", "/finance/statement"] },
       // 반 전체를 한 번에 체크해서 발행하는 표. 이름은 DB 의 `invoices.stream` 값과 같은 말입니다.
       { label: "학비 일괄 발행", href: "/finance/tuition", match: ["/finance/tuition"] },
       { label: "학비외 일괄 발행", href: "/finance/invoices", match: ["/finance/invoices"] },
+      // 발행 다음 단계. 발행한 청구서를 골라 청구 번호 확인 → 올톡 등록 파일.
+      { label: "올톡 보내기", href: "/finance/send", match: ["/finance/send"] },
+      // 올톡 청구서관리목록을 올려 결과를 맞춤 - 결제된 건 수납, 보낸 건 보냄 표시를 한 화면에서.
+      { label: "올톡 결과 맞추기", href: "/finance/alltalk-sync", match: ["/finance/alltalk-sync"] },
       // 몇 월분을 언제 몇 차로 냈는가 - 회차(발행일_순번)별 장수·금액.
       { label: "청구 회차", href: "/finance/rounds", match: ["/finance/rounds"] },
-    ],
-  },
-  {
-    key: "alltalk",
-    label: "올톡페이",
-    icon: "📤",
-    href: "/finance/send",
-    match: ["/finance/send", "/finance/alltalk-sync", "/finance/import"],
-    children: [
-      // 발행한 청구서를 골라 청구 번호 확인 → 올톡 등록 파일. 청구사유 앞에 청구서 번호가 붙습니다.
-      { label: "보내기", href: "/finance/send", match: ["/finance/send"] },
-      // 올톡 청구서관리목록을 올려 결과를 맞춤 - 결제된 건 수납, 보낸 건 보냄 표시를 한 화면에서.
-      { label: "결과 맞추기", href: "/finance/alltalk-sync", match: ["/finance/alltalk-sync"] },
       // 앱에 없는 청구(앱 밖에서 보낸 것)를 새로 만드는 곳. 앱에서 발행한 달에는 쓰지 않습니다.
       { label: "앱 밖 청구 가져오기", href: "/finance/import", match: ["/finance/import"] },
     ],
@@ -456,25 +468,22 @@ const FINANCE_TABS: TabDef[] = [
     label: "수납",
     icon: "💰",
     href: "/finance/unpaid",
-    match: ["/finance/unpaid", "/finance/payments", "/finance/prepaid", "/finance/receipts", "/finance/approvals"],
+    match: ["/finance/unpaid", "/finance/payments", "/finance/prepaid", "/finance/receipts"],
     children: [
       { label: "미납금", href: "/finance/unpaid", match: ["/finance/unpaid"] },
       { label: "수납 내역", href: "/finance/payments", match: ["/finance/payments"] },
       { label: "예치금", href: "/finance/prepaid", match: ["/finance/prepaid"] },
       { label: "현금영수증", href: "/finance/receipts", match: ["/finance/receipts"] },
-      // 결손·환불은 올린 사람이 아닌 관리자가 승인해야 장부에 들어갑니다.
-      { label: "환불·결손 결재", href: "/finance/approvals", match: ["/finance/approvals"] },
     ],
   },
-  // **월별·보고** - 「지금」이 아니라 「흐름」. 첫 화면(이번 달 할 일·개요)도 같은 뷰를 읽으므로 여기 둡니다.
+  // **보고** - 「지금」이 아니라 「흐름」.
   {
     key: "monthly",
-    label: "월별·보고",
-    icon: "📅",
-    href: "/finance",
-    match: ["/finance", "/finance/monthly", "/finance/revenue"],
+    label: "보고",
+    icon: "📊",
+    href: "/finance/monthly",
+    match: ["/finance/monthly", "/finance/revenue"],
     children: [
-      { label: "이번 달 할 일 · 개요", href: "/finance", match: ["/finance"] },
       { label: "월별 · 학기별", href: "/finance/monthly", match: ["/finance/monthly"] },
       { label: "학생별", href: "/finance/monthly/students", match: ["/finance/monthly/students"] },
       // 「무슨 돈으로 얼마」 - 세입과목(관·항·목)별 부과·수납·결손·미수.

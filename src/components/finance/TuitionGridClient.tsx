@@ -4,6 +4,7 @@ import DragScroll from "@/components/common/DragScroll";
 import { Who } from "@/components/common/HomonymProvider";
 import FeePlansModal from "./FeePlansModal";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { billingMonthOf, termOfMonth } from "@/lib/financePeriod";
 import { planBillForMonth } from "@/lib/tuitionMonth";
 import { resolveAddon, addonPlanForLine, type AddonPrice } from "@/lib/tuitionAddon";
@@ -18,6 +19,8 @@ import { streamOf } from "@/lib/settlement";
 import { useFinanceFilter } from "@/components/finance/FinanceFilterProvider";
 import PinButton from "@/components/finance/PinButton";
 import ActionBar from "@/components/finance/ActionBar";
+import UndoIssue from "@/components/finance/UndoIssue";
+import SummaryLine from "@/components/finance/SummaryLine";
 import { StatusBadge } from "@/components/finance/StatusBadge";
 import { BILL_STATUS } from "@/lib/billStatus";
 import { matchesStudentQuery } from "@/lib/financeFilter";
@@ -214,6 +217,9 @@ export default function TuitionGridClient({
   const q = ff.q;
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
+  const router = useRouter();
+  /** 방금 발행한 것(5초 되돌리기). */
+  const [undo, setUndo] = useState<{ ids: string[]; label: string } | null>(null);
   // 납입기한은 **발행한 날로부터 이레**입니다. 앞 판은 오늘이 기본이었는데, 그대로 발행하면
   // 학부모가 문자를 받는 순간 이미 마감일입니다 - 다음 날이면 전부 연체로 넘어가고, 그러면
   // 연체 표시가 온통 빨개져서 정작 진짜 밀린 건이 묻힙니다.
@@ -904,7 +910,29 @@ export default function TuitionGridClient({
     // 학생 줄에서 한 명을 짚어 누른 것은 이미 「이 학생」이라고 말한 것입니다. 되물으면
     // 같은 대답을 두 번 하게 됩니다. 여러 명을 한꺼번에 보낼 때만 한 번 묻습니다.
     const partnerNote = partner === "off" ? "" : ` + 학비외(${partner === "merge" ? "한 장으로" : "따로 한 장"})`;
-    if (!only && !confirm(`${targets.length}명에게 「${scopeLabel}」${partnerNote} 청구서를 발행합니다. 되돌리려면 취소해야 합니다.`)) return;
+    // **발행 전 요약** — 몇 장·얼마·이미 일부가 나간 학생이 누구(언제)인지. 숫자 없이 「발행할까요」만 물으면
+    // 사람은 확인할 재료 없이 누르게 됩니다.
+    if (!only) {
+      const sum = targets.reduce((n, s) => n + totalOf(s.id), 0);
+      const already = targets
+        .map((s) => {
+          const info = billInfoOf.get(s.id);
+          if (!info || info.size === 0) return null;
+          const first = [...info.values()][0];
+          return `${s.name}(${issuedShort(first.date)} ${first.no})`;
+        })
+        .filter((x): x is string => !!x);
+      const lines = [
+        `${targets.length}명 · 「${scopeLabel}」${partnerNote}`,
+        `청구할 학비 합: ${sum.toLocaleString("ko-KR")}원`,
+        already.length > 0
+          ? `이미 이 달에 일부가 나간 학생 ${already.length}명 — 남은 항목만 담습니다: ${already.slice(0, 4).join(", ")}${already.length > 4 ? " 외" : ""}`
+          : "이 달에 이미 나간 학생은 없습니다.",
+        "",
+        "발행할까요? 잘못 냈으면 5초 안에 화면 아래에서 되돌릴 수 있습니다.",
+      ];
+      if (!confirm(lines.join("\n"))) return;
+    }
 
     setBusy(true);
     const made: Invoice[] = [];
@@ -970,7 +998,11 @@ export default function TuitionGridClient({
         // 한 명이 실패해도 나머지는 계속합니다. 다만 **누가 실패했는지 반드시 말합니다.**
         else failed.push(`${s.name}(${body.error ?? res.statusText})`);
       }
-      if (made.length > 0) setInvoices((p) => [...made, ...p]);
+      if (made.length > 0) {
+        setInvoices((p) => [...made, ...p]);
+        // 5초 되돌리기 — 잘못 누른 것을 그 자리에서 거둡니다.
+        setUndo({ ids: made.map((v) => v.id), label: `${made.length}장 발행했습니다` });
+      }
       // 학비외를 함께 담았는지 말해줍니다 - 안 말하면 학비외 화면에 가서 또 냅니다.
       const extraNote =
         (mergedExtra > 0 ? ` · 학비외 ${mergedExtra}개 항목을 같은 장에 담음` : "") +
@@ -1020,6 +1052,14 @@ export default function TuitionGridClient({
         <p className="mb-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] text-rose-800">{loadError}</p>
       )}
 
+      <SummaryLine
+        people={rows.length}
+        items={[
+          { label: "청구할 학비", value: money.billed },
+          { label: "받음", value: money.paid, tone: "emerald" },
+          { label: "남음", value: Math.max(0, money.due), tone: "rose" },
+        ]}
+      />
       {/* ── 학기·부서·검색 ─────────────────────────────────────────── */}
       {/* **지금 이 화면을 함께 보는 사람.** 혼자인지 아닌지를 알면 「지금 고쳐도 되나」를
           묻지 않아도 됩니다. 브라우저를 닫으면 저절로 사라집니다. */}
@@ -1828,6 +1868,19 @@ export default function TuitionGridClient({
           🧾 발행
         </button>
       </ActionBar>
+      {undo && (
+        <UndoIssue
+          ids={undo.ids}
+          label={undo.label}
+          onClose={() => setUndo(null)}
+          onUndone={(ok, bad) => {
+            setInvoices((p) => p.map((v) => (ok.includes(v.id) ? { ...v, status: "취소" } : v)));
+            if (bad.length > 0) notify(`${ok.length}장 되돌림 · ${bad.length}장 못 되돌림: ${bad.join(", ")}`, "error");
+            else notify(`${ok.length}장을 되돌렸습니다(취소로 남김).`, "success");
+            router.refresh();
+          }}
+        />
+      )}
     </div>
   );
 }

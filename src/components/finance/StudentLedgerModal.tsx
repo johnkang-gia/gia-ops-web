@@ -23,6 +23,8 @@ import { StudentBillingPhone } from "@/components/finance/BillingPhoneChips";
 import InvoiceSheet, { type SheetPart } from "@/components/finance/InvoiceSheet";
 import { addDays, DUE_DAYS } from "@/lib/financePeriod";
 import type { InvoiceLine } from "@/lib/types";
+import { BILL_STATUS, statusFromSettle } from "@/lib/billStatus";
+import { issuedShort } from "@/lib/invoiceIssued";
 
 /**
  * **학생 금전 창** — 학생 한 명의 돈을 한 창에서 봅니다. 그리고 그 창에서 다 합니다.
@@ -448,10 +450,16 @@ export default function StudentLedgerModal({
                       {v.issued_offline ? <span className="ml-1 text-[10px] text-sky-600">직접수납</span> : null}
                     </span>
                     <span className="tabular-nums font-bold">{won(Number(v.total_amount))}</span>
-                    <span className={"rounded px-1.5 py-0.5 text-[10px] font-bold " + (STATE_STYLE[v.settled.state] ?? "")} title={v.settled.balance > 0 ? `남은 ${won(v.settled.balance)}` : ""}>
-                      {v.settled.state}
-                      {v.settled.balance > 0 && v.settled.state !== "미납" ? ` ${won(v.settled.balance)}` : ""}
-                    </span>
+                    {(() => {
+                      // 말·색은 재무 모든 화면이 같은 표(`billStatus.ts`)에서 옵니다.
+                      const st = statusFromSettle(v.settled.state) ?? "청구됨";
+                      return (
+                        <span className={"rounded px-1.5 py-0.5 text-[10px] font-bold " + BILL_STATUS[st].cls} title={v.settled.balance > 0 ? `남은 ${won(v.settled.balance)}` : BILL_STATUS[st].hint}>
+                          {BILL_STATUS[st].label}
+                          {v.settled.balance > 0 && st !== "청구됨" ? ` ${won(v.settled.balance)}` : ""}
+                        </span>
+                      );
+                    })()}
                     <label className="flex items-center gap-0.5 text-[10px] text-slate-500" title="올톡으로 보냈는가(올톡 보내기로 파일을 만들면 저절로 켜집니다)">
                       <input type="checkbox" checked={v.exported} disabled={busy} onChange={() => void toggleExported(v)} className="h-3 w-3" />
                       보냄
@@ -492,6 +500,23 @@ export default function StudentLedgerModal({
                         ↩
                       </button>
                     </span>
+                    {/* **이 청구서가 지나온 길** — 발행 → 보냄 → 수납 → 남은 돈을 한 줄로. 상태 하나만 보면
+                        「언제 보냈고 얼마가 언제 들어왔나」를 물으러 다른 화면을 열게 됩니다. */}
+                    <div className="basis-full pl-5 text-[10px] text-slate-400">
+                      {(() => {
+                        const steps: string[] = [`📄 ${issuedShort(v.issue_date)} 발행${(v as { issued_by?: string | null }).issued_by ? `(${(v as { issued_by?: string | null }).issued_by})` : ""}`];
+                        const ex = (v as { exported_at?: string | null }).exported_at;
+                        if (v.issued_offline) steps.push("🏫 직접수납 기록");
+                        else if (ex) steps.push(`📤 ${issuedShort(ex.slice(0, 10))} 올톡 보냄`);
+                        else if (v.exported) steps.push("📤 보냄");
+                        else steps.push("📤 아직 안 보냄");
+                        for (const p of (ledger?.payments ?? []).filter((p) => p.invoice_id === v.id)) {
+                          steps.push(`💰 ${issuedShort(p.paid_at)} ${won(Number(p.amount))}${p.method ? ` ${p.method}` : ""}`);
+                        }
+                        steps.push(v.settled.balance > 0 ? `남음 ${won(v.settled.balance)}` : "✓ 끝");
+                        return steps.join("  →  ");
+                      })()}
+                    </div>
                   </div>
   );
   const invoicesCancelled = (ledger?.invoices ?? []).filter((v) => v.settled.state === "취소");

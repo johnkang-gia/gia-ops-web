@@ -7,6 +7,8 @@ import { useFinanceFilter } from "@/components/finance/FinanceFilterProvider";
 import { matchesStudentQuery } from "@/lib/financeFilter";
 import PinButton from "@/components/finance/PinButton";
 import ActionBar from "@/components/finance/ActionBar";
+import UndoIssue from "@/components/finance/UndoIssue";
+import SummaryLine from "@/components/finance/SummaryLine";
 import { BILL_STATUS } from "@/lib/billStatus";
 import { StatusLegend } from "@/components/finance/StatusBadge";
 import { askText, compareIssue, groupIssue, type CompareRow, type IssueCompare } from "@/lib/issueCompare";
@@ -331,6 +333,8 @@ export default function InvoiceGridClient({
   >({});
   /** 방금 발행한 것. 발행 직후 바로 청구로 이어가라고 띄웁니다. */
   const [justIssued, setJustIssued] = useState<Invoice[]>([]);
+  /** 방금 발행한 것(5초 되돌리기). */
+  const [undo, setUndo] = useState<{ ids: string[]; label: string } | null>(null);
   const q = ff.q;
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
@@ -1208,6 +1212,8 @@ export default function InvoiceGridClient({
         // 발행은 종이를 만든 것일 뿐, 아직 청구가 나간 것이 아닙니다. 여기서 끊기면
         // 발행만 해놓고 올톡페이에 안 올리는 일이 생깁니다.
         setJustIssued(made);
+        // 5초 되돌리기 — 잘못 누른 것을 그 자리에서 거둡니다.
+        if (made.length > 0) setUndo({ ids: made.map((v) => v.id), label: `${made.length}장 발행했습니다` });
       }
       // 학비를 함께 냈는지 말해줍니다 - 안 말하면 학비 화면에 가서 또 냅니다.
       const tNote =
@@ -1424,6 +1430,14 @@ export default function InvoiceGridClient({
         </div>
       )}
 
+      <SummaryLine
+        people={rows.length}
+        items={[
+          { label: "학비외 합", value: money.billed },
+          { label: "받음", value: money.paid, tone: "emerald" },
+          { label: "남음", value: Math.max(0, money.due), tone: "rose" },
+        ]}
+      />
       {/* ── 부서 ──────────────────────────────────────────────────
           초등과 중고등을 한 표에 섞으면 열이 서로의 몫까지 늘어나 가로로 한없이 길어지고,
           "2학년"이 초등 2학년인지 중2인지도 헷갈립니다. 그래서 먼저 갈라놓습니다. */}
@@ -3089,6 +3103,19 @@ export default function InvoiceGridClient({
           🧾 {cat === "전체" ? "발행" : `${cat} 발행`}
         </button>
       </ActionBar>
+      {undo && (
+        <UndoIssue
+          ids={undo.ids}
+          label={undo.label}
+          onClose={() => setUndo(null)}
+          onUndone={(ok, bad) => {
+            setInvoices((p) => p.map((v) => (ok.includes(v.id) ? { ...v, status: "취소" } : v)));
+            setJustIssued((p) => p.filter((v) => !ok.includes(v.id)));
+            if (bad.length > 0) notify(`${ok.length}장 되돌림 · ${bad.length}장 못 되돌림: ${bad.join(", ")}`, "error");
+            else notify(`${ok.length}장을 되돌렸습니다(취소로 남김).`, "success");
+          }}
+        />
+      )}
     </div>
   );
 }

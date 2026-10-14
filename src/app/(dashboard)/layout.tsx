@@ -510,14 +510,15 @@ export default async function DashboardLayout({
         label: "재무",
         icon: "💰",
         accent: "teal",
-        // 재무를 누르면 회계로 갑니다 - 가장 많이 여는 화면이자 모든 일을 처리하는 자리입니다.
-        href: "/finance/ledger",
+        // 재무를 누르면 「이번 달」(할 일)로 갑니다 - 무엇부터 할지가 거기 있습니다.
+        href: "/finance",
         activePrefix: "/finance",
         // **부서마다 장부가 따로입니다** - 전체 회계 · 초등 회계 · 중고등 회계. 고른 장부는 재무 안의
         // 모든 화면(청구·올톡페이·수납·월별·설정)이 함께 따릅니다. 학비·학비외는 그 안의 상단 탭입니다.
         // 볼 수 있는 장부만 나옵니다 - 초등부 담당자에게는 「초등 회계」 하나뿐입니다.
         items: financeScopes.map((sc) => ({
-          href: "/finance/ledger",
+          // 장부를 고르면 「이번 달」(할 일)로 갑니다. 무엇부터 할지가 거기 있습니다.
+          href: "/finance",
           label: scopeLabel(sc),
           icon: sc === ALL_SCOPE ? "📚" : sc === "초등부" ? "📗" : sc === "중고등부" ? "📘" : "📙",
           financeScope: sc,

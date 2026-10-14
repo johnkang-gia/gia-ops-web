@@ -24,6 +24,8 @@ import { billingMonthOf } from "@/lib/financePeriod";
 
 import { getFinanceScope, getFinanceMonth, scopeStudentIds, inScopeIds } from "@/lib/financeScopeServer";
 import Explain from "@/components/finance/Explain";
+import { loadLedgerWorld } from "@/lib/ledgerLoad";
+import { buildLedger } from "@/lib/studentLedger";
 export const dynamic = "force-dynamic";
 
 /** 할 일 칸의 색. 테일윈드는 글자를 조립한 클래스 이름을 못 찾으므로 통째로 적어 둡니다. */
@@ -128,7 +130,22 @@ export default async function FinanceOverviewPage({ searchParams }: { searchPara
     supabase.from("alltalk_sync_files").select("uploaded_at").order("uploaded_at", { ascending: false }).range(0, 0),
   ]);
   const lastSyncAt = ((lastSync as { uploaded_at: string }[] | null) ?? [])[0]?.uploaded_at ?? null;
+  // 이번 달 학비를 아직 청구서에 안 담은 학생 — 학생별 회계와 같은 함수(`buildLedger`)로 셉니다.
+  // 화면마다 다른 식으로 세면 「이번 달 할 일」의 숫자와 학생별 회계의 숫자가 달라집니다.
+  const ledgerMonth = month ?? thisMonth;
+  const lw = await loadLedgerWorld(supabase, { termId: null, month: ledgerMonth });
+  const toBillRows = lw.students
+    .filter((s) => inScopeIds(ids, s.id))
+    .map((s) => ({ s, l: buildLedger(lw.world, s) }))
+    .filter((x) => x.l.totals.toBill > 0);
   const todo = [
+    {
+      href: "/finance/ledger",
+      label: `${Number(ledgerMonth.slice(5))}월 아직 청구 안 한 학생`,
+      count: toBillRows.length,
+      sub: `${won(toBillRows.reduce((n, x) => n + x.l.totals.toBill, 0))} · 청구 › 학생별 회계`,
+      tone: "violet",
+    },
     {
       href: "/finance/send",
       label: "올톡으로 안 보낸 청구서",
@@ -192,7 +209,7 @@ export default async function FinanceOverviewPage({ searchParams }: { searchPara
           보입니다. */}
       {/* 청구는 그 달 것, 입금은 **그 청구서에 붙은 것 전부**입니다 - 10월분을 11월에 받아도 10월 청구의
           수납입니다. 입금을 달로 자르면 수납률이 실제보다 낮게 나옵니다. */}
-      <div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         {todo.map((t) => (
           <Link
             key={t.href}

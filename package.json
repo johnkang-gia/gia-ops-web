@@ -1,6 +1,6 @@
 {
   "name": "gia-ops-web",
-  "version": "0.728.0",
+  "version": "0.729.0",
   "private": true,
   "scripts": {
     "dev": "next dev",

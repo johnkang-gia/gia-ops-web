@@ -8,6 +8,7 @@ import { Who } from "@/components/common/HomonymProvider";
 import { useFinanceFilter } from "@/components/finance/FinanceFilterProvider";
 import { matchesStudentQuery } from "@/lib/financeFilter";
 import PinButton from "@/components/finance/PinButton";
+import SummaryLine from "@/components/finance/SummaryLine";
 import { BILL_STATUS, statusFromSettle } from "@/lib/billStatus";
 import ScopeTabs from "@/components/finance/ScopeTabs";
 import StudentLedgerModal from "@/components/finance/StudentLedgerModal";
@@ -324,6 +325,17 @@ export default function LedgerClient({
       )}
 
       <ScopeTabs dept={dept} students={scopeStudents} scope={scope} onChange={setScope} />
+      {tab === "학생" && (
+        <SummaryLine
+          people={studentRows.length}
+          items={[
+            { label: `${Number(month.slice(5))}월 청구 예정`, value: sum((r) => r.toBill), tone: "amber" },
+            { label: "청구", value: sum((r) => r.billed), tone: "sky" },
+            { label: "받음", value: sum((r) => r.paid), tone: "emerald" },
+            { label: "미수", value: sum((r) => r.unpaid), tone: "rose" },
+          ]}
+        />
+      )}
 
       {tab === "학생" ? (
         /**

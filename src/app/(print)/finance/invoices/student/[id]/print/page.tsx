@@ -1,4 +1,4 @@
-import { redirect, notFound } from "next/navigation";
+import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess } from "@/lib/roles";
@@ -38,15 +38,33 @@ export const dynamic = "force-dynamic";
 
 type Row = Invoice & { issued_offline?: boolean | null; carried_to_invoice_id?: string | null };
 
-async function loadParts(studentId: string, term: string | undefined) {
+/**
+ * `with` = 미리보기에서 열어 둔 그 청구서. **합본에는 늘 들어갑니다.**
+ *
+ * 「이 청구서만」으로는 보이는데 「학비+학비외 한 장」을 누르면 빈 화면이 떴습니다. 합본이 학기(`term_id`
+ * 가 같은 것만)와 「직접수납」 거르기를 거치면서 **지금 보고 있던 장까지 빠지면** 담을 것이 하나도 없어
+ * 404 가 났고, 미리보기 창 안에서는 그게 그냥 흰 화면이었습니다. 학기가 안 적힌 장(term_id 없음)도 같은
+ * 학기로 보지 않아 빠졌습니다.
+ *
+ *   · 학기는 «같은 학기이거나 학기가 안 적힌 장»으로 좁힙니다
+ *   · 보고 있던 장은 거르기와 상관없이 담습니다 - 사람이 지금 그 장을 보고 합본을 눌렀습니다
+ *   · 그래도 비면 404 대신 **왜 비었는지**를 적습니다(§5)
+ */
+async function loadParts(studentId: string, term: string | undefined, withId?: string) {
   const supabase = await createClient();
   let q = supabase.from("invoices").select("*").eq("student_id", studentId).eq("status", "발행");
-  if (term) q = q.eq("term_id", term);
+  // 주소에서 온 값이라 걸러 넣습니다 - 학기 번호(uuid) 모양이 아니면 학기로 좁히지 않습니다.
+  if (term && /^[0-9a-f-]{36}$/i.test(term)) q = q.or(`term_id.eq.${term},term_id.is.null`);
   const { data, error } = await q;
   if (error) throw new Error(`청구서를 읽지 못했습니다: ${error.message}`);
 
+  let rows = (data as Row[] | null) ?? [];
+  if (withId && !rows.some((v) => v.id === withId)) {
+    const { data: one } = await supabase.from("invoices").select("*").eq("id", withId).eq("student_id", studentId).maybeSingle();
+    if (one) rows = [...rows, one as Row];
+  }
   const live = sortForSheet(
-    ((data as Row[] | null) ?? []).filter((v) => !v.carried_to_invoice_id && v.issued_offline !== true),
+    rows.filter((v) => v.id === withId || (!v.carried_to_invoice_id && v.issued_offline !== true)),
   );
   if (live.length === 0) return { parts: [] as SheetPart[], live };
 
@@ -74,12 +92,12 @@ export async function generateMetadata({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ term?: string }>;
+  searchParams: Promise<{ term?: string; with?: string }>;
 }) {
   try {
     const { id } = await params;
-    const { term } = await searchParams;
-    const { live } = await loadParts(id, term);
+    const { term, with: withId } = await searchParams;
+    const { live } = await loadParts(id, term, withId);
     if (live.length === 0) return { title: "청구서" };
     const base = invoiceFileTitle(live[0] as Parameters<typeof invoiceFileTitle>[0]);
     // 「학비 청구서」가 아니라 「학비·학비외 청구서」임을 파일 이름에서부터 알립니다.
@@ -94,16 +112,23 @@ export default async function StudentInvoicePrintPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ embed?: string; term?: string }>;
+  searchParams: Promise<{ embed?: string; term?: string; with?: string }>;
 }) {
   const { id } = await params;
-  const { embed, term } = await searchParams;
+  const { embed, term, with: withId } = await searchParams;
   const me = await getCurrentAppUser();
   if (!me) redirect("/login");
   if (!hasFinanceAccess(me)) redirect("/home");
 
-  const { parts } = await loadParts(id, term);
-  if (parts.length === 0) notFound();
+  const { parts } = await loadParts(id, term, withId);
+  if (parts.length === 0) {
+    return (
+      <p className="mx-auto mt-10 max-w-md rounded-lg bg-amber-50 px-4 py-3 text-[13px] leading-relaxed text-amber-900">
+        한 장으로 묶을 청구서가 없습니다. 이 학생의 「발행」 상태 청구서가 모두 이월되었거나 직접수납으로만 적혀 있습니다.
+        「이 청구서만」으로 보세요.
+      </p>
+    );
+  }
 
   const depositView = await loadDepositView(await createClient(), parts);
   return <InvoiceSheet parts={parts} embed={embed === "1"} deposit={depositView} />;

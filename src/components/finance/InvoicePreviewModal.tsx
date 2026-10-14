@@ -39,7 +39,7 @@ export default function InvoicePreviewModal({ invoiceId, label, onClose, student
    */
   const [merged, setMerged] = useState(false);
   const src = merged && studentId
-    ? `/finance/invoices/student/${studentId}/print?embed=1${termId ? `&term=${termId}` : ""}`
+    ? `/finance/invoices/student/${studentId}/print?embed=1&with=${invoiceId}${termId ? `&term=${termId}` : ""}`
     : `/finance/invoices/${invoiceId}/print?embed=1${receipt ? "&receipt=1" : ""}`;
 
   useEffect(() => {

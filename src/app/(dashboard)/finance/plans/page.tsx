@@ -16,6 +16,8 @@ import { loadStudents } from "@/lib/students";
 // 화면 단에서 한 번, DB(RLS)에서 또 한 번 막습니다. 화면만 막으면 주소를 직접 치는 것으로
 // 뚫리고, RLS만 막으면 화면이 빈 채로 떠서 "고장난 건가" 싶어집니다. 둘 다 필요합니다.
 
+import { getFinanceScope } from "@/lib/financeScopeServer";
+import { ALL_SCOPE } from "@/lib/department";
 export const dynamic = "force-dynamic";
 
 export default async function FeePlansPage() {
@@ -25,6 +27,7 @@ export default async function FeePlansPage() {
   if (!hasFinanceAccess(me)) redirect("/home");
 
   const supabase = await createClient();
+  const financeScope = await getFinanceScope(me);
   // 대상(학년·반)을 고를 재료. **명부에 실제로 있는 값만** 띄웁니다 - 손으로 치게 하면
   // 「4」와 「4학년」과 「G4」가 섞여 들어오고, 그렇게 적힌 대상은 아무에게도 안 걸립니다.
   const [plansRes, optionsRes, discountsRes, rosterRes, addonRes] = await Promise.all([
@@ -55,6 +58,7 @@ export default async function FeePlansPage() {
       <AddonPricesPanel plans={(plansRes.data as FeePlan[] | null) ?? []} rows={(addonRes.data as AddonRow[] | null) ?? []} />
     </div>
     <FeePlansClient
+      lockedDept={financeScope === ALL_SCOPE ? null : financeScope}
       plans={(plansRes.data as FeePlan[] | null) ?? []}
       options={(optionsRes.data as FeePaymentOption[] | null) ?? []}
       discounts={(discountsRes.data as FeeDiscount[] | null) ?? []}

@@ -7,6 +7,7 @@ import { readAll, readNotice } from "@/lib/financeFetch";
 import { buildRevenueReport, monthOf, type AccountCtx, type AccountRow, type RevInvoice, type RevLine, type RevPayment } from "@/lib/revenueAccounts";
 import RevenueClient from "@/components/finance/RevenueClient";
 
+import { getFinanceScope, scopeStudentIds, inScopeIds } from "@/lib/financeScopeServer";
 export const dynamic = "force-dynamic";
 
 const MONTH = /^\d{4}-\d{2}$/;
@@ -46,7 +47,7 @@ export default async function RevenuePage({ searchParams }: { searchParams: Prom
     readAll<RevInvoice>((a, b) =>
       supabase
         .from("invoices")
-        .select("id, status, stream, category, billing_month, issue_date, carried_to_invoice_id, written_off_amount")
+        .select("id, student_id, status, stream, category, billing_month, issue_date, carried_to_invoice_id, written_off_amount")
         .order("issue_date")
         .order("id")
         .range(a, b),
@@ -72,7 +73,13 @@ export default async function RevenuePage({ searchParams }: { searchParams: Prom
     plans: new Map(((planRes.data ?? []) as { id: string; name: string; revenue_account_id: string | null }[]).map((x) => [x.id, { accountId: x.revenue_account_id, name: x.name }])),
   };
 
-  const report = buildRevenueReport(invRes.rows, lineRes.rows, payRes.rows, ctx, (v) => {
+  // 고른 장부(초등·중고등)의 청구서·줄·수납만 셉니다.
+  const ids = await scopeStudentIds(supabase, await getFinanceScope(me));
+  const scopedInv = invRes.rows.filter((v) => inScopeIds(ids, (v as RevInvoice & { student_id?: string | null }).student_id));
+  const keptInv = new Set(scopedInv.map((v) => v.id));
+  const scopedLines = ids ? lineRes.rows.filter((l) => keptInv.has(l.invoice_id)) : lineRes.rows;
+  const scopedPay = ids ? payRes.rows.filter((p) => !!p.invoice_id && keptInv.has(p.invoice_id)) : payRes.rows;
+  const report = buildRevenueReport(scopedInv, scopedLines, scopedPay, ctx, (v) => {
     const m = monthOf(v);
     return m >= from && m <= to;
   });

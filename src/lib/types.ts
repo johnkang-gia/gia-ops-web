@@ -678,6 +678,8 @@ export type WrClass = {
    * 새로 온 직원이 답할 수 없습니다.
    */
   room: string | null;
+  /** 반의 부서(초등부·중고등부). 판정은 `departmentOf` 로 합니다 - 학년이 먼저입니다. */
+  department?: string | null;
   created_at: string;
 };
 

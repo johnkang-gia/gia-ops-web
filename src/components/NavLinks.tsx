@@ -4,6 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useLang } from "@/components/common/LanguageProvider";
+import { useFinanceScope } from "@/components/finance/FinanceScopeProvider";
 
 // labelEn이 있으면 한글 라벨 아래 작게 영어 라벨을 함께 보여줍니다 - 주간 학생 관찰기록은
 // 영어 원어민 교사도 쓰기 때문에, 그 메뉴만이라도 영어를 병기해둡니다(요청).
@@ -14,7 +15,19 @@ import { useLang } from "@/components/common/LanguageProvider";
 // 맞게... 구분선으로 구분해주고" - 예전 사이드바 메인 카테고리 사이에 있던 구분선을, 이제는
 // 플라이아웃으로 펼쳐지는 부메뉴 내부 항목들 사이에도 목적별로 넣습니다). 빈 문자열이면 선만,
 // 값이 있으면 그 위에 작은 소제목도 함께 보여줍니다.
-export type NavLeaf = { href: string; label: string; labelEn?: string; icon: string; badge?: number; dividerBefore?: string };
+export type NavLeaf = {
+  href: string;
+  label: string;
+  labelEn?: string;
+  icon: string;
+  badge?: number;
+  dividerBefore?: string;
+  /**
+   * 회계 범위(전체·초등부·중고등부). 있으면 누를 때 범위를 바꾸고 이동합니다. 세 항목이 같은
+   * 주소(학생별 회계)로 가므로, 켜짐은 주소가 아니라 **지금 범위**로 판정합니다.
+   */
+  financeScope?: string;
+};
 
 // 메뉴 구조를 "카테고리" 단위로 바꿨습니다. items가 있으면 마우스를 올렸을 때 오른쪽으로
 // 펼쳐지는 플라이아웃 서브메뉴가 되고(주메뉴가 세로로 길어지지 않음), items가 없으면 href로
@@ -30,6 +43,8 @@ export type NavCategory = {
   accent?: NavAccent;
   href?: string;
   items?: NavLeaf[];
+  /** 이 주소로 시작하는 화면이면 켜집니다(재무처럼 아래 화면이 많고 메뉴 항목은 범위뿐인 경우). */
+  activePrefix?: string;
 };
 
 // 메뉴 이름을 지금 선택된 언어 하나로만 보여줍니다.
@@ -76,7 +91,8 @@ function bestMatchHref(pathname: string | null, categories: NavCategory[]): stri
   return best;
 }
 
-function isActiveCategory(cat: NavCategory, best: string | null) {
+function isActiveCategory(cat: NavCategory, best: string | null, pathname?: string | null) {
+  if (cat.activePrefix && pathname && isActiveHref(pathname, cat.activePrefix)) return true;
   if (!best) return false;
   if (cat.href === best) return true;
   return !!cat.items?.some((i) => i.href === best);
@@ -117,6 +133,7 @@ export function SidebarNavLinks({ categories }: { categories: NavCategory[] }) {
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flyoutRef = useRef<HTMLDivElement | null>(null);
   const best = bestMatchHref(pathname, categories);
+  const fs = useFinanceScope();
 
   // 주메뉴가 사이드바 아래쪽에 있으면 부메뉴(플라이아웃)도 그만큼 아래에서 열리는데, 그대로
   // 두면 화면 아래로 잘려나가 누르기 어려워집니다(요청: "부메뉴가 화면에 가려서 누르기
@@ -169,7 +186,7 @@ export function SidebarNavLinks({ categories }: { categories: NavCategory[] }) {
   return (
     <div className="flex flex-col divide-y divide-[var(--shell-border,#f1f5f9)]">
       {categories.map((cat) => {
-        const active = isActiveCategory(cat, best);
+        const active = isActiveCategory(cat, best, pathname);
         const accent = cat.accent ?? "navy";
         const hasChildren = !!cat.items && cat.items.length > 0;
         const targetHref = cat.href ?? cat.items?.[0]?.href ?? "#";
@@ -232,10 +249,12 @@ export function SidebarNavLinks({ categories }: { categories: NavCategory[] }) {
               {openCategory.label}
             </div>
             {openCategory.items!.map((item) => {
-              const itemActive = item.href === best;
+              const itemActive = item.financeScope
+                ? !!fs && fs.scope === item.financeScope && isActiveHref(pathname, "/finance")
+                : item.href === best;
               const accent = openCategory.accent ?? "navy";
               return (
-                <div key={item.href}>
+                <div key={item.href + (item.financeScope ?? "")}>
                   {item.dividerBefore !== undefined && (
                     <div className="mx-1 mt-1.5 mb-1 border-t border-[var(--shell-border,#e2e8f0)] pt-1">
                       {item.dividerBefore && (
@@ -249,7 +268,8 @@ export function SidebarNavLinks({ categories }: { categories: NavCategory[] }) {
                     onTouchStart={() => router.prefetch(item.href)}
                     onClick={() => {
                       setOpenKey(null);
-                      router.push(item.href);
+                      if (item.financeScope && fs) fs.setScope(item.financeScope, item.href);
+                      else router.push(item.href);
                     }}
                     className={
                       "shell-nav-btn flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm " +
@@ -287,6 +307,7 @@ export function MobileNavLinks({ categories }: { categories: NavCategory[] }) {
         : []
   );
   const best = bestMatchHref(pathname, categories);
+  const fs = useFinanceScope();
 
   // 모바일은 가로로 죽 늘어선 목록이라 hover가 없어서(터치 시작 시점엔 이미 손가락이 눌린
   // 뒤라 프리페치할 시간이 촉박합니다), 화면에 붙는 순간 전부 미리 받아둡니다. 항목 수가
@@ -299,12 +320,14 @@ export function MobileNavLinks({ categories }: { categories: NavCategory[] }) {
   return (
     <>
       {items.map((item) => {
-        const active = item.href === best;
+        const active = item.financeScope
+          ? !!fs && fs.scope === item.financeScope && isActiveHref(pathname, "/finance")
+          : item.href === best;
         return (
           <button
-            key={item.href}
+            key={item.href + (item.financeScope ?? "")}
             type="button"
-            onClick={() => router.push(item.href)}
+            onClick={() => (item.financeScope && fs ? fs.setScope(item.financeScope, item.href) : router.push(item.href))}
             className={
               "shell-nav-btn flex shrink-0 cursor-pointer items-center gap-1 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium " +
               (active

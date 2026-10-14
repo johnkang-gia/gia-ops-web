@@ -7,6 +7,7 @@ import { decideBlock } from "@/lib/financeRequests";
 import ApprovalsClient, { type ApprovalRow } from "@/components/finance/ApprovalsClient";
 import type { FinanceRequest } from "@/lib/types";
 
+import { getFinanceScope, scopeStudentIds, inScopeIds } from "@/lib/financeScopeServer";
 export const dynamic = "force-dynamic";
 
 /**
@@ -21,17 +22,18 @@ export default async function ApprovalsPage() {
   if (!hasFinanceAccess(me)) redirect("/home");
 
   const supabase = await createClient();
-  const res = await readAll<FinanceRequest & { invoices: { invoice_no: string; student_name: string; student_name_ko: string | null; total_amount: number | string; stream: string | null } | null }>(
+  const res = await readAll<FinanceRequest & { invoices: { invoice_no: string; student_id: string | null; student_name: string; student_name_ko: string | null; total_amount: number | string; stream: string | null } | null }>(
     (from, to) =>
       supabase
         .from("finance_requests")
-        .select("*, invoices(invoice_no, student_name, student_name_ko, total_amount, stream)")
+        .select("*, invoices(invoice_no, student_id, student_name, student_name_ko, total_amount, stream)")
         .order("requested_at", { ascending: false })
         .order("id")
         .range(from, to),
   );
 
-  const rows: ApprovalRow[] = res.rows.map((r) => ({
+  const ids = await scopeStudentIds(supabase, await getFinanceScope(me));
+  const rows: ApprovalRow[] = res.rows.filter((r) => inScopeIds(ids, r.invoices?.student_id)).map((r) => ({
     ...r,
     invoiceNo: r.invoices?.invoice_no ?? "",
     studentName: r.invoices?.student_name_ko || r.invoices?.student_name || "",

@@ -38,7 +38,8 @@ export type ClassRow = {
 
 /** 반 이름 비교용. 「G2 C」·「g2c」·「G-2C」를 같게 봅니다 - 사람은 띄어쓰기를 안 지킵니다. */
 function norm(s: string | null | undefined): string {
-  return String(s ?? "").toLowerCase().replace(/[^a-z0-9가-힣]/g, "");
+  // 「+」는 남깁니다. 중고등부의 G12 와 G12+(졸업 후 과정)는 다른 반입니다.
+  return String(s ?? "").toLowerCase().replace(/[^a-z0-9가-힣+]/g, "");
 }
 
 export type ClassAssignment = {

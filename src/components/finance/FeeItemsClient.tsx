@@ -36,6 +36,8 @@ type Props = {
   usageByItem: Record<string, number>;
   currentUserEmail: string;
   loadError: string | null;
+  /** 회계 범위가 한 부서면 그 부서와 「공통」만 보입니다. */
+  lockedDept?: string | null;
 };
 
 type ItemDept = "초등부" | "중고등부" | "공통";
@@ -57,13 +59,14 @@ const EMPTY = {
   note: "",
 };
 
-export default function FeeItemsClient({ initialItems, initialCategories, terms, gradesByDept, classesByDept, classesByGrade, groups, usageByItem, currentUserEmail, loadError }: Props) {
+export default function FeeItemsClient({ initialItems, initialCategories, terms, gradesByDept, classesByDept, classesByGrade, groups, usageByItem, currentUserEmail, loadError, lockedDept = null }: Props) {
   // 돈에 닿는 자료가 바뀌면 이 화면이 함께 다시 그려집니다. 한 사람이 고치고
   // 여러 사람이 보는 화면이라, 고친 사람만 새 금액을 보면 안 됩니다.
   useFinanceLive();
   const notify = useToast();
   const [items, setItems] = useState(initialItems);
-  const [form, setForm] = useState({ ...EMPTY });
+  // dept-ok: 학생 판정이 아니라 고른 회계 장부(범위)를 첫 탭으로 옮겨 적는 자리입니다.
+  const [form, setForm] = useState({ ...EMPTY, department: (lockedDept === "중고등부" ? "중고등부" : "초등부") as ItemDept });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   /**
@@ -82,7 +85,8 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
    * 항목을 지나쳐 읽어야 하고, 실수로 그 위에 덮어쓰게 됩니다. `공통` 은 교복처럼 학교 전체가
    * 사는 것입니다.
    */
-  const [deptTab, setDeptTab] = useState<ItemDept>("초등부");
+  // dept-ok: 학생 판정이 아니라 고른 회계 장부(범위)를 첫 탭으로 옮겨 적는 자리입니다.
+  const [deptTab, setDeptTab] = useState<ItemDept>(lockedDept === "중고등부" ? "중고등부" : "초등부");
   /**
    * 보고 있는 학기.
    *
@@ -437,7 +441,7 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
           초등과 중고등은 사는 교재가 아예 다릅니다. 섞어두면 등록할 때마다 남의 부서 항목을
           지나쳐 읽어야 하고, 실수로 그 위에 덮어쓰게 됩니다. */}
       <div className="mb-3 flex flex-wrap items-center gap-1 border-b border-slate-200">
-        {(["초등부", "중고등부", "공통"] as ItemDept[]).map((d) => (
+        {(["초등부", "중고등부", "공통"] as ItemDept[]).filter((d) => !lockedDept || d === lockedDept || d === "공통").map((d) => (
           <button
             key={d}
             onClick={() => {

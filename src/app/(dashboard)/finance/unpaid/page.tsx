@@ -8,6 +8,7 @@ import UnpaidClient from "@/components/finance/UnpaidClient";
 import type { UnpaidInvoice, UnpaidPayment } from "@/lib/unpaidLedger";
 import { loadStudents } from "@/lib/students";
 
+import { getFinanceScope, scopeStudentIds, inScopeIds } from "@/lib/financeScopeServer";
 export const dynamic = "force-dynamic";
 
 /**
@@ -43,11 +44,15 @@ export default async function UnpaidPage() {
     loadStudents(supabase, { status: "all" }),
   ]);
 
+  // 고른 장부(초등·중고등)의 학생 청구서만.
+  const ids = await scopeStudentIds(supabase, await getFinanceScope(me));
+  const invoices = invRes.rows.filter((v) => inScopeIds(ids, v.student_id));
+  const keep = new Set(invoices.map((v) => v.id));
   return (
     <UnpaidClient
-      invoices={invRes.rows}
-      payments={payRes.rows}
-      students={stuRes.rows}
+      invoices={invoices}
+      payments={payRes.rows.filter((p) => !ids || (p.invoice_id && keep.has(p.invoice_id)))}
+      students={stuRes.rows.filter((s) => inScopeIds(ids, s.id))}
       today={todayKst()}
       loadError={readNotice(invRes, payRes) ?? stuRes.error ?? null}
     />

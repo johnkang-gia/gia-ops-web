@@ -12,6 +12,7 @@ import { lastDayOf, monthLabel, shiftMonth } from "@/lib/financePeriod";
 import { buildStudentMonth, type MonthInvoice, type MonthPayment } from "@/lib/studentMonthLedger";
 import { loadStudents } from "@/lib/students";
 
+import { getFinanceScope, scopeStudentIds, inScopeIds } from "@/lib/financeScopeServer";
 export const dynamic = "force-dynamic";
 
 /**
@@ -58,6 +59,9 @@ export default async function FinanceMonthStudentsPage({ params }: { params: Pro
       .range(from, to),
   );
 
+  // 고른 장부(초등·중고등)의 청구서만.
+  const ids = await scopeStudentIds(supabase, await getFinanceScope(me));
+  invRes.rows = invRes.rows.filter((v) => inScopeIds(ids, v.student_id));
   const invoiceIds = invRes.rows.map((v) => v.id);
   // 그 청구서들에 붙은 돈은 **언제 들어왔든** 함께 봅니다. 9월분을 10월에 낸 돈을 빼면
   // 9월 표에 청구만 남아 영영 미납으로 보입니다.
@@ -74,8 +78,8 @@ export default async function FinanceMonthStudentsPage({ params }: { params: Pro
         );
 
   // 그 달에 **실제로 통장·올톡페이로 찍힌 돈**. 위와 다른 질문이라 따로 읽습니다.
-  const inMonthRes = await readAll<{ amount: number | string }>((from, to) =>
-    supabase.from("payments").select("amount, paid_at").gte("paid_at", first).lte("paid_at", lastOfMonth).order("paid_at").range(from, to),
+  const inMonthRes = await readAll<{ amount: number | string; student_id?: string | null }>((from, to) =>
+    supabase.from("payments").select("amount, paid_at, student_id").gte("paid_at", first).lte("paid_at", lastOfMonth).order("paid_at").range(from, to),
   );
 
   const [stuRes, closeRes] = await Promise.all([
@@ -95,7 +99,7 @@ export default async function FinanceMonthStudentsPage({ params }: { params: Pro
     whereOf: (id) => whereById.get(id) || null,
   });
 
-  const receivedInMonth = inMonthRes.rows.reduce((n, p) => n + Math.round(Number(p.amount ?? 0)), 0);
+  const receivedInMonth = inMonthRes.rows.filter((p) => inScopeIds(ids, p.student_id)).reduce((n, p) => n + Math.round(Number(p.amount ?? 0)), 0);
   const notice = readNotice(invRes, payRes, inMonthRes);
   const loadError = stuRes.error ?? null;
 

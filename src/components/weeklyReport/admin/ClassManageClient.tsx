@@ -6,13 +6,28 @@ import type { TeamMember, WrClass } from "@/lib/types";
 import Pagination from "@/components/Pagination";
 import { useConfirm } from "@/components/common/ConfirmProvider";
 import { useToast } from "@/components/common/ToastProvider";
+import { departmentOf } from "@/lib/department";
 
 const PAGE_SIZE = 15;
 
-export default function ClassManageClient({ initialClasses, team }: { initialClasses: WrClass[]; team: TeamMember[] }) {
+export default function ClassManageClient({
+  initialClasses,
+  team,
+  departments = ["초등부", "중고등부"],
+}: {
+  initialClasses: WrClass[];
+  team: TeamMember[];
+  /** 볼 수 있는 부서. 반은 부서마다 따로 세웁니다(초등부·중고등부는 담임도 반 체계도 다릅니다). */
+  departments?: string[];
+}) {
   const confirmAction = useConfirm();
   const notify = useToast();
-  const [classes, setClasses] = useState<WrClass[]>(initialClasses);
+  const [allClasses, setClasses] = useState<WrClass[]>(initialClasses);
+  const [dept, setDept] = useState<string>(departments[0] ?? "초등부");
+  const classes = useMemo(
+    () => allClasses.filter((c) => departmentOf({ department: c.department ?? null, grade: c.grade }) === dept),
+    [allClasses, dept],
+  );
   const [grade, setGrade] = useState("");
   const [className, setClassName] = useState("");
   const [teacherEmail, setTeacherEmail] = useState("");
@@ -33,6 +48,8 @@ export default function ClassManageClient({ initialClasses, team }: { initialCla
         class_name: className.trim(),
         teacher_email: teacherEmail || null,
         sub_teacher_email: subTeacherEmail || null,
+        // 고른 부서의 반입니다. 학년으로도 판정되지만 칸에도 적어 둡니다.
+        department: departmentOf({ department: null, grade: grade.trim() }) ?? dept,
         // 이 화면에서 만드는 반은 언제나 실제 반입니다.
         is_demo: false,
       })
@@ -93,6 +110,34 @@ export default function ClassManageClient({ initialClasses, team }: { initialCla
     // 상자가 쪼그라들고, overflow-hidden 이 넘친 부분을 잘라내 **반 목록이 스크롤되지
     // 않았습니다.** 아래에 교실 태블릿 링크와 기록도 이어지므로 페이지 스크롤이 맞습니다.
     <div className="flex flex-col">
+      {departments.length > 1 && (
+        <div className="mb-3 flex gap-1 border-b-2 border-slate-200">
+          {departments.map((d) => (
+            <button
+              key={d}
+              type="button"
+              onClick={() => {
+                setDept(d);
+                setPage(1);
+              }}
+              className={
+                "-mb-0.5 rounded-t-lg border-b-2 px-4 py-2 text-sm font-bold " +
+                (dept === d ? "border-teal-600 bg-teal-600 text-white" : "border-transparent text-slate-500 hover:bg-slate-50")
+              }
+            >
+              {d} 반{" "}
+              <span className="ml-1 text-[11px] font-semibold opacity-70">
+                {allClasses.filter((c) => departmentOf({ department: c.department ?? null, grade: c.grade }) === d).length}개
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+      {dept === "중고등부" && (
+        <p className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+          중고등부는 <b>학년이 곧 반</b>입니다. 학년마다 반(G6 … G12)이 저절로 만들어지고, 학생의 학년이 바뀌면 반도 따라갑니다.
+        </p>
+      )}
       <form onSubmit={addClass} className="mb-4 flex shrink-0 flex-wrap items-end gap-2 g-panel-solid p-3">
         <div>
           <label className="mb-1 block text-[11px] text-slate-400">학년</label>

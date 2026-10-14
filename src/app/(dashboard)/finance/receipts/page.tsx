@@ -6,6 +6,7 @@ import GuideButton from "@/components/common/GuideButton";
 import CashReceiptsClient, { type CashReceiptRow, type StudentLite } from "@/components/finance/CashReceiptsClient";
 import { loadStudents } from "@/lib/students";
 
+import { getFinanceScope, scopeStudentIds, inScopeIds } from "@/lib/financeScopeServer";
 export const dynamic = "force-dynamic";
 
 const GUIDE_SECTIONS = [
@@ -50,8 +51,10 @@ export default async function CashReceiptsPage() {
   ]);
   if (error) console.error("[현금영수증] 목록을 읽지 못했습니다:", error.message);
 
-  const rows = (data as CashReceiptRow[] | null) ?? [];
-  const students: StudentLite[] = studentRows;
+  // 고른 장부의 학생 것만. 학생과 안 이어진 접수(사업자 명의 등)는 「전체 회계」에서만 보입니다.
+  const ids = await scopeStudentIds(supabase, await getFinanceScope(me));
+  const rows = ((data as CashReceiptRow[] | null) ?? []).filter((r) => inScopeIds(ids, r.student_id));
+  const students: StudentLite[] = studentRows.filter((s) => inScopeIds(ids, s.id));
 
   // 어느 청구서 건인지. 「이 사람 얼마짜리였지」를 확인하러 인보이스 명단으로 건너가야
   // 하면 그 왕복이 곧 안 하게 되는 이유가 됩니다.

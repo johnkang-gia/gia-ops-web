@@ -38,6 +38,10 @@ import VersionUpdateBanner from "@/components/common/VersionUpdateBanner";
 import VersionBroadcastButton from "@/components/common/VersionBroadcastButton";
 import CommandPalette from "@/components/common/CommandPalette";
 import UsageTracker from "@/components/common/UsageTracker";
+import { ALL_SCOPE } from "@/lib/department";
+import { allowedScopes, scopeLabel } from "@/lib/financeScope";
+import { getFinanceScope } from "@/lib/financeScopeServer";
+import { FinanceScopeProvider } from "@/components/finance/FinanceScopeProvider";
 import type { AiFeatureFlag } from "@/lib/types";
 
 // 홈 화면에 추가했을 때 브라우저 주소창 없이 앱처럼 열리도록(standalone) 하는 최소 PWA
@@ -365,6 +369,9 @@ export default async function DashboardLayout({
     ]);
   if (meResult.status === "rejected") throw meResult.reason;
   const me = meResult.value;
+  // 회계 범위(전체·초등·중고등). 재무 열쇠가 있는 사람만 고릅니다.
+  const financeScopes = me && hasFinanceAccess(me) ? allowedScopes(me.department) : [];
+  const financeScope = me && hasFinanceAccess(me) ? await getFinanceScope(me) : ALL_SCOPE;
   // 묶은 뒤의 건수. 화면의 「검토대기 (N건)」과 같은 규칙입니다.
   const pendingProposals =
     pendingProposalsResult.status === "fulfilled"
@@ -499,12 +506,16 @@ export default async function DashboardLayout({
         accent: "teal",
         // 재무를 누르면 회계로 갑니다 - 가장 많이 여는 화면이자 모든 일을 처리하는 자리입니다.
         href: "/finance/ledger",
-        items: [
-          // 재무는 셋 - 회계(모든 일) · 월별(흐름) · 설정(요금표). 나머지 화면은 회계 아래 작은 줄에 있습니다.
-          { href: "/finance/ledger", label: "회계", icon: "📒" },
-          { href: "/finance", label: "월별", icon: "📅" },
-          { href: "/finance/plans", label: "설정", icon: "⚙️" },
-        ],
+        activePrefix: "/finance",
+        // **부서마다 장부가 따로입니다** - 전체 회계 · 초등 회계 · 중고등 회계. 고른 장부는 재무 안의
+        // 모든 화면(청구·올톡페이·수납·월별·설정)이 함께 따릅니다. 학비·학비외는 그 안의 상단 탭입니다.
+        // 볼 수 있는 장부만 나옵니다 - 초등부 담당자에게는 「초등 회계」 하나뿐입니다.
+        items: financeScopes.map((sc) => ({
+          href: "/finance/ledger",
+          label: scopeLabel(sc),
+          icon: sc === ALL_SCOPE ? "📚" : sc === "초등부" ? "📗" : sc === "중고등부" ? "📘" : "📙",
+          financeScope: sc,
+        })),
       });
     }
     if (isDeveloper && !isPreviewing) {
@@ -521,6 +532,7 @@ export default async function DashboardLayout({
     // 스크롤되고, 사이드바 메뉴는 항상 제자리에 그대로 있습니다.
     <LanguageProvider initialLang={lang}>
     <ToastProvider>
+    <FinanceScopeProvider initialScope={financeScope} scopes={financeScopes}>
     <ConfirmProvider>
     <NotificationProvider userEmail={isTeacher ? null : me.email}>
     {/* 겹치는 이름 목록을 로그인 영역 전체에 한 번 깝니다. 화면은 준비 없이
@@ -731,6 +743,7 @@ export default async function DashboardLayout({
     </HomonymProvider>
     </NotificationProvider>
     </ConfirmProvider>
+    </FinanceScopeProvider>
     </ToastProvider>
     </LanguageProvider>
   );

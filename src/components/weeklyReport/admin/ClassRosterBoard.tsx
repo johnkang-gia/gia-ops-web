@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
-import { gradeSortKey } from "@/lib/department";
+import { departmentOf, gradeSortKey } from "@/lib/department";
 import type { WrClass } from "@/lib/types";
 
 /**
@@ -29,39 +29,53 @@ export type BoardStudent = {
   className: string | null;
   classId: string | null;
   gender: "남" | "여" | null;
+  department: string | null;
 };
 
 export default function ClassRosterBoard({
   classes,
   initialStudents,
   canEdit,
+  departments,
 }: {
   classes: WrClass[];
   initialStudents: BoardStudent[];
   canEdit: boolean;
+  /** 이 사람이 볼 수 있는 부서. 「전체」는 넣지 않습니다 - 반 배정에서 부서를 섞어 보여줄 일이 없습니다. */
+  departments: string[];
 }) {
   const notify = useToast();
   const [students, setStudents] = useState(initialStudents);
+  /**
+   * **부서가 먼저입니다.** 초등부와 중고등부는 부서가 다르고, 반도 담임도 따로입니다.
+   * 한 판에 섞어 두면 미배정 칸에 두 부서 아이가 함께 쌓이고, 초등 아이를 중고등 반에
+   * 넣는 실수가 화면에서 막히지 않았습니다.
+   */
+  const [dept, setDept] = useState<string>(departments[0] ?? "초등부");
   const [grade, setGrade] = useState<string>("전체");
+  const studentDept = (s: BoardStudent) => departmentOf({ department: s.department, grade: s.grade });
+  const classDept = (c: WrClass) => departmentOf({ department: c.department ?? null, grade: c.grade });
+  const deptStudents = useMemo(() => students.filter((s) => studentDept(s) === dept), [students, dept]);
+  const deptClasses = useMemo(() => classes.filter((c) => classDept(c) === dept), [classes, dept]);
   /** 눌러서 고른 아이. 화면을 만지는 기기에서 끌기 대신 쓰는 길입니다. */
   const [picked, setPicked] = useState<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const grades = useMemo(
-    () => [...new Set(students.map((s) => (s.grade ?? "").trim()).filter(Boolean))].sort((a, b) => gradeSortKey(a) - gradeSortKey(b)),
-    [students],
+    () => [...new Set(deptStudents.map((s) => (s.grade ?? "").trim()).filter(Boolean))].sort((a, b) => gradeSortKey(a) - gradeSortKey(b)),
+    [deptStudents],
   );
 
   /** 이 학년의 반. 학년을 고르면 그 학년 반만 세웁니다 - 전교 반을 다 세우면 화면이 넘칩니다. */
   const shownClasses = useMemo(() => {
-    const list = grade === "전체" ? classes : classes.filter((c) => (c.grade ?? "").trim() === grade);
+    const list = grade === "전체" ? deptClasses : deptClasses.filter((c) => (c.grade ?? "").trim() === grade);
     return [...list].sort((a, b) => gradeSortKey(a.grade ?? "") - gradeSortKey(b.grade ?? "") || (a.class_name ?? "").localeCompare(b.class_name ?? "", "ko"));
-  }, [classes, grade]);
+  }, [deptClasses, grade]);
 
   const inGrade = useMemo(
-    () => students.filter((s) => grade === "전체" || (s.grade ?? "").trim() === grade),
-    [students, grade],
+    () => deptStudents.filter((s) => grade === "전체" || (s.grade ?? "").trim() === grade),
+    [deptStudents, grade],
   );
 
   /** 반 → 그 반 아이들. 반이 없는 아이는 '미배정' 으로 따로 모읍니다. */
@@ -90,6 +104,11 @@ export default function ClassRosterBoard({
     const before = students.find((s) => s.id === studentId);
     if (!before) return;
     if ((before.classId ?? null) === (target?.id ?? null)) return;
+    // 다른 부서의 반에는 넣지 않습니다. 판에는 한 부서만 뜨지만, 끌어다 놓기는 화면 밖에서도 옵니다.
+    if (target && classDept(target) !== studentDept(before)) {
+      notify(`${before.name}은(는) ${studentDept(before) ?? "부서 미상"} 학생입니다. ${classDept(target)} 반에는 넣을 수 없습니다.`, "error");
+      return;
+    }
 
     const next: BoardStudent = {
       ...before,
@@ -201,8 +220,33 @@ export default function ClassRosterBoard({
 
   return (
     <div className="mt-6">
+      {departments.length > 1 && (
+        <div className="mb-3 flex gap-1 border-b-2 border-slate-200">
+          {departments.map((d) => (
+            <button
+              key={d}
+              onClick={() => {
+                setDept(d);
+                setGrade("전체");
+                setPicked(null);
+              }}
+              className={
+                "-mb-0.5 rounded-t-lg border-b-2 px-4 py-2 text-sm font-bold " +
+                (dept === d ? "border-teal-600 bg-teal-600 text-white" : "border-transparent text-slate-500 hover:bg-slate-50")
+              }
+            >
+              {d} <span className="ml-1 text-[11px] font-semibold opacity-70">{students.filter((s) => studentDept(s) === d).length}명</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {dept === "중고등부" && (
+        <p className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+          중고등부는 <b>학년이 곧 반</b>입니다(G6 … G12). 학년을 바꾸면 반도 자동으로 따라갑니다 — 다른 반으로 옮기면 학년도 그 반의 학년으로 바뀝니다.
+        </p>
+      )}
       <div className="mb-2 flex flex-wrap items-center gap-2">
-        <h2 className="text-[15px] font-bold text-slate-800">🧩 반 배정판</h2>
+        <h2 className="text-[15px] font-bold text-slate-800">🧩 {dept} 반 배정판</h2>
         <span className="text-[11px] text-slate-400">이름표를 끌어다 놓거나, 눌러서 고른 뒤 반을 누릅니다</span>
         <span className="ml-auto flex flex-wrap gap-1">
           {["전체", ...grades].map((g) => (

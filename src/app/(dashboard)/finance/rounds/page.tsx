@@ -5,6 +5,7 @@ import { hasFinanceAccess } from "@/lib/roles";
 import { readAll } from "@/lib/financeFetch";
 import RoundsClient, { type BatchRow, type BatchInvoice } from "@/components/finance/RoundsClient";
 
+import { getFinanceScope, scopeStudentIds, inScopeIds } from "@/lib/financeScopeServer";
 export const dynamic = "force-dynamic";
 
 /**
@@ -42,5 +43,27 @@ export default async function FinanceRoundsPage() {
     (v): v is string => !!v,
   );
 
-  return <RoundsClient batches={(batchRes.data as BatchRow[] | null) ?? []} invoices={invRes.rows} problems={problems} />;
+  // **장부가 한 부서면 회차를 그 부서 청구서로 다시 셉니다.** 회차 표(invoice_batches)는 학교 전체를
+  // 세어 둔 것이라, 그대로 두면 초등 회계에 중고등 청구서 장수가 섞여 보입니다.
+  const ids = await scopeStudentIds(supabase, await getFinanceScope(me));
+  const allBatches = (batchRes.data as BatchRow[] | null) ?? [];
+  const invoices = invRes.rows.filter((v) => inScopeIds(ids, v.student_id));
+  const batches: BatchRow[] = !ids
+    ? allBatches
+    : allBatches.flatMap((b) => {
+        const mine = invoices.filter((v) => v.issue_batch === b.issue_batch);
+        if (mine.length === 0) return [];
+        const alive = mine.filter((v) => v.status === "발행");
+        return [
+          {
+            ...b,
+            alive_count: alive.length,
+            cancelled_count: mine.filter((v) => v.status === "취소").length,
+            alive_amount: alive.reduce((n, v) => n + Number(v.total_amount), 0),
+            offline_count: alive.filter((v) => v.issued_offline === true).length,
+          },
+        ];
+      });
+
+  return <RoundsClient batches={batches} invoices={invoices} problems={problems} />;
 }

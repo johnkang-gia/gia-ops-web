@@ -15,6 +15,8 @@ import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
 import { won } from "@/lib/feeItems";
 import { departmentOf, gradeSortKey, type Department } from "@/lib/department";
+import { streamOf } from "@/lib/settlement";
+import { issuedLong, issuedShort } from "@/lib/invoiceIssued";
 import { addDays, DUE_DAYS } from "@/lib/financePeriod";
 import { discountsForPlan, planTargets, tuitionLine, tuitionTotal, discountUsable, type TuitionLine } from "@/lib/tuition";
 import TermPicker, { initialTermId } from "./TermPicker";
@@ -112,7 +114,13 @@ export default function TuitionGridClient({
   canApprove,
   currentUserEmail,
   currentUserName,
+  lockedDept = null,
 }: {
+  /**
+   * 회계 범위가 한 부서면 그 부서로 못박습니다(초등 회계 · 중고등 회계). 부서 단추는 사라집니다 -
+   * 장부를 고른 뒤에 화면 안에서 또 부서를 오가면 어느 장부를 보는지 흐려집니다.
+   */
+  lockedDept?: string | null;
   students: TuitionStudent[];
   plans: FeePlan[];
   /**
@@ -177,7 +185,7 @@ export default function TuitionGridClient({
    */
   const thisMonth = today.slice(0, 7);
   const [month, setMonth] = useState(thisMonth);
-  const [dept, setDept] = useState<DeptTab>("초등부");
+  const [dept, setDept] = useState<DeptTab>(((lockedDept as DeptTab | null) ?? "초등부") as DeptTab);
   /**
    * 부서 안에서 더 좁혀 보는 두 칸. **빈 글자가 「전체」입니다.**
    *
@@ -426,7 +434,10 @@ export default function TuitionGridClient({
   const termInvoicesOf = useMemo(() => {
     const m = new Map<string, Invoice[]>();
     for (const v of invoices) {
-      if (!v.student_id || v.status !== "발행" || v.category !== "학비") continue;
+      // **갈래로 봅니다(`streamOf`).** 학비와 학비외를 한 장으로 낸 청구서는 분류가 「학비+학비외」라,
+      // 분류 글자가 「학비」인 것만 고르면 그 장이 이 표에서 사라졌습니다 - 표는 「미발행」이라며
+      // [발행]을 켜 두고, 서버는 같은 달에 이미 있다며 막았습니다(김에스더 10월분).
+      if (!v.student_id || v.status !== "발행" || streamOf(v) !== "학비") continue;
       if ((v as Invoice & { carried_to_invoice_id?: string | null }).carried_to_invoice_id) continue;
       const sameT = (v.term_id ?? "") === termId || (!v.term_id && terms.find((x) => x.id === termId)?.status === "진행중");
       if (!sameT) continue;
@@ -533,6 +544,26 @@ export default function TuitionGridClient({
     }
     return m;
   }, [monthBill, allPlans, invoices, paidByInvoice]);
+
+  /**
+   * 항목 이름 → **그 항목이 담긴 청구서가 언제·누구에 의해 나갔는가.** 칸에 「청구됨 10/14」로
+   * 적습니다. 「이미 발행되었습니다」만 들으면 어디서 찾아야 하는지 모릅니다 - 날짜와 번호가
+   * 칸에 있어야 그 장을 찾아 취소하든 그대로 두든 정합니다.
+   */
+  const billInfoOf = useMemo(() => {
+    const m = new Map<string, Map<string, { no: string; date: string; by: string | null }>>();
+    for (const [key, mb] of monthBill) {
+      if (!mb.covered || !mb.invoice) continue;
+      const [sid, planId] = key.split("|");
+      const name = allPlans.find((p) => p.id === planId)?.name;
+      const v = invoices.find((x) => x.id === mb.invoice!.id);
+      if (!name || !v) continue;
+      const per = m.get(sid) ?? new Map();
+      per.set(name, { no: v.invoice_no, date: v.issue_date, by: (v as Invoice & { issued_by?: string | null }).issued_by ?? null });
+      m.set(sid, per);
+    }
+    return m;
+  }, [monthBill, allPlans, invoices]);
 
   /** 아직 청구서에 안 담긴 항목이 남아 있는가. */
   const hasUnbilled = (sid: string) => {
@@ -994,7 +1025,7 @@ export default function TuitionGridClient({
           }}
         />
         <TermPicker terms={terms} value={termId} onChange={setTermId} />
-        <span className="flex gap-1">
+        <span className={"flex gap-1" + (lockedDept ? " hidden" : "")}>
           {DEPTS.map((d) => (
             <button
               key={d}
@@ -1407,6 +1438,9 @@ export default function TuitionGridClient({
                               (() => {
                                 const st = billStateOf.get(s.id)?.get(p.name);
                                 if (!st) return null;
+                                const info = billInfoOf.get(s.id)?.get(p.name);
+                                const when = info ? issuedShort(info.date) : "";
+                                const where = info ? ` · ${info.no} · ${info.date}${info.by ? ` ${info.by}` : ""} 발행` : "";
                                 const look =
                                   st === "완납"
                                     ? "bg-emerald-600 text-white"
@@ -1417,14 +1451,15 @@ export default function TuitionGridClient({
                                   <span
                                     className={"shrink-0 rounded px-1 text-[9px] font-bold " + look}
                                     title={
-                                      st === "완납"
+                                      (st === "완납"
                                         ? "이 항목이 담긴 청구서가 다 걷혔습니다"
                                         : st === "일부"
                                           ? "이 항목이 담긴 청구서에 일부만 들어왔습니다 — 미납금 화면에서 잔액만 다시 청구할 수 있습니다"
-                                          : "청구서는 나갔고 아직 안 들어왔습니다"
+                                          : "청구서는 나갔고 아직 안 들어왔습니다") + where
                                     }
                                   >
                                     {st === "완납" ? "입금완료" : st === "일부" ? "일부입금" : "청구됨"}
+                                    {when && <span className="ml-0.5 font-semibold opacity-80">{when}</span>}
                                   </span>
                                 );
                               })()}
@@ -1574,6 +1609,10 @@ export default function TuitionGridClient({
                                 {v.invoice_no}
                                 {scope && <span className="ml-0.5 font-normal text-emerald-600">({scope})</span>}
                               </button>
+                              {/* 언제·누가 냈는지 칸에 바로 적습니다(학생별 회계·학비외 표와 같은 표기). */}
+                              <span className="text-[10px] font-semibold text-slate-500" title={issuedLong(v as Invoice & { issued_by?: string | null })}>
+                                {issuedShort(v.issue_date)}
+                              </span>
                               {/* 잘못 발행한 장을 되돌릴 자리. 지우지 않고 취소로 남기므로
                                   나중에 무엇이 왜 취소됐는지 읽을 수 있습니다. */}
                               <button

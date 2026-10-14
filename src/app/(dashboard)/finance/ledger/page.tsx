@@ -2,7 +2,6 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess } from "@/lib/roles";
-import { departmentTabs } from "@/lib/department";
 import { loadLedgerWorld } from "@/lib/ledgerLoad";
 import { buildLedger } from "@/lib/studentLedger";
 import { todayKst } from "@/lib/kst";
@@ -20,6 +19,9 @@ import LedgerClient, { type LedgerRow, type LedgerInvoiceRow } from "@/component
  * 숫자는 전부 `studentLedger.ts` 가 셉니다 - 학생 창과 같은 함수, 같은 자료입니다. 목록의
  * 숫자와 창의 숫자가 다르면 아무도 안 믿습니다.
  */
+import { getFinanceScope } from "@/lib/financeScopeServer";
+import { inScope, deptTabsForScope } from "@/lib/financeScope";
+
 export const dynamic = "force-dynamic";
 
 /**
@@ -107,7 +109,8 @@ export default async function LedgerPage({ searchParams }: { searchParams: Promi
   const supabase = await createClient();
   const { world, students, terms, errors } = await loadLedgerWorld(supabase, { termId: term || null, month });
 
-  const rows: LedgerRow[] = students.map((s) => {
+  const financeScope = await getFinanceScope(me);
+  const rows: LedgerRow[] = students.filter((s) => inScope(financeScope, s)).map((s) => {
     const l = buildLedger(world, s);
     return {
       id: s.id,
@@ -134,6 +137,8 @@ export default async function LedgerPage({ searchParams }: { searchParams: Promi
   const nameById = new Map(students.map((s) => [s.id, s]));
   const invoices: LedgerInvoiceRow[] = world.invoices
     .filter((v) => v.status === "발행")
+    // 장부 밖 학생의 청구서는 뺍니다. 학생을 못 찾는 청구서(명부에서 빠진 아이)는 전체 회계에만 둡니다.
+    .filter((v) => inScope(financeScope, v.student_id ? nameById.get(v.student_id) : null))
     .map((v) => {
       const s = v.student_id ? nameById.get(v.student_id) : null;
       const l = s ? buildLedger(world, s) : null;
@@ -169,7 +174,7 @@ export default async function LedgerPage({ searchParams }: { searchParams: Promi
       month={month}
       thisMonth={thisMonth}
       terms={terms.map((t) => ({ id: t.id, name: `${t.year} ${t.term_type}`, status: t.status }))}
-      deptTabs={departmentTabs(me.department)}
+      deptTabs={deptTabsForScope(financeScope, me.department)}
       loadError={errors.length ? errors.join(" · ") : null}
     />
   );

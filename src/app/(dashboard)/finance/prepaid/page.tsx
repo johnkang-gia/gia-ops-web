@@ -8,6 +8,7 @@ import type { PrepaidRow } from "@/lib/prepaidLedger";
 import type { Invoice } from "@/lib/types";
 import { loadStudents } from "@/lib/students";
 
+import { getFinanceScope, scopeStudentIds, inScopeIds } from "@/lib/financeScopeServer";
 export const dynamic = "force-dynamic";
 
 /**
@@ -37,11 +38,12 @@ export default async function PrepaidPage() {
     ),
   ]);
 
+  const ids = await scopeStudentIds(supabase, await getFinanceScope(me));
   return (
     <PrepaidClient
-      rows={(payRes.data as PrepaidRow[] | null) ?? []}
-      students={stuRes.rows}
-      invoices={invRes.rows}
+      rows={((payRes.data as PrepaidRow[] | null) ?? []).filter((r) => inScopeIds(ids, r.student_id))}
+      students={stuRes.rows.filter((s) => inScopeIds(ids, s.id))}
+      invoices={invRes.rows.filter((v) => inScopeIds(ids, v.student_id))}
       currentUserEmail={me.email}
       loadError={payRes.error?.message ?? stuRes.error ?? readNotice(invRes)}
     />

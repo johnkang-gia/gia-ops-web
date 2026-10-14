@@ -5,6 +5,7 @@ import { isStaffOrAboveUser } from "@/lib/roles";
 import type { WrClass } from "@/lib/types";
 import ClassRosterBoard, { type BoardStudent } from "@/components/weeklyReport/admin/ClassRosterBoard";
 import GuideButton from "@/components/common/GuideButton";
+import { ALL_SCOPE, departmentTabs } from "@/lib/department";
 
 /**
  * 반 배정 — 아이를 어느 반에 넣을지.
@@ -52,7 +53,7 @@ export default async function ClassRosterPage() {
     // 반이 없는 아이도 함께 읽어야 '미배정' 칸이 채워집니다.
     supabase
       .from("wr_students_basic")
-      .select("id, name, name_en, grade, class_name, class_id, gender")
+      .select("id, name, name_en, grade, class_name, class_id, gender, department")
       .eq("status", "active")
       .order("name"),
   ]);
@@ -68,6 +69,7 @@ export default async function ClassRosterPage() {
           class_name: string | null;
           class_id: string | null;
           gender: "남" | "여" | null;
+          department: string | null;
         }[]
       | null) ?? []
   ).map<BoardStudent>((s) => ({
@@ -78,7 +80,10 @@ export default async function ClassRosterPage() {
     className: s.class_name,
     classId: s.class_id,
     gender: s.gender,
+    department: s.department,
   }));
+  // 반 배정은 부서마다 따로입니다. 「전체」 소속이어도 한 판에 섞지 않고 부서를 골라 봅니다.
+  const departments = departmentTabs(me.department).filter((d) => d !== ALL_SCOPE);
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -91,7 +96,7 @@ export default async function ClassRosterPage() {
         <b>반 · 시간표 → 반/담임</b>에서 합니다.
       </p>
 
-      <ClassRosterBoard classes={(classesData as WrClass[] | null) ?? []} initialStudents={boardStudents} canEdit={canEdit} />
+      <ClassRosterBoard classes={(classesData as WrClass[] | null) ?? []} initialStudents={boardStudents} canEdit={canEdit} departments={departments} />
     </div>
   );
 }

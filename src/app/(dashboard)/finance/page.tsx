@@ -23,6 +23,7 @@ import { billingMonthOf } from "@/lib/financePeriod";
 // 화면은 결국 안 보게 됩니다. 그래서 여기에는 숫자 네 개와 "남은 일" 목록만 둡니다:
 // 얼마를 받아야 하는지, 몇 명에게 보냈는지, 누가 아직 안 보내졌는지.
 
+import { getFinanceScope, scopeStudentIds, inScopeIds } from "@/lib/financeScopeServer";
 export const dynamic = "force-dynamic";
 
 /** 할 일 칸의 색. 테일윈드는 글자를 조립한 클래스 이름을 못 찾으므로 통째로 적어 둡니다. */
@@ -61,14 +62,17 @@ export default async function FinanceOverviewPage({ searchParams }: { searchPara
 
   const loadError = stuRes.error ?? itemsRes.error?.message ?? ovRes.error?.message ?? readNotice(invRes, payRes);
 
-  const students = stuRes.rows.map(
+  // 고른 장부(초등·중고등)의 학생과 그 학생의 청구·수납만.
+  const ids = await scopeStudentIds(supabase, await getFinanceScope(me));
+  const students = stuRes.rows.filter((s) => inScopeIds(ids, s.id)).map(
     (s) => ({ id: s.id, name: s.name, grade: s.grade, className: s.class_name }),
   );
   // active 로 거르지 않습니다. 항목은 끄는 것이 아니라 지웁니다(2026-09).
   const items = (itemsRes.data as FeeItem[] | null) ?? [];
   const overrides = (ovRes.data as StudentFeeItem[] | null) ?? [];
-  const allInvoices = invRes.rows;
-  const allPayments = payRes.rows;
+  const allInvoices = invRes.rows.filter((v) => inScopeIds(ids, v.student_id));
+  const keptInv = new Set(allInvoices.map((v) => v.id));
+  const allPayments = payRes.rows.filter((p) => !ids || (p.invoice_id ? keptInv.has(p.invoice_id) : inScopeIds(ids, p.student_id)));
   const invoices = month ? allInvoices.filter((v) => billingMonthOf(v) === month) : allInvoices;
   const payments = month ? allPayments.filter((p) => String(p.paid_at ?? "").slice(0, 7) === month) : allPayments;
 

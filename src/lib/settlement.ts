@@ -14,7 +14,9 @@ export type InvoiceStream = (typeof INVOICE_STREAMS)[number];
 /** 청구 갈래. 옛 줄은 stream 이 비어 있으므로 category 로 되짚습니다. */
 export function streamOf(inv: { stream?: string | null; category?: string | null }): InvoiceStream {
   if (inv.stream === "학비" || inv.stream === "학비외") return inv.stream;
-  return inv.category === "학비" ? "학비" : "학비외";
+  // 학비와 학비외를 한 장으로 낸 청구서는 분류가 「학비+학비외」입니다. 학비 갈래로 셉니다 -
+  // 학비 청구서 번호 체계·중복 막기가 그쪽에 붙어 있습니다.
+  return inv.category === "학비" || (inv.category ?? "").startsWith("학비+") ? "학비" : "학비외";
 }
 
 export type SettleInvoice = {

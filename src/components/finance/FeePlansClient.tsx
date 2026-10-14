@@ -69,7 +69,10 @@ export default function FeePlansClient({
   gradeOptions,
   classesByGrade,
   loadError,
+  lockedDept = null,
 }: {
+  /** 회계 범위가 한 부서면 그 부서와 「공통」만 보입니다(초등 회계 · 중고등 회계). */
+  lockedDept?: string | null;
   plans: FeePlan[];
   options: FeePaymentOption[];
   discounts: FeeDiscount[];
@@ -105,7 +108,8 @@ export default function FeePlansClient({
    * 「공통」은 부서로 안 가른 옛 항목이 사는 자리입니다. 숨기지 않습니다 - 안 보이면 그
    * 항목이 아직 모두에게 걸려 있다는 사실도 안 보입니다.
    */
-  const [dept, setDept] = useState<"초등부" | "중고등부" | "공통">("초등부");
+  // dept-ok: 학생 판정이 아니라 고른 회계 장부(범위)를 첫 탭으로 옮겨 적는 자리입니다.
+  const [dept, setDept] = useState<"초등부" | "중고등부" | "공통">(lockedDept === "중고등부" ? "중고등부" : "초등부");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -513,7 +517,7 @@ export default function FeePlansClient({
       {tab !== "할인" && (
         <div className="mb-2 flex flex-wrap items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 p-2">
           <span className="text-[11px] font-bold text-slate-500">부서</span>
-          {(["초등부", "중고등부", "공통"] as const).map((d) => (
+          {(["초등부", "중고등부", "공통"] as const).filter((d) => !lockedDept || d === lockedDept || d === "공통").map((d) => (
             <button
               key={d}
               type="button"

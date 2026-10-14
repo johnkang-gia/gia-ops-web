@@ -11,6 +11,7 @@ import { gradeLabel, inTerm, resolveStudentItems } from "@/lib/feeItems";
 import { addDays, DUE_DAYS } from "@/lib/financePeriod";
 import { todayKst } from "@/lib/kst";
 import { resolveRecipient, type GuardianRole, phonesOf, chosenRoleOf, type StudentBilling } from "@/lib/alltalkpay";
+import { streamOf } from "@/lib/settlement";
 import { discountsForPlan, invoiceRowsForLine, tuitionLine, type TuitionLine } from "@/lib/tuition";
 import type { FeePlan, FeePaymentOption, FeeDiscount, FeeItem, StudentFeeItem } from "@/lib/types";
 import { loadStudentsWithPhones } from "@/lib/students";
@@ -296,25 +297,40 @@ export async function POST(req: Request) {
     const mine = new Set(lines.map((l) => l.planName));
     const { data: live, error: liveErr } = await supabase
       .from("invoices")
-      .select("invoice_no, plan_scope, stream, category, term_id")
+      .select("invoice_no, plan_scope, stream, category, term_id, issue_date, issued_by")
       .eq("student_id", student.id)
       .eq("status", "발행")
       .eq("billing_month", month)
       .is("carried_to_invoice_id", null);
     if (liveErr) return NextResponse.json({ error: `이미 낸 청구서를 확인하지 못해 발행하지 않았습니다: ${liveErr.message}` }, { status: 500 });
-    type LiveInv = { invoice_no: string | null; plan_scope: string | null; stream: string | null; category: string | null; term_id: string | null };
+    type LiveInv = {
+      invoice_no: string | null;
+      plan_scope: string | null;
+      stream: string | null;
+      category: string | null;
+      term_id: string | null;
+      issue_date: string | null;
+      issued_by: string | null;
+    };
     const clash = ((live as LiveInv[] | null) ?? [])
-      .filter((v) => (v.stream ?? v.category) === "학비" && (v.term_id ?? null) === (termId ?? null))
+      .filter((v) => streamOf(v) === "학비" && (v.term_id ?? null) === (termId ?? null))
       .map((v) => {
         const theirs = v.plan_scope ? v.plan_scope.split(" · ").map((x) => x.trim()) : null;
         const shared = theirs ? [...mine].filter((n) => theirs.includes(n)) : [...mine];
-        return { no: v.invoice_no, shared };
+        return { no: v.invoice_no, shared, date: v.issue_date, by: v.issued_by };
       })
       .filter((c) => c.shared.length > 0);
     if (clash.length > 0) {
-      const desc = clash.map((c) => `${c.no ?? "번호 없음"}(${c.shared.join(", ")})`).join(" · ");
+      // **언제·누가 낸 몇 번인지** 함께 말합니다. 「이미 발행되었습니다」만으로는 어디서 그 장을
+      // 찾아야 하는지 알 수 없었습니다.
+      const desc = clash
+        .map((c) => `${c.no ?? "번호 없음"} — ${c.date ?? "날짜 없음"}${c.by ? ` ${c.by}` : ""} 발행 (${c.shared.join(", ")})`)
+        .join(" · ");
       return NextResponse.json(
-        { error: `${month} 학비가 이미 발행되어 있습니다: ${desc}. 같은 항목을 두 번 청구하지 않습니다 - 그 장을 취소한 뒤 다시 발행해주세요.` },
+        {
+          error: `${month} 학비가 이미 발행되어 있습니다: ${desc}. 같은 항목을 두 번 청구하지 않습니다 - 학생별 회계에서 그 청구서를 취소한 뒤 다시 발행해주세요.`,
+          clash: clash.map((c) => ({ invoiceNo: c.no, issueDate: c.date, issuedBy: c.by, items: c.shared })),
+        },
         { status: 409 },
       );
     }

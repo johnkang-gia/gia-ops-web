@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { BILL_LABEL, billedItems, markOf } from "@/lib/billedItems";
+import { issuedLong, issuedShort } from "@/lib/invoiceIssued";
 import { askText, compareIssue, groupIssue, type CompareRow, type IssueCompare } from "@/lib/issueCompare";
 import { gridTotals, gridTotalsByStudent } from "@/lib/gridTotals";
 import { useFinanceLive } from "@/lib/useFinanceLive";
@@ -150,6 +151,8 @@ type Props = {
   currentUserEmail: string;
   loadError: string | null;
   today: string;
+  /** 회계 범위가 한 부서면 그 부서로 못박습니다(초등 회계 · 중고등 회계). 부서 탭은 사라집니다. */
+  lockedDept?: string | null;
 };
 
 type View = { kind: "반"; value: string } | { kind: "학년"; value: string } | { kind: "전체" };
@@ -172,6 +175,7 @@ export default function InvoiceGridClient({
   currentUserEmail,
   loadError,
   today,
+  lockedDept = null,
 }: Props) {
   // 돈에 닿는 자료가 바뀌면 이 화면이 함께 다시 그려집니다. 한 사람이 고치고
   // 여러 사람이 보는 화면이라, 고친 사람만 새 금액을 보면 안 됩니다.
@@ -279,7 +283,7 @@ export default function InvoiceGridClient({
       markOf(billed.get(studentId), item, sameName.get(item.name) ?? 1),
     [billed, sameName],
   );
-  const [dept, setDept] = useState<DeptTab>("초등부");
+  const [dept, setDept] = useState<DeptTab>(((lockedDept as DeptTab | null) ?? "초등부") as DeptTab);
   /** 보고 있는 분류. "전체" 면 분류를 가리지 않습니다. */
   const [cat, setCat] = useState<string>("전체");
   /** 보고 있는 학기. 항목 화면과 같은 학기를 봅니다(브라우저에 기억해둡니다). */
@@ -416,8 +420,9 @@ export default function InvoiceGridClient({
     [deptCounts],
   );
   useEffect(() => {
+    if (lockedDept) return; // 장부가 한 부서면 그 부서에서 움직이지 않습니다(학생이 0명이어도).
     if (deptTabs.length > 0 && !deptTabs.includes(dept)) setDept(deptTabs[0]);
-  }, [deptTabs, dept]);
+  }, [deptTabs, dept, lockedDept]);
 
   const inDept = useMemo(() => students.filter((s) => deptOf(s) === dept), [students, dept]);
 
@@ -1396,7 +1401,7 @@ export default function InvoiceGridClient({
       {/* ── 부서 ──────────────────────────────────────────────────
           초등과 중고등을 한 표에 섞으면 열이 서로의 몫까지 늘어나 가로로 한없이 길어지고,
           "2학년"이 초등 2학년인지 중2인지도 헷갈립니다. 그래서 먼저 갈라놓습니다. */}
-      <div className="mb-2 flex flex-wrap items-center gap-1 border-b border-slate-200">
+      <div className={"mb-2 flex flex-wrap items-center gap-1 border-b border-slate-200" + (lockedDept ? " hidden" : "")}>
         {deptTabs.map((d) => (
           <button
             key={d}
@@ -1976,6 +1981,9 @@ export default function InvoiceGridClient({
                       >
                         {inv.invoice_no}
                       </button>
+                      <span className="text-[10px] font-semibold text-slate-500" title={issuedLong(inv as Invoice & { issued_by?: string | null })}>
+                        {issuedShort(inv.issue_date)}
+                      </span>
                       {/* 통합인지 어느 분류인지 보여야 합니다. 번호만 보고는 이 청구서에
                           교복이 들어 있는지 알 수 없습니다. */}
                       <span className="rounded bg-slate-100 px-1 text-[10px] font-bold text-slate-600">
@@ -2846,6 +2854,7 @@ export default function InvoiceGridClient({
                            * 그건 오류가 아니라 「이미 받은 것」으로 보입니다.
                            */
                           const lock = mark && !mark.unsure ? mark : null;
+                          const lockInv = lock ? invoices.find((v) => v.id === lock.invoiceId) : undefined;
                           return (
                             <div
                               key={item.id}
@@ -2866,7 +2875,7 @@ export default function InvoiceGridClient({
                                 onClick={() => toggleCell(detail, item)}
                                 title={
                                   lock
-                                    ? `이미 청구서에 나갔습니다(${BILL_LABEL[lock.state]}). 고치려면 그 청구서를 취소해주세요.`
+                                    ? `이미 청구서에 나갔습니다(${BILL_LABEL[lock.state]}${lockInv ? ` · ${issuedLong(lockInv as Invoice & { issued_by?: string | null })}` : ""}). 고치려면 그 청구서를 취소해주세요.`
                                     : mark?.unsure
                                       ? "이름이 같은 항목이 여럿이라, 이미 나간 것이 이 항목인지 가릴 수 없습니다. 그 청구서를 열어 확인해주세요."
                                       : undefined
@@ -2920,6 +2929,7 @@ export default function InvoiceGridClient({
                                     }
                                   >
                                     {BILL_LABEL[lock.state]}
+                                    {lockInv && <span className="ml-0.5 opacity-80">{issuedShort(lockInv.issue_date)}</span>}
                                   </span>
                                 )}
                                 {/* **모르면 모른다고 적습니다.** 잠긴 것처럼 회색으로 두면

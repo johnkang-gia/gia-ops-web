@@ -15,6 +15,8 @@ import { loadFeeItemsPanel } from "@/lib/panels/feeItems";
 // 화면 단에서 한 번, DB(RLS)에서 또 한 번 막습니다. 화면만 막으면 주소를 직접 치는 것으로
 // 뚫리고, RLS만 막으면 화면이 빈 채로 떠서 "고장난 건가" 싶어집니다.
 
+import { getFinanceScope } from "@/lib/financeScopeServer";
+import { ALL_SCOPE } from "@/lib/department";
 export const dynamic = "force-dynamic";
 
 export default async function FeeItemsPage() {
@@ -23,10 +25,12 @@ export default async function FeeItemsPage() {
   if (!hasFinanceAccess(me)) redirect("/home");
 
   const supabase = await createClient();
+  const financeScope = await getFinanceScope(me);
   const d = await loadFeeItemsPanel(supabase);
 
   return (
     <FeeItemsClient
+      lockedDept={financeScope === ALL_SCOPE ? null : financeScope}
       initialItems={d.initialItems}
       initialCategories={d.initialCategories}
       terms={d.terms}

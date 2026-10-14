@@ -8,6 +8,7 @@ import MonthCloseBar, { type MonthClose } from "@/components/finance/MonthCloseB
 import { buildPeriodGrid, monthLabel, nextMonthEstimate, type PeriodInvoice, type PeriodPayment, type TermSpan } from "@/lib/financePeriod";
 import { readAll, readNotice } from "@/lib/financeFetch";
 
+import { getFinanceScope, scopeStudentIds, inScopeIds } from "@/lib/financeScopeServer";
 export const dynamic = "force-dynamic";
 
 const won = (n: number) => `${Math.round(n).toLocaleString("ko-KR")}원`;
@@ -59,14 +60,20 @@ export default async function FinanceMonthlyPage() {
   const terms: TermSpan[] = ((termRes.data as { id: string; year: number | null; term_type: string | null; start_date: string | null; end_date: string | null }[] | null) ?? [])
     .map((t) => ({ id: t.id, label: termLabelOf(t), start_date: t.start_date, end_date: t.end_date }));
 
-  const blocks = buildPeriodGrid(invRes.rows, payRes.rows, terms);
+  // 고른 장부(초등·중고등)의 청구서와 거기 붙은 돈만 셉니다.
+  const ids = await scopeStudentIds(supabase, await getFinanceScope(me));
+  const scopedInv = invRes.rows.filter((v) => inScopeIds(ids, v.student_id));
+  const keptInv = new Set(scopedInv.map((v) => v.id));
+  const scopedPay = payRes.rows.filter((p) => !ids || (!!p.invoice_id && keptInv.has(p.invoice_id)));
+  const blocks = buildPeriodGrid(scopedInv, scopedPay, terms);
   const estimate = nextMonthEstimate(blocks);
   const closes = new Map(((closeRes.data as MonthClose[] | null) ?? []).map((c) => [c.month, c]));
 
   /** 청구월 → 항목별 줄. 「그 달에 무엇으로 얼마를 걷었나」가 다음 달 산출의 재료입니다. */
   type ItemRow = { month: string; stream: string | null; item_name: string; line_count: number; billed: number; received: number };
   const itemsByMonth = new Map<string, ItemRow[]>();
-  for (const r of ((itemRes.data as ItemRow[] | null) ?? [])) {
+  // 항목별 합계(finance_item_monthly)는 학교 전체를 세어 둔 표입니다 - 부서 장부에서는 섞이므로 띄우지 않습니다.
+  for (const r of ids ? [] : ((itemRes.data as ItemRow[] | null) ?? [])) {
     const list = itemsByMonth.get(r.month) ?? [];
     list.push(r);
     itemsByMonth.set(r.month, list);

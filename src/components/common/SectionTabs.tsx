@@ -2,6 +2,8 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useT } from "@/components/common/LanguageProvider";
+import { useFinanceScope } from "@/components/finance/FinanceScopeProvider";
+import { scopeLabel, scopeTone } from "@/lib/financeScope";
 
 // 대분류 상단 탭바 - 전 화면 공용 단 하나의 구현입니다.
 //
@@ -568,9 +570,11 @@ export default function SectionTabs({ isTeacher, isHomeroom }: { isTeacher: bool
   const t = useT();
   const pathname = usePathname() ?? "";
   const router = useRouter();
+  const fs = useFinanceScope();
 
   const section = sectionFor(pathname, { isTeacher, isHomeroom });
   if (!section) return null;
+  const isFinance = section.title === "재무" && !!fs;
 
   const accent = ACCENT[section.accent];
   const active = activeTab(section.tabs, pathname);
@@ -605,6 +609,37 @@ export default function SectionTabs({ isTeacher, isHomeroom }: { isTeacher: bool
         <span className={"mr-2 shrink-0 whitespace-nowrap text-base font-extrabold " + accent.title}>
           {section.icon} {section.titleEn ? t(section.title, section.titleEn) : section.title}
         </span>
+        {/* **재무는 장부가 먼저입니다.** 고른 장부(전체·초등·중고등)를 재무 안의 모든 화면이 따릅니다.
+            화면 안에서 부서 탭을 오가면 화면마다 다른 장부를 보게 되어 갈라 냈습니다. */}
+        {isFinance && (
+          <span className="mr-3 flex shrink-0 items-center gap-1 rounded-xl bg-slate-100 p-0.5">
+            {fs!.scopes.map((sc) => {
+              const on = sc === fs!.scope;
+              const tone = scopeTone(sc);
+              const onCls =
+                tone === "emerald"
+                  ? "bg-emerald-600 text-white"
+                  : tone === "indigo"
+                    ? "bg-indigo-600 text-white"
+                    : tone === "pink"
+                      ? "bg-pink-600 text-white"
+                      : "bg-slate-700 text-white";
+              return (
+                <button
+                  key={sc}
+                  type="button"
+                  onClick={() => fs!.setScope(sc)}
+                  className={
+                    "whitespace-nowrap rounded-lg px-2.5 py-1 text-[13px] font-bold transition-colors " +
+                    (on ? onCls + " shadow-sm" : "text-slate-500 hover:bg-white hover:text-slate-800")
+                  }
+                >
+                  {scopeLabel(sc)}
+                </button>
+              );
+            })}
+          </span>
+        )}
         {section.tabs.map((tab) => {
           const on = tab.key === active?.key;
           return (

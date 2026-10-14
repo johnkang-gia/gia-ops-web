@@ -8,6 +8,11 @@ import InvoiceGridClient, { type Student, type ReceiptLite, type PayLite } from 
 import type { FeeItem, Term, Invoice, StudentFeeItem } from "@/lib/types";
 import { loadStudentsFull } from "@/lib/students";
 
+// 회계 범위(초등·중고등)
+import { getFinanceScope } from "@/lib/financeScopeServer";
+import { inScope } from "@/lib/financeScope";
+import { ALL_SCOPE } from "@/lib/department";
+
 export const dynamic = "force-dynamic";
 
 type Row = {
@@ -88,7 +93,9 @@ export default async function InvoicesPage() {
     i.target_group_id ? { ...i, target_group_name: groupName.get(i.target_group_id) ?? null } : i,
   );
 
-  const students: Student[] = stuRes.rows.map((s) => ({
+  // **장부 밖의 학생은 처음부터 안 보냅니다.** 화면에서 가리는 것으로는 섞임이 남습니다.
+  const financeScope = await getFinanceScope(me);
+  const students: Student[] = stuRes.rows.filter((s) => inScope(financeScope, s)).map((s) => ({
     id: s.id,
     name: s.name,
     nameEn: s.name_en,
@@ -125,6 +132,7 @@ export default async function InvoicesPage() {
       currentUserEmail={me.email}
       loadError={loadError}
       today={todayKst()}
+      lockedDept={financeScope === ALL_SCOPE ? null : financeScope}
     />
   );
 }

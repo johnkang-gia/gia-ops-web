@@ -8,6 +8,7 @@ import type { PaymentRow } from "@/lib/payments";
 import type { Invoice } from "@/lib/types";
 import { readAll, readNotice } from "@/lib/financeFetch";
 
+import { getFinanceScope, scopeStudentIds, inScopeIds } from "@/lib/financeScopeServer";
 export const dynamic = "force-dynamic";
 
 export default async function PaymentsPage() {
@@ -23,10 +24,15 @@ export default async function PaymentsPage() {
     readAll<PaymentRow>((from, to) => supabase.from("payments").select("*").order("paid_at").order("id").range(from, to)),
   ]);
 
+  // 고른 장부(초등·중고등)의 학생 것만. 수납은 청구서가 없어도(예치금) 학생 번호를 들고 있습니다.
+  const ids = await scopeStudentIds(supabase, await getFinanceScope(me));
+  const invoices = invRes.rows.filter((v) => inScopeIds(ids, v.student_id));
+  const keep = new Set(invoices.map((v) => v.id));
+  const payments = payRes.rows.filter((p) => !ids || (p.invoice_id ? keep.has(p.invoice_id) : inScopeIds(ids, p.student_id)));
   return (
     <PaymentsClient
-      invoices={invRes.rows}
-      payments={payRes.rows}
+      invoices={invoices}
+      payments={payments}
       currentUserEmail={me.email}
       currentUserName={me.name ?? ""}
       loadError={readNotice(invRes, payRes)}

@@ -14,6 +14,11 @@ import type { FeePlan, FeePaymentOption, FeeDiscount, Term, Invoice } from "@/li
 import { loadStudents } from "@/lib/students";
 import type { AddonPrice } from "@/lib/tuitionAddon";
 
+// 회계 범위(초등·중고등)
+import { getFinanceScope } from "@/lib/financeScopeServer";
+import { inScope } from "@/lib/financeScope";
+import { ALL_SCOPE } from "@/lib/department";
+
 export const dynamic = "force-dynamic";
 
 const GUIDE_SECTIONS = [
@@ -64,7 +69,9 @@ export default async function TuitionPage() {
       .eq("active", true),
     supabase.from("student_fee_discounts").select("id, student_id, discount_id, term_id, plan_id, reason").eq("active", true),
     readAll<Invoice>((from, to) =>
-      supabase.from("invoices").select("*").eq("category", "학비").order("issue_date").order("id").range(from, to),
+      // 분류 글자로 거르지 않습니다 - 학비+학비외 한 장(분류 「학비+학비외」)이 빠집니다. 갈래는
+      // 화면이 `streamOf` 로 가릅니다.
+      supabase.from("invoices").select("*").order("issue_date").order("id").range(from, to),
     ),
     /**
      * **이미 들어온 돈.** 발행 전 표에 「입금완료」를 적으려면 있어야 합니다.
@@ -97,7 +104,9 @@ export default async function TuitionPage() {
     readNotice(payRes) ??
     null;
 
-  const students: TuitionStudent[] = stuRes.rows.map((s) => ({
+  // **장부 밖의 학생은 처음부터 안 보냅니다.**
+  const financeScope = await getFinanceScope(me);
+  const students: TuitionStudent[] = stuRes.rows.filter((s) => inScope(financeScope, s)).map((s) => ({
     id: s.id,
     name: s.name,
     nameEn: s.name_en,
@@ -138,6 +147,7 @@ export default async function TuitionPage() {
         today={todayKst()}
         addonPrices={(addonRes.data as AddonPrice[] | null) ?? []}
         loadError={loadError}
+        lockedDept={financeScope === ALL_SCOPE ? null : financeScope}
       />
     </div>
   );

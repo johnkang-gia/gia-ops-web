@@ -33,9 +33,19 @@ export function scopeTone(scope: string): "slate" | "emerald" | "indigo" | "pink
   return "slate";
 }
 
-/** 이 사람이 고를 수 있는 범위. 「전체」 소속만 「전체 회계」가 있습니다. */
-export function allowedScopes(userDepartment: string | null | undefined): string[] {
-  return departmentTabs(userDepartment);
+/**
+ * 이 사람이 고를 수 있는 범위 — **재무 열쇠가 있으면 언제나 전부**(전체 · 초등 · 중고등).
+ *
+ * 처음에는 소속 부서를 따랐습니다(`departmentTabs`). 그런데 재무 담당은 소속이 초등부여도 두 부서의 돈을
+ * 함께 맡습니다 - 초등부 소속 재무 담당에게 초등 회계만 열려 중고등 청구·수납이 아예 안 보였습니다.
+ * 회계 범위는 «어느 부서 사람인가»가 아니라 «재무를 맡았는가»로 정합니다. 열쇠가 없는 사람은 재무
+ * 화면 자체에 못 들어오므로(`hasFinanceAccess`) 여기서 다시 가르지 않습니다.
+ *
+ * 인자는 부르는 자리를 바꾸지 않으려고 남겨 두었습니다.
+ */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function allowedScopes(_userDepartment?: string | null): string[] {
+  return departmentTabs(ALL_SCOPE);
 }
 
 /**
@@ -51,7 +61,8 @@ export function resolveScope(raw: string | null | undefined, userDepartment: str
 
 /** 이 범위의 화면이 보여줄 부서 탭. 부서 범위면 그 부서 하나뿐이라 탭 줄이 사라집니다. */
 export function deptTabsForScope(scope: string, userDepartment: string | null | undefined): string[] {
-  if (scope === ALL_SCOPE) return departmentTabs(userDepartment);
+  // 「전체 회계」는 재무 열쇠의 범위라 소속과 상관없이 모든 부서 탭을 보여줍니다(allowedScopes 와 같은 이유).
+  if (scope === ALL_SCOPE) return allowedScopes(userDepartment);
   return [scope];
 }
 

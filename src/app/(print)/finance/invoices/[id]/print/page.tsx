@@ -102,9 +102,10 @@ export default async function InvoicePrintPage({
   if (parts.length === 0) notFound();
 
   /**
-   * **영수증은 완납된 장에서만 찍습니다.** 덜 받은 장에 「영수증」이라고 찍어 주면 학부모는
-   * 다 낸 줄 압니다. 입금이 모자라면 영수증이 아니라 청구서로 떨어집니다 - 조용히 바꾸지
-   * 않고 그 사실을 화면에 적습니다.
+   * **영수증은 받은 만큼만 찍습니다.** 덜 받은 장에 그냥 「영수증」이라고 찍어 주면 학부모는 다 낸 줄
+   * 압니다. 그래서 일부만 받은 장은 **「일부 납부 영수증」**으로, 받은 금액과 **남은 금액**을 함께 적습니다
+   * (`partial`). 일부 납부 확인서를 달라는 요청이 오는데 예전에는 아예 거절하고 청구서로 떨어뜨려서,
+   * 손으로 적어 드려야 했습니다. 한 푼도 안 받은 장은 여전히 청구서로 떨어집니다.
    */
   let receiptInfo: ReceiptInfo | null = null;
   let receiptRefused: string | null = null;
@@ -113,10 +114,12 @@ export default async function InvoicePrintPage({
     const pays = (payRes.data as { invoice_id: string; amount: number | string; paid_at: string; method: string | null; matched_by: string | null }[] | null) ?? [];
     const paid = pays.reduce((n, p) => n + Number(p.amount), 0);
     const billed = parts.reduce((n, p) => n + Number(p.invoice.total_amount), 0);
-    if (pays.length === 0 || paid < billed) {
-      receiptRefused = `아직 다 받지 않은 청구서입니다(받은 ${paid.toLocaleString()} / 청구 ${billed.toLocaleString()}). 영수증 대신 청구서로 보여줍니다.`;
+    if (pays.length === 0 || paid <= 0) {
+      receiptRefused = `아직 받은 돈이 없는 청구서입니다(청구 ${billed.toLocaleString()}). 영수증 대신 청구서로 보여줍니다.`;
     } else {
       receiptInfo = {
+        partial: paid < billed,
+        balance: Math.max(0, billed - paid),
         paidAt: pays[pays.length - 1].paid_at,
         // 예치금에서 옮겨 붙은 돈은 원래 들어온 수단(계좌이체 등)이 아니라 「예치금」으로 적습니다.
         // 이번에 계좌로 보낸 적이 없는데 영수증에 계좌이체가 찍히면 학부모가 되묻습니다.

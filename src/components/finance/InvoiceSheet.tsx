@@ -95,7 +95,8 @@ export type SheetPart = { invoice: Invoice; lines: InvoiceLine[] };
  * 영수증으로 찍을 때 넘기는 것. **청구서와 같은 양식**에 제목과 날짜 칸만 다릅니다 - 양식을
  * 두 벌 두면 한쪽만 고쳐지는 날이 옵니다. 받은 날·수단은 그 장에 붙은 입금에서 옵니다.
  */
-export type ReceiptInfo = { paidAt: string; methods: string[]; paid: number };
+/** `partial` 이면 일부 납부 영수증 - 받은 금액과 남은 금액(`balance`)을 함께 적습니다. */
+export type ReceiptInfo = { paidAt: string; methods: string[]; paid: number; partial?: boolean; balance?: number };
 
 export default function InvoiceSheet({
   parts,
@@ -219,7 +220,7 @@ export default function InvoiceSheet({
                   {/* 교재 말고도 나갑니다 - 교복·악기·방과후·학비. 제목에 한 품목을 박아두면
                       다른 품목 청구서가 나갈 때마다 제목이 거짓말이 됩니다. */}
                   <div style={{ fontSize: 10, fontWeight: 700, color: "#d6b370", marginTop: 3 }}>
-                    {receipt ? "Payment Receipt · 영수증" : "Payment Invoice"}
+                    {receipt ? (receipt.partial ? "Partial Payment Receipt · 일부 납부 영수증" : "Payment Receipt · 영수증") : "Payment Invoice"}
                   </div>
                 </td>
                 <td style={{ background: "#1e2a44", color: "#fff", padding: "14px 18px", textAlign: "right", fontSize: 9.5, lineHeight: 1.5 }}>
@@ -381,6 +382,12 @@ export default function InvoiceSheet({
                           {won(receipt ? receipt.paid : showBreakdown ? toPay : sum)}
                         </td>
                       </tr>
+                      {receipt?.partial && (
+                        <tr>
+                          <td style={{ fontSize: 10, fontWeight: 800, paddingTop: 4, color: "#fcd34d" }}>BALANCE · 남은 금액</td>
+                          <td style={{ textAlign: "right", fontSize: 12, fontWeight: 800, paddingTop: 4, color: "#fcd34d" }}>{won(receipt.balance ?? 0)}</td>
+                        </tr>
+                      )}
                       {receipt && depTotal > 0 && (
                         <tr>
                           <td colSpan={2} style={{ fontSize: 9, textAlign: "right", color: "#99f6e4", paddingTop: 2 }}>

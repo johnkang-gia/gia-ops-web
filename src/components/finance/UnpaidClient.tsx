@@ -10,6 +10,7 @@ import { useToast } from "@/components/common/ToastProvider";
 import { useConfirm } from "@/components/common/ConfirmProvider";
 import { Who } from "@/components/common/HomonymProvider";
 import AlltalkpayExport from "./AlltalkpayExport";
+import { BILL_STATUS } from "@/lib/billStatus";
 import {
   buildUnpaidLedger,
   mergeWarning,
@@ -72,6 +73,13 @@ export default function UnpaidClient({
    * 놓고 안 보낸 청구서가 남습니다. 만든 자리에서 바로 PDF와 올톡페이로 이어갑니다.
    */
   const [made, setMade] = useState<{ id: string; invoice_no: string; total: number; count: number } | null>(null);
+  /**
+   * **여러 학생의 잔액을 한 번에 다시 청구한 결과.** 장마다 따로 만들고(합치지 않습니다), 실패한 장은
+   * 이유와 함께 남깁니다 - 열 장 중 두 장이 안 됐는데 「완료」만 뜨면 그 두 집은 다음 달까지 아무도 안 봅니다.
+   */
+  const [madeMany, setMadeMany] = useState<{ ok: { id: string; invoice_no: string; total: number }[]; failed: string[] } | null>(null);
+  /** 「일부 받은 장만」 보기. 받을 것이 남은 것 중 이미 일부를 낸 집을 먼저 정리할 때 씁니다. */
+  const [partialOnly, setPartialOnly] = useState(false);
 
   const whereById = useMemo(
     () => new Map(students.map((s) => [s.id, [s.grade, s.class_name].filter(Boolean).join(" ")])),
@@ -99,7 +107,10 @@ export default function UnpaidClient({
 
   // 검색·고정 학생은 재무 화면들이 함께 씁니다(위 공용 줄).
   const ff = useFinanceFilter();
-  const visible = (bucket === "전체" ? ledger.groups : ledger.groups.filter((g) => g.rows.some((r) => r.aging === bucket))).filter((g) =>
+  const partialCount = ledger.groups.reduce((n, g) => n + g.rows.filter((r) => r.paid > 0).length, 0);
+  const visible = (bucket === "전체" ? ledger.groups : ledger.groups.filter((g) => g.rows.some((r) => r.aging === bucket)))
+    .filter((g) => !partialOnly || g.rows.some((r) => r.paid > 0))
+    .filter((g) =>
     ff.pinned
       ? g.studentId === ff.pinned.id
       : matchesStudentQuery(ff.q, { name: g.label, className: whereById.get(g.studentId) ?? "", invoiceNos: g.rows.map((r) => r.invoice.invoice_no) }),
@@ -192,6 +203,39 @@ export default function UnpaidClient({
     router.refresh();
   }
 
+  /**
+   * **고른 장마다 잔액만 다시 청구** — 학생이 섞여 있어도 됩니다. 장 하나에 새 장 하나이고, 서로 합치지 않습니다.
+   * 창구는 한 건짜리와 같은 `/api/finance/unpaid/merge` 입니다(한 장씩 부릅니다) - 같은 일을 하는 코드를 두 벌 두지 않습니다.
+   */
+  async function rebillEach() {
+    const rows = pickedRows;
+    if (rows.length < 2) return;
+    const sum = rows.reduce((n, r) => n + r.balance, 0);
+    const ok = await confirmAction(
+      `고른 ${rows.length}장을 장마다 따로, 아직 안 받은 금액만으로 다시 청구합니다(합계 ${won(sum)}).\n` +
+        `이미 받은 돈은 빠지고, 원 청구서는 「이월됨」으로 잠깁니다. 서로 합치지 않습니다.`,
+    );
+    if (!ok) return;
+    setBusy(true);
+    const done: { id: string; invoice_no: string; total: number }[] = [];
+    const failed: string[] = [];
+    for (const r of rows) {
+      const res = await fetch("/api/finance/unpaid/merge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ invoiceIds: [r.invoice.id] }),
+      });
+      const json = (await res.json().catch(() => null)) as { error?: string; invoice?: { id: string; invoice_no: string }; total?: number } | null;
+      if (!res.ok || !json?.invoice) failed.push(`${r.invoice.invoice_no} ${r.invoice.student_name ?? ""}: ${json?.error ?? "실패"}`);
+      else done.push({ id: json.invoice.id, invoice_no: json.invoice.invoice_no, total: Number(json.total ?? r.balance) });
+    }
+    setBusy(false);
+    setMadeMany({ ok: done, failed });
+    setPicked(new Set());
+    if (failed.length > 0) notify(`${failed.length}장은 다시 청구하지 못했습니다 — 위 띠에 이유가 있습니다.`, "error");
+    router.refresh();
+  }
+
   return (
     <div className="mx-auto flex h-full max-w-5xl flex-col p-4 sm:p-6">
       <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -255,6 +299,36 @@ export default function UnpaidClient({
         </div>
       )}
 
+      {madeMany && (
+        <div className="mb-3 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-[12px]">
+          <div className="flex flex-wrap items-center gap-2">
+            <b className="text-emerald-900">
+              ✅ {madeMany.ok.length}장 다시 청구 · {won(madeMany.ok.reduce((n, x) => n + x.total, 0))}
+            </b>
+            {madeMany.ok.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setSending(madeMany.ok.map((x) => x.id))}
+                className="rounded-lg bg-emerald-700 px-3 py-1.5 text-[12px] font-bold text-white hover:bg-emerald-800"
+              >
+                📤 {madeMany.ok.length}장 올톡 보내기
+              </button>
+            )}
+            <button type="button" onClick={() => setMadeMany(null)} className="ml-auto text-[11px] font-bold text-emerald-700 underline">
+              닫기
+            </button>
+          </div>
+          {madeMany.ok.length > 0 && <p className="mt-1 text-[11px] text-emerald-800">{madeMany.ok.map((x) => x.invoice_no).join(" · ")}</p>}
+          {madeMany.failed.length > 0 && (
+            <ul className="mt-1 list-disc pl-4 text-[11px] font-semibold text-rose-700">
+              {madeMany.failed.map((f) => (
+                <li key={f}>{f}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
       {loadError && (
         <p className="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] font-semibold text-rose-700">
           자료를 읽지 못했습니다: {loadError}
@@ -284,6 +358,25 @@ export default function UnpaidClient({
             </button>
           );
         })}
+        {partialCount > 0 && (
+          <button
+            type="button"
+            onClick={() => setPartialOnly((v) => !v)}
+            className={"rounded-full px-2.5 py-1 text-[11px] font-bold " + (partialOnly ? "bg-amber-500 text-white" : BILL_STATUS.일부.bg + " text-amber-900")}
+            title="이미 일부를 낸 청구서만 봅니다 - 남은 금액만 다시 청구할 대상입니다"
+          >
+            일부 받은 장 {partialCount}건
+          </button>
+        )}
+        {partialOnly && (
+          <button
+            type="button"
+            onClick={() => setPicked(new Set(visible.flatMap((g) => g.rows.filter((r) => r.paid > 0).map((r) => r.invoice.id))))}
+            className="rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-amber-800 ring-1 ring-amber-300 hover:bg-amber-50"
+          >
+            ☑ 보이는 일부 받은 장 전부 고르기
+          </button>
+        )}
       </div>
 
       {/* 고른 것에 대한 행동 줄. 고르기 전에는 안 보입니다 - 늘 떠 있으면 자리만 차지합니다. */}
@@ -319,6 +412,17 @@ export default function UnpaidClient({
             >
               {picked.size === 1 ? "🧾 잔액만 다시 청구" : "🧾 합쳐서 한 장"}
             </button>
+            {picked.size > 1 && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void rebillEach()}
+                className="rounded-lg bg-amber-500 px-3 py-1.5 text-[12px] font-bold text-white hover:bg-amber-600 disabled:bg-slate-300"
+                title="학생이 섞여 있어도 됩니다. 장마다 아직 안 받은 금액만으로 새 장을 만들고, 서로 합치지 않습니다."
+              >
+                🧾 장마다 잔액만 다시 청구 ({picked.size}장)
+              </button>
+            )}
             <button type="button" onClick={() => setPicked(new Set())} className="ml-auto text-[11px] text-slate-400 hover:text-slate-700">
               고르기 해제
             </button>
@@ -330,7 +434,7 @@ export default function UnpaidClient({
           )}
           {!onePerson && picked.size > 1 && (
             <p className="mt-1.5 text-[11px] text-slate-500">
-              학생이 섞여 있어 합치기는 못 합니다. 따로 보내는 것은 됩니다.
+              학생이 섞여 있어 합치기는 못 합니다. 따로 보내기와 「장마다 잔액만 다시 청구」는 됩니다.
             </p>
           )}
         </div>
@@ -400,7 +504,10 @@ export default function UnpaidClient({
                       key={r.invoice.id}
                       className={
                         "flex cursor-pointer flex-wrap items-center gap-x-2 gap-y-0.5 rounded-lg px-2 py-1.5 text-[12px] " +
-                        (picked.has(r.invoice.id) ? "bg-teal-50 ring-1 ring-teal-300" : "bg-slate-50 hover:bg-slate-100")
+                        (picked.has(r.invoice.id)
+                          ? "bg-teal-50 ring-1 ring-teal-300"
+                          : // 줄 바탕 = 납부 상태(학비·학비외 표와 같은 색). 일부 받음 노랑 · 기한 지남 분홍 · 그 밖 하늘.
+                            (r.paid > 0 ? BILL_STATUS.일부.bg : r.days > 0 ? BILL_STATUS.연체.bg : BILL_STATUS.청구됨.bg) + " hover:brightness-95")
                       }
                     >
                       <input

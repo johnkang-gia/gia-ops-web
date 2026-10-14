@@ -479,9 +479,14 @@ export default function StudentLedgerModal({
                           💰 수납
                         </button>
                       )}
-                      {v.settled.state === "완납" && (
-                        <button onClick={() => setPreview({ id: v.id, label: `${student?.name} · ${v.invoice_no} 영수증`, receipt: true })} className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-700 hover:bg-slate-200" title="영수증 (청구서와 같은 양식)">
-                          📄
+                      {/* 일부만 받은 장도 영수증을 찍습니다 - 받은 금액과 남은 금액을 함께 적은 「일부 납부 영수증」. */}
+                      {(v.settled.state === "완납" || (v.settled.paid > 0 && v.settled.state !== "취소")) && (
+                        <button
+                          onClick={() => setPreview({ id: v.id, label: `${student?.name} · ${v.invoice_no} ${v.settled.state === "완납" ? "영수증" : "일부 납부 영수증"}`, receipt: true })}
+                          className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-700 hover:bg-slate-200"
+                          title={v.settled.state === "완납" ? "영수증 (청구서와 같은 양식)" : "일부 납부 영수증 — 받은 금액과 남은 금액을 함께 적습니다"}
+                        >
+                          {v.settled.state === "완납" ? "📄" : "📄½"}
                         </button>
                       )}
                       {/* 보낸 장은 정정, 안 보낸 장은 취소 후 재발행이 기본입니다. 둘 다 열어두되 기본 쪽을 눈에 띄게 둡니다. */}

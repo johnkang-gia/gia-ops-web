@@ -37,6 +37,7 @@ export default async function ApprovalsPage() {
     ...r,
     invoiceNo: r.invoices?.invoice_no ?? "",
     studentName: r.invoices?.student_name_ko || r.invoices?.student_name || "",
+    studentId: r.invoices?.student_id ?? null,
     invoiceTotal: Number(r.invoices?.total_amount ?? 0),
     stream: r.invoices?.stream ?? null,
     block: decideBlock(me, r),

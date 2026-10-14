@@ -13,6 +13,7 @@ import { useEditingPresence } from "@/lib/useEditingPresence";
 import SummaryLine from "@/components/finance/SummaryLine";
 import { BILL_STATUS, rowStatus } from "@/lib/billStatus";
 import { StatusFillLegend, type FillKey } from "@/components/finance/StatusBadge";
+import { useStudentPanel } from "@/components/students/StudentPanelProvider";
 import { askText, compareIssue, groupIssue, type CompareRow, type IssueCompare } from "@/lib/issueCompare";
 import { gridTotals, gridTotalsByStudent } from "@/lib/gridTotals";
 import { useFinanceLive } from "@/lib/useFinanceLive";
@@ -304,6 +305,7 @@ export default function InvoiceGridClient({
   const [cat, setCat] = useState<string>("전체");
   /** 범례에서 누른 납부 상태. 그 상태의 아이만 남깁니다. */
   const [fill, setFill] = useState<FillKey | null>(null);
+  const panel = useStudentPanel();
   /** 보고 있는 학기. 항목 화면과 같은 학기를 봅니다(브라우저에 기억해둡니다). */
   // 학기·검색·학년반은 재무 화면들이 함께 씁니다(`FinanceFilterProvider`). 학비 표에서 고른 반·찾은
   // 아이가 이 화면으로 넘어와도 그대로입니다.
@@ -2037,6 +2039,15 @@ export default function InvoiceGridClient({
                       {s.name}
                     </button>
                     <PinButton id={s.id} name={s.name} />
+                    {/* 이름은 이 표의 항목 창을 엽니다(항목을 고르는 화면이라). 돈 전체는 📒 로 - 학생 회계 창. */}
+                    <button
+                      type="button"
+                      onClick={() => panel.open(s.id, "회계")}
+                      className="ml-0.5 rounded px-0.5 text-[11px] opacity-40 hover:bg-indigo-50 hover:opacity-100"
+                      title={`${s.name} 학생 회계 창 (청구서·수납·미수 전부)`}
+                    >
+                      📒
+                    </button>
                     <span className="ml-1 text-[10px] text-slate-400">
                       {[s.grade ? `${s.grade}` : null, s.className].filter(Boolean).join(" ")}
                     </span>

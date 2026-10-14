@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
 import dynamic from "next/dynamic";
+import { usePathname } from "next/navigation";
 
 /**
  * **학생 창을 로그인 영역 전체에 한 번 깝니다.**
@@ -34,7 +35,16 @@ const StudentPanel = dynamic(() => import("./StudentPanel"), { ssr: false });
 
 export function StudentPanelProvider({ children, canSeeFinance }: { children: ReactNode; canSeeFinance: boolean }) {
   const [state, setState] = useState<{ id: string; tab: PanelTab } | null>(null);
-  const open = useCallback((id: string, tab: PanelTab = "기본") => setState({ id, tab }), []);
+  const pathname = usePathname() ?? "";
+  /**
+   * **재무 화면에서 이름을 누르면 회계 탭으로 엽니다.** 재무에서 이름을 누르는 사람은 그 아이의 돈을 보려는
+   * 것인데, 「기본」 탭으로 열리면 한 번 더 눌러야 했습니다. 화면마다 탭을 정해 넘기게 하면 넘기는 것을
+   * 빠뜨리는 화면이 생기므로, 여기서 주소로 정합니다. 재무 열쇠가 없으면 창이 알아서 「기본」으로 엽니다.
+   */
+  const open = useCallback(
+    (id: string, tab?: PanelTab) => setState({ id, tab: tab ?? (pathname.startsWith("/finance") ? "회계" : "기본") }),
+    [pathname],
+  );
   return (
     <PanelCtx.Provider value={{ open, inside: false }}>
       {children}

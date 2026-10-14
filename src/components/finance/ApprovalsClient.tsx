@@ -1,5 +1,7 @@
 "use client";
 
+import { Who } from "@/components/common/HomonymProvider";
+
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/common/ToastProvider";
@@ -12,6 +14,8 @@ const when = (s: string | null) => (s ? s.replace("T", " ").slice(0, 16) : "");
 export type ApprovalRow = FinanceRequest & {
   invoiceNo: string;
   studentName: string;
+  /** 이름을 누르면 학생 회계 창이 열립니다. 청구서에 학생이 안 이어졌으면 null. */
+  studentId: string | null;
   invoiceTotal: number;
   stream: string | null;
   /** 결재할 수 없는 이유. null 이면 승인·반려 단추를 그립니다. */
@@ -96,7 +100,7 @@ export default function ApprovalsClient({ rows, loadError }: { rows: ApprovalRow
             <div className="flex flex-wrap items-center gap-2">
               <span className={"rounded px-1.5 py-0.5 text-[11px] font-black " + (r.kind === "환불" ? "bg-rose-50 text-rose-700" : "bg-violet-50 text-violet-700")}>{r.kind}</span>
               <span className={"rounded px-1.5 py-0.5 text-[10px] font-bold " + (STATUS_STYLE[r.status] ?? "")}>{r.status}</span>
-              <b className="text-slate-800">{r.studentName}</b>
+              <b className="text-slate-800"><Who id={r.studentId} name={r.studentName} /></b>
               <span className="text-slate-500">
                 {r.invoiceNo} {r.stream ? `· ${r.stream}` : ""} · 청구 {won(r.invoiceTotal)}
               </span>

@@ -672,9 +672,13 @@ export default function LedgerClient({
                         {v.offline ? <span className="text-slate-300">—</span> : v.exported ? <span className="font-bold text-violet-700">올톡 보냄</span> : <span className="text-slate-400">안 보냄</span>}
                       </td>
                       <td className="px-2 py-1 text-right">
-                        {v.state === "완납" && (
-                          <button onClick={() => setPreview({ id: v.id, label: `${v.studentName} · ${v.invoiceNo} 영수증`, receipt: true })} className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-700" title="영수증">
-                            📄
+                        {(v.state === "완납" || v.state === "부분납부") && (
+                          <button
+                            onClick={() => setPreview({ id: v.id, label: `${v.studentName} · ${v.invoiceNo} ${v.state === "완납" ? "영수증" : "일부 납부 영수증"}`, receipt: true })}
+                            className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-700"
+                            title={v.state === "완납" ? "영수증" : "일부 납부 영수증 — 받은 금액과 남은 금액"}
+                          >
+                            {v.state === "완납" ? "📄" : "📄½"}
                           </button>
                         )}
                       </td>

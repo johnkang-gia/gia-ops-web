@@ -8,6 +8,7 @@ import { useToast } from "@/components/common/ToastProvider";
 import { Who } from "@/components/common/HomonymProvider";
 import StudentLedgerModal from "@/components/finance/StudentLedgerModal";
 import AlltalkpayExport from "@/components/finance/AlltalkpayExport";
+import { BILL_STATUS } from "@/lib/billStatus";
 import { readAlltalkFile } from "@/lib/alltalkFile";
 import { DECISIONS, SYNC_CODES, type SyncCode, type SyncRow, type SyncSummary } from "@/lib/alltalkSync";
 
@@ -546,10 +547,13 @@ function SyncLine({
             <span key={v.id} className="whitespace-nowrap">
               <b className="text-slate-700">{v.invoiceNo}</b> <span className="text-slate-500">{v.billingMonth ? `${Number(v.billingMonth.slice(5))}월` : ""} {v.stream}</span>{" "}
               <span className="tabular-nums">{won(v.total)}</span>{" "}
+              {/* 색은 재무 공통 표(BILL_STATUS) - 학비·학비외 표와 같은 아이가 같은 색으로 보여야 합니다. */}
               {v.balance === 0 ? (
-                <span className="rounded bg-slate-800 px-1 text-[10px] font-bold text-white">완납</span>
+                <span className={"rounded px-1 text-[10px] font-bold " + BILL_STATUS.완납.cls}>완납</span>
+              ) : v.balance < v.total ? (
+                <span className={"rounded px-1 text-[10px] font-bold " + BILL_STATUS.일부.cls}>일부 · 남음 {won(v.balance)}</span>
               ) : (
-                <span className="rounded bg-rose-50 px-1 text-[10px] font-bold text-rose-700">남음 {won(v.balance)}</span>
+                <span className={"rounded px-1 text-[10px] font-bold " + BILL_STATUS.청구됨.cls}>남음 {won(v.balance)}</span>
               )}
               {v.offline && <span className="ml-0.5 text-[10px] text-sky-600">직접수납</span>}
               {v.exported && <span className="ml-0.5 text-[10px] text-violet-600">올톡✓</span>}

@@ -687,12 +687,12 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
                     {/* 이름을 누르면 그 학생의 원장 한 장. 「우리가 뭘 얼마 냈죠」에 답하려면
                         청구서를 하나씩 열어 더해야 했습니다. */}
                     <td className="px-3 py-1.5 font-semibold text-slate-700">
-                      {x.v.student_id ? (
-                        <a href={`/finance/statement/${x.v.student_id}`} className="underline decoration-slate-300 hover:text-teal-700">
-                          {x.v.student_name_ko ?? x.v.student_name}
+                      {/* 이름은 학생 회계 창을 엽니다(재무 화면 공통). 거래명세서는 옆 작은 고리로 남깁니다. */}
+                      <Who id={x.v.student_id} name={x.v.student_name_ko ?? x.v.student_name} />
+                      {x.v.student_id && (
+                        <a href={`/finance/statement/${x.v.student_id}`} className="ml-1 text-[10px] font-normal text-slate-400 underline hover:text-teal-700" title="거래명세서">
+                          명세서
                         </a>
-                      ) : (
-                        (x.v.student_name_ko ?? x.v.student_name)
                       )}
                     </td>
                     <td className={"px-3 py-1.5 " + (overdue ? "font-bold text-red-600" : "text-slate-500")}>

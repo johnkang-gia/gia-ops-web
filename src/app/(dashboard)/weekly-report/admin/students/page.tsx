@@ -9,6 +9,7 @@ import type { ShuttleRoute, ShuttleStop, WrStudent, WrStudentFieldDef } from "@/
 import StudentManageClient from "@/components/weeklyReport/admin/StudentManageClient";
 import GuideButton from "@/components/common/GuideButton";
 import { getCurrentTerm } from "@/lib/currentTerm";
+import SameNameBanner from "@/components/school/SameNameBanner";
 
 const GUIDE_SECTIONS = [
   {
@@ -75,6 +76,7 @@ export default async function StudentManagePage() {
             ? "학생을 등록하면 반 배정(반/담임 배정 관리)과 과목 배정(과목반 세팅)에서 바로 선택할 수 있습니다."
             : "명부는 교직원 모두가 봅니다. 고치는 것은 행정직원 이상이고, 보호자 연락처는 보이지 않습니다."}
         </p>
+        {canEdit && <SameNameBanner supabase={supabase} />}
       </div>
       <div className="min-h-0 flex-1">
         <StudentManageClient

@@ -49,6 +49,13 @@ export type IntegrityView = {
 
 export const INTEGRITY_VIEWS: IntegrityView[] = [
   {
+    view: "student_same_name_open",
+    label: "같은 이름 학생 · 아직 판단 안 함",
+    expect: "비어야_정상",
+    impact:
+      "같은 이름의 재학·보류 학생이 둘 이상인데 «같은 아이(합치기)» 또는 «다른 아이로 확인» 중 아무것도 하지 않았습니다. 같은 아이라면 출결·청구가 두 줄에 나뉘어 쌓입니다. 명부 점검에서 정합니다.",
+  },
+  {
     view: "homonym_unresolved",
     label: "동명이인 · 번호 없음 / 근거 없이 붙음",
     expect: "비어야_정상",

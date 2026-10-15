@@ -4,6 +4,8 @@ import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { WR_INSTRUMENTS, type ShuttleRoute, type ShuttleStop, type WrStudent, type WrStudentFieldDef } from "@/lib/types";
 import { assignClass, findClass, type ClassRow } from "@/lib/classAssign";
+import { addStudents, type AddResult, type NeedsConfirm, type NewStudentInput } from "@/lib/studentAdd";
+import SameNameConfirm from "@/components/school/SameNameConfirm";
 import { useConfirm } from "@/components/common/ConfirmProvider";
 import { useToast } from "@/components/common/ToastProvider";
 import ShuttleRecommendModal from "@/components/shuttle/ShuttleRecommendModal";
@@ -136,6 +138,7 @@ export default function StudentManageClient({
   const [bulkText, setBulkText] = useState("");
   const [saving, setSaving] = useState(false);
   const [showBulk, setShowBulk] = useState(false);
+  const [sameName, setSameName] = useState<{ items: NeedsConfirm[]; finish: (r: AddResult) => void | Promise<void> } | null>(null);
 
   // ── 칼럼 추가 ────────────────────────────────────────────────────
   const [showFieldForm, setShowFieldForm] = useState(false);
@@ -231,68 +234,66 @@ export default function StudentManageClient({
     if (!stillThere) setClassName("");
   }
 
+  /**
+   * 학생을 만드는 일은 `addStudents` 하나가 합니다(같은 이름 확인 · 반 연결 · 실제 학생 표시). 같은 이름이 있으면
+   * 넣지 않고 돌려주므로, 여기서는 «같은 학생 / 다른 학생»을 묻는 창을 띄우고 고른 줄만 다시 넣습니다.
+   */
+  async function runAdd(rows: NewStudentInput[], finish: (r: AddResult) => void | Promise<void>) {
+    setSaving(true);
+    const r = await addStudents(createClient(), rows, { classes, by: currentUserEmail });
+    setSaving(false);
+    if (r.inserted.length > 0) setStudents((prev) => [...prev, ...(r.inserted as unknown as WrStudent[])]);
+    // 저장이 안 됐는데 창이 닫히면 사람은 등록된 줄 압니다. 그리고 며칠 뒤 「그 아이가 명부에 없다」로 발견됩니다.
+    if (r.failed.length > 0) notify(`저장하지 못한 학생이 있습니다: ${r.failed.join(", ")}`, "error");
+    // 반 이름은 들어갔는데 배정이 비었으면 **그렇다고 말합니다.** 안 알리면 반 배정 화면에 가서야 발견합니다.
+    if (r.classMissing.length > 0) {
+      notify(`${r.classMissing.join(", ")} — 적은 반이 명부에 없어 반 배정은 비워뒀습니다. 반/담임 배정에서 반을 먼저 만들어주세요.`, "error");
+    }
+    await finish(r);
+    if (r.needsConfirm.length > 0) setSameName({ items: r.needsConfirm, finish });
+  }
+
   async function addStudent(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
-    setSaving(true);
-    const supabase = createClient();
-    const { data, error } = await supabase
-      .from("wr_students")
-      .insert({
-        name: name.trim(),
-        name_en: nameEn.trim() || null,
-        grade: grade.trim() || null,
-        // 반은 **이름과 연결을 함께** 넣습니다. 한 곳(assignClass)에서만 정합니다.
-        ...assignClass(className, classes, grade),
+    const row: NewStudentInput = {
+      name: name.trim(),
+      name_en: nameEn.trim() || null,
+      grade: grade.trim() || null,
+      class_name: className.trim() || null,
+      birth_date: birthDate || null,
+      mother_phone: motherPhone.trim() || null,
+      father_phone: fatherPhone.trim() || null,
+      parent_phone: parentPhone.trim() || null,
+      extra: {
         gender: gender || null,
-        birth_date: birthDate || null,
-        mother_phone: motherPhone.trim() || null,
-        father_phone: fatherPhone.trim() || null,
-        parent_phone: parentPhone.trim() || null,
         parent_email: parentEmail.trim() || null,
         address: address.trim() || null,
         allergies: allergies.trim() || null,
         instrument: instrument || null,
         enrolled_on: enrolledOn || null,
-        // 이 화면에서 만드는 학생은 언제나 실제 학생입니다. 기본값에 기대지 않고 못박습니다.
-        is_demo: false,
-      })
-      .select()
-      .single();
-    if (error || !data) {
-      // 저장이 안 됐는데 창이 닫히면 사람은 등록된 줄 압니다. 그리고 며칠 뒤 「그 아이가
-      // 명부에 없다」로 발견됩니다.
-      setSaving(false);
-      notify(`학생을 저장하지 못했습니다: ${error?.message ?? "알 수 없는 이유"}`, "error");
-      return;
-    }
-
-    // 유니폼 사이즈는 **의류 대장**에 넣습니다. 학생 칸에 하나만 두면 아이가 자랐을 때
-    // 지난 사이즈가 사라지고, 의류 화면·제작 건과도 이어지지 않습니다.
-    if (uniformSize.trim()) {
-      const { error: sizeErr } = await supabase.from("student_apparel_sizes").insert({
-        student_id: (data as WrStudent).id,
-        kind: "유니폼",
-        size: uniformSize.trim(),
-        term_id: currentTermId,
-        updated_by: currentUserEmail,
-      });
-      if (sizeErr) notify(`학생은 등록했지만 유니폼 사이즈를 저장하지 못했습니다: ${sizeErr.message}`, "error");
-    }
-
-    setSaving(false);
-    setStudents((prev) => [...prev, data as WrStudent]);
-    // 반 이름은 들어갔는데 배정이 비었으면 **그렇다고 말합니다.** 화면에는 반이 잘 보이니,
-    // 안 알리면 반 배정 화면에 가서야 「이 아이가 미배정에 있네」를 발견합니다.
-    if (className.trim() && !matchedClass) {
-      notify(
-        `${name.trim()} 학생을 등록했지만, 「${className.trim()}」이라는 반이 명부에 없어 반 배정은 비워뒀습니다. 반/담임 배정에서 반을 먼저 만들어주세요.`,
-        "error",
-      );
-    }
-    resetForm();
-    setShowAddForm(false);
-    notify(`${(data as WrStudent).name} 등록했습니다.`, "success");
+      },
+    };
+    const size = uniformSize.trim();
+    await runAdd([row], async (r) => {
+      const made = r.inserted[0];
+      if (!made) return;
+      // 유니폼 사이즈는 **의류 대장**에 넣습니다. 학생 칸에 하나만 두면 아이가 자랐을 때 지난 사이즈가 사라지고,
+      // 의류 화면·제작 건과도 이어지지 않습니다.
+      if (size) {
+        const { error: sizeErr } = await createClient().from("student_apparel_sizes").insert({
+          student_id: made.id,
+          kind: "유니폼",
+          size,
+          term_id: currentTermId,
+          updated_by: currentUserEmail,
+        });
+        if (sizeErr) notify(`학생은 등록했지만 유니폼 사이즈를 저장하지 못했습니다: ${sizeErr.message}`, "error");
+      }
+      resetForm();
+      setShowAddForm(false);
+      notify(`${made.name} 등록했습니다.`, "success");
+    });
   }
 
   async function bulkAdd() {
@@ -301,34 +302,23 @@ export default function StudentManageClient({
     // 뒤의 세 칸은 비워도 됩니다. 예전 형식(다섯 칸)으로 붙여넣으면 다섯 번째 값이 **어머니**
     // 번호로 들어갑니다 - 청구서가 어머니 앞으로 가는 집이 가장 많아서, 그렇게 두는 편이
     // 붙여넣은 사람의 뜻에 가깝습니다.
-    const rows = bulkText
+    const rows: NewStudentInput[] = bulkText
       .split("\n")
       .map((line) => line.trim())
       .filter(Boolean)
       .map((line) => {
         const [n, ne, g, c, m, f, p] = line.split(",").map((v) => v?.trim() ?? "");
-        return {
-          name: n,
-          name_en: ne || null,
-          grade: g || null,
-          class_name: c || null,
-          mother_phone: m || null,
-          father_phone: f || null,
-          parent_phone: p || null,
-          is_demo: false,
-        };
+        return { name: n, name_en: ne || null, grade: g || null, class_name: c || null, mother_phone: m || null, father_phone: f || null, parent_phone: p || null };
       })
       .filter((r) => r.name);
     if (rows.length === 0) return;
-    setSaving(true);
-    const supabase = createClient();
-    const { data } = await supabase.from("wr_students").insert(rows).select();
-    setSaving(false);
-    if (data) {
-      setStudents((prev) => [...prev, ...(data as WrStudent[])]);
-      setBulkText("");
-      setShowBulk(false);
-    }
+    await runAdd(rows, (r) => {
+      if (r.inserted.length > 0) notify(`${r.inserted.length}명 등록했습니다.`, "success");
+      if (r.failed.length === 0 && r.needsConfirm.length === 0) {
+        setBulkText("");
+        setShowBulk(false);
+      }
+    });
   }
 
   /**
@@ -1026,6 +1016,18 @@ export default function StudentManageClient({
         </table>
       </div>
 
+      {sameName && (
+        <SameNameConfirm
+          items={sameName.items}
+          onCancel={() => setSameName(null)}
+          onDone={(add, skipped) => {
+            const finish = sameName.finish;
+            setSameName(null);
+            if (skipped.length > 0) notify(`같은 학생으로 보고 넣지 않았습니다: ${skipped.join(", ")}`, "info");
+            if (add.length > 0) void runAdd(add, finish);
+          }}
+        />
+      )}
       {recommendFor && (
         <ShuttleRecommendModal
           student={recommendFor}

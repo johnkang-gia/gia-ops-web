@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { friendlyError } from "@/lib/errorMessage";
+import { addStudents, type NeedsConfirm, type NewStudentInput } from "@/lib/studentAdd";
+import SameNameConfirm from "@/components/school/SameNameConfirm";
 import { TERM_TYPES } from "@/lib/termTypes";
 
 // ===== 공용 파싱 유틸 =====
@@ -345,6 +347,7 @@ function StudentImportSection() {
   const [rows, setRows] = useState<StudentRow[] | null>(null);
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<string | null>(null);
+  const [sameName, setSameName] = useState<NeedsConfirm[] | null>(null);
 
   const validCount = rows?.filter((r) => r.ok).length ?? 0;
 
@@ -354,30 +357,24 @@ function StudentImportSection() {
     setResult(null);
   }
 
-  async function doImport() {
+  async function doImport(rowsIn?: NewStudentInput[]) {
     if (!rows) return;
-    const valid = rows.filter((r) => r.ok);
-    if (valid.length === 0) return;
+    const input: NewStudentInput[] =
+      rowsIn ??
+      rows
+        .filter((r) => r.ok)
+        .map((r) => ({ name: r.name, name_en: r.name_en, grade: r.grade, class_name: r.class_name, mother_phone: r.mother_phone, father_phone: r.father_phone, parent_phone: r.parent_phone }));
+    if (input.length === 0) return;
     setImporting(true);
-    const supabase = createClient();
-    const { data: classes } = await supabase.from("wr_classes").select("id, grade, class_name").eq("is_demo", false);
-    const payload = valid.map((r) => {
-      const match = (classes ?? []).find((c) => (c.grade ?? "") === (r.grade ?? "") && (c.class_name ?? "") === (r.class_name ?? ""));
-      return {
-        name: r.name,
-        name_en: r.name_en,
-        grade: r.grade,
-        class_name: r.class_name,
-        class_id: match?.id ?? null,
-        mother_phone: r.mother_phone,
-        father_phone: r.father_phone,
-        parent_phone: r.parent_phone,
-        status: "active" as const,
-      };
-    });
-    const { error } = await supabase.from("wr_students").insert(payload.map((r) => ({ ...r, is_demo: false })));
+    // 같은 이름 확인·반 연결·실제 학생 표시는 addStudents 가 합니다. 같은 이름이 이미 있으면 넣지 않고 묻습니다.
+    const r = await addStudents(createClient(), input);
     setImporting(false);
-    setResult(error ? friendlyError("등록하지 못했습니다.", error) : `${valid.length}명 등록 완료 (새 학생으로 추가됩니다 - 이미 등록된 학생과 이름이 같아도 중복 확인 없이 추가되니, 재등록이 아닌지 확인 후 실행해주세요).`);
+    const parts = [`${r.inserted.length}명 등록`];
+    if (r.needsConfirm.length) parts.push(`같은 이름 확인 ${r.needsConfirm.length}명`);
+    if (r.classMissing.length) parts.push(`반이 명부에 없어 배정 비움: ${r.classMissing.join(", ")}`);
+    if (r.failed.length) parts.push(`실패: ${r.failed.join(", ")}`);
+    setResult(parts.join(" · "));
+    if (r.needsConfirm.length) setSameName(r.needsConfirm);
   }
 
   return (
@@ -387,8 +384,7 @@ function StudentImportSection() {
         열 순서: <code className="rounded bg-slate-100 px-1">이름, 영어이름, 학년, 반, 어머니, 아버지, 보호자</code>
         (이름 말고는 다 비워도 됩니다. 다섯 번째 칸은 <b>어머니</b> 번호로 들어가고, 마지막
         &lsquo;보호자&rsquo;는 부모가 아닌 분을 위한 자리입니다). 학년+반이 위 반 구성과 일치하면 자동으로 그 반에
-        연결됩니다. 새 학생으로 추가되는 방식이라 이미 등록된 학생을 다시 올리면 중복 등록되니
-        주의해주세요.
+        연결됩니다. 같은 이름의 학생이 이미 있으면 넣기 전에 «같은 학생 / 다른 학생»을 묻습니다.
       </p>
       <pre className="mb-2 overflow-x-auto rounded-lg bg-slate-50 p-2 text-[11px] text-slate-500">
 {`이름,영어이름,학년,반,어머니,아버지,보호자
@@ -413,7 +409,7 @@ function StudentImportSection() {
         <button type="button" onClick={preview} disabled={!text.trim()} className={btnGhost}>
           미리보기
         </button>
-        <button type="button" onClick={doImport} disabled={importing || validCount === 0} className={btnPrimary}>
+        <button type="button" onClick={() => void doImport()} disabled={importing || validCount === 0} className={btnPrimary}>
           {importing ? "반영 중..." : `${validCount}명 가져오기`}
         </button>
       </div>
@@ -451,6 +447,16 @@ function StudentImportSection() {
             </tbody>
           </table>
         </div>
+      )}
+      {sameName && (
+        <SameNameConfirm
+          items={sameName}
+          onCancel={() => setSameName(null)}
+          onDone={(add) => {
+            setSameName(null);
+            if (add.length > 0) void doImport(add);
+          }}
+        />
       )}
       {result && <p className="mt-2 text-xs font-semibold text-slate-600">{result}</p>}
     </div>

@@ -1,6 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { RosterField } from "./pasteRoster";
 import { assignClass, loadClasses } from "./classAssign";
+import { normName } from "./studentDuplicates";
+import { addStudents } from "./studentAdd";
 
 /**
  * 붙여넣은/시트에서 받은 줄이 명부에 **무엇을 바꾸는지** 계산합니다.
@@ -49,7 +51,9 @@ export const PLAN_FIELDS: [RosterField, string, keyof StudentLite][] = [
   ["parent_phone", "보호자 연락처", "parent_phone"],
 ];
 
-const norm = (s: string | null | undefined) => (s ?? "").normalize("NFC").trim().toLowerCase().replace(/\s+/g, "");
+// 같은 이름 판정은 명부 점검·학생 추가·데이터베이스 문지기와 같은 함수로 합니다. 여기만 다르면 «새로 등록»으로
+// 계획한 줄이 넣을 때 문지기에 걸립니다.
+const norm = normName;
 
 export function planRoster(existing: StudentLite[], rows: RosterRow[]): RosterPlan[] {
   const plans: RosterPlan[] = [];
@@ -74,6 +78,19 @@ export function planRoster(existing: StudentLite[], rows: RosterRow[]): RosterPl
         kind: "확인 필요",
         changes: [],
         reason: `명부에 「${name}」이(가) ${byName.length}명 있습니다. 생년월일 칸을 함께 붙여넣으면 자동으로 갈립니다.`,
+      });
+      continue;
+    }
+
+    // 이름은 하나 맞는데 생일이 **둘 다 적혀 있고 다르면** 같은 아이로 보지 않습니다. 그대로 덮으면 새로 온 동명이인의
+    // 생일·반·번호가 기존 아이 줄에 덮여, 한 줄에 두 아이가 섞입니다.
+    if (hit && !byBirth[0] && v.birth_date && hit.birth_date && hit.birth_date !== v.birth_date) {
+      plans.push({
+        rowNo: r.rowNo,
+        name,
+        kind: "확인 필요",
+        changes: [],
+        reason: `명부의 「${name}」(생일 ${hit.birth_date})과 생일이 다릅니다(${v.birth_date}). 다른 학생이면 학생 관리에서 추가해 주세요.`,
       });
       continue;
     }
@@ -139,22 +156,16 @@ export async function applyRosterPlans(
     const v = valueOf(p);
     const cls = assignClass(v.class_name, classes, v.grade);
     if (p.kind === "새로 등록") {
-      const { error } = await supabase.from("wr_students").insert({
-        name: p.name,
-        name_en: v.name_en ?? null,
-        grade: v.grade ?? cls.grade ?? null,
-        ...cls,
-        birth_date: v.birth_date ?? null,
-        student_no: v.student_no ?? null,
-        mother_phone: v.mother_phone ?? null,
-        father_phone: v.father_phone ?? null,
-        parent_phone: v.parent_phone ?? null,
-        status: "active",
-        // 값으로 못박습니다. 필터가 아니라 값이어야 데모 학생과 절대 안 섞입니다.
-        is_demo: false,
-      });
-      if (error) failed.push(`${p.name}(${error.message})`);
-      else inserted++;
+      // 새 학생은 학생 추가 함수 하나로 넣습니다(같은 이름 확인 · 반 연결 · 실제 학생 표시).
+      const r = await addStudents(
+        supabase,
+        [{ name: p.name, name_en: v.name_en, grade: v.grade, class_name: v.class_name, birth_date: v.birth_date, student_no: v.student_no, mother_phone: v.mother_phone, father_phone: v.father_phone, parent_phone: v.parent_phone }],
+        { classes },
+      );
+      inserted += r.inserted.length;
+      failed.push(...r.failed);
+      // 계획한 사이에 같은 이름이 생겼습니다. 자동으로는 고르지 않습니다 - 사람이 학생 관리에서 정합니다.
+      for (const n of r.needsConfirm) failed.push(`${n.row.name}(같은 이름의 학생이 이미 있어 넣지 않았습니다 — 학생 관리에서 확인해 주세요)`);
     } else if (p.kind === "바뀜" && p.studentId) {
       const patch: Record<string, string | null> = { status: "active" };
       for (const k of WRITE_COLS) if (v[k]) patch[k] = v[k]!;

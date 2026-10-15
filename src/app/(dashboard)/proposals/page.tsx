@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
-import type { Proposal, ProposalSourceContext } from "@/lib/types";
+import type { Proposal } from "@/lib/types";
+import { loadProposalSourceContext } from "@/lib/proposalSource";
 import ProposalsClient from "@/components/proposals/ProposalsClient";
 
 export const dynamic = "force-dynamic";
@@ -19,51 +20,7 @@ export default async function ProposalsPage() {
 
   const items = (data as Proposal[]) ?? [];
 
-  const idsByType: Record<"incidents" | "events" | "meetings" | "manual", string[]> = {
-    incidents: [],
-    events: [],
-    meetings: [],
-    manual: [],
-  };
-  for (const it of items) {
-    if (it.source_id && it.source in idsByType) {
-      idsByType[it.source as keyof typeof idsByType].push(it.source_id);
-    }
-  }
-
-  const [{ data: incidentRows }, { data: eventRows }, { data: meetingRows }, { data: manualRows }] =
-    await Promise.all([
-      idsByType.incidents.length
-        ? supabase.from("incidents").select("case_id, title, detail, date").in("case_id", idsByType.incidents)
-        : Promise.resolve({ data: [] as { case_id: string; title: string; detail: string; date: string }[] }),
-      idsByType.events.length
-        ? supabase.from("events").select("case_id, name, good, date").in("case_id", idsByType.events)
-        : Promise.resolve({ data: [] as { case_id: string; name: string; good: string; date: string }[] }),
-      idsByType.meetings.length
-        ? supabase.from("meetings").select("case_id, content, date").in("case_id", idsByType.meetings)
-        : Promise.resolve({ data: [] as { case_id: string; content: string; date: string }[] }),
-      idsByType.manual.length
-        ? supabase.from("manual_drafts").select("case_id, raw_text, created_at").in("case_id", idsByType.manual)
-        : Promise.resolve({ data: [] as { case_id: string; raw_text: string; created_at: string }[] }),
-    ]);
-
-  const sourceContext: Record<string, ProposalSourceContext> = {};
-  for (const r of incidentRows || []) {
-    sourceContext[`incidents:${r.case_id}`] = { title: r.title || "(제목 없음)", detail: r.detail || "", date: r.date };
-  }
-  for (const r of eventRows || []) {
-    sourceContext[`events:${r.case_id}`] = { title: r.name || "(제목 없음)", detail: r.good || "", date: r.date };
-  }
-  for (const r of meetingRows || []) {
-    sourceContext[`meetings:${r.case_id}`] = { title: "회의록", detail: r.content || "", date: r.date };
-  }
-  for (const r of manualRows || []) {
-    sourceContext[`manual:${r.case_id}`] = {
-      title: "AI매뉴얼 초안",
-      detail: r.raw_text || "",
-      date: (r.created_at || "").slice(0, 10),
-    };
-  }
+  const sourceContext = await loadProposalSourceContext(supabase, items);
 
   return (
     <div className="p-4 sm:p-6">

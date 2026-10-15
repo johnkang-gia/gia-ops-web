@@ -1,9 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import ReportPeriodBar from "@/components/common/ReportPeriodBar";
 import type { Meeting } from "@/lib/types";
 import GuideButton from "@/components/common/GuideButton";
-import { type ReportPeriodType, PERIOD_TYPE_LABEL, getReportRange, shiftAnchor, toDateStr } from "@/lib/reportPeriod";
+import { type ReportPeriodType, getReportRange, toDateStr } from "@/lib/reportPeriod";
 
 const GUIDE_SECTIONS = [
   {
@@ -54,45 +55,7 @@ export default function MeetingReportClient({ meetings }: { meetings: Meeting[] 
         </div>
       </div>
 
-      <div className="mb-3 flex shrink-0 flex-wrap items-center gap-2">
-        <div className="flex gap-1 g-panel-solid p-1">
-          {(["day", "week", "month"] as ReportPeriodType[]).map((t) => (
-            <button
-              key={t}
-              onClick={() => setPeriodType(t)}
-              className={
-                "rounded-md px-3 py-1 text-xs font-semibold transition " +
-                (periodType === t ? "bg-gia-navy text-white" : "text-slate-500 hover:bg-slate-50")
-              }
-            >
-              {PERIOD_TYPE_LABEL[t]}
-            </button>
-          ))}
-        </div>
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => setAnchor((a) => shiftAnchor(periodType, a, -1))}
-            className="g-panel-solid px-2 py-1 text-xs text-slate-500 hover:bg-slate-50"
-          >
-            ◀
-          </button>
-          <span className="min-w-[10rem] rounded-lg bg-slate-100 px-2.5 py-1 text-center text-xs font-semibold text-slate-700">
-            {range.label}
-          </span>
-          <button
-            onClick={() => setAnchor((a) => shiftAnchor(periodType, a, 1))}
-            className="g-panel-solid px-2 py-1 text-xs text-slate-500 hover:bg-slate-50"
-          >
-            ▶
-          </button>
-          <button
-            onClick={() => setAnchor(new Date())}
-            className="g-panel-solid px-2 py-1 text-xs text-slate-500 hover:bg-slate-50"
-          >
-            오늘
-          </button>
-        </div>
-      </div>
+      <ReportPeriodBar periodType={periodType} setPeriodType={setPeriodType} setAnchor={setAnchor} label={range.label} />
 
       <div className="min-h-0 flex-1 overflow-y-auto pb-4">
         <section className="g-panel-solid p-4 shadow-sm">

@@ -12,6 +12,7 @@ import { useFinanceLive } from "@/lib/useFinanceLive";
 import AlreadyPaidModal from "@/components/finance/AlreadyPaidModal";
 import { loadPartnerMode, savePartnerMode, unbilledOf, issueExtraInvoice, type PartnerMode } from "@/lib/issuePartner";
 import { createClient } from "@/lib/supabase/client";
+import AnchoredPanel from "@/components/common/AnchoredPanel";
 import { useToast } from "@/components/common/ToastProvider";
 import { won } from "@/lib/feeItems";
 import { departmentOf, gradeSortKey, type Department } from "@/lib/department";
@@ -2031,9 +2032,8 @@ function CellEditor({
 
   return (
     <>
-      {/* 바깥을 누르면 닫힙니다. 닫는 X 만 있으면 표를 이어 보려다 매번 그 작은 글자를 찾습니다. */}
-      <div className="fixed inset-0 z-30" onClick={onClose} />
-      <div className="absolute left-0 top-full z-40 mt-1 w-[290px] rounded-xl border border-slate-300 bg-white p-2.5 text-left shadow-xl">
+      {/* 표 상자 밖(문서 맨 위)에 그립니다. 칸 안에 띄우면 표가 한 줄로 줄었을 때 잘립니다. 바깥을 누르면 닫힙니다. */}
+      <AnchoredPanel width={290} onClose={onClose}>
         <p className="mb-1.5 text-[11px] font-bold text-slate-700">
           {student.name} · {plan.name}
           <span className="ml-1 font-normal text-slate-400">기준 {won(Number(plan.base_amount))}/{plan.unit}</span>
@@ -2209,7 +2209,7 @@ function CellEditor({
         >
           닫기
         </button>
-      </div>
+      </AnchoredPanel>
     </>
   );
 }

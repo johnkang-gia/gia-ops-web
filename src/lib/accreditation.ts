@@ -375,7 +375,8 @@ export async function loadVisitSchedule(supabase: SupabaseClient, weekday: numbe
       classes: dc.map((c) => ({ id: c.id, label: c.class_name ?? "—", room: c.room ?? "" })),
       periods: dp.map((p) => ({
         no: p.period_no,
-        label: p.label ?? `Period ${p.period_no}`,
+        // 교시 이름은 한국어(「1교시」)라 영문 종이에는 번호로 적습니다.
+        label: p.label && !/[가-힣]/.test(p.label) ? p.label : `Period ${p.period_no}`,
         time: `${p.start_time.slice(0, 5)}–${p.end_time.slice(0, 5)}`,
         cells: dc.map((c) => {
           const e = cell.get(`${c.id}|${p.id}`);

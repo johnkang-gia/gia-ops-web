@@ -365,6 +365,7 @@ const DOCS_TABS: TabDef[] = [
       { label: "서류함", href: "/documents", match: ["/documents"] },
       { label: "AI 서류 작성", href: "/documents/new" },
       { label: "보고서 모음", href: "/school/documents/reports" },
+      { label: "인증 자료", href: "/school/documents/accreditation" },
       { label: "기록 드라이브", href: "/records/drive", match: ["/records/drive"] },
     ],
   },

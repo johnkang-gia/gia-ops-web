@@ -96,6 +96,7 @@ export const SCREENS: string[] = [
   "/school/library",
   "/school/data-check",
   "/school/documents",
+  "/school/documents/accreditation",
   "/school/documents/reports",
   "/school/duty",
   "/school/groups",

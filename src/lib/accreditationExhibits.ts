@@ -1,5 +1,5 @@
 /** 인증 증거 자료 목록. 화면(클라이언트)도 읽으므로 데이터 읽기 코드와 떼어 둡니다. */
-export type ExhibitKey = "enrollment" | "faculty" | "attendance" | "progress" | "safety" | "governance" | "parents" | "data";
+export type ExhibitKey = "enrollment" | "faculty" | "attendance" | "progress" | "safety" | "governance" | "parents" | "data" | "library";
 
 export const EXHIBITS: { key: ExhibitKey; title: string; ko: string; topic: string }[] = [
   { key: "enrollment", title: "Student Enrollment & Class Composition", ko: "재학생 구성(부서·학년·반)", topic: "Students" },
@@ -10,5 +10,6 @@ export const EXHIBITS: { key: ExhibitKey; title: string; ko: string; topic: stri
   { key: "governance", title: "Meetings, Incident Management & School Events", ko: "회의·사건 처리·행사 기록", topic: "Governance / Operations" },
   { key: "parents", title: "Parent Communication & Conferences", ko: "학부모 문의 응대·상담", topic: "Community" },
   { key: "data", title: "Student Data Protection & Continuity", ko: "학생 정보 보호·백업", topic: "Technology" },
+  { key: "library", title: "Library Collection, Inventory & Use", ko: "도서관 장서·점검·이용", topic: "Learning Resources" },
 ];
 

@@ -4,6 +4,7 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { isStaffOrAboveUser } from "@/lib/roles";
 import { todayKst } from "@/lib/kst";
 import ExhibitSheet, { Kpi, monthEn, pct, ratio } from "@/components/accreditation/ExhibitSheet";
+import { levelEn, loadLibrary } from "@/lib/accreditationLibrary";
 import {
   EXHIBITS,
   loadAttendance,
@@ -556,6 +557,292 @@ export default async function ExhibitPage({
               ))}
             </tbody>
           </table>
+        </ExhibitSheet>
+      );
+    }
+    case "library": {
+      const d = await loadLibrary(supabase);
+      const c = d.collection;
+      const inv = d.inventory;
+      const u = d.usage;
+      return (
+        <ExhibitSheet
+          {...common}
+          period={`Collection as of ${generated} · Circulation ${u.since} – ${generated}`}
+          source="Library system (catalogue, shelf inventory and circulation records)"
+        >
+          <div className="kpis">
+            <Kpi value={c.titles.toLocaleString()} label="Titles catalogued" />
+            <Kpi value={c.copies.toLocaleString()} label="Copies held" />
+            <Kpi value={pct(ratio(c.withLevel, c.titles))} label="Assigned a reading level" />
+            <Kpi value={pct(ratio(inv.countedCopies, c.copies))} label="Copies physically verified on shelf" />
+          </div>
+
+          <h2>1. Collection by reading level</h2>
+          <p className="note">
+            Every book carries a coloured spine label. The colour is the reading band, so a child can match a book to their own level
+            without reading the catalogue. The bands rise in difficulty, and the collection is shelved by band.
+          </p>
+          <table>
+            <thead>
+              <tr>
+                <th>Reading band</th>
+                <th className="num">Titles</th>
+                <th className="num">Copies</th>
+                <th className="num">Share of collection</th>
+              </tr>
+            </thead>
+            <tbody>
+              {c.byLevel.map((r) => (
+                <tr key={String(r.level)}>
+                  <td>{r.label}</td>
+                  <td className="num">{r.titles.toLocaleString()}</td>
+                  <td className="num">{r.copies.toLocaleString()}</td>
+                  <td className="num">{pct(ratio(r.copies, c.copies))}</td>
+                </tr>
+              ))}
+              <tr>
+                <td>
+                  <b>Total</b>
+                </td>
+                <td className="num">
+                  <b>{c.titles.toLocaleString()}</b>
+                </td>
+                <td className="num">
+                  <b>{c.copies.toLocaleString()}</b>
+                </td>
+                <td className="num" />
+              </tr>
+            </tbody>
+          </table>
+
+          <h2>2. Catalogue completeness</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Record field</th>
+                <th className="num">Titles</th>
+                <th className="num">Complete</th>
+                <th>Why it matters</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[
+                ["ISBN recorded", c.withIsbn, "A book can be found by scanning the barcode printed on it, with no manual lookup."],
+                ["Reading level assigned", c.withLevel, "The book can be shelved in its colour band and recommended to the right readers."],
+                ["Shelf location recorded", c.withShelf, "Staff and students can be told where the book actually is."],
+                ["Series recorded", c.withSeries, "Volumes of a series can be shelved together so a reader finds the next book."],
+              ].map(([label, n, why]) => (
+                <tr key={label as string}>
+                  <td>{label as string}</td>
+                  <td className="num">{(n as number).toLocaleString()}</td>
+                  <td className="num">{pct(ratio(n as number, c.titles))}</td>
+                  <td>{why as string}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <h2>3. Cataloguing progress</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Month</th>
+                <th className="num">Titles added to catalogue</th>
+              </tr>
+            </thead>
+            <tbody>
+              {c.added.map((r) => (
+                <tr key={r.month}>
+                  <td>{monthEn(r.month)}</td>
+                  <td className="num">{r.n.toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <h2>4. Physical inventory of the shelves</h2>
+          <p className="note">
+            Each shelf bin is emptied and every book scanned back in, so the recorded location is the real one rather than the intended
+            one. Bins are marked complete only by the person who emptied them. Where the count found more or fewer copies than the
+            catalogue recorded, the holdings figure was corrected and the correction logged.
+          </p>
+          <div className="kpis">
+            <Kpi value={`${inv.binsStarted} / ${inv.bins}`} label="Shelf bins counted" />
+            <Kpi value={`${inv.binsDone} / ${inv.bins}`} label="Bins verified complete" />
+            <Kpi value={inv.countedCopies.toLocaleString()} label="Copies found on shelf" />
+            <Kpi value={inv.holdingsFixes.toLocaleString()} label="Holdings corrections logged" />
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Shelf bin</th>
+                <th>Reading band</th>
+                <th className="num">Titles</th>
+                <th className="num">Copies</th>
+                <th>Last counted</th>
+                <th>Verified complete</th>
+              </tr>
+            </thead>
+            <tbody>
+              {inv.list.map((b) => (
+                <tr key={b.code}>
+                  <td>{b.code}</td>
+                  <td>{b.level == null ? "—" : levelEn(b.level)}</td>
+                  <td className="num">{b.titles}</td>
+                  <td className="num">{b.copies}</td>
+                  <td>{b.last ? b.last.slice(0, 10) : "—"}</td>
+                  <td>{b.done ? "Yes" : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <h2>5. Student access and circulation</h2>
+          <div className="kpis">
+            <Kpi value={u.cards.toLocaleString()} label="Library cards issued to students" />
+            <Kpi value={u.loans12m.toLocaleString()} label="Loans in the last 12 months" />
+            <Kpi value={u.borrowers.toLocaleString()} label="Students who borrowed" />
+            <Kpi value={u.outNow.toLocaleString()} label="Copies on loan now" />
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Month</th>
+                <th className="num">Loans</th>
+              </tr>
+            </thead>
+            <tbody>
+              {u.byMonth.map((r) => (
+                <tr key={r.month}>
+                  <td>{monthEn(r.month)}</td>
+                  <td className="num">{r.n}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {u.byClass.length > 0 && (
+            <>
+              <h2>6. Borrowing by class</h2>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Class</th>
+                    <th className="num">Loans</th>
+                    <th className="num">Students borrowing</th>
+                    <th className="num">Loans per borrower</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {u.byClass.map((r) => (
+                    <tr key={r.name}>
+                      <td>{r.name}</td>
+                      <td className="num">{r.loans}</td>
+                      <td className="num">{r.readers}</td>
+                      <td className="num">{r.readers > 0 ? (Math.round((r.loans / r.readers) * 10) / 10).toFixed(1) : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
+          {u.topTitles.length > 0 && (
+            <>
+              <h2>7. Most borrowed titles</h2>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Title</th>
+                    <th>Reading band</th>
+                    <th className="num">Loans</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {u.topTitles.map((r) => (
+                    <tr key={r.title}>
+                      <td>{r.title}</td>
+                      <td>{levelEn(r.level)}</td>
+                      <td className="num">{r.n}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
+
+          <h2>{u.byClass.length > 0 ? 8 : 6}. Collection management data</h2>
+          <table>
+            <thead>
+              <tr>
+                <th style={{ width: "32%" }}>Measure</th>
+                <th className="num">Figure</th>
+                <th>How it is used</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Titles never borrowed</td>
+                <td className="num">{u.neverBorrowed.toLocaleString()}</td>
+                <td>
+                  Reviewed before any purchase or withdrawal decision, so weeding and acquisition rest on recorded use rather than
+                  impression.
+                </td>
+              </tr>
+              <tr>
+                <td>Holdings corrections logged</td>
+                <td className="num">{inv.holdingsFixes.toLocaleString()}</td>
+                <td>Every change to a holdings figure is recorded with its previous value and can be reversed.</td>
+              </tr>
+              <tr>
+                <td>Last shelf count</td>
+                <td className="num">{inv.lastCheck ? inv.lastCheck.slice(0, 10) : "—"}</td>
+                <td>Inventory is continuous rather than annual; each bin carries its own last-counted date.</td>
+              </tr>
+            </tbody>
+          </table>
+
+          {d.snapshots.length > 0 && (
+            <>
+              <h2>{u.byClass.length > 0 ? 9 : 7}. Measured change over time</h2>
+              <p className="note">
+                Figures are frozen on the date shown and counted by the same rule each time, so two rows can be compared directly. These
+                rows are the baseline for the library section of the Plan for Continuous Improvement.
+              </p>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th className="num">Titles</th>
+                    <th className="num">Copies</th>
+                    <th className="num">Levelled</th>
+                    <th className="num">Bins verified</th>
+                    <th className="num">Copies on shelf</th>
+                    <th className="num">Loans (12m)</th>
+                    <th className="num">Borrowers</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {d.snapshots.map((s) => (
+                    <tr key={s.taken_on}>
+                      <td>{s.taken_on}</td>
+                      <td className="num">{s.titles.toLocaleString()}</td>
+                      <td className="num">{s.copies.toLocaleString()}</td>
+                      <td className="num">{s.with_level.toLocaleString()}</td>
+                      <td className="num">{`${s.bins_done} / ${s.bins}`}</td>
+                      <td className="num">{s.check_copies.toLocaleString()}</td>
+                      <td className="num">{s.loans_12m.toLocaleString()}</td>
+                      <td className="num">{s.borrowers_12m.toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
+
+          <p className="note">
+            Student names and identification numbers are not included in this exhibit. Circulation is summarised by class and by title
+            only. {d.notice ? `Some records could not be read: ${d.notice}` : ""}
+          </p>
         </ExhibitSheet>
       );
     }

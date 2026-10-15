@@ -248,6 +248,7 @@ export default async function ExhibitPage({
             Attendance rate = (instructional days − absences) ÷ instructional days. Late arrivals and early leaves are recorded separately and do not
             reduce the attendance rate. Holidays and non-instructional days are excluded using the school calendar. Absence reasons are recorded as
             illness, excused, other or unexcused.
+            {d.calendarFallback ? " Instructional days are counted as weekdays (Monday–Friday) in this period because the school calendar has not yet been entered in the system; public holidays are therefore included in the denominator." : ""}
             {d.truncated ? " (Note: record volume exceeded the export ceiling; figures may be incomplete.)" : ""}
           </p>
         </ExhibitSheet>

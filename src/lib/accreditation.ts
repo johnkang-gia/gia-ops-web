@@ -30,7 +30,8 @@ export async function loadTermRange(supabase: SupabaseClient): Promise<TermRange
   const today = todayKst();
   if (!t) return { id: null, label: `Academic Year ${today.slice(0, 4)}`, from: `${today.slice(0, 4)}-03-01`, to: today };
   const to = t.end_date && t.end_date < today ? t.end_date : today;
-  return { id: t.id, label: `${t.year} ${TERM_EN[t.term_type] ?? t.term_type}`, from: t.start_date ?? `${today.slice(0, 4)}-03-01`, to };
+  const year = /^\d{2}-\d{2}$/.test(t.year) ? `20${t.year}` : t.year;
+  return { id: t.id, label: `${year} ${TERM_EN[t.term_type] ?? t.term_type}`, from: t.start_date ?? `${today.slice(0, 4)}-03-01`, to };
 }
 const TERM_EN: Record<string, string> = { "1학기": "Term 1", "2학기": "Term 2", "3학기": "Term 3", 정규학기: "Regular Term" };
 
@@ -135,9 +136,13 @@ export async function loadAttendance(supabase: SupabaseClient, term: TermRange) 
       .range(a, b),
   );
   if (rec.error) throw new Error(rec.error);
-  const schoolDays = ((days.data as { day: string; is_school_day: boolean }[] | null) ?? [])
-    .filter((d) => d.is_school_day && (!coverageStart || d.day >= coverageStart))
-    .map((d) => d.day);
+  // 수업일 달력이 비어 있으면 평일(월~금)로 셉니다. 달력이 없다고 출석률을 못 내면 증거가 한 장 비고, 공휴일이 섞여
+  // 출석률이 실제보다 조금 높게 나오는 편이 «0일»보다 정직합니다 - 대신 종이에 그렇게 셌다고 적습니다(`calendarFallback`).
+  const calendar = ((days.data as { day: string; is_school_day: boolean }[] | null) ?? []).filter((d) => d.is_school_day).map((d) => d.day);
+  const firstRecord = rec.rows.reduce<string | null>((m, r) => (!m || r.date < m ? r.date : m), null);
+  const start = coverageStart ?? (calendar.length ? null : firstRecord);
+  const calendarFallback = calendar.length === 0;
+  const schoolDays = (calendarFallback ? weekdaysBetween(start ?? term.from, term.to) : calendar).filter((d) => !start || d >= start);
   const per = summarizeAll(stu.rows.map((s) => s.id), rec.rows, schoolDays, coverageStart);
   const group = (pick: (s: Student) => string) => {
     const m = new Map<string, Student[]>();
@@ -159,9 +164,21 @@ export async function loadAttendance(supabase: SupabaseClient, term: TermRange) 
     const pm = summarizeAll(stu.rows.map((s) => s.id), rec.rows, md, coverageStart);
     return { month: m, g: summarizeGroup([...pm.values()]) };
   });
-  return { schoolDays: schoolDays.length, coverageStart, school, byDept, byClass, byMonth, truncated: rec.truncated };
+  return { schoolDays: schoolDays.length, coverageStart: start, calendarFallback, school, byDept, byClass, byMonth, truncated: rec.truncated };
 }
 export type { GroupSummary };
+
+function weekdaysBetween(from: string, to: string): string[] {
+  const out: string[] = [];
+  const d = new Date(`${from}T12:00:00Z`);
+  const end = new Date(`${to}T12:00:00Z`);
+  while (d <= end) {
+    const w = d.getUTCDay();
+    if (w >= 1 && w <= 5) out.push(d.toISOString().slice(0, 10)); // kst-ok: 정오(UTC) 기준 날짜 글자만 만들어 시간대 영향이 없습니다.
+    d.setUTCDate(d.getUTCDate() + 1);
+  }
+  return out;
+}
 
 // ── 4. 주간 관찰기록 ──────────────────────────────────────────────────────────
 
@@ -232,7 +249,8 @@ export async function loadSafety(supabase: SupabaseClient) {
     byDirection: [...dir.entries()],
     stops: world.stops.length,
     assignedStudents: students.size,
-    trackedRoutes: new Set(dev.filter((d) => d.enabled && d.route_id).map((d) => d.route_id)).size,
+    // 지난 학기 노선에 붙어 있던 기기는 세지 않습니다 - 지금 노선 수보다 많은 «추적 노선»이 찍힙니다.
+    trackedRoutes: new Set(dev.filter((d) => d.enabled && d.route_id && world.routeById.has(d.route_id)).map((d) => d.route_id)).size,
     gpsArrivals: arr.length,
     gpsDays: new Set(arr.map((a) => a.service_date)).size,
     checklistEntries: logs.length,

@@ -34,13 +34,33 @@ export type StatementPay = {
 
 export type StatementIn = { date: string; depositor: string; method: string; origin: string; memo: string; amount: number };
 export type StatementUse = { date: string; student: string; invoiceNo: string; item: string; amount: number; from: string | null };
-export type StatementOut = { date: string; memo: string; amount: number };
+export type StatementOut = { date: string; memo: string; amount: number; student: string };
+
+/**
+ * **예치금 한 통의 흐름을 날짜순 한 줄씩** — 들어온 돈(누구 이름으로), 쓴 돈(누구 청구서에), 돌려준 돈, 그 뒤 남은 돈.
+ * 학생 회계 창과 사용내역서가 같은 줄을 씁니다. 사람은 «누가 얼마 쓰고 얼마 남았나»를 이 한 목록으로 읽습니다.
+ * 학생은 언제나 **이름**으로 적습니다(관계를 나타내는 말은 쓰지 않습니다 - 공유는 형제가 아닐 수도 있습니다).
+ */
+export type StatementEvent = {
+  date: string;
+  kind: "in" | "use" | "refund";
+  student: string;
+  amount: number;
+  /** 사용이면 청구서 번호. */
+  invoiceNo: string | null;
+  /** 사용이면 항목, 입금이면 출처·수단·메모. */
+  detail: string;
+  /** 이 줄 뒤에 남은 예치금. */
+  balanceAfter: number;
+};
 
 export type DepositStatement = {
   received: StatementIn[];
   used: StatementUse[];
   refunded: StatementOut[];
   totals: { received: number; used: number; refunded: number; balance: number; mismatch: boolean };
+  /** 날짜순 흐름(입금·사용·환불)과 그때마다 남은 돈. */
+  timeline: StatementEvent[];
   /** 남은 돈을 맡긴 학생별로. 공유 묶음이면 둘 이상. */
   leftBy: { student: string; amount: number }[];
 };
@@ -78,7 +98,7 @@ export function buildDepositStatement(
     const attached = !!p.invoice_id;
     if (attached && !isFromDeposit(p.matched_by)) continue; // 예치금에서 온 돈이 아닌 수납은 이 종이와 상관없습니다.
     if (!attached && p.amount < 0) {
-      refunded.push({ date: p.paid_at, memo: p.memo ?? "예치금에서 돌려드림", amount: -p.amount });
+      refunded.push({ date: p.paid_at, memo: p.memo ?? "예치금에서 돌려드림", amount: -p.amount, student: ctx.nameOf(depositorOf(p)) });
       balance += p.amount;
       const who = depositorOf(p) ?? "";
       left.set(who, (left.get(who) ?? 0) + p.amount);
@@ -121,11 +141,25 @@ export function buildDepositStatement(
   const sum = (xs: { amount: number }[]) => xs.reduce((n, x) => n + x.amount, 0);
   const totals = { received: sum(received), used: sum(used), refunded: sum(refunded), balance: Math.round(balance), mismatch: false };
   totals.mismatch = Math.round(totals.received - totals.used - totals.refunded) !== totals.balance;
+  // 같은 날이면 들어온 돈 → 쓴 돈 → 돌려준 돈 순서. 같은 날 넣고 바로 쓴 경우 잔액이 음수로 보이지 않게 합니다.
+  const rank = { in: 0, use: 1, refund: 2 } as const;
+  const events: Omit<StatementEvent, "balanceAfter">[] = [
+    ...received.map((r) => ({ date: r.date, kind: "in" as const, student: r.depositor, amount: r.amount, invoiceNo: null, detail: [r.origin, r.method, r.memo].filter(Boolean).join(" · ") })),
+    ...used.map((u) => ({ date: u.date, kind: "use" as const, student: u.student, amount: u.amount, invoiceNo: u.invoiceNo, detail: u.item })),
+    ...refunded.map((r) => ({ date: r.date, kind: "refund" as const, student: r.student, amount: r.amount, invoiceNo: null, detail: r.memo })),
+  ].sort((a, b) => a.date.localeCompare(b.date) || rank[a.kind] - rank[b.kind]);
+  let run = 0;
+  const timeline: StatementEvent[] = events.map((e) => {
+    run += e.kind === "in" ? e.amount : -e.amount;
+    return { ...e, balanceAfter: run };
+  });
+
   return {
     received,
     used,
     refunded,
     totals,
+    timeline,
     leftBy: [...left.entries()].map(([id, amount]) => ({ student: ctx.nameOf(id || null), amount })).filter((x) => x.amount !== 0),
   };
 }

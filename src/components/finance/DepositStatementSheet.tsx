@@ -29,13 +29,6 @@ export default function DepositStatementSheet({
   const t = statement.totals;
   const th = { padding: "7px 10px", textAlign: "left" as const, fontSize: 9, letterSpacing: 0.5 };
   const td = { padding: "6px 10px", fontSize: 10.5 };
-  const Section = ({ title }: { title: string }) => (
-    <tr style={{ background: SECTION_BG }}>
-      <td colSpan={5} style={{ padding: "6px 10px", fontSize: 10, fontWeight: 800, color: INK }}>
-        {title}
-      </td>
-    </tr>
-  );
 
   return (
     <div className="inv-page min-h-screen bg-slate-100 p-4 print:min-h-0 print:bg-white print:p-0">
@@ -102,74 +95,48 @@ export default function DepositStatementSheet({
                 <tr>
                   <td style={{ padding: "3px 0", fontSize: 8.5, fontWeight: 700, letterSpacing: 0.6, color: "#6b7280" }}>SHARED · 공유</td>
                   <td style={{ padding: "3px 0", fontSize: 10, color: ACCENT }}>
-                    {shareName} — 위 학생들이 한 예치금을 함께 사용합니다. Shared by the students above.
+                    {students.map((x) => x.name).join(" · ")} — 한 예치금을 함께 사용합니다. Shared deposit.
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
 
+          {/*
+            **날짜순 한 줄씩.** 언제 얼마가 누구 이름으로 들어왔고, 언제 누구 청구서에 얼마가 쓰였고, 그 뒤 얼마가 남았는지.
+            받은 돈과 쓴 돈을 따로 표로 나누면 «그때 얼마 남아 있었나»를 사람이 다시 계산해야 합니다.
+          */}
           <table style={{ marginTop: 22 }}>
             <thead>
               <tr style={{ background: INK, color: "#fff" }}>
-                <th style={{ ...th, width: 76 }}>DATE</th>
+                <th style={{ ...th, width: 74 }}>DATE</th>
                 <th style={th}>DESCRIPTION</th>
-                <th style={{ ...th, width: 92 }}>STUDENT</th>
-                <th style={{ ...th, width: 92 }}>IN · 입금</th>
-                <th style={{ ...th, width: 92 }}>OUT · 사용</th>
+                <th style={{ ...th, width: 82 }}>STUDENT</th>
+                <th style={{ ...th, width: 84 }}>IN · 입금</th>
+                <th style={{ ...th, width: 84 }}>OUT · 사용</th>
+                <th style={{ ...th, width: 88 }}>BALANCE · 잔액</th>
               </tr>
             </thead>
             <tbody>
-              <Section title="받은 예치금 · Deposits received" />
-              {statement.received.map((r, i) => (
-                <tr key={`in${i}`} style={{ background: i % 2 ? "#f4f5f7" : "#fff" }}>
-                  <td style={td}>{dot(r.date)}</td>
+              {statement.timeline.map((e, i) => (
+                <tr key={i} style={{ background: e.kind === "in" ? SECTION_BG : i % 2 ? "#f4f5f7" : "#fff" }}>
+                  <td style={td}>{dot(e.date)}</td>
                   <td style={td}>
-                    {r.origin}
-                    {r.method ? ` · ${r.method}` : ""}
-                    {r.memo ? <span style={{ color: "#6b7280" }}> · {r.memo}</span> : null}
+                    {e.kind === "in" ? "예치금 입금" : e.kind === "use" ? "예치금 사용" : "예치금 환불"}
+                    {e.kind === "use" && e.invoiceNo ? <span style={{ color: "#6b7280" }}> · No. {e.invoiceNo}</span> : null}
+                    {e.detail ? <span style={{ color: "#6b7280" }}> · {e.detail}</span> : null}
                   </td>
-                  <td style={td}>{r.depositor}</td>
-                  <td style={td}>{won(r.amount)}</td>
-                  <td style={td} />
+                  <td style={{ ...td, fontWeight: 700 }}>{e.student}</td>
+                  <td style={{ ...td, color: ACCENT }}>{e.kind === "in" ? won(e.amount) : ""}</td>
+                  <td style={td}>{e.kind !== "in" ? `−${won(e.amount)}` : ""}</td>
+                  <td style={{ ...td, fontWeight: 800 }}>{won(e.balanceAfter)}</td>
                 </tr>
               ))}
-              {statement.received.length === 0 && (
+              {statement.timeline.length === 0 && (
                 <tr>
-                  <td colSpan={5} style={{ ...td, color: "#9ca3af" }}>받은 예치금이 없습니다.</td>
+                  <td colSpan={6} style={{ ...td, color: "#9ca3af" }}>예치금 내역이 없습니다.</td>
                 </tr>
               )}
-
-              <Section title="사용 내역 · Applied to invoices" />
-              {statement.used.map((u, i) => (
-                <tr key={`out${i}`} style={{ background: i % 2 ? "#f4f5f7" : "#fff" }}>
-                  <td style={td}>{dot(u.date)}</td>
-                  <td style={td}>
-                    {u.item}
-                    <span style={{ color: "#6b7280" }}> · No. {u.invoiceNo}</span>
-                    {u.from && <span style={{ marginLeft: 6, fontSize: 8.5, fontWeight: 700, color: ACCENT, background: "#ccfbf1", borderRadius: 3, padding: "1px 5px" }}>{u.from} 예치금에서</span>}
-                  </td>
-                  <td style={td}>{u.student}</td>
-                  <td style={td} />
-                  <td style={td}>−{won(u.amount)}</td>
-                </tr>
-              ))}
-              {statement.used.length === 0 && (
-                <tr>
-                  <td colSpan={5} style={{ ...td, color: "#9ca3af" }}>아직 사용한 내역이 없습니다.</td>
-                </tr>
-              )}
-
-              {statement.refunded.length > 0 && <Section title="돌려드린 금액 · Refunded" />}
-              {statement.refunded.map((r, i) => (
-                <tr key={`rf${i}`}>
-                  <td style={td}>{dot(r.date)}</td>
-                  <td style={td}>{r.memo}</td>
-                  <td style={td} />
-                  <td style={td} />
-                  <td style={td}>−{won(r.amount)}</td>
-                </tr>
-              ))}
             </tbody>
           </table>
 
@@ -201,7 +168,7 @@ export default function DepositStatementSheet({
                       {statement.leftBy.length > 1 &&
                         statement.leftBy.map((l) => (
                           <tr key={l.student}>
-                            <td style={{ fontSize: 9, opacity: 0.8 }}>└ {l.student} 맡긴 몫</td>
+                            <td style={{ fontSize: 9, opacity: 0.8 }}>└ {l.student} 이름으로 남은 금액</td>
                             <td style={{ textAlign: "right", fontSize: 9.5, opacity: 0.8 }}>{won(l.amount)}</td>
                           </tr>
                         ))}

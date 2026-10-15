@@ -945,7 +945,7 @@ export default function StudentLedgerModal({
                   </button>
                 </div>
               )}
-              <DepositShareBox studentId={studentId} onBalance={setPoolBalance} onChanged={() => void load()} />
+              <DepositShareBox studentId={studentId} onBalance={setPoolBalance} onChanged={() => void load()} refreshOn={ledger} />
               {ledger.payments.length === 0 && <p className="px-1 py-1 text-[11px] text-slate-400">들어온 돈이 없습니다.</p>}
               {ledger.payments.length > 0 && (
                 <div className="grid gap-2 md:grid-cols-2">

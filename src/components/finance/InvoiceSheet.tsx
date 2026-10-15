@@ -161,15 +161,6 @@ export default function InvoiceSheet({
   const depOf = (id: string) => deposit?.byInvoice[id] ?? null;
   const depTotal = parts.reduce((n, p) => n + (depOf(p.invoice.id)?.deposit ?? 0), 0);
   const otherPaid = parts.reduce((n, p) => n + (depOf(p.invoice.id)?.otherPaid ?? 0), 0);
-  const depLineIds = new Set(parts.flatMap((p) => depOf(p.invoice.id)?.lineIds ?? []));
-  const depItemOf = (lineId: string) => {
-    for (const p of parts) {
-      const d = depOf(p.invoice.id);
-      const i = d?.lineIds.indexOf(lineId) ?? -1;
-      if (d && i >= 0) return d.items[i];
-    }
-    return null;
-  };
   /** 청구서라면 실제로 내실 금액. 예치금·이미 받은 돈을 뺍니다. */
   const toPay = Math.max(0, sum - depTotal - otherPaid);
   const showBreakdown = !receipt && (depTotal > 0 || otherPaid > 0);
@@ -321,14 +312,7 @@ export default function InvoiceSheet({
                         <td style={{ padding: "7px 10px", fontSize: 10.5 }}>{l.seq}</td>
                         <td style={{ padding: "7px 10px", fontSize: 10.5 }}>
                           {l.name}
-                          {depLineIds.has(l.id) && (() => {
-                            const it = depItemOf(l.id);
-                            return (
-                              <span style={{ marginLeft: 6, fontSize: 8.5, fontWeight: 700, color: "#0f766e", background: "#ccfbf1", borderRadius: 3, padding: "1px 5px" }}>
-                                {it?.partial ? `예치금 ${won(it.amount)} 차감 · Partly paid from deposit` : "예치금 차감 · Paid from deposit"}
-                              </span>
-                            );
-                          })()}
+                          {/* 항목마다 «예치금 차감» 표시는 달지 않습니다 - 아래 예치금 칸 한 곳에 «누구 이름으로 얼마 · 남은 돈»만 적습니다. */}
                         </td>
                         <td style={{ padding: "7px 10px", fontSize: 10.5 }}>{l.qty}</td>
                         <td style={{ padding: "7px 10px", fontSize: 10.5 }}>{won(Number(l.amount))}</td>
@@ -427,26 +411,21 @@ export default function InvoiceSheet({
                     <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.6, color: "#0f766e" }}>DEPOSIT · 예치금 안내</div>
                     <table style={{ marginTop: 6 }}>
                       <tbody>
-                        {parts.flatMap((p) =>
-                          (depOf(p.invoice.id)?.items ?? []).map((it, i) => (
-                            <tr key={`${p.invoice.id}-${i}`}>
-                              <td style={{ fontSize: 10, padding: "1px 0" }}>
-                                {many ? `${sectionTitle(p.invoice, mode)} · ` : ""}
-                                {it.name}
-                                {it.partial ? " (일부)" : ""}
+                        {/* 학생 이름으로 얼마 뺐는지만 적습니다. 무엇을 어느 순서로 뺐는지는 예치금 내역서가 맡습니다. */}
+                        {parts
+                          .filter((p) => (depOf(p.invoice.id)?.deposit ?? 0) > 0)
+                          .map((p) => (
+                            <tr key={p.invoice.id}>
+                              <td style={{ fontSize: 10, fontWeight: 800, padding: "1px 0" }}>
+                                예치금 차감 · Deposit applied — {(p.invoice.student_name_ko?.trim() || p.invoice.student_name || "").trim()}
                               </td>
-                              <td style={{ fontSize: 10, padding: "1px 0", textAlign: "right", width: 120 }}>−{won(it.amount)}</td>
+                              <td style={{ fontSize: 10.5, fontWeight: 800, padding: "1px 0", textAlign: "right", width: 120 }}>−{won(depOf(p.invoice.id)!.deposit)}</td>
                             </tr>
-                          )),
-                        )}
-                        <tr>
-                          <td style={{ fontSize: 10, fontWeight: 800, paddingTop: 4, borderTop: "1px solid #ccfbf1" }}>예치금에서 차감한 금액 · Deposit applied</td>
-                          <td style={{ fontSize: 10.5, fontWeight: 800, paddingTop: 4, borderTop: "1px solid #ccfbf1", textAlign: "right" }}>{won(depTotal)}</td>
-                        </tr>
+                          ))}
                         {depositLeft.map((d) => (
                           <tr key={d.who}>
                             <td style={{ fontSize: 10, fontWeight: 800, color: "#0f766e" }}>
-                              남은 예치금 · Remaining deposit{d.share ? ` (공유 · ${d.share})` : depositLeft.length > 1 ? ` (${d.who})` : ""}
+                              남은 예치금 · Remaining deposit{!d.share && depositLeft.length > 1 ? ` (${d.who})` : ""}
                               <span style={{ fontWeight: 400, color: "#6b7280" }}> — {dot(deposit!.asOf)} 기준</span>
                             </td>
                             <td style={{ fontSize: 10.5, fontWeight: 800, color: "#0f766e", textAlign: "right" }}>{won(d.left)}</td>

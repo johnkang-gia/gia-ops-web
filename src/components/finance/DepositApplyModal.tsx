@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { won } from "@/lib/feeItems";
-import { depositBalance, groupLines, isFromDeposit, type LineItem } from "@/lib/depositLines";
+import { groupLines, isFromDeposit, type LineItem } from "@/lib/depositLines";
+import { DepositEventLine } from "@/components/finance/DepositShareBox";
+import type { StatementEvent } from "@/lib/depositStatement";
 
 /**
  * **예치금에서 뺄 항목 고르기.**
@@ -38,7 +40,9 @@ export default function DepositApplyModal({
   /** 고른 순서가 곧 덮는 순서입니다. 모자라면 마지막에 고른 항목이 일부만 덮입니다. */
   const [order, setOrder] = useState<string[]>([]);
   /** 공유 묶음 이름과 함께 쓰는 학생 수. 둘 이상이면 «공유 예치금»으로 보여줍니다. */
-  const [share, setShare] = useState<{ name: string; count: number } | null>(null);
+  const [share, setShare] = useState<{ names: string[] } | null>(null);
+  /** 이 예치금의 최근 흐름. 다른 학생이 방금 쓴 것이 여기 먼저 보여야 남은 돈을 믿고 뺍니다. */
+  const [history, setHistory] = useState<StatementEvent[]>([]);
   /**
    * 이번에 뺄 금액(비우면 고른 항목 전부). 큰 예치금이 있어도 이번 달은 일부만 쓰고 나머지는 다음 학기로 두는
    * 집이 있어서, «무엇을»과 함께 «얼마까지»도 사람이 정합니다.
@@ -50,31 +54,22 @@ export default function DepositApplyModal({
     (async () => {
       const { data: inv, error: invErr } = await supabase.from("invoices").select("student_id").eq("id", invoiceId).maybeSingle();
       if (invErr || !inv?.student_id) return setErr(invErr?.message ?? "학생이 이어지지 않은 청구서입니다.");
-      // 공유 묶음이면 묶음 전체의 예치금을 씁니다(`depositShare.ts` 와 같은 규칙 - 서버가 저장할 때 다시 셉니다).
-      let pool: string[] = [inv.student_id];
-      const { data: mem } = await supabase.from("deposit_share_members").select("share_id").eq("student_id", inv.student_id).maybeSingle();
-      if (mem) {
-        const sid = (mem as { share_id: string }).share_id;
-        const [all, sh] = await Promise.all([
-          supabase.from("deposit_share_members").select("student_id").eq("share_id", sid),
-          supabase.from("deposit_shares").select("name").eq("id", sid).maybeSingle(),
-        ]);
-        pool = [...new Set([inv.student_id, ...(((all.data as { student_id: string }[] | null) ?? []).map((r) => r.student_id))])];
-        setShare({ name: (sh.data as { name: string } | null)?.name ?? "공유 예치금", count: pool.length });
-      }
+      // 남은 예치금과 흐름은 서버가 셉니다(공유 묶음 전체 · 사용내역서와 같은 함수). 창이 따로 세면 숫자가 달라집니다.
       const [l, p, d] = await Promise.all([
         supabase.from("invoice_lines").select("id, seq, name, amount, paid_payment_id").eq("invoice_id", invoiceId).order("seq"),
         supabase.from("payments").select("id, amount, matched_by, applied_line_id").eq("invoice_id", invoiceId),
-        supabase.from("payments").select("amount").in("student_id", pool).is("invoice_id", null),
+        fetch(`/api/finance/deposit-share?studentId=${inv.student_id}`).then(async (r) => ({ ok: r.ok, body: (await r.json().catch(() => ({}))) as { error?: string; balance?: number; history?: StatementEvent[]; members?: { name: string }[]; share?: unknown } })),
       ]);
       // 못 읽은 채로 고르게 하면 이미 뺀 항목을 모르고 다시 빼게 됩니다. 이유를 띄우고 멈춥니다.
-      const bad = l.error ?? p.error ?? d.error;
-      if (bad) return setErr(bad.message);
+      const bad = l.error?.message ?? p.error?.message ?? (d.ok ? null : d.body.error ?? "예치금을 읽지 못했습니다.");
+      if (bad) return setErr(bad);
       const ls = ((l.data as Line[] | null) ?? []).map((x) => ({ ...x, amount: Number(x.amount) }));
       const ps = ((p.data as Pay[] | null) ?? []).map((x) => ({ ...x, amount: Number(x.amount) }));
       setLines(ls);
       setPays(ps);
-      setBalance(depositBalance(((d.data as { amount: number | string }[] | null) ?? []).map((x) => ({ amount: Number(x.amount) }))));
+      setBalance(Number(d.body.balance ?? 0));
+      setHistory(d.body.history ?? []);
+      if (d.body.share && (d.body.members?.length ?? 0) > 1) setShare({ names: (d.body.members ?? []).map((m) => m.name) });
       const dep = ps.filter((x) => isFromDeposit(x.matched_by) && x.applied_line_id);
       setOrder([...new Set(dep.map((x) => x.applied_line_id as string))]);
     })();
@@ -152,15 +147,25 @@ export default function DepositApplyModal({
         {lines && (
           <>
             <div className="mb-3 rounded-lg bg-teal-50 px-3 py-2 text-[12px] text-teal-900">
-              {share && share.count > 1 ? (
-                <span className="mr-1 rounded bg-teal-600 px-1 text-[10px] font-bold text-white" title="묶음 안 학생들이 한 통으로 나눠 씁니다">
-                  공유 · {share.name} ({share.count}명)
+              {share ? (
+                <span className="mr-1 rounded bg-teal-600 px-1 text-[10px] font-bold text-white" title="이 학생들이 한 예치금을 함께 씁니다">
+                  공유 · {share.names.join("·")}
                 </span>
               ) : null}
               쓸 수 있는 예치금 <b className="tabular-nums">{won(available)}</b>
               {onInvoice > 0 && <span className="ml-1 text-[11px] text-teal-700">(이 청구서에서 이미 뺀 {won(onInvoice)} 포함)</span>}
             </div>
 
+            {history.length > 0 && (
+              <div className="mb-3 rounded-lg border border-teal-100 px-2 py-1.5 text-[11px]">
+                <p className="mb-0.5 text-[10px] font-bold text-teal-800">예치금 최근 내역</p>
+                <ul className="space-y-0.5">
+                  {[...history].reverse().slice(0, 5).map((e, i) => (
+                    <DepositEventLine key={i} e={e} />
+                  ))}
+                </ul>
+              </div>
+            )}
             <p className="mb-1 text-[11px] font-semibold text-slate-500">예치금에서 낼 항목 — 고른 순서대로 뺍니다</p>
             <ul className="mb-3 flex flex-col gap-0.5">
               {items.map((i) => {

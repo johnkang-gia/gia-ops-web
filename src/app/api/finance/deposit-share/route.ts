@@ -4,6 +4,7 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess } from "@/lib/roles";
 import { loadStudents } from "@/lib/students";
 import { poolOf } from "@/lib/depositShare";
+import { loadDepositStatement } from "@/lib/depositStatement";
 
 /**
  * **예치금 공유 묶음 보기·묶기·풀기.**
@@ -11,8 +12,12 @@ import { poolOf } from "@/lib/depositShare";
  * 묶으면 두 학생의 예치금이 한 통이 됩니다 - 어느 아이 청구서에서든 꺼내 쓸 수 있고, 줄은 하나씩만 있어 같은 돈이
  * 두 번 빠지지 않습니다(`depositShare.ts`). 풀어도 돈은 움직이지 않습니다. 각 줄은 맡긴 학생 앞으로 그대로 남습니다.
  *
- * 형제는 명부의 형제 묶음(`sibling_group_id`)으로 먼저 제안하지만, 형제가 아닌 학생도 묶을 수 있습니다 - 사촌·
- * 같은 보호자가 맡긴 돈처럼 «한 집 돈»은 명부의 형제 관계와 꼭 같지 않습니다.
+ * 묶을 학생은 사람이 검색해서 고르고, 몇 명이든 계속 더할 수 있습니다. 명부의 형제 관계로 미리 묶지 않습니다 - 함께 쓰는
+ * 돈은 형제가 아닌 학생 사이에도 있고, 형제라도 따로 쓰는 집이 있습니다.
+ *
+ * 보기(GET)는 묶음과 함께 **예치금 흐름**(누가 언제 얼마 넣고 누가 얼마 썼고 얼마 남았나)을 돌려줍니다. 학생 회계 창과
+ * 「예치금에서 빼기」 창이 이 목록을 그대로 보여줘, 한 학생이 쓰고 나면 다른 학생 청구서를 낼 때 줄어든 잔액과 그 사용이
+ * 바로 보입니다.
  */
 
 export const dynamic = "force-dynamic";
@@ -46,7 +51,6 @@ export async function GET(req: Request) {
   for (const r of (dep.data as { student_id: string; amount: number | string }[] | null) ?? []) {
     left.set(r.student_id, (left.get(r.student_id) ?? 0) + Number(r.amount));
   }
-  const me = byId.get(studentId);
   const members = pool.memberIds.map((id) => ({
     id,
     name: byId.get(id)?.name ?? "이름 미확인",
@@ -54,14 +58,18 @@ export async function GET(req: Request) {
     className: byId.get(id)?.class_name ?? null,
     deposit: Math.max(0, left.get(id) ?? 0),
   }));
-  const siblings = me?.sibling_group_id
-    ? stu.rows.filter((s) => s.sibling_group_id === me.sibling_group_id && s.id !== studentId && !pool.memberIds.includes(s.id)).map((s) => ({ id: s.id, name: s.name }))
-    : [];
+  // 흐름은 사용내역서와 같은 함수로 셉니다. 두 곳이 따로 세면 창과 종이의 숫자가 달라집니다.
+  let history: Awaited<ReturnType<typeof loadDepositStatement>>["statement"]["timeline"] = [];
+  try {
+    history = (await loadDepositStatement(supabase, studentId)).statement.timeline;
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : "예치금 내역을 읽지 못했습니다." }, { status: 500 });
+  }
   return NextResponse.json({
+    history,
     share: pool.share ? { id: pool.share.id, name: pool.share.name } : null,
     members,
     balance: Math.max(0, [...left.values()].reduce((n, v) => n + v, 0)),
-    siblings,
     students: stu.rows.map((s) => ({ id: s.id, name: s.name, grade: s.grade, class_name: s.class_name, name_en: s.name_en, student_no: s.student_no, birth_date: s.birth_date })),
   });
 }
@@ -76,6 +84,7 @@ export async function POST(req: Request) {
   const supabase = await createClient();
 
   if (body.action === "unlink") {
+    // 화면은 묶음 안 아무 학생이나 골라 뺄 수 있습니다(studentId = 뺄 학생).
     const pool = await poolOf(supabase, studentId);
     if (pool.error) return NextResponse.json({ error: pool.error }, { status: 500 });
     if (!pool.share) return NextResponse.json({ ok: true });

@@ -23,3 +23,17 @@ if (p.lines[0].takes[0].depositId!=="own") throw new Error("own first");
 const q = planDeduction([{id:"a",amount:500,paidAt:"0"}],[{id:"l1",amount:300},{id:"l2",amount:300}],350);
 if (q.applied!==350||q.partial?.covered!==50) throw new Error("cap");
 console.log("OK");
+
+// 1,000,000원을 함께 쓰는 두 학생 - 김가온 청구서에 300,000원을 쓰면 흐름이 «남음 700,000원»을 바로 말해야 합니다.
+{
+  const b = { method: "계좌", payer_name: null, memo: null, origin: "미리받음", deposit_applied_at: null, shared_from_student_id: null };
+  const rows: StatementPay[] = [
+    { ...b, id: "r1", student_id: "G", shared_from_student_id: null, invoice_id: "iv", amount: 300000, paid_at: "2026-10-01", matched_by: "예치금 차감 · x", split_from_id: null, applied_line_id: null, deposit_applied_at: "2026-10-15T00:00:00Z" },
+    { ...b, id: "r2", student_id: "G", invoice_id: null, amount: 700000, paid_at: "2026-10-01", matched_by: "예치금", split_from_id: "r1", applied_line_id: null },
+  ];
+  const t = buildDepositStatement(rows, { nameOf: (id) => (id === "G" ? "김가온" : "?"), invoiceOf: () => ({ invoice_no: "2026-0100", issue_date: "2026-10-15", student_id: "G" }), lineName: () => "정규과정" });
+  const tl = t.timeline.map((e) => `${e.kind}:${e.student}:${e.amount}:${e.balanceAfter}`).join(",");
+  if (tl !== "in:김가온:1000000:1000000,use:김가온:300000:700000") throw new Error("timeline " + tl);
+  if (t.totals.balance !== 700000) throw new Error("balance");
+}
+console.log("OK timeline");

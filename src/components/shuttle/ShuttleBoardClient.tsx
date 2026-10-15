@@ -32,10 +32,6 @@ type YoutubeSearchResult = { videoId: string; title: string; channelTitle: strin
 
 type IntroRoute = { routeId: string; routeNo: string; name: string | null };
 
-function natCompare(a: string, b: string) {
-  return a.localeCompare(b, "ko", { numeric: true });
-}
-
 function fmtTime(iso: string) {
   const d = new Date(iso);
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;

@@ -94,7 +94,6 @@ export default function StudentDayBoard({ students }: { students: SelectableStud
 
   const [q, setQ] = useState("");
   const [onlyPending, setOnlyPending] = useState(false);
-  const [open, setOpen] = useState<Set<string>>(new Set());
   const [showPast, setShowPast] = useState(false);
   const [showAhead, setShowAhead] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
@@ -286,15 +285,6 @@ export default function StudentDayBoard({ students }: { students: SelectableStud
     } catch (err) {
       notify(err instanceof Error ? err.message : String(err), "error");
     }
-  }
-
-  function toggle(id: string) {
-    setOpen((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
   }
 
   return (

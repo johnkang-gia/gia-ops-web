@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { BoardScale } from "@/lib/useBoardDensity";
 
 /**
  * 눌렀을 때 화면 위에 뜨는 작은 창들 — 문의 원문, 반별 주간 시간표.

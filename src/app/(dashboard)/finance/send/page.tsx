@@ -8,7 +8,6 @@ import { billingPhoneOf, phoneOf, phonesOf, ROLE_ORDER, type GuardianRole } from
 import { roundLabel } from "@/lib/invoiceRound";
 import SendClient, { type SendRow } from "@/components/finance/SendClient";
 
-import { getFinanceScope, scopeStudentIds, inScopeIds } from "@/lib/financeScopeServer";
 export const dynamic = "force-dynamic";
 
 /**

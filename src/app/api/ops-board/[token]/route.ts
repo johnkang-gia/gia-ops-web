@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import { checkRevision, parseSince } from "@/lib/boardRevision";
 import { cached } from "@/lib/ttlCache";
 import { APP_VERSION } from "@/lib/version";
-import { buildStaffNames, categorize, extractTargetDate, matchRosterStudents, todayKey, type RosterStudent } from "@/lib/attendanceDigest";
+import { todayKey } from "@/lib/attendanceDigest";
 import { loadActiveEntries, loadUpcomingEntries } from "@/lib/attendanceEntries";
-import { displayStudent, toRosterEntries, ROSTER_SELECT, type RosterEntry } from "@/lib/pickupParse";
+import { displayStudent, toRosterEntries, type RosterEntry } from "@/lib/pickupParse";
 import { loadTodayPickups } from "@/lib/pickups";
 import { displayInquiryType } from "@/lib/inquiryType";
 import { createClient } from "@supabase/supabase-js";
@@ -230,16 +230,6 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   // 이 화면은 30초마다 스스로 다시 물어봅니다. 하루 1,500번 넘게 쓰지도 않을 메시지
   // 본문을 실어 나른 셈이고, 그게 Supabase 무료 한도(월 5GB)를 거의 통째로 먹었습니다.
   // 안 쓰는 조회는 느려지는 것으로도 안 보이고 오류로도 안 보입니다 - 청구서에만 보입니다.
-
-  // 영문명까지 넘겨야 "Diane Lim 결석"처럼 영어로 온 출결도 대조됩니다(업무 화면 출결내역은
-  // 이미 이렇게 합니다). 이게 빠져서 대시보드에만 안 떴습니다.
-  const roster: RosterStudent[] = deptStudents.map((s) => ({
-    name: (s.name as string) ?? "",
-    grade: (s.grade as string | null) ?? null,
-    nameEn: (s.name_en as string | null) ?? null,
-    birthDate: (s.birth_date as string | null) ?? null,
-    className: (s.class_name as string | null) ?? null,
-  }));
 
   // (2-a) 행정실이 등록한 출결(attendance_entries) - 기간이 오늘을 품는 것만.
   //
@@ -544,7 +534,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   // 자료는 이미 있습니다(학생 → 하원수단, 요일별). 여기서는 오늘 요일의 «셔틀이 아닌 것»만
   // 꺼내 시각 순으로 세웁니다. 새 표를 만들지 않습니다 - 같은 사실을 두 곳에 적으면 언젠가
   // 어긋나고, 어긋난 쪽이 어느 쪽인지 아무도 모릅니다.
-  const { rows: planRows, byStudent: planPicked } = await loadDismissalForDay(supabase, {
+  const { byStudent: planPicked } = await loadDismissalForDay(supabase, {
     dayIso: todayK,
     weekday,
     excludeShuttle: true,

@@ -180,8 +180,6 @@ export function categoryForStudent(
   otherSurfaces?: readonly string[],
 ): AttendanceCategory | null {
   if (surfaces.length === 0) return whole;
-  const flat = (v: string) => v.toLowerCase().replace(/\s+/g, "");
-  const hasName = (piece: string, names: readonly string[]) => names.some((n) => flat(piece).includes(flat(n)));
 
   /**
    * 이 아이가 나오는 **문장**을 먼저 봅니다.

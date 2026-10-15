@@ -16,7 +16,7 @@ import type { GoogleChatMirrorMessage } from "@/lib/types";
 import { categorize } from "@/lib/attendanceDigest";
 import GuideButton from "@/components/common/GuideButton";
 import { isStaffOrAboveUser } from "@/lib/roles";
-import { effectiveRouteId, routeChoiceOf } from "@/lib/shuttleRoute";
+import { routeChoiceOf } from "@/lib/shuttleRoute";
 import { compareRoster } from "@/lib/rosterOrder";
 
 const GUIDE_SECTIONS = [

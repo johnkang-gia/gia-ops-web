@@ -7,7 +7,7 @@ import { VISIBLE_DEPARTMENTS } from "@/lib/department";
 import { useKstClock } from "@/lib/useKstClock";
 import { useFullscreen } from "@/lib/useFullscreen";
 import { useIdleCursor } from "@/lib/useIdleCursor";
-import { useBoardDensity, type BoardScale, type Density } from "@/lib/useBoardDensity";
+import { useBoardDensity } from "@/lib/useBoardDensity";
 
 // 요청: "gia운영에 있는 업무 탭을 사무실 가운데에 큰 모니터에 띄워서 전체가 한눈에 보고 파악할
 // 수 있는 통합 대시보드... 페이지를 반으로 나눠서 한쪽은 cctv 그리고 한쪽은 우리 gia운영 앱"
@@ -21,7 +21,6 @@ import { useBoardDensity, type BoardScale, type Density } from "@/lib/useBoardDe
 import { lessonPlace } from "@/lib/lessonLocation";
 import { APP_VERSION } from "@/lib/version";
 import LunchCountdown from "./LunchCountdown";
-import InquiryBoard from "./InquiryBoard";
 import { useSmartPoll } from "@/lib/useSmartPoll";
 import { createClient } from "@/lib/supabase/client";
 import { OPS_REFRESH_CHANNEL, OPS_REFRESH_EVENT } from "@/lib/opsRefresh";
@@ -36,10 +35,10 @@ import { OPS_REFRESH_CHANNEL, OPS_REFRESH_EVENT } from "@/lib/opsRefresh";
 //   BoardPanels  — 대시보드의 칸들(밤 정보·교실 쪽지·인박스·오늘 변동사항)
 //   PickupAlerts — 픽업 5분 전 알람
 //   BoardChrome  — 글자 크기·전체화면 손잡이
-import { BoardData, STATUS_COLOR, WEEKDAY_KO, shortName } from "./boardShared";
+import { BoardData, WEEKDAY_KO } from "./boardShared";
 import { InquiryPopup, WeekTimetablePopup } from "./BoardPopups";
 import { ClassroomNotes, Empty, NightInfoPanel, Panel, TodayChanges, TodayStudentNotes, TodayStudents } from "./BoardPanels";
-import { PickupAlarm, PickupToast } from "./PickupAlerts";
+import { PickupAlarm } from "./PickupAlerts";
 import { DensityPicker, FullscreenPrompt } from "./BoardChrome";
 
 // 요청: "바뀌면 자동으로 새로고침해서 페이지를 수정해줘"

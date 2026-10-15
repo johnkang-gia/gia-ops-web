@@ -2,8 +2,7 @@
 
 import { useState } from "react";
 import type { BoardScale } from "@/lib/useBoardDensity";
-import { lessonPlace } from "@/lib/lessonLocation";
-import { BoardData, STATUS_COLOR, WEEKDAY_KO, btn, dayRange, mergeByStudent, shortName } from "./boardShared";
+import { BoardData, btn, dayRange, mergeByStudent, shortName } from "./boardShared";
 import { ITEM_LOOK, bucketOf, toMinutes, type DayBoard, type DayItem, type StudentDay } from "@/lib/studentDay";
 
 /**

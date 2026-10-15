@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { WR_INSTRUMENTS, type ShuttleRoute, type ShuttleStop, type WrStudent, type WrStudentFieldDef } from "@/lib/types";
-import { assignClass, findClass, type ClassRow } from "@/lib/classAssign";
+import { assignClass, type ClassRow } from "@/lib/classAssign";
 import { addStudents, type AddResult, type NeedsConfirm, type NewStudentInput } from "@/lib/studentAdd";
 import SameNameConfirm from "@/components/school/SameNameConfirm";
 import { useConfirm } from "@/components/common/ConfirmProvider";
@@ -192,7 +192,6 @@ export default function StudentManageClient({
    * 저장한 뒤에 알려주면 이미 잘못 들어간 뒤이고, 그때는 명부를 다시 열어 고쳐야 합니다.
    * 반 이름만 남고 배정이 비어 있는 줄은 화면에 멀쩡해 보여서 아무도 안 찾습니다.
    */
-  const matchedClass = useMemo(() => findClass(className, classes, grade), [className, classes, grade]);
 
   /**
    * 학생 추가 폼의 학년·반 선택지. **학생 명부가 아니라 반 명부(`wr_classes`)에서** 뽑습니다.

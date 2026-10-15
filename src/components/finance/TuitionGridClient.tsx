@@ -10,7 +10,7 @@ import { planBillForMonth } from "@/lib/tuitionMonth";
 import { resolveAddon, addonPlanForLine, type AddonPrice } from "@/lib/tuitionAddon";
 import { useFinanceLive } from "@/lib/useFinanceLive";
 import AlreadyPaidModal from "@/components/finance/AlreadyPaidModal";
-import { loadPartnerMode, savePartnerMode, unbilledOf, issueExtraInvoice, PARTNER_LABEL, type PartnerMode } from "@/lib/issuePartner";
+import { loadPartnerMode, savePartnerMode, unbilledOf, issueExtraInvoice, type PartnerMode } from "@/lib/issuePartner";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
 import { won } from "@/lib/feeItems";
@@ -33,12 +33,10 @@ import TermPicker, { initialTermId } from "./TermPicker";
 import InvoicePreviewModal from "./InvoicePreviewModal";
 import CancelInvoiceModal from "./CancelInvoiceModal";
 import type { FeePlan, FeePaymentOption, FeeDiscount, Term, Invoice } from "@/lib/types";
-import { PAYMENT_METHOD_KINDS } from "@/lib/payments";
-import { todayKst } from "@/lib/kst";
 import { useEditingPresence } from "@/lib/useEditingPresence";
 import ScopeTabs from "./ScopeTabs";
 import AlltalkpayExport from "./AlltalkpayExport";
-import { ALL_SCOPE, inScope, type Scope } from "@/lib/gradeScope";
+import { ALL_SCOPE, inScope } from "@/lib/gradeScope";
 import { gridTotals, gridTotalsByStudent } from "@/lib/gridTotals";
 import Explain from "@/components/finance/Explain";
 
@@ -1039,7 +1037,6 @@ export default function TuitionGridClient({
     }
   }
 
-  const grandTotal = rows.reduce((n, s) => n + totalOf(s.id), 0);
   /**
    * **청구액 · 수납 · 미수금** — 학비외 일괄·회계와 같은 세 숫자, 같은 계산(`gridTotals`).
    *

@@ -101,26 +101,6 @@ function ResizeHandle({ onStart, onReset }: { onStart: (e: React.MouseEvent) => 
   );
 }
 
-/** 위아래로 나눈 칸의 높이 손잡이. 가로 손잡이(ResizeHandle)와 같은 규칙입니다. */
-function HeightHandle({ onStart, onReset }: { onStart: (e: React.MouseEvent) => void; onReset: () => void }) {
-  return (
-    <div
-      onMouseDown={onStart}
-      onDoubleClick={onReset}
-      role="separator"
-      aria-orientation="horizontal"
-      title="끌어서 위아래 높이를 바꿉니다 · 두 번 누르면 원래대로"
-      className="group flex h-2.5 shrink-0 cursor-row-resize items-center justify-center bg-slate-200/80 transition-colors hover:bg-blue-400 active:bg-blue-500"
-    >
-      <span className="flex gap-[3px]">
-        {[0, 1, 2].map((i) => (
-          <span key={i} className="block h-[3px] w-[3px] rounded-full bg-slate-400 group-hover:bg-white" />
-        ))}
-      </span>
-    </div>
-  );
-}
-
 // 세 칸이 모두 똑같이 생긴 머리글을 씁니다 - 어디를 보고 있는지가 같은 자리에서 같은 크기로
 // 읽혀야 화면이 정돈돼 보입니다(요청: "제대로 깔끔하게 보이도록").
 function Zone({
@@ -515,32 +495,6 @@ export default function WorkspaceArea({
    */
   // 인박스 안 위아래 나누기. 가로 손잡이와 같은 방식이되 기준이 컨테이너의 높이입니다.
   const inboxRef = useRef<HTMLDivElement>(null);
-  const startVerticalResize = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault();
-      const box = inboxRef.current?.getBoundingClientRect();
-      if (!box) return;
-      const startY = e.clientY;
-      const startValue = layout.inboxTopHeight;
-      document.body.style.cursor = "row-resize";
-      document.body.style.userSelect = "none";
-      function onMove(ev: MouseEvent) {
-        const delta = ((ev.clientY - startY) / box!.height) * 100;
-        // 한쪽이 너무 얇아지면 안에 든 글을 읽을 수 없습니다.
-        const next = Math.min(85, Math.max(15, startValue + delta));
-        setLayout((p) => ({ ...p, inboxTopHeight: next }));
-      }
-      function onUp() {
-        document.body.style.cursor = "";
-        document.body.style.userSelect = "";
-        document.removeEventListener("mousemove", onMove);
-        document.removeEventListener("mouseup", onUp);
-      }
-      document.addEventListener("mousemove", onMove);
-      document.addEventListener("mouseup", onUp);
-    },
-    [layout.inboxTopHeight],
-  );
 
   /**
    * 특이사항에서 고를 수 있는 학생.

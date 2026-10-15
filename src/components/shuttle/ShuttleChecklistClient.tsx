@@ -914,7 +914,6 @@ export default function ShuttleChecklistClient({
   // 이름을 열쇠로 쓰게 되고, 그러면 김재이 셋에 값 하나만 담겨 마지막 한 명의 반이 셋
   // 모두에게 붙습니다 - 16-1 김재이(G2A)도 20호 김재이(G2C)도 (G3JA)로 나왔습니다.
   const whereMaps = useMemo(() => buildWhereMaps(roster), [roster]);
-  const homonyms = whereMaps.homonyms;
 
   // 영어 이름으로도 찾기 (담당자: "아이들 영어이름으로도 검색할 수 있게 해줘").
   //

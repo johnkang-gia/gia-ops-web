@@ -3,7 +3,6 @@ import { createClient } from "@/lib/supabase/server";
 import { loadShuttleWorld } from "@/lib/shuttleWorld";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isStaffOrAboveUser } from "@/lib/roles";
-import type { WrStudent } from "@/lib/types";
 import RouteManageClient, { type RouteAssignment } from "@/components/shuttle/RouteManageClient";
 import GuideButton from "@/components/common/GuideButton";
 import { loadStudents } from "@/lib/students";

@@ -16,7 +16,7 @@ import ScopeTabs from "@/components/finance/ScopeTabs";
 import StudentLedgerModal from "@/components/finance/StudentLedgerModal";
 import AlltalkpayExport from "@/components/finance/AlltalkpayExport";
 import InvoicePreviewModal from "@/components/finance/InvoicePreviewModal";
-import { ALL_SCOPE, inScope, type Scope } from "@/lib/gradeScope";
+import { ALL_SCOPE, inScope } from "@/lib/gradeScope";
 import { departmentOf, gradeSortKey, tabIncludes } from "@/lib/department";
 import { won } from "@/lib/feeItems";
 

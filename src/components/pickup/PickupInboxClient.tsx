@@ -1,20 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { todayKst } from "@/lib/kst";
 import { useToast } from "@/components/common/ToastProvider";
 import UpcomingPickups, { type ScheduleRow } from "@/components/pickup/UpcomingPickups";
 import PickupTriage from "@/components/pickup/PickupTriage";
 import { createClient } from "@/lib/supabase/client";
-import { parseChannelLabel, type RosterEntry } from "@/lib/pickupParse";
-import { buildAliasIndex, resolveStudent, type AliasRule } from "@/lib/studentMatch";
+import { type RosterEntry } from "@/lib/pickupParse";
 import { buildWhereMaps, RowStudentName } from "@/lib/studentLabel";
-import { nameSurfaces, readSiblings } from "@/lib/attendanceIntent";
-import { extractTargetRange, todayKey } from "@/lib/attendanceDigest";
-import { extractRecurringWeekdays, hasRecurringPhrase, weekdayLabel } from "@/lib/parentRecurrence";
-import { guessNote, isClockTime, KIND_LOOK, NOTE_KINDS, type NoteKind } from "@/lib/studentDayNotes";
-import { readsShuttleRequest } from "@/lib/shuttleRequest";
+import { todayKey } from "@/lib/attendanceDigest";
 import { loadHouseCandidates, type HouseChild } from "@/lib/houseCandidates";
 
 // 픽업 인박스. 토들·전화·교사·직접입력 어디로 들어왔든 여기 한 곳에 모입니다.
@@ -52,15 +46,6 @@ export type StudentOption = {
   student_no?: string | null;
   /** 동명이인 판정에 씁니다("jay kim(190828)"의 괄호). 없으면 아무도 못 고릅니다. */
   birth_date?: string | null;
-};
-
-const SOURCE_STYLE: Record<string, string> = {
-  토들: "bg-rose-50 text-rose-600",
-  전화: "bg-sky-50 text-sky-600",
-  교사: "bg-violet-50 text-violet-600",
-  구글챗: "bg-emerald-50 text-emerald-600",
-  직접입력: "bg-slate-100 text-slate-600",
-  학부모링크: "bg-amber-50 text-amber-700",
 };
 
 function hhmm(iso: string): string {

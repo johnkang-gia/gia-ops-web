@@ -4,7 +4,7 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { isAdminUser } from "@/lib/roles";
 import { getCurrentTerm } from "@/lib/currentTerm";
 import { getPeriodRange } from "@/lib/weeklyReport/week";
-import type { Term, WrClass, WrReport } from "@/lib/types";
+import type { Term, WrClass } from "@/lib/types";
 import RecordSearchPanel from "@/components/weeklyReport/admin/RecordSearchPanel";
 import GuideButton from "@/components/common/GuideButton";
 

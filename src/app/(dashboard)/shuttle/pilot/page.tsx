@@ -2,16 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isAdminUser } from "@/lib/roles";
-import type {
-  ShuttleRoute,
-  ShuttlePilotRoute,
-  ShuttleBoardLink,
-  ShuttleArrivalLink,
-  ShuttleTrackerDevice,
-  ShuttleStop,
-  ShuttleStopObservation,
-} from "@/lib/types";
-import PilotMonitorClient from "@/components/shuttle/PilotMonitorClient";
+import type { ShuttleRoute, ShuttleBoardLink, ShuttleArrivalLink, ShuttleTrackerDevice, ShuttleStop, ShuttleStopObservation } from "@/lib/types";
 import BoardLinkManager from "@/components/shuttle/BoardLinkManager";
 import ArrivalLinkManager from "@/components/shuttle/ArrivalLinkManager";
 import TrackerDeviceManager from "@/components/shuttle/TrackerDeviceManager";
@@ -52,7 +43,7 @@ export default async function ShuttlePilotPage() {
   // 이력·관측은 최근 것만 봐도 충분해서 제한을 그대로 둡니다. 다만 노선을 안 거르고 받으니
   // 제한을 넉넉히 잡고(다른 노선 줄이 섞여 들어올 수 있으므로) 여기서 다시 거릅니다 -
   // 안 그러면 **이 화면에 보여야 할 줄이 제한에 밀려 사라집니다.**
-  const [routesRes, pilotsAll, historyAll, boardLinksRes, arrivalLinksRes, devicesAll, stopsAll, obsAll] = await Promise.all([
+  const [routesRes, historyAll, boardLinksRes, arrivalLinksRes, devicesAll, stopsAll, obsAll] = await Promise.all([
     // 요청: "등원은 패스하고 하원만 진행되도록 우선 만들어줘" - 하원 노선만 링크 관리 대상으로
     // 보여줍니다. term='정규학기'만 대상입니다(여름캠프2 같은 임시 노선은 섞이지 않게).
     supabase
@@ -62,7 +53,6 @@ export default async function ShuttlePilotPage() {
       .eq("direction", "하원")
       .eq("term", "정규학기")
       .order("sort_order"),
-    supabase.from("shuttle_pilot_routes").select("*").order("created_at", { ascending: false }),
     // 기사·차량 변경 이력. 트리거가 자동으로 쌓아둔 스냅샷을 최신순으로 보여줍니다.
     supabase
       .from("shuttle_route_vehicle_history")
@@ -82,7 +72,6 @@ export default async function ShuttlePilotPage() {
   const mine = <T extends { route_id?: string | null }>(rows: T[] | null) =>
     (rows ?? []).filter((r) => r.route_id && routeIds.has(r.route_id));
 
-  const pilotsRes = { data: mine((pilotsAll.data as (ShuttlePilotRoute & { route_id: string })[] | null) ?? []) };
   const history = mine(
     (historyAll.data as
       | {

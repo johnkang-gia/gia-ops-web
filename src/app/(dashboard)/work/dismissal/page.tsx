@@ -4,7 +4,7 @@ import { isMissingWeekStart } from "@/lib/dismissalToday";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isStaffOrAboveUser } from "@/lib/roles";
 import GuideButton from "@/components/common/GuideButton";
-import { ROSTER_SELECT, displayStudent, toRosterEntries } from "@/lib/pickupParse";
+import { displayStudent, toRosterEntries } from "@/lib/pickupParse";
 import DismissalBulkClient, { type InquiryLite, type PlanRow, type RideLite, type StudentLite } from "@/components/work/DismissalBulkClient";
 import { loadStudents } from "@/lib/students";
 

@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRealtimeTable } from "@/lib/useRealtimeTable";
-import { genCaseId } from "@/lib/caseId";
 import { getMeetingAudioUrl } from "@/lib/storage";
 import { useCollapsedPanel } from "@/lib/useCollapsedPanel";
 import type { Meeting, GiaSystem, Term } from "@/lib/types";

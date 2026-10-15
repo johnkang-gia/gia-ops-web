@@ -4,20 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useToast } from "@/components/common/ToastProvider";
 import { won } from "@/lib/feeItems";
 import BillingPhoneChips, { saveBillingPhone } from "@/components/finance/BillingPhoneChips";
-import {
-  COLUMNS,
-  COLUMN_WIDTHS,
-  DEFAULT_DUE_HOUR,
-  ROLE_LABEL,
-  ROLE_SHORT,
-  SHEET_NAME,
-  PAY_WINDOW_DAYS,
-  payExpiryDate,
-  prettyPhone,
-  toAoa,
-  type BillPlan,
-  type GuardianRole,
-} from "@/lib/alltalkpay";
+import { COLUMNS, COLUMN_WIDTHS, DEFAULT_DUE_HOUR, SHEET_NAME, PAY_WINDOW_DAYS, payExpiryDate, prettyPhone, toAoa, type BillPlan, type GuardianRole } from "@/lib/alltalkpay";
 
 // 올톡페이 대량발송 엑셀 만들기.
 //

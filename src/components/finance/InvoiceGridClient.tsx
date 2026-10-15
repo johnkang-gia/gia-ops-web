@@ -29,17 +29,9 @@ import { ReceiptChip, ReceiptModal } from "./ReceiptBits";
 import { settle, type SettleInvoice } from "@/lib/settlement";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
-import { appliesToAny, inDepartment, inTerm, resolveStudentItems, sumLines, targetLabel, won, type StudentLike } from "@/lib/feeItems";
-import { departmentOf, gradeSortKey, type Department } from "@/lib/department";
-import { prettyPhone } from "@/lib/alltalkpay";
-import { todayKst } from "@/lib/kst";
-import {
-  IDENTIFIER_LABEL,
-  digitsOnly,
-  formatIdentifier,
-  identifierProblem,
-  type ReceiptPurpose,
-} from "@/lib/cashReceipt";
+import { appliesToAny, inTerm, resolveStudentItems, sumLines, targetLabel, won, type StudentLike } from "@/lib/feeItems";
+import { departmentOf, type Department } from "@/lib/department";
+import { type ReceiptPurpose } from "@/lib/cashReceipt";
 import AlltalkpayExport from "./AlltalkpayExport";
 import ReconcileModal from "./ReconcileModal";
 import InvoicePreviewModal from "./InvoicePreviewModal";
@@ -333,10 +325,6 @@ export default function InvoiceGridClient({
   const [cancelling, setCancelling] = useState<{ invoice: Invoice; studentName: string; reason?: string } | null>(null);
   /** 미리보기 창. 새 탭으로 열면 확인할 때마다 탭을 열고 닫아야 합니다. */
   const [preview, setPreview] = useState<{ id: string; label: string; studentId?: string | null } | null>(null);
-  /** 이 화면에서 고친 연락처. 새로고침 없이 바로 반영합니다. */
-  const [studentPhones, setStudentPhones] = useState<
-    Record<string, Partial<Pick<Student, "motherPhone" | "fatherPhone" | "parentPhone" | "billingRole" | "billingPhone">>>
-  >({});
   /** 방금 발행한 것. 발행 직후 바로 청구로 이어가라고 띄웁니다. */
   const [justIssued, setJustIssued] = useState<Invoice[]>([]);
   /** 방금 발행한 것(5초 되돌리기). */
@@ -819,7 +807,7 @@ export default function InvoiceGridClient({
       notify(`연락처를 저장하지 못했습니다: ${error.message}`, "error");
       return;
     }
-    setStudentPhones((p) => ({ ...p, [s.id]: { ...(p[s.id] ?? {}), [key]: value } }));
+    // 명부가 바뀌면 화면 전체가 실시간으로 다시 그려집니다(useFinanceLive · wr_students). 따로 들고 있지 않습니다.
     notify("연락처를 저장했습니다.", "success");
   }
 
@@ -852,13 +840,7 @@ export default function InvoiceGridClient({
       notify(`결제번호를 저장하지 못했습니다: ${json?.error ?? "알 수 없는 이유"}`, "error");
       return;
     }
-    // 화면은 **저장된 값**을 그대로 받아 그립니다. 보낸 값을 그리면 서버가 다듬은 것과
-    // 어긋나고, 그 차이는 다음에 열어볼 때야 드러납니다.
-    const saved = json?.student ?? { billing_phone_role: role, billing_phone: phone };
-    setStudentPhones((p) => ({
-      ...p,
-      [s.id]: { ...(p[s.id] ?? {}), billingRole: saved.billing_phone_role, billingPhone: saved.billing_phone },
-    }));
+    // 화면은 서버가 저장한 값을 실시간 구독(useFinanceLive · wr_students)으로 다시 받아 그립니다.
     notify(role ? "결제번호를 정했습니다." : "결제번호를 지웠습니다. 어머니 → 아버지 → 보호자 순으로 나갑니다.", "success");
   }
 
@@ -2488,7 +2470,6 @@ export default function InvoiceGridClient({
                 <tbody>
                   {review.map((s) => {
                     const typical = unusual(s);
-                    const ls = linesByStudent.get(s.id) ?? [];
                     /**
                      * **이전 발행과 대조합니다.** 지난번에 없던 항목이 생긴 것과 지난번과
                      * 똑같은 것은 뜻이 정반대인데, 예전에는 둘 다 그냥 나갔습니다.

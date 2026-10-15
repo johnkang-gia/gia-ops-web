@@ -2,8 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { BoardScale } from "@/lib/useBoardDensity";
-import { lessonPlace } from "@/lib/lessonLocation";
-import { BoardData, btn, shortName } from "./boardShared";
+import { BoardData } from "./boardShared";
 
 /**
  * 픽업 알람 — 시각이 적힌 픽업을 **5분 전에** 화면 위로 끌어올립니다.

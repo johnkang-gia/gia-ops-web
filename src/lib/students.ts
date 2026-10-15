@@ -30,7 +30,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  * 한 명만 읽을 때는 `loadStudent` 를 씁니다. 넣고 고치는 자리는 이 파일의 일이 아닙니다.
  */
 export const STUDENT_COLUMNS =
-  "id, name, name_en, grade, class_name, class_id, department, birth_date, status, student_no, sibling_group_id, photo_path";
+  "id, name, name_en, grade, class_name, class_id, department, birth_date, status, student_no, sibling_group_id, photo_path, shuttle_mode";
 
 const PHONE_COLUMNS = "mother_phone, father_phone, parent_phone, billing_phone, billing_phone_role";
 
@@ -47,6 +47,8 @@ export type Student = {
   student_no: string | null;
   sibling_group_id: string | null;
   photo_path: string | null;
+  /** 명부에 손으로 적은 셔틀 이용(없음·등원·하원·등하원). 실제 배정과 어긋나는지 보는 데 씁니다. */
+  shuttle_mode: string | null;
 };
 
 export type StudentWithPhones = Student & {

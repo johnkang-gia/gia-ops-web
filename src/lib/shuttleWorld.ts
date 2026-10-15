@@ -29,7 +29,14 @@ export type ShuttleWorldOpts = {
   direction?: ShuttleDirection;
   includeDormant?: boolean;
   assignments?: "none" | "basic" | "full";
+  /**
+   * 정류장 칸. 기본은 화면이 그리는 칸만입니다. 「full」은 GPS 학습 칸(gps_*)까지 - 노선 관리처럼 학습 좌표를
+   * 보여주고 반영하는 화면만 씁니다. 650여 정류장의 학습 칸을 모든 셔틀 화면에 실으면 화면 하나가 1MB 가까이 됩니다.
+   */
+  stops?: "lite" | "full";
 };
+
+const STOP_LITE_COLUMNS = "id, route_id, seq, stop_time, address, gate, note, lat, lng, gu, dong, geocoded_at, created_at";
 
 export type ShuttleAssignmentBasic = Pick<ShuttleAssignment, "id" | "stop_id" | "student_name_raw" | "weekdays" | "student_id">;
 
@@ -58,7 +65,7 @@ export async function loadShuttleWorld(supabase: SupabaseClient, opts: ShuttleWo
   // 표가 수백 줄이라 통째로 받는 쪽이 빠릅니다(앞서 용량 화면에서 실측).
   const [routesRes, stopsRes, asgRes] = await Promise.all([
     rq,
-    supabase.from("shuttle_stops").select("*").order("seq"),
+    supabase.from("shuttle_stops").select(opts.stops === "full" ? "*" : STOP_LITE_COLUMNS).order("seq"),
     want === "none"
       ? Promise.resolve({ data: [] as ShuttleAssignment[], error: null })
       : want === "basic"

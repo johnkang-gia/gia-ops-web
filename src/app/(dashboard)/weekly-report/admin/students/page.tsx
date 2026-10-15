@@ -54,7 +54,9 @@ export default async function StudentManagePage() {
       .order("name", { ascending: true }),
     supabase.from("wr_student_field_defs").select("*").order("sort_order", { ascending: true }),
     supabase.from("shuttle_routes").select("*").eq("active", true),
-    supabase.from("shuttle_stops").select("*"),
+    // 노선 추천 창(학생 집에서 가까운 정류장)이 쓰는 칸만 읽습니다. 「*」로 읽으면 정류장 학습용 GPS 칸까지 650여 줄이
+    // 이 화면에 실려 1.4MB가 됐습니다. 좌표가 없는 정류장은 추천에 못 쓰므로 처음부터 뺍니다.
+    supabase.from("shuttle_stops").select("id, route_id, name, address, stop_time, seq, lat, lng").not("lat", "is", null),
     // 반 목록. 학생의 반 **이름**을 반 **연결**로 바꾸는 데 씁니다 - 이름만 저장하면
     // 반 배정 화면에서는 그 아이가 「미배정」에 남습니다.
     supabase.from("wr_classes").select("id, grade, class_name").eq("is_demo", false),

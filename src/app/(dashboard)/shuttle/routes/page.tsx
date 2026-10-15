@@ -36,7 +36,7 @@ export default async function ShuttleRoutesPage() {
 
   const [world, studentsRes] = await Promise.all([
     // 노선 관리는 고치는 화면이라 대기(꺼둔) 노선도 봅니다. 운영 화면은 켠 노선만 봅니다.
-    loadShuttleWorld(supabase, { includeDormant: true, assignments: "full" }),
+    loadShuttleWorld(supabase, { includeDormant: true, assignments: "full", stops: "full" }),
     loadStudents(supabase),
   ]);
 

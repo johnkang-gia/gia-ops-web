@@ -6,7 +6,7 @@ import type { WrStudent } from "@/lib/types";
 import StudentSearchClient from "@/components/students/StudentSearchClient";
 import GuideButton from "@/components/common/GuideButton";
 import { loadShuttleWorld } from "@/lib/shuttleWorld";
-import { loadStudentsFull } from "@/lib/students";
+import { loadStudents } from "@/lib/students";
 
 const GUIDE_SECTIONS = [
   {
@@ -49,8 +49,10 @@ export default async function StudentsSearchPage() {
   // **실제 배정**을 봅니다 - 명부에 "하원"이라 적혀 있어도 배정이 없으면 그 아이는 아무
   // 차에도 안 탑니다. 둘이 어긋나는 것이 실제로 사고가 나는 지점입니다.
   const [{ rows: data }, shuttle] = await Promise.all([
-    // 학생 관리는 주소·알레르기·메모까지 고치는 화면이라 칸 전부를 읽습니다. 퇴소한 아이도 - 상태를 되돌리는 자리입니다.
-    loadStudentsFull<WrStudent>(supabase, { status: "all" }),
+    // 조회 목록이 그리는 칸(이름·학년·반·부서·학번·사진·셔틀 표기)만 읽습니다. 예전에는 주소·알레르기·보호자 번호까지
+    // 칸 전부를 450여 명분 실어 이 화면이 770KB였습니다 - 그 칸들은 카드를 눌러 여는 프로필이 따로 읽습니다.
+    // 퇴소한 아이도 - 졸업·퇴학 탭이 있습니다.
+    loadStudents(supabase, { status: "all" }),
     // 지금 학기·켠 노선에 딸린 배정만 - 거르는 규칙은 shuttleWorld 한 곳입니다.
     loadShuttleWorld(supabase, { assignments: "basic" }),
   ]);
@@ -95,7 +97,7 @@ export default async function StudentsSearchPage() {
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto pb-4">
         <StudentSearchClient
-          students={data}
+          students={data as unknown as WrStudent[]}
           shuttleByStudent={shuttleByStudent}
           photoUrlByPath={photoUrlByPath}
           myDepartment={me?.department ?? null}

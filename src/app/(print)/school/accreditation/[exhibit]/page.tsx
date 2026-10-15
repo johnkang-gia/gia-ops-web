@@ -5,6 +5,7 @@ import { isStaffOrAboveUser } from "@/lib/roles";
 import { todayKst } from "@/lib/kst";
 import ExhibitSheet, { Kpi, monthEn, pct, ratio } from "@/components/accreditation/ExhibitSheet";
 import { levelEn, loadLibrary } from "@/lib/accreditationLibrary";
+import SnapshotButton from "@/components/accreditation/SnapshotButton";
 import {
   EXHIBITS,
   loadAttendance,
@@ -801,9 +802,18 @@ export default async function ExhibitPage({
             </tbody>
           </table>
 
+          <h2>{u.byClass.length > 0 ? 9 : 7}. Measured change over time</h2>
+          <p className="note">
+            <SnapshotButton />
+          </p>
+          {d.snapshots.length === 0 && (
+            <p className="note">
+              No baseline has been recorded yet. Press the button above once the current shelf count is complete; the figures of that day
+              are then frozen and become the comparison point for the Plan for Continuous Improvement.
+            </p>
+          )}
           {d.snapshots.length > 0 && (
             <>
-              <h2>{u.byClass.length > 0 ? 9 : 7}. Measured change over time</h2>
               <p className="note">
                 Figures are frozen on the date shown and counted by the same rule each time, so two rows can be compared directly. These
                 rows are the baseline for the library section of the Plan for Continuous Improvement.

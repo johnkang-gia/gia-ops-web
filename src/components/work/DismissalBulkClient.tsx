@@ -73,6 +73,10 @@ export type PlanRow = {
   range_end?: string | null;
 };
 
+/** 넣어둔 하원수단 한 묶음이 가리키는 실제 줄들. 고치거나 지울 때 이 줄들을 정확히 겨눕니다. */
+type PlanRef = { weekday: number; rangeId: string | null; weekStart: string | null; row: PlanRow };
+type RegisteredItem = { key: string; days: number[]; what: string; when: string; kind: string; refs: PlanRef[] };
+
 const WEEKDAYS = [
   { n: 1, ko: "월" },
   { n: 2, ko: "화" },
@@ -119,6 +123,12 @@ export default function DismissalBulkClient({
   // 이 화면은 「매주 이렇게 갑니다」를 몰아 넣는 자리라 매주가 기본입니다. 그 주 한 번짜리는
   // 업무보드의 빠른등록으로 들어옵니다.
   const [repeat, setRepeat] = useState<DismissalChoice>("매주");
+  /**
+   * **고치는 중인 묶음.** 넣어둔 하원수단을 고치려면 예전에는 같은 갈래(매주·기간)를 찾아 같은 요일에 다시 넣어야 했고,
+   * 기간으로 넣은 것은 다시 넣으면 새 기간이 하나 더 생겨 두 개가 겹쳤습니다. 이제 「수정」을 누르면 그 묶음이 아래 넣기
+   * 칸에 그대로 채워지고, 저장하면 **새 내용을 넣은 뒤 옛 줄을 지웁니다**(넣기가 실패하면 옛 줄은 그대로 남습니다).
+   */
+  const [editing, setEditing] = useState<{ studentId: string; name: string; refs: PlanRef[] } | null>(null);
 
   const today = todayKst();
   /** 「기간」일 때 달력으로 고르는 시작·끝 날짜. 기본은 오늘부터 4주. */
@@ -161,7 +171,7 @@ export default function DismissalBulkClient({
   const registered = useMemo(() => {
     const thisWeek = weekStartOf(today);
     const seen = new Set<string>();
-    const byStudent = new Map<string, { key: string; days: number[]; what: string; when: string; kind: string }[]>();
+    const byStudent = new Map<string, RegisteredItem[]>();
     for (const p of plans) {
       if (p.range_id) {
         if (!p.range_end || p.range_end < today) continue;
@@ -175,9 +185,11 @@ export default function DismissalBulkClient({
       const key = `${what}|${when}|${p.kind}`;
       const list = byStudent.get(p.student_id) ?? [];
       const hit = list.find((x) => x.key === key);
+      const ref: PlanRef = { weekday: p.weekday, rangeId: p.range_id ?? null, weekStart: p.week_start ?? null, row: p };
       if (hit) {
         if (!hit.days.includes(p.weekday)) hit.days.push(p.weekday);
-      } else list.push({ key, days: [p.weekday], what, when, kind: p.kind });
+        hit.refs.push(ref);
+      } else list.push({ key, days: [p.weekday], what, when, kind: p.kind, refs: [ref] });
       byStudent.set(p.student_id, list);
     }
     const nameOf = new Map(students.map((s) => [s.id, s]));
@@ -248,6 +260,70 @@ export default function DismissalBulkClient({
     [rides, picked]
   );
 
+  /** 정확히 이 줄들만 지웁니다. 기간 줄은 그 요일의 기간 묶음 전체, 매주·그 주 줄은 그 갈래만. */
+  async function removeRefs(studentId: string, refs: PlanRef[]): Promise<string | null> {
+    const supabase = createClient();
+    const doneRange = new Set<string>();
+    for (const r of refs) {
+      if (r.rangeId) {
+        const k = `${r.rangeId}|${r.weekday}`;
+        if (doneRange.has(k)) continue;
+        doneRange.add(k);
+        const res = await fetch("/api/work/dismissal", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ studentId, weekday: r.weekday, rangeId: r.rangeId }),
+        });
+        if (!res.ok) return ((await res.json().catch(() => ({}))) as { error?: string }).error ?? "지우기 실패";
+        setPlans((prev) => prev.filter((x) => !(x.range_id === r.rangeId && x.weekday === r.weekday)));
+      } else {
+        const { error } = await supabase.rpc("clear_dismissal_plan", { p_student: studentId, p_weekday: r.weekday, p_week_start: r.weekStart });
+        if (error) return error.message;
+        setPlans((prev) => prev.filter((x) => !(x.student_id === studentId && x.weekday === r.weekday && !x.range_id && (x.week_start ?? null) === r.weekStart)));
+      }
+    }
+    return null;
+  }
+
+  function startEdit(studentId: string, name: string, item: RegisteredItem) {
+    const row = item.refs[0].row;
+    setPicked([studentId]);
+    setDays(item.days.slice().sort());
+    setKind((KINDS as readonly string[]).includes(row.kind) ? (row.kind as (typeof KINDS)[number]) : "기타");
+    setLabel(row.label ?? "");
+    setTime(row.depart_time ?? "");
+    setNote(row.note ?? "");
+    if (row.range_id && row.range_start && row.range_end) {
+      setRepeat("기간");
+      setRangeStart(row.range_start < today ? today : row.range_start);
+      setRangeEnd(row.range_end);
+    } else if (row.week_start) {
+      setRepeat(DISMISSAL_REPEATS.find((r) => weekStartFor(r, today) === row.week_start) ?? "이번주");
+    } else setRepeat("매주");
+    setEditing({ studentId, name, refs: item.refs });
+    document.getElementById("dismissal-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  async function removeItem(studentId: string, name: string, item: RegisteredItem) {
+    if (!window.confirm(`${name} — ${item.what} (${item.when})을(를) 지울까요?`)) return;
+    setBusy(true);
+    const err = await removeRefs(studentId, item.refs);
+    setBusy(false);
+    if (err) notify(`지우지 못했습니다: ${err}`, "error");
+    else notify(`${name} 하원수단을 지웠습니다.`, "success");
+  }
+
+  /** 고치는 중이면, 새로 넣은 뒤 옛 줄 중 «새 줄이 덮어쓰지 않은 것»을 지웁니다. */
+  async function finishEdit(savedOk: boolean) {
+    if (!editing || !savedOk) return;
+    const sameWeekly = !isRange && !weekStart;
+    // 매주 → 매주로 같은 요일을 고치면 저장 함수가 그 줄을 덮어씁니다. 그 줄은 지우면 안 됩니다.
+    const stale = editing.refs.filter((r) => r.rangeId || !(sameWeekly && !r.weekStart && days.includes(r.weekday)) || editing.studentId !== picked[0]);
+    const err = await removeRefs(editing.studentId, stale);
+    if (err) notify(`새 내용은 넣었지만 옛 하원수단을 지우지 못했습니다: ${err}. 「넣어둔 하원수단」에서 옛 줄을 지워주세요.`, "error");
+    setEditing(null);
+  }
+
   async function save() {
     if (picked.length === 0 || days.length === 0) {
       notify("아이와 요일을 고른 뒤 저장해주세요.", "error");
@@ -256,11 +332,11 @@ export default function DismissalBulkClient({
     // 날짜가 정해진 것(기간 · 이번주만 · 다음주만)은 모두 기간으로 넣습니다 - 지속 특이사항과
     // 서로 따라 바뀌려면 기간 묶음이 있어야 합니다.
     if (isRange) {
-      await saveRange(rangeStart, rangeEnd);
+      await finishEdit(await saveRange(rangeStart, rangeEnd));
       return;
     }
     if (weekStart) {
-      await saveRange(weekStart, addDays(weekStart, 4));
+      await finishEdit(await saveRange(weekStart, addDays(weekStart, 4)));
       return;
     }
     setBusy(true);
@@ -313,6 +389,7 @@ export default function DismissalBulkClient({
       `${picked.length}명 × ${days.length}요일 = ${saved.length}건을 ${repeat === "매주" ? "매주" : `${repeat}만`}으로 저장했습니다.`,
       "success",
     );
+    await finishEdit(true);
     setPicked([]);
     setDays([]);
   }
@@ -321,14 +398,14 @@ export default function DismissalBulkClient({
    * 기간으로 넣기. 주별 줄로 펼쳐 한 트랜잭션에 넣어야 해서 하원수단 창구(`/api/work/dismissal`)를
    * 지납니다 - 오늘이 기간 안이면 셔틀 체크표에도 바로 거는 것까지 하원수단 창과 같습니다.
    */
-  async function saveRange(rangeStart: string, rangeEnd: string) {
+  async function saveRange(rangeStart: string, rangeEnd: string): Promise<boolean> {
     if (!rangeStart || !rangeEnd || rangeEnd < rangeStart) {
       notify("기간의 시작일과 종료일을 달력에서 골라주세요.", "error");
-      return;
+      return false;
     }
     if (days.every((d) => countWeekdayInRange(rangeStart, rangeEnd, d) === 0)) {
       notify("고른 기간 안에 고른 요일이 없습니다.", "error");
-      return;
+      return false;
     }
     setBusy(true);
     const failed: string[] = [];
@@ -372,7 +449,10 @@ export default function DismissalBulkClient({
       );
       setPicked([]);
       setDays([]);
-    } else notify(`저장하지 못했습니다: ${failed.join(", ")}`, "error");
+      return failed.length === 0;
+    }
+    notify(`저장하지 못했습니다: ${failed.join(", ")}`, "error");
+    return false;
   }
 
   async function clearOne(studentId: string, weekday: number) {
@@ -441,6 +521,26 @@ export default function DismissalBulkClient({
                     </span>
                     <span className={"rounded px-1.5 py-0.5 font-semibold " + (KIND_TONE[i.kind] ?? KIND_TONE.기타)}>{i.what}</span>
                     <span className="text-slate-500">{i.when}</span>
+                    <span className="ml-auto flex gap-1">
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => startEdit(r.id, r.student!.name, i)}
+                        className="rounded border border-slate-300 px-1.5 py-0.5 text-[10px] font-bold text-slate-600 hover:bg-slate-50"
+                        title="이 하원수단을 아래 넣기 칸에 불러와 고칩니다"
+                      >
+                        ✏️ 수정
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void removeItem(r.id, r.student!.name, i)}
+                        className="rounded border border-rose-200 px-1.5 py-0.5 text-[10px] font-bold text-rose-600 hover:bg-rose-50"
+                        title="이 하원수단을 지웁니다"
+                      >
+                        지우기
+                      </button>
+                    </span>
                   </div>
                 ))}
               </li>
@@ -449,8 +549,24 @@ export default function DismissalBulkClient({
         )}
       </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-3">
-        <h2 className="mb-2 text-sm font-bold text-slate-800">한 번에 넣기</h2>
+      <section id="dismissal-form" className={"rounded-2xl border bg-white p-3 " + (editing ? "border-amber-400 ring-2 ring-amber-200" : "border-slate-200")}>
+        <h2 className="mb-2 text-sm font-bold text-slate-800">{editing ? `✏️ ${editing.name} 하원수단 고치기` : "한 번에 넣기"}</h2>
+        {editing && (
+          <p className="mb-2 flex flex-wrap items-center gap-2 rounded-lg bg-amber-50 px-2 py-1.5 text-[11px] text-amber-900">
+            아래 내용을 고친 뒤 저장하면 새 내용으로 바뀌고 옛 하원수단은 지워집니다.
+            <button
+              type="button"
+              onClick={() => {
+                setEditing(null);
+                setPicked([]);
+                setDays([]);
+              }}
+              className="ml-auto rounded border border-amber-300 bg-white px-2 py-0.5 font-bold"
+            >
+              고치기 취소
+            </button>
+          </p>
+        )}
 
         {/* 언제까지 — 표에 무엇이 보이는지도 여기서 갈립니다. 겹쳐 있는 것을 한 칸에 섞으면
             지우기를 눌렀을 때 어느 쪽이 지워지는지 아무도 모릅니다. */}

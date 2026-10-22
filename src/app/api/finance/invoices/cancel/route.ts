@@ -12,9 +12,8 @@ import { hasFinanceAccess } from "@/lib/roles";
 // 취소한 뒤에는 항목을 고쳐 **다시 발행**할 수 있습니다. 새 번호가 붙습니다 - 같은 번호를
 // 다시 쓰면 학부모가 받은 두 장이 같은 번호가 됩니다.
 //
-// 「직접수납」이 함께 만든 입금은 **함께 지웁니다** - 그 줄은 발행이 만든 것이라, 발행을
-// 없던 일로 하면 함께 없던 일이 됩니다. 수납 화면에서 사람이 따로 붙인 입금만 선입금으로
-// 떼어냅니다.
+// 이 장에 붙은 수납은 **함께 없던 일**이 됩니다(지움). 예치금이나 다른 곳으로 옮기지 않습니다.
+// 예치금에서 끌어다 붙였던 돈만 원래 있던 예치금 자리로 돌아갑니다 - 그건 이 장이 만든 돈이 아닙니다.
 
 export const dynamic = "force-dynamic";
 
@@ -48,9 +47,9 @@ export async function POST(req: Request) {
   //    발행을 없던 일로 하면 이 줄도 함께 없던 일이 됩니다. 남겨두면 선입금이 하나 떠서,
   //    고쳐서 다시 발행할 때 금액이 저절로 깎입니다 - 담당자가 기대하는 것과 다릅니다.
   //
-  // **② 그 밖의 입금** - 수납 화면에서 사람이 붙인 진짜 입금입니다. 발행이 만든 것이 아니므로
-  //    발행을 되돌린다고 지울 수 없습니다. 지우지도 매달아 두지도 않고 **선입금으로 떼어내**
-  //    (`invoice_id = null`) 다음 청구서에 충당되게 둡니다.
+  // **② 그 밖의 입금** - 이 장에 수납으로 적은 돈입니다. 발행 취소는 «이 청구와 그 수납을 없던
+  //    일로»이므로 함께 지웁니다. 예전에는 예치금으로 떼어냈는데, 그러면 받은 적 없는 돈이 예치금에
+  //    떠서 다음 청구서에 저절로 깎였습니다. 지우기 전에 한 번 묻습니다(needsForce).
   const { data: pays, error: payErr } = await supabase
     .from("payments")
     // **출처(`origin`)로 가릅니다.** `matched_by` 는 선입금 충당이 덮어쓰므로, 한 번이라도
@@ -95,7 +94,7 @@ export async function POST(req: Request) {
   if (deskPaid > 0 && !force) {
     return NextResponse.json(
       {
-        error: `이 청구서에는 수납 화면에서 붙인 입금 ${deskPaid.toLocaleString("ko-KR")}원이 있습니다. 취소하면 그 돈은 예치금으로 남아 다음 청구서에 저절로 충당됩니다.\n\n수단·날짜만 잘못 적었다면 취소하지 말고, 학생 회계 창 아래 수납 줄의 ✎ 로 고쳐주세요.`,
+        error: `이 청구서에 수납 ${deskPaid.toLocaleString("ko-KR")}원이 적혀 있습니다. 취소하면 청구서와 그 수납 기록이 함께 없던 일이 됩니다(예치금으로 옮기지 않습니다).\n\n수단·날짜만 잘못 적었다면 취소하지 말고, 학생 회계 창 아래 수납 줄의 ✎ 로 고쳐주세요.`,
         paid: deskPaid,
         needsForce: true,
       },
@@ -149,22 +148,20 @@ export async function POST(req: Request) {
     returned = prepaidBack;
   }
 
-  let detached = 0;
+  // **이 장에 적은 수납도 함께 없던 일로 합니다.** 예전에는 예치금으로 떼어냈는데, 발행 취소를
+  // 누르는 사람은 «이 청구와 그 수납을 통째로 무르는 것»으로 압니다. 예치금으로 옮기면 받은 적 없는
+  // 돈(또는 다시 적을 돈)이 예치금에 떠서, 다음 청구서에 저절로 깎여 들어갑니다. 무엇을 지웠는지는
+  // 취소 사유 끝에 금액으로 남깁니다.
+  let removedDesk = 0;
   if (fromDesk.length > 0) {
-    // 원래 출처를 지우지 않고 **덧붙입니다.** 「수기 · 청구 취소로 떼어냄」처럼 남겨야
-    // 선입금 화면에서 이 돈이 어디서 왔는지 읽을 수 있습니다.
-    const { error: cutErr } = await supabase
-      .from("payments")
-      // 어느 장에서 떼어냈는지 남깁니다. 안 남기면 「취소 되돌리기」가 다시 붙일 돈을 못 찾습니다.
-      .update({ invoice_id: null, matched_by: "청구 취소로 떼어냄", detached_from_invoice_id: id })
-      .in("id", fromDesk.map((p) => p.id));
-    if (cutErr) {
+    const { error: delDeskErr } = await supabase.from("payments").delete().in("id", fromDesk.map((p) => p.id));
+    if (delDeskErr) {
       return NextResponse.json(
-        { error: `받은 돈을 선입금으로 떼어내지 못해 취소하지 않았습니다: ${cutErr.message}` },
+        { error: `이 청구서에 적은 수납을 지우지 못해 취소하지 않았습니다: ${delDeskErr.message}` },
         { status: 500 },
       );
     }
-    detached = deskPaid;
+    removedDesk = deskPaid;
   }
 
   // ── 현금영수증도 함께 내립니다 ──────────────────────────────────────────
@@ -200,7 +197,8 @@ export async function POST(req: Request) {
     .from("invoices")
     .update({
       status: "취소",
-      cancel_reason: reason || null,
+      // 함께 지운 수납이 있으면 금액을 사유 끝에 남깁니다 - 나중에 «그 돈은 어디 갔나»에 답할 자리입니다.
+      cancel_reason: [reason, removedDesk > 0 ? `수납 ${removedDesk.toLocaleString("ko-KR")}원 함께 취소` : ""].filter(Boolean).join(" · ") || null,
       cancelled_at: new Date().toISOString(),
       cancelled_by: me.name || me.email,
     })
@@ -213,8 +211,8 @@ export async function POST(req: Request) {
   return NextResponse.json({
     ok: true,
     invoice: data,
-    detached,
-    removed,
+    detached: 0,
+    removed: removed + removedDesk,
     returned,
     receiptsCancelled,
     receiptsIssued,

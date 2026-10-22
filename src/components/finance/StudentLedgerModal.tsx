@@ -200,7 +200,7 @@ export default function StudentLedgerModal({
 
   /** 잘못 누른 발행 취소를 되돌립니다. 그 장에서 예치금으로 떼어냈던 돈을 다시 붙입니다. */
   async function restoreInvoice(v: LedgerInvoice) {
-    if (!window.confirm(`${v.invoice_no} 의 취소를 되돌립니다.\n\n취소할 때 예치금으로 옮겨진 돈이 있으면 이 청구서에 다시 붙습니다.`)) return;
+    if (!window.confirm(`${v.invoice_no} 의 취소를 되돌려 다시 발행 상태로 둡니다.\n\n취소할 때 함께 지운 수납은 돌아오지 않습니다. 받은 돈이면 💰 수납으로 다시 적어주세요.`)) return;
     setBusy(true);
     const r = await post("/api/finance/invoices/restore", { invoiceId: v.id });
     setBusy(false);
@@ -965,7 +965,7 @@ export default function StudentLedgerModal({
                             onClick={() => void restoreInvoice(v)}
                             disabled={busy}
                             className="rounded border border-slate-300 bg-white px-1.5 py-0 text-[10px] font-bold text-slate-600 hover:bg-slate-100 disabled:opacity-40"
-                            title="잘못 누른 취소를 되돌립니다. 그 장에서 예치금으로 옮겨진 돈을 다시 붙입니다."
+                            title="잘못 누른 취소를 되돌려 같은 번호로 다시 발행 상태로 둡니다."
                           >
                             취소 되돌리기
                           </button>

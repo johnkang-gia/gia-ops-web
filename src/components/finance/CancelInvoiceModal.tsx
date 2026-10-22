@@ -28,8 +28,8 @@ import { Who } from "@/components/common/HomonymProvider";
  * 사람이 수납 화면에서 따로 넣은 것이 아닙니다. 남겨두면 선입금이 하나 떠서, 고쳐 다시
  * 발행할 때 금액이 저절로 깎입니다 - 담당자가 기대하는 것과 다릅니다.
  *
- * 수납 화면에서 따로 붙인 입금은 다릅니다. 그건 발행이 만든 것이 아니므로 지우지 않고
- * 선입금으로 떼어내며, 그럴 때만 한 번 더 묻습니다.
+ * 수납으로 적은 돈도 **함께 없던 일**이 됩니다. 예치금이나 다른 곳으로 옮기지 않습니다 - 옮기면
+ * 받은 적 없는 돈이 예치금에 떠서 다음 청구서에 저절로 깎입니다. 지우기 전에 한 번 더 묻습니다.
  */
 export default function CancelInvoiceModal({
   invoice,
@@ -87,7 +87,7 @@ export default function CancelInvoiceModal({
           : back > 0
             ? `${done.invoice_no} 을(를) 취소했습니다. 충당했던 선입금 ${back.toLocaleString("ko-KR")}원은 원래대로 돌아갔습니다.`
             : gone > 0
-              ? `${done.invoice_no} 을(를) 취소하고, 함께 넣었던 ${gone.toLocaleString("ko-KR")}원 입금도 내렸습니다. 발행 전으로 돌아갔습니다.`
+              ? `${done.invoice_no} 을(를) 취소하고, 이 장에 적었던 수납 ${gone.toLocaleString("ko-KR")}원도 함께 없던 일로 했습니다. 발행 전으로 돌아갔습니다.`
               : `${done.invoice_no} 을(를) 취소했습니다. 항목을 고친 뒤 다시 발행할 수 있습니다.`,
         "success",
       );

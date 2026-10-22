@@ -95,7 +95,7 @@ export async function POST(req: Request) {
   if (deskPaid > 0 && !force) {
     return NextResponse.json(
       {
-        error: `이 청구서에는 수납 화면에서 붙인 입금 ${deskPaid.toLocaleString("ko-KR")}원이 있습니다. 취소하면 그 돈은 선입금으로 남아 다음 청구서에 저절로 충당됩니다.`,
+        error: `이 청구서에는 수납 화면에서 붙인 입금 ${deskPaid.toLocaleString("ko-KR")}원이 있습니다. 취소하면 그 돈은 예치금으로 남아 다음 청구서에 저절로 충당됩니다.\n\n수단·날짜만 잘못 적었다면 취소하지 말고, 학생 회계 창 아래 수납 줄의 ✎ 로 고쳐주세요.`,
         paid: deskPaid,
         needsForce: true,
       },
@@ -155,7 +155,8 @@ export async function POST(req: Request) {
     // 선입금 화면에서 이 돈이 어디서 왔는지 읽을 수 있습니다.
     const { error: cutErr } = await supabase
       .from("payments")
-      .update({ invoice_id: null, matched_by: "청구 취소로 떼어냄" })
+      // 어느 장에서 떼어냈는지 남깁니다. 안 남기면 「취소 되돌리기」가 다시 붙일 돈을 못 찾습니다.
+      .update({ invoice_id: null, matched_by: "청구 취소로 떼어냄", detached_from_invoice_id: id })
       .in("id", fromDesk.map((p) => p.id));
     if (cutErr) {
       return NextResponse.json(

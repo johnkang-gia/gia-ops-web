@@ -109,6 +109,11 @@ export default function StudentLedgerModal({
    */
   const [invView, setInvView] = useState<"current" | "month" | "term">("current");
   const [dep, setDep] = useState({ amount: "", paidAt: todayKst(), method: PAYMENT_METHOD_KINDS[0] as string, memo: "" });
+  /**
+   * 받은 돈 한 줄을 고치는 칸. 수단을 잘못 고른 수납을 고칠 길이 없어서 청구서 발행 취소로 지웠고,
+   * 취소는 그 돈을 예치금으로 떼어냈습니다. 틀린 칸 하나만 고치는 길을 그 줄 옆에 둡니다.
+   */
+  const [editPay, setEditPay] = useState<{ id: string; method: string; paidAt: string; memo: string } | null>(null);
 
   const load = useCallback(async () => {
     setLoadErr(null);
@@ -177,6 +182,33 @@ export default function StudentLedgerModal({
     const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     const b = (await res.json().catch(() => ({}))) as Record<string, unknown>;
     return { ok: res.ok, body: b };
+  }
+
+  /** 받은 돈 한 줄의 수단·수납일·메모만 고칩니다. 청구서는 건드리지 않습니다. */
+  async function savePay() {
+    if (!editPay) return;
+    setBusy(true);
+    const r = await post("/api/finance/payments/edit", { paymentId: editPay.id, method: editPay.method, paidAt: editPay.paidAt, memo: editPay.memo });
+    setBusy(false);
+    if (!r.ok) return notify(String(r.body.error ?? "고치지 못했습니다."), "error");
+    const what = (r.body.changed as string[] | undefined) ?? [];
+    notify(what.length ? `고쳤습니다: ${what.join(", ")}` : "바뀐 것이 없습니다.");
+    if (typeof r.body.receiptNote === "string" && r.body.receiptNote) notify(r.body.receiptNote, "error");
+    setEditPay(null);
+    await changed();
+  }
+
+  /** 잘못 누른 발행 취소를 되돌립니다. 그 장에서 예치금으로 떼어냈던 돈을 다시 붙입니다. */
+  async function restoreInvoice(v: LedgerInvoice) {
+    if (!window.confirm(`${v.invoice_no} 의 취소를 되돌립니다.\n\n취소할 때 예치금으로 옮겨진 돈이 있으면 이 청구서에 다시 붙습니다.`)) return;
+    setBusy(true);
+    const r = await post("/api/finance/invoices/restore", { invoiceId: v.id });
+    setBusy(false);
+    if (!r.ok) return notify(String(r.body.error ?? "되돌리지 못했습니다."), "error");
+    const back = Number(r.body.reattached ?? 0);
+    notify(`${v.invoice_no} 를 되살렸습니다${back > 0 ? ` · 예치금에서 ${won(back)} 다시 붙임` : ""}.`);
+    if (typeof r.body.note === "string" && r.body.note) notify(r.body.note, "error");
+    await changed();
   }
 
   /**
@@ -547,6 +579,27 @@ export default function StudentLedgerModal({
   const payLine = (p: (typeof payRows)[number]) => {
     const inv = ledger?.invoices.find((v) => v.id === p.invoice_id);
     const refund = isRefund(p);
+    if (editPay?.id === p.id) {
+      return (
+        <div key={p.id} className="flex flex-wrap items-center gap-1.5 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-[11px]">
+          <input type="date" value={editPay.paidAt} onChange={(e) => setEditPay({ ...editPay, paidAt: e.target.value })} className="rounded border border-slate-300 px-1 py-0.5" />
+          <select value={editPay.method} onChange={(e) => setEditPay({ ...editPay, method: e.target.value })} className="rounded border border-slate-300 px-1 py-0.5">
+            {PAYMENT_METHOD_KINDS.map((m) => (
+              <option key={m}>{m}</option>
+            ))}
+          </select>
+          <span className="tabular-nums font-bold">{won(Number(p.amount))}</span>
+          <input value={editPay.memo} onChange={(e) => setEditPay({ ...editPay, memo: e.target.value })} placeholder="메모" className="min-w-[8rem] flex-1 rounded border border-slate-300 px-1 py-0.5" />
+          <button onClick={() => void savePay()} disabled={busy} className="rounded bg-slate-900 px-2 py-0.5 font-bold text-white disabled:opacity-40">
+            저장
+          </button>
+          <button onClick={() => setEditPay(null)} className="rounded bg-slate-200 px-2 py-0.5 font-bold text-slate-600">
+            그만
+          </button>
+          <span className="basis-full text-[10px] text-amber-800">금액은 여기서 바꾸지 않습니다. 금액이 틀렸으면 되돌린 뒤 다시 받아주세요.</span>
+        </div>
+      );
+    }
     return (
       <div key={p.id} className="flex items-center gap-2 rounded px-2 py-0.5 text-[11px] odd:bg-slate-50">
         <span className="w-20 shrink-0 tabular-nums text-slate-500">{p.paid_at}</span>
@@ -568,6 +621,15 @@ export default function StudentLedgerModal({
           )}
           {p.memo ? ` · ${p.memo}` : ""}
         </span>
+        {!refund && (
+          <button
+            onClick={() => setEditPay({ id: p.id, method: PAYMENT_METHOD_KINDS.includes(p.method as never) ? String(p.method) : "기타", paidAt: p.paid_at, memo: p.memo ?? "" })}
+            className="shrink-0 px-1 text-slate-400 hover:text-slate-700"
+            title="수단·수납일·메모 고치기 (청구서는 그대로 둡니다)"
+          >
+            ✎
+          </button>
+        )}
       </div>
     );
   };
@@ -894,8 +956,20 @@ export default function StudentLedgerModal({
                   <summary className="cursor-pointer text-[10px] text-slate-400">취소된 장 {invoicesCancelled.length}</summary>
                   <ul className="mt-0.5 space-y-0.5 text-[10px] text-slate-400">
                     {invoicesCancelled.map((v) => (
-                      <li key={v.id}>
-                        {v.invoice_no} · {won(Number(v.total_amount))} · {v.cancel_reason ?? ""}
+                      <li key={v.id} className="flex items-center gap-1.5">
+                        <span>
+                          {v.invoice_no} · {won(Number(v.total_amount))} · {v.cancel_reason ?? ""}
+                        </span>
+                        {!v.issued_offline && (
+                          <button
+                            onClick={() => void restoreInvoice(v)}
+                            disabled={busy}
+                            className="rounded border border-slate-300 bg-white px-1.5 py-0 text-[10px] font-bold text-slate-600 hover:bg-slate-100 disabled:opacity-40"
+                            title="잘못 누른 취소를 되돌립니다. 그 장에서 예치금으로 옮겨진 돈을 다시 붙입니다."
+                          >
+                            취소 되돌리기
+                          </button>
+                        )}
                       </li>
                     ))}
                   </ul>

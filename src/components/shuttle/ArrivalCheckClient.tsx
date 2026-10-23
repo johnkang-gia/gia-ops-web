@@ -359,7 +359,7 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
   return (
     <div className="min-h-screen bg-slate-50 p-2 pb-10">
       <AddToHomeScreenBanner />
-      <div className="mb-2 flex items-center justify-between gap-2 pt-1">
+      <div className="mb-1 flex items-center justify-between gap-2">
         <div className="flex-1 text-center">
           <p className="text-xs font-bold text-slate-500">{data?.label ?? "도착체크"}</p>
           <h1 className="text-base font-black text-slate-800">🚌 차량 도착·출발 체크</h1>
@@ -392,7 +392,7 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
       </div>
 
       {/* 차번호 네 자리로 바로 찾습니다. 호차로도 찾히게 해서, 무엇이 손에 있든 통합니다. */}
-      <div className="mb-2 flex items-center gap-1.5">
+      <div className="mb-1.5 flex items-center gap-1.5">
         <input
           value={plateQuery}
           onChange={(e) => setPlateQuery(e.target.value)}
@@ -405,7 +405,7 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
           // 화면 전체의 확대를 막는 방법(`maximum-scale=1`)도 있지만 쓰지 않습니다 - 잘
           // 안 보이는 사람이 화면을 키우는 길까지 막습니다. 막을 것은 «저절로 확대»이지
           // «사람이 키우는 것»이 아닙니다.
-          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-base outline-none focus:border-blue-400"
+          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-base outline-none focus:border-blue-400"
         />
         {plateQuery && (
           <button
@@ -440,7 +440,7 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
       {routes.length === 0 ? (
         <p className="py-10 text-center text-sm text-slate-400">오늘 탈 학생이 있는 노선이 없습니다.</p>
       ) : (
-        <div className="grid grid-cols-4 gap-1.5">
+        <div className="grid grid-cols-4 gap-1 sm:grid-cols-5 lg:grid-cols-6">
           {routes
             .filter((r) => {
               const k = plateQuery.replace(/\s+/g, "").toLowerCase();
@@ -503,7 +503,7 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
                   onContextMenu={(e) => e.preventDefault()}
                   disabled={isBusy}
                   className={
-                    "flex w-full flex-col items-center gap-0.5 px-0.5 py-1.5 active:scale-95 disabled:opacity-70 " +
+                    "flex w-full flex-col items-center gap-0 px-0.5 py-1 active:scale-95 disabled:opacity-70 " +
                     (status === "arrived"
                       ? "bg-emerald-500 text-white"
                       : status === "departed"
@@ -551,21 +551,32 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
                   )}
                   {/* 상태는 위 동그라미가 말합니다. 여기에는 **연결 상태만** 아주 작게.
                       사람이 누른 건지 GPS가 잡은 건지는 이 줄에 함께 붙입니다. */}
-                  <span
-                    className={
-                      "mt-0.5 text-[7px] font-semibold leading-none " +
-                      (status === "arrived" ? "text-emerald-100" : status === "departed" ? "text-slate-400" : "text-slate-400")
-                    }
-                  >
-                    {status === "departed" && autoLabel
-                      ? `자동·${autoLabel}`
-                      : status === "arrived" && arrivedByGps
-                        ? "자동·GPS"
-                        : gps.label}
-                  </span>
+                  {/* 연결 상태 줄은 **알려줄 것이 있을 때만** 띄웁니다. 「GPS 대기」·「GPS 미설정」은
+                      거의 모든 칸에 똑같이 붙어 한 줄씩 자리만 차지했고, 한 화면에 볼 수 있는
+                      호차 수를 줄였습니다. 핀(📍)이 없으면 GPS가 아직 안 붙은 차입니다. */}
+                  {(() => {
+                    const line =
+                      status === "departed" && autoLabel
+                        ? `자동·${autoLabel}`
+                        : status === "arrived" && arrivedByGps
+                          ? "자동·GPS"
+                          : gps.tone === "none"
+                            ? null
+                            : gps.label;
+                    return line ? (
+                      <span
+                        className={
+                          "text-[7px] font-semibold leading-none " +
+                          (status === "arrived" ? "text-emerald-100" : "text-slate-400")
+                        }
+                      >
+                        {line}
+                      </span>
+                    ) : null;
+                  })()}
                 </button>
                 {(waiting.length > 0 || pickedUpCount > 0 || absentCount > 0) && (
-                  <div className="flex flex-wrap content-start gap-0.5 bg-slate-50 p-1">
+                  <div className="flex flex-wrap content-start gap-0.5 bg-slate-50 p-0.5">
                     {/* 이름을 누르면 그 아이만 픽업으로 바꿉니다.
                         하원 지도 중에 학부모님이 찾아오셔서 데려가시는 일이 하루에도 여러 번
                         있습니다. 그 자리에서 못 누르면 나중에 옮겨 적어야 하고, 옮겨 적는 일은
@@ -606,7 +617,7 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
                                 : undefined
                           }
                           className={
-                            "min-h-[22px] rounded px-1 py-0.5 text-[10px] font-bold leading-tight active:scale-95 " +
+                            "min-h-[20px] rounded px-1 py-0 text-[10px] font-bold leading-tight active:scale-95 " +
                             // 물건이 가장 급합니다. 못 챙기면 그날 학교에 남고, 그건 되돌릴
                             // 기회가 하원이 끝나면 없습니다. 테두리를 굵게 해 멀리서 보이게.
                             (hasObj

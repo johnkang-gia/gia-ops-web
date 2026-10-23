@@ -14,6 +14,10 @@ const POLL_MS = 3000;
 // 끊으면 다음 하원 때 스스로 깨어나지 못해서(벽/모바일 화면이라 아무도 새로고침 안 함),
 // 15분에 한 번만 남겨둡니다. pollDelay가 하원 시작 시각을 넘겨 자지 않게 잡아줍니다.
 const IDLE_POLL_MS = 15 * 60_000;
+// 3초 확인을 시작하는 시각. 3시 전에 도착체크를 시험하면 안내보드가 최대 15분 쉬다가 읽어서
+// «체크했는데 안 뜬다»가 됐습니다. 바뀐 것이 없으면 서버는 번호 한 줄만 돌려주므로(boardRevision)
+// 아침부터 3초로 돌아도 비용은 거의 늘지 않습니다.
+const BOARD_FROM_HOUR = 8;
 // 인트로(패널 안 버스 애니메이션)가 끝나고 위젯이 실제로 나타나기까지 걸리는 시간과 맞춥니다
 // (아래 .gia-bus-cross-panel 애니메이션 길이 1.1초 + 여유).
 const INTRO_MS = 1100;
@@ -351,7 +355,7 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
       t = setTimeout(() => {
         if (typeof document === "undefined" || document.visibilityState === "visible") void poll();
         tick();
-      }, pollDelay(POLL_MS, IDLE_POLL_MS, 15, 19));
+      }, pollDelay(POLL_MS, IDLE_POLL_MS, BOARD_FROM_HOUR, 19));
     };
     tick();
     const onVisible = () => {
@@ -633,7 +637,7 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
                   style={{ border: "2px solid #10b981", backgroundColor: "rgba(16,185,129,0.1)", borderRadius: 12, padding: 12 }}
                 >
                   <p className="flex items-center gap-2 text-2xl font-black text-emerald-300" style={{ color: "#6ee7b7", fontSize: 24, fontWeight: 900 }}>
-                    🚌💨 {route.routeNo}호차 {route.name ?? ""}
+                    🚌💨 {route.routeNo}호차
                   </p>
                   <p className="text-base font-bold text-emerald-400" style={{ color: "#34d399", fontWeight: 700 }}>
                     ✅ 출발했습니다 - 다음에 만나요!
@@ -678,7 +682,7 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
                   >
                     {isNew && <span className="inline-block">🚌</span>}
                     {urgent && <span className="inline-block">⏳</span>}
-                    {route.routeNo}호차 {route.name ?? ""}
+                    {route.routeNo}호차
                   </p>
                   <p
                     className={"text-xs " + (urgent ? "font-bold text-red-300" : "text-slate-400")}
@@ -701,8 +705,8 @@ export default function ShuttleBoardClient({ token }: { token: string }) {
                   </p>
                 ) : (
                   <p
-                    className={"flex flex-wrap gap-2 text-lg font-bold leading-snug " + (isNew ? "gia-names-in" : "")}
-                    style={{ display: "flex", flexWrap: "wrap", gap: 8, fontSize: 18, fontWeight: 700, color: "#ffffff" }}
+                    className={"flex flex-wrap gap-2.5 text-[22px] font-bold leading-snug " + (isNew ? "gia-names-in" : "")}
+                    style={{ display: "flex", flexWrap: "wrap", gap: 10, fontSize: 22, fontWeight: 700, color: "#ffffff" }}
                   >
                     {waiting.map((r, i) => (
                       <span key={i}><Who name={r.studentName} /></span>

@@ -357,16 +357,14 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 p-2 pb-10">
+    <div className="min-h-screen bg-slate-50 px-1 py-1 pb-10">
       <AddToHomeScreenBanner />
       <div className="mb-1 flex items-center justify-between gap-2">
-        <div className="flex-1 text-center">
-          <p className="text-xs font-bold text-slate-500">{data?.label ?? "도착체크"}</p>
-          <h1 className="text-base font-black text-slate-800">🚌 차량 도착·출발 체크</h1>
-          <p className="mt-0.5 text-[10px] text-slate-400">
-            눌러서 <b className="text-blue-600">●</b> 미도착 → <b className="text-emerald-600">●</b> 도착 →{" "}
-            <b className="text-slate-400">●</b> 출발 · 📍는 GPS 연결됨 · 이름을 누르면 개별하원
-          </p>
+        {/* 제목은 한 줄로. 아래로 내렸다 올렸다 하지 않고 한 화면에 호차를 최대한 많이 보이게,
+            색 설명은 「?」 안내에 둡니다. */}
+        <div className="flex min-w-0 flex-1 items-baseline gap-1.5">
+          <h1 className="shrink-0 text-sm font-black text-slate-800">🚌 도착·출발 체크</h1>
+          <p className="truncate text-[10px] font-bold text-slate-400">{data?.label ?? ""}</p>
         </div>
         {/* 요청: "전체 리셋을 반으로 잘라서, 전체리셋은 그냥 원 화살표(리셋로고로 많이씀)와
             물음표로 아이콘만 띄워서 누르면 리셋은 리셋되고, 물음표는 안내하도록" - 글자 버튼
@@ -377,14 +375,14 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
             onClick={resetAll}
             disabled={resetting || routes.length === 0}
             title="전체 리셋"
-            className="flex h-8 w-8 items-center justify-center border-r border-slate-300 text-base font-bold text-slate-500 active:scale-95 disabled:opacity-40"
+            className="flex h-7 w-7 items-center justify-center border-r border-slate-300 text-base font-bold text-slate-500 active:scale-95 disabled:opacity-40"
           >
             ⟲
           </button>
           <button
             onClick={() => setShowHelp(true)}
             title="사용법 안내"
-            className="flex h-8 w-8 items-center justify-center text-sm font-bold text-slate-500 active:scale-95"
+            className="flex h-7 w-7 items-center justify-center text-sm font-bold text-slate-500 active:scale-95"
           >
             ?
           </button>
@@ -392,7 +390,7 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
       </div>
 
       {/* 차번호 네 자리로 바로 찾습니다. 호차로도 찾히게 해서, 무엇이 손에 있든 통합니다. */}
-      <div className="mb-1.5 flex items-center gap-1.5">
+      <div className="mb-1 flex items-center gap-1">
         <input
           value={plateQuery}
           onChange={(e) => setPlateQuery(e.target.value)}
@@ -405,7 +403,7 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
           // 화면 전체의 확대를 막는 방법(`maximum-scale=1`)도 있지만 쓰지 않습니다 - 잘
           // 안 보이는 사람이 화면을 키우는 길까지 막습니다. 막을 것은 «저절로 확대»이지
           // «사람이 키우는 것»이 아닙니다.
-          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-base outline-none focus:border-blue-400"
+          className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1 text-base outline-none focus:border-blue-400"
         />
         {plateQuery && (
           <button
@@ -423,7 +421,7 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
           type="button"
           onClick={() => setScanning(true)}
           title="번호판을 비추면 그 호차를 도착으로 찍습니다"
-          className="shrink-0 rounded-lg bg-slate-900 px-3 py-2 text-sm font-bold text-white active:scale-95"
+          className="shrink-0 rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-bold text-white active:scale-95"
         >
           📷
         </button>
@@ -440,7 +438,7 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
       {routes.length === 0 ? (
         <p className="py-10 text-center text-sm text-slate-400">오늘 탈 학생이 있는 노선이 없습니다.</p>
       ) : (
-        <div className="grid grid-cols-4 gap-1 sm:grid-cols-5 lg:grid-cols-6">
+        <div className="grid grid-cols-5 gap-0.5 sm:grid-cols-6 lg:grid-cols-8">
           {routes
             .filter((r) => {
               const k = plateQuery.replace(/\s+/g, "").toLowerCase();
@@ -485,7 +483,7 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
                 key={r.routeId}
                 className={
                   // 색이 상태를 말합니다(요청). 청색=미도착 · 초록=도착 · 회색=출발.
-                  "flex min-w-0 flex-col overflow-hidden rounded-lg border-2 " +
+                  "flex min-w-0 flex-col overflow-hidden rounded-md border " +
                   (status === "arrived" ? "border-emerald-400" : status === "departed" ? "border-slate-200" : "border-blue-300")
                 }
               >
@@ -503,7 +501,7 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
                   onContextMenu={(e) => e.preventDefault()}
                   disabled={isBusy}
                   className={
-                    "flex w-full flex-col items-center gap-0 px-0.5 py-1 active:scale-95 disabled:opacity-70 " +
+                    "flex w-full flex-col items-center gap-0 px-0 py-1 active:scale-95 disabled:opacity-70 " +
                     (status === "arrived"
                       ? "bg-emerald-500 text-white"
                       : status === "departed"
@@ -532,9 +530,14 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
                         📍
                       </span>
                     )}
-                    <span className="text-base font-black">{r.routeNo}호</span>
+                    <span className="text-[15px] font-black tracking-tight">{r.routeNo}호</span>
                   </span>
-                  {r.name && <span className="max-w-full truncate text-[8px] font-semibold leading-tight opacity-80">{r.name}</span>}
+                  {/* 노선 이름과 기사님을 한 줄에. 줄이 하나 줄면 한 화면에 보이는 호차가 늘어납니다. */}
+                  {(r.name || r.driverName) && (
+                    <span className="max-w-full truncate px-0.5 text-[8px] font-semibold leading-tight opacity-80">
+                      {[r.name, r.driverName ? `${r.driverName} 기사님` : null].filter(Boolean).join(" · ")}
+                    </span>
+                  )}
                   {/* 담당자: "호차 / 차량번호 / 기사님 / 타는 애들 뱃지 이렇게 뜨게."
                       차량번호를 아직 못 적은 차도 있어서, 없으면 그 줄을 그냥 비워둡니다
                       ("미등록" 같은 글자를 넣으면 좁은 칸에서 진짜 번호처럼 읽힙니다). */}
@@ -545,9 +548,6 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
                     <span className="max-w-full truncate text-sm font-black leading-tight tracking-wide">
                       {plateTail(r.vehicleNo)}
                     </span>
-                  )}
-                  {r.driverName && (
-                    <span className="max-w-full truncate text-[7px] font-medium leading-tight opacity-60">{r.driverName} 기사님</span>
                   )}
                   {/* 상태는 위 동그라미가 말합니다. 여기에는 **연결 상태만** 아주 작게.
                       사람이 누른 건지 GPS가 잡은 건지는 이 줄에 함께 붙입니다. */}
@@ -617,7 +617,7 @@ export default function ArrivalCheckClient({ token }: { token: string }) {
                                 : undefined
                           }
                           className={
-                            "min-h-[20px] rounded px-1 py-0 text-[10px] font-bold leading-tight active:scale-95 " +
+                            "min-h-[20px] rounded px-0.5 py-0 text-[10px] font-bold leading-tight active:scale-95 " +
                             // 물건이 가장 급합니다. 못 챙기면 그날 학교에 남고, 그건 되돌릴
                             // 기회가 하원이 끝나면 없습니다. 테두리를 굵게 해 멀리서 보이게.
                             (hasObj

@@ -16,7 +16,8 @@ import AnchoredPanel from "@/components/common/AnchoredPanel";
 import { useToast } from "@/components/common/ToastProvider";
 import { won } from "@/lib/feeItems";
 import { departmentOf, gradeSortKey, type Department } from "@/lib/department";
-import { streamOf } from "@/lib/settlement";
+import { streamOf, type SettleInvoice } from "@/lib/settlement";
+import { priorUnpaidOf, tuitionCarryTotal, carryWarning, type PriorUnpaidRow } from "@/lib/priorUnpaid";
 import { useFinanceFilter } from "@/components/finance/FinanceFilterProvider";
 import PinButton from "@/components/finance/PinButton";
 import ActionBar from "@/components/finance/ActionBar";
@@ -858,6 +859,56 @@ export default function TuitionGridClient({
   const [alreadyFor, setAlreadyFor] = useState<TuitionStudent | null>(null);
 
   /**
+   * **지난 미납** — 발행하는 자리에서 바로 봅니다.
+   *
+   * 수납 처리가 안 된 장은 아무 일을 하지 않아도 다음 달로 밀립니다(`priorUnpaidOf`). 담당자는
+   * 미납금 화면을 따로 열지 않고 이 표의 「지난 미납」 칸에서 셋 중 하나를 고릅니다 -
+   * ① 이번 달 장에 합치기 ② 미납만 따로 한 장 ③ 원 청구서를 올톡으로 다시 보내기.
+   *
+   * 기본은 「합치지 않음」입니다. 발행할 때마다 자동으로 합치던 예전 판에서 커진 장은 한 건도
+   * 안 걷혔습니다(200만 초과 7건 수납 0원). 합치는 것은 화면 위 단추로 이번 발행 전체에,
+   * 또는 학생 줄의 「합침」으로 한 명씩 정합니다.
+   */
+  const [carryMode, setCarryMode] = usePersisted<"off" | "merge">("tuition.carryMode", "off");
+  const [carryWith, setCarryWith] = useState<Set<string>>(new Set());
+  const [priorFor, setPriorFor] = useState<TuitionStudent | null>(null);
+  const [priorPick, setPriorPick] = useState<Set<string>>(new Set());
+  const priorOf = useMemo(() => {
+    const m = new Map<string, PriorUnpaidRow[]>();
+    const invs = invoices as unknown as SettleInvoice[];
+    for (const st of students) {
+      const rows = priorUnpaidOf(invs, payments, { studentId: st.id, month, today });
+      if (rows.length > 0) m.set(st.id, rows);
+    }
+    return m;
+  }, [invoices, payments, students, month, today]);
+  const carryOn = (sid: string) => carryMode === "merge" || carryWith.has(sid);
+
+  /** 지난 미납만 담은 장을 따로 냅니다(`/api/finance/unpaid/merge` — 미납금 화면과 같은 창구). */
+  async function issuePriorOnly(s: TuitionStudent, ids: string[]) {
+    if (ids.length === 0) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/finance/unpaid/merge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ invoiceIds: ids, dueDate }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        notify(`${s.name} 미납 청구서를 만들지 못했습니다: ${body.error ?? res.statusText}`, "error");
+        return;
+      }
+      const inv = body.invoice as Invoice | undefined;
+      if (inv) setInvoices((p) => [inv, ...p.map((v) => (ids.includes(v.id) ? { ...v, carried_to_invoice_id: inv.id } : v))]);
+      notify(`${s.name} 지난 미납 ${ids.length}장을 ${inv ? inv.invoice_no + " 한 장으로" : "새 장으로"} 냈습니다. 원 청구서는 「이월됨」으로 잠겼습니다.`, "success");
+      setPriorFor(null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /**
    * **학비외도 이 화면에서 함께 발행.** 학생마다 학비 일괄과 학비외 일괄을 오가지 않게 합니다.
    * 고른 것은 기억합니다(학비외 일괄 화면과 같은 값) - 매번 다시 고르면 빠뜨립니다.
    */
@@ -944,9 +995,18 @@ export default function TuitionGridClient({
           return `${s.name}(${issuedShort(first.date)} ${first.no})`;
         })
         .filter((x): x is string => !!x);
+      // 서버는 항목을 골라 낼 때(이미 일부가 나가 남은 항목만 담는 학생 포함) 이월을 얹지 않습니다.
+      const carriers = targets.filter((s) => !scoped && restOf(s.id).length === 0 && carryOn(s.id) && tuitionCarryTotal(priorOf.get(s.id) ?? []) > 0);
+      const skipped = targets.filter((s) => !scoped && restOf(s.id).length > 0 && carryOn(s.id) && tuitionCarryTotal(priorOf.get(s.id) ?? []) > 0);
+      const carrySum = carriers.reduce((n, s) => n + tuitionCarryTotal(priorOf.get(s.id) ?? []), 0);
+      const bigs = carriers.map((s) => carryWarning(tuitionCarryTotal(priorOf.get(s.id) ?? []), totalOf(s.id))).filter(Boolean);
       const lines = [
         `${targets.length}명 · 「${scopeLabel}」${partnerNote}`,
         `청구할 학비 합: ${sum.toLocaleString("ko-KR")}원`,
+        carriers.length > 0
+          ? `지난 미납을 이번 장에 합치는 학생 ${carriers.length}명 · ${carrySum.toLocaleString("ko-KR")}원 (원 청구서는 「이월됨」으로 잠김)${bigs.length > 0 ? ` — ⚠ ${bigs.length}명은 100만원을 넘습니다` : ""}`
+          : "지난 미납은 합치지 않습니다(학생 줄 「지난 미납」에서 따로 냅니다).",
+        ...(skipped.length > 0 ? [`이 달에 일부가 이미 나가 남은 항목만 담는 학생은 합치지 않습니다: ${skipped.map((s) => s.name).join(", ")}`] : []),
         already.length > 0
           ? `이미 이 달에 일부가 나간 학생 ${already.length}명 — 남은 항목만 담습니다: ${already.slice(0, 4).join(", ")}${already.length > 4 ? " 외" : ""}`
           : "이 달에 이미 나간 학생은 없습니다.",
@@ -954,6 +1014,11 @@ export default function TuitionGridClient({
         "발행할까요? 잘못 냈으면 5초 안에 화면 아래에서 되돌릴 수 있습니다.",
       ];
       if (!confirm(lines.join("\n"))) return;
+    } else {
+      // 한 명 발행에서 합치면 커지는 장은 그 자리에서 한 번 묻습니다.
+      const s0 = targets[0];
+      const w = !scoped && carryOn(s0.id) ? carryWarning(tuitionCarryTotal(priorOf.get(s0.id) ?? []), totalOf(s0.id)) : null;
+      if (w && !confirm(`${s0.name}: ${w}\n\n그래도 합쳐서 발행할까요?`)) return;
     }
 
     setBusy(true);
@@ -997,6 +1062,8 @@ export default function TuitionGridClient({
             termId: termId || null,
             planIds: scoped ? planIds : rest.length > 0 ? rest : null,
             billingMonth: month,
+            // 지난 학비 미납을 이 장에 얹습니다. 서버는 항목을 골라 낼 때는 얹지 않습니다.
+            ...(!scoped && carryOn(s.id) && tuitionCarryTotal(priorOf.get(s.id) ?? []) > 0 ? { carryForward: true } : {}),
             ...(merge ? { itemIds: extras } : {}),
           }),
         });
@@ -1187,11 +1254,29 @@ export default function TuitionGridClient({
               </button>
             ))}
           </span>
+          {/* **지난 미납.** 수납 안 된 장은 저절로 다음 달로 밀립니다. 이번 발행 전체에 합칠지 여기서,
+              한 명씩은 학생 줄 「지난 미납」 칸에서 정합니다. 기본은 합치지 않음 — 커진 장은 안 걷혔습니다. */}
+          <span className="flex flex-wrap items-center gap-1 rounded-lg bg-rose-50 px-1.5 py-1 ring-1 ring-rose-200" title="보고 있는 달보다 앞선 달의 안 받은 돈을 이번 달 장에 얹을지">
+            <span className="text-[11px] font-bold text-rose-800">지난 미납</span>
+            {(["off", "merge"] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setCarryMode(m)}
+                className={
+                  "rounded-full px-2 py-0.5 text-[11px] font-bold transition-colors " +
+                  (carryMode === m ? "bg-rose-600 text-white" : "bg-white text-slate-500 ring-1 ring-slate-200 hover:text-slate-800")
+                }
+              >
+                {m === "off" ? "따로(학생 줄에서)" : "이번 달 장에 합치기"}
+              </button>
+            ))}
+          </span>
           <button
             onClick={() => void issueChecked([])}
             disabled={busy || checked.size === 0}
             className={btn + " bg-emerald-600 px-3 py-1.5 text-white hover:bg-emerald-700"}
-            title="고른 학생에게 학비 전부를 한 장으로 발행합니다(지난 미납도 함께 얹힙니다)"
+            title="고른 학생에게 학비 전부를 한 장으로 발행합니다(「합치기」를 켠 학생은 지난 미납도 함께 얹힙니다)"
           >
             🧾 고른 {checked.size}명 · 전체 발행
           </button>
@@ -1441,6 +1526,12 @@ export default function TuitionGridClient({
                   받음 · 발행 →」 셋이 들어가는데 칸이 130px 이라 글자가 접혀 내려가면서
                   줄 높이가 들쭉날쭉했습니다. 접힌 글자는 반쯤 잘려 보여 무슨 단추인지
                   읽히지 않습니다. */}
+              <th
+                className="min-w-[150px] whitespace-nowrap border-b border-l border-rose-200 bg-rose-50 px-2 py-1.5 font-semibold text-rose-800"
+                title="보고 있는 달보다 앞선 달의 청구서 중 아직 안 받은 돈. 수납 처리가 안 되면 저절로 여기 남습니다."
+              >
+                지난 미납
+              </th>
               <th className="min-w-[196px] whitespace-nowrap border-b border-l border-slate-200 bg-white px-2 py-1.5 font-semibold text-slate-600">
                 청구서
               </th>
@@ -1714,6 +1805,47 @@ export default function TuitionGridClient({
                     );
                   })()}
 
+                  <td className="whitespace-nowrap border-b border-l border-rose-100 px-2 py-1">
+                    {(() => {
+                      const pr = priorOf.get(s.id) ?? [];
+                      if (pr.length === 0) return <span className="text-[11px] text-slate-300">—</span>;
+                      const sum = pr.reduce((n, r) => n + r.balance, 0);
+                      const on = carryOn(s.id);
+                      return (
+                        <span className="inline-flex items-center gap-1">
+                          <button
+                            onClick={() => {
+                              setPriorFor(s);
+                              setPriorPick(new Set(pr.map((r) => r.invoice.id)));
+                            }}
+                            className="rounded bg-rose-100 px-1.5 py-0.5 text-[11px] font-bold text-rose-800 hover:bg-rose-200"
+                            title={pr.map((r) => `${r.invoice.invoice_no} ${r.billingMonth} ${won(r.balance)}${r.overdueDays > 0 ? ` · ${r.overdueDays}일 연체` : ""}`).join("\n")}
+                          >
+                            {pr.length}장 · {won(sum)}
+                          </button>
+                          <button
+                            onClick={() =>
+                              setCarryWith((p) => {
+                                const n = new Set(p);
+                                if (n.has(s.id)) n.delete(s.id);
+                                else n.add(s.id);
+                                return n;
+                              })
+                            }
+                            disabled={carryMode === "merge"}
+                            className={
+                              "rounded px-1.5 py-0.5 text-[10px] font-bold " +
+                              (on ? "bg-rose-600 text-white" : "bg-white text-slate-500 ring-1 ring-slate-300 hover:text-slate-800") +
+                              (carryMode === "merge" ? " opacity-70" : "")
+                            }
+                            title={on ? "이번 달 장을 발행할 때 지난 학비 미납을 함께 얹습니다" : "누르면 이번 달 장에 지난 학비 미납을 합칩니다"}
+                          >
+                            {on ? "합침" : "합치기"}
+                          </button>
+                        </span>
+                      );
+                    })()}
+                  </td>
                   <td className="whitespace-nowrap border-b border-l border-slate-200 px-2 py-1">
                     {inv ? (
                       <span className="flex flex-wrap items-center gap-1">
@@ -1819,7 +1951,7 @@ export default function TuitionGridClient({
             })}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={usedPlans.length + 7} className="px-3 py-12 text-center text-sm text-slate-400">
+                <td colSpan={usedPlans.length + 8} className="px-3 py-12 text-center text-sm text-slate-400">
                   학생이 없습니다.
                 </td>
               </tr>
@@ -1853,11 +1985,138 @@ export default function TuitionGridClient({
               <td className="border-t-2 border-l border-slate-300 bg-rose-100 px-2 py-1.5 text-right">
                 <span className="text-[13px] font-black tabular-nums text-rose-800">{won(money.due)}</span>
               </td>
+              <td className="border-t-2 border-l border-slate-300 bg-rose-50 px-2 py-1.5 text-right">
+                {(() => {
+                  const list = rows.map((s) => priorOf.get(s.id) ?? []).filter((l) => l.length > 0);
+                  const sum = list.flat().reduce((n, r) => n + r.balance, 0);
+                  return list.length > 0 ? (
+                    <span className="text-[11px] font-bold tabular-nums text-rose-800" title="보고 있는 달보다 앞선 달의 미납">
+                      {list.length}명 · {won(sum)}
+                    </span>
+                  ) : (
+                    <span className="text-[11px] text-slate-300">—</span>
+                  );
+                })()}
+              </td>
               <td className="border-t-2 border-l border-slate-300 bg-slate-100 px-2 py-1.5" />
             </tr>
           </tfoot>
         </table>
       </DragScroll>
+
+      {/* **지난 미납 한 명 창.** 원 청구서가 보이고, 셋 중 하나를 고릅니다 — 따로 한 장 · 올톡으로 다시 보내기 · 이번 달 장에 합치기. */}
+      {priorFor && (() => {
+        const pr = priorOf.get(priorFor.id) ?? [];
+        const picked = pr.filter((r) => priorPick.has(r.invoice.id));
+        const pickedSum = picked.reduce((n, r) => n + r.balance, 0);
+        const streams = new Set(picked.map((r) => r.stream));
+        const onePick = picked.length > 0;
+        const tuitionSum = tuitionCarryTotal(pr);
+        const warn = carryWarning(tuitionSum, totalOf(priorFor.id));
+        return (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30 p-4" onClick={() => setPriorFor(null)}>
+            <div className="w-full max-w-2xl rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+              <div className="mb-2 flex items-center justify-between">
+                <h3 className="text-[15px] font-black text-slate-800">
+                  🧾 {priorFor.name} · 지난 미납 {pr.length}장
+                  <span className="ml-2 text-[12px] font-semibold text-rose-700">{won(pr.reduce((n, r) => n + r.balance, 0))}</span>
+                </h3>
+                <button onClick={() => setPriorFor(null)} className="text-[12px] text-slate-400 hover:text-slate-700">닫기 ✕</button>
+              </div>
+              <p className="mb-3 text-[11px] text-slate-500">
+                보고 있는 달({month})보다 앞선 달의 청구서 중 아직 안 받은 돈입니다. 수납이 들어오면 저절로 빠집니다.
+                따로 보내면 원 청구서는 「이월됨」으로 잠겨 같은 돈이 두 번 청구되지 않습니다.
+              </p>
+              <table className="w-full text-[12px]">
+                <thead>
+                  <tr className="text-left text-[11px] text-slate-500">
+                    <th className="w-6 py-1"></th>
+                    <th className="py-1">청구서</th>
+                    <th className="py-1">달</th>
+                    <th className="py-1">갈래</th>
+                    <th className="py-1 text-right">청구액</th>
+                    <th className="py-1 text-right">남은 돈</th>
+                    <th className="py-1 text-right">연체</th>
+                    <th className="py-1 text-right">올톡</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pr.map((r) => (
+                    <tr key={r.invoice.id} className="border-t border-slate-100">
+                      <td className="py-1">
+                        <input
+                          type="checkbox"
+                          checked={priorPick.has(r.invoice.id)}
+                          onChange={(e) =>
+                            setPriorPick((p) => {
+                              const n = new Set(p);
+                              if (e.target.checked) n.add(r.invoice.id);
+                              else n.delete(r.invoice.id);
+                              return n;
+                            })
+                          }
+                        />
+                      </td>
+                      <td className="py-1">
+                        <button
+                          onClick={() => setPreview({ id: r.invoice.id, label: `${priorFor.name} · ${r.invoice.invoice_no}`, studentId: priorFor.id })}
+                          className="font-bold text-emerald-700 underline"
+                        >
+                          {r.invoice.invoice_no}
+                        </button>
+                        <span className="ml-1 text-[10px] text-slate-400">{issuedShort(r.invoice.issue_date)}</span>
+                      </td>
+                      <td className="py-1 tabular-nums">{r.billingMonth}</td>
+                      <td className="py-1">{r.stream}</td>
+                      <td className="py-1 text-right tabular-nums">{won(Number(r.invoice.total_amount))}</td>
+                      <td className="py-1 text-right font-bold tabular-nums text-rose-700">{won(r.balance)}</td>
+                      <td className="py-1 text-right tabular-nums text-slate-500">{r.overdueDays > 0 ? `${r.overdueDays}일` : "기한 전"}</td>
+                      <td className="py-1 text-right text-[10px] text-slate-500">
+                        {(r.invoice as SettleInvoice & { exported_at?: string | null }).exported_at ? "보냄" : "안 보냄"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <b className="text-[12px] text-slate-700">고른 {picked.length}장 · {won(pickedSum)}</b>
+                <button
+                  disabled={busy || !onePick}
+                  onClick={() => void issuePriorOnly(priorFor, picked.map((r) => r.invoice.id))}
+                  className="rounded-lg bg-rose-600 px-3 py-1.5 text-[12px] font-bold text-white hover:bg-rose-700 disabled:bg-slate-300"
+                  title={streams.size > 1 ? "학비와 학비외가 섞입니다 — 갈래별로 따로 내는 것이 좋습니다" : "고른 장의 남은 돈만으로 새 청구서 한 장을 만듭니다"}
+                >
+                  🧾 미납만 따로 한 장{streams.size > 1 ? " (갈래 섞임)" : ""}
+                </button>
+                <button
+                  disabled={busy || !onePick}
+                  onClick={() => {
+                    setExportIds(picked.map((r) => r.invoice.id));
+                    setPriorFor(null);
+                  }}
+                  className="rounded-lg bg-teal-600 px-3 py-1.5 text-[12px] font-bold text-white hover:bg-teal-700 disabled:bg-slate-300"
+                  title="원 청구서를 그대로 올톡페이 발송 파일에 담습니다 (일부 낸 장은 「따로 한 장」이 낫습니다)"
+                >
+                  📤 원 청구서 올톡으로 다시 보내기
+                </button>
+                <button
+                  disabled={busy || tuitionSum <= 0}
+                  onClick={() => {
+                    setCarryWith((p) => new Set(p).add(priorFor.id));
+                    setPriorFor(null);
+                    notify(`${priorFor.name}: 이번 달 학비 장을 발행할 때 지난 학비 미납 ${won(tuitionSum)}을 함께 얹습니다.`, "success");
+                  }}
+                  className="rounded-lg bg-white px-3 py-1.5 text-[12px] font-bold text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50 disabled:text-slate-300"
+                  title={tuitionSum <= 0 ? "학비 갈래 미납이 없습니다(학비외는 합치지 않습니다)" : "이번 달 학비 장에 「이전 미납」 줄로 얹습니다"}
+                >
+                  ➕ 이번 달 장에 합치기
+                </button>
+              </div>
+              {warn && <p className="mt-2 text-[11px] font-semibold text-amber-700">⚠ {warn}</p>}
+            </div>
+          </div>
+        );
+      })()}
 
       {preview && (
         <InvoicePreviewModal

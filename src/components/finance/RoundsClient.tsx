@@ -5,6 +5,9 @@ import { useFinanceLive } from "@/lib/useFinanceLive";
 import { Who } from "@/components/common/HomonymProvider";
 import StudentLedgerModal from "@/components/finance/StudentLedgerModal";
 import { won } from "@/lib/feeItems";
+import { invoiceStatus } from "@/lib/billStatus";
+import { StatusBadge } from "@/components/finance/StatusBadge";
+import type { SettlePayment } from "@/lib/settlement";
 
 export type BatchRow = {
   billing_month: string;
@@ -29,6 +32,11 @@ export type BatchInvoice = {
   total_amount: number | string;
   status: string;
   issued_offline: boolean | null;
+  issue_date: string;
+  due_date: string;
+  carried_to_invoice_id?: string | null;
+  written_off_amount?: number | string | null;
+  exported_at?: string | null;
 };
 
 const STREAMS = ["학비", "학비외"] as const;
@@ -37,8 +45,32 @@ const STREAMS = ["학비", "학비외"] as const;
  * 청구월마다 학비·학비외가 **언제 몇 차로** 나갔는지. 회차를 누르면 그 차에 나간 아이들이
  * 펼쳐지고, 이름을 누르면 그 아이의 금전 창이 그 달로 열립니다.
  */
-export default function RoundsClient({ batches, invoices, problems }: { batches: BatchRow[]; invoices: BatchInvoice[]; problems: string[] }) {
+export default function RoundsClient({
+  batches,
+  invoices,
+  payments,
+  today,
+  problems,
+}: {
+  batches: BatchRow[];
+  invoices: BatchInvoice[];
+  payments: SettlePayment[];
+  today: string;
+  problems: string[];
+}) {
   useFinanceLive();
+  /**
+   * **장마다 수납 상태.** 보낸 뒤 「들어왔나 안 들어왔나」를 이 화면에서 바로 봅니다. 계산은 금전
+   * 창·청구 화면과 같은 함수(`invoiceStatus`)라 어디서 보든 같은 답입니다.
+   */
+  const stateOf = useMemo(() => {
+    const m = new Map<string, NonNullable<ReturnType<typeof invoiceStatus>>>();
+    for (const v of invoices) {
+      const r = invoiceStatus({ ...v, student_id: v.student_id ?? null }, payments, today);
+      if (r) m.set(v.id, r);
+    }
+    return m;
+  }, [invoices, payments, today]);
   const [open, setOpen] = useState<string | null>(null);
   const [student, setStudent] = useState<{ id: string; month: string } | null>(null);
   const [year, setYear] = useState<string>("전체");
@@ -62,7 +94,10 @@ export default function RoundsClient({ batches, invoices, problems }: { batches:
     <div className="space-y-3 p-4">
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="text-lg font-black text-slate-900">청구 회차</h1>
-        <span className="text-[12px] text-slate-500">몇 월분을 언제 몇 차로 냈는가 · 회차 번호 = 발행일 _ 그날 몇 번째 묶음</span>
+        <span className="text-[12px] text-slate-500">
+          몇 월분을 언제 몇 차로 냈는가 · 회차를 펼치면 장마다 <b>완납·일부·미납</b>이 보입니다. 미납은 수납이 들어올 때까지 다음 달로 밀리고,
+          [청구 → 학비]의 「지난 미납」 칸에서 이번 달 장에 합치거나 따로 보냅니다.
+        </span>
         <select value={year} onChange={(e) => setYear(e.target.value)} className="ml-auto rounded-lg border border-slate-300 px-2 py-1 text-[12px]">
           {years.map((y) => (
             <option key={y} value={y}>
@@ -105,6 +140,23 @@ export default function RoundsClient({ batches, invoices, problems }: { batches:
                             </span>
                             {r.cancelled_count > 0 && <span className="text-[10px] text-slate-400">취소 {r.cancelled_count}</span>}
                             {r.offline_count > 0 && <span className="text-[10px] text-sky-600">직접수납 {r.offline_count}</span>}
+                            {(() => {
+                              // 보낸 뒤 확인: 이 차에서 몇 장이 들어왔고 몇 장이 남았나.
+                              const st = items.map((v) => stateOf.get(v.id)).filter((x): x is NonNullable<typeof x> => !!x);
+                              const done = st.filter((x) => x.status === "완납" || x.status === "결손").length;
+                              const carried = st.filter((x) => x.status === "이월").length;
+                              const open = st.filter((x) => x.balance > 0 && x.status !== "이월");
+                              const openSum = open.reduce((n, x) => n + x.balance, 0);
+                              return (
+                                <span className="flex items-center gap-1 text-[10px]">
+                                  <span className="rounded bg-emerald-100 px-1 font-bold text-emerald-800">완납 {done}</span>
+                                  {open.length > 0 && (
+                                    <span className="rounded bg-rose-100 px-1 font-bold text-rose-800">미납 {open.length}장 · {won(openSum)}</span>
+                                  )}
+                                  {carried > 0 && <span className="rounded bg-slate-200 px-1 font-bold text-slate-600">이월 {carried}</span>}
+                                </span>
+                              );
+                            })()}
                             {r.issued_by && <span className="w-full text-[10px] text-slate-400">발행 {r.issued_by}</span>}
                           </button>
                           {open === key && (
@@ -120,6 +172,17 @@ export default function RoundsClient({ batches, invoices, problems }: { batches:
                                   )}
                                   <span className="text-slate-400">{v.invoice_no}</span>
                                   {v.issued_offline && <span className="text-[10px] text-sky-600">직접수납</span>}
+                                  {(() => {
+                                    const st = stateOf.get(v.id);
+                                    if (!st) return null;
+                                    return (
+                                      <StatusBadge
+                                        status={st.status}
+                                        suffix={st.balance > 0 && st.status !== "이월" ? `남은 ${won(st.balance)}` : undefined}
+                                      />
+                                    );
+                                  })()}
+                                  {!v.exported_at && !v.issued_offline && <span className="text-[10px] text-amber-600">올톡 안 보냄</span>}
                                   <span className="ml-auto tabular-nums">{won(Number(v.total_amount))}</span>
                                 </li>
                               ))}

@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess } from "@/lib/roles";
 import { readAll } from "@/lib/financeFetch";
+import { todayKst } from "@/lib/kst";
 import RoundsClient, { type BatchRow, type BatchInvoice } from "@/components/finance/RoundsClient";
 
 import { getFinanceScope, scopeStudentIds, inScopeIds } from "@/lib/financeScopeServer";
@@ -21,7 +22,7 @@ export default async function FinanceRoundsPage() {
   if (!hasFinanceAccess(me)) redirect("/home");
 
   const supabase = await createClient();
-  const [batchRes, invRes] = await Promise.all([
+  const [batchRes, invRes, payRes] = await Promise.all([
     supabase
       .from("invoice_batches")
       .select("billing_month, stream, issue_batch, issue_date, first_created_at, alive_count, cancelled_count, alive_amount, offline_count, issued_by")
@@ -31,15 +32,20 @@ export default async function FinanceRoundsPage() {
     readAll<BatchInvoice>((from, to) =>
       supabase
         .from("invoices")
-        .select("id, invoice_no, issue_batch, student_id, student_name, student_name_ko, total_amount, status, issued_offline")
+        .select("id, invoice_no, issue_batch, student_id, student_name, student_name_ko, total_amount, status, issued_offline, issue_date, due_date, carried_to_invoice_id, written_off_amount, exported_at")
         .not("issue_batch", "is", null)
         .order("issue_batch")
         .order("invoice_no")
         .range(from, to),
     ),
+    // **수납 확인은 청구서 한 장 단위.** 회차를 펼쳤을 때 장마다 「완납·일부·미납·연체」가 바로 보여야
+    // 보낸 뒤 확인하러 수납 화면을 따로 열지 않습니다. 자르지 않고 끝까지 읽습니다(§2-12).
+    readAll<{ invoice_id: string | null; amount: number | string }>((from, to) =>
+      supabase.from("payments").select("invoice_id, amount").range(from, to),
+    ),
   ]);
 
-  const problems = [batchRes.error?.message, invRes.error, invRes.truncated ? "청구서가 한도를 넘어 일부만 읽었습니다." : null].filter(
+  const problems = [batchRes.error?.message, invRes.error, invRes.truncated ? "청구서가 한도를 넘어 일부만 읽었습니다." : null, payRes.error, payRes.truncated ? "입금이 한도를 넘어 일부만 읽었습니다." : null].filter(
     (v): v is string => !!v,
   );
 
@@ -65,5 +71,5 @@ export default async function FinanceRoundsPage() {
         ];
       });
 
-  return <RoundsClient batches={batches} invoices={invoices} problems={problems} />;
+  return <RoundsClient batches={batches} invoices={invoices} payments={payRes.rows} today={todayKst()} problems={problems} />;
 }

@@ -40,9 +40,19 @@ export async function GET(req: Request, ctx: { params: Promise<{ studentId: stri
       unitPrice: Number(i.unit_price),
       isDefault: isDefaultFor(i, sl),
     }));
+  // 다음 학비 장에 붙을 추가 항목·차액(아직 안 얹힌 것). 창에서 보여야 발행하는 사람이 놀라지 않습니다.
+  const { data: ecRows, error: ecErr } = await supabase
+    .from("tuition_extra_charges")
+    .select("id, student_id, term_id, plan_id, name, amount, reason, target_month, series_id, repeat, series_from, series_to, invoice_id")
+    .eq("student_id", student.id)
+    .is("invoice_id", null)
+    .is("cancelled_at", null)
+    .order("target_month");
+  if (ecErr) errors.push(`추가 항목: ${ecErr.message}`);
   return NextResponse.json({
     ledger,
     addableItems,
+    extraCharges: ecRows ?? [],
     termId: world.termId,
     month: world.month ?? null,
     terms: terms.map((t) => ({ id: t.id, name: `${t.year} ${t.term_type}`, status: t.status })),

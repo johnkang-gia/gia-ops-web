@@ -168,7 +168,24 @@ export async function POST(req: Request) {
     }
   }
 
-  if (lines.length === 0) {
+  // 항목 줄이 없어도 **이 달에 붙일 추가 항목**(셔틀비처럼 이 아이에게만 받는 돈)이 있으면 그것만으로 장을
+  // 냅니다 - 정규과정은 학기에 한 장인데 셔틀비는 달마다 받는 집이 있습니다.
+  let pendingExtraCount = 0;
+  if (lines.length === 0 && !paidAt) {
+    const rawM = String((body as { billingMonth?: unknown } | null)?.billingMonth ?? "").trim();
+    const mk = /^\d{4}-(0[1-9]|1[0-2])$/.test(rawM) ? rawM : todayKst().slice(0, 7);
+    const { data: pend } = await supabase
+      .from("tuition_extra_charges")
+      .select("id, term_id, target_month, plan_id")
+      .eq("student_id", student.id)
+      .is("invoice_id", null)
+      .is("cancelled_at", null);
+    pendingExtraCount = ((pend as { term_id: string | null; target_month: string | null; plan_id: string | null }[] | null) ?? []).filter(
+      (c) => (!c.term_id || !termId || c.term_id === termId) && (!c.target_month || c.target_month <= mk) && (!planIds || planIds.length === 0 || !c.plan_id || planIds.includes(c.plan_id)),
+    ).length;
+  }
+
+  if (lines.length === 0 && pendingExtraCount === 0) {
     // 「고른 것이 없다」와 「고른 것은 있는데 이번에 담을 항목이 아니다」는 다른 말입니다.
     // 같은 문구로 답하면 담당자가 옵션을 다시 넣으려고 헤맵니다.
     const hasAny = enrollments.length > 0 || (enrollRes.data as unknown[] | null)?.length;
@@ -186,7 +203,8 @@ export async function POST(req: Request) {
   // 이 청구서가 무엇을 담았는지를 **사람이 읽는 이름으로** 굳혀 적습니다. 항목 id 로만
   // 가리키면 나중에 요금표에서 항목 이름이 바뀌거나 항목을 껐을 때, 지난 청구서가 무슨
   // 청구서였는지 설명할 수 없게 됩니다.
-  const planScope = planIds && planIds.length > 0 ? lines.map((l) => l.label.split(" · ")[0]).join(" · ") : null;
+  // 항목 줄 없이 추가 항목만 담는 장은 범위를 「추가 항목」으로 적습니다 - 비워 두면 «학비 전부»로 읽힙니다.
+  const planScope = planIds && planIds.length > 0 ? (lines.length > 0 ? lines.map((l) => l.label.split(" · ")[0]).join(" · ") : "추가 항목") : lines.length === 0 ? "추가 항목" : null;
 
   // ── 같은 장에 담을 학비외 ───────────────────────────────────────────────
   type ExtraLine = { name: string; item_id: string; qty: number; unit_price: number; amount: number };
@@ -500,12 +518,12 @@ export async function POST(req: Request) {
   // 실패로 돌리지 않고 경고로 알립니다 - 청구서 청구월에서 같은 기간을 셀 수 있습니다.
   const startMonth = (inv as { billing_month?: string | null }).billing_month ?? issue.slice(0, 7);
   const spanWarnings: string[] = [];
-  for (const e of (enrollRes.data as { id: string; plan_id: string; option_id: string | null; term_id: string | null; paid_from?: string | null }[] | null) ?? []) {
+  for (const e of (enrollRes.data as { id: string; plan_id: string; option_id: string | null; term_id: string | null; paid_from?: string | null; bill_cycle?: "auto" | "월" | "학기" | null }[] | null) ?? []) {
     if (e.paid_from || !e.option_id) continue;
     if (!sameTerm(e) || (planIds && planIds.length > 0 && !planIds.includes(e.plan_id))) continue;
     const plan = plans.find((p) => p.id === e.plan_id);
     const opt = options.find((o) => o.id === e.option_id);
-    if (!plan || !opt || billRuleOf(plan, opt).rule !== "기간") continue;
+    if (!plan || !opt || billRuleOf(plan, opt, e.bill_cycle ?? "auto").rule !== "기간") continue;
     const { error: pfErr } = await supabase.from("student_fee_enrollments").update({ paid_from: startMonth }).eq("id", e.id);
     if (pfErr) spanWarnings.push(`${plan.name} 시작월을 적지 못했습니다(${pfErr.message})`);
   }

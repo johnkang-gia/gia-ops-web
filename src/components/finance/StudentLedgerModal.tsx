@@ -11,6 +11,7 @@ import type { Ledger, LedgerCharge, LedgerInvoice } from "@/lib/studentLedger";
 import type { Invoice } from "@/lib/types";
 import type { AlreadyPaidResult } from "@/components/finance/AlreadyPaidModal";
 import AlreadyPaidModal from "@/components/finance/AlreadyPaidModal";
+import ExtraChargeModal, { type ExtraChargeRow } from "@/components/finance/ExtraChargeModal";
 import { FINANCE_TABLES } from "@/lib/useFinanceLive";
 import { createClient } from "@/lib/supabase/client";
 import DepositApplyModal from "@/components/finance/DepositApplyModal";
@@ -53,6 +54,8 @@ import { issuedShort } from "@/lib/invoiceIssued";
 type LedgerResponse = {
   ledger: Ledger;
   addableItems: { id: string; label: string; category: string; unitPrice: number; isDefault: boolean }[];
+  /** 다음 학비 장에 붙을 추가 항목·차액(아직 안 얹힌 것). */
+  extraCharges?: ExtraChargeRow[];
   termId: string | null;
   terms: { id: string; name: string; status: string }[];
   warnings: string[];
@@ -99,6 +102,8 @@ export default function StudentLedgerModal({
   const [preview, setPreview] = useState<{ id: string; label: string; receipt: boolean } | null>(null);
   const [exporting, setExporting] = useState<string[] | null>(null);
   const [addItemId, setAddItemId] = useState("");
+  /** 「+ 추가」 창(이 아이에게만 받는 돈). */
+  const [extraOpen, setExtraOpen] = useState(false);
   const [depositOpen, setDepositOpen] = useState(false);
   /** 함께 쓸 수 있는 예치금(공유 묶음이면 형제 몫 포함). 자기 예치금만 보면 형제 돈이 있어도 묻지 않고 지나갑니다. */
   const [poolBalance, setPoolBalance] = useState<number | null>(null);
@@ -840,6 +845,41 @@ export default function StudentLedgerModal({
                         </div>
                       );
                     })}
+                    {kind === "학비" && data && (
+                      <div className="mt-1 flex flex-col gap-0.5">
+                        {(data.extraCharges ?? []).map((c) => {
+                          const amt = Number(c.amount);
+                          return (
+                            <div key={c.id} className="flex items-center gap-2 rounded-lg border border-dashed border-sky-200 bg-sky-50/50 px-2 py-1 text-[11px]">
+                              <span className={"rounded px-1 font-bold " + (amt > 0 ? "bg-orange-100 text-orange-800" : "bg-sky-100 text-sky-800")}>
+                                {c.target_month ? `${Number(c.target_month.slice(5))}월 장` : "다음 장"} {amt > 0 ? "+" : "−"}{won(Math.abs(amt))}
+                              </span>
+                              <span className="min-w-0 flex-1 truncate text-slate-600" title={c.reason}>{c.name}</span>
+                              <button
+                                onClick={async () => {
+                                  if (!window.confirm(`「${c.name}」을 지웁니다. 청구서에 붙지 않습니다.`)) return;
+                                  const { error } = await createClient().from("tuition_extra_charges").update({ cancelled_at: new Date().toISOString() }).eq("id", c.id).is("invoice_id", null);
+                                  if (error) return notify(`지우지 못했습니다: ${error.message}`, "error");
+                                  await load();
+                                }}
+                                className="text-slate-300 hover:text-rose-600"
+                                title="지웁니다"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          );
+                        })}
+                        <button
+                          onClick={() => setExtraOpen(true)}
+                          disabled={busy}
+                          className="self-start rounded border border-dashed border-sky-300 px-2 py-0.5 text-[11px] font-bold text-sky-700 hover:bg-sky-50"
+                          title="이 아이에게만 받는 돈(셔틀비·추가금·차액)을 다음 학비 청구서에 한 줄로 붙입니다"
+                        >
+                          + 추가 항목
+                        </button>
+                      </div>
+                    )}
                     {kind === "학비외" && data && data.addableItems.length > 0 && (
                       <div className="mt-1 flex items-center gap-1">
                         <select value={addItemId} onChange={(e) => setAddItemId(e.target.value)} className="min-w-0 flex-1 rounded border border-dashed border-slate-300 px-1 py-0.5 text-[11px]">
@@ -1077,6 +1117,16 @@ export default function StudentLedgerModal({
           </div>
         );
       })()}
+      {extraOpen && ledger && (
+        <ExtraChargeModal
+          student={{ id: ledger.student.id, name: ledger.student.name }}
+          termId={termId}
+          month={month ?? todayKst().slice(0, 7)}
+          createdBy="학생별 회계"
+          onClose={() => setExtraOpen(false)}
+          onSaved={() => void changed()}
+        />
+      )}
       {already && ledger && (
         <AlreadyPaidModal
           title="수납"

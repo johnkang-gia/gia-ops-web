@@ -42,6 +42,8 @@ export type Enrollment = {
   override_note: string | null;
   /** 여러 달 묶음 납부의 시작월(YYYY-MM). 사람이 적거나 첫 청구 때 채워집니다. */
   paid_from?: string | null;
+  /** 청구 주기. auto=항목 단위·옵션대로, 월=달마다, 학기=학기에 한 장. */
+  bill_cycle?: "auto" | "월" | "학기" | null;
 };
 
 export type StudentDiscountRow = { student_id: string; discount_id: string; term_id: string | null; plan_id: string | null };
@@ -240,7 +242,7 @@ export function buildLedger(world: LedgerWorld, student: LedgerStudent): Ledger 
         })
       : null;
     const mb = month
-      ? planBillForMonth({ plan, option, paidFrom: e?.paid_from ?? null, invoices: tuitionAlive, month })
+      ? planBillForMonth({ plan, option, cycle: e?.bill_cycle ?? "auto", paidFrom: e?.paid_from ?? null, invoices: tuitionAlive, month })
       : null;
     const billedInv = mb
       ? mb.covered

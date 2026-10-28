@@ -33,7 +33,7 @@ export async function loadLedgerWorld(
     return only ? q.eq("student_id", only) : q;
   };
   const enrQ = () => {
-    const q = supabase.from("student_fee_enrollments").select("student_id, plan_id, option_id, term_id, active, override_amount, override_note, paid_from").eq("active", true);
+    const q = supabase.from("student_fee_enrollments").select("student_id, plan_id, option_id, term_id, active, override_amount, override_note, paid_from, bill_cycle").eq("active", true);
     return only ? q.eq("student_id", only) : q;
   };
   const sdQ = () => {

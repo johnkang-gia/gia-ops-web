@@ -59,10 +59,16 @@ export type MonthBill = {
   spanSource: "입력" | "청구서" | null;
 };
 
+export type BillCycle = "auto" | "월" | "학기";
+
 export function billRuleOf(
   plan: { unit?: string | null },
   option: { periods?: number | string | null } | null,
+  /** 등록 줄에 적힌 청구 주기. 사람이 정한 것이 항목 단위·옵션보다 먼저입니다(최서연·강하늘 월납 정규과정). */
+  cycle: BillCycle | null | undefined = "auto",
 ): { rule: BillRule; months: number } {
+  if (cycle === "월") return { rule: "월", months: 1 };
+  if (cycle === "학기") return { rule: "학기", months: 0 };
   if ((plan.unit ?? "월") !== "월") return { rule: "학기", months: 0 };
   // 옵션 없이 금액을 직접 기입한 월 단위 항목(오케스트라 직접 기입)은 **한 달치**입니다. 앞 판은 옵션이
   // 없으면 학기로 쳐서, 10월분을 한 번 받으면 11월에도 「완납 10/2」로 떠 다음 달 장을 낼 자리가 없었습니다.
@@ -114,12 +120,14 @@ export function spanLabel(span: MonthSpan): string {
 export function planBillForMonth(args: {
   plan: { id?: string | null; name: string; unit?: string | null };
   option: { periods?: number | string | null } | null;
+  /** 등록 줄의 청구 주기(`student_fee_enrollments.bill_cycle`). 없으면 auto. */
+  cycle?: BillCycle | null;
   paidFrom: string | null;
   invoices: readonly MonthInvoice[];
   month: MonthKey;
 }): MonthBill {
   const { plan, option, month } = args;
-  const { rule, months } = billRuleOf(plan, option);
+  const { rule, months } = billRuleOf(plan, option, args.cycle ?? "auto");
   const covering = args.invoices
     .filter((v) => invoiceCoversPlan(v, { id: plan.id ?? null, name: plan.name }))
     .sort((a, b) => (billingMonthOf(a) ?? "").localeCompare(billingMonthOf(b) ?? ""));

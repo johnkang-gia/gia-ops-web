@@ -67,7 +67,7 @@ export default async function TuitionPage() {
     supabase.from("terms").select("*").order("status").order("start_date", { ascending: false, nullsFirst: false }),
     supabase
       .from("student_fee_enrollments")
-      .select("id, student_id, plan_id, option_id, term_id, override_amount, override_note, paid_from")
+      .select("id, student_id, plan_id, option_id, term_id, override_amount, override_note, paid_from, bill_cycle")
       .eq("active", true),
     supabase.from("student_fee_discounts").select("id, student_id, discount_id, term_id, plan_id, reason").eq("active", true),
     readAll<Invoice>((from, to) =>
@@ -93,7 +93,7 @@ export default async function TuitionPage() {
     // 다음 장에 얹을 차액. 아직 안 얹힌 것만 - 얹힌 것은 청구서 줄로 보입니다.
     supabase
       .from("tuition_extra_charges")
-      .select("id, student_id, term_id, plan_id, name, amount, reason, target_month")
+      .select("id, student_id, term_id, plan_id, name, amount, reason, target_month, series_id, repeat, series_from, series_to, invoice_id")
       .is("invoice_id", null)
       .is("cancelled_at", null),
     /**

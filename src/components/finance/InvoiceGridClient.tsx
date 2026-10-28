@@ -21,6 +21,7 @@ import { useFinanceLive } from "@/lib/useFinanceLive";
 import DragScroll from "@/components/common/DragScroll";
 import FeeItemsButton from "./FeeItemsModal";
 import AlreadyPaidModal, { type AlreadyPaidResult } from "@/components/finance/AlreadyPaidModal";
+import ExtraChargeModal from "@/components/finance/ExtraChargeModal";
 // 돈을 정하는 판단은 화면에서 떼어 `@/lib/invoiceGrid` 에 두고 시험합니다. 섞여 있으면
 // 화면을 손보다 판단을 건드려도 티가 안 나고, 조금 다른 청구서는 그대로 나갑니다.
 import { matchesInstrument, planInvoices, typicalByGroup, unusualAmount } from "@/lib/invoiceGrid";
@@ -368,6 +369,8 @@ export default function InvoiceGridClient({
   const [onlyUnissued, setOnlyUnissued] = useState(false);
   /** 「직접수납」 창을 연 학생. 청구서를 소급해 만들고 입금까지 함께 넣습니다. */
   const [alreadyFor, setAlreadyFor] = useState<Student | null>(null);
+  /** 「+ 추가」 창 - 이 아이에게만 받는 돈. 학비외 표에서 열어도 다음 학비 장에 붙습니다. */
+  const [extraFor, setExtraFor] = useState<Student | null>(null);
 
   /** 발행 전 검토 창. 누르자마자 나가면 잘못 나간 것을 되돌릴 수 없습니다. */
   const [review, setReview] = useState<Student[] | null>(null);
@@ -2201,6 +2204,14 @@ export default function InvoiceGridClient({
                       >
                         💰 수납
                       </button>
+                      <button
+                        onClick={() => setExtraFor(s)}
+                        disabled={busy}
+                        className="rounded bg-slate-100 px-1 text-[10px] font-bold text-slate-500 hover:bg-sky-100 hover:text-sky-800"
+                        title={`${s.name} — 이 아이에게만 받는 돈(셔틀비·추가금). 다음 학비 청구서에 한 줄로 붙습니다`}
+                      >
+                        + 추가
+                      </button>
                       {/* 현금영수증. 청구서를 보내드리면 그 답장에 「해주세요, 번호는 …」이
                           함께 옵니다. 받는 자리가 다른 화면에 있으면 그 순간에 못 적습니다. */}
                       <ReceiptChip
@@ -2243,6 +2254,14 @@ export default function InvoiceGridClient({
                           title={`${s.name} — 받은 돈을 수납으로 넣습니다 (청구서는 만들되 안 보냄)`}
                         >
                           💰 수납
+                        </button>
+                        <button
+                          onClick={() => setExtraFor(s)}
+                          disabled={busy}
+                          className="rounded bg-slate-100 px-1 text-[11px] font-bold text-slate-500 hover:bg-sky-100 hover:text-sky-800"
+                          title={`${s.name} — 이 아이에게만 받는 돈(셔틀비·추가금). 다음 학비 청구서에 한 줄로 붙습니다`}
+                        >
+                          + 추가
                         </button>
                       </span>
                     ) : (
@@ -2397,6 +2416,15 @@ export default function InvoiceGridClient({
       </DragScroll>
 
       {/* ── 발행 전 검토 ────────────────────────────────────────── */}
+      {extraFor && (
+        <ExtraChargeModal
+          student={{ id: extraFor.id, name: extraFor.name }}
+          termId={termId || null}
+          month={month}
+          createdBy={currentUserEmail}
+          onClose={() => setExtraFor(null)}
+        />
+      )}
       {alreadyFor && (
         <AlreadyPaidModal
           title="학비외 수납"

@@ -683,6 +683,34 @@ export default function TuitionGridClient({
     );
   }
 
+  /**
+   * **이 달을 덮고 있는 다른 달의 청구서** — 학기 단위 항목(학기에 한 장)과 여러 달 묶음(5개월 납부)은
+   * 10월에 낸 장이 11월도 덮습니다. 그 아이의 11월 줄은 새로 청구할 것이 없는데, 청구액·받음·청구서 칸을
+   * 전부 「—」로 비우면 보는 사람은 **금액이 사라진 것**으로 읽습니다(김재이·김도은). 어느 장이 덮고 있고
+   * 그 장이 얼마나 걷혔는지가 줄에 있어야 「11월에 왜 완납인가」에 답이 됩니다.
+   *
+   * 이 달에 낸 장(`invoicesOf`)은 여기 안 넣습니다 - 그건 이 달의 청구액이고 `moneyOf` 가 셉니다.
+   */
+  const coverOf = (sid: string): { invoices: Invoice[]; billed: number; paid: number; due: number } | null => {
+    const seen = new Map<string, Invoice>();
+    for (const p of usedPlans) {
+      const mb = monthBill.get(`${sid}|${p.id}`);
+      if (!mb?.covered || !mb.invoice || billingMonthOf(mb.invoice) === month) continue;
+      const v = invoices.find((x) => x.id === mb.invoice!.id);
+      if (v && !seen.has(v.id)) seen.set(v.id, v);
+    }
+    if (seen.size === 0) return null;
+    let billed = 0;
+    let paid = 0;
+    let writtenOff = 0;
+    for (const v of seen.values()) {
+      billed += Number(v.total_amount ?? 0);
+      paid += paidByInvoice.get(v.id) ?? 0;
+      writtenOff += Number((v as Invoice & { written_off_amount?: number | string | null }).written_off_amount ?? 0) || 0;
+    }
+    return { invoices: [...seen.values()], billed, paid, due: billed - paid - writtenOff };
+  };
+
   /** 아직 청구서에 안 담긴 항목이 남아 있는가. */
   const hasUnbilled = (sid: string) => {
     const b = billed.get(sid);
@@ -1888,24 +1916,36 @@ export default function TuitionGridClient({
                     </div>
                   </td>
 
-                  <td className="border-b border-l-2 border-slate-400 px-2 py-1 text-right">
-                    <span className={"font-bold tabular-nums " + (total > 0 ? "text-slate-800" : "text-slate-300")}>
-                      {total > 0 ? won(total) : "—"}
-                    </span>
-                  </td>
                   {(() => {
                     // 아이별 청구·수납·미수금. 합계 줄과 같은 규칙에서 나옵니다.
-                    const mine = moneyOf.get(s.id) ?? { billed: total, paid: 0, due: total };
+                    // 이 달에 새로 청구할 것이 없고 **다른 달 장이 덮고 있으면** 그 장의 숫자를 흐리게 적습니다
+                    // (「10월 장」 표시). 비워 두면 금액이 사라진 것으로 읽힙니다 - 합계 줄에는 넣지 않습니다.
+                    const cover = total <= 0 ? coverOf(s.id) : null;
+                    const mine = cover ?? moneyOf.get(s.id) ?? { billed: total, paid: 0, due: total };
+                    const shownTotal = cover ? cover.billed : total;
+                    const coverTip = cover
+                      ? `다른 달 청구서가 이 달을 덮고 있습니다: ${cover.invoices.map((v) => `${v.invoice_no} (${billingMonthOf(v) ?? v.issue_date.slice(0, 7)})`).join(", ")}`
+                      : undefined;
                     return (
                       <>
-                        <td className="border-b border-l border-slate-200 bg-emerald-50 px-2 py-1 text-right">
-                          <span className={"font-bold tabular-nums " + (mine.paid > 0 ? "text-emerald-800" : "text-emerald-200")}>
+                        <td className="border-b border-l-2 border-slate-400 px-2 py-1 text-right" title={coverTip}>
+                          <span className={"font-bold tabular-nums " + (shownTotal > 0 ? (cover ? "text-slate-400" : "text-slate-800") : "text-slate-300")}>
+                            {shownTotal > 0 ? won(shownTotal) : "—"}
+                          </span>
+                          {cover && (
+                            <span className="ml-1 rounded bg-slate-100 px-1 text-[10px] font-semibold text-slate-500">
+                              {cover.invoices.map((v) => (billingMonthOf(v) ?? "").slice(5)).filter(Boolean).map((m) => `${Number(m)}월 장`).join("·")}
+                            </span>
+                          )}
+                        </td>
+                        <td className="border-b border-l border-slate-200 bg-emerald-50 px-2 py-1 text-right" title={coverTip}>
+                          <span className={"font-bold tabular-nums " + (mine.paid > 0 ? (cover ? "text-emerald-600/70" : "text-emerald-800") : "text-emerald-200")}>
                             {mine.paid > 0 ? won(mine.paid) : "—"}
                           </span>
                         </td>
-                        <td className="border-b border-l border-slate-200 bg-rose-50 px-2 py-1 text-right">
+                        <td className="border-b border-l border-slate-200 bg-rose-50 px-2 py-1 text-right" title={coverTip}>
                           {/* 다 받았으면 초록 「완납」. 0원을 그냥 적으면 안 걷은 것과 구별되지 않습니다. */}
-                          {total <= 0 ? (
+                          {shownTotal <= 0 ? (
                             <span className="tabular-nums text-rose-200">—</span>
                           ) : mine.due <= 0 ? (
                             <span className="rounded bg-emerald-600 px-1 text-[11px] font-bold text-white">
@@ -2057,7 +2097,28 @@ export default function TuitionGridClient({
                         </button>
                       </span>
                     ) : (
-                      <span className="text-[11px] text-slate-300">—</span>
+                      (() => {
+                        // 이 달 장은 없지만 다른 달 장이 덮고 있는 줄 - 그 장의 번호를 적어 둡니다. 「—」만 있으면
+                        // 어느 장이 이 달을 완납으로 만들었는지 찾을 길이 이 줄에 없습니다. 취소는 그 달 화면에서 합니다.
+                        const cover = coverOf(s.id);
+                        if (!cover) return <span className="text-[11px] text-slate-300">—</span>;
+                        return (
+                          <span className="flex flex-wrap items-center gap-1">
+                            {cover.invoices.map((v) => (
+                              <span key={v.id} className="inline-flex items-center gap-0.5">
+                                <button
+                                  onClick={() => setPreview({ id: v.id, label: `${s.name} · ${v.invoice_no}`, studentId: s.id })}
+                                  className="text-[11px] font-semibold text-slate-500 underline"
+                                  title={`${billingMonthOf(v) ?? ""} 청구서가 이 달을 덮고 있습니다`}
+                                >
+                                  {v.invoice_no}
+                                </button>
+                                <span className="text-[10px] text-slate-400">{issuedShort(v.issue_date)}</span>
+                              </span>
+                            ))}
+                          </span>
+                        );
+                      })()
                     )}
                   </td>
                 </tr>

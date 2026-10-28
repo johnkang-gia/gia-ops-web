@@ -43,6 +43,8 @@ export const BACKUP_GROUPS: { group: string; tables: string[] }[] = [
       // 오늘 이 아이에 대해 알아야 할 것(약·결제·준비물). 하루짜리 메모라 가벼워 보이지만
       // **사람이 전화를 받아 적은 판단**이고, 잃으면 되살릴 방법이 없습니다.
       "student_day_notes",
+      // 학생 특이사항 메모. 잃으면 담당자 머릿속에만 있던 것이 다시 머릿속에만 남습니다.
+      "student_profile_notes",
       "terms",
       "school_days",
     ],

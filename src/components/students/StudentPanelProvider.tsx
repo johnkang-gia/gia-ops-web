@@ -26,7 +26,7 @@ type Ctx = {
   inside: boolean;
 };
 
-export type PanelTab = "기본" | "출결·픽업" | "회계" | "기록";
+export type PanelTab = "기본" | "특이사항" | "출결·픽업" | "회계" | "기록";
 
 // 공급자 밖(로그인 없는 토큰 화면 등)에서는 누를 수 없습니다 - 열 창이 없습니다.
 const PanelCtx = createContext<Ctx>({ open: () => {}, inside: true });

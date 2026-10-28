@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
+import { getCurrentTerm } from "@/lib/currentTerm";
 import { hasFinanceAccess, isStaffOrAboveUser } from "@/lib/roles";
 import { kstDateOffset, todayKst } from "@/lib/kst";
 import { pickForWeek, weekStartOf } from "@/lib/dismissalWeek";
@@ -43,7 +44,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   const since = kstDateOffset(-30);
   const today = todayKst();
 
-  const [stuRes, asgRes, attRes, pickRes, incRes, repRes, taskRes, dpRes] = await Promise.all([
+  const [stuRes, asgRes, attRes, pickRes, incRes, repRes, taskRes, dpRes, curTerm, termsRes] = await Promise.all([
     loadStudent(supabase, id, { phones: true }),
     // 정류장·노선은 아래에서 번호로 따로 읽습니다. 중첩 조인은 shuttle_stops→shuttle_routes 사이에
     // 외래키가 둘이라 PostgREST 가 어느 것인지 못 정합니다.
@@ -66,6 +67,9 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       .order("due_at", { ascending: false, nullsFirst: false })
       .limit(10),
     supabase.from("student_dismissal_plans").select("weekday, kind, label, depart_time, note, week_start").eq("student_id", id),
+    // 특이사항 탭이 «이번 학기 / 이전 학기»를 가르고 학기 이름을 적는 데 씁니다.
+    getCurrentTerm(),
+    supabase.from("terms").select("id, year, term_type"),
   ]);
 
   if (stuRes.error) return NextResponse.json({ error: stuRes.error }, { status: 500 });
@@ -105,6 +109,11 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     today,
     since,
     canSeeFinance: hasFinanceAccess(me),
+    me: { email: me.email, name: me.name ?? me.email },
+    currentTermId: curTerm?.id ?? null,
+    termLabels: Object.fromEntries(
+      ((termsRes.data as { id: string; year: string | number; term_type: string }[] | null) ?? []).map((t) => [t.id, `${t.year} ${t.term_type}`]),
+    ),
     student: staff ? stuRes.row : { ...stuRes.row, mother_phone: null, father_phone: null, parent_phone: null },
     shuttle,
     dismissal: dismissalThisWeek((dpRes.data as DpRow[] | null) ?? [], today),

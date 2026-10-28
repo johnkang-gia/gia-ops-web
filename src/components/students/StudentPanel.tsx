@@ -6,12 +6,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import StudentLedgerModal from "@/components/finance/StudentLedgerModal";
 import { Who } from "@/components/common/HomonymProvider";
+import StudentProfileNotes from "@/components/students/StudentProfileNotes";
 import type { PanelTab } from "./StudentPanelProvider";
 
 /**
  * **학생 창 — 한 아이의 전부를 탭 넷으로.**
  *
  *   기본      명부 · 연락처 · 셔틀 배정 · 하원수단
+ *   특이사항  사건이 없어도 알아야 할 아이 이야기(자유 메모, 학기별)
  *   출결·픽업 최근 30일 결석·지각·조퇴 · 픽업/문의 요청
  *   회계      회계 창(StudentLedgerModal)을 그대로 끼움 - 재무 권한이 있을 때만 탭이 있음
  *   기록      사건 · 관찰기록 · 이어진 업무
@@ -23,6 +25,9 @@ type Overview = {
   today: string;
   since: string;
   canSeeFinance: boolean;
+  me: { email: string; name: string };
+  currentTermId: string | null;
+  termLabels: Record<string, string>;
   student: {
     id: string;
     name: string;
@@ -88,7 +93,7 @@ export default function StudentPanel({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose, tab]);
 
-  const tabs: PanelTab[] = canSeeFinance ? ["기본", "출결·픽업", "회계", "기록"] : ["기본", "출결·픽업", "기록"];
+  const tabs: PanelTab[] = canSeeFinance ? ["기본", "특이사항", "출결·픽업", "회계", "기록"] : ["기본", "특이사항", "출결·픽업", "기록"];
   const s = data?.student;
 
   return (
@@ -129,6 +134,17 @@ export default function StudentPanel({
           !err && <p className="p-8 text-center text-sm text-slate-400">읽는 중…</p>
         ) : tab === "기본" ? (
           <BasicTab d={data} />
+        ) : tab === "특이사항" ? (
+          <div className="min-h-0 flex-1 overflow-y-auto p-3">
+            <StudentProfileNotes
+              studentId={studentId}
+              studentName={data.student.name}
+              currentTermId={data.currentTermId ?? null}
+              termLabels={data.termLabels ?? {}}
+              me={data.me?.email ?? ""}
+              myName={data.me?.name ?? ""}
+            />
+          </div>
         ) : tab === "출결·픽업" ? (
           <AttendanceTab d={data} />
         ) : (

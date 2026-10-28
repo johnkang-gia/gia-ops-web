@@ -8,6 +8,8 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess, isStaffOrAboveUser } from "@/lib/roles";
 import DismissalPlanEditor from "@/components/students/DismissalPlanEditor";
 import AbsenceDocsPanel from "@/components/students/AbsenceDocsPanel";
+import StudentProfileNotes from "@/components/students/StudentProfileNotes";
+import { getCurrentTerm } from "@/lib/currentTerm";
 import StudentFeeHistory from "@/components/finance/StudentFeeHistory";
 import OpenStudentPanelButton from "@/components/students/OpenStudentPanelButton";
 import type { DismissalPlan } from "@/lib/dismissalPlan";
@@ -219,6 +221,13 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
   const incidents = [...incidentMap.values()].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
 
   // 학기(연도+학기유형) 라벨을 붙이기 위해 재학이력/리포트에 등장하는 term_id를 한 번에 조회합니다.
+  // 특이사항 메모가 어느 학기 것인지 적으려면 학기 이름이 필요합니다. 메모의 학기는 학적·관찰기록과
+  // 다를 수 있어(캠프 학기에 적은 메모) 학기 전체 이름을 함께 읽습니다.
+  const currentTerm = await getCurrentTerm();
+  const { data: noteTermRows } = await supabase.from("terms").select("id, year, term_type");
+  const noteTermLabels: Record<string, string> = Object.fromEntries(
+    ((noteTermRows as { id: string; year: string | number; term_type: string }[] | null) ?? []).map((t) => [t.id, `${t.year} ${t.term_type}`]),
+  );
   const termIds = [...new Set([...enrollments.map((e) => e.term_id), ...reports.map((r) => r.term_id)].filter((x): x is string => !!x))];
   const { data: termsData } = termIds.length
     ? await supabase.from("terms").select("id, year, term_type").in("id", termIds)
@@ -333,6 +342,18 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
           </span>
         </div>
       )}
+
+      {/* 특이사항 — 사건이 없어도 알아야 할 이 아이 이야기. 전화를 받은 누구라도 이 칸부터 읽습니다. */}
+      <div className="mb-3">
+        <StudentProfileNotes
+          studentId={student.id}
+          studentName={student.name}
+          currentTermId={currentTerm?.id ?? null}
+          termLabels={noteTermLabels}
+          me={me.email}
+          myName={me.name ?? me.email}
+        />
+      </div>
 
       {/* 하원수단 - 요일마다 다른 차를 타는 아이가 있습니다(백서아: 월 셔틀, 화·목 메타프랩,
           수·금 블루웨일). 셔틀 배정은 셔틀을 타는 날만 적을 수 있어서, 안 타는 날 이 아이가

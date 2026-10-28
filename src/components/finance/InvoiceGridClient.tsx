@@ -16,6 +16,7 @@ import { StatusFillLegend, type FillKey } from "@/components/finance/StatusBadge
 import { useStudentPanel } from "@/components/students/StudentPanelProvider";
 import { askText, compareIssue, groupIssue, type CompareRow, type IssueCompare } from "@/lib/issueCompare";
 import { gridTotals, gridTotalsByStudent } from "@/lib/gridTotals";
+import { streamOf } from "@/lib/settlement";
 import { useFinanceLive } from "@/lib/useFinanceLive";
 import DragScroll from "@/components/common/DragScroll";
 import FeeItemsButton from "./FeeItemsModal";
@@ -150,7 +151,7 @@ type Props = {
    * 이게 없어서 같은 항목이 두 번 나갔습니다 - 교복을 한 번 청구한 뒤 다시 발행하면 교복이
    * 또 담겼고, 「직접수납」으로 만든 청구서에는 안 고른 항목까지 함께 담겼습니다.
    */
-  invoiceLines: { invoice_id: string; name: string; item_id?: string | null }[];
+  invoiceLines: { invoice_id: string; name: string; item_id?: string | null; amount?: number | string | null }[];
   terms: Term[];
   currentUserEmail: string;
   loadError: string | null;
@@ -166,6 +167,11 @@ type DeptTab = Department | "기타";
 
 /** 청구서를 한 장으로 묶을지, 분류마다 나눌지. */
 type IssueMode = "통합" | "분류별";
+
+/** 이 표가 다루는 장인가 - 학비외 갈래, 또는 학비·학비외를 한 장으로 낸 장(분류 「학비+학비외」). */
+function isExtraSide(v: Invoice): boolean {
+  return streamOf(v) === "학비외" || (v.category ?? "").includes("학비외");
+}
 
 export default function InvoiceGridClient({
   students,
@@ -304,6 +310,12 @@ export default function InvoiceGridClient({
   const ff = useFinanceFilter();
   const termId = ff.termId;
   const setTermId = ff.setTermId;
+  /**
+   * **보고 있는 달.** 학비 표·학생별 회계와 같은 고르개(`FinanceFilterProvider`)입니다. 학비외 항목은 학기
+   * 단위라 «청구됨» 판정은 학기 전체로 보지만, 새로 발행하는 장은 이 달의 청구월로 들어가고 청구서 칸에는
+   * 어느 달 장인지가 적힙니다 - 월별 집계·회차·올톡 보내기가 전부 청구월로 묶이기 때문입니다.
+   */
+  const month = ff.month ?? ff.thisMonth;
   useEffect(() => {
     if (!termId || !terms.some((t) => t.id === termId)) setTermId(initialTermId(terms));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -472,6 +484,9 @@ export default function InvoiceGridClient({
     const m = new Map<string, Invoice[]>();
     for (const v of invoices) {
       if (!v.student_id || v.status !== "발행") continue;
+      // **학비 장은 이 표의 것이 아닙니다.** 학비 청구서까지 담으면 그 장의 입금이 학비외 수납으로
+      // 잡혀 거의 모든 아이가 「과납」으로 떴습니다. 학비외 갈래와, 학비·학비외를 한 장으로 낸 장만 봅니다.
+      if (!isExtraSide(v)) continue;
       // 지난 학기 청구서가 이번 학기 표에서 '발행됨'으로 보이면 안 됩니다.
       const sameTerm = (v.term_id ?? "") === termId || (!v.term_id && terms.find((x) => x.id === termId)?.status === "진행중");
       if (sameTerm) m.set(v.student_id, [...(m.get(v.student_id) ?? []), v]);
@@ -703,14 +718,36 @@ export default function InvoiceGridClient({
    *
    * 판정은 `gridTotals` 한 곳입니다.
    */
+  /**
+   * **학비외 몫의 청구서와 입금만 셉니다.**
+   *
+   * 예전에는 학생의 모든 장(학비 포함)에 붙은 입금을 더했습니다. 이 표의 청구액은 학비외 항목뿐인데
+   * 수납에는 학비 입금까지 들어가니 「수납 > 청구액」이 되어 거의 모든 아이가 「과납」으로 떴습니다.
+   * 학비와 한 장으로 나간 장은 **학비외 줄의 몫만큼만** 입금을 셉니다(줄 금액 비율).
+   */
+  const extraInvoices = useMemo(() => {
+    const t = terms.find((x) => x.id === termId);
+    return invoices.filter((v) => isExtraSide(v) && ((v.term_id ?? "") === termId || (!v.term_id && t?.status === "진행중")));
+  }, [invoices, termId, terms]);
+  const extraPayments = useMemo(() => {
+    const share = new Map<string, number>();
+    for (const v of extraInvoices) {
+      if (streamOf(v) === "학비외") continue; // 학비외 단독 장은 전부 학비외 몫
+      const mine = lineRows.filter((l) => l.invoice_id === v.id);
+      const extra = mine.filter((l) => l.item_id).reduce((n, l) => n + Number(l.amount ?? 0), 0);
+      const total = Number(v.total_amount) || 0;
+      share.set(v.id, total > 0 ? Math.min(1, extra / total) : 0);
+    }
+    return payments.map((p) => (p.invoice_id && share.has(p.invoice_id) ? { ...p, amount: Number(p.amount) * (share.get(p.invoice_id) ?? 0) } : p));
+  }, [extraInvoices, lineRows, payments]);
   const money = useMemo(
-    () => gridTotals(rows.map((s) => s.id), totalOf, invoices, payments),
-    [rows, totalOf, invoices, payments],
+    () => gridTotals(rows.map((s) => s.id), totalOf, extraInvoices, extraPayments),
+    [rows, totalOf, extraInvoices, extraPayments],
   );
   /** 아이별 세 숫자. 표 오른쪽 고정 칸이 줄마다 이것을 읽습니다. */
   const moneyOf = useMemo(
-    () => gridTotalsByStudent(rows.map((s) => s.id), totalOf, invoices, payments),
-    [rows, totalOf, invoices, payments],
+    () => gridTotalsByStudent(rows.map((s) => s.id), totalOf, extraInvoices, extraPayments),
+    [rows, totalOf, extraInvoices, extraPayments],
   );
   const unissued = rows.filter((s) => !invoiceByStudent.has(s.id)).length;
   /**
@@ -1183,6 +1220,7 @@ export default function InvoiceGridClient({
             feeTermId: termId || null,
             category,
             itemIds: send.map((l) => l.item.id),
+            billingMonth: month,
           }),
         });
         // ── 돌아온 것이 우리 답이 맞는가 ─────────────────────────────────────
@@ -2076,6 +2114,15 @@ export default function InvoiceGridClient({
                       <span className="rounded bg-slate-100 px-1 text-[10px] font-bold text-slate-600">
                         {inv.category ?? "통합"}
                       </span>
+                      {/* 어느 달 장인지. 학비외는 학기 단위 항목이라 달을 안 적으면 지난달 장과 이번 달 장이 같아 보입니다. */}
+                      {(() => {
+                        const bm = (inv as Invoice & { billing_month?: string | null }).billing_month ?? inv.issue_date.slice(0, 7);
+                        return (
+                          <span className={"rounded px-1 text-[10px] font-bold " + (bm === month ? "bg-sky-100 text-sky-800" : "bg-slate-100 text-slate-500")} title="청구월">
+                            {Number(bm.slice(5))}월분
+                          </span>
+                        );
+                      })()}
                       {/* **다른 장도 이 칸에 보입니다.** 남은 항목을 다시 청구한 장(미수금 청구서)은 대표 장이
                           아니라서 「외 1장」 글자로만 보였습니다. 장마다 상태를 붙이고, 못 받은 장을 누르면
                           💰 수납 창이 열립니다 - 받는 일은 그 창 하나에서 합니다. */}

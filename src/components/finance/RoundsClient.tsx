@@ -67,34 +67,7 @@ export default function RoundsClient({
   /** 서버가 다시 그려 주기 전까지 방금 누른 결과를 화면에 바로 반영하기 위한 사본. */
   const [local, setLocal] = useState<BatchInvoice[]>(invoices);
   useEffect(() => setLocal(invoices), [invoices]);
-  const [localPays, setLocalPays] = useState<SettlePayment[]>(payments);
-  useEffect(() => setLocalPays(payments), [payments]);
   const [onlyOpen, setOnlyOpen] = useState(false);
-
-  /**
-   * **✓ 결제됨** — 남은 금액 전부를 올톡페이 입금으로 적습니다(수납 창구 `invoices/pay`와 같은 창구).
-   * 올톡 대조 파일을 올리지 않아도, 올톡에서 결제완료를 눈으로 확인한 장을 그 자리에서 정리합니다.
-   */
-  async function markPaid(v: BatchInvoice) {
-    setBusy(v.id);
-    try {
-      const res = await fetch("/api/finance/invoices/pay", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ invoiceId: v.id, method: "올톡페이", paidAt: today }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        notify(`${v.student_name_ko ?? v.student_name} ${v.invoice_no}: ${body.error ?? res.statusText}`, "error");
-        return;
-      }
-      const st = stateOf.get(v.id);
-      setLocalPays((p) => [...p, { invoice_id: v.id, amount: st?.balance ?? Number(v.total_amount) }]);
-      notify(`${v.student_name_ko ?? v.student_name} ${v.invoice_no} 결제됨으로 적었습니다(올톡페이 · ${today}).`, "success");
-    } finally {
-      setBusy(null);
-    }
-  }
 
   /**
    * **미납** — 보냈는데 기한이 지나도 안 낸 장에 «봤다»는 도장을 찍습니다. 상태는 안 바뀝니다(잔액이 미납을
@@ -127,11 +100,11 @@ export default function RoundsClient({
   const stateOf = useMemo(() => {
     const m = new Map<string, NonNullable<ReturnType<typeof invoiceStatus>>>();
     for (const v of local) {
-      const r = invoiceStatus({ ...v, student_id: v.student_id ?? null }, localPays, today);
+      const r = invoiceStatus({ ...v, student_id: v.student_id ?? null }, payments, today);
       if (r) m.set(v.id, r);
     }
     return m;
-  }, [local, localPays, today]);
+  }, [local, payments, today]);
   const [open, setOpen] = useState<string | null>(null);
   const [student, setStudent] = useState<{ id: string; month: string } | null>(null);
   const [year, setYear] = useState<string>("전체");
@@ -231,7 +204,7 @@ export default function RoundsClient({
                                       const x = stateOf.get(v.id);
                                       return x && x.balance > 0 && x.status !== "이월" && !v.unpaid_checked_at && !v.issued_offline;
                                     }).length;
-                                    return unseen > 0 ? <span className="rounded bg-amber-100 px-1 font-bold text-amber-800" title="결제됨도 미납도 아직 안 누른 장">미확인 {unseen}</span> : null;
+                                    return unseen > 0 ? <span className="rounded bg-amber-100 px-1 font-bold text-amber-800" title="수납도 미납 표시도 아직 없는 장">미확인 {unseen}</span> : null;
                                   })()}
                                 </span>
                               );
@@ -273,16 +246,6 @@ export default function RoundsClient({
                                     const b = busy === v.id;
                                     return (
                                       <span className="flex shrink-0 items-center gap-1">
-                                        <button
-                                          disabled={b}
-                                          onClick={() => {
-                                            if (confirm(`${v.student_name_ko ?? v.student_name} ${v.invoice_no}\n남은 ${won(st.balance)}을 올톡페이 결제(${today})로 적을까요?`)) void markPaid(v);
-                                          }}
-                                          className="rounded bg-emerald-600 px-1.5 py-0.5 text-[10px] font-bold text-white hover:bg-emerald-700 disabled:opacity-40"
-                                          title="올톡페이에서 결제완료를 확인했을 때. 남은 금액 전부를 올톡페이 입금으로 적습니다."
-                                        >
-                                          ✓ 결제됨
-                                        </button>
                                         <button
                                           disabled={b}
                                           onClick={() => void markUnpaid(v, !v.unpaid_checked_at)}

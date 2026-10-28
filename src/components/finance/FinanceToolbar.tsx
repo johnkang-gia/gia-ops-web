@@ -16,7 +16,7 @@ import MonthPicker from "@/components/finance/MonthPicker";
  */
 
 /** 달이 뜻을 갖는 화면. 다른 화면(요금표·항목 등)에서 달 고르개를 띄우면 「이걸 바꾸면 뭐가 바뀌지」가 됩니다. */
-const MONTH_PAGES = ["/finance", "/finance/ledger", "/finance/tuition", "/finance/payments"];
+const MONTH_PAGES = ["/finance", "/finance/ledger", "/finance/tuition", "/finance/invoices", "/finance/payments"];
 /** 검색이 뜻을 갖는 화면(학생 목록이 있는 곳). */
 const SEARCH_PAGES = [
   "/finance/ledger",

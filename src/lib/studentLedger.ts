@@ -146,6 +146,7 @@ function num(v: number | string | null | undefined): number {
  */
 function tuitionBilledOf(
   invoices: Invoice[],
+  allLines: BilledLine[],
   payments: LedgerPayment[],
   studentId: string,
   termId: string | null,
@@ -162,11 +163,14 @@ function tuitionBilledOf(
     const sameT = (v.term_id ?? "") === (termId ?? "") || (!v.term_id && termIsCurrent);
     if (!sameT) continue;
     const scope = (v as { plan_scope?: string | null }).plan_scope ?? null;
-    if (!scope) {
+    // 줄이 있으면 줄로 - 범위를 안 적고 나간 30만 한 줄짜리 장이 「학비 전부」로 읽혀 정규과정이 완납으로 떴습니다.
+    const mine = allLines.filter((l) => l.invoice_id === v.id);
+    const names = mine.length > 0 ? mine.map((l) => (l.name ?? "").split(" · ")[0].trim()).filter(Boolean) : scope ? scope.split(" · ") : null;
+    if (!names) {
       all = all ?? v;
       continue;
     }
-    for (const n of scope.split(" · ")) {
+    for (const n of names) {
       const key = n.trim();
       // 같은 항목이 여러 장이면 덜 걷힌 쪽이 사실입니다(학비 표와 같음).
       // name-lookup-ok: 학생이 아니라 납부 항목 이름입니다.
@@ -202,16 +206,19 @@ export function buildLedger(world: LedgerWorld, student: LedgerStudent): Ledger 
   const sameTerm = <T extends { term_id?: string | null }>(r: T) => !r.term_id || !termId || r.term_id === termId;
   const myEnroll = world.enrollments.filter((e) => e.student_id === student.id && e.active !== false).filter(sameTerm);
   const mySd = world.studentDiscounts.filter((d) => d.student_id === student.id);
-  const tb = tuitionBilledOf(myInvoices, myPayments, student.id, termId, termIsCurrent);
+  const tb = tuitionBilledOf(myInvoices, world.lines, myPayments, student.id, termId, termIsCurrent);
   const month = world.month ?? null;
   // 월별 판정에 쓰는 이 학생의 같은 학기 학비 청구서(살아 있는 장).
-  const tuitionAlive = myInvoices.filter(
-    (v) =>
-      v.status === "발행" &&
-      streamOf(v) === "학비" &&
-      !(v as { carried_to_invoice_id?: string | null }).carried_to_invoice_id &&
-      ((v.term_id ?? "") === (termId ?? "") || (!v.term_id && termIsCurrent)),
-  );
+  // 장마다 담긴 줄을 붙입니다 - 「이 항목이 이미 나갔나」는 범위 글자가 아니라 줄로 가립니다(`tuitionMonth.ts`).
+  const tuitionAlive = myInvoices
+    .filter(
+      (v) =>
+        v.status === "발행" &&
+        streamOf(v) === "학비" &&
+        !(v as { carried_to_invoice_id?: string | null }).carried_to_invoice_id &&
+        ((v.term_id ?? "") === (termId ?? "") || (!v.term_id && termIsCurrent)),
+    )
+    .map((v) => ({ ...v, lines: world.lines.filter((l) => l.invoice_id === v.id).map((l) => ({ name: l.name, plan_id: l.plan_id ?? null })) }));
   // 옵션이나 직접 금액을 고른 항목 - 함께 하는 프로그램이 짝을 찾는 범위입니다.
   const chosenPlanIds = myEnroll
     .filter((e) => e.option_id || (e.override_amount !== null && e.override_amount !== undefined))

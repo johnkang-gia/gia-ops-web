@@ -65,6 +65,8 @@ export type BilledLine = {
    * 채로 잠그면 아직 안 나간 교재가 「받음」으로 보여 받을 돈이 사라집니다.
    */
   item_id?: string | null;
+  /** 학비 줄이면 어느 납부 항목(fee_plans)이었나. 「이미 나간 학비 항목인가」를 이것으로 가립니다. */
+  plan_id?: string | null;
 };
 export type BilledPayment = { invoice_id: string | null; amount: number | string };
 

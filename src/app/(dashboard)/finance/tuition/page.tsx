@@ -57,7 +57,7 @@ export default async function TuitionPage() {
   if (!hasFinanceAccess(me)) redirect("/home");
 
   const supabase = await createClient();
-  const [stuRes, planRes, optRes, discRes, termRes, enrollRes, sdRes, invRes, payRes, addonRes, chargeRes] = await Promise.all([
+  const [stuRes, planRes, optRes, discRes, termRes, enrollRes, sdRes, invRes, payRes, addonRes, chargeRes, lineRes] = await Promise.all([
     loadStudents(supabase, { order: "grade" }),
     // **학비만 거르지 않습니다.** 표에는 학비만 뜨지만, 팝업에서는 학비외 항목도 고칠 수
     // 있어야 합니다 - 거기서 안 보이면 결국 다른 화면으로 건너가게 됩니다.
@@ -96,6 +96,14 @@ export default async function TuitionPage() {
       .select("id, student_id, term_id, plan_id, name, amount, reason, target_month")
       .is("invoice_id", null)
       .is("cancelled_at", null),
+    /**
+     * **청구서에 실제로 담긴 줄.** 「이 항목이 이미 나갔나」는 줄의 항목 번호로 가립니다(`tuitionMonth.ts`).
+     * `plan_scope` 글자만 보면, 범위를 안 적고 나간 30만 한 줄짜리 장이 「학비 전부」로 읽혀 그 학생의
+     * 정규과정이 한 번도 청구된 적 없이 「완납」으로 떴습니다.
+     */
+    readAll<{ invoice_id: string; name: string; plan_id: string | null }>((from, to) =>
+      supabase.from("invoice_lines").select("invoice_id, name, plan_id").order("invoice_id").order("seq").range(from, to),
+    ),
   ]);
 
   // 무엇을 못 읽었는지 **화면에 말합니다.** 조용히 비어 있으면 「아직 아무도 안 골랐구나」로
@@ -111,6 +119,7 @@ export default async function TuitionPage() {
     chargeRes.error?.message ??
     readNotice(invRes) ??
     readNotice(payRes) ??
+    readNotice(lineRes) ??
     null;
 
   // **장부 밖의 학생은 처음부터 안 보냅니다.**
@@ -152,6 +161,7 @@ export default async function TuitionPage() {
         initialEnrollments={(enrollRes.data as EnrollRow[] | null) ?? []}
         initialStudentDiscounts={(sdRes.data as StudentDiscountRow[] | null) ?? []}
         recentInvoices={invRes.rows}
+        invoiceLines={lineRes.rows}
         payments={payRes.rows}
         today={todayKst()}
         addonPrices={(addonRes.data as AddonPrice[] | null) ?? []}

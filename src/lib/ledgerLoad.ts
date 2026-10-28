@@ -60,7 +60,7 @@ export async function loadLedgerWorld(
     // 청구서 줄은 학생 칸이 없어 청구서 번호로 거릅니다. 한 명이면 아래에서 그 학생 청구서 번호로.
     only
       ? Promise.resolve({ rows: [] as BilledLine[], error: null, truncated: false })
-      : readAll<BilledLine>((from, to) => supabase.from("invoice_lines").select("invoice_id, name, item_id").order("invoice_id").order("seq").range(from, to)),
+      : readAll<BilledLine>((from, to) => supabase.from("invoice_lines").select("invoice_id, name, item_id, plan_id").order("invoice_id").order("seq").range(from, to)),
     readAll<LedgerPayment>(payQ),
     // 함께 하면 합친 금액이 정해진 프로그램. 작은 표라 전부 읽습니다.
     supabase.from("fee_addon_prices").select("addon_plan_id, base_plan_id, combined_amount, active"),
@@ -82,7 +82,7 @@ export async function loadLedgerWorld(
   if (only) {
     const ids = invRes.rows.map((v) => v.id);
     if (ids.length > 0) {
-      const { data, error } = await supabase.from("invoice_lines").select("invoice_id, name, item_id").in("invoice_id", ids).order("seq");
+      const { data, error } = await supabase.from("invoice_lines").select("invoice_id, name, item_id, plan_id").in("invoice_id", ids).order("seq");
       if (error) errors.push(`청구서 줄: ${error.message}`);
       lines = (data as BilledLine[] | null) ?? [];
     }

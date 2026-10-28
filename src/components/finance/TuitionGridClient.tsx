@@ -130,6 +130,7 @@ export default function TuitionGridClient({
   initialEnrollments,
   initialStudentDiscounts,
   recentInvoices,
+  invoiceLines = [],
   today,
   loadError,
   addonPrices = [],
@@ -161,6 +162,8 @@ export default function TuitionGridClient({
   initialEnrollments: EnrollRow[];
   initialStudentDiscounts: StudentDiscountRow[];
   recentInvoices: Invoice[];
+  /** 청구서에 담긴 줄(항목 번호). 「이미 나간 항목인가」를 범위 글자가 아니라 이것으로 가립니다. */
+  invoiceLines?: { invoice_id: string; name: string; plan_id: string | null }[];
   today: string;
   loadError: string | null;
   /**
@@ -531,6 +534,17 @@ export default function TuitionGridClient({
   // **한 학생에게 청구서가 여럿일 수 있습니다.** 정규과정과 방과후를 따로 발행하면 두 장이
   // 됩니다. 앞 판은 첫 장만 기억해서, 정규과정만 발행한 아이가 「발행됨」으로 바뀌고
   // 방과후는 영영 안 나갔습니다 - 오류가 아니라 «다 된 것처럼» 보이는 자리였습니다.
+  /** 청구서 → 담긴 줄. 새로 발행한 장은 화면이 다시 읽기 전까지 줄을 모르므로 그동안은 범위 글자로 가립니다. */
+  const linesOf = useMemo(() => {
+    const m = new Map<string, { name: string; plan_id: string | null }[]>();
+    for (const l of invoiceLines) {
+      const cur = m.get(l.invoice_id);
+      if (cur) cur.push(l);
+      else m.set(l.invoice_id, [l]);
+    }
+    return m;
+  }, [invoiceLines]);
+
   const termInvoicesOf = useMemo(() => {
     const m = new Map<string, Invoice[]>();
     for (const v of invoices) {
@@ -541,12 +555,13 @@ export default function TuitionGridClient({
       if ((v as Invoice & { carried_to_invoice_id?: string | null }).carried_to_invoice_id) continue;
       const sameT = (v.term_id ?? "") === termId || (!v.term_id && terms.find((x) => x.id === termId)?.status === "진행중");
       if (!sameT) continue;
+      const withLines = { ...v, lines: linesOf.get(v.id) ?? [] } as Invoice & { lines: { name: string; plan_id: string | null }[] };
       const list = m.get(v.student_id);
-      if (list) list.push(v);
-      else m.set(v.student_id, [v]);
+      if (list) list.push(withLines);
+      else m.set(v.student_id, [withLines]);
     }
     return m;
-  }, [invoices, termId, terms]);
+  }, [invoices, termId, terms, linesOf]);
 
   /** **보고 있는 달의** 학비 청구서. 표의 청구서 칸·합계·올톡페이 묶음이 이 달 것만 다룹니다. */
   const invoicesOf = useMemo(() => {

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { billRuleOf } from "@/lib/tuitionMonth";
+import { invoiceCoversPlan, billRuleOf } from "@/lib/tuitionMonth";
 import { resolveAddon, addonPlanForLine, type AddonPrice } from "@/lib/tuitionAddon";
 import { planCarryForward, lockCarried } from "@/lib/carryForward";
 import { applyPrepaid } from "@/lib/prepaidApply";
@@ -337,13 +337,14 @@ export async function POST(req: Request) {
     const mine = new Set(lines.map((l) => l.planName));
     const { data: live, error: liveErr } = await supabase
       .from("invoices")
-      .select("invoice_no, plan_scope, stream, category, term_id, issue_date, issued_by")
+      .select("id, invoice_no, plan_scope, stream, category, term_id, issue_date, issued_by")
       .eq("student_id", student.id)
       .eq("status", "발행")
       .eq("billing_month", month)
       .is("carried_to_invoice_id", null);
     if (liveErr) return NextResponse.json({ error: `이미 낸 청구서를 확인하지 못해 발행하지 않았습니다: ${liveErr.message}` }, { status: 500 });
     type LiveInv = {
+      id: string;
       invoice_no: string | null;
       plan_scope: string | null;
       stream: string | null;
@@ -352,11 +353,31 @@ export async function POST(req: Request) {
       issue_date: string | null;
       issued_by: string | null;
     };
-    const clash = ((live as LiveInv[] | null) ?? [])
-      .filter((v) => streamOf(v) === "학비" && (v.term_id ?? null) === (termId ?? null))
+    const liveList = ((live as LiveInv[] | null) ?? []).filter((v) => streamOf(v) === "학비" && (v.term_id ?? null) === (termId ?? null));
+    // 범위 글자가 아니라 **담긴 줄**로 견줍니다(화면과 같은 함수 `invoiceCoversPlan`). 범위를 안 적고 나간
+    // 30만 한 줄짜리 장이 「학비 전부」로 읽혀, 정규과정을 한 번도 안 낸 학생에게 발행이 막혔습니다.
+    const liveLines = new Map<string, { name: string; plan_id: string | null }[]>();
+    if (liveList.length > 0) {
+      const { data: ls, error: lsErr } = await supabase
+        .from("invoice_lines")
+        .select("invoice_id, name, plan_id")
+        .in("invoice_id", liveList.map((v) => v.id));
+      if (lsErr) return NextResponse.json({ error: `이미 낸 청구서의 줄을 확인하지 못해 발행하지 않았습니다: ${lsErr.message}` }, { status: 500 });
+      for (const l of (ls as { invoice_id: string; name: string; plan_id: string | null }[] | null) ?? []) {
+        const cur = liveLines.get(l.invoice_id);
+        if (cur) cur.push(l);
+        else liveLines.set(l.invoice_id, [l]);
+      }
+    }
+    const planIdByName = new Map<string, string>();
+    for (const l of lines) {
+      const id = planIdOfLine.get(l);
+      if (id) planIdByName.set(l.planName, id);
+    }
+    const clash = liveList
       .map((v) => {
-        const theirs = v.plan_scope ? v.plan_scope.split(" · ").map((x) => x.trim()) : null;
-        const shared = theirs ? [...mine].filter((n) => theirs.includes(n)) : [...mine];
+        const withLines = { plan_scope: v.plan_scope, lines: liveLines.get(v.id) ?? [] };
+        const shared = [...mine].filter((n) => invoiceCoversPlan(withLines, { id: planIdByName.get(n) ?? null, name: n }));
         return { no: v.invoice_no, shared, date: v.issue_date, by: v.issued_by };
       })
       .filter((c) => c.shared.length > 0);

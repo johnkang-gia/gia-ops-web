@@ -35,7 +35,15 @@ export type MonthInvoice = {
   billing_month?: string | null;
   issue_date: string;
   plan_scope?: string | null;
+  /**
+   * 그 장에 실제로 담긴 줄. **있으면 이것이 범위입니다.** `plan_scope` 글자는 발행 창구가 적는 요약이고
+   * 어떤 창구는 안 적습니다 - LMA 30만 한 줄짜리 장이 범위 없이 나가서 「학비 전부」로 읽혔고, 그 학생의
+   * 정규과정 990만이 한 번도 청구된 적 없이 「완납」으로 떴습니다.
+   */
+  lines?: readonly { name: string; plan_id?: string | null }[];
 };
+
+export type PlanRef = { id?: string | null; name: string };
 
 export type MonthBill = {
   rule: BillRule;
@@ -63,11 +71,26 @@ export function billRuleOf(
   return n <= 1 ? { rule: "월", months: 1 } : { rule: "기간", months: n };
 }
 
-/** 범위가 빈 학비 청구서는 학비 **전부**를 담은 것입니다(항목별 발행 전부터 그랬습니다). */
-export function invoiceCoversPlan(v: { plan_scope?: string | null }, planName: string): boolean {
+/**
+ * 이 청구서가 이 항목을 담고 있는가.
+ *
+ * 순서: ① 줄이 있으면 줄로(항목 번호 → 번호 없는 옛 줄은 「항목 이름 · …」 모양의 이름) ② 줄을 모르면
+ * `plan_scope` 글자 ③ 둘 다 없으면 학비 전부(항목별 발행 전의 장). 줄이 있는데 아무것도 안 맞으면
+ * **안 담은 것**입니다 - 범위가 비었다고 전부로 치면 30만 한 줄짜리 장이 990만 정규과정을 덮습니다.
+ */
+export function invoiceCoversPlan(v: { plan_scope?: string | null; lines?: MonthInvoice["lines"] }, plan: PlanRef | string): boolean {
+  const ref: PlanRef = typeof plan === "string" ? { name: plan } : plan;
+  const lines = v.lines;
+  if (lines && lines.length > 0) {
+    return lines.some((l) => {
+      if (l.plan_id) return !!ref.id && l.plan_id === ref.id;
+      const n = (l.name ?? "").trim();
+      return n === ref.name || n.startsWith(`${ref.name} · `) || n.startsWith(`${ref.name} ·`);
+    });
+  }
   const scope = v.plan_scope ?? null;
   if (!scope) return true;
-  return scope.split(" · ").some((n) => n.trim() === planName);
+  return scope.split(" · ").some((n) => n.trim() === ref.name);
 }
 
 export function spanOf(from: MonthKey, months: number): MonthSpan {
@@ -89,7 +112,7 @@ export function spanLabel(span: MonthSpan): string {
  * @param invoices 이 학생의 같은 학기 학비 청구서(살아 있는 장). 이 함수가 항목으로 거릅니다.
  */
 export function planBillForMonth(args: {
-  plan: { name: string; unit?: string | null };
+  plan: { id?: string | null; name: string; unit?: string | null };
   option: { periods?: number | string | null } | null;
   paidFrom: string | null;
   invoices: readonly MonthInvoice[];
@@ -98,7 +121,7 @@ export function planBillForMonth(args: {
   const { plan, option, month } = args;
   const { rule, months } = billRuleOf(plan, option);
   const covering = args.invoices
-    .filter((v) => invoiceCoversPlan(v, plan.name))
+    .filter((v) => invoiceCoversPlan(v, { id: plan.id ?? null, name: plan.name }))
     .sort((a, b) => (billingMonthOf(a) ?? "").localeCompare(billingMonthOf(b) ?? ""));
 
   if (rule === "학기") {

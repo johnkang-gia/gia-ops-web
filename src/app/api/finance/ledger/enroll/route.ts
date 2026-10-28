@@ -30,6 +30,13 @@ export async function POST(req: Request) {
      * 적어야만 「언제부터 언제까지 냈나」를 압니다. `null` 이면 지웁니다(청구서에서 셉니다).
      */
     paidFrom?: string | null;
+    /** 청구 주기(auto·월·학기). 이것만 고칠 때. */
+    billCycle?: "auto" | "월" | "학기";
+    /**
+     * 옵션 없이 금액만 정할 때(「직접 기입」). 옵션을 비우면 줄을 지우는 것이 기본인데, 직접 기입은
+     * 옵션이 없어도 청구할 금액이 있습니다 - 오케스트라처럼 금액만 정해진 항목이 그렇습니다.
+     */
+    manual?: boolean;
   };
   const studentId = String(body.studentId ?? "");
   const planId = String(body.planId ?? "");
@@ -44,7 +51,7 @@ export async function POST(req: Request) {
   if (touchOverride && overrideAmount !== null && (!Number.isFinite(overrideAmount) || overrideAmount < 0)) {
     return NextResponse.json({ error: "금액이 올바르지 않습니다." }, { status: 400 });
   }
-  if (touchOverride && overrideAmount !== null && !overrideNote) {
+  if (touchOverride && overrideAmount !== null && !overrideNote && !body.manual) {
     return NextResponse.json({ error: "직접 정한 금액에는 이유를 적어주세요." }, { status: 400 });
   }
   const overridePatch = touchOverride ? { override_amount: overrideAmount, override_note: overrideAmount === null ? null : overrideNote } : {};
@@ -71,10 +78,39 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true });
   }
 
+  // ── 청구 주기만 고칠 때 ─────────────────────────────────────────────────
+  if ("billCycle" in body) {
+    const c = body.billCycle;
+    if (c !== "auto" && c !== "월" && c !== "학기") return NextResponse.json({ error: "청구 주기가 올바르지 않습니다." }, { status: 400 });
+    let q = supabase.from("student_fee_enrollments").select("id").eq("student_id", studentId).eq("plan_id", planId);
+    q = termId ? q.eq("term_id", termId) : q.is("term_id", null);
+    const { data: row, error: e1 } = await q.maybeSingle();
+    if (e1) return NextResponse.json({ error: e1.message }, { status: 500 });
+    if (!row) return NextResponse.json({ error: "먼저 옵션을 고르거나 금액을 적어 주세요." }, { status: 400 });
+    const { error } = await supabase.from("student_fee_enrollments").update({ bill_cycle: c }).eq("id", row.id);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
+
   let find = supabase.from("student_fee_enrollments").select("id").eq("student_id", studentId).eq("plan_id", planId);
   find = termId ? find.eq("term_id", termId) : find.is("term_id", null);
   const { data: existing, error: findErr } = await find.maybeSingle();
   if (findErr) return NextResponse.json({ error: findErr.message }, { status: 500 });
+
+  // 직접 기입: 옵션은 그대로 두고(있으면) 금액만 적습니다. 줄이 없으면 옵션 없이 만듭니다.
+  if (body.manual && touchOverride) {
+    if (existing) {
+      const { error } = await supabase.from("student_fee_enrollments").update(overridePatch).eq("id", existing.id);
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ ok: true });
+    }
+    if (overrideAmount === null) return NextResponse.json({ ok: true });
+    const { error } = await supabase
+      .from("student_fee_enrollments")
+      .insert({ student_id: studentId, plan_id: planId, option_id: null, term_id: termId, active: true, ...overridePatch });
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
 
   if (!optionId) {
     if (!existing) return NextResponse.json({ ok: true, removed: 0 });

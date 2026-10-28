@@ -3,7 +3,8 @@
 import DragScroll from "@/components/common/DragScroll";
 import { Who } from "@/components/common/HomonymProvider";
 import FeePlansModal from "./FeePlansModal";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import StudentLedgerModal from "@/components/finance/StudentLedgerModal";
 import { useRouter } from "next/navigation";
 import { billingMonthOf, termOfMonth, shiftMonth } from "@/lib/financePeriod";
 import { planBillForMonth, billRuleOf } from "@/lib/tuitionMonth";
@@ -231,6 +232,14 @@ export default function TuitionGridClient({
   const q = ff.q;
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
+  /**
+   * **펼친 줄.** 이름 앞 ▸ 를 누르면 그 줄 아래에 그 아이의 이번 달 청구(학비·학비외·추가·청구서·수납)가 펼쳐집니다.
+   * 셀을 하나씩 열어 고치고 학비외 표·학생별 회계로 옮겨 다니던 것을 한 자리에서 합니다. 서랍처럼 늘 떠 있지 않아
+   * 표를 가리지 않습니다 - 한 번에 한 줄만 펼칩니다.
+   */
+  const [expanded, setExpanded] = useState<string | null>(null);
+  /** 「고른 N명 발행」에 담을 항목. 비면 학비 전부. 항목마다 단추를 두던 것을 한 칸으로 줄였습니다. */
+  const [issueScope, setIssueScope] = useState("");
   const router = useRouter();
   /**
    * **다음 달에 얹을 차액.** 청구서가 이미 나간 뒤 금액이 바뀌면(더 받기·덜 받기) 보낸 장을 고치지 않고 다음
@@ -866,7 +875,16 @@ export default function TuitionGridClient({
     setBusy(true);
     const sb = createClient();
     const existing = enrollOf.get(`${student.id}|${plan.id}`);
-    const patch = { override_amount: amount, override_note: note.trim() || null };
+    // 처음 직접 기입하면 청구 주기를 «매달»로 둡니다(금액을 정해 받는 집은 대부분 달마다 나눠 냅니다). 직접 기입을
+    // 풀면 «자동»으로 돌립니다 - 옵션 금액으로 돌아갔는데 숨은 주기가 남으면 학기 항목이 매달 다시 청구됩니다.
+    const firstManual =
+      amount !== null && (!existing || existing.override_amount === null || existing.override_amount === undefined) && (existing?.bill_cycle ?? "auto") === "auto";
+    const cyclePatch: { bill_cycle?: "auto" | "월" } = firstManual
+      ? { bill_cycle: "월" }
+      : amount === null && existing && (existing.bill_cycle ?? "auto") !== "auto"
+        ? { bill_cycle: "auto" }
+        : {};
+    const patch = { override_amount: amount, override_note: note.trim() || null, ...cyclePatch };
 
     if (existing) {
       const { error } = await sb.from("student_fee_enrollments").update(patch).eq("id", existing.id);
@@ -1239,6 +1257,11 @@ export default function TuitionGridClient({
     fillCounts[k] = (fillCounts[k] ?? 0) + 1;
   }
   const shown = fill ? rows.filter((s) => fillOf(s.id) === fill) : rows;
+  // 검색으로 한 명이 되면 그 줄을 저절로 펼칩니다 - 「검색 → 고치기 → 발행」이 지금과 같은 세 걸음입니다.
+  const onlyOne = shown.length === 1 ? shown[0].id : null;
+  useEffect(() => {
+    if (onlyOne) setExpanded(onlyOne);
+  }, [onlyOne]);
   // 키보드: ↑↓ 줄 이동 · Space 고르기 · P 고정.
   const keyRow = useRowKeys(rows, {
     onToggle: (s) =>
@@ -1380,28 +1403,31 @@ export default function TuitionGridClient({
             ))}
           </span>
           <button
-            onClick={() => void issueChecked([])}
+            onClick={() => void issueChecked(issueScope ? [issueScope] : [])}
             disabled={busy || checked.size === 0}
             className={btn + " bg-emerald-600 px-3 py-1.5 text-white hover:bg-emerald-700"}
             title="고른 학생에게 학비 전부를 한 장으로 발행합니다(「합치기」를 켠 학생은 지난 미납도 함께 얹힙니다)"
           >
-            🧾 고른 {checked.size}명 · 전체 발행
+            🧾 고른 {checked.size}명 · {issueScope ? `${usedPlans.find((p) => p.id === issueScope)?.name ?? ""}만` : "전체"} 발행
           </button>
           {/* 항목별 발행. 정규과정과 방과후는 납기도 그만두는 시점도 달라, 한 장에 섞으면
               그 장이 반만 결제된 상태가 됩니다. 항목이 하나뿐이면 「전체」와 같으므로
               굳이 두 번 보여주지 않습니다. */}
-          {usedPlans.length > 1 &&
-            usedPlans.map((p) => (
-              <button
-                key={p.id}
-                onClick={() => void issueChecked([p.id])}
-                disabled={busy || checked.size === 0}
-                className={btn + " border border-emerald-300 bg-white px-2.5 py-1.5 text-emerald-700 hover:bg-emerald-50"}
-                title={`${p.name}만 담은 청구서를 따로 발행합니다 — 지난 미납은 얹지 않습니다`}
-              >
-                🧾 {p.name}만
-              </button>
-            ))}
+          {usedPlans.length > 1 && (
+            <select
+              value={issueScope}
+              onChange={(e) => setIssueScope(e.target.value)}
+              className="rounded-lg border border-emerald-300 bg-white px-2 py-1.5 text-[12px] font-semibold text-emerald-800"
+              title="담을 항목 — 정규과정과 방과후는 납기도 그만두는 시점도 달라 따로 낼 때가 있습니다(항목만 낼 때는 지난 미납을 얹지 않습니다)"
+            >
+              <option value="">담을 항목: 전체</option>
+              {usedPlans.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}만
+                </option>
+              ))}
+            </select>
+          )}
 
           {/* **올톡페이 대량발송 파일.** 학비외와 **같은 창**을 씁니다 - 대상(어머니/아버지)·
               합치기·이미 보낸 표시를 두 벌 만들면 한쪽만 고쳐지고, 그러면 같은 집에 청구서가
@@ -1660,8 +1686,8 @@ export default function TuitionGridClient({
               const loose = (sdOf.get(s.id) ?? []).filter((r) => !r.plan_id && (!r.term_id || !termId || r.term_id === termId));
               const inv = invoiceOf.get(s.id);
               return (
+                <Fragment key={s.id}>
                 <tr
-                  key={s.id}
                   data-row-id={s.id}
                   className={(on ? "bg-teal-50/40" : tint.row || "hover:bg-slate-50/60") + (rows[keyRow]?.id === s.id ? " outline outline-2 -outline-offset-2 outline-indigo-400" : "")}
                 >
@@ -1687,6 +1713,14 @@ export default function TuitionGridClient({
                     />
                   </td>
                   <td className={"group sticky left-8 z-10 whitespace-nowrap border-b border-r border-slate-200 px-2 py-1 " + (on ? "bg-teal-50" : nameBg)}>
+                    <button
+                      type="button"
+                      onClick={() => setExpanded((e) => (e === s.id ? null : s.id))}
+                      className={"mr-1 rounded px-0.5 text-[11px] " + (expanded === s.id ? "font-bold text-indigo-700" : "text-slate-400 hover:text-slate-800")}
+                      title="이 아이의 이번 달 청구를 이 줄 아래에 펼쳐 고치고 발행합니다"
+                    >
+                      {expanded === s.id ? "▾" : "▸"}
+                    </button>
                     <b className="text-slate-800"><Who id={s.id} name={s.name} /></b>
                     <PinButton id={s.id} name={s.name} />
                     <span className="ml-1 text-[10px] text-slate-400">
@@ -2115,6 +2149,23 @@ export default function TuitionGridClient({
                     )}
                   </td>
                 </tr>
+                {expanded === s.id && (
+                  <tr>
+                    <td colSpan={usedPlans.length + 8} className="border-b-2 border-indigo-300 bg-indigo-50/30 p-0">
+                      {/* 표가 가로로 길어도 펼친 칸은 화면 폭에 붙어 있습니다(sticky) - 옆으로 밀면 내용이 사라지지 않게. */}
+                      <div className="sticky left-0 flex max-h-[78vh] flex-col overflow-hidden" style={{ width: "min(1200px, calc(100vw - 290px))" }}>
+                        <div className="flex items-center justify-between border-b border-indigo-200 bg-indigo-50 px-3 py-1 text-[11px]">
+                          <span className="font-bold text-indigo-800">▾ {s.name} · {month.replace("-", "년 ")}월 청구 — 고치고 바로 발행합니다</span>
+                          <button type="button" onClick={() => setExpanded(null)} className="rounded px-2 py-0.5 font-bold text-indigo-700 hover:bg-indigo-100">
+                            접기 ▴
+                          </button>
+                        </div>
+                        <StudentLedgerModal embedded studentId={s.id} termId={termId || null} month={month} onClose={() => setExpanded(null)} onChanged={() => router.refresh()} />
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               );
             })}
             {rows.length === 0 && (
@@ -2487,17 +2538,40 @@ function CellEditor({
           <span className="ml-1 font-normal text-slate-400">기준 {won(Number(plan.base_amount))}/{plan.unit}</span>
         </p>
 
-        <p className="mb-1 text-[10px] font-bold text-slate-500">① 납부 옵션 — 한 번에 낼수록 깎입니다</p>
+        {/* **① 납부 방식 한 목록.** 옵션과 직접 기입을 같은 줄에 둡니다 - 예전에는 ① 옵션 · ③ 직접 기입 · ④ 청구 주기가
+            따로 있어서, 직접 기입을 켜도 ①에는 옵션이 그대로 골라져 있었고 주기는 무엇을 고르든 늘 보였습니다. 주기는
+            직접 기입일 때만 묻습니다 - 옵션은 회차가 이미 주기를 말해 줍니다. */}
+        <p className="mb-1 text-[10px] font-bold text-slate-500">① 납부 방식 — 옵션(한 번에 낼수록 깎임) 또는 직접 기입</p>
         <div className="mb-2 flex flex-col gap-0.5">
           <label className="flex cursor-pointer items-center gap-1.5 rounded px-1 py-0.5 hover:bg-slate-50">
-            <input type="radio" checked={!optionId} disabled={busy} onChange={() => onPickOption("")} />
+            <input
+              type="radio"
+              checked={!optionId && !manual}
+              disabled={busy}
+              onChange={() => {
+                setManual(false);
+                onPickOption("");
+              }}
+            />
             <span className="text-[11px] text-slate-400">신청 안 함</span>
           </label>
           {options.map((o) => {
             const l = tuitionLine(plan, o, attached);
             return (
               <label key={o.id} className="flex cursor-pointer items-center gap-1.5 rounded px-1 py-0.5 hover:bg-slate-50">
-                <input type="radio" checked={optionId === o.id} disabled={busy} onChange={() => onPickOption(o.id)} />
+                <input
+                  type="radio"
+                  checked={!manual && optionId === o.id}
+                  disabled={busy}
+                  onChange={() => {
+                    if (manual) {
+                      setManual(false);
+                      setAmt("");
+                      if (override.amount !== null) onSaveOverride(null, "");
+                    }
+                    onPickOption(o.id);
+                  }}
+                />
                 <span className="text-[11px] font-semibold text-slate-700">{o.name}</span>
                 {Number(o.discount_rate) > 0 && (
                   <span className="rounded bg-teal-100 px-1 text-[10px] font-bold text-teal-800">
@@ -2510,15 +2584,18 @@ function CellEditor({
               </label>
             );
           })}
-          {options.length === 0 && (
-            <p className="rounded bg-amber-50 px-1.5 py-1 text-[10px] text-amber-800">
-              이 항목에는 납부 옵션이 없습니다. [📚 납부 항목 · 할인]에서 먼저 만들어주세요.
-            </p>
-          )}
+          <label className="flex cursor-pointer items-center gap-1.5 rounded px-1 py-0.5 hover:bg-amber-50">
+            <input type="radio" checked={manual} disabled={busy} onChange={() => setManual(true)} />
+            <span className="text-[11px] font-semibold text-amber-900">직접 기입 — 금액을 정함</span>
+            {override.amount !== null && (
+              <span className="ml-auto whitespace-nowrap text-[11px] font-bold tabular-nums text-amber-800">{won(override.amount)}</span>
+            )}
+          </label>
         </div>
 
-        <p className="mb-1 text-[10px] font-bold text-slate-500">② 이 항목에 붙는 할인</p>
-        <div className="flex max-h-[160px] flex-col gap-0.5 overflow-y-auto">
+        {/* 직접 기입이면 할인이 붙지 않습니다(정한 금액 하나가 전부). 숨겨 둬야 «붙였는데 왜 안 깎이나»가 없습니다. */}
+        {!manual && <p className="mb-1 text-[10px] font-bold text-slate-500">② 이 항목에 붙는 할인</p>}
+        <div className={"flex max-h-[160px] flex-col gap-0.5 overflow-y-auto" + (manual ? " hidden" : "")}>
           {usableDiscounts.length === 0 ? (
             <p className="rounded bg-slate-50 px-1.5 py-1 text-[10px] text-slate-400">
               이 항목에 걸 수 있는 할인이 없습니다. [📚 납부 항목 · 할인]의 <b>{plan.name}</b> 카드에서 만들어주세요.
@@ -2550,24 +2627,9 @@ function CellEditor({
 
             할인 규칙을 그때마다 새로 만들면(「○○네 감면 17.4%」) 할인 목록이 학생 수만큼
             늘어나고, 그 목록은 다음 학기에 아무도 못 지웁니다. 정한 금액을 그대로 적습니다. */}
-        <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50/60 p-1.5">
-          <label className="flex cursor-pointer items-center gap-1.5">
-            <input
-              type="checkbox"
-              checked={manual}
-              disabled={busy}
-              onChange={(e) => {
-                setManual(e.target.checked);
-                // 끄면 **그 자리에서 계산으로 되돌립니다.** 체크만 풀고 값이 남아 있으면,
-                // 화면에는 안 보이는데 금액은 그대로인 상태가 됩니다.
-                if (!e.target.checked) {
-                  setAmt("");
-                  onSaveOverride(null, "");
-                }
-              }}
-            />
-            <span className="text-[10px] font-bold text-amber-900">③ 직접 기입 — 금액을 정해서 넣습니다</span>
-          </label>
+        {manual && (
+          <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50/60 p-1.5">
+            <div className="mb-0.5 text-[10px] font-bold text-amber-900">직접 기입 금액</div>
           {manual && (
             <div className="mt-1 flex flex-col gap-1">
               <div className="flex items-center gap-1">
@@ -2603,18 +2665,17 @@ function CellEditor({
                 이 금액으로 정하기
               </button>
               <p className="text-[10px] leading-snug text-amber-800">
-                옵션과 할인은 그대로 두고 <b>청구액만</b> 이 금액이 됩니다. 원래 얼마였는지가 아래에 남아,
-                나중에 「왜 이 금액이죠」에 답할 수 있습니다.
+                옵션은 그대로 두고 <b>청구액만</b> 이 금액이 됩니다. 할인은 붙지 않습니다.
               </p>
             </div>
           )}
-        </div>
-
+          {override.amount !== null && (
+            <>
         {/* ④ **청구 주기** — «달마다 다시 청구하는가»는 요금표가 아니라 이 줄의 성격입니다.
             정규과정(학기 단위)을 달마다 나눠 내는 집은 「매달」로 두어야 10월 장을 낸 뒤 11월 칸이
             다시 «미청구»가 됩니다. 안 두면 학기에 한 장으로 쳐서 11월 장을 낼 자리가 없습니다. */}
-        <div className="mt-2 rounded-lg border border-sky-200 bg-sky-50/60 p-1.5">
-          <div className="mb-1 text-[10px] font-bold text-sky-900">④ 청구 주기 — 언제 다시 청구하나</div>
+        <div className="mt-1.5 rounded-lg border border-sky-200 bg-white/70 p-1.5">
+          <div className="mb-1 text-[10px] font-bold text-sky-900">청구 주기 — 언제 다시 청구하나</div>
           <div className="flex flex-wrap gap-1">
             {(
               [
@@ -2641,6 +2702,11 @@ function CellEditor({
             「매달 새로」면 달을 넘길 때마다 다시 미청구가 됩니다. 학기 금액을 직접 기입으로 달마다 나눠 받는 집이 여기 해당합니다.
           </p>
         </div>
+            </>
+          )}
+          </div>
+        )}
+
 
         {/* 계산 순서를 그대로 보여줍니다. 「왜 이 금액인가」를 이 자리에서 답할 수 있어야
             학부모 전화에 바로 답합니다. */}

@@ -5,6 +5,7 @@ import { hasFinanceAccess } from "@/lib/roles";
 import { loadLedgerWorld } from "@/lib/ledgerLoad";
 import { buildLedger } from "@/lib/studentLedger";
 import { inDepartment, inTerm, isDefaultFor } from "@/lib/feeItems";
+import { shiftMonth, type MonthKey } from "@/lib/financePeriod";
 
 /**
  * **학생 원장 한 명분.** 학생 창이 열릴 때마다 새로 읽습니다 - 창에서 발행·입금을 하면 바로
@@ -27,6 +28,20 @@ export async function GET(req: Request, ctx: { params: Promise<{ studentId: stri
   const student = students[0];
   if (!student) return NextResponse.json({ error: "학생을 찾지 못했습니다." }, { status: 404 });
   const ledger = buildLedger(world, student);
+  // **지난달에 무엇을 냈나.** 같은 자료로 지난달을 한 번 더 셉니다(같은 함수 - 규칙을 새로 만들지 않습니다).
+  // 그 달 청구서에 담겼던 항목만 표시합니다. 화면은 이것으로 색 점을 찍고, 이번 달 항목을 미리 골라 둡니다 -
+  // 달마다 방과후를 바꾸는 아이가 있어 미리 고른 것은 바꿀 수 있어야 합니다.
+  const prev: Record<string, { state: string; invoiceNo: string | null; amount: number; month: string }> = {};
+  if (world.month) {
+    const pm = shiftMonth(world.month as MonthKey, -1);
+    const pl = buildLedger({ ...world, month: pm }, student);
+    for (const c of pl.charges) {
+      if (!c.billed?.invoiceId) continue;
+      const inv = pl.invoices.find((v) => v.id === c.billed!.invoiceId);
+      if (!inv || inv.billingMonth !== pm || inv.status !== "발행") continue;
+      prev[`${c.kind}:${c.id}`] = { state: c.billed.state, invoiceNo: inv.invoice_no, amount: c.amount, month: pm };
+    }
+  }
   // 창에서 **더 넣을 수 있는** 학비외 항목. 이 학생 부서·이 학기 것 중 아직 안 붙은 것만.
   // 전교생 항목 목록을 통째로 내려보내면 창이 느려지고, 다른 부서 교재를 실수로 넣는 자리가 생깁니다.
   const have = new Set(ledger.charges.filter((c) => c.kind === "학비외").map((c) => c.id));
@@ -51,6 +66,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ studentId: stri
   if (ecErr) errors.push(`추가 항목: ${ecErr.message}`);
   return NextResponse.json({
     ledger,
+    prev,
     addableItems,
     extraCharges: ecRows ?? [],
     termId: world.termId,

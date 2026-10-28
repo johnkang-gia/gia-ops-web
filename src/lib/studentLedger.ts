@@ -102,7 +102,16 @@ export type LedgerCharge = {
   /** 이미 청구서에 담겼으면 그 장. 없으면 아직 안 보낸 것(「남음」). */
   billed: { state: BillState; invoiceId: string; invoiceNo: string | null; unsure: boolean } | null;
   /** 학비 전용: 옵션 고르기용. */
-  tuition?: { planId: string; optionId: string | null; options: { id: string; name: string }[]; discounts: { id: string; name: string; on: boolean }[] };
+  tuition?: {
+    planId: string;
+    optionId: string | null;
+    options: { id: string; name: string }[];
+    discounts: { id: string; name: string; on: boolean }[];
+    /** 사람이 정한 금액(직접 기입). 없으면 null. */
+    manual: { amount: number; note: string | null } | null;
+    /** 등록 줄의 청구 주기. 줄이 없으면 auto. */
+    cycle: "auto" | "월" | "학기";
+  };
   /** 학비 전용 · 월별 보기: 어떤 갈래로 판정했나, 묶음 납부면 그 기간과 시작월. */
   month?: { rule: BillRule; months: number; span: MonthSpan | null; spanSource: "입력" | "청구서" | null; paidFrom: string | null };
   /** 학비외 전용: 기본 세트인가, 사람이 따로 넣었나, 수량. */
@@ -276,6 +285,8 @@ export function buildLedger(world: LedgerWorld, student: LedgerStudent): Ledger 
       tuition: {
         planId: plan.id,
         optionId: e?.option_id ?? null,
+        manual: e && e.override_amount !== null && e.override_amount !== undefined ? { amount: Number(e.override_amount), note: e.override_note ?? null } : null,
+        cycle: (e?.bill_cycle ?? "auto") as "auto" | "월" | "학기",
         options: world.options.filter((o) => o.plan_id === plan.id && o.active).map((o) => ({ id: o.id, name: o.name })),
         // 이 항목에 걸 수 있는 할인 전부와 지금 붙어 있는지. 학비 일괄 표와 같은 재료라 같은 금액이 나옵니다.
         discounts: world.discounts

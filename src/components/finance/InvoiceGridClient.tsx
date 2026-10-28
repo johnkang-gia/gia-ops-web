@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import StudentLedgerModal from "@/components/finance/StudentLedgerModal";
 import { BILL_LABEL, billedItems, markOf } from "@/lib/billedItems";
 import { issuedLong, issuedShort } from "@/lib/invoiceIssued";
 import { useFinanceFilter } from "@/components/finance/FinanceFilterProvider";
@@ -400,6 +401,8 @@ export default function InvoiceGridClient({
    * 것을 고를 때는 분류별로 펼쳐놓고 보는 편이 낫습니다. 표에서 이름을 누르면 열립니다.
    */
   const [detail, setDetail] = useState<Student | null>(null);
+  /** 펼친 줄 — 학비 표와 같은 창(학생 회계)을 줄 아래에 펼칩니다. 학비·학비외를 오가지 않고 한 자리에서 고치고 발행합니다. */
+  const [expanded, setExpanded] = useState<string | null>(null);
   // 납입기한은 **발행한 날로부터 이레**입니다(`DUE_DAYS`). 학비와 같은 규칙을 써야 합니다 -
   // 같은 날 보낸 두 청구서의 마감일이 다르면 학부모가 먼저 알아봅니다.
   const [dueDate, setDueDate] = useState(() => addDays(today, DUE_DAYS));
@@ -769,6 +772,11 @@ export default function InvoiceGridClient({
     fillCounts[k] = (fillCounts[k] ?? 0) + 1;
   }
   const shown = fill ? rows.filter((s) => fillOf(s.id) === fill) : rows;
+  // 검색으로 한 명이 되면 저절로 펼칩니다(학비 표와 같음).
+  const onlyOne = shown.length === 1 ? shown[0].id : null;
+  useEffect(() => {
+    if (onlyOne) setExpanded(onlyOne);
+  }, [onlyOne]);
 
   /** 열 합계 — 이 항목을 몇 명이 사고 얼마인가. */
   const colSummary = useMemo(() => {
@@ -2024,7 +2032,8 @@ export default function InvoiceGridClient({
               const inv = invoiceByStudent.get(s.id);
               const on = checked.has(s.id);
               return (
-                <tr key={s.id} className={on ? "bg-teal-50/40" : tint.row || "hover:bg-slate-50/60"}>
+                <Fragment key={s.id}>
+                <tr className={on ? "bg-teal-50/40" : tint.row || "hover:bg-slate-50/60"}>
                   <td
                     className={
                       "sticky left-0 z-10 border-b border-l-4 border-slate-100 px-2 py-1 " +
@@ -2056,6 +2065,14 @@ export default function InvoiceGridClient({
                   >
                     {/* 이름을 누르면 그 아이만 크게 봅니다. 표는 훑기에 좋고, 한 아이를
                         꼼꼼히 고를 때는 좁습니다. */}
+                    <button
+                      type="button"
+                      onClick={() => setExpanded((e) => (e === s.id ? null : s.id))}
+                      className={"mr-1 rounded px-0.5 text-[11px] " + (expanded === s.id ? "font-bold text-indigo-700" : "text-slate-400 hover:text-slate-800")}
+                      title="이 아이의 이번 달 청구(학비·학비외)를 이 줄 아래에 펼쳐 고치고 발행합니다"
+                    >
+                      {expanded === s.id ? "▾" : "▸"}
+                    </button>
                     <button
                       type="button"
                       onClick={() => setDetail(s)}
@@ -2357,6 +2374,22 @@ export default function InvoiceGridClient({
                     )}
                   </td>
                 </tr>
+                {expanded === s.id && (
+                  <tr>
+                    <td colSpan={usedItems.length + 8} className="border-b-2 border-indigo-300 bg-indigo-50/30 p-0">
+                      <div className="sticky left-0 flex max-h-[78vh] flex-col overflow-hidden" style={{ width: "min(1200px, calc(100vw - 290px))" }}>
+                        <div className="flex items-center justify-between border-b border-indigo-200 bg-indigo-50 px-3 py-1 text-[11px]">
+                          <span className="font-bold text-indigo-800">▾ {s.name} · {month.replace("-", "년 ")}월 청구 — 고치고 바로 발행합니다</span>
+                          <button type="button" onClick={() => setExpanded(null)} className="rounded px-2 py-0.5 font-bold text-indigo-700 hover:bg-indigo-100">
+                            접기 ▴
+                          </button>
+                        </div>
+                        <StudentLedgerModal embedded studentId={s.id} termId={termId || null} month={month} onClose={() => setExpanded(null)} />
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               );
             })}
             {rows.length === 0 && (

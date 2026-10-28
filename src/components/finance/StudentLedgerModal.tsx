@@ -23,7 +23,7 @@ import InvoicePreviewModal from "@/components/finance/InvoicePreviewModal";
 import AlltalkpayExport from "@/components/finance/AlltalkpayExport";
 import { StudentBillingPhone } from "@/components/finance/BillingPhoneChips";
 import InvoiceSheet, { type SheetPart } from "@/components/finance/InvoiceSheet";
-import { addDays, DUE_DAYS } from "@/lib/financePeriod";
+import { addDays, DUE_DAYS, shiftMonth } from "@/lib/financePeriod";
 import type { InvoiceLine } from "@/lib/types";
 import { BILL_STATUS, statusFromSettle } from "@/lib/billStatus";
 import { issuedShort } from "@/lib/invoiceIssued";
@@ -51,8 +51,12 @@ import { issuedShort } from "@/lib/invoiceIssued";
  * 코드를 두 벌 두지 않습니다 - 규칙이 바뀌면 한 쪽만 고쳐지는 날이 옵니다.
  */
 
+type PrevMark = { state: string; invoiceNo: string | null; amount: number; month: string };
+
 type LedgerResponse = {
   ledger: Ledger;
+  /** 지난달 청구서에 담겼던 항목(`학비:번호` · `학비외:번호`). 색 점과 «미리 고르기»에 씁니다. */
+  prev?: Record<string, PrevMark>;
   addableItems: { id: string; label: string; category: string; unitPrice: number; isDefault: boolean }[];
   /** 다음 학비 장에 붙을 추가 항목·차액(아직 안 얹힌 것). */
   extraCharges?: ExtraChargeRow[];
@@ -64,7 +68,7 @@ type LedgerResponse = {
 export default function StudentLedgerModal({
   studentId,
   termId: initialTermId,
-  month = null,
+  month: monthProp = null,
   onClose,
   onChanged,
   embedded = false,
@@ -83,6 +87,15 @@ export default function StudentLedgerModal({
   embedded?: boolean;
 }) {
   const notify = useToast();
+  /**
+   * **보는 달.** 늘 달 단위로 봅니다 - 달을 안 주면 학기 단위로 판정해서, 10월에 낸 오케스트라가 11월에도
+   * 「수납 완료」로 떠 11월 청구를 할 수 없었습니다(이름을 눌러 여는 학생 창이 그랬습니다). 안 주면 이번 달이고,
+   * 창 안에서 ◀ ▶ 로 옮깁니다.
+   */
+  const [month, setMonth] = useState<string>(monthProp ?? todayKst().slice(0, 7));
+  useEffect(() => {
+    if (monthProp) setMonth(monthProp);
+  }, [monthProp]);
   const [data, setData] = useState<LedgerResponse | null>(null);
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [termId, setTermId] = useState<string | null>(initialTermId ?? null);
@@ -90,6 +103,11 @@ export default function StudentLedgerModal({
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [pickedInv, setPickedInv] = useState<Set<string>>(new Set());
   const [touched, setTouched] = useState(false);
+  /** 사람이 이번 달 고른 것을 손댔는가. 손대기 전에는 지난달 항목을 미리 골라 둡니다. */
+  const [pickTouched, setPickTouched] = useState(false);
+  /** 직접 기입 칸을 연 학비 항목(번호). */
+  const [manualFor, setManualFor] = useState<string | null>(null);
+  const [manualDraft, setManualDraft] = useState({ amount: "", note: "" });
 
   // 하위 창들
   const [already, setAlready] = useState(false);
@@ -123,8 +141,10 @@ export default function StudentLedgerModal({
   const load = useCallback(async () => {
     setLoadErr(null);
     const qs = new URLSearchParams();
-    if (termId) qs.set("term", termId);
-    if (month) qs.set("month", month);
+    // 학기는 달이 정합니다. 부르는 쪽이 학기를 정해 줬어도 그 달을 볼 때만 씁니다 - 창에서 달을 옮겨 학기를
+    // 넘어가면 옛 학기로 그 달을 세게 됩니다.
+    if (initialTermId && month === (monthProp ?? month)) qs.set("term", initialTermId);
+    qs.set("month", month);
     const res = await fetch(`/api/finance/ledger/${studentId}${qs.size ? `?${qs}` : ""}`, { cache: "no-store" });
     const body = (await res.json().catch(() => ({}))) as LedgerResponse & { error?: string };
     if (!res.ok) {
@@ -132,8 +152,8 @@ export default function StudentLedgerModal({
       return;
     }
     setData(body);
-    if (!termId && body.termId) setTermId(body.termId);
-  }, [studentId, termId, month]);
+    setTermId(body.termId ?? null);
+  }, [studentId, initialTermId, monthProp, month]);
 
   useEffect(() => {
     void load();
@@ -169,6 +189,7 @@ export default function StudentLedgerModal({
   /** 무엇이든 바꾼 뒤에는 다시 읽습니다. 그리고 닫을 때 바깥에도 알립니다. */
   async function changed() {
     setTouched(true);
+    setPickTouched(false);
     setPicked(new Set());
     setPickedInv(new Set());
     await load();
@@ -179,9 +200,30 @@ export default function StudentLedgerModal({
   }
 
   const ledger = data?.ledger ?? null;
+  const prev = data?.prev ?? {};
   const unbilled = useMemo(() => (ledger?.charges ?? []).filter((c) => !c.billed && c.amount > 0), [ledger]);
-  const pickedCharges = unbilled.filter((c) => picked.has(`${c.kind}:${c.id}`));
+  /**
+   * 고를 수 있는가. 아직 안 담긴 항목은 늘, 학비외는 **담겼어도 다시 고를 수 있습니다**(「다시 청구」) - 학비외는
+   * 학기 단위로 «담겼다»를 세서, 매달 사는 것도 한 번 담기면 다음 달에 고를 길이 없었습니다. 같은 항목을 한 학기에
+   * 두 번 청구하는 것이므로 발행할 때 서버가 한 번 더 묻습니다. 학비는 그 달 청구서로 판정하므로 이미 담긴 달이면
+   * 고르지 않습니다(같은 달 두 장 = 중복 청구).
+   */
+  const pickable = (c: LedgerCharge) => c.amount > 0 && (!c.billed || (c.kind === "학비외" && !!c.billed.invoiceId));
+  const pickedCharges = (ledger?.charges ?? []).filter((c) => pickable(c) && picked.has(`${c.kind}:${c.id}`));
   const targetCharges = pickedCharges.length > 0 ? pickedCharges : unbilled;
+
+  /**
+   * **지난달 것을 미리 고릅니다.** 10월에 월납 학비·방과후 3일반·매쓰팀·오케스트라를 냈으면 11월에도 그 넷을
+   * 같은 금액으로 골라 둡니다 - 금액은 등록 줄에서 오므로 따로 옮길 것이 없습니다. 달마다 바뀌는 아이가 있어
+   * 고르기만 해 두고 바꿀 수 있게 둡니다. 학비외는 미리 고르지 않습니다 - 교재·교복처럼 한 번 사는 것이 대부분이라
+   * 지난달 것을 다시 고르면 두 번 청구됩니다(색 점으로 보여만 줍니다).
+   */
+  useEffect(() => {
+    if (!ledger || pickTouched) return;
+    const seed = ledger.charges.filter((c) => c.kind === "학비" && pickable(c) && prev[`${c.kind}:${c.id}`]).map((c) => `${c.kind}:${c.id}`);
+    setPicked(new Set(seed));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ledger, data?.prev, pickTouched]);
 
   async function post(url: string, body: unknown): Promise<{ ok: boolean; body: Record<string, unknown> }> {
     const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -362,30 +404,48 @@ export default function StudentLedgerModal({
     await changed();
   }
 
-  /** 학비 옵션 고르기 / 빼기. 표의 pickOption 과 같은 창구. */
+  /**
+   * 학비 옵션 고르기 / 빼기. 표의 pickOption 과 같은 창구. 직접 기입 중이던 항목에서 옵션을 고르면 정한 금액을
+   * 지우고 청구 주기를 자동으로 돌립니다 - 숨은 금액·숨은 주기가 남으면 옵션 금액이 아닌 숫자로 청구됩니다.
+   */
   async function setOption(c: LedgerCharge, optionId: string) {
     setBusy(true);
-    const r = await post("/api/finance/ledger/enroll", { studentId, planId: c.id, optionId: optionId || null, termId });
+    const wasManual = !!c.tuition?.manual;
+    const r = await post("/api/finance/ledger/enroll", {
+      studentId,
+      planId: c.id,
+      optionId: optionId || null,
+      termId,
+      ...(wasManual && optionId ? { overrideAmount: null, overrideNote: null } : {}),
+    });
+    if (r.ok && optionId && c.tuition && c.tuition.cycle !== "auto") {
+      const r2 = await post("/api/finance/ledger/enroll", { studentId, planId: c.id, termId, billCycle: "auto" });
+      if (!r2.ok) notify(`청구 주기를 자동으로 돌리지 못했습니다: ${String(r2.body.error ?? "")}`, "error");
+    }
     setBusy(false);
     if (!r.ok) return notify(String(r.body.error ?? "바꾸지 못했습니다."), "error");
     await changed();
   }
 
-  /** 학비 금액을 손으로 정하기 / 요금표대로 되돌리기. 이유 없이는 저장되지 않습니다(서버). */
-  async function setOverride(c: LedgerCharge) {
-    if (!c.tuition?.optionId) return notify("먼저 납부 옵션을 고르세요.", "error");
-    const raw = prompt(`${c.label} — 이 학생만 다른 금액으로 청구하려면 금액을 적으세요.\n비우면 요금표대로 돌아갑니다.`, c.amount > 0 ? String(c.amount) : "");
-    if (raw === null) return;
-    const amount = raw.trim() === "" ? null : Math.round(Number(raw.replace(/[^\d]/g, "")));
-    if (amount !== null && (!Number.isFinite(amount) || amount < 0)) return notify("금액이 올바르지 않습니다.", "error");
-    let note: string | null = null;
-    if (amount !== null) {
-      note = prompt("왜 다른지 한 줄로 적어주세요. (예: 형제 할인 별도 협의)", c.note?.replace(/^직접 정한 금액 · /, "") ?? "");
-      if (note === null) return;
-      if (!note.trim()) return notify("이유를 적어야 저장됩니다.", "error");
-    }
+  /** 직접 기입 — 금액을 정합니다(옵션이 없어도 됩니다). 이유는 안 적어도 됩니다(학비 표와 같음). */
+  async function saveManual(c: LedgerCharge, amount: number, note: string) {
     setBusy(true);
-    const r = await post("/api/finance/ledger/enroll", { studentId, planId: c.id, optionId: c.tuition.optionId, termId, overrideAmount: amount, overrideNote: note });
+    const r = await post("/api/finance/ledger/enroll", { studentId, planId: c.id, termId, manual: true, overrideAmount: amount, overrideNote: note });
+    // 처음 직접 기입하면 «매달»이 기본입니다 - 금액을 정해 받는 집은 대부분 달마다 나눠 냅니다.
+    if (r.ok && !c.tuition?.manual && (c.tuition?.cycle ?? "auto") === "auto") {
+      const r2 = await post("/api/finance/ledger/enroll", { studentId, planId: c.id, termId, billCycle: "월" });
+      if (!r2.ok) notify(`청구 주기를 «매달»로 두지 못했습니다: ${String(r2.body.error ?? "")}`, "error");
+    }
+    setBusy(false);
+    if (!r.ok) return notify(String(r.body.error ?? "저장하지 못했습니다."), "error");
+    setManualFor(null);
+    await changed();
+  }
+
+  /** 청구 주기(자동·매달·학기에 한 장). */
+  async function setCycle(c: LedgerCharge, cycle: "auto" | "월" | "학기") {
+    setBusy(true);
+    const r = await post("/api/finance/ledger/enroll", { studentId, planId: c.id, termId, billCycle: cycle });
     setBusy(false);
     if (!r.ok) return notify(String(r.body.error ?? "바꾸지 못했습니다."), "error");
     await changed();
@@ -444,13 +504,15 @@ export default function StudentLedgerModal({
     await changed();
   }
 
-  const togglePick = (key: string) =>
+  const togglePick = (key: string) => {
+    setPickTouched(true);
     setPicked((p) => {
       const n = new Set(p);
       if (n.has(key)) n.delete(key);
       else n.add(key);
       return n;
     });
+  };
   const togglePickInv = (id: string) =>
     setPickedInv((p) => {
       const n = new Set(p);
@@ -657,25 +719,13 @@ export default function StudentLedgerModal({
             </div>
             {/* 이 창에서 청구서를 만들고 올톡으로 보내므로, 누구 번호로 가는지가 여기서 보이고 바뀌어야 합니다. */}
             <StudentBillingPhone studentId={studentId} />
-            {month && (
-              <div className="mt-1 text-[11px] font-bold text-indigo-700">
-                {month.replace("-", "년 ")}월 청구 · {data?.terms.find((t) => t.id === termId)?.name ?? ""}
-              </div>
-            )}
-            {!month && data && data.terms.length > 1 && (
-              <select
-                value={termId ?? ""}
-                onChange={(e) => setTermId(e.target.value || null)}
-                className="mt-1 rounded border border-slate-300 bg-white px-1.5 py-0.5 text-[11px]"
-              >
-                {data.terms.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                    {t.status === "진행중" ? " (지금)" : ""}
-                  </option>
-                ))}
-              </select>
-            )}
+            {/* 달을 창 안에서 옮깁니다. 지난달 것을 보려고 창을 닫고 표의 달을 바꿀 필요가 없습니다. */}
+            <div className="mt-1 flex items-center gap-1 text-[11px] font-bold text-indigo-700">
+              <button onClick={() => { setPickTouched(false); setMonth(shiftMonth(month, -1)); }} className="rounded px-1 hover:bg-indigo-50" title="지난달">◀</button>
+              <span className="whitespace-nowrap">{month.replace("-", "년 ")}월 청구</span>
+              <button onClick={() => { setPickTouched(false); setMonth(shiftMonth(month, 1)); }} className="rounded px-1 hover:bg-indigo-50" title="다음 달">▶</button>
+              <span className="font-semibold text-slate-400">{data?.terms.find((t) => t.id === termId)?.name ?? ""}</span>
+            </div>
           </div>
           {ledger && (
             <div className="ml-auto flex flex-wrap items-stretch gap-2 text-right">
@@ -707,7 +757,7 @@ export default function StudentLedgerModal({
             <section className="border-b border-slate-200 p-3 md:col-span-2 md:border-b-0 md:border-r">
               <h3 className="mb-1 flex items-center justify-between text-[12px] font-black text-slate-700">
                 <span>수납 대상 항목 — 요금표 기준</span>
-                <span className="text-[10px] font-semibold text-slate-400">선택한 항목만 발행 · 미선택 시 미청구 항목 전체</span>
+                <span className="text-[10px] font-semibold text-slate-400">● 지난달 청구 · 지난달 것을 미리 골라 둠(바꿀 수 있음)</span>
               </h3>
               {(["학비", "학비외"] as const).map((kind) => {
                 const rows = ledger.charges.filter((c) => c.kind === kind);
@@ -717,41 +767,87 @@ export default function StudentLedgerModal({
                     {rows.length === 0 && <p className="px-1 py-1 text-[11px] text-slate-400">{kind === "학비" ? "해당 학생에게 적용되는 학비 항목이 없습니다." : "등록된 학비외 항목이 없습니다."}</p>}
                     {rows.map((c) => {
                       const key = `${c.kind}:${c.id}`;
-                      const canPick = !c.billed && c.amount > 0;
+                      const canPick = pickable(c);
+                      const pv = prev[key];
+                      const isManual = !!c.tuition?.manual;
                       return (
                         <div
                           key={key}
                           className={
                             "flex items-center gap-2 rounded-lg border px-2 py-1 text-[12px] " +
-                            (c.billed ? "border-slate-100 bg-slate-50 text-slate-400" : "border-slate-200 bg-white")
+                            (c.billed && !canPick ? "border-slate-100 bg-slate-50 text-slate-400" : picked.has(key) ? "border-indigo-300 bg-indigo-50/40" : "border-slate-200 bg-white")
                           }
                         >
                           <input type="checkbox" disabled={!canPick} checked={picked.has(key)} onChange={() => togglePick(key)} className="h-3.5 w-3.5" />
                           <div className="min-w-0 flex-1">
-                            <div className={"truncate " + (c.billed ? "" : "font-semibold text-slate-800")} title={c.label}>
+                            <div className={"truncate " + (c.billed && !canPick ? "" : "font-semibold text-slate-800")} title={c.label}>
+                              {/* 지난달 청구서에 담겼던 항목 - 그 장의 상태 색으로 점 하나. 무엇을 냈는지 보려고 다른 달을 열 필요가 없습니다. */}
+                              {pv && (
+                                <span
+                                  className={
+                                    "mr-1 inline-block h-2 w-2 rounded-full align-middle " +
+                                    (pv.state === "완납" ? "bg-emerald-500" : pv.state === "일부" ? "bg-amber-500" : "bg-sky-500")
+                                  }
+                                  title={`${Number(pv.month.slice(5))}월에 청구 · ${pv.invoiceNo ?? ""} · ${pv.state === "완납" ? "완납" : pv.state === "일부" ? "일부수납" : "청구됨"} · ${won(pv.amount)}`}
+                                />
+                              )}
                               {c.label}
                               {c.extra && !c.extra.fromDefault && <span className="ml-1 text-[10px] text-sky-600">개별 추가</span>}
                             </div>
                             {c.tuition ? (
-                              <select
-                                value={c.tuition.optionId ?? ""}
-                                disabled={busy || !!c.billed}
-                                onChange={(e) => void setOption(c, e.target.value)}
-                                className="mt-0.5 max-w-full rounded border border-slate-200 bg-white px-1 py-0.5 text-[11px] disabled:bg-transparent"
-                                title={c.billed ? "이미 청구서에 담긴 항목은 옵션을 바꿀 수 없습니다. 그 장을 취소한 뒤 바꿔주세요." : "납부 옵션"}
-                              >
-                                <option value="">등록 안 함</option>
-                                {c.tuition.options.map((o) => (
-                                  <option key={o.id} value={o.id}>
-                                    {o.name}
-                                  </option>
-                                ))}
-                              </select>
+                              <>
+                                {/* **납부 방식 한 칸** — 옵션과 「직접 기입」을 한 목록에서 고릅니다. 예전에는 옵션 칸과 ✎ 단추(금액을
+                                    묻는 창 두 번)가 따로 있었고, 옵션 없이 금액만 정한 항목은 옵션 칸에 «등록 안 함»으로 보였습니다. */}
+                                <select
+                                  value={isManual || manualFor === c.id ? "__manual" : (c.tuition.optionId ?? "")}
+                                  disabled={busy || (!!c.billed && !canPick)}
+                                  onChange={(e) => {
+                                    const v = e.target.value;
+                                    if (v === "__manual") {
+                                      setManualFor(c.id);
+                                      setManualDraft({
+                                        amount: c.tuition?.manual ? String(c.tuition.manual.amount) : c.amount > 0 ? String(c.amount) : "",
+                                        note: c.tuition?.manual?.note ?? "",
+                                      });
+                                      return;
+                                    }
+                                    setManualFor(null);
+                                    void setOption(c, v);
+                                  }}
+                                  className="mt-0.5 max-w-full rounded border border-slate-200 bg-white px-1 py-0.5 text-[11px] disabled:bg-transparent"
+                                  title={c.billed && !canPick ? "이 달 청구서에 이미 담긴 항목입니다. 그 장을 취소한 뒤 바꿔주세요." : "납부 방식"}
+                                >
+                                  <option value="">등록 안 함</option>
+                                  {c.tuition.options.map((o) => (
+                                    <option key={o.id} value={o.id}>
+                                      {o.name}
+                                    </option>
+                                  ))}
+                                  <option value="__manual">직접 기입 (금액을 정함)</option>
+                                </select>
+                                {(manualFor === c.id || isManual) && (
+                                  <ManualBox
+                                    editing={manualFor === c.id}
+                                    current={c.tuition.manual}
+                                    cycle={c.tuition.cycle}
+                                    busy={busy || (!!c.billed && !canPick)}
+                                    draft={manualDraft}
+                                    setDraft={setManualDraft}
+                                    onEdit={() => {
+                                      setManualFor(c.id);
+                                      setManualDraft({ amount: String(c.tuition?.manual?.amount ?? ""), note: c.tuition?.manual?.note ?? "" });
+                                    }}
+                                    onCancel={() => setManualFor(null)}
+                                    onSave={(amount, note) => void saveManual(c, amount, note)}
+                                    onCycle={(cy) => void setCycle(c, cy)}
+                                  />
+                                )}
+                              </>
                             ) : (
                               c.optionName && <div className="text-[10px] text-slate-500">{c.optionName}</div>
                             )}
                             {/* 할인 - 누르면 붙고 다시 누르면 떨어집니다. 담긴 항목은 잠깁니다(금액이 이미 나갔습니다). */}
-                            {c.tuition && c.tuition.discounts.length > 0 && (
+                            {c.tuition && !isManual && manualFor !== c.id && c.tuition.discounts.length > 0 && (
                               <div className="mt-0.5 flex flex-wrap gap-1">
                                 {c.tuition.discounts.map((d) => (
                                   <button
@@ -807,13 +903,8 @@ export default function StudentLedgerModal({
                             </label>
                           )}
                           <div className="shrink-0 text-right">
-                            <div className="tabular-nums font-bold">
+                            <div className="whitespace-nowrap tabular-nums font-bold">
                               {c.amount > 0 ? won(c.amount) : "—"}
-                              {c.tuition && !c.billed && c.tuition.optionId && (
-                                <button onClick={() => void setOverride(c)} disabled={busy} className="ml-1 text-[10px] font-normal text-slate-400 hover:text-slate-700" title="이 학생만 다른 금액으로">
-                                  ✎
-                                </button>
-                              )}
                             </div>
                             {c.billed && !c.billed.invoiceId ? (
                               <span className="text-[10px] font-bold text-emerald-700" title="운영앱 이전에 받은 기간입니다 - 시작월을 사람이 적었습니다">
@@ -825,10 +916,15 @@ export default function StudentLedgerModal({
                                 className={"text-[10px] font-bold underline " + (c.billed.state === "완납" ? "text-emerald-700" : c.billed.state === "일부" ? "text-amber-700" : "text-slate-500")}
                                 title="그 청구서 보기"
                               >
-                                {c.billed.state === "완납" ? "수납 완료" : c.billed.state === "일부" ? "일부 수납" : "청구 완료"} {c.billed.invoiceNo ?? ""}
+                                {c.billed.state === "완납" ? "완납" : c.billed.state === "일부" ? "일부수납" : "청구됨"} {c.billed.invoiceNo ?? ""}
                                 {c.billed.unsure ? " ?" : ""}
                               </button>
-                            ) : c.amount > 0 ? (
+                            ) : null}
+                            {c.billed && canPick ? (
+                              <div className="whitespace-nowrap text-[10px] font-semibold text-indigo-600" title="학비외는 학기 단위로 «담겼다»를 셉니다. 이번 달에 다시 사는 것이면 고르세요 - 발행할 때 한 번 더 묻습니다.">
+                                고르면 다시 청구
+                              </div>
+                            ) : !c.billed && c.amount > 0 ? (
                               <span className="rounded bg-amber-100 px-1 text-[10px] font-bold text-amber-800">미청구</span>
                             ) : null}
                           </div>
@@ -910,7 +1006,7 @@ export default function StudentLedgerModal({
               <div className="mt-2 flex flex-wrap gap-1.5">
                 <button
                   onClick={() => setDraft({ combine: true })}
-                  disabled={busy || unbilled.length === 0}
+                  disabled={busy || targetCharges.length === 0}
                   className="rounded-lg bg-slate-900 px-3 py-1.5 text-[12px] font-bold text-white disabled:opacity-40"
                   title="선택한 항목(미선택 시 미청구 항목 전체)으로 청구서가 어떻게 나갈지 먼저 보고, 그대로 발행합니다"
                 >
@@ -1192,6 +1288,96 @@ export default function StudentLedgerModal({
             void changed();
           }}
         />
+      )}
+    </div>
+  );
+}
+
+/**
+ * 직접 기입 칸 — 금액·비고·청구 주기를 한 자리에서. 주기는 직접 기입일 때만 묻습니다 - 옵션은 회차가 주기를
+ * 이미 말해 주고, 사람이 금액을 정한 줄만 «달마다 다시 받나»가 빠져 있습니다.
+ */
+function ManualBox({
+  editing,
+  current,
+  cycle,
+  busy,
+  draft,
+  setDraft,
+  onEdit,
+  onCancel,
+  onSave,
+  onCycle,
+}: {
+  editing: boolean;
+  current: { amount: number; note: string | null } | null;
+  cycle: "auto" | "월" | "학기";
+  busy: boolean;
+  draft: { amount: string; note: string };
+  setDraft: (d: { amount: string; note: string }) => void;
+  onEdit: () => void;
+  onCancel: () => void;
+  onSave: (amount: number, note: string) => void;
+  onCycle: (c: "auto" | "월" | "학기") => void;
+}) {
+  const n = draft.amount.trim() === "" ? NaN : Number(draft.amount.replace(/[,\s원₩]/g, ""));
+  const bad = !Number.isFinite(n) || n < 0;
+  return (
+    <div className="mt-1 rounded border border-amber-200 bg-amber-50/60 px-1.5 py-1 text-[11px]">
+      {editing ? (
+        <div className="flex flex-wrap items-center gap-1">
+          <input
+            value={draft.amount}
+            onChange={(e) => setDraft({ ...draft, amount: e.target.value })}
+            onKeyDown={(e) => e.key === "Enter" && !bad && onSave(Math.round(n), draft.note)}
+            inputMode="numeric"
+            placeholder="금액"
+            autoFocus
+            className={"w-24 rounded border px-1 py-0.5 text-right tabular-nums " + (draft.amount && bad ? "border-rose-400 bg-rose-50" : "border-slate-300")}
+          />
+          <input
+            value={draft.note}
+            onChange={(e) => setDraft({ ...draft, note: e.target.value.slice(0, 120) })}
+            placeholder="비고(안 적어도 됨)"
+            className="min-w-[6rem] flex-1 rounded border border-slate-300 px-1 py-0.5"
+          />
+          <button type="button" disabled={busy || bad} onClick={() => onSave(Math.round(n), draft.note)} className="whitespace-nowrap rounded bg-amber-600 px-1.5 py-0.5 font-bold text-white disabled:opacity-40">
+            정하기
+          </button>
+          <button type="button" onClick={onCancel} className="whitespace-nowrap rounded bg-white px-1.5 py-0.5 font-bold text-slate-500 ring-1 ring-slate-200">
+            그만
+          </button>
+        </div>
+      ) : current ? (
+        <div className="flex items-center gap-1">
+          <span className="whitespace-nowrap font-bold text-amber-900">직접&nbsp;기입&nbsp;{won(current.amount)}</span>
+          {current.note && <span className="min-w-0 truncate text-amber-800" title={current.note}>· {current.note}</span>}
+          <button type="button" onClick={onEdit} disabled={busy} className="ml-auto shrink-0 px-1 text-slate-400 hover:text-slate-700" title="금액 고치기">
+            ✎
+          </button>
+        </div>
+      ) : null}
+      {current && (
+        <div className="mt-1 flex flex-wrap items-center gap-1">
+          <span className="whitespace-nowrap text-[10px] font-bold text-sky-900">청구 주기</span>
+          {(
+            [
+              ["월", "매달"],
+              ["학기", "학기에 한 장"],
+              ["auto", "자동"],
+            ] as const
+          ).map(([k, label]) => (
+            <button
+              key={k}
+              type="button"
+              disabled={busy}
+              onClick={() => onCycle(k)}
+              className={"whitespace-nowrap rounded-full px-1.5 py-0 text-[10px] font-bold " + (cycle === k ? "bg-sky-600 text-white" : "bg-white text-slate-600 ring-1 ring-slate-300")}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       )}
     </div>
   );

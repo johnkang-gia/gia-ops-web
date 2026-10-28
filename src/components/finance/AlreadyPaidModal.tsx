@@ -161,7 +161,7 @@ export default function AlreadyPaidModal({
     } | null;
     if (!res.ok || !j?.ledger) {
       // 못 읽은 것을 「미수 없음」으로 보이면 안 됩니다 - 남은 돈이 있는데 없는 것처럼 됩니다.
-      setOpenErr(j?.error ?? "미수 청구서를 읽지 못했습니다.");
+      setOpenErr(j?.error ?? "잔액 청구서를 읽지 못했습니다.");
       return;
     }
     setOpenErr(null);
@@ -223,10 +223,10 @@ export default function AlreadyPaidModal({
     const j = (await res.json().catch(() => null)) as { error?: string; invoice?: { invoice_no: string } } | null;
     setOpenBusy(false);
     if (!res.ok || !j?.invoice) {
-      setOpenMsg(j?.error ?? "미수금 청구서를 만들지 못했습니다.");
+      setOpenMsg(j?.error ?? "미납분 청구서를 만들지 못했습니다.");
       return;
     }
-    setOpenMsg(`${v.invoice_no} 의 미수금 ${won(v.balance)} 으로 청구서 ${j.invoice.invoice_no} 를 만들었습니다. 원 청구서는 이월됨으로 잠겼습니다.`);
+    setOpenMsg(`${v.invoice_no} 의 잔액 ${won(v.balance)} 으로 청구서 ${j.invoice.invoice_no} 를 만들었습니다. 원 청구서는 이월됨으로 잠겼습니다.`);
     await loadOpen();
     onChanged?.();
   }
@@ -374,7 +374,7 @@ export default function AlreadyPaidModal({
         {studentId && (openErr || (open && open.length > 0)) && (
           <div className="mb-2 rounded-lg border border-rose-200 bg-rose-50/50 p-2">
             <p className="mb-1 text-[11px] font-bold text-rose-800">
-              미수금 <span className="font-normal text-rose-600">— 청구서에 남은 돈. 받은 만큼 적거나, 남은 금액만 청구서를 냅니다</span>
+              잔액 <span className="font-normal text-rose-600">— 청구서에 남은 돈. 받은 만큼 적거나, 남은 금액만 청구서를 냅니다</span>
             </p>
             {openErr && <p className="text-[11px] font-bold text-rose-700">⚠️ {openErr}</p>}
             <div className="space-y-1">
@@ -384,7 +384,7 @@ export default function AlreadyPaidModal({
                   {v.billingMonth && <span className="text-slate-400">{Number(v.billingMonth.slice(5, 7))}월분</span>}
                   {v.label && <span className="max-w-[10rem] truncate text-slate-500" title={v.label}>{v.label}</span>}
                   <span className="text-slate-400">청구 {won(v.billed)}{v.paid > 0 ? ` · 수납 ${won(v.paid)}` : ""}</span>
-                  <span className="font-bold text-rose-700">미수 {won(v.balance)}</span>
+                  <span className="whitespace-nowrap font-bold text-rose-700">잔액 {won(v.balance)}</span>
                   <span className="ml-auto flex items-center gap-1">
                     <input
                       value={openAmt[v.id] ?? ""}
@@ -409,7 +409,7 @@ export default function AlreadyPaidModal({
                       title="남은 금액만 담은 새 청구서를 만듭니다. 원 청구서는 이월됨으로 잠깁니다."
                       className="rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 font-bold text-amber-800 disabled:opacity-40"
                     >
-                      미수금 청구서
+                      미납분 청구서
                     </button>
                   </span>
                 </div>

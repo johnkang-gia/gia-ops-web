@@ -109,10 +109,10 @@ export default function ImportUploadClient({ batches }: { batches: BatchRow[] })
             <tr className="border-b border-slate-200">
               <th className="px-3 py-2">파일</th>
               <th className="px-2 py-2">올린 사람</th>
-              <th className="px-2 py-2 text-right">줄</th>
-              <th className="px-2 py-2 text-right">대기</th>
-              <th className="px-2 py-2 text-right">승인</th>
-              <th className="px-2 py-2 text-right">반영됨</th>
+              <th className="whitespace-nowrap px-2 py-2 text-right">줄</th>
+              <th className="whitespace-nowrap px-2 py-2 text-right">대기</th>
+              <th className="whitespace-nowrap px-2 py-2 text-right">승인</th>
+              <th className="whitespace-nowrap px-2 py-2 text-right">반영됨</th>
               <th className="px-2 py-2 text-center">상태</th>
               <th className="px-3 py-2" />
             </tr>
@@ -127,15 +127,15 @@ export default function ImportUploadClient({ batches }: { batches: BatchRow[] })
                   <div className="text-[10px] text-slate-400">{b.uploaded_at?.slice(0, 16).replace("T", " ")}</div>
                 </td>
                 <td className="px-2 py-1.5 text-[11px] text-slate-500">{b.uploaded_by}</td>
-                <td className="px-2 py-1.5 text-right tabular-nums text-slate-600">{b.rows_total}</td>
+                <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums text-slate-600">{b.rows_total}</td>
                 <td className={"px-2 py-1.5 text-right font-bold tabular-nums " + (b.waiting > 0 ? "text-amber-700" : "text-slate-300")}>
                   {b.waiting || "—"}
                 </td>
-                <td className="px-2 py-1.5 text-right tabular-nums text-emerald-700">
+                <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums text-emerald-700">
                   {b.approved || "—"}
                   {b.approved_amount > 0 && <span className="ml-1 text-[10px] text-slate-400">{won(b.approved_amount)}</span>}
                 </td>
-                <td className="px-2 py-1.5 text-right tabular-nums text-slate-600">
+                <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums text-slate-600">
                   {b.applied || "—"}
                   {b.failed > 0 && <span className="ml-1 rounded bg-rose-100 px-1 text-[9px] font-bold text-rose-700">실패 {b.failed}</span>}
                 </td>
@@ -144,7 +144,7 @@ export default function ImportUploadClient({ batches }: { batches: BatchRow[] })
                     {b.status}
                   </span>
                 </td>
-                <td className="px-3 py-1.5 text-right">
+                <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums">
                   <Link href={`/finance/import/${b.batch_id}`} className="text-[11px] font-semibold text-teal-700 underline">
                     {b.waiting > 0 ? "검수하기 →" : "보기 →"}
                   </Link>

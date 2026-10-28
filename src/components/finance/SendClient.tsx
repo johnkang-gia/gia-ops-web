@@ -159,7 +159,7 @@ export default function SendClient({ rows, error }: { rows: SendRow[]; error: st
               </th>
               <th className="px-2 py-1.5 text-left">학생</th>
               <th className="px-2 py-1.5 text-left">청구서</th>
-              <th className="px-2 py-1.5 text-right">보낼 금액</th>
+              <th className="whitespace-nowrap px-2 py-1.5 text-right">보낼 금액</th>
               <th className="px-2 py-1.5 text-left">청구 번호 (누르면 바뀜 · 학생에게 저장)</th>
               <th className="px-2 py-1.5 text-left">보냄</th>
             </tr>
@@ -194,7 +194,7 @@ export default function SendClient({ rows, error }: { rows: SendRow[]; error: st
                 <td className="px-2 py-1.5">
                   <b className="text-slate-700">{r.invoiceNo}</b> <span className="text-slate-500">{r.label}</span>
                 </td>
-                <td className="px-2 py-1.5 text-right tabular-nums font-bold">
+                <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums font-bold">
                   {won(r.balance)}
                   {r.balance !== r.total && <div className="text-[10px] font-normal text-slate-400">청구 {won(r.total)}</div>}
                 </td>

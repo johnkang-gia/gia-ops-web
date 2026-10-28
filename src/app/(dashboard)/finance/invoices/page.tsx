@@ -79,7 +79,7 @@ export default async function InvoicesPage() {
         .range(from, to),
     ),
   ]);
-  if (termRes.error) console.error("[인보이스] 학기를 읽지 못했습니다:", termRes.error.message);
+  if (termRes.error) console.error("[청구서] 학기를 읽지 못했습니다:", termRes.error.message);
 
   // 학생 → 속한 그룹. 그룹을 대상으로 삼은 항목이 붙으려면 이것이 있어야 합니다.
   const groupOf: Record<string, string[]> = {};

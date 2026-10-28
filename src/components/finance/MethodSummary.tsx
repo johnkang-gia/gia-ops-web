@@ -43,8 +43,8 @@ export default function MethodSummary({ payments }: { payments: PaymentRow[] }) 
                   {needsCashReceipt(k) && <span title="현금영수증 발행 대상"> ·</span>}
                 </th>
               ))}
-              <th className="px-2 py-1.5 text-right">합계</th>
-              <th className="px-2 py-1.5 text-right">건수</th>
+              <th className="whitespace-nowrap px-2 py-1.5 text-right">합계</th>
+              <th className="whitespace-nowrap px-2 py-1.5 text-right">건수</th>
             </tr>
           </thead>
           <tbody>
@@ -62,8 +62,8 @@ export default function MethodSummary({ payments }: { payments: PaymentRow[] }) 
                     {m.byMethod[k] ? won(m.byMethod[k]) : "—"}
                   </td>
                 ))}
-                <td className="px-2 py-1.5 text-right font-bold tabular-nums text-slate-900">{won(m.total)}</td>
-                <td className="px-2 py-1.5 text-right tabular-nums text-slate-400">{m.count}</td>
+                <td className="whitespace-nowrap px-2 py-1.5 text-right font-bold tabular-nums text-slate-900">{won(m.total)}</td>
+                <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums text-slate-400">{m.count}</td>
               </tr>
             ))}
           </tbody>

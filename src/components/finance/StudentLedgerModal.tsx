@@ -505,7 +505,7 @@ export default function StudentLedgerModal({
                         </button>
                       ) : null}
                       {v.settled.balance > 0 && (
-                        <button onClick={() => setAlready(true)} className="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-bold text-sky-800 hover:bg-sky-200" title="수납 창에서 이 청구서의 미수금을 받거나, 미수금만 청구서로 냅니다">
+                        <button onClick={() => setAlready(true)} className="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-bold text-sky-800 hover:bg-sky-200" title="수납 창에서 이 청구서의 잔액을 받거나, 잔액만 미납분 청구서로 냅니다">
                           💰 수납
                         </button>
                       )}
@@ -680,7 +680,7 @@ export default function StudentLedgerModal({
           {ledger && (
             <div className="ml-auto flex flex-wrap items-stretch gap-2 text-right">
               <Stat label="청구 예정액" value={ledger.totals.toBill} tone={ledger.totals.toBill > 0 ? "amber" : "slate"} />
-              <Stat label="미수금" value={ledger.totals.unpaid} tone={ledger.totals.unpaid > 0 ? "rose" : "slate"} />
+              <Stat label="잔액" value={ledger.totals.unpaid} tone={ledger.totals.unpaid > 0 ? "rose" : "slate"} />
               <Stat label="예치금" value={ledger.totals.deposit} tone={ledger.totals.deposit > 0 ? "teal" : "slate"} />
               <Stat label={month ? `${Number(month.slice(5))}월 수납 예정액` : "학기 수납 예정액"} value={ledger.totals.expected} tone="slate" />
             </div>
@@ -740,7 +740,7 @@ export default function StudentLedgerModal({
                                 className="mt-0.5 max-w-full rounded border border-slate-200 bg-white px-1 py-0.5 text-[11px] disabled:bg-transparent"
                                 title={c.billed ? "이미 청구서에 담긴 항목은 옵션을 바꿀 수 없습니다. 그 장을 취소한 뒤 바꿔주세요." : "납부 옵션"}
                               >
-                                <option value="">미신청</option>
+                                <option value="">등록 안 함</option>
                                 {c.tuition.options.map((o) => (
                                   <option key={o.id} value={o.id}>
                                     {o.name}
@@ -922,7 +922,7 @@ export default function StudentLedgerModal({
                   onClick={() => setAlready(true)}
                   disabled={busy || (unbilled.length === 0 && (ledger?.totals.unpaid ?? 0) <= 0)}
                   className="rounded-lg bg-sky-100 px-3 py-1.5 text-[12px] font-bold text-sky-800 hover:bg-sky-200 disabled:opacity-40"
-                  title="수납 등록 — 청구 전 항목 · 미수금 · 미수금 청구서"
+                  title="수납 등록 — 청구 전 항목 · 잔액 · 미납분 청구서"
                 >
                   💰 수납
                 </button>
@@ -966,7 +966,7 @@ export default function StudentLedgerModal({
                         <div className="mb-0.5 flex items-baseline gap-2 border-b border-slate-200 px-1 text-[11px]">
                           <b className="text-slate-800">{g.title}</b>
                           <span className="text-slate-500">{g.list.length}장 · {won(total)}</span>
-                          {left > 0 && <span className="font-bold text-rose-600">미수 {won(left)}</span>}
+                          {left > 0 && <span className="whitespace-nowrap font-bold text-rose-600">잔액 {won(left)}</span>}
                         </div>
                         <div className="space-y-1">{g.list.map((v) => invRow(v))}</div>
                       </div>
@@ -985,7 +985,7 @@ export default function StudentLedgerModal({
                   <summary className="cursor-pointer text-[11px] font-bold text-slate-500">
                     다른 달 청구서 {invoicesOther.length}장
                     {invoicesOther.filter((v) => v.settled.balance > 0 && v.settled.state !== "이월됨").length > 0
-                      ? ` · 미수 ${invoicesOther.filter((v) => v.settled.balance > 0 && v.settled.state !== "이월됨").length}장`
+                      ? ` · 잔액 ${invoicesOther.filter((v) => v.settled.balance > 0 && v.settled.state !== "이월됨").length}장`
                       : ""}
                   </summary>
                   <div className="mt-1 space-y-1">{invoicesOther.map((v) => invRow(v))}</div>

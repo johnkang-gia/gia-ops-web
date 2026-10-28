@@ -105,8 +105,8 @@ export default function AddonPricesPanel({ plans, rows }: { plans: FeePlan[]; ro
                 <thead className="text-[10px] text-slate-400">
                   <tr>
                     <th className="text-left font-semibold">함께 하는 항목</th>
-                    <th className="text-right font-semibold">합친 금액(월)</th>
-                    <th className="text-right font-semibold">프로그램 몫</th>
+                    <th className="whitespace-nowrap text-right font-semibold">합친 금액(월)</th>
+                    <th className="whitespace-nowrap text-right font-semibold">프로그램 몫</th>
                     <th />
                   </tr>
                 </thead>
@@ -119,7 +119,7 @@ export default function AddonPricesPanel({ plans, rows }: { plans: FeePlan[]; ro
                         <td className="py-0.5">
                           {planName(r.base_plan_id)} <span className="text-[10px] text-slate-400">{base ? won(Number(base.base_amount)) : ""}</span>
                         </td>
-                        <td className="py-0.5 text-right">
+                        <td className="whitespace-nowrap py-0.5 text-right tabular-nums">
                           <input
                             defaultValue={String(Math.round(Number(r.combined_amount)))}
                             disabled={busy || !r.active}
@@ -131,7 +131,7 @@ export default function AddonPricesPanel({ plans, rows }: { plans: FeePlan[]; ro
                         <td className={"py-0.5 text-right tabular-nums " + (delta < 0 ? "font-bold text-rose-600" : "text-violet-800")} title={delta < 0 ? "합친 금액이 함께 하는 항목보다 작습니다 - 0원으로 청구됩니다" : ""}>
                           {won(Math.max(0, delta))}
                         </td>
-                        <td className="py-0.5 text-right">
+                        <td className="whitespace-nowrap py-0.5 text-right tabular-nums">
                           <button onClick={() => void toggle(r)} disabled={busy} className="text-[10px] font-bold text-slate-400 hover:text-slate-700" title={r.active ? "이 조합을 끕니다(지우지 않음)" : "다시 켭니다"}>
                             {r.active ? "끄기" : "켜기"}
                           </button>

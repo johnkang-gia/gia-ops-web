@@ -52,7 +52,7 @@ export default function RevenueClient({
   const year = thisMonth.slice(0, 4);
 
   function copy() {
-    const lines = [["코드", "과목", "구분", "부과", "수납", "결손", "미수"].join("\t")];
+    const lines = [["코드", "과목", "구분", "부과", "수납", "결손", "잔액"].join("\t")];
     for (const a of tree) {
       const r = rolled.get(a.id);
       if (!r) continue;
@@ -94,11 +94,11 @@ export default function RevenueClient({
           <thead className="sticky top-0 bg-slate-50 text-[11px] text-slate-500">
             <tr>
               <th className="px-2 py-1.5 text-left">과목</th>
-              <th className="px-2 py-1.5 text-right">부과</th>
-              <th className="px-2 py-1.5 text-right">수납</th>
-              <th className="px-2 py-1.5 text-right">결손</th>
-              <th className="px-2 py-1.5 text-right">미수</th>
-              <th className="px-2 py-1.5 text-right">수납률</th>
+              <th className="whitespace-nowrap px-2 py-1.5 text-right">부과</th>
+              <th className="whitespace-nowrap px-2 py-1.5 text-right">수납</th>
+              <th className="whitespace-nowrap px-2 py-1.5 text-right">결손</th>
+              <th className="whitespace-nowrap px-2 py-1.5 text-right">잔액</th>
+              <th className="whitespace-nowrap px-2 py-1.5 text-right">수납률</th>
             </tr>
           </thead>
           <tbody>
@@ -114,21 +114,21 @@ export default function RevenueClient({
                     {a.name}
                     {z.guessed !== 0 && a.level === "목" && <span className="ml-1 text-[10px] font-normal text-amber-600">짐작 {won(z.guessed)}</span>}
                   </td>
-                  <td className="px-2 py-1 text-right tabular-nums">{won(z.billed)}</td>
-                  <td className="px-2 py-1 text-right tabular-nums text-emerald-700">{won(z.received)}</td>
-                  <td className="px-2 py-1 text-right tabular-nums text-violet-700">{z.writtenOff ? won(z.writtenOff) : ""}</td>
+                  <td className="whitespace-nowrap px-2 py-1 text-right tabular-nums">{won(z.billed)}</td>
+                  <td className="whitespace-nowrap px-2 py-1 text-right tabular-nums text-emerald-700">{won(z.received)}</td>
+                  <td className="whitespace-nowrap px-2 py-1 text-right tabular-nums text-violet-700">{z.writtenOff ? won(z.writtenOff) : ""}</td>
                   <td className={"px-2 py-1 text-right tabular-nums " + (z.due > 0 ? "text-rose-600" : "text-slate-500")}>{won(z.due)}</td>
-                  <td className="px-2 py-1 text-right tabular-nums text-slate-500">{rate === null ? "" : `${rate}%`}</td>
+                  <td className="whitespace-nowrap px-2 py-1 text-right tabular-nums text-slate-500">{rate === null ? "" : `${rate}%`}</td>
                 </tr>
               );
             })}
             {unmapped && (
               <tr className="border-t border-slate-100 text-amber-800">
                 <td className="px-2 py-1">미분류</td>
-                <td className="px-2 py-1 text-right tabular-nums">{won(unmapped.billed)}</td>
-                <td className="px-2 py-1 text-right tabular-nums">{won(unmapped.received)}</td>
-                <td className="px-2 py-1 text-right tabular-nums">{unmapped.writtenOff ? won(unmapped.writtenOff) : ""}</td>
-                <td className="px-2 py-1 text-right tabular-nums">{won(unmapped.due)}</td>
+                <td className="whitespace-nowrap px-2 py-1 text-right tabular-nums">{won(unmapped.billed)}</td>
+                <td className="whitespace-nowrap px-2 py-1 text-right tabular-nums">{won(unmapped.received)}</td>
+                <td className="whitespace-nowrap px-2 py-1 text-right tabular-nums">{unmapped.writtenOff ? won(unmapped.writtenOff) : ""}</td>
+                <td className="whitespace-nowrap px-2 py-1 text-right tabular-nums">{won(unmapped.due)}</td>
                 <td />
               </tr>
             )}
@@ -136,11 +136,11 @@ export default function RevenueClient({
           <tfoot className="sticky bottom-0 bg-slate-800 text-white">
             <tr className="font-black">
               <td className="px-2 py-1.5">합계 ({from} ~ {to})</td>
-              <td className="px-2 py-1.5 text-right tabular-nums">{won(total.billed)}</td>
-              <td className="px-2 py-1.5 text-right tabular-nums">{won(total.received)}</td>
-              <td className="px-2 py-1.5 text-right tabular-nums">{won(total.writtenOff)}</td>
-              <td className="px-2 py-1.5 text-right tabular-nums">{won(total.due)}</td>
-              <td className="px-2 py-1.5 text-right tabular-nums">{total.billed > 0 ? `${Math.round((total.received / total.billed) * 100)}%` : ""}</td>
+              <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums">{won(total.billed)}</td>
+              <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums">{won(total.received)}</td>
+              <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums">{won(total.writtenOff)}</td>
+              <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums">{won(total.due)}</td>
+              <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums">{total.billed > 0 ? `${Math.round((total.received / total.billed) * 100)}%` : ""}</td>
             </tr>
           </tfoot>
         </table>

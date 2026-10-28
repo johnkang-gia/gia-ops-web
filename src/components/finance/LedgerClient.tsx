@@ -131,7 +131,7 @@ export default function LedgerClient({
       changed.add(r.id);
       const b = before.split("/").map(Number);
       const what =
-        b[2] !== r.unpaid ? `미수금 ${won(b[2])} → ${won(r.unpaid)}`
+        b[2] !== r.unpaid ? `잔액 ${won(b[2])} → ${won(r.unpaid)}`
         : b[1] !== r.billed ? `청구액 ${won(b[1])} → ${won(r.billed)}`
         : b[3] !== r.deposit ? `예치금 ${won(b[3])} → ${won(r.deposit)}`
         : b[5] !== r.paid ? `수납액 ${won(b[5])} → ${won(r.paid)}`
@@ -180,7 +180,7 @@ export default function LedgerClient({
   const [open, setOpen] = useState<string | null>(null);
 
   const [stream, setStream] = useState<Stream>("학비");
-  const [invState, setInvState] = useState<"전체" | "미수" | "수납 완료" | "올톡페이 미발송">("전체");
+  const [invState, setInvState] = useState<"전체" | "잔액 있음" | "수납 완료" | "올톡페이 미발송">("전체");
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [exporting, setExporting] = useState<string[] | null>(null);
   const [preview, setPreview] = useState<{ id: string; label: string; receipt: boolean } | null>(null);
@@ -254,7 +254,7 @@ export default function LedgerClient({
       .filter((v) => v.stream === stream)
       // **그 달의 청구서만.** 「미수」를 고르면 그 달까지 못 받은 장을 달을 가리지 않고 모읍니다 -
       // 지난달에 못 받은 돈이 이번 달 화면에서 사라지면 아무도 안 걷습니다.
-      .filter((v) => (invState === "미수" ? (v.billingMonth ?? "") <= month : v.billingMonth === month))
+      .filter((v) => (invState === "잔액 있음" ? (v.billingMonth ?? "") <= month : v.billingMonth === month))
       .filter((v) => tabIncludes(dept, deptOf(v)))
       .filter((v) => inScope({ grade: v.grade, className: v.className }, scope))
       .filter((v) => (ff.pinned ? v.studentId === ff.pinned.id : !needle || `${v.studentName} ${v.invoiceNo} ${v.scope ?? ""} ${v.round}`.toLowerCase().includes(needle)))
@@ -325,7 +325,7 @@ export default function LedgerClient({
         )}
         {tab === "학생" ? (
           <label className="flex items-center gap-1 text-[11px] text-slate-600">
-            <input type="checkbox" checked={onlyOpen} onChange={(e) => setOnlyOpen(e.target.checked)} /> 미청구·미수 학생만
+            <input type="checkbox" checked={onlyOpen} onChange={(e) => setOnlyOpen(e.target.checked)} /> 미청구·잔액 학생만
           </label>
         ) : (
           <>
@@ -337,7 +337,7 @@ export default function LedgerClient({
               ))}
             </span>
             <select value={invState} onChange={(e) => setInvState(e.target.value as typeof invState)} className="rounded-lg border border-slate-300 px-2 py-1 text-[12px]">
-              {["전체", "미수", "수납 완료", "올톡페이 미발송"].map((s) => (
+              {["전체", "잔액 있음", "수납 완료", "올톡페이 미발송"].map((s) => (
                 <option key={s}>{s}</option>
               ))}
             </select>
@@ -367,7 +367,7 @@ export default function LedgerClient({
             { label: `${Number(month.slice(5))}월 청구 예정`, value: sum((r) => r.toBill), tone: "amber" },
             { label: "청구", value: sum((r) => r.billed), tone: "sky" },
             { label: "받음", value: sum((r) => r.paid), tone: "emerald" },
-            { label: "미수", value: sum((r) => r.unpaid), tone: "rose" },
+            { label: "잔액", value: sum((r) => r.unpaid), tone: "rose" },
           ]}
         />
       )}
@@ -415,7 +415,7 @@ export default function LedgerClient({
                 <span>청구 예정 <b className="tabular-nums text-amber-700">{won(r.toBill)}</b></span>
                 <span>청구 <b className="tabular-nums text-sky-700">{won(r.billed)}</b></span>
                 <span>받음 <b className="tabular-nums text-emerald-700">{won(r.paid)}</b></span>
-                <span>미수 <b className="tabular-nums text-rose-700">{won(r.unpaid)}</b></span>
+                <span>잔액 <b className="tabular-nums text-rose-700">{won(r.unpaid)}</b></span>
               </p>
             </button>
           ))}
@@ -555,7 +555,7 @@ export default function LedgerClient({
                 <th rowSpan={2} className="whitespace-nowrap px-1.5 text-right align-bottom" title="이 달 청구서의 합">{Number(month.slice(5))}월 청구액</th>
                 <th rowSpan={2} className="whitespace-nowrap px-1.5 text-right align-bottom">수납</th>
                 <th rowSpan={2} className="whitespace-nowrap px-1.5 text-left align-bottom">수단</th>
-                <th rowSpan={2} className="whitespace-nowrap px-1.5 text-right align-bottom">미수금</th>
+                <th rowSpan={2} className="whitespace-nowrap px-1.5 text-right align-bottom">잔액</th>
                 <th rowSpan={2} className="whitespace-nowrap px-1.5 text-right align-bottom">예치금</th>
                 <th rowSpan={2} className="whitespace-nowrap px-1.5 text-right align-bottom">학기예정</th>
               </tr>
@@ -598,7 +598,7 @@ export default function LedgerClient({
         <div>
           <div className="mb-2 flex flex-wrap items-center gap-2 text-[12px]">
             <span className="font-bold text-slate-700">{invRows.length}장 · {won(invSum)}</span>
-            <span className="text-rose-700">미수금 {won(invBalance)}</span>
+            <span className="text-rose-700">잔액 {won(invBalance)}</span>
             <span className="ml-auto flex items-center gap-1">
               <button
                 onClick={() => setExporting(picked.size > 0 ? [...picked] : invRows.filter((v) => v.state !== "완납" && !v.offline && !v.exported).map((v) => v.id))}
@@ -662,7 +662,7 @@ export default function LedgerClient({
                       <td className="whitespace-nowrap px-2 py-1 text-slate-500" title={`발행일 ${v.issueDate}`}>
                         <span className="font-semibold text-slate-700">{v.round}</span>
                       </td>
-                      <td className="px-2 py-1 text-right tabular-nums font-bold">{won(v.amount)}</td>
+                      <td className="whitespace-nowrap px-2 py-1 text-right tabular-nums font-bold">{won(v.amount)}</td>
                       <td className="px-2 py-1">
                         {(() => {
                           // 말·색은 재무 모든 화면이 같은 표(`billStatus.ts`)에서 옵니다.
@@ -678,7 +678,7 @@ export default function LedgerClient({
                       <td className="px-2 py-1 text-[10px]">
                         {v.offline ? <span className="text-slate-300">—</span> : v.exported ? <span className="font-bold text-violet-700">올톡 보냄</span> : <span className="text-slate-400">안 보냄</span>}
                       </td>
-                      <td className="px-2 py-1 text-right">
+                      <td className="whitespace-nowrap px-2 py-1 text-right tabular-nums">
                         {(v.state === "완납" || v.state === "부분납부") && (
                           <button
                             onClick={() => setPreview({ id: v.id, label: `${v.studentName} · ${v.invoiceNo} ${v.state === "완납" ? "영수증" : "일부 납부 영수증"}`, receipt: true })}

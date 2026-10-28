@@ -109,7 +109,7 @@ export default function CancelInvoiceModal({
           <b><Who name={studentName} /></b> · {invoice.invoice_no} · {total.toLocaleString("ko-KR")}원
           <br />
           지우지 않고 <b>취소로 남깁니다.</b> 나중에 무엇이 왜 취소됐는지 읽을 수 있어야 합니다. 취소하면 이 학생은 다시
-          <b> 미발행</b>이 되어, 항목을 고친 뒤 새로 발행할 수 있습니다(새 번호가 붙습니다).
+          <b> 미청구</b>이 되어, 항목을 고친 뒤 새로 발행할 수 있습니다(새 번호가 붙습니다).
         </p>
 
         {/* 이미 낸 분께 또 청구가 나가는 일을 막는 표시입니다. 여기서 취소해도 올톡페이 쪽은

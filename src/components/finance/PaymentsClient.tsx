@@ -374,7 +374,7 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
 
   async function addManual() {
     if (!manual.amount || !manual.invoiceId) {
-      notify("인보이스와 금액을 골라주세요.", "error");
+      notify("청구서와 금액을 골라주세요.", "error");
       return;
     }
     setBusy(true);
@@ -448,7 +448,7 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
     <div className="mx-auto max-w-6xl p-4 sm:p-6">
       <div className="mb-1 flex flex-wrap items-baseline gap-2">
         <h1 className="text-lg font-bold">💳 수납 내역</h1>
-        <span className="text-xs text-slate-400">올톡페이 엑셀을 올리면 인보이스에 붙습니다</span>
+        <span className="text-xs text-slate-400">올톡페이 엑셀을 올리면 청구서에 붙습니다</span>
       </div>
       <Explain className="mb-4">
         자동으로 붙일 수 있는 것만 붙이고, <b>애매한 것은 애매하다고 말합니다.</b> 어림짐작으로 붙이면 틀린 곳을 아무도
@@ -586,10 +586,10 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
                 <tr>
                   <th className="px-2 py-1.5">줄</th>
                   <th className="px-2 py-1.5">날짜</th>
-                  <th className="px-2 py-1.5 text-right">금액</th>
+                  <th className="whitespace-nowrap px-2 py-1.5 text-right">금액</th>
                   <th className="px-2 py-1.5">입금자</th>
                   <th className="px-2 py-1.5">적요</th>
-                  <th className="px-2 py-1.5">붙일 인보이스</th>
+                  <th className="px-2 py-1.5">붙일 청구서</th>
                   <th className="px-2 py-1.5"></th>
                 </tr>
               </thead>
@@ -598,7 +598,7 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
                   <tr key={s.sourceKey} className={"border-t border-slate-100 " + (s.skip ? "opacity-40" : s.invoiceId ? "" : "bg-amber-50/60")}>
                     <td className="px-2 py-1.5 text-slate-400">{s.rowNo}</td>
                     <td className="px-2 py-1.5">{s.paidAt}</td>
-                    <td className="px-2 py-1.5 text-right font-bold tabular-nums">{won(s.amount)}</td>
+                    <td className="whitespace-nowrap px-2 py-1.5 text-right font-bold tabular-nums">{won(s.amount)}</td>
                     <td className="px-2 py-1.5">{s.payerName || <span className="text-slate-300">—</span>}</td>
                     <td className="max-w-[200px] truncate px-2 py-1.5 text-slate-500">{s.memo}</td>
                     <td className="px-2 py-1.5">
@@ -626,7 +626,7 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
                       </select>
                       <span className={"ml-1.5 text-[10px] " + (s.invoiceId ? "text-emerald-600" : "text-amber-700")}>{s.reason}</span>
                     </td>
-                    <td className="px-2 py-1.5 text-right">
+                    <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums">
                       <button
                         onClick={() => setStaged((p) => p!.map((x, i) => (i === idx ? { ...x, skip: !x.skip } : x)))}
                         className="text-[11px] font-semibold text-slate-400 hover:text-slate-700"
@@ -664,12 +664,12 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
           <table className="w-full text-left text-[12px]">
             <thead className="bg-slate-50 text-[11px] text-slate-500">
               <tr>
-                <th className="px-3 py-2">인보이스</th>
+                <th className="px-3 py-2">청구서</th>
                 <th className="px-3 py-2">학생</th>
                 <th className="px-3 py-2">기한</th>
-                <th className="px-3 py-2 text-right">청구</th>
-                <th className="px-3 py-2 text-right">입금</th>
-                <th className="px-3 py-2 text-right">잔액</th>
+                <th className="whitespace-nowrap px-3 py-2 text-right">청구</th>
+                <th className="whitespace-nowrap px-3 py-2 text-right">입금</th>
+                <th className="whitespace-nowrap px-3 py-2 text-right">잔액</th>
                 <th className="px-3 py-2">밀린 기간</th>
                 <th className="px-3 py-2"> </th>
               </tr>
@@ -699,8 +699,8 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
                       {x.v.due_date}
                       {overdue && " · 기한 지남"}
                     </td>
-                    <td className="px-3 py-1.5 text-right tabular-nums text-slate-600">{won(Number(x.v.total_amount))}</td>
-                    <td className="px-3 py-1.5 text-right tabular-nums text-emerald-700">{x.paid > 0 ? won(x.paid) : "—"}</td>
+                    <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-600">{won(Number(x.v.total_amount))}</td>
+                    <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-emerald-700">{x.paid > 0 ? won(x.paid) : "—"}</td>
                     <td className={"px-3 py-1.5 text-right font-bold tabular-nums " + (x.balance > 0 ? "text-amber-700" : "text-slate-300")}>
                       {x.balance > 0 ? won(x.balance) : "완납"}
                     </td>
@@ -720,7 +720,7 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
                         <span className="text-slate-300">—</span>
                       )}
                     </td>
-                    <td className="px-3 py-1.5 text-right">
+                    <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums">
                       {x.balance > 0 && (
                         <button
                           onClick={() =>
@@ -742,7 +742,7 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
               {(tab === "미납" ? unpaid : issuedInMonth).length === 0 && (
                 <tr>
                   <td colSpan={8} className="px-3 py-10 text-center text-slate-400">
-                    {tab === "미납" ? "미납이 없습니다." : "발행한 인보이스가 없습니다."}
+                    {tab === "미납" ? "미납이 없습니다." : "발행한 청구서가 없습니다."}
                   </td>
                 </tr>
               )}
@@ -755,10 +755,10 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
             <thead className="bg-slate-50 text-[11px] text-slate-500">
               <tr>
                 <th className="px-3 py-2">날짜</th>
-                <th className="px-3 py-2 text-right">금액</th>
+                <th className="whitespace-nowrap px-3 py-2 text-right">금액</th>
                 <th className="px-3 py-2">입금자</th>
                 <th className="px-3 py-2">적요</th>
-                <th className="px-3 py-2">붙은 인보이스</th>
+                <th className="px-3 py-2">붙은 청구서</th>
                 <th className="px-3 py-2" />
               </tr>
             </thead>
@@ -768,7 +768,7 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
                 return (
                   <tr key={p.id} className={"border-t border-slate-100 " + (inv ? "" : "bg-amber-50/60")}>
                     <td className="px-3 py-1.5">{p.paid_at}</td>
-                    <td className="px-3 py-1.5 text-right font-bold tabular-nums">{won(Number(p.amount))}</td>
+                    <td className="whitespace-nowrap px-3 py-1.5 text-right font-bold tabular-nums">{won(Number(p.amount))}</td>
                     <td className="px-3 py-1.5">{p.payer_name ?? <span className="text-slate-300">—</span>}</td>
                     <td className="max-w-[220px] truncate px-3 py-1.5 text-slate-500">{p.memo}</td>
                     <td className="px-3 py-1.5">
@@ -784,7 +784,7 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
                           onChange={(e) => e.target.value && void attach(p, e.target.value)}
                           className="w-60 rounded border border-amber-300 px-1 py-0.5 text-[12px]"
                         >
-                          <option value="">— 붙일 인보이스 고르기 —</option>
+                          <option value="">— 붙일 청구서 고르기 —</option>
                           {unpaidAll.map((u) => (
                             <option key={u.v.id} value={u.v.id}>
                               {u.v.invoice_no} {u.v.student_name_ko ?? u.v.student_name} · {won(u.balance)}
@@ -793,7 +793,7 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
                         </select>
                       )}
                     </td>
-                    <td className="px-3 py-1.5 text-right">
+                    <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums">
                       {/* **환불은 입금 줄에서 시작합니다.** 돌려줄 일은 그 입금을 보고 있을 때
                           생기고, 화면을 옮기게 하면 「나중에」가 되어 안 적힙니다.
                           이미 환불인 줄에는 안 붙입니다 - 환불의 환불은 뜻이 없습니다. */}
@@ -842,7 +842,7 @@ export default function PaymentsClient({ invoices, payments: initial, currentUse
         </summary>
         <div className="flex flex-wrap items-end gap-2 border-t border-slate-100 p-3">
           <label className="text-[11px] text-slate-500">
-            인보이스
+            청구서
             <select
               value={manual.invoiceId}
               onChange={(e) => {

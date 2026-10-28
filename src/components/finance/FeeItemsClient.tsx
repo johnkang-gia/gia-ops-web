@@ -304,7 +304,7 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
   async function save() {
     const name = form.name.trim();
     if (!name) {
-      notify("인보이스에 찍힐 이름을 적어주세요.", "error");
+      notify("청구서에 찍힐 이름을 적어주세요.", "error");
       return;
     }
     if (!form.category.trim()) {
@@ -552,7 +552,7 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
         {/* 한 줄에 다 늘어놓으면 화면 너비에 따라 아무 데서나 줄이 바뀌어, 열 때마다 배치가
             달라집니다. 줄을 뜻으로 묶습니다.
               ① 누가 사는가  — 부서 · 분류 · 학년 · 반
-              ② 무엇인가     — 인보이스 이름 · 한글 이름
+              ② 무엇인가     — 청구서 이름 · 한글 이름
               ③ 얼마인가     — 단가. 눈으로 확인하는 값이라 떼어 놓습니다 */}
         <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
           {/* 부서를 맨 앞에 둡니다. 고르고 나서야 나머지가 무엇을 위한 것인지 정해집니다. */}
@@ -659,7 +659,7 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
 
           {/* 대상 안에서도 **고른 아이만** 사는 항목(3학년 중국어).
               범위(학년·반)와는 다른 축이라 체크 하나로 둡니다 - 끄면 대상 전원에게 자동으로
-              붙고, 켜면 인보이스 표에서 살 아이를 골라야 합니다. 이 둘을 한 칸에 섞으면
+              붙고, 켜면 학비외 표에서 살 아이를 골라야 합니다. 이 둘을 한 칸에 섞으면
               전원에게 붙인 뒤 빼는 것을 잊어 **돈이 잘못 청구됩니다.** */}
           {form.target_scope !== "개별" && (
             <label
@@ -679,7 +679,7 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
         {/* 지금 고른 대상이 무슨 뜻인지 한 줄로. 고르고 나서 확인하는 자리입니다. */}
         <p className="mt-1.5 text-[11px] text-slate-500">
           {form.target_scope === "개별"
-            ? "아무에게도 자동으로 안 붙습니다. 인보이스 표에서 한 명씩 넣습니다."
+            ? "아무에게도 자동으로 안 붙습니다. 학비외 표에서 한 명씩 넣습니다."
             : form.target_scope === "부서전체"
               ? "학년이 늘어도 저절로 따라옵니다."
               : form.target_scope === "그룹"
@@ -688,7 +688,7 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
                   ? `${gradeChoice}학년 ${form.default_classes[0] ?? ""} 에서만 쓰는 항목입니다.`
                   : `${gradeChoice}학년 것입니다.`}
           {form.target_scope !== "개별" && !form.auto_apply && (
-            <span className="ml-1 font-semibold text-amber-700">자동으로 붙지 않습니다 — 인보이스 표에서 살 아이만 체크하세요.</span>
+            <span className="ml-1 font-semibold text-amber-700">자동으로 붙지 않습니다 — 학비외 표에서 살 아이만 체크하세요.</span>
           )}
         </p>
 
@@ -707,7 +707,7 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
             있으면 지나쳐 읽습니다. */}
         <div className="mt-3 flex flex-wrap items-end gap-x-3 gap-y-2 border-t border-slate-100 pt-3">
           <label className="text-[11px] text-slate-500">
-            <span className="mb-0.5 block font-semibold">인보이스 이름 (영문)</span>
+            <span className="mb-0.5 block font-semibold">청구서 이름 (영문)</span>
             <input
               value={form.name}
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
@@ -766,7 +766,7 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
         </div>
         {form.default_grades.length === 0 && form.default_classes.length === 0 && (
           <p className="mt-2 text-[11px] text-amber-700">
-            대상을 고르지 않으면 <b>아무에게도 자동으로 붙지 않습니다.</b> 학생 화면에서 한 명씩 넣어야 하고, 인보이스 표에서는
+            대상을 고르지 않으면 <b>아무에게도 자동으로 붙지 않습니다.</b> 학생 화면에서 한 명씩 넣어야 하고, 학비외 표에서는
             &lsquo;개별 지정&rsquo;으로 뜹니다.
           </p>
         )}
@@ -780,7 +780,7 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
           <div className="w-full max-w-sm rounded-2xl bg-white p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <p className="text-[15px] font-bold text-slate-800">새 분류 만들기</p>
             <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
-              분류는 인보이스 표의 탭이 되고, 청구서를 나눠 발행하는 단위이기도 합니다. 교재와 교복을 다른 날 보낸다면 분류를
+              분류는 학비외 표의 탭이 되고, 청구서를 나눠 발행하는 단위이기도 합니다. 교재와 교복을 다른 날 보낸다면 분류를
               나누는 것이 맞습니다.
             </p>
             <input
@@ -847,7 +847,7 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
               {/* 머리줄을 눌러 정렬합니다. 한 번 더 누르면 반대 방향입니다. */}
               <th className="w-20 px-3 py-2">{sortHead("분류")}</th>
               <th className="px-3 py-2">{sortHead("이름")}</th>
-              <th className="w-28 px-3 py-2 text-right">{sortHead("단가")}</th>
+              <th className="whitespace-nowrap w-28 px-3 py-2 text-right">{sortHead("단가")}</th>
               <th className="w-56 px-3 py-2">{sortHead("대상", "기본 대상")}</th>
               <th className="w-24 px-3 py-2"></th>
             </tr>
@@ -868,7 +868,7 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
                   {i.name_ko && <span className="ml-1.5 text-[11px] text-slate-400">{i.name_ko}</span>}
                   {i.note && <span className="ml-1.5 text-[11px] text-slate-400">· {i.note}</span>}
                 </td>
-                <td className="px-3 py-2 text-right font-bold tabular-nums text-slate-700">{won(Number(i.unit_price))}</td>
+                <td className="whitespace-nowrap px-3 py-2 text-right font-bold tabular-nums text-slate-700">{won(Number(i.unit_price))}</td>
                 <td className="px-3 py-2">
                   <span className="flex flex-wrap items-center gap-1">
                     {/* 대상은 targetLabel 한 곳에서 만듭니다.
@@ -889,7 +889,7 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
                         i.target_scope === "부서전체"
                           ? "이 부서 전원. 학년이 늘어도 저절로 따라옵니다"
                           : targetLabel(i) === "개별 지정"
-                            ? "아무에게도 자동으로 붙지 않습니다. 인보이스 표에서 한 명씩 넣습니다"
+                            ? "아무에게도 자동으로 붙지 않습니다. 학비외 표에서 한 명씩 넣습니다"
                             : `대상: ${targetLabel(i)}`
                       }
                     >
@@ -900,21 +900,21 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
                     {i.auto_apply === false && targetLabel(i) !== "개별 지정" && (
                       <span
                         className="rounded bg-amber-50 px-1.5 text-[11px] font-semibold text-amber-700"
-                        title="대상 안에서 고른 아이에게만 붙습니다. 인보이스 표에서 체크하세요"
+                        title="대상 안에서 고른 아이에게만 붙습니다. 학비외 표에서 체크하세요"
                       >
                         고른 아이만
                       </span>
                     )}
                   </span>
                 </td>
-                <td className="px-3 py-2 text-right">
+                <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
                   <button onClick={() => edit(i)} className="mr-1 text-[11px] font-semibold text-slate-500 hover:text-slate-800">
                     고치기
                   </button>
                   <button
                     onClick={() => setConfirming(i)}
                     className="text-[11px] font-semibold text-red-500 hover:text-red-700"
-                    title="지웁니다. 이미 발행한 인보이스는 그대로입니다"
+                    title="지웁니다. 이미 발행한 청구서는 그대로입니다"
                   >
                     삭제
                   </button>
@@ -947,7 +947,7 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
 
             <ul className="mt-3 space-y-1 text-[12px] leading-relaxed text-slate-600">
               <li>
-                ✓ <b>이미 발행한 인보이스는 그대로입니다.</b> 청구서는 이 항목을 가리키는 것이 아니라, 보낼 때의 이름과 금액을
+                ✓ <b>이미 발행한 청구서는 그대로입니다.</b> 청구서는 이 항목을 가리키는 것이 아니라, 보낼 때의 이름과 금액을
                 자기 줄에 베껴 두기 때문입니다.
               </li>
               <li>✓ 단가 이력(언제 얼마에서 얼마로 올랐는지)도 남습니다.</li>
@@ -955,7 +955,7 @@ export default function FeeItemsClient({ initialItems, initialCategories, terms,
                 {usageByItem[confirming.id] ? "⚠" : "·"} 손으로 넣거나 뺀 아이 <b>{usageByItem[confirming.id] ?? 0}명</b>의 조정이 함께
                 사라집니다.
               </li>
-              <li>· 앞으로 만드는 인보이스에는 이 항목이 나오지 않습니다.</li>
+              <li>· 앞으로 만드는 청구서에는 이 항목이 나오지 않습니다.</li>
             </ul>
             <p className="mt-2 text-[12px] font-semibold text-red-600">되돌릴 수 없습니다.</p>
 

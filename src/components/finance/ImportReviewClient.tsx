@@ -386,7 +386,7 @@ export default function ImportReviewClient({
                               <span className="text-slate-500">{r.rawName}</span>
                               {r.rawWhy && <span className="ml-1 text-[10px] text-slate-400">· {r.rawWhy}</span>}
                             </td>
-                            <td className="px-1 py-1.5 text-right font-bold tabular-nums text-slate-800">{won(r.amount)}</td>
+                            <td className="whitespace-nowrap px-1 py-1.5 text-right font-bold tabular-nums text-slate-800">{won(r.amount)}</td>
                             <td className="px-1 py-1.5 text-[10px] text-slate-500">
                               {r.plan === "청구서 만들고 수납" ? (
                                 <span className="text-emerald-700">청구 + 수납</span>
@@ -402,7 +402,7 @@ export default function ImportReviewClient({
                               {r.issuedAt}
                               {r.paidAt && r.paidAt !== r.issuedAt && <span className="ml-1 text-emerald-600">→ {r.paidAt}</span>}
                             </td>
-                            <td className="px-3 py-1.5 text-right">
+                            <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums">
                               {r.appliedAt ? (
                                 <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[9px] font-bold text-white">반영됨</span>
                               ) : (

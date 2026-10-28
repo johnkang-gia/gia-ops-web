@@ -1070,7 +1070,7 @@ export default function FeePlansClient({
                   <th className="px-2 py-1.5 font-semibold">적용 범위</th>
                   <th className="px-2 py-1.5 font-semibold">기간</th>
                   <th className="px-2 py-1.5 font-semibold">승인</th>
-                  <th className="px-2 py-1.5 text-right font-semibold">상태</th>
+                  <th className="whitespace-nowrap px-2 py-1.5 text-right font-semibold">상태</th>
                 </tr>
               </thead>
               <tbody>
@@ -1105,7 +1105,7 @@ export default function FeePlansClient({
                       {d.effective_from || d.effective_to ? `${d.effective_from ?? "…"} ~ ${d.effective_to ?? "…"}` : "제한 없음"}
                     </td>
                     <td className="px-2 py-1.5 text-slate-500">{d.requires_approval ? "필요" : "-"}</td>
-                    <td className="px-2 py-1.5 text-right">
+                    <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums">
                       <button
                         onClick={() => toggleDiscount(d)}
                         className={

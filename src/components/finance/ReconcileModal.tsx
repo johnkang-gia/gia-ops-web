@@ -153,9 +153,9 @@ export default function ReconcileModal({ students, onClose, onOpenStudent }: Pro
                     <thead className="bg-slate-50 text-[11px] text-slate-500">
                       <tr>
                         <th className="px-2 py-1 text-left">학생</th>
-                        <th className="px-2 py-1 text-right">청구서</th>
-                        <th className="px-2 py-1 text-right">우리 계산</th>
-                        <th className="px-2 py-1 text-right">차이</th>
+                        <th className="whitespace-nowrap px-2 py-1 text-right">청구서</th>
+                        <th className="whitespace-nowrap px-2 py-1 text-right">우리 계산</th>
+                        <th className="whitespace-nowrap px-2 py-1 text-right">차이</th>
                         <th className="px-2 py-1 text-left">청구 내용</th>
                       </tr>
                     </thead>
@@ -182,8 +182,8 @@ export default function ReconcileModal({ students, onClose, onOpenStudent }: Pro
                               </span>
                             )}
                           </td>
-                          <td className="px-2 py-1.5 text-right tabular-nums font-bold text-slate-800">{won(g.billed)}</td>
-                          <td className="px-2 py-1.5 text-right tabular-nums text-slate-600">
+                          <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums font-bold text-slate-800">{won(g.billed)}</td>
+                          <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums text-slate-600">
                             {g.student ? won(g.ours) : "—"}
                           </td>
                           <td

@@ -214,8 +214,8 @@ function AdjustTab({
         <thead>
           <tr className="text-left text-[10px] text-slate-400">
             <th className="py-1">항목</th>
-            <th className="py-1 text-right">지금</th>
-            <th className="py-1 text-right">고친 뒤</th>
+            <th className="whitespace-nowrap py-1 text-right">지금</th>
+            <th className="whitespace-nowrap py-1 text-right">고친 뒤</th>
           </tr>
         </thead>
         <tbody>
@@ -225,8 +225,8 @@ function AdjustTab({
                 {l.name}
                 {l.is_adjustment && l.adjust_reason ? <span className="ml-1 text-[10px]">({l.adjust_reason})</span> : null}
               </td>
-              <td className="py-1 text-right tabular-nums">{won(l.is_adjustment ? Number(l.amount) : (current.get(l.id) ?? 0))}</td>
-              <td className="py-1 text-right">
+              <td className="whitespace-nowrap py-1 text-right tabular-nums">{won(l.is_adjustment ? Number(l.amount) : (current.get(l.id) ?? 0))}</td>
+              <td className="whitespace-nowrap py-1 text-right tabular-nums">
                 {!l.is_adjustment && !l.carried_from_invoice_id && (
                   <input
                     value={to[l.id] ?? ""}
@@ -249,7 +249,7 @@ function AdjustTab({
                   className="w-full rounded border border-slate-200 px-1.5 py-0.5 outline-none focus:border-teal-400"
                 />
               </td>
-              <td className="py-1 text-right">
+              <td className="whitespace-nowrap py-1 text-right tabular-nums">
                 <input
                   value={e.amount}
                   onChange={(ev) => setExtra(extra.map((x, j) => (j === i ? { ...x, amount: ev.target.value } : x)))}
@@ -308,7 +308,7 @@ function WriteOffTab({ target, busy, onSubmit }: { target: FixTarget; busy: bool
     <div>
       <p className="mb-2 rounded-lg bg-violet-50 px-3 py-2 text-[11px] leading-relaxed text-violet-900">
         <b>결손</b>은 받지 않기로 정하는 돈입니다(퇴소 후 연락 두절, 학교 사정으로 면제 등). 받은 돈이 아니므로 수납에는 안 들어가고,
-        미수금에서만 빠집니다. <b>올린 사람이 아닌 관리자</b>가 [회계 → 결재]에서 승인해야 반영됩니다.
+        잔액에서만 빠집니다. <b>올린 사람이 아닌 관리자</b>가 [회계 → 결재]에서 승인해야 반영됩니다.
       </p>
       <label className="block text-[11px] font-semibold text-slate-600">결손 금액 (남은 돈 {won(target.balance)} 까지)</label>
       <input
@@ -385,7 +385,7 @@ function ReclassTab({
                   />
                 </td>
                 <td className="py-1">{l.name}</td>
-                <td className="py-1 text-right tabular-nums">{won(Number(l.amount))}</td>
+                <td className="whitespace-nowrap py-1 text-right tabular-nums">{won(Number(l.amount))}</td>
                 <td className="py-1 pl-2 text-[11px]">
                   <span className={r?.how === "짐작" || r?.how === "모름" ? "text-amber-700" : "text-slate-600"}>
                     {accountLabel(r?.accountId ? byId.get(r.accountId) : null)}

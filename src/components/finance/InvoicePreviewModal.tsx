@@ -60,7 +60,7 @@ export default function InvoicePreviewModal({ invoiceId, label, onClose, student
     <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/50 p-3" onClick={onClose}>
       <div className="flex h-[92vh] w-full max-w-4xl flex-col rounded-xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-3 py-2">
-          <span className="text-sm font-black text-slate-800">{receipt ? "📄" : "🧾"} {label ?? (receipt ? "영수증" : "인보이스")}</span>
+          <span className="text-sm font-black text-slate-800">{receipt ? "📄" : "🧾"} {label ?? (receipt ? "영수증" : "청구서")}</span>
           {/* **학비 + 학비외 한 장.** 두 장을 따로 보내면 학부모는 두 번 결제하고, 어느 쪽을
               냈는지 물어봅니다. 합본은 열 때마다 살아 있는 장을 다시 읽으므로 한쪽을 고치면
               함께 바뀝니다 - 숫자를 옮겨 적는 자리가 없습니다. */}
@@ -106,7 +106,7 @@ export default function InvoicePreviewModal({ invoiceId, label, onClose, student
           <iframe
             ref={ref}
             src={src}
-            title="인보이스"
+            title="청구서"
             onLoad={() => setReady(true)}
             className={"h-full w-full " + (ready ? "" : "hidden")}
           />

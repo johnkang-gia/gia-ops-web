@@ -326,7 +326,7 @@ export default function AlltalkpayExport({ invoiceIds, onClose, onMarked }: Prop
                       <th className="px-2 py-1 text-left">{COLUMNS[1]}</th>
                       <th className="px-2 py-1 text-left">대상</th>
                       <th className="px-2 py-1 text-left">{COLUMNS[2]}</th>
-                      <th className="px-2 py-1 text-right">{COLUMNS[3]}</th>
+                      <th className="whitespace-nowrap px-2 py-1 text-right">{COLUMNS[3]}</th>
                       <th className="px-2 py-1 text-left">{COLUMNS[0]}</th>
                       <th className="px-2 py-1 text-left">{COLUMNS[4]}</th>
                     </tr>
@@ -372,7 +372,7 @@ export default function AlltalkpayExport({ invoiceIds, onClose, onMarked }: Prop
                           />
                         </td>
                         <td className="px-2 py-1 tabular-nums text-slate-600">{prettyPhone(r.phone)}</td>
-                        <td className="px-2 py-1 text-right tabular-nums font-bold text-slate-800">{won(r.amount)}</td>
+                        <td className="whitespace-nowrap px-2 py-1 text-right tabular-nums font-bold text-slate-800">{won(r.amount)}</td>
                         <td className="px-2 py-1 text-slate-500">{r.memo}</td>
                         <td className="px-2 py-1 tabular-nums text-slate-500">
                           {expiryDate} {String(dueHour).padStart(2, "0")}시

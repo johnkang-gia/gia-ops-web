@@ -471,12 +471,12 @@ export default function TuitionGridClient({
       const bits: string[] = [];
       // 직접 기입은 옵션 할인·학생 할인이 붙지 않은 «정한 금액»입니다. 할인을 비고에 적으면
       // 청구서에 없는 할인을 학부모에게 설명하게 됩니다.
-      if (!line.manual && line.optionDiscount > 0) bits.push(`${line.optionName} −${won(line.optionDiscount)}`);
-      for (const d of line.discounts) bits.push(`${d.name} −${won(d.amount)}`);
+      if (!line.manual && line.optionDiscount > 0) bits.push(`${line.optionName} −${won(line.optionDiscount)}`);
+      for (const d of line.discounts) bits.push(`${d.name} −${won(d.amount)}`);
       // **사람이 정한 금액은 깎인 액수가 0이어도 적습니다.** 원래 금액과 같아도 「이건
       // 계산이 아니라 사람이 정한 것」이라는 사실이 요금 인상 때 이 칸이 안 따라오는
       // 이유가 됩니다.
-      if (line.manual && bits.length === 0) bits.push(`직접 기입 ${won(line.amount)}`);
+      if (line.manual && bits.length === 0) bits.push(`직접 기입 ${won(line.amount)}`);
       if (line.manual && line.note?.trim() && !bits.some((b) => b.includes(line.note!.trim()))) {
         bits.push(line.note.trim());
       }
@@ -1330,7 +1330,7 @@ export default function TuitionGridClient({
         </span>
         <label className="flex items-center gap-1 text-[11px] font-semibold text-slate-600">
           <input type="checkbox" checked={onlyUnissued} onChange={(e) => setOnlyUnissued(e.target.checked)} />
-          미발행만
+          미청구만
         </label>
 
         <span className="ml-auto flex flex-wrap items-center gap-2">
@@ -1612,22 +1612,22 @@ export default function TuitionGridClient({
                 비고 <span className="font-normal text-slate-400">(받는 할인)</span>
               </th>
               <th
-                className="min-w-[92px] border-b border-l-2 border-slate-400 bg-slate-100 px-2 py-1.5 text-right font-semibold text-slate-600"
+                className="whitespace-nowrap min-w-[92px] border-b border-l-2 border-slate-400 bg-slate-100 px-2 py-1.5 text-right font-semibold text-slate-600"
                 title="이 아이의 표에 정해진 학비 합. 아직 청구서가 안 나간 것도 들어갑니다."
               >
                 청구액
               </th>
               <th
-                className="min-w-[92px] border-b border-l border-emerald-200 bg-emerald-100 px-2 py-1.5 text-right font-semibold text-emerald-800"
+                className="whitespace-nowrap min-w-[92px] border-b border-l border-emerald-200 bg-emerald-100 px-2 py-1.5 text-right font-semibold text-emerald-800"
                 title="이 학기 학비 청구서에 실제로 들어온 돈. 「직접수납」으로 적어둔 것도 들어갑니다."
               >
                 수납
               </th>
               <th
-                className="min-w-[92px] border-b border-l border-rose-200 bg-rose-100 px-2 py-1.5 text-right font-semibold text-rose-800"
+                className="whitespace-nowrap min-w-[92px] border-b border-l border-rose-200 bg-rose-100 px-2 py-1.5 text-right font-semibold text-rose-800"
                 title="청구액에서 수납을 뺀 값. 더 받았으면 「과납」으로 적습니다."
               >
-                미수금
+                잔액
               </th>
               {/* **세 단추가 한 줄에 들어가야 합니다.** 미발행 줄에는 「미발행 · 💰 이미
                   받음 · 발행 →」 셋이 들어가는데 칸이 130px 이라 글자가 접혀 내려가면서
@@ -1686,7 +1686,7 @@ export default function TuitionGridClient({
                       }
                     />
                   </td>
-                  <td className={"group sticky left-8 z-10 border-b border-r border-slate-200 px-2 py-1 " + (on ? "bg-teal-50" : nameBg)}>
+                  <td className={"group sticky left-8 z-10 whitespace-nowrap border-b border-r border-slate-200 px-2 py-1 " + (on ? "bg-teal-50" : nameBg)}>
                     <b className="text-slate-800"><Who id={s.id} name={s.name} /></b>
                     <PinButton id={s.id} name={s.name} />
                     <span className="ml-1 text-[10px] text-slate-400">
@@ -1921,28 +1921,28 @@ export default function TuitionGridClient({
                       : undefined;
                     return (
                       <>
-                        <td className="border-b border-l-2 border-slate-400 px-2 py-1 text-right" title={coverTip}>
+                        <td className="whitespace-nowrap border-b border-l-2 border-slate-400 px-2 py-1 text-right tabular-nums" title={coverTip}>
                           <span className={"font-bold tabular-nums " + (shownTotal > 0 ? (cover ? "text-slate-400" : "text-slate-800") : "text-slate-300")}>
                             {shownTotal > 0 ? won(shownTotal) : "—"}
                           </span>
                           {cover && (
-                            <span className="ml-1 rounded bg-slate-100 px-1 text-[10px] font-semibold text-slate-500">
+                            <span className="ml-1 whitespace-nowrap rounded bg-slate-100 px-1 text-[10px] font-semibold text-slate-500">
                               {cover.invoices.map((v) => (billingMonthOf(v) ?? "").slice(5)).filter(Boolean).map((m) => `${Number(m)}월 장`).join("·")}
                             </span>
                           )}
                         </td>
-                        <td className="border-b border-l border-slate-200 bg-emerald-50 px-2 py-1 text-right" title={coverTip}>
+                        <td className="whitespace-nowrap border-b border-l border-slate-200 bg-emerald-50 px-2 py-1 text-right tabular-nums" title={coverTip}>
                           <span className={"font-bold tabular-nums " + (mine.paid > 0 ? (cover ? "text-emerald-600/70" : "text-emerald-800") : "text-emerald-200")}>
                             {mine.paid > 0 ? won(mine.paid) : "—"}
                           </span>
                         </td>
-                        <td className="border-b border-l border-slate-200 bg-rose-50 px-2 py-1 text-right" title={coverTip}>
+                        <td className="whitespace-nowrap border-b border-l border-slate-200 bg-rose-50 px-2 py-1 text-right tabular-nums" title={coverTip}>
                           {/* 다 받았으면 초록 「완납」. 0원을 그냥 적으면 안 걷은 것과 구별되지 않습니다. */}
                           {shownTotal <= 0 ? (
                             <span className="tabular-nums text-rose-200">—</span>
                           ) : mine.due <= 0 ? (
-                            <span className="rounded bg-emerald-600 px-1 text-[11px] font-bold text-white">
-                              {mine.due < 0 ? `과납 ${won(-mine.due)}` : "완납"}
+                            <span className="whitespace-nowrap rounded bg-emerald-600 px-1 text-[11px] font-bold text-white">
+                              {mine.due < 0 ? `과납 ${won(-mine.due)}` : "완납"}
                             </span>
                           ) : (
                             <span className="font-bold tabular-nums text-rose-800">{won(mine.due)}</span>
@@ -2037,7 +2037,7 @@ export default function TuitionGridClient({
                             onClick={() => setAlreadyFor(s)}
                             disabled={busy}
                             className="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-bold text-sky-800 hover:bg-sky-200 disabled:opacity-40"
-                            title="미수금 수납 · 미수금 청구서"
+                            title="잔액 수납 · 미납분 청구서"
                           >
                             💰 수납
                           </button>
@@ -2056,7 +2056,7 @@ export default function TuitionGridClient({
                               onClick={() => setAlreadyFor(s)}
                               disabled={busy}
                               className="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-bold text-sky-800 hover:bg-sky-200 disabled:opacity-40"
-                              title="받은 돈 수납 (청구 전 항목 · 미수금)"
+                              title="받은 돈 수납 (청구 전 항목 · 잔액)"
                             >
                               💰 수납
                             </button>
@@ -2065,7 +2065,7 @@ export default function TuitionGridClient({
                       </span>
                     ) : total > 0 ? (
                       <span className="flex flex-nowrap items-center gap-1">
-                        <span className="shrink-0 text-[11px] font-semibold text-amber-600">미발행</span>
+                        <span className="shrink-0 text-[11px] font-semibold text-amber-600">미청구</span>
                         {/* 이미 받은 건. 청구서를 받은 날짜로 만들고 입금까지 함께 넣습니다 -
                             지금 밀려 있는 「이미 낸 분들」을 여기서 하나씩 정리합니다. */}
                         <button
@@ -2130,30 +2130,30 @@ export default function TuitionGridClient({
             <tr>
               <td className="sticky left-0 z-30 border-t-2 border-slate-300 bg-slate-100 px-2 py-1.5" colSpan={2}>
                 <span className="text-[11px] font-bold text-slate-600">
-                  {rows.length}명 · 미발행 {unissued}
+                  {rows.length}명 · 미청구 {unissued}
                 </span>
               </td>
               {usedPlans.map((p) => {
                 const n = rows.filter((s) => lineFor(s.id, p)).length;
                 const sum = rows.reduce((acc, s) => acc + (lineFor(s.id, p)?.amount ?? 0), 0);
                 return (
-                  <td key={p.id} className="border-t-2 border-r border-slate-300 bg-slate-100 px-1.5 py-1.5 text-right">
+                  <td key={p.id} className="whitespace-nowrap border-t-2 border-r border-slate-300 bg-slate-100 px-1.5 py-1.5 text-right tabular-nums">
                     <span className="block text-[11px] font-bold text-slate-700">{n}명</span>
                     <span className="block text-[10px] tabular-nums text-slate-500">{won(sum)}</span>
                   </td>
                 );
               })}
               <td className="border-t-2 border-l border-slate-300 bg-slate-100 px-2 py-1.5" />
-              <td className="border-t-2 border-l-2 border-slate-400 bg-slate-100 px-2 py-1.5 text-right">
+              <td className="whitespace-nowrap border-t-2 border-l-2 border-slate-400 bg-slate-100 px-2 py-1.5 text-right tabular-nums">
                 <span className="text-[13px] font-black tabular-nums text-slate-800">{won(money.billed)}</span>
               </td>
-              <td className="border-t-2 border-l border-slate-300 bg-emerald-100 px-2 py-1.5 text-right">
+              <td className="whitespace-nowrap border-t-2 border-l border-slate-300 bg-emerald-100 px-2 py-1.5 text-right tabular-nums">
                 <span className="text-[13px] font-black tabular-nums text-emerald-800">{won(money.paid)}</span>
               </td>
-              <td className="border-t-2 border-l border-slate-300 bg-rose-100 px-2 py-1.5 text-right">
+              <td className="whitespace-nowrap border-t-2 border-l border-slate-300 bg-rose-100 px-2 py-1.5 text-right tabular-nums">
                 <span className="text-[13px] font-black tabular-nums text-rose-800">{won(money.due)}</span>
               </td>
-              <td className="border-t-2 border-l border-slate-300 bg-rose-50 px-2 py-1.5 text-right">
+              <td className="whitespace-nowrap border-t-2 border-l border-slate-300 bg-rose-50 px-2 py-1.5 text-right tabular-nums">
                 {(() => {
                   const list = rows.map((s) => priorOf.get(s.id) ?? []).filter((l) => l.length > 0);
                   const sum = list.flat().reduce((n, r) => n + r.balance, 0);
@@ -2212,10 +2212,10 @@ export default function TuitionGridClient({
                     <th className="py-1">청구서</th>
                     <th className="py-1">달</th>
                     <th className="py-1">갈래</th>
-                    <th className="py-1 text-right">청구액</th>
-                    <th className="py-1 text-right">남은 돈</th>
-                    <th className="py-1 text-right">연체</th>
-                    <th className="py-1 text-right">올톡</th>
+                    <th className="whitespace-nowrap py-1 text-right">청구액</th>
+                    <th className="whitespace-nowrap py-1 text-right">남은 돈</th>
+                    <th className="whitespace-nowrap py-1 text-right">연체</th>
+                    <th className="whitespace-nowrap py-1 text-right">올톡</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2251,10 +2251,10 @@ export default function TuitionGridClient({
                       </td>
                       <td className="py-1 tabular-nums">{r.billingMonth}</td>
                       <td className="py-1">{r.stream}</td>
-                      <td className="py-1 text-right tabular-nums">{won(Number(r.invoice.total_amount))}</td>
-                      <td className="py-1 text-right font-bold tabular-nums text-rose-700">{won(r.balance)}</td>
-                      <td className="py-1 text-right tabular-nums text-slate-500">{r.overdueDays > 0 ? `${r.overdueDays}일` : "기한 전"}</td>
-                      <td className="py-1 text-right text-[10px] text-slate-500">
+                      <td className="whitespace-nowrap py-1 text-right tabular-nums">{won(Number(r.invoice.total_amount))}</td>
+                      <td className="whitespace-nowrap py-1 text-right font-bold tabular-nums text-rose-700">{won(r.balance)}</td>
+                      <td className="whitespace-nowrap py-1 text-right tabular-nums text-slate-500">{r.overdueDays > 0 ? `${r.overdueDays}일` : "기한 전"}</td>
+                      <td className="whitespace-nowrap py-1 text-right text-[10px] text-slate-500 tabular-nums">
                         {(r.invoice as SettleInvoice & { exported_at?: string | null }).exported_at ? "보냄" : "안 보냄"}
                       </td>
                     </tr>
@@ -2361,7 +2361,7 @@ export default function TuitionGridClient({
                 // 넘겨서, 표에는 할인 적용 금액이 찍히는데 이 창은 할인 전 금액을 보여줬고 그대로
                 // 누르면 받은 돈이 청구서보다 크게 적혔습니다. 표의 칸·청구서 줄과 같은 값이어야 합니다.
                 amount: Number(x.line?.amount ?? 0),
-                lockedNote: taken ? (state === "완납" ? "수납 완료" : "청구됨 · 미수") : null,
+                lockedNote: taken ? (state === "완납" ? "수납 완료" : "청구됨 · 잔액 있음") : null,
               };
             })}
           busy={busy}

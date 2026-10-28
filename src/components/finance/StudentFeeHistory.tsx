@@ -103,7 +103,7 @@ export default async function StudentFeeHistory({ studentId }: { studentId: stri
                     className="rounded-md bg-rose-50 px-1.5 py-0.5 text-[11px] font-semibold text-rose-700"
                     title="현금·계좌이체인데 현금영수증이 아직 발행되지 않았습니다"
                   >
-                    🧾 미발행 {won(t.receiptPending)}
+                    🧾 영수증 미발급 {won(t.receiptPending)}
                   </span>
                 )}
               </p>

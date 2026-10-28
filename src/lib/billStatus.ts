@@ -21,7 +21,7 @@ export type BillStatus = "미청구" | "청구됨" | "일부" | "완납" | "연�
 export const BILL_STATUS: Record<BillStatus, { label: string; cls: string; bg: string; hint: string }> = {
   미청구: { label: "미청구", cls: "bg-white text-slate-500 ring-1 ring-slate-300", bg: "", hint: "아직 청구서에 안 담겼습니다" },
   청구됨: { label: "청구됨", cls: "bg-sky-600 text-white", bg: "bg-sky-50", hint: "청구서가 나갔고 아직 안 들어왔습니다" },
-  일부: { label: "일부 받음", cls: "bg-amber-500 text-white", bg: "bg-amber-100", hint: "일부만 들어왔습니다 — 미납금 화면에서 남은 금액만 다시 청구할 수 있습니다" },
+  일부: { label: "일부수납", cls: "bg-amber-500 text-white", bg: "bg-amber-100", hint: "일부만 들어왔습니다 — 미납금 화면에서 남은 금액만 다시 청구할 수 있습니다" },
   완납: { label: "완납", cls: "bg-emerald-600 text-white", bg: "bg-emerald-100", hint: "다 받았습니다" },
   연체: { label: "연체", cls: "bg-rose-600 text-white", bg: "bg-rose-100", hint: "납부 기한이 지났는데 안 들어왔습니다" },
   이월: { label: "이월됨", cls: "bg-slate-300 text-slate-700", bg: "bg-slate-100", hint: "남은 돈이 다음 청구서로 넘어갔습니다" },
@@ -78,6 +78,12 @@ export function statusFromSettle(state: string): BillStatus | null {
     default:
       return "청구됨";
   }
+}
+
+/** `settlement.ts` 의 상태 글자를 **화면에 보이는 말**로. 「부분납부」「미납」「이월됨」이 그대로 찍히면 표마다 말이 달라집니다. */
+export function stateLabel(state: string): string {
+  const st = statusFromSettle(state);
+  return st ? BILL_STATUS[st].label : state === "취소" ? "취소" : state;
 }
 
 /**

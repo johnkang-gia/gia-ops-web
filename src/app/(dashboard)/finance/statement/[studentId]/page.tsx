@@ -108,9 +108,9 @@ export default async function StatementPage({ params }: { params: Promise<{ stud
               <tr>
                 <th className="py-1.5">날짜</th>
                 <th className="py-1.5">내용</th>
-                <th className="py-1.5 text-right">청구</th>
-                <th className="py-1.5 text-right">입금</th>
-                <th className="py-1.5 text-right">잔액</th>
+                <th className="whitespace-nowrap py-1.5 text-right">청구</th>
+                <th className="whitespace-nowrap py-1.5 text-right">입금</th>
+                <th className="whitespace-nowrap py-1.5 text-right">잔액</th>
               </tr>
             </thead>
             <tbody>
@@ -121,9 +121,9 @@ export default async function StatementPage({ params }: { params: Promise<{ stud
                     {r.label}
                     {r.method && <span className="ml-1 text-[11px] text-slate-400">{r.method}</span>}
                   </td>
-                  <td className="py-1.5 text-right tabular-nums text-slate-700">{r.delta > 0 ? won(r.delta) : ""}</td>
-                  <td className="py-1.5 text-right tabular-nums text-emerald-700">{r.delta < 0 ? won(-r.delta) : ""}</td>
-                  <td className="py-1.5 text-right font-bold tabular-nums text-slate-900">{won(r.running)}</td>
+                  <td className="whitespace-nowrap py-1.5 text-right tabular-nums text-slate-700">{r.delta > 0 ? won(r.delta) : ""}</td>
+                  <td className="whitespace-nowrap py-1.5 text-right tabular-nums text-emerald-700">{r.delta < 0 ? won(-r.delta) : ""}</td>
+                  <td className="whitespace-nowrap py-1.5 text-right font-bold tabular-nums text-slate-900">{won(r.running)}</td>
                 </tr>
               ))}
               {rows.length === 0 && (

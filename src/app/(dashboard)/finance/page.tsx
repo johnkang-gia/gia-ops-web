@@ -275,9 +275,9 @@ export default async function FinanceOverviewPage({ searchParams }: { searchPara
             <thead className="text-[11px] text-slate-400">
               <tr>
                 <th className="px-3 py-1.5">반</th>
-                <th className="px-3 py-1.5 text-right">대상</th>
-                <th className="px-3 py-1.5 text-right">금액</th>
-                <th className="px-3 py-1.5 text-right">미발행</th>
+                <th className="whitespace-nowrap px-3 py-1.5 text-right">대상</th>
+                <th className="whitespace-nowrap px-3 py-1.5 text-right">금액</th>
+                <th className="whitespace-nowrap px-3 py-1.5 text-right">미청구</th>
                 <th className="px-3 py-1.5"></th>
               </tr>
             </thead>
@@ -285,12 +285,12 @@ export default async function FinanceOverviewPage({ searchParams }: { searchPara
               {classRows.map(([name, v]) => (
                 <tr key={name} className="border-t border-slate-100">
                   <td className="px-3 py-1.5 font-semibold text-slate-700">{name}</td>
-                  <td className="px-3 py-1.5 text-right tabular-nums text-slate-500">{v.people}명</td>
-                  <td className="px-3 py-1.5 text-right font-bold tabular-nums text-slate-700">{won(v.amount)}</td>
+                  <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-500">{v.people}명</td>
+                  <td className="whitespace-nowrap px-3 py-1.5 text-right font-bold tabular-nums text-slate-700">{won(v.amount)}</td>
                   <td className={"px-3 py-1.5 text-right font-bold tabular-nums " + (v.pending > 0 ? "text-amber-600" : "text-emerald-600")}>
                     {v.pending > 0 ? `${v.pending}명` : "완료"}
                   </td>
-                  <td className="px-3 py-1.5 text-right">
+                  <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums">
                     <Link href="/finance/invoices" className="text-[11px] font-semibold text-teal-700 underline">
                       명단 →
                     </Link>

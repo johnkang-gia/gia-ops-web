@@ -118,7 +118,7 @@ export default function MoneyFlowBoard({
           <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
             <Stat label="청구" value={won(total.billed)} sub={`${total.invoices}장 · ${total.people}명`} />
             <Stat label="수납" value={won(total.paid)} sub={`${total.rate}%`} tone="emerald" />
-            <Stat label="미수" value={won(total.balance)} sub="아직 받을 돈" tone={total.balance > 0 ? "amber" : "slate"} />
+            <Stat label="잔액" value={won(total.balance)} sub="아직 받을 돈" tone={total.balance > 0 ? "amber" : "slate"} />
             <Stat
               label="연체"
               value={won(total.overdue)}
@@ -221,9 +221,9 @@ function ScopeTable({ byGrade, byClass }: { byGrade: BreakRow[]; byClass: BreakR
           <thead className="sticky top-0 bg-white text-[10px] text-slate-400">
             <tr>
               <th className="px-3 py-1.5">{by}</th>
-              <th className="px-2 py-1.5 text-right">청구</th>
-              <th className="px-2 py-1.5 text-right">수납</th>
-              <th className="px-2 py-1.5 text-right">미수</th>
+              <th className="whitespace-nowrap px-2 py-1.5 text-right">청구</th>
+              <th className="whitespace-nowrap px-2 py-1.5 text-right">수납</th>
+              <th className="whitespace-nowrap px-2 py-1.5 text-right">잔액</th>
               <th className="w-[34%] px-3 py-1.5">수납률</th>
             </tr>
           </thead>
@@ -234,8 +234,8 @@ function ScopeTable({ byGrade, byClass }: { byGrade: BreakRow[]; byClass: BreakR
                   {by === "학년" ? gradeText(r.key) : r.key}
                   <span className="ml-1 text-[10px] font-normal text-slate-400">{r.people}명</span>
                 </td>
-                <td className="px-2 py-1.5 text-right tabular-nums text-slate-600">{manwon(r.billed)}</td>
-                <td className="px-2 py-1.5 text-right font-bold tabular-nums text-emerald-700">{manwon(r.paid)}</td>
+                <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums text-slate-600">{manwon(r.billed)}</td>
+                <td className="whitespace-nowrap px-2 py-1.5 text-right font-bold tabular-nums text-emerald-700">{manwon(r.paid)}</td>
                 <td className={"px-2 py-1.5 text-right font-bold tabular-nums " + (r.overdue > 0 ? "text-rose-600" : r.balance > 0 ? "text-amber-600" : "text-slate-300")}>
                   {r.balance > 0 ? manwon(r.balance) : "—"}
                 </td>

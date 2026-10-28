@@ -11,7 +11,7 @@ import UndoIssue from "@/components/finance/UndoIssue";
 import { usePersisted } from "@/lib/usePersisted";
 import { useEditingPresence } from "@/lib/useEditingPresence";
 import SummaryLine from "@/components/finance/SummaryLine";
-import { BILL_STATUS, rowStatus, tintOf } from "@/lib/billStatus";
+import { BILL_STATUS, rowStatus, stateLabel, tintOf } from "@/lib/billStatus";
 import { StatusFillLegend, type FillKey } from "@/components/finance/StatusBadge";
 import { useStudentPanel } from "@/components/students/StudentPanelProvider";
 import { askText, compareIssue, groupIssue, type CompareRow, type IssueCompare } from "@/lib/issueCompare";
@@ -1291,7 +1291,7 @@ export default function InvoiceGridClient({
 
   /** 지금 보이는 표를 그대로 CSV로. 구글시트에 붙여넣어 따로 보관하거나 공유할 수 있습니다. */
   function exportCsv() {
-    const head = ["학생", "영문이름", "학년", "반", ...usedItems.map((i) => i.name), "합계", "인보이스"];
+    const head = ["학생", "영문이름", "학년", "반", ...usedItems.map((i) => i.name), "합계", "청구서"];
     const body = rows.map((s) => [
       s.name,
       s.nameEn ?? "",
@@ -1320,7 +1320,7 @@ export default function InvoiceGridClient({
     const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `인보이스_${view.kind === "전체" ? "전체" : view.value}_${today}.csv`;
+    a.download = `청구서_${view.kind === "전체" ? "전체" : view.value}_${today}.csv`;
     a.click();
     URL.revokeObjectURL(a.href);
   }
@@ -1689,7 +1689,7 @@ export default function InvoiceGridClient({
               </datalist>
             </label>
             <label className="text-[11px] text-slate-500">
-              인보이스 이름 (영문)
+              청구서 이름 (영문)
               <input
                 value={newItem.name}
                 onChange={(e) => setNewItem((f) => ({ ...f, name: e.target.value }))}
@@ -1753,7 +1753,7 @@ export default function InvoiceGridClient({
           합계 <b className="text-base font-black tabular-nums text-slate-800">{won(grandTotal)}</b>
         </span>
         <span className={"text-[12px] " + (unissued > 0 ? "font-bold text-amber-700" : "text-slate-400")}>
-          미발행 {unissued}명
+          미청구 {unissued}명
         </span>
         <label className="ml-auto text-[11px] text-slate-500">
           납부 기한
@@ -1880,7 +1880,7 @@ export default function InvoiceGridClient({
                   금액 칸 위에 얹혀 보였습니다. 두 줄을 한 칸으로 덮으면 지나갈 자리가
                   없어집니다. */}
               <th
-                className="sticky z-30 border-b border-l-2 border-slate-400 bg-slate-100 px-2 py-1 text-right align-bottom text-[11px] font-bold text-slate-600"
+                className="whitespace-nowrap sticky z-30 border-b border-l-2 border-slate-400 bg-slate-100 px-2 py-1 text-right align-bottom text-[11px] font-bold text-slate-600"
                 style={{ right: RIGHT_BILLED, minWidth: W_MONEY, width: W_MONEY, boxShadow: "-8px 0 8px -6px rgba(15,23,42,0.25)" }}
                 rowSpan={2}
                 title="이 아이의 표에 등록된 항목 합. 아직 청구서가 안 나간 것도 들어갑니다."
@@ -1888,7 +1888,7 @@ export default function InvoiceGridClient({
                 청구액
               </th>
               <th
-                className="sticky z-30 border-b border-l border-emerald-200 bg-emerald-100 px-2 py-1 text-right align-bottom text-[11px] font-bold text-emerald-800"
+                className="whitespace-nowrap sticky z-30 border-b border-l border-emerald-200 bg-emerald-100 px-2 py-1 text-right align-bottom text-[11px] font-bold text-emerald-800"
                 style={{ right: RIGHT_PAID, minWidth: W_MONEY, width: W_MONEY }}
                 rowSpan={2}
                 title="이 아이에게서 실제로 들어온 돈. 「직접수납」으로 적어둔 것도 들어갑니다."
@@ -1896,12 +1896,12 @@ export default function InvoiceGridClient({
                 수납
               </th>
               <th
-                className="sticky right-0 z-30 border-b border-l border-rose-200 bg-rose-100 px-2 py-1 text-right align-bottom text-[11px] font-bold text-rose-800"
+                className="whitespace-nowrap sticky right-0 z-30 border-b border-l border-rose-200 bg-rose-100 px-2 py-1 text-right align-bottom text-[11px] font-bold text-rose-800"
                 style={{ minWidth: W_MONEY, width: W_MONEY }}
                 rowSpan={2}
                 title="청구액에서 수납을 뺀 값. 더 받았으면 「과납」으로 적습니다."
               >
-                미수금
+                잔액
               </th>
             </tr>
             <tr>
@@ -1929,7 +1929,7 @@ export default function InvoiceGridClient({
                 className="sticky z-30 min-w-[150px] whitespace-nowrap border-b border-r-2 border-slate-300 bg-white px-2 py-1.5 font-semibold text-slate-600"
                 style={{ left: LEFT_INVOICE }}
               >
-                인보이스
+                청구서
               </th>
               {usedItems.map((i) => (
                 <th
@@ -2070,7 +2070,7 @@ export default function InvoiceGridClient({
                       type="button"
                       onClick={() => panel.open(s.id, "회계")}
                       className="ml-0.5 rounded px-0.5 text-[11px] opacity-40 hover:bg-indigo-50 hover:opacity-100"
-                      title={`${s.name} 학생 회계 창 (청구서·수납·미수 전부)`}
+                      title={`${s.name} 학생 회계 창 (청구서·수납·잔액 전부)`}
                     >
                       📒
                     </button>
@@ -2145,9 +2145,9 @@ export default function InvoiceGridClient({
                                 "rounded px-1 text-[10px] font-bold " +
                                 (open ? "bg-slate-500 text-white hover:bg-slate-600" : "bg-emerald-100 text-emerald-800")
                               }
-                              title={open ? `${v.invoice_no} 미수 ${won(st.balance)} — 눌러서 수납` : `${v.invoice_no} ${st.state}`}
+                              title={open ? `${v.invoice_no} 잔액 ${won(st.balance)} — 눌러서 수납` : `${v.invoice_no} ${stateLabel(st.state)}`}
                             >
-                              {v.invoice_no.slice(-4)} {open ? `미수 ${won(st.balance)}` : st.state}
+                              {v.invoice_no.slice(-4)} {open ? `잔액 ${won(st.balance)}` : stateLabel(st.state)}
                             </button>
                           );
                         })}
@@ -2188,7 +2188,7 @@ export default function InvoiceGridClient({
                               "rounded px-1 text-[10px] font-bold " +
                               BILL_STATUS[st.state === "연체" ? "연체" : st.state === "부분납부" ? "일부" : "청구됨"].cls
                             }
-                            title={`미수 ${won(st.balance)} — 눌러서 수납`}
+                            title={`잔액 ${won(st.balance)} — 눌러서 수납`}
                           >
                             {st.state === "부분납부" ? `${BILL_STATUS.일부.label} · 남은 ${won(st.balance)}` : st.state === "연체" ? BILL_STATUS.연체.label : BILL_STATUS.청구됨.label}
                           </button>
@@ -2200,7 +2200,7 @@ export default function InvoiceGridClient({
                         onClick={() => setAlreadyFor(s)}
                         disabled={busy}
                         className="rounded bg-emerald-100 px-1 text-[10px] font-bold text-emerald-800 hover:bg-emerald-200 disabled:opacity-40"
-                        title={`${s.name} — 수납 (청구 전 항목 · 미수금 · 미수금 청구서)`}
+                        title={`${s.name} — 수납 (청구 전 항목 · 잔액 · 미납분 청구서)`}
                       >
                         💰 수납
                       </button>
@@ -2235,7 +2235,7 @@ export default function InvoiceGridClient({
                       // **검토 창은 그대로 거칩니다** - 발행은 되돌릴 수 없고, 그 창이
                       // 「이 아이만 금액이 다르다」를 짚어주는 자리입니다.
                       <span className="flex items-center gap-1">
-                        <span className="text-[11px] font-semibold text-amber-600">미발행</span>
+                        <span className="text-[11px] font-semibold text-amber-600">미청구</span>
                         <button
                           onClick={() => setReview([s])}
                           disabled={busy}
@@ -2333,7 +2333,7 @@ export default function InvoiceGridClient({
                     </span>
                   </td>
                   <td
-                    className="sticky z-10 border-b border-l border-slate-200 bg-emerald-50 px-2 py-1 text-right"
+                    className="whitespace-nowrap sticky z-10 border-b border-l border-slate-200 bg-emerald-50 px-2 py-1 text-right tabular-nums"
                     style={{ right: RIGHT_PAID, minWidth: W_MONEY, width: W_MONEY }}
                   >
                     <span className={"font-bold tabular-nums " + (mine.paid > 0 ? "text-emerald-800" : "text-emerald-200")}>
@@ -2341,7 +2341,7 @@ export default function InvoiceGridClient({
                     </span>
                   </td>
                   <td
-                    className="sticky right-0 z-10 border-b border-l border-slate-200 bg-rose-50 px-2 py-1 text-right"
+                    className="whitespace-nowrap sticky right-0 z-10 border-b border-l border-slate-200 bg-rose-50 px-2 py-1 text-right tabular-nums"
                     style={{ minWidth: W_MONEY, width: W_MONEY }}
                   >
                     {/* 다 받았으면 초록 「완납」. 0원을 그냥 적으면 「아직 안 걷은 0원」인지
@@ -2349,8 +2349,8 @@ export default function InvoiceGridClient({
                     {total <= 0 ? (
                       <span className="tabular-nums text-rose-200">—</span>
                     ) : mine.due <= 0 ? (
-                      <span className="rounded bg-emerald-600 px-1 text-[11px] font-bold text-white">
-                        {mine.due < 0 ? `과납 ${won(-mine.due)}` : "완납"}
+                      <span className="whitespace-nowrap rounded bg-emerald-600 px-1 text-[11px] font-bold text-white">
+                        {mine.due < 0 ? `과납 ${won(-mine.due)}` : "완납"}
                       </span>
                     ) : (
                       <span className="font-bold tabular-nums text-rose-800">{won(mine.due)}</span>
@@ -2374,8 +2374,8 @@ export default function InvoiceGridClient({
               {/* 왼쪽 고정 칸 셋을 함께 덮습니다. 둘로 세면 아래 숫자들이 한 칸씩 밀려,
                   마지막 항목 열 밑에 총합이 앉습니다. */}
               <td className="sticky left-0 z-30 border-t-2 border-slate-300 bg-slate-100 px-2 py-1.5" colSpan={3}>
-                <span className="text-[11px] font-bold text-slate-600">합계 · {rows.length}명</span>
-                <span className="ml-2 text-[11px] text-slate-500">미발행 {unissued}</span>
+                <span className="whitespace-nowrap text-[11px] font-bold text-slate-600">합계 · {rows.length}명</span>
+                <span className="ml-2 whitespace-nowrap text-[11px] text-slate-500">미청구 {unissued}</span>
               </td>
               {usedItems.map((i) => {
                 const c = colSummary.get(i.id);
@@ -2393,19 +2393,19 @@ export default function InvoiceGridClient({
                 );
               })}
               <td
-                className="sticky z-20 border-t-2 border-l-2 border-slate-400 bg-slate-100 px-2 py-1.5 text-right"
+                className="whitespace-nowrap sticky z-20 border-t-2 border-l-2 border-slate-400 bg-slate-100 px-2 py-1.5 text-right tabular-nums"
                 style={{ right: RIGHT_BILLED, minWidth: W_MONEY, width: W_MONEY, boxShadow: "-8px 0 8px -6px rgba(15,23,42,0.25)" }}
               >
                 <span className="text-[13px] font-black tabular-nums text-slate-800">{won(money.billed)}</span>
               </td>
               <td
-                className="sticky z-20 border-t-2 border-l border-slate-300 bg-emerald-100 px-2 py-1.5 text-right"
+                className="whitespace-nowrap sticky z-20 border-t-2 border-l border-slate-300 bg-emerald-100 px-2 py-1.5 text-right tabular-nums"
                 style={{ right: RIGHT_PAID, minWidth: W_MONEY, width: W_MONEY }}
               >
                 <span className="text-[13px] font-black tabular-nums text-emerald-800">{won(money.paid)}</span>
               </td>
               <td
-                className="sticky right-0 z-20 border-t-2 border-l border-slate-300 bg-rose-100 px-2 py-1.5 text-right"
+                className="whitespace-nowrap sticky right-0 z-20 border-t-2 border-l border-slate-300 bg-rose-100 px-2 py-1.5 text-right tabular-nums"
                 style={{ minWidth: W_MONEY, width: W_MONEY }}
               >
                 <span className="text-[13px] font-black tabular-nums text-rose-800">{won(money.due)}</span>
@@ -2539,7 +2539,7 @@ export default function InvoiceGridClient({
                   <tr>
                     <th className="px-2 py-1">학생</th>
                     <th className="px-2 py-1">항목</th>
-                    <th className="px-2 py-1 text-right">금액</th>
+                    <th className="whitespace-nowrap px-2 py-1 text-right">금액</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2653,7 +2653,7 @@ export default function InvoiceGridClient({
                             </div>
                           )}
                         </td>
-                        <td className="px-2 py-1.5 text-right align-top">
+                        <td className="whitespace-nowrap px-2 py-1.5 text-right align-top tabular-nums">
                           {/* **이번에 나가는 금액**이 큰 숫자입니다. 등록 합계를 크게 두면
                               이미 나간 것까지 이번에 청구되는 줄로 읽힙니다. */}
                           <span className="block font-bold tabular-nums text-slate-800">{won(freshTotal)}</span>
@@ -3172,8 +3172,8 @@ export default function InvoiceGridClient({
                   <tr>
                     <th className="px-2 py-1">분류</th>
                     <th className="px-2 py-1">항목</th>
-                    <th className="px-2 py-1 text-right">수량</th>
-                    <th className="px-2 py-1 text-right">금액</th>
+                    <th className="whitespace-nowrap px-2 py-1 text-right">수량</th>
+                    <th className="whitespace-nowrap px-2 py-1 text-right">금액</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -3185,8 +3185,8 @@ export default function InvoiceGridClient({
                         <tr key={i.id} className="border-t border-slate-100">
                           <td className="px-2 py-1.5 text-[11px] text-slate-500">{i.category}</td>
                           <td className="px-2 py-1.5 font-semibold text-slate-800">{i.name}</td>
-                          <td className="px-2 py-1.5 text-right font-black tabular-nums text-slate-800">{c.qty}</td>
-                          <td className="px-2 py-1.5 text-right tabular-nums text-slate-500">{won(c.amount)}</td>
+                          <td className="whitespace-nowrap px-2 py-1.5 text-right font-black tabular-nums text-slate-800">{c.qty}</td>
+                          <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums text-slate-500">{won(c.amount)}</td>
                         </tr>
                       );
                     })}

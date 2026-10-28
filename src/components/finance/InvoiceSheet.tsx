@@ -194,7 +194,7 @@ export default function InvoiceSheet({
           .filter((p) => p.invoice.status === "취소")
           .map((p) => (
             <span key={p.invoice.id} className="rounded bg-red-100 px-2 py-0.5 text-[11px] font-bold text-red-700">
-              {many ? `${whoOf(p.invoice)} · ` : ""}취소된 인보이스
+              {many ? `${whoOf(p.invoice)} · ` : ""}취소된 청구서
               {p.invoice.cancel_reason && <span className="ml-1 font-medium">· {p.invoice.cancel_reason}</span>}
               {p.invoice.cancelled_by && <span className="ml-1 font-medium opacity-70">({p.invoice.cancelled_by})</span>}
             </span>

@@ -46,7 +46,7 @@ export default function ApprovalsClient({ rows, loadError }: { rows: ApprovalRow
       note = window.prompt("반려 사유 (올린 사람이 무엇을 고쳐 다시 올릴지 알 수 있게)") ?? null;
       if (!note?.trim()) return;
     } else if (action === "승인") {
-      const what = r.kind === "환불" ? `${won(Number(r.amount))}을 돌려준 것으로 장부에 적습니다` : `${won(Number(r.amount))}을 받지 않기로 하고 미수금에서 뺍니다`;
+      const what = r.kind === "환불" ? `${won(Number(r.amount))}을 돌려준 것으로 장부에 적습니다` : `${won(Number(r.amount))}을 받지 않기로 하고 잔액에서 뺍니다`;
       if (!window.confirm(`${r.studentName} · ${r.invoiceNo}\n${what}.\n\n승인할까요?`)) return;
     } else if (!window.confirm("이 요청을 거둘까요?")) return;
 

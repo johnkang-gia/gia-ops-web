@@ -7,11 +7,13 @@ import { Who } from "@/components/common/HomonymProvider";
 import { useToast } from "@/components/common/ToastProvider";
 import { monthLabel } from "@/lib/financePeriod";
 import type { MonthTotals, RowState, StudentMonthRow } from "@/lib/studentMonthLedger";
+import { stateLabel } from "@/lib/billStatus";
 
 const won = (n: number) => `${Math.round(n).toLocaleString("ko-KR")}원`;
 
 const STATE_TONE: Record<RowState, string> = {
   완납: "bg-emerald-100 text-emerald-800",
+  // term-ok: settlement.ts 의 상태 글자(DB 값)와 맞추는 열쇠
   부분납부: "bg-amber-100 text-amber-800",
   결손: "bg-violet-100 text-violet-700",
   연체: "bg-rose-100 text-rose-800",
@@ -33,7 +35,7 @@ const STATE_TONE: Record<RowState, string> = {
  *   부분납 — 내다 말았음 (남은 금액만 말하면 되는 사람)
  *   완납  — 다 냈음
  */
-type Filter = "전체" | "미납" | "부분납" | "완납";
+type Filter = "전체" | "미납" | "일부수납" | "완납";
 
 /**
  * **그 달의 학생별 거래내역** — 통장 조회처럼 봅니다.
@@ -71,7 +73,7 @@ export default function StudentMonthClient({
       // 청구가 없는 사람은 셋 어디에도 넣지 않습니다 - 낼 것이 없는 사람을 「미납」에 세우면
       // 연락할 명단이 부풀어 오릅니다.
       if (filter === "미납") return r.invoiceCount > 0 && r.received === 0;
-      if (filter === "부분납") return r.invoiceCount > 0 && r.received > 0 && r.balance > 0;
+      if (filter === "일부수납") return r.invoiceCount > 0 && r.received > 0 && r.balance > 0;
       if (filter === "완납") return r.invoiceCount > 0 && r.balance <= 0;
       return true;
     });
@@ -82,7 +84,7 @@ export default function StudentMonthClient({
   const counts = useMemo(
     () => ({
       미납: rows.filter((r) => r.invoiceCount > 0 && r.received === 0).length,
-      부분납: rows.filter((r) => r.invoiceCount > 0 && r.received > 0 && r.balance > 0).length,
+      일부수납: rows.filter((r) => r.invoiceCount > 0 && r.received > 0 && r.balance > 0).length,
       완납: rows.filter((r) => r.invoiceCount > 0 && r.balance <= 0).length,
     }),
     [rows],
@@ -101,7 +103,7 @@ export default function StudentMonthClient({
   async function copyTable() {
     const head = ["학생", "반", "건수", "청구", "수납", "미납", "상태", "마지막 수납일"].join("\t");
     const body = visible
-      .map((r) => [r.name, r.where ?? "", r.invoiceCount, r.billed, r.received, r.balance, r.state, r.lastPaidAt ?? ""].join("\t"))
+      .map((r) => [r.name, r.where ?? "", r.invoiceCount, r.billed, r.received, r.balance, stateLabel(r.state), r.lastPaidAt ?? ""].join("\t"))
       .join("\n");
     try {
       await navigator.clipboard.writeText(`${head}\n${body}`);
@@ -144,7 +146,7 @@ export default function StudentMonthClient({
 
       {/* ── 고르개 ───────────────────────────────────────────────────────── */}
       <div className="mb-2 flex flex-wrap items-center gap-1.5">
-        {(["전체", "미납", "부분납", "완납"] as Filter[]).map((f) => (
+        {(["전체", "미납", "일부수납", "완납"] as Filter[]).map((f) => (
           <button
             key={f}
             type="button"
@@ -213,7 +215,7 @@ export default function StudentMonthClient({
                       {r.balance > 0 ? won(r.balance) : "—"}
                     </td>
                     <td className="px-2 py-1.5 text-center">
-                      <span className={"rounded px-1.5 py-0.5 text-[10px] font-bold " + STATE_TONE[r.state]}>{r.state}</span>
+                      <span className={"rounded px-1.5 py-0.5 text-[10px] font-bold " + STATE_TONE[r.state]}>{stateLabel(r.state)}</span>
                     </td>
                     <td className="px-2 py-1.5 tabular-nums text-slate-400">{r.lastPaidAt ?? "—"}</td>
                     <td className="px-3 py-1.5">

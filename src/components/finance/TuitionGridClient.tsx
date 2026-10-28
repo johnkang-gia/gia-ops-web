@@ -2038,6 +2038,7 @@ export default function TuitionGridClient({
                     <th className="py-1 text-right">남은 돈</th>
                     <th className="py-1 text-right">연체</th>
                     <th className="py-1 text-right">올톡</th>
+                    <th className="py-1"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2065,6 +2066,11 @@ export default function TuitionGridClient({
                           {r.invoice.invoice_no}
                         </button>
                         <span className="ml-1 text-[10px] text-slate-400">{issuedShort(r.invoice.issue_date)}</span>
+                        {(r.invoice as SettleInvoice & { unpaid_checked_at?: string | null }).unpaid_checked_at && (
+                          <span className="ml-1 rounded bg-rose-100 px-1 text-[10px] font-bold text-rose-700" title="회차 화면에서 미납으로 확인한 장">
+                            미납 확인 {(r.invoice as SettleInvoice & { unpaid_checked_at?: string | null }).unpaid_checked_at!.slice(5, 10).replace("-", "/")}
+                          </span>
+                        )}
                       </td>
                       <td className="py-1 tabular-nums">{r.billingMonth}</td>
                       <td className="py-1">{r.stream}</td>
@@ -2073,6 +2079,40 @@ export default function TuitionGridClient({
                       <td className="py-1 text-right tabular-nums text-slate-500">{r.overdueDays > 0 ? `${r.overdueDays}일` : "기한 전"}</td>
                       <td className="py-1 text-right text-[10px] text-slate-500">
                         {(r.invoice as SettleInvoice & { exported_at?: string | null }).exported_at ? "보냄" : "안 보냄"}
+                      </td>
+                      <td className="py-1 text-right">
+                        {/* 올톡에서 결제완료를 눈으로 확인한 장은 여기서 바로 정리합니다 — 회차 화면과 같은 창구. */}
+                        <button
+                          disabled={busy}
+                          onClick={async () => {
+                            if (!confirm(`${priorFor.name} ${r.invoice.invoice_no}\n남은 ${won(r.balance)}을 올톡페이 결제(${today})로 적을까요?`)) return;
+                            setBusy(true);
+                            try {
+                              const res = await fetch("/api/finance/invoices/pay", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ invoiceId: r.invoice.id, method: "올톡페이", paidAt: today }),
+                              });
+                              const body = await res.json().catch(() => ({}));
+                              if (!res.ok) notify(`${r.invoice.invoice_no}: ${body.error ?? res.statusText}`, "error");
+                              else {
+                                notify(`${r.invoice.invoice_no} 결제됨으로 적었습니다.`, "success");
+                                setPriorPick((p) => {
+                                  const n = new Set(p);
+                                  n.delete(r.invoice.id);
+                                  return n;
+                                });
+                                router.refresh();
+                              }
+                            } finally {
+                              setBusy(false);
+                            }
+                          }}
+                          className="rounded bg-emerald-600 px-1.5 py-0.5 text-[10px] font-bold text-white hover:bg-emerald-700 disabled:opacity-40"
+                          title="올톡페이에서 결제완료를 확인했을 때"
+                        >
+                          ✓ 결제됨
+                        </button>
                       </td>
                     </tr>
                   ))}

@@ -32,7 +32,7 @@ export default async function FinanceRoundsPage() {
     readAll<BatchInvoice>((from, to) =>
       supabase
         .from("invoices")
-        .select("id, invoice_no, issue_batch, student_id, student_name, student_name_ko, total_amount, status, issued_offline, issue_date, due_date, carried_to_invoice_id, written_off_amount, exported_at")
+        .select("id, invoice_no, issue_batch, student_id, student_name, student_name_ko, total_amount, status, issued_offline, issue_date, due_date, carried_to_invoice_id, written_off_amount, exported_at, unpaid_checked_at, unpaid_checked_by")
         .not("issue_batch", "is", null)
         .order("issue_batch")
         .order("invoice_no")

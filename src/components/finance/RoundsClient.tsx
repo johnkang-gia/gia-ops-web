@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useToast } from "@/components/common/ToastProvider";
 import { useFinanceLive } from "@/lib/useFinanceLive";
 import { Who } from "@/components/common/HomonymProvider";
 import StudentLedgerModal from "@/components/finance/StudentLedgerModal";
@@ -37,6 +38,8 @@ export type BatchInvoice = {
   carried_to_invoice_id?: string | null;
   written_off_amount?: number | string | null;
   exported_at?: string | null;
+  unpaid_checked_at?: string | null;
+  unpaid_checked_by?: string | null;
 };
 
 const STREAMS = ["학비", "학비외"] as const;
@@ -59,18 +62,76 @@ export default function RoundsClient({
   problems: string[];
 }) {
   useFinanceLive();
+  const notify = useToast();
+  const [busy, setBusy] = useState<string | null>(null);
+  /** 서버가 다시 그려 주기 전까지 방금 누른 결과를 화면에 바로 반영하기 위한 사본. */
+  const [local, setLocal] = useState<BatchInvoice[]>(invoices);
+  useEffect(() => setLocal(invoices), [invoices]);
+  const [localPays, setLocalPays] = useState<SettlePayment[]>(payments);
+  useEffect(() => setLocalPays(payments), [payments]);
+  const [onlyOpen, setOnlyOpen] = useState(false);
+
+  /**
+   * **✓ 결제됨** — 남은 금액 전부를 올톡페이 입금으로 적습니다(수납 창구 `invoices/pay`와 같은 창구).
+   * 올톡 대조 파일을 올리지 않아도, 올톡에서 결제완료를 눈으로 확인한 장을 그 자리에서 정리합니다.
+   */
+  async function markPaid(v: BatchInvoice) {
+    setBusy(v.id);
+    try {
+      const res = await fetch("/api/finance/invoices/pay", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ invoiceId: v.id, method: "올톡페이", paidAt: today }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        notify(`${v.student_name_ko ?? v.student_name} ${v.invoice_no}: ${body.error ?? res.statusText}`, "error");
+        return;
+      }
+      const st = stateOf.get(v.id);
+      setLocalPays((p) => [...p, { invoice_id: v.id, amount: st?.balance ?? Number(v.total_amount) }]);
+      notify(`${v.student_name_ko ?? v.student_name} ${v.invoice_no} 결제됨으로 적었습니다(올톡페이 · ${today}).`, "success");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /**
+   * **미납** — 보냈는데 기한이 지나도 안 낸 장에 «봤다»는 도장을 찍습니다. 상태는 안 바뀝니다(잔액이 미납을
+   * 말합니다). 도장이 찍힌 장은 다음 달 청구 › 학비의 「지난 미납」 칸에 그대로 올라가고, 거기서 합치거나 따로
+   * 보냅니다 - 잊어버릴 자리가 없습니다.
+   */
+  async function markUnpaid(v: BatchInvoice, checked: boolean) {
+    setBusy(v.id);
+    try {
+      const res = await fetch("/api/finance/invoices/unpaid-check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ invoiceIds: [v.id], checked }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        notify(body.error ?? res.statusText, "error");
+        return;
+      }
+      setLocal((p) => p.map((x) => (x.id === v.id ? { ...x, unpaid_checked_at: body.at ?? null, unpaid_checked_by: body.by ?? null } : x)));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   /**
    * **장마다 수납 상태.** 보낸 뒤 「들어왔나 안 들어왔나」를 이 화면에서 바로 봅니다. 계산은 금전
    * 창·청구 화면과 같은 함수(`invoiceStatus`)라 어디서 보든 같은 답입니다.
    */
   const stateOf = useMemo(() => {
     const m = new Map<string, NonNullable<ReturnType<typeof invoiceStatus>>>();
-    for (const v of invoices) {
-      const r = invoiceStatus({ ...v, student_id: v.student_id ?? null }, payments, today);
+    for (const v of local) {
+      const r = invoiceStatus({ ...v, student_id: v.student_id ?? null }, localPays, today);
       if (r) m.set(v.id, r);
     }
     return m;
-  }, [invoices, payments, today]);
+  }, [local, localPays, today]);
   const [open, setOpen] = useState<string | null>(null);
   const [student, setStudent] = useState<{ id: string; month: string } | null>(null);
   const [year, setYear] = useState<string>("전체");
@@ -86,9 +147,9 @@ export default function RoundsClient({
   }, [batches, year]);
   const byBatch = useMemo(() => {
     const m = new Map<string, BatchInvoice[]>();
-    for (const v of invoices) if (v.issue_batch) m.set(v.issue_batch, [...(m.get(v.issue_batch) ?? []), v]);
+    for (const v of local) if (v.issue_batch) m.set(v.issue_batch, [...(m.get(v.issue_batch) ?? []), v]);
     return m;
-  }, [invoices]);
+  }, [local]);
 
   return (
     <div className="space-y-3 p-4">
@@ -98,7 +159,11 @@ export default function RoundsClient({
           몇 월분을 언제 몇 차로 냈는가 · 회차를 펼치면 장마다 <b>완납·일부·미납</b>이 보입니다. 미납은 수납이 들어올 때까지 다음 달로 밀리고,
           [청구 → 학비]의 「지난 미납」 칸에서 이번 달 장에 합치거나 따로 보냅니다.
         </span>
-        <select value={year} onChange={(e) => setYear(e.target.value)} className="ml-auto rounded-lg border border-slate-300 px-2 py-1 text-[12px]">
+        <label className="ml-auto flex items-center gap-1 text-[11px] font-semibold text-slate-600">
+          <input type="checkbox" checked={onlyOpen} onChange={(e) => setOnlyOpen(e.target.checked)} />
+          안 낸 장만
+        </label>
+        <select value={year} onChange={(e) => setYear(e.target.value)} className="rounded-lg border border-slate-300 px-2 py-1 text-[12px]">
           {years.map((y) => (
             <option key={y} value={y}>
               {y === "전체" ? "전체 연도" : `${y}년`}
@@ -128,6 +193,13 @@ export default function RoundsClient({
                     {list.map((r, i) => {
                       const key = `${month}|${st}|${r.issue_batch}`;
                       const items = (byBatch.get(r.issue_batch) ?? []).filter((v) => v.status !== "취소");
+                      // 「안 낸 장만」: 펼친 목록에서 완납·이월을 숨깁니다. 요약 숫자는 전체로 셉니다.
+                      const shown = onlyOpen
+                        ? items.filter((v) => {
+                            const x = stateOf.get(v.id);
+                            return x && x.balance > 0 && x.status !== "이월";
+                          })
+                        : items;
                       return (
                         <li key={key} className="rounded-lg border border-slate-200">
                           <button onClick={() => setOpen(open === key ? null : key)} className="flex w-full flex-wrap items-baseline gap-2 px-2 py-1 text-left text-[12px] hover:bg-slate-50">
@@ -154,6 +226,13 @@ export default function RoundsClient({
                                     <span className="rounded bg-rose-100 px-1 font-bold text-rose-800">미납 {open.length}장 · {won(openSum)}</span>
                                   )}
                                   {carried > 0 && <span className="rounded bg-slate-200 px-1 font-bold text-slate-600">이월 {carried}</span>}
+                                  {(() => {
+                                    const unseen = items.filter((v) => {
+                                      const x = stateOf.get(v.id);
+                                      return x && x.balance > 0 && x.status !== "이월" && !v.unpaid_checked_at && !v.issued_offline;
+                                    }).length;
+                                    return unseen > 0 ? <span className="rounded bg-amber-100 px-1 font-bold text-amber-800" title="결제됨도 미납도 아직 안 누른 장">미확인 {unseen}</span> : null;
+                                  })()}
                                 </span>
                               );
                             })()}
@@ -161,7 +240,7 @@ export default function RoundsClient({
                           </button>
                           {open === key && (
                             <ul className="max-h-72 overflow-y-auto border-t border-slate-100 px-2 py-1 text-[11px]">
-                              {items.map((v) => (
+                              {shown.map((v) => (
                                 <li key={v.id} className="flex items-center gap-2 py-0.5">
                                   {v.student_id ? (
                                     <button onClick={() => setStudent({ id: v.student_id as string, month })} className="font-semibold text-slate-800 hover:underline">
@@ -182,8 +261,42 @@ export default function RoundsClient({
                                       />
                                     );
                                   })()}
-                                  {!v.exported_at && !v.issued_offline && <span className="text-[10px] text-amber-600">올톡 안 보냄</span>}
+                                  {v.unpaid_checked_at && (stateOf.get(v.id)?.balance ?? 0) > 0 && (
+                                    <span className="text-[10px] font-bold text-rose-700" title={`미납 확인 · ${v.unpaid_checked_by ?? ""}`}>
+                                      미납 확인 {v.unpaid_checked_at.slice(5, 10).replace("-", "/")}
+                                    </span>
+                                  )}
                                   <span className="ml-auto tabular-nums">{won(Number(v.total_amount))}</span>
+                                  {(() => {
+                                    const st = stateOf.get(v.id);
+                                    if (!st || st.balance <= 0 || st.status === "이월") return null;
+                                    const b = busy === v.id;
+                                    return (
+                                      <span className="flex shrink-0 items-center gap-1">
+                                        <button
+                                          disabled={b}
+                                          onClick={() => {
+                                            if (confirm(`${v.student_name_ko ?? v.student_name} ${v.invoice_no}\n남은 ${won(st.balance)}을 올톡페이 결제(${today})로 적을까요?`)) void markPaid(v);
+                                          }}
+                                          className="rounded bg-emerald-600 px-1.5 py-0.5 text-[10px] font-bold text-white hover:bg-emerald-700 disabled:opacity-40"
+                                          title="올톡페이에서 결제완료를 확인했을 때. 남은 금액 전부를 올톡페이 입금으로 적습니다."
+                                        >
+                                          ✓ 결제됨
+                                        </button>
+                                        <button
+                                          disabled={b}
+                                          onClick={() => void markUnpaid(v, !v.unpaid_checked_at)}
+                                          className={
+                                            "rounded px-1.5 py-0.5 text-[10px] font-bold disabled:opacity-40 " +
+                                            (v.unpaid_checked_at ? "bg-rose-600 text-white hover:bg-rose-700" : "bg-white text-rose-700 ring-1 ring-rose-300 hover:bg-rose-50")
+                                          }
+                                          title={v.unpaid_checked_at ? "미납 확인을 되돌립니다" : "기한이 지나도 결제가 안 됐을 때. 다음 달 청구 화면의 「지난 미납」에 올라갑니다."}
+                                        >
+                                          {v.unpaid_checked_at ? "미납 ✓" : "미납"}
+                                        </button>
+                                      </span>
+                                    );
+                                  })()}
                                 </li>
                               ))}
                             </ul>

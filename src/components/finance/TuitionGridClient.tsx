@@ -471,7 +471,7 @@ export default function TuitionGridClient({
       const bits: string[] = [];
       // 직접 기입은 옵션 할인·학생 할인이 붙지 않은 «정한 금액»입니다. 할인을 비고에 적으면
       // 청구서에 없는 할인을 학부모에게 설명하게 됩니다.
-      if (!line.manual && line.optionDiscount > 0) bits.push(`${line.optionName} −${won(line.optionDiscount)}`);
+      if (!line.manual && line.optionDiscount > 0) bits.push(`${line.optionName.replace(/ /g, "\u00a0")} −${won(line.optionDiscount)}`);
       for (const d of line.discounts) bits.push(`${d.name} −${won(d.amount)}`);
       // **사람이 정한 금액은 깎인 액수가 0이어도 적습니다.** 원래 금액과 같아도 「이건
       // 계산이 아니라 사람이 정한 것」이라는 사실이 요금 인상 때 이 칸이 안 따라오는
@@ -2129,7 +2129,7 @@ export default function TuitionGridClient({
           <tfoot className="sticky bottom-0 z-20">
             <tr>
               <td className="sticky left-0 z-30 border-t-2 border-slate-300 bg-slate-100 px-2 py-1.5" colSpan={2}>
-                <span className="text-[11px] font-bold text-slate-600">
+                <span className="whitespace-nowrap text-[11px] font-bold text-slate-600">
                   {rows.length}명 · 미청구 {unissued}
                 </span>
               </td>

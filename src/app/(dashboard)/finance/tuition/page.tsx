@@ -6,6 +6,7 @@ import { readAll, readNotice } from "@/lib/financeFetch";
 import { todayKst } from "@/lib/kst";
 import GuideButton from "@/components/common/GuideButton";
 import TuitionGridClient, {
+  type ExtraChargeRow,
   type TuitionStudent,
   type EnrollRow,
   type StudentDiscountRow,
@@ -56,7 +57,7 @@ export default async function TuitionPage() {
   if (!hasFinanceAccess(me)) redirect("/home");
 
   const supabase = await createClient();
-  const [stuRes, planRes, optRes, discRes, termRes, enrollRes, sdRes, invRes, payRes, addonRes] = await Promise.all([
+  const [stuRes, planRes, optRes, discRes, termRes, enrollRes, sdRes, invRes, payRes, addonRes, chargeRes] = await Promise.all([
     loadStudents(supabase, { order: "grade" }),
     // **학비만 거르지 않습니다.** 표에는 학비만 뜨지만, 팝업에서는 학비외 항목도 고칠 수
     // 있어야 합니다 - 거기서 안 보이면 결국 다른 화면으로 건너가게 됩니다.
@@ -89,6 +90,12 @@ export default async function TuitionPage() {
     ),
     // 함께 하면 합친 금액이 정해진 프로그램(오케스트라). 표의 금액을 서버와 같은 함수로 셉니다.
     supabase.from("fee_addon_prices").select("addon_plan_id, base_plan_id, combined_amount, active"),
+    // 다음 장에 얹을 차액. 아직 안 얹힌 것만 - 얹힌 것은 청구서 줄로 보입니다.
+    supabase
+      .from("tuition_extra_charges")
+      .select("id, student_id, term_id, plan_id, name, amount, reason, target_month")
+      .is("invoice_id", null)
+      .is("cancelled_at", null),
   ]);
 
   // 무엇을 못 읽었는지 **화면에 말합니다.** 조용히 비어 있으면 「아직 아무도 안 골랐구나」로
@@ -101,6 +108,7 @@ export default async function TuitionPage() {
     enrollRes.error?.message ??
     sdRes.error?.message ??
     addonRes.error?.message ??
+    chargeRes.error?.message ??
     readNotice(invRes) ??
     readNotice(payRes) ??
     null;
@@ -147,6 +155,7 @@ export default async function TuitionPage() {
         payments={payRes.rows}
         today={todayKst()}
         addonPrices={(addonRes.data as AddonPrice[] | null) ?? []}
+        initialExtraCharges={(chargeRes.data as ExtraChargeRow[] | null) ?? []}
         loadError={loadError}
         lockedDept={financeScope === ALL_SCOPE ? null : financeScope}
       />

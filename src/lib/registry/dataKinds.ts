@@ -180,6 +180,8 @@ export const DATA_KINDS: DataKindDef[] = [
       "student_fee_items",
       "student_fee_discounts",
       "student_fee_enrollments",
+      // 다음 달 장에 얹을 차액. 얹히면 invoice_id 로 어느 장인지 남습니다.
+      "tuition_extra_charges",
       "apparel_orders",
       "apparel_order_items",
       "apparel_order_pieces",

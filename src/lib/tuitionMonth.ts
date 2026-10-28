@@ -55,7 +55,10 @@ export function billRuleOf(
   plan: { unit?: string | null },
   option: { periods?: number | string | null } | null,
 ): { rule: BillRule; months: number } {
-  if ((plan.unit ?? "월") !== "월" || !option) return { rule: "학기", months: 0 };
+  if ((plan.unit ?? "월") !== "월") return { rule: "학기", months: 0 };
+  // 옵션 없이 금액을 직접 기입한 월 단위 항목(오케스트라 직접 기입)은 **한 달치**입니다. 앞 판은 옵션이
+  // 없으면 학기로 쳐서, 10월분을 한 번 받으면 11월에도 「완납 10/2」로 떠 다음 달 장을 낼 자리가 없었습니다.
+  if (!option) return { rule: "월", months: 1 };
   const n = Math.max(1, Math.round(Number(option.periods ?? 1)) || 1);
   return n <= 1 ? { rule: "월", months: 1 } : { rule: "기간", months: n };
 }

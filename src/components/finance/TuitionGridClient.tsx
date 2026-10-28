@@ -5,7 +5,7 @@ import { Who } from "@/components/common/HomonymProvider";
 import FeePlansModal from "./FeePlansModal";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { billingMonthOf, termOfMonth } from "@/lib/financePeriod";
+import { billingMonthOf, termOfMonth, shiftMonth } from "@/lib/financePeriod";
 import { planBillForMonth } from "@/lib/tuitionMonth";
 import { resolveAddon, addonPlanForLine, type AddonPrice } from "@/lib/tuitionAddon";
 import { useFinanceLive } from "@/lib/useFinanceLive";
@@ -103,6 +103,18 @@ export type StudentDiscountRow = {
   reason: string | null;
 };
 
+/** 다음 달 장에 얹을 차액(`tuition_extra_charges`). 아직 안 얹힌 것만 받습니다. */
+export type ExtraChargeRow = {
+  id: string;
+  student_id: string;
+  term_id: string | null;
+  plan_id: string | null;
+  name: string;
+  amount: number | string;
+  reason: string;
+  target_month: string | null;
+};
+
 type DeptTab = Department | "기타";
 const DEPTS: DeptTab[] = ["초등부", "중고등부", "기타"];
 
@@ -121,6 +133,7 @@ export default function TuitionGridClient({
   today,
   loadError,
   addonPrices = [],
+  initialExtraCharges = [],
   catalogPlans,
   canApprove,
   currentUserEmail,
@@ -157,6 +170,8 @@ export default function TuitionGridClient({
   catalogPlans: FeePlan[];
   /** 함께 하면 합친 금액이 정해진 프로그램(오케스트라). */
   addonPrices?: AddonPrice[];
+  /** 다음 달 장에 얹을 차액. 아직 안 얹힌 것. */
+  initialExtraCharges?: ExtraChargeRow[];
   /** 승인이 필요한 할인을 만들 수 있는 사람인가(최고관리자). */
   canApprove: boolean;
   currentUserEmail: string;
@@ -220,6 +235,54 @@ export default function TuitionGridClient({
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const router = useRouter();
+  /**
+   * **다음 달에 얹을 차액.** 청구서가 이미 나간 뒤 금액이 바뀌면(더 받기·덜 받기) 보낸 장을 고치지 않고 다음
+   * 달 장에 한 줄로 얹습니다. 발행 창구(`/api/finance/invoices/tuition`)가 발행할 때 읽어 정정 줄로 넣습니다.
+   */
+  const [extraCharges, setExtraCharges] = useState<ExtraChargeRow[]>(initialExtraCharges);
+  useEffect(() => setExtraCharges(initialExtraCharges), [initialExtraCharges]);
+  const [chargeFor, setChargeFor] = useState<TuitionStudent | null>(null);
+  const [chargeForm, setChargeForm] = useState<{ planId: string; amount: string; reason: string; month: string }>({ planId: "", amount: "", reason: "", month: "" });
+  const chargesOf = (sid: string) => extraCharges.filter((c) => c.student_id === sid && (!c.term_id || !termId || c.term_id === termId));
+
+  async function addExtraCharge() {
+    if (!chargeFor) return;
+    const amount = Math.round(Number(chargeForm.amount.replace(/[^\d-]/g, "")));
+    if (!Number.isFinite(amount) || amount === 0) return notify("금액을 적어주세요(덜 받으면 앞에 -).", "error");
+    if (!chargeForm.reason.trim()) return notify("사유를 적어주세요 - 몇 달 뒤 「왜 이 금액이죠」에 답할 자리는 여기뿐입니다.", "error");
+    const plan = chargeForm.planId ? plans.find((p) => p.id === chargeForm.planId) ?? null : null;
+    const name = `${plan ? plan.name + " " : ""}${Number(month.slice(5))}월분 ${amount > 0 ? "추가" : "감액"}`;
+    setBusy(true);
+    const sb = createClient();
+    const { data, error } = await sb
+      .from("tuition_extra_charges")
+      .insert({
+        student_id: chargeFor.id,
+        term_id: termId || null,
+        plan_id: plan?.id ?? null,
+        name,
+        amount,
+        reason: chargeForm.reason.trim(),
+        target_month: chargeForm.month || null,
+        created_by: currentUserName,
+      })
+      .select("id, student_id, term_id, plan_id, name, amount, reason, target_month")
+      .single();
+    setBusy(false);
+    if (error) return notify(`차액을 적지 못했습니다: ${error.message}`, "error");
+    setExtraCharges((p) => [...p, data as ExtraChargeRow]);
+    setChargeFor(null);
+    setChargeForm({ planId: "", amount: "", reason: "", month: "" });
+    notify(`${chargeFor.name} — ${won(Math.abs(amount))} ${amount > 0 ? "추가" : "감액"}을 ${chargeForm.month ? chargeForm.month + " 장부터" : "다음 장에"} 얹습니다.`, "success");
+  }
+
+  async function cancelExtraCharge(c: ExtraChargeRow) {
+    if (!confirm(`「${c.name} ${won(Math.abs(Number(c.amount)))}」을 지웁니다. 다음 장에 얹히지 않습니다.`)) return;
+    const sb = createClient();
+    const { error } = await sb.from("tuition_extra_charges").update({ cancelled_at: new Date().toISOString() }).eq("id", c.id).is("invoice_id", null);
+    if (error) return notify(`지우지 못했습니다: ${error.message}`, "error");
+    setExtraCharges((p) => p.filter((x) => x.id !== c.id));
+  }
   /** 방금 발행한 것(5초 되돌리기). */
   const [undo, setUndo] = useState<{ ids: string[]; label: string } | null>(null);
   // 납입기한은 **발행한 날로부터 이레**입니다. 앞 판은 오늘이 기본이었는데, 그대로 발행하면
@@ -1752,6 +1815,31 @@ export default function TuitionGridClient({
                           </span>
                         ))
                       )}
+                      {/* 다음 장에 얹을 차액. 적혀 있다는 사실이 여기 보여야 발행하는 사람이 놀라지 않습니다. */}
+                      {chargesOf(s.id).map((c) => {
+                        const amt = Number(c.amount);
+                        const due = !c.target_month || c.target_month <= month;
+                        return (
+                          <span key={c.id} className={"flex items-center gap-1 text-[11px] " + (amt > 0 ? "text-orange-800" : "text-sky-800")} title={c.reason}>
+                            <span className={"rounded px-1 font-bold " + (due ? (amt > 0 ? "bg-orange-100" : "bg-sky-100") : "bg-slate-100 text-slate-500")}>
+                              {due ? "이번 장에" : `${Number(c.target_month!.slice(5))}월 장부터`} {amt > 0 ? "+" : "−"}{won(Math.abs(amt))}
+                            </span>
+                            <span className="truncate text-slate-500">{c.reason}</span>
+                            <button onClick={() => void cancelExtraCharge(c)} disabled={busy} className="rounded bg-slate-100 px-1 text-[10px] font-bold text-slate-500 hover:bg-rose-100 hover:text-rose-700" title="지웁니다">✕</button>
+                          </span>
+                        );
+                      })}
+                      <button
+                        onClick={() => {
+                          setChargeFor(s);
+                          setChargeForm({ planId: "", amount: "", reason: "", month: "" });
+                        }}
+                        disabled={busy}
+                        className="self-start rounded bg-slate-100 px-1 text-[10px] font-bold text-slate-500 hover:bg-orange-100 hover:text-orange-800"
+                        title="청구서는 이미 나갔는데 금액이 바뀐 경우 - 다음 장에 차액을 한 줄로 얹습니다"
+                      >
+                        ± 차액
+                      </button>
                       {/* 항목을 안 정하고 붙어 있던 예전 줄. 「학비 전체」라고 적고, 여기서 뗍니다 -
                           어디서 푸는지 모르면 아무도 안 풉니다. */}
                       {loose.map((r) => {
@@ -2005,6 +2093,53 @@ export default function TuitionGridClient({
       </DragScroll>
 
       {/* **지난 미납 한 명 창.** 원 청구서가 보이고, 셋 중 하나를 고릅니다 — 따로 한 장 · 올톡으로 다시 보내기 · 이번 달 장에 합치기. */}
+      {chargeFor && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30 p-4" onClick={() => setChargeFor(null)}>
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-2 flex items-center justify-between">
+              <h3 className="text-[15px] font-black text-slate-800">± {chargeFor.name} · 다음 장에 얹을 차액</h3>
+              <button onClick={() => setChargeFor(null)} className="text-[12px] text-slate-400 hover:text-slate-700">닫기 ✕</button>
+            </div>
+            <p className="mb-3 text-[11px] text-slate-500">
+              청구서가 이미 나갔는데 금액이 바뀐 경우입니다. 보낸 장은 그대로 두고, 다음에 발행하는 학비 장에
+              「{Number(month.slice(5))}월분 추가/감액 (사유)」 한 줄로 붙습니다. 더 받으면 양수, 덜 받으면 앞에 −.
+            </p>
+            <div className="flex flex-col gap-2 text-[12px]">
+              <label className="flex items-center gap-2">
+                <span className="w-16 text-slate-500">항목</span>
+                <select value={chargeForm.planId} onChange={(e) => setChargeForm((f) => ({ ...f, planId: e.target.value }))} className="flex-1 rounded border border-slate-300 px-2 py-1">
+                  <option value="">학비 전체</option>
+                  {usedPlans.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex items-center gap-2">
+                <span className="w-16 text-slate-500">금액</span>
+                <input value={chargeForm.amount} onChange={(e) => setChargeForm((f) => ({ ...f, amount: e.target.value }))} placeholder="예: 50000 · 덜 받으면 -50000" className="flex-1 rounded border border-slate-300 px-2 py-1 tabular-nums" autoFocus />
+              </label>
+              <label className="flex items-center gap-2">
+                <span className="w-16 text-slate-500">사유</span>
+                <input value={chargeForm.reason} onChange={(e) => setChargeForm((f) => ({ ...f, reason: e.target.value }))} placeholder="예: 10월 중순 오케스트라 추가 등록" className="flex-1 rounded border border-slate-300 px-2 py-1" />
+              </label>
+              <label className="flex items-center gap-2">
+                <span className="w-16 text-slate-500">언제부터</span>
+                <select value={chargeForm.month} onChange={(e) => setChargeForm((f) => ({ ...f, month: e.target.value }))} className="flex-1 rounded border border-slate-300 px-2 py-1">
+                  <option value="">다음에 발행하는 장</option>
+                  {[0, 1, 2, 3].map((d) => {
+                    const m = shiftMonth(month, d);
+                    return <option key={m} value={m}>{m} 장부터</option>;
+                  })}
+                </select>
+              </label>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button onClick={() => setChargeFor(null)} className={btn + " bg-slate-100 text-slate-600"}>취소</button>
+              <button onClick={() => void addExtraCharge()} disabled={busy} className={btn + " bg-orange-600 text-white hover:bg-orange-700"}>얹어 두기</button>
+            </div>
+          </div>
+        </div>
+      )}
       {priorFor && (() => {
         const pr = priorOf.get(priorFor.id) ?? [];
         const picked = pr.filter((r) => priorPick.has(r.invoice.id));

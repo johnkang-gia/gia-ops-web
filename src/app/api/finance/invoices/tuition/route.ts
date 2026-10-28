@@ -225,7 +225,7 @@ export async function POST(req: Request) {
   }
   const extraTotal = extraLines.reduce((n, l) => n + l.amount, 0);
 
-  const total = lines.reduce((n, l) => n + l.amount, 0) + extraTotal;
+  const tuitionOnlyTotal = lines.reduce((n, l) => n + l.amount, 0) + extraTotal;
   // 이미 받은 건은 **받은 날**이 발행일입니다. 오늘로 적으면 지난달 수납이 이번 달로
   // 세어져, 월별 수납 집계가 통째로 어긋납니다.
   const issue = paidAt ?? todayKst();
@@ -274,6 +274,33 @@ export async function POST(req: Request) {
       : await planCarryForward(supabase, { studentId: student.id, stream: "학비", today: todayKst() });
   if (carry.error) return NextResponse.json({ error: `지난 미납을 읽지 못했습니다: ${carry.error}` }, { status: 500 });
 
+  // ── 다음 달에 얹기로 적어 둔 차액 ──────────────────────────────────────────
+  //
+  // 지난 장을 보낸 뒤 금액이 바뀐 경우(더 받기·덜 받기). 보고 있는 달 이전·이 달로 적힌 것만 얹고,
+  // 항목을 골라 발행할 때는 **그 항목의 차액과 항목 없는 차액**만 얹습니다. 이미 받은 돈을 소급해
+  // 넣는 장(alreadyPaid)에는 얹지 않습니다 - 그 장은 과거의 사실이지 새 청구가 아닙니다.
+  type ExtraCharge = { id: string; plan_id: string | null; name: string; amount: number | string; reason: string; target_month: string | null };
+  let extraCharges: ExtraCharge[] = [];
+  if (!paidAt) {
+    const monthKey = billingMonth ?? issue.slice(0, 7);
+    const { data: ecRows, error: ecErr } = await supabase
+      .from("tuition_extra_charges")
+      .select("id, plan_id, name, amount, reason, target_month, term_id")
+      .eq("student_id", student.id)
+      .is("invoice_id", null)
+      .is("cancelled_at", null);
+    if (ecErr) return NextResponse.json({ error: `다음 달 차액을 읽지 못해 발행하지 않았습니다: ${ecErr.message}` }, { status: 500 });
+    extraCharges = ((ecRows as (ExtraCharge & { term_id: string | null })[] | null) ?? [])
+      .filter((c) => !c.term_id || !termId || c.term_id === termId)
+      .filter((c) => !c.target_month || c.target_month <= monthKey)
+      .filter((c) => !planIds || planIds.length === 0 || !c.plan_id || planIds.includes(c.plan_id));
+  }
+  const extraChargeTotal = extraCharges.reduce((n, c) => n + Math.round(Number(c.amount)), 0);
+  const total = tuitionOnlyTotal + extraChargeTotal;
+  if (total < 0) {
+    return NextResponse.json({ error: `차액(감액 ${extraChargeTotal.toLocaleString()}원)이 이번 달 청구액보다 커서 마이너스 청구서가 됩니다. 감액을 줄이거나 환불로 처리해주세요.` }, { status: 400 });
+  }
+
   /**
    * **찍을 줄의 합 = 청구액** 인지 넣기 전에 확인합니다.
    *
@@ -286,7 +313,7 @@ export async function POST(req: Request) {
   const tuitionRows = lines.flatMap((l) =>
     invoiceRowsForLine(l).map((r, i) => ({ ...r, planId: i === 0 ? (planIdOfLine.get(l) ?? null) : null })),
   );
-  const rowsTotal = tuitionRows.reduce((n, r) => n + r.amount, 0) + extraTotal;
+  const rowsTotal = tuitionRows.reduce((n, r) => n + r.amount, 0) + extraTotal + extraChargeTotal;
   if (rowsTotal !== total) {
     console.error("[학비 청구] 줄의 합과 청구액이 다릅니다", { student: student.id, rowsTotal, total });
     return NextResponse.json(
@@ -409,10 +436,23 @@ export async function POST(req: Request) {
   // 같은 장에 담은 학비외 줄. 항목 번호를 함께 남겨 「이미 나갔는가」 판정이 됩니다.
   const extraRows: (typeof rows[number] & { item_id: string })[] = extraLines.map((l) => ({ invoice_id: inv.id, seq: ++seq, name: l.name, item_id: l.item_id, qty: l.qty, unit_price: l.unit_price, amount: l.amount }));
 
+  // 다음 달에 얹기로 한 차액. 정정 줄(`is_adjustment`)로 넣어 중복 문지기를 지나고, 사유가 종이에 남습니다.
+  const chargeRows = extraCharges.map((c) => ({
+    invoice_id: inv.id,
+    seq: ++seq,
+    name: c.name,
+    qty: 1,
+    unit_price: Math.round(Number(c.amount)),
+    amount: Math.round(Number(c.amount)),
+    plan_id: null as string | null,
+    is_adjustment: true,
+    adjust_reason: c.reason,
+  }));
+
   // 이월 줄은 맨 아래. 이번에 새로 청구하는 것이 먼저 읽혀야 합니다.
   for (const c of carry.lines) rows.push({ invoice_id: inv.id, seq: ++seq, ...c });
 
-  const { error: lineErr } = await supabase.from("invoice_lines").insert([...rows, ...extraRows]);
+  const { error: lineErr } = await supabase.from("invoice_lines").insert([...rows, ...extraRows, ...chargeRows]);
   // 줄을 못 넣었으면 총액만 있고 내역이 없는 종이가 나갑니다. 머리줄을 지우고 실패로 답합니다.
   if (lineErr) {
     // 되돌리기도 실패할 수 있습니다. 그러면 **총액만 있고 내역이 없는 청구서**가 남는데,
@@ -446,6 +486,20 @@ export async function POST(req: Request) {
     if (!plan || !opt || billRuleOf(plan, opt).rule !== "기간") continue;
     const { error: pfErr } = await supabase.from("student_fee_enrollments").update({ paid_from: startMonth }).eq("id", e.id);
     if (pfErr) spanWarnings.push(`${plan.name} 시작월을 적지 못했습니다(${pfErr.message})`);
+  }
+
+  // 얹힌 차액에 어느 장인지 적습니다. 못 적으면 다음 발행에 **또 얹히므로** 실패로 돌립니다.
+  if (extraCharges.length > 0) {
+    const { error: ecMarkErr } = await supabase
+      .from("tuition_extra_charges")
+      .update({ invoice_id: inv.id, billed_at: new Date().toISOString() })
+      .in("id", extraCharges.map((c) => c.id));
+    if (ecMarkErr) {
+      return NextResponse.json(
+        { error: `청구서는 만들었지만 얹은 차액에 표시를 못 했습니다(${ecMarkErr.message}). 같은 차액이 다음 장에 또 붙을 수 있으니 확인해주세요.` },
+        { status: 500 },
+      );
+    }
   }
 
   const lockErr = await lockCarried(supabase, carry.lockIds, inv.id as string);

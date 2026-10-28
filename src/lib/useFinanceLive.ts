@@ -55,6 +55,8 @@ export const FINANCE_TABLES = [
   "fee_discounts",
   "student_fee_discounts",
   "student_fee_enrollments",
+  // 다음 달 장에 얹을 차액. 한 사람이 적으면 발행하는 사람이 봐야 합니다.
+  "tuition_extra_charges",
   // 결손·환불 결재. 승인되면 잔액이 바뀌고, 대기 목록은 다른 사람이 처리합니다.
   "finance_requests",
   // 세입과목과 과목경정. 과목별 수입현황이 이 둘로 모입니다.

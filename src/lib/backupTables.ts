@@ -84,6 +84,8 @@ export const BACKUP_GROUPS: { group: string; tables: string[] }[] = [
       "student_fee_enrollments",
       "student_fee_items",
       "student_fee_discounts",
+      // 아직 안 얹힌 차액. 잃으면 「다음 달에 5만원 더」가 조용히 사라집니다.
+      "tuition_extra_charges",
     ],
   },
   {

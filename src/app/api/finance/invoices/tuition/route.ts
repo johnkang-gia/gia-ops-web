@@ -377,6 +377,7 @@ export async function POST(req: Request) {
     const clash = liveList
       .map((v) => {
         const withLines = { plan_scope: v.plan_scope, lines: liveLines.get(v.id) ?? [] };
+        // name-lookup-ok: 학생이 아니라 납부 항목 이름입니다.
         const shared = [...mine].filter((n) => invoiceCoversPlan(withLines, { id: planIdByName.get(n) ?? null, name: n }));
         return { no: v.invoice_no, shared, date: v.issue_date, by: v.issued_by };
       })

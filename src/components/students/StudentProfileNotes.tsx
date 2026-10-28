@@ -164,9 +164,7 @@ export default function StudentProfileNotes({
         <h2 className="text-sm font-bold text-slate-700">
           📝 특이사항 <span className="ml-1 text-[11px] font-semibold text-slate-400">{termName(currentTermId)}</span>
         </h2>
-        <span className="text-[11px] text-slate-400">
-          성향·교우관계·가정 사정·건강 등 이 아이에 대해 교직원이 알아야 할 것을 자유롭게. 누가 봐도 알 수 있게 적어 주세요.
-        </span>
+        <span className="text-[11px] text-slate-400">자유 메모 · 누가 봐도 알 수 있게</span>
       </div>
 
       {!loaded ? (
@@ -217,7 +215,7 @@ export default function StudentProfileNotes({
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           rows={2}
-          placeholder={`${studentName.split("(")[0].trim()} — 예: 이번 학기 방과후 펜싱을 가기 싫어해 수업 전 아프다고 하거나 부모님께 전화하는 일이 잦음`}
+          placeholder={`${studentName.split("(")[0].trim()} 특이사항 적기`}
           className="flex-1 rounded border border-slate-300 px-2 py-1.5 text-[13px] leading-relaxed"
           onKeyDown={(e) => {
             if ((e.metaKey || e.ctrlKey) && e.key === "Enter") void add();

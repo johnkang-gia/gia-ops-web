@@ -665,6 +665,24 @@ export default function TuitionGridClient({
     return m;
   }, [monthBill, allPlans, invoices]);
 
+  /**
+   * **이 달에 청구할 학비** — 다른 달 장이 이미 덮고 있는 항목은 뺍니다.
+   *
+   * 분기 납부(3개월 묶음)를 10월에 받으면 11월·12월은 그 장이 덮습니다. 그런데 줄의 청구액·미수금은
+   * `totalOf`(등록 항목 전부)로 세서, 11월 화면에서 권태이가 「완납 10/2」 칸과 함께 **미청구 · 남음
+   * 1,100만 원**으로 떴습니다. 발행을 누르면 담을 항목이 없다고 멈추는데 미수금은 그대로라, 보는 사람은
+   * 어느 쪽이 맞는지 알 수 없었습니다. 이 달 장이 덮는 항목(월 납부·이 달에 낸 장)만 이 달의 청구액입니다.
+   */
+  function monthTotalOf(studentId: string): number {
+    return tuitionTotal(
+      usedPlans.map((p) => {
+        const mb = monthBill.get(`${studentId}|${p.id}`);
+        if (mb?.covered && (!mb.invoice || billingMonthOf(mb.invoice) !== month)) return null;
+        return lineFor(studentId, p);
+      }),
+    );
+  }
+
   /** 아직 청구서에 안 담긴 항목이 남아 있는가. */
   const hasUnbilled = (sid: string) => {
     const b = billed.get(sid);
@@ -1021,7 +1039,7 @@ export default function TuitionGridClient({
     const partner = partnerMode;
     const pick = only ? new Set(only) : checked;
     const targets = rows.filter(
-      (s) => pick.has(s.id) && (scoped ? planIds.some((pid) => lineFor(s.id, usedPlans.find((p) => p.id === pid)!)) : totalOf(s.id) > 0),
+      (s) => pick.has(s.id) && (scoped ? planIds.some((pid) => lineFor(s.id, usedPlans.find((p) => p.id === pid)!)) : monthTotalOf(s.id) > 0),
     );
     if (targets.length === 0) {
       notify("발행할 학생을 골라주세요(납부 옵션을 고르지 않은 학생은 제외됩니다).", "error");
@@ -1177,17 +1195,24 @@ export default function TuitionGridClient({
    * 입금은 이 학기에 나간 학비 청구서(`invoicesOf`)에 붙은 것만 셉니다.
    */
   const termInvoices = [...invoicesOf.values()].flat();
-  const money = gridTotals(rows.map((s) => s.id), totalOf, termInvoices, payments);
-  const moneyOf = gridTotalsByStudent(rows.map((s) => s.id), totalOf, termInvoices, payments);
+  const money = gridTotals(rows.map((s) => s.id), monthTotalOf, termInvoices, payments);
+  const moneyOf = gridTotalsByStudent(rows.map((s) => s.id), monthTotalOf, termInvoices, payments);
   /**
    * **이 아이 줄의 색.** 학생별 회계·학비외 표와 같은 함수(`rowStatus`)로 정합니다 - 같은 아이가 화면마다
    * 다른 색이면 색을 안 믿게 됩니다. 아직 한 장도 안 나갔으면 「미청구」, 표에 학비가 없으면 칠하지 않습니다.
    */
   const fillOf = (sid: string): FillKey => {
-    const total = totalOf(sid);
+    const total = monthTotalOf(sid);
+    if (total <= 0) {
+      // 이 달에 새로 청구할 것이 없는 줄 - 다른 달 장이 덮고 있으면 **그 장의 상태**가 이 줄의 색입니다.
+      // 아무 항목도 없으면 칠하지 않습니다.
+      const states = [...(billStateOf.get(sid)?.values() ?? [])];
+      if (states.length === 0 || totalOf(sid) <= 0) return "없음";
+      return states.includes("미납") ? "청구됨" : states.includes("일부") ? "일부" : "완납";
+    }
     const m = moneyOf.get(sid) ?? { billed: total, paid: 0, due: total };
     const issued = (invoicesOf.get(sid) ?? []).length > 0;
-    return rowStatus({ billed: issued ? m.billed : 0, paid: m.paid, due: m.due }) ?? (total > 0 ? "미청구" : "없음");
+    return rowStatus({ billed: issued ? m.billed : 0, paid: m.paid, due: m.due }) ?? "미청구";
   };
   const fillCounts: Partial<Record<FillKey, number>> = {};
   for (const s of rows) {
@@ -1206,7 +1231,7 @@ export default function TuitionGridClient({
       }),
     onPin: (s) => ff.pin(ff.pinned?.id === s.id ? null : { id: s.id, name: s.name }),
   });
-  const unissued = rows.filter((s) => totalOf(s.id) > 0 && hasUnbilled(s.id)).length;
+  const unissued = rows.filter((s) => monthTotalOf(s.id) > 0 && hasUnbilled(s.id)).length;
 
   if (usedPlans.length === 0) {
     return (
@@ -1604,7 +1629,8 @@ export default function TuitionGridClient({
           <tbody>
             {shown.map((s) => {
               const on = checked.has(s.id);
-              const total = totalOf(s.id);
+              // 이 달의 청구액. 다른 달 장이 덮는 항목은 칸의 「완납 10/2」 뱃지로만 보입니다.
+              const total = monthTotalOf(s.id);
               const rowFill = fillOf(s.id);
               // 완납만 줄 전체, 청구서가 나간 줄은 이름 칸만 칠합니다(tintOf).
               const tint = tintOf(rowFill === "미청구" ? null : rowFill);

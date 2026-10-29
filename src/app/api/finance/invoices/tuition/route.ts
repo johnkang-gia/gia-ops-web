@@ -492,7 +492,17 @@ export async function POST(req: Request) {
   // 이월 줄은 맨 아래. 이번에 새로 청구하는 것이 먼저 읽혀야 합니다.
   for (const c of carry.lines) rows.push({ invoice_id: inv.id, seq: ++seq, ...c });
 
-  const { error: lineErr } = await supabase.from("invoice_lines").insert([...rows, ...extraRows, ...chargeRows]);
+  // 여러 줄을 한 번에 넣을 때 **모든 줄이 같은 칸을 갖게** 맞춥니다. 한 줄에만 있는 칸(정정 줄의
+  // is_adjustment)은 나머지 줄에서 기본값이 아니라 null 로 들어가, «is_adjustment 는 비울 수 없음»으로
+  // 장 전체가 실패했습니다 - 얹을 차액이 있는 학생만 발행이 안 됐습니다.
+  const allLines = [...rows, ...extraRows, ...chargeRows].map((r) => ({
+    item_id: null as string | null,
+    plan_id: null as string | null,
+    adjust_reason: null as string | null,
+    ...r,
+    is_adjustment: (r as { is_adjustment?: boolean }).is_adjustment === true,
+  }));
+  const { error: lineErr } = await supabase.from("invoice_lines").insert(allLines);
   // 줄을 못 넣었으면 총액만 있고 내역이 없는 종이가 나갑니다. 머리줄을 지우고 실패로 답합니다.
   if (lineErr) {
     // 되돌리기도 실패할 수 있습니다. 그러면 **총액만 있고 내역이 없는 청구서**가 남는데,

@@ -5,7 +5,7 @@ import { Who } from "@/components/common/HomonymProvider";
 import FeePlansModal from "./FeePlansModal";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import StudentLedgerModal from "@/components/finance/StudentLedgerModal";
-import { confirmIssueMonth } from "@/lib/issueMonthGuard";
+import { useIssueMonthConfirm } from "@/components/finance/IssueMonthConfirm";
 import { useRouter } from "next/navigation";
 import { billingMonthOf, termOfMonth, shiftMonth } from "@/lib/financePeriod";
 import { planBillForMonth, billRuleOf } from "@/lib/tuitionMonth";
@@ -242,6 +242,7 @@ export default function TuitionGridClient({
   /** 「고른 N명 발행」에 담을 항목. 비면 학비 전부. 항목마다 단추를 두던 것을 한 칸으로 줄였습니다. */
   const [issueScope, setIssueScope] = useState("");
   const [methodOpen, setMethodOpen] = useState(false);
+  const [askMonth, monthDialog] = useIssueMonthConfirm();
   const router = useRouter();
   /**
    * **다음 달에 얹을 차액.** 청구서가 이미 나간 뒤 금액이 바뀌면(더 받기·덜 받기) 보낸 장을 고치지 않고 다음
@@ -1073,7 +1074,6 @@ export default function TuitionGridClient({
    * 단추인데 다시 고르라고 하니 사람은 무엇을 더 해야 하는지 알 수 없습니다.
    */
   async function issueChecked(planIds: string[], only?: string[]) {
-    if (!confirmIssueMonth(month)) return;
     const scoped = planIds.length > 0;
     // 학비외도 함께 낼지. 고른 그대로 이 발행 전체에 씁니다(`issuePartner`).
     const partner = partnerMode;
@@ -1085,6 +1085,8 @@ export default function TuitionGridClient({
       notify("발행할 학생을 골라주세요(납부 옵션을 고르지 않은 학생은 제외됩니다).", "error");
       return;
     }
+    const bm = await askMonth(month, `${targets.length}명`);
+    if (!bm) return;
     /**
      * **이미 청구서에 담긴 항목은 빼고 보냅니다.**
      *
@@ -1166,7 +1168,7 @@ export default function TuitionGridClient({
         // 학비가 다 나갔어도 학비외가 남았으면 학비외만 따로 냅니다.
         if (tuitionDone) {
           if (extras.length > 0) {
-            const r = await issueExtraInvoice(s.id, termId || null, dueDate, extras, month);
+            const r = await issueExtraInvoice(s.id, termId || null, dueDate, extras, bm);
             if (r.ok) madeExtra++;
             else failed.push(`${s.name}·학비외(${r.error})`);
           } else failed.push(`${s.name}(이미 모든 항목이 청구서에 담겼습니다)`);
@@ -1182,7 +1184,7 @@ export default function TuitionGridClient({
             dueDate,
             termId: termId || null,
             planIds: scoped ? planIds : rest.length > 0 ? rest : null,
-            billingMonth: month,
+            billingMonth: bm,
             // 지난 학비 미납을 이 장에 얹습니다. 서버는 항목을 골라 낼 때는 얹지 않습니다.
             ...(!scoped && carryOn(s.id) && tuitionCarryTotal(priorOf.get(s.id) ?? []) > 0 ? { carryForward: true } : {}),
             ...(merge ? { itemIds: extras } : {}),
@@ -1200,7 +1202,7 @@ export default function TuitionGridClient({
           // 따로 한 장: 학비가 나간 뒤에 학비외를 냅니다. 학비가 실패했는데 학비외만 나가면
           // 반쪽 청구가 되므로 순서를 이렇게 둡니다.
           if (partner === "separate" && extras.length > 0) {
-            const r = await issueExtraInvoice(s.id, termId || null, dueDate, extras, month);
+            const r = await issueExtraInvoice(s.id, termId || null, dueDate, extras, bm);
             if (r.ok) madeExtra++;
             else failed.push(`${s.name}·학비외(학비는 나갔고 학비외는 못 냈습니다: ${r.error})`);
           }
@@ -1296,6 +1298,7 @@ export default function TuitionGridClient({
     // 빼냅니다(-mx-2). 여백은 넓은데 정작 오른쪽 끝의 「청구액·청구서」가 잘려 보이던 것이
     // 이 때문이었습니다 - 잘린 표는 없는 것처럼 보이고, 거기 있는 단추는 아무도 안 누릅니다.
     <div className="px-2">
+      {monthDialog}
       {loadError && (
         <p className="mb-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] text-rose-800">{loadError}</p>
       )}

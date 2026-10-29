@@ -2,7 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import StudentLedgerModal from "@/components/finance/StudentLedgerModal";
-import { confirmIssueMonth } from "@/lib/issueMonthGuard";
+import { useIssueMonthConfirm } from "@/components/finance/IssueMonthConfirm";
 import { BILL_LABEL, billedItems, markOf } from "@/lib/billedItems";
 import { issuedLong, issuedShort } from "@/lib/invoiceIssued";
 import { useFinanceFilter } from "@/components/finance/FinanceFilterProvider";
@@ -404,6 +404,7 @@ export default function InvoiceGridClient({
   const [detail, setDetail] = useState<Student | null>(null);
   /** 펼친 줄 — 학비 표와 같은 창(학생 회계)을 줄 아래에 펼칩니다. 학비·학비외를 오가지 않고 한 자리에서 고치고 발행합니다. */
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [askMonth, monthDialog] = useIssueMonthConfirm();
   // 납입기한은 **발행한 날로부터 이레**입니다(`DUE_DAYS`). 학비와 같은 규칙을 써야 합니다 -
   // 같은 날 보낸 두 청구서의 마감일이 다르면 학부모가 먼저 알아봅니다.
   const [dueDate, setDueDate] = useState(() => addDays(today, DUE_DAYS));
@@ -1146,7 +1147,8 @@ export default function InvoiceGridClient({
 
   /** 고른 줄을 한 번에 발행합니다. */
   async function issueChecked(mode: IssueMode = issueMode) {
-    if (!confirmIssueMonth(month)) return;
+    const bm = await askMonth(month, `${checked.size}명`);
+    if (!bm) return;
     const targets = review ?? rows.filter((s) => checked.has(s.id) && totalOf(s.id) > 0);
     if (targets.length === 0) return;
     const jobs = planFor(targets, mode);
@@ -1215,7 +1217,7 @@ export default function InvoiceGridClient({
         }
         // 한 장으로: 학비 창구가 학비외 줄을 함께 담아 한 장을 냅니다.
         if (partner === "merge" && tuition.length > 0) {
-          const r = await issueTuitionInvoice(s.id, termId || null, dueDate, tuition, send.map((l) => l.item.id));
+          const r = await issueTuitionInvoice(s.id, termId || null, dueDate, tuition, send.map((l) => l.item.id), bm);
           if (r.ok && r.invoice) {
             made.push(r.invoice as unknown as Invoice);
             madeTuition++;
@@ -1233,7 +1235,7 @@ export default function InvoiceGridClient({
             feeTermId: termId || null,
             category,
             itemIds: send.map((l) => l.item.id),
-            billingMonth: month,
+            billingMonth: bm,
           }),
         });
         // ── 돌아온 것이 우리 답이 맞는가 ─────────────────────────────────────
@@ -1266,7 +1268,7 @@ export default function InvoiceGridClient({
             setLineRows((p) => [...p, ...send.map((l) => ({ invoice_id: invId, name: l.item.name, item_id: l.item.id }))]);
           // 따로 한 장: 학비외가 나간 뒤에 학비를 냅니다.
           if (partner === "separate" && tuition.length > 0) {
-            const r = await issueTuitionInvoice(s.id, termId || null, dueDate, tuition);
+            const r = await issueTuitionInvoice(s.id, termId || null, dueDate, tuition, [], bm);
             if (r.ok) madeTuition++;
             else failed.push(`${s.name}·학비(학비외는 나갔고 학비는 못 냈습니다: ${r.error})`);
           }
@@ -1446,6 +1448,7 @@ export default function InvoiceGridClient({
     // 세로로도 스크롤해야 합니다. 학생이 백 명 넘는 명단은 위에서 아래로 쭉 훑어 내리는
     // 것이라 페이지째 내려가는 편이 자연스럽습니다. 가둘 것은 **가로뿐**입니다.
     <div className="mx-auto w-full min-w-0 max-w-full p-3 sm:p-4">
+      {monthDialog}
       <div className="mb-1 flex flex-wrap items-baseline gap-2">
         <h1 className="text-lg font-bold">🧾 청구 · 학비외</h1>
         <span className="text-xs text-slate-400">교재 · 교복 등 · 학생 × 항목</span>

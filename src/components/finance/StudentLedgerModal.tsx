@@ -27,7 +27,7 @@ import { addDays, DUE_DAYS, shiftMonth } from "@/lib/financePeriod";
 import type { InvoiceLine } from "@/lib/types";
 import { BILL_STATUS, statusFromSettle } from "@/lib/billStatus";
 import { issuedShort } from "@/lib/invoiceIssued";
-import { confirmIssueMonth } from "@/lib/issueMonthGuard";
+import { useIssueMonthConfirm } from "@/components/finance/IssueMonthConfirm";
 
 /**
  * **학생 금전 창** — 학생 한 명의 돈을 한 창에서 봅니다. 그리고 그 창에서 다 합니다.
@@ -88,6 +88,7 @@ export default function StudentLedgerModal({
   embedded?: boolean;
 }) {
   const notify = useToast();
+  const [askMonth, monthDialog] = useIssueMonthConfirm();
   /**
    * **보는 달.** 늘 달 단위로 봅니다 - 달을 안 주면 학기 단위로 판정해서, 10월에 낸 오케스트라가 11월에도
    * 「수납 완료」로 떠 11월 청구를 할 수 없었습니다(이름을 눌러 여는 학생 창이 그랬습니다). 안 주면 이번 달이고,
@@ -108,6 +109,8 @@ export default function StudentLedgerModal({
   const [pickTouched, setPickTouched] = useState(false);
   /** 직접 기입 칸을 연 학비 항목(번호). */
   const [manualFor, setManualFor] = useState<string | null>(null);
+  /** ⋯ 메뉴를 연 청구서. */
+  const [menuFor, setMenuFor] = useState<string | null>(null);
   const [manualDraft, setManualDraft] = useState({ amount: "", note: "" });
 
   // 하위 창들
@@ -268,7 +271,8 @@ export default function StudentLedgerModal({
   async function issue(combine: boolean) {
     if (!ledger) return;
     if (targetCharges.length === 0) return notify("보낼 항목이 없습니다. 옵션을 고르거나 항목을 넣어주세요.", "error");
-    if (!confirmIssueMonth(month)) return;
+    const bm = await askMonth(month, `${ledger.student.name} · ${targetCharges.length}개 항목`);
+    if (!bm) return;
     const tuition = targetCharges.filter((c) => c.kind === "학비").map((c) => c.id);
     let extra = targetCharges.filter((c) => c.kind === "학비외").map((c) => c.id);
     // 한 장으로 묶으면 학비 장에 학비외 줄이 항목 번호와 함께 들어가 「이미 나갔는가」 판정은 그대로 됩니다.
@@ -289,19 +293,19 @@ export default function StudentLedgerModal({
     };
     try {
       if (tuition.length > 0) {
-        const r = await post("/api/finance/invoices/tuition", { studentId, termId, planIds: tuition, skipPrepaid, ...(month ? { billingMonth: month } : {}), ...(merged ? { itemIds: extra } : {}) });
+        const r = await post("/api/finance/invoices/tuition", { studentId, termId, planIds: tuition, skipPrepaid, billingMonth: bm, ...(merged ? { itemIds: extra } : {}) });
         if (r.ok) keep(r, "학비");
         else failed.push(`학비${merged ? "+학비외" : ""}(${String(r.body.error ?? "")})`);
         if (merged) extra = [];
       }
       if (extra.length > 0) {
-        let r = await post("/api/finance/invoices", { studentId, feeTermId: termId, itemIds: extra, skipPrepaid, ...(month ? { billingMonth: month } : {}) });
+        let r = await post("/api/finance/invoices", { studentId, feeTermId: termId, itemIds: extra, skipPrepaid, billingMonth: bm });
         // 서버가 「이미 담긴 항목」을 잡으면 사람에게 묻습니다. 한 학기에 같은 교재를 두 번 사는
         // 일은 있지만 드물고, 두 번 청구되는 사고는 흔합니다 - 기본은 막고 확인한 때만 넘깁니다.
         if (!r.ok && Array.isArray(r.body.duplicates)) {
           const dups = r.body.duplicates as { name: string; invoiceNo: string }[];
           const again = confirm(`이미 청구서에 담긴 항목입니다:\n${dups.map((d) => `· ${d.name} — ${d.invoiceNo}`).join("\n")}\n\n정말 한 번 더 청구할까요? (아니면 그 장을 먼저 취소하세요)`);
-          if (again) r = await post("/api/finance/invoices", { studentId, feeTermId: termId, itemIds: extra, allowDuplicate: true, skipPrepaid, ...(month ? { billingMonth: month } : {}) });
+          if (again) r = await post("/api/finance/invoices", { studentId, feeTermId: termId, itemIds: extra, allowDuplicate: true, skipPrepaid, billingMonth: bm });
         }
         if (r.ok) keep(r, "학비외");
         else failed.push(`학비외(${String(r.body.error ?? "")})`);
@@ -573,31 +577,55 @@ export default function StudentLedgerModal({
                           💰 수납
                         </button>
                       )}
-                      {/* 일부만 받은 장도 영수증을 찍습니다 - 받은 금액과 남은 금액을 함께 적은 「일부 납부 영수증」. */}
-                      {(v.settled.state === "완납" || (v.settled.paid > 0 && v.settled.state !== "취소")) && (
+                      {/* **나머지 손질은 ⋯ 하나에.** 영수증·정정·과목경정·발행 취소가 줄마다 단추 넷이었고, 어느 것이 이 장에
+                          맞는지 매번 읽어야 했습니다. 이 장의 상태에 맞는 것만, 맞는 순서로 보입니다 - 보낸 장이면 «정정»이,
+                          안 보낸 장이면 «취소 후 다시 발행»이 위입니다. 수납·예치금은 어느 화면에서든 바로 하도록 밖에 둡니다. */}
+                      <span className="relative">
                         <button
-                          onClick={() => setPreview({ id: v.id, label: `${student?.name} · ${v.invoice_no} ${v.settled.state === "완납" ? "영수증" : "일부 납부 영수증"}`, receipt: true })}
-                          className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-700 hover:bg-slate-200"
-                          title={v.settled.state === "완납" ? "영수증 (청구서와 같은 양식)" : "일부 납부 영수증 — 받은 금액과 남은 금액을 함께 적습니다"}
+                          onClick={() => setMenuFor(menuFor === v.id ? null : v.id)}
+                          className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-bold text-slate-600 hover:bg-slate-200"
+                          title="영수증 · 정정 · 발행 취소"
                         >
-                          {v.settled.state === "완납" ? "📄" : "📄½"}
+                          ⋯
                         </button>
-                      )}
-                      {/* 보낸 장은 정정, 안 보낸 장은 취소 후 재발행이 기본입니다. 둘 다 열어두되 기본 쪽을 눈에 띄게 둡니다. */}
-                      <button
-                        onClick={() => setFixing(v)}
-                        className={"rounded px-1.5 py-0.5 text-[10px] font-bold " + (v.exported ? "bg-slate-800 text-white hover:bg-slate-900" : "bg-slate-100 text-slate-500 hover:bg-slate-200")}
-                        title={v.exported ? "보낸 청구서 정정 · 결손 요청 · 과목 경정" : "결손 요청 · 과목 경정 (금액은 ↩ 취소 후 다시 발행)"}
-                      >
-                        {v.exported ? "정정" : "🛠"}
-                      </button>
-                      <button
-                        onClick={() => setCancelling(v)}
-                        className={"px-1 text-[11px] hover:text-rose-600 " + (v.exported ? "text-slate-200" : "text-slate-400")}
-                        title={v.exported ? "발행 취소 — 이미 보낸 장입니다. 금액이 틀렸다면 [정정]이 번호를 지킵니다" : "발행 취소 (지우지 않고 취소로 남깁니다) — 고쳐서 다시 발행"}
-                      >
-                        ↩
-                      </button>
+                        {menuFor === v.id && (
+                          <span className="absolute right-0 top-full z-30 mt-1 flex w-52 flex-col rounded-lg border border-slate-200 bg-white p-1 text-left text-[11px] shadow-lg" onMouseLeave={() => setMenuFor(null)}>
+                            {(v.settled.state === "완납" || (v.settled.paid > 0 && v.settled.state !== "취소")) && (
+                              <button
+                                onClick={() => {
+                                  setMenuFor(null);
+                                  setPreview({ id: v.id, label: `${student?.name} · ${v.invoice_no} ${v.settled.state === "완납" ? "영수증" : "일부 납부 영수증"}`, receipt: true });
+                                }}
+                                className="rounded px-2 py-1 text-left hover:bg-slate-50"
+                              >
+                                📄 {v.settled.state === "완납" ? "영수증" : "일부 납부 영수증"}
+                              </button>
+                            )}
+                            {(v.exported
+                              ? [
+                                  ["fix", "✎ 정정 (보낸 장 — 번호 그대로)"],
+                                  ["cancel", "↩ 발행 취소"],
+                                ]
+                              : [
+                                  ["cancel", "↩ 발행 취소 (고쳐서 다시 발행)"],
+                                  ["fix", "🛠 결손 요청 · 과목 경정"],
+                                ]
+                            ).map(([k, label]) => (
+                              <button
+                                key={k}
+                                onClick={() => {
+                                  setMenuFor(null);
+                                  if (k === "fix") setFixing(v);
+                                  else setCancelling(v);
+                                }}
+                                className={"rounded px-2 py-1 text-left hover:bg-slate-50 " + (k === "cancel" ? "text-rose-700" : "text-slate-700")}
+                              >
+                                {label}
+                              </button>
+                            ))}
+                          </span>
+                        )}
+                      </span>
                     </span>
                     {/* **이 청구서가 지나온 길** — 발행 → 보냄 → 수납 → 남은 돈을 한 줄로. 상태 하나만 보면
                         「언제 보냈고 얼마가 언제 들어왔나」를 물으러 다른 화면을 열게 됩니다. */}
@@ -706,6 +734,7 @@ export default function StudentLedgerModal({
 
   return (
     <div className={embedded ? "contents" : "fixed inset-0 z-[90] flex items-center justify-center bg-black/40 p-3"} onClick={embedded ? undefined : close}>
+      {monthDialog}
       <div className={embedded ? "flex min-h-0 flex-1 flex-col overflow-hidden" : "flex max-h-[94vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"} onClick={(e) => e.stopPropagation()}>
         {/* ── 머리 ─────────────────────────────────────────────────────── */}
         <div className="flex flex-wrap items-center gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3">

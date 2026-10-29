@@ -3,7 +3,7 @@
 import DragScroll from "@/components/common/DragScroll";
 import { Who } from "@/components/common/HomonymProvider";
 import FeePlansModal from "./FeePlansModal";
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import StudentLedgerModal from "@/components/finance/StudentLedgerModal";
 import { useIssueMonthConfirm } from "@/components/finance/IssueMonthConfirm";
 import { useRouter } from "next/navigation";
@@ -239,6 +239,13 @@ export default function TuitionGridClient({
    * 표를 가리지 않습니다 - 한 번에 한 줄만 펼칩니다.
    */
   const [expanded, setExpanded] = useState<string | null>(null);
+  // 펼치면 그 줄과 펼친 칸이 한 화면에 들어오게 굴립니다. 펼친 칸이 아래로 밀려 있으면 위아래로 오가며 봐야 합니다.
+  const expandRef = useRef<HTMLTableRowElement | null>(null);
+  useEffect(() => {
+    if (!expanded) return;
+    const t = setTimeout(() => expandRef.current?.scrollIntoView({ block: "end", behavior: "smooth" }), 60);
+    return () => clearTimeout(t);
+  }, [expanded]);
   /** 「고른 N명 발행」에 담을 항목. 비면 학비 전부. 항목마다 단추를 두던 것을 한 칸으로 줄였습니다. */
   const [issueScope, setIssueScope] = useState("");
   const [methodOpen, setMethodOpen] = useState(false);
@@ -2177,10 +2184,10 @@ export default function TuitionGridClient({
                   </td>
                 </tr>
                 {expanded === s.id && (
-                  <tr>
+                  <tr ref={expandRef}>
                     <td colSpan={usedPlans.length + 8} className="border-b-2 border-indigo-300 bg-indigo-50/30 p-0">
                       {/* 표가 가로로 길어도 펼친 칸은 화면 폭에 붙어 있습니다(sticky) - 옆으로 밀면 내용이 사라지지 않게. */}
-                      <div className="sticky left-0 flex max-h-[78vh] flex-col overflow-hidden" style={{ width: "min(1200px, calc(100vw - 290px))" }}>
+                      <div className="sticky left-0 flex min-h-[420px] flex-col overflow-hidden" style={{ width: "min(1600px, calc(100vw - 290px))", height: "calc(100vh - 170px)" }}>
                         <div className="flex items-center justify-between border-b border-indigo-200 bg-indigo-50 px-3 py-1 text-[11px]">
                           <span className="font-bold text-indigo-800">▾ {s.name} · {month.replace("-", "년 ")}월 청구 — 고치고 바로 발행합니다</span>
                           <button type="button" onClick={() => setExpanded(null)} className="rounded px-2 py-0.5 font-bold text-indigo-700 hover:bg-indigo-100">

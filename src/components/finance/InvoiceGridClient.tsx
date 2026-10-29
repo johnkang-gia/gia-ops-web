@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import StudentLedgerModal from "@/components/finance/StudentLedgerModal";
 import { useIssueMonthConfirm } from "@/components/finance/IssueMonthConfirm";
 import { BILL_LABEL, billedItems, markOf } from "@/lib/billedItems";
@@ -404,6 +404,13 @@ export default function InvoiceGridClient({
   const [detail, setDetail] = useState<Student | null>(null);
   /** 펼친 줄 — 학비 표와 같은 창(학생 회계)을 줄 아래에 펼칩니다. 학비·학비외를 오가지 않고 한 자리에서 고치고 발행합니다. */
   const [expanded, setExpanded] = useState<string | null>(null);
+  // 펼치면 그 줄과 펼친 칸이 한 화면에 들어오게 굴립니다. 펼친 칸이 아래로 밀려 있으면 위아래로 오가며 봐야 합니다.
+  const expandRef = useRef<HTMLTableRowElement | null>(null);
+  useEffect(() => {
+    if (!expanded) return;
+    const t = setTimeout(() => expandRef.current?.scrollIntoView({ block: "end", behavior: "smooth" }), 60);
+    return () => clearTimeout(t);
+  }, [expanded]);
   const [askMonth, monthDialog] = useIssueMonthConfirm();
   // 납입기한은 **발행한 날로부터 이레**입니다(`DUE_DAYS`). 학비와 같은 규칙을 써야 합니다 -
   // 같은 날 보낸 두 청구서의 마감일이 다르면 학부모가 먼저 알아봅니다.
@@ -2380,9 +2387,9 @@ export default function InvoiceGridClient({
                   </td>
                 </tr>
                 {expanded === s.id && (
-                  <tr>
+                  <tr ref={expandRef}>
                     <td colSpan={usedItems.length + 8} className="border-b-2 border-indigo-300 bg-indigo-50/30 p-0">
-                      <div className="sticky left-0 flex max-h-[78vh] flex-col overflow-hidden" style={{ width: "min(1200px, calc(100vw - 290px))" }}>
+                      <div className="sticky left-0 flex min-h-[420px] flex-col overflow-hidden" style={{ width: "min(1600px, calc(100vw - 290px))", height: "calc(100vh - 170px)" }}>
                         <div className="flex items-center justify-between border-b border-indigo-200 bg-indigo-50 px-3 py-1 text-[11px]">
                           <span className="font-bold text-indigo-800">▾ {s.name} · {month.replace("-", "년 ")}월 청구 — 고치고 바로 발행합니다</span>
                           <button type="button" onClick={() => setExpanded(null)} className="rounded px-2 py-0.5 font-bold text-indigo-700 hover:bg-indigo-100">

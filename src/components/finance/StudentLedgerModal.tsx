@@ -783,9 +783,17 @@ export default function StudentLedgerModal({
         {!ledger && !loadErr && <p className="p-8 text-center text-sm text-slate-400">읽는 중…</p>}
 
         {ledger && (
-          <div className="grid min-h-0 flex-1 grid-cols-1 gap-0 overflow-y-auto md:grid-cols-5">
+          <div
+            className={
+              // 표 안에 펼쳤을 때는 세 칸(항목 · 청구서 · 수납)이 나란히 서고 칸마다 따로 굴러갑니다 - 항목을 고치면서 청구서와
+              // 수납을 같이 봐야 하는데, 한 줄로 쌓으면 페이지를 위아래로 오가야 했습니다.
+              embedded
+                ? "grid min-h-0 flex-1 grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_minmax(0,1fr)] gap-0 overflow-hidden"
+                : "grid min-h-0 flex-1 grid-cols-1 gap-0 overflow-y-auto md:grid-cols-5"
+            }
+          >
             {/* ── 받을 돈 ─────────────────────────────────────────────── */}
-            <section className="border-b border-slate-200 p-3 md:col-span-2 md:border-b-0 md:border-r">
+            <section className={embedded ? "min-h-0 overflow-y-auto border-r border-slate-200 p-3" : "border-b border-slate-200 p-3 md:col-span-2 md:row-span-2 md:border-b-0 md:border-r"}>
               <h3 className="mb-1 flex items-center justify-between text-[12px] font-black text-slate-700">
                 <span>수납 대상 항목 — 요금표 기준</span>
                 <span className="text-[10px] font-semibold text-slate-400">● 지난달 청구 · 지난달 것을 미리 골라 둠(바꿀 수 있음)</span>
@@ -1057,7 +1065,7 @@ export default function StudentLedgerModal({
             </section>
 
             {/* ── 청구서 · 입금 ──────────────────────────────────────────── */}
-            <section className="p-3 md:col-span-3">
+            <section className={embedded ? "min-h-0 overflow-y-auto border-r border-slate-200 p-3" : "p-3 pb-0 md:col-span-3"}>
               <h3 className="mb-1 flex items-center justify-between text-[12px] font-black text-slate-700">
                 <span>청구서</span>
                 <span className="flex items-center gap-1">
@@ -1143,7 +1151,11 @@ export default function StudentLedgerModal({
                 </details>
               )}
 
-              <h3 className="mb-1 mt-3 flex items-center justify-between text-[12px] font-black text-slate-700">
+            </section>
+
+            {/* ── 수납 · 예치금 ─────────────────────────────────────────── */}
+            <section className={embedded ? "min-h-0 overflow-y-auto p-3" : "p-3 pt-0 md:col-span-3 md:col-start-3"}>
+              <h3 className={"mb-1 flex items-center justify-between text-[12px] font-black text-slate-700 " + (embedded ? "" : "mt-3")}>
                 <span>수납 · 예치금</span>
                 <button onClick={() => setDepositOpen((v) => !v)} className="rounded bg-teal-100 px-2 py-0.5 text-[11px] font-bold text-teal-800 hover:bg-teal-200" title="청구서 없이 미리 받은 돈">
                   ＋ 예치금 등록
@@ -1179,7 +1191,7 @@ export default function StudentLedgerModal({
               <DepositShareBox studentId={studentId} onBalance={setPoolBalance} onChanged={() => void load()} refreshOn={ledger} />
               {ledger.payments.length === 0 && <p className="px-1 py-1 text-[11px] text-slate-400">들어온 돈이 없습니다.</p>}
               {ledger.payments.length > 0 && (
-                <div className="grid gap-2 md:grid-cols-2">
+                <div className={embedded ? "grid gap-3" : "grid gap-2 md:grid-cols-2"}>
                   <div>
                     <div className="mb-0.5 flex items-baseline justify-between border-b-2 border-slate-300 px-1 text-[11px]">
                       <b className="text-slate-800">💰 수납 — 청구서에 받은 돈</b>
@@ -1188,7 +1200,7 @@ export default function StudentLedgerModal({
                     {collected.length === 0 && <p className="px-1 py-1 text-[11px] text-slate-400">없음</p>}
                     <div className="space-y-0.5">{collected.map((p) => payLine(p))}</div>
                   </div>
-                  <div className="md:border-l md:border-slate-200 md:pl-2">
+                  <div className={embedded ? "" : "md:border-l md:border-slate-200 md:pl-2"}>
                     <div className="mb-0.5 flex items-baseline justify-between border-b-2 border-teal-300 px-1 text-[11px]">
                       <b className="text-teal-800">🏦 예치금 — 맡겨 둔 돈 · 옮겨 쓴 돈 · 돌려준 돈</b>
                       <span className="tabular-nums font-bold text-teal-700" title="지금 남은 예치금">남음 {won(ledger.totals.deposit)}</span>

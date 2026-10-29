@@ -246,6 +246,7 @@ export default function TuitionGridClient({
   useEffect(() => {
     if (!expanded) return;
     let t2: ReturnType<typeof setTimeout> | undefined;
+    let t3: ReturnType<typeof setTimeout> | undefined;
     const t = setTimeout(() => {
       const tr = expandRef.current;
       const table = tr?.closest("table");
@@ -258,16 +259,26 @@ export default function TuitionGridClient({
       const maxH = sp ? parseFloat(getComputedStyle(sp).maxHeight) : NaN;
       const viewH = Math.min(Number.isFinite(maxH) ? maxH : (sp?.clientHeight ?? window.innerHeight), window.innerHeight - 90);
       setPaneH(Math.max(360, viewH - headH - footH - 4));
-      // 높이가 그려진 뒤에 굴립니다. 바깥 본문도 굴려 표 상자가 화면 안에 들어오게 합니다.
-      t2 = setTimeout(() => {
-        sp?.scrollIntoView({ block: "nearest" });
+      const settle = () => {
+        if (sp) {
+          // 바깥 본문 — 표 상자의 윗변을 본문 맨 위에 맞춥니다.
+          let outer: HTMLElement | null = sp.parentElement;
+          while (outer && !/(auto|scroll)/.test(getComputedStyle(outer).overflowY)) outer = outer.parentElement;
+          const oTop = outer ? outer.getBoundingClientRect().top : 0;
+          (outer ?? document.documentElement).scrollBy({ top: sp.getBoundingClientRect().top - oTop });
+        }
+        // 표 상자 — 펼친 칸을 머리줄 바로 아래로.
         const top = sp ? sp.getBoundingClientRect().top : 0;
         (sp ?? document.documentElement).scrollBy({ top: tr.getBoundingClientRect().top - top - headH });
-      }, 120);
+      };
+      // 높이가 그려진 뒤에 한 번, 학생 자료가 다 읽힌 뒤에 한 번 더 맞춥니다.
+      t2 = setTimeout(settle, 120);
+      t3 = setTimeout(settle, 700);
     }, 60);
     return () => {
       clearTimeout(t);
       if (t2) clearTimeout(t2);
+      if (t3) clearTimeout(t3);
     };
   }, [expanded]);
   /** 「고른 N명 발행」에 담을 항목. 비면 학비 전부. 항목마다 단추를 두던 것을 한 칸으로 줄였습니다. */

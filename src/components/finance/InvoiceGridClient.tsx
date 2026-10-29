@@ -410,24 +410,30 @@ export default function InvoiceGridClient({
   const [paneH, setPaneH] = useState<number | null>(null);
   useEffect(() => {
     if (!expanded) return;
+    let t2: ReturnType<typeof setTimeout> | undefined;
     const t = setTimeout(() => {
       const tr = expandRef.current;
-      const row = tr?.previousElementSibling as HTMLElement | null;
       const table = tr?.closest("table");
-      if (!tr || !row || !table) return;
+      if (!tr || !table) return;
       let sp: HTMLElement | null = table.parentElement;
       while (sp && !/(auto|scroll)/.test(getComputedStyle(sp).overflowY)) sp = sp.parentElement;
-      const box = sp ?? document.documentElement;
       const headH = (table.querySelector("thead") as HTMLElement | null)?.offsetHeight ?? 0;
       const footH = (table.querySelector("tfoot") as HTMLElement | null)?.offsetHeight ?? 0;
-      const viewH = sp ? sp.clientHeight : window.innerHeight;
+      // 표 상자는 내용이 짧으면 줄어 있으므로 «최대 높이»로 잽니다. 바깥 본문 화면보다 클 수는 없습니다.
+      const maxH = sp ? parseFloat(getComputedStyle(sp).maxHeight) : NaN;
+      const viewH = Math.min(Number.isFinite(maxH) ? maxH : (sp?.clientHeight ?? window.innerHeight), window.innerHeight - 90);
       setPaneH(Math.max(360, viewH - headH - footH - 4));
-      requestAnimationFrame(() => {
+      // 높이가 그려진 뒤에 굴립니다. 바깥 본문도 굴려 표 상자가 화면 안에 들어오게 합니다.
+      t2 = setTimeout(() => {
+        sp?.scrollIntoView({ block: "nearest" });
         const top = sp ? sp.getBoundingClientRect().top : 0;
-        box.scrollBy({ top: tr.getBoundingClientRect().top - top - headH, behavior: "smooth" });
-      });
+        (sp ?? document.documentElement).scrollBy({ top: tr.getBoundingClientRect().top - top - headH });
+      }, 120);
     }, 60);
-    return () => clearTimeout(t);
+    return () => {
+      clearTimeout(t);
+      if (t2) clearTimeout(t2);
+    };
   }, [expanded]);
   const [askMonth, monthDialog] = useIssueMonthConfirm();
   // 납입기한은 **발행한 날로부터 이레**입니다(`DUE_DAYS`). 학비와 같은 규칙을 써야 합니다 -

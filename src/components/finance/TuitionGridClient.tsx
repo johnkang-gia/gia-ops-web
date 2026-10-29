@@ -239,8 +239,8 @@ export default function TuitionGridClient({
    * 표를 가리지 않습니다 - 한 번에 한 줄만 펼칩니다.
    */
   const [expanded, setExpanded] = useState<string | null>(null);
-  // 펼치면 그 줄과 펼친 칸이 한 화면에 들어오게 맞춥니다. 펼친 칸 높이를 «표가 굴러가는 상자 높이 − 머리줄 − 그 줄 − 합계줄»로
-  // 재고, 그 줄이 머리줄 바로 아래에 오도록 굴립니다 - 펼친 칸이 아래로 밀려 있으면 위아래로 오가며 봐야 합니다.
+  // 펼치면 펼친 칸이 표 상자 안에 꼭 맞게 들어오게 합니다. 높이를 «표가 굴러가는 상자 높이 − 머리줄 − 합계줄»로
+  // 재고, 펼친 칸이 머리줄 바로 아래에 오도록 굴립니다(학생 이름은 펼친 칸 머리에 있습니다) - 펼친 칸이 밀려 있으면 위아래로 오가며 봐야 합니다.
   const expandRef = useRef<HTMLTableRowElement | null>(null);
   const [paneH, setPaneH] = useState<number | null>(null);
   useEffect(() => {
@@ -256,10 +256,10 @@ export default function TuitionGridClient({
       const headH = (table.querySelector("thead") as HTMLElement | null)?.offsetHeight ?? 0;
       const footH = (table.querySelector("tfoot") as HTMLElement | null)?.offsetHeight ?? 0;
       const viewH = sp ? sp.clientHeight : window.innerHeight;
-      setPaneH(Math.max(360, viewH - headH - row.offsetHeight - footH - 6));
+      setPaneH(Math.max(360, viewH - headH - footH - 4));
       requestAnimationFrame(() => {
         const top = sp ? sp.getBoundingClientRect().top : 0;
-        box.scrollBy({ top: row.getBoundingClientRect().top - top - headH, behavior: "smooth" });
+        box.scrollBy({ top: tr.getBoundingClientRect().top - top - headH, behavior: "smooth" });
       });
     }, 60);
     return () => clearTimeout(t);

@@ -2,6 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import StudentLedgerModal from "@/components/finance/StudentLedgerModal";
+import { confirmIssueMonth } from "@/lib/issueMonthGuard";
 import { BILL_LABEL, billedItems, markOf } from "@/lib/billedItems";
 import { issuedLong, issuedShort } from "@/lib/invoiceIssued";
 import { useFinanceFilter } from "@/components/finance/FinanceFilterProvider";
@@ -1145,6 +1146,7 @@ export default function InvoiceGridClient({
 
   /** 고른 줄을 한 번에 발행합니다. */
   async function issueChecked(mode: IssueMode = issueMode) {
+    if (!confirmIssueMonth(month)) return;
     const targets = review ?? rows.filter((s) => checked.has(s.id) && totalOf(s.id) > 0);
     if (targets.length === 0) return;
     const jobs = planFor(targets, mode);

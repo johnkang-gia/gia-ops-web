@@ -27,6 +27,7 @@ import { addDays, DUE_DAYS, shiftMonth } from "@/lib/financePeriod";
 import type { InvoiceLine } from "@/lib/types";
 import { BILL_STATUS, statusFromSettle } from "@/lib/billStatus";
 import { issuedShort } from "@/lib/invoiceIssued";
+import { confirmIssueMonth } from "@/lib/issueMonthGuard";
 
 /**
  * **학생 금전 창** — 학생 한 명의 돈을 한 창에서 봅니다. 그리고 그 창에서 다 합니다.
@@ -267,6 +268,7 @@ export default function StudentLedgerModal({
   async function issue(combine: boolean) {
     if (!ledger) return;
     if (targetCharges.length === 0) return notify("보낼 항목이 없습니다. 옵션을 고르거나 항목을 넣어주세요.", "error");
+    if (!confirmIssueMonth(month)) return;
     const tuition = targetCharges.filter((c) => c.kind === "학비").map((c) => c.id);
     let extra = targetCharges.filter((c) => c.kind === "학비외").map((c) => c.id);
     // 한 장으로 묶으면 학비 장에 학비외 줄이 항목 번호와 함께 들어가 「이미 나갔는가」 판정은 그대로 됩니다.

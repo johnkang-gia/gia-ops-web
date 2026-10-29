@@ -5,6 +5,7 @@ import { Who } from "@/components/common/HomonymProvider";
 import FeePlansModal from "./FeePlansModal";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import StudentLedgerModal from "@/components/finance/StudentLedgerModal";
+import { confirmIssueMonth } from "@/lib/issueMonthGuard";
 import { useRouter } from "next/navigation";
 import { billingMonthOf, termOfMonth, shiftMonth } from "@/lib/financePeriod";
 import { planBillForMonth, billRuleOf } from "@/lib/tuitionMonth";
@@ -240,6 +241,7 @@ export default function TuitionGridClient({
   const [expanded, setExpanded] = useState<string | null>(null);
   /** 「고른 N명 발행」에 담을 항목. 비면 학비 전부. 항목마다 단추를 두던 것을 한 칸으로 줄였습니다. */
   const [issueScope, setIssueScope] = useState("");
+  const [methodOpen, setMethodOpen] = useState(false);
   const router = useRouter();
   /**
    * **다음 달에 얹을 차액.** 청구서가 이미 나간 뒤 금액이 바뀌면(더 받기·덜 받기) 보낸 장을 고치지 않고 다음
@@ -1071,6 +1073,7 @@ export default function TuitionGridClient({
    * 단추인데 다시 고르라고 하니 사람은 무엇을 더 해야 하는지 알 수 없습니다.
    */
   async function issueChecked(planIds: string[], only?: string[]) {
+    if (!confirmIssueMonth(month)) return;
     const scoped = planIds.length > 0;
     // 학비외도 함께 낼지. 고른 그대로 이 발행 전체에 씁니다(`issuePartner`).
     const partner = partnerMode;
@@ -1357,50 +1360,86 @@ export default function TuitionGridClient({
         </label>
 
         <span className="ml-auto flex flex-wrap items-center gap-2">
-          <label className="flex items-center gap-1 text-[11px] font-semibold text-slate-600">
-            납부 기한
-            <input
-              type="date"
-              value={dueDate}
-              onChange={(e) => setDueDate(e.target.value)}
-              className="rounded-lg border border-slate-300 px-2 py-1 text-[11px]"
-            />
-          </label>
-          {/* **학비외도 함께.** 학생마다 학비외 일괄 화면으로 넘어가 또 발행하지 않게, 이 화면에서 정합니다.
-              작은 드롭다운이던 때는 있는 줄 몰라 두 화면을 오갔습니다 - 학비외 화면과 같은 모양으로 둡니다. */}
-          <span className="flex flex-wrap items-center gap-1 rounded-lg bg-orange-50 px-1.5 py-1 ring-1 ring-orange-200" title="학비외의 아직 안 나간 항목(교재·교복 등)을 이 화면에서 함께 발행합니다">
-            <span className="text-[11px] font-bold text-orange-800">학비외</span>
-            {(["merge", "separate", "off"] as PartnerMode[]).map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => setPartnerMode(m)}
-                className={
-                  "rounded-full px-2 py-0.5 text-[11px] font-bold transition-colors " +
-                  (partnerMode === m ? "bg-orange-600 text-white" : "bg-white text-slate-500 ring-1 ring-slate-200 hover:text-slate-800")
-                }
-              >
-                {m === "off" ? "학비만" : m === "merge" ? "함께 · 한 장으로" : "함께 · 따로 한 장"}
-              </button>
-            ))}
-          </span>
-          {/* **지난 미납.** 수납 안 된 장은 저절로 다음 달로 밀립니다. 이번 발행 전체에 합칠지 여기서,
-              한 명씩은 학생 줄 「지난 미납」 칸에서 정합니다. 기본은 합치지 않음 — 커진 장은 안 걷혔습니다. */}
-          <span className="flex flex-wrap items-center gap-1 rounded-lg bg-rose-50 px-1.5 py-1 ring-1 ring-rose-200" title="보고 있는 달보다 앞선 달의 안 받은 돈을 이번 달 장에 얹을지">
-            <span className="text-[11px] font-bold text-rose-800">지난 미납</span>
-            {(["off", "merge"] as const).map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => setCarryMode(m)}
-                className={
-                  "rounded-full px-2 py-0.5 text-[11px] font-bold transition-colors " +
-                  (carryMode === m ? "bg-rose-600 text-white" : "bg-white text-slate-500 ring-1 ring-slate-200 hover:text-slate-800")
-                }
-              >
-                {m === "off" ? "따로(학생 줄에서)" : "이번 달 장에 합치기"}
-              </button>
-            ))}
+          {/* **발행 방식 하나로.** 납부 기한·학비외를 어떻게·지난 미납을 어떻게·담을 항목 네 가지가 줄 위에 따로 펼쳐져 있어
+              발행 단추 옆이 단추 열댓 개였습니다. 한 번 정하면 바꿀 일이 드물어 한 칸에 접고, 지금 무엇으로 나가는지는
+              단추 글자로 늘 보입니다. */}
+          <span className="relative">
+            <button
+              type="button"
+              onClick={() => setMethodOpen((v) => !v)}
+              className="whitespace-nowrap rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+              title="발행 방식 — 납부 기한 · 학비외 · 지난 미납 · 담을 항목"
+            >
+              ⚙ 발행 방식: 기한 {dueDate.slice(5).replace("-", "/")} · 학비외 {partnerMode === "off" ? "안 함" : partnerMode === "merge" ? "한 장에" : "따로 한 장"} · 지난 미납 {carryMode === "off" ? "따로" : "합침"}
+              {issueScope ? ` · ${usedPlans.find((p) => p.id === issueScope)?.name ?? ""}만` : ""} ▾
+            </button>
+            {methodOpen && (
+              <div className="absolute right-0 top-full z-40 mt-1 flex w-[340px] flex-col gap-2 rounded-xl border border-slate-200 bg-white p-2.5 shadow-xl">
+                <label className="flex items-center gap-1 text-[11px] font-semibold text-slate-600">
+                  납부 기한
+                  <input
+                    type="date"
+                    value={dueDate}
+                    onChange={(e) => setDueDate(e.target.value)}
+                    className="rounded-lg border border-slate-300 px-2 py-1 text-[11px]"
+                  />
+                </label>
+                {/* **학비외도 함께.** 학생마다 학비외 일괄 화면으로 넘어가 또 발행하지 않게, 이 화면에서 정합니다.
+                    작은 드롭다운이던 때는 있는 줄 몰라 두 화면을 오갔습니다 - 학비외 화면과 같은 모양으로 둡니다. */}
+                <span className="flex flex-wrap items-center gap-1 rounded-lg bg-orange-50 px-1.5 py-1 ring-1 ring-orange-200" title="학비외의 아직 안 나간 항목(교재·교복 등)을 이 화면에서 함께 발행합니다">
+                  <span className="text-[11px] font-bold text-orange-800">학비외</span>
+                  {(["merge", "separate", "off"] as PartnerMode[]).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setPartnerMode(m)}
+                      className={
+                        "rounded-full px-2 py-0.5 text-[11px] font-bold transition-colors " +
+                        (partnerMode === m ? "bg-orange-600 text-white" : "bg-white text-slate-500 ring-1 ring-slate-200 hover:text-slate-800")
+                      }
+                    >
+                      {m === "off" ? "학비만" : m === "merge" ? "함께 · 한 장으로" : "함께 · 따로 한 장"}
+                    </button>
+                  ))}
+                </span>
+                {/* **지난 미납.** 수납 안 된 장은 저절로 다음 달로 밀립니다. 이번 발행 전체에 합칠지 여기서,
+                    한 명씩은 학생 줄 「지난 미납」 칸에서 정합니다. 기본은 합치지 않음 — 커진 장은 안 걷혔습니다. */}
+                <span className="flex flex-wrap items-center gap-1 rounded-lg bg-rose-50 px-1.5 py-1 ring-1 ring-rose-200" title="보고 있는 달보다 앞선 달의 안 받은 돈을 이번 달 장에 얹을지">
+                  <span className="text-[11px] font-bold text-rose-800">지난 미납</span>
+                  {(["off", "merge"] as const).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setCarryMode(m)}
+                      className={
+                        "rounded-full px-2 py-0.5 text-[11px] font-bold transition-colors " +
+                        (carryMode === m ? "bg-rose-600 text-white" : "bg-white text-slate-500 ring-1 ring-slate-200 hover:text-slate-800")
+                      }
+                    >
+                      {m === "off" ? "따로(학생 줄에서)" : "이번 달 장에 합치기"}
+                    </button>
+                  ))}
+                </span>
+              {usedPlans.length > 1 && (
+                <select
+                  value={issueScope}
+                  onChange={(e) => setIssueScope(e.target.value)}
+                  className="rounded-lg border border-emerald-300 bg-white px-2 py-1 text-[11px] font-semibold text-emerald-800"
+                  title="담을 항목 — 정규과정과 방과후는 납기도 그만두는 시점도 달라 따로 낼 때가 있습니다(항목만 낼 때는 지난 미납을 얹지 않습니다)"
+                >
+                  <option value="">담을 항목: 전체</option>
+                  {usedPlans.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}만
+                    </option>
+                  ))}
+                </select>
+              )}
+                <button type="button" onClick={() => setMethodOpen(false)} className="self-end rounded bg-slate-800 px-2 py-0.5 text-[11px] font-bold text-white">
+                  닫기
+                </button>
+              </div>
+            )}
           </span>
           <button
             onClick={() => void issueChecked(issueScope ? [issueScope] : [])}
@@ -1413,21 +1452,6 @@ export default function TuitionGridClient({
           {/* 항목별 발행. 정규과정과 방과후는 납기도 그만두는 시점도 달라, 한 장에 섞으면
               그 장이 반만 결제된 상태가 됩니다. 항목이 하나뿐이면 「전체」와 같으므로
               굳이 두 번 보여주지 않습니다. */}
-          {usedPlans.length > 1 && (
-            <select
-              value={issueScope}
-              onChange={(e) => setIssueScope(e.target.value)}
-              className="rounded-lg border border-emerald-300 bg-white px-2 py-1.5 text-[12px] font-semibold text-emerald-800"
-              title="담을 항목 — 정규과정과 방과후는 납기도 그만두는 시점도 달라 따로 낼 때가 있습니다(항목만 낼 때는 지난 미납을 얹지 않습니다)"
-            >
-              <option value="">담을 항목: 전체</option>
-              {usedPlans.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}만
-                </option>
-              ))}
-            </select>
-          )}
 
           {/* **올톡페이 대량발송 파일.** 학비외와 **같은 창**을 씁니다 - 대상(어머니/아버지)·
               합치기·이미 보낸 표시를 두 벌 만들면 한쪽만 고쳐지고, 그러면 같은 집에 청구서가

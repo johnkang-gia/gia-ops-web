@@ -188,7 +188,7 @@ export const BACKUP_GROUPS: { group: string; tables: string[] }[] = [
     // 지금 값은 fee_items·fee_discounts 에 있지만, **언제 얼마에서 얼마로 바뀌었는지**는
     // 여기에만 있습니다. 되돌릴 수 없는 기록이라 담습니다 - 회계는 「지금 얼마인가」보다
     // 「그때 얼마였나」를 더 자주 묻습니다.
-    tables: ["fee_item_price_log", "fee_discount_log", "finance_access_log", "invoice_line_reclass_log"],
+    tables: ["fee_item_price_log", "fee_discount_log", "finance_access_log", "invoice_line_reclass_log", "invoice_billing_month_log"],
   },
   {
     group: "오류 판단",

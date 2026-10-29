@@ -296,6 +296,7 @@ export const LOG_TABLES = [
   "invoice_amount_log",
   // 과목경정 내력. 금액은 그대로이고 어느 과목으로 셀지만 바뀐 기록입니다.
   "invoice_line_reclass_log",
+  "invoice_billing_month_log",
   "fee_discount_log",
   "fee_item_price_log",
   "data_export_log",

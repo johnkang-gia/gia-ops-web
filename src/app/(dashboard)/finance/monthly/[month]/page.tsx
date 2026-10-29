@@ -3,6 +3,7 @@ import Link from "next/link";
 import FinanceLive from "@/components/finance/FinanceLive";
 import MonthCloseBar, { type MonthClose } from "@/components/finance/MonthCloseBar";
 import StudentMonthClient from "@/components/finance/StudentMonthClient";
+import BillingMonthFix, { type MismatchRow } from "@/components/finance/BillingMonthFix";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess } from "@/lib/roles";
@@ -101,6 +102,17 @@ export default async function FinanceMonthStudentsPage({ params }: { params: Pro
 
   const receivedInMonth = inMonthRes.rows.filter((p) => inScopeIds(ids, p.student_id)).reduce((n, p) => n + Math.round(Number(p.amount ?? 0)), 0);
   const notice = readNotice(invRes, payRes, inMonthRes);
+  // 다른 달에 발행했는데 이 달 청구월로 찍힌 장(살아 있는 것만). 위에 모아 보여 옮길 수 있게 합니다.
+  const mismatch: MismatchRow[] = (invRes.rows as (MonthInvoice & { stream?: string | null; category?: string | null })[])
+    .filter((v) => v.status === "발행" && !v.carried_to_invoice_id && v.billing_month === month && (v.issue_date ?? "").slice(0, 7) !== month)
+    .map((v) => ({
+      id: v.id,
+      invoiceNo: v.invoice_no,
+      name: (v.student_id ? nameById.get(v.student_id) : null) ?? v.student_name_ko ?? v.student_name ?? "",
+      issueDate: v.issue_date,
+      amount: Math.round(Number(v.total_amount ?? 0)),
+      stream: v.stream ?? v.category ?? "",
+    }));
   const loadError = stuRes.error ?? null;
 
   return (
@@ -136,6 +148,8 @@ export default async function FinanceMonthStudentsPage({ params }: { params: Pro
           미납금 →
         </Link>
       </div>
+
+      <BillingMonthFix month={month} rows={mismatch} />
 
       <p className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] leading-relaxed text-slate-700">
         <b>통장 조회와 같은 모양</b>입니다 — 줄을 누르면 그 학생의 {monthLabel(month)} 거래내역이 열립니다.

@@ -239,11 +239,29 @@ export default function TuitionGridClient({
    * 표를 가리지 않습니다 - 한 번에 한 줄만 펼칩니다.
    */
   const [expanded, setExpanded] = useState<string | null>(null);
-  // 펼치면 그 줄과 펼친 칸이 한 화면에 들어오게 굴립니다. 펼친 칸이 아래로 밀려 있으면 위아래로 오가며 봐야 합니다.
+  // 펼치면 그 줄과 펼친 칸이 한 화면에 들어오게 맞춥니다. 펼친 칸 높이를 «표가 굴러가는 상자 높이 − 머리줄 − 그 줄 − 합계줄»로
+  // 재고, 그 줄이 머리줄 바로 아래에 오도록 굴립니다 - 펼친 칸이 아래로 밀려 있으면 위아래로 오가며 봐야 합니다.
   const expandRef = useRef<HTMLTableRowElement | null>(null);
+  const [paneH, setPaneH] = useState<number | null>(null);
   useEffect(() => {
     if (!expanded) return;
-    const t = setTimeout(() => expandRef.current?.scrollIntoView({ block: "end", behavior: "smooth" }), 60);
+    const t = setTimeout(() => {
+      const tr = expandRef.current;
+      const row = tr?.previousElementSibling as HTMLElement | null;
+      const table = tr?.closest("table");
+      if (!tr || !row || !table) return;
+      let sp: HTMLElement | null = table.parentElement;
+      while (sp && !/(auto|scroll)/.test(getComputedStyle(sp).overflowY)) sp = sp.parentElement;
+      const box = sp ?? document.documentElement;
+      const headH = (table.querySelector("thead") as HTMLElement | null)?.offsetHeight ?? 0;
+      const footH = (table.querySelector("tfoot") as HTMLElement | null)?.offsetHeight ?? 0;
+      const viewH = sp ? sp.clientHeight : window.innerHeight;
+      setPaneH(Math.max(360, viewH - headH - row.offsetHeight - footH - 6));
+      requestAnimationFrame(() => {
+        const top = sp ? sp.getBoundingClientRect().top : 0;
+        box.scrollBy({ top: row.getBoundingClientRect().top - top - headH, behavior: "smooth" });
+      });
+    }, 60);
     return () => clearTimeout(t);
   }, [expanded]);
   /** 「고른 N명 발행」에 담을 항목. 비면 학비 전부. 항목마다 단추를 두던 것을 한 칸으로 줄였습니다. */
@@ -2187,7 +2205,7 @@ export default function TuitionGridClient({
                   <tr ref={expandRef}>
                     <td colSpan={usedPlans.length + 8} className="border-b-2 border-indigo-300 bg-indigo-50/30 p-0">
                       {/* 표가 가로로 길어도 펼친 칸은 화면 폭에 붙어 있습니다(sticky) - 옆으로 밀면 내용이 사라지지 않게. */}
-                      <div className="sticky left-0 flex min-h-[420px] flex-col overflow-hidden" style={{ width: "min(1600px, calc(100vw - 290px))", height: "calc(100vh - 170px)" }}>
+                      <div className="sticky left-0 flex min-h-[420px] flex-col overflow-hidden" style={{ width: "min(1600px, calc(100vw - 290px))", height: paneH ?? "calc(100vh - 170px)" }}>
                         <div className="flex items-center justify-between border-b border-indigo-200 bg-indigo-50 px-3 py-1 text-[11px]">
                           <span className="font-bold text-indigo-800">▾ {s.name} · {month.replace("-", "년 ")}월 청구 — 고치고 바로 발행합니다</span>
                           <button type="button" onClick={() => setExpanded(null)} className="rounded px-2 py-0.5 font-bold text-indigo-700 hover:bg-indigo-100">

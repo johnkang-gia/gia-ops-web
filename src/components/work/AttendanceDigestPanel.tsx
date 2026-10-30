@@ -769,17 +769,26 @@ export default function AttendanceDigestPanel({
       const category = r.kind === "픽업" ? "픽업" : categorize(text, rules);
       if (!category) continue;
       const day = r.service_date ?? todayKey(r.received_at ? new Date(r.received_at) : now);
-      // 명부에 있는 이름인지 확인합니다. 못 찾으면 🔎 로 표시해 사람이 골라줄 수 있게 합니다.
-      const hit = roster.find(
-        (s) => s.name === name || (s.nameEn ?? "").toLowerCase() === name.toLowerCase(),
-      );
+      // 학생 번호가 붙어 있으면(이어 둔 방에서 왔거나 사람이 고른 연락) 그 아이가 답입니다
+      // (CLAUDE.md 2-4-8). 예전에는 번호를 안 읽고 이름 글자로 명부를 다시 찾아, 김재이 G2C 로
+      // 정해진 연락이 출결내역에서만 「누구?」로 떴습니다 - 같은 연락이 오늘 학생 칸에는 G2C 로
+      // 나오는데 말입니다. 번호가 없으면 이름으로 찾되 **한 명뿐인 이름일 때만** 고릅니다.
+      const linked = r.student_id ? roster.find((s) => s.id === r.student_id) ?? null : null;
+      const byName = linked
+        ? []
+        : roster.filter((s) => s.name === name || (s.nameEn ?? "").toLowerCase() === name.toLowerCase());
+      const hit = linked ?? (byName.length === 1 ? byName[0] : null);
+      const homonym = hit ? roster.filter((s) => s.name === hit.name).length > 1 : byName.length > 1;
+      const shownName = hit?.name ?? byName[0]?.name ?? name;
       out.push({
         key: `toddle-${r.id}`,
         category,
-        studentName: hit?.name ?? name,
-        studentKey: hit?.name ?? name,
-        ambiguous: false,
-        unmatched: !hit,
+        studentName: shownName,
+        // 동명이인은 번호까지 열쇠에 넣습니다. 이름만 쓰면 다른 김재이의 같은 날 픽업과 한 건으로 합쳐집니다.
+        studentKey: homonym && hit?.id ? `${shownName}#${hit.id}` : shownName,
+        studentId: hit?.id ?? null,
+        ambiguous: !hit && byName.length > 1,
+        unmatched: !hit && byName.length === 0,
         rawText: text || `${name} ${category} (토들)`,
         time: r.received_at,
         sourceLabel: r.source ?? "토들",

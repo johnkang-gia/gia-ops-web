@@ -319,10 +319,11 @@ export function MobileNavLinks({ categories }: { categories: NavCategory[] }) {
   const best = bestMatchHref(pathname, categories);
   const fs = useFinanceScope();
 
-  // 모바일은 가로로 죽 늘어선 목록이라 hover가 없어서(터치 시작 시점엔 이미 손가락이 눌린
-  // 뒤라 프리페치할 시간이 촉박합니다), 화면에 붙는 순간 전부 미리 받아둡니다. 항목 수가
-  // 많지 않아(전체 메뉴 20개 안팎) 한꺼번에 프리페치해도 부담이 없습니다.
+  // 예전에는 이 목록이 붙는 순간 메뉴 전부를 미리 받아뒀습니다. 그런데 이 목록은 **PC 화면에도
+  // 숨은 채로 붙어 있어서**, 어느 화면을 열든 메뉴 40여 개를 미리 부르는 요청이 함께 나가 그 화면의
+  // 자료 앞에 줄을 섰습니다. 이제 휴대폰 폭일 때만 미리 받습니다.
   useLayoutEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia("(max-width: 767px)").matches) return;
     items.forEach((item) => router.prefetch(item.href));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

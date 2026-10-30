@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import FinanceLive from "@/components/finance/FinanceLive";
-import Link from "next/link";
+import Link from "@/components/common/AppLink";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess } from "@/lib/roles";

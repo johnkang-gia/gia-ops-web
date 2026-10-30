@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
+import Link from "@/components/common/AppLink";
 import FinanceLive from "@/components/finance/FinanceLive";
 import ImportUploadClient, { type BatchRow } from "@/components/finance/ImportUploadClient";
 import { createClient } from "@/lib/supabase/server";

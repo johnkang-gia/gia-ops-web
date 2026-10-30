@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
+import Link from "@/components/common/AppLink";
 import { createClient } from "@/lib/supabase/client";
 import type { ManualSection, WrStudent } from "@/lib/types";
 import { toDisplayHtml, htmlToPlainText } from "@/lib/manualHtml";

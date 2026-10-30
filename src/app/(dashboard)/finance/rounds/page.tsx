@@ -22,6 +22,8 @@ export default async function FinanceRoundsPage() {
   if (!hasFinanceAccess(me)) redirect("/home");
 
   const supabase = await createClient();
+  // 장부 범위는 아래 조회들과 상관없어 먼저 출발시킵니다 - 차례로 기다리면 왕복 한 번이 더 붙습니다.
+  const scopeP = getFinanceScope(me).then((sc) => scopeStudentIds(supabase, sc));
   const [batchRes, invRes, payRes] = await Promise.all([
     supabase
       .from("invoice_batches")
@@ -51,7 +53,7 @@ export default async function FinanceRoundsPage() {
 
   // **장부가 한 부서면 회차를 그 부서 청구서로 다시 셉니다.** 회차 표(invoice_batches)는 학교 전체를
   // 세어 둔 것이라, 그대로 두면 초등 회계에 중고등 청구서 장수가 섞여 보입니다.
-  const ids = await scopeStudentIds(supabase, await getFinanceScope(me));
+  const ids = await scopeP;
   const allBatches = (batchRes.data as BatchRow[] | null) ?? [];
   const invoices = invRes.rows.filter((v) => inScopeIds(ids, v.student_id));
   const batches: BatchRow[] = !ids

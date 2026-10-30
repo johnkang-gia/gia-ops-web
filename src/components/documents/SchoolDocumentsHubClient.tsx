@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
+import Link from "@/components/common/AppLink";
 import type { ManualSection, SchoolDocument } from "@/lib/types";
 import GuideButton from "@/components/common/GuideButton";
 

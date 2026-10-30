@@ -3,7 +3,7 @@ import { loadHomonyms } from "@/lib/homonyms";
 import { nameKey } from "@/lib/studentKey";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
-import Link from "next/link";
+import Link from "@/components/common/AppLink";
 import ShuttleChecklistClient from "@/components/shuttle/ShuttleChecklistClient";
 import GuideButton from "@/components/common/GuideButton";
 import { isStaffOrAboveUser } from "@/lib/roles";

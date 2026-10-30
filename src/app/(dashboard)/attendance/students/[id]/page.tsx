@@ -1,5 +1,5 @@
 import { redirect, notFound } from "next/navigation";
-import Link from "next/link";
+import Link from "@/components/common/AppLink";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { summarizeStudent, type RegisterRecord, type ReasonType } from "@/lib/attendanceRegister";

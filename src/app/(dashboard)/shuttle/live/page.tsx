@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
-import Link from "next/link";
+import Link from "@/components/common/AppLink";
 import type { ShuttleRoute, ShuttlePilotRoute } from "@/lib/types";
 import ShuttleLiveClient, { type LiveRosterItem } from "@/components/shuttle/ShuttleLiveClient";
 import GuideButton from "@/components/common/GuideButton";

@@ -30,7 +30,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  * 한 명만 읽을 때는 `loadStudent` 를 씁니다. 넣고 고치는 자리는 이 파일의 일이 아닙니다.
  */
 export const STUDENT_COLUMNS =
-  "id, name, name_en, grade, class_name, class_id, department, birth_date, status, student_no, sibling_group_id, photo_path, shuttle_mode";
+  "id, name, name_en, grade, class_name, class_id, department, birth_date, status, student_no, sibling_group_id, photo_path, photo_updated_at, shuttle_mode";
 
 const PHONE_COLUMNS = "mother_phone, father_phone, parent_phone, billing_phone, billing_phone_role";
 

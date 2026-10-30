@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
+import Link from "@/components/common/AppLink";
 import { createClient } from "@/lib/supabase/client";
 import { useFinanceLive } from "@/lib/useFinanceLive";
 import { useToast } from "@/components/common/ToastProvider";

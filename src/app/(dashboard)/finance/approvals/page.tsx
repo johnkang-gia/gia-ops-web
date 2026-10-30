@@ -22,6 +22,8 @@ export default async function ApprovalsPage() {
   if (!hasFinanceAccess(me)) redirect("/home");
 
   const supabase = await createClient();
+  // 장부 범위는 아래 조회들과 상관없어 먼저 출발시킵니다 - 차례로 기다리면 왕복 한 번이 더 붙습니다.
+  const scopeP = getFinanceScope(me).then((sc) => scopeStudentIds(supabase, sc));
   const res = await readAll<FinanceRequest & { invoices: { invoice_no: string; student_id: string | null; student_name: string; student_name_ko: string | null; total_amount: number | string; stream: string | null } | null }>(
     (from, to) =>
       supabase
@@ -32,7 +34,7 @@ export default async function ApprovalsPage() {
         .range(from, to),
   );
 
-  const ids = await scopeStudentIds(supabase, await getFinanceScope(me));
+  const ids = await scopeP;
   const rows: ApprovalRow[] = res.rows.filter((r) => inScopeIds(ids, r.invoices?.student_id)).map((r) => ({
     ...r,
     invoiceNo: r.invoices?.invoice_no ?? "",

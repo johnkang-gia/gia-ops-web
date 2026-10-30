@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
+import Link from "@/components/common/AppLink";
 import { placeLabel, type TodayPickupItem } from "@/lib/todayPickup";
 import { ALERT_LEAD_MINUTES, minutesUntil, pickupDueAt } from "@/lib/pickupTask";
 

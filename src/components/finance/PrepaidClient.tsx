@@ -3,7 +3,7 @@
 import StudentSelect from "@/components/common/StudentSelect";
 import { useMemo, useState } from "react";
 import { useFinanceLive } from "@/lib/useFinanceLive";
-import Link from "next/link";
+import Link from "@/components/common/AppLink";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";

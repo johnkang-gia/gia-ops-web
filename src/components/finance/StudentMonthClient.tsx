@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useMemo, useState } from "react";
-import Link from "next/link";
+import Link from "@/components/common/AppLink";
 import { useFinanceLive } from "@/lib/useFinanceLive";
 import { Who } from "@/components/common/HomonymProvider";
 import { useToast } from "@/components/common/ToastProvider";

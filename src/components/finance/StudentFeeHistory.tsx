@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/common/AppLink";
 import { createClient } from "@/lib/supabase/server";
 import { todayKst } from "@/lib/kst";
 import { summarizeByTerm } from "@/lib/feeSummary";

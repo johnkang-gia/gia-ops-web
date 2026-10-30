@@ -45,6 +45,8 @@ export default async function CashReceiptsPage() {
   if (!hasFinanceAccess(me)) redirect("/home");
 
   const supabase = await createClient();
+  // 장부 범위는 아래 조회들과 상관없어 먼저 출발시킵니다 - 차례로 기다리면 왕복 한 번이 더 붙습니다.
+  const scopeP = getFinanceScope(me).then((sc) => scopeStudentIds(supabase, sc));
   const [{ data, error }, { rows: studentRows }] = await Promise.all([
     supabase.from("cash_receipts").select("*").order("created_at", { ascending: false }).limit(500),  // finance-limit-ok: 현금영수증은 접수 순으로 처리하는 목록입니다. 합계를 내지 않으므로 최근 500건이면 일이 됩니다.
     // 접수할 때 이름으로 학생을 고릅니다. 명부 전체가 있어야 이름을 치는 순간 붙습니다.
@@ -53,7 +55,7 @@ export default async function CashReceiptsPage() {
   if (error) console.error("[현금영수증] 목록을 읽지 못했습니다:", error.message);
 
   // 고른 장부의 학생 것만. 학생과 안 이어진 접수(사업자 명의 등)는 「전체 회계」에서만 보입니다.
-  const ids = await scopeStudentIds(supabase, await getFinanceScope(me));
+  const ids = await scopeP;
   const rows = ((data as CashReceiptRow[] | null) ?? []).filter((r) => inScopeIds(ids, r.student_id));
   const students: StudentLite[] = studentRows.filter((s) => inScopeIds(ids, s.id));
 

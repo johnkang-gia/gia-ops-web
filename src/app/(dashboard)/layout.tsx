@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/common/AppLink";
 import { countProposalGroups, type GroupableProposal } from "@/lib/proposalGroups";
 import Image from "next/image";
 import { Suspense } from "react";

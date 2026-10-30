@@ -1,7 +1,7 @@
 "use client";
 
 import { isRealPerson } from "@/lib/taskAck";
-import Link from "next/link";
+import Link from "@/components/common/AppLink";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";

@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { ROSTER_TABS } from "@/components/school/rosterTabs";
 import PageTabs from "@/components/common/PageTabs";
-import Link from "next/link";
+import Link from "@/components/common/AppLink";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { isAdminUser, isStaffOrAboveUser } from "@/lib/roles";

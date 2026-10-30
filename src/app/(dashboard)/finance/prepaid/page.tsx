@@ -25,6 +25,8 @@ export default async function PrepaidPage() {
   if (!hasFinanceAccess(me)) redirect("/home");
 
   const supabase = await createClient();
+  // 장부 범위는 아래 조회들과 상관없어 먼저 출발시킵니다 - 차례로 기다리면 왕복 한 번이 더 붙습니다.
+  const scopeP = getFinanceScope(me).then((sc) => scopeStudentIds(supabase, sc));
   const [payRes, stuRes, invRes] = await Promise.all([
     // **안 붙은 줄만** 읽습니다. 전부 읽어와 화면에서 거르면 붙은 입금 수천 줄을 헛되이
     // 끌어옵니다 - 그리고 그 수가 limit 을 넘는 날 선입금이 조용히 사라집니다.
@@ -38,7 +40,7 @@ export default async function PrepaidPage() {
     ),
   ]);
 
-  const ids = await scopeStudentIds(supabase, await getFinanceScope(me));
+  const ids = await scopeP;
   return (
     <PrepaidClient
       rows={((payRes.data as PrepaidRow[] | null) ?? []).filter((r) => inScopeIds(ids, r.student_id))}

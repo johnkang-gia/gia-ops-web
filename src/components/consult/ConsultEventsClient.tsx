@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/common/AppLink";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { ConsultEvent } from "@/lib/consult/model";

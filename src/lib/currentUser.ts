@@ -42,10 +42,14 @@ export type CurrentAppUser = {
 // 로그인하지 않았으면 null을 반환합니다(리다이렉트는 호출하는 쪽에서 각자의 상황에 맞게 처리).
 export const getCurrentAppUser = cache(async (): Promise<CurrentAppUser> => {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user || !user.email) return null;
+  // **getClaims 로 확인합니다.** getUser 는 매번 인증 서버에 물으러 나가서 모든 화면의 첫 줄에
+  // 0.1~0.3초가 붙었고, 이 함수는 모든 화면이 부릅니다. 이 프로젝트는 비대칭 서명키(ES256)를 써서
+  // getClaims 가 받아 둔 공개키로 그 자리에서 서명을 검증합니다 - 위조된 토큰은 그대로 걸러지고,
+  // 미들웨어도 같은 방식으로 확인하고 있습니다.
+  const { data: claimsData } = await supabase.auth.getClaims();
+  const claims = claimsData?.claims as { sub?: string; email?: string } | undefined;
+  const user = claims?.sub && claims.email ? { id: claims.sub, email: claims.email } : null;
+  if (!user) return null;
 
   const email = user.email.toLowerCase();
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
+import Link from "@/components/common/AppLink";
 import { BATCH, SCREENS, SITE_CHECK_FRAME, allTargets, inspectRendered, stillLoading, type CheckResult, type RenderIssue, type Verdict } from "@/lib/siteCheck";
 import { useDevReport } from "@/components/dev/DevReportProvider";
 

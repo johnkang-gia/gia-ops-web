@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/common/AppLink";
 import { latePayers, methodKindOf } from "@/lib/feeSummary";
 import type { PaymentRow } from "@/lib/payments";
 import type { Invoice } from "@/lib/types";

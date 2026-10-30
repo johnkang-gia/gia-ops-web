@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
+import Link from "@/components/common/AppLink";
 import { createClient } from "@/lib/supabase/client";
 import { departmentOf } from "@/lib/department";
 import { whereNow, type PeriodRow, type TimetableRow } from "@/lib/whereNow";

@@ -5,7 +5,7 @@ import { isAdminUser } from "@/lib/roles";
 import type { TeamMember, WrClass } from "@/lib/types";
 import ClassManageClient from "@/components/weeklyReport/admin/ClassManageClient";
 import GuideButton from "@/components/common/GuideButton";
-import Link from "next/link";
+import Link from "@/components/common/AppLink";
 import TermSettingTabs from "@/components/school/TermSettingTabs";
 import { TermSnapshotClasses } from "@/components/school/TermSnapshotView";
 import { loadTermSettingView } from "@/lib/termSettingView";

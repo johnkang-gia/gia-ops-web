@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/common/AppLink";
 import { useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useFinanceLive } from "@/lib/useFinanceLive";

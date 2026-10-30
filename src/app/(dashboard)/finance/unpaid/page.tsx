@@ -24,6 +24,8 @@ export default async function UnpaidPage() {
   if (!hasFinanceAccess(me)) redirect("/home");
 
   const supabase = await createClient();
+  // 장부 범위는 아래 조회들과 상관없어 먼저 출발시킵니다 - 차례로 기다리면 왕복 한 번이 더 붙습니다.
+  const scopeP = getFinanceScope(me).then((sc) => scopeStudentIds(supabase, sc));
   const [invRes, payRes, stuRes] = await Promise.all([
     // **발행된 것만** 읽습니다. 취소·이월된 것까지 끌어오면 화면에서 다시 걸러야 하고,
     // 그 수가 한도를 넘는 날 진짜 미납이 조용히 사라집니다.
@@ -45,7 +47,7 @@ export default async function UnpaidPage() {
   ]);
 
   // 고른 장부(초등·중고등)의 학생 청구서만.
-  const ids = await scopeStudentIds(supabase, await getFinanceScope(me));
+  const ids = await scopeP;
   const invoices = invRes.rows.filter((v) => inScopeIds(ids, v.student_id));
   const keep = new Set(invoices.map((v) => v.id));
   return (

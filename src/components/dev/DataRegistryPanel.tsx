@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
+import Link from "@/components/common/AppLink";
 import { DATA_KINDS } from "@/lib/registry/dataKinds";
 import { useDevReport } from "@/components/dev/DevReportProvider";
 

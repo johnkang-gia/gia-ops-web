@@ -36,6 +36,8 @@ export default async function RevenuePage({ searchParams }: { searchParams: Prom
   const from = sp.from && MONTH.test(sp.from) ? sp.from : shiftMonth(to, -11);
 
   const supabase = await createClient();
+  // 장부 범위는 아래 조회들과 상관없어 먼저 출발시킵니다 - 차례로 기다리면 왕복 한 번이 더 붙습니다.
+  const scopeP = getFinanceScope(me).then((sc) => scopeStudentIds(supabase, sc));
   const [accRes, itemRes, catRes, planRes] = await Promise.all([
     supabase.from("revenue_accounts").select("id, code, name, level, parent_id, sort_order, active").order("code"),
     supabase.from("fee_items").select("id, category, revenue_account_id"),
@@ -74,7 +76,7 @@ export default async function RevenuePage({ searchParams }: { searchParams: Prom
   };
 
   // 고른 장부(초등·중고등)의 청구서·줄·수납만 셉니다.
-  const ids = await scopeStudentIds(supabase, await getFinanceScope(me));
+  const ids = await scopeP;
   const scopedInv = invRes.rows.filter((v) => inScopeIds(ids, (v as RevInvoice & { student_id?: string | null }).student_id));
   const keptInv = new Set(scopedInv.map((v) => v.id));
   const scopedLines = ids ? lineRes.rows.filter((l) => keptInv.has(l.invoice_id)) : lineRes.rows;

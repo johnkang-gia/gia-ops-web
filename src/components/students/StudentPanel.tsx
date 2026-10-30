@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { kstDate } from "@/lib/kst";
-import Link from "next/link";
+import Link from "@/components/common/AppLink";
 import { useRouter } from "next/navigation";
 import StudentLedgerModal from "@/components/finance/StudentLedgerModal";
 import { Who } from "@/components/common/HomonymProvider";

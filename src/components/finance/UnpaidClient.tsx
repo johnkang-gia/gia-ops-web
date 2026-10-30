@@ -4,7 +4,7 @@ import { useFinanceFilter } from "@/components/finance/FinanceFilterProvider";
 import { matchesStudentQuery } from "@/lib/financeFilter";
 import { useMemo, useState } from "react";
 import { useFinanceLive } from "@/lib/useFinanceLive";
-import Link from "next/link";
+import Link from "@/components/common/AppLink";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/common/ToastProvider";
 import { useConfirm } from "@/components/common/ConfirmProvider";

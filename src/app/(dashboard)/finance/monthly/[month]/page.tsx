@@ -1,5 +1,5 @@
 import { redirect, notFound } from "next/navigation";
-import Link from "next/link";
+import Link from "@/components/common/AppLink";
 import FinanceLive from "@/components/finance/FinanceLive";
 import MonthCloseBar, { type MonthClose } from "@/components/finance/MonthCloseBar";
 import StudentMonthClient from "@/components/finance/StudentMonthClient";
@@ -40,6 +40,8 @@ export default async function FinanceMonthStudentsPage({ params }: { params: Pro
   if (!hasFinanceAccess(me)) redirect("/home");
 
   const supabase = await createClient();
+  // 장부 범위는 아래 조회들과 상관없어 먼저 출발시킵니다 - 차례로 기다리면 왕복 한 번이 더 붙습니다.
+  const scopeP = getFinanceScope(me).then((sc) => scopeStudentIds(supabase, sc));
   const today = todayKst();
 
   // 그 달 청구서만 읽습니다. 청구월 칸이 빈 옛 줄이 있어 **발행일로도** 한 번 더 봅니다 -
@@ -61,7 +63,7 @@ export default async function FinanceMonthStudentsPage({ params }: { params: Pro
   );
 
   // 고른 장부(초등·중고등)의 청구서만.
-  const ids = await scopeStudentIds(supabase, await getFinanceScope(me));
+  const ids = await scopeP;
   invRes.rows = invRes.rows.filter((v) => inScopeIds(ids, v.student_id));
   const invoiceIds = invRes.rows.map((v) => v.id);
   // 그 청구서들에 붙은 돈은 **언제 들어왔든** 함께 봅니다. 9월분을 10월에 낸 돈을 빼면

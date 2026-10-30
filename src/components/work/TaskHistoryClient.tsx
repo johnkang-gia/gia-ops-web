@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
+import Link from "@/components/common/AppLink";
 import { createClient } from "@/lib/supabase/client";
 import type { Task, TaskComment, Term, TeamMember, Department } from "@/lib/types";
 import { nameFor } from "@/lib/teamName";

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
+import Link from "@/components/common/AppLink";
 import { Who } from "@/components/common/HomonymProvider";
 import { overdueDays, type LibLoan, type LibVisit } from "@/lib/library";
 import { kstDate } from "@/lib/kst";

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
+import Link from "@/components/common/AppLink";
 import type { Incident, WrClass, WrEnrollment, WrReport, WrStudent } from "@/lib/types";
 
 type ProfileResponse = {

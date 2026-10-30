@@ -2,7 +2,7 @@
 
 import StudentSelect from "@/components/common/StudentSelect";
 import { Fragment, useMemo, useState } from "react";
-import Link from "next/link";
+import Link from "@/components/common/AppLink";
 import { useRouter } from "next/navigation";
 import { useFinanceLive } from "@/lib/useFinanceLive";
 import { useToast } from "@/components/common/ToastProvider";

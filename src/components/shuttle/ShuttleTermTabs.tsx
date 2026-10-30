@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/common/AppLink";
 import { usePathname, useSearchParams } from "next/navigation";
 import { SHUTTLE_TERMS, CURRENT_SHUTTLE_TERM, type ShuttleTerm } from "@/lib/shuttleTerm";
 

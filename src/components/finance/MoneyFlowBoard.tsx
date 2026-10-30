@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
+import Link from "@/components/common/AppLink";
 import { Who } from "@/components/common/HomonymProvider";
 import { gradeText } from "@/lib/gradeScope";
 import { gradeSortKey } from "@/lib/department";

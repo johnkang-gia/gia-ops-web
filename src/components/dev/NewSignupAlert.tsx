@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/common/AppLink";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PendingSignup } from "@/app/api/admin/pending-signups/route";
 

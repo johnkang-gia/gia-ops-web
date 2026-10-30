@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { Who } from "@/components/common/HomonymProvider";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
+import Link from "@/components/common/AppLink";
 import { departmentTabs, tabIncludes, departmentOf, gradeSortKey } from "@/lib/department";
 import type { WrStudent } from "@/lib/types";
 
@@ -213,7 +213,7 @@ export default function StudentSearchClient({
               <span className="h-[42px] w-[33px] shrink-0 overflow-hidden rounded border border-slate-200 bg-slate-50">
                 {s.photo_path && photoUrlByPath[s.photo_path] ? (
                   // eslint-disable-next-line @next/next/no-img-element -- 서명 주소라 next/image 대상이 아닙니다.
-                  <img src={photoUrlByPath[s.photo_path]} alt="" className="h-full w-full object-cover" />
+                  <img src={photoUrlByPath[s.photo_path]} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
                 ) : (
                   <span className="flex h-full w-full items-center justify-center text-[9px] text-slate-300">—</span>
                 )}

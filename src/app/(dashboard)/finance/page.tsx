@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import FinanceLive from "@/components/finance/FinanceLive";
-import Link from "next/link";
+import Link from "@/components/common/AppLink";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess } from "@/lib/roles";
@@ -51,6 +51,19 @@ export default async function FinanceOverviewPage({ searchParams }: { searchPara
     ym === "all" ? null : /^\d{4}-(0[1-9]|1[0-2])$/.test(ym ?? "") ? (ym as string) : await getFinanceMonth(thisMonth);
 
   const supabase = await createClient();
+  // **서로 기다릴 이유가 없는 조회는 한꺼번에 띄웁니다.** 예전에는 「명부·청구·수납」 → 「장부 범위」 →
+  // 「결재·올톡·중복」 → 「학생별 회계」 네 번을 차례로 기다려서, 첫 화면이 왕복 네 번만큼 늦게 떴습니다.
+  // 아래 셋은 앞의 결과를 쓰지 않으므로 지금 출발시키고, 쓰는 자리에서 받기만 합니다.
+  const scopeP = getFinanceScope(me).then((sc) => scopeStudentIds(supabase, sc));
+  const sideP = Promise.all([
+    supabase.from("finance_requests").select("id", { count: "exact", head: true }).eq("status", "대기"),
+    supabase.from("alltalk_sync_files").select("uploaded_at").order("uploaded_at", { ascending: false }).range(0, 0),
+    // 같은 항목이 살아 있는 청구서 두 장에 걸린 줄. 데이터베이스 문지기는 앞으로 들어오는 것만 막으므로,
+    // 이미 쌓인 것은 여기서 보여야 고쳐집니다. 진단 화면에만 두면 재무 담당자는 안 엽니다.
+    supabase.from("invoice_duplicate_lines").select("student_id, student_name, item_name, stream, period, invoice_a, invoice_b"),
+  ]);
+  const ledgerMonth = month ?? thisMonth;
+  const lwP = loadLedgerWorld(supabase, { termId: null, month: ledgerMonth });
   const [stuRes, itemsRes, ovRes, invRes, payRes] = await Promise.all([
     loadStudents(supabase),
     supabase.from("fee_items").select("*"),
@@ -67,7 +80,7 @@ export default async function FinanceOverviewPage({ searchParams }: { searchPara
   const loadError = stuRes.error ?? itemsRes.error?.message ?? ovRes.error?.message ?? readNotice(invRes, payRes);
 
   // 고른 장부(초등·중고등)의 학생과 그 학생의 청구·수납만.
-  const ids = await scopeStudentIds(supabase, await getFinanceScope(me));
+  const ids = await scopeP;
   const students = stuRes.rows.filter((s) => inScopeIds(ids, s.id)).map(
     (s) => ({ id: s.id, name: s.name, grade: s.grade, className: s.class_name }),
   );
@@ -125,21 +138,14 @@ export default async function FinanceOverviewPage({ searchParams }: { searchPara
   const unsent = openInv.filter((v) => !v.issued_offline && !v.exported_at);
   const weekAgo = new Date(Date.now() - 7 * 864e5).toISOString();
   const lateSent = openInv.filter((v) => v.exported_at && v.exported_at < weekAgo);
-  const [{ count: approvalsWaiting }, { data: lastSync }, dupRes] = await Promise.all([
-    supabase.from("finance_requests").select("id", { count: "exact", head: true }).eq("status", "대기"),
-    supabase.from("alltalk_sync_files").select("uploaded_at").order("uploaded_at", { ascending: false }).range(0, 0),
-    // 같은 항목이 살아 있는 청구서 두 장에 걸린 줄. 데이터베이스 문지기는 앞으로 들어오는 것만 막으므로,
-    // 이미 쌓인 것은 여기서 보여야 고쳐집니다. 진단 화면에만 두면 재무 담당자는 안 엽니다.
-    supabase.from("invoice_duplicate_lines").select("student_id, student_name, item_name, stream, period, invoice_a, invoice_b"),
-  ]);
+  const [{ count: approvalsWaiting }, { data: lastSync }, dupRes] = await sideP;
   type DupRow = { student_id: string; student_name: string | null; item_name: string; stream: string; period: string; invoice_a: string; invoice_b: string };
   // 뷰가 아직 없으면(마이그레이션 적용 전) 띠를 안 띄웁니다 - 그 사실은 진단 화면이 알려줍니다.
   const dupRows = ((dupRes.data as DupRow[] | null) ?? []).filter((r) => inScopeIds(ids, r.student_id));
   const lastSyncAt = ((lastSync as { uploaded_at: string }[] | null) ?? [])[0]?.uploaded_at ?? null;
   // 이번 달 학비를 아직 청구서에 안 담은 학생 — 학생별 회계와 같은 함수(`buildLedger`)로 셉니다.
   // 화면마다 다른 식으로 세면 「이번 달 할 일」의 숫자와 학생별 회계의 숫자가 달라집니다.
-  const ledgerMonth = month ?? thisMonth;
-  const lw = await loadLedgerWorld(supabase, { termId: null, month: ledgerMonth });
+  const lw = await lwP;
   const toBillRows = lw.students
     .filter((s) => inScopeIds(ids, s.id))
     .map((s) => ({ s, l: buildLedger(lw.world, s) }))

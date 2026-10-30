@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
+import Link from "@/components/common/AppLink";
 import type { AppUser } from "@/lib/types";
 import Pagination from "@/components/Pagination";
 import { inDepartment } from "@/lib/department";

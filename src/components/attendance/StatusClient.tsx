@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
+import Link from "@/components/common/AppLink";
 import SchoolDaysButton from "./SchoolDaysModal";
 import { useRouter } from "next/navigation";
 import {

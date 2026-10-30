@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
+import Link from "@/components/common/AppLink";
 import type { WrStudent } from "@/lib/types";
 
 export default function StudentsListClient({ students }: { students: WrStudent[] }) {

@@ -3,7 +3,7 @@
 import { ALL_SCOPE } from "@/lib/department";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import ActivityLogTicker from "./ActivityLogTicker";
-import Link from "next/link";
+import Link from "@/components/common/AppLink";
 import CronStatusBadge from "./CronStatusBadge";
 import ArrivalQrBadge from "./ArrivalQrBadge";
 import StudentSearchBadge from "./StudentSearchBadge";

@@ -15,11 +15,12 @@ export const dynamic = "force-dynamic";
 export default async function WorkPage() {
   const supabase = await createClient();
   // 지금 보고 있는 학기의 기록만. 학기를 바꾸면 그 학기 것이 보입니다.
-  const termId = await scopedTermId();
-  const me = await getCurrentAppUser();
+  const [termId, me] = await Promise.all([scopedTermId(), getCurrentAppUser()]);
   if (!me) redirect("/login");
 
-  const [tasksRes, teamRes, deptRes, modeColorRes, mirrorRes] = await Promise.all([
+  // **한 번에 다 띄웁니다.** 예전에는 업무·명부·공지·학기 요약을 네 번에 나눠 차례로 기다려서, 업무보드가
+  // 왕복 네 번만큼 늦게 떴습니다. 서로의 결과를 쓰지 않는 조회들입니다.
+  const [tasksRes, teamRes, deptRes, modeColorRes, mirrorRes, { data: rosterData }, noticesRes, collapsesRes, { data: termRows }, elemCountRes] = await Promise.all([
     // deleted_at도 명시적으로 걸러야 합니다 - RLS는 등록자/담당자/관리자에게 휴지통 조회용으로
     // deleted_at is not null(7일 이내) 행도 select 허용하는 별도 정책이 OR로 붙어있어서, 여기서
     // 걸러주지 않으면 방금 삭제한 업무가 등록자/담당자 눈에는 업무보드에 계속 남아있게 됩니다
@@ -39,14 +40,17 @@ export default async function WorkPage() {
       // 다 차지하면 조용한 방은 화면에 한 줄도 안 뜨는데, 화면에는 「아직 메시지가 없습니다」로
       // 보입니다.
       .limit(400),
+    // 출결내역 위젯이 "정서안만 픽업" 같은 문장에서 이름을 추측하지 않고 실제 명부와 대조하도록
+    // 재적생 명단을 가져옵니다(학년·생일·반·번호는 동명이인을 가르는 재료 - CLAUDE.md §2-4).
+    supabase.from("wr_students_basic").select("id, name, grade, name_en, birth_date, class_name").eq("status", "active"),
+    // 상단 전체공지 최근 100건 + 내가 접어둔 공지.
+    supabase.from("work_notices").select("*").is("archived_at", null).order("created_at", { ascending: false }).limit(100),
+    supabase.from("work_notice_collapses").select("notice_id").eq("user_email", me.email),
+    // 상단 학교 요약(지금 학기·학기말까지 남은 기간, 초등부 재학생 수).
+    supabase.from("terms").select("term_type, year, end_date").eq("status", "진행중").order("start_date", { ascending: false }).limit(1),
+    supabase.from("wr_students_basic").select("id", { count: "exact", head: true }).eq("status", "active").eq("department", "초등부"),
   ]);
 
-  // 출결내역 위젯이 "정서안만 픽업" 같은 문장에서 이름을 추측하지 않고 실제 명부와 대조하도록
-  // 재적생 명단을 가져옵니다. 동명이인(같은 이름 여러 명)을 문장의 학년 힌트("2학년 김재이",
-  // "김재이(2)")로 구분해야 해서 학년도 함께 가져옵니다.
-  // 학생 번호(id)도 함께 읽습니다 - [학생 특이사항]은 이름이 아니라 번호로 붙여야 하고
-  // (CLAUDE.md §2-4-1), 번호가 없으면 김재이 셋 중 누구의 약인지 알 수 없습니다.
-  const { data: rosterData } = await supabase.from("wr_students_basic").select("id, name, grade, name_en, birth_date, class_name").eq("status", "active");
   const roster = ((rosterData as { id: string; name: string; grade: string | null; name_en: string | null; birth_date: string | null; class_name: string | null }[] | null) ?? []).map((s) => ({
     id: s.id,
     name: s.name,
@@ -59,21 +63,9 @@ export default async function WorkPage() {
   const team = (teamRes.data as TeamMember[] | null) ?? [];
   const isAdmin = isAdminUser(me);
 
-  // 업무 보드 상단 전체공지(요청: "업무에서 전체공지가 있을경우 바로 상단으로 옮겨지고").
-  // 최신 하나만 상단에 뜨지만 히스토리도 같은 목록에서 보여주므로 최근 100건을 함께 가져오고,
-  // 내가 접어둔 공지 id도 같이 받아서 첫 화면부터 접힌 상태로 그려지게 합니다.
-  const [noticesRes, collapsesRes] = await Promise.all([
-    supabase.from("work_notices").select("*").is("archived_at", null).order("created_at", { ascending: false }).limit(100),
-    supabase.from("work_notice_collapses").select("notice_id").eq("user_email", me.email),
-  ]);
   const notices = (noticesRes.data as WorkNotice[] | null) ?? [];
   const collapsedNoticeIds = ((collapsesRes.data as { notice_id: string }[] | null) ?? []).map((c) => c.notice_id);
 
-  // 상단 학교 요약(요청: 업무 대시보드에도 지금 무슨 학기·학기말까지 남은 기간, 초등부 재학생 수).
-  const [{ data: termRows }, elemCountRes] = await Promise.all([
-    supabase.from("terms").select("term_type, year, end_date").eq("status", "진행중").order("start_date", { ascending: false }).limit(1),
-    supabase.from("wr_students_basic").select("id", { count: "exact", head: true }).eq("status", "active").eq("department", "초등부"),
-  ]);
   const tr = (termRows ?? [])[0] as { term_type?: string; year?: string; end_date?: string | null } | undefined;
   const termLabel = tr ? `${tr.year ?? ""} ${tr.term_type ?? ""}`.trim() : null;
   const termDday = tr?.end_date ? Math.ceil((new Date(tr.end_date).getTime() - Date.now()) / (24 * 60 * 60 * 1000)) : null;

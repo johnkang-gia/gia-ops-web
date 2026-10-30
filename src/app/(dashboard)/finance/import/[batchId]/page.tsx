@@ -1,5 +1,5 @@
 import { redirect, notFound } from "next/navigation";
-import Link from "next/link";
+import Link from "@/components/common/AppLink";
 import FinanceLive from "@/components/finance/FinanceLive";
 import ImportReviewClient from "@/components/finance/ImportReviewClient";
 import { createClient } from "@/lib/supabase/server";

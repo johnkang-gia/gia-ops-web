@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import Link from "next/link";
+import Link from "@/components/common/AppLink";
 import { createClient } from "@/lib/supabase/client";
 import { assumeAfternoon } from "@/lib/pickupParse";
 import { useToast } from "@/components/common/ToastProvider";

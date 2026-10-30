@@ -7,6 +7,7 @@ import StudentSearchClient from "@/components/students/StudentSearchClient";
 import GuideButton from "@/components/common/GuideButton";
 import { loadShuttleWorld } from "@/lib/shuttleWorld";
 import { loadStudents } from "@/lib/students";
+import { studentPhotoUrls } from "@/lib/studentPhotoUrls";
 
 const GUIDE_SECTIONS = [
   {
@@ -66,17 +67,15 @@ export default async function StudentsSearchPage() {
     shuttleByStudent[a.student_id] = prev ? (prev.includes(tag) ? prev : `${prev} · ${tag}`) : tag;
   }
 
-  // 사진은 비공개 버킷이라 서명 주소가 필요합니다. **한 번에 묶어서** 받습니다 - 한 명씩
-  // 받으면 137번을 부르게 되고, 목록이 그만큼 늦게 뜹니다.
-  const photoPaths = data.map((s) => s.photo_path).filter((v): v is string => !!v);
-  const photoUrlByPath: Record<string, string> = {};
-  if (photoPaths.length > 0) {
-    const { data: signed, error: signErr } = await supabase.storage
-      .from("student-photos")
-      .createSignedUrls(photoPaths, 60 * 60);
-    if (signErr) console.error("[학생 조회] 사진 주소를 못 만들었습니다:", signErr.message);
-    for (const r of signed ?? []) if (r.path && r.signedUrl) photoUrlByPath[r.path] = r.signedUrl;
-  }
+  // 사진은 비공개 버킷이라 서명 주소가 필요합니다. **한 번에 묶어서** 받고, 한 번 만든 주소는
+  // 하루 동안 그대로 씁니다(studentPhotoUrls) - 열 때마다 새 주소면 브라우저가 매번 다시 받습니다.
+  const { urls: photoUrlByPath, error: signErr } = await studentPhotoUrls(
+    supabase,
+    data
+      .filter((s) => !!s.photo_path)
+      .map((s) => ({ path: s.photo_path as string, version: (s as { photo_updated_at?: string | null }).photo_updated_at ?? null })),
+  );
+  if (signErr) console.error("[학생 조회] 사진 주소를 못 만들었습니다:", signErr);
 
   return (
     <div className="mx-auto flex h-full w-full max-w-none flex-col overflow-hidden">

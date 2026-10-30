@@ -1,7 +1,7 @@
 import { redirect, notFound } from "next/navigation";
 import { kstDate } from "@/lib/kst";
 import { describeBilling } from "@/lib/alltalkpay";
-import Link from "next/link";
+import Link from "@/components/common/AppLink";
 import { createClient } from "@/lib/supabase/server";
 import { isMissingWeekStart } from "@/lib/dismissalToday";
 import { getCurrentAppUser } from "@/lib/currentUser";

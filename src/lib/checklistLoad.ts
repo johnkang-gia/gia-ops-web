@@ -1,0 +1,610 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { todayKst, kstWeekday } from "@/lib/kst";
+import { isUndecidedChoice } from "@/lib/shuttleChoice";
+import { WEEKDAY_NAMES } from "@/lib/dismissalPlan";
+import { loadDismissalForDay, type DismissalRow } from "@/lib/dismissalToday";
+import { StudentIndex } from "@/lib/studentKey";
+import type { ChecklistLogRow } from "@/lib/checklistLog";
+import type { RideAlongRow } from "@/components/shuttle/RideAlongPanel";
+import { findBySurface } from "@/lib/rideAlong";
+import type { ChecklistRoute, ChecklistItem, PersistentNote, AutoSource } from "@/components/shuttle/ShuttleChecklistClient";
+import type { GoogleChatMirrorMessage } from "@/lib/types";
+import { categorize } from "@/lib/attendanceDigest";
+import { routeChoiceOf } from "@/lib/shuttleRoute";
+import { compareRoster } from "@/lib/rosterOrder";
+import { loadStudents } from "@/lib/students";
+
+/**
+ * **하원 체크표 한 장을 읽는 일은 여기 한 곳에서 합니다.**
+ *
+ * PC 하원 체크표와 모바일 하원 체크표(로그인 없는 링크)가 같은 명단을 봐야 합니다(CLAUDE.md 2-13).
+ * 명단을 짜는 판단(오늘 타는가 · 어느 차인가 · 토들·출결·하원수단에서 자동으로 붙은 픽업·결석)이
+ * 화면마다 따로 있으면, 한쪽에서 뺀 아이가 다른 쪽에는 「타는 아이」로 남습니다.
+ *
+ * `supabase` 는 PC 화면에서는 로그인한 사람의 연결, 모바일 창구에서는 서비스 키 연결입니다.
+ */
+export async function loadChecklistData(
+  supabase: SupabaseClient,
+  term: "정규학기" | "여름캠프2",
+  opts: { homonymNames: Set<string>; light?: boolean },
+) {
+  // 한국 요일입니다. new Date().getDay()는 서버(UTC)의 요일이라 한국시간 오전 9시 이전에는
+  // 어제 요일이 나옵니다 - 월요일 새벽에 열면 일요일이 되어 아무도 안 타는 표가 됩니다.
+  const todayWeekday = kstWeekday();
+  const today = todayKst();
+
+  // 예전에는 PDF에서 통째로 들어온 배정(유치부 포함)을 초등부 명부+허용목록으로 걸러냈지만,
+  // 하원 명단 재세팅(v0.228, 사용자 원문 1-1호~31호 그대로) 이후에는 shuttle_assignments 자체가
+  // 확정 명단입니다. 필터를 걸면 오히려 구분표기 이름(김재이(G2A)·이준서(중등)·에이바(일라이아나)
+  // 등)이 명부 이름과 달라 떨어져 나가므로, 배정된 학생을 전부 그대로 보여줍니다(요청: "내가
+  // 보내준 정규학기 하원명단하고 달라 체크해서 반영해줘").
+
+  // 요청: "이제 토들도 가져오니까 하원체크표에 오늘픽업 결석에 여기도 반영" - 토들·전화·구글챗으로
+  // 들어온 오늘 픽업/결석(pickup_requests)을 명단에 자동으로 얹습니다. 사람이 직접 누른 값이
+  // 있으면 그걸 존중하고, 없을 때만 자동으로 채웁니다.
+  //
+  // **어느 줄에 얹을지는 학생 번호로 정합니다**(`StudentIndex`, CLAUDE.md 2-4-6). 예전에는 이름이
+  // 일부만 겹쳐도 얹었는데, 김재이 셋 중 한 명의 픽업 연락이 셋 모두를 픽업으로 만들었습니다.
+  // 겹치는 이름은 이름으로 아무것도 찾지 않습니다.
+  const homonymNames = opts.homonymNames;
+  // ── 여기서부터는 서로 기다릴 이유가 없습니다 ──────────────────────────────
+  //
+  // 예전에는 여덟 개를 **한 줄씩 차례로** 기다렸습니다. 하나가 100ms 면 여덟 개는 800ms 이고,
+  // 화면이 뜨기 전에 그만큼 사람이 기다립니다. 하원 체크표는 하루에 가장 많이 여는 화면이라
+  // 이 기다림이 그대로 쌓입니다(실측 1,973ms — 다른 화면의 두 배였습니다).
+  //
+  // 서로의 결과를 쓰지 않는 조회이므로 한꺼번에 보냅니다. 가장 느린 하나만큼만 걸립니다.
+  const [
+    routesRes,
+    allStopsRes,
+    allAsgRes,
+    boardingsRes,
+    preqRes,
+    baseRes,
+    noteRes,
+    planRes,
+    mirrorRes,
+    rosterRes,
+    logRes,
+    rideRes,
+    absentRes,
+  ] = await Promise.all([
+    // 노선·정류장·배정·오늘 탑승도 함께 던집니다. 예전에는 이 넷을 **차례로** 기다렸는데,
+    // 뒤엣것이 앞의 번호를 `.in()` 열쇠로 썼기 때문입니다. 정류장·배정은 표 전체가 수백
+    // 줄이라 통째로 받아 여기서 거르는 편이 왕복 세 번을 아낍니다. 거르는 결과는 같습니다.
+    supabase
+      .from("shuttle_routes")
+      .select("id, route_no, name, driver_name, driver_phone, vehicle_no")
+      .eq("active", true)
+      .eq("direction", "하원")
+      .eq("term", term)
+      .order("sort_order"),
+    supabase.from("shuttle_stops").select("id, route_id, seq").order("seq"),
+    supabase
+      .from("shuttle_assignments_basic")
+      .select("id, stop_id, student_id, student_name_raw, weekdays, override_route_id, note, choice_group, sort_order"),
+    supabase
+      .from("shuttle_boardings")
+      // updated_by는 이 표에 **없는 칸**입니다. 여기 적혀 있는 동안 PostgREST가 이 조회
+      // 전체를 400으로 거절했고, 그래서 오늘 사람이 누른 픽업·결석·노선이동이 **하나도
+      // 화면에 반영되지 않았습니다.** 화면에는 오류가 없어서 아무도 몰랐습니다.
+      // 누가 눌렀는지는 checked_by에 적습니다 - 있는 칸을 씁니다.
+      .select("assignment_id, status, override_route_id, checked_by, checked_at")
+      .eq("service_date", today),
+    supabase.from("pickup_requests").select("*").eq("is_demo", false).neq("status", "무시").eq("service_date", today),
+    supabase.from("pickup_requests").select("source_url").not("source_url", "is", null).order("received_at", { ascending: false }).limit(1).maybeSingle(),
+    supabase.from("shuttle_persistent_notes").select("id, term, student_name, student_id, route_no, content, effect_kind, effect_days, effect_from, effect_to, active").eq("term", term).eq("active", true).order("created_at", { ascending: false }),
+    // 「이번 주만」이 있으면 그것이 답이고 없으면 「매주」가 답입니다 - 판단은
+    // loadDismissalForDay 한 곳에서 합니다. 화면마다 다시 판단하면 어느 화면은
+    // 할머니를, 어느 화면은 셔틀을 보여주게 됩니다.
+    loadDismissalForDay(supabase, { dayIso: today, weekday: todayWeekday, excludeShuttle: true }),
+    // 모바일 화면은 왼쪽 출결알림 칸이 없으므로 구글챗 원문 200건을 싣지 않습니다.
+    opts.light
+      ? Promise.resolve({ data: [] as GoogleChatMirrorMessage[], error: null })
+      : supabase.from("google_chat_mirror_messages").select("*").order("created_at_google", { ascending: false }).limit(200),
+    // 명부는 loadStudents 로 읽습니다. 공용 뷰(wr_students_basic)는 로그인 없이 도는 모바일 창구(서비스 키)에서
+    // 빈 결과를 돌려줘 동명이인 구분과 하원수단 대조가 조용히 빠집니다(CLAUDE.md 2-4-5).
+    loadStudents(supabase),
+    supabase.from("shuttle_checklist_log").select("*").eq("service_date", today).order("created_at", { ascending: false }).limit(100),
+    supabase.from("shuttle_ride_alongs").select("id, student_id, student_surface, host_student_id, host_surface, route_id, status, note, raw_text").eq("service_date", today).neq("status", "취소"),
+    // 오늘 **등록된** 출결 — 결석과 픽업 둘 다.
+    //
+    // 앞 판은 결석만 읽었습니다. 「픽업은 pickup_requests 로, 결석은 attendance_entries 로
+    // 들어온다」는 전제였는데, **그 전제가 틀렸습니다.** 구글챗 출결내역에서 픽업으로
+    // 등록하면 이 표로 들어옵니다. 그래서 그렇게 등록한 픽업은 체크표에 닿지 않았고,
+    // 부모님이 데리러 오는 아이가 하원 명단에는 차 타는 것으로 남았습니다.
+    //
+    // '등록'만 봅니다. '확인필요'는 아직 사람이 판단하지 않은 것이라, 그걸로 차에서 빼면
+    // 자동이 사람보다 앞서 나가는 셈입니다.
+    supabase
+      .from("attendance_entries")
+      // `touched_by_human` 을 함께 읽습니다. 이게 없으면 화면은 「누가 정했나」를 물을
+      // 재료가 없어, 사람이 고른 건까지 자동으로 그립니다.
+      .select("id, student_id, student_name, status, date_from, date_to, source, raw_text, note, touched_by_human, registered_by, registered_at")
+      .in("status", ["결석", "픽업"])
+      .eq("state", "등록")
+      .lte("date_from", today)
+      .gte("date_to", today),
+  ]);
+
+  const routes = (routesRes.data as ChecklistRoute[] | null) ?? [];
+  const routeIds = routes.map((r) => r.id);
+  const routeIdSet = new Set(routeIds);
+  const stopsData = ((allStopsRes.data ?? []) as { id: string; route_id: string; seq: number }[]).filter((x) =>
+    routeIdSet.has(x.route_id),
+  );
+  const stopIdSet = new Set(stopsData.map((x) => x.id));
+  const assignmentsData = (
+    (allAsgRes.data ?? []) as {
+      id: string;
+      stop_id: string;
+      student_id: string | null;
+      student_name_raw: string;
+      weekdays: number[];
+      override_route_id: string | null;
+      note: string | null;
+      sort_order?: number | null;
+      /** 행선지를 그날 정하는 학생 묶음. 대부분의 학생은 null입니다. */
+      choice_group: string | null;
+    }[]
+  ).filter((a) => stopIdSet.has(a.stop_id));
+  const assignmentIdSet = new Set(assignmentsData.map((a) => a.id));
+
+  const stopById = new Map(stopsData.map((s) => [s.id, s]));
+
+  // 요청: "안타는 아이도 옅은 회색으로 표시 (...) 갑자기 탑승하게 되면 눌러서 탑승으로" - 오늘
+  // 요일에 안 타는 학생도 명단에 넣되, ridingToday=false로 표시해 회색으로 보여줍니다. 탑승
+  // 상태를 저장할 수 있어야 하므로 오늘 탑승 기록도 전체 배정에 대해 함께 조회합니다.
+  //
+  // 이 조회가 실패하면 오늘 눌러둔 것이 전부 없는 것처럼 보입니다. 조용히 넘기지 않습니다.
+  if (boardingsRes.error) {
+    console.error("[checklist] 오늘 탑승 기록 조회 실패 — 눌러둔 픽업·결석이 화면에 안 뜹니다:", boardingsRes.error.message);
+  }
+  const boardingByAssignment = new Map(
+    (
+      (boardingsRes.data ?? []) as {
+        assignment_id: string;
+        status: string;
+        override_route_id: string | null;
+        checked_by: string | null;
+        checked_at: string | null;
+      }[]
+    )
+      .filter((b) => assignmentIdSet.has(b.assignment_id))
+      .map((b) => [b.assignment_id, b]),
+  );
+  // 기록에 이름을 적기 위한 대조표. 배정 번호만 남으면 나중에 누구였는지 못 읽습니다.
+  const assignmentNameById = new Map(
+    (assignmentsData ?? []).map((a) => [a.id as string, (a.student_name_raw as string) ?? "이름 미확인"]),
+  );
+
+
+  const { data: preqRows } = preqRes;
+  // 이름만 뽑지 않고 **어느 연락에서 왔는지**를 함께 들고 갑니다.
+  //
+  // 담당자: "픽업 처리된 애들 어떤 토들이나 구글챗으로 분류되었는지 (...) 자동으로
+  //          분류되는 거 이유가 뭔지 보고 싶어."
+  //
+  // 지금까지는 이름만 넘겨서, 표에 사선이 그어진 이유를 확인하려면 인박스로 넘어가
+  // 그 아이를 다시 찾아야 했습니다. 근거가 결과 옆에 없으면 사람은 결과를 못 믿습니다.
+  /** 같은 아이에게 여러 연락이 왔으면 가장 최근 것을 씁니다. */
+  const newer = (old: AutoSource, next: AutoSource) => next.receivedAt > old.receivedAt;
+  const pickupIdx = new StudentIndex<AutoSource>(homonymNames, newer);
+  const absentIdx = new StudentIndex<AutoSource>(homonymNames, newer);
+  for (const r of preqRows ?? []) {
+    const name = ((r.matched_name as string | null) ?? (r.ai_student_name as string | null) ?? "").trim();
+    if (!name) continue;
+    const text = ((r.raw_text as string | null) ?? (r.summary as string | null) ?? "").toString();
+    const cat = categorize(text);
+    const isPickup = r.kind === "픽업" || cat === "픽업";
+    const isAbsent = !isPickup && cat === "결석";
+    if (!isPickup && !isAbsent) continue;
+    const at = (r.received_at as string | null) ?? "";
+    const src: AutoSource = {
+      requestId: r.id as string,
+      kind: isPickup ? "픽업" : "결석",
+      source: (r.source as string | null) ?? "토들",
+      channelLabel: (r.channel_label as string | null) ?? null,
+      senderName: (r.sender_name as string | null) ?? null,
+      receivedAt: at,
+      rawText: text,
+      aiNote: (r.ai_note as string | null) ?? null,
+      matchedName: (r.matched_name as string | null) ?? null,
+      sourceUrl: (r.source_url as string | null) ?? null,
+      sourceChatId: (r.source_chat_id as string | null) ?? null,
+      // 픽업 인박스에서 읽어 붙은 건입니다. 여기는 정말 자동입니다.
+      decidedByHuman: false,
+      decidedBy: null,
+      note: null,
+    };
+    (isPickup ? pickupIdx : absentIdx).add(r.student_id as string | null, name, src);
+  }
+
+  // 오늘 결석으로 등록된 아이. 학생 연결(student_id)이 있으면 그것으로, 없으면 이름으로 붙입니다.
+  //
+  // 이름 대조를 뒤에 두는 이유는, 같은 이름이 둘일 때 엉뚱한 아이를 차에서 빼는 일이 이름
+  // 쪽에서만 생기기 때문입니다. 학생 연결이 있으면 그게 언제나 맞습니다.
+  if (absentRes.error) {
+    console.error("[checklist] 오늘 결석 조회 실패 — 결석이 체크표에 안 붙습니다:", absentRes.error.message);
+  }
+  type AbsentRow = {
+    id: string;
+    student_id: string | null;
+    student_name: string;
+    status?: string | null;
+    source: string | null;
+    raw_text: string | null;
+    note: string | null;
+    touched_by_human: boolean | null;
+    registered_by: string | null;
+    registered_at: string | null;
+  };
+
+  /**
+   * 출결내역 한 줄을 체크표가 보여줄 근거로 옮깁니다.
+   *
+   * 여기서 갈리는 것이 **「어디서 왔나」와 「누가 정했나」** 입니다. 예전에는 `source` 하나로
+   * 둘 다 말하려 해서, 사람이 🔎 로 직접 고른 건에도 「구글챗에서 자동」이 붙었습니다.
+   * 그러면서 정작 고른 사람(`registered_by`)은 「보낸 분」 칸에 들어가 학부모처럼 보였고,
+   * 원문이 없는 줄에서는 우리가 적은 메모(`note`)가 원문 자리에 그대로 떴습니다 -
+   * 「이 건만 사람이 지정(규칙 없음)」이 학부모 연락처럼 읽혔습니다.
+   */
+  const entrySourceOf = (r: AbsentRow, kind: "픽업" | "결석"): AutoSource => ({
+    requestId: r.id,
+    kind,
+    source: r.source === "googlechat" ? "구글챗" : r.source === "toddle" ? "토들" : "직접 등록",
+    channelLabel: null,
+    // 보낸 사람은 «연락을 보낸 학부모»입니다. 출결내역 줄에는 그 정보가 없으므로 비웁니다 -
+    // 여기에 등록한 직원을 넣으면 그 직원이 연락을 보낸 것처럼 보입니다.
+    senderName: null,
+    receivedAt: r.registered_at ?? "",
+    rawText: (r.raw_text ?? "").trim(),
+    aiNote: r.touched_by_human
+      ? null
+      : kind === "픽업"
+        ? "연락을 읽어 오늘 픽업으로 저절로 등록된 아이입니다."
+        : "연락을 읽어 오늘 결석으로 저절로 등록된 아이입니다.",
+    matchedName: r.student_name,
+    sourceUrl: null,
+    sourceChatId: null,
+    decidedByHuman: !!r.touched_by_human,
+    decidedBy: r.registered_by,
+    note: r.note,
+  });
+  const allEntryRows = (absentRes.data as AbsentRow[] | null) ?? [];
+  // 픽업으로 등록된 건은 픽업 명단으로 보냅니다. 아래 결석 대조에 섞이면 부모님이 데리러
+  // 오는 아이가 결석으로 표시됩니다 - 둘은 학교에 왔느냐 안 왔느냐가 정반대입니다.
+  const absentRows = allEntryRows.filter((r) => (r.status ?? "결석") === "결석");
+  for (const r of allEntryRows) {
+    if ((r.status ?? "") !== "픽업") continue;
+    // 인박스 연락이 이미 있으면 그쪽 원문이 근거입니다.
+    if (!pickupIdx.find(r.student_id, r.student_name)) pickupIdx.add(r.student_id, r.student_name, entrySourceOf(r, "픽업"));
+  }
+  const absentEntryIdx = new StudentIndex<AbsentRow>(homonymNames);
+  for (const r of absentRows) absentEntryIdx.add(r.student_id, r.student_name, r);
+  const absentSourceOf = (r: AbsentRow): AutoSource => entrySourceOf(r, "결석");
+
+  // 토들 주소는 "학교 주소 + /messaging/ + 방 id" 형태입니다. 주소 칸이 비어 있는 줄이
+  // 많아서(수집기가 못 읽은 경우), 주소가 있는 가장 최근 기록 하나에서 학교 주소만 뽑아
+  // 나머지에 그대로 씁니다 - 학부모 문의사항 화면과 같은 방식입니다.
+  const { data: baseRow } = baseRes;
+  const toddleBase =
+    ((baseRow?.source_url as string | null) ?? "").match(/^(https:\/\/[^/]+\/platform\/[^/]+)/)?.[1] ?? null;
+
+  // 지속 특이사항(요청: 왼쪽 창구에 적으면 오른쪽에 요약으로 계속 뜨고, 차량 셔틀도 자동
+  // 수정되며, 삭제하면 원래대로 복귀). 효과는 클라이언트에서 items에 덧씌우므로, 여기서는
+  // 활성 행만 읽어 넘깁니다.
+  const { data: noteRows } = noteRes;
+  const persistentNotes: PersistentNote[] = (noteRows ?? []).map((n) => ({
+    id: n.id as string,
+    studentName: (n.student_name as string) ?? "",
+    studentId: (n.student_id as string | null) ?? null,
+    routeNo: (n.route_no as string | null) ?? null,
+    content: (n.content as string) ?? "",
+    effectKind: (n.effect_kind as PersistentNote["effectKind"]) ?? "none",
+    effectDays: (n.effect_days as number[] | null) ?? [],
+    // 기간(9/23~9/28 결석 같은 것). 표에는 예전부터 있었는데 이 화면이 안 읽고 있었습니다.
+    effectFrom: (n.effect_from as string | null) ?? null,
+    effectTo: (n.effect_to as string | null) ?? null,
+  }));
+
+  // ── 오늘 요일의 하원수단 ────────────────────────────────────────────────
+  //
+  // 학생 프로필의 🏠 하원수단(요일별)입니다. 셔틀이 아닌 날은 그 아이가 셔틀에 안 탑니다.
+  // 이 사실이 체크표에 닿지 않으면, 프로필에 적어둔 것이 아무 일도 하지 않습니다.
+  //
+  // 셔틀 배정을 지우지 않는 이유: 요일마다 다르기 때문입니다. 월요일에는 같은 아이가 같은
+  // 차를 탑니다. 배정은 그대로 두고 **그날 하루만** 안 타는 것으로 표시합니다.
+  const { byStudent: planByStudentId, error: planErr } = planRes;
+  if (planErr) {
+    // 표가 아직 없는 경우(마이그레이션 전)는 loadDismissalForDay 가 걸러줍니다. 여기까지
+    // 온 실패는 소리를 냅니다 - 조용히 넘기면 "적어뒀는데 반영이 안 된다"가 됩니다.
+    console.error("[checklist] 하원수단 조회 실패:", planErr);
+  }
+  const plans = [...planByStudentId.values()];
+  // 배정에 학생 연결이 안 된 줄이 아직 많아서, 이름으로도 한 번 더 찾습니다.
+  //
+  // **이름 길은 학생 번호가 없는 배정 줄에만, 그리고 한 명뿐인 이름에만 씁니다**(CLAUDE.md 2-4-1).
+  // 예전에는 번호로 못 찾으면 무조건 이름으로 찾았는데, 김재이(G3JA)의 월요일 하원수단
+  // 「14:20 픽업」이 번호가 다른 김재이(G2A)·김재이(G2C) 줄에도 붙었습니다. 그 둘은 그날
+  // 셔틀을 타는 아이라, 표에 픽업 표시가 남았다면 차를 못 탔습니다.
+  const planIdx = new StudentIndex<(typeof plans)[number]>(homonymNames);
+  if (plans.length > 0) {
+    const { rows: planStudents } = await loadStudents(supabase, { ids: plans.map((p) => p.student_id), status: "all" });
+    const nameById = new Map(planStudents.map((r) => [r.id, r.name]));
+    for (const p of plans) planIdx.add(p.student_id, nameById.get(p.student_id), p);
+  }
+  const planLabelOf = (p: DismissalRow) =>
+    [p.depart_time, p.label].filter(Boolean).join(" ") || p.kind;
+
+  // 그룹핑은 클라이언트에서 하도록, 노선별로 나누지 않은 평평한 목록으로 넘깁니다.
+  const items: ChecklistItem[] = assignmentsData
+    .map((a) => {
+      const stop = stopById.get(a.stop_id);
+      if (!stop) return null;
+      const boarding = boardingByAssignment.get(a.id);
+      // 행선지를 그날 물어보고 정하는 학생(이준서·이준우)은, 정하기 전까지 체크표에도
+      // 안 나옵니다. 도착체크 화면에서 물어보고 누르면 그때 해당 호차에 나타납니다.
+      // 한 화면에서만 숨기면 다른 화면에서 타는 것으로 보여, 지금 중복 배정과 같은
+      // 위험이 됩니다.
+      if (isUndecidedChoice(a, boarding)) return null;
+      // rides-ok: 여기는 체크표 자신입니다. 이 값은 「평소 오늘 타는 날인가」라는 사실이고,
+      // 안 타는 아이를 **옅은 회색으로 남겨 두는 근거**입니다. 탑승으로 바꾼 것까지 여기서
+      // 참으로 만들면 되돌릴 자리가 사라집니다 - 표가 자기 줄을 지우는 셈입니다.
+      // 바꾼 결과는 아래 status 와 클라이언트의 baseRiding 이 함께 그립니다.
+      const ridingToday = a.weekdays.includes(todayWeekday) || boarding?.status === "탑승";
+      let status: ChecklistItem["status"] = (boarding?.status as ChecklistItem["status"]) ?? "예정";
+      // 오늘 타는 학생 & 아직 사람이 안 누른 경우에만 토들 픽업/결석을 자동 반영.
+      //
+      // 판단 기준은 **줄이 있는지**이지 값이 '예정'인지가 아닙니다.
+      // 담당자: "잘못 표기된 애들 더블클릭하면 다시 돌아오게 해줘 (...) 지우면 전부 반영되게."
+      // 되돌리기는 '예정' 줄을 남기는 방식인데, 값만 보면 그게 "아무도 안 누름"과 똑같이 보여
+      // 다음에 화면을 열 때 자동 표시가 되살아납니다. 사람이 되돌린 것을 기계가 다시 뒤집는
+      // 셈이라, 줄이 하나라도 있으면 사람 판단으로 봅니다.
+      let autoSource: AutoSource | null = null;
+
+      // 사람이나 크론이 찍은 경우에도 **근거를 남깁니다.**
+      //
+      // 담당자: "자동으로 체크한 애들 전부 다, 그 체크한 근거를 볼 수 있도록."
+      //
+      // 예전에는 토들에서 자동으로 붙은 것만 근거가 있었습니다. 그런데 아침 크론이
+      // 지속 특이사항·예약 픽업으로 찍어놓은 것도 "누가 왜 찍었는지" 모르기는 마찬가지입니다.
+      // 표에 사선이 그어져 있는데 이유를 모르면, 결국 사람이 전화로 확인하게 됩니다.
+      if (boarding && (boarding.status === "픽업" || boarding.status === "결석")) {
+        const who = (boarding.checked_by as string | null) ?? "";
+
+        // ── **먼저 진짜 근거를 찾습니다.** ──────────────────────────────────
+        //
+        // 예전에는 여기서 곧장 「AI(토들)이(가) 오늘 픽업으로 표시했습니다」 한 줄을 넣고
+        // 끝냈습니다. 그러면 그 아래의 「인박스에서 원문을 붙이는 블록」은 `!boarding` 조건에
+        // 걸려 **아예 안 돌았습니다.**
+        //
+        // 처음 만들 때는 그래도 됐습니다 - 체크표에 줄이 없는 동안에만 인박스를 봤으니까요.
+        // 그런데 지금은 아침 크론과 AI 가 **미리 체크표에 줄을 찍습니다.** 그래서 거의 모든
+        // 픽업이 줄을 갖게 됐고, 진짜 연락 원문이 항상 그 한 줄에 가려졌습니다.
+        //
+        // 확인해야 하는 것은 「누가 찍었나」가 아니라 **「AI가 무엇을 읽고 그렇게 판단했나」**
+        // 입니다. 원문이 없으면 맞게 읽었는지 가릴 수가 없습니다.
+        const [same, other] = boarding.status === "픽업" ? [pickupIdx, absentIdx] : [absentIdx, pickupIdx];
+        const linked = same.find(a.student_id, a.student_name_raw) ?? other.find(a.student_id, a.student_name_raw) ?? null;
+
+        autoSource = linked
+          ? {
+              ...linked,
+              // 원문은 연락에서, 「누가 찍었나」는 체크표에서. 둘 다 있어야 합니다.
+              senderName: linked.senderName ?? (who || null),
+              aiNote: [linked.aiNote, who ? `체크표에는 ${who} 이름으로 찍혀 있습니다.` : null]
+                .filter(Boolean)
+                .join(" / "),
+            }
+          : {
+              requestId: "",
+              kind: boarding.status as "픽업" | "결석",
+              source: who || "사람",
+              channelLabel: null,
+              senderName: who || null,
+              receivedAt: (boarding.checked_at as string | null) ?? "",
+              // 사람 이름 뒤에는 **님**을 붙입니다. 받침에 따라 `이/가`를 고르는 것도 번거롭지만,
+              // 그보다 이 문장은 동료를 가리키는 말이라 높임이 맞습니다("이재훈가" → "이재훈님이").
+              rawText: who.includes("AI") || who.includes("자동")
+                ? `${who}이(가) 오늘 ${boarding.status}으로 표시했습니다. (읽은 연락을 찾지 못했습니다 - 인박스에서 정리됐을 수 있습니다)`
+                : `${who ? `${who}님이` : "담당자가"} 체크표에서 ${boarding.status}으로 표시했습니다.`,
+              aiNote: null,
+              matchedName: a.student_name_raw,
+              sourceUrl: null,
+              sourceChatId: null,
+              // 체크표에서 직접 찍은 줄입니다. 「AI」·「자동」이라고 적힌 이름만 기계입니다.
+              decidedByHuman: !(who.includes("AI") || who.includes("자동")),
+              decidedBy: who || null,
+              note: null,
+            };
+      }
+
+      if (ridingToday && !boarding) {
+        const p = pickupIdx.find(a.student_id, a.student_name_raw);
+        const b = p ? undefined : absentIdx.find(a.student_id, a.student_name_raw);
+        if (p) {
+          status = "픽업";
+          autoSource = p;
+        } else if (b) {
+          status = "결석";
+          autoSource = b;
+        } else {
+          // 출석부에 등록된 결석. 픽업 인박스에 줄이 없어도 여기서 붙습니다 -
+          // 구글챗으로 온 결석은 픽업 인박스를 거치지 않습니다.
+          const ab = absentEntryIdx.find(a.student_id, a.student_name_raw);
+          if (ab) {
+            status = "결석";
+            autoSource = absentSourceOf(ab);
+          }
+        }
+      }
+
+      // 하원수단이 셔틀이 아닌 날. 사람이 아직 아무것도 안 눌렀을 때만 자동으로 붙입니다 -
+      // 사람이 "오늘은 그래도 탄다"고 눌렀으면 그 판단이 이깁니다.
+      // 번호가 있는 줄은 번호로만 찾습니다. 번호로 못 찾았다는 것은 「그 아이의 하원수단이 없다」입니다.
+      const plan = planIdx.find(a.student_id, a.student_name_raw);
+      if (plan && ridingToday && !boarding) {
+        status = "픽업";
+        autoSource = {
+          requestId: "",
+          kind: "픽업",
+          source: "하원수단",
+          channelLabel: null,
+          senderName: null,
+          receivedAt: "",
+          rawText: `${WEEKDAY_NAMES[todayWeekday] ?? ""}요일 하원수단이 ${plan.kind}(${planLabelOf(plan)})으로 적혀 있어 셔틀에서 뺐습니다. 학생 프로필의 🏠 하원수단에서 고칠 수 있습니다.`,
+          aiNote: null,
+          matchedName: a.student_name_raw,
+          sourceUrl: null,
+          sourceChatId: null,
+          // 학생 프로필에 적힌 하원수단을 읽어 저절로 붙인 것입니다. 오늘 누가 정한 것이
+          // 아니므로 사람 이름을 붙이지 않습니다.
+          decidedByHuman: false,
+          decidedBy: null,
+          note: null,
+        };
+      }
+
+      const item: ChecklistItem = {
+        assignmentId: a.id,
+        studentId: a.student_id,
+        studentName: a.student_name_raw,
+        stopSeq: stop.seq,
+        sortOrder: (a.sort_order as number | null) ?? 0,
+        // 판정 재료를 만드는 일도 @/lib/shuttleRoute 한 곳에서 합니다 - 괄호 위치가 한 번만
+        // 어긋나도 이 화면만 다른 호차를 말하게 됩니다(CLAUDE.md 2-11).
+        ...routeChoiceOf(
+          { stopRouteId: stop.route_id, assignmentOverride: a.override_route_id, boardingOverride: boarding?.override_route_id },
+          (id) => routeIdSet.has(id),
+        ),
+        status,
+        note: a.note ?? null,
+        ridingToday,
+        weekdays: a.weekdays ?? [],
+        autoSource,
+        dismissalPlan: plan ? { kind: plan.kind, label: plan.label, departTime: plan.depart_time } : null,
+      };
+      return item;
+    })
+    .filter((x): x is ChecklistItem => !!x)
+    .sort(compareRoster);
+
+  // 왼쪽 사이드바용 - 업무 메뉴의 출결내역(구글챗 출결알림)과 같은 자료를 다시 훑어 오늘
+  // 픽업·결석 학생을 보여줍니다(요청: "업무메뉴에있는 결석과 픽업아이들이 목록으로 떴으면
+  // 좋겠어... 업무쪽으로 가지 않아도 알수 있도록"). 셔틀은 초등부 한정 기능이라 부서는
+  // 항상 초등부로 고정합니다.
+
+  if (rosterRes.error) console.error("[checklist] 명부를 읽지 못했습니다 — 동명이인 구분이 빠집니다:", rosterRes.error);
+  const roster = rosterRes.rows.map((s) => ({
+    // 동승 확인창에서 아이를 고를 때 id 가 필요합니다.
+    id: s.id,
+    name: s.name,
+    grade: s.grade,
+    nameEn: s.name_en,
+    birthDate: s.birth_date,
+    // 동명이인을 화면에 "김재이(G3JA)"로 보여주려면 반이 있어야 합니다(담당자 요청).
+    className: s.class_name,
+  }));
+
+  // ── 오늘 이 표에서 있었던 일 ────────────────────────────────────────────
+  // 표가 바뀌어 있을 때 "누가 언제 무엇을" 물어볼 곳입니다.
+  const { data: logRows, error: logErr } = logRes;
+  if (logErr && logErr.code !== "PGRST205") {
+    console.error("[checklist] 활동 기록 조회 실패:", logErr.message);
+  }
+
+  /**
+   * 기록 줄이 없는 변경도 「누가 언제」를 보여줍니다.
+   *
+   * 활동 기록을 만들기 전에 바뀐 줄, 그리고 아침 크론·AI 가 찍은 줄에는 기록이 없습니다.
+   * 그런데 그 줄들에도 **`checked_by`·`checked_at` 은 적혀 있습니다** - 누가 언제인지를
+   * 이미 알고 있는데 화면이 「아무도 안 함」으로 보여주고 있었습니다.
+   *
+   * 없는 사실을 지어내지 않습니다. 바뀌기 전 값은 모르므로 비워 둡니다.
+   */
+  const loggedAssignments = new Set(
+    ((logRows as ChecklistLogRow[] | null) ?? []).map((r) => r.assignment_id).filter((x): x is string => !!x),
+  );
+  const derivedLog: ChecklistLogRow[] = [];
+  for (const [assignmentId, b] of boardingByAssignment) {
+    const who = (b.checked_by as string | null) ?? "";
+    const at = (b.checked_at as string | null) ?? "";
+    if (!who || !at || loggedAssignments.has(assignmentId)) continue;
+    if ((b.status as string) === "예정") continue; // 되돌린 줄은 「한 일」이 아닙니다
+    derivedLog.push({
+      id: `boarding-${assignmentId}`,
+      service_date: today,
+      assignment_id: assignmentId,
+      student_name: assignmentNameById.get(assignmentId) ?? "이름 미확인",
+      action: "상태변경",
+      before_value: null,
+      after_value: b.status as string,
+      actor_email: who,
+      actor_name: who,
+      created_at: at,
+    });
+  }
+  const activityLog = [...((logRows as ChecklistLogRow[] | null) ?? []), ...derivedLog].sort((a, b) =>
+    b.created_at.localeCompare(a.created_at),
+  );
+
+
+  // ── 오늘만 같이 타는 아이 ─────────────────────────────────────────────────
+  // "서이 셔틀에 하임이두 같이 보내주세요" 에서 자동으로 읽어 넣은 줄입니다. 정식 배정이
+  // 아니라 오늘 하루짜리라, 명단 표가 아니라 그 위에 따로 세웁니다.
+
+  if (rideRes.error) {
+    console.error("[checklist] 오늘 동승을 읽지 못했습니다:", rideRes.error.message);
+  }
+  const rideRows = (rideRes.data ?? []) as {
+    id: string; student_id: string | null; student_surface: string | null;
+    host_student_id: string | null; host_surface: string | null; route_id: string | null;
+    status: "확인대기" | "확정" | "취소"; note: string | null; raw_text: string | null;
+  }[];
+
+  const rideNameIds = [...new Set(rideRows.flatMap((r) => [r.student_id, r.host_student_id].filter(Boolean) as string[]))];
+  const { rows: rideNames } = await loadStudents(supabase, { ids: rideNameIds, status: "all" });
+  const nameById = new Map(rideNames.map((s) => [s.id, s.name]));
+  const routeNoById = new Map(routes.map((r) => [r.id, r.route_no]));
+
+  const rideAlongs: RideAlongRow[] = rideRows.map((r) => ({
+    id: r.id,
+    studentId: r.student_id,
+    studentName: r.student_id ? (nameById.get(r.student_id) ?? null) : null,
+    studentSurface: r.student_surface,
+    hostName: r.host_student_id ? (nameById.get(r.host_student_id) ?? null) : null,
+    hostSurface: r.host_surface,
+    routeId: r.route_id,
+    routeNo: r.route_id ? (routeNoById.get(r.route_id) ?? null) : null,
+    status: r.status,
+    note: r.note,
+    rawText: r.raw_text,
+    // 확인대기면 그 표기에 걸리는 아이들을 고를 수 있게 함께 넘깁니다. 사람이 명부를 따로
+    // 뒤지게 하면 결국 안 하고 넘어갑니다.
+    candidates:
+      r.status === "확인대기" && r.student_surface
+        ? findBySurface(
+            r.student_surface,
+            roster.map((s) => ({ id: s.id ?? "", name: s.name, grade: s.grade, className: s.className }))
+          )
+            .filter((c) => c.id)
+            .slice(0, 6)
+            .map((c) => ({ id: c.id, name: c.name, label: `${c.name}${c.className ? ` (${c.className})` : ""}` }))
+        : [],
+  }));
+
+  return {
+    today,
+    routes,
+    items,
+    roster,
+    messages: ((mirrorRes.data as GoogleChatMirrorMessage[] | null) ?? []),
+    persistentNotes,
+    toddleBase,
+    activityLog,
+    rideAlongs,
+  };
+}
+
+export type ChecklistData = Awaited<ReturnType<typeof loadChecklistData>>;

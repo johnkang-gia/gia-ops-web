@@ -99,6 +99,8 @@ export const BACKUP_GROUPS: { group: string; tables: string[] }[] = [
       "shuttle_boardings",
       "shuttle_ride_alongs",
       "shuttle_persistent_notes",
+      // 하원 시간에 현장(휴대폰)에서 남긴 메모. 그 자리에서 본 사실이라 잃으면 되살릴 곳이 없습니다.
+      "shuttle_day_memos",
       "shuttle_route_vehicle_history",
       "shuttle_tracker_devices",
       "shuttle_pilot_routes",

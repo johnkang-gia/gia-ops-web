@@ -80,6 +80,10 @@ export async function updateSession(request: NextRequest) {
     // 누를 수 있는 단독 링크").
     path.startsWith("/shuttle-arrival") ||
     path.startsWith("/api/shuttle/arrival") ||
+    // 모바일 하원 체크표. 도착체크와 같은 링크 열쇠로 열리고, 현장 교직원이 휴대폰으로 픽업·결석을
+    // 누르고 하원 메모를 남깁니다. 열쇠 확인은 창구가 스스로 합니다.
+    path.startsWith("/shuttle-checklist") ||
+    path.startsWith("/api/shuttle/checklist-mobile") ||
     // 사무실 대형 모니터용 통합 운영 대시보드(요청: "큰 모니터에 띄워서 전체가 한눈에 보고
     // 파악할 수 있는 통합 대시보드") - 하루 종일 켜두는 화면이라 세션 만료로 로그인이 풀리면
     // 안 되므로, 안내보드와 같은 토큰 링크 방식으로 엽니다.

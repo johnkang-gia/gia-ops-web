@@ -108,11 +108,17 @@ export default function ArrivalLinkManager({ initialLinks }: { initialLinks: Shu
   // 추가하게 하는 방법 없을까?" - 주소를 복사해서 붙여넣는 대신, QR코드를 카톡방 등에 공유하면
   // 카메라로 스캔만 해도 바로 그 링크가 열립니다(브라우저 안에서 client 전용 qrcode 패키지로
   // 만들어 서버 왕복 없이 즉시 생성).
-  async function showQr(l: ShuttleArrivalLink) {
-    setQrLink({ token: l.token, label: l.label });
+  // 같은 열쇠로 모바일 하원 체크표도 열립니다. 현장 교직원에게 링크를 두 벌 나눠줄 일이 없게.
+  function checklistLinkUrl(token: string) {
+    return shareUrl(`/shuttle-checklist/${token}`);
+  }
+
+  async function showQr(l: ShuttleArrivalLink, kind: "arrival" | "checklist" = "arrival") {
+    setQrLink({ token: l.token, label: kind === "checklist" ? `${l.label} · 모바일 하원 체크표` : l.label });
     setQrDataUrl(null);
     try {
-      const dataUrl = await QRCode.toDataURL(arrivalLinkUrl(l.token), { width: 320, margin: 1 });
+      const url = kind === "checklist" ? checklistLinkUrl(l.token) : arrivalLinkUrl(l.token);
+      const dataUrl = await QRCode.toDataURL(url, { width: 320, margin: 1 });
       setQrDataUrl(dataUrl);
     } catch {
       notify("QR코드를 만들지 못했습니다.", "error");
@@ -173,6 +179,18 @@ export default function ArrivalLinkManager({ initialLinks }: { initialLinks: Shu
                 </button>
                 <button onClick={() => showQr(l)} className="rounded-lg border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-50">
                   📱 QR코드
+                </button>
+                <button
+                  onClick={() => window.open(checklistLinkUrl(l.token), "_blank")}
+                  className="rounded-lg border border-emerald-300 px-2 py-1 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-50"
+                >
+                  📋 모바일 체크표
+                </button>
+                <button
+                  onClick={() => showQr(l, "checklist")}
+                  className="rounded-lg border border-emerald-300 px-2 py-1 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-50"
+                >
+                  📋 체크표 QR
                 </button>
                 <button
                   onClick={() => toggleEnabled(l)}

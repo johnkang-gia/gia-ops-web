@@ -153,7 +153,7 @@ export const DATA_KINDS: DataKindDef[] = [
   {
     key: "셔틀",
     canonical: "shuttle_assignments",
-    satellites: ["shuttle_boardings", "shuttle_ride_alongs", "shuttle_checklist_log", "shuttle_persistent_notes", "shuttle_stops"],
+    satellites: ["shuttle_boardings", "shuttle_ride_alongs", "shuttle_checklist_log", "shuttle_persistent_notes", "shuttle_day_memos", "shuttle_stops"],
     // 겹치면 안 되는 것은 배정이 아니라 「그날 그 배정의 탑승 줄」입니다(유일 색인이 그 표에 있음).
     // 앞 판은 배정 표에서 이 칸을 찾다 「열쇠 칸을 읽지 못했습니다」를 냈습니다.
     dedupe: { by: ["service_date", "assignment_id"], table: "shuttle_boardings" },

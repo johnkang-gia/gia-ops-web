@@ -20,7 +20,7 @@ import type { TeamMember, WorkNotice } from "@/lib/types";
 //  - 올리기/내리기는 관리자·행정직원만 할 수 있고, 보는 것은 모두 가능합니다.
 function formatWhen(iso: string): string {
   const d = new Date(iso);
-  return d.toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleString("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
 export default function NoticeBanner({

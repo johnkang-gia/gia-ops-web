@@ -440,7 +440,7 @@ export default function UpcomingPickups({ initialRows }: { initialRows: Schedule
                   <span className="font-semibold text-slate-600"><Who id={r.student_id} name={r.student_name ?? "학생 미확인"} /></span>
                   {r.pickup_requests?.channel_label && <span>{r.pickup_requests.channel_label}</span>}
                   {r.pickup_requests?.received_at && (
-                    <span>{new Date(r.pickup_requests.received_at).toLocaleString("ko-KR")}</span>
+                    <span>{new Date(r.pickup_requests.received_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}</span>
                   )}
                   {r.pickup_requests?.source_url && (
                     <a

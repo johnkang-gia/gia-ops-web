@@ -296,6 +296,10 @@ const OUTSIDE_DASHBOARD = [
   "/s",
   "/b",
   "/d",
+  // 인증 평가 제출용 인쇄본((print) 묶음). 로그인 영역의 화면 목록에 없을 뿐 열리는 화면이라
+  // 「끊긴 링크」 열 개로 잡혔습니다 - 실제로 열어 보면 모두 200 입니다.
+  "/school/accreditation",
+  "/school/accreditation-visit",
 ];
 
 /** 점검할 것 전부. 화면을 먼저 봅니다 - 사람이 매일 여는 것이 화면입니다. */

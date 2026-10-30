@@ -148,7 +148,7 @@ const STATUS_STYLE: Record<RouteRow["status"], { bg: string; fg: string; label: 
 
 function hhmm(iso: string | null): string {
   if (!iso) return "";
-  return new Date(iso).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
+  return new Date(iso).toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit" });
 }
 
 export default function DismissalOpsClient({

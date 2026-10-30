@@ -11,6 +11,11 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
+// 시간대 없는 날짜 글자도 같은 사고를 냅니다. 서버는 UTC, 브라우저는 한국이라
+// `new Date(x).toLocaleString("ko-KR")` 는 두 곳에서 아홉 시간 다른 글자가 되고, 그 화면은
+// 매번 통째로 다시 그려집니다(백업 화면). 날짜·시각을 글자로 만들 때는 timeZone 을 적습니다.
+// 숫자(`n.toLocaleString("ko-KR")`)는 시간대와 상관없어 `new Date(` 가 있는 줄만 봅니다.
+const tzPat = /new Date\([^;]*\.toLocale(?:Date|Time)?String\(\s*["']ko-KR["']\s*(?:\)|,\s*\{(?![^}]*timeZone)[^}]*\})/;
 const bad = [];
 const pat = /\{\s*typeof\s+(document|window)\s*!==\s*["']undefined["']\s*&&/;
 function walk(dir) {
@@ -20,7 +25,7 @@ function walk(dir) {
     else if (p.endsWith(".tsx")) {
       const lines = readFileSync(p, "utf8").split("\n");
       lines.forEach((l, i) => {
-        if (!pat.test(l)) return;
+        if (!pat.test(l) && !tzPat.test(l)) return;
         const above = lines.slice(Math.max(0, i - 2), i + 1).join("\n");
         if (above.includes("hydration-ok")) return;
         bad.push(`${p}:${i + 1}: ${l.trim().slice(0, 100)}`);
@@ -32,7 +37,7 @@ walk("src");
 if (bad.length) {
   console.error("✗ 서버와 브라우저의 첫 그림이 달라지는 자리 (하이드레이션 오류 #418):");
   for (const b of bad) console.error("  " + b);
-  console.error("  → mounted 상태로 가르거나, 정말 괜찮으면 위 줄에 `hydration-ok: 이유` 를 적으세요.");
+  console.error("  → mounted 상태로 가르거나, 날짜 글자에는 timeZone: Asia/Seoul 을 적거나, 정말 괜찮으면 위 줄에 `hydration-ok: 이유` 를 적으세요.");
   process.exit(1);
 }
 console.log("✓ check-hydration");

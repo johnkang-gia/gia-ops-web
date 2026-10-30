@@ -197,7 +197,8 @@ export default function ClassManageClient({
         )}
       </div>
 
-      <div className="g-panel-solid">
+      {/* 휴대폰에서는 칸 다섯이 화면보다 넓습니다. 표 안에서 옆으로 굴려야 「삭제」에 손이 닿습니다. */}
+      <div className="g-panel-solid overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-400">
             <tr>

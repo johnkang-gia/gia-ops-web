@@ -96,11 +96,11 @@ export default function IntegrationsClient({ rows, stats, spaces }: { rows: Row[
     const guide = FIX_GUIDE[r.key] ?? DEFAULT_GUIDE;
     const text = [
       `[연동 오류] ${r.label} (${r.key})`,
-      `상태: ${v.dot} ${v.text} · 주기 ${everyLabel(r.everyMinutes)} · 마지막 신호 ${r.lastSeenAt ? new Date(r.lastSeenAt).toLocaleString("ko-KR") : "없음"}`,
+      `상태: ${v.dot} ${v.text} · 주기 ${everyLabel(r.everyMinutes)} · 마지막 신호 ${r.lastSeenAt ? new Date(r.lastSeenAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }) : "없음"}`,
       r.status ? `신호 상태: ${r.status}` : null,
       r.detail ? `오류 내용: ${r.detail}` : null,
       `확인한 것: ${guide.map((g, i) => `${i + 1}) ${g}`).join(" ")}`,
-      `복사 시각: ${new Date().toLocaleString("ko-KR")}`,
+      `복사 시각: ${new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}`,
     ]
       .filter(Boolean)
       .join("\n");

@@ -30,7 +30,7 @@ export function TermSnapshotClasses({
   return (
     <div>
       <p className="mb-2 text-[11px] text-slate-400">
-        {termLabel} 기록 · {new Date(snapshot!.taken_at).toLocaleString("ko-KR")}에 저장
+        {termLabel} 기록 · {new Date(snapshot!.taken_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}에 저장
         {snapshot!.source === "자동" ? " (학기 종료 시 자동)" : " (직접 저장)"} · 읽기 전용
       </p>
       <div className="overflow-hidden g-panel-solid">
@@ -81,7 +81,7 @@ export function TermSnapshotSubjects({
   return (
     <div>
       <p className="mb-2 text-[11px] text-slate-400">
-        {termLabel} 기록 · {new Date(snapshot!.taken_at).toLocaleString("ko-KR")}에 저장 · 읽기 전용
+        {termLabel} 기록 · {new Date(snapshot!.taken_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}에 저장 · 읽기 전용
       </p>
       <div className="overflow-hidden g-panel-solid">
         <table className="w-full text-left text-sm">

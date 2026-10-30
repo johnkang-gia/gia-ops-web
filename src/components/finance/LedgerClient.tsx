@@ -352,7 +352,7 @@ export default function LedgerClient({
           <span className="font-black">최근 변경</span>
           {recent.map((n) => (
             <span key={n.key} className="rounded bg-white/70 px-1.5 py-0.5">
-              {n.text} <span className="text-amber-500">{new Date(n.at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}</span>
+              {n.text} <span className="text-amber-500">{new Date(n.at).toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit" })}</span>
             </span>
           ))}
           <button onClick={() => setRecent([])} className="ml-auto text-amber-400 hover:text-amber-800" title="지우기">✕</button>

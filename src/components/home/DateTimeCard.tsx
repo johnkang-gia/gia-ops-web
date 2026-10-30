@@ -93,10 +93,10 @@ export default function DateTimeCard({ compact = false }: { compact?: boolean })
   }
 
   // compact(사이드바)에서도 초 단위까지 표시합니다.
-  const timeStr = now.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const timeStr = now.toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", second: "2-digit" });
   const dateStr = compact
-    ? now.toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" })
-    : now.toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric" });
+    ? now.toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric" })
+    : now.toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul", year: "numeric", month: "long", day: "numeric" });
   const weekdayStr = WEEKDAYS[now.getDay()] + "요일";
   const todayKey = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
   const todayHoliday = holidays[todayKey]?.join(" · ");

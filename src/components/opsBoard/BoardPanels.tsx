@@ -182,7 +182,7 @@ export function ClassroomNotes({
               {n.studentName && <b style={{ fontSize: sc.s(22, 15), color: "#fff" }}>{n.studentName}</b>}
               <span style={{ fontSize: sc.s(20, 14), color: "#e2e8f0" }}>{n.body}</span>
               <span style={{ fontSize: sc.s(14, 11), color: "#64748b", marginLeft: "auto" }}>
-                {new Date(n.at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}
+                {new Date(n.at).toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit" })}
                 {n.readAt ? " · 읽음" : ""}
               </span>
             </div>

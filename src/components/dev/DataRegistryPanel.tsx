@@ -74,7 +74,7 @@ export default function DataRegistryPanel({
       lines.push("점검은 아직 안 돌렸습니다. [자료 점검하기]를 누른 뒤 다시 복사하면 결과가 함께 담깁니다.");
     } else {
       lines.push(
-        `${new Date(result.checkedAt).toLocaleString("ko-KR")} 점검 · 갈래 ${result.summary.갈래} · 못 읽은 표 ${result.summary.못읽은표} · 중복 묶음 ${result.summary.중복묶음}`,
+        `${new Date(result.checkedAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })} 점검 · 갈래 ${result.summary.갈래} · 못 읽은 표 ${result.summary.못읽은표} · 중복 묶음 ${result.summary.중복묶음}`,
       );
       const badTables = [...result.kinds.flatMap((k) => k.unreadable.map((u) => `${k.kind}/${u.table}: ${u.why}`)), ...result.otherUnreadable.map((u) => `${u.table}: ${u.why}`)];
       if (badTables.length > 0) {
@@ -150,7 +150,7 @@ export default function DataRegistryPanel({
           }
         >
           {result.ok
-            ? `${new Date(result.checkedAt).toLocaleTimeString("ko-KR")} 점검 — 표도 다 읽히고 중복도 없습니다.`
+            ? `${new Date(result.checkedAt).toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul" })} 점검 — 표도 다 읽히고 중복도 없습니다.`
             : `못 읽은 표 ${result.summary.못읽은표} · 중복 묶음 ${result.summary.중복묶음}`}
         </div>
       )}

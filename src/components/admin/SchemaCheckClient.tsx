@@ -54,7 +54,7 @@ export default function SchemaCheckClient() {
           {busy ? "확인하는 중…" : "다시 확인"}
         </button>
         {checkedAt && (
-          <span className="text-[11px] text-slate-400">{new Date(checkedAt).toLocaleString("ko-KR")} 확인</span>
+          <span className="text-[11px] text-slate-400">{new Date(checkedAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })} 확인</span>
         )}
       </div>
 

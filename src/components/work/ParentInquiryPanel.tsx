@@ -95,13 +95,13 @@ function whenLabel(iso: string): string {
   const d = new Date(iso);
   const now = new Date();
   const sameDay = d.toDateString() === now.toDateString();
-  if (sameDay) return d.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
+  if (sameDay) return d.toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit" });
 
   const days = Math.floor((now.getTime() - d.getTime()) / 86400000);
   if (days < 7) {
-    return `${["일", "월", "화", "수", "목", "금", "토"][d.getDay()]} ${d.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}`;
+    return `${["일", "월", "화", "수", "목", "금", "토"][d.getDay()]} ${d.toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit" })}`;
   }
-  return d.toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" });
+  return d.toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric" });
 }
 
 // 날짜 구분선.
@@ -910,7 +910,7 @@ export default function ParentInquiryPanel({
           업무{r.task?.status ? `·${r.task.status}` : ""}
         </span>
       )}
-      <span className="shrink-0 text-[10px] text-slate-400" title={new Date(r.received_at).toLocaleString("ko-KR")}>
+      <span className="shrink-0 text-[10px] text-slate-400" title={new Date(r.received_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}>
         {whenLabel(r.received_at)}
       </span>
       {/* 이 자리에서 방금 처리한 것. **단추가 아니라 결과입니다** - 목록은 읽는 자리이고,
@@ -1111,7 +1111,7 @@ export default function ParentInquiryPanel({
                     )}
                   </div>
                   <p className="mt-0.5 text-[11px] text-slate-400">
-                    {detail.source} · {new Date(detail.received_at).toLocaleString("ko-KR")}
+                    {detail.source} · {new Date(detail.received_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}
                     {detail.channel_label ? ` · ${detail.channel_label}` : ""}
                   </p>
                 </div>

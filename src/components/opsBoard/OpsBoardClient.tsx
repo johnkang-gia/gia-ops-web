@@ -816,7 +816,7 @@ export default function OpsBoardClient({ token, initialData = null }: { token: s
                 : urgentInquiries > 0
                 ? `급한 것 ${urgentInquiries}건`
                 : data.collector?.lastSeen
-                ? `수집 ${new Date(data.collector.lastSeen).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}`
+                ? `수집 ${new Date(data.collector.lastSeen).toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit" })}`
                 : ""}
             </span>
           </div>

@@ -105,7 +105,7 @@ export default function RestorePanel() {
     // 무엇이 바뀌는지 **숫자로** 다시 한 번 보여주고 묻습니다. 「정말 복원할까요?」만 뜨는
     // 확인창은 아무것도 확인시켜 주지 못합니다.
     const ok = await confirmAction(
-      `${exportedAt ? new Date(exportedAt).toLocaleString("ko-KR") : "알 수 없는 시점"} 의 자료로 되돌립니다.\n\n` +
+      `${exportedAt ? new Date(exportedAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }) : "알 수 없는 시점"} 의 자료로 되돌립니다.\n\n` +
         `· 표 ${chosen.length}개 · ${willWrite.toLocaleString("ko-KR")}줄을 덮어쓰거나 새로 넣습니다\n` +
         (wipe
           ? `· ⚠ 파일에 없는 ${willDelete.toLocaleString("ko-KR")}줄을 지웁니다 (백업 이후에 만든 자료입니다)\n`
@@ -175,7 +175,7 @@ export default function RestorePanel() {
       {plan && (
         <div className="mt-2 border-t border-amber-200 pt-2">
           <p className="mb-1.5 text-[12px] font-bold text-amber-900">
-            📄 {file?.name} · {exportedAt ? new Date(exportedAt).toLocaleString("ko-KR") : "시점 알 수 없음"}
+            📄 {file?.name} · {exportedAt ? new Date(exportedAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }) : "시점 알 수 없음"}
           </p>
 
           <div className="flex flex-col gap-1">

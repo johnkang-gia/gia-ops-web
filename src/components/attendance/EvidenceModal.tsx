@@ -96,7 +96,7 @@ export default function EvidenceModal({
               <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600">{span}</span>
               {full?.channel && <span className="text-slate-400">· {full.channel}</span>}
               {full?.sender && <span className="text-slate-400">· {full.sender}</span>}
-              {full?.at && <span className="text-slate-400">· {new Date(full.at).toLocaleString("ko-KR")}</span>}
+              {full?.at && <span className="text-slate-400">· {new Date(full.at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}</span>}
             </div>
 
             {/* 원문 그대로. 요약하지 않습니다 - 요약은 자동이 이미 한 번 했고, 지금 보려는 것은
@@ -121,7 +121,7 @@ export default function EvidenceModal({
             {entry.note && <p className="mt-1 text-[11px] text-slate-500">메모: {entry.note}</p>}
             <p className="mt-2 text-[11px] text-slate-400">
               등록: {entry.registered_by ?? "자동"}
-              {entry.registered_at && ` · ${new Date(entry.registered_at).toLocaleString("ko-KR")}`}
+              {entry.registered_at && ` · ${new Date(entry.registered_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}`}
             </p>
           </>
         )}

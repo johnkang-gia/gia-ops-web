@@ -79,7 +79,7 @@ export default async function IntegrationsPage() {
     {
       label: "GPS 위치 수신",
       value: `24시간 ${(pings24.count ?? 0).toLocaleString()}건`,
-      sub: lastPing.data?.recorded_at ? `마지막 ${new Date(lastPing.data.recorded_at).toLocaleString("ko-KR")}` : "기록 없음",
+      sub: lastPing.data?.recorded_at ? `마지막 ${new Date(lastPing.data.recorded_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}` : "기록 없음",
       warn: (pings24.count ?? 0) === 0,
     },
     {

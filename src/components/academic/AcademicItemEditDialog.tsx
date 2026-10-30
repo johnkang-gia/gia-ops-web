@@ -339,7 +339,7 @@ export default function AcademicItemEditDialog({
                 {logs.map((l) => (
                   <li key={l.id} className="text-[11px] leading-relaxed text-slate-600">
                     <b className="text-slate-800">{l.changed_by_name || l.changed_by}</b>{" "}
-                    <span className="text-slate-400">{new Date(l.changed_at).toLocaleString("ko-KR")}</span>
+                    <span className="text-slate-400">{new Date(l.changed_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}</span>
                     <div className="pl-2 text-[10px] text-slate-500">
                       {Object.entries(l.changes ?? {}).map(([k, v]) => (
                         <div key={k}>

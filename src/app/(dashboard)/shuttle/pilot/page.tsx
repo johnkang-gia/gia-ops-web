@@ -184,7 +184,7 @@ export default async function ShuttlePilotPage() {
                       <td className="px-3 py-1.5 text-slate-600">{h.teacher_name ?? "-"}</td>
                       <td className="px-3 py-1.5 text-xs text-slate-500">{h.note ?? ""}</td>
                       <td className="px-3 py-1.5 text-xs text-slate-400">
-                        {new Date(h.changed_at).toLocaleString("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                        {new Date(h.changed_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
                       </td>
                     </tr>
                   ))

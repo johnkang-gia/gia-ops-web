@@ -134,7 +134,7 @@ export default async function SchoolOverviewPage() {
     reportsThisWeek: reportsRes.count ?? 0,
   };
   const events: SchoolEvent[] = (eventRows ?? []).map((e) => ({ date: e.date as string, name: e.name as string }));
-  const dateStr = new Date().toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric", weekday: "short" });
+  const dateStr = new Date().toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul", year: "numeric", month: "long", day: "numeric", weekday: "short" });
 
   return (
     <div className="p-4 sm:p-6">

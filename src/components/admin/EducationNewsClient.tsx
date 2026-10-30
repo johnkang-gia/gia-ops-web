@@ -22,7 +22,7 @@ const CATEGORY_COLOR: Record<string, string> = {
 };
 
 function formatDate(d: string) {
-  return new Date(d).toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric" });
+  return new Date(d).toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul", year: "numeric", month: "long", day: "numeric" });
 }
 
 export default function EducationNewsClient({ initialNews }: { initialNews: EducationNews[] }) {

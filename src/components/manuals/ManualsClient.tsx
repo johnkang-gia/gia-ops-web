@@ -635,7 +635,7 @@ export default function ManualsClient({
                             {historyRows.map((h) => (
                               <div key={h.id} className="rounded-lg bg-white p-2 text-xs">
                                 <div className="mb-1 text-[10px] font-semibold text-slate-400">
-                                  {new Date(h.changed_at).toLocaleString("ko-KR")}
+                                  {new Date(h.changed_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}
                                   {h.changed_by ? ` · ${h.changed_by}` : ""} 이전 내용
                                 </div>
                                 <div

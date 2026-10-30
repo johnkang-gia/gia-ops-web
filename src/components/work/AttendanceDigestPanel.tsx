@@ -43,7 +43,7 @@ function nameKey(n: string): string {
 }
 
 function timeStr(iso: string) {
-  return new Date(iso).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
+  return new Date(iso).toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit" });
 }
 
 // attendance_entries 한 줄(등록 상태).
@@ -1191,7 +1191,7 @@ export default function AttendanceDigestPanel({
                   )}
                   <dt className="text-slate-400">받은 시각</dt>
                   <dd className="text-slate-700">
-                    {detail.time ? new Date(detail.time).toLocaleString("ko-KR") : "알 수 없음"}
+                    {detail.time ? new Date(detail.time).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }) : "알 수 없음"}
                   </dd>
                   <dt className="text-slate-400">경로</dt>
                   <dd className="text-slate-700">{detail.sourceLabel}</dd>

@@ -49,7 +49,7 @@ export type StudentOption = {
 };
 
 function hhmm(iso: string): string {
-  return new Date(iso).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
+  return new Date(iso).toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit" });
 }
 
 export default function PickupInboxClient({
@@ -287,7 +287,7 @@ export default function PickupInboxClient({
             {collector?.status === "login_required"
               ? "사무실 PC에서 토들에 다시 로그인해주세요."
               : collector
-              ? `마지막 신호 ${new Date(collector.last_seen_at).toLocaleString("ko-KR")}`
+              ? `마지막 신호 ${new Date(collector.last_seen_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}`
               : "아직 한 번도 연결된 적이 없습니다."}
             <div className="mt-1 leading-relaxed text-red-600">
               지금은 토들 메시지가 자동으로 들어오지 않습니다. 고칠 때까지는 토들을 직접 확인하시고, 아래 [손으로 접수]에

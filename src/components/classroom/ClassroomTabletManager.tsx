@@ -186,7 +186,7 @@ export default function ClassroomTabletManager({ classes }: { classes: WrClass[]
                         "rounded-full px-1.5 py-0.5 text-[10px] font-bold " +
                         (alive ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500")
                       }
-                      title={l.last_seen_at ? `마지막 신호 ${new Date(l.last_seen_at).toLocaleString("ko-KR")}` : "아직 한 번도 열린 적이 없습니다"}
+                      title={l.last_seen_at ? `마지막 신호 ${new Date(l.last_seen_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}` : "아직 한 번도 열린 적이 없습니다"}
                     >
                       {alive ? "● 켜짐" : l.last_seen_at ? "○ 조용함" : "○ 미접속"}
                     </span>

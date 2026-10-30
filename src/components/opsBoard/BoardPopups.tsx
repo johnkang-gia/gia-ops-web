@@ -27,7 +27,7 @@ export function InquiryPopup({
       >
         <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 12 }}>
           <b style={{ fontSize: 22, color: "#fff" }}>{view.student}</b>
-          <span style={{ fontSize: 13, color: "#64748b" }}>{new Date(view.at).toLocaleString("ko-KR")}</span>
+          <span style={{ fontSize: 13, color: "#64748b" }}>{new Date(view.at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}</span>
           <button onClick={onClose} style={{ marginLeft: "auto", background: "transparent", border: "none", color: "#94a3b8", fontSize: 26, cursor: "pointer", lineHeight: 1 }}>
             ×
           </button>

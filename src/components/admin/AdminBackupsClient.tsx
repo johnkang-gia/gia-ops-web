@@ -136,7 +136,7 @@ export default function AdminBackupsClient({
   }
 
   async function restoreBackup(b: BackupSummary) {
-    const when = new Date(b.created_at).toLocaleString("ko-KR");
+    const when = new Date(b.created_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" });
     // 되돌릴 수 없는 작업이라(복원하는 순간 지금 데이터가 이 백업 시점 내용으로 대체됩니다),
     // 두 번 확인합니다 - 라벨/시각/대상 테이블을 다시 보여줘서 실수로 엉뚱한 백업을 고르지
     // 않도록 합니다.
@@ -202,7 +202,7 @@ export default function AdminBackupsClient({
             <div className="flex flex-col gap-0.5">
               {exportLog.map((r) => (
                 <div key={r.id} className="flex flex-wrap items-center gap-1.5 text-[11px] text-emerald-900">
-                  <span className="tabular-nums text-emerald-700">{new Date(r.created_at).toLocaleString("ko-KR")}</span>
+                  <span className="tabular-nums text-emerald-700">{new Date(r.created_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}</span>
                   <span className="rounded-full bg-white px-1.5 font-bold">{r.kind}</span>
                   <span className="text-emerald-700">{r.actor_email}</span>
                   {r.row_count != null && <span>{r.row_count.toLocaleString("ko-KR")}줄</span>}
@@ -252,7 +252,7 @@ export default function AdminBackupsClient({
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm font-semibold text-slate-800">{b.label || "(이름 없음)"}</div>
               <div className="mt-0.5 text-xs text-slate-400">
-                {new Date(b.created_at).toLocaleString("ko-KR")} · {b.created_by}
+                {new Date(b.created_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })} · {b.created_by}
               </div>
               <div className="mt-1 text-[11px] text-slate-400">{b.tables.map(tableLabel).join(" · ")}</div>
             </div>

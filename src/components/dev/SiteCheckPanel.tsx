@@ -257,7 +257,7 @@ export default function SiteCheckPanel({ gaps, version }: { gaps: { key: string;
       }
     }
 
-    setFinishedAt(new Date().toLocaleTimeString("ko-KR"));
+    setFinishedAt(new Date().toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul" }));
     setRunning(false);
   }
 
@@ -280,7 +280,7 @@ export default function SiteCheckPanel({ gaps, version }: { gaps: { key: string;
    */
   function buildOwn(): string {
     const lines: string[] = [];
-    lines.push(`# 운영앱 점검 결과 (v${version} · ${new Date().toLocaleString("ko-KR")})`);
+    lines.push(`# 운영앱 점검 결과 (v${version} · ${new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })})`);
     lines.push("");
     if (finishedAt) {
       lines.push(`화면 ${results.length}개 점검 · 정상 ${results.length - bad.length} · 손봐야 할 것 ${bad.length} · 끊긴 링크가 있는 화면 ${withDead.length}`);

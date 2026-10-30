@@ -11,5 +11,5 @@ export function deadlineLabel(dueAt: string | null): string | null {
   if (diffDays === 0) return "오늘 마감";
   if (diffDays === 1) return "내일 마감";
   if (diffDays <= 7) return `${diffDays}일 후 마감`;
-  return due.toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" }) + " 마감";
+  return due.toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric" }) + " 마감";
 }

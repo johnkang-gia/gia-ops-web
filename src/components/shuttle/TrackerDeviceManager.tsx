@@ -967,7 +967,7 @@ export default function TrackerDeviceManager({
                         <div key={o.id} className="flex flex-wrap items-center gap-2 rounded-lg bg-white px-2 py-1.5 text-[11px]">
                           <span className="text-slate-500">
                             {o.service_date} ·{" "}
-                            {new Date(o.arrived_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })} ·{" "}
+                            {new Date(o.arrived_at).toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit" })} ·{" "}
                             {o.order_index ?? "?"}번째 정차 · {Math.round(o.dwell_seconds)}초
                           </span>
                           <a
@@ -1050,7 +1050,7 @@ function statusOf(device: ShuttleTrackerDevice | null): { label: string; chip: s
     // 예전에 들어온 적은 있는데 지금은 조용한 경우입니다. 아이폰의 "계속 허용하시겠습니까?"를
     // 잘못 누르셨거나 절전 설정이 되돌아간 경우가 대부분이라, 그냥 넘기면 안 됩니다.
     return {
-      label: `신호 끊김 · 최근 ${new Date(device.last_seen_at).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}`,
+      label: `신호 끊김 · 최근 ${new Date(device.last_seen_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}`,
       chip: "bg-red-100 text-red-700",
       tone: "border-red-200 bg-red-50/50",
     };

@@ -169,7 +169,7 @@ export default function TodayPickupList({
           <p className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 font-semibold text-slate-500">
             <span>출처 {i.source ?? "알 수 없음"}</span>
             {i.channelLabel && <span>· {i.channelLabel}</span>}
-            {i.receivedAt && <span>· {new Date(i.receivedAt).toLocaleString("ko-KR", { hour12: false })}</span>}
+            {i.receivedAt && <span>· {new Date(i.receivedAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", hour12: false })}</span>}
             <span>· {i.pending ? "확인대기" : "확정"}</span>
           </p>
           {i.rawText ? (

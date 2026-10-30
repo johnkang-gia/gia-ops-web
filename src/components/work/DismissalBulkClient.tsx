@@ -791,7 +791,7 @@ export default function DismissalBulkClient({
                     <span className="rounded bg-slate-100 px-1 text-[10px] font-semibold text-slate-500">{q.kind}</span>
                     <span className="text-slate-700">{q.summary || q.raw?.slice(0, 60) || "—"}</span>
                     <span className="ml-auto whitespace-nowrap text-[10px] text-slate-400">
-                      {new Date(q.at).toLocaleString("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                      {new Date(q.at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
                     </span>
                     {/* 요약에는 시각이 잘려 있는 경우가 있어 원문을 열 수 있게 둡니다. */}
                     {q.raw && (

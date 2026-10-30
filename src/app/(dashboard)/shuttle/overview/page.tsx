@@ -304,7 +304,7 @@ export default async function ShuttleOverviewPage() {
     overCount: routeStats.filter((r) => r.over).length,
   };
 
-  const dateStr = new Date().toLocaleDateString("ko-KR", { month: "long", day: "numeric", weekday: "short" });
+  const dateStr = new Date().toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul", month: "long", day: "numeric", weekday: "short" });
 
   // 실시간·지역 지도(요청: 실시간·지역 탭을 개요에 통합, 맨 위에 지도). 위 첫 묶음에서
   // 이미 받은 노선·정류장을 그대로 씁니다 - 같은 표를 두 번 묻지 않습니다.

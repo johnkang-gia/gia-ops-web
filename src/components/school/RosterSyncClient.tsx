@@ -149,7 +149,7 @@ export default function RosterSyncClient() {
               마지막 수신{" "}
               {l.last_push_at ? (
                 <>
-                  {new Date(l.last_push_at).toLocaleString("ko-KR")} · 받은 줄 {l.last_row_count ?? 0} · 대기함에 {l.last_queued ?? 0}
+                  {new Date(l.last_push_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })} · 받은 줄 {l.last_row_count ?? 0} · 대기함에 {l.last_queued ?? 0}
                 </>
               ) : (
                 <span className="text-slate-400">아직 없음</span>
@@ -281,7 +281,7 @@ export default function RosterSyncClient() {
                   <span className={"rounded px-1.5 py-0.5 text-[10px] font-bold " + (ATTEMPT_STYLE[a.result] ?? "bg-slate-100 text-slate-600")}>
                     {a.result}
                   </span>
-                  <span className="tabular-nums text-slate-500">{new Date(a.at).toLocaleString("ko-KR")}</span>
+                  <span className="tabular-nums text-slate-500">{new Date(a.at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}</span>
                   {a.token_prefix && <code className="rounded bg-slate-100 px-1 text-[10px] text-slate-500">{a.token_prefix}…</code>}
                   {a.note && <span className="text-rose-600">{a.note}</span>}
                 </li>

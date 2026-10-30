@@ -97,7 +97,7 @@ export default function OfficeRequestsPanel({
                   <span className="rounded bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">{r.category}</span>
                   {r.teacher_name && <span className="text-[11px] font-semibold text-slate-600">{r.teacher_name}</span>}
                   <span className="ml-auto text-[9px] text-slate-400">
-                    {new Date(r.created_at).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                    {new Date(r.created_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                   </span>
                 </div>
                 <p className="whitespace-pre-wrap text-slate-700">{r.message}</p>

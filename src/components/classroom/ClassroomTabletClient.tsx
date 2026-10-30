@@ -481,7 +481,7 @@ function beep(ref: React.MutableRefObject<AudioContext | null>) {
 
 /** 「읽음 15:32」에 쓸 시:분. */
 function hhmm(iso: string): string {
-  return new Date(iso).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
+  return new Date(iso).toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit" });
 }
 
 const S: Record<string, React.CSSProperties> = {

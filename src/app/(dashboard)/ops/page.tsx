@@ -34,7 +34,7 @@ function fmtDateHeading(dateStr: string) {
   yesterday.setDate(today.getDate() - 1);
   const same = (a: Date, b: Date) =>
     a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-  const label = d.toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric", weekday: "short" });
+  const label = d.toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul", year: "numeric", month: "long", day: "numeric", weekday: "short" });
   if (same(d, today)) return `오늘 · ${label}`;
   if (same(d, yesterday)) return `어제 · ${label}`;
   return label;

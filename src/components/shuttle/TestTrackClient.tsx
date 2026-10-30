@@ -36,7 +36,7 @@ type Data = {
 const POLL_MS = 5000;
 
 function hhmmss(iso: string): string {
-  return new Date(iso).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  return new Date(iso).toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 function agoLabel(iso: string | null): string {
   if (!iso) return "신호 없음";

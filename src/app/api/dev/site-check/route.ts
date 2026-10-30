@@ -48,41 +48,55 @@ export async function POST(req: Request) {
 
   const known = SCREENS;
 
-  const results = await Promise.all(
-    paths.map(async (path): Promise<CheckResult> => {
-      const started = Date.now();
-      const ctl = new AbortController();
-      const timer = setTimeout(() => ctl.abort(), TIMEOUT_MS);
+  const checkOne = async (path: string): Promise<CheckResult> => {
+    const started = Date.now();
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), TIMEOUT_MS);
+    try {
+      const res = await fetch(origin + path, {
+        headers: { cookie, "user-agent": "gia-site-check" },
+        redirect: "follow",
+        cache: "no-store",
+        signal: ctl.signal,
+      });
+      const text = (await res.text()).slice(0, MAX_BODY);
+      const ms = Date.now() - started;
+      const v = verdictOf({ status: res.status, ms, finalUrl: res.url, body: text });
+      // 창구(/api)는 화면이 아니라 자료를 돌려줍니다. 링크를 찾을 것이 없습니다.
+      const dead = path.startsWith("/api") ? [] : deadLinks(collectLinks(text), known);
+      let redirectedTo: string | null = null;
       try {
-        const res = await fetch(origin + path, {
-          headers: { cookie, "user-agent": "gia-site-check" },
-          redirect: "follow",
-          cache: "no-store",
-          signal: ctl.signal,
-        });
-        const text = (await res.text()).slice(0, MAX_BODY);
-        const ms = Date.now() - started;
-        const v = verdictOf({ status: res.status, ms, finalUrl: res.url, body: text });
-        // 창구(/api)는 화면이 아니라 자료를 돌려줍니다. 링크를 찾을 것이 없습니다.
-        const dead = path.startsWith("/api") ? [] : deadLinks(collectLinks(text), known);
-        let redirectedTo: string | null = null;
-        try {
-          const finalPath = new URL(res.url).pathname;
-          if (res.redirected && finalPath !== path) redirectedTo = finalPath;
-        } catch {
-          redirectedTo = null; // 주소를 못 읽으면 넘겨준 것으로 보지 않습니다 - 그려 보기에서 한 번 더 봅니다.
-        }
-        return { path, status: res.status, ms, verdict: v.verdict, note: v.note, deadLinks: dead, redirectedTo };
-      } catch (err) {
-        const ms = Date.now() - started;
-        const why = err instanceof Error && err.name === "AbortError" ? `${TIMEOUT_MS / 1000}초 안에 안 열렸습니다` : String(err);
-        const v = verdictOf({ status: null, ms, finalUrl: null, body: "", failed: why });
-        return { path, status: null, ms, verdict: v.verdict, note: v.note, deadLinks: [] };
-      } finally {
-        clearTimeout(timer);
+        const finalPath = new URL(res.url).pathname;
+        if (res.redirected && finalPath !== path) redirectedTo = finalPath;
+      } catch {
+        redirectedTo = null; // 주소를 못 읽으면 넘겨준 것으로 보지 않습니다 - 그려 보기에서 한 번 더 봅니다.
       }
-    }),
-  );
+      return { path, status: res.status, ms, verdict: v.verdict, note: v.note, deadLinks: dead, redirectedTo };
+    } catch (err) {
+      const ms = Date.now() - started;
+      const why = err instanceof Error && err.name === "AbortError" ? `${TIMEOUT_MS / 1000}초 안에 안 열렸습니다` : String(err);
+      const v = verdictOf({ status: null, ms, finalUrl: null, body: "", failed: why });
+      return { path, status: null, ms, verdict: v.verdict, note: v.note, deadLinks: [] };
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
+  const first = await Promise.all(paths.map(checkOne));
+  // **느림은 혼자 한 번 더 잽니다.** 열두 화면을 한꺼번에 부르면 같은 함수·같은 데이터베이스를
+  // 나눠 써서 서로를 기다립니다. 재무 화면 여섯이 한 묶음에 들어갔을 때 각각 4초대로 찍혔는데,
+  // 하나씩 열면 0.2~0.6초였습니다. 묶음 안의 시간은 «그 화면이 느리다»가 아니라 «같이 불렀다»를
+  // 잰 것이라, 그대로 두면 고칠 것 없는 화면이 「코드를 고쳐야 하는 것」에 올라갑니다.
+  // 혼자 열어도 느리면 그때가 진짜 느린 것입니다.
+  const results: CheckResult[] = [];
+  for (const r of first) {
+    if (r.verdict !== "느림") {
+      results.push(r);
+      continue;
+    }
+    const again = await checkOne(r.path);
+    results.push(again.ms < r.ms ? again : r);
+  }
 
   return NextResponse.json({ results });
 }

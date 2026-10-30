@@ -26,7 +26,7 @@ import { loadStudents } from "@/lib/students";
 export async function loadChecklistData(
   supabase: SupabaseClient,
   term: "정규학기" | "여름캠프2",
-  opts: { homonymNames: Set<string>; light?: boolean },
+  opts: { homonymNames: Set<string>; light?: boolean; service?: boolean },
 ) {
   // 한국 요일입니다. new Date().getDay()는 서버(UTC)의 요일이라 한국시간 오전 9시 이전에는
   // 어제 요일이 나옵니다 - 월요일 새벽에 열면 일요일이 되어 아무도 안 타는 표가 됩니다.
@@ -80,8 +80,10 @@ export async function loadChecklistData(
       .eq("term", term)
       .order("sort_order"),
     supabase.from("shuttle_stops").select("id, route_id, seq").order("seq"),
+    // 로그인한 화면은 보호자 칸을 뺀 공용 뷰를, 모바일 창구(서비스 키)는 같은 칸만 골라 원본 표를 읽습니다.
+    // 공용 뷰는 로그인한 교직원에게만 열려 있어 서비스 키로 읽으면 명단이 통째로 빈 채로 옵니다.
     supabase
-      .from("shuttle_assignments_basic")
+      .from(opts.service ? "shuttle_assignments" : "shuttle_assignments_basic")
       .select("id, stop_id, student_id, student_name_raw, weekdays, override_route_id, note, choice_group, sort_order"),
     supabase
       .from("shuttle_boardings")
@@ -127,6 +129,13 @@ export async function loadChecklistData(
       .gte("date_to", today),
   ]);
 
+  // 명단의 뼈대(노선·정류장·배정)를 못 읽으면 표는 「오늘 탈 아이 없음」처럼 보입니다. 이유를 모아 화면에 넘깁니다.
+  const loadErrors = [
+    routesRes.error && `노선: ${routesRes.error.message}`,
+    allStopsRes.error && `정류장: ${allStopsRes.error.message}`,
+    allAsgRes.error && `배정: ${allAsgRes.error.message}`,
+  ].filter((x): x is string => !!x);
+  if (loadErrors.length) console.error("[checklist] 명단을 읽지 못했습니다:", loadErrors.join(" / "));
   const routes = (routesRes.data as ChecklistRoute[] | null) ?? [];
   const routeIds = routes.map((r) => r.id);
   const routeIdSet = new Set(routeIds);
@@ -596,6 +605,7 @@ export async function loadChecklistData(
 
   return {
     today,
+    loadErrors,
     routes,
     items,
     roster,

@@ -57,6 +57,7 @@ type Payload = {
   rideAlongs?: { id: string; name: string; host: string | null; routeNo: string | null; status: string }[];
   memos?: Memo[];
   memoError?: string | null;
+  loadErrors?: string[];
   unchanged?: boolean;
   error?: string;
 };
@@ -70,6 +71,7 @@ export default function MobileChecklistClient({ token }: { token: string }) {
   const [rideAlongs, setRideAlongs] = useState<NonNullable<Payload["rideAlongs"]>>([]);
   const [memos, setMemos] = useState<Memo[]>([]);
   const [memoError, setMemoError] = useState<string | null>(null);
+  const [loadErrors, setLoadErrors] = useState<string[]>([]);
   const [meta, setMeta] = useState<{ label: string; term: string; today: string } | null>(null);
   const [fatal, setFatal] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ text: string; tone: "ok" | "err" } | null>(null);
@@ -115,6 +117,7 @@ export default function MobileChecklistClient({ token }: { token: string }) {
       if (typeof j.revision === "number") revRef.current = j.revision;
       if (j.unchanged) return;
       setRoutes(j.routes ?? []);
+      setLoadErrors(j.loadErrors ?? []);
       setRideAlongs(j.rideAlongs ?? []);
       if (j.label && j.term && j.today) setMeta({ label: j.label, term: j.term, today: j.today });
       setLoaded(true);
@@ -388,6 +391,11 @@ export default function MobileChecklistClient({ token }: { token: string }) {
         </section>
       )}
 
+      {loadErrors.length > 0 && (
+        <p className="mx-3 mt-3 rounded-lg bg-rose-50 px-3 py-2 text-[12px] font-semibold text-rose-700">
+          명단 일부를 읽지 못했습니다 — 행정실에 알려 주세요. ({loadErrors.join(" / ")})
+        </p>
+      )}
       {!loaded && <p className="mt-10 text-center text-sm text-slate-400">명단을 불러오는 중…</p>}
       {loaded && view.length === 0 && (
         <p className="mt-10 text-center text-sm text-slate-400">{query ? "찾는 이름이 없습니다." : "오늘 하원 차량이 없습니다."}</p>

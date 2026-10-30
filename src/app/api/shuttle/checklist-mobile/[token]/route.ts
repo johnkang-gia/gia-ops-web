@@ -93,7 +93,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   const homonymNames = new Set([...count.entries()].filter(([, n]) => n > 1).map(([k]) => k));
   const classById = new Map(students.map((s) => [s.id, s.class_name ?? s.grade ?? null]));
 
-  const data = await loadChecklistData(supabase, term, { homonymNames, light: true });
+  const data = await loadChecklistData(supabase, term, { homonymNames, light: true, service: true });
   const routeById = new Map(data.routes.map((r) => [r.id, r]));
   const items = applyPersistentNotes(data.items, data.persistentNotes, routeById, homonymNames, data.today);
 
@@ -166,6 +166,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     rideAlongs,
     memos,
     memoError,
+    loadErrors: data.loadErrors,
   });
 }
 

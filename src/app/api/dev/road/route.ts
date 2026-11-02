@@ -12,6 +12,8 @@ import { isDeveloperEmail } from "@/lib/roles";
  *
  *   mode "matrix": 출발지 1곳 → 목적지 최대 30곳의 도로 거리·시간 (다중 목적지 길찾기)
  *   mode "route" : 지점 순서대로 도는 경로(경유지 최대 30곳)의 구간별 거리·시간과 도로 선
+ *   mode "region": 좌표 최대 60곳의 행정 구·동(카카오 좌표→행정구역). 노선을 구·동 단위로 묶어 볼 때 씁니다.
+ *                  주소 글자에는 동이 빠진 도로명 주소가 많아 글자로는 동을 알 수 없습니다.
  *
  * 저장하지 않습니다 - 검토용 계산이라 운영 자료(shuttle_*)와 섞이면 안 됩니다.
  */
@@ -32,10 +34,29 @@ export async function POST(req: Request) {
   const body = (await req.json().catch(() => null)) as
     | { mode: "matrix"; origin: Pt; destinations: Pt[]; radius?: number }
     | { mode: "route"; points: Pt[]; withPath?: boolean }
+    | { mode: "region"; points: Pt[] }
     | null;
   if (!body) return NextResponse.json({ error: "요청 본문이 없습니다." }, { status: 400 });
 
   const headers = { "Content-Type": "application/json", Authorization: `KakaoAK ${restKey}` };
+
+  if (body.mode === "region") {
+    const pts = body.points ?? [];
+    if (pts.length < 1 || pts.length > 60) return NextResponse.json({ error: "points 는 1~60곳이어야 합니다." }, { status: 400 });
+    const rows = await Promise.all(
+      pts.map(async (p, i) => {
+        const u = `https://dapi.kakao.com/v2/local/geo/coord2regioncode.json?x=${p.x}&y=${p.y}`;
+        const res = await fetch(u, { headers: { Authorization: `KakaoAK ${restKey}` } });
+        if (!res.ok) return { key: p.key ?? String(i), ok: false, error: `카카오 오류(${res.status})` };
+        const data = (await res.json()) as { documents?: { region_type: string; region_2depth_name: string; region_3depth_name: string }[] };
+        // H = 행정동, B = 법정동. 둘 다 돌려줍니다 - 학부모가 말하는 동은 대개 법정동입니다.
+        const h = data.documents?.find((d) => d.region_type === "H");
+        const b = data.documents?.find((d) => d.region_type === "B");
+        return { key: p.key ?? String(i), ok: !!(h || b), gu: (h ?? b)?.region_2depth_name ?? null, hdong: h?.region_3depth_name ?? null, bdong: b?.region_3depth_name ?? null };
+      }),
+    );
+    return NextResponse.json({ rows });
+  }
 
   if (body.mode === "matrix") {
     if (!body.origin || !Array.isArray(body.destinations) || body.destinations.length === 0 || body.destinations.length > 30) {

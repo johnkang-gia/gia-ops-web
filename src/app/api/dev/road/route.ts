@@ -14,6 +14,8 @@ import { isDeveloperEmail } from "@/lib/roles";
  *   mode "route" : 지점 순서대로 도는 경로(경유지 최대 30곳)의 구간별 거리·시간과 도로 선
  *   mode "region": 좌표 최대 60곳의 행정 구·동(카카오 좌표→행정구역). 노선을 구·동 단위로 묶어 볼 때 씁니다.
  *                  주소 글자에는 동이 빠진 도로명 주소가 많아 글자로는 동을 알 수 없습니다.
+ *   mode "future" : 출발 시각을 정한 길찾기(카카오 미래 운행 정보, 그 시각의 예상 교통). 지점 2~7곳(경유 5곳).
+ *                  등원 7~9시·하원 16시처럼 실제로 차가 도는 시각의 시간·도로 선이 필요할 때 씁니다.
  *   mode "keyword": 장소 이름 검색 최대 20건(카카오 키워드 검색, 기준 좌표 반경 안). 아파트 단지 안에 아이들을
  *                  모아 태울 자리(정문·관리동·주차장 입구)가 있는지 찾을 때 씁니다.
  *
@@ -37,11 +39,49 @@ export async function POST(req: Request) {
     | { mode: "matrix"; origin: Pt; destinations: Pt[]; radius?: number }
     | { mode: "route"; points: Pt[]; withPath?: boolean }
     | { mode: "region"; points: Pt[] }
+    | { mode: "future"; points: Pt[]; departure: string; withPath?: boolean }
     | { mode: "keyword"; queries: { q: string; x: number; y: number; radius?: number; key?: string }[] }
     | null;
   if (!body) return NextResponse.json({ error: "요청 본문이 없습니다." }, { status: 400 });
 
   const headers = { "Content-Type": "application/json", Authorization: `KakaoAK ${restKey}` };
+
+  if (body.mode === "future") {
+    const pts = body.points ?? [];
+    if (pts.length < 2 || pts.length > 7) return NextResponse.json({ error: "points 는 2~7곳이어야 합니다(경유 5곳)." }, { status: 400 });
+    if (!/^\d{12}$/.test(body.departure ?? "")) return NextResponse.json({ error: "departure 는 YYYYMMDDHHMM 입니다." }, { status: 400 });
+    const q = new URLSearchParams({
+      origin: `${pts[0].x},${pts[0].y}`,
+      destination: `${pts[pts.length - 1].x},${pts[pts.length - 1].y}`,
+      departure_time: body.departure,
+      priority: "RECOMMEND",
+      summary: "false",
+    });
+    const mid = pts.slice(1, -1);
+    if (mid.length) q.set("waypoints", mid.map((p) => `${p.x},${p.y}`).join("|"));
+    const res = await fetch(`https://apis-navi.kakaomobility.com/v1/future/directions?${q.toString()}`, { headers: { Authorization: `KakaoAK ${restKey}` } });
+    if (!res.ok) return NextResponse.json({ error: `카카오 오류(${res.status}): ${(await res.text()).slice(0, 300)}` }, { status: 502 });
+    const data = (await res.json()) as {
+      routes?: { result_code: number; result_msg: string; summary: { distance: number; duration: number }; sections?: { distance: number; duration: number; roads?: { vertexes: number[] }[] }[] }[];
+    };
+    const r = data.routes?.[0];
+    if (!r || r.result_code !== 0) return NextResponse.json({ error: `길찾기 실패: ${r?.result_msg ?? "알 수 없음"}` }, { status: 502 });
+    const path: [number, number][] = [];
+    if (body.withPath) {
+      for (const s of r.sections ?? []) for (const rd of s.roads ?? []) {
+        const v = rd.vertexes ?? [];
+        for (let i = 0; i + 1 < v.length; i += 2) path.push([Math.round(v[i] * 1e5) / 1e5, Math.round(v[i + 1] * 1e5) / 1e5]);
+      }
+    }
+    // 겹치는 길을 가려야 해서 선을 많이 줄이지 않습니다(600점까지).
+    const step = Math.max(1, Math.ceil(path.length / 600));
+    return NextResponse.json({
+      m: r.summary.distance,
+      s: r.summary.duration,
+      legs: (r.sections ?? []).map((s) => [s.distance, s.duration]),
+      path: path.filter((_, i) => i % step === 0 || i === path.length - 1),
+    });
+  }
 
   if (body.mode === "keyword") {
     const qs = body.queries ?? [];

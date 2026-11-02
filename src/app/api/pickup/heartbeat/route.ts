@@ -25,14 +25,20 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
   const supabase = createClient(url, serviceKey, { auth: { persistSession: false } });
 
-  await supabase.from("integration_heartbeats").upsert({
+  const row: Record<string, unknown> = {
     key: typeof body?.key === "string" ? body.key : "toddle-collector",
     last_seen_at: new Date().toISOString(),
     // 'login_required'를 받으면 담당자가 그 PC에서 재로그인만 하면 된다는 뜻입니다.
     status: typeof body?.status === "string" ? body.status : "ok",
     detail: typeof body?.detail === "string" ? body.detail.slice(0, 300) : null,
     updated_at: new Date().toISOString(),
-  });
+  };
+  // meta: 수집기가 센 «오늘 토들에 학부모가 쓴 글 수». 화면이 앱에 들어온 수와 견줍니다.
+  // 새 수집기만 보내므로, 없으면 지난 값을 덮지 않습니다.
+  const meta = body?.meta && typeof body.meta === "object" ? body.meta : null;
+  const { error } = await supabase.from("integration_heartbeats").upsert(meta ? { ...row, meta } : row);
+  // 칸이 아직 없는 동안(마이그레이션 적용 전)에도 살아 있다는 신호는 남아야 합니다.
+  if (error && meta) await supabase.from("integration_heartbeats").upsert(row);
 
   // 토들 수집기는 1분마다 신호를 보냅니다. 크론 둘이 다 죽어도 이 길로 경보가 올라갑니다.
   await checkAlerts(supabase).catch(() => undefined);

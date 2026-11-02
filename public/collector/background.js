@@ -11,8 +11,13 @@ const ALARM = "gia-collect";
 const PERIOD_MIN = 1;
 
 async function getConfig() {
-  const c = await chrome.storage.local.get(["serverUrl", "secret", "sent"]);
-  return { serverUrl: (c.serverUrl || "").replace(/\/+$/, ""), secret: c.secret || "", sent: c.sent || {} };
+  const c = await chrome.storage.local.get(["serverUrl", "secret", "sent", "replySent"]);
+  return {
+    serverUrl: (c.serverUrl || "").replace(/\/+$/, ""),
+    secret: c.secret || "",
+    sent: c.sent || {},
+    replySent: c.replySent || {},
+  };
 }
 
 async function post(path, secret, serverUrl, body) {
@@ -25,11 +30,11 @@ async function post(path, secret, serverUrl, body) {
   return res.json();
 }
 
-async function heartbeat(status, detail) {
+async function heartbeat(status, detail, meta) {
   const { serverUrl, secret } = await getConfig();
   if (!serverUrl || !secret) return;
   try {
-    await post("/api/pickup/heartbeat", secret, serverUrl, { key: "toddle-collector", status, detail });
+    await post("/api/pickup/heartbeat", secret, serverUrl, { key: "toddle-collector", status, detail, meta: meta ?? null });
   } catch {
     /* 서버가 잠깐 안 될 수도 있습니다. 다음 회차에 다시 보냅니다. */
   }
@@ -128,7 +133,7 @@ async function runOnce() {
 }
 
 async function runOnceInner() {
-  const { serverUrl, secret, sent } = await getConfig();
+  const { serverUrl, secret, sent, replySent } = await getConfig();
   if (!serverUrl || !secret) {
     await setState({ status: "설정 필요", detail: "확장 아이콘을 눌러 서버 주소와 키를 넣어주세요." });
     return;
@@ -205,11 +210,15 @@ async function runOnceInner() {
   }
 
   // ── 아직 보내지 않은 메시지만 골라냅니다 ──────────────────────────────────
+  // 페이지 쪽이 이미 「오늘(한국시간) 들어온 학부모 글」만 골라 줍니다. 읽음 여부는 따지지
+  // 않습니다 - 직원이 토들에서 먼저 열어 봐도 앱에는 들어와야 합니다.
   const items = [];
   const nextSent = { ...sent };
-  // 왜 안 보냈는지를 세어 둡니다. "0건"만 보여주면 정상인지 막힌 건지 알 수가 없어서,
-  // 이걸 알아내려고 여러 번 헛짚었습니다.
-  const skipped = { 빈글: 0, 직원: 0, 읽음: 0, 이미보냄: 0, 방없음: 0 };
+  const nextReplySent = { ...replySent };
+  // 직원 답글이 달린 학부모 글. 서버가 그 글을 「답함」으로 표시합니다(처리 완료와는 별개).
+  const messageReplies = [];
+  // 왜 안 보냈는지를 세어 둡니다. "0건"만 보여주면 정상인지 막힌 건지 알 수가 없습니다.
+  const skipped = { 빈글: 0, 직원: 0, 이미보냄: 0, 방없음: 0 };
   for (const chat of reply.chats ?? []) {
     if (!chat.messages || chat.messages.length === 0) skipped.방없음 += 1;
     for (const m of chat.messages ?? []) {
@@ -217,15 +226,13 @@ async function runOnceInner() {
         skipped.빈글 += 1;
         continue;
       }
-      // 우리 직원이 쓴 글은 보내지 않습니다. 학부모가 보낸 것만 픽업 후보입니다.
       if (m.senderType && String(m.senderType).toUpperCase() === "STAFF") {
         skipped.직원 += 1;
         continue;
       }
-      // 이미 읽은 메시지는 예전 것이므로 건너뜁니다(수집기를 처음 켠 날 과거를 몰아 보내지 않도록).
-      if (m.isRead) {
-        skipped.읽음 += 1;
-        continue;
+      if (m.staffReply && m.staffReply.at && !nextReplySent[m.id]) {
+        messageReplies.push({ sourceRef: m.id, at: m.staffReply.at, by: m.staffReply.by ?? null });
+        nextReplySent[m.id] = Date.now();
       }
       if (nextSent[m.id]) {
         skipped.이미보냄 += 1;
@@ -237,32 +244,27 @@ async function runOnceInner() {
         channelLabel: chat.label,
         senderName: m.senderName,
         text: m.text,
-        // 언제 온 문의인지가 목록에서 중요합니다(요청: "시간이 나와 요일도나오고... 언제문의가
-        // 온건지도 기록해줘"). 메시지 자체의 시각을 쓰고, 없으면 그 방의 마지막 활동 시각으로
-        // 대신합니다. 둘 다 없으면 서버가 받은 시각을 씁니다.
+        // 학부모가 쓴 시각. 화면의 경과 시간은 이 시각부터 셉니다.
         receivedAt: m.createdAt ?? chat.lastActiveAt ?? null,
         chatId: chat.chatId,
-        // 문의 목록에서 눌러 원문으로 바로 갈 수 있게 주소를 함께 보냅니다.
         sourceUrl: chat.url ?? null,
+        staffReply: m.staffReply ?? null,
       });
       nextSent[m.id] = Date.now();
     }
   }
 
+  const keep = (obj) => Object.fromEntries(Object.entries(obj).sort((a, b) => b[1] - a[1]).slice(0, 3000));
 
-  // 이제는 목록을 못 읽으면 오류로 올라옵니다(로그인 풀림 등). 여기까지 왔는데 0개면
-  // 정말로 새 학부모 메시지가 없는 것입니다.
-  // 이미 답글이 달린 방들. 서버가 그 방의 미처리 문의를 처리됨으로 바꿉니다.
-  // 다른 선생님이 벌써 답했는데 인박스에 남아 있으면, 또 답하거나 계속 신경 쓰게 됩니다.
-  // 보낼 새 메시지가 하나도 없어도 이 소식은 전해야 하므로 여기서 먼저 처리합니다.
-  const replies = (reply.chats ?? [])
-    .filter((c) => c.reply && c.chatId)
-    .map((c) => ({ chatId: c.chatId, at: c.reply.at, by: c.reply.by, text: c.reply.text ?? "" }));
-  if (replies.length > 0) {
+  // 답글 소식은 새 메시지가 없어도 전합니다. 실패하면 다음 회차에 다시 보내도록 기록하지 않습니다.
+  if (messageReplies.length > 0) {
     try {
-      await post("/api/pickup/ingest", secret, serverUrl, { items: [], replies });
+      for (let i = 0; i < messageReplies.length; i += 50) {
+        await post("/api/pickup/ingest", secret, serverUrl, { items: [], messageReplies: messageReplies.slice(i, i + 50) });
+      }
+      await chrome.storage.local.set({ replySent: keep(nextReplySent) });
     } catch {
-      /* 답글 표시가 늦어지는 것은 큰 문제가 아닙니다 - 다음 회차에 다시 보냅니다 */
+      /* 다음 회차에 다시 보냅니다 */
     }
   }
 
@@ -288,6 +290,7 @@ async function runOnceInner() {
       return;
     }
     const total = diag.totalRooms != null ? ` / 전체 ${diag.totalRooms}개` : "";
+    const meta = { todayParentCount: diag.todayParentCount ?? null, pendingRooms: diag.pendingRooms ?? 0, truncatedRooms: diag.truncatedRooms ?? 0 };
     // 무엇을 걸렀는지 적습니다. 방은 있는데 보낼 게 없다면 그 이유가 보여야 합니다.
     const reasons = Object.entries(skipped)
       .filter(([, n]) => n > 0)
@@ -296,9 +299,9 @@ async function runOnceInner() {
     const why = reasons ? ` · 거른 것: ${reasons}` : "";
     await setState({
       status: "정상",
-      detail: `새 메시지 없음 (안 읽은 방 ${diag.knownRooms ?? 0}개${total})${why}${suffix}`,
+      detail: `새 메시지 없음 (오늘 활동한 방 ${diag.knownRooms ?? 0}개${total})${why}${suffix}`,
     });
-    await heartbeat("ok", `새 메시지 없음 (안 읽은 방 ${diag.knownRooms ?? 0}개)`);
+    await heartbeat("ok", `새 메시지 없음 (오늘 활동한 방 ${diag.knownRooms ?? 0}개)`, meta);
     return;
   }
 
@@ -308,10 +311,14 @@ async function runOnceInner() {
       await post("/api/pickup/ingest", secret, serverUrl, { items: items.slice(i, i + 25) });
     }
 
-    // 보낸 기록이 무한정 쌓이지 않게 최근 2000건만 남깁니다.
-    const entries = Object.entries(nextSent).sort((a, b) => b[1] - a[1]).slice(0, 2000);
-    await chrome.storage.local.set({ sent: Object.fromEntries(entries) });
-    await setState({ status: "정상", detail: `${items.length}건 보냄 (안 읽은 방 ${diag.knownRooms ?? 0}개)${suffix}` });
+    // 보낸 기록이 무한정 쌓이지 않게 최근 것만 남깁니다.
+    await chrome.storage.local.set({ sent: keep(nextSent) });
+    await setState({ status: "정상", detail: `${items.length}건 보냄 (오늘 활동한 방 ${diag.knownRooms ?? 0}개)${suffix}` });
+    await heartbeat("ok", `${items.length}건 보냄`, {
+      todayParentCount: diag.todayParentCount ?? null,
+      pendingRooms: diag.pendingRooms ?? 0,
+      truncatedRooms: diag.truncatedRooms ?? 0,
+    });
   } catch (err) {
     await setState({ status: "전송 실패", detail: String(err.message ?? err) });
     await heartbeat("error", `전송 실패: ${String(err.message ?? err)}`);

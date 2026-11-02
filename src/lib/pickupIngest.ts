@@ -23,6 +23,7 @@ import { effectiveRouteId, routeChoiceOf } from "@/lib/shuttleRoute";
 import { isPleasantry, pleasantryNote } from "@/lib/shortTalk";
 import { objectPickupNote } from "@/lib/objectPickup";
 import { loadStudent, loadStudents } from "@/lib/students";
+import { normalizeBadges } from "@/lib/inquiryBadges";
 
 // 어느 경로로 들어온 연락이든 이 함수 하나를 거쳐 픽업으로 바뀝니다.
 // 토들 수집기, 전화 통화 텍스트, 교사 전달, 직접 입력이 모두 같은 판단을 받도록 하기 위해서입니다.
@@ -38,7 +39,16 @@ export type IngestInput = {
   chatId?: string | null;
   /** 원문으로 바로 가는 주소(수집기가 만들어 보냅니다). */
   sourceUrl?: string | null;
+  /** 이 글 뒤에 토들에서 처음 달린 직원 답글. 있으면 「답함」으로 넣습니다(처리 완료는 아님). */
+  staffReply?: { at: string; by: string | null } | null;
 };
+
+/** 토들에 이미 직원 답글이 달려 있으면 「답함」 칸을 함께 채웁니다(처리 완료는 사람이 누릅니다). */
+function repliedFields(input: IngestInput) {
+  const r = input.staffReply;
+  if (!r || !r.at) return {};
+  return { replied_at: r.at, replied_by: r.by ?? null, replied_via: "토들 답글" };
+}
 
 export type IngestResult = {
   skipped?: "duplicate" | "empty" | "인사말";
@@ -66,6 +76,7 @@ const SYSTEM = `당신은 국제학교 행정실의 보조입니다. 학부모�
   ],
   "recurring_weekdays": ["월"|"화"|"수"|"목"|"금" 중 반복되는 요일들. 한 번뿐이면 빈 배열],
   "inquiry_type": "출결 | 수업·학습 | 생활·교우 | 건강·안전 | 차량·하원 | 행사·일정 | 납부·행정 | 기타",
+  "badges": ["출결" | "픽업·하원" | "셔틀" | "물건" | "건강·안전" | "수업·학습" | "생활·교우" | "행사·일정" | "납부·행정" | "상담 요청" | "인사·감사" | "기타" 중 해당하는 것 전부],
   "summary": "한국어 한 줄 요약(25자 안팎). 학부모 문장을 그대로 옮기지 말고 무엇을 원하는지 적으세요.",
   "urgency": "높음 | 보통 | 낮음",
   "confidence": 0.0~1.0,
@@ -117,6 +128,21 @@ kind 판단 기준
 판단이 헷갈리면 스스로 물어보세요: **"이 문장에 '아이를' + '데려간다'가 둘 다 있는가?"**
 둘 중 하나라도 없으면 픽업이 아닙니다. 애매하면 "문의"로 두세요 - 픽업으로 잘못 넣으면
 아이가 차를 못 타지만, 문의로 잘못 두면 사람이 한 번 더 읽을 뿐입니다.
+
+badges 기준 (한 글에 여러 개를 붙일 수 있습니다. 해당하는 것은 빠짐없이)
+- 출결: 결석·지각·조퇴·늦은 등교·아파서 쉼
+- 픽업·하원: 보호자가 데려감, 하원 시각·방법 변경
+- 셔틀: 차량 노선·정류장·탑승 변경, 오늘 차 안 탐/탐
+- 물건: 두고 간 물건, 챙겨 보내 달라는 물건, 분실물, 전달할 물건(약·서류 포함)
+- 건강·안전: 아픔·다침·약 복용·알레르기·안전 걱정
+- 수업·학습: 숙제·수업·성적·교재
+- 생활·교우: 친구 관계·생활 태도·학교생활 걱정
+- 행사·일정: 행사·방학·일정 문의
+- 납부·행정: 청구서·납부·서류·증명서·결제 번호
+- 상담 요청: 선생님·학교와 상담·통화를 원함
+- 인사·감사: 답할 것이 없는 인사·감사·「네 알겠습니다」. 다른 뱃지와 함께 붙이지 마세요.
+- 기타: 위 어디에도 안 맞을 때만
+예) "내일 병원 들렀다 10시에 등교하고, 두고 간 패딩 오늘 챙겨 주세요" → ["출결", "물건"]
 
 urgency 기준
 - "높음": 오늘 안에 대응하지 않으면 곤란한 것. 아이가 아프다, 지금 학교에 와 있다,
@@ -171,6 +197,7 @@ type AiOut = {
   date_hint?: unknown;
   recurring_weekdays?: unknown;
   inquiry_type?: unknown;
+  badges?: unknown;
   summary?: unknown;
   urgency?: unknown;
   confidence?: unknown;
@@ -462,7 +489,15 @@ export async function ingestPickup(
   // **지우지는 않습니다.** 무엇을 왜 넘겼는지 남겨야, 잘못 넘긴 것을 나중에 찾을 수
   // 있습니다(`isPleasantry` 가 헛걸렸는지 확인할 방법이 이것뿐입니다).
   if (isPleasantry(text)) {
+    // 인사 글도 **누구 집 글인지**는 남깁니다. 이어 둔 방이 한 아이 것이면 그 아이입니다.
+    // (AI를 부르지 않는 자리라 본문 이름은 읽지 않습니다.)
+    const linkedEarly = await loadChannelLink(supabase, input.channelLabel, roster);
+    const onlyChild = linkedEarly && linkedEarly.students.length === 1 ? linkedEarly.students[0] : null;
     await supabase.from("pickup_requests").insert({
+      student_id: onlyChild?.id ?? null,
+      matched_name: onlyChild?.name ?? null,
+      badges: ["인사·감사"],
+      ...repliedFields(input),
       service_date: todayKst,
       kind: "기타",
       source: input.source,
@@ -475,9 +510,8 @@ export async function ingestPickup(
       channel_id: channelId,
       sender_name: input.senderName ?? null,
       received_at: receivedAt.toISOString(),
-      // 본문은 남기지 않습니다(학부모 대화를 쌓아두지 않겠다는 원칙 그대로).
-      // 다만 넘긴 근거에는 앞 40자가 들어갑니다 - 그게 없으면 검증이 불가능합니다.
-      raw_text: null,
+      // 오늘의 문의사항은 학부모 글을 **전부** 보여줍니다. 원문은 90일 뒤 비웁니다(cron/purge-trash).
+      raw_text: text,
       summary: text.slice(0, 60),
       ai_note: pleasantryNote(text),
       ai_is_pickup: false,
@@ -654,19 +688,27 @@ export async function ingestPickup(
   // 학부모 대화를 쌓아두는 시스템이 되면 안 됩니다. 다만 같은 메시지를 매번 다시 AI에 보내지
   // 않으려면 "이건 이미 봤다"는 표시는 남겨야 해서, 출처 식별자만 남기고 본문은 비웁니다.
   if (kind === "기타") {
-    if (input.sourceRef) {
+    // 출처 번호가 없는 글(전화 메모 등)도 남깁니다. 오늘의 문의사항은 들어온 글 전부를 보여줍니다.
+    {
       await supabase.from("pickup_requests").insert({
         service_date: todayKst,
         kind: "기타",
+        student_id: matched?.id ?? null,
+        matched_name: matched?.name ?? null,
+        badges: normalizeBadges(ai.badges, { kind: "기타", inquiryType: null }),
+        source_chat_id: input.chatId ?? null,
+        source_url: input.sourceUrl ?? null,
+        sender_name: input.senderName ?? null,
+        ...repliedFields(input),
         source: input.source,
-        source_ref: input.sourceRef,
+        source_ref: input.sourceRef ?? null,
         channel_label: input.channelLabel ?? null,
       // **어느 집에서 온 연락인가.** 방이 확정되면 집은 언제나 확정입니다 - 형제방이라
       // 아이를 한 명으로 못 좁혀도 그 집 것이라는 사실은 버리지 않습니다.
       channel_id: channelId,
         received_at: receivedAt.toISOString(),
-        // 본문은 남기지 않습니다(학부모 대화를 쌓아두지 않겠다는 원칙 그대로).
-        raw_text: null,
+        // 오늘의 문의사항은 학부모 글을 **전부** 보여줍니다. 원문은 90일 뒤 비웁니다(cron/purge-trash).
+        raw_text: text,
         // 다만 **한 줄 요약과 판단 근거는 남깁니다.**
         //
         // 담당자: "토들 긁어오는데 업무보드, 업무 대시보드에 반영이 안 돼."
@@ -884,6 +926,8 @@ export async function ingestPickup(
       ai_confidence: confidence,
       ai_note: aiNote,
       inquiry_type: isPickup ? null : pick(ai.inquiry_type, INQUIRY_TYPES),
+      badges: normalizeBadges(ai.badges, { kind, inquiryType: pick(ai.inquiry_type, INQUIRY_TYPES) }),
+      ...repliedFields(input),
       summary: typeof ai.summary === "string" ? ai.summary.slice(0, 200) : null,
       urgency: pick(ai.urgency, URGENCIES),
       student_id: matched?.id ?? null,

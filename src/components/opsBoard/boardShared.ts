@@ -73,7 +73,24 @@ export type BoardData = {
     readAt: string | null;
     reply: string | null;
   }[];
-  inquiries: { id: string; student: string; type: string | null; typeGuessed?: boolean; summary: string; urgent: boolean; at: string; replied?: boolean }[];
+  inquiries: {
+    id: string;
+    student: string;
+    type: string | null;
+    typeGuessed?: boolean;
+    /** 분류 뱃지(여럿). 목록은 src/lib/inquiryBadges.ts. */
+    badges?: string[];
+    summary: string;
+    urgent: boolean;
+    /** 학부모가 쓴 시각. 경과 시간은 여기서부터 셉니다. */
+    at: string;
+    source?: string;
+    /** 답함(토들 답글 또는 앱). 처리 완료는 아직. */
+    replied?: boolean;
+    repliedAt?: string | null;
+    /** 처리를 맡은 직원 이름. */
+    assignees?: string[];
+  }[];
   /** 아직 사람이 한 번 봐야 하는 픽업 요청(확인대기). 비어 있는 것이 정상입니다. */
   pendingInbox?: { name: string; date: string | null; time: string | null; today: boolean }[];
   /**

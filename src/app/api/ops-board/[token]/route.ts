@@ -7,6 +7,7 @@ import { loadActiveEntries, loadUpcomingEntries } from "@/lib/attendanceEntries"
 import { displayStudent, toRosterEntries, type RosterEntry } from "@/lib/pickupParse";
 import { loadTodayPickups } from "@/lib/pickups";
 import { displayInquiryType } from "@/lib/inquiryType";
+import { isNoActionBadges } from "@/lib/inquiryBadges";
 import { createClient } from "@supabase/supabase-js";
 import { kstParts } from "@/lib/shuttleTracking";
 import { kstDateOffset } from "@/lib/kst";
@@ -383,48 +384,59 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   // 화면에는 그냥 「김재이」로 떴습니다. 빠뜨려도 오류가 아니라 «그냥 이름»으로 보입니다.
   const nameRoster: RosterEntry[] = toRosterEntries(students);
 
-  const { data: inquiryRows } = await supabase
-    .from("pickup_requests")
-    // 칸을 콕 집어 달라고 하면, 마이그레이션이 아직 안 걸린 동안 조회가 통째로 실패해
-    // 대시보드가 오류 화면이 됩니다. 전부 달라고 하면 있는 것만 돌아옵니다.
-    .select("*")
-    .eq("kind", "문의")
-    // 담당자: "업무 대시보드에도 안 떠."
-    //
-    // answered_at만 비었는지 보면, **기계가 토들 답글을 찾아 표시한 건까지 통째로 빠집니다.**
-    // 그건 아직 사람이 확인한 것이 아닙니다. 사람이 체크한 것(answered_via='수동')만 뺍니다.
-    .or("answered_at.is.null,answered_via.eq.답글")
-    .gte("received_at", new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString())
-    .order("received_at", { ascending: false })
-    .limit(40);
+  // ── 오늘의 문의사항 ─────────────────────────────────────────────────────────
+  //
+  // 셔틀이 기준이던 때는 「문의」만 올렸습니다. 이제는 학부모가 쓴 글 전체가 행정실 일이라,
+  // **처리 완료가 안 된 것**을 뱃지와 함께 올립니다. 범위는 오늘 들어온 것 + 담당자가 정해졌는데
+  // 아직 안 끝난 지난 건입니다(맡은 일은 날이 바뀌어도 남아야 합니다).
+  // 칸을 콕 집지 않고 전부 받습니다 - 마이그레이션이 늦게 걸려도 조회가 통째로 실패하지 않습니다.
+  const todayStartIso = `${kstDateOffset(0)}T00:00:00+09:00`;
+  const [{ data: todayInqRows }, { data: assignedInqRows }, { data: staffRows }] = await Promise.all([
+    supabase
+      .from("pickup_requests")
+      .select("*")
+      .gte("received_at", todayStartIso)
+      .is("answered_at", null)
+      .order("received_at", { ascending: true })
+      .limit(120),
+    supabase
+      .from("pickup_requests")
+      .select("*")
+      .lt("received_at", todayStartIso)
+      .is("answered_at", null)
+      .neq("assignees", "{}")
+      .order("received_at", { ascending: true })
+      .limit(40),
+    supabase.from("app_users").select("email, name").eq("status", "approved"),
+  ]);
+  const staffName = new Map(((staffRows as { email: string; name: string | null }[] | null) ?? []).map((u) => [u.email, u.name ?? u.email]));
+  const inquiryRows = [...((todayInqRows as Record<string, unknown>[] | null) ?? []), ...((assignedInqRows as Record<string, unknown>[] | null) ?? [])];
 
-  const inquiries = (inquiryRows ?? [])
+  const inquiries = inquiryRows
     .filter((r) => !r.is_demo) // 데모 연습용 문의 제외.
+    // 답할 것이 없는 인사·감사는 대시보드에 올리지 않습니다.
+    .filter((r) => !isNoActionBadges(r.badges as string[] | null))
     .map((r) => ({
       id: r.id as string,
-      // 학생이 연결돼 있으면 **그 아이가 답입니다.** 이름으로 다시 짐작하지 않습니다 -
-      // 사람이 인박스에서 고른 것을 기계가 뒤집으면 안 됩니다.
       // 번호가 붙어 있으면 그 아이, 없으면 이름으로 짐작하고 겹치면 «누구?» — `displayStudent` 하나가 정합니다.
       student: displayStudent(r as Parameters<typeof displayStudent>[0], nameRoster) ?? (r.channel_label as string | null) ?? "미확인",
-      // 분류가 비어 있으면 화면에 이름만 뜹니다 - 멀리서 보는 사람에게 «뭔가 왔다» 말고는
-      // 아무것도 아닙니다. 저장된 값이 있으면 그대로 쓰고, 없을 때만 글에서 짐작합니다.
       type: displayInquiryType(r.inquiry_type as string | null, (r.summary as string | null) ?? (r.raw_text as string | null)).label,
-      // 짐작한 것인지. 화면에서 확실한 분류와 구별해 보여줍니다.
       typeGuessed: displayInquiryType(r.inquiry_type as string | null, (r.summary as string | null) ?? (r.raw_text as string | null)).guessed,
+      // 뱃지가 아직 없는 줄(마이그레이션 전)은 예전 분류 한 칸을 뱃지로 씁니다.
+      badges: ((r.badges as string[] | null) ?? []).length > 0 ? (r.badges as string[]) : [displayInquiryType(r.inquiry_type as string | null, null).label],
       summary: (r.summary as string | null) ?? "",
       urgent: r.urgency === "높음",
       at: r.received_at as string,
-      // 답글이 달렸지만 아직 처리로 넘기지 않은 건. 이름 뒤에 초록 체크가 붙습니다.
+      source: (r.source as string | null) ?? "토들",
       replied: !!r.replied_at,
-      // 터치하면 토들 원문으로 바로 갈 수 있게(요청: "터치가능하게").
+      repliedAt: (r.replied_at as string | null) ?? null,
+      assignees: ((r.assignees as string[] | null) ?? []).map((e) => staffName.get(e) ?? e),
       url: (r.source_url as string | null) ?? null,
-      // 짧게 누르면 작은 창에 이 원문을 보여줍니다(요청). 토들에 다시 접속하지 않아도 됩니다.
       raw: (r.raw_text as string | null) ?? (r.summary as string | null) ?? null,
       channel: (r.channel_label as string | null) ?? null,
     }))
-    // 요청: "예전문의보다 최근문의가 위로 올라오게" - 급한 것 우선이 아니라 순수 최신순으로
-    // 둡니다. 급한 것은 화면에서 빨간 테두리로 이미 구분되므로, 위에 올릴 필요까지는 없습니다.
-    .sort((a, b) => b.at.localeCompare(a.at));
+    // 답하지 않은 것 → 오래 기다린 순서. 답한 것(처리만 남음)은 그 뒤.
+    .sort((a, b) => Number(a.replied) - Number(b.replied) || a.at.localeCompare(b.at));
 
   // ── 아직 손 안 댄 인박스 ───────────────────────────────────────────────────
   //

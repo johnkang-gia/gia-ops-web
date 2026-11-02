@@ -1,0 +1,856 @@
+"use client";
+
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
+import { createClient } from "@/lib/supabase/client";
+import {
+  notifyOpsBoardRefresh,
+  OPS_REFRESH_CHANNEL,
+  OPS_REFRESH_EVENT,
+} from "@/lib/opsRefresh";
+import { useToast } from "@/components/common/ToastProvider";
+import { Who } from "@/components/common/HomonymProvider";
+import { loadStudents } from "@/lib/students";
+import { kstDateOffset } from "@/lib/kst";
+import {
+  BADGE_STYLE,
+  INQUIRY_BADGES,
+  elapsedLabel,
+  elapsedTone,
+  isNoActionBadges,
+  minutesBetween,
+  type InquiryBadge,
+} from "@/lib/inquiryBadges";
+import type { TeamMember } from "@/lib/types";
+
+/**
+ * 오늘의 문의사항 — 학부모가 오늘 쓴 글 전부와, 담당이 정해졌는데 아직 안 끝난 지난 글.
+ *
+ * 예전 「학부모 문의사항」 탭은 셔틀 기준 분류의 「문의」만 보여줬습니다. 인사로 판정된 글은
+ * 본문 없이 무시로 내려갔고, 확인이 필요한 글은 다른 탭에 따로 쌓였습니다. 행정실이 하루 동안
+ * 처리하는 것은 토들로 온 글 전체라서, 이제 **한 목록**에 뱃지만 붙여 보여줍니다.
+ *
+ * 두 단추를 나눕니다.
+ *   - 답함: 학부모에게 답을 했다. 토들에 직원 답글이 달리면 수집기가 자동으로 채웁니다.
+ *   - 처리 완료: 요청한 일이 끝났다. 일을 끝낸 직원이 누릅니다.
+ * 「전달드리겠습니다」로 답했지만 청구서는 아직 안 나간 경우처럼, 둘은 시각이 다릅니다.
+ * 누른 사람과 시각은 자동으로 남습니다 - 담당자를 미리 정해 두지 않고, 한 사람이 누릅니다.
+ */
+
+export type InquiryRow = {
+  id: string;
+  kind: string | null;
+  source: string | null;
+  status: string | null;
+  student_id: string | null;
+  channel_label: string | null;
+  sender_name: string | null;
+  received_at: string;
+  created_at: string | null;
+  raw_text: string | null;
+  summary: string | null;
+  urgency: string | null;
+  source_url: string | null;
+  badges: string[] | null;
+  replied_at: string | null;
+  replied_by: string | null;
+  replied_via: string | null;
+  answered_at: string | null;
+  answered_by: string | null;
+  answered_via: string | null;
+  assignees: string[] | null;
+  assigned_by?: string | null;
+  assigned_at?: string | null;
+  is_demo?: boolean | null;
+};
+
+type Ctx = {
+  rows: InquiryRow[];
+  names: Map<string, string>;
+  toddleTodayCount: number | null;
+  loaded: boolean;
+  reload: () => void;
+  patch: (
+    row: InquiryRow,
+    change: Partial<InquiryRow>,
+    okMsg?: string,
+  ) => Promise<void>;
+  me: string;
+  staffName: (email: string | null) => string;
+  team: TeamMember[];
+};
+
+const TodayCtx = createContext<Ctx | null>(null);
+
+function useToday(): Ctx {
+  const c = useContext(TodayCtx);
+  if (!c) throw new Error("TodayInquiriesProvider 안에서만 씁니다.");
+  return c;
+}
+
+const todayStartIso = () => `${kstDateOffset(0)}T00:00:00+09:00`;
+
+const timeKst = (iso: string) =>
+  new Date(iso).toLocaleTimeString("ko-KR", {
+    timeZone: "Asia/Seoul",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+const dayKst = (iso: string) =>
+  new Date(iso).toLocaleDateString("ko-KR", {
+    timeZone: "Asia/Seoul",
+    month: "numeric",
+    day: "numeric",
+  });
+
+export function TodayInquiriesProvider({
+  team,
+  currentUserEmail,
+  children,
+}: {
+  team: TeamMember[];
+  currentUserEmail: string;
+  children: ReactNode;
+}) {
+  const notify = useToast();
+  const [rows, setRows] = useState<InquiryRow[]>([]);
+  const [names, setNames] = useState<Map<string, string>>(new Map());
+  const [toddleTodayCount, setToddleTodayCount] = useState<number | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  const load = useCallback(async () => {
+    const supabase = createClient();
+    const start = todayStartIso();
+    // 칸을 콕 집지 않고 전부 받습니다 - 마이그레이션이 늦게 걸려도 조회가 통째로 실패하지 않습니다.
+    const [todayRes, mineRes, hbRes] = await Promise.all([
+      supabase
+        .from("pickup_requests")
+        .select("*")
+        .gte("received_at", start)
+        .order("received_at", { ascending: true })
+        .limit(400),
+      // 담당이 정해졌는데 아직 안 끝난 지난 글. 날이 바뀌어도 맡은 일은 남아야 합니다.
+      supabase
+        .from("pickup_requests")
+        .select("*")
+        .lt("received_at", start)
+        .is("answered_at", null)
+        .neq("assignees", "{}")
+        .order("received_at", { ascending: true })
+        .limit(100),
+      supabase
+        .from("integration_heartbeats")
+        .select("meta")
+        .eq("key", "toddle-collector")
+        .maybeSingle(),
+    ]);
+    if (todayRes.error) {
+      notify(
+        "오늘의 문의사항을 읽지 못했습니다: " + todayRes.error.message,
+        "error",
+      );
+      return;
+    }
+    const all = [
+      ...((todayRes.data as InquiryRow[] | null) ?? []),
+      ...((mineRes.data as InquiryRow[] | null) ?? []),
+    ].filter((r) => !r.is_demo);
+    setRows(all);
+    const meta = (
+      hbRes.data as {
+        meta?: { todayParentCount?: number | null } | null;
+      } | null
+    )?.meta;
+    setToddleTodayCount(
+      typeof meta?.todayParentCount === "number" ? meta.todayParentCount : null,
+    );
+    setLoaded(true);
+  }, [notify]);
+
+  useEffect(() => {
+    // 이름은 학생 번호로 찾습니다(이름 글자로 다시 짐작하지 않습니다 - CLAUDE.md §2-4-8).
+    (async () => {
+      const { rows: st } = await loadStudents(createClient(), {
+        status: "all",
+      });
+      setNames(new Map(st.map((s) => [s.id, s.name])));
+    })();
+    void load();
+    const supabase = createClient();
+    // 구독에 조건을 걸지 않습니다 - 새로 생긴 줄은 조건에 안 걸립니다.
+    const ch = supabase
+      .channel("today-inquiries")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "pickup_requests" },
+        () => void load(),
+      )
+      .subscribe();
+    const bc = supabase
+      .channel(OPS_REFRESH_CHANNEL + "-today")
+      .on("broadcast", { event: OPS_REFRESH_EVENT }, () => void load())
+      .subscribe();
+    const onFocus = () => {
+      if (document.visibilityState === "visible") void load();
+    };
+    document.addEventListener("visibilitychange", onFocus);
+    return () => {
+      void supabase.removeChannel(ch);
+      void supabase.removeChannel(bc);
+      document.removeEventListener("visibilitychange", onFocus);
+    };
+  }, [load]);
+
+  const patch = useCallback(
+    async (row: InquiryRow, change: Partial<InquiryRow>, okMsg?: string) => {
+      // 화면을 먼저 바꾸고, 실패하면 이유를 띄우고 다시 읽습니다(조용히 넘기지 않습니다).
+      setRows((prev) =>
+        prev.map((r) => (r.id === row.id ? { ...r, ...change } : r)),
+      );
+      const { error } = await createClient()
+        .from("pickup_requests")
+        .update(change)
+        .eq("id", row.id);
+      if (error) {
+        notify("저장하지 못했습니다: " + error.message, "error");
+        void load();
+        return;
+      }
+      if (okMsg) notify(okMsg, "success");
+      void notifyOpsBoardRefresh();
+    },
+    [load, notify],
+  );
+
+  const staffName = useCallback(
+    (email: string | null) =>
+      email ? (team.find((m) => m.email === email)?.name ?? email) : "",
+    [team],
+  );
+
+  const value = useMemo<Ctx>(
+    () => ({
+      rows,
+      names,
+      toddleTodayCount,
+      loaded,
+      reload: () => void load(),
+      patch,
+      me: currentUserEmail,
+      staffName,
+      team,
+    }),
+    [
+      rows,
+      names,
+      toddleTodayCount,
+      loaded,
+      load,
+      patch,
+      currentUserEmail,
+      staffName,
+      team,
+    ],
+  );
+  return <TodayCtx.Provider value={value}>{children}</TodayCtx.Provider>;
+}
+
+/** 지금 시각. 경과 시간이 흐르도록 30초마다 다시 그립니다. */
+function useNow(): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(t);
+  }, []);
+  return now;
+}
+
+const SOURCE_STYLE: Record<string, string> = {
+  토들: "bg-blue-600 text-white",
+  구글챗: "bg-emerald-600 text-white",
+  전화: "bg-slate-700 text-white",
+  직접입력: "bg-slate-500 text-white",
+};
+
+function badgesOf(r: InquiryRow): InquiryBadge[] {
+  const b = (r.badges ?? []).filter((x): x is InquiryBadge =>
+    (INQUIRY_BADGES as readonly string[]).includes(x),
+  );
+  if (b.length > 0) return b;
+  return [
+    r.kind === "픽업" ? "픽업·하원" : r.kind === "기타" ? "인사·감사" : "기타",
+  ];
+}
+
+/** 정렬: 답 안 한 것(오래 기다린 순) → 답했지만 처리 남음 → 처리 완료. 인사는 따로 접습니다. */
+function order(a: InquiryRow, b: InquiryRow): number {
+  const rank = (r: InquiryRow) => (r.answered_at ? 2 : r.replied_at ? 1 : 0);
+  return rank(a) - rank(b) || a.received_at.localeCompare(b.received_at);
+}
+
+export function TodayInquiriesPanel() {
+  const { rows, toddleTodayCount, loaded } = useToday();
+  const now = useNow();
+  const [filter, setFilter] = useState<InquiryBadge | "전체">("전체");
+  const [showGreetings, setShowGreetings] = useState(false);
+  const [showDone, setShowDone] = useState(false);
+  const [openId, setOpenId] = useState<string | null>(null);
+
+  const start = todayStartIso();
+  const todays = rows.filter((r) => r.received_at >= start);
+  const actionable = rows.filter((r) => !isNoActionBadges(badgesOf(r)));
+  const greetings = rows.filter((r) => isNoActionBadges(badgesOf(r)));
+  const counts = new Map<InquiryBadge, number>();
+  for (const r of actionable)
+    for (const b of badgesOf(r)) counts.set(b, (counts.get(b) ?? 0) + 1);
+
+  const filtered = actionable
+    .filter((r) => filter === "전체" || badgesOf(r).includes(filter))
+    .sort(order);
+  const open = filtered.filter((r) => !r.answered_at);
+  const done = filtered.filter((r) => !!r.answered_at);
+  const waiting = actionable.filter(
+    (r) => !r.replied_at && !r.answered_at,
+  ).length;
+  const toddleInApp = todays.filter((r) => r.source === "토들").length;
+
+  return (
+    <div className="flex h-full flex-col overflow-hidden">
+      <div className="shrink-0 space-y-1.5 border-b border-black/5 px-2.5 py-2">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
+          <span className="font-bold text-slate-700">
+            답 기다림{" "}
+            <span
+              className={waiting > 0 ? "text-rose-600" : "text-emerald-600"}
+            >
+              {waiting}
+            </span>
+          </span>
+          <span className="text-slate-500">
+            처리 남음 {actionable.filter((r) => !r.answered_at).length}
+          </span>
+          {/* 수집기가 센 오늘 토들 글 수와 앱에 들어온 수. 다르면 빠진 것이 있다는 뜻입니다. */}
+          <span
+            className={
+              "ml-auto tabular-nums " +
+              (toddleTodayCount != null && toddleTodayCount > toddleInApp
+                ? "font-bold text-rose-600"
+                : "text-slate-400")
+            }
+            title="토들 수집기가 센 오늘 학부모 글 수 → 앱에 들어온 토들 글 수"
+          >
+            오늘 토들 {toddleTodayCount ?? "?"} → 앱 {toddleInApp}
+          </span>
+        </div>
+        <div className="flex flex-wrap gap-1">
+          <Chip
+            active={filter === "전체"}
+            onClick={() => setFilter("전체")}
+            label={`전체 ${actionable.length}`}
+          />
+          {INQUIRY_BADGES.filter((b) => b !== "인사·감사" && counts.get(b)).map(
+            (b) => (
+              <Chip
+                key={b}
+                active={filter === b}
+                onClick={() => setFilter(b)}
+                label={`${b} ${counts.get(b)}`}
+                cls={BADGE_STYLE[b]}
+              />
+            ),
+          )}
+        </div>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 py-1.5">
+        {!loaded ? (
+          <p className="p-4 text-center text-xs text-slate-400">불러오는 중…</p>
+        ) : open.length === 0 ? (
+          <p className="p-4 text-center text-xs text-emerald-600">
+            처리할 문의가 없습니다.
+          </p>
+        ) : (
+          <ul className="space-y-1">
+            {open.map((r) => (
+              <Row
+                key={r.id}
+                r={r}
+                now={now}
+                open={openId === r.id}
+                onToggle={() => setOpenId(openId === r.id ? null : r.id)}
+              />
+            ))}
+          </ul>
+        )}
+
+        {done.length > 0 && (
+          <div className="mt-2">
+            <button
+              type="button"
+              onClick={() => setShowDone((v) => !v)}
+              className="text-[11px] font-bold text-slate-400 hover:text-slate-600"
+            >
+              {showDone ? "▾" : "▸"} 처리 완료 {done.length}건
+            </button>
+            {showDone && (
+              <ul className="mt-1 space-y-1 opacity-70">
+                {done.map((r) => (
+                  <Row
+                    key={r.id}
+                    r={r}
+                    now={now}
+                    open={openId === r.id}
+                    onToggle={() => setOpenId(openId === r.id ? null : r.id)}
+                  />
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
+        {greetings.length > 0 && (
+          <div className="mt-2">
+            <button
+              type="button"
+              onClick={() => setShowGreetings((v) => !v)}
+              className="text-[11px] font-bold text-slate-400 hover:text-slate-600"
+            >
+              {showGreetings ? "▾" : "▸"} 인사·감사 {greetings.length}건 (답할
+              것 없음)
+            </button>
+            {showGreetings && (
+              <ul className="mt-1 space-y-1 opacity-70">
+                {greetings.sort(order).map((r) => (
+                  <Row
+                    key={r.id}
+                    r={r}
+                    now={now}
+                    open={openId === r.id}
+                    onToggle={() => setOpenId(openId === r.id ? null : r.id)}
+                  />
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Chip({
+  active,
+  onClick,
+  label,
+  cls = "",
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  cls?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={
+        "rounded-full border px-2 py-0.5 text-[10px] font-bold transition " +
+        (active
+          ? "ring-2 ring-blue-500 ring-offset-1 "
+          : "opacity-80 hover:opacity-100 ") +
+        (cls || "border-slate-200 bg-white text-slate-600")
+      }
+    >
+      {label}
+    </button>
+  );
+}
+
+function Who2({ r }: { r: InquiryRow }) {
+  const { names } = useToday();
+  const name = r.student_id ? names.get(r.student_id) : null;
+  if (name)
+    return (
+      <Who id={r.student_id} name={name} className="font-bold text-slate-800" />
+    );
+  // 학생 번호가 없으면 어느 방(집)에서 온 글인지만 적습니다. 이름을 짐작해 적지 않습니다.
+  return (
+    <span
+      className="font-bold text-slate-500"
+      title="학생을 아직 정하지 못했습니다"
+    >
+      {r.channel_label ?? "누구?"}
+    </span>
+  );
+}
+
+function Row({
+  r,
+  now,
+  open,
+  onToggle,
+}: {
+  r: InquiryRow;
+  now: number;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const { patch, me, staffName, team } = useToday();
+  const tone = elapsedTone(r.received_at, now);
+  const toneCls = {
+    calm: "bg-slate-100 text-slate-500",
+    warn: "bg-amber-100 text-amber-700",
+    late: "bg-rose-600 text-white",
+  }[tone];
+  const isOld = r.received_at < todayStartIso();
+  const assignees = r.assignees ?? [];
+  const mine = assignees.includes(me);
+
+  const nowIso = () => new Date().toISOString();
+  const toggleReplied = () =>
+    r.replied_at
+      ? patch(
+          r,
+          { replied_at: null, replied_by: null, replied_via: null },
+          "답함을 되돌렸습니다.",
+        )
+      : patch(r, { replied_at: nowIso(), replied_by: me, replied_via: "앱" });
+  const toggleDone = () =>
+    r.answered_at
+      ? patch(
+          r,
+          { answered_at: null, answered_by: null, answered_via: null },
+          "처리 완료를 되돌렸습니다.",
+        )
+      : patch(
+          r,
+          { answered_at: nowIso(), answered_by: me, answered_via: "수동" },
+          "처리 완료로 표시했습니다.",
+        );
+
+  return (
+    <li
+      className={
+        "rounded-lg border bg-white px-2 py-1.5 text-[12px] shadow-sm " +
+        (mine && !r.answered_at ? "border-amber-400 " : "border-black/5 ") +
+        (r.urgency === "높음" && !r.replied_at ? "ring-1 ring-rose-300" : "")
+      }
+    >
+      <div className="flex items-start gap-1.5">
+        {/* 앞자리 — 답 안 했으면 기다린 시간, 답했으면 누가 몇 분 만에. */}
+        {r.replied_at ? (
+          <span className="shrink-0 whitespace-nowrap rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">
+            ✓ 답함 {minutesBetween(r.received_at, r.replied_at)}분 만
+          </span>
+        ) : (
+          <span
+            className={
+              "shrink-0 whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-bold tabular-nums " +
+              toneCls
+            }
+          >
+            ⏱ {elapsedLabel(r.received_at, now)}
+          </span>
+        )}
+        <span
+          className={
+            "shrink-0 rounded px-1 py-0.5 text-[9px] font-bold " +
+            (SOURCE_STYLE[r.source ?? ""] ?? "bg-slate-400 text-white")
+          }
+        >
+          {r.source ?? "?"}
+        </span>
+        <button
+          type="button"
+          onClick={onToggle}
+          className="min-w-0 flex-1 text-left"
+        >
+          <div className="flex flex-wrap items-center gap-1">
+            {badgesOf(r).map((b) => (
+              <span
+                key={b}
+                className={
+                  "rounded-full border px-1.5 text-[9px] font-bold " +
+                  BADGE_STYLE[b]
+                }
+              >
+                {b}
+              </span>
+            ))}
+            <Who2 r={r} />
+            <span className="text-[10px] tabular-nums text-slate-400">
+              {isOld ? `${dayKst(r.received_at)} ` : ""}
+              {timeKst(r.received_at)}
+            </span>
+          </div>
+          <p
+            className={"mt-0.5 text-slate-700 " + (open ? "" : "line-clamp-1")}
+          >
+            {r.summary || r.raw_text || "(내용 없음)"}
+          </p>
+        </button>
+        <div className="flex shrink-0 flex-col gap-1">
+          <button
+            type="button"
+            onClick={() => void toggleReplied()}
+            className={
+              "rounded px-2 py-0.5 text-[10px] font-bold " +
+              (r.replied_at
+                ? "border border-emerald-300 text-emerald-700"
+                : "bg-emerald-600 text-white hover:bg-emerald-700")
+            }
+            title={
+              r.replied_at
+                ? "답함 되돌리기"
+                : "학부모에게 답했으면 누릅니다(토들 답글은 자동으로 체크됩니다)"
+            }
+          >
+            답함
+          </button>
+          <button
+            type="button"
+            onClick={() => void toggleDone()}
+            className={
+              "rounded px-2 py-0.5 text-[10px] font-bold " +
+              (r.answered_at
+                ? "border border-slate-300 text-slate-500"
+                : "bg-slate-800 text-white hover:bg-slate-700")
+            }
+            title={
+              r.answered_at
+                ? "처리 완료 되돌리기"
+                : "요청한 일이 끝났으면 누릅니다"
+            }
+          >
+            처리 완료
+          </button>
+        </div>
+      </div>
+
+      {/* 누가 무엇을 했는지 — 늘 보입니다. */}
+      {(r.replied_at || r.answered_at || assignees.length > 0) && (
+        <div className="mt-1 flex flex-wrap gap-x-2 text-[10px] text-slate-500">
+          {r.replied_at && (
+            <span>
+              답함 ·{" "}
+              {r.replied_via === "토들 답글"
+                ? `토들 · ${r.replied_by ?? ""}`
+                : staffName(r.replied_by)}{" "}
+              {timeKst(r.replied_at)}
+            </span>
+          )}
+          {r.answered_at && (
+            <span className="text-slate-700">
+              처리 완료 · {staffName(r.answered_by)} {timeKst(r.answered_at)}
+            </span>
+          )}
+          {assignees.length > 0 && (
+            <span className="font-bold text-amber-700">
+              담당 → {assignees.map(staffName).join(", ")}
+            </span>
+          )}
+        </div>
+      )}
+
+      {open && (
+        <div className="mt-1.5 space-y-1.5 border-t border-black/5 pt-1.5">
+          {r.raw_text && (
+            <p className="whitespace-pre-wrap rounded bg-slate-50 p-1.5 text-[11px] text-slate-700">
+              {r.raw_text}
+            </p>
+          )}
+          <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-500">
+            {r.sender_name && <span>보낸 사람 {r.sender_name}</span>}
+            {r.source_url && (
+              <a
+                href={r.source_url}
+                target="_blank"
+                rel="noreferrer"
+                className="font-bold text-blue-600 hover:underline"
+              >
+                토들 원문 ↗
+              </a>
+            )}
+          </div>
+          <BadgeEditor r={r} />
+          <AssignEditor r={r} team={team} />
+        </div>
+      )}
+    </li>
+  );
+}
+
+/** 분류를 사람이 고칩니다. AI가 놓친 뱃지를 붙이거나 틀린 것을 뗍니다. */
+function BadgeEditor({ r }: { r: InquiryRow }) {
+  const { patch } = useToday();
+  const cur = badgesOf(r);
+  const toggle = (b: InquiryBadge) => {
+    const next = cur.includes(b)
+      ? cur.filter((x) => x !== b)
+      : [...cur.filter((x) => x !== "인사·감사"), b];
+    void patch(r, { badges: next.length > 0 ? next : ["기타"] });
+  };
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      <span className="text-[10px] font-bold text-slate-400">분류</span>
+      {INQUIRY_BADGES.map((b) => (
+        <button
+          key={b}
+          type="button"
+          onClick={() => toggle(b)}
+          className={
+            "rounded-full border px-1.5 text-[9px] font-bold " +
+            (cur.includes(b)
+              ? BADGE_STYLE[b]
+              : "border-slate-200 bg-white text-slate-300")
+          }
+        >
+          {b}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** 담당 지정. 지정된 사람 화면의 「오늘 꼭 기억」 맨 위에 뜹니다. */
+function AssignEditor({ r, team }: { r: InquiryRow; team: TeamMember[] }) {
+  const { patch, me } = useToday();
+  const cur = r.assignees ?? [];
+  const toggle = (email: string) => {
+    const next = cur.includes(email)
+      ? cur.filter((e) => e !== email)
+      : [...cur, email];
+    void patch(r, {
+      assignees: next,
+      assigned_by: me,
+      assigned_at: new Date().toISOString(),
+    });
+  };
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      <span className="text-[10px] font-bold text-slate-400">담당</span>
+      {team.map((m) => (
+        <button
+          key={m.email}
+          type="button"
+          onClick={() => toggle(m.email)}
+          className={
+            "rounded-full border px-1.5 text-[10px] " +
+            (cur.includes(m.email)
+              ? "border-amber-400 bg-amber-100 font-bold text-amber-800"
+              : "border-slate-200 bg-white text-slate-500")
+          }
+        >
+          {m.name ?? m.email}
+          {m.email === me ? " (나)" : ""}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * 오늘 꼭 기억 — 처리 완료가 안 된 담당 건.
+ *
+ * 보는 사람마다 순서가 다릅니다. **내가 맡은 것이 맨 위**이고, 다른 사람이 맡은 것은 흐리게
+ * 뒤에 둡니다. 날이 바뀌어도 처리 완료를 누를 때까지 남습니다(「2일째」).
+ */
+export function RememberStrip() {
+  const { rows, me, staffName, patch } = useToday();
+  const today = kstDateOffset(0);
+  const pending = rows.filter(
+    (r) => (r.assignees ?? []).length > 0 && !r.answered_at,
+  );
+  if (pending.length === 0) return null;
+  const mine = pending
+    .filter((r) => (r.assignees ?? []).includes(me))
+    .sort((a, b) => a.received_at.localeCompare(b.received_at));
+  const others = pending
+    .filter((r) => !(r.assignees ?? []).includes(me))
+    .sort((a, b) => a.received_at.localeCompare(b.received_at));
+  const days = (iso: string) => {
+    const d = new Date(iso).toLocaleDateString("sv-SE", {
+      timeZone: "Asia/Seoul",
+    });
+    const n = Math.round(
+      (new Date(today).getTime() - new Date(d).getTime()) / 86400000,
+    );
+    return n > 0 ? `${n + 1}일째` : "오늘";
+  };
+  return (
+    <div className="flex shrink-0 items-start gap-2 overflow-x-auto border-t border-amber-200 bg-amber-50/70 px-2.5 py-1.5">
+      <span className="shrink-0 pt-0.5 text-[11px] font-bold text-amber-800">
+        📌 오늘 꼭 기억
+      </span>
+      <div className="flex flex-wrap gap-1.5">
+        {[...mine, ...others].map((r) => {
+          const isMine = (r.assignees ?? []).includes(me);
+          return (
+            <span
+              key={r.id}
+              className={
+                "flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] " +
+                (isMine
+                  ? "border-amber-400 bg-white font-bold text-slate-800"
+                  : "border-slate-200 bg-white/60 text-slate-400")
+              }
+            >
+              {isMine && (
+                <span className="rounded bg-amber-500 px-1 text-[9px] text-white">
+                  내 담당
+                </span>
+              )}
+              {badgesOf(r)
+                .slice(0, 1)
+                .map((b) => (
+                  <span
+                    key={b}
+                    className={
+                      "rounded-full border px-1 text-[9px] " + BADGE_STYLE[b]
+                    }
+                  >
+                    {b}
+                  </span>
+                ))}
+              <Who2 r={r} />
+              <span className="max-w-[16rem] truncate">{r.summary ?? ""}</span>
+              <span className="text-[9px] text-slate-400">
+                {days(r.received_at)}
+              </span>
+              {!isMine && (
+                <span className="text-[9px]">
+                  → {(r.assignees ?? []).map(staffName).join(", ")}
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() =>
+                  void patch(
+                    r,
+                    {
+                      answered_at: new Date().toISOString(),
+                      answered_by: me,
+                      answered_via: "수동",
+                    },
+                    "처리 완료로 표시했습니다.",
+                  )
+                }
+                className="ml-0.5 rounded bg-slate-800 px-1.5 text-[9px] font-bold text-white hover:bg-slate-700"
+              >
+                처리 완료
+              </button>
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  );
+}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { elapsedLabel, elapsedTone } from "@/lib/inquiryBadges";
 import { boardDayKst } from "@/lib/boardDay";
 import DismissalOpsClient from "./DismissalOpsClient";
 import { VISIBLE_DEPARTMENTS } from "@/lib/department";
@@ -349,20 +350,6 @@ export default function OpsBoardClient({ token, initialData = null }: { token: s
       </>
     );
   }
-
-  /**
-   * 갈래별 문의 수. **내용은 세지 않습니다** — 이 화면에서 필요한 것은 「무엇이 몇 건
-   * 와 있는가」뿐이고, 답하는 일은 업무보드에서 합니다.
-   */
-  const inquiryByType: [string, number, boolean][] = (() => {
-    const m = new Map<string, { n: number; urgent: boolean }>();
-    for (const q of data?.inquiries ?? []) {
-      const key = (q.type ?? "").trim() || "기타";
-      const cur = m.get(key) ?? { n: 0, urgent: false };
-      m.set(key, { n: cur.n + 1, urgent: cur.urgent || q.urgent });
-    }
-    return [...m.entries()].sort((a, b) => b[1].n - a[1].n).map(([k, v]) => [k, v.n, v.urgent] as [string, number, boolean]);
-  })();
 
   const urgentInquiries = (data.inquiries ?? []).filter((q) => q.urgent).length;
 
@@ -806,7 +793,7 @@ export default function OpsBoardClient({ token, initialData = null }: { token: s
           {/* ── 아래: 학부모 문의 ─────────────────────────────────────────── */}
           <div style={{ display: "flex", alignItems: "baseline", gap: sc.s(8, 5), marginBottom: sc.s(7, 4), flexShrink: 0 }}>
             <span style={{ fontSize: sc.s(19, 13), fontWeight: 800, color: "#e2e8f0" }}>
-              학부모 문의 {data.inquiries?.length ?? 0}건
+              오늘의 문의사항 {data.inquiries?.length ?? 0}건
             </span>
             <span style={{ fontSize: sc.s(13, 10), color: "#64748b", marginLeft: "auto", textAlign: "right" }}>
               {/* 수집기가 멈추면 문의가 안 들어옵니다. 그런데 화면은 "문의 없음"으로 똑같이
@@ -847,30 +834,9 @@ export default function OpsBoardClient({ token, initialData = null }: { token: s
                   : "지금은 토들 문의가 자동으로 들어오지 않습니다."}
               </div>
             ) : !data.inquiries || data.inquiries.length === 0 ? (
-              <Empty sc={sc} text="답할 문의 없음" tone="good" />
+              <Empty sc={sc} text="처리할 문의 없음" tone="good" />
             ) : (
-              <div style={{ display: "flex", flexWrap: "wrap", gap: `${sc.s(4, 3)}px ${sc.s(6, 4)}px` }}>
-                {inquiryByType.map(([type, n, urgent]) => (
-                  <span
-                    key={type}
-                    style={{
-                      fontSize: sc.s(15, 11),
-                      fontWeight: 800,
-                      color: urgent ? "#fca5a5" : "#c4b5fd",
-                      background: urgent ? "#3f1d2b" : "#1e1b3a",
-                      border: `1px solid ${urgent ? "#7f1d1d" : "#3b2a63"}`,
-                      borderRadius: sc.s(999, 999),
-                      padding: `${sc.s(3, 2)}px ${sc.s(10, 6)}px`,
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {type} {n}
-                  </span>
-                ))}
-                <span style={{ fontSize: sc.s(13, 10), color: "#64748b", alignSelf: "center" }}>
-                  내용은 업무보드에서
-                </span>
-              </div>
+              <InquiryList sc={sc} items={data.inquiries} />
             )}
           </div>
         </Panel>
@@ -886,6 +852,81 @@ export default function OpsBoardClient({ token, initialData = null }: { token: s
 
       {/* 반을 누르면 일주일 시간표(요청). 토큰으로 서버에서 받아옵니다. */}
       {weekClass && <WeekTimetablePopup token={token} classId={weekClass.id} title={weekClass.name} onClose={() => setWeekClass(null)} />}
+    </div>
+  );
+}
+
+
+/**
+ * 오늘의 문의사항 — 무엇을 처리해야 하는지 뱃지로.
+ *
+ * 예전에는 분류별 숫자만 띄웠습니다(「출결 3」). 멀리서 보면 무엇이 쌓였는지는 알지만 **누구의
+ * 무슨 일인지**는 몰라서, 결국 업무보드를 열어야 했습니다. 이제 한 줄에 경과 시간 · 뱃지 · 학생 ·
+ * 요약 · 담당을 적습니다. 답하지 않은 것이 위, 오래 기다린 것이 먼저입니다.
+ */
+function InquiryList({ sc, items }: { sc: { s: (a: number, b: number) => number }; items: NonNullable<BoardData["inquiries"]> }) {
+  const now = Date.now();
+  const MAX = 8;
+  const shown = items.slice(0, MAX);
+  const toneColor = { calm: "#94a3b8", warn: "#fbbf24", late: "#f87171" } as const;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: sc.s(4, 3) }}>
+      {shown.map((q) => {
+        const tone = elapsedTone(q.at, now);
+        return (
+          <div
+            key={q.id}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: sc.s(6, 4),
+              fontSize: sc.s(14, 10),
+              color: "#e2e8f0",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+            }}
+          >
+            <span
+              style={{
+                minWidth: sc.s(62, 44),
+                fontWeight: 800,
+                color: q.replied ? "#4ade80" : toneColor[tone],
+                fontVariantNumeric: "tabular-nums",
+              }}
+            >
+              {q.replied ? "✓ 답함" : `⏱ ${elapsedLabel(q.at, now)}`}
+            </span>
+            {(q.badges ?? []).slice(0, 2).map((b) => (
+              <span
+                key={b}
+                style={{
+                  fontSize: sc.s(12, 9),
+                  fontWeight: 800,
+                  color: "#c4b5fd",
+                  background: "#1e1b3a",
+                  border: "1px solid #3b2a63",
+                  borderRadius: 999,
+                  padding: `0 ${sc.s(7, 5)}px`,
+                }}
+              >
+                {b}
+              </span>
+            ))}
+            <span style={{ fontWeight: 800 }}>{q.student}</span>
+            <span style={{ color: "#94a3b8", overflow: "hidden", textOverflow: "ellipsis" }}>{q.summary}</span>
+            {(q.assignees ?? []).length > 0 && (
+              <span style={{ marginLeft: "auto", color: "#fcd34d", fontWeight: 800, flexShrink: 0 }}>
+                → {(q.assignees ?? []).join(", ")}
+              </span>
+            )}
+          </div>
+        );
+      })}
+      {items.length > MAX && (
+        <span style={{ fontSize: sc.s(12, 9), color: "#64748b" }}>
+          외 {items.length - MAX}건 · 업무보드 「오늘의 문의사항」에서
+        </span>
+      )}
     </div>
   );
 }

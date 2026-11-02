@@ -3,7 +3,6 @@ import { createClient } from "@supabase/supabase-js";
 import { ingestPickup, loadRoster, type IngestInput } from "@/lib/pickupIngest";
 import { logApiError } from "@/lib/logging";
 import { notifyRefreshFromServer } from "@/lib/opsRefresh";
-import { callClaudeJson, CLAUDE_MODEL_FAST } from "@/lib/ai/claude";
 
 export const dynamic = "force-dynamic";
 
@@ -31,61 +30,41 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
   const rawItems = Array.isArray(body?.items) ? body.items : body?.items === undefined && body ? [body] : [];
 
-  // ── 이미 답글이 달린 방 ────────────────────────────────────────────────────
-  // 요청: "혹시나 다른 직원이 답글을 달았다면 해결된 것으로 체크해줘"
+  // ── 토들에 직원 답글이 달린 글 → 「답함」 ─────────────────────────────────
   //
-  // 다른 선생님이 벌써 답했는데 인박스에 남아 있으면, 또 답하거나 계속 신경 쓰게 됩니다.
-  // 학부모는 같은 얘기를 두 번 듣게 되고요. 그래서 답글이 확인되면 처리됨으로 넘깁니다.
-  // 사람이 누른 것과 구분되도록 answered_via에 '답글'로 남깁니다.
-  const rawReplies = Array.isArray(body?.replies) ? body.replies : [];
+  // 답한 것과 일을 끝낸 것은 다릅니다. 「담당실장님께 전달드리겠습니다」는 답이지만 청구서는 아직
+  // 다시 안 나갔습니다. 그래서 답글은 「답함」(replied_*)만 채우고, 「처리 완료」(answered_*)는
+  // 일을 끝낸 직원이 앱에서 누릅니다. 예전에는 답글을 AI가 읽어 「해결」이면 처리 완료로 넘겼는데,
+  // 그러면 할 일이 남은 문의가 목록에서 사라졌습니다.
+  //
+  // 새 수집기(2.6.0~)는 글마다 그 뒤에 처음 달린 직원 답글을 보냅니다(messageReplies).
+  const rawMsgReplies = Array.isArray(body?.messageReplies) ? body.messageReplies : [];
   let repliedCount = 0;
+  for (const r of rawMsgReplies.slice(0, 100)) {
+    const ref = typeof r?.sourceRef === "string" ? r.sourceRef : null;
+    const at = typeof r?.at === "string" ? r.at : null;
+    if (!ref || !at) continue;
+    const { data: updated } = await supabase
+      .from("pickup_requests")
+      .update({ replied_at: at, replied_by: typeof r?.by === "string" ? r.by : null, replied_via: "토들 답글" })
+      .eq("source", "토들")
+      .eq("source_ref", ref)
+      .is("replied_at", null)
+      .select("id");
+    repliedCount += updated?.length ?? 0;
+  }
+
+  // 옛 수집기(~2.5)는 방 단위로 「마지막 직원 답글」만 보냅니다. 그 방에서 답글보다 먼저 온 글을 답함으로 둡니다.
+  const rawReplies = Array.isArray(body?.replies) ? body.replies : [];
   for (const r of rawReplies.slice(0, 50)) {
     const chatId = typeof r?.chatId === "string" ? r.chatId : null;
     const at = typeof r?.at === "string" ? r.at : null;
     if (!chatId || !at) continue;
-    const by = typeof r?.by === "string" ? r.by : null;
-    const text = typeof r?.text === "string" ? r.text : "";
-
-    // 이 방에 아직 답 안 한 문의가 있는지 먼저 봅니다(없으면 AI를 부르지 않습니다).
-    const { data: open } = await supabase
-      .from("pickup_requests")
-      .select("id")
-      .eq("source_chat_id", chatId)
-      .eq("kind", "문의")
-      .is("answered_at", null)
-      .lt("received_at", at);
-    if (!open || open.length === 0) continue;
-
-    // 직원 답글이 "해결"인지 "진행중"인지 판단합니다.
-    // 요청: "우리직원이 쓴글이라면 문의가 해결되었는지 안되었는지 표시"
-    let resolved = true; // 판단 실패 시엔 해결로 봅니다(예전 동작과 같게 - 답이 달렸으니).
-    if (text.trim()) {
-      try {
-        const out = await callClaudeJson(
-          "학교 직원이 학부모 문의에 남긴 답글입니다. 이 답으로 문의가 끝났는지 판단하세요. " +
-            "\"확인 후 다시 연락드리겠습니다\", \"알아보겠습니다\", \"잠시만요\"처럼 아직 처리 중이면 resolved=false. " +
-            "\"처리했습니다\", \"네 알겠습니다\", \"반영했습니다\", 구체적 답변을 준 경우는 resolved=true. " +
-            "반드시 JSON만: {\"resolved\": true 또는 false}",
-          `답글: """${text.slice(0, 500)}"""`,
-          { model: CLAUDE_MODEL_FAST, maxTokens: 60, route: "reply-status" }
-        );
-        if ((out as { resolved?: unknown } | null)?.resolved === false) resolved = false;
-      } catch {
-        // AI 실패 - 예전처럼 해결로 처리합니다(답은 달렸으므로).
-      }
-    }
-
-    const patch = resolved
-      ? { answered_at: at, answered_by: by, answered_via: "답글", replied_by: by, replied_at: at, reply_status: "resolved" }
-      // 진행중: 답은 달렸지만 목록에는 남겨 "답변중"으로 보이게 합니다(answered_at은 비워둠).
-      : { replied_by: by, replied_at: at, reply_status: "pending" };
-
     const { data: updated } = await supabase
       .from("pickup_requests")
-      .update(patch)
+      .update({ replied_at: at, replied_by: typeof r?.by === "string" ? r.by : null, replied_via: "토들 답글" })
       .eq("source_chat_id", chatId)
-      .eq("kind", "문의")
-      .is("answered_at", null)
+      .is("replied_at", null)
       .lt("received_at", at)
       .select("id");
     repliedCount += updated?.length ?? 0;
@@ -93,7 +72,10 @@ export async function POST(req: Request) {
 
   if (rawItems.length === 0) {
     // 답글 소식만 전해오는 경우도 있습니다(새 메시지 없이).
-    if (rawReplies.length > 0) return NextResponse.json({ ok: true, replied: repliedCount, saved: 0 });
+    if (rawReplies.length > 0 || rawMsgReplies.length > 0) {
+      if (repliedCount > 0) await notifyRefreshFromServer();
+      return NextResponse.json({ ok: true, replied: repliedCount, saved: 0 });
+    }
     return NextResponse.json({ error: "items가 필요합니다." }, { status: 400 });
   }
   // 한 번에 너무 많이 보내면 AI 호출이 몰려 응답이 늦어집니다. 수집기가 나눠 보내도록 제한합니다.
@@ -120,6 +102,10 @@ export async function POST(req: Request) {
         // 받는 쪽만 빠뜨려도 조용히 아무 일도 일어나지 않습니다 - 오류가 안 나기 때문입니다.
         chatId: typeof raw?.chatId === "string" ? raw.chatId : null,
         sourceUrl: typeof raw?.sourceUrl === "string" ? raw.sourceUrl : null,
+        staffReply:
+          raw?.staffReply && typeof raw.staffReply.at === "string"
+            ? { at: raw.staffReply.at, by: typeof raw.staffReply.by === "string" ? raw.staffReply.by : null }
+            : null,
       };
       try {
         results.push(await ingestPickup(supabase, item, roster));

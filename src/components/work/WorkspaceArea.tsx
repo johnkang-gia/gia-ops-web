@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchCurrentTerm } from "@/lib/termQuery";
 import type { DayReminder, Department, GoogleChatMirrorMessage, Task, TaskModeColor, TaskStatus, TeamMember, WorkTag } from "@/lib/types";
 import WorkCalendar from "./WorkCalendar";
+import { RememberStrip, TodayInquiriesPanel, TodayInquiriesProvider } from "./TodayInquiries";
 import StudentDayBoard from "./StudentDayBoard";
 import NotesPipButton from "./NotesPipButton";
 import TaskBoard from "./TaskBoard";
@@ -230,6 +231,8 @@ export default function WorkspaceArea({
   const [mobileTab, setMobileTab] = useState<"inbox" | "today" | "talk">("today");
   /** 흐름판·업무 등록은 팝업입니다 - 늘 펼쳐둘 만큼 자주 손대는 자리가 아닙니다. */
   const [boardOpen, setBoardOpen] = useState(false);
+  // 달력은 업무보드에 늘 펼쳐두지 않고 「상세 일정」을 누를 때만 띄웁니다(메뉴에도 있습니다).
+  const [calendarOpen, setCalendarOpen] = useState(false);
   const [taskFormOpen, setTaskFormOpen] = useState(false);
   /** 달력에서 누른 날짜. 그 날 마감으로 새 업무를 만드는 창을 엽니다. */
   const [newTaskDay, setNewTaskDay] = useState<string | null>(null);
@@ -688,6 +691,14 @@ export default function WorkspaceArea({
     <div className="flex h-9 shrink-0 items-center gap-1.5 border-b border-black/5 bg-white/60 px-2.5">
       <button
         type="button"
+        onClick={() => setCalendarOpen(true)}
+        title="달력을 크게 엽니다. 날짜를 눌러 일정·업무를 등록합니다."
+        className="flex items-center gap-1 rounded-full border border-black/10 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-600 transition hover:bg-slate-50"
+      >
+        🗓️ 상세 일정
+      </button>
+      <button
+        type="button"
         onClick={() => setBoardOpen(true)}
         title="업무 흐름판을 크게 엽니다"
         className="flex items-center gap-1.5 rounded-full border border-black/10 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-600 transition hover:bg-slate-50"
@@ -775,6 +786,11 @@ export default function WorkspaceArea({
           {board}
         </FullModal>
       )}
+      {calendarOpen && (
+        <FullModal title="🗓️ 상세 일정" onClose={() => setCalendarOpen(false)}>
+          <div className="h-[75vh]">{center}</div>
+        </FullModal>
+      )}
       {taskFormOpen && (
         <FullModal title="＋ 업무 등록" width="max-w-3xl" onClose={() => setTaskFormOpen(false)}>
           {taskForm}
@@ -785,6 +801,7 @@ export default function WorkspaceArea({
 
   if (isMobileView) {
     return (
+      <TodayInquiriesProvider team={team} currentUserEmail={currentUserEmail}>
       <div className="flex h-full flex-col overflow-hidden">
         {toolbar}
         <div className="glass-panel flex shrink-0 divide-x divide-black/5 border-b border-black/5">
@@ -792,7 +809,7 @@ export default function WorkspaceArea({
             [
               { key: "inbox", label: "📥 인박스" },
               { key: "today", label: "🧒 오늘 학생" },
-              { key: "talk", label: "🗓️ 일정" },
+              { key: "talk", label: "📨 문의" },
             ] as const
           ).map((t) => (
             <button
@@ -807,11 +824,13 @@ export default function WorkspaceArea({
         <div className="min-h-0 flex-1 overflow-hidden">
           {mobileTab === "inbox" && inbox}
           {mobileTab === "today" && todayStudents}
-          {mobileTab === "talk" && center}
+          {mobileTab === "talk" && <TodayInquiriesPanel />}
         </div>
+        <RememberStrip />
         {modals}
         {dialogs}
       </div>
+      </TodayInquiriesProvider>
     );
   }
 
@@ -820,6 +839,7 @@ export default function WorkspaceArea({
     // 이미 같은 줄이 있어서, 한 화면에 똑같은 경고가 두 번 떴습니다. 같은 것이 두 곳에 있으면
     // 어느 쪽을 봐야 하는지 사람이 매번 판단해야 하고, 두 줄이 자리를 먹어 정작 아래 목록이
     // 밀립니다. 경고는 한 자리에만 있어야 경고입니다.
+    <TodayInquiriesProvider team={team} currentUserEmail={currentUserEmail}>
     <div className="flex h-full flex-col overflow-hidden">
       {toolbar}
 
@@ -845,9 +865,10 @@ export default function WorkspaceArea({
           <CollapsedRail icon="📥" title="인박스" side="left" onOpen={() => setLayout((p) => ({ ...p, leftOpen: true }))} />
         )}
 
-        {/* 가운데 — **일정**. 학사와 행정이 함께 보는 자리라 가장 넓게 씁니다. */}
-        <Zone icon="🗓️" title="일정" className="flex-1">
-          {center}
+        {/* 가운데 — **오늘의 문의사항**. 행정실이 하루 동안 실제로 처리하는 일은 토들·전화로 오는
+            학부모 연락이라 가장 넓은 자리를 줍니다. 일정은 등록·계획하는 일이라 「상세 일정」 팝업으로 옮겼습니다. */}
+        <Zone icon="📨" title="오늘의 문의사항" className="flex-1">
+          <TodayInquiriesPanel />
         </Zone>
 
         {/* 오른쪽 — 오늘 학생. 픽업·하원과 특이사항이 두 줄로 섭니다. */}
@@ -871,9 +892,13 @@ export default function WorkspaceArea({
         )}
       </div>
 
+      {/* 맡은 일 — 처리 완료를 누를 때까지 날이 바뀌어도 남습니다. 내 담당이 맨 앞입니다. */}
+      <RememberStrip />
+
       {modals}
       {dialogs}
     </div>
+    </TodayInquiriesProvider>
   );
 }
 

@@ -26,7 +26,7 @@
 // '안 읽음' 표시가 사라지지 않습니다. 선생님들 업무를 건드리지 않는다는 뜻입니다.
 
 (() => {
-  const VERSION = "2.4.0";
+  const VERSION = "2.6.0";
 
   // 같은 버전이 이미 돌고 있으면 그대로 둡니다.
   //
@@ -42,11 +42,29 @@
   const ENDPOINT = "https://ap-southeast-1-production-apis.toddleapp.com/graphql";
   const HEADERS = { "content-type": "application/json", "x-tod-source": "WEB" };
 
-  // 한 번에 살펴볼 방 수. 너무 많으면 한 차례가 길어집니다.
-  const MAX_ROOMS = 15;
-  // 이보다 오래된 메시지는 보내지 않습니다. 수집기를 처음 켠 날 지난 몇 달치를 몰아
-  // 보내면 인박스가 쓸모없어집니다.
-  const MAX_AGE_DAYS = 3;
+  // 한 차례에 메시지를 받아 볼 방 수. 남은 방은 다음 차례(1분 뒤)에 이어 봅니다.
+  const MAX_ROOMS = 30;
+
+  /**
+   * 오늘 한국시간 0시(밀리초).
+   *
+   * 예전 기준은 「안 읽은 방의 안 읽은 메시지」였습니다. 직원이 토들에서 먼저 열어 보면 그 메시지는
+   * 앱에 영영 안 들어왔고, 수집기가 꺼져 있던 시간의 메시지도 마찬가지였습니다. 읽음은 사람이
+   * 화면을 연 기록이지 메시지가 온 기록이 아니라서, 기준을 **날짜**로 바꿨습니다.
+   * PC 시계의 시간대와 상관없이 한국 날짜를 씁니다.
+   */
+  function kstMidnightMs() {
+    const KST = 9 * 60 * 60 * 1000;
+    const day = Math.floor((Date.now() + KST) / 86400000);
+    return day * 86400000 - KST;
+  }
+
+  // 방마다 마지막으로 다 읽어 본 활동 시각. 같으면 그 방은 새 글이 없으니 다시 묻지 않습니다.
+  // 탭이 새로고침되면 비워지고, 그때는 오늘 방을 처음부터 다시 훑습니다(서버가 중복을 거릅니다).
+  const seenActive = new Map();
+  // 방마다 오늘 학부모가 쓴 글 수. 합계를 앱에 들어온 수와 견줘 빠진 것이 없는지 봅니다.
+  const todayCountByRoom = new Map();
+  let seenDay = 0;
 
   const CHAT_LIST_QUERY = `query giaChatList($organizationId: ID!, $input: ChatFeedInput) {
   node(id: $organizationId, type: ORGANIZATION) {
@@ -143,8 +161,15 @@
   async function fetchRoomList(onlyUnread) {
     const organizationId = getOrgId();
     if (!organizationId) throw new Error("LOGIN_REQUIRED");
-    const input = onlyUnread ? { first: 50, isRead: false } : { first: 50 };
-    const one = await gql("giaChatList", CHAT_LIST_QUERY, { organizationId, input });
+    const base = onlyUnread ? { isRead: false } : {};
+    // 하루에 활동하는 방이 50개를 넘을 수 있어 100개씩 받습니다. 토들이 거절하면 50개로 물립니다.
+    let one;
+    try {
+      one = await gql("giaChatList", CHAT_LIST_QUERY, { organizationId, input: { ...base, first: 100 } });
+    } catch (err) {
+      if (String(err.message) === "LOGIN_REQUIRED") throw err;
+      one = await gql("giaChatList", CHAT_LIST_QUERY, { organizationId, input: { ...base, first: 50 } });
+    }
     const edges = one?.data?.node?.chats?.edges;
     if (!Array.isArray(edges)) return [];
     return edges
@@ -158,10 +183,12 @@
       }));
   }
 
-  /** 안 읽은 메시지가 있는 방들. */
-  async function fetchRooms() {
-    const all = await fetchRoomList(true);
-    return all.filter((n) => n.unread > 0);
+  /** 오늘(한국시간) 활동이 있는 방들. 읽었는지는 따지지 않습니다. */
+  async function fetchTodayRooms() {
+    const all = await fetchRoomList(false);
+    const since = kstMidnightMs();
+    const today = all.filter((n) => n.lastActiveAt && new Date(n.lastActiveAt).getTime() >= since);
+    return { all, today };
   }
 
   /**
@@ -195,28 +222,46 @@
     return null;
   }
 
-  async function fetchMessages(chatId, unread) {
+  const isStaff = (n) => String(n?.createdBy?.type || "").toUpperCase() === "STAFF";
+  const nameOf = (n) => [n?.createdBy?.firstName, n?.createdBy?.lastName].filter(Boolean).join(" ") || null;
+
+  /**
+   * 한 방에서 오늘 0시(한국시간) 이후의 글.
+   *
+   * 학부모 글마다 **그 뒤에 처음 달린 직원 글**을 붙입니다. 그 글이 있으면 서버가 그 문의를
+   * 「답함」으로 표시합니다. 답한 것과 일을 끝낸 것은 다르므로 「처리 완료」는 건드리지 않습니다.
+   */
+  async function fetchTodayMessages(chatId) {
     const one = await gql("giaMessages", MESSAGES_QUERY, { chatId });
     const edges = one?.data?.node?.messagesV2?.edges;
-    if (!Array.isArray(edges)) return { messages: [], reply: null };
-    const cutoff = Date.now() - MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
-    const messages = edges
-      .slice(0, Math.max(1, Math.min(unread, 20)))
+    if (!Array.isArray(edges)) return { messages: [], reply: null, truncated: false };
+    const since = kstMidnightMs();
+    const all = edges
       .map((e) => e?.node)
       .filter(Boolean)
       // 입퇴장 같은 시스템 알림은 문의가 아닙니다.
       .filter((m) => !m.type || String(m.type).toUpperCase() === "NORMAL")
-      .filter((m) => !m.createdAt || new Date(m.createdAt).getTime() >= cutoff)
-      .map((m) => ({
+      .filter((m) => m.createdAt && new Date(m.createdAt).getTime() >= since)
+      .sort((x, y) => new Date(x.createdAt).getTime() - new Date(y.createdAt).getTime());
+    const messages = [];
+    for (let i = 0; i < all.length; i++) {
+      const m = all[i];
+      if (isStaff(m)) continue;
+      const answer = all.slice(i + 1).find(isStaff) || null;
+      messages.push({
         id: String(m.id),
         text: typeof m.label === "string" ? m.label : "",
-        createdAt: m.createdAt ?? null,
-        // 여기까지 온 것은 모두 새 메시지입니다(위에서 이미 잘랐습니다).
+        createdAt: m.createdAt,
         isRead: false,
         senderType: m.createdBy?.type ?? null,
-        senderName: [m.createdBy?.firstName, m.createdBy?.lastName].filter(Boolean).join(" ") || null,
-      }));
-    return { messages, reply: lastStaffReply(edges) };
+        senderName: nameOf(m),
+        staffReply: answer ? { at: answer.createdAt, by: nameOf(answer) } : null,
+      });
+    }
+    // 토들이 한 번에 돌려준 글이 전부 오늘 것이면, 더 앞의 오늘 글이 잘렸을 수 있습니다.
+    const oldest = edges.map((e) => e?.node?.createdAt).filter(Boolean).map((t) => new Date(t).getTime());
+    const truncated = oldest.length > 0 && Math.min(...oldest) >= since;
+    return { messages, reply: lastStaffReply(edges), truncated };
   }
 
   // ── 확장(content.js)과의 대화 ──────────────────────────────────────────────
@@ -235,14 +280,22 @@
       }
 
       if (msg.cmd === "collect") {
-        const rooms = await fetchRooms();
-        // 안 읽은 방이 없을 때만 전체를 세어봅니다(평소에는 쓸데없는 요청을 하지 않도록).
-        const totalRooms = rooms.length === 0 ? (await fetchRoomList(false)).length : null;
-        const targets = rooms.slice(0, MAX_ROOMS);
+        const since = kstMidnightMs();
+        if (seenDay !== since) {
+          seenActive.clear();
+          todayCountByRoom.clear();
+          seenDay = since;
+        }
+        const { all, today } = await fetchTodayRooms();
+        // 마지막으로 본 뒤 활동이 바뀐 방만 다시 묻습니다.
+        const changed = today.filter((r) => seenActive.get(r.id) !== r.lastActiveAt);
+        const targets = changed.slice(0, MAX_ROOMS);
         const out = [];
+        let truncatedRooms = 0;
         for (const room of targets) {
           try {
-            const { messages, reply } = await fetchMessages(room.id, room.unread);
+            const { messages, reply, truncated } = await fetchTodayMessages(room.id);
+            if (truncated) truncatedRooms += 1;
             // 원문으로 돌아가는 주소. 지금 보고 있는 화면 주소에서 학교 부분을 그대로 떼어
             // 씁니다 - 번호를 코드에 박아두면 다른 과정에서 안 맞습니다.
             const base = location.href.match(/^(https:\/\/[^/]+\/platform\/[^/]+)/);
@@ -254,21 +307,29 @@
               lastActiveAt: room.lastActiveAt,
               url,
               messages,
-              // 이 방에 이미 답글이 달렸는지. 서버가 해당 문의를 처리됨으로 표시합니다.
               reply,
             });
+            seenActive.set(room.id, room.lastActiveAt);
+            todayCountByRoom.set(room.id, messages.filter((m) => m.text && m.text.trim()).length);
           } catch (err) {
             if (String(err.message) === "LOGIN_REQUIRED") throw err;
-            // 한 방이 실패해도 나머지는 계속합니다.
+            // 한 방이 실패해도 나머지는 계속합니다. 본 것으로 표시하지 않아 다음 차례에 다시 봅니다.
           }
         }
         reply({
           ok: true,
           chats: out,
           diag: {
-            knownRooms: rooms.length,
+            knownRooms: today.length,
             unreadRooms: targets.length,
-            totalRooms,
+            pendingRooms: changed.length - targets.length,
+            truncatedRooms,
+            // 오늘 방을 다 훑은 뒤에만 합계를 냅니다. 덜 훑은 합계는 «빠졌다»로 잘못 읽힙니다.
+            todayParentCount:
+              changed.length - targets.length === 0
+                ? [...todayCountByRoom.values()].reduce((a, b) => a + b, 0)
+                : null,
+            totalRooms: all.length,
             account: whoAmI(),
             pageVersion: VERSION,
           },

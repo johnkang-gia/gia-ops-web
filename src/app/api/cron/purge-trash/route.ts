@@ -60,12 +60,27 @@ export async function GET(req: NextRequest) {
       .select("id");
     if (notesErr) console.error("[cron:purge-trash] 학생 특이사항을 정리하지 못했습니다:", notesErr.message);
 
+    // ── 학부모 메시지 원문 ──────────────────────────────────────────────────
+    //
+    // 오늘의 문의사항은 토들에 들어온 학부모 글을 **전부** 받아 둡니다. 원문은 처리하는 동안만
+    // 필요하고, 그 뒤에는 「무엇에 관한 연락이었나」(요약·뱃지)만 남으면 됩니다. 90일이 지난
+    // 원문은 비웁니다 - 줄 자체는 지우지 않아 학생 이력과 집계는 그대로입니다.
+    const rawCutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+    const { data: rawCleared, error: rawErr } = await supabase
+      .from("pickup_requests")
+      .update({ raw_text: null })
+      .lt("received_at", rawCutoff)
+      .not("raw_text", "is", null)
+      .select("id");
+    if (rawErr) console.error("[cron:purge-trash] 학부모 원문을 비우지 못했습니다:", rawErr.message);
+
     await touchHeartbeat(supabase, "cron:purge-trash");
     return NextResponse.json({
       ok: true,
       purgedCount: purged?.length ?? 0,
       usagePurgedCount: usagePurged?.length ?? 0,
       dayNotesPurgedCount: notesPurged?.length ?? 0,
+      rawTextClearedCount: rawCleared?.length ?? 0,
       usageProblem: usageErr?.message ?? null,
     });
   } catch (err) {

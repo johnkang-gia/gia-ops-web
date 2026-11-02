@@ -14,6 +14,8 @@ import { isDeveloperEmail } from "@/lib/roles";
  *   mode "route" : 지점 순서대로 도는 경로(경유지 최대 30곳)의 구간별 거리·시간과 도로 선
  *   mode "region": 좌표 최대 60곳의 행정 구·동(카카오 좌표→행정구역). 노선을 구·동 단위로 묶어 볼 때 씁니다.
  *                  주소 글자에는 동이 빠진 도로명 주소가 많아 글자로는 동을 알 수 없습니다.
+ *   mode "keyword": 장소 이름 검색 최대 20건(카카오 키워드 검색, 기준 좌표 반경 안). 아파트 단지 안에 아이들을
+ *                  모아 태울 자리(정문·관리동·주차장 입구)가 있는지 찾을 때 씁니다.
  *
  * 저장하지 않습니다 - 검토용 계산이라 운영 자료(shuttle_*)와 섞이면 안 됩니다.
  */
@@ -35,10 +37,41 @@ export async function POST(req: Request) {
     | { mode: "matrix"; origin: Pt; destinations: Pt[]; radius?: number }
     | { mode: "route"; points: Pt[]; withPath?: boolean }
     | { mode: "region"; points: Pt[] }
+    | { mode: "keyword"; queries: { q: string; x: number; y: number; radius?: number; key?: string }[] }
     | null;
   if (!body) return NextResponse.json({ error: "요청 본문이 없습니다." }, { status: 400 });
 
   const headers = { "Content-Type": "application/json", Authorization: `KakaoAK ${restKey}` };
+
+  if (body.mode === "keyword") {
+    const qs = body.queries ?? [];
+    if (qs.length < 1 || qs.length > 20) return NextResponse.json({ error: "queries 는 1~20건이어야 합니다." }, { status: 400 });
+    const rows = await Promise.all(
+      qs.map(async (q, i) => {
+        const u =
+          `https://dapi.kakao.com/v2/local/search/keyword.json?query=${encodeURIComponent(q.q)}` +
+          `&x=${q.x}&y=${q.y}&radius=${Math.min(q.radius ?? 600, 20000)}&sort=distance&size=15`;
+        const res = await fetch(u, { headers: { Authorization: `KakaoAK ${restKey}` } });
+        if (!res.ok) return { key: q.key ?? String(i), ok: false, error: `카카오 오류(${res.status})`, places: [] };
+        const data = (await res.json()) as {
+          documents?: { place_name: string; category_name: string; x: string; y: string; distance: string; road_address_name: string; address_name: string }[];
+        };
+        return {
+          key: q.key ?? String(i),
+          ok: true,
+          places: (data.documents ?? []).map((d) => ({
+            name: d.place_name,
+            cat: d.category_name,
+            x: Number(d.x),
+            y: Number(d.y),
+            d: Number(d.distance),
+            addr: d.road_address_name || d.address_name,
+          })),
+        };
+      }),
+    );
+    return NextResponse.json({ rows });
+  }
 
   if (body.mode === "region") {
     const pts = body.points ?? [];

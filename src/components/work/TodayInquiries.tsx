@@ -854,3 +854,287 @@ export function RememberStrip() {
     </div>
   );
 }
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * 지난 문의사항 — 날짜를 골라 그날 들어온 글을 한눈에, 또는 낱말로 전체를 찾습니다.
+ *
+ * 문의는 지우지 않고 쌓입니다(학부모가 쓴 시각 received_at 이 날짜입니다). 오늘 칸은 오늘 것과
+ * 맡은 일만 보여주므로, 지난 날의 글은 여기서 찾습니다. 원문은 90일이 지나면 비워지지만 요약·뱃지·
+ * 학생·누가 답했고 처리했는지는 남아 검색됩니다.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+const WD = ["일", "월", "화", "수", "목", "금", "토"];
+
+function shiftDay(iso: string, days: number): string {
+  const d = new Date(iso + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function dayTitle(iso: string): string {
+  const d = new Date(iso + "T00:00:00Z");
+  return `${d.getUTCMonth() + 1}월 ${d.getUTCDate()}일 (${WD[d.getUTCDay()]})`;
+}
+
+/** PostgREST or() 안에 들어갈 글자. 쉼표·괄호는 조건을 깨뜨리므로 뺍니다. */
+function safeTerm(q: string): string {
+  return q.replace(/[,()*%\\]/g, " ").trim();
+}
+
+export function PastInquiriesButton() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        title="날짜를 골라 그날 들어온 문의를 보거나, 낱말로 지난 문의 전체를 찾습니다"
+        className="shrink-0 rounded-full border border-black/10 bg-white px-2 py-0.5 text-[10px] font-bold text-slate-600 transition hover:bg-slate-50"
+      >
+        🗂️ 지난 문의사항
+      </button>
+      {open && <PastInquiriesModal onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
+function PastInquiriesModal({ onClose }: { onClose: () => void }) {
+  const { names } = useToday();
+  const notify = useToast();
+  const today = kstDateOffset(0);
+  const [day, setDay] = useState(kstDateOffset(-1));
+  const [q, setQ] = useState("");
+  const [term, setTerm] = useState(""); // 검색을 누른 낱말(입력 중에는 조회하지 않습니다)
+  const [rows, setRows] = useState<InquiryRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [filter, setFilter] = useState<InquiryBadge | "전체">("전체");
+  const [openId, setOpenId] = useState<string | null>(null);
+  const now = useNow();
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const supabase = createClient();
+    let query = supabase.from("pickup_requests").select("*");
+    if (term) {
+      const t = safeTerm(term);
+      // 학생 이름은 번호로 바꿔 찾습니다 - 이름 글자 칸을 다시 짐작하지 않습니다(§2-4-8).
+      const ids = [...names.entries()]
+        .filter(([, n]) =>
+          n.replace(/\s+/g, "").includes(t.replace(/\s+/g, "")),
+        )
+        .map(([id]) => id);
+      const conds = [
+        `summary.ilike.*${t}*`,
+        `raw_text.ilike.*${t}*`,
+        `channel_label.ilike.*${t}*`,
+        `sender_name.ilike.*${t}*`,
+      ];
+      if (ids.length > 0)
+        conds.push(`student_id.in.(${ids.slice(0, 50).join(",")})`);
+      query = query
+        .or(conds.join(","))
+        .order("received_at", { ascending: false })
+        .limit(300);
+    } else {
+      query = query
+        .gte("received_at", `${day}T00:00:00+09:00`)
+        .lt("received_at", `${shiftDay(day, 1)}T00:00:00+09:00`)
+        .order("received_at", { ascending: true })
+        .limit(500);
+    }
+    const { data, error } = await query;
+    setLoading(false);
+    if (error) {
+      notify("지난 문의를 읽지 못했습니다: " + error.message, "error");
+      return;
+    }
+    setRows(((data as InquiryRow[] | null) ?? []).filter((r) => !r.is_demo));
+  }, [day, term, names, notify]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  // 이 창에서 답함·처리 완료를 눌러도 바로 다시 그립니다.
+  useEffect(() => {
+    const supabase = createClient();
+    const ch = supabase
+      .channel("past-inquiries")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "pickup_requests" },
+        () => void load(),
+      )
+      .subscribe();
+    return () => void supabase.removeChannel(ch);
+  }, [load]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const counts = new Map<InquiryBadge, number>();
+  for (const r of rows)
+    for (const b of badgesOf(r)) counts.set(b, (counts.get(b) ?? 0) + 1);
+  const shown = rows.filter(
+    (r) => filter === "전체" || badgesOf(r).includes(filter),
+  );
+  const waiting = rows.filter(
+    (r) => !isNoActionBadges(badgesOf(r)) && !r.answered_at,
+  ).length;
+
+  // 검색 결과는 날짜별로 묶어 보여줍니다.
+  const groups = new Map<string, InquiryRow[]>();
+  for (const r of shown) {
+    const k = new Date(r.received_at).toLocaleDateString("sv-SE", {
+      timeZone: "Asia/Seoul",
+    });
+    groups.set(k, [...(groups.get(k) ?? []), r]);
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[900] flex items-start justify-center bg-black/40 p-3 sm:p-6"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-full w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-black/5 px-4 py-2.5">
+          <h2 className="text-sm font-bold text-slate-800">🗂️ 지난 문의사항</h2>
+          {!term && (
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setDay(shiftDay(day, -1))}
+                className="rounded border px-1.5 text-xs hover:bg-slate-50"
+              >
+                ◀
+              </button>
+              <input
+                type="date"
+                value={day}
+                max={today}
+                onChange={(e) => e.target.value && setDay(e.target.value)}
+                className="rounded border px-1.5 py-0.5 text-xs"
+              />
+              <button
+                type="button"
+                disabled={day >= today}
+                onClick={() => setDay(shiftDay(day, 1))}
+                className="rounded border px-1.5 text-xs hover:bg-slate-50 disabled:opacity-30"
+              >
+                ▶
+              </button>
+              <span className="text-xs font-bold text-slate-600">
+                {dayTitle(day)}
+              </span>
+            </div>
+          )}
+          <form
+            className="ml-auto flex items-center gap-1"
+            onSubmit={(e) => {
+              e.preventDefault();
+              setFilter("전체");
+              setTerm(q.trim());
+            }}
+          >
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="학생·낱말로 전체 검색 (예: 패딩, 청구서)"
+              className="w-56 rounded border px-2 py-0.5 text-xs"
+            />
+            <button
+              type="submit"
+              className="rounded bg-blue-600 px-2 py-0.5 text-xs font-bold text-white hover:bg-blue-700"
+            >
+              검색
+            </button>
+            {term && (
+              <button
+                type="button"
+                onClick={() => {
+                  setQ("");
+                  setTerm("");
+                }}
+                className="rounded border px-2 py-0.5 text-xs text-slate-500 hover:bg-slate-50"
+              >
+                날짜로 보기
+              </button>
+            )}
+          </form>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg bg-slate-800 px-3 py-1 text-[12px] font-bold text-white hover:bg-slate-700"
+          >
+            닫기
+          </button>
+        </div>
+
+        <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-black/5 px-4 py-1.5">
+          <span className="mr-1 text-[11px] text-slate-500">
+            {term
+              ? `「${term}」 검색 ${rows.length}건${rows.length >= 300 ? "(최근 300건까지)" : ""}`
+              : `${rows.length}건`}{" "}
+            · 처리 안 됨{" "}
+            <b className={waiting > 0 ? "text-rose-600" : "text-emerald-600"}>
+              {waiting}
+            </b>
+          </span>
+          <Chip
+            active={filter === "전체"}
+            onClick={() => setFilter("전체")}
+            label={`전체 ${rows.length}`}
+          />
+          {INQUIRY_BADGES.filter((b) => counts.get(b)).map((b) => (
+            <Chip
+              key={b}
+              active={filter === b}
+              onClick={() => setFilter(b)}
+              label={`${b} ${counts.get(b)}`}
+              cls={BADGE_STYLE[b]}
+            />
+          ))}
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
+          {loading && rows.length === 0 ? (
+            <p className="p-6 text-center text-xs text-slate-400">
+              불러오는 중…
+            </p>
+          ) : shown.length === 0 ? (
+            <p className="p-6 text-center text-xs text-slate-400">
+              {term ? "찾는 문의가 없습니다." : "이날 들어온 문의가 없습니다."}
+            </p>
+          ) : (
+            [...groups.entries()].map(([d, list]) => (
+              <div key={d} className="mb-2">
+                {term && (
+                  <div className="sticky top-0 z-10 bg-white/95 py-0.5 text-[11px] font-bold text-slate-500">
+                    {dayTitle(d)}
+                  </div>
+                )}
+                <ul className="space-y-1">
+                  {list.map((r) => (
+                    <Row
+                      key={r.id}
+                      r={r}
+                      now={now}
+                      open={openId === r.id}
+                      onToggle={() => setOpenId(openId === r.id ? null : r.id)}
+                    />
+                  ))}
+                </ul>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

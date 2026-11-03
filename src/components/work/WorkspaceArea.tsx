@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchCurrentTerm } from "@/lib/termQuery";
 import type { DayReminder, Department, GoogleChatMirrorMessage, Task, TaskModeColor, TaskStatus, TeamMember, WorkTag } from "@/lib/types";
 import WorkCalendar from "./WorkCalendar";
-import { RememberStrip, TodayInquiriesPanel, TodayInquiriesProvider } from "./TodayInquiries";
+import { PastInquiriesButton, RememberStrip, TodayInquiriesPanel, TodayInquiriesProvider } from "./TodayInquiries";
 import StudentDayBoard from "./StudentDayBoard";
 import NotesPipButton from "./NotesPipButton";
 import TaskBoard from "./TaskBoard";
@@ -824,7 +824,16 @@ export default function WorkspaceArea({
         <div className="min-h-0 flex-1 overflow-hidden">
           {mobileTab === "inbox" && inbox}
           {mobileTab === "today" && todayStudents}
-          {mobileTab === "talk" && <TodayInquiriesPanel />}
+          {mobileTab === "talk" && (
+            <div className="flex h-full flex-col">
+              <div className="flex shrink-0 justify-end border-b border-black/5 px-2 py-1">
+                <PastInquiriesButton />
+              </div>
+              <div className="min-h-0 flex-1">
+                <TodayInquiriesPanel />
+              </div>
+            </div>
+          )}
         </div>
         <RememberStrip />
         {modals}
@@ -867,7 +876,7 @@ export default function WorkspaceArea({
 
         {/* 가운데 — **오늘의 문의사항**. 행정실이 하루 동안 실제로 처리하는 일은 토들·전화로 오는
             학부모 연락이라 가장 넓은 자리를 줍니다. 일정은 등록·계획하는 일이라 「상세 일정」 팝업으로 옮겼습니다. */}
-        <Zone icon="📨" title="오늘의 문의사항" className="flex-1">
+        <Zone icon="📨" title="오늘의 문의사항" className="flex-1" right={<PastInquiriesButton />}>
           <TodayInquiriesPanel />
         </Zone>
 

@@ -174,7 +174,9 @@ async function runOnceInner() {
 
   if (!reply?.ok) {
     const err = String(reply?.error ?? "");
-    if (err === "LOGIN_REQUIRED") {
+    // 낡은 inject(탭을 새로고침하기 전)는 「JWT EXPIRED」를 GRAPHQL 오류로 올립니다. 그것도 로그인 문제로 봐야
+    // 새로고침이 일어나고, 새로고침해야 새 inject 가 들어옵니다.
+    if (err === "LOGIN_REQUIRED" || /jwt|expired|un-?authenticat|unauthori[sz]ed/i.test(err)) {
       // 실제로 로그인이 풀린 경우도 있지만, 크롬이 밤새 탭을 잠재웠다 깨울 때 로그인 정보를
       // 잠깐 못 읽어 생기는 '가짜 로그인 필요'도 많습니다(요청: "로그인이 되어있는데 로그인
       // 필요라고"). 그래서 8분에 한 번, 토들 탭을 새로고침하고 한 번 더 시도해 스스로 낫게

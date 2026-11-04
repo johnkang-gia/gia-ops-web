@@ -26,7 +26,7 @@
 // '안 읽음' 표시가 사라지지 않습니다. 선생님들 업무를 건드리지 않는다는 뜻입니다.
 
 (() => {
-  const VERSION = "2.6.1";
+  const VERSION = "2.6.2";
 
   // 같은 버전이 이미 돌고 있으면 그대로 둡니다.
   //
@@ -136,31 +136,40 @@
     return info.email || [info.first_name, info.last_name].filter(Boolean).join(" ") || null;
   }
 
+  // 로그인 열쇠가 낡았다는 답. 토들은 이것을 401 로도, 200 안의 오류 글(「JWT EXPIRED」)로도 줍니다.
+  // 예전에는 401 만 로그인 문제로 봐서, 200 으로 온 「JWT EXPIRED」는 그냥 오류로 남고 탭 새로고침
+  // (= 토들이 열쇠를 새로 받는 길)이 한 번도 안 일어났습니다. 수집이 몇 시간씩 멈춘 원인이었습니다.
+  const AUTH_ERROR = /jwt|expired|un-?authenticat|unauthori[sz]ed|not\s*logged/i;
+
+  async function gqlOnce(body, jwt) {
+    const headers = jwt ? { ...HEADERS, authorization: "Bearer " + jwt } : HEADERS;
+    const res = await fetch(ENDPOINT, { method: "POST", headers, credentials: "include", body });
+    let json = null;
+    try {
+      json = await res.json();
+    } catch {
+      json = null;
+    }
+    const one = Array.isArray(json) ? json[0] : json;
+    const errText = one && one.errors && one.errors.length ? one.errors.map((e) => e.message).join(" | ") : "";
+    const auth = res.status === 401 || res.status === 403 || (errText && AUTH_ERROR.test(errText));
+    return { one, errText, auth };
+  }
+
   async function gql(operationName, query, variables) {
     const body = JSON.stringify([{ operationName, variables, extensions: {}, query }]);
-    let res = await fetch(ENDPOINT, { method: "POST", headers: HEADERS, credentials: "include", body });
-    // 쿠키만으로 «Un-authenticated region»(401)이 나는 계정·브라우저가 있습니다. 그때는 토들 화면이
-    // 쓰는 로그인 열쇠(userInfo.jwt)를 붙여 한 번 더 묻습니다. 열쇠는 이 탭 안에서만 쓰고 어디에도 보내지 않습니다.
-    if (res.status === 401 || res.status === 403) {
+    let r = await gqlOnce(body, null);
+    // 쿠키 열쇠가 낡았으면 토들 화면이 들고 있는 열쇠(userInfo.jwt)로 한 번 더 묻습니다. 토들 화면은
+    // 열려 있는 동안 이 열쇠를 새로 받아 두기도 합니다. 열쇠는 이 탭 안에서만 쓰고 어디에도 보내지 않습니다.
+    if (r.auth) {
       const jwt = getUserInfo()?.jwt;
-      if (jwt) {
-        res = await fetch(ENDPOINT, {
-          method: "POST",
-          headers: { ...HEADERS, authorization: "Bearer " + jwt },
-          credentials: "include",
-          body,
-        });
-      }
+      if (jwt) r = await gqlOnce(body, jwt);
     }
-    // 401이면 로그인이 풀린 것입니다. 조용히 빈 값을 돌려주면 "새 메시지 없음"이라는
-    // 거짓 안심을 주게 되므로, 분명히 알립니다.
-    if (res.status === 401 || res.status === 403) throw new Error("LOGIN_REQUIRED");
-    const json = await res.json();
-    const one = Array.isArray(json) ? json[0] : json;
-    if (one && one.errors && one.errors.length) {
-      throw new Error("GRAPHQL: " + one.errors.map((e) => e.message).join(" | ").slice(0, 200));
-    }
-    return one;
+    // 그래도 안 되면 로그인 문제로 올립니다. 그러면 확장이 토들 탭을 새로고침하고(토들이 새 열쇠를 받음)
+    // 다시 묻습니다. 조용히 빈 값을 돌려주면 «새 메시지 없음»이라는 거짓 안심이 됩니다.
+    if (r.auth) throw new Error("LOGIN_REQUIRED");
+    if (r.errText) throw new Error("GRAPHQL: " + r.errText.slice(0, 200));
+    return r.one;
   }
 
   /**

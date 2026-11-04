@@ -71,7 +71,8 @@ export type Term = {
   year: string;
   start_date: string | null;
   end_date: string | null;
-  status: "진행중" | "종료";
+  /** 예정 = 정규학기와 겹쳐 도는 캠프처럼 «지금 학기»는 아니지만 청구는 하는 학기. */
+  status: "진행중" | "종료" | "예정";
   good: string | null;
   lack: string | null;
   suggest: string | null;

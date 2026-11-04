@@ -61,13 +61,16 @@ export default function FeeTermPicker({
         {terms.map((t) => (
           <option key={t.id} value={t.id}>
             {t.year} {t.term_type}
-            {t.status === "진행중" ? " (지금)" : ""}
+            {t.status === "진행중" ? " (지금)" : t.status === "예정" ? " (캠프·예정)" : ""}
           </option>
         ))}
       </select>
       {/* 지난 학기를 보고 있으면 눈에 띄어야 합니다. 모르고 지난 학기에 항목을 등록하면
           이번 학기 표에는 나타나지 않고, 왜 없는지 찾기 어렵습니다. */}
-      {picked && picked.status !== "진행중" && (
+      {picked && picked.status === "예정" && (
+        <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-bold text-sky-800">캠프 학기를 보는 중</span>
+      )}
+      {picked && picked.status === "종료" && (
         <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">지난 학기를 보는 중</span>
       )}
     </span>

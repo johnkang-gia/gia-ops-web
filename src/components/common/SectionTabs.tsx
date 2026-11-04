@@ -447,6 +447,7 @@ const FINANCE_TABS: TabDef[] = [
       "/finance/send",
       "/finance/alltalk-sync",
       "/finance/import",
+      "/finance/camp",
     ],
     children: [
       // 학생 한 명의 일은 전부 여기 - 학생을 누르면 회계 창 하나에서 발행·수납·영수증·올톡 보내기.
@@ -454,6 +455,8 @@ const FINANCE_TABS: TabDef[] = [
       // 반 전체를 한 번에 체크해서 발행하는 표. 이름은 DB 의 `invoices.stream` 값과 같은 말입니다.
       { label: "학비 일괄 발행", href: "/finance/tuition", match: ["/finance/tuition"] },
       { label: "학비외 일괄 발행", href: "/finance/invoices", match: ["/finance/invoices"] },
+      // 캠프는 정규학기와 따로 돕니다. 구글폼 신청 한 줄 = 청구서 한 장(수강료 한 줄).
+      { label: "캠프 청구", href: "/finance/camp", match: ["/finance/camp"] },
       // 발행 다음 단계. 발행한 청구서를 골라 청구 번호 확인 → 올톡 등록 파일.
       { label: "올톡 보내기", href: "/finance/send", match: ["/finance/send"] },
       // 올톡 청구서관리목록을 올려 결과를 맞춤 - 결제된 건 수납, 보낸 건 보냄 표시를 한 화면에서.

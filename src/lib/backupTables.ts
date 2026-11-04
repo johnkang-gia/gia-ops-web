@@ -72,6 +72,8 @@ export const BACKUP_GROUPS: { group: string; tables: string[] }[] = [
       // 올톡 대조. 잃으면 「이 올톡 이름은 이 학생」·「이 건은 앱에 안 넣음」 판단을 매달 다시 해야 합니다.
       "alltalk_sync_files",
       "alltalk_sync_marks",
+      // 캠프 신청. 잃으면 누가 몇 주·셔틀 무엇으로 신청했는지(청구 금액의 근거)가 사라집니다.
+      "camp_applications",
       "invoice_lines",
       "payments",
       "cash_receipts",
@@ -189,7 +191,7 @@ export const BACKUP_GROUPS: { group: string; tables: string[] }[] = [
     // 교실 태블릿 열두 대와 안내보드·도착체크 링크를 다시 등록하고 각 기기에 새 주소를
     // 다시 붙이는 일은 하루가 걸립니다. 다시 만들 수 있는 것과 다시 만들기 쉬운 것은
     // 다릅니다.
-    tables: ["classroom_links", "shuttle_arrival_links", "shuttle_board_links", "roster_sync_links", "form_import_templates"],
+    tables: ["classroom_links", "shuttle_arrival_links", "shuttle_board_links", "roster_sync_links", "camp_intake_links", "form_import_templates"],
   },
   {
     group: "회계 이력",

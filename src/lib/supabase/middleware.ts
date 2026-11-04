@@ -126,6 +126,9 @@ export async function updateSession(request: NextRequest) {
     // 인증은 이 라우트가 토큰으로 직접 확인합니다. `/manage`(사람이 로그인해서 쓰는 쪽)는
     // 여기 걸리지 않도록 **정확히 이 주소만** 엽니다.
     path === "/api/school/roster-sync" ||
+    // 캠프 신청 구글폼(결과 시트의 앱스크립트)이 새 응답을 보내는 곳. 명부 창구와 같은 이유로 엽니다.
+    // 인증은 라우트가 camp_intake_links 의 토큰으로 직접 확인합니다.
+    path === "/api/camp-intake" ||
     // 구글챗 Pub/Sub 푸시(새 메시지 초인종). 구글 서버가 부르므로 세션 쿠키가 없습니다.
     // 막혀 있으면 벨이 울려도 우리에게 닿지 않아 «실시간»이 조용히 폴링 주기로 되돌아갑니다.
     // 인증은 라우트가 GOOGLE_CHAT_PUSH_SECRET 으로 직접 확인합니다.

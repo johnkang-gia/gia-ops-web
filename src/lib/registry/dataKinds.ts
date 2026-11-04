@@ -202,6 +202,9 @@ export const DATA_KINDS: DataKindDef[] = [
       // 예치금 공유 묶음(형제 등). 돈은 payments 에만 있고 여기는 «누가 한 통을 쓰나»만 적습니다.
       "deposit_shares",
       "deposit_share_members",
+      // 캠프 신청(구글폼)과 그 연결 토큰. 확정하면 캠프 학기의 청구서 한 장이 됩니다(/finance/camp).
+      "camp_applications",
+      "camp_intake_links",
     ],
     // 한 학생·한 학기에 청구서가 여러 장인 것은 정상입니다(학비·학비외·분류별·재청구). 데이터베이스가
     // 막는 것은 「같은 학생·학기·청구월·항목 범위의 학비 청구서가 발행 상태로 두 장」뿐이라

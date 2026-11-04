@@ -35,6 +35,11 @@ export type NewStudentInput = {
   extra?: Record<string, unknown>;
   /** 사람이 «이름은 같지만 다른 학생»으로 확인했습니다. */
   homonymOk?: boolean;
+  /**
+   * 「캠프」 = 캠프에만 오는 외부 학생. 청구서를 붙일 번호는 있어야 하지만 출결·셔틀·반배정 명단(재학 active)에는
+   * 섞이면 안 됩니다. 비우면 재학입니다.
+   */
+  status?: "active" | "캠프";
 };
 
 export type SameNameHit = Pick<Student, "id" | "name" | "grade" | "class_name" | "birth_date" | "status"> & {
@@ -113,7 +118,7 @@ export async function addStudents(
         mother_phone: r.mother_phone || null,
         father_phone: r.father_phone || null,
         parent_phone: r.parent_phone || null,
-        status: "active",
+        status: r.status ?? "active",
         // 값으로 못박습니다. 필터가 아니라 값이어야 데모 학생과 절대 안 섞입니다.
         is_demo: false,
         // 칸이 아직 없는 데이터베이스(코드가 몇 분 먼저 배포되는 사이)에서도 평범한 추가는 되도록, 확인한 줄에만 답니다.

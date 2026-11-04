@@ -30,7 +30,7 @@ type FormState = {
   year: string;
   start_date: string;
   end_date: string;
-  status: "진행중" | "종료";
+  status: "진행중" | "종료" | "예정";
   good: string;
   lack: string;
   suggest: string;
@@ -477,11 +477,13 @@ export default function TermsClient({
               상태
               <select
                 value={form.status}
-                onChange={(e) => setForm({ ...form, status: e.target.value as "진행중" | "종료" })}
+                onChange={(e) => setForm({ ...form, status: e.target.value as "진행중" | "종료" | "예정" })}
                 className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
               >
                 <option value="진행중">진행중</option>
                 <option value="종료">종료</option>
+                {/* 정규학기와 겹쳐 도는 캠프. 「지금 학기」는 바꾸지 않고 재무에서 청구만 합니다. */}
+                <option value="예정">예정(캠프)</option>
               </select>
             </label>
           </div>

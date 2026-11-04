@@ -183,6 +183,13 @@ jobs:
             fi
           done
           [ "$late" -eq 0 ] && echo "늦게 끼어든 파일 없음"
+          # 같은 번호를 쓴 파일이 둘이면 적용기가 멈춥니다. 무엇이 겹쳤는지 첫 화면에 남깁니다.
+          dups=$(ls supabase/migrations/*.sql | xargs -n1 basename | cut -d_ -f1 | sort | uniq -d)
+          if [ -n "$dups" ]; then
+            echo "## 같은 번호의 마이그레이션" >> "$GITHUB_STEP_SUMMARY"
+            for v in $dups; do ls supabase/migrations/${v}_*.sql | xargs -n1 basename | sed 's/^/  · /' >> "$GITHUB_STEP_SUMMARY"; done
+            echo "::error::같은 번호의 마이그레이션이 있습니다: $dups — 하나의 이름(시각)을 바꾸세요."
+          fi
           true
 
       # 실패하면 오류 문구를 실행 결과 요약(Summary)에 그대로 남깁니다. 로그를 펼쳐 찾지 않아도

@@ -10,6 +10,21 @@
 import { execSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 const dir = "supabase/migrations";
+
+// 같은 시각(버전)을 쓴 파일이 둘이면 적용기는 하나만 기록하고 나머지 때문에 전체를 멈춥니다.
+// 실제로 도서관 파일 하나가 운영앱 파일과 같은 번호(20261212000000)를 써서 5일 동안 모든 적용이 멈췄습니다.
+{
+  const seen = new Map();
+  for (const f of readdirSync(dir).filter((x) => x.endsWith(".sql"))) {
+    const v = f.split("_")[0];
+    seen.set(v, [...(seen.get(v) ?? []), f]);
+  }
+  const dup = [...seen.values()].filter((l) => l.length > 1);
+  if (dup.length) {
+    console.error(`✗ 같은 번호의 마이그레이션이 있습니다. 하나의 시각을 바꾸세요.\n\n  ${dup.map((l) => l.join("  ·  ")).join("\n  ")}`);
+    process.exit(1);
+  }
+}
 let remote;
 try {
   remote = execSync(`git ls-tree --name-only origin/main ${dir}/`, { stdio: ["ignore", "pipe", "ignore"] })

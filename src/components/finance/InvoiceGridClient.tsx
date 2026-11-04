@@ -387,7 +387,7 @@ export default function InvoiceGridClient({
    * **학비도 이 화면에서 함께 발행.** 학생마다 학비 일괄과 학비외 일괄을 오가지 않게 합니다.
    * 학비 일괄 화면과 같은 값을 기억합니다(`issuePartner`).
    */
-  const [partnerMode, setPartnerModeState] = useState<PartnerMode>("merge");
+  const [partnerMode, setPartnerModeState] = useState<PartnerMode>("off");
   useEffect(() => setPartnerModeState(loadPartnerMode()), []);
   const setPartnerMode = (m: PartnerMode) => {
     setPartnerModeState(m);

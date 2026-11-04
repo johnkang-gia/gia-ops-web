@@ -5,6 +5,15 @@ import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
 import { won } from "@/lib/feeItems";
 import { shiftMonth, type MonthKey } from "@/lib/financePeriod";
+import BodyLayer from "@/components/common/BodyLayer";
+
+/**
+ * 자주 받는 추가 항목. 누르면 제목·금액이 채워지고, 금액은 고칠 수 있습니다.
+ *
+ * 발전기금은 입학·학년 초에 한 번 받는 돈(보통 500만 원)인데 요금표 항목이 아니라서, 매번 제목과 금액을 손으로
+ * 적었습니다. 항목으로 만들면 받지 않는 학생에게도 붙는 요금표가 되므로 이 창의 바로 넣기로 둡니다.
+ */
+const PRESETS: { title: string; amount: number }[] = [{ title: "발전기금", amount: 5_000_000 }];
 
 /**
  * **「+ 추가」 — 이 아이에게만 받는 돈 한 줄.**
@@ -126,17 +135,39 @@ export default function ExtraChargeModal({
   const btn = "rounded-lg px-3 py-1.5 text-[12px] font-bold";
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
+    <BodyLayer>
+    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
       <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="mb-1 flex items-center justify-between">
           <h3 className="text-[15px] font-black text-slate-800">+ {student.name} · 추가 항목</h3>
           <button onClick={onClose} className="text-[12px] text-slate-400 hover:text-slate-700">닫기 ✕</button>
         </div>
         <p className="mb-3 text-[11px] leading-snug text-slate-500">
-          이 아이에게만 받는 돈입니다(셔틀비·오케스트라 추가금 등). 요금표에 항목을 만들지 않고, <b>다음에 발행하는 학비 청구서</b>에
+          이 아이에게만 받는 돈입니다(발전기금·셔틀비·오케스트라 추가금 등). 요금표에 항목을 만들지 않고, <b>다음에 발행하는 학비 청구서</b>에
           제목 그대로 한 줄로 붙습니다. 학비 표 비고에 「+ 제목 금액 · 언제」로 보입니다.
         </p>
         <div className="flex flex-col gap-2 text-[12px]">
+          <div className="flex flex-wrap items-center gap-1">
+            <span className="w-16 shrink-0 text-slate-500">바로 넣기</span>
+            {PRESETS.map((p) => (
+              <button
+                key={p.title}
+                type="button"
+                onClick={() => {
+                  setTitle(p.title);
+                  setAmount(String(p.amount));
+                  setRepeat("once");
+                }}
+                className={
+                  "rounded-full px-2.5 py-0.5 text-[11px] font-bold " +
+                  (title === p.title ? "bg-orange-600 text-white" : "bg-orange-50 text-orange-800 ring-1 ring-orange-200 hover:bg-orange-100")
+                }
+                title={`제목 「${p.title}」 · ${won(p.amount)} (금액은 고칠 수 있습니다)`}
+              >
+                {p.title} {won(p.amount)}
+              </button>
+            ))}
+          </div>
           <label className="flex items-center gap-2">
             <span className="w-16 shrink-0 text-slate-500">제목</span>
             <input value={title} onChange={(e) => setTitle(e.target.value.slice(0, 40))} placeholder="예: 셔틀비 · 오케스트라 추가금" className={field} autoFocus />
@@ -214,5 +245,6 @@ export default function ExtraChargeModal({
         </div>
       </div>
     </div>
+    </BodyLayer>
   );
 }

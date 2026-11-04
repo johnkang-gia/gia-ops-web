@@ -82,6 +82,11 @@ export async function POST(req: Request) {
    * 한 장으로 묶습니다. 담긴 학비외 줄은 `item_id` 로 남아 「그 항목이 이미 나갔는가」 판정이
    * 그대로 됩니다. 장의 갈래(`stream`)는 학비입니다 - 월별 집계에서 학비로 셉니다.
    */
+  /**
+   * **추가 항목만 담는 장**(발전기금처럼 학비가 이미 나간 달에 따로 받는 돈). planIds 를 비우면 «학비 전부»로
+   * 읽히므로 따로 알려야 합니다 - 예전에는 길이 없어서 학비가 다 나간 학생의 추가 항목은 아무 장에도 안 붙었습니다.
+   */
+  const extraOnly = body?.extraOnly === true;
   const itemIds = Array.isArray(body?.itemIds) ? (body.itemIds as unknown[]).filter((v): v is string => typeof v === "string") : [];
   const alreadyPaid = body?.alreadyPaid as { paidAt?: string; amount?: number; method?: string; memo?: string } | undefined;
   const paidAt = typeof alreadyPaid?.paidAt === "string" && /^\d{4}-\d{2}-\d{2}$/.test(alreadyPaid.paidAt) ? alreadyPaid.paidAt : null;
@@ -126,6 +131,7 @@ export async function POST(req: Request) {
     override_note: string | null;
   }[] | null) ?? [])
     .filter(sameTerm)
+    .filter(() => !extraOnly)
     .filter((e) => !planIds || planIds.length === 0 || planIds.includes(e.plan_id));
   // 이 학생에게 붙은 할인 줄. **끈 할인도 그대로 씁니다** - 이미 붙어 있던 건을 빼면
   // 학부모가 들은 금액과 청구서가 달라집니다. 새로 붙이는 것만 화면에서 막습니다.
@@ -204,7 +210,7 @@ export async function POST(req: Request) {
   // 가리키면 나중에 요금표에서 항목 이름이 바뀌거나 항목을 껐을 때, 지난 청구서가 무슨
   // 청구서였는지 설명할 수 없게 됩니다.
   // 항목 줄 없이 추가 항목만 담는 장은 범위를 「추가 항목」으로 적습니다 - 비워 두면 «학비 전부»로 읽힙니다.
-  const planScope = planIds && planIds.length > 0 ? (lines.length > 0 ? lines.map((l) => l.label.split(" · ")[0]).join(" · ") : "추가 항목") : lines.length === 0 ? "추가 항목" : null;
+  let planScope = planIds && planIds.length > 0 ? (lines.length > 0 ? lines.map((l) => l.label.split(" · ")[0]).join(" · ") : "추가 항목") : lines.length === 0 ? "추가 항목" : null;
 
   // ── 같은 장에 담을 학비외 ───────────────────────────────────────────────
   type ExtraLine = { name: string; item_id: string; qty: number; unit_price: number; amount: number };
@@ -312,6 +318,11 @@ export async function POST(req: Request) {
       .filter((c) => !c.term_id || !termId || c.term_id === termId)
       .filter((c) => !c.target_month || c.target_month <= monthKey)
       .filter((c) => !planIds || planIds.length === 0 || !c.plan_id || planIds.includes(c.plan_id));
+  }
+  // 추가 항목만 담는 장은 범위에 **무엇인지** 적습니다(「추가 항목: 발전기금」). 「추가 항목」 한 글자로만 두면 같은 달에
+  // 두 번째 추가 장(발전기금 뒤의 셔틀비)이 같은 범위로 읽혀 「이 달에 이미 있습니다」로 막힙니다.
+  if (lines.length === 0 && extraCharges.length > 0) {
+    planScope = `추가 항목: ${extraCharges.map((c) => c.name).join(" · ")}`.slice(0, 120);
   }
   const extraChargeTotal = extraCharges.reduce((n, c) => n + Math.round(Number(c.amount)), 0);
   const total = tuitionOnlyTotal + extraChargeTotal;

@@ -1075,7 +1075,7 @@ export default function TuitionGridClient({
    * **학비외도 이 화면에서 함께 발행.** 학생마다 학비 일괄과 학비외 일괄을 오가지 않게 합니다.
    * 고른 것은 기억합니다(학비외 일괄 화면과 같은 값) - 매번 다시 고르면 빠뜨립니다.
    */
-  const [partnerMode, setPartnerModeState] = useState<PartnerMode>("merge");
+  const [partnerMode, setPartnerModeState] = useState<PartnerMode>("off");
   useEffect(() => setPartnerModeState(loadPartnerMode()), []);
   const setPartnerMode = (m: PartnerMode) => {
     setPartnerModeState(m);
@@ -1120,8 +1120,12 @@ export default function TuitionGridClient({
     // 학비외도 함께 낼지. 고른 그대로 이 발행 전체에 씁니다(`issuePartner`).
     const partner = partnerMode;
     const pick = only ? new Set(only) : checked;
+    /** 이 달 장에 붙을 「+ 추가 항목」(발전기금·셔틀비·차액) - 서버와 같은 조건(보는 달까지 온 것). */
+    const dueChargesOf = (sid: string) => chargesOf(sid).filter((c) => !c.target_month || c.target_month <= month);
     const targets = rows.filter(
-      (s) => pick.has(s.id) && (scoped ? planIds.some((pid) => lineFor(s.id, usedPlans.find((p) => p.id === pid)!)) : monthTotalOf(s.id) > 0),
+      (s) =>
+        pick.has(s.id) &&
+        (scoped ? planIds.some((pid) => lineFor(s.id, usedPlans.find((p) => p.id === pid)!)) : monthTotalOf(s.id) > 0 || dueChargesOf(s.id).length > 0),
     );
     if (targets.length === 0) {
       notify("발행할 학생을 골라주세요(납부 옵션을 고르지 않은 학생은 제외됩니다).", "error");
@@ -1196,7 +1200,15 @@ export default function TuitionGridClient({
         // 고른 항목이 없으면(「학비 전체」) **아직 안 보낸 항목만** 담습니다. 한 장도 안 나간
         // 학생은 남은 목록이 빈 배열이므로 예전처럼 전부(null) 담깁니다.
         const rest = scoped ? planIds : restOf(s.id);
-        const tuitionDone = !scoped && billed.get(s.id) && !billed.get(s.id)!.all && rest.length === 0;
+        // 이 달 학비가 이미 다 나갔는가(전부 담은 장이 있거나, 항목별로 다 나감).
+        const b0 = billed.get(s.id);
+        const tuitionDone = !scoped && !!b0 && (b0.all || rest.length === 0);
+        /**
+         * 학비가 다 나간 뒤에 적은 「+ 추가 항목」(발전기금 등)은 **추가 항목만 담은 장**으로 냅니다.
+         * 예전에는 이 경우 「이미 모든 항목이 청구서에 담겼습니다」로 끝나거나(항목별로 다 나감) 학비 전부를 다시 내려다
+         * 중복으로 막혀서(전부 담은 장), 추가 항목이 어느 장에도 안 붙었습니다.
+         */
+        const extraOnly = tuitionDone && dueChargesOf(s.id).length > 0;
 
         // ── 학비외도 함께 ───────────────────────────────────────────────
         // 아직 안 나간 학비외 항목을 금전 창과 같은 판정으로 읽습니다. 못 읽으면 학비만 내고
@@ -1208,7 +1220,7 @@ export default function TuitionGridClient({
           else extras = u.extra;
         }
         // 학비가 다 나갔어도 학비외가 남았으면 학비외만 따로 냅니다.
-        if (tuitionDone) {
+        if (tuitionDone && !extraOnly) {
           if (extras.length > 0) {
             const r = await issueExtraInvoice(s.id, termId || null, dueDate, extras, bm);
             if (r.ok) madeExtra++;
@@ -1225,10 +1237,11 @@ export default function TuitionGridClient({
             studentId: s.id,
             dueDate,
             termId: termId || null,
-            planIds: scoped ? planIds : rest.length > 0 ? rest : null,
+            planIds: extraOnly ? null : scoped ? planIds : rest.length > 0 ? rest : null,
+            ...(extraOnly ? { extraOnly: true } : {}),
             billingMonth: bm,
             // 지난 학비 미납을 이 장에 얹습니다. 서버는 항목을 골라 낼 때는 얹지 않습니다.
-            ...(!scoped && carryOn(s.id) && tuitionCarryTotal(priorOf.get(s.id) ?? []) > 0 ? { carryForward: true } : {}),
+            ...(!scoped && !extraOnly && carryOn(s.id) && tuitionCarryTotal(priorOf.get(s.id) ?? []) > 0 ? { carryForward: true } : {}),
             ...(merge ? { itemIds: extras } : {}),
           }),
         });
@@ -2166,7 +2179,7 @@ export default function TuitionGridClient({
                           </span>
                         )}
                       </span>
-                    ) : total > 0 ? (
+                    ) : total > 0 || chargesOf(s.id).some((c) => !c.target_month || c.target_month <= month) ? (
                       <span className="flex flex-nowrap items-center gap-1">
                         <span className="shrink-0 text-[11px] font-semibold text-amber-600">미청구</span>
                         {/* 이미 받은 건. 청구서를 받은 날짜로 만들고 입금까지 함께 넣습니다 -

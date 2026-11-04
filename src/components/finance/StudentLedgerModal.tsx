@@ -28,6 +28,7 @@ import type { InvoiceLine } from "@/lib/types";
 import { BILL_STATUS, statusFromSettle } from "@/lib/billStatus";
 import { issuedShort } from "@/lib/invoiceIssued";
 import { useIssueMonthConfirm } from "@/components/finance/IssueMonthConfirm";
+import BodyLayer from "@/components/common/BodyLayer";
 
 /**
  * **학생 금전 창** — 학생 한 명의 돈을 한 창에서 봅니다. 그리고 그 창에서 다 합니다.
@@ -214,7 +215,31 @@ export default function StudentLedgerModal({
    */
   const pickable = (c: LedgerCharge) => c.amount > 0 && (!c.billed || (c.kind === "학비외" && !!c.billed.invoiceId));
   const pickedCharges = (ledger?.charges ?? []).filter((c) => pickable(c) && picked.has(`${c.kind}:${c.id}`));
-  const targetCharges = pickedCharges.length > 0 ? pickedCharges : unbilled;
+  /**
+   * 청구서에 담을 항목. 고른 것이 없으면 **아직 안 담긴 학비만**입니다.
+   *
+   * 예전에는 미청구 전부(학비외 포함)였습니다. 지난달 학비를 미리 골라 주는 기능이 학비외는 일부러 안 고르는데,
+   * 고른 것이 하나도 없는 순간(학비가 이미 나간 달 등)에는 체크하지 않은 교재·교복이 청구서에 그대로 들어갔습니다.
+   * 학비외는 체크한 것만 나갑니다.
+   */
+  const targetCharges = pickedCharges.length > 0 ? pickedCharges : unbilled.filter((c) => c.kind === "학비");
+  /** 수납(이미 받음) 창은 예전처럼 미청구 전부에서 고릅니다 - 거기서는 사람이 항목마다 체크합니다. */
+  const alreadyCharges = pickedCharges.length > 0 ? pickedCharges : unbilled;
+  /**
+   * 이 달 학비 장에 붙을 「+ 추가 항목」(발전기금·셔틀비·차액). 서버(`invoices/tuition`)와 같은 조건으로 거릅니다 -
+   * 학기가 같고, 보는 달까지 온 것이고, 고른 학비 항목에 붙었거나 어느 항목에도 안 붙은 것.
+   * 예전 미리보기·합계는 이 줄을 몰라서 청구서에 안 들어가는 것처럼 보였고, 학비를 안 고르면 실제로 안 나갔습니다.
+   */
+  const pickedTuitionIds = targetCharges.filter((c) => c.kind === "학비").map((c) => c.id);
+  const dueExtras = (data?.extraCharges ?? []).filter(
+    (c) =>
+      (!c.term_id || !termId || c.term_id === termId) &&
+      (!c.target_month || !month || c.target_month <= month) &&
+      (pickedTuitionIds.length === 0 || !c.plan_id || pickedTuitionIds.includes(c.plan_id)),
+  );
+  const dueExtraTotal = dueExtras.reduce((n, c) => n + Math.round(Number(c.amount)), 0);
+  const issueTotal = targetCharges.reduce((n, c) => n + c.amount, 0) + dueExtraTotal;
+  const hasSomethingToIssue = targetCharges.length > 0 || dueExtras.length > 0;
 
   /**
    * **지난달 것을 미리 고릅니다.** 10월에 월납 학비·방과후 3일반·매쓰팀·오케스트라를 냈으면 11월에도 그 넷을
@@ -270,13 +295,16 @@ export default function StudentLedgerModal({
    */
   async function issue(combine: boolean) {
     if (!ledger) return;
-    if (targetCharges.length === 0) return notify("보낼 항목이 없습니다. 옵션을 고르거나 항목을 넣어주세요.", "error");
-    const bm = await askMonth(month, `${ledger.student.name} · ${targetCharges.length}개 항목`);
+    if (!hasSomethingToIssue) return notify("보낼 항목이 없습니다. 옵션을 고르거나 항목을 넣어주세요.", "error");
+    const bm = await askMonth(month, `${ledger.student.name} · ${targetCharges.length + dueExtras.length}개 항목`);
     if (!bm) return;
     const tuition = targetCharges.filter((c) => c.kind === "학비").map((c) => c.id);
     let extra = targetCharges.filter((c) => c.kind === "학비외").map((c) => c.id);
+    // 학비 항목 없이 「+ 추가 항목」만 있는 장(발전기금만 받는 달 등). 학비 창구에 «추가 항목만»이라고 알립니다 -
+    // planIds 를 비워 보내면 창구는 «학비 전부»로 읽습니다.
+    const extraOnly = tuition.length === 0 && dueExtras.length > 0;
     // 한 장으로 묶으면 학비 장에 학비외 줄이 항목 번호와 함께 들어가 「이미 나갔는가」 판정은 그대로 됩니다.
-    const merged = combine && tuition.length > 0 && extra.length > 0;
+    const merged = combine && (tuition.length > 0 || extraOnly) && extra.length > 0;
     setBusy(true);
     const failed: string[] = [];
     const made: string[] = [];
@@ -292,8 +320,16 @@ export default function StudentLedgerModal({
       if (typeof r.body.warning === "string" && r.body.warning) notify(`${String(v?.invoice_no ?? fallback)}: ${r.body.warning}`, "error");
     };
     try {
-      if (tuition.length > 0) {
-        const r = await post("/api/finance/invoices/tuition", { studentId, termId, planIds: tuition, skipPrepaid, billingMonth: bm, ...(merged ? { itemIds: extra } : {}) });
+      if (tuition.length > 0 || extraOnly) {
+        const r = await post("/api/finance/invoices/tuition", {
+          studentId,
+          termId,
+          planIds: extraOnly ? null : tuition,
+          ...(extraOnly ? { extraOnly: true } : {}),
+          skipPrepaid,
+          billingMonth: bm,
+          ...(merged ? { itemIds: extra } : {}),
+        });
         if (r.ok) keep(r, "학비");
         else failed.push(`학비${merged ? "+학비외" : ""}(${String(r.body.error ?? "")})`);
         if (merged) extra = [];
@@ -358,13 +394,22 @@ export default function StudentLedgerModal({
         unit_price: c.extra && c.extra.qty > 1 ? Math.round(c.amount / c.extra.qty) : c.amount,
         amount: c.amount,
       }));
+      // 학비 장에는 「+ 추가 항목」이 함께 찍힙니다(서버가 같은 장에 붙입니다).
+      if (stream === "학비") {
+        for (const x of dueExtras) {
+          const amt = Math.round(Number(x.amount));
+          lines.push({ id: `draft-extra-${x.id}`, invoice_id: inv.id, seq: lines.length + 1, name: x.name, qty: 1, unit_price: amt, amount: amt });
+        }
+        inv.total_amount = lines.reduce((n, l) => n + Number(l.amount), 0);
+      }
       return { invoice: inv, lines };
     };
     const t = targetCharges.filter((c) => c.kind === "학비");
     const e = targetCharges.filter((c) => c.kind === "학비외");
-    if (combine && t.length > 0 && e.length > 0) return [mk("학비", t), mk("학비외", e)];
+    const tuitionSheet = t.length > 0 || dueExtras.length > 0;
+    if (combine && tuitionSheet && e.length > 0) return [mk("학비", t), mk("학비외", e)];
     const parts: SheetPart[] = [];
-    if (t.length > 0) parts.push(mk("학비", t));
+    if (tuitionSheet) parts.push(mk("학비", t));
     if (e.length > 0) parts.push(mk("학비외", e));
     return parts;
   }
@@ -378,12 +423,12 @@ export default function StudentLedgerModal({
       const batches =
         r.batches.length > 0
           ? r.batches
-          : [{ paidAt: r.paidAt, itemIds: targetCharges.map((c) => `${c.kind}:${c.id}`), amount: r.amount, labels: targetCharges.map((c) => c.label) }];
+          : [{ paidAt: r.paidAt, itemIds: alreadyCharges.map((c) => `${c.kind}:${c.id}`), amount: r.amount, labels: alreadyCharges.map((c) => c.label) }];
       for (const b of batches) {
         const tuition = b.itemIds.filter((k) => k.startsWith("학비:")).map((k) => k.slice(3));
         const extra = b.itemIds.filter((k) => k.startsWith("학비외:")).map((k) => k.slice(4));
-        const tAmount = targetCharges.filter((c) => c.kind === "학비" && tuition.includes(c.id)).reduce((n, c) => n + c.amount, 0);
-        const eAmount = targetCharges.filter((c) => c.kind === "학비외" && extra.includes(c.id)).reduce((n, c) => n + c.amount, 0);
+        const tAmount = alreadyCharges.filter((c) => c.kind === "학비" && tuition.includes(c.id)).reduce((n, c) => n + c.amount, 0);
+        const eAmount = alreadyCharges.filter((c) => c.kind === "학비외" && extra.includes(c.id)).reduce((n, c) => n + c.amount, 0);
         // 금액을 손으로 고친 경우(항목 합과 다름)는 한 갈래만 있을 때 그 갈래에 그대로 둡니다.
         const single = tuition.length > 0 && extra.length === 0 ? "학비" : extra.length > 0 && tuition.length === 0 ? "학비외" : null;
         if (tuition.length > 0) {
@@ -734,7 +779,7 @@ export default function StudentLedgerModal({
 
   return (
     <div className={embedded ? "contents" : "fixed inset-0 z-[90] flex items-center justify-center bg-black/40 p-3"} onClick={embedded ? undefined : close}>
-      {monthDialog}
+      <BodyLayer on={embedded}>{monthDialog}</BodyLayer>
       <div className={embedded ? "flex min-h-0 flex-1 flex-col overflow-hidden" : "flex max-h-[94vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"} onClick={(e) => e.stopPropagation()}>
         {/* ── 머리 ─────────────────────────────────────────────────────── */}
         <div className="flex flex-wrap items-center gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3">
@@ -1045,11 +1090,11 @@ export default function StudentLedgerModal({
               <div className="mt-2 flex flex-wrap gap-1.5">
                 <button
                   onClick={() => setDraft({ combine: true })}
-                  disabled={busy || targetCharges.length === 0}
+                  disabled={busy || !hasSomethingToIssue}
                   className="rounded-lg bg-slate-900 px-3 py-1.5 text-[12px] font-bold text-white disabled:opacity-40"
-                  title="선택한 항목(미선택 시 미청구 항목 전체)으로 청구서가 어떻게 나갈지 먼저 보고, 그대로 발행합니다"
+                  title="체크한 항목(체크가 없으면 미청구 학비만)과 이 달 「+ 추가 항목」으로 청구서가 어떻게 나갈지 먼저 보고, 그대로 발행합니다. 학비외는 체크한 것만 담깁니다."
                 >
-                  🧾 청구서 보기{targetCharges.length > 0 ? ` (${won(targetCharges.reduce((n, c) => n + c.amount, 0))})` : ""}
+                  🧾 청구서 보기{hasSomethingToIssue ? ` (${won(issueTotal)})` : ""}
                 </button>
                 {/* 💰 수납 — 미수금이 남아 있는 동안은 계속 열립니다. 청구 전 항목을 받았을 때, 청구서의
                     미수금이 들어왔을 때, 미수금만 따로 청구서로 낼 때 모두 이 창 하나에서 합니다. */}
@@ -1216,10 +1261,11 @@ export default function StudentLedgerModal({
       </div>
 
       {/* ── 하위 창 — 전부 이미 있는 것들입니다 ──────────────────────────── */}
+      <BodyLayer on={embedded}>
       {draft && ledger && (() => {
-        const hasBoth = targetCharges.some((c) => c.kind === "학비") && targetCharges.some((c) => c.kind === "학비외");
+        const hasBoth = (targetCharges.some((c) => c.kind === "학비") || dueExtras.length > 0) && targetCharges.some((c) => c.kind === "학비외");
         const parts = draftParts(draft.combine);
-        const total = targetCharges.reduce((n, c) => n + c.amount, 0);
+        const total = issueTotal;
         return (
           <div className="fixed inset-0 z-[95] flex items-center justify-center bg-black/50 p-3" onClick={() => !busy && setDraft(null)}>
             <div className="flex max-h-[94vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
@@ -1272,7 +1318,7 @@ export default function StudentLedgerModal({
           studentName={ledger.student.name}
           studentId={ledger.student.id}
           onChanged={() => void changed()}
-          lines={targetCharges.map((c) => ({ id: `${c.kind}:${c.id}`, label: `[${c.kind}] ${c.label}`, amount: c.amount }))}
+          lines={alreadyCharges.map((c) => ({ id: `${c.kind}:${c.id}`, label: `[${c.kind}] ${c.label}`, amount: c.amount }))}
           busy={busy}
           onClose={() => setAlready(false)}
           onSubmit={(r) => void recordAlready(r)}
@@ -1332,6 +1378,7 @@ export default function StudentLedgerModal({
           }}
         />
       )}
+      </BodyLayer>
     </div>
   );
 }

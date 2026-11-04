@@ -26,18 +26,20 @@ export const PARTNER_LABEL: Record<PartnerMode, string> = {
 };
 
 /**
- * **기본은 「한 장으로」입니다.** 예전 기본값은 「이 갈래만」이었는데, 고르는 칸이 작아서
- * 함께 낼 수 있다는 것을 모르고 학비 화면에서 내고 → 학비외 화면에서 또 내는 일이 반복됐습니다.
- * 학부모 한 분께 같은 달 두 장을 보내는 것보다 한 장이 흔한 경우라서 기본으로 둡니다.
- * 저장 열쇠를 바꾼 것은 예전 기본값(「이 갈래만」)이 저장돼 남아 있으면 새 기본이 안 먹기 때문입니다.
+ * **기본은 「이 갈래만」입니다.**
+ *
+ * 한동안 기본이 「한 장으로」였습니다(함께 낼 수 있다는 것을 몰라 두 화면에서 두 번 내던 일 때문). 그런데 그 기본은
+ * 아직 안 나간 학비외를 **고르지 않아도 전부** 학비 장에 담았고, 체크하지 않은 교재·교복이 청구서에 들어가 있는 일이
+ * 났습니다. 청구서에 무엇이 들어가는지는 사람이 고른 것이어야 하므로, 함께 내기는 사람이 켤 때만 합니다.
+ * 저장 열쇠를 바꾼 것은 예전 기본(「한 장으로」)이 저장돼 남아 있으면 새 기본이 안 먹기 때문입니다.
  */
-const KEY = "gia.finance.partnerMode.v2";
+const KEY = "gia.finance.partnerMode.v3";
 export function loadPartnerMode(): PartnerMode {
   try {
     const v = localStorage.getItem(KEY);
-    return v === "off" || v === "separate" ? v : "merge";
+    return v === "merge" || v === "separate" ? v : "off";
   } catch {
-    return "merge";
+    return "off";
   }
 }
 export function savePartnerMode(m: PartnerMode) {

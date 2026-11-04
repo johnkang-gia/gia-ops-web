@@ -1,3 +1,8 @@
+## v0.767.2 - 2026-11-04
+
+- 캠프 마이그레이션이 `syntax error at or near "returning"`(42601)으로 다시 멈췄습니다. 재수강 여부 칸 이름 `returning` 이 SQL
+  예약어였습니다. 칸 이름을 `is_returning` 으로 바꿨습니다. 마이그레이션 파일은 pglast 로 구문을 먼저 읽어 보고 올립니다.
+
 ## v0.767.1 - 2026-11-04
 
 - 캠프 마이그레이션이 `wr_students_status_check` 위반(23514)으로 멈췄습니다. 명부에는 처음 검사 목록(active·inactive·보류) 밖의

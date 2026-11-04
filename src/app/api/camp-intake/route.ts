@@ -112,7 +112,7 @@ export async function POST(req: Request) {
           shuttle: f.shuttle,
           says_current: f.says_current,
           sibling: f.sibling,
-          returning: f.returning,
+          is_returning: f.returning,
         };
       }),
       { count: "exact" },

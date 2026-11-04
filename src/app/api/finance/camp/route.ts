@@ -37,7 +37,7 @@ const PATCHABLE = new Set([
   "shuttle",
   "says_current",
   "sibling",
-  "returning",
+  "is_returning",
   "discount_override",
   "amount_override",
   "status",
@@ -136,7 +136,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "할인 값이 이상합니다." }, { status: 400 });
     // 청구서가 나간 뒤에는 금액을 바꾸는 칸을 잠급니다. 바꾸려면 청구서를 취소하고 다시 만듭니다 - 신청표와
     // 청구서가 다른 금액을 말하면 어느 쪽이 맞는지 아무도 모릅니다.
-    if (liveInvoice && ["weeks", "shuttle", "says_current", "sibling", "returning", "discount_override", "amount_override", "student_id"].some((k) => k in clean))
+    if (liveInvoice && ["weeks", "shuttle", "says_current", "sibling", "is_returning", "discount_override", "amount_override", "student_id"].some((k) => k in clean))
       return NextResponse.json({ error: "이미 청구서가 나간 신청입니다. 금액·학생을 바꾸려면 청구서를 먼저 취소하세요." }, { status: 409 });
     if (Object.keys(clean).length === 0) return NextResponse.json({ ok: true });
     const { error } = await supabase
@@ -190,7 +190,7 @@ export async function POST(req: Request) {
     const discount = campDiscountOf({
       isCurrent: student.status === "active",
       sibling: !!app.sibling,
-      returning: !!app.returning,
+      returning: !!app.is_returning,
       override: app.discount_override as CampDiscount | null,
     });
     const fee = campFee(app.weeks, app.shuttle as CampShuttle | null, discount);

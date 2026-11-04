@@ -67,7 +67,8 @@ create table if not exists public.camp_applications (
   -- 폼에서 읽은 대답. 할인은 이 셋과 «연결한 학생이 재학생인가»로 정합니다(campFee.ts).
   says_current boolean not null default false,
   sibling boolean not null default false,
-  returning boolean not null default false,
+  -- returning 은 SQL 예약어라 이름을 바꿨습니다.
+  is_returning boolean not null default false,
   -- 사람이 할인을 직접 고른 경우만 채웁니다. 비어 있으면 규칙대로입니다.
   discount_override text check (discount_override in ('재학생', '형제', '재수강', '없음')),
   -- 사람이 금액을 직접 정한 경우만 채웁니다.

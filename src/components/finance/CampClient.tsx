@@ -36,7 +36,7 @@ export type CampApp = {
   shuttle: CampShuttle | null;
   says_current: boolean;
   sibling: boolean;
-  returning: boolean;
+  is_returning: boolean;
   discount_override: CampDiscount | null;
   amount_override: number | null;
   student_id: string | null;
@@ -114,7 +114,7 @@ export default function CampClient({
     const discount = campDiscountOf({
       isCurrent: s ? s.status === "active" : a.says_current,
       sibling: a.sibling,
-      returning: a.returning,
+      returning: a.is_returning,
       override: a.discount_override,
     });
     const fee = campFee(a.weeks, a.shuttle, discount);
@@ -332,7 +332,7 @@ export default function CampClient({
                               형제
                             </label>
                             <label className="flex items-center gap-0.5">
-                              <input type="checkbox" disabled={locked} checked={a.returning} onChange={(e) => patch(a.id, { returning: e.target.checked })} />
+                              <input type="checkbox" disabled={locked} checked={a.is_returning} onChange={(e) => patch(a.id, { is_returning: e.target.checked })} />
                               재수강
                             </label>
                           </div>

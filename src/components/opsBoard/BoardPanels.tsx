@@ -586,7 +586,7 @@ export function TodayStudents({ sc, board }: { sc: BoardScale; board: DayBoard }
         <BoardGroupHead sc={sc} icon="🚗" label="픽업 · 하원" n={pickupSide.length} tone="sky" />
         {renderRows(pickupSide, (i) => RIDE_KINDS.has(i.kind), "ride")}
         <div style={{ height: sc.s(7, 4) }} />
-        <BoardGroupHead sc={sc} icon="📌" label="특이사항" n={noteSide.length} tone="violet" />
+        <BoardGroupHead sc={sc} icon="📌" label="전달사항" n={noteSide.length} tone="violet" />
         {renderRows(noteSide, (i) => !RIDE_KINDS.has(i.kind) && i.kind !== "문의", "note")}
         </>
       )}

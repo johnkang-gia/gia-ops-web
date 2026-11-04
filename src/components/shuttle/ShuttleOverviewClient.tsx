@@ -156,7 +156,7 @@ export default function ShuttleOverviewClient({
         <Kpi label="운행 중" value={kpi.running} tone="#16a34a" sub={`전체 ${kpi.totalDevices}대`} />
         <Kpi label="픽업(직접하원)" value={kpi.pickup} tone="#d97706" sub="토들·전화·교사" />
         <Kpi label="결석" value={kpi.absent} tone="#dc2626" sub="오늘 반영" />
-        <Kpi label="지속 특이사항" value={kpi.notes} tone="#0f172a" sub="셔틀 자동 반영" />
+        <Kpi label="지속 전달사항" value={kpi.notes} tone="#0f172a" sub="셔틀 자동 반영" />
         <Kpi label="탑승 완료" value={kpi.boarded} tone="#2563eb" sub="현재까지" />
       </div>
 
@@ -267,9 +267,9 @@ export default function ShuttleOverviewClient({
           )}
         </div>
         <div className="rounded-2xl border border-orange-200 bg-orange-50/40 p-4">
-          <div className="mb-2 text-xs font-bold text-orange-700">📌 지속 특이사항 {notes.length}건 (셔틀 자동 반영)</div>
+          <div className="mb-2 text-xs font-bold text-orange-700">📌 지속 전달사항 {notes.length}건 (셔틀 자동 반영)</div>
           {notes.length === 0 ? (
-            <p className="text-xs text-slate-400">등록된 지속 특이사항이 없습니다.</p>
+            <p className="text-xs text-slate-400">등록된 지속 전달사항이 없습니다.</p>
           ) : (
             <div className="flex flex-col gap-1">
               {notes.map((n, i) => (

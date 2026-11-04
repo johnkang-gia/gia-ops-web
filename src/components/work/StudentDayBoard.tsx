@@ -312,7 +312,7 @@ export default function StudentDayBoard({ students }: { students: SelectableStud
           onClick={() => setFormOpen((v) => !v)}
           className="rounded-lg border border-slate-300 px-2 py-0.5 text-[11px] font-bold text-slate-600 hover:bg-slate-50"
         >
-          {formOpen ? "닫기" : "+ 특이사항"}
+          {formOpen ? "닫기" : "+ 전달사항"}
         </button>
       </div>
 
@@ -381,7 +381,7 @@ export default function StudentDayBoard({ students }: { students: SelectableStud
                 </Group>
 
                 {/* 아래 — 챙길 일. 시각이 있으면 그 순서, 없으면 「오늘 중에」라 뒤로. */}
-                <Group icon="📌" label="특이사항" n={todayNote.length} tone="violet">
+                <Group icon="📌" label="전달사항" n={todayNote.length} tone="violet">
                   {todayNote.map((d) => (
                     <Row
                       key={d.studentId}
@@ -768,7 +768,7 @@ function DetailModal({
                   <button
                     type="button"
                     onClick={() => onDrop(i)}
-                    title="이 특이사항을 내립니다"
+                    title="이 전달사항을 내립니다"
                     className="ml-auto shrink-0 rounded px-1 text-[12px] font-bold text-slate-300 hover:bg-red-50 hover:text-red-500"
                   >
                     ✕

@@ -776,7 +776,7 @@ export default function ShuttleChecklistClient({
       setItems((cur) => cur.map((it) => (it.assignmentId === assignmentId ? { ...it, note: prev } : it)));
       return;
     }
-    notify(trimmed ? "특이사항을 저장했습니다." : "특이사항을 지웠습니다.", "success");
+    notify(trimmed ? "전달사항을 저장했습니다." : "전달사항을 지웠습니다.", "success");
     void record({
       assignmentId,
       studentName: noteEditor.studentName,
@@ -989,7 +989,7 @@ export default function ShuttleChecklistClient({
       .select("id, student_name, student_id, route_no, content, effect_kind, effect_days, effect_from, effect_to");
     setNoteBusyPersist(false);
     if (error || !data) {
-      notify("특이사항을 저장하지 못했습니다: " + (error?.message ?? "알 수 없는 오류"), "error");
+      notify("전달사항을 저장하지 못했습니다: " + (error?.message ?? "알 수 없는 오류"), "error");
       return false;
     }
     setNotes((prev) => [
@@ -1012,7 +1012,7 @@ export default function ShuttleChecklistClient({
     notify(
       unmatched.length > 0
         ? `${names.length}명 추가했습니다. 다만 ${unmatched.join("·")}은(는) 오늘 명단에서 못 찾았습니다 - 이름을 확인해주세요.`
-        : `${names.length}명에게 지속 특이사항을 추가했습니다.`,
+        : `${names.length}명에게 지속 전달사항을 추가했습니다.`,
       unmatched.length > 0 ? "error" : "success"
     );
     return true;
@@ -1051,7 +1051,7 @@ export default function ShuttleChecklistClient({
       setNotes(prev);
       return;
     }
-    notify("특이사항을 지우고 원래 셔틀로 되돌렸습니다.", "success");
+    notify("전달사항을 지우고 원래 셔틀로 되돌렸습니다.", "success");
   }
 
   // 사이드바 세 번째 위젯("오늘 차량 변경")용.
@@ -1114,7 +1114,7 @@ export default function ShuttleChecklistClient({
         )}
         {notes.length > 0 && (
           <div className="mb-2 rounded-xl border border-orange-200 bg-orange-50 px-3 py-2 print:border-black print:bg-white">
-            <p className="mb-1.5 text-[11px] font-bold text-orange-700">📌 지속 특이사항 {notes.length}건 (셔틀 자동 반영 중)</p>
+            <p className="mb-1.5 text-[11px] font-bold text-orange-700">📌 지속 전달사항 {notes.length}건 (셔틀 자동 반영 중)</p>
             <div className="flex flex-wrap gap-1.5">
               {notes.map((n) => {
                 const effLabel =
@@ -1564,7 +1564,7 @@ export default function ShuttleChecklistClient({
       {noteEditor && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 print:hidden">
           <div className="w-full max-w-sm rounded-xl bg-white p-4 shadow-xl">
-            <p className="mb-2 text-sm font-bold text-slate-800"><Who name={noteEditor.studentName} /> 학생 특이사항</p>
+            <p className="mb-2 text-sm font-bold text-slate-800"><Who name={noteEditor.studentName} /> 전달사항</p>
             <textarea
               value={noteEditor.note}
               onChange={(e) => setNoteEditor((prev) => (prev ? { ...prev, note: e.target.value } : prev))}

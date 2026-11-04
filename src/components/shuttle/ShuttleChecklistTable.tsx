@@ -435,7 +435,7 @@ export default function ShuttleChecklistTable({
                                 onRequestEditNote(item.assignmentId);
                               }}
                               onMouseDown={(e) => e.stopPropagation()}
-                              title={hasNote ? `특이사항: ${item.note}` : "특이사항 메모 추가"}
+                              title={hasNote ? `전달사항: ${item.note}` : "전달사항 추가"}
                               className={
                                 "absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full border text-[8px] font-bold leading-none print:hidden " +
                                 (hasNote ? "border-orange-500 bg-orange-500 text-white" : "border-slate-300 bg-white text-slate-300 hover:text-slate-500")

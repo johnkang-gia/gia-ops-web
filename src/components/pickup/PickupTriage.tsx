@@ -484,8 +484,8 @@ export default function PickupTriage({
     const name = json.name ?? target.name;
     notify(
       forms.length === 1
-        ? `${name} · ${forms[0].kind}${forms[0].atTime ? ` ${forms[0].atTime}` : ""} 특이사항으로 남겼습니다.`
-        : `${name} · 특이사항 ${forms.length}건으로 나눠 남겼습니다 (${forms.map((f) => f.kind).join("·")}).`,
+        ? `${name} · ${forms[0].kind}${forms[0].atTime ? ` ${forms[0].atTime}` : ""} 전달사항으로 남겼습니다.`
+        : `${name} · 전달사항 ${forms.length}건으로 나눠 남겼습니다 (${forms.map((f) => f.kind).join("·")}).`,
       "success",
     );
     const undoNote = (json as { undoNote?: string }).undoNote;
@@ -548,7 +548,7 @@ export default function PickupTriage({
           // 봐야 하는지**를 말해줘야 체크표에서 그 아이를 찾다가 헤매지 않습니다.
           "픽업으로 확정했습니다. 셔틀 배정이 없는 학생이라 체크표에는 줄이 없고, 업무보드 [오늘 학생]에 뜹니다.") +
         (t ? ` ${t}` : "") +
-        (dropped > 0 ? ` 특이사항 ${dropped}건은 함께 내렸습니다.` : ""),
+        (dropped > 0 ? ` 전달사항 ${dropped}건은 함께 내렸습니다.` : ""),
       "success",
     );
     for (const p of ((json as { problems?: string[] }).problems ?? []).filter(Boolean)) notify(p, "error");
@@ -831,12 +831,24 @@ export default function PickupTriage({
                 <div className="flex flex-wrap items-center gap-1.5">
                   {/* 137명 목록을 눈으로 훑는 대신 검색합니다(담당자 요청). AI가 읽은 이름을
                       미리 넣어두므로 대개 열자마자 좁혀져 있습니다. */}
+                  {/* 태그된 아이가 먼저 보입니다. 「다른 학생으로」가 맨 앞의 큰 단추였을 때는 맞는 아이가 이미 정해져 있어도
+                      그 단추를 먼저 눌러 버렸습니다. 바꾸기는 이름 뒤의 작은 단추입니다. */}
+                  {actorsOf(r).length === 1 && (
+                    <span className="shrink-0 rounded-lg bg-indigo-600 px-2 py-1 text-[12px] font-bold text-white" title="이 연락이 가리키는 학생">
+                      👤 {actorsOf(r)[0].name}
+                    </span>
+                  )}
                   <StudentPicker
                     students={students}
                     disabled={busy}
                     // **「연결」과 「바꾸기」는 다른 말입니다.** 형제방은 이미 이어져 있고 아이만
                     // 안 갈린 것이라, 「연결」이라고 적으면 아직 아무것도 안 된 줄로 읽힙니다.
-                    label={actorsOf(r).length > 0 ? "다른 학생으로" : "학생 연결"}
+                    label={actorsOf(r).length > 0 ? "↺ 바꾸기" : "학생 연결"}
+                    buttonClassName={
+                      actorsOf(r).length > 0
+                        ? "rounded border border-slate-200 px-1.5 py-0.5 text-[10px] text-slate-500 hover:bg-slate-50 disabled:opacity-50"
+                        : undefined
+                    }
                     autoFocusQuery={(r.ai_student_name ?? "").replace(/\(.*$/, "").trim()}
                     onPick={(s) => linkOnly(r, s)}
                   />
@@ -961,7 +973,7 @@ export default function PickupTriage({
                           }
                           title="픽업이 아니라 약·결제·준비물·물건 챙기기 같은 부탁입니다. 학생 하루 보드에 남깁니다."
                         >
-                          📌 특이사항
+                          📋 전달사항
                         </button>
                         </>
                         )}
@@ -1063,7 +1075,7 @@ function NotesBox({
   return (
     <div className="mt-2 rounded-lg border border-violet-300 bg-violet-50 p-2.5">
       <p className="mb-1.5 text-[11px] font-bold text-violet-800">
-        📌 {row.service_date} · {who ? `${who.name} ` : ""}특이사항으로 남기기
+        📌 {row.service_date} · {who ? `${who.name} ` : ""}전달사항으로 남기기
         <span className="ml-1 font-normal text-violet-500">
           {guessed.length > 1
             ? `— 한 글에 부탁이 ${guessed.length}가지로 읽혀 나눠 담았습니다. 맞는지 보고 고쳐주세요.`
@@ -1112,7 +1124,7 @@ function NotesBox({
                   type="button"
                   onClick={() => setItems((prev) => prev.filter((_, n) => n !== i))}
                   className="ml-auto rounded-lg border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-500"
-                  title="이 줄은 특이사항으로 남기지 않습니다."
+                  title="이 줄은 전달사항으로 남기지 않습니다."
                 >
                   이 줄 빼기
                 </button>
@@ -1152,7 +1164,7 @@ function NotesBox({
           className="rounded-lg bg-violet-700 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-40"
           title={bad ? "시각은 14:30 처럼 적어주세요." : "학생 하루 보드에 남기고 인박스에서 내립니다."}
         >
-          {ready.length > 1 ? `특이사항 ${ready.length}건으로 남기기` : "특이사항으로 남기기"}
+          {ready.length > 1 ? `전달사항 ${ready.length}건으로 남기기` : "전달사항으로 남기기"}
         </button>
       </div>
     </div>
@@ -1176,7 +1188,7 @@ const ACT_LABEL: Record<EmbeddedAct, string> = {
   결석: "🚫 결석",
   지각: "⏰ 지각",
   셔틀: "🚌 오늘 셔틀",
-  특이사항: "📌 특이사항",
+  특이사항: "📋 전달사항",
 };
 
 function EmbeddedActions({

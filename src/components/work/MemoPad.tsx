@@ -21,17 +21,44 @@ import { loadStudents } from "@/lib/students";
  * 보냅니다. 문의는 기존 접수 길(/api/pickup manual)을 타서 학생 판정·픽업 반영·뱃지가 토들 글과 같게 됩니다.
  */
 
-type Dest = "문의" | "업무" | "쪽지" | "특이사항" | "빼기";
+/**
+ * 갈래. 한 건을 여러 갈래로 동시에 보낼 수 있습니다(문의로도 남기고 업무로도 걸기). 하나도 안 고르면 «빼기»입니다.
+ *   전달사항 = 오늘·며칠만 챙길 일(약·준비물·아픔) → 학생 하루 메모(student_day_notes)
+ *   특이사항 = 그 아이에 대해 계속 기억할 사실(알레르기·성향·교우관계) → 학생 창 특이사항(student_profile_notes)
+ */
+type Dest = "문의" | "전달사항" | "특이사항" | "업무" | "쪽지";
+const DESTS: Dest[] = ["문의", "전달사항", "특이사항", "업무", "쪽지"];
+const DEST_LABEL: Record<Dest, string> = {
+  문의: "📨 문의사항",
+  전달사항: "📋 전달사항",
+  특이사항: "📝 학생 특이사항",
+  업무: "✅ 업무",
+  쪽지: "🗒️ 쪽지(오늘)",
+};
+/** 학생마다 한 줄씩 들어가는 갈래. 업무·쪽지는 한 건에 한 장이고 제목에 아이 이름을 모두 적습니다. */
+const PER_STUDENT: Dest[] = ["문의", "전달사항", "특이사항"];
 type Cand = { id: string; name: string; class_name: string | null };
+type ApiItem = {
+  text: string;
+  title: string;
+  dest: "문의" | "업무" | "쪽지" | "특이사항";
+  studentText?: string | null;
+  original?: string | null;
+  studentId?: string | null;
+  candidates?: Cand[];
+};
 type Item = {
   text: string;
   title: string;
-  dest: Dest;
+  dests: Dest[];
+  /** 이 건에 태그된 아이들. 여럿이면 문의·전달사항·특이사항은 아이마다 따로 들어갑니다. */
+  students: Cand[];
   studentText?: string | null;
   original?: string | null;
-  /** 자동으로 붙인 학생(사람이 바꿀 수 있음). 비면 «학생 없음». */
-  studentId?: string | null;
+  /** 동명이인이라 서버가 못 좁힌 후보. */
   candidates?: Cand[];
+  /** 이미 들어간 것(갈래|학생). 일부만 실패했을 때 다시 눌러도 들어간 것은 두 번 넣지 않습니다. */
+  done?: string[];
   state?: "ok" | "fail";
   error?: string;
 };
@@ -168,7 +195,18 @@ export default function MemoPad({
         notify(json?.error ?? "메모를 나누지 못했습니다.", "error");
         return;
       }
-      setItems(json.items as Item[]);
+      const named = uniqueNamesIn(body, await rosterCands());
+      setItems(
+        (json.items as ApiItem[]).map((r) => {
+          const students: Cand[] = [];
+          const tagged = r.studentId ? r.candidates?.find((c) => c.id === r.studentId) : null;
+          if (tagged) students.push(tagged);
+          // 서버는 한 건에 한 아이만 붙입니다. 같은 건 글에 다른 아이 이름도 있으면(명부에 한 명뿐인 이름만) 함께 태그합니다.
+          const src = `${r.original ?? ""}\n${r.text}`;
+          for (const c of named) if (src.includes(c.name) && !students.some((x) => x.id === c.id)) students.push(c);
+          return { text: r.text, title: r.title, dests: [r.dest], students, studentText: r.studentText, original: r.original, candidates: r.candidates };
+        }),
+      );
       setSplitNote((json.note as string | undefined) ?? null);
     } catch (err) {
       notify(err instanceof Error ? err.message : String(err), "error");
@@ -177,50 +215,42 @@ export default function MemoPad({
     }
   }
 
-  const tagName = (it: Item) => it.candidates?.find((c) => c.id === it.studentId)?.name ?? null;
+  const names = (it: Item) => it.students.map((x) => x.name).join("·");
 
-  async function sendOne(it: Item): Promise<string | null> {
-    if (it.dest === "빼기") return null;
-    if (it.dest === "문의") {
-      const res = await fetch("/api/pickup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "manual", text: it.text, source: "전화", senderName: currentUserName ?? email }),
-      });
-      const json = await res.json().catch(() => null);
-      if (!res.ok) return json?.error ?? `접수 실패(${res.status})`;
-      // 사람이 고른(또는 자동으로 붙은) 학생을 그 연락에 잇습니다. 접수 규칙이 다른 아이를 골랐거나 못 골랐을 때
-      // 이 태그가 이깁니다 - 미리보기에서 사람이 본 값이기 때문입니다.
-      if (it.studentId) {
-        const ids = ((json?.results ?? []) as { id?: string }[]).map((x) => x.id).filter(Boolean) as string[];
+  async function post(body: Record<string, unknown>, url = "/api/pickup") {
+    const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    return { ok: res.ok, status: res.status, json: (await res.json().catch(() => null)) as Record<string, unknown> | null };
+  }
+
+  /** 한 갈래·한 아이 몫을 넣습니다. 실패하면 이유를 돌려줍니다. */
+  async function sendPart(it: Item, d: Dest, who: Cand | null): Promise<string | null> {
+    if (d === "문의") {
+      const r = await post({ action: "manual", text: it.text, source: "전화", senderName: currentUserName ?? email });
+      if (!r.ok) return String(r.json?.error ?? `접수 실패(${r.status})`);
+      // 사람이 미리보기에서 본 아이가 접수 규칙의 판단보다 이깁니다.
+      if (who) {
+        const ids = ((r.json?.results ?? []) as { id?: string }[]).map((x) => x.id).filter(Boolean) as string[];
         for (const id of ids) {
-          const lr = await fetch("/api/pickup", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: "link", id, studentId: it.studentId }),
-          });
-          if (!lr.ok) {
-            const lj = await lr.json().catch(() => null);
-            return "접수는 됐지만 학생을 잇지 못했습니다: " + (lj?.error ?? lr.status);
-          }
+          const lr = await post({ action: "link", id, studentId: who.id });
+          if (!lr.ok) return "접수는 됐지만 학생을 잇지 못했습니다: " + String(lr.json?.error ?? lr.status);
         }
       }
       return null;
     }
-    if (it.dest === "특이사항") {
-      // 학생 창 「특이사항」 탭에 남습니다. 누구 이야기인지 모르면 어디에도 적지 않습니다.
-      if (!it.studentId) return "특이사항은 학생을 골라야 등록됩니다. 위의 학생 태그를 정해 주세요.";
-      const res = await fetch("/api/pickup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "profile-note", studentId: it.studentId, text: it.text }),
-      });
-      const json = await res.json().catch(() => null);
-      return res.ok ? null : (json?.error ?? `특이사항 저장 실패(${res.status})`);
+    if (d === "전달사항") {
+      if (!who) return "학생을 골라야 등록됩니다.";
+      const r = await post({ studentId: who.id, content: it.text.slice(0, 300), kind: "기타", onDate: todayKst() }, "/api/student-notes");
+      return r.ok ? null : String(r.json?.error ?? `저장 실패(${r.status})`);
     }
-    if (it.dest === "업무") {
+    if (d === "특이사항") {
+      if (!who) return "학생을 골라야 등록됩니다.";
+      const r = await post({ action: "profile-note", studentId: who.id, text: it.text });
+      return r.ok ? null : String(r.json?.error ?? `저장 실패(${r.status})`);
+    }
+    const tag = it.students.length ? `[${names(it)}] ` : "";
+    if (d === "업무") {
       const { error } = await createTaskFromInbox({
-        title: (tagName(it) ? `[${tagName(it)}] ` : "") + (it.title || it.text.slice(0, 50)),
+        title: tag + (it.title || it.text.slice(0, 50)),
         description: `메모장에서 등록 · ${currentUserName ?? email}\n\n${it.text}`,
         department,
         userEmail: email,
@@ -229,7 +259,7 @@ export default function MemoPad({
     }
     const { error } = await createClient().from("board_notes").insert({
       department,
-      content: (tagName(it) ? `[${tagName(it)}] ` : "") + it.text,
+      content: tag + it.text,
       color: "yellow",
       expires_on: todayKst(),
       author_email: email,
@@ -238,31 +268,44 @@ export default function MemoPad({
     return error ? error.message : null;
   }
 
+  /** 한 건을 고른 갈래 전부로 보냅니다. 문의·전달사항·특이사항은 태그된 아이마다 한 줄씩. */
+  async function sendOne(it: Item): Promise<Item> {
+    const done = new Set(it.done ?? []);
+    const errors: string[] = [];
+    for (const d of it.dests) {
+      const targets: (Cand | null)[] = PER_STUDENT.includes(d) && it.students.length ? it.students : [null];
+      for (const who of targets) {
+        const key = `${d}|${who?.id ?? ""}`;
+        if (done.has(key)) continue;
+        const err = await sendPart(it, d, who);
+        if (err) errors.push(`${DEST_LABEL[d]}${who ? `(${who.name})` : ""}: ${err}`);
+        else done.add(key);
+      }
+    }
+    return errors.length
+      ? { ...it, done: [...done], state: "fail", error: errors.join(" / ") }
+      : { ...it, done: [...done], state: "ok", error: undefined };
+  }
+
   async function sendAll() {
     if (!items || sending) return;
     setSending(true);
     const next: Item[] = [];
-    for (const it of items) {
-      if (it.state === "ok") {
-        next.push(it);
-        continue;
-      }
-      const err = await sendOne(it);
-      next.push(err ? { ...it, state: "fail", error: err } : { ...it, state: "ok" });
-    }
+    for (const it of items) next.push(it.state === "ok" || it.dests.length === 0 ? it : await sendOne(it));
     setItems(next);
     setSending(false);
     const failed = next.filter((x) => x.state === "fail");
     if (failed.length === 0) {
-      const sent = next.filter((x) => x.dest !== "빼기").length;
-      notify(`${sent}건을 등록했습니다.`, "success");
+      notify(`${next.filter((x) => x.dests.length > 0).length}건을 등록했습니다.`, "success");
       // 다 보냈으면 메모장을 비웁니다. 남겨 두면 다음에 또 등록해 같은 일이 두 번 생깁니다.
       onChange("");
       setItems(null);
     } else {
-      notify(`${failed.length}건을 등록하지 못했습니다. 이유를 확인하고 다시 눌러 주세요.`, "error");
+      notify(`${failed.length}건을 다 넣지 못했습니다. 이유를 확인하고 다시 눌러 주세요(들어간 것은 다시 넣지 않습니다).`, "error");
     }
   }
+
+  const patchItem = (i: number, f: (x: Item) => Item) => setItems((p) => p && p.map((x, j) => (j === i ? f(x) : x)));
 
   const status = serverError
     ? null
@@ -295,6 +338,7 @@ export default function MemoPad({
         placeholder="전화·요청을 자유롭게 적으세요."
         className="mx-2 mb-1 min-h-0 flex-1 resize-none rounded-lg border border-amber-200 bg-amber-50/60 p-2 text-[12.5px] leading-relaxed text-slate-800 outline-none focus:border-amber-400"
       />
+      <NameBadges text={text} />
       {serverError && <p className="shrink-0 px-2.5 pb-1 text-[10px] font-bold text-rose-600">{serverError}</p>}
 
       {items &&
@@ -317,45 +361,53 @@ export default function MemoPad({
                     }
                   >
                     <div className="mb-1 flex flex-wrap items-center gap-1">
-                      {(["문의", "특이사항", "업무", "쪽지", "빼기"] as Dest[]).map((d) => (
+                      {DESTS.map((d) => {
+                        const on = it.dests.includes(d);
+                        return (
+                          <button
+                            key={d}
+                            type="button"
+                            disabled={it.state === "ok"}
+                            onClick={() => patchItem(i, (x) => ({ ...x, dests: on ? x.dests.filter((v) => v !== d) : [...x.dests, d] }))}
+                            className={
+                              "rounded-full border px-2 py-0.5 text-[11px] font-bold " +
+                              (on ? "border-blue-500 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50")
+                            }
+                            title="여러 개를 함께 고를 수 있습니다"
+                          >
+                            {on ? "✓ " : ""}
+                            {DEST_LABEL[d]}
+                          </button>
+                        );
+                      })}
+                      {it.dests.length === 0 && <span className="text-[11px] text-slate-400">(안 보냄)</span>}
+                      {it.state !== "ok" && (
                         <button
-                          key={d}
                           type="button"
-                          disabled={it.state === "ok"}
-                          onClick={() => setItems((p) => p && p.map((x, j) => (j === i ? { ...x, dest: d } : x)))}
-                          className={
-                            "rounded-full border px-2 py-0.5 text-[11px] font-bold " +
-                            (it.dest === d ? "border-blue-500 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50")
-                          }
+                          onClick={() => setItems((p) => p && [...p.slice(0, i + 1), { ...it, done: [], state: undefined, error: undefined }, ...p.slice(i + 1)])}
+                          className="ml-auto rounded border border-slate-200 px-1.5 py-0.5 text-[10px] text-slate-500 hover:bg-slate-50"
+                          title="이 건을 하나 더 만듭니다 - 한 메모를 업무 여러 개로 나눌 때 씁니다"
                         >
-                          {d === "문의" ? "📨 오늘의 문의사항" : d === "특이사항" ? "📝 학생 특이사항" : d === "업무" ? "✅ 업무" : d === "쪽지" ? "🗒️ 쪽지(오늘)" : "빼기"}
+                          ＋ 한 건 더
                         </button>
-                      ))}
+                      )}
                       {it.state === "ok" && <span className="ml-auto text-[11px] font-bold text-emerald-700">등록됨</span>}
                     </div>
-                    <StudentTag
+                    <StudentTags
                       item={it}
-                      disabled={it.state === "ok" || it.dest === "빼기"}
-                      onChange={(studentId, cand) =>
-                        setItems((p) =>
-                          p &&
-                          p.map((x, j) =>
-                            j === i
-                              ? {
-                                  ...x,
-                                  studentId,
-                                  candidates: cand && !(x.candidates ?? []).some((c) => c.id === cand.id) ? [...(x.candidates ?? []), cand] : x.candidates,
-                                }
-                              : x,
-                          ),
-                        )
-                      }
+                      disabled={it.state === "ok"}
+                      onChange={(students) => patchItem(i, (x) => ({ ...x, students }))}
                     />
-                    {it.dest === "업무" && (
+                    {it.students.length > 1 && it.dests.some((d) => PER_STUDENT.includes(d)) && (
+                      <p className="mb-1 text-[10px] text-slate-400">
+                        {it.dests.filter((d) => PER_STUDENT.includes(d)).map((d) => DEST_LABEL[d]).join("·")}은(는) {it.students.length}명 각각에게 따로 들어갑니다.
+                      </p>
+                    )}
+                    {it.dests.includes("업무") && (
                       <input
                         value={it.title}
                         disabled={it.state === "ok"}
-                        onChange={(e) => setItems((p) => p && p.map((x, j) => (j === i ? { ...x, title: e.target.value } : x)))}
+                        onChange={(e) => patchItem(i, (x) => ({ ...x, title: e.target.value }))}
                         className="mb-1 w-full rounded border border-slate-200 px-2 py-1 text-[12px] font-bold"
                         placeholder="업무 제목"
                       />
@@ -365,7 +417,7 @@ export default function MemoPad({
                       disabled={it.state === "ok"}
                       rows={Math.min(5, Math.max(2, Math.ceil(it.text.length / 50)))}
                       onChange={(e) => setItems((p) => p && p.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))}
-                      className={"w-full resize-y rounded border border-slate-200 px-2 py-1 text-[12px] " + (it.dest === "빼기" ? "opacity-40" : "")}
+                      className={"w-full resize-y rounded border border-slate-200 px-2 py-1 text-[12px] " + (it.dests.length === 0 ? "opacity-40" : "")}
                     />
                     {it.original && it.original !== it.text && (
                       <details className="mt-0.5 text-[10.5px] text-slate-400">
@@ -410,72 +462,106 @@ export default function MemoPad({
 
 /** 명부는 한 번만 읽습니다 - 찾기 칸에 글자를 칠 때마다 139명을 다시 받지 않게. */
 let rosterOnce: ReturnType<typeof loadStudents> | null = null;
+async function rosterCands(): Promise<Cand[]> {
+  rosterOnce ??= loadStudents(createClient());
+  const { rows } = await rosterOnce;
+  return rows.map((s) => ({ id: s.id, name: s.name, class_name: s.class_name }));
+}
 
 /**
- * 메모 한 건의 학생 태그. 자동으로 붙은 아이가 있으면 선택된 채로 뜨고, 동명이인이라 못 좁혔으면 후보 중에서
- * 고릅니다. 후보에 없는 아이는 이름으로 찾아 붙입니다(명부에서 번호로 고르므로 동명이인이 섞이지 않습니다).
+ * 글에 적힌 아이 이름 중 **명부에 한 명뿐인 이름**만 찾습니다. 같은 이름이 둘 이상이면(김재이 셋) 글자만으로 누구인지
+ * 정할 수 없어 태그하지 않습니다 - 사람이 미리보기에서 고릅니다(CLAUDE.md §2-4-1).
  */
-function StudentTag({
-  item,
-  disabled,
-  onChange,
-}: {
-  item: Item;
-  disabled: boolean;
-  onChange: (studentId: string | null, cand?: Cand) => void;
-}) {
+function uniqueNamesIn(text: string, roster: Cand[]): Cand[] {
+  const count = new Map<string, number>();
+  for (const c of roster) count.set(c.name, (count.get(c.name) ?? 0) + 1);
+  return roster.filter((c) => c.name.length >= 2 && count.get(c.name) === 1 && text.includes(c.name));
+}
+
+/** 메모장 아래, 글에서 찾은 아이 이름을 뱃지로 보여줍니다. 등록하면 이 아이들이 각 건에 태그됩니다. */
+function NameBadges({ text }: { text: string }) {
+  const [roster, setRoster] = useState<Cand[] | null>(null);
+  useEffect(() => {
+    let stop = false;
+    void rosterCands().then((r) => !stop && setRoster(r));
+    return () => {
+      stop = true;
+    };
+  }, []);
+  if (!roster || !text.trim()) return null;
+  const found = uniqueNamesIn(text, roster);
+  const dupNames = [...new Set(roster.filter((c, _, all) => all.filter((x) => x.name === c.name).length > 1 && text.includes(c.name)).map((c) => c.name))];
+  if (found.length === 0 && dupNames.length === 0) return null;
+  return (
+    <div className="mx-2 mb-1 flex shrink-0 flex-wrap items-center gap-1">
+      {found.map((c) => (
+        <span key={c.id} className="rounded-full bg-indigo-100 px-1.5 py-0.5 text-[10.5px] font-bold text-indigo-800">
+          👤 {c.name}
+        </span>
+      ))}
+      {dupNames.map((n) => (
+        <span key={n} className="rounded-full bg-rose-100 px-1.5 py-0.5 text-[10.5px] font-bold text-rose-700" title="같은 이름이 여럿이라 등록할 때 골라야 합니다">
+          👤 {n} ?
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * 한 건의 학생 태그(여러 명). 뱃지의 ×로 빼고, 찾기 칸으로 더합니다. 동명이인이라 서버가 못 좁힌 후보는 «누구?»로
+ * 따로 보여 고르게 합니다. 명부 번호로 고르므로 같은 이름이 섞이지 않습니다.
+ */
+function StudentTags({ item, disabled, onChange }: { item: Item; disabled: boolean; onChange: (s: Cand[]) => void }) {
   const [q, setQ] = useState("");
   const [hits, setHits] = useState<Cand[]>([]);
-  const cands = item.candidates ?? [];
   useEffect(() => {
     const t = q.trim();
-    if (t.length < 1) {
+    if (!t) {
       setHits([]);
       return;
     }
     let stop = false;
-    rosterOnce ??= loadStudents(createClient());
-    void rosterOnce.then(({ rows }) => {
+    void rosterCands().then((rows) => {
       if (stop) return;
       const k = t.toLowerCase();
-      setHits(
-        rows
-          .filter((s) => s.name.includes(t) || (s.name_en ?? "").toLowerCase().includes(k) || (s.class_name ?? "").toLowerCase() === k)
-          .slice(0, 8)
-          .map((s) => ({ id: s.id, name: s.name, class_name: s.class_name })),
-      );
+      setHits(rows.filter((s) => s.name.includes(t) || (s.class_name ?? "").toLowerCase() === k).slice(0, 8));
     });
     return () => {
       stop = true;
     };
   }, [q]);
-  const ambiguous = !item.studentId && cands.length > 1;
+  const add = (c: Cand) => !item.students.some((x) => x.id === c.id) && onChange([...item.students, c]);
+  const pending = item.students.length === 0 ? (item.candidates ?? []).filter((c) => !item.students.some((x) => x.id === c.id)) : [];
   return (
     <div className="mb-1 flex flex-wrap items-center gap-1 text-[11px]">
       <span className="font-bold text-slate-400">학생</span>
-      <select
-        value={item.studentId ?? ""}
-        disabled={disabled}
-        onChange={(e) => onChange(e.target.value || null)}
-        className={"rounded border px-1.5 py-0.5 " + (ambiguous ? "border-rose-400 bg-rose-50 font-bold text-rose-700" : "border-slate-200")}
-      >
-        <option value="">{ambiguous ? `${item.studentText ?? ""} — 누구? (골라 주세요)` : "학생 없음"}</option>
-        {cands.map((c) => (
-          <option key={c.id} value={c.id}>
-            {c.name}
-            {c.class_name ? ` (${c.class_name})` : ""}
-          </option>
-        ))}
-      </select>
-      {item.studentId && <span className="rounded bg-emerald-50 px-1 text-[10px] font-bold text-emerald-700">자동 태그 · 바꿀 수 있음</span>}
+      {item.students.length === 0 && pending.length === 0 && <span className="text-slate-400">없음</span>}
+      {item.students.map((c) => (
+        <span key={c.id} className="flex items-center gap-0.5 rounded-full bg-indigo-100 px-1.5 py-0.5 font-bold text-indigo-800">
+          👤 {c.name}
+          {c.class_name ? <span className="font-normal text-indigo-500">({c.class_name})</span> : null}
+          {!disabled && (
+            <button type="button" onClick={() => onChange(item.students.filter((x) => x.id !== c.id))} className="ml-0.5 text-indigo-400 hover:text-rose-600" title="태그 빼기">
+              ×
+            </button>
+          )}
+        </span>
+      ))}
+      {pending.length > 1 && (
+        <span className="flex items-center gap-0.5 rounded bg-rose-50 px-1 text-rose-700">
+          {item.studentText ?? ""} 누구?
+          {pending.map((c) => (
+            <button key={c.id} type="button" disabled={disabled} onClick={() => add(c)} className="rounded border border-rose-200 bg-white px-1 font-bold">
+              {c.name}
+              {c.class_name ? ` (${c.class_name})` : ""}
+            </button>
+          ))}
+        </span>
+      )}
       {!disabled && (
         <span className="relative">
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="다른 학생 찾기"
-            className="w-28 rounded border border-slate-200 px-1.5 py-0.5"
-          />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="＋ 학생 더하기" className="w-28 rounded border border-slate-200 px-1.5 py-0.5" />
           {hits.length > 0 && (
             <span className="absolute left-0 top-full z-10 mt-0.5 flex w-48 flex-col rounded border bg-white shadow">
               {hits.map((h) => (
@@ -483,7 +569,7 @@ function StudentTag({
                   key={h.id}
                   type="button"
                   onClick={() => {
-                    onChange(h.id, h);
+                    add(h);
                     setQ("");
                   }}
                   className="px-2 py-1 text-left hover:bg-slate-50"

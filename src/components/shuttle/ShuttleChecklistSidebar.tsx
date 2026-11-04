@@ -644,7 +644,7 @@ export default function ShuttleChecklistSidebar({
             onClick={() => setPnOpen((v) => !v)}
             className="flex w-full items-center justify-between text-[11px] font-bold text-orange-700"
           >
-            <span>📌 지속 특이사항 입력</span>
+            <span>📌 지속 전달사항 입력</span>
             <span className="text-orange-400">{pnOpen ? "▾" : "＋"}</span>
           </button>
           {pnOpen && (
@@ -863,7 +863,7 @@ export default function ShuttleChecklistSidebar({
       </div>
 
       <div className="g-panel-solid p-3">
-        <p className="mb-2 text-[11px] font-bold text-slate-600">⚠️ 특이사항 {specialNotes.length > 0 && `(${specialNotes.length})`}</p>
+        <p className="mb-2 text-[11px] font-bold text-slate-600">⚠️ 전달사항 {specialNotes.length > 0 && `(${specialNotes.length})`}</p>
         {specialNotes.length === 0 ? (
           <p className="text-[10px] text-slate-300">없음</p>
         ) : (

@@ -238,7 +238,7 @@ export default function PickupInboxClient({
     const dropped = (json as { notesDropped?: number }).notesDropped ?? 0;
     notify(
       (json.applied > 0 ? "픽업으로 체크했습니다." : "확정했습니다(셔틀 배정이 없는 학생입니다).") +
-        (dropped > 0 ? ` 특이사항 ${dropped}건은 함께 내렸습니다.` : ""),
+        (dropped > 0 ? ` 전달사항 ${dropped}건은 함께 내렸습니다.` : ""),
       "success",
     );
     for (const p of ((json as { problems?: string[] }).problems ?? []).filter(Boolean)) notify(p, "error");

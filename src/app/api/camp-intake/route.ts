@@ -113,6 +113,8 @@ export async function POST(req: Request) {
           says_current: f.says_current,
           sibling: f.sibling,
           is_returning: f.returning,
+          // 학부모의 «기타 문의»(2주차부터 참석·동생도 신청 같은 금액을 바꾸는 말)와 주 수를 짐작한 사실을 메모로 남깁니다.
+          memo: [f.note ? `폼 문의: ${f.note}` : null, f.weeks_assumed ? "폼에 참여 주 질문이 없어 3주로 두었습니다" : null].filter(Boolean).join("\n") || null,
         };
       }),
       { count: "exact" },

@@ -59,6 +59,29 @@ eq("폼 셔틀", f.shuttle, "편도");
 eq("폼 재학", f.says_current, false);
 eq("폼 형제", f.sibling, true);
 
+// 2027 윈터캠프 실제 폼 머리줄(값은 지어낸 것)
+const w = readCampForm({
+  Timestamp: "2026-11-03T05:10:00.000Z",
+  "Student Name (Korean)\n학생 이름 (한글)": "홍길동",
+  "Student Name (English)\n학생 이름 (영문)": "Gildong Hong",
+  "Guardian Phone Number\n보호자 연락처": "010-0000-0000",
+  "I would like to sign up for the shuttle bus service.\n셔틀버스 이용을 신청합니다.": "Yes: One-way (Going home)",
+  "Current Address (for Shuttle Bus)\n현재 거주 중인 주소 (셔틀버스 이용 시)": "서울 어딘가",
+  "Name of the current elementary school the student is attending\n현재 재학 중인 초등학교": "어느초",
+  "Is this your first time at GIA Micro Lab Camp?\nGIA Micro Lab 캠프에 참여하는 것이 이번이 처음입니까?": "No",
+  "Once you complete the application form, we will review it and send you a message with details regarding the level test and payment. If you have any additional questions, please feel free to write them below.\n신청서 작성을 완료하시면 확인 후 레벨테스트 및 입금 관련 안내 문자를 보내드립니다. 기타 문의사항이 있으시면 아래에 적어주세요.": "여동생 함께 신청합니다. week1은 어렵습니다",
+  "How did you hear about GIA Micro Lab Camp?\nGIA 마이크로랩 캠프를 어떤 경로로 알게 되셨나요?": "Current GIA Parent (재학생 학부모)",
+});
+eq("윈터 이름", w.applicant_name, "홍길동");
+eq("윈터 셔틀 편도", w.shuttle, "편도");
+eq("윈터 재수강", w.returning, true);
+eq("윈터 재학 대답", w.says_current, true);
+eq("윈터 형제 언급", w.sibling, true);
+eq("윈터 주 기본 3", [w.weeks, w.weeks_assumed], [3, true]);
+eq("윈터 문의 글", !!w.note, true);
+eq("셔틀 아니오", parseShuttle("No."), "미이용");
+eq("셔틀 왕복", parseShuttle("Yes: Round-trip"), "왕복");
+
 if (fail) {
   console.error(`캠프 수강료 시험 ${fail}건 실패`);
   process.exit(1);

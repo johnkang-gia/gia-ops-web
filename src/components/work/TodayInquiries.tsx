@@ -992,6 +992,27 @@ function Row({
    * 요약이 믿을 만하지 않은 글은 원문을 그대로 보여줍니다. 누구 글인지 모르거나(학생 없음) 갈래가 「기타」면
    * AI 요약이 뜻을 바꿨을 수 있고, 요약만 보고 처리하면 학부모가 한 말과 다른 일을 하게 됩니다.
    */
+  /**
+   * 이미 문의로 올라간 글을 학생 특이사항으로 옮깁니다. 적을 글은 한 번 보여주고 고칠 수 있게 합니다 - 학부모 말투
+   * 그대로보다 «무엇을 기억해야 하는지»로 적는 편이 나중에 읽기 쉽습니다. 문의는 지우지 않고 처리 완료로 내립니다.
+   */
+  async function moveToProfileNote() {
+    if (!r.student_id) {
+      notify("누구 이야기인지 아직 모르는 글입니다. 학생을 먼저 연결해 주세요.", "error");
+      return;
+    }
+    const t = window.prompt("학생 특이사항에 적을 내용(고쳐도 됩니다)", (r.raw_text || r.summary || "").trim());
+    if (t === null || !t.trim()) return;
+    const res = await fetch("/api/pickup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "profile-note", id: r.id, studentId: r.student_id, text: t.trim() }),
+    }).catch(() => null);
+    const json = res ? ((await res.json().catch(() => ({}))) as { error?: string; name?: string }) : {};
+    if (!res || !res.ok) return notify(json.error ?? "특이사항으로 옮기지 못했습니다.", "error");
+    notify(`${json.name ?? "학생"} 특이사항에 적고 문의를 처리 완료로 내렸습니다.`, "success");
+    reload();
+  }
   const unclear = !r.student_id || badgesOf(r).includes("기타") || !r.summary;
 
   const nowIso = () => new Date().toISOString();
@@ -1322,6 +1343,14 @@ function Row({
             )
           )}
           <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-500">
+            <button
+              type="button"
+              onClick={() => void moveToProfileNote()}
+              className="rounded border border-violet-200 bg-violet-50 px-1.5 py-0.5 font-bold text-violet-700 hover:bg-violet-100"
+              title="이 글을 학생 창 「특이사항」에 적고, 문의는 처리 완료로 내립니다(원문은 그대로 남습니다)"
+            >
+              📝 특이사항으로 옮기기
+            </button>
             {r.sender_name && <span>보낸 사람 {r.sender_name}</span>}
             {r.source_url && (
               <a

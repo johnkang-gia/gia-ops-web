@@ -255,6 +255,11 @@ export default function CampClient({
                           <div className="text-[11px] text-slate-500">
                             {[a.grade && `${a.grade}`, a.birth_date && `생일 ${a.birth_date}`].filter(Boolean).join(" · ")}
                           </div>
+                          {a.memo && (
+                            <div className="mt-0.5 line-clamp-2 whitespace-pre-wrap rounded bg-amber-50 px-1 text-[10px] text-amber-800" title={a.memo}>
+                              {a.memo}
+                            </div>
+                          )}
                           {student ? (
                             <div className="mt-0.5 flex items-center gap-1 text-[11px]">
                               <span className="text-slate-400">→</span>

@@ -19,7 +19,7 @@ import { loadAliasIndex } from "@/lib/aliasIndex";
  * 같은 판단을 두 곳에서 하면 둘이 다른 아이를 고르는 날이 옵니다.
  */
 
-type Dest = "문의" | "업무" | "쪽지";
+type Dest = "문의" | "업무" | "쪽지" | "특이사항";
 type Cand = { id: string; name: string; class_name: string | null };
 export type MemoItem = {
   text: string;
@@ -61,7 +61,8 @@ const SYSTEM = `너는 국제학교 행정실 직원의 전화·업무 메모를
 - student: 이 건이 가리키는 학생 이름(메모에 적힌 그대로, 없으면 null). 여러 명이면 첫 번째.
 - dest: 학부모·학생에 관한 연락(결석, 픽업, 하원, 아픔, 물건, 상담, 납부 문의 등)이면 "문의",
         직원이 해야 할 내부 일(구매, 수리, 서류, 연락 돌리기)이면 "업무",
-        모두가 알면 되는 짧은 알림이면 "쪽지".
+        모두가 알면 되는 짧은 알림이면 "쪽지",
+        오늘 처리할 일이 아니라 그 학생에 대해 계속 기억해 둘 사실(알레르기, 성향, 가정 사정, 건강 상태, 지도 시 주의점)이면 "특이사항".
 나눌 것이 없으면 한 건으로 둔다. 원문에 없는 내용을 지어내지 않는다.
 JSON 만 답한다: {"items":[{"original":"...","text":"...","title":"...","student":"김OO","dest":"문의"}]}`;
 
@@ -90,7 +91,7 @@ export async function POST(req: Request) {
         text: String(v.text).trim(),
         original: typeof v.original === "string" && v.original.trim() ? v.original.trim() : null,
         title: String(v.title ?? v.text).trim().slice(0, 40),
-        dest: v.dest === "업무" || v.dest === "쪽지" ? v.dest : "문의",
+        dest: v.dest === "업무" || v.dest === "쪽지" || v.dest === "특이사항" ? v.dest : "문의",
         studentText: v.student ?? null,
         ...tagStudent(v.student, String(v.text), roster, aliases),
       }));

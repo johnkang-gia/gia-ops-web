@@ -482,6 +482,42 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, results });
   }
 
+  // ── 학생 특이사항(프로필 메모)으로 적기 ───────────────────────────────────
+  // 메모장에서 「특이사항」으로 고른 글, 또는 이미 문의로 올라간 글을 학생 창 「특이사항」 탭(student_profile_notes)에
+  // 적습니다. 문의에서 옮긴 경우 그 문의는 「처리 완료(특이사항으로 옮김)」로 내립니다 - 지우지 않으므로 원문함·문의
+  // 이력에는 그대로 남고, 같은 글이 두 목록에서 할 일로 동시에 보이지 않습니다.
+  if (action === "profile-note") {
+    const studentId = String(body?.studentId ?? "").trim();
+    const text = String(body?.text ?? "").trim();
+    const fromId = (body?.id as string | undefined) || null;
+    if (!studentId) return NextResponse.json({ error: "학생을 먼저 골라주세요." }, { status: 400 });
+    if (!text) return NextResponse.json({ error: "적을 내용이 없습니다." }, { status: 400 });
+    if (text.length > 4000) return NextResponse.json({ error: "글이 너무 깁니다(4,000자까지)." }, { status: 400 });
+    const { row: student, error: stuErr } = await loadStudent(supabase, studentId);
+    if (stuErr) return NextResponse.json({ error: `명부를 읽지 못했습니다: ${stuErr}` }, { status: 500 });
+    if (!student) return NextResponse.json({ error: "명부에 없는 학생입니다." }, { status: 400 });
+    const { data: term, error: termErr } = await supabase.from("terms").select("id").eq("status", "진행중").limit(1).maybeSingle();
+    if (termErr) return NextResponse.json({ error: `학기를 읽지 못했습니다: ${termErr.message}` }, { status: 500 });
+    const { data: note, error: noteErr } = await supabase
+      .from("student_profile_notes")
+      .insert({ student_id: studentId, term_id: term?.id ?? null, body: text, author_email: me.email, author_name: me.name || null })
+      .select("id")
+      .single();
+    if (noteErr || !note) return NextResponse.json({ error: `특이사항을 적지 못했습니다: ${noteErr?.message ?? "알 수 없는 이유"}` }, { status: 500 });
+    if (fromId) {
+      const { error: upErr } = await supabase
+        .from("pickup_requests")
+        .update({ student_id: studentId, answered_at: new Date().toISOString(), answered_by: me.email, answered_via: "특이사항으로 옮김" })
+        .eq("id", fromId);
+      if (upErr)
+        return NextResponse.json(
+          { error: `특이사항은 적었지만 문의를 내리지 못했습니다(${upErr.message}). 문의에서 「처리 완료」를 눌러 주세요.`, noteId: note.id },
+          { status: 500 },
+        );
+    }
+    return NextResponse.json({ ok: true, noteId: note.id, name: (student as { name: string }).name });
+  }
+
   // ── 직원이 적은 문의의 글자 고치기 ─────────────────────────────────────────
   // 메모장·전화로 직원이 적어 올린 줄(토들이 아닌 줄)만 고칩니다. 토들 글은 학부모가 쓴 원문이라 고치면
   // 원문과 앱이 다른 말을 하게 됩니다. 요약(summary)과 원문(raw_text)을 같은 글로 맞춥니다 - 한쪽만

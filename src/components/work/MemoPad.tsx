@@ -21,7 +21,7 @@ import { loadStudents } from "@/lib/students";
  * 보냅니다. 문의는 기존 접수 길(/api/pickup manual)을 타서 학생 판정·픽업 반영·뱃지가 토들 글과 같게 됩니다.
  */
 
-type Dest = "문의" | "업무" | "쪽지" | "빼기";
+type Dest = "문의" | "업무" | "쪽지" | "특이사항" | "빼기";
 type Cand = { id: string; name: string; class_name: string | null };
 type Item = {
   text: string;
@@ -207,6 +207,17 @@ export default function MemoPad({
       }
       return null;
     }
+    if (it.dest === "특이사항") {
+      // 학생 창 「특이사항」 탭에 남습니다. 누구 이야기인지 모르면 어디에도 적지 않습니다.
+      if (!it.studentId) return "특이사항은 학생을 골라야 등록됩니다. 위의 학생 태그를 정해 주세요.";
+      const res = await fetch("/api/pickup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "profile-note", studentId: it.studentId, text: it.text }),
+      });
+      const json = await res.json().catch(() => null);
+      return res.ok ? null : (json?.error ?? `특이사항 저장 실패(${res.status})`);
+    }
     if (it.dest === "업무") {
       const { error } = await createTaskFromInbox({
         title: (tagName(it) ? `[${tagName(it)}] ` : "") + (it.title || it.text.slice(0, 50)),
@@ -306,7 +317,7 @@ export default function MemoPad({
                     }
                   >
                     <div className="mb-1 flex flex-wrap items-center gap-1">
-                      {(["문의", "업무", "쪽지", "빼기"] as Dest[]).map((d) => (
+                      {(["문의", "특이사항", "업무", "쪽지", "빼기"] as Dest[]).map((d) => (
                         <button
                           key={d}
                           type="button"
@@ -317,7 +328,7 @@ export default function MemoPad({
                             (it.dest === d ? "border-blue-500 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50")
                           }
                         >
-                          {d === "문의" ? "📨 오늘의 문의사항" : d === "업무" ? "✅ 업무" : d === "쪽지" ? "🗒️ 쪽지(오늘)" : "빼기"}
+                          {d === "문의" ? "📨 오늘의 문의사항" : d === "특이사항" ? "📝 학생 특이사항" : d === "업무" ? "✅ 업무" : d === "쪽지" ? "🗒️ 쪽지(오늘)" : "빼기"}
                         </button>
                       ))}
                       {it.state === "ok" && <span className="ml-auto text-[11px] font-bold text-emerald-700">등록됨</span>}

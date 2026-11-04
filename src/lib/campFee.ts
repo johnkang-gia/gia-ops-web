@@ -80,6 +80,10 @@ export type CampForm = {
   sibling: boolean;
   returning: boolean;
   submitted_at: string | null;
+  /** 학부모가 «기타 문의»에 적은 글. 「2주차부터 참석」·「동생도 신청」처럼 금액을 바꾸는 말이 여기 옵니다. */
+  note: string | null;
+  /** 폼에 참여 주를 묻는 질문이 없어 3주(전체)로 둔 경우. 화면이 «확인 필요»로 보여줍니다. */
+  weeks_assumed: boolean;
   /** 어느 머리줄을 어느 칸으로 읽었는지. 화면이 보여줘서 «잘못 읽음»을 사람이 알아챕니다. */
   used: Record<string, string>;
 };
@@ -124,7 +128,7 @@ function dateText(v: string): string | null {
   return t;
 }
 
-type Field = keyof Omit<CampForm, "used" | "says_current" | "sibling" | "returning">;
+type Field = keyof Omit<CampForm, "used" | "says_current" | "sibling" | "returning" | "note" | "weeks_assumed">;
 
 /**
  * 머리줄 → 칸. 폼 질문 문구는 해마다 바뀌므로 정확한 글자가 아니라 **낱말**로 찾습니다. 먼저 맞은 규칙이
@@ -138,9 +142,9 @@ const RULES: { field: Field; test: (h: string) => boolean }[] = [
   { field: "applicant_name_en", test: (h) => /(영문|english|영어)/.test(h) && /(이름|성명|name)/.test(h) },
   { field: "birth_date", test: (h) => /생년|생일|birth|dob/.test(h) },
   { field: "grade", test: (h) => /학년|grade/.test(h) },
-  { field: "weeks", test: (h) => /(주|week)/.test(h) && /(참여|기간|신청|과정|선택|week)/.test(h) && !/셔틀|차량/.test(h) },
-  { field: "shuttle", test: (h) => /셔틀|차량|shuttle|bus/.test(h) },
-  { field: "applicant_name", test: (h) => /(이름|성명|name)/.test(h) },
+  { field: "weeks", test: (h) => /(주|week|기간)/.test(h) && /(참여|기간|신청|과정|선택|week)/.test(h) && !/셔틀|차량|문의|question|주소|address/.test(h) },
+  { field: "shuttle", test: (h) => /셔틀|차량|shuttle|bus/.test(h) && !/주소|address/.test(h) },
+  { field: "applicant_name", test: (h) => /(이름|성명|name)/.test(h) && !/학교|school/.test(h) },
 ];
 
 export function readCampForm(answers: Record<string, string>): CampForm {
@@ -158,6 +162,8 @@ export function readCampForm(answers: Record<string, string>): CampForm {
     sibling: false,
     returning: false,
     submitted_at: null,
+    note: null,
+    weeks_assumed: false,
     used: {},
   };
   for (const [rawHeader, rawValue] of Object.entries(answers)) {
@@ -180,6 +186,25 @@ export function readCampForm(answers: Record<string, string>): CampForm {
     if (/재수강|이전\s*캠프|참여\s*(경험|이력)|returning|다시/.test(h)) {
       if (yes(v)) out.returning = true;
       out.used[rawHeader] = "재수강 여부";
+      continue;
+    }
+    // 「GIA 캠프가 처음입니까?」 - 아니오면 재수강입니다(2027 윈터캠프 폼).
+    if (/처음|first time/.test(h)) {
+      if (/^(아니|no)/i.test(lv)) out.returning = true;
+      out.used[rawHeader] = "재수강 여부(처음인가)";
+      continue;
+    }
+    // 「어떤 경로로 알게 되셨나요?」의 «재학생 학부모»는 재학생이라는 대답입니다. 실제 할인은 연결한 학생의 명부 상태로 정합니다.
+    if (/경로|hear about/.test(h)) {
+      if (/current gia parent|재학생 학부모/.test(lv)) out.says_current = true;
+      out.used[rawHeader] = "알게 된 경로";
+      continue;
+    }
+    // 기타 문의 칸. 형제 언급이면 형제 표시를 켭니다(사람이 화면에서 확인). 글은 그대로 남깁니다.
+    if (/문의|question|comment/.test(h)) {
+      if (v) out.note = v;
+      if (/동생|형제|자매|누나|언니|오빠|sibling|brother|sister/.test(lv)) out.sibling = true;
+      out.used[rawHeader] = "기타 문의";
       continue;
     }
     if (/할인|구분|해당/.test(h)) {
@@ -213,15 +238,12 @@ export function readCampForm(answers: Record<string, string>): CampForm {
     out.used[rawHeader] = FIELD_LABEL[f];
   }
 
-  // 주 수를 따로 묻지 않고 「참여 기간」 같은 다른 질문의 대답에만 적힌 폼도 있습니다.
+  // 참여 주를 묻는 질문이 아예 없는 폼(2027 윈터캠프)은 전체 3주로 둡니다. 2주만 오는 집은 «기타 문의»에 적어 오므로
+  // 화면이 그 글을 함께 보여주고, 사람이 2주로 바꿉니다. 기타 문의 글에서 주 수를 짐작하지는 않습니다 - 「week1은 못 옴」을
+  // 1주로 읽는 식의 오독이 금액을 바꿉니다.
   if (out.weeks == null) {
-    for (const v of Object.values(answers)) {
-      const w = parseWeeks(String(v ?? ""));
-      if (w) {
-        out.weeks = w;
-        break;
-      }
-    }
+    out.weeks = 3;
+    out.weeks_assumed = true;
   }
   return out;
 }

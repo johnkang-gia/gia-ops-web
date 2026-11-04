@@ -6,6 +6,7 @@ import { fetchCurrentTerm } from "@/lib/termQuery";
 import type { DayReminder, Department, GoogleChatMirrorMessage, Task, TaskModeColor, TaskStatus, TeamMember, WorkTag } from "@/lib/types";
 import WorkCalendar from "./WorkCalendar";
 import { PastInquiriesButton, RememberStrip, TodayInquiriesPanel, TodayInquiriesProvider } from "./TodayInquiries";
+import MemoPad from "./MemoPad";
 import StudentDayBoard from "./StudentDayBoard";
 import NotesPipButton from "./NotesPipButton";
 import TaskBoard from "./TaskBoard";
@@ -228,7 +229,7 @@ export default function WorkspaceArea({
   const [isMobileView, setIsMobileView] = useState(false);
   // 모바일 기본 탭도 가장 많이 쓰는 등록·달력입니다.
   const notify = useToast();
-  const [mobileTab, setMobileTab] = useState<"inbox" | "today" | "talk">("today");
+  const [mobileTab, setMobileTab] = useState<"inbox" | "today" | "talk" | "memo">("today");
   /** 흐름판·업무 등록은 팝업입니다 - 늘 펼쳐둘 만큼 자주 손대는 자리가 아닙니다. */
   const [boardOpen, setBoardOpen] = useState(false);
   // 달력은 업무보드에 늘 펼쳐두지 않고 「상세 일정」을 누를 때만 띄웁니다(메뉴에도 있습니다).
@@ -521,7 +522,7 @@ export default function WorkspaceArea({
   );
 
   /**
-   * ① 인박스 — 밖에서 들어오는 것(학부모 문의·출결·선생님 요청).
+   * ① 인박스 — 구글챗에서 들어오는 것(출결·선생님 요청). 토들 학부모 글은 가운데 오늘의 문의사항이 받습니다.
    *
    * 예전에는 이 칸이 위아래로 나뉘어 아래쪽에 「오늘 학생」이 함께 있었습니다. 성격이 다른
    * 둘을 한 칸에 포개니 둘 다 좁았고, 사이의 높이 손잡이까지 있어 볼 것이 하나 더 늘었습니다.
@@ -543,6 +544,18 @@ export default function WorkspaceArea({
     <div className="h-full overflow-hidden">
       <StudentDayBoard students={noteStudents} />
     </div>
+  );
+
+  /**
+   * 메모장 — 전화·요청을 받으며 적는 칸. 늘 열려 있어야 손이 가므로 팝업이 아니라 오른쪽 칸 아래에 둡니다.
+   * 적는 즉시 저장되고, 「등록하기」로 오늘의 문의사항·업무·쪽지로 보냅니다(MemoPad).
+   */
+  const memoPad = (
+    <MemoPad
+      currentUserEmail={currentUserEmail}
+      currentUserName={team.find((m) => m.email === currentUserEmail)?.name ?? null}
+      department={activeDepartment.name}
+    />
   );
 
   /**
@@ -810,6 +823,7 @@ export default function WorkspaceArea({
               { key: "inbox", label: "📥 인박스" },
               { key: "today", label: "🧒 오늘 학생" },
               { key: "talk", label: "📨 문의" },
+              { key: "memo", label: "📝 메모" },
             ] as const
           ).map((t) => (
             <button
@@ -824,6 +838,7 @@ export default function WorkspaceArea({
         <div className="min-h-0 flex-1 overflow-hidden">
           {mobileTab === "inbox" && inbox}
           {mobileTab === "today" && todayStudents}
+          {mobileTab === "memo" && memoPad}
           {mobileTab === "talk" && (
             <div className="flex h-full flex-col">
               <div className="flex shrink-0 justify-end border-b border-black/5 px-2 py-1">
@@ -893,7 +908,10 @@ export default function WorkspaceArea({
               onCollapse={() => setLayout((p) => ({ ...p, rightOpen: false }))}
               style={{ width: `${layout.rightWidth}%` }}
             >
-              {todayStudents}
+              <div className="flex h-full flex-col overflow-hidden">
+                <div className="min-h-0 flex-[3] overflow-hidden">{todayStudents}</div>
+                <div className="min-h-[140px] flex-[2] overflow-hidden border-t border-black/10">{memoPad}</div>
+              </div>
             </Zone>
           </>
         ) : (

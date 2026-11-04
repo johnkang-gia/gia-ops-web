@@ -1,13 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
-import PickupTriagePanel from "./PickupTriagePanel";
 import type { GoogleChatMirrorMessage } from "@/lib/types";
 import type { RosterStudent } from "@/lib/attendanceDigest";
 import AttendanceDigestPanel from "./AttendanceDigestPanel";
-import ParentInquiryPanel from "./ParentInquiryPanel";
 import OfficeRequestsPanel from "./OfficeRequestsPanel";
+import { useToast } from "@/components/common/ToastProvider";
+import { createTaskFromInbox } from "@/lib/taskFromInbox";
 
 // 통합 인박스(커맨드센터 개편): 학부모 문의·출결내역·출결알림·선생님요청 등 "들어오는 소식"을
 // 필터 탭 하나의 패널로 모았습니다. 예전에는 학부모 문의/픽업/선생님요청 배너가 화면 곳곳에
@@ -18,7 +17,12 @@ import OfficeRequestsPanel from "./OfficeRequestsPanel";
 // 항목 수를 탭 오른쪽 위 빨간 원으로 띄웁니다. 탭을 열면 본 것으로 치고 원이 사라집니다.
 // 예외로 [선생님요청]은 "보면 사라지는 안읽음"이 아니라 "아직 완료 처리하지 않은 건수"입니다 -
 // 요청은 읽는 게 아니라 처리해야 끝나는 것이라서, 완료를 눌러야 숫자가 내려갑니다.
-type TabKey = "inquiry" | "digest" | "office";
+//
+// 학부모 문의(토들)는 인박스에서 뺐습니다. 토들 글은 이제 가운데 「오늘의 문의사항」이 전부 받고, 같은 글이
+// 두 자리에 뜨면 한쪽에서 처리한 것이 다른 쪽에는 남아 «아직 안 한 일»로 보입니다. 인박스는 구글챗에서
+// 들어오는 두 갈래(출결알림 방 → 출결내역, 선생님요청 방 → 선생님요청)만 봅니다. 토들 픽업의 「확인 필요」
+// 칸도 같은 이유로 뺐습니다 - 학생 연결은 오늘의 문의사항 줄에서 합니다.
+type TabKey = "digest" | "office";
 
 const SEEN_STORAGE_KEY = "gia-work-inbox-seen-v1";
 
@@ -26,14 +30,13 @@ function loadSeen(): Record<TabKey, number> {
   const now = Date.now();
   // 처음 쓰는 브라우저에서는 "지금까지 온 것은 다 본 것"으로 시작합니다 - 첫 로드부터 지난
   // 메시지 수백 건이 전부 빨간 숫자로 뜨면 알림이 아니라 소음입니다.
-  const fallback: Record<TabKey, number> = { inquiry: now, digest: now, office: now };
+  const fallback: Record<TabKey, number> = { digest: now, office: now };
   if (typeof window === "undefined") return fallback;
   try {
     const raw = window.localStorage.getItem(SEEN_STORAGE_KEY);
     if (!raw) return fallback;
     const p = JSON.parse(raw) as Partial<Record<TabKey, number>>;
     return {
-      inquiry: typeof p.inquiry === "number" ? p.inquiry : now,
       digest: typeof p.digest === "number" ? p.digest : now,
       office: typeof p.office === "number" ? p.office : now,
     };
@@ -63,8 +66,7 @@ export default function AttendancePanels({
   department: string;
   roster: RosterStudent[];
 }) {
-  // 학부모 문의가 가장 자주 보는 것이므로 기본 탭입니다(기존 유지).
-  const [tab, setTab] = useState<TabKey>("inquiry");
+  const [tab, setTab] = useState<TabKey>("digest");
   const [officeOpen, setOfficeOpen] = useState(0);
 
   // 탭별 "마지막으로 본 시각". 서버 렌더링과 첫 렌더가 같아야 하므로(hydration) 마운트 후에만
@@ -91,61 +93,35 @@ export default function AttendancePanels({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, messages.length]);
 
-  // 학부모 문의의 새 항목 감지용 최근 접수시각 목록. 목록 화면(ParentInquiryPanel)은 탭이
-  // 열려 있을 때만 마운트되므로, 배지는 여기서 가볍게 따로 봅니다 - 시각만 30건 가져오고,
-  // 새 행이 INSERT되면 다시 읽습니다(채널 이름은 패널 쪽 "parent-inquiries"와 다르게).
-  const [inquiryTimes, setInquiryTimes] = useState<number[]>([]);
-  useEffect(() => {
-    const supabase = createClient();
-    let stopped = false;
-    async function load() {
-      const { data } = await supabase
-        .from("pickup_requests")
-        .select("received_at, is_demo")
-        .eq("kind", "문의")
-        .order("received_at", { ascending: false })
-        .limit(30);
-      if (stopped) return;
-      setInquiryTimes(
-        ((data as { received_at: string | null; is_demo?: boolean }[] | null) ?? [])
-          .filter((r) => !r.is_demo && r.received_at)
-          .map((r) => new Date(r.received_at as string).getTime())
-      );
-    }
-    load();
-    const channel = supabase
-      .channel("parent-inquiries-badge")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "pickup_requests" }, () => load())
-      .subscribe();
-    return () => {
-      stopped = true;
-      supabase.removeChannel(channel);
-    };
-  }, []);
-
   // 출결내역·출결알림은 같은 미러링 스트림(attendance)을 각자 방식으로 보여주므로, 배지도
   // 같은 스트림에서 "그 탭을 본 뒤 들어온 메시지 수"를 셉니다.
   const attendanceTimes = useMemo(
     () => messages.filter((m) => m.source_key === "attendance").map((m) => new Date(m.created_at_google).getTime()),
     [messages]
   );
+  const teacherMessages = useMemo(
+    () =>
+      messages
+        .filter((m) => m.source_key === "teacher_requests")
+        .sort((a, b) => b.created_at_google.localeCompare(a.created_at_google)),
+    [messages]
+  );
+  const teacherTimes = useMemo(() => teacherMessages.map((m) => new Date(m.created_at_google).getTime()), [teacherMessages]);
 
   const unread: Record<TabKey, number> = useMemo(() => {
-    if (!seen) return { inquiry: 0, digest: 0, office: officeOpen };
+    if (!seen) return { digest: 0, office: officeOpen };
     return {
-      inquiry: inquiryTimes.filter((t) => t > seen.inquiry).length,
       digest: attendanceTimes.filter((t) => t > seen.digest).length,
-      // 선생님요청은 안읽음이 아니라 미완료 건수 - 처리해야 끝나는 것이라 보기만 해서는 안 꺼집니다.
-      office: officeOpen,
+      // 선생님요청은 앱 창구의 미완료 건수 + 구글챗 방에 마지막으로 본 뒤 들어온 글 수입니다.
+      office: officeOpen + teacherTimes.filter((t) => t > seen.office).length,
     };
-  }, [seen, inquiryTimes, attendanceTimes, officeOpen]);
+  }, [seen, attendanceTimes, teacherTimes, officeOpen]);
 
   // 「🚸 출결알림」 탭을 내렸습니다. 이 탭은 구글챗의 출결알림 방을 그대로 옮겨 보여주는
   // 자리였는데, **바로 아래 칸(구글챗)이 같은 방을 이미 보여줍니다.** 창을 여러 개 띄우지
   // 않으려고 만든 자리가 한 화면 안에서 같은 내용을 두 번 띄우는 자리가 됐고, 그러면 어느
   // 쪽이 최신인지 묻게 됩니다. 구글챗에서 읽어 만든 출결 판정은 [출결내역] 탭에 남습니다.
   const tabs: { key: TabKey; label: string }[] = [
-    { key: "inquiry", label: "💬 학부모 문의" },
     { key: "digest", label: "📊 출결내역" },
     { key: "office", label: "❗ 선생님요청" },
   ];
@@ -176,10 +152,12 @@ export default function AttendancePanels({
       <div className="min-h-0 flex-1 overflow-hidden">
         {/* 선생님요청 탭은 배지 숫자(미완료 건수)를 유지하기 위해 항상 마운트해두고 표시만
             전환합니다 - 다른 탭을 보고 있어도 새 요청이 오면 배지가 올라갑니다. */}
-        <div className={tab === "office" ? "h-full" : "hidden"}>
-          <OfficeRequestsPanel onOpenCountChange={setOfficeOpen} department={department} userEmail={userEmail} />
+        <div className={tab === "office" ? "flex h-full flex-col overflow-hidden" : "hidden"}>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <TeacherChatRequests messages={teacherMessages} department={department} userEmail={userEmail} />
+            <OfficeRequestsPanel onOpenCountChange={setOfficeOpen} department={department} userEmail={userEmail} />
+          </div>
         </div>
-        {tab === "inquiry" && <ParentInquiryPanel currentUserEmail={userEmail} full />}
         {tab === "digest" && (
           <div className="flex h-full flex-col overflow-hidden">
             {/* 「오늘 하원체크」는 업무보드 맨 위로 올라갔습니다. 같은 화면에 두 번 뜨면
@@ -194,12 +172,77 @@ export default function AttendancePanels({
         )}
       </div>
 
-      {/* **학부모 문의 아래가 픽업 자리입니다.** 탭이 무엇이든 늘 보입니다 - 탭 안에 넣으면
-          다른 탭을 보는 동안 확인이 필요한 픽업이 화면에서 사라지고, 안 보이는 것은 없는
-          것과 같습니다. 열고 닫을 수 있어 자리를 다 먹지도 않습니다. */}
-      <div className="flex max-h-[46%] shrink-0 flex-col overflow-hidden">
-        <PickupTriagePanel roster={roster} />
-      </div>
+    </div>
+  );
+}
+
+const timeKst = (iso: string) =>
+  new Date(iso).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
+
+/**
+ * 구글챗 「선생님요청」 방에 올라온 글.
+ *
+ * 선생님들은 앱 창구보다 구글챗 방에 먼저 씁니다. 그 방을 읽어 둔 자료(google_chat_mirror_messages)가 이미
+ * 있었는데 인박스는 앱 창구만 보여서, 방에 쓴 요청은 구글챗을 따로 열어야 보였습니다. 글은 구글챗 쪽이
+ * 원본이라 여기서는 읽고 업무로 옮기는 것만 합니다.
+ */
+function TeacherChatRequests({
+  messages,
+  department,
+  userEmail,
+}: {
+  messages: GoogleChatMirrorMessage[];
+  department: string;
+  userEmail: string;
+}) {
+  const notify = useToast();
+  const [tasked, setTasked] = useState<Set<string>>(new Set());
+  const shown = messages.slice(0, 60);
+
+  async function toTask(m: GoogleChatMirrorMessage) {
+    const who = m.sender_display_name ?? "선생님";
+    const { error } = await createTaskFromInbox({
+      title: `[${who} 요청] ${m.content.replace(/\s+/g, " ").slice(0, 50)}`,
+      description: `구글챗 선생님요청 방 · ${who} · ${timeKst(m.created_at_google)}\n\n${m.content}`,
+      department,
+      userEmail,
+    });
+    if (error) notify("업무 등록 실패: " + error, "error");
+    else {
+      notify("업무로 등록했습니다.", "success");
+      setTasked((prev) => new Set(prev).add(m.id));
+    }
+  }
+
+  return (
+    <div className="border-b border-black/5 px-2 pb-2">
+      <p className="px-1 pb-1 pt-1 text-[10px] font-bold text-slate-400">구글챗 · 선생님요청 방</p>
+      {shown.length === 0 ? (
+        <p className="px-1 text-[11px] text-slate-400">
+          구글챗 선생님요청 방에서 읽어온 글이 없습니다. 방이 꺼져 있으면 관리 › 연동 상태에서 켜 주세요.
+        </p>
+      ) : (
+        <ul className="space-y-1">
+          {shown.map((m) => (
+            <li key={m.id} className="rounded-lg bg-white px-2 py-1.5 text-[12px] shadow-sm ring-1 ring-black/5">
+              <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
+                <span className="rounded bg-sky-100 px-1 font-bold text-sky-700">구글챗</span>
+                <b className="text-slate-600">{m.sender_display_name ?? "?"}</b>
+                <span className="tabular-nums">{timeKst(m.created_at_google)}</span>
+                <button
+                  type="button"
+                  disabled={tasked.has(m.id) || !!m.task_id}
+                  onClick={() => void toTask(m)}
+                  className="ml-auto rounded border border-slate-200 px-1.5 py-0.5 font-bold text-slate-500 hover:bg-slate-50 disabled:opacity-40"
+                >
+                  {tasked.has(m.id) || m.task_id ? "업무 등록됨" : "→ 업무"}
+                </button>
+              </div>
+              <p className="mt-0.5 whitespace-pre-wrap break-words text-slate-700">{m.content}</p>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

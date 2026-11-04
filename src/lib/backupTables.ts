@@ -129,6 +129,8 @@ export const BACKUP_GROUPS: { group: string; tables: string[] }[] = [
       "work_notices",
       // 누가 언제 무엇을 했는지. 사고를 되짚을 때 필요합니다.
       "staff_activity_log",
+      // 아직 등록하지 않은 전화 메모. 잃으면 받은 전화 내용이 함께 사라집니다.
+      "staff_memo_pads",
       "department_memos",
       "incidents",
       "incident_students",

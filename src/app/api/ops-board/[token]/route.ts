@@ -414,6 +414,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
 
   const inquiries = inquiryRows
     .filter((r) => !r.is_demo) // 데모 연습용 문의 제외.
+    .filter((r) => !r.skipped_at) // 직원이 「넘기기」로 내린 글.
     // 답할 것이 없는 인사·감사는 대시보드에 올리지 않습니다.
     .filter((r) => !isNoActionBadges(r.badges as string[] | null))
     .map((r) => ({

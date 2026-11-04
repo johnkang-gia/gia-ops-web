@@ -68,6 +68,10 @@ export type InquiryRow = {
   assignees: string[] | null;
   assigned_by?: string | null;
   assigned_at?: string | null;
+  skipped_at?: string | null;
+  skipped_by?: string | null;
+  announced_at?: string | null;
+  announced_by?: string | null;
   is_demo?: boolean | null;
 };
 
@@ -302,12 +306,16 @@ export function TodayInquiriesPanel() {
   const [filter, setFilter] = useState<InquiryBadge | "전체">("전체");
   const [showGreetings, setShowGreetings] = useState(false);
   const [showDone, setShowDone] = useState(false);
+  const [showSkipped, setShowSkipped] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
 
   const start = todayStartIso();
   const todays = rows.filter((r) => r.received_at >= start);
-  const actionable = rows.filter((r) => !isNoActionBadges(badgesOf(r)));
-  const greetings = rows.filter((r) => isNoActionBadges(badgesOf(r)));
+  // 넘긴 글은 목록에서 내립니다. 처리 완료와 달리 «한 일»로 세지 않습니다(보고·통계에서 빠짐).
+  const live = rows.filter((r) => !r.skipped_at);
+  const skipped = rows.filter((r) => !!r.skipped_at);
+  const actionable = live.filter((r) => !isNoActionBadges(badgesOf(r)));
+  const greetings = live.filter((r) => isNoActionBadges(badgesOf(r)));
   const counts = new Map<InquiryBadge, number>();
   for (const r of actionable)
     for (const b of badgesOf(r)) counts.set(b, (counts.get(b) ?? 0) + 1);
@@ -441,6 +449,31 @@ export function TodayInquiriesPanel() {
             )}
           </div>
         )}
+
+        {skipped.length > 0 && (
+          <div className="mt-2">
+            <button
+              type="button"
+              onClick={() => setShowSkipped((v) => !v)}
+              className="text-[11px] font-bold text-slate-400 hover:text-slate-600"
+            >
+              {showSkipped ? "▾" : "▸"} 넘긴 글 {skipped.length}건
+            </button>
+            {showSkipped && (
+              <ul className="mt-1 space-y-1 opacity-60">
+                {skipped.sort(order).map((r) => (
+                  <Row
+                    key={r.id}
+                    r={r}
+                    now={now}
+                    open={openId === r.id}
+                    onToggle={() => setOpenId(openId === r.id ? null : r.id)}
+                  />
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -503,7 +536,9 @@ function Row({
   open: boolean;
   onToggle: () => void;
 }) {
-  const { patch, me, staffName, team } = useToday();
+  const { patch, me, staffName, team, names } = useToday();
+  const notify = useToast();
+  const [announcing, setAnnouncing] = useState(false);
   const tone = elapsedTone(r.received_at, now);
   const toneCls = {
     calm: "bg-slate-100 text-slate-500",
@@ -535,6 +570,37 @@ function Row({
           { answered_at: nowIso(), answered_by: me, answered_via: "수동" },
           "처리 완료로 표시했습니다.",
         );
+
+  const toggleSkip = () =>
+    r.skipped_at
+      ? patch(r, { skipped_at: null, skipped_by: null }, "넘긴 글을 되돌렸습니다.")
+      : patch(r, { skipped_at: nowIso(), skipped_by: me }, "넘겼습니다(목록에서 내림).");
+
+  /**
+   * 확성기 — 이 문의를 전체 공지로 올립니다. 공지 쓰기는 관리자만 할 수 있어서 함수(announce_inquiry)가
+   * 문의 한 건을 올리는 일만 대신합니다. 이미 올린 글은 한 번 더 묻습니다(같은 공지가 두 장 뜨지 않게).
+   */
+  async function announce() {
+    if (announcing) return;
+    const who = r.student_id ? (names.get(r.student_id) ?? null) : null;
+    const head = (who ?? r.channel_label ?? "문의") + " · " + badgesOf(r).join("·");
+    if (r.announced_at && !window.confirm(`이미 ${timeKst(r.announced_at)}에 공지로 올렸습니다. 한 번 더 올릴까요?`)) return;
+    if (!r.announced_at && !window.confirm(`이 문의를 모든 직원 화면 위 공지로 띄울까요?\n\n${head}\n${(r.summary || r.raw_text || "").slice(0, 100)}`)) return;
+    setAnnouncing(true);
+    const body = [
+      r.summary ?? "",
+      r.raw_text && r.raw_text !== r.summary ? `\n원문: ${r.raw_text.slice(0, 600)}` : "",
+      `\n(${r.source ?? "?"} · ${dayKst(r.received_at)} ${timeKst(r.received_at)} · 올린 사람 ${staffName(me)})`,
+    ].join("");
+    const { error } = await createClient().rpc("announce_inquiry", {
+      p_id: r.id,
+      p_title: `📢 ${head}`,
+      p_body: body,
+    });
+    setAnnouncing(false);
+    if (error) notify("공지로 올리지 못했습니다: " + error.message, "error");
+    else notify("전체 공지로 올렸습니다.", "success");
+  }
 
   return (
     <li
@@ -632,11 +698,36 @@ function Row({
           >
             처리 완료
           </button>
+          <div className="flex gap-1">
+            <button
+              type="button"
+              onClick={() => void toggleSkip()}
+              className={
+                "flex-1 rounded px-1 py-0.5 text-[10px] font-bold " +
+                (r.skipped_at ? "border border-slate-300 text-slate-500" : "border border-slate-200 text-slate-400 hover:bg-slate-50")
+              }
+              title={r.skipped_at ? "넘긴 것을 되돌립니다" : "감사 인사처럼 할 일이 없는 글을 목록에서 내립니다(처리 건수에 안 들어감)"}
+            >
+              {r.skipped_at ? "되돌림" : "넘기기"}
+            </button>
+            <button
+              type="button"
+              disabled={announcing}
+              onClick={() => void announce()}
+              className={
+                "rounded px-1 py-0.5 text-[11px] " +
+                (r.announced_at ? "bg-amber-100 ring-1 ring-amber-300" : "hover:bg-amber-50")
+              }
+              title={r.announced_at ? `${timeKst(r.announced_at)} 전체 공지로 올림 · ${staffName(r.announced_by ?? null)}` : "모든 직원 화면에 공지로 띄웁니다"}
+            >
+              📢
+            </button>
+          </div>
         </div>
       </div>
 
       {/* 누가 무엇을 했는지 — 늘 보입니다. */}
-      {(r.replied_at || r.answered_at || assignees.length > 0) && (
+      {(r.replied_at || r.answered_at || r.skipped_at || r.announced_at || assignees.length > 0) && (
         <div className="mt-1 flex flex-wrap gap-x-2 text-[10px] text-slate-500">
           {r.replied_at && (
             <span>
@@ -650,6 +741,16 @@ function Row({
           {r.answered_at && (
             <span className="text-slate-700">
               처리 완료 · {staffName(r.answered_by)} {timeKst(r.answered_at)}
+            </span>
+          )}
+          {r.skipped_at && (
+            <span>
+              넘김 · {staffName(r.skipped_by ?? null)} {timeKst(r.skipped_at)}
+            </span>
+          )}
+          {r.announced_at && (
+            <span className="font-bold text-amber-700">
+              📢 공지 · {staffName(r.announced_by ?? null)} {timeKst(r.announced_at)}
             </span>
           )}
           {assignees.length > 0 && (
@@ -767,7 +868,7 @@ export function RememberStrip() {
   const { rows, me, staffName, patch } = useToday();
   const today = kstDateOffset(0);
   const pending = rows.filter(
-    (r) => (r.assignees ?? []).length > 0 && !r.answered_at,
+    (r) => (r.assignees ?? []).length > 0 && !r.answered_at && !r.skipped_at,
   );
   if (pending.length === 0) return null;
   const mine = pending

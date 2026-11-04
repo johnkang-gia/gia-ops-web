@@ -233,6 +233,8 @@ export const DATA_KINDS: DataKindDef[] = [
       // 업무 ↔ 학생. **이름이 아니라 번호로** 잇습니다 - 학생 프로필이 쓰던
       // `ilike '%이름%'` 은 김재이 셋을 한꺼번에 걸었습니다(CLAUDE.md §2-4-1).
       "task_students",
+      // 직원 활동 기록. 다른 표의 트리거가 채우고 화면은 읽기만 합니다.
+      "staff_activity_log",
     ],
     dedupe: { none: "업무는 같은 내용이 여러 번 생겨도 각각 다른 일입니다. 픽업에서 생기는 업무만 pickup_requests.task_id 로 한 번만 만듭니다." },
     apply: "src/lib/pickupTask.ts",

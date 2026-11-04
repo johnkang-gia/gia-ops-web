@@ -74,6 +74,16 @@ export async function GET(req: NextRequest) {
       .select("id");
     if (rawErr) console.error("[cron:purge-trash] 학부모 원문을 비우지 못했습니다:", rawErr.message);
 
+    // ── 직원 활동 기록 ──────────────────────────────────────────────────────
+    // 「누가 언제 무엇을 했나」는 한 학기 안에서 되짚는 일이 대부분입니다. 180일만 둡니다.
+    const actCutoff = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString();
+    const { data: actPurged, error: actErr } = await supabase
+      .from("staff_activity_log")
+      .delete()
+      .lt("at", actCutoff)
+      .select("id");
+    if (actErr) console.error("[cron:purge-trash] 직원 활동 기록을 정리하지 못했습니다:", actErr.message);
+
     await touchHeartbeat(supabase, "cron:purge-trash");
     return NextResponse.json({
       ok: true,
@@ -81,6 +91,7 @@ export async function GET(req: NextRequest) {
       usagePurgedCount: usagePurged?.length ?? 0,
       dayNotesPurgedCount: notesPurged?.length ?? 0,
       rawTextClearedCount: rawCleared?.length ?? 0,
+      activityPurgedCount: actPurged?.length ?? 0,
       usageProblem: usageErr?.message ?? null,
     });
   } catch (err) {

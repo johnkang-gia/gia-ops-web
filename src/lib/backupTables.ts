@@ -127,6 +127,8 @@ export const BACKUP_GROUPS: { group: string; tables: string[] }[] = [
       // 이름으로 짐작해 다시 잇는 것은 일부러 안 하기로 한 일입니다.
       "task_students",
       "work_notices",
+      // 누가 언제 무엇을 했는지. 사고를 되짚을 때 필요합니다.
+      "staff_activity_log",
       "department_memos",
       "incidents",
       "incident_students",

@@ -1,177 +1,269 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { timeAgo } from "@/lib/kst";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
+import { timeAgo, kstDateOffset } from "@/lib/kst";
 import { createClient } from "@/lib/supabase/client";
-import { useConfirm } from "@/components/common/ConfirmProvider";
 import { useToast } from "@/components/common/ToastProvider";
-import type { TaskComment } from "@/lib/types";
+import { Who } from "@/components/common/HomonymProvider";
+import { loadStudents } from "@/lib/students";
 
-// 실시간 로그 — 부서 탭 줄 가운데에 한 줄로 흐릅니다.
-//
-// 요청: "지금 실시간 로그를 맨위에 초등부 부서 나오는칸 가운데로 로그를 옮기고 한줄만
-// 표시되도록해서 누르면 전체로그가 뜨도록 바꾸고"
-//
-// 왜 옮겼나요?
-//   로그는 "무슨 일이 있었나"를 곁눈질로 확인하는 정보지, 자리를 크게 차지할 만큼 자주 들여다보는
-//   것이 아닙니다. 세 줄을 차지하던 자리를 학부모 문의사항에 내주고, 로그는 맨 윗줄에 한 줄로만
-//   흐르게 했습니다. 궁금하면 눌러서 전체를 봅니다.
+/**
+ * 직원 활동 기록 — 누가 언제 무엇을 했나. 모든 직원이 봅니다.
+ *
+ * 예전 로그는 업무 카드의 시스템 댓글만 보여줬고, 부서 탭이 「전체」이면 아예 숨었습니다. 문의에 답하거나
+ * 처리 완료를 누르거나 학생 메모를 남긴 일은 어디에도 안 보여서, 같은 학부모에게 두 사람이 답하거나
+ * 「누가 처리했지?」를 물으러 다녔습니다.
+ *
+ * 기록은 화면이 남기지 않습니다. 표마다 트리거가 남깁니다(`20261222000000_staff_activity_log.sql`) -
+ * 어느 화면에서 눌러도 빠지지 않습니다. 여기서는 읽기만 합니다.
+ */
 
-export default function ActivityLogTicker({
-  department,
-  isAdmin,
-  currentUserEmail,
-}: {
-  department: string;
-  isAdmin: boolean;
-  currentUserEmail: string;
-}) {
-  const confirmAction = useConfirm();
-  const notify = useToast();
-  const [latest, setLatest] = useState<TaskComment | null>(null);
-  const [expanded, setExpanded] = useState(false);
-  const [fullEvents, setFullEvents] = useState<TaskComment[] | null>(null);
+type Act = {
+  id: string;
+  at: string;
+  actor_email: string | null;
+  actor_name: string;
+  area: string;
+  action: string;
+  summary: string | null;
+  student_id: string | null;
+};
+
+const AREA_STYLE: Record<string, string> = {
+  문의: "bg-blue-100 text-blue-700",
+  픽업: "bg-amber-100 text-amber-700",
+  업무: "bg-slate-200 text-slate-700",
+  쪽지: "bg-yellow-100 text-yellow-800",
+  "학생 메모": "bg-violet-100 text-violet-700",
+  "하원 체크표": "bg-orange-100 text-orange-700",
+  "셔틀 메모": "bg-orange-50 text-orange-700",
+  출결: "bg-rose-100 text-rose-700",
+};
+
+const WD = ["일", "월", "화", "수", "목", "금", "토"];
+const shiftDay = (iso: string, d: number) => {
+  const x = new Date(iso + "T00:00:00Z");
+  x.setUTCDate(x.getUTCDate() + d);
+  return x.toISOString().slice(0, 10);
+};
+const dayTitle = (iso: string) => {
+  const d = new Date(iso + "T00:00:00Z");
+  return `${d.getUTCMonth() + 1}월 ${d.getUTCDate()}일 (${WD[d.getUTCDay()]})`;
+};
+const timeKst = (iso: string) =>
+  new Date(iso).toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", hour12: false });
+
+export default function ActivityLogTicker(_props: { department?: string; isAdmin?: boolean; currentUserEmail?: string }) {
+  const [latest, setLatest] = useState<Act | null>(null);
+  const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    setLatest(null);
-    setFullEvents(null);
-    if (!department || department === "전체") return;
     const supabase = createClient();
     let cancelled = false;
-
     supabase
-      .from("task_comments")
+      .from("staff_activity_log")
       .select("*")
-      .eq("department", department)
-      .eq("is_system", true)
-      .order("created_at", { ascending: false })
+      .order("at", { ascending: false })
       .limit(1)
       .then(({ data }) => {
-        if (!cancelled) setLatest(((data as TaskComment[] | null) ?? [])[0] ?? null);
+        if (!cancelled) setLatest(((data as Act[] | null) ?? [])[0] ?? null);
       });
-
-    const channel = supabase
-      .channel(`activity-ticker-${department}`)
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "task_comments", filter: `department=eq.${department}` },
-        (payload) => {
-          const next = payload.new as TaskComment;
-          if (!next.is_system) return;
-          setLatest(next);
-          setFullEvents((prev) => (prev ? [next, ...prev] : prev));
-        }
-      )
+    const ch = supabase
+      .channel("staff-activity-ticker")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "staff_activity_log" }, (p) => setLatest(p.new as Act))
       .subscribe();
-
     return () => {
       cancelled = true;
-      supabase.removeChannel(channel);
+      void supabase.removeChannel(ch);
     };
-  }, [department]);
-
-  async function openFull() {
-    setExpanded(true);
-    if (fullEvents) return;
-    const supabase = createClient();
-    const { data } = await supabase
-      .from("task_comments")
-      .select("*")
-      .eq("department", department)
-      .eq("is_system", true)
-      .order("created_at", { ascending: false })
-      .limit(300);
-    setFullEvents((data as TaskComment[] | null) ?? []);
-  }
-
-  async function deleteEvent(e: TaskComment) {
-    if (!(await confirmAction("이 로그 기록을 삭제할까요?", { danger: true }))) return;
-    const supabase = createClient();
-    setFullEvents((prev) => (prev ? prev.filter((x) => x.id !== e.id) : prev));
-    if (latest?.id === e.id) setLatest(null);
-    const { error } = await supabase.from("task_comments").delete().eq("id", e.id);
-    if (error) notify("로그를 삭제하지 못했습니다: " + error.message, "error");
-  }
-
-  const canDelete = (e: TaskComment) => isAdmin || e.author_email === currentUserEmail;
-
-  if (!department || department === "전체") return null;
+  }, []);
 
   return (
     <>
-      {/* min-w-0 + truncate로 부서 탭이 많아져도 이 칸이 밀려나지 않고 줄어들기만 합니다. */}
       <button
         type="button"
-        onClick={openFull}
-        title="전체 로그 보기"
-        // 담당자: "위쪽 로그 부분 너무 기니까 조금 줄이고."
-        //
-        // 예전에는 flex-1로 남는 폭을 전부 먹었습니다. 로그는 "무슨 일이 있었나" 훑는 용도지
-        // 자세히 읽는 자리가 아닌데, 화면에서 가장 넓은 칸을 차지하고 있었습니다. 최대 폭을
-        // 두어 절반 아래로 줄이고, 남은 자리는 오른쪽 배지들이 씁니다. 전체 내용은 눌러서 봅니다.
-        className="mx-2 flex min-w-0 max-w-[22rem] flex-1 items-center gap-1.5 rounded-full bg-black/5 px-3 py-1 text-left text-[11px] text-slate-500 transition hover:bg-black/10"
+        onClick={() => setOpen(true)}
+        title="모든 직원의 활동 기록 보기"
+        className="mx-2 flex min-w-0 max-w-[26rem] flex-1 items-center gap-1.5 rounded-full bg-black/5 px-3 py-1 text-left text-[11px] text-slate-500 transition hover:bg-black/10"
       >
         <span className="shrink-0">🔔</span>
         <span className="min-w-0 flex-1 truncate">
           {latest ? (
             <>
-              {latest.content} <span className="opacity-50">· {timeAgo(latest.created_at)}</span>
+              <b className="text-slate-700">{latest.actor_name}</b> {latest.action}
+              {latest.summary ? ` · ${latest.summary}` : ""} <span className="opacity-50">· {timeAgo(latest.at)}</span>
             </>
           ) : (
             <span className="opacity-50">아직 활동 기록이 없습니다.</span>
           )}
         </span>
-        <span className="shrink-0 text-[10px] font-semibold text-blue-500">전체 →</span>
+        <span className="shrink-0 text-[10px] font-semibold text-blue-500">활동 기록 →</span>
       </button>
-
-      {expanded &&
-        typeof document !== "undefined" &&
-        createPortal(
-          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4" onClick={() => setExpanded(false)}>
-            <div
-              onClick={(e) => e.stopPropagation()}
-              className="flex max-h-[80vh] w-full max-w-lg flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
-            >
-              <div className="flex shrink-0 items-center justify-between border-b border-black/5 px-4 py-3">
-                <span className="text-sm font-bold text-slate-800">🔔 {department} 실시간 로그 전체</span>
-                <button onClick={() => setExpanded(false)} className="rounded-lg px-2 py-1 text-sm text-slate-400 hover:bg-slate-100">
-                  ✕
-                </button>
-              </div>
-              <div className="flex-1 overflow-y-auto px-4 py-3">
-                {fullEvents === null ? (
-                  <p className="text-xs text-slate-300">불러오는 중…</p>
-                ) : fullEvents.length === 0 ? (
-                  <p className="text-xs text-slate-300">아직 활동 기록이 없습니다.</p>
-                ) : (
-                  <div className="flex flex-col gap-2">
-                    {fullEvents.map((e) => (
-                      <div
-                        key={e.id}
-                        className="group flex items-center justify-between gap-2 rounded-lg bg-slate-50 px-2.5 py-1.5 text-[12px] text-slate-600"
-                      >
-                        <span className="min-w-0 flex-1 truncate">
-                          {e.content} <span className="text-[10px] text-slate-400">· {timeAgo(e.created_at)}</span>
-                        </span>
-                        {canDelete(e) && (
-                          <button
-                            onClick={() => deleteEvent(e)}
-                            title="로그 삭제"
-                            className="shrink-0 text-slate-300 hover:text-red-500"
-                          >
-                            ✕
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>,
-          document.body
-        )}
+      {open && typeof document !== "undefined" && createPortal(<ActivityModal onClose={() => setOpen(false)} />, document.body)}
     </>
+  );
+}
+
+function ActivityModal({ onClose }: { onClose: () => void }) {
+  const notify = useToast();
+  const [day, setDay] = useState(kstDateOffset(0));
+  const [rows, setRows] = useState<Act[] | null>(null);
+  const [who, setWho] = useState<string>("전체");
+  const [area, setArea] = useState<string>("전체");
+  const [names, setNames] = useState<Map<string, string>>(new Map());
+  const today = kstDateOffset(0);
+
+  const load = useCallback(async () => {
+    const { data, error } = await createClient()
+      .from("staff_activity_log")
+      .select("*")
+      .gte("at", `${day}T00:00:00+09:00`)
+      .lt("at", `${shiftDay(day, 1)}T00:00:00+09:00`)
+      .order("at", { ascending: false })
+      .limit(1000);
+    if (error) {
+      notify("활동 기록을 읽지 못했습니다: " + error.message, "error");
+      setRows([]);
+      return;
+    }
+    setRows((data as Act[] | null) ?? []);
+  }, [day, notify]);
+
+  useEffect(() => {
+    setRows(null);
+    void load();
+  }, [load]);
+
+  useEffect(() => {
+    // 학생 이름은 번호로 찾습니다.
+    void loadStudents(createClient(), { status: "all" }).then(({ rows: st }) => setNames(new Map(st.map((s) => [s.id, s.name]))));
+    if (day !== today) return;
+    const supabase = createClient();
+    const ch = supabase
+      .channel("staff-activity-modal")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "staff_activity_log" }, (p) =>
+        setRows((prev) => (prev ? [p.new as Act, ...prev] : prev)),
+      )
+      .subscribe();
+    return () => void supabase.removeChannel(ch);
+  }, [day, today]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const people = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of rows ?? []) m.set(r.actor_name, (m.get(r.actor_name) ?? 0) + 1);
+    return [...m.entries()].sort((a, b) => b[1] - a[1]);
+  }, [rows]);
+  const areas = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of rows ?? []) m.set(r.area, (m.get(r.area) ?? 0) + 1);
+    return [...m.entries()].sort((a, b) => b[1] - a[1]);
+  }, [rows]);
+  const shown = (rows ?? []).filter((r) => (who === "전체" || r.actor_name === who) && (area === "전체" || r.area === area));
+
+  const chip = (active: boolean) =>
+    "rounded-full border px-2 py-0.5 text-[10px] font-bold " +
+    (active ? "border-blue-500 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50");
+
+  return (
+    <div className="fixed inset-0 z-[900] flex items-start justify-center bg-black/40 p-3 sm:p-6" onClick={onClose}>
+      <div
+        className="flex max-h-full w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-black/5 px-4 py-2.5">
+          <h2 className="text-sm font-bold text-slate-800">🔔 직원 활동 기록</h2>
+          <div className="flex items-center gap-1">
+            <button type="button" onClick={() => setDay(shiftDay(day, -1))} className="rounded border px-1.5 text-xs hover:bg-slate-50">
+              ◀
+            </button>
+            <input
+              type="date"
+              value={day}
+              max={today}
+              onChange={(e) => e.target.value && setDay(e.target.value)}
+              className="rounded border px-1.5 py-0.5 text-xs"
+            />
+            <button
+              type="button"
+              disabled={day >= today}
+              onClick={() => setDay(shiftDay(day, 1))}
+              className="rounded border px-1.5 text-xs hover:bg-slate-50 disabled:opacity-30"
+            >
+              ▶
+            </button>
+            <span className="text-xs font-bold text-slate-600">{dayTitle(day)}</span>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="ml-auto rounded-lg bg-slate-800 px-3 py-1 text-[12px] font-bold text-white hover:bg-slate-700"
+          >
+            닫기
+          </button>
+        </div>
+
+        <div className="shrink-0 space-y-1 border-b border-black/5 px-4 py-1.5">
+          <div className="flex flex-wrap items-center gap-1">
+            <span className="mr-1 text-[10px] font-bold text-slate-400">사람</span>
+            <button type="button" className={chip(who === "전체")} onClick={() => setWho("전체")}>
+              전체 {rows?.length ?? 0}
+            </button>
+            {people.map(([n, c]) => (
+              <button key={n} type="button" className={chip(who === n)} onClick={() => setWho(n)}>
+                {n} {c}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-1">
+            <span className="mr-1 text-[10px] font-bold text-slate-400">종류</span>
+            <button type="button" className={chip(area === "전체")} onClick={() => setArea("전체")}>
+              전체
+            </button>
+            {areas.map(([a, c]) => (
+              <button key={a} type="button" className={chip(area === a)} onClick={() => setArea(a)}>
+                {a} {c}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-2">
+          {rows === null ? (
+            <p className="p-6 text-center text-xs text-slate-400">불러오는 중…</p>
+          ) : shown.length === 0 ? (
+            <p className="p-6 text-center text-xs text-slate-400">이날 남은 활동이 없습니다.</p>
+          ) : (
+            <ul className="divide-y divide-black/5">
+              {shown.map((r) => {
+                const sName = r.student_id ? names.get(r.student_id) : null;
+                return (
+                  <li key={r.id} className="flex items-start gap-2 py-1.5 text-[12px]">
+                    <span className="w-11 shrink-0 tabular-nums text-slate-400">{timeKst(r.at)}</span>
+                    <span className="w-20 shrink-0 truncate font-bold text-slate-800" title={r.actor_email ?? r.actor_name}>
+                      {r.actor_name}
+                    </span>
+                    <span className={"shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold " + (AREA_STYLE[r.area] ?? "bg-slate-100 text-slate-600")}>
+                      {r.area}
+                    </span>
+                    <span className="shrink-0 font-bold text-slate-700">{r.action}</span>
+                    <span className="min-w-0 flex-1 text-slate-600">
+                      {sName && <Who id={r.student_id} name={sName} className="mr-1 font-bold text-slate-800" />}
+                      {r.summary}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }

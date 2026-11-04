@@ -11,7 +11,23 @@ export async function logApiError(
   err: unknown,
   userEmail?: string | null
 ): Promise<void> {
-  const message = err instanceof Error ? err.message : String(err);
+  // Supabase 오류는 Error 가 아니라 { message, code, details, hint } 꼴의 객체라 String() 하면
+  // 「[object Object]」만 남습니다. 실제로 토들 문의 저장 실패가 그렇게 찍혀 원인을 알 수 없었습니다.
+  const message =
+    err instanceof Error
+      ? err.message
+      : err && typeof err === "object" && "message" in err
+        ? [
+            (err as { code?: string }).code,
+            (err as { message?: string }).message,
+            (err as { details?: string }).details,
+            (err as { hint?: string }).hint,
+          ]
+            .filter(Boolean)
+            .join(" · ")
+        : typeof err === "object"
+          ? JSON.stringify(err)
+          : String(err);
   try {
     const stack = err instanceof Error ? err.stack ?? null : null;
     await supabase.from("error_logs").insert({

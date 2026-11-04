@@ -11,12 +11,15 @@ const ALARM = "gia-collect";
 const PERIOD_MIN = 1;
 
 async function getConfig() {
-  const c = await chrome.storage.local.get(["serverUrl", "secret", "sent", "replySent"]);
+  // 보낸 기록의 이름을 바꿨습니다(sent → sent2). 2.6.0 은 서버가 저장하지 못한 글도 «보냈음»으로
+  // 기억해서, 그날 실패한 글이 다시 오지 않았습니다. 새 이름으로 비운 채 시작하면 오늘 글을 한 번
+  // 더 보내고, 이미 저장된 글은 서버가 메시지 번호로 거릅니다.
+  const c = await chrome.storage.local.get(["serverUrl", "secret", "sent2", "replySent2"]);
   return {
     serverUrl: (c.serverUrl || "").replace(/\/+$/, ""),
     secret: c.secret || "",
-    sent: c.sent || {},
-    replySent: c.replySent || {},
+    sent: c.sent2 || {},
+    replySent: c.replySent2 || {},
   };
 }
 
@@ -262,7 +265,7 @@ async function runOnceInner() {
       for (let i = 0; i < messageReplies.length; i += 50) {
         await post("/api/pickup/ingest", secret, serverUrl, { items: [], messageReplies: messageReplies.slice(i, i + 50) });
       }
-      await chrome.storage.local.set({ replySent: keep(nextReplySent) });
+      await chrome.storage.local.set({ replySent2: keep(nextReplySent) });
     } catch {
       /* 다음 회차에 다시 보냅니다 */
     }
@@ -307,12 +310,16 @@ async function runOnceInner() {
 
   try {
     // 서버가 한 번에 30건까지 받습니다.
+    const failed = [];
     for (let i = 0; i < items.length; i += 25) {
-      await post("/api/pickup/ingest", secret, serverUrl, { items: items.slice(i, i + 25) });
+      const res = await post("/api/pickup/ingest", secret, serverUrl, { items: items.slice(i, i + 25) });
+      for (const r of res?.results ?? []) if (r && r.error && r.sourceRef) failed.push(r.sourceRef);
     }
+    // 서버가 저장하지 못한 글은 «보냈음»에서 빼서 다음 차례에 다시 보냅니다.
+    for (const ref of failed) delete nextSent[ref];
 
     // 보낸 기록이 무한정 쌓이지 않게 최근 것만 남깁니다.
-    await chrome.storage.local.set({ sent: keep(nextSent) });
+    await chrome.storage.local.set({ sent2: keep(nextSent) });
     await setState({ status: "정상", detail: `${items.length}건 보냄 (오늘 활동한 방 ${diag.knownRooms ?? 0}개)${suffix}` });
     await heartbeat("ok", `${items.length}건 보냄`, {
       todayParentCount: diag.todayParentCount ?? null,
@@ -389,7 +396,7 @@ chrome.runtime.onMessage.addListener((msg, _s, sendResponse) => {
   }
   // 보낸 기록 지우기. 서버 쪽에서 지웠는데 수집기가 "이미 보냈다"고 기억해 다시 안 보낼 때 씁니다.
   if (msg?.cmd === "clearSent") {
-    chrome.storage.local.set({ sent: {} }).then(() => sendResponse({ ok: true }));
+    chrome.storage.local.set({ sent2: {}, replySent2: {} }).then(() => sendResponse({ ok: true }));
     return true;
   }
   return false;

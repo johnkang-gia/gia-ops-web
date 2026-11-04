@@ -151,6 +151,40 @@ jobs:
           done
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
+      # ── 늦게 끼어든 파일을 먼저 적용합니다 ────────────────────────────────
+      #
+      # 두 저장소(운영앱·도서관)와 여러 작업이 같은 폴더에 파일을 넣습니다. 이미 적용된 마지막
+      # 파일보다 이름(시각)이 앞선 새 파일이 들어오면 `db push` 는 아무것도 실행하지 않고 통째로
+      # 거절합니다. 그러면 그 뒤에 올린 파일까지 전부 안 걸리고, 앱 화면에는 오류가 아니라
+      # «칸이 없음»·«저장 실패»로만 보입니다(실제로 토들 문의가 한 건도 저장되지 않았습니다).
+      #
+      # 파일 이름 검사(check-migration-names)는 빌드를 돌린 작업에서만 막습니다. 그래서 여기서
+      # **스스로 낫게** 합니다: 늦게 끼어든 파일만 골라 하나씩 실행하고 «적용됨»으로 기록합니다.
+      # 마이그레이션은 두 번 돌려도 안전하게 쓰는 것이 규칙이라(if not exists) 이 순서로 충분합니다.
+      - name: 늦게 끼어든 파일 먼저 적용
+        if: steps.check.outputs.ready == 'true' && inputs.mode != 'baseline'
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -e
+          psql "$SUPABASE_DB_URL" -Atc \
+            "select version from supabase_migrations.schema_migrations order by version" \
+            > /tmp/remote2.txt
+          last=$(tail -n 1 /tmp/remote2.txt)
+          late=0
+          for f in $(ls supabase/migrations/*.sql | sort); do
+            v=$(basename "$f" | cut -d_ -f1)
+            if [ "$v" \< "$last" ] && ! grep -qx "$v" /tmp/remote2.txt; then
+              late=1
+              echo "늦게 끼어든 파일 적용: $(basename "$f")"
+              psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f "$f"
+              supabase migration repair --status applied "$v" --db-url "$SUPABASE_DB_URL"
+              echo "  · $(basename "$f") (늦게 끼어들어 따로 적용)" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
+          [ "$late" -eq 0 ] && echo "늦게 끼어든 파일 없음"
+          true
+
       # 실패하면 오류 문구를 실행 결과 요약(Summary)에 그대로 남깁니다. 로그를 펼쳐 찾지 않아도
       # 실행 페이지 첫 화면에서 바로 보이도록 하기 위해서입니다 - 예전에는 빨간 X만 뜨고
       # "Process completed with exit code 1"밖에 안 보여서 원인을 알 수 없었습니다.

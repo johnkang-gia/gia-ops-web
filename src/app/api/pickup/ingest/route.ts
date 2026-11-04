@@ -113,7 +113,9 @@ export async function POST(req: Request) {
         // 한 건이 실패해도 나머지는 계속 처리합니다 - 한 메시지의 오류로 그날 픽업 전체를
         // 놓치는 일이 없어야 합니다.
         await logApiError(supabase, "pickup:ingest:item", err);
-        results.push({ isPickup: false, error: true });
+        // 실패한 글의 번호를 돌려줍니다. 수집기는 이 번호를 «보냈음»으로 기억하지 않고 다음 차례에
+        // 다시 보냅니다 - 예전에는 실패한 글도 보낸 것으로 기억해서 영영 다시 오지 않았습니다.
+        results.push({ isPickup: false, error: true, sourceRef: item.sourceRef ?? null });
       }
     }
 

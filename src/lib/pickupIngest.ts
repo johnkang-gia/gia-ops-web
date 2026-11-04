@@ -43,6 +43,37 @@ export type IngestInput = {
   staffReply?: { at: string; by: string | null } | null;
 };
 
+/** 오늘의 문의사항(20261221) 마이그레이션이 만든 칸. */
+const NEW_COLUMNS = ["badges", "replied_via", "assignees", "assigned_by", "assigned_at"];
+
+/**
+ * 연락 한 줄 넣기. 새 칸이 아직 없다는 오류면 그 칸을 빼고 한 번 더 넣습니다.
+ *
+ * 코드는 배포되었는데 마이그레이션이 늦거나 멈춘 동안, 새 칸(뱃지 등) 때문에 **줄 자체가 저장되지
+ * 않았습니다**. 토들 문의가 하루 동안 한 건도 안 들어왔고, 오류는 「[object Object]」로만 남았습니다.
+ * 뱃지가 비는 것은 나중에 채울 수 있지만, 학부모 글을 잃는 것은 되돌릴 수 없습니다.
+ */
+async function insertPickupRow(
+  supabase: SupabaseClient,
+  row: Record<string, unknown>,
+  wantId = false,
+): Promise<{ data: { id: string } | null; error: { message: string; code?: string } | null }> {
+  const run = async (r: Record<string, unknown>) => {
+    if (wantId) {
+      const { data, error } = await supabase.from("pickup_requests").insert(r).select("id").single();
+      return { data: (data as { id: string } | null) ?? null, error };
+    }
+    const { error } = await supabase.from("pickup_requests").insert(r);
+    return { data: null, error };
+  };
+  const first = await run(row);
+  if (!first.error) return first;
+  const msg = `${first.error.code ?? ""} ${first.error.message ?? ""}`;
+  if (!/42703|PGRST204|column|schema cache/i.test(msg)) return first;
+  const slim = Object.fromEntries(Object.entries(row).filter(([k]) => !NEW_COLUMNS.includes(k)));
+  return run(slim);
+}
+
 /** 토들에 이미 직원 답글이 달려 있으면 「답함」 칸을 함께 채웁니다(처리 완료는 사람이 누릅니다). */
 function repliedFields(input: IngestInput) {
   const r = input.staffReply;
@@ -493,7 +524,7 @@ export async function ingestPickup(
     // (AI를 부르지 않는 자리라 본문 이름은 읽지 않습니다.)
     const linkedEarly = await loadChannelLink(supabase, input.channelLabel, roster);
     const onlyChild = linkedEarly && linkedEarly.students.length === 1 ? linkedEarly.students[0] : null;
-    await supabase.from("pickup_requests").insert({
+    await insertPickupRow(supabase, {
       student_id: onlyChild?.id ?? null,
       matched_name: onlyChild?.name ?? null,
       badges: ["인사·감사"],
@@ -690,7 +721,7 @@ export async function ingestPickup(
   if (kind === "기타") {
     // 출처 번호가 없는 글(전화 메모 등)도 남깁니다. 오늘의 문의사항은 들어온 글 전부를 보여줍니다.
     {
-      await supabase.from("pickup_requests").insert({
+      await insertPickupRow(supabase, {
         service_date: todayKst,
         kind: "기타",
         student_id: matched?.id ?? null,
@@ -904,9 +935,7 @@ export async function ingestPickup(
       .join(" / ")
       .slice(0, 300) || null;
 
-  const { data, error } = await supabase
-    .from("pickup_requests")
-    .insert({
+  const { data, error } = await insertPickupRow(supabase, {
       service_date: serviceDate,
       kind,
       source: input.source,
@@ -936,9 +965,7 @@ export async function ingestPickup(
       status: autoConfirm ? "확정" : "확인대기",
       resolved_by: autoConfirm ? "AI" : null,
       resolved_at: autoConfirm ? new Date().toISOString() : null,
-    })
-    .select("id")
-    .single();
+    }, true);
 
   if (error) throw error;
 
@@ -972,7 +999,7 @@ export async function ingestPickup(
 
     for (const o of others.found) {
       const note = otherChildNote([matched.name], o.student.name);
-      const { error: otherErr } = await supabase.from("pickup_requests").insert({
+      const { error: otherErr } = await insertPickupRow(supabase, {
         service_date: todayKst,
         kind,
         source: input.source,

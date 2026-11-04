@@ -26,7 +26,7 @@
 // '안 읽음' 표시가 사라지지 않습니다. 선생님들 업무를 건드리지 않는다는 뜻입니다.
 
 (() => {
-  const VERSION = "2.6.0";
+  const VERSION = "2.6.1";
 
   // 같은 버전이 이미 돌고 있으면 그대로 둡니다.
   //
@@ -65,6 +65,9 @@
   // 방마다 오늘 학부모가 쓴 글 수. 합계를 앱에 들어온 수와 견줘 빠진 것이 없는지 봅니다.
   const todayCountByRoom = new Map();
   let seenDay = 0;
+  // 10분마다 오늘 방을 처음부터 다시 훑습니다. 서버가 저장하지 못해 «다시 보낼» 글이 생겨도, 방의
+  // 활동 시각이 그대로면 위 기억 때문에 다시 묻지 않기 때문입니다. 이미 저장된 글은 서버가 거릅니다.
+  let lastFullScan = 0;
 
   const CHAT_LIST_QUERY = `query giaChatList($organizationId: ID!, $input: ChatFeedInput) {
   node(id: $organizationId, type: ORGANIZATION) {
@@ -134,12 +137,21 @@
   }
 
   async function gql(operationName, query, variables) {
-    const res = await fetch(ENDPOINT, {
-      method: "POST",
-      headers: HEADERS,
-      credentials: "include",
-      body: JSON.stringify([{ operationName, variables, extensions: {}, query }]),
-    });
+    const body = JSON.stringify([{ operationName, variables, extensions: {}, query }]);
+    let res = await fetch(ENDPOINT, { method: "POST", headers: HEADERS, credentials: "include", body });
+    // 쿠키만으로 «Un-authenticated region»(401)이 나는 계정·브라우저가 있습니다. 그때는 토들 화면이
+    // 쓰는 로그인 열쇠(userInfo.jwt)를 붙여 한 번 더 묻습니다. 열쇠는 이 탭 안에서만 쓰고 어디에도 보내지 않습니다.
+    if (res.status === 401 || res.status === 403) {
+      const jwt = getUserInfo()?.jwt;
+      if (jwt) {
+        res = await fetch(ENDPOINT, {
+          method: "POST",
+          headers: { ...HEADERS, authorization: "Bearer " + jwt },
+          credentials: "include",
+          body,
+        });
+      }
+    }
     // 401이면 로그인이 풀린 것입니다. 조용히 빈 값을 돌려주면 "새 메시지 없음"이라는
     // 거짓 안심을 주게 되므로, 분명히 알립니다.
     if (res.status === 401 || res.status === 403) throw new Error("LOGIN_REQUIRED");
@@ -281,6 +293,10 @@
 
       if (msg.cmd === "collect") {
         const since = kstMidnightMs();
+        if (Date.now() - lastFullScan > 10 * 60 * 1000) {
+          seenActive.clear();
+          lastFullScan = Date.now();
+        }
         if (seenDay !== since) {
           seenActive.clear();
           todayCountByRoom.clear();

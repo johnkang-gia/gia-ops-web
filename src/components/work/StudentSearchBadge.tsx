@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { departmentOf } from "@/lib/department";
 import { whereNow, type PeriodRow, type TimetableRow } from "@/lib/whereNow";
 
-// 업무보드 머리줄의 "학생 검색" 팝업.
+// 업무보드 머리줄의 "학생 검색" 칸.
 //
 // 업무를 보다가 학생 기록을 남기거나 자료를 확인해야 하는 일이 자주 생깁니다. 지금까지는
 // 학교 → 학생 조회로 화면을 옮겨야 했고, 돌아오면 보던 업무 자리를 다시 찾아야 했습니다.
@@ -101,9 +101,7 @@ export default function StudentSearchBadge() {
   const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({});
 
   // 열면 바로 칠 수 있어야 합니다. 창을 연 뒤 칸을 한 번 더 누르게 하면 두 동작이 됩니다.
-  useEffect(() => {
-    if (open) setTimeout(() => inputRef.current?.focus(), 30);
-  }, [open]);
+
 
   useEffect(() => {
     if (!open) return;
@@ -150,33 +148,49 @@ export default function StudentSearchBadge() {
     };
   }, [hits, photoUrls]);
 
+  // 검색창이 머리줄에 늘 있습니다. 전화를 받으면서 단추 → 창 → 칸으로 세 번 누르던 것을 바로 칩니다.
+  // 고르면 학생 창이 오른쪽에 붙어 뜨고, 메모장은 그대로 씁니다.
+  const wrapRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    window.addEventListener("mousedown", onDown);
+    return () => window.removeEventListener("mousedown", onDown);
+  }, [open]);
+
   return (
-    <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        title="학생 검색 (이름 · 영문이름 · 반 · 교실 위치)"
-        className="shrink-0 whitespace-nowrap rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-700 transition hover:bg-sky-100"
-      >
-        🔎 학생 검색
-      </button>
+    <div ref={wrapRef} className="relative shrink-0">
+      <input
+        ref={inputRef}
+        value={q}
+        onChange={(e) => {
+          setQ(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && hits[0]) {
+            e.preventDefault();
+            setOpen(false);
+            setQ("");
+            panel.open(hits[0].id);
+            inputRef.current?.blur();
+          }
+        }}
+        placeholder="🔎 학생 이름·반 검색"
+        title="학생 검색 (이름 · 영문이름 · 반 · 교실 위치). Enter 는 첫 학생을 엽니다."
+        className="w-40 rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-[11px] text-sky-900 outline-none placeholder:text-sky-600 focus:w-56 focus:border-sky-400 focus:bg-white"
+      />
 
       {open && (
-        <div className="fixed inset-0 z-[999] flex items-start justify-center bg-black/40 p-4 pt-[10vh]" onClick={() => setOpen(false)}>
-          <div className="flex max-h-[70vh] w-full max-w-md flex-col rounded-xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <div className="border-b border-slate-100 p-3">
-              <input
-                ref={inputRef}
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="이름 · 영문이름 · 반 · 위치"
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-sky-400"
-              />
-              <p className="mt-1 text-[10px] text-slate-400">
-                🏫 반위치 · 📍 지금 위치(시간표 기준)
-                {timetableError && <span className="ml-1 font-semibold text-orange-600">{timetableError}</span>}
-              </p>
-            </div>
+        <div className="absolute left-0 top-full z-[999] mt-1 w-[26rem] max-w-[90vw]">
+          <div className="flex max-h-[60vh] flex-col rounded-xl border border-slate-200 bg-white shadow-xl">
+            <p className="border-b border-slate-100 px-3 py-1 text-[10px] text-slate-400">
+              🏫 반위치 · 📍 지금 위치(시간표 기준) · 누르면 학생 창이 오른쪽에 뜹니다
+              {timetableError && <span className="ml-1 font-semibold text-orange-600">{timetableError}</span>}
+            </p>
             <div className="min-h-0 flex-1 overflow-y-auto p-2">
               {error ? (
                 <p className="rounded-lg bg-orange-50 px-3 py-2 text-[12px] leading-relaxed text-orange-800">{error}</p>
@@ -191,6 +205,7 @@ export default function StudentSearchBadge() {
                     key={s.id}
                     onClick={() => {
                       setOpen(false);
+                      setQ("");
                       panel.open(s.id);
                     }}
                     className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-slate-50"
@@ -262,14 +277,9 @@ export default function StudentSearchBadge() {
                 ))
               )}
             </div>
-            <div className="border-t border-slate-100 px-3 py-2 text-right">
-              <button type="button" onClick={() => setOpen(false)} className="text-[11px] font-semibold text-slate-500 hover:text-slate-700">
-                닫기 (Esc)
-              </button>
-            </div>
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }

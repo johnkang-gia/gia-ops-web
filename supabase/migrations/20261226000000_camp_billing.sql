@@ -26,9 +26,24 @@ end $$;
 alter table public.terms add constraint terms_status_check check (status in ('진행중', '종료', '예정'));
 
 -- ── 명부 상태: 캠프(외부 학생) ───────────────────────────────────────────────
+-- 명부에는 처음 검사(active·inactive·보류) 뒤에 생긴 상태(졸업·퇴학·전출)가 이미 들어 있어서, 옛 목록에 「캠프」만
+-- 더하면 기존 줄이 걸립니다. 쓰이는 상태 전부에 「캠프」를 더하고, 그래도 모르는 값이 남아 있으면 검사를 걸지 않고
+-- 알립니다 - 모르는 값 때문에 이 마이그레이션 전체가 멈추면 캠프 청구가 통째로 안 열립니다.
 alter table public.wr_students drop constraint if exists wr_students_status_check;
-alter table public.wr_students add constraint wr_students_status_check
-  check (status in ('active', 'inactive', '보류', '캠프'));
+do $$
+declare odd text;
+begin
+  select string_agg(distinct status, ', ') into odd
+    from public.wr_students
+   where status is not null
+     and status not in ('active', 'inactive', '보류', '졸업', '퇴학', '전출', '캠프');
+  if odd is null then
+    alter table public.wr_students add constraint wr_students_status_check
+      check (status in ('active', 'inactive', '보류', '졸업', '퇴학', '전출', '캠프'));
+  else
+    raise notice '명부에 모르는 상태가 있어 상태 검사를 걸지 않았습니다: %', odd;
+  end if;
+end $$;
 
 -- ── 캠프 신청 ────────────────────────────────────────────────────────────────
 create table if not exists public.camp_applications (

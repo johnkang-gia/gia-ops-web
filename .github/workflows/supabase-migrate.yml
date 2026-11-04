@@ -123,7 +123,7 @@ jobs:
             while read -r v; do
               [ -z "$v" ] && continue
               echo "정리: $v"
-              supabase migration repair --status reverted "$v" --db-url "$SUPABASE_DB_URL"
+              supabase migration repair --yes --status reverted "$v" --db-url "$SUPABASE_DB_URL" || supabase migration repair --status reverted "$v" --db-url "$SUPABASE_DB_URL"
             done < /tmp/orphans.txt
           fi
 
@@ -146,7 +146,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           for f in supabase/migrations/*.sql; do
             v=$(basename "$f" | cut -d_ -f1)
-            supabase migration repair --status applied "$v" --db-url "$SUPABASE_DB_URL"
+            supabase migration repair --yes --status applied "$v" --db-url "$SUPABASE_DB_URL" || supabase migration repair --status applied "$v" --db-url "$SUPABASE_DB_URL"
             echo "  · $v $(basename "$f")" >> "$GITHUB_STEP_SUMMARY"
           done
           echo '```' >> "$GITHUB_STEP_SUMMARY"
@@ -178,7 +178,7 @@ jobs:
               late=1
               echo "늦게 끼어든 파일 적용: $(basename "$f")"
               psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f "$f"
-              supabase migration repair --status applied "$v" --db-url "$SUPABASE_DB_URL"
+              supabase migration repair --yes --status applied "$v" --db-url "$SUPABASE_DB_URL" || supabase migration repair --status applied "$v" --db-url "$SUPABASE_DB_URL"
               echo "  · $(basename "$f") (늦게 끼어들어 따로 적용)" >> "$GITHUB_STEP_SUMMARY"
             fi
           done
@@ -210,7 +210,9 @@ jobs:
           #
           # 지금 상태에서 필요한 것은 **베이스라인**입니다(위 단계). 한 번 표시해 두면
           # 그다음부터는 새로 만든 파일만 순서대로 적용되므로 이 깃발이 필요 없습니다.
-          supabase db push --db-url "$SUPABASE_DB_URL" 2>&1 | tee /tmp/push.log
+          # `--yes`: 새 CLI 는 적용 전에 확인을 묻고, 화면이 없는 실행기에서는 «물을 수 없음 → 아무것도
+          # 안 함» 으로 실패합니다(10월 말부터 모든 적용이 이 이유로 멈춰 있었습니다).
+          supabase db push --yes --db-url "$SUPABASE_DB_URL" 2>&1 | tee /tmp/push.log
           code=${PIPESTATUS[0]}
           {
             echo "## 마이그레이션 적용 결과"

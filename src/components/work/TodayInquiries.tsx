@@ -32,6 +32,7 @@ import {
 import type { TeamMember } from "@/lib/types";
 import PickupTriage, { type PickupRow, type StudentOption } from "@/components/pickup/PickupTriage";
 import { loadHouseCandidates, type HouseChild } from "@/lib/houseCandidates";
+import { chimeEnabled, playChime, primeChime, setChimeEnabled } from "@/lib/chime";
 import { ProcessingReportButton, ReplyTemplates, StudentHistory } from "./InquiryExtras";
 
 /**
@@ -179,6 +180,8 @@ export function TodayInquiriesProvider({
   const [toddleTodayCount, setToddleTodayCount] = useState<number | null>(null);
   const [loaded, setLoaded] = useState(false);
   const studentsRef = useRef<StudentOption[]>([]);
+  const knownIds = useRef<Set<string> | null>(null);
+  useEffect(() => primeChime(), []);
   useEffect(() => {
     studentsRef.current = students;
   }, [students]);
@@ -229,6 +232,15 @@ export function TodayInquiriesProvider({
       ...((mineRes.data as InquiryRow[] | null) ?? []),
     ].filter((r) => !r.is_demo);
     setRows(all);
+    // 새 토들 글이면 띠링. 처음 읽을 때는 울리지 않습니다 - 화면을 열 때마다 오늘 글 전부에 울리면 소음입니다.
+    const ids = new Set(all.map((r) => r.id));
+    if (knownIds.current) {
+      const fresh = all.filter(
+        (r) => !knownIds.current!.has(r.id) && r.source === "토들" && !isNoActionBadges(r.badges) && isNewRow(r),
+      );
+      if (fresh.length > 0) playChime();
+    }
+    knownIds.current = ids;
     // 형제방에서 온 확인 필요 줄은 «그 집 아이들» 후보를 붙입니다(PickupTriage 와 같은 길).
     const houseIds = all
       .filter((r) => r.status === "확인대기" && !r.student_id && r.channel_id)
@@ -394,6 +406,13 @@ function badgesOf(r: InquiryRow): InquiryBadge[] {
 }
 
 /** 정렬: 답 안 한 것(오래 기다린 순) → 답했지만 처리 남음 → 처리 완료. 인사는 따로 접습니다. */
+/** 앱에 들어온 지 10분 안의 글. 빨간 점으로 «새 글»을 표시합니다(쓴 시각이 아니라 들어온 시각 기준). */
+const NEW_MS = 10 * 60 * 1000;
+function isNewRow(r: InquiryRow, now = Date.now()): boolean {
+  const at = r.created_at ?? r.received_at;
+  return now - new Date(at).getTime() < NEW_MS;
+}
+
 /** 사람이 누구인지·픽업인지 정해야 하는 글(오늘 이후 것만). */
 function needsCheck(r: InquiryRow): boolean {
   return r.status === "확인대기" && (r.service_date ?? kstDateOffset(0)) >= kstDateOffset(0);
@@ -468,6 +487,7 @@ export function TodayInquiriesPanel() {
           >
             오늘 토들 {toddleTodayCount ?? "?"} → 앱 {toddleInApp}
           </span>
+          <ChimeToggle />
           {canReport && <ProcessingReportButton staffName={staffName} />}
         </div>
         {late.length > 0 && (
@@ -783,6 +803,9 @@ function Row({
       }
     >
       <div className="flex items-start gap-1.5">
+        {isNewRow(r, now) && !r.replied_at && (
+          <span className="mt-1.5 h-2 w-2 shrink-0 animate-pulse rounded-full bg-red-500" title="새 글 (들어온 지 10분 안)" />
+        )}
         {/* 앞자리 — 답 안 했으면 기다린 시간, 답했으면 누가 몇 분 만에. */}
         {r.replied_at ? (
           <span className="shrink-0 whitespace-nowrap rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">
@@ -1465,5 +1488,26 @@ function PastInquiriesModal({ onClose }: { onClose: () => void }) {
         </div>
       </div>
     </div>
+  );
+}
+
+/** 소리 켜기/끄기. 이 브라우저에만 기억합니다. */
+function ChimeToggle() {
+  const [on, setOn] = useState(true);
+  useEffect(() => setOn(chimeEnabled()), []);
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        const next = !on;
+        setChimeEnabled(next);
+        setOn(next);
+        if (next) playChime();
+      }}
+      title={on ? "새 토들 문의가 오면 띠링 소리가 납니다. 누르면 끕니다." : "소리가 꺼져 있습니다. 누르면 켭니다."}
+      className="rounded-full border border-black/10 bg-white px-1.5 py-0.5 text-[11px] hover:bg-slate-50"
+    >
+      {on ? "🔔" : "🔕"}
+    </button>
   );
 }

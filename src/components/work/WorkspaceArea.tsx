@@ -528,14 +528,32 @@ export default function WorkspaceArea({
    * 둘을 한 칸에 포개니 둘 다 좁았고, 사이의 높이 손잡이까지 있어 볼 것이 하나 더 늘었습니다.
    * 이제 오늘 학생은 **가운데 제 칸**을 씁니다.
    */
+  /**
+   * 메모장 — 전화·요청을 받으며 적는 칸. 적는 즉시 저장되고, 「등록하기」로 오늘의 문의사항·업무·쪽지로 보냅니다.
+   */
+  const memoPadEl = (
+    <MemoPad
+      currentUserEmail={currentUserEmail}
+      currentUserName={team.find((m) => m.email === currentUserEmail)?.name ?? null}
+      department={activeDepartment.name}
+    />
+  );
+  const memoPad = memoPadEl;
+
+  const inboxPanels = (
+    <AttendancePanels
+      messages={mirrorMessages}
+      userEmail={currentUserEmail}
+      department={activeDepartment.name}
+      roster={roster}
+    />
+  );
+  // 인박스 = 위 출결내역·선생님요청 + 아래 메모장. 메모장은 탭과 상관없이 늘 떠 있습니다 - 전화는
+  // 아무 때나 오고, 메모하려고 탭을 옮겨야 하면 포스트잇으로 돌아갑니다.
   const inbox = (
-    <div ref={inboxRef} className="h-full overflow-hidden">
-      <AttendancePanels
-        messages={mirrorMessages}
-        userEmail={currentUserEmail}
-        department={activeDepartment.name}
-        roster={roster}
-      />
+    <div ref={inboxRef} className="flex h-full flex-col overflow-hidden">
+      <div className="min-h-0 flex-[3] overflow-hidden">{inboxPanels}</div>
+      <div className="min-h-[150px] flex-[2] overflow-hidden border-t border-black/10">{memoPadEl}</div>
     </div>
   );
 
@@ -546,17 +564,7 @@ export default function WorkspaceArea({
     </div>
   );
 
-  /**
-   * 메모장 — 전화·요청을 받으며 적는 칸. 늘 열려 있어야 손이 가므로 팝업이 아니라 오른쪽 칸 아래에 둡니다.
-   * 적는 즉시 저장되고, 「등록하기」로 오늘의 문의사항·업무·쪽지로 보냅니다(MemoPad).
-   */
-  const memoPad = (
-    <MemoPad
-      currentUserEmail={currentUserEmail}
-      currentUserName={team.find((m) => m.email === currentUserEmail)?.name ?? null}
-      department={activeDepartment.name}
-    />
-  );
+
 
   /**
    * ③ 일정 — 달력.
@@ -836,7 +844,7 @@ export default function WorkspaceArea({
           ))}
         </div>
         <div className="min-h-0 flex-1 overflow-hidden">
-          {mobileTab === "inbox" && inbox}
+          {mobileTab === "inbox" && <div className="h-full overflow-hidden">{inboxPanels}</div>}
           {mobileTab === "today" && todayStudents}
           {mobileTab === "memo" && memoPad}
           {mobileTab === "talk" && (
@@ -908,10 +916,7 @@ export default function WorkspaceArea({
               onCollapse={() => setLayout((p) => ({ ...p, rightOpen: false }))}
               style={{ width: `${layout.rightWidth}%` }}
             >
-              <div className="flex h-full flex-col overflow-hidden">
-                <div className="min-h-0 flex-[3] overflow-hidden">{todayStudents}</div>
-                <div className="min-h-[140px] flex-[2] overflow-hidden border-t border-black/10">{memoPad}</div>
-              </div>
+              {todayStudents}
             </Zone>
           </>
         ) : (

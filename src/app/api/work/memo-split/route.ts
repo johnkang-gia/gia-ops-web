@@ -5,6 +5,10 @@ import { callClaudeJson, CLAUDE_MODEL_FAST } from "@/lib/ai/claude";
 import { todayKst } from "@/lib/kst";
 import { logApiError } from "@/lib/logging";
 import { createClient } from "@/lib/supabase/server";
+import { loadRoster } from "@/lib/pickupIngest";
+import type { RosterEntry } from "@/lib/pickupParse";
+import { resolveStudent } from "@/lib/studentMatch";
+import { loadAliasIndex } from "@/lib/aliasIndex";
 
 /**
  * 메모장 글을 «한 건씩» 나눕니다.
@@ -16,18 +20,45 @@ import { createClient } from "@/lib/supabase/server";
  */
 
 type Dest = "문의" | "업무" | "쪽지";
-export type MemoItem = { text: string; title: string; dest: Dest };
+type Cand = { id: string; name: string; class_name: string | null };
+export type MemoItem = {
+  text: string;
+  title: string;
+  dest: Dest;
+  /** AI 가 읽은 학생 이름(글자 그대로). 화면에 보여주기만 합니다. */
+  studentText?: string | null;
+  /** 동명이인 규칙(matchStudent)으로 한 명으로 좁혀졌을 때만 채웁니다. */
+  studentId?: string | null;
+  /** 좁혀지지 않았을 때 고를 후보(같은 이름의 아이들). */
+  candidates?: Cand[];
+};
+
+/**
+ * 메모 한 건의 학생 태그. 자동으로 붙이되 **번호로 좁혀질 때만** 붙입니다 - 김재이가 셋인 학교에서
+ * 이름 글자로 붙이면 엉뚱한 아이가 태그됩니다. 못 좁히면 후보만 주고 사람이 고릅니다.
+ */
+function tagStudent(name: string | null | undefined, text: string, roster: RosterEntry[], aliases: Map<string, RosterEntry>) {
+  const n = (name ?? "").trim();
+  if (!n) return { studentId: null, candidates: [] as Cand[] };
+  const { student, candidates } = resolveStudent(n, roster, { context: text, aliases });
+  if (student) return { studentId: student.id, candidates: [{ id: student.id, name: student.name, class_name: student.class_name ?? null }] };
+  return {
+    studentId: null,
+    candidates: (candidates ?? []).slice(0, 8).map((s) => ({ id: s.id, name: s.name, class_name: s.class_name ?? null })),
+  };
+}
 
 const SYSTEM = `너는 국제학교 행정실 직원의 전화·업무 메모를 정리한다.
 메모를 서로 다른 일 단위로 나눈다. 한 사람(한 학부모·한 학생)에 대한 한 가지 연락은 한 건이다.
 각 건마다:
 - text: 그 건에 해당하는 원문 문장(원문의 말을 바꾸지 말고 그대로, 필요하면 앞뒤 문장을 붙인다)
 - title: 25자 이내 요약(누가·무엇을)
+- student: 이 건이 가리키는 학생 이름(메모에 적힌 그대로, 없으면 null). 여러 명이면 첫 번째.
 - dest: 학부모·학생에 관한 연락(결석, 픽업, 하원, 아픔, 물건, 상담, 납부 문의 등)이면 "문의",
         직원이 해야 할 내부 일(구매, 수리, 서류, 연락 돌리기)이면 "업무",
         모두가 알면 되는 짧은 알림이면 "쪽지".
 나눌 것이 없으면 한 건으로 둔다. 원문에 없는 내용을 지어내지 않는다.
-JSON 만 답한다: {"items":[{"text":"...","title":"...","dest":"문의"}]}`;
+JSON 만 답한다: {"items":[{"text":"...","title":"...","student":"김OO","dest":"문의"}]}`;
 
 export async function POST(req: Request) {
   const me = await getCurrentAppUser();
@@ -43,14 +74,19 @@ export async function POST(req: Request) {
       maxTokens: 1500,
       route: "memo-split",
     })) as { items?: unknown } | null;
+    const sb = await createClient();
+    const roster = await loadRoster(sb);
+    const aliases = await loadAliasIndex(sb, roster);
     const items: MemoItem[] = (Array.isArray(raw?.items) ? raw.items : [])
-      .map((v) => v as Partial<MemoItem>)
+      .map((v) => v as Partial<MemoItem> & { student?: string | null })
       .filter((v) => typeof v.text === "string" && v.text.trim())
       .slice(0, 20)
       .map((v) => ({
         text: String(v.text).trim(),
         title: String(v.title ?? v.text).trim().slice(0, 40),
         dest: v.dest === "업무" || v.dest === "쪽지" ? v.dest : "문의",
+        studentText: v.student ?? null,
+        ...tagStudent(v.student, String(v.text), roster, aliases),
       }));
     // AI 가 아무것도 못 나눴으면 통째로 한 건입니다. 「나눌 수 없음」으로 끝내면 적은 글이 갈 곳이 없습니다.
     if (items.length === 0) items.push({ text, title: text.slice(0, 25), dest: "문의" });

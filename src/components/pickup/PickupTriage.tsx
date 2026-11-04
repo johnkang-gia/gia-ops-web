@@ -79,6 +79,7 @@ export default function PickupTriage({
   onChanged,
   compact = false,
   houseOf,
+  embedded = false,
 }: {
   /** 확인이 필요한 줄만. 가르는 일은 부르는 쪽이 합니다 - 여기서 또 거르면 두 곳이 어긋납니다. */
   rows: PickupRow[];
@@ -93,6 +94,12 @@ export default function PickupTriage({
   onChanged: () => void | Promise<void>;
   /** 업무보드처럼 좁은 칸. 글자·여백만 줄이고 고를 수 있는 것은 같습니다. */
   compact?: boolean;
+  /**
+   * 오늘의 문의사항 줄 안에 들어갈 때. 그 줄이 이미 원문·방·시각·넘기기를 보여주므로 여기서는 **판단하는
+   * 부분만** 그립니다. 다섯 단추(픽업 확정·결석·지각·오늘 셔틀·특이사항)는 고르개 하나 + 「처리」로 줄입니다 -
+   * 좁은 줄 안에서 단추 다섯이 두 줄로 접히면 어느 줄 단추인지 헷갈립니다. 하는 일은 같습니다.
+   */
+  embedded?: boolean;
 }) {
   const notify = useToast();
   const router = useRouter();
@@ -168,6 +175,8 @@ export default function PickupTriage({
    * 남습니다.
    */
   const btn = compact ? "px-2 py-1 text-[11px]" : "px-3 py-1.5 text-xs";
+  /** 고르개(embedded)에서 줄·아이마다 고른 처리. 처음 값은 글이 읽히는 대로 둡니다. */
+  const [actFor, setActFor] = useState<Record<string, EmbeddedAct>>({});
   /** AI가 못 읽어서 요약·시각이 비어 있는 줄. 원문은 남아 있어 다시 읽을 수 있습니다. */
   const unread = useMemo(() => rows.filter((r) => (r.ai_note ?? "").startsWith("AI 판단에 실패")), [rows]);
 
@@ -593,7 +602,7 @@ export default function PickupTriage({
 
   return (
     <div className={compact ? "flex flex-col gap-1.5 text-[11px]" : "flex flex-col gap-2"}>
-      <div className="flex flex-wrap items-center gap-1.5">
+      <div className={"flex flex-wrap items-center gap-1.5" + (embedded ? " hidden" : "")}>
         {unread.length > 0 && (
           <button
             onClick={rereadFailed}
@@ -622,8 +631,15 @@ export default function PickupTriage({
       ) : (
         <div className="flex flex-col gap-2">
             {pending.map((r) => (
-              <div key={r.id} className={"rounded-xl border border-amber-200 bg-amber-50/50 " + (compact ? "p-2" : "p-3")}>
-                <div className="mb-1 flex flex-wrap items-center gap-2">
+              <div
+                key={r.id}
+                className={
+                  embedded
+                    ? "rounded-lg border border-amber-200 bg-amber-50/40 p-1.5"
+                    : "rounded-xl border border-amber-200 bg-amber-50/50 " + (compact ? "p-2" : "p-3")
+                }
+              >
+                <div className={"mb-1 flex flex-wrap items-center gap-2" + (embedded ? " hidden" : "")}>
                   <span className={"rounded px-1.5 py-0.5 text-[11px] font-bold " + (SOURCE_STYLE[r.source] ?? "bg-slate-100")}>
                     {r.source}
                   </span>
@@ -666,7 +682,7 @@ export default function PickupTriage({
                   )}
                 </div>
 
-                {r.raw_text && (
+                {r.raw_text && !embedded && (
                   <p className={"mb-2 rounded-lg bg-white p-2 text-xs leading-relaxed text-slate-700 " + (compact ? "line-clamp-5" : "")}>
                     {r.raw_text}
                   </p>
@@ -721,7 +737,7 @@ export default function PickupTriage({
                     <b> 픽업</b>으로 적혀 있습니다 — 아래 [🚌 오늘 셔틀]을 누르면 오늘 하루만 탑승으로 바뀝니다.
                   </p>
                 )}
-                {r.ai_note && <p className="mb-2 text-[11px] text-slate-500">AI: {r.ai_note}</p>}
+                {r.ai_note && !embedded && <p className="mb-2 text-[11px] text-slate-500">AI: {r.ai_note}</p>}
 
                 {/* 결석으로 읽히는 연락. 담당자: "AI가 결석으로 체크한 부분인데도 픽업이냐
                     아니냐밖에 선택을 못해."
@@ -862,6 +878,23 @@ export default function PickupTriage({
                         {/* **시각을 여기서 넣습니다.** 확정과 같은 줄에 두어야 「몇 시?」를
                             떠올린 그 자리에서 적습니다 - 다른 화면으로 건너가게 하면 대개
                             안 적고 넘어가고, 그 아이는 「미정」으로 남습니다. */}
+                        {embedded ? (
+                          <EmbeddedActions
+                            act={actFor[keyOf] ?? defaultAct(r)}
+                            onAct={(v) => setActFor((m) => ({ ...m, [keyOf]: v }))}
+                            time={timeFor[keyOf] ?? r.ai_pickup_time ?? ""}
+                            onTime={(v) => setTimeFor((m) => ({ ...m, [keyOf]: v }))}
+                            busy={busy}
+                            btn={btn}
+                            onRun={(v) => {
+                              if (v === "픽업") void confirm(r, who.id, many);
+                              else if (v === "결석" || v === "지각") void markAttendance(r, [dayOf(r)], v, who, many);
+                              else if (v === "셔틀") void rideShuttle(r, who);
+                              else setNoteFor((x) => (x === keyOf ? null : keyOf));
+                            }}
+                          />
+                        ) : (
+                        <>
                         <input
                           value={timeFor[keyOf] ?? r.ai_pickup_time ?? ""}
                           onChange={(e) => setTimeFor((v) => ({ ...v, [keyOf]: e.target.value }))}
@@ -930,6 +963,8 @@ export default function PickupTriage({
                         >
                           📌 특이사항
                         </button>
+                        </>
+                        )}
                       </div>
                     );
                   })}
@@ -941,6 +976,7 @@ export default function PickupTriage({
                   <button
                     onClick={() => ignore(r)}
                     disabled={busy}
+                    hidden={embedded}
                     title="처리할 일이 없는 글(인사·광고·이미 끝난 일)을 목록에서 내립니다. 잘못 눌렀으면 아래 접힌 목록에서 되돌립니다."
                     className="ml-auto rounded-lg border border-slate-300 px-2 py-1.5 text-[11px] font-semibold text-slate-500"
                   >
@@ -1120,5 +1156,82 @@ function NotesBox({
         </button>
       </div>
     </div>
+  );
+}
+
+type EmbeddedAct = "픽업" | "결석" | "지각" | "셔틀" | "특이사항";
+
+/** 글이 읽히는 대로 처음 고를 처리. 사람이 고르개에서 바꿉니다. */
+function defaultAct(r: PickupRow): EmbeddedAct {
+  const t = r.raw_text ?? "";
+  if (readsShuttleRequest(t).yes) return "셔틀";
+  if (/결석|못\s*가|쉬(어|겠|려)|absent|sick/i.test(t)) return "결석";
+  if (/지각|늦게|늦을|late/i.test(t)) return "지각";
+  if (r.ai_pickup_time || /픽업|데리러|pick\s*up/i.test(t)) return "픽업";
+  return "특이사항";
+}
+
+const ACT_LABEL: Record<EmbeddedAct, string> = {
+  픽업: "🚗 픽업 확정",
+  결석: "🚫 결석",
+  지각: "⏰ 지각",
+  셔틀: "🚌 오늘 셔틀",
+  특이사항: "📌 특이사항",
+};
+
+function EmbeddedActions({
+  act,
+  onAct,
+  time,
+  onTime,
+  busy,
+  btn,
+  onRun,
+}: {
+  act: EmbeddedAct;
+  onAct: (v: EmbeddedAct) => void;
+  time: string;
+  onTime: (v: string) => void;
+  busy: boolean;
+  btn: string;
+  onRun: (v: EmbeddedAct) => void;
+}) {
+  return (
+    <span className="flex flex-wrap items-center gap-1">
+      <select
+        value={act}
+        onChange={(e) => onAct(e.target.value as EmbeddedAct)}
+        disabled={busy}
+        className={"rounded-lg border border-slate-300 bg-white font-bold " + btn}
+      >
+        {(Object.keys(ACT_LABEL) as EmbeddedAct[]).map((k) => (
+          <option key={k} value={k}>
+            {ACT_LABEL[k]}
+          </option>
+        ))}
+      </select>
+      {act === "픽업" && (
+        <input
+          value={time}
+          onChange={(e) => onTime(e.target.value)}
+          placeholder="14:30"
+          title="몇 시에 데리러 오는지. 비워두면 「미정」으로 뜹니다."
+          className={
+            "w-16 rounded-lg border text-center tabular-nums " +
+            btn +
+            " " +
+            (time.trim() !== "" && !isClockTime(time.trim()) ? "border-rose-400 bg-rose-50" : "border-slate-300")
+          }
+        />
+      )}
+      <button
+        type="button"
+        onClick={() => onRun(act)}
+        disabled={busy}
+        className={"rounded-lg bg-blue-600 font-bold text-white disabled:opacity-50 " + btn}
+      >
+        {act === "특이사항" ? "적기" : "처리"}
+      </button>
+    </span>
   );
 }

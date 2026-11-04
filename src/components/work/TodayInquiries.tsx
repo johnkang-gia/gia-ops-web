@@ -394,13 +394,19 @@ function badgesOf(r: InquiryRow): InquiryBadge[] {
 }
 
 /** 정렬: 답 안 한 것(오래 기다린 순) → 답했지만 처리 남음 → 처리 완료. 인사는 따로 접습니다. */
+/** 사람이 누구인지·픽업인지 정해야 하는 글(오늘 이후 것만). */
+function needsCheck(r: InquiryRow): boolean {
+  return r.status === "확인대기" && (r.service_date ?? kstDateOffset(0)) >= kstDateOffset(0);
+}
+
 function order(a: InquiryRow, b: InquiryRow): number {
-  const rank = (r: InquiryRow) => (r.answered_at ? 2 : r.replied_at ? 1 : 0);
+  // 확인 필요가 맨 위입니다 - 판단이 늦으면 아이가 잘못된 차에 탑니다.
+  const rank = (r: InquiryRow) => (needsCheck(r) && !r.answered_at ? -1 : r.answered_at ? 2 : r.replied_at ? 1 : 0);
   return rank(a) - rank(b) || a.received_at.localeCompare(b.received_at);
 }
 
 export function TodayInquiriesPanel() {
-  const { rows, toddleTodayCount, loaded, students, houseOf, reload, canReport, staffName } = useToday();
+  const { rows, toddleTodayCount, loaded, canReport, staffName } = useToday();
   const now = useNow();
   const [filter, setFilter] = useState<InquiryBadge | "전체">("전체");
   const [showGreetings, setShowGreetings] = useState(false);
@@ -413,13 +419,10 @@ export function TodayInquiriesPanel() {
   // 넘긴 글은 목록에서 내립니다. 처리 완료와 달리 «한 일»로 세지 않습니다(보고·통계에서 빠짐).
   const live = rows.filter((r) => !r.skipped_at);
   const skipped = rows.filter((r) => !!r.skipped_at);
-  // 「확인 필요」(사람이 픽업·결석을 판단해야 하는 글)는 맨 위 노란 칸에서 그 자리에서 처리합니다.
-  // 예전에는 인박스 아래 따로 있어서, 같은 글이 두 자리에 떴습니다.
-  const today = kstDateOffset(0);
-  const needs = live.filter((r) => r.status === "확인대기" && (r.service_date ?? today) >= today);
-  const needIds = new Set(needs.map((r) => r.id));
-  const actionable = live.filter((r) => !isNoActionBadges(badgesOf(r)) && !needIds.has(r.id));
-  const greetings = live.filter((r) => isNoActionBadges(badgesOf(r)) && !needIds.has(r.id));
+  // 「확인 필요」는 따로 칸을 두지 않고 같은 목록 맨 위에 「확인 필요」 뱃지로 섭니다. 줄을 펼치면 판단하는
+  // 고르개가 나옵니다(Row). 인사로 분류됐어도 판단이 남은 글은 접힌 칸에 숨기지 않습니다.
+  const actionable = live.filter((r) => !isNoActionBadges(badgesOf(r)) || needsCheck(r));
+  const greetings = live.filter((r) => isNoActionBadges(badgesOf(r)) && !needsCheck(r));
   const counts = new Map<InquiryBadge, number>();
   for (const r of actionable)
     for (const b of badgesOf(r)) counts.set(b, (counts.get(b) ?? 0) + 1);
@@ -503,20 +506,6 @@ export function TodayInquiriesPanel() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-1.5">
-        {needs.length > 0 && (
-          <div className="mb-2 rounded-xl border border-amber-300 bg-amber-50/70 p-1.5">
-            <p className="px-1 pb-1 text-[11px] font-bold text-amber-800">
-              ⚠ 확인 필요 {needs.length}건 — 누구인지·픽업인지 사람이 정해야 하는 글입니다. 여기서 바로 처리됩니다.
-            </p>
-            <PickupTriage
-              rows={needs as unknown as PickupRow[]}
-              students={students}
-              onChanged={reload}
-              compact
-              houseOf={houseOf}
-            />
-          </div>
-        )}
         {!loaded ? (
           <p className="p-4 text-center text-xs text-slate-400">불러오는 중…</p>
         ) : open.length === 0 ? (
@@ -680,7 +669,7 @@ function Row({
   open: boolean;
   onToggle: () => void;
 }) {
-  const { patch, me, staffName, team, names, repeatOf } = useToday();
+  const { patch, me, staffName, team, names, repeatOf, students, houseOf, reload } = useToday();
   const repeat = repeatOf.get(r.id);
   const notify = useToast();
   const [announcing, setAnnouncing] = useState(false);
@@ -716,10 +705,21 @@ function Row({
           "처리 완료로 표시했습니다.",
         );
 
-  const toggleSkip = () =>
-    r.skipped_at
-      ? patch(r, { skipped_at: null, skipped_by: null }, "넘긴 글을 되돌렸습니다.")
-      : patch(r, { skipped_at: nowIso(), skipped_by: me }, "넘겼습니다(목록에서 내림).");
+  const toggleSkip = async () => {
+    if (r.skipped_at) return patch(r, { skipped_at: null, skipped_by: null }, "넘긴 글을 되돌렸습니다.");
+    // 확인 필요 글을 넘기면 픽업 판단도 «아님»으로 내립니다. 안 그러면 픽업 인박스에 계속 남습니다.
+    if (needsCheck(r)) {
+      const res = await fetch("/api/pickup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "ignore", id: r.id }),
+      }).catch(() => null);
+      if (!res || !res.ok) notify("픽업 판단을 내리지 못했습니다. 픽업 인박스에서 한 번 더 확인해 주세요.", "error");
+    }
+    return patch(r, { skipped_at: nowIso(), skipped_by: me }, "넘겼습니다(목록에서 내림).");
+  };
+  /** 답할 것 없음(인사·감사)으로 잘못 간 글을 다시 올립니다. 뱃지를 「기타」로 바꾸면 목록으로 돌아옵니다. */
+  const raise = () => patch(r, { badges: ["기타"] }, "다시 올렸습니다. 분류를 맞게 고쳐 주세요.");
 
   /**
    * 확성기 — 이 문의를 전체 공지로 올립니다. 공지 쓰기는 관리자만 할 수 있어서 함수(announce_inquiry)가
@@ -796,6 +796,11 @@ function Row({
                 {b}
               </span>
             ))}
+            {needsCheck(r) && (
+              <span className="rounded-full bg-amber-400 px-1.5 text-[9px] font-bold text-white" title="누구인지·픽업인지 정해야 합니다. 펼쳐서 처리하세요.">
+                ⚠ 확인 필요
+              </span>
+            )}
             <Who2 r={r} />
             {repeat && (
               <span
@@ -816,42 +821,59 @@ function Row({
             {r.summary || r.raw_text || "(내용 없음)"}
           </p>
         </button>
-        <div className="flex shrink-0 flex-col gap-1">
-          <button
-            type="button"
-            onClick={() => void toggleReplied()}
-            className={
-              "rounded px-2 py-0.5 text-[10px] font-bold " +
-              (r.replied_at
-                ? "border border-emerald-300 text-emerald-700"
-                : "bg-emerald-600 text-white hover:bg-emerald-700")
-            }
-            title={
-              r.replied_at
-                ? "답함 되돌리기"
-                : "학부모에게 답했으면 누릅니다(토들 답글은 자동으로 체크됩니다)"
-            }
-          >
-            답함
-          </button>
+        <div className="flex w-[4.5rem] shrink-0 flex-col gap-1">
+          {/* 답하기 — 토들 글이면 그 방을 새 창으로 엽니다. 거기서 답을 달면 수집기가 직원 답글을 보고
+              「답함」을 스스로 채웁니다(누가·몇 분 만에). 토들 방이 없는 글(전화·메모)은 누르면 바로 답함입니다. */}
+          {r.replied_at ? (
+            <button
+              type="button"
+              onClick={() => void toggleReplied()}
+              className="rounded border border-emerald-300 px-1 py-0.5 text-[10px] font-bold text-emerald-700"
+              title="답함 되돌리기"
+            >
+              ✓ 답함
+            </button>
+          ) : (
+            <span className="flex">
+              <button
+                type="button"
+                onClick={() => {
+                  if (r.source_url) window.open(r.source_url, "_blank", "noopener");
+                  else void toggleReplied();
+                }}
+                className="flex-1 rounded-l bg-emerald-600 px-1 py-0.5 text-[10px] font-bold text-white hover:bg-emerald-700"
+                title={
+                  r.source_url
+                    ? "토들 방을 엽니다. 거기서 답하면 「답함」이 자동으로 체크됩니다."
+                    : "토들 방이 없는 글입니다. 답했으면 누르세요."
+                }
+              >
+                답하기
+              </button>
+              {r.source_url && (
+                <button
+                  type="button"
+                  onClick={() => void toggleReplied()}
+                  className="rounded-r border-l border-emerald-500 bg-emerald-600 px-1 text-[10px] text-white hover:bg-emerald-700"
+                  title="토들 말고 전화 등으로 답했으면 여기서 답함으로 표시합니다"
+                >
+                  ✓
+                </button>
+              )}
+            </span>
+          )}
           <button
             type="button"
             onClick={() => void toggleDone()}
             className={
-              "rounded px-2 py-0.5 text-[10px] font-bold " +
-              (r.answered_at
-                ? "border border-slate-300 text-slate-500"
-                : "bg-slate-800 text-white hover:bg-slate-700")
+              "rounded px-1 py-0.5 text-[10px] font-bold " +
+              (r.answered_at ? "border border-slate-300 text-slate-500" : "bg-slate-800 text-white hover:bg-slate-700")
             }
-            title={
-              r.answered_at
-                ? "처리 완료 되돌리기"
-                : "요청한 일이 끝났으면 누릅니다"
-            }
+            title={r.answered_at ? "처리 완료 되돌리기" : "요청한 일이 끝났으면 누릅니다"}
           >
-            처리 완료
+            {r.answered_at ? "✓ 완료" : "처리 완료"}
           </button>
-          <div className="flex gap-1">
+          <span className="flex gap-0.5">
             <button
               type="button"
               onClick={() => void toggleSkip()}
@@ -859,7 +881,7 @@ function Row({
                 "flex-1 rounded px-1 py-0.5 text-[10px] font-bold " +
                 (r.skipped_at ? "border border-slate-300 text-slate-500" : "border border-slate-200 text-slate-400 hover:bg-slate-50")
               }
-              title={r.skipped_at ? "넘긴 것을 되돌립니다" : "감사 인사처럼 할 일이 없는 글을 목록에서 내립니다(처리 건수에 안 들어감)"}
+              title={r.skipped_at ? "넘긴 것을 되돌립니다" : "할 일이 없는 글을 목록에서 내립니다(처리 건수에 안 들어감)"}
             >
               {r.skipped_at ? "되돌림" : "넘기기"}
             </button>
@@ -867,15 +889,12 @@ function Row({
               type="button"
               disabled={announcing}
               onClick={() => void announce()}
-              className={
-                "rounded px-1 py-0.5 text-[11px] " +
-                (r.announced_at ? "bg-amber-100 ring-1 ring-amber-300" : "hover:bg-amber-50")
-              }
+              className={"rounded px-0.5 text-[11px] " + (r.announced_at ? "bg-amber-100 ring-1 ring-amber-300" : "hover:bg-amber-50")}
               title={r.announced_at ? `${timeKst(r.announced_at)} 전체 공지로 올림 · ${staffName(r.announced_by ?? null)}` : "모든 직원 화면에 공지로 띄웁니다"}
             >
               📢
             </button>
-          </div>
+          </span>
         </div>
       </div>
 
@@ -934,6 +953,29 @@ function Row({
               </a>
             )}
           </div>
+          {needsCheck(r) && (
+            <div>
+              <p className="mb-0.5 text-[10px] font-bold text-amber-700">⚠ 확인 요청 — 학생·날짜를 맞추고 처리를 고르세요</p>
+              <PickupTriage
+                rows={[r as unknown as PickupRow]}
+                students={students}
+                onChanged={reload}
+                compact
+                embedded
+                houseOf={houseOf}
+              />
+            </div>
+          )}
+          {isNoActionBadges(badgesOf(r)) && !needsCheck(r) && (
+            <button
+              type="button"
+              onClick={() => void raise()}
+              className="rounded-full border border-blue-300 bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700"
+              title="답할 것 없음으로 분류됐지만 답해야 하는 글이면 목록으로 올립니다"
+            >
+              ↑ 답할 것으로 다시 올리기
+            </button>
+          )}
           <ReplyTemplates
             badges={badgesOf(r)}
             studentName={r.student_id ? (names.get(r.student_id) ?? null) : null}

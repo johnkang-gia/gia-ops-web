@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/common/ToastProvider";
 import { createTaskFromInbox } from "@/lib/taskFromInbox";
 import { todayKst } from "@/lib/kst";
+import { loadStudents } from "@/lib/students";
 
 /**
  * 메모장 — 전화 받으며 적는 칸.
@@ -21,7 +22,18 @@ import { todayKst } from "@/lib/kst";
  */
 
 type Dest = "문의" | "업무" | "쪽지" | "빼기";
-type Item = { text: string; title: string; dest: Dest; state?: "ok" | "fail"; error?: string };
+type Cand = { id: string; name: string; class_name: string | null };
+type Item = {
+  text: string;
+  title: string;
+  dest: Dest;
+  studentText?: string | null;
+  /** 자동으로 붙인 학생(사람이 바꿀 수 있음). 비면 «학생 없음». */
+  studentId?: string | null;
+  candidates?: Cand[];
+  state?: "ok" | "fail";
+  error?: string;
+};
 
 const LS_KEY = (email: string) => `gia-memo-pad-v1:${email}`;
 type Saved = { content: string; at: number };
@@ -164,6 +176,8 @@ export default function MemoPad({
     }
   }
 
+  const tagName = (it: Item) => it.candidates?.find((c) => c.id === it.studentId)?.name ?? null;
+
   async function sendOne(it: Item): Promise<string | null> {
     if (it.dest === "빼기") return null;
     if (it.dest === "문의") {
@@ -174,11 +188,27 @@ export default function MemoPad({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok) return json?.error ?? `접수 실패(${res.status})`;
+      // 사람이 고른(또는 자동으로 붙은) 학생을 그 연락에 잇습니다. 접수 규칙이 다른 아이를 골랐거나 못 골랐을 때
+      // 이 태그가 이깁니다 - 미리보기에서 사람이 본 값이기 때문입니다.
+      if (it.studentId) {
+        const ids = ((json?.results ?? []) as { id?: string }[]).map((x) => x.id).filter(Boolean) as string[];
+        for (const id of ids) {
+          const lr = await fetch("/api/pickup", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "link", id, studentId: it.studentId }),
+          });
+          if (!lr.ok) {
+            const lj = await lr.json().catch(() => null);
+            return "접수는 됐지만 학생을 잇지 못했습니다: " + (lj?.error ?? lr.status);
+          }
+        }
+      }
       return null;
     }
     if (it.dest === "업무") {
       const { error } = await createTaskFromInbox({
-        title: it.title || it.text.slice(0, 50),
+        title: (tagName(it) ? `[${tagName(it)}] ` : "") + (it.title || it.text.slice(0, 50)),
         description: `메모장에서 등록 · ${currentUserName ?? email}\n\n${it.text}`,
         department,
         userEmail: email,
@@ -187,7 +217,7 @@ export default function MemoPad({
     }
     const { error } = await createClient().from("board_notes").insert({
       department,
-      content: it.text,
+      content: (tagName(it) ? `[${tagName(it)}] ` : "") + it.text,
       color: "yellow",
       expires_on: todayKst(),
       author_email: email,
@@ -250,7 +280,7 @@ export default function MemoPad({
       <textarea
         value={text}
         onChange={(e) => onChange(e.target.value)}
-        placeholder={"전화·요청을 자유롭게 적으세요. 적는 대로 저장됩니다.\n예) 3시 김OO 어머님 전화 - 내일 병원 때문에 결석\n2층 프린터 토너 주문"}
+        placeholder="전화·요청을 자유롭게 적으세요."
         className="mx-2 mb-1 min-h-0 flex-1 resize-none rounded-lg border border-amber-200 bg-amber-50/60 p-2 text-[12.5px] leading-relaxed text-slate-800 outline-none focus:border-amber-400"
       />
       {serverError && <p className="shrink-0 px-2.5 pb-1 text-[10px] font-bold text-rose-600">{serverError}</p>}
@@ -291,6 +321,24 @@ export default function MemoPad({
                       ))}
                       {it.state === "ok" && <span className="ml-auto text-[11px] font-bold text-emerald-700">등록됨</span>}
                     </div>
+                    <StudentTag
+                      item={it}
+                      disabled={it.state === "ok" || it.dest === "빼기"}
+                      onChange={(studentId, cand) =>
+                        setItems((p) =>
+                          p &&
+                          p.map((x, j) =>
+                            j === i
+                              ? {
+                                  ...x,
+                                  studentId,
+                                  candidates: cand && !(x.candidates ?? []).some((c) => c.id === cand.id) ? [...(x.candidates ?? []), cand] : x.candidates,
+                                }
+                              : x,
+                          ),
+                        )
+                      }
+                    />
                     {it.dest === "업무" && (
                       <input
                         value={it.title}
@@ -329,6 +377,98 @@ export default function MemoPad({
           </div>,
           document.body,
         )}
+    </div>
+  );
+}
+
+/** 명부는 한 번만 읽습니다 - 찾기 칸에 글자를 칠 때마다 139명을 다시 받지 않게. */
+let rosterOnce: ReturnType<typeof loadStudents> | null = null;
+
+/**
+ * 메모 한 건의 학생 태그. 자동으로 붙은 아이가 있으면 선택된 채로 뜨고, 동명이인이라 못 좁혔으면 후보 중에서
+ * 고릅니다. 후보에 없는 아이는 이름으로 찾아 붙입니다(명부에서 번호로 고르므로 동명이인이 섞이지 않습니다).
+ */
+function StudentTag({
+  item,
+  disabled,
+  onChange,
+}: {
+  item: Item;
+  disabled: boolean;
+  onChange: (studentId: string | null, cand?: Cand) => void;
+}) {
+  const [q, setQ] = useState("");
+  const [hits, setHits] = useState<Cand[]>([]);
+  const cands = item.candidates ?? [];
+  useEffect(() => {
+    const t = q.trim();
+    if (t.length < 1) {
+      setHits([]);
+      return;
+    }
+    let stop = false;
+    rosterOnce ??= loadStudents(createClient());
+    void rosterOnce.then(({ rows }) => {
+      if (stop) return;
+      const k = t.toLowerCase();
+      setHits(
+        rows
+          .filter((s) => s.name.includes(t) || (s.name_en ?? "").toLowerCase().includes(k) || (s.class_name ?? "").toLowerCase() === k)
+          .slice(0, 8)
+          .map((s) => ({ id: s.id, name: s.name, class_name: s.class_name })),
+      );
+    });
+    return () => {
+      stop = true;
+    };
+  }, [q]);
+  const ambiguous = !item.studentId && cands.length > 1;
+  return (
+    <div className="mb-1 flex flex-wrap items-center gap-1 text-[11px]">
+      <span className="font-bold text-slate-400">학생</span>
+      <select
+        value={item.studentId ?? ""}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value || null)}
+        className={"rounded border px-1.5 py-0.5 " + (ambiguous ? "border-rose-400 bg-rose-50 font-bold text-rose-700" : "border-slate-200")}
+      >
+        <option value="">{ambiguous ? `${item.studentText ?? ""} — 누구? (골라 주세요)` : "학생 없음"}</option>
+        {cands.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.name}
+            {c.class_name ? ` (${c.class_name})` : ""}
+          </option>
+        ))}
+      </select>
+      {item.studentId && <span className="rounded bg-emerald-50 px-1 text-[10px] font-bold text-emerald-700">자동 태그 · 바꿀 수 있음</span>}
+      {!disabled && (
+        <span className="relative">
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="다른 학생 찾기"
+            className="w-28 rounded border border-slate-200 px-1.5 py-0.5"
+          />
+          {hits.length > 0 && (
+            <span className="absolute left-0 top-full z-10 mt-0.5 flex w-48 flex-col rounded border bg-white shadow">
+              {hits.map((h) => (
+                <button
+                  key={h.id}
+                  type="button"
+                  onClick={() => {
+                    onChange(h.id, h);
+                    setQ("");
+                  }}
+                  className="px-2 py-1 text-left hover:bg-slate-50"
+                >
+                  {h.name}
+                  {h.class_name ? ` (${h.class_name})` : ""}
+                </button>
+              ))}
+            </span>
+          )}
+        </span>
+      )}
     </div>
   );
 }

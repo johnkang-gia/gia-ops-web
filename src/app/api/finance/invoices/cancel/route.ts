@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { isFromDeposit } from "@/lib/depositLines";
+import { streamOf } from "@/lib/settlement";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess } from "@/lib/roles";
@@ -208,7 +209,44 @@ export async function POST(req: Request) {
     .single();
   if (error || !data) return NextResponse.json({ error: error?.message ?? "취소하지 못했습니다." }, { status: 500 });
 
+  // ── 발행이 함께 적어 둔 것도 되돌립니다 ─────────────────────────────────
+  //
+  // 학비 발행은 장만 만드는 것이 아니라 두 가지를 더 적습니다. 취소가 이것을 모르면 «발행 전 상태»가 안 됩니다.
+  //  ① 여러 달 묶음(5개월·10개월) 항목의 시작월(`student_fee_enrollments.paid_from`) = 그 장의 청구월.
+  //     남겨 두면 장은 취소됐는데 그 항목이 「납부 기간 … 기간 납부 완료」로 남아 다시 고를 수 없었습니다
+  //     (방과후 5개월 납부 장을 취소한 뒤 재발행이 막힘). 같은 항목을 담은 다른 살아 있는 장이 있으면 둡니다.
+  //  ② 그 장에 붙인 「+ 추가 항목」(`tuition_extra_charges.invoice_id`). 풀지 않으면 다시 발행할 때 빠집니다.
+  const followUp: string[] = [];
+  if (streamOf(inv) === "학비" && inv.student_id) {
+    const bm = (inv as { billing_month?: string | null }).billing_month ?? String(inv.issue_date ?? "").slice(0, 7);
+    const { data: myLines, error: mlErr } = await supabase.from("invoice_lines").select("plan_id").eq("invoice_id", id);
+    const planIdsHere = [...new Set(((myLines as { plan_id: string | null }[] | null) ?? []).map((l) => l.plan_id).filter((x): x is string => !!x))];
+    if (mlErr) followUp.push(`청구서 줄을 읽지 못해 묶음 시작월을 되돌리지 못했습니다(${mlErr.message})`);
+    else if (planIdsHere.length > 0 && bm) {
+      const { data: alive } = await supabase.from("invoices").select("id").eq("student_id", inv.student_id).eq("status", "발행");
+      const aliveIds = ((alive as { id: string }[] | null) ?? []).map((v) => v.id);
+      const stillCovered = new Set<string>();
+      if (aliveIds.length > 0) {
+        const { data: al } = await supabase.from("invoice_lines").select("plan_id").in("invoice_id", aliveIds).in("plan_id", planIdsHere);
+        for (const l of (al as { plan_id: string | null }[] | null) ?? []) if (l.plan_id) stillCovered.add(l.plan_id);
+      }
+      const clear = planIdsHere.filter((p) => !stillCovered.has(p));
+      if (clear.length > 0) {
+        const { error: pfErr } = await supabase
+          .from("student_fee_enrollments")
+          .update({ paid_from: null })
+          .eq("student_id", inv.student_id)
+          .in("plan_id", clear)
+          .eq("paid_from", bm);
+        if (pfErr) followUp.push(`묶음 납부 시작월을 되돌리지 못했습니다(${pfErr.message}) — 학생 회계 창의 시작월을 비워주세요`);
+      }
+    }
+    const { error: ecErr } = await supabase.from("tuition_extra_charges").update({ invoice_id: null, billed_at: null }).eq("invoice_id", id);
+    if (ecErr) followUp.push(`붙어 있던 추가 항목을 풀지 못했습니다(${ecErr.message})`);
+  }
+
   return NextResponse.json({
+    warning: followUp.length > 0 ? `취소는 됐습니다. 다만 ${followUp.join(" · ")}` : undefined,
     ok: true,
     invoice: data,
     detached: 0,

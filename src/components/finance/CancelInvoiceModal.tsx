@@ -77,6 +77,8 @@ export default function CancelInvoiceModal({
       // 이미 발행된 영수증은 앱이 없앨 수 없습니다. 서버가 준 문장을 그대로 띄웁니다 -
       // 조용히 두면 담당자는 취소했으니 영수증도 정리된 줄 압니다.
       const crNote = (json?.receiptNote as string | null) ?? null;
+      // 취소는 됐는데 묶음 시작월·추가 항목을 되돌리지 못한 경우 - 숨기면 그 항목이 다시 고를 수 없게 남습니다.
+      if (typeof json?.warning === "string" && json.warning) notify(json.warning, "error");
       onDone(done);
       // **되돌리기라는 것을 말로도 맞춥니다.** 원래 선입금이던 돈이 선입금으로 돌아간 것은
       // 새로 생긴 일이 아니므로 「남습니다」가 아니라 「돌아갔습니다」로 적습니다 - 앞의

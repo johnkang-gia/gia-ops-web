@@ -114,7 +114,9 @@ export async function addStudents(
         grade: r.grade || cls.grade || null,
         ...cls,
         birth_date: r.birth_date || null,
-        student_no: r.student_no || null,
+        // 학생 번호는 비워 보내지 않습니다. 칸에 기본값(GIA-연도-일련번호)이 걸려 있는데 null 을 명시하면 기본값 대신
+        // null 이 들어가 not-null 검사에 걸립니다 - 번호 없이 새 학생을 넣는 모든 화면이 「저장하지 못한 학생」으로 막혔습니다.
+        ...(r.student_no?.trim() ? { student_no: r.student_no.trim() } : {}),
         mother_phone: r.mother_phone || null,
         father_phone: r.father_phone || null,
         parent_phone: r.parent_phone || null,

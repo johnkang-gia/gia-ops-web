@@ -56,7 +56,7 @@ export const INTEGRATIONS: IntegrationSpec[] = [
     // 15:30 전에는 신호를 안 남겨서 매일 오전~오후 내내 빨간불이었습니다.
   },
   { key: "google-chat-poll", label: "구글챗 수집", what: "출결알림·문의를 인박스로 가져옵니다.", everyMinutes: 1 },
-  { key: "toddle-collector", label: "토들 수집기", what: "학부모 문의를 가져옵니다. 브라우저가 켜져 있어야 합니다.", everyMinutes: 1 },
+  { key: "toddle-collector", label: "토들 수집기", what: "학부모 문의를 가져옵니다. 서버가 1분마다 직접 읽습니다(TODDLE_JWT · 2027-08 만료). 크롬 확장은 예비입니다.", everyMinutes: 1 },
   { key: "cron:pickup-schedules", label: "픽업 예약 반영", what: "예약된 픽업을 그날 체크표에 겁니다.", everyMinutes: 5 },
   { key: "cron:shuttle-learn-stops", label: "정류장 좌표 학습", what: "실제 주행 GPS로 정류장 위치를 다듬습니다.", everyMinutes: 60 * 24 },
   {

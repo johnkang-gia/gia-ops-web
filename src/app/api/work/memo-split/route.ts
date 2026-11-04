@@ -25,6 +25,8 @@ export type MemoItem = {
   text: string;
   title: string;
   dest: Dest;
+  /** 다듬기 전 원문. 미리보기에서 «원문 보기»로 견줍니다 - 다듬은 글이 사실을 바꾸지 않았는지 사람이 봅니다. */
+  original?: string | null;
   /** AI 가 읽은 학생 이름(글자 그대로). 화면에 보여주기만 합니다. */
   studentText?: string | null;
   /** 동명이인 규칙(matchStudent)으로 한 명으로 좁혀졌을 때만 채웁니다. */
@@ -51,14 +53,17 @@ function tagStudent(name: string | null | undefined, text: string, roster: Roste
 const SYSTEM = `너는 국제학교 행정실 직원의 전화·업무 메모를 정리한다.
 메모를 서로 다른 일 단위로 나눈다. 한 사람(한 학부모·한 학생)에 대한 한 가지 연락은 한 건이다.
 각 건마다:
-- text: 그 건에 해당하는 원문 문장(원문의 말을 바꾸지 말고 그대로, 필요하면 앞뒤 문장을 붙인다)
+- original: 그 건에 해당하는 원문 문장(바꾸지 말고 그대로)
+- text: original 을 다듬은 글. 맞춤법·띄어쓰기·오타를 고치고, 업무 보고서에 그대로 옮길 수 있는 정돈된 문체
+        (「~했습니다」「~요청했습니다」 같은 합니다체, 누가·언제·무엇을이 드러나게)로 자연스럽게 바꾼다.
+        사실(이름·시각·날짜·숫자·요청 내용)은 하나도 바꾸거나 더하거나 빼지 않는다. 줄임말은 풀되 뜻을 짐작해 넣지 않는다.
 - title: 25자 이내 요약(누가·무엇을)
 - student: 이 건이 가리키는 학생 이름(메모에 적힌 그대로, 없으면 null). 여러 명이면 첫 번째.
 - dest: 학부모·학생에 관한 연락(결석, 픽업, 하원, 아픔, 물건, 상담, 납부 문의 등)이면 "문의",
         직원이 해야 할 내부 일(구매, 수리, 서류, 연락 돌리기)이면 "업무",
         모두가 알면 되는 짧은 알림이면 "쪽지".
 나눌 것이 없으면 한 건으로 둔다. 원문에 없는 내용을 지어내지 않는다.
-JSON 만 답한다: {"items":[{"text":"...","title":"...","student":"김OO","dest":"문의"}]}`;
+JSON 만 답한다: {"items":[{"original":"...","text":"...","title":"...","student":"김OO","dest":"문의"}]}`;
 
 export async function POST(req: Request) {
   const me = await getCurrentAppUser();
@@ -71,18 +76,19 @@ export async function POST(req: Request) {
   try {
     const raw = (await callClaudeJson(SYSTEM, `[오늘] ${todayKst()}\n\n메모:\n"""\n${text}\n"""`, {
       model: CLAUDE_MODEL_FAST,
-      maxTokens: 1500,
+      maxTokens: 3000,
       route: "memo-split",
     })) as { items?: unknown } | null;
     const sb = await createClient();
     const roster = await loadRoster(sb);
     const aliases = await loadAliasIndex(sb, roster);
     const items: MemoItem[] = (Array.isArray(raw?.items) ? raw.items : [])
-      .map((v) => v as Partial<MemoItem> & { student?: string | null })
+      .map((v) => v as Partial<MemoItem> & { student?: string | null; original?: string | null })
       .filter((v) => typeof v.text === "string" && v.text.trim())
       .slice(0, 20)
       .map((v) => ({
         text: String(v.text).trim(),
+        original: typeof v.original === "string" && v.original.trim() ? v.original.trim() : null,
         title: String(v.title ?? v.text).trim().slice(0, 40),
         dest: v.dest === "업무" || v.dest === "쪽지" ? v.dest : "문의",
         studentText: v.student ?? null,

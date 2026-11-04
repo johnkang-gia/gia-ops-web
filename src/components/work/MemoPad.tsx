@@ -28,6 +28,7 @@ type Item = {
   title: string;
   dest: Dest;
   studentText?: string | null;
+  original?: string | null;
   /** 자동으로 붙인 학생(사람이 바꿀 수 있음). 비면 «학생 없음». */
   studentId?: string | null;
   candidates?: Cand[];
@@ -292,7 +293,7 @@ export default function MemoPad({
             <div className="flex max-h-full w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
               <div className="flex shrink-0 items-center gap-2 border-b border-black/5 px-4 py-2.5">
                 <h2 className="text-sm font-bold text-slate-800">📝 메모 등록 미리보기</h2>
-                <span className="text-[11px] text-slate-400">{items.length}건 · 갈래와 글을 고친 뒤 등록하세요</span>
+                <span className="text-[11px] text-slate-400">{items.length}건 · 맞춤법·문체를 다듬었습니다. 갈래와 글을 확인한 뒤 등록하세요</span>
               </div>
               {splitNote && <p className="shrink-0 bg-amber-50 px-4 py-1.5 text-[11px] text-amber-800">{splitNote}</p>}
               <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto px-4 py-3">
@@ -355,6 +356,21 @@ export default function MemoPad({
                       onChange={(e) => setItems((p) => p && p.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))}
                       className={"w-full resize-y rounded border border-slate-200 px-2 py-1 text-[12px] " + (it.dest === "빼기" ? "opacity-40" : "")}
                     />
+                    {it.original && it.original !== it.text && (
+                      <details className="mt-0.5 text-[10.5px] text-slate-400">
+                        <summary className="cursor-pointer">✍️ 맞춤법·문체를 다듬었습니다 — 원문 보기</summary>
+                        <p className="mt-0.5 whitespace-pre-wrap rounded bg-slate-50 p-1 text-slate-500">{it.original}</p>
+                        {it.state !== "ok" && (
+                          <button
+                            type="button"
+                            onClick={() => setItems((p) => p && p.map((x, j) => (j === i ? { ...x, text: x.original ?? x.text } : x)))}
+                            className="mt-0.5 text-[10.5px] font-bold text-blue-600"
+                          >
+                            원문 그대로 쓰기
+                          </button>
+                        )}
+                      </details>
+                    )}
                     {it.state === "fail" && <p className="mt-0.5 text-[11px] font-bold text-rose-600">{it.error}</p>}
                   </li>
                 ))}

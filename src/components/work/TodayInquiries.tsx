@@ -747,6 +747,33 @@ function Row({
     else notify("전체 공지로 올렸습니다.", "success");
   }
 
+  // 처리 완료된 줄은 한 줄로 접습니다 - 아이와 내용, 되돌리기만. 끝난 일에 단추 넷이 그대로 있으면 아직 할
+  // 일처럼 보이고, 남은 일이 묻힙니다. 누가 언제 끝냈는지는 마우스를 올리면 보입니다.
+  if (r.answered_at && !open) {
+    return (
+      <li
+        className="flex items-center gap-1.5 rounded-lg border border-black/5 bg-slate-50 px-2 py-1 text-[11.5px]"
+        title={`처리 완료 · ${staffName(r.answered_by)} ${timeKst(r.answered_at)}${r.replied_at ? ` · 답함 ${r.replied_via === "토들 답글" ? r.replied_by ?? "" : staffName(r.replied_by)}` : ""}`}
+      >
+        <span className="shrink-0 text-emerald-600">✓</span>
+        <span className="shrink-0">
+          <Who2 r={r} />
+        </span>
+        <button type="button" onClick={onToggle} className="min-w-0 flex-1 truncate text-left text-slate-500">
+          {r.summary || r.raw_text || "(내용 없음)"}
+        </button>
+        <button
+          type="button"
+          onClick={() => void toggleDone()}
+          className="shrink-0 rounded border border-slate-200 px-1.5 py-0.5 text-[10px] font-bold text-slate-400 hover:bg-white hover:text-slate-600"
+          title="처리 완료를 되돌려 목록으로 올립니다"
+        >
+          ↩ 되돌리기
+        </button>
+      </li>
+    );
+  }
+
   return (
     <li
       className={

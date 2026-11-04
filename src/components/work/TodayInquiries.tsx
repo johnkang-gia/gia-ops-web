@@ -619,6 +619,15 @@ export function TodayInquiriesPanel() {
           >
             오늘 토들 {toddleTodayCount ?? "?"} → 앱 {toddleInApp}
           </span>
+          <a
+            href="/work/raw-log"
+            target="_blank"
+            rel="noreferrer"
+            className="rounded px-1 text-[11px] text-slate-500 hover:bg-slate-100"
+            title="원문함 — 들어온 연락 원문을 날짜별·방별로 그대로 봅니다(새 창)"
+          >
+            📚
+          </a>
           <DesktopNotifyToggle />
           <ChimeToggle />
           {canReport && <ProcessingReportButton staffName={staffName} />}
@@ -943,6 +952,48 @@ function Row({
   const assignees = r.assignees ?? [];
   const mine = assignees.includes(me);
 
+  /**
+   * 픽업·하원 글은 펼치지 않고 바로 픽업으로 넘깁니다. 학생이 정해진 글은 시각만 물어 확정하고, 학생을 모르는
+   * 글은 펼쳐서 픽업 판단 칸(학생·날짜·시각)을 띄웁니다 - 누구인지 모르는 채로 체크표에 올리지 않습니다.
+   */
+  const pickupish = badgesOf(r).includes("픽업·하원");
+  const pickupDone = r.kind === "픽업" && r.status === "확정";
+  const [forceTriage, setForceTriage] = useState(false);
+  const [pickingUp, setPickingUp] = useState(false);
+  async function quickPickup() {
+    if (pickingUp) return;
+    if (!r.student_id) {
+      setForceTriage(true);
+      if (!open) onToggle();
+      notify("누구인지 아직 모르는 글입니다. 펼친 칸에서 학생을 고르고 픽업을 누르세요.", "info");
+      return;
+    }
+    const t = window.prompt("몇 시에 데리러 오나요? (예: 14:30 · 모르면 비워 두세요)", "");
+    if (t === null) return;
+    setPickingUp(true);
+    const res = await fetch("/api/pickup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "confirm",
+        id: r.id,
+        studentId: r.student_id,
+        serviceDate: r.service_date ?? kstDateOffset(0),
+        ...(t.trim() ? { pickupTime: t.trim() } : {}),
+      }),
+    }).catch(() => null);
+    const json = res ? ((await res.json().catch(() => ({}))) as { error?: string; noShuttleRow?: boolean }) : {};
+    setPickingUp(false);
+    if (!res || !res.ok) return notify(`픽업으로 넘기지 못했습니다: ${json.error ?? "연결 오류"}`, "error");
+    notify(json.noShuttleRow ? "픽업으로 등록했습니다(셔틀을 안 타는 아이라 체크표 줄은 없습니다)." : "픽업으로 등록했습니다. 하원 체크표에 반영됐습니다.", "success");
+    reload();
+  }
+  /**
+   * 요약이 믿을 만하지 않은 글은 원문을 그대로 보여줍니다. 누구 글인지 모르거나(학생 없음) 갈래가 「기타」면
+   * AI 요약이 뜻을 바꿨을 수 있고, 요약만 보고 처리하면 학부모가 한 말과 다른 일을 하게 됩니다.
+   */
+  const unclear = !r.student_id || badgesOf(r).includes("기타") || !r.summary;
+
   const nowIso = () => new Date().toISOString();
   const toggleReplied = () =>
     r.replied_at
@@ -1115,12 +1166,37 @@ function Row({
             </span>
           </div>
           <p
-            className={"mt-0.5 text-slate-700 " + (open ? "" : "line-clamp-1")}
+            className={"mt-0.5 text-slate-700 " + (open ? "" : unclear ? "line-clamp-3 whitespace-pre-wrap" : "line-clamp-1")}
           >
-            {r.summary || r.raw_text || "(내용 없음)"}
+            {unclear && r.raw_text ? (
+              <>
+                <span className="mr-1 rounded bg-slate-200 px-1 text-[9px] font-bold text-slate-600" title="요약이 불확실해 학부모가 쓴 글을 그대로 보여줍니다">
+                  원문
+                </span>
+                {r.raw_text}
+              </>
+            ) : (
+              r.summary || r.raw_text || "(내용 없음)"
+            )}
           </p>
         </button>
         <div className="flex w-[4.5rem] shrink-0 flex-col gap-1">
+          {pickupish && !pickupDone && (
+            <button
+              type="button"
+              disabled={pickingUp}
+              onClick={() => void quickPickup()}
+              className="rounded bg-amber-500 px-1 py-0.5 text-[10px] font-bold text-white hover:bg-amber-600 disabled:bg-slate-300"
+              title="이 글을 바로 픽업으로 등록합니다(하원 체크표에 반영)"
+            >
+              🚗 픽업 등록
+            </button>
+          )}
+          {pickupish && pickupDone && (
+            <span className="rounded border border-amber-300 px-1 py-0.5 text-center text-[10px] font-bold text-amber-700" title="픽업으로 등록된 글입니다">
+              🚗 픽업됨
+            </span>
+          )}
           {/* 답하기 — 토들 글이면 그 방을 새 창으로 엽니다. 거기서 답을 달면 수집기가 직원 답글을 보고
               「답함」을 스스로 채웁니다(누가·몇 분 만에). 토들 방이 없는 글(전화·메모)은 누르면 바로 답함입니다. */}
           {r.replied_at ? (
@@ -1258,7 +1334,7 @@ function Row({
               </a>
             )}
           </div>
-          {needsCheck(r) && (
+          {(needsCheck(r) || forceTriage) && (
             <div>
               <p className="mb-0.5 text-[10px] font-bold text-amber-700">⚠ 확인 요청 — 학생·날짜를 맞추고 처리를 고르세요</p>
               <PickupTriage

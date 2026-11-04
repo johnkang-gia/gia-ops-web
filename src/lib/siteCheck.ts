@@ -139,6 +139,7 @@ export const SCREENS: string[] = [
   "/work/dismissal",
   "/work/history",
   "/work/inquiry-search",
+  "/work/raw-log",
   "/work/report",
   "/work/trash",
 ];

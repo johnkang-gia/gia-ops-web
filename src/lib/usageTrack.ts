@@ -46,6 +46,7 @@ const LABELS: Record<string, string> = {
   "/work/report": "업무 리포트",
   "/work/dismissal": "하원 일괄",
   "/work/inquiry-search": "문의 검색",
+  "/work/raw-log": "원문함",
   "/work/trash": "업무 휴지통",
   "/pickup": "픽업 인박스",
   "/shuttle": "셔틀 현황",

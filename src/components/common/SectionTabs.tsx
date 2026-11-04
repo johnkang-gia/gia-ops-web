@@ -154,8 +154,10 @@ const WORK_TABS: TabDef[] = [
     label: "보관함",
     icon: "🗃️",
     href: "/work/history",
-    match: ["/work/history", "/work/trash"],
+    match: ["/work/history", "/work/trash", "/work/raw-log"],
     children: [
+      // 들어온 연락 원문이 날짜별로 한 곳에. 다른 화면들은 이 원본을 읽어 보여주는 창입니다.
+      { label: "원문함", href: "/work/raw-log", match: ["/work/raw-log"] },
       { label: "지난 업무", href: "/work/history", match: ["/work/history"] },
       { label: "휴지통", href: "/work/trash", match: ["/work/trash"] },
     ],

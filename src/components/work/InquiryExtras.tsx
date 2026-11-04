@@ -69,7 +69,20 @@ export function StudentHistory({ rowId, studentId, channelId }: { rowId: string;
       </p>
       <ul className="max-h-40 space-y-0.5 overflow-y-auto rounded bg-slate-50 p-1">
         {rows.map((h) => (
-          <li key={h.id} className="flex items-start gap-1 text-[10.5px]">
+          <HistLine key={h.id} h={h} />
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** 이력 한 줄. 누르면 펼쳐져 학부모가 쓴 원문 그대로가 보입니다 - 요약 한 줄만으로는 무슨 말이었는지 모를 때가 많습니다. */
+function HistLine({ h }: { h: HistRow }) {
+  const [open, setOpen] = useState(false);
+  const full = h.raw_text || h.summary || "(내용 없음)";
+  return (
+          <li className="text-[10.5px]">
+            <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full items-start gap-1 text-left hover:bg-white">
             <span className="w-16 shrink-0 tabular-nums text-slate-400">
               {dayKst(h.received_at)} {timeKst(h.received_at)}
             </span>
@@ -83,10 +96,10 @@ export function StudentHistory({ rowId, studentId, channelId }: { rowId: string;
             <span className={"min-w-0 flex-1 truncate " + (h.answered_at || h.skipped_at ? "text-slate-400" : "text-slate-700")}>
               {h.summary || h.raw_text || "(내용 없음)"}
             </span>
+            <span className="shrink-0 text-[9px] text-slate-400">{open ? "▲" : "▼"}</span>
+            </button>
+            {open && <p className="mt-0.5 whitespace-pre-wrap rounded bg-white p-1 text-[10.5px] text-slate-700 ring-1 ring-slate-200">{full}</p>}
           </li>
-        ))}
-      </ul>
-    </div>
   );
 }
 

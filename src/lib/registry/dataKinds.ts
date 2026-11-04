@@ -237,6 +237,8 @@ export const DATA_KINDS: DataKindDef[] = [
       "staff_activity_log",
       // 업무보드 메모장(사람마다 한 장). 등록하면 문의·업무·쪽지로 옮겨 가고 메모장은 비웁니다.
       "staff_memo_pads",
+      // 문의에 답할 때 복사해 쓰는 문구. 직원이 함께 고칩니다.
+      "inquiry_reply_templates",
     ],
     dedupe: { none: "업무는 같은 내용이 여러 번 생겨도 각각 다른 일입니다. 픽업에서 생기는 업무만 pickup_requests.task_id 로 한 번만 만듭니다." },
     apply: "src/lib/pickupTask.ts",

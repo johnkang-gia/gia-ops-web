@@ -138,6 +138,9 @@ export async function checkAlerts(supabase: SupabaseClient, spaces?: readonly Sp
     if (!spec) continue;
     const v = judge(spec, byKey.get(key), now);
     if (v.dot === "🔴") broken.push(spec.label);
+    // 토들 수집기는 신호는 오는데 못 읽는 상태(로그인 풀림·오류)가 더 흔합니다. 신호가 살아 있으니 빨간불이
+    // 안 켜졌고, 그동안 학부모 글은 한 건도 안 들어왔습니다. 일과 시간에는 노란불도 경보로 올립니다.
+    else if (key === "toddle-collector" && v.dot === "🟡" && inOfficeHours(now)) broken.push(`${spec.label}(${v.text})`);
   }
   let spaceList = spaces;
   if (!spaceList) {

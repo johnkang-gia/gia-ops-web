@@ -99,12 +99,30 @@ export default function AttendancePanels({
     () => messages.filter((m) => m.source_key === "attendance").map((m) => new Date(m.created_at_google).getTime()),
     [messages]
   );
+  // 선생님요청 = 구글챗 세 방(마이크로랩 초등·물품 요청·사고 보고)을 모은 것. 방 번호가 아니라 방 이름으로
+  // 고릅니다 - 방을 다시 만들면 번호는 바뀌지만 이름은 사람이 같은 것으로 다시 붙입니다.
+  const [spaceNames, setSpaceNames] = useState<Map<string, string>>(new Map());
+  const [spaceError, setSpaceError] = useState<string | null>(null);
+  useEffect(() => {
+    fetch("/api/google-chat/spaces")
+      .then(async (r) => {
+        const j = await r.json().catch(() => null);
+        if (!r.ok) throw new Error(j?.error ?? `방 목록을 읽지 못했습니다(${r.status})`);
+        const list = (j?.spaces ?? []) as { google_space_id: string; display_name: string | null }[];
+        setSpaceNames(new Map(list.map((x) => [x.google_space_id, x.display_name ?? ""])));
+      })
+      .catch((e) => setSpaceError(e instanceof Error ? e.message : String(e)));
+  }, []);
   const teacherMessages = useMemo(
     () =>
       messages
-        .filter((m) => m.source_key === "teacher_requests")
+        .filter(
+          (m) =>
+            m.source_key === "teacher_requests" ||
+            (!!m.google_space_id && isTeacherRoom(spaceNames.get(m.google_space_id))),
+        )
         .sort((a, b) => b.created_at_google.localeCompare(a.created_at_google)),
-    [messages]
+    [messages, spaceNames]
   );
   const teacherTimes = useMemo(() => teacherMessages.map((m) => new Date(m.created_at_google).getTime()), [teacherMessages]);
 
@@ -154,7 +172,13 @@ export default function AttendancePanels({
             전환합니다 - 다른 탭을 보고 있어도 새 요청이 오면 배지가 올라갑니다. */}
         <div className={tab === "office" ? "flex h-full flex-col overflow-hidden" : "hidden"}>
           <div className="min-h-0 flex-1 overflow-y-auto">
-            <TeacherChatRequests messages={teacherMessages} department={department} userEmail={userEmail} />
+            <TeacherChatRequests
+              messages={teacherMessages}
+              roomOf={(m) => roomLabel(m.google_space_id ? spaceNames.get(m.google_space_id) : undefined)}
+              error={spaceError}
+              department={department}
+              userEmail={userEmail}
+            />
             <OfficeRequestsPanel onOpenCountChange={setOfficeOpen} department={department} userEmail={userEmail} />
           </div>
         </div>
@@ -176,6 +200,19 @@ export default function AttendancePanels({
   );
 }
 
+/** 선생님요청으로 모으는 구글챗 방. 이름에 이 글자가 들어 있으면 같은 방으로 봅니다. */
+const TEACHER_ROOMS: { match: RegExp; label: string }[] = [
+  { match: /microlab\s*elementary/i, label: "마이크로랩" },
+  { match: /supply\s*request/i, label: "물품 요청" },
+  { match: /incident\s*report/i, label: "사고 보고" },
+];
+function isTeacherRoom(name: string | undefined): boolean {
+  return !!name && TEACHER_ROOMS.some((r) => r.match.test(name));
+}
+function roomLabel(name: string | undefined): string {
+  return TEACHER_ROOMS.find((r) => name && r.match.test(name))?.label ?? "선생님요청";
+}
+
 const timeKst = (iso: string) =>
   new Date(iso).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
 
@@ -188,10 +225,14 @@ const timeKst = (iso: string) =>
  */
 function TeacherChatRequests({
   messages,
+  roomOf,
+  error,
   department,
   userEmail,
 }: {
   messages: GoogleChatMirrorMessage[];
+  roomOf: (m: GoogleChatMirrorMessage) => string;
+  error: string | null;
   department: string;
   userEmail: string;
 }) {
@@ -203,7 +244,7 @@ function TeacherChatRequests({
     const who = m.sender_display_name ?? "선생님";
     const { error } = await createTaskFromInbox({
       title: `[${who} 요청] ${m.content.replace(/\s+/g, " ").slice(0, 50)}`,
-      description: `구글챗 선생님요청 방 · ${who} · ${timeKst(m.created_at_google)}\n\n${m.content}`,
+      description: `구글챗 ${roomOf(m)} 방 · ${who} · ${timeKst(m.created_at_google)}\n\n${m.content}`,
       department,
       userEmail,
     });
@@ -216,17 +257,18 @@ function TeacherChatRequests({
 
   return (
     <div className="border-b border-black/5 px-2 pb-2">
-      <p className="px-1 pb-1 pt-1 text-[10px] font-bold text-slate-400">구글챗 · 선생님요청 방</p>
+      <p className="px-1 pb-1 pt-1 text-[10px] font-bold text-slate-400">구글챗 · 마이크로랩 초등 · 물품 요청 · 사고 보고</p>
+      {error && <p className="px-1 text-[11px] font-bold text-rose-600">{error}</p>}
       {shown.length === 0 ? (
         <p className="px-1 text-[11px] text-slate-400">
-          구글챗 선생님요청 방에서 읽어온 글이 없습니다. 방이 꺼져 있으면 관리 › 연동 상태에서 켜 주세요.
+          세 방에서 읽어온 글이 없습니다. 방이 꺼져 있으면 관리 › 연동 상태에서 켜 주세요.
         </p>
       ) : (
         <ul className="space-y-1">
           {shown.map((m) => (
             <li key={m.id} className="rounded-lg bg-white px-2 py-1.5 text-[12px] shadow-sm ring-1 ring-black/5">
               <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
-                <span className="rounded bg-sky-100 px-1 font-bold text-sky-700">구글챗</span>
+                <span className="rounded bg-sky-100 px-1 font-bold text-sky-700">{roomOf(m)}</span>
                 <b className="text-slate-600">{m.sender_display_name ?? "?"}</b>
                 <span className="tabular-nums">{timeKst(m.created_at_google)}</span>
                 <button

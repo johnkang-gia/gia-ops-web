@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -29,6 +30,9 @@ import {
   type InquiryBadge,
 } from "@/lib/inquiryBadges";
 import type { TeamMember } from "@/lib/types";
+import PickupTriage, { type PickupRow, type StudentOption } from "@/components/pickup/PickupTriage";
+import { loadHouseCandidates, type HouseChild } from "@/lib/houseCandidates";
+import { ProcessingReportButton, ReplyTemplates, StudentHistory } from "./InquiryExtras";
 
 /**
  * 오늘의 문의사항 — 학부모가 오늘 쓴 글 전부와, 담당이 정해졌는데 아직 안 끝난 지난 글.
@@ -49,6 +53,8 @@ export type InquiryRow = {
   kind: string | null;
   source: string | null;
   status: string | null;
+  service_date?: string | null;
+  channel_id?: string | null;
   student_id: string | null;
   channel_label: string | null;
   sender_name: string | null;
@@ -78,6 +84,11 @@ export type InquiryRow = {
 type Ctx = {
   rows: InquiryRow[];
   names: Map<string, string>;
+  students: StudentOption[];
+  houseOf: Map<string, HouseChild[]>;
+  /** 같은 학생(없으면 같은 방)이 이번 주 같은 갈래로 몇 번째 연락했는가. 2 이상만 담깁니다. */
+  repeatOf: Map<string, number>;
+  canReport: boolean;
   toddleTodayCount: number | null;
   loaded: boolean;
   reload: () => void;
@@ -115,26 +126,68 @@ const dayKst = (iso: string) =>
     day: "numeric",
   });
 
+type WeekRow = {
+  id: string;
+  student_id: string | null;
+  channel_id?: string | null;
+  badges: string[] | null;
+  received_at: string;
+  is_demo?: boolean | null;
+};
+
+/**
+ * 반복 문의 — 같은 아이(번호가 없으면 같은 방)가 지난 7일 안에 **같은 갈래**로 다시 연락한 순번.
+ * 인사·감사·기타는 세지 않습니다. 「또 물어보셨다」는 사실이 보여야 앞선 답이 부족했는지 돌아봅니다.
+ */
+function computeRepeats(rows: readonly WeekRow[]): Map<string, number> {
+  const seen = new Map<string, number>();
+  const out = new Map<string, number>();
+  for (const r of rows) {
+    const who = r.student_id ? `s:${r.student_id}` : r.channel_id ? `c:${r.channel_id}` : null;
+    if (!who) continue;
+    let best = 0;
+    for (const b of r.badges ?? []) {
+      if (b === "인사·감사" || b === "기타") continue;
+      const k = `${who}|${b}`;
+      const n = (seen.get(k) ?? 0) + 1;
+      seen.set(k, n);
+      best = Math.max(best, n);
+    }
+    if (best >= 2) out.set(r.id, best);
+  }
+  return out;
+}
+
 export function TodayInquiriesProvider({
   team,
   currentUserEmail,
+  canReport = false,
   children,
 }: {
   team: TeamMember[];
   currentUserEmail: string;
+  /** 하루 처리 보고를 볼 수 있는가(관리자·개발자). */
+  canReport?: boolean;
   children: ReactNode;
 }) {
   const notify = useToast();
   const [rows, setRows] = useState<InquiryRow[]>([]);
   const [names, setNames] = useState<Map<string, string>>(new Map());
+  const [students, setStudents] = useState<StudentOption[]>([]);
+  const [houseOf, setHouseOf] = useState<Map<string, HouseChild[]>>(new Map());
+  const [weekRows, setWeekRows] = useState<WeekRow[]>([]);
   const [toddleTodayCount, setToddleTodayCount] = useState<number | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const studentsRef = useRef<StudentOption[]>([]);
+  useEffect(() => {
+    studentsRef.current = students;
+  }, [students]);
 
   const load = useCallback(async () => {
     const supabase = createClient();
     const start = todayStartIso();
     // 칸을 콕 집지 않고 전부 받습니다 - 마이그레이션이 늦게 걸려도 조회가 통째로 실패하지 않습니다.
-    const [todayRes, mineRes, hbRes] = await Promise.all([
+    const [todayRes, mineRes, hbRes, weekRes] = await Promise.all([
       supabase
         .from("pickup_requests")
         .select("*")
@@ -155,7 +208,15 @@ export function TodayInquiriesProvider({
         .select("meta")
         .eq("key", "toddle-collector")
         .maybeSingle(),
+      // 반복 문의 표시용 - 지난 7일. 칸을 콕 집지 않습니다(새 칸이 늦게 걸려도 조회가 안 깨지게).
+      supabase
+        .from("pickup_requests")
+        .select("*")
+        .gte("received_at", `${kstDateOffset(-6)}T00:00:00+09:00`)
+        .order("received_at", { ascending: true })
+        .limit(1500),
     ]);
+    setWeekRows(((weekRes.data as WeekRow[] | null) ?? []).filter((r) => !r.is_demo));
     if (todayRes.error) {
       notify(
         "오늘의 문의사항을 읽지 못했습니다: " + todayRes.error.message,
@@ -168,6 +229,15 @@ export function TodayInquiriesProvider({
       ...((mineRes.data as InquiryRow[] | null) ?? []),
     ].filter((r) => !r.is_demo);
     setRows(all);
+    // 형제방에서 온 확인 필요 줄은 «그 집 아이들» 후보를 붙입니다(PickupTriage 와 같은 길).
+    const houseIds = all
+      .filter((r) => r.status === "확인대기" && !r.student_id && r.channel_id)
+      .map((r) => r.channel_id as string);
+    if (houseIds.length > 0) {
+      const { houseOf: h, problem } = await loadHouseCandidates(supabase, houseIds, studentsRef.current);
+      if (problem) notify("형제방 아이 목록을 읽지 못했습니다: " + problem, "error");
+      setHouseOf(h);
+    } else setHouseOf(new Map());
     const meta = (
       hbRes.data as {
         meta?: { todayParentCount?: number | null } | null;
@@ -186,6 +256,20 @@ export function TodayInquiriesProvider({
         status: "all",
       });
       setNames(new Map(st.map((s) => [s.id, s.name])));
+      // 픽업 판단(확인 필요)에서 고를 수 있는 아이는 재학생만입니다.
+      setStudents(
+        st
+          .filter((s) => s.status === "active")
+          .map((s) => ({
+            id: s.id,
+            name: s.name,
+            grade: s.grade,
+            class_name: s.class_name,
+            name_en: s.name_en,
+            student_no: s.student_no,
+            birth_date: s.birth_date,
+          })),
+      );
     })();
     void load();
     const supabase = createClient();
@@ -212,6 +296,11 @@ export function TodayInquiriesProvider({
       document.removeEventListener("visibilitychange", onFocus);
     };
   }, [load]);
+
+  // 명부가 늦게 오면 형제방 후보를 그때 다시 붙입니다.
+  useEffect(() => {
+    if (students.length > 0) void load();
+  }, [students, load]);
 
   const patch = useCallback(
     async (row: InquiryRow, change: Partial<InquiryRow>, okMsg?: string) => {
@@ -240,10 +329,16 @@ export function TodayInquiriesProvider({
     [team],
   );
 
+  const repeatOf = useMemo(() => computeRepeats(weekRows), [weekRows]);
+
   const value = useMemo<Ctx>(
     () => ({
       rows,
       names,
+      students,
+      houseOf,
+      repeatOf,
+      canReport,
       toddleTodayCount,
       loaded,
       reload: () => void load(),
@@ -255,6 +350,10 @@ export function TodayInquiriesProvider({
     [
       rows,
       names,
+      students,
+      houseOf,
+      repeatOf,
+      canReport,
       toddleTodayCount,
       loaded,
       load,
@@ -301,7 +400,7 @@ function order(a: InquiryRow, b: InquiryRow): number {
 }
 
 export function TodayInquiriesPanel() {
-  const { rows, toddleTodayCount, loaded } = useToday();
+  const { rows, toddleTodayCount, loaded, students, houseOf, reload, canReport, staffName } = useToday();
   const now = useNow();
   const [filter, setFilter] = useState<InquiryBadge | "전체">("전체");
   const [showGreetings, setShowGreetings] = useState(false);
@@ -314,8 +413,13 @@ export function TodayInquiriesPanel() {
   // 넘긴 글은 목록에서 내립니다. 처리 완료와 달리 «한 일»로 세지 않습니다(보고·통계에서 빠짐).
   const live = rows.filter((r) => !r.skipped_at);
   const skipped = rows.filter((r) => !!r.skipped_at);
-  const actionable = live.filter((r) => !isNoActionBadges(badgesOf(r)));
-  const greetings = live.filter((r) => isNoActionBadges(badgesOf(r)));
+  // 「확인 필요」(사람이 픽업·결석을 판단해야 하는 글)는 맨 위 노란 칸에서 그 자리에서 처리합니다.
+  // 예전에는 인박스 아래 따로 있어서, 같은 글이 두 자리에 떴습니다.
+  const today = kstDateOffset(0);
+  const needs = live.filter((r) => r.status === "확인대기" && (r.service_date ?? today) >= today);
+  const needIds = new Set(needs.map((r) => r.id));
+  const actionable = live.filter((r) => !isNoActionBadges(badgesOf(r)) && !needIds.has(r.id));
+  const greetings = live.filter((r) => isNoActionBadges(badgesOf(r)) && !needIds.has(r.id));
   const counts = new Map<InquiryBadge, number>();
   for (const r of actionable)
     for (const b of badgesOf(r)) counts.set(b, (counts.get(b) ?? 0) + 1);
@@ -329,6 +433,10 @@ export function TodayInquiriesPanel() {
     (r) => !r.replied_at && !r.answered_at,
   ).length;
   const toddleInApp = todays.filter((r) => r.source === "토들").length;
+  // 답변 지연 — 1시간 넘게 아무도 답하지 않은 글.
+  const late = actionable.filter(
+    (r) => !r.replied_at && !r.answered_at && now - new Date(r.received_at).getTime() >= 60 * 60 * 1000,
+  );
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -357,7 +465,23 @@ export function TodayInquiriesPanel() {
           >
             오늘 토들 {toddleTodayCount ?? "?"} → 앱 {toddleInApp}
           </span>
+          {canReport && <ProcessingReportButton staffName={staffName} />}
         </div>
+        {late.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1 rounded-lg bg-rose-600 px-2 py-1 text-[11px] font-bold text-white">
+            <span>⏰ 1시간 넘게 답 못 한 문의 {late.length}건</span>
+            {late.slice(0, 6).map((r) => (
+              <button
+                key={r.id}
+                type="button"
+                onClick={() => setOpenId(r.id)}
+                className="rounded bg-white/20 px-1.5 hover:bg-white/30"
+              >
+                <LateName r={r} /> {elapsedLabel(r.received_at, now)}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="flex flex-wrap gap-1">
           <Chip
             active={filter === "전체"}
@@ -379,6 +503,20 @@ export function TodayInquiriesPanel() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-1.5">
+        {needs.length > 0 && (
+          <div className="mb-2 rounded-xl border border-amber-300 bg-amber-50/70 p-1.5">
+            <p className="px-1 pb-1 text-[11px] font-bold text-amber-800">
+              ⚠ 확인 필요 {needs.length}건 — 누구인지·픽업인지 사람이 정해야 하는 글입니다. 여기서 바로 처리됩니다.
+            </p>
+            <PickupTriage
+              rows={needs as unknown as PickupRow[]}
+              students={students}
+              onChanged={reload}
+              compact
+              houseOf={houseOf}
+            />
+          </div>
+        )}
         {!loaded ? (
           <p className="p-4 text-center text-xs text-slate-400">불러오는 중…</p>
         ) : open.length === 0 ? (
@@ -507,6 +645,12 @@ function Chip({
   );
 }
 
+function LateName({ r }: { r: InquiryRow }) {
+  const { names } = useToday();
+  const name = r.student_id ? names.get(r.student_id) : null;
+  return name ? <Who id={r.student_id} name={name} /> : <>{r.channel_label ?? "누구?"}</>;
+}
+
 function Who2({ r }: { r: InquiryRow }) {
   const { names } = useToday();
   const name = r.student_id ? names.get(r.student_id) : null;
@@ -536,7 +680,8 @@ function Row({
   open: boolean;
   onToggle: () => void;
 }) {
-  const { patch, me, staffName, team, names } = useToday();
+  const { patch, me, staffName, team, names, repeatOf } = useToday();
+  const repeat = repeatOf.get(r.id);
   const notify = useToast();
   const [announcing, setAnnouncing] = useState(false);
   const tone = elapsedTone(r.received_at, now);
@@ -652,6 +797,14 @@ function Row({
               </span>
             ))}
             <Who2 r={r} />
+            {repeat && (
+              <span
+                className="rounded-full bg-purple-100 px-1.5 text-[9px] font-bold text-purple-700"
+                title="같은 아이(또는 같은 방)가 지난 7일 같은 갈래로 다시 연락했습니다"
+              >
+                🔁 이번 주 {repeat}번째
+              </span>
+            )}
             <span className="text-[10px] tabular-nums text-slate-400">
               {isOld ? `${dayKst(r.received_at)} ` : ""}
               {timeKst(r.received_at)}
@@ -781,6 +934,12 @@ function Row({
               </a>
             )}
           </div>
+          <ReplyTemplates
+            badges={badgesOf(r)}
+            studentName={r.student_id ? (names.get(r.student_id) ?? null) : null}
+            me={me}
+          />
+          <StudentHistory rowId={r.id} studentId={r.student_id} channelId={r.channel_id ?? null} />
           <BadgeEditor r={r} />
           <AssignEditor r={r} team={team} />
         </div>

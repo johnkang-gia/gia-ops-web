@@ -814,7 +814,7 @@ export default function WorkspaceArea({
 
   if (isMobileView) {
     return (
-      <TodayInquiriesProvider team={team} currentUserEmail={currentUserEmail}>
+      <TodayInquiriesProvider team={team} currentUserEmail={currentUserEmail} canReport={isAdmin}>
       <div className="flex h-full flex-col overflow-hidden">
         {toolbar}
         <div className="glass-panel flex shrink-0 divide-x divide-black/5 border-b border-black/5">
@@ -863,7 +863,7 @@ export default function WorkspaceArea({
     // 이미 같은 줄이 있어서, 한 화면에 똑같은 경고가 두 번 떴습니다. 같은 것이 두 곳에 있으면
     // 어느 쪽을 봐야 하는지 사람이 매번 판단해야 하고, 두 줄이 자리를 먹어 정작 아래 목록이
     // 밀립니다. 경고는 한 자리에만 있어야 경고입니다.
-    <TodayInquiriesProvider team={team} currentUserEmail={currentUserEmail}>
+    <TodayInquiriesProvider team={team} currentUserEmail={currentUserEmail} canReport={isAdmin}>
     <div className="flex h-full flex-col overflow-hidden">
       {toolbar}
 

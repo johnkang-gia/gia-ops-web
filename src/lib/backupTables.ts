@@ -131,6 +131,8 @@ export const BACKUP_GROUPS: { group: string; tables: string[] }[] = [
       "staff_activity_log",
       // 아직 등록하지 않은 전화 메모. 잃으면 받은 전화 내용이 함께 사라집니다.
       "staff_memo_pads",
+      // 직원이 다듬어 둔 답장 문구.
+      "inquiry_reply_templates",
       "department_memos",
       "incidents",
       "incident_students",

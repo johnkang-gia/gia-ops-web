@@ -18,6 +18,7 @@ import {
 } from "@/lib/opsRefresh";
 import { useToast } from "@/components/common/ToastProvider";
 import { Who } from "@/components/common/HomonymProvider";
+import { useStudentPanel } from "@/components/students/StudentPanelProvider";
 import { loadStudents } from "@/lib/students";
 import { kstDateOffset } from "@/lib/kst";
 import {
@@ -859,6 +860,7 @@ function Row({
   onToggle: () => void;
 }) {
   const { patch, me, staffName, team, names, repeatOf, students, houseOf, reload, replying, announceReplying } = useToday();
+  const studentPanel = useStudentPanel();
   const rp = replying.get(r.id);
   const replyingNow = !r.replied_at && rp && Date.now() - rp.at < 10 * 60 * 1000 ? rp : null;
   const repeat = repeatOf.get(r.id);
@@ -1214,6 +1216,16 @@ function Row({
             me={me}
           />
           <StudentHistory rowId={r.id} studentId={r.student_id} channelId={r.channel_id ?? null} />
+          {r.student_id && (
+            <button
+              type="button"
+              onClick={() => studentPanel.open(r.student_id as string, "문의")}
+              className="rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[10px] font-bold text-indigo-700 hover:bg-indigo-100"
+              title="학생 창을 오른쪽에 띄워 지난 문의 전부를 봅니다. 메모장은 그대로 쓸 수 있습니다."
+            >
+              📂 지난 문의 전체 보기
+            </button>
+          )}
           <BadgeEditor r={r} />
           <AssignEditor r={r} team={team} />
         </div>

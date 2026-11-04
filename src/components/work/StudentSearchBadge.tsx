@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import Link from "@/components/common/AppLink";
+import { useStudentPanel } from "@/components/students/StudentPanelProvider";
 import { createClient } from "@/lib/supabase/client";
 import { departmentOf } from "@/lib/department";
 import { whereNow, type PeriodRow, type TimetableRow } from "@/lib/whereNow";
@@ -30,6 +30,9 @@ const norm = (s: string) => s.toLowerCase().replace(/\s+/g, "");
 
 export default function StudentSearchBadge() {
   const [open, setOpen] = useState(false);
+  // 고르면 페이지를 옮기지 않고 학생 창을 엽니다. 업무보드에서는 오른쪽에 붙어 떠서, 학생을 보면서 메모장에
+  // 적을 수 있습니다(예전에는 학생 프로필 페이지로 넘어가 업무보드를 떠나야 했습니다).
+  const panel = useStudentPanel();
   const [rows, setRows] = useState<Row[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [periods, setPeriods] = useState<PeriodRow[]>([]);
@@ -183,11 +186,14 @@ export default function StudentSearchBadge() {
                 <p className="p-4 text-center text-[12px] text-slate-400">찾는 학생이 없습니다.</p>
               ) : (
                 hits.map((s) => (
-                  <Link
+                  <button
+                    type="button"
                     key={s.id}
-                    href={`/students/${s.id}`}
-                    onClick={() => setOpen(false)}
-                    className="flex items-center gap-2 rounded-lg px-3 py-2 hover:bg-slate-50"
+                    onClick={() => {
+                      setOpen(false);
+                      panel.open(s.id);
+                    }}
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-slate-50"
                   >
                     {/* 얼굴이 이름보다 빠릅니다. 전화를 받거나 아이를 인계할 때 특히 그렇습니다. */}
                     <span className="h-[34px] w-[27px] shrink-0 overflow-hidden rounded border border-slate-200 bg-slate-50">
@@ -252,7 +258,7 @@ export default function StudentSearchBadge() {
                         );
                       })()}
                     </span>
-                  </Link>
+                  </button>
                 ))
               )}
             </div>

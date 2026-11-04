@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { checkAlerts } from "@/lib/integrationHealth";
+import { toddleServerConfigured } from "@/lib/toddleServer";
 
 export const dynamic = "force-dynamic";
 
@@ -25,8 +26,17 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
   const supabase = createClient(url, serviceKey, { auth: { persistSession: false } });
 
+  /**
+   * 서버 수집(TODDLE_JWT)이 켜져 있으면 크롬 확장의 신호는 **따로** 적습니다.
+   *
+   * 둘이 같은 칸(toddle-collector)을 쓰자, 토들 탭을 닫은 PC의 확장이 1분마다 「토들 탭이 열려 있지 않습니다」(error)를
+   * 적고 서버가 곧바로 ok 로 덮어서, 연동 상태와 경보가 «끊김 → 풀림»을 계속 오갔습니다. 수집 책임은 이제 서버에 있으니
+   * 확장 신호는 참고용 칸(toddle-extension)에만 남기고 경보에는 넣지 않습니다.
+   */
+  const askedKey = typeof body?.key === "string" ? body.key : "toddle-collector";
+  const key = askedKey === "toddle-collector" && toddleServerConfigured() ? "toddle-extension" : askedKey;
   const row: Record<string, unknown> = {
-    key: typeof body?.key === "string" ? body.key : "toddle-collector",
+    key,
     last_seen_at: new Date().toISOString(),
     // 'login_required'를 받으면 담당자가 그 PC에서 재로그인만 하면 된다는 뜻입니다.
     status: typeof body?.status === "string" ? body.status : "ok",

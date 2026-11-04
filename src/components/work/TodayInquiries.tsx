@@ -33,7 +33,7 @@ import type { TeamMember } from "@/lib/types";
 import PickupTriage, { type PickupRow, type StudentOption } from "@/components/pickup/PickupTriage";
 import { loadHouseCandidates, type HouseChild } from "@/lib/houseCandidates";
 import { chimeEnabled, playChime, primeChime, setChimeEnabled } from "@/lib/chime";
-import { DesktopNotifyToggle, ProcessingReportButton, ReplyTemplates, StudentHistory, StudentPeek } from "./InquiryExtras";
+import { DesktopNotifyToggle, ProcessingReportButton, ReplyTemplates, StudentHistory } from "./InquiryExtras";
 
 /**
  * 오늘의 문의사항 — 학부모가 오늘 쓴 글 전부와, 담당이 정해졌는데 아직 안 끝난 지난 글.
@@ -1025,13 +1025,8 @@ function Row({
                 ⚠ 확인 필요
               </span>
             )}
-            {r.student_id ? (
-              <StudentPeek id={r.student_id}>
-                <Who2 r={r} />
-              </StudentPeek>
-            ) : (
-              <Who2 r={r} />
-            )}
+            {/* 이름을 누르면 학생 창(기본·셔틀·하원수단·특이사항·출결)이 뜹니다 - <Who> 가 이미 하는 일입니다. */}
+            <Who2 r={r} />
             {replyingNow && (
               <span className="animate-pulse rounded-full bg-sky-100 px-1.5 text-[9px] font-bold text-sky-700" title="토들 방을 열고 답하는 중입니다">
                 ✍️ {replyingNow.name} 답하는 중

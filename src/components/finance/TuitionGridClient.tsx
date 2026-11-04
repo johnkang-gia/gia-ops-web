@@ -13,7 +13,7 @@ import { resolveAddon, addonPlanForLine, type AddonPrice } from "@/lib/tuitionAd
 import { useFinanceLive } from "@/lib/useFinanceLive";
 import AlreadyPaidModal from "@/components/finance/AlreadyPaidModal";
 import ExtraChargeModal, { type ExtraChargeRow } from "@/components/finance/ExtraChargeModal";
-import { loadPartnerMode, savePartnerMode, unbilledOf, issueExtraInvoice, type PartnerMode } from "@/lib/issuePartner";
+import { loadPartnerMode, savePartnerMode, unbilledOf, issueExtraInvoice, issueOwnCharges, type PartnerMode } from "@/lib/issuePartner";
 import { createClient } from "@/lib/supabase/client";
 import AnchoredPanel from "@/components/common/AnchoredPanel";
 import { useToast } from "@/components/common/ToastProvider";
@@ -294,6 +294,19 @@ export default function TuitionGridClient({
   useEffect(() => setExtraCharges(initialExtraCharges), [initialExtraCharges]);
   const [chargeFor, setChargeFor] = useState<TuitionStudent | null>(null);
   const chargesOf = (sid: string) => extraCharges.filter((c) => c.student_id === sid && (!c.term_id || !termId || c.term_id === termId));
+
+  /** 따로 나가는 추가 항목(발전기금) 한 줄을 그 줄만 담은 청구서로 냅니다. */
+  async function issueOwn(s: TuitionStudent, c: ExtraChargeRow) {
+    const bm = await askMonth(month, `${s.name} · ${c.name} 따로 청구`);
+    if (!bm) return;
+    setBusy(true);
+    const r = await issueOwnCharges(s.id, termId || null, [c.id], bm, dueDate);
+    setBusy(false);
+    if (!r.ok) return notify(`${s.name} ${c.name} 청구서를 내지 못했습니다: ${r.error ?? ""}`, "error");
+    notify(`${s.name} — ${c.name} ${r.invoice?.invoice_no ?? ""} 따로 발행했습니다.`, "success");
+    setExtraCharges((p) => p.filter((x) => x.id !== c.id));
+    router.refresh();
+  }
 
   async function cancelExtraCharge(c: ExtraChargeRow) {
     if (!confirm(`「${c.name} ${won(Math.abs(Number(c.amount)))}」을 지웁니다. 청구서에 붙지 않습니다.${c.series_id ? " 같은 묶음의 다른 달은 그대로 남습니다." : ""}`)) return;
@@ -745,7 +758,8 @@ export default function TuitionGridClient({
   /** 아직 청구서에 안 담긴 항목이 남아 있는가. */
   const hasUnbilled = (sid: string) => {
     // 이 달에 붙일 추가 항목(셔틀비 등)이 있으면 항목이 다 나갔어도 낼 장이 있습니다.
-    if (chargesOf(sid).some((c) => !c.target_month || c.target_month <= month)) return true;
+    // 따로 나가는 줄(발전기금)은 「남은 항목 발행」 대상이 아닙니다 - 비고의 「따로 발행」으로 냅니다.
+    if (chargesOf(sid).some((c) => !c.own_invoice && (!c.target_month || c.target_month <= month))) return true;
     const b = billed.get(sid);
     if (!b) return totalOf(sid) > 0;
     if (b.all) return false;
@@ -1121,7 +1135,7 @@ export default function TuitionGridClient({
     const partner = partnerMode;
     const pick = only ? new Set(only) : checked;
     /** 이 달 장에 붙을 「+ 추가 항목」(발전기금·셔틀비·차액) - 서버와 같은 조건(보는 달까지 온 것). */
-    const dueChargesOf = (sid: string) => chargesOf(sid).filter((c) => !c.target_month || c.target_month <= month);
+    const dueChargesOf = (sid: string) => chargesOf(sid).filter((c) => !c.own_invoice && (!c.target_month || c.target_month <= month));
     const targets = rows.filter(
       (s) =>
         pick.has(s.id) &&
@@ -1987,10 +2001,20 @@ export default function TuitionGridClient({
                         const rest = c.series_id ? chargesOf(s.id).filter((x) => x.series_id === c.series_id && x.target_month && x.target_month > month).length : 0;
                         return (
                           <span key={c.id} className={"flex items-center gap-1 text-[11px] " + (amt > 0 ? "text-orange-800" : "text-sky-800")} title={c.reason + (c.series_from ? ` · ${c.series_from}~${c.series_to} 매달` : "")}>
-                            <span className={"rounded px-1 font-bold " + (due ? (amt > 0 ? "bg-orange-100" : "bg-sky-100") : "bg-slate-100 text-slate-500")}>
-                              {due ? (c.target_month && c.target_month < month ? `${Number(c.target_month.slice(5))}월분` : "이번 장에") : `${Number(c.target_month!.slice(5))}월 장부터`} {amt > 0 ? "+" : "−"}{won(Math.abs(amt))}
+                            <span className={"rounded px-1 font-bold " + (c.own_invoice ? "bg-orange-200 text-orange-900" : due ? (amt > 0 ? "bg-orange-100" : "bg-sky-100") : "bg-slate-100 text-slate-500")}>
+                              {c.own_invoice ? "따로 청구" : due ? (c.target_month && c.target_month < month ? `${Number(c.target_month.slice(5))}월분` : "이번 장에") : `${Number(c.target_month!.slice(5))}월 장부터`} {amt > 0 ? "+" : "−"}{won(Math.abs(amt))}
                             </span>
                             <span className="truncate text-slate-500">{c.name}{rest > 0 ? ` (이후 ${rest}개월 더)` : ""}</span>
+                            {c.own_invoice && (
+                              <button
+                                onClick={() => void issueOwn(s, c)}
+                                disabled={busy}
+                                className="shrink-0 rounded bg-orange-600 px-1 text-[10px] font-bold text-white hover:bg-orange-700 disabled:opacity-40"
+                                title="이 항목만 담은 청구서를 따로 냅니다(학비·학비외와 합치지 않음)"
+                              >
+                                따로 발행 →
+                              </button>
+                            )}
                             <button onClick={() => void cancelExtraCharge(c)} disabled={busy} className="rounded bg-slate-100 px-1 text-[10px] font-bold text-slate-500 hover:bg-rose-100 hover:text-rose-700" title={c.series_id ? "이 달 것만 지웁니다" : "지웁니다"}>✕</button>
                           </span>
                         );
@@ -2179,7 +2203,7 @@ export default function TuitionGridClient({
                           </span>
                         )}
                       </span>
-                    ) : total > 0 || chargesOf(s.id).some((c) => !c.target_month || c.target_month <= month) ? (
+                    ) : total > 0 || chargesOf(s.id).some((c) => !c.own_invoice && (!c.target_month || c.target_month <= month)) ? (
                       <span className="flex flex-nowrap items-center gap-1">
                         <span className="shrink-0 text-[11px] font-semibold text-amber-600">미청구</span>
                         {/* 이미 받은 건. 청구서를 받은 날짜로 만들고 입금까지 함께 넣습니다 -

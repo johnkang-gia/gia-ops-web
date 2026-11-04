@@ -98,3 +98,17 @@ export async function issueTuitionInvoice(
   const body = (await res.json().catch(() => ({}))) as { invoice?: { id: string; invoice_no: string }; error?: string };
   return { ok: res.ok, invoice: body.invoice ?? null, error: body.error ?? (res.ok ? null : res.statusText) };
 }
+
+/**
+ * **따로 나가는 추가 항목(발전기금)만 담은 장**을 냅니다. 학비·학비외·지난 미납을 섞지 않습니다 -
+ * 기부금 성격이라 학부모가 학비와 다른 장으로 받기를 원합니다.
+ */
+export async function issueOwnCharges(studentId: string, termId: string | null, chargeIds: string[], billingMonth?: string | null, dueDate?: string | null) {
+  const res = await fetch("/api/finance/invoices/tuition", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ studentId, termId, planIds: null, ownChargeIds: chargeIds, ...(billingMonth ? { billingMonth } : {}), ...(dueDate ? { dueDate } : {}) }),
+  });
+  const body = (await res.json().catch(() => ({}))) as { invoice?: { id: string; invoice_no: string }; error?: string };
+  return { ok: res.ok, invoice: body.invoice ?? null, error: body.error ?? (res.ok ? null : res.statusText) };
+}

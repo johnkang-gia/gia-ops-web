@@ -29,6 +29,7 @@ import { BILL_STATUS, statusFromSettle } from "@/lib/billStatus";
 import { issuedShort } from "@/lib/invoiceIssued";
 import { useIssueMonthConfirm } from "@/components/finance/IssueMonthConfirm";
 import BodyLayer from "@/components/common/BodyLayer";
+import { issueOwnCharges } from "@/lib/issuePartner";
 
 /**
  * **학생 금전 창** — 학생 한 명의 돈을 한 창에서 봅니다. 그리고 그 창에서 다 합니다.
@@ -233,6 +234,8 @@ export default function StudentLedgerModal({
   const pickedTuitionIds = targetCharges.filter((c) => c.kind === "학비").map((c) => c.id);
   const dueExtras = (data?.extraCharges ?? []).filter(
     (c) =>
+      // 따로 나가는 줄(발전기금)은 학비 장에 붙지 않습니다 - 아래 줄의 「따로 발행」으로 냅니다.
+      !c.own_invoice &&
       (!c.term_id || !termId || c.term_id === termId) &&
       (!c.target_month || !month || c.target_month <= month) &&
       (pickedTuitionIds.length === 0 || !c.plan_id || pickedTuitionIds.includes(c.plan_id)),
@@ -354,6 +357,19 @@ export default function StudentLedgerModal({
     else notify(`${made.join(", ")} 발행했습니다.`, "success");
     await changed();
     if (skipPrepaid && madeIds.length > 0) setDepositFor({ id: madeIds[0].id, label: `${ledger.student.name} · ${madeIds[0].no}` });
+  }
+
+  /** 따로 나가는 추가 항목(발전기금) 한 줄을 그 줄만 담은 청구서로 냅니다. */
+  async function issueOwn(c: ExtraChargeRow) {
+    if (!ledger) return;
+    const bm = await askMonth(month, `${ledger.student.name} · ${c.name} 따로 청구`);
+    if (!bm) return;
+    setBusy(true);
+    const r = await issueOwnCharges(studentId, termId, [c.id], bm);
+    setBusy(false);
+    if (!r.ok) return notify(`${c.name} 청구서를 내지 못했습니다: ${r.error ?? ""}`, "error");
+    notify(`${c.name} — ${r.invoice?.invoice_no ?? ""} 따로 발행했습니다.`, "success");
+    await changed();
   }
 
   /**
@@ -1032,9 +1048,19 @@ export default function StudentLedgerModal({
                           return (
                             <div key={c.id} className="flex items-center gap-2 rounded-lg border border-dashed border-sky-200 bg-sky-50/50 px-2 py-1 text-[11px]">
                               <span className={"rounded px-1 font-bold " + (amt > 0 ? "bg-orange-100 text-orange-800" : "bg-sky-100 text-sky-800")}>
-                                {c.target_month ? `${Number(c.target_month.slice(5))}월 장` : "다음 장"} {amt > 0 ? "+" : "−"}{won(Math.abs(amt))}
+                                {c.own_invoice ? "따로 청구" : c.target_month ? `${Number(c.target_month.slice(5))}월 장` : "다음 장"} {amt > 0 ? "+" : "−"}{won(Math.abs(amt))}
                               </span>
                               <span className="min-w-0 flex-1 truncate text-slate-600" title={c.reason}>{c.name}</span>
+                              {c.own_invoice && (
+                                <button
+                                  onClick={() => void issueOwn(c)}
+                                  disabled={busy}
+                                  className="shrink-0 rounded bg-orange-600 px-1.5 py-0.5 text-[10px] font-bold text-white hover:bg-orange-700 disabled:opacity-40"
+                                  title="이 항목만 담은 청구서를 따로 냅니다(학비·학비외와 합치지 않음)"
+                                >
+                                  따로 발행 →
+                                </button>
+                              )}
                               <button
                                 onClick={async () => {
                                   if (!window.confirm(`「${c.name}」을 지웁니다. 청구서에 붙지 않습니다.`)) return;

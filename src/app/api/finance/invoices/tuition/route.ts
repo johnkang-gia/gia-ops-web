@@ -86,7 +86,13 @@ export async function POST(req: Request) {
    * **추가 항목만 담는 장**(발전기금처럼 학비가 이미 나간 달에 따로 받는 돈). planIds 를 비우면 «학비 전부»로
    * 읽히므로 따로 알려야 합니다 - 예전에는 길이 없어서 학비가 다 나간 학생의 추가 항목은 아무 장에도 안 붙었습니다.
    */
-  const extraOnly = body?.extraOnly === true;
+  /**
+   * **따로 나가는 추가 항목**(발전기금). 이 번호들만 담은 장을 냅니다 - 학비·학비외·지난 미납을 섞지 않습니다.
+   * 주지 않으면 반대로 그런 줄은 학비 장에 붙이지 않습니다(`own_invoice`).
+   */
+  const ownChargeIds = Array.isArray(body?.ownChargeIds) ? (body.ownChargeIds as unknown[]).filter((v): v is string => typeof v === "string") : [];
+  const ownMode = ownChargeIds.length > 0;
+  const extraOnly = body?.extraOnly === true || ownMode;
   const itemIds = Array.isArray(body?.itemIds) ? (body.itemIds as unknown[]).filter((v): v is string => typeof v === "string") : [];
   const alreadyPaid = body?.alreadyPaid as { paidAt?: string; amount?: number; method?: string; memo?: string } | undefined;
   const paidAt = typeof alreadyPaid?.paidAt === "string" && /^\d{4}-\d{2}-\d{2}$/.test(alreadyPaid.paidAt) ? alreadyPaid.paidAt : null;
@@ -182,12 +188,17 @@ export async function POST(req: Request) {
     const mk = /^\d{4}-(0[1-9]|1[0-2])$/.test(rawM) ? rawM : todayKst().slice(0, 7);
     const { data: pend } = await supabase
       .from("tuition_extra_charges")
-      .select("id, term_id, target_month, plan_id")
+      .select("id, term_id, target_month, plan_id, own_invoice")
       .eq("student_id", student.id)
       .is("invoice_id", null)
       .is("cancelled_at", null);
-    pendingExtraCount = ((pend as { term_id: string | null; target_month: string | null; plan_id: string | null }[] | null) ?? []).filter(
-      (c) => (!c.term_id || !termId || c.term_id === termId) && (!c.target_month || c.target_month <= mk) && (!planIds || planIds.length === 0 || !c.plan_id || planIds.includes(c.plan_id)),
+    pendingExtraCount = ((pend as { id: string; term_id: string | null; target_month: string | null; plan_id: string | null; own_invoice?: boolean | null }[] | null) ?? []).filter((c) =>
+      ownMode
+        ? ownChargeIds.includes(c.id)
+        : !c.own_invoice &&
+          (!c.term_id || !termId || c.term_id === termId) &&
+          (!c.target_month || c.target_month <= mk) &&
+          (!planIds || planIds.length === 0 || !c.plan_id || planIds.includes(c.plan_id)),
     ).length;
   }
 
@@ -215,7 +226,8 @@ export async function POST(req: Request) {
   // ── 같은 장에 담을 학비외 ───────────────────────────────────────────────
   type ExtraLine = { name: string; item_id: string; qty: number; unit_price: number; amount: number };
   const extraLines: ExtraLine[] = [];
-  if (itemIds.length > 0) {
+  // 따로 나가는 장(발전기금)에는 학비외를 섞지 않습니다.
+  if (itemIds.length > 0 && !ownMode) {
     const [itemsRes, ovRes, termRes] = await Promise.all([
       supabase.from("fee_items").select("*"),
       supabase.from("student_fee_items").select("*").eq("student_id", studentId),
@@ -291,7 +303,7 @@ export async function POST(req: Request) {
   //
   // 이제 합치는 것은 **사람이 미납금 화면에서 고릅니다**(`/finance/unpaid`). 여기서는
   // 화면이 일부러 `carryForward: true` 를 보낼 때만 얹습니다.
-  const wantCarry = (body as { carryForward?: unknown } | null)?.carryForward === true;
+  const wantCarry = (body as { carryForward?: unknown } | null)?.carryForward === true && !ownMode;
   const carry =
     !wantCarry || (planIds && planIds.length > 0)
       ? { total: 0, lines: [] as { seq: number; name: string; qty: number; unit_price: number; amount: number }[], lockIds: [] as string[], error: null as string | null }
@@ -309,20 +321,28 @@ export async function POST(req: Request) {
     const monthKey = billingMonth ?? issue.slice(0, 7);
     const { data: ecRows, error: ecErr } = await supabase
       .from("tuition_extra_charges")
-      .select("id, plan_id, name, amount, reason, target_month, term_id")
+      .select("id, plan_id, name, amount, reason, target_month, term_id, own_invoice")
       .eq("student_id", student.id)
       .is("invoice_id", null)
       .is("cancelled_at", null);
     if (ecErr) return NextResponse.json({ error: `다음 달 차액을 읽지 못해 발행하지 않았습니다: ${ecErr.message}` }, { status: 500 });
-    extraCharges = ((ecRows as (ExtraCharge & { term_id: string | null })[] | null) ?? [])
-      .filter((c) => !c.term_id || !termId || c.term_id === termId)
-      .filter((c) => !c.target_month || c.target_month <= monthKey)
-      .filter((c) => !planIds || planIds.length === 0 || !c.plan_id || planIds.includes(c.plan_id));
+    const ecAll = (ecRows as (ExtraCharge & { term_id: string | null; own_invoice?: boolean | null })[] | null) ?? [];
+    extraCharges = ownMode
+      ? ecAll.filter((c) => ownChargeIds.includes(c.id))
+      : ecAll
+          // 따로 나가는 줄(발전기금)은 학비 장에 붙이지 않습니다.
+          .filter((c) => !c.own_invoice)
+          .filter((c) => !c.term_id || !termId || c.term_id === termId)
+          .filter((c) => !c.target_month || c.target_month <= monthKey)
+          .filter((c) => !planIds || planIds.length === 0 || !c.plan_id || planIds.includes(c.plan_id));
+    if (ownMode && extraCharges.length !== ownChargeIds.length) {
+      return NextResponse.json({ error: "따로 낼 항목 중 이미 청구서에 붙었거나 지워진 것이 있습니다. 화면을 새로 고친 뒤 다시 해주세요." }, { status: 409 });
+    }
   }
   // 추가 항목만 담는 장은 범위에 **무엇인지** 적습니다(「추가 항목: 발전기금」). 「추가 항목」 한 글자로만 두면 같은 달에
   // 두 번째 추가 장(발전기금 뒤의 셔틀비)이 같은 범위로 읽혀 「이 달에 이미 있습니다」로 막힙니다.
   if (lines.length === 0 && extraCharges.length > 0) {
-    planScope = `추가 항목: ${extraCharges.map((c) => c.name).join(" · ")}`.slice(0, 120);
+    planScope = `${ownMode ? "따로 청구" : "추가 항목"}: ${extraCharges.map((c) => c.name).join(" · ")}`.slice(0, 120);
   }
   const extraChargeTotal = extraCharges.reduce((n, c) => n + Math.round(Number(c.amount)), 0);
   const total = tuitionOnlyTotal + extraChargeTotal;
@@ -450,7 +470,8 @@ export async function POST(req: Request) {
       guardian_role: recipient?.role ?? null,
       // 학비 청구서는 학비외와 **한 장에 섞지 않습니다.** 금액 자릿수가 다르고 납기도
       // 다릅니다. 분류로 갈라두면 명단에서도 따로 셉니다.
-      category: extraLines.length > 0 ? "학비+학비외" : "학비",
+      // 따로 나가는 장은 분류로 표시합니다(`isStandaloneInvoice`) - 지난 미납 합치기·미납분 청구서가 이 장을 건너뜁니다.
+      category: ownMode ? (extraCharges.every((c) => c.name.startsWith("발전기금")) ? "발전기금" : "따로 청구") : extraLines.length > 0 ? "학비+학비외" : "학비",
       // 학기 칸은 학비외 청구서와 **같은 칸**을 씁니다. 두 종류가 다른 칸에 학기를 넣으면
       // 학기별 집계가 한쪽만 세게 됩니다.
       term_id: termId,

@@ -13,7 +13,7 @@ import BodyLayer from "@/components/common/BodyLayer";
  * 발전기금은 입학·학년 초에 한 번 받는 돈(보통 500만 원)인데 요금표 항목이 아니라서, 매번 제목과 금액을 손으로
  * 적었습니다. 항목으로 만들면 받지 않는 학생에게도 붙는 요금표가 되므로 이 창의 바로 넣기로 둡니다.
  */
-const PRESETS: { title: string; amount: number }[] = [{ title: "발전기금", amount: 5_000_000 }];
+const PRESETS: { title: string; amount: number; own: boolean }[] = [{ title: "발전기금", amount: 5_000_000, own: true }];
 
 /**
  * **「+ 추가」 — 이 아이에게만 받는 돈 한 줄.**
@@ -49,9 +49,11 @@ export type ExtraChargeRow = {
   series_from?: string | null;
   series_to?: string | null;
   invoice_id?: string | null;
+  /** 학비 장에 붙지 않고 따로 청구서로 나감(발전기금). */
+  own_invoice?: boolean | null;
 };
 
-export const EXTRA_CHARGE_COLS = "id, student_id, term_id, plan_id, name, amount, reason, target_month, series_id, repeat, series_from, series_to, invoice_id";
+export const EXTRA_CHARGE_COLS = "id, student_id, term_id, plan_id, name, amount, reason, target_month, series_id, repeat, series_from, series_to, invoice_id, own_invoice";
 
 export default function ExtraChargeModal({
   student,
@@ -81,6 +83,8 @@ export default function ExtraChargeModal({
   const [to, setTo] = useState<MonthKey>(shiftMonth(month, 2));
   const [planId, setPlanId] = useState("");
   const [note, setNote] = useState("");
+  /** 따로 청구서로 - 기부금 성격이라 학비와 다른 장으로 받기를 원하는 돈(발전기금). */
+  const [own, setOwn] = useState(false);
 
   const amt = Math.round(Number(amount.replace(/[^\d-]/g, "")));
   const months: MonthKey[] = (() => {
@@ -116,6 +120,7 @@ export default function ExtraChargeModal({
       series_from: repeat === "monthly" ? from : null,
       series_to: repeat === "monthly" ? to : null,
       created_by: createdBy,
+      own_invoice: own,
     }));
     const { data, error } = await sb.from("tuition_extra_charges").insert(rows).select(EXTRA_CHARGE_COLS);
     setBusy(false);
@@ -124,7 +129,9 @@ export default function ExtraChargeModal({
     notify(
       repeat === "monthly"
         ? `${student.name} — 「${title.trim()}」 ${won(Math.abs(amt))}을 ${from}~${to} 매달(${months.length}개월) 학비 장에 붙입니다.`
-        : `${student.name} — 「${title.trim()}」 ${won(Math.abs(amt))}을 ${from} 학비 장에 붙입니다.`,
+        : own
+          ? `${student.name} — 「${title.trim()}」 ${won(Math.abs(amt))}을 적었습니다. 따로 청구서로 냅니다(비고의 「따로 발행」).`
+          : `${student.name} — 「${title.trim()}」 ${won(Math.abs(amt))}을 ${from} 학비 장에 붙입니다.`,
       "success",
     );
     onClose();
@@ -157,6 +164,7 @@ export default function ExtraChargeModal({
                   setTitle(p.title);
                   setAmount(String(p.amount));
                   setRepeat("once");
+                  setOwn(p.own);
                 }}
                 className={
                   "rounded-full px-2.5 py-0.5 text-[11px] font-bold " +
@@ -227,6 +235,12 @@ export default function ExtraChargeModal({
               </select>
             </label>
           )}
+          <label className="flex items-center gap-2 rounded-lg bg-orange-50/60 px-1 py-1 ring-1 ring-orange-100">
+            <input type="checkbox" checked={own} onChange={(e) => setOwn(e.target.checked)} />
+            <span className="text-[11px] text-orange-900">
+              <b>따로 청구서로</b> — 학비·학비외 장에 붙이지 않고 이 항목만 한 장으로 냅니다(발전기금처럼 따로 받는 돈). 합치는 청구서에도 섞이지 않습니다.
+            </span>
+          </label>
           <label className="flex items-center gap-2">
             <span className="w-16 shrink-0 text-slate-500">메모</span>
             <input value={note} onChange={(e) => setNote(e.target.value.slice(0, 120))} placeholder="왜 받는지(안 적어도 됩니다)" className={field} />

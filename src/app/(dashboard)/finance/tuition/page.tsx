@@ -93,7 +93,7 @@ export default async function TuitionPage() {
     // 다음 장에 얹을 차액. 아직 안 얹힌 것만 - 얹힌 것은 청구서 줄로 보입니다.
     supabase
       .from("tuition_extra_charges")
-      .select("id, student_id, term_id, plan_id, name, amount, reason, target_month, series_id, repeat, series_from, series_to, invoice_id")
+      .select("id, student_id, term_id, plan_id, name, amount, reason, target_month, series_id, repeat, series_from, series_to, invoice_id, own_invoice")
       .is("invoice_id", null)
       .is("cancelled_at", null),
     /**

@@ -19,6 +19,16 @@ export function streamOf(inv: { stream?: string | null; category?: string | null
   return inv.category === "학비" || (inv.category ?? "").startsWith("학비+") ? "학비" : "학비외";
 }
 
+/**
+ * **따로 나가는 청구서**(발전기금 등). 기부금 성격이라 학부모가 학비와 다른 장으로 받기를 원합니다.
+ * 이 장은 지난 미납 합치기·미납분 청구서에 섞지 않습니다 - 합치면 다시 학비 장 한 줄이 되어 따로 낸 의미가 없어집니다.
+ * 갈래(stream)는 학비로 셉니다(학비 「+ 추가 항목」에서 나옴). 분류 글자로 가립니다.
+ */
+export const STANDALONE_CATEGORIES = ["발전기금", "따로 청구"] as const;
+export function isStandaloneInvoice(v: { category?: string | null }): boolean {
+  return (STANDALONE_CATEGORIES as readonly string[]).includes((v.category ?? "").trim());
+}
+
 export type SettleInvoice = {
   id: string;
   invoice_no: string;
@@ -140,6 +150,7 @@ export function carryForwardCandidates(
   return invoices
     .filter((v) => v.student_id === opts.studentId)
     .filter((v) => v.id !== opts.excludeInvoiceId)
+    .filter((v) => !isStandaloneInvoice(v))
     .filter((v) => streamOf(v) === opts.stream)
     .map((v) => ({ invoice: v, s: settle(v, payments, opts.today) }))
     .filter((x) => isOutstanding(x.s))

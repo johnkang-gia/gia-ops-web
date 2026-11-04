@@ -1,4 +1,4 @@
-import { settle, isOutstanding, streamOf, type SettleInvoice, type SettlePayment, type InvoiceStream } from "./settlement";
+import { settle, isOutstanding, isStandaloneInvoice, streamOf, type SettleInvoice, type SettlePayment, type InvoiceStream } from "./settlement";
 import { billingMonthOf } from "./financePeriod";
 
 /**
@@ -28,6 +28,8 @@ export function priorUnpaidOf(
   const out: PriorUnpaidRow[] = [];
   for (const v of invoices) {
     if (v.student_id !== opts.studentId) continue;
+    // 따로 나간 장(발전기금)은 합치기 후보가 아닙니다.
+    if (isStandaloneInvoice(v)) continue;
     const bm = billingMonthOf(v);
     if (!bm || bm >= opts.month) continue;
     const s = settle(v, payments as SettlePayment[], opts.today);

@@ -4,7 +4,7 @@ import { getCurrentAppUser } from "@/lib/currentUser";
 import { hasFinanceAccess } from "@/lib/roles";
 import { todayKst } from "@/lib/kst";
 import { lockCarried } from "@/lib/carryForward";
-import { carryForwardLineName, type SettleInvoice } from "@/lib/settlement";
+import { carryForwardLineName, isStandaloneInvoice, type SettleInvoice } from "@/lib/settlement";
 import { phonesOf, chosenRoleOf, resolveRecipient, type StudentBilling } from "@/lib/alltalkpay";
 import { loadStudent } from "@/lib/students";
 
@@ -64,6 +64,14 @@ export async function POST(req: Request) {
   if (already.length > 0) {
     return NextResponse.json(
       { error: `이미 취소됐거나 합쳐진 청구서가 있습니다: ${already.map((v) => v.invoice_no).join(", ")}` },
+      { status: 400 },
+    );
+  }
+  // 따로 나간 장(발전기금)은 합치지 않습니다 - 학부모가 다른 장으로 받기를 원해서 따로 낸 돈입니다.
+  const standalone = rows.filter((v) => isStandaloneInvoice(v));
+  if (standalone.length > 0) {
+    return NextResponse.json(
+      { error: `발전기금처럼 따로 내는 청구서는 합치지 않습니다: ${standalone.map((v) => v.invoice_no).join(", ")}` },
       { status: 400 },
     );
   }

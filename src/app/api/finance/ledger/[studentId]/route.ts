@@ -58,7 +58,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ studentId: stri
   // 다음 학비 장에 붙을 추가 항목·차액(아직 안 얹힌 것). 창에서 보여야 발행하는 사람이 놀라지 않습니다.
   const { data: ecRows, error: ecErr } = await supabase
     .from("tuition_extra_charges")
-    .select("id, student_id, term_id, plan_id, name, amount, reason, target_month, series_id, repeat, series_from, series_to, invoice_id")
+    .select("id, student_id, term_id, plan_id, name, amount, reason, target_month, series_id, repeat, series_from, series_to, invoice_id, own_invoice")
     .eq("student_id", student.id)
     .is("invoice_id", null)
     .is("cancelled_at", null)

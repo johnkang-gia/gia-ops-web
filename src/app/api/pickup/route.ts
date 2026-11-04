@@ -482,6 +482,24 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, results });
   }
 
+  // ── 직원이 적은 문의의 글자 고치기 ─────────────────────────────────────────
+  // 메모장·전화로 직원이 적어 올린 줄(토들이 아닌 줄)만 고칩니다. 토들 글은 학부모가 쓴 원문이라 고치면
+  // 원문과 앱이 다른 말을 하게 됩니다. 요약(summary)과 원문(raw_text)을 같은 글로 맞춥니다 - 한쪽만
+  // 고치면 접힌 줄에는 옛 글이, 펼친 줄에는 새 글이 보입니다.
+  if (action === "edit-text") {
+    const id = body?.id as string | undefined;
+    const text = String(body?.text ?? "").trim();
+    if (!id || !text) return NextResponse.json({ error: "고칠 글을 적어주세요." }, { status: 400 });
+    if (text.length > 4000) return NextResponse.json({ error: "글이 너무 깁니다(4,000자까지)." }, { status: 400 });
+    const { data: row, error: readErr } = await supabase.from("pickup_requests").select("id, source").eq("id", id).maybeSingle();
+    if (readErr) return NextResponse.json({ error: readErr.message }, { status: 500 });
+    if (!row) return NextResponse.json({ error: "문의를 찾지 못했습니다." }, { status: 404 });
+    if (row.source === "토들") return NextResponse.json({ error: "토들 원문은 고칠 수 없습니다." }, { status: 400 });
+    const { error } = await supabase.from("pickup_requests").update({ summary: text, raw_text: text }).eq("id", id);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
+
   // ── 오늘 인박스 다시 읽기 ─────────────────────────────────────────────────
   if (action === "list") {
     const today = kstParts(new Date()).iso;

@@ -4,6 +4,7 @@ import { checkAlerts } from "@/lib/integrationHealth";
 import { logApiError } from "@/lib/logging";
 import { pollAllSpaces } from "@/lib/googleChat";
 import { isChatPollPeakHour } from "@/lib/shuttleTracking";
+import { collectToddleServer, toddleServerConfigured } from "@/lib/toddleServer";
 
 // 볼 방은 **표(google_chat_spaces)가 정합니다.** 예전에는 여기 코드에 방 이름이 박혀
 // 있어서, 방을 하나 더 보려면 배포를 해야 했습니다. 방은 학기 중에도 생깁니다.
@@ -45,6 +46,10 @@ export async function GET(req: NextRequest) {
   const peak = isChatPollPeakHour();
   const budgetMs = peak ? LOOP_BUDGET_MS : 0;
 
+  // 토들 서버 수집(열쇠가 있을 때만). 구글챗 루프와 함께 돌리고 끝에서 기다립니다 - 따로 크론을 하나 더
+  // 만들면 외부 스케줄러에 등록할 것이 늘고, 그 등록을 빠뜨리면 조용히 안 돕니다.
+  const toddle = toddleServerConfigured() ? collectToddleServer(supabase).catch((e) => ({ ok: false, error: String(e) })) : null;
+
   const startedAt = Date.now();
   let totalNew = 0;
   let rounds = 0;
@@ -84,5 +89,6 @@ export async function GET(req: NextRequest) {
   // 끊기면 안 되는 연동이 끊겼으면 전체공지를 올립니다. 이 크론이 1분마다 돌므로 가장 빠른 파수꾼입니다.
   const alerts = await checkAlerts(supabase).catch((e) => ({ broken: [`경보 검사 실패: ${e instanceof Error ? e.message : String(e)}`] }));
 
-  return NextResponse.json({ ok: true, peak, rounds, newMessages: totalNew, lastError, alerts });
+  const toddleResult = toddle ? await toddle : null;
+  return NextResponse.json({ ok: true, peak, rounds, newMessages: totalNew, lastError, alerts, toddle: toddleResult });
 }

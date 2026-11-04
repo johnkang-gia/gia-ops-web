@@ -845,6 +845,73 @@ function Who2({ r }: { r: InquiryRow }) {
   );
 }
 
+/**
+ * 직원이 메모장·전화로 적어 올린 문의의 글을 고칩니다. 토들 글은 학부모가 쓴 원문이라 고치지 않습니다.
+ * 요약과 원문을 같은 글로 맞춰 저장합니다 - 한쪽만 바뀌면 접힌 줄과 펼친 줄이 다른 말을 합니다.
+ */
+function EditableText({ r, onSaved }: { r: InquiryRow; onSaved: () => void | Promise<void> }) {
+  const notify = useToast();
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState(r.summary || r.raw_text || "");
+  const [busy, setBusy] = useState(false);
+  if (!editing)
+    return (
+      <div className="group relative">
+        <p className="whitespace-pre-wrap rounded bg-slate-50 p-1.5 pr-14 text-[11px] text-slate-700">{r.raw_text || r.summary || "(내용 없음)"}</p>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setText(r.summary || r.raw_text || "");
+            setEditing(true);
+          }}
+          className="absolute right-1 top-1 rounded bg-white px-1.5 py-0.5 text-[10px] font-bold text-indigo-700 shadow-sm ring-1 ring-indigo-100 hover:bg-indigo-50"
+        >
+          ✏️ 고치기
+        </button>
+      </div>
+    );
+  async function save() {
+    const t = text.trim();
+    if (!t) return notify("빈 글로는 저장할 수 없습니다.", "error");
+    setBusy(true);
+    const res = await fetch("/api/pickup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "edit-text", id: r.id, text: t }),
+    }).catch(() => null);
+    const json = res ? await res.json().catch(() => ({})) : {};
+    setBusy(false);
+    if (!res || !res.ok) return notify(`저장하지 못했습니다: ${(json as { error?: string }).error ?? "연결 오류"}`, "error");
+    setEditing(false);
+    notify("글을 고쳤습니다.", "success");
+    await onSaved();
+  }
+  return (
+    <div className="space-y-1" onClick={(e) => e.stopPropagation()}>
+      <textarea
+        autoFocus
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") setEditing(false);
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void save();
+        }}
+        rows={Math.min(8, Math.max(3, text.split("\n").length + 1))}
+        className="w-full rounded border border-indigo-200 p-1.5 text-[11px] text-slate-800"
+      />
+      <div className="flex items-center justify-end gap-1.5 text-[10px]">
+        <span className="mr-auto text-slate-400">Ctrl/⌘+Enter 저장 · Esc 취소</span>
+        <button onClick={() => setEditing(false)} className="rounded px-2 py-0.5 font-bold text-slate-500 hover:bg-slate-100">
+          취소
+        </button>
+        <button disabled={busy} onClick={() => void save()} className="rounded bg-indigo-600 px-2 py-0.5 font-bold text-white disabled:bg-slate-300">
+          {busy ? "저장 중…" : "저장"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function Row({
   r,
   now,
@@ -1169,10 +1236,14 @@ function Row({
 
       {open && (
         <div className="mt-1.5 space-y-1.5 border-t border-black/5 pt-1.5">
-          {r.raw_text && (
-            <p className="whitespace-pre-wrap rounded bg-slate-50 p-1.5 text-[11px] text-slate-700">
-              {r.raw_text}
-            </p>
+          {r.source !== "토들" ? (
+            <EditableText r={r} onSaved={reload} />
+          ) : (
+            r.raw_text && (
+              <p className="whitespace-pre-wrap rounded bg-slate-50 p-1.5 text-[11px] text-slate-700">
+                {r.raw_text}
+              </p>
+            )
           )}
           <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-500">
             {r.sender_name && <span>보낸 사람 {r.sender_name}</span>}

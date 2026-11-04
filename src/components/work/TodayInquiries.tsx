@@ -33,7 +33,7 @@ import type { TeamMember } from "@/lib/types";
 import PickupTriage, { type PickupRow, type StudentOption } from "@/components/pickup/PickupTriage";
 import { loadHouseCandidates, type HouseChild } from "@/lib/houseCandidates";
 import { chimeEnabled, playChime, primeChime, setChimeEnabled } from "@/lib/chime";
-import { ProcessingReportButton, ReplyTemplates, StudentHistory } from "./InquiryExtras";
+import { DesktopNotifyToggle, ProcessingReportButton, ReplyTemplates, StudentHistory, StudentPeek } from "./InquiryExtras";
 
 /**
  * 오늘의 문의사항 — 학부모가 오늘 쓴 글 전부와, 담당이 정해졌는데 아직 안 끝난 지난 글.
@@ -90,6 +90,9 @@ type Ctx = {
   /** 같은 학생(없으면 같은 방)이 이번 주 같은 갈래로 몇 번째 연락했는가. 2 이상만 담깁니다. */
   repeatOf: Map<string, number>;
   canReport: boolean;
+  /** 지금 누가 답하는 중인가(문의 번호 → 이름·시각). 다른 직원 화면에도 실시간으로 뜹니다. */
+  replying: Map<string, { name: string; at: number }>;
+  announceReplying: (id: string) => void;
   toddleTodayCount: number | null;
   loaded: boolean;
   reload: () => void;
@@ -181,7 +184,25 @@ export function TodayInquiriesProvider({
   const [loaded, setLoaded] = useState(false);
   const studentsRef = useRef<StudentOption[]>([]);
   const knownIds = useRef<Set<string> | null>(null);
+  const [replying, setReplying] = useState<Map<string, { name: string; at: number }>>(new Map());
+  const replyCh = useRef<ReturnType<ReturnType<typeof createClient>["channel"]> | null>(null);
   useEffect(() => primeChime(), []);
+  // 「답하는 중」 — 저장하지 않고 열려 있는 화면끼리만 알립니다(10분 지나면 저절로 사라짐). 같은 학부모에게
+  // 두 사람이 따로 답하는 일을 막는 용도라, 기록으로 남길 일은 아닙니다.
+  useEffect(() => {
+    const ch = createClient()
+      .channel("inquiry-replying")
+      .on("broadcast", { event: "replying" }, ({ payload }) => {
+        const p = payload as { id: string; name: string; at: number };
+        setReplying((prev) => new Map(prev).set(p.id, { name: p.name, at: p.at }));
+      })
+      .subscribe();
+    replyCh.current = ch;
+    return () => {
+      void createClient().removeChannel(ch);
+      replyCh.current = null;
+    };
+  }, []);
   useEffect(() => {
     studentsRef.current = students;
   }, [students]);
@@ -238,7 +259,10 @@ export function TodayInquiriesProvider({
       const fresh = all.filter(
         (r) => !knownIds.current!.has(r.id) && r.source === "토들" && !isNoActionBadges(r.badges) && isNewRow(r),
       );
-      if (fresh.length > 0) playChime();
+      if (fresh.length > 0) {
+        playChime();
+        notifyDesktop(fresh, studentsRef.current);
+      }
     }
     knownIds.current = ids;
     // 형제방에서 온 확인 필요 줄은 «그 집 아이들» 후보를 붙입니다(PickupTriage 와 같은 길).
@@ -342,6 +366,15 @@ export function TodayInquiriesProvider({
   );
 
   const repeatOf = useMemo(() => computeRepeats(weekRows), [weekRows]);
+  const myName = team.find((m) => m.email === currentUserEmail)?.name ?? currentUserEmail;
+  const announceReplying = useCallback(
+    (id: string) => {
+      const p = { id, name: myName, at: Date.now() };
+      setReplying((prev) => new Map(prev).set(id, { name: p.name, at: p.at }));
+      void replyCh.current?.send({ type: "broadcast", event: "replying", payload: p });
+    },
+    [myName],
+  );
 
   const value = useMemo<Ctx>(
     () => ({
@@ -351,6 +384,8 @@ export function TodayInquiriesProvider({
       houseOf,
       repeatOf,
       canReport,
+      replying,
+      announceReplying,
       toddleTodayCount,
       loaded,
       reload: () => void load(),
@@ -366,6 +401,8 @@ export function TodayInquiriesProvider({
       houseOf,
       repeatOf,
       canReport,
+      replying,
+      announceReplying,
       toddleTodayCount,
       loaded,
       load,
@@ -406,6 +443,26 @@ function badgesOf(r: InquiryRow): InquiryBadge[] {
 }
 
 /** 정렬: 답 안 한 것(오래 기다린 순) → 답했지만 처리 남음 → 처리 완료. 인사는 따로 접습니다. */
+/**
+ * 바탕화면 알림. 크롬이 다른 창에 가려져 있어도 화면 구석에 뜹니다. 사람이 「허용」한 브라우저에서만 띄우고,
+ * 이 화면을 보고 있을 때는 띄우지 않습니다(소리와 빨간 점으로 충분합니다).
+ */
+function notifyDesktop(rows: InquiryRow[], students: StudentOption[]) {
+  if (typeof window === "undefined" || !("Notification" in window)) return;
+  if (Notification.permission !== "granted" || document.visibilityState === "visible") return;
+  const nameOf = (id: string | null) => (id ? (students.find((x) => x.id === id)?.name ?? null) : null);
+  const first = rows[0];
+  const who = nameOf(first.student_id) ?? first.channel_label ?? "학부모";
+  const n = new Notification(rows.length > 1 ? `새 토들 문의 ${rows.length}건` : `새 토들 문의 · ${who}`, {
+    body: `${(first.badges ?? []).join("·")} ${first.summary ?? first.raw_text ?? ""}`.slice(0, 120),
+    tag: "gia-inquiry",
+  });
+  n.onclick = () => {
+    window.focus();
+    n.close();
+  };
+}
+
 /** 앱에 들어온 지 10분 안의 글. 빨간 점으로 «새 글»을 표시합니다(쓴 시각이 아니라 들어온 시각 기준). */
 const NEW_MS = 10 * 60 * 1000;
 function isNewRow(r: InquiryRow, now = Date.now()): boolean {
@@ -425,8 +482,11 @@ function order(a: InquiryRow, b: InquiryRow): number {
 }
 
 export function TodayInquiriesPanel() {
-  const { rows, toddleTodayCount, loaded, canReport, staffName } = useToday();
+  const { rows, toddleTodayCount, loaded, canReport, staffName, me, patch, announceReplying } = useToday();
+  const notifyP = useToast();
   const now = useNow();
+  const [mineOnly, setMineOnly] = useState(false);
+  const [cursor, setCursor] = useState<string | null>(null);
   const [filter, setFilter] = useState<InquiryBadge | "전체">("전체");
   const [showGreetings, setShowGreetings] = useState(false);
   const [showDone, setShowDone] = useState(false);
@@ -446,8 +506,12 @@ export function TodayInquiriesPanel() {
   for (const r of actionable)
     for (const b of badgesOf(r)) counts.set(b, (counts.get(b) ?? 0) + 1);
 
+  // 내 것 = 나에게 맡겨진 글 + 내가 답했거나 끝낸 글.
+  const isMine = (r: InquiryRow) =>
+    (r.assignees ?? []).includes(me) || r.replied_by === me || r.answered_by === me;
   const filtered = actionable
     .filter((r) => filter === "전체" || badgesOf(r).includes(filter))
+    .filter((r) => !mineOnly || isMine(r))
     .sort(order);
   const open = filtered.filter((r) => !r.answered_at);
   const done = filtered.filter((r) => !!r.answered_at);
@@ -455,6 +519,73 @@ export function TodayInquiriesPanel() {
     (r) => !r.replied_at && !r.answered_at,
   ).length;
   const toddleInApp = todays.filter((r) => r.source === "토들").length;
+  // 오늘 마감 — 오후 3시가 넘으면 오늘 안에 끝내야 하는 픽업·출결·확인 필요 미처리 건을 맨 위에 모읍니다.
+  const kstHour = Number(new Date(now).toLocaleString("en-US", { timeZone: "Asia/Seoul", hour: "numeric", hour12: false }));
+  const dueToday =
+    kstHour >= 15
+      ? actionable.filter(
+          (r) =>
+            !r.answered_at &&
+            r.received_at >= start &&
+            (needsCheck(r) || badgesOf(r).some((b) => b === "픽업·하원" || b === "출결" || b === "셔틀")),
+        )
+      : [];
+
+  // ── 탭 제목에 답 기다림 수 ─────────────────────────────────────────
+  // 다른 탭에서 일하는 동안에도 「(3) GIA 운영」으로 보입니다. 화면을 떠나면 원래 제목으로 돌려놓습니다.
+  useEffect(() => {
+    const base = document.title.replace(/^\(\d+\)\s*/, "");
+    document.title = waiting > 0 ? `(${waiting}) ${base}` : base;
+    return () => {
+      document.title = document.title.replace(/^\(\d+\)\s*/, "");
+    };
+  }, [waiting]);
+
+  // ── 키보드 ──────────────────────────────────────────────────────
+  // ↑↓ 줄 옮기기 · Enter 펼치기 · R 답하기 · D 처리 완료 · S 넘기기. 글을 치는 칸 안에서는 가로채지 않습니다.
+  const keyRef = useRef({ open, cursor, openId });
+  keyRef.current = { open, cursor, openId };
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const el = e.target as HTMLElement | null;
+      if (el?.closest("input,textarea,select,[contenteditable]")) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const { open: list, cursor: cur } = keyRef.current;
+      if (list.length === 0) return;
+      const idx = Math.max(0, list.findIndex((r) => r.id === cur));
+      const row = list.find((r) => r.id === cur) ?? null;
+      const k = e.key.toLowerCase();
+      if (k === "arrowdown" || k === "arrowup") {
+        e.preventDefault();
+        const next = list[Math.min(list.length - 1, Math.max(0, cur ? idx + (k === "arrowdown" ? 1 : -1) : 0))];
+        setCursor(next.id);
+        document.getElementById(`inq-${next.id}`)?.scrollIntoView({ block: "nearest" });
+        return;
+      }
+      if (!row) return;
+      const nowIso = new Date().toISOString();
+      if (k === "enter") {
+        e.preventDefault();
+        setOpenId((v) => (v === row.id ? null : row.id));
+      } else if (k === "r") {
+        e.preventDefault();
+        if (row.source_url) {
+          announceReplying(row.id);
+          window.open(row.source_url, "_blank", "noopener");
+        } else if (!row.replied_at) void patch(row, { replied_at: nowIso, replied_by: me, replied_via: "앱" }, "답함으로 표시했습니다.");
+      } else if (k === "d") {
+        e.preventDefault();
+        void patch(row, { answered_at: nowIso, answered_by: me, answered_via: "수동" }, "처리 완료로 표시했습니다.");
+      } else if (k === "s") {
+        e.preventDefault();
+        if (needsCheck(row)) return notifyP("확인 필요 글은 펼쳐서 넘기기를 눌러 주세요(픽업 판단도 함께 내립니다).", "error");
+        void patch(row, { skipped_at: nowIso, skipped_by: me }, "넘겼습니다.");
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [patch, me, announceReplying, notifyP]);
+
   // 답변 지연 — 1시간 넘게 아무도 답하지 않은 글.
   const late = actionable.filter(
     (r) => !r.replied_at && !r.answered_at && now - new Date(r.received_at).getTime() >= 60 * 60 * 1000,
@@ -487,6 +618,7 @@ export function TodayInquiriesPanel() {
           >
             오늘 토들 {toddleTodayCount ?? "?"} → 앱 {toddleInApp}
           </span>
+          <DesktopNotifyToggle />
           <ChimeToggle />
           {canReport && <ProcessingReportButton staffName={staffName} />}
         </div>
@@ -505,7 +637,32 @@ export function TodayInquiriesPanel() {
             ))}
           </div>
         )}
+        {dueToday.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1 rounded-lg bg-amber-400 px-2 py-1 text-[11px] font-bold text-amber-950">
+            <span>⏳ 오늘 마감 — 하원 전에 끝낼 픽업·출결 {dueToday.length}건</span>
+            {dueToday.slice(0, 8).map((r) => (
+              <button
+                key={r.id}
+                type="button"
+                onClick={() => {
+                  setOpenId(r.id);
+                  setCursor(r.id);
+                  document.getElementById(`inq-${r.id}`)?.scrollIntoView({ block: "nearest" });
+                }}
+                className="rounded bg-white/40 px-1.5 hover:bg-white/60"
+              >
+                <LateName r={r} />
+              </button>
+            ))}
+          </div>
+        )}
         <div className="flex flex-wrap gap-1">
+          <Chip
+            active={mineOnly}
+            onClick={() => setMineOnly((v) => !v)}
+            label={`👤 내 것 ${actionable.filter(isMine).length}`}
+            cls={mineOnly ? "border-blue-400 bg-blue-50 text-blue-700" : ""}
+          />
           <Chip
             active={filter === "전체"}
             onClick={() => setFilter("전체")}
@@ -528,6 +685,8 @@ export function TodayInquiriesPanel() {
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-1.5">
         {!loaded ? (
           <p className="p-4 text-center text-xs text-slate-400">불러오는 중…</p>
+        ) : open.length === 0 && mineOnly ? (
+          <p className="p-4 text-center text-xs text-slate-400">내 것으로 남은 문의가 없습니다.</p>
         ) : open.length === 0 ? (
           <p className="p-4 text-center text-xs text-emerald-600">
             처리할 문의가 없습니다.
@@ -540,7 +699,11 @@ export function TodayInquiriesPanel() {
                 r={r}
                 now={now}
                 open={openId === r.id}
-                onToggle={() => setOpenId(openId === r.id ? null : r.id)}
+                focused={cursor === r.id}
+                onToggle={() => {
+                  setCursor(r.id);
+                  setOpenId(openId === r.id ? null : r.id);
+                }}
               />
             ))}
           </ul>
@@ -597,6 +760,9 @@ export function TodayInquiriesPanel() {
           </div>
         )}
 
+        <p className="mt-3 text-center text-[10px] text-slate-300">
+          단축키 ↑↓ 줄 이동 · Enter 펼치기 · R 답하기 · D 처리 완료 · S 넘기기
+        </p>
         {skipped.length > 0 && (
           <div className="mt-2">
             <button
@@ -682,14 +848,19 @@ function Row({
   r,
   now,
   open,
+  focused = false,
   onToggle,
 }: {
   r: InquiryRow;
   now: number;
   open: boolean;
+  /** 키보드로 고른 줄. */
+  focused?: boolean;
   onToggle: () => void;
 }) {
-  const { patch, me, staffName, team, names, repeatOf, students, houseOf, reload } = useToday();
+  const { patch, me, staffName, team, names, repeatOf, students, houseOf, reload, replying, announceReplying } = useToday();
+  const rp = replying.get(r.id);
+  const replyingNow = !r.replied_at && rp && Date.now() - rp.at < 10 * 60 * 1000 ? rp : null;
   const repeat = repeatOf.get(r.id);
   const notify = useToast();
   const [announcing, setAnnouncing] = useState(false);
@@ -772,6 +943,7 @@ function Row({
   if (r.answered_at && !open) {
     return (
       <li
+        id={`inq-${r.id}`}
         className="flex items-center gap-1.5 rounded-lg border border-black/5 bg-slate-50 px-2 py-1 text-[11.5px]"
         title={`처리 완료 · ${staffName(r.answered_by)} ${timeKst(r.answered_at)}${r.replied_at ? ` · 답함 ${r.replied_via === "토들 답글" ? r.replied_by ?? "" : staffName(r.replied_by)}` : ""}`}
       >
@@ -796,7 +968,9 @@ function Row({
 
   return (
     <li
+      id={`inq-${r.id}`}
       className={
+        (focused ? "ring-2 ring-blue-400 " : "") +
         "rounded-lg border bg-white px-2 py-1.5 text-[12px] shadow-sm " +
         (mine && !r.answered_at ? "border-amber-400 " : "border-black/5 ") +
         (r.urgency === "높음" && !r.replied_at ? "ring-1 ring-rose-300" : "")
@@ -851,7 +1025,18 @@ function Row({
                 ⚠ 확인 필요
               </span>
             )}
-            <Who2 r={r} />
+            {r.student_id ? (
+              <StudentPeek id={r.student_id}>
+                <Who2 r={r} />
+              </StudentPeek>
+            ) : (
+              <Who2 r={r} />
+            )}
+            {replyingNow && (
+              <span className="animate-pulse rounded-full bg-sky-100 px-1.5 text-[9px] font-bold text-sky-700" title="토들 방을 열고 답하는 중입니다">
+                ✍️ {replyingNow.name} 답하는 중
+              </span>
+            )}
             {repeat && (
               <span
                 className="rounded-full bg-purple-100 px-1.5 text-[9px] font-bold text-purple-700"
@@ -888,8 +1073,10 @@ function Row({
               <button
                 type="button"
                 onClick={() => {
-                  if (r.source_url) window.open(r.source_url, "_blank", "noopener");
-                  else void toggleReplied();
+                  if (r.source_url) {
+                    announceReplying(r.id);
+                    window.open(r.source_url, "_blank", "noopener");
+                  } else void toggleReplied();
                 }}
                 className="flex-1 rounded-l bg-emerald-600 px-1 py-0.5 text-[10px] font-bold text-white hover:bg-emerald-700"
                 title={

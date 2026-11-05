@@ -728,7 +728,7 @@ export function TodayInquiriesPanel() {
             처리할 문의가 없습니다.
           </p>
         ) : (
-          <ul className="space-y-1">
+          <ul className="space-y-0.5">
             {open.map((r) => (
               <Row
                 key={r.id}
@@ -1143,7 +1143,8 @@ function Row({
       id={`inq-${r.id}`}
       className={
         (focused ? "ring-2 ring-blue-400 " : "") +
-        "rounded-lg border bg-white px-2 py-1.5 text-[12px] shadow-sm " +
+        // 접힌 줄은 한 줄 높이입니다. 글이 많은 날 한 화면에 열 몇 줄은 보여야 「뭐가 남았나」가 한눈에 들어옵니다.
+        (open ? "rounded-lg border bg-white px-2 py-1.5 text-[12px] shadow-sm " : "rounded border bg-white px-1.5 py-0.5 text-[11px] ") +
         (mine && !r.answered_at ? "border-amber-400 " : "border-black/5 ") +
         (r.urgency === "높음" && !r.replied_at ? "ring-1 ring-rose-300" : "")
       }
@@ -1178,7 +1179,7 @@ function Row({
           onClick={onToggle}
           className="min-w-0 flex-1 text-left"
         >
-          <div className="flex flex-wrap items-center gap-1">
+          <div className={open ? "flex flex-wrap items-center gap-1" : "flex min-w-0 items-center gap-1 overflow-hidden"}>
             {badgesOf(r).map((b) => (
               <span
                 key={b}
@@ -1212,14 +1213,21 @@ function Row({
                 🔁 이번 주 {repeat}번째
               </span>
             )}
-            <span className="text-[10px] tabular-nums text-slate-400">
-              {isOld ? `${dayKst(r.received_at)} ` : ""}
-              {timeKst(r.received_at)}
-            </span>
+            {isOld && <span className="text-[10px] tabular-nums text-slate-400">{dayKst(r.received_at)}</span>}
+            {!open && assignees.length > 0 && (
+              <span className="shrink-0 rounded bg-amber-50 px-1 text-[9px] font-bold text-amber-700" title={`담당 → ${assignees.map(staffName).join(", ")}`}>
+                담당 {staffName(assignees[0])}{assignees.length > 1 ? ` +${assignees.length - 1}` : ""}
+              </span>
+            )}
+            {/* 접힌 줄은 요약을 같은 줄 오른쪽에 붙입니다(한 줄). 펼치면 아래 문단으로 내려옵니다. */}
+            {!open && (
+              <span className="min-w-0 flex-1 truncate text-slate-600">
+                {unclear && r.raw_text ? r.raw_text : r.summary || r.raw_text || "(내용 없음)"}
+              </span>
+            )}
           </div>
-          <p
-            className={"mt-0.5 text-slate-700 " + (open ? "" : unclear ? "line-clamp-3 whitespace-pre-wrap" : "line-clamp-1")}
-          >
+          {open && (
+          <p className="mt-0.5 text-slate-700">
             {unclear && r.raw_text ? (
               <>
                 <span className="mr-1 rounded bg-slate-200 px-1 text-[9px] font-bold text-slate-600" title="요약이 불확실해 학부모가 쓴 글을 그대로 보여줍니다">
@@ -1231,8 +1239,10 @@ function Row({
               r.summary || r.raw_text || "(내용 없음)"
             )}
           </p>
+          )}
         </button>
-        <div className="flex w-[4.5rem] shrink-0 flex-col gap-1">
+        {/* 단추는 접힌 줄에서는 가로 한 줄, 펼치면 세로 묶음. 세로로 셋이 서면 접힌 줄도 세 줄 높이가 됩니다. */}
+        <div className={open ? "flex w-[4.5rem] shrink-0 flex-col gap-1" : "flex shrink-0 items-center gap-0.5"}>
           {pickupish && !pickupDone && (
             <button
               type="button"
@@ -1327,8 +1337,8 @@ function Row({
         </div>
       </div>
 
-      {/* 누가 무엇을 했는지 — 늘 보입니다. */}
-      {(r.replied_at || r.answered_at || r.skipped_at || r.announced_at || assignees.length > 0) && (
+      {/* 누가 무엇을 했는지 — 펼쳤을 때. 접힌 줄에서는 앞자리 색(✓ 초록)과 담당 뱃지가 대신합니다. */}
+      {open && (r.replied_at || r.answered_at || r.skipped_at || r.announced_at || assignees.length > 0) && (
         <div className="mt-1 flex flex-wrap gap-x-2 text-[10px] text-slate-500">
           {r.replied_at && (
             <span>

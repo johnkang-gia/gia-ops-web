@@ -105,6 +105,10 @@ eq("셔틀 왕복", parseShuttle("Yes: Round-trip"), "왕복");
   eq("묶음: 안 이음 + 재학 답", campGroupOf(null, true), "재학생");
 }
 
+// 시트 날짜는 UTC 시각으로 온다 → 한국 날짜
+eq("생일 UTC→KST", readCampForm({ "학생 생년월일": "2018-11-12T15:00:00.000Z" }).birth_date, "2018-11-13");
+eq("생일 글자 그대로", readCampForm({ "학생 생년월일": "2018-11-13" }).birth_date, "2018-11-13");
+
 if (fail) {
   console.error(`캠프 수강료 시험 ${fail}건 실패`);
   process.exit(1);

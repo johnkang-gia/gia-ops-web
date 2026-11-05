@@ -1,3 +1,4 @@
+import { kstDate } from "./kst";
 /**
  * 캠프 수강료 — 금액 계산과 구글폼 응답 읽기 (순수 함수).
  *
@@ -121,6 +122,12 @@ export function parseShuttle(v: string): CampShuttle | null {
 function dateText(v: string): string | null {
   const t = norm(v);
   if (!t) return null;
+  // 시트의 날짜 칸은 앱스크립트가 **시각까지 붙은 세계표준시**로 보냅니다(한국 자정 = 전날 15:00Z). 앞 10글자만 자르면
+  // 생일이 하루씩 앞당겨져 명부와 안 맞았습니다 - 시각이 붙은 값은 한국 날짜로 바꿉니다.
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(t)) {
+    const d = new Date(t);
+    if (!Number.isNaN(d.getTime())) return kstDate(d);
+  }
   const iso = t.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
   const m = t.match(/(\d{4})\s*[.\/년-]\s*(\d{1,2})\s*[.\/월-]\s*(\d{1,2})/);

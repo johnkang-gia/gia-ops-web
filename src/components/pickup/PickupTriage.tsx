@@ -77,6 +77,7 @@ export default function PickupTriage({
   rows,
   students,
   onChanged,
+  onDecided,
   compact = false,
   houseOf,
   embedded = false,
@@ -92,6 +93,12 @@ export default function PickupTriage({
   houseOf?: Map<string, { id: string; name: string }[]>;
   /** 무언가 처리한 뒤. 부르는 화면이 제 목록을 다시 읽습니다. */
   onChanged: () => void | Promise<void>;
+  /**
+   * **처리를 하나 끝낸 뒤**(픽업 확정·출결 등록·전달사항·셔틀·아님). 학생을 잇기만 한 것(linkOnly·confirmHouse)은 처리가
+   * 아니라 부르지 않습니다. 오늘의 문의사항이 이 신호로 「처리 완료로 내릴까요」를 묻습니다 - 처리하고 나서 처리 완료를
+   * 또 눌러야 끝나는 두 번 일을 한 번으로 줄이되, 취소하면 처리만 된 상태로 둡니다.
+   */
+  onDecided?: () => void;
   /** 업무보드처럼 좁은 칸. 글자·여백만 줄이고 고를 수 있는 것은 같습니다. */
   compact?: boolean;
   /**
@@ -440,6 +447,7 @@ export default function PickupTriage({
         ok === dates.length ? "success" : "error",
       );
     void refresh();
+    if (ok > 0 && action !== "예정" && !keepOpen) onDecided?.();
   }
 
 
@@ -493,6 +501,7 @@ export default function PickupTriage({
     await refresh();
     // 학생 하루 보드(업무보드·중앙 대시보드)가 바로 받아보게 합니다.
     router.refresh();
+    onDecided?.();
   }
 
   /**
@@ -515,6 +524,7 @@ export default function PickupTriage({
     if (undoNote) notify(undoNote, "success");
     await refresh();
     router.refresh();
+    onDecided?.();
   }
 
   async function confirm(row: PickupRow, studentId?: string, keepOpen = false) {
@@ -553,6 +563,7 @@ export default function PickupTriage({
     );
     for (const p of ((json as { problems?: string[] }).problems ?? []).filter(Boolean)) notify(p, "error");
     await refresh();
+    if (!keepOpen) onDecided?.();
   }
 
   /**
@@ -598,6 +609,7 @@ export default function PickupTriage({
     const problems = ((json as { undo?: { problems?: string[] } }).undo?.problems ?? []).filter(Boolean);
     if (problems.length > 0) notify(problems.join(" / "), "error");
     else if (note) notify(note, "success");
+    onDecided?.();
   }
 
   return (

@@ -1433,6 +1433,12 @@ function Row({
                 rows={[r as unknown as PickupRow]}
                 students={students}
                 onChanged={reload}
+                onDecided={() => {
+                  // 처리(픽업·출결·전달사항 등)가 끝났으면 처리 완료가 마지막 단계입니다. 묻고 바로 내려서 두 번 누르지 않게
+                  // 합니다. 취소하면 처리만 된 상태로 둡니다 - 답장이 아직 남은 글이 있습니다.
+                  if (r.answered_at) return;
+                  if (window.confirm("처리했습니다. 이 문의를 처리 완료로 내릴까요?\n(취소하면 처리만 된 상태로 남습니다)")) void toggleDone();
+                }}
                 compact
                 embedded
                 houseOf={houseOf}

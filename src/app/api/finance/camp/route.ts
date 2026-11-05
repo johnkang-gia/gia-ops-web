@@ -10,7 +10,7 @@ import { loadStudentsWithPhones } from "@/lib/students";
 import { campGroupOf, matchCampStudent } from "@/lib/campMatch";
 import { addStudents } from "@/lib/studentAdd";
 import { resolveRecipient, phonesOf, chosenRoleOf } from "@/lib/alltalkpay";
-import { CAMP_DISCOUNTS, CAMP_SHUTTLES, campDiscountOf, campFee, campLineName, type CampDiscount, type CampShuttle } from "@/lib/campFee";
+import { CAMP_DISCOUNTS, CAMP_SHUTTLES, campDiscountOf, campFee, campLineName, extrasTotal, normalizeExtras, type CampDiscount, type CampShuttle } from "@/lib/campFee";
 
 /**
  * 재무 › 캠프 의 모든 «고치기».
@@ -45,6 +45,7 @@ const PATCHABLE = new Set([
   "is_returning",
   "discount_override",
   "amount_override",
+  "extras",
   "status",
   "memo",
   "student_id",
@@ -258,9 +259,14 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "셔틀 값이 이상합니다." }, { status: 400 });
     if ("discount_override" in clean && clean.discount_override != null && !CAMP_DISCOUNTS.includes(clean.discount_override as CampDiscount))
       return NextResponse.json({ error: "할인 값이 이상합니다." }, { status: 400 });
+    if ("extras" in clean) {
+      const { extras, dropped } = normalizeExtras(clean.extras ?? []);
+      if (dropped > 0) return NextResponse.json({ error: `추가 금액 ${dropped}줄이 비었거나 0원입니다. 이름과 금액을 모두 적으세요.` }, { status: 400 });
+      clean.extras = extras;
+    }
     // 청구서가 나간 뒤에는 금액을 바꾸는 칸을 잠급니다. 바꾸려면 청구서를 취소하고 다시 만듭니다 - 신청표와
     // 청구서가 다른 금액을 말하면 어느 쪽이 맞는지 아무도 모릅니다.
-    if (liveInvoice && ["weeks", "shuttle", "says_current", "sibling", "is_returning", "discount_override", "amount_override", "student_id"].some((k) => k in clean))
+    if (liveInvoice && ["weeks", "shuttle", "says_current", "sibling", "is_returning", "discount_override", "amount_override", "extras", "student_id"].some((k) => k in clean))
       return NextResponse.json({ error: "이미 청구서가 나간 신청입니다. 금액·학생을 바꾸려면 청구서를 먼저 취소하세요." }, { status: 409 });
     if (Object.keys(clean).length === 0) return NextResponse.json({ ok: true });
     const { error } = await supabase
@@ -318,6 +324,7 @@ type CampAppRow = {
   is_returning: boolean | null;
   discount_override: string | null;
   amount_override: number | null;
+  extras: unknown;
   guardian_phone: string | null;
   invoice_id: string | null;
 };
@@ -346,7 +353,10 @@ async function issueApp(supabase: Awaited<ReturnType<typeof createClient>>, app:
   const fee = campFee(app.weeks, app.shuttle as CampShuttle | null, discount);
   if (!fee && app.amount_override == null)
     return { ok: false, error: "참여 주(2주·3주)와 셔틀을 먼저 정하세요.", status: 400 };
-  const amount = app.amount_override ?? fee!.amount;
+  const base = app.amount_override ?? fee!.amount;
+  // 수강료 말고 따로 받는 금액(셔틀 추가 등). 청구서에 줄로 각각 찍고 합계에 더합니다 - 합계만 바꾸면 무슨 돈인지 안 보입니다.
+  const extras = normalizeExtras(app.extras).extras;
+  const amount = base + extrasTotal(extras);
   const termLabel = `${term.year} ${term.term_type}`;
   const lineName =
     app.weeks && app.shuttle ? campLineName(termLabel, app.weeks, app.shuttle as CampShuttle, discount) : `${termLabel} 수강료`;
@@ -422,9 +432,10 @@ async function issueApp(supabase: Awaited<ReturnType<typeof createClient>>, app:
     .single();
   if (invErr || !inv) return { ok: false, error: invErr?.message ?? "청구서를 만들지 못했습니다.", status: 500 };
 
-  const { error: lineErr } = await supabase
-    .from("invoice_lines")
-    .insert({ invoice_id: inv.id, seq: 1, name: lineName, item_id: itemId, qty: 1, unit_price: amount, amount });
+  const { error: lineErr } = await supabase.from("invoice_lines").insert([
+    { invoice_id: inv.id, seq: 1, name: lineName, item_id: itemId, qty: 1, unit_price: base, amount: base },
+    ...extras.map((e, i) => ({ invoice_id: inv.id, seq: i + 2, name: `${termLabel} ${e.name}`, item_id: null, qty: 1, unit_price: e.amount, amount: e.amount })),
+  ]);
   if (lineErr) {
     const { error: rbErr } = await supabase.from("invoices").delete().eq("id", inv.id);
     return {

@@ -17,10 +17,14 @@ import {
   DISCOUNT_RATE,
   campDiscountOf,
   campFee,
+  extrasTotal,
   readCampForm,
   type CampDiscount,
+  type CampExtra,
   type CampShuttle,
 } from "@/lib/campFee";
+import PayModal from "./PayModal";
+import { todayKst } from "@/lib/kst";
 
 export type CampTerm = { id: string; term_type: string; year: string; status: string; start_date: string | null; end_date: string | null };
 export type CampApp = {
@@ -43,6 +47,8 @@ export type CampApp = {
   is_returning: boolean;
   discount_override: CampDiscount | null;
   amount_override: number | null;
+  /** 수강료 말고 따로 받는 금액(셔틀 추가 등). 청구서에 줄로 각각 찍힙니다. */
+  extras: CampExtra[] | null;
   student_id: string | null;
   status: "접수" | "확정" | "취소";
   invoice_id: string | null;
@@ -91,6 +97,8 @@ export default function CampClient({
   const [cancelling, setCancelling] = useState<{ invoice: Invoice; studentName: string } | null>(null);
   /** 청구서 미리보기(우리 양식). 학비·학비외와 같은 창이라 인쇄·PDF 저장이 같은 자리에 있습니다. */
   const [preview, setPreview] = useState<{ id: string; label: string; receipt: boolean } | null>(null);
+  /** 직접수납(창구에서 받음). 학비·학비외와 같은 창(PayModal)이라 수단·항목 고르기가 같습니다. */
+  const [payFor, setPayFor] = useState<{ id: string; label: string; balance: number } | null>(null);
   const [filter, setFilter] = useState<"전체" | "접수" | "확정" | "취소" | "미연결" | "재학생" | "외부">("전체");
   const [q, setQ] = useState("");
   const [open, setOpen] = useState<string | null>(null);
@@ -126,7 +134,9 @@ export default function CampClient({
       override: a.discount_override,
     });
     const fee = campFee(a.weeks, a.shuttle, discount);
-    return { discount, fee, amount: a.amount_override ?? fee?.amount ?? null, student: s };
+    const base = a.amount_override ?? fee?.amount ?? null;
+    const extra = extrasTotal(a.extras);
+    return { discount, fee, base, extra, amount: base == null ? null : base + extra, student: s };
   }
 
   const liveInv = (a: CampApp) => {
@@ -431,6 +441,11 @@ export default function CampClient({
                             </div>
                           )}
                           {a.amount_override != null && <div className="text-[10px] font-bold text-amber-700">직접 정한 금액</div>}
+                          {(a.extras ?? []).map((e, i) => (
+                            <div key={i} className="text-[10px] text-sky-800">
+                              + {e.name} {won(e.amount)}
+                            </div>
+                          ))}
                         </td>
                         <td className="whitespace-nowrap px-2 py-1.5">
                           {inv ? (
@@ -447,6 +462,15 @@ export default function CampClient({
                                 >
                                   청구서 보기·인쇄
                                 </button>
+                                {inv.paid < inv.total && (
+                                  <button
+                                    className="font-bold text-emerald-700 underline"
+                                    title="창구에서 받은 돈을 적습니다(직접수납). 수단과 받은 항목을 고릅니다."
+                                    onClick={() => setPayFor({ id: inv.id, label: `${a.applicant_name ?? ""} · ${inv.invoice_no}`, balance: inv.total - inv.paid })}
+                                  >
+                                    수납
+                                  </button>
+                                )}
                                 {inv.paid >= inv.total && (
                                   <button
                                     className="font-bold text-emerald-700 underline"
@@ -539,6 +563,18 @@ export default function CampClient({
             </div>
           </div>
         </div>
+      )}
+      {payFor && (
+        <PayModal
+          target={payFor}
+          today={todayKst()}
+          onClose={() => setPayFor(null)}
+          onDone={(msg) => {
+            notify(msg, "success");
+            setPayFor(null);
+            router.refresh();
+          }}
+        />
       )}
       {preview && <InvoicePreviewModal invoiceId={preview.id} label={preview.label} receipt={preview.receipt} onClose={() => setPreview(null)} />}
       {cancelling && (
@@ -677,6 +713,55 @@ function LinkStudent({
   );
 }
 
+/**
+ * 수강료 말고 따로 받는 금액(셔틀 추가 등). 금액 직접 정하기로 합계를 바꾸면 청구서에 한 줄로 뭉쳐 나가 무슨 돈인지
+ * 안 보입니다. 여기 적은 줄은 청구서에 수강료 다음 줄로 각각 찍히고 합계에 더해집니다.
+ */
+function ExtrasEditor({ app, locked, patch }: { app: CampApp; locked: boolean; patch: (id: string, p: Record<string, unknown>) => Promise<unknown> }) {
+  const [name, setName] = useState("셔틀 추가");
+  const [amount, setAmount] = useState("");
+  const list = app.extras ?? [];
+  const save = (next: CampExtra[]) => patch(app.id, { extras: next });
+  return (
+    <div className="flex items-start gap-2">
+      <span className="w-24 pt-0.5 text-slate-500">추가 금액</span>
+      <div className="flex-1 space-y-1">
+        {list.length === 0 && <div className="text-[11px] text-slate-400">없음. 셔틀 추가 요금처럼 수강료 밖의 돈을 적습니다. 청구서에 줄로 따로 찍힙니다.</div>}
+        {list.map((e, i) => (
+          <div key={i} className="flex items-center gap-2 text-[12px]">
+            <span className="flex-1">{e.name}</span>
+            <span className="tabular-nums">{won(e.amount)}</span>
+            <button disabled={locked} onClick={() => void save(list.filter((_, j) => j !== i))} className="text-red-600 underline disabled:opacity-40">
+              빼기
+            </button>
+          </div>
+        ))}
+        {!locked && (
+          <div className="flex items-center gap-1">
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="항목 이름" className="w-32 rounded border border-slate-300 px-1.5 py-0.5" />
+            <input
+              value={amount}
+              onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ""))}
+              placeholder="금액"
+              className="w-24 rounded border border-slate-300 px-1.5 py-0.5 text-right tabular-nums"
+            />
+            <button
+              disabled={!name.trim() || !amount}
+              onClick={() => {
+                void save([...list, { name: name.trim(), amount: Number(amount) }]);
+                setAmount("");
+              }}
+              className="rounded bg-sky-700 px-2 py-0.5 font-bold text-white disabled:bg-slate-200"
+            >
+              + 추가
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function Detail({ app, locked, patch }: { app: CampApp; locked: boolean; patch: (id: string, p: Record<string, unknown>) => Promise<unknown> }) {
   const used = readCampForm(app.raw ?? {}).used;
   const [amount, setAmount] = useState(app.amount_override != null ? String(app.amount_override) : "");
@@ -721,6 +806,7 @@ function Detail({ app, locked, patch }: { app: CampApp; locked: boolean; patch: 
             저장
           </button>
         </label>
+        <ExtrasEditor app={app} locked={locked} patch={patch} />
         <label className="flex items-center gap-2">
           <span className="w-24 text-slate-500">재학생이라고 답함</span>
           <input type="checkbox" disabled={locked} checked={app.says_current} onChange={(e) => patch(app.id, { says_current: e.target.checked })} />

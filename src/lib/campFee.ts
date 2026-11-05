@@ -267,3 +267,29 @@ export const FIELD_LABEL: Record<Field, string> = {
   shuttle: "셔틀",
   submitted_at: "제출 시각",
 };
+
+// ── 추가 금액(셔틀 추가 요금 등) ───────────────────────────────────────────
+
+/** 수강료 말고 따로 받는 금액 한 줄. 청구서에는 수강료 다음 줄로 각각 찍힙니다. */
+export type CampExtra = { name: string; amount: number };
+
+/**
+ * 화면·폼에서 온 값을 안전한 목록으로 바꿉니다. 이름이 비었거나 금액이 0 이하·숫자 아님이면 뺍니다.
+ * 뺀 줄이 있으면 `dropped` 로 알려서 조용히 사라지지 않게 합니다(CLAUDE.md §5).
+ */
+export function normalizeExtras(v: unknown): { extras: CampExtra[]; dropped: number } {
+  if (!Array.isArray(v)) return { extras: [], dropped: 0 };
+  const out: CampExtra[] = [];
+  let dropped = 0;
+  for (const x of v) {
+    const name = String((x as { name?: unknown })?.name ?? "").trim();
+    const amount = Number((x as { amount?: unknown })?.amount);
+    if (name && Number.isFinite(amount) && amount > 0) out.push({ name: name.slice(0, 60), amount: Math.round(amount) });
+    else dropped++;
+  }
+  return { extras: out, dropped };
+}
+
+export function extrasTotal(extras: readonly CampExtra[] | null | undefined): number {
+  return (extras ?? []).reduce((n, e) => n + e.amount, 0);
+}

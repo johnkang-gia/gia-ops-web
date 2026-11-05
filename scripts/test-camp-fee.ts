@@ -3,7 +3,7 @@
  * 요금표가 바뀌면 이 표를 새 요금표로 고칩니다. 식이 표와 어긋나면 빌드가 멈춥니다.
  */
 import { matchCampStudent, campGroupOf, campLinkSuspect, phoneKey } from "../src/lib/campMatch";
-import { campDiscountOf, campFee, parseShuttle, parseWeeks, readCampForm, type CampDiscount, type CampShuttle } from "../src/lib/campFee";
+import { campDiscountOf, campFee, parseShuttle, parseWeeks, readCampForm, type CampDiscount, type CampShuttle, normalizeExtras, extrasTotal } from "../src/lib/campFee";
 
 let fail = 0;
 const eq = (label: string, got: unknown, want: unknown) => {
@@ -129,6 +129,14 @@ eq("셔틀 왕복", parseShuttle("Yes: Round-trip"), "왕복");
   eq("김재이: 모르는 번호 → 사람이", matchCampStudent({ applicant_name: "김재이", guardian_phone: "01099998888", says_current: true }, roster), { ambiguous: 3 });
   eq("전화 정리", phoneKey("+82-10-1234-5678"), "01012345678");
 }
+
+// 추가 금액(셔틀 추가 등): 빈 이름·0원은 빼고 그 수를 알려줍니다
+eq("추가 금액 정리", normalizeExtras([{ name: " 셔틀 추가 ", amount: "30000" }, { name: "", amount: 100 }, { name: "x", amount: 0 }]), {
+  extras: [{ name: "셔틀 추가", amount: 30000 }],
+  dropped: 2,
+});
+eq("추가 금액 합", extrasTotal([{ name: "a", amount: 1000 }, { name: "b", amount: 2500 }]), 3500);
+eq("추가 금액 비어 있음", extrasTotal(null), 0);
 
 // 시트 날짜는 UTC 시각으로 온다 → 한국 날짜
 eq("생일 UTC→KST", readCampForm({ "학생 생년월일": "2018-11-12T15:00:00.000Z" }).birth_date, "2018-11-13");

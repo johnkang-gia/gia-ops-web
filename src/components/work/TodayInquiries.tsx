@@ -587,6 +587,35 @@ export function TodayInquiriesPanel() {
     return () => window.removeEventListener("keydown", onKey);
   }, [patch, me, announceReplying, notifyP]);
 
+  /**
+   * 경보 뱃지(지연·오늘 마감)를 누르면 **그 글만 펼쳐 화면 가운데로** 가져옵니다.
+   *
+   * 예전에는 펼치기만 해서, 목록 아래쪽 글은 펼쳐진 줄도 모르고 다시 찾아야 했습니다. 펼친 글이 하나뿐이도록
+   * `openId` 하나만 쓰므로 다른 뱃지를 누르면 앞 글은 저절로 접힙니다. 걸러진 상태(뱃지 필터·내 것만)라 목록에
+   * 없는 글이면 필터를 풀어서 보이게 한 뒤 굴립니다 - 눌렀는데 아무 일도 안 일어나는 것이 가장 나쁩니다.
+   * 스크롤은 펼친 내용이 그려진 다음에 해야 가운데가 맞아서, 렌더 뒤(useEffect)로 미룹니다.
+   */
+  const scrollToRef = useRef<string | null>(null);
+  const jumpTo = (r: InquiryRow) => {
+    if (filter !== "전체" && !badgesOf(r).includes(filter)) setFilter("전체");
+    if (mineOnly && !isMine(r)) setMineOnly(false);
+    setOpenId(r.id);
+    setCursor(r.id);
+    scrollToRef.current = r.id;
+  };
+  useEffect(() => {
+    const id = scrollToRef.current;
+    if (!id || openId !== id) return;
+    const raf = requestAnimationFrame(() => {
+      const el = document.getElementById(`inq-${id}`);
+      if (el) {
+        el.scrollIntoView({ block: "center", behavior: "smooth" });
+        scrollToRef.current = null;
+      }
+    });
+    return () => cancelAnimationFrame(raf);
+  });
+
   // 답변 지연 — 1시간 넘게 아무도 답하지 않은 글.
   const late = actionable.filter(
     (r) => !r.replied_at && !r.answered_at && now - new Date(r.received_at).getTime() >= 60 * 60 * 1000,
@@ -639,8 +668,9 @@ export function TodayInquiriesPanel() {
               <button
                 key={r.id}
                 type="button"
-                onClick={() => setOpenId(r.id)}
-                className="rounded bg-white/20 px-1.5 hover:bg-white/30"
+                onClick={() => jumpTo(r)}
+                className={"rounded px-1.5 hover:bg-white/30 " + (openId === r.id ? "bg-white text-rose-700" : "bg-white/20")}
+                title="누르면 이 문의만 펼쳐 화면 가운데로 옵니다"
               >
                 <LateName r={r} /> {elapsedLabel(r.received_at, now)}
               </button>
@@ -654,12 +684,9 @@ export function TodayInquiriesPanel() {
               <button
                 key={r.id}
                 type="button"
-                onClick={() => {
-                  setOpenId(r.id);
-                  setCursor(r.id);
-                  document.getElementById(`inq-${r.id}`)?.scrollIntoView({ block: "nearest" });
-                }}
-                className="rounded bg-white/40 px-1.5 hover:bg-white/60"
+                onClick={() => jumpTo(r)}
+                className={"rounded px-1.5 hover:bg-white/60 " + (openId === r.id ? "bg-white" : "bg-white/40")}
+                title="누르면 이 문의만 펼쳐 화면 가운데로 옵니다"
               >
                 <LateName r={r} />
               </button>

@@ -25,7 +25,6 @@ import {
   BADGE_STYLE,
   INQUIRY_BADGES,
   elapsedLabel,
-  elapsedTone,
   isNoActionBadges,
   type InquiryBadge,
 } from "@/lib/inquiryBadges";
@@ -861,6 +860,34 @@ function Chip({
  * 뱃지는 「그 글로 가서 처리하라」는 단추인데, 이름 부분을 누르면 학생 창이 열려 가로막혔습니다 - 처리하러 눌렀는데
  * 학생 기본정보가 뜨면 두 번 일하게 됩니다. 동명이인 표시(반)는 그대로 붙습니다.
  */
+/** 아이콘 하나짜리 단추. 뜻은 title(마우스 올리면)로만 - 한 줄 높이를 지키려고 글자를 뺐습니다. */
+function IconBtn({
+  label,
+  onClick,
+  cls,
+  disabled,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  cls: string;
+  disabled?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      className={"h-6 w-6 rounded text-[13px] leading-none disabled:opacity-40 " + cls}
+    >
+      {children}
+    </button>
+  );
+}
+
 function LateName({ r }: { r: InquiryRow }) {
   const { names } = useToday();
   const name = r.student_id ? names.get(r.student_id) : null;
@@ -973,12 +1000,6 @@ function Row({
   const repeat = repeatOf.get(r.id);
   const notify = useToast();
   const [announcing, setAnnouncing] = useState(false);
-  const tone = elapsedTone(r.received_at, now);
-  const toneCls = {
-    calm: "bg-slate-100 text-slate-500",
-    warn: "bg-amber-100 text-amber-700",
-    late: "bg-rose-600 text-white",
-  }[tone];
   const isOld = r.received_at < todayStartIso();
   const assignees = r.assignees ?? [];
   const mine = assignees.includes(me);
@@ -1153,18 +1174,22 @@ function Row({
         {isNewRow(r, now) && !r.replied_at && (
           <span className="mt-1.5 h-2 w-2 shrink-0 animate-pulse rounded-full bg-red-500" title="새 글 (들어온 지 10분 안)" />
         )}
-        {/* 앞자리 — 글이 올라온 시각과 그 뒤로 지난 시간. 「몇 분 만에 답했나」는 적지 않습니다 - 사람을 재는 숫자가
-            화면에 늘 떠 있으면 빨리 답하는 것이 목표가 되고, 그 숫자는 월간 보고(ProcessingReport)에만 남깁니다.
-            답한 글은 색만 초록으로 바꿔 «답함»을 표시합니다. */}
+        {/* 앞자리 — 올라온 시각만. 지난 시간은 마우스를 올리면 보이고, 1시간을 넘긴 답 없는 글은 시각이 빨갛게 됩니다.
+            「몇 분 만에 답했나」는 적지 않습니다 - 사람을 재는 숫자가 늘 떠 있으면 빨리 답하는 것이 목표가 되고, 그 숫자는
+            관리자용 처리 보고에만 남깁니다. */}
         <span
           className={
-            "shrink-0 whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-bold tabular-nums " +
-            (r.replied_at ? "bg-emerald-50 text-emerald-700" : toneCls)
+            "shrink-0 whitespace-nowrap rounded px-1 py-0.5 text-[10px] font-bold tabular-nums " +
+            (r.replied_at
+              ? "bg-emerald-50 text-emerald-700"
+              : now - new Date(r.received_at).getTime() >= 60 * 60 * 1000
+                ? "bg-rose-600 text-white"
+                : "bg-slate-100 text-slate-600")
           }
-          title={r.replied_at ? `답함 · 올라온 시각 ${timeKst(r.received_at)}` : `올라온 시각 ${timeKst(r.received_at)}`}
+          title={`${r.replied_at ? "답함 · " : ""}올라온 시각 ${timeKst(r.received_at)} · ${elapsedLabel(r.received_at, now)} 지남`}
         >
-          {r.replied_at ? "✓ " : "⏱ "}
-          {timeKst(r.received_at)} · {elapsedLabel(r.received_at, now)}
+          {r.replied_at ? "✓ " : ""}
+          {timeKst(r.received_at)}
         </span>
         <span
           className={
@@ -1191,13 +1216,8 @@ function Row({
                 {b}
               </span>
             ))}
-            {/* 자동이 누구인지·무엇인지 못 정한 글. 오류가 아니라 «사람이 고를 차례»라서 경고색을 쓰지 않습니다 -
-                노란 ⚠ 가 줄마다 붙어 있으면 고장난 화면처럼 보이고, 정작 급한 지연 경보가 묻힙니다. */}
-            {needsCheck(r) && (
-              <span className="rounded-full border border-indigo-200 bg-indigo-50 px-1.5 text-[9px] font-bold text-indigo-700" title="학생·날짜·처리 종류를 사람이 고르면 끝납니다. 펼치면 처리 칸이 열려 있습니다.">
-                🛠 처리 대기
-              </span>
-            )}
+            {/* 처리 대기 표시는 뱃지로 달지 않습니다. 펼치면 처리 칸이 열려 있는 것으로 충분하고, 줄마다 뱃지가 붙으면
+                고장난 화면처럼 보입니다. */}
             {/* 이름을 누르면 학생 창(기본·셔틀·하원수단·특이사항·출결)이 뜹니다 - <Who> 가 이미 하는 일입니다. */}
             <Who2 r={r} />
             {replyingNow && (
@@ -1242,98 +1262,66 @@ function Row({
           )}
         </button>
         {/* 단추는 접힌 줄에서는 가로 한 줄, 펼치면 세로 묶음. 세로로 셋이 서면 접힌 줄도 세 줄 높이가 됩니다. */}
-        <div className={open ? "flex w-[4.5rem] shrink-0 flex-col gap-1" : "flex shrink-0 items-center gap-0.5"}>
+        {/* 단추는 **아이콘만**, 확성기 크기. 글자 단추 넷이 세로로 서면 한 줄이 네 줄 높이가 되어 목록이 몇 건밖에 안
+            보였습니다. 뜻은 마우스를 올리면(title) 나옵니다 - 픽업 확정·답하기·답함 표시·처리 완료·넘기기·공지 등록. */}
+        <div className="flex shrink-0 items-center gap-0.5 self-start">
           {pickupish && !pickupDone && (
-            <button
-              type="button"
-              disabled={pickingUp}
-              onClick={() => void quickPickup()}
-              className="rounded bg-amber-500 px-1 py-0.5 text-[10px] font-bold text-white hover:bg-amber-600 disabled:bg-slate-300"
-              title="이 글을 바로 픽업으로 등록합니다(하원 체크표에 반영)"
-            >
-              🚗 픽업 등록
-            </button>
+            <IconBtn label="픽업 확정 — 이 글을 바로 픽업으로 등록합니다(하원 체크표에 반영)" disabled={pickingUp} onClick={() => void quickPickup()} cls="bg-amber-100 hover:bg-amber-200">
+              🚗
+            </IconBtn>
           )}
           {pickupish && pickupDone && (
-            <span className="rounded border border-amber-300 px-1 py-0.5 text-center text-[10px] font-bold text-amber-700" title="픽업으로 등록된 글입니다">
-              🚗 픽업됨
+            <span className="rounded px-1 text-[13px] leading-none opacity-60" title="픽업으로 등록된 글입니다">
+              🚗
             </span>
           )}
-          {/* 답하기 — 토들 글이면 그 방을 새 창으로 엽니다. 거기서 답을 달면 수집기가 직원 답글을 보고
-              「답함」을 스스로 채웁니다(누가·몇 분 만에). 토들 방이 없는 글(전화·메모)은 누르면 바로 답함입니다. */}
           {r.replied_at ? (
-            <button
-              type="button"
-              onClick={() => void toggleReplied()}
-              className="rounded border border-emerald-300 px-1 py-0.5 text-[10px] font-bold text-emerald-700"
-              title="답함 되돌리기"
-            >
-              ✓ 답함
-            </button>
+            <IconBtn label="답함 — 누르면 되돌립니다" onClick={() => void toggleReplied()} cls="bg-emerald-100 text-emerald-700 hover:bg-emerald-200">
+              ✅
+            </IconBtn>
           ) : (
-            <span className="flex">
-              <button
-                type="button"
+            <>
+              <IconBtn
+                label={r.source_url ? "답하기 — 토들 방을 엽니다. 거기서 답하면 「답함」이 자동으로 체크됩니다" : "답하기 — 토들 방이 없는 글입니다. 답했으면 누르세요"}
                 onClick={() => {
                   if (r.source_url) {
                     announceReplying(r.id);
                     window.open(r.source_url, "_blank", "noopener");
                   } else void toggleReplied();
                 }}
-                className="flex-1 rounded-l bg-emerald-600 px-1 py-0.5 text-[10px] font-bold text-white hover:bg-emerald-700"
-                title={
-                  r.source_url
-                    ? "토들 방을 엽니다. 거기서 답하면 「답함」이 자동으로 체크됩니다."
-                    : "토들 방이 없는 글입니다. 답했으면 누르세요."
-                }
+                cls="bg-emerald-600 text-white hover:bg-emerald-700"
               >
-                답하기
-              </button>
+                💬
+              </IconBtn>
               {r.source_url && (
-                <button
-                  type="button"
-                  onClick={() => void toggleReplied()}
-                  className="rounded-r border-l border-emerald-500 bg-emerald-600 px-1 text-[10px] text-white hover:bg-emerald-700"
-                  title="토들 말고 전화 등으로 답했으면 여기서 답함으로 표시합니다"
-                >
+                <IconBtn label="답함 표시 — 토들 말고 전화 등으로 답했으면 여기서 표시합니다" onClick={() => void toggleReplied()} cls="border border-emerald-300 text-emerald-700 hover:bg-emerald-50">
                   ✓
-                </button>
+                </IconBtn>
               )}
-            </span>
+            </>
           )}
-          <button
-            type="button"
+          <IconBtn
+            label={r.answered_at ? "처리 완료됨 — 누르면 되돌립니다" : "처리 완료 — 이 글을 끝내고 목록에서 내립니다"}
             onClick={() => void toggleDone()}
-            className={
-              "rounded px-1 py-0.5 text-[10px] font-bold " +
-              (r.answered_at ? "border border-slate-300 text-slate-500" : "bg-slate-800 text-white hover:bg-slate-700")
-            }
-            title={r.answered_at ? "처리 완료 되돌리기" : "요청한 일이 끝났으면 누릅니다"}
+            cls={r.answered_at ? "border border-slate-300 text-slate-500" : "bg-slate-800 text-white hover:bg-slate-700"}
           >
-            {r.answered_at ? "✓ 완료" : "처리 완료"}
-          </button>
-          <span className="flex gap-0.5">
-            <button
-              type="button"
-              onClick={() => void toggleSkip()}
-              className={
-                "flex-1 rounded px-1 py-0.5 text-[10px] font-bold " +
-                (r.skipped_at ? "border border-slate-300 text-slate-500" : "border border-slate-200 text-slate-400 hover:bg-slate-50")
-              }
-              title={r.skipped_at ? "넘긴 것을 되돌립니다" : "할 일이 없는 글을 목록에서 내립니다(처리 건수에 안 들어감)"}
-            >
-              {r.skipped_at ? "되돌림" : "넘기기"}
-            </button>
-            <button
-              type="button"
-              disabled={announcing}
-              onClick={() => void announce()}
-              className={"rounded px-0.5 text-[11px] " + (r.announced_at ? "bg-amber-100 ring-1 ring-amber-300" : "hover:bg-amber-50")}
-              title={r.announced_at ? `${timeKst(r.announced_at)} 전체 공지로 올림 · ${staffName(r.announced_by ?? null)}` : "모든 직원 화면에 공지로 띄웁니다"}
-            >
-              📢
-            </button>
-          </span>
+            ✔
+          </IconBtn>
+          <IconBtn
+            label={r.skipped_at ? "넘김 — 누르면 되돌립니다" : "넘기기 — 할 일이 없는 글을 목록에서 내립니다(처리 건수에 안 들어감)"}
+            onClick={() => void toggleSkip()}
+            cls={r.skipped_at ? "border border-slate-300 text-slate-500" : "border border-slate-200 text-slate-400 hover:bg-slate-50"}
+          >
+            ⏭
+          </IconBtn>
+          <IconBtn
+            label={r.announced_at ? `공지 등록됨 · ${timeKst(r.announced_at)} · ${staffName(r.announced_by ?? null)}` : "공지 등록 — 모든 직원 화면에 공지로 띄웁니다"}
+            disabled={announcing}
+            onClick={() => void announce()}
+            cls={r.announced_at ? "bg-amber-100 ring-1 ring-amber-300" : "hover:bg-amber-50"}
+          >
+            📢
+          </IconBtn>
         </div>
       </div>
 

@@ -5,7 +5,7 @@ import UpcomingEntriesModal from "@/components/work/UpcomingEntriesModal";
 import { todayKst } from "@/lib/kst";
 import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
-import type { DepartmentMemo, GoogleChatMirrorMessage } from "@/lib/types";
+import type { GoogleChatMirrorMessage } from "@/lib/types";
 import AttendanceTeachModal from "./AttendanceTeachModal";
 import AttendanceRulesModal from "./AttendanceRulesModal";
 import { DismissalQuickModal, ManualAttendanceModal, RangeEditModal } from "./QuickEntryModals";
@@ -230,109 +230,9 @@ function RegBadge({
   );
 }
 
-const MEMO_SAVE_DELAY = 800;
+// 출결 메모 칸(오른콽 30%)은 걷어냈습니다. 자동 반영이 없는 자유 메모였는데 쓰이지 않았고, 그 폭을 출결내역이 쓰는
+// 편이 낫습니다. 자료(department_memos.attendance_memo)는 그대로 두었으니 되살리려면 칸만 다시 그리면 됩니다.
 
-// 출결 전용 메모칸 - 부서 메모(ActivityLog의 MemoPanel)와는 별개의 순수 자유 메모입니다. 절대
-// 자동으로 파싱되어 위 출결내역에 올라가지 않습니다(요청: "부서 메모는 그냥 반영하지 말고").
-// 용도: 오늘 픽업·결석·퇴소 아동을 손으로 정리하거나, 구글챗에 "금요일 권수호 픽업입니다"처럼
-// 오늘이 아닌 날짜 얘기가 오면 "권수호 금요일 픽업"처럼 짧게 옮겨 적어 놓치지 않게 합니다
-// (요청: "혹여나 구글챗에 오늘이 아닌 다른날의 출결상황을 적어주면 그것을 여기에 적어서
-// 파악할 수 있도록"). department_memos에 이 패널 전용 칼럼(attendance_memo)을 추가로 써서,
-// 부서 메모(content)와 완전히 독립된 값으로 관리합니다.
-function AttendanceMemoPanel({ department, currentUserEmail }: { department: string; currentUserEmail: string }) {
-  const [content, setContent] = useState("");
-  const [updatedBy, setUpdatedBy] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const skipNextRealtimeRef = useRef(false);
-
-  useEffect(() => {
-    if (department === "전체") return;
-    const supabase = createClient();
-    let cancelled = false;
-
-    supabase
-      .from("department_memos")
-      .select("attendance_memo, attendance_memo_updated_by")
-      .eq("department", department)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (cancelled) return;
-        const row = data as Pick<DepartmentMemo, "attendance_memo" | "attendance_memo_updated_by"> | null;
-        setContent(row?.attendance_memo ?? "");
-        setUpdatedBy(row?.attendance_memo_updated_by ?? null);
-      });
-
-    const channel = supabase
-      .channel(`attendance-memo-${department}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "department_memos", filter: `department=eq.${department}` },
-        (payload) => {
-          if (skipNextRealtimeRef.current) {
-            skipNextRealtimeRef.current = false;
-            return;
-          }
-          const row = payload.new as DepartmentMemo | undefined;
-          if (!row) return;
-          setContent(row.attendance_memo ?? "");
-          setUpdatedBy(row.attendance_memo_updated_by ?? null);
-        }
-      )
-      .subscribe();
-
-    return () => {
-      cancelled = true;
-      supabase.removeChannel(channel);
-      if (saveTimer.current) clearTimeout(saveTimer.current);
-    };
-  }, [department]);
-
-  function handleChange(next: string) {
-    setContent(next);
-    setSaving(true);
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(async () => {
-      const supabase = createClient();
-      skipNextRealtimeRef.current = true;
-      const { error } = await supabase
-        .from("department_memos")
-        .upsert(
-          {
-            department,
-            attendance_memo: next,
-            attendance_memo_updated_by: currentUserEmail,
-            attendance_memo_updated_at: new Date().toISOString(),
-          },
-          { onConflict: "department" }
-        );
-      setSaving(false);
-      if (error) {
-        skipNextRealtimeRef.current = false;
-      } else {
-        setUpdatedBy(currentUserEmail);
-      }
-    }, MEMO_SAVE_DELAY);
-  }
-
-  return (
-    <div className="flex h-full min-w-0 flex-col">
-      <div className="mb-1.5 flex shrink-0 items-center justify-between gap-1 text-[12px] font-bold text-slate-600">
-        {/* 제목은 줄지 않고, 누가 고쳤는지는 남는 폭에서 말줄임. 반대로 하면 제목이 세로로 늘어섭니다. */}
-        <span className="shrink-0 whitespace-nowrap">📝 출결 메모</span>
-        <span className="min-w-0 truncate text-[9px] font-medium text-slate-400" title={updatedBy ?? undefined}>
-          {saving ? "저장 중…" : updatedBy ? `${updatedBy} 수정` : ""}
-        </span>
-      </div>
-      <textarea
-        value={content}
-        onChange={(e) => handleChange(e.target.value)}
-        placeholder={"오늘 픽업·결석·퇴소 아동을 자유롭게 메모하세요.\n예: 권수호 금요일 픽업"}
-        className="min-h-0 w-full flex-1 resize-none rounded-lg border border-black/5 bg-white/60 px-2 py-1.5 text-[11px] text-slate-700 outline-none focus:border-blue-300"
-      />
-    </div>
-  );
-}
 
 // 출결알림 방(구글챗)에서 결석·픽업·지각·조퇴를 뽑아 학생별로 정리해 보여줍니다. 왼쪽
 // 출결알림 패널이 원문 로그라면, 여기는 그 원문에서 추려낸 요약본입니다.
@@ -850,10 +750,8 @@ export default function AttendanceDigestPanel({
   }, [entries]);
 
   return (
-    // 출결내역 칸이 넓어서 좌:우 = 7:3으로 나눕니다(요청). 왼쪽은 기존 출결내역 그대로,
-    // 오른쪽은 절대 자동 반영되지 않는 순수 출결 메모입니다.
     <div className="glass flex h-full gap-2.5 overflow-hidden p-2.5">
-      <div className="flex h-full min-w-0 flex-[7] flex-col overflow-hidden">
+      <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden">
       {/* 제목 옆에 픽업/결석/지각 순서로 건수를 요약합니다(요청 1). */}
       <div className="mb-1.5 flex shrink-0 flex-wrap items-center gap-1 text-[12px] font-bold text-emerald-600">
         <span>📊 출결내역</span>
@@ -1140,9 +1038,6 @@ export default function AttendanceDigestPanel({
       )}
       </div>
 
-      <div className="min-w-0 flex-[3] border-l border-black/5 pl-2.5">
-        <AttendanceMemoPanel department={department} currentUserEmail={currentUserEmail} />
-      </div>
 
       {/* 원문 전체 보기. 한 줄 미리보기로는 "정말 픽업 얘기인지" 알 수 없어, 담당자가 매번
           다른 화면으로 넘어가 확인해야 했습니다. */}

@@ -27,7 +27,6 @@ import {
   elapsedLabel,
   elapsedTone,
   isNoActionBadges,
-  minutesBetween,
   type InquiryBadge,
 } from "@/lib/inquiryBadges";
 import type { TeamMember } from "@/lib/types";
@@ -579,7 +578,7 @@ export function TodayInquiriesPanel() {
         void patch(row, { answered_at: nowIso, answered_by: me, answered_via: "수동" }, "처리 완료로 표시했습니다.");
       } else if (k === "s") {
         e.preventDefault();
-        if (needsCheck(row)) return notifyP("확인 필요 글은 펼쳐서 넘기기를 눌러 주세요(픽업 판단도 함께 내립니다).", "error");
+        if (needsCheck(row)) return notifyP("처리 대기 글은 펼쳐서 넘기기를 눌러 주세요(픽업 판단도 함께 내립니다).", "error");
         void patch(row, { skipped_at: nowIso, skipped_by: me }, "넘겼습니다.");
       }
     }
@@ -857,10 +856,15 @@ function Chip({
   );
 }
 
+/**
+ * 경보 뱃지(지연·오늘 마감) 안의 이름. **학생 창을 열지 않습니다**(`plain`).
+ * 뱃지는 「그 글로 가서 처리하라」는 단추인데, 이름 부분을 누르면 학생 창이 열려 가로막혔습니다 - 처리하러 눌렀는데
+ * 학생 기본정보가 뜨면 두 번 일하게 됩니다. 동명이인 표시(반)는 그대로 붙습니다.
+ */
 function LateName({ r }: { r: InquiryRow }) {
   const { names } = useToday();
   const name = r.student_id ? names.get(r.student_id) : null;
-  return name ? <Who id={r.student_id} name={name} /> : <>{r.channel_label ?? "누구?"}</>;
+  return name ? <Who id={r.student_id} name={name} plain /> : <>{r.channel_label ?? "누구?"}</>;
 }
 
 function Who2({ r }: { r: InquiryRow }) {
@@ -1148,21 +1152,19 @@ function Row({
         {isNewRow(r, now) && !r.replied_at && (
           <span className="mt-1.5 h-2 w-2 shrink-0 animate-pulse rounded-full bg-red-500" title="새 글 (들어온 지 10분 안)" />
         )}
-        {/* 앞자리 — 답 안 했으면 기다린 시간, 답했으면 누가 몇 분 만에. */}
-        {r.replied_at ? (
-          <span className="shrink-0 whitespace-nowrap rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">
-            ✓ 답함 {minutesBetween(r.received_at, r.replied_at)}분 만
-          </span>
-        ) : (
-          <span
-            className={
-              "shrink-0 whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-bold tabular-nums " +
-              toneCls
-            }
-          >
-            ⏱ {elapsedLabel(r.received_at, now)}
-          </span>
-        )}
+        {/* 앞자리 — 글이 올라온 시각과 그 뒤로 지난 시간. 「몇 분 만에 답했나」는 적지 않습니다 - 사람을 재는 숫자가
+            화면에 늘 떠 있으면 빨리 답하는 것이 목표가 되고, 그 숫자는 월간 보고(ProcessingReport)에만 남깁니다.
+            답한 글은 색만 초록으로 바꿔 «답함»을 표시합니다. */}
+        <span
+          className={
+            "shrink-0 whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-bold tabular-nums " +
+            (r.replied_at ? "bg-emerald-50 text-emerald-700" : toneCls)
+          }
+          title={r.replied_at ? `답함 · 올라온 시각 ${timeKst(r.received_at)}` : `올라온 시각 ${timeKst(r.received_at)}`}
+        >
+          {r.replied_at ? "✓ " : "⏱ "}
+          {timeKst(r.received_at)} · {elapsedLabel(r.received_at, now)}
+        </span>
         <span
           className={
             "shrink-0 rounded px-1 py-0.5 text-[9px] font-bold " +
@@ -1188,9 +1190,11 @@ function Row({
                 {b}
               </span>
             ))}
+            {/* 자동이 누구인지·무엇인지 못 정한 글. 오류가 아니라 «사람이 고를 차례»라서 경고색을 쓰지 않습니다 -
+                노란 ⚠ 가 줄마다 붙어 있으면 고장난 화면처럼 보이고, 정작 급한 지연 경보가 묻힙니다. */}
             {needsCheck(r) && (
-              <span className="rounded-full bg-amber-400 px-1.5 text-[9px] font-bold text-white" title="누구인지·픽업인지 정해야 합니다. 펼쳐서 처리하세요.">
-                ⚠ 확인 필요
+              <span className="rounded-full border border-indigo-200 bg-indigo-50 px-1.5 text-[9px] font-bold text-indigo-700" title="학생·날짜·처리 종류를 사람이 고르면 끝납니다. 펼치면 처리 칸이 열려 있습니다.">
+                🛠 처리 대기
               </span>
             )}
             {/* 이름을 누르면 학생 창(기본·셔틀·하원수단·특이사항·출결)이 뜹니다 - <Who> 가 이미 하는 일입니다. */}
@@ -1378,6 +1382,19 @@ function Row({
             >
               📝 특이사항으로 옮기기
             </button>
+            {!needsCheck(r) && (
+              <button
+                type="button"
+                onClick={() => setForceTriage((v) => !v)}
+                className={
+                  "rounded border px-1.5 py-0.5 font-bold " +
+                  (forceTriage ? "border-indigo-400 bg-indigo-100 text-indigo-800" : "border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100")
+                }
+                title="학생·날짜·처리 종류(픽업·결석·지각·물건 챙기기 등)를 골라 등록합니다. 자동이 안 잡은 일을 여기서 올립니다."
+              >
+                🛠 처리
+              </button>
+            )}
             {r.sender_name && <span>보낸 사람 {r.sender_name}</span>}
             {r.source_url && (
               <a
@@ -1390,9 +1407,18 @@ function Row({
               </a>
             )}
           </div>
+          {/* 처리 칸은 «필요할 때 꺼내는 메뉴»입니다. 자동이 못 정한 글(처리 대기)은 처음부터 열려 있고, 그 밖의 글은
+              「🛠 처리」를 눌러 엽니다 - 물건 챙기기처럼 자동이 안 잡는 일을 여기서 등록해 모든 직원 화면에 띄웁니다. */}
           {(needsCheck(r) || forceTriage) && (
-            <div>
-              <p className="mb-0.5 text-[10px] font-bold text-amber-700">⚠ 확인 요청 — 학생·날짜를 맞추고 처리를 고르세요</p>
+            <div className="rounded-lg border border-indigo-100 bg-indigo-50/40 p-1.5">
+              <p className="mb-0.5 flex items-center gap-2 text-[10px] font-bold text-indigo-700">
+                <span>🛠 처리하기 — 학생·날짜를 정하고 픽업·결석·지각·물건 챙기기 등을 고릅니다</span>
+                {!needsCheck(r) && (
+                  <button type="button" onClick={() => setForceTriage(false)} className="ml-auto rounded px-1 text-slate-400 hover:bg-white" title="처리 칸 닫기">
+                    닫기
+                  </button>
+                )}
+              </p>
               <PickupTriage
                 rows={[r as unknown as PickupRow]}
                 students={students}

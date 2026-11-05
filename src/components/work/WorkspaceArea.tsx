@@ -45,8 +45,10 @@ import type { RosterStudent } from "@/lib/attendanceDigest";
 // 양옆 칸은 접을 수 있습니다. 접으면 세로 막대만 남고 가운데가 그만큼 넓어집니다. 흐름판이
 // 옆 칸이 되면서 3열 대신 위에서 아래로(예정→진행중→완료) 쌓이는 세로 배치를 씁니다 - 좁은
 // 폭에 3열을 욱여넣으면 카드 제목이 다 잘립니다. 폭과 접힘 상태는 이 브라우저에 기억해둡니다.
-const LAYOUT_STORAGE_KEY = "gia-ops-work-layout-v4";
-const DEFAULT_LAYOUT = { leftWidth: 23, rightWidth: 34, leftOpen: true, rightOpen: true, inboxTopHeight: 55 };
+const LAYOUT_STORAGE_KEY = "gia-ops-work-layout-v5";
+// 가운데(오늘의 문의사항)가 너무 넓어서 한 줄이 길게 늘어졌습니다. 양옆을 넓혀 가운데를 화면의 3분의 1 안팎으로 둡니다.
+// 저장 열쇠를 v5 로 올려 예전에 기억된 폭을 한 번 버립니다 - 기본값만 바꾸면 이미 쓰던 사람 화면은 안 바뀝니다.
+const DEFAULT_LAYOUT = { leftWidth: 28, rightWidth: 38, leftOpen: true, rightOpen: true, inboxTopHeight: 55 };
 type Layout = typeof DEFAULT_LAYOUT;
 
 // 한 칸이 이보다 좁아지면 안에 든 표·채팅이 읽을 수 없게 되므로 드래그를 여기서 멈춥니다.

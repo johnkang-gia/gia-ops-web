@@ -59,9 +59,17 @@ function whoOf(inv: TitleInvoice): string {
   return klass ? `${name}(${klass})` : name;
 }
 
-/** 「김사랑(G2C) 학비 청구서」. 확장자는 브라우저가 붙입니다. */
+/**
+ * 파일 이름에 적는 갈래. 캠프 청구서는 갈래가 학비외지만 「학비외 청구서」라고 적으면 받는 쪽이 무슨 돈인지
+ * 모릅니다 - 캠프 학부모는 학비외라는 말을 처음 봅니다. 분류가 캠프면 「캠프」로 적습니다.
+ */
+function kindOf(inv: TitleInvoice): string {
+  return inv.category === "캠프" ? "캠프" : streamOf(inv);
+}
+
+/** 「김사랑(G2C) 학비 청구서」·「박세주(G2A) 캠프 청구서」. 확장자는 브라우저가 붙입니다. */
 export function invoiceFileTitle(inv: TitleInvoice): string {
-  return safeFileName(`${whoOf(inv)} ${streamOf(inv)} 청구서`);
+  return safeFileName(`${whoOf(inv)} ${kindOf(inv)} 청구서`);
 }
 
 /**
@@ -75,6 +83,6 @@ export function familyFileTitle(list: readonly TitleInvoice[]): string {
   if (list.length === 0) return "청구서";
   if (list.length === 1) return invoiceFileTitle(list[0]);
   const who = list.map(whoOf).join("·");
-  const streams = [...new Set(list.map((v) => streamOf(v)))].join("·");
+  const streams = [...new Set(list.map((v) => kindOf(v)))].join("·");
   return safeFileName(`${who} ${streams} 청구서`);
 }

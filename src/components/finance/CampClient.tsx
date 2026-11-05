@@ -9,6 +9,7 @@ import { APP_ORIGIN } from "@/lib/appUrl";
 import { TERM_GROUPS } from "@/lib/termTypes";
 import { campGroupOf, campLinkSuspect } from "@/lib/campMatch";
 import CancelInvoiceModal from "./CancelInvoiceModal";
+import InvoicePreviewModal from "./InvoicePreviewModal";
 import type { Invoice } from "@/lib/types";
 import {
   CAMP_DISCOUNTS,
@@ -88,6 +89,8 @@ export default function CampClient({
   const notify = useToast();
   const [busy, setBusy] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState<{ invoice: Invoice; studentName: string } | null>(null);
+  /** 청구서 미리보기(우리 양식). 학비·학비외와 같은 창이라 인쇄·PDF 저장이 같은 자리에 있습니다. */
+  const [preview, setPreview] = useState<{ id: string; label: string; receipt: boolean } | null>(null);
   const [filter, setFilter] = useState<"전체" | "접수" | "확정" | "취소" | "미연결" | "재학생" | "외부">("전체");
   const [q, setQ] = useState("");
   const [open, setOpen] = useState<string | null>(null);
@@ -436,6 +439,27 @@ export default function CampClient({
                               <div className={`text-[10px] font-bold ${inv.paid >= inv.total ? "text-emerald-700" : inv.paid > 0 ? "text-amber-700" : "text-slate-500"}`}>
                                 {inv.paid >= inv.total ? "완납" : inv.paid > 0 ? `일부수납 ${won(inv.paid)}` : "청구됨"}
                               </div>
+                              <div className="mt-0.5 flex flex-wrap gap-x-2 text-[10px]">
+                                <button
+                                  className="font-bold text-indigo-700 underline"
+                                  title="우리 청구서 양식으로 봅니다. 그 창에서 인쇄하거나 PDF로 저장합니다."
+                                  onClick={() => setPreview({ id: inv.id, label: `${a.applicant_name ?? ""} · ${inv.invoice_no}`, receipt: false })}
+                                >
+                                  청구서 보기·인쇄
+                                </button>
+                                {inv.paid >= inv.total && (
+                                  <button
+                                    className="font-bold text-emerald-700 underline"
+                                    title="완납된 장은 같은 양식으로 영수증을 찍습니다."
+                                    onClick={() => setPreview({ id: inv.id, label: `${a.applicant_name ?? ""} · ${inv.invoice_no}`, receipt: true })}
+                                  >
+                                    영수증
+                                  </button>
+                                )}
+                                <a href={`/finance/invoices/${inv.id}/print`} target="_blank" rel="noreferrer" className="text-slate-500 underline" title="새 탭에서 바로 열기(탭 제목이 PDF 파일 이름이 됩니다)">
+                                  새 탭
+                                </a>
+                              </div>
                               <button
                                 className="text-[10px] text-red-600 underline"
                                 title="청구서를 취소하고 이 신청을 청구 전으로 돌립니다. 주·셔틀을 고쳐 다시 발행할 수 있습니다."
@@ -516,6 +540,7 @@ export default function CampClient({
           </div>
         </div>
       )}
+      {preview && <InvoicePreviewModal invoiceId={preview.id} label={preview.label} receipt={preview.receipt} onClose={() => setPreview(null)} />}
       {cancelling && (
         <CancelInvoiceModal
           invoice={cancelling.invoice}

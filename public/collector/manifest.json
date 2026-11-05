@@ -1,27 +1,19 @@
 {
   "manifest_version": 3,
   "name": "GIA 토들 픽업 수집기",
-  "version": "2.7.0",
-  "description": "토들에 오늘 들어온 학부모 메시지를 GIA 운영앱으로 보내고, 구글챗을 크롬 사이드패널로 엽니다.",
+  "version": "2.6.2",
+  "description": "토들에 오늘 들어온 학부모 메시지를 모두 읽어 GIA 운영앱의 오늘의 문의사항으로 보냅니다. 토들의 '안 읽음' 표시는 그대로 둡니다.",
   "permissions": [
     "storage",
     "alarms",
     "tabs",
-    "scripting",
-    "sidePanel",
-    "declarativeNetRequest"
+    "scripting"
   ],
   "host_permissions": [
     "https://web.toddleapp.com/*",
     "https://*.toddleapp.com/*",
     "https://*.vercel.app/*",
-    "http://localhost/*",
-    "https://chat.google.com/*",
-    "https://mail.google.com/*",
-    "https://accounts.google.com/*",
-    "https://*.google.com/*",
-    "https://*.googleusercontent.com/*",
-    "https://*.gstatic.com/*"
+    "http://localhost/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -46,34 +38,11 @@
       ],
       "run_at": "document_start",
       "world": "MAIN"
-    },
-    {
-      "matches": [
-        "https://gia-ops.vercel.app/*",
-        "https://*.vercel.app/*",
-        "http://localhost/*"
-      ],
-      "js": [
-        "bridge.js"
-      ],
-      "run_at": "document_idle"
     }
   ],
   "action": {
     "default_popup": "popup.html",
     "default_title": "GIA 토들 픽업 수집기"
   },
-  "options_page": "popup.html",
-  "side_panel": {
-    "default_path": "chatpanel.html"
-  },
-  "declarative_net_request": {
-    "rule_resources": [
-      {
-        "id": "chat_frame",
-        "enabled": true,
-        "path": "rules_chat.json"
-      }
-    ]
-  }
+  "options_page": "popup.html"
 }

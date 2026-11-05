@@ -403,25 +403,3 @@ chrome.runtime.onMessage.addListener((msg, _s, sendResponse) => {
   }
   return false;
 });
-
-// ── 구글챗 사이드패널 ────────────────────────────────────────────────────────
-// 운영앱(bridge.js)이 «열어줘»를 보내면 그 탭의 사이드패널을 엽니다. 사이드패널은 사용자 동작(클릭) 뒤에만
-// 열 수 있는데, 운영앱의 손잡이 클릭에서 온 메시지라 통과합니다. 못 열면 ok:false 를 돌려 운영앱이 창으로 엽니다.
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (!msg || msg.type !== "openChat") return;
-  const tabId = sender.tab && sender.tab.id;
-  (async () => {
-    try {
-      if (tabId != null) await chrome.sidePanel.setOptions({ tabId, path: "chatpanel.html", enabled: true });
-      await chrome.sidePanel.open(tabId != null ? { tabId } : { windowId: (sender.tab && sender.tab.windowId) });
-      sendResponse({ ok: true });
-    } catch (e) {
-      sendResponse({ ok: false, error: String(e && e.message ? e.message : e) });
-    }
-  })();
-  return true;
-});
-try {
-  // 확장 아이콘 우클릭 메뉴 › 「사이드 패널 열기」로도 열립니다. 아이콘 클릭은 설정 팝업이 그대로입니다.
-  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false });
-} catch {}
